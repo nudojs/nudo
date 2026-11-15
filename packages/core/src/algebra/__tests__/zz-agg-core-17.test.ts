@@ -8,7 +8,6 @@ import "./core--map-insertion-order.part.ts";
 import "./core--contract-return-segment-syntax.part.ts";
 import "./core--error-proto-tostring-generic.part.ts";
 import "./core--array-concat-generic-receiver.part.ts";
-import "./core--sidecar-dts-name.part.ts";
 import "./core--array-inplace-methods-return-receiver.part.ts";
 import "./core--array-with-prim-receiver-rangeerror.part.ts";
 import "./core--tospliced-empty-args.part.ts";

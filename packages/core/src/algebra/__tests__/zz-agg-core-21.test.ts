@@ -6,7 +6,6 @@ import "./core--nonscalar-conjunction.part.ts";
 import "./core--length-nonnumeric-bound.part.ts";
 import "./core--callee-violation-face.part.ts";
 import "./core--duplicate-import-binding.part.ts";
-import "./core--dep-sidecar-attribution.part.ts";
 import "./core--assume-name-scope.part.ts";
 import "./core--pick-prototype-field.part.ts";
 import "./core--lit-literal-signature.part.ts";

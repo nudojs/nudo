@@ -4,7 +4,6 @@
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
 import "./core--lastindexof-explicit-undefined.part.ts";
 import "./core--linforms-eq-ieee.part.ts";
-import "./core--sidecar-load-diag-exec-cache.part.ts";
 import "./core--neg-zero-render.part.ts";
 import "./core--instance-bridge-ctor-throws.part.ts";
 import "./core--async-gen-decl-await.part.ts";

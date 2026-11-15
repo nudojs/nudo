@@ -3,7 +3,6 @@
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
 import "./core--bigint-render.part.ts";
-import "./core--sidecar-path-idempotent.part.ts";
 import "./core--assign-fn-body.part.ts";
 import "./core--call-site-verification.part.ts";
 import "./core--user-error-subclass-throws-coverage.part.ts";

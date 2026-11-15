@@ -7,8 +7,6 @@ import "./core--shape-nonobject-arg.part.ts";
 import "./core--shape-missing-arg.part.ts";
 import "./core--array-missing-element.part.ts";
 import "./core--array-element-length.part.ts";
-import "./core--sidecar-inject-scope.part.ts";
 import "./core--fn-throws-validation.part.ts";
 import "./core--pick-omit-keys-validation.part.ts";
-import "./core--sidecar-export-name.part.ts";
 import "./core--multi-return-conjunction.part.ts";

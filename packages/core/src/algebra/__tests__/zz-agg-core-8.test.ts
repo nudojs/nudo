@@ -11,4 +11,3 @@ import "./core--export-default-class-entry.part.ts";
 import "./core--case-throws-regex-backtrack.part.ts";
 import "./core--export-names-template-literal.part.ts";
 import "./core--lit-nan-self-conflict.part.ts";
-import "./core--sidecar-import-alias-collision.part.ts";

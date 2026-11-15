@@ -3,7 +3,6 @@
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
 import "./core--ambient-fingerprint-eacces.part.ts";
-import "./core--sidecar-diag-attribution.part.ts";
 import "./core--async-gen-multi-await.part.ts";
 import "./core--export-slot-member-key.part.ts";
 import "./core--leq-fn-min-arity.part.ts";

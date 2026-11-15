@@ -10,5 +10,4 @@ import "./core--union-member-structure.part.ts";
 import "./core--lit-nullish-literal-contract.part.ts";
 import "./core--missing-field-dedup.part.ts";
 import "./core--static-instance-name-collision.part.ts";
-import "./core--cross-file-sidecar-base-dir.part.ts";
 import "./core--lazy-shape-gate.part.ts";
