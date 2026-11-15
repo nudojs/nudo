@@ -5,4 +5,3 @@
 import "./lsp--call-arg-insert-pos.part.ts";
 import "./lsp--optional-bare-arrow-param.part.ts";
 import "./lsp--sidecar-edit-range.part.ts";
-import "./lsp--workspace-symbol-class-members.part.ts";

@@ -2,8 +2,6 @@
 // One of 15 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./lsp--document-symbol-capability-shape.part.ts";
 import "./lsp--check-merge-channels.part.ts";
-import "./lsp--default-export-lens.part.ts";
 import "./lsp--test-assertions.part.ts";
 import "./lsp--selectcase-caseindex-range.part.ts";

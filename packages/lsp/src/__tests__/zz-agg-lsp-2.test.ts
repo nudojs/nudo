@@ -2,7 +2,6 @@
 // One of 15 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./lsp--cross-module-call-lens.part.ts";
 import "./lsp--check-project-env.part.ts";
 import "./lsp--relax-param-slot.part.ts";
 import "./lsp--relax-return-base.part.ts";

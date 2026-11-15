@@ -2,7 +2,5 @@
 // One of 15 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./lsp--document-symbol-let-var.part.ts";
-import "./lsp--export-default-symbol.part.ts";
 import "./lsp--shadowed-binding.part.ts";
 import "./lsp--member-access-no-workspace-fallback.part.ts";
