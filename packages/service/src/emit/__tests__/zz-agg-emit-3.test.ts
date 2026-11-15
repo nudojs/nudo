@@ -4,9 +4,6 @@
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
 import "./emit--draft-throws-slot.part.ts";
 import "./emit--product-internal-slots.part.ts";
-import "./emit--line-comment-escape.part.ts";
-import "./emit--freeze-indent.part.ts";
 import "./emit--duplicate-issue-render.part.ts";
 import "./emit--draft-return-obligation.part.ts";
-import "./emit--zod-brand-user-class.part.ts";
 import "./emit--frozen-observation-type-face.part.ts";

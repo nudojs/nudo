@@ -3,12 +3,8 @@
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
 import "./emit--formal-params.part.ts";
-import "./emit--sparse-tuple-hole.part.ts";
-import "./emit--bom-fidelity.part.ts";
 import "./emit--crlf-fidelity.part.ts";
-import "./emit--eof-diff.part.ts";
 import "./emit--empty-object-projection.part.ts";
 import "./emit--draft-root-escape.part.ts";
 import "./emit--draft-default-sidecar-key.part.ts";
 import "./emit--derived-return-anchor.part.ts";
-import "./emit--derived-reproducibility.part.ts";

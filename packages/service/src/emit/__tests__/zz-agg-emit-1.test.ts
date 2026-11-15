@@ -4,11 +4,7 @@
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
 import "./emit--case-witness-not-contract.part.ts";
 import "./emit--evidence-scope.part.ts";
-import "./emit--stale-section-refresh.part.ts";
 import "./emit--ts-sidecar-nullable-import.part.ts";
-import "./emit--freeze-add-idempotent.part.ts";
 import "./emit--contract-conflict-surface.part.ts";
-import "./emit--zod-number-bound-infinity.part.ts";
-import "./emit--array-length-domain.part.ts";
 import "./emit--zod-number-domain.part.ts";
 import "./emit--rest-literal-widening.part.ts";

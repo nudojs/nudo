@@ -70,14 +70,22 @@ for (const p of parsed) for (const im of p.imports) {
     else if (prev.typeOnly && !im.typeOnly) prev.typeOnly = false;
   }
 }
+const PREFER = new Map([
+  ["FunctionAnalysis", "../../analyzer-types.ts"],
+  ["AnalysisResult", "../../analyzer-types.ts"],
+]);
 const conflictList = [];
 for (const [local, mods] of localMods) {
   const unique = [...new Set(mods)];
-  if (unique.length > 1 && !m.allowConflicts) conflictList.push(`${local}: ${unique.join(" vs ")}`);
+  if (unique.length <= 1) continue;
+  const prefer = PREFER.get(local);
+  if (prefer && unique.includes(prefer)) continue;
+  if (!m.allowConflicts) conflictList.push(`${local}: ${unique.join(" vs ")}`);
 }
 if (conflictList.length) throw new Error(`import conflicts:\n${conflictList.join("\n")}`);
 for (const [local, mods] of localMods) {
-  const keep = mods[0];
+  const prefer = PREFER.get(local);
+  const keep = prefer && mods.includes(prefer) ? prefer : mods[0];
   for (const mod of new Set(mods)) if (mod !== keep) byMod.get(mod)?.named.delete(local);
 }
 const importLines = [];

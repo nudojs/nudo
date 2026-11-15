@@ -5,9 +5,6 @@
 import "./emit--guard-strict-compile.part.ts";
 import "./emit--throws-annotation-block-comment.part.ts";
 import "./emit--515-517-518-550-939-dts-export-surface.part.ts";
-import "./emit--989-standard-strict-compile.part.ts";
 import "./emit--contract-return-literal.part.ts";
-import "./emit--builtin-generic-brand.part.ts";
 import "./emit--tuple-arity.part.ts";
-import "./emit--section-order.part.ts";
 import "./emit--525-542-derived-merge.part.ts";

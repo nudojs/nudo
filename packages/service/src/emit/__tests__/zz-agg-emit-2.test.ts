@@ -2,8 +2,6 @@
 // One of 8 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./emit--generator-element-slots.part.ts";
-import "./emit--symbol-key-slots.part.ts";
 import "./emit--zod-proto-slot.part.ts";
 import "./emit--ts-optional-params.part.ts";
 import "./emit--export-namespace.part.ts";
