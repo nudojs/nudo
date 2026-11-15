@@ -4,7 +4,7 @@
  * 原 9 个 core--guard-* part 按义务类型归并；断言与 Abs 夹具逐字保留。
  */
 import { describe, it, expect, afterAll } from "vitest";
-import { abs, obj, strLit, type Abs, gt, lit, v, abs as makeAbs, numLit, eq, app, bool, unknown, and, ge, le, v as termVar } from "@nudojs/core";
+import { abs, obj, strLit, type Abs, gt, lit, v, abs as makeAbs, numLit, eq, app, bool, boolLit, num, str, never, unknown, and, ge, le, v as termVar } from "@nudojs/core";
 import { denoteGuard } from "@nudojs/core/internal";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { execFileSync } from "node:child_process";
@@ -748,5 +748,65 @@ describe("guard 投影必须保真结构义务", () => {
   it("负控制：unknown 形状仍恒真（结构义务只对有形状的 Abs 生效）", () => {
     expect(denoteGuard(unknown, "data")).toBe("true");
   });
+});
+});
+
+
+// ---------------------------------------------------------------------------
+// 模块矩阵：denoteGuard 的接受集 / 可编译 / 非恒真不变量
+// ---------------------------------------------------------------------------
+describe("模块矩阵：denoteGuard 接受集", () => {
+/** Abs 形态 → 必须接受 / 必须拒绝的运行时值；表驱动覆盖模块契约而非单个 bug。 */
+type GuardCase = {
+  name: string;
+  abs: Abs;
+  accept: unknown[];
+  reject: unknown[];
+  canBeTautology?: boolean;
+};
+
+const A = (v: unknown): Abs => abs(v as never, undefined, undefined, "exact");
+const objOf = (slots: Record<string, { value: Abs; optional?: boolean }>): Abs =>
+  A({ k: "obj", slots });
+const arrOf = (element: Abs): Abs => A({ k: "arr", element });
+const tupleOf = (elements: Abs[]): Abs => A({ k: "tuple", elements });
+
+const CASES: GuardCase[] = [
+  { name: "never 拒绝一切", abs: never, accept: [], reject: [0, "", null, undefined, {}, []] },
+  { name: "unknown 接受一切", abs: unknown, accept: [0, "", null, undefined, {}, []], reject: [], canBeTautology: true },
+  { name: "number 基类型", abs: num(), accept: [1, -0, Number.NaN, Infinity], reject: ["1", true, null, undefined, {}, []] },
+  { name: "string 基类型", abs: str(), accept: ["", "a"], reject: [1, true, null, undefined, {}, []] },
+  { name: "boolean 基类型", abs: bool(), accept: [true, false], reject: [0, 1, "true", null] },
+  { name: "number 字面量", abs: numLit(1), accept: [1], reject: [2, -1, "1", true, null, Number.NaN, -0] },
+  { name: "NaN 字面量", abs: numLit(Number.NaN), accept: [Number.NaN], reject: [1, "NaN", null] },
+  { name: "string 字面量", abs: strLit("a"), accept: ["a"], reject: ["b", "", 1, null] },
+  { name: "boolean 字面量", abs: boolLit(true), accept: [true], reject: [false, 1, "true"] },
+  { name: "number 数组", abs: arrOf(num()), accept: [[], [1, 2]], reject: [[1, "x"], "[]", {}, null] },
+  { name: "定长 tuple", abs: tupleOf([numLit(1), strLit("a")]), accept: [[1, "a"]], reject: [[1], [1, "a", 2], ["1", "a"], []] },
+  { name: "必选字段 obj", abs: objOf({ a: { value: num() } }), accept: [{ a: 1 }], reject: [{}, { a: "1" }, [], null] },
+  {
+    name: "可选字段 obj（缺省 / undefined 接受，错型拒绝）",
+    abs: objOf({ a: { value: num() }, b: { value: str(), optional: true } }),
+    accept: [{ a: 1 }, { a: 1, b: undefined }, { a: 1, b: "x" }],
+    reject: [{}, { a: 1, b: 2 }, { a: "1" }],
+  },
+  { name: "number | string", abs: A({ k: "sum", members: [num(), str()] }), accept: [1, "a", ""], reject: [true, null, {}, []] },
+  {
+    name: "obj(a:number) | obj(b:string)",
+    abs: A({ k: "sum", members: [objOf({ a: { value: num() } }), objOf({ b: { value: str() } })] }),
+    accept: [{ a: 1 }, { b: "x" }],
+    reject: [{}, { a: "1" }, { b: 2 }, null],
+  },
+];
+
+const compile = (g: string): ((v: unknown) => boolean) => new Function("data", `return (${g});`) as (v: unknown) => boolean;
+
+it.each(CASES)("$name", ({ abs: a, accept, reject, canBeTautology }) => {
+  const guard = denoteGuard(a, "data");
+  expect(guard.trim().length).toBeGreaterThan(0);
+  const check = compile(guard);
+  for (const value of accept) expect(check(value), `accept ${String(value)}`).toBe(true);
+  for (const value of reject) expect(check(value), `reject ${String(value)}`).toBe(false);
+  if (!canBeTautology) expect(guard.trim()).not.toBe("true");
 });
 });
