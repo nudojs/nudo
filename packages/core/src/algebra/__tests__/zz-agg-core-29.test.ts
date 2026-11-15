@@ -2,13 +2,13 @@
 // One of 32 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./core-bug-430-boolean-arg-fastpath.part.ts";
-import "./core-bug-431-1020-nonscalar-arg-obligation.part.ts";
-import "./core-bug-431-union-prim-member-obligation.part.ts";
-import "./core-bug-432-generated-section-const-boundary.part.ts";
-import "./core-bug-433-union-member-structure.part.ts";
-import "./core-bug-434-lit-nullish-literal-contract.part.ts";
-import "./core-bug-436-missing-field-dedup.part.ts";
-import "./core-bug-437-static-instance-name-collision.part.ts";
-import "./core-bug-438-cross-file-sidecar-base-dir.part.ts";
-import "./core-bug-439-lazy-shape-gate.part.ts";
+import "./core--boolean-arg-fastpath.part.ts";
+import "./core--1020-nonscalar-arg-obligation.part.ts";
+import "./core--union-prim-member-obligation.part.ts";
+import "./core--generated-section-const-boundary.part.ts";
+import "./core--union-member-structure.part.ts";
+import "./core--lit-nullish-literal-contract.part.ts";
+import "./core--missing-field-dedup.part.ts";
+import "./core--static-instance-name-collision.part.ts";
+import "./core--cross-file-sidecar-base-dir.part.ts";
+import "./core--lazy-shape-gate.part.ts";

@@ -2,13 +2,13 @@
 // One of 16 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./cli-bug-279-rest-entry-witness-slot.part.ts";
-import "./cli-bug-284-ci-hard-errors.part.ts";
-import "./cli-bug-285-gha-gitlab-both.part.ts";
-import "./cli-bug-366-from-drift.part.ts";
-import "./cli-bug-394-array-pattern-input-face.part.ts";
-import "./cli-bug-405-whatif-target-fn-return.part.ts";
-import "./cli-bug-413-check-json-signature-stable.part.ts";
-import "./cli-bug-445-migrate-strip-type-import-parses.part.ts";
-import "./cli-bug-446-migrate-strip-export-assignment-parses.part.ts";
-import "./cli-bug-447-migrate-strip-class-member-parses.part.ts";
+import "./cli--rest-entry-witness-slot.part.ts";
+import "./cli--ci-hard-errors.part.ts";
+import "./cli--gha-gitlab-both.part.ts";
+import "./cli--from-drift.part.ts";
+import "./cli--array-pattern-input-face.part.ts";
+import "./cli--whatif-target-fn-return.part.ts";
+import "./cli--check-json-signature-stable.part.ts";
+import "./cli--migrate-strip-type-import-parses.part.ts";
+import "./cli--migrate-strip-export-assignment-parses.part.ts";
+import "./cli--migrate-strip-class-member-parses.part.ts";

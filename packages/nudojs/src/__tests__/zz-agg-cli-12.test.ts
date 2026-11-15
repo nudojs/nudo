@@ -2,13 +2,13 @@
 // One of 16 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./cli-bug-670-assume-parse-exit.part.ts";
-import "./cli-bug-671-symlink-scan.part.ts";
-import "./cli-bug-672-migrate-strip-product-parses.part.ts";
-import "./cli-bug-673-whatif-equals-form.part.ts";
-import "./cli-bug-674-health-analysis-error-gate.part.ts";
-import "./cli-bug-675-migrate-retire-json-shape.part.ts";
-import "./cli-bug-676-init-idempotence-predicate.part.ts";
-import "./cli-bug-677-init-monorepo-shadowing.part.ts";
-import "./cli-bug-678-init-scope-escape.part.ts";
-import "./cli-bug-679-ignore-throws-config-parity.part.ts";
+import "./cli--assume-parse-exit.part.ts";
+import "./cli--symlink-scan.part.ts";
+import "./cli--migrate-strip-product-parses.part.ts";
+import "./cli--whatif-equals-form.part.ts";
+import "./cli--health-analysis-error-gate.part.ts";
+import "./cli--migrate-retire-json-shape.part.ts";
+import "./cli--init-idempotence-predicate.part.ts";
+import "./cli--init-monorepo-shadowing.part.ts";
+import "./cli--init-scope-escape.part.ts";
+import "./cli--ignore-throws-config-parity.part.ts";

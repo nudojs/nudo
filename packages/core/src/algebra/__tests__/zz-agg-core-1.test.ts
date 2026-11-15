@@ -2,13 +2,13 @@
 // One of 32 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./core-bug-001-union-literal-return.part.ts";
-import "./core-bug-002-int-return-obligation.part.ts";
-import "./core-bug-004-class-static-bridge.part.ts";
-import "./core-bug-005-array-length-return-contract.part.ts";
-import "./core-bug-006-nullish-union-structural-return.part.ts";
-import "./core-bug-007-prim-proto-method-dispatch.part.ts";
-import "./core-bug-008-get-own-property-descriptor-fn.part.ts";
-import "./core-bug-009-regexp-literal-flags-canonical.part.ts";
-import "./core-bug-010-sub-zero-domain.part.ts";
-import "./core-bug-018-cross-slot-binders.part.ts";
+import "./core--union-literal-return.part.ts";
+import "./core--int-return-obligation.part.ts";
+import "./core--class-static-bridge.part.ts";
+import "./core--array-length-return-contract.part.ts";
+import "./core--nullish-union-structural-return.part.ts";
+import "./core--prim-proto-method-dispatch.part.ts";
+import "./core--get-own-property-descriptor-fn.part.ts";
+import "./core--regexp-literal-flags-canonical.part.ts";
+import "./core--sub-zero-domain.part.ts";
+import "./core--cross-slot-binders.part.ts";

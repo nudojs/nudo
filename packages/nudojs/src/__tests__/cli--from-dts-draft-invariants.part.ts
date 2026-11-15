@@ -11,7 +11,7 @@ describe("[merged] cli-bug-944-from-dts-draft-invariants.test.ts", () => {
 /**
  * `--from-dts --write` 的**草稿落点族**不变量（族 20 · Bug 944 / 1147 的
  * 收口回归；与 `cli-bug-944-from-dts-write-path.test.ts` /
- * `nudojs-bug-1147-contract-cli-text.test.ts` 互补 —— 那两处钉的是
+ * `nudojs--contract-cli-text.part.ts` 互补 —— 那两处钉的是
  * 「用例意图」，这里钉的是**规则本身**）。
  *
  * 钉：

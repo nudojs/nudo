@@ -2,10 +2,10 @@
 // One of 32 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./core-bug-1141-shape-conjoin-drops-obligation.part.ts";
-import "./core-bug-1142-contract-face-bigint-compare.part.ts";
-import "./core-bug-1148-promise-all-settle.part.ts";
-import "./core-bug-1150-promise-reaction-combinators.part.ts";
-import "./core-bug-1152-seeded-generalize-l0.part.ts";
-import "./core-bug-1153-failclosed-reachability.part.ts";
-import "./core-bug-1154-class-member-call-contract.part.ts";
+import "./core--shape-conjoin-drops-obligation.part.ts";
+import "./core--contract-face-bigint-compare.part.ts";
+import "./core--promise-all-settle.part.ts";
+import "./core--promise-reaction-combinators.part.ts";
+import "./core--seeded-generalize-l0.part.ts";
+import "./core--failclosed-reachability.part.ts";
+import "./core--class-member-call-contract.part.ts";

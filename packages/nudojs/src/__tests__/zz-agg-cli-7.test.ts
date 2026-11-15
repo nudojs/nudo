@@ -2,13 +2,13 @@
 // One of 16 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./cli-bug-448-migrate-strip-this-param-parses.part.ts";
-import "./cli-bug-56-cli-face.part.ts";
-import "./cli-bug-56b-strip-isolation.part.ts";
-import "./cli-bug-599-guard-contract-return.part.ts";
-import "./cli-bug-600-skip-function-export.part.ts";
-import "./cli-bug-601-standard-helper-once.part.ts";
-import "./cli-bug-602-format-all-output-name.part.ts";
-import "./cli-bug-603-format-all-input-name.part.ts";
-import "./cli-bug-604-rest-param-slot.part.ts";
-import "./cli-bug-605-partial-contract-params.part.ts";
+import "./cli--migrate-strip-this-param-parses.part.ts";
+import "./cli--face.part.ts";
+import "./cli--strip-isolation.part.ts";
+import "./cli--guard-contract-return.part.ts";
+import "./cli--skip-function-export.part.ts";
+import "./cli--standard-helper-once.part.ts";
+import "./cli--format-all-output-name.part.ts";
+import "./cli--format-all-input-name.part.ts";
+import "./cli--rest-param-slot.part.ts";
+import "./cli--partial-contract-params.part.ts";

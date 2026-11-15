@@ -2,13 +2,13 @@
 // One of 15 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./lsp-bug-777-config-deep-merge.part.ts";
-import "./lsp-bug-778-diagnostic-range-clamp.part.ts";
-import "./lsp-bug-779-check-info-level.part.ts";
-import "./lsp-bug-780-trace-positional-bridge.part.ts";
-import "./lsp-bug-781-pull-env-diagnostics.part.ts";
-import "./lsp-bug-782-non-ascii-receiver.part.ts";
-import "./lsp-bug-783-workspace-folders.part.ts";
-import "./lsp-bug-784-malformed-uri-initialize.part.ts";
-import "./lsp-bug-785-inline-directive-injection.part.ts";
-import "./lsp-bug-786-hover-inject.part.ts";
+import "./lsp--config-deep-merge.part.ts";
+import "./lsp--diagnostic-range-clamp.part.ts";
+import "./lsp--check-info-level.part.ts";
+import "./lsp--trace-positional-bridge.part.ts";
+import "./lsp--pull-env-diagnostics.part.ts";
+import "./lsp--non-ascii-receiver.part.ts";
+import "./lsp--workspace-folders.part.ts";
+import "./lsp--malformed-uri-initialize.part.ts";
+import "./lsp--inline-directive-injection.part.ts";
+import "./lsp--hover-inject.part.ts";

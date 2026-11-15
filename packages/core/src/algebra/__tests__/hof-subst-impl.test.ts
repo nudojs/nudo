@@ -6,7 +6,7 @@
  * inferFrom / condFallback / throws / fingerprint 等 impl 独有数据）静默
  * 丢失 ⇒ 泛型方法调用经接口 α 代入后折 any/unknown（Bug 810 的引擎面半边；
  * 收割面半边 = harvest-dts 的 α 作用域隔离，见 harvester 的
- * harvest-bug-810-method-type-param-shadow.part.ts）。
+ * harvest--method-type-param-shadow.part.ts）。
  *
  * 口径（见 hof.ts `substFnImpl`）：行为面（apply/body/闭包）与标量 facet
  * α 无关 ⇒ 原样搬运；relation 槽是 Abs 数据 ⇒ 按 map 替换并与 shape 槽

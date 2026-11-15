@@ -2,13 +2,13 @@
 // One of 15 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./eval-bug-299-reflect-set-receiver.part.ts";
-import "./eval-bug-300-proxy-get-own-property-descriptor.part.ts";
-import "./eval-bug-301-freeze-seal-proxy-traps.part.ts";
-import "./eval-bug-302-reflect-define-property-proxy.part.ts";
-import "./eval-bug-303-ta-buffer-length-multiple.part.ts";
-import "./eval-bug-304-ta-set-content-type.part.ts";
-import "./eval-bug-305-ta-set-item-conversion.part.ts";
-import "./eval-bug-306-reflect-get-accessor.part.ts";
-import "./eval-bug-307-function-prototype-proto.part.ts";
-import "./eval-bug-308-regexp-lastindex-own-prop.part.ts";
+import "./eval--reflect-set-receiver.part.ts";
+import "./eval--proxy-get-own-property-descriptor.part.ts";
+import "./eval--freeze-seal-proxy-traps.part.ts";
+import "./eval--reflect-define-property-proxy.part.ts";
+import "./eval--ta-buffer-length-multiple.part.ts";
+import "./eval--ta-set-content-type.part.ts";
+import "./eval--ta-set-item-conversion.part.ts";
+import "./eval--reflect-get-accessor.part.ts";
+import "./eval--function-prototype-proto.part.ts";
+import "./eval--regexp-lastindex-own-prop.part.ts";

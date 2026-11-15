@@ -316,7 +316,7 @@ BUG-024 ESM 类表达式    census=[C.m]            indexed=[C,C.m]          +[C
 **默认切换前的风险实测**（临时把 `entryFaceEnabled` 默认置 `true` 跑全量，随后**立即恢复 `false`**；该状态不是交付状态，也未进入任何测试快照）：
 
 - 1769 文件 / 18056 用例：**6 失败 / 5 文件**。其中 2 条是我们自己「默认关闭」的自指断言（`entry-face-shadow.test.ts`、`semantic-index-face.test.ts`），**4 条是真实回归**：
-  - `core-bug-996-cjs-getter-setter-not-entry.part.ts`（getter / setter 各 1 条）：`objectPropertyKeys` 只看 `isFunctionValue(p)`，未看 `kind` ⇒ 访问器被当成可调用入口，报假 `entry may-throw` / `opaque-result`（§16 实测 `indexed=[f]`）。
+  - `core--cjs-getter-setter-not-entry.part.ts`（getter / setter 各 1 条）：`objectPropertyKeys` 只看 `isFunctionValue(p)`，未看 `kind` ⇒ 访问器被当成可调用入口，报假 `entry may-throw` / `opaque-result`（§16 实测 `indexed=[f]`）。
   - `transpile-temp-names.test.ts` 的两处「撞名时无假 `nudo:opaque-result`（整模块 fail-closed 面）」用例（原 `core-bug-1149` / `1159` 两组，现已并入模块套件）：**`FunctionDeclaration` 无条件 `addEntry`** 且 walker 遍历整棵 AST ⇒ 函数体内嵌套声明被当成模块顶层入口（§16 实测 `SRC_D2` 的 `function g(){}`：`old=[f] indexed=[f,g]`）⇒ 名字解析不到、假 `nudo:opaque-result`。此处「内部临时名」是当时的错误推测，§16 已按实测更正。
 - 三份金标（`check-gold` / `check-recall-gold` / `check-shape-gold`）在**开启**状态下仍 233/233 全绿 ⇒ 缺口集中在 **`entries` 精度**，不是优先级格或整体架构。
 

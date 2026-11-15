@@ -2,13 +2,13 @@
 // One of 8 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./emit-bug-1065-neg-zero-schema.part.ts";
-import "./emit-bug-130-generator-element-slots.part.ts";
-import "./emit-bug-131-symbol-key-slots.part.ts";
-import "./emit-bug-151-dts-class-extends.part.ts";
-import "./emit-bug-156-zod-proto-slot.part.ts";
-import "./emit-bug-168-dts-unresolvable-annotation.part.ts";
-import "./emit-bug-169-ts-optional-params.part.ts";
-import "./emit-bug-189-dts-named-and-default-export.part.ts";
-import "./emit-bug-190-dts-value-exports.part.ts";
-import "./emit-bug-191-export-namespace.part.ts";
+import "./emit--neg-zero-schema.part.ts";
+import "./emit--generator-element-slots.part.ts";
+import "./emit--symbol-key-slots.part.ts";
+import "./emit--dts-class-extends.part.ts";
+import "./emit--zod-proto-slot.part.ts";
+import "./emit--dts-unresolvable-annotation.part.ts";
+import "./emit--ts-optional-params.part.ts";
+import "./emit--dts-named-and-default-export.part.ts";
+import "./emit--dts-value-exports.part.ts";
+import "./emit--export-namespace.part.ts";

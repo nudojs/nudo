@@ -19,7 +19,7 @@
  * - 负控制：适用形态（变量声明 / return）⇒ 零 `nudo:directive-syntax`。
  *
  * service 面的同一条事实已由
- * packages/service/src/__tests__/service-bug-080-as-shape-guard.test.ts 钉住；
+ * packages/service/src/__tests__/service--as-shape-guard.part.ts 钉住；
  * 本文件只补 IDE 面。
  */
 import { describe, it, expect } from "vitest";

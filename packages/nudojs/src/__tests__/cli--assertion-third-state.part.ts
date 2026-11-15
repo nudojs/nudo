@@ -20,7 +20,7 @@
  * - 负控制：推导成功 + 期望不符 ⇒ 仍是 **FAIL / exit 1**（既有行为不变）。
  *
  * ⚠ 本钉只钉**报告面**（两个报告面的第三态是同一条口径，见 service 面的
- * 平行钉 `packages/service/src/__tests__/service-bug-950-test-report-third-state.test.ts`）。
+ * 平行钉 `packages/service/src/__tests__/service--test-report-third-state.part.ts`）。
  */
 import { describe, it, expect } from "vitest";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";

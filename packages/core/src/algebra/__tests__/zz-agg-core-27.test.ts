@@ -2,13 +2,13 @@
 // One of 32 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./core-bug-409-guard-required-slot-existence.part.ts";
-import "./core-bug-410-guard-structural-obligations.part.ts";
-import "./core-bug-412-inlay-internal-term-id.part.ts";
-import "./core-bug-413-check-json-no-internal-term-id.part.ts";
-import "./core-bug-414-inlay-negzero-union-member.part.ts";
-import "./core-bug-415-mock-module-single-quote.part.ts";
-import "./core-bug-416-block-comment-import.part.ts";
-import "./core-bug-417-env-payload-grammar.part.ts";
-import "./core-bug-418-multi-declarator-single-binding.part.ts";
-import "./core-bug-419-arrow-inline-jsdoc-binding.part.ts";
+import "./core--guard-required-slot-existence.part.ts";
+import "./core--guard-structural-obligations.part.ts";
+import "./core--inlay-internal-term-id.part.ts";
+import "./core--check-json-no-internal-term-id.part.ts";
+import "./core--inlay-negzero-union-member.part.ts";
+import "./core--mock-module-single-quote.part.ts";
+import "./core--block-comment-import.part.ts";
+import "./core--env-payload-grammar.part.ts";
+import "./core--multi-declarator-single-binding.part.ts";
+import "./core--arrow-inline-jsdoc-binding.part.ts";

@@ -2,13 +2,13 @@
 // One of 32 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./core-bug-1077-setproto-object-prototype-null.part.ts";
-import "./core-bug-1078-reflect-ownkeys-order.part.ts";
-import "./core-bug-1079-hof-arr-tuple-alphabind.part.ts";
-import "./core-bug-1080-postcondition-phi.part.ts";
-import "./core-bug-1092-directive-scan-class-object-gate.part.ts";
-import "./core-bug-1093-generalize-class-bridge-ctor-throw.part.ts";
-import "./core-bug-1095-proxy-gopd-invariant-threshold.part.ts";
-import "./core-bug-1096-ctor-throw-evidence-attribution.part.ts";
-import "./core-bug-1097-hof-tuple-element-domain.part.ts";
-import "./core-bug-1102-directive-scan-array-pattern-gate.part.ts";
+import "./core--setproto-object-prototype-null.part.ts";
+import "./core--reflect-ownkeys-order.part.ts";
+import "./core--hof-arr-tuple-alphabind.part.ts";
+import "./core--postcondition-phi.part.ts";
+import "./core--directive-scan-class-object-gate.part.ts";
+import "./core--generalize-class-bridge-ctor-throw.part.ts";
+import "./core--proxy-gopd-invariant-threshold.part.ts";
+import "./core--ctor-throw-evidence-attribution.part.ts";
+import "./core--hof-tuple-element-domain.part.ts";
+import "./core--directive-scan-array-pattern-gate.part.ts";

@@ -2,13 +2,13 @@
 // One of 15 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./eval-bug-290-match-result-iterable.part.ts";
-import "./eval-bug-291-freeze-seal-key-flags.part.ts";
-import "./eval-bug-291-host-fn-stable-facade.part.ts";
-import "./eval-bug-292-define-property-validate.part.ts";
-import "./eval-bug-293-promise-combinator-settle.part.ts";
-import "./eval-bug-294-arraylike-accessor.part.ts";
-import "./eval-bug-295-enum-surface-symbol.part.ts";
-import "./eval-bug-296-array-from-thisarg.part.ts";
-import "./eval-bug-297-date-setters.part.ts";
-import "./eval-bug-298-json-parse-reviver.part.ts";
+import "./eval--match-result-iterable.part.ts";
+import "./eval--freeze-seal-key-flags.part.ts";
+import "./eval--host-fn-stable-facade.part.ts";
+import "./eval--define-property-validate.part.ts";
+import "./eval--promise-combinator-settle.part.ts";
+import "./eval--arraylike-accessor.part.ts";
+import "./eval--enum-surface-symbol.part.ts";
+import "./eval--array-from-thisarg.part.ts";
+import "./eval--date-setters.part.ts";
+import "./eval--json-parse-reviver.part.ts";

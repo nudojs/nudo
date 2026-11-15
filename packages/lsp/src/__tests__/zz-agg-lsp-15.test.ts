@@ -2,4 +2,4 @@
 // One of 15 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./lsp-bug-998-cjs-export-faces.part.ts";
+import "./lsp--cjs-export-faces.part.ts";

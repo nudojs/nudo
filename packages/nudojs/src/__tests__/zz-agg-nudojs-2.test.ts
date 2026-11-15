@@ -2,13 +2,13 @@
 // One of 4 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./nudojs-bug-1145-check-analysis-failed-exit.part.ts";
-import "./nudojs-bug-1147-contract-cli-text.part.ts";
-import "./nudojs-bug-456-esm-cycle-check.part.ts";
-import "./nudojs-bug-460-mock-invalid-severity.part.ts";
-import "./nudojs-bug-461-check-health-entry-only-parity.part.ts";
-import "./nudojs-bug-461-contract-entry-only.part.ts";
-import "./nudojs-bug-466-callsite-load-failure.part.ts";
-import "./nudojs-bug-468-936-config-shape-report.part.ts";
-import "./nudojs-bug-499-unreadable-dep.part.ts";
-import "./nudojs-bug-533-1000-standard-literal-fidelity.part.ts";
+import "./nudojs--check-analysis-failed-exit.part.ts";
+import "./nudojs--contract-cli-text.part.ts";
+import "./nudojs--esm-cycle-check.part.ts";
+import "./nudojs--mock-invalid-severity.part.ts";
+import "./nudojs--check-health-entry-only-parity.part.ts";
+import "./nudojs--contract-entry-only.part.ts";
+import "./nudojs--callsite-load-failure.part.ts";
+import "./nudojs--936-config-shape-report.part.ts";
+import "./nudojs--unreadable-dep.part.ts";
+import "./nudojs--1000-standard-literal-fidelity.part.ts";

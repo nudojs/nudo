@@ -2,13 +2,13 @@
 // One of 15 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./lsp-bug-714-include-declaration-false.part.ts";
-import "./lsp-bug-715-shorthand-rename.part.ts";
-import "./lsp-bug-716-inlay-hint-range.part.ts";
-import "./lsp-bug-717-completion-kind-function.part.ts";
-import "./lsp-bug-718-active-parameter-range.part.ts";
-import "./lsp-bug-719-document-symbol-destructure.part.ts";
-import "./lsp-bug-720-method-call-signature.part.ts";
-import "./lsp-bug-721-shorthand-semantic-token.part.ts";
-import "./lsp-bug-722-inlay-hint-crlf-position.part.ts";
-import "./lsp-bug-723-semantic-token-escape-length.part.ts";
+import "./lsp--include-declaration-false.part.ts";
+import "./lsp--shorthand-rename.part.ts";
+import "./lsp--inlay-hint-range.part.ts";
+import "./lsp--completion-kind-function.part.ts";
+import "./lsp--active-parameter-range.part.ts";
+import "./lsp--document-symbol-destructure.part.ts";
+import "./lsp--method-call-signature.part.ts";
+import "./lsp--shorthand-semantic-token.part.ts";
+import "./lsp--inlay-hint-crlf-position.part.ts";
+import "./lsp--semantic-token-escape-length.part.ts";

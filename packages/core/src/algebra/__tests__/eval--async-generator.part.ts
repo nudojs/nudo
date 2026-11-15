@@ -304,7 +304,7 @@ describe("[merged] eval-bug-141-decl-async-generator.test.ts", () => {
  * "[object Object]"，且错误地带上了同步迭代面（@@iterator）。
  *
  * 声明面与函数**表达式**面 / class **方法**面（已修，见
- * eval-bug-141-async-generator.test.ts）同属一条语义线；本文件只补声明面。
+ * eval--async-generator.part.ts）同属一条语义线；本文件只补声明面。
  *
  * 不变量（负控制钉住）：同步 generator 声明仍是同步协议（无 then、有
  * @@iterator）；async **函数**（非 generator）声明仍返回 promise。

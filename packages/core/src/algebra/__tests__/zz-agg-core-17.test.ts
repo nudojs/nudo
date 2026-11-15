@@ -2,13 +2,13 @@
 // One of 32 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./core-bug-259-array-mutator-prim-receiver.part.ts";
-import "./core-bug-259-symbol-key-write.part.ts";
-import "./core-bug-260-map-insertion-order.part.ts";
-import "./core-bug-261-contract-return-segment-syntax.part.ts";
-import "./core-bug-261-error-proto-tostring-generic.part.ts";
-import "./core-bug-262-array-concat-generic-receiver.part.ts";
-import "./core-bug-264-sidecar-dts-name.part.ts";
-import "./core-bug-267-array-inplace-methods-return-receiver.part.ts";
-import "./core-bug-268-array-with-prim-receiver-rangeerror.part.ts";
-import "./core-bug-270-tospliced-empty-args.part.ts";
+import "./core--array-mutator-prim-receiver.part.ts";
+import "./core--symbol-key-write.part.ts";
+import "./core--map-insertion-order.part.ts";
+import "./core--contract-return-segment-syntax.part.ts";
+import "./core--error-proto-tostring-generic.part.ts";
+import "./core--array-concat-generic-receiver.part.ts";
+import "./core--sidecar-dts-name.part.ts";
+import "./core--array-inplace-methods-return-receiver.part.ts";
+import "./core--array-with-prim-receiver-rangeerror.part.ts";
+import "./core--tospliced-empty-args.part.ts";

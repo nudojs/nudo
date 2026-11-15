@@ -2,13 +2,13 @@
 // One of 32 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./core-bug-145-inlay-same-name-slot.part.ts";
-import "./core-bug-147-inlay-anonymous-default.part.ts";
-import "./core-bug-157-urlsearchparams-entries-internal-slot.part.ts";
-import "./core-bug-158-guard-arguments-brand.part.ts";
-import "./core-bug-159-host-ctor-probe.part.ts";
-import "./core-bug-160-textencoder.part.ts";
-import "./core-bug-163-url-host-slot.part.ts";
-import "./core-bug-163-url-tojson-brand-face.part.ts";
-import "./core-bug-164-object-proto-legacy-accessors.part.ts";
-import "./core-bug-165-symbol-member-call.part.ts";
+import "./core--inlay-same-name-slot.part.ts";
+import "./core--inlay-anonymous-default.part.ts";
+import "./core--urlsearchparams-entries-internal-slot.part.ts";
+import "./core--guard-arguments-brand.part.ts";
+import "./core--host-ctor-probe.part.ts";
+import "./core--textencoder.part.ts";
+import "./core--url-host-slot.part.ts";
+import "./core--url-tojson-brand-face.part.ts";
+import "./core--object-proto-legacy-accessors.part.ts";
+import "./core--symbol-member-call.part.ts";

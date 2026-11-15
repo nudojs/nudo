@@ -2,13 +2,13 @@
 // One of 32 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./core-bug-078-rename-facets.part.ts";
-import "./core-bug-080-as-destructure.part.ts";
-import "./core-bug-082-contract-default-param.part.ts";
-import "./core-bug-083-goal-const-cancel.part.ts";
-import "./core-bug-084-invariant-relied-ledger.part.ts";
-import "./core-bug-087-lit-projects-as-type.part.ts";
-import "./core-bug-088-optional-entry-projection.part.ts";
-import "./core-bug-092-guard-comparison-predicates.part.ts";
-import "./core-bug-095-guard-array-holes.part.ts";
-import "./core-bug-097-guard-proto-named-slots.part.ts";
+import "./core--rename-facets.part.ts";
+import "./core--as-destructure.part.ts";
+import "./core--contract-default-param.part.ts";
+import "./core--goal-const-cancel.part.ts";
+import "./core--invariant-relied-ledger.part.ts";
+import "./core--lit-projects-as-type.part.ts";
+import "./core--optional-entry-projection.part.ts";
+import "./core--guard-comparison-predicates.part.ts";
+import "./core--guard-array-holes.part.ts";
+import "./core--guard-proto-named-slots.part.ts";

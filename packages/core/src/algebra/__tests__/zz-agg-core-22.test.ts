@@ -2,13 +2,13 @@
 // One of 32 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./core-bug-351-fn-return-obligation.part.ts";
-import "./core-bug-352-shape-nonobject-arg.part.ts";
-import "./core-bug-353-shape-missing-arg.part.ts";
-import "./core-bug-354-array-missing-element.part.ts";
-import "./core-bug-355-array-element-length.part.ts";
-import "./core-bug-356-sidecar-inject-scope.part.ts";
-import "./core-bug-357-fn-throws-validation.part.ts";
-import "./core-bug-358-pick-omit-keys-validation.part.ts";
-import "./core-bug-359-sidecar-export-name.part.ts";
-import "./core-bug-360-multi-return-conjunction.part.ts";
+import "./core--fn-return-obligation.part.ts";
+import "./core--shape-nonobject-arg.part.ts";
+import "./core--shape-missing-arg.part.ts";
+import "./core--array-missing-element.part.ts";
+import "./core--array-element-length.part.ts";
+import "./core--sidecar-inject-scope.part.ts";
+import "./core--fn-throws-validation.part.ts";
+import "./core--pick-omit-keys-validation.part.ts";
+import "./core--sidecar-export-name.part.ts";
+import "./core--multi-return-conjunction.part.ts";

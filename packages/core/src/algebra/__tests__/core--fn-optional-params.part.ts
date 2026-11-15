@@ -128,7 +128,7 @@ describe("[merged] core-bug-399-optional-params-write-side.test.ts", () => {
  * Bug 399 回归（**写侧**）：形参表面（`FormalParam.optional`）→ fn shape 的
  * `optionalParams` 标记 → `leq` 的必选元数判定。
  *
- * 读侧钉在 `core-bug-399-fn-optional-params.test.ts`（模型层：形参表面 →
+ * 读侧钉在 `core--fn-optional-params.part.ts`（模型层：形参表面 →
  * shape → `leq`）；本钉走**真实管线**（源码 → 转译 → fn shape），
  * 因为写侧的每一跳都在真实路径上才生效：
  *

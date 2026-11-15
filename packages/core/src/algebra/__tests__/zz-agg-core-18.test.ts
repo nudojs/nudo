@@ -2,13 +2,13 @@
 // One of 32 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./core-bug-272-class-no-new.part.ts";
-import "./core-bug-273-mock-name-collision.part.ts";
-import "./core-bug-274-mock-host-builtin-skip.part.ts";
-import "./core-bug-275-object-create-inherited-slot.part.ts";
-import "./core-bug-275-optional-require-cjsmain.part.ts";
-import "./core-bug-276-class-instance-enumerable-flags.part.ts";
-import "./core-bug-276-missing-require-throws.part.ts";
-import "./core-bug-277-builtin-brand-user-keys.part.ts";
-import "./core-bug-277-cjs-top-level-this.part.ts";
-import "./core-bug-278-error-inherited-name-order.part.ts";
+import "./core--class-no-new.part.ts";
+import "./core--mock-name-collision.part.ts";
+import "./core--mock-host-builtin-skip.part.ts";
+import "./core--object-create-inherited-slot.part.ts";
+import "./core--optional-require-cjsmain.part.ts";
+import "./core--class-instance-enumerable-flags.part.ts";
+import "./core--missing-require-throws.part.ts";
+import "./core--builtin-brand-user-keys.part.ts";
+import "./core--cjs-top-level-this.part.ts";
+import "./core--error-inherited-name-order.part.ts";

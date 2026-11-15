@@ -2,13 +2,13 @@
 // One of 32 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./core-bug-361-bigint-render.part.ts";
-import "./core-bug-362-sidecar-path-idempotent.part.ts";
-import "./core-bug-363-assign-fn-body.part.ts";
-import "./core-bug-364-call-site-verification.part.ts";
-import "./core-bug-365-user-error-subclass-throws-coverage.part.ts";
-import "./core-bug-366-drift-from-evidence.part.ts";
-import "./core-bug-367-assume-relied-attribution.part.ts";
-import "./core-bug-368-assign-record-non-abs.part.ts";
-import "./core-bug-369-return-contract-location.part.ts";
-import "./core-bug-370-bounded-evidence-severity.part.ts";
+import "./core--bigint-render.part.ts";
+import "./core--sidecar-path-idempotent.part.ts";
+import "./core--assign-fn-body.part.ts";
+import "./core--call-site-verification.part.ts";
+import "./core--user-error-subclass-throws-coverage.part.ts";
+import "./core--drift-from-evidence.part.ts";
+import "./core--assume-relied-attribution.part.ts";
+import "./core--assign-record-non-abs.part.ts";
+import "./core--return-contract-location.part.ts";
+import "./core--bounded-evidence-severity.part.ts";

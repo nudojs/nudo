@@ -13,7 +13,7 @@
 > 的时序），经复核在本内核里不是局部改造（见 §5.4 订正）。
 > 关联：诚实台账 → [`limitations.md`](./limitations.md) §1.4；架构债台账 →
 > [`architecture-debt.md`](./architecture-debt.md) A1；仓内回归钉 →
-> [`eval-bug-212-generator-body-eager.part.ts`](../packages/core/src/algebra/__tests__/eval-bug-212-generator-body-eager.part.ts)、
+> [`eval--generator-body-eager.part.ts`](../packages/core/src/algebra/__tests__/eval--generator-body-eager.part.ts)、
 > [`eval-generator-cross-function-consume.test.ts`](../packages/core/src/algebra/__tests__/eval-generator-cross-function-consume.test.ts)。
 > 分片：S10 · 族 44 · **研究级** · 出路 **B（精确登记）** · 2026-10-23
 >
@@ -50,7 +50,7 @@
 **局部收窄方案的可行性判定**（结论：局部收窄**可行**，但落在 **S11 的转译侧** ⇒ 本片不能单独落地）。
 
 **本片状态判定：局部收窄已落地**（2026-11-04，S11 转译侧实施步骤 1 ⇒ 交付新钉
-`eval-bug-212-generator-body-eager.part.ts`；步骤 2–4 待续，债面收窄为「时间轴缺失」）。
+`eval--generator-body-eager.part.ts`；步骤 2–4 待续，债面收窄为「时间轴缺失」）。
 
 ---
 
@@ -157,7 +157,7 @@ export function f() {
 
 ### 1.6 症状复现（before-state 取证）
 
-> 仓内回归钉：`packages/core/src/algebra/__tests__/eval-bug-212-generator-body-eager.part.ts`
+> 仓内回归钉：`packages/core/src/algebra/__tests__/eval--generator-body-eager.part.ts`
 > （4 条 `it.todo` 逐条对应下面 4 行原生语义；负控制钉住族 01 的 eager 收集口径）。
 
 | body | native | 引擎（当前） |
@@ -265,11 +265,11 @@ Abs = `shape × term × pred × conf`（`packages/core/src/algebra/abs.ts`）—
 
 `packages/core/src/algebra/__tests__/`：`exec-generator.test.ts`、`exec-generator-consumption.test.ts`、
 `exec-generator-precision.test.ts`、`exec-generator-protocol.test.ts`、`eval-generator-semantics.test.ts`、
-`eval-bug-141-async-generator.part.ts`（合并 decl / iter-elems 两钉）、
-`eval-bug-229-yield-star-return-forward.part.ts`、
-`eval-bug-240-generator-own-properties.part.ts`（合并 guard-internal-slots 钉）、
-`eval-bug-212-generator-body-eager.part.ts`（**本族**：4 条 `it.todo` = 未闭合缺口）、
-`eval-loop-return-join.test.ts`（`$gen` 本地作用域臂）、`eval-bug-198-s20-residual-live-iter.part.ts`。
+`eval--async-generator.part.ts`（合并 decl / iter-elems 两钉）、
+`eval--yield-star-return-forward.part.ts`、
+`eval--generator-own-properties.part.ts`（合并 guard-internal-slots 钉）、
+`eval--generator-body-eager.part.ts`（**本族**：4 条 `it.todo` = 未闭合缺口）、
+`eval-loop-return-join.test.ts`（`$gen` 本地作用域臂）、`eval--s20-residual-live-iter.part.ts`。
 
 ---
 
@@ -301,7 +301,7 @@ Abs = `shape × term × pred × conf`（`packages/core/src/algebra/abs.ts`）—
 > `$copy` 第二实参 = 共享 `WeakMap` 身份 memo ⇒ 同一对象只拷一次，别名组内不分裂身份；
 > 临时名 `__g0_<n>` / `__gCopyMemo` 经 `internalTmpName`/`internalTmpNameSet` 避让用户同名
 > 标识符）。四个 `$gen` 发射点全部接入；快照集为空时**零发射**（不写外层绑定的生成器产物
-> 逐字不变）。回归钉：`eval-bug-212-generator-body-eager.part.ts`（12 用例：四行症状 +
+> 逐字不变）。回归钉：`eval--generator-body-eager.part.ts`（12 用例：四行症状 +
 > 四发射点 + 元素面承重 + 容器/别名组 + 负控制）。**残余**（→ §5.5 订正注）：首个 yield
 > 挂起点中间值不在 join 内；步骤 2–4 待续。
 
@@ -407,7 +407,7 @@ WeakMap miss，值面逐字不变。回归钉
 
 | 面 | 必改 expectation（精确文件） |
 |---|---|
-| 构造点值域 | `eval-bug-212-generator-body-eager.part.ts:49,59,70,81`（`'0 \| 1  #exact'` 等四行）、`:91,:99,:107,:115`（四发射点）、`:126`（元素面 exact）、`:138`（长度域）、`:149`（别名组） |
+| 构造点值域 | `eval--generator-body-eager.part.ts:49,59,70,81`（`'0 \| 1  #exact'` 等四行）、`:91,:99,:107,:115`（四发射点）、`:126`（元素面 exact）、`:138`（长度域）、`:149`（别名组） |
 | 元素面 / dts | `exec-generator.test.ts:24,43,72,74,76,124,134`、`exec-generator-protocol.test.ts`（16 条）、`exec-generator-consumption.test.ts` / `-precision.test.ts` / `eval-generator-semantics.test.ts` 全族；`service/src/emit/__tests__/emit-abs-brand-projection.test.ts:85-91`（元素槽空 ⇒ `Generator<unknown>`） |
 | 差分语料 | `differential/corpus/batch5.ts:310-317`、`batch11.ts:541-544`、`batch20-transpile-adversarial.ts:102-106` 共 14 条（「先消费再取值」形态在触发点覆盖 `next()` / spread / for-of 三条后应仍绿） |
 | 委托表 | `async.ts:790-823` 的 `genDelegationStack` 在**体执行序**里建 ⇒ 随体延后则下标对位失效即「不转发」 |
@@ -849,7 +849,7 @@ sound 过近似（`false | true`），见 ABS 计划 §5/§8。夹具
 
 **回归**：新增 `exec/__tests__/gen-suspend-replay.test.ts`（8 例机制钉：
 构造期零捕获 / 首次回放 / 单调推进 / drain / 别名广播 / async 同编 /
-嵌套帧隔离 + 终态格 / 无钩子零开销）；`eval-bug-212-generator-body-eager.part.ts` 的 c3/c4
+嵌套帧隔离 + 终态格 / 无钩子零开销）；`eval--generator-body-eager.part.ts` 的 c3/c4
 断言重订为精确 native 值并补 2 例推进用例（14 例全绿）；
 `eval-generator-cross-function-consume.test.ts` 的步骤 4 todo 升级为
 5 例验收（含两类 sound 守卫与 `.return()` 回退，9 例全绿）。

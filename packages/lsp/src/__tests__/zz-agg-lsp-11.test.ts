@@ -2,13 +2,13 @@
 // One of 15 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./lsp-bug-767-agent-tool-error-flag.part.ts";
-import "./lsp-bug-768-hover-position-validation.part.ts";
-import "./lsp-bug-769-class-method-lens.part.ts";
-import "./lsp-bug-770-analysis-target-gate.part.ts";
-import "./lsp-bug-771-sum-primitive-arm.part.ts";
-import "./lsp-bug-772-nested-member-receiver.part.ts";
-import "./lsp-bug-773-else-guard-narrowing.part.ts";
-import "./lsp-bug-774-param-hover-any.part.ts";
-import "./lsp-bug-775-contract-param-caliber.part.ts";
-import "./lsp-bug-776-didopen-dup-publish.part.ts";
+import "./lsp--agent-tool-error-flag.part.ts";
+import "./lsp--hover-position-validation.part.ts";
+import "./lsp--class-method-lens.part.ts";
+import "./lsp--analysis-target-gate.part.ts";
+import "./lsp--sum-primitive-arm.part.ts";
+import "./lsp--nested-member-receiver.part.ts";
+import "./lsp--else-guard-narrowing.part.ts";
+import "./lsp--param-hover-any.part.ts";
+import "./lsp--contract-param-caliber.part.ts";
+import "./lsp--didopen-dup-publish.part.ts";

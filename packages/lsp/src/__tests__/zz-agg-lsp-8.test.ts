@@ -2,13 +2,13 @@
 // One of 15 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./lsp-bug-736-extract-insert-statement-position.part.ts";
-import "./lsp-bug-737-call-arg-insert-pos.part.ts";
-import "./lsp-bug-738-inline-free-var-mutated.part.ts";
-import "./lsp-bug-739-optional-bare-arrow-param.part.ts";
-import "./lsp-bug-740-extract-control-flow.part.ts";
-import "./lsp-bug-741-inline-member-read-getter.part.ts";
-import "./lsp-bug-742-extract-after-hashbang.part.ts";
-import "./lsp-bug-743-sidecar-edit-range.part.ts";
-import "./lsp-bug-744-inline-export-binding.part.ts";
-import "./lsp-bug-745-workspace-symbol-class-members.part.ts";
+import "./lsp--extract-insert-statement-position.part.ts";
+import "./lsp--call-arg-insert-pos.part.ts";
+import "./lsp--inline-free-var-mutated.part.ts";
+import "./lsp--optional-bare-arrow-param.part.ts";
+import "./lsp--extract-control-flow.part.ts";
+import "./lsp--inline-member-read-getter.part.ts";
+import "./lsp--extract-after-hashbang.part.ts";
+import "./lsp--sidecar-edit-range.part.ts";
+import "./lsp--inline-export-binding.part.ts";
+import "./lsp--workspace-symbol-class-members.part.ts";

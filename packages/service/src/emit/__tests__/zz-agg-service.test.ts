@@ -2,8 +2,8 @@
 // One vitest entry per (directory, family). Each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./service-bug-055-freeze-contract-guard.part.ts";
-import "./service-bug-096-key-presence-parity.part.ts";
-import "./service-bug-1082-standard-schema-neg-zero.part.ts";
-import "./service-bug-119-freeze-update-rebuild.part.ts";
-import "./service-bug-258-array-view-products.part.ts";
+import "./service--freeze-contract-guard.part.ts";
+import "./service--key-presence-parity.part.ts";
+import "./service--standard-schema-neg-zero.part.ts";
+import "./service--freeze-update-rebuild.part.ts";
+import "./service--array-view-products.part.ts";

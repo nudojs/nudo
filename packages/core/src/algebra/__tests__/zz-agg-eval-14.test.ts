@@ -2,13 +2,13 @@
 // One of 15 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./eval-bug-328-builtin-proto-chain.part.ts";
-import "./eval-bug-330-array-proto-nullish-receiver.part.ts";
-import "./eval-bug-331-string-to-string-brand.part.ts";
-import "./eval-bug-332-intl-collator-shape.part.ts";
-import "./eval-bug-479-ts-annotation.part.ts";
-import "./eval-bug-489-default-export-lookup.part.ts";
-import "./eval-bug-499-unreadable-dep.part.ts";
-import "./eval-bug-57-container-proxy-symbols.part.ts";
-import "./eval-bug-58-descriptor-generator-proto.part.ts";
-import "./eval-bug-59-class-transpile.part.ts";
+import "./eval--builtin-proto-chain.part.ts";
+import "./eval--array-proto-nullish-receiver.part.ts";
+import "./eval--string-to-string-brand.part.ts";
+import "./eval--intl-collator-shape.part.ts";
+import "./eval--ts-annotation.part.ts";
+import "./eval--default-export-lookup.part.ts";
+import "./eval--unreadable-dep.part.ts";
+import "./eval--container-proxy-symbols.part.ts";
+import "./eval--descriptor-generator-proto.part.ts";
+import "./eval--class-transpile.part.ts";

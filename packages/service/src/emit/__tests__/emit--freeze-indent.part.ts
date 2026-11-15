@@ -1,4 +1,4 @@
-// emit-bug-507-freeze-indent.test.ts — Bug 507：
+// emit--freeze-indent.part.ts — Bug 507：
 // `nudo test --freeze` 为**导出函数**写回的 JSDoc 块缩进错位
 //（按 `function` 关键字列号缩进，而非声明语句列号）。
 //

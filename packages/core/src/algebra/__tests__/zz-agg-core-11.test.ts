@@ -2,11 +2,11 @@
 // One of 32 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./core-bug-1155-toplevel-unsupported-failclosed.part.ts";
-import "./core-bug-1156-class-member-boundaries.part.ts";
-import "./core-bug-1157-nonscalar-literal-arg-contract.part.ts";
-import "./core-bug-1158-module-throw-failclosed.part.ts";
-import "./core-bug-128-entry-throws-suggestion-kinds.part.ts";
-import "./core-bug-132-boxed-primitive-internal-slot.part.ts";
-import "./core-bug-137-unknown-in-union.part.ts";
-import "./core-bug-138-referenceerror-attribution.part.ts";
+import "./core--toplevel-unsupported-failclosed.part.ts";
+import "./core--class-member-boundaries.part.ts";
+import "./core--nonscalar-literal-arg-contract.part.ts";
+import "./core--module-throw-failclosed.part.ts";
+import "./core--entry-throws-suggestion-kinds.part.ts";
+import "./core--boxed-primitive-internal-slot.part.ts";
+import "./core--unknown-in-union.part.ts";
+import "./core--referenceerror-attribution.part.ts";

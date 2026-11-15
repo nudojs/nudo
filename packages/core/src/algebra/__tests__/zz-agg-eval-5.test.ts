@@ -2,13 +2,13 @@
 // One of 15 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./eval-bug-193-detached-method-call.part.ts";
-import "./eval-bug-194-delete-prototype-method.part.ts";
-import "./eval-bug-195-template-object-frozen.part.ts";
-import "./eval-bug-196-borrowed-class-method.part.ts";
-import "./eval-bug-197-class-instance-set-gate.part.ts";
-import "./eval-bug-198-s20-residual-live-iter.part.ts";
-import "./eval-bug-199-iterator-close.part.ts";
-import "./eval-bug-200-brand-proto-write.part.ts";
-import "./eval-bug-201-await-suspension.part.ts";
-import "./eval-bug-202-user-iterator.part.ts";
+import "./eval--detached-method-call.part.ts";
+import "./eval--delete-prototype-method.part.ts";
+import "./eval--template-object-frozen.part.ts";
+import "./eval--borrowed-class-method.part.ts";
+import "./eval--class-instance-set-gate.part.ts";
+import "./eval--s20-residual-live-iter.part.ts";
+import "./eval--iterator-close.part.ts";
+import "./eval--brand-proto-write.part.ts";
+import "./eval--await-suspension.part.ts";
+import "./eval--user-iterator.part.ts";

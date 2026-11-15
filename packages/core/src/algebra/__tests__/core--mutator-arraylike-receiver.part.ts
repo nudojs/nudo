@@ -105,7 +105,7 @@ describe("[merged] core-bug-254-mutator-arraylike-wiring.test.ts", () => {
 /**
  * Bug 254（主 agent 接线）—— mutator 在**端到端**路径上必须**就地改接收者**。
  *
- * E4 的写面钉（`core-bug-254-mutator-arraylike-receiver.test.ts`）直接调
+ * E4 的写面钉（`core--mutator-arraylike-receiver.part.ts`）直接调
  * `invokeArrMethod(闭 obj 接收者, ...)`，只覆盖**写面本身**。
  * 但端到端路径 `Array.prototype.push.call(o, 5)` 走
  * `exec/class/invoke.ts` 的 `home === "Array"` 通道 —— 该通道先把接收者

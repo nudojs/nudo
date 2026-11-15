@@ -2,7 +2,7 @@
 // One of 32 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./core-bug-981-glued-contract.part.ts";
-import "./core-bug-990-reexport-modules-absent.part.ts";
-import "./core-bug-996-cjs-getter-setter-not-entry.part.ts";
-import "./core-bug-997-cjs-export-slot-name.part.ts";
+import "./core--glued-contract.part.ts";
+import "./core--reexport-modules-absent.part.ts";
+import "./core--cjs-getter-setter-not-entry.part.ts";
+import "./core--cjs-export-slot-name.part.ts";

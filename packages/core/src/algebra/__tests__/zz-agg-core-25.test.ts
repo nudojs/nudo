@@ -2,13 +2,13 @@
 // One of 32 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./core-bug-381-user-coercion-hook.part.ts";
-import "./core-bug-383-computed-object-key-topropertykey.part.ts";
-import "./core-bug-385-setprototypeof-cycle.part.ts";
-import "./core-bug-386-immutable-prototype.part.ts";
-import "./core-bug-387-eq-implies-order.part.ts";
-import "./core-bug-388-array-pattern-signature.part.ts";
-import "./core-bug-389-env-gate-unknown-inference.part.ts";
-import "./core-bug-392-array-pattern-contract-index.part.ts";
-import "./core-bug-393-array-pattern-param-shape.part.ts";
-import "./core-bug-397-this-param-transpile.part.ts";
+import "./core--user-coercion-hook.part.ts";
+import "./core--computed-object-key-topropertykey.part.ts";
+import "./core--setprototypeof-cycle.part.ts";
+import "./core--immutable-prototype.part.ts";
+import "./core--eq-implies-order.part.ts";
+import "./core--array-pattern-signature.part.ts";
+import "./core--env-gate-unknown-inference.part.ts";
+import "./core--array-pattern-contract-index.part.ts";
+import "./core--array-pattern-param-shape.part.ts";
+import "./core--this-param-transpile.part.ts";

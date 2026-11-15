@@ -2,13 +2,13 @@
 // One of 15 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./lsp-bug-746-alias-local-rename-no-collateral.part.ts";
-import "./lsp-bug-747-shadowed-param-rename-no-collateral.part.ts";
-import "./lsp-bug-749-document-symbol-capability-shape.part.ts";
-import "./lsp-bug-750-rename-invalid-name.part.ts";
-import "./lsp-bug-751-navigation-gate-consistency.part.ts";
-import "./lsp-bug-752-check-merge-channels.part.ts";
-import "./lsp-bug-753-default-export-lens.part.ts";
-import "./lsp-bug-754-test-assertions.part.ts";
-import "./lsp-bug-755-whatif-binding-changes-type.part.ts";
-import "./lsp-bug-756-selectcase-caseindex-range.part.ts";
+import "./lsp--alias-local-rename-no-collateral.part.ts";
+import "./lsp--shadowed-param-rename-no-collateral.part.ts";
+import "./lsp--document-symbol-capability-shape.part.ts";
+import "./lsp--rename-invalid-name.part.ts";
+import "./lsp--navigation-gate-consistency.part.ts";
+import "./lsp--check-merge-channels.part.ts";
+import "./lsp--default-export-lens.part.ts";
+import "./lsp--test-assertions.part.ts";
+import "./lsp--whatif-binding-changes-type.part.ts";
+import "./lsp--selectcase-caseindex-range.part.ts";

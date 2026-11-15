@@ -1,4 +1,4 @@
-// emit-bug-561-sparse-tuple-hole.test.ts — Bug 561：
+// emit--sparse-tuple-hole.part.ts — Bug 561：
 // `nudo test --freeze` 把稀疏元组的**洞**固化成**显式 `undefined` 元素**
 // ⇒ 固化后同一调用点的见证从 `false` **翻成 `true`**（与事实相反）。
 //

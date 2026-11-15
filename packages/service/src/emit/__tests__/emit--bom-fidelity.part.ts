@@ -1,4 +1,4 @@
-// emit-bug-562-bom-fidelity.test.ts — Bug 562（+ Bug 938 的 case-emitter 侧）：
+// emit--bom-fidelity.part.ts — Bug 562（+ Bug 938 的 case-emitter 侧）：
 //
 // 562：`nudo test --freeze` 的**源码写回**摧毁 UTF-8 BOM ⇒ BOM 从文件首字节
 //      被挪到文件中段（`export` 那一行）⇒ 文件不再是「UTF-8 with BOM」，

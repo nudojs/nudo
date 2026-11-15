@@ -2,13 +2,13 @@
 // One of 15 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./eval-bug-1044-brand-missing-member.part.ts";
-import "./eval-bug-1045-fn-sum-member.part.ts";
-import "./eval-bug-1046-bigint-prim.part.ts";
-import "./eval-bug-1052-handler-return-thenable.part.ts";
-import "./eval-bug-1055-string-alias-methods.part.ts";
-import "./eval-bug-1058-1059-temp-name-collision.part.ts";
-import "./eval-bug-136-assign-eval-order.part.ts";
-import "./eval-bug-139-instance-field-computed-key.part.ts";
-import "./eval-bug-140-user-iterable-destructure.part.ts";
-import "./eval-bug-141-async-generator.part.ts";
+import "./eval--brand-missing-member.part.ts";
+import "./eval--fn-sum-member.part.ts";
+import "./eval--bigint-prim.part.ts";
+import "./eval--handler-return-thenable.part.ts";
+import "./eval--string-alias-methods.part.ts";
+import "./eval--1059-temp-name-collision.part.ts";
+import "./eval--assign-eval-order.part.ts";
+import "./eval--instance-field-computed-key.part.ts";
+import "./eval--user-iterable-destructure.part.ts";
+import "./eval--async-generator.part.ts";

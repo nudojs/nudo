@@ -1,4 +1,4 @@
-// emit-bug-547-freeze-crlf.test.ts — Bug 547：
+// emit--freeze-crlf.part.ts — Bug 547：
 // `nudo test --freeze` 把新 `@nudo:case` 块写进 **CRLF 源文件** ⇒ **混合行尾**
 //（源文件被污染：原行保留 CRLF，新插入的行是裸 LF）。
 //

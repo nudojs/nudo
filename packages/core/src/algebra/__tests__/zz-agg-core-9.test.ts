@@ -2,12 +2,12 @@
 // One of 32 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./core-bug-1124-ambient-fingerprint-eacces.part.ts";
-import "./core-bug-1125-sidecar-diag-attribution.part.ts";
-import "./core-bug-1126-async-gen-multi-await.part.ts";
-import "./core-bug-1128-export-slot-member-key.part.ts";
-import "./core-bug-1129-leq-fn-min-arity.part.ts";
-import "./core-bug-1130-guard-prototype-less-brand.part.ts";
-import "./core-bug-1131-arg-count-warning-optional-slots.part.ts";
-import "./core-bug-1139-await-position-compile-fail.part.ts";
-import "./core-bug-1140-skip-signature-machine-face.part.ts";
+import "./core--ambient-fingerprint-eacces.part.ts";
+import "./core--sidecar-diag-attribution.part.ts";
+import "./core--async-gen-multi-await.part.ts";
+import "./core--export-slot-member-key.part.ts";
+import "./core--leq-fn-min-arity.part.ts";
+import "./core--guard-prototype-less-brand.part.ts";
+import "./core--arg-count-warning-optional-slots.part.ts";
+import "./core--await-position-compile-fail.part.ts";
+import "./core--skip-signature-machine-face.part.ts";

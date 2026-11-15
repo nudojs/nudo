@@ -20,7 +20,7 @@ describe("[merged] core-bug-397-this-param-transpile.test.ts", () => {
  *
  * 模型层（形参表排除 `this`）见 `core-bug-397-this-parameter.test.ts`；
  * 产物面（dts / zod / standard / case 四面）见
- * `packages/service/src/__tests__/service-bug-397-this-param-product-faces.test.ts`；
+ * `packages/service/src/__tests__/service--this-param-product-faces.part.ts`；
  * 本钉只钉**转译面**：模块必须**装载成功**（不是 unknown），
  * 且形参表里**没有** `this`、实参**不因** `this` 占用而错位。
  */

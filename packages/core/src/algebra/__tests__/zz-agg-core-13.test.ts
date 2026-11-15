@@ -2,13 +2,13 @@
 // One of 32 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./core-bug-166-user-class-shadow.part.ts";
-import "./core-bug-167-side-effect-getter-not-frozen.part.ts";
-import "./core-bug-173-this-before-super.part.ts";
-import "./core-bug-174-textdecoder-options.part.ts";
-import "./core-bug-175-instanceof-no-prototype.part.ts";
-import "./core-bug-176-reflect-construct-user-class.part.ts";
-import "./core-bug-177-derived-return-object.part.ts";
-import "./core-bug-181-reflect-set-primitive-receiver.part.ts";
-import "./core-bug-182-host-fn-ctor-facet.part.ts";
-import "./core-bug-183-btoa-atob-missing-arg.part.ts";
+import "./core--user-class-shadow.part.ts";
+import "./core--side-effect-getter-not-frozen.part.ts";
+import "./core--this-before-super.part.ts";
+import "./core--textdecoder-options.part.ts";
+import "./core--instanceof-no-prototype.part.ts";
+import "./core--reflect-construct-user-class.part.ts";
+import "./core--derived-return-object.part.ts";
+import "./core--reflect-set-primitive-receiver.part.ts";
+import "./core--host-fn-ctor-facet.part.ts";
+import "./core--btoa-atob-missing-arg.part.ts";

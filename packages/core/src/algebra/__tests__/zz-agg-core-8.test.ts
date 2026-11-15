@@ -2,13 +2,13 @@
 // One of 32 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./core-bug-1114-duplicate-diagnostics.part.ts";
-import "./core-bug-1115-early-return-nan-complement.part.ts";
-import "./core-bug-1116-literal-branch-disproved.part.ts";
-import "./core-bug-1117-switch-case-hit-narrowing.part.ts";
-import "./core-bug-1118-multiline-case-throws.part.ts";
-import "./core-bug-1119-export-default-class-entry.part.ts";
-import "./core-bug-1120-case-throws-regex-backtrack.part.ts";
-import "./core-bug-1121-export-names-template-literal.part.ts";
-import "./core-bug-1122-lit-nan-self-conflict.part.ts";
-import "./core-bug-1123-sidecar-import-alias-collision.part.ts";
+import "./core--duplicate-diagnostics.part.ts";
+import "./core--early-return-nan-complement.part.ts";
+import "./core--literal-branch-disproved.part.ts";
+import "./core--switch-case-hit-narrowing.part.ts";
+import "./core--multiline-case-throws.part.ts";
+import "./core--export-default-class-entry.part.ts";
+import "./core--case-throws-regex-backtrack.part.ts";
+import "./core--export-names-template-literal.part.ts";
+import "./core--lit-nan-self-conflict.part.ts";
+import "./core--sidecar-import-alias-collision.part.ts";

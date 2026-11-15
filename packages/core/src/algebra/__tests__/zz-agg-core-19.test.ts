@@ -2,13 +2,13 @@
 // One of 32 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./core-bug-278-proxy-noncallable-target.part.ts";
-import "./core-bug-279-proxy-call-facet.part.ts";
-import "./core-bug-280-multi-declarator-export.part.ts";
-import "./core-bug-281-get-own-property-descriptors-brand.part.ts";
-import "./core-bug-281-pure-memo-value-key.part.ts";
-import "./core-bug-282-env-default-import.part.ts";
-import "./core-bug-282-nested-same-name-case-scope.part.ts";
-import "./core-bug-283-unknown-callee-may-throw.part.ts";
-import "./core-bug-284-proxy-is-extensible-trap.part.ts";
-import "./core-bug-285-forin-ownkeys-trap.part.ts";
+import "./core--proxy-noncallable-target.part.ts";
+import "./core--proxy-call-facet.part.ts";
+import "./core--multi-declarator-export.part.ts";
+import "./core--get-own-property-descriptors-brand.part.ts";
+import "./core--pure-memo-value-key.part.ts";
+import "./core--env-default-import.part.ts";
+import "./core--nested-same-name-case-scope.part.ts";
+import "./core--unknown-callee-may-throw.part.ts";
+import "./core--proxy-is-extensible-trap.part.ts";
+import "./core--forin-ownkeys-trap.part.ts";

@@ -2,13 +2,13 @@
 // One of 16 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./cli-bug-1026-dist-exclusion.part.ts";
-import "./cli-bug-1050-dropped-ledger-title.part.ts";
-import "./cli-bug-113-health-json-usage-envelope.part.ts";
-import "./cli-bug-115-json-summary-path-errors.part.ts";
-import "./cli-bug-119-freeze-update-keeps-live-witness.part.ts";
-import "./cli-bug-120-input-key-param-names.part.ts";
-import "./cli-bug-121-union-shape-return-contract.part.ts";
-import "./cli-bug-122-emit-net-effect.part.ts";
-import "./cli-bug-129-empty-callsite-dir.part.ts";
-import "./cli-bug-170-duplicate-callsite-cases.part.ts";
+import "./cli--dist-exclusion.part.ts";
+import "./cli--dropped-ledger-title.part.ts";
+import "./cli--health-json-usage-envelope.part.ts";
+import "./cli--json-summary-path-errors.part.ts";
+import "./cli--freeze-update-keeps-live-witness.part.ts";
+import "./cli--input-key-param-names.part.ts";
+import "./cli--union-shape-return-contract.part.ts";
+import "./cli--emit-net-effect.part.ts";
+import "./cli--empty-callsite-dir.part.ts";
+import "./cli--duplicate-callsite-cases.part.ts";

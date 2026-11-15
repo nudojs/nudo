@@ -2,13 +2,13 @@
 // One of 15 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./lsp-bug-704-document-symbol-let-var.part.ts";
-import "./lsp-bug-705-class-method-references.part.ts";
-import "./lsp-bug-706-export-default-symbol.part.ts";
-import "./lsp-bug-707-namespace-import-not-a-reference.part.ts";
-import "./lsp-bug-708-completion-after-operator.part.ts";
-import "./lsp-bug-709-shadowed-binding.part.ts";
-import "./lsp-bug-710-alias-import-cross-file-rename.part.ts";
-import "./lsp-bug-711-nested-call-signature.part.ts";
-import "./lsp-bug-712-method-rename-receiver.part.ts";
-import "./lsp-bug-713-member-access-no-workspace-fallback.part.ts";
+import "./lsp--document-symbol-let-var.part.ts";
+import "./lsp--class-method-references.part.ts";
+import "./lsp--export-default-symbol.part.ts";
+import "./lsp--namespace-import-not-a-reference.part.ts";
+import "./lsp--completion-after-operator.part.ts";
+import "./lsp--shadowed-binding.part.ts";
+import "./lsp--alias-import-cross-file-rename.part.ts";
+import "./lsp--nested-call-signature.part.ts";
+import "./lsp--method-rename-receiver.part.ts";
+import "./lsp--member-access-no-workspace-fallback.part.ts";

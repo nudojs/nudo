@@ -2,13 +2,13 @@
 // One of 8 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./emit-bug-035-case-witness-not-contract.part.ts";
-import "./emit-bug-035-evidence-scope.part.ts";
-import "./emit-bug-035-stale-section-refresh.part.ts";
-import "./emit-bug-068-ts-sidecar-nullable-import.part.ts";
-import "./emit-bug-069-freeze-add-idempotent.part.ts";
-import "./emit-bug-081-contract-conflict-surface.part.ts";
-import "./emit-bug-093-zod-number-bound-infinity.part.ts";
-import "./emit-bug-094-array-length-domain.part.ts";
-import "./emit-bug-1001-zod-number-domain.part.ts";
-import "./emit-bug-1008-rest-literal-widening.part.ts";
+import "./emit--case-witness-not-contract.part.ts";
+import "./emit--evidence-scope.part.ts";
+import "./emit--stale-section-refresh.part.ts";
+import "./emit--ts-sidecar-nullable-import.part.ts";
+import "./emit--freeze-add-idempotent.part.ts";
+import "./emit--contract-conflict-surface.part.ts";
+import "./emit--zod-number-bound-infinity.part.ts";
+import "./emit--array-length-domain.part.ts";
+import "./emit--zod-number-domain.part.ts";
+import "./emit--rest-literal-widening.part.ts";

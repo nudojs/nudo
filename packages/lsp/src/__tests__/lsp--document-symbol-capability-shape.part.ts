@@ -7,7 +7,7 @@
  * ⇒ `onDocumentSymbol` 永远按「层级式 + 全量 SymbolKind」输出。
  *
  * 本钉钉住**输出侧**（片 B）：能力**读取侧**在 `server.ts`（片 C），
- * 见 `lsp-bug-749-client-capabilities.test.ts`。
+ * 见 `lsp--client-capabilities.test.ts`。
  *
  * 契约（片 C → B）：
  * · `deps.clientCapabilities?: () => ClientCapabilities | undefined`

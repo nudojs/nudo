@@ -2,13 +2,13 @@
 // One of 15 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./eval-bug-234-class-constructor-function.part.ts";
-import "./eval-bug-235-proxy-fresh-instance-mark.part.ts";
-import "./eval-bug-236-boxed-string-iterable.part.ts";
-import "./eval-bug-237-builtin-proto-string-members.part.ts";
-import "./eval-bug-238-map-set-prototype-size.part.ts";
-import "./eval-bug-239-union-length.part.ts";
-import "./eval-bug-240-generator-own-properties.part.ts";
-import "./eval-bug-241-switch-literal-disc-abs-test.part.ts";
-import "./eval-bug-242-intl-pseudo-brand.part.ts";
-import "./eval-bug-243-intl-proto-brand-check.part.ts";
+import "./eval--class-constructor-function.part.ts";
+import "./eval--proxy-fresh-instance-mark.part.ts";
+import "./eval--boxed-string-iterable.part.ts";
+import "./eval--builtin-proto-string-members.part.ts";
+import "./eval--map-set-prototype-size.part.ts";
+import "./eval--union-length.part.ts";
+import "./eval--generator-own-properties.part.ts";
+import "./eval--switch-literal-disc-abs-test.part.ts";
+import "./eval--intl-pseudo-brand.part.ts";
+import "./eval--intl-proto-brand-check.part.ts";

@@ -2,13 +2,13 @@
 // One of 32 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./core-bug-1103-assume-ledger-merge.part.ts";
-import "./core-bug-1105-spread-arg-count.part.ts";
-import "./core-bug-1106-bare-callee-scope.part.ts";
-import "./core-bug-1107-member-fn-scope-key.part.ts";
-import "./core-bug-1108-optional-param-arity.part.ts";
-import "./core-bug-1109-or-union-undecidable.part.ts";
-import "./core-bug-1110-undefined-default-arg.part.ts";
-import "./core-bug-1111-default-arg-tail-fill.part.ts";
-import "./core-bug-1112-fn-shape-guard.part.ts";
-import "./core-bug-1113-int-flag-non-number.part.ts";
+import "./core--assume-ledger-merge.part.ts";
+import "./core--spread-arg-count.part.ts";
+import "./core--bare-callee-scope.part.ts";
+import "./core--member-fn-scope-key.part.ts";
+import "./core--optional-param-arity.part.ts";
+import "./core--or-union-undecidable.part.ts";
+import "./core--undefined-default-arg.part.ts";
+import "./core--default-arg-tail-fill.part.ts";
+import "./core--fn-shape-guard.part.ts";
+import "./core--int-flag-non-number.part.ts";

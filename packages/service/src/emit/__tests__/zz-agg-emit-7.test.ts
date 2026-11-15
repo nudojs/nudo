@@ -2,13 +2,13 @@
 // One of 8 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./emit-bug-547-freeze-crlf.part.ts";
-import "./emit-bug-548-import-name-clash.part.ts";
-import "./emit-bug-549-inherited-slot.part.ts";
-import "./emit-bug-551-never-throw.part.ts";
-import "./emit-bug-552-reserved-binding-name.part.ts";
-import "./emit-bug-554-generator-iterator-projection.part.ts";
-import "./emit-bug-555-nonfinite-literal.part.ts";
-import "./emit-bug-556-nullable-wrap-third-arg.part.ts";
-import "./emit-bug-557-draft-no-overwrite.part.ts";
-import "./emit-bug-558-scope-aware-fn-locate.part.ts";
+import "./emit--freeze-crlf.part.ts";
+import "./emit--import-name-clash.part.ts";
+import "./emit--inherited-slot.part.ts";
+import "./emit--never-throw.part.ts";
+import "./emit--reserved-binding-name.part.ts";
+import "./emit--generator-iterator-projection.part.ts";
+import "./emit--nonfinite-literal.part.ts";
+import "./emit--nullable-wrap-third-arg.part.ts";
+import "./emit--draft-no-overwrite.part.ts";
+import "./emit--scope-aware-fn-locate.part.ts";

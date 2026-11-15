@@ -2,13 +2,13 @@
 // One of 7 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./migrate-bug-581-object-form-workspaces.part.ts";
-import "./migrate-bug-582-verify-tsc-baseline.part.ts";
-import "./migrate-bug-583-strip-tsx-jsx.part.ts";
-import "./migrate-bug-584-pnpm-negative-pattern.part.ts";
-import "./migrate-bug-585-draft-sidecar-path.part.ts";
-import "./migrate-bug-586-build-script-preserved.part.ts";
-import "./migrate-bug-586-emit-detection.part.ts";
-import "./migrate-bug-587-relative-specifier.part.ts";
-import "./migrate-bug-588-package-json-parse-failure.part.ts";
-import "./migrate-bug-589-verify-empty-scope.part.ts";
+import "./migrate--object-form-workspaces.part.ts";
+import "./migrate--verify-tsc-baseline.part.ts";
+import "./migrate--strip-tsx-jsx.part.ts";
+import "./migrate--pnpm-negative-pattern.part.ts";
+import "./migrate--draft-sidecar-path.part.ts";
+import "./migrate--build-script-preserved.part.ts";
+import "./migrate--emit-detection.part.ts";
+import "./migrate--relative-specifier.part.ts";
+import "./migrate--package-json-parse-failure.part.ts";
+import "./migrate--verify-empty-scope.part.ts";

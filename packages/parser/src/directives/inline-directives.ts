@@ -47,7 +47,7 @@ const AS_TAG = "@nudo:as";
  *
  * ⚠ Bug 1032（parser 面）**未改**这里：标签名被延长（`@nudo:asXYZ`）⇒ 不是
  * `@nudo:as` 指令、且**零诊断**——这是族 28（Bug 842）**已合入并钉死**的行为
- * （`packages/parser/src/__tests__/parser-bug-842-as-payload-separator.part.ts`
+ * （`packages/parser/src/__tests__/parser--as-payload-separator.part.ts`
  * 的「tag boundary」用例断言 `@nudo:asXYZ` / `@nudo:ascii` 零诊断）⇒ 本片
  * 不推翻它（**越界发现**，见交付报告）。`@nudo:replace` 侧无此约束，已修。
  */

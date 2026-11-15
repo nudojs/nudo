@@ -2,13 +2,13 @@
 // One of 32 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./core-bug-1051-lastindexof-explicit-undefined.part.ts";
-import "./core-bug-106-linforms-eq-ieee.part.ts";
-import "./core-bug-1064-sidecar-load-diag-exec-cache.part.ts";
-import "./core-bug-1065-neg-zero-render.part.ts";
-import "./core-bug-1070-instance-bridge-ctor-throws.part.ts";
-import "./core-bug-1072-async-gen-decl-await.part.ts";
-import "./core-bug-1073-loopvar-slot-collision.part.ts";
-import "./core-bug-1074-proxy-gopd-invariant.part.ts";
-import "./core-bug-1075-gopds-symbol-keys.part.ts";
-import "./core-bug-1076-uint8clamped-rounding.part.ts";
+import "./core--lastindexof-explicit-undefined.part.ts";
+import "./core--linforms-eq-ieee.part.ts";
+import "./core--sidecar-load-diag-exec-cache.part.ts";
+import "./core--neg-zero-render.part.ts";
+import "./core--instance-bridge-ctor-throws.part.ts";
+import "./core--async-gen-decl-await.part.ts";
+import "./core--loopvar-slot-collision.part.ts";
+import "./core--proxy-gopd-invariant.part.ts";
+import "./core--gopds-symbol-keys.part.ts";
+import "./core--uint8clamped-rounding.part.ts";

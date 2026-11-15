@@ -2,13 +2,13 @@
 // One of 32 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./core-bug-287-unicode-export-name.part.ts";
-import "./core-bug-288-structured-clone-throws.part.ts";
-import "./core-bug-289-export-star-as-string-name.part.ts";
-import "./core-bug-333-prim-bound-typeof.part.ts";
-import "./core-bug-334-sidecar-cycle-dedup.part.ts";
-import "./core-bug-335-type-mismatch-enforced.part.ts";
-import "./core-bug-336-length-finite-bound.part.ts";
-import "./core-bug-337-self-placeholder-leak.part.ts";
-import "./core-bug-338-sidecar-builder-name-clash.part.ts";
-import "./core-bug-339-orphan-sidecar-export.part.ts";
+import "./core--unicode-export-name.part.ts";
+import "./core--structured-clone-throws.part.ts";
+import "./core--export-star-as-string-name.part.ts";
+import "./core--prim-bound-typeof.part.ts";
+import "./core--sidecar-cycle-dedup.part.ts";
+import "./core--type-mismatch-enforced.part.ts";
+import "./core--length-finite-bound.part.ts";
+import "./core--self-placeholder-leak.part.ts";
+import "./core--sidecar-builder-name-clash.part.ts";
+import "./core--orphan-sidecar-export.part.ts";

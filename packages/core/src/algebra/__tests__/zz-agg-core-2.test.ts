@@ -2,13 +2,13 @@
 // One of 32 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./core-bug-020-mock-scope.part.ts";
-import "./core-bug-023-drift-inner-callsites.part.ts";
-import "./core-bug-029-drift-nested-union.part.ts";
-import "./core-bug-030-contract-finite-literal-conflict.part.ts";
-import "./core-bug-031-literal-union-signature.part.ts";
-import "./core-bug-056-eval-round-identity.part.ts";
-import "./core-bug-058-string-hint.part.ts";
-import "./core-bug-072-module-throw.part.ts";
-import "./core-bug-073-native-exception.part.ts";
-import "./core-bug-077-rounding-preimage.part.ts";
+import "./core--mock-scope.part.ts";
+import "./core--drift-inner-callsites.part.ts";
+import "./core--drift-nested-union.part.ts";
+import "./core--contract-finite-literal-conflict.part.ts";
+import "./core--literal-union-signature.part.ts";
+import "./core--eval-round-identity.part.ts";
+import "./core--string-hint.part.ts";
+import "./core--module-throw.part.ts";
+import "./core--native-exception.part.ts";
+import "./core--rounding-preimage.part.ts";

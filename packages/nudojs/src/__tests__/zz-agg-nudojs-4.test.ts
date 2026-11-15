@@ -2,13 +2,13 @@
 // One of 4 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./nudojs-bug-641-dual-entry-cache-dedup.part.ts";
-import "./nudojs-bug-643-from-cli-static-callsite.part.ts";
-import "./nudojs-bug-643-from-static-callsite.part.ts";
-import "./nudojs-bug-644-whatif-flag-combos.part.ts";
-import "./nudojs-bug-645-watch-json-coexist.part.ts";
-import "./nudojs-bug-646-module-cycle-keeps-graph.part.ts";
-import "./nudojs-bug-647-project-env-base-dir.part.ts";
-import "./nudojs-bug-648-fix-diff-single-header.part.ts";
-import "./nudojs-bug-926-watch-file-failure-red.part.ts";
-import "./nudojs-bug-954-json-usage-error-envelope.part.ts";
+import "./nudojs--dual-entry-cache-dedup.part.ts";
+import "./nudojs--from-cli-static-callsite.part.ts";
+import "./nudojs--from-static-callsite.part.ts";
+import "./nudojs--whatif-flag-combos.part.ts";
+import "./nudojs--watch-json-coexist.part.ts";
+import "./nudojs--module-cycle-keeps-graph.part.ts";
+import "./nudojs--project-env-base-dir.part.ts";
+import "./nudojs--fix-diff-single-header.part.ts";
+import "./nudojs--watch-file-failure-red.part.ts";
+import "./nudojs--json-usage-error-envelope.part.ts";

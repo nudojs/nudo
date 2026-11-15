@@ -2,13 +2,13 @@
 // One of 15 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./eval-bug-319-date-tojson-invalid.part.ts";
-import "./eval-bug-320-reflect-set-array-length.part.ts";
-import "./eval-bug-321-error-proto-own-props.part.ts";
-import "./eval-bug-322-url-searchparams-entries.part.ts";
-import "./eval-bug-323-create-explicit-undefined-props.part.ts";
-import "./eval-bug-324-defineproperties-primitive-props.part.ts";
-import "./eval-bug-325-fn-kind-labels.part.ts";
-import "./eval-bug-325-fn-kind-tags.part.ts";
-import "./eval-bug-326-open-keyset-partial.part.ts";
-import "./eval-bug-327-json-eff-and-replacer.part.ts";
+import "./eval--date-tojson-invalid.part.ts";
+import "./eval--reflect-set-array-length.part.ts";
+import "./eval--error-proto-own-props.part.ts";
+import "./eval--url-searchparams-entries.part.ts";
+import "./eval--create-explicit-undefined-props.part.ts";
+import "./eval--defineproperties-primitive-props.part.ts";
+import "./eval--fn-kind-labels.part.ts";
+import "./eval--fn-kind-tags.part.ts";
+import "./eval--open-keyset-partial.part.ts";
+import "./eval--json-eff-and-replacer.part.ts";

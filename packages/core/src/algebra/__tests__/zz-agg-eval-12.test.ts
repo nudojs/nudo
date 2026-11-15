@@ -2,13 +2,13 @@
 // One of 15 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./eval-bug-309-url-searchparams-slot.part.ts";
-import "./eval-bug-310-promise-executor-throw.part.ts";
-import "./eval-bug-311-promise-static-this-wiring.part.ts";
-import "./eval-bug-312-promise-allsettled-projection.part.ts";
-import "./eval-bug-313-promise-noncallable-handler.part.ts";
-import "./eval-bug-314-iterator-self-protocol.part.ts";
-import "./eval-bug-315-tolocalestring-delegation.part.ts";
-import "./eval-bug-316-error-cause-slot.part.ts";
-import "./eval-bug-317-aggregate-errors-copy.part.ts";
-import "./eval-bug-318-329-boxed-prim-value.part.ts";
+import "./eval--url-searchparams-slot.part.ts";
+import "./eval--promise-executor-throw.part.ts";
+import "./eval--promise-static-this-wiring.part.ts";
+import "./eval--promise-allsettled-projection.part.ts";
+import "./eval--promise-noncallable-handler.part.ts";
+import "./eval--iterator-self-protocol.part.ts";
+import "./eval--tolocalestring-delegation.part.ts";
+import "./eval--error-cause-slot.part.ts";
+import "./eval--aggregate-errors-copy.part.ts";
+import "./eval--329-boxed-prim-value.part.ts";

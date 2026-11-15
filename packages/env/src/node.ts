@@ -1965,7 +1965,7 @@ function assertRegexpPattern(
     // 收口它要动 **core 的 `$new` env 构造器分支**（`exec/class/declare.ts`）：
     // 无 `apply` 的 env 构造器走 `$call` ⇒ 会命中类值判据 ⇒ **`new` 也抛**
     // ⇒ 必须挂 `apply`；而挂 `apply` 后实例面从 `obj` 变 `brand`
-    // ⇒ 打破既有金标 `env-bug-866-module-ctor.part.ts`（`shape.k === "obj"`）。
+    // ⇒ 打破既有金标 `env--module-ctor.part.ts`（`shape.k === "obj"`）。
     // ⇒ 收益窄（少见的裸调路径）＋ 代价越界到 core ⇒ **本波登记为已知限制**。
     TextEncoder: envFn(
       [],

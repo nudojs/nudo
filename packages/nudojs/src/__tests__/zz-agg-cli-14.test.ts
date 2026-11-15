@@ -2,13 +2,13 @@
 // One of 16 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./cli-bug-691-health-mock-channel-contract-drift.part.ts";
-import "./cli-bug-692-abs-sidecar-contract.part.ts";
-import "./cli-bug-693-watch-json-stdout.part.ts";
-import "./cli-bug-695-json-envelope-error-count.part.ts";
-import "./cli-bug-696-migrate-strip-json-envelope.part.ts";
-import "./cli-bug-697-env-template-watch.part.ts";
-import "./cli-bug-913-migrate-strip-enum-parses.part.ts";
-import "./cli-bug-919-abs-keeps-diagnostics.part.ts";
-import "./cli-bug-925-health-json-budget.part.ts";
-import "./cli-bug-927-health-watch-missing-path.part.ts";
+import "./cli--health-mock-channel-contract-drift.part.ts";
+import "./cli--abs-sidecar-contract.part.ts";
+import "./cli--watch-json-stdout.part.ts";
+import "./cli--json-envelope-error-count.part.ts";
+import "./cli--migrate-strip-json-envelope.part.ts";
+import "./cli--env-template-watch.part.ts";
+import "./cli--migrate-strip-enum-parses.part.ts";
+import "./cli--abs-keeps-diagnostics.part.ts";
+import "./cli--health-json-budget.part.ts";
+import "./cli--health-watch-missing-path.part.ts";

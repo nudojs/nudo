@@ -2,13 +2,13 @@
 // One of 15 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./lsp-bug-136-witness-line-parity.part.ts";
-import "./lsp-bug-140-internal-diagnostic.part.ts";
-import "./lsp-bug-146-trace-external.part.ts";
-import "./lsp-bug-247-hover-axiom.part.ts";
-import "./lsp-bug-369-return-contract-location.part.ts";
-import "./lsp-bug-450-apply-edits-nested-ranges.part.ts";
-import "./lsp-bug-459-directive-syntax-dup.part.ts";
-import "./lsp-bug-463-484-signature-param-names.part.ts";
-import "./lsp-bug-470-937-env-by-name-diag.part.ts";
-import "./lsp-bug-487-autobind-fingerprint.part.ts";
+import "./lsp--witness-line-parity.part.ts";
+import "./lsp--internal-diagnostic.part.ts";
+import "./lsp--trace-external.part.ts";
+import "./lsp--hover-axiom.part.ts";
+import "./lsp--return-contract-location.part.ts";
+import "./lsp--apply-edits-nested-ranges.part.ts";
+import "./lsp--directive-syntax-dup.part.ts";
+import "./lsp--484-signature-param-names.part.ts";
+import "./lsp--937-env-by-name-diag.part.ts";
+import "./lsp--autobind-fingerprint.part.ts";

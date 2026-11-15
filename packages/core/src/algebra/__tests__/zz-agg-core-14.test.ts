@@ -2,13 +2,13 @@
 // One of 32 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./core-bug-194-fork-copy-host-global.part.ts";
-import "./core-bug-197-arity-contract-optional.part.ts";
-import "./core-bug-200-strict-endpoint-const-cancel.part.ts";
-import "./core-bug-208-fn-throws-split.part.ts";
-import "./core-bug-209-pick-omit-partial-optional.part.ts";
-import "./core-bug-210-declared-throws-union.part.ts";
-import "./core-bug-211-min-max-prim-gate.part.ts";
-import "./core-bug-215-noncallable-iterator.part.ts";
-import "./core-bug-216-optional-call-single-read.part.ts";
-import "./core-bug-217-computed-key-accessor.part.ts";
+import "./core--fork-copy-host-global.part.ts";
+import "./core--arity-contract-optional.part.ts";
+import "./core--strict-endpoint-const-cancel.part.ts";
+import "./core--fn-throws-split.part.ts";
+import "./core--pick-omit-partial-optional.part.ts";
+import "./core--declared-throws-union.part.ts";
+import "./core--min-max-prim-gate.part.ts";
+import "./core--noncallable-iterator.part.ts";
+import "./core--optional-call-single-read.part.ts";
+import "./core--computed-key-accessor.part.ts";

@@ -2,13 +2,13 @@
 // One of 16 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./cli-bug-055-freeze-contract-guard.part.ts";
-import "./cli-bug-056-check-single-eval.part.ts";
-import "./cli-bug-066-abs-quiet.part.ts";
-import "./cli-bug-067-fix-shared-sidecar.part.ts";
-import "./cli-bug-074-export-stdout-ambient-default.part.ts";
-import "./cli-bug-075-stdout-top-level-identifiers.part.ts";
-import "./cli-bug-076-unevidenced-any.part.ts";
-import "./cli-bug-085-abs-assume-premises.part.ts";
-import "./cli-bug-099-truncation-diagnostic.part.ts";
-import "./cli-bug-100-from-dts-flag-swallow.part.ts";
+import "./cli--freeze-contract-guard.part.ts";
+import "./cli--check-single-eval.part.ts";
+import "./cli--abs-quiet.part.ts";
+import "./cli--fix-shared-sidecar.part.ts";
+import "./cli--export-stdout-ambient-default.part.ts";
+import "./cli--stdout-top-level-identifiers.part.ts";
+import "./cli--unevidenced-any.part.ts";
+import "./cli--abs-assume-premises.part.ts";
+import "./cli--truncation-diagnostic.part.ts";
+import "./cli--from-dts-flag-swallow.part.ts";

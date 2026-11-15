@@ -8,7 +8,7 @@
  * 而对照写法 `module.exports.h = fn` 三方言都正常。
  *
  * 这里钉的是**产物面**（用户实际拿到的校验器），根因与求值面回归见
- * `packages/service/src/__tests__/service-bug-045-cjs-object-export-member.test.ts`。
+ * `packages/service/src/__tests__/service--cjs-object-export-member.test.ts`。
  */
 import { describe, it, expect, afterAll } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";

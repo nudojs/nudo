@@ -2,13 +2,13 @@
 // One of 32 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./core-bug-098-guard-brand-observed-literals.part.ts";
-import "./core-bug-1004-strict-endpoint-lattice.part.ts";
-import "./core-bug-1020-bigint-lit-contract-tautology.part.ts";
-import "./core-bug-1021-nullish-top-shape.part.ts";
-import "./core-bug-1023-cross-module-param-mismatch.part.ts";
-import "./core-bug-1027-shape-proto-field.part.ts";
-import "./core-bug-1031-export-specifier-class-method.part.ts";
-import "./core-bug-1032-glued-directives.part.ts";
-import "./core-bug-1033-throws-position-anchor.part.ts";
-import "./core-bug-1040-includes-fromindex-validate.part.ts";
+import "./core--guard-brand-observed-literals.part.ts";
+import "./core--strict-endpoint-lattice.part.ts";
+import "./core--bigint-lit-contract-tautology.part.ts";
+import "./core--nullish-top-shape.part.ts";
+import "./core--cross-module-param-mismatch.part.ts";
+import "./core--shape-proto-field.part.ts";
+import "./core--export-specifier-class-method.part.ts";
+import "./core--glued-directives.part.ts";
+import "./core--throws-position-anchor.part.ts";
+import "./core--includes-fromindex-validate.part.ts";

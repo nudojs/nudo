@@ -2,13 +2,13 @@
 // One of 8 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./emit-bug-559-formal-params.part.ts";
-import "./emit-bug-561-sparse-tuple-hole.part.ts";
-import "./emit-bug-562-bom-fidelity.part.ts";
-import "./emit-bug-563-crlf-fidelity.part.ts";
-import "./emit-bug-564-eof-diff.part.ts";
-import "./emit-bug-565-empty-object-projection.part.ts";
-import "./emit-bug-665-draft-root-escape.part.ts";
-import "./emit-bug-942-draft-default-sidecar-key.part.ts";
-import "./emit-bug-984-derived-return-anchor.part.ts";
-import "./emit-bug-988-derived-reproducibility.part.ts";
+import "./emit--formal-params.part.ts";
+import "./emit--sparse-tuple-hole.part.ts";
+import "./emit--bom-fidelity.part.ts";
+import "./emit--crlf-fidelity.part.ts";
+import "./emit--eof-diff.part.ts";
+import "./emit--empty-object-projection.part.ts";
+import "./emit--draft-root-escape.part.ts";
+import "./emit--draft-default-sidecar-key.part.ts";
+import "./emit--derived-return-anchor.part.ts";
+import "./emit--derived-reproducibility.part.ts";

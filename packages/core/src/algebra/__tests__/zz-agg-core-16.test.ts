@@ -2,13 +2,13 @@
 // One of 32 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./core-bug-247-inlay-axiom.part.ts";
-import "./core-bug-248-binary-recursion.part.ts";
-import "./core-bug-248-hof-live-elements.part.ts";
-import "./core-bug-249-strict-eq-domain-shared.part.ts";
-import "./core-bug-251-generated-segment-under-source-contract.part.ts";
-import "./core-bug-254-env-global-reserved-name.part.ts";
-import "./core-bug-254-mutator-arraylike-receiver.part.ts";
-import "./core-bug-255-fill-no-args.part.ts";
-import "./core-bug-256-string-proto-generic-methods.part.ts";
-import "./core-bug-258-array-view-facet.part.ts";
+import "./core--inlay-axiom.part.ts";
+import "./core--binary-recursion.part.ts";
+import "./core--hof-live-elements.part.ts";
+import "./core--strict-eq-domain-shared.part.ts";
+import "./core--generated-segment-under-source-contract.part.ts";
+import "./core--env-global-reserved-name.part.ts";
+import "./core--mutator-arraylike-receiver.part.ts";
+import "./core--fill-no-args.part.ts";
+import "./core--string-proto-generic-methods.part.ts";
+import "./core--array-view-facet.part.ts";

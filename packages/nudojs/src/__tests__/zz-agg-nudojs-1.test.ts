@@ -2,13 +2,13 @@
 // One of 4 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./nudojs-bug-1037-env-harvest-merge.part.ts";
-import "./nudojs-bug-1038-env-harvest-conflict-visible.part.ts";
-import "./nudojs-bug-1060-from-module-resolution.part.ts";
-import "./nudojs-bug-1064-check-gate-sidecar-load.part.ts";
-import "./nudojs-bug-1085-watch-json-lines.part.ts";
-import "./nudojs-bug-1086-migrate-strip-json-results.part.ts";
-import "./nudojs-bug-1087-usage-error-code.part.ts";
-import "./nudojs-bug-1100-migrate-strip-write-status.part.ts";
-import "./nudojs-bug-1143-migrate-strip-diag-registry.part.ts";
-import "./nudojs-bug-1144-init-ancestor-inherit.part.ts";
+import "./nudojs--env-harvest-merge.part.ts";
+import "./nudojs--env-harvest-conflict-visible.part.ts";
+import "./nudojs--from-module-resolution.part.ts";
+import "./nudojs--check-gate-sidecar-load.part.ts";
+import "./nudojs--watch-json-lines.part.ts";
+import "./nudojs--migrate-strip-json-results.part.ts";
+import "./nudojs--usage-error-code.part.ts";
+import "./nudojs--migrate-strip-write-status.part.ts";
+import "./nudojs--migrate-strip-diag-registry.part.ts";
+import "./nudojs--init-ancestor-inherit.part.ts";

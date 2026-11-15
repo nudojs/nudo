@@ -2,13 +2,13 @@
 // One of 4 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./nudojs-bug-534-bigint-contract.part.ts";
-import "./nudojs-bug-559-contract-formals.part.ts";
-import "./nudojs-bug-629-dry-run-wins-over-write.part.ts";
-import "./nudojs-bug-630-input-read-path-error.part.ts";
-import "./nudojs-bug-631-gitlab-json-annotations.part.ts";
-import "./nudojs-bug-632-module-load-issues-visible.part.ts";
-import "./nudojs-bug-633-ts-only-syntax-in-js.part.ts";
-import "./nudojs-bug-637-profile-warning-effective-tier.part.ts";
-import "./nudojs-bug-638-env-string-not-expanded.part.ts";
-import "./nudojs-bug-640-check-fix-same-analysis-inputs.part.ts";
+import "./nudojs--bigint-contract.part.ts";
+import "./nudojs--contract-formals.part.ts";
+import "./nudojs--dry-run-wins-over-write.part.ts";
+import "./nudojs--input-read-path-error.part.ts";
+import "./nudojs--gitlab-json-annotations.part.ts";
+import "./nudojs--module-load-issues-visible.part.ts";
+import "./nudojs--ts-only-syntax-in-js.part.ts";
+import "./nudojs--profile-warning-effective-tier.part.ts";
+import "./nudojs--env-string-not-expanded.part.ts";
+import "./nudojs--check-fix-same-analysis-inputs.part.ts";

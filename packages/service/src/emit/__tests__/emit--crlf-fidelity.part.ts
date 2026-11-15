@@ -1,4 +1,4 @@
-// emit-bug-563-crlf-fidelity.test.ts — Bug 563：
+// emit--crlf-fidelity.part.ts — Bug 563：
 //
 // `nudo test --freeze` 的源码写回把 **CRLF 文件改成混合行尾**（新插入的行用
 // LF、原行保留 CRLF）⇒ `file(1)` 的判定从「with CRLF line terminators」变成

@@ -2,13 +2,13 @@
 // One of 15 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./eval-bug-223-sealed-array-mutator.part.ts";
-import "./eval-bug-224-field-init-new-target.part.ts";
-import "./eval-bug-225-static-getter-only-write.part.ts";
-import "./eval-bug-226-obj-rest-getter.part.ts";
-import "./eval-bug-227-namespace-tostring-tag.part.ts";
-import "./eval-bug-228-for-let-continue-write.part.ts";
-import "./eval-bug-229-yield-star-return-forward.part.ts";
-import "./eval-bug-230-delete-array-length.part.ts";
-import "./eval-bug-231-array-length-domain.part.ts";
-import "./eval-bug-232-array-expando-read.part.ts";
+import "./eval--sealed-array-mutator.part.ts";
+import "./eval--field-init-new-target.part.ts";
+import "./eval--static-getter-only-write.part.ts";
+import "./eval--obj-rest-getter.part.ts";
+import "./eval--namespace-tostring-tag.part.ts";
+import "./eval--for-let-continue-write.part.ts";
+import "./eval--yield-star-return-forward.part.ts";
+import "./eval--delete-array-length.part.ts";
+import "./eval--array-length-domain.part.ts";
+import "./eval--array-expando-read.part.ts";

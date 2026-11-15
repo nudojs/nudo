@@ -2,13 +2,13 @@
 // One of 16 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./cli-bug-606-proto-param-slot.part.ts";
-import "./cli-bug-607-contract-param-mismatch.part.ts";
-import "./cli-bug-609-standard-artifact-name-unique.part.ts";
-import "./cli-bug-610-contract-load-diagnostic.part.ts";
-import "./cli-bug-611-default-param-optional.part.ts";
-import "./cli-bug-612-contract-domain-return.part.ts";
-import "./cli-bug-613-guard-cross-face-agreement.part.ts";
-import "./cli-bug-615-return-contract-keeps-params.part.ts";
-import "./cli-bug-616-write-failure-replays-written.part.ts";
-import "./cli-bug-617-no-overwrite-handwritten-dts.part.ts";
+import "./cli--proto-param-slot.part.ts";
+import "./cli--contract-param-mismatch.part.ts";
+import "./cli--standard-artifact-name-unique.part.ts";
+import "./cli--contract-load-diagnostic.part.ts";
+import "./cli--default-param-optional.part.ts";
+import "./cli--contract-domain-return.part.ts";
+import "./cli--guard-cross-face-agreement.part.ts";
+import "./cli--return-contract-keeps-params.part.ts";
+import "./cli--write-failure-replays-written.part.ts";
+import "./cli--no-overwrite-handwritten-dts.part.ts";

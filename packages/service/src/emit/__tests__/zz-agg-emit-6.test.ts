@@ -2,13 +2,13 @@
 // One of 8 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./emit-bug-536-dts-contract-optional.part.ts";
-import "./emit-bug-537-emit-denied-message.part.ts";
-import "./emit-bug-538-dts-destructured-contract.part.ts";
-import "./emit-bug-539-standard-input-face.part.ts";
-import "./emit-bug-540-crlf-byte-fidelity.part.ts";
-import "./emit-bug-541-ts-builder-declaration.part.ts";
-import "./emit-bug-543-560-dts-slot-optional.part.ts";
-import "./emit-bug-544-any-vs-unknown.part.ts";
-import "./emit-bug-545-draft-import-export-clash.part.ts";
-import "./emit-bug-546-ts-sidecar-builder-import.part.ts";
+import "./emit--dts-contract-optional.part.ts";
+import "./emit--denied-message.part.ts";
+import "./emit--dts-destructured-contract.part.ts";
+import "./emit--standard-input-face.part.ts";
+import "./emit--crlf-byte-fidelity.part.ts";
+import "./emit--ts-builder-declaration.part.ts";
+import "./emit--560-dts-slot-optional.part.ts";
+import "./emit--any-vs-unknown.part.ts";
+import "./emit--draft-import-export-clash.part.ts";
+import "./emit--ts-sidecar-builder-import.part.ts";

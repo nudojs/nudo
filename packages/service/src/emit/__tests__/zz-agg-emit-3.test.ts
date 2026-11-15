@@ -2,13 +2,13 @@
 // One of 8 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./emit-bug-198-draft-throws-slot.part.ts";
-import "./emit-bug-233-dts-brand-class-name.part.ts";
-import "./emit-bug-240-product-internal-slots.part.ts";
-import "./emit-bug-411-line-comment-escape.part.ts";
-import "./emit-bug-506-dts-rest-param.part.ts";
-import "./emit-bug-507-freeze-indent.part.ts";
-import "./emit-bug-508-duplicate-issue-render.part.ts";
-import "./emit-bug-509-draft-return-obligation.part.ts";
-import "./emit-bug-510-zod-brand-user-class.part.ts";
-import "./emit-bug-511-frozen-observation-type-face.part.ts";
+import "./emit--draft-throws-slot.part.ts";
+import "./emit--dts-brand-class-name.part.ts";
+import "./emit--product-internal-slots.part.ts";
+import "./emit--line-comment-escape.part.ts";
+import "./emit--dts-rest-param.part.ts";
+import "./emit--freeze-indent.part.ts";
+import "./emit--duplicate-issue-render.part.ts";
+import "./emit--draft-return-obligation.part.ts";
+import "./emit--zod-brand-user-class.part.ts";
+import "./emit--frozen-observation-type-face.part.ts";

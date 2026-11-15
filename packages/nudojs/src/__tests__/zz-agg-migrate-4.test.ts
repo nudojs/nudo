@@ -2,13 +2,13 @@
 // One of 7 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./migrate-bug-571-nudo-gate-command-metric.part.ts";
-import "./migrate-bug-572-peer-deps-scope.part.ts";
-import "./migrate-bug-573-workspace-tsfiles-boundary.part.ts";
-import "./migrate-bug-574-strip-atomic-write.part.ts";
-import "./migrate-bug-575-strip-refuse-clobber.part.ts";
-import "./migrate-bug-576-retire-audit-merge.part.ts";
-import "./migrate-bug-577-tsc-scripts-blocker.part.ts";
-import "./migrate-bug-578-check-nudo-persisted.part.ts";
-import "./migrate-bug-579-workflow-command-position.part.ts";
-import "./migrate-bug-580-yaml-quoted-run-scalar.part.ts";
+import "./migrate--nudo-gate-command-metric.part.ts";
+import "./migrate--peer-deps-scope.part.ts";
+import "./migrate--workspace-tsfiles-boundary.part.ts";
+import "./migrate--strip-atomic-write.part.ts";
+import "./migrate--strip-refuse-clobber.part.ts";
+import "./migrate--retire-audit-merge.part.ts";
+import "./migrate--tsc-scripts-blocker.part.ts";
+import "./migrate--check-nudo-persisted.part.ts";
+import "./migrate--workflow-command-position.part.ts";
+import "./migrate--yaml-quoted-run-scalar.part.ts";

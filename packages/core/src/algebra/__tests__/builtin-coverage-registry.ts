@@ -1062,7 +1062,7 @@ export const VERSION_SKEW: ReadonlySet<string> = new Set([
  * 产品宿主面，也不该**逐厂商名**登记进台账（否则换一个工具链就要改仓库）。
  *
  * 口径：只在**枚举侧**跳过；未登记的**真实**宿主全局仍然硬失败。`env` 包的
- * 宿主面对账（`env-bug-61-node-surface.test.ts`）有同一判定，两处必须同步。
+ * 宿主面对账（`env--node-surface.test.ts`）有同一判定，两处必须同步。
  */
 export function isInjectedHostGlobal(name: string): boolean {
   return name.startsWith("__vitest_") || /^__[A-Za-z0-9_]*_LOADED__$/.test(name);

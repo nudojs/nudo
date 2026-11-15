@@ -1,4 +1,4 @@
-// emit-bug-511-frozen-observation-type-face.test.ts — Bug 511：
+// emit--frozen-observation-type-face.part.ts — Bug 511：
 // `nudo test --freeze` 固化的**无断言**见证**接管了整个函数的返回面**
 // ⇒ zod / guard / dts 全变成「单次调用点字面量」，且与 `nudo check` 自相矛盾。
 //

@@ -1,4 +1,4 @@
-// emit-bug-564-eof-diff.test.ts — Bug 564：
+// emit--eof-diff.part.ts — Bug 564：
 //
 // 源文件**末尾缺少换行**时，`nudo test --freeze --dry-run` 产出的 unified diff
 // **不可 apply**（缺 `\ No newline at end of file` 标记 + EOF 行模型多算一格）

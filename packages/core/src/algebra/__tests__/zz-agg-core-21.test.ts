@@ -2,13 +2,13 @@
 // One of 32 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./core-bug-340-nonscalar-conjunction.part.ts";
-import "./core-bug-341-length-nonnumeric-bound.part.ts";
-import "./core-bug-343-callee-violation-face.part.ts";
-import "./core-bug-344-duplicate-import-binding.part.ts";
-import "./core-bug-345-dep-sidecar-attribution.part.ts";
-import "./core-bug-346-assume-name-scope.part.ts";
-import "./core-bug-347-pick-prototype-field.part.ts";
-import "./core-bug-348-lit-literal-signature.part.ts";
-import "./core-bug-349-fn-slot-term.part.ts";
-import "./core-bug-350-unicode-directive-names.part.ts";
+import "./core--nonscalar-conjunction.part.ts";
+import "./core--length-nonnumeric-bound.part.ts";
+import "./core--callee-violation-face.part.ts";
+import "./core--duplicate-import-binding.part.ts";
+import "./core--dep-sidecar-attribution.part.ts";
+import "./core--assume-name-scope.part.ts";
+import "./core--pick-prototype-field.part.ts";
+import "./core--lit-literal-signature.part.ts";
+import "./core--fn-slot-term.part.ts";
+import "./core--unicode-directive-names.part.ts";

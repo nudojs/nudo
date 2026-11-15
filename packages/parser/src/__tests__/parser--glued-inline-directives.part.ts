@@ -9,7 +9,7 @@
  *
  * ⚠ `@nudo:as` 侧**未改**：标签名被延长（`@nudo:asXYZ`）⇒ 不是 `@nudo:as`
  * 指令、且零诊断——族 28（Bug 842）已合入并钉死该行为
- * （`parser-bug-842-as-payload-separator.test.ts` 的「tag boundary」用例）⇒
+ * （`parser--as-payload-separator.part.ts` 的「tag boundary」用例）⇒
  * 本片不推翻（越界发现，见交付报告）。
  */
 import { describe, it, expect } from "vitest";

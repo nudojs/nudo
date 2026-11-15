@@ -32,7 +32,7 @@
  *
  * 本文件的三条 todo 已随缺口闭合转为**实断言**；负控制（`.js` 同形源行为
  * 不变）保留。**更完整的回归钉**（entry@ 实参 / dts 形参 / 契约优先级）见
- * `service-bug-479-ts-annotation-entry-and-dts.test.ts`。
+ * `service--ts-annotation-entry-and-dts.part.ts`。
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { checkSource, formatShape, pTrue } from "@nudojs/core";

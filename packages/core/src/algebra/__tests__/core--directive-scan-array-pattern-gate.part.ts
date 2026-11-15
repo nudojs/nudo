@@ -8,7 +8,7 @@
  * （Bug 1088）；数组字面量体与解构模式体同属**嵌套体**，却**不在**闸门区间内。
  *
  * 与 parser 的 AST 路径同款修复（`packages/parser/src/directives/file-directives.ts`
- * 的 `nestedBodyRanges`，见 `parser-bug-1101-file-directive-gate-hole.test.ts`）：
+ * 的 `nestedBodyRanges`，见 `parser--file-directive-gate-hole.part.ts`）：
  * 闸门区间再纳入 `ArrayExpression` 与 `ObjectPattern`（+ 同族孪生
  * `ArrayPattern`）。
  *

@@ -2,6 +2,6 @@
 // One vitest entry per (directory, family). Each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./core-bug-435-dts-default-export-names.part.ts";
-import "./core-bug-437-dts-class-member-duplicate.part.ts";
-import "./core-bug-443-generated-marker-parity.part.ts";
+import "./core--dts-default-export-names.part.ts";
+import "./core--dts-class-member-duplicate.part.ts";
+import "./core--generated-marker-parity.part.ts";

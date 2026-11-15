@@ -2,7 +2,7 @@
 // One vitest entry per (directory, family). Each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./eval-bug-165-166-replace-as-scope.part.ts";
-import "./eval-bug-191-dts-accessor.part.ts";
-import "./eval-bug-233-zod-brand-runtime-value.part.ts";
-import "./eval-bug-242-intl-pseudo-brand-product.part.ts";
+import "./eval--166-replace-as-scope.part.ts";
+import "./eval--dts-accessor.part.ts";
+import "./eval--zod-brand-runtime-value.part.ts";
+import "./eval--intl-pseudo-brand-product.part.ts";

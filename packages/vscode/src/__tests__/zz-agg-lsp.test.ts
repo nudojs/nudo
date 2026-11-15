@@ -2,9 +2,9 @@
 // One vitest entry per (directory, family). Each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./lsp-bug-1019-highlight-recompute.part.ts";
-import "./lsp-bug-1057-contract-emit-palette.part.ts";
-import "./lsp-bug-905-crlf-endchar.part.ts";
-import "./lsp-bug-907-vsix-self-contained.part.ts";
-import "./lsp-bug-953-select-case-palette.part.ts";
-import "./lsp-bug-999-server-esm-identity.part.ts";
+import "./lsp--highlight-recompute.part.ts";
+import "./lsp--contract-emit-palette.part.ts";
+import "./lsp--crlf-endchar.part.ts";
+import "./lsp--vsix-self-contained.part.ts";
+import "./lsp--select-case-palette.part.ts";
+import "./lsp--server-esm-identity.part.ts";

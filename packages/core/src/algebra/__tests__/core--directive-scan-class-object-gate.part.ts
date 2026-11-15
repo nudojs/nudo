@@ -8,7 +8,7 @@
  * 的行注释落在区间**之外** ⇒ 闸门不拦。
  *
  * 与 parser 的 AST 路径同款修复（`packages/parser/src/directives/file-directives.ts`
- * 的 `nestedBodyRanges`，见 `parser-bug-1090-file-directive-class-gate.test.ts`）：
+ * 的 `nestedBodyRanges`，见 `parser--file-directive-class-gate.part.ts`）：
  * 闸门区间另纳入「类体（`ClassBody`）」与「对象字面量体（`ObjectExpression`）」。
  *
  * ⚠ 类**声明上方**的注释（`/// @nudo:env node` 写在 `class A {` 之前）仍是

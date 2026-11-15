@@ -2,13 +2,13 @@
 // One of 32 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./core-bug-420-case-arg-escape.part.ts";
-import "./core-bug-421-empty-payload.part.ts";
-import "./core-bug-422-empty-import-payload.part.ts";
-import "./core-bug-423-crlf-expected.part.ts";
-import "./core-bug-424-shadowed-name-lookup.part.ts";
-import "./core-bug-425-static-instance-scope-name.part.ts";
-import "./core-bug-426-throws-suffix-expected.part.ts";
-import "./core-bug-427-expected-parens.part.ts";
-import "./core-bug-428-cjs-assignment-binding.part.ts";
-import "./core-bug-429-union-nullish-false-red.part.ts";
+import "./core--case-arg-escape.part.ts";
+import "./core--empty-payload.part.ts";
+import "./core--empty-import-payload.part.ts";
+import "./core--crlf-expected.part.ts";
+import "./core--shadowed-name-lookup.part.ts";
+import "./core--static-instance-scope-name.part.ts";
+import "./core--throws-suffix-expected.part.ts";
+import "./core--expected-parens.part.ts";
+import "./core--cjs-assignment-binding.part.ts";
+import "./core--union-nullish-false-red.part.ts";

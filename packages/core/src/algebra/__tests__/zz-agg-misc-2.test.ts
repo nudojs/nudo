@@ -2,13 +2,13 @@
 // One of 3 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./bug-5-lit-null-any-arg.part.ts";
-import "./bug-60-array-borrow-nullish.part.ts";
-import "./bug-65-url-searchparams-live-view.part.ts";
-import "./bug-66-brand-own-method-shadow.part.ts";
-import "./bug-7-union-length-member-obligation.part.ts";
-import "./bug-78-union-member-int.part.ts";
-import "./bug-8-array-pattern-field-index-enforce.part.ts";
-import "./bug-81-tostring-hint.part.ts";
-import "./bug-82-sloppy-write.part.ts";
-import "./bug-9-local-const-arg.part.ts";
+import "./core--lit-null-any-arg.part.ts";
+import "./core--array-borrow-nullish.part.ts";
+import "./core--url-searchparams-live-view.part.ts";
+import "./core--brand-own-method-shadow.part.ts";
+import "./core--union-length-member-obligation.part.ts";
+import "./core--union-member-int.part.ts";
+import "./core--array-pattern-field-index-enforce.part.ts";
+import "./core--tostring-hint.part.ts";
+import "./core--sloppy-write.part.ts";
+import "./core--local-const-arg.part.ts";

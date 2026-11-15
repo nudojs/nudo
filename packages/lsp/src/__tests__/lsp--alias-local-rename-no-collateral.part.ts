@@ -13,7 +13,7 @@
  *   **imported** 侧，**别名 `alias` 不动**。
  *
  * ⇒ 症状已被**更早的族**修掉：**族 22（lsp-signature）的 Bug 710**
- *   （`lsp-bug-710-alias-import-cross-file-rename.test.ts`）的修复面覆盖本条
+ *   （`lsp--alias-import-cross-file-rename.part.ts`）的修复面覆盖本条
  *   （`isLocalAliasSymbol` / `resolveReferences` 的「本地别名」分支）。
  *
  * 本文件是**反向守护钉**：钉住「**已修**」的行为 ⇒ **在 HEAD 上必须通过**

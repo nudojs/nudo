@@ -2,13 +2,13 @@
 // One of 32 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./core-bug-398-lit-samevalue.part.ts";
-import "./core-bug-399-fn-optional-params.part.ts";
-import "./core-bug-400-rest-param-arg-aggregation.part.ts";
-import "./core-bug-401-uncontracted-sibling-binding.part.ts";
-import "./core-bug-402-union-string-concat-member-parallel.part.ts";
-import "./core-bug-403-format-shape-arr-fn-grouping.part.ts";
-import "./core-bug-404-format-shape-sum-fn-grouping.part.ts";
-import "./core-bug-406-proto-slot-projection.part.ts";
-import "./core-bug-407-guard-brand-identity.part.ts";
-import "./core-bug-408-inlay-expression-body-anchor.part.ts";
+import "./core--lit-samevalue.part.ts";
+import "./core--fn-optional-params.part.ts";
+import "./core--rest-param-arg-aggregation.part.ts";
+import "./core--uncontracted-sibling-binding.part.ts";
+import "./core--union-string-concat-member-parallel.part.ts";
+import "./core--format-shape-arr-fn-grouping.part.ts";
+import "./core--format-shape-sum-fn-grouping.part.ts";
+import "./core--proto-slot-projection.part.ts";
+import "./core--guard-brand-identity.part.ts";
+import "./core--inlay-expression-body-anchor.part.ts";

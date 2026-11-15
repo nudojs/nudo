@@ -2,13 +2,13 @@
 // One of 15 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./eval-bug-183-for-loop-guard.part.ts";
-import "./eval-bug-184-switch-case-narrowing.part.ts";
-import "./eval-bug-185-dowhile-rel-guard.part.ts";
-import "./eval-bug-186-early-return-nested-scope.part.ts";
-import "./eval-bug-187-optional-call-chain.part.ts";
-import "./eval-bug-188-arrow-expr-rebind-order.part.ts";
-import "./eval-bug-189-proto-value-eval-order.part.ts";
-import "./eval-bug-190-member-writeback-accessor.part.ts";
-import "./eval-bug-191-accessor-projection.part.ts";
-import "./eval-bug-192-proto-own-method.part.ts";
+import "./eval--for-loop-guard.part.ts";
+import "./eval--switch-case-narrowing.part.ts";
+import "./eval--dowhile-rel-guard.part.ts";
+import "./eval--early-return-nested-scope.part.ts";
+import "./eval--optional-call-chain.part.ts";
+import "./eval--arrow-expr-rebind-order.part.ts";
+import "./eval--proto-value-eval-order.part.ts";
+import "./eval--member-writeback-accessor.part.ts";
+import "./eval--accessor-projection.part.ts";
+import "./eval--proto-own-method.part.ts";

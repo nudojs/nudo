@@ -12,7 +12,7 @@
 export const FS_INPUT_TARGETS = [
   "packages/website/tests",
   "packages/core/src/algebra/__tests__/check-mini-repo.test.ts",
-  "packages/env/src/__tests__/env-bug-61-node-surface.test.ts",
+  "packages/env/src/__tests__/env--node-surface.test.ts",
 ];
 
 /** @param {string} rel repo-relative path */

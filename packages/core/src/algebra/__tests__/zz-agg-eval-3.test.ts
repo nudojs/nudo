@@ -2,13 +2,13 @@
 // One of 15 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./eval-bug-165-replace-keeps-eval.part.ts";
-import "./eval-bug-166-directive-scope.part.ts";
-import "./eval-bug-168-switch-case-test-lazy.part.ts";
-import "./eval-bug-169-switch-case-test-side-effect.part.ts";
-import "./eval-bug-170-dowhile-break-continue.part.ts";
-import "./eval-bug-174-default-param-this.part.ts";
-import "./eval-bug-178-for-member-head-assign.part.ts";
-import "./eval-bug-180-member-update-order.part.ts";
-import "./eval-bug-181-destructure-tmp-names.part.ts";
-import "./eval-bug-182-early-return-rel-narrowing.part.ts";
+import "./eval--replace-keeps-eval.part.ts";
+import "./eval--directive-scope.part.ts";
+import "./eval--switch-case-test-lazy.part.ts";
+import "./eval--switch-case-test-side-effect.part.ts";
+import "./eval--dowhile-break-continue.part.ts";
+import "./eval--default-param-this.part.ts";
+import "./eval--for-member-head-assign.part.ts";
+import "./eval--member-update-order.part.ts";
+import "./eval--destructure-tmp-names.part.ts";
+import "./eval--early-return-rel-narrowing.part.ts";

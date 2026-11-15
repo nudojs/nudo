@@ -26,7 +26,7 @@
  * 本钉直接驱动引擎（core 的 `checkSource` + env 模块直注），
  * 不经 service 的 `@nudo:env` 指令层。
  *
- * ⚠️ 与 S4 的 `env-bug-882-util-brand-params.test.ts`（env 侧：给
+ * ⚠️ 与 S4 的 `env--util-brand-params.part.ts`（env 侧：给
  * `node:util` 四兄弟加 `apply`，建模侧规避）**互补**：本钉的**判别钉**
  * 走 `fs.readFile(path, enc, cb)`（仍是 relation 形态 ⇒ 只由 core 侧
  * 修复兜住）+ 一条 core API 直钉 ⇒ **拆掉 core 修复 ⇒ 本文件必红**。

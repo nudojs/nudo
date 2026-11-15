@@ -2,13 +2,13 @@
 // One of 3 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./bug-106-core-symbol-slot-visibility.part.ts";
-import "./bug-16-optional-chain-fn-decl.part.ts";
-import "./bug-17-shape-optional-undefined.part.ts";
-import "./bug-18-this-computed-member-call.part.ts";
-import "./bug-28-import-alias-rebinding.part.ts";
-import "./bug-3-for-shadow-const.part.ts";
-import "./bug-37-url-component-write.part.ts";
-import "./bug-38-slot-array-length.part.ts";
-import "./bug-4-string-destructure-codepoint.part.ts";
-import "./bug-47-namespace-module-isolation.part.ts";
+import "./core--symbol-slot-visibility.part.ts";
+import "./core--optional-chain-fn-decl.part.ts";
+import "./core--shape-optional-undefined.part.ts";
+import "./core--this-computed-member-call.part.ts";
+import "./core--import-alias-rebinding.part.ts";
+import "./core--for-shadow-const.part.ts";
+import "./core--url-component-write.part.ts";
+import "./core--slot-array-length.part.ts";
+import "./core--string-destructure-codepoint.part.ts";
+import "./core--namespace-module-isolation.part.ts";

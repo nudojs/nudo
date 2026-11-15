@@ -17,7 +17,7 @@
  * 2. **info 走 `this.info` 上屏** —— info 级诊断出现在 vite 的 **info 通道**，
  *    **不混进 warn 流**（否则 info 冒充告警）。
  *
- * 与族 26 的 `vite-bug-779-info-level-diagnostics.test.ts` 的分工：779 钉的是
+ * 与族 26 的 `vite--info-level-diagnostics.part.ts` 的分工：779 钉的是
  * **check 面** info（`nudo:assume-relied`，verbose 档）上屏；本钉钉的是
  * **evaluator 面** info（不可达代码 / 无契约根）**与汇总计数口径** ⇒ 不重复。
  *

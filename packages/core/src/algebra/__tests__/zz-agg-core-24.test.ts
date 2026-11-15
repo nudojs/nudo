@@ -2,13 +2,13 @@
 // One of 32 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./core-bug-371-case-scan-shape-contract.part.ts";
-import "./core-bug-372-return-contract-position.part.ts";
-import "./core-bug-373-workspace-root-path-boundary.part.ts";
-import "./core-bug-374-diagnostic-loc.part.ts";
-import "./core-bug-375-1009-case-args-split.part.ts";
-import "./core-bug-376-assign-record-fn-decl.part.ts";
-import "./core-bug-377-signature-detail-name.part.ts";
-import "./core-bug-378-return-contract-source-wording.part.ts";
-import "./core-bug-379-class-instance-method-l2.part.ts";
-import "./core-bug-380-transpiler-reject-l2-failclosed.part.ts";
+import "./core--case-scan-shape-contract.part.ts";
+import "./core--return-contract-position.part.ts";
+import "./core--workspace-root-path-boundary.part.ts";
+import "./core--diagnostic-loc.part.ts";
+import "./core--1009-case-args-split.part.ts";
+import "./core--assign-record-fn-decl.part.ts";
+import "./core--signature-detail-name.part.ts";
+import "./core--return-contract-source-wording.part.ts";
+import "./core--class-instance-method-l2.part.ts";
+import "./core--transpiler-reject-l2-failclosed.part.ts";

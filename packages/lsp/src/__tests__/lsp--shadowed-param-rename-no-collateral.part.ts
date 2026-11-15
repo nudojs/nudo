@@ -16,7 +16,7 @@
  *     `["1:18-1:19","1:30-1:31"]`（**作用域感知**）。
  *
  * ⇒ 症状已被**更早的族**修掉：**族 22（lsp-signature）的 Bug 709**
- *   （`lsp-bug-709-shadowed-binding.test.ts`）的修复面覆盖本条 ——
+ *   （`lsp--shadowed-binding.part.ts`）的修复面覆盖本条 ——
  *   符号表按**作用域路径**存同名绑定（`name@行:列`），`findDefinition` /
  *   `findReferences` / `resolveDefinitionLocations` 取**最内层**那条。
  *

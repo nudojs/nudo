@@ -2,13 +2,13 @@
 // One of 15 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./eval-bug-142-static-block-order.part.ts";
-import "./eval-bug-143-object-literal-dup-key.part.ts";
-import "./eval-bug-147-switch-break-in-if.part.ts";
-import "./eval-bug-152-call-member-accessor-order.part.ts";
-import "./eval-bug-157-static-block-super.part.ts";
-import "./eval-bug-158-private-class-scope.part.ts";
-import "./eval-bug-159-static-async-method.part.ts";
-import "./eval-bug-162-member-target-default.part.ts";
-import "./eval-bug-163-for-var-head-scope.part.ts";
-import "./eval-bug-164-as-evaluates-expression.part.ts";
+import "./eval--static-block-order.part.ts";
+import "./eval--object-literal-dup-key.part.ts";
+import "./eval--switch-break-in-if.part.ts";
+import "./eval--call-member-accessor-order.part.ts";
+import "./eval--static-block-super.part.ts";
+import "./eval--private-class-scope.part.ts";
+import "./eval--static-async-method.part.ts";
+import "./eval--member-target-default.part.ts";
+import "./eval--for-var-head-scope.part.ts";
+import "./eval--as-evaluates-expression.part.ts";

@@ -2,13 +2,13 @@
 // One of 16 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./cli-bug-171-duplicate-from-sites.part.ts";
-import "./cli-bug-196-emit-single-writer.part.ts";
-import "./cli-bug-199-health-emit-drift-agreement.part.ts";
-import "./cli-bug-204-stdout-rename-preserves-slot-keys.part.ts";
-import "./cli-bug-228-health-env-base-dir.part.ts";
-import "./cli-bug-229-init-duplicate-nudo-key.part.ts";
-import "./cli-bug-231-out-same-module-overwrite.part.ts";
-import "./cli-bug-232-out-specifier-rebase.part.ts";
-import "./cli-bug-233-export-conflict-blocking.part.ts";
-import "./cli-bug-246-optional-slot-undefined.part.ts";
+import "./cli--duplicate-from-sites.part.ts";
+import "./cli--emit-single-writer.part.ts";
+import "./cli--health-emit-drift-agreement.part.ts";
+import "./cli--stdout-rename-preserves-slot-keys.part.ts";
+import "./cli--health-env-base-dir.part.ts";
+import "./cli--init-duplicate-nudo-key.part.ts";
+import "./cli--out-same-module-overwrite.part.ts";
+import "./cli--out-specifier-rebase.part.ts";
+import "./cli--export-conflict-blocking.part.ts";
+import "./cli--optional-slot-undefined.part.ts";

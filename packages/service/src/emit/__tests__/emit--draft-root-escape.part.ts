@@ -15,7 +15,7 @@
  * 不许抽成 core 的共享助手 —— core 冻结面不得新增导出）。
  *
  * ⚠ 本钉**只**钉 service 半（`writeContractDraft` 的项目根判据）；
- *   CLI 半的钉在 `packages/nudojs/src/__tests__/cli-bug-665-dotdir-escape.test.ts`。
+ *   CLI 半的钉在 `packages/nudojs/src/__tests__/cli--dotdir-escape.part.ts`。
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } from "node:fs";

@@ -2,5 +2,5 @@
 // One of 3 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./bug-96-optional-bounded-pred.part.ts";
-import "./bug-99-symbol-key-vs-string-key.part.ts";
+import "./core--optional-bounded-pred.part.ts";
+import "./core--symbol-key-vs-string-key.part.ts";

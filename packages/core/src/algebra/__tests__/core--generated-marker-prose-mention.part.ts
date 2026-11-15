@@ -10,7 +10,7 @@
  *
  * 口径：core `scan-named-exports.ts` / service `contract-derivation-emit.ts` /
  * service `contract-emitter.ts` 三处**同源实现**（跨包一致性由 service 侧的
- * `core-bug-443-generated-marker-parity.test.ts` 钉住）。
+ * `core--generated-marker-parity.part.ts` 钉住）。
  */
 import { describe, it, expect } from "vitest";
 import { generatedExportNames } from "../scan/scan-named-exports.ts";

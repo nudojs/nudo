@@ -353,7 +353,7 @@ export function arrayProtoMemberForKey(key: string, symbolKey: boolean): boolean
  * ⇒ 它们的内层 obj 槽表**不是**可调用面全集 ⇒ 表外名**不可证缺席** ⇒
  * 一律保守不判（缺席不可证）。
  *
- * 名单与引擎表**同源核对**：新钉 `eval-bug-1044-brand-missing-member.part.ts`
+ * 名单与引擎表**同源核对**：新钉 `eval--brand-missing-member.part.ts`
  * 断言 `exec/runtime/members.ts` 的两张表键集 ⊆ 本名单（新增内建 brand 时
  * 同步此处，否则同步守卫会红）。
  */

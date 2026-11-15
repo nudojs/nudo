@@ -2,7 +2,7 @@
 // One vitest entry per (directory, family). Each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./core-bug-274-mock-host-builtin-service.part.ts";
-import "./core-bug-282-env-default-import-service.part.ts";
-import "./core-bug-286-namespace-member-attribution.part.ts";
-import "./core-bug-963-mock-module-missing-named.part.ts";
+import "./core--mock-host-builtin-service.part.ts";
+import "./core--env-default-import-service.part.ts";
+import "./core--namespace-member-attribution.part.ts";
+import "./core--mock-module-missing-named.part.ts";

@@ -2,7 +2,7 @@
 // One of 16 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./cli-bug-973-assume-ge-operator.part.ts";
-import "./cli-bug-974-assume-conjunction.part.ts";
-import "./cli-bug-975-assume-generalize-reject.part.ts";
-import "./cli-bug-976-assume-bound-param-pred.part.ts";
+import "./cli--assume-ge-operator.part.ts";
+import "./cli--assume-conjunction.part.ts";
+import "./cli--assume-generalize-reject.part.ts";
+import "./cli--assume-bound-param-pred.part.ts";

@@ -2,13 +2,13 @@
 // One of 16 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./cli-bug-680-init-io-error-faces.part.ts";
-import "./cli-bug-681-init-minimal-write.part.ts";
-import "./cli-bug-682-health-witness-drift-count.part.ts";
-import "./cli-bug-683-health-from-zero-records.part.ts";
-import "./cli-bug-684-watch-mixed-paths.part.ts";
-import "./cli-bug-685-watch-event-attribution.part.ts";
-import "./cli-bug-686-watch-multi-dir-roots.part.ts";
-import "./cli-bug-687-health-error-count-parity.part.ts";
-import "./cli-bug-688-health-multi-from.part.ts";
-import "./cli-bug-689-watch-include-exclude.part.ts";
+import "./cli--init-io-error-faces.part.ts";
+import "./cli--init-minimal-write.part.ts";
+import "./cli--health-witness-drift-count.part.ts";
+import "./cli--health-from-zero-records.part.ts";
+import "./cli--watch-mixed-paths.part.ts";
+import "./cli--watch-event-attribution.part.ts";
+import "./cli--watch-multi-dir-roots.part.ts";
+import "./cli--health-error-count-parity.part.ts";
+import "./cli--health-multi-from.part.ts";
+import "./cli--watch-include-exclude.part.ts";

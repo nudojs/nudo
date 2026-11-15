@@ -2,13 +2,13 @@
 // One of 15 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./lsp-bug-724-hover-tier-active.part.ts";
-import "./lsp-bug-726-cross-file-uses-buffer-text.part.ts";
-import "./lsp-bug-727-reexport-edge-refs-rename.part.ts";
-import "./lsp-bug-728-sidecar-invalid-binding-not-contract.part.ts";
-import "./lsp-bug-730-missing-field-placeholder.part.ts";
-import "./lsp-bug-731-contract-shape-insert.part.ts";
-import "./lsp-bug-732-extract-keeps-export-keyword.part.ts";
-import "./lsp-bug-733-inline-keeps-sibling-statement.part.ts";
-import "./lsp-bug-734-extract-assign-not-const.part.ts";
-import "./lsp-bug-735-agent-tool-deps-lazy.part.ts";
+import "./lsp--hover-tier-active.part.ts";
+import "./lsp--cross-file-uses-buffer-text.part.ts";
+import "./lsp--reexport-edge-refs-rename.part.ts";
+import "./lsp--sidecar-invalid-binding-not-contract.part.ts";
+import "./lsp--missing-field-placeholder.part.ts";
+import "./lsp--contract-shape-insert.part.ts";
+import "./lsp--extract-keeps-export-keyword.part.ts";
+import "./lsp--inline-keeps-sibling-statement.part.ts";
+import "./lsp--extract-assign-not-const.part.ts";
+import "./lsp--agent-tool-deps-lazy.part.ts";
