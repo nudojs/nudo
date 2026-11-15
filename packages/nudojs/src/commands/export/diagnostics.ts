@@ -123,6 +123,8 @@ function checkFaceIssues(opts: ExportDiagnosticOptions): {
   raw: readonly { readonly code?: string }[];
   /** 契约申报真值（check 签名面自带 provenance）；check 面抛错时为 undefined */
   declaredContract: boolean;
+  /** 申报过契约的入口名（降级证据按 `fn` 归因到这个集合才算该入口的保证掉了） */
+  contractedEntries: ReadonlySet<string>;
 } {
   const out: ExportDiagnostic[] = [];
   const autoBind =
@@ -140,18 +142,22 @@ function checkFaceIssues(opts: ExportDiagnosticOptions): {
       const entry = toExportDiagnostic(issue);
       if (entry !== undefined) out.push(entry);
     }
+    // ADR 0001 §4 D3：申报真值只能来自 `effectiveContract` 的解析结果
+    // （generalize 顺带带进签名面）。不读源码字符串、不按诊断码反推。
+    const contractedEntries = new Set(
+      report.signatures
+        .filter((s) => s.entry === true && s.contract !== undefined)
+        .map((s) => s.name),
+    );
     // 原始诊断（过滤前）只供影子双读使用；开关关闭时不复制、不构造 Evidence。
     return {
       entries: out,
       raw: report.issues,
-      // ADR 0001 §4 D3：申报真值只能来自 `effectiveContract` 的解析结果
-      // （generalize 顺带带进签名面）。不读源码字符串、不按诊断码反推。
-      declaredContract: report.signatures.some(
-        (s) => s.entry === true && s.contract !== undefined,
-      ),
+      declaredContract: contractedEntries.size > 0,
+      contractedEntries,
     };
   } catch {
-    return { entries: [], raw: [], declaredContract: false };
+    return { entries: [], raw: [], declaredContract: false, contractedEntries: new Set() };
   }
 }
 
@@ -204,21 +210,35 @@ export function collectExportDiagnostics(opts: ExportDiagnosticOptions): ExportD
   //      产生，因此也是申报意图的证据。② 是覆盖率的关键：契约本身解析失败
   //      时（BUG-021 的 `nudo:contract-syntax`）① 必然拿不到 provenance。
   //
-  // 两者取并集后，阻断条件只剩「有降级证据」。这带来两处有意的行为变更：
+  // 归因（本轮收紧）：契约面诊断恒阻断；**一般降级族**（`internal` /
+  // `unknown-inference`）按 `fn` 归因——只有落在「申报过契约的入口」上才算
+  // 该入口的保证掉了（无 `fn` 的模块级降级无法归因 ⇒ 保守阻断）。
+  // 否则一个文件里只要**别处**有一个入口推断失败（例如 `fs.readFileSync` 在
+  // 严格能力档下恒 unknown），整份产物就会被无关入口卡住 —— 而同类降级落在
+  // **未申报**入口上本来就只上屏不阻断（见下）。
+  //
+  // 这带来三处有意的行为变更：
   //   - `nudo:contract-syntax` 从此阻断（此前 exit 0 且零上屏）；
-  //   - 申报过契约的入口出现 `nudo:internal` / `unknown-inference` 也阻断。
-  // 未申报契约的纯推导文件不受影响（降级只是上屏，不阻断）——否则每个
-  // 无注解文件都会因推断失败而无法发布。
+  //   - 申报过契约的**入口**出现 `nudo:internal` / `unknown-inference` 阻断；
+  //   - 降级落在**未申报**的入口时只上屏（纯推导的兄弟入口不得卡住别人的契约）。
   const degradedOnSurface = entries.filter((d) => isDegradedCode(d.code));
-  const declaredContract =
-    checkFace.declaredContract ||
-    degradedOnSurface.some((d) => CONTRACT_DECLARATION_EVIDENCE.has(d.code));
+  const contractEvidence = degradedOnSurface.filter((d) =>
+    CONTRACT_DECLARATION_EVIDENCE.has(d.code),
+  );
+  const genericDegradation = degradedOnSurface.filter(
+    (d) => !CONTRACT_DECLARATION_EVIDENCE.has(d.code),
+  );
+  const declaredContract = checkFace.declaredContract || contractEvidence.length > 0;
+  const attributedToContract = genericDegradation.some(
+    (d) => d.fn === undefined || checkFace.contractedEntries.has(d.fn),
+  );
 
   return {
     entries,
     contractLoad: entries.filter((d) => d.code === DIAG.contractLoad),
     conflicts: entries.filter((d) => d.code === DIAG.contractConflict),
-    blocking: declaredContract && degradedOnSurface.length > 0,
+    blocking:
+      contractEvidence.length > 0 || (declaredContract && attributedToContract),
   };
 }
 

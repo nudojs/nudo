@@ -78,4 +78,22 @@ describe("BUG-008 · CJS 单值导出 = `export =`", () => {
     );
     expect(out).not.toContain("export =");
   }, 60000);
+
+  it("对照：镜像的 `export interface` 同样算「其它导出」⇒ 不切 `export =`", () => {
+    // BUG-005 让本地类型原文镜像进产物；`export =` 与 `export interface` 共存
+    // 会让产物直接 TS2309（`nudo export` 却 exit 0）⇒ 这类混用保持具名投影
+    // （与 TS 自己的 --declaration 同答案）。
+    const out = dts(
+      fixture(
+        "typed.ts",
+        `export interface Foo { a: number }
+class C { m() { return 1; } }
+module.exports = C;
+`,
+      ),
+    );
+    expect(out).toContain("export interface Foo");
+    expect(out).not.toContain("export =");
+    expect(out).toContain("export declare class C");
+  }, 60000);
 });

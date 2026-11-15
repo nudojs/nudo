@@ -70,6 +70,7 @@ import {
 const MAX_EVAL_RUN_MEMO = 256;
 import { instanceForMethodBridge } from "../bridge-instance.ts";
 import { resolveExportSlotCall } from "../contract/export-slot.ts";
+import { OBJECT_PROTO_NAMES } from "../object-proto-names.ts";
 /** 节点跨度 / 装载期判定共用 `fn-fp.ts` 的勘测（`nodeSpan`）与推迟面清单。 */
 import {
   deferredExecutionSpans,
@@ -1079,7 +1080,19 @@ function isDefinitelyNonCallable(node: unknown, ctx: DefiniteCtx): boolean {
     if (obj?.type === "ObjectExpression" && key !== undefined) {
       const props = (obj.properties as AnyAst[] | undefined) ?? [];
       const hasSpread = props.some((p) => p.type === "SpreadElement");
-      if (!hasSpread) {
+      // 对象字面量**继承 Object.prototype** ⇒ `({}).toString()` /
+      // `hasOwnProperty` / `valueOf` 是存在的可调用成员，缺席的只是 own 键。
+      // 只有 `__proto__: null` 的字面量才是真正封闭的成员集。
+      // （否则「成员集已知」这一前提不成立：会把原生合法的调用判成必抛，
+      // 且一旦引擎因宿主近似回落 module-throw，这类调用会伪造出句法证据。）
+      const nullProto = props.some((p) => {
+        if (p.computed === true || p.type !== "ObjectProperty") return false;
+        const k = p.key as AnyAst | undefined;
+        const name =
+          k?.type === "Identifier" ? (k.name as string) : (k?.value as string | undefined);
+        return name === "__proto__" && (p.value as AnyAst | undefined)?.type === "NullLiteral";
+      });
+      if (!hasSpread && (nullProto || !OBJECT_PROTO_NAMES.has(key))) {
         const hasKey = props.some((p) => {
           if (p.computed === true) return true; // 计算键 ⇒ 不确定，不当证据
           const k = p.key as AnyAst | undefined;

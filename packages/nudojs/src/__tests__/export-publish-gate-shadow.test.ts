@@ -77,6 +77,23 @@ describe("ADR 0001 §4 D3 · 语义发布门", () => {
     expect(diags.blocking).toBe(true);
   });
 
+  it("降级归因到申报入口：阻断（同一诊断只换 fn）", () => {
+    const diags = collectExportDiagnostics(
+      makeOpts(DECLARED, [{ ...UNKNOWN, fn: "f" }]),
+    );
+    expect(diags.blocking).toBe(true);
+  });
+
+  it("降级落在未申报的兄弟入口：上屏但不阻断（文件级契约不连坐）", () => {
+    // `read` 用宿主 API 恒 unknown，而契约只申报在 `f` 上 ⇒ 产物不得被无关
+    // 入口卡住（否则任何「读文件 + 有契约」的模块都无法 export）。
+    const diags = collectExportDiagnostics(
+      makeOpts(DECLARED, [{ ...UNKNOWN, fn: "other" }]),
+    );
+    expect(diags.entries.map((d) => d.code)).toContain(DIAG.unknownInference);
+    expect(diags.blocking).toBe(false);
+  });
+
   it("BUG-021：契约解析失败 ⇒ 诊断上屏且阻断（此前 exit 0、零诊断）", () => {
     const diags = collectExportDiagnostics(makeOpts(BROKEN, []));
     const syntax = diags.entries.find((d) => d.code === DIAG.contractSyntax);

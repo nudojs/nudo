@@ -71,3 +71,39 @@ describe("audit 34 · 可选链调用（BUG-032）", () => {
     expect(violations(check(src, "/t/audit-b032-ok.js"))).toHaveLength(0);
   });
 });
+
+describe("audit 34 · BUG-003 面：catch 形参的作用域", () => {
+  /** `f` 的契约：`a` 必须 ≥ 0 */
+  const CALLEE_SIDE = `import { fn, number } from "@nudojs/core";
+export const f = fn({ a: number().ge(0) }, number());
+`;
+  function run(file: string, body: string) {
+    const src = [`import { f } from "./f.js";`, body].join("\n");
+    const { loadModule } = makeFiles({
+      "/t/f.js": "export function f(a) { return a; }",
+      "/t/f.nudo.js": CALLEE_SIDE,
+      [file]: src,
+    });
+    return checkSource(file, src, pTrue, { loadModule, fromFile: file });
+  }
+
+  it("catch 形参只在 catch 块内遮蔽：之后的调用仍用外层 const（真违例不得判绿）", () => {
+    const file = "/t/audit-b003-catch.js";
+    const r = run(
+      file,
+      `const LIMIT = -1;
+export function afterCatch() { try { throw 1; } catch (LIMIT) { } return f(LIMIT); }`,
+    );
+    expect(violations(r)).toHaveLength(1);
+  });
+
+  it("对照：catch 块内的同名形参不读外层值（不发明义务）", () => {
+    const file = "/t/audit-b003-catch-ok.js";
+    const r = run(
+      file,
+      `const LIMIT = -1;
+export function insideCatch() { try { throw 1; } catch (LIMIT) { return f(LIMIT); } }`,
+    );
+    expect(violations(r)).toHaveLength(0);
+  });
+});

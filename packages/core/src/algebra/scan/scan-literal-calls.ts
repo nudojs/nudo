@@ -971,8 +971,13 @@ export function scanLiteralCalls(
     }
     const childChain = scopeChainChild(chain, obj);
     if (isScopeDeclNode(obj.type)) {
-      // 形参 / catch 参数 / for-of·in 的声明左值：在本层（或子层）遮蔽外层
-      const target = obj.type === "CatchClause" ? ownBucket : childBucket(childChain);
+      // 形参 / catch 参数 / for-of·in 的声明左值：一律登记在**该节点自己开的
+      // 作用域**里（`scopeChainChild` 已为四类节点建桶）。
+      // 曾经把 `CatchClause` 的形参写进**外层**桶（注释写「在本层（或子层）」）
+      // ⇒ 桶只增不弹 ⇒ `try{}catch(LIMIT){}` 之后同作用域的 `f(LIMIT)` 读到
+      // 的是 catch 形参的「无信息」而不是外层 `const LIMIT = -1`：本 PR 自己
+      // 要修的「遮蔽读错绑定」在反方向复现（真违例被判绿）。
+      const target = childBucket(childChain);
       for (const n of declaredNamesOf(obj)) target.set(n, absUnknown());
     }
     for (const key of Object.keys(obj)) {

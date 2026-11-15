@@ -426,7 +426,7 @@ BUG-1149 SRC_D2         old=[f] indexed=[f,g] ON codes=[nudo:opaque-result]   �
 | 改动 | 文件 |
 |---|---|
 | Evidence 跨包只读面 | `core/src/internal.ts` 暴露 `declaredOf` / `observedOf` / `degradedOf` / `resolvePublicType` / `publishBlockedBy` + `Evidence` / `PublicName` / `ModuleForm` 类型；`.` 产品面零改动。`core/public-api.snapshot.json` 的 internal 面 values 210 → 219、types 36 → 41（决议 3 快照门禁第四次生效） |
-| 影子判据 | 新增 `core/src/algebra/diagnostics/evidence-shadow.ts`：`comparePublishGates` 把「按码白名单」与 `publishBlockedBy` 对照，产出 `byCode` / `degraded` / `lostByCodeFilter` / `semanticIfDeclared`；`setPublishGateShadow` 默认关闭、`takePublishGateShadow` 消费式读取 |
+| 影子判据 | 新增 `core/src/algebra/diagnostics/evidence-shadow.ts`：`comparePublishGates` 把「按码白名单」与 `publishBlockedBy` 对照，产出 `byCode` / `degraded` / `notBlockedByCode` / `semanticIfDeclared`；`setPublishGateShadow` 默认关闭、`takePublishGateShadow` 消费式读取 |
 | 产品面接线 | `nudojs/src/commands/export/diagnostics.ts`：`checkFaceIssues` 额外返回**过滤前**的原始诊断（同一数组引用、零拷贝），`collectExportDiagnostics` 末尾一行 `recordPublishGateShadow([rawCheck, result.diagnostics], EXPORT_BLOCKING_CODES)`。开关关闭时只做一次布尔判断 ⇒ 发布门热路径零分配 |
 | 真源 / 发布 | `kernel-merge.md`「绑定索引层」补「证据层（切片 4.1）」一条：影子阶段 Evidence 未进分析结论 ⇒ 不纳入 `analysisFileCacheKey` / `fnDepSeg`；changeset 追加说明；`docs/README.md` 与 en/zh notes 状态改「阶段 1 切片 4.1」 |
 | 测试 | 新增 `core/.../evidence-shadow.test.ts`（4 例，纯函数与开关）、`nudojs/src/__tests__/export-publish-gate-shadow.test.ts`（4 例，逐字钉住现行发布门行为） |
@@ -436,14 +436,14 @@ BUG-1149 SRC_D2         old=[f] indexed=[f,g] ON codes=[nudo:opaque-result]   �
 ```text
 现行 entries = [nudo:contract-conflict]        blocking = true
 影子 byCode = [nudo:contract-conflict]
-影子 lostByCodeFilter = [nudo:internal, nudo:unknown-inference]   ← BUG-021 缺口
+影子 notBlockedByCode = [nudo:internal, nudo:unknown-inference]   ← BUG-021 缺口
 影子 semanticIfDeclared 含 nudo:internal / nudo:contract-conflict
 开启影子后 entries / blocking / contractLoad / conflicts 逐字不变
 ```
 
 **关键决策**：
 
-1. **不设白名单**：`lostByCodeFilter` 如实列出被 `toExportDiagnostic` 丢掉的降级诊断，不做豁免、不设 CI 失败门槛（§10 决议 4）。这正是切片 4.2 要修的清单。
+1. **不设白名单**：`notBlockedByCode` 如实列出被 `toExportDiagnostic` 丢掉的降级诊断，不做豁免、不设 CI 失败门槛（§10 决议 4）。这正是切片 4.2 要修的清单。
 2. **复用现有诊断码**：降级证据族取 `contract-load` / `contract-param-mismatch` / `contract-conflict` / `internal` / `unknown-inference`，按来源分派，不新增用户可见码（§10 决议 2）；`EXPORT_BLOCKING_CODES` 本身仍是三族，影子不扩张它。
 3. **键纪律继续推迟**：影子阶段 Evidence 只产生观察数据、不进入分析结论，此刻塞进缓存键无语义作用且增漂移风险；切片 4.2 首次切换判据时同步补 `analysisFileCacheKey` / `fnDepSeg`。
 4. **「申报过契约」的真源未在本切片解决**：`semanticIfDeclared` 是 `publishBlockedBy(e, true)` 的对照档，不代表当前文件真的申报过契约。切片 4.2 必须从 `effectiveContract`（`refine-derivation.md:24` 的唯一读取口）取真值，不得用源码正则近似。
@@ -517,3 +517,32 @@ BUG-1149 SRC_D2         old=[f] indexed=[f,g] ON codes=[nudo:opaque-result]   �
 
 **下一步**：`resolvePublicType` 优先级格（007/014/033）与 `ModuleForm`（008）——
 两者都在 `dts-generator.ts`，一起改才不会在投影器里重复写一遍优先级。
+
+---
+
+## 20. 合并前审查修复（2026-11-15）
+
+审查（未调 subagent）逐条复现了六处「新判据自己漏一种形态」的缺陷，全部修在判据
+唯一入口，并各配一条回归钉。**当前口径（取代 §19 的粗粒表述）**：
+
+```text
+阻断 = 契约面诊断（load / param-mismatch / conflict / syntax，恒阻断）
+     ∨ (申报过契约 ∧ 降级证据归因到申报入口 或无 fn 的模块级降级)
+```
+
+| # | 缺陷（可复现） | 修法 | 面 |
+|---|---|---|---|
+| 1 | `module.exports = C` + `export interface Foo` ⇒ 产物同时含 `export interface` 与 `export =` ⇒ **TS2309，产物不可编译**而 `nudo export` exit 0 | 形态门加「无带 `export` 的镜像类型声明」：这类混用源码在 TS 自己的 `--declaration` 里本来只有具名导出 ⇒ 保持 ESM 投影（与 TS 同答案、可编译） | dts |
+| 2 | 类 getter 的观测类型取**首个** `return` ⇒ `get v(): number` 而运行时可返回 `"s"`（公开类型比运行时窄） | 只在 getter 体内**恰有一个** `return` 时采用观测；多返回 ⇒ `unknown`（与对象 getter 同判定：拿不准不猜） | dts |
+| 3 | `try{}catch(LIMIT){}` 之后的 `f(LIMIT)` 读不到外层 `const LIMIT = -1`：catch 形参被登记进**外层** bucket 且永不弹出 ⇒ 本切片要修的真违例被判绿 | catch 形参登记进 `CatchClause` **自己**的 child bucket（形参 / for-of·in 同一条规则） | 调用点 |
+| 4 | 「对象字面量缺成员被调用必抛」忽略原型链 ⇒ `({}).hasOwnProperty("a")` 被当成必抛（实测把 `nudo:module-throw` 的行号指到它而不是真正的 `n.foo()`）；引擎因宿主近似回落 module-throw 时这类调用会**伪造句法证据** | 复用 `object-proto-names.ts` 的 `OBJECT_PROTO_NAMES`：这些键在字面量上是存在的可调用成员；仅 `__proto__: null` 的字面量才是封闭成员集 | module-throw |
+| 5 | 索引新增的 CJS 出口槽名（`exports.greet = boom` 的 `greet`）在源码里没有声明 ⇒ 合成签名行把**求值占位** `_p0` 送上公共面（JSON `params:["_p0"]`），且与被别名指向的本地函数重复 | synthetic 签名行只给「有声明面」的名字（`extractFn` / 类入口 / `default`）；入口 may-throw 执法照旧 | check 签名面 |
+| 6 | `capability-denied` 进 check 面白名单后，每个 `module.exports = …` 文件都多一条与结论无关的 warning（`exports.` 拼写同一导出面却不报） | 新判据 `dropUnexplainedCapabilityDenied`（core，CLI + LSP 同一实现）：同报告内没有 `nudo:unknown-inference` 时不上屏 | check / LSP |
+
+另有两处文档/器械修正：`kernel-merge.md` 的切片 4.2 表述（「阻断仍按码表」）与 §18
+的 `lostByCodeFilter` 字段名同步为 `notBlockedByCode`；`audit-wiring` 的 migrate
+夹具补 `writeSrcTsconfig`（`cwd` 在临时目录时子进程会落到各包旧 `dist/`）。
+
+**对外行为补充**（并入 changeset）：第 1 条 ⇒「CJS 单值 + 导出类型」不再切
+`export =`；第 2 条 ⇒ 无注解 getter 在多返回时从「首个 return 的类型」变 `unknown`；
+第 6 条 ⇒ 与结论无关的 `capability-denied` 从 `nudo check` 上屏面消失。

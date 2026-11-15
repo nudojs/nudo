@@ -20,6 +20,8 @@
 import { describe, it, expect } from "vitest";
 import { checkSource, pTrue } from "../index.ts";
 import { tryRunTranspiledDetailed } from "../exec/run.ts";
+import { definiteModuleThrowOf } from "../check/check-may-throw.ts";
+import { parseSource } from "../parse-source.ts";
 import { l2Count, sigOf } from "./nudo-constraints.ts";
 
 /** `nudo:module-throw` 诊断全集（模块级：无 `fn`） */
@@ -229,5 +231,36 @@ export function f(){ return 1; }`;
       ignoreThrows: ["RangeError"],
     });
     expect(moduleThrowIssues(other)).toHaveLength(1);
+  });
+});
+
+describe("Bug 1158 判据边界：对象字面量的成员集不是 own 键集", () => {
+  it("原型链上的成员（toString / hasOwnProperty）不得当「确定缺席」", () => {
+    expect(definiteModuleThrowOf(parseSource(`const a = ({}).toString();`))).toBeUndefined();
+    expect(
+      definiteModuleThrowOf(parseSource(`const a = ({}).hasOwnProperty("x");`)),
+    ).toBeUndefined();
+    expect(definiteModuleThrowOf(parseSource(`const a = ({}).toLocaleString();`))).toBeUndefined();
+  });
+
+  it("对照：own 键缺席仍判（`({}).m()`）", () => {
+    expect(definiteModuleThrowOf(parseSource(`const a = ({}).m();`))).not.toBeUndefined();
+  });
+
+  it("`__proto__: null` 的字面量是封闭成员集 ⇒ 缺席仍判", () => {
+    expect(
+      definiteModuleThrowOf(parseSource(`const a = ({ __proto__: null }).toString();`)),
+    ).not.toBeUndefined();
+  });
+
+  it("行号归因：真实抛点优先于 `({}).hasOwnProperty`（此前误指第 1 行）", () => {
+    const r = checkSource(
+      "b1158-proto.js",
+      `const ok = ({}).hasOwnProperty("a");\nconst n = null;\nn.foo();`,
+      pTrue,
+    );
+    const hits = moduleThrowIssues(r);
+    expect(hits).toHaveLength(1);
+    expect(hits[0]!.line).toBe(3);
   });
 });

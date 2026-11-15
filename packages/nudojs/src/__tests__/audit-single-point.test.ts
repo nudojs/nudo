@@ -108,6 +108,16 @@ describe("D8 · 能力档诊断（BUG-026）", () => {
     });
     expect(codes(dir, "cap-fs.cjs")).toContain("nudo:capability-denied");
   }, 60000);
+
+  it("负控制：与结论无关的 `module` 全局 deny 不上屏（无 unknown 即无成因）", () => {
+    // 引擎对 `module` 全局恒 deny（导出面由 loader 正常解析）⇒ 若不加门控，
+    // 每个 `module.exports = …` 文件都会多一条与签名结论无关的 warning，
+    // 而同一导出面写成 `exports.x` 却完全不报（同一事实两种信号）。
+    const dir = fixture({
+      "plain.cjs": "module.exports = { add(a, b) { return a + b; } };\n",
+    });
+    expect(codes(dir, "plain.cjs")).not.toContain("nudo:capability-denied");
+  }, 60000);
 });
 
 describe("D3 · 模块装载期必抛（BUG-025）", () => {

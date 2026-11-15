@@ -9,7 +9,9 @@
  * - BUG-014：注解不再被初始化器抢占（`z: number | null = 1` 不得窄成 number）；
  * - BUG-007：单个内部构造点（`static make(){ return new C() }`）不得把字段
  *   钉死成 `undefined`——那是与构造器签名自相矛盾的 unsound 窄化；
- * - BUG-033：无注解 getter 按返回值观测给类型（与同类方法 / 对象 getter 同口径）。
+ * - BUG-033：无注解 getter 按返回值观测给类型——**只在恰有一个 return 时**；
+ *   多 return（分支可能返回不同类型）保留 `unknown`，取首个会把公开类型
+ *   钉得比运行时窄。
  */
 import { describe, it, expect, afterAll } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -94,5 +96,26 @@ function compute() { return 1; }
     expect(out).toContain("get value(): number;");
     // 不猜：非字面量 / 非 this.<字段> 的表达式仍是 unknown
     expect(out).toContain("get opaque(): unknown;");
+  }, 60000);
+
+  it("BUG-033 边界：多 return 的 getter 保 unknown（不取首个 return 的类型）", () => {
+    const out = dts(
+      fixture(
+        "g2.js",
+        `export class C {
+  n = 1;
+  flag = false;
+  get branch() { if (this.flag) return this.n; return "s"; }
+  get two() { if (this.flag) return 1; return 2; }
+  get single() { return this.n; }
+}
+`,
+      ),
+    );
+    // 多分支：首支 number、末支 string ⇒ 任一单支都不等于真实返回值集合
+    expect(out).toContain("get branch(): unknown;");
+    expect(out).toContain("get two(): unknown;");
+    // 对照：唯一 return 仍取观测（不因这条收严而退化）
+    expect(out).toContain("get single(): number;");
   }, 60000);
 });

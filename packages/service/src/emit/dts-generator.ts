@@ -3340,7 +3340,10 @@ function scanClassSurface(
     else instanceMethods.push(entry);
   }
   // BUG-033：getter 的返回值观测（无注解档）。
-  // 与「对象字面量 getter 取读域」同一口径：**读**出来的类型才是公开类型。
+  // **只在 getter 体内恰有一个 `return` 时**采用——多 return 可能返回不同类型，
+  // 取「第一个」会把公开类型钉得比运行时**更窄**（不可靠的说法：消费者按窄
+  // 类型写代码，运行时拿到另一支）。与对象字面量 getter 的读域同一判定：
+  // 拿不准就 `unknown`（不是「无类型」，是「未观测到」）。
   // 只认两种形态——字面量族（初始化器映射）与 `this.<字段>`（字段类型已知）；
   // 其余表达式一律保留 `unknown`（不猜），避免把 getter 变成第二个推断引擎。
   for (const g of pendingGetters) {
@@ -3351,7 +3354,11 @@ function scanClassSurface(
     }
   }
   function getterObservedType(fnNode: SurfaceNode, isStatic: boolean): string | undefined {
-    const ret = firstReturnArgument(fnNode.body as SurfaceNode | undefined);
+    const returns: SurfaceNode[] = [];
+    collectReturns(fnNode.body as SurfaceNode | undefined, returns);
+    // 0 条 = 无 return（或只从嵌套函数返回）；≥2 条 = 多分支 ⇒ 都不猜
+    if (returns.length !== 1) return undefined;
+    const ret = returns[0]!.argument as SurfaceNode | undefined;
     if (ret === undefined) return undefined;
     if (ret.type === "MemberExpression") {
       const obj = ret.object as SurfaceNode | undefined;
@@ -3363,9 +3370,9 @@ function scanClassSurface(
     const t = classFieldTypeOfInit(ret);
     return t === "unknown" ? undefined : t;
   }
-  /** 首个 `return <expr>` 的 expr（不跨函数边界） */
-  function firstReturnArgument(node: SurfaceNode | undefined): SurfaceNode | undefined {
-    if (!node || typeof node !== "object") return undefined;
+  /** getter 体内的 `return`（不跨函数边界；收到第二条即可停） */
+  function collectReturns(node: SurfaceNode | undefined, out: SurfaceNode[]): void {
+    if (!node || typeof node !== "object" || out.length > 1) return;
     if (
       node.type === "FunctionExpression" ||
       node.type === "ArrowFunctionExpression" ||
@@ -3373,26 +3380,22 @@ function scanClassSurface(
       node.type === "ClassMethod" ||
       node.type === "MethodDefinition"
     ) {
-      return undefined;
+      return;
     }
     if (node.type === "ReturnStatement") {
-      return node.argument as SurfaceNode | undefined;
+      out.push(node);
+      return;
     }
     for (const value of Object.values(node)) {
       if (Array.isArray(value)) {
         for (const v of value) {
           if (!v || typeof v !== "object") continue;
-          const hit = firstReturnArgument(v as SurfaceNode);
-          if (hit !== undefined || (v as SurfaceNode).type === "ReturnStatement") return hit;
+          collectReturns(v as SurfaceNode, out);
         }
         continue;
       }
-      if (value && typeof value === "object") {
-        const hit = firstReturnArgument(value as SurfaceNode);
-        if (hit !== undefined) return hit;
-      }
+      if (value && typeof value === "object") collectReturns(value as SurfaceNode, out);
     }
-    return undefined;
   }
 
   return {
@@ -4017,12 +4020,8 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
     }
   }
 
-  // BUG-008：只有「这个值就是模块本身」时才是 `export =`——`module.exports`
-  // 之外还有别的导出（`exports.x = …`）时不设，`export =` 与其他导出共存是
-  // TS2309，保持既有 ESM 投影。
-  if (exportEqualsCandidate !== undefined && surface.exportBindings.size === 1) {
-    surface.exportEquals = { local: exportEqualsCandidate };
-  }
+  // BUG-008：`export =` 的形态判定放在**镜像类型声明扫描之后**（见下）——
+  // `export interface` / `export type` 同样是「其它导出」（TS2309）。
 
   // ── 模块级值声明（BUG-190）──
   // `export const/let/var` 与 TS `enum` 在导出名表里已登记，但旧实现只发射
@@ -4124,6 +4123,27 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
         noteTypeDecl(stmt, d);
       }
     }
+  }
+
+  // BUG-008：只有「这个值就是模块本身」时才是 `export =`。
+  //
+  // 排除项（都是 TS2309「export assignment 不得与其他导出元素共存」）：
+  // - `module.exports` 之外还有具名值导出（`exports.x = …` / `export const`）；
+  // - 镜像进产物的 **`export interface` / `export type`** —— BUG-005 让本地
+  //   类型原文镜像进同一份产物后，`export =` 与它共存会让产物直接编译失败
+  //   （`error TS2309`），而 `nudo export` 仍 exit 0。
+  //   这类混用源码在 TS 自己的 `--declaration` 里本来就只有具名导出
+  //   （`module.exports = C` 只是对全局 `module` 的赋值，不构成声明面事实）
+  //   ⇒ 保持既有 ESM 投影，不猜 `export =`（与 TS 同答案，且产物可编译）。
+  const hasExportedTypeDecl = (surface.typeDeclarations ?? []).some((t) =>
+    /^\s*export\b/.test(t),
+  );
+  if (
+    exportEqualsCandidate !== undefined &&
+    surface.exportBindings.size === 1 &&
+    !hasExportedTypeDecl
+  ) {
+    surface.exportEquals = { local: exportEqualsCandidate };
   }
 
   // ── Bug 57：函数 / 方法级类型形参子句（普查名 → `<T>` 原文）──

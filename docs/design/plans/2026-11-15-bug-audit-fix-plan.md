@@ -153,3 +153,23 @@
 | 类体初始化器 + 构造器注解并存 | 两处写入都不丢域 |
 
 `real-package FP=0` 门禁不受影响：那些包是纯 JS、没有构造器注解 ⇒ 仍补 `any`。
+
+---
+
+## 13. 合并前审查修复（2026-11-15）
+
+审查（未调 subagent）复现了六处「新判据自己漏一种形态」的缺陷，详情与逐条
+修法/回归钉见 `adr-0001-semantic-index-and-evidence.md` §20。要点：
+
+- **dts**：`export =` 与镜像 `export interface` 共存 ⇒ TS2309（产物不可编译）⇒
+  这类混用保持具名投影；类 getter 的观测类型只在**唯一** `return` 时采用；
+- **调用点**：`catch` 形参登记进外层 bucket ⇒ 泄漏到 catch 之后（真违例判绿）⇒
+  改登记进自己的 child bucket；
+- **module-throw**：对象字面量的原型链成员（`toString` / `hasOwnProperty`）不是
+  「成员缺席」⇒ 复用 `OBJECT_PROTO_NAMES`，仅 `__proto__: null` 才是封闭集；
+- **check 签名面**：CJS 出口槽名（`exports.greet = boom` 的 `greet`）不再伪造
+  `_pN` 签名行（执法照旧）；
+- **check / LSP**：`capability-denied` 只在同报告有 `nudo:unknown-inference` 时上屏
+  （`dropUnexplainedCapabilityDenied`，CLI 与 agent 面同一实现）；
+- **export 门**：一般降级族按 `fn` 归因到「申报过契约的入口」才算阻断（契约面
+  诊断恒阻断；无 `fn` 的模块级降级保守阻断）。

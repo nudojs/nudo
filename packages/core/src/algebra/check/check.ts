@@ -1253,6 +1253,8 @@ function checkSourceInner(
   // fail-closed：记录通道唯一源 = B（EvalCallRecord/$assignRecord）
   const bCalls: EvalCallRecord[] = [];
   const prevCall = setEvalCallCollector((r) => bCalls.push(r));
+  // 签名行的「有声明面」判据（见 synthetic 分支）：类入口名一次算好。
+  const localClassEntries = new Set(listClassEntryNames(source, file));
   for (const name of names) {
     // #152：@nudo:assume 校验 + 入口前提种子（无 assume → undefined，零行为变化）
     const assumePhi = assumePremisesPhiOf(name, source, file, issues);
@@ -1395,19 +1397,32 @@ function checkSourceInner(
           pushEntryMayThrowIssue(name, gateDisplay, remaining,
             `${name}(…)    throws ${gateDisplay}`);
         }
-        signatures.push({
-          name,
-          params: synthetic.params,
-          paramTypes: synthetic.params.map(() => "any"),
-          abs: synthetic.symbolic,
-          display: throwsDisplayFallback
-            ? `any throws ${throwsDisplayFallback}`
-            : "any",
-          detail: `${name}: any`,
-          conf: "path",
-          ...(throwsDisplayFallback ? { throws: throwsDisplayFallback } : {}),
-          entry: true,
-        });
+        // 名字在本文件里**有声明面**才给签名行：类入口（`C` / `C.m`）、默认
+        // 导出、以及 `extractFn` 能定位的函数（声明式 / const 箭头 / 类方法）。
+        // 索引新增的 CJS 出口槽名（`exports.greet = boom` 的 `greet`）在源码里
+        // 没有声明 ⇒ 这里的 `_p0` 是**求值占位**（不是公共名，见 BUG-030 的
+        // 同一论点），且被别名指向的本地函数本来已有一行 ⇒ 同一函数两条记录。
+        // 入口执法（上面的 may-throw 归因）不受影响：只省掉伪造的签名行。
+        const hasDeclaration =
+          name === "default" ||
+          name.includes(".") ||
+          localClassEntries.has(name) ||
+          extractFn(source, name, file) !== undefined;
+        if (hasDeclaration) {
+          signatures.push({
+            name,
+            params: synthetic.params,
+            paramTypes: synthetic.params.map(() => "any"),
+            abs: synthetic.symbolic,
+            display: throwsDisplayFallback
+              ? `any throws ${throwsDisplayFallback}`
+              : "any",
+            detail: `${name}: any`,
+            conf: "path",
+            ...(throwsDisplayFallback ? { throws: throwsDisplayFallback } : {}),
+            entry: true,
+          });
+        }
         continue;
       }
       issues.push({

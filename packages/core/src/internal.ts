@@ -51,6 +51,9 @@ export {
   // 共用；Bug 632 / 1038 手抄漂移的闭合点）
   checkIssuesFromDiagnostics,
   type AnalyzerDiagnosticLike,
+  // BUG-026 精确化：capability-denied 只在它确实造成推断失败时上屏
+  // （CLI check 与 lsp agent-tools 共用同一判据，不各写一份）
+  dropUnexplainedCapabilityDenied,
   // 截断 suggestion 具体修值单源（core check 面 + service analyzer 截断臂
   // 共用——analyz器面不得手写第二份公式）
   suggestedForkCeiling, suggestedDepthCeiling, suggestedCallsCeiling,

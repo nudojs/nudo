@@ -26,6 +26,21 @@ describe("audit 34 · 导出槽映射形态", () => {
     expect(errors("/t/audit-b002c.cjs", source)).toContain("nudo:entry-may-throw");
   });
 
+  it("BUG-002 面：出口槽名不伪造签名行（`_p0` 是求值占位，不是公共名）", () => {
+    // 索引把槽名 `greet` 当成入口（执法要它），但源码里没有这个名字的声明 ⇒
+    // synthetic 签名行只能编出 `_pN` 形参，且被别名指向的 `boom` 已有一行。
+    const source = `function boom() { throw new Error("boom"); }\nexports.greet = boom;`;
+    const report = checkSource("/t/audit-b002-sig.cjs", source, pTrue, {});
+    const names = report.signatures.map((s) => s.name);
+    expect(names).toContain("boom");
+    expect(names).not.toContain("greet");
+    expect(report.signatures.some((s) => s.params.some((p) => p.startsWith("_p")))).toBe(false);
+    // 执法面不受影响：槽名 `greet` 仍是归因落点
+    expect(
+      report.issues.some((i) => i.code === "nudo:entry-may-throw" && i.fn === "greet"),
+    ).toBe(true);
+  });
+
   it("BUG-017 匿名 export default class 的实例方法进 L2 执法", () => {
     const source = `export default class { m() { return null.x; } }`;
     expect(errors("/t/audit-b017.js", source)).toContain("nudo:entry-may-throw");
