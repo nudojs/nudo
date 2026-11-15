@@ -12,7 +12,7 @@ import { makeValidateDeps, createMockConnection, type AnyHandler, withLspServer,
 import { createNudoServer } from "../server.ts";
 import { DIAG } from "@nudojs/core/internal";
 import { actionsForIssue } from "@nudojs/core";
-import { applyEdits, codeActionParams, mountCodeActions, sidecarEdits, type CodeActionEntry } from "./lsp-bug-r90a-harness.ts";
+import { applyEdits, codeActionParams, mountCodeActions, sidecarEdits, type CodeActionEntry } from "./lsp-harness-r90a.ts";
 
 // ---------------------------------------------------------------------------
 // Abs check as LSP diagnostics

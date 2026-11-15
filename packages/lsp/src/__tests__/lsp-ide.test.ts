@@ -7,7 +7,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { withLspServer } from "./helpers.ts";
-import { decodeSemanticTokens } from "./lsp-bug-d4-harness.ts";
+import { decodeSemanticTokens } from "./lsp-harness-d4.ts";
 import { SEMANTIC_TOKEN_TYPES, SEMANTIC_TOKEN_MODIFIERS } from "../semantic-tokens.ts";
 
 type Resp = any;

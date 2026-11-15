@@ -7,8 +7,8 @@ import { collectEvalDiagnostics } from "@nudojs/service";
 import { defineEnv, defineEnv as defineEsEnv } from "../es.ts";
 import { defineEnv as defineWebEnv } from "../web.ts";
 import { execFileSync } from "node:child_process";
-import { checkWeb, webEnvGlobals, ctorFlagOf, instanceSlotOf, slotOf, displayOf } from "./env-bug-s1-helpers.ts";
-import { checkNode, instanceFaceOf, slotOfAbs } from "./env-bug-1044-1049-helpers.ts";
+import { checkWeb, webEnvGlobals, ctorFlagOf, instanceSlotOf, slotOf, displayOf } from "./env-helpers-s1.ts";
+import { checkNode, instanceFaceOf, slotOfAbs } from "./env-member-tables-helpers.ts";
 
 // ---------------------------------------------------------------------------
 // Bug 865 · ES 规范全局的「已被覆盖」判定

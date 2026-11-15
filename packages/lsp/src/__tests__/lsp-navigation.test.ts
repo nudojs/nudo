@@ -15,8 +15,8 @@ import { createMockConnection, withLspServer, withTempDir } from "./helpers.ts";
 import { pathToFileURL } from "node:url";
 import { defaultLoadModule } from "@nudojs/service";
 import { checkToLspDiagnostics } from "../validation.ts";
-import { applyEdits, type CodeActionEdit } from "./lsp-bug-r90a-harness.ts";
-import { startLspWithFiles, locationsOf, editsOf, type LspHarness } from "./lsp-bug-d3-harness.ts";
+import { applyEdits, type CodeActionEdit } from "./lsp-harness-r90a.ts";
+import { startLspWithFiles, locationsOf, editsOf, type LspHarness } from "./lsp-harness-d3.ts";
 
 // ---------------------------------------------------------------------------
 // Bug 712 — 方法改名以「归属」为界

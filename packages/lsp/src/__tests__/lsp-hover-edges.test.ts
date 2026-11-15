@@ -9,10 +9,10 @@ import { buildLspInjection } from "../agent-tools.ts";
 import { getHoverAtPosition } from "../lsp-surface/hover.ts";
 import { withLspServer, withTempDir } from "./helpers.ts";
 import { makeParamOptionalAt } from "../refactor-b2.ts";
-import { applyEdits, runNudoCheck, nodeCheck, runModule } from "./lsp-bug-r90b-harness.ts";
+import { applyEdits, runNudoCheck, nodeCheck, runModule } from "./lsp-harness-r90b.ts";
 import { parse } from "@nudojs/parser";
 import { buildSymbolTable, findDefinition, findReferences } from "../symbols.ts";
-import { openLspDocument, requestCompletion } from "./lsp-bug-d4-harness.ts";
+import { openLspDocument, requestCompletion } from "./lsp-harness-d4.ts";
 
 // ---------------------------------------------------------------------------
 // Bug 024 — 协议面 hover 必须带注入包（@nudo:mock 覆盖表）

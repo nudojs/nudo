@@ -49,7 +49,7 @@
 | **现象** | core 的 `relationFn` **不带 throws 字段** ⇒ 「宿主会抛、但声明侧没写 apply」的 env 声明仍记「不抛」⇒ **假绿** |
 | **根因** | Abs 的 relation 形状没有承载 throws 的槽位 |
 | **阻塞** | 需要 core 侧给 relation 面加 throws ⇒ **触及 core 公共 API 冻结**（`packages/core/src/index.ts` / `algebra/index.ts` / `internal.ts`） |
-| **状态** | **已修（2026-11-04）**。承载位 = `impl.relation.throws`（`relationFn` opts 透传；与 `AbsApplyResult.throws` 同一表示）；`$call` 关系臂消费时经 `routeApplyThrows` 单点路由（may-throw → `pushThrowExit`）。env 声明侧 `envFn` 无 apply 分支透传 `opts.throws`（`packages/env/src/abs-helpers.ts`）。回归：`abs-apply-throws-channel.test.ts`（A3 段）+ `env--s0-mechanism.test.ts`（A3 段）。公共 API 快照只钉导出名，未新增导出 ⇒ 无快照变更 |
+| **状态** | **已修（2026-11-04）**。承载位 = `impl.relation.throws`（`relationFn` opts 透传；与 `AbsApplyResult.throws` 同一表示）；`$call` 关系臂消费时经 `routeApplyThrows` 单点路由（may-throw → `pushThrowExit`）。env 声明侧 `envFn` 无 apply 分支透传 `opts.throws`（`packages/env/src/abs-helpers.ts`）。回归：`abs-apply-throws-channel.test.ts`（A3 段）+ `env-s0-mechanism.test.ts`（A3 段）。公共 API 快照只钉导出名，未新增导出 ⇒ 无快照变更 |
 
 ---
 

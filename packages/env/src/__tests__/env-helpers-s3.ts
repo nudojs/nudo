@@ -4,7 +4,7 @@
  * 只用 `@nudojs/core` 的 `$call` / `getFnImpl` + 本包自己的 `defineEnv()`
  * （不引 `@nudojs/service`——那是 service→env 的反向依赖）。
  *
- * 断言口径与 S0 机制层测试（`env--s0-mechanism.test.ts`）一致：
+ * 断言口径与 S0 机制层测试（`env-s0-mechanism.test.ts`）一致：
  * - **may-throw** ⇒ 调用点记一条 throw exit（`takeThrowExits()`），不冒泡；
  * - **必抛**（always-throw）⇒ `NudoThrow` 冒泡（`isNudoThrow`）。
  */

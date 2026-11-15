@@ -8,16 +8,16 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { analyzeFileAsync, clearPathEnvCaches, defaultLoadModule } from "@nudojs/service";
 import { checkToLspDiagnostics, clearValidationState, validateText, type LspDiagnostic, type ValidateTextDeps } from "../validation.ts";
-import { applyEdits, codeActionParams, mountCodeActions, sidecarEdits, type CodeActionEntry, missingFieldDiag, docEdits } from "./lsp-bug-r90a-harness.ts";
+import { applyEdits, codeActionParams, mountCodeActions, sidecarEdits, type CodeActionEntry, missingFieldDiag, docEdits } from "./lsp-harness-r90a.ts";
 import { buildTestReport } from "../../../nudojs/src/run-test.ts";
 import { computeObservationLenses, contractEmitTool } from "../agent-tools.ts";
 import { parse } from "@nudojs/parser";
 import { collectBindingReferences } from "../symbols.ts";
-import { startLspWithFiles, locationsOf, type LspHarness, editsOf } from "./lsp-bug-d3-harness.ts";
+import { startLspWithFiles, locationsOf, type LspHarness, editsOf } from "./lsp-harness-d3.ts";
 import { findFnContractInsertPos } from "../sidecar-insert.ts";
 import { pathToFileURL } from "node:url";
 import { createNudoServer } from "../server.ts";
-import { decodeSemanticTokens } from "./lsp-bug-d4-harness.ts";
+import { decodeSemanticTokens } from "./lsp-harness-d4.ts";
 
 // ---------------------------------------------------------------------------
 // Bug 1025 — 别名 import 的 imported 侧：definition 落到正确模块、references 不为空

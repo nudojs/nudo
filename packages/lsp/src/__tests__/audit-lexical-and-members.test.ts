@@ -5,7 +5,7 @@
  * - BUG-034：成员面并入类成员表（实例原型方法 / 静态方法）。
  */
 import { describe, expect, it } from "vitest";
-import { openLspDocument, requestCompletion } from "./lsp-bug-d4-harness.ts";
+import { openLspDocument, requestCompletion } from "./lsp-harness-d4.ts";
 
 const labels = (items: { label: string }[]): string[] => items.map((i) => i.label);
 

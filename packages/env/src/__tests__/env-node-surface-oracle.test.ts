@@ -29,8 +29,8 @@
  * 与 formatShape 快照）。
  *
  * 证据口径：原生 oracle = 同一进程内的**真 node**（v26.10.0）；引擎探针 =
- * `checkSource` + node env 全局表（复用族 35 的 `env-bug-1044-1049-helpers.ts`
- * 与族 29 S4 的 `env-bug-s4-helpers.ts`）。
+ * `checkSource` + node env 全局表（复用族 35 的 `env-member-tables-helpers.ts`
+ * 与族 29 S4 的 `env-helpers-s4.ts`）。
  */
 import { describe, it, expect } from "vitest";
 import { execFileSync } from "node:child_process";
@@ -57,8 +57,8 @@ import {
   nodeSlotOf,
   memberNames,
   returnTypeOf,
-} from "./env-bug-1044-1049-helpers.ts";
-import { brandName, callSite } from "./env-bug-s4-helpers.ts";
+} from "./env-member-tables-helpers.ts";
+import { brandName, callSite } from "./env-helpers-s4.ts";
 
 const env = defineEnv();
 const cryptoMod = env.modules!.crypto!;

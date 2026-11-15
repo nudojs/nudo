@@ -9,8 +9,8 @@
  *
  * core 侧钉的是三张表（localNamedExports / listTopFunctions /
  * listClassEntryNames）、导出槽解析与 check 闸门（签名 + L2 may-throw）。
- * dts 产物面见 service/emit/__tests__/emit--module-boundary.test.ts，
- * CLI 四面见 nudojs/src/__tests__/cli--module-boundary.test.ts。
+ * dts 产物面见 service/emit/__tests__/emit-module-boundary.test.ts，
+ * CLI 四面见 nudojs/src/__tests__/cli-module-boundary.test.ts。
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { checkSource, resetCheckSourceMemo } from "../check/check.ts";

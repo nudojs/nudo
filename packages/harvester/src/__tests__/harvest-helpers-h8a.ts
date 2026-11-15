@@ -19,7 +19,7 @@ export {
   runNudoCheck,
   writeSidecar,
   repoRoot,
-} from "./harvest-bug-h8b-helpers.ts";
+} from "./harvest-helpers-h8b.ts";
 
 /** fn 约束的展开形态（core 的 `NudoFnConstraint`） */
 export type FnConstraint = NudoConstraint & {

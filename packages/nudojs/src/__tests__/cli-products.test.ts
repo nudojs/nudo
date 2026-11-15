@@ -405,7 +405,7 @@ describe("[cli-] BUG-045 · CJS `module.exports = { … }` 导出面与 dot 形�
  * 而对照写法 `module.exports.h = fn` 三方言都正常。
  *
  * 这里钉的是**产物面**（用户实际拿到的校验器），根因与求值面回归见
- * `packages/service/src/__tests__/service--cjs-object-export-member.test.ts`。
+ * `packages/service/src/__tests__/service-cjs-object-export-member.test.ts`。
  */
 
 

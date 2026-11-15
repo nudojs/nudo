@@ -46,10 +46,12 @@ Because there is no style linter, **reviewers** must watch what the type-checker
 
 ### 回归测试：按模块/不变量归属，不按缺陷编号拆文件
 
-`packages/*/src/__tests__/` 现有 2350 个测试模块（1050 个入口 + 1300 个
-`*.part.ts`）。**2026-11-15 起不再有缺陷编号命名的测试文件**：历史 1360 个
-`*-bug-NNN-*` 已改为 `<domain>--<特性>.part.ts`，命名门禁
+`packages/*/src/__tests__/` 现有 1037 个测试相关 `.ts`（972 个入口 + 65 个
+harness/helper），`*.part.ts` = 0。**2026-11-15 起不再有缺陷编号命名**：历史
+1360 个 `*-bug-NNN-*` 已改为 `<domain>-<特性>.test.ts`（旧 `--` 分隔亦已清除），命名门禁
 （`scripts/check-test-names.mjs`，挂在 `lint:hygiene`）拒绝新增此类文件名。
+门禁覆盖 `__tests__/**` 下**全部 `.ts`**（含 harness/helper），并拒绝 `--`
+分隔（历史迁移误产物）；缺陷编号只能出现在 `it` 标题、commit、changeset。
 缺陷编号是批次内的局部编号，会跨批次复用（如 `core-254` 的两组文件互不相关），
 不能当稳定身份；文件应是模块规格的载体，不应随缺陷生命周期增删。新增回归时：
 

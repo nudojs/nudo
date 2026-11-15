@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { dtsToContractDraft, dtsPathToContractDraft } from "../dts-contract-draft.ts";
-import { makeWorkDir, removeWorkDir, runNudoCheck, writeSidecar } from "./harvest-bug-h8b-helpers.ts";
+import { makeWorkDir, removeWorkDir, runNudoCheck, writeSidecar } from "./harvest-helpers-h8b.ts";
 import { bareSpecToAbsModules, packageHarvestToAbsModules } from "../harvest-to-abs.ts";
 import { formatShape, type Abs, abs, getFnImpl, type Slot, abs as makeAbs, strLit, type LiteralValue } from "@nudojs/core";
 import { harvestDts, promotedNamesOf, emitEnvModule } from "../harvest-dts.ts";

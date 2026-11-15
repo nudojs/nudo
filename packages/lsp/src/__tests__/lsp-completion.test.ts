@@ -2,7 +2,7 @@
  * 模块套件：completion 面（操作符后 / 函数 detail/kind / 词法门 / 指令 / 尾点）。
  */
 import { describe, expect, it } from "vitest";
-import { openLspDocument, requestCompletion } from "./lsp-bug-d4-harness.ts";
+import { openLspDocument, requestCompletion } from "./lsp-harness-d4.ts";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { withTempDir } from "./helpers.ts";
