@@ -1057,6 +1057,32 @@ function isDefinitelyNonCallable(node: unknown, ctx: DefiniteCtx): boolean {
     return true;
   }
   if (n.type === "TemplateLiteral") return true;
+  // BUG-025：对象字面量的**不存在成员**被调用（`({}).m()`）——成员集已知且
+  // 该键缺席 ⇒ 值一定是 undefined ⇒ TypeError。有 spread / 计算键时不判。
+  if (n.type === "MemberExpression" && n.computed !== true) {
+    const obj = n.object as AnyAst | undefined;
+    const prop = n.property as AnyAst | undefined;
+    const key =
+      prop?.type === "Identifier" && typeof prop.name === "string"
+        ? prop.name
+        : prop?.type === "StringLiteral" && typeof prop.value === "string"
+          ? (prop.value as string)
+          : undefined;
+    if (obj?.type === "ObjectExpression" && key !== undefined) {
+      const props = (obj.properties as AnyAst[] | undefined) ?? [];
+      const hasSpread = props.some((p) => p.type === "SpreadElement");
+      if (!hasSpread) {
+        const hasKey = props.some((p) => {
+          if (p.computed === true) return true; // 计算键 ⇒ 不确定，不当证据
+          const k = p.key as AnyAst | undefined;
+          const name =
+            k?.type === "Identifier" ? (k.name as string) : (k?.value as string | undefined);
+          return name === key;
+        });
+        if (!hasKey) return true;
+      }
+    }
+  }
   return isNullishValue(n, ctx);
 }
 
@@ -1190,6 +1216,89 @@ function scopedCtx(ctx: DefiniteCtx): DefiniteCtx {
  * 形态（变量初始化 / 表达式语句里的裸读，见 Identifier 臂）与**已知值面**
  * 形态（nullish 成员访问 / 确定不可调用的被调值）。
  */
+
+/** 算术 / 位运算（BigInt 混型在这些算符上必抛 TypeError） */
+const BIGINT_ARITH_OPS = new Set([
+  "+",
+  "-",
+  "*",
+  "/",
+  "%",
+  "**",
+  "&",
+  "|",
+  "^",
+  "<<",
+  ">>",
+  ">>>",
+]);
+
+/** 数值字面量种类（含一元正负号）：BigInt vs Number */
+function numericKindOf(node: AnyAst | undefined): "bigint" | "number" | undefined {
+  if (!node) return undefined;
+  if (node.type === "BigIntLiteral") return "bigint";
+  if (node.type === "NumericLiteral") return "number";
+  if (node.type === "UnaryExpression" && (node.operator === "-" || node.operator === "+")) {
+    return numericKindOf(node.argument as AnyAst | undefined);
+  }
+  return undefined;
+}
+
+/** 字面量是否数值 0（BigInt `0n` 与 Number `0` 都算） */
+function isZeroNumeric(node: AnyAst | undefined): boolean {
+  if (!node) return false;
+  if (node.type === "UnaryExpression" && (node.operator === "-" || node.operator === "+")) {
+    return isZeroNumeric(node.argument as AnyAst | undefined);
+  }
+  if (node.type !== "NumericLiteral" && node.type !== "BigIntLiteral") return false;
+  const raw = String(node.value ?? "").replace(/_/g, "").replace(/n$/, "");
+  return /^0+$/.test(raw);
+}
+
+/**
+ * 二元表达式的**确定**原生抛（BUG-025）。
+ *
+ * 只认值面已知的字面量组合——不做类型推导：
+ * - BigInt 与 Number 混用（`1n + 1`）⇒ TypeError；
+ * - BigInt 除 / 模零（`1n / 0n`）⇒ RangeError；
+ * - `in` 的右操作数是原始值（`"abc" in 5`）⇒ TypeError。
+ */
+function binaryDefiniteThrow(e: AnyAst, ctx: DefiniteCtx): ThrowSite | undefined {
+  const op = e.operator as string | undefined;
+  if (!op) return undefined;
+  const left = e.left as AnyAst | undefined;
+  const right = e.right as AnyAst | undefined;
+  if (op === "in") {
+    // 右操作数必须是对象；字面量原始值必然抛
+    const rightKind = right?.type;
+    if (
+      rightKind === "NumericLiteral" ||
+      rightKind === "StringLiteral" ||
+      rightKind === "BooleanLiteral" ||
+      rightKind === "NullLiteral" ||
+      rightKind === "BigIntLiteral"
+    ) {
+      return siteOf(e, "TypeError");
+    }
+    return undefined;
+  }
+  if (!BIGINT_ARITH_OPS.has(op)) return undefined;
+  const lk = numericKindOf(left);
+  const rk = numericKindOf(right);
+  if (lk !== undefined && rk !== undefined && lk !== rk) return siteOf(e, "TypeError");
+  // Unit 之外的 BigInt 混型（`1n * "s"`）也必抛，但字符串字的语义留给求值面
+  if (
+    (op === "/" || op === "%") &&
+    lk === "bigint" &&
+    rk === "bigint" &&
+    isZeroNumeric(right)
+  ) {
+    return siteOf(e, "RangeError");
+  }
+  void ctx;
+  return undefined;
+}
+
 function exprDefiniteThrow(
   expr: unknown,
   ctx: DefiniteCtx,
@@ -1302,7 +1411,10 @@ function exprDefiniteThrow(
     case "BinaryExpression": {
       const hit = exprDefiniteThrow(e.left, ctx);
       if (hit) return hit;
-      return exprDefiniteThrow(e.right, ctx);
+      const rightHit = exprDefiniteThrow(e.right, ctx);
+      if (rightHit) return rightHit;
+      // BUG-025：算符级的**确定**原生抛（值面已知，不依赖上下文）
+      return binaryDefiniteThrow(e, ctx);
     }
     case "UnaryExpression": {
       // `typeof <未声明名>` 不抛（安全探测）；其余操作数照常求值。

@@ -109,3 +109,32 @@ describe("D8 · 能力档诊断（BUG-026）", () => {
     expect(codes(dir, "cap-fs.cjs")).toContain("nudo:capability-denied");
   }, 60000);
 });
+
+describe("D3 · 模块装载期必抛（BUG-025）", () => {
+  it("BigInt 混型 `1n + 1` ⇒ module-throw", () => {
+    const dir = fixture({
+      "bigint.js": 'export const x = 1n + 1;\n',
+    });
+    expect(codes(dir, "bigint.js")).toContain("nudo:module-throw");
+  }, 60000);
+
+  it("`in` 右操作数是原始值 ⇒ module-throw", () => {
+    const dir = fixture({ "in.js": 'export const x = "abc" in 5;\n' });
+    expect(codes(dir, "in.js")).toContain("nudo:module-throw");
+  }, 60000);
+
+  it("BigInt 除零 ⇒ module-throw", () => {
+    const dir = fixture({ "div.js": "export const x = 1n / 0n;\n" });
+    expect(codes(dir, "div.js")).toContain("nudo:module-throw");
+  }, 60000);
+
+  it("对象字面量缺成员被调用 `({}).m()` ⇒ module-throw", () => {
+    const dir = fixture({ "nc.js": "export const x = ({}).m();\n" });
+    expect(codes(dir, "nc.js")).toContain("nudo:module-throw");
+  }, 60000);
+
+  it("负控制：`1n + 1n` 不抛", () => {
+    const dir = fixture({ "ok.js": "export const x = 1n + 1n;\n" });
+    expect(codes(dir, "ok.js")).not.toContain("nudo:module-throw");
+  }, 60000);
+});
