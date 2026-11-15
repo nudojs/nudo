@@ -1622,3 +1622,77 @@ describe("侧车装载诊断随 exec 结果缓存（缓存命中时重发）", (
   });
 });
 });
+
+// ---------------------------------------------------------------------------
+// 模块矩阵：sidecar 装载面（场景 × 诊断码 × 归属）
+// ---------------------------------------------------------------------------
+describe("模块矩阵：sidecar 装载面", () => {
+beforeEach(() => {
+  resetEngineCaches();
+  takeRefineDiags();
+  takeContractDiags();
+});
+
+type Case = {
+  name: string;
+  files: Record<string, string>;
+  src: string;
+  entry?: string;
+  expectCodes?: string[];
+  absentCodes?: string[];
+  message?: string;
+};
+
+const CASES: Case[] = [
+  { name: "无侧车 ⇒ 静默（零 contract-load）", files: {}, src: "export function f(x) { return x; }", absentCodes: ["nudo:contract-load"] },
+  {
+    name: "侧车语法错 ⇒ contract-load 且点名侧车",
+    files: { "/t/bad.nudo.js": `import { fn, null_ } from "@nudojs/core";\nexport const f = fn({ x: null_() });` },
+    src: "export function f(x) { return x; }",
+    entry: "/t/bad.js",
+    expectCodes: ["nudo:contract-load"],
+    message: "bad.nudo.js",
+  },
+  {
+    name: "侧车孤儿 fn 导出 ⇒ contract-load 点名侧车导出名",
+    files: { "/t/typo.nudo.js": `import { fn, number } from "@nudojs/core";\nexport const ff = fn({ x: number() }, number());` },
+    src: "export function f(x) { return x * 2; }",
+    entry: "/t/typo.js",
+    expectCodes: ["nudo:contract-load"],
+    message: "'ff'",
+  },
+  {
+    name: "侧车非 fn 模板导出 ⇒ 不算孤儿（零 contract-load）",
+    files: { "/t/tpl.nudo.js": `import { shape, number } from "@nudojs/core";\nexport const userShape = shape({ id: number() });` },
+    src: "export function f(x) { return x * 2; }",
+    entry: "/t/tpl.js",
+    absentCodes: ["nudo:contract-load"],
+  },
+  {
+    name: "构建器别名撞名 ⇒ 侧车可加载（零 contract-load）",
+    files: { "/t/alias.nudo.js": `import { fn, number as string } from "@nudojs/core";\nexport const f = fn({ x: string().gt(0) }, string());` },
+    src: "export function f(x) { return x; }",
+    entry: "/t/alias.js",
+    absentCodes: ["nudo:contract-load"],
+  },
+  {
+    name: "跨文件：侧车按被调方目录解析 ⇒ 零 contract-load",
+    files: {
+      "/t/dep.js": "export function dep(x) { return x + 1; }",
+      "/t/dep.nudo.js": `import { fn, number } from "@nudojs/core";\nexport const dep = fn({ x: number().gt(0) }, number());`,
+    },
+    src: `import { dep } from "./dep.js";\nexport function caller(x) { return dep(x); }`,
+    entry: "/t/caller.js",
+    absentCodes: ["nudo:contract-load"],
+  },
+];
+
+it.each(CASES)("$name", ({ files, src, entry = "/t/f.js", expectCodes = [], absentCodes = [], message }) => {
+  const { loadModule } = makeFiles(files);
+  const r = checkSource(entry, src, pTrue, { loadModule, fromFile: entry });
+  const codes = r.issues.map((i) => i.code);
+  for (const code of expectCodes) expect(codes).toContain(code);
+  for (const code of absentCodes) expect(codes).not.toContain(code);
+  if (message) expect(r.issues.map((i) => i.message).join("\n")).toContain(message);
+});
+});
