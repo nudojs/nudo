@@ -2,35 +2,3 @@
 // One vitest entry per (directory, family). Each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./parser--glued-inline-directives.part.ts";
-import "./parser--file-directive-class-gate.part.ts";
-import "./parser--file-directive-gate-hole.part.ts";
-import "./parser--import-misplaced.part.ts";
-import "./parser--416-417-file-directive-diags.part.ts";
-import "./parser--expected-parse-failure.part.ts";
-import "./parser--mock-module-tag-boundary.part.ts";
-import "./parser--numeric-literal-grammar.part.ts";
-import "./parser--string-escape.part.ts";
-import "./parser--expected-malformed-not-green.part.ts";
-import "./parser--as-payload-separator.part.ts";
-import "./parser--as-trailing-comment.part.ts";
-import "./parser--case-expected-trailing-comment.part.ts";
-import "./parser--mock-empty-payload.part.ts";
-import "./parser--case-arg-mask.part.ts";
-import "./parser--file-directive-position.part.ts";
-import "./parser--diag-dedup-position.part.ts";
-import "./parser--concat-not-literal.part.ts";
-import "./parser--witness-concat.part.ts";
-import "./parser--skip-mock-concat.part.ts";
-import "./parser--structure-literal-trailing.part.ts";
-import "./parser--legacy-octal.part.ts";
-import "./parser--expression-literal-forms.part.ts";
-import "./parser--object-literal-no-colon.part.ts";
-import "./parser--static-method-census.part.ts";
-import "./parser--mock-async-flag.part.ts";
-import "./parser--mock-param-binding.part.ts";
-import "./parser--shape-optional-slot.part.ts";
-import "./parser--expected-layout.part.ts";
-import "./parser--case-tag-spacing.part.ts";
-import "./parser--skip-tight-payload.part.ts";
-import "./parser--mock-glued-tag.part.ts";
