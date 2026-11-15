@@ -1,22 +1,22 @@
 // dx 指标对外发布钉面（vs-typescript.md 的 <!-- dx-metrics:begin/end --> 生成块）。
 // 实跑 scripts/dx-metrics.mjs --json（默认 --mode both：tsx + dist 双口径同场景）后断言：
 // ① fix-rate === 1（硬钉，不放松）—— 文档块发布的「每条文档修复路径都真能修绿」主张必须可复现；
-//    fix-rate 无计时依赖，红了就是引擎/错误面真回归，不是机器噪声。顶层 fixRate 聚合
-//    **所有实际执行的口径**——dist 执行且 <1 同样拉红（src 与构建产物的 drift 信号）；
-//    tsx 口径恒可执行（canonical），单独钉 byMode.tsx.fixRate === 1；
+// fix-rate 无计时依赖，红了就是引擎/错误面真回归，不是机器噪声。顶层 fixRate 聚合
+// **所有实际执行的口径**——dist 执行且 <1 同样拉红（src 与构建产物的 drift 信号）；
+// tsx 口径恒可执行（canonical），单独钉 byMode.tsx.fixRate === 1；
 // ② time-to-green（硬钉 sanity 上界 + 目标可区分提示）—— rev 5 运营目标是 avg < 2s，
-//    但 tsx 口径由本地 tsx 冷启动主导：本机单次 check ≈1.3s（场景 = 红+绿两次 check ⇒ ≈2.7s）、
-//    2026-09 基线机单次 ≈0.9s、CI runner 更慢；dist 口径跳过 tsx 冷启动（本机 ≈0.55s）。
-//    硬钉 2000ms 在慢机器上必然假红（同类机器因子问题见 benchmark-gate-noise.test.ts
-//    与 benchmark gate 的 --allow-uniform-shift），且 dx-metrics.mjs 自身的 exit 分级也只把
-//    fix-rate<1 当失败、time-to-green 不影响退出码。因此**逐口径**硬钉 < 10s sanity 上界
-//    （≈本机 4 倍：修复环未失控、无多余轮次）；任一口径超 2s 目标时 console.warn 给出
-//    **可区分**的提示（机器慢，非文档漂移），不判失败；
+// 但 tsx 口径由本地 tsx 冷启动主导：本机单次 check ≈1.3s（场景 = 红+绿两次 check ⇒ ≈2.7s）、
+// 2026-09 基线机单次 ≈0.9s、CI runner 更慢；dist 口径跳过 tsx 冷启动（本机 ≈0.55s）。
+// 硬钉 2000ms 在慢机器上必然假红（同类机器因子问题见 benchmark-gate-noise.test.ts
+// 与 benchmark gate 的 --allow-uniform-shift），且 dx-metrics.mjs 自身的 exit 分级也只把
+// fix-rate<1 当失败、time-to-green 不影响退出码。因此**逐口径**硬钉 < 10s sanity 上界
+// （≈本机 4 倍：修复环未失控、无多余轮次）；任一口径超 2s 目标时 console.warn 给出
+// **可区分**的提示（机器慢，非文档漂移），不判失败；
 // ③ en+zh 生成块（硬钉）—— 标记对、生成日期、模式列表头、tsx 行、目标行、fix-rate 数值与
-//    实跑一致。dist 行与实跑可用性**一致**：实跑执行了 dist ⇒ dist 行必须是数值行且含实跑
-//    fix-rate；实跑 honest-skip ⇒ dist 行必须如实标 skipped/跳过（不许伪造数字，也不许
-//    过期地宣称 skip）。time-to-green 的**秒数刻意不钉**——文档块保留实测值即可；钉秒数
-//    必然 flaky。fix-rate 才是跨机器可钉的主张。
+// 实跑一致。dist 行与实跑可用性**一致**：实跑执行了 dist ⇒ dist 行必须是数值行且含实跑
+// fix-rate；实跑 honest-skip ⇒ dist 行必须如实标 skipped/跳过（不许伪造数字，也不许
+// 过期地宣称 skip）。time-to-green 的**秒数刻意不钉**——文档块保留实测值即可；钉秒数
+// 必然 flaky。fix-rate 才是跨机器可钉的主张。
 // 注意：本测试要求先 `pnpm run build`（dist 口径需要 packages/nudojs/dist/index.js）——与仓库
 // build-before-test 约定一致。spawn node→pnpm→tsx + node→dist 子进程链（约 10s），勿与其他
 // heavy job 并发跑。

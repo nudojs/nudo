@@ -1,5 +1,5 @@
 /**
- * Bug 25：new WeakRef(x) / new FinalizationRegistry(cb) 此前两个分发面
+ * new WeakRef(x) / new FinalizationRegistry(cb) 此前两个分发面
  * （evalBuiltinNew Abs 面 + $new 宿主表）均无 case——构造实参零校验，
  * `try { new WeakRef(1) } catch` 引擎走 try 臂而原生 TypeError
  * （node 实测 "WeakRef: invalid target" / "FinalizationRegistry:
@@ -9,7 +9,7 @@
  * TypeError；symbol/对象形态（含元组）合法；抽象 → recordMayThrow。
  * FCR cleanupCallback 过 IsCallable（validateCallableArg，无 undefinedOk
  * 豁免——缺省原生同抛）。合法 → 空 brand（与原兜底同款，deref/实例方法
- * 面保持 Bug 40/43 现状）。
+ * 面保持 现状）。
  * ground truth：node 原生实测（native 是 ground truth）。
  */
 import { describe, it, expect } from "vitest";
@@ -148,7 +148,7 @@ describe("new FinalizationRegistry(cleanupCallback)：IsCallable 前置校验（
     expect(isBrandNamed(r.result, "FinalizationRegistry")).toBe(true);
     expect(throwsTypeError(r.throws)).toBe(false);
     expect(r.effects).toEqual([]);
-    // 合法构造后实例方法面不变：register 返回 undefined 字面量（Bug 43）
+    // 合法构造后实例方法面不变：register 返回 undefined 字面量（）
     const r2 = evalAbs(
       `export function f() { const r = new FinalizationRegistry(() => {}); return r.register({}, 1); }`,
     );

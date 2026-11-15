@@ -12,11 +12,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 // ---------------------------------------------------------------------------
-// BUG-158 — `arguments`（非数组 exotic）不得以 Array.isArray 为前提
+// `arguments`（非数组 exotic）不得以 Array.isArray 为前提
 // ---------------------------------------------------------------------------
-describe("[core--guard] BUG-158 — `arguments`（非数组 exotic）不得以 Array.isArray 为前提", () => {
+describe("`arguments`（非数组 exotic）不得以 Array.isArray 为前提", () => {
 /**
- * BUG-158 —— `arguments` 是**非数组 exotic**（core 自己的 Bug 56 判
+ * `arguments` 是**非数组 exotic**（core 自己的 判
  * `Array.isArray(arguments) === false`），而 guard 面把 brand 的内层 tuple
  * 折成 `Array.isArray(data) && …` ⇒ 守卫对被导出函数**自己的返回值**恒假。
  *
@@ -62,7 +62,7 @@ const argsOf = (n: number): unknown => {
   return f();
 };
 
-describe("BUG-158 — `arguments`（非数组 exotic）不得以 Array.isArray 为前提", () => {
+describe("`arguments`（非数组 exotic）不得以 Array.isArray 为前提", () => {
   it("守卫体不含 `Array.isArray`，且放行函数自己的 `arguments`", () => {
     const g = denoteGuard(emptyArgsAbs(), "data");
     expect(g).not.toContain("Array.isArray");
@@ -88,11 +88,11 @@ describe("BUG-158 — `arguments`（非数组 exotic）不得以 Array.isArray �
 });
 
 // ---------------------------------------------------------------------------
-// BUG-095 — guard 的数组检查不跳过稀疏洞
+// guard 的数组检查不跳过稀疏洞
 // ---------------------------------------------------------------------------
-describe("[core--guard] BUG-095 — guard 的数组检查不跳过稀疏洞", () => {
+describe("guard 的数组检查不跳过稀疏洞", () => {
 /**
- * BUG-095 —— guard 面的数组检查用 `Array.prototype.every` ⇒ 规范规定它**跳过
+ * guard 面的数组检查用 `Array.prototype.every` ⇒ 规范规定它**跳过
  * 不存在的下标（洞）** ⇒ 稀疏数组的洞位从不被检查 ⇒ guard 放行 `[1,,3]`，
  * 而 zod / standard 按位读到 `undefined` ⇒ 拒绝 ⇒ 三面接受集相反。
  *
@@ -118,7 +118,7 @@ const arrOf = (element: Abs): Abs => abs({ k: "arr", element }, undefined, undef
 const runner = (g: string): ((data: unknown) => boolean) =>
   new Function("data", `return ${g};`) as (data: unknown) => boolean;
 
-describe("BUG-095 — guard 的数组检查不跳过稀疏洞", () => {
+describe("guard 的数组检查不跳过稀疏洞", () => {
   it("运行时：接受 `[1,2,3]`，拒绝稀疏 `[1,,3]` 与 `[1,undefined,3]`", () => {
     const check = runner(denoteGuard(arrOf(positiveNum()), "data"));
     expect(check([1, 2, 3])).toBe(true);
@@ -138,11 +138,11 @@ describe("BUG-095 — guard 的数组检查不跳过稀疏洞", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 407 — brand 身份必须被投影进守卫（instanceof 判定）
+// brand 身份必须被投影进守卫（instanceof 判定）
 // ---------------------------------------------------------------------------
-describe("[core--guard] Bug 407 — brand 身份必须被投影进守卫（instanceof 判定）", () => {
+describe("brand 身份必须被投影进守卫（instanceof 判定）", () => {
 /**
- * Bug 407 —— 守卫投影**丢掉 brand 身份** → `ismkDateOutput({})` 返回 `true`
+ * 守卫投影**丢掉 brand 身份** → `ismkDateOutput({})` 返回 `true`
  * （假绿），与 zod / dts / check 三面互相矛盾。
  *
  * 根因：`packages/core/src/algebra/denote.ts` → `denoteShape` 的 `case "brand"`
@@ -180,7 +180,7 @@ const brandOf = (name: string, inner?: Abs): Abs =>
 const runner = (g: string): ((v: unknown) => boolean) =>
   new Function("data", `return ${g};`) as (v: unknown) => boolean;
 
-describe("Bug 407 — brand 身份必须被投影进守卫（instanceof 判定）", () => {
+describe("brand 身份必须被投影进守卫（instanceof 判定）", () => {
   it("brand 臂产出 globalThis[\"<Brand>\"] 形态的 instanceof 判定", () => {
     const g = denoteGuard(brandOf("Date"), "data");
     expect(g).toContain('Reflect.get(globalThis, "Date")');
@@ -223,11 +223,11 @@ describe("Bug 407 — brand 身份必须被投影进守卫（instanceof 判定�
 });
 
 // ---------------------------------------------------------------------------
-// BUG-098 — brand 内层的观测字面量不得钉成出口域
+// brand 内层的观测字面量不得钉成出口域
 // ---------------------------------------------------------------------------
-describe("[core--guard] BUG-098 — brand 内层的观测字面量不得钉成出口域", () => {
+describe("brand 内层的观测字面量不得钉成出口域", () => {
 /**
- * BUG-098 —— guard 面把 brand 的**观测字面量**钉死（`source === "abc"` /
+ * guard 面把 brand 的**观测字面量**钉死（`source === "abc"` /
  * `flags === "g"` / `message === "boom"` …）⇒ 同一个 brand 的其它实例被拒
  * （`/abc/i`、`new TypeError(…)`），而 `.d.ts` / zod / standard 三面只判
  * **brand 身份**（`instanceof`）⇒ 四面接受集相反（假红）。
@@ -278,7 +278,7 @@ function errorAbs(): Abs {
 const runner = (g: string): ((data: unknown) => boolean) =>
   new Function("data", `return ${g};`) as (data: unknown) => boolean;
 
-describe("BUG-098 — brand 内层的观测字面量不得钉成出口域", () => {
+describe("brand 内层的观测字面量不得钉成出口域", () => {
   it("RegExp：同 brand 的任意实例都放行（`/abc/i`、`/xyz/g`）", () => {
     const g = denoteGuard(regexpAbs(), "data");
     expect(g).not.toContain('=== "abc"');
@@ -302,11 +302,11 @@ describe("BUG-098 — brand 内层的观测字面量不得钉成出口域", () =
 });
 
 // ---------------------------------------------------------------------------
-// BUG-092 — guard 面保留比较类谓词
+// guard 面保留比较类谓词
 // ---------------------------------------------------------------------------
-describe("[core--guard] BUG-092 — guard 面保留比较类谓词", () => {
+describe("guard 面保留比较类谓词", () => {
 /**
- * BUG-092 —— guard 面把契约里的**比较类谓词**整段蒸发（`.int()` 的整性谓词 +
+ * guard 面把契约里的**比较类谓词**整段蒸发（`.int()` 的整性谓词 +
  * 嵌套字段的数值界）⇒ guard 放行契约外值（`3.5` / `NaN` / `{n:0}`），而同一
  * 份源码的 zod / standard 面拒绝 ⇒ 三个产物面对同一个值给出相反裁决。
  *
@@ -345,7 +345,7 @@ function nestedBoundAbs(): Abs {
 const runner = (g: string): ((data: unknown) => boolean) =>
   new Function("data", `return ${g};`) as (data: unknown) => boolean;
 
-describe("BUG-092 — guard 面保留比较类谓词", () => {
+describe("guard 面保留比较类谓词", () => {
   it("`.int()` ⇒ `Number.isInteger`（不是恒真）", () => {
     const g = denoteGuard(intAbs(), "data");
     expect(g).toContain("Number.isInteger(data)");
@@ -370,11 +370,11 @@ describe("BUG-092 — guard 面保留比较类谓词", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-097 — 原型成员同名的槽走方括号取值（产物可编译）
+// 原型成员同名的槽走方括号取值（产物可编译）
 // ---------------------------------------------------------------------------
-describe("[core--guard] BUG-097 — 原型成员同名的槽走方括号取值（产物可编译）", () => {
+describe("原型成员同名的槽走方括号取值（产物可编译）", () => {
 /**
- * BUG-097 —— guard 产物**过不了 `tsc --noEmit --strict`**（TS2367）：槽名撞
+ * guard 产物**过不了 `tsc --noEmit --strict`**（TS2367）：槽名撞
  * `Object.prototype` 具名成员（`toString` / `valueOf` / `constructor` /
  * `hasOwnProperty`）时，`data.toString` 的静态类型是原型成员的类型
  * （`Record<string, any>` 的索引签名**不遮蔽**它们）⇒ 与字面量比较 ⇒
@@ -406,7 +406,7 @@ const protoSlots = (): Abs =>
     hasOwnProperty: { value: abs({ k: "prim", type: "boolean" }, { op: "lit", value: true }, undefined, "exact") },
   });
 
-describe("BUG-097 — 原型成员同名的槽走方括号取值（产物可编译）", () => {
+describe("原型成员同名的槽走方括号取值（产物可编译）", () => {
   it("守卫体里不出现点号访问（`data.toString`），改用 `data[\"toString\"]`", () => {
     const g = denoteGuard(protoSlots(), "data");
     expect(g).not.toContain("data.toString");
@@ -456,11 +456,11 @@ describe("BUG-097 — 原型成员同名的槽走方括号取值（产物可编�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1130 — 没有可用 prototype 的构造器 ⇒ 守卫跳过 brand 身份子句
+// 没有可用 prototype 的构造器 ⇒ 守卫跳过 brand 身份子句
 // ---------------------------------------------------------------------------
-describe("[core--guard] Bug 1130 — 没有可用 prototype 的构造器 ⇒ 守卫跳过 brand 身份子句", () => {
+describe("没有可用 prototype 的构造器 ⇒ 守卫跳过 brand 身份子句", () => {
 /**
- * Bug 1130（并发 review F24 / P2）—— 生成的 guard 对 `new Proxy(...)` **抛错**。
+ * （并发 review F24 / P2）—— 生成的 guard 对 `new Proxy(...)` **抛错**。
  *
  * 现象：`new Proxy({}, {})` 的 brand 是 `"Proxy"`
  * （`packages/core/src/algebra/builtins/error/error-family.ts` 的
@@ -494,7 +494,7 @@ const brandOf = (name: string, inner?: Abs): Abs =>
 const runner = (g: string): ((v: unknown) => boolean) =>
   new Function("data", `return ${g};`) as (v: unknown) => boolean;
 
-describe("Bug 1130 — 没有可用 prototype 的构造器 ⇒ 守卫跳过 brand 身份子句", () => {
+describe("没有可用 prototype 的构造器 ⇒ 守卫跳过 brand 身份子句", () => {
   it("原生 oracle：x instanceof Proxy 抛 TypeError（Proxy 没有 prototype）", () => {
     const proxyCtor = Reflect.get(globalThis, "Proxy") as unknown as Function;
     expect((proxyCtor as unknown as { prototype?: unknown }).prototype).toBeUndefined();
@@ -549,11 +549,11 @@ describe("Bug 1130 — 没有可用 prototype 的构造器 ⇒ 守卫跳过 bran
 });
 
 // ---------------------------------------------------------------------------
-// Bug 409 — 必填槽存在性是独立子句 + 对象判定排除数组
+// 必填槽存在性是独立子句 + 对象判定排除数组
 // ---------------------------------------------------------------------------
-describe("[core--guard] Bug 409 — 必填槽存在性是独立子句 + 对象判定排除数组", () => {
+describe("必填槽存在性是独立子句 + 对象判定排除数组", () => {
 /**
- * Bug 409 —— `nudo export --format guard`：**必填槽的存在性检查被丢掉**、
+ * `nudo export --format guard`：**必填槽的存在性检查被丢掉**、
  * `typeof === "object"` **不排除数组** → 守卫放行引擎与 standard-schema 都拒
  * 的值（假绿）。
  *
@@ -580,7 +580,7 @@ const objOfSlots = (
 const runner = (g: string): ((v: unknown) => boolean) =>
   new Function("data", `return ${g};`) as (v: unknown) => boolean;
 
-describe("Bug 409 — 必填槽存在性是独立子句 + 对象判定排除数组", () => {
+describe("必填槽存在性是独立子句 + 对象判定排除数组", () => {
   it("内层守卫为 \"true\"（any/unknown）的必填槽仍产存在性子句", () => {
     const g = denoteGuard(objOfSlots({ id: { value: unknown } }), "data");
     expect(g).toContain('Object.hasOwn(data, "id")');
@@ -617,11 +617,11 @@ describe("Bug 409 — 必填槽存在性是独立子句 + 对象判定排除数�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 410 — guard 投影必须保真结构义务
+// guard 投影必须保真结构义务
 // ---------------------------------------------------------------------------
-describe("[core--guard] Bug 410 — guard 投影必须保真结构义务", () => {
+describe("guard 投影必须保真结构义务", () => {
 /**
- * Bug 410 —— guard 投影（`denoteGuard`）**丢掉结构义务**：object 形状**把数组
+ * guard 投影（`denoteGuard`）**丢掉结构义务**：object 形状**把数组
  * 当对象接受**、**required 键缺失不报**、string **长度界整段消失** → 同一次
  * `nudo export --format all` 里 zod / standard 面**都保真**，只有 guard 面
  * **比它们宽松**（假绿）。
@@ -630,7 +630,7 @@ describe("[core--guard] Bug 410 — guard 投影必须保真结构义务", () =>
  * 与 `predAsJs`：
  * ① obj 分支缺 `!Array.isArray(v)`；② required 键的存在性没有独立检查；
  * ③ `predAsJs` 对 `app` 项落到 `return "true"` ⇒ 作用在 `length(self)` 上的
- *    界（`length()` / `min()` / `max()`）整段丢失。
+ * 界（`length()` / `min()` / `max()`）整段丢失。
  *
  * 报告末尾「第 80 轮主持人复核补充」块的**第三形态**：必填槽**值域恰为
  * `undefined`** ⇒ 存在性必须是**独立子句**，**不能**写成 `v.a !== undefined`
@@ -653,7 +653,7 @@ const objOfSlots = (
 const runner = (g: string): ((v: unknown) => boolean) =>
   new Function("data", `return ${g};`) as (v: unknown) => boolean;
 
-describe("Bug 410 — guard 投影必须保真结构义务", () => {
+describe("guard 投影必须保真结构义务", () => {
   it("必填槽值域恰为 undefined：存在性是独立子句（不是 v.a !== undefined）", () => {
     const undefAbs = makeAbs({ k: "unknown" }, lit(undefined), undefined, "exact");
     const g = denoteGuard(

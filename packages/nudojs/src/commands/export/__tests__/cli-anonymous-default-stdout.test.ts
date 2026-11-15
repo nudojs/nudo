@@ -1,10 +1,10 @@
 /**
- * Bug 12B —— 匿名 `export default function (): T;` 的 **stdout 平铺**产物
+ * 匿名 `export default function (): T;` 的 **stdout 平铺**产物
  * 在普通 `.ts` 模块里报 TS2391（函数声明缺实现）。
  *
  * 根因：`ambientizeDtsSegment` 的 `DEFAULT_EXPORT_DECL` 正则要求绑定名，
  * 匿名形态匹配不上 ⇒ 原样落到 stdout ⇒ TS2391。`--out` 落 `.d.ts` 时该形态
- * 合法（且 core-bug-435 / emit-bug-514 要求保留匿名发射形态）⇒ 缺陷只在
+ * 合法（且 core-/ emit-要求保留匿名发射形态）⇒ 缺陷只在
  * stdout 平铺面。
  *
  * 修法：`ambientizeDtsSegment` 对匿名形态分配合成名 `_default`，拆成
@@ -26,7 +26,7 @@ function dtsStdout(dts: string): string {
   }).join("\n");
 }
 
-describe("Bug 12B — 匿名 default 声明的 stdout 平铺是合法 ambient 形态", () => {
+describe("匿名 default 声明的 stdout 平铺是合法 ambient 形态", () => {
   it("匿名 function：`declare function _default` + `export { _default as default }`", () => {
     const out = dtsStdout(
       "/**\n * @returns number\n */\nexport default function (): number;",
@@ -53,7 +53,7 @@ describe("Bug 12B — 匿名 default 声明的 stdout 平铺是合法 ambient �
   });
 });
 
-describe("Bug 12B 对照组 — 既有形态不回归", () => {
+describe("对照组 — 既有形态不回归", () => {
   it("具名 default 函数仍走 BUG-074 形态（`declare function main`）", () => {
     const out = dtsStdout("export default function main(): number;");
     expect(out).toContain("declare function main(): number;");

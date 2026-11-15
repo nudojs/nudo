@@ -23,16 +23,16 @@ import { constraintToEntryAbs, instantiateConstraint, number as number_____const
 import { formatObjectKey } from "../format/codegen-escape.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 106：core 槽可见性 symbolKey 规则
+// core 槽可见性 symbolKey 规则
 // ---------------------------------------------------------------------------
-describe("[] Bug 106：core 槽可见性 symbolKey 规则", () => {
+describe("core 槽可见性 symbolKey 规则", () => {
 /**
- * Bug 106 回归（core 面）：`isHiddenInternalSlot` 缺 `symbolKey` 规则
+ * 回归（core 面）：`isHiddenInternalSlot` 缺 `symbolKey` 规则
  * ⇒ check / test 签名面把符号键槽发布成运行时不存在的字符串字段
  * （`"@@iterator"` / `"@@sym#1"`），guard 面还写出恒假的 Object.hasOwn 子句。
  *
  * 修法：core 判据补 `if (slot.symbolKey === true) return true`（与 service
- * 侧 internal-slot.ts 的 BUG-131 同款），使 format（展示/签名）、projection
+ * 侧 internal-slot.ts 的 同款），使 format（展示/签名）、projection
  * （约束）、denote（guard）三个消费点同口径剔除。
  */
 
@@ -56,7 +56,7 @@ const withSymbolSlot = (): Abs =>
     "exact",
   );
 
-describe("Bug 106：core 槽可见性 symbolKey 规则", () => {
+describe("core 槽可见性 symbolKey 规则", () => {
   it("isHiddenInternalSlot 剔除 symbolKey 槽（与 service 副本同款）", () => {
     expect(isHiddenInternalSlot("@@iterator", { symbolKey: true })).toBe(true);
     expect(isHiddenInternalSlot("@@sym#1", { symbolKey: true })).toBe(true);
@@ -86,11 +86,11 @@ describe("Bug 106：core 槽可见性 symbolKey 规则", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 99：符号键与字符串 "@@iterator" 分态
+// 符号键与字符串 "@@iterator" 分态
 // ---------------------------------------------------------------------------
-describe("[] Bug 99：符号键与字符串 \"@@iterator\" 分态", () => {
+describe("符号键与字符串 \"@@iterator\" 分态", () => {
 /**
- * Bug 99 回归：`ARRAY_PROTO_METHOD_NAMES` 把 "@@iterator" 当**普通字符串键**
+ * 回归：`ARRAY_PROTO_METHOD_NAMES` 把 "@@iterator" 当**普通字符串键**
  * ⇒ `[1,2]["@@iterator"]` 折成函数、`"@@iterator" in [1,2]` 折成 true
  * （原生 undefined / false），而 `Symbol.iterator in [1,2]` 必须仍为 true。
  *
@@ -99,8 +99,8 @@ describe("[] Bug 99：符号键与字符串 \"@@iterator\" 分态", () => {
  * 不同的 PropertyKey，不得合并成同一个事实。
  *
  * 原生 ground truth：
- *   [1,2]["@@iterator"] === undefined / typeof === "undefined"
- *   "@@iterator" in [1,2] === false / Symbol.iterator in [1,2] === true
+ * [1,2]["@@iterator"] === undefined / typeof === "undefined"
+ * "@@iterator" in [1,2] === false / Symbol.iterator in [1,2] === true
  */
 
 
@@ -111,7 +111,7 @@ function v(src: string) {
   return litValue(call(src, "f").result);
 }
 
-describe("Bug 99：符号键与字符串 \"@@iterator\" 分态", () => {
+describe("符号键与字符串 \"@@iterator\" 分态", () => {
   it("字符串键 \"@@iterator\" 在 tuple 上确定缺席（改前折成函数）", () => {
     expect(v(`export function f() { return [1,2]["@@iterator"]; }`)).toEqual({
       ok: true,
@@ -168,7 +168,7 @@ describe("Bug 99：符号键与字符串 \"@@iterator\" 分态", () => {
     // `$invokeKey` 把运行时键折成 "@@iterator" 槽名后，必须把**键身份**
     // 一并透传到 $get：字符串键 "@@iterator" 不是 Symbol.iterator，原生
     // `[1,2]["@@iterator"]()` 定抛 TypeError。此前调用面把两者合并 ⇒
-    // 字符串键也能拿到迭代器面（Bug 198 / 314 的符号键调用则反过来全塌）。
+    // 字符串键也能拿到迭代器面（ 的符号键调用则反过来全塌）。
     expect(v(`export function f() { return [1,2]["@@iterator"]().next().value; }`)).toEqual({
       ok: false,
     });
@@ -206,21 +206,21 @@ describe("Bug 99：符号键与字符串 \"@@iterator\" 分态", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-007：number / boolean 原型方法走自己的原型面
+// number / boolean 原型方法走自己的原型面
 // ---------------------------------------------------------------------------
-describe("[] BUG-007：number / boolean 原型方法走自己的原型面", () => {
+describe("number / boolean 原型方法走自己的原型面", () => {
 /**
- * BUG-007 回归：`number` / `boolean` 原型方法不得落 `Object.prototype` 泛型版。
+ * 回归：`number` / `boolean` 原型方法不得落 `Object.prototype` 泛型版。
  *
  * 根因（`packages/core/src/algebra/exec/runtime/containers/member.ts`
  * `getProtoMethodMember` 的 prim 通道例外清单）：`toString` / `toLocaleString`
  * / `valueOf` 三者都在 `OBJECT_PROTO_METHOD_NAMES` 里，prim 通道必须**显式**
- * 例外才能进；例外清单此前只列了 string（Bug 49）、bigint（Bug 105）、
+ * 例外才能进；例外清单此前只列了 string（）、bigint（）、
  * symbol（独立臂，member.ts 的 `symbolProtoMethodAbs`）⇒ **number / boolean
  * 从未被加入** ⇒ 落 `objectProtoMethodAbs(key)` ⇒
- *   - **错值**：`[object Number]` / `[object Boolean]`（原生是 "5" / "true"）；
- *   - **丢 brand check**：`(5).toString.call("x")` 原生定抛 TypeError，引擎
- *     照常返回值 ⇒ L2 `nudo:entry-may-throw` 闸门**假绿**。
+ * - **错值**：`[object Number]` / `[object Boolean]`（原生是 "5" / "true"）；
+ * - **丢 brand check**：`(5).toString.call("x")` 原生定抛 TypeError，引擎
+ * 照常返回值 ⇒ L2 `nudo:entry-may-throw` 闸门**假绿**。
  *
  * 修法：prim 通道例外补 number（toString / toLocaleString / valueOf）与
  * boolean（toString / valueOf）；`PRIM_HOME_BRAND`（number→Number /
@@ -237,7 +237,7 @@ const lit = (src: string): unknown => {
 
 const wrap = (body: string): string => `export function f() { ${body} }`;
 
-describe("BUG-007：number / boolean 原型方法走自己的原型面", () => {
+describe("number / boolean 原型方法走自己的原型面", () => {
   it("(5).toString.call(5) ⇒ \"5\"（不是 \"[object Number]\"）", () => {
     expect(lit(wrap("return (5).toString.call(5);"))).toBe("5");
   });
@@ -283,11 +283,11 @@ describe("BUG-007：number / boolean 原型方法走自己的原型面", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-008：函数 / 类接收者的 getOwnPropertyDescriptor（不再定抛）
+// 函数 / 类接收者的 getOwnPropertyDescriptor（不再定抛）
 // ---------------------------------------------------------------------------
-describe("[] BUG-008：函数 / 类接收者的 getOwnPropertyDescriptor（不再定抛）", () => {
+describe("函数 / 类接收者的 getOwnPropertyDescriptor（不再定抛）", () => {
 /**
- * BUG-008 回归：`Object/Reflect.getOwnPropertyDescriptor(fn, key)` 不得被建模成
+ * 回归：`Object/Reflect.getOwnPropertyDescriptor(fn, key)` 不得被建模成
  * 「必定抛」。
  *
  * 根因：`packages/core/src/algebra/builtins/object/methods.ts` 的
@@ -311,7 +311,7 @@ const lit = (src: string): unknown => {
 
 const wrap = (body: string): string => `export function f() { ${body} }`;
 
-describe("BUG-008：函数 / 类接收者的 getOwnPropertyDescriptor（不再定抛）", () => {
+describe("函数 / 类接收者的 getOwnPropertyDescriptor（不再定抛）", () => {
   it("gOPD(function f(){}, \"length\").value ⇒ 0（原生精确值）", () => {
     expect(lit(wrap('return Object.getOwnPropertyDescriptor(function f(){}, "length").value;'))).toBe(0);
   });
@@ -360,11 +360,11 @@ describe("BUG-008：函数 / 类接收者的 getOwnPropertyDescriptor（不再�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1027 · shape/partial/omit/pick 写侧不得吞掉 __proto__ 字段
+// shape/partial/omit/pick 写侧不得吞掉 __proto__ 字段
 // ---------------------------------------------------------------------------
-describe("[] Bug 1027 · shape/partial/omit/pick 写侧不得吞掉 __proto__ 字段", () => {
+describe("shape/partial/omit/pick 写侧不得吞掉 __proto__ 字段", () => {
 /**
- * Bug 1027 — 约束 DSL 的**写侧**把 `__proto__` 字段静默吞掉：
+ * 约束 DSL 的**写侧**把 `__proto__` 字段静默吞掉：
  * 普通对象字面量 `{}` 装配字段表 ⇒ `mapped["__proto__"] = {…}` 触发
  * `Object.prototype.__proto__` 的 **setter** ⇒ 字段被写成**原型**而非
  * **自有键** ⇒ 下游 `Object.entries` 读不到 ⇒ 契约被悄悄削弱成空 shape
@@ -391,7 +391,7 @@ describe("[] Bug 1027 · shape/partial/omit/pick 写侧不得吞掉 __proto__ �
 
 const protoField = (): Record<string, unknown> => ({ ["__proto__"]: number() });
 
-describe("Bug 1027 · shape/partial/omit/pick 写侧不得吞掉 __proto__ 字段", () => {
+describe("shape/partial/omit/pick 写侧不得吞掉 __proto__ 字段", () => {
   beforeEach(() => {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
@@ -467,18 +467,18 @@ export function g() {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1074 — Proxy [[GetOwnProperty]] 不变量：值不同 ⇒ TypeError
+// Proxy [[GetOwnProperty]] 不变量：值不同 ⇒ TypeError
 // ---------------------------------------------------------------------------
-describe("[] Bug 1074 — Proxy [[GetOwnProperty]] 不变量：值不同 ⇒ TypeError", () => {
+describe("Proxy [[GetOwnProperty]] 不变量：值不同 ⇒ TypeError", () => {
 /**
- * Bug 1074 回归：Proxy **[[GetOwnProperty]]** 的靶一致性不变量
+ * 回归：Proxy **[[GetOwnProperty]]** 的靶一致性不变量
  * （ES2024 10.5.5 step 12.f）——违者原生定抛 TypeError，引擎此前
  * **照抄陷阱的值**（自信的错值 / 假绿）。
  *
  * 修前（探针实测）：
  * - `Object.getOwnPropertyDescriptor(p, "a").value` ⇒ **exact 2**
- *   （原生抛 TypeError：靶上 "a" 是不可配置 + 不可写的数据属性，陷阱
- *   报了不同的 value ⇒ 违反 [[GetOwnProperty]] 不变量）；
+ * （原生抛 TypeError：靶上 "a" 是不可配置 + 不可写的数据属性，陷阱
+ * 报了不同的 value ⇒ 违反 [[GetOwnProperty]] 不变量）；
  * - `Reflect.getOwnPropertyDescriptor(p, "a").value` ⇒ 同款 exact 2。
  *
  * 修后：靶自有 + 不可配置 + 不可写 + 陷阱 value 与靶值不同 ⇒ 定抛
@@ -506,7 +506,7 @@ const wrap = (body: string) => `export function f() { ${body} }`;
 /** 靶上 "a" 是不可配置 + 不可写的数据属性（value 1） */
 const FROZEN_TARGET = `const t = {}; Object.defineProperty(t, "a", {value:1, configurable:false, writable:false});`;
 
-describe("Bug 1074 — Proxy [[GetOwnProperty]] 不变量：值不同 ⇒ TypeError", () => {
+describe("Proxy [[GetOwnProperty]] 不变量：值不同 ⇒ TypeError", () => {
   it("Object.getOwnPropertyDescriptor(p, \"a\").value ⇒ 抛 TypeError（native：同款）", () => {
     const rec = call(
       wrap(
@@ -536,7 +536,7 @@ describe("Bug 1074 — Proxy [[GetOwnProperty]] 不变量：值不同 ⇒ TypeEr
   });
 });
 
-describe("Bug 1074 — 负控制（邻近形态不回归）", () => {
+describe("负控制（邻近形态不回归）", () => {
   it("靶属性**可写**（普通 {a:1}）⇒ 陷阱值原样给出（native：2）", () => {
     expect(
       val(
@@ -583,7 +583,7 @@ const TGT = (flags: string): string =>
 const TRAP = (flags: string): string =>
   `const p = new Proxy(t, { getOwnPropertyDescriptor(){ return {value:2, ${flags}}; } });`;
 
-describe("Bug 1074 扩展 — 规则 1：靶无该自有键 ⇒ 陷阱必须可配置", () => {
+describe("扩展 — 规则 1：靶无该自有键 ⇒ 陷阱必须可配置", () => {
   it("靶 {} + 陷阱报 configurable:false ⇒ 抛 TypeError（native：抛）", () => {
     const rec = call(
       wrap(
@@ -604,7 +604,7 @@ describe("Bug 1074 扩展 — 规则 1：靶无该自有键 ⇒ 陷阱必须可�
   });
 });
 
-describe("Bug 1074 扩展 — 规则 2：可配置性必须一致", () => {
+describe("扩展 — 规则 2：可配置性必须一致", () => {
   it("靶可配置 + 陷阱报 configurable:false ⇒ 抛 TypeError（native：抛）", () => {
     const rec = call(
       wrap(`${TGT("writable:true, enumerable:true, configurable:true")} ${TRAP("writable:true, enumerable:true, configurable:false")} return Object.getOwnPropertyDescriptor(p, "a").value;`),
@@ -620,7 +620,7 @@ describe("Bug 1074 扩展 — 规则 2：可配置性必须一致", () => {
   });
 });
 
-describe("Bug 1074 扩展 — 规则 3：靶不可配置 ⇒ writable / enumerable 冻结", () => {
+describe("扩展 — 规则 3：靶不可配置 ⇒ writable / enumerable 冻结", () => {
   it("靶不可配置+可写 + 陷阱报 writable:false ⇒ 抛 TypeError（native：抛）", () => {
     const rec = call(
       wrap(`${TGT("writable:true, enumerable:true, configurable:false")} ${TRAP("writable:false, enumerable:true, configurable:false")} return Object.getOwnPropertyDescriptor(p, "a").value;`),
@@ -663,7 +663,7 @@ describe("Bug 1074 扩展 — 规则 3：靶不可配置 ⇒ writable / enumerab
   });
 });
 
-describe("Bug 1074 扩展 — 规则 4：数据 / 访问器描述符不得混报", () => {
+describe("扩展 — 规则 4：数据 / 访问器描述符不得混报", () => {
   it("靶是访问器 + 陷阱报数据描述符 ⇒ 抛 TypeError（native：抛）", () => {
     const rec = call(
       wrap(
@@ -685,18 +685,18 @@ describe("Bug 1074 扩展 — 规则 4：数据 / 访问器描述符不得混报
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1075 — gOPDs 保留 symbol 键（原生走 [[OwnPropertyKeys]]）
+// gOPDs 保留 symbol 键（原生走 [[OwnPropertyKeys]]）
 // ---------------------------------------------------------------------------
-describe("[] Bug 1075 — gOPDs 保留 symbol 键（原生走 [[OwnPropertyKeys]]）", () => {
+describe("gOPDs 保留 symbol 键（原生走 [[OwnPropertyKeys]]）", () => {
 /**
- * Bug 1075 回归：`Object.getOwnPropertyDescriptors` **丢弃 symbol 键**的自有属性
+ * 回归：`Object.getOwnPropertyDescriptors` **丢弃 symbol 键**的自有属性
  * ——结果对象少一个自有属性、键数少 1（exact 结构 ⇒ 假绿）。
  *
  * 修前（探针实测）：
  * - `Reflect.ownKeys(Object.getOwnPropertyDescriptors(o)).length` ⇒ **1**
- *   （原生 2）；
+ * （原生 2）；
  * - `Object.getOwnPropertySymbols(Object.getOwnPropertyDescriptors(o)).length`
- *   ⇒ **0**（原生 1）。
+ * ⇒ **0**（原生 1）。
  *
  * 根因：gOPDs 面按 `symbolKey` 过滤掉了 symbol 投影槽。但原生 gOPDs 走
  * [[OwnPropertyKeys]]——**含** symbol 键（结果对象带**真 symbol** 键 ⇒
@@ -718,7 +718,7 @@ describe("[] Bug 1075 — gOPDs 保留 symbol 键（原生走 [[OwnPropertyKeys]
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 1075 — gOPDs 保留 symbol 键（原生走 [[OwnPropertyKeys]]）", () => {
+describe("gOPDs 保留 symbol 键（原生走 [[OwnPropertyKeys]]）", () => {
   it("Reflect.ownKeys(gOPDs(o)).length ⇒ 2（native：2；修前：1）", () => {
     expect(
       val(
@@ -767,7 +767,7 @@ describe("Bug 1075 — gOPDs 保留 symbol 键（原生走 [[OwnPropertyKeys]]�
   });
 });
 
-describe("Bug 1075 — 负控制（字符串键面不受影响）", () => {
+describe("负控制（字符串键面不受影响）", () => {
   it("Object.keys(gOPDs(o)) ⇒ \"a\"（native：symbol 键不进字符串键面）", () => {
     expect(
       val(
@@ -797,11 +797,11 @@ describe("Bug 1075 — 负控制（字符串键面不受影响）", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1078 — Reflect.ownKeys：字符串键段在前、symbol 键段在后
+// Reflect.ownKeys：字符串键段在前、symbol 键段在后
 // ---------------------------------------------------------------------------
-describe("[] Bug 1078 — Reflect.ownKeys：字符串键段在前、symbol 键段在后", () => {
+describe("Reflect.ownKeys：字符串键段在前、symbol 键段在后", () => {
 /**
- * Bug 1078 回归：`Reflect.ownKeys` 的 **symbol 键排在字符串键之前**——段序错
+ * 回归：`Reflect.ownKeys` 的 **symbol 键排在字符串键之前**——段序错
  * 的 exact 元组（假绿）。
  *
  * 修前（探针实测）：`Reflect.ownKeys(o)`（o 有 symbol 键 + 字符串键 "a"）⇒
@@ -822,7 +822,7 @@ describe("[] Bug 1078 — Reflect.ownKeys：字符串键段在前、symbol 键�
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 1078 — Reflect.ownKeys：字符串键段在前、symbol 键段在后", () => {
+describe("Reflect.ownKeys：字符串键段在前、symbol 键段在后", () => {
   it("ownKeys(o) ⇒ \"a,sym\"（native：a 在前、symbol 在后；修前：\"sym,a\"）", () => {
     expect(
       val(
@@ -854,7 +854,7 @@ describe("Bug 1078 — Reflect.ownKeys：字符串键段在前、symbol 键段�
   });
 });
 
-describe("Bug 1078 — 负控制（字符串键段内部顺序不变）", () => {
+describe("负控制（字符串键段内部顺序不变）", () => {
   it("只有字符串键：ownKeys 保持插入序（native：\"b,a\"）", () => {
     expect(val(wrap(`const o = { b: 1, a: 2 }; return Reflect.ownKeys(o).join(",");`))).toEqual({
       ok: true,
@@ -876,11 +876,11 @@ describe("Bug 1078 — 负控制（字符串键段内部顺序不变）", () => 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1095 验收 1 — 可配置靶 + 异形态陷阱 ⇒ 不抛（native：不抛）
+// 验收 1 — 可配置靶 + 异形态陷阱 ⇒ 不抛（native：不抛）
 // ---------------------------------------------------------------------------
-describe("[] Bug 1095 验收 1 — 可配置靶 + 异形态陷阱 ⇒ 不抛（native：不抛）", () => {
+describe("验收 1 — 可配置靶 + 异形态陷阱 ⇒ 不抛（native：不抛）", () => {
 /**
- * Bug 1095 —— Proxy **[[GetOwnProperty]]** 靶一致性不变量的**阈值**回归
+ * Proxy **[[GetOwnProperty]]** 靶一致性不变量的**阈值**回归
  * （ES2024 10.5.5 step 12.f / 24.4.2.1 IsCompatiblePropertyDescriptor）。
  *
  * 症状族：native 不抛，引擎抛 TypeError ⇒ error 级 `nudo:entry-may-throw`
@@ -890,53 +890,53 @@ describe("[] Bug 1095 验收 1 — 可配置靶 + 异形态陷阱 ⇒ 不抛（n
  *
  * ── 修前的三处缺陷 ─────────────────────────────────────────────────
  * ① **形态一致性检查（规则 4）没以「靶属性不可配置」为前提**
- *    —— 靶属性**可配置**（默认）时，陷阱报异形态描述符（靶是数据属性、
- *    陷阱报访问器，或反之）⇒ 引擎无条件抛 TypeError；原生**不抛**
- *    （IsCompatiblePropertyDescriptor 只在 current.[[Configurable]] 为
- *    false 时做形态比对）。
+ * —— 靶属性**可配置**（默认）时，陷阱报异形态描述符（靶是数据属性、
+ * 陷阱报访问器，或反之）⇒ 引擎无条件抛 TypeError；原生**不抛**
+ * （IsCompatiblePropertyDescriptor 只在 current.[[Configurable]] 为
+ * false 时做形态比对）。
  * ② **`frozen` 被当成 `enumerable:false`**
- *    —— `Object.freeze` 只改 writable/configurable，**不改 enumerable**
- *    （原生：`Object.freeze({a:1})` ⇒ writable:false / enumerable:true /
- *    configurable:false）；引擎把 targetEnumerable 算成 false ⇒ 陷阱诚实报
- *    `enumerable:true` ⇒ 规则 3 判不一致 ⇒ 抛 TypeError。
+ * —— `Object.freeze` 只改 writable/configurable，**不改 enumerable**
+ * （原生：`Object.freeze({a:1})` ⇒ writable:false / enumerable:true /
+ * configurable:false）；引擎把 targetEnumerable 算成 false ⇒ 陷阱诚实报
+ * `enumerable:true` ⇒ 规则 3 判不一致 ⇒ 抛 TypeError。
  * ③ **靶侧标志 / extState 只查「内层 obj」，不查「接收者」**
- *    —— defineProperty / freeze / seal 把标志记在**接收者**上（brand 靶 ⇒
- *    记在 brand 上；obj 靶 ⇒ 记在 obj 上），只读内层 obj 的标志表 ⇒ 取不到
- *    ⇒ targetConfigurable 回落成 true ⇒ 与陷阱报的 `configurable:false`
- *    判「不一致」⇒ **即使陷阱报告的描述符与靶完全一致也抛**。
+ * —— defineProperty / freeze / seal 把标志记在**接收者**上（brand 靶 ⇒
+ * 记在 brand 上；obj 靶 ⇒ 记在 obj 上），只读内层 obj 的标志表 ⇒ 取不到
+ * ⇒ targetConfigurable 回落成 true ⇒ 与陷阱报的 `configurable:false`
+ * 判「不一致」⇒ **即使陷阱报告的描述符与靶完全一致也抛**。
  *
  * ── 修法（descriptor.ts 内，三处最小改动）────────────────────────
  * ① 形态比对收进「靶属性不可配置」分支（与规则 3 同一前提）；
  * ② 靶侧 enumerable 不再叠 `st !== "frozen"`（freeze 不改 enumerable）；
  * ③ 靶侧三标志 + extState 统一走 `currentPropDesc(target, key)`
- *    （**接收者优先、内层兜底**——同文件既有口径，不再漂移）。
+ * （**接收者优先、内层兜底**——同文件既有口径，不再漂移）。
  *
  * ── oracle：node v26.10.0 实测（`node -e` 本机跑，2026-10）──────────
- * | # | 靶                                            | 陷阱报告                          | native |
+ * | # | 靶 | 陷阱报告 | native |
  * |---|-----------------------------------------------|-----------------------------------|--------|
- * | 1 | `{a:1}`（a 可配置·数据）                     | 访问器 {get, configurable:true}     | 不抛   |
- * | 2 | 可配置**访问器** a                           | 数据 {value:2,…,configurable:true} | 不抛   |
- * | 3 | 不可配置数据 a                                | 访问器 {get, configurable:false}    | 抛     |
- * | 4 | 不可配置访问器 a                              | 数据 {value:2,…,configurable:false} | 抛     |
- * | 5 | `Object.freeze({a:1})`                       | {value:1,writable:false,enum:true,cfg:false} | 不抛 |
- * | 6 | `Object.freeze({a:1})`                       | 同上但 writable:true                | 抛     |
- * | 7 | `Object.freeze({a:1})`                       | 同上但 enumerable:false             | 抛     |
- * | 8 | brand 实例 + defineProperty 收紧（非配置·非写） | 与靶完全一致的描述符                | 不抛   |
- * | 9 | 同 8                                         | writable:true                      | 抛     |
- * |10 | 同 8                                         | enumerable:false                   | 抛     |
- * |11 | 同 8                                         | value:2（值不同）                  | 抛     |
+ * | 1 | `{a:1}`（a 可配置·数据） | 访问器 {get, configurable:true} | 不抛 |
+ * | 2 | 可配置**访问器** a | 数据 {value:2,…,configurable:true} | 不抛 |
+ * | 3 | 不可配置数据 a | 访问器 {get, configurable:false} | 抛 |
+ * | 4 | 不可配置访问器 a | 数据 {value:2,…,configurable:false} | 抛 |
+ * | 5 | `Object.freeze({a:1})` | {value:1,writable:false,enum:true,cfg:false} | 不抛 |
+ * | 6 | `Object.freeze({a:1})` | 同上但 writable:true | 抛 |
+ * | 7 | `Object.freeze({a:1})` | 同上但 enumerable:false | 抛 |
+ * | 8 | brand 实例 + defineProperty 收紧（非配置·非写） | 与靶完全一致的描述符 | 不抛 |
+ * | 9 | 同 8 | writable:true | 抛 |
+ * |10 | 同 8 | enumerable:false | 抛 |
+ * |11 | 同 8 | value:2（值不同） | 抛 |
  *
  * Object 面与 Reflect 面同口径（node 实测 1/2 两面皆不抛）。
  *
  * ── 已知缺口（**本次不修**：基线同样不抛 ⇒ 非本次回归；新增抛点有
- *    制造新假红的风险 ⇒ 后续单独立项）─────────────────────────────
+ * 制造新假红的风险 ⇒ 后续单独立项）─────────────────────────────
  * ① 靶不可扩展且该键不存在时，陷阱报 `configurable:true`
- *    ⇒ node v26.10.0 **抛** TypeError，引擎**不抛**（漏抛）。
+ * ⇒ node v26.10.0 **抛** TypeError，引擎**不抛**（漏抛）。
  * ② 靶不可写 + 不可配置而陷阱**省略 value** 时
- *    ⇒ node v26.10.0 **抛** TypeError，引擎**不抛**（漏抛）。
+ * ⇒ node v26.10.0 **抛** TypeError，引擎**不抛**（漏抛）。
  * ③ 靶为不可配置**访问器**且陷阱的 get/set 身份与靶不同
- *    ⇒ node v26.10.0 **抛** TypeError，引擎**放过**（漏抛——引擎的访问器
- *    侧表只存 thunk、不存原函数值 ⇒ SameValue 不可判）。
+ * ⇒ node v26.10.0 **抛** TypeError，引擎**放过**（漏抛——引擎的访问器
+ * 侧表只存 thunk、不存原函数值 ⇒ SameValue 不可判）。
  */
 
 
@@ -1004,7 +1004,7 @@ function expectTypeError(body: string): void {
   expect(throwsError(call(wrap(body)).throws, "TypeError")).toBe(true);
 }
 
-describe("Bug 1095 验收 1 — 可配置靶 + 异形态陷阱 ⇒ 不抛（native：不抛）", () => {
+describe("验收 1 — 可配置靶 + 异形态陷阱 ⇒ 不抛（native：不抛）", () => {
   it("Object 面：靶是可配置数据属性 + 陷阱报访问器描述符 ⇒ 不抛", () => {
     expectNoTypeError(read(DATA_CFG, TRAP_ACC(true)));
     // 原生返回**陷阱**的描述符（configurable:true；访问器描述符缺省不可枚举）
@@ -1039,7 +1039,7 @@ describe("Bug 1095 验收 1 — 可配置靶 + 异形态陷阱 ⇒ 不抛（nati
   });
 });
 
-describe("Bug 1095 验收 2 — 不可配置靶 + 异形态陷阱 ⇒ 抛 TypeError（native：抛）", () => {
+describe("验收 2 — 不可配置靶 + 异形态陷阱 ⇒ 抛 TypeError（native：抛）", () => {
   it("Object 面：靶是不可配置数据属性 + 陷阱报访问器描述符 ⇒ 抛", () => {
     expectTypeError(read(DATA_NONCFG, TRAP_ACC(false)));
   });
@@ -1057,7 +1057,7 @@ describe("Bug 1095 验收 2 — 不可配置靶 + 异形态陷阱 ⇒ 抛 TypeEr
   });
 });
 
-describe("Bug 1095 验收 3 — frozen 靶（freeze 不改 enumerable）", () => {
+describe("验收 3 — frozen 靶（freeze 不改 enumerable）", () => {
   it("陷阱诚实报 enumerable:true ⇒ 不抛（native：不抛）", () => {
     expectNoTypeError(read(FROZEN, TRAP_FROZEN_HONEST));
     expect(val(wrap(read(FROZEN, TRAP_FROZEN_HONEST, "Object", "enumerable")))).toEqual({
@@ -1089,7 +1089,7 @@ describe("Bug 1095 验收 3 — frozen 靶（freeze 不改 enumerable）", () =>
   });
 });
 
-describe("Bug 1095 验收 4 — brand 靶 + defineProperty 收紧标志（记在接收者上）", () => {
+describe("验收 4 — brand 靶 + defineProperty 收紧标志（记在接收者上）", () => {
   it("陷阱报与靶完全一致的描述符 ⇒ 不抛（native：不抛）", () => {
     expectNoTypeError(read(BRAND_TIGHT, TRAP_TIGHT_HONEST));
     expect(val(wrap(read(BRAND_TIGHT, TRAP_TIGHT_HONEST, "Object", "value")))).toEqual({
@@ -1130,7 +1130,7 @@ describe("Bug 1095 验收 4 — brand 靶 + defineProperty 收紧标志（记在
   });
 });
 
-describe("Bug 1095 — CI 闸门面：nudo check 不得报 error 级 nudo:entry-may-throw", () => {
+describe("CI 闸门面：nudo check 不得报 error 级 nudo:entry-may-throw", () => {
   /** 闸门源（导出函数 ⇒ 入口面参与 may-throw 分析） */
   const gate = (body: string) => `export function f() { ${body} }`;
 
@@ -1175,11 +1175,11 @@ describe("Bug 1095 — CI 闸门面：nudo check 不得报 error 级 nudo:entry-
 });
 
 // ---------------------------------------------------------------------------
-// BUG-132：[[PrimitiveValue]] 内部槽不进自有属性面
+// [[PrimitiveValue]] 内部槽不进自有属性面
 // ---------------------------------------------------------------------------
-describe("[] BUG-132：[[PrimitiveValue]] 内部槽不进自有属性面", () => {
+describe("[[PrimitiveValue]] 内部槽不进自有属性面", () => {
 /**
- * BUG-132 回归：装箱原始值的 `[[PrimitiveValue]]` 是**内部槽**，不是自有属性。
+ * 回归：装箱原始值的 `[[PrimitiveValue]]` 是**内部槽**，不是自有属性。
  *
  * 根因：`packages/core/src/algebra/builtins/error/boxed.ts` 的 `makeBoxedAbs`
  * 建 `[[PrimitiveValue]]` 时**只**把「不可枚举」记在**侧表**（prop flags）里，
@@ -1214,7 +1214,7 @@ function primSlotOf(name: "Number" | "String" | "Boolean", v: unknown): Slot {
   return slots[BOXED_PRIMITIVE_SLOT]!;
 }
 
-describe("BUG-132：[[PrimitiveValue]] 内部槽不进自有属性面", () => {
+describe("[[PrimitiveValue]] 内部槽不进自有属性面", () => {
   it("槽带 internal 标记（投影面据此剔除）", () => {
     for (const [name, v] of [
       ["Number", 1],
@@ -1251,11 +1251,11 @@ describe("BUG-132：[[PrimitiveValue]] 内部槽不进自有属性面", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-163（toJSON 半）：URL 原型方法面
+// （toJSON 半）：URL 原型方法面
 // ---------------------------------------------------------------------------
-describe("[] BUG-163（toJSON 半）：URL 原型方法面", () => {
+describe("（toJSON 半）：URL 原型方法面", () => {
 /**
- * BUG-163（**toJSON 半**）：`URL.prototype` 的自有方法面（`toString` /
+ * （**toJSON 半**）：`URL.prototype` 的自有方法面（`toString` /
  * `toJSON`）此前不在 `BUILTIN_BRAND_METHODS` / `BUILTIN_BRAND_ACCESSORS`
  * 里 ⇒ 成员读落闭 obj 槽 miss 折 **exact undefined**（wrong-exact：
  * `u.toJSON === undefined` 判 true）、`"toJSON" in u` 折 **exact false**
@@ -1279,7 +1279,7 @@ describe("[] BUG-163（toJSON 半）：URL 原型方法面", () => {
 const url = (expr: string) =>
   val(`export function f() { const u = new URL("http://example.com/a"); return ${expr}; }`);
 
-describe("BUG-163（toJSON 半）：URL 原型方法面", () => {
+describe("（toJSON 半）：URL 原型方法面", () => {
   it("u.toJSON 折函数值（不是 exact undefined）", () => {
     const r = call(
       `export function f() { const u = new URL("http://example.com/a"); return u.toJSON; }`,
@@ -1326,19 +1326,19 @@ describe("BUG-163（toJSON 半）：URL 原型方法面", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-164：Object.prototype legacy 四访问器（值读面与 `in` 面同口径）
+// Object.prototype legacy 四访问器（值读面与 `in` 面同口径）
 // ---------------------------------------------------------------------------
-describe("[] BUG-164：Object.prototype legacy 四访问器（值读面与 `in` 面同口径）", () => {
+describe("Object.prototype legacy 四访问器（值读面与 `in` 面同口径）", () => {
 /**
- * BUG-164 回归：`Object.prototype` 的 **legacy 四访问器**
+ * 回归：`Object.prototype` 的 **legacy 四访问器**
  * （`__defineGetter__` / `__defineSetter__` / `__lookupGetter__` /
  * `__lookupSetter__`）在**值读面**不得折 exact undefined。
  *
  * 根因：引擎有**两张** `Object.prototype` 名单——
  * - `exec/member-diag.ts` 的 `OBJECT_PROTO_NAMES`（**11** 个，含 legacy 四件）
- *   —— 被 **`in` 判定**与不可调用判定使用；
+ * —— 被 **`in` 判定**与不可调用判定使用；
  * - `builtins/ctor.ts` 的 `OBJECT_PROTO_METHOD_NAMES`（此前**只有 6** 个，
- *   无 legacy 四件）—— 被**值读面**使用。
+ * 无 legacy 四件）—— 被**值读面**使用。
  * ⇒ 同一个成员 `in` 面说有、值读面说没有 ⇒ **同一引擎两面结论相反** +
  * 假绿（`({}).__defineGetter__ === undefined` 恒 true）。
  *
@@ -1365,7 +1365,7 @@ const LEGACY = [
   "__lookupSetter__",
 ] as const;
 
-describe("BUG-164：Object.prototype legacy 四访问器（值读面与 `in` 面同口径）", () => {
+describe("Object.prototype legacy 四访问器（值读面与 `in` 面同口径）", () => {
   it("legacy 四件的 `=== undefined` 恒 false（原生恒是函数）", () => {
     for (const k of LEGACY) {
       expect(lit(wrap(`return ({}).${k} === undefined;`))).toBe(false);
@@ -1400,11 +1400,11 @@ describe("BUG-164：Object.prototype legacy 四访问器（值读面与 `in` 面
 });
 
 // ---------------------------------------------------------------------------
-// BUG-165 symbol member call face
+// symbol member call face
 // ---------------------------------------------------------------------------
-describe("[] BUG-165 symbol member call face", () => {
+describe("symbol member call face", () => {
 /**
- * BUG-165：符号成员（@@matchAll / @@iterator …）读面说「有」，调用面查的是
+ * 符号成员（@@matchAll / @@iterator …）读面说「有」，调用面查的是
  * 另两张表 ⇒ 判「确定不存在」⇒ hard throw TypeError（对永不抛的代码报假红）。
  * 修复：读面说存在的符号成员，调用面不得声称缺失（brand 接收者折 unknown /
  * 迭代器面）。
@@ -1426,7 +1426,7 @@ export function sTaIter() { return new Uint8Array(2)[Symbol.iterator](); }
 export function sMapIter() { return new Map()[Symbol.iterator](); }
 `;
 
-describe("BUG-165 symbol member call face", () => {
+describe("symbol member call face", () => {
   it("no hard TypeError for registered symbol members", () => {
     const r = checkSource("/t/bug-165.js", SRC, pTrue);
     expect(r.issues.filter((i) => i.severity === "error")).toHaveLength(0);
@@ -1444,11 +1444,11 @@ describe("BUG-165 symbol member call face", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-175 instanceof RHS without prototype
+// instanceof RHS without prototype
 // ---------------------------------------------------------------------------
-describe("[] BUG-175 instanceof RHS without prototype", () => {
+describe("instanceof RHS without prototype", () => {
 /**
- * BUG-175：`instanceof` RHS 没有 `prototype`（Proxy / 箭头函数 / 方法）时
+ * `instanceof` RHS 没有 `prototype`（Proxy / 箭头函数 / 方法）时
  * `rhsPrototypeOf` 合成一个 brand 原型 ⇒ 「原型非对象 ⇒ 定抛」门永不触发。
  * 修复：缺省信息不得伪造空值语义。
  */
@@ -1469,7 +1469,7 @@ export function instMethod() { const o = { a: 1 }; const m = { f() {} }.f; retur
 export function instProxy() { const o = { a: 1 }; return o instanceof Proxy; }
 `;
 
-describe("BUG-175 instanceof RHS without prototype", () => {
+describe("instanceof RHS without prototype", () => {
   it("missing prototype ⇒ native TypeError (not a synthetic brand)", () => {
     const r = checkSource("/t/bug-175-p1.js", P1, pTrue);
     expect(sigOf(r, "instProxy")).toBe("never throws TypeError");
@@ -1488,11 +1488,11 @@ describe("BUG-175 instanceof RHS without prototype", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-176 — Reflect.construct(用户类, …) 不记假 may-throw
+// Reflect.construct(用户类, …) 不记假 may-throw
 // ---------------------------------------------------------------------------
-describe("[] BUG-176 — Reflect.construct(用户类, …) 不记假 may-throw", () => {
+describe("Reflect.construct(用户类, …) 不记假 may-throw", () => {
 /**
- * BUG-176 回归：`Reflect.construct(用户类, argsList[, newTarget])` 不得误报
+ * 回归：`Reflect.construct(用户类, argsList[, newTarget])` 不得误报
  * may-throw TypeError。
  *
  * 原生（node v26）：用户类值 `class A {}` 恒有 `[[Construct]]`（ClassDefinition-
@@ -1510,7 +1510,7 @@ describe("[] BUG-176 — Reflect.construct(用户类, …) 不记假 may-throw",
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("BUG-176 — Reflect.construct(用户类, …) 不记假 may-throw", () => {
+describe("Reflect.construct(用户类, …) 不记假 may-throw", () => {
   it("2 参合法形：target/argsList 均为用户类值 → 不抛、不记 may", () => {
     const src = wrap(`class A { constructor(){ this.t = 1; } } return Reflect.construct(A, []);`);
     const r = call(src);
@@ -1549,11 +1549,11 @@ describe("BUG-176 — Reflect.construct(用户类, …) 不记假 may-throw", ()
 });
 
 // ---------------------------------------------------------------------------
-// BUG-177 derived constructor returning an object
+// derived constructor returning an object
 // ---------------------------------------------------------------------------
-describe("[] BUG-177 derived constructor returning an object", () => {
+describe("derived constructor returning an object", () => {
 /**
- * BUG-177：派生构造器 `return {obj}` 时，ES 返回值语义应先于「必须调用
+ * 派生构造器 `return {obj}` 时，ES 返回值语义应先于「必须调用
  * super()」门 ⇒ 合法代码被误报必抛。修复：按 ES [[Construct]] 顺序。
  */
 
@@ -1568,7 +1568,7 @@ export class DerivedB extends BaseB {
 export function derivedReturnObj() { return new DerivedB(); }
 `;
 
-describe("BUG-177 derived constructor returning an object", () => {
+describe("derived constructor returning an object", () => {
   it("returns the explicit object instead of may-throw", () => {
     const r = checkSource("/t/bug-177.js", SRC, pTrue);
     expect(sigOf(r, "derivedReturnObj")).toBe("{ q: 1 }");
@@ -1580,11 +1580,11 @@ describe("BUG-177 derived constructor returning an object", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-217 computed literal key member access
+// computed literal key member access
 // ---------------------------------------------------------------------------
-describe("[] BUG-217 computed literal key member access", () => {
+describe("computed literal key member access", () => {
 /**
- * BUG-217：`o[k]`（字面量常量键）对 obj / brand 接收者不查成员表 ⇒ getter
+ * `o[k]`（字面量常量键）对 obj / brand 接收者不查成员表 ⇒ getter
  * 返回 unknown。修复：`$idx` 对字面量键委派 `$get`。
  */
 
@@ -1605,7 +1605,7 @@ export function f() {
 }
 `;
 
-describe("BUG-217 computed literal key member access", () => {
+describe("computed literal key member access", () => {
   it("getter through a computed variable key resolves", () => {
     expect(val(SRC)).toEqual({ ok: true, value: 42 });
   });
@@ -1617,11 +1617,11 @@ describe("BUG-217 computed literal key member access", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 218：Proxy has 陷阱的规范不变式
+// Proxy has 陷阱的规范不变式
 // ---------------------------------------------------------------------------
-describe("[] Bug 218：Proxy has 陷阱的规范不变式", () => {
+describe("Proxy has 陷阱的规范不变式", () => {
 /**
- * Bug 218：Proxy `has` 陷阱缺 **ES 规范不变式** ⇒ 漏判必抛 TypeError ⇒ 假绿，
+ * Proxy `has` 陷阱缺 **ES 规范不变式** ⇒ 漏判必抛 TypeError ⇒ 假绿，
  * 并印出宿主不可能产出的值 `false`。
  *
  * ES2023 `[[HasProperty]]` 第 8 步：陷阱结果为 falsy 时取靶的
@@ -1644,7 +1644,7 @@ const hasSrc = (targetSetup: string, trapBody: string): string => `export functi
   return "x" in p;
 }`;
 
-describe("Bug 218：Proxy has 陷阱的规范不变式", () => {
+describe("Proxy has 陷阱的规范不变式", () => {
   it("靶上不可配置自有属性 + 陷阱返 false ⇒ 定抛 TypeError（改前：false，不抛）", () => {
     const r = call(
       hasSrc(`Object.defineProperty(t, "x", { value: 1, configurable: false, enumerable: true });`, "false"),
@@ -1678,24 +1678,24 @@ describe("Bug 218：Proxy has 陷阱的规范不变式", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 256：String.prototype 的 generic 方法不品牌检查
+// String.prototype 的 generic 方法不品牌检查
 // ---------------------------------------------------------------------------
-describe("[] Bug 256：String.prototype 的 generic 方法不品牌检查", () => {
+describe("String.prototype 的 generic 方法不品牌检查", () => {
 /**
- * Bug 256 —— `String.prototype.*` 的 30 个方法被**品牌检查**（ES2023 §22.1.3 实为
+ * `String.prototype.*` 的 30 个方法被**品牌检查**（ES2023 §22.1.3 实为
  * **generic**：RequireObjectCoercible + ToString）⇒ 借用调用定抛 TypeError
  * （L2 门禁假红；`String.prototype.toUpperCase.call(1)` 原生 "1"）。
  *
  * 修法（core/algebra/exec/class/invoke.ts）：**修表**——`String.prototype` 上只有
  * `toString` / `valueOf` 要品牌（BRAND_CHECK_METHODS 方法级表），其余方法走
  * generic 路（ToString 接收者后派发）；品牌检查判定改由 brandCheckBrandOf
- * 表驱动，Error 家族不进品牌面（Bug 261）。
+ * 表驱动，Error 家族不进品牌面（）。
  */
 
 
 
 
-describe("Bug 256：String.prototype 的 generic 方法不品牌检查", () => {
+describe("String.prototype 的 generic 方法不品牌检查", () => {
   it("toUpperCase.call(1) = '1'（原生 generic；此前定抛 TypeError）", () => {
     const r = call(`export function f() { return String.prototype.toUpperCase.call(1); }`);
     expect(litValue(r.result)).toEqual({ ok: true, value: "1" });
@@ -1749,11 +1749,11 @@ describe("Bug 256：String.prototype 的 generic 方法不品牌检查", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-259 symbol-keyed writes
+// symbol-keyed writes
 // ---------------------------------------------------------------------------
-describe("[] BUG-259 symbol-keyed writes", () => {
+describe("symbol-keyed writes", () => {
 /**
- * BUG-259：`$setKey` 对 symbol 键直接走字符串键写面 ⇒ 运行时 symbol 键读写
+ * `$setKey` 对 symbol 键直接走字符串键写面 ⇒ 运行时 symbol 键读写
  * 不一致（写入丢失 / 读到 undefined）。修复：symbol 槽键经 symbolSlotKeyOf
  * 映射到 `@@…` 槽。
  */
@@ -1785,7 +1785,7 @@ export function f() {
 }
 `;
 
-describe("BUG-259 symbol-keyed writes", () => {
+describe("symbol-keyed writes", () => {
   it("literal symbol key reads back", () => {
     expect(val(READ)).toEqual({ ok: true, value: 1 });
   });
@@ -1801,11 +1801,11 @@ describe("BUG-259 symbol-keyed writes", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 261：Error.prototype.toString 是普通方法（无品牌检查）
+// Error.prototype.toString 是普通方法（无品牌检查）
 // ---------------------------------------------------------------------------
-describe("[] Bug 261：Error.prototype.toString 是普通方法（无品牌检查）", () => {
+describe("Error.prototype.toString 是普通方法（无品牌检查）", () => {
 /**
- * Bug 261 —— `Error.prototype.toString` 被判**品牌检查**⇒ 定抛 TypeError
+ * `Error.prototype.toString` 被判**品牌检查**⇒ 定抛 TypeError
  * （L2 门禁假红）。规范里它是**普通方法**（无品牌校验）：只读 this.name /
  * this.message 两个属性（node 实测 `Error.prototype.toString.call({name:"X",
  * message:"y"})` → "X: y"）。
@@ -1818,7 +1818,7 @@ describe("[] Bug 261：Error.prototype.toString 是普通方法（无品牌检�
 
 
 
-describe("Bug 261：Error.prototype.toString 是普通方法（无品牌检查）", () => {
+describe("Error.prototype.toString 是普通方法（无品牌检查）", () => {
   it("toString.call({name:'X', message:'y'}) = 'X: y'（原生；此前定抛）", () => {
     const r = call(
       `export function f() { return Error.prototype.toString.call({ name: "X", message: "y" }); }`,
@@ -1866,11 +1866,11 @@ describe("Bug 261：Error.prototype.toString 是普通方法（无品牌检查�
 });
 
 // ---------------------------------------------------------------------------
-// BUG-275：Object.create(proto) 继承 proto 的字段存在性
+// Object.create(proto) 继承 proto 的字段存在性
 // ---------------------------------------------------------------------------
-describe("[] BUG-275：Object.create(proto) 继承 proto 的字段存在性", () => {
+describe("Object.create(proto) 继承 proto 的字段存在性", () => {
 /**
- * BUG-275：`Object.create(proto)` 的 Abs 此前只记**原型身份**
+ * `Object.create(proto)` 的 Abs 此前只记**原型身份**
  * （protoTable）、槽面是空 obj ⇒ L1 shape 契约逐字段对账（只查自有槽）报
  * `missing field`（门禁假红），而宿主（`"a" in o` = true）、TypeScript
  * （结构类型）、引擎自己的 guard / zod / standard 三个产物（HasProperty
@@ -1894,7 +1894,7 @@ describe("[] BUG-275：Object.create(proto) 继承 proto 的字段存在性", ()
 const create = (expr: string) =>
   val(`export function f() { const o = Object.create({ a: 1 }); return ${expr}; }`);
 
-describe("BUG-275：Object.create(proto) 继承 proto 的字段存在性", () => {
+describe("Object.create(proto) 继承 proto 的字段存在性", () => {
   it('"a" in Object.create({a:1}) 折 exact true（HasProperty 口径）', () => {
     expect(create('"a" in o')).toEqual({ ok: true, value: true });
   });
@@ -1976,11 +1976,11 @@ export function bad() {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 278: Proxy 靶不可调用 → 调用定抛 TypeError
+// Proxy 靶不可调用 → 调用定抛 TypeError
 // ---------------------------------------------------------------------------
-describe("[] Bug 278: Proxy 靶不可调用 → 调用定抛 TypeError", () => {
+describe("Proxy 靶不可调用 → 调用定抛 TypeError", () => {
 /**
- * Bug 278：Proxy 的 `[[Call]]` **不检查靶是否可调用** —— 代理一个不可调用
+ * Proxy 的 `[[Call]]` **不检查靶是否可调用** —— 代理一个不可调用
  * 靶（`{}` / `[]` / 类）时，引擎恒判「可调用」⇒ 调用不抛且**不记
  * may-throw** ⇒ 声称「永不抛」⇒ L2 `nudo:entry-may-throw` 假绿。
  *
@@ -1990,7 +1990,7 @@ describe("[] Bug 278: Proxy 靶不可调用 → 调用定抛 TypeError", () => {
  *
  * 修复（packages/core/src/algebra/exec/call.ts）：
  * - `$callDispatch` 遇 Proxy brand → `callProxyAbs`：先按**靶**判可调用性
- *   （callableFacetOf 三档：true / false / 不可判），false ⇒ hard NudoThrow。
+ * （callableFacetOf 三档：true / false / 不可判），false ⇒ hard NudoThrow。
  */
 
 
@@ -2000,7 +2000,7 @@ function v(src: string) {
   return litValue___nudojs_core(call(src, "f").result);
 }
 
-describe("Bug 278: Proxy 靶不可调用 → 调用定抛 TypeError", () => {
+describe("Proxy 靶不可调用 → 调用定抛 TypeError", () => {
   it("靶是普通对象 → throws TypeError（此前 unknown + never）", () => {
     const r = call(
       `export function f() {
@@ -2069,11 +2069,11 @@ export function f() {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 279: Proxy [[Call]] 回退靶 + 派发 apply 陷阱
+// Proxy [[Call]] 回退靶 + 派发 apply 陷阱
 // ---------------------------------------------------------------------------
-describe("[] Bug 279: Proxy [[Call]] 回退靶 + 派发 apply 陷阱", () => {
+describe("Proxy [[Call]] 回退靶 + 派发 apply 陷阱", () => {
 /**
- * Bug 279：Proxy 的 `[[Call]]` 既**不回退靶**、**不派发 `apply` 陷阱**
+ * Proxy 的 `[[Call]]` 既**不回退靶**、**不派发 `apply` 陷阱**
  * —— 引擎声称代理调用「永不抛」且结果恒 unknown（假绿 + 错值）。
  *
  * 规范（Proxy [[Call]]）：靶可调用时，`[[Call]]` 先取 handler 的 `apply`
@@ -2082,9 +2082,9 @@ describe("[] Bug 279: Proxy [[Call]] 回退靶 + 派发 apply 陷阱", () => {
  *
  * 修复（packages/core/src/algebra/exec/call.ts` + `exec/match-iter.ts`）：
  * - `proxyTrapOf` 陷阱名联合补 `"apply"`（此前并集里没有 ⇒ 陷阱**从不派发**，
- *   陷阱副作用整体丢失）。
+ * 陷阱副作用整体丢失）。
  * - `$callDispatch` 遇 Proxy brand → `callProxyAbs`：apply 陷阱优先、
- *   缺席回退靶；陷阱实参按原生口径 (target, thisArg, args)。
+ * 缺席回退靶；陷阱实参按原生口径 (target, thisArg, args)。
  */
 
 
@@ -2094,7 +2094,7 @@ function v(src: string) {
   return litValue___nudojs_core_1(call(src, "f").result);
 }
 
-describe("Bug 279: Proxy [[Call]] 回退靶 + 派发 apply 陷阱", () => {
+describe("Proxy [[Call]] 回退靶 + 派发 apply 陷阱", () => {
   it("无 apply 陷阱 → 回退靶的 [[Call]]（此前恒 unknown）", () => {
     expect(
       v(`export function f() {
@@ -2157,11 +2157,11 @@ describe("Bug 279: Proxy [[Call]] 回退靶 + 派发 apply 陷阱", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 281 · 复数 gOPDs 必须有 brand 分支（键集与 gOPN 同口径）
+// 复数 gOPDs 必须有 brand 分支（键集与 gOPN 同口径）
 // ---------------------------------------------------------------------------
-describe("[] Bug 281 · 复数 gOPDs 必须有 brand 分支（键集与 gOPN 同口径）", () => {
+describe("复数 gOPDs 必须有 brand 分支（键集与 gOPN 同口径）", () => {
 /**
- * Bug 281 — `Object.getOwnPropertyDescriptors`（**复数**）没有 `brand` 分支
+ * `Object.getOwnPropertyDescriptors`（**复数**）没有 `brand` 分支
  * ⇒ 类实例 / 内建 brand 一路落「键集不可判 → 开放 obj」兜底（**零槽**）⇒
  * `Object.keys(gOPDs(x))` 折 **exact 空元组**（自信的确切错值），而同一引擎
  * 的 `gOPN`（exact 键集）与 `gOPD(单数)`（exact 描述符）都说键在 ⇒ 三面互斥。
@@ -2196,7 +2196,7 @@ function tupleLits(a: Abs): unknown[] | undefined {
   return out.some((v) => v === undefined) ? undefined : out;
 }
 
-describe("Bug 281 · 复数 gOPDs 必须有 brand 分支（键集与 gOPN 同口径）", () => {
+describe("复数 gOPDs 必须有 brand 分支（键集与 gOPN 同口径）", () => {
   it("类实例：描述符映射的键集 = 自有键集（改前 []）", () => {
     expect(tupleLits(absOf("const inst = new C(); return Object.keys(Object.getOwnPropertyDescriptors(inst));"))).toEqual([
       "x",
@@ -2291,18 +2291,18 @@ describe("Bug 281 · 复数 gOPDs 必须有 brand 分支（键集与 gOPN 同口
 });
 
 // ---------------------------------------------------------------------------
-// Bug 284: Object.isExtensible 派发 Proxy 的 isExtensible 陷阱
+// Object.isExtensible 派发 Proxy 的 isExtensible 陷阱
 // ---------------------------------------------------------------------------
-describe("[] Bug 284: Object.isExtensible 派发 Proxy 的 isExtensible 陷阱", () => {
+describe("Object.isExtensible 派发 Proxy 的 isExtensible 陷阱", () => {
 /**
- * Bug 284：Proxy 的 `isExtensible` 陷阱**从不派发** ⇒ `Object.isExtensible(proxy)`
+ * Proxy 的 `isExtensible` 陷阱**从不派发** ⇒ `Object.isExtensible(proxy)`
  * 折**确定 true**（原生必抛 TypeError：陷阱报 false 而靶实际可扩展 ⇒ 规范
  * 不变量冲突），且陷阱的副作用整体丢失（假绿 + 错值）。
  *
  * 修复（packages/core/src/algebra/builtins/object/methods.ts）：
  * - "isExtensible" 分支接线 Proxy 臂 → `proxyIsExtensible`：
- *   GetMethod(handler, "isExtensible") → 缺席回退**靶**的 [[IsExtensible]]；
- *   ToBoolean(陷阱结果) 与靶的实际可扩展性不一致 ⇒ TypeError。
+ * GetMethod(handler, "isExtensible") → 缺席回退**靶**的 [[IsExtensible]]；
+ * ToBoolean(陷阱结果) 与靶的实际可扩展性不一致 ⇒ TypeError。
  */
 
 
@@ -2312,7 +2312,7 @@ function v(src: string) {
   return litValue___nudojs_core_2(call(src, "f").result);
 }
 
-describe("Bug 284: Object.isExtensible 派发 Proxy 的 isExtensible 陷阱", () => {
+describe("Object.isExtensible 派发 Proxy 的 isExtensible 陷阱", () => {
   it("陷阱报 false 而靶可扩展 → TypeError（此前恒折 true）", () => {
     expect(
       v(`export function f() {
@@ -2460,19 +2460,19 @@ describe("Bug 284: Object.isExtensible 派发 Proxy 的 isExtensible 陷阱", ()
 });
 
 // ---------------------------------------------------------------------------
-// Bug 285: for…in 走 Proxy 的 ownKeys 陷阱
+// for…in 走 Proxy 的 ownKeys 陷阱
 // ---------------------------------------------------------------------------
-describe("[] Bug 285: for…in 走 Proxy 的 ownKeys 陷阱", () => {
+describe("for…in 走 Proxy 的 ownKeys 陷阱", () => {
 /**
- * Bug 285：Proxy 的 `for…in` **完全无视 `ownKeys` 陷阱** ⇒ 枚举出**靶对象**的
+ * Proxy 的 `for…in` **完全无视 `ownKeys` 陷阱** ⇒ 枚举出**靶对象**的
  * 自有可枚举键（精确错值：原生 "" 而引擎 "ac"）。
  *
  * 修复（packages/core/src/algebra/exec/runtime/containers/iterate.ts）：
  * `$forInKeys` 加 Proxy 臂 → `proxyForInKeys`：
  * 1. [[OwnPropertyKeys]] → ownKeys 陷阱（proxyOwnKeysTrapKeys：单一实现，含
- *    规范不变量校验——重复名 / 非字符串键 / 漏靶的不可配置自有键 ⇒ TypeError）；
+ * 规范不变量校验——重复名 / 非字符串键 / 漏靶的不可配置自有键 ⇒ TypeError）；
  * 2. 每个键按 [[GetOwnProperty]] 判**可枚举性**（gOPD 陷阱优先，否则靶的自有
- *    描述符）——不可枚举 / 靶上不存在 ⇒ 不进结果；
+ * 描述符）——不可枚举 / 靶上不存在 ⇒ 不进结果；
  * 3. 键序 = 陷阱结果的顺序（原生 for-in 不重排整数键）。
  *
  * 已知保守偏差（**不钉**，待 descriptor.ts 的 gOPD 派发面区分「陷阱返回
@@ -2488,7 +2488,7 @@ function v(src: string) {
   return litValue___nudojs_core_3(call(src, "f").result);
 }
 
-describe("Bug 285: for…in 走 Proxy 的 ownKeys 陷阱", () => {
+describe("for…in 走 Proxy 的 ownKeys 陷阱", () => {
   it("陷阱返回不在靶上的键 → 0 次（此前枚举靶的 2 个键）", () => {
     expect(
       v(`export function f() {
@@ -2623,11 +2623,11 @@ describe("Bug 285: for…in 走 Proxy 的 ownKeys 陷阱", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 288 — structuredClone 按可克隆性分档（不再一律 may TypeError）
+// structuredClone 按可克隆性分档（不再一律 may TypeError）
 // ---------------------------------------------------------------------------
-describe("[] Bug 288 — structuredClone 按可克隆性分档（不再一律 may TypeError）", () => {
+describe("structuredClone 按可克隆性分档（不再一律 may TypeError）", () => {
 /**
- * Bug 288 — 宿主全局 `structuredClone` 的**抽象实参**一律记 may `TypeError`
+ * 宿主全局 `structuredClone` 的**抽象实参**一律记 may `TypeError`
  * ⇒ ① 可克隆形态（普通对象 / 数组 / Date / Map / Set / RegExp）**假红**
  * （L1/L2 门禁红，而 native 不抛）；② 不可克隆形态（Symbol / 函数 /
  * WeakMap / Promise）**抛错类型错**（native 抛 `DOMException`
@@ -2688,7 +2688,7 @@ const NOT_CLONEABLE: Array<[string, string]> = [
   ["class with fn prop", `class C { constructor() { this.f = () => 1; } }\nreturn structuredClone(new C());`],
 ];
 
-describe("Bug 288 — structuredClone 按可克隆性分档（不再一律 may TypeError）", () => {
+describe("structuredClone 按可克隆性分档（不再一律 may TypeError）", () => {
   it("原生 oracle：可克隆形态不抛 / 不可克隆形态抛 DataCloneError", () => {
     expect(structuredClone({ a: 1 })).toEqual({ a: 1 });
     expect(structuredClone(new Date(0))).toBeInstanceOf(Date);
@@ -2776,11 +2776,11 @@ describe("Bug 288 — structuredClone 按可克隆性分档（不再一律 may T
 });
 
 // ---------------------------------------------------------------------------
-// Bug 347：pick 不把原型链成员当字段
+// pick 不把原型链成员当字段
 // ---------------------------------------------------------------------------
-describe("[] Bug 347：pick 不把原型链成员当字段", () => {
+describe("pick 不把原型链成员当字段", () => {
 /**
- * Bug 347 —— `pick(shape({…}), keys)` 用 `d.fields[k]` 取字段，**沿原型链读**：
+ * `pick(shape({…}), keys)` 用 `d.fields[k]` 取字段，**沿原型链读**：
  * `"constructor"` / `"toString"` / `"valueOf"` 会命中 `Object.prototype` 成员，
  * 判真后被当成字段塞进新字段表 ⇒ 消费端读 `f.constraint` 拿到 `undefined`
  * ⇒ `nudo contract` / `nudo export` 面裸崩（内部 TypeError 外泄），
@@ -2794,7 +2794,7 @@ describe("[] Bug 347：pick 不把原型链成员当字段", () => {
 
 const PROTO_KEYS = ["constructor", "toString", "valueOf", "hasOwnProperty"];
 
-describe("Bug 347：pick 不把原型链成员当字段", () => {
+describe("pick 不把原型链成员当字段", () => {
   it("原型链 key 不进字段表（constructor / toString / valueOf …）", () => {
     for (const k of PROTO_KEYS) {
       const p = pick_____constraint_ts(shape_____constraint_ts({ a: number_____constraint_ts() }), [k]);
@@ -2824,11 +2824,11 @@ describe("Bug 347：pick 不把原型链成员当字段", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 352 · shape 非对象实参守卫
+// shape 非对象实参守卫
 // ---------------------------------------------------------------------------
-describe("[] Bug 352 · shape 非对象实参守卫", () => {
+describe("shape 非对象实参守卫", () => {
 /**
- * Bug 352 — `shape(42)` 这类**非对象实参**：`Object.entries(42)` ⇒ `[]` ⇒
+ * `shape(42)` 这类**非对象实参**：`Object.entries(42)` ⇒ `[]` ⇒
  * 整条参数契约退化成「空 shape」⇒ 域放宽到「任意对象」⇒ 门禁**假绿**
  * （合法实参与违约实参同样放行），且全程零诊断。
  *
@@ -2843,7 +2843,7 @@ describe("[] Bug 352 · shape 非对象实参守卫", () => {
 
 
 
-describe("Bug 352 · shape 非对象实参守卫", () => {
+describe("shape 非对象实参守卫", () => {
   beforeEach(() => {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
@@ -2891,20 +2891,20 @@ export function g() {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 383 · 对象键走 ToPropertyKey（写落地）
+// 对象键走 ToPropertyKey（写落地）
 // ---------------------------------------------------------------------------
-describe("[] Bug 383 · 对象键走 ToPropertyKey（写落地）", () => {
+describe("对象键走 ToPropertyKey（写落地）", () => {
 /**
- * Bug 383 —— 计算成员访问的**对象键**不做 ToPropertyKey：写被静默丢弃、
+ * 计算成员访问的**对象键**不做 ToPropertyKey：写被静默丢弃、
  * 键强制转换副作用全丢。
  *
  * 修前（HEAD）：`propertyKeyOf` 只认**字面量** term ⇒ 对象键落「抽象键」臂 ⇒
- *   - 写被**静默丢弃**（`o[{}] = 1` 之后 `Object.keys(o).length` = 0；native 1）
- *   - 键的强制转换副作用全丢（`k.toString()` 从不执行 ⇒ 计数器恒 0）
- *   - 键集面还折 **exact 空元组**（自信的确切错值）
+ * - 写被**静默丢弃**（`o[{}] = 1` 之后 `Object.keys(o).length` = 0；native 1）
+ * - 键的强制转换副作用全丢（`k.toString()` 从不执行 ⇒ 计数器恒 0）
+ * - 键集面还折 **exact 空元组**（自信的确切错值）
  *
  * 修后：对象键走 ToPropertyKey（ToPrimitive(string) → ToString），钩子**真调用**
- * （与 Bug 381 的钩子调用面同口径）；键**不可判**时写不得静默丢弃 ⇒ 打
+ * （与 的钩子调用面同口径）；键**不可判**时写不得静默丢弃 ⇒ 打
  * 「自有键集不完备」标记（键家族据此折 partial，**不得**折 exact 空元组）。
  *
  * oracle：node v26 实测（`node -e` 逐条对照）。
@@ -2912,7 +2912,7 @@ describe("[] Bug 383 · 对象键走 ToPropertyKey（写落地）", () => {
 
 
 
-describe("Bug 383 · 对象键走 ToPropertyKey（写落地）", () => {
+describe("对象键走 ToPropertyKey（写落地）", () => {
   it("`o[{}] = 1` 的键为 \"[object Object]\" ⇒ 写落地（native：1）", () => {
     expect(val(`export function f() { const o = {}; o[{}] = 1; return Object.keys(o).length; }`)).toEqual({
       ok: true,
@@ -2943,7 +2943,7 @@ describe("Bug 383 · 对象键走 ToPropertyKey（写落地）", () => {
   });
 });
 
-describe("Bug 383 · 键的强制转换副作用不再全丢", () => {
+describe("键的强制转换副作用不再全丢", () => {
   it("写面：键的 toString 被调一次（native：1）", () => {
     expect(
       val(
@@ -2961,14 +2961,14 @@ describe("Bug 383 · 键的强制转换副作用不再全丢", () => {
   });
 });
 
-describe("Bug 383 · 键不可判 ⇒ 写不得静默丢弃（键集面不折 exact 空元组）", () => {
+describe("键不可判 ⇒ 写不得静默丢弃（键集面不折 exact 空元组）", () => {
   it("函数键的 ToString 不可判 ⇒ 键集折 partial（native：1，引擎不得折 exact 0）", () => {
     const r = val(`export function f() { const o = {}; o[function f(){}] = 1; return Object.keys(o).length; }`);
     expect(r.ok).toBe(false);
   });
 });
 
-describe("Bug 383 · 对照组（字面量键）不得回归", () => {
+describe("对照组（字面量键）不得回归", () => {
   it("字符串键 / 数字键照旧落地（native：1）", () => {
     expect(val(`export function f() { const o = {}; o["x"] = 1; return Object.keys(o).length; }`)).toEqual({
       ok: true,
@@ -2983,11 +2983,11 @@ describe("Bug 383 · 对照组（字面量键）不得回归", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 386 · 不可变原型 Object.prototype：Object.setPrototypeOf 抛 TypeError
+// 不可变原型 Object.prototype：Object.setPrototypeOf 抛 TypeError
 // ---------------------------------------------------------------------------
-describe("[] Bug 386 · 不可变原型 Object.prototype：Object.setPrototypeOf 抛 TypeError", () => {
+describe("不可变原型 Object.prototype：Object.setPrototypeOf 抛 TypeError", () => {
 /**
- * Bug 386 —— `Object.setPrototypeOf(Object.prototype, …)` **不查不可变原型**：
+ * `Object.setPrototypeOf(Object.prototype, …)` **不查不可变原型**：
  * 引擎**静默改写** `Object.prototype` 的原型并声称「不会抛」（假绿）。
  *
  * 修前（HEAD）：`protoChangeAllowed` 只查 extensibility + SameValue ⇒
@@ -2995,9 +2995,9 @@ describe("[] Bug 386 · 不可变原型 Object.prototype：Object.setPrototypeOf
  * Immutable prototype object 'Object.prototype' cannot have their prototype set）。
  *
  * 修后：**同一事实源**（`protoChangeAllowed`，builtins/object/methods.ts——
- * 与 Bug 385 的原型环判定同处）——
- *   - `Object.setPrototypeOf` 据此**抛 TypeError**（native 同款）
- *   - `Reflect.setPrototypeOf` 据此**返 false**（native 口径：Reflect 不抛）
+ * 与 的原型环判定同处）——
+ * - `Object.setPrototypeOf` 据此**抛 TypeError**（native 同款）
+ * - `Reflect.setPrototypeOf` 据此**返 false**（native 口径：Reflect 不抛）
  *
  * 不可变原型的范围（规范 + V8 实测）：**仅 `Object.prototype`**——其余内建
  * 原型（Array / Function / String / … .prototype）**可**改（native 不抛）。
@@ -3007,7 +3007,7 @@ describe("[] Bug 386 · 不可变原型 Object.prototype：Object.setPrototypeOf
 
 
 
-describe("Bug 386 · 不可变原型 Object.prototype：Object.setPrototypeOf 抛 TypeError", () => {
+describe("不可变原型 Object.prototype：Object.setPrototypeOf 抛 TypeError", () => {
   it("`Object.setPrototypeOf(Object.prototype, {})` ⇒ 抛 TypeError（native：同款）", () => {
     const rec = call(`export function f() { Object.setPrototypeOf(Object.prototype, {}); return 1; }`);
     expect(throwsError(rec.throws, "TypeError")).toBe(true);
@@ -3030,7 +3030,7 @@ describe("Bug 386 · 不可变原型 Object.prototype：Object.setPrototypeOf �
   });
 });
 
-describe("Bug 386 · 不可变原型：Reflect.setPrototypeOf 返 false（Reflect 口径不抛）", () => {
+describe("不可变原型：Reflect.setPrototypeOf 返 false（Reflect 口径不抛）", () => {
   it("`Reflect.setPrototypeOf(Object.prototype, {})` ⇒ false（native：false）", () => {
     expect(
       val(`export function f() { return Reflect.setPrototypeOf(Object.prototype, {}); }`),
@@ -3038,7 +3038,7 @@ describe("Bug 386 · 不可变原型：Reflect.setPrototypeOf 返 false（Reflec
   });
 });
 
-describe("Bug 386 · 对照组（其余内建原型可改）不得回归", () => {
+describe("对照组（其余内建原型可改）不得回归", () => {
   it("`Object.setPrototypeOf(Array.prototype, {})` 不抛（native：可改）", () => {
     expect(
       val(`export function f() { try { Object.setPrototypeOf(Array.prototype, {}); return "no-throw"; } catch { return "threw"; } }`),
@@ -3054,21 +3054,21 @@ describe("Bug 386 · 对照组（其余内建原型可改）不得回归", () =>
 });
 
 // ---------------------------------------------------------------------------
-// Bug 406: `__proto__` 槽在契约投影层不被吞掉（族 17 / Bug 606 已修，本钉防回归）
+// `__proto__` 槽在契约投影层不被吞掉（族 17 / 已修，本钉防回归）
 // ---------------------------------------------------------------------------
-describe("[] Bug 406: `__proto__` 槽在契约投影层不被吞掉（族 17 / Bug 606 已修，本钉防回归）", () => {
+describe("`__proto__` 槽在契约投影层不被吞掉（族 17 / 已修，本钉防回归）", () => {
 /**
- * Bug 406 —— 对象槽名 `__proto__` 在 core 契约投影层被吞掉。
+ * 对象槽名 `__proto__` 在 core 契约投影层被吞掉。
  *
- * 报告称两处 Nudo 侧缺陷（core 投影层吞键 + 渲染层第二道防线失效）⇒ **与 Bug 606 同族不同层**。
+ * 报告称两处 Nudo 侧缺陷（core 投影层吞键 + 渲染层第二道防线失效）⇒ **与 同族不同层**。
  *
- * ⚠ **勘误（按实测走）**：报告这句**不成立** —— 两处 Nudo 侧缺陷**均已在族 17 / Bug 606 修掉**，
+ * ⚠ **勘误（按实测走）**：报告这句**不成立** —— 两处 Nudo 侧缺陷**均已在族 17 / 修掉**，
  * 且**是同一层**（不是不同层）：
  * - `packages/core/src/algebra/projection.ts` 的 `projectObj` 字段表已是 `Object.create(null)`
- *   （注释明写「族 17 Bug 606」）⇒ 键 `__proto__` 的赋值不命中 `Object.prototype.__proto__`
- *   的**原型 setter** ⇒ 该键成自有属性；
+ * （注释明写「族 17 」）⇒ 键 `__proto__` 的赋值不命中 `Object.prototype.__proto__`
+ * 的**原型 setter** ⇒ 该键成自有属性；
  * - `packages/core/src/algebra/codegen-escape.ts` 的 `formatObjectKey` 已特判 `__proto__`
- *   ⇒ 一律写成计算键 `["__proto__"]`（计算键是普通自有属性，不是原型 setter）。
+ * ⇒ 一律写成计算键 `["__proto__"]`（计算键是普通自有属性，不是原型 setter）。
  *
  * ⇒ **本条判假阳性** ⇒ **零实现改动**，只补一条**反向守护钉**把「已修的行为」钉住，防回归。
  *
@@ -3096,7 +3096,7 @@ function protoSlotObjAbs(): Abs {
   return makeAbs({ k: "obj", slots }, undefined, undefined, "exact");
 }
 
-describe("Bug 406: `__proto__` 槽在契约投影层不被吞掉（族 17 / Bug 606 已修，本钉防回归）", () => {
+describe("`__proto__` 槽在契约投影层不被吞掉（族 17 / 已修，本钉防回归）", () => {
   it("渲染层第二道防线：formatObjectKey 把 `__proto__` 写成计算键（不是裸键）", () => {
     expect(formatObjectKey("__proto__")).toBe('["__proto__"]');
     // 对照：普通标识符仍是裸键（特判只针对 `__proto__`）
@@ -3132,20 +3132,20 @@ describe("Bug 406: `__proto__` 槽在契约投影层不被吞掉（族 17 / Bug 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 413：机器面签名不得含引擎内部计数器 id
+// 机器面签名不得含引擎内部计数器 id
 // ---------------------------------------------------------------------------
-describe("[] Bug 413：机器面签名不得含引擎内部计数器 id", () => {
+describe("机器面签名不得含引擎内部计数器 id", () => {
 /**
- * Bug 413 —— `nudo check --json` / `--verbose` 把**引擎内部 term id**
+ * `nudo check --json` / `--verbose` 把**引擎内部 term id**
  * （`len#N` 一族）渲进机器可读的签名字段。
  *
  * 三条症状：
  * ① 机器面载荷含**内部符号**（`len#N` 不是一个用户能理解的名字）；
  * ② 编号随**同一次调用内的文件顺序**漂移（`len#0` / `len#2` / `len#4`）
- *    ⇒ **单个文件的 JSON 载荷是它在参数列表中位置的函数**，不是文件内容的
- *    函数（机器消费方拿到的不是可比对的内容）；
+ * ⇒ **单个文件的 JSON 载荷是它在参数列表中位置的函数**，不是文件内容的
+ * 函数（机器消费方拿到的不是可比对的内容）；
  * ③ 同一条命令的**人类面**给出另一个字符串（`f() => number` vs
- *    `number = len#0 where len#0 ≥ 0 #path`）⇒ 两个面自相矛盾。
+ * `number = len#0 where len#0 ≥ 0 #path`）⇒ 两个面自相矛盾。
  *
  * 根因：`formatAbs` / `formatAbsMultiline` **无条件**把 Abs 的 term / pred
  * 渲进签名串，而 Abs 的 term 里混着引擎内部的抽象变量名（`len#N` 来自
@@ -3154,12 +3154,12 @@ describe("[] Bug 413：机器面签名不得含引擎内部计数器 id", () => 
  *
  * 修法（core/algebra/check-signatures.ts + core/algebra/check-report.ts）：
  * - `formatSigCached` 的 `display` 改为**人类面口径**（`formatShape`）⇒ 与
- *   `formatCheckReport` 的签名行**逐字同源**；
+ * `formatCheckReport` 的签名行**逐字同源**；
  * - 新增模块级导出 `absWithStableTermIds`（`check-report.ts`，**不进公开面**）：
- *   把 term / pred 里的**引擎内部计数器 id**换成**稳定名**（`len#2` → `len`）
- *   ⇒ `formatSigCached` 的 `detail` 与 `serializeCheckJson` 的 `abs` 用它渲染
- *   ⇒ 形状 / 谓词证据（`len ≥ 0`）/ `#conf` / pathNote 全部保留，只有那个
- *   会随进程漂移的编号被抹平。
+ * 把 term / pred 里的**引擎内部计数器 id**换成**稳定名**（`len#2` → `len`）
+ * ⇒ `formatSigCached` 的 `detail` 与 `serializeCheckJson` 的 `abs` 用它渲染
+ * ⇒ 形状 / 谓词证据（`len ≥ 0`）/ `#conf` / pathNote 全部保留，只有那个
+ * 会随进程漂移的编号被抹平。
  *
  * 回归护栏：
  * - 机器面三字段（display / detail / abs）不得含内部 id；
@@ -3183,7 +3183,7 @@ const LEN_SRC = `export function f() {
 /** 引擎内部计数器 id 形态（`len#N` / `fromIdx#N` / `inv#N` / `#N` 一族） */
 const INTERNAL_ID_RE = /#\d+/;
 
-describe("Bug 413：机器面签名不得含引擎内部计数器 id", () => {
+describe("机器面签名不得含引擎内部计数器 id", () => {
   it("display / detail / abs 三字段都不含内部 id", () => {
     const j = serializeCheckJson(checkSource("/t/len.js", LEN_SRC, pTrue));
     const sig = j.signatures.find((s) => s.name === "f");

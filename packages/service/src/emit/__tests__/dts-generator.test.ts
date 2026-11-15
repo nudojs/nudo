@@ -159,7 +159,7 @@ describe("absToTSType", () => {
 
   it("optional 形参标签保留 ?（BUG-020）", () => {
     const f = fnAbs(["x", "options?"], num(), [num(), objOf({})]);
-    // Bug 565：零成员对象不再是 TS 的 `{}`（= 任意非 nullish 值）⇒
+    // 零成员对象不再是 TS 的 `{}`（= 任意非 nullish 值）⇒
     // `Record<string, never>`（空对象类型）
     expect(absToTSType(f)).toBe("(x: number, options?: Record<string, never>) => number");
   });
@@ -287,7 +287,7 @@ function safeSqrt(x) {
 `;
     const result = analyzeFile("/test/sqrt2.js", source);
     const dts = generateDts(result);
-    // 单一 widen 主签名。**参数面与返回面同源**（Bug 511）：无断言的 case
+    // 单一 widen 主签名。**参数面与返回面同源**（）：无断言的 case
     // 指令只是**见证**（"这次调用没抛、返回了这个"），不是调用域声明 ⇒
     // 产物面取**推断域**（入口求值：实参无约束 ⇒ 返回 unknown），而不是把两个
     // 点观测 join 成 number —— 后者会发布一个**不 sound** 的契约

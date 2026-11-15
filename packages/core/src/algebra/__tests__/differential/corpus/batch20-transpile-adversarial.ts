@@ -1,14 +1,14 @@
 /**
  * 转译对抗形态（batch20）：同行多语句 / 压缩单行程序 / 同行嵌套块与 try
  * 组合 / 同行解构与生成器。
- * 背景：Bug 42（同一行两个 try 的 `__nudoTm_<line>` 行号寻址重名 → 重复
+ * 背景：（同一行两个 try 的 `__nudoTm_<line>` 行号寻址重名 → 重复
  * const 声明 → 整模块 SyntaxError fail-closed）已修——stmt.ts 改用
  * tryTmpSeq 单调计数；解构临时 `_d${seq}_${line}` 同类问题也已改单调
  * 计数（types.ts 注释）。本批把「行号/压缩风格对抗」形态钉进差分门禁：
  * minified / 生成代码常见的单行多语句必须与 native 对账一致。
  */
 export const sameLineTry = [
-  // Bug 42 核心形态：同一作用域、同一行多条 try（临时名不得再按行号寻址）
+  // 核心形态：同一作用域、同一行多条 try（临时名不得再按行号寻址）
   "try { 1; } catch (e) {} try { 2; } catch (e) {} return \"done\";",
   "try { 1; } catch (e) {} try { 2; } finally {} return \"done\";",
   "try { 1; } finally {} try { 2; } catch (e) {} return \"done\";",

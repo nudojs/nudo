@@ -7,7 +7,7 @@ describe("isNudoTargetPath", () => {
     expect(isNudoTargetPath("/a/b.mjs")).toBe(true);
     expect(isNudoTargetPath("/a/b.ts")).toBe(true);
     expect(isNudoTargetPath("/a/b.JS")).toBe(true);
-    // BUG-101：与 `migrate verify` 的目标集合同口径（否则 `migrate retire` 装的
+    // 与 `migrate verify` 的目标集合同口径（否则 `migrate retire` 装的
     // `nudo check .` 在这些扩展的包上恒红 —— 目录展开成空集 ⇒ path-empty-dir）
     expect(isNudoTargetPath("/a/b.cjs")).toBe(true);
     expect(isNudoTargetPath("/a/b.mts")).toBe(true);

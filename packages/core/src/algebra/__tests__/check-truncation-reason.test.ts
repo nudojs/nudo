@@ -3,7 +3,7 @@
  * - cycle（同 name+arg 指纹已在栈上）：文案/suggestion/action 不得指向抬预算
  * - depth / calls：真预算——@nudo:budget 可抬，指明可抬的维
  * - stats：B 命名调用截断必须进 truncated/evalCallTruncated/reasons——
- *   `truncated:false` 与 nudo:recursion-truncated 不得共存
+ * `truncated:false` 与 nudo:recursion-truncated 不得共存
  */
 import { describe, it, expect, afterEach } from "vitest";
 import {

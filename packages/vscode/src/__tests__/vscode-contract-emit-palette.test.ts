@@ -1,5 +1,5 @@
 /**
- * Bug 1057 —— `nudo.contract.emit` 的处理器把 `functionName` 设为**必填**
+ * `nudo.contract.emit` 的处理器把 `functionName` 设为**必填**
  * ⇒ 命令面板入口（面板执行命令**不传任何参数**）100% 不可达 ⇒ 文档承诺的
  * 「先 dry-run → Output 预览 → 确认 → 真实写盘」三步流程在面板路径上
  * **永远走不到第一步**（兄弟命令 `nudo.contract` / `nudo.contract.draft` 的
@@ -33,7 +33,7 @@ const PERSIST_LENS = {
   },
 };
 
-describe("Bug 1057 —— nudo.contract.emit 的命令面板入口可达（三步门禁不绕过）", () => {
+describe("nudo.contract.emit 的命令面板入口可达（三步门禁不绕过）", () => {
   beforeAll(async () => {
     const { activate } = await import("../extension.ts");
     await activate(makeExtensionContext() as never);

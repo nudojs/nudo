@@ -1,26 +1,26 @@
 /**
- * 类 D（语义特判遗漏）回归（Bug 13/14/17/18/20/25/33/34/36/37/40/42/44/60）：
- * - Bug 13：s.split(/re/) 假 may-throw（RegExp 分隔符走 @@split 委托，
- *   从不 ToString(separator)）。
- * - Bug 14：Reflect.apply(f, thisArg, argsList) 假 unknown + 假 may-throw
- *   （镜像 $invoke 的 apply 真复放；fn target 恒可调用）。
- * - Bug 17/20：JSON.stringify 闭内建 brand / 闭 obj·prim 槽 / arr·
- *   non-bigint 元素 → 假 may-throw（三由头——BigInt 成员/循环/抛错
- *   toJSON——均不可能）。
- * - Bug 18：o?.m?.()（prim string/number 接收者 + 原型方法）→ 错误具体值
- *   undefined（T4 的方法值读通道已根治——本文件钉住该面防回归）。
- * - Bug 25：算术算子以内建 brand 为操作数 → 假 unknown + 假 may-throw
- *   （+ 错误域 number|string）；ToPrimitive 折 prim（Date → time value、
- *   装箱 → [[PrimitiveValue]]、其余 → toString → string）。
- * - Bug 33：表达式位 [1,2,3].splice(1,1,9) / copyWithin → unknown。
- * - Bug 34：arr-of-union 渲染缺括号（3 | 1 | 2[] → (3 | 1 | 2)[]）。
- * - Bug 36/37：Promise 拒绝通道（reject(v)/executor reject(v)/catch/两参
- *   then）+ then 的 nullish handler ≡ Identity。
- * - Bug 40：BigInt(x)（抽象 number/string prim）漏报 may-throw
- *   RangeError/SyntaxError。
- * - Bug 42：new URL(...).toJSON() → 假 unknown（原生 href string）。
- * - Bug 44：rest 形参签名符号执行塌缩固定 1 元组 → 开放数组注入。
- * - Bug 60：delete o?.a 引擎假抛（原生恒 true——nullish 短路）。
+ * 类 D（语义特判遗漏）回归（）：
+ * - s.split(/re/) 假 may-throw（RegExp 分隔符走 @@split 委托，
+ * 从不 ToString(separator)）。
+ * - Reflect.apply(f, thisArg, argsList) 假 unknown + 假 may-throw
+ * （镜像 $invoke 的 apply 真复放；fn target 恒可调用）。
+ * - ：JSON.stringify 闭内建 brand / 闭 obj·prim 槽 / arr·
+ * non-bigint 元素 → 假 may-throw（三由头——BigInt 成员/循环/抛错
+ * toJSON——均不可能）。
+ * - o?.m?.()（prim string/number 接收者 + 原型方法）→ 错误具体值
+ * undefined（T4 的方法值读通道已根治——本文件钉住该面防回归）。
+ * - 算术算子以内建 brand 为操作数 → 假 unknown + 假 may-throw
+ * （+ 错误域 number|string）；ToPrimitive 折 prim（Date → time value、
+ * 装箱 → [[PrimitiveValue]]、其余 → toString → string）。
+ * - 表达式位 [1,2,3].splice(1,1,9) / copyWithin → unknown。
+ * - arr-of-union 渲染缺括号（3 | 1 | 2[] → (3 | 1 | 2)[]）。
+ * - ：Promise 拒绝通道（reject(v)/executor reject(v)/catch/两参
+ * then）+ then 的 nullish handler ≡ Identity。
+ * - BigInt(x)（抽象 number/string prim）漏报 may-throw
+ * RangeError/SyntaxError。
+ * - new URL(...).toJSON() → 假 unknown（原生 href string）。
+ * - rest 形参签名符号执行塌缩固定 1 元组 → 开放数组注入。
+ * - delete o?.a 引擎假抛（原生恒 true——nullish 短路）。
  *
  * 原生 ground truth：node v26 实测对照。
  */
@@ -75,7 +75,7 @@ function evalWithArgs(
 const strAbs = abs({ k: "prim", type: "string" }, undefined, undefined, "path");
 const numAbs = abs({ k: "prim", type: "number" }, undefined, undefined, "path");
 
-describe("Bug 13: s.split(/re/)（RegExp 分隔符）不记假 ToString may-throw", () => {
+describe("s.split(/re/)（RegExp 分隔符）不记假 ToString may-throw", () => {
   it("抽象 string 接收者 × RegExp brand 分隔符：string[] 域 + 零 throws 效果", () => {
     const r = evalWithArgs(`export function f(s) { return s.split(/a/); }`, [strAbs]);
     expect(r.value).toBe("string[]");
@@ -95,7 +95,7 @@ describe("Bug 13: s.split(/re/)（RegExp 分隔符）不记假 ToString may-thro
   });
 });
 
-describe("Bug 14: Reflect.apply 字面量 fn + argsList 精确复放", () => {
+describe("Reflect.apply 字面量 fn + argsList 精确复放", () => {
   it("Math.max / 箭头 fn：exact 折叠 + 零 throws 效果（fn target 恒可调用）", () => {
     const r = call(`export function f() { return Reflect.apply(Math.max, null, [1, 2]); }`);
     expect(litValue(r.result)).toEqual({ ok: true, value: 2 });
@@ -114,7 +114,7 @@ describe("Bug 14: Reflect.apply 字面量 fn + argsList 精确复放", () => {
   });
 });
 
-describe("Bug 17/20: JSON.stringify 三由头不可能面不记 may-throw", () => {
+describe("JSON.stringify 三由头不可能面不记 may-throw", () => {
   it("Bug 17：闭内建 brand 接收者——精确折叠 + 零 throws 效果", () => {
     // RegExp/Map/Set/Error 家族 → "{}"；URL → href；Date(tv) → ISO 串
     const cases: Array<[string, string]> = [
@@ -166,7 +166,7 @@ describe("Bug 17/20: JSON.stringify 三由头不可能面不记 may-throw", () =
   });
 });
 
-describe("Bug 18: o?.m?.() prim 接收者 + 原型方法（T4 通道钉住）", () => {
+describe("o?.m?.() prim 接收者 + 原型方法（T4 通道钉住）", () => {
   it("可选调用链对 prim string/number 接收者路由原方法派发（无 undefined 臂）", () => {
     const up = evalWithArgs(`export function f(s) { return s?.toUpperCase?.(); }`, [strAbs]);
     expect(up.value).toBe("string");
@@ -184,7 +184,7 @@ describe("Bug 18: o?.m?.() prim 接收者 + 原型方法（T4 通道钉住）", 
   });
 });
 
-describe("Bug 25: 内建 brand 算术操作数 ToPrimitive 折叠", () => {
+describe("内建 brand 算术操作数 ToPrimitive 折叠", () => {
   it("Date：数值算子 → time value 精确；+ → string 域；< → boolean", () => {
     const sub = call(`export function f() { return new Date(0) - 1; }`);
     expect(litValue(sub.result)).toEqual({ ok: true, value: -1 });
@@ -221,7 +221,7 @@ describe("Bug 25: 内建 brand 算术操作数 ToPrimitive 折叠", () => {
   });
 });
 
-describe("Bug 33: 表达式位 splice / copyWithin 精确折叠", () => {
+describe("表达式位 splice / copyWithin 精确折叠", () => {
   it("splice：被删元素 tuple（native [2] / [3] / [1,2,3] / []）", () => {
     expect(fmt(call(`export function f() { return [1,2,3].splice(1,1,9); }`).result)).toBe("[2]");
     expect(fmt(call(`export function f() { return [1,2,3].splice(-1,1); }`).result)).toBe("[3]");
@@ -244,7 +244,7 @@ describe("Bug 33: 表达式位 splice / copyWithin 精确折叠", () => {
   });
 });
 
-describe("Bug 34: arr-of-union 渲染加括号", () => {
+describe("arr-of-union 渲染加括号", () => {
   it("arr(sum) 元素 → (A | B)[]；单 prim 元素不加冗余括号", () => {
     // M4 后一致比较器（a-b）精确折 tuple——arr(sum) 降级面用不一致比较器
     //（()=>1 违反反对称）保持触发；精确折叠断言见 eval-missed-throw-w10
@@ -254,7 +254,7 @@ describe("Bug 34: arr-of-union 渲染加括号", () => {
   });
 });
 
-describe("Bug 36/37: Promise 拒绝通道 + nullish handler 恒等", () => {
+describe("Promise 拒绝通道 + nullish handler 恒等", () => {
   it("Bug 36：Promise.reject(v) → 拒绝域 never + reason 通道", () => {
     const r = call(`export function f() { return Promise.reject(1); }`);
     expect(fmt(r.result)).toBe("promise<never>");
@@ -299,7 +299,7 @@ describe("Bug 36/37: Promise 拒绝通道 + nullish handler 恒等", () => {
   });
 });
 
-describe("Bug 40: BigInt(x) 抽象 prim 漏报 may-throw", () => {
+describe("BigInt(x) 抽象 prim 漏报 may-throw", () => {
   it("抽象 number → may RangeError；抽象 string → may SyntaxError", () => {
     const r = evalWithArgs(`export function f(x) { return BigInt(x); }`, [numAbs]);
     expect(r.value).toBe("bigint");
@@ -325,7 +325,7 @@ describe("Bug 40: BigInt(x) 抽象 prim 漏报 may-throw", () => {
   });
 });
 
-describe("Bug 42: new URL(...).toJSON() ≡ href", () => {
+describe("new URL(...).toJSON() ≡ href", () => {
   it("字面量输入精确折叠 href；抽象输入 string 域", () => {
     const r = call(`export function f() { return new URL("https://x.com/a").toJSON(); }`);
     expect(litValue(r.result)).toEqual({ ok: true, value: "https://x.com/a" });
@@ -338,7 +338,7 @@ describe("Bug 42: new URL(...).toJSON() ≡ href", () => {
   });
 });
 
-describe("Bug 44: rest 形参签名 = 开放数组（不塌缩固定 1 元组）", () => {
+describe("rest 形参签名 = 开放数组（不塌缩固定 1 元组）", () => {
   /** 泛化面：checkSource 的 signatures —— rest 函数零实参符号执行 */
   function sigOf(src: string, fnName: string): string {
     const r = checkSource("/t/rest.js", src, pTrue, { ...stdOpts, loadModule: () => STD_NUDO_SRC });
@@ -364,7 +364,7 @@ describe("Bug 44: rest 形参签名 = 开放数组（不塌缩固定 1 元组）
   });
 });
 
-describe("Bug 60: delete o?.a 恒 total（nullish 短路 true）", () => {
+describe("delete o?.a 恒 total（nullish 短路 true）", () => {
   it("对象接收者 / null 接收者 → true exact（非 unknown/假抛）", () => {
     const r = call(`export function f() { let o = { a: 1 }; return delete o?.a; }`);
     expect(litValue(r.result)).toEqual({ ok: true, value: true });

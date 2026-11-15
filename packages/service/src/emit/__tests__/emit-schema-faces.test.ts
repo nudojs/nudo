@@ -21,11 +21,11 @@ import { analyzeFile, type AnalysisResult, type FunctionAnalysis } from "@nudojs
 import { serializeCaseArg, buildCaseDirective, insertGeneratedCaseDirectives } from "../case-emitter.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 534 — bigint 字面量契约不得让契约面崩溃
+// bigint 字面量契约不得让契约面崩溃
 // ---------------------------------------------------------------------------
-describe("[emit-] Bug 534 — bigint 字面量契约不得让契约面崩溃", () => {
+describe("bigint 字面量契约不得让契约面崩溃", () => {
 /**
- * Bug 534 —— 契约面遇 **bigint 字面量契约** 不得整条命令崩溃。
+ * 契约面遇 **bigint 字面量契约** 不得整条命令崩溃。
  *
  * 病灶：`constraintToJson` 用 `JSON.parse(JSON.stringify(c))` 落盘 ⇒ JSON
  * **无法表示 bigint** ⇒ `JSON.stringify` 直接抛 `TypeError: Do not know how
@@ -124,7 +124,7 @@ async function runWithCache(
   }
 }
 
-describe("Bug 534 — bigint 字面量契约不得让契约面崩溃", () => {
+describe("bigint 字面量契约不得让契约面崩溃", () => {
   it("bigint 字面量契约正常出结果（改前：抛 Do not know how to serialize a BigInt）", async () => {
     const root = makeFixture({ "c.js": SRC_JS, "c.nudo.js": BIGINT_NUDO_JS });
     const file = join(root, "c.js");
@@ -133,7 +133,7 @@ describe("Bug 534 — bigint 字面量契约不得让契约面崩溃", () => {
     const cold = await runWithCache(file, cacheDir);
     expect(cold.lines).toHaveLength(1);
     expect(cold.lines[0]).toContain("g");
-    // bigint 保 `n` 后缀（Bug 361）：`lit(10)` 与 `lit(10n)` 在诊断文本里必须
+    // bigint 保 `n` 后缀（）：`lit(10)` 与 `lit(10n)` 在诊断文本里必须
     // 可区分 —— 否则「expected:」陈述的是**另一条契约**（抄回侧车即得相反契约）。
     // 本用例的诉求是「不崩」，渲染形态按 361 走。
     expect(cold.lines[0]).toContain("n: lit(10n)");
@@ -174,11 +174,11 @@ describe("Bug 534 — bigint 字面量契约不得让契约面崩溃", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 539: standard 入参面不得把解构字段平铺成整参校验器
+// standard 入参面不得把解构字段平铺成整参校验器
 // ---------------------------------------------------------------------------
-describe("[emit-] Bug 539: standard 入参面不得把解构字段平铺成整参校验器", () => {
+describe("standard 入参面不得把解构字段平铺成整参校验器", () => {
 /**
- * Bug 539 —— **standard 面**对**解构形参**把契约的**字段级**条目**平铺成整参
+ * **standard 面**对**解构形参**把契约的**字段级**条目**平铺成整参
  * 校验器**导出 ⇒ `act_a.validate({a:1,b:2})` 拒绝正确入参、`act_a.validate(1)`
  * 放行错误入参（双向都错）；且导出名与 zod 面（`<fn>Input`）不一致。
  *
@@ -186,7 +186,7 @@ describe("[emit-] Bug 539: standard 入参面不得把解构字段平铺成整�
  * - `<fn>Input`：校验**整个入参对象**（入参条目的对象投影）；
  * - `<fn>_<param>`：**整参**校验器（一个形参一个）；
  * - **解构形参的字段不提升为顶层整参校验器**（字段级校验器与整参校验器同名
- *   同形、语义却不同 ⇒ 消费方必然误用）。
+ * 同形、语义却不同 ⇒ 消费方必然误用）。
  *
  * 负控制：具名形参（`act(a, b)`）的 `<fn>_<param>` 仍是真的整参校验器。
  */
@@ -214,7 +214,7 @@ const namedFormals: FormalParam[] = [
   { kind: "id", name: "b", index: 1 },
 ];
 
-describe("Bug 539: standard 入参面不得把解构字段平铺成整参校验器", () => {
+describe("standard 入参面不得把解构字段平铺成整参校验器", () => {
   it("解构形参：出 `<fn>Input` 对象校验器，且**不出**字段级顶层校验器", async () => {
     const { source } = absToStandardSchemaFunction({
       fn: "act",
@@ -293,20 +293,20 @@ describe("Bug 539: standard 入参面不得把解构字段平铺成整参校验�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 533 / 1000: standard 节点的字面量序列化必须保真
+// : standard 节点的字面量序列化必须保真
 // ---------------------------------------------------------------------------
-describe("[emit-] Bug 533 / 1000: standard 节点的字面量序列化必须保真", () => {
+describe(": standard 节点的字面量序列化必须保真", () => {
 /**
- * Bug 533 / Bug 1000 —— standard 方言用 `JSON.stringify` 序列化 schema 节点。
+ * / standard 方言用 `JSON.stringify` 序列化 schema 节点。
  *
  * 修前：`JSON.stringify(node)` 把 Abs 的 `lit` 节点整个 JSON 化 ⇒
  * - `Infinity` / `-Infinity` **静默变 `null`**（JSON 没有非有限数表示）⇒
- *   生成的校验器**拒绝函数必返的值**（假红）、**放行函数永不返回的 `null`**
- *   （假绿）——导出的 schema 与被导出的函数**完全反向**（Bug 1000）；
- *   报错文案还自相矛盾（「expected null, got null」）。
+ * 生成的校验器**拒绝函数必返的值**（假红）、**放行函数永不返回的 `null`**
+ * （假绿）——导出的 schema 与被导出的函数**完全反向**（）；
+ * 报错文案还自相矛盾（「expected null, got null」）。
  * - bigint **直接抛** `TypeError: Do not know how to serialize a BigInt` ⇒
- *   `nudo export --format standard` **整条崩溃、零产物**，`--format all` 下
- *   **四个方言的产物一起丢**（Bug 533）。
+ * `nudo export --format standard` **整条崩溃、零产物**，`--format all` 下
+ * **四个方言的产物一起丢**（）。
  *
  * 修后（产物生成侧，本分片）：节点走**保真序列化**（逐节点写源码文本，绝不
  * 经过 JSON 往返）——`Infinity` / `-Infinity` / `NaN` / `10n` 各有对应源码。
@@ -333,7 +333,7 @@ const bigintEntryAbs = (): Abs => {
   return constraintToEntryAbs(c, "n");
 };
 
-describe("Bug 533 / 1000: standard 节点的字面量序列化必须保真", () => {
+describe("standard 节点的字面量序列化必须保真", () => {
   it("Infinity 不再被写成 null（产物文本层）", () => {
     const { node } = absToSchemaNode(litAbs(Infinity));
     expect(node).toEqual({ k: "lit", value: Infinity });
@@ -402,11 +402,11 @@ describe("Bug 533 / 1000: standard 节点的字面量序列化必须保真", () 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 519 / 989: standard 产物必须能过 tsc --noEmit --strict
+// : standard 产物必须能过 tsc --noEmit --strict
 // ---------------------------------------------------------------------------
-describe("[emit-] Bug 519 / 989: standard 产物必须能过 tsc --noEmit --strict", () => {
+describe(": standard 产物必须能过 tsc --noEmit --strict", () => {
 /**
- * Bug 519 / Bug 989 —— **standard 产物面过不了 `tsc --noEmit --strict`**。
+ * / **standard 产物面过不了 `tsc --noEmit --strict`**。
  *
  * 修前：产物是 `.ts` 模块，helper 却是裸 JS（`function __nudoCheck(node, value,
  * path, issues)`、`const local = []`、`validate(value)`）⇒ strict 工程里
@@ -486,7 +486,7 @@ const richAbs = (): Abs =>
     "exact",
   );
 
-describe("Bug 519 / 989: standard 产物必须能过 tsc --noEmit --strict", () => {
+describe("standard 产物必须能过 tsc --noEmit --strict", () => {
   it("生成的 standard 产物在 strict 下 0 诊断", () => {
     const { source } = absToStandardSchemaModule({ rich: richAbs() });
     const diags = strictDiagnostics(source);
@@ -539,11 +539,11 @@ export const rich = {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-093 — zod number + numBound 必须覆盖 ±Infinity 的合法端
+// zod number + numBound 必须覆盖 ±Infinity 的合法端
 // ---------------------------------------------------------------------------
-describe("[emit-] BUG-093 — zod number + numBound 必须覆盖 ±Infinity 的合法端", () => {
+describe("zod number + numBound 必须覆盖 ±Infinity 的合法端", () => {
 /**
- * BUG-093 —— zod 面在 number **带数值 refinement** 时不放宽 ±Infinity ⇒
+ * zod 面在 number **带数值 refinement** 时不放宽 ±Infinity ⇒
  * 导出的 schema **拒绝被导出函数自己的返回值**。
  *
  * 改前：`number().gt(0)` ⇒ `z.number().gt(0)`，而 zod v4 的 `z.number()` 只收
@@ -561,7 +561,7 @@ describe("[emit-] BUG-093 — zod number + numBound 必须覆盖 ±Infinity 的�
 const numWith = (pred: Pred): Abs =>
   abs({ k: "prim", type: "number" }, { op: "var", id: "x" }, pred, "exact");
 
-describe("BUG-093 — zod number + numBound 必须覆盖 ±Infinity 的合法端", () => {
+describe("zod number + numBound 必须覆盖 ±Infinity 的合法端", () => {
   it("gt(0)：放宽 +Infinity，不放宽 -Infinity（-Infinity > 0 为假）", () => {
     const source = absToSchemaSource(numWith(gt(v("x"), lit(0))));
     expect(source).toContain("z.number().gt(0)");
@@ -642,15 +642,15 @@ describe("BUG-093 — zod number + numBound 必须覆盖 ±Infinity 的合法端
 });
 
 // ---------------------------------------------------------------------------
-// Bug 530 — 内建类型 brand（纯类型）不得进 z.instanceof
+// 内建类型 brand（纯类型）不得进 z.instanceof
 // ---------------------------------------------------------------------------
-describe("[emit-] Bug 530 — 内建类型 brand（纯类型）不得进 z.instanceof", () => {
+describe("内建类型 brand（纯类型）不得进 z.instanceof", () => {
 /**
- * Bug 530 —— `nudo export --format schema` 把**内建类型 brand** 渲染成
+ * `nudo export --format schema` 把**内建类型 brand** 渲染成
  * `z.instanceof(Record<string, string>)` ⇒ 产物是 **TS2693 编译不过**的模块
  * （`process.env` 即触发）。
  *
- * 根因（族 02 的 Bug 233 已在本文件被 pin 之前修掉，这里是**回归钉**）：
+ * 根因（族 02 的 已在本文件被 pin 之前修掉，这里是**回归钉**）：
  * brand 分支曾无条件把 brand **名字**当作用域内的**运行时值**插进产物
  * （`z.instanceof(Record<string, string | undefined>)`）——`Record<…>` /
  * `Map<…>` 这类**纯类型**根本没有运行时类 ⇒ 产物用「类型当值」⇒ TS2693。
@@ -669,7 +669,7 @@ describe("[emit-] Bug 530 — 内建类型 brand（纯类型）不得进 z.insta
 const brandOf = (name: string): Abs =>
   abs({ k: "brand", name, shape: abs({ k: "obj", slots: {} }, undefined, undefined, "exact") }, undefined, undefined, "exact");
 
-describe("Bug 530 — 内建类型 brand（纯类型）不得进 z.instanceof", () => {
+describe("内建类型 brand（纯类型）不得进 z.instanceof", () => {
   it("Record<string, string | undefined>（process.env 的 brand）不进产物", () => {
     const source = absToSchemaSource(brandOf("Record<string, string | undefined>"));
     // 「类型当值」⇒ TS2693：`Record` only refers to a type
@@ -699,14 +699,14 @@ describe("Bug 530 — 内建类型 brand（纯类型）不得进 z.instanceof", 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 510 — 用户自定义类的 brand 不得原样进 z.instanceof
+// 用户自定义类的 brand 不得原样进 z.instanceof
 // ---------------------------------------------------------------------------
-describe("[emit-] Bug 510 — 用户自定义类的 brand 不得原样进 z.instanceof", () => {
+describe("用户自定义类的 brand 不得原样进 z.instanceof", () => {
 /**
- * Bug 510 —— 用户自定义类的 brand 被渲染成 `z.instanceof(<类名>)`：
+ * 用户自定义类的 brand 被渲染成 `z.instanceof(<类名>)`：
  * 生成的模块根本无法 import（ReferenceError / TS2304）。
  *
- * 根因（族 02 的 Bug 233 已在本文件被 pin 之前修掉，这里是**回归钉**）：
+ * 根因（族 02 的 已在本文件被 pin 之前修掉，这里是**回归钉**）：
  * `schema-generator.ts` 的 brand 分支曾把 brand **名字**当作用域内的标识符
  * 插进产物（`z.instanceof(Counter)`），而生成模块**只** import zod ⇒
  * 用户类名在模块作用域内不存在 ⇒ 模块求值期即抛 ReferenceError（TS2304）。
@@ -725,7 +725,7 @@ describe("[emit-] Bug 510 — 用户自定义类的 brand 不得原样进 z.inst
 const brandOf = (name: string): Abs =>
   abs({ k: "brand", name, shape: abs({ k: "obj", slots: {} }, undefined, undefined, "exact") }, undefined, undefined, "exact");
 
-describe("Bug 510 — 用户自定义类的 brand 不得原样进 z.instanceof", () => {
+describe("用户自定义类的 brand 不得原样进 z.instanceof", () => {
   it("用户类名不进产物（模块可 import，无 TS2304）", () => {
     const source = absToSchemaSource(brandOf("Counter"));
     expect(source).not.toContain("z.instanceof(Counter)");
@@ -754,21 +754,21 @@ describe("Bug 510 — 用户自定义类的 brand 不得原样进 z.instanceof",
 });
 
 // ---------------------------------------------------------------------------
-// Bug 521 —— 内建泛型 brand 补类型实参
+// 内建泛型 brand 补类型实参
 // ---------------------------------------------------------------------------
-describe("[emit-] Bug 521 —— 内建泛型 brand 补类型实参", () => {
+describe("内建泛型 brand 补类型实参", () => {
 /**
- * Bug 521 —— `.d.ts` 把**内建泛型 brand**（`Map` / `Set` / `WeakMap`）渲染成
+ * `.d.ts` 把**内建泛型 brand**（`Map` / `Set` / `WeakMap`）渲染成
  * **裸名**（缺类型实参）⇒ TS2314 ⇒ 产出的 `.d.ts` 编译不过。
  *
  * 改前：
- *   export declare function mkMap(): Map;      ← TS2314
- *   export declare function mkSet(): Set;      ← TS2314
- *   export declare function mkWeak(): WeakMap; ← TS2314
+ * export declare function mkMap(): Map; ← TS2314
+ * export declare function mkSet(): Set; ← TS2314
+ * export declare function mkWeak(): WeakMap; ← TS2314
  *
  * 修法：brand 渲染补一张「内建泛型 → TS 类型串」表（实例形状不带 K/V 证据
  * ⇒ 实参落到最宽的合法值；`WeakMap` / `WeakSet` 的键位受 `WeakKey` 约束 ⇒
- * `object` 而非 `unknown`）。用户类 brand 走 `declare class` 路径（Bug 517）。
+ * `object` 而非 `unknown`）。用户类 brand 走 `declare class` 路径（）。
  */
 
 
@@ -778,7 +778,7 @@ describe("[emit-] Bug 521 —— 内建泛型 brand 补类型实参", () => {
 const brandOf = (name: string): Abs =>
   abs({ k: "brand", name, shape: objOf({}) }, undefined, undefined, "path");
 
-describe("Bug 521 —— 内建泛型 brand 补类型实参", () => {
+describe("内建泛型 brand 补类型实参", () => {
   it("Map / Set / WeakMap / WeakSet 渲染成带实参的泛型", () => {
     expect(absToTSType(brandOf("Map"))).toBe("Map<unknown, unknown>");
     expect(absToTSType(brandOf("Set"))).toBe("Set<unknown>");
@@ -822,11 +822,11 @@ export declare function mkWeak(): WeakMap;
 });
 
 // ---------------------------------------------------------------------------
-// Bug 531: standard 面 brand 必须有运行时判据
+// standard 面 brand 必须有运行时判据
 // ---------------------------------------------------------------------------
-describe("[emit-] Bug 531: standard 面 brand 必须有运行时判据", () => {
+describe("standard 面 brand 必须有运行时判据", () => {
 /**
- * Bug 531 —— standard 面的 brand 节点是**恒真**校验器（假绿）。
+ * standard 面的 brand 节点是**恒真**校验器（假绿）。
  *
  * 修前：`case "brand": return;` ⇒ `mkDateOutput({})` / `([])` / `("x")` 全部
  * 放行，而**同一次导出**的 zod 面 `z.instanceof(Date)` 全部拒绝 ⇒ 跨方言相反
@@ -848,7 +848,7 @@ describe("[emit-] Bug 531: standard 面 brand 必须有运行时判据", () => {
 const brandOf = (name: string): Abs =>
   abs({ k: "brand", name, shape: num() }, undefined, undefined, "exact");
 
-describe("Bug 531: standard 面 brand 必须有运行时判据", () => {
+describe("standard 面 brand 必须有运行时判据", () => {
   it("库函数版：全局构造器 brand 只放行真实例", () => {
     const { node } = absToSchemaNode(brandOf("Date"));
     expect(validateSchemaNode(node, new Date()).issues).toBeUndefined();
@@ -879,11 +879,11 @@ describe("Bug 531: standard 面 brand 必须有运行时判据", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 532 — 值级 template 不是手写函数契约
+// 值级 template 不是手写函数契约
 // ---------------------------------------------------------------------------
-describe("[emit-] Bug 532 — 值级 template 不是手写函数契约", () => {
+describe("值级 template 不是手写函数契约", () => {
 /**
- * Bug 532 — LSP codeLens 的契约档位与**它自己那条命令**的结果互相矛盾：
+ * LSP codeLens 的契约档位与**它自己那条命令**的结果互相矛盾：
  * `● contract / imp` + `⚡ persist contract`，点下去却是
  * 「handwritten wins — skipping」（**值级 template** 被当成手写**函数**绑定）。
  *
@@ -894,8 +894,8 @@ describe("[emit-] Bug 532 — 值级 template 不是手写函数契约", () => {
  *
  * 本文件的钉：
  * - 值级 template 占着导出名 → **不是** name-clash（文案与判定都要真）；
- *   生成段就地替换它（同名不能并存：重复 export = 非法 ESM）⇒ 侧车可用、
- *   契约生效、且第二次 emit 报「无改动」。
+ * 生成段就地替换它（同名不能并存：重复 export = 非法 ESM）⇒ 侧车可用、
+ * 契约生效、且第二次 emit 报「无改动」。
  * - 负控制：真 `fn(...)` 绑定仍报 name-clash（手写优先，既有钉不许回归）。
  */
 
@@ -915,7 +915,7 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-// BUG-035：`@nudo:case` 的**纯点观测见证**（实参全是字面量、无断言）不是契约
+// `@nudo:case` 的**纯点观测见证**（实参全是字面量、无断言）不是契约
 // 产物 ⇒ 夹具的 case 改为**带断言的域声明**（`=> 期望值`），生成段内容
 // （`export const classify = fn(…)`）与 name-clash 语义不变。
 const SRC = `/**
@@ -939,7 +939,7 @@ const loadModule = (spec: string, from: string): string | undefined => {
   }
 };
 
-describe("Bug 532 — 值级 template 不是手写函数契约", () => {
+describe("值级 template 不是手写函数契约", () => {
   it("does not report name-clash for a value-level template and persists the contract", async () => {
     const file = join(dir, "lib.js");
     writeFileSync(file, SRC);
@@ -1018,11 +1018,11 @@ describe("Bug 532 — 值级 template 不是手写函数契约", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 556 — nullish quickfix 不得吞掉 fn() 的第三实参
+// nullish quickfix 不得吞掉 fn() 的第三实参
 // ---------------------------------------------------------------------------
-describe("[emit-] Bug 556 — nullish quickfix 不得吞掉 fn() 的第三实参", () => {
+describe("nullish quickfix 不得吞掉 fn() 的第三实参", () => {
 /**
- * Bug 556：`nudo check --fix` 的 **nullish quickfix** 吞掉侧车 `fn()` 的**第三
+ * `nudo check --fix` 的 **nullish quickfix** 吞掉侧车 `fn()` 的**第三
  * 实参 `{ throws }`** ⇒ 自动落盘后**删除用户的 throws 义务** ⇒ 门禁从
  * `constraint-violated` 变成**新的** `entry-may-throw` ⇒ 没修好还制造新错误。
  *
@@ -1030,9 +1030,9 @@ describe("[emit-] Bug 556 — nullish quickfix 不得吞掉 fn() 的第三实参
  * **全部**文本当 return 位 ⇒ 第三个实参被一起卷进 `nullable(...)`。
  *
  * 本钉：
- *   ① 第三实参原样保留（只卷 return 位）
- *   ② 改写后门禁真的转绿（引擎复核：无 constraint-violated、无 entry-may-throw）
- *   ③ 证不出时降级 [review]（不自动落盘）
+ * ① 第三实参原样保留（只卷 return 位）
+ * ② 改写后门禁真的转绿（引擎复核：无 constraint-violated、无 entry-may-throw）
+ * ③ 证不出时降级 [review]（不自动落盘）
  */
 
 
@@ -1059,7 +1059,7 @@ function gate(sidecarText: string): string[] {
   return r.issues.map((i) => `${i.code} fn=${i.fn}`);
 }
 
-describe("Bug 556 — nullish quickfix 不得吞掉 fn() 的第三实参", () => {
+describe("nullish quickfix 不得吞掉 fn() 的第三实参", () => {
   it("只卷 return 位：第三实参 { throws } 原样保留", () => {
     const next = wrapReturnNullable(SIDECAR, "sim");
     expect(next).toBeDefined();
@@ -1140,11 +1140,11 @@ export const sim = fn({ v: number() }, nullable(number()));
 });
 
 // ---------------------------------------------------------------------------
-// BUG-131 — symbol 键槽不得发布成字符串字段
+// symbol 键槽不得发布成字符串字段
 // ---------------------------------------------------------------------------
-describe("[emit-] BUG-131 — symbol 键槽不得发布成字符串字段", () => {
+describe("symbol 键槽不得发布成字符串字段", () => {
 /**
- * BUG-131 —— 三个运行时产物面把 **symbol 键槽**当**字符串自有字段**发布
+ * 三个运行时产物面把 **symbol 键槽**当**字符串自有字段**发布
  * （`"@@sym#1"` / `"@@iterator"`）⇒ 运行时不存在的属性 + zod / guard 产物恒假
  * （dts 面正确：它认 `slot.symbolKey`）。
  *
@@ -1197,7 +1197,7 @@ const makeIterLike = (): Abs =>
     "exact",
   );
 
-describe("BUG-131 — symbol 键槽不得发布成字符串字段", () => {
+describe("symbol 键槽不得发布成字符串字段", () => {
   it("zod 面不出现 @@sym#1，也不要求该键", () => {
     const source = absToSchemaSource(withSymbolProp());
     expect(source).not.toContain("@@sym#1");
@@ -1255,11 +1255,11 @@ describe("BUG-131 — symbol 键槽不得发布成字符串字段", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-094 — 数组长度界不得在 zod / standard 面消失
+// 数组长度界不得在 zod / standard 面消失
 // ---------------------------------------------------------------------------
-describe("[emit-] BUG-094 — 数组长度界不得在 zod / standard 面消失", () => {
+describe("数组长度界不得在 zod / standard 面消失", () => {
 /**
- * BUG-094 —— zod / standard 面把**数组自身的长度界**（`array(T).min(n)` /
+ * zod / standard 面把**数组自身的长度界**（`array(T).min(n)` /
  * `.max(n)`）整段丢掉，且**零 dropped 台账** ⇒ guard 面拒绝的数组，另两个面
  * 全部放行（假绿 + 跨面矛盾）。
  *
@@ -1294,7 +1294,7 @@ const arrConstraint = (n: number): NudoConstraint => ({
   element: number(),
 } as NudoConstraint);
 
-describe("BUG-094 — 数组长度界不得在 zod / standard 面消失", () => {
+describe("数组长度界不得在 zod / standard 面消失", () => {
   it("min(3)：zod 面渲染 `.min(3)`（不再是裸 z.array）", () => {
     const source = absToSchemaSource(arrWith(lenOf(3, "ge")));
     expect(source).toContain("z.array(");
@@ -1395,10 +1395,10 @@ describe("BUG-094 — 数组长度界不得在 zod / standard 面消失", () => 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 561 — 稀疏元组的洞不被固化成显式 undefined
+// 稀疏元组的洞不被固化成显式 undefined
 // ---------------------------------------------------------------------------
-describe("[emit-] Bug 561 — 稀疏元组的洞不被固化成显式 undefined", () => {
-// emit--sparse-tuple-hole.part.ts — Bug 561：
+describe("稀疏元组的洞不被固化成显式 undefined", () => {
+// emit--sparse-tuple-hole.part.ts — 
 // `nudo test --freeze` 把稀疏元组的**洞**固化成**显式 `undefined` 元素**
 // ⇒ 固化后同一调用点的见证从 `false` **翻成 `true`**（与事实相反）。
 //
@@ -1415,7 +1415,7 @@ describe("[emit-] Bug 561 — 稀疏元组的洞不被固化成显式 undefined"
 // 用例含：
 // - 改前会失败的形态（带洞的元组不可序列化；带洞的见证不被写进源码）；
 // - 负控制（稠密元组照常固化；洞与「显式 undefined 元素」在 Abs 层同形
-//   ——不可区分性正是根因，故只有洞位走放弃路径）。
+// ——不可区分性正是根因，故只有洞位走放弃路径）。
 
 
 
@@ -1452,7 +1452,7 @@ function makeAnalysis(functions: FunctionAnalysis[]): AnalysisResult {
   return { functions, diagnostics: [], bindings: new Map(), nodeAbsMap: new Map(), caseHints: [] };
 }
 
-describe("Bug 561 — 稀疏元组的洞不被固化成显式 undefined", () => {
+describe("稀疏元组的洞不被固化成显式 undefined", () => {
   it("带洞的元组不可序列化（整条放弃，不静默近似）", () => {
     expect(serializeCaseArg(sparseTuple())).toBeNull();
     expect(buildCaseDirective("call@L5", [sparseTuple()])).toBeNull();
@@ -1520,11 +1520,11 @@ first(arr);
 });
 
 // ---------------------------------------------------------------------------
-// BUG-130 — 生成器元素域不进运行时产物面
+// 生成器元素域不进运行时产物面
 // ---------------------------------------------------------------------------
-describe("[emit-] BUG-130 — 生成器元素域不进运行时产物面", () => {
+describe("生成器元素域不进运行时产物面", () => {
 /**
- * BUG-130 —— zod / guard / standard 三个**运行时产物面**把生成器的**元素域下标槽**
+ * zod / guard / standard 三个**运行时产物面**把生成器的**元素域下标槽**
  * （`"0"` / `"1"`）当成**对象自有字段**发布 ⇒ 导出的校验器**拒绝被导出函数自己的
  * 返回值**（而 dts 面正确给 `Generator<number>`）。
  *
@@ -1539,7 +1539,7 @@ describe("[emit-] BUG-130 — 生成器元素域不进运行时产物面", () =>
  *
  * 2026-11-05 补充：生成器身份投影已实施（产品裁决「收紧是 bug，非 breaking」），
  * 判据是随值携带的 `Abs.facets.brand`（见 `emit/generator-identity.ts`）。本夹具
- * **手工构造、无 brand** ⇒ 不触发新分支，下面的 `z.object({  })` 断言仍绿，
+ * **手工构造、无 brand** ⇒ 不触发新分支，下面的 `z.object({ })` 断言仍绿，
  * 现作为「旧 Abs 逐字不变」的负控制；带 brand 的生产回归见
  * `emit-generator-identity-poc.test.ts`。
  */
@@ -1592,7 +1592,7 @@ function* gen(): Generator<number> {
   yield 2;
 }
 
-describe("BUG-130 — 生成器元素域不进运行时产物面", () => {
+describe("生成器元素域不进运行时产物面", () => {
   it("zod 面不发布数字下标字段（运行时不存在的自有属性）", () => {
     const source = absToSchemaSource(generatorObj([numLit(1), numLit(2)]));
     expect(source).not.toContain("0:");

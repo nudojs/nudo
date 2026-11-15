@@ -1,5 +1,5 @@
 /**
- * 求值引擎私有名 foreign-obj 接收者定抛（Bug 115）：
+ * 求值引擎私有名 foreign-obj 接收者定抛（）：
  * 此前 privateNameGuard 的 obj 臂一律 recordMayThrow——闭 obj（对象字面量/
  * spread 产物/Object.create(null) 靶）上的 o.#p 读/写在 try 内被静默折
  * undefined/成功。原生：私有名只安装于类实例，闭 obj 访问 → 确定
@@ -21,7 +21,7 @@ const throwsName = (r: { throws: unknown }): string | undefined =>
     ? undefined
     : (r.throws as { shape?: { name?: string } })?.shape?.name;
 
-describe("Bug 115: private-name access on closed obj receivers", () => {
+describe("private-name access on closed obj receivers", () => {
   it("闭 obj 读/写 → definite TypeError（try 捕获面与入口整抛面）", () => {
     expect(
       litOf(

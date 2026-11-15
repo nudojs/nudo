@@ -5,7 +5,7 @@
  * - 跨文件（import / namespace member）侧车按定义文件路径绑定
  * - fwd 转发（wrapper→target）在侧车来源下仍工作
  * - conflict（源码 refine × 侧车手写绑定矛盾）→ nudo:contract-conflict 只在
- *   checkSource fn 级报告（scan 调用点级曾双报，已收口）
+ * checkSource fn 级报告（scan 调用点级曾双报，已收口）
  * - 无侧车时不做 body 必填 slot 门禁（C0.1 契约模型）
  */
 import { describe, it, expect } from "vitest";
@@ -143,7 +143,7 @@ const r = lib.needsPos(-1);
     const err = issues.find((i) => i.code === "nudo:constraint-violated");
     expect(err).toBeDefined();
     expect(err!.severity).toBe("error");
-    // Bug 442：被调名按**被调方本地声明名**解析（契约绑定面以本地名为键），
+    // 被调名按**被调方本地声明名**解析（契约绑定面以本地名为键），
     // 不再写死导出名 "default" ⇒ displayName 走 external.fnName = "needsPos"
     expect(err!.fn).toBe("needsPos");
   });

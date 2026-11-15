@@ -63,7 +63,7 @@ describe("web env load + Fetch/URL/DOM faces", () => {
     const fetchFn = globalOf(env, "fetch");
     expect(shapeOf(fetchFn, "fetch")).toContain("=>");
 
-    // Bug 887：Request **没有** Response 的状态面（原生 r.status === undefined）。
+    // Request **没有** Response 的状态面（原生 r.status === undefined）。
     const Request = instanceOf(globalOf(env, "Request"));
     expect(shapeOf(Request, "Request instance")).toBeTruthy();
     for (const name of ["json", "text", "arrayBuffer", "clone"] as const) {
@@ -73,7 +73,7 @@ describe("web env load + Fetch/URL/DOM faces", () => {
     expect(walk(Request, "status"), "Request.status (Response-only)").toBeUndefined();
     expect(walk(Request, "ok"), "Request.ok (Response-only)").toBeUndefined();
 
-    // Bug 860：Response 改成**可构造**的 envFn——静态面在 fn 的 slots 上，
+    // Response 改成**可构造**的 envFn——静态面在 fn 的 slots 上，
     // 实例面在 returnType 上。
     const ResponseCtor = globalOf(env, "Response");
     for (const name of ["json", "redirect", "error"] as const) {
@@ -117,7 +117,7 @@ describe("web env load + Fetch/URL/DOM faces", () => {
     ] as const) {
       expect(shapeOf(globalOf(env, name), name)).toContain("=>");
     }
-    // Bug 888：queueMicrotask 的 env 声明**删掉**（遮蔽掉 core 的可调用实参
+    // queueMicrotask 的 env 声明**删掉**（遮蔽掉 core 的可调用实参
     // 校验 ⇒ 假绿）⇒ 不再出现在 env 全局表里。
     expect(env.globals["queueMicrotask"]).toBeUndefined();
   });
@@ -172,7 +172,7 @@ describe("web env load + Fetch/URL/DOM faces", () => {
   });
 
   it("atob / btoa / TextEncoder / TextDecoder are NOT declared (host fallback)", () => {
-    // Bug 883 / 886 / 889：这些 env 声明会**遮蔽**宿主内建的更精确建模
+    // ：这些 env 声明会**遮蔽**宿主内建的更精确建模
     // （core：atob/btoa 的 InvalidCharacterError、TextDecoder 的 RangeError、
     // 「类不可裸调」的 TypeError）⇒ 声明删除，走宿主回落路径。
     for (const name of ["atob", "btoa", "TextEncoder", "TextDecoder"] as const) {
@@ -181,7 +181,7 @@ describe("web env load + Fetch/URL/DOM faces", () => {
   });
 
   it("structuredClone is NOT declared (host fallback, Bug 884)", () => {
-    // Bug 884（web 侧）：env 的 structuredClone 声明会**遮蔽**宿主内建 ⇒
+    // （web 侧）：env 的 structuredClone 声明会**遮蔽**宿主内建 ⇒
     // 宿主的 throws 面（不可克隆值抛 DOMException/DataCloneError）整个消失
     // ⇒ L2 门禁假绿。声明删除，走宿主回落路径。
     // （node 侧同款修法见 packages/env/src/node.ts。）

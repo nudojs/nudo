@@ -30,27 +30,27 @@ import { entryVariantIssueForFile } from "../entry-variants.ts";
 import { buildTestReport } from "../test-report.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 286：命名空间成员调用的调用点可归因（domain-exceeds 不再静默）
+// 命名空间成员调用的调用点可归因（domain-exceeds 不再静默）
 // ---------------------------------------------------------------------------
-describe("[] Bug 286：命名空间成员调用的调用点可归因（domain-exceeds 不再静默）", () => {
+describe("命名空间成员调用的调用点可归因（domain-exceeds 不再静默）", () => {
 /**
- * Bug 286：`--from` 注入的调用点记录在**命名空间成员调用**上无法归因 ⇒
+ * `--from` 注入的调用点记录在**命名空间成员调用**上无法归因 ⇒
  * `nudo:contract-domain-exceeds`（**error 级** L1 门禁）静默不报 ⇒ 假绿。
  *
  * 根因（analyzer-abs-eval.ts 的调用记录归因）：
  * - eval 侧对命名空间成员调用（`ns.helper(...)`）只记**成员名**（`helper`），
- *   不带接收者 ⇒ 归因侧的点号拆分**永远走不到** ⇒ `targetModule` /
- *   `targetExport` 为空 ⇒ 匹配侧（`matchingExternal` 要求可归因到本文件）
- *   整条丢弃 ⇒ 越界调用点证据消失 ⇒ 门禁绿灯。
+ * 不带接收者 ⇒ 归因侧的点号拆分**永远走不到** ⇒ `targetModule` /
+ * `targetExport` 为空 ⇒ 匹配侧（`matchingExternal` 要求可归因到本文件）
+ * 整条丢弃 ⇒ 越界调用点证据消失 ⇒ 门禁绿灯。
  * - CJS `const ns = require("./m.js")` 的 import 表条目登记成
- *   `exportName: "default"` ⇒ 基名匹配（`exportName === "*"`）永远走不到。
+ * `exportName: "default"` ⇒ 基名匹配（`exportName === "*"`）永远走不到。
  *
  * 修复后的契约（主 agent 裁决，D/E 共同遵守）：
  * - **命名空间成员调用**的记录名 = `<接收者绑定名>.<成员名>`（与类成员调用
- *   `Brand.method` 同形；不带 `ns.` 前缀——接收者的名字是用户的**本地绑定名**）。
+ * `Brand.method` 同形；不带 `ns.` 前缀——接收者的名字是用户的**本地绑定名**）。
  * - **普通调用**（本地函数 / 具名导入 / 宿主全局）**保持现状**：只记函数名。
  * - 归因侧按**最后一个点**拆分：base = 接收者绑定名（查 import 表）·
- *   member = 导出名。
+ * member = 导出名。
  * - CJS `require` 的命名空间导入项：`exportName` 必须是 `"*"`。
  *
  * 钉：
@@ -73,7 +73,7 @@ const DEP = `export const g = (x) => x;
 const DEP_SIDE = `export const g = fn({ x: number().gt(0) }, number());
 `;
 
-describe("Bug 286：命名空间成员调用的调用点可归因（domain-exceeds 不再静默）", () => {
+describe("命名空间成员调用的调用点可归因（domain-exceeds 不再静默）", () => {
   it("ESM `import * as dep`：记录名带接收者限定，且归因到被调模块", () =>
     withTmpProject("nudo-b286a-", (dir) => {
       const depPath = writeTmpFile(dir, "dep.js", DEP);
@@ -171,11 +171,11 @@ describe("Bug 286：命名空间成员调用的调用点可归因（domain-excee
 });
 
 // ---------------------------------------------------------------------------
-// BUG-011 — 超限调用记录不得让分析器崩溃
+// 超限调用记录不得让分析器崩溃
 // ---------------------------------------------------------------------------
-describe("[] BUG-011 — 超限调用记录不得让分析器崩溃", () => {
+describe("超限调用记录不得让分析器崩溃", () => {
 /**
- * BUG-011 回归：跨模块调用记录全部**超限被丢**时，合成路径不得解引用空数组。
+ * 回归：跨模块调用记录全部**超限被丢**时，合成路径不得解引用空数组。
  *
  * 改前 `synthesizeExternalFunctions` 直接读 `deduped[0].callLoc` /
  * `deduped[0].resultAbs` ⇒ TypeError 抛出分析器（`nudo check` 吞掉异常后
@@ -206,7 +206,7 @@ function record(over: Partial<CallRecord>): CallRecord {
   };
 }
 
-describe("BUG-011 — 超限调用记录不得让分析器崩溃", () => {
+describe("超限调用记录不得让分析器崩溃", () => {
   it("组内记录全部超限 ⇒ 整组跳过（不抛、不产出残缺分析）", () => {
     const out = synthesizeExternalFunctions(
       [record({ argAbs: [oversizedObjAbs()] }), record({ argAbs: [oversizedObjAbs()] })],
@@ -226,11 +226,11 @@ describe("BUG-011 — 超限调用记录不得让分析器崩溃", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-021 —— 点观测不得成为契约域
+// 点观测不得成为契约域
 // ---------------------------------------------------------------------------
-describe("[] BUG-021 —— 点观测不得成为契约域", () => {
+describe("点观测不得成为契约域", () => {
 /**
- * BUG-021 —— `nudo contract --emit` 把**一次点观测**（实参全是字面量）直接
+ * `nudo contract --emit` 把**一次点观测**（实参全是字面量）直接
  * 提升成契约 ⇒ `fn({ a: lit(1), b: lit(2) }, lit(3))` ⇒ 导出的 dts / zod /
  * guard 三面塌缩成那个单点字面量（`add(5, 6)` 被自己的产物判非法），且与
  * `nudo check` 的签名面（`number × number → number`）结论相反。
@@ -254,7 +254,7 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("BUG-021 —— 点观测不得成为契约域", () => {
+describe("点观测不得成为契约域", () => {
   it("调用点字面量实参 ⇒ 投影成基类型（不是 lit(N)）", async () => {
     const file = join(dir, "lib.js");
     writeFileSync(
@@ -283,11 +283,11 @@ describe("BUG-021 —— 点观测不得成为契约域", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-022 · 调用点域与声明顺序无关
+// 调用点域与声明顺序无关
 // ---------------------------------------------------------------------------
-describe("[] BUG-022 · 调用点域与声明顺序无关", () => {
+describe("调用点域与声明顺序无关", () => {
 /**
- * BUG-022 回归：被调方的**调用点域**不得被「首次 settle」截断。
+ * 回归：被调方的**调用点域**不得被「首次 settle」截断。
  *
  * 症状（修前）：同一组函数，只改**声明顺序**就得到不同的调用点域 ——
  * 被调方先定义时只留下第一个调用方的调用点（`callee(2)` / `callee(3)` 被
@@ -379,7 +379,7 @@ function callsiteDomain(
   };
 }
 
-describe("BUG-022 · 调用点域与声明顺序无关", () => {
+describe("调用点域与声明顺序无关", () => {
   it("被调方先定义：三个调用点全部留证（不再只剩第一条）", async () => {
     const r = await analyze(CALLEE_FIRST);
     const { args, rets } = callsiteDomain(r, "callee");
@@ -418,11 +418,11 @@ describe("BUG-022 · 调用点域与声明顺序无关", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-070 — 同行多调用点的见证名唯一
+// 同行多调用点的见证名唯一
 // ---------------------------------------------------------------------------
-describe("[] BUG-070 — 同行多调用点的见证名唯一", () => {
+describe("同行多调用点的见证名唯一", () => {
 /**
- * BUG-070 回归：「见证名 = 调用点身份」必须在**同一行多个调用点**时仍成立。
+ * 回归：「见证名 = 调用点身份」必须在**同一行多个调用点**时仍成立。
  *
  * 改前本地调用点只有行号维度 ⇒ 同一行两个调用点都叫 `call@L6` ⇒ 一个现场的
  * 见证凭空消失（声明了其中一个后另一个的观测真值被吞）。
@@ -444,7 +444,7 @@ function rec(line: number, column: number, arg: number): CallRecord {
   };
 }
 
-describe("BUG-070 — 同行多调用点的见证名唯一", () => {
+describe("同行多调用点的见证名唯一", () => {
   it("同一行两个调用点 ⇒ 名字不同（加列维度），且各自可核对到列", () => {
     const names = disambiguateCallsiteNames([rec(6, 0, 1), rec(6, 9, 3)], FILE, 1);
     expect(new Set(names).size).toBe(2);
@@ -468,11 +468,11 @@ describe("BUG-070 — 同行多调用点的见证名唯一", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-089 — 调用现场文件按 AST 核对，不用行数猜
+// 调用现场文件按 AST 核对，不用行数猜
 // ---------------------------------------------------------------------------
-describe("[] BUG-089 — 调用现场文件按 AST 核对，不用行数猜", () => {
+describe("调用现场文件按 AST 核对，不用行数猜", () => {
 /**
- * BUG-089 回归：调用记录的「调用现场文件」不得用**行数上界**猜。
+ * 回归：调用记录的「调用现场文件」不得用**行数上界**猜。
  *
  * 改前 `rec.callLoc.line > lineCount` 是唯一判据：依赖模块里的调用
  * （`dep.js` 第 2 行）在「行号 ≤ 现场文件行数」时被误贴成现场文件 ⇒
@@ -500,7 +500,7 @@ function project(collide: boolean): { dir: string; usage: string } {
   return { dir, usage };
 }
 
-describe("BUG-089 — 调用现场文件按 AST 核对，不用行数猜", () => {
+describe("调用现场文件按 AST 核对，不用行数猜", () => {
   it("依赖模块里的调用不得带现场文件（行号落在注释行）", () => {
     const { dir, usage } = project(false);
     const records = collectCallRecords_____analyzer_orchestrate_calls_ts(join(dir, "usage.js"), usage);
@@ -523,11 +523,11 @@ describe("BUG-089 — 调用现场文件按 AST 核对，不用行数猜", () =>
 });
 
 // ---------------------------------------------------------------------------
-// BUG-099: 循环迭代截断 → analysis 诊断（test 面）
+// 循环迭代截断 → analysis 诊断（test 面）
 // ---------------------------------------------------------------------------
-describe("[] BUG-099: 循环迭代截断 → analysis 诊断（test 面）", () => {
+describe("循环迭代截断 → analysis 诊断（test 面）", () => {
 /**
- * BUG-099（loop 面）回归：循环迭代预算截断必须在 **test 面**报**专用码**。
+ * （loop 面）回归：循环迭代预算截断必须在 **test 面**报**专用码**。
  *
  * 症状（修前）：`nudo check` 对「退出条件恒具体为真」的循环报
  * `nudo:loop-truncated`，而 `nudo test` 只把放宽后的结果（如 `-1024`）
@@ -539,8 +539,8 @@ describe("[] BUG-099: 循环迭代截断 → analysis 诊断（test 面）", () 
  *
  * 断言面：
  * 1. 恒具体真的循环 ⇒ 恰好一条 `nudo:loop-truncated`（info），锚在文件起点
- *    （事件不绑函数——collector 只给 `#loop-iterations` 标签，check 面对同一
- *    事件同样不给位置）；
+ * （事件不绑函数——collector 只给 `#loop-iterations` 标签，check 面对同一
+ * 事件同样不给位置）；
  * 2. 措辞与 check 面同款（iteration budget），且**不**冒充递归截断；
  * 3. 同一次分析内多次求值不重复出诊断；
  * 4. 无循环截断的文件零误报。
@@ -580,7 +580,7 @@ beforeEach(() => {
   clearAbsModuleCache();
 });
 
-describe("BUG-099: 循环迭代截断 → analysis 诊断（test 面）", () => {
+describe("循环迭代截断 → analysis 诊断（test 面）", () => {
   it("恒具体真的循环产出 nudo:loop-truncated（info，锚在函数声明处）", async () => {
     const dir = tmpProject("nudo-bug099-loop-");
     const file = join(dir, "loop.js");
@@ -622,11 +622,11 @@ describe("BUG-099: 循环迭代截断 → analysis 诊断（test 面）", () => 
 });
 
 // ---------------------------------------------------------------------------
-// BUG-099: 截断观测 → analysis 诊断（test 面）
+// 截断观测 → analysis 诊断（test 面）
 // ---------------------------------------------------------------------------
-describe("[] BUG-099: 截断观测 → analysis 诊断（test 面）", () => {
+describe("截断观测 → analysis 诊断（test 面）", () => {
 /**
- * BUG-099 回归：引擎「放弃求值」必须在 **test 面可观测**。
+ * 回归：引擎「放弃求值」必须在 **test 面可观测**。
  *
  * 症状（修前）：同一份递归源码，`nudo check` / `nudo health` 都报「求值被
  * 截断」，而 `nudo test`（人类面 + `--json`）**零诊断** —— 把放宽后的类型
@@ -645,7 +645,7 @@ describe("[] BUG-099: 截断观测 → analysis 诊断（test 面）", () => {
  *
  * 断言面：
  * 1. 递归截断产出 `nudo:recursion-truncated`（severity info），锚在被求值
- *    函数声明处（1 基行号）；
+ * 函数声明处（1 基行号）；
  * 2. 归因措辞与 core check 一致（cycle ⇒ 明说抬预算无效）；
  * 3. 同一事件多次求值不重复出诊断（Map 按 label 去重）；
  * 4. 无截断的文件零误报（collector 是全局单槽，装错就全仓噪声）。
@@ -683,7 +683,7 @@ beforeEach(() => {
   clearAbsModuleCache();
 });
 
-describe("BUG-099: 截断观测 → analysis 诊断（test 面）", () => {
+describe("截断观测 → analysis 诊断（test 面）", () => {
   it("自递归截断产出 nudo:recursion-truncated（info，锚在函数声明处）", async () => {
     const dir = tmpProject("nudo-bug099-");
     const file = join(dir, "self.js");
@@ -721,11 +721,11 @@ describe("BUG-099: 截断观测 → analysis 诊断（test 面）", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1036: 声明锚点不被行尾注释劫持
+// 声明锚点不被行尾注释劫持
 // ---------------------------------------------------------------------------
-describe("[] Bug 1036: 声明锚点不被行尾注释劫持", () => {
+describe("声明锚点不被行尾注释劫持", () => {
 /**
- * Bug 1036 回归：`injectBindings` 的**声明锚点**必须绑到「声明语句自身」，
+ * 回归：`injectBindings` 的**声明锚点**必须绑到「声明语句自身」，
  * 不能被上一条语句的**行尾注释**劫持。
  *
  * 病灶（Babel 注释挂载事实）：`const a = 1; // 说明` 的行尾注释**同时**被挂成
@@ -750,7 +750,7 @@ function asLineIndex(source: string): number {
   return idx;
 }
 
-describe("Bug 1036: 声明锚点不被行尾注释劫持", () => {
+describe("声明锚点不被行尾注释劫持", () => {
   const SRC = [
     "const alpha = 1; // alpha is the first",
     "const beta = 2;",
@@ -791,7 +791,7 @@ describe("Bug 1036: 声明锚点不被行尾注释劫持", () => {
   });
 });
 
-describe("Bug 1036: 同一行多条声明——各落各的（行号口径会撞车）", () => {
+describe("同一行多条声明——各落各的（行号口径会撞车）", () => {
   const SAME_LINE = `const delta = 10; const epsilon = 20;\nexport const ve = epsilon;\n`;
 
   it("点名的声明落在**自己**的前面（不被同行的前一条声明吃掉）", () => {
@@ -823,9 +823,9 @@ describe("Bug 1036: 同一行多条声明——各落各的（行号口径会撞
 // ---------------------------------------------------------------------------
 // 码归因 — 重复声明的诊断码是 nudo:mock-invalid（不是 nudo:module-missing）
 // ---------------------------------------------------------------------------
-describe("[] 码归因 — 重复声明的诊断码是 nudo:mock-invalid（不是 nudo:module-missing）", () => {
+describe("码归因 — 重复声明的诊断码是 nudo:mock-invalid（不是 nudo:module-missing）", () => {
 /**
- * Bug 1062 / 1063 —— 指令诊断的**码归因**与**文案贯通**（族 47 · 片 S13）。
+ * —— 指令诊断的**码归因**与**文案贯通**（族 47 · 片 S13）。
  *
  * 背景：片 S6 修好了两条指令的**本体**（`@nudo:replace` 目标未命中 ⇒ 显式诊断；
  * `@nudo:mock-module` 重复声明 ⇒ 显式诊断 + 导出名并集），但**码**在
@@ -835,14 +835,14 @@ describe("[] 码归因 — 重复声明的诊断码是 nudo:mock-invalid（不�
  *
  * 本钉锁四件事：
  * 1. **码归因**：分析器面（= `nudo test` / `health` 面的诊断源）上，重复声明的
- *    码是 `nudo:mock-invalid`（**不是** `nudo:module-missing`），文案自明
- *    （点名重复声明 + 两条 fromPath）。
+ * 码是 `nudo:mock-invalid`（**不是** `nudo:module-missing`），文案自明
+ * （点名重复声明 + 两条 fromPath）。
  * 2. **既有码不被误改**：「mock 文件缺失」仍然是 `nudo:module-missing`（error）
- *    ⇒ 不许把别的错误也改成 mock-invalid。
+ * ⇒ 不许把别的错误也改成 mock-invalid。
  * 3. **suggestion 文案**：重复声明 ⇒ 提示「只保留一条声明」；导出名缺失 ⇒ 点名
- *    那个缺失的导出（原先两族都落到通用句 ⇒ 提示与事实不符）。
+ * 那个缺失的导出（原先两族都落到通用句 ⇒ 提示与事实不符）。
  * 4. **body-read**：`param.trimLeft()` ⇒ `param: string()`（与 `trimStart` 同口径）；
- *    `param.includes(...)` **仍推不出**（该表刻意排除 Array 同名方法 ⇒ 负控）。
+ * `param.includes(...)` **仍推不出**（该表刻意排除 Array 同名方法 ⇒ 负控）。
  */
 
 
@@ -1034,11 +1034,11 @@ export function h(o) {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-127 — 去重键含调用点身份
+// 去重键含调用点身份
 // ---------------------------------------------------------------------------
-describe("[] BUG-127 — 去重键含调用点身份", () => {
+describe("去重键含调用点身份", () => {
 /**
- * BUG-127 回归：调用记录去重必须按**调用点身份**，不能按「形态」——
+ * 回归：调用记录去重必须按**调用点身份**，不能按「形态」——
  * 两个不同现场的调用只要实参/结果/throws 形状相同就会被判成同一条
  * ⇒ 后到现场的见证被吞，`--from` 顺序决定谁活下来。
  */
@@ -1057,7 +1057,7 @@ function rec(line: number, column: number): CallRecord {
   };
 }
 
-describe("BUG-127 — 去重键含调用点身份", () => {
+describe("去重键含调用点身份", () => {
   it("同形态但不同调用点 ⇒ 两条独立见证（顺序无关）", () => {
     expect(dedupeCallRecords([rec(2, 0), rec(5, 0)])).toHaveLength(2);
     expect(dedupeCallRecords([rec(5, 0), rec(2, 0)])).toHaveLength(2);
@@ -1072,11 +1072,11 @@ describe("BUG-127 — 去重键含调用点身份", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 396：期望里的对象槽字面量按值执法（不再恒 [ok]）
+// 期望里的对象槽字面量按值执法（不再恒 [ok]）
 // ---------------------------------------------------------------------------
-describe("[] Bug 396：期望里的对象槽字面量按值执法（不再恒 [ok]）", () => {
+describe("期望里的对象槽字面量按值执法（不再恒 [ok]）", () => {
 /**
- * Bug 396：`@nudo:case` 期望里的**对象槽字面量**永不被执法 ⇒ 假绿。
+ * `@nudo:case` 期望里的**对象槽字面量**永不被执法 ⇒ 假绿。
  *
  * 根因（core `packages/core/src/algebra/leq.ts:223-234`）：`leqAbs` 的
  * 「同 prim 字面量视为可赋」捷径在**对象槽**位上连字面量相等性都不比 ——
@@ -1116,7 +1116,7 @@ function caseExpectedCount(src: string): number {
   });
 }
 
-describe("Bug 396：期望里的对象槽字面量按值执法（不再恒 [ok]）", () => {
+describe("期望里的对象槽字面量按值执法（不再恒 [ok]）", () => {
   it("对象槽字面量不符（期望 { a: 2 }，实际 { a: 1 }）→ 报 nudo:case-expected", () => {
     const src = `/**
  * @nudo:case "t" ({ a: 1 }) => shape({ a: lit(2) })
@@ -1172,7 +1172,7 @@ export function f(x) { return x; }
   });
 });
 
-describe("Bug 396：caseExpectedSatisfied 的严格变体（消费侧单测）", () => {
+describe("caseExpectedSatisfied 的严格变体（消费侧单测）", () => {
   const objA1 = abs({ k: "obj", slots: { a: { value: numLit(1) } } }, undefined, undefined, "exact");
   const objX = abs({ k: "obj", slots: { a: { value: strLit("x") } } }, undefined, undefined, "exact");
   const nested = abs(
@@ -1208,11 +1208,11 @@ describe("Bug 396：caseExpectedSatisfied 的严格变体（消费侧单测）",
 });
 
 // ---------------------------------------------------------------------------
-// Bug 464：具名类导入的调用点归因（--from 不再丢弃）
+// 具名类导入的调用点归因（--from 不再丢弃）
 // ---------------------------------------------------------------------------
-describe("[] Bug 464：具名类导入的调用点归因（--from 不再丢弃）", () => {
+describe("具名类导入的调用点归因（--from 不再丢弃）", () => {
 /**
- * Bug 464：`nudo test --from` 静默丢弃类方法调用点（`import { C }` 形态）。
+ * `nudo test --from` 静默丢弃类方法调用点（`import { C }` 形态）。
  *
  * 根因（analyzer-abs-eval.ts 的调用记录归因）：点号被调名（`Svc.run`）只认
  * **命名空间导入**（`exportName === "*"`）；具名类导入（`import { Svc }`）
@@ -1221,7 +1221,7 @@ describe("[] Bug 464：具名类导入的调用点归因（--from 不再丢弃�
  *
  * 钉：
  * - 具名导入 / 别名导入（`import { Svc as S }`）都要归因到**类所在模块**，
- *   并在 `--from` 注入后合成 `call@` case（实参 1 → 返回 2）。
+ * 并在 `--from` 注入后合成 `call@` case（实参 1 → 返回 2）。
  * - 负控制：命名空间导入形态不受影响；别的模块的调用点不得被挂到本文件。
  *
  * 类名逐用例唯一（引擎 classRegistry 按类名全局驻留——同名类跨 run 共享
@@ -1242,7 +1242,7 @@ function litOf(a: Abs): unknown {
   return lv.ok ? lv.value : undefined;
 }
 
-describe("Bug 464：具名类导入的调用点归因（--from 不再丢弃）", () => {
+describe("具名类导入的调用点归因（--from 不再丢弃）", () => {
   it("import { Svc }：调用点归因到类所在模块并合成 call@ case", () =>
     withTmpProject("nudo-b464-", (dir) => {
       const t9 = writeTmpFile(
@@ -1339,26 +1339,26 @@ describe("Bug 464：具名类导入的调用点归因（--from 不再丢弃）",
 });
 
 // ---------------------------------------------------------------------------
-// Bug 465：call@ 见证名带来源限定；二次 freeze 不丢新见证
+// call@ 见证名带来源限定；二次 freeze 不丢新见证
 // ---------------------------------------------------------------------------
-describe("[] Bug 465：call@ 见证名带来源限定；二次 freeze 不丢新见证", () => {
+describe("call@ 见证名带来源限定；二次 freeze 不丢新见证", () => {
 /**
- * Bug 465：固化下来的 case 名 `call@L<行号>` 取的是**使用现场文件**的行号
+ * 固化下来的 case 名 `call@L<行号>` 取的是**使用现场文件**的行号
  * ⇒ 同名碰撞 + 指向无关行 + 二次 freeze 静默丢弃新见证。
  *
  * 根因：
  * - 合成 case 名直接取记录里的行号（使用现场文件的行）⇒ 两个现场文件在
- *   同一行调用同一函数 → 同名 `call@L2`；行号在被分析文件里无意义。
+ * 同一行调用同一函数 → 同名 `call@L2`；行号在被分析文件里无意义。
  * - `insertGeneratedCaseDirectives` 的 `already-generated` 判定以「该函数已有
- *   case 指令」为条件 ⇒ 函数级的已有见证吞掉其它调用点的新见证。
+ * case 指令」为条件 ⇒ 函数级的已有见证吞掉其它调用点的新见证。
  *
  * 修法（命名规则，service 侧统一口径）：
  * - 调用点在本文件内 → `call@L<行号>`（行号在被分析文件里可核对；与既有
- *   已固化名字兼容，不引起 freeze 抖动）。
+ * 已固化名字兼容，不引起 freeze 抖动）。
  * - 调用点在别的文件（`--from` 现场）→ `call@<现场文件相对路径>:L<行号>`
- *   （名字自带来源限定 ⇒ 不撞名；行号落在具名文件里可核对）。
+ * （名字自带来源限定 ⇒ 不撞名；行号落在具名文件里可核对）。
  * - emitter 的 `already-generated` 判定改为**按见证身份（名字）逐条**比对：
- *   同名不重复写，新调用点照写。
+ * 同名不重复写，新调用点照写。
  *
  * 钉：两个现场文件同行的调用 → 见证名不同；本地调用点 → 名字不变（兼容）；
  * 二次 freeze：新见证能追加（emitter 层）；负控制：本地见证名保持 `call@L<n>`。
@@ -1384,7 +1384,7 @@ function callNames(result: ReturnType<typeof analyzeFile>, name: string): string
   return (fn?.cases ?? []).map((c) => c.name);
 }
 
-describe("Bug 465：call@ 见证名带来源限定；二次 freeze 不丢新见证", () => {
+describe("call@ 见证名带来源限定；二次 freeze 不丢新见证", () => {
   it("两个现场文件同行的调用 → 见证名不同（改前都是 call@L2）", () =>
     withTmpProject("nudo-b465-", (dir) => {
       const lib = writeTmpFile(dir, "lib.js", LIB);
@@ -1472,11 +1472,11 @@ export function add(a, b) { return a + b; }
 });
 
 // ---------------------------------------------------------------------------
-// Bug 467 — 非法 entryThrows 的告警文案必须与生效档位一致
+// 非法 entryThrows 的告警文案必须与生效档位一致
 // ---------------------------------------------------------------------------
-describe("[] Bug 467 — 非法 entryThrows 的告警文案必须与生效档位一致", () => {
+describe("非法 entryThrows 的告警文案必须与生效档位一致", () => {
 /**
- * Bug 467 —— `nudo.check.entryThrows` 非法值 + 合法 `profile` 时：
+ * `nudo.check.entryThrows` 非法值 + 合法 `profile` 时：
  * stderr 告警写死「using error」，门禁实际用 **warning**（自相矛盾）。
  *
  * 根因（config.ts checkConfig）：告警文案是常量字符串，而生效值随后被
@@ -1511,7 +1511,7 @@ function captureStderr(fn: () => void): string {
   return writes.join("");
 }
 
-describe("Bug 467 — 非法 entryThrows 的告警文案必须与生效档位一致", () => {
+describe("非法 entryThrows 的告警文案必须与生效档位一致", () => {
   it("非法 entryThrows + adoption profile：文案说 warning（生效值也是 warning）", () => {
     let eff: string | undefined;
     const out = captureStderr(() => {
@@ -1583,11 +1583,11 @@ describe("Bug 467 — 非法 entryThrows 的告警文案必须与生效档位一
 });
 
 // ---------------------------------------------------------------------------
-// Bug 471：带谓词的期望（number().gt(0)）按值判定，不再恒假红
+// 带谓词的期望（number().gt(0)）按值判定，不再恒假红
 // ---------------------------------------------------------------------------
-describe("[] Bug 471：带谓词的期望（number().gt(0)）按值判定，不再恒假红", () => {
+describe("带谓词的期望（number().gt(0)）按值判定，不再恒假红", () => {
 /**
- * Bug 471：`@nudo:case "t" (…) => number().gt(0)` 这类**带谓词**的期望
+ * `@nudo:case "t" (…) => number().gt(0)` 这类**带谓词**的期望
  * 恒判失败（假红）。
  *
  * 根因（analyzer-orchestrate-uncached-cases.ts）：期望侧用 `leqAbs` 判定，
@@ -1611,7 +1611,7 @@ function caseExpectedIssues(result: { diagnostics: readonly { code?: string }[] 
   return result.diagnostics.filter((d) => d.code === "nudo:case-expected").length;
 }
 
-describe("Bug 471：带谓词的期望（number().gt(0)）按值判定，不再恒假红", () => {
+describe("带谓词的期望（number().gt(0)）按值判定，不再恒假红", () => {
   it("满足谓词：期望 number().gt(0)，实际 2 → 无 nudo:case-expected", () =>
     withTmpProject("nudo-b471-", (dir) => {
       const src = `/**
@@ -1667,11 +1667,11 @@ export function f(x) { return x + 1; }
 });
 
 // ---------------------------------------------------------------------------
-// Bug 472 — 合成入口用例的模块实例隔离
+// 合成入口用例的模块实例隔离
 // ---------------------------------------------------------------------------
-describe("[] Bug 472 — 合成入口用例的模块实例隔离", () => {
+describe("合成入口用例的模块实例隔离", () => {
 /**
- * Bug 472 —— 合成入口用例（entry@）之间的**模块级状态串味**。
+ * 合成入口用例（entry@）之间的**模块级状态串味**。
  *
  * 改前：`tryRunEval` 的 memo 按「文件 × mode」命中时直接返回缓存里的
  * `out`，而 `out.exports` 是**活模块实例**（导出函数的闭包捕获着模块级
@@ -1679,8 +1679,8 @@ describe("[] Bug 472 — 合成入口用例的模块实例隔离", () => {
  *
  * 原生真值：每个合成用例 = 一次**独立**的外部调用（各自进程 / 各自模块
  * 实例）⇒ 模块级计数器每次都从初值起算：
- *   `let n = 0; function inc(){ n = n + 1; return n; }`
- *   `export function a(){ inc(); return n; }` → 1（不是 2）
+ * `let n = 0; function inc(){ n = n + 1; return n; }`
+ * `export function a(){ inc(); return n; }` → 1（不是 2）
  */
 
 
@@ -1696,7 +1696,7 @@ function caseShapes(source: string): Record<string, string> {
   return out;
 }
 
-describe("Bug 472 — 合成入口用例的模块实例隔离", () => {
+describe("合成入口用例的模块实例隔离", () => {
   it("非导出辅助函数改写模块级状态后，导出函数的入口用例仍从初值起算", () => {
     const shapes = caseShapes(`let n = 0;
 function inc() { n = n + 1; return n; }
@@ -1722,7 +1722,7 @@ export function c() { inc(); return n; }
 });
 
 /** 负控制：不该被这条修复波及的邻近形态 */
-describe("Bug 472 — 负控制", () => {
+describe("负控制", () => {
   it("声明式 @nudo:case 的求值结果不变", () => {
     const shapes = caseShapes(`/**
  * @nudo:case "t" (1)
@@ -1748,11 +1748,11 @@ export function read() { return n; }
 });
 
 // ---------------------------------------------------------------------------
-// Bug 480 — nudo.analysis.include 的字面量要能命中（路径形态，非子串）
+// nudo.analysis.include 的字面量要能命中（路径形态，非子串）
 // ---------------------------------------------------------------------------
-describe("[] Bug 480 — nudo.analysis.include 的字面量要能命中（路径形态，非子串）", () => {
+describe("nudo.analysis.include 的字面量要能命中（路径形态，非子串）", () => {
 /**
- * Bug 480 回归钉：`nudo.analysis.include` 的白名单判定。
+ * 回归钉：`nudo.analysis.include` 的白名单判定。
  *
  * 改前：include 走 matchesEmitAllowlist —— 无通配符的字面量被编译成锚定
  * 全等正则 `^literal$`（相对项目根），`include: ["src"]` 对 `src/a.js`
@@ -1760,7 +1760,7 @@ describe("[] Bug 480 — nudo.analysis.include 的字面量要能命中（路径
  *
  * 本次定的语义（写在 analysis-scope.includeHit 的注释里）：
  * - 字面量 = **路径形态**（这个文件 / 这个目录），不是子串搜索：
- *   `src` 命中 `src/**`，不命中 `src-other/c.js`。
+ * `src` 命中 `src/**`，不命中 `src-other/c.js`。
  * - 通配符 = 锚定 glob（`**` 跨段、`*`/`?` 不跨 `/`），与 exclude 同编译器。
  *
  * 负控制：exclude 的字面量**子串**语义不得被本次改动波及；include 为空
@@ -1790,7 +1790,7 @@ function fileIn(dir: string, rel: string): string {
 
 const SRC = "export function f(x) {\n  return x;\n}\n";
 
-describe("Bug 480 — nudo.analysis.include 的字面量要能命中（路径形态，非子串）", () => {
+describe("nudo.analysis.include 的字面量要能命中（路径形态，非子串）", () => {
   it("include: [\"src\"] 命中 src 下的文件（改前：永不命中 → 白名单作废）", () => {
     const dir = project(["src"]);
     const hit = fileIn(dir, "src/a.js");
@@ -1864,11 +1864,11 @@ describe("Bug 480 — nudo.analysis.include 的字面量要能命中（路径形
 });
 
 // ---------------------------------------------------------------------------
-// Bug 481 — 项目级预算/上限必须随每次解析重写（顺序无关）
+// 项目级预算/上限必须随每次解析重写（顺序无关）
 // ---------------------------------------------------------------------------
-describe("[] Bug 481 — 项目级预算/上限必须随每次解析重写（顺序无关）", () => {
+describe("项目级预算/上限必须随每次解析重写（顺序无关）", () => {
 /**
- * Bug 481 —— `nudo.analysis.maxForks`（与 `nudo.sessionCache.*`）是**进程级
+ * `nudo.analysis.maxForks`（与 `nudo.sessionCache.*`）是**进程级
  * 单槽**，且只在 findProjectConfig 的 **memo-miss** 路径写一次 ⇒
  * 「哪个项目最后被**首次**查找」决定全局值 ⇒ 同一项目同一配置在不同目标
  * 顺序下结论不同（fork 截断诊断时有时无，类型静默变宽）。
@@ -1891,7 +1891,7 @@ function project(prefix: string, nudo: unknown): string {
   return root;
 }
 
-describe("Bug 481 — 项目级预算/上限必须随每次解析重写（顺序无关）", () => {
+describe("项目级预算/上限必须随每次解析重写（顺序无关）", () => {
   beforeEach(() => {
     evictProjectConfigMemo();
     resetSessionCacheLimitState();
@@ -1969,11 +1969,11 @@ describe("Bug 481 — 项目级预算/上限必须随每次解析重写（顺序
 });
 
 // ---------------------------------------------------------------------------
-// Bug 485：类方法上的 @nudo:case 见证被求值（不再恒 unknown）
+// 类方法上的 @nudo:case 见证被求值（不再恒 unknown）
 // ---------------------------------------------------------------------------
-describe("[] Bug 485：类方法上的 @nudo:case 见证被求值（不再恒 unknown）", () => {
+describe("类方法上的 @nudo:case 见证被求值（不再恒 unknown）", () => {
 /**
- * Bug 485：**类方法**上的 `@nudo:case` 见证从不被求值 → 结果恒 `unknown`
+ * **类方法**上的 `@nudo:case` 见证从不被求值 → 结果恒 `unknown`
  * → 任何期望都必假红（顶层函数同款 case 却通过）。
  *
  * 根因（analyzer-orchestrate-uncached-cases.ts）：见证求值把 `fn.name` 当
@@ -1992,7 +1992,7 @@ describe("[] Bug 485：类方法上的 @nudo:case 见证被求值（不再恒 un
 
 
 
-describe("Bug 485：类方法上的 @nudo:case 见证被求值（不再恒 unknown）", () => {
+describe("类方法上的 @nudo:case 见证被求值（不再恒 unknown）", () => {
   it("实例方法：见证求值出确切值 1（改前恒 unknown）", () =>
     withTmpProject("nudo-b485-", (dir) => {
       const src = `export class C {
@@ -2064,11 +2064,11 @@ export function f(x) { return 1; }
 });
 
 // ---------------------------------------------------------------------------
-// Bug 486：call@ 见证值 = 调用现场观测值（不被目标语境重求值覆盖）
+// call@ 见证值 = 调用现场观测值（不被目标语境重求值覆盖）
 // ---------------------------------------------------------------------------
-describe("[] Bug 486：call@ 见证值 = 调用现场观测值（不被目标语境重求值覆盖）", () => {
+describe("call@ 见证值 = 调用现场观测值（不被目标语境重求值覆盖）", () => {
 /**
- * Bug 486：合成 `call@` 见证的**返回值**被「目标语境重求值」覆盖 ⇒ 报告出
+ * 合成 `call@` 见证的**返回值**被「目标语境重求值」覆盖 ⇒ 报告出
  * 的调用点真值与实际调用结果矛盾（错误的确切值）。
  *
  * 根因（analyzer-orchestrate-uncached-cases.ts）：`caseAbs` 已经是闸门后的
@@ -2087,7 +2087,7 @@ describe("[] Bug 486：call@ 见证值 = 调用现场观测值（不被目标语
 
 
 
-describe("Bug 486：call@ 见证值 = 调用现场观测值（不被目标语境重求值覆盖）", () => {
+describe("call@ 见证值 = 调用现场观测值（不被目标语境重求值覆盖）", () => {
   it("模块状态不同：见证值 = 现场观测值 6（改前被重算成 1）", () =>
     withTmpProject("nudo-b486-", (dir) => {
       const lib = writeTmpFile(
@@ -2150,11 +2150,11 @@ const x = add(1, 2);
 });
 
 // ---------------------------------------------------------------------------
-// Bug 491：再导出链归因（barrel 不再吞掉跨文件调用点证据）
+// 再导出链归因（barrel 不再吞掉跨文件调用点证据）
 // ---------------------------------------------------------------------------
-describe("[] Bug 491：再导出链归因（barrel 不再吞掉跨文件调用点证据）", () => {
+describe("再导出链归因（barrel 不再吞掉跨文件调用点证据）", () => {
 /**
- * Bug 491：`export *` barrel 吞掉 `--from` 采集到的跨文件调用点证据 ⇒
+ * `export *` barrel 吞掉 `--from` 采集到的跨文件调用点证据 ⇒
  * `nudo:contract-domain-exceeds`（error 级 L1 门禁）静默不报（假绿）。
  *
  * 根因（analyzer-abs-eval.ts 的调用记录归因）：targetModule 填的是**调用方
@@ -2190,7 +2190,7 @@ const SIDECAR = `import { fn, number } from "@nudojs/core";
 export const area = fn({ x: number().gt(0) });
 `;
 
-describe("Bug 491：再导出链归因（barrel 不再吞掉跨文件调用点证据）", () => {
+describe("再导出链归因（barrel 不再吞掉跨文件调用点证据）", () => {
   it("export * barrel：记录归因到定义文件，domain-exceeds 门禁照报", () =>
     withTmpProject("nudo-b491-", (dir) => {
       const lib = writeTmpFile(dir, "lib.js", LIB);
@@ -2292,11 +2292,11 @@ describe("Bug 491：再导出链归因（barrel 不再吞掉跨文件调用点�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 492 — dual-entry issue anchor is a legal, real position
+// dual-entry issue anchor is a legal, real position
 // ---------------------------------------------------------------------------
-describe("[] Bug 492 — dual-entry issue anchor is a legal, real position", () => {
+describe("dual-entry issue anchor is a legal, real position", () => {
 /**
- * Bug 492：nudo:dual-entry 的位置硬编码 line: 0 / column: 0。
+ * nudo:dual-entry 的位置硬编码 line: 0 / column: 0。
  *
  * 后果（产品面）：
  * - `nudo check --json` → `"line": 0`
@@ -2328,7 +2328,7 @@ const DUAL = {
 };
 const SRC = `export function id(x) { return x; }\n`;
 
-describe("Bug 492 — dual-entry issue anchor is a legal, real position", () => {
+describe("dual-entry issue anchor is a legal, real position", () => {
   it("anchors the dual-entry issue on line 1 (not the line-0 placeholder)", () => {
     const dir = tmpProject("nudo-bug492-", {
       "package.json": JSON.stringify(DUAL),
@@ -2389,7 +2389,7 @@ describe("Bug 492 — dual-entry issue anchor is a legal, real position", () => 
   });
 });
 
-describe("Bug 492 — eval 通道（analyzer 诊断面）也必须是合法行号", () => {
+describe("eval 通道（analyzer 诊断面）也必须是合法行号", () => {
   it("analyzeFile 的 dual-entry 诊断落在第 1 行（不是 line 0 占位）", () => {
     const dir = tmpProject("nudo-bug492-eval-", {
       "package.json": JSON.stringify(DUAL),
@@ -2407,11 +2407,11 @@ describe("Bug 492 — eval 通道（analyzer 诊断面）也必须是合法行�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 496：intension.display 与求值面同源（跨模块不再退化成 unknown）
+// intension.display 与求值面同源（跨模块不再退化成 unknown）
 // ---------------------------------------------------------------------------
-describe("[] Bug 496：intension.display 与求值面同源（跨模块不再退化成 unknown）", () => {
+describe("intension.display 与求值面同源（跨模块不再退化成 unknown）", () => {
 /**
- * Bug 496：`nudo test --json` 的 `intension.display` 在跨模块调用上退化成
+ * `nudo test --json` 的 `intension.display` 在跨模块调用上退化成
  * `() => unknown`，与同一份 JSON 里的 `result` / `resultAbs` / `intension.abs`
  * 自相矛盾，且与 `nudo check` 的签名相反。
  *
@@ -2441,7 +2441,7 @@ const SAME = `function inner2() { return 7; }
 export function run2() { return inner2(); }
 `;
 
-describe("Bug 496：intension.display 与求值面同源（跨模块不再退化成 unknown）", () => {
+describe("intension.display 与求值面同源（跨模块不再退化成 unknown）", () => {
   it("跨模块：display 由求值面合成，与 resultAbs / nudo check 签名一致", () =>
     withTmpProject("nudo-b496-", (dir) => {
       writeTmpFile(dir, "lib.js", LIB);
@@ -2502,11 +2502,11 @@ describe("Bug 496：intension.display 与求值面同源（跨模块不再退化
 });
 
 // ---------------------------------------------------------------------------
-// Bug 497 — what-if type expression fidelity
+// what-if type expression fidelity
 // ---------------------------------------------------------------------------
-describe("[] Bug 497 — what-if type expression fidelity", () => {
+describe("what-if type expression fidelity", () => {
 /**
- * Bug 497：what-if 把**认不出**的类型表达式静默洗成 `any()`，却仍报
+ * what-if 把**认不出**的类型表达式静默洗成 `any()`，却仍报
  * 「Bindings applied: <用户原文>」——报告与实际注入不符。
  *
  * 原生 oracle（tmp/probe/fix-r24-m/engine497-grammar.ts）：
@@ -2517,8 +2517,8 @@ describe("[] Bug 497 — what-if type expression fidelity", () => {
  *
  * 修法（service 侧 what-if）：
  * - 认不出的名字（`Date` / `notatype`）与 TS 类型引用（`T.*`）不再洗成 `any()`，
- *   而是按文档契约（agent.md「any other name becomes `unknown`」）落到
- *   `unknown`——`@nudo:as unknown` 是合法载荷。
+ * 而是按文档契约（agent.md「any other name becomes `unknown`」）落到
+ * `unknown`——`@nudo:as unknown` 是合法载荷。
  * - `applied` 回显如实反映**实际注入**：降级时明说降到了 `unknown`。
  *
  * 负控制：可表达的表达式（原始类型 / 联合 / 构建器 / 结构字面量）行为不变，
@@ -2529,7 +2529,7 @@ describe("[] Bug 497 — what-if type expression fidelity", () => {
 
 const SRC = `const x = 1;\nconst y = x + 1;\n`;
 
-describe("Bug 497 — what-if type expression fidelity", () => {
+describe("what-if type expression fidelity", () => {
   it("does not launder an unrecognized name into any()", () => {
     expect(typeExprToDirective("Date")).not.toBe("any()");
     expect(typeExprToDirective("Date")).toBe("unknown");
@@ -2603,11 +2603,11 @@ describe("Bug 497 — what-if type expression fidelity", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 503：导出函数体内的调用点 → 合成 call@ 见证
+// 导出函数体内的调用点 → 合成 call@ 见证
 // ---------------------------------------------------------------------------
-describe("[] Bug 503：导出函数体内的调用点 → 合成 call@ 见证", () => {
+describe("导出函数体内的调用点 → 合成 call@ 见证", () => {
 /**
- * Bug 503：调用点位于**导出函数体内**时，Nudo 从不合成 `call@` case ⇒ 回落
+ * 调用点位于**导出函数体内**时，Nudo 从不合成 `call@` case ⇒ 回落
  * 成 `entry@` ⇒ 该函数的调用点域完全丢失（误报 entry-only）。
  *
  * 根因（analyzer-orchestrate-uncached-cases.ts / analyzer-orchestrate-uncached.ts）：
@@ -2631,7 +2631,7 @@ function casesOf(result: ReturnType<typeof analyzeFile>, name: string): string[]
   return (fn?.cases ?? []).map((c) => c.name);
 }
 
-describe("Bug 503：导出函数体内的调用点 → 合成 call@ 见证", () => {
+describe("导出函数体内的调用点 → 合成 call@ 见证", () => {
   it("函数体内调用：被调方有 call@ 见证（改前只有 entry@）", () =>
     withTmpProject("nudo-b503-", (dir) => {
       const src = `export function add(a, b) {
@@ -2684,11 +2684,11 @@ export function run2() { return inner2(); }
 });
 
 // ---------------------------------------------------------------------------
-// Bug 639: entryThrows 非法值告警进程内去重
+// entryThrows 非法值告警进程内去重
 // ---------------------------------------------------------------------------
-describe("[] Bug 639: entryThrows 非法值告警进程内去重", () => {
+describe("entryThrows 非法值告警进程内去重", () => {
 /**
- * Bug 639 回归：`nudo.check.entryThrows` 的非法值告警必须**进程内去重**
+ * 回归：`nudo.check.entryThrows` 的非法值告警必须**进程内去重**
  * （与同族 `nudo.check.profile` 的 `warnedGateConfig` 去重口径一致）。
  *
  * 病灶：`checkConfig()` 此前对非法 `entryThrows` 走**裸** `process.stderr.write`
@@ -2732,7 +2732,7 @@ function illegalEntryThrows(value: string): "error" | "warning" | "off" {
   return value as "error" | "warning" | "off";
 }
 
-describe("Bug 639: entryThrows 非法值告警进程内去重", () => {
+describe("entryThrows 非法值告警进程内去重", () => {
   it("同一非法值在多次 checkConfig 调用里只告警一次", () => {
     const writes = captureStderr(() => {
       checkConfig({ check: { entryThrows: illegalEntryThrows("bogus-639-same") } });
@@ -2771,18 +2771,18 @@ describe("Bug 639: entryThrows 非法值告警进程内去重", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 921：case 级 nudo:may-throw 认「已声明的有意抛」（与 check 面同口径）
+// case 级 nudo:may-throw 认「已声明的有意抛」（与 check 面同口径）
 // ---------------------------------------------------------------------------
-describe("[] Bug 921：case 级 nudo:may-throw 认「已声明的有意抛」（与 check 面同口径）", () => {
+describe("case 级 nudo:may-throw 认「已声明的有意抛」（与 check 面同口径）", () => {
 /**
- * Bug 921：case 级 `nudo:may-throw` **不认「已声明的有意抛」** ⇒ 两个 verb
+ * case 级 `nudo:may-throw` **不认「已声明的有意抛」** ⇒ 两个 verb
  * 对同一份文件给出**相反裁决**。
  *
  * 复现：源码里声明了有意抛（`@nudo:case "t" (1) !! throws TypeError` 或
  * `@nudo:throws TypeError`，或侧车 `fn(…, { throws: "TypeError" })`）⇒
  * - `nudo check` 面：L2 entry 面按「已申报」豁免 ⇒ **OK / 0 error**；
  * - `nudo test` 面：case 级 `nudo:may-throw` 只认「抛了就是问题」⇒ **照报**
- *   未处理的抛 ⇒ 同一文件两个 verb 裁决相反。
+ * 未处理的抛 ⇒ 同一文件两个 verb 裁决相反。
  *
  * 修法（`packages/service/src/analyzer-orchestrate-uncached-cases.ts`）：
  * case 级 `nudo:may-throw` 发射**前**先取该函数的**已声明抛**，口径与 check 面
@@ -2795,11 +2795,11 @@ describe("[] Bug 921：case 级 nudo:may-throw 认「已声明的有意抛」（
  * - 侧车 `fn(…, { throws: "TypeError" })` ⇒ 无 `nudo:may-throw`（改前有）；
  * - 负控制：未申报 ⇒ **有** `nudo:may-throw`（口径不变）；
  * - 负控制：申报的 kind 不覆盖实测 kind（申报 RangeError / 实测 TypeError）
- *   ⇒ **有** `nudo:may-throw`（口径不变）；
+ * ⇒ **有** `nudo:may-throw`（口径不变）；
  * - 负控制：申报 `Error`（Error 族）覆盖实测 `TypeError` ⇒ 无 `nudo:may-throw`
- *   （族覆盖口径与 check 面一致）；
+ * （族覆盖口径与 check 面一致）；
  * - 负控制：坏侧车（加载失败）⇒ `nudo:contract-load` 仍报（memo 化不得吞掉
- *   core 的「同 (路径, 原因) 只报一次」去重项）。
+ * core 的「同 (路径, 原因) 只报一次」去重项）。
  */
 
 
@@ -2848,7 +2848,7 @@ const SIDECAR = `import { fn, number } from "@nudojs/core";
 export const f = fn({ x: number() }, number(), { throws: "TypeError" });
 `;
 
-describe("Bug 921：case 级 nudo:may-throw 认「已声明的有意抛」（与 check 面同口径）", () => {
+describe("case 级 nudo:may-throw 认「已声明的有意抛」（与 check 面同口径）", () => {
   it("case 上的 `!! throws TypeError` ⇒ 不发 nudo:may-throw", () => {
     expect(mayThrowCount({ "f.js": CASE_THROWS_DECL })).toBe(0);
   });
@@ -2898,11 +2898,11 @@ export const f = fn({ x: number(
 });
 
 // ---------------------------------------------------------------------------
-// Bug 950 — 分析面：推导失败 ⇒ nudo:opaque-result（INFO），不发 nudo:case-expected
+// 分析面：推导失败 ⇒ nudo:opaque-result（INFO），不发 nudo:case-expected
 // ---------------------------------------------------------------------------
-describe("[] Bug 950 — 分析面：推导失败 ⇒ nudo:opaque-result（INFO），不发 nudo:case-expected", () => {
+describe("分析面：推导失败 ⇒ nudo:opaque-result（INFO），不发 nudo:case-expected", () => {
 /**
- * Bug 950（**分析面**）：第三态只活在报告面 ⇒ 同一输出里两条消息口径不一致。
+ * （**分析面**）：第三态只活在报告面 ⇒ 同一输出里两条消息口径不一致。
  *
  * 报告面（`packages/nudojs/src/run-test.ts` 与 `packages/service/src/test-report.ts`）
  * 已把「引擎**未能推断**实测值」（实测 Abs 是 `unknown` / `conf === "opaque"`）
@@ -2919,7 +2919,7 @@ describe("[] Bug 950 — 分析面：推导失败 ⇒ nudo:opaque-result（INFO�
  *
  * 钉：
  * - 推导失败 + 期望 `number()` ⇒ **没有** `nudo:case-expected`；
- *   有且仅有 `nudo:opaque-result`，且 **severity = "info"**；
+ * 有且仅有 `nudo:opaque-result`，且 **severity = "info"**；
  * - 推导失败 + 期望 `any()` ⇒ 同上（**不被放宽的期望空洞通过**）；
  * - 负控制：推导成功 + 期望不符 ⇒ 仍是 `nudo:case-expected` **error**；
  * - 负控制：推导成功 + 期望相符 ⇒ 两者都**不**产出。
@@ -2956,7 +2956,7 @@ function diagsOf(src: string): Diag[] {
   });
 }
 
-describe("Bug 950 — 分析面：推导失败 ⇒ nudo:opaque-result（INFO），不发 nudo:case-expected", () => {
+describe("分析面：推导失败 ⇒ nudo:opaque-result（INFO），不发 nudo:case-expected", () => {
   it("推导失败 + 期望 number() ⇒ 只有 nudo:opaque-result，且严重度是 info", () => {
     const diags = diagsOf(
       `/**\n * @nudo:case "w" (1) => number()\n */\n${OPAQUE_BODY}`,
@@ -2999,11 +2999,11 @@ describe("Bug 950 — 分析面：推导失败 ⇒ nudo:opaque-result（INFO）�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 950 — service 报告面（agent testTool）的第三态：推导失败 ⇒ unchecked
+// service 报告面（agent testTool）的第三态：推导失败 ⇒ unchecked
 // ---------------------------------------------------------------------------
-describe("[] Bug 950 — service 报告面（agent testTool）的第三态：推导失败 ⇒ unchecked", () => {
+describe("service 报告面（agent testTool）的第三态：推导失败 ⇒ unchecked", () => {
 /**
- * Bug 950：断言判定**没有「推导失败」第三态**（LSP agent `testTool` 的报告面）。
+ * 断言判定**没有「推导失败」第三态**（LSP agent `testTool` 的报告面）。
  *
  * 本模块（`packages/service/src/test-report.ts`）是 CLI `nudo test` 报告面的
  * **平行副本**（LSP agent 工具面 `packages/lsp/src/agent-tools.ts` 的
@@ -3025,7 +3025,7 @@ describe("[] Bug 950 — service 报告面（agent testTool）的第三态：推
  * - 负控制：推导成功 + 期望不符 ⇒ 仍是 failed；
  * - 负控制：声明了但**没写**期望 ⇒ 既有 `no-expectation` 口径不变；
  * - 负控制：抛错（实测 `never`）⇒ 仍是 failed（**不是**「推导失败」——
- *   `never` 是底元素，Bug 649 的判定层已把它拦成「不满足」）。
+ * `never` 是底元素，的判定层已把它拦成「不满足」）。
  */
 
 
@@ -3051,7 +3051,7 @@ function reportOf(src: string): Report {
   });
 }
 
-describe("Bug 950 — service 报告面（agent testTool）的第三态：推导失败 ⇒ unchecked", () => {
+describe("service 报告面（agent testTool）的第三态：推导失败 ⇒ unchecked", () => {
   it("推导失败 + 期望 number() ⇒ unchecked（不是 failed）", () => {
     const report = reportOf(`/**
  * @nudo:case "num" (1) => number()

@@ -1,5 +1,5 @@
 /**
- * Bug 217 回归：`process.env` / `process.versions` 的**索引值域**必须在成员读
+ * 回归：`process.env` / `process.versions` 的**索引值域**必须在成员读
  * 时被使用（同一个对象不得在展示面（`Record<string, string | undefined>`）
  * 与读面（`unknown`）自相矛盾）。
  *
@@ -40,7 +40,7 @@ function indexValueOf(o: Abs): Abs | undefined {
   return inner.shape.index?.value;
 }
 
-describe("Bug 217 — process.env / process.versions 的索引值域声明", () => {
+describe("process.env / process.versions 的索引值域声明", () => {
   it("process.env 是开放对象（open）且带索引值域", () => {
     const env = processGlobal();
     const penv = slotOf(env, "env");

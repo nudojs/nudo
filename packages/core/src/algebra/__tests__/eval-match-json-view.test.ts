@@ -7,7 +7,7 @@
  *
  * 修复口径：形状维持 obj（m[0]/m.length/m.index/m.input/m.groups.x 槽读面
  * #136 依赖；容器 arr/tuple 无侧槽），数组性经 **Shape 的 `view: "array"`
- * facet** 标注（BUG-258：单一事实源；此前是 WeakSet 侧表）——json.ts 三消费点
+ * facet** 标注（单一事实源；此前是 WeakSet 侧表）——json.ts 三消费点
  * （absToJsonNative / jsonStringifyTotal / callable replacer walk）按下标槽
  * 0..n-1 走数组序列化；length 槽单挂
  * enumerable:false（原生数组 length 唯一非枚举——Object.keys/展开面）。

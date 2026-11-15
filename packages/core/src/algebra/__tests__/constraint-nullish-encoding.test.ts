@@ -1,12 +1,12 @@
 /**
- * Bug 24：契约 lit(null) / nullable() 的 entry Abs 编码。
+ * 契约 lit(null) / nullable() 的 entry Abs 编码。
  *
  * 回归背景：constraintOnTermAbs 的 allEqNullish 分支产出裸
  * `{k:"unknown"}` + 参数项 var（无 lit term）——formatShape 渲染
  * "unknown"、`!== null` 守卫剪不掉成员、算术落保守并集：
- *   sig(v: number | unknown) => number | unknown
- *   guardAdd → number | string | 0（不可能 string 臂）
- *   guardRel → 假 L2 may-throw
+ * sig(v: number | unknown) => number | unknown
+ * guardAdd → number | string | 0（不可能 string 臂）
+ * guardRel → 假 L2 may-throw
  * 修复：与对象 union 的 nullish 成员同款编码——shape unknown +
  * term lit(null/undefined)（formatShape 渲染 "null"/"undefined"、
  * $removeNull/$removeNullish/strictEq 按 term 识别）。同时不回归
@@ -28,7 +28,7 @@ import {
 } from "../index.ts";
 import { issuesOf } from "./nudo-constraints.ts";
 
-describe("constraintOnTermAbs nullish encoding (Bug 24, unit)", () => {
+describe("constraintOnTermAbs nullish encoding (, unit)", () => {
   it("litC(null) entry Abs = unknown shape + term lit(null), renders null", () => {
     const a = constraintToEntryAbs(litC(null) as never, "v");
     expect(a.shape.k).toBe("unknown");
@@ -61,7 +61,7 @@ describe("constraintOnTermAbs nullish encoding (Bug 24, unit)", () => {
   });
 });
 
-describe("nudo check: numOrNull contract signatures (Bug 24, four symptoms)", () => {
+describe("nudo check: numOrNull contract signatures (, four symptoms)", () => {
   it("sig: signature displays number | null (not unknown)", () => {
     const r = issuesOf(`
 /** @nudo:contract v numOrNull */
@@ -131,7 +131,7 @@ export function bad(v) { return v + "!"; }
 `, "/t/nullish.js");
     // issue #119：number | null ⊗ string 原生全定（`1 + "!"`→"1!"、
     // `null + "!"`→"null!"——ToString 对 number/null 恒 total），lit(null)
-    // 成员不再记 Symbol 强转 may-throw（Bug 24 时钉住的 wave-1 口径已修）。
+    // 成员不再记 Symbol 强转 may-throw（时钉住的 wave-1 口径已修）。
     // 契约违例执法通道（L1）由 check-recall-gold / check-return-contract
     // 的 violation 用例守护，此处只钉零假 L2。
     expect(r.issues.filter((i) => i.code === "nudo:entry-may-throw")).toEqual([]);

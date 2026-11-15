@@ -1,5 +1,5 @@
 /**
- * Bug 972 —— VS Code 扩展**自己注册**的 `nudo.*` 命令 id 与 LSP 服务端在
+ * VS Code 扩展**自己注册**的 `nudo.*` 命令 id 与 LSP 服务端在
  * `initialize` 的 `executeCommandProvider.commands` 广告的**同一批 id**
  * 撞名 ⇒ `vscode-languageclient`（10.1.2）在**客户端初始化**路径上对每个
  * 服务端 id 调 `vscode.commands.registerCommand` ⇒ 同一 id 在命令注册表出现
@@ -14,8 +14,8 @@
  * （本地乐观高亮 / Output 预览 / 写盘门禁）一并搬进 middleware。
  *
  * 本钉断言（两条）：
- *   1. **扩展注册名 ∩ 服务端广告名 = ∅**（运行时实测 + 源码静态闸）；
- *   2. 「扩展先注册 → languageclient 再注册服务端 12 个 id」不再撞名。
+ * 1. **扩展注册名 ∩ 服务端广告名 = ∅**（运行时实测 + 源码静态闸）；
+ * 2. 「扩展先注册 → languageclient 再注册服务端 12 个 id」不再撞名。
  */
 import { describe, it, expect, beforeAll, vi } from "vitest";
 import { readFileSync } from "node:fs";
@@ -50,7 +50,7 @@ const sourceRegistered: string[] = [
   ),
 ].map((m) => m[1]!);
 
-describe("Bug 972 —— 扩展命令 id 不与服务端广告 id 撞名", () => {
+describe("扩展命令 id 不与服务端广告 id 撞名", () => {
   beforeAll(async () => {
     const { activate } = await import("../extension.ts");
     await activate(makeExtensionContext() as never);

@@ -1,5 +1,5 @@
 /**
- * Bug 811 回归（harvester 落盘面）：`emitAbs` 的 `case "any"` 分支**丢掉泛型 α
+ * 回归（harvester 落盘面）：`emitAbs` 的 `case "any"` 分支**丢掉泛型 α
  * 的 var term** ⇒ 落盘 env 模块**整体失去泛型性**（内存 `number` vs 产物
  * `unknown`）。
  *
@@ -9,7 +9,7 @@
  * 内存面（harvestDts）已经是对的：`first: (arr(T)) => T`，返回位的 term 是
  * `{ op: "var", id: "T" }`。**落盘面**（`emitEnvModule` 的产物）此前是：
  *
- *   first: relationFn([makeAbs({ k: "arr", element: absUnknown }, …)], absUnknown, { conf: "exact" })
+ * first: relationFn([makeAbs({ k: "arr", element: absUnknown }, …)], absUnknown, { conf: "exact" })
  *
  * ⇒ α 的 var term 整个没了 ⇒ 同一个 harvest 结果，**内存与产物两个不同类型**
  * ⇒ 引擎在调用点绑不上 α ⇒ 假 `nudo:unknown-inference`。
@@ -78,7 +78,7 @@ function arrElemVarIds(a: unknown): string[] {
   return out;
 }
 
-describe("Bug 811 —— 落盘产物保留泛型 α 的 var term（不被降级成 unknown）", () => {
+describe("落盘产物保留泛型 α 的 var term（不被降级成 unknown）", () => {
   it("内存面：α 的 var term 在位（对照基准）", () => {
     expect(varTermIds(env.globals.first)).toEqual(["T"]);
     expect(arrElemVarIds(env.globals.first)).toEqual(["T"]);

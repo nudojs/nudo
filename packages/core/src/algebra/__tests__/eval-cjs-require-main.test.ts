@@ -3,10 +3,10 @@ import { runTranspiled, callTranspiledExportFull, numLit, strLit } from "../inde
 import type { Abs, AbsModuleExports } from "../index.ts";
 
 /**
- * Bug 10 回归（obj-callee 定抛暴露的 CJS 桥形状失真）：
+ * 回归（obj-callee 定抛暴露的 CJS 桥形状失真）：
  * `module.exports = X`（重赋值，cjsMain）的模块经 require 必须拿到 X 本身
  * （常为可调用函数），而不是 namespace obj——否则 `ms(5000)` 撞上
- * $callDispatch 的 obj-callee 定抛（Bug 10），整个入口模块 fail-closed
+ * $callDispatch 的 obj-callee 定抛（），整个入口模块 fail-closed
  * （analyzer-domain-exceeds 真实包零 FP 套件曾因此丢全部调用记录）。
  * 链路三跳：evalExportsToModuleExports 标 cjsMain → graph 占位符回填
  * 保标记 → requireFromModules 返回 default 本身。
@@ -53,7 +53,7 @@ describe("CJS require 的 module.exports=X 形态（cjsMain）", () => {
         "./ns.js": { named: { a: numLit(1) }, evaluated: true },
       },
     });
-    // namespace obj 不可调是正确口径（Bug 10）；这里只钉成员读面
+    // namespace obj 不可调是正确口径（）；这里只钉成员读面
     const r = callTranspiledExportFull(run, "v", []);
     expect(litOf(r.result)).toBe("object");
   });

@@ -7,7 +7,7 @@ import { checkSource, pTrue } from "../index.ts";
 const codes = (path: string, source: string): string[] =>
   checkSource(path, source, pTrue, {}).issues.map((i) => `${i.severity}:${i.code}`);
 
-describe("audit 34 · typeof 合取守卫进 if 体（BUG-011）", () => {
+describe("audit 34 · typeof 合取守卫进 if 体（）", () => {
   const SIMPLE = `export function simple(x) { if (typeof x === "string") return x.length; return 0; }`;
   const COMPOUND = `export function compound(x) { if (typeof x === "string" && true) return x.length; return 0; }`;
 

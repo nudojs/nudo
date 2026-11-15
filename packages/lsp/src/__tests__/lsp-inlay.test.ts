@@ -9,11 +9,11 @@ import { createNudoServer } from "../server.ts";
 import { createMockConnection, withLspServer } from "./helpers.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 722 inlayHint：CRLF 源文件的 hint 位置不得越出行可见长度
+// inlayHint：CRLF 源文件的 hint 位置不得越出行可见长度
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 722 inlayHint：CRLF 源文件的 hint 位置不得越出行可见长度", () => {
+describe("inlayHint：CRLF 源文件的 hint 位置不得越出行可见长度", () => {
 /**
- * Bug 722 —— LSP `inlayHint` 在 **CRLF 源文件**上把 `position.character`
+ * LSP `inlayHint` 在 **CRLF 源文件**上把 `position.character`
  * 推到**行可见长度之外 1 列**（越界位置）。
  *
  * 改前：服务端 `source.split("\n")` 切行 ⇒ 每行末尾的 `\r` 被算进行长
@@ -45,7 +45,7 @@ async function hintsFor(file: string, text: string): Promise<Hint[]> {
   return (inlay({ textDocument: { uri } }) ?? []) as Hint[];
 }
 
-describe("Bug 722 inlayHint：CRLF 源文件的 hint 位置不得越出行可见长度", () => {
+describe("inlayHint：CRLF 源文件的 hint 位置不得越出行可见长度", () => {
   it("CRLF 与 LF 给出同一组位置（改前：CRLF 的行尾 hint 越界 1 列）", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug722-"));
     try {
@@ -91,11 +91,11 @@ describe("Bug 722 inlayHint：CRLF 源文件的 hint 位置不得越出行可见
 });
 
 // ---------------------------------------------------------------------------
-// Bug 716 inlayHint：params.range 必须被尊重
+// inlayHint：params.range 必须被尊重
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 716 inlayHint：params.range 必须被尊重", () => {
+describe("inlayHint：params.range 必须被尊重", () => {
 /**
- * Bug 716 —— LSP `textDocument/inlayHint` **完全忽略** `params.range`。
+ * LSP `textDocument/inlayHint` **完全忽略** `params.range`。
  *
  * 改前：handler 收了 `params` 却不读 `params.range` ⇒ 两个**不相交**的
  * 区间返回**逐字节相同**的整文件 hint 集（IDE 的「只看这一段」被无视）。
@@ -130,7 +130,7 @@ async function hintsFor(
   return (inlay({ textDocument: { uri }, ...(range ? { range } : {}) }) ?? []) as Hint[];
 }
 
-describe("Bug 716 inlayHint：params.range 必须被尊重", () => {
+describe("inlayHint：params.range 必须被尊重", () => {
   it("区间请求只返回区间内的 hint（改前：整文件集逐字节相同）", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug716-"));
     const file = join(dir, "range.js");
@@ -197,11 +197,11 @@ describe("Bug 716 inlayHint：params.range 必须被尊重", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 790 — 项目侧 inlayHints.parameters 与宿主侧同口径
+// 项目侧 inlayHints.parameters 与宿主侧同口径
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 790 — 项目侧 inlayHints.parameters 与宿主侧同口径", () => {
+describe("项目侧 inlayHints.parameters 与宿主侧同口径", () => {
 /**
- * Bug 790 —— 项目侧的 `nudo.inlayHints.parameters` 与宿主侧**两套规则**。
+ * 项目侧的 `nudo.inlayHints.parameters` 与宿主侧**两套规则**。
  *
  * 症状：项目 `package.json` 写 `nudo.inlayHints.parameters: "false"`
  * （字符串）⇒ IDE 里参数 inlay 仍然**开着**；同一台机器把宿主设置
@@ -272,7 +272,7 @@ async function hintLabels(
 const isParamInlay = (labels: string[]): boolean =>
   labels.some((l) => l.includes("where "));
 
-describe("Bug 790 — 项目侧 inlayHints.parameters 与宿主侧同口径", () => {
+describe("项目侧 inlayHints.parameters 与宿主侧同口径", () => {
   it("项目侧字符串 \"false\" ⇒ 参数 inlay 关（非法值回落默认）", async () => {
     const labels = await hintLabels({
       name: "inlay",
@@ -306,21 +306,21 @@ describe("Bug 790 — 项目侧 inlayHints.parameters 与宿主侧同口径", ()
 // ---------------------------------------------------------------------------
 // inlay 的 any/unknown 责任区分
 // ---------------------------------------------------------------------------
-describe("[lsp-] inlay 的 any/unknown 责任区分", () => {
+describe("inlay 的 any/unknown 责任区分", () => {
 /**
  * inlay 面的 any / unknown 责任区分。
  *
  * 产品契约（docs/design/cli-semantics.md §2）：`any` = 无约束（**开发者**责任）、
  * `unknown` = 推导失败（**引擎**债），两者永不得混用 ⇒ inlay 面在视觉上分开：
  * - 返回位渲染**恰为 unknown**（含 conf 标注形）⇒ label 挂 `⚠ ` 前缀 +
- *   tooltip 写明「inference failure (engine debt)」与修复通道；
+ * tooltip 写明「inference failure (engine debt)」与修复通道；
  * - `any`（无约束入口参 / `where any()`）⇒ **不加警示前缀**，tooltip 写
- *   「no contract on this param」的责任说明；
+ * 「no contract on this param」的责任说明；
  * - 显示契约不回归：无约束参数不显示 `unknown`；`formatShape` 口径的 label
- *   生成路径不动（只叠加前缀 / tooltip）。
+ * 生成路径不动（只叠加前缀 / tooltip）。
  *
  * 真 unknown 夹具：未 mock 的宿主副作用面（顶层 `fetch(u)`）⇒ B 路径
- * fail-closed，返回位 = `unknown`（Bug 786 同族构造方式）。
+ * fail-closed，返回位 = `unknown`（同族构造方式）。
  */
 
 
@@ -347,7 +347,7 @@ const ID_SRC = `export function id(x) {
 }
 `;
 
-/** 参数 inlay（`nudo.inlayHints.parameters`）开启的会话（Bug 790 同款启动） */
+/** 参数 inlay（`nudo.inlayHints.parameters`）开启的会话（同款启动） */
 async function paramInlaySession(
   files: Record<string, string>,
 ): Promise<{
@@ -395,7 +395,7 @@ describe("inlay 的 any/unknown 责任区分", () => {
       }) ?? []) as Hint[];
       const ret = hints.filter((h) => h.label.includes("unknown"));
       expect(ret, `未 mock 宿主副作用 ⇒ 返回位必须是 unknown：${JSON.stringify(hints)}`).toHaveLength(1);
-      // ⚠ 前缀（`: ⚠ unknown  · derived  `——`formatShape` 文本本身不动）
+      // ⚠ 前缀（`: ⚠ unknown · derived `——`formatShape` 文本本身不动）
       expect(ret[0]!.label).toMatch(/^:\s*⚠\s*unknown/);
       // tooltip：责任区分 + 修复通道（引擎债不是注解）
       expect(ret[0]!.tooltip).toContain("inference failure");

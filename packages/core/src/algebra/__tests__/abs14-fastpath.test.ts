@@ -3,11 +3,11 @@
  *
  * 门禁口径（2026-11-13 修订）：
  * - **等价门禁真的落到第 3 层**：`fastPathPost` 用新 PolyFn 实例 + 与形成时
- *   不同的见证 Φ（`ABS14_GATE_PHI`）⇒ 第 1 层 instMemo / 第 2 层实例摘要必
- *   miss，`applied` 必须增长；此前同实参同 Φ 跑两遍只测到 memo 回读。
+ * 不同的见证 Φ（`ABS14_GATE_PHI`）⇒ 第 1 层 instMemo / 第 2 层实例摘要必
+ * miss，`applied` 必须增长；此前同实参同 Φ 跑两遍只测到 memo 回读。
  * - 对抗样本逐条钉住三类已修复缺陷：实参按位置对齐（不置换）、形成时完整 Φ
- *   必须被当前 Φ 蕴含（不被 app term 合取支绕过）、实参必须同构（同 kind
- *   异形不复用）。
+ * 必须被当前 Φ 蕴含（不被 app term 合取支绕过）、实参必须同构（同 kind
+ * 异形不复用）。
  * - 任一条件不满足必须回退 body，不得静默放宽。
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";

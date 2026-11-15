@@ -1,5 +1,5 @@
 /**
- * Bug 22（运行时内建建模）：生成器对象此前塌缩为 yield 值元组数组
+ * （运行时内建建模）：生成器对象此前塌缩为 yield 值元组数组
  * （$gen → $arr(ys)）——无 next/return/throw 方法面、无 Generator 原型。
  * 原生：it.next() 按调用序返 {value, done}、typeof it.next === "function"、
  * g().constructor.name === ""（GeneratorFunction）、it.return(x) →
@@ -17,7 +17,7 @@ function throwsName(r: { throws: { shape: { k: string; name?: string } } }): str
   return r.throws.shape.k === "brand" ? r.throws.shape.name : undefined;
 }
 
-describe("Bug 22: generator object carries the iterator protocol face", () => {
+describe("generator object carries the iterator protocol face", () => {
   it("it.next().value → 1（字面量 yield 序列首调用）", () => {
     const r = call(
       `export function genNext() { function* g() { yield 1; } const it = g(); return it.next().value; }`,

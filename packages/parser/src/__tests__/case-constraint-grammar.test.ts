@@ -134,7 +134,7 @@ function id(x) { return x; }
 });
 
 /**
- * BUG-014 回归：builder 名单不得再与实现漂移。
+ * 回归：builder 名单不得再与实现漂移。
  * 名单单源在 core 的 CONSTRAINT_BUILDERS；每个可注入 builder 必须能被
  * parseCaseArgExpr 解析成对应 Abs，而不是静默落回 unknown。
  */

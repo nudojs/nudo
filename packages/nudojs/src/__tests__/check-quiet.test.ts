@@ -21,7 +21,7 @@ function write(name: string, src: string): string {
 }
 
 const CLEAN_SRC = "export function id(x) { return x; }\n";
-/** 零 issue 样本：有契约根（侧车）⇒ 无 entry-only info（Bug 461 起普通 check 也报它） */
+/** 零 issue 样本：有契约根（侧车）⇒ 无 entry-only info（起普通 check 也报它） */
 const CLEAN_WITH_CONTRACT_SRC = "export function id(x) { return x; }\n";
 const CLEAN_WITH_CONTRACT_SIDECAR = `import { fn, number } from "@nudojs/core";
 

@@ -3,11 +3,11 @@
  *
  * 覆盖：
  * - 递归 / 高阶调用的内部记录（实参带自由 term 变元）不再把最外层
- *   （具体实参）的精确见证挤出 `callSiteBudget`；
+ * （具体实参）的精确见证挤出 `callSiteBudget`；
  * - 默认互斥（@nudo:case × call@/entry@）在「两路都存在」时给出可发现性
- *   提示（`bothPathsHint`），默认报告本身不变；
+ * 提示（`bothPathsHint`），默认报告本身不变；
  * - 截断原因与下一步动作由既有 `nudo:recursion-truncated` 诊断承载
- *   （BUG-099 口径；本套钉住 suggestion 仍指向预算旋钮）。
+ * （口径；本套钉住 suggestion 仍指向预算旋钮）。
  */
 import { describe, it, expect } from "vitest";
 import { analyzeFile } from "../analysis.ts";

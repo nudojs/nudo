@@ -1,5 +1,5 @@
 /**
- * Bug 90 回归：类方法分派 / 值读不得索引宿主 spec 记录。
+ * 回归：类方法分派 / 值读不得索引宿主 spec 记录。
  *
  * transpile 产出的 spec.methods / staticMethods / accessors / … 是宿主普通
  * 对象，原型链取值会把 Object.prototype 继承名（toString / toLocaleString /
@@ -33,7 +33,7 @@ function check(src: string) {
   return checkSource("/t/eval-class-objproto-dispatch.js", src);
 }
 
-describe("Bug 90：实例继承方法分派（Object.prototype 名不被当类方法）", () => {
+describe("实例继承方法分派（Object.prototype 名不被当类方法）", () => {
   it("c.toString() / c.toLocaleString() → 抽象 string（不再 wrong-exact \"[object Undefined]\"）", () => {
     for (const src of [
       `export function f() { class C { m(){} } const c = new C(); return c.toString(); }`,
@@ -96,7 +96,7 @@ describe("Bug 90：实例继承方法分派（Object.prototype 名不被当类�
   });
 });
 
-describe("Bug 90：静态面（类值接收者）", () => {
+describe("静态面（类值接收者）", () => {
   it("D.hasOwnProperty(\"m\") → true（静态方法是类值自有属性）；祖先静态 own-only false", () => {
     expect(val(`export function f() { class D { static m(){} } return D.hasOwnProperty("m"); }`))
       .toEqual({ ok: true, value: true });
@@ -125,7 +125,7 @@ describe("Bug 90：静态面（类值接收者）", () => {
   });
 });
 
-describe("Bug 90：L2 假阳（nudo:entry-may-throw）消除", () => {
+describe("L2 假阳（nudo:entry-may-throw）消除", () => {
   it("类实例/类值的 Object.prototype 方法面不再被标记 entry-may-throw", () => {
     for (const src of [
       `export function clsHasOwn() { class C { m(){} } const c = new C(); return c.hasOwnProperty("m"); }`,

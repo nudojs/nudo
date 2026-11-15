@@ -17,22 +17,22 @@ import { execFileSync } from "node:child_process";
 import { tmpProject } from "../../__tests__/tmp-project.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 233 —— dts 面不得产出未声明的类型名
+// dts 面不得产出未声明的类型名
 // ---------------------------------------------------------------------------
-describe("[dts] Bug 233 —— dts 面不得产出未声明的类型名", () => {
+describe("dts 面不得产出未声明的类型名", () => {
 /**
- * Bug 233 —— dts 面不得产出「从未声明的类型名」（用户类 brand）。
+ * dts 面不得产出「从未声明的类型名」（用户类 brand）。
  *
  * 改前：`absToTSType(brand("Counter"))` = `Counter` ⇒ 产物里那个类名**从未
  * 声明** ⇒ 消费方 tsc 报 **TS2304**（"Cannot find name 'Counter'"）。
  *
  * 修法（模块面口径）：
- * - **本地声明**的类 ⇒ 保留类名 + `declare class`（Bug 517 既有口径不变）；
+ * - **本地声明**的类 ⇒ 保留类名 + `declare class`（既有口径不变）；
  * - **import 进来**的类 ⇒ 保留类名 + 补 `import type { C } from "…";`
- *   （族 15 S11 的 zod 白名单口径：「补 import 的类名不能被误杀」——不能把
- *   所有未声明的类型名一律降级）；
+ * （族 15 S11 的 zod 白名单口径：「补 import 的类名不能被误杀」——不能把
+ * 所有未声明的类型名一律降级）；
  * - **两边都没有**的类名（用户类 brand 来自未声明的名字）⇒ 降级为 `unknown`
- *   并在产物头部留**降级台账**（可诊断）。
+ * 并在产物头部留**降级台账**（可诊断）。
  *
  * TS 全局类型名（Date / RegExp / Error / URL …，与 zod 白名单同名单）原样保留。
  * 纯投影面（`absToTSType` 单值投影，无模块面）保持既有口径不变。
@@ -58,7 +58,7 @@ function moduleDts(source: string, fn: unknown): string {
   return projectModuleDts(surface, [{ fn: typed, projection }]).lines.join("\n");
 }
 
-describe("Bug 233 —— dts 面不得产出未声明的类型名", () => {
+describe("dts 面不得产出未声明的类型名", () => {
   it("未声明的类 brand：降级为 unknown + 降级台账（改前：TS2304）", () => {
     const dts = moduleDts(
       `export function make() { return 1; }\n`,
@@ -131,16 +131,16 @@ describe("Bug 233 —— dts 面不得产出未声明的类型名", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-151 —— dts 类面保留 extends 与实例字段
+// dts 类面保留 extends 与实例字段
 // ---------------------------------------------------------------------------
-describe("[dts] BUG-151 —— dts 类面保留 extends 与实例字段", () => {
+describe("dts 类面保留 extends 与实例字段", () => {
 /**
- * BUG-151 —— 类的 `extends` 在 `.d.ts` 里被整条丢弃（类面扫描只采方法与构造器）
+ * 类的 `extends` 在 `.d.ts` 里被整条丢弃（类面扫描只采方法与构造器）
  * ⇒ 产物里 `class B extends A` 变成 `class B`：
- *   - `const b: A = new B()` 报 TS2741（缺 A 的成员）；
- *   - `b.am()`（继承方法）报 TS2339；
- *   - 实例字段（构造器 `this.x = …` / 类属性初始化器）**一个都不声明**
- *     ⇒ `b.y` 也是 TS2339。
+ * - `const b: A = new B()` 报 TS2741（缺 A 的成员）；
+ * - `b.am()`（继承方法）报 TS2339；
+ * - 实例字段（构造器 `this.x = …` / 类属性初始化器）**一个都不声明**
+ * ⇒ `b.y` 也是 TS2339。
  *
  * 判据：超类名**可解析**（本地类 / 导入类 / TS 全局构造器）才进 `extends`
  * （否则会造出 TS2304）；实例字段从源码面采集，继承来的字段不重复声明。
@@ -159,7 +159,7 @@ function moduleDts(source: string, path = "/test/bug151.ts"): string {
   return projectModuleDts(surface, entries).lines.join("\n");
 }
 
-describe("BUG-151 —— dts 类面保留 extends 与实例字段", () => {
+describe("dts 类面保留 extends 与实例字段", () => {
   it("`class B extends A` 在产物里带超类；本类字段声明、继承字段不重复", () => {
     const dts = moduleDts(`export class A {
   constructor() {
@@ -265,16 +265,15 @@ export class B extends A {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 13 —— static-only 方法不再多发幻影实例声明
+// static-only 方法不再多发幻影实例声明
 // ---------------------------------------------------------------------------
-describe("[dts] Bug 13 —— static-only 方法不再多发幻影实例声明", () => {
+describe("static-only 方法不再多发幻影实例声明", () => {
 /**
  * 缺陷报告分册 05-dts-fidelity —— 类成员面 / 修饰符 / 名义标记 / 索引签名。
  *
- * 覆盖：Bug 13（static-only 幻影实例方法）、Bug 23（static 字段 + 访问器）、
- * Bug 42（abstract 类与成员）、Bug 44（注解-only 实例字段）、Bug 48
- * （TSParameterProperty）、Bug 86（private / protected）、Bug 87（#private
- * 名义标记）、Bug 88（index signature）。
+ * 覆盖：（static-only 幻影实例方法）、（static 字段 + 访问器）、
+ * （abstract 类与成员）、（注解-only 实例字段）、* （TSParameterProperty）、（private / protected）、（#private
+ * 名义标记）、（index signature）。
  *
  * 用 CLI 同一条模块面投影链 + 真 tsc --noEmit --strict 校验产物 / 消费端。
  */
@@ -307,7 +306,7 @@ function moduleDts(source: string, path = "/test/bug-report-class.ts"): string {
   return projectModuleDts(surface, entries, { values }).lines.join("\n");
 }
 
-describe("Bug 13 —— static-only 方法不再多发幻影实例声明", () => {
+describe("static-only 方法不再多发幻影实例声明", () => {
   const SRC = `export class C {
   static only(v) { return v; }
 }
@@ -327,14 +326,14 @@ describe("Bug 13 —— static-only 方法不再多发幻影实例声明", () =>
 `);
     expect(dts).toMatch(/^  m\(/m);
     expect(dts).toContain("static m(");
-    // 类实例方法返回类型由 Bug 39 的入口兜底派发补全：unknown → number。
+    // 类实例方法返回类型由 的入口兜底派发补全：unknown → number。
     // 本断言的目标是「同名 static / instance 两条声明都在」，类型精度
     // 跟随分析面（与 dts 单元面对齐），不再钉死 unknown。
     expect((dts.match(/^  m\(.*\): (number|unknown);/gm) ?? []).length).toBe(1);
   });
 });
 
-describe("Bug 23 —— static 字段与 getter/setter 进产物", () => {
+describe("static 字段与 getter/setter 进产物", () => {
   const SRC = `export class A {
   static count = 0;
   value = 2;
@@ -363,7 +362,7 @@ describe("Bug 23 —— static 字段与 getter/setter 进产物", () => {
   });
 });
 
-describe("Bug 42 —— abstract 修饰符与 abstract 成员", () => {
+describe("abstract 修饰符与 abstract 成员", () => {
   const SRC = `export abstract class Shape {
   abstract area(): number;
   abstract label(): string;
@@ -397,7 +396,7 @@ describe("Bug 42 —— abstract 修饰符与 abstract 成员", () => {
   });
 });
 
-describe("Bug 44 —— 只有类型注解的实例字段不塌成 unknown", () => {
+describe("只有类型注解的实例字段不塌成 unknown", () => {
   const SRC = `export class Account {
   id: number;
   name: string;
@@ -428,7 +427,7 @@ export class Counter { count: number = 0; label: string = "c"; }
   });
 });
 
-describe("Bug 48 —— TS 构造器参数属性登记成实例字段", () => {
+describe("TS 构造器参数属性登记成实例字段", () => {
   const SRC = `export class Account {
   constructor(public id: number, protected name: string, readonly active: boolean = true) {}
   getId(): number { return this.id; }
@@ -453,7 +452,7 @@ describe("Bug 48 —— TS 构造器参数属性登记成实例字段", () => {
   });
 });
 
-describe("Bug 86 —— private / protected 成员不再翻成 public", () => {
+describe("private / protected 成员不再翻成 public", () => {
   const SRC = `export class C {
   private secret = 1;
   protected guarded = 2;
@@ -467,7 +466,7 @@ describe("Bug 86 —— private / protected 成员不再翻成 public", () => {
     const dts = moduleDts(SRC);
     expect(dts).toContain("private secret: number;");
     expect(dts).toContain("protected guarded: number;");
-    // 同上：Bug 39 修好后私有/保护方法也拿到精确返回类型（number）。
+    // 同上：修好后私有/保护方法也拿到精确返回类型（number）。
     expect(dts).toMatch(/private hidden\(\): (number|unknown);/);
     expect(dts).toMatch(/protected shield\(\): (number|unknown);/);
   });
@@ -483,7 +482,7 @@ describe("Bug 86 —— private / protected 成员不再翻成 public", () => {
   });
 });
 
-describe("Bug 87 —— `#private;` 名义标记", () => {
+describe("`#private;` 名义标记", () => {
   const SRC = `export class A { #x = 1; m() { return this.#x; } }
 export class B { #y = 2; m() { return this.#y; } }
 `;
@@ -504,7 +503,7 @@ export class B { #y = 2; m() { return this.#y; } }
   });
 });
 
-describe("Bug 88 —— 类 index signature 进产物", () => {
+describe("类 index signature 进产物", () => {
   const SRC = `export class Dict3 {
   [key: string]: number | Function;
   a = 1;
@@ -528,11 +527,11 @@ describe("Bug 88 —— 类 index signature 进产物", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 536 —— dts 顶层形参吃契约级可选性
+// dts 顶层形参吃契约级可选性
 // ---------------------------------------------------------------------------
-describe("[dts] Bug 536 —— dts 顶层形参吃契约级可选性", () => {
+describe("dts 顶层形参吃契约级可选性", () => {
 /**
- * Bug 536 —— 契约的**顶层形参「可选性」**在 dts / zod 面全丢 ⇒ 生成的
+ * 契约的**顶层形参「可选性」**在 dts / zod 面全丢 ⇒ 生成的
  * `.d.ts` **拒绝契约允许的调用**（实测 TS2345）；契约面（权威）却显示
  * `x: number().optional()`。
  *
@@ -583,7 +582,7 @@ function tscNoEmit(files: Record<string, string>): { ok: boolean; stderr: string
   }
 }
 
-describe("Bug 536 —— dts 顶层形参吃契约级可选性", () => {
+describe("dts 顶层形参吃契约级可选性", () => {
   it("契约声明 optional 的**尾部**形参渲染成 `x?: T`", () => {
     const source = `export function act(x, s) { return s; }\n`;
     const result = analyzeFile("/test/s2-copt.js", source);
@@ -677,11 +676,11 @@ describe("Bug 536 —— dts 顶层形参吃契约级可选性", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 538 —— dts 解构形参吃契约
+// dts 解构形参吃契约
 // ---------------------------------------------------------------------------
-describe("[dts] Bug 538 —— dts 解构形参吃契约", () => {
+describe("dts 解构形参吃契约", () => {
 /**
- * Bug 538 —— **dts 面**对**解构形参**把**整份手写契约丢掉** ⇒ 生成的
+ * **dts 面**对**解构形参**把**整份手写契约丢掉** ⇒ 生成的
  * `.d.ts` 声明 `act(_p0: unknown): number` ⇒ TS 消费方**零类型检查**
  * （错误调用 `tsc` exit 0 静默放行），而同一次导出的 check / zod /
  * standard 三面**都保真**。
@@ -729,7 +728,7 @@ function tscNoEmit(files: Record<string, string>): { ok: boolean; stderr: string
   }
 }
 
-describe("Bug 538 —— dts 解构形参吃契约", () => {
+describe("dts 解构形参吃契约", () => {
   it("契约的字段级条目聚合成该形参的形状（不再是 unknown）", () => {
     const source = `export function act({ a, b }) { return a + b; }\n`;
     const result = analyzeFile("/test/s2-destr.js", source);
@@ -796,16 +795,13 @@ describe("Bug 538 —— dts 解构形参吃契约", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 11 —— Unicode 导出名原样保留
+// Unicode 导出名原样保留
 // ---------------------------------------------------------------------------
-describe("[dts] Bug 11 —— Unicode 导出名原样保留", () => {
+describe("Unicode 导出名原样保留", () => {
 /**
  * 缺陷报告分册 05-dts-fidelity —— 导出面 / 默认导出 / 再导出 / 顶层类型 / enum。
  *
- * 覆盖：Bug 11（Unicode 导出名）、Bug 12A（匿名默认类）、Bug 19
- * （`export * as ns from`）、Bug 20（非函数 default 表达式）、Bug 22
- * （顶层 export interface / type）、Bug 25（const enum）、Bug 30
- * （再导出字符串名引号）。
+ * 覆盖：（Unicode 导出名）、（匿名默认类）、* （`export * as ns from`）、（非函数 default 表达式）、* （顶层 export interface / type）、（const enum）、* （再导出字符串名引号）。
  *
  * 用 CLI 同一条模块面投影链（analyzeFile → dtsModuleSurface →
  * projectFunctionDts → projectModuleDts）+ 真 tsc --noEmit --strict 校验产物。
@@ -841,7 +837,7 @@ function moduleDts(source: string, path = "/test/bug-report-export.ts"): string 
   return projectModuleDts(surface, entries, { values }).lines.join("\n");
 }
 
-describe("Bug 11 —— Unicode 导出名原样保留", () => {
+describe("Unicode 导出名原样保留", () => {
   const SRC = `export function café(x) { return x; }
 export const 日本 = 1;
 `;
@@ -862,7 +858,7 @@ export const 日本 = 1;
   });
 });
 
-describe("Bug 12A —— 匿名默认类产出合法 ambient 声明", () => {
+describe("匿名默认类产出合法 ambient 声明", () => {
   const SRC = `export default class { m() { return 1; } }
 `;
 
@@ -870,7 +866,7 @@ describe("Bug 12A —— 匿名默认类产出合法 ambient 声明", () => {
     const dts = moduleDts(SRC);
     expect(dts).toContain("export default class _default {");
     expect(dts).not.toContain("class default");
-    // Bug 39 补齐类方法入口兜底后返回类型从 unknown 变精确值（此处为
+    // 补齐类方法入口兜底后返回类型从 unknown 变精确值（此处为
     // number）；本例钉的是匿名默认类的**类名合法性**，不钉返回类型。
     expect(dts).toMatch(/m\(\): [^;]+;/);
   });
@@ -881,7 +877,7 @@ describe("Bug 12A —— 匿名默认类产出合法 ambient 声明", () => {
   });
 });
 
-describe("Bug 19 —— `export * as ns from` 发射合法语法", () => {
+describe("`export * as ns from` 发射合法语法", () => {
   const SRC = `export * as ns from "./a.js";
 export function anchor(x) { return x; }
 `;
@@ -902,7 +898,7 @@ export function anchor(x) { return x; }
   });
 });
 
-describe("Bug 20 —— 非函数 / 非标识符 default 表达式不消失", () => {
+describe("非函数 / 非标识符 default 表达式不消失", () => {
   const SRC = `export default 42;
 export function f() { return 1; }
 `;
@@ -922,7 +918,7 @@ export function f() { return 1; }
   });
 });
 
-describe("Bug 22 —— 顶层 export interface / export type 进产物", () => {
+describe("顶层 export interface / export type 进产物", () => {
   const SRC = `export interface Top { b: number }
 export type Alias = number;
 export namespace NS { export interface Inner { a: number } }
@@ -945,7 +941,7 @@ export function useTop(t: Top): Alias { return t.b; }
   });
 });
 
-describe("Bug 25 —— `export const enum` 保留 const 限定", () => {
+describe("`export const enum` 保留 const 限定", () => {
   const SRC = `export const enum Mode { A = "a", B = "b" }
 `;
 
@@ -964,7 +960,7 @@ describe("Bug 25 —— `export const enum` 保留 const 限定", () => {
   });
 });
 
-describe("Bug 30 —— 再导出字符串导出名走 exportNameRepr", () => {
+describe("再导出字符串导出名走 exportNameRepr", () => {
   const SRC = `export { f as "a-b" } from "./a.js";
 export function anchor(x) { return x; }
 `;
@@ -987,15 +983,15 @@ export function anchor(x) { return x; }
 });
 
 // ---------------------------------------------------------------------------
-// Bug 49 —— `extends NS.Base` 不再整条消失
+// `extends NS.Base` 不再整条消失
 // ---------------------------------------------------------------------------
-describe("[dts] Bug 49 —— `extends NS.Base` 不再整条消失", () => {
+describe("`extends NS.Base` 不再整条消失", () => {
 /**
  * 缺陷报告分册 05-dts-fidelity —— 泛型 / 类型形参 / 形参可省性 / 超类。
  *
- * 覆盖：Bug 49（namespace 限定超类）、Bug 57（函数 / 方法级类型形参槽）、
- * Bug 70（默认值 + 后随 rest 的可省性）、Bug 71（构造器 / static 默认值）、
- * Bug 73（导入泛型基类的类型实参）、Bug 74（类类型形参默认值）。
+ * 覆盖：（namespace 限定超类）、（函数 / 方法级类型形参槽）、
+ * （默认值 + 后随 rest 的可省性）、（构造器 / static 默认值）、
+ * （导入泛型基类的类型实参）、（类类型形参默认值）。
  *
  * 用 CLI 同一条模块面投影链 + 真 tsc --noEmit --strict 校验产物 / 消费端。
  */
@@ -1028,7 +1024,7 @@ function moduleDts(source: string, path = "/test/bug-report-generics.ts"): strin
   return projectModuleDts(surface, entries, { values }).lines.join("\n");
 }
 
-describe("Bug 49 —— `extends NS.Base` 不再整条消失", () => {
+describe("`extends NS.Base` 不再整条消失", () => {
   const SRC = `import DBase, { Base } from "./base.js";
 import * as NS from "./base.js";
 export class Sub extends Base { s() { return 3; } }
@@ -1060,7 +1056,7 @@ export default class DBase { d(): unknown; }
   });
 });
 
-describe("Bug 57 —— 函数 / 方法级类型形参槽", () => {
+describe("函数 / 方法级类型形参槽", () => {
   const SRC = `export class Box<T> {
   constructor(public v: T) {}
 }
@@ -1091,7 +1087,7 @@ export function pair<A, B>(a: A, b: B): [A, B] { return [a, b]; }
   });
 });
 
-describe("Bug 70 —— 后随 rest 的默认形参仍可省", () => {
+describe("后随 rest 的默认形参仍可省", () => {
   const SRC = `export function f(a = 1, ...rest) { return [a, rest]; }
 export class C { m(a = 1, ...rest) { return [a, rest]; } }
 `;
@@ -1113,7 +1109,7 @@ export class C { m(a = 1, ...rest) { return [a, rest]; } }
   });
 });
 
-describe("Bug 71 —— 构造器 / static 方法默认值不丢", () => {
+describe("构造器 / static 方法默认值不丢", () => {
   const SRC = `export class C {
   constructor(a = 1) { this.a = a; }
   static make(x = 2) { return new C(); }
@@ -1138,7 +1134,7 @@ describe("Bug 71 —— 构造器 / static 方法默认值不丢", () => {
   });
 });
 
-describe("Bug 73 —— 导入的泛型基类保留类型实参", () => {
+describe("导入的泛型基类保留类型实参", () => {
   const SRC = `import { Base } from "./base.js";
 export class Derived extends Base<string> { y: number = 1; z(): number { return this.y; } }
 `;
@@ -1158,7 +1154,7 @@ export class Derived extends Base<string> { y: number = 1; z(): number { return 
   });
 });
 
-describe("Bug 74 —— 类类型形参默认值", () => {
+describe("类类型形参默认值", () => {
   const SRC = `export class Box<T = string> {
   value: T = "x" as T;
   get(): T { return this.value; }
@@ -1178,16 +1174,16 @@ export function mk(): Box { return new Box(); }
 });
 
 // ---------------------------------------------------------------------------
-// BUG-189 —— 一个绑定多个导出名，全部进 .d.ts
+// 一个绑定多个导出名，全部进 .d.ts
 // ---------------------------------------------------------------------------
-describe("[dts] BUG-189 —— 一个绑定多个导出名，全部进 .d.ts", () => {
+describe("一个绑定多个导出名，全部进 .d.ts", () => {
 /**
- * BUG-189 —— 同一个本地绑定**同时**是具名导出与 `default` 导出时，旧实现
+ * 同一个本地绑定**同时**是具名导出与 `default` 导出时，旧实现
  * （`dtsExportNameOf` 只返回一个名字）只发射其中一个 ⇒ 另一个导出名在发布的
  * `.d.ts` 里根本不存在：
- *   - default 名缺失 ⇒ 消费方 `import def from "./m.js"` 得到 `{}` ⇒
- *     `error TS2349: This expression is not callable`；
- *   - 具名缺失 ⇒ `TS2305: has no exported member`。
+ * - default 名缺失 ⇒ 消费方 `import def from "./m.js"` 得到 `{}` ⇒
+ * `error TS2349: This expression is not callable`；
+ * - 具名缺失 ⇒ `TS2305: has no exported member`。
  *
  * 判据：`.d.ts` 只能引用**它自己声明或导入**的名字；一个本地绑定有几个导出名，
  * 产物就有几条导出 —— 主形态（具名优先）一次，其余逐条 `export { local as … };`。
@@ -1213,7 +1209,7 @@ function moduleDts(source: string, path = "/test/bug189.ts"): string {
   return projectModuleDts(surface, entries).lines.join("\n");
 }
 
-describe("BUG-189 —— 一个绑定多个导出名，全部进 .d.ts", () => {
+describe("一个绑定多个导出名，全部进 .d.ts", () => {
   it("`export { foo as default, foo }` ⇒ 具名声明 + default 别名", () => {
     const dts = moduleDts(`function foo(x) {
   return x + 1;
@@ -1281,15 +1277,15 @@ export { internal as publicName };
 });
 
 // ---------------------------------------------------------------------------
-// Bug 516 —— dts 参数表来自声明形参表
+// dts 参数表来自声明形参表
 // ---------------------------------------------------------------------------
-describe("[dts] Bug 516 —— dts 参数表来自声明形参表", () => {
+describe("dts 参数表来自声明形参表", () => {
 /**
- * Bug 516 —— dts 参数表按 **case 实参个数**截断 → **契约声明的形参被静默
+ * dts 参数表按 **case 实参个数**截断 → **契约声明的形参被静默
  * 丢弃**；同一次导出里 check / zod / standard 三面都保留 → **四方交叉矛盾**。
  *
  * 症状（旧口径）：契约声明 2 个形参、只有 1 个 case 实参 ⇒
- *   `export declare function addAll(a: number): number;`（`b` 被吞）
+ * `export declare function addAll(a: number): number;`（`b` 被吞）
  * 而 check 签名面是 `addAll(a: number, b: number) => number`。
  *
  * 根因：dts 参数表的**长度**取自观测到的 case 实参个数（证据驱动），
@@ -1321,7 +1317,7 @@ function fnOf(
   } as FunctionAnalysis;
 }
 
-describe("Bug 516 —— dts 参数表来自声明形参表", () => {
+describe("dts 参数表来自声明形参表", () => {
   it("契约声明 2 个形参、只有 1 个 case 实参 ⇒ 形参不被丢弃", () => {
     const fn = fnOf("addAll", ["a", "b"], [
       { name: "c", argAbs: [num()], abs: neverAbs(), throwsAbs: neverAbs() },
@@ -1344,7 +1340,7 @@ describe("Bug 516 —— dts 参数表来自声明形参表", () => {
     ]);
     const p = projectFunctionDts(fn);
     // 类型词（number / any / unknown）随类型渲染面口径变化（无断言 case 指令
-    // 只是见证、不是域声明 ⇒ 产物面取推断域，Bug 511）——本钉只关心**两个形参
+    // 只是见证、不是域声明 ⇒ 产物面取推断域，）——本钉只关心**两个形参
     // 都在产物里**（声明形参表的长度）。
     expect(p.lines.join("\n")).toMatch(
       /export declare function addAll\(a: \w+( \| \w+)?, b\?: (unknown|any)\)/,
@@ -1363,7 +1359,7 @@ export function addAll(a, b) { return a + b; }
     expect(fn).toBeTruthy();
     const p = projectFunctionDts(fn);
     // 类型词（number / any / unknown）随类型渲染面口径变化（无断言 case 指令
-    // 只是见证、不是域声明 ⇒ 产物面取推断域，Bug 511）——本钉只关心**两个形参
+    // 只是见证、不是域声明 ⇒ 产物面取推断域，）——本钉只关心**两个形参
     // 都在产物里**（声明形参表的长度）。
     expect(p.lines.join("\n")).toMatch(
       /export declare function addAll\(a: \w+( \| \w+)?, b\?: (unknown|any)\)/,
@@ -1387,24 +1383,24 @@ export function addAll(a, b) { return a + b; }
 });
 
 // ---------------------------------------------------------------------------
-// Bug 506 —— dts 剩余参数
+// dts 剩余参数
 // ---------------------------------------------------------------------------
-describe("[dts] Bug 506 —— dts 剩余参数", () => {
+describe("dts 剩余参数", () => {
 /**
- * Bug 506 —— dts 生成器对**剩余参数（rest parameter）**函数产出**非法
+ * dts 生成器对**剩余参数（rest parameter）**函数产出**非法
  * TypeScript**（tsc 报 TS2370 / TS1014）。
  *
  * 症状（旧口径）：
  * - `export declare function sum(...xs: number): number;` ⇒ TS2370
- *   （剩余参数必须是数组类型）；
+ * （剩余参数必须是数组类型）；
  * - `export declare function sum3(...xs: number, arg1: number, arg2: number)`
- *   ⇒ TS1014（剩余参数必须最后）+ TS2370。
+ * ⇒ TS1014（剩余参数必须最后）+ TS2370。
  *
  * 根因（两处叠加）：
  * - 参数表长度取自**观测到的 case 实参个数**（rest 天然吞掉 N 个实参 ⇒
- *   元数 N > 声明形参数 1 ⇒ 多余槽位被当成普通形参追加在 rest 之后）；
+ * 元数 N > 声明形参数 1 ⇒ 多余槽位被当成普通形参追加在 rest 之后）；
  * - case-widen 路径（paramTypeFromAbs）**漏了**契约路径才有的
- *   `isRest → T[]` 提升 ⇒ rest 槽类型是单个实参类型而非数组类型。
+ * `isRest → T[]` 提升 ⇒ rest 槽类型是单个实参类型而非数组类型。
  *
  * 修法：参数表长度取**声明形参表**（rest 吞掉全部尾部实参 ⇒ 长度 = 声明
  * 长度，rest 必居末位）；case-widen 路径复用 rest → T[] 提升。
@@ -1446,7 +1442,7 @@ const REST_ARRAY_RE = (name: string) =>
 const NONREST_OPTIONAL_RE =
   /export declare function add\(a: \w+( \| \w+)?, b\?: (unknown|any)\): \w+( \| \w+)?;/;
 
-describe("Bug 506 —— dts 剩余参数", () => {
+describe("dts 剩余参数", () => {
   it("rest 形参类型提升为数组（TS2370）", () => {
     const source = `
 /**
@@ -1457,7 +1453,7 @@ export function sum(...xs) { return xs.length; }
     const dts = generateDts(analyzeFile("/test/s2-rest.js", source));
     // rest 形参提升为**数组**（TS2370 的修法）。元素类型词（number / any）是
     // 类型渲染面的口径：无断言的 case 指令只是见证、不是域声明 ⇒ 产物面取
-    // 推断域（Bug 511）⇒ 元素落到 any。
+    // 推断域（）⇒ 元素落到 any。
     expect(dts).toMatch(REST_ARRAY_RE("sum"));
     expect(dts).not.toContain("...xs: number;");
   });
@@ -1505,20 +1501,20 @@ export function add(a, b) { return a + b; }
 });
 
 // ---------------------------------------------------------------------------
-// BUG-168 — 注解原文的类型名必须在产物里可解析
+// 注解原文的类型名必须在产物里可解析
 // ---------------------------------------------------------------------------
-describe("[dts] BUG-168 — 注解原文的类型名必须在产物里可解析", () => {
+describe("注解原文的类型名必须在产物里可解析", () => {
 /**
- * BUG-168 — dts 面把 TS 注解原文抄进产物，却**不校验该名字在产物里可解析**
+ * dts 面把 TS 注解原文抄进产物，却**不校验该名字在产物里可解析**
  * ⇒ 发布的 `.d.ts` 里出现从未声明的类型名（TS2304），且 `nudo export`
  * exit 0、零台账；同一形参 check 面说 `any`、dts 面说 `T`（两面相反）。
  *
  * 判据（本钉）：注解原文里的**类型名**必须在产物里可解析 ——
- *   本地 `declare class`（含未导出但被注解引用的类）/ 已 import 的名字 /
- *   TS 全局类型名（`Date` / `Record` / `Promise` …）才放行；
- *   类型形参（`<T>`）/ 本地 interface / type 别名 / 未导入的名字 ⇒ **不放行**，
- *   回落 `paramTypeFromAbs` 的观测口径（与 check 面一致）并留
- *   `nudo:dropped-type-annotation` 台账。
+ * 本地 `declare class`（含未导出但被注解引用的类）/ 已 import 的名字 /
+ * TS 全局类型名（`Date` / `Record` / `Promise` …）才放行；
+ * 类型形参（`<T>`）/ 本地 interface / type 别名 / 未导入的名字 ⇒ **不放行**，
+ * 回落 `paramTypeFromAbs` 的观测口径（与 check 面一致）并留
+ * `nudo:dropped-type-annotation` 台账。
  */
 
 
@@ -1550,7 +1546,7 @@ function moduleDts(source: string, path = "/test/bug168-annotation.ts"): string 
   return projectModuleDts(surface, entries).lines.join("\n");
 }
 
-describe("BUG-168 — 注解原文的类型名必须在产物里可解析", () => {
+describe("注解原文的类型名必须在产物里可解析", () => {
   it("泛型函数的类型形参不放行：`id<T>(x: T)` ⇒ `id(x: unknown)` + 台账", () => {
     const dts = moduleDts(`export function id<T>(x: T): T {
   return x;
@@ -1571,7 +1567,7 @@ describe("BUG-168 — 注解原文的类型名必须在产物里可解析", () =
     expect(dts).not.toContain("b: B)");
   });
 
-  // BUG-005 之后口径变更：模块级 `interface` / `type` 会被**原文镜像**进同一份
+  // 之后口径变更：模块级 `interface` / `type` 会被**原文镜像**进同一份
   // 产物（见 dtsModuleSurface 的 typeDeclarations）⇒ 引用它是可解析的，不再回落。
   // 真正的「不可解析」只剩类型形参与未声明 / 未导入的名字（上面两条已覆盖）。
   it("本地 interface 放行（原文镜像进产物）⇒ 注解保留、零台账", () => {
@@ -1656,11 +1652,11 @@ export function pair<A, B>(a: A, b: B): [A, B] {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-190 —— 值导出落地到 .d.ts
+// 值导出落地到 .d.ts
 // ---------------------------------------------------------------------------
-describe("[dts] BUG-190 —— 值导出落地到 .d.ts", () => {
+describe("值导出落地到 .d.ts", () => {
 /**
- * BUG-190 —— 模块级**值绑定**（`export const` / `export let` / TS `enum`）在导出
+ * 模块级**值绑定**（`export const` / `export let` / TS `enum`）在导出
  * 面表里登记了、却从不落地到 `.d.ts` ⇒ 发布的产物里根本没有这些导出 ⇒
  * 消费端 `error TS2305: Module … has no exported member 'VERSION'`，而运行时
  * 确实有该导出（`.d.ts` 与运行时面相反）。
@@ -1692,7 +1688,7 @@ function moduleDts(source: string, path = "/test/bug190.ts", includeValues = tru
     .lines.join("\n");
 }
 
-describe("BUG-190 —— 值导出落地到 .d.ts", () => {
+describe("值导出落地到 .d.ts", () => {
   it("`export const` / `export let` 有声明，类型来自分析面绑定", () => {
     const dts = moduleDts(`export const VERSION = "1.2.3";
 export const LIMIT = 10;
@@ -1763,15 +1759,15 @@ export function reveal() {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 72 —— 模块级可变容器不投成字面量类型
+// 模块级可变容器不投成字面量类型
 // ---------------------------------------------------------------------------
-describe("[dts] Bug 72 —— 模块级可变容器不投成字面量类型", () => {
+describe("模块级可变容器不投成字面量类型", () => {
 /**
  * 缺陷报告分册 05-dts-fidelity —— 模块级值绑定 / namespace 成员 / readonly。
  *
- * 覆盖：Bug 72（对象 / 数组常量不投成冻结字面量类型）、Bug 75（namespace
- * 成员注解引用的模块私有类型）、Bug 76（namespace 内 export class 非空体）、
- * Bug 77（readonly 类字段 / `as const`）。
+ * 覆盖：（对象 / 数组常量不投成冻结字面量类型）、（namespace
+ * 成员注解引用的模块私有类型）、（namespace 内 export class 非空体）、
+ * （readonly 类字段 / `as const`）。
  *
  * 用 CLI 同一条模块面投影链 + 真 tsc --noEmit --strict 校验产物 / 消费端。
  */
@@ -1804,7 +1800,7 @@ function moduleDts(source: string, path = "/test/bug-report-values.ts"): string 
   return projectModuleDts(surface, entries, { values }).lines.join("\n");
 }
 
-describe("Bug 72 —— 模块级可变容器不投成字面量类型", () => {
+describe("模块级可变容器不投成字面量类型", () => {
   const SRC = `export let config = { retries: 3, label: "x" };
 export const empty = [];
 export const nums = [1, 2, 3];
@@ -1832,7 +1828,7 @@ export const nested = { a: { b: 1 } };
   });
 });
 
-describe("Bug 75 —— namespace 成员注解引用的私有类型可解析", () => {
+describe("namespace 成员注解引用的私有类型可解析", () => {
   const SRC = `interface Hidden { a: number }
 type LocalAlias = string;
 
@@ -1857,7 +1853,7 @@ export namespace NS {
   });
 });
 
-describe("Bug 76 —— namespace 内 export class 不再是空类体", () => {
+describe("namespace 内 export class 不再是空类体", () => {
   const SRC = `export const anchor = 1;
 export namespace NS {
   export class C {
@@ -1885,7 +1881,7 @@ export namespace NS {
   });
 });
 
-describe("Bug 77 —— readonly 语义", () => {
+describe("readonly 语义", () => {
   const SRC = `export class Counter { readonly count: number = 0; m(): number { return this.count; } }
 export const CFG = { host: "h" } as const;
 `;

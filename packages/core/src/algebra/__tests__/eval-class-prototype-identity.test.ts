@@ -1,5 +1,5 @@
 /**
- * Bug 64（fabrication 半）：$get(ctor, "prototype") 不再捏匿名闭 obj——
+ * （fabrication 半）：$get(ctor, "prototype") 不再捏匿名闭 obj——
  * 类值分支与宿主 fn 分支都返回 protoBrandAbs(ownerName)（constructor 槽 +
  * 按名驻留）。经验探针：`X.prototype.hasOwnProperty("constructor")` 从
  * 非具体 boolean 变具体 true。原型链 instanceof 解析是另一半（brand 臂
@@ -13,7 +13,7 @@ function v(src: string) {
   return litValue(call(src, "f").result);
 }
 
-describe("Bug 64: X.prototype 是 protoBrandAbs（constructor 自有槽）", () => {
+describe("X.prototype 是 protoBrandAbs（constructor 自有槽）", () => {
   it("MyErr.prototype.hasOwnProperty(\"constructor\") → 具体.true", () => {
     expect(v(`export function f() { class MyErr extends Error {} return MyErr.prototype.hasOwnProperty("constructor"); }`)).toEqual({ ok: true, value: true });
   });

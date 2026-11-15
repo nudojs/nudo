@@ -1,10 +1,10 @@
 /**
- * Bug 128 回归：Object.assign 逐键 [[Set]]（OrdinarySet）语义。
+ * 回归：Object.assign 逐键 [[Set]]（OrdinarySet）语义。
  *
  * 原生 Object.assign 对目标逐键执行 Set(target, key, value, throw=true)：
  * - "__proto__" 键非自有且目标非 null-proto → Object.prototype 的原型
- *   setter：null / 对象值设原型、原始值静默忽略（原型污染面——
- *   JSON.parse 源键此前被折成自有数据键）
+ * setter：null / 对象值设原型、原始值静默忽略（原型污染面——
+ * JSON.parse 源键此前被折成自有数据键）
  * - 自有访问器 → setter 调用（getter-only → TypeError）
  * - 自有 / 继承非可写数据属性 → TypeError
  * 此前引擎只写自有槽：继承面全忽略。分类共享 descriptor.ts 的
@@ -16,7 +16,7 @@
 import { describe, it, expect } from "vitest";
 import { val, call, throwsError } from "./eval-helpers.ts";
 
-describe("Bug 128: __proto__ source key goes through the prototype setter", () => {
+describe("__proto__ source key goes through the prototype setter", () => {
   it("primitive value is silently ignored (no own key)", () => {
     expect(
       val(`export function f() { return Object.keys(Object.assign({}, JSON.parse('{"__proto__":1}'))).length; }`),
@@ -53,7 +53,7 @@ describe("Bug 128: __proto__ source key goes through the prototype setter", () =
   });
 });
 
-describe("Bug 128: own accessor targets dispatch setters", () => {
+describe("own accessor targets dispatch setters", () => {
   it("setter runs with the target as receiver", () => {
     expect(
       val(`export function f() { const t = { set x(v) { this.y = v; } }; Object.assign(t, { x: 5 }); return t.y; }`),
@@ -66,7 +66,7 @@ describe("Bug 128: own accessor targets dispatch setters", () => {
   });
 });
 
-describe("Bug 128: non-writable data targets throw", () => {
+describe("non-writable data targets throw", () => {
   it("own writable:false throws", () => {
     const r = call(`export function f() { const t = {}; Object.defineProperty(t, "x", { value: 1, writable: false }); Object.assign(t, { x: 2 }); return 0; }`);
     expect(throwsError(r.throws, "TypeError")).toBe(true);
@@ -86,7 +86,7 @@ describe("Bug 128: non-writable data targets throw", () => {
   });
 });
 
-describe("Bug 128: plain assign semantics are unchanged (controls)", () => {
+describe("plain assign semantics are unchanged (controls)", () => {
   it("multi-source merge and enumerable filtering", () => {
     expect(val(`export function f() { return Object.assign({ a: 1 }, { b: 2 }, { a: 3 }).a; }`)).toEqual({ ok: true, value: 3 });
     expect(val(`export function f() { return Object.assign({ a: 1 }, { b: 2 }).b; }`)).toEqual({ ok: true, value: 2 });

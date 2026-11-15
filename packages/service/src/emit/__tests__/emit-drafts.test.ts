@@ -24,11 +24,11 @@ import { defaultLoadModule as defaultLoadModule___nudojs_service, type AnalysisR
 import { insertGeneratedCaseDirectives, stripGeneratedCaseDirectives } from "../case-emitter.ts";
 
 // ---------------------------------------------------------------------------
-// BUG-035 —— `@nudo:case` 的调试见证不进契约产物
+// `@nudo:case` 的调试见证不进契约产物
 // ---------------------------------------------------------------------------
-describe("[] BUG-035 —— `@nudo:case` 的调试见证不进契约产物", () => {
+describe("`@nudo:case` 的调试见证不进契约产物", () => {
 /**
- * BUG-035 —— `nudo contract --emit` 把 `@nudo:case` 的**调试见证**写成契约。
+ * `nudo contract --emit` 把 `@nudo:case` 的**调试见证**写成契约。
  *
  * 现象（同一份文件，三个面三种说法）：
  *
@@ -48,9 +48,9 @@ describe("[] BUG-035 —— `@nudo:case` 的调试见证不进契约产物", () 
  * 修法（与 `analyzer-orchestrate-uncached.ts` 的「点观测不得独占返回面」
  * 同口径）：指令来源**内部**再分档——
  * - **域声明**（实参是约束构建器 `number()`/`shape()`/`union()` … 的域形状，
- *   或带断言 `=> expected`）⇒ 可作域来源；
+ * 或带断言 `=> expected`）⇒ 可作域来源；
  * - **纯点观测见证**（实参全是字面量且无断言）⇒ **不产任何契约**（不生成域、
- *   不生成返回义务）。
+ * 不生成返回义务）。
  *
  * 钉：三种 case 形态（点观测 / 带断言 / 域形状）+ 「有调用点证据时指令见证
  * 不得污染返回义务」+ 分档判据本身（构造器实参 ⇒ 域；字面量实参且无断言 ⇒
@@ -95,7 +95,7 @@ async function emit(name: string, src: string): Promise<{
   };
 }
 
-describe("BUG-035 —— `@nudo:case` 的调试见证不进契约产物", () => {
+describe("`@nudo:case` 的调试见证不进契约产物", () => {
   it("点观测见证（实参全是字面量、无断言）不生成任何契约", async () => {
     // 改前：写盘产物是 `export const f = fn({ x: lit(5) }, lit(6));`
     const r = await emit(
@@ -164,7 +164,7 @@ f(9);
 `,
     );
     expect(r.written).toEqual(["f"]);
-    // 调用点证据优先（BUG-021：点观测拓宽到基类型）⇒ 见证的 lit(5)/lit(6) 不得混入
+    // 调用点证据优先（点观测拓宽到基类型）⇒ 见证的 lit(5)/lit(6) 不得混入
     expect(r.sidecar).toContain("export const f = fn({ x: number() }, number());");
     expect(r.sidecar).not.toContain("lit(5)");
     expect(r.sidecar).not.toContain("lit(6)");
@@ -188,7 +188,7 @@ export function f(x) {
   });
 });
 
-describe("BUG-035 —— 指令 case 的分档判据（见证 vs 域声明）", () => {
+describe("指令 case 的分档判据（见证 vs 域声明）", () => {
   const never = makeAbs({ k: "never" }, undefined, undefined, "exact");
   const primNumber = makeAbs({ k: "prim", type: "number" }, undefined, undefined, "exact");
   const base = (over: Partial<CaseResult>): CaseResult => ({
@@ -223,11 +223,11 @@ describe("BUG-035 —— 指令 case 的分档判据（见证 vs 域声明）", 
 });
 
 // ---------------------------------------------------------------------------
-// BUG-081 —— 契约面与门禁面对无解契约给同一结论
+// 契约面与门禁面对无解契约给同一结论
 // ---------------------------------------------------------------------------
-describe("[] BUG-081 —— 契约面与门禁面对无解契约给同一结论", () => {
+describe("契约面与门禁面对无解契约给同一结论", () => {
 /**
- * BUG-081 —— `nudo contract` 把**无解契约**印成**有效契约**并 exit 0，而
+ * `nudo contract` 把**无解契约**印成**有效契约**并 exit 0，而
  * `nudo check` 报 `nudo:contract-conflict` error（exit 1）、`nudo export` 拒绝
  * 出货（exit 1）⇒ 三个一级动词对同一个事实给出**相反结论**。
  *
@@ -269,7 +269,7 @@ function conflictProject(): string {
 /** 真跑 CLI（退出码是本条 bug 的另一半，字符串断言抓不到） */
 function runCli(args: string[]): { status: number; stdout: string; stderr: string } {
   const repoRoot = join(import.meta.dirname, "../../../../..");
-  // spawnSync 而非 execFileSync：只读 `contract` 修好 Bug 34 后 exit 0，但
+  // spawnSync 而非 execFileSync：只读 `contract` 修好 后 exit 0，但
   // 诊断仍写 stderr；execFileSync 的成功分支拿不到 stderr（只有抛错分支有）。
   const r = spawnSync(
     "npx",
@@ -283,7 +283,7 @@ function runCli(args: string[]): { status: number; stdout: string; stderr: strin
   };
 }
 
-describe("BUG-081 —— 契约面与门禁面对无解契约给同一结论", () => {
+describe("契约面与门禁面对无解契约给同一结论", () => {
   it("契约条目透出 conflict（此前被静默跳过 ⇒ 印成有效契约）", async () => {
     const entries = await contractSurface(conflictProject());
     const entry = entries.find((e) => e.fn === "conflict");
@@ -298,7 +298,7 @@ describe("BUG-081 —— 契约面与门禁面对无解契约给同一结论", (
   });
 
   it("`nudo contract` 与 check 同诊断：stderr 报同码 error + 只读命令 exit 0", () => {
-    // Bug 34：只读 `contract` 的 exit 契约是「仅用法 / IO 错误时 exit 1」；
+    // 只读 `contract` 的 exit 契约是「仅用法 / IO 错误时 exit 1」；
     // 契约冲突是被分析代码的状态，诊断照发但不再把进程判失败。
     const file = conflictProject();
     const text = runCli(["contract", file]);
@@ -347,11 +347,11 @@ export function ok(n) {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-198 —— contract --draft 必须带抛错证据
+// contract --draft 必须带抛错证据
 // ---------------------------------------------------------------------------
-describe("[] BUG-198 —— contract --draft 必须带抛错证据", () => {
+describe("contract --draft 必须带抛错证据", () => {
 /**
- * BUG-198 —— `nudo:entry-may-throw` 的 `fix:` 行把 `nudo contract --draft` 指为
+ * `nudo:entry-may-throw` 的 `fix:` 行把 `nudo contract --draft` 指为
  * 补救手段，但草稿**只投影参数 / 返回证据**、不含 `throws` 槽 ⇒ 照建议落盘后
  * 诊断原样还在（建议不可执行）；源码里显式 `@nudo:throws` 也在草稿里消失
  * （草稿与源码矛盾）。
@@ -395,7 +395,7 @@ function mayThrowAfterSidecar(file: string, source: string, dsl: string): number
   return r.issues.filter((i) => i.code === "nudo:entry-may-throw").length;
 }
 
-describe("BUG-198 —— contract --draft 必须带抛错证据", () => {
+describe("contract --draft 必须带抛错证据", () => {
   it("未申报但门禁判「可能抛」⇒ 草稿头给出可照抄的 throws 补救（DSL 不擅自加义务）", async () => {
     const dir = tmpProject("nudo-bug-198-");
     writeTmpFiles(dir, { "lib.js": MAY_THROW });
@@ -457,17 +457,17 @@ export function f(x) {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 509 —— 草稿返回义务的来源
+// 草稿返回义务的来源
 // ---------------------------------------------------------------------------
-describe("[] Bug 509 —— 草稿返回义务的来源", () => {
+describe("草稿返回义务的来源", () => {
 /**
- * Bug 509 —— `nudo contract --draft` 写的**返回义务**只来自**观测到的调用点**
+ * `nudo contract --draft` 写的**返回义务**只来自**观测到的调用点**
  * ⇒ 接受草稿就是**假红**（函数被自己产生的草稿判违规）。
  *
  * 症状（旧口径）：
  * ```js
  * export function opt(flag) { if (flag) return 1; return null; }
- * opt(true);                     // ← 只观测到 true 这一支
+ * opt(true); // ← 只观测到 true 这一支
  * ```
  * 草稿写 `fn({ flag: boolean() }, number())`；照抄进 `lib.nudo.js` 后
  * `nudo check` 报 `return value ⊭ @nudo:contract return number()`
@@ -497,7 +497,7 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("Bug 509 —— 草稿返回义务的来源", () => {
+describe("草稿返回义务的来源", () => {
   it("观测集是真实返回域的真子集 ⇒ 不投影返回义务（改前：number() ⇒ 假红）", async () => {
     const file = join(dir, "opt.js");
     writeFileSync(
@@ -536,11 +536,11 @@ describe("Bug 509 —— 草稿返回义务的来源", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 513 — @nudo:throws 注解不得写出语法错误文件
+// @nudo:throws 注解不得写出语法错误文件
 // ---------------------------------------------------------------------------
-describe("[] Bug 513 — @nudo:throws 注解不得写出语法错误文件", () => {
+describe("@nudo:throws 注解不得写出语法错误文件", () => {
 /**
- * Bug 513：quickfix「[silence] Declare @nudo:throws X」在**块注释**场景写出
+ * quickfix「[silence] Declare @nudo:throws X」在**块注释**场景写出
  * **语法错误**的文件。
  *
  * 根因：addThrowsAnnotation 从声明行**向下**扫「首个含 JSDoc 收尾标记的行」
@@ -569,7 +569,7 @@ function parses(src: string): boolean {
   }
 }
 
-describe("Bug 513 — @nudo:throws 注解不得写出语法错误文件", () => {
+describe("@nudo:throws 注解不得写出语法错误文件", () => {
   it("函数体首行是普通块注释：产物仍可解析（改前失败）", () => {
     const src = `export function f(x) {
   /* note */
@@ -657,17 +657,17 @@ export function f(n) {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 520 —— 契约返回位保形（lit(n) → n）
+// 契约返回位保形（lit(n) → n）
 // ---------------------------------------------------------------------------
-describe("[] Bug 520 —— 契约返回位保形（lit(n) → n）", () => {
+describe("契约返回位保形（lit(n) → n）", () => {
 /**
- * Bug 520 —— dts 把**手写契约**的 `lit(42)` 返回 widen 成 `number`。
+ * dts 把**手写契约**的 `lit(42)` 返回 widen 成 `number`。
  *
  * 症状（改前）：`export declare function only42(a: number): number;`
  * 而同一次导出的其它三面都保 `42`：
- *   - zod：`only42Output = z.literal(42)`
- *   - standard：`{"k":"lit","value":42}`
- *   - `nudo check` 签名：`only42(a: number) => 42`
+ * - zod：`only42Output = z.literal(42)`
+ * - standard：`{"k":"lit","value":42}`
+ * - `nudo check` 签名：`only42(a: number) => 42`
  *
  * 根因：契约返回域在 Abs 里是「prim + eq(self, lit(v)) **pred**」（core 的
  * `constraintToEntryAbs` 形态）——字面量在 pred 里、不在 term 里 ⇒ 只看
@@ -699,7 +699,7 @@ const entryCase = (argAbs: Abs[], result: Abs): FunctionAnalysis["cases"] => [
   { name: "entry@L1", argAbs, abs: result, throwsAbs: neverAbs() },
 ];
 
-describe("Bug 520 —— 契约返回位保形（lit(n) → n）", () => {
+describe("契约返回位保形（lit(n) → n）", () => {
   it("手写契约的 lit(42) 返回渲染成 42（不是 number）", () => {
     const fn = fnOf("only42", ["a"], entryCase([anyAbs], numLit(42)));
     const p = projectFunctionDts(fn, {
@@ -740,11 +740,11 @@ describe("Bug 520 —— 契约返回位保形（lit(n) → n）", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 527 —— 草稿的 rest 形参
+// 草稿的 rest 形参
 // ---------------------------------------------------------------------------
-describe("[] Bug 527 —— 草稿的 rest 形参", () => {
+describe("草稿的 rest 形参", () => {
 /**
- * Bug 527 —— `nudo contract --draft` 对**剩余参数（rest）**函数写出**语法非法**
+ * `nudo contract --draft` 对**剩余参数（rest）**函数写出**语法非法**
  * 的草稿 ⇒ 照抄进侧车后**整份侧车语法错误**，该文件**所有**契约一起失联。
  *
  * 症状（旧口径）：草稿正文出现 `export const sum = fn({ first: number(),
@@ -782,7 +782,7 @@ export function greet(user) { return "hi " + user; }
 sum(1, 2, 3);
 `;
 
-describe("Bug 527 —— 草稿的 rest 形参", () => {
+describe("草稿的 rest 形参", () => {
   it("rest 函数 not-projectable 跳过（改前：写出 ...rest: number()）", async () => {
     const file = join(dir, "lib.js");
     writeFileSync(file, REST_JS);
@@ -817,11 +817,11 @@ describe("Bug 527 —— 草稿的 rest 形参", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 545 —— 草稿的 import ↔ export 撞名
+// 草稿的 import ↔ export 撞名
 // ---------------------------------------------------------------------------
-describe("[] Bug 545 —— 草稿的 import ↔ export 撞名", () => {
+describe("草稿的 import ↔ export 撞名", () => {
 /**
- * Bug 545 —— 契约草稿生成器写出的模块里，**builder 的 import 绑定**与生成的
+ * 契约草稿生成器写出的模块里，**builder 的 import 绑定**与生成的
  * `export const <name>` **撞名** ⇒ 写出的文件是**非法 JavaScript**
  * （`node --check` 直接 SyntaxError）。
  *
@@ -857,7 +857,7 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("Bug 545 —— 草稿的 import ↔ export 撞名", () => {
+describe("草稿的 import ↔ export 撞名", () => {
   it("导出名撞 builder import ⇒ 走别名形态（改前：export const number）", async () => {
     const file = join(dir, "src.js");
     writeFileSync(
@@ -900,11 +900,11 @@ describe("Bug 545 —— 草稿的 import ↔ export 撞名", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 557 —— 草稿落盘不覆盖人工改过的文件
+// 草稿落盘不覆盖人工改过的文件
 // ---------------------------------------------------------------------------
-describe("[] Bug 557 —— 草稿落盘不覆盖人工改过的文件", () => {
+describe("草稿落盘不覆盖人工改过的文件", () => {
 /**
- * Bug 557 —— `nudo contract --draft --write` **静默覆盖**已手改的
+ * `nudo contract --draft --write` **静默覆盖**已手改的
  * `*.nudo.draft.js` ⇒ 用户评审成果**无声丢失**（而生成文件自己的头写着
  * 「Handwritten contracts are never overwritten.」）。
  *
@@ -936,7 +936,7 @@ afterEach(() => {
 
 const LIB_JS = `export function add(a, b) {\n  return a + b;\n}\n`;
 
-describe("Bug 557 —— 草稿落盘不覆盖人工改过的文件", () => {
+describe("草稿落盘不覆盖人工改过的文件", () => {
   it("既有草稿被手改过 ⇒ 拒绝覆盖且原样保留（改前：静默覆盖）", async () => {
     const file = join(dir, "lib.js");
     writeFileSync(file, LIB_JS);
@@ -986,11 +986,11 @@ describe("Bug 557 —— 草稿落盘不覆盖人工改过的文件", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 665（service 半）—— 项目根判据按**路径分量**，不按字符串前缀
+// （service 半）—— 项目根判据按**路径分量**，不按字符串前缀
 // ---------------------------------------------------------------------------
-describe("[] Bug 665（service 半）—— 项目根判据按**路径分量**，不按字符串前缀", () => {
+describe("（service 半）—— 项目根判据按**路径分量**，不按字符串前缀", () => {
 /**
- * Bug 665 —— `nudo contract --draft --write` 的**项目根边界**用
+ * `nudo contract --draft --write` 的**项目根边界**用
  * `rel.startsWith("..")` 判逃逸 ⇒ 项目根下的**合法目录** `..data/` 被判
  * 「在项目根之外」⇒ 草稿**拒写**。
  *
@@ -1006,7 +1006,7 @@ describe("[] Bug 665（service 半）—— 项目根判据按**路径分量**�
  * 不许抽成 core 的共享助手 —— core 冻结面不得新增导出）。
  *
  * ⚠ 本钉**只**钉 service 半（`writeContractDraft` 的项目根判据）；
- *   CLI 半的钉在 `packages/nudojs/src/__tests__/cli--dotdir-escape.part.ts`。
+ * CLI 半的钉在 `packages/nudojs/src/__tests__/cli--dotdir-escape.part.ts`。
  */
 
 
@@ -1027,7 +1027,7 @@ afterEach(() => {
 
 const DRAFT_SOURCE = `// @nudo:draft\nimport { fn } from "@nudojs/core";\n\nexport const f = fn({});\n`;
 
-describe("Bug 665（service 半）—— 项目根判据按**路径分量**，不按字符串前缀", () => {
+describe("（service 半）—— 项目根判据按**路径分量**，不按字符串前缀", () => {
   it("项目根下的合法目录 `..data/` 不再被误判为越出项目根 ⇒ 草稿写盘成功", () => {
     const dir = join(root, "..data");
     mkdirSync(dir, { recursive: true });
@@ -1070,11 +1070,11 @@ describe("Bug 665（service 半）—— 项目根判据按**路径分量**，�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 942 —— 匿名 default 导出的侧车键
+// 匿名 default 导出的侧车键
 // ---------------------------------------------------------------------------
-describe("[] Bug 942 —— 匿名 default 导出的侧车键", () => {
+describe("匿名 default 导出的侧车键", () => {
 /**
- * Bug 942 —— `nudo contract --draft` 对**匿名 default 导出**写出的侧车键是
+ * `nudo contract --draft` 对**匿名 default 导出**写出的侧车键是
  * 合成的本地名 **`_default`**，而真正生效的键是 **`default`** ⇒ 用户照工具
  * 指引把草稿抄进 `*.nudo.js` 后，契约**完全失效**（门禁假绿）；而同一产品
  * 的 `--emit` 面却把同一个函数写成 `export { _nudo_1 as default }` ⇒ 两条
@@ -1108,7 +1108,7 @@ afterEach(() => {
 
 const DEFAULT_JS = `/**\n * @nudo:case "ok" (1, 2)\n */\nexport default (a, b) => a + b;\n`;
 
-describe("Bug 942 —— 匿名 default 导出的侧车键", () => {
+describe("匿名 default 导出的侧车键", () => {
   it("侧车键 = 导出身份 default（改前：_default ⇒ 绑不上）", async () => {
     const file = join(dir, "lib.js");
     writeFileSync(file, DEFAULT_JS);
@@ -1148,11 +1148,11 @@ describe("Bug 942 —— 匿名 default 导出的侧车键", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-055 — --freeze 不得把违反被调方契约的见证写进被调方
+// --freeze 不得把违反被调方契约的见证写进被调方
 // ---------------------------------------------------------------------------
-describe("[] BUG-055 — --freeze 不得把违反被调方契约的见证写进被调方", () => {
+describe("--freeze 不得把违反被调方契约的见证写进被调方", () => {
 /**
- * BUG-055：`nudo test --freeze` 把**违反被调方契约**的见证写进被调方 ⇒
+ * `nudo test --freeze` 把**违反被调方契约**的见证写进被调方 ⇒
  * 绿色被调方被自己的 freeze 操作冻成红色（`nudo:case-inconsistency`，error 级）。
  *
  * 根因：固化只筛「可序列化」与「非手写」，**从不把候选见证与被调方的有效契约
@@ -1226,7 +1226,7 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("BUG-055 — --freeze 不得把违反被调方契约的见证写进被调方", () => {
+describe("-freeze 不得把违反被调方契约的见证写进被调方", () => {
   it("违约见证（-1 ⊭ x > 0）不写入；合规见证照写；skip 记 contract-violation", () => {
     const out = insertGeneratedCaseDirectives(
       LIB,
@@ -1269,19 +1269,19 @@ describe("BUG-055 — --freeze 不得把违反被调方契约的见证写进被�
 });
 
 // ---------------------------------------------------------------------------
-// BUG-119 — update 链不得净删除活着的生成态见证
+// update 链不得净删除活着的生成态见证
 // ---------------------------------------------------------------------------
-describe("[] BUG-119 — update 链不得净删除活着的生成态见证", () => {
+describe("update 链不得净删除活着的生成态见证", () => {
 /**
- * BUG-119：`nudo test --freeze=update` **静默删除**一条**仍然活着**的见证 ⇒
+ * `nudo test --freeze=update` **静默删除**一条**仍然活着**的见证 ⇒
  * 不可恢复（add 模式又因「有手写 case ⇒ 整函数跳过」拒绝重建）⇒ 数据丢失 +
  * 事后 health 转绿（假绿）。
  *
  * 根因（两处，同一族）：
  * ① `stripGeneratedCaseDirectives` 无条件剥离 `call@` 指令 → 残留的手写 case
- *    让回写阶段按**函数级**「hand-written」整跳 ⇒ 生成态见证净损失；
+ * 让回写阶段按**函数级**「hand-written」整跳 ⇒ 生成态见证净损失；
  * ② `insertGeneratedCaseDirectives` 的「手写 ⇒ 整函数跳过」规则是**只增不改**
- *    的 add 模式规则，被 update 链的重建阶段沿用了。
+ * 的 add 模式规则，被 update 链的重建阶段沿用了。
  *
  * 契约：含手写 case 的块**不剥离**生成态见证（剥离 → 回写往返闭合）；
  * 重建阶段按**见证身份**逐条重建（手写 case 只挡**同名**）。
@@ -1333,7 +1333,7 @@ function analysisOf(cases: Array<{ name: string; args: Abs[] }>): AnalysisResult
   };
 }
 
-describe("BUG-119 — update 链不得净删除活着的生成态见证", () => {
+describe("update 链不得净删除活着的生成态见证", () => {
   it("① strip 不剥离「含手写 case 的块」里的生成态见证（往返闭合）", () => {
     const { source, removed } = stripGeneratedCaseDirectives(MIXED);
     expect(source).toBe(MIXED);

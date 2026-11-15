@@ -12,10 +12,10 @@ import { diskCacheSignState, type NudoCacheConfig } from "../evaluator/config.ts
 
 /**
  * B3 签名磁盘缓存（`nudo.cache.sign: true` + `NUDO_CACHE_KEY`）：
- *  - 逐条 HMAC-SHA256（篡改 ⇒ miss 回算，不 throw——fail-open 只对**内容**，
- *    配置错误仍然 fail-closed）；
- *  - 密钥空间分离（signed/unsigned 不同 storage key ⇒ 轮换/模式切换不脏命中）；
- *  - sign 开而 key 缺席 / sign 形状非法 ⇒ DiskCacheSignError（不静默降级）。
+ * - 逐条 HMAC-SHA256（篡改 ⇒ miss 回算，不 throw——fail-open 只对**内容**，
+ * 配置错误仍然 fail-closed）；
+ * - 密钥空间分离（signed/unsigned 不同 storage key ⇒ 轮换/模式切换不脏命中）；
+ * - sign 开而 key 缺席 / sign 形状非法 ⇒ DiskCacheSignError（不静默降级）。
  */
 describe("B3 signed disk cache", () => {
   it("sign state: on/off/error 三态（env 可注入）", () => {

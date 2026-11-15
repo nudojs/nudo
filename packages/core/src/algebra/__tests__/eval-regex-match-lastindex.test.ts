@@ -1,5 +1,5 @@
 /**
- * Bug 94 回归：`String.prototype.match/matchAll` 忽略模式 RegExp brand 的
+ * 回归：`String.prototype.match/matchAll` 忽略模式 RegExp brand 的
  * lastIndex。stringRegexMethod 用 brand source/flags 重建宿主 RegExp，但
  * 从不复制 brand 的 lastIndex 槽——非全局 match ≡ RegExpExec（sticky 从
  * lastIndex 起）、matchAll 迭代起点同源，二者都从 0 起步。修复：
@@ -18,7 +18,7 @@ function expectVal(body: string, expected: unknown) {
   expect(litValue(rec.result), `value for: ${body}`).toEqual({ ok: true, value: expected });
 }
 
-describe("match/matchAll honor pattern brand lastIndex (Bug 94)", () => {
+describe("match/matchAll honor pattern brand lastIndex ()", () => {
   it("非全局 sticky match 从 lastIndex 起（命中）", () => {
     // node: const r = /b/y; r.lastIndex = 1; "ab".match(r)[0] → "b"
     expectVal(`const r = /b/y; r.lastIndex = 1; return "ab".match(r)[0];`, "b");

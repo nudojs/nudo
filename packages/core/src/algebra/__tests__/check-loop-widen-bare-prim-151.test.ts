@@ -1,17 +1,17 @@
 /**
- * issue #151：循环携带绑定宽化（loop-widen，Bug 47/48）到 prim 域顶的
+ * issue #151：循环携带绑定宽化（loop-widen，）到 prim 域顶的
  * 返回值对无界裸 prim 契约的域隶属证明。
  *
  * 宽化产物形态（实测）：
- *   - m1 `let best='info'; for (const x of xs) best=x`（xs: string[]）
- *     → 单臂 `string #widened`（无 term/pred）；
- *   - m2 `let best=null; …` → sum `null | string #widened`（nullish lit
- *     臂 + widened 裸 prim 臂，parent conf=widened）。
+ * - m1 `let best='info'; for (const x of xs) best=x`（xs: string[]）
+ * → 单臂 `string #widened`（无 term/pred）；
+ * - m2 `let best=null; …` → sum `null | string #widened`（nullish lit
+ * 臂 + widened 裸 prim 臂，parent conf=widened）。
  * 此前两处没接住 #115 的「partial 丢界/路径证据不丢 prim 值域」口径：
- *   1. 单臂：isValueSetUnknown 把 conf="widened" 归「值域未知」→
- *      assertImpliesSingle 无条件 unprovable → 假 unproven-return；
- *   2. sum：isWidenedSumArm 只认 parent.conf==="partial"，loop-widen
- *      产物 parent/arm conf 是 "widened" → discharge 永不触发。
+ * 1. 单臂：isValueSetUnknown 把 conf="widened" 归「值域未知」→
+ * assertImpliesSingle 无条件 unprovable → 假 unproven-return；
+ * 2. sum：isWidenedSumArm 只认 parent.conf==="partial"，loop-widen
+ * 产物 parent/arm conf 是 "widened" → discharge 永不触发。
  * 现与 #115 同口径：无界裸 prim 契约（string() / union(string(), lit(null))
  * 的 string 成员）的域隶属可证；带界义务（gt(0)）与错配 prim 仍 unprovable
  * （不得 proved、不得 disproved）。

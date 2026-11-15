@@ -1,5 +1,5 @@
 /**
- * try 区域重复 `return` 的临时量重名回归（报告 Bug 145）。
+ * try 区域重复 `return` 的临时量重名回归（报告 ）。
  *
  * try 内的 return 生成固定名临时量 `const __nudoRet = …`——同一词法块内
  * 出现两个 return 就是**重复 const 声明**：`new Function` 编译期

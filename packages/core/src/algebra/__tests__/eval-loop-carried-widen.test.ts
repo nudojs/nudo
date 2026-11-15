@@ -1,13 +1,13 @@
 /**
- * 类 C 抽象求值欠近似回归（Bug 47 / 48）——循环携带累加器 widen：
- * - Bug 47：for-of（抽象容器）单代表迭代的出口 join 是 {0 次, 1 次} 两
- *   个打包态（`0 | 1`，conf exact）——常步长累加器（n++ / n += 2）跨迭代
- *   增长，原生 xs.length 任意（[1,2,3] → 3 ∉ {0,1}），引擎自己的具体求值
- *   直接证伪抽象签名；break/continue 打断代表体时 0 次出口独占（假精确
- *   0，反转分支走向）。
- * - Bug 48：while / for / do-while（抽象条件）预算耗尽（maxLoopIters=8）
- *   的出口 join 是 {0..8} / {1..9}（conf exact）——原生 n=100 → 100 ∉
- *   {0..8}。
+ * 类 C 抽象求值欠近似回归（）——循环携带累加器 widen：
+ * - for-of（抽象容器）单代表迭代的出口 join 是 {0 次, 1 次} 两
+ * 个打包态（`0 | 1`，conf exact）——常步长累加器（n++ / n += 2）跨迭代
+ * 增长，原生 xs.length 任意（[1,2,3] → 3 ∉ {0,1}），引擎自己的具体求值
+ * 直接证伪抽象签名；break/continue 打断代表体时 0 次出口独占（假精确
+ * 0，反转分支走向）。
+ * - while / for / do-while（抽象条件）预算耗尽（maxLoopIters=8）
+ * 的出口 join 是 {0..8} / {1..9}（conf exact）——原生 n=100 → 100 ∉
+ * {0..8}。
  * 机制（loop-widen.ts，两形态收敛同一迭代 join/widen helper）：出口快照
  * observe 进累计 join + 逐槽「值级」增长检测（leqAbs 是 shape 级——
  * `{n:1} ⊑ {n:0}` 成立，检测不到计数器）；预算耗尽 / 抽象 fork 臂的
@@ -51,7 +51,7 @@ function callWith(
   return { value: norm(result.result), throws: norm(result.throws), lit: l };
 }
 
-describe("Bug 47: for-of（抽象容器）循环携带累加器宽化", () => {
+describe("for-of（抽象容器）循环携带累加器宽化", () => {
   it("count / countDouble：增长计数器 → 无上界 number（不再 0 | 1 #exact）", () => {
     const r = callWith(
       `export function f(xs) { let n = 0; for (const v of xs) { n++; } return n; }`,
@@ -123,7 +123,7 @@ describe("Bug 47: for-of（抽象容器）循环携带累加器宽化", () => {
   });
 });
 
-describe("Bug 48: while / for / do-while（抽象条件）累加器宽化", () => {
+describe("while / for / do-while（抽象条件）累加器宽化", () => {
   it("while：增长计数器 → number（不再 0..8 #exact）", () => {
     const r = callWith(
       `export function f(n) { let i = 0; while (i < n) { i++; } return i; }`,

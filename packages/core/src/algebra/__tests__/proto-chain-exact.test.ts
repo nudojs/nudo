@@ -1,13 +1,13 @@
 /**
  * D 类 wrong-exact 缺陷（原型链语义未建模）：修前引擎对依赖原型链才能
  * 确定的值断言了精确结果——
- * - Bug 15：$in tuple 兑底臂对 Array.prototype 成员（"map" in []）、brand
- *   兑底臂对 Map/Set 的 size 访问器断言精确 false（原生恒 true）；
- * - Bug 16：$instanceof obj 臂对 open obj（Object.create 产物）+ 内建构造器
- *   断言精确 false（Object.create([]) instanceof Array 原生 true）；
- * - Bug 17：$get 缺槽兑底把 o.__proto__ 折精确 undefined（原生读出原型对象）；
- * - Bug 18：$forInKeys 只算自有可枚举键，Object.create({x:1}) 的 for-in
- *   折 0 次（原生跑 1 次）。
+ * - $in tuple 兑底臂对 Array.prototype 成员（"map" in []）、brand
+ * 兑底臂对 Map/Set 的 size 访问器断言精确 false（原生恒 true）；
+ * - $instanceof obj 臂对 open obj（Object.create 产物）+ 内建构造器
+ * 断言精确 false（Object.create([]) instanceof Array 原生 true）；
+ * - $get 缺槽兑底把 o.__proto__ 折精确 undefined（原生读出原型对象）；
+ * - $forInKeys 只算自有可枚举键，Object.create({x:1}) 的 for-in
+ * 折 0 次（原生跑 1 次）。
  * 修复口径：不引入通用原型链建模——tuple 臂复用静态 Array.prototype 名表、
  * brand 补访问器表（size）、open obj 诚实降级 boolean/抽象键序列、
  * __proto__ 读复用 Object.getPrototypeOf 的 protoOfRecv 投影。
@@ -29,7 +29,7 @@ function expectNotExact(src: string, value: unknown) {
   expect(r.ok && r.value === value).toBe(false);
 }
 
-describe("Bug 15 — `in` walks the prototype chain (tuple / brand arms)", () => {
+describe("`in` walks the prototype chain (tuple / brand arms)", () => {
   it("Array.prototype members on array literals are exact true", () => {
     expectExact(`export function f() { return "map" in []; }`, true);
     expectExact(`export function f() { return "push" in [1]; }`, true);
@@ -66,7 +66,7 @@ describe("Bug 15 — `in` walks the prototype chain (tuple / brand arms)", () =>
   });
 });
 
-describe("Bug 16 — instanceof on open objects (Object.create receivers)", () => {
+describe("instanceof on open objects (Object.create receivers)", () => {
   it("no longer folds exact false when the proto chain may match", () => {
     // 原生 true：Object.create([]) 的原型链含 Array.prototype；引擎对
     // open obj（原型链未知）诚实降级 boolean，不再断言精确 false
@@ -83,7 +83,7 @@ describe("Bug 16 — instanceof on open objects (Object.create receivers)", () =
   });
 });
 
-describe("Bug 17 — __proto__ member read yields the prototype, not undefined", () => {
+describe("__proto__ member read yields the prototype, not undefined", () => {
   it("plain object literal: proto is the Object.prototype singleton", () => {
     expectExact(`export function f() { return ({}).__proto__ === Object.prototype; }`, true);
     expectExact(`export function f() { return typeof ({}).__proto__; }`, "object");
@@ -113,7 +113,7 @@ describe("Bug 17 — __proto__ member read yields the prototype, not undefined",
   });
 });
 
-describe("Bug 18 — for-in over proto-linked objects (open obj downgrade)", () => {
+describe("for-in over proto-linked objects (open obj downgrade)", () => {
   it("inherited enumerable keys no longer fold exact zero iterations", () => {
     // 原生 1：for-in over Object.create({x:1}) 访问继承键 "x"；引擎对
     // open obj（原型链未跟踪）降级抽象键序列，体 0..N 次

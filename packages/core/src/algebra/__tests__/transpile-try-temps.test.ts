@@ -8,7 +8,7 @@ import {
 } from "../index.ts";
 import { call } from "./eval-helpers.ts";
 
-describe("Bug 42：同作用域同一行 try 临时名唯一化", () => {
+describe("同作用域同一行 try 临时名唯一化", () => {
   it("同一行两个 try/catch：能求值且返回正常值（此前重复 const → new Function SyntaxError 整模块失败）", () => {
     const src = `export function f() { try { 1; } catch (e) {} try { 2; } catch (e) {} return "done"; }`;
     const r = call(src);

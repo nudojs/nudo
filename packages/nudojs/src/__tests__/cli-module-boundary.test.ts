@@ -36,7 +36,7 @@ const CJS = {
   "f4.js": 'exports["getName"] = function (user) { return user.name; };\n',
 };
 
-describe("Bug 6 — CJS 默认导出形态在 check 面不再假绿", () => {
+describe("CJS 默认导出形态在 check 面不再假绿", () => {
   it("f1/f2/f3/f4 全部判红（修前 OK / 0 fn）", () => {
     const at = fixture(CJS);
     for (const name of ["f1.cjs", "f2.cjs", "f3.cjs", "f4.js"]) {
@@ -47,7 +47,7 @@ describe("Bug 6 — CJS 默认导出形态在 check 面不再假绿", () => {
   }, 120000);
 });
 
-describe("Bug 51 — 同名 static 方法的签名与书写顺序无关", () => {
+describe("同名 static 方法的签名与书写顺序无关", () => {
   const A = `export class C {
   m(x) { return "inst"; }
   static m(p, q) { return "stat"; }
@@ -69,7 +69,7 @@ describe("Bug 51 — 同名 static 方法的签名与书写顺序无关", () => 
   }, 120000);
 });
 
-describe("Bug 61 / 64 — 类表达式与内部基类进 L2", () => {
+describe("类表达式与内部基类进 L2", () => {
   const CEXPR = `export const C = class {
   constructor() { throw new TypeError("boom"); }
 };
@@ -102,7 +102,7 @@ export class Derived extends Base {
   }, 120000);
 });
 
-describe("Bug 89 — 别名说明符导出仍是入口", () => {
+describe("别名说明符导出仍是入口", () => {
   it("export { C as Other } 与 export { f as h } 都判红（修前 OK）", () => {
     const at = fixture({
       "cls-alias.js":
@@ -118,7 +118,7 @@ describe("Bug 89 — 别名说明符导出仍是入口", () => {
   }, 120000);
 });
 
-describe("Bug 90 — ESM 对象字面量方法与 CJS 同口径", () => {
+describe("ESM 对象字面量方法与 CJS 同口径", () => {
   const ESM = `export const api = {
   danger() { throw new TypeError("boom"); },
   safe() { return 1; },
@@ -140,7 +140,7 @@ describe("Bug 90 — ESM 对象字面量方法与 CJS 同口径", () => {
   }, 120000);
 });
 
-describe("Bug 62 / 63 — CJS 值导出与解构导出进 dts 面", () => {
+describe("CJS 值导出与解构导出进 dts 面", () => {
   it("CJS 值：四个值声明 + 值-only 模块不空产物", () => {
     const at = fixture({
       "vals.cjs":
@@ -185,7 +185,7 @@ export const { a, b } = src;
   }, 120000);
 });
 
-describe("Bug 105 — 非 Identifier 键的侧车契约被执法", () => {
+describe("非 Identifier 键的侧车契约被执法", () => {
   it('static "make"() 返回 "s" 违反 number() ⇒ nudo:constraint-violated', () => {
     const at = fixture({
       "q.js": 'export class C { static "make"() { return "s"; } }\n',

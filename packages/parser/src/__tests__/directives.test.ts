@@ -393,7 +393,7 @@ describe("stripTypes: parse() 统一 TS 剥除", () => {
   });
 
   it("尖括号断言 <T>x 解析成功（TS+JSX 硬失败后降级去 jsx 重试），剥除器仍处理 TSTypeAssertion 节点", () => {
-    // Bug 451（口径更新）：`.ts`（非 `.tsx`）里 `<T>x` 是**合法** TS（tsc exit 0）
+    // （口径更新）：`.ts`（非 `.tsx`）里 `<T>x` 是**合法** TS（tsc exit 0）
     // ⇒ 解析层在 TS+JSX **硬失败**时**去掉 jsx 重试一次**（core 的
     // `parseWithJsxFallback`）⇒ `<T>x` 回到 TS 语法（TSTypeAssertion）
     // ⇒ 剥除器仍处理 TSTypeAssertion 节点（unwrapExpression 分支）。
@@ -409,7 +409,7 @@ describe("stripTypes: parse() 统一 TS 剥除", () => {
   });
 
   it("interface / type alias / declare 声明被删除；enum 被合成成运行时对象（Bug 913）", () => {
-    // 口径更新（Bug 913）：TS 的 `enum` **有运行时语义**（tsc 编译成带反向映射的
+    // 口径更新（）：TS 的 `enum` **有运行时语义**（tsc 编译成带反向映射的
     // 对象）⇒ 剥除器不再把它整条删除，而是**合成**一个等价的运行时对象
     // （`var Color = (function (Color) { … })({})`）⇒ 成员引用不再退化成
     // 未绑定全局读取。`declare enum`（环境声明）仍然整条删除。

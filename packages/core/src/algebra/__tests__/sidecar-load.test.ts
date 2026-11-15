@@ -50,7 +50,7 @@ function draftPathOf(file: string): string {
   return sidecarPathOf(file).replace(/\.nudo\.ts$/, ".nudo.draft.ts");
 }
 
-describe("[table] sidecarPathOf", () => {
+describe("sidecarPathOf", () => {
   it.each(SIDECAR_PATH_CASES)("%s → %s", (input, expected) => {
     expect(sidecarPathOf(input)).toBe(expected);
   });
@@ -62,7 +62,7 @@ describe("[table] sidecarPathOf", () => {
 // ---------------------------------------------------------------------------
 // #135 侧车 fs 读错误（check 核心侧）
 // ---------------------------------------------------------------------------
-describe("[sidecar] #135 侧车 fs 读错误（check 核心侧）", () => {
+describe("#135 侧车 fs 读错误（check 核心侧）", () => {
 /**
  * #135：check 输出在两个稳定集间翻转（28↔22）——少集 = 契约族诊断整体
  * 静默消失、exit 0 假绿。根因链：fs 读错误被上游折叠成「无侧车」miss 后，
@@ -70,14 +70,14 @@ describe("[sidecar] #135 侧车 fs 读错误（check 核心侧）", () => {
  * 钉死整场。核心侧的行为钉（loadModule 对侧车 spec **抛错**的真实 fs 错误）：
  *
  * - 瞬态自愈：raw() 抛错不进 per-call 缓存（undefined 才缓存）→ 下一消费者
- *   重试拿到侧车 → 契约族诊断完整在场，且**无** nudo:contract-load；
+ * 重试拿到侧车 → 契约族诊断完整在场，且**无** nudo:contract-load；
  * - 持久响亮：loadModule 恒抛 → error 级 nudo:contract-load + ok=false
- *   （contract.ts 已区分「读失败」与「无侧车」，此处验证而非重复实现）；
+ * （contract.ts 已区分「读失败」与「无侧车」，此处验证而非重复实现）；
  * - 真 miss 反钉：loadModule 返回 undefined（真无侧车）→ 静默零诊断，
- *   防修过头的反向回归；
+ * 防修过头的反向回归；
  * - readerr 指纹：读错误轮的 deps 指纹不可信（readerr: 前缀 + readError），
- *   整文件 memo fail-open 不读不写——错误轮 / miss 轮 / 内容轮互不为
- *   跨次陈旧命中（修复前错误轮与 miss 轮折叠成同一 miss 键，28↔22 翻转）。
+ * 整文件 memo fail-open 不读不写——错误轮 / miss 轮 / 内容轮互不为
+ * 跨次陈旧命中（修复前错误轮与 miss 轮折叠成同一 miss 键，28↔22 翻转）。
  */
 
 
@@ -284,7 +284,7 @@ describe("#135 readerr 指纹（loadModuleDepsFingerprint）", () => {
 // ---------------------------------------------------------------------------
 // sidecarSpecsOf
 // ---------------------------------------------------------------------------
-describe("[sidecar] sidecarSpecsOf", () => {
+describe("sidecarSpecsOf", () => {
 /**
  * loadModuleDepsFingerprint 的 autoBind 侧车闭包扩展（设计 §4.5）：
  * - 侧车存在 → 指纹含 `sidecar:path=hash` 条目（根 + 递归 .nudo 依赖）；
@@ -488,7 +488,7 @@ describe("loadModuleDepsFingerprint sidecar closure", () => {
 // ---------------------------------------------------------------------------
 // projectDir ambient bind boundary
 // ---------------------------------------------------------------------------
-describe("[sidecar] projectDir ambient bind boundary", () => {
+describe("projectDir ambient bind boundary", () => {
 /**
  * T7：项目根 ambient 绑定边界。
  * projectDir 提供时，树外侧车不 ambient 加载；树内正常；node_modules 仍拦。
@@ -614,7 +614,7 @@ export const add = fn({ x: number(), y: number().gt(0) }, number());
 // ---------------------------------------------------------------------------
 // sidecar load I/O error vs no-sidecar (R2-6 #2)
 // ---------------------------------------------------------------------------
-describe("[sidecar] sidecar load I/O error vs no-sidecar (R2-6 #2)", () => {
+describe("sidecar load I/O error vs no-sidecar (R2-6 #2)", () => {
 /**
  * R2-6 #2：侧车 load 读失败（EACCES/EMFILE…）≠「无侧车」。
  * 读失败必须报 nudo:contract-load；无侧车文件（undefined）是 auto-bind
@@ -714,7 +714,7 @@ export function f(x) {
 // ---------------------------------------------------------------------------
 // #64 sidecar load failure dedup
 // ---------------------------------------------------------------------------
-describe("[sidecar] #64 sidecar load failure dedup", () => {
+describe("#64 sidecar load failure dedup", () => {
 /**
  * #64：侧车加载失败按 (路径, 原因) 去重，不按源导出逐个上报。
  *
@@ -797,11 +797,11 @@ describe("#64 sidecar load failure dedup", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 438 —— 跨文件调用：侧车按**被调方目录**解析
+// 跨文件调用：侧车按**被调方目录**解析
 // ---------------------------------------------------------------------------
-describe("[sidecar] Bug 438 —— 跨文件调用：侧车按**被调方目录**解析", () => {
+describe("跨文件调用：侧车按**被调方目录**解析", () => {
 /**
- * Bug 438 —— 跨文件调用时，**被调方**的 `@nudo:import` 侧车说明符按**调用方目录**
+ * 跨文件调用时，**被调方**的 `@nudo:import` 侧车说明符按**调用方目录**
  * 解析 ⇒ 侧车明明在**被调方旁边**却报「failed to load」⇒ **error 级**
  * `nudo:contract-load` + `nudo:contract-syntax` 假红。
  *
@@ -812,11 +812,11 @@ describe("[sidecar] Bug 438 —— 跨文件调用：侧车按**被调方目录*
  * 本钉把这条行为钉死（**不改实现**）。
  *
  * 判据（**不是**「有没有报错」，而是「报什么」）：
- *   - 正例：侧车在被调方旁边 ⇒ 只有**真违例**（`nudo:constraint-violated`），
- *     **零** `nudo:contract-load` / **零** `nudo:contract-syntax`；
- *   - 负控制：侧车**只**在调用方目录 ⇒ 按被调方目录解析必然找不到 ⇒ 报
- *     `nudo:contract-load`（证明 loader 的 base 目录确实决定解析结果，
- *     正例不是因为「压根没查侧车」而绿）。
+ * - 正例：侧车在被调方旁边 ⇒ 只有**真违例**（`nudo:constraint-violated`），
+ * **零** `nudo:contract-load` / **零** `nudo:contract-syntax`；
+ * - 负控制：侧车**只**在调用方目录 ⇒ 按被调方目录解析必然找不到 ⇒ 报
+ * `nudo:contract-load`（证明 loader 的 base 目录确实决定解析结果，
+ * 正例不是因为「压根没查侧车」而绿）。
  */
 
 
@@ -857,7 +857,7 @@ function codes(r: { issues: { code: string }[] }): string[] {
   return r.issues.map((i) => i.code);
 }
 
-describe("Bug 438 —— 跨文件调用：侧车按**被调方目录**解析", () => {
+describe("跨文件调用：侧车按**被调方目录**解析", () => {
   it("正例：侧车在被调方旁边 ⇒ 只有真违例，无 contract-load / contract-syntax", () => {
     const r = check(CALLER_SUB, {
       "/t/sub/std.nudo.js": STD,
@@ -901,11 +901,11 @@ describe("Bug 438 —— 跨文件调用：侧车按**被调方目录**解析", 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 345: 依赖侧车失败的归因
+// 依赖侧车失败的归因
 // ---------------------------------------------------------------------------
-describe("[sidecar] Bug 345: 依赖侧车失败的归因", () => {
+describe("依赖侧车失败的归因", () => {
 /**
- * Bug 345 回归：依赖侧车的求值异常**不包装、不标注依赖路径** ⇒ 报错指向
+ * 回归：依赖侧车的求值异常**不包装、不标注依赖路径** ⇒ 报错指向
  * **导入方**且点名它根本没有的名字；导入方的合法契约被连坐作废 ⇒ 契约门禁
  * 假绿。
  *
@@ -928,7 +928,7 @@ import { positive } from "./std.nudo.js";
 export const good = fn({ n: positive }, number().gt(1000));
 `;
 
-describe("Bug 345: 依赖侧车失败的归因", () => {
+describe("依赖侧车失败的归因", () => {
   it("诊断点名**依赖侧车路径**（旧口径只说导入方坏了）", () => {
     const { loadModule } = makeFiles({
       "/t/std.nudo.js": `export const positive = ((( broken syntax\n`,
@@ -965,11 +965,11 @@ describe("Bug 345: 依赖侧车失败的归因", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 339 侧车孤儿导出诊断
+// 侧车孤儿导出诊断
 // ---------------------------------------------------------------------------
-describe("[sidecar] Bug 339 侧车孤儿导出诊断", () => {
+describe("侧车孤儿导出诊断", () => {
 /**
- * Bug 339：侧车导出名打错 ⇒ 契约被**静默丢弃**。
+ * 侧车导出名打错 ⇒ 契约被**静默丢弃**。
  *
  * 绑定是「拉取式」的（每个源码函数去问侧车「你叫这个名字吗」），从不枚举
  * 侧车导出 ⇒ 侧车里没人认领的条目在系统里根本不存在：签名退化成 any、
@@ -986,7 +986,7 @@ describe("[sidecar] Bug 339 侧车孤儿导出诊断", () => {
 
 
 
-describe("Bug 339 侧车孤儿导出诊断", () => {
+describe("侧车孤儿导出诊断", () => {
   beforeEach(() => {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
@@ -1053,11 +1053,11 @@ describe("Bug 339 侧车孤儿导出诊断", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 338: 侧车绑定名与构建器名同名
+// 侧车绑定名与构建器名同名
 // ---------------------------------------------------------------------------
-describe("[sidecar] Bug 338: 侧车绑定名与构建器名同名", () => {
+describe("侧车绑定名与构建器名同名", () => {
 /**
- * Bug 338 回归：侧车自身的绑定名与**构建器名**同名 ⇒ 侧车根本加载不了。
+ * 回归：侧车自身的绑定名与**构建器名**同名 ⇒ 侧车根本加载不了。
  *
  * 根因：`execSidecar` 用 `new Function(...Object.keys(sidecarInjects), …)`
  * 把 15 个构建器名当**形参**注入；侧车里的 `const pick = …`
@@ -1077,7 +1077,7 @@ beforeEach(() => {
   takeRefineDiags();
 });
 
-describe("Bug 338: 侧车绑定名与构建器名同名", () => {
+describe("侧车绑定名与构建器名同名", () => {
   it("`export const pick = fn(…)`（pick 是构建器名）→ 侧车可加载，导出可见", () => {
     const src = `
 import { fn, number } from "@nudojs/core";
@@ -1112,16 +1112,16 @@ export const keep = fn({ x: number().gt(0) }, number());
 });
 
 // ---------------------------------------------------------------------------
-// Bug 334 侧车环只报一条 nudo:contract-cycle
+// 侧车环只报一条 nudo:contract-cycle
 // ---------------------------------------------------------------------------
-describe("[sidecar] Bug 334 侧车环只报一条 nudo:contract-cycle", () => {
+describe("侧车环只报一条 nudo:contract-cycle", () => {
 /**
- * Bug 334：同一个物理侧车环被两条通道各报一次 ⇒ 一个环 = 两条同码 error。
+ * 同一个物理侧车环被两条通道各报一次 ⇒ 一个环 = 两条同码 error。
  *
  * 两条通道：
  * - ambient 侧车加载通道（contract.ts `loadSidecarBinding` 的 exec catch）
  * - `@nudo:import` 通道（refine.ts `collectConstraints` → exec 抛
- *   `NudoSidecarError(nudo:contract-cycle)`）
+ * `NudoSidecarError(nudo:contract-cycle)`）
  *
  * 两条通道命中的是**同一个物理环**（环链文本相同），但 message 差一个
  * "sidecar '…' failed to load: " 前缀 ⇒ check 层的 code+message 去重抓不住
@@ -1137,7 +1137,7 @@ describe("[sidecar] Bug 334 侧车环只报一条 nudo:contract-cycle", () => {
 
 
 
-describe("Bug 334 侧车环只报一条 nudo:contract-cycle", () => {
+describe("侧车环只报一条 nudo:contract-cycle", () => {
   beforeEach(() => {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
@@ -1190,17 +1190,17 @@ export function area(x) { return x; }`;
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1125: 侧车装载诊断的依赖归属
+// 侧车装载诊断的依赖归属
 // ---------------------------------------------------------------------------
-describe("[sidecar] Bug 1125: 侧车装载诊断的依赖归属", () => {
+describe("侧车装载诊断的依赖归属", () => {
 /**
- * Bug 1125 —— 缓存的 sidecar 装载诊断**丢失依赖归属** ⇒ 依赖侧车的坏 import
+ * 缓存的 sidecar 装载诊断**丢失依赖归属** ⇒ 依赖侧车的坏 import
  * 被记在 **root 侧车**名下（用户去 root 里找不到那个名字 ⇒ 定位错文件）。
  *
  * 根因（packages/core/src/algebra/refine.ts）：
- *   `SidecarLoadDiag` 只存 `{ code, message }`；递归求值（root → dep）**共享**
- *   同一个 diags 数组；发射时 `emitSidecarLoadDiags(diags, fromFile)` 一律用
- *   **root** 的 fromFile 归因 ⇒ 依赖侧车的诊断挂错文件。
+ * `SidecarLoadDiag` 只存 `{ code, message }`；递归求值（root → dep）**共享**
+ * 同一个 diags 数组；发射时 `emitSidecarLoadDiags(diags, fromFile)` 一律用
+ * **root** 的 fromFile 归因 ⇒ 依赖侧车的诊断挂错文件。
  *
  * 修法：缓存记录里保留**来源文件**，发射时按来源文件归因；去重键也纳入来源
  * 文件（同一消息在不同文件 ⇒ 两条独立事实，不得互相吞掉）。
@@ -1247,7 +1247,7 @@ const BAD_DEP = `import { number, totallyBogus } from "@nudojs/core";
 export const positive = number().gt(0);
 `;
 
-describe("Bug 1125: 侧车装载诊断的依赖归属", () => {
+describe("侧车装载诊断的依赖归属", () => {
   it("依赖侧车的坏 import ⇒ 诊断归因到依赖侧车路径（不是 root）", () => {
     const diags = execInScope(ROOT, "/t/root.nudo.js", { "/t/dep.nudo.js": BAD_DEP });
     const bad = diags.filter((d) => d.message.includes("is not an injected builder"));
@@ -1281,11 +1281,11 @@ export const f = fn({ x: positive }, number());
 });
 
 // ---------------------------------------------------------------------------
-// Bug 359 侧车形态诊断点名侧车真名
+// 侧车形态诊断点名侧车真名
 // ---------------------------------------------------------------------------
-describe("[sidecar] Bug 359 侧车形态诊断点名侧车真名", () => {
+describe("侧车形态诊断点名侧车真名", () => {
 /**
- * Bug 359：侧车形态诊断点名的是**源码本地名**，不是侧车里真实存在的导出名。
+ * 侧车形态诊断点名的是**源码本地名**，不是侧车里真实存在的导出名。
  *
  * 形态：别名导出（`export { _c as class }`）与 default 导出
  * （`export { f as default }`）下，侧车身份是**导出名**（class / default），
@@ -1303,7 +1303,7 @@ describe("[sidecar] Bug 359 侧车形态诊断点名侧车真名", () => {
 
 
 
-describe("Bug 359 侧车形态诊断点名侧车真名", () => {
+describe("侧车形态诊断点名侧车真名", () => {
   beforeEach(() => {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
@@ -1346,20 +1346,20 @@ describe("Bug 359 侧车形态诊断点名侧车真名", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1123: 侧车 import 别名不得与 ambient builder 声明撞名
+// 侧车 import 别名不得与 ambient builder 声明撞名
 // ---------------------------------------------------------------------------
-describe("[sidecar] Bug 1123: 侧车 import 别名不得与 ambient builder 声明撞名", () => {
+describe("侧车 import 别名不得与 ambient builder 声明撞名", () => {
 /**
- * Bug 1123 —— 侧车 import **别名**与注入的 builder 声明冲突 ⇒ 整个 sidecar
+ * 侧车 import **别名**与注入的 builder 声明冲突 ⇒ 整个 sidecar
  * 装载失败（SyntaxError）⇒ 该文件的全部契约静默丢失（门禁假绿 + 产物面退化）。
  *
  * 根因（packages/core/src/algebra/refine.ts）：
- *   侧车求值包装器在外层作用域声明**全部** builder 名
- *   （`const { number, string, … } = __nudoInjects;`），而 prologue 用 `var`
- *   在**同一外层作用域**绑定显式 import 的本地名
- *   （`import { number as string }` ⇒ `var string = __nudoInjects["number"];`）
- *   ⇒ `const string` + `var string` 同作用域 ⇒ SyntaxError
- *   「Identifier 'string' has already been declared」⇒ 侧车根本装载不了。
+ * 侧车求值包装器在外层作用域声明**全部** builder 名
+ * （`const { number, string, … } = __nudoInjects;`），而 prologue 用 `var`
+ * 在**同一外层作用域**绑定显式 import 的本地名
+ * （`import { number as string }` ⇒ `var string = __nudoInjects["number"];`）
+ * ⇒ `const string` + `var string` 同作用域 ⇒ SyntaxError
+ * 「Identifier 'string' has already been declared」⇒ 侧车根本装载不了。
  *
  * 修法：把**显式导入的本地名**从 ambient builder 声明中排除（用户显式
  * 导入的名字由 import 绑定，ambient 解构不得再声明同名）。
@@ -1392,7 +1392,7 @@ export function f(x) {
 }
 `;
 
-describe("Bug 1123: 侧车 import 别名不得与 ambient builder 声明撞名", () => {
+describe("侧车 import 别名不得与 ambient builder 声明撞名", () => {
   it("裸包别名（number as string）⇒ 侧车装载成功、契约生效", () => {
     const { loadModule } = makeFiles({
       "/t/alias.nudo.js":
@@ -1433,11 +1433,11 @@ describe("Bug 1123: 侧车 import 别名不得与 ambient builder 声明撞名",
 });
 
 // ---------------------------------------------------------------------------
-// Bug 356: 侧车注入名撞名
+// 侧车注入名撞名
 // ---------------------------------------------------------------------------
-describe("[sidecar] Bug 356: 侧车注入名撞名", () => {
+describe("侧车注入名撞名", () => {
 /**
- * Bug 356 回归：侧车求值的**注入名**与侧车自身绑定撞名 ⇒ SyntaxError。
+ * 回归：侧车求值的**注入名**与侧车自身绑定撞名 ⇒ SyntaxError。
  *
  * 根因（同 338）：`new Function(...Object.keys(sidecarInjects), …)` 把 15 个
  * 构建器名当形参注入；侧车的顶层 `const <name>` 与形参同名 ⇒ 整份侧车失效。
@@ -1459,7 +1459,7 @@ beforeEach(() => {
   takeRefineDiags();
 });
 
-describe("Bug 356: 侧车注入名撞名", () => {
+describe("侧车注入名撞名", () => {
   it("构建器名撞名 → 侧车可加载（旧口径 SyntaxError）", () => {
     const src = `
 import { fn } from "@nudojs/core";
@@ -1517,11 +1517,11 @@ export const g = fn({ x: number() }, number());
 });
 
 // ---------------------------------------------------------------------------
-// bug 1064: 侧车装载诊断随 exec 结果缓存（缓存命中时重发）
+// 侧车装载诊断随 exec 结果缓存（缓存命中时重发）
 // ---------------------------------------------------------------------------
-describe("[sidecar] bug 1064: 侧车装载诊断随 exec 结果缓存（缓存命中时重发）", () => {
+describe("侧车装载诊断随 exec 结果缓存（缓存命中时重发）", () => {
 /**
- * Bug 1064 —— 侧车装载失败（`nudo:contract-load`）在 **check 门禁面彻底隐形**
+ * 侧车装载失败（`nudo:contract-load`）在 **check 门禁面彻底隐形**
  * ⇒ 门禁假绿（exit 0）。
  *
  * 根因在 core（`packages/core/src/algebra/refine.ts`）：侧车装载诊断在
@@ -1573,7 +1573,7 @@ function execInScopeWithExports(fromFile: string): {
   });
 }
 
-describe("bug 1064: 侧车装载诊断随 exec 结果缓存（缓存命中时重发）", () => {
+describe("侧车装载诊断随 exec 结果缓存（缓存命中时重发）", () => {
   it("第二个分析作用域（exec 缓存命中）仍报 contract-load", () => {
     resetNudoModuleExecCache();
     const fromFile = "/tmp/bug1064/lib.nudo.js";

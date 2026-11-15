@@ -6,17 +6,17 @@
  * （check-guard-narrow-fp-118.test.ts 同款 harness；@nudo:import 引入的
  * fn 导出走的是模板通道，对 nullable 参数的 L2 语义弱于指令绑定——与本
  * 特性无关）。三条用例：
- *   (a) issue 原型 staticName（守卫递归折叠点号链）——其复合守卫
- *       `node.object == null || node.property == null` 的多名收窄依赖
- *       transpile 层（stmt-predicates.ts nullishGuardsOf，issue #118 v3 /
- *       #120 形态）由并行分支落地；已验证残余 L2 与 lazy 无关（手写两层
- *       模板同形态在 HEAD 同样报，probe 对照）。落地后断言翻回 TODO 处；
- *   (b) 定深路径精度：逐层 `== null` 单级守卫 + 局部重绑定，读
- *       node.object.object.type → 返回 null | string（精确，非 any）；
- *   (c) 深度边界：第 4 层 object 链（entry Abs 预算 LAZY_TEMPLATE_DEPTH=3
- *       展开 3 层 + 顶层）之后 lazy 字段为**缺席槽**——读取折叠为
- *       undefined，守卫剪枝干净；最深处再读属性是诚实的预算边界
- *       （depth cutoff boundary），不产生 constraint-violated / 崩溃。
+ * (a) issue 原型 staticName（守卫递归折叠点号链）——其复合守卫
+ * `node.object == null || node.property == null` 的多名收窄依赖
+ * transpile 层（stmt-predicates.ts nullishGuardsOf，issue #118 v3 /
+ * #120 形态）由并行分支落地；已验证残余 L2 与 lazy 无关（手写两层
+ * 模板同形态在 HEAD 同样报，probe 对照）。落地后断言翻回 TODO 处；
+ * (b) 定深路径精度：逐层 `== null` 单级守卫 + 局部重绑定，读
+ * node.object.object.type → 返回 null | string（精确，非 any）；
+ * (c) 深度边界：第 4 层 object 链（entry Abs 预算 LAZY_TEMPLATE_DEPTH=3
+ * 展开 3 层 + 顶层）之后 lazy 字段为**缺席槽**——读取折叠为
+ * undefined，守卫剪枝干净；最深处再读属性是诚实的预算边界
+ * （depth cutoff boundary），不产生 constraint-violated / 崩溃。
  */
 import {describe, it, expect} from "vitest";
 import {checkSource, pTrue} from "@nudojs/core";

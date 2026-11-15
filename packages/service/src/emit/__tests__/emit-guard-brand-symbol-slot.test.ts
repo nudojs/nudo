@@ -1,5 +1,5 @@
 /**
- * Bug 106 回归（service guard 面）：`stripInvisibleSlots` 缺 `brand` 臂
+ * 回归（service guard 面）：`stripInvisibleSlots` 缺 `brand` 臂
  * ⇒ class 实例（shape.k === "brand"）内层 obj 的符号键槽原样传给
  * `denoteGuard`，写出 `Object.hasOwn(data, "@@sym#1")` 恒假子句 ⇒ 守卫
  * **拒绝函数自己的返回值**（dts / zod / standard 三面却放行）。
@@ -34,7 +34,7 @@ const brandWithSymbolSlot = (): Abs =>
     "exact",
   );
 
-describe("Bug 106：guard stripInvisibleSlots 的 brand 臂", () => {
+describe("guard stripInvisibleSlots 的 brand 臂", () => {
   it("brand 内层符号键槽不写进守卫（改前 hasOwn '@@sym#1' 恒假）", () => {
     const src = generateGuardFunctionFromAbs("ismakeOutput", brandWithSymbolSlot());
     expect(src).not.toContain("@@sym#1");
@@ -47,7 +47,7 @@ describe("Bug 106：guard stripInvisibleSlots 的 brand 臂", () => {
       .replace("(value: unknown): boolean", "(value)")
       .replace("const data: any = value as Record<string, any>;", "const data = value;")
       .replace("const data = value as Record<string, any>;", "const data = value;")
-      // BUG-250：brand 身份子句在场时产物把 Array.isArray(data) 写成
+      // brand 身份子句在场时产物把 Array.isArray(data) 写成
       // Array.isArray(data as unknown)（TS 收窄规避）——剥离成纯 JS 再求值。
       .replaceAll(" as unknown", "")
       .replace("export function ", "function ");

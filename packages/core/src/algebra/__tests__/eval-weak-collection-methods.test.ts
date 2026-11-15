@@ -1,21 +1,21 @@
 /**
- * Bug 12/13/22：弱集合实例方法三连（同族，一次修完）。
- * - Bug 12：evalBuiltinInstanceMethod 无 WeakMap/WeakSet case——方法值经
- *   BUILTIN_BRAND_METHODS 的 no-op fn 被直接调用，折精确 undefined/false
- *   （w.set(k,1) 后 w.get(k) 声称「键必不存在」）。修复：诚实域——条目表
- *   不建模（key 身份不在分析域）：get → unknown、has/delete → 抽象 boolean、
- *   set/add → receiver（原生恒返 this）；确定非弱键时 get/has/delete 原生
- *   不抛直返 undefined/false，可精确折（node 实测）。
- * - Bug 22：set/add 缺 ValidateWeakMapKey——键过 CanBeHeldWeakly
- *   （enforceCanBeHeldWeakly，与 FCR register 同口径）：prim/nullish 字面量
- *   与缺省 → 确定 TypeError；symbol/对象形态合法（node 26：Symbol() 不抛；
- *   注册 Symbol.for 原生抛，Abs 无注册标记不可分，保守按合法——已知欠
- *   近似）；抽象 → recordMayThrow（L2 gate）。get/has/delete 原生不校验。
- * - Bug 13：brand 实例方法值读（containers $get）此前返回 no-op fn，借用
- *   m.get.call(m,k) / .apply / .bind 产物直接调用折精确 undefined。修复：
- *   具名方法值走方法值读通道（protoMethodValueAbs），apply 钩子转发回
- *   $invoke 既有派发——全部内建 brand（Map/Set/Date/RegExp/Error）借用
- *   调用与直调同面；@@iterator 维持 no-op 形状（迭代协议派发另走）。
+ * ：弱集合实例方法三连（同族，一次修完）。
+ * - evalBuiltinInstanceMethod 无 WeakMap/WeakSet case——方法值经
+ * BUILTIN_BRAND_METHODS 的 no-op fn 被直接调用，折精确 undefined/false
+ * （w.set(k,1) 后 w.get(k) 声称「键必不存在」）。修复：诚实域——条目表
+ * 不建模（key 身份不在分析域）：get → unknown、has/delete → 抽象 boolean、
+ * set/add → receiver（原生恒返 this）；确定非弱键时 get/has/delete 原生
+ * 不抛直返 undefined/false，可精确折（node 实测）。
+ * - set/add 缺 ValidateWeakMapKey——键过 CanBeHeldWeakly
+ * （enforceCanBeHeldWeakly，与 FCR register 同口径）：prim/nullish 字面量
+ * 与缺省 → 确定 TypeError；symbol/对象形态合法（node 26：Symbol() 不抛；
+ * 注册 Symbol.for 原生抛，Abs 无注册标记不可分，保守按合法——已知欠
+ * 近似）；抽象 → recordMayThrow（L2 gate）。get/has/delete 原生不校验。
+ * - brand 实例方法值读（containers $get）此前返回 no-op fn，借用
+ * m.get.call(m,k) / .apply / .bind 产物直接调用折精确 undefined。修复：
+ * 具名方法值走方法值读通道（protoMethodValueAbs），apply 钩子转发回
+ * $invoke 既有派发——全部内建 brand（Map/Set/Date/RegExp/Error）借用
+ * 调用与直调同面；@@iterator 维持 no-op 形状（迭代协议派发另走）。
  * ground truth：node 原生实测（native 是 ground truth）。
  */
 import { describe, it, expect } from "vitest";
@@ -63,7 +63,7 @@ function shapeK(a: Abs | undefined): string {
   return a?.shape?.k ?? "?";
 }
 
-/** 精确 undefined 字面量（k:"unknown" + lit undefined）——Bug 12 的病灶面 */
+/** 精确 undefined 字面量（k:"unknown" + lit undefined）——的病灶面 */
 function isUndefLit(a: Abs | undefined): boolean {
   return (
     !!a &&
@@ -91,7 +91,7 @@ function litOf(a: Abs | undefined): unknown {
   return r?.ok ? r.value : undefined;
 }
 
-describe("Bug 12：WeakMap/WeakSet 实例方法返回面（诚实域，不再折精确 undefined/false）", () => {
+describe("WeakMap/WeakSet 实例方法返回面（诚实域，不再折精确 undefined/false）", () => {
   it("w.get(k) after w.set(k,1) → unknown（条目表不建模；修复前折精确 undefined）", () => {
     const src = `export function f() { const w = new WeakMap(); const k = {}; w.set(k, 1); return w.get(k); }`;
     const r = evalAbs(src);
@@ -147,7 +147,7 @@ describe("Bug 12：WeakMap/WeakSet 实例方法返回面（诚实域，不再折
   });
 });
 
-describe("Bug 22：WeakMap.set / WeakSet.add 弱键校验（CanBeHeldWeakly）", () => {
+describe("WeakMap.set / WeakSet.add 弱键校验（CanBeHeldWeakly）", () => {
   it("prim/nullish 字面量键 → definite TypeError（node 实测均抛）", () => {
     for (const key of ["1", "'s'", "null", "undefined", "true", "1n"]) {
       const src = `export function f() { try { new WeakMap().set(${key}, 1); return "no-throw"; } catch (e) { return e.constructor.name; } }`;
@@ -203,7 +203,7 @@ describe("Bug 22：WeakMap.set / WeakSet.add 弱键校验（CanBeHeldWeakly）",
   });
 });
 
-describe("Bug 13：借用 .call/.apply/.bind 在 brand 实例方法值上转发既有派发", () => {
+describe("借用 .call/.apply/.bind 在 brand 实例方法值上转发既有派发", () => {
   it("Map 借用 call：get/has/set 与直调同面（node：1 / true / true）", () => {
     expect(litOf(evalAbs(`export function f() { const m = new Map([["k", 1]]); return m.get.call(m, "k"); }`).result)).toBe(1);
     expect(litOf(evalAbs(`export function f() { const m = new Map([["k", 1]]); return m.has.call(m, "k"); }`).result)).toBe(true);

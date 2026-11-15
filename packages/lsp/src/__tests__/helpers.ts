@@ -4,20 +4,20 @@
  * 在超集上只是额外留痕，对 server 行为不可观测）。
  *
  * - createMockConnection / MockConnection / AnyHandler：JSON-RPC-ish 内存 mock
- *   Connection——记录 request/notification handler，不起真实 transport。
- *   刻意不 import server.ts（避免 createConnection 副作用）：mock 注入架构不变，
- *   由调用处自行 createNudoServer(mock as unknown as Connection)。
+ * Connection——记录 request/notification handler，不起真实 transport。
+ * 刻意不 import server.ts（避免 createConnection 副作用）：mock 注入架构不变，
+ * 由调用处自行 createNudoServer(mock as unknown as Connection)。
  * - makeValidateDeps：ValidateTextDeps fixture 工厂。sendDiagnostics 回调、
- *   openDocs 查表键归一、isNudoUri / getActiveCases / loadModule /
- *   workspaceRoots 参数化；各测试的发布收集逻辑（sent/revalidated 闭包）留在
- *   调用处逐字不动。
+ * openDocs 查表键归一、isNudoUri / getActiveCases / loadModule /
+ * workspaceRoots 参数化；各测试的发布收集逻辑（sent/revalidated 闭包）留在
+ * 调用处逐字不动。
  * - withTempDir：mkdtemp + try/finally rmSync 的 tmpdir 脚手架。
  * - withLspServer：真 server（mock connection）+ didOpen 的协议面脚手架——
- *   协议回归钉（rename / references / definition）拿到的就是协议响应本身。
+ * 协议回归钉（rename / references / definition）拿到的就是协议响应本身。
  * - withLspServerCapabilities：同上，但**先发 initialize**（携带客户端能力）
- *   ——客户端能力协商面（Bug 749）的协议回归钉入口。
+ * ——客户端能力协商面（）的协议回归钉入口。
  * - mock 的 `workspace` 特性面 + `fireWorkspaceFoldersChanged`：工作区文件夹
- *   变更通知的协议面入口（Bug 783）。
+ * 变更通知的协议面入口（）。
  */
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -48,7 +48,7 @@ export function createMockConnection() {
   const byName = register(requests);
   const byNotification = register(notifications);
 
-  /** `workspace/didChangeWorkspaceFolders` 监听器（Bug 783 的协议面入口）。 */
+  /** `workspace/didChangeWorkspaceFolders` 监听器（的协议面入口）。 */
   const workspaceFolderListeners: AnyHandler[] = [];
 
   const mock = {
@@ -91,7 +91,7 @@ export function createMockConnection() {
       },
     },
     // 真实 Connection 的 `workspace` 特性面（工作区文件夹变更通知）。
-    // server 侧订阅 `onDidChangeWorkspaceFolders`（Bug 783）⇒ mock 必须
+    // server 侧订阅 `onDidChangeWorkspaceFolders`（）⇒ mock 必须
     // 提供同一入口，否则订阅面在测试里根本不存在。
     workspace: {
       onDidChangeWorkspaceFolders: (h: AnyHandler) => {
@@ -129,9 +129,9 @@ export function createMockConnection() {
     sentRequests,
     consoleErrors,
     /**
-     * 触发 `workspace/didChangeWorkspaceFolders`（Bug 783）：server 订阅的
-     * 监听器被调用——等价于客户端真的发了这条通知。
-     */
+ * 触发 `workspace/didChangeWorkspaceFolders`（）：server 订阅的
+ * 监听器被调用——等价于客户端真的发了这条通知。
+ */
     fireWorkspaceFoldersChanged: (event: {
       added?: { uri: string; name: string }[];
       removed?: { uri: string; name: string }[];
@@ -227,7 +227,7 @@ export type LspServerCtx = {
  * 真 LSP server 脚手架的内核：建临时目录 → 落文件 → 起 server（mock
  * connection）→（可选）发 `initialize` → didOpen 全部文件 → 交出协议请求入口。
  *
- * `capabilities` 非空时**先发 `initialize`**（客户端能力协商面，Bug 749）：
+ * `capabilities` 非空时**先发 `initialize`**（客户端能力协商面，）：
  * server 在 `initialize` 里捕获 `params.capabilities`，协议面才可能按能力
  * 作答 ⇒ 能力面回归钉必须走这条路径。
  */
@@ -285,8 +285,8 @@ async function runLspServer(
  * 路径：拿到的是**协议响应本身**，不是内部函数的推断。
  *
  * ⚠ 本脚手架**不发** `initialize` ⇒ server 侧拿不到客户端能力
- *   （`clientCapabilities` 保持 `undefined`）⇒ 协议面走**默认**行为。
- *   需要客户端能力面（Bug 749）请用 `withLspServerCapabilities`。
+ * （`clientCapabilities` 保持 `undefined`）⇒ 协议面走**默认**行为。
+ * 需要客户端能力面（）请用 `withLspServerCapabilities`。
  */
 export async function withLspServer(
   files: Record<string, string>,
@@ -297,7 +297,7 @@ export async function withLspServer(
 }
 
 /**
- * **新增（Bug 749）**：真 LSP server 脚手架 + **客户端能力**。
+ * **新增（）**：真 LSP server 脚手架 + **客户端能力**。
  *
  * 与 `withLspServer` 的唯一差别：起 server 后**先发 `initialize`**
  * （携带 `capabilities`）⇒ server 捕获客户端能力 ⇒ 协议面可按能力作答。

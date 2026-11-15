@@ -199,7 +199,7 @@ describe("leqAbs structural assignability", () => {
     });
   });
 
-  describe("tuple rest slot (BUG-002)", () => {
+  describe("tuple rest slot ()", () => {
     // TS 元组语义（tsc 验证）：rest = 0..n 个额外元素，最小长度 = elements.length
     const tup = (elements: Abs[], rest?: Abs): Abs =>
       abs({ k: "tuple", elements, ...(rest ? { rest } : {}) }, undefined, undefined, "exact");
@@ -207,7 +207,7 @@ describe("leqAbs structural assignability", () => {
       abs({ k: "arr", element }, undefined, undefined, "exact");
 
     it("source rest ⊭ fixed-arity target (extra elements unaccepted)", () => {
-      // [1, ...number] ⊭ [1] — [1,2,3] 属源不属目标（此前误判 ok：BUG-002 主案）
+      // [1, ...number] ⊭ [1] — [1,2,3] 属源不属目标（此前误判 ok：主案）
       expect(leqAbs(tup([numLit(1)], num()), tup([numLit(1)])).ok).toBe(false);
       expect(leqAbs(tup([numLit(1)]), tup([numLit(1)])).ok).toBe(true);
     });

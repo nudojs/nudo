@@ -1,7 +1,7 @@
 /**
  * 不可写回 UpdateExpression / 同模式假精确静默折 → NudoUnsupportedError。
  *
- * 回归背景（BUG-015 / F3-update-expr-fake-undefined）：
+ * 回归背景（/ F3-update-expr-fake-undefined）：
  * transpile 的 UpdateExpression 尾部对不可写回目标（`foo().x++`、`super.x++`、
  * 解构怪形、可选链更新）静默折注释 + $lit(undefined)——表达式值被伪造为精确
  * undefined，自增副作用整条消失。同一文件 default 分支明确把「静默 $lit(undefined)」

@@ -7,7 +7,7 @@
  * stat 错误分类（#135）：
  * - ENOENT = 真缺席，继续向上；
  * - 非 ENOENT（EACCES/…）= fail-closed：告警 + null（不猜根配置），
- *   memo 校验抛错按「已变化」回落重走，瞬态故障恢复后自愈。
+ * memo 校验抛错按「已变化」回落重走，瞬态故障恢复后自愈。
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { mkdirSync, writeFileSync, utimesSync, chmodSync } from "node:fs";

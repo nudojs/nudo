@@ -8,28 +8,28 @@
  *
  * 四条：
  * - **第 1 条** · 全局 `TextEncoder`：原生是 **class**（裸调必抛 TypeError；
- *   宿主实测 v26.10.0：`TextEncoder()` ⇒ TypeError "Class constructor
- *   TextEncoder cannot be invoked without 'new'"），env 却声明成普通 fn 面 ⇒
- *   裸调恒不抛（假绿）。修法：**在 env 侧声明成类值**（core 的 Bug 272 判据：
- *   `ctor: true` + 单一 rest 形参 `"_rest"` ⇒ `isClassValueCallee` 命中 ⇒ 裸调
- *   定抛 TypeError，**与原生同形**）；`apply` 返回**声明实例面** ⇒
- *   `new TextEncoder()` 的实例面（encoding / encode / encodeInto）**不丢**
- *   （删声明回落宿主的话会退成 `undefined`——那是**确定的错值**，宿主真值
- *   是 "utf-8"）。
+ * 宿主实测 v26.10.0：`TextEncoder()` ⇒ TypeError "Class constructor
+ * TextEncoder cannot be invoked without 'new'"），env 却声明成普通 fn 面 ⇒
+ * 裸调恒不抛（假绿）。修法：**在 env 侧声明成类值**（core 的 判据：
+ * `ctor: true` + 单一 rest 形参 `"_rest"` ⇒ `isClassValueCallee` 命中 ⇒ 裸调
+ * 定抛 TypeError，**与原生同形**）；`apply` 返回**声明实例面** ⇒
+ * `new TextEncoder()` 的实例面（encoding / encode / encodeInto）**不丢**
+ * （删声明回落宿主的话会退成 `undefined`——那是**确定的错值**，宿主真值
+ * 是 "utf-8"）。
  * - **第 2 条** · `node:url` 的 `URL`：apply 的 catch 分支 `return undefined`
- *   ⇒ 非法 URL 被静默吞掉（恒不抛）⇒ 套 **Bug 881**（fileURLToPath）同款
- *   范式：非法 URL ⇒ 记 **TypeError** throws 面；抽象实参 ⇒ 原生可能抛 ⇒
- *   同样记 may-throw TypeError。
+ * ⇒ 非法 URL 被静默吞掉（恒不抛）⇒ 套 （fileURLToPath）同款
+ * 范式：非法 URL ⇒ 记 **TypeError** throws 面；抽象实参 ⇒ 原生可能抛 ⇒
+ * 同样记 may-throw TypeError。
  * - **第 3 条** · `util` / `querystring` 的 `escape` / `unescape`：**宿主实测**
- *   `require("node:util").escape === undefined`（util **没有**这两个成员）、
- *   `require("node:querystring").escape` 是函数（querystring **有**）⇒ env 的
- *   querystring 面与宿主一致，util 面也**没有**多声明 ⇒ **无需改动**（钉住）。
+ * `require("node:util").escape === undefined`（util **没有**这两个成员）、
+ * `require("node:querystring").escape` 是函数（querystring **有**）⇒ env 的
+ * querystring 面与宿主一致，util 面也**没有**多声明 ⇒ **无需改动**（钉住）。
  * - **第 4 条** · `crypto.subtle` 的拒绝 reason：**宿主实测** node 的 WebCrypto
- *   与浏览器**不同**——node 的拒绝 reason ∈ {NotSupportedError, TypeError,
- *   OperationError, DataError}（**从不是** OperationError 唯一值）⇒ 按
- *   `promiseOf` 的契约（reason 必须是**全部**拒绝路径的公共上界，否则是
- *   wrong-exact）node env 的 reason 必须保持 **`unknown`** ⇒ **保持现状**
- *   （钉住 + 说明跨 env 不同源是**宿主事实**，不是缺陷）。
+ * 与浏览器**不同**——node 的拒绝 reason ∈ {NotSupportedError, TypeError,
+ * OperationError, DataError}（**从不是** OperationError 唯一值）⇒ 按
+ * `promiseOf` 的契约（reason 必须是**全部**拒绝路径的公共上界，否则是
+ * wrong-exact）node env 的 reason 必须保持 **`unknown`** ⇒ **保持现状**
+ * （钉住 + 说明跨 env 不同源是**宿主事实**，不是缺陷）。
  *
  * 负控：族 61 的 **130** 个全局 + `node:crypto` / `node:fs` 成员名单
  * **逐字不变**。
@@ -104,14 +104,14 @@ describe("族 64-1 · 全局 TextEncoder 是 class（裸调必抛 TypeError，�
     //
     // 旧负控钉的是「回落宿主 ⇒ encoding 退成 undefined（**确定的错值**）」——
     // 那时宿主路**没有** TextEncoder 的实例面建模（成员读折 exact undefined）。
-    // **BUG-160**（`tmp/bug-report/sections/BUG-160.md` §期望 vs 实际）已声明
+    // ****（`tmp/bug-report/sections/.md` §期望 vs 实际）已声明
     // 宿主路的正确行为：「`TextEncoder` 的实例面 = `encoding`（只读访问器，
     // 恒 `"utf-8"`）+ `encode` / `encodeInto`（方法）⇒ **成员读不得折
     // undefined**」（宿主实测 `new TextEncoder().encoding === "utf-8"`）。
-    // ⇒ 「退成 undefined」这个前提已被 BUG-160 推翻：宿主路现在也拿得到
+    // ⇒ 「退成 undefined」这个前提已被 推翻：宿主路现在也拿得到
     // **真值** `"utf-8"`（env 声明面给的是放宽的 `string`，宿主建模给的是
     // 精确字面量 `"utf-8"`）⇒ 负控改钉宿主路的**真值**，不再钉已被
-    // BUG-160 判死的「假值 undefined」。
+    // 判死的「假值 undefined」。
     const hostOut = checkNode(`export function f(){ return new TextEncoder().encoding; }`, false);
     expect(hostOut.signatures[0]!.display).toBe('"utf-8"');
   });

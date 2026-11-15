@@ -12,15 +12,15 @@ import { runCliNode as runCli, runCliTsx, repoRoot } from "./helpers/run-cli.ts"
 import { runAbsViewCaptured } from "./helpers/abs-view.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 692: check --abs 必须与签名表同源地应用契约
+// check --abs 必须与签名表同源地应用契约
 // ---------------------------------------------------------------------------
-describe("[cli-contract] Bug 692: check --abs 必须与签名表同源地应用契约", () => {
+describe("check --abs 必须与签名表同源地应用契约", () => {
 /**
- * Bug 692：`nudo check --abs` **完全不看契约**（侧车 `*.nudo.js` /
+ * `nudo check --abs` **完全不看契约**（侧车 `*.nudo.js` /
  * 源码 `@nudo:contract`）⇒ 同一函数在两个面上给出**互斥**的类型：
  *
- *   check          → g(x: number) => string
- *   check --abs    → g(any) => any            （旧行为）
+ * check → g(x: number) => string
+ * check --abs → g(any) => any （旧行为）
  *
  * 修复：`--abs` 面与签名表**同源** —— 有效契约约束的形参真的进求值
  * （core `effectiveContract` + `constraintToEntryAbs`，与 `checkSource`
@@ -47,7 +47,7 @@ async function withTmp(fn: (dir: string) => Promise<void> | void): Promise<void>
   }
 }
 
-describe("Bug 692: check --abs 必须与签名表同源地应用契约", () => {
+describe("check --abs 必须与签名表同源地应用契约", () => {
   it("侧车契约的形参进求值（不再回落 any）", async () => {
     await withTmp(async (dir) => {
       writeFileSync(join(dir, "lib.js"), LIB_JS, "utf-8");
@@ -96,11 +96,11 @@ describe("Bug 692: check --abs 必须与签名表同源地应用契约", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 34 · 只读 contract 不因 contract-conflict 改退出码
+// 只读 contract 不因 contract-conflict 改退出码
 // ---------------------------------------------------------------------------
-describe("[cli-contract] Bug 34 · 只读 contract 不因 contract-conflict 改退出码", () => {
+describe("只读 contract 不因 contract-conflict 改退出码", () => {
 /**
- * 缺陷分册 04-contract-command · CLI 回归（Bug 34 / 54 / 80 / 101）。
+ * 缺陷分册 04-contract-command · CLI 回归（）。
  *
  * 复现工程一律建在 /tmp 独立目录；CLI 用 `runCliTsx`（cwd = repoRoot ⇒ tsx
  * 按仓库根 tsconfig 把 `@nudojs/*` 解析到 **src**，不会落到 dist 旧产物），
@@ -122,11 +122,11 @@ beforeAll(() => {
     '{"name":"nudo-bug-contract","version":"1.0.0","type":"module"}\n',
   );
 
-  // Bug 34：手写契约合取不可满足（x > 0 ∧ x < 0）
+  // 手写契约合取不可满足（x > 0 ∧ x < 0）
   writeFileSync(p("b34.js"), "export function f(x) { return x; }\n");
   writeFileSync(p("b34.nudo.js"), "export const f = fn({ x: number().gt(0).lt(0) });\n");
 
-  // Bug 80：正常侧车 / 语法损坏的侧车（分两个文件，避免互相干扰）
+  // 正常侧车 / 语法损坏的侧车（分两个文件，避免互相干扰）
   for (const tag of ["good", "bad"]) {
     writeFileSync(p(`${tag}.js`), "export function add(a, b) { return a + b; }\n");
   }
@@ -136,14 +136,14 @@ beforeAll(() => {
   );
   writeFileSync(p("bad.nudo.js"), "export const add = fn({ a: number().gt(0)  // broken\n");
 
-  // Bug 101：两个顶层导出
+  // 两个顶层导出
   writeFileSync(
     p("b101.js"),
     "export function add(a, b) { return a + b; }\n" +
       "export function word(s) { return s.toUpperCase(); }\n",
   );
 
-  // Bug 54：目录模式（两个 .d.ts）+ 单文件模式
+  // 目录模式（两个 .d.ts）+ 单文件模式
   mkdirSync(p("dts"), { recursive: true });
   writeFileSync(p("dts", "a.d.ts"), "export declare function alpha(n: number): number;\n");
   writeFileSync(p("dts", "b.d.ts"), "export declare function beta(s: string): string;\n");
@@ -153,7 +153,7 @@ beforeAll(() => {
 
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 
-describe("Bug 34 · 只读 contract 不因 contract-conflict 改退出码", () => {
+describe("只读 contract 不因 contract-conflict 改退出码", () => {
   it("print：stderr 报同码 error，但 exit 0（§1.3 只在用法 / IO 错误时 exit 1）", () => {
     const print = runCliTsx(["contract", p("b34.js")]);
     expect(print.status).toBe(0);
@@ -169,7 +169,7 @@ describe("Bug 34 · 只读 contract 不因 contract-conflict 改退出码", () =
   }, 120000);
 });
 
-describe("Bug 80 · 坏侧车三面透出 nudo:contract-load（与 check/export 同裁决）", () => {
+describe("坏侧车三面透出 nudo:contract-load（与 check/export 同裁决）", () => {
   it("好侧车对照：exit 0 + [handwritten]，stderr 无 contract-load", () => {
     const r = runCliTsx(["contract", p("good.js")]);
     expect(r.status).toBe(0);
@@ -198,7 +198,7 @@ describe("Bug 80 · 坏侧车三面透出 nudo:contract-load（与 check/export 
   }, 120000);
 });
 
-describe("Bug 101 · 打印面 --fn / --all 生效（不再静默忽略）", () => {
+describe("打印面 --fn / --all 生效（不再静默忽略）", () => {
   it("--fn add 只输出 add；--all 全量", () => {
     const f = p("b101.js");
     const json = runCliTsx(["contract", f, "--json", "--fn", "add"]);
@@ -228,7 +228,7 @@ describe("Bug 101 · 打印面 --fn / --all 生效（不再静默忽略）", () 
   }, 120000);
 });
 
-describe("Bug 54 · 多 .d.ts 合并草稿逐导出点名接受目标", () => {
+describe("多 .d.ts 合并草稿逐导出点名接受目标", () => {
   it("--write：beta 指向 b.d.ts 自己的模块侧车，不再只给第一个文件", () => {
     const draft = p("dts", "a.nudo.draft.ts");
     if (existsSync(draft)) rmSync(draft);
@@ -256,11 +256,11 @@ describe("Bug 54 · 多 .d.ts 合并草稿逐导出点名接受目标", () => {
 });
 
 // ---------------------------------------------------------------------------
-// export — 契约合取不可满足时报错退出（Bug 625）
+// export — 契约合取不可满足时报错退出（）
 // ---------------------------------------------------------------------------
-describe("[cli-contract] export — 契约合取不可满足时报错退出（Bug 625）", () => {
+describe("export — 契约合取不可满足时报错退出（）", () => {
 /**
- * Bug 625 —— 契约**合取不可满足**（源码 `@nudo:contract` 与同名侧车约束互相
+ * 契约**合取不可满足**（源码 `@nudo:contract` 与同名侧车约束互相
  * 矛盾）时，export 面照样发布产物：zod 面只编码了**一半**契约（源码侧那条
  * 约束被丢掉），消费方拿到一个**永远校验不过**的输入校验器；stderr 零提示。
  *
@@ -305,7 +305,7 @@ export function f(x) {
   );
 }
 
-describe("export — 契约合取不可满足时报错退出（Bug 625）", () => {
+describe("export — 契约合取不可满足时报错退出（）", () => {
   it("stderr 上屏 nudo:contract-conflict 且 exit 1", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug625-"));
     writeConflictFixture(dir);
@@ -347,15 +347,15 @@ describe("export — 契约合取不可满足时报错退出（Bug 625）", () =
 });
 
 // ---------------------------------------------------------------------------
-// export — 有参数契约无返回契约的返回面（族 17 · S1 · Bug 612）
+// export — 有参数契约无返回契约的返回面（族 17 · S1 · ）
 // ---------------------------------------------------------------------------
-describe("[cli-contract] export — 有参数契约无返回契约的返回面（族 17 · S1 · Bug 612）", () => {
+describe("export — 有参数契约无返回契约的返回面（族 17 · S1 · ）", () => {
 /**
- * Bug 612 —— 有**参数契约、无返回契约**时，返回面回退到**无约束**的 `entry@`
+ * 有**参数契约、无返回契约**时，返回面回退到**无约束**的 `entry@`
  * 观测（缺 dts 面的种子重算）⇒ 返回位毫无信息，且与 dts / check 面矛盾。
  *
  * 症状（改前）：`@nudo:contract x num`（无返回契约）的函数，zod 面的
- *   `<fn>Output` = `z.union([z.number()…, z.string()])`（**无约束入口**观测）
+ * `<fn>Output` = `z.union([z.number()…, z.string()])`（**无约束入口**观测）
  * 而 dts 面（做了契约种子重算）是 `g(x: number): number` ⇒ 两个产物面矛盾，
  * 运行时校验器还会拒掉合法返回值。
  *
@@ -388,7 +388,7 @@ function fixture(files: Record<string, string>): string {
 /** 侧车约束：number 的纯数据形态 */
 const NUM = `export const num = { __nudoConstraint: true, prim: "number", preds: [] };\n`;
 
-describe("export — 有参数契约无返回契约的返回面（族 17 · S1 · Bug 612）", () => {
+describe("export — 有参数契约无返回契约的返回面（族 17 · S1 · ）", () => {
   it("zod 返回面不再是「无约束入口」观测（不再是 number | string）", () => {
     const dir = fixture({
       "c612.nudo.js": NUM,
@@ -425,11 +425,11 @@ describe("export — 有参数契约无返回契约的返回面（族 17 · S1 �
 });
 
 // ---------------------------------------------------------------------------
-// export — 侧车装载失败时报错退出（Bug 610）
+// export — 侧车装载失败时报错退出（）
 // ---------------------------------------------------------------------------
-describe("[cli-contract] export — 侧车装载失败时报错退出（Bug 610）", () => {
+describe("export — 侧车装载失败时报错退出（）", () => {
 /**
- * Bug 610 —— 侧车（`*.nudo.js`）装载失败时，export 面**静默降级**：契约整条
+ * 侧车（`*.nudo.js`）装载失败时，export 面**静默降级**：契约整条
  * 丢失 ⇒ 产物面把「未申报」当「无约束」发布（zod 面落 `z.unknown()`），而
  * stderr **零提示**、exit 0 ⇒ 消费方拿到一份比「没有契约」更危险的校验器。
  *
@@ -468,7 +468,7 @@ export function f(a) {
   );
 }
 
-describe("export — 侧车装载失败时报错退出（Bug 610）", () => {
+describe("export — 侧车装载失败时报错退出（）", () => {
   it("stderr 上屏 nudo:contract-load 且 exit 1", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug610-"));
     writeBrokenSidecarFixture(dir);
@@ -510,11 +510,11 @@ describe("export — 侧车装载失败时报错退出（Bug 610）", () => {
 });
 
 // ---------------------------------------------------------------------------
-// export — 契约形参名与形参表不匹配时报错退出（Bug 607）
+// export — 契约形参名与形参表不匹配时报错退出（）
 // ---------------------------------------------------------------------------
-describe("[cli-contract] export — 契约形参名与形参表不匹配时报错退出（Bug 607）", () => {
+describe("export — 契约形参名与形参表不匹配时报错退出（）", () => {
 /**
- * Bug 607 —— 契约形参名与声明形参表**对不上**时，export 面照样发布产物
+ * 契约形参名与声明形参表**对不上**时，export 面照样发布产物
  * （zod 面把契约位的名字原样搬进 `<fn>Input` ⇒ 消费方拿到一个**参数名与函数
  * 签名不一致**的校验器），且 stderr **一个字都没有**。
  *
@@ -530,7 +530,7 @@ describe("[cli-contract] export — 契约形参名与形参表不匹配时报�
 
 
 
-describe("export — 契约形参名与形参表不匹配时报错退出（Bug 607）", () => {
+describe("export — 契约形参名与形参表不匹配时报错退出（）", () => {
   it("stderr 上屏 nudo:contract-param-mismatch 且 exit 1", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug607-"));
     writeFileSync(
@@ -596,11 +596,11 @@ export function g(y) {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 599 — guard 面消费契约返回域（不再按单次 case 字面量收窄）
+// guard 面消费契约返回域（不再按单次 case 字面量收窄）
 // ---------------------------------------------------------------------------
-describe("[cli-contract] Bug 599 — guard 面消费契约返回域（不再按单次 case 字面量收窄）", () => {
+describe("guard 面消费契约返回域（不再按单次 case 字面量收窄）", () => {
 /**
- * Bug 599 — `nudo export --format guard` 忽略**契约返回域**，按单次 case 字面量出守卫。
+ * `nudo export --format guard` 忽略**契约返回域**，按单次 case 字面量出守卫。
  *
  * 症状（改前）：函数声明了 `@nudo:contract return unit01`（返回域 = number
  * 区间 [0,1]），同一文件 `@nudo:case` 见证返回 `0.5` ⇒ guard 生成
@@ -616,7 +616,7 @@ describe("[cli-contract] Bug 599 — guard 面消费契约返回域（不再按�
  *
  * 注：夹具的实现**满足**返回契约（返回 0.5，契约域 = number [0,1]）⇒ 契约面
  * 是出口域；若实现**违约**（返回域与实现矛盾），族 17 · S1 的违约复核
- * （Bug 626）会让**四个面**一起回落实现实际的返回形态（那时不存在跨面分裂）。
+ * （）会让**四个面**一起回落实现实际的返回形态（那时不存在跨面分裂）。
  *
  * runner 注：spawn 型 CLI 子进程对 @nudojs/* 的解析不经 vitest 别名 ⇒ 子进程
  * cwd 下的 tsconfig.json paths（绝对路径指向 src）保证测试面与本仓 src 一致。
@@ -688,7 +688,7 @@ const CONTRACT_RETURN_FILES = {
   ].join("\n"),
 };
 
-describe("Bug 599 — guard 面消费契约返回域（不再按单次 case 字面量收窄）", () => {
+describe("guard 面消费契约返回域（不再按单次 case 字面量收窄）", () => {
   it("guard 不再收窄成观测字面量（改前：data === 0.5）", () => {
     const dir = fixtureDir(CONTRACT_RETURN_FILES);
     const r = runCliTsx(["export", "lib.js", "--format", "guard"], { cwd: dir });
@@ -717,17 +717,17 @@ describe("Bug 599 — guard 面消费契约返回域（不再按单次 case 字�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 613 — guard 面与 zod 面同一出口域（同一次导出、同一裁决）
+// guard 面与 zod 面同一出口域（同一次导出、同一裁决）
 // ---------------------------------------------------------------------------
-describe("[cli-contract] Bug 613 — guard 面与 zod 面同一出口域（同一次导出、同一裁决）", () => {
+describe("guard 面与 zod 面同一出口域（同一次导出、同一裁决）", () => {
 /**
- * Bug 613 — `nudo export` 的 **guard 面无视契约**：守卫取「单次调用点字面量」
+ * `nudo export` 的 **guard 面无视契约**：守卫取「单次调用点字面量」
  * 而 zod / standard 取「契约域」⇒ 同一次导出里两个面**对同一个值给出相反裁决**。
  *
  * 症状（改前，夹具 = 返回契约 number[0,1] + case 见证 0.5）：
- *   zod 面   → `clamp01Output = z.number().gte(0).lte(1)`（契约域）
- *   guard 面 → `return data === 0.5;`（观测字面量）
- *   ⇒ 值 0.7：zod **接受**、guard **拒绝**（同一命令、同一个函数、同一个值）。
+ * zod 面 → `clamp01Output = z.number().gte(0).lte(1)`（契约域）
+ * guard 面 → `return data === 0.5;`（观测字面量）
+ * ⇒ 值 0.7：zod **接受**、guard **拒绝**（同一命令、同一个函数、同一个值）。
  *
  * 根因：guard 分支取**观测** Abs（`fn.combinedAbs ?? asserted[0]?.abs`），
  * 绕开调度器已算好的统一返回面 `outputAbs`（契约面优先）。
@@ -822,7 +822,7 @@ function evalGuard(src: string): (value: unknown) => boolean {
   return new Function(`return (${js});`)() as (value: unknown) => boolean;
 }
 
-describe("Bug 613 — guard 面与 zod 面同一出口域（同一次导出、同一裁决）", () => {
+describe("guard 面与 zod 面同一出口域（同一次导出、同一裁决）", () => {
   it("契约允许的值（0.7）guard 接受（改前：guard 拒绝，zod 接受）", () => {
     const dir = fixtureDir(FILES);
     const r = runCliTsx(["export", "lib.js", "--format", "guard"], { cwd: dir });
@@ -860,11 +860,11 @@ describe("Bug 613 — guard 面与 zod 面同一出口域（同一次导出、�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 628 — guard 面守导出面闸门（内部函数不出守卫）
+// guard 面守导出面闸门（内部函数不出守卫）
 // ---------------------------------------------------------------------------
-describe("[cli-contract] Bug 628 — guard 面守导出面闸门（内部函数不出守卫）", () => {
+describe("guard 面守导出面闸门（内部函数不出守卫）", () => {
 /**
- * Bug 628 — `nudo export --format guard` **不守导出面闸门** ⇒ 被裁剪掉的模块内部
+ * `nudo export --format guard` **不守导出面闸门** ⇒ 被裁剪掉的模块内部
  * 函数照样产出运行时守卫（`isinternalHelperOutput`），而同一��导出里 .d.ts 面
  * 静默没有这个函数 ⇒ 产物面互相矛盾（内部实现泄漏成对外承诺）。
  *
@@ -943,7 +943,7 @@ const FILES = {
   ].join("\n"),
 };
 
-describe("Bug 628 — guard 面守导出面闸门（内部函数不出守卫）", () => {
+describe("guard 面守导出面闸门（内部函数不出守卫）", () => {
   it("guard 产物只有导出面函数的守卫（改前：内部函数也出守卫）", () => {
     const dir = fixtureDir(FILES);
     const r = runCliTsx(["export", "lib.js", "--format", "guard"], { cwd: dir });
@@ -965,11 +965,11 @@ describe("Bug 628 — guard 面守导出面闸门（内部函数不出守卫）"
 });
 
 // ---------------------------------------------------------------------------
-// BUG-039: contract drift 摘要数与明细行同量纲（槽数）
+// contract drift 摘要数与明细行同量纲（槽数）
 // ---------------------------------------------------------------------------
-describe("[cli-contract] BUG-039: contract drift 摘要数与明细行同量纲（槽数）", () => {
+describe("contract drift 摘要数与明细行同量纲（槽数）", () => {
 /**
- * BUG-039：`nudo health` 的 `contract drift` 摘要数用**文件数**、明细行用
+ * `nudo health` 的 `contract drift` 摘要数用**文件数**、明细行用
  * **槽数** ⇒ 同一份报告里两个 N 量纲不同（多文件时更明显）。
  *
  * 修复：摘要数 = Σ 各文件的槽数（与明细行、与 `files[].contractDrift` 同口径）。
@@ -1007,7 +1007,7 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("BUG-039: contract drift 摘要数与明细行同量纲（槽数）", () => {
+describe("contract drift 摘要数与明细行同量纲（槽数）", () => {
   it("文本面：Summary 的 N == 明细行「N @generated slot(s)」", () => {
     const r = runCliTsx(["health", p("lib.js")], { cwd: dir });
     expect(r.status).toBe(1);
@@ -1035,11 +1035,11 @@ describe("BUG-039: contract drift 摘要数与明细行同量纲（槽数）", (
 });
 
 // ---------------------------------------------------------------------------
-// BUG-054: health --from 的契约漂移判定与 check 同口径
+// health --from 的契约漂移判定与 check 同口径
 // ---------------------------------------------------------------------------
-describe("[cli-contract] BUG-054: health --from 的契约漂移判定与 check 同口径", () => {
+describe("health --from 的契约漂移判定与 check 同口径", () => {
 /**
- * BUG-054：`nudo health --from` 的 **contract-drift** 闸门拿不到 `--from` 证据
+ * `nudo health --from` 的 **contract-drift** 闸门拿不到 `--from` 证据
  * ⇒ 同一份陈旧生成段：`nudo check` 报 `nudo:contract-drift`，`nudo health` 报
  * 「0 contract drift」并 exit 0（跨动词结论矛盾 + 假绿）。
  *
@@ -1081,7 +1081,7 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("BUG-054: health --from 的契约漂移判定与 check 同口径", () => {
+describe("health --from 的契约漂移判定与 check 同口径", () => {
   it("跨文件调用点证据在场 ⇒ 报 contract drift + exit 1（旧行为：0 drift / exit 0）", () => {
     const r = runCliTsx(["health", p("lib.js"), "--from", p("usage.js")], { cwd: dir });
     expect(r.stdout, r.stdout).toMatch(/contract drift: [1-9]\d* @generated slot\(s\)/);
@@ -1100,11 +1100,11 @@ describe("BUG-054: health --from 的契约漂移判定与 check 同口径", () =
 });
 
 // ---------------------------------------------------------------------------
-// Bug 691: health 的契约漂移判定必须走 mock 通道
+// health 的契约漂移判定必须走 mock 通道
 // ---------------------------------------------------------------------------
-describe("[cli-contract] Bug 691: health 的契约漂移判定必须走 mock 通道", () => {
+describe("health 的契约漂移判定必须走 mock 通道", () => {
 /**
- * Bug 691 — `nudo health` 的**契约漂移判定**不施加 **mock 通道** ⇒ 同一份陈旧
+ * `nudo health` 的**契约漂移判定**不施加 **mock 通道** ⇒ 同一份陈旧
  * 生成段，`nudo check` 报 `nudo:contract-drift`，`nudo health` 报 0 contract
  * drift / OK / exit 0（假绿 + 跨动词自相矛盾）。
  *
@@ -1143,7 +1143,7 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("Bug 691: health 的契约漂移判定必须走 mock 通道", () => {
+describe("health 的契约漂移判定必须走 mock 通道", () => {
   it("文本面：报 contract drift + exit 1（不得 0 contract drift / Result: OK）", { timeout: 60_000 }, () => {
     const r = runCliTsx(["health", p("m.js")]);
     expect(r.status).toBe(1);
@@ -1171,11 +1171,11 @@ describe("Bug 691: health 的契约漂移判定必须走 mock 通道", () => {
 });
 
 // ---------------------------------------------------------------------------
-// export — 返回契约不影响参数面（Bug 615 回归钉）
+// export — 返回契约不影响参数面（回归钉）
 // ---------------------------------------------------------------------------
-describe("[cli-contract] export — 返回契约不影响参数面（Bug 615 回归钉）", () => {
+describe("export — 返回契约不影响参数面（回归钉）", () => {
 /**
- * Bug 615 —— `nudo export --format standard` 在「**只有返回契约**」时整份参数面
+ * `nudo export --format standard` 在「**只有返回契约**」时整份参数面
  * 丢失（standard 面一个 `<fn>_<param>` 导出都不产）⇒ 同一次导出里 zod / dts /
  * standard 三个方言的**参数个数互相矛盾**。
  *
@@ -1193,7 +1193,7 @@ describe("[cli-contract] export — 返回契约不影响参数面（Bug 615 回
 /** 有返回契约 + 一个形参的导出函数。 */
 function writeReturnContractFixture(dir: string): void {
   // 契约段必须是**合法**约束名（`num`）；`number()` 是调用式，会被判
-  // `nudo:contract-syntax`，而 BUG-021 之后那条诊断会阻断 export（本用例的
+  // `nudo:contract-syntax`，而 之后那条诊断会阻断 export（本用例的
   // 意图是参数面，不是非法契约，所以给一份合法契约 + 侧车定义）。
   writeFileSync(
     join(dir, "withRet.nudo.js"),
@@ -1215,7 +1215,7 @@ export function withRet(a) {
   );
 }
 
-describe("export — 返回契约不影响参数面（Bug 615 回归钉）", () => {
+describe("export — 返回契约不影响参数面（回归钉）", () => {
   it("standard 面仍产出参数位（<fn>_<param>）", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug615-"));
     writeReturnContractFixture(dir);
@@ -1265,16 +1265,16 @@ describe("export — 返回契约不影响参数面（Bug 615 回归钉）", () 
 });
 
 // ---------------------------------------------------------------------------
-// export — 返回契约投影前复核实现（族 17 · S1 · Bug 626）
+// export — 返回契约投影前复核实现（族 17 · S1 · ）
 // ---------------------------------------------------------------------------
-describe("[cli-contract] export — 返回契约投影前复核实现（族 17 · S1 · Bug 626）", () => {
+describe("export — 返回契约投影前复核实现（族 17 · S1 · ）", () => {
 /**
- * Bug 626 —— 导出面把**契约返回约束**当「已证成的事实」直接投影：投影前没有
+ * 导出面把**契约返回约束**当「已证成的事实」直接投影：投影前没有
  * 复核实现 ⇒ 产物声明一个实现**可被证否**的返回类型。
  *
  * 症状（改前）：`@nudo:contract return txt`（string）而实现返回入参（number）
  * ⇒ zod 面产出 `fOutput = z.string()`、dts 面产出
- *   `export declare function f(x: number): string;`
+ * `export declare function f(x: number): string;`
  * —— 与实现矛盾（运行时校验器会把合法返回值判非法）。而 check 面在同一份源码
  * 上报 `nudo:constraint-violated`（返回位 ⊭ 契约）⇒ 门禁与产物面自相矛盾。
  *
@@ -1315,7 +1315,7 @@ const SOURCE = [
   ``,
 ].join("\n");
 
-describe("export — 返回契约投影前复核实现（族 17 · S1 · Bug 626）", () => {
+describe("export — 返回契约投影前复核实现（族 17 · S1 · ）", () => {
   it("zod 返回面：违约的契约不投影（回落实现实际返回）", () => {
     const dir = fixture({ "c626.nudo.js": TXT, "violate626.js": SOURCE });
     const r = runCliTsx(["export", join(dir, "violate626.js"), "--format", "schema"]);

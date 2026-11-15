@@ -1,5 +1,5 @@
 /**
- * 缺陷报告分册 10（LSP / IDE 观察面）回归钉：Bug 33 / 36 / 68 / 83 / 92 / 93 / 102。
+ * 缺陷报告分册 10（LSP / IDE 观察面）回归钉。
  *
  * 全部走**真 LSP server + mock connection + 真实 `textDocument/*` 协议请求**
  * （helpers.ts 的 withLspServer）——与 tmp/bugs/10-lsp-ide.md 的复现命令同款，
@@ -15,7 +15,7 @@ const hoverSig = (r: Resp): string | undefined =>
   /```nudo\n([\s\S]*?)\n```/.exec(r?.contents?.value ?? "")?.[1];
 
 // ---------------------------------------------------------------------------
-// Bug 33 · hover / 成员补全按名字查模块级绑定表，不看词法作用域
+// hover / 成员补全按名字查模块级绑定表，不看词法作用域
 // ---------------------------------------------------------------------------
 const B33_SRC = [
   "export const v = { a: 1 };",
@@ -29,7 +29,7 @@ const B33_SRC = [
   "}",
 ].join("\n");
 
-describe("Bug 33 — hover / 成员补全按词法作用域解析，不借用被遮蔽的外部绑定", () => {
+describe("hover / 成员补全按词法作用域解析，不借用被遮蔽的外部绑定", () => {
   it("hover：局部 v 给局部真值、形参 user 给 any；模块级同名绑定不变", async () => {
     await withLspServer({ "a.js": B33_SRC }, async ({ req, uri }) => {
       const hover = req("textDocument/hover");
@@ -69,9 +69,9 @@ describe("Bug 33 — hover / 成员补全按词法作用域解析，不借用被
 });
 
 // ---------------------------------------------------------------------------
-// Bug 36 · 解构形参标 parameter、解构赋值目标不带 declaration
+// 解构形参标 parameter、解构赋值目标不带 declaration
 // ---------------------------------------------------------------------------
-describe("Bug 36 — 解构形参 = parameter；解构赋值目标不带 declaration", () => {
+describe("解构形参 = parameter；解构赋值目标不带 declaration", () => {
   it("semanticTokens/full：解构形参与 x 同档，赋值目标 a 无 declaration", async () => {
     const SRC = [
       "export function f(x, { a, b }, [c]) { return x + a + b + c; }",
@@ -110,9 +110,9 @@ describe("Bug 36 — 解构形参 = parameter；解构赋值目标不带 declara
 });
 
 // ---------------------------------------------------------------------------
-// Bug 68 · 指令补全表补齐 4 条 live 指令
+// 指令补全表补齐 4 条 live 指令
 // ---------------------------------------------------------------------------
-describe("Bug 68 — 指令补全表包含 assume / invariant / throws / budget", () => {
+describe("指令补全表包含 assume / invariant / throws / budget", () => {
   const cases: Array<[string, string[]]> = [
     ["@nudo:t", ["@nudo:throws"]],
     ["@nudo:b", ["@nudo:budget"]],
@@ -136,9 +136,9 @@ describe("Bug 68 — 指令补全表包含 assume / invariant / throws / budget"
 });
 
 // ---------------------------------------------------------------------------
-// Bug 83 · 补全 detail 与 hover / check 签名同形（不塌 any）
+// 补全 detail 与 hover / check 签名同形（不塌 any）
 // ---------------------------------------------------------------------------
-describe("Bug 83 — 补全 detail ≡ 同函数 hover 签名（含契约形参 / 返回）", () => {
+describe("补全 detail ≡ 同函数 hover 签名（含契约形参 / 返回）", () => {
   const FILES: Record<string, string> = {
     "std.nudo.js": `import { number } from "@nudojs/core";\nexport const positive = number().gt(0);\n`,
     "a.js": `/// @nudo:import { positive } from "./std.nudo.js"
@@ -179,9 +179,9 @@ export function ident(x) { return x; }
 });
 
 // ---------------------------------------------------------------------------
-// Bug 92 · signatureHelp 形参渲染带 showLits
+// signatureHelp 形参渲染带 showLits
 // ---------------------------------------------------------------------------
-describe("Bug 92 — signatureHelp 的 lit(1) 形参印 x: 1（与 hover / check 同口径）", () => {
+describe("signatureHelp 的 lit(1) 形参印 x: 1（与 hover / check 同口径）", () => {
   const FILES: Record<string, string> = {
     "f.js": `export function f(x) { return x; }\nf(1);\n`,
     "f.nudo.js": `import { fn, lit, number } from "@nudojs/core";\nexport const f = fn({ x: lit(1) }, number());\n`,
@@ -204,9 +204,9 @@ describe("Bug 92 — signatureHelp 的 lit(1) 形参印 x: 1（与 hover / check
 });
 
 // ---------------------------------------------------------------------------
-// Bug 93 · documentSymbol / workspace/symbol 解说明符 export
+// documentSymbol / workspace/symbol 解说明符 export
 // ---------------------------------------------------------------------------
-describe("Bug 93 — export { localFn as publicName } 的导出标注与公开名", () => {
+describe("export { localFn as publicName } 的导出标注与公开名", () => {
   const SRC = `function localFn(x) { return x; }\nexport { localFn as publicName };\nfunction localOnly(x) { return x; }\n`;
   const assertSymbols = (ds: Resp, ws: Resp): void => {
     const names = (ds as { name: string }[]).map((s) => s.name);
@@ -232,9 +232,9 @@ describe("Bug 93 — export { localFn as publicName } 的导出标注与公开�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 102 · rename / references 区分同名 static / 实例方法
+// rename / references 区分同名 static / 实例方法
 // ---------------------------------------------------------------------------
-describe("Bug 102 — rename / references 以 static / 实例身份为界", () => {
+describe("rename / references 以 static / 实例身份为界", () => {
   const instanceFirst = `export class A {\n  m() { return 1; }\n  static m() { return 2; }\n}\nexport function f() {\n  return [new A().m(), A.m()];\n}\n`;
   const staticFirst = `export class A {\n  static m() { return 2; }\n  m() { return 1; }\n}\nexport function f() {\n  return [new A().m(), A.m()];\n}\n`;
 

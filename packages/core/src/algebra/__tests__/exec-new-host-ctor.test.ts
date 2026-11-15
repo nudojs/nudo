@@ -1,14 +1,14 @@
 /**
- * Bug 16 / Bug 17（运行时内建建模）：宿主函数 new 的 [[Construct]] 语义。
+ * / （运行时内建建模）：宿主函数 new 的 [[Construct]] 语义。
  *
- * Bug 16：用户 function 声明/表达式/var 绑定函数的 new F(…) 此前落
+ * 用户 function 声明/表达式/var 绑定函数的 new F(…) 此前落
  * $new 尾部空 brand——函数体从未执行，成员读全 undefined。修复：按原生
  * [[Construct]] 新建空 brand this → 调函数体（$rawThis 承接 Abs this）→
  * 返回 Abs 对象（brand/obj）优先，否则 this（宿主函数皆基类构造器，
  * 原始返回值忽略）。宿主内建构造器（Object/Function/Boolean…）不走体
  * 执行（Abs 实参喂真 JS 构造器会产宿主原值），维持空 brand 口径。
  *
- * Bug 17：构造器原始值返回——此前只判 brand/nullish。修复：ES [[Construct]]
+ * 构造器原始值返回——此前只判 brand/nullish。修复：ES [[Construct]]
  * undefined → this；其余原始值基类忽略（→ this）、派生类 TypeError
  * （Derived constructors may only return object or undefined）。
  */
@@ -20,7 +20,7 @@ function throwsName(r: { throws: { shape: { k: string; name?: string } } }): str
   return r.throws.shape.k === "brand" ? r.throws.shape.name : undefined;
 }
 
-describe("Bug 16: new on host user functions executes the constructor body", () => {
+describe("new on host user functions executes the constructor body", () => {
   it("函数声明形态：function F(a,b){this.s=a+b;} new F(1,2).s → 3", () => {
     const r = call(
       `export function declNew() { function F(a, b) { this.s = a + b; } return new F(1, 2).s; }`,
@@ -79,7 +79,7 @@ describe("Bug 16: new on host user functions executes the constructor body", () 
   });
 });
 
-describe("Bug 17: constructor primitive return follows [[Construct]]", () => {
+describe("constructor primitive return follows [[Construct]]", () => {
   it("派生类 return 5 → throws TypeError（Derived constructors …）", () => {
     const r = call(
       `export function derivedPrim() { class A { constructor() { this.x = 1; } } class B extends A { constructor() { super(); return 5; } } return new B(); }`,

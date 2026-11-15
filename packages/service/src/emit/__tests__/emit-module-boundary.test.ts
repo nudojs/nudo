@@ -1,9 +1,9 @@
 /**
  * 缺陷报告分册 06-module-boundary —— 模块边界与导出扫描（dts 产物面回归）。
  *
- * 覆盖：Bug 61（`export const C = class {}` 落成 `const C: unknown`）、
- * Bug 62（CJS 值导出在 dts 面整体缺席 / 值-only 空产物）、Bug 63（解构导出
- * 绑定在 dts 面整体缺席）、Bug 64（未导出内部基类发成 `declare class Base {}`）。
+ * 覆盖：（`export const C = class {}` 落成 `const C: unknown`）、
+ * （CJS 值导出在 dts 面整体缺席 / 值-only 空产物）、（解构导出
+ * 绑定在 dts 面整体缺席）、（未导出内部基类发成 `declare class Base {}`）。
  *
  * 用 CLI 同一条模块面投影链 + 真 tsc --noEmit --strict 校验消费端。
  */
@@ -41,9 +41,9 @@ function moduleDts(source: string, path = "/test/mb/mod.js"): string {
 }
 
 // ---------------------------------------------------------------------------
-// Bug 61 — 类表达式
+// 类表达式
 // ---------------------------------------------------------------------------
-describe("Bug 61 — export const C = class {} 在 dts 面是类，不是 unknown", () => {
+describe("export const C = class {} 在 dts 面是类，不是 unknown", () => {
   const SRC = `export const C = class {
   constructor() { throw new TypeError("boom"); }
 };
@@ -77,9 +77,9 @@ export const D = class {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 62 — CJS 值导出
+// CJS 值导出
 // ---------------------------------------------------------------------------
-describe("Bug 62 — CJS 值导出进 dts 值声明", () => {
+describe("CJS 值导出进 dts 值声明", () => {
   const VALS = `exports.num = 1;
 exports.str = "s";
 exports.obj = { a: 1 };
@@ -124,9 +124,9 @@ exports.str = "s";
 });
 
 // ---------------------------------------------------------------------------
-// Bug 63 — 解构导出绑定
+// 解构导出绑定
 // ---------------------------------------------------------------------------
-describe("Bug 63 — 解构导出绑定进 dts 面", () => {
+describe("解构导出绑定进 dts 面", () => {
   const SRC = `const src = { a: 1, b: "s" };
 export const { a, b } = src;
 const arr = [1, 2, 3];
@@ -169,9 +169,9 @@ export const { a, b } = src;
 });
 
 // ---------------------------------------------------------------------------
-// Bug 64 — 未导出内部基类
+// 未导出内部基类
 // ---------------------------------------------------------------------------
-describe("Bug 64 — 内部基类的继承方法在 dts 面可见", () => {
+describe("内部基类的继承方法在 dts 面可见", () => {
   const SRC = `class Base {
   m() { throw new TypeError("boom"); }
   n() { return 1; }

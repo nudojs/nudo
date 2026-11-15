@@ -20,10 +20,10 @@ import { takeRefineDiags } from "../refine.ts";
 import { takeContractDiags } from "../contract/contract.ts";
 
 // ---------------------------------------------------------------------------
-// [merged] eval-bug-1052-handler-return-thenable.test.ts
+// [merged] handler-return-thenable
 // ---------------------------------------------------------------------------
-describe("[] [merged] eval-bug-1052-handler-return-thenable.test.ts", () => {
-// MERGED (topic-related bug pins): eval-bug-1052-handler-return-thenable.test.ts + eval-bug-1052-thenable-adoption.test.ts
+describe("handler-return-thenable", () => {
+// MERGED (topic-related bug pins): handler-return-thenable + thenable-adoption
 // Each absorbed file keeps its own describe scope so file-level hooks stay
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 
@@ -32,9 +32,9 @@ describe("[] [merged] eval-bug-1052-handler-return-thenable.test.ts", () => {
 
 
 
-describe("[merged] eval-bug-1052-handler-return-thenable.test.ts", () => {
+describe("handler-return-thenable", () => {
 /**
- * Bug 1052 邻面回归钉：**then / catch / finally 回调返回值**的 thenable 采纳。
+ * 邻面回归钉：**then / catch / finally 回调返回值**的 thenable 采纳。
  *
  * 原生（ES2023 `PerformPromiseThen` + `PromiseResolve`）：
  * 回调的**返回值**走 `PromiseResolve` ⇒ 返回值是对象且 `Get(then)` 可调用 ⇒
@@ -55,7 +55,7 @@ describe("[merged] eval-bug-1052-handler-return-thenable.test.ts", () => {
  * - `pending`（`then` 调过没 settle）→ 永挂（unsettled，不猜）；
  * - `undecidable`（采纳面不可判）→ 原值 + 永挂；
  * - `noThen` / `thenNotCallable` → 普通值（原生 `Get(then)` 不可调用 ⇒ 以该值
- *   兑现，不抛 TypeError）。
+ * 兑现，不抛 TypeError）。
  *
  * `finally` 臂的原生语义（node v26 实测）：回调返回值是 thenable ⇒ **等它
  * settle**，但**兑现值丢弃**（`finally` 不改 settled value）⇒
@@ -65,10 +65,10 @@ describe("[merged] eval-bug-1052-handler-return-thenable.test.ts", () => {
  *
  * 口径边界（已登记）：
  * - 宿主在**微任务**里调 `then`，引擎在求值点**抽象地**调（await 面 /
- *   `Promise.resolve` 面同款近似）⇒ 兑现值同款，`then` 体副作用的**时序**与
- *   原生不同。
+ * `Promise.resolve` 面同款近似）⇒ 兑现值同款，`then` 体副作用的**时序**与
+ * 原生不同。
  * - 采纳面**不可判**（any/unknown/fn/开对象/可选 `then` 槽）⇒ 仍标 unsettled
- *   （settle 不可判，不猜）——与 `Promise.resolve` 面同款。
+ * （settle 不可判，不猜）——与 `Promise.resolve` 面同款。
  * - 采纳链深度上限 8（与片 S8 同款）。
  */
 
@@ -91,7 +91,7 @@ function promiseParts(r: Abs): { inner: Abs; rejected?: Abs; unsettled: boolean 
   return { inner: sh.inner, rejected: sh.rejected, unsettled: sh.unsettled === true };
 }
 
-describe("Bug 1052 邻面：then 回调返回值的 thenable 采纳", () => {
+describe("邻面：then 回调返回值的 thenable 采纳", () => {
   it("thenable 的兑现值进 promise 的值域（原生 5，引擎改前 { then: (r) => ? }）", () => {
     const src = `
 export function f() {
@@ -214,7 +214,7 @@ export function f() {
   });
 });
 
-describe("Bug 1052 邻面：catch 回调返回值的 thenable 采纳", () => {
+describe("邻面：catch 回调返回值的 thenable 采纳", () => {
   it("catch 臂的回调返回值是 thenable ⇒ 同款采纳（原生 5）", () => {
     const src = `
 export function f() {
@@ -265,7 +265,7 @@ export function f() {
   });
 });
 
-describe("Bug 1052 邻面：finally 回调返回值的 thenable 采纳", () => {
+describe("邻面：finally 回调返回值的 thenable 采纳", () => {
   it("finally 臂的回调返回值是 thenable ⇒ 同款采纳（原生：兑现值丢弃，保留原值 1）", () => {
     const src = `
 export function f() {
@@ -328,7 +328,7 @@ export function f() {
   });
 });
 
-describe("Bug 1052 邻面：await 面与 promise 面同款（不回归）", () => {
+describe("邻面：await 面与 promise 面同款（不回归）", () => {
   it("await then 臂的 thenable 兑现值（原生 6）", () => {
     const src = `
 export async function f() {
@@ -390,9 +390,9 @@ export async function f() {
 });
 });
 
-describe("[merged] eval-bug-1052-thenable-adoption.test.ts", () => {
+describe("thenable-adoption", () => {
 /**
- * Bug 1052 回归钉：**Promise 构造器 / 静态 resolve 的 thenable 采纳**。
+ * 回归钉：**Promise 构造器 / 静态 resolve 的 thenable 采纳**。
  *
  * 原生（ES2023 `PromiseResolve` / `NewPromiseCapability` + `PromiseResolveThenableJob`）：
  * `Promise.resolve(thenable)` 与 `new Promise(resolve => resolve(thenable))`
@@ -406,18 +406,18 @@ describe("[merged] eval-bug-1052-thenable-adoption.test.ts", () => {
  *
  * 修法（`builtins/promise.ts`）：
  * - 新增 thenable 采纳机制 `thenableAdoption` / `adoptThenableChain`
- *   （**判定与调用**与 await 面（`exec/runtime/async.ts` 的 `adoptThenable`，
- *   Bug 221）**同一套**——不另造）；
+ * （**判定与调用**与 await 面（`exec/runtime/async.ts` 的 `adoptThenable`，
+ * ）**同一套**——不另造）；
  * - 采纳入口三处统一：`Promise.resolve` 静态臂、`new Promise` 执行器 `resolve`
- *   采集臂、await 面（复用）。
+ * 采集臂、await 面（复用）。
  *
  * 口径边界（已登记）：
  * - 宿主在**微任务**里调 `then`，引擎在求值点**抽象地**调（await 面同款近似）
- *   ⇒ 兑现值同款，`then` 体副作用的**时序**与原生不同（原生在微任务里）。
+ * ⇒ 兑现值同款，`then` 体副作用的**时序**与原生不同（原生在微任务里）。
  * - 采纳面**不可判**（any/unknown/fn/开对象/可选 `then` 槽）⇒ 仍标 unsettled
- *   （settle 不可判，不猜）。
+ * （settle 不可判，不猜）。
  * - `then` **不可调用** ⇒ 原生按**普通值**兑现（`Get(then)` 不可调用 ⇒ 直接以
- *   该值兑现）⇒ 引擎同款（不再当 unsettled）。
+ * 该值兑现）⇒ 引擎同款（不再当 unsettled）。
  */
 
 
@@ -439,7 +439,7 @@ function promiseParts(r: Abs): { inner: Abs; rejected?: Abs; unsettled: boolean 
   return { inner: sh.inner, rejected: sh.rejected, unsettled: sh.unsettled === true };
 }
 
-describe("Bug 1052：Promise.resolve 的 thenable 采纳", () => {
+describe("Promise.resolve 的 thenable 采纳", () => {
   it("thenable 的兑现值进 promise 的值域（原生 1，引擎改前 { then: (r) => ? }）", () => {
     const src = `
 export function f() {
@@ -596,7 +596,7 @@ export function f() {
   });
 });
 
-describe("Bug 1052：new Promise(resolve => resolve(thenable)) 的采纳", () => {
+describe("new Promise(resolve => resolve(thenable)) 的采纳", () => {
   it("执行器 resolve 采到 thenable ⇒ 兑现值进 promise 的值域（原生 1）", () => {
     const src = `
 export function f() {
@@ -633,7 +633,7 @@ export function f() {
   });
 });
 
-describe("Bug 1052：await 面与 promise 面共用同一套采纳机制（不回归）", () => {
+describe("await 面与 promise 面共用同一套采纳机制（不回归）", () => {
   it("await thenable 仍交付 settle 值（原生 6，机制同款）", () => {
     const src = `
 export async function f() {
@@ -671,19 +671,19 @@ export async function f() {
 });
 
 // ---------------------------------------------------------------------------
-// [merged] eval-bug-141-async-generator.test.ts
+// [merged] async-generator
 // ---------------------------------------------------------------------------
-describe("[] [merged] eval-bug-141-async-generator.test.ts", () => {
-// MERGED (topic-related bug pins): eval-bug-141-async-generator.test.ts + eval-bug-141-async-iter-elems.test.ts + eval-bug-141-decl-async-generator.test.ts
+describe("async-generator", () => {
+// MERGED (topic-related bug pins): async-generator + async-iter-elems + decl-async-generator
 // Each absorbed file keeps its own describe scope so file-level hooks stay
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 
 
 
 
-describe("[merged] eval-bug-141-async-generator.test.ts", () => {
+describe("async-generator", () => {
 /**
- * Bug 141 回归：async generator 的 **async 面**。
+ * 回归：async generator 的 **async 面**。
  *
  * ES 语义：`async function*`（及 `async *` 方法）返回 AsyncGenerator——
  * next()/return()/throw() 返回 **promise**（promise<iterResult>）、装
@@ -709,7 +709,7 @@ function v(src: string) {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 141 — async generator：async 面（promise 迭代协议）", () => {
+describe("async generator：async 面（promise 迭代协议）", () => {
   describe("函数表达式面", () => {
     it("next() 返回 promise（typeof next().then === function）", () => {
       expect(
@@ -798,9 +798,9 @@ describe("Bug 141 — async generator：async 面（promise 迭代协议）", ()
 });
 });
 
-describe("[merged] eval-bug-141-async-iter-elems.test.ts", () => {
+describe("async-iter-elems", () => {
 /**
- * Bug 141 回归（**for-await 元素域**面）：async generator 的元素域必须走
+ * 回归（**for-await 元素域**面）：async generator 的元素域必须走
  * **元素侧表**（与同步 generator 同口径），不得落 asyncOnly 的 unknown
  * 快路径。
  *
@@ -812,9 +812,9 @@ describe("[merged] eval-bug-141-async-iter-elems.test.ts", () => {
  *
  * 修法（core exec/runtime/containers/iterate.ts）：
  * - asyncOnly 分支：接收者是**生成器对象**（有生成器消费视图）⇒ 元素取
- *   侧表剩余条目（逐项 await），长度亦由侧表给出（sideIterLen 兜底读
- *   消费视图的剩余条目数——async generator 无 @@iterator 槽，
- *   matchIterElements 不命中）；
+ * 侧表剩余条目（逐项 await），长度亦由侧表给出（sideIterLen 兜底读
+ * 消费视图的剩余条目数——async generator 无 @@iterator 槽，
+ * matchIterElements 不命中）；
  * - 非生成器的仅异步可迭代对象元素域不可静态刻画 → 仍折 unknown。
  *
  * 本文件的断言与 Node 真实执行结果对齐（原生 ground truth 见各用例注释）。
@@ -836,7 +836,7 @@ function v(src: string) {
 
 const wrap = (body: string) => `export async function f() { ${body} }`;
 
-describe("Bug 141 — async generator 的 for-await 元素域（走元素侧表）", () => {
+describe("async generator 的 for-await 元素域（走元素侧表）", () => {
   it("async generator（函数表达式面）：for-await 累加精确 3（原生 1+2=3）", () => {
     expect(
       v(
@@ -909,7 +909,7 @@ describe("Bug 141 — async generator 的 for-await 元素域（走元素侧表�
   });
 });
 
-describe("Bug 141 负控制：不得被本修复波及的邻近形态", () => {
+describe("负控制：不得被本修复波及的邻近形态", () => {
   it("同步 generator 的 for-await（同步迭代器回退）仍是精确 3", () => {
     expect(
       v(
@@ -966,9 +966,9 @@ describe("Bug 141 负控制：不得被本修复波及的邻近形态", () => {
 });
 });
 
-describe("[merged] eval-bug-141-decl-async-generator.test.ts", () => {
+describe("decl-async-generator", () => {
 /**
- * Bug 141 回归（续作）：async generator 的**声明面**
+ * 回归（续作）：async generator 的**声明面**
  * （`async function* g(){}` 语句形态）。
  *
  * ES 语义：`async function*` 返回 AsyncGenerator——next()/return()/throw()
@@ -997,7 +997,7 @@ function v(src: string) {
 /** 嵌套声明（函数体内的 `async function* g(){}`） */
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 141 — async generator 声明面：async 面（promise 迭代协议）", () => {
+describe("async generator 声明面：async 面（promise 迭代协议）", () => {
   it("嵌套声明：next() 返回 promise（typeof next().then === function）", () => {
     expect(
       v(wrap(`async function* g(){ yield 1; } return typeof g().next().then;`)),
@@ -1047,7 +1047,7 @@ describe("Bug 141 — async generator 声明面：async 面（promise 迭代协�
   });
 });
 
-describe("Bug 141 — 负控制：同步 generator / async 函数声明不得回归", () => {
+describe("负控制：同步 generator / async 函数声明不得回归", () => {
   it("同步 generator 声明：next() 不是 promise", () => {
     expect(
       v(wrap(`function* g(){ yield 1; } return g().next() instanceof Promise;`)),
@@ -1076,11 +1076,11 @@ describe("Bug 141 — 负控制：同步 generator / async 函数声明不得回
 });
 
 // ---------------------------------------------------------------------------
-// Bug 159 — static async 方法进 $async 包装
+// static async 方法进 $async 包装
 // ---------------------------------------------------------------------------
-describe("[] Bug 159 — static async 方法进 $async 包装", () => {
+describe("static async 方法进 $async 包装", () => {
 /**
- * Bug 159 回归：class 的 **static async 方法**未进 $async 包装。
+ * 回归：class 的 **static async 方法**未进 $async 包装。
  *
  * ES 语义：`static async m(){}` 与实例 async 方法同语义——调用返回
  * **promise**；函数体 throw 不同步抛到调用点（确定拒绝 promise）。
@@ -1106,7 +1106,7 @@ function throwName(src: string): string {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 159 — static async 方法进 $async 包装", () => {
+describe("static async 方法进 $async 包装", () => {
   it("static async 方法返回 promise（typeof → object）", () => {
     expect(v(wrap(`class A { static async m(){ return 1; } } return typeof A.m();`))).toEqual({
       ok: true,
@@ -1153,11 +1153,11 @@ describe("Bug 159 — static async 方法进 $async 包装", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 201：await 挂起点（await 之后的副作用不进调用方的同步窗口）
+// await 挂起点（await 之后的副作用不进调用方的同步窗口）
 // ---------------------------------------------------------------------------
-describe("[] Bug 201：await 挂起点（await 之后的副作用不进调用方的同步窗口）", () => {
+describe("await 挂起点（await 之后的副作用不进调用方的同步窗口）", () => {
 /**
- * Bug 201 回归钉：`await` **真挂起**——async 体在 await 处挂起，
+ * 回归钉：`await` **真挂起**——async 体在 await 处挂起，
  * await 之后的语句**不在调用点内联跑完**（原生：恢复点是微任务）。
  *
  * 原生：`await` 挂起当前 async 体——`await` 之后的语句在**微任务**里
@@ -1167,18 +1167,18 @@ describe("[] Bug 201：await 挂起点（await 之后的副作用不进调用方
  *
  * 修法（转译侧 `exec/transpile/**` + 运行时侧 `exec/runtime/async.ts`）：
  * - async 体（**直接含 await**）编译成**宿主生成器** `function*(){…}`，
- *   `await x` 发射 `yield x`（挂起点 + 被等待值）；
+ * `await x` 发射 `yield x`（挂起点 + 被等待值）；
  * - `$asyncGen` 驱动生成器：同步段跑到第一个挂起点即返回 promise，
- *   续体登记到**宿主微任务队列**（与 promise reaction 同一队列 ⇒ 跨
- *   promise 链顺序保真）；
+ * 续体登记到**宿主微任务队列**（与 promise reaction 同一队列 ⇒ 跨
+ * promise 链顺序保真）；
  * - 续体跑完 ⇒ **就地**填 promise 的 inner（值域由续体终值给出）。
  *
  * 口径边界（已登记）：
  * - `for await` 走**整循环一个**挂起点（原生是每轮一个 await）——与引擎
- *   既有的同步 for-await 建模一致；
+ * 既有的同步 for-await 建模一致；
  * - async 体的 await 落在**分支臂 / 循环体 / switch 臂 / 短路表达式右臂**
- *   （宿主 thunk 位置）时，`yield` 会是语法错误 ⇒ 这类体**整体**沿用既有
- *   同步路径（行为不变，挂起缺陷仍在该形态上）。
+ * （宿主 thunk 位置）时，`yield` 会是语法错误 ⇒ 这类体**整体**沿用既有
+ * 同步路径（行为不变，挂起缺陷仍在该形态上）。
  */
 
 
@@ -1192,7 +1192,7 @@ function syncVal(src: string): unknown {
   return lv.ok ? lv.value : lv;
 }
 
-describe("Bug 201：await 挂起点（await 之后的副作用不进调用方的同步窗口）", () => {
+describe("await 挂起点（await 之后的副作用不进调用方的同步窗口）", () => {
   it("原生：f() 返回后 await 之前的写可见、之后的写不可见（n = 0）", () => {
     expect(
       syncVal(`let n = 0;
@@ -1232,7 +1232,7 @@ export async function f() {
   });
 });
 
-describe("Bug 201：await 之后的写对调用点完全不可见（含顺序与 typeof）", () => {
+describe("await 之后的写对调用点完全不可见（含顺序与 typeof）", () => {
   it("await 之前的写保留（原生 1，引擎改前 11）", () => {
     expect(
       syncVal(`let n = 0;
@@ -1276,7 +1276,7 @@ describe("Bug 201：await 之后的写对调用点完全不可见（含顺序与
   });
 });
 
-describe("Bug 201：await 在**表达式位置**同样挂起", () => {
+describe("await 在**表达式位置**同样挂起", () => {
   it("const x = await f()：同步段拿不到被等待值", () => {
     expect(
       syncVal(`async function g() { return 7; }
@@ -1331,7 +1331,7 @@ describe("Bug 201：await 在**表达式位置**同样挂起", () => {
   });
 });
 
-describe("Bug 201：值域由**续体终值**给出（promise<inner> 不退化）", () => {
+describe("值域由**续体终值**给出（promise<inner> 不退化）", () => {
   it("await 后的返回值进 promise 的 inner", () => {
     const src = `
 async function g() { return 7; }
@@ -1378,11 +1378,11 @@ export async function f() {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 212：生成器体构造期副作用——步骤 1 join 隔离（wrong-exact 消灭）
+// 生成器体构造期副作用——步骤 1 join 隔离（wrong-exact 消灭）
 // ---------------------------------------------------------------------------
-describe("[] Bug 212：生成器体构造期副作用——步骤 1 join 隔离（wrong-exact 消灭）", () => {
+describe("生成器体构造期副作用——步骤 1 join 隔离（wrong-exact 消灭）", () => {
 /**
- * Bug 212 回归钉（**步骤 1 已落地**：转译侧「自由写快照 + $join 折回」，
+ * 回归钉（**步骤 1 已落地**：转译侧「自由写快照 + $join 折回」，
  * 见 docs/design/generator-laziness.md §5.1 / 架构债台账 A1）。
  *
  * 原生：生成器函数被调用时**不执行体**——体只在首个 `next()` 时跑到
@@ -1421,15 +1421,15 @@ describe("[] Bug 212：生成器体构造期副作用——步骤 1 join 隔离�
  *
  * 仓内可查证的回归钉（读者**不必出仓**即可复核本条口径）：
  * - 族 01 的 eager 收集口径（协议面 / yield 序列 / 元素域）：
- *   `packages/core/src/algebra/__tests__/exec-generator.test.ts`
- *   （及同目录 `exec-generator-protocol/-precision/-consumption.test.ts`）；
+ * `packages/core/src/algebra/__tests__/exec-generator.test.ts`
+ * （及同目录 `exec-generator-protocol/-precision/-consumption.test.ts`）；
  * - 本文件的负控制用例（协议面与 yield 序列不变、解构 lowering 取到元素）。
  */
 
 
 
 
-describe("Bug 212：生成器体构造期副作用——步骤 1 join 隔离（wrong-exact 消灭）", () => {
+describe("生成器体构造期副作用——步骤 1 join 隔离（wrong-exact 消灭）", () => {
   it("c1 构造点：n = 0（步骤 3：体在消费点跑，构造点 native 0 精确）", () => {
     const r = call(`export function f() {
       let n = 0;
@@ -1615,11 +1615,11 @@ describe("Bug 212：生成器体构造期副作用——步骤 1 join 隔离（w
 });
 
 // ---------------------------------------------------------------------------
-// Bug 220：await 双臂 promise —— 拒绝臂不再被丢弃
+// await 双臂 promise —— 拒绝臂不再被丢弃
 // ---------------------------------------------------------------------------
-describe("[] Bug 220：await 双臂 promise —— 拒绝臂不再被丢弃", () => {
+describe("await 双臂 promise —— 拒绝臂不再被丢弃", () => {
 /**
- * Bug 220 回归钉：`$await` **不得丢掉双臂 promise 的 rejected 通道**。
+ * 回归钉：`$await` **不得丢掉双臂 promise 的 rejected 通道**。
  *
  * 原生：promise 的 executor 里若两条臂都可能发生（条件抽象），
  * `await p` 的结果是「fulfilled 值 ∪ 拒绝」——`try` 臂与 `catch` 臂
@@ -1641,7 +1641,7 @@ describe("[] Bug 220：await 双臂 promise —— 拒绝臂不再被丢弃", ()
 
 
 
-describe("Bug 220：await 双臂 promise —— 拒绝臂不再被丢弃", () => {
+describe("await 双臂 promise —— 拒绝臂不再被丢弃", () => {
   it("双臂 promise：try 臂与 catch 臂都可达（并集）", () => {
     const src = `
 export async function f(c) {
@@ -1681,11 +1681,11 @@ export async function f() {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 221：await thenable 走采纳
+// await thenable 走采纳
 // ---------------------------------------------------------------------------
-describe("[] Bug 221：await thenable 走采纳", () => {
+describe("await thenable 走采纳", () => {
 /**
- * Bug 221 回归钉：`await` 一个 **thenable** 必须做**采纳**。
+ * 回归钉：`await` 一个 **thenable** 必须做**采纳**。
  *
  * 原生：`await t`（t 是带 `then` 方法的对象）走 PromiseResolve 式的采纳
  * ——取 `t.then(res, rej)` 的 settle 值（不是 t 本身）。引擎此前把
@@ -1704,7 +1704,7 @@ describe("[] Bug 221：await thenable 走采纳", () => {
 
 
 
-describe("Bug 221：await thenable 走采纳", () => {
+describe("await thenable 走采纳", () => {
   it("thenable 的 res 值被交付（原生 number，引擎改前 object）", () => {
     const src = `
 export async function f() {
@@ -1754,11 +1754,11 @@ export async function f() {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 229：yield* 委托的 .return(v) 转发
+// yield* 委托的 .return(v) 转发
 // ---------------------------------------------------------------------------
-describe("[] Bug 229：yield* 委托的 .return(v) 转发", () => {
+describe("yield* 委托的 .return(v) 转发", () => {
 /**
- * Bug 229 回归钉：`yield*` 委托的生成器 `.return(v)` **必须转发**给
+ * 回归钉：`yield*` 委托的生成器 `.return(v)` **必须转发**给
  * 委托迭代器。
  *
  * 原生：`gi.return(5)`（gi 挂起在 `yield* it` 内）→ 先调 `it` 的
@@ -1790,7 +1790,7 @@ const DELEGATE = `
   };
 `;
 
-describe("Bug 229：yield* 委托的 .return(v) 转发", () => {
+describe("yield* 委托的 .return(v) 转发", () => {
   it(".return(v) 转发给委托迭代器（委托的清理副作用不再丢失）", () => {
     expect(
       val(`export function f() { ${DELEGATE}
@@ -1830,10 +1830,10 @@ describe("Bug 229：yield* 委托的 .return(v) 转发", () => {
 });
 
 // ---------------------------------------------------------------------------
-// [merged] eval-bug-240-generator-own-properties.test.ts
+// [merged] generator-own-properties
 // ---------------------------------------------------------------------------
-describe("[] [merged] eval-bug-240-generator-own-properties.test.ts", () => {
-// MERGED (topic-related bug pins): eval-bug-240-generator-own-properties.test.ts + eval-bug-240-guard-internal-slots.test.ts
+describe("generator-own-properties", () => {
+// MERGED (topic-related bug pins): generator-own-properties + guard-internal-slots
 // Each absorbed file keeps its own describe scope so file-level hooks stay
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 
@@ -1843,9 +1843,9 @@ describe("[] [merged] eval-bug-240-generator-own-properties.test.ts", () => {
 
 
 
-describe("[merged] eval-bug-240-generator-own-properties.test.ts", () => {
+describe("generator-own-properties", () => {
 /**
- * Bug 240 回归钉：生成器对象是**内部槽对象**——原生**没有任何自有可枚举
+ * 回归钉：生成器对象是**内部槽对象**——原生**没有任何自有可枚举
  * 属性**（`Object.keys` / `Object.getOwnPropertyNames` / `for-in` 恒空；
  * `hasOwnProperty("next")` 恒 false）。引擎此前把协议方法与 yield 元素
  * 塞进**自有可枚举槽** ⇒ 枚举面印出
@@ -1868,7 +1868,7 @@ describe("[merged] eval-bug-240-generator-own-properties.test.ts", () => {
  * 协议方法槽虽对**属性 introspection**不可见（枚举面 / 自有面已过滤
  * `Slot.internal`），但**投影面**（`algebra/format.ts`）此前不过滤 ⇒
  * 签名面把 `next` / `return` / `throw` / `constructor` / `@@iterator`
- * 五个内部槽当用户可见属性发布（Bug 240 报告的产品面证据）。S18 让
+ * 五个内部槽当用户可见属性发布（报告的产品面证据）。S18 让
  * 投影面剔除 internal 槽，但**保留数字下标槽**（承载元素域——族 01
  * `eval-spread-iter-elems` 钉住的 `"0": string`）。
  */
@@ -1882,7 +1882,7 @@ const GEN = `
   const gi = g();
 `;
 
-describe("Bug 240：生成器对象的自有可枚举面为空", () => {
+describe("生成器对象的自有可枚举面为空", () => {
   it("Object.keys(g) → \"\"（改前：\"0,next,return,throw,constructor,@@iterator\"）", () => {
     expect(val(`export function f() { ${GEN} return Object.keys(gi).join(","); }`)).toEqual({
       ok: true,
@@ -1932,7 +1932,7 @@ describe("Bug 240：生成器对象的自有可枚举面为空", () => {
   it.todo("原生 \"0\" in g 恒 false —— 同上（数字下标槽仍在自有面）");
 });
 
-describe("Bug 240（S18）：投影面不发布 internal 槽", () => {
+describe("（S18）：投影面不发布 internal 槽", () => {
   it("签名面不发布协议方法槽（无 next/return/throw/constructor/@@iterator）", () => {
     const sig = formatAbs_____format_format_ts_1(
       call(`export function* g() { yield 1; yield "s"; }`, "g").result as never,
@@ -1963,7 +1963,7 @@ describe("Bug 240（S18）：投影面不发布 internal 槽", () => {
       slots: Record<string, { internal?: boolean; symbolKey?: boolean }>;
     };
     expect(shape.k).toBe("obj");
-    // 与用户写的 `[Symbol.X]` 静态字段同机制（族 01 Bug 149 / 203）
+    // 与用户写的 `[Symbol.X]` 静态字段同机制（族 01 ）
     expect(shape.slots["@@iterator"]?.symbolKey).toBe(true);
     expect(shape.slots["@@iterator"]?.internal).toBe(true);
   });
@@ -1978,9 +1978,9 @@ describe("Bug 240（S18）：投影面不发布 internal 槽", () => {
 });
 });
 
-describe("[merged] eval-bug-240-guard-internal-slots.test.ts", () => {
+describe("guard-internal-slots", () => {
 /**
- * Bug 240（S21 分片）：**guard / 约束面**不发布 internal 槽。
+ * （S21 分片）：**guard / 约束面**不发布 internal 槽。
  *
  * ── 背景 ────────────────────────────────────────────────────────────────
  * S18 分片修了**签名面**（`algebra/format.ts`）：投影面剔除 `Slot.internal`
@@ -1991,16 +1991,16 @@ describe("[merged] eval-bug-240-guard-internal-slots.test.ts", () => {
  * （`algebra/projection.ts` 的 `absToConstraint`）没跟上 ⇒ 不过滤 internal 槽：
  *
  * - 生成器对象的协议槽（`next` / `return` / `throw` / `constructor` /
- *   `@@iterator`）是 internal 槽（原生挂在**原型**上，不是自有属性）；
+ * `@@iterator`）是 internal 槽（原生挂在**原型**上，不是自有属性）；
  * - `@@iterator` 更是 **symbol 键**槽（`Symbol.iterator`），guard 面却按
- *   **字符串键** `"@@iterator"` 取值 ⇒ 原生恒 `undefined` ⇒
- *   `typeof data["@@iterator"] === "function"` **恒假** ⇒ 恒假条款污染
- *   guard 产物。
+ * **字符串键** `"@@iterator"` 取值 ⇒ 原生恒 `undefined` ⇒
+ * `typeof data["@@iterator"] === "function"` **恒假** ⇒ 恒假条款污染
+ * guard 产物。
  *
  * 根因在 **core**（不在 service）：`service/src/emit/guard-generator.ts`
  * 直接 `import { denoteGuard } from "@nudojs/core/internal"` ⇒ 产物面
  * 恒假条款的根因是 core 的投影通道。与 dts/schema 面发布 internal 槽
- * 不同源（后者归族 15 的 Bug 554）。
+ * 不同源（后者归族 15 的 ）。
  *
  * ── 修法 ────────────────────────────────────────────────────────────────
  * 与 `format.ts` **同口径**：剔除 internal 槽，**保留数字下标槽**（元素域，
@@ -2048,7 +2048,7 @@ function accessedKeys(guard: string): string[] {
 /**
  * 按顶层 `&&` 拆 guard 条款（core 生成的守卫串顶层连接符固定为 " && "）。
  *
- * 口径更新（族 09 / Bug 409 + 410）：必填槽的**存在性子句**自带一层括号
+ * 口径更新（族 09 / + 410）：必填槽的**存在性子句**自带一层括号
  * （`(Object.hasOwn(v, "a") || ("a" in v && !Object.hasOwn(Object.prototype, "a")))`）
  * ⇒ 顶层拆分必须**跳过括号内**的 " && "（本函数的注释一直声明「按**顶层**
  * 拆」，此前实现没做到——只有顶层连接符恰好不在括号里的旧产物才看不出差别）。
@@ -2108,7 +2108,7 @@ function nativeGen(): unknown {
   })();
 }
 
-describe("Bug 240（S21）：guard 面不发布 internal 槽", () => {
+describe("（S21）：guard 面不发布 internal 槽", () => {
   it("恒假条款 `typeof data[\"@@iterator\"] === \"function\"` 消失", () => {
     const guard = guardOf(GEN_SRC, "g");
     expect(guard).not.toContain('@@iterator');
@@ -2125,12 +2125,12 @@ describe("Bug 240（S21）：guard 面不发布 internal 槽", () => {
 
   it("guard 产物逐条等于期望串（改前多出 6 条协议槽条款）", () => {
     // 改前：typeof data === "object" && data !== null && data["0"] === 1 &&
-    //       data["1"] === "s" && typeof data.next === "function" &&
-    //       typeof data.return === "function" && typeof data.throw === "function" &&
-    //       typeof data.constructor === "object" && data.constructor !== null &&
-    //       data.constructor.name === "" && typeof data["@@iterator"] === "function"
+    // data["1"] === "s" && typeof data.next === "function" &&
+    // typeof data.return === "function" && typeof data.throw === "function" &&
+    // typeof data.constructor === "object" && data.constructor !== null &&
+    // data.constructor.name === "" && typeof data["@@iterator"] === "function"
     // 改后：只剩元素域（数字下标）两条
-    // 口径更新（族 09 / Bug 409 + 410）：guard 面现在还带 ① 数组排除
+    // 口径更新（族 09 / + 410）：guard 面现在还带 ① 数组排除
     // （`!Array.isArray(data)`）② 必填槽的**独立存在性子句** ——
     // internal 槽的剔除口径不变。
     // 2026-11-06：`facets.brand` 的生成器身份在 `denoteGuardB` 递归投影
@@ -2168,7 +2168,7 @@ describe("Bug 240（S21）：guard 面不发布 internal 槽", () => {
   });
 });
 
-describe("Bug 240（S21）：原生 oracle 对拍（guard 条款逐条对照）", () => {
+describe("（S21）：原生 oracle 对拍（guard 条款逐条对照）", () => {
   it("改前的恒假条款在原生生成器上恒 false（问题确实存在）", () => {
     const g = nativeGen();
     expect(evalClause('typeof data["@@iterator"] === "function"', g)).toBe(false);
@@ -2181,7 +2181,7 @@ describe("Bug 240（S21）：原生 oracle 对拍（guard 条款逐条对照）"
     const falseOnes = clauses.filter((c) => evalClause(c, g) === false);
     // 族 01 已知残留：数字下标槽承载元素域（族 01「数字下标读（历史口径）」结论）
     // ⇒ 原生生成器上恒 false。本分片按「不改族 01 已提交语义」约束保留。
-    // 口径更新（族 09 / Bug 409 + 410）：必填槽的**存在性子句**也是 false
+    // 口径更新（族 09 / + 410）：必填槽的**存在性子句**也是 false
     // ——同一个族 01 残留（数字下标槽不是真实属性 ⇒ 既没有值也没有键）。
     // ⇒ false 条款从 2 条变 4 条，仍**全部**指向数字下标槽。
     expect(falseOnes).toEqual([
@@ -2200,7 +2200,7 @@ describe("Bug 240（S21）：原生 oracle 对拍（guard 条款逐条对照）"
   });
 });
 
-describe("Bug 240（S21）：约束面同口径（absToConstraint 不发布 internal 槽）", () => {
+describe("（S21）：约束面同口径（absToConstraint 不发布 internal 槽）", () => {
   it("协议槽不进约束产物", () => {
     const c = constraintOf(GEN_SRC, "g");
     expect(c).toBeDefined();
@@ -2221,7 +2221,7 @@ describe("Bug 240（S21）：约束面同口径（absToConstraint 不发布 inte
   });
 });
 
-describe("Bug 240（S21）：私有字段槽（internal）同样不进 guard 面", () => {
+describe("（S21）：私有字段槽（internal）同样不进 guard 面", () => {
   /** 私有字段 `#x` 是 internal 槽（原生私有字段对属性 introspection 不可见） */
   const PRIV_SRC = `export class C { #x = 1; getX() { return this.#x; } }
 export function f() { return new C(); }`;
@@ -2229,7 +2229,7 @@ export function f() { return new C(); }`;
   it("私有字段槽不进 guard（改前恒假条款 `data[\"#C::x\"] === 1` 消失）", () => {
     const guard = guardOf(PRIV_SRC);
     expect(guard).not.toContain("#C::x");
-    // 口径更新（族 09 / Bug 407 + 409 + 410）：`new C()` 的 Abs 是 **brand**
+    // 口径更新（族 09 / + 409 + 410）：`new C()` 的 Abs 是 **brand**
     // ⇒ guard 面现在还带 ① brand 身份子句（`Reflect.get(globalThis, "C")`
     // 形态的 instanceof 判定；用户类名不是全局构造器 ⇒ 运行时放行）
     // ② 数组排除 ③ 内层对象面（无可见槽 ⇒ 无存在性子句）。
@@ -2247,7 +2247,7 @@ export function f() { return new C(); }`;
   });
 });
 
-describe("Bug 240（S21）：与 S18 签名面 / Bug 191 访问器读域同口径", () => {
+describe("（S21）：与 S18 签名面 / 访问器读域同口径", () => {
   it("签名面（S18）仍不发布 internal 槽——本分片不回退", () => {
     const sig = formatAbs_____format_format_ts_1(call(GEN_SRC, "g").result as Abs);
     expect(sig).not.toContain("@@iterator");
@@ -2257,7 +2257,7 @@ describe("Bug 240（S21）：与 S18 签名面 / Bug 191 访问器读域同口�
 
   it("Bug 191：访问器键的 guard 仍按 getter 读域判定（不被本分片改坏）", () => {
     const src = `export function f() { return { get ab() { return 1; } }; }`;
-    // 口径更新（族 09 / Bug 409 + 410）：guard 面现在还带 ① 数组排除
+    // 口径更新（族 09 / + 410）：guard 面现在还带 ① 数组排除
     // ② 必填槽的**独立存在性子句** —— 读域判定（`data.ab === 1`）不变。
     expect(denoteGuard(call(src, "f").result, "data")).toBe(
       'typeof data === "object" && data !== null && !Array.isArray(data) && (Object.hasOwn(data, "ab") || ("ab" in data && !Object.hasOwn(Object.prototype, "ab"))) && data.ab === 1',
@@ -2276,17 +2276,17 @@ describe("Bug 240（S21）：与 S18 签名面 / Bug 191 访问器读域同口�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 293: Promise 组合子 settle 域
+// Promise 组合子 settle 域
 // ---------------------------------------------------------------------------
-describe("[] Bug 293: Promise 组合子 settle 域", () => {
+describe("Promise 组合子 settle 域", () => {
 /**
- * Bug 293：Promise 组合子（all / race / any）的 settle 域。
+ * Promise 组合子（all / race / any）的 settle 域。
  *
  * 原生（node v26）：
  * - `await Promise.all([Promise.reject(e)])` / `race` → 抛 e（catch 臂可达）
  * - `await Promise.any([Promise.reject(e)])` → 抛 AggregateError
  * - `await Promise.race([Promise.resolve(1)])` → 1（**元素 promise 的值**，
- *   不是 promise 本身——原生 race/any 先按 PromiseResolve unwrap）
+ * 不是 promise 本身——原生 race/any 先按 PromiseResolve unwrap）
  * - `Promise.race([Promise.resolve(1), 2])` → 2（非 promise 元素先 settle）
  *
  * 修前：all/race/any 丢弃元素的 rejected 通道（组合子恒「不抛」→ catch 臂成
@@ -2314,7 +2314,7 @@ function fmt(src: string): string {
   return formatAbs(call(src, "f").result as Abs___nudojs_core)?.replace(/\s+#[a-z0-9]+$/, "") ?? "";
 }
 
-describe("Bug 293: Promise 组合子 settle 域", () => {
+describe("Promise 组合子 settle 域", () => {
   it("all：元素 rejected → 组合子带 reason（await 抛 → catch 臂可达）", () => {
     expect(
       v(`export async function f() {
@@ -2411,11 +2411,11 @@ describe("Bug 293: Promise 组合子 settle 域", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 310: new Promise 执行器抛错
+// new Promise 执行器抛错
 // ---------------------------------------------------------------------------
-describe("[] Bug 310: new Promise 执行器抛错", () => {
+describe("new Promise 执行器抛错", () => {
 /**
- * Bug 310：`new Promise` 的执行器抛错被吞掉。
+ * `new Promise` 的执行器抛错被吞掉。
  *
  * 原生（node v26）：`new Promise(() => { throw new Error("x"); })` 产出
  * **被拒绝**的 promise（reason = Error("x")）——`await` 抛 → catch 臂可达。
@@ -2447,7 +2447,7 @@ function shape(src: string): EffShape["shape"] {
   return sh;
 }
 
-describe("Bug 310: new Promise 执行器抛错", () => {
+describe("new Promise 执行器抛错", () => {
   it("执行器抛错 → promise 以抛出值拒绝（catch 臂可达）", () => {
     expect(
       v(`export async function f() {
@@ -2486,10 +2486,10 @@ describe("Bug 310: new Promise 执行器抛错", () => {
 });
 
 // ---------------------------------------------------------------------------
-// [merged] eval-bug-311-promise-static-this-wiring.test.ts
+// [merged] promise-static-this-wiring
 // ---------------------------------------------------------------------------
-describe("[] [merged] eval-bug-311-promise-static-this-wiring.test.ts", () => {
-// MERGED (topic-related bug pins): eval-bug-311-promise-static-this-wiring.test.ts + eval-bug-311-promise-static-this.test.ts
+describe("promise-static-this-wiring", () => {
+// MERGED (topic-related bug pins): promise-static-this-wiring + promise-static-this
 // Each absorbed file keeps its own describe scope so file-level hooks stay
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 
@@ -2498,33 +2498,33 @@ describe("[] [merged] eval-bug-311-promise-static-this-wiring.test.ts", () => {
 
 
 
-describe("[merged] eval-bug-311-promise-static-this-wiring.test.ts", () => {
+describe("promise-static-this-wiring", () => {
 /**
- * Bug 311 回归（**主 agent 接线面**）：Promise 静态方法的 `this` 绑定转发。
+ * 回归（**主 agent 接线面**）：Promise 静态方法的 `this` 绑定转发。
  *
  * 接线（主 agent 已落地，本文件只钉行为，不改源码）：
  * - `exec/runtime/containers/member.ts`：命名空间成员读出的静态方法值，
- *   `apply: (args) => evalNamespaceCall(ns, key, args)`
- *   → `apply: (args, thisVal) => evalNamespaceCall(ns, key, args, thisVal ?? undef())`
- *   （this 缺席 = 「this 是 undefined」，与「无 this 信息」区分）；
+ * `apply: (args) => evalNamespaceCall(ns, key, args)`
+ * → `apply: (args, thisVal) => evalNamespaceCall(ns, key, args, thisVal ?? undef())`
+ * （this 缺席 = 「this 是 undefined」，与「无 this 信息」区分）；
  * - `builtins/error/namespace.ts`：`evalNamespaceCall` 收第 4 参 `thisVal`
- *   并转给 `evalPromiseStatic`；
+ * 并转给 `evalPromiseStatic`；
  * - `builtins/promise.ts`：`checkPromiseStaticThis` —— this nullish ⇒ TypeError；
- *   this 非构造器 ⇒ TypeError；this 是构造器（`shape.k === "fn" | "brand"`
- *   且 `ctor === true`）⇒ 合法。
+ * this 非构造器 ⇒ TypeError；this 是构造器（`shape.k === "fn" | "brand"`
+ * 且 `ctor === true`）⇒ 合法。
  *
  * 原生依据（node v26.10.0 实测，ES262：Promise 的静态是以 `this` 为接收者
  * 的普通函数，`PromiseResolve` / `NewPromiseCapability` 要求 this 是构造器）：
- * - `Promise.resolve(1)`               → 合法，返回 promise；
- * - `Promise.resolve.call(null, 1)`    → TypeError: PromiseResolve called on non-object；
- * - `Promise.resolve.call({}, 1)`      → TypeError: #<Object> is not a constructor；
+ * - `Promise.resolve(1)` → 合法，返回 promise；
+ * - `Promise.resolve.call(null, 1)` → TypeError: PromiseResolve called on non-object；
+ * - `Promise.resolve.call({}, 1)` → TypeError: #<Object> is not a constructor；
  * - `Promise.resolve.call(Promise, 1)` → 合法，返回 promise；
  * - `const r = Promise.resolve; r(1)` → TypeError（this ≡ undefined ⇒ 非构造器）；
  * - `Promise.resolve.call(undefined,1)`→ TypeError;
  * - 负控制 `Math.max.call(null, 1, 2)` → 合法，返回 2（命名空间静态的 this
- *   判定**只对 Promise 生效**）。
+ * 判定**只对 Promise 生效**）。
  *
- * 同族已由 `eval-bug-311-promise-static-this.test.ts` 钉机制面
+ * 同族已由 `promise-static-this` 钉机制面
  * （`evalNamespaceCall` 直调），本文件钉**端到端接线面**（成员读 → this
  * 转发 → 静态派发）。
  */
@@ -2550,7 +2550,7 @@ function run(body: string) {
   return call(`export function f() { ${body} }`, "f");
 }
 
-describe("Bug 311 — Promise 静态的 this 绑定转发（接线面）", () => {
+describe("Promise 静态的 this 绑定转发（接线面）", () => {
   it("Promise.resolve(1)：直接命名空间调用不抛，值域是 promise<1>", () => {
     const { inner, throws } = promiseFace(
       `export function f() { return Promise.resolve(1); }`,
@@ -2626,24 +2626,24 @@ describe("Bug 311 — Promise 静态的 this 绑定转发（接线面）", () =>
 });
 });
 
-describe("[merged] eval-bug-311-promise-static-this.test.ts", () => {
+describe("promise-static-this", () => {
 /**
- * Bug 311：Promise 静态方法忽略 `this` 绑定。
+ * Promise 静态方法忽略 `this` 绑定。
  *
  * 原生（node v26）：Promise 的静态（resolve / reject / all / race / allSettled /
  * any / withResolvers）在规范里都是**以 `this` 为接收者**的普通函数——
  * `PromiseResolve` / `NewPromiseCapability` 要求 `this` 是构造器，否则 TypeError：
- *   Promise.resolve.call(null, 1) → TypeError: PromiseResolve called on non-object
- *   Promise.all.call({}, [])     → TypeError: #<Object> is not a constructor
+ * Promise.resolve.call(null, 1) → TypeError: PromiseResolve called on non-object
+ * Promise.all.call({}, []) → TypeError: #<Object> is not a constructor
  *
  * 修法分两跳：
  * 1) 本分片（promise.ts / error/namespace.ts）：命名空间静态派发带 this 绑定，
- *    非构造器接收者按原生抛 TypeError（`checkPromiseStaticThis`）。
+ * 非构造器接收者按原生抛 TypeError（`checkPromiseStaticThis`）。
  * 2) 越界一行（**exec/runtime/containers/member.ts:847**，分片 A 的地盘）：
- *    成员读出的静态方法值须把 this 转发进命名空间派发——
- *      apply: (args) => evalNamespaceCall(ns, key, args) ?? unknown
- *    → apply: (args, thisVal) => evalNamespaceCall(ns, key, args, thisVal) ?? unknown
- *    合并前端到端仍是「静态派发无接收者」（返回 promise<1>、L2 假绿）。
+ * 成员读出的静态方法值须把 this 转发进命名空间派发——
+ * apply: (args) => evalNamespaceCall(ns, key, args) ?? unknown
+ * → apply: (args, thisVal) => evalNamespaceCall(ns, key, args, thisVal) ?? unknown
+ * 合并前端到端仍是「静态派发无接收者」（返回 promise<1>、L2 假绿）。
  */
 
 
@@ -2664,7 +2664,7 @@ function throwsTypeError(fn: () => unknown): boolean {
   }
 }
 
-describe("Bug 311: Promise 静态的 this 绑定", () => {
+describe("Promise 静态的 this 绑定", () => {
   it("机制面：命名空间派发带 this → 非构造器接收者抛 TypeError", () => {
     expect(
       throwsTypeError(() => evalNamespaceCall("Promise", "resolve", [numLit(1)], absLit(null))),
@@ -2738,11 +2738,11 @@ describe("Bug 311: Promise 静态的 this 绑定", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 312: allSettled 元素投影
+// allSettled 元素投影
 // ---------------------------------------------------------------------------
-describe("[] Bug 312: allSettled 元素投影", () => {
+describe("allSettled 元素投影", () => {
 /**
- * Bug 312：`Promise.allSettled` 的元素投影。
+ * `Promise.allSettled` 的元素投影。
  *
  * 原生（node v26）：`Promise.allSettled([p])` 的元素是**判别联合**——
  * `{status:"fulfilled", value:<值>}` 或 `{status:"rejected", reason:<reason>}`，
@@ -2772,7 +2772,7 @@ function fmt(src: string): string {
   return formatAbs(call(src, "f").result as Abs___nudojs_core_3)?.replace(/\s+#[a-z0-9]+$/, "") ?? "";
 }
 
-describe("Bug 312: allSettled 元素投影", () => {
+describe("allSettled 元素投影", () => {
   it("rejected 元素 → reason 槽装真 reason（读 .reason.message 不抛）", () => {
     expect(
       v(`export async function f() {
@@ -2815,11 +2815,11 @@ describe("Bug 312: allSettled 元素投影", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 313: 非可调用 handler ≡ identity
+// 非可调用 handler ≡ identity
 // ---------------------------------------------------------------------------
-describe("[] Bug 313: 非可调用 handler ≡ identity", () => {
+describe("非可调用 handler ≡ identity", () => {
 /**
- * Bug 313：`then` / `catch` 的非可调用 handler 被当成可调用。
+ * `then` / `catch` 的非可调用 handler 被当成可调用。
  *
  * 原生（node v26，ES262 PerformPromiseThen）：`IsCallable(onFulfilled)` 为假
  * ⇒ onFulfilled ≡ undefined（identity）⇒ 原值透传。
@@ -2849,7 +2849,7 @@ function fmt(src: string): string {
   return formatAbs(call(src, "f").result as Abs___nudojs_core_4)?.replace(/\s+#[a-z0-9]+$/, "") ?? "";
 }
 
-describe("Bug 313: 非可调用 handler ≡ identity", () => {
+describe("非可调用 handler ≡ identity", () => {
   it("then({}) → 透传原值（非调用 → ≡ undefined）", () => {
     expect(
       v(`export async function f() { return Promise.resolve(1).then({}); }`),
@@ -2899,9 +2899,9 @@ describe("Bug 313: 非可调用 handler ≡ identity", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 族 58 · 第 1 条 · Bug 197 · writable:true 的重定义覆盖旧的 [[Writable]]
+// 族 58 · 第 1 条 · writable:true 的重定义覆盖旧的 [[Writable]]
 // ---------------------------------------------------------------------------
-describe("[] 族 58 · 第 1 条 · Bug 197 · writable:true 的重定义覆盖旧的 [[Writable]]", () => {
+describe("族 58 · 第 1 条 · writable:true 的重定义覆盖旧的 [[Writable]]", () => {
 /**
  * 族 58 · W8 · core runtime **描述符与生成器协议面** —— 5 条精度债的回归钉。
  *
@@ -2910,29 +2910,29 @@ describe("[] 族 58 · 第 1 条 · Bug 197 · writable:true 的重定义覆盖�
  * 每条用例都带**负控**（表外成员 / 未建模面仍按既有口径判定，逐字不变）。
  *
  * 逐条对应（族 58 台账 · W8 分片）：
- * 1. Bug 197  描述符 exists 分支：`writable:true` 的**重定义**不覆盖旧的
- *              `[[Writable]]` ⇒ 引擎读描述符/写门须见**新的** writable。
- * 2. Bug 321  原型 brand 描述符面：`Object.getOwnPropertyNames(Error.prototype)`
- *              / `Object.hasOwn(Error.prototype, "name")` 折 partial。
+ * 1. 描述符 exists 分支：`writable:true` 的**重定义**不覆盖旧的
+ * `[[Writable]]` ⇒ 引擎读描述符/写门须见**新的** writable。
+ * 2. 原型 brand 描述符面：`Object.getOwnPropertyNames(Error.prototype)`
+ * / `Object.hasOwn(Error.prototype, "name")` 折 partial。
  * 3. 原型 brand 描述符 / gOPN 面：类原型的 `Object.getOwnPropertyNames` /
- *              `Object.keys` 折保守域（`string[]`），非精确列表。
+ * `Object.keys` 折保守域（`string[]`），非精确列表。
  * 4. 生成器 `prototype.next` 协议面缺席（`g.prototype.next` 折 undefined）。
  * 5. `.length` slot 在任意 brand 上不可读（core 的 `$len` 不读任意 brand 的
- *              `"length"` 槽 ⇒ env brand 的 `.length` 拿不到，如 Buffer 实例）。
+ * `"length"` 槽 ⇒ env brand 的 `.length` 拿不到，如 Buffer 实例）。
  *
  * 口径边界（**诚实写明**，勿当精确承诺）：
  * - 第 2/3 条的用户类原型 / Error 家族给精确清单；**内建原型**（Array /
- *   Object / Map…）已由 A10 残余批次（`builtins/ctor.ts::hostProtoOwnKeys`
- *   宿主采集对拍）升为精确面，见 `abs-proto-own-keys-facet.test.ts`。
+ * Object / Map…）已由 A10 残余批次（`builtins/ctor.ts::hostProtoOwnKeys`
+ * 宿主采集对拍）升为精确面，见 `abs-proto-own-keys-facet.test.ts`。
  * - 用户类原型的**方法与访问器交错定义序**曾因 `methods` / `accessors`
- *   分两张表而不可复原 ⇒ 保守 `string[]`；A10 残余批次已由
- *   `EvalClassSpec.protoMemberOrder`（转译期按类体源码序登记）收口，
- *   本文件下方 4 条钉与宿主逐一对拍（含定义序反转 / 静态 / 私有 / 计算键）。
+ * 分两张表而不可复原 ⇒ 保守 `string[]`；A10 残余批次已由
+ * `EvalClassSpec.protoMemberOrder`（转译期按类体源码序登记）收口，
+ * 本文件下方 4 条钉与宿主逐一对拍（含定义序反转 / 静态 / 私有 / 计算键）。
  * - 第 4 条：协议方法在**原型链**上（原生 `g.prototype` 自有键为空）⇒ 引擎
- *   把协议槽标 internal——自有面（hasOwnProperty / gOPN / 枚举）不可见，
- *   与原生一致；`g.prototype` 的 gOPN 仍走既有保守域 `string[]`（不折空）。
+ * 把协议槽标 internal——自有面（hasOwnProperty / gOPN / 枚举）不可见，
+ * 与原生一致；`g.prototype` 的 gOPN 仍走既有保守域 `string[]`（不折空）。
  * - 第 5 条：core 不依赖 `@nudojs/env` ⇒ env 的 Buffer brand 用**同形**
- *   （brand + 内层 obj 的 `"length"` 槽）在 core 内构造后直接打 `$len`。
+ * （brand + 内层 obj 的 `"length"` 槽）在 core 内构造后直接打 `$len`。
  *
  * ⚠️ **类名唯一性**：引擎的类注册表按**类名**全局驻留（同名类跨用例共享同
  * 一原型对象）⇒ 本文件每个用例用**互不相同**的类名，避免用例间互相污染。
@@ -2959,9 +2959,9 @@ function throwName(src: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// 1. Bug 197 · 描述符 exists 分支 · writable:true 的重定义
+// 1. 描述符 exists 分支 · writable:true 的重定义
 // ---------------------------------------------------------------------------
-describe("族 58 · 第 1 条 · Bug 197 · writable:true 的重定义覆盖旧的 [[Writable]]", () => {
+describe("族 58 · 第 1 条 · writable:true 的重定义覆盖旧的 [[Writable]]", () => {
   it("宿主实测：writable:true 的重定义把 [[Writable]] 翻回 true（node 原生）", () => {
     const o = {};
     Object.defineProperty(o, "x", { value: 1, writable: false, configurable: true, enumerable: true });
@@ -3018,9 +3018,9 @@ describe("族 58 · 第 1 条 · Bug 197 · writable:true 的重定义覆盖旧�
 });
 
 // ---------------------------------------------------------------------------
-// 2. Bug 321 · 原型 brand 描述符面（Error 家族）
+// 2. 原型 brand 描述符面（Error 家族）
 // ---------------------------------------------------------------------------
-describe("族 58 · 第 2 条 · Bug 321 · 原型 brand 描述符面（Error 家族）", () => {
+describe("族 58 · 第 2 条 · 原型 brand 描述符面（Error 家族）", () => {
   it("宿主实测：Error.prototype 的自有键与 hasOwn 判定（node 原生）", () => {
     expect(Object.getOwnPropertyNames(Error.prototype)).toEqual([
       "constructor",
@@ -3371,11 +3371,11 @@ describe("族 58 · 第 5 条 · 任意 brand 的 \"length\" 槽可读", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1148：Promise.all 等元素 settle 后才兑现（不取调用期快照）
+// Promise.all 等元素 settle 后才兑现（不取调用期快照）
 // ---------------------------------------------------------------------------
-describe("[] Bug 1148：Promise.all 等元素 settle 后才兑现（不取调用期快照）", () => {
+describe("Promise.all 等元素 settle 后才兑现（不取调用期快照）", () => {
 /**
- * Bug 1148 回归钉：`Promise.all` 不得取**调用期快照**（组合子的兑现值 =
+ * 回归钉：`Promise.all` 不得取**调用期快照**（组合子的兑现值 =
  * **全部元素 settle 之后**的聚合）。
  *
  * 原生（node v26.10.0 实测）：
@@ -3401,7 +3401,7 @@ describe("[] Bug 1148：Promise.all 等元素 settle 后才兑现（不取调用
  *
  * 口径边界（未改）：
  * - `Promise.all` 只对**可迭代**的元素数组生效；非可迭代输入按原生折
- *   **返回 promise 的 rejection**（不同步抛——Bug 47 node v26 实测口径）。
+ * **返回 promise 的 rejection**（不同步抛——node v26 实测口径）。
  * - 元素**全部已 settle** 时走既有快路径（`promise<[1, 2]>` 等金标零漂移）。
  *
  * 已知遗留（**不在本条归属**——`.then` 反应面在 pending 接收者上仍抢跑，
@@ -3434,7 +3434,7 @@ function fmt(src: string, fnName = "f"): string {
 /** 2 个 await 的 inner（原生：`Promise.all([inner(), inner()])` → [2, 2]） */
 const INNER_TWO_AWAIT = `async function inner() { await null; await null; return 2; }`;
 
-describe("Bug 1148：Promise.all 等元素 settle 后才兑现（不取调用期快照）", () => {
+describe("Promise.all 等元素 settle 后才兑现（不取调用期快照）", () => {
   beforeEach(() => {
     resetEngineCaches();
     takeRefineDiags();
@@ -3545,33 +3545,33 @@ describe("Bug 1148：Promise.all 等元素 settle 后才兑现（不取调用期
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1150：promise 反应面（.then/.catch）与组合子（race/any/allSettled）不抢跑
+// promise 反应面（.then/.catch）与组合子（race/any/allSettled）不抢跑
 // ---------------------------------------------------------------------------
-describe("[] Bug 1150：promise 反应面（.then/.catch）与组合子（race/any/allSettled）不抢跑", () => {
+describe("promise 反应面（.then/.catch）与组合子（race/any/allSettled）不抢跑", () => {
 /**
- * Bug 1150 回归钉：**promise 反应面**（.then/.catch）与**其它组合子**
+ * 回归钉：**promise 反应面**（.then/.catch）与**其它组合子**
  * （race / any / allSettled）不得抢跑、不得取调用期快照。
  *
  * 原生（node v26.10.0 实测，见交付报告的原生基线表）：
  * - `await inner().then((v) => v + 1)`（inner 含 2 个 await）→ **3**
  * - `await Promise.all([inner(), inner()]).then((r) => r[0] + r[1])` → **4**
  * - `await Promise.race([inner(), Promise.resolve(9)])` → **9**（已 settle 的
- *   元素先赢——原生 race 是「首个 settle 赢」）
+ * 元素先赢——原生 race 是「首个 settle 赢」）
  * - `await Promise.any([inner(), Promise.resolve(9)])` → **9**（首个 fulfilled 赢）
  * - `await Promise.any([Promise.reject(1), innerRej()])` → **AggregateError**
- *   （全拒才拒）
+ * （全拒才拒）
  * - `await Promise.allSettled([inner(), Promise.resolve(9)])` →
- *   **fulfilled:2,fulfilled:9**（等全部 settle，逐项记 fulfilled/rejected）
+ * **fulfilled:2,fulfilled:9**（等全部 settle，逐项记 fulfilled/rejected）
  * - 兑现序：`log` = "a,a,b,b,then:2,after"（then 回调在 all 兑现**之后**跑）
  *
  * 修前（假绿）：
  * - `.then` / `.catch` 在 **pending 接收者**上按「已 fulfilled」处理 ⇒ 反应
- *   **抢跑**（回调读到占位符 `unknown`）⇒ `inner().then(v => v + 1)` 得
- *   `promise<number | string>`（原生 `promise<3>`）。
+ * **抢跑**（回调读到占位符 `unknown`）⇒ `inner().then(v => v + 1)` 得
+ * `promise<number | string>`（原生 `promise<3>`）。
  * - `Promise.race` / `Promise.any` / `Promise.allSettled` 对元素 promise 取
- *   **调用期快照**（`elementSettle` 读 `shape.inner`）⇒ 兑现值被占位符
- *   **永久冻住**（原生 9 / 9 / fulfilled:2，引擎 unknown | 9 / unknown | 9 /
- *   fulfilled:unknown）。
+ * **调用期快照**（`elementSettle` 读 `shape.inner`）⇒ 兑现值被占位符
+ * **永久冻住**（原生 9 / 9 / fulfilled:2，引擎 unknown | 9 / unknown | 9 /
+ * fulfilled:unknown）。
  *
  * 根因：反应调度（`evalPromiseMethod` 的 `settledFulfilled` 判定 +
  * `queuePromiseMicro`）与组合子聚合都把 **pending 活通道**当「已 settle」⇒
@@ -3582,12 +3582,12 @@ describe("[] Bug 1150：promise 反应面（.then/.catch）与组合子（race/a
  * `flushPromiseWaiters`——与 `exec/runtime/async.ts` 的 await 恢复点共用，
  * 不另造第二套）：
  * - 1150-a：接收者 pending ⇒ 反应**登记为 waiter**（待 settle 后再跑），
- *   结果 promise 自身是 live pending（`inner` 就地填）⇒ `await` 方排在
- *   settle 之后恢复；拒绝 ⇒ 走 rejection 通道（catch 臂可达）。
+ * 结果 promise 自身是 live pending（`inner` 就地填）⇒ `await` 方排在
+ * settle 之后恢复；拒绝 ⇒ 走 rejection 通道（catch 臂可达）。
  * - 1150-b：race / any / allSettled 按原生语义建模（race 首个 settle 赢；
- *   any 首个 fulfilled 赢、全拒才 AggregateError；allSettled 等全部 settle
- *   并逐项记 fulfilled/rejected）；元素**全部已 settle** 时保留原快路径
- *   （金标零漂移）。
+ * any 首个 fulfilled 赢、全拒才 AggregateError；allSettled 等全部 settle
+ * 并逐项记 fulfilled/rejected）；元素**全部已 settle** 时保留原快路径
+ * （金标零漂移）。
  *
  * 已知遗留（**不在本条归属**——悬挂元素建模缺口，见交付报告 1150-c 方案
  * 草案）：元素**永不 settle** 时组合子永不 settle，await 方永不恢复，且调用
@@ -3621,7 +3621,7 @@ const INNER_TWO_AWAIT = `async function inner() { await null; await null; return
 /** 2 个 await 后抛错的 inner（原生：拒绝 reason = Error("boom")） */
 const INNER_REJECT = `async function innerRej() { await null; await null; throw new Error("boom"); }`;
 
-describe("Bug 1150：promise 反应面（.then/.catch）与组合子（race/any/allSettled）不抢跑", () => {
+describe("promise 反应面（.then/.catch）与组合子（race/any/allSettled）不抢跑", () => {
   beforeEach(() => {
     resetEngineCaches();
     takeRefineDiags();

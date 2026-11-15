@@ -1,5 +1,5 @@
 /**
- * Bug 9 回归：非空（匿名）ClassExpression 处于子表达式位置时，转译器把
+ * 回归：非空（匿名）ClassExpression 处于子表达式位置时，转译器把
  * 类 spec 的语句终止符 `;` 一起发进表达式文本（`$class(…});`），被父级
  * 包裹成 `return($class(…}););` 之类 → new Function SyntaxError，整个模块
  * 加载失败（原生是合法 JS）。
@@ -18,7 +18,7 @@ function evalsTo(src: string, value: unknown, fnName = "f") {
   expect(litValue(r.result)).toEqual({ ok: true, value });
 }
 
-describe("Bug 9：非空匿名类表达式在子表达式位置（修复前 new Function SyntaxError 整模块失败）", () => {
+describe("非空匿名类表达式在子表达式位置（修复前 new Function SyntaxError 整模块失败）", () => {
   it("报告原始 repro：return class { m() { return a; } } 模块可加载", () => {
     const exports = runTranspiled(
       `export function f(a) { return class { m() { return a; } }; }`,
@@ -110,7 +110,7 @@ describe("Bug 9：非空匿名类表达式在子表达式位置（修复前 new 
   });
 });
 
-describe("Bug 9：不回退面（空类 / 具名类表达式 / 类声明）", () => {
+describe("不回退面（空类 / 具名类表达式 / 类声明）", () => {
   it("空类体仍走 $classExpr fn 形状", () => {
     const r = call(`export function f() { let B = class {}; return typeof B; }`);
     expect(litValue(r.result)).toEqual({ ok: true, value: "function" });

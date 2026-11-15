@@ -24,11 +24,11 @@ import { runWithMayThrowSession, setMayThrowCollector, type MayThrowEffect } fro
 import { listTopFunctions } from "../scan/scan.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 38 · shape 槽位 / 数组元素的长度界执法
+// shape 槽位 / 数组元素的长度界执法
 // ---------------------------------------------------------------------------
-describe("[] Bug 38 · shape 槽位 / 数组元素的长度界执法", () => {
+describe("shape 槽位 / 数组元素的长度界执法", () => {
 /**
- * 分册 03 · Bug 38 —— 契约**槽位**（shape 字段 / 数组元素）上的数组长度界
+ * 分册 03 · 契约**槽位**（shape 字段 / 数组元素）上的数组长度界
  * 在 L1 门禁零执法（假绿）；同一界在顶层形参 / guard 面都生效。
  *
  * 根因：`checkFieldConstraint` 复制顶层长度通道时只抄了字符串半边
@@ -62,7 +62,7 @@ function violations(r: { issues: Array<{ code: string; expected?: string }> }) {
   return r.issues.filter((i) => i.code === "nudo:constraint-violated");
 }
 
-describe("Bug 38 · shape 槽位 / 数组元素的长度界执法", () => {
+describe("shape 槽位 / 数组元素的长度界执法", () => {
   it("顶层形参（对照组）topLevel([1]) ⇒ 报 length(xs) ≥ 2", () => {
     const v = violations(check("twoNumbers", "[1]"));
     expect(v).toHaveLength(1);
@@ -90,11 +90,11 @@ describe("Bug 38 · shape 槽位 / 数组元素的长度界执法", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 60 — Array 借用方法 nullish 接收者记抛
+// Array 借用方法 nullish 接收者记抛
 // ---------------------------------------------------------------------------
-describe("[] Bug 60 — Array 借用方法 nullish 接收者记抛", () => {
+describe("Array 借用方法 nullish 接收者记抛", () => {
 /**
- * Bug 60 回归：`Array.prototype.sort / reverse / fill / copyWithin / concat`
+ * 回归：`Array.prototype.sort / reverse / fill / copyWithin / concat`
  * 借用给 **nullish 接收者**必须记抛（ES2023 RequireObjectCoercible(this)）。
  * `$lit(null/undefined)` 的 shape.k 是 "unknown" 而非 "prim"，此前绕过
  * prim 守卫 ⇒ sort 一族原样返回 nullish、concat 包成 [null]（假绿 + 错值）。
@@ -112,7 +112,7 @@ const CASES: Array<[string, string]> = [
   ["copyWithin", `return Array.prototype.copyWithin.call(undefined, 0, 1);`],
 ];
 
-describe("Bug 60 — Array 借用方法 nullish 接收者记抛", () => {
+describe("Array 借用方法 nullish 接收者记抛", () => {
   for (const [name, body] of CASES) {
     it(`${name}.call(nullish) ⇒ definite TypeError`, () => {
       const r = call(wrap(body));
@@ -136,11 +136,11 @@ describe("Bug 60 — Array 借用方法 nullish 接收者记抛", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 8 · 数组解构契约按元素下标执法
+// 数组解构契约按元素下标执法
 // ---------------------------------------------------------------------------
-describe("[] Bug 8 · 数组解构契约按元素下标执法", () => {
+describe("数组解构契约按元素下标执法", () => {
 /**
- * 分册 03 · Bug 8 —— 数组解构形参的契约被投影成**对象槽** ⇒ 合法调用报
+ * 分册 03 · 数组解构形参的契约被投影成**对象槽** ⇒ 合法调用报
  * `missing field x`（假红），元素值从未与界比对（真违例也被误伤）。
  *
  * 根因：`locateContractParam` 对数组 pattern 只给 `fieldIndex`、不给
@@ -173,7 +173,7 @@ function violations(r: { issues: Array<{ code: string; expected?: string; actual
   return r.issues.filter((i) => i.code === "nudo:constraint-violated");
 }
 
-describe("Bug 8 · 数组解构契约按元素下标执法", () => {
+describe("数组解构契约按元素下标执法", () => {
   it("f([5]) 合法 ⇒ 零违例（改前报 missing field x）", () => {
     const r = check(`export function ok() { return f([5]); }`);
     expect(violations(r)).toHaveLength(0);
@@ -197,11 +197,11 @@ export function bad() { return f([-1]); }`);
 });
 
 // ---------------------------------------------------------------------------
-// BUG-005: array 长度界在返回契约上必须执法
+// array 长度界在返回契约上必须执法
 // ---------------------------------------------------------------------------
-describe("[] BUG-005: array 长度界在返回契约上必须执法", () => {
+describe("array 长度界在返回契约上必须执法", () => {
 /**
- * BUG-005 回归：`array(...)` 的**长度界**在返回契约上完全不执法（假绿）。
+ * 回归：`array(...)` 的**长度界**在返回契约上完全不执法（假绿）。
  *
  * 根因：`assertImpliesSingle` 的 `element` 分支只对账元素类型就 `proved()` 返回，
  * 而 `array(...)` **没有 prim** ⇒ 通用谓词通道（`assertScalar`）根本走不到 ⇒
@@ -246,7 +246,7 @@ export function f() {
 const violations = (r: ReturnType<typeof check>) =>
   r.issues.filter((i) => i.code === "nudo:constraint-violated" && i.fn === "f");
 
-describe("BUG-005: array 长度界在返回契约上必须执法", () => {
+describe("array 长度界在返回契约上必须执法", () => {
   it("返回 [] ⊭ array(number()).min(1) ⇒ error（此前零诊断假绿）", () => {
     const r = check("nonEmpty", "[]");
     const v = violations(r);
@@ -312,18 +312,18 @@ export function f() {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1077 — Object.prototype 置 null 原型：放行（native：不抛 / true）
+// Object.prototype 置 null 原型：放行（native：不抛 / true）
 // ---------------------------------------------------------------------------
-describe("[] Bug 1077 — Object.prototype 置 null 原型：放行（native：不抛 / true）", () => {
+describe("Object.prototype 置 null 原型：放行（native：不抛 / true）", () => {
 /**
- * Bug 1077 回归：`Object.setPrototypeOf(Object.prototype, null)` /
+ * 回归：`Object.setPrototypeOf(Object.prototype, null)` /
  * `Reflect.setPrototypeOf(Object.prototype, null)` 被**过拒绝**——把合法程序
  * 判成必抛 ⇒ L1/L2 门禁假红。
  *
  * 修前（探针实测）：
  * - `Object.setPrototypeOf(Object.prototype, null)` ⇒ **抛 TypeError**
- *   （原生 node v26.10.0：**不抛**——Object.prototype 的 [[Prototype]] 本来
- *   就是 null ⇒ 空操作）；
+ * （原生 node v26.10.0：**不抛**——Object.prototype 的 [[Prototype]] 本来
+ * 就是 null ⇒ 空操作）；
  * - `Reflect.setPrototypeOf(Object.prototype, null)` ⇒ **false**（原生：true）。
  *
  * 规范依据（ES2024 10.4.1.2 的 Object.prototype.[[SetPrototypeOf]]）：**只在
@@ -336,7 +336,7 @@ describe("[] Bug 1077 — Object.prototype 置 null 原型：放行（native：�
  * - 置 null ⇒ 放行；
  * - 置非 null ⇒ 仍拒（Object 面抛 TypeError、Reflect 面返 false）；
  * - `Object.prototype` 的原型链面**不变**（不落 null-proto 标记 ⇒ 原生
- *   `"toString" in Object.prototype === true` 仍成立）。
+ * `"toString" in Object.prototype === true` 仍成立）。
  *
  * oracle：node v26.10.0 实测。
  */
@@ -345,7 +345,7 @@ describe("[] Bug 1077 — Object.prototype 置 null 原型：放行（native：�
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 1077 — Object.prototype 置 null 原型：放行（native：不抛 / true）", () => {
+describe("Object.prototype 置 null 原型：放行（native：不抛 / true）", () => {
   it("Object.setPrototypeOf(Object.prototype, null) ⇒ 不抛（native：no-throw；修前：threw）", () => {
     expect(
       val(
@@ -364,7 +364,7 @@ describe("Bug 1077 — Object.prototype 置 null 原型：放行（native：不�
   });
 });
 
-describe("Bug 1077 — 负控制（置非 null 仍拒 + 原型链面不变）", () => {
+describe("负控制（置非 null 仍拒 + 原型链面不变）", () => {
   it("Object.setPrototypeOf(Object.prototype, {}) ⇒ 仍抛 TypeError（native：同款）", () => {
     expect(
       val(
@@ -402,11 +402,11 @@ describe("Bug 1077 — 负控制（置非 null 仍拒 + 原型链面不变）", 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1079: arr 形参 × tuple 实参的 α 绑定口径
+// arr 形参 × tuple 实参的 α 绑定口径
 // ---------------------------------------------------------------------------
-describe("[] Bug 1079: arr 形参 × tuple 实参的 α 绑定口径", () => {
+describe("arr 形参 × tuple 实参的 α 绑定口径", () => {
 /**
- * Bug 1079 —— arr 形参（收割的 `T[]`）× tuple 实参（引擎的数组字面量）：
+ * arr 形参（收割的 `T[]`）× tuple 实参（引擎的数组字面量）：
  * α 绑定**只取首元素** ⇒ 异构数组 `[1,"a"]` 被推成 `number[]`
  * ——比真实类型 `(number|string)[]` **更窄** ⇒ 把「不知道」升级成「知道」
  * ⇒ 下游按该类型执法时假绿（契约 `array(number())` 被判满足，而实参里
@@ -414,7 +414,7 @@ describe("[] Bug 1079: arr 形参 × tuple 实参的 α 绑定口径", () => {
  *
  * 修法（`packages/core/src/algebra/hof.ts` 的 `tupleElementDomain`）：
  * 元素域 = tuple **全部**元素的同型域；异构 ⇒ `any`（诚实的「不知道」）。
- * 同型时仍绑出元素类型 ⇒ Bug 453 的 L2 假红修复（同 kind 臂 + 跨 kind 臂
+ * 同型时仍绑出元素类型 ⇒ 的 L2 假红修复（同 kind 臂 + 跨 kind 臂
  * 都还生效）不被回退。
  */
 
@@ -445,7 +445,7 @@ function tupleArg(...elements: Abs[]): Abs {
   return abs_____index_ts({ k: "tuple", elements }, undefined, undefined, "exact");
 }
 
-describe("Bug 1079: arr 形参 × tuple 实参的 α 绑定口径", () => {
+describe("arr 形参 × tuple 实参的 α 绑定口径", () => {
   it("异构数组字面量 [1,\"a\"] ⇒ α 不绑成 number（落 any，不窄于真实类型）", () => {
     const fn = genericArrFn();
     const out = instantiateReturn(fn, [tupleArg(numLit(1), strLit("a"))]);
@@ -524,7 +524,7 @@ describe("Bug 1079: arr 形参 × tuple 实参的 α 绑定口径", () => {
   });
 });
 
-describe("Bug 1079: anyAbs 是异构元素域的落点", () => {
+describe("anyAbs 是异构元素域的落点", () => {
   it("异构元素域用 anyAbs（不是 unknown——unknown 是推断失败，any 是未约束）", () => {
     const fn = abs_____index_ts(
       {
@@ -566,11 +566,11 @@ describe("Bug 1079: anyAbs 是异构元素域的落点", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1097: tuple 元素域的 7 个验收值
+// tuple 元素域的 7 个验收值
 // ---------------------------------------------------------------------------
-describe("[] Bug 1097: tuple 元素域的 7 个验收值", () => {
+describe("tuple 元素域的 7 个验收值", () => {
 /**
- * Bug 1097 —— `tupleElementDomain`（`packages/core/src/algebra/hof.ts`）按
+ * `tupleElementDomain`（`packages/core/src/algebra/hof.ts`）按
  * **形状 kind** 判「元素域是否可知」：`shape.k === "unknown"` ⇒ 域退 `any`。
  *
  * 但引擎把 `null` / `undefined` 建成「`unknown` **形状** + lit **项**」
@@ -579,10 +579,10 @@ describe("[] Bug 1097: tuple 元素域的 7 个验收值", () => {
  * 元素域整体退 `any`：
  *
  * - `[null]` / `[undefined]`：元素域从 `null` / `undefined` 退成 `any`
- *   （精度回退）；
+ * （精度回退）；
  * - `[1,null]`：退成 `any`（应为 `number | null`）；
  * - `any` 是「**自信的任意值**」（仓内口径 `abs.ts`：`any` = 无约束并集，
- *   `unknown` = 推导失败）⇒ 参与算术即抽象强转 ⇒ 记 may-throw ⇒ L2 假红。
+ * `unknown` = 推导失败）⇒ 参与算术即抽象强转 ⇒ 记 may-throw ⇒ L2 假红。
  *
  * 修法：元素分三类——已知 nullish（**不参与**异型判定，只**贡献可空性**）／
  * 真·推断失败（退 **`unknown`**，不是 `any`）／其它（既有同型 base type 口径，
@@ -631,7 +631,7 @@ function elementDomain(...elements: Abs[]): Abs {
   return instantiateReturn(genericArrFn(), [tupleArg(...elements)]);
 }
 
-describe("Bug 1097: tuple 元素域的 7 个验收值", () => {
+describe("tuple 元素域的 7 个验收值", () => {
   it("[1,2] ⇒ number（同型 base prim，字面量拓宽）", () => {
     const d = elementDomain(numLit(1), numLit(2));
     expect(d.shape).toEqual({ k: "prim", type: "number" });
@@ -677,7 +677,7 @@ describe("Bug 1097: tuple 元素域的 7 个验收值", () => {
   });
 });
 
-describe("Bug 1097: 修前红 / 修后绿（口径锚点）", () => {
+describe("修前红 / 修后绿（口径锚点）", () => {
   it("修前：nullish 元素命中 `shape.k === \"unknown\"` 一刀切 ⇒ 域退 any", () => {
     // 修前实现（保留为对照）：任何 unknown 形状元素 ⇒ anyAbs。
     const oldDomain = (elements: Abs[]): Abs => {
@@ -703,7 +703,7 @@ describe("Bug 1097: 修前红 / 修后绿（口径锚点）", () => {
   });
 });
 
-describe("Bug 1097: 其它 nullish 组合", () => {
+describe("其它 nullish 组合", () => {
   it("[null, undefined] ⇒ null | undefined（两个已知 nullish 都保留）", () => {
     const d = elementDomain(nullElem(), undefElem());
     expect(formatShape(d)).toBe("null | undefined");
@@ -732,15 +732,15 @@ describe("Bug 1097: 其它 nullish 组合", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1111 —— 默认值补齐覆盖缺失的尾部位置
+// 默认值补齐覆盖缺失的尾部位置
 // ---------------------------------------------------------------------------
-describe("[] Bug 1111 —— 默认值补齐覆盖缺失的尾部位置", () => {
+describe("默认值补齐覆盖缺失的尾部位置", () => {
 /**
- * Bug 1111 —— 默认值填充**只在零参调用**时发生（Bug 444 的不完整修复）⇒
+ * 默认值填充**只在零参调用**时发生（的不完整修复）⇒
  * 漏传尾部位置时**静默**（P1 **假绿**：违约代码被放过 ⇒ 门禁空转）。
  *
  * 复现：`/** @nudo:contract x positive *\/ function e4(a, x = -5)`：
- * - `e4()` 被报（对：x = -5 违约）—— Bug 444 的零参补齐生效；
+ * - `e4()` 被报（对：x = -5 违约）—— 的零参补齐生效；
  * - `e4(1)` **静默** —— 但运行时 x = -5（应当报）⇒ 假绿。
  *
  * 根因（`scan-literal-calls.ts` 的零参守卫 + `literal-args.ts` 的
@@ -776,7 +776,7 @@ function violations(r: { issues: { code: string }[] }): number {
   return r.issues.filter((i) => i.code === "nudo:constraint-violated").length;
 }
 
-describe("Bug 1111 —— 默认值补齐覆盖缺失的尾部位置", () => {
+describe("默认值补齐覆盖缺失的尾部位置", () => {
   it("e4(1)（x = -5，契约 x > 0）⇒ 报违例（默认值违约不沉默）", () => {
     const r = check(`/** @nudo:contract x positive */
 function e4(a, x = -5) { return x; }
@@ -813,11 +813,11 @@ export function use() { return f(1); }
 });
 
 // ---------------------------------------------------------------------------
-// BUG-181 — Reflect.set 的非对象 receiver 返 boolean 不抛
+// Reflect.set 的非对象 receiver 返 boolean 不抛
 // ---------------------------------------------------------------------------
-describe("[] BUG-181 — Reflect.set 的非对象 receiver 返 boolean 不抛", () => {
+describe("Reflect.set 的非对象 receiver 返 boolean 不抛", () => {
 /**
- * BUG-181 回归：`Reflect.set(target, key, value, receiver)` 的 receiver 为
+ * 回归：`Reflect.set(target, key, value, receiver)` 的 receiver 为
  * **原始值**时不得判 TypeError——规范返回面是 `false`（不抛）。
  *
  * 原生（node v26，ES2024 10.1.9.2 OrdinarySetWithOwnDescriptor）：data 臂
@@ -840,7 +840,7 @@ function face(src: string): string {
   return formatShape_____format_format_ts(call(src).result);
 }
 
-describe("BUG-181 — Reflect.set 的非对象 receiver 返 boolean 不抛", () => {
+describe("Reflect.set 的非对象 receiver 返 boolean 不抛", () => {
   it("数字字面量 receiver → boolean，定抛面消失", () => {
     const src = wrap(`const o = { k: 0 }; return Reflect.set(o, "k", 1, 1);`);
     expect(face(src)).toEqual("boolean");
@@ -888,11 +888,11 @@ describe("BUG-181 — Reflect.set 的非对象 receiver 返 boolean 不抛", () 
 });
 
 // ---------------------------------------------------------------------------
-// BUG-215 non-callable iterator slot
+// non-callable iterator slot
 // ---------------------------------------------------------------------------
-describe("[] BUG-215 non-callable iterator slot", () => {
+describe("non-callable iterator slot", () => {
 /**
- * BUG-215：`{[Symbol.iterator]: 5}`（不可调用的迭代器槽）以前被当成
+ * `{[Symbol.iterator]: 5}`（不可调用的迭代器槽）以前被当成
  * 可迭代 ⇒ `for..of` 静默得到空循环 / 错误结果。修复：迭代器槽存在但
  * 不可调用 ⇒ 定抛 TypeError。
  */
@@ -921,7 +921,7 @@ export function okIt() {
 }
 `;
 
-describe("BUG-215 non-callable iterator slot", () => {
+describe("non-callable iterator slot", () => {
   it("throws TypeError instead of silently iterating nothing", () => {
     const r = checkSource("/t/bug-215.js", SRC, pTrue);
     expect(sigOf(r, "consume")).toBe("never throws TypeError");
@@ -939,11 +939,11 @@ describe("BUG-215 non-callable iterator slot", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-230：抽象可迭代构造的 Set/Map 基数不得折成确定值
+// 抽象可迭代构造的 Set/Map 基数不得折成确定值
 // ---------------------------------------------------------------------------
-describe("[] BUG-230：抽象可迭代构造的 Set/Map 基数不得折成确定值", () => {
+describe("抽象可迭代构造的 Set/Map 基数不得折成确定值", () => {
 /**
- * BUG-230：`new Set(抽象可迭代)` / `new Map(抽象可迭代)` 的**基数**曾被建模
+ * `new Set(抽象可迭代)` / `new Map(抽象可迭代)` 的**基数**曾被建模
  * 成确定值 ⇒ 引擎印出宿主不可能产出的 exact `0` / `1` / `false`（自信的错值），
  * 且同一个 Set 的基数在 `size` 与 `Array.from(...).length` 两条读取路径上
  * 结论相反（exact 0 vs number）。
@@ -980,7 +980,7 @@ export function setHas(xs) { return new Set(xs).has("a"); }
 export function mapSize(xs) { return new Map(xs).size; }
 `;
 
-describe("BUG-230：抽象可迭代构造的 Set/Map 基数不得折成确定值", () => {
+describe("抽象可迭代构造的 Set/Map 基数不得折成确定值", () => {
   it("new Set(xs).size（xs: any）是 number(path)，不是 exact 0", () => {
     const r = call(SRC, "setSize", [anyAbs___nudojs_core]);
     expect(r.result.shape).toMatchObject({ k: "prim", type: "number" });
@@ -1048,15 +1048,15 @@ describe("BUG-230：抽象可迭代构造的 Set/Map 基数不得折成确定值
 });
 
 // ---------------------------------------------------------------------------
-// BUG-243 sort/reverse on array-like receivers
+// sort/reverse on array-like receivers
 // ---------------------------------------------------------------------------
-describe("[] BUG-243 sort/reverse on array-like receivers", () => {
+describe("sort/reverse on array-like receivers", () => {
 /**
- * BUG-243：数组样（array-like）接收者上的 `sort` / `reverse` / `copyWithin` /
+ * 数组样（array-like）接收者上的 `sort` / `reverse` / `copyWithin` /
  * `fill` 此前**既不建模写面、又记 may-throw** ⇒
  * ① 宿主能跑通的代码被判 error 级 `nudo:entry-may-throw`（L1 **假红**）；
  * ② 接收者内容被当结果交回 ⇒ 印出「未排序 / 未反转」的旧值（`conf: exact`
- *   的**自信错值**）。
+ * 的**自信错值**）。
  *
  * 规范事实（ES2023 22.1.3.x）：这四个方法的算法只依赖 `Get` / `Set` /
  * `DeletePropertyOrThrow` + 可写 `length` ⇒ 数组样接收者与真数组**同义**，
@@ -1071,7 +1071,7 @@ const lit = (src: string): unknown => {
   return r.ok ? r.value : `NOT-LIT(${JSON.stringify(r)})`;
 };
 
-describe("BUG-243 sort/reverse on array-like receivers", () => {
+describe("sort/reverse on array-like receivers", () => {
   it("sort writes the sorted order back (host: 'a')", () => {
     expect(
       lit(`export function f() {
@@ -1149,11 +1149,11 @@ describe("BUG-243 sort/reverse on array-like receivers", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-248 binary recursion
+// binary recursion
 // ---------------------------------------------------------------------------
-describe("[] BUG-248 binary recursion", () => {
+describe("binary recursion", () => {
 /**
- * BUG-248：二元递归（`bin(n-1)+bin(n-2)`）在 α 泛化求值里让 term/预算键
+ * 二元递归（`bin(n-1)+bin(n-2)`）在 α 泛化求值里让 term/预算键
  * 指数增长 ⇒ `check`/`health`/`test` 全部 OOM 死亡、stdout 0 字节。
  * 修复：自递归函数不走 B（求值）路径（解释路径有界展开）；L2 入口求值对
  * 多自引用实参剥掉 term 身份，恢复环检测。
@@ -1165,7 +1165,7 @@ describe("[] BUG-248 binary recursion", () => {
 const BIN = `export function bin(n) { return n < 2 ? n : bin(n - 1) + bin(n - 2); }`;
 const LIN = `export function bin(n) { return n < 2 ? n : bin(n - 1); }`;
 
-describe("BUG-248 binary recursion", () => {
+describe("binary recursion", () => {
   it(
     "binary recursion terminates and reports recursion truncation",
     () => {
@@ -1189,11 +1189,11 @@ describe("BUG-248 binary recursion", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 248 · HOF / for-of 读当前容器（live 元素 + live 长度）
+// HOF / for-of 读当前容器（live 元素 + live 长度）
 // ---------------------------------------------------------------------------
-describe("[] Bug 248 · HOF / for-of 读当前容器（live 元素 + live 长度）", () => {
+describe("HOF / for-of 读当前容器（live 元素 + live 长度）", () => {
 /**
- * Bug 248 — HOF 回调族（forEach/map/filter/reduce/…）与 `for..of` 用**进体前
+ * HOF 回调族（forEach/map/filter/reduce/…）与 `for..of` 用**进体前
  * 快照**的元素表：体内对接收者的变异（`a[1]=9` / `a.length=1` / `a.shift()`）
  * 对后续迭代不可见（陈旧值）；`for..of` 的长度也按进体前快照 ⇒ 迭代期间的
  * push/shift 不可见。
@@ -1223,7 +1223,7 @@ const s = (body: string): unknown => {
   return (r.result as { term?: { value?: unknown } })?.term?.value;
 };
 
-describe("Bug 248 · HOF / for-of 读当前容器（live 元素 + live 长度）", () => {
+describe("HOF / for-of 读当前容器（live 元素 + live 长度）", () => {
   it("forEach：体内改写元素值对后续迭代可见（原生 1,9,3）", () => {
     expect(
       s(`const a=[1,2,3]; const out=[]; a.forEach((v,i)=>{ out.push(v); a[1]=9; }); return out.join(",");`),
@@ -1284,10 +1284,10 @@ describe("Bug 248 · HOF / for-of 读当前容器（live 元素 + live 长度）
 });
 
 // ---------------------------------------------------------------------------
-// [merged] core-bug-254-mutator-arraylike-receiver.test.ts
+// [merged] mutator-arraylike-receiver
 // ---------------------------------------------------------------------------
-describe("[] [merged] core-bug-254-mutator-arraylike-receiver.test.ts", () => {
-// MERGED (topic-related bug pins): core-bug-254-mutator-arraylike-receiver.test.ts + core-bug-254-mutator-arraylike-wiring.test.ts
+describe("mutator-arraylike-receiver", () => {
+// MERGED (topic-related bug pins): mutator-arraylike-receiver + mutator-arraylike-wiring
 // Each absorbed file keeps its own describe scope so file-level hooks stay
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 
@@ -1296,9 +1296,9 @@ describe("[] [merged] core-bug-254-mutator-arraylike-receiver.test.ts", () => {
 
 
 
-describe("[merged] core-bug-254-mutator-arraylike-receiver.test.ts", () => {
+describe("mutator-arraylike-receiver", () => {
 /**
- * Bug 254 — 数组 mutator 的**泛型接收者**（数组样对象 `{length, 0: …}`）：
+ * 数组 mutator 的**泛型接收者**（数组样对象 `{length, 0: …}`）：
  * `$arrMutContainer` 对非 tuple/arr 形状**早退**（原样返回接收者）⇒ 写入被
  * 静默丢弃（长度不变、元素不变、不记 may-throw）。
  *
@@ -1338,7 +1338,7 @@ function slotsOf(o: Abs_____abs_ts): Record<string, unknown> {
   return out;
 }
 
-describe("Bug 254 · mutator 家族的泛型（数组样）接收者写面", () => {
+describe("mutator 家族的泛型（数组样）接收者写面", () => {
   it("push：写 length + 索引槽，返回新长度", () => {
     const o = mkObj({ length: numLit_____abs_ts(0) });
     const ret = invokeArrMethod(o, "push", [numLit_____abs_ts(5)]);
@@ -1390,17 +1390,17 @@ describe("Bug 254 · mutator 家族的泛型（数组样）接收者写面", () 
 });
 });
 
-describe("[merged] core-bug-254-mutator-arraylike-wiring.test.ts", () => {
+describe("mutator-arraylike-wiring", () => {
 /**
- * Bug 254（主 agent 接线）—— mutator 在**端到端**路径上必须**就地改接收者**。
+ * （主 agent 接线）—— mutator 在**端到端**路径上必须**就地改接收者**。
  *
  * E4 的写面钉（`core--mutator-arraylike-receiver.part.ts`）直接调
  * `invokeArrMethod(闭 obj 接收者, ...)`，只覆盖**写面本身**。
  * 但端到端路径 `Array.prototype.push.call(o, 5)` 走
  * `exec/class/invoke.ts` 的 `home === "Array"` 通道 —— 该通道先把接收者
  * **物化成副本**再派发 mutator ⇒ 写入落在副本上：
- *   改前：`o.length` 仍 0、`o[0]` 仍 undefined、返回值 1（返回值对、写面丢）
- *   改后：`o.length` = 1、`o[0]` = 5（与原生 `push.call({length:0},5)` 一致）
+ * 改前：`o.length` 仍 0、`o[0]` 仍 undefined、返回值 1（返回值对、写面丢）
+ * 改后：`o.length` = 1、`o[0]` = 5（与原生 `push.call({length:0},5)` 一致）
  *
  * 接线修法：mutator 家族在**闭 obj 数组样接收者**上改走**原接收者**
  * （`invokeArrMethod` 的泛型接收者臂 → `$arrMutContainer` → `mutateArrayLike`）。
@@ -1414,10 +1414,10 @@ describe("[merged] core-bug-254-mutator-arraylike-wiring.test.ts", () => {
  * **不属本族**，已记入遗留；本钉只覆盖本族能修好的部分。
  *
  * 原生 oracle（node v26，sloppy + strict 一致）：
- *   Array.prototype.shift.call([])            → undefined
- *   Array.prototype.shift.call(5)             → undefined
- *   Array.prototype.shift.call("ab")          → TypeError（只读 length）
- *   Array.prototype.push.call({length:0},5)   → 1，且 o.length = 1、o[0] = 5
+ * Array.prototype.shift.call([]) → undefined
+ * Array.prototype.shift.call(5) → undefined
+ * Array.prototype.shift.call("ab") → TypeError（只读 length）
+ * Array.prototype.push.call({length:0},5) → 1，且 o.length = 1、o[0] = 5
  */
 
 
@@ -1429,7 +1429,7 @@ function litOf(v: unknown): unknown {
   return r.ok ? r.value : undefined;
 }
 
-describe("Bug 254 · mutator 端到端就地改接收者（主 agent 接线）", () => {
+describe("mutator 端到端就地改接收者（主 agent 接线）", () => {
   it("push.call({length:0},5)：写回原接收者的 length 与索引槽", () => {
     const src = `
       export function f() {
@@ -1492,11 +1492,11 @@ describe("Bug 254 · mutator 端到端就地改接收者（主 agent 接线）",
 });
 
 // ---------------------------------------------------------------------------
-// Bug 255 · fill() 零实参
+// fill() 零实参
 // ---------------------------------------------------------------------------
-describe("[] Bug 255 · fill() 零实参", () => {
+describe("fill() 零实参", () => {
 /**
- * Bug 255 — `Array.prototype.fill()` **无实参**：整条 fill 分支被跳过（守卫
+ * `Array.prototype.fill()` **无实参**：整条 fill 分支被跳过（守卫
  * `args.length >= 1`），数组原样保留（原生整数组被填成 `undefined`、
  * length 不变）。
  *
@@ -1514,7 +1514,7 @@ const val = (body: string): unknown => {
 
 const shape = (body: string): string => formatShape___nudojs_core(call(`export function f() {\n${body}\n}`).result);
 
-describe("Bug 255 · fill() 零实参", () => {
+describe("fill() 零实参", () => {
   it("fill() 把整条数组填成 undefined（长度不变）", () => {
     // 原生 [0,1,2,3].fill() → [undefined, undefined, undefined, undefined]
     // 引擎的 undefined 元素面 = lit undefined（确定 undefined，非裸 unknown）
@@ -1537,11 +1537,11 @@ describe("Bug 255 · fill() 零实参", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-258: 数组视图 = Shape facet（形状单一事实源）
+// 数组视图 = Shape facet（形状单一事实源）
 // ---------------------------------------------------------------------------
-describe("[] BUG-258: 数组视图 = Shape facet（形状单一事实源）", () => {
+describe("数组视图 = Shape facet（形状单一事实源）", () => {
 /**
- * BUG-258 回归：**数组视图**从 WeakSet 身份侧表 → **Shape facet**
+ * 回归：**数组视图**从 WeakSet 身份侧表 → **Shape facet**
  * （`{ k: "obj", view: "array" }`）。
  *
  * RegExpExecArray / String.match 结果 / 标签模板对象原生都是**数组 exotic**
@@ -1562,7 +1562,7 @@ describe("[] BUG-258: 数组视图 = Shape facet（形状单一事实源）", ()
 
 
 
-describe("BUG-258: 数组视图 = Shape facet（形状单一事实源）", () => {
+describe("数组视图 = Shape facet（形状单一事实源）", () => {
   it('Array.isArray(/a(b)c/.exec("abc")) 折 true（值面）', () => {
     const r = call(`export function f1() { return Array.isArray(/a(b)c/.exec("abc")); }`, "f1");
     expect(litValue_____abs_ts_2(r.result)).toEqual({ ok: true, value: true });
@@ -1660,11 +1660,11 @@ describe("BUG-258: 数组视图 = Shape facet（形状单一事实源）", () =>
 });
 
 // ---------------------------------------------------------------------------
-// Bug 259：Array.prototype mutator 只在字符串接收者上定抛
+// Array.prototype mutator 只在字符串接收者上定抛
 // ---------------------------------------------------------------------------
-describe("[] Bug 259：Array.prototype mutator 只在字符串接收者上定抛", () => {
+describe("Array.prototype mutator 只在字符串接收者上定抛", () => {
 /**
- * Bug 259 —— `Array.prototype` 的 **mutator** 在**非字符串**原始值接收者上**假抛**
+ * `Array.prototype` 的 **mutator** 在**非字符串**原始值接收者上**假抛**
  * TypeError（node 实测：`Array.prototype.push.call(5, 1)` → 1；`pop.call(5)` →
  * undefined）。ToObject(prim) 得到的是**普通可扩展对象**（length 0），mutator
  * 正常成功；只有**字符串**接收者的 length 不可写 ⇒ 才定抛
@@ -1678,7 +1678,7 @@ describe("[] Bug 259：Array.prototype mutator 只在字符串接收者上定抛
 
 
 
-describe("Bug 259：Array.prototype mutator 只在字符串接收者上定抛", () => {
+describe("Array.prototype mutator 只在字符串接收者上定抛", () => {
   it("push.call(5, 1) = 1（原生；此前定抛 TypeError）", () => {
     const r = call(`export function f() { return Array.prototype.push.call(5, 1); }`);
     expect(litValue_____abs_ts_3(r.result)).toEqual({ ok: true, value: 1 });
@@ -1728,11 +1728,11 @@ describe("Bug 259：Array.prototype mutator 只在字符串接收者上定抛", 
 });
 
 // ---------------------------------------------------------------------------
-// BUG-260：Map 迭代按宿主插入序（字面量键与身份键混插）
+// Map 迭代按宿主插入序（字面量键与身份键混插）
 // ---------------------------------------------------------------------------
-describe("[] BUG-260：Map 迭代按宿主插入序（字面量键与身份键混插）", () => {
+describe("Map 迭代按宿主插入序（字面量键与身份键混插）", () => {
 /**
- * BUG-260：Map 的 Abs 表被拆成 `byLit`（字面量键）与 `identEntries`（引用
+ * Map 的 Abs 表被拆成 `byLit`（字面量键）与 `identEntries`（引用
  * 身份键）两个通道，却**没有插入序**字段 ⇒ 键/值/条目迭代恒先吐字面量键、
  * 再吐身份键 ⇒ 与宿主插入序相反 ⇒ 依赖迭代序的 L1 契约假红 + `#exact` 的
  * 自信错值（Map 是 JS 里唯一保证插入序的集合）。
@@ -1790,7 +1790,7 @@ export function f() {
 }
 `;
 
-describe("BUG-260：Map 迭代按宿主插入序（字面量键与身份键混插）", () => {
+describe("Map 迭代按宿主插入序（字面量键与身份键混插）", () => {
   it("keys()：身份键先插 → 迭代在前（宿主 obj,a）", () => {
     // 宿主：const m=new Map(); m.set(o,1); m.set("a",2) → [...m.keys()] = [o, "a"]
     expect(litValue(call(KEYS_SRC, "f").result)).toEqual({ ok: true, value: "obj,a" });
@@ -1853,11 +1853,11 @@ describe("BUG-260：Map 迭代按宿主插入序（字面量键与身份键混�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 262：concat 的非数组接收者整体作为单元素
+// concat 的非数组接收者整体作为单元素
 // ---------------------------------------------------------------------------
-describe("[] Bug 262：concat 的非数组接收者整体作为单元素", () => {
+describe("concat 的非数组接收者整体作为单元素", () => {
 /**
- * Bug 262 —— `Array.prototype.concat` 的**泛型接收者**被当数组展开 ⇒
+ * `Array.prototype.concat` 的**泛型接收者**被当数组展开 ⇒
  * `Array.prototype.concat.call("ab")` 折出 **2 个元素**（原生是 **1 个**：
  * `["ab"]`）⇒ 元素数 / 首元素全错 ⇒ `nudo test` 对**正确代码**报假红。
  *
@@ -1870,7 +1870,7 @@ describe("[] Bug 262：concat 的非数组接收者整体作为单元素", () =>
 
 
 
-describe("Bug 262：concat 的非数组接收者整体作为单元素", () => {
+describe("concat 的非数组接收者整体作为单元素", () => {
   it("concat.call('ab') = 1 个元素（原生；此前 2 个）", () => {
     const r = call(`export function f() { return Array.prototype.concat.call("ab"); }`);
     expect(tupleEls(r.result)).toEqual(["ab"]);
@@ -1908,11 +1908,11 @@ describe("Bug 262：concat 的非数组接收者整体作为单元素", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 267：sort / reverse / fill / copyWithin 返回接收者
+// sort / reverse / fill / copyWithin 返回接收者
 // ---------------------------------------------------------------------------
-describe("[] Bug 267：sort / reverse / fill / copyWithin 返回接收者", () => {
+describe("sort / reverse / fill / copyWithin 返回接收者", () => {
 /**
- * Bug 267 —— `Array.prototype.sort/reverse/fill/copyWithin.call(<对象>)` ⇒ 引擎
+ * `Array.prototype.sort/reverse/fill/copyWithin.call(<对象>)` ⇒ 引擎
  * 返回**物化出来的空数组**而非**接收者对象**（原生返回 this 本身：
  * `Array.prototype.sort.call({a:1})` → `{a:1}`）⇒ 错值（内容 + 身份全丢）。
  *
@@ -1923,7 +1923,7 @@ describe("[] Bug 267：sort / reverse / fill / copyWithin 返回接收者", () =
 
 
 
-describe("Bug 267：sort / reverse / fill / copyWithin 返回接收者", () => {
+describe("sort / reverse / fill / copyWithin 返回接收者", () => {
   it("sort.call({a:1}) = 接收者对象（此前折空数组）", () => {
     const r = call(`export function f() { return Array.prototype.sort.call({ a: 1 }); }`);
     expect(r.result.shape.k).toBe("obj");
@@ -1956,11 +1956,11 @@ describe("Bug 267：sort / reverse / fill / copyWithin 返回接收者", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 268：Array.prototype.with 在原始值接收者上定抛 RangeError
+// Array.prototype.with 在原始值接收者上定抛 RangeError
 // ---------------------------------------------------------------------------
-describe("[] Bug 268：Array.prototype.with 在原始值接收者上定抛 RangeError", () => {
+describe("Array.prototype.with 在原始值接收者上定抛 RangeError", () => {
 /**
- * Bug 268 —— `Array.prototype.with.call(<原始值>)` ⇒ native 必抛 `RangeError`
+ * `Array.prototype.with.call(<原始值>)` ⇒ native 必抛 `RangeError`
  * （`with.call(1, 0, 2)` → RangeError: Invalid index : 0——ToObject(prim).length
  * = 0 ⇒ 下标必越界），引擎**恒不抛** ⇒ L2 门禁**假绿**（throws 面折 never）。
  *
@@ -1972,7 +1972,7 @@ describe("[] Bug 268：Array.prototype.with 在原始值接收者上定抛 Range
 
 
 
-describe("Bug 268：Array.prototype.with 在原始值接收者上定抛 RangeError", () => {
+describe("Array.prototype.with 在原始值接收者上定抛 RangeError", () => {
   it("with.call(1, 0, 2) 定抛 RangeError（原生；此前恒不抛 ⇒ 假绿）", () => {
     const r = call(`export function f() { return Array.prototype.with.call(1, 0, 2); }`);
     expect(isNever(r.result)).toBe(true);
@@ -2006,11 +2006,11 @@ describe("Bug 268：Array.prototype.with 在原始值接收者上定抛 RangeErr
 });
 
 // ---------------------------------------------------------------------------
-// Bug 270 · toSpliced 删除窗口（零实参 / 显式 undefined）
+// toSpliced 删除窗口（零实参 / 显式 undefined）
 // ---------------------------------------------------------------------------
-describe("[] Bug 270 · toSpliced 删除窗口（零实参 / 显式 undefined）", () => {
+describe("toSpliced 删除窗口（零实参 / 显式 undefined）", () => {
 /**
- * Bug 270 — `Array.prototype.toSpliced()` 的删除窗口：`skipCount` **缺省**与
+ * `Array.prototype.toSpliced()` 的删除窗口：`skipCount` **缺省**与
  * `skipCount` **显式 undefined** 被混为一谈（`toIOI` 对两者都返回
  * undefined）⇒ `toSpliced()` / `toSpliced(0, undefined)` 把整个数组删空
  * （原生**原样保留**）。
@@ -2019,7 +2019,7 @@ describe("[] Bug 270 · toSpliced 删除窗口（零实参 / 显式 undefined）
  * - `toSpliced()` **start 缺省** ⇒ `actualSkipCount = 0`（不删）；
  * - `toSpliced(0)` skipCount 缺省 ⇒ 删到尾；
  * - `toSpliced(0, undefined)` skipCount **在场** ⇒ `ToIntegerOrInfinity(undefined) = 0`
- *   ⇒ 不删。
+ * ⇒ 不删。
  *
  * 根修：删除窗口走 `spliceWindow`（arr-methods.ts）——splice / toSpliced 两臂
  * 共用同一实现；`toIOIArg` 提供「缺省 / 显式 undefined / 数值」第三态。
@@ -2032,7 +2032,7 @@ const val = (body: string): unknown => {
   return (r.result as { term?: { op?: string; value?: unknown } })?.term?.value;
 };
 
-describe("Bug 270 · toSpliced 删除窗口（零实参 / 显式 undefined）", () => {
+describe("toSpliced 删除窗口（零实参 / 显式 undefined）", () => {
   it("toSpliced() 零实参：原样保留（原生 1,2,3）", () => {
     expect(val(`return [1,2,3].toSpliced().join(",");`)).toBe("1,2,3");
   });
@@ -2064,11 +2064,11 @@ describe("Bug 270 · toSpliced 删除窗口（零实参 / 显式 undefined）", 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 354 · array 缺元素约束守卫
+// array 缺元素约束守卫
 // ---------------------------------------------------------------------------
-describe("[] Bug 354 · array 缺元素约束守卫", () => {
+describe("array 缺元素约束守卫", () => {
 /**
- * Bug 354 — `array()` **少传元素约束**：`asNestedConstraint(undefined, …)`
+ * `array()` **少传元素约束**：`asNestedConstraint(undefined, …)`
  * 静默变成 `lit(undefined)` ⇒ 契约变成「元素必须是 undefined」⇒ 任何
  * **合法**数组实参都被判违反（假红：`a[0] ∈ lit(undefined)`），且零诊断
  * 说明缺参。
@@ -2084,7 +2084,7 @@ describe("[] Bug 354 · array 缺元素约束守卫", () => {
 
 
 
-describe("Bug 354 · array 缺元素约束守卫", () => {
+describe("array 缺元素约束守卫", () => {
   beforeEach(() => {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
@@ -2152,11 +2152,11 @@ export function g() {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 355：数组元素的长度界被执法（此前静默丢弃 = 门禁假绿）
+// 数组元素的长度界被执法（此前静默丢弃 = 门禁假绿）
 // ---------------------------------------------------------------------------
-describe("[] Bug 355：数组元素的长度界被执法（此前静默丢弃 = 门禁假绿）", () => {
+describe("数组元素的长度界被执法（此前静默丢弃 = 门禁假绿）", () => {
 /**
- * Bug 355 —— 侧车 `array(string().max(1))` 的**元素长度界整条被丢弃** ⇒
+ * 侧车 `array(string().max(1))` 的**元素长度界整条被丢弃** ⇒
  * L3 前置条件**假绿**（门禁 0 error），而 **zod 产物面**同时在执法 ⇒
  * **跨产物面自相矛盾**（CI 判绿、运行时校验器判红）。
  *
@@ -2202,7 +2202,7 @@ function violated(caller: string): number {
   return checkCaller(caller).issues.filter((i) => i.code === "nudo:constraint-violated").length;
 }
 
-describe("Bug 355：数组元素的长度界被执法（此前静默丢弃 = 门禁假绿）", () => {
+describe("数组元素的长度界被执法（此前静默丢弃 = 门禁假绿）", () => {
   it("元素超长 ⇒ 报违例（改前 0 error 假绿）", () => {
     expect(violated(CALLER)).toBe(1);
   });
@@ -2226,19 +2226,19 @@ export function g() { return f(["a", "b"]); }
 });
 
 // ---------------------------------------------------------------------------
-// Bug 385 · 原型环：Object.setPrototypeOf 抛 TypeError
+// 原型环：Object.setPrototypeOf 抛 TypeError
 // ---------------------------------------------------------------------------
-describe("[] Bug 385 · 原型环：Object.setPrototypeOf 抛 TypeError", () => {
+describe("原型环：Object.setPrototypeOf 抛 TypeError", () => {
 /**
- * Bug 385 —— `Object.setPrototypeOf` **不做原型环检测**：引擎建出一棵**活原型环**，
+ * `Object.setPrototypeOf` **不做原型环检测**：引擎建出一棵**活原型环**，
  * native 在建环瞬间抛 `TypeError: Cyclic __proto__ value`。
  *
  * 修前（HEAD）：`setProtoAbs` 直接 `protoTable.set(o, proto)` ⇒ 环被静默建出
  * （native 不存在该状态）⇒ 之后所有原型链观察都跑在环上，产出与 native 不可比的值。
  *
  * 修后：**同一事实源**（`protoChangeAllowed`，builtins/object/methods.ts）——
- *   - `Object.setPrototypeOf` 据此**抛 TypeError**（native 同款）
- *   - `Reflect.setPrototypeOf` 据此**返 false**（native 口径：Reflect 不抛，返 boolean）
+ * - `Object.setPrototypeOf` 据此**抛 TypeError**（native 同款）
+ * - `Reflect.setPrototypeOf` 据此**返 false**（native 口径：Reflect 不抛，返 boolean）
  * 环检测本体在 objects.ts（`protoChainContains`：沿新原型的 [[Prototype]] 链上溯）。
  *
  * oracle：node v26 实测（`node -e` 逐条对照）。
@@ -2246,7 +2246,7 @@ describe("[] Bug 385 · 原型环：Object.setPrototypeOf 抛 TypeError", () => 
 
 
 
-describe("Bug 385 · 原型环：Object.setPrototypeOf 抛 TypeError", () => {
+describe("原型环：Object.setPrototypeOf 抛 TypeError", () => {
   it("`a→b` 后 `b→a` ⇒ 抛 TypeError（native：TypeError: Cyclic __proto__ value）", () => {
     const rec = call(
       `export function f() { const a = {}, b = {}; Object.setPrototypeOf(a, b); Object.setPrototypeOf(b, a); return 1; }`,
@@ -2269,7 +2269,7 @@ describe("Bug 385 · 原型环：Object.setPrototypeOf 抛 TypeError", () => {
   });
 });
 
-describe("Bug 385 · 原型环：Reflect.setPrototypeOf 返 false（Reflect 口径不抛）", () => {
+describe("原型环：Reflect.setPrototypeOf 返 false（Reflect 口径不抛）", () => {
   it("`Reflect.setPrototypeOf(b, a)`（a→b 已成环）⇒ false（native：false）", () => {
     expect(
       val(`export function f() { const a = {}, b = {}; Object.setPrototypeOf(a, b); return Reflect.setPrototypeOf(b, a); }`),
@@ -2283,7 +2283,7 @@ describe("Bug 385 · 原型环：Reflect.setPrototypeOf 返 false（Reflect 口�
   });
 });
 
-describe("Bug 385 · 对照组（合法原型设定）不得回归", () => {
+describe("对照组（合法原型设定）不得回归", () => {
   it("`Object.setPrototypeOf(a, b)` 生效（native：getPrototypeOf(a) === b）", () => {
     expect(
       val(`export function f() { const a = {}, b = {}; Object.setPrototypeOf(a, b); return Object.getPrototypeOf(a) === b; }`),
@@ -2299,11 +2299,11 @@ describe("Bug 385 · 对照组（合法原型设定）不得回归", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 388 array pattern signature rendering
+// array pattern signature rendering
 // ---------------------------------------------------------------------------
-describe("[] Bug 388 array pattern signature rendering", () => {
+describe("array pattern signature rendering", () => {
 /**
- * Bug 388 —— 数组解构形参在签名面被渲染成对象解构 `{ x, y }`。
+ * 数组解构形参在签名面被渲染成对象解构 `{ x, y }`。
  *
  * 根因：`FormalParam.kind === "pattern"` 同时覆盖 `ObjectPattern` 与
  * `ArrayPattern`，模型层**不记录模式种类** ⇒ 渲染层没有区分依据，一律输出
@@ -2348,7 +2348,7 @@ const objectPatternNode = {
   ],
 };
 
-describe("Bug 388 array pattern signature rendering", () => {
+describe("array pattern signature rendering", () => {
   it("array destructured param records pattern kind array", () => {
     const formals = formalParamsFromNodes([arrayPatternNode] as never);
     expect(formals).toHaveLength(1);
@@ -2391,11 +2391,11 @@ describe("Bug 388 array pattern signature rendering", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 392 array pattern contract addressing is by index
+// array pattern contract addressing is by index
 // ---------------------------------------------------------------------------
-describe("[] Bug 392 array pattern contract addressing is by index", () => {
+describe("array pattern contract addressing is by index", () => {
 /**
- * Bug 392 —— 数组解构形参的**字段级契约**被按**属性键**寻址 ⇒ 假红。
+ * 数组解构形参的**字段级契约**被按**属性键**寻址 ⇒ 假红。
  *
  * 根因：`locateContractParam` 对 `kind: "pattern"` 默认「bound 名即属性键」
  * （对对象解构成立）。对数组解构不成立：`[a, b]` 的 `a` 是**下标 0 的元素**
@@ -2435,7 +2435,7 @@ const objectPatternNode = {
   ],
 };
 
-describe("Bug 392 array pattern contract addressing is by index", () => {
+describe("array pattern contract addressing is by index", () => {
   it("array pattern bound name resolves to the element index", () => {
     const formals = formalParamsFromNodes([arrayPatternNode] as never);
     expect(locateContractParam(formals, "a")).toEqual({
@@ -2475,11 +2475,11 @@ describe("Bug 392 array pattern contract addressing is by index", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 393 array pattern param shape model
+// array pattern param shape model
 // ---------------------------------------------------------------------------
-describe("[] Bug 393 array pattern param shape model", () => {
+describe("array pattern param shape model", () => {
 /**
- * Bug 393 —— 数组解构形参的契约把形参投影成**对象 shape**（错形态）
+ * 数组解构形参的契约把形参投影成**对象 shape**（错形态）
  * ⇒ 函数体按**数组下标**读绑定名 `a` ⇒ 读到 `never` ⇒ 返回面塌成 `never`。
  *
  * 修法（族 08 · S3 = **模型层**）：形参表面必须记录「这是数组解构」以及
@@ -2487,9 +2487,9 @@ describe("[] Bug 393 array pattern param shape model", () => {
  * `buildPatternObjAbs`）据此建 **tuple/arr** 而不是对象 shape。
  *
  * ⚠ **投影侧在 S4**（`generalize.ts`）：S4 需要的字段形状 =
- *   `FormalParam.patternKind === "array"`（判形态）+ `FormalParam.boundIndex`
- *   （绑定名 → 下标）+ `FormalParam.propKey`（数组解构**恒空**——数组没有
- *   属性键）。S4 建 tuple 时按下标取 `boundIndex` 的值。
+ * `FormalParam.patternKind === "array"`（判形态）+ `FormalParam.boundIndex`
+ * （绑定名 → 下标）+ `FormalParam.propKey`（数组解构**恒空**——数组没有
+ * 属性键）。S4 建 tuple 时按下标取 `boundIndex` 的值。
  *
  * 反向钉：HEAD（未修）上 `patternKind` 为 undefined、`boundIndex` 不存在
  * ⇒ 本文件的断言**必失败**。
@@ -2518,7 +2518,7 @@ const objectPatternNode = {
   ],
 };
 
-describe("Bug 393 array pattern param shape model", () => {
+describe("array pattern param shape model", () => {
   it("array pattern exposes the element index of every top-level binding", () => {
     const formals = formalParamsFromNodes([arrayPatternNode] as never);
     const f = formals[0]!;
@@ -2573,19 +2573,19 @@ describe("Bug 393 array pattern param shape model", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 946: bigint ⊗ array in + is string concat (never throws)
+// bigint ⊗ array in + is string concat (never throws)
 // ---------------------------------------------------------------------------
-describe("[] Bug 946: bigint ⊗ array in + is string concat (never throws)", () => {
+describe("bigint ⊗ array in + is string concat (never throws)", () => {
 /**
- * Bug 946 —— `+` 的 bigint 臂**排在数组臂之前** ⇒ `1n + []` 被短路进数值臂。
+ * `+` 的 bigint 臂**排在数组臂之前** ⇒ `1n + []` 被短路进数值臂。
  *
  * 根因（两段，见 AGENT-CONTEXT §4 / SURVEY-08 §1 第 5 行）：
  * ① `arithmetic/addsub.ts` 的 `add()`：bigint 臂（`foldBigintBinOp`）在数组臂
- *    之前 ⇒ `+` 的第一步 ToPrimitive 被跳过（数组侧恒 join(",") ⇒ string）。
- *    原生 `1n + []` = string "1"（**从不抛**），引擎却硬抛 TypeError ⇒ 折
- *    `never` ⇒ L2 `nudo:entry-may-throw` **假红**（exit 1）。
+ * 之前 ⇒ `+` 的第一步 ToPrimitive 被跳过（数组侧恒 join(",") ⇒ string）。
+ * 原生 `1n + []` = string "1"（**从不抛**），引擎却硬抛 TypeError ⇒ 折
+ * `never` ⇒ L2 `nudo:entry-may-throw` **假红**（exit 1）。
  * ② `arithmetic/coerce.ts` 的 `isMaybeBigintOperand`：kind 清单漏 `arr`/
- *    `tuple` ⇒ 数组 ⊗ bigint 落不进「数组专属分流」，只能落进兜底路径。
+ * `tuple` ⇒ 数组 ⊗ bigint 落不进「数组专属分流」，只能落进兜底路径。
  *
  * 修法：`add()` 的数组臂**前移**到 bigint 臂之前（ToPrimitive 先行）；kind
  * 清单补 `arr`/`tuple`，并由 `foldBigintBinOp` 的数组分支**显式硬抛**
@@ -2596,10 +2596,10 @@ describe("[] Bug 946: bigint ⊗ array in + is string concat (never throws)", ()
  * may-throw）。
  *
  * 原生 oracle（node 实跑）：
- *   1n + []    => string "1"      1n + [1,2] => string "11,2"
- *   [] + 1n    => string "1"      1n + "s"   => string "1s"
- *   [1] + 1n   => string "11"     1n + 1     => THROW TypeError
- *   1 + []     => string "1"      1n - []    => THROW TypeError
+ * 1n + [] => string "1" 1n + [1,2] => string "11,2"
+ * [] + 1n => string "1" 1n + "s" => string "1s"
+ * [1] + 1n => string "11" 1n + 1 => THROW TypeError
+ * 1 + [] => string "1" 1n - [] => THROW TypeError
  */
 
 
@@ -2616,7 +2616,7 @@ const ARR_ABS = abs_____index_ts_2(
   "path",
 );
 
-describe("Bug 946: bigint ⊗ array in + is string concat (never throws)", () => {
+describe("bigint ⊗ array in + is string concat (never throws)", () => {
   it("1n + [] folds to string \"1\" (native), not never/TypeError", () => {
     const r = call(`export function f() { return 1n + []; }`);
     expect(isNever(r.result)).toBe(false);
@@ -2653,7 +2653,7 @@ describe("Bug 946: bigint ⊗ array in + is string concat (never throws)", () =>
   });
 });
 
-describe("Bug 946 反向：不得改动既有口径", () => {
+describe("反向：不得改动既有口径", () => {
   it("number ⊗ 数组仍是 string 拼接（1 + [] = \"1\"，无 may-throw）", () => {
     expect(val(`export function f() { return 1 + []; }`)).toEqual({ ok: true, value: "1" });
     expect(effects(`export function f() { return 1 + []; }`)).toEqual([]);
@@ -2695,7 +2695,7 @@ describe("Bug 946 反向：不得改动既有口径", () => {
   });
 });
 
-describe("Bug 946 成员级：sum 含 arr/tuple 成员不连坐 may-throw", () => {
+describe("成员级：sum 含 arr/tuple 成员不连坐 may-throw", () => {
   // 单源化批次（coerce/surface 谓词收敛）曾把 arr/tuple 成员带进 may-throw
   // 通道 ⇒ `x & 1`（x: number|[]）记假 TypeError may-throw ⇒ L2 假红。
   // 原生 oracle：5 & 1 = 1、[] & 1 = 0、1 - 5 / 1 - [] 均不抛。
@@ -2751,11 +2751,11 @@ describe("Bug 946 成员级：sum 含 arr/tuple 成员不连坐 may-throw", () =
 });
 
 // ---------------------------------------------------------------------------
-// Bug 996 — CJS getter / setter 不是可调用入口
+// CJS getter / setter 不是可调用入口
 // ---------------------------------------------------------------------------
-describe("[] Bug 996 — CJS getter / setter 不是可调用入口", () => {
+describe("CJS getter / setter 不是可调用入口", () => {
 /**
- * Bug 996 —— core 的 CJS 对象字面量收集器把 **getter / setter**（`ObjectMethod`
+ * core 的 CJS 对象字面量收集器把 **getter / setter**（`ObjectMethod`
  * 的 `kind` 是 `get` / `set`）当成**导出函数** ⇒ `nudo check` **凭空造出**
  * `f() => unknown`（getter）/ `f(v: any) => unknown`（setter）+ **假的 L2
  * `nudo:entry-may-throw`**（假红，exit 1）⇒ 而 dts / health 面（service 普查）
@@ -2792,7 +2792,7 @@ const PLAIN_METHOD = `module.exports = {
 };
 `;
 
-describe("Bug 996 — CJS getter / setter 不是可调用入口", () => {
+describe("CJS getter / setter 不是可调用入口", () => {
   it("getter 不进普查", () => {
     expect(listTopFunctions(GETTER)).toEqual([]);
   });

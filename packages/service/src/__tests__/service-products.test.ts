@@ -27,11 +27,11 @@ import { loadGeneratedModule } from "../emit/__tests__/fixtures.ts";
 import { loadEnvs, preloadPathEnvs, getPathEnvLoadErrors, clearPathEnvCaches } from "../evaluator/env-loader.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 191 — dts 面：访问器占位槽不得渲染成 exact undefined
+// dts 面：访问器占位槽不得渲染成 exact undefined
 // ---------------------------------------------------------------------------
-describe("[] Bug 191 — dts 面：访问器占位槽不得渲染成 exact undefined", () => {
+describe("dts 面：访问器占位槽不得渲染成 exact undefined", () => {
 /**
- * Bug 191 回归（**dts 投影面**）：对象字面量访问器（getter）的占位槽
+ * 回归（**dts 投影面**）：对象字面量访问器（getter）的占位槽
  * 不得在 `.d.ts` 里被渲染成 exact `undefined`。
  *
  * 背景：访问器不住在 shape 槽里——transpile 只落一个 `$lit(void 0)` 占位槽
@@ -65,7 +65,7 @@ function declOf(source: string): string {
   return line ?? "";
 }
 
-describe("Bug 191 — dts 面：访问器占位槽不得渲染成 exact undefined", () => {
+describe("dts 面：访问器占位槽不得渲染成 exact undefined", () => {
   it("getter 返数字：dts 取读域 number（原生读 1）", () => {
     expect(declOf(`export function g() { return { get ab() { return 1; } }; }`)).toContain(
       "{ ab: 1 }",
@@ -102,7 +102,7 @@ describe("Bug 191 — dts 面：访问器占位槽不得渲染成 exact undefine
   });
 });
 
-describe("Bug 191 dts 负控制：非 getter 槽不受影响", () => {
+describe("dts 负控制：非 getter 槽不受影响", () => {
   it("普通数据属性仍渲染成它的值类型", () => {
     expect(declOf(`export function g() { return { plain: 5 }; }`)).toContain("{ plain: 5 }");
   });
@@ -130,11 +130,11 @@ describe("Bug 191 dts 负控制：非 getter 槽不受影响", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 233: zod brand 节点不得引用无运行时值的名字
+// zod brand 节点不得引用无运行时值的名字
 // ---------------------------------------------------------------------------
-describe("[] Bug 233: zod brand 节点不得引用无运行时值的名字", () => {
+describe("zod brand 节点不得引用无运行时值的名字", () => {
 /**
- * Bug 233 —— `nudo export --format schema` 把**生成器的 `constructor` brand**
+ * `nudo export --format schema` 把**生成器的 `constructor` brand**
  * （`GeneratorFunction`）渲染成 `z.instanceof(GeneratorFunction)`：生成的 zod
  * 模块 **import 即崩**（`ReferenceError: GeneratorFunction is not defined`），
  * 整个产物作废（客户端 import 的第一行就崩，一个校验器都拿不到）。
@@ -198,14 +198,14 @@ function generatorOutputAbs(): Abs {
   return out;
 }
 
-describe("Bug 233: zod brand 节点不得引用无运行时值的名字", () => {
+describe("zod brand 节点不得引用无运行时值的名字", () => {
   it("生成器的 constructor brand 不再渲染成 z.instanceof(GeneratorFunction)", () => {
     const { source, dropped } = absToZodSchemaModule({ genOutput: generatorOutputAbs() });
     expect(source).not.toMatch(/z\.instanceof\([^)]*GeneratorFunction/);
-    // 族 02 / Bug 240（S21）：`constructor` 是 **internal 槽**（原生挂在原型上，
+    // 族 02 / （S21）：`constructor` 是 **internal 槽**（原生挂在原型上，
     // 不是自有属性）⇒ core 约束面（`absToConstraint`）与投影面（`format.ts`）
     // 同口径剔除 internal 槽 ⇒ 产物里**连这个字段都没有**。
-    // Bug 233 的不变量（"产物永远可 import"）由此更强地满足：没有名字需要
+    // 的不变量（"产物永远可 import"）由此更强地满足：没有名字需要
     // 解析，也就没有 ReferenceError 可言（不是"降级成 z.unknown()"）。
     expect(source).not.toContain("constructor");
     expect(source).not.toContain("GeneratorFunction");
@@ -239,7 +239,7 @@ describe("Bug 233: zod brand 节点不得引用无运行时值的名字", () => 
     expect(absToSchemaSource(brandOf("Date"))).toBe("z.instanceof(Date)");
     expect(absToSchemaSource(brandOf("Map"))).toBe("z.instanceof(Map)");
     expect(absToSchemaSource(brandOf("RegExp"))).toBe("z.instanceof(RegExp)");
-    // 非 brand 形态不受影响（number prim 的域渲染见 Bug 1001：含 NaN / ±Infinity）
+    // 非 brand 形态不受影响（number prim 的域渲染见 含 NaN / ±Infinity）
     expect(absToSchemaSource(num())).toContain("z.number()");
   });
 
@@ -261,11 +261,11 @@ describe("Bug 233: zod brand 节点不得引用无运行时值的名字", () => 
 });
 
 // ---------------------------------------------------------------------------
-// BUG-025 — standard 方言的 promise 节点不再放行一切
+// standard 方言的 promise 节点不再放行一切
 // ---------------------------------------------------------------------------
-describe("[] BUG-025 — standard 方言的 promise 节点不再放行一切", () => {
+describe("standard 方言的 promise 节点不再放行一切", () => {
 /**
- * BUG-025 —— `nudo export --format standard` 的 `promise` 分支**放行一切**
+ * `nudo export --format standard` 的 `promise` 分支**放行一切**
  * ⇒ 非 Promise 值被校验器接受，而同一份 Abs 的 zod 面（`z.promise`）与 guard
  * 面（`data instanceof Promise`）都拒绝 ⇒ 同一 Abs 在两个方言里给出相反裁决。
  *
@@ -280,7 +280,7 @@ describe("[] BUG-025 — standard 方言的 promise 节点不再放行一切", (
 
 const promiseNode: SchemaNode = { k: "promise", inner: { k: "unknown" } };
 
-describe("BUG-025 — standard 方言的 promise 节点不再放行一切", () => {
+describe("standard 方言的 promise 节点不再放行一切", () => {
   it("非 Promise 值被拒绝（42 / 'str' / {}）", () => {
     for (const bad of [42, "str", {}, null, undefined]) {
       const r = validateSchemaNode(promiseNode, bad);
@@ -302,17 +302,17 @@ describe("BUG-025 — standard 方言的 promise 节点不再放行一切", () =
 });
 
 // ---------------------------------------------------------------------------
-// Bug 027 · 契约的 union 字面量域必须在 dts 面保形
+// 契约的 union 字面量域必须在 dts 面保形
 // ---------------------------------------------------------------------------
-describe("[] Bug 027 · 契约的 union 字面量域必须在 dts 面保形", () => {
+describe("契约的 union 字面量域必须在 dts 面保形", () => {
 /**
- * Bug 027 —— `export --format dts` 把**非同 prim 的字面量 union** 拓宽成基类型
+ * `export --format dts` 把**非同 prim 的字面量 union** 拓宽成基类型
  * ⇒ 发布的 `.d.ts` 允许契约违约的调用（双门禁对撞）。
  *
  * 同一次运行、同一份契约三个面三种说法：
- *   check 签名   `pick(v: lit(1) | lit("x")) => number | string`
- *   dts（改前）  `pick(v: number | string): number | string`   ← **拓宽**
- *   zod          `z.union([z.literal(1), z.literal("x")])`      ← 保字面量
+ * check 签名 `pick(v: lit(1) | lit("x")) => number | string`
+ * dts（改前） `pick(v: number | string): number | string` ← **拓宽**
+ * zod `z.union([z.literal(1), z.literal("x")])` ← 保字面量
  *
  * 根因：`contractLiteralTSType` **只读顶层 pred**。同 prim 字面量 union 在 Abs
  * 面上被特化成「prim + or(eq…)」，字面量在顶层 pred 里 ⇒ 保形 ✓；而**非同
@@ -337,7 +337,7 @@ function dtsOf(c: ReturnType<typeof union>): string {
   }).lines.join("\n");
 }
 
-describe("Bug 027 · 契约的 union 字面量域必须在 dts 面保形", () => {
+describe("契约的 union 字面量域必须在 dts 面保形", () => {
   it("非同 prim 字面量 union ⇒ `1 | \"x\"`（改前 `number | string`）", () => {
     const text = dtsOf(union(litC(1), litC("x")));
     expect(text).toContain(`export declare function pick(v: 1 | "x"): 1 | "x";`);
@@ -369,11 +369,11 @@ describe("Bug 027 · 契约的 union 字面量域必须在 dts 面保形", () =>
 });
 
 // ---------------------------------------------------------------------------
-// BUG-032 —— bigint 字面量保基类型
+// bigint 字面量保基类型
 // ---------------------------------------------------------------------------
-describe("[] BUG-032 —— bigint 字面量保基类型", () => {
+describe("bigint 字面量保基类型", () => {
 /**
- * BUG-032 —— export 的 zod / standard 两个方言把**已知的 bigint 字面量**
+ * export 的 zod / standard 两个方言把**已知的 bigint 字面量**
  * 整条降级成 `unknown`（连基类型都没保住）⇒ 校验器接受**任何**值；
  * 而 guard 面（`data === 10n`）与 dts 面（`bigint`）都保住了基类型
  * ⇒ 三面接受集不相交。
@@ -387,7 +387,7 @@ describe("[] BUG-032 —— bigint 字面量保基类型", () => {
 
 const bigintLit = (v: bigint) => abs({ k: "prim", type: "bigint" }, { op: "lit", value: v }, undefined, "exact");
 
-describe("BUG-032 —— bigint 字面量保基类型", () => {
+describe("bigint 字面量保基类型", () => {
   it("zod 方言：z.bigint()（不是 z.unknown()）", () => {
     const p = projectAbsToSchema(bigintLit(10n), { dialect: "zod" });
     expect(p.source).toBe("z.bigint()");
@@ -403,11 +403,11 @@ describe("BUG-032 —— bigint 字面量保基类型", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-080 残留 — @nudo:as 目标形态不支持 ⇒ 显式诊断（不许静默）
+// 残留 — @nudo:as 目标形态不支持 ⇒ 显式诊断（不许静默）
 // ---------------------------------------------------------------------------
-describe("[] BUG-080 残留 — @nudo:as 目标形态不支持 ⇒ 显式诊断（不许静默）", () => {
+describe("残留 — @nudo:as 目标形态不支持 ⇒ 显式诊断（不许静默）", () => {
 /**
- * BUG-080 残留（service 指令面）：`@nudo:as` 覆盖只施加在
+ * 残留（service 指令面）：`@nudo:as` 覆盖只施加在
  * **VariableDeclaration 的 init** 与 **ReturnStatement 的值**上（文档口径）
  * ⇒ 标注在**其它语句形态**（for 头 / for-init / if / 表达式语句 / 函数声明 …）
  * 上的 `@nudo:as` **无适用目标**。
@@ -415,7 +415,7 @@ describe("[] BUG-080 残留 — @nudo:as 目标形态不支持 ⇒ 显式诊断�
  * 改前：这类指令被**采集**（asTargets 非空）却**静默失效**——类型没变、
  * 零诊断（用户毫无痕迹的假绿）。
  *
- * 改后：按 BUG-080 的修复方向（不许静默）⇒ 目标形态不支持时发一条显式
+ * 改后：按 的修复方向（不许静默）⇒ 目标形态不支持时发一条显式
  * `nudo:directive-syntax`（既有码，不另造新码；warning 级，不制造假红）。
  *
  * 负控制钉住：适用形态（变量声明 / return / export 声明）**零诊断**，且
@@ -453,7 +453,7 @@ function sigOf(r: { signatures: { name: string; display: string }[] }, fn: strin
   return r.signatures.find((s) => s.name === fn)?.display ?? "(missing)";
 }
 
-describe("BUG-080 残留 — @nudo:as 目标形态不支持 ⇒ 显式诊断（不许静默）", () => {
+describe("残留 — @nudo:as 目标形态不支持 ⇒ 显式诊断（不许静默）", () => {
   it("for 头（for-of 解构）：诊断一条，覆盖不生效", () => {
     const src = `export function f(xs) {
   // @nudo:as shape({ a: number() })
@@ -531,11 +531,11 @@ export const raw = 1;
 });
 
 // ---------------------------------------------------------------------------
-// BUG-203 —— zod 长度界按 UTF-16 码元
+// zod 长度界按 UTF-16 码元
 // ---------------------------------------------------------------------------
-describe("[] BUG-203 —— zod 长度界按 UTF-16 码元", () => {
+describe("zod 长度界按 UTF-16 码元", () => {
 /**
- * BUG-203 —— zod 面把 Abs 的长度界（**UTF-16 码元**）一对一映射成 zod v4 的
+ * zod 面把 Abs 的长度界（**UTF-16 码元**）一对一映射成 zod v4 的
  * `.min()/.max()`（**Unicode 码点**）⇒ 含星平面字符时 zod 面与契约 / guard /
  * standard 三面裁决相反（min 假红 / max 假绿）⇒ 四面互斥。
  *
@@ -545,7 +545,7 @@ describe("[] BUG-203 —— zod 长度界按 UTF-16 码元", () => {
 
 
 
-describe("BUG-203 —— zod 长度界按 UTF-16 码元", () => {
+describe("zod 长度界按 UTF-16 码元", () => {
   it("strMin / strMax 用 refine 写 .length（不是 .min()/.max()）", () => {
     const min = schemaNodeToZod({
       k: "prim",
@@ -571,11 +571,11 @@ describe("BUG-203 —— zod 长度界按 UTF-16 码元", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-214 —— dts 不发布调用点观测的字面量
+// dts 不发布调用点观测的字面量
 // ---------------------------------------------------------------------------
-describe("[] BUG-214 —— dts 不发布调用点观测的字面量", () => {
+describe("dts 不发布调用点观测的字面量", () => {
 /**
- * BUG-214 —— `export --format dts` 把**一次调用点观测到的字面量**当成函数的
+ * `export --format dts` 把**一次调用点观测到的字面量**当成函数的
  * TS 声明发布：返回位的**对象槽字面量不拓宽** ⇒ 消费端 `tsc --strict` 对
  * **合法代码**报 TS2367（把 `{ a: number }` 谎报成 `{ a: 1 }`）。
  *
@@ -586,7 +586,7 @@ describe("[] BUG-214 —— dts 不发布调用点观测的字面量", () => {
 
 
 
-describe("BUG-214 —— dts 不发布调用点观测的字面量", () => {
+describe("dts 不发布调用点观测的字面量", () => {
   it("纯调用点观测：返回位对象槽字面量 → 基类型", () => {
     const dts = generateDts(
       analyzeFile(
@@ -609,11 +609,11 @@ describe("BUG-214 —— dts 不发布调用点观测的字面量", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-250 — 内建 brand 的 guard 产物必须过 tsc --strict
+// 内建 brand 的 guard 产物必须过 tsc --strict
 // ---------------------------------------------------------------------------
-describe("[] BUG-250 — 内建 brand 的 guard 产物必须过 tsc --strict", () => {
+describe("内建 brand 的 guard 产物必须过 tsc --strict", () => {
 /**
- * BUG-250 —— guard 产物因 brand 的 `instanceof` **类型收窄**过不了
+ * guard 产物因 brand 的 `instanceof` **类型收窄**过不了
  * `tsc --noEmit --strict`（TS7053：`data["0"]` 在
  * `Uint8Array | Record<string, any>` 上不可索引）⇒ `nudo export` **exit 0、
  * 零警告**地发布不可编译的产物。
@@ -655,7 +655,7 @@ function uint8Abs(): Abs {
   );
 }
 
-describe("BUG-250 — 内建 brand 的 guard 产物必须过 tsc --strict", () => {
+describe("内建 brand 的 guard 产物必须过 tsc --strict", () => {
   it("产物真跑 tsc --noEmit --strict（改前 TS7053 ×2）", () => {
     const source = generateGuardFunctionFromAbs("isbytesOutput", uint8Abs());
     // 身份子句会收窄 `data` ⇒ 声明必须是 `: any`（否则索引读报 TS7053）
@@ -689,11 +689,11 @@ describe("BUG-250 — 内建 brand 的 guard 产物必须过 tsc --strict", () =
 });
 
 // ---------------------------------------------------------------------------
-// BUG-271 —— core import 不得豁免 builder 声明头
+// core import 不得豁免 builder 声明头
 // ---------------------------------------------------------------------------
-describe("[] BUG-271 —— core import 不得豁免 builder 声明头", () => {
+describe("core import 不得豁免 builder 声明头", () => {
 /**
- * BUG-271 —— `.nudo.ts` 侧车里**已有**的 `import { lit } from "@nudojs/core";`
+ * `.nudo.ts` 侧车里**已有**的 `import { lit } from "@nudojs/core";`
  * 被当成「builder 已就位」⇒ 抑制掉 `declare const lit: …litC;` 声明头 ⇒
  * 产物里的 `lit(1)` 绑定到 core 的 **Term 构造器**（约束构建器叫 `litC`）
  * ⇒ `tsc --strict` 报 TS2322 / TS2345，而 `nudo check` 对该侧车判 OK
@@ -727,7 +727,7 @@ export function f(x) {
 }
 `;
 
-describe("BUG-271 —— core import 不得豁免 builder 声明头", () => {
+describe("core import 不得豁免 builder 声明头", () => {
   it("侧车已有 `import { lit }` ⇒ 仍补 litC 声明（别名，不撞名）", async () => {
     const file = join(dir, "lit.ts");
     writeFileSync(file, SRC);
@@ -762,11 +762,11 @@ describe("BUG-271 —— core import 不得豁免 builder 声明头", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-272 —— 草稿 builder import ⊆ 真正被调用的 builder
+// 草稿 builder import ⊆ 真正被调用的 builder
 // ---------------------------------------------------------------------------
-describe("[] BUG-272 —— 草稿 builder import ⊆ 真正被调用的 builder", () => {
+describe("草稿 builder import ⊆ 真正被调用的 builder", () => {
 /**
- * BUG-272 —— 草稿的 builder import 列表用**词边界**（`\bname\b`）扫 DSL ⇒
+ * 草稿的 builder import 列表用**词边界**（`\bname\b`）扫 DSL ⇒
  * 仅仅因为观测对象的**字段名叫 `lit`** 就把 core 的 `lit`（**Term 构造器**，
  * 约束构建器叫 `litC`）拖进草稿 import ⇒ 与「只 import 草稿里实际用到的
  * builder」的自述直接相悖，且写出的绑定类型面是坏的。
@@ -794,7 +794,7 @@ function importLine(src: string): string {
   return /^import \{[^}]*\} from "@nudojs\/core";$/m.exec(src)?.[0] ?? "";
 }
 
-describe("BUG-272 —— 草稿 builder import ⊆ 真正被调用的 builder", () => {
+describe("草稿 builder import ⊆ 真正被调用的 builder", () => {
   it("字段名叫 `lit` 不得把 `lit` 拖进 import（DSL 从未调用 lit(）", async () => {
     const file = join(dir, "lit.ts");
     writeFileSync(
@@ -828,11 +828,11 @@ describe("BUG-272 —— 草稿 builder import ⊆ 真正被调用的 builder", 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 394（service 侧）— dts 面：数组解构的输入面是元组，不是对象
+// （service 侧）— dts 面：数组解构的输入面是元组，不是对象
 // ---------------------------------------------------------------------------
-describe("[] Bug 394（service 侧）— dts 面：数组解构的输入面是元组，不是对象", () => {
+describe("（service 侧）— dts 面：数组解构的输入面是元组，不是对象", () => {
 /**
- * Bug 394（**service 侧**，dts 产物面）：**数组解构**形参的字段级侧车契约
+ * （**service 侧**，dts 产物面）：**数组解构**形参的字段级侧车契约
  * 被聚合成**对象形状** ⇒ 产物的输入面与真实形参形态**完全颠倒**。
  *
  * 症状（改前）：`export function f7([a, b])` + 侧车契约 `fn({ a: number() })`
@@ -885,7 +885,7 @@ const OBJECT_PATTERN = `export function f7({ a, b }) { return a; }
 f7({ a: 1, b: 2 });
 `;
 
-describe("Bug 394（service 侧）— dts 面：数组解构的输入面是元组，不是对象", () => {
+describe("（service 侧）— dts 面：数组解构的输入面是元组，不是对象", () => {
   it("部分覆盖（契约只写 a）⇒ 形参类型是元组（改前是 { a: number }）", () => {
     const decl = declOf(ARRAY_PATTERN, [{ name: "a", abs: num }]);
     expect(decl).toContain("[number, unknown]");
@@ -915,22 +915,22 @@ describe("Bug 394（service 侧）— dts 面：数组解构的输入面是元�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 397（产物半）— 形参表过滤 `this` 接收者标注
+// （产物半）— 形参表过滤 `this` 接收者标注
 // ---------------------------------------------------------------------------
-describe("[] Bug 397（产物半）— 形参表过滤 `this` 接收者标注", () => {
+describe("（产物半）— 形参表过滤 `this` 接收者标注", () => {
 /**
- * Bug 397（**产物半**，service 侧）：TS 的 `this: T` 是**接收者标注**，不是
+ * （**产物半**，service 侧）：TS 的 `this: T` 是**接收者标注**，不是
  * 运行时形参 —— 形参表多一槽 ⇒ **四个产物面同时失真**：
  * dts 多一个形参（消费方吃 TS2554 假红）、zod 多一个字面量槽 `"this"`
  * （对每一个真实调用值报假红）、standard 多一个幽灵导出 `<fn>_this`。
  *
  * 根因分层：
  * - **模型层**（core `formalParamsFromNodes` 的 Identifier 分支）：已排除名字
- *   为 `this` 的形参；
+ * 为 `this` 的形参；
  * - **产物半**（本文件钉的）：`packages/service/src/analyzer-ast.ts` 的
- *   `extractFormals` 是 service 侧**唯一的形参表入口**（dts / zod / standard /
- *   case 四个产物面都从它取形参）⇒ 这里必须**兜底**过滤 `this`，并在过滤后
- *   **重排 index**（index 是形参表内的位置 ⇒ 实参位靠它对齐）。
+ * `extractFormals` 是 service 侧**唯一的形参表入口**（dts / zod / standard /
+ * case 四个产物面都从它取形参）⇒ 这里必须**兜底**过滤 `this`，并在过滤后
+ * **重排 index**（index 是形参表内的位置 ⇒ 实参位靠它对齐）。
  *
  * 钉：
  * - `extractFormals` 不返回 `this` 形参、后续形参的 index 前移；
@@ -965,7 +965,7 @@ const WITH_THIS = `export function withThis(this: { x: number }, a: number): num
 }
 `;
 
-describe("Bug 397（产物半）— 形参表过滤 `this` 接收者标注", () => {
+describe("（产物半）— 形参表过滤 `this` 接收者标注", () => {
   it("extractFormals 不返回 `this` 形参", () => {
     const formals = extractFormals(firstFnNode(WITH_THIS));
     expect(formals.map((f) => (f.kind === "id" ? f.name : f.kind))).toEqual(["a"]);
@@ -998,33 +998,33 @@ describe("Bug 397（产物半）— 形参表过滤 `this` 接收者标注", () 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 479（service 侧）— 推断面：entry@ 实参按 TS 声明类型
+// （service 侧）— 推断面：entry@ 实参按 TS 声明类型
 // ---------------------------------------------------------------------------
-describe("[] Bug 479（service 侧）— 推断面：entry@ 实参按 TS 声明类型", () => {
+describe("（service 侧）— 推断面：entry@ 实参按 TS 声明类型", () => {
 /**
- * Bug 479（**service 侧**）回归钉：`.ts` 源的**形参类型注解**必须进
+ * （**service 侧**）回归钉：`.ts` 源的**形参类型注解**必须进
  * 推断面（entry@ 实参）与产物面（dts 形参类型）。
  *
- * 背景（`tmp/bugs/14-service-eval.md` Bug 479）：`.ts` 源里写好的
+ * 背景（`tmp/bugs/14-service-eval.md` ）：`.ts` 源里写好的
  * `a: string` 从未进入推断 —— 解析层把注解删了（core 侧已修：注解文本以
  * 旁路 `nudoTypeText` 留在 AST 上，经 `FormalParam.tsType` 带出），但
  * **service 侧还有两处没接线**（本文件钉的就是这两处）：
  *
  * 1. `analyzer-orchestrate-uncached-cases.ts` 的 entry@ 兜底评估：入口实参
- *    写死 `anyAbs` ⇒ `nudo test` 的 entry@ 实参显示 any，且合法 TypeScript
- *    拿到「参数无约束」的假红（`a.toUpperCase()` on any）。
+ * 写死 `anyAbs` ⇒ `nudo test` 的 entry@ 实参显示 any，且合法 TypeScript
+ * 拿到「参数无约束」的假红（`a.toUpperCase()` on any）。
  * 2. `emit/dts-generator.ts` 的声明位：形参类型从 case 观测值取，注解被丢掉
- *    ⇒ `.d.ts` 形参退化成 `unknown`（产物比它所生成的源更弱）。
+ * ⇒ `.d.ts` 形参退化成 `unknown`（产物比它所生成的源更弱）。
  *
  * 口径（与既有约定对齐）：
  * - **推断面**：声明类型 → Abs 形状，只映射 JS 一等类型
- *   （string/number/boolean/bigint/symbol）；别名/泛型/对象类型**不映射**
- *   ⇒ 回落 any（不猜）。与 core `ts-type-shape.ts` 同表。
+ * （string/number/boolean/bigint/symbol）；别名/泛型/对象类型**不映射**
+ * ⇒ 回落 any（不猜）。与 core `ts-type-shape.ts` 同表。
  * - **产物面声明位优先级**：手写契约（sidecar / @nudo:contract）>
- *   TS 声明注解 > case 观测值（既有口径「声明位取侧车契约」不被破坏；
- *   `Case:` 行仍是观测值）。
+ * TS 声明注解 > case 观测值（既有口径「声明位取侧车契约」不被破坏；
+ * `Case:` 行仍是观测值）。
  * - **无注解 = 无变化**：`.js` 源 / 未标注形参 ⇒ 推断面仍 any、产物面仍走
- *   既有 case-widen。
+ * 既有 case-widen。
  */
 
 
@@ -1063,7 +1063,7 @@ const JS_UPPER = `export function upper(a) {
 }
 `;
 
-describe("Bug 479（service 侧）— 推断面：entry@ 实参按 TS 声明类型", () => {
+describe("（service 侧）— 推断面：entry@ 实参按 TS 声明类型", () => {
   it("`.ts` 的 string 形参：entry@ 实参是 string（改前是 any）", () => {
     const result = analyzeFile_____analyzer_ts_2("/test/bug479-entry.ts", TS_UPPER);
     const fn = result.functions.find((f) => f.name === "upper")!;
@@ -1106,7 +1106,7 @@ describe("Bug 479（service 侧）— 推断面：entry@ 实参按 TS 声明类�
   });
 });
 
-describe("Bug 479（service 侧）— 产物面：dts 形参保留 TS 注解", () => {
+describe("（service 侧）— 产物面：dts 形参保留 TS 注解", () => {
   it("dts 形参保留 string 注解（改前是 unknown）", () => {
     expect(declOf(TS_UPPER)).toContain("export declare function upper(a: string)");
     expect(declOf(TS_UPPER)).not.toContain("a: unknown");
@@ -1140,7 +1140,7 @@ describe("Bug 479（service 侧）— 产物面：dts 形参保留 TS 注解", (
   });
 });
 
-describe("Bug 479（service 侧）— 负控制：既有行为不得被波及", () => {
+describe("（service 侧）— 负控制：既有行为不得被波及", () => {
   it("同形 `.js` 源（无注解）：entry@ 实参仍是 any、仍抛 TypeError", () => {
     const result = analyzeFile_____analyzer_ts_2("/test/bug479-ctrl.js", JS_UPPER);
     const fn = result.functions.find((f) => f.name === "upper")!;
@@ -1184,11 +1184,11 @@ describe("Bug 479（service 侧）— 负控制：既有行为不得被波及", 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 494 — dts identifier is always a legal TS identifier
+// dts identifier is always a legal TS identifier
 // ---------------------------------------------------------------------------
-describe("[] Bug 494 — dts identifier is always a legal TS identifier", () => {
+describe("dts identifier is always a legal TS identifier", () => {
 /**
- * Bug 494：dts 投影不得产出非法 TS 标识符。
+ * dts 投影不得产出非法 TS 标识符。
  *
  * 带 @nudo: 指令的类方法此前走**指令路径**，丢掉了顶层函数普查的
  * noDeclaration 分类 ⇒ dts 投影把作用域名 "C.m" 直接当函数名，产出
@@ -1196,8 +1196,8 @@ describe("[] Bug 494 — dts identifier is always a legal TS identifier", () => 
  * 生成的 .d.ts 不可用（zod / standard / guard 三个面都清洗成 C_m*）。
  *
  * 本测试锁住：
- *   ① 指令路径继承 noDeclaration 分类（与非指令路径同口径）
- *   ② dts 投影出的函数名恒为合法 TS 标识符（双保险：非法名一律清洗）
+ * ① 指令路径继承 noDeclaration 分类（与非指令路径同口径）
+ * ② dts 投影出的函数名恒为合法 TS 标识符（双保险：非法名一律清洗）
  */
 
 
@@ -1212,7 +1212,7 @@ const CLASS_METHOD_WITH_DIRECTIVE = `export class C {
 }
 `;
 
-describe("Bug 494 — dts identifier is always a legal TS identifier", () => {
+describe("dts identifier is always a legal TS identifier", () => {
   it("directive path inherits the noDeclaration classification", () => {
     const r = analyzeFile_____analyzer_ts_3("/t/b494/class-method.js", CLASS_METHOD_WITH_DIRECTIVE);
     const fn = r.functions.find((f) => f.name === "C.m");
@@ -1257,32 +1257,32 @@ describe("Bug 494 — dts identifier is always a legal TS identifier", () => {
 // ---------------------------------------------------------------------------
 // 族 54 · service 协议面
 // ---------------------------------------------------------------------------
-describe("[] 族 54 · service 协议面", () => {
+describe("族 54 · service 协议面", () => {
 /**
  * 族 54 · service **协议面**（3 条缺口）的钉。
  *
  * 第 1 条 —— env 模板族的扩展名表（`isEnvTemplatePath`）：
- *   env 模板族 = `.env.<ext>` / `mock-<name>.<ext>` / `<name>.mock.<ext>`，
- *   **三支同表**：`js / mjs / ts / cjs / cts / mts`（族 21 遗留 697：mock 两支
- *   曾只认 `js|mjs|ts` ⇒ `mock-foo.cjs` / `fs.mock.cts` 这类模板改动不进 watch
- *   门禁 ⇒ 不触发依赖源文件复分析）。
- *   mock 前缀支锚在 **basename** 起点（绝对路径的 `/` 或相对路径的起点）。
+ * env 模板族 = `.env.<ext>` / `mock-<name>.<ext>` / `<name>.mock.<ext>`，
+ * **三支同表**：`js / mjs / ts / cjs / cts / mts`（族 21 遗留 697：mock 两支
+ * 曾只认 `js|mjs|ts` ⇒ `mock-foo.cjs` / `fs.mock.cts` 这类模板改动不进 watch
+ * 门禁 ⇒ 不触发依赖源文件复分析）。
+ * mock 前缀支锚在 **basename** 起点（绝对路径的 `/` 或相对路径的起点）。
  *
  * 第 2 条 —— hover 的 throws 段（service 侧可观测面）：
- *   hover 只读 case 台账的 throws 证据（`AnalysisResult.functions[].cases[].throwsAbs`）
- *   ⇒ service 必须**产出**这份证据。两种状态下此前拿不到函数级 throws 域
- *   （check 签名行口径 = 入口求值的 hard throw ∪ soft may-throw）：
- *   ① **有调用点见证**：`settleEntryOnlyCandidates` 把 `entry@` 见证连同 throws
- *      证据一起撤掉、改由 `call@` 见证承担调用点域 ⇒ 证据随见证一起消失；
- *   ② **选中 case**：被选函数**不生成 `entry@` 见证**（域由选中的那条 case 声明）
- *      ⇒ 函数级 throws 域在 case 台账里无处安放。
- *   修复后：证据并进该函数**已有**的见证 ⇒ 见证数不变、推断域不变（产物面不动）。
+ * hover 只读 case 台账的 throws 证据（`AnalysisResult.functions[].cases[].throwsAbs`）
+ * ⇒ service 必须**产出**这份证据。两种状态下此前拿不到函数级 throws 域
+ * （check 签名行口径 = 入口求值的 hard throw ∪ soft may-throw）：
+ * ① **有调用点见证**：`settleEntryOnlyCandidates` 把 `entry@` 见证连同 throws
+ * 证据一起撤掉、改由 `call@` 见证承担调用点域 ⇒ 证据随见证一起消失；
+ * ② **选中 case**：被选函数**不生成 `entry@` 见证**（域由选中的那条 case 声明）
+ * ⇒ 函数级 throws 域在 case 台账里无处安放。
+ * 修复后：证据并进该函数**已有**的见证 ⇒ 见证数不变、推断域不变（产物面不动）。
  *
  * 第 3 条 —— `migrate verify` 库面整批 abort：**缺陷不在 service 包**。
- *   取证（见报告）：`migrateVerify`（`packages/nudojs/src/migrate.ts`）**已经**
- *   逐文件隔离（同目标内部分文件语法错 ⇒ 失败文件记 `analysis-error`、成功文件
- *   照常返回）；仍整批 abort 的是同族的 `migrateStrip`（696 的库面半边）。
- *   两处都在 nudojs 包 ⇒ 不在本片（service）范围，本钉不含该例。
+ * 取证（见报告）：`migrateVerify`（`packages/nudojs/src/migrate.ts`）**已经**
+ * 逐文件隔离（同目标内部分文件语法错 ⇒ 失败文件记 `analysis-error`、成功文件
+ * 照常返回）；仍整批 abort 的是同族的 `migrateStrip`（696 的库面半边）。
+ * 两处都在 nudojs 包 ⇒ 不在本片（service）范围，本钉不含该例。
  */
 
 
@@ -1420,11 +1420,11 @@ export function risky(x) {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 608: guard 导出名必须模块内去重（清洗碰撞不再产生同名导出）
+// guard 导出名必须模块内去重（清洗碰撞不再产生同名导出）
 // ---------------------------------------------------------------------------
-describe("[] Bug 608: guard 导出名必须模块内去重（清洗碰撞不再产生同名导出）", () => {
+describe("guard 导出名必须模块内去重（清洗碰撞不再产生同名导出）", () => {
 /**
- * Bug 608 —— **guard 面**的导出名只过字符清洗（`safeExportIdent(name)`）⇒
+ * **guard 面**的导出名只过字符清洗（`safeExportIdent(name)`）⇒
  * **没有模块内去重集合** ⇒ 两个不同的源函数清洗后同名
  * （类方法 `A.b` 与顶层函数 `A_b` ⇒ 两个 `export function isA_bOutput`）
  * ⇒ 产物在 node 下 `SyntaxError: Identifier 'isA_bOutput' has already been
@@ -1445,7 +1445,7 @@ function exportedGuardNames(source: string): string[] {
   return [...source.matchAll(/export function (\w+)\(/g)].map((m) => m[1]!);
 }
 
-describe("Bug 608: guard 导出名必须模块内去重（清洗碰撞不再产生同名导出）", () => {
+describe("guard 导出名必须模块内去重（清洗碰撞不再产生同名导出）", () => {
   it("同一个 used 集合 ⇒ 清洗后同名的两个守卫拿到不同导出名", () => {
     const used = new Set<string>();
     // 类方法 `A.b` 与顶层函数 `A_b` ⇒ 清洗后都是 `isA_bOutput`
@@ -1488,11 +1488,11 @@ describe("Bug 608: guard 导出名必须模块内去重（清洗碰撞不再产�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 614: standard 返回面导出名恒为 <fn>Output（不随符号来源翻转）
+// standard 返回面导出名恒为 <fn>Output（不随符号来源翻转）
 // ---------------------------------------------------------------------------
-describe("[] Bug 614: standard 返回面导出名恒为 <fn>Output（不随符号来源翻转）", () => {
+describe("standard 返回面导出名恒为 <fn>Output（不随符号来源翻转）", () => {
 /**
- * Bug 614 —— **standard 面**的返回面导出名与**符号来源耦合**：有契约返回叫
+ * **standard 面**的返回面导出名与**符号来源耦合**：有契约返回叫
  * `<fn>Return`，走观测叫 `<fn>Output` ⇒ 同一函数在不同源码状态下拿到**不同
  * 名字** ⇒ 下游 `import { <fn>Output } from "*.nudo.standard"` 直接报错
  * （而同一次导出的 zod 面**恒叫** `<fn>Output` ⇒ 两面同物异名）。
@@ -1505,7 +1505,7 @@ describe("[] Bug 614: standard 返回面导出名恒为 <fn>Output（不随符�
 
 
 
-describe("Bug 614: standard 返回面导出名恒为 <fn>Output（不随符号来源翻转）", () => {
+describe("standard 返回面导出名恒为 <fn>Output（不随符号来源翻转）", () => {
   it("契约返回 ⇒ 恒叫 <fn>Output（不再叫 <fn>Return）", async () => {
     const { source } = absToStandardSchemaFunction({
       fn: "alpha",
@@ -1566,22 +1566,22 @@ describe("Bug 614: standard 返回面导出名恒为 <fn>Output（不随符号�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 627: standard 顶层形参的可选性必须保真（接受 undefined）
+// standard 顶层形参的可选性必须保真（接受 undefined）
 // ---------------------------------------------------------------------------
-describe("[] Bug 627: standard 顶层形参的可选性必须保真（接受 undefined）", () => {
+describe("standard 顶层形参的可选性必须保真（接受 undefined）", () => {
 /**
- * Bug 627 —— **standard 面**把契约「顶层形参的**可选性**」整条丢掉：顶层形参
+ * **standard 面**把契约「顶层形参的**可选性**」整条丢掉：顶层形参
  * 导出走的是**独立值节点**（不是对象槽）⇒ 结构上**无处挂 `optional`** ⇒
  * 发布的 `act_x` 校验器**运行时拒收**契约允许的 `undefined`
  * （契约 `number().optional()` ⇒ `act_x.validate(undefined)` 应通过）。
  *
  * 修法（service 侧）：
  * - `StandardSchemaFunctionSpec.inputs[].optional`（契约级可选性，同 dts 面
- *   `DtsContractFace.params[].optional` 口径）——`constraintToEntryAbs` 对标量
- *   契约丢掉 `isOptional`，故必须由契约面显式带过来；
+ * `DtsContractFace.params[].optional` 口径）——`constraintToEntryAbs` 对标量
+ * 契约丢掉 `isOptional`，故必须由契约面显式带过来；
  * - 声明级可选性（默认形参 `function f(a, b = 2)`）从 `spec.formals` 派生；
  * - 可选位的整参校验器 = `T | undefined`（与 zod 面 `.optional()` 同判据），
- *   `<fn>Input` 的对应槽位带 `optional`（键可缺席）。
+ * `<fn>Input` 的对应槽位带 `optional`（键可缺席）。
  */
 
 
@@ -1594,7 +1594,7 @@ const defaultFormals: FormalParam[] = [
   { kind: "default", name: "b", index: 1 },
 ];
 
-describe("Bug 627: standard 顶层形参的可选性必须保真（接受 undefined）", () => {
+describe("standard 顶层形参的可选性必须保真（接受 undefined）", () => {
   it("契约级可选位：整参校验器接受 undefined（契约 number().optional()）", async () => {
     const { source } = absToStandardSchemaFunction({
       fn: "act",
@@ -1657,11 +1657,11 @@ describe("Bug 627: standard 顶层形参的可选性必须保真（接受 undefi
 });
 
 // ---------------------------------------------------------------------------
-// Bug 937 — defineEnv() 契约违约必须可见
+// defineEnv() 契约违约必须可见
 // ---------------------------------------------------------------------------
-describe("[] Bug 937 — defineEnv() 契约违约必须可见", () => {
+describe("defineEnv() 契约违约必须可见", () => {
 /**
- * Bug 937 — path 型 env 文件违反 `defineEnv()` 契约（不导出 / 不是函数 /
+ * path 型 env 文件违反 `defineEnv()` 契约（不导出 / 不是函数 /
  * 抛异常 / 返回非 {globals}）⇒ **零 env 诊断** ⇒ env 静默失效 ⇒ 用户代码被
  * 判「必然抛 ReferenceError」（假红），而同目录里**语法错**的 env 文件
  * 反而有 nudo:env-unresolved 警告（口径分裂）。
@@ -1714,7 +1714,7 @@ const VIOLATIONS: Array<{ name: string; src: string; expect: string }> = [
   },
 ];
 
-describe("Bug 937 — defineEnv() 契约违约必须可见", () => {
+describe("defineEnv() 契约违约必须可见", () => {
   for (const v of VIOLATIONS) {
     it(`${v.name}：一条 nudo:env-unresolved 诊断且点名 env 文件`, async () => {
       const dir = tmpProject("nudo-bug-937-");

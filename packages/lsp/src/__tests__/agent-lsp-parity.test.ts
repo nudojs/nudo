@@ -266,7 +266,7 @@ add("a", "b");
     );
     const text = r.content[0].text;
     // 与 suggestCase 同口径：**已声明** case（source = "directive"）与合成
-    // 见证（call@ / entry@）分开计数（Bug 511：入口兜底见证也会进台账）
+    // 见证（call@ / entry@）分开计数（入口兜底见证也会进台账）
     const declared = fn!.cases.filter((c) => c.source === "directive");
     const synthetic = fn!.cases.filter((c) => c.source !== "directive");
     if (declared.length === 0 && synthetic.length > 0) {

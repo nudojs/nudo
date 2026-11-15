@@ -9,11 +9,11 @@ import { migrateVerify, migrateStatus, migrateRetire, listWorkflowTscLines, rewr
 import { runCliTsx, repoRoot } from "./helpers/run-cli.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 015: verify 与 check 必须共用 ignoreThrows 解析器
+// verify 与 check 必须共用 ignoreThrows 解析器
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 015: verify 与 check 必须共用 ignoreThrows 解析器", () => {
+describe("verify 与 check 必须共用 ignoreThrows 解析器", () => {
 /**
- * BUG-015 —— `nudo migrate verify` 与 `nudo check` 用**不同的 `ignoreThrows`
+ * `nudo migrate verify` 与 `nudo check` 用**不同的 `ignoreThrows`
  * 解析器** ⇒ 同一文件同一配置两个结论（verify 假失败，迁移门禁永远转不绿）。
  *
  * 根因：verify 走 service `checkConfig()` 的**严格** `Array.isArray` 变体
@@ -47,7 +47,7 @@ function project(ignoreThrows?: unknown): string {
   return dir;
 }
 
-describe("Bug 015: verify 与 check 必须共用 ignoreThrows 解析器", () => {
+describe("verify 与 check 必须共用 ignoreThrows 解析器", () => {
   it("裸字符串 \"TypeError\" ⇒ verify 判绿（与 check 同结论）", async () => {
     const dir = project("TypeError");
     const rows = await migrateVerify([join(dir, "boom.js")], { json: true });
@@ -70,11 +70,11 @@ describe("Bug 015: verify 与 check 必须共用 ignoreThrows 解析器", () => 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 061: verify 必须对模块级求值失败 fail-closed（与 check 同结论）
+// verify 必须对模块级求值失败 fail-closed（与 check 同结论）
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 061: verify 必须对模块级求值失败 fail-closed（与 check 同结论）", () => {
+describe("verify 必须对模块级求值失败 fail-closed（与 check 同结论）", () => {
 /**
- * BUG-061 —— `nudo migrate verify` 对**模块级求值失败**放绿（`nudo check` 判红
+ * `nudo migrate verify` 对**模块级求值失败**放绿（`nudo check` 判红
  * `nudo:internal`）⇒ 迁移闸门假绿。
  *
  * 根因：`migrateVerify` 调 `checkSource` 时**没有装求值回落 collector**
@@ -110,7 +110,7 @@ function dirWith(source: string): string {
   return dir;
 }
 
-describe("Bug 061: verify 必须对模块级求值失败 fail-closed（与 check 同结论）", () => {
+describe("verify 必须对模块级求值失败 fail-closed（与 check 同结论）", () => {
   it("模块顶层抛（undefined is not a function）⇒ nudoOk: false", async () => {
     const dir = dirWith(`export const boom = undefined();\n\nexport function add(a, b) {\n  return a + b;\n}\n`);
     const rows = await migrateVerify([join(dir, "boom.js")], { json: true });
@@ -134,21 +134,21 @@ describe("Bug 061: verify 必须对模块级求值失败 fail-closed（与 check
 });
 
 // ---------------------------------------------------------------------------
-// Bug 064: 项目级 path env 必须按项目根解析（与 nudo check 同口径）
+// 项目级 path env 必须按项目根解析（与 nudo check 同口径）
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 064: 项目级 path env 必须按项目根解析（与 nudo check 同口径）", () => {
+describe("项目级 path env 必须按项目根解析（与 nudo check 同口径）", () => {
 /**
- * BUG-064 —— `nudo migrate verify` 把**项目级** `package.json#nudo.env` 的相对
+ * `nudo migrate verify` 把**项目级** `package.json#nudo.env` 的相对
  * 路径按「被检文件所在目录」解析 ⇒ 子目录里的文件**永远拿不到**项目级 env
  * ⇒ 误报红（`may throw ReferenceError`），而 `nudo check` 判绿。
  *
- * 既定契约（Bug 647）：**项目级** path env 按**项目根**解析；**文件级**
+ * 既定契约（）：**项目级** path env 按**项目根**解析；**文件级**
  * `@nudo:env` 才按被分析文件所在目录解析。
  *
  * 修复：verify 侧照抄 check 的分层口径（项目级按 `proj.projectDir` 绝对化 +
  * 文件级按 `dirname(file)`），并把 env 加载失败并入报告（`nudo:env-unresolved`）。
  *
- * 反向闸：文件级 `@nudo:env` 仍按文件目录解析（Bug 593 口径不变）。
+ * 反向闸：文件级 `@nudo:env` 仍按文件目录解析（口径不变）。
  */
 
 
@@ -187,7 +187,7 @@ function project(): { root: string; file: string } {
   return { root, file };
 }
 
-describe("Bug 064: 项目级 path env 必须按项目根解析（与 nudo check 同口径）", () => {
+describe("项目级 path env 必须按项目根解析（与 nudo check 同口径）", () => {
   it("子目录文件拿得到项目级 env 全局 ⇒ verify 判绿", async () => {
     const { file } = project();
     const rows = await migrateVerify([file], { json: true });
@@ -218,18 +218,18 @@ describe("Bug 064: 项目级 path env 必须按项目根解析（与 nudo check 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 114: .js 里的 TS-only 语法必须与 nudo check 同结论（判红）
+// .js 里的 TS-only 语法必须与 nudo check 同结论（判红）
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 114: .js 里的 TS-only 语法必须与 nudo check 同结论（判红）", () => {
+describe(".js 里的 TS-only 语法必须与 nudo check 同结论（判红）", () => {
 /**
- * BUG-114 —— `nudo migrate verify` 对 `.js` 里的 **TS-only 语法**判绿 ⇒ 与
+ * `nudo migrate verify` 对 `.js` 里的 **TS-only 语法**判绿 ⇒ 与
  * `nudo check` 相反 ⇒ 迁移闸门假绿。
  *
  * 根因：check 面按**扩展名**选解析插件（`parseSource(source, { filename })`：
  * `.js` 不带 TS 插件 ⇒ TS 语法直接 SyntaxError ⇒ pathErrors + exit 1），
  * verify 只走宽松解析 ⇒ 同一文件 check 红 / verify 绿。
  *
- * 影响链（与 BUG-050 串联）：`migrate strip` 写坏的产物（`export namespace …` /
+ * 影响链（与 串联）：`migrate strip` 写坏的产物（`export namespace …` /
  * `import x = require(…)`）在 verify 面**也是绿的** ⇒ 「strip 写坏 ⇒ verify 放绿
  * ⇒ retire 摘掉 TS」完整失效链。
  *
@@ -263,7 +263,7 @@ function project(files: Record<string, string>): string {
   return dir;
 }
 
-describe("Bug 114: .js 里的 TS-only 语法必须与 nudo check 同结论（判红）", () => {
+describe(".js 里的 TS-only 语法必须与 nudo check 同结论（判红）", () => {
   it("`.js` 里的类型标注 ⇒ code: syntax-error + nudoOk: false", async () => {
     const dir = project({ "ts-in-js.js": "export function f(a: number): number {\n  return a;\n}\n" });
     const rows = await migrateVerify([join(dir, "ts-in-js.js")], { json: true });
@@ -296,21 +296,21 @@ describe("Bug 114: .js 里的 TS-only 语法必须与 nudo check 同结论（判
 });
 
 // ---------------------------------------------------------------------------
-// Bug 226: verify 的 env/harvest 合并必须走 B8（harvest 填空位）
+// verify 的 env/harvest 合并必须走 B8（harvest 填空位）
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 226: verify 的 env/harvest 合并必须走 B8（harvest 填空位）", () => {
+describe("verify 的 env/harvest 合并必须走 B8（harvest 填空位）", () => {
 /**
- * BUG-226 —— `nudo migrate verify` 的注入装配器仍用**对象展开**合并 env 模块
+ * `nudo migrate verify` 的注入装配器仍用**对象展开**合并 env 模块
  * （而非 `mergeHarvestUnderEnv`）⇒ 手工 env 与 harvest **同名模块**时，harvest
  * 独有的导出被**整体丢弃** ⇒ 同一文件同一配置，verify 报 `unknown` + 误导性
  * `nudo:unknown-inference`，而 `nudo check` 报精确类型。
  *
  * 引擎自己的策略（两个面都打印同一条诊断）：
  * 「handwritten @nudo:env wins over harvest on module "util" — export(s) format;
- *  **harvest only fills missing slots (B8)**」——`onlyHarvest` 正是那个空位。
+ * **harvest only fills missing slots (B8)**」——`onlyHarvest` 正是那个空位。
  *
  * 修复：改用 `mergeHarvestUnderEnv(graph.modules, envMods)`（与
- * `commands/check.ts` 的 Bug 1037 同源）。
+ * `commands/check.ts` 的 同源）。
  *
  * 判据 = **跨动词一致性**（报告自述：「同一文件 `nudo check` 与
  * `nudo migrate verify` 的诊断码集合必须相同、签名文本必须相同」）。
@@ -378,7 +378,7 @@ function summaryOf(stdout: string): string | undefined {
   return m ? `${m[1]} error · ${m[2]} warning · ${m[3]} fn` : undefined;
 }
 
-describe("Bug 226: verify 的 env/harvest 合并必须走 B8（harvest 填空位）", () => {
+describe("verify 的 env/harvest 合并必须走 B8（harvest 填空位）", () => {
   it("nudo check 的签名是精确类型（反向闸：前提成立）", () => {
     const root = project();
     const check = runCliTsx(["check", join(root, "src", "app.js")]);
@@ -401,11 +401,11 @@ describe("Bug 226: verify 的 env/harvest 合并必须走 B8（harvest 填空位
 });
 
 // ---------------------------------------------------------------------------
-// migrate verify — 文件发现与 nudo check 同口径（Bug 566）
+// migrate verify — 文件发现与 nudo check 同口径（）
 // ---------------------------------------------------------------------------
-describe("[migrate-] migrate verify — 文件发现与 nudo check 同口径（Bug 566）", () => {
+describe("migrate verify — 文件发现与 nudo check 同口径（）", () => {
 /**
- * Bug 566 — `nudo migrate verify` 把 sidecar 与 `.d.ts` 当源码分析，与 `nudo check` 判定分叉。
+ * `nudo migrate verify` 把 sidecar 与 `.d.ts` 当源码分析，与 `nudo check` 判定分叉。
  *
  * 根因：verify 自行按扩展名收文件（.js/.mjs/.cjs/.ts/.tsx），没走 `nudo check` 的
  * `isNudoTargetPath`（`packages/service/src/target-path.ts`）——后者显式排除
@@ -437,7 +437,7 @@ writeFileSync(
   "utf-8",
 );
 
-describe("migrate verify — 文件发现与 nudo check 同口径（Bug 566）", () => {
+describe("migrate verify — 文件发现与 nudo check 同口径（）", () => {
   it("目录扫描不把 sidecar / .d.ts 当源码：verify 与 check 同绿", { timeout: 120_000 }, () => {
     const check = runCliTsx(["check", dir]);
     expect(check.status).toBe(0);
@@ -463,11 +463,11 @@ describe("migrate verify — 文件发现与 nudo check 同口径（Bug 566）",
 });
 
 // ---------------------------------------------------------------------------
-// migrate verify --json — stdout 是纯 JSON（Bug 568）
+// migrate verify --json — stdout 是纯 JSON（）
 // ---------------------------------------------------------------------------
-describe("[migrate-] migrate verify --json — stdout 是纯 JSON（Bug 568）", () => {
+describe("migrate verify --json — stdout 是纯 JSON（）", () => {
 /**
- * Bug 568 — `migrate verify --json` 把**人工报告混进 stdout**：stdout 不是合法 JSON。
+ * `migrate verify --json` 把**人工报告混进 stdout**：stdout 不是合法 JSON。
  *
  * 根因：`migrateVerify` 在 per-file 循环里无条件 `console.log(formatCheckReport(report))`
  * （人工面打到 stdout），随后 CLI 再把结果数组 `JSON.stringify` 后打到 stdout ⇒
@@ -495,7 +495,7 @@ writeFileSync(RED, "export function getName(user) {\n  return user.name;\n}\n", 
 const GREEN = join(dir, "green.js");
 writeFileSync(GREEN, "export function id(x) {\n  return x;\n}\n", "utf-8");
 
-describe("migrate verify --json — stdout 是纯 JSON（Bug 568）", () => {
+describe("migrate verify --json — stdout 是纯 JSON（）", () => {
   it("判红文件：stdout 可 JSON.parse；人工报告在 stderr", { timeout: 120_000 }, () => {
     const r = runCliTsx(["migrate", "verify", RED, "--json"]);
     expect(r.status).toBe(1);
@@ -531,11 +531,11 @@ describe("migrate verify --json — stdout 是纯 JSON（Bug 568）", () => {
 });
 
 // ---------------------------------------------------------------------------
-// migrate verify — 批量目标的 per-file 隔离（Bug 569）
+// migrate verify — 批量目标的 per-file 隔离（）
 // ---------------------------------------------------------------------------
-describe("[migrate-] migrate verify — 批量目标的 per-file 隔离（Bug 569）", () => {
+describe("migrate verify — 批量目标的 per-file 隔离（）", () => {
 /**
- * Bug 569 — `migrate verify`（批量目标）遇**第一个**语法错文件即整批中止。
+ * `migrate verify`（批量目标）遇**第一个**语法错文件即整批中止。
  *
  * 根因：per-file 循环没有 try/catch ⇒ 一个语法错文件抛出的异常一路冒泡到命令层
  * 唯一的 catch ⇒ 整批结果（连同已算好的行）全部丢弃：stdout **0 字节**、
@@ -562,7 +562,7 @@ writeFileSync(join(dir, "syn.js"), "export function broken( {\n  return 1;\n}\n"
 /** 第二个合法文件（证明「不是只报第一个」） */
 writeFileSync(join(dir, "good2.js"), "export function good2(x) {\n  return x;\n}\n", "utf-8");
 
-describe("migrate verify — 批量目标的 per-file 隔离（Bug 569）", () => {
+describe("migrate verify — 批量目标的 per-file 隔离（）", () => {
   it("文本面：合法文件仍被逐行报告，语法错文件带文件名", { timeout: 120_000 }, () => {
     const r = runCliTsx(["migrate", "verify", dir]);
     expect(r.status).toBe(1);
@@ -596,11 +596,11 @@ describe("migrate verify — 批量目标的 per-file 隔离（Bug 569）", () =
 });
 
 // ---------------------------------------------------------------------------
-// Bug 570 — 版本钉住的 tsc 逃过退役（检测口径 ≠ 改写口径）
+// 版本钉住的 tsc 逃过退役（检测口径 ≠ 改写口径）
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 570 — 版本钉住的 tsc 逃过退役（检测口径 ≠ 改写口径）", () => {
+describe("版本钉住的 tsc 逃过退役（检测口径 ≠ 改写口径）", () => {
 /**
- * Bug 570 — `migrate` 的 tsc 调用形态「检测口径与改写口径分裂」：
+ * `migrate` 的 tsc 调用形态「检测口径与改写口径分裂」：
  * 版本钉住的 `npx tsc@5.4.5` 被 status 计入、却不被 retire 改写
  * ⇒ 假绿（tsc 门禁原样留在 CI 里，工具却报「已退役」）。
  *
@@ -657,7 +657,7 @@ function fixture(): string {
   return dir;
 }
 
-describe("Bug 570 — 版本钉住的 tsc 逃过退役（检测口径 ≠ 改写口径）", () => {
+describe("版本钉住的 tsc 逃过退役（检测口径 ≠ 改写口径）", () => {
   it("rewriteTscCommand 认得版本钉住形态 npx tsc@5.4.5", () => {
     expect(rewriteTscCommand("npx tsc@5.4.5 --noEmit").cmd).toBe("npx nudojs check .");
     expect(rewriteTscCommand("npx tsc@5.4.5 --noEmit").changed).toBe(true);
@@ -697,11 +697,11 @@ describe("Bug 570 — 版本钉住的 tsc 逃过退役（检测口径 ≠ 改写
 });
 
 // ---------------------------------------------------------------------------
-// Bug 577: tsc 脚本阻塞不依赖 tsFiles > 0
+// tsc 脚本阻塞不依赖 tsFiles > 0
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 577: tsc 脚本阻塞不依赖 tsFiles > 0", () => {
+describe("tsc 脚本阻塞不依赖 tsFiles > 0", () => {
 /**
- * Bug 577 — `nudo migrate status` 的「tsc still in scripts」阻塞被 `tsFiles > 0` 包住：
+ * `nudo migrate status` 的「tsc still in scripts」阻塞被 `tsFiles > 0` 包住：
  * 有 tsc 脚本、**0 个 .ts** 的包（恰恰是最该退役的场景）blockers 为空。
  *
  * 期望：tsc 脚本阻塞与 .ts 数量无关（tscScripts.length > 0 即阻塞）。
@@ -729,7 +729,7 @@ function pkg(name: string, scripts: Record<string, string>, withTs: boolean) {
   return dir;
 }
 
-describe("Bug 577: tsc 脚本阻塞不依赖 tsFiles > 0", () => {
+describe("tsc 脚本阻塞不依赖 tsFiles > 0", () => {
   it("0 个 .ts + tsc 脚本 ⇒ 必须报「tsc still in scripts」", () => {
     const dir = pkg("r16-lc-m2", { typecheck: "tsc --noEmit", build: "tsc -p ." }, false);
     const rows = migrateStatus(dir);
@@ -757,11 +757,11 @@ describe("Bug 577: tsc 脚本阻塞不依赖 tsFiles > 0", () => {
 });
 
 // ---------------------------------------------------------------------------
-// migrate verify --with-tsc — tsc 基线带信号（Bug 582）
+// migrate verify --with-tsc — tsc 基线带信号（）
 // ---------------------------------------------------------------------------
-describe("[migrate-] migrate verify --with-tsc — tsc 基线带信号（Bug 582）", () => {
+describe("migrate verify --with-tsc — tsc 基线带信号（）", () => {
 /**
- * Bug 582 — `nudo migrate verify --with-tsc` 的 tsc 基线**不带任何信号**。
+ * `nudo migrate verify --with-tsc` 的 tsc 基线**不带任何信号**。
  *
  * 根因：源文件被当**位置参数**传给 tsc ⇒ 现代 TS 见到「命令行给了文件 + 目录里
  * 有 tsconfig.json」直接拒绝（TS5112）⇒ 干净文件与有错文件的基线**逐字相同**；
@@ -817,7 +817,7 @@ type Row = {
   tsc?: { ok: boolean; output: string };
 };
 
-describe("migrate verify --with-tsc — tsc 基线带信号（Bug 582）", () => {
+describe("migrate verify --with-tsc — tsc 基线带信号（）", () => {
   it("基线加载 tsconfig：干净文件与有错文件的诊断不同", { timeout: 300_000 }, () => {
     const r = runCliTsx(["migrate", "verify", "--with-tsc", dir, "--json"]);
     const rows = JSON.parse(r.stdout) as Row[];
@@ -852,11 +852,11 @@ describe("migrate verify --with-tsc — tsc 基线带信号（Bug 582）", () =>
 });
 
 // ---------------------------------------------------------------------------
-// migrate verify — 空目录不是绿灯通行证（Bug 589）
+// migrate verify — 空目录不是绿灯通行证（）
 // ---------------------------------------------------------------------------
-describe("[migrate-] migrate verify — 空目录不是绿灯通行证（Bug 589）", () => {
+describe("migrate verify — 空目录不是绿灯通行证（）", () => {
 /**
- * Bug 589 — `nudo migrate verify <空目录>` **静默 exit 0**（零输出、零文件）。
+ * `nudo migrate verify <空目录>` **静默 exit 0**（零输出、零文件）。
  *
  * 根因：verify 的文件收集为空时没有「空 ⇒ 失败/警告」的判定 ⇒ 迁移闸门
  * （status → strip → verify → retire）里，verify 是唯一用来证明「产物已经能用」
@@ -879,7 +879,7 @@ afterAll(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
-describe("migrate verify — 空目录不是绿灯通行证（Bug 589）", () => {
+describe("migrate verify — 空目录不是绿灯通行证（）", () => {
   it("文本面：空目录判红并给出引导（与 check 同口径）", { timeout: 120_000 }, () => {
     const check = runCliTsx(["check", dir]);
     expect(check.status).toBe(1);
@@ -908,19 +908,19 @@ describe("migrate verify — 空目录不是绿灯通行证（Bug 589）", () =>
 });
 
 // ---------------------------------------------------------------------------
-// migrate verify — 分析注入与 nudo check 同源（Bug 593）
+// migrate verify — 分析注入与 nudo check 同源（）
 // ---------------------------------------------------------------------------
-describe("[migrate-] migrate verify — 分析注入与 nudo check 同源（Bug 593）", () => {
+describe("migrate verify — 分析注入与 nudo check 同源（）", () => {
 /**
- * Bug 593 — `nudo migrate verify` 的**分析注入**缺失（无模块图 / 无 mock）⇒ 与
+ * `nudo migrate verify` 的**分析注入**缺失（无模块图 / 无 mock）⇒ 与
  * `nudo check` **判相反**（两个方向都相反）：
  *
  * - 方向 A（跨模块 ⇒ **假绿**）：被调函数的 throws 面不传播给调用点 ⇒
- *   `nudo check` 判红（entry-may-throw），verify 判绿 ⇒ 迁移闸门放行了 CI 门禁
- *   拒绝的文件 ⇒ `retire` 会在 check 仍红的情况下把 tsc 退役。
+ * `nudo check` 判红（entry-may-throw），verify 判绿 ⇒ 迁移闸门放行了 CI 门禁
+ * 拒绝的文件 ⇒ `retire` 会在 check 仍红的情况下把 tsc 退役。
  * - 方向 B（`@nudo:mock` ⇒ **假红** + 误导诊断）：verify 侧不施加 mock ⇒
- *   helper 未定义 ⇒ 报「may throw ReferenceError」，cause 文案把用户引向
- *   「你用了 `export { x } from` 重导出写法」——照着改永远不会好。
+ * helper 未定义 ⇒ 报「may throw ReferenceError」，cause 文案把用户引向
+ * 「你用了 `export { x } from` 重导出写法」——照着改永远不会好。
  *
  * 根因：`migrateVerify` 的 `checkSource` 调用既不传 `modules` 也不传 `inject`
  * （对照 `packages/nudojs/src/commands/check.ts` 的 `{ modules, inject }`）。
@@ -998,7 +998,7 @@ function verdict(args: string[]): { status: number; out: string } {
   return { status: r.status, out: r.stdout + r.stderr };
 }
 
-describe("migrate verify — 分析注入与 nudo check 同源（Bug 593）", () => {
+describe("migrate verify — 分析注入与 nudo check 同源（）", () => {
   it("跨模块：verify 不再假绿（与 check 同判红）", { timeout: 120_000 }, () => {
     const file = join(cross, "main.js");
     const check = verdict(["check", file]);
@@ -1040,22 +1040,22 @@ describe("migrate verify — 分析注入与 nudo check 同源（Bug 593）", ()
 });
 
 // ---------------------------------------------------------------------------
-// Bug 917 — migrate strip 的 .cts 扩展名映射与告警口径
+// migrate strip 的 .cts 扩展名映射与告警口径
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 917 — migrate strip 的 .cts 扩展名映射与告警口径", () => {
+describe("migrate strip 的 .cts 扩展名映射与告警口径", () => {
 /**
- * Bug 917 — `migrate strip` 只剥类型、**不改模块系统**：`.cts` 产物里仍是
+ * `migrate strip` 只剥类型、**不改模块系统**：`.cts` 产物里仍是
  * 源侧的 import/export 语法，因此产物形态不得被静默当成 CommonJS。
  *
  * 口径沿革：
  * - 原修复把 `.cts → .js`（不谎称 CommonJS，模块系统由最近的
- *   package.json#type 决定），并在 notes 里如实说明。
- * - Bug 26（类别 08）改为 `.cts → .cjs`，与 tsc / Node 解析序一致且与
- *   `.mts → .mjs` 对称，避免 `.ts` 与 `.cts` 同 stem 时争用同一个 `index.js`
- *   产物（整批产物路径冲突另由 assertUniqueStripProducts 硬错误拦住）。
- *   此时「不谎称」的责任落在 **notes 告警**上：`.cjs` 恒被 Node 当 CommonJS，
- *   若产物仍是 ESM 语法，用户必须先转换模块语法再加载。
- *   `.cjs` 现已是 `isNudoTargetPath` 的目标扩展名，门禁不会零覆盖。
+ * package.json#type 决定），并在 notes 里如实说明。
+ * - （类别 08）改为 `.cts → .cjs`，与 tsc / Node 解析序一致且与
+ * `.mts → .mjs` 对称，避免 `.ts` 与 `.cts` 同 stem 时争用同一个 `index.js`
+ * 产物（整批产物路径冲突另由 assertUniqueStripProducts 硬错误拦住）。
+ * 此时「不谎称」的责任落在 **notes 告警**上：`.cjs` 恒被 Node 当 CommonJS，
+ * 若产物仍是 ESM 语法，用户必须先转换模块语法再加载。
+ * `.cjs` 现已是 `isNudoTargetPath` 的目标扩展名，门禁不会零覆盖。
  *
  * 本分片钉的是「映射与说明符同口径 + notes 如实告警」这两条不变量。
  */
@@ -1070,7 +1070,7 @@ afterAll(() => {
   for (const d of dirs) rmSync(d, { recursive: true, force: true });
 });
 
-describe("Bug 917 — migrate strip 的 .cts 扩展名映射与告警口径", () => {
+describe("migrate strip 的 .cts 扩展名映射与告警口径", () => {
   it(".cts ⇒ 产物是 .cjs（Bug 26 / tsc 同口径），且 notes 如实说明模块系统未转换", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-bug-917-"));
     dirs.push(dir);
@@ -1082,7 +1082,7 @@ describe("Bug 917 — migrate strip 的 .cts 扩展名映射与告警口径", ()
 
     const results = await migrateStrip([dir], { write: true, draft: false });
 
-    // Bug 26：与 tsc / Node 解析序一致，且不再与同 stem 的 .ts 争用 index.js
+    // 与 tsc / Node 解析序一致，且不再与同 stem 的 .ts 争用 index.js
     expect(existsSync(join(dir, "a.cjs"))).toBe(true);
     expect(existsSync(join(dir, "a.js"))).toBe(false);
     expect(readFileSync(join(dir, "a.cjs"), "utf-8")).toContain("function greet");
@@ -1107,11 +1107,11 @@ describe("Bug 917 — migrate strip 的 .cts 扩展名映射与告警口径", ()
 });
 
 // ---------------------------------------------------------------------------
-// Bug 943 — 路径限定型 tsc 被计入却不被改写
+// 路径限定型 tsc 被计入却不被改写
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 943 — 路径限定型 tsc 被计入却不被改写", () => {
+describe("路径限定型 tsc 被计入却不被改写", () => {
 /**
- * Bug 943 — `nudo migrate retire` 的 tsc **检测口径与改写口径不一致**
+ * `nudo migrate retire` 的 tsc **检测口径与改写口径不一致**
  * ⇒ 路径限定型的 tsc（`./node_modules/.bin/tsc`）被 status 计入、却不被 retire 改写
  * ⇒ `typescript` 依赖被删、tsc 调用却留着（落盘仓库自相矛盾）。
  *
@@ -1167,7 +1167,7 @@ function fixture(): string {
   return dir;
 }
 
-describe("Bug 943 — 路径限定型 tsc 被计入却不被改写", () => {
+describe("路径限定型 tsc 被计入却不被改写", () => {
   it("rewriteTscCommand 认得路径限定型 tsc", () => {
     expect(rewriteTscCommand("./node_modules/.bin/tsc -p .").cmd).toBe("npx nudojs check .");
     expect(rewriteTscCommand("node_modules/.bin/tsc --noEmit").cmd).toBe(

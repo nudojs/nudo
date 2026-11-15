@@ -3,7 +3,7 @@
  * 此前 evalJsonMethod 恒返回 unknown（parse）/ strPrim（stringify）——
  * 字面量实参不折叠、非法输入不抛：
  * - JSON.parse('{bad') 原生 SyntaxError，evaluator 静默成功 → catch 不进入，
- *   r 保持旧值（假精确）
+ * r 保持旧值（假精确）
  * - JSON.stringify(1n) 原生 TypeError，同样被静默吞掉
  * - JSON.parse('{"a":1}').a 原生 1，evaluator 折 unknown（精度缺口）
  * 修复：字面量实参真执行（JSON 值 ↔ Abs 双向折叠）；语法失败硬抛

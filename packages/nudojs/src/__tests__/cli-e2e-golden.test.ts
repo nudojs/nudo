@@ -132,7 +132,7 @@ describe("migrate — status golden", () => {
   });
 });
 
-describe("--version — shell + engine + core", () => {
+describe("-version — shell + engine + core", () => {
   it("prints nudojs version; core optional", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-e2e-version-"));
     const r = runCli(["--version"], { cwd: dir });

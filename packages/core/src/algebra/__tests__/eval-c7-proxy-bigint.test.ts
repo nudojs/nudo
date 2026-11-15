@@ -1,19 +1,19 @@
 /**
- * C7 类别判定 / Proxy 模型簇回归（Bug 105/106/108/122/123/124）。
+ * C7 类别判定 / Proxy 模型簇回归（）。
  *
- * - Bug 105：抽象 bigint 的 Object.prototype.toString 折 "[object BigInt]"；
- *   bigint.toString 值读路由（字面量 radix 精确 / 越界 RangeError / 抽象
- *   bigint 返抽象 string）。
- * - Bug 106：bigint-ness 双侧判定（字面量 ∪ isBigPrim）——恰一侧 bigint 且
- *   另一侧已知非 bigint → 定抛 TypeError；b/0n、b%0n、b**-1n → RangeError；
- *   抽象混合 → recordMayThrow（effects 面）。
- * - Bug 108：借调内建原型方法不查 brand → Number/String/…/Map/Set 等
- *   brand-checking 原型按 home vs 接收者 brand 比对（异 brand 定抛）。
- * - Bug 122：new <proxy> 重入靶（construct 陷阱 / 缺省递归靶构造器）。
- * - Bug 123：typeof 代理 / instanceof 剥靶（fn 靶 → "function"）。
- * - Bug 124：对象级 Proxy 陷阱（deleteProperty/defineProperty/
- *   setPrototypeOf/preventExtensions/getPrototypeOf）——Object 版 falsy
- *   字面量定抛、Reflect 版返布尔、陷阱在场不动靶。
+ * - 抽象 bigint 的 Object.prototype.toString 折 "[object BigInt]"；
+ * bigint.toString 值读路由（字面量 radix 精确 / 越界 RangeError / 抽象
+ * bigint 返抽象 string）。
+ * - bigint-ness 双侧判定（字面量 ∪ isBigPrim）——恰一侧 bigint 且
+ * 另一侧已知非 bigint → 定抛 TypeError；b/0n、b%0n、b**-1n → RangeError；
+ * 抽象混合 → recordMayThrow（effects 面）。
+ * - 借调内建原型方法不查 brand → Number/String/…/Map/Set 等
+ * brand-checking 原型按 home vs 接收者 brand 比对（异 brand 定抛）。
+ * - new <proxy> 重入靶（construct 陷阱 / 缺省递归靶构造器）。
+ * - typeof 代理 / instanceof 剥靶（fn 靶 → "function"）。
+ * - 对象级 Proxy 陷阱（deleteProperty/defineProperty/
+ * setPrototypeOf/preventExtensions/getPrototypeOf）——Object 版 falsy
+ * 字面量定抛、Reflect 版返布尔、陷阱在场不动靶。
  *
  * 断言锚定原生语义（node v26 strict-mode 实测，tmp/probe/c7-verify.ts 差分
  * compared=73 mismatch=0）。抽象 bigint 用 BigInt(Date.now())（不可折字面量）；
@@ -29,7 +29,7 @@ const valv = (src: string) => {
   return r.ok ? r.value : undefined;
 };
 
-describe("Bug 105 抽象 bigint 的 Object.prototype.toString / toString", () => {
+describe("抽象 bigint 的 Object.prototype.toString / toString", () => {
   it("抽象 bigint 经 Object.prototype.toString.call 折 \"[object BigInt]\"", () => {
     expect(
       valv(`export function f(){ const b = BigInt(Date.now()); return Object.prototype.toString.call(b); }`),
@@ -72,7 +72,7 @@ describe("Bug 105 抽象 bigint 的 Object.prototype.toString / toString", () =>
   });
 });
 
-describe("Bug 106 bigint-ness 双侧判定（字面量 ∪ isBigPrim）", () => {
+describe("bigint-ness 双侧判定（字面量 ∪ isBigPrim）", () => {
   const bSrc = (expr: string) => `export function f(x){ const b = BigInt(Date.now()); return ${expr}; }`;
 
   it("抽象 bigint ⊕ 已知非 bigint → 定抛 TypeError（never + throws 面）", () => {
@@ -119,7 +119,7 @@ describe("Bug 106 bigint-ness 双侧判定（字面量 ∪ isBigPrim）", () => 
   });
 });
 
-describe("Bug 108 借调内建原型方法不查 brand", () => {
+describe("借调内建原型方法不查 brand", () => {
   it("异 brand 借调 brand-checking 原型 → 定抛 TypeError", () => {
     const rows = [
       `return Array.prototype.push.call("ab", 1);`,
@@ -149,7 +149,7 @@ describe("Bug 108 借调内建原型方法不查 brand", () => {
   });
 });
 
-describe("Bug 122 new <proxy> 重入靶", () => {
+describe("new <proxy> 重入靶", () => {
   it("无 construct 陷阱 → 递归靶构造器", () => {
     expect(
       valv(`export function f(){ const P = new Proxy(function A(){ this.x = 1; }, {}); return new P().x; }`),
@@ -169,7 +169,7 @@ describe("Bug 122 new <proxy> 重入靶", () => {
   });
 });
 
-describe("Bug 123 typeof / instanceof 代理剥靶", () => {
+describe("typeof / instanceof 代理剥靶", () => {
   it("typeof fn 靶代理 → \"function\"；object 靶 → \"object\"", () => {
     expect(valv(`export function f(){ return typeof new Proxy(function(){}, {}); }`)).toBe("function");
     expect(valv(`export function f(){ return typeof new Proxy({}, {}); }`)).toBe("object");
@@ -181,7 +181,7 @@ describe("Bug 123 typeof / instanceof 代理剥靶", () => {
   });
 });
 
-describe("Bug 124 对象级 Proxy 陷阱派发", () => {
+describe("对象级 Proxy 陷阱派发", () => {
   it("deleteProperty 陷阱 falsy → strict delete 定抛；try/catch 捕获", () => {
     expect(
       valv(`export function f(){ const p = new Proxy({ a: 1 }, { deleteProperty() { return false; } }); try { delete p.a; return "ok"; } catch { return "c"; } }`),

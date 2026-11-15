@@ -3,14 +3,14 @@
  *
  * 审计表（2026-11-10 核查；文件 / 消费方 / 依赖 conf / 处理）：
  *
- * | 键面                          | 消费方                                   | 依赖 conf | 处理 |
+ * | 键面 | 消费方 | 依赖 conf | 处理 |
  * |-------------------------------|------------------------------------------|-----------|------|
- * | `absKey`                      | join 去重 / obj 槽相等 / env 声明去重     | 否（结构相等口径） | 默认键**不加** conf（逐字节不变） |
- * | `relationFingerprint`         | relationFn 指纹（shape 级关系）           | 否 | 保持 |
- * | `instantiateMemoKey`          | generalize 的 instantiate memo             | **是**（identity 函数把 #widened 实参跑成 #exact） | 改用 `absKeyWithConf`（含嵌套 conf 摘要） |
- * | `checkMemoKey`                | `checkSource` 整文件 memo / 磁盘缓存       | 否（键 = 源码 + 配置 + 依赖/侧车指纹） | 保持 |
- * | `pureValueKey`                | `@nudo:pure` 值基记忆化                     | 否（值语义键） | 保持 |
- * | `analysisFileCacheKey`        | service 文件级缓存                         | 否 | 保持 |
+ * | `absKey` | join 去重 / obj 槽相等 / env 声明去重 | 否（结构相等口径） | 默认键**不加** conf（逐字节不变） |
+ * | `relationFingerprint` | relationFn 指纹（shape 级关系） | 否 | 保持 |
+ * | `instantiateMemoKey` | generalize 的 instantiate memo | **是**（identity 函数把 #widened 实参跑成 #exact） | 改用 `absKeyWithConf`（含嵌套 conf 摘要） |
+ * | `checkMemoKey` | `checkSource` 整文件 memo / 磁盘缓存 | 否（键 = 源码 + 配置 + 依赖/侧车指纹） | 保持 |
+ * | `pureValueKey` | `@nudo:pure` 值基记忆化 | 否（值语义键） | 保持 |
+ * | `analysisFileCacheKey` | service 文件级缓存 | 否 | 保持 |
  *
  * 纪律：精度敏感的「结果继承输入置信度」共享必须用 `absKeyWithConf`；
  * 结构相等 / join 去重不得改默认 `absKey`（会破坏既有去重面）。

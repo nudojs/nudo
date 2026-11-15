@@ -1,5 +1,5 @@
 /**
- * Bug 119（静态字段初始化器 super 走实例链）：class-emit 静态字段 thunk 的
+ * （静态字段初始化器 super 走实例链）：class-emit 静态字段 thunk 的
  * fieldOpts 只展开 methodOptsBase、不带 staticSuperSrc——super.x 落
  * $getSuper（实例原型链 accessors/methods 表），父类**静态**字段/访问器/
  * 方法全折 exact undefined（算术折 NaN）。静态方法（staticOpts）与静态
@@ -15,7 +15,7 @@ import { call } from "./eval-helpers.ts";
 
 const run = (src: string) => litValue(call(src).result);
 
-describe("Bug 119: 静态字段初始化器 super.x 读父类静态面", () => {
+describe("静态字段初始化器 super.x 读父类静态面", () => {
   it("static t = super.s → typeof \"number\"（此前 exact \"undefined\"）", () => {
     expect(
       run(`export function f() { class A { static s = 1; } class B extends A { static t = super.s; } return typeof B.t; }`),
@@ -56,7 +56,7 @@ describe("Bug 119: 静态字段初始化器 super.x 读父类静态面", () => {
   });
 });
 
-describe("Bug 119 controls：既有 super 面不回归", () => {
+describe("controls：既有 super 面不回归", () => {
   it("静态方法体 super.s / super.m()（staticOpts 注入面）", () => {
     expect(
       run(`export function f() { class A { static s = 1; } class B extends A { static t() { return super.s; } } return B.t(); }`),

@@ -1,5 +1,5 @@
 /**
- * -0 字面量键同一性回归（literal-identity-negzero / BUG-008）。
+ * -0 字面量键同一性回归（literal-identity-negzero / ）。
  * 回归背景：键/指纹通道用 String(value) 序列化字面量，String(-0)==="0"，
  * numLit(0) 与 numLit(-0) 同键 → flattenSum 去重吞掉 -0；
  * relationFingerprint / generalize L2 instantiateMemoKey 也不保真。
@@ -18,7 +18,7 @@ import { runTranspiled, callTranspiledExportFull } from "@nudojs/core";
 const posZero = numLit(0);
 const negZero = numLit(-0);
 
-describe("-0 literal identity in key channels", () => {
+describe("0 literal identity in key channels", () => {
   it("absShapeKey distinguishes 0 from -0 (stable per value)", () => {
     expect(absShapeKey(posZero)).not.toBe(absShapeKey(negZero));
     expect(absShapeKey(posZero)).toBe(absShapeKey(numLit(0)));

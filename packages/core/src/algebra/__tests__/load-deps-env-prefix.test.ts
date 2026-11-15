@@ -1,5 +1,5 @@
 /**
- * BUG-013 回归：load-deps 侧 @nudo:env / @nudo:mock-module 识别面与 parser 对齐。
+ * 回归：load-deps 侧 @nudo:env / @nudo:mock-module 识别面与 parser 对齐。
  * 指纹过近似本身安全，但字符串误匹配会把垃圾 spec 写进依赖集合；
  * `//` 与 `///` 必须都命中 path 型 env。
  */

@@ -13,7 +13,7 @@ import { createNudoServer } from "../server.ts";
 // ---------------------------------------------------------------------------
 // documentSymbols
 // ---------------------------------------------------------------------------
-describe("[lsp-] documentSymbols", () => {
+describe("documentSymbols", () => {
 /**
  * documentSymbol + 跨文件 definition / references / rename 的纯函数测试
  * （不启 live LSP connection）。
@@ -180,11 +180,11 @@ describe("import bindings", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 749 — documentSymbol 按客户端能力作答（形状 + SymbolKind 取值）
+// documentSymbol 按客户端能力作答（形状 + SymbolKind 取值）
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 749 — documentSymbol 按客户端能力作答（形状 + SymbolKind 取值）", () => {
+describe("documentSymbol 按客户端能力作答（形状 + SymbolKind 取值）", () => {
 /**
- * Bug 749 —— `textDocument/documentSymbol` **完全无视客户端 capabilities**
+ * `textDocument/documentSymbol` **完全无视客户端 capabilities**
  * ⇒ 客户端声明「不支持层级式」却收到 `DocumentSymbol[]`（**形状违规**），
  * 且返回的 `SymbolKind` 超出客户端声明的 `valueSet`（**取值违规**）。
  *
@@ -196,14 +196,14 @@ describe("[lsp-] Bug 749 — documentSymbol 按客户端能力作答（形状 + 
  *
  * 契约（片 C → B）：
  * · `deps.clientCapabilities?: () => ClientCapabilities | undefined`
- *   ——返回客户端在 `initialize` 里声明的 `params.capabilities` **原对象**。
+ * ——返回客户端在 `initialize` 里声明的 `params.capabilities` **原对象**。
  * · **缺省**（`undefined`，老客户端可能根本不发该段）⇒ **必须走默认**：
- *   **层级式 `DocumentSymbol[]` + 全量 `SymbolKind`**（**不得因拿不到能力就退化**）。
+ * **层级式 `DocumentSymbol[]` + 全量 `SymbolKind`**（**不得因拿不到能力就退化**）。
  * · `hierarchicalDocumentSymbolSupport === false` ⇒ 回 **`SymbolInformation[]`**
- *   （`location` 而非 `range` / `selectionRange` / `children`；层级关系用
- *   `containerName` 表达）。
+ * （`location` 而非 `range` / `selectionRange` / `children`；层级关系用
+ * `containerName` 表达）。
  * · `symbolKind.valueSet` 存在 ⇒ 不在集合内的 kind **夹到集合内的安全值**
- *   （建议 `SymbolKind.Variable` = 13）并保留 `detail` 降级提示。
+ * （建议 `SymbolKind.Variable` = 13）并保留 `detail` 降级提示。
  */
 
 
@@ -239,7 +239,7 @@ type Sym = {
 
 const keysOf = (s: Sym): string[] => Object.keys(s).sort();
 
-describe("Bug 749 — documentSymbol 按客户端能力作答（形状 + SymbolKind 取值）", () => {
+describe("documentSymbol 按客户端能力作答（形状 + SymbolKind 取值）", () => {
   it("缺省（客户端没发能力段）⇒ 层级式 + 全量 SymbolKind（不得退化）", async () => {
     await withLspServer({ "a.js": SRC }, async ({ req, uri }) => {
       const syms = req("textDocument/documentSymbol")({
@@ -307,17 +307,17 @@ describe("Bug 749 — documentSymbol 按客户端能力作答（形状 + SymbolK
 });
 
 // ---------------------------------------------------------------------------
-// Bug 719 — documentSymbol 展开解构绑定
+// documentSymbol 展开解构绑定
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 719 — documentSymbol 展开解构绑定", () => {
+describe("documentSymbol 展开解构绑定", () => {
 /**
- * Bug 719 — LSP `documentSymbol`：**解构绑定**的顶层变量整个从大纲里消失。
+ * LSP `documentSymbol`：**解构绑定**的顶层变量整个从大纲里消失。
  *
  * 改前：变量分支对每个 declarator 取 `getDeclaratorId(d)`，而它只在
- *       `decl.id.type === "Identifier"` 时返回 id ⇒ 解构声明（ObjectPattern /
- *       ArrayPattern）整条 `continue` ⇒ 4 个绑定一个都不出。
+ * `decl.id.type === "Identifier"` 时返回 id ⇒ 解构声明（ObjectPattern /
+ * ArrayPattern）整条 `continue` ⇒ 4 个绑定一个都不出。
  * 改后：遇到解构模式时**展开每个绑定**，每个绑定各出一个 Variable 项，
- *       range / selectionRange 取该绑定标识符的 range。
+ * range / selectionRange 取该绑定标识符的 range。
  *
  * 原生 oracle：真 LSP server 驱动 `textDocument/documentSymbol` ⇒ 绑定名逐条。
  */
@@ -366,7 +366,7 @@ const plain = 3;
 export function f() { return plain; }
 `;
 
-describe("Bug 719 — documentSymbol 展开解构绑定", () => {
+describe("documentSymbol 展开解构绑定", () => {
   it("纯函数面：4 个解构绑定各出一个符号", () => {
     const syms = documentSymbols(parse(SRC));
     expect(syms.map((s) => s.name)).toEqual(["p", "q", "first", "second", "plain", "f"]);
@@ -409,14 +409,14 @@ export const used = [b, c, rest, x, tail];
 });
 
 // ---------------------------------------------------------------------------
-// Bug 704 — documentSymbol 的变量 detail 按声明种类（const / let / var）
+// documentSymbol 的变量 detail 按声明种类（const / let / var）
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 704 — documentSymbol 的变量 detail 按声明种类（const / let / var）", () => {
+describe("documentSymbol 的变量 detail 按声明种类（const / let / var）", () => {
 /**
- * Bug 704 — LSP documentSymbol 把 `let` / `var` 绑定标成 `const`（大纲文案错值）。
+ * LSP documentSymbol 把 `let` / `var` 绑定标成 `const`（大纲文案错值）。
  *
  * 改前：`documentSymbols` 的变量分支写死 `detail: exported ? "export const" : "const"`，
- *       与 `decl.kind`（const / let / var）无关 ⇒ 所有变量绑定都显示成 `const`。
+ * 与 `decl.kind`（const / let / var）无关 ⇒ 所有变量绑定都显示成 `const`。
  * 改后：detail 按 `decl.kind` 输出 `const` / `let` / `var`（导出时前缀 `export `）。
  *
  * 原生 oracle：真 LSP server 驱动 `textDocument/documentSymbol` ⇒ 响应里的 `detail`。
@@ -461,7 +461,7 @@ async function protocolSymbols(src: string): Promise<Sym[]> {
   }
 }
 
-describe("Bug 704 — documentSymbol 的变量 detail 按声明种类（const / let / var）", () => {
+describe("documentSymbol 的变量 detail 按声明种类（const / let / var）", () => {
   it("纯函数面：let / var / const / export 前缀各自正确", () => {
     const syms = documentSymbols(parse(SRC));
     const detailOf = (name: string): string | undefined =>
@@ -506,18 +506,18 @@ describe("Bug 704 — documentSymbol 的变量 detail 按声明种类（const / 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 706 — documentSymbol 收录 export default
+// documentSymbol 收录 export default
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 706 — documentSymbol 收录 export default", () => {
+describe("documentSymbol 收录 export default", () => {
 /**
- * Bug 706 — LSP `documentSymbol` 漏掉 `export default <arrow>` 与**匿名**
+ * LSP `documentSymbol` 漏掉 `export default <arrow>` 与**匿名**
  * `export default function () {}`。
  *
  * 改前：顶层语句循环只处理 FunctionDeclaration / ClassDeclaration /
- *       VariableDeclaration ⇒ `export default` 的声明整条从大纲里消失；
- *       `pushFn` 对无名函数 `if (!idNode?.name) return` 直接丢弃。
+ * VariableDeclaration ⇒ `export default` 的声明整条从大纲里消失；
+ * `pushFn` 对无名函数 `if (!idNode?.name) return` 直接丢弃。
  * 改后：顶层循环补 `ExportDefaultDeclaration` 分支——表达式型默认导出给一个
- *       名为 `default` 的符号；函数型默认导出**即便匿名**也要出项。
+ * 名为 `default` 的符号；函数型默认导出**即便匿名**也要出项。
  *
  * 原生 oracle：真 LSP server 驱动 `textDocument/documentSymbol` ⇒ DocumentSymbol[]。
  */
@@ -592,7 +592,7 @@ const CASES: Array<{ label: string; src: string; name: string; kind: number }> =
   },
 ];
 
-describe("Bug 706 — documentSymbol 收录 export default", () => {
+describe("documentSymbol 收录 export default", () => {
   for (const c of CASES) {
     it(`纯函数面：${c.label} ⇒ 大纲里有 ${c.name}`, () => {
       const syms = documentSymbols(parse(c.src));
@@ -617,11 +617,11 @@ describe("Bug 706 — documentSymbol 收录 export default", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 745 — workspace/symbol 返回类成员（递归下钻 + 扁平化）
+// workspace/symbol 返回类成员（递归下钻 + 扁平化）
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 745 — workspace/symbol 返回类成员（递归下钻 + 扁平化）", () => {
+describe("workspace/symbol 返回类成员（递归下钻 + 扁平化）", () => {
 /**
- * Bug 745 —— `workspace/symbol` **从不返回类方法 / 类属性**（只返回类本身）。
+ * `workspace/symbol` **从不返回类方法 / 类属性**（只返回类本身）。
  *
  * 根因：`onWorkspaceSymbol`（`server-navigation.ts`）只遍历 `documentSymbols(ast)`
  * 的**顶层**结果，**不下钻 `sym.children`**；而 `documentSymbols`（`symbols.ts`）
@@ -631,9 +631,9 @@ describe("[lsp-] Bug 745 — workspace/symbol 返回类成员（递归下钻 + �
  * `containerName` 表达）⇒ 与 LSP 的扁平协议相符。
  *
  * ⚠ **独立于本条的口径问题（本族不修）**：`workspace/symbol` 扫的是
- *   `knownFiles`（由 `validateText` 登记）+ 已打开文档 ⇒ **只有被分析过的
- *   文件**才进搜索 ⇒ 搜一个「只被 import 从未单独打开分析过」的文件的类方法
- *   仍可能搜不到（登记为族 24 残留项）。
+ * `knownFiles`（由 `validateText` 登记）+ 已打开文档 ⇒ **只有被分析过的
+ * 文件**才进搜索 ⇒ 搜一个「只被 import 从未单独打开分析过」的文件的类方法
+ * 仍可能搜不到（登记为族 24 残留项）。
  */
 
 
@@ -653,7 +653,7 @@ type WsSymbol = {
   location: { uri: string; range: { start: { line: number; character: number } } };
 };
 
-describe("Bug 745 — workspace/symbol 返回类成员（递归下钻 + 扁平化）", () => {
+describe("workspace/symbol 返回类成员（递归下钻 + 扁平化）", () => {
   it("类方法进搜索结果（带 containerName）", async () => {
     await withLspServer({ "kls.js": SRC }, async ({ req, uri }) => {
       const syms = req("workspace/symbol")({ query: "alphaMethod" }) as WsSymbol[];

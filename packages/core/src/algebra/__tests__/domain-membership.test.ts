@@ -34,7 +34,7 @@ function litConstraint(value: number | string | boolean | null): NudoConstraint 
 }
 
 /** union(...cs) 编码形态的手工等价物：绕过 toPlainConstraint 归一化直测
- *  members 裸解码（union() 构建器已落地，此处不复刻其 builder 表面） */
+ * members 裸解码（union() 构建器已落地，此处不复刻其 builder 表面） */
 function unionOf(...members: NudoConstraint[]): NudoConstraint {
   return {
     __nudoConstraint: true,
@@ -269,7 +269,7 @@ describe("literalMeetsConstraint", () => {
     });
   });
 
-  describe("lit(undefined) / lit(NaN)：哨兵 + SameValue（BUG-003）", () => {
+  describe("lit(undefined) / lit(NaN)：哨兵 + SameValue（）", () => {
     it("lit(undefined) domain membership", () => {
       expect(literalMeetsConstraint(undefined, cLit(undefined))).toBe(true);
       expect(literalMeetsConstraint(0, cLit(undefined))).toBe(false);

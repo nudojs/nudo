@@ -1,5 +1,5 @@
 /**
- * Bug 47（计算 Symbol 键解构静默丢绑定）：emitDestructure 的
+ * （计算 Symbol 键解构静默丢绑定）：emitDestructure 的
  * ObjectPattern 此前只认静态字符串键（staticKeyOf null → continue）——
  * `{[Symbol.iterator]: it} = [1,2,3]` 的计算键被整条跳过，`it` 从未绑定
  * （typeof 折 "undefined"、裸读 ReferenceError 面）。
@@ -13,7 +13,7 @@ import { litValue, anyAbs } from "@nudojs/core";
 import { call } from "./eval-helpers.ts";
 import { diffBody } from "./differential/harness.ts";
 
-describe("Bug 47: 计算 Symbol 键解构绑定", () => {
+describe("计算 Symbol 键解构绑定", () => {
   it("const {[Symbol.iterator]: it} = [1,2,3]; typeof it → function", () => {
     const r = call(
       `export function f() { const {[Symbol.iterator]: it} = [1,2,3]; return typeof it; }`,
@@ -75,7 +75,7 @@ describe("Bug 47: 计算 Symbol 键解构绑定", () => {
   });
 });
 
-describe("Bug 47: differential native 对照（隐式 return 体）", () => {
+describe("differential native 对照（隐式 return 体）", () => {
   const corpus = [
     `const {[Symbol.iterator]: it} = [1,2,3]; return typeof it;`,
     `const {[Symbol.toStringTag]: t} = {a:1}; return t;`,

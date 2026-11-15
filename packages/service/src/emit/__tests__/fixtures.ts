@@ -1,11 +1,11 @@
 /**
  * emit 投影测试共享夹具：
- * - BUG-020 tuple 洞构造器（sparse/dense/lead/trail/multi——hole 槽 vs 显式
- *   undefined 槽的区分面，dts / schema 投影测试共用）
+ * - tuple 洞构造器（sparse/dense/lead/trail/multi——hole 槽 vs 显式
+ * undefined 槽的区分面，dts / schema 投影测试共用）
  * - 'scale' CallRecord 构造器（跨文件域根记录，contract-emitter /
- *   contract-surface 的注入证据形态）
+ * contract-surface 的注入证据形态）
  * - 小助手：absExact/absUnknown/absUnion（case-emitter 投影面）与
- *   neverAbs/undefLit/litAbs（字面量面）
+ * neverAbs/undefLit/litAbs（字面量面）
  * - 产物装载器：loadGeneratedModule（真执行**生成产物**里的内联校验器）
  */
 import { abs as makeAbs, numLit, strLit, boolLit, joinAbs, type Abs } from "@nudojs/core";
@@ -41,7 +41,7 @@ export function litAbs(v: string | number | boolean | null | undefined): Abs {
   return undefLit();
 }
 
-// ---- BUG-020 tuple 洞夹具（conf 全部 exact） ----
+// ---- tuple 洞夹具（conf 全部 exact） ----
 
 /** hole 槽（`1 in a` 为 false）：[1, hole, 3] */
 export const tupleSparse = (): Abs =>

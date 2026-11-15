@@ -1,10 +1,10 @@
 /**
  * 具体循环两段预算（maxIters 抽象预算 + MAX_CONCRETE_LOOP_ITERS 硬上限）：
  * - 具体迭代空间（definitely-true 条件 / 精确长度 iterable）截断在 maxIters
- *   会产出**错误的 #exact**（症状 A：globToRegex 对 12 字符 glob 只跑 8 轮，
- *   拼出 `^lib\/debu$` 还声明 exact → negation case 求值成 true，原生 false）；
+ * 会产出**错误的 #exact**（症状 A：globToRegex 对 12 字符 glob 只跑 8 轮，
+ * 拼出 `^lib\/debu$` 还声明 exact → negation case 求值成 true，原生 false）；
  * - 硬上限仍未终止（无限具体循环）→ noteAbsTruncation(#loop-iterations) +
- *   绑定 conf 降级 partial（有界、可观测，与 fork/call 预算同 posture）；
+ * 绑定 conf 降级 partial（有界、可观测，与 fork/call 预算同 posture）；
  * - 抽象条件循环语义不变（仍以 maxIters 为预算，出口 join）。
  * 同时钉住 for-of `continue` 前的绑定写保留（副作用经闭包直达绑定，
  * pack/unpack 不吞写）。

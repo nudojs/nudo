@@ -1,5 +1,5 @@
 /**
- * Bug 836 回归（harvester 收割面）：`declare module "__proto__"` 让收割器把导出
+ * 回归（harvester 收割面）：`declare module "__proto__"` 让收割器把导出
  * 直接写到 **`Object.prototype`** 上 ⇒ **进程级原型污染**（分析进程里每个普通
  * 对象都多出该成员）+ 该模块记录从表里**消失**。
  *
@@ -7,8 +7,8 @@
  * `Object.prototype` 没有 "polluted"（tmp/probe/fix-r27/h6/native-proto.mjs）。
  *
  * 契约：
- *   1. 收割**不得**污染 `Object.prototype` / `globalThis` / 其它普通对象；
- *   2. 模块记录**必须仍在表里**（`env.modules` 的自有键含 "__proto__"）。
+ * 1. 收割**不得**污染 `Object.prototype` / `globalThis` / 其它普通对象；
+ * 2. 模块记录**必须仍在表里**（`env.modules` 的自有键含 "__proto__"）。
  */
 import { describe, it, expect, afterAll } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -57,7 +57,7 @@ function harvest(): { env: ReturnType<typeof harvestDts>; code: string } {
   return cached;
 }
 
-describe("Bug 836 — declare module \"__proto__\" 不得造成进程级原型污染", () => {
+describe("declare module \"__proto__\" 不得造成进程级原型污染", () => {
   it("收割后 Object.prototype / globalThis / 普通对象都没被污染", () => {
     harvest();
     expect(({} as Record<string, unknown>)["polluted"]).toBeUndefined();

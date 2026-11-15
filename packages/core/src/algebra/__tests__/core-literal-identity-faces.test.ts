@@ -6,8 +6,8 @@
  *
  * | 面 | 问的问题 | 同一性 | 由谁钉死 |
  * |---|---|---|---|
- * | ① **赋值 / 期望面**（`leq.ts` 的 `leqAbs`） | 「实现给出的值**是不是同一个值**？」 | **SameValue**（`Object.is`） | Bug 398 钉（`core--lit-samevalue.part.ts`） |
- * | ② **契约 / 类型执法面**（`scan/literal-preds.ts` + `scan/domain-membership.ts`） | 「这个值**是不是落在这个契约的类型域内**？」 | **SameValueZero**（`===` + NaN 特例） | Bug 915 钉（`core--literal-identity.part.ts`） |
+ * | ① **赋值 / 期望面**（`leq.ts` 的 `leqAbs`） | 「实现给出的值**是不是同一个值**？」 | **SameValue**（`Object.is`） | 钉（`core--lit-samevalue.part.ts`） |
+ * | ② **契约 / 类型执法面**（`scan/literal-preds.ts` + `scan/domain-membership.ts`） | 「这个值**是不是落在这个契约的类型域内**？」 | **SameValueZero**（`===` + NaN 特例） | 钉（`core--literal-identity.part.ts`） |
  * | ③ **项身份**（`term.ts` 的 `termEquals`） | 「这两个**项**是不是同一个项？」（不是精确期望） | **`===` + NaN**（= ②） | 本钉 |
  *
  * ①与②**故意不同**：`-0` 与 `0` 在 JS 里 `===` 为 **true** ⇒ 在**类型域**上
@@ -16,9 +16,9 @@
  * （否则 `@nudo:case` 期望 -0、实现给 0 会**假绿**通过）。
  *
  * ⚠ **不要**因为「看着不一致」就把 ② 改成 `Object.is`：
- *   - 那会让 `-0` 在**契约面**报红（`lit(0)` 的契约收到 `-0` 变成违例）⇒
- *     与 Bug 398 的期望面语义**混淆**，且与 Bug 915 的要求（标量位与字段位
- *     **同一个裁决**）直接冲突；
+ * - 那会让 `-0` 在**契约面**报红（`lit(0)` 的契约收到 `-0` 变成违例）⇒
+ * 与 的期望面语义**混淆**，且与 的要求（标量位与字段位
+ * **同一个裁决**）直接冲突；
  * ⚠ **也不要**改 ③ 的 `termEquals`：那是**项身份**（结构 + NaN 特例），不是
  * 精确期望；把它改成 SameValue 会让 `lit(-0)` 与 `lit(0)` 的项不再相等 ⇒
  * 波及项层面的折叠 / 缓存键。

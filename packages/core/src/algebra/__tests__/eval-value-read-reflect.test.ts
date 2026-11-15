@@ -1,21 +1,21 @@
 /**
- * 类 A 值读/反射面回归（Bug 3/9/31/32/41/43/49/54/56/57）：
- * - Bug 3：字符串下标 s[n]（抽象字符串接收者）→ unknown（应 string|undefined）。
- * - Bug 9：函数值属性 f.name / f.length / f.prototype → unknown。
- * - Bug 31：Reflect.set/deleteProperty/defineProperty/setPrototypeOf/
- *   preventExtensions 五个 mutator 不修改接收者（错误具体值，静默）。
- * - Bug 32：Object.create(proto, descriptors) 双参数——descriptors 被整体忽略。
- * - Bug 41：Object.keys/values/entries/gOPN(Object.create(<obj>)) 假 may-throw
- *   （原生恒 total）。
- * - Bug 43：keys/values/entries 非字符串 prim / 内建 brand 接收者未分类
- *   （假精确 string[]/unknown[]）。
- * - Bug 49：prim 实例方法**值读**（"ab".trim / (1).toFixed）→ 静默 undefined /
- *   假 unknown（原生一等函数）；typeof / === undefined 面错误具体值。
- * - Bug 54：Symbol.<well-known> 常量读 → 假 unknown。
- * - Bug 56：X.prototype.<method> 值读 → undefined/unknown（级联 .call 借用
- *   never + 假 may-throw）；与 Bug 49 收敛为同一条「方法值读」通道。
- * - Bug 57：访问器属性对反射/枚举内建不可见（entries/values/gOPD/
- *   JSON.stringify 直接读占位数据槽，绕过 accessorTable thunk）。
+ * 类 A 值读/反射面回归（）：
+ * - 字符串下标 s[n]（抽象字符串接收者）→ unknown（应 string|undefined）。
+ * - 函数值属性 f.name / f.length / f.prototype → unknown。
+ * - Reflect.set/deleteProperty/defineProperty/setPrototypeOf/
+ * preventExtensions 五个 mutator 不修改接收者（错误具体值，静默）。
+ * - Object.create(proto, descriptors) 双参数——descriptors 被整体忽略。
+ * - Object.keys/values/entries/gOPN(Object.create(<obj>)) 假 may-throw
+ * （原生恒 total）。
+ * - keys/values/entries 非字符串 prim / 内建 brand 接收者未分类
+ * （假精确 string[]/unknown[]）。
+ * - prim 实例方法**值读**（"ab".trim / (1).toFixed）→ 静默 undefined /
+ * 假 unknown（原生一等函数）；typeof / === undefined 面错误具体值。
+ * - Symbol.<well-known> 常量读 → 假 unknown。
+ * - X.prototype.<method> 值读 → undefined/unknown（级联 .call 借用
+ * never + 假 may-throw）；与 收敛为同一条「方法值读」通道。
+ * - 访问器属性对反射/枚举内建不可见（entries/values/gOPD/
+ * JSON.stringify 直接读占位数据槽，绕过 accessorTable thunk）。
  *
  * 原生 ground truth：node v26 实测对照。
  */
@@ -68,7 +68,7 @@ function evalWithArgs(
 const strAbs = abs({ k: "prim", type: "string" }, undefined, undefined, "path");
 const numAbs = abs({ k: "prim", type: "number" }, undefined, undefined, "path");
 
-describe("Bug 3: 字符串下标（抽象字符串接收者）", () => {
+describe("字符串下标（抽象字符串接收者）", () => {
   it("s[0] → string | undefined（与 s.at(n) 同域；字面量路径维持精确）", () => {
     const r = evalWithArgs(`export function f(s) { return s[0]; }`, [strAbs]);
     expect(r.value).toContain("string");
@@ -86,7 +86,7 @@ describe("Bug 3: 字符串下标（抽象字符串接收者）", () => {
   });
 });
 
-describe("Bug 9: 函数值属性 name / length / prototype", () => {
+describe("函数值属性 name / length / prototype", () => {
   it("声明名 / 形参数 / prototype 对象全部可判定", () => {
     expect(litValue(call(`export function f() { function g(a, b) { return a; } return g.name; }`).result))
       .toEqual({ ok: true, value: "g" });
@@ -102,7 +102,7 @@ describe("Bug 9: 函数值属性 name / length / prototype", () => {
       .toEqual({ ok: true, value: undefined });
     const r = call(`export function f() { const g = () => 1; return g.name; }`);
     expect(fmt(r.result)).toBe("string");
-    // Bug 69：$fnVal opts.length 通道覆盖箭头函数 —— length 折叠精确 arity
+    // $fnVal opts.length 通道覆盖箭头函数 —— length 折叠精确 arity
     // （原生 (a, b) => a 的 length === 2）
     const len = call(`export function f() { const g = (a, b) => a; return g.length; }`);
     expect(litValue(len.result)).toEqual({ ok: true, value: 2 });
@@ -114,7 +114,7 @@ describe("Bug 9: 函数值属性 name / length / prototype", () => {
   });
 });
 
-describe("Bug 31: Reflect 五个 mutator 修改接收者", () => {
+describe("Reflect 五个 mutator 修改接收者", () => {
   it("set / deleteProperty / defineProperty / setPrototypeOf / preventExtensions", () => {
     expect(litValue(call(`export function f() { const o = {}; Reflect.set(o, "a", 1); return o.a; }`).result))
       .toEqual({ ok: true, value: 1 });
@@ -162,7 +162,7 @@ describe("Bug 31: Reflect 五个 mutator 修改接收者", () => {
   });
 });
 
-describe("Bug 32: Object.create(proto, descriptors)", () => {
+describe("Object.create(proto, descriptors)", () => {
   it("descriptors 安装为自有属性（null-proto 与 obj-proto 双变体）", () => {
     expect(litValue(call(`export function f() { return Object.create(null, { y: { value: 2 } }).y; }`).result))
       .toEqual({ ok: true, value: 2 });
@@ -184,7 +184,7 @@ describe("Bug 32: Object.create(proto, descriptors)", () => {
   });
 });
 
-describe("Bug 41: keys 家族对 Object.create(<obj>) 恒 total", () => {
+describe("keys 家族对 Object.create(<obj>) 恒 total", () => {
   it("无假 may-throw；keys/values/entries 精确 []", () => {
     for (const src of [
       `export function f() { return Object.keys(Object.create({ a: 1 })); }`,
@@ -206,7 +206,7 @@ describe("Bug 41: keys 家族对 Object.create(<obj>) 恒 total", () => {
   });
 });
 
-describe("Bug 43: keys/values/entries 接收者分类", () => {
+describe("keys/values/entries 接收者分类", () => {
   it("非字符串 prim（bool/bigint/symbol 字面量 + 抽象 number）→ []", () => {
     for (const recv of ["true", "1n", 'Symbol("d")']) {
       const r = call(`export function f() { return Object.keys(${recv}); }`);
@@ -237,7 +237,7 @@ describe("Bug 43: keys/values/entries 接收者分类", () => {
   });
 });
 
-describe("Bug 49: prim 实例方法值读（方法值读通道）", () => {
+describe("prim 实例方法值读（方法值读通道）", () => {
   it("字符串方法：typeof 折 function；=== undefined 折 false（不再静默 undef）", () => {
     for (const m of ["trim", "charAt", "indexOf", "split", "padStart", "bold", "replace"]) {
       const r = call(`export function f() { return typeof "ab".${m}; }`);
@@ -269,7 +269,7 @@ describe("Bug 49: prim 实例方法值读（方法值读通道）", () => {
   });
 });
 
-describe("Bug 54: Symbol.<well-known> 常量读", () => {
+describe("Symbol.<well-known> 常量读", () => {
   it("值域 symbol；=== 恒等折 true；description 精确", () => {
     const r = call(`export function f() { return typeof Symbol.iterator; }`);
     expect(litValue(r.result)).toEqual({ ok: true, value: "symbol" });
@@ -286,7 +286,7 @@ describe("Bug 54: Symbol.<well-known> 常量读", () => {
   });
 });
 
-describe("Bug 56: X.prototype.<method> 值读 + 借用调用（与 49 同通道）", () => {
+describe("X.prototype.<method> 值读 + 借用调用（与 49 同通道）", () => {
   it("typeof 面折 function（不再 undefined/unknown）", () => {
     for (const src of [
       `typeof Array.prototype.slice`,
@@ -336,7 +336,7 @@ describe("Bug 56: X.prototype.<method> 值读 + 借用调用（与 49 同通道�
   });
 });
 
-describe("Bug 57: 访问器属性对反射/枚举内建可见（readProperty 收口）", () => {
+describe("访问器属性对反射/枚举内建可见（readProperty 收口）", () => {
   it("Object.entries / Object.values 经 getter 求值", () => {
     expect(fmt(call(`export function f() { return Object.entries({ get a() { return 1; } }); }`).result))
       .toBe('[["a", 1]]');

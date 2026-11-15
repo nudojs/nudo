@@ -5,7 +5,7 @@
  * 「申报」的真值只来自契约解析本身（签名面 provenance 或契约面诊断），
  * 不读源码字符串、不按阻断码表反推。
  *
- * 本文件同时钉住 BUG-021（`contract-syntax` 此前 exit 0、零上屏）。
+ * 本文件同时钉住 （`contract-syntax` 此前 exit 0、零上屏）。
  */
 import { describe, it, expect, afterEach } from "vitest";
 import { DIAG, setPublishGateShadow, takePublishGateShadow } from "@nudojs/core/internal";
@@ -23,7 +23,7 @@ const DECLARED = `/// @nudo:import { num } from "./f.nudo.js"
  * @nudo:contract x num
  */
 export function f(x) { return x; }`;
-/** 申报但契约写坏（BUG-021）：约束名不是合法约束。 */
+/** 申报但契约写坏（）：约束名不是合法约束。 */
 const BROKEN = `/**
  * @nudo:contract x number()
  */

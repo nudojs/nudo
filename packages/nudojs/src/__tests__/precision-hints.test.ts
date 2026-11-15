@@ -2,14 +2,14 @@
  * 精度悬崖 UX（两个特性）的回归钉：
  *
  * 1. `nudo test` 报告含 `call@symbolic`（调用点超 callSiteBudget 被折出的
- *    符号化聚合见证）⇒ 报告尾追加一条 actionable 提示（SYMBOLIC_BUDGET_NOTE）：
- *    抬 `package.json#nudo.analysis.callSiteBudget`（1–64）或用 `@nudo:case`
- *    固化精确见证（limitations §3.2.2 同款口径）。句式与 check 面
- *    `nudo:recursion-truncated` 的建议（「事实 — 动作 A or 动作 B」）同构。
- *    不含 call@symbolic 的报告不得出现该提示（不制造噪音）。
+ * 符号化聚合见证）⇒ 报告尾追加一条 actionable 提示（SYMBOLIC_BUDGET_NOTE）：
+ * 抬 `package.json#nudo.analysis.callSiteBudget`（1–64）或用 `@nudo:case`
+ * 固化精确见证（limitations §3.2.2 同款口径）。句式与 check 面
+ * `nudo:recursion-truncated` 的建议（「事实 — 动作 A or 动作 B」）同构。
+ * 不含 call@symbolic 的报告不得出现该提示（不制造噪音）。
  * 2. `nudo health` Summary（文本面与 --json 面 summary 同源）新增精度计数：
- *    unknown 签名数（返回位推断失败 ⇒ 签名渲染 `unknown`）与 #widened
- *    出现数（conf === "widened" 的见证条数）——观察指标，不挡门禁。
+ * unknown 签名数（返回位推断失败 ⇒ 签名渲染 `unknown`）与 #widened
+ * 出现数（conf === "widened" 的见证条数）——观察指标，不挡门禁。
  *
  * 夹具与 docs/design/limitations.md §3.2.2 的实测口径一致：默认预算 3，
  * `add` 的第 4 个调用点起被折进 call@symbolic（实参 widen 成 number，

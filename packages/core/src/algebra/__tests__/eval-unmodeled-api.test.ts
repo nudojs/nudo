@@ -2,10 +2,10 @@
  * 未建模 API 小清单偿还：String.fromCharCode / Object.prototype 方法 / Symbol()。
  * A. fromCharCode：字面量码点 ToUint16 折叠；抽象实参 → 抽象 string。
  * B. hasOwnProperty / isPrototypeOf / propertyIsEnumerable / valueOf / toString：
- *    具体形状/元组/数组/字符串装箱按自有槽/下标/length/holes 判定；
- *    Object.prototype.hasOwnProperty.call 同语义；null-proto 无这些方法（TypeError）。
+ * 具体形状/元组/数组/字符串装箱按自有槽/下标/length/holes 判定；
+ * Object.prototype.hasOwnProperty.call 同语义；null-proto 无这些方法（TypeError）。
  * C. Symbol()：非具体 unique symbol（=== 两枚为 false、同引用为 true）；
- *    .description 字面量或 undefined；typeof "symbol"；隐式 ToString TypeError。
+ * .description 字面量或 undefined；typeof "symbol"；隐式 ToString TypeError。
  */
 import { describe, it, expect } from "vitest";
 import { litValue, anyAbs } from "@nudojs/core";
@@ -29,7 +29,7 @@ describe("A. String.fromCharCode", () => {
   });
 
   it("abstract args widen to abstract string", () => {
-    // Bug 7 边界归一：缺省 n ≡ undefined → ToUint16(ToNumber(undefined)=NaN)=0
+    // 边界归一：缺省 n ≡ undefined → ToUint16(ToNumber(undefined)=NaN)=0
     // 折 "\u0000"（原生 String.fromCharCode(undefined) === "\u0000"）
     expect(litValue(call(`export function f(n) { return String.fromCharCode(n); }`).result)).toEqual({ ok: true, value: "\u0000" });
     expect(litValue(call(`export function f(n) { return String.fromCharCode(65, n); }`).result)).toEqual({ ok: true, value: "A\u0000" });

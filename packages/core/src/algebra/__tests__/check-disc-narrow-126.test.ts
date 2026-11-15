@@ -6,7 +6,7 @@
  * 三态成员分类（$narrowMemberEq / memberEqClass）：
  * - "only"（槽值域恰为 lit，pred ⊢ eq）→ 对偶补集臂剪除；
  * - "never"（值域排除 lit / 形态不容 / 闭 shape 槽缺席 / nullish-lit 成员）
- *   → 事实臂剪除；
+ * → 事实臂剪除；
  * - "may"（typeof-only 域、any/unknown 令牌）→ 双侧保守保留。
  *
  * 边界（诚实残差，文档化）：宽容尾臂 `shape({ type: string() })` 的值域

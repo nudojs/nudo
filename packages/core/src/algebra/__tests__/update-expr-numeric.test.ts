@@ -3,16 +3,16 @@
  *
  * 回归背景：transpile 把 `x++` 编成 `$add(x, 1)` / 后缀 `(x = $add(x,1), $sub(x,1))`。
  * `$add` 是 JS `+`——字符串操作数走拼接：
- *   let x = "5"; x++;   // 原生 x === 6，引擎 "51"
- *   let x = "5"; x++;   // 原生表达式值 5，引擎 50（后缀 undo 用 $sub("51",1)）
+ * let x = "5"; x++; // 原生 x === 6，引擎 "51"
+ * let x = "5"; x++; // 原生表达式值 5，引擎 50（后缀 undo 用 $sub("51",1)）
  *
  * 规范（ES UpdateExpression）：
- *   oldValue = ToNumeric(GetValue(lvalue))
- *   newValue = oldValue + 1   （1 随 oldValue 的 numeric type：number→1，bigint→1n）
- *   写回 newValue；前缀值 = newValue，后缀值 = oldValue
+ * oldValue = ToNumeric(GetValue(lvalue))
+ * newValue = oldValue + 1 （1 随 oldValue 的 numeric type：number→1，bigint→1n）
+ * 写回 newValue；前缀值 = newValue，后缀值 = oldValue
  *
  * 同类：后缀 undo `(x = x+1, x-1)` 在 IEEE 边界不保值：
- *   let x = 2**53; return x++;  // 原生 2**53，引擎 2**53-1
+ * let x = 2**53; return x++; // 原生 2**53，引擎 2**53-1
  * 必须先缓存 oldValue，不得用 `new-1` 还原。
  */
 import {describe, it, expect} from "vitest";

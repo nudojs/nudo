@@ -8,7 +8,7 @@ import { makeFiles } from "./nudo-constraints.ts";
 const errors = (r: { issues: Array<{ severity: string; code: string }> }): string[] =>
   r.issues.filter((i) => i.severity === "error").map((i) => i.code);
 
-describe("audit 34 · 跨槽 binder 表（BUG-018）", () => {
+describe("audit 34 · 跨槽 binder 表（）", () => {
   const SIDE = `import { fn, any, number, bind, ref } from "@nudojs/core";
 export const t = fn({ x: bind("a", number()), y: fn({ z: ref("a") }, any()) }, any());
 `;

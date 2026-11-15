@@ -1,18 +1,18 @@
 /**
- * Bug 5 / Bug 26：Object.groupBy / Map.groupBy（ES2024 array-grouping）——
+ * / Object.groupBy / Map.groupBy（ES2024 array-grouping）——
  * 此前两静态均未建模：nullish/非可迭代 items 不抛、非函数回调不抛、结果
  * unknown、L2 entry-may-throw gate 静默。三面口径（node v26.10 实测 ground
  * truth，见各 describe 注释）：
  * - 校验序（V8）：items nullish（RequireObjectCoercible）→ 回调 IsCallable
- *   → items 可迭代性。`groupBy(null, null)` 报 nullish、`groupBy(1, null)`
- *   报 not-a-function。
+ * → items 可迭代性。`groupBy(null, null)` 报 nullish、`groupBy(1, null)`
+ * 报 not-a-function。
  * - 非字符串 prim（number/boolean/bigint/symbol）items → TypeError not
- *   iterable；字符串 items 可迭代（按 code point 分组，不抛）。
+ * iterable；字符串 items 可迭代（按 code point 分组，不抛）。
  * - 字面量数组/字符串 + 可执行字面量回调 → 精确分组折叠：
- *   Object.groupBy → null 原型对象（ToPropertyKey 字符串键）；
- *   Map.groupBy → Map brand（原始键，SameValueZero 合并）。
+ * Object.groupBy → null 原型对象（ToPropertyKey 字符串键）；
+ * Map.groupBy → Map brand（原始键，SameValueZero 合并）。
  * - 抽象 items / 抽象回调 → recordMayThrow(TypeError)（gate 不再静默）+
- *   保守值（Object：开放 null-prototype obj；Map：含 shadow 条目的 Map）。
+ * 保守值（Object：开放 null-prototype obj；Map：含 shadow 条目的 Map）。
  */
 import { describe, it, expect } from "vitest";
 import { checkSource } from "../check/check.ts";
@@ -88,9 +88,9 @@ function tupleLits(r: unknown): unknown[] | undefined {
   return els;
 }
 
-// --- Bug 5：Object.groupBy ---------------------------------------------------
+// --- Object.groupBy ---------------------------------------------------
 
-describe("Bug 5: Object.groupBy 校验面（node 实测）", () => {
+describe("Object.groupBy 校验面（node 实测）", () => {
   // node v26.10：Object.groupBy(null/undefined, cb) → TypeError
   // "Object.groupBy called on null or undefined"
   it("nullish items 定抛 TypeError + catch 臂可达", () => {
@@ -177,9 +177,9 @@ describe("Bug 5: Object.groupBy 校验面（node 实测）", () => {
   });
 });
 
-// --- Bug 26：Map.groupBy -----------------------------------------------------
+// --- Map.groupBy -----------------------------------------------------
 
-describe("Bug 26: Map.groupBy 校验面（node 实测）", () => {
+describe("Map.groupBy 校验面（node 实测）", () => {
   // node v26.10：Map.groupBy(null/undefined, cb) → TypeError
   // "Map.groupBy called on null or undefined"
   it("nullish items 定抛 TypeError + catch 臂可达", () => {

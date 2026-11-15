@@ -6,12 +6,12 @@ import { checkSource } from "@nudojs/core";
  *
  * for/for-of/for-in/while/do-while 的 pack/unpack 名单按「循环体**顶层**
  * 词法声明名」剔除（collectLoopBodyTopLevelDeclNames）：
- *   - 体顶层 `const re = …` 对整个循环体 shadow 外层绑定，而 pack 闭包发射
- *     在体作用域之外（外层无绑定 → ReferenceError）——必须剔除（#91）；
- *     `re = $reStateCall(re, …)`（正则状态重绑）会把声明名带进 assigned。
- *   - 嵌套块内 `if (…) { let x }` 只 shadow 该块——不得剔除，否则外层 x
- *     丢 pack → 跨迭代状态丢失 → 非健全精确（shadowPack 曾折 `1`，
- *     a=[] 真值 0）。
+ * - 体顶层 `const re = …` 对整个循环体 shadow 外层绑定，而 pack 闭包发射
+ * 在体作用域之外（外层无绑定 → ReferenceError）——必须剔除（#91）；
+ * `re = $reStateCall(re, …)`（正则状态重绑）会把声明名带进 assigned。
+ * - 嵌套块内 `if (…) { let x }` 只 shadow 该块——不得剔除，否则外层 x
+ * 丢 pack → 跨迭代状态丢失 → 非健全精确（shadowPack 曾折 `1`，
+ * a=[] 真值 0）。
  */
 const shadowSrc = `
 export function shadowPack(a) {
@@ -96,10 +96,10 @@ describe("loop pack/unpack exclusion × shadowing", () => {
   };
 
   it("for-of: nested block `let x` does not evict outer pack var (sound widen, was unsound 1)", () => {
-    // a=[] 真值 0；`=> 1` 即非健全。Bug 47 后单代表迭代出口按增长宽化到
+    // a=[] 真值 0；`=> 1` 即非健全。后单代表迭代出口按增长宽化到
     // 无上界域（native a=[2,2] → 2 ∉ {0,1}，number 是 sound 超集）。
-    // throws TypeError：for-of over any 接收者 may TypeError（Bug 6 迭代守卫，原生语义）
-    // ⚠ Bug 413：`display` 自此是人类面口径的 shape 渲染（不再带 `#conf` 段）
+    // throws TypeError：for-of over any 接收者 may TypeError（迭代守卫，原生语义）
+    // ⚠ `display` 自此是人类面口径的 shape 渲染（不再带 `#conf` 段）
     // ⇒ 宽化证据（conf = widened）改看 `conf` 字段
     expect(sig("shadowPack").display).toBe("number throws TypeError");
     expect(sig("shadowPack").conf).toBe("widened");
@@ -107,18 +107,18 @@ describe("loop pack/unpack exclusion × shadowing", () => {
 
   it("for / while: same shadow soundness across loop forms", () => {
     // forShadow 的 throws：a[i] 计算成员读 any 接收者 may TypeError（$idx 守卫）
-    // Bug 48 后抽象条件预算耗尽按增长宽化（native a.length 任意 → 不再折
+    // 后抽象条件预算耗尽按增长宽化（native a.length 任意 → 不再折
     // {0..8} 假上界）
     expect(sig("forShadow").display).toBe("number throws TypeError");
     expect(sig("forShadow").conf).toBe("widened");
     // whileShadow 的 throws：`i < a.length`（a.length:any）关系比较 may TypeError
-    //（Bug 31 关系算子守卫，原生语义：a.length 可能为 Symbol）；值域不变
+    //（关系算子守卫，原生语义：a.length 可能为 Symbol）；值域不变
     expect(sig("whileShadow").display).toBe("number throws TypeError");
     expect(sig("whileShadow").conf).toBe("widened");
   });
 
   it("do-while: body-first semantics preserved (≥1 widen, no more 1..9 cap)", () => {
-    // 同 whileShadow：`while (i < a.length)`（Bug 31，a.length:any may Symbol）
+    // 同 whileShadow：`while (i < a.length)`（，a.length:any may Symbol）
     expect(sig("doWhileShadow").display).toBe("number throws TypeError");
     expect(sig("doWhileShadow").conf).toBe("widened");
   });
@@ -129,8 +129,8 @@ describe("loop pack/unpack exclusion × shadowing", () => {
     expect(f4).toBeTruthy();
     // #91 症状面：entry 不再报 may throw ReferenceError；签名保持 sound 布尔并集。
     // throws TypeError（非 ReferenceError）：for-of over any 接收者（files）may
-    // TypeError（Bug 6 迭代守卫，原生语义）。
-    // ⚠ Bug 413：`display` 自此是人类面口径的 shape 渲染（不再带 `#conf` /
+    // TypeError（迭代守卫，原生语义）。
+    // ⚠ `display` 自此是人类面口径的 shape 渲染（不再带 `#conf` /
     // pathNote 段）⇒ 置信度看 `conf`、join 证据看 `abs.pathNote`
     // ⚠ 断言强度：pathNote **精确相等**（`toContain` 会放过「前后多挂别的
     // join 证据」⇒ join 口径就没人钉了）。
@@ -141,7 +141,7 @@ describe("loop pack/unpack exclusion × shadowing", () => {
     expect(String(f4!.throws)).not.toContain("ReferenceError");
     const sel = rep91.signatures.find((s) => s.name === "selectedByFiles");
     expect(sel).toBeTruthy();
-    // Bug 47：体内 `continue`（抽象条件 fork 的 continue 臂冒泡）打断代表
+    // 体内 `continue`（抽象条件 fork 的 continue 臂冒泡）打断代表
     // 迭代——「先跑任意次（selected 可被置 true）再 continue」的域不可
     // 观测，出口按打断宽化到全域 boolean（sound：native ∈ {true,false}；
     // #91 的回归面是 ReferenceError——仍不得出现）
@@ -152,7 +152,7 @@ describe("loop pack/unpack exclusion × shadowing", () => {
     const entryThrows = rep91.issues.filter(
       (i) => i.code === "nudo:entry-may-throw" && (i.fn === "f4" || i.fn === "selectedByFiles"),
     );
-    // L2 gate 现在因 may TypeError 报错（Bug 6 迭代守卫，原生语义）；
+    // L2 gate 现在因 may TypeError 报错（迭代守卫，原生语义）；
     // #91 的回归面是 ReferenceError——不得再出现。
     expect(entryThrows.every((i) => !String(i.message).includes("ReferenceError"))).toBe(true);
     expect(entryThrows.length).toBeGreaterThan(0);

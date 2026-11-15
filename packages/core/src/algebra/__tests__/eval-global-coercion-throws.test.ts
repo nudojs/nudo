@@ -1,5 +1,5 @@
 /**
- * Wave 8 — 全局函数 / Number / Math 内建强转面 throws 域回归（Bug 23/25/26/
+ * Wave 8 — 全局函数 / Number / Math 内建强转面 throws 域回归（/
  * 30/45/50/81/83）。三面口径：确定抛（NudoThrow → 边界收成 throws brand）、
  * 抽象臂 may（recordMayThrow 效果，值域不变）、原生 total（无效果——假阳控制组）。
  * node v26 实测为 ground truth（探测结论见各用例注释）。
@@ -40,9 +40,9 @@ function evalAny(src: string, fnName = "f"): ReturnType<typeof evalSrc> {
   ]);
 }
 
-// --- Bug 23：Symbol(Symbol()) ----------------------------------------------
+// --- Symbol(Symbol()) ----------------------------------------------
 
-describe("Bug 23: Symbol(Symbol()) definite TypeError", () => {
+describe("Symbol(Symbol()) definite TypeError", () => {
   it("prim symbol descriptor → throws TypeError（node: ToString(Symbol) 恒抛）", () => {
     for (const src of [
       `export function f() { return Symbol(Symbol()); }`,
@@ -67,9 +67,9 @@ describe("Bug 23: Symbol(Symbol()) definite TypeError", () => {
   });
 });
 
-// --- Bug 25：Math.* 静态 ----------------------------------------------------
+// --- Math.* 静态 ----------------------------------------------------
 
-describe("Bug 25: Math.* symbol/bigint operands", () => {
+describe("Math.* symbol/bigint operands", () => {
   it("prim symbol/bigint 操作数 → definite TypeError（node 实测全 Math 数值方法）", () => {
     for (const src of [
       `export function f() { return Math.max(Symbol()); }`,
@@ -100,9 +100,9 @@ describe("Bug 25: Math.* symbol/bigint operands", () => {
   });
 });
 
-// --- Bug 26：parseInt / parseFloat / Number.parseFloat 首参 ------------------
+// --- parseInt / parseFloat / Number.parseFloat 首参 ------------------
 
-describe("Bug 26: parseInt/parseFloat symbol first arg", () => {
+describe("parseInt/parseFloat symbol first arg", () => {
   it("prim symbol 首参 → definite TypeError（node: ToString(Symbol) 恒抛）", () => {
     for (const src of [
       `export function f() { return parseInt(Symbol()); }`,
@@ -132,9 +132,9 @@ describe("Bug 26: parseInt/parseFloat symbol first arg", () => {
   });
 });
 
-// --- Bug 30：BigInt({}) -----------------------------------------------------
+// --- BigInt({}) -----------------------------------------------------
 
-describe("Bug 30: BigInt(object-literal) SyntaxError", () => {
+describe("BigInt(object-literal) SyntaxError", () => {
   it("纯对象字面量（无自有 toString/valueOf）→ definite SyntaxError（node 实测）", () => {
     const r = evalSrc(`export function f() { return BigInt({}); }`);
     expect(r.value).toBe("never");
@@ -159,9 +159,9 @@ describe("Bug 30: BigInt(object-literal) SyntaxError", () => {
   });
 });
 
-// --- Bug 45：parseInt radix --------------------------------------------------
+// --- parseInt radix --------------------------------------------------
 
-describe("Bug 45: parseInt/Number.parseInt radix", () => {
+describe("parseInt/Number.parseInt radix", () => {
   it("symbol-prim / bigint-lit radix → definite TypeError（node: ToNumber 恒抛）", () => {
     for (const src of [
       `export function f() { return parseInt("42", Symbol()); }`,
@@ -185,9 +185,9 @@ describe("Bug 45: parseInt/Number.parseInt radix", () => {
   });
 });
 
-// --- Bug 50：Number(x) / Array(x) / Object.assign(x, {}) ---------------------
+// --- Number(x) / Array(x) / Object.assign(x, {}) ---------------------
 
-describe("Bug 50: abstract arms of Number/Array/Object.assign", () => {
+describe("abstract arms of Number/Array/Object.assign", () => {
   it("Number(x) → may TypeError，值域 number 不变", () => {
     const r = evalAny(`export function f(x) { return Number(x); }`);
     expect(r.value).toBe("number");
@@ -220,9 +220,9 @@ describe("Bug 50: abstract arms of Number/Array/Object.assign", () => {
   });
 });
 
-// --- Bug 81：isNaN / isFinite ------------------------------------------------
+// --- isNaN / isFinite ------------------------------------------------
 
-describe("Bug 81: isNaN/isFinite coercion", () => {
+describe("isNaN/isFinite coercion", () => {
   it("isFinite(<bigint literal>) → definite TypeError（node 实测，与 isNaN 同口径）", () => {
     const fin = evalSrc(`export function f() { return isFinite(1n); }`);
     expect(fin.value).toBe("never");
@@ -244,9 +244,9 @@ describe("Bug 81: isNaN/isFinite coercion", () => {
   });
 });
 
-// --- Bug 83：BigInt.asIntN / asUintN -----------------------------------------
+// --- BigInt.asIntN / asUintN -----------------------------------------
 
-describe("Bug 83: BigInt.asIntN/asUintN ToIndex bits", () => {
+describe("BigInt.asIntN/asUintN ToIndex bits", () => {
   it("FP 修复：非 number 字面量位宽过 ToIndex 强转+截断，不再假阳 RangeError（node 实测）", () => {
     expect(evalSrc(`export function f() { return BigInt.asIntN("8", 1n); }`).value).toBe("1n");
     expect(evalSrc(`export function f() { return BigInt.asIntN(null, 1n); }`).value).toBe("0n");

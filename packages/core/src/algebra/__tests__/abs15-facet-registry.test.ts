@@ -3,10 +3,10 @@
  *
  * 钉住三件事（缺任何一条都会退化成「靠人记」）：
  * 1. `FACET_SPECS` 覆盖 `AbsFacets` **全部**槽位，声明序 = `facetKey` 片段序；
- *    `satisfies Record<keyof AbsFacets, FacetSpec>` 让漏登记在编译期红，
- *    本文件另用 `SAMPLE` 的 `-?` 映射类型做第二道编译期覆盖检查。
+ * `satisfies Record<keyof AbsFacets, FacetSpec>` 让漏登记在编译期红，
+ * 本文件另用 `SAMPLE` 的 `-?` 映射类型做第二道编译期覆盖检查。
  * 2. 键编码逐字节稳定：前缀 / 分隔符 / JSON 引号 / 缺省不出现。
- *    改序或改前缀 = 缓存键漂移，必须在这里显式改并说明。
+ * 改序或改前缀 = 缓存键漂移，必须在这里显式改并说明。
  * 3. 等价副本按 `kind` 执行：标量与只读投影面共享，容器深/浅拷贝。
  */
 import { describe, it, expect } from "vitest";

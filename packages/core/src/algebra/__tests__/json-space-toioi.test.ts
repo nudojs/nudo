@@ -4,14 +4,14 @@
  * 回归背景：evalJsonMethod 对 number space 预处理成
  * `Number.isFinite(sv) ? Math.min(10, Math.max(0, Math.floor(sv))) : 0`，
  * 与原生不一致：
- *   JSON.stringify({a:1}, null, Infinity)  原生 10 空格，引擎 0（紧凑）
- *   JSON.stringify({a:1}, null, 0.1)       原生换行+空 indent，引擎紧凑
- *   JSON.stringify({a:1}, null, 5e-324)    同上
+ * JSON.stringify({a:1}, null, Infinity) 原生 10 空格，引擎 0（紧凑）
+ * JSON.stringify({a:1}, null, 0.1) 原生换行+空 indent，引擎紧凑
+ * JSON.stringify({a:1}, null, 5e-324) 同上
  *
  * 规范（ES JSON.stringify）：
- *   space 为 Number → spaceCount = ToIntegerOrInfinity(space); space = min(10, spaceCount)
- *   随后 gap 非空 **或** 原 space 为正数（含 (0,1)）→ pretty-print
- *   Infinity → min(10, Inf) = 10；0 / -0 / 负数 → 紧凑
+ * space 为 Number → spaceCount = ToIntegerOrInfinity(space); space = min(10, spaceCount)
+ * 随后 gap 非空 **或** 原 space 为正数（含 (0,1)）→ pretty-print
+ * Infinity → min(10, Inf) = 10；0 / -0 / 负数 → 紧凑
  *
  * 修法：number space 原样交给宿主 JSON.stringify（其内部即规范算法），
  * 不再 isFinite/floor/max 预折——那是同族 ToIntegerOrInfinity 漏网点。

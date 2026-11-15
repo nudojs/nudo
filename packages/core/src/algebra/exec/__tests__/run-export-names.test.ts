@@ -168,7 +168,7 @@ export function read() { return value; }
   });
 });
 
-describe("env/mock 注入与模块级绑定撞名：模块级绑定胜出（Bug 273）", () => {
+describe("env/mock 注入与模块级绑定撞名：模块级绑定胜出（）", () => {
   it("env 同名顶层 const：不注入 env 值，模块绑定保持", () => {
     const run = runTranspiled(
       `const value = 1;

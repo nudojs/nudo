@@ -3,7 +3,7 @@
  *
  * 原生语义：
  * - `[...x]`：x 不可迭代（number/bool/null/undefined/bigint/symbol 字面量）
- *   → TypeError；x 抽象（长度未知）→ 结果长度未知。
+ * → TypeError；x 抽象（长度未知）→ 结果长度未知。
  * - `[...set]` / `[...map]`：逐条目展开。
  *
  * 修复前：$concat 对非 tuple/arr/string 的操作数一律折成单元素 tuple

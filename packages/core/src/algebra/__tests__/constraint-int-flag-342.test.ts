@@ -1,5 +1,5 @@
 /**
- * Bug 342 —— `.int()` 是**数据标志**（不产 pred）⇒ 约束 → Abs 投影把整性
+ * `.int()` 是**数据标志**（不产 pred）⇒ 约束 → Abs 投影把整性
  * 整条蒸发 ⇒ zod / standard 两个产物面静默放行 `3.5`，而门禁（读**约束**）
  * 判红 ⇒ 跨产物面自相矛盾 + 假绿。
  *
@@ -50,7 +50,7 @@ function hasIntEncoding(pred: unknown): boolean {
   return false;
 }
 
-describe("Bug 342 —— int 标志投影成 pred（约束 → Abs）", () => {
+describe("int 标志投影成 pred（约束 → Abs）", () => {
   it("number().int().gt(0) 的 entry Abs 带整性编码 eq(self % 1, 0)", () => {
     const a = constraintToEntryAbs(number().int().gt(0), "n");
     expect(hasIntEncoding(a.pred)).toBe(true);

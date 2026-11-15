@@ -12,11 +12,11 @@ import { analyzeFileAsync, buildTestReport } from "@nudojs/service";
 import { suggestCase } from "../agent-tools.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 756 — selectCase 的 caseIndex 必须落在该函数的 case 列表内
+// selectCase 的 caseIndex 必须落在该函数的 case 列表内
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 756 — selectCase 的 caseIndex 必须落在该函数的 case 列表内", () => {
+describe("selectCase 的 caseIndex 必须落在该函数的 case 列表内", () => {
 /**
- * Bug 756 —— `nudo.selectCase` 不校验 caseIndex。
+ * `nudo.selectCase` 不校验 caseIndex。
  *
  * 改前：caseIndex=-1 让分析崩溃（"Cannot read properties of undefined
  * (reading 'argsAbs')" 诊断）、caseIndex=99 静默改掉观察档（活动档表写出
@@ -70,7 +70,7 @@ function handler(mock: ReturnType<typeof createMockConnection>, method: string):
   return h!;
 }
 
-describe("Bug 756 — selectCase 的 caseIndex 必须落在该函数的 case 列表内", () => {
+describe("selectCase 的 caseIndex 必须落在该函数的 case 列表内", () => {
   it("越界 caseIndex 回结构化错误，活动档表不变", async () => {
     const mock = startServer();
     const exec = handler(mock, "workspace/executeCommand");
@@ -129,11 +129,11 @@ describe("Bug 756 — selectCase 的 caseIndex 必须落在该函数的 case 列
 });
 
 // ---------------------------------------------------------------------------
-// Bug 764 — selectCase 必须校验 functionName
+// selectCase 必须校验 functionName
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 764 — selectCase 必须校验 functionName", () => {
+describe("selectCase 必须校验 functionName", () => {
 /**
- * Bug 764 —— `nudo.selectCase` 不校验 functionName。
+ * `nudo.selectCase` 不校验 functionName。
  *
  * 改前：任意名字（空串 ""、文件里不存在的 "doesNotExist"）都被当成真写进
  * 活动档表 ⇒ getActiveCases 如实上报幽灵条目（{"":0} / {"doesNotExist":0}）。
@@ -157,7 +157,7 @@ export function g(y) {
 }
 `;
 
-describe("Bug 764 — selectCase 必须校验 functionName", () => {
+describe("selectCase 必须校验 functionName", () => {
   it("空串 / 不存在的函数名回结构化错误，活动档表无幽灵条目", async () => {
     await withLspServer({ "sel.js": SRC }, async ({ req, uri }) => {
       const exec = req("workspace/executeCommand");
@@ -207,11 +207,11 @@ describe("Bug 764 — selectCase 必须校验 functionName", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 763 — selectContract 必须校验目标函数
+// selectContract 必须校验目标函数
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 763 — selectContract 必须校验目标函数", () => {
+describe("selectContract 必须校验目标函数", () => {
 /**
- * Bug 763 —— `nudo.selectContract` 无条件回 success:true。
+ * `nudo.selectContract` 无条件回 success:true。
  *
  * 改前：目标函数不存在（"noSuchFn"）、甚至参数全缺时也回 {"success":true}
  * ——协议层假成功，客户端以为契约已切回。
@@ -236,7 +236,7 @@ export function g(y) {
 }
 `;
 
-describe("Bug 763 — selectContract 必须校验目标函数", () => {
+describe("selectContract 必须校验目标函数", () => {
   it("目标函数不存在时回结构化错误，不写幽灵条目", async () => {
     await withLspServer({ "sel.js": SRC }, async ({ req, uri }) => {
       const exec = req("workspace/executeCommand");
@@ -284,11 +284,11 @@ describe("Bug 763 — selectContract 必须校验目标函数", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 655 · suggestCase 建议的名字与期望
+// suggestCase 建议的名字与期望
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 655 · suggestCase 建议的名字与期望", () => {
+describe("suggestCase 建议的名字与期望", () => {
 /**
- * Bug 655 —— LSP agent 工具 `nudo/suggestCase` 的建议：**名字**与**期望**。
+ * LSP agent 工具 `nudo/suggestCase` 的建议：**名字**与**期望**。
  *
  * 报告原文：`nudo/suggestCase` 把**合成 case 的原名**（`call@L<n>`）原样写进
  * 建议文本 ⇒ ① 建议落进引擎的「合成 / 固化」名字空间（`call@` / `entry@`）；
@@ -296,13 +296,13 @@ describe("[lsp-] Bug 655 · suggestCase 建议的名字与期望", () => {
  * 留下两条见证）。
  *
  * ⚠ 勘误：报告断言的「贴回后零断言、期望永不被判定」**已不复现** —— 引擎侧
- * 的「按名字前缀降级」已被族 14/15（Bug 651）修掉（判据改成**来源**
+ * 的「按名字前缀降级」已被族 14/15（）修掉（判据改成**来源**
  * `c.source !== "directive"`）⇒ 贴回后是**声明 case**（进断言面、但没写
  * `=> expected` ⇒ `unchecked`）。**本钉只钉工具侧这一面**：
  * ① 建议里的 case 名**不在** `call@` / `entry@` 合成 / 冻结名字空间；
  * ② 建议**带** `=> expected` ⇒ 贴回后真的产生断言（进断言面、不是 `unchecked`）。
  *
- * 夹具走**内存源码**（`params.source`）——与同族 `lsp-bug-759-*` 钉同款；
+ * 夹具走**内存源码**（`params.source`）——与同族 `lsp-*` 钉同款；
  * `helpers.ts` 的 tmpdir 脚手架对本钉无用（不需要落盘），故不复制脚手架。
  */
 
@@ -322,7 +322,7 @@ const SRC = [
 const FILE = "/t/bug-655-greet.js";
 
 /** 合成 / 固化见证的名字空间前缀（`call@` = service 侧 `GENERATED_PREFIX`；
- *  `entry@` = 入口兜底见证）——手写见证名一律避开。 */
+ * `entry@` = 入口兜底见证）——手写见证名一律避开。 */
 const SYNTHETIC_PREFIXES = ["call@", "entry@"];
 
 /** 建议文本里的 case 名（`@nudo:case "<name>" (…)`）。 */
@@ -356,7 +356,7 @@ async function suggestText(): Promise<string> {
   return r.content[0]!.text;
 }
 
-describe("Bug 655 · suggestCase 建议的名字与期望", () => {
+describe("suggestCase 建议的名字与期望", () => {
   it("建议里的 case 名不落在合成 / 冻结名字空间（改前是 call@L<n>）", async () => {
     const text = await suggestText();
     const names = suggestedNames(text);
@@ -406,11 +406,11 @@ describe("Bug 655 · suggestCase 建议的名字与期望", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 759 反向钉：suggestCase 区分「已声明 case」与「合成见证」
+// 反向钉：suggestCase 区分「已声明 case」与「合成见证」
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 759 反向钉：suggestCase 区分「已声明 case」与「合成见证」", () => {
+describe("反向钉：suggestCase 区分「已声明 case」与「合成见证」", () => {
 /**
- * Bug 759 —— **上游已修（报告结论不成立）**：反向钉，钉住「当前行为正确」。
+ * **上游已修（报告结论不成立）**：反向钉，钉住「当前行为正确」。
  *
  * 报告称 `nudo/suggestCase` 把**合成见证**（`call@` / `entry@`）当成用户
  * 手写的 `@nudo:case`，于是「already has N case(s)」并拒绝再建议。
@@ -424,7 +424,7 @@ describe("[lsp-] Bug 759 反向钉：suggestCase 区分「已声明 case」与�
 
 
 
-describe("Bug 759 反向钉：suggestCase 区分「已声明 case」与「合成见证」", () => {
+describe("反向钉：suggestCase 区分「已声明 case」与「合成见证」", () => {
   it("只有合成见证（call@）时给建议，不报 'already has N case(s)'", async () => {
     const src = [
       "export function add(a, b) { return a + b; }",
@@ -452,11 +452,11 @@ describe("Bug 759 反向钉：suggestCase 区分「已声明 case」与「合成
 });
 
 // ---------------------------------------------------------------------------
-// Bug 754 — agent nudo/test 并入 assertions 汇总
+// agent nudo/test 并入 assertions 汇总
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 754 — agent nudo/test 并入 assertions 汇总", () => {
+describe("agent nudo/test 并入 assertions 汇总", () => {
 /**
- * Bug 754 — LSP agent 工具 `nudo/test` 丢掉 CLI 的 **`assertions` 通道**
+ * LSP agent 工具 `nudo/test` 丢掉 CLI 的 **`assertions` 通道**
  * ⇒ agent 面分不出「见证通过」与「见证失败」。
  *
  * 症状（改前）：CLI `nudo test --json` 的顶层键含 `assertions`
@@ -478,7 +478,7 @@ export function double(x) {
 }
 `;
 
-describe("Bug 754 — agent nudo/test 并入 assertions 汇总", () => {
+describe("agent nudo/test 并入 assertions 汇总", () => {
   it("JSON 面含 assertions 键（passed / failed / unchecked）", async () => {
     await withLspServer({ "cases.js": CASES }, async ({ req, dir }) => {
       const r = await req("nudo/test")({ file: `${dir}/cases.js`, format: "json" });
@@ -510,11 +510,11 @@ describe("Bug 754 — agent nudo/test 并入 assertions 汇总", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 761 — agent nudo/test 过滤后 summary.cases 与 payload 同源
+// agent nudo/test 过滤后 summary.cases 与 payload 同源
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 761 — agent nudo/test 过滤后 summary.cases 与 payload 同源", () => {
+describe("agent nudo/test 过滤后 summary.cases 与 payload 同源", () => {
 /**
- * Bug 761 — LSP agent 工具 `nudo/test` 的 **`functions` 过滤**只重算**本地**
+ * LSP agent 工具 `nudo/test` 的 **`functions` 过滤**只重算**本地**
  * 函数的 case 数 ⇒ `summary.cases` 与**自身 payload** 矛盾（summary 说 1 个
  * case，payload 里躺着 2 个）。
  *
@@ -543,7 +543,7 @@ alpha(1);
 beta(2);
 `;
 
-describe("Bug 761 — agent nudo/test 过滤后 summary.cases 与 payload 同源", () => {
+describe("agent nudo/test 过滤后 summary.cases 与 payload 同源", () => {
   it("summary.cases == payload 里的实际 case 总数（含外部 case）", async () => {
     await withLspServer(
       { "lib.js": LIB, "main.js": MAIN },
@@ -609,18 +609,18 @@ describe("Bug 761 — agent nudo/test 过滤后 summary.cases 与 payload 同源
 });
 
 // ---------------------------------------------------------------------------
-// Bug 962 — agent nudo/test 的 functions 入参形态校验
+// agent nudo/test 的 functions 入参形态校验
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 962 — agent nudo/test 的 functions 入参形态校验", () => {
+describe("agent nudo/test 的 functions 入参形态校验", () => {
 /**
- * Bug 962 — LSP agent 工具 `nudo.test` 的 **`functions` 入参零校验**。
+ * LSP agent 工具 `nudo.test` 的 **`functions` 入参零校验**。
  *
  * 改前两种畸形形态：
  * 1. 传**字符串** ⇒ 按**字符**建集合 ⇒ 函数全被过滤掉 ⇒ 返回一份**完全
- *    合法但全空**的报告（`0 fn · 0 case`）⇒ agent 得出「这个文件没有
- *    函数」的**假空**结论（无错误、无警告、零信号）；
+ * 合法但全空**的报告（`0 fn · 0 case`）⇒ agent 得出「这个文件没有
+ * 函数」的**假空**结论（无错误、无警告、零信号）；
  * 2. 传**数字 / 对象** ⇒ `params.functions.length` 为 undefined ⇒ 过滤被
- *    **整体跳过** ⇒ 请求**静默失效**（拿到的是未过滤的全量报告）。
+ * **整体跳过** ⇒ 请求**静默失效**（拿到的是未过滤的全量报告）。
  *
  * 修法：入口做形态校验 ⇒ 畸形入参一律**工具错误**（`isError: true`）。
  */
@@ -631,7 +631,7 @@ const SRC = `function a(x) { return x; }
 function b(x) { return x + 1; }
 `;
 
-describe("Bug 962 — agent nudo/test 的 functions 入参形态校验", () => {
+describe("agent nudo/test 的 functions 入参形态校验", () => {
   it("functions 传字符串 ⇒ 工具错误（不是全空报告）", async () => {
     await withLspServer({ "m.js": SRC }, async ({ req, dir }) => {
       const r = await req("nudo/test")({
@@ -703,11 +703,11 @@ describe("Bug 962 — agent nudo/test 的 functions 入参形态校验", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 760 — agent nudo/test 文本面渲染 imported 段
+// agent nudo/test 文本面渲染 imported 段
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 760 — agent nudo/test 文本面渲染 imported 段", () => {
+describe("agent nudo/test 文本面渲染 imported 段", () => {
 /**
- * Bug 760 — LSP agent 工具 `nudo/test` 的**文本面**丢掉 **imported（外部）
+ * LSP agent 工具 `nudo/test` 的**文本面**丢掉 **imported（外部）
  * 函数** ⇒ CLI 文本面有的 `(imported)` 段在 IDE 面整段消失，而头部计数**仍
  * 把外部 case 算进去**（「2 fn · 3 case」却只列出 2 个函数块）。
  *
@@ -733,7 +733,7 @@ alpha(1);
 beta(2);
 `;
 
-describe("Bug 760 — agent nudo/test 文本面渲染 imported 段", () => {
+describe("agent nudo/test 文本面渲染 imported 段", () => {
   it("文本面含 (imported) 段头与外部函数", async () => {
     await withLspServer(
       { "lib.js": LIB, "main.js": MAIN },
@@ -757,7 +757,7 @@ describe("Bug 760 — agent nudo/test 文本面渲染 imported 段", () => {
         const header = text.split("\n").find((l: string) => l.includes(" fn · "));
         expect(header).toBeTruthy();
         const declared = Number(header!.match(/(\d+) case/)?.[1]);
-        // 正文里印出的 case 行（`  call@L…: (…) => …`）
+        // 正文里印出的 case 行（` call@L…: (…) => …`）
         const printed = text.split("\n").filter((l: string) => /^ {2}call@/.test(l)).length;
         expect(printed).toBe(declared);
       },

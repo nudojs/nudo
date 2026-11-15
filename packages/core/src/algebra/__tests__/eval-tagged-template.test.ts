@@ -1,12 +1,12 @@
 /**
- * Bug 34：TaggedTemplateExpression lowering——tag`a${b}c` ≡
+ * TaggedTemplateExpression lowering——tag`a${b}c` ≡
  * tag(GetTemplateObject, b)。此前无 case → unsupported → 模块级 opaque
  * （同文件其余签名连坐），原生 TypeError（1`x` definite / x`x` may）被吞。
  *
  * 模板对象模型（$tpl）：数字槽 cooked（无效转义 → undefined，node 实测）、
  * length 精确、.raw 数组、@@iterator 面 + 元素侧表（spread/join 精确）。
  * 调用路由：标识符 → $callNamed；obj.method → $invoke；其余 → $call
- * （callee 校验在 Bug 2 修复位）。
+ * （callee 校验在 修复位）。
  */
 import {describe, it, expect} from "vitest";
 import {runTranspiled, callTranspiledExportFull, $lit, anyAbs, formatAbs, transpileSource} from "@nudojs/core";
@@ -43,7 +43,7 @@ function rawCount(s, ...vs) { return s.raw.length + ":" + vs.length; }
 function quasis(s) { return s.length; }
 `;
 
-describe("Bug 34: tagged template lowering", () => {
+describe("tagged template lowering", () => {
   it("transpiles to $tpl + call routing（不再 unsupported）", () => {
     const out = transpileSource(`export function f(t) { return t\`a\${1}b\`; }`);
     expect(out).toContain("$tpl(");

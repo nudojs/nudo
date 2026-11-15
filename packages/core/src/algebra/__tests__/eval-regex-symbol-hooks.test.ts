@@ -1,5 +1,5 @@
 /**
- * Bug 81 回归（class-regex 半边）：`String.prototype.match/search/matchAll`
+ * 回归（class-regex 半边）：`String.prototype.match/search/matchAll`
  * 识别 RegExp 品牌后直接重建宿主 RegExp 调用，从不读模式的 @@match/
  * @@search/@@matchAll 槽（`re[Symbol.match] = fn` 形——symbolKey 槽投影
  * "@@match"）。修复：分派前查槽——可调用 → 以模式为 this、字符串为唯一
@@ -18,7 +18,7 @@ function expectVal(body: string, expected: unknown) {
   expect(litValue(rec.result), `value for: ${body}`).toEqual({ ok: true, value: expected });
 }
 
-describe("pattern @@match/@@search/@@matchAll slots dispatch (Bug 81, class-regex half)", () => {
+describe("pattern @@match/@@search/@@matchAll slots dispatch (, class-regex half)", () => {
   it("@@match 槽可调用 → 钩子返回值取代匹配结果", () => {
     // node: r[Symbol.match] = () => "Q"; "aa".match(r) → "Q"
     expectVal(`const r = /a/; r[Symbol.match] = () => "Q"; return "aa".match(r);`, "Q");

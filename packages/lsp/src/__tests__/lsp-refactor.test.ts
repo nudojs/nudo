@@ -23,20 +23,20 @@ import { DIAG } from "@nudojs/core/internal";
 import { whatIf } from "../agent-tools.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 450 · applyEdits 的区间嵌套
+// applyEdits 的区间嵌套
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 450 · applyEdits 的区间嵌套", () => {
+describe("applyEdits 的区间嵌套", () => {
 /**
- * Bug 450 —— LSP `refactor.extract` 的多 edit 合成：`applyEdits` **排序**用原
+ * LSP `refactor.extract` 的多 edit 合成：`applyEdits` **排序**用原
  * `source` 的坐标、**应用**时却用 `posToOffset(out, …)` 在**已被前面的 edit
  * 改写过的** `out` 上求坐标 ⇒ 两个区间相互包含（插入点落在替换范围内部）时，
  * 后应用的 edit 落点按**陈旧坐标**漂移 ⇒ 源文件被搅成垃圾。
  *
  * 改前 → 改后（逐字）：
- *   source : "AAAA BBBB CCCC"
- *   edits  : 替换 [5,9) → REPL ; 插入 @6
- *   改前   : "AAAA REPLBBB CCCC"     ← 插入文本被吞进替换文本里（垃圾）
- *   改后   : "AAAA INSREPL CCCC"     ← 插入文本紧贴替换文本**之前**
+ * source : "AAAA BBBB CCCC"
+ * edits : 替换 [5,9) → REPL ; 插入 @6
+ * 改前 : "AAAA REPLBBB CCCC" ← 插入文本被吞进替换文本里（垃圾）
+ * 改后 : "AAAA INSREPL CCCC" ← 插入文本紧贴替换文本**之前**
  *
  * 修法（`packages/lsp/src/extract-function.ts` 的 `applyEdits`）：**统一坐标
  * 口径** —— 全部 edit 的偏移都在**原 source** 上算好，再**从后往前**应用；
@@ -59,7 +59,7 @@ const NESTED_EDITS = [
   { range: { start: { line: 0, character: 6 }, end: { line: 0, character: 6 } }, newText: "INS" },
 ];
 
-describe("Bug 450 · applyEdits 的区间嵌套", () => {
+describe("applyEdits 的区间嵌套", () => {
   it("插入点落在替换范围内部：插入文本紧贴替换文本之前（改前是垃圾源码）", () => {
     const out = applyEdits("AAAA BBBB CCCC", NESTED_EDITS);
     // 改前是 "AAAA REPLBBB CCCC"（插入文本被吞进替换文本里）
@@ -107,7 +107,7 @@ describe("Bug 450 · applyEdits 的区间嵌套", () => {
   });
 });
 
-describe("Bug 450 · 产品路径（extractFunction 的两个调用点）", () => {
+describe("产品路径（extractFunction 的两个调用点）", () => {
   it("表达式提取路径：对象字面量方法宿主 ⇒ 产物可解析、结构完整", () => {
     const source = `export const o = { m() { const y = this.v * 2; return y; }, };
 `;
@@ -184,11 +184,11 @@ console.log(u);
 });
 
 // ---------------------------------------------------------------------------
-// Bug 742 · 顶层选区的 Extract 跳过文件前导区（hashbang）
+// 顶层选区的 Extract 跳过文件前导区（hashbang）
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 742 · 顶层选区的 Extract 跳过文件前导区（hashbang）", () => {
+describe("顶层选区的 Extract 跳过文件前导区（hashbang）", () => {
 /**
- * Bug 742 —— Extract 在**顶层选区**时把新函数插到**文件第 0 字节** ⇒ 落到 hashbang
+ * Extract 在**顶层选区**时把新函数插到**文件第 0 字节** ⇒ 落到 hashbang
  * **之前** ⇒ Node 只认第一行的 `#!` 为 shebang ⇒ 产物
  * `SyntaxError: Invalid or unexpected token` ⇒ 文件不再是可执行脚本。
  *
@@ -200,9 +200,9 @@ describe("[lsp-] Bug 742 · 顶层选区的 Extract 跳过文件前导区（hash
  * 没有锚点时退到「文件前导区之后」（`leadingSafeInsertPos`）。
  *
  * oracle（改前 → 改后）：
- *   改前 insertAt = {line:0, character:0} ⇒ newText 第 1 行是 `function extracted() {…}`，
- *        hashbang 被挤到第 5 行 ⇒ Babel: Unexpected token (5:0)
- *   改后 insertAt = {line:1, character:0} ⇒ hashbang 仍是第 1 行 ⇒ 产物可解析。
+ * 改前 insertAt = {line:0, character:0} ⇒ newText 第 1 行是 `function extracted() {…}`，
+ * hashbang 被挤到第 5 行 ⇒ Babel: Unexpected token (5:0)
+ * 改后 insertAt = {line:1, character:0} ⇒ hashbang 仍是第 1 行 ⇒ 产物可解析。
  */
 
 
@@ -219,7 +219,7 @@ export function f(a) {
 /** 选区 = 第 2 行（0 基）的 `const value = compute();` */
 const SEL = { start: { line: 1, character: 0 }, end: { line: 1, character: 24 } };
 
-describe("Bug 742 · 顶层选区的 Extract 跳过文件前导区（hashbang）", () => {
+describe("顶层选区的 Extract 跳过文件前导区（hashbang）", () => {
   it("插入点在 hashbang 之后（不是文件第 0 字节）", () => {
     const r = extractFunction(SRC, SEL);
     expect(r.ok).toBe(true);
@@ -259,11 +259,11 @@ describe("Bug 742 · 顶层选区的 Extract 跳过文件前导区（hashbang）
 });
 
 // ---------------------------------------------------------------------------
-// Bug 734 · Extract 的赋值写法不引入重复 const 声明
+// Extract 的赋值写法不引入重复 const 声明
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 734 · Extract 的赋值写法不引入重复 const 声明", () => {
+describe("Extract 的赋值写法不引入重复 const 声明", () => {
 /**
- * Bug 734 —— Extract 在 `capturedWrites` 路径**一律**生成 `const <name> = <call>()`，
+ * Extract 在 `capturedWrites` 路径**一律**生成 `const <name> = <call>()`，
  * 不区分「原本是声明」与「原本是赋值」⇒ 被抽出的若是**赋值表达式**
  * （`x = compute();`），调用点就变成 `const x = extracted(...)` ⇒ 与外层已有的
  * `let x` **重复声明** ⇒ `SyntaxError: Identifier 'x' has already been declared`
@@ -274,13 +274,13 @@ describe("[lsp-] Bug 734 · Extract 的赋值写法不引入重复 const 声明"
  *
  * 修法：区分两种写 ——
  * - assign（选区内是 `x = …`，x 声明在选区外）⇒ 调用点用**赋值表达式**
- *   `x = extracted(...)`，**不得**引入新的 `const`。
+ * `x = extracted(...)`，**不得**引入新的 `const`。
  * - declare（选区内是 `const/let/var x = …`）⇒ 调用点还原**同种声明**。
  *
  * oracle（改前 → 改后）：
- *   改前 callText = "const x = extracted(compute);" ⇒ newText 不可解析
- *        （Babel: Identifier 'x' has already been declared. (7:8)）
- *   改后 callText = "x = extracted(compute);" ⇒ newText 可解析
+ * 改前 callText = "const x = extracted(compute);" ⇒ newText 不可解析
+ * （Babel: Identifier 'x' has already been declared. (7:8)）
+ * 改后 callText = "x = extracted(compute);" ⇒ newText 可解析
  */
 
 
@@ -297,7 +297,7 @@ const SRC = `export function f(compute) {
 /** 选区 = 第 3 行（0 基）的 `x = compute();` */
 const SEL = { start: { line: 2, character: 2 }, end: { line: 2, character: 16 } };
 
-describe("Bug 734 · Extract 的赋值写法不引入重复 const 声明", () => {
+describe("Extract 的赋值写法不引入重复 const 声明", () => {
   it("调用点是赋值表达式，不是 const 声明", () => {
     const r = extractFunction(SRC, SEL);
     expect(r.ok).toBe(true);
@@ -357,11 +357,11 @@ describe("Bug 734 · Extract 的赋值写法不引入重复 const 声明", () =>
 });
 
 // ---------------------------------------------------------------------------
-// Bug 740 · Extract 不搬走控制流语句、返回值必须接回
+// Extract 不搬走控制流语句、返回值必须接回
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 740 · Extract 不搬走控制流语句、返回值必须接回", () => {
+describe("Extract 不搬走控制流语句、返回值必须接回", () => {
 /**
- * Bug 740 —— Extract 把 switch case 里的 `break;` 一起搬进新函数
+ * Extract 把 switch case 里的 `break;` 一起搬进新函数
  * ⇒ `SyntaxError: Illegal break statement`（Babel 措辞 `Unsyntactic break. (3:8)`），
  * 且原来的 `break` **消失** ⇒ case 贯穿到下一个分支（语义也变了）。
  *
@@ -376,13 +376,13 @@ describe("[lsp-] Bug 740 · Extract 不搬走控制流语句、返回值必须�
  * 修法：
  * - `break` / `continue`：新函数里没有循环/开关可跳 ⇒ **拒绝**该选区（不出 action）。
  * - `return`：只允许出现在选区**末尾**；末尾的 `return` 必须把返回值**接回调用点**
- *   （`return extracted();`）⇒ 外层返回值不再被静默丢掉。
+ * （`return extracted();`）⇒ 外层返回值不再被静默丢掉。
  *
  * oracle（改前 → 改后）：
- *   改前 break 选区：ok = true，callText = "extracted(k);"，产物 `Unsyntactic break. (3:8)`
- *   改后 break 选区：ok = false（reason 提到 break）⇒ 协议面 0 个 action
- *   改前 return 选区：callText = "extracted();"（返回值被丢）
- *   改后 return 选区：callText = "return extracted();"（返回值接回）
+ * 改前 break 选区：ok = true，callText = "extracted(k);"，产物 `Unsyntactic break. (3:8)`
+ * 改后 break 选区：ok = false（reason 提到 break）⇒ 协议面 0 个 action
+ * 改前 return 选区：callText = "extracted();"（返回值被丢）
+ * 改后 return 选区：callText = "return extracted();"（返回值接回）
  */
 
 
@@ -410,7 +410,7 @@ const RETURN_SRC = `export function f() {
 /** 选区 = `const a = 1;` + `return a + 1;`（整条覆盖 return） */
 const RETURN_SEL = { start: { line: 1, character: 2 }, end: { line: 2, character: 15 } };
 
-describe("Bug 740 · Extract 不搬走控制流语句、返回值必须接回", () => {
+describe("Extract 不搬走控制流语句、返回值必须接回", () => {
   it("选区含 break：拒绝抽取（不再产出非法 JS）", () => {
     const r = extractFunction(BREAK_SRC, BREAK_SEL);
     expect(r.ok).toBe(false);
@@ -461,11 +461,11 @@ describe("Bug 740 · Extract 不搬走控制流语句、返回值必须接回", 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 736 · Extract 的新函数只能插在语句位置
+// Extract 的新函数只能插在语句位置
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 736 · Extract 的新函数只能插在语句位置", () => {
+describe("Extract 的新函数只能插在语句位置", () => {
 /**
- * Bug 736 —— `refactor.extract` 把新函数**插到非语句位置**（箭头初始化式 / 对象字面量
+ * `refactor.extract` 把新函数**插到非语句位置**（箭头初始化式 / 对象字面量
  * 方法 / class 方法）⇒ 产物**根本不可解析**（3 宿主全中）。
  *
  * 根因（`packages/lsp/src/extract-function.ts`）：插入点的选取**只考虑了「宿主是函数
@@ -478,10 +478,10 @@ describe("[lsp-] Bug 736 · Extract 的新函数只能插在语句位置", () =>
  * 对象字面量方法 / class 方法 ⇒ 所在声明之前。
  *
  * oracle（改前 → 改后，三宿主）：
- *   改前 insertAt = {0,17} / {1,2} / {1,2}
- *        ⇒ Babel: Missing semicolon. (4:3) / Unexpected keyword 'function'. (2:2)
- *           / Unexpected token (2:11)
- *   改后 insertAt = {0,0}（三者都落在宿主声明之前）⇒ 产物可解析。
+ * 改前 insertAt = {0,17} / {1,2} / {1,2}
+ * ⇒ Babel: Missing semicolon. (4:3) / Unexpected keyword 'function'. (2:2)
+ * / Unexpected token (2:11)
+ * 改后 insertAt = {0,0}（三者都落在宿主声明之前）⇒ 产物可解析。
  */
 
 
@@ -505,7 +505,7 @@ const CLASS_SRC = `export class A {
 }
 `;
 
-describe("Bug 736 · Extract 的新函数只能插在语句位置", () => {
+describe("Extract 的新函数只能插在语句位置", () => {
   it("箭头初始化式：插在整条声明之前，产物可解析", () => {
     const r = extractFunction(ARROW_SRC, {
       start: { line: 1, character: 9 },
@@ -575,11 +575,11 @@ describe("Bug 736 · Extract 的新函数只能插在语句位置", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 732 · Extract 不偷走原函数的 export 关键字
+// Extract 不偷走原函数的 export 关键字
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 732 · Extract 不偷走原函数的 export 关键字", () => {
+describe("Extract 不偷走原函数的 export 关键字", () => {
 /**
- * Bug 732 —— 「Extract to function 'extracted'」把原函数的 `export` 关键字**偷给新函数**
+ * 「Extract to function 'extracted'」把原函数的 `export` 关键字**偷给新函数**
  * ⇒ 模块公开 API 静默变（导出集合 `['f']` → `['extracted']`，文件仍可解析 ⇒ IDE 不报错）。
  *
  * 根因（`packages/lsp/src/extract-function.ts`）：插入点用的是 **Babel 节点 `loc.start`**
@@ -590,8 +590,8 @@ describe("[lsp-] Bug 732 · Extract 不偷走原函数的 export 关键字", () 
  * 起点 = `export` 的列）⇒ 新函数插在 `export` **之前**，`export` 仍属原函数。
  *
  * oracle（改前 → 改后）：
- *   改前 insertAt = {line:0, character:7} ⇒ newText = "export function extracted(a) {…}\nfunction f(a) {…}"
- *   改后 insertAt = {line:0, character:0} ⇒ newText = "function extracted(a) {…}\nexport function f(a) {…}"
+ * 改前 insertAt = {line:0, character:7} ⇒ newText = "export function extracted(a) {…}\nfunction f(a) {…}"
+ * 改后 insertAt = {line:0, character:0} ⇒ newText = "function extracted(a) {…}\nexport function f(a) {…}"
  */
 
 
@@ -607,7 +607,7 @@ const SRC = `export function f(a) {
 /** 选区 = 第 2 行（0 基）的 `a + 1` */
 const SEL = { start: { line: 1, character: 12 }, end: { line: 1, character: 17 } };
 
-describe("Bug 732 · Extract 不偷走原函数的 export 关键字", () => {
+describe("Extract 不偷走原函数的 export 关键字", () => {
   it("插入点是语句起点（export 的列），不是 function 关键字的列", () => {
     const r = extractFunction(SRC, SEL);
     expect(r.ok).toBe(true);
@@ -652,11 +652,11 @@ describe("Bug 732 · Extract 不偷走原函数的 export 关键字", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 971 · Extract 的新函数名做占用检查（撞名自动改名）
+// Extract 的新函数名做占用检查（撞名自动改名）
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 971 · Extract 的新函数名做占用检查（撞名自动改名）", () => {
+describe("Extract 的新函数名做占用检查（撞名自动改名）", () => {
 /**
- * Bug 971 —— Extract 把新函数名**写死为 `extracted`**、**不查重名** ⇒ 产物出现两个同名
+ * Extract 把新函数名**写死为 `extracted`**、**不查重名** ⇒ 产物出现两个同名
  * 声明 ⇒ `SyntaxError: Identifier 'extracted' has already been declared`
  * ⇒ 模块整个加载不了（IDE 里整文件标红）。
  *
@@ -671,9 +671,9 @@ describe("[lsp-] Bug 971 · Extract 的新函数名做占用检查（撞名自�
  * ⚠ 触发面不止「文件里已有 `extracted`」：**同一文件连续抽取两次**必然撞名。
  *
  * oracle（改前 → 改后）：
- *   改前 functionName = "extracted" ⇒ newText 里两个 `export function extracted`
- *        ⇒ Babel: Identifier 'extracted' has already been declared. (5:16)
- *   改后 functionName = "extracted1" ⇒ 产物可解析。
+ * 改前 functionName = "extracted" ⇒ newText 里两个 `export function extracted`
+ * ⇒ Babel: Identifier 'extracted' has already been declared. (5:16)
+ * 改后 functionName = "extracted1" ⇒ 产物可解析。
  */
 
 
@@ -712,7 +712,7 @@ function rangeOf(src: string, needle: string): {
   return { start: { line, character }, end: { line, character: character + needle.length } };
 }
 
-describe("Bug 971 · Extract 的新函数名做占用检查（撞名自动改名）", () => {
+describe("Extract 的新函数名做占用检查（撞名自动改名）", () => {
   it("名字被占用时自动改名（extracted → extracted1）", () => {
     const r = extractFunction(CLASH_SRC, SEL);
     expect(r.ok).toBe(true);
@@ -774,11 +774,11 @@ describe("Bug 971 · Extract 的新函数名做占用检查（撞名自动改名
 });
 
 // ---------------------------------------------------------------------------
-// Bug 785 — LSP 门禁面必须与 CLI 同源采集行内指令
+// LSP 门禁面必须与 CLI 同源采集行内指令
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 785 — LSP 门禁面必须与 CLI 同源采集行内指令", () => {
+describe("LSP 门禁面必须与 CLI 同源采集行内指令", () => {
 /**
- * Bug 785 —— LSP 面**从不采集**行内指令（`@nudo:as` / `@nudo:replace`）
+ * LSP 面**从不采集**行内指令（`@nudo:as` / `@nudo:replace`）
  * ⇒ CLI 与 LSP 对同一份文件给出**相反**的门禁结论与签名 ⇒ IDE 侧**假红**。
  *
  * 根因：`collectEvalReplacements`（service 的行内指令收集器）在
@@ -794,7 +794,7 @@ describe("[lsp-] Bug 785 — LSP 门禁面必须与 CLI 同源采集行内指令
  *
  * 钉（agent 门禁面，本片能改的一侧）：
  * - `@nudo:as number()` 夹具 ⇒ `nudo/check` 判绿（0 error）且签名是
- *   `string`（CLI 同款结论），不再 `unknown #partial throws TypeError`；
+ * `string`（CLI 同款结论），不再 `unknown #partial throws TypeError`；
  * - `@nudo:replace makeRaw() number()` 夹具 ⇒ 同上。
  */
 
@@ -867,7 +867,7 @@ async function checkJson(
   return JSON.parse(text) as CheckJsonLike;
 }
 
-describe("Bug 785 — LSP 门禁面必须与 CLI 同源采集行内指令", () => {
+describe("LSP 门禁面必须与 CLI 同源采集行内指令", () => {
   it("@nudo:as：agent nudo/check 判绿且签名与 CLI 同款（string，非 unknown）", async () => {
     const { mock, file, cleanup } = openSession(AS_SRC, "as");
     try {
@@ -906,11 +906,11 @@ describe("Bug 785 — LSP 门禁面必须与 CLI 同源采集行内指令", () =
 });
 
 // ---------------------------------------------------------------------------
-// Bug 744 · inline 不产出重叠 edit（导出绑定）
+// inline 不产出重叠 edit（导出绑定）
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 744 · inline 不产出重叠 edit（导出绑定）", () => {
+describe("inline 不产出重叠 edit（导出绑定）", () => {
 /**
- * Bug 744 —— `refactor.inline` 对**导出绑定**产出**互相重叠的两条 TextEdit**
+ * `refactor.inline` 对**导出绑定**产出**互相重叠的两条 TextEdit**
  * ⇒ 客户端应用后**源码被毁**（`node --check` ⇒ SyntaxError），且**两种应用顺序都毁**。
  *
  * 根因（`packages/lsp/src/refactor-b2.ts` 的 `inlineVariableAt` refs 循环）：
@@ -921,16 +921,16 @@ describe("[lsp-] Bug 744 · inline 不产出重叠 edit（导出绑定）", () =
  *
  * 修法（两道）：
  * 1. **收集阶段拒绝导出绑定**（`isExportedBinding`）—— 内联会**删除声明** ⇒
- *    导出绑定被内联 = 模块公开 API 变化 ⇒ 本来就不该内联；
+ * 导出绑定被内联 = 模块公开 API 变化 ⇒ 本来就不该内联；
  * 2. refs 循环**跳过非「真正的引用」节点**（只接受 `Identifier` 且父节点不是
- *    `ExportSpecifier` / `ExportNamedDeclaration` / `ExportDefaultDeclaration`）；
+ * `ExportSpecifier` / `ExportNamedDeclaration` / `ExportDefaultDeclaration`）；
  * 3. 生成 edits 后加一道**区间重叠自检**（相交即放弃该动作）⇒ 绝不产出非法
- *    WorkspaceEdit。
+ * WorkspaceEdit。
  *
  * oracle（动作面 / 语义面）：
- *   改前 `export const X = 42;` ⇒ 3 条 edit，其中 [0:0→0:20] ∩ [0:0→1:0] **重叠**
- *        ⇒ 应用后源码变成 `42) {` ⇒ `node --check` FAIL
- *   改后 result = null（**不提供该动作** ⇒ 不产出重叠 edit，源码不被毁）
+ * 改前 `export const X = 42;` ⇒ 3 条 edit，其中 [0:0→0:20] ∩ [0:0→1:0] **重叠**
+ * ⇒ 应用后源码变成 `42) {` ⇒ `node --check` FAIL
+ * 改后 result = null（**不提供该动作** ⇒ 不产出重叠 edit，源码不被毁）
  */
 
 
@@ -959,7 +959,7 @@ export function use() {
 }
 `;
 
-describe("Bug 744 · inline 不产出重叠 edit（导出绑定）", () => {
+describe("inline 不产出重叠 edit（导出绑定）", () => {
   it("`export const X = …` ⇒ 不提供 Inline 动作", () => {
     expect(inlineVariableAt(SRC_EXPORT_DECL, 1, 13)).toBeNull();
   });
@@ -1026,11 +1026,11 @@ describe("Bug 744 · inline 不产出重叠 edit（导出绑定）", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 738 · inline 不捕获会被改写的自由变量
+// inline 不捕获会被改写的自由变量
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 738 · inline 不捕获会被改写的自由变量", () => {
+describe("inline 不捕获会被改写的自由变量", () => {
 /**
- * Bug 738 —— `refactor.inline` 把**会被重新赋值**的变量捕获进被内联的表达式
+ * `refactor.inline` 把**会被重新赋值**的变量捕获进被内联的表达式
  * ⇒ 内联后**程序行为改变**（`f()` 从 1 变成 2）。
  *
  * 根因：内联的安全前提是「被捕获的表达式在**声明点 ↔ 使用点**之间取值不变」，
@@ -1043,8 +1043,8 @@ describe("[lsp-] Bug 738 · inline 不捕获会被改写的自由变量", () => 
  * ⇒ 同样放弃。
  *
  * oracle（动作面 / 语义面）：
- *   改前 title = "Inline variable 'x' (1 use)"，应用后 `f()` = 2（改前源码 `f()` = 1）
- *   改后 result = null（**不提供该动作** ⇒ 行为不变）
+ * 改前 title = "Inline variable 'x' (1 use)"，应用后 `f()` = 2（改前源码 `f()` = 1）
+ * 改后 result = null（**不提供该动作** ⇒ 行为不变）
  */
 
 
@@ -1063,7 +1063,7 @@ const SRC = `export function f() {
 const LINE = 3;
 const COLUMN = 8;
 
-describe("Bug 738 · inline 不捕获会被改写的自由变量", () => {
+describe("inline 不捕获会被改写的自由变量", () => {
   it("自由变量有写入 ⇒ 不提供 Inline 动作", () => {
     expect(inlineVariableAt(SRC, LINE, COLUMN)).toBeNull();
   });
@@ -1115,11 +1115,11 @@ describe("Bug 738 · inline 不捕获会被改写的自由变量", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 733 · inline 不删同行兄弟语句
+// inline 不删同行兄弟语句
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 733 · inline 不删同行兄弟语句", () => {
+describe("inline 不删同行兄弟语句", () => {
 /**
- * Bug 733 —— `Inline variable 'x'` 把声明所在**整行**删掉 ⇒ 同行兄弟语句被静默删除。
+ * `Inline variable 'x'` 把声明所在**整行**删掉 ⇒ 同行兄弟语句被静默删除。
  *
  * 根因（`packages/lsp/src/refactor-b2.ts` 的 `inlineVariableAt` 删除范围段）：
  * 删除范围被**无条件扩到整行**（`character: 0` → 该行长度）来覆盖「声明独占一行」的
@@ -1130,10 +1130,10 @@ describe("[lsp-] Bug 733 · inline 不删同行兄弟语句", () => {
  * 时才扩到整行（含换行）；同行兄弟语句保留，并被内联展开为 `doSomething(1);`。
  *
  * oracle（动作面 / 语义面）：
- *   改前 edit[2] = [5:0 → 6:0] ""   ⇒ 应用后 `doSomething(a);` 整句消失
- *                                  ⇒ 运行时 `calls` = 0（副作用被静默删掉）
- *   改后 edit[2] = [5:2 → 5:15] ""  ⇒ 应用后 `doSomething(1);` 保留
- *                                  ⇒ 运行时 `calls` = 1
+ * 改前 edit[2] = [5:0 → 6:0] "" ⇒ 应用后 `doSomething(a);` 整句消失
+ * ⇒ 运行时 `calls` = 0（副作用被静默删掉）
+ * 改后 edit[2] = [5:2 → 5:15] "" ⇒ 应用后 `doSomething(1);` 保留
+ * ⇒ 运行时 `calls` = 1
  */
 
 
@@ -1160,7 +1160,7 @@ function inline(): { title: string; edits: Edit[] } | null {
   return r;
 }
 
-describe("Bug 733 · inline 不删同行兄弟语句", () => {
+describe("inline 不删同行兄弟语句", () => {
   it("删除范围只覆盖声明语句本身（不扩到整行）", () => {
     const r = inline();
     expect(r).not.toBeNull();
@@ -1217,11 +1217,11 @@ describe("Bug 733 · inline 不删同行兄弟语句", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 741 · inline 不内联成员读（getter / Proxy 陷阱）
+// inline 不内联成员读（getter / Proxy 陷阱）
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 741 · inline 不内联成员读（getter / Proxy 陷阱）", () => {
+describe("inline 不内联成员读（getter / Proxy 陷阱）", () => {
 /**
- * Bug 741 —— 「Inline variable」把**成员读**（getter）内联 ⇒ 求值 1 次变 2 次
+ * 「Inline variable」把**成员读**（getter）内联 ⇒ 求值 1 次变 2 次
  * ⇒ 程序行为改变；而 `nudo check` 前后签名**完全相同** ⇒ 门禁对这次语义改变无感。
  *
  * 根因（`packages/lsp/src/refactor-b2.ts` 的 `isPureExpr`）：`MemberExpression`
@@ -1232,9 +1232,9 @@ describe("[lsp-] Bug 741 · inline 不内联成员读（getter / Proxy 陷阱）
  * 可能有副作用**（不内联）。
  *
  * oracle（动作面 / 语义面）：
- *   改前 title = "Inline variable 'g' (2 uses)"，应用后 `obj.total + obj.total`
- *        ⇒ `sum(makeObj())` = 3（getter 求值 2 次；改前源码 = 2）
- *   改后 result = null（**不提供该动作** ⇒ 求值次数不变）
+ * 改前 title = "Inline variable 'g' (2 uses)"，应用后 `obj.total + obj.total`
+ * ⇒ `sum(makeObj())` = 3（getter 求值 2 次；改前源码 = 2）
+ * 改后 result = null（**不提供该动作** ⇒ 求值次数不变）
  */
 
 
@@ -1255,7 +1255,7 @@ export function sum(obj) {
 const LINE = 6;
 const COLUMN = 8;
 
-describe("Bug 741 · inline 不内联成员读（getter / Proxy 陷阱）", () => {
+describe("inline 不内联成员读（getter / Proxy 陷阱）", () => {
   it("成员读 ⇒ 不提供 Inline 动作", () => {
     expect(inlineVariableAt(SRC, LINE, COLUMN)).toBeNull();
   });
@@ -1310,11 +1310,11 @@ export function sum(obj) {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 970 · inline 保留兄弟 declarator
+// inline 保留兄弟 declarator
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 970 · inline 保留兄弟 declarator", () => {
+describe("inline 保留兄弟 declarator", () => {
 /**
- * Bug 970 —— LSP codeAction「Inline variable 'a'」取**整条 `VariableDeclaration`**
+ * LSP codeAction「Inline variable 'a'」取**整条 `VariableDeclaration`**
  * 作删除范围 ⇒ **同一声明的兄弟 declarator 被一起删掉** ⇒ 产物**语法合法但运行即
  * `ReferenceError`**（IDE/CI 的语法检查发现不了）。
  *
@@ -1329,11 +1329,11 @@ describe("[lsp-] Bug 970 · inline 保留兄弟 declarator", () => {
  * 也不把兄弟的声明删掉。
  *
  * oracle（动作面 / 语义面）：
- *   改前 edit[1] = [1:0 → 3:0] ""（跨两行 ⇒ 取自 `path.parent`）
- *        ⇒ 应用后 `return 1 + b;` ⇒ `node --check` **OK** 但运行即
- *           `ReferenceError: b is not defined`
- *   改后 edit[1] = [1:2 → 2:10] "const b = 2;"
- *        ⇒ 应用后 `const b = 2;` 保留 ⇒ 运行 `f()` = 3
+ * 改前 edit[1] = [1:0 → 3:0] ""（跨两行 ⇒ 取自 `path.parent`）
+ * ⇒ 应用后 `return 1 + b;` ⇒ `node --check` **OK** 但运行即
+ * `ReferenceError: b is not defined`
+ * 改后 edit[1] = [1:2 → 2:10] "const b = 2;"
+ * ⇒ 应用后 `const b = 2;` 保留 ⇒ 运行 `f()` = 3
  */
 
 
@@ -1355,7 +1355,7 @@ const SRC_SAMELINE = `export function f() {
 }
 `;
 
-describe("Bug 970 · inline 保留兄弟 declarator", () => {
+describe("inline 保留兄弟 declarator", () => {
   it("跨行声明：改写整条声明，保留兄弟", () => {
     const r = inlineVariableAt(SRC_MULTILINE, 2, 8);
     expect(r && "edits" in r).toBe(true);
@@ -1434,11 +1434,11 @@ describe("Bug 970 · inline 保留兄弟 declarator", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 730 · 补字段 quickfix 不得把 undefined 当值写进调用点
+// 补字段 quickfix 不得把 undefined 当值写进调用点
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 730 · 补字段 quickfix 不得把 undefined 当值写进调用点", () => {
+describe("补字段 quickfix 不得把 undefined 当值写进调用点", () => {
 /**
- * Bug 730 —— A6「Add missing field 'X' to call」把**待填占位符** `undefined`
+ * A6「Add missing field 'X' to call」把**待填占位符** `undefined`
  * 当成合法值写进调用点（` ${field}: undefined `）。
  *
  * 占位符不是值：它被写进用户的源码后，「字段缺失」这条违规要么被整条跳过
@@ -1466,7 +1466,7 @@ const GREET_SC = `import { fn, shape, string } from "@nudojs/core";
 export const greet = fn({ u: shape({ name: string() }) }, string());
 `;
 
-describe("Bug 730 · 补字段 quickfix 不得把 undefined 当值写进调用点", () => {
+describe("补字段 quickfix 不得把 undefined 当值写进调用点", () => {
   it("插入文本不是 undefined（占位不是值）", () => {
     withTempDir("nudo-lsp-730-", (dir) => {
       writeFileSync(join(dir, "greet.js"), GREET_JS, "utf-8");
@@ -1508,11 +1508,11 @@ describe("Bug 730 · 补字段 quickfix 不得把 undefined 当值写进调用�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 493 — 占位 range 换算后落合法位置（line ≥ 0）
+// 占位 range 换算后落合法位置（line ≥ 0）
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 493 — 占位 range 换算后落合法位置（line ≥ 0）", () => {
+describe("占位 range 换算后落合法位置（line ≥ 0）", () => {
 /**
- * Bug 493 回归钉：service 侧的**占位 range**（无源码锚点）换算到 LSP 后
+ * 回归钉：service 侧的**占位 range**（无源码锚点）换算到 LSP 后
  * 必须是合法位置（`Position.line` 是 uinteger，≥ 0），不得落成 -1。
  *
  * 改前：toLspDiagnostic 无条件 `line - 1`，而 service 对「无锚点」的诊断
@@ -1539,7 +1539,7 @@ export function f(x) {
 }
 `;
 
-describe("Bug 493 — 占位 range 换算后落合法位置（line ≥ 0）", () => {
+describe("占位 range 换算后落合法位置（line ≥ 0）", () => {
   it("toLspDiagnostic：占位 range（line 0）→ line 0（改前：-1）", () => {
     const d = toLspDiagnostic(
       {
@@ -1596,11 +1596,11 @@ describe("Bug 493 — 占位 range 换算后落合法位置（line ≥ 0）", ()
 });
 
 // ---------------------------------------------------------------------------
-// Bug 755 反向钉：whatIf 注入假设后类型**确实**改变（报告为假阳性）
+// 反向钉：whatIf 注入假设后类型**确实**改变（报告为假阳性）
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 755 反向钉：whatIf 注入假设后类型**确实**改变（报告为假阳性）", () => {
+describe("反向钉：whatIf 注入假设后类型**确实**改变（报告为假阳性）", () => {
 /**
- * Bug 755 —— **报告结论不成立（假阳性）**：反向钉，钉住「当前行为正确」。
+ * **报告结论不成立（假阳性）**：反向钉，钉住「当前行为正确」。
  *
  * 报告称 `nudo.whatIf` 注入假设后类型不变（自称「Bindings applied」却类型
  * 没变）。实测（probe-755b / A4 oracle）：`agent-tools.ts` 注入后**分析的
@@ -1613,7 +1613,7 @@ describe("[lsp-] Bug 755 反向钉：whatIf 注入假设后类型**确实**改�
 
 
 
-describe("Bug 755 反向钉：whatIf 注入假设后类型**确实**改变（报告为假阳性）", () => {
+describe("反向钉：whatIf 注入假设后类型**确实**改变（报告为假阳性）", () => {
   it("顶层 const 的类型随 binding 改变（注入后的 source 被真正分析）", async () => {
     const src = "const total = 1;\n";
     const deps = { readFile: () => src };
@@ -1642,21 +1642,21 @@ describe("Bug 755 反向钉：whatIf 注入假设后类型**确实**改变（报
 });
 
 // ---------------------------------------------------------------------------
-// Bug 961：nudo/whatIf 入参校验（畸形请求 ⇒ 工具错误）
+// nudo/whatIf 入参校验（畸形请求 ⇒ 工具错误）
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 961：nudo/whatIf 入参校验（畸形请求 ⇒ 工具错误）", () => {
+describe("nudo/whatIf 入参校验（畸形请求 ⇒ 工具错误）", () => {
 /**
- * Bug 961 —— `nudo/whatIf` 的入参**零校验**：
+ * `nudo/whatIf` 的入参**零校验**：
  *
  * 1. `target` 缺失 ⇒ 返回 `Type of "undefined": unknown` 的**假成功**——
- *    `unknown` 按产品口径是「推断失败」，于是「你根本没传 target」被说成
- *    「这个变量推断不出来」。⇒ 工具错误。
+ * `unknown` 按产品口径是「推断失败」，于是「你根本没传 target」被说成
+ * 「这个变量推断不出来」。⇒ 工具错误。
  * 2. `bindings` 不是数组 ⇒ 裸 JS TypeError（`bindings.map is not a
- *    function`）当工具错误回给客户端——引擎内部实现细节，不是可诊断信息。
- *    ⇒ 工具错误（可诊断文案）。
+ * function`）当工具错误回给客户端——引擎内部实现细节，不是可诊断信息。
+ * ⇒ 工具错误（可诊断文案）。
  * 3. `bindings` 项缺 `name` ⇒ 静默 no-op，且回显行渲染成「…: 」（冒号后
- *    为空）——用户以为「没有未应用的绑定」，实际是自己少传了字段。
- *    ⇒ 工具错误。
+ * 为空）——用户以为「没有未应用的绑定」，实际是自己少传了字段。
+ * ⇒ 工具错误。
  *
  * 「target 不是已知绑定」仍是**合法**结果（文档承诺 `unknown`）——只有
  * **请求本身畸形**才走工具错误（对照组）。
@@ -1669,7 +1669,7 @@ describe("[lsp-] Bug 961：nudo/whatIf 入参校验（畸形请求 ⇒ 工具错
 
 const SRC = ["const total = 1;", ""].join("\n");
 
-describe("Bug 961：nudo/whatIf 入参校验（畸形请求 ⇒ 工具错误）", () => {
+describe("nudo/whatIf 入参校验（畸形请求 ⇒ 工具错误）", () => {
   it("target 缺失 / bindings 非数组 / binding 缺 name ⇒ isError:true", async () => {
     await withLspServer({ "a4-961.js": SRC }, async ({ req, uri }) => {
       const file = uri("a4-961.js");

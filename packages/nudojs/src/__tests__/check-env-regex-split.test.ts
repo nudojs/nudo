@@ -1,5 +1,5 @@
 /**
- * BUG-013 回归：check 侧文件级 @nudo:env 抽取与 test/analyzer 同口径。
+ * 回归：check 侧文件级 @nudo:env 抽取与 test/analyzer 同口径。
  * `//` 与 `///` 等价；字符串里假阳性不得进符号面。
  */
 import { describe, it, expect } from "vitest";

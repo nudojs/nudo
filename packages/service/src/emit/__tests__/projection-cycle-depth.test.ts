@@ -9,8 +9,8 @@
  *
  * - absToTSType：`/* nudo:truncated:* *\/ unknown`（合法 TS，过 tsc 门）
  * - absToSchemaNode：unknown 节点 + dropped 台账记 truncated
- * - denoteGuard：`/* nudo:truncated:* *\/ true`（合法 TS——Bug 512 之后守卫产物
- *   带类型标注，不再是纯 JS）
+ * - denoteGuard：`/* nudo:truncated:* *\/ true`（合法 TS——之后守卫产物
+ * 带类型标注，不再是纯 JS）
  * - serializeCaseArg：null（既有「不可表达」信号）
  */
 import { describe, it, expect, afterAll } from "vitest";
@@ -95,7 +95,7 @@ describe("cyclic Abs (evaluator-produced, DESIGN-001)", () => {
   it("guard source stays syntactically valid with a truncation comment", async () => {
     const src = generateGuardFunctionFromAbs("isA", evaluatorCyclicAbs());
     expect(src).toContain("/* nudo:truncated:cycle */ true");
-    // 守卫产物是 .ts（带类型标注——Bug 512）⇒ 用 TS 感知装载（解析失败 ⇒ import 拒绝）
+    // 守卫产物是 .ts（带类型标注——）⇒ 用 TS 感知装载（解析失败 ⇒ import 拒绝）
     await expect(loadGeneratedModule(src)).resolves.toBeTruthy();
   });
 
@@ -125,7 +125,7 @@ describe("deep-but-acyclic Abs (200 levels, DESIGN-001)", () => {
   it("guard source stays syntactically valid", async () => {
     const src = generateGuardFunctionFromAbs("isDeep", deepObjAbs(200));
     expect(src).toContain("/* nudo:truncated:depth */ true");
-    // 守卫产物是 .ts（带类型标注——Bug 512）⇒ 用 TS 感知装载（解析失败 ⇒ import 拒绝）
+    // 守卫产物是 .ts（带类型标注——）⇒ 用 TS 感知装载（解析失败 ⇒ import 拒绝）
     await expect(loadGeneratedModule(src)).resolves.toBeTruthy();
   });
 

@@ -19,26 +19,26 @@ import { checkSource as checkSource_____check_check_ts, resetCheckSourceMemo } f
 import { resetGeneralizeMemo } from "../generalize.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 1059 — try 内 return 载体 __nudoRet 不遮蔽用户同名绑定
+// try 内 return 载体 __nudoRet 不遮蔽用户同名绑定
 // ---------------------------------------------------------------------------
-describe("[] Bug 1059 — try 内 return 载体 __nudoRet 不遮蔽用户同名绑定", () => {
+describe("try 内 return 载体 __nudoRet 不遮蔽用户同名绑定", () => {
 /**
- * Bug 1058 / Bug 1059 回归：引擎**内部临时名**必须与用户标识符**避让**。
+ * / 回归：引擎**内部临时名**必须与用户标识符**避让**。
  *
- * 同根因（Bug 181 的修复只装在了解构临时名族上 ⇒ 这里只装了一半）：
+ * 同根因（的修复只装在了解构临时名族上 ⇒ 这里只装了一半）：
  * 引擎为转译生成的内部绑定（`arguments` 槽 `__nudoArgs` / try 标记
  * `__nudoTm_{n}` / catch 载体 `__nudoE_{n}` / try 内 return 载体
  * `__nudoRet` / 写回载体 `__mutRet` / 函数体 catch 载体 `__nudoFnRet` …）
  * 一律用**固定名**发射 ⇒ 用户源码里写了同名标识符时两种失效形态都成立：
  *
- * - **同作用域重复词法声明**（Bug 1058）⇒ 产物不是合法 JS ⇒ `new Function`
- *   编译期 SyntaxError ⇒ 求值器 fail-closed ⇒ **整模块**导出退化 unknown +
- *   **假** `nudo:opaque-result`（「path not covered, or native」——误导诊断）
- *   ⇒ 门禁 exit 0 **假绿**；连**无关**的导出也失去签名。
- * - **内层遮蔽**用户同名外层绑定（Bug 1059）⇒ 引擎的 `const __nudoRet =
- *   <用户表达式>` 在**自己的初始化器**里读 `__nudoRet` ⇒ TDZ
- *   ReferenceError ⇒ 被用户自己的 `catch` 吞掉 ⇒ 原生 `15` 被算成 `0`
- *   （wrong-exact）⇒ 签名面写成 `=> 0` ⇒ 门禁假绿。
+ * - **同作用域重复词法声明**（）⇒ 产物不是合法 JS ⇒ `new Function`
+ * 编译期 SyntaxError ⇒ 求值器 fail-closed ⇒ **整模块**导出退化 unknown +
+ * **假** `nudo:opaque-result`（「path not covered, or native」——误导诊断）
+ * ⇒ 门禁 exit 0 **假绿**；连**无关**的导出也失去签名。
+ * - **内层遮蔽**用户同名外层绑定（）⇒ 引擎的 `const __nudoRet =
+ * <用户表达式>` 在**自己的初始化器**里读 `__nudoRet` ⇒ TDZ
+ * ReferenceError ⇒ 被用户自己的 `catch` 吞掉 ⇒ 原生 `15` 被算成 `0`
+ * （wrong-exact）⇒ 签名面写成 `=> 0` ⇒ 门禁假绿。
  *
  * 修法（`transpile/helpers.ts` 的 `internalTmpName`）：生成内部名时用
  * `userIdentInfo(source).names`（源文本里出现过的**全部标识符词形**，保守
@@ -49,9 +49,9 @@ describe("[] Bug 1059 — try 内 return 载体 __nudoRet 不遮蔽用户同名�
  *
  * 锚定值均为 node 原生实测：
  * - `f(5)`：原生 `15`（`const __nudoRet = 10; try { return __nudoRet + x; }
- *   catch (e) { return 0; }`）
+ * catch (e) { return 0; }`）
  * - `f(1)`：原生 `8`（`const __nudoTm_0 = 7; try { throw … } catch (e) {
- *   return __nudoTm_0 + x; }`）
+ * return __nudoTm_0 + x; }`）
  * - `f()`：原生 `0`（`const __nudoArgs = 1; return arguments.length;`）
  */
 
@@ -120,7 +120,7 @@ const SRC_ARGS = `export function f() {
 }
 export function g() { return 7; }`;
 
-describe("Bug 1059 — try 内 return 载体 __nudoRet 不遮蔽用户同名绑定", () => {
+describe("try 内 return 载体 __nudoRet 不遮蔽用户同名绑定", () => {
   it("引擎结果 = 原生 15（修前：TDZ ReferenceError 被用户 catch 吞掉 ⇒ 0）", () => {
     expect(v(SRC_RET, 5)).toEqual({ ok: true, value: 15 });
   });
@@ -139,7 +139,7 @@ describe("Bug 1059 — try 内 return 载体 __nudoRet 不遮蔽用户同名绑�
   });
 });
 
-describe("Bug 1058 — 内部临时名（__nudoTm_ / __nudoE_ / __nudoArgs）与用户标识符避让", () => {
+describe("内部临时名（__nudoTm_ / __nudoE_ / __nudoArgs）与用户标识符避让", () => {
   it("用户写 __nudoTm_0：模块不退化 unknown（结果 = 原生 8）", () => {
     expect(v(SRC_TM, 1)).toEqual({ ok: true, value: 8 });
   });
@@ -203,11 +203,11 @@ export function g() { return arguments.length; }`;
 });
 
 // ---------------------------------------------------------------------------
-// Bug 140：数组解构对用户 iterable 按迭代序（不按索引）
+// 数组解构对用户 iterable 按迭代序（不按索引）
 // ---------------------------------------------------------------------------
-describe("[] Bug 140：数组解构对用户 iterable 按迭代序（不按索引）", () => {
+describe("数组解构对用户 iterable 按迭代序（不按索引）", () => {
 /**
- * Bug 140 回归：数组解构对**用户 iterable**（对象带自有 `@@iterator` 方法）
+ * 回归：数组解构对**用户 iterable**（对象带自有 `@@iterator` 方法）
  * 必须按迭代序取元素（GetIterator + IteratorNext），**不得**按索引读。
  *
  * 修复前：解构 lowering 一律 `$idx(recv, i)`（按索引属性读）——用户 iterable
@@ -233,7 +233,7 @@ describe("[] Bug 140：数组解构对用户 iterable 按迭代序（不按索�
 /** 用户 iterable：对象带自有 @@iterator 方法（原生按迭代序产 1,2,3…） */
 const USER_ITER = `const it = { [Symbol.iterator]() { let i = 0; return { next: () => (i < 3 ? { value: ++i, done: false } : { done: true }) }; } };`;
 
-describe("Bug 140：数组解构对用户 iterable 按迭代序（不按索引）", () => {
+describe("数组解构对用户 iterable 按迭代序（不按索引）", () => {
   it("单元素解构：值面 = 迭代序第 1 个值（原生 1，此前折确定 undefined）", () => {
     expect(val(`export function f() { ${USER_ITER} const [a] = it; return a; }`)).toEqual({
       ok: true,
@@ -328,11 +328,11 @@ describe("Bug 140：数组解构对用户 iterable 按迭代序（不按索引�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 147: switch 臂内（含 if 臂内）的 break 退出 switch
+// switch 臂内（含 if 臂内）的 break 退出 switch
 // ---------------------------------------------------------------------------
-describe("[] Bug 147: switch 臂内（含 if 臂内）的 break 退出 switch", () => {
+describe("switch 臂内（含 if 臂内）的 break 退出 switch", () => {
 /**
- * Bug 147 回归（core 转译层）：switch 臂内（含 **if 臂内**）的 break 必须
+ * 回归（core 转译层）：switch 臂内（含 **if 臂内**）的 break 必须
  * **退出 switch**。
  *
  * 修复前：switch 臂内的 break 发射 `return;`——只结束**最近的 thunk**。
@@ -366,7 +366,7 @@ function engine(body: string): unknown {
   return lv.ok ? lv.value : `not-lit:${r.result}`;
 }
 
-describe("Bug 147: switch 臂内（含 if 臂内）的 break 退出 switch", () => {
+describe("switch 臂内（含 if 臂内）的 break 退出 switch", () => {
   it("if 臂里的 break 退出 switch（原生 \"\"）", () => {
     const body = `let r = ""; switch (1) { case 1: if (true) break; r += "x"; } return r;`;
     expect(native(body)).toBe("");
@@ -431,17 +431,17 @@ describe("Bug 147: switch 臂内（含 if 臂内）的 break 退出 switch", () 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 163 — for (var x of …) 头绑定是函数级共享绑定
+// for (var x of …) 头绑定是函数级共享绑定
 // ---------------------------------------------------------------------------
-describe("[] Bug 163 — for (var x of …) 头绑定是函数级共享绑定", () => {
+describe("for (var x of …) 头绑定是函数级共享绑定", () => {
 /**
- * Bug 163 回归：`for (var x of …)` / `for (var k in …)` 的**头绑定作用域**。
+ * 回归：`for (var x of …)` / `for (var k in …)` 的**头绑定作用域**。
  *
  * ES 语义（ForIn/OfHeadEvaluation）：
  * - `var` 头是**函数级**绑定（提升到函数体/模块体顶部）——循环**共享同一
- *   个绑定**，循环**之后仍可见**，且值 = 最后一次迭代的项；
+ * 个绑定**，循环**之后仍可见**，且值 = 最后一次迭代的项；
  * - `let` / `const` 头是**块级、每轮新绑定**（per-iteration）——循环后
- *   不可见，闭包各捕获各的轮次值。
+ * 不可见，闭包各捕获各的轮次值。
  *
  * 修复前：头绑定一律实现成「回调形参」⇒ ① 形参遮蔽函数级 `var` 槽 ⇒
  * 循环外读 `x` 恒 `undefined`；② 每轮是**新形参绑定** ⇒ 闭包捕获值错
@@ -468,7 +468,7 @@ function native(body: string): unknown {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 163 — for (var x of …) 头绑定是函数级共享绑定", () => {
+describe("for (var x of …) 头绑定是函数级共享绑定", () => {
   it("循环后 var 头仍可见（typeof x === number）", () => {
     const src = wrap(`for (var x of [1,2]) {} return typeof x;`);
     expect(v(src)).toEqual({ ok: true, value: "number" });
@@ -537,7 +537,7 @@ describe("Bug 163 — for (var x of …) 头绑定是函数级共享绑定", () 
   });
 });
 
-describe("Bug 163 — 产品面：nudo check 签名不再折出 undefined", () => {
+describe("产品面：nudo check 签名不再折出 undefined", () => {
   const NUDO_SRC = `
 export const numArr = array(number());
 export const numOrUndef = union(number(), lit(undefined));
@@ -567,7 +567,7 @@ export function f(items) {
   });
 });
 
-describe("Bug 163 — 负控制：let / const 头的 per-iteration 语义不变", () => {
+describe("负控制：let / const 头的 per-iteration 语义不变", () => {
   it("for (let x of …) 循环后不可见", () => {
     const src = wrap(`for (let x of [1,2]) {} return typeof x;`);
     expect(v(src)).toEqual({ ok: true, value: "undefined" });
@@ -605,11 +605,11 @@ describe("Bug 163 — 负控制：let / const 头的 per-iteration 语义不变"
 });
 
 // ---------------------------------------------------------------------------
-// Bug 166: 指令作用范围按 AST 节点身份（字符区间）
+// 指令作用范围按 AST 节点身份（字符区间）
 // ---------------------------------------------------------------------------
-describe("[] Bug 166: 指令作用范围按 AST 节点身份（字符区间）", () => {
+describe("指令作用范围按 AST 节点身份（字符区间）", () => {
 /**
- * Bug 166 回归（core 转译层）：@nudo:as / @nudo:replace 的作用范围按
+ * 回归（core 转译层）：@nudo:as / @nudo:replace 的作用范围按
  * **AST 节点身份**（源文本字符区间）判定，不是「同一行号窗口」。
  *
  * 修复前：`matchAsOverride` / `matchReplacement` 只看行号
@@ -645,7 +645,7 @@ function identRangeOf(src: string, needle: string): { start: number; end: number
   return { start, end: start + 1 };
 }
 
-describe("Bug 166: 指令作用范围按 AST 节点身份（字符区间）", () => {
+describe("指令作用范围按 AST 节点身份（字符区间）", () => {
   it("@nudo:as 只覆盖被登记的那条语句（同行下一条不受影响）", () => {
     const src = `export function f(a) {
   const x = a; const y = a;
@@ -720,11 +720,11 @@ describe("Bug 166: 指令作用范围按 AST 节点身份（字符区间）", ()
 });
 
 // ---------------------------------------------------------------------------
-// Bug 168: switch 的 case 测试命中即停
+// switch 的 case 测试命中即停
 // ---------------------------------------------------------------------------
-describe("[] Bug 168: switch 的 case 测试命中即停", () => {
+describe("switch 的 case 测试命中即停", () => {
 /**
- * Bug 168 回归（core 转译层）：`switch` 的 **case 测试按源码序求值，命中即停**。
+ * 回归（core 转译层）：`switch` 的 **case 测试按源码序求值，命中即停**。
  *
  * 修复前：发射面把 case 测试当**普通实参内联**——`$switch(disc, [{ test: t(1) },
  * { test: t(2) }])` 的实参数组在**进入 switch 之前**全部求值（JS 实参语义）
@@ -759,7 +759,7 @@ function engine(body: string, args: unknown[] = []): unknown {
   return lv.ok ? lv.value : `not-lit:${r.result}`;
 }
 
-describe("Bug 168: switch 的 case 测试命中即停", () => {
+describe("switch 的 case 测试命中即停", () => {
   it("命中第一个 case：后续 case 测试不求值（原生 1）", () => {
     const body = `let n = 0; function t(v){n=n+1;return v;} switch (1){case t(1):break; case t(2):break;} return n;`;
     expect(native(body)).toBe(1);
@@ -812,11 +812,11 @@ describe("Bug 168: switch 的 case 测试命中即停", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 169: switch 的 case 测试副作用不被臂入口快照抹掉
+// switch 的 case 测试副作用不被臂入口快照抹掉
 // ---------------------------------------------------------------------------
-describe("[] Bug 169: switch 的 case 测试副作用不被臂入口快照抹掉", () => {
+describe("switch 的 case 测试副作用不被臂入口快照抹掉", () => {
 /**
- * Bug 169 回归（core 转译层）：`switch` 的 **case 测试副作用不被臂入口快照抹掉**。
+ * 回归（core 转译层）：`switch` 的 **case 测试副作用不被臂入口快照抹掉**。
  *
  * 修复前：臂入口按「switch 前的快照」恢复绑定（`n = $copy(__sw0_n)`）——而
  * case 测试的副作用发生在**快照之后、臂体之前** ⇒ 被恢复动作**整体抹掉**：
@@ -846,7 +846,7 @@ function engine(body: string, withArg = false): unknown {
   return lv.ok ? lv.value : `not-lit:${r.result}`;
 }
 
-describe("Bug 169: switch 的 case 测试副作用不被臂入口快照抹掉", () => {
+describe("switch 的 case 测试副作用不被臂入口快照抹掉", () => {
   it("case 测试的写保留（原生 11）", () => {
     const body = `let n = 0; const t = (v) => { n = n + 1; return v; }; switch (1){case t(1): n = n + 10; break;} return n;`;
     expect(native(body)).toBe(11);
@@ -893,11 +893,11 @@ describe("Bug 169: switch 的 case 测试副作用不被臂入口快照抹掉", 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 170: do-while 体的 break / continue 不逃出函数
+// do-while 体的 break / continue 不逃出函数
 // ---------------------------------------------------------------------------
-describe("[] Bug 170: do-while 体的 break / continue 不逃出函数", () => {
+describe("do-while 体的 break / continue 不逃出函数", () => {
 /**
- * Bug 170 回归（core 转译层）：do-while 体的 `break` / `continue` **只作用于
+ * 回归（core 转译层）：do-while 体的 `break` / `continue` **只作用于
  * 该循环**，不得逃出整个函数。
  *
  * 修复前：do-while 被降级成「先跑一份体，再跑 `$whileSeq(() => T, () => {体})`」
@@ -922,7 +922,7 @@ function valOf(src: string): unknown {
   return r.ok ? r.value : "not-lit";
 }
 
-describe("Bug 170: do-while 体的 break / continue 不逃出函数", () => {
+describe("do-while 体的 break / continue 不逃出函数", () => {
   it("体里的 break 跳出循环（不是跳出函数）", () => {
     const rec = call(
       `export function f() {
@@ -1011,10 +1011,10 @@ describe("Bug 170: do-while 体的 break / continue 不逃出函数", () => {
 });
 
 // ---------------------------------------------------------------------------
-// [merged] eval-bug-181-destructure-tmp-names.test.ts
+// [merged] destructure-tmp-names
 // ---------------------------------------------------------------------------
-describe("[] [merged] eval-bug-181-destructure-tmp-names.test.ts", () => {
-// MERGED (topic-related bug pins): eval-bug-181-destructure-tmp-names.test.ts + eval-bug-181-tmp-name-first-alloc.test.ts
+describe("destructure-tmp-names", () => {
+// MERGED (topic-related bug pins): destructure-tmp-names + tmp-name-first-alloc
 // Each absorbed file keeps its own describe scope so file-level hooks stay
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 
@@ -1022,9 +1022,9 @@ describe("[] [merged] eval-bug-181-destructure-tmp-names.test.ts", () => {
 
 
 
-describe("[merged] eval-bug-181-destructure-tmp-names.test.ts", () => {
+describe("destructure-tmp-names", () => {
 /**
- * Bug 181 回归：转译器的**解构临时名**（`_d0` / `_n1` / `_p0` / `_rest0`）
+ * 回归：转译器的**解构临时名**（`_d0` / `_n1` / `_p0` / `_rest0`）
  * 必须与**用户标识符**避让。
  *
  * 修复前：临时名不带任何避让——用户自己声明同名标识符时，生成码出现
@@ -1043,7 +1043,7 @@ describe("[merged] eval-bug-181-destructure-tmp-names.test.ts", () => {
 const v = (src: string, ...args: unknown[]): { ok: boolean; value?: unknown } =>
   litValue(callLit(src, "f", ...args).result) as { ok: boolean; value?: unknown };
 
-describe("Bug 181：解构临时名与用户标识符避让", () => {
+describe("解构临时名与用户标识符避让", () => {
   it("用户声明 _d0：模块仍可求值（不再重复声明 SyntaxError）", () => {
     expect(
       val(`export function f() { let _d0 = 5; const { a } = { a: 1 }; return a + _d0; }`),
@@ -1085,12 +1085,12 @@ describe("Bug 181：解构临时名与用户标识符避让", () => {
 });
 });
 
-describe("[merged] eval-bug-181-tmp-name-first-alloc.test.ts", () => {
+describe("tmp-name-first-alloc", () => {
 /**
- * Bug 181 收尾（批次 r21-w15）：解构临时名的**首次分配**也必须避让用户
+ * 收尾（批次 r21-w15）：解构临时名的**首次分配**也必须避让用户
  * 标识符。
  *
- * 背景：主体修复（Bug 181 本体）把避让接在**解构发射入口**
+ * 背景：主体修复（本体）把避让接在**解构发射入口**
  * （emit.ts 的 emitDestructure / 形参绑定）——但模块**首条语句**即解构
  * 声明时，`_d{n}` 这个名字在避让生效**之前**就被分配（statement.ts 的
  * 首次取号处）⇒ 用户自己声明了 `_d0` 时，生成码出现**重复词法声明**
@@ -1118,7 +1118,7 @@ const callName = (
 ): { ok: boolean; value?: unknown } =>
   litValue(callLit(src, name, ...args).result) as { ok: boolean; value?: unknown };
 
-describe("Bug 181 收尾：解构临时名首次分配的避让", () => {
+describe("收尾：解构临时名首次分配的避让", () => {
   it("模块首条语句即解构声明 + 用户模块级 _d0：模块可求值且值正确", () => {
     expect(
       val(`const { a } = { a: 1 };
@@ -1206,14 +1206,14 @@ export function f([...xs]) { let _rest0 = 5; return a + xs.length + _rest0; }`, 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 182/1115/1116: 早返回形态的后续路径不断言否定界（与三元写法同口径）
+// : 早返回形态的后续路径不断言否定界（与三元写法同口径）
 // ---------------------------------------------------------------------------
-describe("[] Bug 182/1115/1116: 早返回形态的后续路径不断言否定界（与三元写法同口径）", () => {
+describe(": 早返回形态的后续路径不断言否定界（与三元写法同口径）", () => {
 /**
- * Bug 182 回归（core 转译层 + 契约执法面）——**判据已被 Bug 1115 / 1116
+ * 回归（core 转译层 + 契约执法面）——**判据已被 
  * 修正**：早返回形态的**后续路径**上**不断言否定关系界**。
  *
- * Bug 182 的做法（已撤销）：事实臂以 return/throw 结束 ⇒ else 臂（尾句全终止
+ * 的做法（已撤销）：事实臂以 return/throw 结束 ⇒ else 臂（尾句全终止
  * 时 `completeElseChains` 把它收进合成的 else）即**后续路径** ⇒ 后续路径上
  * 断言**否定关系界**（`x <= 0` 为假 ⇒ `x > 0`）。
  *
@@ -1222,7 +1222,7 @@ describe("[] Bug 182/1115/1116: 早返回形态的后续路径不断言否定界
  * NaN** ⇒ 假绿：`if (x < 0) return 0; return x;` + `return nonNeg` 被判「证成」
  * （0 诊断），而原生 x=NaN ⇒ `NaN < 0` 为假 ⇒ `return x` ⇒ 返回 NaN ⇒ 违约。
  *
- * Bug 1115：后续路径**不断言否定界**（事实臂窄化保留——那一侧「测试为真」⇒
+ * 后续路径**不断言否定界**（事实臂窄化保留——那一侧「测试为真」⇒
  * NaN 不可达）⇒ 与三元写法（`return x < 0 ? 0 : x;`，else 臂本就无否定界
  * 窄化）**同口径**。
  *
@@ -1230,7 +1230,7 @@ describe("[] Bug 182/1115/1116: 早返回形态的后续路径不断言否定界
  * `if (x > 0) { return x; } else { return 1; }`「语义完全等价」——**不成立**：
  * 二者只在 NaN 上分叉（前者对 NaN 返回 NaN，后者返回 1）。
  *
- * Bug 1116：后续路径的返回项是**声明域参数**（值域已知：任意 number）⇒ 契约
+ * 后续路径的返回项是**声明域参数**（值域已知：任意 number）⇒ 契约
  * `positive` 不蕴含 ⇒ 契约不成立（存在违约输入：x=0 / x=NaN）⇒ 判
  * `nudo:constraint-violated`（error）。
  *
@@ -1257,7 +1257,7 @@ function violations(r: { issues: { code: string; severity: string }[] }): number
   return r.issues.filter((i) => i.severity === "error" && i.code === "nudo:constraint-violated").length;
 }
 
-describe("Bug 182/1115/1116: 早返回形态的后续路径不断言否定界（与三元写法同口径）", () => {
+describe("早返回形态的后续路径不断言否定界（与三元写法同口径）", () => {
   it("早返回形态：后续路径不排除 NaN ⇒ return number().gt(0) 不成立（error）", () => {
     const r = check(`export function f(x) {
   if (x <= 0) { return 1; }
@@ -1294,7 +1294,7 @@ describe("Bug 182/1115/1116: 早返回形态的后续路径不断言否定界（
 
   it("负控制：事实臂不终止的普通 if/else 同样不断言否定界（判违约的依据不是否定界）", () => {
     // 事实臂不终止 ⇒ else 臂**不**建立否定界（x ≤ 0 / NaN）⇒ 该臂的返回项
-    // 值域 = 任意 number（**不是**「x ≤ 0」）⇒ Bug 1116：声明域参数的值域
+    // 值域 = 任意 number（**不是**「x ≤ 0」）⇒ 声明域参数的值域
     // 已知 ⇒ `positive` 不蕴含 ⇒ 契约不成立（x=0 即违约）⇒ error。
     // 判违约的**依据**是「值域 ⊄ 契约域」，不是「断言了否定界」⇒ 非假红。
     const r = check(`export function f(x) {
@@ -1308,7 +1308,7 @@ describe("Bug 182/1115/1116: 早返回形态的后续路径不断言否定界（
   });
 
   it("负控制：四种关系算子的后续路径**同口径**（四种形态都在 NaN 上违约）", () => {
-    // Bug 1115 之后：后续路径**不再**断言否定界 ⇒ 四种形态同口径。
+    // 之后：后续路径**不再**断言否定界 ⇒ 四种形态同口径。
     // 四者都在 NaN 上违约（`NaN` 与任何比较皆假 ⇒ 走 `return x` ⇒ 返回 NaN
     // ⇒ 违反 positive）⇒ 四个都是 error。
     for (const op of [">=", ">", "<", "<="]) {
@@ -1326,11 +1326,11 @@ describe("Bug 182/1115/1116: 早返回形态的后续路径不断言否定界（
 });
 
 // ---------------------------------------------------------------------------
-// Bug 183 — for 循环体接 nullish 守卫（零 L2 / 不报 may-throw）
+// for 循环体接 nullish 守卫（零 L2 / 不报 may-throw）
 // ---------------------------------------------------------------------------
-describe("[] Bug 183 — for 循环体接 nullish 守卫（零 L2 / 不报 may-throw）", () => {
+describe("for 循环体接 nullish 守卫（零 L2 / 不报 may-throw）", () => {
 /**
- * Bug 183 回归：`for` 循环体**接守卫事实**（nullish + 关系）。
+ * 回归：`for` 循环体**接守卫事实**（nullish + 关系）。
  *
  * ES 语义：`for (; test; )` 的测试在**每轮迭代前**求值、为真则进体 ⇒
  * 「测试为真 ⇒ 体内成立」与 `while (test) { … }` / `if (test) { … }` 的
@@ -1339,7 +1339,7 @@ describe("[] Bug 183 — for 循环体接 nullish 守卫（零 L2 / 不报 may-t
  * 修复前：`ForStatement` 分支**一条守卫都没接**（`if` 接了四种、只接了
  * nullish 的 `while` 接了一种）⇒ 同一守卫事实在 `for` 被丢弃 ⇒
  * - L2 假红：`for (; v !== null; ) { return v.length; }` 报
- *   「property 'length' on null」（native 永不抛）；
+ * 「property 'length' on null」（native 永不抛）；
  * - L1 假红：`for (; x > 0; ) { return x; }` 的返回值域丢 `> 0` 事实。
  *
  * 不变量（负控制钉住）：无守卫的 for 仍报 L2；体侧写守卫名 ⇒ 跳过收窄
@@ -1368,7 +1368,7 @@ function check(src: string) {
   return checkSource___nudojs_core_1("/t/b183.js", IMP + src, pTrue___nudojs_core_1, opts);
 }
 
-describe("Bug 183 — for 循环体接 nullish 守卫（零 L2 / 不报 may-throw）", () => {
+describe("for 循环体接 nullish 守卫（零 L2 / 不报 may-throw）", () => {
   it("for (; v !== null; ) { return v.length; } 零 L2（native 永不抛）", () => {
     const r = check(`
 /**
@@ -1419,7 +1419,7 @@ export function f(v) {
   });
 });
 
-describe("Bug 183 — for 循环体接关系守卫（L1 契约成立）", () => {
+describe("for 循环体接关系守卫（L1 契约成立）", () => {
   it("for (; x > 0; ) { return x; } 满足 return number().gt(0)", () => {
     const r = check(`
 /**
@@ -1454,7 +1454,7 @@ export function f(x) {
   });
 });
 
-describe("Bug 183 — 引擎求值：for 头的测试语义不变", () => {
+describe("引擎求值：for 头的测试语义不变", () => {
   it("for (; v !== null; ) 在 v 为 null 时不进体（返回 0）", () => {
     const src = `export function f(v) { for (; v !== null; ) { return v.length; } return 0; }`;
     expect(v(src, null)).toEqual({ ok: true, value: 0 });
@@ -1471,7 +1471,7 @@ describe("Bug 183 — 引擎求值：for 头的测试语义不变", () => {
   });
 });
 
-describe("Bug 183 — 负控制：无守卫 / 体侧写守卫名 ⇒ 仍报 L2", () => {
+describe("负控制：无守卫 / 体侧写守卫名 ⇒ 仍报 L2", () => {
   it("无守卫的 for 体内读 null 臂成员仍报 L2", () => {
     const r = check(`
 /**
@@ -1506,23 +1506,23 @@ export function f(v) {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 184: switch 的 case 标签产生窄化事实
+// switch 的 case 标签产生窄化事实
 // ---------------------------------------------------------------------------
-describe("[] Bug 184: switch 的 case 标签产生窄化事实", () => {
+describe("switch 的 case 标签产生窄化事实", () => {
 /**
- * Bug 184 回归（core 转译层）：`switch` 的 **case 标签产生窄化事实**。
+ * 回归（core 转译层）：`switch` 的 **case 标签产生窄化事实**。
  *
  * 修复前：case 标签不产生任何窄化事实 ⇒ 臂内既不知道「本臂命中哪个字面量」，
  * 也不知道「其它臂排除了哪些字面量」：
  * - 命中事实缺失：`switch (x) { case 1: return x; default: return 2; }` 的返回
- *   域含未窄化的 number ⇒ L1 契约 `return number().gt(0)` 假红；
+ * 域含未窄化的 number ⇒ L1 契约 `return number().gt(0)` 假红；
  * - 排除事实缺失：`switch (v) { case null: return 0; default: return v.length; }`
- *   的 default 臂仍可能 v === null ⇒ `v.length` 判 may-throw ⇒ L2 假红。
+ * 的 default 臂仍可能 v === null ⇒ `v.length` 判 may-throw ⇒ L2 假红。
  *
  * 修复后：case 标签产出**命中事实**（判别值在本臂等于该字面量）与**排除事实**
  * （本臂之外的标签值在本臂被排除）：
  * - 标识符判别式：命中事实以影子重绑表达（臂内判别值 = 该字面量）；排除事实
- *   只有 nullish 标签可表达（$removeNull / $removeUndefined / $removeNullish）。
+ * 只有 nullish 标签可表达（$removeNull / $removeUndefined / $removeNullish）。
  * - 成员判别式（`switch (o.kind)`）：命中 / 排除事实均走 $narrowMemberEq。
  *
  * 负控制钉住：① 臂内写判别绑定时**跳过**窄化（影子参数会吞掉臂内写）；② 非
@@ -1578,7 +1578,7 @@ function checkDisc(src: string) {
   );
 }
 
-describe("Bug 184: switch 的 case 标签产生窄化事实", () => {
+describe("switch 的 case 标签产生窄化事实", () => {
   it("命中事实：`case 1:` 臂内判别值 = 字面量 1（返回域 1 | 2）", () => {
     const src = `export function f(x) { switch (x) { case 1: return x; default: return 2; } }`;
     const r = engine(src, NUMBER_ABS);
@@ -1659,10 +1659,10 @@ export function switchFormNonLit(node) {
 });
 
 // ---------------------------------------------------------------------------
-// [merged] eval-bug-185-dowhile-rel-guard.test.ts
+// [merged] dowhile-rel-guard
 // ---------------------------------------------------------------------------
-describe("[] [merged] eval-bug-185-dowhile-rel-guard.test.ts", () => {
-// MERGED (topic-related bug pins): eval-bug-185-dowhile-rel-guard.test.ts + eval-bug-185-while-rel-guard.test.ts
+describe("dowhile-rel-guard", () => {
+// MERGED (topic-related bug pins): dowhile-rel-guard + while-rel-guard
 // Each absorbed file keeps its own describe scope so file-level hooks stay
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 
@@ -1671,9 +1671,9 @@ describe("[] [merged] eval-bug-185-dowhile-rel-guard.test.ts", () => {
 
 
 
-describe("[merged] eval-bug-185-dowhile-rel-guard.test.ts", () => {
+describe("dowhile-rel-guard", () => {
 /**
- * Bug 185 同构缺口回归：`do-while` 分支的**关系守卫**接线。
+ * 同构缺口回归：`do-while` 分支的**关系守卫**接线。
  *
  * ES 语义：`do { B } while (T)` —— 体 B **先**执行一次，之后每轮迭代前求
  * 测试 T；T 为真则再进体 ⇒ 「T 为真 ⇒ 体内成立」与 `if (T) { B }` 的事实臂
@@ -1718,7 +1718,7 @@ function l1(r: ReturnType<typeof check>): number {
 
 /**
  * L1 **返回义务**诊断数（违约 error + 证不出 warning）。
- * Bug 370：`x: number()` 是**无界** prim ⇒ 返回义务「既证不出、也反证不了」
+ * `x: number()` 是**无界** prim ⇒ 返回义务「既证不出、也反证不了」
  * ⇒ 无界证据下判 `nudo:unproven-return`（warning）而非 `nudo:constraint-violated`
  * （error，确定违约）。「仍报 L1」的不变量按**返回义务诊断**计。
  */
@@ -1728,7 +1728,7 @@ function l1Return(r: ReturnType<typeof check>): number {
   ).length;
 }
 
-describe("Bug 185 同构缺口 — do-while 体侧接关系守卫（L1 契约成立）", () => {
+describe("同构缺口 — do-while 体侧接关系守卫（L1 契约成立）", () => {
   it("第 2 轮起体内成立 x > 0 事实 ⇒ return x 满足契约", () => {
     const r = check(`
 /**
@@ -1766,7 +1766,7 @@ export function f(x) {
   });
 });
 
-describe("Bug 185 同构缺口 — 负控制：收窄不越界 / 接线不回归", () => {
+describe("同构缺口 — 负控制：收窄不越界 / 接线不回归", () => {
   it("首轮拷贝保持未收窄（先于测试求值 ⇒ 无 > 0 事实，仍报 L1）", () => {
     const r = check(`
 /**
@@ -1779,7 +1779,7 @@ export function f(x) {
   } while (x > 0);
 }
 `);
-    // Bug 370：无界证据（无 > 0 事实）⇒ 判「证不出」（warning）而非「确定违约」
+    // 无界证据（无 > 0 事实）⇒ 判「证不出」（warning）而非「确定违约」
     expect(l1Return(r)).toBeGreaterThan(0);
   });
 
@@ -1813,7 +1813,7 @@ export function f(x) {
   return x;
 }
 `);
-    // Bug 370：循环体外的读不携带关系事实 ⇒ 无界证据 ⇒ 判「证不出」（warning）
+    // 循环体外的读不携带关系事实 ⇒ 无界证据 ⇒ 判「证不出」（warning）
     expect(l1Return(r)).toBeGreaterThan(0);
   });
 
@@ -1836,7 +1836,7 @@ export function f(v) {
   });
 });
 
-describe("Bug 185 同构缺口 — 引擎求值：do-while 语义不变", () => {
+describe("同构缺口 — 引擎求值：do-while 语义不变", () => {
   it("do-while 体至少执行一次（先于测试）", () => {
     const src = `export function f(x) { let n = 0; do { n = n + 1; if (n === 3) return n; } while (x > 0); return n; }`;
     expect(v(src, -1)).toEqual({ ok: true, value: 1 });
@@ -1858,9 +1858,9 @@ describe("Bug 185 同构缺口 — 引擎求值：do-while 语义不变", () => 
 });
 });
 
-describe("[merged] eval-bug-185-while-rel-guard.test.ts", () => {
+describe("while-rel-guard", () => {
 /**
- * Bug 185 回归：`while` 循环体接**关系守卫**（`x > 0`）。
+ * 回归：`while` 循环体接**关系守卫**（`x > 0`）。
  *
  * ES 语义：`while (test)` 的测试在每轮迭代前求值、为真则进体 ⇒ 「测试为
  * 真 ⇒ 体内成立」与 `if (test) { … }` 的事实臂**完全等价**。
@@ -1897,7 +1897,7 @@ function check(src: string) {
   return checkSource___nudojs_core_2("/t/b185.js", IMP + src, pTrue___nudojs_core_2, opts);
 }
 
-describe("Bug 185 — while 循环体接关系守卫（L1 契约成立）", () => {
+describe("while 循环体接关系守卫（L1 契约成立）", () => {
   it("while (x > 0) { return x; } 满足 return number().gt(0)", () => {
     const r = check(`
 /**
@@ -1948,7 +1948,7 @@ export function f(x) {
   });
 });
 
-describe("Bug 185 — 负控制：nullish 守卫接线不回归 / 收窄不越界", () => {
+describe("负控制：nullish 守卫接线不回归 / 收窄不越界", () => {
   it("while (v !== null) 体内成员读仍零 L2（nullish 接线不回归）", () => {
     const r = check(`
 /**
@@ -1996,7 +1996,7 @@ export function f(x) {
   return x;
 }
 `);
-    // Bug 370：无界证据（循环体外的读不携带关系事实）⇒ 判「证不出」
+    // 无界证据（循环体外的读不携带关系事实）⇒ 判「证不出」
     // （nudo:unproven-return，warning）而非「确定违约」（error）
     expect(
       r.issues.filter(
@@ -2006,7 +2006,7 @@ export function f(x) {
   });
 });
 
-describe("Bug 185 — 引擎求值：while 语义不变", () => {
+describe("引擎求值：while 语义不变", () => {
   it("while (x > 0) 在 x 为正时进体（返回 x）", () => {
     const src = `export function f(x) { while (x > 0) { return x; } return 1; }`;
     expect(v(src, 5)).toEqual({ ok: true, value: 5 });
@@ -2027,11 +2027,11 @@ describe("Bug 185 — 引擎求值：while 语义不变", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 186 — 裸块 / try / catch / finally 内的早退补集窄化生效
+// 裸块 / try / catch / finally 内的早退补集窄化生效
 // ---------------------------------------------------------------------------
-describe("[] Bug 186 — 裸块 / try / catch / finally 内的早退补集窄化生效", () => {
+describe("裸块 / try / catch / finally 内的早退补集窄化生效", () => {
 /**
- * Bug 186 回归：早退补集窄化的**送达范围**（嵌套语句表）。
+ * 回归：早退补集窄化的**送达范围**（嵌套语句表）。
  *
  * ES 语义：`if (v === null) { return 0; }` 早退 ⇒ **后续路径**上
  * 「v 不再是 null」⇒ 后续的 `v.length` 不撞 null 臂。这条补集事实与
@@ -2067,7 +2067,7 @@ function check(src: string) {
   return checkSource___nudojs_core_3("/t/b186.js", IMP + src, pTrue___nudojs_core_3, opts);
 }
 
-describe("Bug 186 — 裸块 / try / catch / finally 内的早退补集窄化生效", () => {
+describe("裸块 / try / catch / finally 内的早退补集窄化生效", () => {
   it("裸块：{ if (v === null) { return 0; } } return v.length; 零 L2", () => {
     const r = check(`
 /**
@@ -2178,7 +2178,7 @@ export function f(v) {
   });
 });
 
-describe("Bug 186 — 引擎求值：嵌套形态的返回值与原生一致", () => {
+describe("引擎求值：嵌套形态的返回值与原生一致", () => {
   it("裸块：v 为 null → 0；v 为字符串 → 长度", () => {
     const src = `export function f(v) { { if (v === null) { return 0; } } return v.length; }`;
     expect(v(src, null)).toEqual({ ok: true, value: 0 });
@@ -2204,7 +2204,7 @@ describe("Bug 186 — 引擎求值：嵌套形态的返回值与原生一致", (
   });
 });
 
-describe("Bug 186 — 负控制：无早退守卫 / 非 nullish 守卫 ⇒ 仍报 L2", () => {
+describe("负控制：无早退守卫 / 非 nullish 守卫 ⇒ 仍报 L2", () => {
   it("嵌套块内无早退守卫 → 仍报 L2", () => {
     const r = check(`
 /**
@@ -2244,11 +2244,11 @@ export function f(v) {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 187 — 可选调用命中 nullish 时整链短路（剩余成员读不再求值）
+// 可选调用命中 nullish 时整链短路（剩余成员读不再求值）
 // ---------------------------------------------------------------------------
-describe("[] Bug 187 — 可选调用命中 nullish 时整链短路（剩余成员读不再求值）", () => {
+describe("可选调用命中 nullish 时整链短路（剩余成员读不再求值）", () => {
 /**
- * Bug 187 回归：可选「调用」`o.b?.()` 命中 nullish 时必须**整链**短路。
+ * 回归：可选「调用」`o.b?.()` 命中 nullish 时必须**整链**短路。
  *
  * ES 语义：`o.b?.().c` 里 `o.b` 为 nullish ⇒ **整条链**求值为 undefined，
  * 后续的 `.c` 不得再求值、不得抛（`o.b` 非 nullish 时才调用并继续 `.c`）。
@@ -2286,7 +2286,7 @@ function expectChainUndefined(src: string) {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 187 — 可选调用命中 nullish 时整链短路（剩余成员读不再求值）", () => {
+describe("可选调用命中 nullish 时整链短路（剩余成员读不再求值）", () => {
   it("o.b?.().c on {b:null} → undefined（不抛）", () => {
     expectChainUndefined(wrap(`const o = { b: null }; return o.b?.().c;`));
   });
@@ -2336,7 +2336,7 @@ describe("Bug 187 — 可选调用命中 nullish 时整链短路（剩余成员�
   });
 });
 
-describe("Bug 187 — 负控制：非 nullish 链仍正常求值 / 既有 hop 语义不回归", () => {
+describe("负控制：非 nullish 链仍正常求值 / 既有 hop 语义不回归", () => {
   it("o.b?.().c on 函数 b → 读到 c", () => {
     expect(v(wrap(`const o = { b: () => ({ c: 9 }) }; return o.b?.().c;`))).toEqual({ ok: true, value: 9 });
   });
@@ -2396,11 +2396,11 @@ describe("Bug 187 — 负控制：非 nullish 链仍正常求值 / 既有 hop �
 });
 
 // ---------------------------------------------------------------------------
-// Bug 188 — 表达式体的写回排在表达式取值之后
+// 表达式体的写回排在表达式取值之后
 // ---------------------------------------------------------------------------
-describe("[] Bug 188 — 表达式体的写回排在表达式取值之后", () => {
+describe("表达式体的写回排在表达式取值之后", () => {
 /**
- * Bug 188 回归：箭头 / 函数表达式**表达式体**的成员目标写回被排在
+ * 回归：箭头 / 函数表达式**表达式体**的成员目标写回被排在
  * `return <表达式>` 之前 ⇒ `() => o.n++` 返回**写后**值（原生是写前值）。
  *
  * 修复前（表达式体发射，expr/function.ts）：先发 rebinds（写回），再
@@ -2425,7 +2425,7 @@ function v(src: string, ...args: unknown[]) {
   return litValue___nudojs_core_5(callLit(src, "f", ...args).result);
 }
 
-describe("Bug 188 — 表达式体的写回排在表达式取值之后", () => {
+describe("表达式体的写回排在表达式取值之后", () => {
   it("`() => o.n++` 返回写前值 0（原生同），写回仍发生（o.n = 1）", () => {
     const src = `export function f() {
       const o = { n: 0 };
@@ -2466,7 +2466,7 @@ describe("Bug 188 — 表达式体的写回排在表达式取值之后", () => {
   });
 });
 
-describe("Bug 188 — 负控制：写回 / 取值语义不被改写", () => {
+describe("负控制：写回 / 取值语义不被改写", () => {
   it("块体箭头的写回照旧发生", () => {
     const src = `export function f() {
       const o = { n: 0 };
@@ -2510,11 +2510,11 @@ describe("Bug 188 — 负控制：写回 / 取值语义不被改写", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 193 — 摘下方法引用后调用不得假抛（FALSE-THROW）
+// 摘下方法引用后调用不得假抛（FALSE-THROW）
 // ---------------------------------------------------------------------------
-describe("[] Bug 193 — 摘下方法引用后调用不得假抛（FALSE-THROW）", () => {
+describe("摘下方法引用后调用不得假抛（FALSE-THROW）", () => {
 /**
- * Bug 193 回归：**摘下方法引用后调用**被误判为必抛（FALSE-THROW）。
+ * 回归：**摘下方法引用后调用**被误判为必抛（FALSE-THROW）。
  *
  * 修复前：`const m = new A().m; m()` 折 never + throws=TypeError——原生恒不抛
  * （方法体不碰 `this` 时，`this` 只是 undefined）。根因在方法值读通道的 apply
@@ -2544,7 +2544,7 @@ function throwName(src: string): string {
   return t.shape.k === "brand" ? (t.shape.name ?? "") : (t.shape.k as string);
 }
 
-describe("Bug 193 — 摘下方法引用后调用不得假抛（FALSE-THROW）", () => {
+describe("摘下方法引用后调用不得假抛（FALSE-THROW）", () => {
   it("实例方法摘下后调用 → 正常返回（原生 this=undefined，方法体不碰 this）", () => {
     expect(
       v(wrap(`class A { m(){ return 1; } } const m = new A().m; return m();`)),
@@ -2592,21 +2592,21 @@ describe("Bug 193 — 摘下方法引用后调用不得假抛（FALSE-THROW）",
 });
 
 // ---------------------------------------------------------------------------
-// Bug 199：非正常出口触发 IteratorClose
+// 非正常出口触发 IteratorClose
 // ---------------------------------------------------------------------------
-describe("[] Bug 199：非正常出口触发 IteratorClose", () => {
+describe("非正常出口触发 IteratorClose", () => {
 /**
- * Bug 199 回归：**非正常出口必须 IteratorClose**（对用户迭代器调 `return()`）。
+ * 回归：**非正常出口必须 IteratorClose**（对用户迭代器调 `return()`）。
  *
  * ES 语义（IteratorClose / ForInOfBodyEvaluation / 数组解构）：
  * - `for-of` 循环体 `break` / `return` / `throw`（含 label break）⇒ 迭代器
- *   的 `return()` 被调用（**副作用可见**）；
+ * 的 `return()` 被调用（**副作用可见**）；
  * - 数组解构模式被**填满**而迭代器尚未耗尽 ⇒ 同样 IteratorClose；
  * - `continue` 与**自然耗尽** ⇒ **不**调用 `return()`；
  * - 无 `return` 槽 ⇒ 不调用（原生无副作用）；
  * - `return` 槽是**非可调用值** ⇒ GetMethod 定抛 TypeError；
  * - `return()` 的返回值**必须是对象** ⇒ 否则定抛 TypeError（`return(){}` 无
- *   返回值即抛——原生实测）。
+ * 返回值即抛——原生实测）。
  *
  * 修复前：引擎从不调 `return()` ⇒ 迭代器的清理副作用**丢失**
  * （`forOfCloseOnBreak() => ""`，原生 `"ret"`）。
@@ -2623,7 +2623,7 @@ const IT = `const log = [];
     [Symbol.iterator]() { return this; },
   };`;
 
-describe("Bug 199：非正常出口触发 IteratorClose", () => {
+describe("非正常出口触发 IteratorClose", () => {
   it("for-of 里 break ⇒ 调 return()", () => {
     expect(val(`export function f() { ${IT} for (const v of it) { break; } return log.join(","); }`)).toEqual({
       ok: true,
@@ -2729,20 +2729,20 @@ describe("Bug 199：非正常出口触发 IteratorClose", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 202：用户自定义 @@iterator 被驱动（回归钉，根因由族 01 Bug 140 关闭）
+// 用户自定义 @@iterator 被驱动（回归钉，根因由族 01 关闭）
 // ---------------------------------------------------------------------------
-describe("[] Bug 202：用户自定义 @@iterator 被驱动（回归钉，根因由族 01 Bug 140 关闭）", () => {
+describe("用户自定义 @@iterator 被驱动（回归钉，根因由族 01 关闭）", () => {
 /**
- * Bug 202 回归**钉**（不宣称新修）：用户自定义 `@@iterator` 必须被驱动。
+ * 回归**钉**（不宣称新修）：用户自定义 `@@iterator` 必须被驱动。
  *
  * ── 归属说明 ─────────────────────────────────────────────────────────────
- * 本条的**根因已由族 01 的 Bug 140 顺带关闭**：`exec/runtime/containers/iterate.ts`
+ * 本条的**根因已由族 01 的 顺带关闭**：`exec/runtime/containers/iterate.ts`
  * 在 `elemsOf` / `$iterCheck` 里实现了用户迭代器协议（`collectUserIterElems`：
  * GetIterator + IteratorNext，元素按**迭代序**取），并把迭代器对象登记到侧表
- * 供 IteratorClose 使用（见 Bug 199 的回归）。
+ * 供 IteratorClose 使用（见 的回归）。
  *
  * 当前 HEAD（族 01 提交 `7fea13a1` 后）**已不复现**本条症状 ⇒ 本文件只作
- * **回归钉**（防止该协议被后续改动回退），**不宣称本分片新修了 Bug 202**。
+ * **回归钉**（防止该协议被后续改动回退），**不宣称本分片新修了 **。
  *
  * ── 已知残留（不在 S4 可改文件内）────────────────────────────────────────
  * `Array.from(userIterable)` 仍**不驱动**用户迭代器（`builtins/array.ts` 的
@@ -2765,7 +2765,7 @@ const USER_ITER = `let n = 0;
     },
   };`;
 
-describe("Bug 202：用户自定义 @@iterator 被驱动（回归钉，根因由族 01 Bug 140 关闭）", () => {
+describe("用户自定义 @@iterator 被驱动（回归钉，根因由族 01 关闭）", () => {
   it("for-of 调用 @@iterator 与 next（原生 1 + 3 = 4 次）", () => {
     expect(val(`export function f() { ${USER_ITER} for (const v of o) {} return n; }`)).toEqual({
       ok: true,
@@ -2833,7 +2833,7 @@ describe("Bug 202：用户自定义 @@iterator 被驱动（回归钉，根因由
  * `@@iterator` / `next()` ⇒ 迭代器体内的副作用（计数 / 写状态）整体丢失，
  * 元素域折 unknown（wrong-exact 的 0 / undefined）。
  */
-describe("Bug 202：Array.from 驱动用户 @@iterator", () => {
+describe("Array.from 驱动用户 @@iterator", () => {
   it("Array.from(o) 调用 @@iterator 与 next（原生 1 + 3 = 4 次）", () => {
     expect(val(`export function f() { ${USER_ITER} const a = Array.from(o); return n; }`)).toEqual({
       ok: true,
@@ -2887,18 +2887,18 @@ describe("Bug 202：Array.from 驱动用户 @@iterator", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 211: try 块里的 break / continue 不被 catch 体吞掉
+// try 块里的 break / continue 不被 catch 体吞掉
 // ---------------------------------------------------------------------------
-describe("[] Bug 211: try 块里的 break / continue 不被 catch 体吞掉", () => {
+describe("try 块里的 break / continue 不被 catch 体吞掉", () => {
 /**
- * Bug 211 回归（core 运行时）：`try` 块里的 `break` / `continue` **不是异常**——
+ * 回归（core 运行时）：`try` 块里的 `break` / `continue` **不是异常**——
  * catch 体不得吞掉控制流信号。
  *
  * 修复前：循环信号（NudoLoopSignal，Error 子类）能被 catch 接住，catch 体的
  * 逃逸门只重抛 NudoReturn（`$rethrowIfNudoReturn`）⇒ 信号被「吃掉」：
  * catch 体的副作用照样执行、循环还不退出。
- *   `for (let i=0;i<4;i++){ try{ if(i===1) break; s+=i; } catch(e){ s+="c"; } }`
- *   原生 "0"，修复前 "0c23"（catch 体跑了 3 次，循环跑满 4 轮）。
+ * `for (let i=0;i<4;i++){ try{ if(i===1) break; s+=i; } catch(e){ s+="c"; } }`
+ * 原生 "0"，修复前 "0c23"（catch 体跑了 3 次，循环跑满 4 轮）。
  *
  * 修复后：catch 体的取值入口 `$catchVal` 遇控制流信号**重抛** ⇒ catch 体不执行、
  * 信号透传到循环捕获点（原生：break 是控制流完成值，根本到不了 catch 处理器）。
@@ -2924,7 +2924,7 @@ function engine(body: string): unknown {
   return lv.ok ? lv.value : `not-lit:${r.result}`;
 }
 
-describe("Bug 211: try 块里的 break / continue 不被 catch 体吞掉", () => {
+describe("try 块里的 break / continue 不被 catch 体吞掉", () => {
   it("try 里的 break：catch 体不跑、循环退出", () => {
     const body = `let s=""; for(let i=0;i<4;i++){ try{ if(i===1) break; s+=i; }catch(e){ s+="c"; } } return s;`;
     expect(native(body)).toBe("0");
@@ -2983,18 +2983,18 @@ describe("Bug 211: try 块里的 break / continue 不被 catch 体吞掉", () =>
 });
 
 // ---------------------------------------------------------------------------
-// Bug 215：@nudo:invariant 在四种循环形态同口径生效
+// @nudo:invariant 在四种循环形态同口径生效
 // ---------------------------------------------------------------------------
-describe("[] Bug 215：@nudo:invariant 在四种循环形态同口径生效", () => {
+describe("@nudo:invariant 在四种循环形态同口径生效", () => {
 /**
- * Bug 215（族 02 / tmp/bugs/02-core-exec-runtime.md）：@nudo:invariant 在
+ * （族 02 / tmp/bugs/02-core-exec-runtime.md）：@nudo:invariant 在
  * **while / do-while / for-of** 三种循环里被静默丢弃 ⇒ 门禁对**用户自己的
  * 公理本可证明**的函数报红（假红）。
  *
  * 根因：不变式只在**循环 join / 宽化位**实施（issue #176 的设计——用户公理
  * 是循环携带界的唯一通道）。历史上的实施点只有两处：
- *   - control.ts `$for` 的 applyExtJoin → widenLoopJoin（内接 applyInvariantsToPack）
- *   - loop-widen.ts `widenFinal`（抽象预算耗尽路径）
+ * - control.ts `$for` 的 applyExtJoin → widenLoopJoin（内接 applyInvariantsToPack）
+ * - loop-widen.ts `widenFinal`（抽象预算耗尽路径）
  * `$whileSeq`（while / do-while）与 `$forOf`（for-of）的**具体出口**路径
  * （循环条件可判定为假 → 无快照 join → 不经 widenFinal）两条路都不通 ⇒
  * 出口 join 上的绑定包从未被强化 ⇒ 公理无诊断地消失（假红）。
@@ -3065,7 +3065,7 @@ ${directive ? `/**\n * ${directive}\n */` : ""}
 export function f(n) {${body}}
 `;
 
-describe("Bug 215：@nudo:invariant 在四种循环形态同口径生效", () => {
+describe("@nudo:invariant 在四种循环形态同口径生效", () => {
   it.each(FORMS.map((f) => [f.id, f.body] as const))(
     "%s：公理 last >= 0 → 返回契约 ge(0) 证得（无 error）+ invariant-relied 审计",
     (_id, body) => {
@@ -3077,7 +3077,7 @@ describe("Bug 215：@nudo:invariant 在四种循环形态同口径生效", () =>
       expect(relied!.severity).toBe("info");
       expect(relied!.message).toContain("proved via @nudo:invariant last >= 0");
       // 签名面：出口绑定带上了公理界（n ≥ 0）
-      // ⚠ 证据在 `detail` 的 pred 行（`display` 自 Bug 413 起是**人类面口径**
+      // ⚠ 证据在 `detail` 的 pred 行（`display` 自 起是**人类面口径**
       // 的 shape 渲染，不再带 term / pred 注记）
       const sig = r.signatures.find((s) => s.name === "f");
       expect(sig).toBeDefined();
@@ -3089,7 +3089,7 @@ describe("Bug 215：@nudo:invariant 在四种循环形态同口径生效", () =>
     "%s 对照（无公理）：证不出 → 返回义务未证得（负控制：不得被本修复波及）",
     (_id, body) => {
       const r = checkOf(srcOf(body, null), sidecarOpts(SIDECAR));
-      // Bug 1116：无公理时 `last` 是**声明域参数**（值域已知：任意 number）⇒
+      // 无公理时 `last` 是**声明域参数**（值域已知：任意 number）⇒
       // 返回契约 `ge(0)` 不蕴含 ⇒ 契约不成立（存在违约输入）⇒ 判
       // `nudo:constraint-violated`（error）。判 warning 会让门禁空转
       // （warning 不改 exit code）。
@@ -3124,11 +3124,11 @@ describe("Bug 215：@nudo:invariant 在四种循环形态同口径生效", () =>
 });
 
 // ---------------------------------------------------------------------------
-// Bug 216：矛盾公理不得烘进 Abs（ex falso 假绿）
+// 矛盾公理不得烘进 Abs（ex falso 假绿）
 // ---------------------------------------------------------------------------
-describe("[] Bug 216：矛盾公理不得烘进 Abs（ex falso 假绿）", () => {
+describe("矛盾公理不得烘进 Abs（ex falso 假绿）", () => {
 /**
- * Bug 216（族 02 / tmp/bugs/02-core-exec-runtime.md）：@nudo:invariant 把
+ * （族 02 / tmp/bugs/02-core-exec-runtime.md）：@nudo:invariant 把
  * **矛盾谓词**烘进 Abs ⇒ **ex falso**：真正的契约违例被判为「已证明」，
  * 门禁**绿灯**（假绿）。
  *
@@ -3178,7 +3178,7 @@ export function f(n) {${BODY}}
 
 const SIDECAR_CONFLICT = `export const f = fn({ n: number().le(-5) }, number().ge(0).le(1));`;
 
-describe("Bug 216：矛盾公理不得烘进 Abs（ex falso 假绿）", () => {
+describe("矛盾公理不得烘进 Abs（ex falso 假绿）", () => {
   it("矛盾公理（last >= 0 vs 参数契约 n ≤ -5）：门禁红（constraint-violated），不得判绿", () => {
     const r = checkOf(srcOf("@nudo:invariant last >= 0"), sidecarOpts(SIDECAR_CONFLICT));
     // 假绿回归钉：改前此处只有 nudo:invariant-relied info、门禁 exit=0
@@ -3215,7 +3215,7 @@ describe("Bug 216：矛盾公理不得烘进 Abs（ex falso 假绿）", () => {
   });
 });
 
-describe("Bug 216 单元：strengthenLeaf 的相容性检查", () => {
+describe("单元：strengthenLeaf 的相容性检查", () => {
   const packOf = (leaf: Abs_____abs_ts): Abs_____abs_ts =>
     abs({ k: "obj", slots: { last: { value: leaf } } }, undefined, undefined, "path");
 
@@ -3267,10 +3267,10 @@ describe("Bug 216 单元：strengthenLeaf 的相容性检查", () => {
 });
 
 // ---------------------------------------------------------------------------
-// [merged] eval-bug-241-switch-literal-disc-abs-test.test.ts
+// [merged] switch-literal-disc-abs-test
 // ---------------------------------------------------------------------------
-describe("[] [merged] eval-bug-241-switch-literal-disc-abs-test.test.ts", () => {
-// MERGED (topic-related bug pins): eval-bug-241-switch-literal-disc-abs-test.test.ts + eval-bug-241-switch-miss-path-narrowing.test.ts
+describe("switch-literal-disc-abs-test", () => {
+// MERGED (topic-related bug pins): switch-literal-disc-abs-test + switch-miss-path-narrowing
 // Each absorbed file keeps its own describe scope so file-level hooks stay
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 
@@ -3282,25 +3282,25 @@ describe("[] [merged] eval-bug-241-switch-literal-disc-abs-test.test.ts", () => 
 
 
 
-describe("[merged] eval-bug-241-switch-literal-disc-abs-test.test.ts", () => {
+describe("switch-literal-disc-abs-test", () => {
 /**
- * Bug 241 回归（core 运行时）：`$switch` 在「**字面量判别式 + 非字面量 case
+ * 回归（core 运行时）：`$switch` 在「**字面量判别式 + 非字面量 case
  * 测试**」下不得把该臂整条丢弃。
  *
  * 修复前：判别式是字面量（`switch (true)`）时走「严格相等匹配」路径，只有
  * **case 测试本身也是字面量**的臂才可能被比较；`case x > 0:` 这类臂的测试
  * 是抽象值 ⇒ 该臂**永不命中** ⇒ 臂内返回值从返回域/签名里彻底消失：
- *   - 签名谎报：`switch (true) { case x > 0: return 0; default: return 1; }`
- *     的返回域原生是 `0 | 1`，引擎只给 `1`；
- *   - L1 门禁假绿：契约 `return number().gt(0)` 被判「满足」（原生在 x=5 时
- *     返回 0 ⇒ 真实违约）。
+ * - 签名谎报：`switch (true) { case x > 0: return 0; default: return 1; }`
+ * 的返回域原生是 `0 | 1`，引擎只给 `1`；
+ * - L1 门禁假绿：契约 `return number().gt(0)` 被判「满足」（原生在 x=5 时
+ * 返回 0 ⇒ 真实违约）。
  *
  * 修复后：非字面量 case 测试 ⇒ **分叉**（命中该臂 / 不命中继续后续臂与
  * default），两路结果并入返回域 ⇒ 签名诚实 + 违约被报出。
  *
  * 负控制钉住：① 全字面量 case 的 switch 仍精确匹配（不进入分叉）；
  * ② 同语义的 if 写法结论不变；③ 抽象判别式（switch (x)）路径不变；
- * ④ 非字面量 case 测试的**值**求值仍按序惰性（Bug 168 口径）。
+ * ④ 非字面量 case 测试的**值**求值仍按序惰性（口径）。
  */
 
 
@@ -3337,7 +3337,7 @@ function checkSwitch(src: string, file: string) {
   );
 }
 
-describe("Bug 241: 字面量判别式 + 非字面量 case 测试 ⇒ 该臂不得被丢弃", () => {
+describe("字面量判别式 + 非字面量 case 测试 ⇒ 该臂不得被丢弃", () => {
   it("返回域含被丢掉的分支（0 | 1）", () => {
     const src = `export function f(x) { switch (true) { case x > 0: return 0; default: return 1; } }`;
     const d = domain(src, NUMBER_ABS);
@@ -3412,19 +3412,19 @@ describe("Bug 241: 字面量判别式 + 非字面量 case 测试 ⇒ 该臂不�
 });
 });
 
-describe("[merged] eval-bug-241-switch-miss-path-narrowing.test.ts", () => {
+describe("switch-miss-path-narrowing", () => {
 /**
- * Bug 241 回归（第二形态）：**非字面量 case 测试**（`case v === null:`）的
+ * 回归（第二形态）：**非字面量 case 测试**（`case v === null:`）的
  * **miss 路径**未按「该 case 测试不成立」收窄 ⇒ 后续臂（default）里的
  * `v.length` 报 may-throw（L2 假红：原生该路径不抛）。
  *
  * ES 语义（原生）：
  * - `switch (true) { case v === null: …; default: … }`——case 测试是**运行
- *   时求值的表达式**（不是「判别值等于某标签」）：判别值是布尔 true 且测试
- *   是布尔值时，「该臂未命中」⟺「该测试为假」⇒ default 路径上 v **不是**
- *   null（`v.length` 安全）；
+ * 时求值的表达式**（不是「判别值等于某标签」）：判别值是布尔 true 且测试
+ * 是布尔值时，「该臂未命中」⟺「该测试为假」⇒ default 路径上 v **不是**
+ * null（`v.length` 安全）；
  * - 判别值是其它值（false / 数字 / 标识符）时，「未命中」**不**蕴含「测试
- *   为假」⇒ 不产事实（宁缺毋假）。
+ * 为假」⇒ 不产事实（宁缺毋假）。
  *
  * 修复前：miss 路径无收窄 ⇒ default 臂的 `v.length` 报 may-throw（L2 假红）。
  * 修法（transpile/stmt-predicates.ts）：`switchCaseFacts` 为 nullish 比较
@@ -3446,7 +3446,7 @@ function mayThrow(src: string, args: Abs_____abs_ts_1[]): boolean {
   return !isNever(rec.throws);
 }
 
-describe("Bug 241 — $switch 的 miss 路径按 case 测试收窄（非字面量 case 测试）", () => {
+describe("$switch 的 miss 路径按 case 测试收窄（非字面量 case 测试）", () => {
   it("`case v === null:` 的 miss 路径 → default 臂的 v.length 不报 may-throw", () => {
     const src = `export function f(v) {
       switch (true) {
@@ -3539,13 +3539,13 @@ describe("Bug 241 — $switch 的 miss 路径按 case 测试收窄（非字面�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 290: match/exec 结果的可迭代面（原生数组 exotic）
+// match/exec 结果的可迭代面（原生数组 exotic）
 // ---------------------------------------------------------------------------
-describe("[] Bug 290: match/exec 结果的可迭代面（原生数组 exotic）", () => {
+describe("match/exec 结果的可迭代面（原生数组 exotic）", () => {
 /**
- * Bug 290 回归：RegExp `exec` / 非全局 `match` 的结果对象是**数组 exotic**
+ * 回归：RegExp `exec` / 非全局 `match` 的结果对象是**数组 exotic**
  * （原生 IsArray = true，继承 Array.prototype）⇒ 既有**数组方法面**
- * （join / slice / map…，族 01 的 Bug 195 已修），也有**可迭代面**
+ * （join / slice / map…，族 01 的 已修），也有**可迭代面**
  * （spread / for-of / 数组解构）。
  *
  * 修前：结果只是「带下标槽的 obj」⇒ 迭代面按 obj 臂判 **definite 不可
@@ -3553,7 +3553,7 @@ describe("[] Bug 290: match/exec 结果的可迭代面（原生数组 exotic）"
  * TypeError**（原生全部正常返回 ⇒ 假抛 + L1/L2 假红）。
  *
  * 修法（regexp.ts）：匹配结果补「@@iterator 槽（非枚举）+ 下标元素侧表」
- * ——同 Bug 195 的标签模板对象口径（iterabilityKind 判 total、elemsOf 取
+ * ——同 的标签模板对象口径（iterabilityKind 判 total、elemsOf 取
  * 到精确下标序列）；形状仍是 obj（#136 的槽读面依赖它）。
  *
  * 锚定值均为 node 原生实测（见各断言）。
@@ -3566,7 +3566,7 @@ function v(src: string) {
   return litValue___nudojs_core_7(call(src, "f").result);
 }
 
-describe("Bug 290: match/exec 结果的可迭代面（原生数组 exotic）", () => {
+describe("match/exec 结果的可迭代面（原生数组 exotic）", () => {
   it("spread 展开下标序列（node: \"abc,b\"）", () => {
     expect(v(`export function f() { const m = /a(b)c/.exec("abc"); return [...m].join(","); }`)).toEqual({
       ok: true,

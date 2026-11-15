@@ -6,8 +6,8 @@
  * 新契约（2026-11-13）：
  * - 逐出只覆盖**事件里真的变了**的文件（各层缓存键已含依赖内容指纹）；
  * - dependents 仍进分析循环（本测试的 fake runOne 钉住这一点），但语义编辑
- *   会因指纹翻转而重算、inert 编辑（尾部注释/空白）则命中复用（见 core 侧
- *   `load-deps-fp-stable.test.ts`）。
+ * 会因指纹翻转而重算、inert 编辑（尾部注释/空白）则命中复用（见 core 侧
+ * `load-deps-fp-stable.test.ts`）。
  *
  * 这里用「替换 AnalysisSession」观察逐出参数，不依赖真实分析耗时。
  */

@@ -2,7 +2,7 @@
  * ADR 0001 阶段 0 · Evidence 优先级格与 fail-closed 边界（纯单元测试）。
  *
  * 阶段 0 不接产品面：本文件验证 D2 的类型与决议语义本身，不改变任何
- * `check` / `export` / dts 行为。对应 BUG-007 / 014 / 021 / 030 / 008。
+ * `check` / `export` / dts 行为。对应 / 014 / 021 / 030 / 008。
  */
 import { describe, it, expect } from "vitest";
 import { DIAG } from "../diagnostics/diag-codes.ts";

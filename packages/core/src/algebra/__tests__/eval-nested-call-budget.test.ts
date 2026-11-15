@@ -1,5 +1,5 @@
 /**
- * BUG-013 预算共享态：跨导出桥嵌套进入不得 reset 外层深度/cycle 键。
+ * 预算共享态：跨导出桥嵌套进入不得 reset 外层深度/cycle 键。
  *
  * 此前 callTranspiledExportFull 入口 resetEvalCallBudget() 把
  * evalCallDepth / evalActiveCallKeys 清零——导出桥（$call → apply →
@@ -69,7 +69,7 @@ function setupCrossModule(fExport: {
   return { runA, runB };
 }
 
-describe("BUG-013 nested call budget session", () => {
+describe("nested call budget session", () => {
   it("nested export-bridge entry inherits outer depth (does not clear mid-flight)", () => {
     let midState: ReturnType<typeof getEvalCallBudgetState> | null = null;
     const { runA } = setupCrossModule({

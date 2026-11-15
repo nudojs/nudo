@@ -24,7 +24,7 @@ function captureWarnings(): { logger: ReturnType<typeof createLogger>; warnings:
   logger.warn = (msg: string, _opt?: unknown) => {
     warnings.push(msg);
   };
-  // ⚠ **S3 更新（族 30 · S3 · Bug 1002）**：buildEnd 的**汇总行**改走 vite
+  // ⚠ **S3 更新（族 30 · S3 · ）**：buildEnd 的**汇总行**改走 vite
   // logger 的 info 通道（原先走裸 console.log ⇒ 逃出 `build.logLevel` 契约）⇒
   // 这里把 info 通道也接出来（`createLogger("warn")` 默认会静音 info）。
   logger.info = (msg: string, _opt?: unknown) => {
@@ -137,7 +137,7 @@ export const entry = needsPositive;
         expect(msgs).toContain("[nudo]");
         expect(msgs).toMatch(/entry-may-throw/);
 
-        // buildEnd 汇总行（**走 vite logger 的 info 通道** —— S3 / Bug 1002：
+        // buildEnd 汇总行（**走 vite logger 的 info 通道** —— S3 / 
         // 原先走 console.log，会逃出 `build.logLevel` 契约）：
         // entry-may-throw 计入 error 档
         const logged = infos.join("\n");
@@ -174,7 +174,7 @@ export const answer = 42;
         );
 
         expect(warnings.join("\n")).not.toContain("[nudo]");
-        // 汇总行现在走 vite logger 的 info 通道（S3 / Bug 1002）⇒ 干净工程
+        // 汇总行现在走 vite logger 的 info 通道（S3 / ）⇒ 干净工程
         // 既不上 console.log 也不上 info 通道。
         expect(infos.join("\n")).not.toContain("[nudo] Analysis complete");
         expect(summary.mock.calls.map((c) => String(c[0])).join("\n")).not.toContain(

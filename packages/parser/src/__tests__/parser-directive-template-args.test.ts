@@ -1,5 +1,5 @@
 /**
- * Bug 94 —— `@nudo:case` 的**模板字面量**实参被顶层逗号切分器劈开。
+ * `@nudo:case` 的**模板字面量**实参被顶层逗号切分器劈开。
  *
  * 根因：两个字符串感知扫描器（core `format/text-scan.ts` 的
  * `splitTopLevelArgs` / `walkTopLevelChars`）与 core `directive-scan.ts` 的
@@ -24,7 +24,7 @@ function caseWithDiags(source: string) {
   return { cases, diags };
 }
 
-describe("Bug 94 — 反引号是串定界符", () => {
+describe("反引号是串定界符", () => {
   it("splitTopLevelArgs：反引号内逗号 / 括号不当顶层分隔符", () => {
     expect(splitTopLevelArgs("`a,b`, 1")).toEqual(["`a,b`", "1"]);
     expect(splitTopLevelArgs("`a(b`")).toEqual(["`a(b`"]);

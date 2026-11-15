@@ -371,7 +371,7 @@ function f(flag) {
   });
 });
 
-describe("BUG-002: 裸 prim 契约对非 prim 返回（obj/arr/fn）必须 disproved", () => {
+describe("裸 prim 契约对非 prim 返回（obj/arr/fn）必须 disproved", () => {
   it("error: object return ⊭ string()", () => {
     const r = issuesOf(`
 /**
@@ -900,7 +900,7 @@ function compareVersions(a, b) {
   });
 });
 
-describe("Bug 30: array 契约元素级执法（[-1] ⊭ array(number().gt(0))）", () => {
+describe("array 契约元素级执法（[-1] ⊭ array(number().gt(0))）", () => {
   it("error: 元素 pred 违约——精确到下标（negElem/mixedElem）", () => {
     const errs = errorsOf(`
 /**

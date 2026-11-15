@@ -5,8 +5,8 @@
  * 别名（`const u = t`）与语句位都看得见写。修复前两条路径各自实现：
  * - 直接面 `Object.assign(t, s)` → runtimeAssignObject（就地）；
  * - second-class 面 `const g = Object.assign; g(t, s)` / `.call` / `.apply`
- *   → evalObjectMethod("assign") 不可变构造新 Abs ⇒ 别名读不到写
- *   （`u.b` 折 undefined #exact 假精确）。
+ * → evalObjectMethod("assign") 不可变构造新 Abs ⇒ 别名读不到写
+ * （`u.b` 折 undefined #exact 假精确）。
  * 现两条路径都走 descriptor.ts 的 performObjectAssign（就地写、返回原 Abs）。
  */
 import { describe, it, expect } from "vitest";

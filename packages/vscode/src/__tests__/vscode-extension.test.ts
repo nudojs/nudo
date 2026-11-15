@@ -8,11 +8,11 @@ import { join } from "node:path";
 import { externalPackageImports, runBundler, runIsolated, vscodeDir } from "./vscode-bundle-harness.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 905 VS Code 扩展：case 装饰 endChar 必须是行可见长度
+// VS Code 扩展：case 装饰 endChar 必须是行可见长度
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 905 VS Code 扩展：case 装饰 endChar 必须是行可见长度", () => {
+describe("VS Code 扩展：case 装饰 endChar 必须是行可见长度", () => {
 /**
- * Bug 905 —— VS Code 扩展的 case 高亮装饰在 **CRLF 源文件**上把 `endChar`
+ * VS Code 扩展的 case 高亮装饰在 **CRLF 源文件**上把 `endChar`
  * 推到**行可见长度之外 1 列**。
  *
  * 根因（`packages/vscode/src/case-decorations.ts` 的 `computeCaseDecorationSpans`）：
@@ -48,7 +48,7 @@ const EOLS = [
 /** 行可见长度 = 行终止符不属于该行 ⇒ 切行后该行的字符数。 */
 const visibleLines = (src: string): string[] => src.split(/\r\n|\r|\n/);
 
-describe("Bug 905 VS Code 扩展：case 装饰 endChar 必须是行可见长度", () => {
+describe("VS Code 扩展：case 装饰 endChar 必须是行可见长度", () => {
   for (const { label, eol } of EOLS) {
     it(`${label} 源文件上函数档与 case-comment 档的 endChar 都等于该行可见长度`, () => {
       const src = SRC.replace(/\n/g, eol);
@@ -93,21 +93,21 @@ describe("Bug 905 VS Code 扩展：case 装饰 endChar 必须是行可见长度"
 });
 
 // ---------------------------------------------------------------------------
-// Bug 907 —— VSIX 里的 LSP server 必须自包含
+// VSIX 里的 LSP server 必须自包含
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 907 —— VSIX 里的 LSP server 必须自包含", () => {
+describe("VSIX 里的 LSP server 必须自包含", () => {
 /**
- * Bug 907 —— 发布的 VSIX 里 **LSP server 不是自包含的** ⇒ 扩展的语言服务器
+ * 发布的 VSIX 里 **LSP server 不是自包含的** ⇒ 扩展的语言服务器
  * **启动即崩** `ERR_MODULE_NOT_FOUND`；而 CI 的 smoke 门禁在 monorepo 布局里
  * 跑 ⇒ **假绿放行**。
  *
  * 三层叠加（缺一不可）：
- *   1. `packages/lsp/tsup.config.ts` 的 `noExternal` 不含 `@babel/*`
- *      ⇒ `packages/lsp/dist/server.js` 尾部有 **6 条裸 `@babel/*` import**；
- *   2. `packages/vscode/scripts/bundle-server.mjs` 原来**只 `cp` 不重打包**
- *      ⇒ 外部 import 原样进 VSIX；
- *   3. `packages/vscode/.vscodeignore` 排 `node_modules/` +
- *      `vsce package --no-dependencies` ⇒ 外部依赖**确定不在包里**。
+ * 1. `packages/lsp/tsup.config.ts` 的 `noExternal` 不含 `@babel/*`
+ * ⇒ `packages/lsp/dist/server.js` 尾部有 **6 条裸 `@babel/*` import**；
+ * 2. `packages/vscode/scripts/bundle-server.mjs` 原来**只 `cp` 不重打包**
+ * ⇒ 外部 import 原样进 VSIX；
+ * 3. `packages/vscode/.vscodeignore` 排 `node_modules/` +
+ * `vsce package --no-dependencies` ⇒ 外部依赖**确定不在包里**。
  *
  * 修法（**只改 `packages/vscode/scripts/bundle-server.mjs`**，`packages/lsp`
  * 零改动）：对 `packages/lsp/dist/server.js` **再打一次 esbuild bundle**
@@ -116,15 +116,15 @@ describe("[lsp-] Bug 907 —— VSIX 里的 LSP server 必须自包含", () => {
  * 原生 oracle：**VSIX 的实际布局 = 没有 node_modules 的目录** ⇒ 产物在那里
  * 必须能起来。本钉用**假仓库布局**跑**真实**的打包脚本（不依赖任何构建
  * 产物），断言：
- *   1. 产物里**裸包 import = 0**（自包含）；
- *   2. 产物在**没有 node_modules 的目录**里能启动。
+ * 1. 产物里**裸包 import = 0**（自包含）；
+ * 2. 产物在**没有 node_modules 的目录**里能启动。
  */
 
 
 
 
 
-describe("Bug 907 —— VSIX 里的 LSP server 必须自包含", () => {
+describe("VSIX 里的 LSP server 必须自包含", () => {
   const run = runBundler();
 
   it("打包脚本成功产出 server artifact", () => {
@@ -158,11 +158,11 @@ describe("Bug 907 —— VSIX 里的 LSP server 必须自包含", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 999 —— VSIX 里的 LSP server 必须保住 ESM 身份
+// VSIX 里的 LSP server 必须保住 ESM 身份
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 999 —— VSIX 里的 LSP server 必须保住 ESM 身份", () => {
+describe("VSIX 里的 LSP server 必须保住 ESM 身份", () => {
 /**
- * Bug 999 —— 发布的 VSIX 里 **LSP server 是 ESM，但 `packages/vscode/package.json`
+ * 发布的 VSIX 里 **LSP server 是 ESM，但 `packages/vscode/package.json`
  * 没有 `"type": "module"`** ⇒ Node < 22.18（**无模块语法检测**）的扩展宿主上
  * 语言服务器起不来：`SyntaxError: Cannot use import statement outside a module`
  * ⇒ 整个 IDE 侧产品零功能；而 CI **从不测 VSIX** ⇒ **恒绿**。
@@ -195,7 +195,7 @@ const noDetect = process.allowedNodeEnvironmentFlags.has(
   ? ["--no-experimental-detect-module"]
   : [];
 
-describe("Bug 999 —— VSIX 里的 LSP server 必须保住 ESM 身份", () => {
+describe("VSIX 里的 LSP server 必须保住 ESM 身份", () => {
   const run = runBundler();
 
   it("打包脚本成功产出 server artifact", () => {

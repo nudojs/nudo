@@ -1,17 +1,17 @@
 /**
- * 审计 34 · D2：类公开类型的**唯一优先级格**（BUG-007 / 014 / 033）。
+ * 审计 34 · D2：类公开类型的**唯一优先级格**（/ 014 / 033）。
  *
  * 三个 bug 是同一处判据的三种症状：谁决定类字段 / accessor 的公开类型。
  * 现口径（`classFieldType` + `fieldsOf`）：
  *
- *   源码注解（declared） > 源码赋值形态（this.x = <expr>） > brand 观测 > unknown
+ * 源码注解（declared） > 源码赋值形态（this.x = <expr>） > brand 观测 > unknown
  *
- * - BUG-014：注解不再被初始化器抢占（`z: number | null = 1` 不得窄成 number）；
- * - BUG-007：单个内部构造点（`static make(){ return new C() }`）不得把字段
- *   钉死成 `undefined`——那是与构造器签名自相矛盾的 unsound 窄化；
- * - BUG-033：无注解 getter 按返回值观测给类型——**只在恰有一个 return 时**；
- *   多 return（分支可能返回不同类型）保留 `unknown`，取首个会把公开类型
- *   钉得比运行时窄。
+ * - 注解不再被初始化器抢占（`z: number | null = 1` 不得窄成 number）；
+ * - 单个内部构造点（`static make(){ return new C() }`）不得把字段
+ * 钉死成 `undefined`——那是与构造器签名自相矛盾的 unsound 窄化；
+ * - 无注解 getter 按返回值观测给类型——**只在恰有一个 return 时**；
+ * 多 return（分支可能返回不同类型）保留 `unknown`，取首个会把公开类型
+ * 钉得比运行时窄。
  */
 import { describe, it, expect, afterAll } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";

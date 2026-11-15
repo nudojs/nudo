@@ -5,17 +5,17 @@
  * 两处缺陷（同一函数，分别属于「遮蔽不足」与「遮蔽过度」）：
  *
  * - **Leak 1（遮蔽不足 ⇒ 假 ReferenceError / 假 never）**：walk 进入嵌套
- *   函数时只 pushShadow「函数名 + 形参」，**没有**把函数体提升出来的**函数级**
- *   绑定（`var` 声明 + 本层函数声明）算进去 ⇒ 体内 `var a = 1; a = 2` 的写被
- *   记成**外层**自由写 ⇒ 发射 `$copy(a)` 而外层根本没有 `a` ⇒ 运行时
- *   ReferenceError ⇒ 引擎折 `never #exact` + `throws ReferenceError #exact`
- *   （原生 `1`、不抛）。if-fork 与 switch pack 共用同一 helper，两条路径同病。
+ * 函数时只 pushShadow「函数名 + 形参」，**没有**把函数体提升出来的**函数级**
+ * 绑定（`var` 声明 + 本层函数声明）算进去 ⇒ 体内 `var a = 1; a = 2` 的写被
+ * 记成**外层**自由写 ⇒ 发射 `$copy(a)` 而外层根本没有 `a` ⇒ 运行时
+ * ReferenceError ⇒ 引擎折 `never #exact` + `throws ReferenceError #exact`
+ * （原生 `1`、不抛）。if-fork 与 switch pack 共用同一 helper，两条路径同病。
  *
  * - **Leak 2（遮蔽过度 ⇒ 臂不再隔离）**：批内遮蔽名用 `collectLexicalDeclNames`
- *   递归收集后做成**扁平并集**，嵌套块里的 `let a` 因此也遮蔽了**兄弟语句**
- *   里对外层 `a` 的合法写 ⇒ `recvSet` 为空 ⇒ 外层 `a` 没有 switch 级快照 /
- *   join。修法：按**语句表本层**判遮蔽（嵌套块由 walk 自己的 BlockStatement
- *   分支负责）。
+ * 递归收集后做成**扁平并集**，嵌套块里的 `let a` 因此也遮蔽了**兄弟语句**
+ * 里对外层 `a` 的合法写 ⇒ `recvSet` 为空 ⇒ 外层 `a` 没有 switch 级快照 /
+ * join。修法：按**语句表本层**判遮蔽（嵌套块由 walk 自己的 BlockStatement
+ * 分支负责）。
  *
  * 断言两层证据：① helper 的返回集；② 发射文本（快照行存在与否）+ 引擎值。
  */

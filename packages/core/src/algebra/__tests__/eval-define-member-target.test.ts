@@ -1,5 +1,5 @@
 /**
- * Bug 87 回归：语句位 `Object.defineProperty/defineProperties(o.p, …)` 的
+ * 回归：语句位 `Object.defineProperty/defineProperties(o.p, …)` 的
  * member 目标写回。emitStmtWritebackRebinds 的 defineProperty 臂原本只认
  * Identifier 第一实参——member 目标（o.p / a[0] / C.prototype / o.p.q）的
  * 描述符安装在 `$invoke` 返回的新容器上但没有写回根绑定，后续 `o.p.m`
@@ -18,7 +18,7 @@ function expectVal(body: string, expected: unknown) {
   expect(litValue(rec.result), `value for: ${body}`).toEqual({ ok: true, value: expected });
 }
 
-describe("Object.defineProperty/defineProperties member-target writeback (Bug 87)", () => {
+describe("Object.defineProperty/defineProperties member-target writeback ()", () => {
   it("member 目标 o.p 写回：data 描述符可读", () => {
     // node: const o = { p: {} }; Object.defineProperty(o.p, "m", { value: 4 }); o.p.m → 4
     expectVal(`const o = { p: {} }; Object.defineProperty(o.p, "m", { value: 4 }); return o.p.m;`, 4);

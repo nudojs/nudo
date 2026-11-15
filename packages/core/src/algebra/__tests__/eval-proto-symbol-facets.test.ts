@@ -1,30 +1,30 @@
 /**
- * 成员读/原型面 facets 批（tmp/bug-report.md Bug 92/93/102/103/113/114）：
+ * 成员读/原型面 facets 批（tmp/bug-report.md ）：
  *
- * - Bug 92：非构造命名空间（Math/JSON/Reflect/Intl——宿主值 typeof
- *   "object"）原生无 prototype：成员读折 exact undefined（此前凭空捏
- *   protoBrandAbs → typeof "object" wrong-exact、`Math.prototype.x` 假
- *   不抛）；Function.prototype 原生 callable——折 fn 面（typeof
- *   "function"、调用返 undefined、自身 .prototype undefined）。
- * - Bug 93：generator 函数「不可构造但有 prototype」两属性分离：声明
- *   （宿主分支 isHostGeneratorFn 源形判定）与表达式（$fnVal kind 标记）
- *   均折可辨 brand（typeof "object"、`g.prototype.constructor === g`
- *   原生 false——constructor 不回指 g、getPrototypeOf(g.prototype) ≠
- *   Object.prototype）；async/箭头 controls 保持 exact undefined。
- * - Bug 102：TA 字符串形下标 v["1"] ≡ v[1]（canonicalArrayIndex 归一 +
- *   元素域；长度槽字面量时精确：在界元素域 / 越界 undef）——此前闭 obj
- *   槽 miss 折 exact undefined。
- * - Bug 103：内建 brand 的 getter-only 原型访问器（$in presence 表
- *   BUILTIN_BRAND_ACCESSORS）strict 写原生 TypeError——此前落新自有槽
- *   假写成功 + 假读回。
- * - Bug 113：`new <函数声明>()` 实例沿 protoBrandAbs(clsName) 链解析
- *   f.prototype 写落槽（registerEvalClass 链键）；in 判定补原型数据槽
- *   presence（brandHasProtoMember → chainProtoSlotOf，class 实例同修）。
- * - Bug 114：well-known symbol 计算键全表投影（定义侧 keyOf 句法形
- *   `Symbol.X` → "@@X" 静态名 + $class 值面反查表；读侧既有投影）；
- *   内建构造器 @@species 静态读折 fn 面（BUILTIN_SPECIES_CTORS——
- *   Array/Promise/RegExp/Map/Set/AB/SAB 自有 + TA 全家自 %TypedArray%
- *   继承；Date/DataView/Object 原生 undefined）。
+ * - 非构造命名空间（Math/JSON/Reflect/Intl——宿主值 typeof
+ * "object"）原生无 prototype：成员读折 exact undefined（此前凭空捏
+ * protoBrandAbs → typeof "object" wrong-exact、`Math.prototype.x` 假
+ * 不抛）；Function.prototype 原生 callable——折 fn 面（typeof
+ * "function"、调用返 undefined、自身 .prototype undefined）。
+ * - generator 函数「不可构造但有 prototype」两属性分离：声明
+ * （宿主分支 isHostGeneratorFn 源形判定）与表达式（$fnVal kind 标记）
+ * 均折可辨 brand（typeof "object"、`g.prototype.constructor === g`
+ * 原生 false——constructor 不回指 g、getPrototypeOf(g.prototype) ≠
+ * Object.prototype）；async/箭头 controls 保持 exact undefined。
+ * - TA 字符串形下标 v["1"] ≡ v[1]（canonicalArrayIndex 归一 +
+ * 元素域；长度槽字面量时精确：在界元素域 / 越界 undef）——此前闭 obj
+ * 槽 miss 折 exact undefined。
+ * - 内建 brand 的 getter-only 原型访问器（$in presence 表
+ * BUILTIN_BRAND_ACCESSORS）strict 写原生 TypeError——此前落新自有槽
+ * 假写成功 + 假读回。
+ * - `new <函数声明>()` 实例沿 protoBrandAbs(clsName) 链解析
+ * f.prototype 写落槽（registerEvalClass 链键）；in 判定补原型数据槽
+ * presence（brandHasProtoMember → chainProtoSlotOf，class 实例同修）。
+ * - well-known symbol 计算键全表投影（定义侧 keyOf 句法形
+ * `Symbol.X` → "@@X" 静态名 + $class 值面反查表；读侧既有投影）；
+ * 内建构造器 @@species 静态读折 fn 面（BUILTIN_SPECIES_CTORS——
+ * Array/Promise/RegExp/Map/Set/AB/SAB 自有 + TA 全家自 %TypedArray%
+ * 继承；Date/DataView/Object 原生 undefined）。
  * 原生 ground truth 均为 node 实测。
  */
 import { describe, it, expect } from "vitest";
@@ -50,7 +50,7 @@ function expectThrows(src: string, name: string) {
   expect(got, `throws ${name} for: ${src}`).toBe(name);
 }
 
-describe("Bug 92 — 非构造命名空间无 prototype；Function.prototype fn 面", () => {
+describe("非构造命名空间无 prototype；Function.prototype fn 面", () => {
   it("Math/JSON/Reflect/Intl 的 .prototype 折 exact undefined", () => {
     expectExact(`export function f() { return typeof Math.prototype; }`, "undefined");
     expectExact(`export function f() { return typeof JSON.prototype; }`, "undefined");
@@ -83,7 +83,7 @@ describe("Bug 92 — 非构造命名空间无 prototype；Function.prototype fn 
   });
 });
 
-describe("Bug 93 — generator 函数有 prototype（声明与表达式）；async/箭头无", () => {
+describe("generator 函数有 prototype（声明与表达式）；async/箭头无", () => {
   it("声明：typeof 折 \"object\"、expando 写读、constructor/getPrototypeOf 不恒等", () => {
     expectExact(`export function f() { function* d() {} return typeof d.prototype; }`, "object");
     expectExact(
@@ -136,7 +136,7 @@ describe("Bug 93 — generator 函数有 prototype（声明与表达式）；asy
   });
 });
 
-describe("Bug 102 — TA 字符串形下标与数字形同域（长度字面量时精确）", () => {
+describe("TA 字符串形下标与数字形同域（长度字面量时精确）", () => {
   it("在界：折精确元素域（BigInt 家族为 bigint）", () => {
     expectExact(`export function f() { const v = new Uint8Array(3); return typeof v["1"]; }`, "number");
     expectExact(`export function f() { const v = new Float64Array(2); return typeof v["0"]; }`, "number");
@@ -170,7 +170,7 @@ describe("Bug 102 — TA 字符串形下标与数字形同域（长度字面量�
   });
 });
 
-describe("Bug 103 — 内建 brand getter-only 访问器写定抛 TypeError", () => {
+describe("内建 brand getter-only 访问器写定抛 TypeError", () => {
   it("TA/DataView/Map/RegExp 的访问器键写", () => {
     expectThrows(`export function f() { const v = new Uint8Array(3); v.length = 4; return v; }`, "TypeError");
     expectThrows(
@@ -201,7 +201,7 @@ describe("Bug 103 — 内建 brand getter-only 访问器写定抛 TypeError", ()
   });
 });
 
-describe("Bug 113 — new <函数声明>() 沿 protoBrandAbs 链解析 f.prototype", () => {
+describe("new <函数声明>() 沿 protoBrandAbs 链解析 f.prototype", () => {
   it("实例缺槽读命中 f.prototype 写落槽", () => {
     expectExact(
       `export function f() { function g1() {} g1.prototype.zz = 5; return new g1().zz; }`,
@@ -249,10 +249,10 @@ describe("Bug 113 — new <函数声明>() 沿 protoBrandAbs 链解析 f.prototy
   });
 });
 
-describe("Bug 114 — well-known symbol 键全表投影 + 内建 @@species", () => {
+describe("well-known symbol 键全表投影 + 内建 @@species", () => {
   it("类成员：species/iterator/for 键读写闭合", () => {
     // 访问器形态：getter 体 `return Array` 折 sound 抽象（typeof 非 exact
-    // "function"）——断言 Bug 114 的 wrong-exact "undefined" 消除
+    // "function"）——断言 的 wrong-exact "undefined" 消除
     expectNotExact(
       `export function f() { class A { static get [Symbol.species]() { return Array; } } return typeof A[Symbol.species]; }`,
       "undefined",

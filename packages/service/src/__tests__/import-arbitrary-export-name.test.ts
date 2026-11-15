@@ -1,5 +1,5 @@
 /**
- * 任意模块导出名 import 回归（报告 Bug 177）。
+ * 任意模块导出名 import 回归（报告 ）。
  *
  * ES2022 允许 `import { "a-b" as x } from "./dep.js"`（任意模块导出名）。
  * 转译器把导出名渲染成 `[object Object]`（`String(node)` 走

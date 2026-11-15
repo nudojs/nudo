@@ -1,11 +1,11 @@
 // 文档 ↔ 产品面的一致性门禁（docs-as-code）：
 // 1. 源码里每个 `code: "nudo:*"` 诊断码都在诊断术语表（en + zh）有显式锚点
-//    —— CLI 的「诊断 → 文档深链」依赖这条规则（anchor = code.replaceAll(":","-")）。
+// —— CLI 的「诊断 → 文档深链」依赖这条规则（anchor = code.replaceAll(":","-")）。
 // 2. 术语表每个 nudo:* 标题都带显式 {#…} 锚点，且 id 符合上述规则。
 // 3. zh 文档页集合 == en 文档页集合（页面级 i18n 对齐）。
 // 4. sidebars.ts 的每个 category label 在 zh current.json 有翻译。
 // 5. docusaurus.config.ts 的 navbar/footer label、footer title 都在 zh navbar.json / footer.json 有翻译；
-//    footer.json 不得残留 config 里已不存在的 stale key。
+// footer.json 不得残留 config 里已不存在的 stale key。
 // 6. en 文档（白名单除外）不得残留 CJK —— en 是源语言，zh 走 i18n 镜像。
 // 7. harvest 不是产品动词：白名单外 en 页不得出现 `nudo harvest` 命令形态或 Primary verbs 列出 harvest。
 // 8. js/javascript 围栏 meta 仅允许 空 / verify / verify-sidecar / noplayground（en + zh）。
@@ -14,20 +14,20 @@
 // 11. 相对 markdown 链接（](./x) / ](../x)）必须带 .md 扩展名（en + zh；围栏内不扫描，允许 #anchor）。
 // 12. en/zh 博客帖文件名集合一致。
 // 13. sidebar 里每个 doc id（字符串项）的 en 文件与 zh 镜像都必须存在（规则 9 的通用化；
-//     硬编码 performance/hof-relations 哨兵保留，本规则是其超集）。
+// 硬编码 performance/hof-relations 哨兵保留，本规则是其超集）。
 // 14. 手写文档页（排除生成物 releases*/versioning/api）zh 与 en 结构新鲜：``` 围栏行数一致，
-//     围栏外 http(s) 外链 URL 集合一致（zh 漏译段落/陈旧外链会被抓住；allowlist 见注释）。
+// 围栏外 http(s) 外链 URL 集合一致（zh 漏译段落/陈旧外链会被抓住；allowlist 见注释）。
 // 15. en 文档禁止站内绝对链接（](/docs/… / ](/blog/… 形态；https:// 外链不管）——统一相对 .md 路径。
 // 16. guides/examples.md 的派生表（目录集合 + Expected exit）必须与 docs/examples/README.md
-//     的命令矩阵一致（矩阵才是 verify:examples 的真值）。
+// 的命令矩阵一致（矩阵才是 verify:examples 的真值）。
 // 17. 仓库 docs/design/*.md 每篇都必须在 design/notes.md 索引页被登记（且链接指向真实文件）。
 // 18. static/llms.txt 的索引段条目必须是 `- [Title](url): summary`，Title 与页面 H1 一致 —— 裸 URL
-//     只能告诉 agent「有哪些页」，不能告诉它「该读哪页」。
+// 只能告诉 agent「有哪些页」，不能告诉它「该读哪页」。
 // 19. 诊断术语表的反向对账：文档里的每个 `nudo:*` 码必须真的可发射（详见文件末尾规则 19 段）。
 // 20. `nudo:fork-truncated` 的严重度在文档面处处 = info（详见文件末尾规则 20 段）。
 // 21. zh 镜像的**机器面**与 en 一致：输出块（```text / ```json）形状、CLI 机器输出行
-//     （诊断计数 / 诊断头 / case 见证）、标识符类关键行（配置键 / 诊断码 / 字面量 / 路径）。
-//     规则 14 只比围栏行数与外链集合 ⇒ zh 抄旧 CLI 输出全程静默；这里补上那道闸。
+// （诊断计数 / 诊断头 / case 见证）、标识符类关键行（配置键 / 诊断码 / 字面量 / 路径）。
+// 规则 14 只比围栏行数与外链集合 ⇒ zh 抄旧 CLI 输出全程静默；这里补上那道闸。
 import { describe, it, expect } from "vitest";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, join, relative } from "node:path";
@@ -125,11 +125,11 @@ const ZH_STRUCT_ALLOWLIST: Record<string, Array<"fences" | "urls">> = {
 // 规则 14 只比「围栏行数」与「外链集合」：zh 把 CLI 输出块抄旧了也照样绿灯 ——
 // 诊断计数少一档、漏抄 `[INFO L1/L5]` 行、case 见证值停在旧版，CI 全程看不见。
 // 这里把几类**语言无关**的面钉住（散文仍由人翻译，不在此列）：
-//   blocks  —— 输出块（```text / ```json 等）的块数与每块行数
-//   machine —— CLI 机器输出行（摘要计数 / 诊断头 / case 行 / debug 见证 / 通过标记）
-//   tokens  —— 标识符类 inline code span（诊断码 / 环境变量 / 点分配置键 / 引号字面量 / 路径）
-//   rows    —— 表格行内的标识符类 inline code span（逐行对齐，行序即语义）
-//   paras   —— 散文段落内的标识符类 inline code span（逐段对齐，段落序即语义）
+// blocks —— 输出块（```text / ```json 等）的块数与每块行数
+// machine —— CLI 机器输出行（摘要计数 / 诊断头 / case 行 / debug 见证 / 通过标记）
+// tokens —— 标识符类 inline code span（诊断码 / 环境变量 / 点分配置键 / 引号字面量 / 路径）
+// rows —— 表格行内的标识符类 inline code span（逐行对齐，行序即语义）
+// paras —— 散文段落内的标识符类 inline code span（逐段对齐，段落序即语义）
 // ---------------------------------------------------------------------------
 // 规则 21 allowlist：已知且已复核的 zh/en 机器面差异（须带理由）。
 // 2026-10 逐条复核后：17 条 waiver 里 15 条判为**真实漏译**并已补齐（条目已删），
@@ -251,10 +251,10 @@ function srcFiles(): string[] {
 }
 
 // 双源（P3-7 诊断码注册表落地后不得丢强制力）：
-//   1. 注册表值 —— @nudojs/core 的 DIAG 是生产面 `nudo:*` 诊断码的唯一真理源
-//      （生产 src 的 code 赋值/查找表/相等比较已改用 DIAG.*，字面量扫描面收缩）；
-//   2. src 残留字面量扫描 —— 兜住注册表外的 `code: "nudo:*"` 字面量
-//      （新码漏进注册表直接写字面量时仍被强制）。
+// 1. 注册表值 —— @nudojs/core 的 DIAG 是生产面 `nudo:*` 诊断码的唯一真理源
+// （生产 src 的 code 赋值/查找表/相等比较已改用 DIAG.*，字面量扫描面收缩）；
+// 2. src 残留字面量扫描 —— 兜住注册表外的 `code: "nudo:*"` 字面量
+// （新码漏进注册表直接写字面量时仍被强制）。
 function emittedCodes(): Set<string> {
   const codes = new Set<string>(Object.values(DIAG));
   for (const f of srcFiles()) {
@@ -1085,15 +1085,15 @@ describe("examples guide table ↔ docs/examples matrix (rule 16)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 规则 19（族 32 / Bug 908）：诊断术语表的**反向**对账 —— 文档里的每个码必须可发射。
+// 规则 19（族 32 / ）：诊断术语表的**反向**对账 —— 文档里的每个码必须可发射。
 // 既有断言只做单向（「可发射 ⇒ 有文档锚点」），方向缺一半 ⇒ 只写文档、不写实现的码
-// 会变成永久幻影（Bug 908 = `nudo:eval-error`：DIAG 注册表无此项、全仓无发射点）。
+// 会变成永久幻影（= `nudo:eval-error`：DIAG 注册表无此项、全仓无发射点）。
 // ---------------------------------------------------------------------------
 
 // 「可发射码」全集 = 既有 emittedCodes()（DIAG 注册表 ∪ src 里 `code: "nudo:…"` 字面量）
-//   ∪ 补充扫描 `code: "nudo-…"`（**无冒号**形态的真实码 —— 例如 `nudo-unreachable`
-//     真发射于 packages/service/src/analyzer-orchestrate-uncached-modules.ts，
-//     但 emittedCodes() 的冒号字面量正则匹配不到它）。
+// ∪ 补充扫描 `code: "nudo-…"`（**无冒号**形态的真实码 —— 例如 `nudo-unreachable`
+// 真发射于 packages/service/src/analyzer-orchestrate-uncached-modules.ts，
+// 但 emittedCodes() 的冒号字面量正则匹配不到它）。
 // emittedCodes() 本身语义不动（既有断言依赖它）；这里只新增一个更宽的辅助函数。
 function emittableCodes(): Set<string> {
   const codes = new Set(emittedCodes());
@@ -1125,7 +1125,7 @@ describe("glossary headings ⇔ emittable codes (rule 19, reverse direction)", (
   });
 
   // 术语表**标题**只是码出现的一个位置：指南 / 参考页 / api 页里的正文引用
-  // （表格里的码、清单里的码）同样会变成永久幻影（Bug 908 = `nudo:eval-error`
+  // （表格里的码、清单里的码）同样会变成永久幻影（= `nudo:eval-error`
   // 最初就写在术语表标题里，但同形态的漏抄可以出现在任何一页）。
   // 这里把反向对账扩到**全部手写页**（生成页 releases*/versioning 不入列）。
   it("every nudo:* code cited on a hand-written doc page is emittable (en + zh)", () => {
@@ -1153,7 +1153,7 @@ describe("glossary headings ⇔ emittable codes (rule 19, reverse direction)", (
 });
 
 // ---------------------------------------------------------------------------
-// 规则 20（族 32 / Bug 909）：`nudo:fork-truncated` 的严重度在文档面被手抄了 9 遍，
+// 规则 20（族 32 / ）：`nudo:fork-truncated` 的严重度在文档面被手抄了 9 遍，
 // 没有一致性校验 ⇒ 实现（core 写死 severity: "info"，仓库自带回归测试
 // packages/core/src/algebra/__tests__/check-fork-truncated.test.ts 断言 info）
 // 与文档之间会漂移。此处钉住：9 处严重度陈述必须全部 = info。

@@ -1,5 +1,5 @@
 /**
- * BUG-013 promise 微队列：模块级 then 排队不得窜到后续文件；队列有上限。
+ * promise 微队列：模块级 then 排队不得窜到后续文件；队列有上限。
  *
  * 此前 promiseMicros 全局队列只在具名调用出口 drain——模块求值
  * （runTranspiled / tryRunEval）排队的 then/catch 回调会滞留到下一个任意
@@ -26,7 +26,7 @@ afterEach(() => {
   setAbsTruncationCollector(null);
 });
 
-describe("BUG-013 promise micro queue", () => {
+describe("promise micro queue", () => {
   it("module-level Promise.then is drained at runTranspiled exit (does not leak to the next file)", () => {
     // 文件 A：只求值、不做具名调用——then 回调必须在 A 的求值出口排空
     const srcA = `export const p = Promise.resolve(1).then((x) => { return x + 1; });`;

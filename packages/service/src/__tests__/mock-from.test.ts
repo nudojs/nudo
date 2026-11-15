@@ -386,7 +386,7 @@ function f() {
   });
 });
 
-describe("from-mock bridge preserves throws channel (FIX-D7 / BUG-006)", () => {
+describe("from-mock bridge preserves throws channel (FIX-D7 / )", () => {
   it("mock fn that always throws surfaces throws non-never in caller", () => {
     const dir = tmpProject({
       "mocks/boom.js": `export function boomStub() { throw new TypeError("mock-boom"); }\n`,

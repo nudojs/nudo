@@ -1,23 +1,23 @@
 /**
- * R1 生成器精度（Bug 52/53/54 修复留下的两处 sound-but-imprecise 残差）：
+ * R1 生成器精度（ 修复留下的两处 sound-but-imprecise 残差）：
  *
  * - R1a（.throw-into-catch done 域）：`it.throw(e)` 挂在 try/catch 内的
- *   yield 上时，wave-1 分级把 done 恒并成 boolean。事实上 catch 结局可以
- *   静态分类：transpile 侧 finalizerBits 同口径标注 catch 事实位
- *   （YIELD_CATCH_RETURNS/YIELDS/RETHROWS，$yield/$yieldStar 第二实参
- *   扩展位）+ 运行时收集序列——catch 无 yield、重抛不被外层 catch 二次
- *   吸收、挂起点后无剩余收集 yield ⇒ 吸收必完成生成器（catch return /
- *   fallthrough 到体末 / 重抛→may-throw 已记），done 折 true（native）。
- *   值域保持 unknown（catch 体 eager 收集期未执行，return 表达式不可判）。
+ * yield 上时，wave-1 分级把 done 恒并成 boolean。事实上 catch 结局可以
+ * 静态分类：transpile 侧 finalizerBits 同口径标注 catch 事实位
+ * （YIELD_CATCH_RETURNS/YIELDS/RETHROWS，$yield/$yieldStar 第二实参
+ * 扩展位）+ 运行时收集序列——catch 无 yield、重抛不被外层 catch 二次
+ * 吸收、挂起点后无剩余收集 yield ⇒ 吸收必完成生成器（catch return /
+ * fallthrough 到体末 / 重抛→may-throw 已记），done 折 true（native）。
+ * 值域保持 unknown（catch 体 eager 收集期未执行，return 表达式不可判）。
  *
- * - R1b（>8-yield spread widening）：`[...g()]` 此前把 Bug 53 保留的完整
- *   收集序列（ys.els）经 tupleOrWiden 的 TUPLE_LITERAL_CAP 又降回 widened
- *   arr（单代表元素域），`[...g()].join("")` 丢成抽象 string。修复：
- *   makeGenObject 对**线性收集**（非路径敏感）的 drain 视图注册 exact 位；
- *   消费端（spread $concat / Array.from / 解构 rest / yield* lengthKnown）
- *   读权威列表重组 exact 元组，越过 cap（仅 > TUPLE_MATERIALIZE_CAP 退
- *   arr join 保 sound）。路径敏感（fork 拼接）序列不可 exact——保持 widened
- *   （拼接序列不是 native 序列，禁 wrong-definite）。
+ * - R1b（>8-yield spread widening）：`[...g()]` 此前把 保留的完整
+ * 收集序列（ys.els）经 tupleOrWiden 的 TUPLE_LITERAL_CAP 又降回 widened
+ * arr（单代表元素域），`[...g()].join("")` 丢成抽象 string。修复：
+ * makeGenObject 对**线性收集**（非路径敏感）的 drain 视图注册 exact 位；
+ * 消费端（spread $concat / Array.from / 解构 rest / yield* lengthKnown）
+ * 读权威列表重组 exact 元组，越过 cap（仅 > TUPLE_MATERIALIZE_CAP 退
+ * arr join 保 sound）。路径敏感（fork 拼接）序列不可 exact——保持 widened
+ * （拼接序列不是 native 序列，禁 wrong-definite）。
  */
 import {describe, it, expect} from "vitest";
 import {litValue} from "@nudojs/core";
@@ -26,7 +26,7 @@ import {anyAbs} from "../abs.ts";
 
 const lv = (src: string): ReturnType<typeof litValue> => litValue(call(src, "f").result);
 
-describe("R1a: .throw-into-catch done 域静态分类", () => {
+describe("R1a。throw-into-catch done 域静态分类", () => {
   it("catch 含 return、无剩余 yield：done 折 true（native true）", () => {
     expect(lv(`export function f(){
       function* h(){ try { yield 1; } catch (e) { return "caught"; } }

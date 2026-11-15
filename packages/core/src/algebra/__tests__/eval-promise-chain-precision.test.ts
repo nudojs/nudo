@@ -3,12 +3,12 @@
  * state 未知）× catch/then/finally。
  *
  * - R3a：确定 fulfilled 接收者的 .catch 回调原生死代码——值原样透传
- *   （此前把 h(unknown reason) 并进值域：promise<1|2> 假臂）。
+ * （此前把 h(unknown reason) 并进值域：promise<1|2> 假臂）。
  * - R3b：确定 fulfilled + effectFree∧closed 回调 → 同步映射 promise<h(v)>
- *   （await p.then(h) 不再塌 unknown）。副作用/读外层态回调保持微任务路径
- *   （同步窗口副作用序不可破——closed/effectFree 双 facet 是同步执行门）。
+ * （await p.then(h) 不再塌 unknown）。副作用/读外层态回调保持微任务路径
+ * （同步窗口副作用序不可破——closed/effectFree 双 facet 是同步执行门）。
  * - 混合态控制：fork（resolve|reject 双臂）/ state 未知（any 实参 →
- *   unsettled）保持 sound union。
+ * unsettled）保持 sound union。
  */
 import { describe, it, expect } from "vitest";
 import { formatAbs, anyAbs } from "@nudojs/core";
@@ -125,7 +125,7 @@ describe("R3b：确定 fulfilled 的 .then 同步映射（effectFree∧closed �
        export function f() { const q = Promise.resolve(5).then((v) => v + n); n = 10; return q; }`,
     );
     expect(fmt(r.result)).toBe("promise<15>");
-    // await 变体（Bug 201 后）：async 体的 await 是**真挂起点**——回调在
+    // await 变体（后）：async 体的 await 是**真挂起点**——回调在
     // 微任务里跑（原生口径），引擎在续体里**真**算出 5 + 10 = 15 ⇒
     // promise<15>。改前 async 体同步跑完、await 塌 unknown（假降级：
     // 引擎从未真的算出 15）。断言由 unknown 收紧为 15（加强，非弱化）。
@@ -143,7 +143,7 @@ describe("R3b：确定 fulfilled 的 .then 同步映射（effectFree∧closed �
        async function g() { return await Promise.resolve(1).then((v) => { x = 9; return v; }); }
        export function f() { const r = g(); return x; }`,
     );
-    // 原生 f 同步返回 0（回调微任务后跑）；Bug 201 后 async 体的 await 是
+    // 原生 f 同步返回 0（回调微任务后跑）；后 async 体的 await 是
     // 真挂起点 ⇒ 回调在续体（微任务）里跑 ⇒ 同步段仍读到 0
     const { result } = x;
     const lv = result as { term?: { op?: string; value?: unknown } };

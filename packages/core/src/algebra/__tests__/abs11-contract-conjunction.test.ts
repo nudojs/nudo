@@ -3,10 +3,10 @@
  *
  * 覆盖：
  * - `and()`（andC）的结构合取：shape∧shape 字段级、array∧array 元素级、
- *   union∧union 成员交叉、fn∧fn 参数/返回位；矛盾形态显式 throw（conflict）；
+ * union∧union 成员交叉、fn∧fn 参数/返回位；矛盾形态显式 throw（conflict）；
  * - 合取不得静默丢字段 / 丢长度界（missing 字段 = 并集；单侧谓词并入）；
  * - dts 投影层「契约 × HOF 关系」合取：契约覆盖位绑定 HOF α，未覆盖位与
- *   返回位保留 β 链接（写契约不再退化成 unknown）。
+ * 返回位保留 β 链接（写契约不再退化成 unknown）。
  *
  * 说明：判别式穷尽性 warning 未在本批实现（避免高误报率的启发式；
  * 零误报优先，留待后续批次）。

@@ -1,5 +1,5 @@
 /**
- * Bug 725 —— VS Code 扩展**从不注册 `nudo.trace` 命令** ⇒ 观察透镜
+ * VS Code 扩展**从不注册 `nudo.trace` 命令** ⇒ 观察透镜
  * （`entry@` / `call@` CodeLens）在 IDE 里是**死链**（点了报
  * 「command 'nudo.trace' not found」）。
  *
@@ -10,18 +10,18 @@
  * 原生 oracle：CodeLens 的 `command.command` 是**客户端命令名**（由编辑器
  * 解析并派发）⇒ 该命令名必须**被某个注册面接住**。
  *
- * ⚠ Bug 972 之后接住的方式变了（**同批改**）：
- *   - 服务端在 `initialize` 的 `executeCommandProvider.commands` 里广告了
- *     `nudo.trace` ⇒ `vscode-languageclient` 会**自动**把它注册成 VS Code
- *     命令 ⇒ 扩展**再**用 `commands.registerCommand` 注册同名 id 会抛
- *     `command '<id>' already exists`（客户端初始化期抛 ⇒ language client
- *     起不来）。
- *   - ⇒ 扩展不再注册同名 id，改由 `middleware.executeCommand` 接管
- *     （`NUDO_CLIENT_COMMAND_IDS` / `NUDO_CLIENT_COMMAND_HANDLERS`）。
+ * ⚠ 之后接住的方式变了（**同批改**）：
+ * - 服务端在 `initialize` 的 `executeCommandProvider.commands` 里广告了
+ * `nudo.trace` ⇒ `vscode-languageclient` 会**自动**把它注册成 VS Code
+ * 命令 ⇒ 扩展**再**用 `commands.registerCommand` 注册同名 id 会抛
+ * `command '<id>' already exists`（客户端初始化期抛 ⇒ language client
+ * 起不来）。
+ * - ⇒ 扩展不再注册同名 id，改由 `middleware.executeCommand` 接管
+ * （`NUDO_CLIENT_COMMAND_IDS` / `NUDO_CLIENT_COMMAND_HANDLERS`）。
  *
  * ⇒ 不变量从「CodeLens 名 ⊆ 扩展注册名单」改成
- *   「CodeLens 名 ∈ 扩展注册名单 ∪ **服务端广告名单**」，
- *   并新增「**扩展注册名 ∩ 服务端广告名 = ∅**」。
+ * 「CodeLens 名 ∈ 扩展注册名单 ∪ **服务端广告名单**」，
+ * 并新增「**扩展注册名 ∩ 服务端广告名 = ∅**」。
  */
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
@@ -83,7 +83,7 @@ const serverAdvertised = [
   ).matchAll(/"([^"]+)"/g),
 ].map((m) => m[1]!);
 
-describe("Bug 725 VS Code 扩展：nudo.trace 命令必须被接住（观察透镜不是死链）", () => {
+describe("VS Code 扩展：nudo.trace 命令必须被接住（观察透镜不是死链）", () => {
   it("扩展接管了 nudo.trace（972 后由 middleware 拦截，不再重复注册）", () => {
     expect(middlewareHandled).toContain("nudo.trace");
     expect(registered).not.toContain("nudo.trace");

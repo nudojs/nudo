@@ -1,5 +1,5 @@
 /**
- * BUG-023：export 路径 / IO 错误面（PathError）。
+ * export 路径 / IO 错误面（PathError）。
  * export 是唯一完全绕开 PathError 面的主命令——
  * 输入不存在 → ENOENT 原文带绝对路径进 CI 日志；
  * --out IO 失败同样裸抛。
@@ -16,7 +16,7 @@ const CASE_FIXTURE = `export function scale(x) {
 }
 `;
 
-describe("BUG-023: export 路径 / IO 错误面", () => {
+describe("export 路径 / IO 错误面", () => {
   it("missing input → nudo:path-not-found face (no ENOENT / raw errno), exit 1", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-export-pe-"));
     const r = runCli(["export", join(dir, "nope.js")]);

@@ -1,5 +1,5 @@
 /**
- * Bug 786（inlay 半）—— `collectAbsInlays` **从不传 `inject`**
+ * （inlay 半）—— `collectAbsInlays` **从不传 `inject`**
  * ⇒ LSP 的 inlayHint 面（`textDocument/inlayHint`）把「行内指令缺席」显示成
  * `unknown`（Nudo 词汇里 = 「推断失败」）而 CLI 门禁显示真实类型。
  *
@@ -24,7 +24,7 @@ const SRC = `export function useGlobal() {
 }
 `;
 
-describe("Bug 786（inlay 半）— collectAbsInlays 必须透传 inject", () => {
+describe("（inlay 半）— collectAbsInlays 必须透传 inject", () => {
   it("不传 inject ⇒ 自由标识符未绑定 ⇒ inlay 是 never（改前形态）", () => {
     const inlays = collectAbsInlays(SRC, { fromFile: "/tmp/x/lib.js" });
     const labels = inlays.map((i) => i.label);

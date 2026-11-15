@@ -20,10 +20,10 @@ import { domainIssuesFromDiagnostics, dedupeFromStaticIssues, staticFromDomainIs
 import { runCheck } from "../commands/check.ts";
 
 // ---------------------------------------------------------------------------
-// [merged] cli-bug-044-case-witness-not-published.test.ts
+// [merged] case-witness-not-published
 // ---------------------------------------------------------------------------
-describe("[cli-] [merged] cli-bug-044-case-witness-not-published.test.ts", () => {
-// MERGED (topic-related bug pins): cli-bug-044-case-witness-not-published.test.ts + cli-bug-044-export-case-not-contract.test.ts
+describe("case-witness-not-published", () => {
+// MERGED (topic-related bug pins): case-witness-not-published + export-case-not-contract
 // Each absorbed file keeps its own describe scope so file-level hooks stay
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 
@@ -32,9 +32,9 @@ describe("[cli-] [merged] cli-bug-044-case-witness-not-published.test.ts", () =>
 
 
 
-describe("[merged] cli-bug-044-case-witness-not-published.test.ts", () => {
+describe("case-witness-not-published", () => {
 /**
- * BUG-044 —— `nudo export` 把 `@nudo:case` 的**调试见证**发布成类型 ⇒ 四个
+ * `nudo export` 把 `@nudo:case` 的**调试见证**发布成类型 ⇒ 四个
  * 产物面一致地拒绝**实现允许**的调用，且与 `nudo check` 的签名相反。
  *
  * 症状：`/** @nudo:case "dom" (number()) *\/ export function f(x) { return x + 1; }`
@@ -78,7 +78,7 @@ function dtsParamType(stdout: string): string {
   return m![1]!;
 }
 
-describe("BUG-044 — `@nudo:case` 调试见证不进发布面", () => {
+describe("`@nudo:case` 调试见证不进发布面", () => {
   it("dts 面：有调试见证与无证据的投影相同（形参是 unknown，不是 number）", () => {
     const dir = fixture();
     const plain = runCliTsx(["export", join(dir, "plain.js"), "--format", "dts"]);
@@ -117,9 +117,9 @@ describe("BUG-044 — `@nudo:case` 调试见证不进发布面", () => {
 });
 });
 
-describe("[merged] cli-bug-044-export-case-not-contract.test.ts", () => {
+describe("export-case-not-contract", () => {
 /**
- * BUG-044 — `nudo export` / `nudo contract` 把 `@nudo:case` 的**域形状实参**
+ * `nudo export` / `nudo contract` 把 `@nudo:case` 的**域形状实参**
  * 发布成类型 ⇒ 发布的 d.ts / schema / guard / 打印面是错的。
  *
  * `@nudo:case` 是**调试见证**（docs/concepts/directives.md:44），不是契约；
@@ -166,7 +166,7 @@ function dtsSig(stdout: string): string {
     .trim();
 }
 
-describe("BUG-044 — 调试见证不得进入发布/打印面", () => {
+describe("调试见证不得进入发布/打印面", () => {
   it("dts：有 case 与无 case 逐字相同（均门禁口径 x: unknown）", () => {
     const { dir, withCase, plain } = project();
     try {
@@ -220,27 +220,27 @@ describe("BUG-044 — 调试见证不得进入发布/打印面", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-056: check 签名 = 一次正常求值
+// check 签名 = 一次正常求值
 // ---------------------------------------------------------------------------
-describe("[cli-] BUG-056: check 签名 = 一次正常求值", () => {
+describe("check 签名 = 一次正常求值", () => {
 /**
- * BUG-056 回归：`nudo check` 的签名必须是**一次正常求值**的结果。
+ * 回归：`nudo check` 的签名必须是**一次正常求值**的结果。
  *
  * 症状（报告时的形态）：check 通道先跑分析器再跑 core 闸门，两轮共享同一份
  * 模块实例 ⇒ 模块级可变状态被双写，闸门打印的签名取自脏状态：
  * - `let c = 0; export function bump(){ c += 1; return c }` → `bump() => 2`
- *   （原生唯一可能值是 1；`nudo test` / `nudo export` 都给 1）
+ * （原生唯一可能值是 1；`nudo test` / `nudo export` 都给 1）
  * - `once()`（第一次调用必抛）→ `1 throws Error`（应为 `never throws Error`，
- *   发布的 d.ts 也是 `never`）⇒ 门禁面与发布面互相矛盾
+ * 发布的 d.ts 也是 `never`）⇒ 门禁面与发布面互相矛盾
  * - 该签名是 `nudo:contract-drift` 的输入 ⇒ 生成段（干净值）与今日域
- *   （脏值）永不收敛：emit 说「无变化」、check 说「漂移」、health 判 FAIL
- *   且提示的重跑无效（CI 卡死，无自愈路径）。
+ * （脏值）永不收敛：emit 说「无变化」、check 说「漂移」、health 判 FAIL
+ * 且提示的重跑无效（CI 卡死，无自愈路径）。
  *
  * 当前树已修好（分析器轮与闸门轮不再共享实例）；本测试钉住**值级结论**防回归：
  * 1. 计数器工厂：check 与 test 两面都给 1（跨动词一致）；
  * 2. 一次性抛：check 给 `never` + `throws Error`（与 d.ts 一致）；
  * 3. 漂移收敛：手写 `lit(1)` 生成段 ⇒ check **不报** `nudo:contract-drift`
- *    且签名 = 1（脏值会让它与生成段打架）。
+ * 且签名 = 1（脏值会让它与生成段打架）。
  *
  * 注：每个用例用**独立**的 `NUDO_CACHE_DIR`——check 有磁盘缓存，复用会让
  * 「值是从缓存来的」与「值是真算出来的」不可区分。
@@ -290,7 +290,7 @@ function project(files: Record<string, string>): { cwd: string; cache: string } 
   return { cwd: dir, cache: join(dir, ".nudo-cache") };
 }
 
-describe("BUG-056: check 签名 = 一次正常求值", () => {
+describe("check 签名 = 一次正常求值", () => {
   it("计数器工厂：check 与 test 都给 1", { timeout: 60_000 }, () => {
     const { cwd, cache } = project({ "lib.js": COUNTER });
     const env = { NUDO_CACHE_DIR: cache };
@@ -326,11 +326,11 @@ export const once = fn({  }, lit(1));
 });
 
 // ---------------------------------------------------------------------------
-// BUG-066 — --abs --quiet 必须兑现 --quiet
+// --abs --quiet 必须兑现 --quiet
 // ---------------------------------------------------------------------------
-describe("[cli-] BUG-066 — --abs --quiet 必须兑现 --quiet", () => {
+describe("--abs --quiet 必须兑现 --quiet", () => {
 /**
- * BUG-066 —— `nudo check --abs --quiet` **完全忽略** `--quiet`：clean 文件
+ * `nudo check --abs --quiet` **完全忽略** `--quiet`：clean 文件
  * 打 3 行而非 1 行摘要，失败文件仍打印 `signatures` 段。
  *
  * 根因：渲染分支里 `opts.abs` 排在 `opts.quiet` **之前**，且 abs 分支自己打
@@ -364,7 +364,7 @@ function makeProject(): string {
   return cwd;
 }
 
-describe("BUG-066 — --abs --quiet 必须兑现 --quiet", () => {
+describe("-abs --quiet 必须兑现 --quiet", () => {
   it("clean 文件 ⇒ 恰好一行摘要（旧实现 3 行 OK 块 + 代数面）", () => {
     const cwd = makeProject();
     try {
@@ -395,11 +395,11 @@ describe("BUG-066 — --abs --quiet 必须兑现 --quiet", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-085 — @nudo:assume 前提在 --abs 观察面可见（与 --json 同源）
+// @nudo:assume 前提在 --abs 观察面可见（与 --json 同源）
 // ---------------------------------------------------------------------------
-describe("[cli-] BUG-085 — @nudo:assume 前提在 --abs 观察面可见（与 --json 同源）", () => {
+describe("@nudo:assume 前提在 --abs 观察面可见（与 --json 同源）", () => {
 /**
- * BUG-085 回归：`check --abs` 必须与 `check --json` 的 `abs` **同源** ——
+ * 回归：`check --abs` 必须与 `check --json` 的 `abs` **同源** ——
  * 源码级 `@nudo:assume d <= max` 的用户引理不得在观察面丢掉。
  *
  * 症状（修前）：同一份源码，`check --json` 的 `abs` 是
@@ -413,7 +413,7 @@ describe("[cli-] BUG-085 — @nudo:assume 前提在 --abs 观察面可见（与 
  *
  * 断言面：
  * 1. 带 `@nudo:assume`：`--abs` 面出现与 `--json` 面**同一句** pred
- *    （`/(d, max) ≤ 1`）；
+ * （`/(d, max) ≤ 1`）；
  * 2. 对照组（删掉 assume 行）：两面都不出现该 pred（差异确实由指令引起）；
  * 3. `nudo test --abs` 走同一 `runAbsView` ⇒ 同样可见（第三处观察面）。
  */
@@ -451,7 +451,7 @@ function cacheDir(): Record<string, string> {
 /** `--abs` 观察面里 pred 行的规范文本（`pred: /(d, max) ≤ 1`） */
 const PRED_LINE = "pred: /(d, max) ≤ 1";
 
-describe("BUG-085 — @nudo:assume 前提在 --abs 观察面可见（与 --json 同源）", () => {
+describe("@nudo:assume 前提在 --abs 观察面可见（与 --json 同源）", () => {
   it("带 assume：--abs 与 --json 的 abs 面出现同一句 pred", () => {
     const file = fixture("@nudo:assume d <= max");
 
@@ -489,11 +489,11 @@ describe("BUG-085 — @nudo:assume 前提在 --abs 观察面可见（与 --json 
 });
 
 // ---------------------------------------------------------------------------
-// BUG-121 — shape-union 返回契约不塌缩
+// shape-union 返回契约不塌缩
 // ---------------------------------------------------------------------------
-describe("[cli-] BUG-121 — shape-union 返回契约不塌缩", () => {
+describe("shape-union 返回契约不塌缩", () => {
 /**
- * BUG-121 —— 返回契约若是「**shape 的 union**」，zod / standard / guard **三个
+ * 返回契约若是「**shape 的 union**」，zod / standard / guard **三个
  * 运行时面全部塌缩**为「接受一切」⇒ 契约违约值被放行（假绿），而 dts / check
  * 仍保留 union ⇒ 四面互斥。
  *
@@ -503,7 +503,7 @@ describe("[cli-] BUG-121 — shape-union 返回契约不塌缩", () => {
  *
  * 钉：
  * - 三个运行时面都保留 union（不再 `z.unknown()` / `{"k":"unknown"}` /
- *   `return true`）；
+ * `return true`）；
  * - 运行时（Standard Schema 真跑）：契约违约值被**拒绝**，契约允许的值被接受；
  * - 与 dts 面同口径。
  */
@@ -538,7 +538,7 @@ function fixture(): string {
   return dir;
 }
 
-describe("BUG-121 — shape-union 返回契约不塌缩", () => {
+describe("shape-union 返回契约不塌缩", () => {
   it("zod / standard / guard 三面都保留 union（同一 zod 文件内 Input 与 Output 同口径）", () => {
     const dir = fixture();
     const r = runCliTsx(["export", join(dir, "G.js"), "--format", "all"]);
@@ -586,11 +586,11 @@ describe("BUG-121 — shape-union 返回契约不塌缩", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-129 — 空目录现场
+// 空目录现场
 // ---------------------------------------------------------------------------
-describe("[cli-] BUG-129 — 空目录现场", () => {
+describe("空目录现场", () => {
 /**
- * BUG-129 回归：`--from <空目录>` 必须报路径错误（`nudo:path-empty-dir`），
+ * 回归：`--from <空目录>` 必须报路径错误（`nudo:path-empty-dir`），
  * 不能静默通过。
  *
  * 改前空目录展开成 `[]` ⇒ 循环体一次都不执行 ⇒ 既不产生 PathError 也不产生
@@ -604,7 +604,7 @@ describe("[cli-] BUG-129 — 空目录现场", () => {
 
 
 
-describe("BUG-129 — 空目录现场", () => {
+describe("空目录现场", () => {
   it("空目录 ⇒ path-empty-dir 进 sink，且不返回记录", () => {
     const dir = tmpProject("nudo-129-", { "lib.js": "export function f() { return 1; }\n" });
     const empty = join(dir, "empty");
@@ -629,11 +629,11 @@ describe("BUG-129 — 空目录现场", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-170 — 调用点见证不重复合成
+// 调用点见证不重复合成
 // ---------------------------------------------------------------------------
-describe("[cli-] BUG-170 — 调用点见证不重复合成", () => {
+describe("调用点见证不重复合成", () => {
 /**
- * BUG-170 回归：`--from` 的调用点见证不得被**两条合成路径各合成一次**。
+ * 回归：`--from` 的调用点见证不得被**两条合成路径各合成一次**。
  *
  * 改前「已固化 directive 见证 + 主候选循环的 callsite 见证」会产出同名两条
  * ⇒ 台账里 `call@` 出现两次、人类面打印两遍、`summary.cases` 重复计数。
@@ -667,7 +667,7 @@ function project(): string {
   return dir;
 }
 
-describe("BUG-170 — 调用点见证不重复合成", () => {
+describe("调用点见证不重复合成", () => {
   it("已固化见证 + 另一现场 ⇒ 同名 case 只出现一次，summary.cases == 不同见证数", () => {
     const dir = project();
     const out = runCliTsx([
@@ -697,11 +697,11 @@ describe("BUG-170 — 调用点见证不重复合成", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-284 — 文件级硬错误进 CI 注解通道
+// 文件级硬错误进 CI 注解通道
 // ---------------------------------------------------------------------------
-describe("[cli-] BUG-284 — 文件级硬错误进 CI 注解通道", () => {
+describe("文件级硬错误进 CI 注解通道", () => {
 /**
- * BUG-284 —— 文件级**硬错误**（语法错 / 路径不存在）在两个 **CI 注解通道**上
+ * 文件级**硬错误**（语法错 / 路径不存在）在两个 **CI 注解通道**上
  * 完全静默：`--gitlab` 的 stdout 塌成 0 字节（消费方 `JSON.parse` 直接抛）、
  * `--gha` 产出 0 条 `::error`；三个机器面对同一失败文件给出 1 / 0 / 0。
  *
@@ -740,7 +740,7 @@ function makeProject(): string {
 const annCount = (r: { stdout: string; stderr: string }): number =>
   `${r.stdout}${r.stderr}`.split("::error").length - 1;
 
-describe("BUG-284 — 文件级硬错误进 CI 注解通道", () => {
+describe("文件级硬错误进 CI 注解通道", () => {
   it("--gitlab 语法错文件 ⇒ stdout 是**可解析数组**且含该文件的条目", () => {
     const cwd = makeProject();
     try {
@@ -798,11 +798,11 @@ describe("BUG-284 — 文件级硬错误进 CI 注解通道", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 413：`nudo check --json` 载荷不得含内部 id 且与参数位置无关
+// `nudo check --json` 载荷不得含内部 id 且与参数位置无关
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 413：`nudo check --json` 载荷不得含内部 id 且与参数位置无关", () => {
+describe("`nudo check --json` 载荷不得含内部 id 且与参数位置无关", () => {
 /**
- * Bug 413 —— `nudo check --json` 把**引擎内部 term id**（`len#N` 一族）渲进
+ * `nudo check --json` 把**引擎内部 term id**（`len#N` 一族）渲进
  * 机器可读的签名字段 ⇒ 且编号随**同一次调用内的文件顺序**漂移 ⇒
  * **单个文件的 JSON 载荷是它在参数列表中位置的函数**，不是文件内容的函数
  * （机器消费方拿到的不是可比对的内容）；**同一条命令的人类面**还给出另一个
@@ -865,7 +865,7 @@ function byFile(stdout: string): Record<string, Sig[]> {
   return out;
 }
 
-describe("Bug 413：`nudo check --json` 载荷不得含内部 id 且与参数位置无关", () => {
+describe("`nudo check --json` 载荷不得含内部 id 且与参数位置无关", () => {
   it("三个同内容文件的载荷逐字相同（换序也不变）", { timeout: 120_000 }, () => {
     const dir = setup();
     const r1 = runCheck(dir, ["a.js", "b.js", "c.js"], ["--json"]);
@@ -907,11 +907,11 @@ describe("Bug 413：`nudo check --json` 载荷不得含内部 id 且与参数位
 });
 
 // ---------------------------------------------------------------------------
-// export — 部分契约的形参合流（族 17 · S1 · Bug 605）
+// export — 部分契约的形参合流（族 17 · S1 · ）
 // ---------------------------------------------------------------------------
-describe("[cli-] export — 部分契约的形参合流（族 17 · S1 · Bug 605）", () => {
+describe("export — 部分契约的形参合流（族 17 · S1 · ）", () => {
 /**
- * Bug 605 —— **部分契约**（契约只覆盖部分形参）时，未被契约覆盖的形参位在
+ * **部分契约**（契约只覆盖部分形参）时，未被契约覆盖的形参位在
  * 产物面里被**静默丢掉**：契约面与观测面二选一，不是合流。
  *
  * 症状（改前）：`@nudo:contract n pos` 只声明了 `n`，函数签名是 `f(n, other)`
@@ -950,7 +950,7 @@ function fixture(files: Record<string, string>): string {
 /** 侧车约束：number 的纯数据形态 */
 const NUM = `export const num = { __nudoConstraint: true, prim: "number", preds: [] };\n`;
 
-describe("export — 部分契约的形参合流（族 17 · S1 · Bug 605）", () => {
+describe("export — 部分契约的形参合流（族 17 · S1 · ）", () => {
   it("zod 入参面：契约覆盖的位 + 未覆盖的形参位都在（不丢位）", () => {
     const dir = fixture({
       "c605.nudo.js": NUM,
@@ -989,11 +989,11 @@ describe("export — 部分契约的形参合流（族 17 · S1 · Bug 605）", 
 });
 
 // ---------------------------------------------------------------------------
-// export — skip 函数的多条见证不进 Output 面（BUG-044 重钉 · 原 Bug 619）
+// export — skip 函数的多条见证不进 Output 面（重钉 · 原 ）
 // ---------------------------------------------------------------------------
-describe("[cli-] export — skip 函数的多条见证不进 Output 面（BUG-044 重钉 · 原 Bug 619）", () => {
+describe("export — skip 函数的多条见证不进 Output 面（重钉 · 原 ）", () => {
 /**
- * Bug 619 —— `@nudo:skip` + 多条 case 见证时，**Output 面（返回面）不产出**：
+ * `@nudo:skip` + 多条 case 见证时，**Output 面（返回面）不产出**：
  * 兜底只取「第 0 条断言见证」，而无断言的 case 是见证不是断言 ⇒ 兜底落空。
  *
  * 症状（改前）：两条 `@nudo:case` 见证（返回 4 / 6）的 skip 函数，zod 面只有
@@ -1006,13 +1006,13 @@ describe("[cli-] export — skip 函数的多条见证不进 Output 面（BUG-04
  *
  * 修法（族 17 · S1）：返回面兜底改为 join **全部域证据见证**（与参数面同口径）。
  *
- * ⚠ **BUG-044 口径变更后的重钉**（本文件现行断言）：`@nudo:case` 是**调试见证**，
+ * ⚠ **口径变更后的重钉**（本文件现行断言）：`@nudo:case` 是**调试见证**，
  * 不是契约产品（`docs/concepts/directives.md`：Cases are debug witnesses … not
  * the contract product）⇒ `nudo export` 以 `caseMode: "none"` 调分析器，
  * **发布面不消费 `@nudo:case`**。因此：
  * - 见证**不再**进 `<fn>Output` 面（也不进 `<fn>Input` 面）；
  * - 只带 `@nudo:case`、无契约的 skip 函数 ⇒ 发布面**没有** Output 校验器
- *   （域证据为空 ⇒ 返回面无种子），这正是 BUG-044 的口径，不是 Bug 619 的缺陷；
+ * （域证据为空 ⇒ 返回面无种子），这正是 的口径，不是 的缺陷；
  * - 见证返回值（4 / 6）**不**泄漏进产物。
  *
  * 仍钉住（与本次口径无关的真实行为）：函数**仍出现在产物**里（Input 面照常
@@ -1048,14 +1048,14 @@ const SKIP_CASES = [
   ``,
 ].join("\n");
 
-describe("export — skip 函数的多条见证不进 Output 面（BUG-044 重钉 · 原 Bug 619）", () => {
+describe("export — skip 函数的多条见证不进 Output 面（重钉 · 原 ）", () => {
   it("zod 面：见证不进 Output 面，也不泄漏见证返回值", () => {
     const dir = fixture({ "skip619.js": SKIP_CASES });
     const r = runCliTsx(["export", join(dir, "skip619.js"), "--format", "schema"]);
     expect(r.status).toBe(0);
     // 函数仍出现在产物里（Input 面照常产出）——与见证口径无关的真实行为
     expect(r.stdout).toContain("twiceInput");
-    // BUG-044：见证是调试见证，不进发布面 ⇒ 只带 `@nudo:case` 的 skip 函数
+    // 见证是调试见证，不进发布面 ⇒ 只带 `@nudo:case` 的 skip 函数
     // 没有 Output 校验器（域证据为空 ⇒ 返回面无种子）
     expect(r.stdout).not.toContain("twiceOutput");
     // 见证返回值（4 / 6）不泄漏进产物
@@ -1069,25 +1069,25 @@ describe("export — skip 函数的多条见证不进 Output 面（BUG-044 重�
     expect(r.status).toBe(0);
     // 函数仍出现在产物里（Input 面照常产出）
     expect(r.stdout).toContain("twiceInput");
-    // BUG-044：见证不进发布面 ⇒ 没有 Output 校验器
+    // 见证不进发布面 ⇒ 没有 Output 校验器
     expect(r.stdout).not.toContain("twiceOutput");
   }, 30000);
 });
 });
 
 // ---------------------------------------------------------------------------
-// export — 点路径契约键的嵌套投影（族 17 · S1 · Bug 620）
+// export — 点路径契约键的嵌套投影（族 17 · S1 · ）
 // ---------------------------------------------------------------------------
-describe("[cli-] export — 点路径契约键的嵌套投影（族 17 · S1 · Bug 620）", () => {
+describe("export — 点路径契约键的嵌套投影（族 17 · S1 · ）", () => {
 /**
- * Bug 620 —— **点路径**契约键（`"card.grade"`）在产物面里被当成字面量顶层
+ * **点路径**契约键（`"card.grade"`）在产物面里被当成字面量顶层
  * 属性名，约束也被当成**整个形参**的约束。
  *
  * 症状（改前）：侧车 `fn({ "card.grade": string() }, string())` 声明了解构形参
  * `{ card: { grade } }` 的内层字段约束 ⇒ zod 面产出
- *   `z.object({ "card.grade": z.string() })`
+ * `z.object({ "card.grade": z.string() })`
  * —— 点号键成了对象属性名（调用面里根本没有这个属性），而 dts 面是
- *   `nested({ card }: { card: { grade: string } })` ⇒ 两个产物面自相矛盾。
+ * `nested({ card }: { card: { grade: string } })` ⇒ 两个产物面自相矛盾。
  *
  * 根因（族 17 · S1）：`export/contract-face.ts` 的统一参数面直接拿契约参数名
  * （`card.grade`）当槽位键、拿约束 Abs 当**整参**的槽值，没有按定位结果展开
@@ -1156,7 +1156,7 @@ const SIDECAR = [
   ``,
 ].join("\n");
 
-describe("export — 点路径契约键的嵌套投影（族 17 · S1 · Bug 620）", () => {
+describe("export — 点路径契约键的嵌套投影（族 17 · S1 · ）", () => {
   it("zod 入参面：点路径 ⇒ 嵌套 obj（不是字面量点号键）", () => {
     const dir = fixture({ "dotpath620.js": SOURCE, "dotpath620.nudo.js": SIDECAR });
     const r = runCliTsx(["export", join(dir, "dotpath620.js"), "--format", "schema"], { cwd: dir });
@@ -1177,14 +1177,14 @@ describe("export — 点路径契约键的嵌套投影（族 17 · S1 · Bug 620
 });
 
 // ---------------------------------------------------------------------------
-// Bug 651：声明式 @nudo:case 不得因名字前缀被丢出断言面
+// 声明式 @nudo:case 不得因名字前缀被丢出断言面
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 651：声明式 @nudo:case 不得因名字前缀被丢出断言面", () => {
+describe("声明式 @nudo:case 不得因名字前缀被丢出断言面", () => {
 /**
- * Bug 651 — `nudo test` 的 synthetic 判据必须按 **case 来源**（`c.source`），
+ * `nudo test` 的 synthetic 判据必须按 **case 来源**（`c.source`），
  * 不得按 **名字前缀**（`call@` / `entry@`）。
  *
- * 报告原文（`tmp/bugs/19-nudojs-test.md` §Bug 651）：synthetic 判定用
+ * 报告原文（`tmp/bugs/19-nudojs-test.md` §）：synthetic 判定用
  * `name.startsWith("call@") || name.startsWith("entry@")` ⇒ 用户**手写**的
  * 声明式见证 `@nudo:case "call@L42" (2) => 5`（实得 4）被降级成合成 case ⇒
  * 失败的声明断言被**整条丢出断言面** ⇒ 报告面「0 failed」、**exit 0**，而
@@ -1222,7 +1222,7 @@ async function withTmp(fn: (dir: string) => Promise<void> | void): Promise<void>
   }
 }
 
-describe("Bug 651：声明式 @nudo:case 不得因名字前缀被丢出断言面", () => {
+describe("声明式 @nudo:case 不得因名字前缀被丢出断言面", () => {
   it("call@ 前缀的声明式见证：期望不符 ⇒ 计入失败 + exit 1", async () => {
     await withTmp(async (dir) => {
       const file = join(dir, "callnamed.js");
@@ -1284,16 +1284,16 @@ describe("Bug 651：声明式 @nudo:case 不得因名字前缀被丢出断言面
 });
 
 // ---------------------------------------------------------------------------
-// Bug 652 — test --abs 与非 --abs 共用同一套「无函数」结论
+// test --abs 与非 --abs 共用同一套「无函数」结论
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 652 — test --abs 与非 --abs 共用同一套「无函数」结论", () => {
+describe("test --abs 与非 --abs 共用同一套「无函数」结论", () => {
 /**
- * Bug 652：`nudo test --abs` 在**一个函数都没有**的文件上 exit 1 + 打
+ * `nudo test --abs` 在**一个函数都没有**的文件上 exit 1 + 打
  * 「Function not found」；同一命令**不带** `--abs` 却 exit 0 ⇒ 同一输入、
  * 同一份报告，仅因多一个旗标就换了退出码，且两条文案互相打架。
  *
  * 根因：`--abs` 分支借道 `runAbsView`，后者把「文件没有函数」当**用法
- * 错误**（exit 1 + 专属文案）——那是 `check --abs` 的既有语义（**Bug 669**
+ * 错误**（exit 1 + 专属文案）——那是 `check --abs` 的既有语义（
  * 钉住的期望行为）⇒ 修法只对 `test` 生效：文件无函数时跳过观察面，
  * 报告与退出码与非 `--abs` 面逐字一致。
  */
@@ -1313,7 +1313,7 @@ function makeProject(): { cwd: string; file: string } {
   return { cwd, file };
 }
 
-describe("Bug 652 — test --abs 与非 --abs 共用同一套「无函数」结论", () => {
+describe("test --abs 与非 --abs 共用同一套「无函数」结论", () => {
   it("无函数文件：--abs 与非 --abs 同为 exit 0 + 同一句报告", () => {
     const { cwd, file } = makeProject();
     try {
@@ -1359,11 +1359,11 @@ describe("Bug 652 — test --abs 与非 --abs 共用同一套「无函数」结�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 669: check --abs --fn <不存在的名字> ⇒ 用法错误 + 非零 exit
+// check --abs --fn <不存在的名字> ⇒ 用法错误 + 非零 exit
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 669: check --abs --fn <不存在的名字> ⇒ 用法错误 + 非零 exit", () => {
+describe("check --abs --fn <不存在的名字> ⇒ 用法错误 + 非零 exit", () => {
 /**
- * Bug 669：`nudo check --abs --fn <不存在的名字>` 被当成「引擎推导失败」
+ * `nudo check --abs --fn <不存在的名字>` 被当成「引擎推导失败」
  * （unknown / conf: partial）而不是**用法错误**。
  *
  * 旧行为：`--fn nosuch` ⇒ stdout 打印 `nosuch() / unknown / conf: partial`，
@@ -1392,7 +1392,7 @@ async function withTmp(fn: (dir: string) => Promise<void> | void): Promise<void>
   }
 }
 
-describe("Bug 669: check --abs --fn <不存在的名字> ⇒ 用法错误 + 非零 exit", () => {
+describe("check --abs --fn <不存在的名字> ⇒ 用法错误 + 非零 exit", () => {
   it("拼错的函数名 → Function not found + exit 1（不再是 unknown/partial）", async () => {
     await withTmp(async (dir) => {
       const file = join(dir, "one.js");
@@ -1444,11 +1444,11 @@ describe("Bug 669: check --abs --fn <不存在的名字> ⇒ 用法错误 + 非�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 670: --assume 坏值 ⇒ 用法错误 + 非零 exit
+// --assume 坏值 ⇒ 用法错误 + 非零 exit
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 670: --assume 坏值 ⇒ 用法错误 + 非零 exit", () => {
+describe("--assume 坏值 ⇒ 用法错误 + 非零 exit", () => {
 /**
- * Bug 670：`--assume` 的**坏值**（形如 `x=5`）只打一行 stderr 就被吞掉，
+ * `--assume` 的**坏值**（形如 `x=5`）只打一行 stderr 就被吞掉，
  * 命令照常跑完并 exit 0 ⇒ CI 里把「假设根本没生效」当成功。
  *
  * 旧行为：stderr 有 `Cannot parse --assume: x=5`，但 exit code = 0。
@@ -1472,7 +1472,7 @@ async function withTmp(fn: (dir: string) => Promise<void> | void): Promise<void>
   }
 }
 
-describe("Bug 670: --assume 坏值 ⇒ 用法错误 + 非零 exit", () => {
+describe("-assume 坏值 ⇒ 用法错误 + 非零 exit", () => {
   it("`x=5` 这类坏值 → exit 1（旧行为 exit 0）", async () => {
     await withTmp(async (dir) => {
       const file = join(dir, "one.js");
@@ -1523,11 +1523,11 @@ describe("Bug 670: --assume 坏值 ⇒ 用法错误 + 非零 exit", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 679 — ignoreThrows 配置面与 CLI 面同口径
+// ignoreThrows 配置面与 CLI 面同口径
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 679 — ignoreThrows 配置面与 CLI 面同口径", () => {
+describe("ignoreThrows 配置面与 CLI 面同口径", () => {
 /**
- * Bug 679：`package.json#nudo.check.ignoreThrows` 与 CLI `--ignore-throws`
+ * `package.json#nudo.check.ignoreThrows` 与 CLI `--ignore-throws`
  * **两套解析器** ⇒ 同一语义键两种写法行为不同。
  *
  * 症状：配置面只认严格 `string[]`（service checkConfig 的 `Array.isArray` 过滤）
@@ -1561,7 +1561,7 @@ function makeProject(ignoreThrowsJson: string): { cwd: string; file: string } {
   return { cwd: dir, file };
 }
 
-describe("Bug 679 — ignoreThrows 配置面与 CLI 面同口径", () => {
+describe("ignoreThrows 配置面与 CLI 面同口径", () => {
   it("解析器：配置面裸字符串 / 数组元素内逗号都被切开", () => {
     expect(configIgnoreThrows({ check: { ignoreThrows: "TypeError" } })).toEqual([
       "TypeError",
@@ -1642,11 +1642,11 @@ describe("Bug 679 — ignoreThrows 配置面与 CLI 面同口径", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 919 — test --abs 不再吞掉 diagnostics（三个面诊断条数一致）
+// test --abs 不再吞掉 diagnostics（三个面诊断条数一致）
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 919 — test --abs 不再吞掉 diagnostics（三个面诊断条数一致）", () => {
+describe("test --abs 不再吞掉 diagnostics（三个面诊断条数一致）", () => {
 /**
- * Bug 919：`nudo test --abs` 把整段 **diagnostics** 吞掉 ⇒ 期望写错
+ * `nudo test --abs` 把整段 **diagnostics** 吞掉 ⇒ 期望写错
  * （`=> 42x` 这类）在观察面上是「屏幕上零提示」的**假绿**。
  *
  * 根因：「诊断上屏」的判据把 `--abs` 写成第三个被排除的面
@@ -1657,7 +1657,7 @@ describe("[cli-] Bug 919 — test --abs 不再吞掉 diagnostics（三个面诊�
  * 对同一文件的**诊断条数**一致。
  *
  * ⚠ 只改 `test --abs`：`check --abs` 的既有口径（report.ok 时只打 OK +
- * 计数）不动（Bug 669 / 692 钉住）。
+ * 计数）不动（ 钉住）。
  */
 
 
@@ -1682,7 +1682,7 @@ function makeProject(): { cwd: string; file: string } {
   return { cwd, file };
 }
 
-describe("Bug 919 — test --abs 不再吞掉 diagnostics（三个面诊断条数一致）", () => {
+describe("test --abs 不再吞掉 diagnostics（三个面诊断条数一致）", () => {
   it("--abs 面：诊断段上屏（旧行为：整段消失 ⇒ 屏幕上零提示）", () => {
     const { cwd, file } = makeProject();
     try {
@@ -1716,7 +1716,7 @@ describe("Bug 919 — test --abs 不再吞掉 diagnostics（三个面诊断条�
     const { cwd, file } = makeProject();
     try {
       const r = runCli(["check", file, "--abs"], { cwd });
-      // check 面是另一个 verb 的既有口径（Bug 669 / 692）⇒ 本钉只保证
+      // check 面是另一个 verb 的既有口径（）⇒ 本钉只保证
       // test --abs 的诊断可见，不把 check --abs 改成无条件打 issues。
       expect(typeof r.stdout).toBe("string");
     } finally {
@@ -1727,11 +1727,11 @@ describe("Bug 919 — test --abs 不再吞掉 diagnostics（三个面诊断条�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 973: --assume 的 >= 与 > 必须落到不同谓词
+// --assume 的 >= 与 > 必须落到不同谓词
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 973: --assume 的 >= 与 > 必须落到不同谓词", () => {
+describe("--assume 的 >= 与 > 必须落到不同谓词", () => {
 /**
- * Bug 973：`--assume` 的运算符被**一律按 `>` 构造** ⇒ 用户写 `x>=1`
+ * `--assume` 的运算符被**一律按 `>` 构造** ⇒ 用户写 `x>=1`
  * 实际得到 `x>1` ⇒ 引擎里的谓词与用户写的不一致
  * （`x+1 > 1.9999999999999998` 而不是 `x+1 ≥ 2`）。
  *
@@ -1755,7 +1755,7 @@ async function withTmp(fn: (dir: string) => Promise<void> | void): Promise<void>
   }
 }
 
-describe("Bug 973: --assume 的 >= 与 > 必须落到不同谓词", () => {
+describe("-assume 的 >= 与 > 必须落到不同谓词", () => {
   it("`x>=1` ⇒ 谓词是 (x + 1) ≥ 2（不是 > 1.999…）", async () => {
     await withTmp(async (dir) => {
       const file = join(dir, "f.js");
@@ -1781,11 +1781,11 @@ describe("Bug 973: --assume 的 >= 与 > 必须落到不同谓词", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 974: 多条 --assume 必须合取（不是互相覆盖）
+// 多条 --assume 必须合取（不是互相覆盖）
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 974: 多条 --assume 必须合取（不是互相覆盖）", () => {
+describe("多条 --assume 必须合取（不是互相覆盖）", () => {
 /**
- * Bug 974：多条 `--assume` **互相覆盖**（每条都重写 φ ⇒ 只有最后一条生效）。
+ * 多条 `--assume` **互相覆盖**（每条都重写 φ ⇒ 只有最后一条生效）。
  *
  * 旧行为：`--assume x>100 --assume y>200` ⇒ φ = `y>200` ⇒ 结果谓词
  * `(x + y) > 200`（x 的界丢失）。
@@ -1808,7 +1808,7 @@ async function withTmp(fn: (dir: string) => Promise<void> | void): Promise<void>
   }
 }
 
-describe("Bug 974: 多条 --assume 必须合取（不是互相覆盖）", () => {
+describe("多条 --assume 必须合取（不是互相覆盖）", () => {
   it("x>100 且 y>200 ⇒ 谓词 (x + y) > 300（两条都在场）", async () => {
     await withTmp(async (dir) => {
       const file = join(dir, "g.js");
@@ -1834,11 +1834,11 @@ describe("Bug 974: 多条 --assume 必须合取（不是互相覆盖）", () => 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 975: --assume 与 --generalize 互斥 ⇒ 显式拒绝
+// --assume 与 --generalize 互斥 ⇒ 显式拒绝
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 975: --assume 与 --generalize 互斥 ⇒ 显式拒绝", () => {
+describe("--assume 与 --generalize 互斥 ⇒ 显式拒绝", () => {
 /**
- * Bug 975：`--abs --generalize` 与 `--assume` 组合被**接受并打印 assume 回显**，
+ * `--abs --generalize` 与 `--assume` 组合被**接受并打印 assume 回显**，
  * 但 generalize 分支**根本不吃 assume**（`generalizeFromAst` 没有 Φ 入口）
  * ⇒ 静默说谎：用户以为假设参与了符号推导。
  *
@@ -1862,7 +1862,7 @@ async function withTmp(fn: (dir: string) => Promise<void> | void): Promise<void>
   }
 }
 
-describe("Bug 975: --assume 与 --generalize 互斥 ⇒ 显式拒绝", () => {
+describe("-assume 与 --generalize 互斥 ⇒ 显式拒绝", () => {
   it("组合 → 用法错误 + exit 1（且不回显 assume）", async () => {
     await withTmp(async (dir) => {
       const file = join(dir, "g.js");
@@ -1911,11 +1911,11 @@ describe("Bug 975: --assume 与 --generalize 互斥 ⇒ 显式拒绝", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 976（CLI 半）：--assume 的界落到形参前提（不再被写死的 x>0 顶掉）
+// （CLI 半）：--assume 的界落到形参前提（不再被写死的 x>0 顶掉）
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 976（CLI 半）：--assume 的界落到形参前提（不再被写死的 x>0 顶掉）", () => {
+describe("（CLI 半）：--assume 的界落到形参前提（不再被写死的 x>0 顶掉）", () => {
 /**
- * Bug 976（**CLI 半**，`packages/nudojs/src/commands/shared.ts`）：`--assume`
+ * （**CLI 半**，`packages/nudojs/src/commands/shared.ts`）：`--assume`
  * 声明的**界**被顶掉 ⇒ 观察面给出比用户声明**更窄**的结果（说谎）。
  *
  * 根因：core 的 `buildArgsFromAssume` 只拿到**被假设形参的 id 集合** ⇒ 把
@@ -1929,7 +1929,7 @@ describe("[cli-] Bug 976（CLI 半）：--assume 的界落到形参前提（不�
  *
  * 钉：
  * - `--assume 'x>-5'` ⇒ 结果含 `"neg"`（改前只有 `"pos"`）；
- * - `--assume 'x>=-5'` ⇒ 同上（`>=` 口径，Bug 973 的运算符分派不被破坏）；
+ * - `--assume 'x>=-5'` ⇒ 同上（`>=` 口径，的运算符分派不被破坏）；
  * - 负控制：`--assume 'x>0'` ⇒ 仍只有 `"pos"`（写死的界与用户一致时不变）；
  * - 负控制：同一形参多条界取**合取**（`x>0` + `x<10` ⇒ `x=1` 可达 ⇒ 两侧都可达）。
  */
@@ -1962,7 +1962,7 @@ function fixture(): string {
   return join(dir, "k.js");
 }
 
-describe("Bug 976（CLI 半）：--assume 的界落到形参前提（不再被写死的 x>0 顶掉）", () => {
+describe("（CLI 半）：--assume 的界落到形参前提（不再被写死的 x>0 顶掉）", () => {
   it("--assume 'x>-5' ⇒ x=-1 可达 ⇒ 结果含 \"neg\"", async () => {
     const r = await runAbsViewCaptured(fixture(), { assume: ["x>-5"] });
     expect(r.stdout).toContain("assume: x > -5");
@@ -1994,11 +1994,11 @@ describe("Bug 976（CLI 半）：--assume 的界落到形参前提（不再被�
 });
 
 // ---------------------------------------------------------------------------
-// bug 1064: 侧车写坏 ⇒ check 门禁必须红（nudo:contract-load）
+// 侧车写坏 ⇒ check 门禁必须红（nudo:contract-load）
 // ---------------------------------------------------------------------------
-describe("[cli-] bug 1064: 侧车写坏 ⇒ check 门禁必须红（nudo:contract-load）", () => {
+describe("侧车写坏 ⇒ check 门禁必须红（nudo:contract-load）", () => {
 /**
- * Bug 1064 —— 侧车写坏（import 了非构建器名）时，`nudo check` **门禁绿灯、
+ * 侧车写坏（import 了非构建器名）时，`nudo check` **门禁绿灯、
  * exit 0**（假绿），而 `nudo test` / `nudo health` 都报 error。
  *
  * 根因在 core（`packages/core/src/algebra/refine.ts`）：侧车装载诊断在
@@ -2067,7 +2067,7 @@ function makeProject(): { dir: string; file: string } {
   return { dir, file };
 }
 
-describe("bug 1064: 侧车写坏 ⇒ check 门禁必须红（nudo:contract-load）", () => {
+describe("侧车写坏 ⇒ check 门禁必须红（nudo:contract-load）", () => {
   it("人类面：check 报 contract-load error + exit 1（旧行为：exit 0 假绿）", async () => {
     const { dir, file } = makeProject();
     try {
@@ -2105,9 +2105,9 @@ describe("bug 1064: 侧车写坏 ⇒ check 门禁必须红（nudo:contract-load�
 // ---------------------------------------------------------------------------
 // 1145 · nudo check：模块级求值失败必须 fail-closed
 // ---------------------------------------------------------------------------
-describe("[cli-] 1145 · nudo check：模块级求值失败必须 fail-closed", () => {
+describe("1145 · nudo check：模块级求值失败必须 fail-closed", () => {
 /**
- * Bug 1145 回归：`nudo check` 遇**模块级求值失败**（引擎内部回落 `internal`）
+ * 回归：`nudo check` 遇**模块级求值失败**（引擎内部回落 `internal`）
  * 必须**红**——不得「零诊断 + exit 0」（**闸门假绿**：合法代码与违约代码都判绿）。
  *
  * 病灶：core 在「生成模块编译失败（`new Function` SyntaxError）」或「模块求值抛
@@ -2189,7 +2189,7 @@ describe("1145 · nudo check：模块级求值失败必须 fail-closed", () => {
     const r = runCliTsx(["check", file]);
     expect(r.status).not.toBe(0);
     // 人类面：明确的失败行（哪个文件 + 什么原因）。
-    // BUG-073 之后模块级原生异常归类为 `nudo:module-throw`（用户代码的异常不再是
+    // 之后模块级原生异常归类为 `nudo:module-throw`（用户代码的异常不再是
     // 引擎内部缺陷），因此不再有 `analysis failed for … internal fallback` 行；
     // 契约不变：该文件必须红，且失败原因必须可见。
     expect(r.stdout).toContain("FAILED");
@@ -2253,9 +2253,9 @@ describe("1145 · nudo check：模块级求值失败必须 fail-closed", () => {
 
 describe("1145 · nudo health：存在 internal 回落时不得报 OK", () => {
   it("模块级原生异常不再是「分析失败」⇒ health 只看漂移，报 OK（口径变更）", () => {
-    // BUG-073 之后 `export const boom = undefined();` 被**确定性**归类为
+    // 之后 `export const boom = undefined();` 被**确定性**归类为
     // `nudo:module-throw`（分析本身成功，结论是「这个模块装载必抛」），
-    // 不再走 `internal` 回落 ⇒ BUG-1145 的 health 断言前提（「分析失败 ⇒ 闸门
+    // 不再走 `internal` 回落 ⇒ 的 health 断言前提（「分析失败 ⇒ 闸门
     // 无法裁决」）消失：health 的失败判据是 **contract drift / case drift /
     // path error / internal 回落**，不含「代码本身必抛」这类**可裁决**的缺陷
     // ——那由 `nudo check` 报红（见上方用例）。`internal` 回落仍会进
@@ -2289,27 +2289,27 @@ describe("1145 · nudo health：存在 internal 回落时不得报 OK", () => {
 });
 
 // ---------------------------------------------------------------------------
-// nudo contract --help · Bug 1147-a · `--json` 的三形态口径
+// nudo contract --help · a · `--json` 的三形态口径
 // ---------------------------------------------------------------------------
-describe("[cli-] nudo contract --help · Bug 1147-a · `--json` 的三形态口径", () => {
+describe("nudo contract --help · a · `--json` 的三形态口径", () => {
 /**
- * Bug 1147 —— `nudo contract` 的两处**文案与实现口径分裂**（只改文案，
+ * `nudo contract` 的两处**文案与实现口径分裂**（只改文案，
  * **不改行为**）。
  *
  * 1147-a：`contract --help` 把 `--json` 写成「With --draft: …」⇒ 用户以为
- *   `--json` **只能**配 `--draft`；实现里 print / `--draft` / `--emit`
- *   **三形态**都吐机器面载荷，且**顶层恒为 JSON 数组**（元素形状按形态不同）
- *   ⇒ 帮助文本与实现口径分裂。
+ * `--json` **只能**配 `--draft`；实现里 print / `--draft` / `--emit`
+ * **三形态**都吐机器面载荷，且**顶层恒为 JSON 数组**（元素形状按形态不同）
+ * ⇒ 帮助文本与实现口径分裂。
  * 1147-b：`--from-dts --write` 拒绝覆盖「存在且不同」的草稿时，提示**只**提
- *   环境变量 `NUDO_DRAFT_FORCE=1`，**不提** CLI 旗标 `--force` ⇒ 用户按文档
- *   用 `--force` 仍被拒时**看不出还有旗标**（死胡同感）。
+ * 环境变量 `NUDO_DRAFT_FORCE=1`，**不提** CLI 旗标 `--force` ⇒ 用户按文档
+ * 用 `--force` 仍被拒时**看不出还有旗标**（死胡同感）。
  *
  * 钉：
  * ① 帮助文本里 `--json` **不再**声称「仅 `--draft`」，且**提到三形态**
- *    （print / `--draft` / `--emit`）与「元素形状按形态不同」；
+ * （print / `--draft` / `--emit`）与「元素形状按形态不同」；
  * ② 拒绝提示**同时**含 `--force` 与 `NUDO_DRAFT_FORCE`（两个放行口子都可见）；
  * ③ **人工改过的草稿永不被覆盖** ⇒ 拒绝**仍然发生**（`--force` 也不放行）
- *    ⇒ 不得为了提示友好而放开覆盖（**不引入数据丢失**）；
+ * ⇒ 不得为了提示友好而放开覆盖（**不引入数据丢失**）；
  * ④ 提示里给出的放行口子是真的：机器原稿（内容不同）+ `--force` ⇒ 覆盖成功。
  */
 
@@ -2353,16 +2353,16 @@ function makeDtsFixture(): string {
 /**
  * `--from-dts --write` 的落盘路径（贴着源 `.d.ts`，`sidecarDraftPath` 口径）。
  *
- * ⚠ 落点名**不含 `.d.` 段**（BUG-264：`tmp/bug-report/sections/BUG-264.md`
- *   + `.changeset/fix-bug-cat-09-cli-check.md`）—— basename 含 `.d.` ⇒
- *   TypeScript 判成声明文件 ⇒ 草稿与它建议的复制落点都过不了 `tsc --strict`
- *   ⇒ `types/index.d.ts` ⇒ `types/index.nudo.draft.ts`。
+ * ⚠ 落点名**不含 `.d.` 段**（`tmp/bug-report/sections/.md`
+ * + `.changeset/fix-bug-cat-09-cli-check.md`）—— basename 含 `.d.` ⇒
+ * TypeScript 判成声明文件 ⇒ 草稿与它建议的复制落点都过不了 `tsc --strict`
+ * ⇒ `types/index.d.ts` ⇒ `types/index.nudo.draft.ts`。
  */
 function draftPathOf(dir: string): string {
   return join(dir, "types", "index.nudo.draft.ts");
 }
 
-describe("nudo contract --help · Bug 1147-a · `--json` 的三形态口径", () => {
+describe("nudo contract --help · a · `--json` 的三形态口径", () => {
   it("`--json` 不再声称「仅 `--draft`」，且**提到** print / `--draft` / `--emit` 三形态", () => {
     const r = runCli(["contract", "--help"]);
     expect(r.status).toBe(0);
@@ -2403,7 +2403,7 @@ describe("nudo contract --help · Bug 1147-a · `--json` 的三形态口径", ()
   }, 60000); // 1 个 CLI 子进程
 });
 
-describe("nudo contract --from-dts --write · Bug 1147-b · 拒绝提示的双放行口子", () => {
+describe("nudo contract --from-dts --write · b · 拒绝提示的双放行口子", () => {
   it("拒绝覆盖时提示**同时**给出 `--force` 与 `NUDO_DRAFT_FORCE`（既有草稿逐字不变）", () => {
     const dir = makeDtsFixture();
     const draftPath = draftPathOf(dir);
@@ -2478,11 +2478,11 @@ describe("nudo contract --from-dts --write · Bug 1147-b · 拒绝提示的双�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 456 CLI：nudo check 面对 ESM import 环不再丢弃整张依赖图
+// CLI：nudo check 面对 ESM import 环不再丢弃整张依赖图
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 456 CLI：nudo check 面对 ESM import 环不再丢弃整张依赖图", () => {
+describe("CLI：nudo check 面对 ESM import 环不再丢弃整张依赖图", () => {
 /**
- * Bug 456 回归（CLI 面）：`nudo check` 检出 ESM import 环就**丢弃整张依赖图**
+ * 回归（CLI 面）：`nudo check` 检出 ESM import 环就**丢弃整张依赖图**
  * ⇒ 环内文件的 import 全部落空 ⇒ 环内函数在 check 面恒为 `unknown`
  * （原生是确定值）。
  *
@@ -2490,10 +2490,10 @@ describe("[cli-] Bug 456 CLI：nudo check 面对 ESM import 环不再丢弃整�
  * 改前：`probe() => unknown`；改后：`probe() => 0`。
  *
  * 本文件锁三件事：
- *  ① 环内文件在 check 面给出**正确签名**（= 原生值）；
- *  ② 求值**有界**：真·无限递归的环被调用环检测器截断成
- *     `nudo:recursion-truncated`（info），不挂死、不无限求值；
- *  ③ 负控制：非环的跨模块调用不受影响（值与改前一致）。
+ * ① 环内文件在 check 面给出**正确签名**（= 原生值）；
+ * ② 求值**有界**：真·无限递归的环被调用环检测器截断成
+ * `nudo:recursion-truncated`（info），不挂死、不无限求值；
+ * ③ 负控制：非环的跨模块调用不受影响（值与改前一致）。
  */
 
 
@@ -2534,7 +2534,7 @@ function fixture(files: Record<string, string>): string {
   return dir;
 }
 
-describe("Bug 456 CLI：nudo check 面对 ESM import 环不再丢弃整张依赖图", () => {
+describe("CLI：nudo check 面对 ESM import 环不再丢弃整张依赖图", () => {
   it("环内文件的签名 = 原生值（改前：unknown）", () => {
     const dir = fixture({ "a.js": A, "b.js": B, "index.js": ENTRY });
     try {
@@ -2571,17 +2571,17 @@ describe("Bug 456 CLI：nudo check 面对 ESM import 环不再丢弃整张依赖
 });
 
 // ---------------------------------------------------------------------------
-// Bug 461: domainIssuesFromDiagnostics —— contract 家族白名单
+// domainIssuesFromDiagnostics —— contract 家族白名单
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 461: domainIssuesFromDiagnostics —— contract 家族白名单", () => {
+describe("domainIssuesFromDiagnostics —— contract 家族白名单", () => {
 /**
- * Bug 461：`nudo:contract-entry-only` 在 `nudo check` 面被**丢弃**（白名单只留
+ * `nudo:contract-entry-only` 在 `nudo check` 面被**丢弃**（白名单只留
  * contract-domain-exceeds 一条）⇒ 分析器产出的 entry-only info 在 check 面不可达，
  * 而 `nudo health` 走另一条统计路径仍报「N entry-only」⇒ 同一事实两 verb 口径分裂。
  *
  * 本文件锁两件事：
  * 1. 单元面：contract 家族白名单纳入 `nudo:contract-entry-only`（severity=info，
- *    不挡门禁），且既有 domain-exceeds 映射与其余码的过滤行为**不变**（负控制）。
+ * 不挡门禁），且既有 domain-exceeds 映射与其余码的过滤行为**不变**（负控制）。
  * 2. 产品面：`nudo check --from <usage>` 真实报出这条 info（改前 infos: 0）。
  */
 
@@ -2613,7 +2613,7 @@ function fixture(): string {
   return dir;
 }
 
-describe("Bug 461: domainIssuesFromDiagnostics —— contract 家族白名单", () => {
+describe("domainIssuesFromDiagnostics —— contract 家族白名单", () => {
   const base = {
     severity: "info",
     message: "export 'f' has no contract root and no call-site domain (entry-only)",
@@ -2654,7 +2654,7 @@ describe("Bug 461: domainIssuesFromDiagnostics —— contract 家族白名单",
   });
 });
 
-describe("Bug 461: nudo check --from 产品面报出 entry-only", () => {
+describe("nudo check --from 产品面报出 entry-only", () => {
   it("check --from 打印 nudo:contract-entry-only（改前 infos: 0 / 静默丢弃）", () => {
     const dir = fixture();
     try {
@@ -2690,11 +2690,11 @@ describe("Bug 461: nudo check --from 产品面报出 entry-only", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 466: nudo test --from 现场文件读失败
+// nudo test --from 现场文件读失败
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 466: nudo test --from 现场文件读失败", () => {
+describe("nudo test --from 现场文件读失败", () => {
 /**
- * Bug 466：`nudo test --from` 指向**解析/求值失败**的现场文件时静默零记录、exit 0
+ * `nudo test --from` 指向**解析/求值失败**的现场文件时静默零记录、exit 0
  * （假绿）——`collectCallRecords`（service）把求值异常 blanket 吞成「0 条记录」，
  * 于是「现场文件读失败」与「现场文件里确实没有调用」在下游同形。
  *
@@ -2739,7 +2739,7 @@ function fixture(): string {
   return dir;
 }
 
-describe("Bug 466: nudo test --from 现场文件读失败", () => {
+describe("nudo test --from 现场文件读失败", () => {
   it("解析失败 → 明确报错 + exit 1（改前：静默 0 记录 + exit 0 假绿）", () => {
     const dir = fixture();
     try {
@@ -2796,11 +2796,11 @@ describe("Bug 466: nudo test --from 现场文件读失败", () => {
 });
 
 // ---------------------------------------------------------------------------
-// nudo contract — bigint 字面量契约不得崩溃（Bug 534）
+// nudo contract — bigint 字面量契约不得崩溃（）
 // ---------------------------------------------------------------------------
-describe("[cli-] nudo contract — bigint 字面量契约不得崩溃（Bug 534）", () => {
+describe("nudo contract — bigint 字面量契约不得崩溃（）", () => {
 /**
- * Bug 534 —— `nudo contract` 遇 **bigint 字面量契约** 不得整条命令崩溃。
+ * `nudo contract` 遇 **bigint 字面量契约** 不得整条命令崩溃。
  *
  * 病灶：契约面把约束用 `JSON.parse(JSON.stringify(c))` 落盘 ⇒ JSON 无法表示
  * bigint ⇒ `JSON.stringify` 抛 `TypeError: Do not know how to serialize a
@@ -2825,7 +2825,7 @@ const BIGINT_NUDO_JS = `import { fn, lit } from "@nudojs/core";
 export const g = fn({ n: lit(10n) }, lit(10n));
 `;
 
-describe("nudo contract — bigint 字面量契约不得崩溃（Bug 534）", () => {
+describe("nudo contract — bigint 字面量契约不得崩溃（）", () => {
   it("contract 正常出结果（改前：裸 Do not know how to serialize a BigInt，exit 1）", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug534-"));
     try {
@@ -2837,7 +2837,7 @@ describe("nudo contract — bigint 字面量契约不得崩溃（Bug 534）", ()
       expect(r.status).toBe(0);
       expect(r.stderr).not.toContain("Do not know how to serialize a BigInt");
       expect(r.stdout).toContain("g");
-      // bigint 保 `n` 后缀（Bug 361）：`lit(10)` 与 `lit(10n)` 必须可区分，
+      // bigint 保 `n` 后缀（）：`lit(10)` 与 `lit(10n)` 必须可区分，
       // 否则「expected:」陈述的是另一条契约。本用例的诉求是「不崩」。
       expect(r.stdout).toContain("lit(10n)");
     } finally {
@@ -2867,11 +2867,11 @@ describe("nudo contract — bigint 字面量契约不得崩溃（Bug 534）", ()
 });
 
 // ---------------------------------------------------------------------------
-// nudo contract — 打印面以声明形参表为骨架（Bug 559）
+// nudo contract — 打印面以声明形参表为骨架（）
 // ---------------------------------------------------------------------------
-describe("[cli-] nudo contract — 打印面以声明形参表为骨架（Bug 559）", () => {
+describe("nudo contract — 打印面以声明形参表为骨架（）", () => {
 /**
- * Bug 559 —— `nudo contract` 打印面用**契约里的参数**冒充**函数的形参表**
+ * `nudo contract` 打印面用**契约里的参数**冒充**函数的形参表**
  * ⇒ 与 `nudo check` 的签名面给出两套形参（跨 verb 自相矛盾）。
  *
  * 本测试钉住产品面：同一份文件，`nudo contract` 印的形参表必须与
@@ -2893,7 +2893,7 @@ const MISMATCH_NUDO_JS = `import { fn, number } from "@nudojs/core";
 export const scale = fn({ zzz: number().gt(0) }, number());
 `;
 
-describe("nudo contract — 打印面以声明形参表为骨架（Bug 559）", () => {
+describe("nudo contract — 打印面以声明形参表为骨架（）", () => {
   it("contract 印的形参 = 声明形参；契约里绑不上的参数另列并标注", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug559-"));
     try {
@@ -2920,11 +2920,11 @@ describe("nudo contract — 打印面以声明形参表为骨架（Bug 559）", 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 640 — check 与 check --fix 的分析输入集必须一致
+// check 与 check --fix 的分析输入集必须一致
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 640 — check 与 check --fix 的分析输入集必须一致", () => {
+describe("check 与 check --fix 的分析输入集必须一致", () => {
 /**
- * Bug 640 — `nudo check` 与 `nudo check --fix` 喂给分析器的**输入集不同**
+ * `nudo check` 与 `nudo check --fix` 喂给分析器的**输入集不同**
  * ⇒ 同一文件两条命令给出**相反**的门禁结论（一个绿一个红 / 一个红一个绿）。
  *
  * 修法（族 18 片 4）：`runCheckFix` 的两处 `checkSource` 调用与 `runCheck`
@@ -2933,10 +2933,10 @@ describe("[cli-] Bug 640 — check 与 check --fix 的分析输入集必须一�
  * 装配 env 注入包（`@nudo:mock` 的替换、`@nudo:env` 的全局、模块图）。
  *
  * 四个方向（每个方向都锁「两条命令结论一致」）：
- *  a) `@nudo:mock`（内联）——改前 check 绿 / --fix 红（假红）
- *  b) `nudo.contract.autoBind: false`——改前 check 红 / --fix 绿（假绿 / CI 假通过）
- *  c) `@nudo:mock x from "缺文件"`——改前两条命令的**诊断集**不同
- *  d) `--profile adoption`（L2 降级 warning）——改前 --fix 仍替用户写契约
+ * a) `@nudo:mock`（内联）——改前 check 绿 / --fix 红（假红）
+ * b) `nudo.contract.autoBind: false`——改前 check 红 / --fix 绿（假绿 / CI 假通过）
+ * c) `@nudo:mock x from "缺文件"`——改前两条命令的**诊断集**不同
+ * d) `--profile adoption`（L2 降级 warning）——改前 --fix 仍替用户写契约
  */
 
 
@@ -2965,7 +2965,7 @@ function gate(r: { status: number }): "red" | "green" {
   return r.status === 0 ? "green" : "red";
 }
 
-describe("Bug 640 — check 与 check --fix 的分析输入集必须一致", () => {
+describe("check 与 check --fix 的分析输入集必须一致", () => {
   it("方向 a：@nudo:mock 内联 —— 两条命令同绿（改前 check 绿 / --fix 红）", { timeout: 90_000 }, () => {
     const dir = project({
       "lib.js": `/**
@@ -3068,25 +3068,25 @@ export function f() {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 643 —— --from 的现场文件路径必须到达 runCheck（CLI 闭环）
+// --from 的现场文件路径必须到达 runCheck（CLI 闭环）
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 643 —— --from 的现场文件路径必须到达 runCheck（CLI 闭环）", () => {
+describe("--from 的现场文件路径必须到达 runCheck（CLI 闭环）", () => {
 /**
- * Bug 643 —— **CLI 闭环**：`nudo check <被调方> --from <调用方>` 的现场文件
+ * **CLI 闭环**：`nudo check <被调方> --from <调用方>` 的现场文件
  * **路径**从未到达 `runCheck` ⇒ 静态调用点复核整条失明 ⇒ 门禁**假绿**。
  *
  * 根因链（库级接线已由族 18 · 片 3 落盘，CLI 侧漏了最后一根线）：
  * - `commands/check-command.ts` 的 action 把 `--from` 路径交给
- *   `commands/shared.ts` 的 `collectExternalRecords`，它**塌缩成执行态
- *   `CallRecord[]``**；现场文件「零条执行态记录」时直接回 `undefined`
- *   ⇒ `runCheck` 连「现场文件是哪个」都看不见；
+ * `commands/shared.ts` 的 `collectExternalRecords`，它**塌缩成执行态
+ * `CallRecord[]``**；现场文件「零条执行态记录」时直接回 `undefined`
+ * ⇒ `runCheck` 连「现场文件是哪个」都看不见；
  * - `check-json-map.ts` 的 `staticFromDomainIssues`（按 core 同文件通道的
- *   静态全树扫描判据复核 `--from` 现场文件）与 `check.ts` 的
- *   `RunCheckOptions.fromPaths` 都需要**路径**才能工作 ⇒ 路径不落地 ⇒
- *   静态通道整条失明；
+ * 静态全树扫描判据复核 `--from` 现场文件）与 `check.ts` 的
+ * `RunCheckOptions.fromPaths` 都需要**路径**才能工作 ⇒ 路径不落地 ⇒
+ * 静态通道整条失明；
  * - 症状：调用点被包在**函数体 / 箭头 / 方法体**里时（执行态采集拿不到
- *   记录），`nudo check <被调方> --from <调用方>` **exit 0 绿**，而
- *   `nudo check <调用方>` **exit 1 红** —— 谁被检查谁决定颜色。
+ * 记录），`nudo check <被调方> --from <调用方>` **exit 0 绿**，而
+ * `nudo check <调用方>` **exit 1 红** —— 谁被检查谁决定颜色。
  *
  * 本钉走**产品面**（共享脚手架 `helpers/run-cli.ts` 的 CLI runner）：
  * ① `--from` ⇒ 被调方红（exit 1）+ 恰一条 `nudo:contract-domain-exceeds`；
@@ -3094,7 +3094,7 @@ describe("[cli-] Bug 643 —— --from 的现场文件路径必须到达 runChec
  * ③ 归因到**被调方导出名**（`fn: "f"` / actual `-1`）；
  * ④ `--from <目录>` 同判（现场文件集合按目录展开）；
  * ⑤ 控制组：直接 check **调用方** ⇒ 仍 1 条 `nudo:constraint-violated`
- *    （跨文件面不得污染同文件面）；
+ * （跨文件面不得污染同文件面）；
  * ⑥ 控制组：**不带** `--from` ⇒ 被调方绿（不得凭空造证据）；
  * ⑦ **不重复报告**：顶层调用点（执行态 + 静态两通道同时命中）⇒ 恰一条。
  *
@@ -3152,7 +3152,7 @@ type CheckJsonLike = {
  * - `lib.js`：被调方（导出 `f`）；
  * - `lib.nudo.js`：手写契约侧车（`x > 0`）——ambient 绑定，无需 import；
  * - `infn.js`：现场文件，调用点**被包在函数体内** ⇒ 执行态采集拿不到记录
- *   ⇒ 只有静态通道能看见它。
+ * ⇒ 只有静态通道能看见它。
  */
 function fixture(): string {
   const dir = mkdtempSync(join(tmpdir(), "nudo-b643-cli-"));
@@ -3176,7 +3176,7 @@ function fixture(): string {
   return dir;
 }
 
-describe("Bug 643 —— --from 的现场文件路径必须到达 runCheck（CLI 闭环）", () => {
+describe("-from 的现场文件路径必须到达 runCheck（CLI 闭环）", () => {
   it("① --from 现场文件（调用点在函数体内）⇒ 被调方门禁红（exit 1 + 恰一条跨文件域超限）", () => {
     const dir = fixture();
     const r = runCliTsx(["check", "lib.js", "--from", "infn.js"], { cwd: dir });
@@ -3254,20 +3254,20 @@ describe("Bug 643 —— --from 的现场文件路径必须到达 runCheck（CLI
 });
 
 // ---------------------------------------------------------------------------
-// Bug 643 —— --from 的调用点义务按静态判据复核
+// --from 的调用点义务按静态判据复核
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 643 —— --from 的调用点义务按静态判据复核", () => {
+describe("--from 的调用点义务按静态判据复核", () => {
 /**
- * Bug 643 —— `nudo check --from` / `nudo test --from` 的**调用点义务**只覆盖
+ * `nudo check --from` / `nudo test --from` 的**调用点义务**只覆盖
  * **执行态**调用点 ⇒ 被包在**函数 / 箭头 / 方法**里的违例**静默漏过**
  * （exit 0 绿），而**同一调用点所在文件单独 check 是红的**。
  *
  * 根因：调用点义务有两条通道、判据本应一致——
  * - **同文件**：core 的 `scanLiteralCalls` 做**静态全树扫描** ⇒ 无论调用点
- *   是否被执行过都执法；
+ * 是否被执行过都执法；
  * - **跨文件（`--from`）**：此前只有**执行态** `externalCallRecords`
- *   （`collectExternalRecords` 只收集真正跑过的调用）⇒ 函数体内的调用点
- *   根本没有记录 ⇒ 同一处静态可见的违例，谁被检查谁决定颜色。
+ * （`collectExternalRecords` 只收集真正跑过的调用）⇒ 函数体内的调用点
+ * 根本没有记录 ⇒ 同一处静态可见的违例，谁被检查谁决定颜色。
  *
  * 修法：复用 core **同文件通道的静态扫描**（`checkSource` 对 `--from` 现场
  * 文件跑一遍）复核调用点义务 ⇒ 两通道同码（`nudo:constraint-violated`）
@@ -3276,9 +3276,9 @@ describe("[cli-] Bug 643 —— --from 的调用点义务按静态判据复核",
  *
  * 钉：
  * - 现场文件里的调用点被包在**函数体内** ⇒ 被调方的 check 报告必须带上
- *   `nudo:constraint-violated`（error）+ 归因到被调方的导出名；
+ * `nudo:constraint-violated`（error）+ 归因到被调方的导出名；
  * - 控制组：**不带** `--from` 现场文件 ⇒ 被调方自身报告不含该违例
- *   （不得凭空造证据）。
+ * （不得凭空造证据）。
  */
 
 
@@ -3344,7 +3344,7 @@ function loadRelative(specifier: string, fromFile: string): string | undefined {
   }
 }
 
-describe("Bug 643 —— --from 的调用点义务按静态判据复核", () => {
+describe("-from 的调用点义务按静态判据复核", () => {
   it("静态扫描：函数体内的调用点被判为被调方的调用点违例", () => {
     const { lib, infn } = fixture();
     const issues = staticFromDomainIssues({

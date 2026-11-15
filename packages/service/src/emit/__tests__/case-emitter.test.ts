@@ -183,7 +183,7 @@ describe("serializeCaseArg", () => {
       { label: "object with bigint", value: absObj({ n: absPrim("bigint") }) },
       { label: "union with symbol", value: absUnion([num(), absPrim("symbol")]) },
       { label: "object with function value", value: absObj({ cb: dummyFn() }) },
-      // BUG-002：rest 槽指令文法不可表达 → 不得静默截断成固定位前缀
+      // rest 槽指令文法不可表达 → 不得静默截断成固定位前缀
       {
         label: "tuple with rest slot",
         value: absExact({ k: "tuple", elements: [absLit(1)], rest: num() }),
@@ -207,7 +207,7 @@ describe("serializeCaseArg", () => {
     expect(serializeCaseArg(absObj({ "'q'": num() }))).toBeNull();
   });
 
-  // ★ 族 28 接线（Bug 840）：指令文法改为**解释 JS 转义** + 完整数值文法
+  // ★ 族 28 接线（）：指令文法改为**解释 JS 转义** + 完整数值文法
   // ⇒ 下列形态从「不可表达」变成「可表达且往返保真」。
   it("expresses values the widened grammar can now round-trip", () => {
     // 两种引号并存：现在用双引号包裹并转义其中的 `"`
@@ -363,7 +363,7 @@ function add(a, b) {
   });
 
   it("appends a newly discovered call site to an already-frozen function", () => {
-    // 二次 freeze：已固化函数**新增**的调用点要看得见（族 14 Bug 465）——
+    // 二次 freeze：已固化函数**新增**的调用点要看得见（族 14 ）——
     // 旧口径「函数已有 case 指令 ⇒ 整函数跳过」⇒ 新见证被静默丢弃。
     const source = `/**
  * @nudo:case "call@L2" (1)

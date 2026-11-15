@@ -1,5 +1,5 @@
 /**
- * Bug 749 — LSP server **从不保存**客户端能力（`initialize` 的
+ * LSP server **从不保存**客户端能力（`initialize` 的
  * `params.capabilities`）⇒ 协议面无从按客户端声明的能力作答。
  *
  * 根因：`onInitialize` 只回**自己**的能力声明、**从不读** `params.capabilities`
@@ -9,12 +9,12 @@
  * 本钉钉住**能力读取侧**（片 C）的契约：
  * 1. `initialize` 时捕获 `params.capabilities`；
  * 2. 经**既有 deps** 注入导航面（`deps.clientCapabilities`）——`deps` 是模块内
- *    参数 ⇒ **零新增 package 导出**、公开面零变更；
+ * 参数 ⇒ **零新增 package 导出**、公开面零变更；
  * 3. **缺省语义**：客户端没发能力段（老客户端可能根本不发）⇒ `undefined`
- *    ⇒ 消费方必须走**默认**（层级式 + 全量 SymbolKind），**不得**因拿不到
- *    能力就退化；
+ * ⇒ 消费方必须走**默认**（层级式 + 全量 SymbolKind），**不得**因拿不到
+ * 能力就退化；
  * 4. `initialize` 的**返回值不变** ⇒ `NUDO_INITIALIZE_CAPABILITIES` 冻结表
- *    一行不动（服务端**声明**的能力键 ≠ 客户端**声明**的能力）。
+ * 一行不动（服务端**声明**的能力键 ≠ 客户端**声明**的能力）。
  *
  * ⚠ 输出侧（按能力决定返回形状 / SymbolKind 夹取）归片 B（`server-navigation.ts`）。
  */
@@ -49,7 +49,7 @@ const CLIENT_CAPS = {
   },
 };
 
-describe("Bug 749 — initialize 捕获客户端能力并注入导航面", () => {
+describe("initialize 捕获客户端能力并注入导航面", () => {
   it("客户端能力被捕获，并经既有 deps 注入导航面", async () => {
     await withLspServerCapabilities({ "a.js": "export const a = 1;\n" }, CLIENT_CAPS, async () => {
       expect(nav.deps, "导航面 deps 未注入").toBeTruthy();

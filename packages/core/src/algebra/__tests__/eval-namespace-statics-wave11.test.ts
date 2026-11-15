@@ -1,20 +1,20 @@
 /**
- * 求值引擎命名空间静态 + 宿主全局守卫（wave 11：Bug 19/20/38/43/47/54/64）。
+ * 求值引擎命名空间静态 + 宿主全局守卫（wave 11：）。
  * 全部断言与 node v26 ground truth 对齐（probe 记录见各 bug 注释）：
  *
- * - Bug 19 Reflect.*：非对象 target（prim/nullish/缺省）→ 定抛 TypeError；
- *   any target → may；闭 obj 槽命中投影。
- * - Bug 20 宿主全局守卫：decodeURIComponent("%") 定抛 URIError；全字面量
- *   实参真执行（"%41" → "A"）；抽象实参保守 unknown + may；symbol 实参定抛。
- * - Bug 38 String.fromCodePoint：越界/非整数/NaN → 定抛 RangeError；
- *   symbol/bigint → TypeError；合法字面量精确折叠；抽象 → may。
- * - Bug 43 Symbol.for/keyFor：注册表身份（同 key === true、keyFor 反查）；
- *   symbol key 定抛；非 symbol keyFor 实参定抛；抽象 → may。
- * - Bug 47/64 Promise 静态：node v26 实测迭代器获取折为 rejection（含
- *   all——bug 文本「同步定抛」被否决），同步侧不抛；race/any → 元素联合、
- *   allSettled → {status;value|reason}[] 值域。
- * - Bug 54 Error 家族：symbol message 定抛（new 与调用形）；AggregateError
- *   errors 非可迭代定抛（同步 IterableToList）；nullish/数字 message 全定。
+ * - Reflect.*：非对象 target（prim/nullish/缺省）→ 定抛 TypeError；
+ * any target → may；闭 obj 槽命中投影。
+ * - 宿主全局守卫：decodeURIComponent("%") 定抛 URIError；全字面量
+ * 实参真执行（"%41" → "A"）；抽象实参保守 unknown + may；symbol 实参定抛。
+ * - String.fromCodePoint：越界/非整数/NaN → 定抛 RangeError；
+ * symbol/bigint → TypeError；合法字面量精确折叠；抽象 → may。
+ * - Symbol.for/keyFor：注册表身份（同 key === true、keyFor 反查）；
+ * symbol key 定抛；非 symbol keyFor 实参定抛；抽象 → may。
+ * - Promise 静态：node v26 实测迭代器获取折为 rejection（含
+ * all——bug 文本「同步定抛」被否决），同步侧不抛；race/any → 元素联合、
+ * allSettled → {status;value|reason}[] 值域。
+ * - Error 家族：symbol message 定抛（new 与调用形）；AggregateError
+ * errors 非可迭代定抛（同步 IterableToList）；nullish/数字 message 全定。
  */
 import { describe, it, expect } from "vitest";
 import {
@@ -75,9 +75,9 @@ function expectThrows(src: string, name: string): void {
   expect(throwsBrand(r.throws, name), `${src} throws=${formatAbs(r.throws)}`).toBe(true);
 }
 
-// --- Bug 19：Reflect.* ----------------------------------------------------
+// --- Reflect.* ----------------------------------------------------
 
-describe("Bug 19: Reflect.* target validation", () => {
+describe("Reflect.* target validation", () => {
   it("non-object literal target → definite TypeError", () => {
     for (const m of ["get", "set", "has", "ownKeys", "deleteProperty"]) {
       expectThrows(`export function f() { return Reflect.${m}(1, "a"); }`, "TypeError");
@@ -121,9 +121,9 @@ describe("Bug 19: Reflect.* target validation", () => {
   });
 });
 
-// --- Bug 20：宿主全局守卫 --------------------------------------------------
+// --- 宿主全局守卫 --------------------------------------------------
 
-describe("Bug 20: unmodeled host globals execute with guarded literal args", () => {
+describe("unmodeled host globals execute with guarded literal args", () => {
   it("literal arg reaching a native throw folds into the throws domain", () => {
     expectThrows(`export function f() { return decodeURIComponent("%"); }`, "URIError");
     expectThrows(`export function f() { return decodeURI("%"); }`, "URIError");
@@ -154,9 +154,9 @@ describe("Bug 20: unmodeled host globals execute with guarded literal args", () 
   });
 });
 
-// --- Bug 38：String.fromCodePoint -----------------------------------------
+// --- String.fromCodePoint -----------------------------------------
 
-describe("Bug 38: String.fromCodePoint validation and folding", () => {
+describe("String.fromCodePoint validation and folding", () => {
   it("invalid literal code points → definite RangeError", () => {
     for (const arg of ["-1", "0x110000", "65.5", '"66.5"', "NaN", "undefined", '"abc"', "Infinity"]) {
       expectThrows(`export function f() { return String.fromCodePoint(${arg}); }`, "RangeError");
@@ -196,9 +196,9 @@ describe("Bug 38: String.fromCodePoint validation and folding", () => {
   });
 });
 
-// --- Bug 43：Symbol.for / Symbol.keyFor -----------------------------------
+// --- Symbol.for / Symbol.keyFor -----------------------------------
 
-describe("Bug 43: Symbol.for / Symbol.keyFor registry semantics", () => {
+describe("Symbol.for / Symbol.keyFor registry semantics", () => {
   it("definite TypeErrors: symbol key / non-symbol keyFor argument", () => {
     expectThrows(`export function f() { return Symbol.for(Symbol()); }`, "TypeError");
     expectThrows(`export function f() { return Symbol.keyFor(1); }`, "TypeError");
@@ -236,9 +236,9 @@ describe("Bug 43: Symbol.for / Symbol.keyFor registry semantics", () => {
   });
 });
 
-// --- Bug 47/64：Promise 静态（node v26：迭代器获取折 rejection，不同步抛）---
+// --- ：Promise 静态（node v26：迭代器获取折 rejection，不同步抛）---
 
-describe("Bug 47/64: Promise statics", () => {
+describe("Promise statics", () => {
   it("non-iterable receivers do not throw synchronously (node v26: rejected promise)", () => {
     for (const src of [
       `export function f() { return Promise.all(1); }`,
@@ -278,9 +278,9 @@ describe("Bug 47/64: Promise statics", () => {
   });
 });
 
-// --- Bug 54：Error 家族 ctor 实参 -----------------------------------------
+// --- Error 家族 ctor 实参 -----------------------------------------
 
-describe("Bug 54: Error-family constructor argument validation", () => {
+describe("Error-family constructor argument validation", () => {
   it("symbol message → definite TypeError (all ctors, both call forms)", () => {
     for (const src of [
       `export function f() { return new Error(Symbol()); }`,

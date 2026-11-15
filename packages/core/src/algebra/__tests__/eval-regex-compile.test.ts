@@ -1,5 +1,5 @@
 /**
- * Bug 126 回归：`RegExp.prototype.compile` 不改接收者。compile 此前无臂：
+ * 回归：`RegExp.prototype.compile` 不改接收者。compile 此前无臂：
  * r.compile("b","gi") 后 source/flags/7 个 flag getter/lastIndex 全是旧
  * brand 的 exact 折叠值；非法 pattern/flags 也漏 SyntaxError。修复：
  * execRegexBrand 值通道 + $reStateCall 写回通道共用 compileRegexBrand
@@ -24,7 +24,7 @@ function expectThrow(body: string, name: string) {
   expect(throwsError(rec.throws, name), `throws face for: ${body}`).toBe(true);
 }
 
-describe("RegExp.prototype.compile rebuilds receiver (Bug 126)", () => {
+describe("RegExp.prototype.compile rebuilds receiver ()", () => {
   it("重编译 pattern：source 更新", () => {
     // node: /a/.compile("b") → source "b"
     expectVal(`const r = /a/; r.compile("b"); return r.source;`, "b");

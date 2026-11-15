@@ -10,11 +10,11 @@ import { checkSource } from "../check/check.ts";
 import { pTrue } from "../pred.ts";
 
 // ---------------------------------------------------------------------------
-// BUG-145 — 同名导出槽不得串位渲染
+// 同名导出槽不得串位渲染
 // ---------------------------------------------------------------------------
-describe("[] BUG-145 — 同名导出槽不得串位渲染", () => {
+describe("同名导出槽不得串位渲染", () => {
 /**
- * BUG-145 —— LSP `textDocument/inlayHint` 在**同名导出槽**下渲染**别的函数**
+ * LSP `textDocument/inlayHint` 在**同名导出槽**下渲染**别的函数**
  * 的计算式（IDE 里显示文件里根本不存在的表达式）。
  *
  * 根因：`inlay.ts` 的 `listFunctions` 逐节点取锚点，取值却走
@@ -46,7 +46,7 @@ exports.g = function (b) {
 const returnLabels = (inlays: AbsInlay[]): string[] =>
   inlays.filter((i) => i.kind === "type").map((i) => i.label);
 
-describe("BUG-145 — 同名导出槽不得串位渲染", () => {
+describe("同名导出槽不得串位渲染", () => {
   it("同名槽（`function f` + `exports.f`）不产返回 inlay（不渲染别的函数计算式）", () => {
     const labels = returnLabels(collectAbsInlays(CJS_SAME_NAME));
     // 文件里只有 `a + 1` 与 `"S" + b` —— `b + 1` 不存在
@@ -78,11 +78,11 @@ describe("BUG-145 — 同名导出槽不得串位渲染", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-147 — 匿名 default 导出的返回 inlay 不得消失
+// 匿名 default 导出的返回 inlay 不得消失
 // ---------------------------------------------------------------------------
-describe("[] BUG-147 — 匿名 default 导出的返回 inlay 不得消失", () => {
+describe("匿名 default 导出的返回 inlay 不得消失", () => {
 /**
- * BUG-147 —— LSP `textDocument/inlayHint` 对**匿名 default 导出**
+ * LSP `textDocument/inlayHint` 对**匿名 default 导出**
  * （`export default (a) => …`）整段消失，而同文件 codeLens 却有类型 ⇒ inlay
  * 面自述的「枚举必须与导出面同口径」不变量被破。
  *
@@ -98,7 +98,7 @@ describe("[] BUG-147 — 匿名 default 导出的返回 inlay 不得消失", () 
 const returnInlays = (src: string) =>
   collectAbsInlays(src, { fromFile: "/test/file.js" }).filter((i) => i.kind === "type");
 
-describe("BUG-147 — 匿名 default 导出的返回 inlay 不得消失", () => {
+describe("匿名 default 导出的返回 inlay 不得消失", () => {
   it("`export default (a) => a + 1` 有返回 inlay", () => {
     const inlays = returnInlays(`export default (a) => a + 1;\n`);
     expect(inlays.length).toBe(1);
@@ -120,15 +120,15 @@ describe("BUG-147 — 匿名 default 导出的返回 inlay 不得消失", () => 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 247 · inlay 返回位必须消费用户公理（与 check 面同源）
+// inlay 返回位必须消费用户公理（与 check 面同源）
 // ---------------------------------------------------------------------------
-describe("[] Bug 247 · inlay 返回位必须消费用户公理（与 check 面同源）", () => {
+describe("inlay 返回位必须消费用户公理（与 check 面同源）", () => {
 /**
- * Bug 247（inlay 面）—— 用户公理（`@nudo:invariant` / `@nudo:assume`）**只由
+ * （inlay 面）—— 用户公理（`@nudo:invariant` / `@nudo:assume`）**只由
  * check 的动态域播种** ⇒ inlayHint 自算 generalize 时若不播种，IDE 角标印的是
  * 「**没有那条公理**的程序」的类型 ⇒ `nudo check`（CLI）与 IDE 角标跨面矛盾。
  *
- * 夹具（`tmp/repro/bug-247/inv|ctrl/m1.js` 逐字）：同一函数体，只差
+ * 夹具（`tmp/repro//inv|ctrl/m1.js` 逐字）：同一函数体，只差
  * `@nudo:invariant dp[*] >= 0` 那一行。
  *
  * | 面 | 有公理 | 无公理（对照） |
@@ -137,11 +137,11 @@ describe("[] Bug 247 · inlay 返回位必须消费用户公理（与 check 面�
  * | IDE inlayHint | `: 0 \| number` | `: number` ← **改前逐字相同** |
  *
  * 修复后钉（本文件 = **inlay 面**；hover 面见 lsp 包的
- * `lsp-bug-247-*`）：
+ * `lsp-*`）：
  * 1. inlay 返回角标随公理那一行变化（`0 | number` ↔ `number`）；
  * 2. inlay 与 check 面**同源**：角标文本 == 签名行返回位文本（逐字）；
- * 3. 任何内部计数器 id（`inv#N` / `len#N`）不得上屏（Bug 412 同款口径）——
- *    公理折出的循环值参与算术时（`inv#2 + 1`）也必须退形状。
+ * 3. 任何内部计数器 id（`inv#N` / `len#N`）不得上屏（同款口径）——
+ * 公理折出的循环值参与算术时（`inv#2 + 1`）也必须退形状。
  */
 
 
@@ -151,7 +151,7 @@ describe("[] Bug 247 · inlay 返回位必须消费用户公理（与 check 面�
 
 
 
-/** 有公理：`tmp/repro/bug-247/inv/m1.js` 逐字内容 */
+/** 有公理：`tmp/repro//inv/m1.js` 逐字内容 */
 const INV_SRC = `/**
  * @nudo:invariant dp[*] >= 0
  */
@@ -197,7 +197,7 @@ type Faces = { inlay: string; check: string; issues: string[] };
  * 同一份源码的**两个面**：
  * - `inlay` = `collectAbsInlays` 的返回角标（`: … · derived` → 返回位文本）
  * - `check` = `checkSource` 的 `NudoSig.display`（CLI 签名行返回位；去掉
- *   ` throws …` 尾缀——那是 L2 域，不在本条的比较面）
+ * ` throws …` 尾缀——那是 L2 域，不在本条的比较面）
  */
 function facesOf(name: string, src: string): Faces {
   const dir = mkdtempSync(join(tmpdir(), `nudo-bug247-core-${name}-`));
@@ -223,7 +223,7 @@ function facesOf(name: string, src: string): Faces {
   }
 }
 
-describe("Bug 247 · inlay 返回位必须消费用户公理（与 check 面同源）", () => {
+describe("inlay 返回位必须消费用户公理（与 check 面同源）", () => {
   it("有公理 ⇒ inlay `0 | number`；无公理 ⇒ `number`；两者不同", () => {
     const inv = facesOf("inv", INV_SRC);
     const ctrl = facesOf("ctrl", CTRL_SRC);
@@ -256,18 +256,18 @@ describe("Bug 247 · inlay 返回位必须消费用户公理（与 check 面同�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 408：表达式体箭头函数的返回 inlay 锚点
+// 表达式体箭头函数的返回 inlay 锚点
 // ---------------------------------------------------------------------------
-describe("[] Bug 408：表达式体箭头函数的返回 inlay 锚点", () => {
+describe("表达式体箭头函数的返回 inlay 锚点", () => {
 /**
- * Bug 408 —— 返回 inlay 的锚点对**表达式体**箭头函数落在表达式**内部**
+ * 返回 inlay 的锚点对**表达式体**箭头函数落在表达式**内部**
  * （把源码行劈开）。
  *
  * 改前：`collectAbsInlays` 无条件取 `fnNode.body?.loc.start` 作为返回 inlay
  * 的锚点。对**块体**它等于 `{` 的位置（正确）；对**表达式体**它等于**表达式
  * 的起点** ⇒ 标注被插到 `=>` 与表达式之间：
  *
- *   export const arrow = (v) => : v * 2  · derived   v * 2;
+ * export const arrow = (v) => : v * 2 · derived v * 2;
  *
  * 改后：块体 ⇒ `{` 位置（不变）；表达式体 ⇒ **整个表达式的结束**位置
  * （标注落在表达式之后，不劈开源码行；口径同 TypeScript 自身的返回类型
@@ -286,7 +286,7 @@ const retInlay = (src: string) => {
   return ret!;
 };
 
-describe("Bug 408：表达式体箭头函数的返回 inlay 锚点", () => {
+describe("表达式体箭头函数的返回 inlay 锚点", () => {
   it("表达式体：锚点在表达式结束处（改前 = 表达式起点 ⇒ 劈开源码行）", () => {
     const src = `export const arrow = (v) => v * 2;`;
     const expr = "v * 2";
@@ -336,23 +336,23 @@ describe("Bug 408：表达式体箭头函数的返回 inlay 锚点", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 412：返回 inlay 不得上屏内部 term id
+// 返回 inlay 不得上屏内部 term id
 // ---------------------------------------------------------------------------
-describe("[] Bug 412：返回 inlay 不得上屏内部 term id", () => {
+describe("返回 inlay 不得上屏内部 term id", () => {
 /**
- * Bug 412 —— 返回 inlay 把**内部 term id**（`len#N`）当返回类型上屏。
+ * 返回 inlay 把**内部 term id**（`len#N`）当返回类型上屏。
  *
  * 改前：`formatReturnDisplay` 的 term 渲染路径直接吐 `termToString` 的内部串
  * ⇒ `len#N`（`exec/runtime/containers/arr-index.ts` 的**模块级自增**计数器
  * `lenVarSeq` 铸造）出现在 IDE 提示里：
  *
- *   : len#0  · derived
+ * : len#0 · derived
  *
  * 而同一份源码的 hover / `nudo check` 面给的是 `number` ⇒ 三个面口径矛盾。
  *
  * 改后：内部 id 统一映射成**稳定可读**标识 `len`：
  *
- *   : len  · derived
+ * : len · derived
  *
  * ⚠ 勘误（按实测）：报告称「同一份源码每次给出不同编号」——**不成立**：
  * `generalizeFromAst` 有源码级 memo ⇒ 完全相同的源码命中缓存、编号**稳定**；
@@ -372,7 +372,7 @@ const retLabel = (src: string): string => {
 
 const LEN_SRC = `export function restLen(...xs) {\n  return xs.length;\n}`;
 
-describe("Bug 412：返回 inlay 不得上屏内部 term id", () => {
+describe("返回 inlay 不得上屏内部 term id", () => {
   it("提示文本不含 `len#N` 这类内部 id", () => {
     const label = retLabel(LEN_SRC);
     expect(label).not.toMatch(/len#/);
@@ -408,19 +408,19 @@ describe("Bug 412：返回 inlay 不得上屏内部 term id", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 414：返回 inlay 的 `-0` 保真 + union 成员不被去重丢掉
+// 返回 inlay 的 `-0` 保真 + union 成员不被去重丢掉
 // ---------------------------------------------------------------------------
-describe("[] Bug 414：返回 inlay 的 `-0` 保真 + union 成员不被去重丢掉", () => {
+describe("返回 inlay 的 `-0` 保真 + union 成员不被去重丢掉", () => {
 /**
- * Bug 414 —— 返回 inlay 把 `-0` 渲染成 `0`，并因此**丢掉一个 union 成员**。
+ * 返回 inlay 把 `-0` 渲染成 `0`，并因此**丢掉一个 union 成员**。
  *
  * 改前：`formatReturnDisplay` 的 `memberPath` 字面量分支**自写**了一套字面量
  * 文本（`JSON.stringify(lv)`）⇒ `JSON.stringify(-0) === "0"` 抹掉负零符号；
  * 去重键 `lit:${String(lv)}` 让 `-0` 臂与 `0` 臂**键相同** ⇒ `seen` 集合把
  * 其中一条**整个丢掉**：
  *
- *   negZero()   → : 0      （应为 : -0）
- *   zeroOrNeg() → : 0      （应为 : 0 | -0）
+ * negZero() → : 0 （应为 : -0）
+ * zeroOrNeg() → : 0 （应为 : 0 | -0）
  *
  * 而 `nudo check` / `nudo test` 同一份源码给 `-0` / `0 | -0` ⇒ 面与面矛盾。
  *
@@ -433,7 +433,7 @@ describe("[] Bug 414：返回 inlay 的 `-0` 保真 + union 成员不被去重�
 
 const NEG_ZERO_SRC = `export function negZero() {\n  return -0;\n}\n\nexport function zeroOrNeg(x) {\n  return x ? 0 : -0;\n}\n`;
 
-/** label 形如 `: 0 | -0  · derived  ` ⇒ 取其中的展示文本 */
+/** label 形如 `: 0 | -0 · derived ` ⇒ 取其中的展示文本 */
 const displayOf = (label: string): string =>
   label
     .replace(/^:\s*/, "")
@@ -445,7 +445,7 @@ const displays = (src: string): string[] =>
     .filter((i) => i.kind === "type")
     .map((i) => displayOf(i.label));
 
-describe("Bug 414：返回 inlay 的 `-0` 保真 + union 成员不被去重丢掉", () => {
+describe("返回 inlay 的 `-0` 保真 + union 成员不被去重丢掉", () => {
   it("`-0` 不被渲染成 `0`", () => {
     const d = displays(NEG_ZERO_SRC);
     expect(d.length).toBe(2);

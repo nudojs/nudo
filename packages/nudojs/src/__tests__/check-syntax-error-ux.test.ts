@@ -4,9 +4,9 @@
  * 无文件名/摘录/指位，且 checkSource 的同一解析错漏到顶层 catch 再打一行
  * 裸 message、stdout 全空。新行为：
  * - 人类面：`path:line:col — syntax error: <本质信息>` + 源码行摘录 + `^` 指位
- *   （tsc 风格）；EOF 错（错误行为空）摘录回落最后一个非空行、^ 落行尾。
+ * （tsc 风格）；EOF 错（错误行为空）摘录回落最后一个非空行、^ 落行尾。
  * - --json：错误并入信封 pathErrors（与路径错误同字段，attachPathErrors →
- *   ok:false）；单文件也走 multi 信封（有 pathError 必须有 body 且 ok:false）。
+ * ok:false）；单文件也走 multi 信封（有 pathError 必须有 body 且 ok:false）。
  * - exit 1 语义不变；不再出现 "eval injection setup failed" 黑话。
  */
 import { describe, it, expect } from "vitest";
@@ -85,7 +85,7 @@ describe("check syntax error UX — --json 面", () => {
     expect(envelope.reports[0].ok).toBe(true);
     expect(envelope.pathErrors).toHaveLength(1);
     expect(envelope.pathErrors[0].path).toBe(broken);
-    // 族 21 Bug 695：信封的 `summary.errors` 是**分析诊断**计数，必须等于
+    // 族 21 信封的 `summary.errors` 是**分析诊断**计数，必须等于
     // Σ`reports[].summary.errors`（= 人类面计数）。语法错是**路径错误**
     // （走 `pathErrors[]`），不是分析诊断 ⇒ 这里应是 0。
     // （改前这里断言 1，把路径错误混进了分析 error 计数 ⇒ 信封内部自相矛盾。）

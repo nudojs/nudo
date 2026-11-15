@@ -1,14 +1,14 @@
 /**
  * batch21 电池排除台账四面收尾（回归锁定；differential 行已随修复入库）：
  * 1. BigInt 数组实参 ToString 折叠漏检——join 折出 "1,2" 不可解析 → 确定
- *    SyntaxError；symbol 元素 → 确定 TypeError；可解析串（[] / [1] / [null]）
- *    值面维持保守非具体（skip-baseline 盲区稳定）；抽象元素 → may。
+ * SyntaxError；symbol 元素 → 确定 TypeError；可解析串（[] / [1] / [null]）
+ * 值面维持保守非具体（skip-baseline 盲区稳定）；抽象元素 → may。
  * 2. 装箱构造器缺省实参 ≠ undefined——new Number() → +0、new String() →
- *    ""（显式 undefined 才折 NaN / "undefined"）。
+ * ""（显式 undefined 才折 NaN / "undefined"）。
  * 3. new URLSearchParams([{}])——闭 obj 元素无 @@iterator 槽 → 非可迭代
- *    pair，确定 TypeError（[{0:"a",1:"b"}] 同抛；二元组/缺省照旧 total）。
+ * pair，确定 TypeError（[{0:"a",1:"b"}] 同抛；二元组/缺省照旧 total）。
  * 4. Array.from(x, undefined)——undefined 字面量 mapper ≡ 无 mapper，不再
- *    假抛 TypeError（null/prim mapper 原生同抛，维持定抛）。
+ * 假抛 TypeError（null/prim mapper 原生同抛，维持定抛）。
  * ground truth：node 原生实测。
  */
 import { describe, it, expect } from "vitest";

@@ -24,22 +24,22 @@ import { analysisConfig } from "../evaluator/config.ts";
 import { defaultLoadModule } from "../load-module.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 274（service 侧）—— 宿主内建名的 mock 不再被 env 跳过表吞掉
+// （service 侧）—— 宿主内建名的 mock 不再被 env 跳过表吞掉
 // ---------------------------------------------------------------------------
-describe("[] Bug 274（service 侧）—— 宿主内建名的 mock 不再被 env 跳过表吞掉", () => {
+describe("（service 侧）—— 宿主内建名的 mock 不再被 env 跳过表吞掉", () => {
 /**
- * Bug 274 —— service 侧剩余半边：mock 与 env 必须**分表传**。
+ * service 侧剩余半边：mock 与 env 必须**分表传**。
  *
  * 根因（core 侧已由片 C 修好，service 侧此前还差半边）：
  * - core 的注入面把 env 全局与 mock 分**两张表**过滤：「不遮蔽宿主内建」
- *   跳过表（ENV_SHADOW_SKIP）**只作用于 env 全局**，mock 键集不过滤
- *   （mock 的值本身就是一个 Abs，没有宿主对象身份需要保全——遮蔽宿主全局
- *   正是 mock 的意图）。
+ * 跳过表（ENV_SHADOW_SKIP）**只作用于 env 全局**，mock 键集不过滤
+ * （mock 的值本身就是一个 Abs，没有宿主对象身份需要保全——遮蔽宿主全局
+ * 正是 mock 的意图）。
  * - 但 service 侧两处把 mock **并进** `envGlobals` 一张表传给 core ⇒ core
- *   收到时**分不清哪些是 mock** ⇒ 名单内的 mock（`Math` / `JSON` / `Date` …）
- *   在注入前就被跳过表丢弃 ⇒ `@nudo:mock Math` 静默 no-op（跑的是宿主内建）。
- *   - 合并点 ①：`eval-run.ts` 的 `tryRunEval`（调用值面 / case 求值通道）
- *   - 合并点 ②：`abs-modules-graph.ts` 的 `collectAbsBindingsFromGraph`
+ * 收到时**分不清哪些是 mock** ⇒ 名单内的 mock（`Math` / `JSON` / `Date` …）
+ * 在注入前就被跳过表丢弃 ⇒ `@nudo:mock Math` 静默 no-op（跑的是宿主内建）。
+ * - 合并点 ①：`eval-run.ts` 的 `tryRunEval`（调用值面 / case 求值通道）
+ * - 合并点 ②：`abs-modules-graph.ts` 的 `collectAbsBindingsFromGraph`
  *
  * 修法：两处都**分表传**（`mocks` 走独立形参，`envGlobals` 只装 env 全局）。
  * **优先级不变**：core 的 `__nudoEnv` 读面 = `{ ...envGlobals, ...mocks }`
@@ -47,11 +47,11 @@ describe("[] Bug 274（service 侧）—— 宿主内建名的 mock 不再被 en
  *
  * 钉：
  * - 宿主内建名的 mock 在**调用值面**生效（`tryEvalCallFull`，与 `nudo test`
- *   的 case 值同通道）；产品面（`analyzeFileAsync`）同值。
+ * 的 case 值同通道）；产品面（`analyzeFileAsync`）同值。
  * - 负控制：普通名 mock 逐字不变；mock 覆盖 env 的优先级不变；env 全局仍受
- *   跳过表约束（env 的 `Math` 不遮蔽宿主 `Math`）；无 mock 时宿主应答不变。
+ * 跳过表约束（env 的 `Math` 不遮蔽宿主 `Math`）；无 mock 时宿主应答不变。
  * - 第二合并点：模块图绑定面（`collectAbsBindingsFromGraph`）同样尊重
- *   宿主内建名的 mock。
+ * 宿主内建名的 mock。
  */
 
 
@@ -146,7 +146,7 @@ const NO_MOCK = `export function run() {
 }
 `;
 
-describe("Bug 274（service 侧）—— 宿主内建名的 mock 不再被 env 跳过表吞掉", () => {
+describe("（service 侧）—— 宿主内建名的 mock 不再被 env 跳过表吞掉", () => {
   it("@nudo:mock Number 生效（宿主 Number 不再应答）", () => {
     const got = callValue(MOCK_NUMBER, "/tmp/bug274-service-number.js");
     expect(got.isLiteral).toBe(true);
@@ -181,7 +181,7 @@ describe("Bug 274（service 侧）—— 宿主内建名的 mock 不再被 env �
   });
 });
 
-describe("Bug 274（service 侧）负控制 —— 既有语义逐字不变", () => {
+describe("（service 侧）负控制 —— 既有语义逐字不变", () => {
   it("普通名 mock 仍生效（改前就生效，不得回退）", () => {
     const got = callValue(MOCK_PLAIN, "/tmp/bug274-service-plain.js");
     expect(got.value).toBe("MOCKED");
@@ -206,7 +206,7 @@ describe("Bug 274（service 侧）负控制 —— 既有语义逐字不变", ()
   });
 });
 
-describe("Bug 274（service 侧）第二合并点 —— 模块图绑定面也分表传", () => {
+describe("（service 侧）第二合并点 —— 模块图绑定面也分表传", () => {
   it("collectAbsBindingsFromGraph：宿主内建名的 mock 生效（顶层 const 求值面）", () => {
     const src = `/**
  * @nudo:mock Number = stub().returns(42)
@@ -229,11 +229,11 @@ const x = Number("7");
 });
 
 // ---------------------------------------------------------------------------
-// Bug 963 — mock-module 点名缺失（fail-closed，不静默回落原模块）
+// mock-module 点名缺失（fail-closed，不静默回落原模块）
 // ---------------------------------------------------------------------------
-describe("[] Bug 963 — mock-module 点名缺失（fail-closed，不静默回落原模块）", () => {
+describe("mock-module 点名缺失（fail-closed，不静默回落原模块）", () => {
 /**
- * Bug 963 —— `@nudo:mock-module` 的**局部（点名）形态**：被**点名**但 mock 文件
+ * `@nudo:mock-module` 的**局部（点名）形态**：被**点名**但 mock 文件
  * **没有导出**的名字被 `pickNamed` **静默跳过** ⇒ `{ ...orig.named, ...overlay.named }`
  * 让**原模块的同名导出原封不动活下来** ⇒ 分析跑在「**一半 mock、一半原模块**」的
  * **混合程序**上；该分支**无条件 `applied = true`、零 error** ⇒ 违反本模块自陈的
@@ -243,8 +243,8 @@ describe("[] Bug 963 — mock-module 点名缺失（fail-closed，不静默回�
  * 修法（`packages/service/src/mock-module.ts`）：
  * - `pickNamed` 报出 **missing**（被点名但 mock 没有导出的名字）；
  * - `applyMockModuleDirectives` 的局部分支：missing 非空 ⇒ **走错误出口**
- *   （`nudo:module-missing` / error，见 `check-issues.ts` 的既有 errors 通道）
- *   ⇒ 该条指令**不生效**（`applied` 不置 true、原模块保持原样）。
+ * （`nudo:module-missing` / error，见 `check-issues.ts` 的既有 errors 通道）
+ * ⇒ 该条指令**不生效**（`applied` 不置 true、原模块保持原样）。
  *
  * ⇒ 断言非永真：HEAD 上「点名缺失」既不报错也不 applied（见反向闸）。
  */
@@ -283,7 +283,7 @@ function writeMock(): void {
   writeTmpFile(dir, "mock.js", `export function depFn() { return "MOCK"; }\n`);
 }
 
-describe("Bug 963 — mock-module 点名缺失（fail-closed，不静默回落原模块）", () => {
+describe("mock-module 点名缺失（fail-closed，不静默回落原模块）", () => {
   it("a named export the mock does not provide is a fail-closed error, not a silent fall-through", () => {
     writeMock();
     const src = `/// @nudo:mock-module "./dep.js" { depFn, otherFn } from "./mock.js"\nimport { depFn, otherFn } from "./dep.js";\nexport function run() { return depFn() + "/" + otherFn(); }\n`;
@@ -374,18 +374,18 @@ describe("Bug 963 — mock-module 点名缺失（fail-closed，不静默回落�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 165: @nudo:replace 命中的子表达式仍求值
+// @nudo:replace 命中的子表达式仍求值
 // ---------------------------------------------------------------------------
-describe("[] Bug 165: @nudo:replace 命中的子表达式仍求值", () => {
+describe("@nudo:replace 命中的子表达式仍求值", () => {
 /**
- * Bug 165 / Bug 166 回归（@nudo:replace / @nudo:as 指令面）。
+ * / 回归（@nudo:replace / @nudo:as 指令面）。
  *
- * Bug 165：@nudo:replace 命中的子表达式**仍要求值**——副作用与 throws 域
+ * @nudo:replace 命中的子表达式**仍要求值**——副作用与 throws 域
  * 保留（L2 门禁不再假绿），只是**结果**被注入值取代。
  * 修复前：命中节点整段替换 → 原表达式从不求值 → 副作用归零、抛错域消失
  * （`JSON.parse(input)` 的 TypeError 被吞 → L2 假绿）。
  *
- * Bug 166：指令作用范围按 **AST 节点身份**（源文本字符区间）判定，不是
+ * 指令作用范围按 **AST 节点身份**（源文本字符区间）判定，不是
  * 「同一行号窗口」——不再泄漏进嵌套语句 / 嵌套函数体 / 同行下一条语句
  * （文档承诺「only affects the immediately following statement」）。
  *
@@ -421,7 +421,7 @@ function witness(src: string, file = "/t/replace-scope.js"): string {
   return formatShape(r.functions[0].cases[0].abs);
 }
 
-describe("Bug 165: @nudo:replace 命中的子表达式仍求值", () => {
+describe("@nudo:replace 命中的子表达式仍求值", () => {
   it("被替换调用的 throws 域保留（L2 门禁不再假绿）", () => {
     const withDirective = `export function f(input) {
   // @nudo:replace JSON.parse(input) number()
@@ -480,7 +480,7 @@ export function f(a, b) {
   });
 });
 
-describe("Bug 166: @nudo:as / @nudo:replace 的作用范围按 AST 节点身份", () => {
+describe("@nudo:as / @nudo:replace 的作用范围按 AST 节点身份", () => {
   it("@nudo:as 挂在 if 上不泄漏进块内的 return", () => {
     const withDirective = `export function f(cond) {
   // @nudo:as number()
@@ -571,11 +571,11 @@ export function f() {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-079 —— skipped 导出不得从产物里消失
+// skipped 导出不得从产物里消失
 // ---------------------------------------------------------------------------
-describe("[] BUG-079 —— skipped 导出不得从产物里消失", () => {
+describe("skipped 导出不得从产物里消失", () => {
 /**
- * BUG-079 —— `@nudo:skip`（未声明返回类型）让 export 面把**整条导出静默丢掉**
+ * `@nudo:skip`（未声明返回类型）让 export 面把**整条导出静默丢掉**
  * （`.d.ts` 里该函数不存在，exit 0 零警告），而 `nudo check`（core）为同一
  * 函数合成 `any` ⇒ 两面相反 + 消费端 `import` TS2305。
  *
@@ -586,7 +586,7 @@ describe("[] BUG-079 —— skipped 导出不得从产物里消失", () => {
 
 
 
-describe("BUG-079 —— skipped 导出不得从产物里消失", () => {
+describe("skipped 导出不得从产物里消失", () => {
   it("skip 且未声明返回 ⇒ 仍然声明成 unknown（与 check 同源、TS 投影面归一）", () => {
     const dts = generateDts(
       analyzeFile___nudojs_service(
@@ -608,11 +608,11 @@ describe("BUG-079 —— skipped 导出不得从产物里消失", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-086 — 孤儿行内指令的诊断不被同文件其它指令抑制
+// 孤儿行内指令的诊断不被同文件其它指令抑制
 // ---------------------------------------------------------------------------
-describe("[] BUG-086 — 孤儿行内指令的诊断不被同文件其它指令抑制", () => {
+describe("孤儿行内指令的诊断不被同文件其它指令抑制", () => {
 /**
- * BUG-086 —— 行内指令「无处可施」的诊断被**同文件另一条生效指令**抑制 ⇒
+ * 行内指令「无处可施」的诊断被**同文件另一条生效指令**抑制 ⇒
  * 诊断覆盖度取决于无关代码。
  *
  * 根因：`packages/service/src/eval-injection.ts` 的 `collectInto` 只在
@@ -652,7 +652,7 @@ const ORPHAN_PLUS_WORKING = `export function f(x) {
 }
 `;
 
-/** 两处孤儿（同一文案、不同位置）⇒ 各报一条（Bug 848 位置进身份） */
+/** 两处孤儿（同一文案、不同位置）⇒ 各报一条（位置进身份） */
 const TWO_ORPHANS = `export function f(x) {
   const obj = {
     // @nudo:as number()
@@ -674,7 +674,7 @@ function orphanDiags(src: string): DirectiveDiag[] {
   );
 }
 
-describe("BUG-086 — 孤儿行内指令的诊断不被同文件其它指令抑制", () => {
+describe("孤儿行内指令的诊断不被同文件其它指令抑制", () => {
   it("只有孤儿指令 ⇒ 有一条「无处可施」诊断（既有口径）", () => {
     expect(orphanDiags(ORPHAN_ONLY)).toHaveLength(1);
   });
@@ -698,15 +698,15 @@ describe("BUG-086 — 孤儿行内指令的诊断不被同文件其它指令抑�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1062 — @nudo:replace 目标文本在源码里不存在 ⇒ 显式诊断
+// @nudo:replace 目标文本在源码里不存在 ⇒ 显式诊断
 // ---------------------------------------------------------------------------
-describe("[] Bug 1062 — @nudo:replace 目标文本在源码里不存在 ⇒ 显式诊断", () => {
+describe("@nudo:replace 目标文本在源码里不存在 ⇒ 显式诊断", () => {
 /**
- * Bug 1062 / Bug 1063 —— 指令的**语义前提被违反**时，引擎**静默失效、零诊断**
+ * / 指令的**语义前提被违反**时，引擎**静默失效、零诊断**
  * ⇒ 唯一的信号是**归因错误**的 `nudo:unknown-inference`（把「你的指令没生效」
  * 说成「推断精度不够」）⇒ 假红 / 假绿。
  *
- * ── Bug 1062（`@nudo:replace` 的目标文本在源码里不存在）────────────────────
+ * ── （`@nudo:replace` 的目标文本在源码里不存在）────────────────────
  * 病灶：`packages/service/src/eval-injection.ts` 的**收集面**把「目标文本在
  * 本语句作用域内无对应节点」降级成一条**无作用域**登记项（`stmtStart/stmtEnd`
  * 缺省）⇒ 转译面（core 的 `matchReplacement`）恒跳过 ⇒ 声明的类型覆盖
@@ -716,7 +716,7 @@ describe("[] Bug 1062 — @nudo:replace 目标文本在源码里不存在 ⇒ �
  * 改后：收集面发一条**点名目标文本**的 `nudo:directive-syntax`（warning）⇒
  * ② 与 ③ 可区分；①（目标命中）**零**该诊断。
  *
- * ── Bug 1063（`@nudo:mock-module` 对同一模块重复声明）──────────────────────
+ * ── （`@nudo:mock-module` 对同一模块重复声明）──────────────────────
  * 病灶：`packages/service/src/mock-module.ts` 的**叠加面**对同一 `d.source`
  * **逐条整块覆写**（后者胜出、无比较、无告警）⇒ 先声明者独有的导出名**静默
  * 消失** ⇒ 该导出名的调用点退化成 `unknown`（wrong-exact）。
@@ -735,7 +735,7 @@ describe("[] Bug 1062 — @nudo:replace 目标文本在源码里不存在 ⇒ �
 
 
 
-// ── Bug 1062 夹具（三份只差「目标文本」/「有没有指令」）──────────────────────
+// ── 夹具（三份只差「目标文本」/「有没有指令」）──────────────────────
 
 /** ② 目标写错一个字母（源码里是 `JSON.parse(input)`）。 */
 const REPLACE_MISS = `export function g(input) {
@@ -774,7 +774,7 @@ function replaceMissDiags(src: string): DirectiveDiag[] {
   );
 }
 
-describe("Bug 1062 — @nudo:replace 目标文本在源码里不存在 ⇒ 显式诊断", () => {
+describe("@nudo:replace 目标文本在源码里不存在 ⇒ 显式诊断", () => {
   it("② 目标写错 ⇒ 有一条点名目标文本的诊断", () => {
     const diags = replaceMissDiags(REPLACE_MISS);
     expect(diags).toHaveLength(1);
@@ -814,7 +814,7 @@ describe("Bug 1062 — @nudo:replace 目标文本在源码里不存在 ⇒ 显�
   });
 });
 
-// ── Bug 1063 夹具 ───────────────────────────────────────────────────────────
+// ── 夹具 ───────────────────────────────────────────────────────────
 
 let dir: string;
 
@@ -837,7 +837,7 @@ import { readFile } from "fs";
 export function f() { return readFile("/x"); }
 `;
 
-describe("Bug 1063 — @nudo:mock-module 对同一模块重复声明 ⇒ 显式诊断", () => {
+describe("@nudo:mock-module 对同一模块重复声明 ⇒ 显式诊断", () => {
   it("② 重复声明 ⇒ 有一条点名两条来源的诊断", () => {
     const r = applyMockModuleDirectivesFromSource(DUP_SRC, {}, {
       fromFile: join(dir, "app.js"),
@@ -900,11 +900,11 @@ export function f() { return readFile("/x"); }
 });
 
 // ---------------------------------------------------------------------------
-// BUG-180 dependency module's own @nudo:mock
+// dependency module's own @nudo:mock
 // ---------------------------------------------------------------------------
-describe("[] BUG-180 dependency module's own @nudo:mock", () => {
+describe("dependency module's own @nudo:mock", () => {
 /**
- * BUG-180：依赖模块自己的 `@nudo:mock` 完全不注入 ⇒ 同一个函数「作为目标」
+ * 依赖模块自己的 `@nudo:mock` 完全不注入 ⇒ 同一个函数「作为目标」
  * 与「作为依赖」结论互斥。修复：abs-modules-graph 按声明函数作用域重求值
  * 依赖模块，只覆盖该函数导出（其它函数保留无 mock 基线）。
  */
@@ -930,7 +930,7 @@ export function callReal() { return useReal(); }
 `,
 };
 
-describe("BUG-180 dependency module's own @nudo:mock", () => {
+describe("dependency module's own @nudo:mock", () => {
   it("applies in the declaring function only (entry B)", () => {
     withTmpProject("nudo-bug-180-", FILES, (dir) => {
       const qPath = join(dir, "q.js");
@@ -972,11 +972,11 @@ describe("BUG-180 dependency module's own @nudo:mock", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-184 — @nudo:replace 只认值位的表达式节点
+// @nudo:replace 只认值位的表达式节点
 // ---------------------------------------------------------------------------
-describe("[] BUG-184 — @nudo:replace 只认值位的表达式节点", () => {
+describe("@nudo:replace 只认值位的表达式节点", () => {
 /**
- * BUG-184 —— `@nudo:replace` 的目标文本命中**绑定位 / 对象属性键位**（非表达式位）
+ * `@nudo:replace` 的目标文本命中**绑定位 / 对象属性键位**（非表达式位）
  * ⇒ 收集面算「命中」，转译面却只在**表达式发射入口**调用
  * `matchReplacement` ⇒ 指令**静默失效且零诊断**（引擎自己的「matched no
  * expression」告警被绕过）。
@@ -1043,7 +1043,7 @@ function registeredOffsets(src: string): Array<number | undefined> {
   return collectEvalReplacements_____eval_injection_ts_1(src).targets.map((t) => t.stmtStart);
 }
 
-describe("BUG-184 — @nudo:replace 只认值位的表达式节点", () => {
+describe("@nudo:replace 只认值位的表达式节点", () => {
   it("目标命中声明符 id（绑定位）⇒ 不算命中 + 显式诊断", () => {
     expect(registeredOffsets(DECL_ID)).toEqual([undefined]);
     const diags = directiveDiagsOf(DECL_ID);
@@ -1076,14 +1076,14 @@ describe("BUG-184 — @nudo:replace 只认值位的表达式节点", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-283 — @nudo:skip 按「同名取词法最浅」绑定
+// @nudo:skip 按「同名取词法最浅」绑定
 // ---------------------------------------------------------------------------
-describe("[] BUG-283 — @nudo:skip 按「同名取词法最浅」绑定", () => {
+describe("@nudo:skip 按「同名取词法最浅」绑定", () => {
 /**
- * BUG-283 —— `@nudo:skip` 的**作用域绑定**按**函数名**做键 ⇒
+ * `@nudo:skip` 的**作用域绑定**按**函数名**做键 ⇒
  * ① 内层**同名**函数的 skip **顶掉**外层的声明（偷取）；
  * ② 外层**没有** skip 时内层的 skip **越界**作用到导出函数上（body 不再
- *    评估 ⇒ 导出签名的 **throws 标注被抹掉**）。
+ * 评估 ⇒ 导出签名的 **throws 标注被抹掉**）。
  *
  * 根因：`packages/parser/src/directives/fn-directives.ts` 的 `collectFnDirectives`
  * 只推 `{ node, name, directives }`——**把 core scope 自带的 `depth` 丢掉了**
@@ -1134,7 +1134,7 @@ function signatureOf(src: string, name: string): NudoSig {
   return sig!;
 }
 
-describe("BUG-283 — @nudo:skip 按「同名取词法最浅」绑定", () => {
+describe("@nudo:skip 按「同名取词法最浅」绑定", () => {
   it("C：内层同名函数的 skip 不再顶掉外层（C 的签名 == D 的签名）", () => {
     expect(collectSkipReturns(C).get("f")).toBeDefined();
     expect(signatureOf(C, "f").display).toBe(signatureOf(D, "f").display);
@@ -1194,11 +1194,11 @@ describe("BUG-283 — @nudo:skip 按「同名取词法最浅」绑定", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 454 — 指令收集覆盖面
+// 指令收集覆盖面
 // ---------------------------------------------------------------------------
-describe("[] Bug 454 — 指令收集覆盖面", () => {
+describe("指令收集覆盖面", () => {
 /**
- * Bug 454 —— 行内指令（@nudo:as / @nudo:replace）收集器的**通用下钻**。
+ * 行内指令（@nudo:as / @nudo:replace）收集器的**通用下钻**。
  *
  * 改前：收集器只下钻 4 类容器（Block / Function / Export / If）⇒ 写在
  * for / for-of / while / do-while / try / catch / finally / switch /
@@ -1324,7 +1324,7 @@ const CONTAINERS: Array<[string, string]> = [
 ];
 
 /** 收集器层面：每个容器位置的指令都必须进注入表 */
-describe("Bug 454 — 指令收集覆盖面", () => {
+describe("指令收集覆盖面", () => {
   for (const [name, body] of CONTAINERS) {
     it(`收集 ${name} 容器里的 @nudo:as`, () => {
       const src = `/// @nudo:env es\n\n${body}\n`;
@@ -1350,7 +1350,7 @@ describe("Bug 454 — 指令收集覆盖面", () => {
 });
 
 /** 产品面（分析器）层面：承载指令的那条语句被覆盖 */
-describe("Bug 454 — 分析面上的覆盖效果", () => {
+describe("分析面上的覆盖效果", () => {
   // 类方法的入口用例在分析面恒为 unknown（与指令无关）——它只断言收集器层面
   for (const [name, body] of CONTAINERS.filter(([n]) => n !== "class-method")) {
     it(`${name} 里的 @nudo:as 覆盖承载语句的值`, () => {
@@ -1363,7 +1363,7 @@ describe("Bug 454 — 分析面上的覆盖效果", () => {
 });
 
 /** 负控制：不该被这条修复波及的邻近形态 */
-describe("Bug 454 — 负控制", () => {
+describe("负控制", () => {
   it("无指令的语句不受同函数内其它指令影响", () => {
     const src = `/// @nudo:env es
 
@@ -1404,18 +1404,18 @@ export function f() {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 455 — 同名 @nudo:mock 按函数作用域各生效
+// 同名 @nudo:mock 按函数作用域各生效
 // ---------------------------------------------------------------------------
-describe("[] Bug 455 — 同名 @nudo:mock 按函数作用域各生效", () => {
+describe("同名 @nudo:mock 按函数作用域各生效", () => {
 /**
- * Bug 455 —— 两个函数声明**同名** `@nudo:mock`：后者全文件胜出，
+ * 两个函数声明**同名** `@nudo:mock`：后者全文件胜出，
  * 先声明的函数被改写成**错误的类型**（并进入发布的 d.ts）。
  *
  * 修法（族 14 · 分片 I）：
  * - mock 种子表按**函数作用域**组织（`mock-abs.ts` 的 `scoped` + 覆盖表）
  * - 按**被求值的函数**取作用域覆盖（core `generalize.ts` 的按函数求值边界）
  *
- * 负控制（BUG-020 / BUG-180 口径修正）：未冲突的 mock **只在其声明函数内**
+ * 负控制（/ 口径修正）：未冲突的 mock **只在其声明函数内**
  * 生效，不再文件级可见——函数级指令不得泄漏到同文件其它函数。
  */
 
@@ -1487,7 +1487,7 @@ function sigValue(source: string, fromFile: string, name: string): unknown {
   return lit.ok ? lit.value : sig!.display;
 }
 
-describe("Bug 455 — 同名 @nudo:mock 按函数作用域各生效", () => {
+describe("同名 @nudo:mock 按函数作用域各生效", () => {
   it("先声明的函数不再被后声明的同名 mock 改写成错类型", () => {
     expect(sigValue(TWO_MOCKS, "/tmp/bug455-a.js", "readA")).toBe(8080);
     expect(sigValue(TWO_MOCKS, "/tmp/bug455-b.js", "readB")).toBe("closed");
@@ -1514,11 +1514,11 @@ describe("Bug 455 — 同名 @nudo:mock 按函数作用域各生效", () => {
   });
 });
 
-// BUG-020 / BUG-180：旧负控断言「未冲突的 mock 文件级可见」正是那两条 bug
+// / 旧负控断言「未冲突的 mock 文件级可见」正是那两条 bug
 // 的假绿根因（同文件其它函数被 mock 掩盖真实 ReferenceError）。按
 // `docs/design/directive-scope.md`，`@nudo:mock` 是**函数级**指令 ⇒ 只在
 // 声明它的函数体内生效。
-describe("Bug 455 负控制 —— 未冲突的 mock 只在声明函数内生效", () => {
+describe("负控制 —— 未冲突的 mock 只在声明函数内生效", () => {
   it("声明函数取值一致；未声明函数看不到该 mock", () => {
     expect(sigValue(ONE_MOCK, "/tmp/bug455-f.js", "readA")).toBe(8080);
     expect(sigValue(ONE_MOCK, "/tmp/bug455-g.js", "readB")).toBe(
@@ -1532,7 +1532,7 @@ describe("Bug 455 负控制 —— 未冲突的 mock 只在声明函数内生效
   });
 });
 
-describe("Bug 455 产物面 —— service analyzer 逐函数求值按作用域取 mock", () => {
+describe("产物面 —— service analyzer 逐函数求值按作用域取 mock", () => {
   it("readA / readB 各自取各自的 mock（接线前：先声明的也被后声明的改写）", async () => {
     // 产物面（`nudo export --format dts` / `nudo test` 的 case 值 / LSP hover）
     // 走 service analyzer 的**按函数求值**路径（tryEvalCallFull / tryEvalAbsFull），
@@ -1551,11 +1551,11 @@ describe("Bug 455 产物面 —— service analyzer 逐函数求值按作用域�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 458 — mode=directives 的指令名单要全（assume/invariant/throws/budget）
+// mode=directives 的指令名单要全（assume/invariant/throws/budget）
 // ---------------------------------------------------------------------------
-describe("[] Bug 458 — mode=directives 的指令名单要全（assume/invariant/throws/budget）", () => {
+describe("mode=directives 的指令名单要全（assume/invariant/throws/budget）", () => {
 /**
- * Bug 458 回归钉：只含 @nudo:assume / @nudo:invariant / @nudo:throws /
+ * 回归钉：只含 @nudo:assume / @nudo:invariant / @nudo:throws /
  * @nudo:budget 的文件，在 analysis.mode=directives 下必须**纳入分析面**。
  *
  * 改前：hasNudoDirectives 的名单漏掉这四个指令名 → 文件被判定为
@@ -1591,7 +1591,7 @@ function tmpDirProject(): string {
   });
 }
 
-describe("Bug 458 — mode=directives 的指令名单要全（assume/invariant/throws/budget）", () => {
+describe("mode=directives 的指令名单要全（assume/invariant/throws/budget）", () => {
   it("hasNudoDirectives 认得 assume/invariant/throws/budget", () => {
     for (const name of MISSING) {
       expect(hasNudoDirectives(sourceWith(name)), name).toBe(true);
@@ -1639,11 +1639,11 @@ describe("Bug 458 — mode=directives 的指令名单要全（assume/invariant/t
 });
 
 // ---------------------------------------------------------------------------
-// Bug 460 — nudo:mock-invalid severity
+// nudo:mock-invalid severity
 // ---------------------------------------------------------------------------
-describe("[] Bug 460 — nudo:mock-invalid severity", () => {
+describe("nudo:mock-invalid severity", () => {
 /**
- * Bug 460：nudo:mock-invalid 的严重度。
+ * nudo:mock-invalid 的严重度。
  *
  * 文档口径（packages/website/docs/reference/diagnostics.md#nudo-mock-invalid、
  * packages/website/docs/guides/check.md「nudo:mock-invalid | engine | warning」）
@@ -1654,9 +1654,9 @@ describe("[] Bug 460 — nudo:mock-invalid severity", () => {
  * warning——同一 code 两条通道两种严重度，且与文档相反。
  *
  * 本测试锁住：
- *   ① mock 表达式解析失败 = warning（不再让 CI 门禁由红转绿地误报）
- *   ② 两条 mock-invalid 通道严重度一致
- *   ③ mock **文件**缺失/加载失败仍是 error（不引入假绿）
+ * ① mock 表达式解析失败 = warning（不再让 CI 门禁由红转绿地误报）
+ * ② 两条 mock-invalid 通道严重度一致
+ * ③ mock **文件**缺失/加载失败仍是 error（不引入假绿）
  */
 
 
@@ -1669,7 +1669,7 @@ const MOCK_MISSING_FILE = `// @nudo:mock fs from "./definitely-missing-mock-file
 export function useFs() { return 1; }
 `;
 
-describe("Bug 460 — nudo:mock-invalid severity", () => {
+describe("nudo:mock-invalid severity", () => {
   it("mock expression parse failure is a warning, not an error", () => {
     const r = analyzeFile("/t/b460/mock-expr.js", MOCK_EXPR);
     const diags = r.diagnostics.filter((d) => d.code === "nudo:mock-invalid");
@@ -1697,11 +1697,11 @@ describe("Bug 460 — nudo:mock-invalid severity", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 482 — 内联 mock 的可构造性 facet
+// 内联 mock 的可构造性 facet
 // ---------------------------------------------------------------------------
-describe("[] Bug 482 — 内联 mock 的可构造性 facet", () => {
+describe("内联 mock 的可构造性 facet", () => {
 /**
- * Bug 482 —— **内联** `@nudo:mock` 丢掉「可构造性」facet ⇒ `new <mock>` 不再定抛
+ * **内联** `@nudo:mock` 丢掉「可构造性」facet ⇒ `new <mock>` 不再定抛
  * ⇒ try/catch 走错分支（原生 "caught"，引擎 "mocked"）+ 门禁假绿。
  * `from` 形态（mock 文件导出箭头）一直是对的 ⇒ 两条路径的 facet 供给不对称。
  *
@@ -1758,7 +1758,7 @@ function sigValue(source: string, fromFile: string, name: string): unknown {
   return lit.ok ? lit.value : sig!.display;
 }
 
-describe("Bug 482 — 内联 mock 的可构造性 facet", () => {
+describe("内联 mock 的可构造性 facet", () => {
   it("内联箭头 mock：new 定抛 ⇒ 走 catch 分支（原生 caught，修复前 mocked）", () => {
     expect(sigValue(INLINE_ARROW, "/tmp/bug482-a.js", "greet")).toBe("caught");
   });
@@ -1777,7 +1777,7 @@ describe("Bug 482 — 内联 mock 的可构造性 facet", () => {
   });
 });
 
-describe("Bug 482 负控制 —— from 形态与本地箭头不受影响", () => {
+describe("负控制 —— from 形态与本地箭头不受影响", () => {
   it("from 形态（mock 文件导出箭头）仍是 caught", () => {
     const dir = makeTmpProject("nudo-bug482-", {
       "mocks/greeter.js": `export const Greeter = () => ({ msg: "mocked" });\n`,
@@ -1810,11 +1810,11 @@ export function greet() {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 488 — rejects 形态建模成 reject 的 promise（不是 never）
+// rejects 形态建模成 reject 的 promise（不是 never）
 // ---------------------------------------------------------------------------
-describe("[] Bug 488 — rejects 形态建模成 reject 的 promise（不是 never）", () => {
+describe("rejects 形态建模成 reject 的 promise（不是 never）", () => {
 /**
- * Bug 488 —— `@nudo:mock` 的 **`rejects`** 形态被建模成「返回 never」
+ * `@nudo:mock` 的 **`rejects`** 形态被建模成「返回 never」
  * ⇒ 返回契约**空洞成立**（`never ⊑ string()` ⇒ 假绿，零诊断）
  * + 签名/dts 写出 `never`（错误类型声明）。
  *
@@ -1868,7 +1868,7 @@ function check(file: string, source: string, entry: string) {
   });
 }
 
-describe("Bug 488 — rejects 形态建模成 reject 的 promise（不是 never）", () => {
+describe("rejects 形态建模成 reject 的 promise（不是 never）", () => {
   it("返回类型是 promise 面（eff/promise），不是 never", () => {
     const report = check("/tmp/bug488-a.js", REJECTS, "/tmp/bug488-a.js");
     const sig = report.signatures.find((s) => s.name === "f");
@@ -1891,7 +1891,7 @@ describe("Bug 488 — rejects 形态建模成 reject 的 promise（不是 never�
   });
 });
 
-describe("Bug 488 负控制 —— resolves / returns 形态不受影响", () => {
+describe("负控制 —— resolves / returns 形态不受影响", () => {
   it("resolves 形态仍是 promise<42>", () => {
     const report = check("/tmp/bug488-b.js", RESOLVES, "/tmp/bug488-b.js");
     const sig = report.signatures.find((s) => s.name === "f");

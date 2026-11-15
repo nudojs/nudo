@@ -1,16 +1,16 @@
 /**
- * BUG-196（LSP 面）—— `nudo.contract.emit` 的根侧车**只有一个写者**。
+ * （LSP 面）—— `nudo.contract.emit` 的根侧车**只有一个写者**。
  *
  * 症状（改前）：agent 工具仍是旧的「派生 → 直写」双路顺序 ——
  * ① `emitDerivedFromRoot` 先写根侧车（段 = 4 行，含 `// derived-from:` 溯源行）；
  * ② `emitContract` 随后**整段重写**同一段（段 = 3 行，无溯源行）。
  * ⇒ 溯源行**永不落盘**，而报告 / 判定 / dry-run 预览仍按「有溯源行」算：
- *   落盘、判定、预览三者不同源（CLI 侧 BUG-196 的同类缺陷，改后单写者）。
+ * 落盘、判定、预览三者不同源（CLI 侧 的同类缺陷，改后单写者）。
  *
  * 改后（与 CLI `runContractEmit` 同序同口径）：
  * ① 直写分支**永远 dry-run**（只算不写）⇒ 产物 D 是段级合并的基底；
  * ② 派生分支以 D 为基底、`skipWrite` 根侧车、`directSections` = 直写分支负责的
- *    段 ⇒ 只在直写正文上**并进** `// derived-from:` 标签行，不整段覆盖；
+ * 段 ⇒ 只在直写正文上**并进** `// derived-from:` 标签行，不整段覆盖；
  * ③ 根侧车由工具**写一次**（原子 rename）⇒ 落盘内容 = 判定内容 = 预览内容。
  *
  * 本文件用 fs 面的 `renameSync` 计数（每个写者都以 `renameSync(tmp, sidecar)`
@@ -57,7 +57,7 @@ const SIDECAR = `import { fn, number, string } from "@nudojs/core";
 export const tag = fn({ n: number().gt(0) }, string());
 `;
 
-/** 收敛态：直写正文 + 派生分支并进来的溯源行（BUG-196） */
+/** 收敛态：直写正文 + 派生分支并进来的溯源行（） */
 const SIDECAR_CONVERGED = `import { fn, number, string } from "@nudojs/core";
 
 // 手写段（tag）：API 表面想强制的契约
@@ -87,7 +87,7 @@ beforeEach(() => {
   writes.renames = [];
 });
 
-describe("Bug 196（LSP 面）：contract.emit 的根侧车单写者", () => {
+describe("（LSP 面）：contract.emit 的根侧车单写者", () => {
   it("update：直写正文 + 溯源行同时落盘，且根侧车只写一次", async () => {
     const { dir, libJs, sidecar } = makeFixture();
     try {
@@ -132,7 +132,7 @@ describe("Bug 196（LSP 面）：contract.emit 的根侧车单写者", () => {
         { workspaceRoots: [dir] },
       );
       expect(readFileSync(sidecar, "utf-8")).toBe(SIDECAR_CONVERGED);
-      // 收敛后没有净变化 ⇒ 不写盘（否则就是 BUG-122 的「假 Updated」）
+      // 收敛后没有净变化 ⇒ 不写盘（否则就是 的「假 Updated」）
       expect(sidecarWrites(sidecar)).toHaveLength(0);
       expect(again.content[0].text).toContain("no contract changes");
       expect(again.content[0].text).not.toContain("Updated");
@@ -180,7 +180,7 @@ describe("Bug 196（LSP 面）：contract.emit 的根侧车单写者", () => {
       // 判「段已存在 ⇒ no-change」⇒ 直写正文**永不上盘**。
       expect(after).toContain("export const wrap = fn({ text: number() }, string());");
       expect(after).toContain("export const tag = fn({ n: number().gt(0) }, string());");
-      // BUG-196（add 面）：add 面新建的直写段也必须带 `// derived-from:`
+      // （add 面）：add 面新建的直写段也必须带 `// derived-from:`
       // 溯源行（改前 add 面把直写新建段当成「既有段」跳过 ⇒ 溯源行永不落盘）。
       expect(after).toContain("// derived-from: lib.js:tag");
       // 合并不是复制：同一段只有一份（就地替换，不是追加）

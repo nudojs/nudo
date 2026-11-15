@@ -2,8 +2,8 @@
  * health 的 budget 截断行与 check --json 对同一文件必须同源同义：
  * - 未截断文件：check budget.truncated=false ⇔ health 不打 truncated 行；
  * - 真截断文件：两者同 truncated=true，且 health 行内计数 = 触发截断的那条
- *   预算自己的计数（depth 截断打 depth/limit 对、必到顶；cycle 不是预算，
- *   不打任何计数段）——杜绝「71/20000 却标 truncated」的自相矛盾；
+ * 预算自己的计数（depth 截断打 depth/limit 对、必到顶；cycle 不是预算，
+ * 不打任何计数段）——杜绝「71/20000 却标 truncated」的自相矛盾；
  * - 多文件运行不得串档：前一文件的截断旗标/计数不得 latch 进后一文件报告。
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";

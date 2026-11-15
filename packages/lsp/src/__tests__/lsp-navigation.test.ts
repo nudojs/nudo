@@ -19,19 +19,19 @@ import { applyEdits, type CodeActionEdit } from "./lsp-harness-r90a.ts";
 import { startLspWithFiles, locationsOf, editsOf, type LspHarness } from "./lsp-harness-d3.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 712 — 方法改名以「归属」为界
+// 方法改名以「归属」为界
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 712 — 方法改名以「归属」为界", () => {
+describe("方法改名以「归属」为界", () => {
 /**
- * Bug 712 — LSP 类方法改名**越过无关对象**的成员访问、且**漏掉对象字面量的同名 key**
- *          → 改出坏代码（运行时读到 `undefined`）。
+ * LSP 类方法改名**越过无关对象**的成员访问、且**漏掉对象字面量的同名 key**
+ * → 改出坏代码（运行时读到 `undefined`）。
  *
  * 改前：`collectMethodReferences` 只按**名字**匹配成员访问（`property.name === name`），
- *       完全不看接收者 ⇒ 改 `a.m` 把 `b.m` 一起改掉；定义位点又只收 ClassMethod /
- *       ObjectMethod 键 ⇒ 对象字面量里的同名 key 漏改 ⇒ 定义集与使用集口径不一致。
+ * 完全不看接收者 ⇒ 改 `a.m` 把 `b.m` 一起改掉；定义位点又只收 ClassMethod /
+ * ObjectMethod 键 ⇒ 对象字面量里的同名 key 漏改 ⇒ 定义集与使用集口径不一致。
  * 改后：方法引用**以「归属」为界**——类方法归类、对象字面量方法归对象；
- *       成员访问只在**接收者归属与该方法定义同源**时计入；对象字面量的方法键
- *       （`{ m() {} }` / `{ m: fn }`）也算定义位点。
+ * 成员访问只在**接收者归属与该方法定义同源**时计入；对象字面量的方法键
+ * （`{ m() {} }` / `{ m: fn }`）也算定义位点。
  *
  * 原生 oracle：真 LSP server 驱动 `textDocument/rename` ⇒ WorkspaceEdit 逐条。
  */
@@ -176,7 +176,7 @@ async function renameEdits(
   }
 }
 
-describe("Bug 712 — 方法改名以「归属」为界", () => {
+describe("方法改名以「归属」为界", () => {
   it("纯函数面：无关对象的同名成员访问不进改名集合", () => {
     const ast = parse(R21);
     const hits = collectMethodReferences(ast, "m", { owner: { kind: "class", name: "K" } });
@@ -216,11 +216,11 @@ describe("Bug 712 — 方法改名以「归属」为界", () => {
     );
     const list = edits["ren-meth.js"] ?? [];
     // 改前：4 条编辑（类方法键 + k.m(1) + o.m(2) + k.m(3)）
-    //   ⇒ `o.m(2)` 被改成 `o.renamed(2)`，运行时读到 undefined（静默坏代码）
+    // ⇒ `o.m(2)` 被改成 `o.renamed(2)`，运行时读到 undefined（静默坏代码）
     // 改后：R21 夹具里 `k` / `o` 都是**无类型形参** ⇒ 接收者归属解析不出来，
-    //   而文件内 `other` 有同名成员 `m` ⇒ **归属歧义**。
-    //   歧义下只有两种自洽结果：全改（改到无关对象）或全不改（定义改了、
-    //   调用点没改 ⇒ 同样坏）——两者都坏 ⇒ 拒绝改名，**一条编辑都不产出**。
+    // 而文件内 `other` 有同名成员 `m` ⇒ **归属歧义**。
+    // 歧义下只有两种自洽结果：全改（改到无关对象）或全不改（定义改了、
+    // 调用点没改 ⇒ 同样坏）——两者都坏 ⇒ 拒绝改名，**一条编辑都不产出**。
     expect(list).toEqual([]);
   });
 
@@ -314,11 +314,11 @@ describe("Bug 712 — 方法改名以「归属」为界", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1066 — 别名导出 export { a as b } 的 rename 改导出名（不改本地名）
+// 别名导出 export { a as b } 的 rename 改导出名（不改本地名）
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 1066 — 别名导出 export { a as b } 的 rename 改导出名（不改本地名）", () => {
+describe("别名导出 export { a as b } 的 rename 改导出名（不改本地名）", () => {
 /**
- * Bug 1066 — LSP 的**别名导出**（`export { a as b }`）形态：跨文件 references 丢掉
+ * LSP 的**别名导出**（`export { a as b }`）形态：跨文件 references 丢掉
  * 部分 importer + **rename 改的是本地名** ⇒ 改完**模块图断裂**
  * （真 node `SyntaxError`，而两个文件语法都合法）。
  *
@@ -330,11 +330,11 @@ describe("[lsp-] Bug 1066 — 别名导出 export { a as b } 的 rename 改导�
  *
  * 改后：**本地名 / 导出名分成两个身份字段**
  * - 导出名身份：编辑集 = 导出说明符的**导出侧** + importer 的 **imported 侧**
- *   （+ importer 的本地用法）⇒ 改完模块图仍然自洽；
+ * （+ importer 的本地用法）⇒ 改完模块图仍然自洽；
  * - 本地名身份：编辑集 = 本地声明 + 导出说明符的**本地侧**（**不得**连坐
- *   importer 的 imported 侧 —— 那是导出名的身份）。
+ * importer 的 imported 侧 —— 那是导出名的身份）。
  * - 导出名位（`export { hidden as visible }` 的 `visible`）不再是死位：
- *   definition / references / prepareRename / rename 都有可导航身份。
+ * definition / references / prepareRename / rename 都有可导航身份。
  *
  * ⚠ 回归钉**真的落盘 + 真 import** 验（不能只断言编辑集）：改名后必须能被
  * node 以 ESM 真 import 成功、且取到正确的值。
@@ -402,7 +402,7 @@ function offset(pos: { line: number; character: number }, dx: number): { line: n
 const LOCAL_POS = posOf(DEF, "hidden = 1");
 /** 导出名位：`export { hidden as visible };` 的 visible */
 const EXPORT_POS = offset(posOf(DEF, "as visible"), 3);
-/** importer 用点位：`  return visible;` 的 visible */
+/** importer 用点位：` return visible;` 的 visible */
 const USE_POS = posOf(USE, "visible;");
 
 function rel(uri: string, root: string): string {
@@ -447,7 +447,7 @@ async function importOk(dir: string, file: string, tag: string): Promise<number>
   return typeof mod.use === "function" ? (mod.use() as number) : (mod.use2() as number);
 }
 
-describe("Bug 1066 — 别名导出 export { a as b } 的 rename 改导出名（不改本地名）", () => {
+describe("别名导出 export { a as b } 的 rename 改导出名（不改本地名）", () => {
   it("rename @ importer 用点位 ⇒ 改导出名 + importer 的 imported 侧，**不动** hidden 的声明", async () => {
     const where: string[] = [];
     let filesAfter: Record<string, string> = {};
@@ -581,30 +581,30 @@ describe("Bug 1066 — 别名导出 export { a as b } 的 rename 改导出名（
 });
 
 // ---------------------------------------------------------------------------
-// Bug 746 — 改本地别名不得连坐导出符号与其它 importer
+// 改本地别名不得连坐导出符号与其它 importer
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 746 — 改本地别名不得连坐导出符号与其它 importer", () => {
+describe("改本地别名不得连坐导出符号与其它 importer", () => {
 /**
- * Bug 746 —— 跨文件改名：改**本地别名**却把**导出符号**与**其它 importer**一起改掉。
+ * 跨文件改名：改**本地别名**却把**导出符号**与**其它 importer**一起改掉。
  *
  * 报告说的症状（**假阳性 —— 不复现**）：
- *   在 `xf-use.js`（导入方）把**本地别名** `alias` 改名 ⇒ 报告实测：
- *   `xf-def.js` 的导出符号 + `xf-use2.js` 的 import 与用法**被一起改掉**。
+ * 在 `xf-use.js`（导入方）把**本地别名** `alias` 改名 ⇒ 报告实测：
+ * `xf-def.js` 的导出符号 + `xf-use2.js` 的 import 与用法**被一起改掉**。
  *
  * 实测（HEAD `dd22619e` 上逐字，见 `tmp/probe/fix-r91/D/oracle-before-head.txt`）：
- *   在 `xf-use.js` 改本地别名 ⇒ 编辑集**只有**
- *     `xf-use.js:0:20-0:25`（import 说明符的 **local** 侧）+ `xf-use.js:3:9-3:14`（用法处）；
- *   `xf-def.js` 与 `xf-use2.js` **零编辑**。
- *   反向（从**定义方**改导出名）⇒ 正确改 `xf-def.js` 的导出名 + 各 importer 的
- *   **imported** 侧，**别名 `alias` 不动**。
+ * 在 `xf-use.js` 改本地别名 ⇒ 编辑集**只有**
+ * `xf-use.js:0:20-0:25`（import 说明符的 **local** 侧）+ `xf-use.js:3:9-3:14`（用法处）；
+ * `xf-def.js` 与 `xf-use2.js` **零编辑**。
+ * 反向（从**定义方**改导出名）⇒ 正确改 `xf-def.js` 的导出名 + 各 importer 的
+ * **imported** 侧，**别名 `alias` 不动**。
  *
- * ⇒ 症状已被**更早的族**修掉：**族 22（lsp-signature）的 Bug 710**
- *   （`lsp--alias-import-cross-file-rename.part.ts`）的修复面覆盖本条
- *   （`isLocalAliasSymbol` / `resolveReferences` 的「本地别名」分支）。
+ * ⇒ 症状已被**更早的族**修掉：**族 22（lsp-signature）的 **
+ * （`lsp--alias-import-cross-file-rename.part.ts`）的修复面覆盖本条
+ * （`isLocalAliasSymbol` / `resolveReferences` 的「本地别名」分支）。
  *
  * 本文件是**反向守护钉**：钉住「**已修**」的行为 ⇒ **在 HEAD 上必须通过**
  * （闸④ 反向闸，与其它片「必须大面积失败」的口径相反）⇒ 任何人把「本地别名」
- *   与「被导入符号」再混为一谈，本钉立刻变红。
+ * 与「被导入符号」再混为一谈，本钉立刻变红。
  */
 
 
@@ -659,7 +659,7 @@ function editsOf(result: unknown): Edit[] {
   );
 }
 
-describe("Bug 746 — 改本地别名不得连坐导出符号与其它 importer", () => {
+describe("改本地别名不得连坐导出符号与其它 importer", () => {
   it("在别名用法处改名：只改 importer 的本地侧 + 用法处", async () => {
     await withLspServer(
       { "xf-def.js": DEF, "xf-use.js": USE, "xf-use2.js": USE2 },
@@ -788,30 +788,30 @@ describe("Bug 746 — 改本地别名不得连坐导出符号与其它 importer"
 });
 
 // ---------------------------------------------------------------------------
-// Bug 747 — 形参与同名遮蔽的顶层变量：两个方向都不连坐
+// 形参与同名遮蔽的顶层变量：两个方向都不连坐
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 747 — 形参与同名遮蔽的顶层变量：两个方向都不连坐", () => {
+describe("形参与同名遮蔽的顶层变量：两个方向都不连坐", () => {
 /**
- * Bug 747 —— `rename` 重命名**形参**时，把**同名遮蔽的顶层变量**一起改了。
+ * `rename` 重命名**形参**时，把**同名遮蔽的顶层变量**一起改了。
  *
  * 报告说的症状（**假阳性 —— 不复现**）：
- *   夹具 `const x = 1;` / `export function f(x) { return x + 1; }`
- *   重命名**形参** ⇒ 编辑集**多出一条**真改动（顶层 `const x`）。
- *   报告还指出两个方向**不对称**（形参方向多改、顶层方向正确）。
+ * 夹具 `const x = 1;` / `export function f(x) { return x + 1; }`
+ * 重命名**形参** ⇒ 编辑集**多出一条**真改动（顶层 `const x`）。
+ * 报告还指出两个方向**不对称**（形参方向多改、顶层方向正确）。
  *
  * 实测（HEAD `dd22619e` 上逐字，见 `tmp/probe/fix-r91/D/oracle-before-head.txt`）：
- *   · 形参声明位（1:18）改名 ⇒ 编辑集**只有** `1:18-1:19` + `1:30-1:31`
- *     （顶层 `0:6-0:7` **零编辑**）；
- *   · 形参引用位（1:30）改名 ⇒ 同上；
- *   · 顶层 `x`（0:6）改名 ⇒ 编辑集**只有** `0:6-0:7`（形参零编辑）。
- *   ⇒ **两个方向都不连坐**。
- *   `definition`@形参 ⇒ `renfx.js:1:18-1:19`；`references`@形参 ⇒
- *     `["1:18-1:19","1:30-1:31"]`（**作用域感知**）。
+ * · 形参声明位（1:18）改名 ⇒ 编辑集**只有** `1:18-1:19` + `1:30-1:31`
+ * （顶层 `0:6-0:7` **零编辑**）；
+ * · 形参引用位（1:30）改名 ⇒ 同上；
+ * · 顶层 `x`（0:6）改名 ⇒ 编辑集**只有** `0:6-0:7`（形参零编辑）。
+ * ⇒ **两个方向都不连坐**。
+ * `definition`@形参 ⇒ `renfx.js:1:18-1:19`；`references`@形参 ⇒
+ * `["1:18-1:19","1:30-1:31"]`（**作用域感知**）。
  *
- * ⇒ 症状已被**更早的族**修掉：**族 22（lsp-signature）的 Bug 709**
- *   （`lsp--shadowed-binding.part.ts`）的修复面覆盖本条 ——
- *   符号表按**作用域路径**存同名绑定（`name@行:列`），`findDefinition` /
- *   `findReferences` / `resolveDefinitionLocations` 取**最内层**那条。
+ * ⇒ 症状已被**更早的族**修掉：**族 22（lsp-signature）的 **
+ * （`lsp--shadowed-binding.part.ts`）的修复面覆盖本条 ——
+ * 符号表按**作用域路径**存同名绑定（`name@行:列`），`findDefinition` /
+ * `findReferences` / `resolveDefinitionLocations` 取**最内层**那条。
  *
  * 本文件是**反向守护钉**：钉住「**已修**」的行为 ⇒ **在 HEAD 上必须通过**
  * （闸④ 反向闸）⇒ 任何人把符号表退回「按名字索引」，本钉立刻变红。
@@ -894,7 +894,7 @@ const TOP_LEVEL: Loc = {
   endCharacter: 7,
 };
 
-describe("Bug 747 — 形参与同名遮蔽的顶层变量：两个方向都不连坐", () => {
+describe("形参与同名遮蔽的顶层变量：两个方向都不连坐", () => {
   it("重命名形参声明位：编辑集只有形参声明 + 形参引用，顶层零编辑", async () => {
     await withLspServer({ "renfx.js": SHADOW }, async ({ req, uri }) => {
       const edits = editsOf(
@@ -972,11 +972,11 @@ describe("Bug 747 — 形参与同名遮蔽的顶层变量：两个方向都不�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 105 · 侧车契约绑定参与 references / rename
+// 侧车契约绑定参与 references / rename
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 105 · 侧车契约绑定参与 references / rename", () => {
+describe("侧车契约绑定参与 references / rename", () => {
 /**
- * BUG-105 —— `textDocument/rename` / `textDocument/references` 漏掉**侧车契约绑定**
+ * `textDocument/rename` / `textDocument/references` 漏掉**侧车契约绑定**
  * （而 `textDocument/definition` 把它报成定义位）
  *
  * 现象：对带侧车契约的导出函数改名 ⇒ 只改源码、侧车契约成孤儿
@@ -1021,7 +1021,7 @@ const fileOf = (uri: string): string => basename(decodeURIComponent(uri));
 const keyOf = (l: Loc): string =>
   `${fileOf(l.uri)}:${l.range.start.line}:${l.range.start.character}`;
 
-describe("Bug 105 · 侧车契约绑定参与 references / rename", () => {
+describe("侧车契约绑定参与 references / rename", () => {
   it("definition / references / rename 对同一符号同口径（含侧车契约绑定）", async () => {
     await withLspServer(
       { "lib.js": LIB_JS, "lib.nudo.js": LIB_SC },
@@ -1127,11 +1127,11 @@ describe("Bug 105 · 侧车契约绑定参与 references / rename", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 727 — re-export 边的引用面与改名
+// re-export 边的引用面与改名
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 727 — re-export 边的引用面与改名", () => {
+describe("re-export 边的引用面与改名", () => {
 /**
- * Bug 727 — re-export 边在 references / rename 面不可见。
+ * re-export 边在 references / rename 面不可见。
  *
  * 症状：`export { a } from "./m.js"` 这条边在符号表里根本没被建立 ⇒
  * 引用面看不到 m.js ⇒ 改名只改本地 ⇒ 目标模块没同步 ⇒ 模块图断裂
@@ -1158,7 +1158,7 @@ export function use() {
 }
 `;
 
-describe("Bug 727 — re-export 边的引用面与改名", () => {
+describe("re-export 边的引用面与改名", () => {
   it("从 re-export 位置发起 references 覆盖目标模块的定义与内部引用", async () => {
     h = await startLspWithFiles({ "m.js": M, "main.js": MAIN });
     const refs = locationsOf(
@@ -1244,11 +1244,11 @@ describe("Bug 727 — re-export 边的引用面与改名", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 710 — 别名 import 的跨文件改名口径
+// 别名 import 的跨文件改名口径
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 710 — 别名 import 的跨文件改名口径", () => {
+describe("别名 import 的跨文件改名口径", () => {
 /**
- * Bug 710 — 跨文件改名：别名 import 被改、import 说明符的 imported 侧没被改。
+ * 跨文件改名：别名 import 被改、import 说明符的 imported 侧没被改。
  *
  * 症状：`import { oldName as alias } from "./xf-def.js"` + 在 xf-def.js 改名
  * ⇒ 改出来是 `import { oldName as newName }`（imported 侧没动 ⇒ import 断链，
@@ -1282,7 +1282,7 @@ export function use2() {
 }
 `;
 
-describe("Bug 710 — 别名 import 的跨文件改名口径", () => {
+describe("别名 import 的跨文件改名口径", () => {
   it("改导出名时：imported 侧被改、别名不被改", async () => {
     h = await startLspWithFiles({ "xf-def.js": DEF, "xf-use.js": USE, "xf-use2.js": USE2 });
     const edits = editsOf(
@@ -1361,11 +1361,11 @@ describe("Bug 710 — 别名 import 的跨文件改名口径", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 750 — rename 校验新名字（语法层）
+// rename 校验新名字（语法层）
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 750 — rename 校验新名字（语法层）", () => {
+describe("rename 校验新名字（语法层）", () => {
 /**
- * Bug 750 —— `textDocument/rename` **从不校验新名字** ⇒ 一次改名就能把源码
+ * `textDocument/rename` **从不校验新名字** ⇒ 一次改名就能把源码
  * 改成**非法 JavaScript**（重复声明 / 非法标识符 / 空名 / 保留字），
  * `node --check` 直接 `SyntaxError`。
  *
@@ -1377,8 +1377,8 @@ describe("[lsp-] Bug 750 — rename 校验新名字（语法层）", () => {
  * ③ 非空。⇒ 非法新名**不产出任何编辑**（返回 `null`）。
  *
  * ⚠ **「与同作用域已有绑定冲突」（重复声明）本族不做** —— 它需要作用域模型
- *   （`buildSymbolTable`，片 A 的地盘）⇒ 登记为独立后续项。本钉**不断言**
- *   重复声明被拒（那会与 AGENT-CONTEXT §4 的裁决冲突）。
+ * （`buildSymbolTable`，片 A 的地盘）⇒ 登记为独立后续项。本钉**不断言**
+ * 重复声明被拒（那会与 AGENT-CONTEXT §4 的裁决冲突）。
  */
 
 
@@ -1392,7 +1392,7 @@ const ALPHA_POS = { line: 0, character: 13 };
 
 type RenameResult = { changes: Record<string, Array<{ range: unknown; newText: string }>> } | null;
 
-describe("Bug 750 — rename 校验新名字（语法层）", () => {
+describe("rename 校验新名字（语法层）", () => {
   it("非法标识符 ⇒ 不产出任何编辑", async () => {
     await withLspServer({ "a.js": SRC }, async ({ req, uri }) => {
       const res = req("textDocument/rename")({
@@ -1461,19 +1461,19 @@ describe("Bug 750 — rename 校验新名字（语法层）", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 699 — rename 导出绑定不得毁掉声明（编辑范围 / 重叠）
+// rename 导出绑定不得毁掉声明（编辑范围 / 重叠）
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 699 — rename 导出绑定不得毁掉声明（编辑范围 / 重叠）", () => {
+describe("rename 导出绑定不得毁掉声明（编辑范围 / 重叠）", () => {
 /**
- * Bug 699 回归钉：LSP `textDocument/rename` 改一个**导出绑定**时，不得把
+ * 回归钉：LSP `textDocument/rename` 改一个**导出绑定**时，不得把
  * 声明本身毁掉。
  *
  * 改前（协议面实测，见 tmp/probe/fix-r30/d1-before.txt）：
- *   rename `total` → `renamed`，返回两条编辑
- *     [0:13-0:18] -> "renamed"   （标识符）
- *     [0:0-0:24]  -> "renamed"   （**整条 `export const total = 42;` 声明**）
- *   ⇒ 两条 range 重叠（LSP 规定同一份 edit 列表里 range 不得重叠），
- *     且第二条会把整条声明替换成一个标识符 ⇒ 文件被改坏。
+ * rename `total` → `renamed`，返回两条编辑
+ * [0:13-0:18] -> "renamed" （标识符）
+ * [0:0-0:24] -> "renamed" （**整条 `export const total = 42;` 声明**）
+ * ⇒ 两条 range 重叠（LSP 规定同一份 edit 列表里 range 不得重叠），
+ * 且第二条会把整条声明替换成一个标识符 ⇒ 文件被改坏。
  *
  * 根因：babel 把 `ExportNamedDeclaration` **语句节点**放进导出绑定的
  * `referencePaths`（实测：`export const total = 42;` 的 binding.referencePaths
@@ -1481,9 +1481,9 @@ describe("[lsp-] Bug 699 — rename 导出绑定不得毁掉声明（编辑范�
  * 引用收进来 ⇒ 变成一个「宽于单个标识符」的编辑目标。
  *
  * 修法：
- *   1) `collectBindingReferences` 的 referencePaths **只收 Identifier 节点**；
- *   2) `buildRenameEdits` 兜底：编辑范围宽于一个标识符 ⇒ 挡掉；编辑区间
- *      互相重叠 ⇒ 只留窄的一条。不得把协议非法的 edit 列表发给客户端。
+ * 1) `collectBindingReferences` 的 referencePaths **只收 Identifier 节点**；
+ * 2) `buildRenameEdits` 兜底：编辑范围宽于一个标识符 ⇒ 挡掉；编辑区间
+ * 互相重叠 ⇒ 只留窄的一条。不得把协议非法的 edit 列表发给客户端。
  */
 
 
@@ -1492,7 +1492,7 @@ describe("[lsp-] Bug 699 — rename 导出绑定不得毁掉声明（编辑范�
 
 const DEF_SRC = `export const total = 42;\n`;
 
-describe("Bug 699 — rename 导出绑定不得毁掉声明（编辑范围 / 重叠）", () => {
+describe("rename 导出绑定不得毁掉声明（编辑范围 / 重叠）", () => {
   it("collectBindingReferences：导出绑定的 referencePaths 只收标识符（语句节点不进）", () => {
     const ast = parse(DEF_SRC);
     const refs = collectBindingReferences(ast, "total", { line: 1, column: 14 }, "file:///t/d.js");
@@ -1561,18 +1561,18 @@ describe("Bug 699 — rename 导出绑定不得毁掉声明（编辑范围 / 重
 });
 
 // ---------------------------------------------------------------------------
-// Bug 715 — 简写属性改名必须保留 key（`{ x }` → `{ x: y }`）
+// 简写属性改名必须保留 key（`{ x }` → `{ x: y }`）
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 715 — 简写属性改名必须保留 key（`{ x }` → `{ x: y }`）", () => {
+describe("简写属性改名必须保留 key（`{ x }` → `{ x: y }`）", () => {
 /**
- * Bug 715 回归钉：rename 遇到**对象字面量简写属性**（`{ x }`）时，编辑文本
+ * 回归钉：rename 遇到**对象字面量简写属性**（`{ x }`）时，编辑文本
  * 必须是 `x: <新名>`（**保留 key、只换 value**），不得把整段替换成新名字
  * —— 否则对象的**形状被静默改掉**（`{ x }` → `{ y }`）。
  *
  * 改前（协议面实测，见 tmp/probe/fix-r30/d1-before.txt）：
- *   rename `x` → `y`，返回
- *     [1:8-1:9]  -> "y"   （声明）
- *     [2:11-2:12] -> "y"  （**简写属性** ⇒ 变成 `{ y }`，key 被改掉 ❌）
+ * rename `x` → `y`，返回
+ * [1:8-1:9] -> "y" （声明）
+ * [2:11-2:12] -> "y" （**简写属性** ⇒ 变成 `{ y }`，key 被改掉 ❌）
  *
  * 根因：babel 8 里简写属性的 key 与 value 是**两个节点、同一段源码**
  * （实测 `{ x }` 的 `prop.key` 与 `prop.value` 相等位置但不同节点）⇒ 把这段
@@ -1593,7 +1593,7 @@ const SHORT_SRC = `export function mk() {
 }
 `;
 
-describe("Bug 715 — 简写属性改名必须保留 key（`{ x }` → `{ x: y }`）", () => {
+describe("简写属性改名必须保留 key（`{ x }` → `{ x: y }`）", () => {
   it("collectBindingReferences：简写属性的引用位带上 key 元数据", () => {
     const ast = parse(SHORT_SRC);
     const refs = collectBindingReferences(ast, "x", { line: 2, column: 9 }, "file:///t/s.js");
@@ -1655,11 +1655,11 @@ describe("Bug 715 — 简写属性改名必须保留 key（`{ x }` → `{ x: y }
 });
 
 // ---------------------------------------------------------------------------
-// Bug 707 — 命名空间 import 的引用面
+// 命名空间 import 的引用面
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 707 — 命名空间 import 的引用面", () => {
+describe("命名空间 import 的引用面", () => {
 /**
- * Bug 707 — 命名空间 import 的**裸** `ns` 出现处被当成具名导出的引用。
+ * 命名空间 import 的**裸** `ns` 出现处被当成具名导出的引用。
  *
  * 症状：`import * as ns from "./def.js"` 之后，def.js 里**从未被提及**的
  * 导出 alpha 的 references 里出现了 ns-user.js 的 `ns` 出现处（假引用）；
@@ -1688,7 +1688,7 @@ export function go() {
 }
 `;
 
-describe("Bug 707 — 命名空间 import 的引用面", () => {
+describe("命名空间 import 的引用面", () => {
   it("未被命名空间引用的导出，其 references 不含命名空间导入方", async () => {
     h = await startLspWithFiles({ "ns-def.js": DEF, "ns-user.js": USER });
     const refs = locationsOf(
@@ -1731,20 +1731,20 @@ describe("Bug 707 — 命名空间 import 的引用面", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 705 — 类方法的 references / definition 不再返回空
+// 类方法的 references / definition 不再返回空
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 705 — 类方法的 references / definition 不再返回空", () => {
+describe("类方法的 references / definition 不再返回空", () => {
 /**
- * Bug 705 — LSP references / definition 对**类方法**返回空（IDE 显示「无引用 / 无定义」）。
+ * LSP references / definition 对**类方法**返回空（IDE 显示「无引用 / 无定义」）。
  *
  * 改前：类方法键不是绑定标识符（`isBindingIdentifier` 对 ClassMethod 键返回 false）
- *       ⇒ 绑定面（`collectBindingReferences`）找不到绑定目标直接返回空；
- *       已经写好的方法面（`collectMethodReferences`）**没有**被 references /
- *       definition 通道接入 ⇒ 两个请求都答「没有」。
+ * ⇒ 绑定面（`collectBindingReferences`）找不到绑定目标直接返回空；
+ * 已经写好的方法面（`collectMethodReferences`）**没有**被 references /
+ * definition 通道接入 ⇒ 两个请求都答「没有」。
  * 改后：references / definition 通道**改走方法面**（方法键 + 同源成员访问）。
  *
  * 原生 oracle：真 LSP server 驱动 `textDocument/references` 与 `textDocument/definition`
- *             ⇒ Location 数组 / 跳转目标。
+ * ⇒ Location 数组 / 跳转目标。
  */
 
 
@@ -1812,7 +1812,7 @@ const KEY_POS = posOf(SRC, "m(p)");
 // `k.m(1)` 里的 `m`（不是 `k`）
 const USE_POS = { line: posOf(SRC, "k.m").line, character: posOf(SRC, "k.m").character + 2 };
 
-describe("Bug 705 — 类方法的 references / definition 不再返回空", () => {
+describe("类方法的 references / definition 不再返回空", () => {
   it("纯函数面：方法面能收齐类方法键 + 同源成员访问", () => {
     const hits = collectMethodReferences(parse(SRC), "m");
     expect(hits.some((h) => h.kind === "key")).toBe(true);
@@ -1892,11 +1892,11 @@ export function use() { return v; }
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1010 — definition 对方法形参 / catch 形参不再返回 null
+// definition 对方法形参 / catch 形参不再返回 null
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 1010 — definition 对方法形参 / catch 形参不再返回 null", () => {
+describe("definition 对方法形参 / catch 形参不再返回 null", () => {
 /**
- * Bug 1010 — LSP `definition` 对**类方法形参** / **对象方法形参** / **`catch` 形参**
+ * LSP `definition` 对**类方法形参** / **对象方法形参** / **`catch` 形参**
  * 返回 `null`，而**同一位置**的 `references` 却**返回声明位点**
  * ⇒ 同一个 LSP、同一个坐标，两个面自相矛盾。
  *
@@ -1999,7 +1999,7 @@ async function referencesAt(pos: { line: number; character: number }): Promise<L
   return out;
 }
 
-describe("Bug 1010 — definition 对方法形参 / catch 形参不再返回 null", () => {
+describe("definition 对方法形参 / catch 形参不再返回 null", () => {
   it("类方法形参：definition ⇒ 形参声明位（改前是 null）", async () => {
     const defs = await definitionAt(CLASS_PARAM);
     expect(defs.length).toBeGreaterThanOrEqual(1);
@@ -2048,18 +2048,18 @@ describe("Bug 1010 — definition 对方法形参 / catch 形参不再返回 nul
 });
 
 // ---------------------------------------------------------------------------
-// [merged] lsp-bug-751-navigation-gate-consistency.test.ts
+// [merged] navigation-gate-consistency
 // ---------------------------------------------------------------------------
-describe("[lsp-] [merged] lsp-bug-751-navigation-gate-consistency.test.ts", () => {
-// MERGED (topic-related bug pins): lsp-bug-751-navigation-gate-consistency.test.ts + lsp-bug-751-sidecar-gate-family.test.ts + lsp-bug-751-sidecar-gate-parity.test.ts
+describe("navigation-gate-consistency", () => {
+// MERGED (topic-related bug pins): navigation-gate-consistency + sidecar-gate-family + sidecar-gate-parity
 // Each absorbed file keeps its own describe scope so file-level hooks stay
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 
 
 
-describe("[merged] lsp-bug-751-navigation-gate-consistency.test.ts", () => {
+describe("navigation-gate-consistency", () => {
 /**
- * Bug 751 —— 侧车契约文件（`*.nudo.js`）在导航面上的**门禁各写各的**：
+ * 侧车契约文件（`*.nudo.js`）在导航面上的**门禁各写各的**：
  * `definition` 单独挂了 `isSidecarPath` **逃生口**（放行侧车），
  * `workspace/symbol` 干脆**没有门禁**（反而放行侧车），其余四个请求一律
  * `isNudoFile` 一刀切 ⇒ **同一坐标六种请求三种结论**：definition 说
@@ -2068,16 +2068,16 @@ describe("[merged] lsp-bug-751-navigation-gate-consistency.test.ts", () => {
  *
  * 修法（**最小一致修法**，全部落在 `server-navigation.ts`）：
  * ① 去掉 `definition` 的 `|| isSidecarPath(...)` 逃生口 ⇒ 侧车在所有导航
- *    请求上一律为 null；② 给 `workspace/symbol` **补上同一个门禁**
- *    （路径层 `isNudoTargetPath`——`isNudoFile` 的第一层，同样排除侧车）。
+ * 请求上一律为 null；② 给 `workspace/symbol` **补上同一个门禁**
+ * （路径层 `isNudoTargetPath`——`isNudoFile` 的第一层，同样排除侧车）。
  *
  * ⚠ **代价（已裁决：接受）**：丢掉「源码 → 侧车」的 definition 可导航能力。
  * ⚠ `workspace/symbol` 扫的是**文件路径集合**（可能**未打开**）⇒ 不能用
- *   `isNudoFile`（它要求文档已打开 ⇒ 会把未打开的文件整片误杀）⇒ 只用
- *   **路径层**。
+ * `isNudoFile`（它要求文档已打开 ⇒ 会把未打开的文件整片误杀）⇒ 只用
+ * **路径层**。
  *
- * ⚠ **共担**：族级不变量钉见 `lsp-bug-751-sidecar-gate-family.test.ts`
- *   （片 C 落，本钉与它同口径）。
+ * ⚠ **共担**：族级不变量钉见 `sidecar-gate-family`
+ * （片 C 落，本钉与它同口径）。
  */
 
 
@@ -2099,7 +2099,7 @@ const SIDECAR_POS = { line: 2, character: 13 };
 const isEmptyResult = (v: unknown): boolean =>
   v === null || v === undefined || (Array.isArray(v) && v.length === 0);
 
-describe("Bug 751 — 导航面门禁一致：侧车在六个请求上不可见", () => {
+describe("导航面门禁一致：侧车在六个请求上不可见", () => {
   it("同一坐标（侧车里的 getName）⇒ 六个导航请求结论一致（都不可见）", async () => {
     await withLspServer(
       { "lib.js": LIB, "lib.nudo.js": LIB_SIDECAR },
@@ -2159,16 +2159,16 @@ describe("Bug 751 — 导航面门禁一致：侧车在六个请求上不可见"
 });
 });
 
-describe("[merged] lsp-bug-751-sidecar-gate-family.test.ts", () => {
+describe("sidecar-gate-family", () => {
 /**
- * Bug 751（**共担钉**）—— 族级不变量：侧车契约文件（`*.nudo.js`）在**全部**
+ * （**共担钉**）—— 族级不变量：侧车契约文件（`*.nudo.js`）在**全部**
  * 导航请求上不可见。
  *
  * ⚠ **共担**：本钉的两条断言落在 `server-navigation.ts` 的两个调用点
- *   （`definition` 的 `|| isSidecarPath(...)` 逃生口、`workspace/symbol` 的
- *   **无门禁**）⇒ **片 B** 落。⇒ 本钉在 HEAD（未修）上**红**（反向闸证据），
- *   片 B 落地后**转绿**。片 C 的那一半（统一门禁谓词真源 + IDE 侧一致性）
- *   见 `lsp-bug-751-sidecar-gate-parity.test.ts`。
+ * （`definition` 的 `|| isSidecarPath(...)` 逃生口、`workspace/symbol` 的
+ * **无门禁**）⇒ **片 B** 落。⇒ 本钉在 HEAD（未修）上**红**（反向闸证据），
+ * 片 B 落地后**转绿**。片 C 的那一半（统一门禁谓词真源 + IDE 侧一致性）
+ * 见 `sidecar-gate-parity`。
  *
  * 症状（HEAD）：同一坐标（侧车里的 `getName`）六种请求三种结论——
  * definition **有**、references/rename/prepareRename/documentSymbol 全空、
@@ -2191,7 +2191,7 @@ export const getName = fn({ u: shape({ name: string() }) }, string());
 /** 侧车里 `getName` 的位置（行 2，列 13）。 */
 const SIDECAR_POS = { line: 2, character: 13 };
 
-describe("Bug 751（族级不变量）— 侧车在全部导航请求上不可见", () => {
+describe("（族级不变量）— 侧车在全部导航请求上不可见", () => {
   it("definition 不得放行侧车（逃生口已去掉）", async () => {
     await withLspServer(
       { "lib.js": LIB, "lib.nudo.js": LIB_SIDECAR },
@@ -2233,9 +2233,9 @@ describe("Bug 751（族级不变量）— 侧车在全部导航请求上不可�
 });
 });
 
-describe("[merged] lsp-bug-751-sidecar-gate-parity.test.ts", () => {
+describe("sidecar-gate-parity", () => {
 /**
- * Bug 751 — 侧车契约文件（`*.nudo.js`）在导航请求族里的**门禁各写各的**：
+ * 侧车契约文件（`*.nudo.js`）在导航请求族里的**门禁各写各的**：
  * `definition` 单独挂了 `isSidecarPath` 逃生口（放行侧车），`workspace/symbol`
  * 干脆**没有门禁**（反而放行侧车），其余四个导航请求与 6 个 IDE 请求一律
  * `isNudoFile` 一刀切 ⇒ **同一坐标六种请求三种结论**：definition 说「这个符号
@@ -2252,8 +2252,8 @@ describe("[merged] lsp-bug-751-sidecar-gate-parity.test.ts", () => {
  * 侧车契约文件在 IDE 面与「走统一门禁的四个导航请求」上完全不可见。
  *
  * ⚠ 导航面剩下的两处调用点（`definition` 的逃生口、`workspace/symbol` 的无
- *   门禁）在 `server-navigation.ts` ⇒ **片 B** 落 ⇒ 族级不变量钉见
- *   `lsp-bug-751-sidecar-gate-family.test.ts`（共担钉：片 B 落地后转绿）。
+ * 门禁）在 `server-navigation.ts` ⇒ **片 B** 落 ⇒ 族级不变量钉见
+ * `sidecar-gate-family`（共担钉：片 B 落地后转绿）。
  */
 
 
@@ -2274,7 +2274,7 @@ const SIDECAR_POS = { line: 2, character: 13 };
 /** 源码里 `getName` 的位置（行 0，列 16）。 */
 const SRC_POS = { line: 0, character: 16 };
 
-describe("Bug 751 — 统一门禁谓词：侧车在 IDE 面与统一门禁的导航请求上不可见", () => {
+describe("统一门禁谓词：侧车在 IDE 面与统一门禁的导航请求上不可见", () => {
   it("侧车上的六个 IDE 请求结论一致（侧车不可见）", async () => {
     await withLspServer(
       { "lib.js": LIB, "lib.nudo.js": LIB_SIDECAR },
@@ -2337,20 +2337,20 @@ describe("Bug 751 — 统一门禁谓词：侧车在 IDE 面与统一门禁的�
 // ---------------------------------------------------------------------------
 // rename 作用域冲突 ⇒ 拒绝改名（拒绝优于改坏）
 // ---------------------------------------------------------------------------
-describe("[lsp-] rename 作用域冲突 ⇒ 拒绝改名（拒绝优于改坏）", () => {
+describe("rename 作用域冲突 ⇒ 拒绝改名（拒绝优于改坏）", () => {
 /**
- * rename 作用域冲突检测（Bug 750 自认的「独立后续项」，此处落地）。
+ * rename 作用域冲突检测（自认的「独立后续项」，此处落地）。
  *
- * Bug 750 只做了新名的**语法层**校验（合法标识符 / 非保留字 / 非空）⇒ 合法的
+ * 只做了新名的**语法层**校验（合法标识符 / 非保留字 / 非空）⇒ 合法的
  * 新名仍可与既有绑定撞车 ⇒ 一次改名就把源码改坏：
  * - 同作用域重复声明（`const a` + 改 `f`→`a`）⇒ `SyntaxError`；
  * - 捕获（外层已有 `newName` 且在目标作用域内被引用 / 目标引用落在声明了
- *   `newName` 的内层作用域里）⇒ 引用静默指向别的绑定。
+ * `newName` 的内层作用域里）⇒ 引用静默指向别的绑定。
  *
- * 修法（哲学与 Bug 712「歧义接收者拒绝改名」同源：**拒绝优于改坏**）：
+ * 修法（哲学与 「歧义接收者拒绝改名」同源：**拒绝优于改坏**）：
  * `renameNameConflicts`（symbols.ts）按目标身份判冲突：
  * - binding：babel 作用域链上三类冲突（重复声明 / 内层遮蔽捕获 / 外层捕获）；
- *   纯遮蔽（外层 `newName` 存在但目标作用域内零引用）**允许**；
+ * 纯遮蔽（外层 `newName` 存在但目标作用域内零引用）**允许**；
  * - method：只查同归属内成员名冲突（方法键不是绑定，同名 key 语义不同）；
  * - private：同类体内已有 `#newName` ⇒ 重复私有名；
  * - export：模块导出名空间里已有 `newName` ⇒ 重复导出。

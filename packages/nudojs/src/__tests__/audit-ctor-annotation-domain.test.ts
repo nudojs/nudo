@@ -1,8 +1,8 @@
 /**
- * 审计 34 · BUG-020：`.ts` 构造器注解（含参数属性）不进实例字段域。
+ * 审计 34 · `.ts` 构造器注解（含参数属性）不进实例字段域。
  *
  * 症状：`constructor(private size: number)` + `area() { return this.size *
- * this.size }` ⇒ check 面 `Box.area() => number  throws TypeError`（error 级
+ * this.size }` ⇒ check 面 `Box.area() => number throws TypeError`（error 级
  * 假红），而 dts 面写着 `size: number` —— 同一份源码两面结论相反。
  *
  * 根因：类方法桥的构造实参一律补 `any`（`ctorAnyArgs`），而构造器体
@@ -65,7 +65,7 @@ function sigOf(sigs: Sig[], name: string): Sig | undefined {
 
 const AREA = "area() { return this.n * 2; }";
 
-describe("BUG-020 · 构造器注解即实例字段域", () => {
+describe("构造器注解即实例字段域", () => {
   it("参数属性 `private n: number` + 算术 ⇒ 0 error、返回 number", () => {
     const dir = fixture({
       "p.ts": `export class C { constructor(private n: number, readonly tag: string) {} ${AREA} }\n`,

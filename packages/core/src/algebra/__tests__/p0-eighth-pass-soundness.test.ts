@@ -75,7 +75,7 @@ describe("P0-6 generator abstract yield is not exact wrong tuple", () => {
     const src = `export function* g(n) { yield 1; if (n) return 2; yield 3; }
 export function spread(n) { return [...g(n)]; }`;
     const r = call(src, "spread", true);
-    // Bug 22：生成器对象是迭代器协议 obj——值域经 spread 消费断言
+    // 生成器对象是迭代器协议 obj——值域经 spread 消费断言
     expect(formatAbs(r.result)).toContain("[1]");
     expect(r.result.conf).toBe("exact");
   });
@@ -93,8 +93,8 @@ export function f(n) {
     const absNumGt = { shape: { k: "prim", type: "number" }, conf: "path" } as never;
     const r = callAbs(src, "f", [absNumGt]);
     // 可能 0 次迭代出口与 body 后状态 join；不得只剩 exact 单成员 last state。
-    // T5 Bug 48 修复后：抽象条件循环携带值 growth-widen 为无上界 prim 域
-    //（旧 `0..8` sum 是 Bug 48 的假 exact 上界形状）。
+    // T5 修复后：抽象条件循环携带值 growth-widen 为无上界 prim 域
+    //（旧 `0..8` sum 是 的假 exact 上界形状）。
     expect(formatShape(r.result)).not.toBe("8");
     expect(formatShape(r.result)).toBe("number");
   });

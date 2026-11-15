@@ -1,9 +1,9 @@
 // R2-4 / FIX-J4 / PR#71 review：gate-major 政策对齐。
 // 1. --for-publish：拒绝未确认的 major 上升（2.x 天花板——唯一豁免是已有
-//    发布 tag 的 no-op 重试、相对 baseline 的跳变、无 baseline 时的首版 1.0.0）；
-//    1.x 火车（1.0.1+）必须可自动发。
+// 发布 tag 的 no-op 重试、相对 baseline 的跳变、无 baseline 时的首版 1.0.0）；
+// 1.x 火车（1.0.1+）必须可自动发。
 // 2. --check-baseline：失败保留 baseline（重跑仍能看到 jumps）；成功/确认后也保留
-//    （同一 job 的 --for-publish 要它做 jump 证据；下次 --save-baseline 整体覆盖）。
+// （同一 job 的 --for-publish 要它做 jump 证据；下次 --save-baseline 整体覆盖）。
 import { describe, it, expect, afterEach } from "vitest";
 import {
   mkdtempSync,
@@ -217,7 +217,7 @@ describe("majorJumps — baseline rise detection", () => {
   });
 });
 
-describe("--for-publish: hand-edited 0.x → 1.0.0 (R2-4 regression)", () => {
+describe("-for-publish: hand-edited 0.x → 1.0.0 (R2-4 regression)", () => {
   it("blocks first-major 1.0.0 without CONFIRM_MAJOR", () => {
     const root = makeFixture([
       { dir: "env", name: "test-env", version: "1.0.0" },
@@ -320,7 +320,7 @@ describe("--for-publish: hand-edited 0.x → 1.0.0 (R2-4 regression)", () => {
   });
 });
 
-describe("--check-baseline: failure keeps the evidence (R2-4 regression)", () => {
+describe("-check-baseline: failure keeps the evidence (R2-4 regression)", () => {
   it("rejects a 0→1 jump and leaves the baseline for re-diagnosis", () => {
     const root = makeFixture([{ dir: "env", name: "test-env", version: "0.4.10" }]);
     writeBaseline(root, [{ name: "test-env", version: "0.4.10" }]);
@@ -393,7 +393,7 @@ describe("--check-baseline: failure keeps the evidence (R2-4 regression)", () =>
   });
 });
 
-describe("--for-publish + --check-baseline combined (ci:version → publish)", () => {
+describe("-for-publish + --check-baseline combined (ci:version → publish)", () => {
   it("hand-edit 0.x → 1.0.0 is blocked at both gates without confirm", () => {
     const root = makeFixture([{ dir: "env", name: "test-env", version: "0.4.10" }]);
     writeBaseline(root, [{ name: "test-env", version: "0.4.10" }]);

@@ -1,22 +1,22 @@
 /**
- * Shared harness for the **packaging-side** pins (Bug 907 / Bug 999).
+ * Shared harness for the **packaging-side** pins (/ ).
  *
  * The two bugs live in the **VSIX layout**, not in the monorepo:
- *   - 907: the VSIX ships **no node_modules** (`.vscodeignore` drops
- *     `node_modules/`, `vsce package --no-dependencies`) ⇒ the bundled LSP
- *     server must be **self-contained** (no bare package imports).
- *   - 999: Node decides a file's module type from the **nearest**
- *     `package.json`'s `type` field ⇒ the bundled server needs an ESM
- *     manifest **next to it** (the root manifest stays CommonJS so the CJS
- *     extension bundle keeps loading).
+ * - 907: the VSIX ships **no node_modules** (`.vscodeignore` drops
+ * `node_modules/`, `vsce package --no-dependencies`) ⇒ the bundled LSP
+ * server must be **self-contained** (no bare package imports).
+ * - 999: Node decides a file's module type from the **nearest**
+ * `package.json`'s `type` field ⇒ the bundled server needs an ESM
+ * manifest **next to it** (the root manifest stays CommonJS so the CJS
+ * extension bundle keeps loading).
  *
  * The harness runs the **real** `packages/vscode/scripts/bundle-server.mjs`
  * against a **fake monorepo layout** (a throw-away directory that mimics
  * `<repo>/packages/{vscode,lsp}`):
  *
- *   <tmp>/packages/vscode/scripts/bundle-server.mjs   ← copy of the real one
- *   <tmp>/packages/lsp/dist/server.js                 ← the fixture
- *   <tmp>/node_modules → <repo>/node_modules          ← symlink (esbuild/tsup)
+ * <tmp>/packages/vscode/scripts/bundle-server.mjs ← copy of the real one
+ * <tmp>/packages/lsp/dist/server.js ← the fixture
+ * <tmp>/node_modules → <repo>/node_modules ← symlink (esbuild/tsup)
  *
  * ⇒ the pins need **no build output** and are **hermetic**: on the pre-fix
  * tree the bundler merely *copies* the fixture, so the artifact keeps its
@@ -150,7 +150,7 @@ export function externalPackageImports(file: string): string[] {
  * 把产物复制到**没有 node_modules 的目录**（= VSIX 的实际布局）再启动。
  *
  * @param extraArgs 传给 node 的额外参数（`--no-experimental-detect-module`
- *   ⇒ Node < 22.18 的模块类型判定语义）
+ * ⇒ Node < 22.18 的模块类型判定语义）
  */
 export function runIsolated(
   artifact: string,

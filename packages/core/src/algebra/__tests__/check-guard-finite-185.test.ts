@@ -2,7 +2,7 @@
  * issue #185 · 补集半：契约 `number().finite()` + 运行时关系补集。
  *
  * 顺序早退 / De Morgan 的 fall-through 不能断言 `x >= k`，因为
- * `¬(x < k)` 只蕴含 `x >= k ∨ x is NaN`（Bug 1115）。`.finite()` 提供
+ * `¬(x < k)` 只蕴含 `x >= k ∨ x is NaN`（）。`.finite()` 提供
  * 非 NaN 证据后，运行时 `$refineRelComplement` 才收紧；缺证据必须**原样
  * 返回**（不得假绿）。负数界（`.ge(-5)` 等）本身排除 NaN ⇒ 同样触发补集。
  */

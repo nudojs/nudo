@@ -1,17 +1,17 @@
 /**
- * 转译打印保真修复回归（bug-report Bug 4/5/8/9/13/14/15/19/21）。
+ * 转译打印保真修复回归（bug-report ）。
  *
  * 每条测试锁定「转译产物与源程序语义等价」的一个此前破坏面：
- * - Bug 4  多行 export default 不再被导出重写正则静默丢弃（runTranspiled 边界）
- * - Bug 5  逗号运算符（SequenceExpression）括号化——嵌入箭头体/数组元素/
- *          初始化/for-init 不再改变外层语法结构
- * - Bug 8  for (let a=…, b=…) 多声明 init 不丢弃后续声明
- * - Bug 9  对象字面量计算键方法/访问器 {[m](){}} 键按 m 的值注册
- * - Bug 13 命名函数表达式（NFE）自身名绑定（typeof g / 递归）
- * - Bug 14 静态方法内 super.x / super.m() 接收者 = 父类构造器
- * - Bug 15 同一作用域同行/相邻解构临时名不撞车（含 prologue _n 面）
- * - Bug 19 对象字面量方法内 super.m() 沿 home object 原型链派发
- * - Bug 21 var 函数作用域提升（块内 var / 重声明 / 跨块写 / while 内 var）
+ * - 多行 export default 不再被导出重写正则静默丢弃（runTranspiled 边界）
+ * - 逗号运算符（SequenceExpression）括号化——嵌入箭头体/数组元素/
+ * 初始化/for-init 不再改变外层语法结构
+ * - for (let a=…, b=…) 多声明 init 不丢弃后续声明
+ * - 对象字面量计算键方法/访问器 {[m](){}} 键按 m 的值注册
+ * - 命名函数表达式（NFE）自身名绑定（typeof g / 递归）
+ * - 静态方法内 super.x / super.m() 接收者 = 父类构造器
+ * - 同一作用域同行/相邻解构临时名不撞车（含 prologue _n 面）
+ * - 对象字面量方法内 super.m() 沿 home object 原型链派发
+ * - var 函数作用域提升（块内 var / 重声明 / 跨块写 / while 内 var）
  */
 import {describe, it, expect} from "vitest";
 import {runTranspiled, callTranspiledExportFull, transpileSource, litValue, absToString, $lit, $obj} from "../index.ts";
@@ -29,7 +29,7 @@ const evalFn = (source: string, name: string, args: unknown[] = []) => {
   };
 };
 
-describe("Bug 4：多行 export default 导出重写", () => {
+describe("多行 export default 导出重写", () => {
   it("块体箭头默认导出跨行——default 槽保留（此前整条漏改写）", () => {
     const exports = runTranspiled(`export default (x) => { return x + 1; };`);
     expect(Object.hasOwn(exports, "default")).toBe(true);
@@ -50,7 +50,7 @@ describe("Bug 4：多行 export default 导出重写", () => {
   });
 });
 
-describe("Bug 5：逗号运算符（SequenceExpression）括号化", () => {
+describe("逗号运算符（SequenceExpression）括号化", () => {
   it("箭头简洁体序列取末元（不再逸出成 $fnVal 多余实参）", () => {
     expect(
       evalFn(`export function seq() { const f = () => (1, 2, 3); return f(); }`, "seq"),
@@ -82,7 +82,7 @@ describe("Bug 5：逗号运算符（SequenceExpression）括号化", () => {
   });
 });
 
-describe("Bug 8：for-init 多声明", () => {
+describe("for-init 多声明", () => {
   it("let i=0, j=10 双绑定都可用（此前 j 丢失 → ReferenceError）", () => {
     expect(
       evalFn(`export function f() { let s = 0; for (let i = 0, j = 10; i < j; i++, j--) { s++; } return s; }`, "f"),
@@ -102,7 +102,7 @@ describe("Bug 8：for-init 多声明", () => {
   });
 });
 
-describe("Bug 9：对象字面量计算键方法/访问器", () => {
+describe("对象字面量计算键方法/访问器", () => {
   it('{ [m]() {} } 键按 m 的值注册（此前挂 "m" 键 → o.g undefined → TypeError）', () => {
     expect(
       evalFn(`export function f() { const m = "g"; const o = { [m]() { return 5; } }; return o.g(); }`, "f"),
@@ -125,7 +125,7 @@ describe("Bug 9：对象字面量计算键方法/访问器", () => {
   });
 });
 
-describe("Bug 13：命名函数表达式自身名绑定", () => {
+describe("命名函数表达式自身名绑定", () => {
   it('typeof g === "function"（此前折 "undefined"）', () => {
     expect(
       evalFn(`export function selfName() { const f = function g() { return typeof g; }; return f(); }`, "selfName"),
@@ -145,7 +145,7 @@ describe("Bug 13：命名函数表达式自身名绑定", () => {
   });
 });
 
-describe("Bug 14：静态方法内 super", () => {
+describe("静态方法内 super", () => {
   it("super.m() 派发到父类静态方法（此前哨兵注释 → 整模块 SyntaxError）", () => {
     expect(
       evalFn(
@@ -172,7 +172,7 @@ describe("Bug 14：静态方法内 super", () => {
   });
 });
 
-describe("Bug 19：对象字面量方法内 super", () => {
+describe("对象字面量方法内 super", () => {
   it("Object.setPrototypeOf 形式：super.m() 沿原型链派发", () => {
     expect(
       evalFn(
@@ -216,7 +216,7 @@ describe("Bug 19：对象字面量方法内 super", () => {
   });
 });
 
-describe("Bug 15：同作用域解构临时名唯一化", () => {
+describe("同作用域解构临时名唯一化", () => {
   it("同行两条解构（此前 _d0_1 重复 const → 整模块 SyntaxError）", () => {
     expect(
       evalFn(`export function twoDestructure() { const {a = 1} = {}; const {b = 2} = {}; return a + b; }`, "twoDestructure"),
@@ -247,7 +247,7 @@ describe("Bug 15：同作用域解构临时名唯一化", () => {
   });
 });
 
-describe("Bug 21：var 函数作用域提升", () => {
+describe("var 函数作用域提升", () => {
   it("块内 var 块外可读（此前臂 thunk 内 let → ReferenceError）", () => {
     expect(
       evalFn(`export function varIf() { if (true) { var w = 5; } return w; }`, "varIf"),

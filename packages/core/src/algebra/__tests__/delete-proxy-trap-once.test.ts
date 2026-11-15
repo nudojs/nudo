@@ -1,6 +1,6 @@
 /**
  * 语句位 `delete o[k]` 的 Proxy deleteProperty 陷阱**恰好派发一次**回归
- * （Bug 172）。
+ * （）。
  *
  * 根因：`runtime/members.ts` 的 $del（语句位写回通道 `o = $del(o, k)`）与
  * $delRes（delete 表达式值通道）**各自**派发一次 deleteProperty 陷阱 ⇒

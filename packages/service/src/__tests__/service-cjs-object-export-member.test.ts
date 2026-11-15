@@ -1,5 +1,5 @@
 /**
- * BUG-045 回归：CJS `module.exports = { … }` 形态的**成员函数**必须能求值。
+ * 回归：CJS `module.exports = { … }` 形态的**成员函数**必须能求值。
  *
  * 症状：同一份 `x + 1`，三种 CJS 写法里只有对象字面量形态在导出面丢类型 ——
  * `nudo check` 说 `h(x: any) => number | string`，而 `nudo export`（dts /
@@ -15,7 +15,7 @@
  *
  * 断言面：
  * 1. 对象字面量形态的 `combinedAbs` 与 `module.exports.h = fn` / ESM 形态**同源**
- *    （导出面消费的就是 `combinedAbs`）；
+ * （导出面消费的就是 `combinedAbs`）；
  * 2. 不得凭空合成调用点见证（`call@`）——合成入口调用不是源码里的调用点；
  * 3. 成员方法体内的 `this` 绑定正确（按 `$invoke` 派发，不是裸值 apply）；
  * 4. 成员体必抛 ⇒ `never` + throws（不回落成 unknown）。
@@ -96,7 +96,7 @@ const ESM = `export function h(x) {
 }
 `;
 
-describe("BUG-045 · CJS `module.exports = { … }` 成员函数求值", () => {
+describe("CJS `module.exports = { … }` 成员函数求值", () => {
   it("对象字面量形态的 combinedAbs 与 dot 形态 / ESM 形态同源", async () => {
     const obj = await analyze(OBJ_LITERAL);
     const dot = await analyze(DOT_ASSIGN);

@@ -8,11 +8,11 @@
  * fulfilled，下游 .catch 变死代码（wrong-definite）。
  *
  * - fork 双臂（res|rej / rej|res）/ switch 臂 / 嵌套 fork：两通道并存
- *   （inner ⊔ 各臂值 × rejected ⊔ 各臂 reason），eff(promise) resolve 的
- *   rejected/unsettled 通道并入 join 面
+ * （inner ⊔ 各臂值 × rejected ⊔ 各臂 reason），eff(promise) resolve 的
+ * rejected/unsettled 通道并入 join 面
  * - 同路径顺序双 settle（含 fork join 之后的顺序 settle）：first-wins 原样
  * - 单 resolve / 只 reject / 同步抛 executor 控制组不变（同步抛 → 确定拒绝，
- *   Bug 310：原生 promise 以抛出值拒绝）
+ * 原生 promise 以抛出值拒绝）
  */
 import { describe, it, expect } from "vitest";
 import { formatAbs, runTranspiled, callTranspiledExportFull } from "@nudojs/core";

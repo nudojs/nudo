@@ -3,10 +3,10 @@
  *
  * 覆盖：
  * - `@nudo:assume` / `@nudo:invariant` 的简单算术文法（name / number /
- *   name ± number）；文法外形态仍 fail-closed；
+ * name ± number）；文法外形态仍 fail-closed；
  * - 依赖式返回契约 `@nudo:contract return >= x`（以及 `> x` 的诚实证不出）；
  * - 契约内 binder / ref（`bind` / `ref` / `.at(path)`）的跨槽作用域、
- *   未绑定 ref 的 fail-closed 诊断、数组域口径不因 binder 落地而漂移；
+ * 未绑定 ref 的 fail-closed 诊断、数组域口径不因 binder 落地而漂移；
  * - `formatConstraint` 的 bind/ref/rel 数据形态可回写。
  */
 import { describe, it, expect } from "vitest";

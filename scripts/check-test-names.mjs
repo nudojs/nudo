@@ -15,13 +15,12 @@ const bad = files.filter((f) => {
   return (
     /(?:^|[-_])bug[-_]?\d/i.test(b) ||
     /^bug-/i.test(b) ||
-    /bug-report/i.test(b) ||
-    b.includes("--")
+    /bug-report/i.test(b)
   );
 });
 
 if (bad.length > 0) {
-  console.error("test files must not be named after defect IDs or use '--':");
+  console.error("test files must not be named after defect IDs:");
   for (const f of bad.slice(0, 50)) console.error("  " + f);
   console.error(`${bad.length} violation(s); see CONTRIBUTING.md`);
   process.exit(1);

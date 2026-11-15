@@ -2,8 +2,8 @@
  * evaluator 记录通道插桩（迁移件 2 基建）：
  * - __nudoRecordBinding：顶层绑定表（checkSource varAbs 通道）；
  * - __nudoRecordAssign：结构赋值记录（assign-mismatch gold 通道）——
- *   prev 读在写前、conditional = 分支/循环体内（与 ast-eval assignFlowDepth
- *   同口径；structuralAssignIssues 跳过 conditional）。
+ * prev 读在写前、conditional = 分支/循环体内（与 ast-eval assignFlowDepth
+ * 同口径；structuralAssignIssues 跳过 conditional）。
  * checkSource 三通道（assign/绑定/call 记录）共享一次求值——call 记录
  * 受 emit 双端同源约束暂留 Abs，绑定/赋值通道的切换与 call 通道一并
  * 落地（避免双引擎同跑无净收益）。

@@ -4,13 +4,13 @@
  * vitest alias 使 @nudojs/* 解析到 src，无需 dist 重建）。
  *
  * - #7：test 诊断行（check 的报告头/issue 行本就打绝对路径，无 relative 渲染）
- *   ——目标在 cwd 外打绝对路径；cwd 内维持相对展示（displayPathOf 单源）。
+ * ——目标在 cwd 外打绝对路径；cwd 内维持相对展示（displayPathOf 单源）。
  * - #1：exit 1 ∧ 全部 error 为 nudo:entry-may-throw ∧ 全部目标零 @nudo:*
- *   指令 ∧ 零 package.json#nudo 配置 → issues 段之后、docs 段之前打 onboarding；
- *   任一条件破坏（@nudo:case / nudo 配置 / 混入 L1 error）或 --json 模式不打。
- *   门禁语义不变（仍 exit 1）。
+ * 指令 ∧ 零 package.json#nudo 配置 → issues 段之后、docs 段之前打 onboarding；
+ * 任一条件破坏（@nudo:case / nudo 配置 / 混入 L1 error）或 --json 模式不打。
+ * 门禁语义不变（仍 exit 1）。
  * - #9：多路径或目录 check 跑完且磁盘缓存未启用 → stderr 一行提示；
- *   单文件 / --json / nudo.cache 已启用不打。
+ * 单文件 / --json / nudo.cache 已启用不打。
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
@@ -198,7 +198,7 @@ export const one = fn({}, number().gt(10));
       };
       expect(json.ok).toBe(false);
       // 全部 **error** 必须是 L2 入口 may-throw（onboarding 的前提：error 全为 L2）。
-      // info 级诊断不参与该前提（Bug 461 起普通 check 也报 contract 家族的
+      // info 级诊断不参与该前提（起普通 check 也报 contract 家族的
       // entry-only info —— 覆盖率缺口，不是门禁失败）。
       const errors = json.issues.filter((i) => i.severity === "error");
       expect(errors.length).toBeGreaterThan(0);

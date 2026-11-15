@@ -4,11 +4,11 @@
  * 根因：`stmtReturns` 无 TryStatement case → try 区域内的 return 不能触发
  * if 臂提升/双 return 改写，臂值以裸 JS return 退出 thunk 后被语句位
  * $fork 丢弃，fall-through 值独占结果（错定）。修复三件套：
- *  1. stmt-predicates：TryShape / finalizerJumpsOut / stmtReturns(try)
- *  2. 臂内 return 信号：conditionalFlow>0 时 $loopReturn（NudoReturn 经
- *     settleForkArms ret 臂恰一次交付：双 ret 抛出 join / 单 ret 入 exits）
- *  3. 边界吸收：函数体自包含（$catchReturn）、callAtFunctionBoundary /
- *     $call 编译体路径 join 帧 exits（此前 ret 臂值被丢弃 → 错定）
+ * 1. stmt-predicates：TryShape / finalizerJumpsOut / stmtReturns(try)
+ * 2. 臂内 return 信号：conditionalFlow>0 时 $loopReturn（NudoReturn 经
+ * settleForkArms ret 臂恰一次交付：双 ret 抛出 join / 单 ret 入 exits）
+ * 3. 边界吸收：函数体自包含（$catchReturn）、callAtFunctionBoundary /
+ * $call 编译体路径 join 帧 exits（此前 ret 臂值被丢弃 → 错定）
  *
  * 引擎值口径：callTranspiledExportFull；native 口径（strict new Function）
  * 已在调试脚本对拍，此处钉引擎期望。

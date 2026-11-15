@@ -4,7 +4,7 @@
  * 语义契约由 run-strip-effectful.test.ts 锁（走 runTranspiled）；本文件锁
  * 发射层事实：
  * - 判定表（源 AST：控制流**按发射形态**——for/while 剥，if 按块包装判据，
- *   for-in/for-of 保留；危险与未知全局调用；簿记 / `$` 前缀 / 本地调用）；
+ * for-in/for-of 保留；危险与未知全局调用；簿记 / `$` 前缀 / 本地调用）；
  * - analyze 产物**已在发射期干净**（无顶层效应语句、无生成码 post-pass）；
  * - var 提升按原始 body 计算（被剥块内的 `var` 仍有模块顶绑定）；
  * - exec 模式逐字节不变；analyze 与 exec 的差异只是「语句被整条删除」。

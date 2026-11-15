@@ -1,5 +1,5 @@
 /**
- * G6 / BUG-024 后续：`nudo health --from usage.js`（无位置参数）——
+ * G6 / 后续：`nudo health --from usage.js`（无位置参数）——
  * --from 收尾、只吞了旗标自身的一个值，没有任何位置参数被吞。
  * 旧门把它误报成 "variadic flag(s) --from consumed ..."（文案失实）；
  * 现为定向 usage error：如实说明 --from 需显式 paths（旧形态静默扫 cwd，
@@ -7,7 +7,7 @@
  * 688：`--from` 收到 ≥2 个值而**位置路径已给出**时（`health lib.js --from
  * a.js b.js`）不再报 variadic 错误——多文件 --from 与 `check` / `contract`
  * 同口径被接受（歧义只存在于「旗标之后的裸 token」；paths 为空时仍报
- * BUG-024 面）。
+ * 面）。
  */
 import { describe, it, expect } from "vitest";
 import { runCliNode as runCli } from "./helpers/run-cli.ts";

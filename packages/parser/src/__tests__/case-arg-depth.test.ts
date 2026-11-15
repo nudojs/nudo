@@ -1,5 +1,5 @@
 /**
- * BUG-014 回归：parseCaseArgExpr 结构字面量递归无深度上限。
+ * 回归：parseCaseArgExpr 结构字面量递归无深度上限。
  * `@nudo:case` 实参含超深嵌套（`[`×5000）曾以 RangeError 打穿 extractDirectives
  * ——文法边界必须走 nudo:directive-syntax 诊断，不能把宿主栈深当隐式限制。
  */
@@ -26,7 +26,7 @@ function nestedObjects(depth: number, leaf = "1"): string {
   return "{a:".repeat(depth) + leaf + "}".repeat(depth);
 }
 
-describe("BUG-014: deep structural literals hit the depth cap, not the host stack", () => {
+describe("deep structural literals hit the depth cap, not the host stack", () => {
   it("parseCaseArgExpr: hostile deep array literals (5000 / 20000) do not throw, emit diagnostic", () => {
     for (const depth of [5000, 20000]) {
       const deep = nestedArrays(depth);
@@ -121,7 +121,7 @@ function f(x) { return x; }`);
   });
 });
 
-describe("BUG-014 same-class: parseNudoMockExpr sinon prefix strip is iterative", () => {
+describe("same-class: parseNudoMockExpr sinon prefix strip is iterative", () => {
   it("mock expr with 30000 `sinon.` prefixes does not throw, mock is kept", () => {
     const expr = "sinon.".repeat(30000) + "stub()";
     const { fns, diags } = extractWithDiags(`/**

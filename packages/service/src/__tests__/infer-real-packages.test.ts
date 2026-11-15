@@ -4,11 +4,11 @@
  * Asserts that infer/check can run on real JS packages from node_modules
  * **without handwritten mocks**:
  * 1. checkSource scans their JS sources with FP=0 (same ERROR_CODES as
- *    check-real-packages — that suite remains the precision lock).
+ * check-real-packages — that suite remains the precision lock).
  * 2. analyzeFile does not crash and produces structured output.
  * 3. At least one scanned file yields a case whose formatShape is **not**
- *    a whole-page `unknown` — signatures must be inductively useful, not
- *    merely "did not throw".
+ * a whole-page `unknown` — signatures must be inductively useful, not
+ * merely "did not throw".
  *
  * Resolution uses packages/core's node_modules (pnpm isolated layout)
  * because those fixture packages are core devDependencies.
@@ -186,13 +186,13 @@ function scanInfer(pkgName: string, maxFiles = 4): InferOutcome[] {
 
 describe("real package no-mock infer gate (B5)", () => {
   /**
-   * requireUsefulSignature: at least one case format is not whole-page `unknown`.
-   * `ms` has call-site-ish surface that inducts concrete leaves without mocks.
-   * `commander` / `escape-string-regexp` / `debug` currently yield honest
-   * `entry@`/`unknown` under default exports-mode with no call sites — that is
-   * a design-limitations ceiling, not a crash; B5 still locks FP=0 + structured run.
-   * The suite-level pin requires *at least one* installed package to show useful leaves.
-   */
+ * requireUsefulSignature: at least one case format is not whole-page `unknown`.
+ * `ms` has call-site-ish surface that inducts concrete leaves without mocks.
+ * `commander` / `escape-string-regexp` / `debug` currently yield honest
+ * `entry@`/`unknown` under default exports-mode with no call sites — that is
+ * a design-limitations ceiling, not a crash; B5 still locks FP=0 + structured run.
+ * The suite-level pin requires *at least one* installed package to show useful leaves.
+ */
   const packages = [
     { name: "ms", minFiles: 1, requireUsefulSignature: true, requireCases: true },
     // commander@15 class-heavy entry often yields 0 collected functions under

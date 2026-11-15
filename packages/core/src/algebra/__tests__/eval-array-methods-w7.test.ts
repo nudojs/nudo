@@ -5,7 +5,7 @@
  * - 下标实参 ToIntegerOrInfinity 校验（symbol/bigint shape 判定）；
  * - join 逐元素 ToString 校验；Number/BigInt 原型方法实参校验；
  * - flat/toReversed/toSpliced/with/concat/slice/indexOf/lastIndexOf/
- *   findLast/findLastIndex/toSorted/reverse(表达式) 的值域建模；
+ * findLast/findLastIndex/toSorted/reverse(表达式) 的值域建模；
  * - flatMap 展开投影（first-wins 不丢元素 + 非数组映射值原样追加）。
  * 基准：node v26 原生语义（native 是 ground truth）。
  * throws 面：definite NudoThrow → result=never + throws=TypeError；
@@ -78,7 +78,7 @@ const throwsTypeError = (r: { throws: string }): boolean =>
 const throwsRangeError = (r: { throws: string }): boolean =>
   r.throws === "RangeError";
 
-describe("Bug 55/73: HOF callback GetCallback validation", () => {
+describe("HOF callback GetCallback validation", () => {
   it("non-callable callback on EMPTY receiver still definite-throws (spec order)", () => {
     for (const m of [
       "map", "filter", "some", "every", "forEach", "find", "findIndex",
@@ -130,7 +130,7 @@ describe("Bug 55/73: HOF callback GetCallback validation", () => {
   });
 });
 
-describe("Bug 51: sort comparator GetSortComparator validation", () => {
+describe("sort comparator GetSortComparator validation", () => {
   it("non-callable comparator (both positions) definite-throws", () => {
     for (const cmp of ["1", "Symbol()", "null", '"x"']) {
       const stmt = evalSrc(`export function f() { const a = [3,1,2]; a.sort(${cmp}); return a; }`);
@@ -192,7 +192,7 @@ describe("Bug 51: sort comparator GetSortComparator validation", () => {
   });
 });
 
-describe("Bug 21/84: flatMap flatten projection", () => {
+describe("flatMap flatten projection", () => {
   it("flatMap(x => x) keeps non-array mapped values as elements", () => {
     // native: [1,2]
     const r = evalSrc(`export function f() { return [1, 2].flatMap((x) => x); }`);
@@ -223,7 +223,7 @@ describe("Bug 21/84: flatMap flatten projection", () => {
   });
 });
 
-describe("Bug 28/49: Array.from receiver + mapper validation", () => {
+describe("Array.from receiver + mapper validation", () => {
   it("nullish/absent receiver definite TypeError", () => {
     for (const recv of ["null", "undefined", ""]) {
       const r = evalSrc(`export function f() { return Array.from(${recv}); }`);
@@ -264,7 +264,7 @@ describe("Bug 28/49: Array.from receiver + mapper validation", () => {
   });
 });
 
-describe("Bug 36: join symbol-element check", () => {
+describe("join symbol-element check", () => {
   it("symbol element definite TypeError; abstract element may throw", () => {
     const r = evalSrc(`export function f() { return [Symbol()].join(); }`);
     expect(throwsTypeError(r)).toBe(true);
@@ -287,7 +287,7 @@ describe("Bug 36: join symbol-element check", () => {
   });
 });
 
-describe("Bug 56: mutator index args ToIntegerOrInfinity", () => {
+describe("mutator index args ToIntegerOrInfinity", () => {
   it("symbol index definite TypeError (splice/copyWithin/fill), empty receiver too", () => {
     for (const m of ["splice", "copyWithin", "fill"]) {
       const arg = m === "fill" ? `1, Symbol()` : "Symbol()";
@@ -329,7 +329,7 @@ describe("Bug 56: mutator index args ToIntegerOrInfinity", () => {
   });
 });
 
-describe("Bug 65: Number/BigInt prototype method arg validation", () => {
+describe("Number/BigInt prototype method arg validation", () => {
   it("symbol arg definite TypeError; abstract arg may throw", () => {
     for (const m of ["toString", "toFixed", "toExponential", "toPrecision"]) {
       const r = evalSrc(`export function f() { return (1).${m}(Symbol()); }`);
@@ -357,7 +357,7 @@ describe("Bug 65: Number/BigInt prototype method arg validation", () => {
   });
 });
 
-describe("Bug 66: flat/toReversed/toSpliced/with/concat/slice/indexOf/lastIndexOf", () => {
+describe("flat/toReversed/toSpliced/with/concat/slice/indexOf/lastIndexOf", () => {
   it("value domain folds on literal tuples", () => {
     expect(els(call(`export function f() { return [1, [2]].flat(); }`))).toEqual([1, 2]);
     expect(els(call(`export function f() { return [1, [2, [3]]].flat(2); }`))).toEqual([1, 2, 3]);
@@ -406,7 +406,7 @@ describe("Bug 66: flat/toReversed/toSpliced/with/concat/slice/indexOf/lastIndexO
   });
 });
 
-describe("Bug 67: at index validation", () => {
+describe("at index validation", () => {
   it("symbol index definite TypeError; abstract → may + conservative union", () => {
     const r = evalSrc(`export function f() { return [1, 2].at(Symbol()); }`);
     expect(throwsTypeError(r)).toBe(true);
@@ -423,7 +423,7 @@ describe("Bug 67: at index validation", () => {
   });
 });
 
-describe("Bug 71: expression-position reverse", () => {
+describe("expression-position reverse", () => {
   it("reverse() folds exactly in expression position", () => {
     expect(els(call(`export function f() { return [1, 2, 3].reverse(); }`))).toEqual([3, 2, 1]);
     const r = evalSrc(`export function f() { return [1, 2, 3].reverse(); }`);
@@ -436,7 +436,7 @@ describe("Bug 71: expression-position reverse", () => {
   });
 });
 
-describe("Bug 74: findLast/findLastIndex/toSorted", () => {
+describe("findLast/findLastIndex/toSorted", () => {
   it("valid calls keep the value domain", () => {
     expect(litValue(call(`export function f() { return [1, 2].findLast((v) => v > 1); }`).result)).toEqual({ ok: true, value: 2 });
     expect(litValue(call(`export function f() { return [1, 2].findLastIndex((v) => v > 1); }`).result)).toEqual({ ok: true, value: 1 });

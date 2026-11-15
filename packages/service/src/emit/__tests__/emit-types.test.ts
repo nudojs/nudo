@@ -24,11 +24,11 @@ import { parse } from "@nudojs/parser";
 import { insertGeneratedCaseDirectives } from "../case-emitter.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 443 — 散文提及 @generated ⇒ 手写契约不得被 emit 覆盖
+// 散文提及 @generated ⇒ 手写契约不得被 emit 覆盖
 // ---------------------------------------------------------------------------
-describe("[] Bug 443 — 散文提及 @generated ⇒ 手写契约不得被 emit 覆盖", () => {
+describe("散文提及 @generated ⇒ 手写契约不得被 emit 覆盖", () => {
 /**
- * Bug 443 —— 侧车注释里**提到** `@generated` 这个词 ⇒ 手写段被判成生成段 ⇒
+ * 侧车注释里**提到** `@generated` 这个词 ⇒ 手写段被判成生成段 ⇒
  * `nudo contract --emit --all` **直接覆盖用户手写契约**（数据丢失：手写的
  * `fn({ x: number().gt(0) })` 被换成观测值冻结的 `lit(-1)` / `lit(0)`）。
  *
@@ -38,10 +38,10 @@ describe("[] Bug 443 — 散文提及 @generated ⇒ 手写契约不得被 emit 
  *
  * 本文件钉住两件事：
  * ① **产品面**：侧车里只有散文提及 `@generated` 时，`--emit` **不得**覆盖手写
- *    契约（`nudo:contract-name-clash` + 跳过）。
+ * 契约（`nudo:contract-name-clash` + 跳过）。
  * ② **跨包一致性**：core 的 `generatedExportNames` 与 service 侧（派生路径
- *    `contract-derivation-emit.ts` + 主路径 `contract-emitter.ts`）对同一份
- *    侧车源码的「谁是生成段」判定必须一致（core / service 两份实现同批落地）。
+ * `contract-derivation-emit.ts` + 主路径 `contract-emitter.ts`）对同一份
+ * 侧车源码的「谁是生成段」判定必须一致（core / service 两份实现同批落地）。
  */
 
 
@@ -76,7 +76,7 @@ const PROSE_SIDECAR = `import { fn, number } from "@nudojs/core";
 export const scale = fn({ x: number().gt(0) });
 `;
 
-describe("Bug 443 — 散文提及 @generated ⇒ 手写契约不得被 emit 覆盖", () => {
+describe("散文提及 @generated ⇒ 手写契约不得被 emit 覆盖", () => {
   it("--emit --all 跳过手写绑定（name-clash），侧车内容原样保留", async () => {
     const file = join(dir, "lib.js");
     writeFileSync(file, LIB_JS);
@@ -147,15 +147,15 @@ export const scale = fn({ x: number().gt(0) });
 });
 
 // ---------------------------------------------------------------------------
-// BUG-035 证据范围（`// evidence:`）—— 宽域段也能判定刷新
+// 证据范围（`// evidence:`）—— 宽域段也能判定刷新
 // ---------------------------------------------------------------------------
-describe("[] BUG-035 证据范围（`// evidence:`）—— 宽域段也能判定刷新", () => {
+describe("证据范围（`// evidence:`）—— 宽域段也能判定刷新", () => {
 /**
- * BUG-035 残留（最后一条边界）—— 侧车记录**证据范围**，宽域段也能判定刷新。
+ * 残留（最后一条边界）—— 侧车记录**证据范围**，宽域段也能判定刷新。
  *
  * 现象（上一轮收口后仍留）：`// evidence` 之前，侧车只记 `@generated` + `source`，
  * 不记「这段的证据来自哪里」⇒ **调用点来源的宽域段**（`fn({ x: number() },
- * number())`，调用点观测被 BUG-021 拓宽）与「`--from` 采集的使用现场记录来源
+ * number())`，调用点观测被 拓宽）与「`--from` 采集的使用现场记录来源
  * 段」**逐字同形** ⇒ 调用点被删后宽域段只能保守留存（侧车继续承诺一个今天
  * 已经不存在的域，与 `nudo check` 的签名面矛盾），而误删 `--from` 段又会丢
  * 用户契约。
@@ -190,7 +190,7 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-/** 有调用点证据 ⇒ 投影出**宽域**（BUG-021 把点观测拓宽到基类型） */
+/** 有调用点证据 ⇒ 投影出**宽域**（把点观测拓宽到基类型） */
 const SRC_WITH_CALL = `export function f(x) {
   return x + 1;
 }
@@ -236,7 +236,7 @@ function rec(file: string, arg: number) {
   };
 }
 
-describe("BUG-035 证据范围（`// evidence:`）—— 宽域段也能判定刷新", () => {
+describe("证据范围（`// evidence:`）—— 宽域段也能判定刷新", () => {
   it("本地调用点来源的宽域段带 `local` 标记；调用点消失 ⇒ 段被删（残差收口）", async () => {
     const file = join(dir, "lib.js");
     writeFileSync(file, SRC_WITH_CALL);
@@ -340,16 +340,16 @@ export const f = fn({ x: number() }, number());
 });
 
 // ---------------------------------------------------------------------------
-// BUG-068 —— TS 侧车的 nullish 回填必须自带 builder import
+// TS 侧车的 nullish 回填必须自带 builder import
 // ---------------------------------------------------------------------------
-describe("[] BUG-068 —— TS 侧车的 nullish 回填必须自带 builder import", () => {
+describe("TS 侧车的 nullish 回填必须自带 builder import", () => {
 /**
- * BUG-068 —— `nudo check --fix` 的 nullish 回填在**TS 侧车**（`*.nudo.ts`）里注入
+ * `nudo check --fix` 的 nullish 回填在**TS 侧车**（`*.nudo.ts`）里注入
  * `nullable(…)` 却不补 builder import ⇒ 落盘的侧车过不了 `tsc --noEmit --strict`
  * （TS2304: Cannot find name 'nullable'），而 `nudo check` 自己复检仍报 OK
  * （引擎运行时注入 DSL ⇒ import 缺失对它不可见）。
  *
- * 判据（工具自己写下的纪律，`quickfix-edits.ts` 的 TS 侧车注释，Bug 546）：
+ * 判据（工具自己写下的纪律，`quickfix-edits.ts` 的 TS 侧车注释，）：
  * TS 侧车必须**自带**它用到的全部 builder import；`.nudo.js` 侧车维持「裸注入」。
  */
 
@@ -417,7 +417,7 @@ function nullishFix(over: Partial<MaterializeInput> = {}): ReturnType<typeof mat
   });
 }
 
-describe("BUG-068 —— TS 侧车的 nullish 回填必须自带 builder import", () => {
+describe("TS 侧车的 nullish 回填必须自带 builder import", () => {
   it("注入 `nullable(…)` 的同一次改写里补上 import（TS2304 的根因）", () => {
     const plan = nullishFix();
     const next = plan?.sidecar?.newText;
@@ -484,20 +484,20 @@ export const f = fn({ x: number() }, nullable(number()));
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1001 — zod 的 number prim 必须覆盖 Abs 的全部 JS number 域
+// zod 的 number prim 必须覆盖 Abs 的全部 JS number 域
 // ---------------------------------------------------------------------------
-describe("[] Bug 1001 — zod 的 number prim 必须覆盖 Abs 的全部 JS number 域", () => {
+describe("zod 的 number prim 必须覆盖 Abs 的全部 JS number 域", () => {
 /**
- * Bug 1001 —— zod 方言把 Abs 的 `number` prim 投影成 `z.number()`，而
+ * zod 方言把 Abs 的 `number` prim 投影成 `z.number()`，而
  * **zod 的 `number` 排除 NaN / ±Infinity**（Abs 的 `number` prim 域**含**它们）
  * ⇒ 导出的 schema **拒绝被导出函数自己的返回值** ⇒ 消费方假红。
  *
  * 域差（原生事实）：
  * - `typeof NaN === "number"` ⇒ Abs 的 number prim 域含 NaN
- *   （standard / guard / 门禁三面同口径：门禁渲染 `nanZero() => NaN`）；
+ * （standard / guard / 门禁三面同口径：门禁渲染 `nanZero() => NaN`）；
  * - zod v4 的 `z.number()` 的 parse 是
- *   `typeof input === "number" && !Number.isNaN(input) && Number.isFinite(input)`
- *   ⇒ 只收**有限数** ⇒ `z.number()` 是**收窄**映射（不是合法超近似）。
+ * `typeof input === "number" && !Number.isNaN(input) && Number.isFinite(input)`
+ * ⇒ 只收**有限数** ⇒ `z.number()` 是**收窄**映射（不是合法超近似）。
  *
  * 修法：zod 侧的 `number` prim（**无 refinement**）放宽成
  * 「有限数 ∪ NaN ∪ ±Infinity」。带 refinement 的 number **不放宽**
@@ -513,7 +513,7 @@ describe("[] Bug 1001 — zod 的 number prim 必须覆盖 Abs 的全部 JS numb
 
 const numWith = (pred: Pred): Abs => abs({ k: "prim", type: "number" }, { op: "var", id: "x" }, pred, "exact");
 
-describe("Bug 1001 — zod 的 number prim 必须覆盖 Abs 的全部 JS number 域", () => {
+describe("zod 的 number prim 必须覆盖 Abs 的全部 JS number 域", () => {
   it("原生域前提：NaN / ±Infinity 都是 number（Abs 域含之）", () => {
     expect(typeof NaN).toBe("number");
     expect(typeof Infinity).toBe("number");
@@ -534,7 +534,7 @@ describe("Bug 1001 — zod 的 number prim 必须覆盖 Abs 的全部 JS number 
 
   it("带 numBound 的 number prim 只放宽满足该界的那一端（BUG-093 收口）", () => {
     // `x > 5` 对 Infinity 为真、对 -Infinity 为假 ⇒ 只放宽 +Infinity
-    // （`z.number()` 只收有限数 ⇒ 不放宽即**收窄**，见 BUG-093）。
+    // （`z.number()` 只收有限数 ⇒ 不放宽即**收窄**，见 ）。
     expect(absToSchemaSource(numWith(gt(v("x"), lit(5))))).toBe(
       "z.number().gt(5).or(z.literal(Infinity))",
     );
@@ -563,23 +563,23 @@ describe("Bug 1001 — zod 的 number prim 必须覆盖 Abs 的全部 JS number 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1008 — 不确信观测里的字面量不得被钉成出口域
+// 不确信观测里的字面量不得被钉成出口域
 // ---------------------------------------------------------------------------
-describe("[] Bug 1008 — 不确信观测里的字面量不得被钉成出口域", () => {
+describe("不确信观测里的字面量不得被钉成出口域", () => {
 /**
- * Bug 1008 —— rest 形参 + 无调用点证据 ⇒ entry@ 兜底只造**一个**占位实参 ⇒
+ * rest 形参 + 无调用点证据 ⇒ entry@ 兜底只造**一个**占位实参 ⇒
  * `xs.length` 被观测成**字面量 1** ⇒ zod / standard / guard 三个方言把返回值
  * 投影成 `literal(1)` ⇒ 导出的校验器**拒绝被导出函数自己的返回值**（而 dts
  * 面写 `number` ⇒ 四方言互相矛盾）。
  *
  * 根因分两层：
  * - **观测层（越界）**：core 的 `formalParamDisplayNames` 只给 rest 形参一个
- *   名字，不给「变长」信息；service 的 entry@ 兜底据此造**一个**实参 ⇒
- *   观测域被**假窄化**成 1。本片（schema-generator / guard-generator）是
- *   **只读**边界 ⇒ 根因侧已越界上报给主 agent。
+ * 名字，不给「变长」信息；service 的 entry@ 兜底据此造**一个**实参 ⇒
+ * 观测域被**假窄化**成 1。本片（schema-generator / guard-generator）是
+ * **只读**边界 ⇒ 根因侧已越界上报给主 agent。
  * - **投影层（本片）**：**不确信**的观测（widened / mock / partial /
- *   opaque —— 「没有证据」的占位）里的字面量**不是**出口域 ⇒ 三个方言必须
- *   **放宽**到基类型，而不是逐字投影。
+ * opaque —— 「没有证据」的占位）里的字面量**不是**出口域 ⇒ 三个方言必须
+ * **放宽**到基类型，而不是逐字投影。
  *
  * 本文件钉住投影层：① 不确信置信度 ⇒ 三方言都放宽；② **确信**置信度
  * （exact）⇒ 字面量精度保留；③ 契约面（pred 通道，term 是 var）⇒ 字面量
@@ -594,7 +594,7 @@ describe("[] Bug 1008 — 不确信观测里的字面量不得被钉成出口域
 const observedLit = (conf: Abs["conf"]): Abs =>
   abs({ k: "prim", type: "number" }, { op: "lit", value: 1 }, undefined, conf);
 
-describe("Bug 1008 — 不确信观测里的字面量不得被钉成出口域", () => {
+describe("不确信观测里的字面量不得被钉成出口域", () => {
   it("不确信置信度 ⇒ zod 放宽（不再 z.literal(1)）", () => {
     for (const conf of ["widened", "mock", "partial", "opaque"] as const) {
       const source = absToSchemaSource(observedLit(conf));
@@ -633,11 +633,11 @@ describe("Bug 1008 — 不确信观测里的字面量不得被钉成出口域", 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 508 — emit 诊断只渲染一次
+// emit 诊断只渲染一次
 // ---------------------------------------------------------------------------
-describe("[] Bug 508 — emit 诊断只渲染一次", () => {
+describe("emit 诊断只渲染一次", () => {
 /**
- * Bug 508 — `nudo contract --emit` 把**同一条** `nudo:contract-name-clash`
+ * `nudo contract --emit` 把**同一条** `nudo:contract-name-clash`
  * 错误**打印两遍**（一次在摘要里、一次在 issues 列表里）。
  *
  * 根因（消费侧）：`formatEmitSummary`（emitter 侧）已经把 `result.issues`
@@ -646,7 +646,7 @@ describe("[] Bug 508 — emit 诊断只渲染一次", () => {
  *
  * 本分片（service/contract-emitter.ts）能落的那一半：
  * - 摘要 = 诊断的**唯一渲染点**：渲染后即**消费** result.issues ⇒ 第二个
- *   渲染点（CLI 的尾部 error-only 循环）自动变空 ⇒ 每条诊断只出一遍；
+ * 渲染点（CLI 的尾部 error-only 循环）自动变空 ⇒ 每条诊断只出一遍；
  * - 同一 (code, message) 只出一行（去重）。
  *
  * 负控制：两条**不同**的诊断都要出（去重不得吞掉真诊断）。
@@ -668,7 +668,7 @@ const result = (issues: EmitContractResult["issues"]): EmitContractResult => ({
   sidecarPath: "/tmp/lib.nudo.js",
 });
 
-describe("Bug 508 — emit 诊断只渲染一次", () => {
+describe("emit 诊断只渲染一次", () => {
   it("renders a duplicated issue exactly once", () => {
     const r = result([
       issue("nudo:contract-name-clash", "sidecar already has a handwritten contract 'area'"),
@@ -698,11 +698,11 @@ describe("Bug 508 — emit 诊断只渲染一次", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 512 — 守卫产物必须过 tsc --noEmit --strict
+// 守卫产物必须过 tsc --noEmit --strict
 // ---------------------------------------------------------------------------
-describe("[] Bug 512 — 守卫产物必须过 tsc --noEmit --strict", () => {
+describe("守卫产物必须过 tsc --noEmit --strict", () => {
 /**
- * Bug 512 —— 生成的守卫 `.ts` **过不了 `tsc --noEmit --strict`**（TS7006
+ * 生成的守卫 `.ts` **过不了 `tsc --noEmit --strict`**（TS7006
  * 隐式 any）⇒ 产物在 strict 工程里不可用。
  *
  * 根因：`guard-generator.ts` 的守卫签名**没有任何类型标注**
@@ -757,7 +757,7 @@ function tscStrict(source: string): { ok: boolean; stderr: string } {
   }
 }
 
-describe("Bug 512 — 守卫产物必须过 tsc --noEmit --strict", () => {
+describe("守卫产物必须过 tsc --noEmit --strict", () => {
   it("守卫签名带类型标注（入参 unknown / 返回 boolean）", () => {
     const g = generateGuardFunctionFromAbs("isStr", str());
     expect(g).toContain("export function isStr(value: unknown): boolean {");
@@ -794,7 +794,7 @@ describe("Bug 512 — 守卫产物必须过 tsc --noEmit --strict", () => {
 
   it("负控制：守卫产物不引用用户类名（不会 TS2304）", () => {
     const g = generateGuardFunctionFromAbs("isUser", brandOf("Counter"));
-    // 口径更新（族 09 / Bug 407 —— 「brand 身份必须被投影」）：brand 的身份
+    // 口径更新（族 09 / 「brand 身份必须被投影」）：brand 的身份
     // 判定落进产物 ⇒ 品牌名以**字符串字面量**出现（`Reflect.get(globalThis,
     // "Counter")`），不再是「完全不出现」。但**裸标识符**（`instanceof
     // Counter`）仍然禁止 —— 那才是 TS2304 的来源。断言改为「剥掉字符串
@@ -808,11 +808,11 @@ describe("Bug 512 — 守卫产物必须过 tsc --noEmit --strict", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 522: standard 面定长元组必须校验长度
+// standard 面定长元组必须校验长度
 // ---------------------------------------------------------------------------
-describe("[] Bug 522: standard 面定长元组必须校验长度", () => {
+describe("standard 面定长元组必须校验长度", () => {
 /**
- * Bug 522 —— standard-schema 方言**不校验元组的定长**（假绿）。
+ * standard-schema 方言**不校验元组的定长**（假绿）。
  *
  * 修前：定长元组（无 rest）的校验器只按位校验 `node.elements`，从不看
  * `value.length` ⇒ `[1, "two", 3]` 被放行，而引擎（`leqAbs` 的 tuple arity
@@ -840,7 +840,7 @@ const tupleWithRest = () =>
     "exact",
   );
 
-describe("Bug 522: standard 面定长元组必须校验长度", () => {
+describe("standard 面定长元组必须校验长度", () => {
   it("库函数版：超长 / 欠长元组被拒，等长放行", () => {
     const { node } = absToSchemaNode(fixedTuple());
     expect(validateSchemaNode(node, [1, "two"])).toEqual({ value: [1, "two"] });
@@ -869,21 +869,21 @@ describe("Bug 522: standard 面定长元组必须校验长度", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 524 —— 多个 root 命中同一下游导出：只写一段（侧车必须是合法 ESM）
+// 多个 root 命中同一下游导出：只写一段（侧车必须是合法 ESM）
 // ---------------------------------------------------------------------------
-describe("[] Bug 524 —— 多个 root 命中同一下游导出：只写一段（侧车必须是合法 ESM）", () => {
+describe("多个 root 命中同一下游导出：只写一段（侧车必须是合法 ESM）", () => {
 /**
  * 族 15 / 分片 S13 —— 派生契约面的三条缺陷回归钉：
  *
- * - Bug 524：同一 root 文件的**多个手写契约**（多个 root）指向同一个下游导出
- *   → 派生段被写进同一侧车**两次** → 侧车成非法 ESM（`SyntaxError: Duplicate
- *   export of 'add2'`）→ 契约面整体失效。修法：跨 root 按 (file, fn) 合并
- *   **一条**派生行（参数位取并集＝最宽者）。
- * - Bug 525：跨 root（不同 root 文件）写同一个下游导出 → **按名覆盖**、谁后写
- *   谁赢 → 快照只覆盖部分调用点，且**顺序相关**。修法：写盘时与既有段求并集
- *   （最宽者），标签取并集 ⇒ 顺序无关。
- * - Bug 542：源里已不存在的导出，其 `@generated` 段**不被清理** → 侧车里留下
- *   运行时不存在的导出，并永久占住那个名字。修法：派生路径按源清理死段。
+ * - 同一 root 文件的**多个手写契约**（多个 root）指向同一个下游导出
+ * → 派生段被写进同一侧车**两次** → 侧车成非法 ESM（`SyntaxError: Duplicate
+ * export of 'add2'`）→ 契约面整体失效。修法：跨 root 按 (file, fn) 合并
+ * **一条**派生行（参数位取并集＝最宽者）。
+ * - 跨 root（不同 root 文件）写同一个下游导出 → **按名覆盖**、谁后写
+ * 谁赢 → 快照只覆盖部分调用点，且**顺序相关**。修法：写盘时与既有段求并集
+ * （最宽者），标签取并集 ⇒ 顺序无关。
+ * - 源里已不存在的导出，其 `@generated` 段**不被清理** → 侧车里留下
+ * 运行时不存在的导出，并永久占住那个名字。修法：派生路径按源清理死段。
  */
 
 
@@ -947,7 +947,7 @@ function duplicateExports(src: string): string[] {
   return [...dup];
 }
 
-describe("Bug 524 —— 多个 root 命中同一下游导出：只写一段（侧车必须是合法 ESM）", () => {
+describe("多个 root 命中同一下游导出：只写一段（侧车必须是合法 ESM）", () => {
   it("derives ONE row for the same downstream export hit by two roots", () => {
     writeFileSync(join(dir, "std.nudo.js"), STD);
     writeFileSync(join(dir, "add.js"), ADD_JS);
@@ -1046,7 +1046,7 @@ export const add4 = fn({ x: positive }, positive);
 `,
     );
     // 预置一个**重名**的生成段（历史坏盘）：两段都导出 add2。
-    // 形态取 Bug 524 的真实坏盘（`export const add2` + 别名段）——两段的
+    // 形态取 的真实坏盘（`export const add2` + 别名段）——两段的
     // **const 名不同**，侧车执行（const 重声明会报错）抓不到，只有导出名
     // 唯一性检查能抓到 ⇒ 拼出来的是非法 ESM（Duplicate export）。
     writeFileSync(
@@ -1075,7 +1075,7 @@ export { _nudo_1 as add2 };
   });
 });
 
-describe("Bug 525 —— 跨 root 写同一下游导出：快照顺序无关", () => {
+describe("跨 root 写同一下游导出：快照顺序无关", () => {
   /** lib.js → add2(x+1)；lib2.js → add2(x+5) */
   function writeCrossRootFixture(): void {
     writeFileSync(join(dir, "std.nudo.js"), STD);
@@ -1146,7 +1146,7 @@ export const add5 = fn({ x: positive }, positive);
   });
 });
 
-describe("Bug 542 —— 源里已不存在的导出：其生成段必须被删掉", () => {
+describe("源里已不存在的导出：其生成段必须被删掉", () => {
   it("drops the stale section of an export the target no longer has", () => {
     writeFileSync(join(dir, "std.nudo.js"), STD);
     writeFileSync(
@@ -1220,11 +1220,11 @@ export const add4 = fn({ x: positive }, positive);
 });
 
 // ---------------------------------------------------------------------------
-// Bug 528: 两份实现对稀疏数组必须同口径
+// 两份实现对稀疏数组必须同口径
 // ---------------------------------------------------------------------------
-describe("[] Bug 528: 两份实现对稀疏数组必须同口径", () => {
+describe("两份实现对稀疏数组必须同口径", () => {
 /**
- * Bug 528 —— standard-schema 面**两份实现口径分叉**。
+ * standard-schema 面**两份实现口径分叉**。
  *
  * 修前：库函数版 `checkNode` 的数组臂用 `value.forEach`（**跳过稀疏洞**），
  * 生成产物内联版用索引循环（**把洞当 `undefined` 报**）⇒ 同一 schema、同一
@@ -1250,7 +1250,7 @@ const sparse = (): number[] => {
   return a;
 };
 
-describe("Bug 528: 两份实现对稀疏数组必须同口径", () => {
+describe("两份实现对稀疏数组必须同口径", () => {
   it("库函数版与生成产物版对稀疏洞给出逐字相同的结果", async () => {
     const { node } = absToSchemaNode(arrOfNumber());
     const { source } = absToStandardSchema(arrOfNumber(), { name: "xs" });
@@ -1276,11 +1276,11 @@ describe("Bug 528: 两份实现对稀疏数组必须同口径", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 529 — lazy() 递归约束的磁盘缓存往返
+// lazy() 递归约束的磁盘缓存往返
 // ---------------------------------------------------------------------------
-describe("[] Bug 529 — lazy() 递归约束的磁盘缓存往返", () => {
+describe("lazy() 递归约束的磁盘缓存往返", () => {
 /**
- * Bug 529 —— 契约面磁盘缓存的 `lazy()` 递归约束往返（冷跑/热跑逐字一致）。
+ * 契约面磁盘缓存的 `lazy()` 递归约束往返（冷跑/热跑逐字一致）。
  *
  * 病灶：`constraintToJson` 用 `JSON.parse(JSON.stringify(c))` 落盘 ⇒ JSON 遇
  * 函数值属性（`lazy` 槽的 thunk）**静默省略** ⇒ 递归约束退化成「无字段的
@@ -1375,7 +1375,7 @@ async function runWithCache(
   }
 }
 
-describe("Bug 529 — lazy() 递归约束的磁盘缓存往返", () => {
+describe("lazy() 递归约束的磁盘缓存往返", () => {
   it("冷跑与缓存命中跑逐字相同（递归展开不被 any().optional() 取代）", async () => {
     const root = makeFixture({ "lib.js": LIB_JS, "lib.nudo.js": LAZY_NUDO_JS });
     const file = join(root, "lib.js");
@@ -1436,11 +1436,11 @@ describe("Bug 529 — lazy() 递归约束的磁盘缓存往返", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 535: standard 面 fn 节点必须是函数判据
+// standard 面 fn 节点必须是函数判据
 // ---------------------------------------------------------------------------
-describe("[] Bug 535: standard 面 fn 节点必须是函数判据", () => {
+describe("standard 面 fn 节点必须是函数判据", () => {
 /**
- * Bug 535 —— standard 方言的 `fn` 节点是**恒真**校验器（假绿）。
+ * standard 方言的 `fn` 节点是**恒真**校验器（假绿）。
  *
  * 修前：`case "fn"` 与 unknown / brand / promise 共用放行分支 ⇒ 函数型输出
  * `42` / `null` / `"str"` / `{}` 全部放行，而**同一次导出**的 zod 面
@@ -1449,7 +1449,7 @@ describe("[] Bug 535: standard 面 fn 节点必须是函数判据", () => {
  * 修后：`fn` 节点要求 `typeof value === "function"`（不校验签名，只校验
  * 「是函数」）——与 zod 的 `z.function()` 同口径。
  *
- * 语法面同 Bug 535；`promise` 的接受集口径见 BUG-025（幂等 Promise 判定）。
+ * 语法面同 ；`promise` 的接受集口径见 （幂等 Promise 判定）。
  */
 
 
@@ -1461,7 +1461,7 @@ describe("[] Bug 535: standard 面 fn 节点必须是函数判据", () => {
 const fnAbs = (): Abs =>
   abs({ k: "fn", params: [] }, undefined, undefined, "exact");
 
-describe("Bug 535: standard 面 fn 节点必须是函数判据", () => {
+describe("standard 面 fn 节点必须是函数判据", () => {
   it("库函数版：非函数被拒，函数放行", () => {
     const { node } = absToSchemaNode(fnAbs());
     expect(validateSchemaNode(node, () => 1).issues).toBeUndefined();
@@ -1493,11 +1493,11 @@ describe("Bug 535: standard 面 fn 节点必须是函数判据", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 537 — emit-denied 消息点名源文件路径
+// emit-denied 消息点名源文件路径
 // ---------------------------------------------------------------------------
-describe("[] Bug 537 — emit-denied 消息点名源文件路径", () => {
+describe("emit-denied 消息点名源文件路径", () => {
 /**
- * Bug 537 — `nudo:contract-emit-denied` 的消息里报的是**源文件**路径，而
+ * `nudo:contract-emit-denied` 的消息里报的是**源文件**路径，而
  * 文档（diagnostics.md）的示例消息写的是**侧车**路径 → 照文档配的 allowlist
  * （侧车形态 glob）**永远**被拒，且用户被指向一个不存在的判定对象。
  *
@@ -1530,7 +1530,7 @@ const SRC = `/**
 export function f(x) { return x + 1; }
 `;
 
-describe("Bug 537 — emit-denied 消息点名源文件路径", () => {
+describe("emit-denied 消息点名源文件路径", () => {
   it("names the source file path and states the path semantics", async () => {
     mkdirSync(join(dir, "src"), { recursive: true });
     writeFileSync(
@@ -1577,11 +1577,11 @@ describe("Bug 537 — emit-denied 消息点名源文件路径", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 541 — .ts 侧车带 builder 类型声明（产物可过 tsc）
+// .ts 侧车带 builder 类型声明（产物可过 tsc）
 // ---------------------------------------------------------------------------
-describe("[] Bug 541 — .ts 侧车带 builder 类型声明（产物可过 tsc）", () => {
+describe(".ts 侧车带 builder 类型声明（产物可过 tsc）", () => {
 /**
- * Bug 541 — `nudo contract --emit` 给 **`.ts` 源**写出的 `*.nudo.ts` 段
+ * `nudo contract --emit` 给 **`.ts` 源**写出的 `*.nudo.ts` 段
  * **不带 builder 声明** → 产物**过不了 tsc**（TS2304: Cannot find name
  * 'lit' / 'fn'），而同命令的 `--draft` 产物带 import。
  *
@@ -1629,7 +1629,7 @@ const JS_SRC = `/**
 export function sub(a, b) { return a - b; }
 `;
 
-describe("Bug 541 — .ts 侧车带 builder 类型声明（产物可过 tsc）", () => {
+describe(".ts 侧车带 builder 类型声明（产物可过 tsc）", () => {
   it("declares the builders used by the generated section in a .nudo.ts sidecar", async () => {
     const file = join(dir, "lib.ts");
     writeFileSync(file, TS_SRC);
@@ -1673,11 +1673,11 @@ describe("Bug 541 — .ts 侧车带 builder 类型声明（产物可过 tsc）",
 });
 
 // ---------------------------------------------------------------------------
-// Bug 544 —— Abs 域区分保留、TS 投影面归一为 unknown
+// Abs 域区分保留、TS 投影面归一为 unknown
 // ---------------------------------------------------------------------------
-describe("[] Bug 544 —— Abs 域区分保留、TS 投影面归一为 unknown", () => {
+describe("Abs 域区分保留、TS 投影面归一为 unknown", () => {
 /**
- * Bug 544 —— Abs 的 **`any`（未受约束）** 与 **`unknown`（推导失败）**
+ * Abs 的 **`any`（未受约束）** 与 **`unknown`（推导失败）**
  * 在 **nudo 内部**是两个不同的产品概念（`abs.md` 的 display 规则约束的是
  * **nudo 展示 / CLI 面**，那里不得合并）。
  *
@@ -1688,7 +1688,7 @@ describe("[] Bug 544 —— Abs 域区分保留、TS 投影面归一为 unknown"
  * `return "unknown"` ⇒ 与 zod / standard / guard 三面运行时校验器同口径
  * （三面早就把 any / unknown 同映为 `z.unknown()` / `unknown`）。
  *
- * 旧版 BUG-544 把 `abs.md:100` 的 display 规则**误引到 .d.ts 产物面**，并把
+ * 旧版 把 `abs.md:100` 的 display 规则**误引到 .d.ts 产物面**，并把
  * `id(1).toFixed()` 的 TS2571 定性为「假红」；按本裁定性为**正确的类型安全
  * 提示**（引擎确实不知道返回值是什么，消费方理应先收窄）。
  *
@@ -1704,7 +1704,7 @@ describe("[] Bug 544 —— Abs 域区分保留、TS 投影面归一为 unknown"
 const unknownAbs = (): Abs =>
   ({ shape: { k: "unknown" }, term: undefined, pred: undefined, conf: "partial" }) as Abs;
 
-describe("Bug 544 —— Abs 域区分保留、TS 投影面归一为 unknown", () => {
+describe("Abs 域区分保留、TS 投影面归一为 unknown", () => {
   it("TS 投影面：Abs any 与 Abs unknown 都渲染成 TS unknown", () => {
     expect(absToTSType(anyAbs)).toBe("unknown");
     expect(absToTSType(unknownAbs())).toBe("unknown");
@@ -1765,11 +1765,11 @@ export const r = id(1).toFixed();
 });
 
 // ---------------------------------------------------------------------------
-// Bug 546 — TS 侧车必须自带 builder import（产物过 tsc）
+// TS 侧车必须自带 builder import（产物过 tsc）
 // ---------------------------------------------------------------------------
-describe("[] Bug 546 — TS 侧车必须自带 builder import（产物过 tsc）", () => {
+describe("TS 侧车必须自带 builder import（产物过 tsc）", () => {
 /**
- * Bug 546：`nudo check --fix --write` 给 **`.ts` 源**写出的 `*.nudo.ts` 侧车
+ * `nudo check --fix --write` 给 **`.ts` 源**写出的 `*.nudo.ts` 侧车
  * **不带 builder import** ⇒ 产物 **3× TS 错误**（TS2304 × 2 + TS2693）⇒
  * 过不了 `tsc --noEmit --strict`。
  *
@@ -1778,9 +1778,9 @@ describe("[] Bug 546 — TS 侧车必须自带 builder import（产物过 tsc）
  * `fn` / `shape` 没 import（TS2304），`any()` 撞 TS 类型关键字（TS2693）。
  *
  * 本钉：
- *   ① `.nudo.ts` 侧车带 builder import（TS 关键字构建器改名导入）
- *   ② 产物真的能过 `tsc --noEmit --strict`
- *   ③ `.nudo.js` 侧车维持「裸注入」纪律（不加 import）
+ * ① `.nudo.ts` 侧车带 builder import（TS 关键字构建器改名导入）
+ * ② 产物真的能过 `tsc --noEmit --strict`
+ * ③ `.nudo.js` 侧车维持「裸注入」纪律（不加 import）
  */
 
 
@@ -1844,7 +1844,7 @@ function tscNoEmit(fileName: string, text: string): { ok: boolean; out: string }
   }
 }
 
-describe("Bug 546 — TS 侧车必须自带 builder import（产物过 tsc）", () => {
+describe("TS 侧车必须自带 builder import（产物过 tsc）", () => {
   it("`.nudo.ts` 侧车带 builder import，TS 关键字构建器改名导入", () => {
     const text = draftSidecar("/t/risky.nudo.ts");
     expect(text).toContain('import {');
@@ -1910,11 +1910,11 @@ export const other = fn({ x: number() });
 });
 
 // ---------------------------------------------------------------------------
-// Bug 548 — 生成段不与 import 局部绑定重名
+// 生成段不与 import 局部绑定重名
 // ---------------------------------------------------------------------------
-describe("[] Bug 548 — 生成段不与 import 局部绑定重名", () => {
+describe("生成段不与 import 局部绑定重名", () => {
 /**
- * Bug 548 — `nudo contract --emit` 写出的侧车是**非法 JavaScript**：生成段的
+ * `nudo contract --emit` 写出的侧车是**非法 JavaScript**：生成段的
  * `export const <name>` 与侧车里已有的 **import 局部绑定**同名 ⇒ 整份侧车装载
  * 失败 ⇒ **该文件所有契约一起丢失**（工具却 exit 0 自称成功）。
  *
@@ -1942,7 +1942,7 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-// BUG-035：`@nudo:case` 的**纯点观测见证**（实参全是字面量、无断言）不是契约
+// `@nudo:case` 的**纯点观测见证**（实参全是字面量、无断言）不是契约
 // 产物 ⇒ 夹具的 case 改为**带断言的域声明**（`=> 期望值`），生成段形态
 // （`export const positive = fn(…)`）与 import 局部绑定语义不变。
 const SRC = `/** @nudo:case "default" (1, 2) => 3 */
@@ -1965,7 +1965,7 @@ const loadModule = (spec: string, from: string): string | undefined => {
   }
 };
 
-describe("Bug 548 — 生成段不与 import 局部绑定重名", () => {
+describe("生成段不与 import 局部绑定重名", () => {
   it("uses an alias binding when an import local shadows the target name", async () => {
     const file = join(dir, "c.js");
     writeFileSync(file, SRC);
@@ -2062,11 +2062,11 @@ export const other = fn({ n: number().gt(0) }, boolean());
 });
 
 // ---------------------------------------------------------------------------
-// Bug 551: standard 面 validate 永不抛
+// standard 面 validate 永不抛
 // ---------------------------------------------------------------------------
-describe("[] Bug 551: standard 面 validate 永不抛", () => {
+describe("standard 面 validate 永不抛", () => {
 /**
- * Bug 551 —— standard 产物的 `~standard.validate` 在 bigint / 循环对象上**抛
+ * standard 产物的 `~standard.validate` 在 bigint / 循环对象上**抛
  * TypeError** ⇒ 违反 Standard Schema v1「`validate` 永不抛」的协议。
  *
  * 修前：`lit` 臂的消息构造直接 `JSON.stringify(运行期入参)` ⇒ bigint 抛
@@ -2101,7 +2101,7 @@ const throwingGetter = (): Record<string, unknown> => ({
   },
 });
 
-describe("Bug 551: standard 面 validate 永不抛", () => {
+describe("standard 面 validate 永不抛", () => {
   it("库函数版：bigint / 循环对象 / 抛错 getter 都返回 Result 而非抛异常", () => {
     const { node } = absToSchemaNode(litOne());
     for (const v of [1n, circular(), throwingGetter()]) {
@@ -2143,11 +2143,11 @@ describe("Bug 551: standard 面 validate 永不抛", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 552 —— 导出绑定名清洗（保留字）
+// 导出绑定名清洗（保留字）
 // ---------------------------------------------------------------------------
-describe("[] Bug 552 —— 导出绑定名清洗（保留字）", () => {
+describe("导出绑定名清洗（保留字）", () => {
 /**
- * Bug 552 —— dts 面把**保留字**当绑定名直出。
+ * dts 面把**保留字**当绑定名直出。
  *
  * 改前：`export declare function default(...)` / `export declare function class(...)`
  * ⇒ **TS1359 + TS1005**（整份 `.d.ts` 解析失败，tsc exit 2）——而同一次导出
@@ -2174,7 +2174,7 @@ function fnOf(name: string): FunctionAnalysis {
   } as FunctionAnalysis;
 }
 
-describe("Bug 552 —— 导出绑定名清洗（保留字）", () => {
+describe("导出绑定名清洗（保留字）", () => {
   it("保留字作绑定名 ⇒ `_` 前缀（不是直出）", () => {
     const p = projectFunctionDts(fnOf("class"));
     const text = p.lines.join("\n");
@@ -2205,11 +2205,11 @@ describe("Bug 552 —— 导出绑定名清洗（保留字）", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 555: 非有限数值不得被折成 null
+// 非有限数值不得被折成 null
 // ---------------------------------------------------------------------------
-describe("[] Bug 555: 非有限数值不得被折成 null", () => {
+describe("非有限数值不得被折成 null", () => {
 /**
- * Bug 555 —— standard 面把 `Infinity` / `-Infinity` 折成 `null`（假红 + 假绿）。
+ * standard 面把 `Infinity` / `-Infinity` 折成 `null`（假红 + 假绿）。
  *
  * 修前：节点里的 `Infinity` 被写成 `null` ⇒ 校验器**拒绝函数唯一可能返回的
  * 值**、**放行函数永不返回的 `null`**；报错文案还自相矛盾（「expected null,
@@ -2217,9 +2217,9 @@ describe("[] Bug 555: 非有限数值不得被折成 null", () => {
  *
  * 修后（两半）：
  * - 序列化半（产物生成侧）：节点走**保真序列化**，`Infinity` / `-Infinity` /
- *   `NaN` 各有对应源码文本（不是 JSON 往返）。
+ * `NaN` 各有对应源码文本（不是 JSON 往返）。
  * - 语义半（校验器侧，本分片）：`lit` 比较认非有限数值；消息走**安全描述**
- *   ⇒ 「expected Infinity, got 0」而不是「expected null, got null」。
+ * ⇒ 「expected Infinity, got 0」而不是「expected null, got null」。
  *
  * 负控制：普通字面量的消息格式不变（`expected 1, got 0`）。
  */
@@ -2232,7 +2232,7 @@ describe("[] Bug 555: 非有限数值不得被折成 null", () => {
 const litAbs = (value: number): Abs =>
   abs({ k: "unknown" }, { op: "lit", value }, undefined, "exact");
 
-describe("Bug 555: 非有限数值不得被折成 null", () => {
+describe("非有限数值不得被折成 null", () => {
   it("库函数版：Infinity 放行、null / 0 拒绝，消息保真", () => {
     const { node } = absToSchemaNode(litAbs(Infinity));
     expect(validateSchemaNode(node, Infinity).issues).toBeUndefined();
@@ -2271,11 +2271,11 @@ describe("Bug 555: 非有限数值不得被折成 null", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 558 — quickfix 定位按作用域（最近的同名声明）
+// quickfix 定位按作用域（最近的同名声明）
 // ---------------------------------------------------------------------------
-describe("[] Bug 558 — quickfix 定位按作用域（最近的同名声明）", () => {
+describe("quickfix 定位按作用域（最近的同名声明）", () => {
 /**
- * Bug 558：quickfix「[silence] Declare @nudo:throws X」按**名字首匹配**定位
+ * quickfix「[silence] Declare @nudo:throws X」按**名字首匹配**定位
  * 声明 ⇒ 注解落进**别的函数体** ⇒ 门禁**完全不变**（一个「点了也没用」的
  * quickfix）。
  *
@@ -2301,13 +2301,13 @@ export function alpha(x) {
 }
 `;
 
-describe("Bug 558 — quickfix 定位按作用域（最近的同名声明）", () => {
+describe("quickfix 定位按作用域（最近的同名声明）", () => {
   it("同名局部绑定不再命中：定位到顶层声明", () => {
     const lines = SRC.split("\n");
     // 契约：返回**附着的 JSDoc 起点**（alpha 的 JSDoc 在第 5 行，声明在第 8 行）
     expect(findFnDeclStart(lines, "alpha")).toBe(5);
     expect(findFnDeclStart(lines, "beta")).toBe(0);
-    // 改前形态：旧的行级正则首匹配会命中 `  const alpha = 1;`（第 1 行）
+    // 改前形态：旧的行级正则首匹配会命中 ` const alpha = 1;`（第 1 行）
     expect(lines[1]).toContain("const alpha = 1;");
   });
 
@@ -2324,7 +2324,7 @@ describe("Bug 558 — quickfix 定位按作用域（最近的同名声明）", (
   });
 
   it("改前形态：旧实现把注解写进 beta 的函数体（回归有效性自证）", () => {
-    // 旧实现（行级正则首匹配）会命中 `  const alpha = 1;` 那一行
+    // 旧实现（行级正则首匹配）会命中 ` const alpha = 1;` 那一行
     const legacyLine = SRC.split("\n").findIndex((l) => l.includes("const alpha = 1;"));
     expect(legacyLine).toBeGreaterThan(-1);
     expect(legacyLine).toBeLessThan(findFnDeclStart(SRC.split("\n"), "alpha"));
@@ -2354,10 +2354,10 @@ describe("Bug 558 — quickfix 定位按作用域（最近的同名声明）", (
 });
 
 // ---------------------------------------------------------------------------
-// Bug 563 — 固化写回不改源文件的行尾约定
+// 固化写回不改源文件的行尾约定
 // ---------------------------------------------------------------------------
-describe("[] Bug 563 — 固化写回不改源文件的行尾约定", () => {
-// emit--crlf-fidelity.part.ts — Bug 563：
+describe("固化写回不改源文件的行尾约定", () => {
+// emit--crlf-fidelity.part.ts — 
 //
 // `nudo test --freeze` 的源码写回把 **CRLF 文件改成混合行尾**（新插入的行用
 // LF、原行保留 CRLF）⇒ `file(1)` 的判定从「with CRLF line terminators」变成
@@ -2366,7 +2366,7 @@ describe("[] Bug 563 — 固化写回不改源文件的行尾约定", () => {
 // 不变量：固化**只增不改** ⇒ 写回后源文件的行尾约定不变（纯 CRLF 仍是纯
 // CRLF、纯 LF 仍是纯 LF），且原行逐字节不动。
 //
-// 注：根因行（写回时新插入的行不带 "\r"）由同文件 S9 分片的 Bug 547 修法
+// 注：根因行（写回时新插入的行不带 "\r"）由同文件 S9 分片的 修法
 // 关闭（新行沿用**源文件的主导行尾**）；本文件是它的**回归钉**（不宣称新修）。
 
 
@@ -2396,7 +2396,7 @@ function keepsOriginalLines(original: string, output: string): boolean {
   return i === src.length;
 }
 
-describe("Bug 563 — 固化写回不改源文件的行尾约定", () => {
+describe("固化写回不改源文件的行尾约定", () => {
   it("CRLF 源文件写回后仍是纯 CRLF（新插入的行不带裸 LF）", () => {
     const analysis = analyzeFile("/test/crlf.js", CRLF_SRC);
     const out = insertGeneratedCaseDirectives(CRLF_SRC, analysis);
@@ -2438,11 +2438,11 @@ describe("Bug 563 — 固化写回不改源文件的行尾约定", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 565 —— 零成员对象不是 TS 的 {}
+// 零成员对象不是 TS 的 {}
 // ---------------------------------------------------------------------------
-describe("[] Bug 565 —— 零成员对象不是 TS 的 {}", () => {
+describe("零成员对象不是 TS 的 {}", () => {
 /**
- * Bug 565 —— dts 把「**无已知成员的对象**」渲染成 TypeScript 的 `{}`。
+ * dts 把「**无已知成员的对象**」渲染成 TypeScript 的 `{}`。
  *
  * TS 语义：类型 `{}` = 「**任意非 nullish 值**」（`42` / `"str"` / `[]` 全部
  * 合法）——它**不是**「没有属性的对象」。⇒ ① 消费方属性读吃 **TS2339 假红**
@@ -2458,7 +2458,7 @@ describe("[] Bug 565 —— 零成员对象不是 TS 的 {}", () => {
 
 
 
-describe("Bug 565 —— 零成员对象不是 TS 的 {}", () => {
+describe("零成员对象不是 TS 的 {}", () => {
   it("空 obj → Record<string, never>（不是 {}）", () => {
     expect(absToTSType(objOf({}))).toBe("Record<string, never>");
   });
@@ -2534,20 +2534,20 @@ export { p };
 });
 
 // ---------------------------------------------------------------------------
-// Bug 984 —— 同 root 的多个形参：返回位必须锚到**实现真正返回**的那个
+// 同 root 的多个形参：返回位必须锚到**实现真正返回**的那个
 // ---------------------------------------------------------------------------
-describe("[] Bug 984 —— 同 root 的多个形参：返回位必须锚到**实现真正返回**的那个", () => {
+describe("同 root 的多个形参：返回位必须锚到**实现真正返回**的那个", () => {
 /**
- * 族 15 / 分片 S14 —— Bug 984 回归钉。
+ * 族 15 / 分片 S14 —— 回归钉。
  *
- * Bug 984：组合式返回位的**相对锚定只按 root 节点 id 匹配**、从不比较 shift 的
+ * 组合式返回位的**相对锚定只按 root 节点 id 匹配**、从不比较 shift 的
  * offset ⇒ 同一个上游变量派生出的多个形参**共用同一个 root id** ⇒ 相对锚定
  * 循环取到**第一个**候选 ⇒ 把**另一个形参的约束**写成返回约束 ⇒ 生成的契约
  * **unsound**（比实现能保证的更强）。
  *
  * 夹具：`helper(a, b) { return b; }` + `helper(x + 5, x + 1)`（x > 0）
- *   ⇒ 改前：返回位写成 `a`（gt(5)），实现真值只有 gt(1)
- *   ⇒ 改后：返回位写成 `b`（gt(1)）
+ * ⇒ 改前：返回位写成 `a`（gt(5)），实现真值只有 gt(1)
+ * ⇒ 改后：返回位写成 `b`（gt(1)）
  *
  * 负控制：不同 root 的两个形参（既有锚定不变）、返回位不是形参本身（相对
  * shift 形态不变）。
@@ -2591,7 +2591,7 @@ export function root(x) { return helper(${call}); }
   writeFileSync(join(dir, "lib.nudo.js"), LIB_NUDO);
 }
 
-describe("Bug 984 —— 同 root 的多个形参：返回位必须锚到**实现真正返回**的那个", () => {
+describe("同 root 的多个形参：返回位必须锚到**实现真正返回**的那个", () => {
   it("helper(x+5, x+1)：返回位是 b（gt(1)），不是 a（gt(5)）", () => {
     writeHelperFixture("x + 5, x + 1");
     const r = deriveFromRoot(join(dir, "lib.js"), { fnNames: ["helper"] });
@@ -2674,11 +2674,11 @@ export function root(x) { return bump(x + 1); }
 });
 
 // ---------------------------------------------------------------------------
-// BUG-096: 键存在性三面同口径（HasProperty − Object.prototype 自身成员）
+// 键存在性三面同口径（HasProperty − Object.prototype 自身成员）
 // ---------------------------------------------------------------------------
-describe("[] BUG-096: 键存在性三面同口径（HasProperty − Object.prototype 自身成员）", () => {
+describe("键存在性三面同口径（HasProperty − Object.prototype 自身成员）", () => {
 /**
- * BUG-096 ——**键存在性**口径三面分裂：zod 面（`z.object` 原生用 `key in data`，
+ * **键存在性**口径三面分裂：zod 面（`z.object` 原生用 `key in data`，
  * 含 `Object.prototype` 成员）放行 `Object.create({ toString: "s" })`，而
  * guard / standard 面判「不在场」（减污染键）⇒ 同一个值三面结论相反。
  *
@@ -2687,7 +2687,7 @@ describe("[] BUG-096: 键存在性三面同口径（HasProperty − Object.proto
  * - guard 面 = core `denote.ts` 的 `hasPropertyClause`（子句文本被既有测试钉住）；
  * - standard 面 = `standard-schema.ts` 的 `hasProperty` / 产物 `__nudoHasProperty`；
  * - zod 面 = `schema-generator.ts` 给**必填污染键槽**补的 `.superRefine`
- *   （`z.object` 原生判据没有「减污染键」这一层）。
+ * （`z.object` 原生判据没有「减污染键」这一层）。
  *
  * 本钉同时锁住：两面（guard / standard）逐值同裁决 + zod 产物**真的**带上
  * 那条子句（缺了就是修前的缺陷态），且非污染键不额外加 refinement（不误伤）。
@@ -2728,7 +2728,7 @@ function stdOk(a: Abs, value: unknown): boolean {
   return validateSchemaNode(absToSchemaNode(a).node, value).issues === undefined;
 }
 
-describe("BUG-096: 键存在性三面同口径（HasProperty − Object.prototype 自身成员）", () => {
+describe("键存在性三面同口径（HasProperty − Object.prototype 自身成员）", () => {
   it("guard / standard / standard 产物 逐值同裁决（含用户原型上的同名键）", async () => {
     const shape = slotShape("toString", "s");
     const guard = guardOf(shape);
@@ -2788,23 +2788,23 @@ describe("BUG-096: 键存在性三面同口径（HasProperty − Object.prototyp
 });
 
 // ---------------------------------------------------------------------------
-// BUG-258 产物面：数组视图投影成数组（四面同判据）
+// 产物面：数组视图投影成数组（四面同判据）
 // ---------------------------------------------------------------------------
-describe("[] BUG-258 产物面：数组视图投影成数组（四面同判据）", () => {
+describe("产物面：数组视图投影成数组（四面同判据）", () => {
 /**
- * BUG-258（产物面）—— **数组视图**（`Shape.view === "array"`，RegExpExecArray
+ * （产物面）—— **数组视图**（`Shape.view === "array"`，RegExpExecArray
  * 等）在四个产物面必须投影成**数组**，与具名 guard / standard 判据同口径。
  *
  * 修前：数组性只活在 Shape 之外的语义里 ⇒ 产物面一律按普通对象投影：
  * - dts：`{ 0: "abc"; 1: "b"; length: 2; index: 0; … }` ⇒ 消费方 `.map` /
- *   下标元组读全报 TS2339；
+ * 下标元组读全报 TS2339；
  * - guard：头部要求 `!Array.isArray(v)` ⇒ **拒绝**实现自己的返回值（假红）；
  * - standard：`expected object, got array` ⇒ 拒绝真实值；
  * - zod：`z.object({...})` 同口径 ⇒ 拒绝真实值。
  *
  * 修后判据（四面同源，单一事实源 = Shape facet）：
  * - dts → 下标槽成元组、`length` 由元组隐含、其余自有槽（index / input /
- *   groups）成交集里的对象部分；
+ * groups）成交集里的对象部分；
  * - guard → `Array.isArray(v)`（槽判据不变：原生 exec 结果的槽全是自有属性）；
  * - standard → 库函数版与产物版都要求 `Array.isArray(value)`；
  * - zod → `z.tuple([...])`（`z.object` 换掉）。
@@ -2848,7 +2848,7 @@ const lookalikeObject = (): unknown => ({
   groups: undefined,
 });
 
-describe("BUG-258 产物面：数组视图投影成数组（四面同判据）", () => {
+describe("产物面：数组视图投影成数组（四面同判据）", () => {
   it('形状前提：combinedAbs 是 obj 形状 + view: "array"', () => {
     const a = viewAbs();
     expect(a.shape.k).toBe("obj");

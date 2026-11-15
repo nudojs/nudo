@@ -11,11 +11,11 @@ import { runInit } from "../commands/init.ts";
 import { attachPathErrors } from "../check-json-map.ts";
 
 // ---------------------------------------------------------------------------
-// BUG-018: `nudo test --freeze <path>` 不得把路径吞成取值
+// `nudo test --freeze <path>` 不得把路径吞成取值
 // ---------------------------------------------------------------------------
-describe("[cli-] BUG-018: `nudo test --freeze <path>` 不得把路径吞成取值", () => {
+describe("`nudo test --freeze <path>` 不得把路径吞成取值", () => {
 /**
- * BUG-018：`nudo test --freeze <path>`（旗标在前、路径在后——CLI 的惯用形式）
+ * `nudo test --freeze <path>`（旗标在前、路径在后——CLI 的惯用形式）
  * 把路径吞成 `--freeze` 的**取值** ⇒ 必然报「needs at least one path」⇒ 该功能
  * 在文档/惯例给出的调用形式下**不可达**。
  *
@@ -37,7 +37,7 @@ const SRC = `export function add(a, b) {
 const x = add(1, 2);
 `;
 
-describe("BUG-018: `nudo test --freeze <path>` 不得把路径吞成取值", () => {
+describe("`nudo test --freeze <path>` 不得把路径吞成取值", () => {
   it("旗标在前 + 路径在后 ⇒ 正常固化见证（旧行为：Usage error / exit 1 / 零写盘）", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug-018-"));
     const file = join(dir, "lib.js");
@@ -68,14 +68,14 @@ describe("BUG-018: `nudo test --freeze <path>` 不得把路径吞成取值", () 
 });
 
 // ---------------------------------------------------------------------------
-// BUG-019 — --freeze=update 的见证坐标
+// --freeze=update 的见证坐标
 // ---------------------------------------------------------------------------
-describe("[cli-] BUG-019 — --freeze=update 的见证坐标", () => {
+describe("--freeze=update 的见证坐标", () => {
 /**
- * BUG-019 — `nudo test --freeze=update` 在**剥离后的源码坐标**上分析并写回：
+ * `nudo test --freeze=update` 在**剥离后的源码坐标**上分析并写回：
  *
  * - ① 把正确的见证行号改错（`call@L8` → `call@L5`）：基源（剥离生成块后）的
- *   调用点在第 5 行，但写回的文件里它在第 8 行；
+ * 调用点在第 5 行，但写回的文件里它在第 8 行；
  * - ② 过期见证与新调用点撞名 ⇒ 判「已经是最新」⇒ 永不刷新；
  * - ③ `--freeze` 运行里报告的行号相对真实文件整体偏移（少掉被剥离的行数）；
  * - ④ 已冻结的指令 case 在 `--freeze` 运行里整个消失（剥离后再没被分析）。
@@ -129,7 +129,7 @@ function claimedLine(text: string): number | undefined {
   return m ? Number(m[1]) : undefined;
 }
 
-describe("BUG-019 — --freeze=update 的见证坐标", () => {
+describe("-freeze=update 的见证坐标", () => {
   it("首轮 add 之后的 update 把见证名改成真实行号，且再跑一次幂等", () => {
     const { dir, file } = project(BASE);
     try {
@@ -210,11 +210,11 @@ describe("BUG-019 — --freeze=update 的见证坐标", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-119（CLI）— update 不得净删除活着的见证
+// （CLI）— update 不得净删除活着的见证
 // ---------------------------------------------------------------------------
-describe("[cli-] BUG-119（CLI）— update 不得净删除活着的见证", () => {
+describe("（CLI）— update 不得净删除活着的见证", () => {
 /**
- * BUG-119（CLI 面）：`nudo test --freeze=update` **静默删除**一条**仍然活着**的
+ * （CLI 面）：`nudo test --freeze=update` **静默删除**一条**仍然活着**的
  * 见证（`call@site.js:L2`），删除汇总还谎报「0 directive(s)」，事后 health 转绿
  * （假绿）；而 `nudo health --from` 推荐的刷新动作正是这个破坏动作。
  *
@@ -251,7 +251,7 @@ function project(libSource = LIB): { dir: string; lib: string; site: string } {
   return { dir, lib: join(dir, "lib.js"), site: join(dir, "site.js") };
 }
 
-describe("BUG-119（CLI）— update 不得净删除活着的见证", () => {
+describe("（CLI）— update 不得净删除活着的见证", () => {
   it("update 后仍活着的见证一条都不少（旧行为：静默删除 call@site.js:L2）", () => {
     const { dir, lib, site } = project();
     try {
@@ -311,11 +311,11 @@ add(3, 4);
 });
 
 // ---------------------------------------------------------------------------
-// BUG-229: 重复的 nudo 成员 ⇒ 写入必须对生效配置有效
+// 重复的 nudo 成员 ⇒ 写入必须对生效配置有效
 // ---------------------------------------------------------------------------
-describe("[cli-] BUG-229: 重复的 nudo 成员 ⇒ 写入必须对生效配置有效", () => {
+describe("重复的 nudo 成员 ⇒ 写入必须对生效配置有效", () => {
 /**
- * BUG-229：`nudo init` 的最小改动写盘只替换**第一个**同名 `"nudo"` 成员，而
+ * `nudo init` 的最小改动写盘只替换**第一个**同名 `"nudo"` 成员，而
  * 加载器按 `JSON.parse`（**后者胜**）读 ⇒ init 报「已写入 adoption baseline」
  * 并引导跑 adoption 档，但**生效的配置仍是旧的非法值**（陈述与事实相反）；
  * init 还主动写出一个带**重复键**的 package.json。
@@ -355,7 +355,7 @@ function init(): { code: number; out: string[]; err: string[] } {
   return { code, out, err };
 }
 
-describe("BUG-229: 重复的 nudo 成员 ⇒ 写入必须对生效配置有效", () => {
+describe("重复的 nudo 成员 ⇒ 写入必须对生效配置有效", () => {
   it("重复成员：落盘只剩一个 nudo 成员，且加载器读到 adoption baseline", () => {
     const d = makePkg(`{\n  "name": "p14",\n  "version": "1.0.0",\n  "nudo": null,\n  "nudo": null\n}\n`);
     const r = init();
@@ -380,11 +380,11 @@ describe("BUG-229: 重复的 nudo 成员 ⇒ 写入必须对生效配置有效",
 });
 
 // ---------------------------------------------------------------------------
-// Bug 654 — --help 承诺的 --freeze 模式必须都被实现接受
+// --help 承诺的 --freeze 模式必须都被实现接受
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 654 — --help 承诺的 --freeze 模式必须都被实现接受", () => {
+describe("--help 承诺的 --freeze 模式必须都被实现接受", () => {
 /**
- * Bug 654：`nudo test --help` 宣称 `--freeze` 的模式是 `update | add`，
+ * `nudo test --help` 宣称 `--freeze` 的模式是 `update | add`，
  * 但 `--freeze=add` 是**用法错误** exit 1 ⇒ **帮助面承诺 vs 实现矛盾**
  * （用户照 `--help` 写就命令失败）。
  *
@@ -422,7 +422,7 @@ function advertisedModes(help: string): string[] {
   return (m![1] ?? "").split("|").map((s) => s.trim()).filter((s) => s.length > 0);
 }
 
-describe("Bug 654 — --help 承诺的 --freeze 模式必须都被实现接受", () => {
+describe("-help 承诺的 --freeze 模式必须都被实现接受", () => {
   it("帮助文本承诺 update | add，且两个模式都能被实现接受", () => {
     const { cwd, file } = makeProject();
     try {
@@ -462,15 +462,15 @@ describe("Bug 654 — --help 承诺的 --freeze 模式必须都被实现接受",
 });
 
 // ---------------------------------------------------------------------------
-// Bug 656 — --freeze=add 被接受（与省略取值同义）
+// --freeze=add 被接受（与省略取值同义）
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 656 — --freeze=add 被接受（与省略取值同义）", () => {
+describe("--freeze=add 被接受（与省略取值同义）", () => {
 /**
- * Bug 656：`nudo test --freeze=add` 被**拒绝**（exit 1 + 「Invalid --freeze
+ * `nudo test --freeze=add` 被**拒绝**（exit 1 + 「Invalid --freeze
  * value: add」），而 `nudo test --help` **明写** `--freeze [mode]` 的合法
  * 取值是「**update | add**」⇒ 用户照 `--help` 写就命令失败。
  *
- * 修复（与 Bug 654 同根因、同片一次修完）：解析器接受 `--freeze=add`
+ * 修复（与 同根因、同片一次修完）：解析器接受 `--freeze=add`
  * ⇒ 显式 `=add` 与省略取值（默认 add）**同义**。
  *
  * 本钉只钉**实现侧**：`=add` 可用 + 与省略值同义 + 非法取值仍被拒。
@@ -494,7 +494,7 @@ function makeProject(): { cwd: string; file: string } {
   return { cwd, file };
 }
 
-describe("Bug 656 — --freeze=add 被接受（与省略取值同义）", () => {
+describe("-freeze=add 被接受（与省略取值同义）", () => {
   it("--freeze=add --dry-run：exit 0（旧行为：exit 1 + Invalid --freeze value）", () => {
     const { cwd, file } = makeProject();
     try {
@@ -547,11 +547,11 @@ describe("Bug 656 — --freeze=add 被接受（与省略取值同义）", () => 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 676 — init 的幂等判据 = 配置加载器的真值判据
+// init 的幂等判据 = 配置加载器的真值判据
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 676 — init 的幂等判据 = 配置加载器的真值判据", () => {
+describe("init 的幂等判据 = 配置加载器的真值判据", () => {
 /**
- * Bug 676 — `nudo init` 的**幂等判据**必须与**配置加载器的真值判据**一致。
+ * `nudo init` 的**幂等判据**必须与**配置加载器的真值判据**一致。
  *
  * 真源：packages/service/src/evaluator/config.ts 的 readNudoKey ——
  * `nudo` 键存在（自有属性）**且**值是「非 null 的非数组对象」才算**有效配置**；
@@ -586,7 +586,7 @@ function pkgDir(content: string): string {
 
 const io = { out: () => {}, err: () => {} };
 
-describe("Bug 676 — init 的幂等判据 = 配置加载器的真值判据", () => {
+describe("init 的幂等判据 = 配置加载器的真值判据", () => {
   it("nudo 值为 null（形状非法 ⇒ 加载器按「无配置」处理）⇒ init 写入基线", () => {
     const dir = pkgDir('{ "name": "x", "nudo": null }\n');
     expect(runInit(dir, io)).toBe(0);
@@ -618,11 +618,11 @@ describe("Bug 676 — init 的幂等判据 = 配置加载器的真值判据", ()
 });
 
 // ---------------------------------------------------------------------------
-// Bug 677 — init 不得用 nudo 键遮蔽祖先配置
+// init 不得用 nudo 键遮蔽祖先配置
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 677 — init 不得用 nudo 键遮蔽祖先配置", () => {
+describe("init 不得用 nudo 键遮蔽祖先配置", () => {
 /**
- * Bug 677 — `nudo init` 在 monorepo 子包写 `nudo` 键 ⇒ **遮蔽**仓库根配置，
+ * `nudo init` 在 monorepo 子包写 `nudo` 键 ⇒ **遮蔽**仓库根配置，
  * 门禁由红翻绿（假绿）。
  *
  * 加载器的查找口径（packages/service/src/evaluator/config.ts）：取「最近的、
@@ -666,7 +666,7 @@ function monoRepo(): { root: string; sub: string } {
   return { root, sub };
 }
 
-describe("Bug 677 — init 不得用 nudo 键遮蔽祖先配置", () => {
+describe("init 不得用 nudo 键遮蔽祖先配置", () => {
   it("祖先有 nudo 配置 ⇒ init 拒绝写盘（exit 1）且子包 package.json 逐字不变", () => {
     const { sub } = monoRepo();
     const before = readFileSync(join(sub, "package.json"), "utf-8");
@@ -702,11 +702,11 @@ describe("Bug 677 — init 不得用 nudo 键遮蔽祖先配置", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 678 — init 不得向上逃逸到仓库根
+// init 不得向上逃逸到仓库根
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 678 — init 不得向上逃逸到仓库根", () => {
+describe("init 不得向上逃逸到仓库根", () => {
 /**
- * Bug 678 — `nudo init` 向上逃逸：目标目录**没有自己的 package.json** ⇒
+ * `nudo init` 向上逃逸：目标目录**没有自己的 package.json** ⇒
  * 基线写到**仓库根**（整个 monorepo 的门禁档被改），而用户以为只初始化了
  * 一个包。
  *
@@ -716,7 +716,7 @@ describe("[cli-] Bug 678 — init 不得向上逃逸到仓库根", () => {
  * / `lerna.json` / `package.json#workspaces`）⇒ **拒绝写盘**（error:/fix:
  * 引导 + exit 1），并提示「先给目标包建 package.json」。
  *
- * Bug 35 口径修订：真源信号**缺失**时，仅凭 `packages/<pkg>/package.json`
+ * 口径修订：真源信号**缺失**时，仅凭 `packages/<pkg>/package.json`
  * 这类常规目录名**不再**反推容器根——普通仓也可能有同样的目录形态，
  * 据此拒写是假红（且引导用户去造一个并不需要的嵌套 package.json）。
  * 因此第一个用例从「拒绝」改为「照常写盘」；其余三条真源用例仍钉住
@@ -748,7 +748,7 @@ function monoRepo(extra?: { pnpmWorkspace?: boolean }): { root: string; target: 
   return { root, target };
 }
 
-describe("Bug 678 — init 不得向上逃逸到仓库根", () => {
+describe("init 不得向上逃逸到仓库根", () => {
   it("未声明 workspace 的 monorepo（packages/* 形态）⇒ 不假拒绝（Bug 35 新口径）", () => {
     const { root, target } = monoRepo();
     const errors: string[] = [];
@@ -798,11 +798,11 @@ describe("Bug 678 — init 不得向上逃逸到仓库根", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 680 — init 的 IO 失败路径可区分
+// init 的 IO 失败路径可区分
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 680 — init 的 IO 失败路径可区分", () => {
+describe("init 的 IO 失败路径可区分", () => {
 /**
- * Bug 680 — `nudo init` 的 IO 失败路径：**读失败被误报成「不是合法 JSON」**；
+ * `nudo init` 的 IO 失败路径：**读失败被误报成「不是合法 JSON」**；
  * **写失败抛未捕获异常**（裸 errno、无 `error:` / `fix:` 引导）。
  *
  * 改前：readFileSync 与 JSON.parse 共用一个 catch ⇒ EACCES 也被报成
@@ -835,7 +835,7 @@ function pkgDir(content: string): string {
 /** root 跑起来时权限测试无意义（root 无视 chmod） */
 const canTestPermissions = typeof process.getuid !== "function" || process.getuid() !== 0;
 
-describe("Bug 680 — init 的 IO 失败路径可区分", () => {
+describe("init 的 IO 失败路径可区分", () => {
   it("package.json 不可读 ⇒ 「cannot read」（不是「不是合法 JSON」）+ exit 1", () => {
     if (!canTestPermissions) return;
     const dir = pkgDir('{ "name": "noread" }\n');
@@ -885,11 +885,11 @@ describe("Bug 680 — init 的 IO 失败路径可区分", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 681 — init 写盘只改目标键（最小改动）
+// init 写盘只改目标键（最小改动）
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 681 — init 写盘只改目标键（最小改动）", () => {
+describe("init 写盘只改目标键（最小改动）", () => {
 /**
- * Bug 681 — `nudo init` 整文件重写：**缩进被规范化成 2 空格**、**整数样键
+ * `nudo init` 整文件重写：**缩进被规范化成 2 空格**、**整数样键
  * 被重排**、**尾换行被强制添加** ⇒ 写盘保真度被破坏（非目标键的字节变了）。
  *
  * 改前：`JSON.parse` → 改对象 → `JSON.stringify(pkg, null, 2)` 整份重写。
@@ -920,7 +920,7 @@ function pkgDir(content: string): string {
 
 const io = { out: () => {}, err: () => {} };
 
-describe("Bug 681 — init 写盘只改目标键（最小改动）", () => {
+describe("init 写盘只改目标键（最小改动）", () => {
   it("4 空格缩进 + 无尾换行 ⇒ 缩进与尾换行状态逐字保留，只多出 nudo 成员", () => {
     const before = '{\n    "name": "s1",\n    "version": "1.0.0"\n}';
     const dir = pkgDir(before);
@@ -969,11 +969,11 @@ describe("Bug 681 — init 写盘只改目标键（最小改动）", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 695 — 信封 summary.errors = Σreports[] = 人类面计数
+// 信封 summary.errors = Σreports[] = 人类面计数
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 695 — 信封 summary.errors = Σreports[] = 人类面计数", () => {
+describe("信封 summary.errors = Σreports[] = 人类面计数", () => {
 /**
- * Bug 695：多文件信封的 `summary.errors` 把 `--from` 的**路径错误**也算成
+ * 多文件信封的 `summary.errors` 把 `--from` 的**路径错误**也算成
  * 分析 error ⇒ 信封聚合数 ≠ Σ`reports[].summary.errors` ≠ 人类面计数。
  *
  * 口径（core 自己的契约断言）：`summary.errors` = **诊断条数之和** ——
@@ -1014,14 +1014,14 @@ function makeProject(): { cwd: string; files: string[]; missing: string } {
   return { cwd: dir, files: [a, b], missing: join(dir, "nope.js") };
 }
 
-/** 人类面计数：每个文件一段「  N error · M warning · …」，求和 */
+/** 人类面计数：每个文件一段「 N error · M warning · …」，求和 */
 function humanErrorCount(stdout: string): number {
   const all = [...stdout.matchAll(/^\s*(\d+) error · /gm)].map((m) => Number(m[1]));
   expect(all.length).toBeGreaterThan(0);
   return all.reduce((a, b) => a + b, 0);
 }
 
-describe("Bug 695 — 信封 summary.errors = Σreports[] = 人类面计数", () => {
+describe("信封 summary.errors = Σreports[] = 人类面计数", () => {
   it("单元：attachPathErrors 不把路径错误并进 summary.errors（只挂 ok:false + pathErrors）", () => {
     const envelope: {
       ok: boolean;
@@ -1118,11 +1118,11 @@ describe("Bug 695 — 信封 summary.errors = Σreports[] = 人类面计数", ()
 });
 
 // ---------------------------------------------------------------------------
-// Bug 696 — migrate strip --json 的失败面（stdout 永不为空 + 结果不丢）
+// migrate strip --json 的失败面（stdout 永不为空 + 结果不丢）
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 696 — migrate strip --json 的失败面（stdout 永不为空 + 结果不丢）", () => {
+describe("migrate strip --json 的失败面（stdout 永不为空 + 结果不丢）", () => {
 /**
- * Bug 696 — `nudo migrate strip --json` 遇**语法错文件** ⇒ stdout 0 字节
+ * `nudo migrate strip --json` 遇**语法错文件** ⇒ stdout 0 字节
  * （违反「`--json` 下 stdout 永不为空」的产品不变量）⇒ 已成功文件的结果
  * 一并丢失；且 stderr 不含文件名。
  *
@@ -1168,13 +1168,13 @@ type StripEnvelope = {
   error?: string;
 };
 
-describe("Bug 696 — migrate strip --json 的失败面（stdout 永不为空 + 结果不丢）", () => {
+describe("migrate strip --json 的失败面（stdout 永不为空 + 结果不丢）", () => {
   it("语法错文件 ⇒ stdout 是合法 JSON（非 0 字节）且带文件名", () => {
     const dir = dirWith({ "good.ts": GOOD, "bad.ts": BAD });
     const r = runCliTsx(["migrate", "strip", "--json", dir]);
     expect(r.status).toBe(1);
     expect(r.stdout.length).toBeGreaterThan(0);
-    // BUG-017：`--json` 顶层形状**恒为数组**（失败信封是单元素数组）
+    // `--json` 顶层形状**恒为数组**（失败信封是单元素数组）
     const envelope = JSON.parse(r.stdout) as StripEnvelope[];
     expect(Array.isArray(envelope)).toBe(true);
     expect(envelope).toHaveLength(1);
@@ -1221,11 +1221,11 @@ describe("Bug 696 — migrate strip --json 的失败面（stdout 永不为空 + 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 934 — package.json#nudo.env 非数组：原生报告而非裸崩
+// package.json#nudo.env 非数组：原生报告而非裸崩
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 934 — package.json#nudo.env 非数组：原生报告而非裸崩", () => {
+describe("package.json#nudo.env 非数组：原生报告而非裸崩", () => {
 /**
- * Bug 934：`package.json#nudo.env` 的值**不是数组**时的处理。
+ * `package.json#nudo.env` 的值**不是数组**时的处理。
  *
  * 旧实现：消费点 `projectEnvNames is not iterable` ⇒ check / test / health /
  * contract / export **五个 verb 全部裸崩**（不是 Nudo 报告）。
@@ -1235,7 +1235,7 @@ describe("[cli-] Bug 934 — package.json#nudo.env 非数组：原生报告而�
  * 且消费点没有显式守卫。本测试钉住：
  * - 消费点守卫：非数组 ⇒ 回落默认，门禁照跑（不裸崩）；
  * - 报告面可见：人类面与 `--json` 面都有一条**带文件名 + 诊断码**
- *   （`config-shape`，与既有的 nudo 键形状诊断同口径）的告警。
+ * （`config-shape`，与既有的 nudo 键形状诊断同口径）的告警。
  */
 
 
@@ -1261,7 +1261,7 @@ function makeProject(envJson: string): { cwd: string; file: string; pkg: string 
   return { cwd: dir, file, pkg };
 }
 
-describe("Bug 934 — package.json#nudo.env 非数组：原生报告而非裸崩", () => {
+describe("package.json#nudo.env 非数组：原生报告而非裸崩", () => {
   it("人类面：exit 0（不裸崩）+ 报告面有文件名与诊断码 config-shape", () => {
     const { cwd, file, pkg } = makeProject("42");
     try {
@@ -1326,11 +1326,11 @@ describe("Bug 934 — package.json#nudo.env 非数组：原生报告而非裸崩
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1037 — env 模块合并须走 mergeHarvestUnderEnv（harvest 填空位）
+// env 模块合并须走 mergeHarvestUnderEnv（harvest 填空位）
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 1037 — env 模块合并须走 mergeHarvestUnderEnv（harvest 填空位）", () => {
+describe("env 模块合并须走 mergeHarvestUnderEnv（harvest 填空位）", () => {
 /**
- * Bug 1037 — `nudo check` 的 env 模块装配用**对象展开**代替
+ * `nudo check` 的 env 模块装配用**对象展开**代替
  * `mergeHarvestUnderEnv` ⇒ 手写 env 与 harvest **同名模块**时，harvest 的
  * **非冲突导出被整体丢弃** ⇒ check 面报 `unknown` + 误导诊断
  * （`nudo:unknown-inference`），而 test 面报**精确值** ⇒ 两个产品面互相矛盾。
@@ -1340,9 +1340,9 @@ describe("[cli-] Bug 1037 — env 模块合并须走 mergeHarvestUnderEnv（harv
  * （B8）。
  *
  * oracle（改前 → 改后）：
- *   改前 `nudo check lib.js` ⇒ `harvested(a: any) => unknown` + unknown-inference 告警
- *   改后 `nudo check lib.js` ⇒ `harvested(a: any) => string` + 无 unknown-inference 告警
- *   （`nudo test lib.js` 两边都是 `(any) => string` ⇒ 两面一致）
+ * 改前 `nudo check lib.js` ⇒ `harvested(a: any) => unknown` + unknown-inference 告警
+ * 改后 `nudo check lib.js` ⇒ `harvested(a: any) => string` + 无 unknown-inference 告警
+ * （`nudo test lib.js` 两边都是 `(any) => string` ⇒ 两面一致）
  */
 
 
@@ -1398,7 +1398,7 @@ export function key(dir, name) {
   return dir;
 }
 
-describe("Bug 1037 — env 模块合并须走 mergeHarvestUnderEnv（harvest 填空位）", () => {
+describe("env 模块合并须走 mergeHarvestUnderEnv（harvest 填空位）", () => {
   it("check 面：harvest 的非冲突导出不再被丢弃（unknown ⇒ string）", { timeout: 90_000 }, () => {
     const dir = project();
     const r = runCli(["check", join(dir, "lib.js")]);
@@ -1425,11 +1425,11 @@ describe("Bug 1037 — env 模块合并须走 mergeHarvestUnderEnv（harvest 填
 });
 
 // ---------------------------------------------------------------------------
-// check — env-harvest-conflict 上屏（Bug 1038）
+// check — env-harvest-conflict 上屏（）
 // ---------------------------------------------------------------------------
-describe("[cli-] check — env-harvest-conflict 上屏（Bug 1038）", () => {
+describe("check — env-harvest-conflict 上屏（）", () => {
 /**
- * Bug 1038 —— 文档明确列为 **check 面告警**的 `nudo:env-harvest-conflict`
+ * 文档明确列为 **check 面告警**的 `nudo:env-harvest-conflict`
  * 在 `nudo check` **永不出现**：analyzer 已经产出这条 warning，check 面的
  * 诊断白名单把它整条丢掉 ⇒ 文档承诺 vs 实现冲突。
  *
@@ -1485,7 +1485,7 @@ function writeHarvestConflictFixture(dir: string): void {
   );
 }
 
-describe("check — env-harvest-conflict 上屏（Bug 1038）", () => {
+describe("check — env-harvest-conflict 上屏（）", () => {
   it("人面上屏 nudo:env-harvest-conflict（warning，不挡门禁）", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug1038-"));
     writeHarvestConflictFixture(dir);
@@ -1513,11 +1513,11 @@ describe("check — env-harvest-conflict 上屏（Bug 1038）", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1144 —— init 的祖先继承口径 = 加载器口径（不得死锁）
+// init 的祖先继承口径 = 加载器口径（不得死锁）
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 1144 —— init 的祖先继承口径 = 加载器口径（不得死锁）", () => {
+describe("init 的祖先继承口径 = 加载器口径（不得死锁）", () => {
 /**
- * Bug 1144 —— `nudo init` 的「祖先配置继承」口径必须与**配置加载器**一致，
+ * `nudo init` 的「祖先配置继承」口径必须与**配置加载器**一致，
  * 且不得死锁。
  *
  * 加载器真源（`packages/service/src/evaluator/config.ts` 的
@@ -1525,15 +1525,15 @@ describe("[cli-] Bug 1144 —— init 的祖先继承口径 = 加载器口径（
  * package.json；键存在即**截断**祖先搜索（#936）——
  * - 键存在且形状**有效** ⇒ 用它（= 继承成功）；
  * - 键存在但形状**非法**（null / 标量 / 数组）⇒ stderr 提示后按
- *   「无配置」处理，并**不继承**祖先配置（fail-closed）。
+ * 「无配置」处理，并**不继承**祖先配置（fail-closed）。
  *
  * 旧行为（`packages/nudojs/src/commands/init.ts` 的 `runInit`）：**无论**本包
  * 有没有 `nudo` 键，都调用 `findInheritableAncestorConfig`；祖先有**有效**
  * `nudo` 配置时一律以「it inherits a nudo config from …」拒绝写盘。
  * ⇒ 本包的 `nudo` 值**形状非法** + 祖先有有效配置时：
- *   - 加载器**不继承**祖先（假话：「it inherits」）；
- *   - init 又以「遮蔽祖先」为由拒绝写盘 ⇒ **死锁**：文档承诺
- *     「无效值以基线替换并告警」，实现却拒绝 ⇒ 用户无法自行修复该值。
+ * - 加载器**不继承**祖先（假话：「it inherits」）；
+ * - init 又以「遮蔽祖先」为由拒绝写盘 ⇒ **死锁**：文档承诺
+ * 「无效值以基线替换并告警」，实现却拒绝 ⇒ 用户无法自行修复该值。
  *
  * 新行为：只有「本包**没有** `nudo` 键」（= 祖先配置真的会被继承）时，
  * 才用「it inherits」当拒绝理由；本包已有 `nudo` 键但形状非法 ⇒ 按文档
@@ -1566,7 +1566,7 @@ function ancestorWithInvalidChild(): { root: string; sub: string } {
   return { root, sub };
 }
 
-describe("Bug 1144 —— init 的祖先继承口径 = 加载器口径（不得死锁）", () => {
+describe("init 的祖先继承口径 = 加载器口径（不得死锁）", () => {
   it("加载器口径：本包 nudo 键形状非法 ⇒ **不继承**祖先配置（fail-closed）", () => {
     const { sub } = ancestorWithInvalidChild();
     // 加载器：本包的 nudo 键存在 ⇒ 截断祖先搜索 ⇒ 无配置
@@ -1649,20 +1649,20 @@ describe("Bug 1144 —— init 的祖先继承口径 = 加载器口径（不得�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 460 CLI：nudo:mock-invalid 严重度对齐文档（warning）
+// CLI：nudo:mock-invalid 严重度对齐文档（warning）
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 460 CLI：nudo:mock-invalid 严重度对齐文档（warning）", () => {
+describe("CLI：nudo:mock-invalid 严重度对齐文档（warning）", () => {
 /**
- * Bug 460 回归（CLI 面）：`nudo:mock-invalid` 的严重度在 **CLI 映射面**被
+ * 回归（CLI 面）：`nudo:mock-invalid` 的严重度在 **CLI 映射面**被
  * 无条件提到 error —— 与文档（reference/diagnostics.md#nudo-mock-invalid
  * 「**Warning**」、guides/check.md「nudo:mock-invalid | engine | warning」）
  * 和 service 侧（analyzer-orchestrate-uncached.ts 的 `isExpr ? "warning" : "error"`）
  * 都相反。
  *
  * 本文件锁三件事：
- *  ① `@nudo:mock` **表达式**解析失败 ⇒ warning（不再红门禁）；
- *  ② `@nudo:mock` **文件**缺失/加载失败仍是 error（不引入假绿）；
- *  ③ 负控制：同一文件里两条通道严重度一致（不再一 warning 一 error）。
+ * ① `@nudo:mock` **表达式**解析失败 ⇒ warning（不再红门禁）；
+ * ② `@nudo:mock` **文件**缺失/加载失败仍是 error（不引入假绿）；
+ * ③ 负控制：同一文件里两条通道严重度一致（不再一 warning 一 error）。
  */
 
 
@@ -1696,7 +1696,7 @@ type Json = {
   issues: { code: string; severity: string }[];
 };
 
-describe("Bug 460 CLI：nudo:mock-invalid 严重度对齐文档（warning）", () => {
+describe("CLI：nudo:mock-invalid 严重度对齐文档（warning）", () => {
   it("mock 表达式解析失败 ⇒ warning（不红门禁）", () => {
     const dir = fixture(MOCK_EXPR);
     try {
@@ -1744,11 +1744,11 @@ describe("Bug 460 CLI：nudo:mock-invalid 严重度对齐文档（warning）", (
 });
 
 // ---------------------------------------------------------------------------
-// Bug 468 CLI：nudo 键形状非法 ⇒ 报告面可见（不静默）
+// CLI：nudo 键形状非法 ⇒ 报告面可见（不静默）
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 468 CLI：nudo 键形状非法 ⇒ 报告面可见（不静默）", () => {
+describe("CLI：nudo 键形状非法 ⇒ 报告面可见（不静默）", () => {
 /**
- * Bug 468 / 936 回归（CLI 报告面）：package.json#nudo 键的**形状**问题
+ * 回归（CLI 报告面）：package.json#nudo 键的**形状**问题
  * （值不是对象 / 是假值）必须**在报告面可见**——service 侧只给 stderr 一行，
  * check / health 的报告面看不到 ⇒ 用户不知道自己写错了。
  *
@@ -1778,7 +1778,7 @@ function projectWithNudo(nudo: unknown): string {
   return dir;
 }
 
-describe("Bug 468 CLI：nudo 键形状非法 ⇒ 报告面可见（不静默）", () => {
+describe("CLI：nudo 键形状非法 ⇒ 报告面可见（不静默）", () => {
   it("check --json：config-shape warning 进 issues 段", () => {
     const dir = projectWithNudo(true);
     try {
@@ -1855,7 +1855,7 @@ describe("Bug 468 CLI：nudo 键形状非法 ⇒ 报告面可见（不静默）"
   });
 });
 
-describe("Bug 468/936 CLI：配置形状诊断是 live 事实（磁盘缓存不得留痕/重复）", () => {
+describe("CLI：配置形状诊断是 live 事实（磁盘缓存不得留痕/重复）", () => {
   it("缓存命中轮：config-shape 仍恰 1 条（不重复）", () => {
     const dir = projectWithNudo(true);
     try {
@@ -1928,11 +1928,11 @@ function collectCacheFiles(dir: string): string[] {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 638 — nudo.env 写成字符串：不展成逐字符 env 名列表（反向守护钉）
+// nudo.env 写成字符串：不展成逐字符 env 名列表（反向守护钉）
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 638 — nudo.env 写成字符串：不展成逐字符 env 名列表（反向守护钉）", () => {
+describe("nudo.env 写成字符串：不展成逐字符 env 名列表（反向守护钉）", () => {
 /**
- * Bug 638（**反向守护钉** · 报告说法的假阳性）：`package.json#nudo.env` 写成
+ * （**反向守护钉** · 报告说法的假阳性）：`package.json#nudo.env` 写成
  * **字符串**时，`nudo check` **不得**把它展成逐字符的 env 名列表。
  *
  * 报告原始描述：`packages/nudojs/src/commands/check.ts` 把 `package.json#nudo.env`
@@ -1944,23 +1944,23 @@ describe("[cli-] Bug 638 — nudo.env 写成字符串：不展成逐字符 env �
  *
  * HEAD 上的真实链路（两段守卫，缺一不可）：
  * 1. **配置层**（`packages/service/src/evaluator/config.ts` 的 `sanitizeProjectEnv`）：
- *    `nudo.env` 的值不是数组 ⇒ **整项丢弃**（回落空列表）+ 一条 stderr 提示
- *    （`has an invalid "nudo.env" value ("node"; expected an array of strings); ignoring it`）；
+ * `nudo.env` 的值不是数组 ⇒ **整项丢弃**（回落空列表）+ 一条 stderr 提示
+ * （`has an invalid "nudo.env" value ("node"; expected an array of strings); ignoring it`）；
  * 2. **消费层**（`packages/nudojs/src/commands/check.ts` 的 `projectEnvShapeIssue` +
- *    `Array.isArray(rawProjectEnv) ? rawProjectEnv : []`）：形状问题在**报告面**
- *    可见（诊断码 `config-shape`，与 468/936 的 `nudo` 键形状诊断同口径），
- *    消费点另有显式守卫 ⇒ 旧实现的 `projectEnvNames is not iterable` 裸崩
- *    （五个 verb 全崩）也已消失。
+ * `Array.isArray(rawProjectEnv) ? rawProjectEnv : []`）：形状问题在**报告面**
+ * 可见（诊断码 `config-shape`，与 468/936 的 `nudo` 键形状诊断同口径），
+ * 消费点另有显式守卫 ⇒ 旧实现的 `projectEnvNames is not iterable` 裸崩
+ * （五个 verb 全崩）也已消失。
  *
  * **为什么这条钉不是空转**（两头夹逼）：
  * - 若真被展成字符（`["n","o","d","e"]`），env 装载面会为**每个字符名**报一条
- *   `nudo:env-unresolved`（`unknown env name "n"` …，共 **4** 条）——
- *   本钉用「字符串 env ⇒ **0** 条」与「字符数组 env ⇒ 恰 **4** 条」夹逼，
- *   把「env 名列表**不是**逐字符」钉死；
+ * `nudo:env-unresolved`（`unknown env name "n"` …，共 **4** 条）——
+ * 本钉用「字符串 env ⇒ **0** 条」与「字符数组 env ⇒ 恰 **4** 条」夹逼，
+ * 把「env 名列表**不是**逐字符」钉死；
  * - 用「`env: ["node"]` ⇒ `Buffer` 可用」与「`env: "node"` ⇒ `Buffer` **不可用**
- *   （列表被忽略，env 侧不生效）」夹逼，把「env 列表被忽略」钉死；
+ * （列表被忽略，env 侧不生效）」夹逼，把「env 列表被忽略」钉死；
  * - env **无关**型代码在字符串 env 下**不得**产生 `nudo:unknown-inference`
- *   （被忽略的 env 不得制造假的推断失败告警）。
+ * （被忽略的 env 不得制造假的推断失败告警）。
  */
 
 
@@ -1993,7 +1993,7 @@ function count(haystack: string, needle: string): number {
   return haystack.split(needle).length - 1;
 }
 
-describe("Bug 638 — nudo.env 写成字符串：不展成逐字符 env 名列表（反向守护钉）", () => {
+describe("nudo.env 写成字符串：不展成逐字符 env 名列表（反向守护钉）", () => {
   it("字符串 env：不裸崩 + 人类面产出 config-shape 形状告警", () => {
     const { cwd, pkg } = makeProject('"node"', SRC_ENV_DEPENDENT);
     try {
@@ -2105,24 +2105,24 @@ describe("Bug 638 — nudo.env 写成字符串：不展成逐字符 env 名列�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 647 — 项目级 path env 按项目根解析（子目录文件也拿得到）
+// 项目级 path env 按项目根解析（子目录文件也拿得到）
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 647 — 项目级 path env 按项目根解析（子目录文件也拿得到）", () => {
+describe("项目级 path env 按项目根解析（子目录文件也拿得到）", () => {
 /**
- * Bug 647 — `package.json#nudo.env` 的**路径型**条目按**被分析文件所在目录**
+ * `package.json#nudo.env` 的**路径型**条目按**被分析文件所在目录**
  * 解析（不是项目根）⇒ **子目录**里的文件永远拿不到 env ⇒ **假红**
  * （`never` + `nudo:env-unresolved`）+ 误导诊断。
  *
  * 修法（族 18 片 4）：env 名装配**分层**（`assembleEnvs`）——
  * - **项目级**（package.json#nudo.env）按**项目根**解析（相对说明符先绝对化：
- *   收集期的查表基准是「最后一次 preload 的目录」，不绝对化则子目录文件必然
- *   查空）；
+ * 收集期的查表基准是「最后一次 preload 的目录」，不绝对化则子目录文件必然
+ * 查空）；
  * - **文件级**（`/// @nudo:env <path>`）按**本文件目录**解析；
  * - env 加载失败诊断按**各自**的基准过滤 ⇒ 不再报 check 面从未请求过的路径。
  *
  * oracle（改前 → 改后）：
- *   改前 `nudo check src/lib.js` ⇒ FAILED / `magic() => never` / env-unresolved
- *   改后 `nudo check src/lib.js` ⇒ OK / `magic() => 42` / 无 env 告警
+ * 改前 `nudo check src/lib.js` ⇒ FAILED / `magic() => never` / env-unresolved
+ * 改后 `nudo check src/lib.js` ⇒ OK / `magic() => 42` / 无 env 告警
  */
 
 
@@ -2168,7 +2168,7 @@ function project(): string {
   return dir;
 }
 
-describe("Bug 647 — 项目级 path env 按项目根解析（子目录文件也拿得到）", () => {
+describe("项目级 path env 按项目根解析（子目录文件也拿得到）", () => {
   it("子目录文件：拿到 env ⇒ magic() => 42、无 env 告警、exit 0", { timeout: 90_000 }, () => {
     const dir = project();
     const r = runCli(["check", join(dir, "src", "lib.js")]);
@@ -2209,11 +2209,11 @@ describe("Bug 647 — 项目级 path env 按项目根解析（子目录文件也
 });
 
 // ---------------------------------------------------------------------------
-// Bug 954 — --json 下用法错误也有机器可读信封（stdout 不得为空）
+// --json 下用法错误也有机器可读信封（stdout 不得为空）
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 954 — --json 下用法错误也有机器可读信封（stdout 不得为空）", () => {
+describe("--json 下用法错误也有机器可读信封（stdout 不得为空）", () => {
 /**
- * Bug 954：`nudo check --json` 下的**用法错误** ⇒ stdout 空 + exit 1
+ * `nudo check --json` 下的**用法错误** ⇒ stdout 空 + exit 1
  * （机器面 `JSON.parse(stdout)` 直接炸；且违反「exit 只由打印出的 ok 决定 /
  * 绝不出现空 stdout + 非零 exit」的机器面契约）。
  *
@@ -2240,7 +2240,7 @@ function makeProject(): { cwd: string; file: string } {
   return { cwd: dir, file };
 }
 
-describe("Bug 954 — --json 下用法错误也有机器可读信封（stdout 不得为空）", () => {
+describe("-json 下用法错误也有机器可读信封（stdout 不得为空）", () => {
   const cases: Array<{ name: string; args: (file: string) => string[] }> = [
     { name: "无路径", args: () => ["check", "--json"] },
     { name: "--json + --abs", args: (f) => ["check", f, "--json", "--abs"] },

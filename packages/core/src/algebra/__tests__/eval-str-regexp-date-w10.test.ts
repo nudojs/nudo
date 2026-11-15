@@ -2,15 +2,15 @@
  * Wave 10 回归：String.prototype / RegExp / Date 家族的实参强转 + 值域。
  * 覆盖 bug-report 24/29/42/52/57/62/69/72/75：
  * - new Date(v) ToPrimitive/ToNumber 校验（symbol/bigint 确定抛——node 实测
- *   new Date(1n) 抛 TypeError，与 bug 文本一致）；
+ * new Date(1n) 抛 TypeError，与 bug 文本一致）；
  * - new RegExp(pattern/flags) ToString 校验（symbol 确定抛；1n pattern 合法）；
  * - RegExp.prototype.test/exec subject ToString 校验（三派发面：evalRegExpMethod /
- *   execRegexBrand / $reStateCall）；
+ * execRegexBrand / $reStateCall）；
  * - String.prototype 搜索/替换/分隔/拼接/填充实参 + 位置实参（ToIntegerOrInfinity）
- *   + startsWith/endsWith/includes 的 IsRegExp 守卫；
+ * + startsWith/endsWith/includes 的 IsRegExp 守卫；
  * - localeCompare/normalize/substr/toLocaleUpperCase/toLocaleLowerCase/
- *   trimStart/trimEnd 值域建模（normalize 非法 form → RangeError；
- *   localeCompare 非法 language tag → RangeError、null → TypeError）；
+ * trimStart/trimEnd 值域建模（normalize 非法 form → RangeError；
+ * localeCompare 非法 language tag → RangeError、null → TypeError）；
  * - Date.prototype getter/setter/toString 族值域 + setter ToNumber 校验。
  * 基准：node v26 原生语义（native 是 ground truth）。
  * throws 面：definite NudoThrow → result=never + throws=TypeError；
@@ -64,7 +64,7 @@ function evalSrc(
   };
 }
 
-describe("Bug 24: new Date(v) argument coercion", () => {
+describe("new Date(v) argument coercion", () => {
   it("symbol/bigint values definite-throw TypeError (node: new Date(1n) throws)", () => {
     expect(throwsError(evalSrc(`export function f() { return new Date(Symbol()); }`).throws, "TypeError")).toBe(true);
     expect(throwsError(evalSrc(`export function f() { return new Date(1n); }`).throws, "TypeError")).toBe(true);
@@ -96,7 +96,7 @@ describe("Bug 24: new Date(v) argument coercion", () => {
   });
 });
 
-describe("Bug 29/52: new RegExp(pattern, flags) coercion", () => {
+describe("new RegExp(pattern, flags) coercion", () => {
   it("symbol pattern/flags definite-throw", () => {
     expect(throwsError(evalSrc(`export function f() { return new RegExp(Symbol()); }`).throws, "TypeError")).toBe(true);
     expect(throwsError(evalSrc(`export function f() { return new RegExp("a", Symbol()); }`).throws, "TypeError")).toBe(true);
@@ -116,7 +116,7 @@ describe("Bug 29/52: new RegExp(pattern, flags) coercion", () => {
   });
 });
 
-describe("Bug 57: RegExp.prototype.test/exec subject ToString", () => {
+describe("RegExp.prototype.test/exec subject ToString", () => {
   it("symbol subject definite-throws on all faces", () => {
     expect(throwsError(evalSrc(`export function f() { return /a/.test(Symbol()); }`).throws, "TypeError")).toBe(true);
     expect(throwsError(evalSrc(`export function f() { return /a/.exec(Symbol()); }`).throws, "TypeError")).toBe(true);
@@ -137,7 +137,7 @@ describe("Bug 57: RegExp.prototype.test/exec subject ToString", () => {
   });
 });
 
-describe("Bug 62: Date.prototype methods", () => {
+describe("Date.prototype methods", () => {
   it("setter symbol/bigint args definite-throw; abstract may-throw", () => {
     expect(throwsError(evalSrc(`export function f() { const d = new Date(); return d.setTime(Symbol()); }`).throws, "TypeError")).toBe(true);
     expect(throwsError(evalSrc(`export function f() { const d = new Date(); return d.setTime(1n); }`).throws, "TypeError")).toBe(true);
@@ -160,7 +160,7 @@ describe("Bug 62: Date.prototype methods", () => {
   });
 });
 
-describe("Bug 42: String.prototype arg coercion (search/replace/split/concat/pad/repeat)", () => {
+describe("String.prototype arg coercion (search/replace/split/concat/pad/repeat)", () => {
   it("symbol args definite-throw TypeError on every surface", () => {
     for (const src of [
       `export function f() { return "a".startsWith(Symbol()); }`,
@@ -207,7 +207,7 @@ describe("Bug 42: String.prototype arg coercion (search/replace/split/concat/pad
   });
 });
 
-describe("Bug 69: startsWith/endsWith/includes IsRegExp guard", () => {
+describe("startsWith/endsWith/includes IsRegExp guard", () => {
   it("RegExp argument definite-throws before ToString", () => {
     expect(throwsError(evalSrc(`export function f() { return "a".startsWith(/x/); }`).throws, "TypeError")).toBe(true);
     expect(throwsError(evalSrc(`export function f() { return "a".endsWith(/x/); }`).throws, "TypeError")).toBe(true);
@@ -221,7 +221,7 @@ describe("Bug 69: startsWith/endsWith/includes IsRegExp guard", () => {
   });
 });
 
-describe("Bug 72: localeCompare/normalize/substr/toLocale*/trim* value domain", () => {
+describe("localeCompare/normalize/substr/toLocale*/trim* value domain", () => {
   it("literal calls fold via host", () => {
     expect(evalSrc(`export function f() { return "abc".substr(-2); }`).value).toEqual({ ok: true, value: "bc" });
     expect(evalSrc(`export function f() { return "abc".substr(1); }`).value).toEqual({ ok: true, value: "bc" });
@@ -268,7 +268,7 @@ describe("Bug 72: localeCompare/normalize/substr/toLocale*/trim* value domain", 
   });
 });
 
-describe("Bug 75: position args ToIntegerOrInfinity validation", () => {
+describe("position args ToIntegerOrInfinity validation", () => {
   it("symbol/bigint position args definite-throw on every surface", () => {
     for (const src of [
       `export function f() { return "a".charAt(Symbol()); }`,

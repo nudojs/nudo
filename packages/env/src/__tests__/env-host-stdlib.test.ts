@@ -15,11 +15,11 @@ import { defineEnv as defineWebEnv } from "../web.ts";
 import { defineEnv as defineEnv_____es_ts } from "../es.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 1044 — node env 的静态 `Response.json` 返回域是 `Response`（不是 promise）
+// node env 的静态 `Response.json` 返回域是 `Response`（不是 promise）
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 1044 — node env 的静态 `Response.json` 返回域是 `Response`（不是 promise）", () => {
+describe("node env 的静态 `Response.json` 返回域是 `Response`（不是 promise）", () => {
 /**
- * 族 35 · Bug 1044 / 1047 / 1048 / 1049 —— env 成员表对齐（node / web 两 env）。
+ * 族 35 · —— env 成员表对齐（node / web 两 env）。
  *
  * 共同根因：env 的成员表是**手写**的 ⇒（a）**缺**成员 ⇒ 闭 obj 缺槽 ⇒ 成员读出
  * **exact `undefined`**（确定的错值）⇒ 调用即「确定抛 TypeError」⇒ **L2 门禁假红**
@@ -28,18 +28,18 @@ describe("[env-] Bug 1044 — node env 的静态 `Response.json` 返回域是 `R
  *
  * 四条各自的病灶（族 35 之前从未被任何批次处理过）：
  * - 1044：`packages/env/src/node.ts` 的 `Response` **静态面** `json` 返回域写成
- *   `promise<unknown>`（WHATWG Fetch / undici：静态 `Response.json` **同步**返回
- *   `Response`）；同表 `error` / `redirect` 都返回 `Response` ⇒ 表内不自洽。
+ * `promise<unknown>`（WHATWG Fetch / undici：静态 `Response.json` **同步**返回
+ * `Response`）；同表 `error` / `redirect` 都返回 `Response` ⇒ 表内不自洽。
  * - 1047：node env 的 `performance` 表只有 9 个槽，缺宿主真实存在的 6 个
- *   （`toJSON` / `clearResourceTimings` / `eventLoopUtilization` / `timerify` /
- *   `setResourceTimingBufferSize` / `nodeTiming`）；web env 同一对象早已补过前两个
- *   （Bug 862）⇒ 两 env 不对称。
+ * （`toJSON` / `clearResourceTimings` / `eventLoopUtilization` / `timerify` /
+ * `setResourceTimingBufferSize` / `nodeTiming`）；web env 同一对象早已补过前两个
+ * （）⇒ 两 env 不对称。
  * - 1048：node env 的 `navigator` 表缺 `locks`（Web Locks API，W3C 标准）⇒
- *   `navigator.locks` 读出 exact `undefined`，`navigator.locks.request(...)` 判
- *   「确定抛 TypeError」。
+ * `navigator.locks` 读出 exact `undefined`，`navigator.locks.request(...)` 判
+ * 「确定抛 TypeError」。
  * - 1049：web env 的 `crypto.subtle` 表只有 8 个键，缺 4 个标准 WebCrypto API
- *   （`deriveKey` / `deriveBits` / `wrapKey` / `unwrapKey`）；node env 同一对象
- *   早已声明前两个 ⇒ 两 env 自相矛盾。
+ * （`deriveKey` / `deriveBits` / `wrapKey` / `unwrapKey`）；node env 同一对象
+ * 早已声明前两个 ⇒ 两 env 自相矛盾。
  *
  * 修法：补齐缺失成员（**只补宿主实测存在的**）+ 宿主实测护栏（真 node 跑
  * `Object.getOwnPropertyNames` 对照 env 表）+ 同名对象两 env 同源。
@@ -56,7 +56,7 @@ describe("[env-] Bug 1044 — node env 的静态 `Response.json` 返回域是 `R
 /**
  * `performance` 原型面上**不建模**的宿主成员：
  * - `markResourceTiming`：宿主上以非法 cache 名调用**必抛**
- *   （`cache must be an empty string or 'local'`）⇒ 不是「普通可调用成员」。
+ * （`cache must be an empty string or 'local'`）⇒ 不是「普通可调用成员」。
  * - `onresourcetimingbufferfull`：事件回调**属性**（宿主上是 null），不是方法。
  */
 const PERFORMANCE_EXCLUDED = ["markResourceTiming", "onresourcetimingbufferfull"];
@@ -64,7 +64,7 @@ const PERFORMANCE_EXCLUDED = ["markResourceTiming", "onresourcetimingbufferfull"
 /**
  * `crypto.subtle` 原型面上**不建模**的宿主成员：node 后期量子（PQ）扩展
  * （`getPublicKey` / `encapsulate*` / `decapsulate*`）——**非 WebCrypto 标准**
- * ⇒ 浏览器没有；node env 本次也不建模（超出 Bug 1049 的标准 API 范围）
+ * ⇒ 浏览器没有；node env 本次也不建模（超出 的标准 API 范围）
  * ⇒ 记为已知偏差（见报告）。
  */
 const SUBTLE_EXCLUDED = [
@@ -90,7 +90,7 @@ function staticSlotNames(fn: Abs | undefined): string[] {
   return Object.keys((fn.shape as { slots?: Record<string, unknown> }).slots ?? {});
 }
 
-describe("Bug 1044 — node env 的静态 `Response.json` 返回域是 `Response`（不是 promise）", () => {
+describe("node env 的静态 `Response.json` 返回域是 `Response`（不是 promise）", () => {
   it("静态 `Response.json` 的返回域是 brand `Response`，且不是 promise", () => {
     const rt = returnTypeOf(staticSlotOf("Response", "json"));
     expect(rt, "Response.json 必须声明返回域").toBeTruthy();
@@ -129,7 +129,7 @@ describe("Bug 1044 — node env 的静态 `Response.json` 返回域是 `Response
   });
 });
 
-describe("Bug 1047 — node env 的 `performance` 补齐 6 个宿主真实成员", () => {
+describe("node env 的 `performance` 补齐 6 个宿主真实成员", () => {
   const SIX = [
     "toJSON",
     "clearResourceTimings",
@@ -184,7 +184,7 @@ describe("Bug 1047 — node env 的 `performance` 补齐 6 个宿主真实成员
   });
 });
 
-describe("Bug 1048 — node env 的 `navigator` 补 `locks`（Web Locks API）", () => {
+describe("node env 的 `navigator` 补 `locks`（Web Locks API）", () => {
   it("`navigator.locks` 被声明（不再是 exact undefined）", () => {
     const slot = nodeSlotOf("navigator", "locks");
     expect(slot, "navigator.locks").toBeTruthy();
@@ -229,7 +229,7 @@ describe("Bug 1048 — node env 的 `navigator` 补 `locks`（Web Locks API）",
   });
 });
 
-describe("Bug 1049 — web env 的 `crypto.subtle` 补 4 个标准 WebCrypto API", () => {
+describe("web env 的 `crypto.subtle` 补 4 个标准 WebCrypto API", () => {
   const FOUR = ["deriveKey", "deriveBits", "wrapKey", "unwrapKey"] as const;
 
   it("deriveKey / deriveBits / wrapKey / unwrapKey 被声明", () => {
@@ -337,11 +337,11 @@ describe("宿主护栏 —— 宿主实测成员名 ⊆ env 表成员名", () =>
 });
 
 // ---------------------------------------------------------------------------
-// Bug 883 — atob / btoa keep the host's InvalidCharacterError throws面
+// atob / btoa keep the host's InvalidCharacterError throws面
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 883 — atob / btoa keep the host's InvalidCharacterError throws面", () => {
+describe("atob / btoa keep the host's InvalidCharacterError throws面", () => {
 /**
- * 族 29 Bug 883 — `@nudo:env web` 的 `atob` / `btoa` 吞掉宿主的
+ * 族 29 `@nudo:env web` 的 `atob` / `btoa` 吞掉宿主的
  * `DOMException(InvalidCharacterError)` ⇒ 恒不抛 ⇒ **L2 门禁假绿**。
  *
  * 根因：web env 把宿主实现包在 `try/catch` 里（catch 分支 `return undefined`）
@@ -353,13 +353,13 @@ describe("[env-] Bug 883 — atob / btoa keep the host's InvalidCharacterError t
  * `InvalidCharacterError`）。
  *
  * 原生 oracle（node v26.10.0）：
- *   atob("!!!")  → THROW DOMException name=InvalidCharacterError
- *   btoa("✓")   → THROW DOMException name=InvalidCharacterError
- *   atob("YWJj") → "abc"
+ * atob("!!!") → THROW DOMException name=InvalidCharacterError
+ * btoa("✓") → THROW DOMException name=InvalidCharacterError
+ * atob("YWJj") → "abc"
  *
  * 反向钉：把 atob / btoa 加回 env 全局表 ⇒ 本文件必挂。
  */
-describe("Bug 883 — atob / btoa keep the host's InvalidCharacterError throws面", () => {
+describe("atob / btoa keep the host's InvalidCharacterError throws面", () => {
   it("atob / btoa are NOT declared in the web env (host fallback)", () => {
     expect(webEnvGlobals()["atob"]).toBeUndefined();
     expect(webEnvGlobals()["btoa"]).toBeUndefined();
@@ -391,11 +391,11 @@ describe("Bug 883 — atob / btoa keep the host's InvalidCharacterError throws�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 878 — Buffer 是构造器（new Buffer(...) 不再定抛 TypeError）
+// Buffer 是构造器（new Buffer(...) 不再定抛 TypeError）
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 878 — Buffer 是构造器（new Buffer(...) 不再定抛 TypeError）", () => {
+describe("Buffer 是构造器（new Buffer(...) 不再定抛 TypeError）", () => {
 /**
- * Bug 878 — node env 把 `Buffer` 声明成**普通对象**（不是构造器）⇒
+ * node env 把 `Buffer` 声明成**普通对象**（不是构造器）⇒
  * `new Buffer(...)` 被判**确定 TypeError** ⇒ L2 门禁对合法 Node 代码报 error
  * （假红，`nudo check` exit 1）。
  *
@@ -417,7 +417,7 @@ function check(src: string) {
   });
 }
 
-describe("Bug 878 — Buffer 是构造器（new Buffer(...) 不再定抛 TypeError）", () => {
+describe("Buffer 是构造器（new Buffer(...) 不再定抛 TypeError）", () => {
   it("原生 oracle：new Buffer(1) / new Buffer(\"ab\") 正常返回（仅弃用警告，不抛）", () => {
     expect(new Buffer(1).length).toBe(1);
     expect(new Buffer("ab").length).toBe(2);
@@ -448,11 +448,11 @@ describe("Bug 878 — Buffer 是构造器（new Buffer(...) 不再定抛 TypeErr
 });
 
 // ---------------------------------------------------------------------------
-// Bug 868 — Buffer 实例面补 byteLength / buffer / byteOffset
+// Buffer 实例面补 byteLength / buffer / byteOffset
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 868 — Buffer 实例面补 byteLength / buffer / byteOffset", () => {
+describe("Buffer 实例面补 byteLength / buffer / byteOffset", () => {
 /**
- * Bug 868 — env node：`Buffer` 实例面**缺 `byteLength` / `buffer` / `byteOffset`**
+ * env node：`Buffer` 实例面**缺 `byteLength` / `buffer` / `byteOffset`**
  * ⇒ 成员读出 **exact `undefined`**（真值分别是 `4` / `ArrayBuffer` / `0`）。
  *
  * 修法：Buffer 实例形状（packages/env/src/node.ts 的 `BufferInstance`）补三个
@@ -498,7 +498,7 @@ function check(src: string) {
   });
 }
 
-describe("Bug 868 — Buffer 实例面补 byteLength / buffer / byteOffset", () => {
+describe("Buffer 实例面补 byteLength / buffer / byteOffset", () => {
   it("原生 oracle：Buffer.alloc(4) 的三个成员是真值（不是 undefined）", () => {
     const b = Buffer.alloc(4);
     expect(b.byteLength).toBe(4);
@@ -531,11 +531,11 @@ describe("Bug 868 — Buffer 实例面补 byteLength / buffer / byteOffset", () 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 193 — Buffer has no isUtf8/transcode/constants statics
+// Buffer has no isUtf8/transcode/constants statics
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 193 — Buffer has no isUtf8/transcode/constants statics", () => {
+describe("Buffer has no isUtf8/transcode/constants statics", () => {
 /**
- * 族 15 · BUG-193 — node env 把**宿主上不存在**的 4 个成员声明成 `Buffer`
+ * 族 15 · node env 把**宿主上不存在**的 4 个成员声明成 `Buffer`
  * 类的**静态**成员（`compareBuffers` / `isUtf8` / `transcode` / `constants`）。
  *
  * 宿主真值：`typeof Buffer.isUtf8 === "undefined"`（它们是 `node:buffer` 的
@@ -550,7 +550,7 @@ function host(script: string): string {
   return execFileSync(process.execPath, ["-e", script], { encoding: "utf-8" }).trim();
 }
 
-describe("Bug 193 — Buffer has no isUtf8/transcode/constants statics", () => {
+describe("Buffer has no isUtf8/transcode/constants statics", () => {
   it("host oracle: the four names are not Buffer statics (they are module exports)", () => {
     const out = host(`
       const b = require("node:buffer");
@@ -599,11 +599,11 @@ describe("Bug 193 — Buffer has no isUtf8/transcode/constants statics", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 874 — Buffer 静态面补 of（不再定抛 TypeError）
+// Buffer 静态面补 of（不再定抛 TypeError）
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 874 — Buffer 静态面补 of（不再定抛 TypeError）", () => {
+describe("Buffer 静态面补 of（不再定抛 TypeError）", () => {
 /**
- * Bug 874 — node env 的**静态 `Buffer`** 面**没有 `of`** ⇒ `Buffer.of(1, 2)`
+ * node env 的**静态 `Buffer`** 面**没有 `of`** ⇒ `Buffer.of(1, 2)`
  * 必抛 TypeError ⇒ L2 门禁假红。
  *
  * 修法：静态面挂在 `Buffer` 这个 envFn 的 slots 上（packages/env/src/node.ts），
@@ -637,7 +637,7 @@ function check(src: string) {
   });
 }
 
-describe("Bug 874 — Buffer 静态面补 of（不再定抛 TypeError）", () => {
+describe("Buffer 静态面补 of（不再定抛 TypeError）", () => {
   it("原生 oracle：Buffer.of 存在且返回 Buffer（长度 2）", () => {
     expect(typeof Buffer.of).toBe("function");
     const b = Buffer.of(1, 2);
@@ -666,24 +666,24 @@ describe("Bug 874 — Buffer 静态面补 of（不再定抛 TypeError）", () =>
 });
 
 // ---------------------------------------------------------------------------
-// Bug 885 · node:crypto 族有实参域 throws 面
+// node:crypto 族有实参域 throws 面
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 885 · node:crypto 族有实参域 throws 面", () => {
+describe("node:crypto 族有实参域 throws 面", () => {
 /**
- * Bug 885 — `@nudo:env node` 的 `node:crypto` 族**实参域抛错全缺** ⇒ L2 门禁**假绿**
+ * `@nudo:env node` 的 `node:crypto` 族**实参域抛错全缺** ⇒ L2 门禁**假绿**
  *（一次放行五个必抛入口）。
  *
  * 原生 oracle（Node v26.10.0 **独立进程**逐个实测，**不猜**）：
- *   createHash("nope")              ⇒ 抛 **Error**（"Digest method not supported"）
- *   createHash("sha256")            ⇒ 不抛
- *   randomBytes(-1)                 ⇒ 抛 **RangeError**（ERR_OUT_OF_RANGE；size ∈ [0, 2^31-1]）
- *   randomBytes(8)                  ⇒ 不抛
- *   randomInt(5, 1)                 ⇒ 抛 **RangeError**（ERR_OUT_OF_RANGE；max 必须 > min）
- *   randomInt(1, 5)                 ⇒ 不抛
- *   pbkdf2Sync("p","s",0,8,"sha256") ⇒ 抛 **RangeError**（iterations ∈ [1, 2^31-1]）
- *   pbkdf2Sync("p","s",1,8,"sha256") ⇒ 不抛
- *   timingSafeEqual(Buffer.alloc(1), Buffer.alloc(2))
- *                                    ⇒ 抛 **RangeError**（ERR_CRYPTO_TIMING_SAFE_EQUAL_LENGTH）
+ * createHash("nope") ⇒ 抛 **Error**（"Digest method not supported"）
+ * createHash("sha256") ⇒ 不抛
+ * randomBytes(-1) ⇒ 抛 **RangeError**（ERR_OUT_OF_RANGE；size ∈ [0, 2^31-1]）
+ * randomBytes(8) ⇒ 不抛
+ * randomInt(5, 1) ⇒ 抛 **RangeError**（ERR_OUT_OF_RANGE；max 必须 > min）
+ * randomInt(1, 5) ⇒ 不抛
+ * pbkdf2Sync("p","s",0,8,"sha256") ⇒ 抛 **RangeError**（iterations ∈ [1, 2^31-1]）
+ * pbkdf2Sync("p","s",1,8,"sha256") ⇒ 不抛
+ * timingSafeEqual(Buffer.alloc(1), Buffer.alloc(2))
+ * ⇒ 抛 **RangeError**（ERR_CRYPTO_TIMING_SAFE_EQUAL_LENGTH）
  *
  * 旧实现：五个入口全是 relation 面（**恒不抛**）⇒ 五个必抛入口一次放行（假绿）。
  *
@@ -715,7 +715,7 @@ function nativeErrorName(fn: () => unknown): string | undefined {
   }
 }
 
-describe("Bug 885 · node:crypto 族有实参域 throws 面", () => {
+describe("node:crypto 族有实参域 throws 面", () => {
   it("1. createHash：不支持的算法名 ⇒ 必抛 Error（旧实现恒不抛）", () => {
     expect(nativeErrorName(() => nodeCreateHash("nope"))).toBe("Error");
     const bad = callSite(cryptoMod.createHash!, [strLit("nope")]);
@@ -795,11 +795,11 @@ describe("Bug 885 · node:crypto 族有实参域 throws 面", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 125 — crypto.getRandomValues takes a TypedArray, returns it
+// crypto.getRandomValues takes a TypedArray, returns it
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 125 — crypto.getRandomValues takes a TypedArray, returns it", () => {
+describe("crypto.getRandomValues takes a TypedArray, returns it", () => {
 /**
- * 族 15 · BUG-125 — node env 的 `crypto.getRandomValues` 声明成
+ * 族 15 · node env 的 `crypto.getRandomValues` 声明成
  * `(unknown[]) => unknown[]`。
  *
  * 宿主真值：**只接受整数型 TypedArray**（数组字面量 ⇒ 定抛
@@ -815,7 +815,7 @@ function host(script: string): string {
   return execFileSync(process.execPath, ["-e", script], { encoding: "utf-8" }).trim();
 }
 
-describe("Bug 125 — crypto.getRandomValues takes a TypedArray, returns it", () => {
+describe("crypto.getRandomValues takes a TypedArray, returns it", () => {
   it("host oracle: array argument throws, TypedArray is returned by identity", () => {
     const out = host(`
       const a = new Uint8Array(4);
@@ -868,17 +868,17 @@ describe("Bug 125 — crypto.getRandomValues takes a TypedArray, returns it", ()
 });
 
 // ---------------------------------------------------------------------------
-// Bug 154 — Headers/FormData iterators are not arrays (both envs)
+// Headers/FormData iterators are not arrays (both envs)
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 154 — Headers/FormData iterators are not arrays (both envs)", () => {
+describe("Headers/FormData iterators are not arrays (both envs)", () => {
 /**
- * 族 15 · BUG-154 — `Headers` / `FormData` 的 `keys` / `values` / `entries`
+ * 族 15 · `Headers` / `FormData` 的 `keys` / `values` / `entries`
  * 在 WHATWG 规范里返回**迭代器**，不是数组。
  *
  * - node 面声明成 `arrOf(...)` ⇒ `Array.isArray(h.keys())` 折 **true**
- *   （宿主 false）、`k.length` 折 `number`（宿主 undefined）⇒ 自信的错值；
+ * （宿主 false）、`k.length` 折 `number`（宿主 undefined）⇒ 自信的错值；
  * - web 面声明成 `unknown` ⇒ 可迭代性分类落 "may" ⇒ `[...h.keys()]` 记
- *   may-throw TypeError ⇒ **假红**（挡住合法的 `for…of` / 展开）。
+ * may-throw TypeError ⇒ **假红**（挡住合法的 `for…of` / 展开）。
  *
  * 修法：两面统一为**迭代器面**（带 `@@iterator` 槽的 obj ⇒ core 判 total）。
  *
@@ -888,7 +888,7 @@ function host(script: string): string {
   return execFileSync(process.execPath, ["-e", script], { encoding: "utf-8" }).trim();
 }
 
-describe("Bug 154 — Headers/FormData iterators are not arrays (both envs)", () => {
+describe("Headers/FormData iterators are not arrays (both envs)", () => {
   it("host oracle: keys() is an Iterator, not an Array", () => {
     const out = host(`
       const h = new Headers({ a: "b" });
@@ -961,11 +961,11 @@ describe("Bug 154 — Headers/FormData iterators are not arrays (both envs)", ()
 });
 
 // ---------------------------------------------------------------------------
-// Bug 890 · env promise 必须带 rejected 通道（catch 臂是活代码）
+// env promise 必须带 rejected 通道（catch 臂是活代码）
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 890 · env promise 必须带 rejected 通道（catch 臂是活代码）", () => {
+describe("env promise 必须带 rejected 通道（catch 臂是活代码）", () => {
 /**
- * Bug 890（族 29 · S6）—— **env promise 的 rejected 通道**回归钉。
+ * （族 29 · S6）—— **env promise 的 rejected 通道**回归钉。
  *
  * 现象：env 造的 promise **没有 rejected 通道** ⇒ core 读成「**确定
  * fulfilled**」⇒ `catch` 臂被当成**死代码** ⇒ 引擎给出**确定的错值**
@@ -992,12 +992,12 @@ describe("[env-] Bug 890 · env promise 必须带 rejected 通道（catch 臂是
  *
  * ```ts
  * export function promiseOf(inner: Abs): Abs {
- *   return makeAbs(
- *     { k: "eff", eff: "promise", inner, rejected: unknown },
- *     undefined,
- *     undefined,
- *     "exact",
- *   );
+ * return makeAbs(
+ * { k: "eff", eff: "promise", inner, rejected: unknown },
+ * undefined,
+ * undefined,
+ * "exact",
+ * );
  * }
  * ```
  *
@@ -1056,7 +1056,7 @@ function sigOf(
 /** try/catch 模板：catch 臂的返回值 "boom" 是「catch 臂活」的探针 */
 const TRY_CATCH_BODY = (expr: string) => `try { ${expr} return "ok"; } catch (e) { return "boom"; }`;
 
-describe("Bug 890 · env promise 必须带 rejected 通道（catch 臂是活代码）", () => {
+describe("env promise 必须带 rejected 通道（catch 臂是活代码）", () => {
   describe("core 对照组（现在就绿——证明 core 侧无需改动）", () => {
     it("带 rejected 通道的 promise（executor fork）⇒ catch 臂活", () => {
       const src = `export async function use(c) {
@@ -1136,11 +1136,11 @@ export async function use() {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 884 — node env 不再声明 structuredClone（宿主 throws 面不再被遮蔽）
+// node env 不再声明 structuredClone（宿主 throws 面不再被遮蔽）
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 884 — node env 不再声明 structuredClone（宿主 throws 面不再被遮蔽）", () => {
+describe("node env 不再声明 structuredClone（宿主 throws 面不再被遮蔽）", () => {
 /**
- * Bug 884 — `@nudo:env node` 的**全局 `structuredClone`** **遮蔽**宿主内建 ⇒
+ * `@nudo:env node` 的**全局 `structuredClone`** **遮蔽**宿主内建 ⇒
  * 引擎改走 env 声明路径 ⇒ **throws 面整个消失** ⇒ 假绿（原生对不可克隆值抛
  * DataCloneError，引擎却说「不抛」）。
  *
@@ -1149,10 +1149,10 @@ describe("[env-] Bug 884 — node env 不再声明 structuredClone（宿主 thro
  *
  * 说明（勘误）：宿主路径曾把 structuredClone 的错误记成 **TypeError**（宿主
  * 实际抛 DOMException/DataCloneError）——那是 core 侧「宿主全局字面量守卫」
- * 的保守口径（Bug 288 / 750 家族），**不在本条范围**；本条只保证
+ * 的保守口径（ 家族），**不在本条范围**；本条只保证
  * 「throws 面不再消失」（假绿修掉）。
  *
- * Bug 288 落地后的探针口径（2026-10）：宿主路径已按**实参可克隆性**分档
+ * 落地后的探针口径（2026-10）：宿主路径已按**实参可克隆性**分档
  * ——可克隆实参（{ a: 1 } / 数组 / Date / Map…）**不记抛**（native 也不抛），
  * 不可克隆实参（函数 / Symbol / WeakMap / Promise）记 **DataCloneError**。
  * ⇒ 本文件的「throws 面还在不在」探针**必须用不可克隆实参**，否则会把
@@ -1172,7 +1172,7 @@ function check(src: string) {
   });
 }
 
-describe("Bug 884 — node env 不再声明 structuredClone（宿主 throws 面不再被遮蔽）", () => {
+describe("node env 不再声明 structuredClone（宿主 throws 面不再被遮蔽）", () => {
   it("原生 oracle：structuredClone 对不可克隆值抛错（不是恒不抛）", () => {
     expect(structuredClone({ a: 1 })).toEqual({ a: 1 });
     expect(() => structuredClone(Symbol("x"))).toThrow();
@@ -1184,7 +1184,7 @@ describe("Bug 884 — node env 不再声明 structuredClone（宿主 throws 面�
 
   it("引擎探针：带 node env 时 structuredClone 仍有 throws 面（假绿修掉）", () => {
     // 探针实参取**不可克隆**值（函数）：宿主对不可克隆值抛 DataCloneError ⇒
-    // throws 面必须存在（Bug 288 口径：可克隆实参不记抛，见下一例）。
+    // throws 面必须存在（口径：可克隆实参不记抛，见下一例）。
     const r = check(`export function s1() { return structuredClone(() => 1); }`);
     const sig = r.signatures[0];
     expect(sig, "无签名").toBeTruthy();
@@ -1209,11 +1209,11 @@ describe("Bug 884 — node env 不再声明 structuredClone（宿主 throws 面�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 886 — TextDecoder keeps core's precise RangeError
+// TextDecoder keeps core's precise RangeError
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 886 — TextDecoder keeps core's precise RangeError", () => {
+describe("TextDecoder keeps core's precise RangeError", () => {
 /**
- * 族 29 Bug 886 — web env 的 `TextDecoder` 声明**遮蔽** core 精确的 `RangeError`。
+ * 族 29 web env 的 `TextDecoder` 声明**遮蔽** core 精确的 `RangeError`。
  *
  * 根因：env 的 `TextDecoder` 只是一条**无 impl 的类型声明** ⇒ 引擎走 env 声明
  * 路径 ⇒ core 的 `makeTextDecoderAbs`（非法 encoding label ⇒ **RangeError**）
@@ -1229,7 +1229,7 @@ describe("[env-] Bug 886 — TextDecoder keeps core's precise RangeError", () =>
  *
  * 反向钉：把 `TextDecoder` 加回 env 全局表 ⇒ 本文件必挂。
  */
-describe("Bug 886 — TextDecoder keeps core's precise RangeError", () => {
+describe("TextDecoder keeps core's precise RangeError", () => {
   it("TextDecoder is NOT declared in the web env (it shadowed core's exact model)", () => {
     expect(webEnvGlobals()["TextDecoder"]).toBeUndefined();
   });
@@ -1262,31 +1262,31 @@ describe("Bug 886 — TextDecoder keeps core's precise RangeError", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 889 — TextEncoder / TextDecoder are classes, not plain functions
+// TextEncoder / TextDecoder are classes, not plain functions
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 889 — TextEncoder / TextDecoder are classes, not plain functions", () => {
+describe("TextEncoder / TextDecoder are classes, not plain functions", () => {
 /**
- * 族 29 Bug 889 — env 把 JS **类**（`TextEncoder` / `TextDecoder`）建模成普通
+ * 族 29 env 把 JS **类**（`TextEncoder` / `TextDecoder`）建模成普通
  * 可调用函数 ⇒ 不带 `new` 的调用被判「成功返回、恒不抛」⇒ **L2 门禁假绿**。
  *
  * 根因：`envFn` 的 facet 面只能表达「可 `new`」（`ctor: true`），**不能**表达
  * 「不可裸调」⇒ 声明侧把类与函数混为一谈：
- * - `new TextDecoder(...)` 走「fn 无 ctor ⇒ 记 may-throw」分支 ⇒ 假红（Bug 860）；
+ * - `new TextDecoder(...)` 走「fn 无 ctor ⇒ 记 may-throw」分支 ⇒ 假红（）；
  * - `TextDecoder(...)`（不写 `new`）走「普通 fn 可调」分支 ⇒ 恒不抛 ⇒ 假绿（本条）。
  *
  * 修法（已实测）：**删掉 web env 的 `TextEncoder` / `TextDecoder` 声明** ⇒
  * 回落宿主 ⇒ 裸调用记 TypeError、`new` 调用干净。
  *
  * 原生 oracle（node v26.10.0）：
- *   TextEncoder()          → TypeError: Class constructor TextEncoder cannot be
- *                            invoked without 'new'
- *   TextDecoder("utf-8")   → TypeError: Class constructor TextDecoder cannot be
- *                            invoked without 'new'
- *   new TextEncoder()      → OK
+ * TextEncoder() → TypeError: Class constructor TextEncoder cannot be
+ * invoked without 'new'
+ * TextDecoder("utf-8") → TypeError: Class constructor TextDecoder cannot be
+ * invoked without 'new'
+ * new TextEncoder() → OK
  *
  * 反向钉：把 TextEncoder / TextDecoder 加回 env 全局表 ⇒ 本文件必挂。
  */
-describe("Bug 889 — TextEncoder / TextDecoder are classes, not plain functions", () => {
+describe("TextEncoder / TextDecoder are classes, not plain functions", () => {
   it("TextEncoder / TextDecoder are NOT declared in the web env", () => {
     expect(webEnvGlobals()["TextEncoder"]).toBeUndefined();
     expect(webEnvGlobals()["TextDecoder"]).toBeUndefined();
@@ -1322,11 +1322,11 @@ describe("Bug 889 — TextEncoder / TextDecoder are classes, not plain functions
 });
 
 // ---------------------------------------------------------------------------
-// Bug 864 · URI 族不再吞掉 URIError（es env）
+// URI 族不再吞掉 URIError（es env）
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 864 · URI 族不再吞掉 URIError（es env）", () => {
+describe("URI 族不再吞掉 URIError（es env）", () => {
 /**
- * 族 29 · Bug 864 —— es env 的 URI 族（`decodeURI` / `decodeURIComponent` /
+ * 族 29 · es env 的 URI 族（`decodeURI` / `decodeURIComponent` /
  * `encodeURI` / `encodeURIComponent`）**吞掉 URIError** ⇒ 引擎判「不抛」
  * ⇒ L2 `nudo:entry-may-throw` 门禁失效（**假绿**）。
  *
@@ -1335,11 +1335,11 @@ describe("[env-] Bug 864 · URI 族不再吞掉 URIError（es env）", () => {
  * **委托 core 的 `evalGlobalFn`**（= 宿主回落路径的同一建模），
  * - 字面量实参：畸形 % 序列 / 孤立代理项 ⇒ **always-throw URIError**；
  * - 抽象实参：回落**声明域** `string`（**不**折原生产不出的自信精确字面量），
- *   decode* 记 **may-throw URIError**（与无 env 的宿主路径同口径）。
+ * decode* 记 **may-throw URIError**（与无 env 的宿主路径同口径）。
  *
  * 断言双向：
  * - 正向：畸形入参 ⇒ 记 URIError（门禁红）；合法入参 ⇒ **不**抛（不误红）；
- *   抽象入参 ⇒ 值面是 `string` 声明域（不是自信精确字面量）。
+ * 抽象入参 ⇒ 值面是 `string` 声明域（不是自信精确字面量）。
  * - 反向：把 URI 族改回旧的「吞异常」实现 ⇒ 本文件必须失败。
  */
 
@@ -1365,7 +1365,7 @@ function mayThrowMessages(r: CheckResult): string[] {
   return r.issues.filter((i) => i.code === "nudo:entry-may-throw").map((i) => i.message);
 }
 
-describe("Bug 864 · URI 族不再吞掉 URIError（es env）", () => {
+describe("URI 族不再吞掉 URIError（es env）", () => {
   it("1. 畸形 % 序列 ⇒ 记 URIError（原生恒抛，门禁必须红）", () => {
     const cases: Array<[string, string]> = [
       ["decodeURI", 'decodeURI("%")'],

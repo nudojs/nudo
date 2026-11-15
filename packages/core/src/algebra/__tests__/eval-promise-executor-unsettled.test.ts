@@ -13,9 +13,9 @@
  * - 两臂全 settle（resolve×reject / 嵌套）→ 精确两通道，无 unsettled
  * - 同路径顺序双 settle → first-wins 不变
  * - `while (c) { r(1); } r(2);` → 确定 1|2（体臂 settle + 出口臂被
- *   post-loop settle 覆盖——原生同款）；`while (true) { r(1); }` → 确定 1
+ * post-loop settle 覆盖——原生同款）；`while (true) { r(1); }` → 确定 1
  * - 退出臂（throw/return）延续被截断：join 后 settle 不在其路径 →
- *   `if (c) return; r(2);` 带 unsettled（原生 c 真时悬挂）
+ * `if (c) return; r(2);` 带 unsettled（原生 c 真时悬挂）
  */
 import { describe, it, expect } from "vitest";
 import { formatAbs, runTranspiled, callTranspiledExportFull } from "@nudojs/core";

@@ -1,5 +1,5 @@
 /**
- * BUG-009 回归：UpdateExpression（++/--）与复合赋值（+= / -=）同一约束代数。
+ * 回归：UpdateExpression（++/--）与复合赋值（+= / -=）同一约束代数。
  *
  * 回归背景：updateAddAbs/updateSubAbs 走 addNumeric/subNumeric 只保留数值面，
  * 丢 term/pred——`x>0` 上 `x++` 得裸 number，而 `x += 1` 走 arithmetic.add

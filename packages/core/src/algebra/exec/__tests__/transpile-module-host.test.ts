@@ -5,9 +5,9 @@
  * - 默认 esm target 与 transpileSource 逐字节一致（新增结构化 API 不得改发射）；
  * - runtimeImport: null / host target 不发射运行时 import 行；
  * - meta 从源 AST 回收 imports / 静态与显式导出名 / export * / default /
- *   顶层函数名 / 顶层声明名 / 顶层 this / ESM 形态；
+ * 顶层函数名 / 顶层声明名 / 顶层 this / ESM 形态；
  * - host target 直接发射 __nudoBindImport / __nudoBindNamespace /
- *   __nudoExport* ，不残留 import/export 语句（用 @babel/parser 校验）。
+ * __nudoExport* ，不残留 import/export 语句（用 @babel/parser 校验）。
  */
 import { describe, it, expect } from "vitest";
 import { parse } from "@babel/parser";

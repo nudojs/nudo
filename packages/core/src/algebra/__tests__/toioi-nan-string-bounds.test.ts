@@ -2,11 +2,11 @@
  * toIOI / fill / copyWithin 的 ToIntegerOrInfinity 回归。
  *
  * 回归背景：toIOI 对 string/bool 走 Math.trunc(Number(lv))，非数字字符串
- * （'abc'、'-'、'  ' 等）的 Number 为 NaN，trunc 后仍是 NaN——而规范
+ * （'abc'、'-'、' ' 等）的 Number 为 NaN，trunc 后仍是 NaN——而规范
  * ToIntegerOrInfinity(ToNumber(x)) 对 NaN 取 0。结果 fill/copyWithin 把
  * NaN 当窗口边界，比较全 false，整段 no-op 并仍折成 exact tuple：
- *   [1,2,3].fill(0, 'abc')          原生 [0,0,0]，引擎 [1,2,3]
- *   [1,2,3,4,5].copyWithin('abc',1) 原生 [2,3,4,5,5]，引擎 no-op
+ * [1,2,3].fill(0, 'abc') 原生 [0,0,0]，引擎 [1,2,3]
+ * [1,2,3,4,5].copyWithin('abc',1) 原生 [2,3,4,5,5]，引擎 no-op
  *
  * 同类排查：methods.ts toIntegerOrInfinityLit 已对 NaN→0；本文件钉住
  * containers.ts toIOI 同族漏网点（fill/copyWithin 共用）。

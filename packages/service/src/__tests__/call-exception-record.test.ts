@@ -1,5 +1,5 @@
 /**
- * BUG-008 service 侧回归：EvalCallRecord → CallRecord 桥。
+ * service 侧回归：EvalCallRecord → CallRecord 桥。
  * threw 时 result 位承载抛出 Abs（$callNamed / class.ts 同约定），
  * 桥后 throwsAbs 必须是非 never 载荷——不得落成 never+never 被
  * isLeakedCallRecord 判「泄漏」丢弃。
@@ -22,7 +22,7 @@ function collect(src: string, fnName: string): EvalCallRecord[] {
   return records;
 }
 
-describe("BUG-008: callRecordFromAbsCall keeps throw payload", () => {
+describe("callRecordFromAbsCall keeps throw payload", () => {
   it("custom throw payload → throwsAbs non-never, resultAbs never", () => {
     const records = collect(
       `

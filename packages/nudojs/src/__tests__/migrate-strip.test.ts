@@ -9,11 +9,11 @@ import { runCliTsx } from "./helpers/run-cli.ts";
 import { migrateStrip } from "../migrate.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 050: strip 不得写出仍是 TS 语法的 .js
+// strip 不得写出仍是 TS 语法的 .js
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 050: strip 不得写出仍是 TS 语法的 .js", () => {
+describe("strip 不得写出仍是 TS 语法的 .js", () => {
 /**
- * BUG-050 —— `nudo migrate strip --write` 写出 **Node 无法解析** 的 `.js`
+ * `nudo migrate strip --write` 写出 **Node 无法解析** 的 `.js`
  * 且 exit 0（非 `declare` 的 `namespace` / `import x = require(…)`）。
  *
  * 根因：命令层的 TS-only 构造清单（`tsOnlyConstructs`）**没有**
@@ -56,7 +56,7 @@ const IMPORT_EQUALS = `import fs = require("node:fs");
 export const readFile = (p: string): string => fs.readFileSync(p, "utf-8");
 `;
 
-describe("Bug 050: strip 不得写出仍是 TS 语法的 .js", () => {
+describe("strip 不得写出仍是 TS 语法的 .js", () => {
   it("非 declare 的 namespace ⇒ 拒绝写盘 + exit 1", () => {
     const dir = dirWith({ "ns.ts": NS });
     const r = runCliTsx(["migrate", "strip", "--write", dir]);
@@ -79,7 +79,7 @@ describe("Bug 050: strip 不得写出仍是 TS 语法的 .js", () => {
     const dir = dirWith({ "ns.ts": NS });
     const r = runCliTsx(["migrate", "strip", "--write", "--json", dir]);
     expect(r.status).toBe(1);
-    // BUG-017：`--json` 顶层形状恒为数组（信封是单元素数组）
+    // `--json` 顶层形状恒为数组（信封是单元素数组）
     const __env = JSON.parse(r.stdout) as Array<{
       ok?: boolean;
       pathErrors?: Array<{ path: string; message: string }>;
@@ -101,11 +101,11 @@ describe("Bug 050: strip 不得写出仍是 TS 语法的 .js", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1053 — strip 产物被 check 跳过（发布物零覆盖 ⇒ 假绿）
+// strip 产物被 check 跳过（发布物零覆盖 ⇒ 假绿）
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 1053 — strip 产物被 check 跳过（发布物零覆盖 ⇒ 假绿）", () => {
+describe("strip 产物被 check 跳过（发布物零覆盖 ⇒ 假绿）", () => {
 /**
- * Bug 1053 — `migrate strip --write` 之后**源 `.ts` 仍在** ⇒ `nudo check`
+ * `migrate strip --write` 之后**源 `.ts` 仍在** ⇒ `nudo check`
  * （= `migrate retire` 装上的 CI 门禁）**跳过同 stem 的产物 `.js`**
  * ⇒ 发布的产物零覆盖（**假绿**）；且与 `migrate verify` 对同一包给出
  * **相反结论**（verify 红 / check 绿）。
@@ -117,12 +117,12 @@ describe("[migrate-] Bug 1053 — strip 产物被 check 跳过（发布物零覆
  * **退役后不再被编译的死源**，真正发布出去的 `.js` 零覆盖。
  *
  * 修法：同 stem 冲突时**产物（发布物）胜出** ⇒ 门禁门禁**要发布的东西**；
- * 「一个模块 ⇒ 一次分析」的不变式（Bug 923）仍然成立（源被压掉，不是两份
+ * 「一个模块 ⇒ 一次分析」的不变式（）仍然成立（源被压掉，不是两份
  * 都分析 ⇒ 计数不翻倍）。
  *
  * 判据：
  * ① `strip --write` 后 `nudo check` **覆盖产物 `.js`**（能报出产物里的问题
- *    ⇒ 证明产物被检查了；且被分析的文件是 `.js` 而**不是** `.ts`）；
+ * ⇒ 证明产物被检查了；且被分析的文件是 `.js` 而**不是** `.ts`）；
  * ② **一致性**：`migrate verify` 与 `nudo check` 对同一包**结论一致**；
  * ③ 负控：普通项目（无同 stem 冲突）⇒ 目标集合**不变**；
  * ④ 负控：`migrate strip` **不带** `--write` ⇒ `.js` 未生成 ⇒ 行为不变。
@@ -198,7 +198,7 @@ function issueCodes(stdout: string): string[] {
   return (data.issues ?? []).map((i) => i.code ?? "");
 }
 
-describe("Bug 1053 — strip 产物被 check 跳过（发布物零覆盖 ⇒ 假绿）", () => {
+describe("strip 产物被 check 跳过（发布物零覆盖 ⇒ 假绿）", () => {
   it("① strip --write 后 check 覆盖同 stem 的产物 .js（报出产物里的问题）", { timeout: 180_000 }, () => {
     const dir = tmpPkg("nudo-migrate-bug-1053-");
     writeFileSync(join(dir, "src", "shapes.nudo.js"), SHAPES_NUDO_JS, "utf-8");
@@ -224,7 +224,7 @@ describe("Bug 1053 — strip 产物被 check 跳过（发布物零覆盖 ⇒ 假
     const files = analyzedFiles(check.stdout);
     expect(files).toHaveLength(1);
     expect(files[0]).toMatch(/index\.js$/);
-    // 一个模块 ⇒ 一次分析（Bug 923 的计数不变式不翻倍）
+    // 一个模块 ⇒ 一次分析（的计数不变式不翻倍）
     expect(files.filter((f) => f.endsWith("index.ts"))).toHaveLength(0);
   });
 
@@ -282,11 +282,11 @@ describe("Bug 1053 — strip 产物被 check 跳过（发布物零覆盖 ⇒ 假
 });
 
 // ---------------------------------------------------------------------------
-// Bug 574 — migrate strip --write 是原子的（无半写状态）
+// migrate strip --write 是原子的（无半写状态）
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 574 — migrate strip --write 是原子的（无半写状态）", () => {
+describe("migrate strip --write 是原子的（无半写状态）", () => {
 /**
- * Bug 574 — `migrate strip --write` 遇语法错文件时留下半写状态，且错误信息不含文件名。
+ * `migrate strip --write` 遇语法错文件时留下半写状态，且错误信息不含文件名。
  *
  * 根因：逐文件 read → strip → write（无事务），前一个文件已落盘、后一个失败不回滚；
  * 异常路径也不携带文件名（只有 Babel 的 "Unexpected token (2:12)"）。
@@ -311,7 +311,7 @@ afterAll(() => {
   for (const d of dirs) rmSync(d, { recursive: true, force: true });
 });
 
-describe("Bug 574 — migrate strip --write 是原子的（无半写状态）", () => {
+describe("migrate strip --write 是原子的（无半写状态）", () => {
   it("语法错文件 ⇒ 报错点名文件 + 一个字节都不落盘", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-bug-574-"));
     dirs.push(dir);
@@ -354,11 +354,11 @@ describe("Bug 574 — migrate strip --write 是原子的（无半写状态）", 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 575 — migrate strip --write 不覆盖既有的同名 .js
+// migrate strip --write 不覆盖既有的同名 .js
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 575 — migrate strip --write 不覆盖既有的同名 .js", () => {
+describe("migrate strip --write 不覆盖既有的同名 .js", () => {
 /**
- * Bug 575 — `migrate strip --write` 静默覆盖同目录既有的同名 `.js`（手写 JS 丢失）。
+ * `migrate strip --write` 静默覆盖同目录既有的同名 `.js`（手写 JS 丢失）。
  *
  * 根因：`foo.ts → foo.js` 是**不同文件** ⇒ 既有的存在性守卫完全失效；
  * 写目标前没有任何「目标已存在」的检查 ⇒ 手写的 `legacy()` 整段消失，exit 0。
@@ -379,7 +379,7 @@ afterAll(() => {
 const TS_SRC = `export function add(a: number, b: number): number { return a + b; }\n`;
 const HANDWRITTEN = `export function add(a, b) { return a + b; }\nexport function legacy() { return "hand-written"; }\n`;
 
-describe("Bug 575 — migrate strip --write 不覆盖既有的同名 .js", () => {
+describe("migrate strip --write 不覆盖既有的同名 .js", () => {
   it("既有 util.js ⇒ 拒绝写入并报错（exit 非 0），手写内容原样保留", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-bug-575-"));
     dirs.push(dir);
@@ -431,11 +431,11 @@ describe("Bug 575 — migrate strip --write 不覆盖既有的同名 .js", () =>
 });
 
 // ---------------------------------------------------------------------------
-// Bug 583 — migrate strip 不产出加载不了的 .jsx
+// migrate strip 不产出加载不了的 .jsx
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 583 — migrate strip 不产出加载不了的 .jsx", () => {
+describe("migrate strip 不产出加载不了的 .jsx", () => {
 /**
- * Bug 583 — `migrate strip` 把 `.tsx` 映射成 `.jsx`：Node 加载不了，且不被任何门禁分析。
+ * `migrate strip` 把 `.tsx` 映射成 `.jsx`：Node 加载不了，且不被任何门禁分析。
  *
  * 根因：扩展名映射断言了「产物是 JSX」，但 strip 的产品约束是「只剥类型」
  * （TS 剥除 ≠ 编译变换）——JSX 需要 JSX 变换才能变成可加载的 JS。
@@ -457,7 +457,7 @@ afterAll(() => {
 
 const TSX_SRC = `export function Comp(props: { name: string }) {\n  return <div className="x">{props.name}</div>;\n}\n`;
 
-describe("Bug 583 — migrate strip 不产出加载不了的 .jsx", () => {
+describe("migrate strip 不产出加载不了的 .jsx", () => {
   it(".tsx ⇒ 明确报错（不静默 exit 0），且不落任何产物", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-bug-583-"));
     dirs.push(dir);

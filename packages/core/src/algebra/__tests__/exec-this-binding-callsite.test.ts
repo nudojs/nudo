@@ -1,5 +1,5 @@
 /**
- * Bug 46（this 绑定调用点化）：成员调用的接收者注入此前由函数定义位点
+ * （this 绑定调用点化）：成员调用的接收者注入此前由函数定义位点
  * 决定——`{ bindThis: true }` 只盖对象字面量属性值位的函数表达式；
  * 赋值 RHS（o.get = function(){…}）/ 再赋值 / 计算键赋值的同一函数
  * 走通用路径无标记，$invoke 不传接收者 → $rawThis(this) 恒 undefined →
@@ -16,7 +16,7 @@ import { litValue } from "@nudojs/core";
 import { call } from "./eval-helpers.ts";
 import { diffBody } from "./differential/harness.ts";
 
-describe("Bug 46: 动态赋值方法的 this 绑定（成员调用注入接收者）", () => {
+describe("动态赋值方法的 this 绑定（成员调用注入接收者）", () => {
   it("o.get = function(){ return this.v; }; o.get() → 1（非 never/TypeError）", () => {
     const r = call(
       `export function f() { const o = {v:1}; o.get = function(){ return this.v; }; return o.get(); }`,
@@ -53,7 +53,7 @@ describe("Bug 46: 动态赋值方法的 this 绑定（成员调用注入接收�
   });
 });
 
-describe("Bug 46: 统一 thisVal 通道不回归既有面", () => {
+describe("统一 thisVal 通道不回归既有面", () => {
   it("对象方法 bindThis：o.get() / call / apply / bind 全注入", () => {
     const r = call(
       `export function f() { const o = {v:7, m(x){ return this.v + x; }}; return o.m(1) + o.m.call(o, 2) + o.m.apply(o, [3]) + o.m.bind(o)(4); }`,
@@ -116,7 +116,7 @@ describe("Bug 46: 统一 thisVal 通道不回归既有面", () => {
   });
 });
 
-describe("Bug 46: differential native 对照（隐式 return 体）", () => {
+describe("differential native 对照（隐式 return 体）", () => {
   const corpus = [
     `const o = {v:1}; o.get = function(){ return this.v; }; return o.get();`,
     `const o = {v:1}; const g = function(){ return this.v; }; o.get = g; return o.get();`,

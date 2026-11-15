@@ -1,10 +1,10 @@
 /**
  * 缺陷报告分册 06-module-boundary —— 模块边界与导出扫描（core 面回归）。
  *
- * 覆盖：Bug 6（CJS 默认导出形态进 L2 入口表）、Bug 51（同名 static 顶掉实例
- * 方法形参表 / @nudo:assume 锚定面）、Bug 61（`export const C = class {}`）、
- * Bug 64（未导出内部基类的继承方法）、Bug 89（`export { local as public }`
- * 别名说明符 → 导出槽）、Bug 90（ESM 对象字面量方法）、Bug 105（类方法普查
+ * 覆盖：（CJS 默认导出形态进 L2 入口表）、（同名 static 顶掉实例
+ * 方法形参表 / @nudo:assume 锚定面）、（`export const C = class {}`）、
+ * （未导出内部基类的继承方法）、（`export { local as public }`
+ * 别名说明符 → 导出槽）、（ESM 对象字面量方法）、（类方法普查
  * 只认 Identifier 键）。
  *
  * core 侧钉的是三张表（localNamedExports / listTopFunctions /
@@ -40,9 +40,9 @@ beforeEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 6 — CJS 默认导出形态不在 L2 入口表 ⇒ 假绿
+// CJS 默认导出形态不在 L2 入口表 ⇒ 假绿
 // ---------------------------------------------------------------------------
-describe("Bug 6 — CJS 默认导出形态进 L2 入口表", () => {
+describe("CJS 默认导出形态进 L2 入口表", () => {
   const ANON_FN = "module.exports = function (user) { return user.name; };\n";
   const NAMED_FN = "module.exports = function getName(user) { return user.name; };\n";
   const CJS_CLASS =
@@ -84,9 +84,9 @@ describe("Bug 6 — CJS 默认导出形态进 L2 入口表", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 51 — 同名 static 顶掉实例方法形参表与 @nudo:assume 锚定面
+// 同名 static 顶掉实例方法形参表与 @nudo:assume 锚定面
 // ---------------------------------------------------------------------------
-describe("Bug 51 — 同名 static 方法不得顶掉实例方法", () => {
+describe("同名 static 方法不得顶掉实例方法", () => {
   const INST_FIRST = `export class C {
   m(x) { return "inst"; }
   static m(p, q) { return "stat"; }
@@ -126,9 +126,9 @@ describe("Bug 51 — 同名 static 方法不得顶掉实例方法", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 61 — export const C = class {} 的类表达式
+// export const C = class {} 的类表达式
 // ---------------------------------------------------------------------------
-describe("Bug 61 — 类表达式既不是入口也不是 dts 类", () => {
+describe("类表达式既不是入口也不是 dts 类", () => {
   const SRC = `export const C = class {
   constructor() { throw new TypeError("boom"); }
 };
@@ -151,9 +151,9 @@ export const D = class {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 64 — 未导出的内部基类：继承方法既不是 L2 入口也不进 dts
+// 未导出的内部基类：继承方法既不是 L2 入口也不进 dts
 // ---------------------------------------------------------------------------
-describe("Bug 64 — 内部基类继承方法进 L2 与导出名表", () => {
+describe("内部基类继承方法进 L2 与导出名表", () => {
   const SRC = `class Base {
   m() { throw new TypeError("boom"); }
   n() { return 1; }
@@ -179,9 +179,9 @@ export class Derived extends Base {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 89 — export { local as public } 别名说明符
+// export { local as public } 别名说明符
 // ---------------------------------------------------------------------------
-describe("Bug 89 — 别名说明符映射到导出槽", () => {
+describe("别名说明符映射到导出槽", () => {
   const CLS_ALIAS = `class C { constructor() { throw new TypeError("ctor"); } m() { return 1; } }
 export { C as Other };
 `;
@@ -215,9 +215,9 @@ export { C as default };
 });
 
 // ---------------------------------------------------------------------------
-// Bug 90 — ESM export const api = { m(){} } 对象字面量方法
+// ESM export const api = { m(){} } 对象字面量方法
 // ---------------------------------------------------------------------------
-describe("Bug 90 — ESM 对象字面量方法与 CJS 同口径", () => {
+describe("ESM 对象字面量方法与 CJS 同口径", () => {
   const SRC = `export const api = {
   danger() { throw new TypeError("boom"); },
   safe() { return 1; },
@@ -239,9 +239,9 @@ describe("Bug 90 — ESM 对象字面量方法与 CJS 同口径", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 105 — 类方法普查只认 Identifier 键
+// 类方法普查只认 Identifier 键
 // ---------------------------------------------------------------------------
-describe("Bug 105 — 字符串 / 计算 / 数字键方法与 Identifier 键同口径", () => {
+describe("字符串 / 计算 / 数字键方法与 Identifier 键同口径", () => {
   it("static \"make\" / static [\"mk\"] / 7() 都进普查面与导出名表", () => {
     expect(listTopFunctions('export class C { static "make"() { return 1; } }')).toContain(
       "C.make",

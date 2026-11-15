@@ -21,15 +21,15 @@ import { defaultLoadModule } from "../../load-module.ts";
 import { formatContractSurfaceLine, contractSurface } from "../contract-surface.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 435 —— dts 面的 default 导出名（四形态）
+// dts 面的 default 导出名（四形态）
 // ---------------------------------------------------------------------------
-describe("[] Bug 435 —— dts 面的 default 导出名（四形态）", () => {
+describe("dts 面的 default 导出名（四形态）", () => {
 /**
- * Bug 435 —— `nudo export --format dts` 把**具名 default 导出**投影成**具名导出**
+ * `nudo export --format dts` 把**具名 default 导出**投影成**具名导出**
  * ⇒ 产物声明了**运行时不存在的导出**（编译通过、运行时 `undefined`）+ 默认导入
  * 直接 **TS2349**。
  *
- * 现状：**假阳性** —— 症状已被族 15（Bug 514，commit `dde4b037`）修掉：
+ * 现状：**假阳性** —— 症状已被族 15（，commit `dde4b037`）修掉：
  * `service/src/emit/dts-generator.ts` 的 `projectFunctionDts` 显式按**模块面**
  * 取**导出名**（`export default function f(...)` 的导出名是 `default`，**不是**
  * `export declare function f`）。本钉把**四种 default 形态**的导出名钉死
@@ -69,7 +69,7 @@ function moduleDts(source: string, path = "/test/default-surface.js"): string {
   return projectModuleDts(surface, entries).lines.join("\n");
 }
 
-describe("Bug 435 —— dts 面的 default 导出名（四形态）", () => {
+describe("dts 面的 default 导出名（四形态）", () => {
   it("形态①：export default function named ⇒ 导出名是 default（不是具名导出）", () => {
     const dts = moduleDts(`export default function named(x) {
   return x + 1;
@@ -161,11 +161,11 @@ function helper(x) {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 437 — dts 面：静态与实例同名 ⇒ 类体里不重复声明成员
+// dts 面：静态与实例同名 ⇒ 类体里不重复声明成员
 // ---------------------------------------------------------------------------
-describe("[] Bug 437 — dts 面：静态与实例同名 ⇒ 类体里不重复声明成员", () => {
+describe("dts 面：静态与实例同名 ⇒ 类体里不重复声明成员", () => {
 /**
- * Bug 437 —— dts 面的**回归钉**（service 侧）。
+ * dts 面的**回归钉**（service 侧）。
  *
  * core 侧的类方法普查名不再让**静态方法与实例方法同名**时共用一个名字
  * （`scan-top-functions.ts` 的 `collectClassMethods`；service 侧
@@ -175,8 +175,8 @@ describe("[] Bug 437 — dts 面：静态与实例同名 ⇒ 类体里不重复�
  * dts 的正确形态（族 14/15 已把静态方法投影成 `static m(...)`）：
  * ```ts
  * export declare class C {
- *   m(x: any): unknown;          // 实例方法（普查面）
- *   static m(x: unknown): unknown; // 静态方法（源码面 class surface）
+ * m(x: any): unknown; // 实例方法（普查面）
+ * static m(x: unknown): unknown; // 静态方法（源码面 class surface）
  * }
  * ```
  * ⚠ 修名前多出来的那条 `m(x: any): unknown;`（静态方法被当成实例成员再投影一次）
@@ -222,7 +222,7 @@ const SAME_NAME = `export class C {
 }
 `;
 
-describe("Bug 437 — dts 面：静态与实例同名 ⇒ 类体里不重复声明成员", () => {
+describe("dts 面：静态与实例同名 ⇒ 类体里不重复声明成员", () => {
   it("普查面只有一条 C.m", () => {
     const result = analyzeFile("/test/b437.js", SAME_NAME);
     const names = result.functions.map((f) => f.name);
@@ -234,7 +234,7 @@ describe("Bug 437 — dts 面：静态与实例同名 ⇒ 类体里不重复声�
     expect(dts).toContain("export declare class C {");
     expect(dts).toMatch(/static m\(y: (any|unknown)\): unknown;/);
     // 实例成员 `m(...)` 只出现一次（重复的那条是静态方法被当成实例成员再投影）。
-    // Bug 39 补齐类方法入口兜底后返回类型从 unknown 变精确值，故不钉返回类型。
+    // 补齐类方法入口兜底后返回类型从 unknown 变精确值，故不钉返回类型。
     const instanceMembers = dts.match(/^\s*m\(x: (?:any|unknown)\): [^;]+;$/gm) ?? [];
     expect(instanceMembers.length).toBe(1);
   });
@@ -247,11 +247,11 @@ describe("Bug 437 — dts 面：静态与实例同名 ⇒ 类体里不重复声�
 });
 
 // ---------------------------------------------------------------------------
-// BUG-156 — zod 必须真的校验 __proto__ 槽
+// zod 必须真的校验 __proto__ 槽
 // ---------------------------------------------------------------------------
-describe("[] BUG-156 — zod 必须真的校验 __proto__ 槽", () => {
+describe("zod 必须真的校验 __proto__ 槽", () => {
 /**
- * BUG-156 —— zod 产物面把 `__proto__` 槽发布成**必填字段**，但 **zod v4 在 shape
+ * zod 产物面把 `__proto__` 槽发布成**必填字段**，但 **zod v4 在 shape
  * 阶段整条跳过该键**（`if (key === "__proto__") continue;`）⇒ 声明的字段**从不被
  * 校验** ⇒ 违约值被静默放行（假绿）+ 与 dts / guard / standard 四面矛盾 +
  * 零 dropped 台账。
@@ -292,7 +292,7 @@ const missing = (): Record<string, unknown> => ({ own: 2 });
 /** 违约形态 ②：`__proto__` 值错 */
 const wrongValue = (): Record<string, unknown> => JSON.parse('{"__proto__": {"z": 1}, "own": 2}');
 
-describe("BUG-156 — zod 必须真的校验 __proto__ 槽", () => {
+describe("zod 必须真的校验 __proto__ 槽", () => {
   it("shape 里不再出现 __proto__ 键（zod v4 会跳过它 ⇒ 声明了也不校验）", () => {
     const source = absToSchemaSource(protoObj());
     expect(source).not.toContain('["__proto__"]:');
@@ -344,11 +344,11 @@ describe("BUG-156 — zod 必须真的校验 __proto__ 槽", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-169: TS 可选形参进三个产物面（可省性 ≡ 源码）
+// TS 可选形参进三个产物面（可省性 ≡ 源码）
 // ---------------------------------------------------------------------------
-describe("[] BUG-169: TS 可选形参进三个产物面（可省性 ≡ 源码）", () => {
+describe("TS 可选形参进三个产物面（可省性 ≡ 源码）", () => {
 /**
- * BUG-169 —— TS **可选形参** `b?: T` 的 `?` 标记在 dts / zod / standard 三面
+ * TS **可选形参** `b?: T` 的 `?` 标记在 dts / zod / standard 三面
  * 全部丢失：`.d.ts` 把 `b` 印成必填（消费端 **TS2554**），运行时校验器对源码
  * 合法的 `f({ a: 1 })` 报 `required: b`（**假红**）。
  *
@@ -387,7 +387,7 @@ function formalsOf(name: string): Array<[string, boolean | undefined]> {
   return (fn.formals ?? []).map((f) => [f.kind, f.optional]);
 }
 
-describe("BUG-169: TS 可选形参进三个产物面（可省性 ≡ 源码）", () => {
+describe("TS 可选形参进三个产物面（可省性 ≡ 源码）", () => {
   it("数据源：FormalParam.optional ≡ 源码（JS 默认值 ∪ TS `?`）", () => {
     expect(formalsOf("f")).toEqual([
       ["id", false],
@@ -455,20 +455,20 @@ describe("BUG-169: TS 可选形参进三个产物面（可省性 ≡ 源码）",
 });
 
 // ---------------------------------------------------------------------------
-// BUG-191: export namespace 进入导出面与 .d.ts
+// export namespace 进入导出面与 .d.ts
 // ---------------------------------------------------------------------------
-describe("[] BUG-191: export namespace 进入导出面与 .d.ts", () => {
+describe("export namespace 进入导出面与 .d.ts", () => {
 /**
- * BUG-191 —— `export namespace NS { … }` 在导出面 / dts 产物**完全不可见**，
+ * `export namespace NS { … }` 在导出面 / dts 产物**完全不可见**，
  * 而 nudo 自己的求值器把 namespace 物化成了运行时对象 ⇒ 引擎内部两套导出面
  * 互相矛盾 ⇒ 消费端 `import { NS }` 报 **TS2305**。
  *
  * 根因（两处平行缺口）：
  * - `packages/core/src/algebra/scan-named-exports.ts` 的 `ExportNamedDeclaration`
- *   声明分支只认 Function / Class / Variable ⇒ `TSModuleDeclaration` 落到
- *   `continue` 被静默丢弃；
+ * 声明分支只认 Function / Class / Variable ⇒ `TSModuleDeclaration` 落到
+ * `continue` 被静默丢弃；
  * - `dts-generator.ts` 的模块面导出名表与声明发射同款缺口 ⇒ 即使导出面登记
- *   了，`.d.ts` 里也没有 `NS`。
+ * 了，`.d.ts` 里也没有 `NS`。
  *
  * 本钉钉死三件事：导出面含 NS（及成员键）、dts 导出名表含 NS、`.d.ts` 里
  * 真的有 `export declare namespace NS { … }`（消费端 import 才不报 TS2305）。
@@ -505,7 +505,7 @@ function moduleDts(source: string, path = "/test/namespace.ts"): string {
   return projectModuleDts(surface, entries).lines.join("\n");
 }
 
-describe("BUG-191: export namespace 进入导出面与 .d.ts", () => {
+describe("export namespace 进入导出面与 .d.ts", () => {
   it("导出面（check 入口表 / 侧车绑定 / dts 裁剪同源）含 NS 与其运行时成员键", () => {
     const names = localNamedExports(SRC);
     expect(names.has("NS")).toBe(true);
@@ -541,14 +541,14 @@ describe("BUG-191: export namespace 进入导出面与 .d.ts", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 240 —— 产物面不得发布 internal 槽
+// 产物面不得发布 internal 槽
 // ---------------------------------------------------------------------------
-describe("[] Bug 240 —— 产物面不得发布 internal 槽", () => {
+describe("产物面不得发布 internal 槽", () => {
 /**
- * Bug 240 —— service **产物面**不得发布 internal 槽（私有字段 / 生成器协议槽）。
+ * service **产物面**不得发布 internal 槽（私有字段 / 生成器协议槽）。
  *
  * 改前：
- *   export declare function f(x: { a: number; "#priv": number; "@@iterator": number }): number;
+ * export declare function f(x: { a: number; "#priv": number; "@@iterator": number }): number;
  * ⇒ 形参位把内部槽当**用户可见字段**直出：`widenParamAbs` 造新槽时丢了
  * `internal` / `symbolKey` 标记 ⇒ 内部槽被"提权"成可见字段（`"#priv"` 是私有
  * 字段、`"@@iterator"` 是 **symbol 键**协议槽——按字符串键发布是错的）。
@@ -629,7 +629,7 @@ function moduleDts(source: string, fn: unknown): string {
   return projectModuleDts(surface, [{ fn: typed, projection }]).lines.join("\n");
 }
 
-describe("Bug 240 —— 产物面不得发布 internal 槽", () => {
+describe("产物面不得发布 internal 槽", () => {
   it("dts 形参位：内部槽不进结构字段（改前：\"#priv\" / \"@@iterator\" 直出）", () => {
     const dts = moduleDts(
       `export function f(x) { return x; }\n`,
@@ -649,7 +649,7 @@ describe("Bug 240 —— 产物面不得发布 internal 槽", () => {
     expect(dts).toContain("declare class Counter");
     expect(dts).not.toContain("#priv");
     // 字段类型取**构造器形参域**（`this.v = v`，v 无约束 ⇒ unknown）——这是
-    // BUG-007 的口径：单个构造点的 brand 观测（这里的 fake brand 说 number）
+    // 的口径：单个构造点的 brand 观测（这里的 fake brand 说 number）
     // 不得把公开字段钉成比构造器签名更窄的类型。
     expect(dts).toContain("v: unknown");
   });
@@ -710,30 +710,30 @@ describe("Bug 240 —— 产物面不得发布 internal 槽", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 511 — 固化的无断言见证不独占返回面
+// 固化的无断言见证不独占返回面
 // ---------------------------------------------------------------------------
-describe("[] Bug 511 — 固化的无断言见证不独占返回面", () => {
-// emit--frozen-observation-type-face.part.ts — Bug 511：
+describe("固化的无断言见证不独占返回面", () => {
+// emit--frozen-observation-type-face.part.ts — 
 // `nudo test --freeze` 固化的**无断言**见证**接管了整个函数的返回面**
 // ⇒ zod / guard / dts 全变成「单次调用点字面量」，且与 `nudo check` 自相矛盾。
 //
 // 事实（探针 tmp/probe/fix-r25-s9/engine-511.ts 实测）：
-// | 源                                        | combinedAbs（返回面） | cases                        |
+// | 源 | combinedAbs（返回面） | cases |
 // |-------------------------------------------|-----------------------|------------------------------|
-// | 无指令（固化前）                          | `number \| string`     | `entry@L1[expected=no]`      |
-// | 固化后（**无断言**观测见证 `call@…`）      | **`3`**（单次调用点）  | `call@…[expected=no]`        |
-// | 手写断言 `@nudo:case "t" (1,2) => 3`      | `3`（合法）            | `t[expected=yes]`            |
+// | 无指令（固化前） | `number \| string` | `entry@L1[expected=no]` |
+// | 固化后（**无断言**观测见证 `call@…`） | **`3`**（单次调用点） | `call@…[expected=no]` |
+// | 手写断言 `@nudo:case "t" (1,2) => 3` | `3`（合法） | `t[expected=yes]` |
 //
 // 根因（**已由主 agent 在分析器侧闭环**）：
 // - `packages/service/src/analyzer-orchestrate-uncached.ts`
-//   无断言的**点观测**见证（实参全是字面量）不再是域声明 ⇒ 该函数仍走
-//   entry@/call@ 合成（`SynthCandidate.domainOnly` 隔离其调用点证据），
-//   返回面由**推断域**承担 ⇒ 见证不再独占返回面。
+// 无断言的**点观测**见证（实参全是字面量）不再是域声明 ⇒ 该函数仍走
+// entry@/call@ 合成（`SynthCandidate.domainOnly` 隔离其调用点证据），
+// 返回面由**推断域**承担 ⇒ 见证不再独占返回面。
 // - `packages/service/src/emit/domain-cases.ts`
-//   产物面（dts / zod / standard / guard）的域证据只吃「合成证据 +
-//   **带断言**的声明」；无断言的 case 指令是见证、不是域声明。
+// 产物面（dts / zod / standard / guard）的域证据只吃「合成证据 +
+// **带断言**的声明」；无断言的 case 指令是见证、不是域声明。
 // - `packages/nudojs/src/commands/export.ts`
-//   `fn.combinedAbs ?? caseResults[0]?.abs` 的兜底不再拿无断言的观测值当返回面。
+// `fn.combinedAbs ?? caseResults[0]?.abs` 的兜底不再拿无断言的观测值当返回面。
 //
 // ⇒ 本文件从「缺口钉」转为主门禁（`it.fails` 旗标已摘）。
 //
@@ -753,7 +753,7 @@ function faceOf(source: string): string {
   return fn?.combinedAbs ? formatShape(fn.combinedAbs) : "(none)";
 }
 
-describe("Bug 511 — 固化的无断言见证不独占返回面", () => {
+describe("固化的无断言见证不独占返回面", () => {
   it(
     "固化后的无断言观测见证不得独占返回面（返回面由推断域承担）",
     () => {
@@ -834,11 +834,11 @@ export function add(a, b) { return a + b; }
 // ---------------------------------------------------------------------------
 // dts 导出面（S1）
 // ---------------------------------------------------------------------------
-describe("[] dts 导出面（S1）", () => {
+describe("dts 导出面（S1）", () => {
 /**
  * dts 导出面 / 类投影 / 再导出面回归钉（族 15 · S1）。
  *
- * 覆盖 Bug 514（default / CJS 绑定被整类丢弃）、515（导出名 ≠ 局部绑定名）、
+ * 覆盖 （default / CJS 绑定被整类丢弃）、515（导出名 ≠ 局部绑定名）、
  * 517（brand 引用的类从未声明 ⇒ TS2304）、518（类方法被投影成模块级
  * `C_m` 导出 ⇒ 凭空造导出）、550（类本身 / 构造器 / 静态方法不进 dts）、
  * 939（再导出面 `export * from` / `export {x} from` 整类丢弃）。
@@ -945,7 +945,7 @@ export function makeUser(name) {
 `);
     expect(dts).not.toContain("C_m");
     expect(dts).not.toContain("export declare function C_m");
-    // Bug 39 补齐类方法入口兜底后返回类型从 unknown 变精确值，只钉形参与方法存在。
+    // 补齐类方法入口兜底后返回类型从 unknown 变精确值，只钉形参与方法存在。
     expect(dts).toMatch(/m\(x: (any|unknown)\): [^;]+;/);
   });
 
@@ -963,7 +963,7 @@ export function makeUser(name) {
 }
 `);
     expect(dts).toContain("export declare class C {");
-    // BUG-003：类形参无类型证据 ⇒ TS 投影面为 `unknown`（nudo any ≈ TS unknown）；
+    // 类形参无类型证据 ⇒ TS 投影面为 `unknown`（nudo any ≈ TS unknown）；
     // nudo 展示面仍显示 any（CLAUDE.md：入口无约束形参），两者作用域不同。
     expect(dts).toContain("constructor(v: unknown);");
     // 同上：实例方法返回类型精度随分析面提升，不钉死 unknown。
@@ -1093,22 +1093,22 @@ export function plain(x) {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 526 / 553 —— dts 顶层形参可选性来自声明形参表
+// —— dts 顶层形参可选性来自声明形参表
 // ---------------------------------------------------------------------------
-describe("[] Bug 526 / 553 —— dts 顶层形参可选性来自声明形参表", () => {
+describe("—— dts 顶层形参可选性来自声明形参表", () => {
 /**
- * Bug 526 / Bug 553 —— dts 顶层形参的**可选性**。
+ * / dts 顶层形参的**可选性**。
  *
  * 526：可选性取自「**观测到的调用元数**」而非**声明形参表** ⇒ 带**默认值**
- *      的形参在 `.d.ts` 里被渲染成**必填**（消费方 TS2554）。
+ * 的形参在 `.d.ts` 里被渲染成**必填**（消费方 TS2554）。
  * 553：同一根因的另一形态——实现签名里的默认参数被当成必填 ⇒
- *      `export declare function def(x: unknown): unknown;` ⇒ 消费方 `def()`
- *      报 TS2554 ⇒ 生成的 `.d.ts` **拒绝实现本身允许的调用**。
+ * `export declare function def(x: unknown): unknown;` ⇒ 消费方 `def()`
+ * 报 TS2554 ⇒ 生成的 `.d.ts` **拒绝实现本身允许的调用**。
  *
  * 修法：可选性来源改为
- *   ① 契约级（手写契约申报的调用域，权威；Bug 536）→
- *   ② 声明级（实现签名带默认值 ⇒ JS 语义可省略）→
- *   ③ 观测级（最短观测调用省略了该位）。
+ * ① 契约级（手写契约申报的调用域，权威；）→
+ * ② 声明级（实现签名带默认值 ⇒ JS 语义可省略）→
+ * ③ 观测级（最短观测调用省略了该位）。
  */
 
 
@@ -1140,7 +1140,7 @@ function tscNoEmit(files: Record<string, string>): { ok: boolean; stderr: string
   }
 }
 
-describe("Bug 526 / 553 —— dts 顶层形参可选性来自声明形参表", () => {
+describe("— dts 顶层形参可选性来自声明形参表", () => {
   it("带默认值的形参渲染成可选（无调用证据时也是）", () => {
     const source = `
 export function optNoEvidence(a, b = 2) { return a + b; }
@@ -1193,16 +1193,16 @@ export function need(a, b) { return a + b; }
 });
 
 // ---------------------------------------------------------------------------
-// Bug 543 / 560 —— dts 槽位可选性
+// —— dts 槽位可选性
 // ---------------------------------------------------------------------------
-describe("[] Bug 543 / 560 —— dts 槽位可选性", () => {
+describe("—— dts 槽位可选性", () => {
 /**
- * Bug 543 / Bug 560 —— dts 面的**对象槽可选性**渲染。
+ * / dts 面的**对象槽可选性**渲染。
  *
  * 症状（旧口径 `k: T | undefined`）：
  * - TS 里 `{ id: number | undefined }` 是「**键必需**、值可为 undefined」；
- *   「键可省略」只有 `k?: T` 能表达 ⇒ 投影比契约 / zod / standard / check
- *   四个面都**严**（one-way 投影不得更严 ⇒ 方向反了）。
+ * 「键可省略」只有 `k?: T` 能表达 ⇒ 投影比契约 / zod / standard / check
+ * 四个面都**严**（one-way 投影不得更严 ⇒ 方向反了）。
  * - 消费方按契约/zod 放行的值（缺可选键）在 `.d.ts` 下吃 TS2345 / TS2741。
  * - 同一份产物内部口径相反：顶层形参用 `?`，嵌套字段不用。
  *
@@ -1241,7 +1241,7 @@ function tscNoEmit(files: Record<string, string>): { ok: boolean; stderr: string
   }
 }
 
-describe("Bug 543 / 560 —— dts 槽位可选性", () => {
+describe("— dts 槽位可选性", () => {
   it("optional 槽渲染成 TS 可选属性 `k?: T`（不再是 `k: T | undefined`）", () => {
     const ts = absToTSType(objOf({ a: { value: num(), optional: true }, b: { value: str() } }));
     expect(ts).toBe("{ a?: number; b: string }");
@@ -1282,11 +1282,11 @@ describe("Bug 543 / 560 —— dts 槽位可选性", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 549: 必填槽存在性用 HasProperty 语义
+// 必填槽存在性用 HasProperty 语义
 // ---------------------------------------------------------------------------
-describe("[] Bug 549: 必填槽存在性用 HasProperty 语义", () => {
+describe("必填槽存在性用 HasProperty 语义", () => {
 /**
- * Bug 549 —— standard 面「必填槽存在性」用**自有属性**判定（假红）。
+ * standard 面「必填槽存在性」用**自有属性**判定（假红）。
  *
  * 修前：`Object.hasOwn(rec, key)` ⇒ 继承来的键被当成**缺键** ⇒ 运行时校验器
  * 比 zod 面与 dts 面（TS 结构类型）**都严** ⇒ 对类型系统接受的值报红。
@@ -1296,7 +1296,7 @@ describe("[] Bug 549: 必填槽存在性用 HasProperty 语义", () => {
  * TS 结构类型同口径。
  *
  * 负控制：`Object.prototype` 的污染键仍算**缺键**（原型污染不是真实槽）；
- * 「缺键 ≠ 显式 undefined」（BUG-018 语义）不回归。
+ * 「缺键 ≠ 显式 undefined」（语义）不回归。
  */
 
 
@@ -1313,7 +1313,7 @@ const shapeAbs = (): Abs =>
     "exact",
   );
 
-describe("Bug 549: 必填槽存在性用 HasProperty 语义", () => {
+describe("必填槽存在性用 HasProperty 语义", () => {
   it("库函数版：继承来的键算在场，真缺键报 required", () => {
     const { node } = absToSchemaNode(shapeAbs());
     expect(validateSchemaNode(node, { c: 1 }).issues).toBeUndefined();
@@ -1358,16 +1358,16 @@ describe("Bug 549: 必填槽存在性用 HasProperty 语义", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 554 —— 生成器 / 迭代器形态投影
+// 生成器 / 迭代器形态投影
 // ---------------------------------------------------------------------------
-describe("[] Bug 554 —— 生成器 / 迭代器形态投影", () => {
+describe("生成器 / 迭代器形态投影", () => {
 /**
- * Bug 554 —— dts 面把**生成器对象**的内部槽当**普通对象字段**直出。
+ * dts 面把**生成器对象**的内部槽当**普通对象字段**直出。
  *
  * 改前：
- *   export declare function gen(x: unknown):
- *     { 0: unknown; next: () => unknown; return: () => unknown;
- *       throw: () => unknown; constructor: GeneratorFunction; "@@iterator": () => unknown };
+ * export declare function gen(x: unknown):
+ * { 0: unknown; next: () => unknown; return: () => unknown;
+ * throw: () => unknown; constructor: GeneratorFunction; "@@iterator": () => unknown };
  * ⇒ 返回类型里**没有** `[Symbol.iterator]()` ⇒ 消费方 `for (const v of gen(1))`
  * 报 **TS2488**（生成的 `.d.ts` 拒绝实现本身允许的用法）。
  *
@@ -1411,7 +1411,7 @@ const generatorObj = (elements: Abs[], async = false): Abs =>
     "exact",
   );
 
-describe("Bug 554 —— 生成器 / 迭代器形态投影", () => {
+describe("生成器 / 迭代器形态投影", () => {
   it("同步生成器 → Generator<T>（元素类型取数字下标元素槽）", () => {
     expect(absToTSType(generatorObj([numLit(1)]))).toBe("Generator<number>");
   });
@@ -1475,11 +1475,11 @@ export function useGen() {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 559 — 契约面打印以声明形参表为骨架
+// 契约面打印以声明形参表为骨架
 // ---------------------------------------------------------------------------
-describe("[] Bug 559 — 契约面打印以声明形参表为骨架", () => {
+describe("契约面打印以声明形参表为骨架", () => {
 /**
- * Bug 559 —— 契约面打印面用**契约里的参数**冒充**函数的形参表**。
+ * 契约面打印面用**契约里的参数**冒充**函数的形参表**。
  *
  * 病灶：effective 档直接渲染 `eff.params`（**契约声明的参数**）⇒ 契约参数名
  * 冒充函数形参名（`fn({ zzz: … })` 印成 `(zzz: …)`），而 `nudo check` 的签名面
@@ -1534,7 +1534,7 @@ import { fn, number, string } from "@nudojs/core";
 export const scale = fn({ x: number().gt(0), y: string() }, number());
 `;
 
-describe("Bug 559 — 契约面打印以声明形参表为骨架", () => {
+describe("契约面打印以声明形参表为骨架", () => {
   it("契约参数绑不上形参时：形参表照旧、契约参数另列并显式标注", async () => {
     const root = makeFixture({ "lib.js": LIB_JS, "lib.nudo.js": MISMATCH_NUDO_JS });
     const file = join(root, "lib.js");

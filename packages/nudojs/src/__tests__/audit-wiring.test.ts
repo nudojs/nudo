@@ -1,5 +1,5 @@
 /**
- * 审计批次 2026-11-14 回归钉 · 接线 / 配置（BUG-010 / BUG-022）。
+ * 审计批次 2026-11-14 回归钉 · 接线 / 配置（/ ）。
  */
 import { describe, it, expect, afterAll } from "vitest";
 import { mkdirSync, mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
@@ -13,7 +13,7 @@ afterAll(() => {
   for (const d of dirs) rmSync(d, { recursive: true, force: true });
 });
 
-describe("audit 34 · 能力清单前缀归一化（BUG-010）", () => {
+describe("audit 34 · 能力清单前缀归一化（）", () => {
   it("清单里显式 allow 的带前缀内建不再被误判 denied", () => {
     expect(nodeModuleCapability("node:test/reporters")).toBe("allowed");
     expect(nodeModuleCapability("node:path")).toBe("allowed");
@@ -34,7 +34,7 @@ function makePkg(dir: string, name: string): void {
   );
 }
 
-describe("audit 34 · migrate retire --all 多目标（BUG-022）", () => {
+describe("audit 34 · migrate retire --all 多目标（）", () => {
   it("两个位置目标都被退役（一变量对照：无 --all 时也都要退役）", { timeout: 60000 }, () => {
     const root = mkdtempSync(join(tmpdir(), "nudo-audit-retire-"));
     dirs.push(root);

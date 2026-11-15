@@ -1,5 +1,5 @@
 /**
- * Bug 56：`Array.isArray(arguments)` 原生 false——arguments 对象不是数组
+ * `Array.isArray(arguments)` 原生 false——arguments 对象不是数组
  * exotic。修复：$arguments 产 brand "Arguments" 包 tuple 内层（isArray 在
  * 剥层前判定 false）；下标/长度/spread/for-of/Array.from 经委托与剥层
  * 保持精确。四条 Scope 变体（plain fn / method / apply 转发 / 空实参）+
@@ -13,7 +13,7 @@ function v(src: string, fnName = "f", args: unknown[] = []) {
   return litValue(call(src, fnName, args as never).result);
 }
 
-describe("Bug 56: Array.isArray(arguments) → false（非数组 exotic）", () => {
+describe("Array.isArray(arguments) → false（非数组 exotic）", () => {
   it("plain function：f(1, 2) → false", () => {
     expect(
       v(`export function f() { function g() { return Array.isArray(arguments); } return g(1, 2); }`),
@@ -51,7 +51,7 @@ describe("Bug 56: Array.isArray(arguments) → false（非数组 exotic）", () 
   });
 });
 
-describe("Bug 56 回归：arguments 使用面不因 brand 退化", () => {
+describe("回归：arguments 使用面不因 brand 退化", () => {
   it("arguments.length / arguments[i] 精确", () => {
     expect(v(`export function f() { function g(a, b) { return arguments.length; } return g(7, 8, 9); }`)).toEqual({ ok: true, value: 3 });
     expect(v(`export function f() { function g(a, b) { return arguments[1]; } return g(7, 8); }`)).toEqual({ ok: true, value: 8 });

@@ -11,24 +11,24 @@ import { checkWeb, webEnvGlobals, ctorFlagOf, instanceSlotOf, slotOf, displayOf 
 import { checkNode, instanceFaceOf, slotOfAbs } from "./env-member-tables-helpers.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 865 · ES 规范全局的「已被覆盖」判定
+// ES 规范全局的「已被覆盖」判定
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 865 · ES 规范全局的「已被覆盖」判定", () => {
+describe("ES 规范全局的「已被覆盖」判定", () => {
 /**
- * 族 29 · Bug 865 —— es env 未声明的 ES 规范全局被报「未被 Nudo 覆盖」，
+ * 族 29 · es env 未声明的 ES 规范全局被报「未被 Nudo 覆盖」，
  * 而**同一份报告**里引擎恰恰把它们推成了**精确值** —— 报告自相矛盾。
  *
  * 症状（`nudo test` 报告同屏）：
- *   `return BigInt(1);`                    → 签名 `() => 1n` + 警告「BigInt 未被覆盖」
- *   `return new Uint8Array(4).length;`     → 签名 `() => 4`  + 警告「Uint8Array 未被覆盖」
- *   `return escape("a b");`                → 签名 `() => "a%20b"` + 警告「escape 未被覆盖」
+ * `return BigInt(1);` → 签名 `() => 1n` + 警告「BigInt 未被覆盖」
+ * `return new Uint8Array(4).length;` → 签名 `() => 4` + 警告「Uint8Array 未被覆盖」
+ * `return escape("a b");` → 签名 `() => "a%20b"` + 警告「escape 未被覆盖」
  *
  * 根因（两条腿）：
  * ① `packages/env/src/es.ts` 的 globals 表只声明了 30 个全局；core **已精确
- *    建模**的一批 ES 规范全局（BigInt / TypedArray 族 / ArrayBuffer / DataView /
- *    AggregateError / RegExp / Intl / Map / Set / 弱引用族）**未声明**。
+ * 建模**的一批 ES 规范全局（BigInt / TypedArray 族 / ArrayBuffer / DataView /
+ * AggregateError / RegExp / Intl / Map / Set / 弱引用族）**未声明**。
  * ② `packages/service/src/eval-diagnostics.ts` 的 `KNOWN_GLOBALS` 是**手写**
- *    白名单，判据不是「引擎真实的建模能力」。
+ * 白名单，判据不是「引擎真实的建模能力」。
  *
  * 修法：① 补齐 es env 的 ES 规范全局声明（这些名字都在 core 的
  * `ENV_SHADOW_SKIP_GLOBALS` 里 ⇒ env 注入对它们无效 ⇒ 不会遮蔽宿主语义）；
@@ -38,7 +38,7 @@ describe("[env-] Bug 865 · ES 规范全局的「已被覆盖」判定", () => {
  *
  * 断言双向：
  * - 正向：core 已建模的全局**不再**被报「未被覆盖」；同一份报告里签名仍是
- *   精确值（不矛盾）；es env 声明面含这些全局。
+ * 精确值（不矛盾）；es env 声明面含这些全局。
  * - 反向：把 ① 或 ② 任一侧改回旧实现 ⇒ 本文件必须失败。
  */
 
@@ -100,7 +100,7 @@ const CORE_MODELED_ES_GLOBALS = [
  */
 const WEAKREF_EXCEPTION = "WeakRef";
 
-describe("Bug 865 · ES 规范全局的「已被覆盖」判定", () => {
+describe("ES 规范全局的「已被覆盖」判定", () => {
   it("1. es env 声明面含 core 已建模的 ES 规范全局", () => {
     const env = defineEnv();
     for (const name of CORE_MODELED_ES_GLOBALS) {
@@ -164,10 +164,10 @@ export function fU8() { return new Uint8Array(4).length; }`;
     // ① es env 声明面含 WeakRef（865 的 ① 已补）
     expect(defineEnv().globals[WEAKREF_EXCEPTION], "es env must declare WeakRef").toBeTruthy();
     // ② 裸用（不带 env）：core 的 `evalBuiltinNew` 有 `case "WeakRef"` ⇒
-    //    「已被覆盖」按 core 真实建模能力推导 ⇒ **不报**。
-    //    （原 S5 分片为保三条既有 service 钉而留的手写例外表已由主 agent 删除：
-    //    core 早已精确建模 WeakRef，那张例外表正是 Bug 865 要消灭的「手写白名单」
-    //    换了个地方继续写。三条 service 钉的样例全局已换成真正未建模的 `Atomics`。）
+    // 「已被覆盖」按 core 真实建模能力推导 ⇒ **不报**。
+    // （原 S5 分片为保三条既有 service 钉而留的手写例外表已由主 agent 删除：
+    // core 早已精确建模 WeakRef，那张例外表正是 要消灭的「手写白名单」
+    // 换了个地方继续写。三条 service 钉的样例全局已换成真正未建模的 `Atomics`。）
     const bare = collectEvalDiagnostics(
       `export function f() { return ${WEAKREF_EXCEPTION}; }`,
     ).builtinUnknown.map((b) => b.name);
@@ -190,18 +190,18 @@ export function fU8() { return new Uint8Array(4).length; }`;
 // ---------------------------------------------------------------------------
 // 族 62 · 第 5 条 —— env promise 的拒绝 reason 逐声明可见
 // ---------------------------------------------------------------------------
-describe("[env-] 族 62 · 第 5 条 —— env promise 的拒绝 reason 逐声明可见", () => {
+describe("族 62 · 第 5 条 —— env promise 的拒绝 reason 逐声明可见", () => {
 /**
  * 族 62 · env es / web 内建构造器与 brand 精度 —— 5 条精度债的钉。
  *
  * 本文件覆盖台账 5 条：
  * | # | 主题 | 本分片的落点 |
  * |---|------|----------------|
- * | 1 | Bug 332 Intl 子构造器**实例方法面** | **声明面**已建模（Collator / NumberFormat / DateTimeFormat）；运行时面由**族 65 · 第 4 条**补齐（core 的 `BUILTIN_BRAND_METHODS`）⇒ 旗标已摘、断言转正 |
- * | 2 | Bug 317 AggregateError 的 `errors` | 台账前提与原生**不符**（原生缺省实参**抛 TypeError**）⇒ 按原生钉；**不改**引擎行为 |
- * | 3 | Bug 316 Error 的 `cause` 槽 | 自有键已可判（正钉）；**继承**键由**族 65 · 第 5 条**收口（core 的 `errorBrandAbs`）⇒ 旗标已摘、断言转正 |
- * | 4 | Bug 318 / 329 类型化数组的**对象源**逐元素 ToNumber | 元素**值**面由**族 65 · 第 6 条**收口（core 的 `makeTypedArrayAbs`）⇒ 旗标已摘、断言转正 |
- * | 5 | Bug 890 env promise 的**拒绝 reason** | **env 侧真修**：逐声明给 reason（fetch / body 读取 / crypto.subtle / clipboard / Promise.reject） |
+ * | 1 | Intl 子构造器**实例方法面** | **声明面**已建模（Collator / NumberFormat / DateTimeFormat）；运行时面由**族 65 · 第 4 条**补齐（core 的 `BUILTIN_BRAND_METHODS`）⇒ 旗标已摘、断言转正 |
+ * | 2 | AggregateError 的 `errors` | 台账前提与原生**不符**（原生缺省实参**抛 TypeError**）⇒ 按原生钉；**不改**引擎行为 |
+ * | 3 | Error 的 `cause` 槽 | 自有键已可判（正钉）；**继承**键由**族 65 · 第 5 条**收口（core 的 `errorBrandAbs`）⇒ 旗标已摘、断言转正 |
+ * | 4 | 类型化数组的**对象源**逐元素 ToNumber | 元素**值**面由**族 65 · 第 6 条**收口（core 的 `makeTypedArrayAbs`）⇒ 旗标已摘、断言转正 |
+ * | 5 | env promise 的**拒绝 reason** | **env 侧真修**：逐声明给 reason（fetch / body 读取 / crypto.subtle / clipboard / Promise.reject） |
  *
  * 取证口径（原生 oracle，node v26.10.0）：
  * - `new AggregateError()` → **TypeError: undefined is not iterable**（不是 `[]`！）
@@ -476,10 +476,10 @@ describe("族 62 · 第 1 条 —— Intl 子构造器的实例方法面（声�
 describe("族 62 · 第 2 条 —— AggregateError 的 errors 面", () => {
   it("2.1 缺省实参 ⇒ 原生**抛 TypeError**（引擎同款：never + may-throw TypeError）", () => {
     // 原生 oracle（node v26.10.0）：
-    //   new AggregateError()          → TypeError: undefined is not iterable
-    //   new AggregateError(undefined) → TypeError: undefined is not iterable
+    // new AggregateError() → TypeError: undefined is not iterable
+    // new AggregateError(undefined) → TypeError: undefined is not iterable
     // ⇒ 台账「缺省时 errors 是 []」与原生**不符**（那是自信的错值 ⇒ 假绿：
-    //    会把真实的 TypeError 吞掉）。此处按原生钉，**不改**引擎行为。
+    // 会把真实的 TypeError 吞掉）。此处按原生钉，**不改**引擎行为。
     const display = sigOf(`export function f() { return new AggregateError().errors; }`);
     expect(display).toContain("never");
     const issues = issuesOf(`export function f() { return new AggregateError(); }`);
@@ -546,8 +546,8 @@ describe("族 62 · 第 4 条 —— 类型化数组的元素面", () => {
 
   it("对象源逐元素 ToNumber ⇒ 精确值（原生同款）", () => {
     // 原生 oracle（node v26.10.0）：
-    //   new Int8Array(["3"])[0]              → 3
-    //   new Int8Array([{valueOf: () => 1}])[0] → 1
+    // new Int8Array(["3"])[0] → 3
+    // new Int8Array([{valueOf: () => 1}])[0] → 1
     // 族 65 · 第 6 条：core 侧
     // `packages/core/src/algebra/builtins/error/binary.ts` 的
     // `makeTypedArrayAbs`——闭 tuple 源逐元素过 ToNumber / ToBigInt + 家族
@@ -561,11 +561,11 @@ describe("族 62 · 第 4 条 —— 类型化数组的元素面", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 161 — web browser constructors keep their brand
+// web browser constructors keep their brand
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 161 — web browser constructors keep their brand", () => {
+describe("web browser constructors keep their brand", () => {
 /**
- * 族 15 · BUG-161 — web env 的浏览器构造器返回**普通对象面**（无 brand）
+ * 族 15 · web env 的浏览器构造器返回**普通对象面**（无 brand）
  * ⇒ `instanceof` **恒假**、`constructor.name` 恒 `"Object"` ⇒ 与宿主**相反**
  * ⇒ 真实分支被消成死代码（假绿 + 自信的错值）。node env 同 API 全对。
  *
@@ -574,14 +574,14 @@ describe("[env-] Bug 161 — web browser constructors keep their brand", () => {
  * 反向钉：把 `EventInstance` 改回 `objAbs(eventSlots)` ⇒ 本文件必挂。
  *
  * ⚠️ `URLSearchParams` 例外：core 按 **brand 名**路由内建建模并**忽略** env
- * 的槽表（实测 `.get` 折 unknown，`env-bug-930` 回归）⇒ 暂不加 brand
+ * 的槽表（实测 `.get` 折 unknown，`env-` 回归）⇒ 暂不加 brand
  * （见 web.ts 的说明）。其余 12 个构造器均已带 brand。
  */
 function host(script: string): string {
   return execFileSync(process.execPath, ["-e", script], { encoding: "utf-8" }).trim();
 }
 
-describe("Bug 161 — web browser constructors keep their brand", () => {
+describe("web browser constructors keep their brand", () => {
   it("host oracle: instanceof is true and constructor.name is the class name", () => {
     const out = host(`
       const e = new Event("t");
@@ -649,11 +649,11 @@ describe("Bug 161 — web browser constructors keep their brand", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 860 — web browser constructors are constructible
+// web browser constructors are constructible
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 860 — web browser constructors are constructible", () => {
+describe("web browser constructors are constructible", () => {
 /**
- * 族 29 Bug 860 — web env 的浏览器构造器缺 `ctor: true`。
+ * 族 29 web env 的浏览器构造器缺 `ctor: true`。
  *
  * 根因：`packages/env/src/web.ts` 把浏览器构造器建模成普通可调用 fn（`Response`
  * 甚至是 `objAbs`）⇒ `$new` 走「obj 非构造器 ⇒ 硬 TypeError」或「fn 无 ctor ⇒
@@ -665,7 +665,7 @@ describe("[env-] Bug 860 — web browser constructors are constructible", () => 
  *
  * 反向钉：把 `ctor: true` 去掉（或把 Response 改回 objAbs）⇒ 本文件必挂。
  */
-describe("Bug 860 — web browser constructors are constructible", () => {
+describe("web browser constructors are constructible", () => {
   const CTORS = [
     "Request",
     "Response",
@@ -717,11 +717,11 @@ describe("Bug 860 — web browser constructors are constructible", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 870 — web browser globals are declared
+// web browser globals are declared
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 870 — web browser globals are declared", () => {
+describe("web browser globals are declared", () => {
 /**
- * 族 29 Bug 870 — env web 的浏览器全局清单缺项 ⇒ **定抛 ReferenceError**（假红）。
+ * 族 29 env web 的浏览器全局清单缺项 ⇒ **定抛 ReferenceError**（假红）。
  *
  * 根因：env 的 `globals` 表未收录这些浏览器全局 ⇒ 未声明的名字在引擎里是
  * **未绑定** ⇒ 读它 = ReferenceError ⇒ L2 门禁对合法浏览器代码报 error，
@@ -735,7 +735,7 @@ describe("[env-] Bug 870 — web browser globals are declared", () => {
  *
  * 反向钉：从 `web.ts` 的 globals 表删掉任一个 ⇒ 本文件必挂。
  */
-describe("Bug 870 — web browser globals are declared", () => {
+describe("web browser globals are declared", () => {
   const GLOBALS = [
     "alert",
     "screen",
@@ -743,7 +743,7 @@ describe("Bug 870 — web browser globals are declared", () => {
     "XMLHttpRequest",
     "Worker",
     "FileReader",
-    // 扩围（Bug 865 段）：另 5 个真实存在的浏览器全局
+    // 扩围（段）：另 5 个真实存在的浏览器全局
     "matchMedia",
     "IntersectionObserver",
     "getComputedStyle",
@@ -821,11 +821,11 @@ describe("Bug 870 — web browser globals are declared", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 862 — document / performance member tables are complete
+// document / performance member tables are complete
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 862 — document / performance member tables are complete", () => {
+describe("document / performance member tables are complete", () => {
 /**
- * 族 29 Bug 862 — web env 的 `document` / `performance` 成员表不完整。
+ * 族 29 web env 的 `document` / `performance` 成员表不完整。
  *
  * 根因：env 的成员表是**手写白名单**；漏掉的成员在引擎里不是「不知道」，而是
  * 「**确定是 undefined**」（闭 obj 缺槽机制）⇒ 调用即「确定抛 TypeError」⇒
@@ -837,7 +837,7 @@ describe("[env-] Bug 862 — document / performance member tables are complete",
  *
  * 反向钉：把补的槽从 `web.ts` 删掉 ⇒ 本文件必挂。
  */
-describe("Bug 862 — document / performance member tables are complete", () => {
+describe("document / performance member tables are complete", () => {
   it("document collection lookups are callable (no definite TypeError)", () => {
     const out = checkWeb(`export function f() {
   const a = document.getElementsByTagName("div");
@@ -896,11 +896,11 @@ describe("Bug 862 — document / performance member tables are complete", () => 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 153 — web env declares the browser globals it models
+// web env declares the browser globals it models
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 153 — web env declares the browser globals it models", () => {
+describe("web env declares the browser globals it models", () => {
 /**
- * 族 15 · BUG-153 — web env **根本没声明** 13 个浏览器标准全局
+ * 族 15 · web env **根本没声明** 13 个浏览器标准全局
  * （`FormData` / `Blob` / `BroadcastChannel` / `DisposableStack` /
  * `AsyncDisposableStack` / `PerformanceMark` / `PerformanceObserver` /
  * `ReadableStream` / `ReadableStreamBYOBReader` /
@@ -929,7 +929,7 @@ const CASES: Array<[global: string, body: string]> = [
   ["WritableStreamDefaultWriter", `return new WritableStreamDefaultWriter(new WritableStream()).abort();`],
 ];
 
-describe("Bug 153 — web env declares the browser globals it models", () => {
+describe("web env declares the browser globals it models", () => {
   it("every previously-missing global is declared", () => {
     const globals = webEnvGlobals();
     for (const [name] of CASES) {
@@ -948,11 +948,11 @@ describe("Bug 153 — web env declares the browser globals it models", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 149 — performance.mark/measure return PerformanceEntry values
+// performance.mark/measure return PerformanceEntry values
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 149 — performance.mark/measure return PerformanceEntry values", () => {
+describe("performance.mark/measure return PerformanceEntry values", () => {
 /**
- * 族 15 · BUG-149 — web env 把 `performance.mark` 的返回类型**写死成
+ * 族 15 · web env 把 `performance.mark` 的返回类型**写死成
  * `undefined`**（宿主返回 `PerformanceMark`）⇒ `m.name` 读在 undefined 上
  * ⇒ 判「确定抛 TypeError」⇒ L2 假红；node env 同一 API 对 ⇒ 两 env 互斥。
  *
@@ -962,7 +962,7 @@ function host(script: string): string {
   return execFileSync(process.execPath, ["-e", script], { encoding: "utf-8" }).trim();
 }
 
-describe("Bug 149 — performance.mark/measure return PerformanceEntry values", () => {
+describe("performance.mark/measure return PerformanceEntry values", () => {
   it("host oracle: mark returns PerformanceMark with .name", () => {
     const out = host(`
       const m = performance.mark("start");
@@ -996,11 +996,11 @@ describe("Bug 149 — performance.mark/measure return PerformanceEntry values", 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 872 — navigator.hardwareConcurrency is modelled
+// navigator.hardwareConcurrency is modelled
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 872 — navigator.hardwareConcurrency is modelled", () => {
+describe("navigator.hardwareConcurrency is modelled", () => {
 /**
- * 族 29 Bug 872 — web env 的 `navigator` 面缺 `hardwareConcurrency`。
+ * 族 29 web env 的 `navigator` 面缺 `hardwareConcurrency`。
  *
  * 根因：闭 obj 缺槽 ⇒ 成员读出 **exact `undefined`** ⇒ `undefined > 4` 按 JS
  * 语义折成 `false`（NaN 比较恒 false）⇒ 引擎**零诊断**地断言了一个假事实
@@ -1012,7 +1012,7 @@ describe("[env-] Bug 872 — navigator.hardwareConcurrency is modelled", () => {
  * 反向钉：删掉 `hardwareConcurrency` 槽 ⇒ 本文件必挂（签名回到
  * `undefined` / `false`）。
  */
-describe("Bug 872 — navigator.hardwareConcurrency is modelled", () => {
+describe("navigator.hardwareConcurrency is modelled", () => {
   it("the navigator member table declares hardwareConcurrency", () => {
     expect(slotOf("navigator", "hardwareConcurrency")).toBeTruthy();
   });
@@ -1033,11 +1033,11 @@ describe("Bug 872 — navigator.hardwareConcurrency is modelled", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 930 — location.searchParams is modelled
+// location.searchParams is modelled
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 930 — location.searchParams is modelled", () => {
+describe("location.searchParams is modelled", () => {
 /**
- * 族 29 Bug 930 — web env 的 `location` 全局成员表缺 `searchParams`。
+ * 族 29 web env 的 `location` 全局成员表缺 `searchParams`。
  *
  * 根因：`location` 是**闭合**对象（`objAbs` 默认 closed），槽表只列了 12 个成员，
  * 漏了 `searchParams` ⇒ 成员读落到「闭 obj 缺槽」⇒ **exact `undefined`** ⇒
@@ -1045,12 +1045,12 @@ describe("[env-] Bug 930 — location.searchParams is modelled", () => {
  * throw-only ⇒ 返回域落成 `never` ⇒ `nudo:entry-may-throw`（error）⇒ 门禁假红。
  *
  * 原生 oracle（浏览器 `Location` 实例；node 锚点）：
- *   new URL("http://x/?q=1").searchParams.get("q") → "1"
- *   location.searchParams.get("q") → string | null（**恒不抛**）
+ * new URL("http://x/?q=1").searchParams.get("q") → "1"
+ * location.searchParams.get("q") → string | null（**恒不抛**）
  *
  * 反向钉：删掉 `searchParams` 槽 ⇒ 本文件必挂。
  */
-describe("Bug 930 — location.searchParams is modelled", () => {
+describe("location.searchParams is modelled", () => {
   it("the location member table declares searchParams", () => {
     expect(slotOf("location", "searchParams")).toBeTruthy();
   });
@@ -1075,11 +1075,11 @@ describe("Bug 930 — location.searchParams is modelled", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 887 — Request has its own member table
+// Request has its own member table
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 887 — Request has its own member table", () => {
+describe("Request has its own member table", () => {
 /**
- * 族 29 Bug 887 — web env 的 `Request` **整份复制了 `Response` 的成员表**。
+ * 族 29 web env 的 `Request` **整份复制了 `Response` 的成员表**。
  *
  * 根因：`bodySlots` 同时被 `Response` 与 `Request` 用 `...` 展开 ⇒ Response
  * 专有的状态面（`ok` / `status` / `statusText` / `redirected` / `type`）被复制
@@ -1087,14 +1087,14 @@ describe("[env-] Bug 887 — Request has its own member table", () => {
  * ⇒ 引擎给出**确定的错误类型**（错值），且会传播到 dts / zod / guard 产物面。
  *
  * 原生 oracle（node v26.10.0，undici `Request`）：
- *   new Request("https://example.com").status → undefined
- *   new Request("https://example.com").ok     → undefined
- *   new Request("https://example.com").method  → "GET"
- *   new Request("https://example.com").bodyUsed → false （**共有**成员）
+ * new Request("https://example.com").status → undefined
+ * new Request("https://example.com").ok → undefined
+ * new Request("https://example.com").method → "GET"
+ * new Request("https://example.com").bodyUsed → false （**共有**成员）
  *
  * 反向钉：把状态面塞回 Request ⇒ 本文件必挂。
  */
-describe("Bug 887 — Request has its own member table", () => {
+describe("Request has its own member table", () => {
   it("Request carries NO Response-only status members", () => {
     for (const name of ["status", "ok", "statusText", "redirected", "type"] as const) {
       expect(instanceSlotOf("Request", name), `Request.${name} must not exist`).toBeUndefined();
@@ -1158,11 +1158,11 @@ describe("Bug 887 — Request has its own member table", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 873 — AbortSignal.any is declared
+// AbortSignal.any is declared
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 873 — AbortSignal.any is declared", () => {
+describe("AbortSignal.any is declared", () => {
 /**
- * 族 29 Bug 873 — web env 的 `AbortSignal` 面缺静态工厂 `any`。
+ * 族 29 web env 的 `AbortSignal` 面缺静态工厂 `any`。
  *
  * 根因：`AbortSignal` 只建模了 `abort` / `timeout` 两个静态方法 ⇒ 成员读 `any`
  * 落到 exact `undefined` ⇒ 调用 undefined ⇒ **定抛 TypeError** ⇒ L2 门禁假红。
@@ -1172,7 +1172,7 @@ describe("[env-] Bug 873 — AbortSignal.any is declared", () => {
  *
  * 反向钉：删掉 `any` 槽 ⇒ 本文件必挂。
  */
-describe("Bug 873 — AbortSignal.any is declared", () => {
+describe("AbortSignal.any is declared", () => {
   it("the AbortSignal member table declares any", () => {
     expect(slotOf("AbortSignal", "any")).toBeTruthy();
   });
@@ -1192,11 +1192,11 @@ describe("Bug 873 — AbortSignal.any is declared", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 150 — WebCrypto rejections include TypeError at the call site
+// WebCrypto rejections include TypeError at the call site
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 150 — WebCrypto rejections include TypeError at the call site", () => {
+describe("WebCrypto rejections include TypeError at the call site", () => {
 /**
- * 族 15 · BUG-150 — web env 把 `crypto.subtle` 的拒绝 reason **一刀切收窄成
+ * 族 15 · web env 把 `crypto.subtle` 的拒绝 reason **一刀切收窄成
  * `OperationError`**，而参数类型非法时宿主拒绝的是 **`TypeError`**
  * （node 实测 `crypto.subtle.encrypt("AES-GCM", 1, 2)` ⇒ `e.name ===
  * "TypeError"`）⇒ `catch (e) { if (e.name === "TypeError") … }` 的**真分支
@@ -1219,7 +1219,7 @@ const TRY_CATCH = (call: string) => `export async function enc() {
   }
 }`;
 
-describe("Bug 150 — WebCrypto rejections include TypeError at the call site", () => {
+describe("WebCrypto rejections include TypeError at the call site", () => {
   it("host oracle: invalid arguments reject with a TypeError", async () => {
     const name = host(`
       crypto.subtle.encrypt("AES-GCM", 1, 2).catch((e) => console.log(e.name));
@@ -1256,11 +1256,11 @@ describe("Bug 150 — WebCrypto rejections include TypeError at the call site", 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 148 — host objects model the members the host actually has
+// host objects model the members the host actually has
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 148 — host objects model the members the host actually has", () => {
+describe("host objects model the members the host actually has", () => {
 /**
- * 族 15 · BUG-148 — env 的宿主对象是**封闭**的：未建模成员读出
+ * 族 15 · env 的宿主对象是**封闭**的：未建模成员读出
  * 「**确定的 undefined**」⇒ 「在 undefined 上取成员 / 调用」= **确定抛
  * TypeError** ⇒ L2 门禁假红（exit 1），而宿主上这些成员**全部存在**。
  *
@@ -1273,7 +1273,7 @@ function host(script: string): string {
   return execFileSync(process.execPath, ["-e", script], { encoding: "utf-8" }).trim();
 }
 
-describe("Bug 148 — host objects model the members the host actually has", () => {
+describe("host objects model the members the host actually has", () => {
   it("host oracle: all four web members exist and are usable", () => {
     const out = host(`
       const body = new Response("hi").body;

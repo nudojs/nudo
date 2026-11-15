@@ -3,7 +3,7 @@
  * 挂 `attachCodeActions`（内存 mock connection），拿 `textDocument/codeAction`
  * 的**动作面**（action 列表 + 逐条 edit 的 range/newText）。
  *
- * 只服务本片的 `lsp-bug-730|731|735|737|743-*.test.ts`；不改动共享的
+ * 只服务本片的 `lsp-|731|735|737|743-*.test.ts`；不改动共享的
  * `helpers.ts`（族 24 片 C 的地盘）——只复用它的 `createMockConnection`
  * 与 `withTempDir`。
  */
@@ -26,11 +26,11 @@ export type CodeActionEntry = {
 
 export type MountOpts = {
   /**
-   * `agentToolDeps` 形态：
-   * - `"none"`（缺省）= `undefined` —— **真 server 的挂载后状态**
-   *   （server.ts 先建 ref 后回填 ⇒ 挂载期读到的就是 undefined，见 Bug 735）；
-   * - `"buffer"` = 能读「编辑器打开缓冲」的形态（getOpenText 命中 openSidecar）。
-   */
+ * `agentToolDeps` 形态：
+ * - `"none"`（缺省）= `undefined` —— **真 server 的挂载后状态**
+ * （server.ts 先建 ref 后回填 ⇒ 挂载期读到的就是 undefined，见 ）；
+ * - `"buffer"` = 能读「编辑器打开缓冲」的形态（getOpenText 命中 openSidecar）。
+ */
   agentToolDeps?: "none" | "buffer";
   /** 打开缓冲里的文本（按**文件路径**索引） */
   openSidecar?: Record<string, string>;

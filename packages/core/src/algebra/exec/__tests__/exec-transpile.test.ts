@@ -9,11 +9,11 @@ import { runTranspiled, callTranspiledExportFull } from "../run.ts";
 import { formatAbs } from "../../format/format.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 1035: 类值接收者的派发先查静态面
+// 类值接收者的派发先查静态面
 // ---------------------------------------------------------------------------
-describe("[core-] Bug 1035: 类值接收者的派发先查静态面", () => {
+describe("类值接收者的派发先查静态面", () => {
 /**
- * Bug 1035：类值接收者（`A.m()`）的方法派发**先查实例方法表** ⇒ 跑错方法
+ * 类值接收者（`A.m()`）的方法派发**先查实例方法表** ⇒ 跑错方法
  * 体、抛错方向**双向反转** ⇒ L2 门禁既**假绿**又**假红**。
  *
  * 原生：类值是构造器函数，`A.m` 沿构造器 [[Prototype]] 链解析（= 静态方法
@@ -48,7 +48,7 @@ function expectTypeError(src: string) {
   expect(throwsError(rec.throws, "TypeError")).toBe(true);
 }
 
-describe("Bug 1035: 类值接收者的派发先查静态面", () => {
+describe("类值接收者的派发先查静态面", () => {
   it("同名 static + 实例方法并存 ⇒ A.m() 跑静态体（native \"S\"）", () => {
     expectLit(
       `export function f() { class A1035a { m(){ return "I"; } static m(){ return "S"; } } return A1035a.m(); }`,
@@ -95,11 +95,11 @@ describe("Bug 1035: 类值接收者的派发先查静态面", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1041: 摘下的一等方法值按来源侧定方法体
+// 摘下的一等方法值按来源侧定方法体
 // ---------------------------------------------------------------------------
-describe("[core-] Bug 1041: 摘下的一等方法值按来源侧定方法体", () => {
+describe("摘下的一等方法值按来源侧定方法体", () => {
 /**
- * Bug 1041：「摘下的一等方法值」（`const f = A.m`）在**同名 static + 实例
+ * 「摘下的一等方法值」（`const f = A.m`）在**同名 static + 实例
  * 方法并存**时定抛 TypeError ⇒ 原生**正常返回**的调用被判「必抛」。
  *
  * 原生：`A.m` 取到的是**构造器上的静态方法**，`a.m` 取到的是**原型上的
@@ -130,7 +130,7 @@ function expectLit(src: string, expected: unknown) {
   expect(r.value).toEqual(expected);
 }
 
-describe("Bug 1041: 摘下的一等方法值按来源侧定方法体", () => {
+describe("摘下的一等方法值按来源侧定方法体", () => {
   it("const g = A.m（静态侧）⇒ g() 跑静态体（native \"S\"）", () => {
     expectLit(
       `export function f() { class A1041a { m(){ return "I"; } static m(){ return "S"; } } const g = A1041a.m; return g(); }`,
@@ -182,11 +182,11 @@ describe("Bug 1041: 摘下的一等方法值按来源侧定方法体", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1042: charAt/charCodeAt/codePointAt/at take no second argument
+// charAt/charCodeAt/codePointAt/at take no second argument
 // ---------------------------------------------------------------------------
-describe("[core-] Bug 1042: charAt/charCodeAt/codePointAt/at take no second argument", () => {
+describe("charAt/charCodeAt/codePointAt/at take no second argument", () => {
 /**
- * Bug 1042 —— `String.prototype.charAt` / `charCodeAt` / `codePointAt` /
+ * `String.prototype.charAt` / `charCodeAt` / `codePointAt` /
  * `at` **没有第二实参**（元数均为 1）。
  *
  * 根因：`algebra/methods.ts` 的字符串方法表把 7 个**元数不同**的方法塞进
@@ -202,7 +202,7 @@ describe("[core-] Bug 1042: charAt/charCodeAt/codePointAt/at take no second argu
 
 
 
-describe("Bug 1042: charAt/charCodeAt/codePointAt/at take no second argument", () => {
+describe("charAt/charCodeAt/codePointAt/at take no second argument", () => {
   it("charAt(0, 1n) → \"a\"（此前判「必抛 TypeError」）", () => {
     const r = call(`export function f() { return "abc".charAt(0, 1n); }`);
     expect(litValue(r.result)).toEqual({ ok: true, value: "a" });
@@ -242,21 +242,21 @@ describe("Bug 1042: charAt/charCodeAt/codePointAt/at take no second argument", (
 });
 
 // ---------------------------------------------------------------------------
-// BUG-172：跨模块同名类按值身份解析（不是裸名 last-wins）
+// 跨模块同名类按值身份解析（不是裸名 last-wins）
 // ---------------------------------------------------------------------------
-describe("[core-] BUG-172：跨模块同名类按值身份解析（不是裸名 last-wins）", () => {
+describe("跨模块同名类按值身份解析（不是裸名 last-wins）", () => {
 /**
- * BUG-172：跨模块同名用户类 ⇒ 类注册表**裸名键**静默 clobber。
+ * 跨模块同名用户类 ⇒ 类注册表**裸名键**静默 clobber。
  *
- * 夹具（与 tmp/bug-report/sections/BUG-172.md 的 repro 同构）：
+ * 夹具（与 tmp/bug-report/sections/.md 的 repro 同构）：
  * - a.js 定义 `class Config { this.a = 1 }` + `kind() { return "A" }`
  * - b.js 定义 `class Config { this.b = 2 }` + `kind() { return "B" }`
  * - d2.js 同时 import 两个模块，各自 `new Config()` 后读成员
  *
  * 修前（注册表裸名 last-wins）：
  * - `mkA()` 的构造体解析到 **B 的 spec** ⇒ `this.b = 2` 落地、`this.a` 从未
- *   初始化 ⇒ `mkA().a` 判 `undefined`（真成员被判不存在）、`mkA().b` 判 `2`
- *   （不存在的成员被判有值）；
+ * 初始化 ⇒ `mkA().a` 判 `undefined`（真成员被判不存在）、`mkA().b` 判 `2`
+ * （不存在的成员被判有值）；
  * - 方法查表同样按裸名 ⇒ `mkA().kind()` 判 `"B"`（读成 B 模块的方法体）。
  *
  * 修后：类规格**随值携带**（class-registry.ts 的 attachClassSpec /
@@ -315,7 +315,7 @@ function lit(exports: Record<string, unknown>, fn: string): unknown {
   return v.value;
 }
 
-describe("BUG-172：跨模块同名类按值身份解析（不是裸名 last-wins）", () => {
+describe("跨模块同名类按值身份解析（不是裸名 last-wins）", () => {
   it("A 模块实例的构造体与自有字段不被 B 模块的同名类顶掉", () => {
     const d = runGraph();
     expect(lit(d, "readA")).toBe(1);
@@ -345,11 +345,11 @@ describe("BUG-172：跨模块同名类按值身份解析（不是裸名 last-win
 });
 
 // ---------------------------------------------------------------------------
-// BUG-220: 无界用户迭代器的代表元不得取首个具体元素
+// 无界用户迭代器的代表元不得取首个具体元素
 // ---------------------------------------------------------------------------
-describe("[core-] BUG-220: 无界用户迭代器的代表元不得取首个具体元素", () => {
+describe("无界用户迭代器的代表元不得取首个具体元素", () => {
 /**
- * BUG-220 —— 无界（next() 永不报 done）用户迭代器的 for-of 代表元必须是
+ * 无界（next() 永不报 done）用户迭代器的 for-of 代表元必须是
  * **元素域**（已采集元素 join / unknown），不得取首个具体元素去**决定**分支。
  *
  * 修前：`$forOf` 的 unbounded 单代表迭代取 `items[Math.min(i, items.length - 1)]`
@@ -367,9 +367,9 @@ describe("[core-] BUG-220: 无界用户迭代器的代表元不得取首个具�
 
 const probe = (src: string) => call(src, "probe", []);
 
-describe("BUG-220: 无界用户迭代器的代表元不得取首个具体元素", () => {
+describe("无界用户迭代器的代表元不得取首个具体元素", () => {
   it("a) 无界迭代器：break 臂可达 ⇒ IteratorClose 的 return() 计入出口（宿主同结论）", () => {
-    // BUG-220 原始复现器（宿主 returns CLOSED；修前引擎 "NOT" #exact）
+    // 原始复现器（宿主 returns CLOSED；修前引擎 "NOT" #exact）
     const r = probe(`export function probe() {
   let closed = false;
   const o = {
@@ -482,11 +482,11 @@ describe("BUG-220: 无界用户迭代器的代表元不得取首个具体元素"
 });
 
 // ---------------------------------------------------------------------------
-// Bug 244: 原型 / 实例上的方法写参与派发（monkey-patch 生效）
+// 原型 / 实例上的方法写参与派发（monkey-patch 生效）
 // ---------------------------------------------------------------------------
-describe("[core-] Bug 244: 原型 / 实例上的方法写参与派发（monkey-patch 生效）", () => {
+describe("原型 / 实例上的方法写参与派发（monkey-patch 生效）", () => {
 /**
- * Bug 244：原型 / 实例上的方法**写**（monkey-patch）被派发面忽略。
+ * 原型 / 实例上的方法**写**（monkey-patch）被派发面忽略。
  *
  * 原生属性查找序 own → prototype：`A.prototype.m = fn`（写原型对象的自有
  * 属性）、`a.m = fn` / `this.m = fn`（写实例的自有属性）都**遮住**类注册表
@@ -521,7 +521,7 @@ function expectTypeError(src: string) {
   expect(throwsError(rec.throws, "TypeError")).toBe(true);
 }
 
-describe("Bug 244: 原型 / 实例上的方法写参与派发（monkey-patch 生效）", () => {
+describe("原型 / 实例上的方法写参与派发（monkey-patch 生效）", () => {
   it("A.prototype.m = fn ⇒ new A().m() 跑用户函数（native 2）", () => {
     expectLit(
       `export function f() { class A244a { m(){ return 1; } } A244a.prototype.m = function(){ return 2; }; return new A244a().m(); }`,
@@ -605,18 +605,18 @@ describe("Bug 244: 原型 / 实例上的方法写参与派发（monkey-patch 生
 });
 
 // ---------------------------------------------------------------------------
-// Bug 245：派生构造器的 super() 通道
+// 派生构造器的 super() 通道
 // ---------------------------------------------------------------------------
-describe("[core-] Bug 245：派生构造器的 super() 通道", () => {
+describe("派生构造器的 super() 通道", () => {
 /**
- * Bug 245：派生类构造器**未调 super()** / **重复调 super()** ⇒ ReferenceError。
+ * 派生类构造器**未调 super()** / **重复调 super()** ⇒ ReferenceError。
  *
  * 原生（node 实测）：
  * - `class B extends A { constructor(){ this.x = 1; } }` → `new B()` 抛
- *   ReferenceError（"Must call super constructor in derived class before
- *   accessing 'this' or returning from derived constructor"）。
+ * ReferenceError（"Must call super constructor in derived class before
+ * accessing 'this' or returning from derived constructor"）。
  * - `class B extends A { constructor(){ super(); super(); } }` → `new B()` 抛
- *   ReferenceError（"Super constructor may only be called once"）。
+ * ReferenceError（"Super constructor may only be called once"）。
  * - 基类构造器 / 隐式派生构造器（无显式 ctor）⇒ 不抛。
  *
  * 引擎此前无「本帧已调 super」状态通道 ⇒ 不调 super 的派生构造器静默构造
@@ -625,7 +625,7 @@ describe("[core-] Bug 245：派生构造器的 super() 通道", () => {
 
 
 
-describe("Bug 245：派生构造器的 super() 通道", () => {
+describe("派生构造器的 super() 通道", () => {
   it("派生构造器不调 super()：new B() 定抛 ReferenceError", () => {
     const r = call(
       `class A { constructor(){ this.x = 1; } }
@@ -689,11 +689,11 @@ describe("Bug 245：派生构造器的 super() 通道", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 246 (false positive): Object.assign into brand targets keeps source props
+// (false positive): Object.assign into brand targets keeps source props
 // ---------------------------------------------------------------------------
-describe("[core-] Bug 246 (false positive): Object.assign into brand targets keeps source props", () => {
+describe("(false positive): Object.assign into brand targets keeps source props", () => {
 /**
- * Bug 246 —— **假阳性钉**（反向钉）：`Object.assign` 目标为 brand
+ * **假阳性钉**（反向钉）：`Object.assign` 目标为 brand
  * （类实例 / 内建实例 / 函数构造实例）时**静默丢弃**源属性。
  *
  * 报告结论复核：brand 目标的合并分支**已在位**
@@ -709,7 +709,7 @@ describe("[core-] Bug 246 (false positive): Object.assign into brand targets kee
 
 
 
-describe("Bug 246 (false positive): Object.assign into brand targets keeps source props", () => {
+describe("(false positive): Object.assign into brand targets keeps source props", () => {
   it("类实例目标：源属性不丢", () => {
     const r = call(
       `export function f() {
@@ -777,17 +777,17 @@ describe("Bug 246 (false positive): Object.assign into brand targets keeps sourc
 });
 
 // ---------------------------------------------------------------------------
-// Bug 247：实例字段落地 = 自有数据属性（不派发原型 setter）
+// 实例字段落地 = 自有数据属性（不派发原型 setter）
 // ---------------------------------------------------------------------------
-describe("[core-] Bug 247：实例字段落地 = 自有数据属性（不派发原型 setter）", () => {
+describe("实例字段落地 = 自有数据属性（不派发原型 setter）", () => {
 /**
- * Bug 247：实例字段落地必须是 **CreateDataPropertyOrThrow**（原生
+ * 实例字段落地必须是 **CreateDataPropertyOrThrow**（原生
  * DefineField）——在接收者上**创建自有数据属性**，**不沿原型链派发
  * setter**。
  *
  * 原生（node 实测）：
  * - `class A { get x(){ return 1; } } class B extends A { x = 2; }`
- *   → `new B().x === 2`（字段是 B 实例的自有数据属性，父类 getter 不参与）。
+ * → `new B().x === 2`（字段是 B 实例的自有数据属性，父类 getter 不参与）。
  * - 父类 setter-only：字段落地**不**调父类 setter（`b._v` 仍是 undefined）。
  * - `Object.keys(new B())` → ["x"]（字段是自有可枚举属性）。
  *
@@ -797,7 +797,7 @@ describe("[core-] Bug 247：实例字段落地 = 自有数据属性（不派发�
 
 
 
-describe("Bug 247：实例字段落地 = 自有数据属性（不派发原型 setter）", () => {
+describe("实例字段落地 = 自有数据属性（不派发原型 setter）", () => {
   it("父类 getter-only 同名访问器不拦截子类字段落地", () => {
     const r = call(
       `class A { get x(){ return 1; } }
@@ -856,17 +856,17 @@ describe("Bug 247：实例字段落地 = 自有数据属性（不派发原型 se
 });
 
 // ---------------------------------------------------------------------------
-// Bug 249: matchAll result exposes the iterator protocol face
+// matchAll result exposes the iterator protocol face
 // ---------------------------------------------------------------------------
-describe("[core-] Bug 249: matchAll result exposes the iterator protocol face", () => {
+describe("matchAll result exposes the iterator protocol face", () => {
 /**
- * Bug 249 —— `String.prototype.matchAll` 的结果必须**是迭代器**。
+ * `String.prototype.matchAll` 的结果必须**是迭代器**。
  *
  * 原生 `matchAll` 返回 **RegExp String Iterator**：
  * - `typeof it.next` → "function"（此前折 exact **"undefined"**——wrong-exact）
  * - `typeof it[Symbol.iterator]` → "function"（协议面缺失）
  * - `it.next()` → `{value: <匹配项 RegExpExecArray>, done: false}`；
- *   逐次推进同一游标（第二次 → 第二项）；耗尽 → `{value: undefined, done: true}`
+ * 逐次推进同一游标（第二次 → 第二项）；耗尽 → `{value: undefined, done: true}`
  * - `Object.prototype.toString.call(it)` → "[object RegExp String Iterator]"
  *
  * 根因：`exec/class-regex.ts` 的 `stringRegexMethod` matchAll 尾段只挂了
@@ -881,7 +881,7 @@ describe("[core-] Bug 249: matchAll result exposes the iterator protocol face", 
 
 
 
-describe("Bug 249: matchAll result exposes the iterator protocol face", () => {
+describe("matchAll result exposes the iterator protocol face", () => {
   it("typeof it.next → \"function\"（原生协议面；此前 \"undefined\"）", () => {
     const r = call(`export function f() {
       const it = "a1b2".matchAll(/\\d/g);
@@ -970,17 +970,17 @@ describe("Bug 249: matchAll result exposes the iterator protocol face", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 250：构造器返回值是对象就用它（不窄化成 brand|obj）
+// 构造器返回值是对象就用它（不窄化成 brand|obj）
 // ---------------------------------------------------------------------------
-describe("[core-] Bug 250：构造器返回值是对象就用它（不窄化成 brand|obj）", () => {
+describe("构造器返回值是对象就用它（不窄化成 brand|obj）", () => {
 /**
- * Bug 250：原生 [[Construct]] 的返回值判定——「返回值**是 Object** 就用它」。
+ * 原生 [[Construct]] 的返回值判定——「返回值**是 Object** 就用它」。
  *
  * 原生（node 实测）：
  * - `function F(){ this.a=1; return [1,2]; }` → `new F()` 是**数组**
- *   （`Array.isArray` true、`JSON.stringify` → "[1,2]"），且
- *   `new F() instanceof F` **false**（原型取 newTarget，构造器返回对象
- *   替换 this）。
+ * （`Array.isArray` true、`JSON.stringify` → "[1,2]"），且
+ * `new F() instanceof F` **false**（原型取 newTarget，构造器返回对象
+ * 替换 this）。
  * - 构造器返回**函数** → `typeof new F()` === "function"。
  * - 构造器返回**原始值** → 忽略，返回 this（`typeof` 仍是 "object"）。
  *
@@ -990,7 +990,7 @@ describe("[core-] Bug 250：构造器返回值是对象就用它（不窄化成 
 
 
 
-describe("Bug 250：构造器返回值是对象就用它（不窄化成 brand|obj）", () => {
+describe("构造器返回值是对象就用它（不窄化成 brand|obj）", () => {
   it("宿主构造器返回数组：new F() 是数组", () => {
     expect(
       val(
@@ -1048,22 +1048,22 @@ describe("Bug 250：构造器返回值是对象就用它（不窄化成 brand|ob
 });
 
 // ---------------------------------------------------------------------------
-// Bug 251: toLocaleString value (ICU) + locales argument validation
+// toLocaleString value (ICU) + locales argument validation
 // ---------------------------------------------------------------------------
-describe("[core-] Bug 251: toLocaleString value (ICU) + locales argument validation", () => {
+describe("toLocaleString value (ICU) + locales argument validation", () => {
 /**
- * Bug 251 —— `toLocaleString` / `toLocale*` 家族的**值**与**locales 实参校验**。
+ * `toLocaleString` / `toLocale*` 家族的**值**与**locales 实参校验**。
  *
  * 两处根因（族 03 报告 + 实测）：
  * 1. `exec/class/invoke.ts` number 臂把 `toLocaleString` **重定向成宿主
- *    `toString`** ⇒ 值错（丢千分位 / `-0` / 指数形态）：
- *    `(1234567.5).toLocaleString()` 原生 "1,234,567.5"、引擎 "1234567.5"；
- *    `(-0).toLocaleString()` 原生 "-0"、引擎 "0"；
- *    `(1e21).toLocaleString()` 原生 "1,000,000,000,000,000,000,000"、
- *    引擎 "1e+21"。
+ * `toString`** ⇒ 值错（丢千分位 / `-0` / 指数形态）：
+ * `(1234567.5).toLocaleString()` 原生 "1,234,567.5"、引擎 "1234567.5"；
+ * `(-0).toLocaleString()` 原生 "-0"、引擎 "0"；
+ * `(1e21).toLocaleString()` 原生 "1,000,000,000,000,000,000,000"、
+ * 引擎 "1e+21"。
  * 2. 三臂（number / bigint / 字符串 `toLocaleUpperCase|toLocaleLowerCase`）
- *    **都不校验 locales 实参** ⇒ `null`（原生 TypeError）、非法 language
- *    tag（原生 RangeError）全不抛 ⇒ throws 域折 never（假 no-throw）。
+ * **都不校验 locales 实参** ⇒ `null`（原生 TypeError）、非法 language
+ * tag（原生 RangeError）全不抛 ⇒ throws 域折 never（假 no-throw）。
  *
  * 修法：number/bigint 臂改走**宿主 `toLocaleString`**（ICU）+ 透传 locales
  * 实参（宿主 `CanonicalizeLocaleList` 校验同款）；字符串 `toLocale*` 臂在
@@ -1077,7 +1077,7 @@ describe("[core-] Bug 251: toLocaleString value (ICU) + locales argument validat
 
 
 
-describe("Bug 251: toLocaleString value (ICU) + locales argument validation", () => {
+describe("toLocaleString value (ICU) + locales argument validation", () => {
   it("Number.prototype.toLocaleString 保留千分位（此前折成 toString）", () => {
     const r = call(`export function f() { return (1234567.5).toLocaleString("en-US"); }`);
     expect(litValue(r.result)).toEqual({ ok: true, value: "1,234,567.5" });
@@ -1135,11 +1135,11 @@ describe("Bug 251: toLocaleString value (ICU) + locales argument validation", ()
 });
 
 // ---------------------------------------------------------------------------
-// Bug 252: invalid string pattern is a definite SyntaxError
+// invalid string pattern is a definite SyntaxError
 // ---------------------------------------------------------------------------
-describe("[core-] Bug 252: invalid string pattern is a definite SyntaxError", () => {
+describe("invalid string pattern is a definite SyntaxError", () => {
 /**
- * Bug 252 —— `String.prototype.search` / `match` 的**无效字符串模式**必须
+ * `String.prototype.search` / `match` 的**无效字符串模式**必须
  * 进 throws 面（确定 SyntaxError）。
  *
  * 根因：`exec/class-regex.ts` 的 `stringRegexMethod` 把模式编译失败
@@ -1152,16 +1152,16 @@ describe("[core-] Bug 252: invalid string pattern is a definite SyntaxError", ()
  *
  * 修法：
  * - `class-regex.ts`：编译失败 → `throw new NudoThrow(errorTypeAbs("SyntaxError"))`
- *   （模式在此恒为**字面量** ⇒ 编译结果运行时同款 ⇒ 定抛，可被 try/catch 吸收）。
+ * （模式在此恒为**字面量** ⇒ 编译结果运行时同款 ⇒ 定抛，可被 try/catch 吸收）。
  * - `algebra/methods.ts`：抽象接收者路径（`stringRegexMethod` 在其 sv 检查
- *   处提前 return，够不到编译点）补 `literalPatternString` +
- *   `regexPatternCompiles` 判定 ⇒ 同样定抛。
+ * 处提前 return，够不到编译点）补 `literalPatternString` +
+ * `regexPatternCompiles` 判定 ⇒ 同样定抛。
  */
 
 
 
 
-describe("Bug 252: invalid string pattern is a definite SyntaxError", () => {
+describe("invalid string pattern is a definite SyntaxError", () => {
   it("search(\"(\") → SyntaxError（此前 throws 域折 never）", () => {
     const r = call(`export function f() { return "abc".search("("); }`);
     expect(throwsError(r.throws, "SyntaxError")).toBe(true);
@@ -1203,11 +1203,11 @@ describe("Bug 252: invalid string pattern is a definite SyntaxError", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 253：bind 产物的构造语义
+// bind 产物的构造语义
 // ---------------------------------------------------------------------------
-describe("[core-] Bug 253：bind 产物的构造语义", () => {
+describe("bind 产物的构造语义", () => {
 /**
- * Bug 253：`Function.prototype.bind` 产物**可构造**——原生
+ * `Function.prototype.bind` 产物**可构造**——原生
  * `new (f.bind(thisArg, ...bound))()` 走**绑定目标的 [[Construct]]**：
  * 以 newTarget.prototype 建新实例、绑定实参前置、`this` = 新实例
  * （**忽略**绑定的 thisArg）。
@@ -1215,7 +1215,7 @@ describe("[core-] Bug 253：bind 产物的构造语义", () => {
  * 原生（node 实测）：
  * - `function F(a){ this.a = a; } const B = F.bind(null, 7); new B().a === 7`
  * - `class A { constructor(v){ this.v = v; } } const B = A.bind(null, 3);
- *   new B().v === 3`
+ * new B().v === 3`
  * - 二次 bind（`B.bind(null)`）仍可构造、`new C().a === 7`。
  *
  * 引擎此前 bind 产物只带 apply 钩子 ⇒ `$new` 复用 `impl.apply` ⇒ 目标
@@ -1226,7 +1226,7 @@ describe("[core-] Bug 253：bind 产物的构造语义", () => {
 
 
 
-describe("Bug 253：bind 产物的构造语义", () => {
+describe("bind 产物的构造语义", () => {
   it("宿主函数 bind 产物：new B() 的 this = 新实例（绑定实参前置）", () => {
     const r = call(
       `export function f(){ function F(a){ this.a = a; } const B = F.bind(null, 7); const o = new B(); return o.a; }`,
@@ -1261,15 +1261,15 @@ describe("Bug 253：bind 产物的构造语义", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 257：Proxy construct 的靶可构造性判定
+// Proxy construct 的靶可构造性判定
 // ---------------------------------------------------------------------------
-describe("[core-] Bug 257：Proxy construct 的靶可构造性判定", () => {
+describe("Proxy construct 的靶可构造性判定", () => {
 /**
- * Bug 257：`$new` 的 Proxy 分支必须先判 **IsConstructor(target)**。
+ * `$new` 的 Proxy 分支必须先判 **IsConstructor(target)**。
  *
  * 原生（node 实测）：
  * - `new Proxy(() => 1, { construct(){ ... } })` → **TypeError**（"not a
- *   constructor"），且**构造陷阱不派发**（陷阱副作用不发生）。
+ * constructor"），且**构造陷阱不派发**（陷阱副作用不发生）。
  * - `new Proxy({}, { construct(){ ... } })` → 同抛 TypeError。
  * - 靶**可构造**时（函数 / 类）⇒ 陷阱照常派发。
  *
@@ -1279,7 +1279,7 @@ describe("[core-] Bug 257：Proxy construct 的靶可构造性判定", () => {
 
 
 
-describe("Bug 257：Proxy construct 的靶可构造性判定", () => {
+describe("Proxy construct 的靶可构造性判定", () => {
   it("靶不可构造（箭头函数）：定抛 TypeError", () => {
     const r = call(
       `export function f(){ const t = () => 1; const p = new Proxy(t, { construct(){ return {a:9}; } }); return new p(); }`,
@@ -1311,11 +1311,11 @@ describe("Bug 257：Proxy construct 的靶可构造性判定", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 258: apply 的 array-like 实参按 length 展开
+// apply 的 array-like 实参按 length 展开
 // ---------------------------------------------------------------------------
-describe("[core-] Bug 258: apply 的 array-like 实参按 length 展开", () => {
+describe("apply 的 array-like 实参按 length 展开", () => {
 /**
- * Bug 258：`Function.prototype.apply` 传 **array-like** 实参时只传进 1 个实参。
+ * `Function.prototype.apply` 传 **array-like** 实参时只传进 1 个实参。
  *
  * 原生 `CreateListFromArrayLike`：ToLength(argArray.length) → 逐下标 Get ⇒
  * `f.apply(null, {length: 2, 0: 1, 1: 2})` 传 **2 个**实参。
@@ -1340,7 +1340,7 @@ function expectLit(src: string, expected: unknown) {
   expect(r.value).toEqual(expected);
 }
 
-describe("Bug 258: apply 的 array-like 实参按 length 展开", () => {
+describe("apply 的 array-like 实参按 length 展开", () => {
   it("apply({length:2,0:1,1:2}) ⇒ 2 个实参（native 2）", () => {
     expectLit(
       `export function f() { function g(){ return arguments.length; } return g.apply(null, { length: 2, 0: 1, 1: 2 }); }`,
@@ -1390,11 +1390,11 @@ describe("Bug 258: apply 的 array-like 实参按 length 展开", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 260: derived static field shadows inherited static method
+// derived static field shadows inherited static method
 // ---------------------------------------------------------------------------
-describe("[core-] Bug 260: derived static field shadows inherited static method", () => {
+describe("derived static field shadows inherited static method", () => {
 /**
- * Bug 260：派生类的 `static` 字段**不遮蔽**继承的 `static` 方法
+ * 派生类的 `static` 字段**不遮蔽**继承的 `static` 方法
  * → `B.m()` 调到父类方法（原生是 `TypeError: B.m is not a function`）。
  *
  * 根因：`findStaticMethod`（`exec/class/declare.ts`）只查类注册表
@@ -1409,7 +1409,7 @@ describe("[core-] Bug 260: derived static field shadows inherited static method"
 
 
 
-describe("Bug 260: derived static field shadows inherited static method", () => {
+describe("derived static field shadows inherited static method", () => {
   it("派生类 static 字段遮蔽继承的 static 方法 → 原生 TypeError", () => {
     const r = call(
       `export function f() {
@@ -1505,11 +1505,11 @@ describe("Bug 260: derived static field shadows inherited static method", () => 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 263: union 成员按方法名判定（prim 原型方法表）
+// union 成员按方法名判定（prim 原型方法表）
 // ---------------------------------------------------------------------------
-describe("[core-] Bug 263: union 成员按方法名判定（prim 原型方法表）", () => {
+describe("union 成员按方法名判定（prim 原型方法表）", () => {
 /**
- * Bug 263：core 的 **union 方法分派**用 `memberLikelyHasMethod` 过滤成员，
+ * core 的 **union 方法分派**用 `memberLikelyHasMethod` 过滤成员，
  * 而该判据**只认 `string`**（`method` 形参根本没被使用）。
  *
  * 原生：`u.m()`（u : string | number）逐成员按**该成员自己的原型面**解析
@@ -1518,9 +1518,9 @@ describe("[core-] Bug 263: union 成员按方法名判定（prim 原型方法表
  *
  * 引擎此前：
  * - number 成员被**无条件排除** ⇒ 值域塌成 unknown（且 L2 门禁把「成员
- *   不支持该方法」误报成「成员缺方法」——诊断点名的是 string 侧）；
+ * 不支持该方法」误报成「成员缺方法」——诊断点名的是 string 侧）；
  * - string 成员被**无条件放行** ⇒ string 上不存在的方法也被判「有」⇒
- *   派发到 string 成员 ⇒ 报「missing on string receiver」。
+ * 派发到 string 成员 ⇒ 报「missing on string receiver」。
  *
  * 钉：改前 union-toFixed 的值 = unknown + 误导诊断（点名 string 侧）；
  * union-toUpperCase 无 throws 记录（假绿）。
@@ -1536,7 +1536,7 @@ function callAny(src: string, fn: string) {
   return callTranspiledExportFull(exports, fn, [anyAbs]);
 }
 
-describe("Bug 263: union 成员按方法名判定（prim 原型方法表）", () => {
+describe("union 成员按方法名判定（prim 原型方法表）", () => {
   it("number 侧成员不再被排除：pick(y).toFixed() 的值是 number 分支结果（native \"1\"）", () => {
     const rec = callAny(
       `export function pick(x) { if (x) { return 1; } return "a"; }
@@ -1600,11 +1600,11 @@ export function useStr(y) { return pick(y).toString(); }`,
 });
 
 // ---------------------------------------------------------------------------
-// Bug 264: 命名空间上不存在的静态方法定抛 TypeError
+// 命名空间上不存在的静态方法定抛 TypeError
 // ---------------------------------------------------------------------------
-describe("[core-] Bug 264: 命名空间上不存在的静态方法定抛 TypeError", () => {
+describe("命名空间上不存在的静态方法定抛 TypeError", () => {
 /**
- * Bug 264：内建**命名空间对象**上调用**不存在**的静态方法 ⇒ 引擎不记
+ * 内建**命名空间对象**上调用**不存在**的静态方法 ⇒ 引擎不记
  * may-throw ⇒ L2 门禁**假绿**（原生确定抛 TypeError）。
  *
  * 原生：`Math.clamp(1,0,2)` / `JSON.foo(1)` / `Object.foo(1)` /
@@ -1627,7 +1627,7 @@ function expectTypeError(src: string) {
   expect(throwsError(rec.throws, "TypeError")).toBe(true);
 }
 
-describe("Bug 264: 命名空间上不存在的静态方法定抛 TypeError", () => {
+describe("命名空间上不存在的静态方法定抛 TypeError", () => {
   it("Math.clamp(1,0,2) ⇒ TypeError", () => {
     expectTypeError(`export function f() { return Math.clamp(1, 0, 2); }`);
   });
@@ -1672,11 +1672,11 @@ describe("Bug 264: 命名空间上不存在的静态方法定抛 TypeError", () 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 265: missing method on non-prim / non-obj receivers throws
+// missing method on non-prim / non-obj receivers throws
 // ---------------------------------------------------------------------------
-describe("[core-] Bug 265: missing method on non-prim / non-obj receivers throws", () => {
+describe("missing method on non-prim / non-obj receivers throws", () => {
 /**
- * Bug 265：**非 prim / 非 obj** 接收者（数组元组 / 内建 brand / 用户类实例）
+ * **非 prim / 非 obj** 接收者（数组元组 / 内建 brand / 用户类实例）
  * 上调用**确实不存在**的方法 ⇒ 引擎**不记 may-throw** ⇒ L2 门禁**假绿**
  * （原生恒抛 `TypeError`）。
  *
@@ -1693,7 +1693,7 @@ describe("[core-] Bug 265: missing method on non-prim / non-obj receivers throws
 
 
 
-describe("Bug 265: missing method on non-prim / non-obj receivers throws", () => {
+describe("missing method on non-prim / non-obj receivers throws", () => {
   it("数组元组上调用不存在的方法 → 原生 TypeError", () => {
     for (const src of [
       `export function f() { return [].missing(); }`,
@@ -1771,16 +1771,16 @@ describe("Bug 265: missing method on non-prim / non-obj receivers throws", () =>
 });
 
 // ---------------------------------------------------------------------------
-// Bug 266：super.constructor 取父类构造器
+// super.constructor 取父类构造器
 // ---------------------------------------------------------------------------
-describe("[core-] Bug 266：super.constructor 取父类构造器", () => {
+describe("super.constructor 取父类构造器", () => {
 /**
- * Bug 266：`super.constructor` 必须是**父类构造器本身**（原生父类原型上的
+ * `super.constructor` 必须是**父类构造器本身**（原生父类原型上的
  * "constructor" 自有属性 ⇒ 父类值）。
  *
  * 原生（node 实测）：
  * - `class Base {} class Sub extends Base { who(){ return super.constructor.name; } }`
- *   → "Base"（引擎此前折 "Object"——确定错值）。
+ * → "Base"（引擎此前折 "Object"——确定错值）。
  * - `super.constructor === Base` → true（引擎此前假 false）。
  *
  * 根因：`$getSuper` 只在 `spec.methods` 里找 "constructor" ⇒ 父类构造器
@@ -1789,7 +1789,7 @@ describe("[core-] Bug 266：super.constructor 取父类构造器", () => {
 
 
 
-describe("Bug 266：super.constructor 取父类构造器", () => {
+describe("super.constructor 取父类构造器", () => {
   it("super.constructor.name = 父类名", () => {
     expect(val(
       `class Base { constructor(){ this.tag = "Base"; } }
@@ -1817,16 +1817,16 @@ describe("Bug 266：super.constructor 取父类构造器", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 269 (false positive): explicit undefined pattern is the empty pattern
+// (false positive): explicit undefined pattern is the empty pattern
 // ---------------------------------------------------------------------------
-describe("[core-] Bug 269 (false positive): explicit undefined pattern is the empty pattern", () => {
+describe("(false positive): explicit undefined pattern is the empty pattern", () => {
 /**
- * Bug 269 —— **假阳性钉**（反向钉）：`String.prototype.search` / `match`
+ * **假阳性钉**（反向钉）：`String.prototype.search` / `match`
  * 传**显式 undefined** 模式时按 ES2023 `RegExpCreate` 语义折叠。
  *
  * 报告结论复核：`exec/class-regex.ts` 的 `stringRegexMethod` 里
  * `litTerm.value === undefined ? "" : String(litTerm.value)` —— 这**已是
- * Bug 179 的空模式修复**（修入 6ec8afc6）：ES2023 `RegExpCreate` 规定
+ * 的空模式修复**（修入 6ec8afc6）：ES2023 `RegExpCreate` 规定
  * pattern 为 undefined ⇒ P = ""（**不是** "undefined"）。报告引用的
  * 「`String(litTerm.value)` 把 undefined 变 "undefined"」在当前树**不成立**
  * ⇒ **不改实现**，只钉住「已修」的行为（本钉在 HEAD 只读副本上**必须通过**）。
@@ -1838,7 +1838,7 @@ describe("[core-] Bug 269 (false positive): explicit undefined pattern is the em
 
 
 
-describe("Bug 269 (false positive): explicit undefined pattern is the empty pattern", () => {
+describe("(false positive): explicit undefined pattern is the empty pattern", () => {
   it("search(undefined) → 0（空模式在 0 处匹配）", () => {
     const r = call(`export function f() { return "abc".search(undefined); }`);
     expect(litValue(r.result)).toEqual({ ok: true, value: 0 });
@@ -1862,11 +1862,11 @@ describe("Bug 269 (false positive): explicit undefined pattern is the empty patt
 });
 
 // ---------------------------------------------------------------------------
-// Bug 271 (false positive): fn-expression prototype constructor is non-enumerable
+// (false positive): fn-expression prototype constructor is non-enumerable
 // ---------------------------------------------------------------------------
-describe("[core-] Bug 271 (false positive): fn-expression prototype constructor is non-enumerable", () => {
+describe("(false positive): fn-expression prototype constructor is non-enumerable", () => {
 /**
- * Bug 271 —— **假阳性钉**（反向钉）：函数表达式原型对象的 `constructor` 槽
+ * **假阳性钉**（反向钉）：函数表达式原型对象的 `constructor` 槽
  * 被折成「可枚举」⇒ `Object.keys(F.prototype)` 折 exact `"constructor"`
  * （原生 `""`）、`Object.assign` 把 `constructor` 复制出去。
  *
@@ -1877,7 +1877,7 @@ describe("[core-] Bug 271 (false positive): fn-expression prototype constructor 
 
 
 
-describe("Bug 271 (false positive): fn-expression prototype constructor is non-enumerable", () => {
+describe("(false positive): fn-expression prototype constructor is non-enumerable", () => {
   it("Object.keys(F.prototype) → ''（原生空）", () => {
     const r = call(
       `export function f() { return Object.keys((function () {}).prototype).join(","); }`,

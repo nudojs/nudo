@@ -1,22 +1,22 @@
 /**
- * 类 B brand 槽建模回归（Bug 10/15/22/23/28/29/39/45/46/58/59）：
- * - Bug 10：Error 家族实例 toString/toLocaleString = `${name}: ${message}`；
- *   Object.prototype.toString.call(错误 brand) → "[object Error]"（[[ErrorData]]）。
- * - Bug 15：ArrayBuffer/SharedArrayBuffer/DataView 构造实参存 brand 槽
- *   （byteLength/byteOffset/maxByteLength/resizable/growable；字面量精确、抽象 → number）。
- * - Bug 22：装箱 brand（new String/Number/Boolean）构造存 [[PrimitiveValue]]，
- *   实例方法拆箱走 prim 面（valueOf/toString 拆箱值；charAt/toFixed 折叠）。
- * - Bug 23：Map/Set keys/values/entries → 迭代器对象（next 按调用序、
- *   spread/for-of/Array.from 精确展开）。
- * - Bug 28：RegExp 7 标志 getter 槽（flags 字符串折 boolean）。
- * - Bug 29：URL 7 组件槽（hostname/pathname/search/hash/port/username/password）。
- * - Bug 39：Date.prototype.getYear/setYear（Annex B）→ number。
- * - Bug 45：new BigInt() 确定 TypeError（BigInt 无 [[Construct]]）。
- * - Bug 46：new Math()/JSON()/Reflect() 确定 TypeError（裸宿主对象不可构造，
- *   此前 specOf 内部崩溃被兜底 unknown + 假 may-throw）。
- * - Bug 58：new RegExp(<抽象 string>) brand 槽全空 → 单一 builder（source/
- *   flags/lastIndex + 标志 getter；字面量 flags 精确）。
- * - Bug 59：Error brand .stack → string 域（不可折叠）。
+ * 类 B brand 槽建模回归（）：
+ * - Error 家族实例 toString/toLocaleString = `${name}: ${message}`；
+ * Object.prototype.toString.call(错误 brand) → "[object Error]"（[[ErrorData]]）。
+ * - ArrayBuffer/SharedArrayBuffer/DataView 构造实参存 brand 槽
+ * （byteLength/byteOffset/maxByteLength/resizable/growable；字面量精确、抽象 → number）。
+ * - 装箱 brand（new String/Number/Boolean）构造存 [[PrimitiveValue]]，
+ * 实例方法拆箱走 prim 面（valueOf/toString 拆箱值；charAt/toFixed 折叠）。
+ * - Map/Set keys/values/entries → 迭代器对象（next 按调用序、
+ * spread/for-of/Array.from 精确展开）。
+ * - RegExp 7 标志 getter 槽（flags 字符串折 boolean）。
+ * - URL 7 组件槽（hostname/pathname/search/hash/port/username/password）。
+ * - Date.prototype.getYear/setYear（Annex B）→ number。
+ * - new BigInt() 确定 TypeError（BigInt 无 [[Construct]]）。
+ * - new Math()/JSON()/Reflect() 确定 TypeError（裸宿主对象不可构造，
+ * 此前 specOf 内部崩溃被兜底 unknown + 假 may-throw）。
+ * - new RegExp(<抽象 string>) brand 槽全空 → 单一 builder（source/
+ * flags/lastIndex + 标志 getter；字面量 flags 精确）。
+ * - Error brand .stack → string 域（不可折叠）。
  *
  * 原生 ground truth：node v26.10.0 实测对照。
  */
@@ -60,7 +60,7 @@ function evalWithArgs(
 const numAbs = abs({ k: "prim", type: "number" }, undefined, undefined, "path");
 const strAbs = abs({ k: "prim", type: "string" }, undefined, undefined, "path");
 
-describe("Bug 10: Error family toString/toLocaleString + [object Error] tag", () => {
+describe("Error family toString/toLocaleString + [object Error] tag", () => {
   it("Error.prototype.toString = `${name}: ${message}`（字面量精确）", () => {
     expect(litValue(call(`export function f() { return new Error("m").toString(); }`).result))
       .toEqual({ ok: true, value: "Error: m" });
@@ -95,7 +95,7 @@ describe("Bug 10: Error family toString/toLocaleString + [object Error] tag", ()
   });
 });
 
-describe("Bug 15: ArrayBuffer/SharedArrayBuffer/DataView brand slots", () => {
+describe("ArrayBuffer/SharedArrayBuffer/DataView brand slots", () => {
   it("new ArrayBuffer(n).byteLength 字面量精确折叠", () => {
     expect(litValue(call(`export function f() { return new ArrayBuffer(8).byteLength; }`).result))
       .toEqual({ ok: true, value: 8 });
@@ -137,7 +137,7 @@ describe("Bug 15: ArrayBuffer/SharedArrayBuffer/DataView brand slots", () => {
   });
 });
 
-describe("Review: maxByteLength 边界（Bug 15 补，native ground truth: node v26）", () => {
+describe("Review: maxByteLength 边界（补，native ground truth: node v26）", () => {
   it("maxByteLength: undefined ≡ 缺省：非 resizable/growable，max = byteLength", () => {
     expect(litValue(call(`export function f() { return new ArrayBuffer(8, { maxByteLength: undefined }).resizable; }`).result))
       .toEqual({ ok: true, value: false });
@@ -187,7 +187,7 @@ describe("Review: maxByteLength 边界（Bug 15 补，native ground truth: node 
   });
 });
 
-describe("Bug 22: boxed brand (new String/Number/Boolean) instance methods", () => {
+describe("boxed brand (new String/Number/Boolean) instance methods", () => {
   it("valueOf 拆箱（原生返回包装原始值）", () => {
     expect(litValue(call(`export function f() { return new Number(5).valueOf(); }`).result))
       .toEqual({ ok: true, value: 5 });
@@ -258,7 +258,7 @@ describe("Bug 22: boxed brand (new String/Number/Boolean) instance methods", () 
   });
 });
 
-describe("Bug 23: Map/Set iterator methods (keys/values/entries)", () => {
+describe("Map/Set iterator methods (keys/values/entries)", () => {
   it(".next() 按调用序折 {value, done}（字面量条目表）", () => {
     expect(formatAbs(call(`export function f() { return new Map([["a", 1]]).entries().next().value; }`).result))
       .toContain('["a", 1]');
@@ -299,7 +299,7 @@ describe("Bug 23: Map/Set iterator methods (keys/values/entries)", () => {
   });
 });
 
-describe("Bug 28: RegExp flag getter slots", () => {
+describe("RegExp flag getter slots", () => {
   it("7 标志 getter 精确 boolean（字面量 flags 折叠）", () => {
     expect(litValue(call(`export function f() { return /a/g.global; }`).result)).toEqual({ ok: true, value: true });
     expect(litValue(call(`export function f() { return /a/i.ignoreCase; }`).result)).toEqual({ ok: true, value: true });
@@ -314,7 +314,7 @@ describe("Bug 28: RegExp flag getter slots", () => {
   });
 });
 
-describe("Bug 29: URL component slots", () => {
+describe("URL component slots", () => {
   it("7 组件槽精确（宿主真解析）", () => {
     expect(litValue(call(`export function f() { return new URL("https://x.com/a").hostname; }`).result))
       .toEqual({ ok: true, value: "x.com" });
@@ -335,17 +335,17 @@ describe("Bug 29: URL component slots", () => {
   });
 });
 
-describe("Bug 39: Date.prototype.getYear / setYear", () => {
+describe("Date.prototype.getYear / setYear", () => {
   it("getYear/setYear → number（与同表 33 个兄弟方法一致）", () => {
     expect(evalWithArgs(`export function f() { return new Date(0).getYear(); }`, []).value).toBe("number");
-    // Bug 297：setter 真正回写 time value → 返回值是**新 time value**（数字
+    // setter 真正回写 time value → 返回值是**新 time value**（数字
     // 字面量，原生同款；此前恒折抽象 "number"）。时区无关断言：数值字面量。
     expect(evalWithArgs(`export function f() { return new Date(0).setYear(2020); }`, []).value)
       .toMatch(/^-?\d+$/);
   });
 });
 
-describe("Bug 45: new BigInt() throws TypeError", () => {
+describe("new BigInt() throws TypeError", () => {
   it("BigInt 无 [[Construct]] → never throws TypeError（与 Symbol 同口径）", () => {
     const r1 = evalWithArgs(`export function f() { return new BigInt(); }`, []);
     expect(r1.value).toBe("never");
@@ -356,7 +356,7 @@ describe("Bug 45: new BigInt() throws TypeError", () => {
   });
 });
 
-describe("Bug 46: new Math()/JSON()/Reflect() throws TypeError (no internal crash)", () => {
+describe("new Math()/JSON()/Reflect() throws TypeError (no internal crash)", () => {
   it("裸宿主命名空间对象不可构造 → never throws TypeError（非 unknown）", () => {
     for (const ns of ["Math", "JSON", "Reflect"]) {
       const r = evalWithArgs(`export function f() { return new ${ns}(); }`, []);
@@ -366,7 +366,7 @@ describe("Bug 46: new Math()/JSON()/Reflect() throws TypeError (no internal cras
   });
 });
 
-describe("Bug 58: new RegExp(<abstract pattern>) brand slots (single builder)", () => {
+describe("new RegExp(<abstract pattern>) brand slots (single builder)", () => {
   it("抽象 pattern → source/flags string 域、lastIndex 精确 0", () => {
     expect(evalWithArgs(`export function f(s) { return new RegExp(s).source; }`, [strAbs]).value).toBe("string");
     expect(evalWithArgs(`export function f(s) { return new RegExp(s).flags; }`, [strAbs]).value).toBe("string");
@@ -391,7 +391,7 @@ describe("Bug 58: new RegExp(<abstract pattern>) brand slots (single builder)", 
   });
 });
 
-describe("Bug 59: Error brand .stack → string", () => {
+describe("Error brand .stack → string", () => {
   it("stack 域恒 string（不可精确折叠）", () => {
     const strip = (a: unknown) => formatAbs(a as never)?.replace(/\s+#[a-z]+$/, "");
     expect(strip(call(`export function f() { return new Error("m").stack; }`).result)).toBe("string");

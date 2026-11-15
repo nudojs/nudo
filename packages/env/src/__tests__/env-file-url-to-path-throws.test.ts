@@ -1,12 +1,12 @@
 /**
- * Bug 881 — `node:url.fileURLToPath` 的 apply **把原生异常 catch 掉** ⇒ 恒不抛。
+ * `node:url.fileURLToPath` 的 apply **把原生异常 catch 掉** ⇒ 恒不抛。
  *
  * 原生 oracle（Node v26.10.0 独立进程实测）：
- *   fileURLToPath("file:///tmp/x.txt")  ⇒ OK（"/tmp/x.txt"）
- *   fileURLToPath("not-a-url")          ⇒ 抛 TypeError [ERR_INVALID_URL]
- *                                         （"Invalid URL"）
- *   fileURLToPath("http://example.com/x") ⇒ 抛 TypeError [ERR_INVALID_URL_SCHEME]
- *                                         （"The URL must be of scheme file"）
+ * fileURLToPath("file:///tmp/x.txt") ⇒ OK（"/tmp/x.txt"）
+ * fileURLToPath("not-a-url") ⇒ 抛 TypeError [ERR_INVALID_URL]
+ * （"Invalid URL"）
+ * fileURLToPath("http://example.com/x") ⇒ 抛 TypeError [ERR_INVALID_URL_SCHEME]
+ * （"The URL must be of scheme file"）
  *
  * 旧实现：apply 的 catch 分支 `return undefined` ⇒ envFn 回落「返回 string、
  * **永不抛**」——而源码注释却写着「保留 returnType/throws 面」——**envFn 当时
@@ -40,7 +40,7 @@ function nativeError(fn: () => unknown): { name?: string; code?: string } {
   }
 }
 
-describe("Bug 881 · fileURLToPath 不再吞掉原生异常", () => {
+describe("fileURLToPath 不再吞掉原生异常", () => {
   it("1. 非法 URL ⇒ 有 TypeError throws 面（旧实现恒不抛）", () => {
     // 原生 oracle
     const oracle = nativeError(() => nodeFileURLToPath("not-a-url"));

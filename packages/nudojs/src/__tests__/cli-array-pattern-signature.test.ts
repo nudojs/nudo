@@ -1,11 +1,11 @@
 /**
- * 缺陷报告类别 03 补修 —— Bug 8 的**签名面残留**。
+ * 缺陷报告类别 03 补修 —— 的**签名面残留**。
  *
  * L1 执法侧（数组解构形参按下标投影实参）已在类别 03 的主提交里修好；
  * 残留是 `generalize.ts` 仍把数组 pattern 的契约叶子合成**对象槽**：
  *
- *   f([ x ]: { x: number }) => never  throws TypeError
- *   [ERROR] f (export): may throw TypeError  (nudo:entry-may-throw)
+ * f([ x ]: { x: number }) => never throws TypeError
+ * [ERROR] f (export): may throw TypeError (nudo:entry-may-throw)
  *
  * 期望：形参域是数组 `number[]`、返回 `number`、不判必抛；`f([5])` 合法、
  * `f([-1])` 仍报 `x > 0`（L1 不回归）。
@@ -16,7 +16,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runCliNode as runCli, writeSrcTsconfig } from "./helpers/run-cli.ts";
 
-describe("类别 03 补修 · Bug 8 数组解构形参签名面", () => {
+describe("类别 03 补修 · 数组解构形参签名面", () => {
   it("签名是 number[] / 返回 number / 不判必抛，L1 元素义务照常执法", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug8-sig-"));
     writeSrcTsconfig(dir);

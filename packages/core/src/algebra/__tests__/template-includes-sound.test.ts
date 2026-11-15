@@ -2,10 +2,10 @@
  * 模板 includes / matches 不得跨抽象间隙假精确。
  * 回归背景：
  * 1) decideIncludes 用 allFixedTextOfViews 把固定段拼在一起，
- *    `a${x}b` 的固定文本是 "ab"，于是 includes("ab") 折 true——
- *    但 x="zz" 时 "azzb" 并不包含 "ab"。
+ * `a${x}b` 的固定文本是 "ab"，于是 includes("ab") 折 true——
+ * 但 x="zz" 时 "azzb" 并不包含 "ab"。
  * 2) templateMatchesValue 无回溯：`${x}abc` 匹配 "abcabc" 为 false；
- *    相邻抽象 part 直接 return true：`${x}${y}abc` 匹配 "hello" 为 true。
+ * 相邻抽象 part 直接 return true：`${x}${y}abc` 匹配 "hello" 为 true。
  */
 import { describe, it, expect } from "vitest";
 import {

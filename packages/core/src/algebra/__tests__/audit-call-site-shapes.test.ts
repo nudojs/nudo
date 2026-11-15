@@ -1,5 +1,5 @@
 /**
- * 审计批次 2026-11-14 回归钉 · 调用点 AST 形态（BUG-004 / BUG-032）。
+ * 审计批次 2026-11-14 回归钉 · 调用点 AST 形态（/ ）。
  *
  * 两种形态在原生里与非可选 / 字符串键写法完全等价，但 check 的调用点
  * 义务收集器此前只认 CallExpression + Identifier/StringLiteral 成员键。
@@ -23,7 +23,7 @@ function check(src: string, file: string) {
 const violations = (r: { issues: Array<{ code: string; fn?: string }> }) =>
   r.issues.filter((i) => i.code === "nudo:constraint-violated");
 
-describe("audit 34 · 静态模板字面量成员键（BUG-004）", () => {
+describe("audit 34 · 静态模板字面量成员键（）", () => {
   it("c[`m`](...) 与 c[\"m\"](...) / c.m(...) 三条义务一致", () => {
     const src = [
       `export class K { m(a) { return a; } }`,
@@ -46,7 +46,7 @@ describe("audit 34 · 静态模板字面量成员键（BUG-004）", () => {
   });
 });
 
-describe("audit 34 · 可选链调用（BUG-032）", () => {
+describe("audit 34 · 可选链调用（）", () => {
   it("f?.(-1) / c?.m(-1) / c.m?.(-1) 都触发形参前置条件", () => {
     const src = [
       `export function f(a) { return a; }`,
@@ -72,7 +72,7 @@ describe("audit 34 · 可选链调用（BUG-032）", () => {
   });
 });
 
-describe("audit 34 · BUG-003 面：catch 形参的作用域", () => {
+describe("audit 34 · 面：catch 形参的作用域", () => {
   /** `f` 的契约：`a` 必须 ≥ 0 */
   const CALLEE_SIDE = `import { fn, number } from "@nudojs/core";
 export const f = fn({ a: number().ge(0) }, number());

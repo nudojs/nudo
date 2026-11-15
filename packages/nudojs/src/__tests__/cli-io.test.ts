@@ -19,18 +19,18 @@ import { DIAG } from "@nudojs/core/internal";
 import { pathToFileURL } from "node:url";
 
 // ---------------------------------------------------------------------------
-// BUG-014 — `nudo test` 的 error 级分析诊断必须挡退出码
+// `nudo test` 的 error 级分析诊断必须挡退出码
 // ---------------------------------------------------------------------------
-describe("[cli-] BUG-014 — `nudo test` 的 error 级分析诊断必须挡退出码", () => {
+describe("`nudo test` 的 error 级分析诊断必须挡退出码", () => {
 /**
- * BUG-014 — `nudo test` 看不到**分析面 error 级诊断** ⇒ 假绿。
+ * `nudo test` 看不到**分析面 error 级诊断** ⇒ 假绿。
  *
  * 两个可观察面（同一根因：`commands/test.ts` 的退出码只由声明断言 + pathErrors
  * 决定，error 级分析诊断完全不参与）：
  * - 模块装载失败（`nudo:module-missing`，error）⇒ `nudo check` 判红，`nudo test`
- *   此前报绿（exit 0）；
+ * 此前报绿（exit 0）；
  * - `--json` 面没有 `ok` / error 计数 ⇒ CI 消费方不解析 `diagnostics[]` 就看不出
- *   失败。
+ * 失败。
  *
  * 反向钉：warning 级诊断（模块环）**不得**把 `test` 判红（那会大面积假红）。
  */
@@ -70,7 +70,7 @@ const CYCLE_B = `import { a } from "./a.js";
 export function b() { return a(); }
 `;
 
-describe("BUG-014 — `nudo test` 的 error 级分析诊断必须挡退出码", () => {
+describe("`nudo test` 的 error 级分析诊断必须挡退出码", () => {
   it("module-missing（error）⇒ exit 1 且诊断上屏", () => {
     const dir = project({ "m.js": MISSING_MODULE });
     try {
@@ -129,11 +129,11 @@ describe("BUG-014 — `nudo test` 的 error 级分析诊断必须挡退出码", 
 });
 
 // ---------------------------------------------------------------------------
-// BUG-026 — rest 参数在 zod / standard 面是**一层**数组
+// rest 参数在 zod / standard 面是**一层**数组
 // ---------------------------------------------------------------------------
-describe("[cli-] BUG-026 — rest 参数在 zod / standard 面是**一层**数组", () => {
+describe("rest 参数在 zod / standard 面是**一层**数组", () => {
 /**
- * BUG-026 —— `export --format all` 把 rest 参数投影成「**数组的数组**」，
+ * `export --format all` 把 rest 参数投影成「**数组的数组**」，
  * 而 dts 面是单数组 ⇒ 同一份产物集里两个方言给出不同的接受集。
  *
  * 根因：`observedRestAbs` 按「rest 位之后每个实参一个槽」遍历 `argAbs`，但
@@ -156,7 +156,7 @@ afterAll(() => {
 
 const SRC = "export function withRest(a, ...rest) {\n  return rest.length;\n}\n";
 
-describe("BUG-026 — rest 参数在 zod / standard 面是**一层**数组", () => {
+describe("rest 参数在 zod / standard 面是**一层**数组", () => {
   it("zod 入参槽 = z.array(z.unknown())（不是数组的数组）", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-b026-"));
     dirs.push(dir);
@@ -173,7 +173,7 @@ describe("BUG-026 — rest 参数在 zod / standard 面是**一层**数组", () 
     writeFileSync(join(dir, "rest.js"), SRC, "utf-8");
     const all = runCliTsx(["export", join(dir, "rest.js"), "--format", "all"]);
     expect(all.status).toBe(0);
-    // BUG-109：rest 槽恒可选 ⇒ standard 槽带 "optional":true（一层数组不变）
+    // rest 槽恒可选 ⇒ standard 槽带 "optional":true（一层数组不变）
     expect(all.stdout).toContain('{"key":"rest","node":{"k":"arr","element":{"k":"unknown"}},"optional":true}');
     expect(all.stdout).not.toContain('{"key":"rest","node":{"k":"arr","element":{"k":"arr"');
     expect(all.stdout).toContain("...rest: unknown[]");
@@ -182,11 +182,11 @@ describe("BUG-026 — rest 参数在 zod / standard 面是**一层**数组", () 
 });
 
 // ---------------------------------------------------------------------------
-// BUG-046 — --only 部分吞掉路径 ⇒ 不得静默丢文件
+// --only 部分吞掉路径 ⇒ 不得静默丢文件
 // ---------------------------------------------------------------------------
-describe("[cli-] BUG-046 — --only 部分吞掉路径 ⇒ 不得静默丢文件", () => {
+describe("--only 部分吞掉路径 ⇒ 不得静默丢文件", () => {
 /**
- * BUG-046 —— `nudo check --only <codes…>` **部分吞掉**后面的路径 ⇒ 被吞的
+ * `nudo check --only <codes…>` **部分吞掉**后面的路径 ⇒ 被吞的
  * 文件**从未被检查** ⇒ exit 0 假绿。
  *
  * 旧守卫只在「paths 全被吞空」（`paths.length === 0`）时触发；`paths` 已非空
@@ -210,7 +210,7 @@ const BROKEN = `export function staticName(node) {
 }
 `;
 
-describe("BUG-046 — --only 部分吞掉路径 ⇒ 不得静默丢文件", () => {
+describe("-only 部分吞掉路径 ⇒ 不得静默丢文件", () => {
   it("`check clean.js --only <code> broken.js` ⇒ 定向 usage error + exit 1", () => {
     const cwd = mkdtempSync(join(tmpdir(), "nudo-bug046-"));
     try {
@@ -266,11 +266,11 @@ describe("BUG-046 — --only 部分吞掉路径 ⇒ 不得静默丢文件", () =
 });
 
 // ---------------------------------------------------------------------------
-// BUG-047 — --fix 的 dry-run 计划 == --write 结果
+// --fix 的 dry-run 计划 == --write 结果
 // ---------------------------------------------------------------------------
-describe("[cli-] BUG-047 — --fix 的 dry-run 计划 == --write 结果", () => {
+describe("--fix 的 dry-run 计划 == --write 结果", () => {
 /**
- * BUG-047 —— `nudo check --fix` 的 dry-run 打印的计划必须等于 `--write` 的
+ * `nudo check --fix` 的 dry-run 打印的计划必须等于 `--write` 的
  * 实际写入，且 stdout 可被 `git apply --check -p1` 消费。
  *
  * 旧实现把「推进到计划文本」（`source = next` / `sidecarText = next`）放在
@@ -305,7 +305,7 @@ function makeProject(prefix: string): string {
   return cwd;
 }
 
-describe("BUG-047 — --fix 的 dry-run 计划 == --write 结果", () => {
+describe("-fix 的 dry-run 计划 == --write 结果", () => {
   it("第二份 diff 以第一份为基准（累积），不是又一份「新建文件」", () => {
     const cwd = makeProject("nudo-bug047-");
     try {
@@ -368,11 +368,11 @@ describe("BUG-047 — --fix 的 dry-run 计划 == --write 结果", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-048 — --fix --only 无命中必须可见
+// --fix --only 无命中必须可见
 // ---------------------------------------------------------------------------
-describe("[cli-] BUG-048 — --fix --only 无命中必须可见", () => {
+describe("--fix --only 无命中必须可见", () => {
 /**
- * BUG-048 —— `nudo check --fix --only <码>` 匹配不到任何诊断时是**静默
+ * `nudo check --fix --only <码>` 匹配不到任何诊断时是**静默
  * no-op**：拼错的码与「这些诊断确实没有可自动应用的修复」输出完全一样。
  *
  * 现在两个面都可见：
@@ -402,7 +402,7 @@ function makeProject(): string {
   return cwd;
 }
 
-describe("BUG-048 — --fix --only 无命中必须可见", () => {
+describe("-fix --only 无命中必须可见", () => {
   it("拼错的码 ⇒ usage error + exit 1（不再静默 no-op）", () => {
     const cwd = makeProject();
     try {
@@ -435,9 +435,9 @@ describe("BUG-048 — --fix --only 无命中必须可见", () => {
 // ---------------------------------------------------------------------------
 // fix-write-failure
 // ---------------------------------------------------------------------------
-describe("[cli-] fix-write-failure", () => {
+describe("fix-write-failure", () => {
 /**
- * BUG-049 —— `nudo check --fix --write` 写盘失败抛**裸 Node 异常**（EACCES）
+ * `nudo check --fix --write` 写盘失败抛**裸 Node 异常**（EACCES）
  * 且**不再处理其余文件**（整次运行中断）。
  *
  * 现在与读路径同口径：`error: check --fix cannot write <path>: <原因>`
@@ -495,11 +495,11 @@ describe.skipIf(isRoot)("BUG-049 — --fix --write 的写失败不中断整次�
 });
 
 // ---------------------------------------------------------------------------
-// BUG-067 — --fix --write 不写共享侧车路径
+// --fix --write 不写共享侧车路径
 // ---------------------------------------------------------------------------
-describe("[cli-] BUG-067 — --fix --write 不写共享侧车路径", () => {
+describe("--fix --write 不写共享侧车路径", () => {
 /**
- * BUG-067 —— `nudo check --fix --write` 写的侧车污染同目录**共享同一侧车
+ * `nudo check --fix --write` 写的侧车污染同目录**共享同一侧车
  * 路径**的兄弟模块（`foo.js` 与 `foo.mjs` 都映射到 `foo.nudo.js`）：
  * 给未被修复的兄弟**新增** error，且自己的 fix 被静默丢弃。
  *
@@ -521,13 +521,13 @@ const FOO_MJS = `export function b(user) {
 }
 `;
 
-/** 人类面 error 计数（`  N error · …`） */
+/** 人类面 error 计数（` N error · …`） */
 function errorCount(stdout: string): number {
   const m = /^\s*(\d+) error · /m.exec(stdout);
   return m ? Number(m[1]) : Number.NaN;
 }
 
-describe("BUG-067 — --fix --write 不写共享侧车路径", () => {
+describe("-fix --write 不写共享侧车路径", () => {
   it("foo.js + foo.mjs 共存 ⇒ 拒绝落盘、兄弟模块错误数不变", () => {
     const cwd = mkdtempSync(join(tmpdir(), "nudo-bug067-"));
     try {
@@ -561,11 +561,11 @@ describe("BUG-067 — --fix --write 不写共享侧车路径", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-075 — stdout 平铺的顶层标识符互不冲突
+// stdout 平铺的顶层标识符互不冲突
 // ---------------------------------------------------------------------------
-describe("[cli-] BUG-075 — stdout 平铺的顶层标识符互不冲突", () => {
+describe("stdout 平铺的顶层标识符互不冲突", () => {
 /**
- * BUG-075 —— `export --format all` 的 stdout 平铺**跨段去重只认「导出声明」**
+ * `export --format all` 的 stdout 平铺**跨段去重只认「导出声明」**
  * ⇒ 与 zod 段的 `import { z }` / standard 段的非导出 helper 撞名
  * （TS2440 + `z.object` 被解析到用户自己的 `z` ⇒ **语义串味**）。
  *
@@ -593,7 +593,7 @@ const SRC = "export function z(x) {\n  return x;\n}\nz(1);\n";
 /** zod 桩：平铺产物只 import `{ z }`，类型面 any 即可（编译面判的是作用域冲突）。 */
 const ZOD_STUB = "export declare const z: any;\n";
 
-describe("BUG-075 — stdout 平铺的顶层标识符互不冲突", () => {
+describe("stdout 平铺的顶层标识符互不冲突", () => {
   it("用户导出 `z` + zod 段 import ⇒ 产物可编译（tsc --strict rc 0）", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-b075-"));
     dirs.push(dir);
@@ -649,15 +649,15 @@ describe("BUG-075 — stdout 平铺的顶层标识符互不冲突", () => {
 });
 
 // ---------------------------------------------------------------------------
-// export --format dts · BUG-076 · 无证据参数的既定口径
+// export --format dts · 无证据参数的既定口径
 // ---------------------------------------------------------------------------
-describe("[cli-] export --format dts · BUG-076 · 无证据参数的既定口径", () => {
+describe("export --format dts · 无证据参数的既定口径", () => {
 /**
- * BUG-076 —— `nudo export --format dts` 的**无证据参数**口径。
+ * `nudo export --format dts` 的**无证据参数**口径。
  *
  * 导出指南 en/zh 与 `docs/design/cli-semantics.md` §2 原本承诺：未被观测的
  * export 参数渲染为 **`unknown`** 并在 stderr 打一行**点名提示**。历史实现
- * （Bug 544 把 `abs.md:100` 的 display 规则误引到 .d.ts 产物面）渲染成
+ * （把 `abs.md:100` 的 display 规则误引到 .d.ts 产物面）渲染成
  * **`any`** 且不打提示，本文件曾钉住那处「文档 vs 实现」矛盾。
  *
  * 2026-11-06 产品裁定「nudo 的 any 含义更接近 TS 的 unknown」把 TS 投影面
@@ -665,11 +665,11 @@ describe("[cli-] export --format dts · BUG-076 · 无证据参数的既定口�
  * 仍只管 nudo 展示 / CLI 面（那里 any 与 unknown 继续区分）。
  *
  * 归一还带来一个**顺带的正面效应**：提示通道是按「渲染成 unknown」触发的，
- * 所以主路径也开始打点名提示 ⇒ BUG-076 记录的「文档承诺 vs 实现」矛盾
+ * 所以主路径也开始打点名提示 ⇒ 记录的「文档承诺 vs 实现」矛盾
  * （类型 + 提示两半）**彻底关闭**：① **主路径**（普通导出函数，完全无证据 /
  * 契约未覆盖某位）⇒ `unknown` + stderr `rendered as unknown`；
  * ② **窄路径**（`@nudo:skip` / 无 case 函数 **且** 手写契约参数位存在
- *    ⇒ `contractOnlySignature`）⇒ 同样的 `unknown` + 点名提示。
+ * ⇒ `contractOnlySignature`）⇒ 同样的 `unknown` + 点名提示。
  * 本文件钉住新口径；提示通道若退回只覆盖窄路径，这条回归会先亮红灯。
  *
  * ⚠ 夹具里写 `writeSrcTsconfig`：CLI 子进程按 cwd 找 tsconfig，否则落到
@@ -690,7 +690,7 @@ function fixtureDir(files: Record<string, string>): string {
   return dir;
 }
 
-describe("export --format dts · BUG-076 · 无证据参数的既定口径", () => {
+describe("export --format dts · 无证据参数的既定口径", () => {
   it("主路径：完全无证据的导出函数 ⇒ 参数 unknown，stderr 点名提示", () => {
     const dir = fixtureDir({
       "noev.js": `export function neverCalled(a, b) {\n  return a + b;\n}\n`,
@@ -753,11 +753,11 @@ describe("export --format dts · BUG-076 · 无证据参数的既定口径", () 
 });
 
 // ---------------------------------------------------------------------------
-// BUG-099: 截断诊断跨面可见（test / --json / check）
+// 截断诊断跨面可见（test / --json / check）
 // ---------------------------------------------------------------------------
-describe("[cli-] BUG-099: 截断诊断跨面可见（test / --json / check）", () => {
+describe("截断诊断跨面可见（test / --json / check）", () => {
 /**
- * BUG-099 CLI 回归：截断诊断必须**跨面可见**。
+ * CLI 回归：截断诊断必须**跨面可见**。
  *
  * 修前：同一份递归源码，`nudo check` / `nudo health` 报「求值被截断」，
  * `nudo test`（人类面 + `--json`）**零诊断** —— 三个面对同一件事给出互斥
@@ -795,7 +795,7 @@ interface TestJson {
   diagnostics: { code: string; severity: string }[];
 }
 
-describe("BUG-099: 截断诊断跨面可见（test / --json / check）", () => {
+describe("截断诊断跨面可见（test / --json / check）", () => {
   it("test 文本面与 --json 面都带 nudo:recursion-truncated", { timeout: 60_000 }, () => {
     const file = writeFixture();
 
@@ -824,11 +824,11 @@ describe("BUG-099: 截断诊断跨面可见（test / --json / check）", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1026 — 目录目标扫描排除产品默认安全目录（dist / coverage）
+// 目录目标扫描排除产品默认安全目录（dist / coverage）
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 1026 — 目录目标扫描排除产品默认安全目录（dist / coverage）", () => {
+describe("目录目标扫描排除产品默认安全目录（dist / coverage）", () => {
 /**
- * Bug 1026 — CLI 的**目录目标扫描**只抄了产品默认安全排除 3 条里的 1 条
+ * CLI 的**目录目标扫描**只抄了产品默认安全排除 3 条里的 1 条
  * （`node_modules`）⇒ `dist/` / `coverage/` 里的构建产物被当源码门禁。
  *
  * 后果（本次逐条钉住）：
@@ -864,7 +864,7 @@ export function double(x) {
 }
 `;
 
-describe("Bug 1026 — 目录目标扫描排除产品默认安全目录（dist / coverage）", () => {
+describe("目录目标扫描排除产品默认安全目录（dist / coverage）", () => {
   const dirs: string[] = [];
   afterEach(() => {
     for (const d of dirs) rmSync(d, { recursive: true, force: true });
@@ -929,11 +929,11 @@ describe("Bug 1026 — 目录目标扫描排除产品默认安全目录（dist /
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1050 — dropped preds 台账标题与内容同源
+// dropped preds 台账标题与内容同源
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 1050 — dropped preds 台账标题与内容同源", () => {
+describe("dropped preds 台账标题与内容同源", () => {
 /**
- * Bug 1050 — `nudo export` 的 stdout `dropped preds` 台账恒称「not projected into
+ * `nudo export` 的 stdout `dropped preds` 台账恒称「not projected into
  * zod」⇒ `--format standard`（**根本没产 zod 产物**）也这么写 ⇒ 误导诊断
  * （标题与内容张冠李戴）。
  *
@@ -968,7 +968,7 @@ function count(text: string, pattern: RegExp): number {
   return (text.match(pattern) ?? []).length;
 }
 
-describe("Bug 1050 — dropped preds 台账标题与内容同源", () => {
+describe("dropped preds 台账标题与内容同源", () => {
   it("--format standard：台账标题不再宣称 zod（没有 zod 产物）", () => {
     const file = fixture();
     const r = runCli(["export", file, "--format", "standard"]);
@@ -998,11 +998,11 @@ describe("Bug 1050 — dropped preds 台账标题与内容同源", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-115 — --json 信封的 summary.pathErrors
+// --json 信封的 summary.pathErrors
 // ---------------------------------------------------------------------------
-describe("[cli-] BUG-115 — --json 信封的 summary.pathErrors", () => {
+describe("--json 信封的 summary.pathErrors", () => {
 /**
- * BUG-115 —— `check --json` 的信封里 `summary.errors` **不含** `pathErrors`
+ * `check --json` 的信封里 `summary.errors` **不含** `pathErrors`
  * （695 口径），而设计文档写的是「并计入」⇒ 只读 `summary.errors` 的机器
  * 消费方把「路径失败」读成「0 错」（`ok` 才是 false）。
  *
@@ -1039,7 +1039,7 @@ function makeProject(): string {
   return cwd;
 }
 
-describe("BUG-115 — --json 信封的 summary.pathErrors", () => {
+describe("-json 信封的 summary.pathErrors", () => {
   it("路径不存在 ⇒ ok:false + summary.pathErrors = 1（summary.errors 仍只数诊断）", () => {
     const cwd = makeProject();
     try {
@@ -1073,14 +1073,14 @@ describe("BUG-115 — --json 信封的 summary.pathErrors", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-120 / BUG-030 — `<fn>Input` 的顶层键
+// / `<fn>Input` 的顶层键
 // ---------------------------------------------------------------------------
-describe("[cli-] BUG-120 / BUG-030 — `<fn>Input` 的顶层键", () => {
+describe("/ `<fn>Input` 的顶层键", () => {
 /**
- * BUG-120 —— `<fn>Input` 的**键语义**在解构形参与普通形参上相反 ⇒
+ * `<fn>Input` 的**键语义**在解构形参与普通形参上相反 ⇒
  * `plainInput` 拒绝 `.d.ts` 明文声明的调用形态。
  *
- * **口径已由 BUG-030 修正**：BUG-120 把解构形参整段收进一个以**求值占位**
+ * **口径已由 修正**：把解构形参整段收进一个以**求值占位**
  * （`_p0`）命名的槽 —— 占位名不是公共名，发布的校验器因此对唯一合法调用报
  * `required@_p0`。现口径：解构形参按**字段名**建顶层键（与 dts 声明的调用形态
  * 同形）；普通形参仍按形参名。
@@ -1097,7 +1097,7 @@ describe("[cli-] BUG-120 / BUG-030 — `<fn>Input` 的顶层键", () => {
  * 钉（三个面同口径 + 顶层键 ≡ 形参名）：
  * - zod：`destrInput` / `plainInput` 的顶层键都是形参名，值都是那个对象的形状；
  * - standard：`destrInput` 的槽节点是**一个**对象槽 `_p0`；
- * - 负控制：数组解构的字段级契约仍是**元组**（Bug 394 口径不变）。
+ * - 负控制：数组解构的字段级契约仍是**元组**（口径不变）。
  */
 
 
@@ -1146,8 +1146,8 @@ function inputNode(stdout: string, exportName: string): string {
   return m![1]!;
 }
 
-describe("BUG-120 / BUG-030 — `<fn>Input` 的顶层键", () => {
-  // 口径（BUG-030 覆盖 BUG-120 的槽名部分）：解构形参**没有公共名**，`_p0` 是
+describe("/ `<fn>Input` 的顶层键", () => {
+  // 口径（覆盖 的槽名部分）：解构形参**没有公共名**，`_p0` 是
   // 求值占位 ⇒ 公共面只允许源码里写得出来的键。解构形参因此按**字段名**建顶层
   // 键（= `.d.ts` 明文声明的调用形态 `f({ a, b })`）；普通形参仍按形参名建键。
   it("zod：解构形参按**字段名**建顶层键（不再是内部占位 `_p0`）", () => {
@@ -1182,11 +1182,11 @@ describe("BUG-120 / BUG-030 — `<fn>Input` 的顶层键", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-171 — --from 路径去重
+// --from 路径去重
 // ---------------------------------------------------------------------------
-describe("[cli-] BUG-171 — --from 路径去重", () => {
+describe("--from 路径去重", () => {
 /**
- * BUG-171 回归：同一个 `--from` 路径给两次不是两个现场。
+ * 回归：同一个 `--from` 路径给两次不是两个现场。
  *
  * 改前 `collectExternalRecords` 逐项处理、不去重 ⇒ 同一路径登记两次错误、
  * 跑两次求值探针，human 面还把同一文件说成「2 usage-site files」。
@@ -1197,7 +1197,7 @@ describe("[cli-] BUG-171 — --from 路径去重", () => {
 
 
 
-describe("BUG-171 — --from 路径去重", () => {
+describe("-from 路径去重", () => {
   it("同一缺失路径给两次 ⇒ 只登记一条错误", () => {
     const dir = tmpProject("nudo-171-");
     const missing = join(dir, "nope.js");
@@ -1220,11 +1220,11 @@ describe("BUG-171 — --from 路径去重", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-204 — stdout 跨段改名不碰 schema 里的槽键数据
+// stdout 跨段改名不碰 schema 里的槽键数据
 // ---------------------------------------------------------------------------
-describe("[cli-] BUG-204 — stdout 跨段改名不碰 schema 里的槽键数据", () => {
+describe("stdout 跨段改名不碰 schema 里的槽键数据", () => {
 /**
- * BUG-204 —— `export --format all`（stdout）的跨段改名是**裸文本替换** ⇒ 把
+ * `export --format all`（stdout）的跨段改名是**裸文本替换** ⇒ 把
  * standard 段 `{"key":"<形参名>"}` 这个**数据**一并改名 ⇒ 导出的 standard
  * schema 要求一个根本不存在的形参名，与同一产物里的 zod 段 / dts 段结论相反。
  *
@@ -1250,7 +1250,7 @@ afterAll(() => {
 
 const SRC = "export function f1(f1Input) {\n  return f1Input;\n}\n";
 
-describe("BUG-204 — stdout 跨段改名不碰 schema 里的槽键数据", () => {
+describe("stdout 跨段改名不碰 schema 里的槽键数据", () => {
   it("standard 段的槽键是原形参名（导出名让位，数据不动）", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-b204-"));
     dirs.push(dir);
@@ -1285,11 +1285,11 @@ describe("BUG-204 — stdout 跨段改名不碰 schema 里的槽键数据", () =
 });
 
 // ---------------------------------------------------------------------------
-// BUG-231 — 唯一名兜底分支按「同一模块」覆盖更新
+// 唯一名兜底分支按「同一模块」覆盖更新
 // ---------------------------------------------------------------------------
-describe("[cli-] BUG-231 — 唯一名兜底分支按「同一模块」覆盖更新", () => {
+describe("唯一名兜底分支按「同一模块」覆盖更新", () => {
 /**
- * BUG-231 —— `nudo export --out` 的「唯一名兜底」分支**不查「同一模块」** ⇒
+ * `nudo export --out` 的「唯一名兜底」分支**不查「同一模块」** ⇒
  * 同一模块重导落盘产生**内容互斥**的陈旧副本并逐次累积。
  *
  * 症状：两个同名模块（`a/lib.js` / `b/lib.js`）导出到同一 `--out` 目录后再改
@@ -1312,7 +1312,7 @@ afterAll(() => {
   for (const d of dirs) rmSync(d, { recursive: true, force: true });
 });
 
-describe("BUG-231 — 唯一名兜底分支按「同一模块」覆盖更新", () => {
+describe("唯一名兜底分支按「同一模块」覆盖更新", () => {
   it("同名两个模块 + 同模块重导 ⇒ 无编号副本、无陈旧内容", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-b231-"));
     dirs.push(dir);
@@ -1361,20 +1361,20 @@ describe("BUG-231 — 唯一名兜底分支按「同一模块」覆盖更新", (
 });
 
 // ---------------------------------------------------------------------------
-// BUG-232 —— --out 产物的相对说明符必须重基
+// --out 产物的相对说明符必须重基
 // ---------------------------------------------------------------------------
-describe("[cli-] BUG-232 —— --out 产物的相对说明符必须重基", () => {
+describe("--out 产物的相对说明符必须重基", () => {
 /**
- * BUG-232 —— `nudo export --format dts --out <dir>` 不重基相对模块说明符。
+ * `nudo export --format dts --out <dir>` 不重基相对模块说明符。
  *
  * 产物里的 `import type … from "./point.js"` / `export … from "./helper.js"`
  * 是相对**源目录**的；写到 `--out` 后解析基准变成输出目录 ⇒ 消费端
  * `tsc` 报 **TS2307**（同一份字节放源目录 0 error）。
  *
- * 修法（Bug 43 起）：写盘时把相对说明符压成产物**旁边的兄弟声明**
+ * 修法（起）：写盘时把相对说明符压成产物**旁边的兄弟声明**
  * （`./point.js` / `./helper.js`，按源 stem 平铺的声明树；不再指向源目录）。
  * `ExportArtifacts.sourcePath` 是**独立**的可选字段 —— `moduleKey` 仍与
- * 路径无关，BUG-016 不回归。
+ * 路径无关，不回归。
  */
 
 
@@ -1399,7 +1399,7 @@ function makeFixture(): { src: string; outDir: string; root: string } {
   return { src, outDir, root };
 }
 
-describe("BUG-232 —— --out 产物的相对说明符必须重基", () => {
+describe("-out 产物的相对说明符必须重基", () => {
   it("写出的 .d.ts 里的相对说明符从输出目录可解析（不再指向源目录）", () => {
     const { src, outDir } = makeFixture();
     // 平铺声明树：依赖模块也导出到同一 out ⇒ 兄弟声明就在产物旁边。
@@ -1428,11 +1428,11 @@ describe("BUG-232 —— --out 产物的相对说明符必须重基", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-246 CLI：可选槽吸收 undefined
+// CLI：可选槽吸收 undefined
 // ---------------------------------------------------------------------------
-describe("[cli-] BUG-246 CLI：可选槽吸收 undefined", () => {
+describe("CLI：可选槽吸收 undefined", () => {
 /**
- * BUG-246（CLI e2e）：可选槽吸收 `undefined` —— TS 默认
+ * （CLI e2e）：可选槽吸收 `undefined` —— TS 默认
  * `exactOptionalPropertyTypes: false` 下 `{ a?: string }` 的槽类型是
  * `string | undefined` ⇒ `f({ a: undefined })` 合法。
  *
@@ -1486,7 +1486,7 @@ interface CliIssue {
   expected?: string;
 }
 
-describe("BUG-246 CLI：可选槽吸收 undefined", () => {
+describe("CLI：可选槽吸收 undefined", () => {
   it("optional 契约 + `{ a: undefined }` / `{}` / `{ a: 'x' }` ⇒ exit 0、无 constraint-violated", () => {
     const file = fixture(
       "f",
@@ -1528,11 +1528,11 @@ describe("BUG-246 CLI：可选槽吸收 undefined", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-279 — rest 入参槽不得多包一层数组
+// rest 入参槽不得多包一层数组
 // ---------------------------------------------------------------------------
-describe("[cli-] BUG-279 — rest 入参槽不得多包一层数组", () => {
+describe("rest 入参槽不得多包一层数组", () => {
 /**
- * BUG-279 —— `nudo export` 的 zod / standard 产物把**剩余参数**（`...args`）
+ * `nudo export` 的 zod / standard 产物把**剩余参数**（`...args`）
  * 的入参槽**多包一层数组** ⇒ 导出的入参 schema 拒绝该函数自己的合法调用。
  *
  * 严格单变量：A 组（无调用点证据，只有 `entry@`）坏、B 组（同一函数 + 一行
@@ -1543,7 +1543,7 @@ describe("[cli-] BUG-279 — rest 入参槽不得多包一层数组", () => {
  * - A 组 zod 槽 = `z.array(z.unknown())`（一层）；standard 节点同形；
  * - A 组 standard 校验器（Standard Schema 真跑）**接受** `{ args: [1, 2] }`；
  * - 对照组 B 组仍是**一层**数组，且接受同样的调用（同一函数的两个证据来源
- *   给出同一接受集）。
+ * 给出同一接受集）。
  */
 
 
@@ -1567,12 +1567,12 @@ function fixture(src: string): string {
   return dir;
 }
 
-describe("BUG-279 — rest 入参槽不得多包一层数组", () => {
+describe("rest 入参槽不得多包一层数组", () => {
   it("A 组（无调用点）：zod / standard 槽是一层数组，dts 同形", () => {
     const dir = fixture(NO_CALLSITE);
     const schema = runCliTsx(["export", join(dir, "lib.js"), "--format", "schema"]);
     expect(schema.status).toBe(0);
-    // BUG-109：rest 槽恒可选（zod 面 .optional()），仍是一层数组
+    // rest 槽恒可选（zod 面 .optional()），仍是一层数组
     expect(schema.stdout).toContain("export const restOneInput = z.object({ args: z.array(z.unknown()).optional() })");
     expect(schema.stdout).not.toContain("z.array(z.array(");
 
@@ -1625,11 +1625,11 @@ describe("BUG-279 — rest 入参槽不得多包一层数组", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-285 — --gha --gitlab 两个通道都不丢
+// --gha --gitlab 两个通道都不丢
 // ---------------------------------------------------------------------------
-describe("[cli-] BUG-285 — --gha --gitlab 两个通道都不丢", () => {
+describe("--gha --gitlab 两个通道都不丢", () => {
 /**
- * BUG-285 —— `check --gha --gitlab`（**非** `--json`）⇒ GHA 注解整段丢弃
+ * `check --gha --gitlab`（**非** `--json`）⇒ GHA 注解整段丢弃
  * （`::error` 计数 0），而同一语义只多一个无关的 `--json` 就恢复 ⇒
  * 「同一语义两种写法两个结论」。
  *
@@ -1667,7 +1667,7 @@ function makeProject(): string {
 const annCount = (r: { stdout: string; stderr: string }): number =>
   `${r.stdout}${r.stderr}`.split("::error").length - 1;
 
-describe("BUG-285 — --gha --gitlab 两个通道都不丢", () => {
+describe("-gha --gitlab 两个通道都不丢", () => {
   it("--gha 单独 ⇒ 注解在 stdout（不回归）", () => {
     const cwd = makeProject();
     try {
@@ -1717,11 +1717,11 @@ describe("BUG-285 — --gha --gitlab 两个通道都不丢", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 366 — --from 的跨文件调用点证据必须进入 drift 判定
+// --from 的跨文件调用点证据必须进入 drift 判定
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 366 — --from 的跨文件调用点证据必须进入 drift 判定", () => {
+describe("--from 的跨文件调用点证据必须进入 drift 判定", () => {
 /**
- * Bug 366 — `nudo check --from <使用现场文件>` 必须能判出**跨文件**调用点
+ * `nudo check --from <使用现场文件>` 必须能判出**跨文件**调用点
  * 带来的生成段陈旧（`nudo:contract-drift`）。
  *
  * 症状（改前）：drift 的「今日域」证据**只**来自 checkSource 评估**被检查
@@ -1807,7 +1807,7 @@ function fixtureDir(files: Record<string, string>): string {
   return dir;
 }
 
-describe("Bug 366 — --from 的跨文件调用点证据必须进入 drift 判定", () => {
+describe("-from 的跨文件调用点证据必须进入 drift 判定", () => {
   it("check --from <使用现场> -- <被检查文件> ⇒ 报 nudo:contract-drift（改前 0 条）", () => {
     const dir = fixtureDir(FILES);
     const r = runCliTsx(
@@ -1852,11 +1852,11 @@ describe("Bug 366 — --from 的跨文件调用点证据必须进入 drift 判�
 });
 
 // ---------------------------------------------------------------------------
-// export — 数组解构形参的输入面（族 08 · S5 · Bug 394）
+// export — 数组解构形参的输入面（族 08 · S5 · ）
 // ---------------------------------------------------------------------------
-describe("[cli-] export — 数组解构形参的输入面（族 08 · S5 · Bug 394）", () => {
+describe("export — 数组解构形参的输入面（族 08 · S5 · ）", () => {
 /**
- * Bug 394（**nudojs 侧**，zod / standard 产物面）：**数组解构**形参的字段级
+ * （**nudojs 侧**，zod / standard 产物面）：**数组解构**形参的字段级
  * 侧车契约被摊成**对象槽** ⇒ 产物的输入面与真实形参形态**完全颠倒**。
  *
  * 症状（改前）：`export function f7([a, b])` + 侧车契约 `fn({ a: number() })`
@@ -1913,7 +1913,7 @@ const OBJECT_SIDECAR = `import { fn, number } from "@nudojs/core";
 export const f7 = fn({ a: number() }, number());
 `;
 
-describe("export — 数组解构形参的输入面（族 08 · S5 · Bug 394）", () => {
+describe("export — 数组解构形参的输入面（族 08 · S5 · ）", () => {
   it("zod 入参面：数组解构 + 字段级契约 ⇒ 元组槽（改前是对象槽 `a`）", () => {
     const dir = fixture({ "m394.js": ARRAY_SRC, "m394.nudo.js": ARRAY_SIDECAR });
     const r = runCliTsx(["export", join(dir, "m394.js"), "--format", "schema"]);
@@ -1949,17 +1949,17 @@ describe("export — 数组解构形参的输入面（族 08 · S5 · Bug 394）
 });
 
 // ---------------------------------------------------------------------------
-// Bug 405 —— --what-if --target 指向函数时不再打出 `?`
+// --what-if --target 指向函数时不再打出 `?`
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 405 —— --what-if --target 指向函数时不再打出 `?`", () => {
+describe("--what-if --target 指向函数时不再打出 `?`", () => {
 /**
- * Bug 405 —— `nudo check --what-if --target <函数名>` 把函数的**返回域**渲染成
- * 占位符 `?`（`() => ?  #exact`）。
+ * `nudo check --what-if --target <函数名>` 把函数的**返回域**渲染成
+ * 占位符 `?`（`() => ? #exact`）。
  *
  * 症状（改前）：
  * ```
  * $ nudo check c.js --what-if raw:string --target useRaw
- * Type of "useRaw": () => ?  #exact
+ * Type of "useRaw": () => ? #exact
  * ```
  * 而**同一份文件**的签名表里写着 `useRaw() => 3` ⇒ 两条面互相矛盾；`?` 既不是
  * 合法 TS 类型也不是 Nudo 的类型记号（对 AI/agent 消费者等于「返回域未知」）。
@@ -2001,7 +2001,7 @@ const SRC = [
   ``,
 ].join("\n");
 
-describe("Bug 405 —— --what-if --target 指向函数时不再打出 `?`", () => {
+describe("-what-if --target 指向函数时不再打出 `?`", () => {
   it("--target 指向函数名：返回域取自函数面（不再是 `() => ?`）", () => {
     const dir = fixture({ "w405.js": SRC });
     const r = runCliTsx([
@@ -2014,7 +2014,7 @@ describe("Bug 405 —— --what-if --target 指向函数时不再打出 `?`", ()
     ]);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain('Type of "useRaw":');
-    // 改前：`Type of "useRaw": () => ?  #exact`
+    // 改前：`Type of "useRaw": () => ? #exact`
     expect(r.stdout).not.toContain("=> ?");
     expect(r.stdout).toContain("() => number");
   }, 60000);
@@ -2071,11 +2071,11 @@ describe("Bug 405 —— --what-if --target 指向函数时不再打出 `?`", ()
 });
 
 // ---------------------------------------------------------------------------
-// Bug 445 —— strip 产物不得残留「值位置的类型专用导入」（产物可加载）
+// strip 产物不得残留「值位置的类型专用导入」（产物可加载）
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 445 —— strip 产物不得残留「值位置的类型专用导入」（产物可加载）", () => {
+describe("strip 产物不得残留「值位置的类型专用导入」（产物可加载）", () => {
 /**
- * Bug 445 —— 值位置的「类型专用导入」未消除 ⇒ 产物 Node **加载不了**
+ * 值位置的「类型专用导入」未消除 ⇒ 产物 Node **加载不了**
  * （ESM 链接期 `SyntaxError: does not provide an export named 'Foo'`），
  * 而 `migrate strip` / `migrate verify` 双双绿灯。
  *
@@ -2121,7 +2121,7 @@ function esmLoad(path: string): { status: number; stdout: string; stderr: string
   return { status: r.status ?? 1, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
 }
 
-describe("Bug 445 —— strip 产物不得残留「值位置的类型专用导入」（产物可加载）", () => {
+describe("strip 产物不得残留「值位置的类型专用导入」（产物可加载）", () => {
   it("类型专用的值位置 import 被消掉 ⇒ 产物 `node --check` 过且真 import() 成功", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-cli-bug-445-"));
     dirs.push(dir);
@@ -2166,11 +2166,11 @@ describe("Bug 445 —— strip 产物不得残留「值位置的类型专用导�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 447 —— 类成员的 `x!` / `y?` / `m?()` 必须被剥除（产物是合法 JS）
+// 类成员的 `x!` / `y?` / `m?()` 必须被剥除（产物是合法 JS）
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 447 —— 类成员的 `x!` / `y?` / `m?()` 必须被剥除（产物是合法 JS）", () => {
+describe("类成员的 `x!` / `y?` / `m?()` 必须被剥除（产物是合法 JS）", () => {
 /**
- * Bug 447 —— 类成员的 `x!`（确定赋值断言）与 `y?` / `m?()`（可选成员）未剥
+ * 类成员的 `x!`（确定赋值断言）与 `y?` / `m?()`（可选成员）未剥
  * ⇒ 产物**不是合法 JS**（`node --check` 报 `SyntaxError: Unexpected token
  * '!'` / `'?'`）。
  *
@@ -2207,7 +2207,7 @@ function nodeCheck(path: string): { status: number; stderr: string } {
   return { status: r.status ?? 1, stderr: r.stderr ?? "" };
 }
 
-describe("Bug 447 —— 类成员的 `x!` / `y?` / `m?()` 必须被剥除（产物是合法 JS）", () => {
+describe("类成员的 `x!` / `y?` / `m?()` 必须被剥除（产物是合法 JS）", () => {
   it("字段的 `x!` / `y?` 被剥 ⇒ 产物 `node --check` 过", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-cli-bug-447-"));
     dirs.push(dir);
@@ -2249,11 +2249,11 @@ describe("Bug 447 —— 类成员的 `x!` / `y?` / `m?()` 必须被剥除（产
 });
 
 // ---------------------------------------------------------------------------
-// Bug 448 —— TS 的 `this` 形参必须被剥除（产物可加载）
+// TS 的 `this` 形参必须被剥除（产物可加载）
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 448 —— TS 的 `this` 形参必须被剥除（产物可加载）", () => {
+describe("TS 的 `this` 形参必须被剥除（产物可加载）", () => {
 /**
- * Bug 448 —— TS 的 `this` 形参未剥 ⇒ 产物 `function f(this, a)` **Node 根本
+ * TS 的 `this` 形参未剥 ⇒ 产物 `function f(this, a)` **Node 根本
  * 加载不了**（strict 与 sloppy 都不允许 `this` 作形参名），而 `migrate strip`
  * 报「wrote」/ exit 0。
  *
@@ -2287,7 +2287,7 @@ function nodeCheck(path: string): { status: number; stderr: string } {
   return { status: r.status ?? 1, stderr: r.stderr ?? "" };
 }
 
-describe("Bug 448 —— TS 的 `this` 形参必须被剥除（产物可加载）", () => {
+describe("TS 的 `this` 形参必须被剥除（产物可加载）", () => {
   it("`this` 形参被剥 ⇒ 产物 `node --check` 过且形参表只剩 `a`", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-cli-bug-448-"));
     dirs.push(dir);
@@ -2330,7 +2330,7 @@ describe("Bug 448 —— TS 的 `this` 形参必须被剥除（产物可加载�
 // ---------------------------------------------------------------------------
 // 族 56 · CLI 面 3 条
 // ---------------------------------------------------------------------------
-describe("[cli-] 族 56 · CLI 面 3 条", () => {
+describe("族 56 · CLI 面 3 条", () => {
 /**
  * 族 56 · nudojs **CLI 面** 3 条（机器消费者能看见的问题）：
  *
@@ -2343,7 +2343,7 @@ describe("[cli-] 族 56 · CLI 面 3 条", () => {
  * 反向闸（断言非永真）：
  * - 排除清单：无排除的 workspace ⇒ `--json` 里**不出现** `excluded` 键（stdout 逐字不变）。
  * - 失败清单：单个失败 ⇒ 消息与旧实现**逐字同形**（`<原因> (target: <目标>)`）。
- * - 扫描面：`.d.ts` 声明 / `*.nudo.js` 侧车**仍不是** verify 的目标（Bug 566 同口径不变）。
+ * - 扫描面：`.d.ts` 声明 / `*.nudo.js` 侧车**仍不是** verify 的目标（同口径不变）。
  */
 
 
@@ -2526,14 +2526,14 @@ describe("族 56 · CLI 面 3 条", () => {
     const a = plainPkg("cli-plain-a");
     const b = plainPkg("cli-plain-b");
     const r = runCliTsx(["migrate", "retire", a.dir, b.dir]);
-    expect(r.status).toBe(0); // 「无可退役」是正常结果（Bug 567 口径不变）
+    expect(r.status).toBe(0); // 「无可退役」是正常结果（口径不变）
     const all = `${r.stdout}${r.stderr}`;
     expect(all).toContain(a.dir);
     expect(all).toContain(b.dir);
 
     const j = runCliTsx(["migrate", "retire", a.dir, b.dir, "--json"]);
     expect(j.status).toBe(0);
-    // BUG-017：`--json` 顶层形状**恒为数组**（成功信封也是单元素数组）
+    // `--json` 顶层形状**恒为数组**（成功信封也是单元素数组）
     const envelope = JSON.parse(j.stdout) as Array<{
       ok: boolean;
       failedTargets?: Array<{ target: string; message: string }>;
@@ -2602,9 +2602,9 @@ describe("族 56 · CLI 面 3 条", () => {
 // ---------------------------------------------------------------------------
 // 族 56b — migrateStrip 库面逐文件错误隔离（与 migrateVerify 同口径）
 // ---------------------------------------------------------------------------
-describe("[cli-] 族 56b — migrateStrip 库面逐文件错误隔离（与 migrateVerify 同口径）", () => {
+describe("族 56b — migrateStrip 库面逐文件错误隔离（与 migrateVerify 同口径）", () => {
 /**
- * 族 56b · Bug 696 的**库面半边** —— `migrateStrip` 的**逐文件错误隔离**。
+ * 族 56b · 的**库面半边** —— `migrateStrip` 的**逐文件错误隔离**。
  *
  * 背景（台账原描述「`migrate verify` 库面整批 abort」经 W4 取证**已不成立**）：
  * `migrateVerify` 早已逐文件隔离（同目标内部分文件语法错 ⇒ 失败文件记
@@ -2617,9 +2617,9 @@ describe("[cli-] 族 56b — migrateStrip 库面逐文件错误隔离（与 migr
  *
  * 必须保持的不变量：
  * 1. **整批零写盘的原子性不变**（任一文件失败 ⇒ 不写任何产物）——正确形态是
- *    「**先算完全部结果（含错误行）⇒ 再决定写不写**」，**不是**部分写盘。
+ * 「**先算完全部结果（含错误行）⇒ 再决定写不写**」，**不是**部分写盘。
  * 2. **CLI 面的既有行为与 stdout 逐字不变**（既有金标钉了 `migrate strip` 的
- *    输出）⇒ CLI 侧把失败行映射回**旧版逐字同形**的失败条目。
+ * 输出）⇒ CLI 侧把失败行映射回**旧版逐字同形**的失败条目。
  *
  * 反向闸（断言非永真）：
  * - 混合目录（好文件 + 语法错文件）⇒ 库面**不 throw**、好文件的行**仍返回**；
@@ -2714,7 +2714,7 @@ describe("族 56b — migrateStrip 库面逐文件错误隔离（与 migrateVeri
     const dir = dirWith({ "a-good.ts": GOOD, "z-bad.ts": BAD });
     const r = runCliTsx(["migrate", "strip", "--json", dir]);
     expect(r.status).toBe(1);
-    // BUG-017：`--json` 顶层形状恒为数组（信封是单元素数组）
+    // `--json` 顶层形状恒为数组（信封是单元素数组）
     const __env = JSON.parse(r.stdout) as Array<{
       ok?: boolean;
       action?: string;
@@ -2734,11 +2734,11 @@ describe("族 56b — migrateStrip 库面逐文件错误隔离（与 migrateVeri
 });
 
 // ---------------------------------------------------------------------------
-// Bug 601 — export --format standard 的 helper 只声明一次
+// export --format standard 的 helper 只声明一次
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 601 — export --format standard 的 helper 只声明一次", () => {
+describe("export --format standard 的 helper 只声明一次", () => {
 /**
- * Bug 601 — `nudo export --format standard` 到 stdout 时产出**重复的 helper 声明**
+ * `nudo export --format standard` 到 stdout 时产出**重复的 helper 声明**
  * （TS2393 / TS2300 ⇒ 产物不可用）。
  *
  * 机制（AGENT-CONTEXT §4 已裁决）：产物头**没有** helper；helper 是 service 侧
@@ -2777,7 +2777,7 @@ function count(text: string, pattern: RegExp): number {
   return (text.match(pattern) ?? []).length;
 }
 
-describe("Bug 601 — export --format standard 的 helper 只声明一次", () => {
+describe("export --format standard 的 helper 只声明一次", () => {
   it("stdout 里 helper / 类型别名各只出现一次（两个函数 ⇒ 两块）", () => {
     const file = fixture();
     const r = runCli(["export", file, "--format", "standard"]);
@@ -2826,11 +2826,11 @@ describe("Bug 601 — export --format standard 的 helper 只声明一次", () =
 });
 
 // ---------------------------------------------------------------------------
-// Bug 602 — export --format all 到 stdout：`<fn>Output` 不跨段撞名
+// export --format all 到 stdout：`<fn>Output` 不跨段撞名
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 602 — export --format all 到 stdout：`<fn>Output` 不跨段撞名", () => {
+describe("export --format all 到 stdout：`<fn>Output` 不跨段撞名", () => {
 /**
- * Bug 602 — `nudo export --format all` 到 stdout：zod 段与 standard 段的
+ * `nudo export --format all` 到 stdout：zod 段与 standard 段的
  * `<fn>Output` **同名** ⇒ 同一模块作用域里 TS2451 ⇒ 产物不可用。
  *
  * 机制：stdout 把四个方言**平铺**进同一模块作用域，导出名无前缀 / 无去重 ⇒
@@ -2884,7 +2884,7 @@ function duplicateTopLevelNames(text: string): string[] {
   return [...dup];
 }
 
-describe("Bug 602 — export --format all 到 stdout：`<fn>Output` 不跨段撞名", () => {
+describe("export --format all 到 stdout：`<fn>Output` 不跨段撞名", () => {
   it("stdout 里 `fooOutput` 只声明一次（standard 段改名）", () => {
     const file = fixture();
     const r = runCli(["export", file, "--format", "all"]);
@@ -2927,11 +2927,11 @@ describe("Bug 602 — export --format all 到 stdout：`<fn>Output` 不跨段撞
 });
 
 // ---------------------------------------------------------------------------
-// Bug 603 — export --format all 到 stdout：`<fn>Input` 不跨段撞名
+// export --format all 到 stdout：`<fn>Input` 不跨段撞名
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 603 — export --format all 到 stdout：`<fn>Input` 不跨段撞名", () => {
+describe("export --format all 到 stdout：`<fn>Input` 不跨段撞名", () => {
 /**
- * Bug 603 — 同一 stdout 产物里 zod 段的 `<fn>Input` 与另一段的 `<fn>Input`
+ * 同一 stdout 产物里 zod 段的 `<fn>Input` 与另一段的 `<fn>Input`
  * **标识符冲突**（TS2300 / TS2451）⇒ 产物不可用。
  *
  * ⚠ 勘误（AGENT-CONTEXT §4）：报告说的「dts 段 `export declare function
@@ -2966,7 +2966,7 @@ function count(text: string, pattern: RegExp): number {
   return (text.match(pattern) ?? []).length;
 }
 
-describe("Bug 603 — export --format all 到 stdout：`<fn>Input` 不跨段撞名", () => {
+describe("export --format all 到 stdout：`<fn>Input` 不跨段撞名", () => {
   it("stdout 里 `fooInput` 只声明一次（standard 段改名）", () => {
     const file = fixture();
     const r = runCli(["export", file, "--format", "all"]);
@@ -2994,16 +2994,16 @@ describe("Bug 603 — export --format all 到 stdout：`<fn>Input` 不跨段撞�
 });
 
 // ---------------------------------------------------------------------------
-// export — 剩余参数位（族 17 · S1 · Bug 604）
+// export — 剩余参数位（族 17 · S1 · ）
 // ---------------------------------------------------------------------------
-describe("[cli-] export — 剩余参数位（族 17 · S1 · Bug 604）", () => {
+describe("export — 剩余参数位（族 17 · S1 · ）", () => {
 /**
- * Bug 604 —— 剩余参数（`...rest`）在产物面里被当成普通形参位：槽名原样带
+ * 剩余参数（`...rest`）在产物面里被当成普通形参位：槽名原样带
  * `...rest`、槽值是**单个实参**、槽数取观测实参个数 ⇒ 凭空多出 `argN` 槽。
  *
  * 症状（改前）：`export function sumAll(first, ...rest)` 在 `sumAll(1, 2, 3)`
  * 的调用点上产出
- *   `z.object({ first: z.literal(1), "...rest": z.literal(2), arg2: z.literal(3) })`
+ * `z.object({ first: z.literal(1), "...rest": z.literal(2), arg2: z.literal(3) })`
  * —— 三个槽：剩余参数被拆成「`...rest` 一个槽 + `arg2` 一个槽」，而调用面里
  * 剩余参数**是一个数组**。
  *
@@ -3034,7 +3034,7 @@ function fixture(files: Record<string, string>): string {
   return dir;
 }
 
-describe("export — 剩余参数位（族 17 · S1 · Bug 604）", () => {
+describe("export — 剩余参数位（族 17 · S1 · ）", () => {
   it("zod 入参面：槽名取裸名、槽值是数组、不凭空造 argN 槽", () => {
     const dir = fixture({
       "rest604.js": [
@@ -3071,11 +3071,11 @@ describe("export — 剩余参数位（族 17 · S1 · Bug 604）", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 606 — zod 槽表保留 `__proto__` 形参（无原型对象 ⇒ 不触发原型 setter）
+// zod 槽表保留 `__proto__` 形参（无原型对象 ⇒ 不触发原型 setter）
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 606 — zod 槽表保留 `__proto__` 形参（无原型对象 ⇒ 不触发原型 setter）", () => {
+describe("zod 槽表保留 `__proto__` 形参（无原型对象 ⇒ 不触发原型 setter）", () => {
 /**
- * Bug 606 — 形参名 `__proto__` 在 **zod Input 装配**时被普通对象吞掉 ⇒ zod 面丢形参。
+ * 形参名 `__proto__` 在 **zod Input 装配**时被普通对象吞掉 ⇒ zod 面丢形参。
  *
  * 症状（改前）：`export function f(__proto__, normal)` ⇒ zod 产物
  * `fInput = z.object({ normal: z.literal(3) })`（`__proto__` 形参**消失**），
@@ -3148,7 +3148,7 @@ function fixtureDir(files: Record<string, string>): string {
 
 const numAbs = abs({ k: "prim", type: "number" }, undefined, undefined, "exact");
 
-describe("Bug 606 — zod 槽表保留 `__proto__` 形参（无原型对象 ⇒ 不触发原型 setter）", () => {
+describe("zod 槽表保留 `__proto__` 形参（无原型对象 ⇒ 不触发原型 setter）", () => {
   it("槽表把 `__proto__` 落为自有键（改前：普通对象 ⇒ 被原型 setter 吞掉）", () => {
     const slots = zodInputSlots([
       { name: "__proto__", abs: numAbs },
@@ -3197,11 +3197,11 @@ describe("Bug 606 — zod 槽表保留 `__proto__` 形参（无原型对象 ⇒ 
 });
 
 // ---------------------------------------------------------------------------
-// nudo export --out · Bug 609 · standard 产物名不撞名
+// nudo export --out · standard 产物名不撞名
 // ---------------------------------------------------------------------------
-describe("[cli-] nudo export --out · Bug 609 · standard 产物名不撞名", () => {
+describe("nudo export --out · standard 产物名不撞名", () => {
 /**
- * Bug 609 — `nudo export --out` 的 standard 产物按**函数名**命名 ⇒ 两个不同
+ * `nudo export --out` 的 standard 产物按**函数名**命名 ⇒ 两个不同
  * 模块里的同名函数落到同一路径 ⇒ 后写覆盖先写（先导出的那份静默丢失）。
  *
  * 钉：两个不同源文件、同名导出函数 ⇒ out 目录里**两份产物都在**（规范名 +
@@ -3213,7 +3213,7 @@ describe("[cli-] nudo export --out · Bug 609 · standard 产物名不撞名", (
 
 
 
-describe("nudo export --out · Bug 609 · standard 产物名不撞名", () => {
+describe("nudo export --out · standard 产物名不撞名", () => {
   it("同名函数在两个模块里 ⇒ 两份 standard 产物都在（先导出的不被覆盖）", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug-609-"));
     const a = join(dir, "a.js");
@@ -3263,15 +3263,15 @@ describe("nudo export --out · Bug 609 · standard 产物名不撞名", () => {
 });
 
 // ---------------------------------------------------------------------------
-// export — 声明级默认值的可选性（族 17 · S1 · Bug 611）
+// export — 声明级默认值的可选性（族 17 · S1 · ）
 // ---------------------------------------------------------------------------
-describe("[cli-] export — 声明级默认值的可选性（族 17 · S1 · Bug 611）", () => {
+describe("export — 声明级默认值的可选性（族 17 · S1 · ）", () => {
 /**
- * Bug 611 —— 声明级默认值（`b = 2`）在产物面里**不参与槽位可选性** ⇒ 带默认值的
+ * 声明级默认值（`b = 2`）在产物面里**不参与槽位可选性** ⇒ 带默认值的
  * 形参被渲染成必填槽。
  *
  * 症状（改前）：`export function f(a, b = 2)` 的 zod 入参面产出
- *   `z.object({ a: z.literal(1), b: z.literal(2) })`
+ * `z.object({ a: z.literal(1), b: z.literal(2) })`
  * 而同一函数的 dts 面是 `f(a: number, b?: number)` ⇒ 两个产物面自相矛盾
  * （dts 的可选性三来源口径是对的：契约级 → 声明级默认值 → 观测级最短元数）。
  *
@@ -3301,7 +3301,7 @@ function fixture(files: Record<string, string>): string {
   return dir;
 }
 
-describe("export — 声明级默认值的可选性（族 17 · S1 · Bug 611）", () => {
+describe("export — 声明级默认值的可选性（族 17 · S1 · ）", () => {
   it("zod 入参面：带默认值的形参位是可选槽（与 dts 面同口径）", () => {
     const dir = fixture({
       "d611.js": [
@@ -3333,11 +3333,11 @@ describe("export — 声明级默认值的可选性（族 17 · S1 · Bug 611）
 });
 
 // ---------------------------------------------------------------------------
-// nudo export --out · Bug 616 · 写失败回放已落盘清单
+// nudo export --out · 写失败回放已落盘清单
 // ---------------------------------------------------------------------------
-describe("[cli-] nudo export --out · Bug 616 · 写失败回放已落盘清单", () => {
+describe("nudo export --out · 写失败回放已落盘清单", () => {
 /**
- * Bug 616 — `nudo export --out` **写失败**时：产物已经部分落盘，但 stdout
+ * `nudo export --out` **写失败**时：产物已经部分落盘，但 stdout
  * 一行「wrote」都没有 ⇒ 用户以为「什么都没写」，实际磁盘上多了半个产物集；
  * 错误文案也不带**是哪个文件**失败。
  *
@@ -3350,7 +3350,7 @@ describe("[cli-] nudo export --out · Bug 616 · 写失败回放已落盘清单"
 
 
 
-describe("nudo export --out · Bug 616 · 写失败回放已落盘清单", () => {
+describe("nudo export --out · 写失败回放已落盘清单", () => {
   it("写失败 ⇒ stdout 回放已落盘产物 + stderr 点名失败文件", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug-616-"));
     const file = join(dir, "lib.js");
@@ -3375,15 +3375,15 @@ describe("nudo export --out · Bug 616 · 写失败回放已落盘清单", () =>
 });
 
 // ---------------------------------------------------------------------------
-// export — async 返回约束的 Promise 保形（族 17 · S1 · Bug 618）
+// export — async 返回约束的 Promise 保形（族 17 · S1 · ）
 // ---------------------------------------------------------------------------
-describe("[cli-] export — async 返回约束的 Promise 保形（族 17 · S1 · Bug 618）", () => {
+describe("export — async 返回约束的 Promise 保形（族 17 · S1 · ）", () => {
 /**
- * Bug 618 —— async 函数的**返回约束被当成整个返回类型** ⇒ `Promise<…>` 包装丢失。
+ * async 函数的**返回约束被当成整个返回类型** ⇒ `Promise<…>` 包装丢失。
  *
  * 症状（改前）：`@nudo:contract return num` 的 async 函数，zod 面产出
- *   `fOutput = z.number()…`（**不是** Promise）、dts 面产出
- *   `export declare function f(x: number): number;`
+ * `fOutput = z.number()…`（**不是** Promise）、dts 面产出
+ * `export declare function f(x: number): number;`
  * ⇒ 产物说「返回 number」，实现返回的是 `Promise<number>` ⇒ 校验器会把合法
  * 返回值判非法（运行时校验器拿到的是 Promise）。
  *
@@ -3416,7 +3416,7 @@ function fixture(files: Record<string, string>): string {
 /** 侧车约束：number 的纯数据形态 */
 const NUM = `export const num = { __nudoConstraint: true, prim: "number", preds: [] };\n`;
 
-describe("export — async 返回约束的 Promise 保形（族 17 · S1 · Bug 618）", () => {
+describe("export — async 返回约束的 Promise 保形（族 17 · S1 · ）", () => {
   it("zod 返回面保留 promise 包装", () => {
     const dir = fixture({
       "c618.nudo.js": NUM,
@@ -3452,11 +3452,11 @@ describe("export — async 返回约束的 Promise 保形（族 17 · S1 · Bug 
 });
 
 // ---------------------------------------------------------------------------
-// nudo export --out · Bug 622 · 同 stem 模块产物不互相覆盖
+// nudo export --out · 同 stem 模块产物不互相覆盖
 // ---------------------------------------------------------------------------
-describe("[cli-] nudo export --out · Bug 622 · 同 stem 模块产物不互相覆盖", () => {
+describe("nudo export --out · 同 stem 模块产物不互相覆盖", () => {
 /**
- * Bug 622 — `nudo export --out` 的 dts / zod / guard 三面按源文件 **stem** 命名
+ * `nudo export --out` 的 dts / zod / guard 三面按源文件 **stem** 命名
  * ⇒ 不同目录下的同名模块映射到同一批产物路径 ⇒ 后写覆盖先写（先导出的那份
  * 无声丢失）⇒ 消费方拿到别的模块的声明。
  *
@@ -3469,7 +3469,7 @@ describe("[cli-] nudo export --out · Bug 622 · 同 stem 模块产物不互相�
 
 
 
-describe("nudo export --out · Bug 622 · 同 stem 模块产物不互相覆盖", () => {
+describe("nudo export --out · 同 stem 模块产物不互相覆盖", () => {
   it("两个目录下的同名模块 ⇒ 两份 .d.ts 都在（先导出的不被覆盖）", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug-622-"));
     const a = join(dir, "a");
@@ -3529,11 +3529,11 @@ describe("nudo export --out · Bug 622 · 同 stem 模块产物不互相覆盖",
 });
 
 // ---------------------------------------------------------------------------
-// nudo export --out · Bug 623 · 同名函数的产物不互相覆盖
+// nudo export --out · 同名函数的产物不互相覆盖
 // ---------------------------------------------------------------------------
-describe("[cli-] nudo export --out · Bug 623 · 同名函数的产物不互相覆盖", () => {
+describe("nudo export --out · 同名函数的产物不互相覆盖", () => {
 /**
- * Bug 623 — 产物面把「函数名 → 校验器」建成**以函数名为键**的映射 ⇒ 同名
+ * 产物面把「函数名 → 校验器」建成**以函数名为键**的映射 ⇒ 同名
  * 函数后者覆盖前者；standard 面则把**同一个文件写两次**（后者静默覆盖前者，
  * CLI 零告警）。
  *
@@ -3558,7 +3558,7 @@ const DUP = `export class C {
 }
 `;
 
-describe("nudo export --out · Bug 623 · 同名函数的产物不互相覆盖", () => {
+describe("nudo export --out · 同名函数的产物不互相覆盖", () => {
   it("同一文件里两个同名方法 ⇒ 两份 standard 产物都在", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug-623-"));
     const file = join(dir, "lib.js");
@@ -3583,11 +3583,11 @@ describe("nudo export --out · Bug 623 · 同名函数的产物不互相覆盖",
 });
 
 // ---------------------------------------------------------------------------
-// nudo export --out · Bug 624 · 写失败提示可执行
+// nudo export --out · 写失败提示可执行
 // ---------------------------------------------------------------------------
-describe("[cli-] nudo export --out · Bug 624 · 写失败提示可执行", () => {
+describe("nudo export --out · 写失败提示可执行", () => {
 /**
- * Bug 624 — `nudo export --out` 写失败的 `fix:` 提示硬编码成 **不存在的**
+ * `nudo export --out` 写失败的 `fix:` 提示硬编码成 **不存在的**
  * `check --out` ⇒ 用户照做只会再吃一个 `unknown option '--out'`。
  *
  * 钉：写失败的提示指向**本命令**且可执行（不含 `check --out`）。
@@ -3598,7 +3598,7 @@ describe("[cli-] nudo export --out · Bug 624 · 写失败提示可执行", () =
 
 
 
-describe("nudo export --out · Bug 624 · 写失败提示可执行", () => {
+describe("nudo export --out · 写失败提示可执行", () => {
   it("--out 指向已有文件 ⇒ 提示不再指向不存在的 check --out", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug-624-"));
     const file = join(dir, "lib.js");
@@ -3624,8 +3624,8 @@ describe("nudo export --out · Bug 624 · 写失败提示可执行", () => {
     mkdirSync(out, { recursive: true });
     // 目标路径是目录 ⇒ readFileSync EISDIR。目录不可能被 writeFileSync
     // 覆盖（无绕过「拒绝覆盖」守卫的风险）⇒ 照常走写入，由**写失败通道**
-    // 点名该文件并给可执行 fix:（与 Bug 616 的回放语义同一通道）。
-    // （EACCES/EIO 等真读不出 ⇒ refuse 分支；refuse 文案由 Bug 617
+    // 点名该文件并给可执行 fix:（与 的回放语义同一通道）。
+    // （EACCES/EIO 等真读不出 ⇒ refuse 分支；refuse 文案由 
     // 「可读手写文件」钉住。）
     mkdirSync(join(out, "lib.d.ts"), { recursive: true });
 
@@ -3644,7 +3644,7 @@ describe("nudo export --out · Bug 624 · 写失败提示可执行", () => {
 // ---------------------------------------------------------------------------
 // 族 63b-1: check --json
 // ---------------------------------------------------------------------------
-describe("[cli-] 族 63b-1: check --json", () => {
+describe("族 63b-1: check --json", () => {
 /**
  * 族 63b · nudojs `pathErrors[]` 口径一致性（**check / test / contract**）。
  *
@@ -3655,19 +3655,19 @@ describe("[cli-] 族 63b-1: check --json", () => {
  *
  * **口径**（与 health 面（W16）**同款**，三个动词统一）：
  * - `pathErrors[]`：**有序全集**，**字段名 + 内容 + 顺序逐字不变**
- *   （既有机器消费者零影响）；
+ * （既有机器消费者零影响）；
  * - `targetErrors[]`：**新增的可选** JSON 字段 = **分析目标闸门**错误的
- *   **精确**子集
- *   - `--from` 路径错误**不**进它（它是**精确入口**，不是副本）；
- *   - 闸门错误**同时**留在 `pathErrors[]` 里（全集不变 ⇒ 不丢事实）；
+ * **精确**子集
+ * - `--from` 路径错误**不**进它（它是**精确入口**，不是副本）；
+ * - 闸门错误**同时**留在 `pathErrors[]` 里（全集不变 ⇒ 不丢事实）；
  * - **无**闸门错误 ⇒ `targetErrors[]` **不出现**（既有场景 stdout 逐字不变）。
  *
  * **钉法**（真跑 CLI，`runCliTsx`）：
  * - 闸门错误场景：`pathErrors[]` 与**改前**逐字一致（名字 / 条数 / 码 /
- *   `suggestion` / 顺序）+ `targetErrors[]` **精确**只装闸门错误；
+ * `suggestion` / 顺序）+ `targetErrors[]` **精确**只装闸门错误；
  * - `--from` 路径错误：**不**进 `targetErrors[]`；
  * - 无闸门错误：`targetErrors[]` 不出现 + stdout 与**改前基线逐字一致**
- *   （负控；基线 = 改前实跑抓的常量）。
+ * （负控；基线 = 改前实跑抓的常量）。
  */
 
 
@@ -4061,11 +4061,11 @@ describe("族 63b 负控: 无闸门错误时输出逐字不变（既有场景零
 });
 
 // ---------------------------------------------------------------------------
-// Bug 650 — test 面语法错：人类面 tsc 风格块 + --json 面 pathErrors
+// test 面语法错：人类面 tsc 风格块 + --json 面 pathErrors
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 650 — test 面语法错：人类面 tsc 风格块 + --json 面 pathErrors", () => {
+describe("test 面语法错：人类面 tsc 风格块 + --json 面 pathErrors", () => {
 /**
- * Bug 650：`nudo test` 遇解析失败 ⇒ **裸 message、无文件名**；`--json` 面
+ * `nudo test` 遇解析失败 ⇒ **裸 message、无文件名**；`--json` 面
  * stdout **0 字节**（而 `nudo check` 对同一文件有 tsc 风格块 +
  * `pathErrors[{code:"syntax-error"}]` 信封）。
  *
@@ -4101,7 +4101,7 @@ function makeProject(): { cwd: string; file: string } {
   return { cwd, file };
 }
 
-describe("Bug 650 — test 面语法错：人类面 tsc 风格块 + --json 面 pathErrors", () => {
+describe("test 面语法错：人类面 tsc 风格块 + --json 面 pathErrors", () => {
   it("人类面：文件名 + 行:列 + 摘录 + ^ 指位（不再是无路径的裸 message）", () => {
     const { cwd, file } = makeProject();
     try {
@@ -4155,11 +4155,11 @@ describe("Bug 650 — test 面语法错：人类面 tsc 风格块 + --json 面 p
 });
 
 // ---------------------------------------------------------------------------
-// Bug 653 — --exit-on-diff 的前置校验不得嵌在 --freeze 分支内
+// --exit-on-diff 的前置校验不得嵌在 --freeze 分支内
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 653 — --exit-on-diff 的前置校验不得嵌在 --freeze 分支内", () => {
+describe("--exit-on-diff 的前置校验不得嵌在 --freeze 分支内", () => {
 /**
- * Bug 653：`nudo test --exit-on-diff`（**无 `--freeze`**）被**静默忽略**、
+ * `nudo test --exit-on-diff`（**无 `--freeze`**）被**静默忽略**、
  * exit 0 ⇒ CI 门禁形同虚设（用户以为「有 diff 就红」）。
  *
  * 根因：旗标校验被**嵌在 `if (opts.freeze !== undefined)` 块内** ⇒
@@ -4187,7 +4187,7 @@ function makeProject(): { cwd: string; file: string } {
   return { cwd, file };
 }
 
-describe("Bug 653 — --exit-on-diff 的前置校验不得嵌在 --freeze 分支内", () => {
+describe("-exit-on-diff 的前置校验不得嵌在 --freeze 分支内", () => {
   it("无 --freeze：报用法错误 + exit 1（旧行为：静默忽略 + exit 0）", () => {
     const { cwd, file } = makeProject();
     try {
@@ -4227,18 +4227,18 @@ describe("Bug 653 — --exit-on-diff 的前置校验不得嵌在 --freeze 分支
 });
 
 // ---------------------------------------------------------------------------
-// Bug 661 —— contract --json 的路径错误必须进 JSON body
+// contract --json 的路径错误必须进 JSON body
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 661 —— contract --json 的路径错误必须进 JSON body", () => {
+describe("contract --json 的路径错误必须进 JSON body", () => {
 /**
- * Bug 661 —— `nudo contract --json`（**非** `--draft` 形态）把**路径错误整个吞掉**
+ * `nudo contract --json`（**非** `--draft` 形态）把**路径错误整个吞掉**
  * ⇒ exit 1 但 stdout 的 JSON 里**没有** `pathErrors`、stderr 0 字节
  * ⇒ 「置红的那个原因没有任何地方说得出来」。
  *
  * 修法（族 20 · 片 A）：`--json` 形态下**路径错误必须进 JSON body**
  * （`pathErrors[]`）⇒ print / emit / draft **三形态统一**。
  *
- * ⚠ 勘误（族 21 Bug 670 已修 print 分支 ⇒ stdout **现在就是**合法 JSON）：
+ * ⚠ 勘误（族 21 已修 print 分支 ⇒ stdout **现在就是**合法 JSON）：
  * 验收用例**不**断言「stdout 不是 JSON」，只断言「JSON 里有 `pathErrors[]`」
  * +「stderr **可**为空」+「exit **仍** 1」。
  */
@@ -4267,7 +4267,7 @@ type JsonDoc = {
   pathErrors?: { path: string; code: string; message: string; suggestion?: string }[];
 };
 
-describe("Bug 661 —— contract --json 的路径错误必须进 JSON body", () => {
+describe("contract --json 的路径错误必须进 JSON body", () => {
   it("print 形态 + 缺失路径：stdout 是合法 JSON 且带 pathErrors[] + exit 1", () => {
     const missing = join(dir, "nope.js");
     const r = runCli(["contract", lib, missing, "--json"], { cwd: dir });
@@ -4317,11 +4317,11 @@ describe("Bug 661 —— contract --json 的路径错误必须进 JSON body", ()
 });
 
 // ---------------------------------------------------------------------------
-// Bug 665 —— contract --draft --write 不得把 `..data/` 判成越出项目根
+// contract --draft --write 不得把 `..data/` 判成越出项目根
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 665 —— contract --draft --write 不得把 `..data/` 判成越出项目根", () => {
+describe("contract --draft --write 不得把 `..data/` 判成越出项目根", () => {
 /**
- * Bug 665 —— `nudo contract --write` 的**项目根边界**用 `rel.startsWith("..")`
+ * `nudo contract --write` 的**项目根边界**用 `rel.startsWith("..")`
  * 判逃逸 ⇒ 项目根下的**合法目录** `..data/` 被判「在项目根之外」⇒ 草稿
  * **拒写**（exit 1）—— 而同一文件在项目根下**正常写出**。
  *
@@ -4337,9 +4337,9 @@ describe("[cli-] Bug 665 —— contract --draft --write 不得把 `..data/` 判
  *
  * ⚠ 本钉的夹具**全部写在临时目录**里 ⇒ 绝不往仓里写文件。
  * ⚠ 两层钉：
- *   ① **进程内**直调 `runContractDraft`（`@nudojs/service/emit` 在测试里
- *      走 **src** 别名 ⇒ CLI 半 + service 半**两端都是源码**）⇒ 端到端写盘；
- *   ② **CLI 级**（子进程）：断言 CLI 半**不再**用那句 CLI 专属的拒写文案。
+ * ① **进程内**直调 `runContractDraft`（`@nudojs/service/emit` 在测试里
+ * 走 **src** 别名 ⇒ CLI 半 + service 半**两端都是源码**）⇒ 端到端写盘；
+ * ② **CLI 级**（子进程）：断言 CLI 半**不再**用那句 CLI 专属的拒写文案。
  */
 
 
@@ -4393,7 +4393,7 @@ async function runDraftInProcess(
   return { stdout: out.join("\n"), stderr: err.join("\n"), exitCode };
 }
 
-describe("Bug 665 —— contract --draft --write 不得把 `..data/` 判成越出项目根", () => {
+describe("contract --draft --write 不得把 `..data/` 判成越出项目根", () => {
   it("进程内：CLI 半 + service 半（都走 src）⇒ `..data/f.js` 的草稿**写出来了**", async () => {
     const file = join(dir, "..data", "f.js");
 
@@ -4411,7 +4411,7 @@ describe("Bug 665 —— contract --draft --write 不得把 `..data/` 判成越�
 
     // 改前：stderr = "Error: '…/..data/f.js' is outside project root '…'; draft write refused"
     // （service 半的拒写文案是「draft write refused: outside project root」，
-    //   两者**不同** ⇒ 这条断言精确地钉住 **CLI 半**。）
+    // 两者**不同** ⇒ 这条断言精确地钉住 **CLI 半**。）
     expect(r.stderr).not.toContain("is outside project root");
   }, 60000); // 1 个 CLI 子进程（tsx 冷启动）
 
@@ -4427,11 +4427,11 @@ describe("Bug 665 —— contract --draft --write 不得把 `..data/` 判成越�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 668 — migrate status 审计全部路径（回归钉）
+// migrate status 审计全部路径（回归钉）
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 668 — migrate status 审计全部路径（回归钉）", () => {
+describe("migrate status 审计全部路径（回归钉）", () => {
 /**
- * Bug 668 — `nudo migrate status` 静默忽略第一个之后的全部路径。
+ * `nudo migrate status` 静默忽略第一个之后的全部路径。
  *
  * 族 16（commit e5b3f388）已在**命令层**修好（`packages/nudojs/src/commands/
  * migrate.ts` 的 status 分支改为**全量审计**）⇒ 本文件是**回归钉**（防止
@@ -4463,7 +4463,7 @@ function pkgDir(name: string): string {
   return dir;
 }
 
-describe("Bug 668 — migrate status 审计全部路径（回归钉）", () => {
+describe("migrate status 审计全部路径（回归钉）", () => {
   it("migrate status <a> <b> ⇒ 两个包都被审计（不得只报第一个）", () => {
     const a = pkgDir("status-a");
     const b = pkgDir("status-b");
@@ -4494,11 +4494,11 @@ describe("Bug 668 — migrate status 审计全部路径（回归钉）", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 671 — 目录扫描跟随符号链接
+// 目录扫描跟随符号链接
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 671 — 目录扫描跟随符号链接", () => {
+describe("目录扫描跟随符号链接", () => {
 /**
- * Bug 671 — 目录目标的文件收集**静默跳过符号链接**。
+ * 目录目标的文件收集**静默跳过符号链接**。
  *
  * 旧实现用 `entry.isDirectory()` / `entry.isFile()` 判定 dirent ⇒ 符号链接
  * 条目两者皆 false（既非 dir 也非 file）⇒ 被**静默丢弃**（既不分析、也不报
@@ -4525,7 +4525,7 @@ const GOOD_SRC = `export function one() {
 }
 `;
 
-describe("Bug 671 — 目录扫描跟随符号链接", () => {
+describe("目录扫描跟随符号链接", () => {
   const dirs: string[] = [];
   afterEach(() => {
     for (const d of dirs) rmSync(d, { recursive: true, force: true });
@@ -4588,11 +4588,11 @@ describe("Bug 671 — 目录扫描跟随符号链接", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 672 — strip 产物必须是 Node 能解析的纯 JS
+// strip 产物必须是 Node 能解析的纯 JS
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 672 — strip 产物必须是 Node 能解析的纯 JS", () => {
+describe("strip 产物必须是 Node 能解析的纯 JS", () => {
 /**
- * Bug 672 — `nudo migrate strip --write` 写出的 `.js` **Node 无法解析**
+ * `nudo migrate strip --write` 写出的 `.js` **Node 无法解析**
  * （`private` / `public` / `readonly` 未剥离；参数属性
  * `constructor(private opening: number)` 也原样保留）。
  *
@@ -4639,7 +4639,7 @@ function nodeCheck(path: string): { status: number; stderr: string } {
   return { status: r.status ?? 1, stderr: r.stderr ?? "" };
 }
 
-describe("Bug 672 — strip 产物必须是 Node 能解析的纯 JS", () => {
+describe("strip 产物必须是 Node 能解析的纯 JS", () => {
   it("产物必须落盘且能被 `node --check` 解析（成员修饰符已剥、参数属性已降级）", () => {
     const dir = dirWith("cls.ts", CLASS_TS);
     const r = runCliTsx(["migrate", "strip", "--write", join(dir, "cls.ts")]);
@@ -4682,11 +4682,11 @@ describe("Bug 672 — strip 产物必须是 Node 能解析的纯 JS", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 673 — --what-if 等号 / 冒号两种写法等价
+// --what-if 等号 / 冒号两种写法等价
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 673 — --what-if 等号 / 冒号两种写法等价", () => {
+describe("--what-if 等号 / 冒号两种写法等价", () => {
 /**
- * Bug 673：`--what-if` 只认冒号 ⇒ 文档给的可复制命令（等号形态）原样跑不通。
+ * `--what-if` 只认冒号 ⇒ 文档给的可复制命令（等号形态）原样跑不通。
  *
  * 症状：整串被当成绑定名 ⇒ 「Bindings not applied」+ exit 0（假设静默不生效，
  * 用户以为假设生效了）。修复：解析器**两种分隔符都认**（`:` 与 `=`），
@@ -4713,7 +4713,7 @@ function makeProject(): { cwd: string; file: string } {
   return { cwd: dir, file };
 }
 
-describe("Bug 673 — --what-if 等号 / 冒号两种写法等价", () => {
+describe("-what-if 等号 / 冒号两种写法等价", () => {
   it("解析器：等号形态切出 name/type（不是整串当绑定名）", () => {
     expect(parseWhatIfBindings(["raw=string"])).toEqual([
       { name: "raw", type: "string" },
@@ -4765,11 +4765,11 @@ describe("Bug 673 — --what-if 等号 / 冒号两种写法等价", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 675 — migrate retire --all --json 顶层形状恒定（回归钉）
+// migrate retire --all --json 顶层形状恒定（回归钉）
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 675 — migrate retire --all --json 顶层形状恒定（回归钉）", () => {
+describe("migrate retire --all --json 顶层形状恒定（回归钉）", () => {
 /**
- * Bug 675 — `migrate retire --all --json` 的**顶层 JSON 形状随结果条数变化**
+ * `migrate retire --all --json` 的**顶层 JSON 形状随结果条数变化**
  * （1 个包 = 对象，≥2 个包 = 数组）⇒ 机器可读契约不稳定。
  *
  * 族 16（commit e5b3f388）已在**命令层**修好（顶层恒为数组）⇒ 本文件是
@@ -4812,7 +4812,7 @@ function workspace(pkgCount: number): string {
   return root;
 }
 
-describe("Bug 675 — migrate retire --all --json 顶层形状恒定（回归钉）", () => {
+describe("migrate retire --all --json 顶层形状恒定（回归钉）", () => {
   it("1 个可退役包 ⇒ 顶层仍是数组（不得退化为对象）", () => {
     const root = workspace(1);
     const r = runCliTsx(["migrate", "retire", root, "--all", "--dry-run", "--json"]);
@@ -4856,11 +4856,11 @@ describe("Bug 675 — migrate retire --all --json 顶层形状恒定（回归钉
 });
 
 // ---------------------------------------------------------------------------
-// Bug 913 —— TS enum 被合成成运行时对象（产物面 + 门禁行为）
+// TS enum 被合成成运行时对象（产物面 + 门禁行为）
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 913 —— TS enum 被合成成运行时对象（产物面 + 门禁行为）", () => {
+describe("TS enum 被合成成运行时对象（产物面 + 门禁行为）", () => {
 /**
- * Bug 913 —— TS 的 `enum` 被整段删除 ⇒ 成员引用退化成**未绑定全局**读取 ⇒
+ * TS 的 `enum` 被整段删除 ⇒ 成员引用退化成**未绑定全局**读取 ⇒
  * 门禁报 error 级 `nudo:entry-may-throw`（**假红**）+ dts / zod / standard /
  * guard 四个产物面把返回类型落成 `never`。
  *
@@ -4868,7 +4868,7 @@ describe("[cli-] Bug 913 —— TS enum 被合成成运行时对象（产物面 
  * 对象**，逐形态对齐 tsc 的 emit）。本钉是**产物面**的回归钉：
  * ① 产物必须是可加载的运行时对象（不是空模块）；
  * ② 门禁行为正确：`.ts` 源与 `.js` 产物**都绿**，签名都是 `f() => 1`
- *    （不再是 `never` + ReferenceError 的假红）。
+ * （不再是 `never` + ReferenceError 的假红）。
  */
 
 
@@ -4908,7 +4908,7 @@ function esmReadEnum(path: string): { status: number; stdout: string; stderr: st
   return { status: r.status ?? 1, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
 }
 
-describe("Bug 913 —— TS enum 被合成成运行时对象（产物面 + 门禁行为）", () => {
+describe("TS enum 被合成成运行时对象（产物面 + 门禁行为）", () => {
   it("产物含运行时 enum 对象 ⇒ `node --check` 过且 `E.A === 1`", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-cli-bug-913-"));
     dirs.push(dir);
@@ -4953,11 +4953,11 @@ describe("Bug 913 —— TS enum 被合成成运行时对象（产物面 + 门�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 950 — 断言判定的第三态：推导失败 ⇒ unchecked（不是失败、不是空洞通过）
+// 断言判定的第三态：推导失败 ⇒ unchecked（不是失败、不是空洞通过）
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 950 — 断言判定的第三态：推导失败 ⇒ unchecked（不是失败、不是空洞通过）", () => {
+describe("断言判定的第三态：推导失败 ⇒ unchecked（不是失败、不是空洞通过）", () => {
 /**
- * Bug 950：`nudo test` 的断言判定**没有「推导失败」第三态**。
+ * `nudo test` 的断言判定**没有「推导失败」第三态**。
  *
  * 根因（`packages/nudojs/src/run-test.ts` 的报告面）：断言判定是**二值**的
  * ——实测侧 `unknown`（**引擎没推出来**）被压成「断言不符」（假红），
@@ -5023,7 +5023,7 @@ ${body}`,
   return { cwd, file };
 }
 
-describe("Bug 950 — 断言判定的第三态：推导失败 ⇒ unchecked（不是失败、不是空洞通过）", () => {
+describe("断言判定的第三态：推导失败 ⇒ unchecked（不是失败、不是空洞通过）", () => {
   it("推导失败 + 期望 number() ⇒ unchecked + exit 0（改前：FAIL + exit 1）", () => {
     const { cwd, file } = makeProject("number()", OPAQUE_BODY);
     try {
@@ -5093,11 +5093,11 @@ describe("Bug 950 — 断言判定的第三态：推导失败 ⇒ unchecked（�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 957 — test --json 的用法错误也必须有机器可读 body
+// test --json 的用法错误也必须有机器可读 body
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 957 — test --json 的用法错误也必须有机器可读 body", () => {
+describe("test --json 的用法错误也必须有机器可读 body", () => {
 /**
- * Bug 957：`nudo test --json` 的**用法错误**路径产出「**空 stdout + 非零
+ * `nudo test --json` 的**用法错误**路径产出「**空 stdout + 非零
  * exit**」⇒ 违反「`--json` 下 stdout 永不为空 / 绝不出现空 stdout + 非零
  * exit」的机器面契约；而**同一动词**的路径失败路径**有**合法
  * `pathErrors[]` 信封 ⇒ 机器面自相矛盾。
@@ -5111,7 +5111,7 @@ describe("[cli-] Bug 957 — test --json 的用法错误也必须有机器可读
  * 文案**不变**。
  *
  * ⚠ 码：用法错误码本地定义在 `commands/test.ts`（不改 `shared.ts` 的
- * `PathError["code"]` 联合）——**Bug 1087**：该码原为 `"usage-error"`，与
+ * `PathError["code"]` 联合）——：该码原为 `"usage-error"`，与
  * `check` / `contract` 的 `"nudo:usage-error"` **分叉** ⇒ 同一类错误在三个
  * 动词产出不同的机器码 ⇒ 消费者要为 test 单独维护一张码表 ⇒ 已统一为
  * `"nudo:usage-error"`（`"syntax-error"` 保持不变）。
@@ -5136,7 +5136,7 @@ function makeProject(): { cwd: string; file: string; other: string } {
   return { cwd, file, other };
 }
 
-describe("Bug 957 — test --json 的用法错误也必须有机器可读 body", () => {
+describe("test --json 的用法错误也必须有机器可读 body", () => {
   const cases: Array<{ name: string; args: (p: { file: string; other: string }) => string[] }> = [
     { name: "无路径", args: () => ["test", "--json"] },
     { name: "--json + --abs", args: (p) => ["test", p.file, "--json", "--abs"] },
@@ -5158,7 +5158,7 @@ describe("Bug 957 — test --json 的用法错误也必须有机器可读 body",
         expect(doc.version).toBe(1);
         expect(Array.isArray(doc.pathErrors)).toBe(true);
         expect(doc.pathErrors.length).toBeGreaterThan(0);
-        // Bug 1087：用法错误码与 check / contract 同码（`nudo:usage-error`）
+        // 用法错误码与 check / contract 同码（`nudo:usage-error`）
         expect(doc.pathErrors[0].code).toBe("nudo:usage-error");
         expect(doc.pathErrors[0].message.length).toBeGreaterThan(0);
         // 与路径错误信封同形（同一动词不再有两条失败通道）
@@ -5213,11 +5213,11 @@ describe("Bug 957 — test --json 的用法错误也必须有机器可读 body",
 });
 
 // ---------------------------------------------------------------------------
-// Bug 968 —— 文件级指令随被删语句消失（产物面 + 门禁行为）
+// 文件级指令随被删语句消失（产物面 + 门禁行为）
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 968 —— 文件级指令随被删语句消失（产物面 + 门禁行为）", () => {
+describe("文件级指令随被删语句消失（产物面 + 门禁行为）", () => {
 /**
- * Bug 968 —— 挂在「将被删除的语句」上的**文件级指令**被静默丢掉 ⇒ 产物
+ * 挂在「将被删除的语句」上的**文件级指令**被静默丢掉 ⇒ 产物
  * **失去契约绑定** ⇒ 门禁从**红变绿**（假绿）。
  *
  * **真源**：`packages/core/src/strip-types.ts`（数组分支剔除语句时把它的
@@ -5225,7 +5225,7 @@ describe("[cli-] Bug 968 —— 文件级指令随被删语句消失（产物面
  * 兜底自检）。本钉是**产物面**的回归钉：
  * ① 指令必须在产物里**存活**；
  * ② 门禁行为正确：`.ts` 源与 `.js` 产物**同样红**（源红 / 产物红 ⇒ 结论
- *    一致；产物绿才是假绿）。
+ * 一致；产物绿才是假绿）。
  */
 
 
@@ -5264,7 +5264,7 @@ function nodeCheck(path: string): { status: number; stderr: string } {
   return { status: r.status ?? 1, stderr: r.stderr ?? "" };
 }
 
-describe("Bug 968 —— 文件级指令随被删语句消失（产物面 + 门禁行为）", () => {
+describe("文件级指令随被删语句消失（产物面 + 门禁行为）", () => {
   it("挂在被删语句上的 `/// @nudo:import` 必须在产物里存活", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-cli-bug-968-"));
     dirs.push(dir);
@@ -5306,13 +5306,13 @@ describe("Bug 968 —— 文件级指令随被删语句消失（产物面 + 门�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1060: nudo test --from 模块解析失败不得静默放过
+// nudo test --from 模块解析失败不得静默放过
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 1060: nudo test --from 模块解析失败不得静默放过", () => {
+describe("nudo test --from 模块解析失败不得静默放过", () => {
 /**
- * Bug 1060：`nudo test --from <callsite>` 对**模块解析失败**
+ * `nudo test --from <callsite>` 对**模块解析失败**
  * （import 不存在的模块 / 不存在的导出）**静默放过**：零提示、零 `call@`、
- * **exit 0 假绿**（而语法错 / 顶层抛错**有**报错）—— **Bug 466 的半修**
+ * **exit 0 假绿**（而语法错 / 顶层抛错**有**报错）—— **的半修**
  * （只补了「求值抛错」这一档）。
  *
  * 修法（CLI 面，`packages/nudojs/src/commands/shared.ts`）：现场文件探针
@@ -5325,7 +5325,7 @@ describe("[cli-] Bug 1060: nudo test --from 模块解析失败不得静默放过
  * （指向一个不存在的函数，下游被丢弃）⇒ 只挂 0 记录分支永远测不到第三档。
  *
  * 本文件锁：模块解析失败必须报错 + 非 0 退出；可读且模块可解析的邻近形态
- * （有调用 / 无调用）**不得**被这条修复波及（负控制）；Bug 466 的两档
+ * （有调用 / 无调用）**不得**被这条修复波及（负控制）；的两档
  * （语法错 / 顶层抛错）**不得**被这条修复改口径（回归锁）。
  */
 
@@ -5356,11 +5356,11 @@ const NO_CALL_SRC = `export function helper() {
   return 0;
 }
 `;
-/** 现场文件：语法错（Bug 466 第一档） */
+/** 现场文件：语法错（第一档） */
 const SYNTAX_ERR_SRC = `import { add } from "./target.js";
 const x = add(1, 2
 `;
-/** 现场文件：顶层抛错（Bug 466 第二档） */
+/** 现场文件：顶层抛错（第二档） */
 const TOPLEVEL_THROW_SRC = `throw new Error("boom");
 `;
 
@@ -5377,7 +5377,7 @@ function fixture(): string {
   return dir;
 }
 
-describe("Bug 1060: nudo test --from 模块解析失败不得静默放过", () => {
+describe("nudo test --from 模块解析失败不得静默放过", () => {
   it("import 不存在的模块 ⇒ 明确报错 + exit 1（改前：零提示 + exit 0 假绿）", () => {
     const dir = fixture();
     try {
@@ -5476,21 +5476,21 @@ describe("Bug 1060: nudo test --from 模块解析失败不得静默放过", () =
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1086 — migrate strip --json 的逐文件隔离与 path 量纲
+// migrate strip --json 的逐文件隔离与 path 量纲
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 1086 — migrate strip --json 的逐文件隔离与 path 量纲", () => {
+describe("migrate strip --json 的逐文件隔离与 path 量纲", () => {
 /**
- * Bug 1086：`nudo migrate strip --json` 的 `pathErrors[].path` **混用两种量纲**
+ * `nudo migrate strip --json` 的 `pathErrors[].path` **混用两种量纲**
  * （目标**目录** vs 失败**文件**），且同目标内**成功文件的逐文件结果被整条丢弃**。
  *
  * 症状（目标目录里混一个语法错文件：`a-good.ts` + `z-bad.ts`）：
  * 1. 库面（`packages/nudojs/src/migrate.ts`，族 56b）已按**逐文件隔离**改好 ——
- *    `migrateStrip` 返回「成功行 + 失败行」，失败行自带 `file`；但 CLI 命中
- *    `plan.find(r => r.code !== undefined)` 后直接 `continue` ⇒ 该目标**所有**
- *    成功行一并丢掉 ⇒ 机器消费者拿不到「哪些文件本来可以迁移」。
+ * `migrateStrip` 返回「成功行 + 失败行」，失败行自带 `file`；但 CLI 命中
+ * `plan.find(r => r.code !== undefined)` 后直接 `continue` ⇒ 该目标**所有**
+ * 成功行一并丢掉 ⇒ 机器消费者拿不到「哪些文件本来可以迁移」。
  * 2. 失败条目的 `path` 填的是**目标目录**而不是失败文件，而同一数组里
- *    TS-only 闸门失败填的是**文件**（`path: l.file`）⇒ `path` 量纲不一致；
- *    消费者要定位坏文件只能去解析 message 里的文件名字符串。
+ * TS-only 闸门失败填的是**文件**（`path: l.file`）⇒ `path` 量纲不一致；
+ * 消费者要定位坏文件只能去解析 message 里的文件名字符串。
  *
  * 修复：失败条目的 `path` 改用库面失败行的 `file`（失败**文件**）；同目标内的
  * 成功行**照常透出**（写盘轮按库面已附的「未写盘」注记透出）⇒ 原子性不变
@@ -5527,12 +5527,12 @@ type StripEnvelope = {
   error?: string;
 };
 
-describe("Bug 1086 — migrate strip --json 的逐文件隔离与 path 量纲", () => {
+describe("migrate strip --json 的逐文件隔离与 path 量纲", () => {
   it("混合目录 ⇒ results 保留成功文件的逐文件结果（不再整目标丢弃）", () => {
     const dir = dirWith({ "a-good.ts": GOOD, "z-bad.ts": BAD });
     const r = runCliTsx(["migrate", "strip", "--json", "."], { cwd: dir });
     expect(r.status).toBe(1);
-    // BUG-017：`--json` 顶层形状恒为数组（信封是单元素数组）
+    // `--json` 顶层形状恒为数组（信封是单元素数组）
     const __env = JSON.parse(r.stdout) as StripEnvelope[];
     const parsed = __env[0]!;
     expect(parsed.ok).toBe(false);
@@ -5547,7 +5547,7 @@ describe("Bug 1086 — migrate strip --json 的逐文件隔离与 path 量纲", 
     const dir = dirWith({ "a-good.ts": GOOD, "z-bad.ts": BAD });
     const r = runCliTsx(["migrate", "strip", "--json", "."], { cwd: dir });
     expect(r.status).toBe(1);
-    // BUG-017：`--json` 顶层形状恒为数组（信封是单元素数组）
+    // `--json` 顶层形状恒为数组（信封是单元素数组）
     const __env = JSON.parse(r.stdout) as StripEnvelope[];
     const parsed = __env[0]!;
     expect(parsed.pathErrors?.length ?? 0).toBe(1);
@@ -5567,7 +5567,7 @@ describe("Bug 1086 — migrate strip --json 的逐文件隔离与 path 量纲", 
     const dir = dirWith({ "a-good.ts": GOOD, "z-bad.ts": BAD });
     const r = runCliTsx(["migrate", "strip", "--json", "."], { cwd: dir });
     expect(r.status).toBe(1);
-    // BUG-017：`--json` 顶层形状恒为数组（信封是单元素数组）
+    // `--json` 顶层形状恒为数组（信封是单元素数组）
     const __env = JSON.parse(r.stdout) as StripEnvelope[];
     const parsed = __env[0]!;
     const paths = (parsed.pathErrors ?? []).map((e) => e.path);
@@ -5584,7 +5584,7 @@ describe("Bug 1086 — migrate strip --json 的逐文件隔离与 path 量纲", 
     const dir = dirWith({ "a-good.ts": GOOD, "z-bad.ts": BAD });
     const r = runCliTsx(["migrate", "strip", "--json", "--write", "."], { cwd: dir });
     expect(r.status).toBe(1);
-    // BUG-017：`--json` 顶层形状恒为数组（信封是单元素数组）
+    // `--json` 顶层形状恒为数组（信封是单元素数组）
     const __env = JSON.parse(r.stdout) as StripEnvelope[];
     const parsed = __env[0]!;
     expect(parsed.ok).toBe(false);
@@ -5612,11 +5612,11 @@ describe("Bug 1086 — migrate strip --json 的逐文件隔离与 path 量纲", 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1087 — 用法错误的机器码三动词统一（nudo:usage-error）
+// 用法错误的机器码三动词统一（nudo:usage-error）
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 1087 — 用法错误的机器码三动词统一（nudo:usage-error）", () => {
+describe("用法错误的机器码三动词统一（nudo:usage-error）", () => {
 /**
- * Bug 1087：用法错误的机器码在三个动词间**分叉** ⇒ 同一类错误产出**不同的
+ * 用法错误的机器码在三个动词间**分叉** ⇒ 同一类错误产出**不同的
  * `pathErrors[].code`** ⇒ 机器消费者必须为 `test` 单独维护一张码表。
  *
  * 实测（改前）：`nudo check --json`（无路径）⇒ `"nudo:usage-error"`；
@@ -5647,7 +5647,7 @@ function firstPathError(stdout: string): PathError | undefined {
   return undefined;
 }
 
-describe("Bug 1087 — 用法错误的机器码三动词统一（nudo:usage-error）", () => {
+describe("用法错误的机器码三动词统一（nudo:usage-error）", () => {
   const verbs = ["check", "contract", "test"] as const;
 
   for (const verb of verbs) {
@@ -5685,39 +5685,39 @@ describe("Bug 1087 — 用法错误的机器码三动词统一（nudo:usage-erro
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1100 —— migrate strip --write 的写盘状态（人类面不谎称 / 机器面可判定）
+// migrate strip --write 的写盘状态（人类面不谎称 / 机器面可判定）
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 1100 —— migrate strip --write 的写盘状态（人类面不谎称 / 机器面可判定）", () => {
+describe("migrate strip --write 的写盘状态（人类面不谎称 / 机器面可判定）", () => {
 /**
- * Bug 1100 —— `nudo migrate strip --write` 把「**未写盘**」的成功行报成 `wrote`。
+ * `nudo migrate strip --write` 把「**未写盘**」的成功行报成 `wrote`。
  *
  * 症状（目标目录里混一个语法错文件：`good.ts` + `bad.ts`）：
- * 1. **人类面说谎**：stdout 打 `wrote  good.ts → good.js`，而磁盘上**根本没有**
- *    `good.js`（库面原子性：批内有失败 ⇒ 整批零写盘，Bug 574）⇒ 同一行下面还
- *    跟着一句 `note: not written — …` ⇒ **同一行既说「wrote」又说「not
- *    written」**（自相矛盾）。
+ * 1. **人类面说谎**：stdout 打 `wrote good.ts → good.js`，而磁盘上**根本没有**
+ * `good.js`（库面原子性：批内有失败 ⇒ 整批零写盘，）⇒ 同一行下面还
+ * 跟着一句 `note: not written — …` ⇒ **同一行既说「wrote」又说「not
+ * written」**（自相矛盾）。
  * 2. **机器面不可判定**：`--json` 的 `results[]` 里该行带 `outFile`
- *    （`good.js`）⇒ 消费方**只能靠一条自由文本 `notes`** 才能区分「计划成功」
- *    与「已写盘」⇒ 极易误判已产出。
+ * （`good.js`）⇒ 消费方**只能靠一条自由文本 `notes`** 才能区分「计划成功」
+ * 与「已写盘」⇒ 极易误判已产出。
  *
  * 根因（两半）：
  * - 库面（`packages/nudojs/src/migrate.ts`）有失败时**整批零写盘**，但把成功行
- *   的结果一并返回（结果不丢是对的）⇒ 附注记 `STRIP_NOT_WRITTEN_NOTE`。
+ * 的结果一并返回（结果不丢是对的）⇒ 附注记 `STRIP_NOT_WRITTEN_NOTE`。
  * - 命令层（`packages/nudojs/src/commands/migrate.ts`）把这些成功行当普通成功行
- *   推入 `results`，人类面又**无条件**按 `--write` 打 `wrote`。
+ * 推入 `results`，人类面又**无条件**按 `--write` 打 `wrote`。
  *
  * 修法：
  * - 库面：逐行给**写盘状态**（机器面枚举）：写盘轮全成功 ⇒ `written`；批内有
- *   失败 ⇒ 整批 `not-written`（dry-run 的行不带此键，命令层补 `planned`）。
+ * 失败 ⇒ 整批 `not-written`（dry-run 的行不带此键，命令层补 `planned`）。
  * - 命令层：人类面措辞由**逐行**的写盘状态决定（`wrote` / `not written` /
- *   `dry`）⇒ 未写盘**不得**打 `wrote`；`--json` 的每一行都带 `writeStatus`
- *   ⇒ 消费方只读结构化字段即可判定。
+ * `dry`）⇒ 未写盘**不得**打 `wrote`；`--json` 的每一行都带 `writeStatus`
+ * ⇒ 消费方只读结构化字段即可判定。
  *
  * 必须保持的不变量（负控）：
- * - **整批零写盘的原子性不变**（Bug 574）：有失败 ⇒ 磁盘上一个 `.js` 都没有。
+ * - **整批零写盘的原子性不变**（）：有失败 ⇒ 磁盘上一个 `.js` 都没有。
  * - **成功行的结果不丢**：失败批次里「本来可以迁移」的文件仍出现在 `results[]`。
  * - **退出码语义不变**：有失败 ⇒ 非 0；全成功 ⇒ 0。
- * - `pathErrors[]` 的内容与量纲不变（失败**文件**，不是目标目录 —— Bug 1086）。
+ * - `pathErrors[]` 的内容与量纲不变（失败**文件**，不是目标目录 —— ）。
  */
 
 
@@ -5747,7 +5747,7 @@ type StripRow = {
   file: string;
   outFile: string;
   notes?: string[];
-  /** 写盘状态（机器面 · Bug 1100）：`written` / `not-written` / `planned` */
+  /** 写盘状态（机器面 · ）：`written` / `not-written` / `planned` */
   writeStatus?: string;
 };
 
@@ -5759,7 +5759,7 @@ type StripEnvelope = {
   error?: string;
 };
 
-describe("Bug 1100 —— migrate strip --write 的写盘状态（人类面不谎称 / 机器面可判定）", () => {
+describe("migrate strip --write 的写盘状态（人类面不谎称 / 机器面可判定）", () => {
   it("验收 1：批内有失败文件 + --write ⇒ 人类面**不打** `wrote`，且磁盘上零产出", () => {
     const dir = dirWith({ "good.ts": GOOD, "bad.ts": BAD });
 
@@ -5781,7 +5781,7 @@ describe("Bug 1100 —— migrate strip --write 的写盘状态（人类面不�
 
     const r = runCliTsx(["migrate", "strip", "--json", "--write", "."], { cwd: dir });
 
-    // BUG-017：`--json` 顶层形状恒为数组（信封是单元素数组）
+    // `--json` 顶层形状恒为数组（信封是单元素数组）
     const __env = JSON.parse(r.stdout) as StripEnvelope[];
     const parsed = __env[0]!;
     expect(parsed.ok).toBe(false);
@@ -5794,7 +5794,7 @@ describe("Bug 1100 —— migrate strip --write 的写盘状态（人类面不�
     // 机器可判定：**只读结构化字段**就能判定「没落盘」（不必解析 notes）
     expect(row.writeStatus).toBe("not-written");
     expect(row.writeStatus).not.toBe("written");
-    // 失败路径的量纲不变（失败**文件**，不是目标目录 —— Bug 1086）
+    // 失败路径的量纲不变（失败**文件**，不是目标目录 —— ）
     expect(parsed.pathErrors?.length ?? 0).toBe(1);
     expect(parsed.pathErrors![0]!.path).toBe("bad.ts");
   });
@@ -5845,7 +5845,7 @@ describe("Bug 1100 —— migrate strip --write 的写盘状态（人类面不�
     const rows = await migrateStrip([mixed], { write: true, draft: false });
     const good = rows.find((r) => r.file.endsWith("good.ts"))!;
     expect(good.writeStatus).toBe("not-written");
-    // 原子性不变（Bug 574）
+    // 原子性不变（）
     expect(readdirSync(mixed).filter((f) => f.endsWith(".js"))).toHaveLength(0);
 
     const ok = dirWith({ "good.ts": GOOD });
@@ -5857,19 +5857,19 @@ describe("Bug 1100 —— migrate strip --write 的写盘状态（人类面不�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1143 —— migrate strip 的失败码走 DIAG 注册表
+// migrate strip 的失败码走 DIAG 注册表
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 1143 —— migrate strip 的失败码走 DIAG 注册表", () => {
+describe("migrate strip 的失败码走 DIAG 注册表", () => {
 /**
- * Bug 1143 —— `nudo:migrate-strip-failed` 必须走**稳定诊断码注册表**
+ * `nudo:migrate-strip-failed` 必须走**稳定诊断码注册表**
  * （`@nudojs/core/internal` 的 `DIAG`），不得在 CLI 层直写字面量。
  *
  * 旧行为：`packages/nudojs/src/commands/migrate.ts` 的 `--json` 信封里直接写
  * `code: "nudo:migrate-strip-failed"` 字面量 ⇒ 绕过 `DIAG` 注册表 ⇒
  * - 码的**拼写**在生产面有两处真理源（注册表外的字面量 + 术语表）；
  * - 术语表反向对账（website docs-coverage rule 19）只能靠「src 字面量扫描」
- *   兜底，一旦 CLI 层改写法（变量 / 拼接）该码就会变成**永久幻影**
- *   （文档里有、实现里扫不到 ⇒ rule 19 误报 phantom）。
+ * 兜底，一旦 CLI 层改写法（变量 / 拼接）该码就会变成**永久幻影**
+ * （文档里有、实现里扫不到 ⇒ rule 19 误报 phantom）。
  *
  * 新行为：码进 `DIAG` 注册表（键 `migrateStripFailed`），CLI 层引用常量。
  *
@@ -5908,7 +5908,7 @@ type StripEnvelope = {
   pathErrors?: Array<{ path: string; code: string; message: string }>;
 };
 
-describe("Bug 1143 —— migrate strip 的失败码走 DIAG 注册表", () => {
+describe("migrate strip 的失败码走 DIAG 注册表", () => {
   it("注册表里存在该码（键名 migrateStripFailed）", () => {
     expect(DIAG.migrateStripFailed).toBe("nudo:migrate-strip-failed");
     expect(Object.values(DIAG)).toContain("nudo:migrate-strip-failed");
@@ -5918,7 +5918,7 @@ describe("Bug 1143 —— migrate strip 的失败码走 DIAG 注册表", () => {
     const dir = dirWith({ "a-good.ts": GOOD, "z-bad.ts": BAD });
     const r = runCliTsx(["migrate", "strip", "--json", "."], { cwd: dir });
     expect(r.status).toBe(1);
-    // BUG-017：`--json` 顶层形状恒为数组（信封是单元素数组）
+    // `--json` 顶层形状恒为数组（信封是单元素数组）
     const __env = JSON.parse(r.stdout) as StripEnvelope[];
     const parsed = __env[0]!;
     expect(parsed.pathErrors?.length ?? 0).toBe(1);
@@ -5941,17 +5941,17 @@ describe("Bug 1143 —— migrate strip 的失败码走 DIAG 注册表", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 499 CLI：不可读依赖 ⇒ 明确诊断 + 非零退出（不谎报「不存在」）
+// CLI：不可读依赖 ⇒ 明确诊断 + 非零退出（不谎报「不存在」）
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 499 CLI：不可读依赖 ⇒ 明确诊断 + 非零退出（不谎报「不存在」）", () => {
+describe("CLI：不可读依赖 ⇒ 明确诊断 + 非零退出（不谎报「不存在」）", () => {
 /**
- * Bug 499 回归（CLI 面）：**依赖模块不可读（EACCES）**不得被说成「文件不存在」，
+ * 回归（CLI 面）：**依赖模块不可读（EACCES）**不得被说成「文件不存在」，
  * 也不得让异常冒到整轮外面。
  *
  * 口径（core 侧 load-guard + service 侧 ModuleReadError 同源）：
- *  - 不可读 ⇒ 一条明确诊断（写明「读不到」+ errno），严重级 error ⇒ 非零退出；
- *  - 不可读 ≠ 不存在（诊断文案不得出现「not found」）；
- *  - 整轮仍产出报告（stdout 非空），不是「0 字节无报告」。
+ * - 不可读 ⇒ 一条明确诊断（写明「读不到」+ errno），严重级 error ⇒ 非零退出；
+ * - 不可读 ≠ 不存在（诊断文案不得出现「not found」）；
+ * - 整轮仍产出报告（stdout 非空），不是「0 字节无报告」。
  *
  * root 对 chmod 000 免疫 ⇒ 真实 EACCES 用例在 root 下跳过。
  *
@@ -5985,7 +5985,7 @@ function fixture(): string {
   return dir;
 }
 
-describe("Bug 499 CLI：不可读依赖 ⇒ 明确诊断 + 非零退出（不谎报「不存在」）", () => {
+describe("CLI：不可读依赖 ⇒ 明确诊断 + 非零退出（不谎报「不存在」）", () => {
   it.runIf(!isRoot)("chmod 000 的依赖 ⇒ EACCES 诊断 + exit 1 + 报告非空", () => {
     const dir = fixture();
     const dep = join(dir, "dep.js");
@@ -6046,11 +6046,11 @@ describe("Bug 499 CLI：不可读依赖 ⇒ 明确诊断 + 非零退出（不谎
 });
 
 // ---------------------------------------------------------------------------
-// nudojs Bug 533 / 1000: standard 产物的字面量保真
+// nudojs : standard 产物的字面量保真
 // ---------------------------------------------------------------------------
-describe("[cli-] nudojs Bug 533 / 1000: standard 产物的字面量保真", () => {
+describe("nudojs : standard 产物的字面量保真", () => {
 /**
- * Bug 533 / Bug 1000 —— `nudo export --format standard` 的**产品面**回归。
+ * / `nudo export --format standard` 的**产品面**回归。
  *
  * 修前：standard 节点经 `JSON.stringify` 落地 ⇒ `Infinity` 静默变 `null` ⇒
  * 导出的校验器**拒绝函数必返的值**、**放行函数永不返回的 `null`**（schema 与
@@ -6076,7 +6076,7 @@ type StdExport = {
   };
 };
 
-describe("nudojs Bug 533 / 1000: standard 产物的字面量保真", () => {
+describe("nudojs : standard 产物的字面量保真", () => {
   it("export --format standard：Infinity 放行、null 拒绝（不再折成 null）", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-standard-inf-"));
     const file = join(dir, "divzero.js");
@@ -6112,7 +6112,7 @@ describe("nudojs Bug 533 / 1000: standard 产物的字面量保真", () => {
       join(dir, "big.nudo.js"),
       // 侧车的契约形参名必须与函数形参表一致（`bigAdd(a)` ⇒ `a`）：写成 `n` 时
       // `nudo check` 判 `nudo:contract-param-mismatch`（error）⇒ 导出面按契约
-      // 一致性闸门拒绝发布产物（Bug 607）。
+      // 一致性闸门拒绝发布产物（）。
       'import { fn, lit } from "@nudojs/core";\nexport const bigAdd = fn({ a: lit(10n) }, lit(10n));\n',
       "utf-8",
     );
@@ -6133,11 +6133,11 @@ describe("nudojs Bug 533 / 1000: standard 产物的字面量保真", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 629 — --dry-run 与 --write 同时给出时以 dry-run 为准
+// --dry-run 与 --write 同时给出时以 dry-run 为准
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 629 — --dry-run 与 --write 同时给出时以 dry-run 为准", () => {
+describe("--dry-run 与 --write 同时给出时以 dry-run 为准", () => {
 /**
- * Bug 629：`nudo check --fix --write --dry-run` 仍**落盘**（--dry-run 被静默忽略）。
+ * `nudo check --fix --write --dry-run` 仍**落盘**（--dry-run 被静默忽略）。
  *
  * 症状：--dry-run 与 --write 同时给出时 write 胜出 ⇒ 磁盘被改、侧车被写；
  * 用户以为在演练、实际改了仓库。修复：--dry-run 优先（与兄弟命令同款口径：
@@ -6162,7 +6162,7 @@ function makeProject(): { cwd: string; file: string; sidecar: string } {
   return { cwd: dir, file, sidecar: join(dir, "helper.nudo.js") };
 }
 
-describe("Bug 629 — --dry-run 与 --write 同时给出时以 dry-run 为准", () => {
+describe("-dry-run 与 --write 同时给出时以 dry-run 为准", () => {
   it("CLI：--fix --write --dry-run 只打印计划、**不落盘**", () => {
     const { cwd, file, sidecar } = makeProject();
     try {
@@ -6206,11 +6206,11 @@ describe("Bug 629 — --dry-run 与 --write 同时给出时以 dry-run 为准", 
 });
 
 // ---------------------------------------------------------------------------
-// bug 630: check 输入读取失败 ⇒ 显式 pathError（nudo:path-io）
+// check 输入读取失败 ⇒ 显式 pathError（nudo:path-io）
 // ---------------------------------------------------------------------------
-describe("[cli-] bug 630: check 输入读取失败 ⇒ 显式 pathError（nudo:path-io）", () => {
+describe("check 输入读取失败 ⇒ 显式 pathError（nudo:path-io）", () => {
 /**
- * Bug 630 —— `check --json` 遇**输入读取失败**（EACCES）⇒ stdout 0 字节 + 裸 errno。
+ * `check --json` 遇**输入读取失败**（EACCES）⇒ stdout 0 字节 + 裸 errno。
  *
  * 旧实现：`runCheck` 的 `readFileSync` 无 try/catch ⇒ 异常逃逸出命令层 ⇒
  * 顶层兜底只打一行裸 errno ⇒ `--json` 面 **stdout 0 字节** + exit 1
@@ -6246,7 +6246,7 @@ function makeUnreadable(dir: string): string | undefined {
   }
 }
 
-describe("bug 630: check 输入读取失败 ⇒ 显式 pathError（nudo:path-io）", () => {
+describe("check 输入读取失败 ⇒ 显式 pathError（nudo:path-io）", () => {
   it("--json 面：stdout 非空 + 信封 ok:false + pathErrors[nudo:path-io] + exit 1", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug630-"));
     try {
@@ -6305,11 +6305,11 @@ describe("bug 630: check 输入读取失败 ⇒ 显式 pathError（nudo:path-io�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 631 — check --json --gitlab：GitLab 注解不再被丢弃
+// check --json --gitlab：GitLab 注解不再被丢弃
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 631 — check --json --gitlab：GitLab 注解不再被丢弃", () => {
+describe("check --json --gitlab：GitLab 注解不再被丢弃", () => {
 /**
- * Bug 631 — `nudo check --json --gitlab`：GitLab 注解数组被**整段丢弃**
+ * `nudo check --json --gitlab`：GitLab 注解数组被**整段丢弃**
  * （既不进 stdout 也不进 stderr）。
  *
  * 根因（packages/nudojs/src/commands/check-report.ts）：注解分派把 GitLab
@@ -6323,11 +6323,11 @@ describe("[cli-] Bug 631 — check --json --gitlab：GitLab 注解不再被丢�
  * 注解不得混进去（与 --gha 的既有口径同形）。
  *
  * 本文件钉住：
- *  - `--json --gitlab`：stdout 可解析为 CheckJson + stderr 可解析为
- *    Code Quality 数组（`check_name` 字段在位）；
- *  - `--json`（无 --gitlab）：stderr 不含任何注解（不回归泄漏）；
- *  - `--gitlab`（无 --json）：stdout 仍是**恰好一份** Code Quality 数组
- *    （旧口径不变）。
+ * - `--json --gitlab`：stdout 可解析为 CheckJson + stderr 可解析为
+ * Code Quality 数组（`check_name` 字段在位）；
+ * - `--json`（无 --gitlab）：stderr 不含任何注解（不回归泄漏）；
+ * - `--gitlab`（无 --json）：stdout 仍是**恰好一份** Code Quality 数组
+ * （旧口径不变）。
  */
 
 
@@ -6355,7 +6355,7 @@ function lastJsonLine(stderr: string): unknown {
   return JSON.parse(lines[lines.length - 1]!);
 }
 
-describe("Bug 631 — check --json --gitlab：GitLab 注解不再被丢弃", () => {
+describe("check --json --gitlab：GitLab 注解不再被丢弃", () => {
   it("--json --gitlab：stdout 是 CheckJson 契约，stderr 是 Code Quality 数组", { timeout: 30_000 }, () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-b631-json-gitlab-"));
     const file = join(dir, "bad.js");
@@ -6420,11 +6420,11 @@ describe("Bug 631 — check --json --gitlab：GitLab 注解不再被丢弃", () 
 });
 
 // ---------------------------------------------------------------------------
-// check — 模块装载问题族上屏（Bug 632）
+// check — 模块装载问题族上屏（）
 // ---------------------------------------------------------------------------
-describe("[cli-] check — 模块装载问题族上屏（Bug 632）", () => {
+describe("check — 模块装载问题族上屏（）", () => {
 /**
- * Bug 632 —— `nudo check` **从不报告模块装载问题族**
+ * `nudo check` **从不报告模块装载问题族**
  * （`nudo:module-missing` / `nudo:missing-export` / `nudo:module-cycle` /
  * `nudo:module-depth`）：依赖解析失败的源文件**门禁绿灯、exit 0**。
  *
@@ -6465,7 +6465,7 @@ function jsonIssues(stdout: string): Array<{ severity: string; code: string; mes
   return parsed.issues ?? [];
 }
 
-describe("check — 模块装载问题族上屏（Bug 632）", () => {
+describe("check — 模块装载问题族上屏（）", () => {
   it("依赖文件缺失 ⇒ nudo:module-missing 上屏 + 门禁红（exit 1）", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug632-missing-"));
     writeProject(dir, "b632-missing");
@@ -6535,24 +6535,24 @@ describe("check — 模块装载问题族上屏（Bug 632）", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 633 — .js 里的 TS-only 语法不得判绿
+// .js 里的 TS-only 语法不得判绿
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 633 — .js 里的 TS-only 语法不得判绿", () => {
+describe(".js 里的 TS-only 语法不得判绿", () => {
 /**
- * Bug 633 — `nudo check` 对 `.js` 里的 **TS-only 语法**判 **OK / exit 0**
+ * `nudo check` 对 `.js` 里的 **TS-only 语法**判 **OK / exit 0**
  * （CI 门禁假绿）：`node --check` 自己拒绝该文件（SyntaxError）。
  *
  * 修法（族 18 片 4）：
  * - core `parseSource` 新增 `filename` 选项 ⇒ **按扩展名**选解析插件
- *   （`.js` / `.mjs` / `.cjs` / `.jsx` **不开** typescript 插件）；
+ * （`.js` / `.mjs` / `.cjs` / `.jsx` **不开** typescript 插件）；
  * - check 面按扩展名复核（`parseForCheck`）⇒ TS-only 语法走既有**语法错
- *   通道**（人类面 tsc 风格块 / `--json` 面 pathErrors + ok:false / `--fix`
- *   面残余 error ⇒ exit 1），不再静默判绿。
+ * 通道**（人类面 tsc 风格块 / `--json` 面 pathErrors + ok:false / `--fix`
+ * 面残余 error ⇒ exit 1），不再静默判绿。
  *
  * oracle（改前 → 改后）：
- *   改前 `nudo check privfield.js` ⇒ OK / 0 error / exit 0
- *   改后 `nudo check privfield.js` ⇒ 语法错块（2:11 — syntax error:
- *         TypeScript-only syntax is not valid in a .js file）/ exit 1
+ * 改前 `nudo check privfield.js` ⇒ OK / 0 error / exit 0
+ * 改后 `nudo check privfield.js` ⇒ 语法错块（2:11 — syntax error:
+ * TypeScript-only syntax is not valid in a .js file）/ exit 1
  */
 
 
@@ -6583,7 +6583,7 @@ function project(src: string): string {
   return dir;
 }
 
-describe("Bug 633 — .js 里的 TS-only 语法不得判绿", () => {
+describe(".js 里的 TS-only 语法不得判绿", () => {
   it("人类面：语法错块 + exit 1（此前 OK / exit 0）", { timeout: 60_000 }, () => {
     const dir = project(TS_ONLY_JS);
     const r = runCli(["check", join(dir, "lib.js")]);
@@ -6651,11 +6651,11 @@ describe("Bug 633 — .js 里的 TS-only 语法不得判绿", () => {
 });
 
 // ---------------------------------------------------------------------------
-// bug 637: profile typo 告警文案按生效档位生成
+// profile typo 告警文案按生效档位生成
 // ---------------------------------------------------------------------------
-describe("[cli-] bug 637: profile typo 告警文案按生效档位生成", () => {
+describe("profile typo 告警文案按生效档位生成", () => {
 /**
- * Bug 637 —— 非法 `nudo.check.profile` 的告警文案与**实际生效档位**脱节。
+ * 非法 `nudo.check.profile` 的告警文案与**实际生效档位**脱节。
  *
  * 旧文案写死「using default strict」⇒ 诊断说假话：配置里同层还有显式
  * `check.entryThrows:"warning"` 时，实际生效档位是 warning（门禁放行、
@@ -6689,7 +6689,7 @@ function makeProject(nudoCheck: string): { cwd: string; file: string } {
   return { cwd, file };
 }
 
-describe("bug 637: profile typo 告警文案按生效档位生成", () => {
+describe("profile typo 告警文案按生效档位生成", () => {
   it("profile:\"bogus\" + entryThrows:\"warning\" ⇒ 告警说 using warning（且不说 default strict）", () => {
     const { cwd, file } = makeProject(`{"profile":"bogus","entryThrows":"warning"}`);
     try {
@@ -6734,11 +6734,11 @@ describe("bug 637: profile typo 告警文案按生效档位生成", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 641 — nudo:dual-entry 缓存命中轮不重复上屏
+// nudo:dual-entry 缓存命中轮不重复上屏
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 641 — nudo:dual-entry 缓存命中轮不重复上屏", () => {
+describe("nudo:dual-entry 缓存命中轮不重复上屏", () => {
 /**
- * Bug 641 — `nudo:dual-entry` 在**磁盘缓存命中轮**被**重复**上屏
+ * `nudo:dual-entry` 在**磁盘缓存命中轮**被**重复**上屏
  * （冷缓存 1 条 → 热缓存 2 条同文案）⇒ 机器可读面逐轮漂移
  * （诊断条数随缓存状态变化）。
  *
@@ -6753,10 +6753,10 @@ describe("[cli-] Bug 641 — nudo:dual-entry 缓存命中轮不重复上屏", ()
  * 数组逐条相同（不引入"热轮无该条"的反向漂移）。
  *
  * 本文件钉住：
- *  - `--json` 面：冷 / 热 / 热三轮的 issues 数组与 summary 逐条相同，
- *    dual-entry 各**恰好 1 条**；
- *  - 人类面：热轮的 issues 段只有**一行** dual-entry；
- *  - 写盘口径：磁盘缓存条目里**不含** nudo:dual-entry。
+ * - `--json` 面：冷 / 热 / 热三轮的 issues 数组与 summary 逐条相同，
+ * dual-entry 各**恰好 1 条**；
+ * - 人类面：热轮的 issues 段只有**一行** dual-entry；
+ * - 写盘口径：磁盘缓存条目里**不含** nudo:dual-entry。
  */
 
 
@@ -6804,7 +6804,7 @@ function cacheFiles(root: string): string[] {
   return out;
 }
 
-describe("Bug 641 — nudo:dual-entry 缓存命中轮不重复上屏", () => {
+describe("nudo:dual-entry 缓存命中轮不重复上屏", () => {
   it("--json 面：冷/热/热三轮 issues 逐条相同（dual-entry 各 1 条）", { timeout: 30_000 }, () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-b641-json-"));
     const file = join(dir, "browser.js");
@@ -6881,11 +6881,11 @@ describe("Bug 641 — nudo:dual-entry 缓存命中轮不重复上屏", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 644 — --what-if 不再静默吞掉机器 / 观察旗标
+// --what-if 不再静默吞掉机器 / 观察旗标
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 644 — --what-if 不再静默吞掉机器 / 观察旗标", () => {
+describe("--what-if 不再静默吞掉机器 / 观察旗标", () => {
 /**
- * Bug 644：`nudo check --json --what-if …` **静默吞掉 --json**（stdout 是人读文本）。
+ * `nudo check --json --what-if …` **静默吞掉 --json**（stdout 是人读文本）。
  *
  * 症状：--what-if 是早退分支 ⇒ --json/--abs/--gha/--gitlab/--from/--watch/--verbose
  * 全部被静默丢弃（stdout 变成 `Type of "raw": …` 的人读文本、exit 0 ⇒ 机器面
@@ -6914,7 +6914,7 @@ function makeProject(): { cwd: string; file: string; other: string } {
   return { cwd: dir, file, other };
 }
 
-describe("Bug 644 — --what-if 不再静默吞掉机器 / 观察旗标", () => {
+describe("-what-if 不再静默吞掉机器 / 观察旗标", () => {
   it("CLI：--json --what-if ⇒ 显式 usage error（stdout 是机器可读信封）", () => {
     const { cwd, file } = makeProject();
     try {
@@ -6994,11 +6994,11 @@ describe("Bug 644 — --what-if 不再静默吞掉机器 / 观察旗标", () => 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 646 — 模块环不再丢弃整张依赖图（反向守护钉）
+// 模块环不再丢弃整张依赖图（反向守护钉）
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 646 — 模块环不再丢弃整张依赖图（反向守护钉）", () => {
+describe("模块环不再丢弃整张依赖图（反向守护钉）", () => {
 /**
- * Bug 646（**反向守护钉** · 报告说法的假阳性）：`nudo check` 遇**模块环**时
+ * （**反向守护钉** · 报告说法的假阳性）：`nudo check` 遇**模块环**时
  * **不得**把整张依赖图丢弃。
  *
  * 报告原始描述：`packages/nudojs/src/commands/check.ts` 有
@@ -7011,19 +7011,19 @@ describe("[cli-] Bug 646 — 模块环不再丢弃整张依赖图（反向守护
  *
  * HEAD 上的真实链路：
  * - `packages/nudojs/src/commands/check.ts` 的 `buildCheckInjection` 注释明写
- *   「Bug 456：**不再**因为检出环就丢弃整张依赖图」——环内求值**有界**
- *   （装载层：环内已部分求值的导出；求值层：调用/分支预算硬闸），
- *   无需「整图丢弃」这种有损降级；
+ * 「**不再**因为检出环就丢弃整张依赖图」——环内求值**有界**
+ * （装载层：环内已部分求值的导出；求值层：调用/分支预算硬闸），
+ * 无需「整图丢弃」这种有损降级；
  * - 环本身仍由诊断面报告（`nudo:module-cycle` warning）——**不靠丢图来「避免」环**。
  *
  * **为什么这条钉不是空转**：
  * - 门禁结果必须**逐字一致**：有环 / 无环两夹具的 `nudo check` exit code 与
- *   诊断文本相同 ⇒ 环没有改变分析结果；
+ * 诊断文本相同 ⇒ 环没有改变分析结果；
  * - 一致结果里**仍有** `nudo:constraint-violated`（actual `5` ⊭ `> 999`）
- *   ⇒ 跨模块的值**没有**塌成 `unknown`（塌成 unknown 时门禁会**假绿**，
- *   exit code 变 0、约束违规消失 ⇒ 本钉必红）；
+ * ⇒ 跨模块的值**没有**塌成 `unknown`（塌成 unknown 时门禁会**假绿**，
+ * exit code 变 0、约束违规消失 ⇒ 本钉必红）；
  * - 夹具**非空转**：有环夹具真被检出环（`nudo test` 面的 `nudo:module-cycle`），
- *   无环夹具没有 ⇒ 两夹具的差别只在「有没有环」。
+ * 无环夹具没有 ⇒ 两夹具的差别只在「有没有环」。
  */
 
 
@@ -7085,8 +7085,8 @@ function makeProject(modules: Record<string, string>, name: string): string {
  * 归一化三处**与分析结果无关**的差异：
  * 1. 夹具目录路径（两个夹具在不同目录）；
  * 2. 模块图**形状**诊断（`nudo:module-cycle` / `nudo:module-depth`）及其 docs 行
- *    —— 环本身被诊断面报告是**期望**行为（模块装载问题族上屏），
- *    但它**不得**改变分析结果（签名 + L2 门禁判定）；
+ * —— 环本身被诊断面报告是**期望**行为（模块装载问题族上屏），
+ * 但它**不得**改变分析结果（签名 + L2 门禁判定）；
  * 3. 汇总行里的 warning 计数（形状诊断是 warning，会把计数带高）。
  */
 function normalizeGateOutput(out: string, dir: string): string {
@@ -7099,7 +7099,7 @@ function normalizeGateOutput(out: string, dir: string): string {
     .replace(/\d+ warning/g, "N warning");
 }
 
-describe("Bug 646 — 模块环不再丢弃整张依赖图（反向守护钉）", () => {
+describe("模块环不再丢弃整张依赖图（反向守护钉）", () => {
   it("有环 / 无环：nudo check 的 exit code 逐字一致（门禁同判）", () => {
     const cyc = makeProject(CYCLE_MODULES, "b646-with");
     const acyc = makeProject(ACYCLIC_MODULES, "b646-without");
@@ -7177,19 +7177,19 @@ describe("Bug 646 — 模块环不再丢弃整张依赖图（反向守护钉）"
 });
 
 // ---------------------------------------------------------------------------
-// bug 648: check --fix 的 diff 单份头 + 干净路径字段
+// check --fix 的 diff 单份头 + 干净路径字段
 // ---------------------------------------------------------------------------
-describe("[cli-] bug 648: check --fix 的 diff 单份头 + 干净路径字段", () => {
+describe("check --fix 的 diff 单份头 + 干净路径字段", () => {
 /**
- * Bug 648 —— `nudo check --fix` 打印的 unified diff **非法且不可 apply**。
+ * `nudo check --fix` 打印的 unified diff **非法且不可 apply**。
  *
  * 旧实现（check.ts 的 diff 打印段）：
- * - 自印一份 `--- <file>` / `+++ <file>  ([fix] …)` **又**追加自带头的
- *   `unifiedDiff(...)` ⇒ **双份头**；
- * - `+++` 行的**路径字段被说明文字污染**（`+++ <path>  ([fix] …)`）⇒
- *   解析出的文件名不是合法路径；
+ * - 自印一份 `--- <file>` / `+++ <file> ([fix] …)` **又**追加自带头的
+ * `unifiedDiff(...)` ⇒ **双份头**；
+ * - `+++` 行的**路径字段被说明文字污染**（`+++ <path> ([fix] …)`）⇒
+ * 解析出的文件名不是合法路径；
  * - 传给 `unifiedDiff` 的是**绝对路径** ⇒ 头拼成 `a//abs` 的**双斜杠**
- *   ⇒ `git apply -p1` 剥掉 `a/` 后仍是绝对路径 ⇒ git 拒绝（exit 1）。
+ * ⇒ `git apply -p1` 剥掉 `a/` 后仍是绝对路径 ⇒ git 拒绝（exit 1）。
  *
  * 修复：diff 头**只**由 `unifiedDiff` 产出；说明文字移到 diff **之外**的一行；
  * 路径取**相对 cwd**（与兄弟命令 `test --freeze --dry-run` 同口径）。
@@ -7212,7 +7212,7 @@ function diffHeaderLines(stdout: string): { minus: string[]; plus: string[] } {
   };
 }
 
-describe("bug 648: check --fix 的 diff 单份头 + 干净路径字段", () => {
+describe("check --fix 的 diff 单份头 + 干净路径字段", () => {
   it("单份 ---/+++ 头 + 路径字段无说明文字 + 相对路径（无 a// 双斜杠）", () => {
     const cwd = mkdtempSync(join(tmpdir(), "nudo-bug648-"));
     try {

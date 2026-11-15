@@ -1,27 +1,26 @@
 /**
- * 强制转换/回调校验三连回归（Bug 24 / 29 / 30）：
- * - Bug 24：`String(x)` 补 ToPrimitive 校验——null-proto 无 coercer 对象
- *   定抛 TypeError（node 实测 `String(Object.create(null))` 抛），抽象臂
- *   （any/fn/sum）may TypeError；**ToString 面按 brand 分档**（Bug 331：
- *   引擎已知的内建 brand 的 toString 行为确定 ⇒ 不记 may；闭普通对象走
- *   Object.prototype.toString ⇒ 不记 may）——与 `Number(x)`（Bug 50）/
- *   `parseInt` 的 ToNumber 面分档；symbol/字面量全定不受影响；
- * - Bug 29：`new Function(x)` 补构造器形 ToString 校验（Symbol 定抛 /
- *   抽象 may）——$new 宿主分支（exec/class.ts）与 evalBuiltinNew（Abs 面）
- *   双面同口径；调用形 `Function(x)` 经 callHostGlobalLiteralOnly 已覆盖
- *   （控制组回归）；
- * - Bug 30：`queueMicrotask(x)` 补 IsCallable 校验（非可调用定抛 TypeError /
- *   抽象 may）——never-exec 守卫 fail-closed **前置**校验（回调仍不执行，
- *   unknown#opaque 口径不变；setTimeout/fetch 等名单其余成员原生接受任意
- *   首实参，无校验可言——控制组回归）。
+ * 强制转换/回调校验三连回归（）：
+ * - `String(x)` 补 ToPrimitive 校验——null-proto 无 coercer 对象
+ * 定抛 TypeError（node 实测 `String(Object.create(null))` 抛），抽象臂
+ * （any/fn/sum）may TypeError；**ToString 面按 brand 分档**（* 引擎已知的内建 brand 的 toString 行为确定 ⇒ 不记 may；闭普通对象走
+ * Object.prototype.toString ⇒ 不记 may）——与 `Number(x)`（）/
+ * `parseInt` 的 ToNumber 面分档；symbol/字面量全定不受影响；
+ * - `new Function(x)` 补构造器形 ToString 校验（Symbol 定抛 /
+ * 抽象 may）——$new 宿主分支（exec/class.ts）与 evalBuiltinNew（Abs 面）
+ * 双面同口径；调用形 `Function(x)` 经 callHostGlobalLiteralOnly 已覆盖
+ * （控制组回归）；
+ * - `queueMicrotask(x)` 补 IsCallable 校验（非可调用定抛 TypeError /
+ * 抽象 may）——never-exec 守卫 fail-closed **前置**校验（回调仍不执行，
+ * unknown#opaque 口径不变；setTimeout/fetch 等名单其余成员原生接受任意
+ * 首实参，无校验可言——控制组回归）。
  *
  * node 实测 ground truth：
- *   String(Object.create(null)) → TypeError（Cannot convert object to primitive）
- *   String({toString(){throw}}) → 用户 throw 传播（Bug 381 起钩子体真调用 ⇒
- *     **定抛**（throws 面 = 用户的 Error），不再折 may TypeError）
- *   new Function(Symbol()) → TypeError（Cannot convert a Symbol value to a string）
- *   queueMicrotask(1/null/undefined/true/1n/Symbol()/{} ) → TypeError
- *   queueMicrotask(() => {}) / setTimeout(x, 0) → 不抛
+ * String(Object.create(null)) → TypeError（Cannot convert object to primitive）
+ * String({toString(){throw}}) → 用户 throw 传播（起钩子体真调用 ⇒
+ * **定抛**（throws 面 = 用户的 Error），不再折 may TypeError）
+ * new Function(Symbol()) → TypeError（Cannot convert a Symbol value to a string）
+ * queueMicrotask(1/null/undefined/true/1n/Symbol()/{} ) → TypeError
+ * queueMicrotask(() => {}) / setTimeout(x, 0) → 不抛
  */
 import { describe, it, expect } from "vitest";
 import { runTranspiled, callTranspiledExportFull } from "../exec/run.ts";
@@ -74,9 +73,9 @@ function l2Of(r: ReturnType<typeof check>, fn?: string) {
   return r.issues.filter((i) => i.code === "nudo:entry-may-throw" && (!fn || i.fn === fn));
 }
 
-// --- Bug 24：String(x) ToPrimitive -----------------------------------------
+// --- String(x) ToPrimitive -----------------------------------------
 
-describe("Bug 24: String(x) 补 ToPrimitive 校验", () => {
+describe("String(x) 补 ToPrimitive 校验", () => {
   it("null-proto 无 coercer 对象 → 定抛 TypeError（原生同款）", () => {
     const r = evalAbs(
       `export function f() { try { return String(Object.create(null)); } catch (e) { return e.constructor.name; } }`,
@@ -93,7 +92,7 @@ describe("Bug 24: String(x) 补 ToPrimitive 校验", () => {
     );
     expect(isNever(coer.result)).toBe(false);
     expect(coer.effects).toContain("TypeError");
-    // {toString(){throw}}：Bug 381 起**钩子体真调用**（不再只探存在性）⇒
+    // {toString(){throw}}：起**钩子体真调用**（不再只探存在性）⇒
     // 钩子体抛错**必然传播**（原生同款：用户的 Error 直接抛出，用户 try/catch
     // 可捕）⇒ 结果 never + throws 面 = 用户的 Error（不再是 may TypeError
     // 的抽象臂——旧 pin 记录的是「钩子体从不执行」时代的折法）。
@@ -109,7 +108,7 @@ describe("Bug 24: String(x) 补 ToPrimitive 校验", () => {
       (obj.throws as { shape?: { k?: string; name?: string } })?.shape?.name,
     ).toBe("Error");
     // {a:1}：无自有 coercer → 走 Object.prototype.toString ⇒ 原生折
-    // "[object Object]" **不抛**（node 实测 total）。Bug 331：ToString 面
+    // "[object Object]" **不抛**（node 实测 total）。ToString 面
     // 与 ToNumber 面分档——闭普通对象不记 may（此前与 Number(x) 抽象 obj
     // 臂同口径记 may ⇒ L2 假红）。
     const plain = evalAbs(`export function f() { return String({ a: 1 }); }`);
@@ -144,7 +143,7 @@ describe("Bug 24: String(x) 补 ToPrimitive 校验", () => {
     const arrow = evalAbs(`export function f() { return String(() => 1); }`);
     expect(arrow.effects).toContain("TypeError");
     // brand 形（已知内建）：原生 `String(new Date(0))` → "Thu Jan 01 1970 …"
-    // **不抛**（Date.prototype.toString 行为确定）。Bug 331：ToString 面按
+    // **不抛**（Date.prototype.toString 行为确定）。ToString 面按
     // brand 分档——引擎已知的内建 brand 不记 may（此前一律记 may ⇒ L2 假红）。
     const brand = evalAbs(`export function f() { return String(new Date(0)); }`);
     expect(brand.effects).not.toContain("TypeError");
@@ -175,9 +174,9 @@ describe("Bug 24: String(x) 补 ToPrimitive 校验", () => {
   });
 });
 
-// --- Bug 29：new Function(x) ToString --------------------------------------
+// --- new Function(x) ToString --------------------------------------
 
-describe("Bug 29: new Function(x) 补构造器形 ToString 校验", () => {
+describe("new Function(x) 补构造器形 ToString 校验", () => {
   it("new Function(Symbol()) → 定抛 TypeError（原生同款）", () => {
     const r = evalAbs(
       `export function f() { try { return new Function(Symbol()); } catch (e) { return e.constructor.name; } }`,
@@ -227,9 +226,9 @@ describe("Bug 29: new Function(x) 补构造器形 ToString 校验", () => {
   });
 });
 
-// --- Bug 30：queueMicrotask(x) IsCallable -----------------------------------
+// --- queueMicrotask(x) IsCallable -----------------------------------
 
-describe("Bug 30: queueMicrotask(x) 补 IsCallable 校验", () => {
+describe("queueMicrotask(x) 补 IsCallable 校验", () => {
   it("非可调用实参 → 定抛 TypeError（原生同款）", () => {
     for (const arg of ["1", "null", "undefined", "true", "1n", "Symbol()", "{}"]) {
       const src = `export function f() { try { queueMicrotask(${arg}); return "no-throw"; } catch (e) { return e.constructor.name; } }`;

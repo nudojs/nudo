@@ -12,11 +12,11 @@
  *
  * 锁住：
  * 1. **薄壳的导出面**：`commands/contract.ts` 的运行时导出**有且只有**
- *    `registerContractCommand`（`packages/nudojs/src/index.ts` 仍零导出 ⇒
- *    零新增公开导出）。
+ * `registerContractCommand`（`packages/nudojs/src/index.ts` 仍零导出 ⇒
+ * 零新增公开导出）。
  * 2. **可观测行为逐字不变**：`nudo contract` 的 print / `--json` /
- *    `--draft` / `--emit --dry-run` / `--from-dts` 五个形态的输出面
- *    （行文本、JSON 载荷键、草稿正文、汇总行）。
+ * `--draft` / `--emit --dry-run` / `--from-dts` 五个形态的输出面
+ * （行文本、JSON 载荷键、草稿正文、汇总行）。
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
@@ -67,10 +67,10 @@ describe("族 20 S0 —— 可观测行为逐字不变", () => {
     writeFileSync(file, `export function getName(user) { return user.name; }\n`);
     const r = runCliTsx(["contract", "--json", file]);
     expect(r.status).toBe(0);
-    // ⚠ 族 20 · 片 A（Bug 658）起：**顶层恒为数组**（单文件 = 单元素数组）——
-    //   跨文件聚合层修掉了「目录形态 stdout 是 N 份 JSON 拼接」的缺陷，
-    //   单文件载荷形状随之**破坏性变更**（见 .changeset/fix-nudojs-contract-A.md）。
-    //   元素内部的键（file / entries[].fn / entries[].signature）**未变**。
+    // ⚠ 族 20 · 片 A（）起：**顶层恒为数组**（单文件 = 单元素数组）——
+    // 跨文件聚合层修掉了「目录形态 stdout 是 N 份 JSON 拼接」的缺陷，
+    // 单文件载荷形状随之**破坏性变更**（见 .changeset/fix-nudojs-contract-A.md）。
+    // 元素内部的键（file / entries[].fn / entries[].signature）**未变**。
     const docs = JSON.parse(r.stdout) as {
       file: string;
       entries: { fn: string; signature: string }[];

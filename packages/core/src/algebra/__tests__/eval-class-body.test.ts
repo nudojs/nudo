@@ -1,5 +1,5 @@
 /**
- * Wave 5 class-body 家族回归（Bug 58/59/60/77/78/79/80）：
+ * Wave 5 class-body 家族回归（）：
  * - 59 实例字段：每次构造以新实例为 this 按源序求值（不再误编静态）
  * - 60 计算方法键：定义期求值（definite/may TypeError 表面），不静默挂 "method"
  * - 77 static 块：定义期执行（副作用 + throw 表面；this = 类值）
@@ -7,7 +7,7 @@
  * - 79 new.target：普通调用 undefined / 构造帧内类值（不再混编 import.meta）
  * - 80 类表达式：非空类体走 $class 机制（不再恒 unknown）
  * - 80/81（differential 批）私有名补漏：#x in o 运算符派发 $in（不再折
- *   $lit(void 0) 键）；私有字段复合赋值读-改-写（不再无视 compoundFn）
+ * $lit(void 0) 键）；私有字段复合赋值读-改-写（不再无视 compoundFn）
  * - 58 生成器：调用期全操作——体内 throw/may-throw 不泄漏进调用方 throws 域
  * 每条断言与 node 真实执行对齐（值域 + throws 域双钉）。
  */
@@ -46,7 +46,7 @@ function evalSrc(
   };
 }
 
-describe("Bug 59: instance class fields initialize per construction on the instance", () => {
+describe("instance class fields initialize per construction on the instance", () => {
   it("field initializer never runs at class-definition time (entry total)", () => {
     const r = evalSrc(
       `export function fieldDef(x) { class C { p = x.a; } return 1; }`,
@@ -113,7 +113,7 @@ describe("Bug 59: instance class fields initialize per construction on the insta
   });
 });
 
-describe("Bug 60: computed method-name keys evaluate at definition time", () => {
+describe("computed method-name keys evaluate at definition time", () => {
   it("definite TypeError at definition ([null.x]())", () => {
     const r = evalSrc(
       `export function computedKeyDef() { class C { [null.x]() {} } return 1; }`,
@@ -160,7 +160,7 @@ describe("Bug 60: computed method-name keys evaluate at definition time", () => 
   });
 });
 
-describe("Bug 77: static blocks execute at class-definition time", () => {
+describe("static blocks execute at class-definition time", () => {
   it("side effects on enclosing bindings land at definition", () => {
     const r = evalSrc(
       `export function sideEffect() { let y = 0; class C { static { y = 5; } } return y; }`,
@@ -205,7 +205,7 @@ describe("Bug 77: static blocks execute at class-definition time", () => {
   });
 });
 
-describe("Bug 78: private fields/methods modeled (no module-wide fail-closed)", () => {
+describe("private fields/methods modeled (no module-wide fail-closed)", () => {
   it("#x instance field read via this.#x", () => {
     const r = evalSrc(
       `export function privField() { class C { #x = 1; m() { return this.#x; } } return new C().m(); }`,
@@ -257,7 +257,7 @@ describe("Bug 78: private fields/methods modeled (no module-wide fail-closed)", 
   });
 });
 
-describe("Bug 79: new.target is not import.meta", () => {
+describe("new.target is not import.meta", () => {
   it("new.target in a plain call is undefined (was { url: string })", () => {
     const r = evalSrc(
       `export function f() { function g() { return new.target; } return g(); }`,
@@ -290,7 +290,7 @@ describe("Bug 79: new.target is not import.meta", () => {
   });
 });
 
-describe("Bug 80: class expressions route through the class machinery", () => {
+describe("class expressions route through the class machinery", () => {
   it("method body computes (was unknown)", () => {
     const r = evalSrc(
       `export function f() { const A = class { m() { return 1; } }; return new A().m(); }`,
@@ -349,11 +349,11 @@ describe("Bug 80: class expressions route through the class machinery", () => {
   });
 });
 
-describe("Bug 58: generator calls are total (body throws deferred to iteration)", () => {
+describe("generator calls are total (body throws deferred to iteration)", () => {
   it("explicit throw in body does not surface at call time", () => {
     const r = evalSrc(`export function* genThrow() { throw new Error("e"); }`, "genThrow");
-    // Bug 22：生成器对象带迭代器协议面（无 yield 元素槽）——**协议面在运行面**
-    // （`typeof gi.next`），不在**投影面**（Bug 240：协议槽是 internal 槽，
+    // 生成器对象带迭代器协议面（无 yield 元素槽）——**协议面在运行面**
+    // （`typeof gi.next`），不在**投影面**（协议槽是 internal 槽，
     // 不进签名面）；体内 throw 仍被 $gen 丢弃式帧吞掉（调用期不表面）
     expect(r.value).toMatch(/^\{/);
     expect(r.kinds).toEqual([]);
@@ -387,7 +387,7 @@ describe("Bug 58: generator calls are total (body throws deferred to iteration)"
   });
 
   it("yield collection stays eager (value domain unchanged)", () => {
-    // Bug 22：生成器对象不再是 yield 元组数组——值域经原生迭代面（spread）
+    // 生成器对象不再是 yield 元组数组——值域经原生迭代面（spread）
     // 断言 eager 收集口径不变
     const r = evalSrc(
       `export function* genYield() { yield 1; yield 2; }\nexport function spread() { return [...genYield()]; }`,
@@ -415,7 +415,7 @@ describe("Bug 58: generator calls are total (body throws deferred to iteration)"
   });
 });
 
-describe("Bug 80 (differential): #x in o routes through $in", () => {
+describe("(differential): #x in o routes through $in", () => {
   it("#x in this on own instance → true (was void-0 key query)", () => {
     const r = evalSrc(
       `export function f() { class A { #x = 1; has() { return #x in this; } } return new A().has(); }`,
@@ -459,14 +459,14 @@ describe("Bug 80 (differential): #x in o routes through $in", () => {
 
   it("transpile emits $in($lit(key), recv) — PrivateName not folded to void 0", () => {
     const out = transpileSource(`class A { #x = 1; has() { return #x in this; } }`);
-    // Bug 158：私有名键按**声明类**作用域化（"#<类名>::x"）——断言只绑
+    // 私有名键按**声明类**作用域化（"#<类名>::x"）——断言只绑
     // "键是真实私有名（未被折成 void 0）"，不绑死作用域串。接收者名属于
-    // Bug 1160 的载体分配面，不在本断言（只要求是标识符）。
+    // 的载体分配面，不在本断言（只要求是标识符）。
     expect(out).toMatch(/\$in\(\$lit\("#[^"]*x"\), [A-Za-z_$][\w$]*\)/);
   });
 });
 
-describe("Bug 81 (differential): private-field compound assignment is read-modify-write", () => {
+describe("(differential): private-field compound assignment is read-modify-write", () => {
   it("this.#x += 1 (was: RHS written verbatim → 1)", () => {
     const r = evalSrc(
       `export function f() { class A { #x = 1; inc() { this.#x += 1; return this.#x; } } return new A().inc(); }`,
@@ -517,7 +517,7 @@ describe("Bug 81 (differential): private-field compound assignment is read-modif
 
   it("transpile emits $add($get(...)) under the $set wrapper", () => {
     const out = transpileSource(`class A { #x = 1; inc() { this.#x += 1; return this.#x; } }`);
-    // Bug 158：私有名键按**声明类**作用域化（"#<类名>::x"）——断言只绑
+    // 私有名键按**声明类**作用域化（"#<类名>::x"）——断言只绑
     // "复合赋值是读-改-写（读 $get 与写 $set 用同一私有名键）"，不绑死
     // 作用域串与具体发射形状
     const key = /"#[^"]*x"/.exec(out)?.[0];

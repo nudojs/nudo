@@ -17,22 +17,22 @@ import { v as termVar, lit as termLit } from "../term.ts";
 import { and, gt, lt, type Pred } from "../pred.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 1055: String.prototype ES2017 别名（trimLeft / trimRight）方法值读
+// String.prototype ES2017 别名（trimLeft / trimRight）方法值读
 // ---------------------------------------------------------------------------
-describe("[] Bug 1055: String.prototype ES2017 别名（trimLeft / trimRight）方法值读", () => {
+describe("String.prototype ES2017 别名（trimLeft / trimRight）方法值读", () => {
 /**
- * Bug 1055 回归钉：String.prototype 的 **ES2017 别名**（trimLeft / trimRight）
+ * 回归钉：String.prototype 的 **ES2017 别名**（trimLeft / trimRight）
  * 方法值读通道（core `exec/member-diag.ts` 的 `STRING_METHODS` 白名单）。
  *
  * 病灶（修前，HEAD 4d1a249d）：
  * - `STRING_METHODS` 只列了 `trimStart` / `trimEnd`，漏列宿主**真实存在**的
- *   两个 ES2017 别名 `trimLeft` / `trimRight`（≡ trimStart / trimEnd，原生
- *   同一内置）⇒ 同一引擎两套字符串方法名集合自相矛盾：
- *   - 派发面（`algebra/methods.ts`）认识这两个别名 ⇒ `s.trimLeft()` 正常；
- *   - 读面（`STRING_METHODS`）不认识 ⇒ prim 接收者值读落 exact `undefined`
- *     （原生是 function）⇒ 原型对象面 `String.prototype.trimLeft` 同落
- *     `undefined` ⇒ `String.prototype.trimLeft.call(s)` ⇒「property 'call'
- *     on undefined」⇒ 硬 TypeError ⇒ **L2 门禁假红**（nudo:entry-may-throw）。
+ * 两个 ES2017 别名 `trimLeft` / `trimRight`（≡ trimStart / trimEnd，原生
+ * 同一内置）⇒ 同一引擎两套字符串方法名集合自相矛盾：
+ * - 派发面（`algebra/methods.ts`）认识这两个别名 ⇒ `s.trimLeft()` 正常；
+ * - 读面（`STRING_METHODS`）不认识 ⇒ prim 接收者值读落 exact `undefined`
+ * （原生是 function）⇒ 原型对象面 `String.prototype.trimLeft` 同落
+ * `undefined` ⇒ `String.prototype.trimLeft.call(s)` ⇒「property 'call'
+ * on undefined」⇒ 硬 TypeError ⇒ **L2 门禁假红**（nudo:entry-may-throw）。
  *
  * 修法：`STRING_METHODS` 补 `"trimLeft"` / `"trimRight"`（只加表项，不动
  * 导出面）。
@@ -49,7 +49,7 @@ describe("[] Bug 1055: String.prototype ES2017 别名（trimLeft / trimRight）�
 /** 抽象 prim string 实参（等价于侧车把形参约束成 string()） */
 const strAbs = abs({ k: "prim", type: "string" }, undefined, undefined, "path");
 
-describe("Bug 1055: String.prototype ES2017 别名（trimLeft / trimRight）方法值读", () => {
+describe("String.prototype ES2017 别名（trimLeft / trimRight）方法值读", () => {
   it("prim 接收者：别名的方法值读是 function（原生同）", () => {
     expect(litValue(call(`export function f(){ return typeof " ab ".trimLeft; }`).result))
       .toEqual({ ok: true, value: "function" });
@@ -147,11 +147,11 @@ describe("Bug 1055: String.prototype ES2017 别名（trimLeft / trimRight）方�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 209 — Proxy has 陷阱返回值 ToBoolean
+// Proxy has 陷阱返回值 ToBoolean
 // ---------------------------------------------------------------------------
-describe("[] Bug 209 — Proxy has 陷阱返回值 ToBoolean", () => {
+describe("Proxy has 陷阱返回值 ToBoolean", () => {
 /**
- * Bug 209 回归：Proxy `has` 陷阱的返回值必须按规范 **ToBoolean**。
+ * 回归：Proxy `has` 陷阱的返回值必须按规范 **ToBoolean**。
  *
  * ES 语义（`[[HasProperty]]` → `ToBoolean(trapResult)`）：
  * `has:()=>0` → false、`has:()=>1` → true、`has:()=>""` → false、
@@ -180,7 +180,7 @@ function v2(src: string) {
   return litValue___nudojs_core(call(src, "f").result);
 }
 
-describe("Bug 209 — Proxy has 陷阱返回值 ToBoolean", () => {
+describe("Proxy has 陷阱返回值 ToBoolean", () => {
   it("has:()=>0 → false（此前折「有」）", () => {
     expect(v(wrap(`const p=new Proxy({},{has:()=>0}); return ("a" in p);`))).toEqual({
       ok: true,
@@ -246,26 +246,26 @@ describe("Bug 209 — Proxy has 陷阱返回值 ToBoolean", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 210 — Proxy [[Get]] 不变量（不可配置+不可写属性须返回实际值）
+// Proxy [[Get]] 不变量（不可配置+不可写属性须返回实际值）
 // ---------------------------------------------------------------------------
-describe("[] Bug 210 — Proxy [[Get]] 不变量（不可配置+不可写属性须返回实际值）", () => {
+describe("Proxy [[Get]] 不变量（不可配置+不可写属性须返回实际值）", () => {
 /**
- * Bug 210 回归：Proxy **不变量校验**（ES2024 10.5 Proxy 内部方法）。
+ * 回归：Proxy **不变量校验**（ES2024 10.5 Proxy 内部方法）。
  *
  * ① [[Get]] 不变量（ES2024 10.5.4 step 6）：靶上某自有属性**不可配置且
- *    不可写**（数据属性）时，get 陷阱的返回值必须与靶的实际值 SameValue，
- *    否则原生定抛 TypeError（"'get' on proxy: property 'a' is a read-only
- *    and non-configurable data property on the proxy target but the proxy
- *    did not return its actual value"）。
- *    —— 只在**同时**不可写 + 不可配置时成立：仅不可写（configurable:true）
- *    / 仅不可配置（writable:true）/ 密封靶（不可配置但可写）都**不**抛。
+ * 不可写**（数据属性）时，get 陷阱的返回值必须与靶的实际值 SameValue，
+ * 否则原生定抛 TypeError（"'get' on proxy: property 'a' is a read-only
+ * and non-configurable data property on the proxy target but the proxy
+ * did not return its actual value"）。
+ * —— 只在**同时**不可写 + 不可配置时成立：仅不可写（configurable:true）
+ * / 仅不可配置（writable:true）/ 密封靶（不可配置但可写）都**不**抛。
  * ② [[OwnPropertyKeys]] 不变量（ES2024 10.5.5）：陷阱结果不得含重复项、
- *    不得含非字符串/symbol 键；靶的**不可配置**自有键必须都在陷阱结果里
- *    （与靶可扩展性无关）；靶**不可扩展**时陷阱结果须恰为靶的自有键集
- *    （不多不少——多余键也抛）。
+ * 不得含非字符串/symbol 键；靶的**不可配置**自有键必须都在陷阱结果里
+ * （与靶可扩展性无关）；靶**不可扩展**时陷阱结果须恰为靶的自有键集
+ * （不多不少——多余键也抛）。
  * ③ [[OwnPropertyKeys]] **派发点**：handler 的 "ownKeys" 陷阱此前从不被
- *    调用（Reflect.ownKeys / Object.keys / Object.getOwnPropertyNames 直
- *    接走靶面）——原生先查 handler 的 "ownKeys" 槽；无陷阱时转发靶面。
+ * 调用（Reflect.ownKeys / Object.keys / Object.getOwnPropertyNames 直
+ * 接走靶面）——原生先查 handler 的 "ownKeys" 槽；无陷阱时转发靶面。
  *
  * 修复前：引擎的 Proxy 内部方法只做「派发陷阱 + 采用返回值」，零不变量
  * 校验 → 上述四类原生 TypeError 全部静默通过（wrong-exact）。
@@ -292,7 +292,7 @@ function throwName(src: string): string {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 210 — Proxy [[Get]] 不变量（不可配置+不可写属性须返回实际值）", () => {
+describe("Proxy [[Get]] 不变量（不可配置+不可写属性须返回实际值）", () => {
   it("Reflect.get(冻结靶代理, 'a') → TypeError（此前折 2 且声称不抛）", () => {
     expect(
       throwName(
@@ -380,7 +380,7 @@ describe("Bug 210 — Proxy [[Get]] 不变量（不可配置+不可写属性须�
   });
 });
 
-describe("Bug 210 — Proxy [[OwnPropertyKeys]] 不变量 + 陷阱派发", () => {
+describe("Proxy [[OwnPropertyKeys]] 不变量 + 陷阱派发", () => {
   it("ownKeys 陷阱结果含重复名 → TypeError（此前折 'a,a'）", () => {
     expect(
       throwName(wrap(`const p=new Proxy({},{ownKeys:()=>["a","a"]}); return Reflect.ownKeys(p).join(",");`)),
@@ -470,11 +470,11 @@ describe("Bug 210 — Proxy [[OwnPropertyKeys]] 不变量 + 陷阱派发", () =>
 });
 
 // ---------------------------------------------------------------------------
-// Bug 227 — 内建命名空间对象的 Symbol.toStringTag
+// 内建命名空间对象的 Symbol.toStringTag
 // ---------------------------------------------------------------------------
-describe("[] Bug 227 — 内建命名空间对象的 Symbol.toStringTag", () => {
+describe("内建命名空间对象的 Symbol.toStringTag", () => {
 /**
- * Bug 227 回归：内建命名空间对象（Math / JSON / Reflect / Intl / Atomics）的
+ * 回归：内建命名空间对象（Math / JSON / Reflect / Intl / Atomics）的
  * `Symbol.toStringTag` 必须读到**原生标签**。
  *
  * ES 语义：命名空间对象把 `Symbol.toStringTag` 挂在**自己**上（自有数据属性）
@@ -495,7 +495,7 @@ function v(src: string) {
   return litValue___nudojs_core_2(call(src, "f").result);
 }
 
-describe("Bug 227 — 内建命名空间对象的 Symbol.toStringTag", () => {
+describe("内建命名空间对象的 Symbol.toStringTag", () => {
   it("命名空间对象的 Symbol.toStringTag 是原生标签", () => {
     for (const [ns, tag] of [
       ["Math", "Math"],
@@ -550,11 +550,11 @@ describe("Bug 227 — 内建命名空间对象的 Symbol.toStringTag", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 231: length 域校验走 ToNumber（具体非数值定抛 RangeError）
+// length 域校验走 ToNumber（具体非数值定抛 RangeError）
 // ---------------------------------------------------------------------------
-describe("[] Bug 231: length 域校验走 ToNumber（具体非数值定抛 RangeError）", () => {
+describe("length 域校验走 ToNumber（具体非数值定抛 RangeError）", () => {
 /**
- * Bug 231：`a.length = undefined` / `a.length = {}` 不抛 RangeError（原生
+ * `a.length = undefined` / `a.length = {}` 不抛 RangeError（原生
  * `Invalid array length`）→ 数值域校验只覆盖**数字**字面量，具体非数值被
  * 误当抽象值放行 → 门禁假绿。
  *
@@ -579,7 +579,7 @@ function threw(src: string, name = "RangeError"): boolean {
   return isNever(r.result) && throwsError(r.throws, name);
 }
 
-describe("Bug 231: length 域校验走 ToNumber（具体非数值定抛 RangeError）", () => {
+describe("length 域校验走 ToNumber（具体非数值定抛 RangeError）", () => {
   it("a.length = undefined → RangeError", () => {
     expect(
       threw(`export function f() {
@@ -683,11 +683,11 @@ describe("Bug 231: length 域校验走 ToNumber（具体非数值定抛 RangeErr
 });
 
 // ---------------------------------------------------------------------------
-// Bug 232 — 数组 expando 键读回不得假精确
+// 数组 expando 键读回不得假精确
 // ---------------------------------------------------------------------------
-describe("[] Bug 232 — 数组 expando 键读回不得假精确", () => {
+describe("数组 expando 键读回不得假精确", () => {
 /**
- * Bug 232：数组**非下标键写**被丢弃后读回折成 **exact `undefined`**
+ * 数组**非下标键写**被丢弃后读回折成 **exact `undefined`**
  * （原生读回写入值 9）→ 违反引擎自己「不得假精确」的不变式。
  *
  * 写侧（expando 写降级为 arr，值被丢弃）属 S3 分片；本分片修**读面**：
@@ -713,7 +713,7 @@ function isExactUndef(r: unknown): boolean {
   );
 }
 
-describe("Bug 232 — 数组 expando 键读回不得假精确", () => {
+describe("数组 expando 键读回不得假精确", () => {
   it("负下标写后读回不是 exact undefined（改前是）", () => {
     const r = call(`export function f() { const a=[1,2,3]; a[-1]=9; return a[-1]; }`, "f").result;
     expect(isExactUndef(r)).toBe(false);
@@ -743,11 +743,11 @@ describe("Bug 232 — 数组 expando 键读回不得假精确", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 236：String 包装对象可迭代
+// String 包装对象可迭代
 // ---------------------------------------------------------------------------
-describe("[] Bug 236：String 包装对象可迭代", () => {
+describe("String 包装对象可迭代", () => {
 /**
- * Bug 236 回归：**String 包装对象可迭代**（`new String("ab")` 展开得字符序列），
+ * 回归：**String 包装对象可迭代**（`new String("ab")` 展开得字符序列），
  * 而 Number / Boolean 包装对象**不可迭代**（原生定抛 TypeError）。
  *
  * ES 语义（ES5 §15.10.5 / ES2015+ 包装对象）：`String` 包装对象内部持有
@@ -765,7 +765,7 @@ describe("[] Bug 236：String 包装对象可迭代", () => {
 
 
 
-describe("Bug 236：String 包装对象可迭代", () => {
+describe("String 包装对象可迭代", () => {
   it("[...new String(\"ab\")] → [\"a\",\"b\"]（原生不抛）", () => {
     expect(val(`export function f() { return [...new String("ab")].join(","); }`)).toEqual({
       ok: true,
@@ -816,27 +816,27 @@ describe("Bug 236：String 包装对象可迭代", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 242 — 未建模 Intl 子构造器不得返回内部伪名 brand
+// 未建模 Intl 子构造器不得返回内部伪名 brand
 // ---------------------------------------------------------------------------
-describe("[] Bug 242 — 未建模 Intl 子构造器不得返回内部伪名 brand", () => {
+describe("未建模 Intl 子构造器不得返回内部伪名 brand", () => {
 /**
- * Bug 242 回归：`new Intl.Collator('en')` 等**未建模子构造器**返回内部伪名
+ * 回归：`new Intl.Collator('en')` 等**未建模子构造器**返回内部伪名
  * brand（`__nudoFnParentN`），该伪名泄漏进 `nudo check` 签名 / dts 产物
  * （TS2304：伪名是合法 JS 标识符却从未声明）/ schema 产物
  * （`z.instanceof(伪名)` ⇒ 加载即 ReferenceError）。
  *
  * 根因两处：
  * 1. 命名空间成员 fn 投影（containers/member.ts）**不带 name** ⇒ `new` 落
- *    「伪父名」兜底（`ensureFnParentName`）——伪名成了实例的**类型名**；
+ * 「伪父名」兜底（`ensureFnParentName`）——伪名成了实例的**类型名**；
  * 2. `$new`（packages/core/src/algebra/exec/class/declare.ts）用伪名兜底时
- *    直接造出 brand 实例。
+ * 直接造出 brand 实例。
  *
  * 修法：
  * - core 侧（declare.ts）：伪名**不得**成为实例的类型名——命名空间成员
- *   构造器（宿主成员函数：无体、只有 apply 钩子）未建模 ⇒ 折 unknown
- *   （台账口径：Intl 成员未建模，接受 unknown）；
- * - 命名空间成员投影带 name（containers/member.ts，S2a 的 Bug 243 修复）⇒
- *   实例 brand 拿到真名（`Intl.<Sub>`），不再落伪名。
+ * 构造器（宿主成员函数：无体、只有 apply 钩子）未建模 ⇒ 折 unknown
+ * （台账口径：Intl 成员未建模，接受 unknown）；
+ * - 命名空间成员投影带 name（containers/member.ts，S2a 的 修复）⇒
+ * 实例 brand 拿到真名（`Intl.<Sub>`），不再落伪名。
  *
  * 本文件钉住**行为**（实例 brand 名不得是内部伪名 + 产物面不得引用伪名），
  * 与具体由哪一侧收口无关。
@@ -863,7 +863,7 @@ function isInternalPseudoName(name: string): boolean {
   return /^__nudoFnParent\d*$/.test(name);
 }
 
-describe("Bug 242 — 未建模 Intl 子构造器不得返回内部伪名 brand", () => {
+describe("未建模 Intl 子构造器不得返回内部伪名 brand", () => {
   it("new Intl.Collator('en') 的 brand 名不是内部伪名", () => {
     const name = brandName(wrap(`return new Intl.Collator('en');`));
     expect(isInternalPseudoName(name)).toBe(false);
@@ -896,10 +896,10 @@ describe("Bug 242 — 未建模 Intl 子构造器不得返回内部伪名 brand"
 });
 
 // ---------------------------------------------------------------------------
-// [merged] eval-bug-295-enum-surface-symbol.test.ts
+// [merged] enum-surface-symbol
 // ---------------------------------------------------------------------------
-describe("[] [merged] eval-bug-295-enum-surface-symbol.test.ts", () => {
-// MERGED (topic-related bug pins): eval-bug-295-enum-surface-symbol.test.ts + eval-bug-295-proto-constructor-non-enumerable.test.ts + eval-bug-295-symbol-key-enum-copy.test.ts
+describe("enum-surface-symbol", () => {
+// MERGED (topic-related bug pins): enum-surface-symbol + proto-constructor-non-enumerable + symbol-key-enum-copy
 // Each absorbed file keeps its own describe scope so file-level hooks stay
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 
@@ -909,31 +909,31 @@ describe("[] [merged] eval-bug-295-enum-surface-symbol.test.ts", () => {
 
 
 
-describe("[merged] eval-bug-295-enum-surface-symbol.test.ts", () => {
+describe("enum-surface-symbol", () => {
 /**
- * Bug 295 回归（分片：**枚举面接线**）——symbol 键（`[Symbol.X]`）不得出现在
+ * 回归（分片：**枚举面接线**）——symbol 键（`[Symbol.X]`）不得出现在
  * **字符串键枚举面**。
  *
  * 本文件钉的是**主 agent 刚落地的枚举面接线**（for-in / keys 家族 / gOPD /
  * Reflect.ownKeys / `in`）；**复制面**（spread / Object.assign / 对象 rest）
- * 由同 bug 的另一分片 `eval-bug-295-symbol-key-enum-copy.test.ts` 钉——
+ * 由同 bug 的另一分片 `symbol-key-enum-copy` 钉——
  * 两套枚举口径必须分流（字符串键视图 vs CopyDataProperties 视图）。
  *
  * 原生依据（**node v26.10.0 实测**；本文件每条断言的期望值都先跑原生确认，
  * 不用印象值）：
  * - `Object.keys` / `Object.getOwnPropertyNames` / for-in / `JSON.stringify`
- *   只枚举**字符串**键 ⇒ `[Symbol.toStringTag]` 这类 symbol 键**看不到**。
- * - **Bug 1075 更正**：`Object.getOwnPropertyDescriptors` **不在**该清单里——
- *   原生 gOPDs 走 [[OwnPropertyKeys]]（**含** symbol 键：结果对象带**真
- *   symbol** 键 ⇒ `Reflect.ownKeys(gOPDs(o)).length === 2`、
- *   `Object.getOwnPropertySymbols(gOPDs(o)).length === 1`；而
- *   `Object.keys(gOPDs(o))` / `Object.getOwnPropertyNames(gOPDs(o))` 仍只有
- *   `"a"`——字符串键面不受影响）。本文件此前把 gOPDs 误列入「只枚举字符串
- *   键」清单并据此断言 ownKeys 长度 1 ⇒ 该断言钉的是**错行为**，已更正。
+ * 只枚举**字符串**键 ⇒ `[Symbol.toStringTag]` 这类 symbol 键**看不到**。
+ * - **更正**：`Object.getOwnPropertyDescriptors` **不在**该清单里——
+ * 原生 gOPDs 走 [[OwnPropertyKeys]]（**含** symbol 键：结果对象带**真
+ * symbol** 键 ⇒ `Reflect.ownKeys(gOPDs(o)).length === 2`、
+ * `Object.getOwnPropertySymbols(gOPDs(o)).length === 1`；而
+ * `Object.keys(gOPDs(o))` / `Object.getOwnPropertyNames(gOPDs(o))` 仍只有
+ * `"a"`——字符串键面不受影响）。本文件此前把 gOPDs 误列入「只枚举字符串
+ * 键」清单并据此断言 ownKeys 长度 1 ⇒ 该断言钉的是**错行为**，已更正。
  * - `Reflect.ownKeys` 枚举**自有可枚举**键（字符串 + symbol）⇒ symbol 键**在**，
- *   且取回的是**真 symbol**（`typeof === "symbol"`，`=== Symbol.toStringTag`）。
+ * 且取回的是**真 symbol**（`typeof === "symbol"`，`=== Symbol.toStringTag`）。
  * - `"@@toStringTag" in o` 是**假**（原型链上没有这个字符串键）；
- *   `Symbol.toStringTag in o` 是**真**（symbol 键本身在）。
+ * `Symbol.toStringTag in o` 是**真**（symbol 键本身在）。
  *
  * 改前（改前 = HEAD，本 worktree 的枚举面接线落盘前；探针实测）：
  * - for-in 发布伪键 `"@@toStringTag"`（`"a,@@toStringTag"`）；
@@ -943,18 +943,18 @@ describe("[merged] eval-bug-295-enum-surface-symbol.test.ts", () => {
  *
  * 接线落点（主 agent 已落地；**本文件只钉行为，不改源码**）：
  * - `builtins/invariants.ts`：新增 `enumOwnStringKeys`（剔除 symbol 投影槽
- *   与 internal 私有槽）；`isNonEnumerable` 并查 brand 自身 / brand 内层 obj
- *   两套 flags 载体。
+ * 与 internal 私有槽）；`isNonEnumerable` 并查 brand 自身 / brand 内层 obj
+ * 两套 flags 载体。
  * - `exec/runtime/containers/iterate.ts`：for-in 三处枚举改走字符串键视图。
  * - `builtins/object/methods.ts`：`getOwnPropertyDescriptors` 的 open/闭 obj
- *   两分支**保留** symbol 槽（Bug 1075：原生 gOPDs 含 symbol 键——symbol
- *   投影槽带 `symbolKey` 标记随结果对象走 ⇒ 字符串键面仍剔除它）；
- *   `classInstanceEnumEntries` 用剔除 symbol 的 `enumKeys`。
+ * 两分支**保留** symbol 槽（原生 gOPDs 含 symbol 键——symbol
+ * 投影槽带 `symbolKey` 标记随结果对象走 ⇒ 字符串键面仍剔除它）；
+ * `classInstanceEnumEntries` 用剔除 symbol 的 `enumKeys`。
  * - `builtins/reflect.ts`：`Reflect.ownKeys` 把 symbol 槽还原成宿主**真 symbol**。
  * - `exec/runtime/members.ts`：`$in` 的 obj/brand 臂——symbol 键槽不被字符串
- *   键命中（原生 `"@@toStringTag" in o` === false）。
+ * 键命中（原生 `"@@toStringTag" in o` === false）。
  * - `builtins/object/descriptor.ts` + `exec/class/assign.ts`：复制面携带
- *   `symbolKey` 标记（symbol 键不降级成字符串键）。
+ * `symbolKey` 标记（symbol 键不降级成字符串键）。
  */
 
 
@@ -967,7 +967,7 @@ function v(src: string) {
   return litValue(call(src, "f").result);
 }
 
-describe("Bug 295 — 枚举面：symbol 键不进字符串键视图", () => {
+describe("枚举面：symbol 键不进字符串键视图", () => {
   it("Object.keys({a:1, [Symbol.toStringTag]:2}) → [\"a\"]（symbol 键不进 keys）", () => {
     expect(
       v(wrap(`const o = { a: 1, [Symbol.toStringTag]: 2 }; return Object.keys(o).join(",");`)),
@@ -1093,7 +1093,7 @@ describe("Bug 295 — 枚举面：symbol 键不进字符串键视图", () => {
   });
 });
 
-describe("Bug 295 — 负控制：过滤只剔字符串视图，不误伤真 symbol", () => {
+describe("负控制：过滤只剔字符串视图，不误伤真 symbol", () => {
   it("真 symbol 键仍被命中：o[Symbol.toStringTag] 读到 2 且 Symbol.toStringTag in o 为真", () => {
     expect(
       v(wrap(`const o = { a: 1, [Symbol.toStringTag]: 2 }; return String(o[Symbol.toStringTag]);`)),
@@ -1171,9 +1171,9 @@ describe("Bug 295 — 负控制：过滤只剔字符串视图，不误伤真 sym
 });
 });
 
-describe("[merged] eval-bug-295-proto-constructor-non-enumerable.test.ts", () => {
+describe("proto-constructor-non-enumerable", () => {
 /**
- * Bug 295 回归（分片：**原型 `constructor` 不可枚举**）——类 / 函数原型的
+ * 回归（分片：**原型 `constructor` 不可枚举**）——类 / 函数原型的
  * `constructor` 是**不可枚举**自有数据属性 ⇒ 字符串键枚举面（for-in /
  * Object.keys）**看不到**它；但**不可枚举 ≠ 不可见**（gOPN 仍列它）。
  *
@@ -1186,9 +1186,9 @@ describe("[merged] eval-bug-295-proto-constructor-non-enumerable.test.ts", () =>
  * - `for (const k in Object.prototype)` → **[]**；
  * - `for (const k in (function(){}).prototype)` → **[]**；
  * - `Object.getOwnPropertyNames(A.prototype)` → **["constructor"]**
- *   （不可枚举 ≠ 不可见）；
+ * （不可枚举 ≠ 不可见）；
  * - `for (const k in new A())` → **[]**（实例无自有可枚举键；`constructor`
- *   在原型上且不可枚举）。
+ * 在原型上且不可枚举）。
  *
  * 改前（改前 = HEAD；探针实测）：引擎把原型的 `constructor` 当**可枚举**键
  * 发布 ⇒ `for (const k in A.prototype)` 得 `["constructor"]`、
@@ -1198,17 +1198,17 @@ describe("[merged] eval-bug-295-proto-constructor-non-enumerable.test.ts", () =>
  *
  * 接线落点（主 agent 已落地；**本文件只钉行为，不改源码**）：
  * - `builtins/invariants.ts`：`isNonEnumerable` / `enumOwnKeys` /
- *   `enumOwnStringKeys` / `isEnumerableView` 经 `isNonEnumerable` 判定——
- *   该函数**并查两套 flags 载体**（brand 自身的 flags + brand 内层 obj 的
- *   flags），修掉「原型 `constructor` 的不可枚举标记挂在 brand、枚举面却查
- *   inner ⇒ 漏查」的缺陷。
+ * `enumOwnStringKeys` / `isEnumerableView` 经 `isNonEnumerable` 判定——
+ * 该函数**并查两套 flags 载体**（brand 自身的 flags + brand 内层 obj 的
+ * flags），修掉「原型 `constructor` 的不可枚举标记挂在 brand、枚举面却查
+ * inner ⇒ 漏查」的缺陷。
  * - `exec/runtime/containers/iterate.ts`：for-in 三处枚举改走
- *   `enumOwnStringKeys`；brand 原型自身那处把 **brand**（不是 inner）传给
- *   枚举面以查 flags。
+ * `enumOwnStringKeys`；brand 原型自身那处把 **brand**（不是 inner）传给
+ * 枚举面以查 flags。
  * - `builtins/ctor.ts`：`protoBrandAbs(name)` 给 prototype 的 `constructor` 槽
- *   打 `enumerable: false`。
+ * 打 `enumerable: false`。
  * - `exec/class-registry.ts`：`fnProtoOf` 给函数原型的 `constructor` 槽打
- *   `enumerable: false`（`Object.prototype` 早就这么打）。
+ * `enumerable: false`（`Object.prototype` 早就这么打）。
  *
  * ⚠️ **类名唯一性**：引擎的类注册表按**类名**全局驻留（`classRegistry` /
  * `protoBrandByName`），同名类跨求值 run 共享同一原型对象 ⇒ 本文件每个用例
@@ -1225,7 +1225,7 @@ function v(src: string) {
   return litValue(call(src, "f").result);
 }
 
-describe("Bug 295 — 原型 `constructor` 不可枚举：for-in 枚举面看不到它", () => {
+describe("原型 `constructor` 不可枚举：for-in 枚举面看不到它", () => {
   it("class A{} → for (const k in A.prototype) 是**空**（原生 []；改前引擎给 [\"constructor\"]）", () => {
     expect(
       v(
@@ -1306,10 +1306,10 @@ describe("Bug 295 — 原型 `constructor` 不可枚举：for-in 枚举面看不
   });
 });
 
-describe("Bug 295 — 不可枚举 ≠ 不可见：gOPN 仍列 `constructor`", () => {
+describe("不可枚举 ≠ 不可见：gOPN 仍列 `constructor`", () => {
   it("Object.getOwnPropertyNames(A.prototype) 精确 [\"constructor\"]（原生 [\"constructor\"]）", () => {
     // 原生 oracle（node v26）：["constructor"]。
-    // 引擎口径（族 58 · Bug 321/3 落盘后）：类原型的 gOPN 由**保守域** `string[]`
+    // 引擎口径（族 58 · 落盘后）：类原型的 gOPN 由**保守域** `string[]`
     // 升为**精确元组** ["constructor"]（引擎已建模该原型的自有成员 ⇒ 自有键集
     // 静态可知）——与原生 oracle 逐字一致（本断言由「保守域」期望**加强**为
     // 「精确原生」期望，未删未弱化）。
@@ -1353,19 +1353,19 @@ describe("Bug 295 — 不可枚举 ≠ 不可见：gOPN 仍列 `constructor`", (
 });
 });
 
-describe("[merged] eval-bug-295-symbol-key-enum-copy.test.ts", () => {
+describe("symbol-key-enum-copy", () => {
 /**
- * Bug 295 回归：symbol 键（`[Symbol.X]`）在**复制面**不得退化成普通字符串键。
+ * 回归：symbol 键（`[Symbol.X]`）在**复制面**不得退化成普通字符串键。
  *
  * ES 语义（node v26 实测）：
  * - `[Symbol.X]` 是 **symbol 键**，不是字符串键 `"@@X"`；引擎的槽表用
- *   `"@@X"` 作投影键 + `Slot.symbolKey` 标记表示它（Bug 73/117）。
+ * `"@@X"` 作投影键 + `Slot.symbolKey` 标记表示它（）。
  * - `Object.assign` / spread / **对象 rest** 复制的是**可枚举 symbol 键本身**
- *   （node 实测 rest 也拷 symbol ⇒ `rest[Symbol.toStringTag] === 2`）⇒
- *   复制后 `Object.keys/values/entries` / `JSON.stringify` **看不到**它，
- *   但 `t[Symbol.toStringTag]` **读得到**值。
+ * （node 实测 rest 也拷 symbol ⇒ `rest[Symbol.toStringTag] === 2`）⇒
+ * 复制后 `Object.keys/values/entries` / `JSON.stringify` **看不到**它，
+ * 但 `t[Symbol.toStringTag]` **读得到**值。
  * - for-in / `Object.keys|values|entries` / `getOwnPropertyNames` /
- *   `getOwnPropertyDescriptors` / `JSON.stringify` **只枚举字符串键**。
+ * `getOwnPropertyDescriptors` / `JSON.stringify` **只枚举字符串键**。
  *
  * 修复前：`exec/class/assign.ts` 的 mergeObj 拷源槽时**丢掉 symbolKey 标记**
  * ⇒ `"@@X"` 投影槽退化成**普通字符串键** ⇒ 目标上的伪键进了
@@ -1393,7 +1393,7 @@ function v(src: string) {
   return litValue(call(src, "f").result);
 }
 
-describe("Bug 295 — Object.assign 复制 symbol 键时不退化成字符串键", () => {
+describe("Object.assign 复制 symbol 键时不退化成字符串键", () => {
   it("Object.keys(Object.assign({}, o))：只含字符串键 \"a\"（改前含伪键 \"@@toStringTag\"）", () => {
     expect(
       v(
@@ -1455,7 +1455,7 @@ describe("Bug 295 — Object.assign 复制 symbol 键时不退化成字符串键
   });
 });
 
-describe("Bug 295 — 负控制（复制面 / 枚举面的邻近形态不回归）", () => {
+describe("负控制（复制面 / 枚举面的邻近形态不回归）", () => {
   it("源对象自身的字符串键枚举面不变：Object.keys/values/entries/JSON.stringify", () => {
     expect(
       v(wrap(`const o = { a: 1, [Symbol.toStringTag]: 2 }; return Object.keys(o).join(",");`)),
@@ -1510,7 +1510,7 @@ describe("Bug 295 — 负控制（复制面 / 枚举面的邻近形态不回归�
   });
 });
 
-describe("Bug 295 — 枚举视图两套口径（留接口：enumOwnKeys vs enumOwnStringKeys）", () => {
+describe("枚举视图两套口径（留接口：enumOwnKeys vs enumOwnStringKeys）", () => {
   const o = objOf({
     a: { value: num() },
     "@@toStringTag": { value: num(), symbolKey: true },
@@ -1529,23 +1529,23 @@ describe("Bug 295 — 枚举视图两套口径（留接口：enumOwnKeys vs enum
 });
 
 // ---------------------------------------------------------------------------
-// Bug 297 — Date.prototype.set* 回写 time value（精确面不再过期）
+// Date.prototype.set* 回写 time value（精确面不再过期）
 // ---------------------------------------------------------------------------
-describe("[] Bug 297 — Date.prototype.set* 回写 time value（精确面不再过期）", () => {
+describe("Date.prototype.set* 回写 time value（精确面不再过期）", () => {
 /**
- * Bug 297 回归：`Date.prototype.set*` 族不再是空操作——time value 回写，
+ * 回归：`Date.prototype.set*` 族不再是空操作——time value 回写，
  * 精确渲染面（toISOString）不再给**过期**日期。
  *
  * ES 语义（node 实测）：
  * - `setUTCFullYear` / `setUTCMonth` / `setUTCDate` / `setUTCHours` /
- *   `setUTCMinutes` / `setUTCSeconds` / `setUTCMilliseconds` / `setTime`
- *   按规范 MakeDay/MakeTime 归一化后回写 [[DateValue]]（1 月 31 日
- *   setUTCMonth(1) → 3 月 2 日）；本地族（setFullYear / setMonth / …）同款
- *   （本地时区口径，与宿主 Date 同）。
+ * `setUTCMinutes` / `setUTCSeconds` / `setUTCMilliseconds` / `setTime`
+ * 按规范 MakeDay/MakeTime 归一化后回写 [[DateValue]]（1 月 31 日
+ * setUTCMonth(1) → 3 月 2 日）；本地族（setFullYear / setMonth / …）同款
+ * （本地时区口径，与宿主 Date 同）。
  * - setter **返回**新 time value（number）。
  * - 实参不可判定（抽象 number）→ 新 time value 不可知 ⇒ 精确面必须降级
- *   （不得给过期日期）。
- * - 实参是 Symbol / BigInt → 确定 TypeError（Bug 62 既有口径，不回归）。
+ * （不得给过期日期）。
+ * - 实参是 Symbol / BigInt → 确定 TypeError（既有口径，不回归）。
  *
  * 修复前：setter 臂只做实参校验就返回抽象 number，从不回写 time value
  * ⇒ `toISOString()` 恒给**构造期**的日期（wrong-exact）。
@@ -1575,7 +1575,7 @@ function throwName(src: string): string {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 297 — Date.prototype.set* 回写 time value（精确面不再过期）", () => {
+describe("Date.prototype.set* 回写 time value（精确面不再过期）", () => {
   it("setUTCFullYear / setUTCMonth / setUTCDate → ISO 更新", () => {
     expect(v(wrap(`const d = new Date(Date.UTC(2020,0,1)); d.setUTCFullYear(2021); return d.toISOString();`)))
       .toEqual({ ok: true, value: "2021-01-01T00:00:00.000Z" });
@@ -1658,11 +1658,11 @@ describe("Bug 297 — Date.prototype.set* 回写 time value（精确面不再过
 });
 
 // ---------------------------------------------------------------------------
-// Bug 298: JSON.parse 的 callable reviver 副作用通道
+// JSON.parse 的 callable reviver 副作用通道
 // ---------------------------------------------------------------------------
-describe("[] Bug 298: JSON.parse 的 callable reviver 副作用通道", () => {
+describe("JSON.parse 的 callable reviver 副作用通道", () => {
 /**
- * Bug 298 回归：JSON.parse 的 **callable reviver 真执行**（原生
+ * 回归：JSON.parse 的 **callable reviver 真执行**（原生
  * InternalizeJSONProperty 语义）。
  *
  * 修前：reviver **一次都不执行** ⇒ 回调副作用（计数器 / 累加串 / 捕获变量
@@ -1686,7 +1686,7 @@ function v(src: string) {
   return litValue___nudojs_core_7(call(src, "f").result);
 }
 
-describe("Bug 298: JSON.parse 的 callable reviver 副作用通道", () => {
+describe("JSON.parse 的 callable reviver 副作用通道", () => {
   it("reviver 调用次数 = 节点数（node: 3）", () => {
     expect(
       v(`export function f() { let n = 0; JSON.parse("[1,2]", (k, v) => { n++; return v; }); return n; }`),
@@ -1768,20 +1768,20 @@ describe("Bug 298: JSON.parse 的 callable reviver 副作用通道", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 299 — Reflect.set 的 receiver 语义 + Proxy 反射口径
+// Reflect.set 的 receiver 语义 + Proxy 反射口径
 // ---------------------------------------------------------------------------
-describe("[] Bug 299 — Reflect.set 的 receiver 语义 + Proxy 反射口径", () => {
+describe("Reflect.set 的 receiver 语义 + Proxy 反射口径", () => {
 /**
- * Bug 299 回归：`Reflect.set` 落 [[Set]] 语义——**第 4 实参 receiver** 参与
+ * 回归：`Reflect.set` 落 [[Set]] 语义——**第 4 实参 receiver** 参与
  * 写语义，且 Proxy 走**反射口径**（ToBoolean(陷阱结果)，失败返 false 不抛）。
  *
  * 原生（node v26 实测，ES2024 13.15.2 OrdinarySetWithOwnDescriptor）：
  * - `Reflect.set(t,"a",2,r)`：t 有自有数据属性 "a" ⇒ **receiver** 建自有
- *   数据属性（t 不变、r.a = 2）；t 无自有 "b" ⇒ 沿原型链上溯后 receiver 建
- *   自有属性（t.b 仍 undefined）；
+ * 数据属性（t 不变、r.a = 2）；t 无自有 "b" ⇒ 沿原型链上溯后 receiver 建
+ * 自有属性（t.b 仍 undefined）；
  * - receiver 自有**访问器**属性 ⇒ 写门失败 → 返 **false**（不抛）；
  * - Proxy 的 set 陷阱返 false / 0 ⇒ `Reflect.set` 返 **false**（不抛）——
- *   抛错是**赋值运算符**（strict）的语义，不是 Reflect 的语义。
+ * 抛错是**赋值运算符**（strict）的语义，不是 Reflect 的语义。
  *
  * 修复前：第 4 实参被丢弃（写恒落在 target 上）；Proxy 走 $set 的赋值口径
  * ⇒ 陷阱返 false 时定抛 TypeError、返回值恒 true。
@@ -1805,7 +1805,7 @@ function thrown(src: string): string | undefined {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 299 — Reflect.set 的 receiver 语义 + Proxy 反射口径", () => {
+describe("Reflect.set 的 receiver 语义 + Proxy 反射口径", () => {
   it("第 4 实参 receiver：写落在 receiver，target 不变", () => {
     expect(
       v(
@@ -1869,19 +1869,19 @@ describe("Bug 299 — Reflect.set 的 receiver 语义 + Proxy 反射口径", () 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 303：TA buffer 形态缺省长度非整数倍 → definite RangeError
+// TA buffer 形态缺省长度非整数倍 → definite RangeError
 // ---------------------------------------------------------------------------
-describe("[] Bug 303：TA buffer 形态缺省长度非整数倍 → definite RangeError", () => {
+describe("TA buffer 形态缺省长度非整数倍 → definite RangeError", () => {
 /**
- * Bug 303 回归：new <TypedArray>(buffer) 缺省长度——「buffer 剩余字节数须为
+ * 回归：new <TypedArray>(buffer) 缺省长度——「buffer 剩余字节数须为
  * 元素大小整数倍」的 RangeError 检查。
  *
  * 原生 AllocateTypedArrayBuffer（node v26 实测）：
- *   new Int32Array(new ArrayBuffer(6))  → RangeError（byte length 须是 4 的倍数）
- *   new Float64Array(new ArrayBuffer(9)) → RangeError
- *   new Int16Array(new ArrayBuffer(3))  → RangeError
- *   new Int32Array(new ArrayBuffer(9), 4) → RangeError（剩余 5 字节非倍数）
- *   new Int32Array(new ArrayBuffer(8), 4) → length 1（剩余 4 字节，合法）
+ * new Int32Array(new ArrayBuffer(6)) → RangeError（byte length 须是 4 的倍数）
+ * new Float64Array(new ArrayBuffer(9)) → RangeError
+ * new Int16Array(new ArrayBuffer(3)) → RangeError
+ * new Int32Array(new ArrayBuffer(9), 4) → RangeError（剩余 5 字节非倍数）
+ * new Int32Array(new ArrayBuffer(8), 4) → length 1（剩余 4 字节，合法）
  * 引擎此前只判「offset 越界」与「offset 对齐」两道，缺省长度臂整支缺失 ⇒
  * Math.floor 静默截断折出**确定的错长度**（buf6 → 1），且门禁恒绿。
  *
@@ -1916,7 +1916,7 @@ function check(src: string) {
 // 改前会失败的形态：非整数倍尾段 → definite RangeError
 // ---------------------------------------------------------------------------
 
-describe("Bug 303：TA buffer 形态缺省长度非整数倍 → definite RangeError", () => {
+describe("TA buffer 形态缺省长度非整数倍 → definite RangeError", () => {
   it.each([
     ["Int32Array / 6 字节", `const b = new ArrayBuffer(6); return new Int32Array(b).length;`],
     ["Float64Array / 9 字节", `const b = new ArrayBuffer(9); return new Float64Array(b).length;`],
@@ -1941,7 +1941,7 @@ describe("Bug 303：TA buffer 形态缺省长度非整数倍 → definite RangeE
 // 负控制：整数倍尾段 / 显式长度 / 对齐与越界档——不得被本修复波及
 // ---------------------------------------------------------------------------
 
-describe("Bug 303 负控制：合法 buffer 形态不回退", () => {
+describe("负控制：合法 buffer 形态不回退", () => {
   it.each([
     ["Int32Array / 8 字节 → 2", `const b = new ArrayBuffer(8); return new Int32Array(b).length;`, 2],
     ["Int32Array / 8 字节 off 4 → 1", `const b = new ArrayBuffer(8); return new Int32Array(b, 4).length;`, 1],
@@ -1961,7 +1961,7 @@ describe("Bug 303 负控制：合法 buffer 形态不回退", () => {
   it("显式 byteLength 臂不查整除（原生同：new Int32Array(buf6, 0, 1) → 1）", () => {
     expect(val(`export function f() { const b = new ArrayBuffer(6); return new Int32Array(b, 0, 1).length; }`))
       .toEqual({ ok: true, value: 1 });
-    // 显式长度越界仍是 RangeError（既有 Bug 101 档不回退）
+    // 显式长度越界仍是 RangeError（既有 档不回退）
     expectThrows(
       `export function f() { const b = new ArrayBuffer(6); return new Int32Array(b, 4, 1).length; }`,
       "RangeError",
@@ -1980,7 +1980,7 @@ describe("Bug 303 负控制：合法 buffer 形态不回退", () => {
 // 门禁面：抽象 buffer 长度 → may RangeError（不误报定抛）
 // ---------------------------------------------------------------------------
 
-describe("Bug 303 gate 面", () => {
+describe("gate 面", () => {
   it("抽象 buffer byteLength（缺省长度臂整除不可判）→ may RangeError", () => {
     const src = `export function f(x) { const b = new ArrayBuffer(x); return new Int32Array(b).length; }`;
     expect(effects(src)).toContain("RangeError");
@@ -1999,20 +1999,20 @@ describe("Bug 303 gate 面", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 304：TA set 跨内容类型 → definite TypeError
+// TA set 跨内容类型 → definite TypeError
 // ---------------------------------------------------------------------------
-describe("[] Bug 304：TA set 跨内容类型 → definite TypeError", () => {
+describe("TA set 跨内容类型 → definite TypeError", () => {
 /**
- * Bug 304 回归：%TypedArray%.prototype.set 缺「源/目标**内容类型**（number vs
+ * 回归：%TypedArray%.prototype.set 缺「源/目标**内容类型**（number vs
  * bigint）一致」校验。
  *
  * 原生（node v26 实测）：
- *   new Uint8Array(2).set(new BigInt64Array(1))     → TypeError
- *     （Cannot mix BigInt and other types, use explicit conversions）
- *   new BigInt64Array(2).set(new Uint8Array(1))     → TypeError
+ * new Uint8Array(2).set(new BigInt64Array(1)) → TypeError
+ * （Cannot mix BigInt and other types, use explicit conversions）
+ * new BigInt64Array(2).set(new Uint8Array(1)) → TypeError
  * 规范约束的是**内容类型**（[[ContentType]] number/bigint）而**不是家族名**：
- *   new Uint8Array(2).set(new Int8Array(1))         → 合法（不抛）
- *   new BigInt64Array(2).set(new BigUint64Array(1)) → 合法（不抛）
+ * new Uint8Array(2).set(new Int8Array(1)) → 合法（不抛）
+ * new BigInt64Array(2).set(new BigUint64Array(1)) → 合法（不抛）
  * 引擎此前从不比较源与目标的 brand ⇒ 跨内容类型 set 一律 no-throw（假 no-throw），
  * 门禁恒绿、L2 may-throw 记账缺失。
  *
@@ -2047,7 +2047,7 @@ function check(src: string) {
 // 改前会失败的形态：跨内容类型 set → definite TypeError
 // ---------------------------------------------------------------------------
 
-describe("Bug 304：TA set 跨内容类型 → definite TypeError", () => {
+describe("TA set 跨内容类型 → definite TypeError", () => {
   it.each([
     ["number 目标 ← bigint 源", `const ta = new Uint8Array(2); ta.set(new BigInt64Array(1)); return "no-throw";`],
     ["bigint 目标 ← number 源", `const ta = new BigInt64Array(2); ta.set(new Uint8Array(1)); return "no-throw";`],
@@ -2069,7 +2069,7 @@ describe("Bug 304：TA set 跨内容类型 → definite TypeError", () => {
 // 负控制：同内容类型跨家族合法（规范约束内容类型而非家族名）
 // ---------------------------------------------------------------------------
 
-describe("Bug 304 负控制：同内容类型跨家族 set 合法", () => {
+describe("负控制：同内容类型跨家族 set 合法", () => {
   it.each([
     ["Uint8 ← Int8", `const ta = new Uint8Array(2); ta.set(new Int8Array(1)); return "no-throw";`],
     ["Uint8 ← Int16", `const ta = new Uint8Array(2); ta.set(new Int16Array(1)); return "no-throw";`],
@@ -2099,7 +2099,7 @@ describe("Bug 304 负控制：同内容类型跨家族 set 合法", () => {
 // 门禁面
 // ---------------------------------------------------------------------------
 
-describe("Bug 304 gate 面", () => {
+describe("gate 面", () => {
   it("跨内容类型 set 进 L2（entry-may-throw 记账）", () => {
     const src = `export function f() { const ta = new Uint8Array(2); ta.set(new BigInt64Array(1)); return "no-throw"; }`;
     expect(l2Count(check(src))).toBeGreaterThan(0);
@@ -2113,34 +2113,34 @@ describe("Bug 304 gate 面", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 305：TA set 逐元素转换 → definite TypeError
+// TA set 逐元素转换 → definite TypeError
 // ---------------------------------------------------------------------------
-describe("[] Bug 305：TA set 逐元素转换 → definite TypeError", () => {
+describe("TA set 逐元素转换 → definite TypeError", () => {
 /**
- * Bug 305 回归：%TypedArray%.prototype.set 缺**逐元素 ToNumber / ToBigInt**
+ * 回归：%TypedArray%.prototype.set 缺**逐元素 ToNumber / ToBigInt**
  * 转换校验。
  *
  * 原生（node v26 实测）：
- *   new Uint8Array(2).set([1n])       → TypeError（Cannot convert a BigInt
- *     value to a number）
- *   new BigInt64Array(2).set([1])     → TypeError（Invalid argument type in
- *     ToBigInt operation）
- *   new BigInt64Array(2).set([1.5])   → TypeError
- *   new BigInt64Array(2).set([null])  → TypeError
- *   new BigInt64Array(2).set([undefined]) → TypeError
+ * new Uint8Array(2).set([1n]) → TypeError（Cannot convert a BigInt
+ * value to a number）
+ * new BigInt64Array(2).set([1]) → TypeError（Invalid argument type in
+ * ToBigInt operation）
+ * new BigInt64Array(2).set([1.5]) → TypeError
+ * new BigInt64Array(2).set([null]) → TypeError
+ * new BigInt64Array(2).set([undefined]) → TypeError
  * 合法（ToBigInt(true) / ToBigInt("2") / ToNumber(null) / ToNumber(undefined)）：
- *   new BigInt64Array(2).set([true])  → no-throw
- *   new BigInt64Array(2).set(["2"])   → no-throw
- *   new Uint8Array(2).set([null])     → no-throw
- *   new Uint8Array(2).set([undefined])→ no-throw
- *   new Uint8Array(2).set([1.5])      → no-throw
+ * new BigInt64Array(2).set([true]) → no-throw
+ * new BigInt64Array(2).set(["2"]) → no-throw
+ * new Uint8Array(2).set([null]) → no-throw
+ * new Uint8Array(2).set([undefined])→ no-throw
+ * new Uint8Array(2).set([1.5]) → no-throw
  *
  * 引擎此前 set 路径完全不接元素转换面（只读源长度做越界档）⇒ 原生 TypeError
  * 被折成 no-throw。修法：复用 binary.ts 的 enforceTaItem /
  * enforceTaItemConversion（构造器 / from / of 同一口径）做逐元素判定。
  *
  * 原生报错序（node v26）：越界（RangeError）先于元素转换（TypeError）——
- * new Uint8Array(2).set([1n, 2n, 3n]) → RangeError（既有 Bug 38 档）。
+ * new Uint8Array(2).set([1n, 2n, 3n]) → RangeError（既有 档）。
  */
 
 
@@ -2169,7 +2169,7 @@ function check(src: string) {
 // 改前会失败的形态：逐元素转换 → definite TypeError
 // ---------------------------------------------------------------------------
 
-describe("Bug 305：TA set 逐元素转换 → definite TypeError", () => {
+describe("TA set 逐元素转换 → definite TypeError", () => {
   it.each([
     ["number 域收 bigint 字面量", `const ta = new Uint8Array(2); ta.set([1n]); return "no-throw";`],
     ["number 域收 bigint 字面量（混合）", `const ta = new Uint8Array(2); ta.set([1, 2n]); return "no-throw";`],
@@ -2196,7 +2196,7 @@ describe("Bug 305：TA set 逐元素转换 → definite TypeError", () => {
 // 负控制：合法转换（ToBigInt(true) / ToBigInt("2") / ToNumber(null) / …）
 // ---------------------------------------------------------------------------
 
-describe("Bug 305 负控制：合法元素转换不回退", () => {
+describe("负控制：合法元素转换不回退", () => {
   it.each([
     ["bigint 域收 boolean", `const ta = new BigInt64Array(2); ta.set([true]); return "no-throw";`],
     ["bigint 域收数字字符串", `const ta = new BigInt64Array(2); ta.set(["2"]); return "no-throw";`],
@@ -2239,7 +2239,7 @@ describe("Bug 305 负控制：合法元素转换不回退", () => {
 // 门禁面
 // ---------------------------------------------------------------------------
 
-describe("Bug 305 gate 面", () => {
+describe("gate 面", () => {
   it("逐元素转换错误进 L2（entry-may-throw 记账）", () => {
     const src = `export function f() { const ta = new Uint8Array(2); ta.set([1n]); return "no-throw"; }`;
     expect(l2Count(check(src))).toBeGreaterThan(0);
@@ -2253,17 +2253,17 @@ describe("Bug 305 gate 面", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 308 — RegExp 自有 lastIndex 进 gOPN / gOPD
+// RegExp 自有 lastIndex 进 gOPN / gOPD
 // ---------------------------------------------------------------------------
-describe("[] Bug 308 — RegExp 自有 lastIndex 进 gOPN / gOPD", () => {
+describe("RegExp 自有 lastIndex 进 gOPN / gOPD", () => {
 /**
- * Bug 308 回归：RegExp 实例的**自有 `lastIndex`**（ECMA-262 §22.2.6）。
+ * 回归：RegExp 实例的**自有 `lastIndex`**（ECMA-262 §22.2.6）。
  *
  * 原生（node v26 实测）：
  * - `Object.getOwnPropertyNames(/x/)` === ["lastIndex"]（gOPN 是「**全部**
- *   自有键」语义——lastIndex 自有但**非可枚举**）；
+ * 自有键」语义——lastIndex 自有但**非可枚举**）；
  * - `Object.getOwnPropertyDescriptor(/x/, "lastIndex").writable` === true
- *   （数据属性：可写、非可枚举、不可配置）；
+ * （数据属性：可写、非可枚举、不可配置）；
  * - `Object.keys(/x/)` === []（**可枚举**自有键视图——lastIndex 非可枚举）。
  *
  * 修复前：gOPN 复用了「零**可枚举**自有键」表 ⇒ 折 exact 空元组（自信的
@@ -2287,7 +2287,7 @@ function thrown(src: string): string | undefined {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 308 — RegExp 自有 lastIndex 进 gOPN / gOPD", () => {
+describe("RegExp 自有 lastIndex 进 gOPN / gOPD", () => {
   it("gOPN：列出自有 lastIndex（改前折空元组）", () => {
     expect(v(wrap(`return JSON.stringify(Object.getOwnPropertyNames(/x/));`))).toEqual({
       ok: true,
@@ -2329,21 +2329,21 @@ describe("Bug 308 — RegExp 自有 lastIndex 进 gOPN / gOPD", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 309 — URL brand 的 searchParams 组件槽
+// URL brand 的 searchParams 组件槽
 // ---------------------------------------------------------------------------
-describe("[] Bug 309 — URL brand 的 searchParams 组件槽", () => {
+describe("URL brand 的 searchParams 组件槽", () => {
 /**
- * Bug 309 回归：URL brand 的 `searchParams` 组件槽。
+ * 回归：URL brand 的 `searchParams` 组件槽。
  *
  * 原生依据（node v26.10.0 实测，取证命令见文件末尾「取证」段）：
- *   new URL("https://x/?a=1").searchParams           → URLSearchParams 实例
- *                                                       （constructor.name
- *                                                        === "URLSearchParams"；
- *                                                        instanceof URLSearchParams）
- *   new URL("https://x/?a=1").searchParams.get("a")  → "1"
- *   new URL("https://x/?a=1").href                   → "https://x/?a=1"
- *   new URL("https://x/?a=1").search                 → "?a=1"
- *   typeof new URL("https://x/?a=1").searchParams    → "object"
+ * new URL("https://x/?a=1").searchParams → URLSearchParams 实例
+ * （constructor.name
+ * === "URLSearchParams"；
+ * instanceof URLSearchParams）
+ * new URL("https://x/?a=1").searchParams.get("a") → "1"
+ * new URL("https://x/?a=1").href → "https://x/?a=1"
+ * new URL("https://x/?a=1").search → "?a=1"
+ * typeof new URL("https://x/?a=1").searchParams → "object"
  *
  * 修前：URL 组件槽表**独缺 searchParams** ⇒ 读它落「槽缺失 ⇒ undefined」
  * ⇒ `.get(...)` 在 undefined 上调用 ⇒ **确定 TypeError** ⇒ 返回值折 never
@@ -2351,9 +2351,9 @@ describe("[] Bug 309 — URL brand 的 searchParams 组件槽", () => {
  * `nudo:entry-may-throw` **假红**（L2/L5）。
  *
  * 取证（原生 oracle）：
- *   node -e 'const u=new URL("https://x/?a=1");
- *     console.log(u.searchParams.constructor.name, u.searchParams.get("a"),
- *       u.href, u.search, typeof u.searchParams)'
+ * node -e 'const u=new URL("https://x/?a=1");
+ * console.log(u.searchParams.constructor.name, u.searchParams.get("a"),
+ * u.href, u.search, typeof u.searchParams)'
  */
 
 
@@ -2361,7 +2361,7 @@ describe("[] Bug 309 — URL brand 的 searchParams 组件槽", () => {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 309 — URL brand 的 searchParams 组件槽", () => {
+describe("URL brand 的 searchParams 组件槽", () => {
   it("new URL(u).searchParams.get(\"a\") → 精确 \"1\"（修前：确定抛 TypeError ⇒ 折 never）", () => {
     const r = call(wrap(`return new URL("https://x/?a=1").searchParams.get("a");`), "f");
     expect(litValue___nudojs_core_10(r.result)).toEqual({ ok: true, value: "1" });
@@ -2381,7 +2381,7 @@ describe("Bug 309 — URL brand 的 searchParams 组件槽", () => {
   });
 });
 
-describe("Bug 309 — 负控制（URL 其它组件槽不变 + 非法 URL 仍确定抛）", () => {
+describe("负控制（URL 其它组件槽不变 + 非法 URL 仍确定抛）", () => {
   it("new URL(u).href → \"https://x/?a=1\"", () => {
     const r = call(wrap(`return new URL("https://x/?a=1").href;`), "f");
     expect(litValue___nudojs_core_10(r.result)).toEqual({ ok: true, value: "https://x/?a=1" });
@@ -2405,20 +2405,20 @@ describe("Bug 309 — 负控制（URL 其它组件槽不变 + 非法 URL 仍确�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 315 — Object.prototype.toLocaleString 委派 this.toString()
+// Object.prototype.toLocaleString 委派 this.toString()
 // ---------------------------------------------------------------------------
-describe("[] Bug 315 — Object.prototype.toLocaleString 委派 this.toString()", () => {
+describe("Object.prototype.toLocaleString 委派 this.toString()", () => {
 /**
- * Bug 315 回归：Object.prototype.toLocaleString **委派接收者的 toString()**。
+ * 回归：Object.prototype.toLocaleString **委派接收者的 toString()**。
  *
  * 原生（node v26 实测）：
  * - `Object.prototype.toLocaleString.call({toString(){return "CUSTOM"}})`
- *   === "CUSTOM"（委派接收者的 toString；**不**调接收者自有的
- *   toLocaleString——自有 toLocaleString 原生永不被调用）；
+ * === "CUSTOM"（委派接收者的 toString；**不**调接收者自有的
+ * toLocaleString——自有 toLocaleString 原生永不被调用）；
  * - 接收者的 toString 抛错 ⇒ 原样冒泡；
  * - `Object.create(null)` 接收者 ⇒ TypeError（没有 toString 可委派）；
  * - `[1,2]` ⇒ "1,2"（Array.prototype.toString）、`5` ⇒ "5"
- *   （Number.prototype.toString）。
+ * （Number.prototype.toString）。
  *
  * 修复前：toLocaleString 与 toString 合流折 "[object X]" ⇒ 用户自定义
  * toString 的**值与抛错全被吞**；null 原型接收者 no-throw。
@@ -2433,7 +2433,7 @@ function v(src: string) {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 315 — Object.prototype.toLocaleString 委派 this.toString()", () => {
+describe("Object.prototype.toLocaleString 委派 this.toString()", () => {
   it("自定义 toString 的值透传（改前折 \"[object Object]\"）", () => {
     expect(
       v(wrap(`const o = { toString() { return "CUSTOM"; } }; return Object.prototype.toLocaleString.call(o);`)),
@@ -2496,11 +2496,11 @@ describe("Bug 315 — Object.prototype.toLocaleString 委派 this.toString()", (
 });
 
 // ---------------------------------------------------------------------------
-// Bug 316: Error cause slot only when options has a cause key
+// Error cause slot only when options has a cause key
 // ---------------------------------------------------------------------------
-describe("[] Bug 316: Error cause slot only when options has a cause key", () => {
+describe("Error cause slot only when options has a cause key", () => {
 /**
- * Bug 316：`new Error("m", {})`（options **无 cause 键**）仍被装上自有 cause 槽。
+ * `new Error("m", {})`（options **无 cause 键**）仍被装上自有 cause 槽。
  *
  * 原生 InstallErrorCause（ES2022 10.2.1）：**只有** options 真有 `cause`
  * 键时才 CreateNonEnumerableDataPropertyOrThrow(error, "cause", cause)——
@@ -2509,15 +2509,15 @@ describe("[] Bug 316: Error cause slot only when options has a cause key", () =>
  * ⇒ 装槽、值为 undefined。
  *
  * node v26.10.0 原生实测（oracle）：
- *   new Error("m", {}).hasOwnProperty("cause")            → false
- *   "cause" in new Error("m", {})                          → false
- *   new Error("m", {}).cause                               → undefined
- *   new Error("m", {cause: 42}).hasOwnProperty("cause")    → true
- *   new Error("m", {cause: 42}).cause                      → 42
- *   new Error("m", {cause: undefined}).hasOwnProperty(..)  → true（值 undefined）
- *   new Error("m").hasOwnProperty("cause")                 → false
- *   Object.getOwnPropertyNames(new Error("m", {}))         → ["stack","message"]
- *   Object.getOwnPropertyNames(new Error("m", {cause: 1})) → ["stack","message","cause"]
+ * new Error("m", {}).hasOwnProperty("cause") → false
+ * "cause" in new Error("m", {}) → false
+ * new Error("m", {}).cause → undefined
+ * new Error("m", {cause: 42}).hasOwnProperty("cause") → true
+ * new Error("m", {cause: 42}).cause → 42
+ * new Error("m", {cause: undefined}).hasOwnProperty(..) → true（值 undefined）
+ * new Error("m").hasOwnProperty("cause") → false
+ * Object.getOwnPropertyNames(new Error("m", {})) → ["stack","message"]
+ * Object.getOwnPropertyNames(new Error("m", {cause: 1})) → ["stack","message","cause"]
  *
  * 修前：options 无 cause 键也装一个 undefAbs() 槽 ⇒ 自有面假 true
  * （"cause" in e 也假 true——$in 走槽存在性判定）。
@@ -2536,7 +2536,7 @@ function v(src: string): unknown {
 
 const HOP = "Object.prototype.hasOwnProperty.call";
 
-describe("Bug 316: Error cause slot only when options has a cause key", () => {
+describe("Error cause slot only when options has a cause key", () => {
   it("options 无 cause 键 ⇒ 无自有 cause 槽（hasOwnProperty false）", () => {
     expect(v(`export function f() { return ${HOP}(new Error("m", {}), "cause"); }`)).toBe(false);
     expect(v(`export function f() { return ${HOP}(new TypeError("m", {}), "cause"); }`)).toBe(false);
@@ -2592,28 +2592,28 @@ describe("Bug 316: Error cause slot only when options has a cause key", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 317: AggregateError errors is an IterableToList copy
+// AggregateError errors is an IterableToList copy
 // ---------------------------------------------------------------------------
-describe("[] Bug 317: AggregateError errors is an IterableToList copy", () => {
+describe("AggregateError errors is an IterableToList copy", () => {
 /**
- * Bug 317：AggregateError(errors) 的 errors 槽与入参**共享同一 Abs**
+ * AggregateError(errors) 的 errors 槽与入参**共享同一 Abs**
  * （无 IterableToList 拷贝）。
  *
  * 原生 AggregateError 构造器走 `errors = IterableToList(errors)`——产出
  * **新列表**（元素同、列表不同）：
- *   const a=[1,2]; const e=new AggregateError(a,"msg"); String(e.errors === a) → "false"
- *   const a=[1,2]; const e=new AggregateError(a,"msg"); a.push(3); e.errors.length → 2
+ * const a=[1,2]; const e=new AggregateError(a,"msg"); String(e.errors === a) → "false"
+ * const a=[1,2]; const e=new AggregateError(a,"msg"); a.push(3); e.errors.length → 2
  *
  * node v26.10.0 原生实测（oracle）：
- *   e.errors === a                     → false
- *   a.push(3) 后 e.errors.length       → 2（a.length → 3）
- *   new AggregateError([1,2],"m").errors.length → 2
- *   new AggregateError([1,2],"m").errors[0]    → 1
- *   new AggregateError([1,2],"m").errors.join("-") → "1-2"
- *   Array.isArray(new AggregateError([1,2],"m").errors) → true
- *   e.errors === e.errors               → true（同一列表）
- *   e1.errors === e2.errors             → false（两次构造两个列表）
- *   gOPD(errors) → {value:[1], writable:true, enumerable:false, configurable:true}
+ * e.errors === a → false
+ * a.push(3) 后 e.errors.length → 2（a.length → 3）
+ * new AggregateError([1,2],"m").errors.length → 2
+ * new AggregateError([1,2],"m").errors[0] → 1
+ * new AggregateError([1,2],"m").errors.join("-") → "1-2"
+ * Array.isArray(new AggregateError([1,2],"m").errors) → true
+ * e.errors === e.errors → true（同一列表）
+ * e1.errors === e2.errors → false（两次构造两个列表）
+ * gOPD(errors) → {value:[1], writable:true, enumerable:false, configurable:true}
  *
  * 修前：slots["errors"] 直接存**同一个**入参 Abs（别名）⇒ `e.errors === a`
  * 折 true、`a.push(3)` 就地改写 e.errors.length。
@@ -2630,7 +2630,7 @@ function v(src: string): unknown {
   return r.ok ? r.value : undefined;
 }
 
-describe("Bug 317: AggregateError errors is an IterableToList copy", () => {
+describe("AggregateError errors is an IterableToList copy", () => {
   it("e.errors !== 入参（原生 false；修前折 true）", () => {
     expect(
       v(`export function f() { const a=[1,2]; const e=new AggregateError(a,"msg"); return String(e.errors === a); }`),
@@ -2680,18 +2680,18 @@ describe("Bug 317: AggregateError errors is an IterableToList copy", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 319 — Date.prototype.toJSON 对非法日期返回 null
+// Date.prototype.toJSON 对非法日期返回 null
 // ---------------------------------------------------------------------------
-describe("[] Bug 319 — Date.prototype.toJSON 对非法日期返回 null", () => {
+describe("Date.prototype.toJSON 对非法日期返回 null", () => {
 /**
- * Bug 319 回归：`Date.prototype.toJSON` 对**非法日期**（time value = NaN）
+ * 回归：`Date.prototype.toJSON` 对**非法日期**（time value = NaN）
  * 返回 **null**（不是字符串）。
  *
  * ES 语义（node 实测）：
  * - `Date.prototype.toJSON(key)`：取 [[DateValue]]；**NaN → null**；否则
- *   返回 ISO 串（≡ toISOString）。
+ * 返回 ISO 串（≡ toISOString）。
  * - `new Date(NaN).toJSON()` → null；`new Date(0).toJSON()` → ISO 串；
- *   `JSON.stringify(new Date(NaN))` → "null"（JSON 侧既有口径）。
+ * `JSON.stringify(new Date(NaN))` → "null"（JSON 侧既有口径）。
  *
  * 修复前：toJSON 混进「恒返回 string」的方法集合 ⇒ 非法日期也折成**抽象
  * string**（既不是 null 也不是确定值）；`d.toJSON() === null` 折**确定的
@@ -2721,7 +2721,7 @@ function throwName(src: string): string {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 319 — Date.prototype.toJSON 对非法日期返回 null", () => {
+describe("Date.prototype.toJSON 对非法日期返回 null", () => {
   it("new Date(NaN).toJSON() → null（原生口径）", () => {
     expect(v(wrap(`const d = new Date(NaN); return d.toJSON();`))).toEqual({ ok: true, value: null });
   });
@@ -2765,11 +2765,11 @@ describe("Bug 319 — Date.prototype.toJSON 对非法日期返回 null", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 320 — Reflect.set(arr, "length", v) 落 ArraySetLength
+// Reflect.set(arr, "length", v) 落 ArraySetLength
 // ---------------------------------------------------------------------------
-describe("[] Bug 320 — Reflect.set(arr, \"length\", v) 落 ArraySetLength", () => {
+describe("Reflect.set(arr, \"length\", v) 落 ArraySetLength", () => {
 /**
- * Bug 320 回归：`Reflect.set(arr, "length", v)` 落 [[Set]] → **ArraySetLength**
+ * 回归：`Reflect.set(arr, "length", v)` 落 [[Set]] → **ArraySetLength**
  * （原生：length 被改成 v，元素被截断/延长），改前**静默丢弃写入**
  * （引擎 length 不变 ⇒ 错值）。
  *
@@ -2800,7 +2800,7 @@ function thrown(src: string): string | undefined {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 320 — Reflect.set(arr, \"length\", v) 落 ArraySetLength", () => {
+describe("Reflect.set(arr, \"length\", v) 落 ArraySetLength", () => {
   it("length 被截断（原生 1 / [1]，改前 3 / [1,2,3]）", () => {
     expect(
       v(wrap(`const a = [1,2,3]; Reflect.set(a, "length", 1); return String(a.length) + ":" + a.join(",");`)),
@@ -2834,42 +2834,42 @@ describe("Bug 320 — Reflect.set(arr, \"length\", v) 落 ArraySetLength", () =>
 });
 
 // ---------------------------------------------------------------------------
-// [merged] eval-bug-322-url-searchparams-entries.test.ts
+// [merged] url-searchparams-entries
 // ---------------------------------------------------------------------------
-describe("[] [merged] eval-bug-322-url-searchparams-entries.test.ts", () => {
-// MERGED (topic-related bug pins): eval-bug-322-url-searchparams-entries.test.ts + eval-bug-322-url-searchparams-slot.test.ts
+describe("url-searchparams-entries", () => {
+// MERGED (topic-related bug pins): url-searchparams-entries + url-searchparams-slot
 // Each absorbed file keeps its own describe scope so file-level hooks stay
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 
 
 
 
-describe("[merged] eval-bug-322-url-searchparams-entries.test.ts", () => {
+describe("url-searchparams-entries", () => {
 /**
- * Bug 322 回归：**URLSearchParams 条目表**（[[name, value]] 对的序列）建模与
+ * 回归：**URLSearchParams 条目表**（[[name, value]] 对的序列）建模与
  * 品牌方法派发。
  *
  * 本文件钉的是**主 agent 刚完成的接线**：
  * - `packages/core/src/algebra/builtins/error/web.ts`：新增内部槽
- *   `URL_SEARCH_PARAMS_ENTRIES_SLOT`（`"@@entries"`）、`urlSearchParamsEntriesOf(a)`
- *   （读表）、`urlSearchParamsSetEntries(a, entries)`（写表）；
- *   `urlBrandAbs(u)` 给 URL brand 补 `searchParams` 槽（**宿主 URL** ⇒ 条目表
- *   由 `u.search` 按 WHATWG 查询串解析**精确**推出；**抽象 URL** ⇒ 条目表不可知）；
- *   `makeUrlSearchParamsAbs(init)`：init 缺席/nullish ⇒ 空表；字符串/数字/布尔/
- *   bigint **字面量** ⇒ 按查询串解析；**二元组 tuple** ⇒ 元素两侧均为字符串
- *   字面量时逐条精确；**record obj** ⇒ 槽值均为字符串字面量时精确；否则表不可知。
+ * `URL_SEARCH_PARAMS_ENTRIES_SLOT`（`"@@entries"`）、`urlSearchParamsEntriesOf(a)`
+ * （读表）、`urlSearchParamsSetEntries(a, entries)`（写表）；
+ * `urlBrandAbs(u)` 给 URL brand 补 `searchParams` 槽（**宿主 URL** ⇒ 条目表
+ * 由 `u.search` 按 WHATWG 查询串解析**精确**推出；**抽象 URL** ⇒ 条目表不可知）；
+ * `makeUrlSearchParamsAbs(init)`：init 缺席/nullish ⇒ 空表；字符串/数字/布尔/
+ * bigint **字面量** ⇒ 按查询串解析；**二元组 tuple** ⇒ 元素两侧均为字符串
+ * 字面量时逐条精确；**record obj** ⇒ 槽值均为字符串字面量时精确；否则表不可知。
  * - `packages/core/src/algebra/builtins/error/dispatch.ts`：
- *   `evalBuiltinInstanceMethod` 新增 `URLSearchParams` 派发臂 → `evalUrlSearchParamsMethod`
- *   （get / getAll / has / size / toString / set / append / delete / sort / keys /
- *   values / entries）。
+ * `evalBuiltinInstanceMethod` 新增 `URLSearchParams` 派发臂 → `evalUrlSearchParamsMethod`
+ * （get / getAll / has / size / toString / set / append / delete / sort / keys /
+ * values / entries）。
  * - `packages/core/src/algebra/exec/runtime/containers/member.ts`：`size` 读取
- *   分派新增 `URLSearchParams`（原生 `size` 是 **getter**，不是方法）。
+ * 分派新增 `URLSearchParams`（原生 `size` 是 **getter**，不是方法）。
  *
  * 原生语义要点（node v26.10.0 实测）：
  * - `get(name)` 无匹配返 **null**（不是 undefined）；`delete(name)` 返
- *   **undefined**（不是 boolean）；`set` / `append` 返 undefined；`size` 是条目数；
+ * **undefined**（不是 boolean）；`set` / `append` 返 undefined；`size` 是条目数；
  * - `append` **追加**一条（同键不去重）⇒ `new URLSearchParams("a=1&b=2")` 后
- *   `append("b","2")` ⇒ `toString()` === `"a=1&b=2&b=2"`；
+ * `append("b","2")` ⇒ `toString()` === `"a=1&b=2&b=2"`；
  * - `set(name, value)` **替换**全部同键条目 ⇒ `getAll("a")` === `["9"]`。
  *
  * 原生依据（node v26.10.0 实测）：
@@ -2895,7 +2895,7 @@ const wrap = (body: string) => `export function f() { ${body} }`;
 /** 抽象（不可知）实参——init 不可知时的口径 */
 const unknownAbs = abs({ k: "unknown" }, undefined, undefined, "partial");
 
-describe("Bug 322 — URL brand 的 searchParams 条目表（精确取值）", () => {
+describe("URL brand 的 searchParams 条目表（精确取值）", () => {
   it("get(name) 命中 → 精确值（原生 \"1\"）", () => {
     const r = call(wrap(`return new URL("http://x/?a=1&b=2").searchParams.get("a");`), "f");
     expect(litValue(r.result)).toEqual({ ok: true, value: "1" });
@@ -2938,7 +2938,7 @@ describe("Bug 322 — URL brand 的 searchParams 条目表（精确取值）", (
   });
 });
 
-describe("Bug 322 — new URLSearchParams(init) 的条目表", () => {
+describe("new URLSearchParams(init) 的条目表", () => {
   it("字符串 init → 查询串解析（原生 get(\"b\") === \"2\"）", () => {
     const r = call(wrap(`return new URLSearchParams("a=1&b=2").get("b");`), "f");
     expect(litValue(r.result)).toEqual({ ok: true, value: "2" });
@@ -2972,7 +2972,7 @@ describe("Bug 322 — new URLSearchParams(init) 的条目表", () => {
   });
 });
 
-describe("Bug 322 — 变更面：set / append / delete / sort", () => {
+describe("变更面：set / append / delete / sort", () => {
   it("append 追加一条（同键不去重）→ toString 原生 \"a=1&b=2&b=2\"", () => {
     const r = call(
       wrap(
@@ -3038,7 +3038,7 @@ describe("Bug 322 — 变更面：set / append / delete / sort", () => {
   });
 });
 
-describe("Bug 322 — 负控制 / 精度口径", () => {
+describe("负控制 / 精度口径", () => {
   it("URL 的其它组件槽不变（href / search）", () => {
     expect(litValue(call(wrap(`return new URL("http://x/?a=1").href;`), "f").result)).toEqual({
       ok: true,
@@ -3079,9 +3079,9 @@ describe("Bug 322 — 负控制 / 精度口径", () => {
 });
 });
 
-describe("[merged] eval-bug-322-url-searchparams-slot.test.ts", () => {
+describe("url-searchparams-slot", () => {
 /**
- * Bug 322 回归：`new URL(...)` 的实例模型补 `searchParams` 槽。
+ * 回归：`new URL(...)` 的实例模型补 `searchParams` 槽。
  *
  * ES 语义（node 实测）：`new URL(u).searchParams` **恒**是 URLSearchParams
  * 实例——原生 URL 的组件槽表里 `searchParams` 与 href/origin/protocol/…
@@ -3111,7 +3111,7 @@ describe("[merged] eval-bug-322-url-searchparams-slot.test.ts", () => {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 322 — new URL(...).searchParams 不再是「读 undefined → 确定抛」", () => {
+describe("new URL(...).searchParams 不再是「读 undefined → 确定抛」", () => {
   it("new URL(u).searchParams.get(\"a\")：不再是 never（改前确定抛 TypeError ⇒ 折 never）", () => {
     const r = call(
       wrap(`return new URL("https://example.com/?a=1").searchParams.get("a");`),
@@ -3123,7 +3123,7 @@ describe("Bug 322 — new URL(...).searchParams 不再是「读 undefined → �
 
   it("new URL(u).searchParams.get(\"a\")：值口径精确 \"1\"（条目表已建模——原生同值）", () => {
     // 口径演进：条目表此前**不建模**（值域 unknown，保守但不准）⇒ 引擎自
-    // 己的「不折假精确」纪律。Bug 322 收口时条目表已按 WHATWG 查询串
+    // 己的「不折假精确」纪律。收口时条目表已按 WHATWG 查询串
     // 解析建模（URL brand 的 search 组件 → 宿主 URLSearchParams 解析）⇒
     // 值域**精确**且与原生一致（node v26：get("a") === "1"）。
     const r = call(
@@ -3148,7 +3148,7 @@ describe("Bug 322 — new URL(...).searchParams 不再是「读 undefined → �
   });
 });
 
-describe("Bug 322 — 负控制（URL 构造面的邻近形态不回归）", () => {
+describe("负控制（URL 构造面的邻近形态不回归）", () => {
   it("URL 其它组件槽不变：href / protocol / search / toString", () => {
     expect(litValue(call(wrap(`return new URL("https://x/").href;`), "f").result)).toEqual({
       ok: true,
@@ -3180,11 +3180,11 @@ describe("Bug 322 — 负控制（URL 构造面的邻近形态不回归）", () 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 326 — 开放键集对象的 keys/values/entries 折 partial
+// 开放键集对象的 keys/values/entries 折 partial
 // ---------------------------------------------------------------------------
-describe("[] Bug 326 — 开放键集对象的 keys/values/entries 折 partial", () => {
+describe("开放键集对象的 keys/values/entries 折 partial", () => {
 /**
- * Bug 326 回归：Object.keys / values / entries 对**自有键集不完备**的对象
+ * 回归：Object.keys / values / entries 对**自有键集不完备**的对象
  * （Object.groupBy 的分组对象——组键由回调运行时 ToPropertyKey 决定，静态
  * 不可知）折 **partial**，不再折 exact 空元组。
  *
@@ -3210,7 +3210,7 @@ function v(src: string) {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 326 — 开放键集对象的 keys/values/entries 折 partial", () => {
+describe("开放键集对象的 keys/values/entries 折 partial", () => {
   it("Object.groupBy 的 keys 不再折 exact 空元组（改前折 []）", () => {
     const r = call(
       wrap(`return Object.keys(Object.groupBy([1, 2], (x) => ({ t: "x" })));`),
@@ -3263,10 +3263,10 @@ describe("Bug 326 — 开放键集对象的 keys/values/entries 折 partial", ()
 });
 
 // ---------------------------------------------------------------------------
-// [merged] eval-bug-327-json-eff-and-replacer.test.ts
+// [merged] json-eff-and-replacer
 // ---------------------------------------------------------------------------
-describe("[] [merged] eval-bug-327-json-eff-and-replacer.test.ts", () => {
-// MERGED (topic-related bug pins): eval-bug-327-json-eff-and-replacer.test.ts + eval-bug-327-json-nested-brand.test.ts
+describe("json-eff-and-replacer", () => {
+// MERGED (topic-related bug pins): json-eff-and-replacer + json-nested-brand
 // Each absorbed file keeps its own describe scope so file-level hooks stay
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 
@@ -3275,21 +3275,21 @@ describe("[] [merged] eval-bug-327-json-eff-and-replacer.test.ts", () => {
 
 
 
-describe("[merged] eval-bug-327-json-eff-and-replacer.test.ts", () => {
+describe("json-eff-and-replacer", () => {
 /**
- * Bug 327 回归：JSON 面的 **eff（Promise / 生成器对象）折叠** 与
+ * 回归：JSON 面的 **eff（Promise / 生成器对象）折叠** 与
  * **不可调用 replacer 被忽略**。
  *
  * 本文件钉的是**主 agent 刚完成的接线**（`packages/core/src/algebra/builtins/json.ts`）：
  * - `absToJsonNative` 新增 `eff` 臂 ⇒ 恒返回 `{}`（原生：Promise / 生成器
- *   对象无自有可枚举属性、无 toJSON ⇒ `JSON.stringify({p: Promise.resolve(1)})`
- *   === `'{"p":{}}'` 且**不抛**）；
+ * 对象无自有可枚举属性、无 toJSON ⇒ `JSON.stringify({p: Promise.resolve(1)})`
+ * === `'{"p":{}}'` 且**不抛**）；
  * - `jsonStringifyTotal` 新增 `eff` ⇒ total（恒不抛）；
  * - replacer **可调用性**判定：`brand` **不再一律**记 may-throw——只有
- *   **构造器 brand**（`classNameOfValue(abs) !== undefined` ⇒ class 值 / 内建
- *   构造器）才记 may-throw（可调用）；`brand` **实例**（`new Map()` /
- *   `new Date()` / 用户类实例）与 `eff` 都**不可调用** ⇒ 原生忽略 replacer ⇒
- *   **不抛**。
+ * **构造器 brand**（`classNameOfValue(abs) !== undefined` ⇒ class 值 / 内建
+ * 构造器）才记 may-throw（可调用）；`brand` **实例**（`new Map()` /
+ * `new Date()` / 用户类实例）与 `eff` 都**不可调用** ⇒ 原生忽略 replacer ⇒
+ * **不抛**。
  *
  * 修前：eff 无臂 ⇒ 落 NOT_LITERAL ⇒ 父层记 may-throw ⇒ **L1/L2 假红**；
  * brand/eff 作 replacer 一律记 may-throw ⇒ 同款假红。
@@ -3300,12 +3300,12 @@ describe("[merged] eval-bug-327-json-eff-and-replacer.test.ts", () => {
  * - `JSON.stringify({d: new Date(0)})` === `'{"d":"1970-01-01T00:00:00.000Z"}'`
  * - `JSON.stringify({g: (function*(){})()})` === `'{"g":{}}'`（不抛）
  * - `JSON.stringify({a:1}, new Map())` === `'{"a":1}'`（**不抛**——brand 实例
- *   不可调用 ⇒ replacer 被忽略）
+ * 不可调用 ⇒ replacer 被忽略）
  * - `JSON.stringify({a:1}, Promise.resolve(1))` === `'{"a":1}'`（不抛）
  * - `JSON.stringify({a:1}, {})` === `'{"a":1}'`（不抛）
  * - `JSON.stringify({a:1}, Map)` → **抛 TypeError**（原生
- *   "Constructor Map requires 'new'"——构造器 brand **可调用** ⇒ 逐键调用
- *   ⇒ 抛）★ 本文件的核心区分。
+ * "Constructor Map requires 'new'"——构造器 brand **可调用** ⇒ 逐键调用
+ * ⇒ 抛）★ 本文件的核心区分。
  */
 
 
@@ -3316,7 +3316,7 @@ const wrap = (body: string) => `export function f() { ${body} }`;
 /** 带 any 实参的入口（effects 面用——抽象接收者才走 may-throw 记账） */
 const wrapArg = (body: string) => `export function f(x) { ${body} }`;
 
-describe("Bug 327 — JSON 面的 eff（Promise / 生成器对象）折叠", () => {
+describe("JSON 面的 eff（Promise / 生成器对象）折叠", () => {
   it("Promise 对象 → {}（原生 '{\"p\":{}}'，不抛）", () => {
     const r = call(wrap(`return JSON.stringify({ p: Promise.resolve(1) });`), "f");
     expect(litValue(r.result)).toEqual({ ok: true, value: '{"p":{}}' });
@@ -3354,7 +3354,7 @@ describe("Bug 327 — JSON 面的 eff（Promise / 生成器对象）折叠", () 
   });
 });
 
-describe("Bug 327 — replacer 可调用性：构造器 brand 可调用，brand 实例 / eff 不可调用", () => {
+describe("replacer 可调用性：构造器 brand 可调用，brand 实例 / eff 不可调用", () => {
   it("★ 构造器 brand 作 replacer → 抛 TypeError（原生 'Constructor Map requires new'）", () => {
     const r = call(wrap(`return JSON.stringify({ a: 1 }, Map);`), "f");
     expect(throwsError(r.throws, "TypeError")).toBe(true);
@@ -3390,7 +3390,7 @@ describe("Bug 327 — replacer 可调用性：构造器 brand 可调用，brand 
   });
 });
 
-describe("Bug 327 — 负控制（邻近形态不回归）", () => {
+describe("负控制（邻近形态不回归）", () => {
   it("可调用 replacer 仍逐键生效（原生同款）", () => {
     const r = call(wrap(`return JSON.stringify({ a: 1 }, (k, v) => v);`), "f");
     expect(litValue(r.result)).toEqual({ ok: true, value: '{"a":1}' });
@@ -3419,9 +3419,9 @@ describe("Bug 327 — 负控制（邻近形态不回归）", () => {
 });
 });
 
-describe("[merged] eval-bug-327-json-nested-brand.test.ts", () => {
+describe("json-nested-brand", () => {
 /**
- * Bug 327 回归：JSON.stringify 的**内建 brand 折叠是递归的**（顶层与
+ * 回归：JSON.stringify 的**内建 brand 折叠是递归的**（顶层与
  * 对象/数组**成员**同款）。
  *
  * 修前：`foldJsonTotalBrand` 只喂**顶层**接收者 ⇒ **嵌套** brand 一律落
@@ -3432,10 +3432,10 @@ describe("[merged] eval-bug-327-json-nested-brand.test.ts", () => {
  * 修法（json.ts `jsonBrandFold` 单一事实源 + `absToJsonNative` 的 brand
  * 臂 + `jsonStringifyTotal` 的 brand 臂）：
  * - 精确可折：RegExp/Map/Set 族/Error 族 → {}；Date → ISO 串（Invalid →
- *   null）；URL → href；装箱 Number/String/Boolean → 拆箱后的原始值；
+ * null）；URL → href；装箱 Number/String/Boolean → 拆箱后的原始值；
  * - total 但值不可知：TypedArray 家族（元素值未建模）——**恒不抛**；
  * - 不可折（仍记 may-throw）：用户 toJSON 面、BigInt 元素家族
- *   （BigInt64Array/BigUint64Array —— 原生**定抛** TypeError）。
+ * （BigInt64Array/BigUint64Array —— 原生**定抛** TypeError）。
  *
  * 锚定值均为 node 原生实测（见各断言）。
  */
@@ -3471,7 +3471,7 @@ function v(src: string) {
   return litValue(call(src, "f").result);
 }
 
-describe("Bug 327: JSON.stringify 的嵌套内建 brand（不记 may-throw）", () => {
+describe("JSON.stringify 的嵌套内建 brand（不记 may-throw）", () => {
   it("嵌套 Date → 精确折叠（node: {\"when\":\"1970-01-01T00:00:00.000Z\"}）", () => {
     expect(v(`export function f() { return JSON.stringify({ when: new Date(0) }); }`)).toEqual({
       ok: true,
@@ -3581,19 +3581,19 @@ describe("Bug 327: JSON.stringify 的嵌套内建 brand（不记 may-throw）", 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 331 — String(<brand>) 不再一律记 may-throw TypeError
+// String(<brand>) 不再一律记 may-throw TypeError
 // ---------------------------------------------------------------------------
-describe("[] Bug 331 — String(<brand>) 不再一律记 may-throw TypeError", () => {
+describe("String(<brand>) 不再一律记 may-throw TypeError", () => {
 /**
- * Bug 331 回归：`String(<brand>)` 的抽象臂不再一律记 may-throw TypeError。
+ * 回归：`String(<brand>)` 的抽象臂不再一律记 may-throw TypeError。
  *
  * 原生依据（node v26.10.0 实测，取证命令见文件末尾「取证」段）：
- *   String(new Date(0))  → "Thu Jan 01 1970 08:00:00 GMT+0800 (中国标准时间)"
- *                           （**不抛**）
- *   String(new Map())    → "[object Map]"（**不抛**）
- *   String({})           → "[object Object]"（**不抛**）
- *   `${new Date(0)}`     → 与 String(new Date(0)) 同值（**不抛**）
- *   String(new Date(0)) === `${new Date(0)}` → true（**两侧都不抛**）
+ * String(new Date(0)) → "Thu Jan 01 1970 08:00:00 GMT+0800 (中国标准时间)"
+ * （**不抛**）
+ * String(new Map()) → "[object Map]"（**不抛**）
+ * String({}) → "[object Object]"（**不抛**）
+ * `${new Date(0)}` → 与 String(new Date(0)) 同值（**不抛**）
+ * String(new Date(0)) === `${new Date(0)}` → true（**两侧都不抛**）
  *
  * 修前：`String(x)` 的抽象臂对**带品牌**的 x 一律记 may-throw TypeError
  * ⇒ 对 `String(new Date(0))` 这种**确定不抛**的代码报 may-throw（假红，
@@ -3607,8 +3607,8 @@ describe("[] Bug 331 — String(<brand>) 不再一律记 may-throw TypeError", (
  * （那是修前的假红）。
  *
  * 取证（原生 oracle）：
- *   node -e 'console.log(String(new Date(0)), String(new Map()), String({}),
- *     `${new Date(0)}` === String(new Date(0)))'
+ * node -e 'console.log(String(new Date(0)), String(new Map()), String({}),
+ * `${new Date(0)}` === String(new Date(0)))'
  */
 
 
@@ -3616,7 +3616,7 @@ describe("[] Bug 331 — String(<brand>) 不再一律记 may-throw TypeError", (
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 331 — String(<brand>) 不再一律记 may-throw TypeError", () => {
+describe("String(<brand>) 不再一律记 may-throw TypeError", () => {
   it("String(new Date(0))：不抛 + 值域是 string（原生给日期串，不抛）", () => {
     const r = call(wrap(`return String(new Date(0));`), "f");
     expect(throwsError(r.throws, "TypeError")).toBe(false);
@@ -3642,7 +3642,7 @@ describe("Bug 331 — String(<brand>) 不再一律记 may-throw TypeError", () =
   });
 });
 
-describe("Bug 331 — 负控制（同一载荷内部不再自相矛盾 + 相邻面不回归）", () => {
+describe("负控制（同一载荷内部不再自相矛盾 + 相邻面不回归）", () => {
   it("String(new Date(0)) 与模板串**同样不抛**（修前：String 记 may-throw、模板串判 OK）", () => {
     const viaString = call(wrap(`return String(new Date(0));`), "f");
     const viaTemplate = call(wrap("return `${new Date(0)}`;"), "f");
@@ -3678,23 +3678,23 @@ describe("Bug 331 — 负控制（同一载荷内部不再自相矛盾 + 相邻�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 332 — Intl.Collator 的形状
+// Intl.Collator 的形状
 // ---------------------------------------------------------------------------
-describe("[] Bug 332 — Intl.Collator 的形状", () => {
+describe("Intl.Collator 的形状", () => {
 /**
- * Bug 332 回归：`Intl.Collator` 的形状（构造器 fn 的 name 面 + 实例面）。
+ * 回归：`Intl.Collator` 的形状（构造器 fn 的 name 面 + 实例面）。
  *
  * 原生依据（node v26.10.0 实测，取证命令见文件末尾「取证」段）：
- *   typeof new Intl.Collator()   → "object"
- *   new Intl.Collator().name     → **undefined**（实例**没有** name 属性；
- *                                   "Collator" 是**构造器函数**
- *                                   `Intl.Collator.name`，不是实例的）
- *   Intl.Collator.name           → "Collator"（构造器函数的 name 属性）
- *   Intl.NumberFormat.name       → "NumberFormat"
- *   Intl.DateTimeFormat.name     → "DateTimeFormat"
- *   Intl.Locale.name             → "Locale"
- *   typeof new Intl.Collator().compare → "function"（实例继承原型上的
- *                                   brand check 访问器）
+ * typeof new Intl.Collator() → "object"
+ * new Intl.Collator().name → **undefined**（实例**没有** name 属性；
+ * "Collator" 是**构造器函数**
+ * `Intl.Collator.name`，不是实例的）
+ * Intl.Collator.name → "Collator"（构造器函数的 name 属性）
+ * Intl.NumberFormat.name → "NumberFormat"
+ * Intl.DateTimeFormat.name → "DateTimeFormat"
+ * Intl.Locale.name → "Locale"
+ * typeof new Intl.Collator().compare → "function"（实例继承原型上的
+ * brand check 访问器）
  *
  * 修前：Intl 子构造器的 fn **name** 面折**限定名**（"Intl.Collator"）——
  * 原生是**子构造器名**（"Collator"）⇒ 对 `Intl.Collator.name` 给出
@@ -3717,9 +3717,9 @@ describe("[] Bug 332 — Intl.Collator 的形状", () => {
  * "Intl.Collator"）⇒ 旗标已摘、断言转正。
  *
  * 取证（原生 oracle）：
- *   node -e 'const c=new Intl.Collator();
- *     console.log(typeof c, c.name, Intl.Collator.name, Intl.NumberFormat.name,
- *       typeof c.compare)'
+ * node -e 'const c=new Intl.Collator();
+ * console.log(typeof c, c.name, Intl.Collator.name, Intl.NumberFormat.name,
+ * typeof c.compare)'
  */
 
 
@@ -3727,7 +3727,7 @@ describe("[] Bug 332 — Intl.Collator 的形状", () => {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 332 — Intl.Collator 的形状", () => {
+describe("Intl.Collator 的形状", () => {
   it("typeof new Intl.Collator() → \"object\"（原生同款）", () => {
     const r = call(wrap(`return typeof new Intl.Collator();`), "f");
     expect(litValue___nudojs_core_16(r.result)).toEqual({ ok: true, value: "object" });
@@ -3758,7 +3758,7 @@ describe("Bug 332 — Intl.Collator 的形状", () => {
   });
 });
 
-describe("Bug 332 — 构造器 fn 的 name 面（原生是**子构造器名**，非限定名）", () => {
+describe("构造器 fn 的 name 面（原生是**子构造器名**，非限定名）", () => {
   it("Intl.NumberFormat.name → \"NumberFormat\"（已建模子构造器：原生同款）", () => {
     const r = call(wrap(`return Intl.NumberFormat.name;`), "f");
     expect(litValue___nudojs_core_16(r.result)).toEqual({ ok: true, value: "NumberFormat" });
@@ -3770,7 +3770,7 @@ describe("Bug 332 — 构造器 fn 的 name 面（原生是**子构造器名**�
   });
 
   it("Intl.Collator.name → \"Collator\"（原生同款：非限定名）", () => {
-    // Bug 332 收口：Intl 子构造器的**内部派发键**（"Intl.Collator"）只留在
+    // 收口：Intl 子构造器的**内部派发键**（"Intl.Collator"）只留在
     // shape.name（原型 brand 路由要它），读面剥掉 "Intl." 前缀 ⇒ 原生
     // `fn.name` 投影（非限定名）。
     const r = call(wrap(`return Intl.Collator.name;`), "f");
@@ -3783,10 +3783,10 @@ describe("Bug 332 — 构造器 fn 的 name 面（原生是**子构造器名**�
   });
 });
 
-describe("Bug 332 — 实例方法面（未建模子构造器）", () => {
+describe("实例方法面（未建模子构造器）", () => {
   it("typeof new Intl.Collator().compare → \"function\"（族 65 第 4 条已建模）", () => {
     // 原生：typeof new Intl.Collator().compare === "function"
-    //   （实例继承 Intl.Collator.prototype 上的方法）
+    // （实例继承 Intl.Collator.prototype 上的方法）
     // 族 65 · 第 4 条：`BUILTIN_BRAND_METHODS` 补 "Intl.Collator"
     // （compare / resolvedOptions）⇒ 实例方法面折精确 "function"
     // （此前是 unknown 域——imprecise 但 sound）。
@@ -3802,28 +3802,28 @@ describe("Bug 332 — 实例方法面（未建模子构造器）", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 族 57 · 第 1 条 · Bug 207 · 派生类 brand 的集合 size（✅ 已是原生）
+// 族 57 · 第 1 条 · 派生类 brand 的集合 size（✅ 已是原生）
 // ---------------------------------------------------------------------------
-describe("[] 族 57 · 第 1 条 · Bug 207 · 派生类 brand 的集合 size（✅ 已是原生）", () => {
+describe("族 57 · 第 1 条 · 派生类 brand 的集合 size（✅ 已是原生）", () => {
 /**
  * 族 57 · W7 · core 容器 / Proxy / 符号键 —— 8 条精度债的回归钉。
  *
  * 本钉的断言口径：**对拍原生**（node v26.10.0 实测）。
  * - 标「✅ 已修」= 引擎与原生逐字一致；
  * - 标「⚠️ 已知偏差」= 引擎仍与原生有差（**修法落在别的分片的文件范围**，
- *   本钉钉住**当前**行为以免静默漂移；修法落地后本断言需由主 agent 追认
- *   更新——见文件末尾「已知偏差路由」）。
+ * 本钉钉住**当前**行为以免静默漂移；修法落地后本断言需由主 agent 追认
+ * 更新——见文件末尾「已知偏差路由」）。
  *
  * 逐条对应（族 57 台账）：
- * 1. Bug 207  `s.size` 精确值（派生类 brand）——✅ 已是原生（闭合点：
- *           exec/class/super.ts 的 $super「不重铸 Abs」——W9 并发落盘）
- * 2. Bug 234  宿主函数面 / 命名空间面的 `constructor`——✅ 已修（本片）
- * 3. Bug 219  包装 brand（Object(5) / Object(Symbol("x"))）的成员面——✅ 已是原生
+ * 1. `s.size` 精确值（派生类 brand）——✅ 已是原生（闭合点：
+ * exec/class/super.ts 的 $super「不重铸 Abs」——W9 并发落盘）
+ * 2. 宿主函数面 / 命名空间面的 `constructor`——✅ 已修（本片）
+ * 3. 包装 brand（Object(5) / Object(Symbol("x"))）的成员面——✅ 已是原生
  * 4. Proxy `has` / `set` 陷阱返回值 ToBoolean 归一——✅ 已是原生
  * 5. Proxy `ownKeys` 陷阱派发通道——✅ 已是原生
- * 6. 外-02    符号键槽寻址（普通对象面）——① 读写 ✅ 已修（本片）；② `in` /
- *             `delete` ✅ 已修（exec/runtime/members.ts，W8 落盘）
- * 7. Bug 140 残余：用户 iterable 同时带索引属性 ⇒ 迭代序优先——✅ 已是原生
+ * 6. 外-02 符号键槽寻址（普通对象面）——① 读写 ✅ 已修（本片）；② `in` /
+ * `delete` ✅ 已修（exec/runtime/members.ts，W8 落盘）
+ * 7. 残余：用户 iterable 同时带索引属性 ⇒ 迭代序优先——✅ 已是原生
  * 8. `mk().x += 2` 复合赋值到「调用结果成员」——✅ 已修（exec/transpile，W9 并发落盘）
  */
 
@@ -3853,7 +3853,7 @@ function throwName(src: string): string {
 /** 用户 iterable（迭代序与索引序**故意不同**——用于钉「迭代序优先」） */
 const USER_ITER = `[Symbol.iterator](){ let i=0; return { next(){ return i<2 ? {value:"I"+i++, done:false} : {value:undefined, done:true} } } }`;
 
-describe("族 57 · 第 1 条 · Bug 207 · 派生类 brand 的集合 size（✅ 已是原生）", () => {
+describe("族 57 · 第 1 条 · 派生类 brand 的集合 size（✅ 已是原生）", () => {
   // 原生：class S extends Set {} ⇒ new S() 是 Set ⇒ s.add(1) 后 s.size === 1。
   // 引擎此前：派生类实例的 brand（"S"）**没有**集合内部表项——集合内部表按
   // **Abs 身份**驻留（collections.ts 的 WeakMap），而 super() 归位时**重铸**
@@ -3887,7 +3887,7 @@ describe("族 57 · 第 1 条 · Bug 207 · 派生类 brand 的集合 size（✅
   });
 });
 
-describe("族 57 · 第 2 条 · Bug 234 · 宿主函数面 / 命名空间面的 constructor（✅ 已修）", () => {
+describe("族 57 · 第 2 条 · 宿主函数面 / 命名空间面的 constructor（✅ 已修）", () => {
   it("函数声明的 constructor === Function（原生 true）", () => {
     expect(v(wrap(`function f(){} return f.constructor === Function;`))).toEqual({ ok: true, value: true });
   });
@@ -3930,7 +3930,7 @@ describe("族 57 · 第 2 条 · Bug 234 · 宿主函数面 / 命名空间面的
   });
 });
 
-describe("族 57 · 第 3 条 · Bug 219 · 包装 brand 的成员面（✅ 已是原生）", () => {
+describe("族 57 · 第 3 条 · 包装 brand 的成员面（✅ 已是原生）", () => {
   it("Object(Symbol('x')).toString() → \"Symbol(x)\"", () => {
     expect(v(wrap(`return Object(Symbol("x")).toString();`))).toEqual({ ok: true, value: "Symbol(x)" });
   });
@@ -4075,7 +4075,7 @@ describe("族 57 · 第 6 条 · 外-02 · 符号键槽寻址（① 读写 ✅ �
   });
 });
 
-describe("族 57 · 第 7 条 · Bug 140 残余 · 用户 iterable 同时带索引属性（✅ 已是原生）", () => {
+describe("族 57 · 第 7 条 · 残余 · 用户 iterable 同时带索引属性（✅ 已是原生）", () => {
   it("for-of 取迭代序而非索引序（原生 [\"I0\",\"I1\"]）", () => {
     const src = wrap(
       `const o = { 0: "A", 1: "B", ${USER_ITER} }; const out = []; for (const x of o) out.push(x); return out;`,
@@ -4130,9 +4130,9 @@ describe("族 57 · 第 8 条 · mk().x += 2 复合赋值（✅ 已修）", () =
 /**
  * 已知偏差路由（修法落在**别的**分片的文件范围 ⇒ 本片只报告，不越界改）：
  * - 第 6 条 ②（`in` / `delete`）已由 **W8 落盘**（exec/runtime/members.ts：
- *   `$in` 的 `symSlotKey` 改用 containers/symbol-slot.ts 的
- *   `symbolSlotKeyOf`（认用户符号）；`$del` 的 `keyStr` 改为
- *   `propertyKeyOf(key) ?? symbolSlotKeyOf(key)`）⇒ 本路由条目作废。
+ * `$in` 的 `symSlotKey` 改用 containers/symbol-slot.ts 的
+ * `symbolSlotKeyOf`（认用户符号）；`$del` 的 `keyStr` 改为
+ * `propertyKeyOf(key) ?? symbolSlotKeyOf(key)`）⇒ 本路由条目作废。
  */
 describe("族 57 · 已知偏差的抛错面不回归", () => {
   it("Symbol 键的对象不会被误判成抛错面", () => {
@@ -4143,28 +4143,28 @@ describe("族 57 · 已知偏差的抛错面不回归", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 958 — Math.min / Math.max 区间端点合并（合取位取更松的一侧）
+// Math.min / Math.max 区间端点合并（合取位取更松的一侧）
 // ---------------------------------------------------------------------------
-describe("[] Bug 958 — Math.min / Math.max 区间端点合并（合取位取更松的一侧）", () => {
+describe("Math.min / Math.max 区间端点合并（合取位取更松的一侧）", () => {
 /**
- * Bug 958 回归：Math.min / Math.max 的**区间端点合并**按合取/析取分家。
+ * 回归：Math.min / Math.max 的**区间端点合并**按合取/析取分家。
  *
  * ES 语义（node 实测）：
  * - `Math.min(a,b) ≥ L ⟺ a ≥ L ∧ b ≥ L`（**合取**）⇒ 端点值相同时只能取
- *   **更松**（非 strict）的一侧：`a > 0 ∧ b ≥ 0` 时 `min(a,b)` 可能恰为 0
- *   （b = 0）⇒ 只能推出 `min(a,b) ≥ 0`。
+ * **更松**（非 strict）的一侧：`a > 0 ∧ b ≥ 0` 时 `min(a,b)` 可能恰为 0
+ * （b = 0）⇒ 只能推出 `min(a,b) ≥ 0`。
  * - `Math.max(a,b) ≤ U ⟺ a ≤ U ∧ b ≤ U`（**合取**）⇒ 同款取更松的一侧。
  * - `Math.max(a,b) ≥ L ⟺ a ≥ L ∨ b ≥ L`（**析取**）与
- *   `Math.min(a,b) ≤ U ⟺ a ≤ U ∨ b ≤ U`（**析取**）⇒ 取**更严**的一侧。
+ * `Math.min(a,b) ≤ U ⟺ a ≤ U ∨ b ≤ U`（**析取**）⇒ 取**更严**的一侧。
  *
  * 修复前：`loMin`（min 的 lo）与 `hiMax`（max 的 hi）照抄了析取位的条件
  * （`b.strict && !a.strict → b`）⇒ 取了**更严**的一侧 ⇒ 端点同值时产出
  * **不可满足**谓词（`min(x,0) > 0 ∧ min(x,0) ≤ 0`）⇒
- *   ① 证明器 ex falso 放电 ⇒ L1 返回契约门禁**假绿**（恒为 0 的函数被判
- *      满足 `number().gt(0)`）；
- *   ② 分支选择把不可满足谓词当恒真 ⇒ 走错臂且 `conf: exact`
- *      （`Math.min(x,0) > 0 ? "pos" : "nonpos"` 折成 `"pos"`，原生恒
- *      `"nonpos"`）。
+ * ① 证明器 ex falso 放电 ⇒ L1 返回契约门禁**假绿**（恒为 0 的函数被判
+ * 满足 `number().gt(0)`）；
+ * ② 分支选择把不可满足谓词当恒真 ⇒ 走错臂且 `conf: exact`
+ * （`Math.min(x,0) > 0 ? "pos" : "nonpos"` 折成 `"pos"`，原生恒
+ * `"nonpos"`）。
  *
  * 修法（`builtins/math.ts`）：`loMin` / `hiMax` 的 tie-break 改成取**非
  * strict**（更松）的一侧；`loMax` / `hiMin`（析取位）保持取更严的一侧。
@@ -4203,7 +4203,7 @@ function checkOf(src: string, sidecar: string) {
   return checkSource_____index_ts("/t/math-bounds.js", src, pTrue, sidecarOpts(sidecar));
 }
 
-describe("Bug 958 — Math.min / Math.max 区间端点合并（合取位取更松的一侧）", () => {
+describe("Math.min / Math.max 区间端点合并（合取位取更松的一侧）", () => {
   it("Math.min(x,0) > 0：x>0 时原生恒 \"nonpos\"（改前折 \"pos\" 且 conf: exact）", () => {
     const r = call(
       `export function f(x) { return Math.min(x, 0) > 0 ? "pos" : "nonpos"; }`,
@@ -4291,7 +4291,7 @@ export const branchOne = fn({ x: number().gt(0) }, number().gt(0));`,
   });
 });
 
-describe("Bug 958 — 负控制（区间合并的邻近形态不回归）", () => {
+describe("负控制（区间合并的邻近形态不回归）", () => {
   it("Math.min(x,1) > 0：x>0 时原生恒 \"pos\"", () => {
     const r = call(
       `export function f(x) { return Math.min(x, 1) > 0 ? "pos" : "nonpos"; }`,

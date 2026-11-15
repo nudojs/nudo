@@ -18,10 +18,10 @@ import { nextDown } from "../pred.ts";
  * 示例 0 金标：类型即计算
  *
  * add = (a, b) => a + b
- * add(1, 3)          → lit(4)                 #exact
+ * add(1, 3) → lit(4) #exact
  * Φ: x > 0
- * add(x, 1)          → term=x+1, pred:>1      #path
- * twice(x)           → term=(x+1)+1, pred:>2  #path
+ * add(x, 1) → term=x+1, pred:>1 #path
+ * twice(x) → term=(x+1)+1, pred:>2 #path
  */
 
 describe("Example 0: add is the computation itself", () => {
@@ -93,10 +93,10 @@ describe("Example 0: add is the computation itself", () => {
 
 describe("comparison implies under Φ", () => {
   it("x>0 ⊬ x+1 > 1（IEEE 吸收：x = MIN_VALUE 时 fl(x+1) === 1）", () => {
-    // 重钉（BUG-200，parent 授权）：旧断言 `{ ok: true, value: true }` 是**假事实**
+    // 重钉（，parent 授权）：旧断言 `{ ok: true, value: true }` 是**假事实**
     // ——它正是 cmp.ts「implies(phi, pred) ⇒ boolLit(true)」这条**造值点**。
     // 原生反例：x = Number.MIN_VALUE 时 x > 0 真、fl(x+1) === 1 ⇒ x+1 > 1 假。
-    // 依据 BUG-200 section:14-16,27,30（`x>0 ⊢ x+1>1` 是假证）。
+    // 依据 section:14-16,27,30（`x>0 ⊢ x+1>1` 是假证）。
     expect(Number.MIN_VALUE > 0).toBe(true);
     expect(Number.MIN_VALUE + 1).toBe(1);
     const phi = gtNum(v("x"), 0);

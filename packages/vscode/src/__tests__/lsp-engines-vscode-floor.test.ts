@@ -1,5 +1,5 @@
 /**
- * Bug 906 —— VS Code 扩展的 `engines.vscode: "^1.85.0"` 与
+ * VS Code 扩展的 `engines.vscode: "^1.85.0"` 与
  * `vscode-languageclient@10.1.2` 的**硬要求 `^1.91.0`** 冲突 ⇒ 扩展在
  * **自己声明允许**的 VS Code 版本（1.85 ~ 1.90）上**根本不激活**。
  *
@@ -47,7 +47,7 @@ function floorOf(range: string): [number, number, number] {
   return [Number(m[1]), Number(m[2]), Number(m[3])];
 }
 
-describe("Bug 906 —— engines.vscode 必须满足依赖的构造期硬校验", () => {
+describe("engines.vscode 必须满足依赖的构造期硬校验", () => {
   const required = requiredVscodeVersion();
 
   it("依赖的硬要求被读到了（vscode-languageclient 的构造函数校验）", () => {

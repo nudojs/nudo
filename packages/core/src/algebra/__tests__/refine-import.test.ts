@@ -171,7 +171,7 @@ function setDelay(ms) {
   });
 });
 
-describe("@nudo:import { a as b } alias binding (BUG-016)", () => {
+describe("@nudo:import { a as b } alias binding ()", () => {
   it("alias import binds local name to the sidecar's original export", () => {
     const src = `
 /// @nudo:import { delay as pos } from "./x.nudo.js"

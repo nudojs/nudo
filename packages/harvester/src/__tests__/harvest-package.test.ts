@@ -118,11 +118,11 @@ describe("读故障 fail-closed 上浮（ENOENT 静默，非 ENOENT 有信号）
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1003 —— --from-dts 的具名 default 导出
+// --from-dts 的具名 default 导出
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 1003 —— --from-dts 的具名 default 导出", () => {
+describe("--from-dts 的具名 default 导出", () => {
 /**
- * Bug 1003 —— `nudo contract --from-dts` 把**具名 default 导出**写成本地名键
+ * `nudo contract --from-dts` 把**具名 default 导出**写成本地名键
  * ⇒ 草稿键 `helper` ≠ 模块导出名 `default` ⇒ 用户照抄进侧车后**该导出永远
  * 零义务**（**假绿**），而汇总行报「**0 skipped**」让用户以为「没有需要
  * 人工处理的东西」。
@@ -133,7 +133,7 @@ describe("[harvest-] Bug 1003 —— --from-dts 的具名 default 导出", () =>
  * 产品面取证（改前 vs 改后，同一份侧车 + 同一份源码）：
  * - 改后：侧车 `export { _default as default }` ⇒ `impl(x: number) => string`；
  * - 改前：侧车 `export const helper = …` ⇒ 绑不到 `default` ⇒
- *   `impl(x: any) => string` + `nudo:contract-entry-only`（零义务）。
+ * `impl(x: any) => string` + `nudo:contract-entry-only`（零义务）。
  */
 
 
@@ -158,7 +158,7 @@ function writeDts(name: string, src: string): string {
   return file;
 }
 
-describe("Bug 1003 —— --from-dts 的具名 default 导出", () => {
+describe("-from-dts 的具名 default 导出", () => {
   it("草稿键是 `default`（不是本地名 `helper`）", () => {
     const file = writeDts("def.d.ts", NAMED_DEFAULT_DTS);
     const draft = dtsToContractDraft([file], "def");
@@ -197,11 +197,11 @@ describe("Bug 1003 —— --from-dts 的具名 default 导出", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1014 — ambient 声明不得变成包名键的具名导出
+// ambient 声明不得变成包名键的具名导出
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 1014 — ambient 声明不得变成包名键的具名导出", () => {
+describe("ambient 声明不得变成包名键的具名导出", () => {
 /**
- * Bug 1014 — harvester 的**桥接层把整个 globals 袋提升成包名键的具名导出**
+ * harvester 的**桥接层把整个 globals 袋提升成包名键的具名导出**
  * ⇒ `declare global { … }` / **script 模式 `.d.ts`** 的 **ambient 声明变成「可导入的导出」**
  * ⇒ `import { <ambient> } from "pkg"` 解析成功 ⇒ **TS2305 / TS2306 零诊断**（**假绿**）。
  *
@@ -230,7 +230,7 @@ function writePkg(root: string, name: string, files: Record<string, string>): vo
   }
 }
 
-describe("Bug 1014 — ambient 声明不得变成包名键的具名导出", () => {
+describe("ambient 声明不得变成包名键的具名导出", () => {
   let dir: string;
   let appDir: string;
   let prevCache: string | undefined;
@@ -290,11 +290,11 @@ describe("Bug 1014 — ambient 声明不得变成包名键的具名导出", () =
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1015 —— --from-dts 目录模式的文件预算
+// --from-dts 目录模式的文件预算
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 1015 —— --from-dts 目录模式的文件预算", () => {
+describe("--from-dts 目录模式的文件预算", () => {
 /**
- * Bug 1015 —— `nudo contract --from-dts <目录>` **静默只投影前 16 个 `.d.ts`**
+ * `nudo contract --from-dts <目录>` **静默只投影前 16 个 `.d.ts`**
  * ⇒ 第 17+ 个文件的导出**整条不存在**于草稿，而汇总行报「**16 d.ts ·
  * 0 skipped**」⇒ 丢失**零信号** ⇒ 照抄进侧车后这些导出**零义务**（假绿）。
  *
@@ -332,7 +332,7 @@ function makePkg(count: number): string {
   return pkg;
 }
 
-describe("Bug 1015 —— --from-dts 目录模式的文件预算", () => {
+describe("-from-dts 目录模式的文件预算", () => {
   it("目录里的 `.d.ts` **全部**被投影（改前：只投影前 16 个）", () => {
     const pkg = makePkg(20);
     const draft = dtsPathToContractDraft(pkg, "pkg");
@@ -370,11 +370,11 @@ describe("Bug 1015 —— --from-dts 目录模式的文件预算", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 793 —— 顶层 declare namespace 的运行时成员不摊平进 globals
+// 顶层 declare namespace 的运行时成员不摊平进 globals
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 793 —— 顶层 declare namespace 的运行时成员不摊平进 globals", () => {
+describe("顶层 declare namespace 的运行时成员不摊平进 globals", () => {
 /**
- * Bug 793 回归（harvester 收割面）：顶层 `declare namespace` 的**运行时成员被摊平进
+ * 回归（harvester 收割面）：顶层 `declare namespace` 的**运行时成员被摊平进
  * globals** ⇒ harvester **凭空造出全局**（`bar`）⇒ 并**抑制**了对应的
  * ReferenceError 诊断（裸 `bar()` 被当成有定义）。
  *
@@ -383,11 +383,11 @@ describe("[harvest-] Bug 793 —— 顶层 declare namespace 的运行时成员�
  * - 裸 `bar` **不是**全局（运行时只有 `Foo.bar`）⇒ 引用它是 ReferenceError。
  *
  * 收割侧契约：
- *   1. 命名空间的运行时成员**留在命名空间的名字空间里**（`Foo.bar`），
- *      **不摊平**进 globals ⇒ `env.globals` 里**没有** `bar`；
- *   2. `Foo` 本身是命名空间对象（成员挂在它下面）；
- *   3. 只有类型（interface / type）的命名空间**不产生**运行时对象
- *      （否则 `declare namespace _ { interface X {} }` 会凭空多出一个全局 `_`）。
+ * 1. 命名空间的运行时成员**留在命名空间的名字空间里**（`Foo.bar`），
+ * **不摊平**进 globals ⇒ `env.globals` 里**没有** `bar`；
+ * 2. `Foo` 本身是命名空间对象（成员挂在它下面）；
+ * 3. 只有类型（interface / type）的命名空间**不产生**运行时对象
+ * （否则 `declare namespace _ { interface X {} }` 会凭空多出一个全局 `_`）。
  *
  * 产品面（闸②，tmp/probe/fix-r27/h5/e2e/ns/）：
  * - 改前：`callBareBar() => number`（0 issue —— 伪造全局把 ReferenceError 抹掉了）；
@@ -420,7 +420,7 @@ function slotNames(a: unknown): string[] {
   return Object.keys(shape.slots ?? {});
 }
 
-describe("Bug 793 —— 顶层 declare namespace 的运行时成员不摊平进 globals", () => {
+describe("顶层 declare namespace 的运行时成员不摊平进 globals", () => {
   it("命名空间成员不落进 globals（不再凭空造出全局 `bar`）", () => {
     const p = writeTemp(
       "fx.d.ts",
@@ -521,11 +521,11 @@ declare namespace B {
 });
 
 // ---------------------------------------------------------------------------
-// 族 27 · 磁盘投影 facet 往返（Bug 803 接线）
+// 族 27 · 磁盘投影 facet 往返（接线）
 // ---------------------------------------------------------------------------
-describe("[harvest-] 族 27 · 磁盘投影 facet 往返（Bug 803 接线）", () => {
+describe("族 27 · 磁盘投影 facet 往返（接线）", () => {
 /**
- * 族 27 · Bug 803（主 agent 接线）—— **磁盘投影的 facet 往返**。
+ * 族 27 · （主 agent 接线）—— **磁盘投影的 facet 往返**。
  *
  * 收割面（内存 Abs）在本族新增了几个 facet：
  * - obj：`index`（索引签名 / `Record<K,V>` 的值域）+ `open`（开放对象标志）
@@ -548,7 +548,7 @@ function roundTrip(a: Abs): Abs {
   return back!.globals["x"]!;
 }
 
-describe("族 27 · 磁盘投影 facet 往返（Bug 803 接线）", () => {
+describe("族 27 · 磁盘投影 facet 往返（接线）", () => {
   it("obj：索引签名 + 开放对象标志往返后仍在", () => {
     const indexed = abs(
       {
@@ -677,11 +677,11 @@ describe("族 27 · 磁盘投影 facet 往返（Bug 803 接线）", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 808 —— 提升成模块级成员时保留 `?` 可选标记
+// 提升成模块级成员时保留 `?` 可选标记
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 808 —— 提升成模块级成员时保留 `?` 可选标记", () => {
+describe("提升成模块级成员时保留 `?` 可选标记", () => {
 /**
- * Bug 808 回归（harvester 收割面）：接口成员被**提升**成模块级全局时丢掉 `?`
+ * 回归（harvester 收割面）：接口成员被**提升**成模块级全局时丢掉 `?`
  * 可选标记（brand 面 `number | undefined` vs 提升面 `number`）。
  *
  * 根因：提升路径把成员**降级成一条 `var` 声明**（`{t:"var", typeNode: member.type}`），
@@ -691,8 +691,8 @@ describe("[harvest-] Bug 808 —— 提升成模块级成员时保留 `?` 可选
  * 改后：`global a: number | undefined`（与 brand 面同口径）
  *
  * oracle（`tsc --strict`，tmp/probe/fix-r27/h3/oracle/o808.ts）：
- *   `const bad: number = opt.a` ⇒ TS2322 "Type 'number | undefined' is not
- *   assignable to type 'number'" ⇒ TS 侧 `opt.a` 就是 `number | undefined`。
+ * `const bad: number = opt.a` ⇒ TS2322 "Type 'number | undefined' is not
+ * assignable to type 'number'" ⇒ TS 侧 `opt.a` 就是 `number | undefined`。
  */
 
 
@@ -726,7 +726,7 @@ function slots(a: Abs): Record<string, Abs> {
   return {};
 }
 
-describe("Bug 808 —— 提升成模块级成员时保留 `?` 可选标记", () => {
+describe("提升成模块级成员时保留 `?` 可选标记", () => {
   it("提升出的可选属性是 `number | undefined`（不是 `number`）", () => {
     const p = writeTemp(
       "optmem.d.ts",
@@ -786,23 +786,23 @@ describe("Bug 808 —— 提升成模块级成员时保留 `?` 可选标记", ()
 });
 
 // ---------------------------------------------------------------------------
-// Bug 814 —— `export default` 进导出表，局部名不进
+// `export default` 进导出表，局部名不进
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 814 —— `export default` 进导出表，局部名不进", () => {
+describe("`export default` 进导出表，局部名不进", () => {
 /**
- * Bug 814 回归（harvester 收割面）：`export default` **不在模块导出表里** ⇒
+ * 回归（harvester 收割面）：`export default` **不在模块导出表里** ⇒
  * 默认导入落 `unknown`（假警告）；同时**默认导出的局部名被当成具名导出**（假绿）。
  *
  * oracle（`tsc --strict`，见 tmp/probe/fix-r27/h4/）：
  * - `export default function makeThing(): number;` ⇒ 默认导入 `() => number`，
- *   而 `import { makeThing } from "fx"` 是 **TS2614**（该模块没有具名导出 `makeThing`）。
+ * 而 `import { makeThing } from "fx"` 是 **TS2614**（该模块没有具名导出 `makeThing`）。
  * - `export default class Widget { render(): string; }` ⇒ 默认导入拿到类（构造签名），
- *   `import { Widget } from "fx"` 同样是 **TS2614**。
+ * `import { Widget } from "fx"` 同样是 **TS2614**。
  *
  * 契约：
- *   1. 导出表里有 `default`（键名就是 `default`）；
- *   2. 默认导出的**局部名不进导出表**（否则 `import { makeThing }` 假绿）；
- *   3. 桥接层不把局部名抬成具名导出（包名键的 `named` 里没有 `makeThing`）。
+ * 1. 导出表里有 `default`（键名就是 `default`）；
+ * 2. 默认导出的**局部名不进导出表**（否则 `import { makeThing }` 假绿）；
+ * 3. 桥接层不把局部名抬成具名导出（包名键的 `named` 里没有 `makeThing`）。
  *
  * 桥接层的另一半（包名键的 `default` 槽 + 扫描面登记 `default`）由 H7 并发修好
  * （`harvest-package.ts` 的 `scanDtsFile` 现在对 `export default function/class`
@@ -835,7 +835,7 @@ function pkgOf(pkg: string, file: string): PackageHarvest {
   return { pkg, root: join(file, ".."), dtsFiles: [file], env: harvestDts([file]) };
 }
 
-describe("Bug 814 —— `export default` 进导出表，局部名不进", () => {
+describe("`export default` 进导出表，局部名不进", () => {
   it("`export default function makeThing()` ⇒ 导出表有 default，没有 makeThing", () => {
     const p = writeTemp("fx.d.ts", `export default function makeThing(): number;\n`);
     const env = harvestDts([p]);
@@ -880,16 +880,16 @@ describe("Bug 814 —— `export default` 进导出表，局部名不进", () =>
 });
 
 // ---------------------------------------------------------------------------
-// Bug 815 —— `export { X as Y }` 不再整条丢弃
+// `export { X as Y }` 不再整条丢弃
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 815 —— `export { X as Y }` 不再整条丢弃", () => {
+describe("`export { X as Y }` 不再整条丢弃", () => {
 /**
- * Bug 815 回归（harvester 收割面）：`export { X as Y }`（本地改名再导出）被**整条丢弃**
+ * 回归（harvester 收割面）：`export { X as Y }`（本地改名再导出）被**整条丢弃**
  * ⇒ 改名后的导出根本不存在（假警告）。
  *
  * oracle（`tsc --strict`，见 tmp/probe/fix-r27/h4/）：
  * - `declare function foo(): number; export { foo as bar };` ⇒ 模块导出面是 `["bar"]`
- *   （`bar` 是**运行时值**，`foo` 只是局部名 ⇒ 不在导出面里）。
+ * （`bar` 是**运行时值**，`foo` 只是局部名 ⇒ 不在导出面里）。
  * - `export { foo as default }` ⇒ 默认导入拿得到 `foo`。
  *
  * 契约：改名后的导出名必须进导出表，且拿到的是**局部绑定的值**（不是 unknown）。
@@ -914,7 +914,7 @@ function writeTemp(name: string, content: string): string {
   return p;
 }
 
-describe("Bug 815 —— `export { X as Y }` 不再整条丢弃", () => {
+describe("`export { X as Y }` 不再整条丢弃", () => {
   it("函数改名再导出 ⇒ 导出表里有 `bar`，值是局部绑定的签名", () => {
     const p = writeTemp(
       "fx.d.ts",
@@ -960,16 +960,16 @@ describe("Bug 815 —— `export { X as Y }` 不再整条丢弃", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 817 —— `export * from` 与模块自有声明合并
+// `export * from` 与模块自有声明合并
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 817 —— `export * from` 与模块自有声明合并", () => {
+describe("`export * from` 与模块自有声明合并", () => {
 /**
- * Bug 817 回归（harvester 收割面）：`export * from` 的别名应用是**整记录替换**
+ * 回归（harvester 收割面）：`export * from` 的别名应用是**整记录替换**
  * （`!ctx.modules[alias]` 守卫）⇒ **有自有声明的模块**把星号再导出的名字**整批丢掉**。
  *
  * oracle（`tsc --strict`，见 tmp/probe/fix-r27/h4/）：
  * - `declare module "fs" { export * from "node:fs"; export function extra(): number; }`
- *   ⇒ 模块 "fs" 的导出面 = 星号再导出的名字 **加上** `extra`（两者都在）。
+ * ⇒ 模块 "fs" 的导出面 = 星号再导出的名字 **加上** `extra`（两者都在）。
  *
  * 契约：别名模块的导出表 = 星号再导出的名字 ∪ 模块自己的声明（自己的优先）。
  */
@@ -993,7 +993,7 @@ function writeTemp(name: string, content: string): string {
   return p;
 }
 
-describe("Bug 817 —— `export * from` 与模块自有声明合并", () => {
+describe("`export * from` 与模块自有声明合并", () => {
   it("有自有声明的模块不再丢掉星号再导出的名字", () => {
     const p = writeTemp(
       "fx.d.ts",
@@ -1055,23 +1055,23 @@ declare module "c" {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 818 —— `declare module "x" { export = <本地类> }` 生成模块记录
+// `declare module "x" { export = <本地类> }` 生成模块记录
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 818 —— `declare module \"x\" { export = <本地类> }` 生成模块记录", () => {
+describe("`declare module \"x\" { export = <本地类> }` 生成模块记录", () => {
 /**
- * Bug 818 回归（harvester 收割面）：`export = <本地类/常量>`（@types/node 的 CJS 形态）
+ * 回归（harvester 收割面）：`export = <本地类/常量>`（@types/node 的 CJS 形态）
  * ⇒ **整个模块记录不生成**（`ctx.skipped++` 静默丢弃）。
  *
  * oracle（`tsc --strict`，见 tmp/probe/fix-r27/h4/ts-oracle/）：
  * - `declare class Buffer { … }; declare module "buffer" { export = Buffer; }`
- *   ⇒ `import B from "./cls.js"` 合法（默认导入拿到类）；
- *   `import { Buffer } from "./cls.js"` 是 **TS2595**（`'Buffer' can only be imported by
- *   using a default import`）⇒ 导出表**不得**提供具名导出 `Buffer`（否则假绿）。
+ * ⇒ `import B from "./cls.js"` 合法（默认导入拿到类）；
+ * `import { Buffer } from "./cls.js"` 是 **TS2595**（`'Buffer' can only be imported by
+ * using a default import`）⇒ 导出表**不得**提供具名导出 `Buffer`（否则假绿）。
  *
  * 契约：
- *   1. 模块记录**生成**，`default` = 被导出实体的值；
- *   2. 不生成具名导出 `Buffer`（TS 侧 TS2595）；
- *   3. 东西不再被丢 ⇒ `stats.skipped` 不再因为它而涨（汇总行如实反映）。
+ * 1. 模块记录**生成**，`default` = 被导出实体的值；
+ * 2. 不生成具名导出 `Buffer`（TS 侧 TS2595）；
+ * 3. 东西不再被丢 ⇒ `stats.skipped` 不再因为它而涨（汇总行如实反映）。
  */
 
 
@@ -1093,7 +1093,7 @@ function writeTemp(name: string, content: string): string {
   return p;
 }
 
-describe("Bug 818 —— `declare module \"x\" { export = <本地类> }` 生成模块记录", () => {
+describe("`declare module \"x\" { export = <本地类> }` 生成模块记录", () => {
   it("模块记录生成，default = 被导出实体的值，且不产生具名导出", () => {
     const p = writeTemp(
       "fx.d.ts",
@@ -1137,16 +1137,16 @@ declare module "ver" { export = version; }
 });
 
 // ---------------------------------------------------------------------------
-// Bug 820 —— 导出表与 .d.ts 遍历顺序无关
+// 导出表与 .d.ts 遍历顺序无关
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 820 —— 导出表与 .d.ts 遍历顺序无关", () => {
+describe("导出表与 .d.ts 遍历顺序无关", () => {
 /**
- * Bug 820 回归（harvester 收割面）：`export { X }` 的「是不是值」判定发生在 **Phase 1**
+ * 回归（harvester 收割面）：`export { X }` 的「是不是值」判定发生在 **Phase 1**
  * ⇒ 模块导出表随 **`.d.ts` 遍历顺序**变（同一份声明，换个文件顺序就少一个导出）。
  *
  * oracle（`tsc --strict`，见 tmp/probe/fix-r27/h4/）：
  * - `declare module "pkg-a" { export { Widget }; }` + `export interface Widget { size: number; }`
- *   ⇒ 两种遍历顺序下模块 "pkg-a" 的导出面**逐项相同**（都是 `["Widget"]`）。
+ * ⇒ 两种遍历顺序下模块 "pkg-a" 的导出面**逐项相同**（都是 `["Widget"]`）。
  *
  * 契约：同一组 `.d.ts` 换遍历顺序 ⇒ 导出表**逐项相同**（模块键、导出名、导出值都一致）。
  */
@@ -1184,7 +1184,7 @@ function snapshot(files: string[]): Record<string, Record<string, string>> {
   return out;
 }
 
-describe("Bug 820 —— 导出表与 .d.ts 遍历顺序无关", () => {
+describe("导出表与 .d.ts 遍历顺序无关", () => {
   it("再导出在前 / 声明在后 ⇒ 两种顺序逐项相同", () => {
     const reexport = writeTemp(
       "a-reexport.d.ts",
@@ -1224,22 +1224,22 @@ describe("Bug 820 —— 导出表与 .d.ts 遍历顺序无关", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 824 —— 顶层 `export = X` 进 default 导出
+// 顶层 `export = X` 进 default 导出
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 824 —— 顶层 `export = X` 进 default 导出", () => {
+describe("顶层 `export = X` 进 default 导出", () => {
 /**
- * Bug 824 回归（harvester 收割面）：模块级 `.d.ts` **顶层的 CJS `export = X`** 整个被丢弃
+ * 回归（harvester 收割面）：模块级 `.d.ts` **顶层的 CJS `export = X`** 整个被丢弃
  * ⇒ 该包**没有 `default` 导出** ⇒ ESM 默认导入（`import _ from "pkg"`）落 `unknown` + 假警告。
  *
  * oracle（`tsc --strict`，见 tmp/probe/fix-r27/h4/ts-oracle/use-default.ts，tsc exit=0）：
  * - `export = _; declare const _: _.LoDashStatic;` ⇒ `import _ from "./cjs.js"` 合法
- *   （开 `allowSyntheticDefaultImports`），默认导入拿到 `_` 的类型。
+ * （开 `allowSyntheticDefaultImports`），默认导入拿到 `_` 的类型。
  * - Node 的 cjs↔esm 互操作：`module.exports = _` ⇒ ESM 侧 `default` = `_`。
  *
  * 契约：
- *   1. 顶层 `export = X` ⇒ 收割面的 `default` = X 的值；
- *   2. 桥接层把它提升成包的 `default` 导出（默认导入不再是 unknown）；
- *   3. 不再静默丢弃 ⇒ `stats.skipped` 不因它而涨。
+ * 1. 顶层 `export = X` ⇒ 收割面的 `default` = X 的值；
+ * 2. 桥接层把它提升成包的 `default` 导出（默认导入不再是 unknown）；
+ * 3. 不再静默丢弃 ⇒ `stats.skipped` 不因它而涨。
  */
 
 
@@ -1267,7 +1267,7 @@ function pkgOf(pkg: string, file: string): PackageHarvest {
   return { pkg, root: join(file, ".."), dtsFiles: [file], env: harvestDts([file]) };
 }
 
-describe("Bug 824 —— 顶层 `export = X` 进 default 导出", () => {
+describe("顶层 `export = X` 进 default 导出", () => {
   it("顶层 `export = _` ⇒ 收割面有 default（值 = _ 的类型）", () => {
     const p = writeTemp(
       "fx.d.ts",
@@ -1318,11 +1318,11 @@ declare class Widget { size: number; }
 });
 
 // ---------------------------------------------------------------------------
-// Bug 831 —— 接口成员提升不得抢真实导出的名字
+// 接口成员提升不得抢真实导出的名字
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 831 —— 接口成员提升不得抢真实导出的名字", () => {
+describe("接口成员提升不得抢真实导出的名字", () => {
 /**
- * Bug 831 回归（harvester 收割面）：「**接口成员提升**」把**非导出实体**写进模块导出表
+ * 回归（harvester 收割面）：「**接口成员提升**」把**非导出实体**写进模块导出表
  * ⇒ **真实导出整条被丢弃**（先到先得）⇒ L2 假红；且提升出的「幽灵导出」让
  * **不存在的导入**被当成真实导出。
  *
@@ -1330,18 +1330,18 @@ describe("[harvest-] Bug 831 —— 接口成员提升不得抢真实导出的�
  * **之前** ⇒ 物化时「同名先到先得」⇒ 真实导出被挤掉。
  *
  * 夹具（tmp/probe/fix-r27/h3/e2e/realLast/）：
- *   export interface Point { x: number; y: number; }
- *   export declare const origin: Point;
- *   export declare function x(): string;     ← 与接口成员 x 同名
+ * export interface Point { x: number; y: number; }
+ * export declare const origin: Point;
+ * export declare function x(): string; ← 与接口成员 x 同名
  *
  * 改前（产品面）：`nudo check` FAILED（`use() => never throws TypeError`）——
- *   真实导出 `x(): string` 被接口成员 `x: number` 顶掉 ⇒ 调用被判「对 number 调用」。
- *   只把两行换个顺序（realFirst）就翻成 OK ⇒ **同一份声明，顺序决定门禁**。
+ * 真实导出 `x(): string` 被接口成员 `x: number` 顶掉 ⇒ 调用被判「对 number 调用」。
+ * 只把两行换个顺序（realFirst）就翻成 OK ⇒ **同一份声明，顺序决定门禁**。
  * 改后：两种顺序都 OK，`use() => string`。
  *
  * oracle（`tsc --strict`，tmp/probe/fix-r27/h3/oracle/o831.ts）：exit=0
- *   ⇒ TS 侧 `x` 就是那个函数导出；接口成员 `size` 从未被导出 ⇒ `import { size }`
- *   在 TS 侧是 TS2305（模块没有该导出）⇒ 收割面不得把它当成导出。
+ * ⇒ TS 侧 `x` 就是那个函数导出；接口成员 `size` 从未被导出 ⇒ `import { size }`
+ * 在 TS 侧是 TS2305（模块没有该导出）⇒ 收割面不得把它当成导出。
  */
 
 
@@ -1403,7 +1403,7 @@ export declare function x(): string;
 export declare const origin: Point;
 `;
 
-describe("Bug 831 —— 接口成员提升不得抢真实导出的名字", () => {
+describe("接口成员提升不得抢真实导出的名字", () => {
   it("同名真实导出存活（不被接口成员顶掉）", () => {
     const p = writeTemp("last.d.ts", REAL_LAST);
     const env = harvestDts([p]);
@@ -1459,11 +1459,11 @@ export declare function other(): string;
 });
 
 // ---------------------------------------------------------------------------
-// Bug 833 — 包根解析：包自带 types 优先于同名 @types
+// 包根解析：包自带 types 优先于同名 @types
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 833 — 包根解析：包自带 types 优先于同名 @types", () => {
+describe("包根解析：包自带 types 优先于同名 @types", () => {
 /**
- * Bug 833 — harvester 的**包根解析无条件优先 `@types/<pkg>`**
+ * harvester 的**包根解析无条件优先 `@types/<pkg>`**
  * ⇒ 收割到陈旧的 @types 声明（另一个版本的 API）⇒ 签名错（string 折成 number）且**零诊断**。
  *
  * 口径（与 TypeScript / Node 一致）：
@@ -1490,7 +1490,7 @@ function returnTypeOf(a: Abs | undefined): string {
   return s.k === "prim" ? (s.type ?? s.k) : s.k;
 }
 
-describe("Bug 833 — 包根解析：包自带 types 优先于同名 @types", () => {
+describe("包根解析：包自带 types 优先于同名 @types", () => {
   let dir: string;
   let pkgRoot: string;
   let typesRoot: string;
@@ -1552,11 +1552,11 @@ describe("Bug 833 — 包根解析：包自带 types 优先于同名 @types", ()
 });
 
 // ---------------------------------------------------------------------------
-// Bug 835 — 包名键 = 该包自己的顶层导出；子路径不回落包名键
+// 包名键 = 该包自己的顶层导出；子路径不回落包名键
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 835 — 包名键 = 该包自己的顶层导出；子路径不回落包名键", () => {
+describe("包名键 = 该包自己的顶层导出；子路径不回落包名键", () => {
 /**
- * Bug 835 — harvester 的「**包名键**」导出表 = **第一个 `declare module` 记录**，
+ * harvester 的「**包名键**」导出表 = **第一个 `declare module` 记录**，
  * 且**盖住包自身的顶层导出** ⇒ `import { x } from "pkg"` 拿到另一个模块的同名导出；
  * 子路径说明符又**回落**到包名键 ⇒ 两个方向都拿到**错的确切类型**，且**零诊断**。
  *
@@ -1595,7 +1595,7 @@ function writePkg(root: string, name: string, files: Record<string, string>): vo
   }
 }
 
-describe("Bug 835 — 包名键 = 该包自己的顶层导出；子路径不回落包名键", () => {
+describe("包名键 = 该包自己的顶层导出；子路径不回落包名键", () => {
   let dir: string;
   let appDir: string;
   let prevCache: string | undefined;
@@ -1663,11 +1663,11 @@ describe("Bug 835 — 包名键 = 该包自己的顶层导出；子路径不回�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 960 —— --from-dts 的运行时导出面
+// --from-dts 的运行时导出面
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 960 —— --from-dts 的运行时导出面", () => {
+describe("--from-dts 的运行时导出面", () => {
 /**
- * Bug 960 —— `nudo contract --from-dts` 的**草稿面**把 5 类**运行时导出**
+ * `nudo contract --from-dts` 的**草稿面**把 5 类**运行时导出**
  * 整条丢弃（`export {x} from` / `export * from` / `enum` / `namespace` /
  * 匿名 `export default function`），且**汇总行报「0 skipped」** ⇒ 丢失**零信号**；
  * 而**同一 harvester 的收割面 `harvestDts` 对同一文件看得见 `Color`（enum）**
@@ -1675,11 +1675,11 @@ describe("[harvest-] Bug 960 —— --from-dts 的运行时导出面", () => {
  *
  * 修法（草稿面）：
  * 1. `collectExports` 补齐语句分支：`enum` / `namespace`（**运行时对象** ⇒
- *    投影成 shape）、`export {x} from` / `export * from` / `export * as ns from`
- *    （**导出名逐个 push + note** ⇒ 看得见）、匿名 `export default function`
- *    （与匿名 class **同款**处理）；
+ * 投影成 shape）、`export {x} from` / `export * from` / `export * as ns from`
+ * （**导出名逐个 push + note** ⇒ 看得见）、匿名 `export default function`
+ * （与匿名 class **同款**处理）；
  * 2. **无法建模的导出也要 `push({name, note, kind})`** ⇒ 进 `stats.skipped`
- *    ⇒ 汇总行说真话。
+ * ⇒ 汇总行说真话。
  *
  * 反向闸：改前（5 类里 3 类整条消失 + 汇总行报「0 skipped」）⇒ 本文件失败。
  */
@@ -1694,7 +1694,7 @@ afterAll(() => {
   for (const d of dirs) rmSync(d, { recursive: true, force: true });
 });
 
-/** 报告 §Bug 960 的夹具：6 个运行时导出面 */
+/** 报告 §的夹具：6 个运行时导出面 */
 const RUNTIME_DTS = `export declare function alpha(x: number): string;
 export { beta } from "./other";
 export * from "./other";
@@ -1711,7 +1711,7 @@ function writeDts(name: string, src: string): string {
   return file;
 }
 
-describe("Bug 960 —— --from-dts 的运行时导出面", () => {
+describe("-from-dts 的运行时导出面", () => {
   it("`enum` 是运行时导出 ⇒ 进草稿（收割面看得见 `Color`）", () => {
     const file = writeDts("types.d.ts", RUNTIME_DTS);
     const draft = dtsToContractDraft([file], "types");
@@ -1775,11 +1775,11 @@ describe("Bug 960 —— --from-dts 的运行时导出面", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-123 —— 接口成员不得注册成模块导出
+// 接口成员不得注册成模块导出
 // ---------------------------------------------------------------------------
-describe("[harvest-] BUG-123 —— 接口成员不得注册成模块导出", () => {
+describe("接口成员不得注册成模块导出", () => {
 /**
- * BUG-123 回归：`declare module "pkg" { interface Opts { x; y } const o: Opts; }`
+ * 回归：`declare module "pkg" { interface Opts { x; y } const o: Opts; }`
  * —— 接口成员 `x` / `y` 是**接口成员提升**出来的，不是模块导出
  * （TS：`import { x }` ⇒ TS2305）⇒ 模块记录 / 包导出表都不得登记它们。
  *
@@ -1815,7 +1815,7 @@ function fixture(): PackageHarvest {
   return { pkg: "ghostpkg", root: dir, dtsFiles: [file], env: harvestDts([file]) };
 }
 
-describe("BUG-123 —— 接口成员不得注册成模块导出", () => {
+describe("接口成员不得注册成模块导出", () => {
   it("declare module 记录的导出表只含真实声明（o / real）", () => {
     const h = fixture();
     // 白盒：x / y 仍在记录里（brand 面要用），但被标记成「提升」
@@ -1843,11 +1843,11 @@ describe("BUG-123 —— 接口成员不得注册成模块导出", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-143 —— export declare namespace 进导出面
+// export declare namespace 进导出面
 // ---------------------------------------------------------------------------
-describe("[harvest-] BUG-143 —— export declare namespace 进导出面", () => {
+describe("export declare namespace 进导出面", () => {
 /**
- * BUG-143 回归：`export declare namespace Space { … }` 被导出面扫描器一起跳过
+ * 回归：`export declare namespace Space { … }` 被导出面扫描器一起跳过
  * （`NamespaceDeclaration` 与 ambient module 共用 `ModuleDeclaration` 节点）
  * ⇒ 整块 API 漏导出（裸包 import 拿到 unknown、零信号），而契约草稿面却登记了它。
  *
@@ -1891,7 +1891,7 @@ function writePkg(): { pkg: string; dir: string; entry: string } {
   return { pkg, dir, entry };
 }
 
-describe("BUG-143 —— export declare namespace 进导出面", () => {
+describe("export declare namespace 进导出面", () => {
   it("导出面扫描登记 Space（不只是 plain）", () => {
     const { entry } = writePkg();
     const scan = dtsFileScan(entry);
@@ -1912,11 +1912,11 @@ describe("BUG-143 —— export declare namespace 进导出面", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-212 —— namespace 先声明时函数不得被丢弃
+// namespace 先声明时函数不得被丢弃
 // ---------------------------------------------------------------------------
-describe("[harvest-] BUG-212 —— namespace 先声明时函数不得被丢弃", () => {
+describe("namespace 先声明时函数不得被丢弃", () => {
 /**
- * BUG-212 回归：`nsSlotsByName` 的 set / get 键不对称（写带 `\0` 分隔符、读漏掉）
+ * 回归：`nsSlotsByName` 的 set / get 键不对称（写带 `\0` 分隔符、读漏掉）
  * ⇒ `.d.ts` 里 **namespace 先声明**、同名 function 后声明时**函数被整条丢弃**
  * ⇒ 调用它被判 `throws TypeError` ⇒ L2 假红（tsc 判绿、宿主可调用）。
  *
@@ -1963,7 +1963,7 @@ function staticSlots(a: Abs): Record<string, Slot> {
   return s.k === "fn" ? (s.slots ?? {}) : {};
 }
 
-describe("BUG-212 —— namespace 先声明时函数不得被丢弃", () => {
+describe("namespace 先声明时函数不得被丢弃", () => {
   it("ns-first：helper 是可调用函数（不是命名空间对象）", () => {
     const h = helperOf(NS_FIRST);
     expect(h.shape.k).toBe("fn");
@@ -1983,11 +1983,11 @@ describe("BUG-212 —— namespace 先声明时函数不得被丢弃", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-253 —— 顶层值位置接口声明不得产生幽灵全局
+// 顶层值位置接口声明不得产生幽灵全局
 // ---------------------------------------------------------------------------
-describe("[harvest-] BUG-253 —— 顶层值位置接口声明不得产生幽灵全局", () => {
+describe("顶层值位置接口声明不得产生幽灵全局", () => {
 /**
- * BUG-253 回归（harvester 全局面）：顶层「值位置接口声明」的接口成员
+ * 回归（harvester 全局面）：顶层「值位置接口声明」的接口成员
  * **不得**提升成全局符号。
  *
  * `export declare const o: Opts;` 里的成员在 TypeScript 中只在 `Opts` 内部
@@ -2028,7 +2028,7 @@ const MODULE_SCOPE = `declare module "m" {
 }
 `;
 
-describe("BUG-253 —— 顶层值位置接口声明不得产生幽灵全局", () => {
+describe("顶层值位置接口声明不得产生幽灵全局", () => {
   it("控制组：单独声明 interface 不产生任何全局（基线）", () => {
     const p = writeTemp("ctl.d.ts", `export interface Opts { x?: number; y: string; }\n`);
     const env = harvestDts([p]);
@@ -2061,15 +2061,15 @@ describe("BUG-253 —— 顶层值位置接口声明不得产生幽灵全局", (
 });
 
 // ---------------------------------------------------------------------------
-// BUG-253 —— 接口成员不得落成 env 模块的全局
+// 接口成员不得落成 env 模块的全局
 // ---------------------------------------------------------------------------
-describe("[harvest-] BUG-253 —— 接口成员不得落成 env 模块的全局", () => {
+describe("接口成员不得落成 env 模块的全局", () => {
 /**
- * BUG-253 回归：顶层「值位置接口声明」的**接口成员**被提升成 envoy 模块的
+ * 回归：顶层「值位置接口声明」的**接口成员**被提升成 envoy 模块的
  * **全局** ⇒ 引用该 env 的工程里裸写 `x` 被判 `number | undefined`，而 tsc 报
  * TS2304 ⇒ 假绿。
  *
- * 口径（BUG-253 完整修法）：成员提升**只对模块作用域**成立。顶层值位置声明
+ * 口径（完整修法）：成员提升**只对模块作用域**成立。顶层值位置声明
  * （`export declare const o: Opts;`）的 `p.scope` 是全局作用域 ⇒ 那里**不提升**
  * ⇒ 收割面的 `env.globals` 本身就不含 `x` / `y`（早先只在出口
  * `emitEnvModule` 过滤，收割面仍留着幽灵名字；现已消除源头）。
@@ -2098,7 +2098,7 @@ export declare const o: Opts;
 `;
 const WITHOUT_VALUE_DECL = "export interface Opts { x?: number; y: string; }\n";
 
-describe("BUG-253 —— 接口成员不得落成 env 模块的全局", () => {
+describe("接口成员不得落成 env 模块的全局", () => {
   it("收割面不产生提升成员（x / y 只在接口内部可见）", () => {
     const env = harvestDts([writeTemp(WITH_VALUE_DECL)]);
     expect([...promotedNamesOf(env.globals)]).toEqual([]);
@@ -2121,11 +2121,11 @@ describe("BUG-253 —— 接口成员不得落成 env 模块的全局", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-265 —— 「公开面不可知」回落不得把模块私有声明当导出
+// 「公开面不可知」回落不得把模块私有声明当导出
 // ---------------------------------------------------------------------------
-describe("[harvest-] BUG-265 —— 「公开面不可知」回落不得把模块私有声明当导出", () => {
+describe("「公开面不可知」回落不得把模块私有声明当导出", () => {
 /**
- * BUG-265 回归：包里只要有一条解析不了的 `export * from "<外部包>"`，
+ * 回归：包里只要有一条解析不了的 `export * from "<外部包>"`，
  * 「公开面不可知」回落就退成整个 globals 袋（只扣 ambient）⇒ **模块私有**
  * 顶层声明被提升成包导出 ⇒ nudo 接受 TS 拒绝的 import（TS2459）并给出自信值。
  *
@@ -2183,7 +2183,7 @@ function namedOf(dts: string): string[] {
   return Object.keys(modsOf(pkg, dir)[pkg]!.named).sort();
 }
 
-describe("BUG-265 —— 「公开面不可知」回落不得把模块私有声明当导出", () => {
+describe("「公开面不可知」回落不得把模块私有声明当导出", () => {
   it("存在未解析的 export *：helper（模块私有）不得出现在包导出集", () => {
     expect(namedOf(UNRESOLVED_STAR)).toEqual(["real"]);
   });
@@ -2199,11 +2199,11 @@ describe("BUG-265 —— 「公开面不可知」回落不得把模块私有声�
 });
 
 // ---------------------------------------------------------------------------
-// BUG-280 —— 磁盘回读保留声明字面量的精度
+// 磁盘回读保留声明字面量的精度
 // ---------------------------------------------------------------------------
-describe("[harvest-] BUG-280 —— 磁盘回读保留声明字面量的精度", () => {
+describe("磁盘回读保留声明字面量的精度", () => {
 /**
- * BUG-280 回归：磁盘投影丢 `conf` ⇒ 回读把**每个** Abs 标成 `mock` ⇒ 声明的
+ * 回归：磁盘投影丢 `conf` ⇒ 回读把**每个** Abs 标成 `mock` ⇒ 声明的
  * 字面量被 `widenUncertainLiteral` 放宽成基类型 ⇒ 同一份 `.d.ts`，缓存冷 / 热
  * 两次运行发布**不同**的 zod / standard 产物（热产物接受集更宽 ⇒ 消费端假绿）。
  *
@@ -2224,7 +2224,7 @@ function litValue(a: Abs): LiteralValue | undefined {
   return t?.op === "lit" ? t.value : undefined;
 }
 
-describe("BUG-280 —— 磁盘回读保留声明字面量的精度", () => {
+describe("磁盘回读保留声明字面量的精度", () => {
   it("单个声明字面量往返后 conf = exact（不是 mock）", () => {
     const back = harvestSigToAbs(absToHarvestSig(strLit("/")));
     expect(back.conf).toBe("exact");

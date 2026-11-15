@@ -17,9 +17,9 @@ import {
   takeServiceEntryFace,
 } from "../analyzer-ast.ts";
 
-/** BUG-015 形态：service 的对象字面量分支已收到 `a`，两面一致。 */
+/** 形态：service 的对象字面量分支已收到 `a`，两面一致。 */
 const DESTRUCTURED = `export const { a } = { a: () => 1 };`;
-/** BUG-016 形态：service 普查为空，索引登记 `m`。 */
+/** 形态：service 普查为空，索引登记 `m`。 */
 const DEFAULT_OBJECT = `export default { m() { return 1; } };`;
 const CONTROL = `export function f() { return 1; }`;
 

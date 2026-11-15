@@ -17,20 +17,20 @@ import { litValue } from "../abs.ts";
 import { parseSource as parseSource_____parse_source_ts, resetParseSourceCache } from "../parse-source.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 1032：粘连的函数级指令必须发诊断
+// 粘连的函数级指令必须发诊断
 // ---------------------------------------------------------------------------
-describe("[] Bug 1032：粘连的函数级指令必须发诊断", () => {
+describe("粘连的函数级指令必须发诊断", () => {
 /**
- * Bug 1032：函数级指令的**粘连**形态此前在扫描层**整行不匹配且无 else 分支**
+ * 函数级指令的**粘连**形态此前在扫描层**整行不匹配且无 else 分支**
  * ⇒ **零诊断**。
  *
  * - `@nudo:assumed d <= max`（引理）⇒ 公理被丢弃 ⇒ 返回契约从「已证明」退回
- *   「未证明」，而唯一信号是**归因错误**的 `nudo:unproven-return`。
+ * 「未证明」，而唯一信号是**归因错误**的 `nudo:unproven-return`。
  * - `@nudo:invariantdp >= 0`（不变量）⇒ 同款无声蒸发。
  * - `@nudo:throwsTypeError`（抛错申报）⇒ 申报无声蒸发 ⇒ L2 门禁按「未申报」
- *   执法（假红），而用户以为申报生效了。
+ * 执法（假红），而用户以为申报生效了。
  *
- * 修复：扫描层**看得见**粘连形态（口径与族 28 的 Bug 980 一致）⇒
+ * 修复：扫描层**看得见**粘连形态（口径与族 28 的 一致）⇒
  * - 引理 / 不变量 ⇒ **坏段**通道 ⇒ `nudo:assume-invalid` / `nudo:invariant-invalid`
  * - 抛错申报 ⇒ `nudo:directive-syntax`
  * （**不另造新码**）
@@ -42,7 +42,7 @@ function check(src: string, file = "/t/bug-1032.js") {
   return checkSource(file, src, pTrue);
 }
 
-describe("Bug 1032：粘连的函数级指令必须发诊断", () => {
+describe("粘连的函数级指令必须发诊断", () => {
   it("@nudo:assumed → nudo:assume-invalid（error）", () => {
     const r = check(`
 /**
@@ -113,11 +113,11 @@ export function ok(d, max, dp) {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1092: 文本路径 — class 体 / 对象体里的文件级指令不提升为文件级
+// 文本路径 — class 体 / 对象体里的文件级指令不提升为文件级
 // ---------------------------------------------------------------------------
-describe("[] Bug 1092: 文本路径 — class 体 / 对象体里的文件级指令不提升为文件级", () => {
+describe("文本路径 — class 体 / 对象体里的文件级指令不提升为文件级", () => {
 /**
- * Bug 1092 回归：core **文本路径**（`directive-scan.ts`）的文件级指令位置闸门
+ * 回归：core **文本路径**（`directive-scan.ts`）的文件级指令位置闸门
  * 漏掉 **class 体 / 对象字面量体** ⇒ 方法 / 字段上方的 `/// @nudo:env web`
  * 被**静默提升**成**整文件** env（零诊断）。
  *
@@ -159,7 +159,7 @@ const IMPORT_IN_CLASS = `export class A {
 }
 `;
 
-describe("Bug 1092: 文本路径 — class 体 / 对象体里的文件级指令不提升为文件级", () => {
+describe("文本路径 — class 体 / 对象体里的文件级指令不提升为文件级", () => {
   it("env inside a class body is not file-wide", () => {
     expect(extractFileEnvNames(ENV_IN_CLASS)).toEqual([]);
   });
@@ -177,7 +177,7 @@ describe("Bug 1092: 文本路径 — class 体 / 对象体里的文件级指令�
   });
 });
 
-describe("Bug 1092: 负控制（顶层位置不回归）", () => {
+describe("负控制（顶层位置不回归）", () => {
   it("class **声明上方**的 env 仍是文件级（合法顶层位置）", () => {
     expect(
       extractFileEnvNames(`/// @nudo:env node\nexport class A { m() {} }\n`),
@@ -199,17 +199,17 @@ describe("Bug 1092: 负控制（顶层位置不回归）", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1102: 文本路径 — 数组体 / 解构模式体里的文件级指令不提升为文件级
+// 文本路径 — 数组体 / 解构模式体里的文件级指令不提升为文件级
 // ---------------------------------------------------------------------------
-describe("[] Bug 1102: 文本路径 — 数组体 / 解构模式体里的文件级指令不提升为文件级", () => {
+describe("文本路径 — 数组体 / 解构模式体里的文件级指令不提升为文件级", () => {
 /**
- * Bug 1102 回归：core **文本路径**（`directive-scan.ts`）的文件级指令位置闸门
+ * 回归：core **文本路径**（`directive-scan.ts`）的文件级指令位置闸门
  * 漏掉 **array 字面量体（`ArrayExpression`）** 与 **解构模式体（`ObjectPattern`）**
  * ⇒ 写在数组元素 / 解构键**上方**的 `/// @nudo:env web` 被**静默提升**成
  * **整文件** env（零诊断）。
  *
- * 根因：闸门区间只覆盖「函数体」（Bug 847）+「类体 / 对象字面量体」
- * （Bug 1088）；数组字面量体与解构模式体同属**嵌套体**，却**不在**闸门区间内。
+ * 根因：闸门区间只覆盖「函数体」（）+「类体 / 对象字面量体」
+ * （）；数组字面量体与解构模式体同属**嵌套体**，却**不在**闸门区间内。
  *
  * 与 parser 的 AST 路径同款修复（`packages/parser/src/directives/file-directives.ts`
  * 的 `nestedBodyRanges`，见 `parser--file-directive-gate-hole.part.ts`）：
@@ -261,7 +261,7 @@ const IMPORT_IN_OBJECT_PATTERN = `export const {
 } = obj;
 `;
 
-describe("Bug 1102: 文本路径 — 数组体 / 解构模式体里的文件级指令不提升为文件级", () => {
+describe("文本路径 — 数组体 / 解构模式体里的文件级指令不提升为文件级", () => {
   it("env inside an array literal body is not file-wide", () => {
     expect(extractFileEnvNames(ENV_IN_ARRAY)).toEqual([]);
   });
@@ -287,7 +287,7 @@ describe("Bug 1102: 文本路径 — 数组体 / 解构模式体里的文件级�
   });
 });
 
-describe("Bug 1102: 负控制（合法顶层位置不回归）", () => {
+describe("负控制（合法顶层位置不回归）", () => {
   it("数组**声明上方**的 env 仍是文件级", () => {
     expect(extractFileEnvNames(`/// @nudo:env node\nexport const a = [1, 2];\n`)).toEqual([
       "node",
@@ -327,23 +327,23 @@ describe("Bug 1102: 负控制（合法顶层位置不回归）", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1117：switch 分组 case 标签的 hit 收窄必须安全
+// switch 分组 case 标签的 hit 收窄必须安全
 // ---------------------------------------------------------------------------
-describe("[] Bug 1117：switch 分组 case 标签的 hit 收窄必须安全", () => {
+describe("switch 分组 case 标签的 hit 收窄必须安全", () => {
 /**
- * Bug 1117 —— switch **分组 case 标签**的 `hit` 收窄不安全 ⇒ L2 may-throw 假绿。
+ * switch **分组 case 标签**的 `hit` 收窄不安全 ⇒ L2 may-throw 假绿。
  *
  * 根因（core/algebra/exec/transpile/stmt-predicates.ts 的 `switchCaseFacts` +
  * `narrowCaseLabelArmThunk`，本分支新增）：
  * - `switchCaseFacts` 只用**原始 prim 标签**算 `hit`，**忽略** `mine.nullish`
- *   （`case null:`）与**非字面量** case 测试（`case v === null:`）⇒ 一个
- *   共享体的多标签臂（`case null: case "ab":`）也被判成「命中值 = "ab"」。
+ * （`case null:`）与**非字面量** case 测试（`case v === null:`）⇒ 一个
+ * 共享体的多标签臂（`case null: case "ab":`）也被判成「命中值 = "ab"」。
  * - `narrowCaseLabelArmThunk` 据此把判别量**重绑**为那些字面量。
  *
  * 后果（假绿）：
- *   `const x = null; switch (x) { case null: case "ab": return x.length; }`
- *   原生：`case null` 命中（`null === null`）⇒ `null.length` ⇒ **TypeError**；
- *   引擎按源码推导读 `"ab".length` = 2 ⇒ **L2 may-throw 消失**（假绿）。
+ * `const x = null; switch (x) { case null: case "ab": return x.length; }`
+ * 原生：`case null` 命中（`null === null`）⇒ `null.length` ⇒ **TypeError**；
+ * 引擎按源码推导读 `"ab".length` = 2 ⇒ **L2 may-throw 消失**（假绿）。
  *
  * 修法：只有当**同体所有标签都是原始字面量**（无 nullish 标签、无非字面量
  * 测试）时才应用 `hit` 收窄；其余形态**不产命中事实**（宁缺毋假）。
@@ -366,7 +366,7 @@ function check(src: string, file = "/t/bug1117.js") {
   return checkSource(file, withStdImport(src), pTrue, stdOpts);
 }
 
-describe("Bug 1117：switch 分组 case 标签的 hit 收窄必须安全", () => {
+describe("switch 分组 case 标签的 hit 收窄必须安全", () => {
   beforeEach(() => {
     resetEngineCaches();
     takeRefineDiags();
@@ -491,28 +491,28 @@ export function f() {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1118 — 多行 `@nudo:case … !! throws` 声明不再丢失
+// 多行 `@nudo:case … !! throws` 声明不再丢失
 // ---------------------------------------------------------------------------
-describe("[] Bug 1118 — 多行 `@nudo:case … !! throws` 声明不再丢失", () => {
+describe("多行 `@nudo:case … !! throws` 声明不再丢失", () => {
 /**
- * Bug 1118 回归 —— **多行** `@nudo:case … !! throws` 声明**丢失** ⇒ 闸门**假红**。
+ * 回归 —— **多行** `@nudo:case … !! throws` 声明**丢失** ⇒ 闸门**假红**。
  *
  * 缺陷（假红）：
- *   `scanThrowsDecl` 的同行后缀正则要求 case 的两个括号**在同一行**
- *   （`\([^\n]*\)`），续行口径又要求**前一行**以 `@nudo:case` 开头 ⇒
- *   ```
- *   @nudo:case "neg" (
- *   0
- *   ) !! throws TypeError
- *   ```
- *   的申报**整条丢失** ⇒ `extractDeclaredThrows` 消费不到 ⇒ 用户**已申报**
- *   仍被 `nudo:entry-may-throw`（error 级）卡住 ⇒ CI 闸门**假红**。
+ * `scanThrowsDecl` 的同行后缀正则要求 case 的两个括号**在同一行**
+ * （`\([^\n]*\)`），续行口径又要求**前一行**以 `@nudo:case` 开头 ⇒
+ * ```
+ * @nudo:case "neg" (
+ * 0
+ * ) !! throws TypeError
+ * ```
+ * 的申报**整条丢失** ⇒ `extractDeclaredThrows` 消费不到 ⇒ 用户**已申报**
+ * 仍被 `nudo:entry-may-throw`（error 级）卡住 ⇒ CI 闸门**假红**。
  *
  * 修法（directive-scan.ts）：**先在完整注释文本里找到 case 实参的平衡终点**
  * （`extractBalancedParens`），**再**识别后缀 —— 不再靠「单行同括号」或
  * 「上一行是 case 行」推断；单行写法行为**逐字不变**。
  *
- * ⚠ 位置锚（Bug 1033）**不放宽**：散文行、case **名字**内部的同形文本、
+ * ⚠ 位置锚（）**不放宽**：散文行、case **名字**内部的同形文本、
  * `=> 1 !! throws`（后缀落在期望表达式一侧）仍然**不产申报**。
  */
 
@@ -554,7 +554,7 @@ const l2 = (src: string, file: string): number =>
   checkSource_____check_check_ts(file, src, pTrue_____pred_ts, {}).issues.filter((i) => i.code === "nudo:entry-may-throw")
     .length;
 
-describe("Bug 1118 — 多行 `@nudo:case … !! throws` 声明不再丢失", () => {
+describe("多行 `@nudo:case … !! throws` 声明不再丢失", () => {
   it("扫描层：多行实参的 case 后缀产出申报（修前：undefined）", () => {
     expect(
       scanThrowsDecl(['@nudo:case "neg" (', "0", ") !! throws TypeError"]),
@@ -611,24 +611,24 @@ export function boom(n) {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1120 — case 行尾 `!! throws` 正则不再二次回溯
+// case 行尾 `!! throws` 正则不再二次回溯
 // ---------------------------------------------------------------------------
-describe("[] Bug 1120 — case 行尾 `!! throws` 正则不再二次回溯", () => {
+describe("case 行尾 `!! throws` 正则不再二次回溯", () => {
 /**
- * Bug 1120 回归 —— case 行尾 `!! throws` 后缀正则**二次回溯**（性能 / DoS）。
+ * 回归 —— case 行尾 `!! throws` 后缀正则**二次回溯**（性能 / DoS）。
  *
  * 根因（directive-scan.ts，`CASE_THROWS_SUFFIX_TAIL_RE`）：
- *   旧式 `/!!\s*throws(?:\s+[A-Za-z*][\w*|,\s]*)?\s*$/i` 里，kind 组
- *   `[\w*|,\s]*` **含空白**，其后又有结尾 `\s*$` ⇒ 同一段空白有**多种切分**
- *   ⇒ 回溯**二次方**（实测：5 万空格 ≈ 1.7s；10 万空格 ≈ 6.7s）⇒ 一条
- *   注释就能把 CI / `nudo check` 打爆（DoS）。
+ * 旧式 `/!!\s*throws(?:\s+[A-Za-z*][\w*|,\s]*)?\s*$/i` 里，kind 组
+ * `[\w*|,\s]*` **含空白**，其后又有结尾 `\s*$` ⇒ 同一段空白有**多种切分**
+ * ⇒ 回溯**二次方**（实测：5 万空格 ≈ 1.7s；10 万空格 ≈ 6.7s）⇒ 一条
+ * 注释就能把 CI / `nudo check` 打爆（DoS）。
  *
  * 修法：kind 改成**无歧义**切分 —— token 内**不含空白**
  * （`[A-Za-z*][\w*|,]*`），空白只能落在 token **之间**（`token (空白 token)*`）
- *   ⇒ 空白切分**唯一** ⇒ 线性。
+ * ⇒ 空白切分**唯一** ⇒ 线性。
  *
  * ⚠ 语义**不变**：kind 组只用于**剥掉**后缀（组内容被丢弃）⇒ 剥除结果与
- *   旧式逐字一致（本断言逐字校验）。
+ * 旧式逐字一致（本断言逐字校验）。
  */
 
 
@@ -646,7 +646,7 @@ beforeEach(() => {
 /** 预算：修后线性（实测 ≈ 0ms）⇒ 给足余量仍远低于旧式的二次方耗时 */
 const BUDGET_MS = 2000;
 
-describe("Bug 1120 — case 行尾 `!! throws` 正则不再二次回溯", () => {
+describe("case 行尾 `!! throws` 正则不再二次回溯", () => {
   it("后缀不在行尾（尾部有其它字符）⇒ 不剥除，且耗时线性", () => {
     const n = 100000;
     const src = '@nudo:case "x" (0) => 1 !! throws T' + " ".repeat(n) + "!";
@@ -682,11 +682,11 @@ describe("Bug 1120 — case 行尾 `!! throws` 正则不再二次回溯", () => 
 });
 
 // ---------------------------------------------------------------------------
-// BUG-282：同名嵌套函数的 case 见证不对外层契约负责
+// 同名嵌套函数的 case 见证不对外层契约负责
 // ---------------------------------------------------------------------------
-describe("[] BUG-282：同名嵌套函数的 case 见证不对外层契约负责", () => {
+describe("同名嵌套函数的 case 见证不对外层契约负责", () => {
 /**
- * BUG-282 回归：`@nudo:case` 的**见证作用域**不得与 `@nudo:contract` 的
+ * 回归：`@nudo:case` 的**见证作用域**不得与 `@nudo:contract` 的
  * **契约作用域**按裸名字混在一起。
  *
  * 根因：`packages/core/src/algebra/check-case-scan.ts` 的 `scanCaseInconsistency`
@@ -705,7 +705,7 @@ describe("[] BUG-282：同名嵌套函数的 case 见证不对外层契约负责
 const caseIssues = (src: string, path: string) =>
   issuesOf(src, path).issues.filter((i) => i.code === "nudo:case-inconsistency");
 
-describe("BUG-282：同名嵌套函数的 case 见证不对外层契约负责", () => {
+describe("同名嵌套函数的 case 见证不对外层契约负责", () => {
   it("内层同名 function f() 的见证 ⇒ 不报 case-inconsistency", () => {
     const r = caseIssues(
       `/**
@@ -773,11 +773,11 @@ export function f(x) {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 287：导出名回收覆盖 $ / 非 ASCII
+// 导出名回收覆盖 $ / 非 ASCII
 // ---------------------------------------------------------------------------
-describe("[] Bug 287：导出名回收覆盖 $ / 非 ASCII", () => {
+describe("导出名回收覆盖 $ / 非 ASCII", () => {
 /**
- * Bug 287 —— 导出名回收正则的捕获组是 **ASCII-only**（`\w`）⇒ 任何含
+ * 导出名回收正则的捕获组是 **ASCII-only**（`\w`）⇒ 任何含
  * **`$`** 或**非 ASCII** 字符的**导出函数名被整条丢掉**：函数体**从不被
  * 分析** ⇒ 签名塌 `unknown` ⇒ 追加**假** `nudo:unknown-inference` ⇒
  * L2 `nudo:entry-may-throw` 门禁假绿。
@@ -793,7 +793,7 @@ describe("[] Bug 287：导出名回收覆盖 $ / 非 ASCII", () => {
 
 
 
-describe("Bug 287：导出名回收覆盖 $ / 非 ASCII", () => {
+describe("导出名回收覆盖 $ / 非 ASCII", () => {
   it("含 $ 的导出函数名被回收", () => {
     const exports = runTranspiled(`export function $d(x) { return x + 1; }`, {
       mode: "exec",
@@ -843,11 +843,11 @@ describe("Bug 287：导出名回收覆盖 $ / 非 ASCII", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 350: Unicode 标识符的指令文法
+// Unicode 标识符的指令文法
 // ---------------------------------------------------------------------------
-describe("[] Bug 350: Unicode 标识符的指令文法", () => {
+describe("Unicode 标识符的指令文法", () => {
 /**
- * Bug 350 回归：指令文法（`@nudo:assume` / `@nudo:invariant` / `@nudo:contract`
+ * 回归：指令文法（`@nudo:assume` / `@nudo:invariant` / `@nudo:contract`
  * 目标名）用 ASCII 正则 ⇒ **中文标识符**被判 malformed ⇒ L1 假红；而侧车面
  * 把同一个中文名当一等公民 ⇒ 跨面自相矛盾。
  *
@@ -863,7 +863,7 @@ beforeEach(() => {
   takeRefineDiags();
 });
 
-describe("Bug 350: Unicode 标识符的指令文法", () => {
+describe("Unicode 标识符的指令文法", () => {
   it("@nudo:assume 中文名 → 合法（不再是 malformed）", () => {
     const src = `
 /**
@@ -875,7 +875,7 @@ export function 差(小数, 大数) {
 `;
     const segs = extractAssumeSegs(src, "差");
     expect(segs).toHaveLength(1);
-    // Bug 374：段带指令位置（line/column）⇒ 用 toMatchObject（不锁死新字段）
+    // 段带指令位置（line/column）⇒ 用 toMatchObject（不锁死新字段）
     expect(segs[0]).toMatchObject({ kind: "ok", lhs: "小数", rhs: "大数" });
   });
 
@@ -990,18 +990,18 @@ export function inc(x) {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 371 — case 见证与字段级 / shape 契约对账
+// case 见证与字段级 / shape 契约对账
 // ---------------------------------------------------------------------------
-describe("[] Bug 371 — case 见证与字段级 / shape 契约对账", () => {
+describe("case 见证与字段级 / shape 契约对账", () => {
 /**
- * Bug 371 回归钉：`@nudo:case` 见证**从不与字段级 / shape 契约比对**
+ * 回归钉：`@nudo:case` 见证**从不与字段级 / shape 契约比对**
  * ⇒ 违反契约的见证**静默放行**（假绿，exit 0）。
  *
  * 改前有**两条独立**机制，任一条都足以让违例见证消失（只修一条不够）：
  * ① 字段级 / shape 契约**整条跳过**：`if (entry.constraint.fields) continue;`
- *    ⇒ 带 `fields` 的契约在见证面零义务；
+ * ⇒ 带 `fields` 的契约在见证面零义务；
  * ② 非字面量实参（对象 / 数组）**归一成 unknown 后静默 continue**
- *    ⇒ 对象 / 数组见证对任何契约都零义务。
+ * ⇒ 对象 / 数组见证对任何契约都零义务。
  *
  * 改后：对象 / 数组字面量解析成真 Abs（obj / tuple），shape 契约**逐字段**
  * 对账；缺字段 → `missing field <path>`；字段 prim 不符 → `typeof <path> = "<prim>"`
@@ -1017,7 +1017,7 @@ function witnessIssues(src: string, file: string) {
   return issuesOf(src, file).issues.filter((i) => i.code === "nudo:case-inconsistency");
 }
 
-describe("Bug 371 — case 见证与字段级 / shape 契约对账", () => {
+describe("case 见证与字段级 / shape 契约对账", () => {
   it("error: 对象见证 ⊭ 标量契约（number()）——改前机制②归一成 unknown 后静默跳过", () => {
     const errs = witnessIssues(
       `
@@ -1159,23 +1159,23 @@ function needsPositive(x) {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 375 — 多行 case 实参不再被静默跳过
+// 多行 case 实参不再被静默跳过
 // ---------------------------------------------------------------------------
-describe("[] Bug 375 — 多行 case 实参不再被静默跳过", () => {
+describe("多行 case 实参不再被静默跳过", () => {
 /**
- * Bug 375 / 1009 回归钉：check 面的 case 实参**切分**必须与共享单源
+ * 回归钉：check 面的 case 实参**切分**必须与共享单源
  * （parser 的 `splitTopLevelArgs` + JSDoc 续行前缀剥离）**同口径**。
  *
- * Bug 375（多行实参 ⇒ 整条见证被静默跳过）：
- *   共享单源 `scanCaseTags` 产出的 `argsText` **仍带 JSDoc 续行前缀 ` * `**
- *   ⇒ check 面不剥前缀 ⇒ 实参认不出 ⇒ 整条见证被静默跳过（假绿，exit 0）。
- *   同一见证写成**单行**则正常报红 ⇒ 症状取决于排版，不是契约。
+ * （多行实参 ⇒ 整条见证被静默跳过）：
+ * 共享单源 `scanCaseTags` 产出的 `argsText` **仍带 JSDoc 续行前缀 ` * `**
+ * ⇒ check 面不剥前缀 ⇒ 实参认不出 ⇒ 整条见证被静默跳过（假绿，exit 0）。
+ * 同一见证写成**单行**则正常报红 ⇒ 症状取决于排版，不是契约。
  *
- * Bug 1009（`\` 被当转义 ⇒ 实参个数不同 ⇒ 违例见证被静默跳过）：
- *   check 面的**私有**切分器把 `\` 当转义 ⇒ `"a\", -1` 只切出 1 个实参
- *   ⇒ 第二个实参上的违例见证**根本不存在** ⇒ 被静默跳过
- *   ⇒ **L2 见证门禁假绿**；而 `nudo test`（共享单源）看到的是**另一个**
- *   实参列表（2 个）⇒ 两个面看到不同的世界。
+ * （`\` 被当转义 ⇒ 实参个数不同 ⇒ 违例见证被静默跳过）：
+ * check 面的**私有**切分器把 `\` 当转义 ⇒ `"a\", -1` 只切出 1 个实参
+ * ⇒ 第二个实参上的违例见证**根本不存在** ⇒ 被静默跳过
+ * ⇒ **L2 见证门禁假绿**；而 `nudo test`（共享单源）看到的是**另一个**
+ * 实参列表（2 个）⇒ 两个面看到不同的世界。
  *
  * 改后：check 面剥续行前缀 + 按共享单源口径切分 ⇒ 实参个数与 `nudo test` 一致，
  * 违例见证必现在诊断里。
@@ -1193,7 +1193,7 @@ function witnessIssues(src: string, file: string) {
   return issuesOf(src, file).issues.filter((i) => i.code === "nudo:case-inconsistency");
 }
 
-describe("Bug 375 — 多行 case 实参不再被静默跳过", () => {
+describe("多行 case 实参不再被静默跳过", () => {
   it("error: 多行实参的违例见证（改前整条见证被跳过 ⇒ 零诊断 / 假绿）", () => {
     const errs = witnessIssues(
       `
@@ -1251,7 +1251,7 @@ function needsPositive(x) {
   });
 });
 
-describe("Bug 1009 — `\\` 不是转义：实参个数与共享单源一致", () => {
+describe("`\\` 不是转义：实参个数与共享单源一致", () => {
   it("error: `\"a\\\", -1` 切 2 个实参 ⇒ 第二个实参的违例见证被检出", () => {
     const errs = witnessIssues(
       `
@@ -1366,11 +1366,11 @@ function f(x) {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 417: @nudo:env payload grammar
+// @nudo:env payload grammar
 // ---------------------------------------------------------------------------
-describe("[] Bug 417: @nudo:env payload grammar", () => {
+describe("@nudo:env payload grammar", () => {
 /**
- * Bug 417 —— `@nudo:env` 的载荷文法**静默丢掉整条列表**：空格分隔
+ * `@nudo:env` 的载荷文法**静默丢掉整条列表**：空格分隔
  * （`node web`）与裸标签（`/// @nudo:env`）都不生效、零诊断。
  *
  * 根因（core 载荷文法）：`parseEnvPayload` **只按 `,` 切分** ⇒ 空格分隔
@@ -1384,7 +1384,7 @@ describe("[] Bug 417: @nudo:env payload grammar", () => {
 
 
 
-describe("Bug 417: @nudo:env payload grammar", () => {
+describe("@nudo:env payload grammar", () => {
   it("space-separated env list is recognized (was dropped as one token)", () => {
     expect(parseEnvPayload("node web")).toEqual(["node", "web"]);
     expect(extractFileEnvNames(`/// @nudo:env node web\n`)).toEqual(["node", "web"]);
@@ -1420,11 +1420,11 @@ describe("Bug 417: @nudo:env payload grammar", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 419 — 箭头初始化器上的内联 JSDoc 绑到绑定名
+// 箭头初始化器上的内联 JSDoc 绑到绑定名
 // ---------------------------------------------------------------------------
-describe("[] Bug 419 — 箭头初始化器上的内联 JSDoc 绑到绑定名", () => {
+describe("箭头初始化器上的内联 JSDoc 绑到绑定名", () => {
 /**
- * Bug 419 —— 箭头函数**初始化器上的** JSDoc 绑到 `<anonymous>` 而不是导出名 `f`
+ * 箭头函数**初始化器上的** JSDoc 绑到 `<anonymous>` 而不是导出名 `f`
  * → 见证落在错的函数名下（`nudo test` 打出 `=== <anonymous> ===`）。
  *
  * 根因（`directive-scan.ts` 的 `VariableDeclaration` 分支）：它按**语句**的
@@ -1457,7 +1457,7 @@ function scopesOf(src: string) {
   return listFnDirectiveScopes(parseSource(src));
 }
 
-describe("Bug 419 — 箭头初始化器上的内联 JSDoc 绑到绑定名", () => {
+describe("箭头初始化器上的内联 JSDoc 绑到绑定名", () => {
   it("内联形态：见证落在 f 上", () => {
     const f = scopesOf(INLINE).find((s) => s.name === "f");
     expect(f?.commentLines).toContain('@nudo:case "inline" (1)');
@@ -1488,11 +1488,11 @@ describe("Bug 419 — 箭头初始化器上的内联 JSDoc 绑到绑定名", () 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 420 — 配平扫描器转义感知：转义引号不再吃掉整条 case
+// 配平扫描器转义感知：转义引号不再吃掉整条 case
 // ---------------------------------------------------------------------------
-describe("[] Bug 420 — 配平扫描器转义感知：转义引号不再吃掉整条 case", () => {
+describe("配平扫描器转义感知：转义引号不再吃掉整条 case", () => {
 /**
- * Bug 420 —— 括号配平扫描器**不感知转义** ⇒ 双引号串里的 `\"` 被当成**字符串结束**
+ * 括号配平扫描器**不感知转义** ⇒ 双引号串里的 `\"` 被当成**字符串结束**
  * ⇒ 括号**提前闭合** ⇒ **整条 case 被丢弃**（只剩一条归因错误的「unclosed argument
  * list」警告）⇒ 断言从不运行、零见证（假绿）。
  *
@@ -1502,13 +1502,13 @@ describe("[] Bug 420 — 配平扫描器转义感知：转义引号不再吃掉�
  * 改后：配平**优先**按 JS 转义语义走（`\"` 不结束字符串）⇒ 括号配平正确 ⇒
  * 含转义引号的 case 被正常抽出、正常执法。
  *
- * ⚠ 口径边界（Bug 1009 钉住）：串**未闭合**（`"a\", -1` —— 非法 JS 串）时**回退**
+ * ⚠ 口径边界（钉住）：串**未闭合**（`"a\", -1` —— 非法 JS 串）时**回退**
  * 宽松口径（`\` 不是转义）⇒ 实参个数与共享单源保持一致。
  */
 
 
 
-describe("Bug 420 — 配平扫描器转义感知：转义引号不再吃掉整条 case", () => {
+describe("配平扫描器转义感知：转义引号不再吃掉整条 case", () => {
   it("extractBalancedParens: 双引号串里的 `\\\"` 不结束字符串", () => {
     const text = '("a\\"b")';
     expect(extractBalancedParens(text, 0)).toBe('"a\\"b"');
@@ -1547,11 +1547,11 @@ describe("Bug 420 — 配平扫描器转义感知：转义引号不再吃掉整�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 421：空载荷的 assume / invariant 必须发诊断
+// 空载荷的 assume / invariant 必须发诊断
 // ---------------------------------------------------------------------------
-describe("[] Bug 421：空载荷的 assume / invariant 必须发诊断", () => {
+describe("空载荷的 assume / invariant 必须发诊断", () => {
 /**
- * Bug 421：`@nudo:assume` / `@nudo:invariant` 的**空载荷**此前**零诊断**。
+ * `@nudo:assume` / `@nudo:invariant` 的**空载荷**此前**零诊断**。
  *
  * 根因：段扫描用严格正则 `^@nudo:assume\s+(.+)$`（载荷非空）⇒ 空载荷行
  * **整行不匹配**且**无 else 分支** ⇒ 段列表为空 ⇒ 消费方（check）连一条
@@ -1568,7 +1568,7 @@ function check(src: string) {
   return checkSource("/t/bug-421.js", src, pTrue);
 }
 
-describe("Bug 421：空载荷的 assume / invariant 必须发诊断", () => {
+describe("空载荷的 assume / invariant 必须发诊断", () => {
   it("@nudo:assume 空载荷 → nudo:assume-invalid（error）", () => {
     const r = check(`
 /**
@@ -1639,11 +1639,11 @@ export function ok(d, max) {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 422: empty @nudo:import payload is diagnosable
+// empty @nudo:import payload is diagnosable
 // ---------------------------------------------------------------------------
-describe("[] Bug 422: empty @nudo:import payload is diagnosable", () => {
+describe("empty @nudo:import payload is diagnosable", () => {
 /**
- * Bug 422 —— `@nudo:import` 的**空载荷**被**静默丢弃**（零诊断），而同一条
+ * `@nudo:import` 的**空载荷**被**静默丢弃**（零诊断），而同一条
  * 指令的**其它**未识别形态有 `nudo:contract-syntax` 警告。
  *
  * 根因（core 文本扫描通道）：空载荷在 `nudoImportPayloads` 这一层就被丢弃
@@ -1656,7 +1656,7 @@ describe("[] Bug 422: empty @nudo:import payload is diagnosable", () => {
 
 
 
-describe("Bug 422: empty @nudo:import payload is diagnosable", () => {
+describe("empty @nudo:import payload is diagnosable", () => {
   it("bare tag is reported as a malformed import", () => {
     expect(scanMalformedNudoImports(`/// @nudo:import\n`)).toEqual(["malformed"]);
   });
@@ -1682,11 +1682,11 @@ describe("Bug 422: empty @nudo:import payload is diagnosable", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 423 — CRLF 源文件里 `=> expected` 不再被吞掉
+// CRLF 源文件里 `=> expected` 不再被吞掉
 // ---------------------------------------------------------------------------
-describe("[] Bug 423 — CRLF 源文件里 `=> expected` 不再被吞掉", () => {
+describe("CRLF 源文件里 `=> expected` 不再被吞掉", () => {
 /**
- * Bug 423 —— CRLF 源文件里 `=> expected` 的期望值被**整条吞掉** ⇒ 该 case 判
+ * CRLF 源文件里 `=> expected` 的期望值被**整条吞掉** ⇒ 该 case 判
  * `[unchecked]` ⇒ 断言**不执法**、`nudo test` **exit 0**、**屏幕上零诊断**（假绿）。
  *
  * 根因行：`packages/core/src/algebra/directive-scan.ts` 的 `extractCaseExpectedExpr`
@@ -1698,7 +1698,7 @@ describe("[] Bug 423 — CRLF 源文件里 `=> expected` 不再被吞掉", () =>
 
 
 
-describe("Bug 423 — CRLF 源文件里 `=> expected` 不再被吞掉", () => {
+describe("CRLF 源文件里 `=> expected` 不再被吞掉", () => {
   it("CRLF: 期望被抽出（改前整条期望消失）", () => {
     const tags = scanCaseTags('@nudo:case "c" (1) => 999\r\n');
     expect(tags).toHaveLength(1);
@@ -1727,11 +1727,11 @@ describe("Bug 423 — CRLF 源文件里 `=> expected` 不再被吞掉", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 426 — `!! throws [Kind]` 后缀不再吃掉期望值
+// `!! throws [Kind]` 后缀不再吃掉期望值
 // ---------------------------------------------------------------------------
-describe("[] Bug 426 — `!! throws [Kind]` 后缀不再吃掉期望值", () => {
+describe("`!! throws [Kind]` 后缀不再吃掉期望值", () => {
 /**
- * Bug 426 —— case 行上的 `!! throws [Kind]` **后缀**（文档化形态）被当**期望值文本**
+ * case 行上的 `!! throws [Kind]` **后缀**（文档化形态）被当**期望值文本**
  * ⇒ 期望**整条丢失**（后缀在 `=>` 之前：判 `[unchecked]`、零诊断）或**被腐蚀**
  * （后缀在 `=>` 之后：`1 !! throws` 解析失败 ⇒ 退化成「什么都接受」/ 假红）。
  *
@@ -1746,7 +1746,7 @@ describe("[] Bug 426 — `!! throws [Kind]` 后缀不再吃掉期望值", () => 
 
 
 
-describe("Bug 426 — `!! throws [Kind]` 后缀不再吃掉期望值", () => {
+describe("`!! throws [Kind]` 后缀不再吃掉期望值", () => {
   it("后缀在 `=>` 之前: 期望照旧被抽出（改前整条期望消失）", () => {
     const tags = scanCaseTags('@nudo:case "a" (0) !! throws => 1');
     expect(tags).toHaveLength(1);
@@ -1778,7 +1778,7 @@ describe("Bug 426 — `!! throws [Kind]` 后缀不再吃掉期望值", () => {
   });
 
   it("回归护栏: 后缀在 `=>` 之后时**申报口径不变**（既有约定：后缀须紧跟实参括号）", () => {
-    // Bug 1033 收紧后的口径：后缀申报只在**实参括号闭合之后**、紧邻 `!! throws`
+    // 收紧后的口径：后缀申报只在**实参括号闭合之后**、紧邻 `!! throws`
     // 时产出 ⇒ `=> 1 !! throws` **本来就没有**申报（改前改后一致）
     const lines = ['@nudo:case "b" (0) => 1 !! throws'];
     expect(scanThrowsDecl(lines)).toBeUndefined();
@@ -1787,11 +1787,11 @@ describe("Bug 426 — `!! throws [Kind]` 后缀不再吃掉期望值", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 427 — 期望表达式的冗余括号被剥掉
+// 期望表达式的冗余括号被剥掉
 // ---------------------------------------------------------------------------
-describe("[] Bug 427 — 期望表达式的冗余括号被剥掉", () => {
+describe("期望表达式的冗余括号被剥掉", () => {
 /**
- * Bug 427 —— 期望表达式带**一层冗余括号**（`=> (999)` / `=> ("a")` / `=> ({ b: 1 })`）
+ * 期望表达式带**一层冗余括号**（`=> (999)` / `=> ("a")` / `=> ({ b: 1 })`）
  * ⇒ 期望解析失败 ⇒ 断言退化成「什么都接受」（空洞通过）或**恒假红**
  * ⇒ case 形同虚设。
  *
@@ -1805,7 +1805,7 @@ describe("[] Bug 427 — 期望表达式的冗余括号被剥掉", () => {
 
 
 
-describe("Bug 427 — 期望表达式的冗余括号被剥掉", () => {
+describe("期望表达式的冗余括号被剥掉", () => {
   it("数字字面量: `=> (999)` ⇒ `999`", () => {
     const tags = scanCaseTags('@nudo:case "a" (1) => (999)');
     expect(tags).toHaveLength(1);
@@ -1851,11 +1851,11 @@ describe("Bug 427 — 期望表达式的冗余括号被剥掉", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 451: .ts 尖括号类型断言不再整文件解析失败
+// .ts 尖括号类型断言不再整文件解析失败
 // ---------------------------------------------------------------------------
-describe("[] Bug 451: .ts 尖括号类型断言不再整文件解析失败", () => {
+describe(".ts 尖括号类型断言不再整文件解析失败", () => {
 /**
- * Bug 451 —— 解析器**无条件**启用 `jsx` 插件 ⇒ `.ts`（非 `.tsx`）里**合法**的
+ * 解析器**无条件**启用 `jsx` 插件 ⇒ `.ts`（非 `.tsx`）里**合法**的
  * 尖括号类型断言 `<T>x` 被 Babel 当成 JSX ⇒ **整文件解析失败**
  * （`check` / `test` / `export` / `migrate strip` 全废）。
  *
@@ -1879,7 +1879,7 @@ export function f(x: number): number {
 }
 `;
 
-describe("Bug 451: .ts 尖括号类型断言不再整文件解析失败", () => {
+describe(".ts 尖括号类型断言不再整文件解析失败", () => {
   it("无 filename 时 `<number>1` 解析成功（降级重试命中）", () => {
     resetParseSourceCache();
     const ast = parseSource_____parse_source_ts(TS_ANGLE);
@@ -1928,11 +1928,11 @@ export function f() { return x; }
 });
 
 // ---------------------------------------------------------------------------
-// Bug 846: malformed @nudo:case argument regions are masked too
+// malformed @nudo:case argument regions are masked too
 // ---------------------------------------------------------------------------
-describe("[] Bug 846: malformed @nudo:case argument regions are masked too", () => {
+describe("malformed @nudo:case argument regions are masked too", () => {
 /**
- * Bug 846 —— **畸形**的 `@nudo:case` 不登记**参数区间掩码** ⇒ case 参数里的
+ * **畸形**的 `@nudo:case` 不登记**参数区间掩码** ⇒ case 参数里的
  * `@nudo:mock` / `@nudo:skip` **泄漏**成真指令 ⇒ 假红 / d.ts 丢方法。
  *
  * 根因：`scanCaseArgSpans` 只登记**合法** case 形态（双引号名 + 同行实参括号）的
@@ -1946,7 +1946,7 @@ describe("[] Bug 846: malformed @nudo:case argument regions are masked too", () 
 
 const MALFORMED = `\n * @nudo:case 'bad' (\n *   @nudo:mock fetch = (u) => ({ ok: true }))\n`;
 
-describe("Bug 846: malformed @nudo:case argument regions are masked too", () => {
+describe("malformed @nudo:case argument regions are masked too", () => {
   it("the argument region of a malformed case is registered as a span", () => {
     const spans = scanCaseArgSpans(MALFORMED);
     expect(spans).toHaveLength(1);
@@ -1975,11 +1975,11 @@ describe("Bug 846: malformed @nudo:case argument regions are masked too", () => 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 847: text-level file-level extraction is position-gated
+// text-level file-level extraction is position-gated
 // ---------------------------------------------------------------------------
-describe("[] Bug 847: text-level file-level extraction is position-gated", () => {
+describe("text-level file-level extraction is position-gated", () => {
 /**
- * Bug 847 —— **文件级** `@nudo:env` / `@nudo:mock-module` / `@nudo:import` 写在
+ * **文件级** `@nudo:env` / `@nudo:mock-module` / `@nudo:import` 写在
  * **函数体内部**也被当成文件级指令 ⇒ 整文件 env / 模块替换 / 约束模板被静默改写，
  * **零诊断**。
  *
@@ -2011,7 +2011,7 @@ const IMPORT_IN_FN = `export function f(a) {
 }
 `;
 
-describe("Bug 847: text-level file-level extraction is position-gated", () => {
+describe("text-level file-level extraction is position-gated", () => {
   it("env inside a function body is not file-wide", () => {
     expect(extractFileEnvNames(ENV_IN_FN)).toEqual([]);
   });
@@ -2055,11 +2055,11 @@ describe("Bug 847: text-level file-level extraction is position-gated", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 918 — `=> expected` 的排版不再让期望静默消失
+// `=> expected` 的排版不再让期望静默消失
 // ---------------------------------------------------------------------------
-describe("[] Bug 918 — `=> expected` 的排版不再让期望静默消失", () => {
+describe("`=> expected` 的排版不再让期望静默消失", () => {
 /**
- * Bug 918 —— `=> expected` 在「期望值不与 `=>` 同行」（形态 A）或「`=>` 后为空」
+ * `=> expected` 在「期望值不与 `=>` 同行」（形态 A）或「`=>` 后为空」
  * （形态 B）时，期望被**静默丢弃** ⇒ 该 case 判 `[unchecked]` ⇒ 断言**不执法**、
  * `nudo test` **exit 0**、**屏幕上零诊断**（完全静默的假绿）。
  *
@@ -2070,12 +2070,12 @@ describe("[] Bug 918 — `=> expected` 的排版不再让期望静默消失", ()
  * 改后：
  * - 形态 A：往下找一行拿期望值；
  * - 形态 B：**产出行首锚的语法错**（`expectedIssue`）⇒ 消费方发
- *   `nudo:directive-syntax`（不再静默吞错）。
+ * `nudo:directive-syntax`（不再静默吞错）。
  */
 
 
 
-describe("Bug 918 — `=> expected` 的排版不再让期望静默消失", () => {
+describe("`=> expected` 的排版不再让期望静默消失", () => {
   it("形态 A: 期望值在下一行 ⇒ 期望被抽出", () => {
     const text = '@nudo:case "multi" (2) =>\n *   4\n ';
     const tags = scanCaseTags(text);
@@ -2121,11 +2121,11 @@ describe("Bug 918 — `=> expected` 的排版不再让期望静默消失", () =>
 });
 
 // ---------------------------------------------------------------------------
-// Bug 978 — 粘连写法 `@nudo:case"c1"` 不再静默蒸发
+// 粘连写法 `@nudo:case"c1"` 不再静默蒸发
 // ---------------------------------------------------------------------------
-describe("[] Bug 978 — 粘连写法 `@nudo:case\"c1\"` 不再静默蒸发", () => {
+describe("粘连写法 `@nudo:case\"c1\"` 不再静默蒸发", () => {
 /**
- * Bug 978 —— `@nudo:case"c1" (1, 2)`（标签与名字之间**无空白**）⇒ 抽取侧（严格
+ * `@nudo:case"c1" (1, 2)`（标签与名字之间**无空白**）⇒ 抽取侧（严格
  * `[ \t]+`）**不匹配** + 诊断侧（宽松 `[ \t]*`）**判合法** ⇒ 整条 case **静默
  * 蒸发** ⇒ `nudo test` 一个 case 都不跑、**零诊断**（假绿）。
  *
@@ -2133,12 +2133,12 @@ describe("[] Bug 978 — 粘连写法 `@nudo:case\"c1\"` 不再静默蒸发", ()
  * `scanMalformedCaseTagRests` 的畸形判据**没跟抽取侧的真实文法对齐**。
  *
  * 改后：两条正则**共用同一段文法**（宽松侧**捕获分隔空白**），诊断侧按「标签后
- * 没有空白 ⇒ 畸形」判定 ⇒ 粘连写法**看得见**（口径与族 28 的 Bug 980 一致）。
+ * 没有空白 ⇒ 畸形」判定 ⇒ 粘连写法**看得见**（口径与族 28 的 一致）。
  */
 
 
 
-describe("Bug 978 — 粘连写法 `@nudo:case\"c1\"` 不再静默蒸发", () => {
+describe("粘连写法 `@nudo:case\"c1\"` 不再静默蒸发", () => {
   it("粘连写法: 不被抽成 case（抽取侧要求 `[ \\t]+`）", () => {
     const tags = scanCaseTags('@nudo:case"c1" (1, 2)');
     expect(tags).toEqual([]);
@@ -2164,11 +2164,11 @@ describe("Bug 978 — 粘连写法 `@nudo:case\"c1\"` 不再静默蒸发", () =>
 });
 
 // ---------------------------------------------------------------------------
-// Bug 981：粘连的 @nudo:contract 必须发语法诊断
+// 粘连的 @nudo:contract 必须发语法诊断
 // ---------------------------------------------------------------------------
-describe("[] Bug 981：粘连的 @nudo:contract 必须发语法诊断", () => {
+describe("粘连的 @nudo:contract 必须发语法诊断", () => {
 /**
- * Bug 981：`@nudo:contract` 的**粘连**形态（`@nudo:contractx …`）此前
+ * `@nudo:contract` 的**粘连**形态（`@nudo:contractx …`）此前
  * **零诊断**地蒸发。
  *
  * 根因：段扫描用严格正则 `^@nudo:contract\s+(.+)$`（标签后必须有分隔空白）
@@ -2176,14 +2176,14 @@ describe("[] Bug 981：粘连的 @nudo:contract 必须发语法诊断", () => {
  * 生效了（**假绿**）；同族的其它畸形载荷（`x > 0` 等）反而会落到
  * `nudo:contract-syntax` ⇒ 口径不一致。
  *
- * 修复：诊断面**看得见**粘连形态（口径与族 28 的 Bug 980 一致——严格文法仍
+ * 修复：诊断面**看得见**粘连形态（口径与族 28 的 一致——严格文法仍
  * 要求分隔空白，宽松形态只用于诊断）⇒ 发既有码 `nudo:contract-syntax`。
  */
 
 
 
 
-describe("Bug 981：粘连的 @nudo:contract 必须发语法诊断", () => {
+describe("粘连的 @nudo:contract 必须发语法诊断", () => {
   it("@nudo:contractx → nudo:contract-syntax（warning）", () => {
     const r = checkSource(
       "/t/bug-981.js",

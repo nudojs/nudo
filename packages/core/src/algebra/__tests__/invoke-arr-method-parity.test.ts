@@ -3,21 +3,21 @@
  *
  * 同名 mutator 的两条触发路径：
  * 1. **方法面**（直达臂）：`a.push(x)` —— $invoke 按接收者 shape 分派到
- *    invokeArrMethod（arr-methods.ts）；
+ * invokeArrMethod（arr-methods.ts）；
  * 2. **借用/摘下面**（class/invoke.ts setProtoMethodDispatch home=Array 的
- *    generic 借用臂）：`Array.prototype.push.call(o, x)`、对 Method 值摘下后
- *    `m.call(o, x)`。
+ * generic 借用臂）：`Array.prototype.push.call(o, x)`、对 Method 值摘下后
+ * `m.call(o, x)`。
  *
  * 互钉口径（固定方法族：push/pop/splice + reverse/fill/copyWithin + concat/with）：
  * - **tuple/arr 接收者**：借用面 recv 是 tuple ⇒ dispatch 落回方法面 ⇒ 两路
- *   必须同门同结果（frozen/sealed 的 TypeError 门 + 结果形态）。任何一条
- *   路径漂移（改 invokeArrMethod 不改借用分派，或反之）⇒ 本钉翻红。
+ * 必须同门同结果（frozen/sealed 的 TypeError 门 + 结果形态）。任何一条
+ * 路径漂移（改 invokeArrMethod 不改借用分派，或反之）⇒ 本钉翻红。
  * - **array-like obj 接收者**：两路都进 invokeArrMethod 的 generic 借用臂
- *   （mutateArrayLike 写面，Bug 243）——钉当前行为。已知与原生的差异
- *   （见各断言注释）：mutateArrayLike 不查 extState ⇒ frozen/sealed 的
- *   array-like 不设门（原生 TypeError）；若未来补门，本钉翻红提醒同步。
- * - **非 array-like 接收者**：concat 种子 [recv]（Bug 262）、with 越界
- *   RangeError（Bug 268）、push 对 string 原始值 TypeError（Bug 259）。
+ * （mutateArrayLike 写面，）——钉当前行为。已知与原生的差异
+ * （见各断言注释）：mutateArrayLike 不查 extState ⇒ frozen/sealed 的
+ * array-like 不设门（原生 TypeError）；若未来补门，本钉翻红提醒同步。
+ * - **非 array-like 接收者**：concat 种子 [recv]（）、with 越界
+ * RangeError（）、push 对 string 原始值 TypeError（）。
  *
  * 只经公共面触发（runTranspiled + callTranspiledExportFull，eval-helpers），
  * 不 import class/invoke.ts 内部（该文件由兄弟域重构中——本钉跨内部重构
@@ -92,7 +92,7 @@ describe("Array.prototype 借用臂 ↔ invokeArrMethod 直达臂互钉", () => 
     });
   });
 
-  describe("array-like obj 接收者：generic 借用臂写面（Bug 243 家族）", () => {
+  describe("array-like obj 接收者：generic 借用臂写面（家族）", () => {
     it("push：length 增长 + 新键可读回（借下面 + Method 值摘下面同果）", () => {
       const borrow = `export function f() { const o = { length: 1, 0: "a" }; Array.prototype.push.call(o, "b"); return o.length; }`;
       const detached = `export function f() { const m = Array.prototype.push; const o = { length: 1, 0: "a" }; m.call(o, "b"); return o.length; }`;

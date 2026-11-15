@@ -1,5 +1,5 @@
 /**
- * BUG-015 S4-004 回归：scanCaseTags / 文件级扫描的标签-载荷**同行分隔**。
+ * S4-004 回归：scanCaseTags / 文件级扫描的标签-载荷**同行分隔**。
  * 旧 `\s+`/`\s*` 可跨行：空 `@nudo:case` 标签把下一行内容粘成合法 case，
  * 未闭合名引号把下一行粘进名字，`//` 行注释把非注释行的 `@nudo:env` 粘成指令。
  * 多行 case 实参仍由 extractBalancedParens 单独支撑，不受影响。
@@ -7,7 +7,7 @@
 import { describe, it, expect } from "vitest";
 import { scanCaseTags, scanCaseArgSpans, extractFileEnvNames, extractMockModuleRecords } from "../directive-scan.ts";
 
-describe("scanCaseTags same-line separation (BUG-015 S4-004)", () => {
+describe("scanCaseTags same-line separation (S4-004)", () => {
   it("empty tag does not glue the next line into a case", () => {
     expect(scanCaseTags("\n@nudo:case\n\"evil\" (1)\n")).toHaveLength(0);
   });
@@ -34,7 +34,7 @@ describe("scanCaseTags same-line separation (BUG-015 S4-004)", () => {
   });
 });
 
-describe("file-level line-comment scans stay on one line (BUG-015 S4-004 family)", () => {
+describe("file-level line-comment scans stay on one line (S4-004 family)", () => {
   it("extractFileEnvNames does not glue a non-comment next line", () => {
     expect(extractFileEnvNames("//\n@nudo:env es\n")).toEqual([]);
   });

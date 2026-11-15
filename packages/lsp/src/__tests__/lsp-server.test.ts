@@ -17,11 +17,11 @@ import { filePathToUri } from "../server-navigation.ts";
 import { cacheKey, uriToFilePath, clearValidationState, handleNudoDepFileChanged, registerNudoImportDeps, validateText, analysisCache, getCachedOrAnalyze, knownFiles, nudoDepParents, validateGeneration, bumpValidateGeneration, type ValidateTextDeps } from "../validation.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 784 — 畸形 URI 不得让 initialize 整个失败
+// 畸形 URI 不得让 initialize 整个失败
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 784 — 畸形 URI 不得让 initialize 整个失败", () => {
+describe("畸形 URI 不得让 initialize 整个失败", () => {
 /**
- * Bug 784 —— 畸形 workspace URI 让**整个 initialize 抛出去**。
+ * 畸形 workspace URI 让**整个 initialize 抛出去**。
  *
  * 症状：客户端送来一个百分号转义非法的 URI（如 `file:///tmp/proj%zz`）⇒
  * `uriToFilePath` 里的裸 `decodeURIComponent` 抛 `URIError` ⇒ initialize
@@ -50,7 +50,7 @@ function initWith(params: Record<string, unknown>): { capabilities?: Record<stri
   };
 }
 
-describe("Bug 784 — 畸形 URI 不得让 initialize 整个失败", () => {
+describe("畸形 URI 不得让 initialize 整个失败", () => {
   it("畸形 workspaceFolders[0].uri ⇒ 跳过该 folder，initialize 照常返回", () => {
     const res = initWith({
       rootUri: null,
@@ -77,11 +77,11 @@ describe("Bug 784 — 畸形 URI 不得让 initialize 整个失败", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 940 — 未声明的命令名必须回协议层错误（MethodNotFound）
+// 未声明的命令名必须回协议层错误（MethodNotFound）
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 940 — 未声明的命令名必须回协议层错误（MethodNotFound）", () => {
+describe("未声明的命令名必须回协议层错误（MethodNotFound）", () => {
 /**
- * Bug 940 —— 未声明的命令名在 `workspace/executeCommand` 上回 result:null。
+ * 未声明的命令名在 `workspace/executeCommand` 上回 result:null。
  *
  * 改前：未知命令 → JSON-RPC **成功** + null 结果——协议层假成功（与「命令
  * 跑了但无输出」同形），客户端无法区分「无此命令」与「跑了但没结果」。
@@ -101,7 +101,7 @@ const SRC = `export function f(x) {
 }
 `;
 
-describe("Bug 940 — 未声明的命令名必须回协议层错误（MethodNotFound）", () => {
+describe("未声明的命令名必须回协议层错误（MethodNotFound）", () => {
   it("未知命令名不再回落 result:null", async () => {
     await withLspServer({ "sel.js": SRC }, async ({ req }) => {
       const exec = req("workspace/executeCommand");
@@ -130,11 +130,11 @@ describe("Bug 940 — 未声明的命令名必须回协议层错误（MethodNotF
 });
 
 // ---------------------------------------------------------------------------
-// Bug 783 — workspace/didChangeWorkspaceFolders 必须更新根集合
+// workspace/didChangeWorkspaceFolders 必须更新根集合
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 783 — workspace/didChangeWorkspaceFolders 必须更新根集合", () => {
+describe("workspace/didChangeWorkspaceFolders 必须更新根集合", () => {
 /**
- * Bug 783 —— 工作区文件夹增删不生效（`workspaceRoots` 永久冻结）。
+ * 工作区文件夹增删不生效（`workspaceRoots` 永久冻结）。
  *
  * 症状：多根工作区里，客户端新增/移除一个工作区文件夹后，server 仍按
  * `initialize` 时的老根集合行事 ⇒ 新加入的目录被写盘边界误拒
@@ -151,7 +151,7 @@ describe("[lsp-] Bug 783 — workspace/didChangeWorkspaceFolders 必须更新根
  * - capabilities 声明 `workspace.workspaceFolders.changeNotifications`；
  * - 订阅 `connection.workspace.onDidChangeWorkspaceFolders` ⇒ 增删根；
  * - 根集合变了 ⇒ 清 `nudoFileCache` + 重检已打开文档 + 广播
- *   `workspace/diagnostic/refresh`。
+ * `workspace/diagnostic/refresh`。
  *
  * 钉：① capabilities 声明了 changeNotifications；② 新增根后该目录被放行；
  * ③ 移除根后该目录被拒。
@@ -165,7 +165,7 @@ describe("[lsp-] Bug 783 — workspace/didChangeWorkspaceFolders 必须更新根
 
 const SRC = "export function f() {\n  return 1;\n}\n";
 
-describe("Bug 783 — workspace/didChangeWorkspaceFolders 必须更新根集合", () => {
+describe("workspace/didChangeWorkspaceFolders 必须更新根集合", () => {
   it("声明 changeNotifications + 增删根即时生效（写盘边界跟着走）", async () => {
     const base = mkdtempSync(join(tmpdir(), "nudo-bug783-"));
     try {
@@ -219,7 +219,7 @@ describe("Bug 783 — workspace/didChangeWorkspaceFolders 必须更新根集合"
 // ---------------------------------------------------------------------------
 // 族 24 Z —— workspaceFolders 的 getter 抛异常不得让 server 崩
 // ---------------------------------------------------------------------------
-describe("[lsp-] 族 24 Z —— workspaceFolders 的 getter 抛异常不得让 server 崩", () => {
+describe("族 24 Z —— workspaceFolders 的 getter 抛异常不得让 server 崩", () => {
 /**
  * 族 24 收口片 Z —— `connection.workspace.onDidChangeWorkspaceFolders`
  * 是**会抛异常的 getter** ⇒ server 不得因此崩。
@@ -236,14 +236,14 @@ describe("[lsp-] 族 24 Z —— workspaceFolders 的 getter 抛异常不得让 
  *
  * 修法（`server.ts`）：取值包在 `try` 里；抛了 ⇒ **静默跳过订阅**（server 照常
  * 启动）；并在 `initialize` 之后**再取一次**（真 transport 下 getter 此时才就绪）
- * ⇒ Bug 783 的功能面（工作区文件夹变更 ⇒ 授权边界重算）**不被防御打死**。
+ * ⇒ 的功能面（工作区文件夹变更 ⇒ 授权边界重算）**不被防御打死**。
  *
  * 钉：
  * ① 客户端**不声明** `capabilities.workspace.workspaceFolders` ⇒
- *    `createNudoServer` **不抛**；
+ * `createNudoServer` **不抛**；
  * ② 该客户端的 `onInitialize` **仍正常返回**（服务端能力声明一字不动）；
  * ③ 真语义（getter 在 `initialize` 之前抛、之后可用）⇒ 订阅**仍建立**
- *    且**只建立一次**（构造期那次抛了，不算）。
+ * 且**只建立一次**（构造期那次抛了，不算）。
  */
 
 
@@ -348,15 +348,15 @@ describe("族 24 Z —— workspaceFolders 的 getter 抛异常不得让 server 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 146 — 跨模块 call@ 镜的 nudo.trace 动作必须可执行
+// 跨模块 call@ 镜的 nudo.trace 动作必须可执行
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 146 — 跨模块 call@ 镜的 nudo.trace 动作必须可执行", () => {
+describe("跨模块 call@ 镜的 nudo.trace 动作必须可执行", () => {
 /**
- * Bug 146 —— 跨模块 `call@` 观察镜的 `nudo.trace` 动作 **100% 不可执行**。
+ * 跨模块 `call@` 观察镜的 `nudo.trace` 动作 **100% 不可执行**。
  *
  * 症状（真 server 协议面）：`lib.js` 导出 `add`，`main.js` 里
  * `import { add } from "./lib.js"` 后调用 `add(x, 2)` ⇒ 调用方文件的 CodeLens
- * 出现跨模块 `call@L3  (any, 2) => number | string`，但点它（命令
+ * 出现跨模块 `call@L3 (any, 2) => number | string`，但点它（命令
  * `nudo.trace [uri(main.js), "add"]`）回 `Function "add" not found` ——
  * 镜面标题说有这个事实，动作却说没有。
  *
@@ -369,7 +369,7 @@ describe("[lsp-] Bug 146 — 跨模块 call@ 镜的 nudo.trace 动作必须可�
  * 钉：
  * 1. agent 工具直调（跨模块）⇒ 出跨模块见证，不是 `not found`；
  * 2. 真 server `workspace/executeCommand nudo.trace [uri, fn]`（观察镜的动作
- *    形态，位置参数）⇒ 同上；
+ * 形态，位置参数）⇒ 同上；
  * 3. 同文件 `call@` 对照（一直在工作的那条路径）不回归。
  */
 
@@ -422,7 +422,7 @@ function withProject(
   });
 }
 
-describe("Bug 146 — 跨模块 call@ 镜的 nudo.trace 动作必须可执行", () => {
+describe("跨模块 call@ 镜的 nudo.trace 动作必须可执行", () => {
   it("trace({file, functionName}) 回落到 externalFunctions：出跨模块见证", async () => {
     await withProject({ "lib.js": LIB_SRC, "main.js": MAIN_SRC }, async (dir) => {
       // 前置：`add` **不在**本文件函数表里（否则这条用例测不到回落）
@@ -496,10 +496,10 @@ describe("Bug 146 — 跨模块 call@ 镜的 nudo.trace 动作必须可执行", 
 });
 
 // ---------------------------------------------------------------------------
-// [merged] lsp-bug-780-trace-positional-bridge.test.ts
+// [merged] trace-positional-bridge
 // ---------------------------------------------------------------------------
-describe("[lsp-] [merged] lsp-bug-780-trace-positional-bridge.test.ts", () => {
-// MERGED (topic-related bug pins): lsp-bug-780-trace-positional-bridge.test.ts + lsp-bug-780-trace-uri-bridge.test.ts
+describe("trace-positional-bridge", () => {
+// MERGED (topic-related bug pins): trace-positional-bridge + trace-uri-bridge
 // Each absorbed file keeps its own describe scope so file-level hooks stay
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 
@@ -511,9 +511,9 @@ describe("[lsp-] [merged] lsp-bug-780-trace-positional-bridge.test.ts", () => {
 
 
 
-describe("[merged] lsp-bug-780-trace-positional-bridge.test.ts", () => {
+describe("trace-positional-bridge", () => {
 /**
- * Bug 780 —— `nudo.trace` 的**位置参数**形态没有命令桥。
+ * `nudo.trace` 的**位置参数**形态没有命令桥。
  *
  * 症状：IDE 的 `entry@` / `call@` 观察透镜用位置参数发命令
  * （`executeCommand "nudo.trace" [uri, functionName]`）⇒ 服务端兜底分支把
@@ -526,9 +526,9 @@ describe("[merged] lsp-bug-780-trace-positional-bridge.test.ts", () => {
  *
  * 修法：
  * - `nudo.trace` 补上同款位置参数桥（复用 agent 侧
- *   `tracePositionalArgs`：`[uri, fn]` → `{ uri, functionName }`）；
+ * `tracePositionalArgs`：`[uri, fn]` → `{ uri, functionName }`）；
  * - 兜底分支：参数不是对象 ⇒ 抛**协议层参数错误**（InvalidParams），
- *   不再把字符串当对象传下去。
+ * 不再把字符串当对象传下去。
  *
  * 钉：① `[uri, fn]` 位置形态跑出 trace；② 对象形态不受影响；
  * ③ 非对象参数（裸字符串）⇒ 协议层 InvalidParams（而不是工具内部错误）。
@@ -549,7 +549,7 @@ export function run() {
 }
 `;
 
-describe("Bug 780 — nudo.trace 必须支持位置参数 [uri, functionName]", () => {
+describe("nudo.trace 必须支持位置参数 [uri, functionName]", () => {
   it("位置参数 [uri, fn] 跑出 trace（不是错误）", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug780-"));
     try {
@@ -608,23 +608,23 @@ describe("Bug 780 — nudo.trace 必须支持位置参数 [uri, functionName]", 
 });
 });
 
-describe("[merged] lsp-bug-780-trace-uri-bridge.test.ts", () => {
+describe("trace-uri-bridge", () => {
 /**
- * Bug 780 —— IDE 的 `entry@` / `call@` 观察透镜**必然抛 TypeError**：
+ * IDE 的 `entry@` / `call@` 观察透镜**必然抛 TypeError**：
  * `nudo.trace` 既没有「位置参数 → 对象」的桥，也不接受 `uri` 键 ⇒
  * `params.file` 是 `undefined` ⇒ `normalizeFilePath(undefined)` 抛。
  *
  * 根因（两半）：
  * - server 侧：`workspace/executeCommand` 的兜底分支把 `args[0]`（**uri
- *   字符串**）当参数对象传下去 ⇒ `params.file === undefined`
- *   （server.ts 归片 D；本片交付 agent 侧的桥 `tracePositionalArgs`）；
+ * 字符串**）当参数对象传下去 ⇒ `params.file === undefined`
+ * （server.ts 归片 D；本片交付 agent 侧的桥 `tracePositionalArgs`）；
  * - agent 侧（本片）：`trace` 工具只读 `params.file` ⇒ 连 IDE 自产的
- *   `file://…` uri 形态也走不通。
+ * `file://…` uri 形态也走不通。
  *
  * 修法（片 F，agent 侧）：
  * - `FunctionToolParams` 增 `uri` 键（`file` 与 `uri` 二选一）；
  * - `trace` / `suggestCase` 经 `resolveToolFile` 定位文件（缺省时抛共用
- *   入口闸的 TypeError，不让裸 TypeError 当工具文案）；
+ * 入口闸的 TypeError，不让裸 TypeError 当工具文案）；
  * - 导出 `tracePositionalArgs`（位置参数桥，供片 D 接进命令桥）。
  *
  * 钉：`nudo/trace` 的 `{uri}` 形态成功出见证；`{file}` 形态不回归；
@@ -678,7 +678,7 @@ function textOf(res: any): string {
   return String(res ?? "");
 }
 
-describe("Bug 780 — nudo.trace 必须接受 uri 键并有位置参数桥", () => {
+describe("nudo.trace 必须接受 uri 键并有位置参数桥", () => {
   it("nudo/trace 的 {uri} 形态：出见证（不再 TypeError）", async () => {
     const { mock, file, cleanup } = openSession();
     try {
@@ -732,11 +732,11 @@ describe("Bug 780 — nudo.trace 必须接受 uri 键并有位置参数桥", () 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 748 — URI 编解码互逆（编码侧 pathToFileURL / 解码侧 fileURLToPath）
+// URI 编解码互逆（编码侧 pathToFileURL / 解码侧 fileURLToPath）
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 748 — URI 编解码互逆（编码侧 pathToFileURL / 解码侧 fileURLToPath）", () => {
+describe("URI 编解码互逆（编码侧 pathToFileURL / 解码侧 fileURLToPath）", () => {
 /**
- * Bug 748 —— `filePathToUri` / `uriToFilePath` **不互逆** ⇒ 服务端自产的
+ * `filePathToUri` / `uriToFilePath` **不互逆** ⇒ 服务端自产的
  * `location.uri` 是**非法 URI**（裸 `%`）⇒ 客户端回传后
  * `didOpen` / `didChange` / `didClose` 抛未捕获 `URIError`
  * ⇒ 该文档**零诊断**（L2 假绿）。
@@ -752,7 +752,7 @@ describe("[lsp-] Bug 748 — URI 编解码互逆（编码侧 pathToFileURL / 解
  *
  * ⚠ **非 `file:` scheme**（`untitled:` 等）**原样返回**（行为不变）。
  * ⚠ **Windows 盘符**必须一并验证：`fileURLToPath` 给 `C:\...`，
- *   旧实现 `slice(7)` 会留 `/C:/...` ⇒ 本钉用 `cacheKey` 断言（跨平台同形）。
+ * 旧实现 `slice(7)` 会留 `/C:/...` ⇒ 本钉用 `cacheKey` 断言（跨平台同形）。
  */
 
 
@@ -763,7 +763,7 @@ describe("[lsp-] Bug 748 — URI 编解码互逆（编码侧 pathToFileURL / 解
 
 
 
-describe("Bug 748 — URI 编解码互逆（编码侧 pathToFileURL / 解码侧 fileURLToPath）", () => {
+describe("URI 编解码互逆（编码侧 pathToFileURL / 解码侧 fileURLToPath）", () => {
   it("编码侧对保留字符做百分号转义（裸 % 不再出现）", () => {
     expect(filePathToUri("/x/100%.js")).toBe("file:///x/100%25.js");
     expect(filePathToUri("/x/a#b.js")).toBe("file:///x/a%23b.js");
@@ -837,10 +837,10 @@ describe("Bug 748 — URI 编解码互逆（编码侧 pathToFileURL / 解码侧 
 });
 
 // ---------------------------------------------------------------------------
-// [merged] lsp-bug-776-didopen-dup-publish.test.ts
+// [merged] didopen-dup-publish
 // ---------------------------------------------------------------------------
-describe("[lsp-] [merged] lsp-bug-776-didopen-dup-publish.test.ts", () => {
-// MERGED (topic-related bug pins): lsp-bug-776-didopen-dup-publish.test.ts + lsp-bug-776-validation-self-exclusion.test.ts
+describe("didopen-dup-publish", () => {
+// MERGED (topic-related bug pins): didopen-dup-publish + validation-self-exclusion
 // Each absorbed file keeps its own describe scope so file-level hooks stay
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 
@@ -851,9 +851,9 @@ describe("[lsp-] [merged] lsp-bug-776-didopen-dup-publish.test.ts", () => {
 
 
 
-describe("[merged] lsp-bug-776-didopen-dup-publish.test.ts", () => {
+describe("didopen-dup-publish", () => {
 /**
- * Bug 776 —— `didOpen` 重复发布 `publishDiagnostics`。
+ * `didOpen` 重复发布 `publishDiagnostics`。
  *
  * 症状：打开一个文件后，同一版本、同一内容的诊断被**发布两次**。
  * 根因：`vscode-languageserver` 的 `TextDocuments.listen()` 在 `didOpen` 时
@@ -865,9 +865,9 @@ describe("[merged] lsp-bug-776-didopen-dup-publish.test.ts", () => {
  * 修法（片 D · `server.ts`）：
  * - `documents.onDidOpen` 记录文档指纹（version + 内容）；
  * - `documents.onDidChangeContent` 发现指纹相同 ⇒ 认定是 didOpen 回声 ⇒
- *   不再排一次防抖校验；
+ * 不再排一次防抖校验；
  * - publish 面加**内容去重**（同 uri + 同 version + 同诊断内容 ⇒ 只发一次），
- *   同版本但诊断内容变了（侧车/依赖变更后的 force 重检）仍照发。
+ * 同版本但诊断内容变了（侧车/依赖变更后的 force 重检）仍照发。
  *
  * 钉：打开一个会出诊断的文件 ⇒ 只发布 1 次；打开一个不出诊断的文件 ⇒
  * 也只发布 1 次（空数组），不得出现「同一版本同内容发两次」。
@@ -881,7 +881,7 @@ describe("[merged] lsp-bug-776-didopen-dup-publish.test.ts", () => {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-describe("Bug 776 — didOpen 不得重复发布同一版本的诊断", () => {
+describe("didOpen 不得重复发布同一版本的诊断", () => {
   it("会出诊断的文件：didOpen 只发布一次（同 version 同内容）", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug776-"));
     try {
@@ -957,9 +957,9 @@ describe("Bug 776 — didOpen 不得重复发布同一版本的诊断", () => {
 });
 });
 
-describe("[merged] lsp-bug-776-validation-self-exclusion.test.ts", () => {
+describe("validation-self-exclusion", () => {
 /**
- * Bug 776（validation.ts 半）—— 依赖文件变更的 **self-排除**。
+ * （validation.ts 半）—— 依赖文件变更的 **self-排除**。
  *
  * `handleNudoDepFileChanged` 把 `computeDirtySet(...)` 的返回值（含**种子**
  * 本身）整个塞进 `parentSet` ⇒ 变更文件被当成**自己的** parent ⇒ 触发对
@@ -980,7 +980,7 @@ describe("[merged] lsp-bug-776-validation-self-exclusion.test.ts", () => {
 
 const norm = (p: string) => resolve(p).replace(/\\/g, "/");
 
-describe("Bug 776（validation 半）—— 依赖文件变更的 self-排除", () => {
+describe("（validation 半）—— 依赖文件变更的 self-排除", () => {
   beforeEach(() => {
     clearValidationState();
   });
@@ -1047,7 +1047,7 @@ export function needsPositive(x) {
 // ---------------------------------------------------------------------------
 // createNudoServer — initialize
 // ---------------------------------------------------------------------------
-describe("[lsp-] createNudoServer — initialize", () => {
+describe("createNudoServer — initialize", () => {
 /**
  * JSON-RPC-ish protocol tests for createNudoServer (importable without
  * starting a transport). Uses an in-memory mock Connection that records
@@ -1082,7 +1082,7 @@ function handler(mock: Mock, method: string): AnyHandler {
   return h!;
 }
 
-// Bug 8（wave 3）：`x + y`（any 形参算术）原生 may TypeError → 不再是 clean
+// （wave 3）：`x + y`（any 形参算术）原生 may TypeError → 不再是 clean
 // 样本；本组用例意图是「clean 文件 → ok / 空诊断发布」，改用恒总 identity。
 const CHECK_OK = `
 export function id(x) {
@@ -1698,7 +1698,7 @@ const r = mul(2, 3);
 // ---------------------------------------------------------------------------
 // LSP session maps are LRU-capped (P-IDE6)
 // ---------------------------------------------------------------------------
-describe("[lsp-] LSP session maps are LRU-capped (P-IDE6)", () => {
+describe("LSP session maps are LRU-capped (P-IDE6)", () => {
 /**
  * P-IDE6：LSP 会话 Map（analysisCache / knownFiles / nudoDepParents）LRU 上限。
  * 与 service getSessionCacheLimits 同源（maxFiles；dep 边按 4× 口径）——
@@ -1768,7 +1768,7 @@ describe("LSP session maps are LRU-capped (P-IDE6)", () => {
 // ---------------------------------------------------------------------------
 // A8 validateGeneration cancel
 // ---------------------------------------------------------------------------
-describe("[lsp-] A8 validateGeneration cancel", () => {
+describe("A8 validateGeneration cancel", () => {
 function makeDeps(): ValidateTextDeps & { sent: Array<{ uri: string; n: number }> } {
   const sent: Array<{ uri: string; n: number }> = [];
   return {
@@ -1869,11 +1869,11 @@ function safe(x) {
 });
 
 // ---------------------------------------------------------------------------
-// validateText 文档 version 门（BUG-021）
+// validateText 文档 version 门（）
 // ---------------------------------------------------------------------------
-describe("[lsp-] validateText 文档 version 门（BUG-021）", () => {
+describe("validateText 文档 version 门（）", () => {
 /**
- * validateText 文档 version 门回归（BUG-021 / S5-003）。
+ * validateText 文档 version 门回归（/ S5-003）。
  * 回归背景：stillCurrent 只比 validateGeneration——didChange 不 bump
  * generation，慢分析（await 期间）文档已更新时，旧结果会发布到
  * 新 buffer（squiggle 错位 / 幽灵报错）。修复：generation 之外
@@ -1896,7 +1896,7 @@ const SRC_V2 = `export function f(x) {
 }
 `;
 
-describe("validateText 文档 version 门（BUG-021）", () => {
+describe("validateText 文档 version 门（）", () => {
   it("superseded 文档版本的慢分析不发布陈旧诊断", async () => {
     clearValidationState();
     await withTempDir("nudo-vgate-", async (dir) => {
@@ -1979,11 +1979,11 @@ describe("validateText 文档 version 门（BUG-021）", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 777 — 配置变更不得抹掉未提及的宿主设置
+// 配置变更不得抹掉未提及的宿主设置
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 777 — 配置变更不得抹掉未提及的宿主设置", () => {
+describe("配置变更不得抹掉未提及的宿主设置", () => {
 /**
- * Bug 777 —— `workspace/didChangeConfiguration` 的部分载荷把宿主的
+ * `workspace/didChangeConfiguration` 的部分载荷把宿主的
  * `nudo.analysis.mode` 默认值**抹成 undefined**。
  *
  * 症状：初始化时 `analysis.mode = "all"`（宿主设置），一次**部分**或**无关**
@@ -2024,7 +2024,7 @@ function hoverText(mock: ReturnType<typeof createMockConnection>, uri: string): 
   return res?.contents?.value ?? null;
 }
 
-describe("Bug 777 — 配置变更不得抹掉未提及的宿主设置", () => {
+describe("配置变更不得抹掉未提及的宿主设置", () => {
   it("部分载荷 / 无关载荷 / 扁平键：analysis.mode 不被抹掉", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug777-"));
     try {
@@ -2107,7 +2107,7 @@ describe("Bug 777 — 配置变更不得抹掉未提及的宿主设置", () => {
 // ---------------------------------------------------------------------------
 // LSP project-config invalidation
 // ---------------------------------------------------------------------------
-describe("[lsp-] LSP project-config invalidation", () => {
+describe("LSP project-config invalidation", () => {
 describe("LSP project-config invalidation", () => {
   it("package.json change clears analysisCache and notifies host", async () => {
     clearValidationState();

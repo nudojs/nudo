@@ -10,11 +10,11 @@ import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 
 // ---------------------------------------------------------------------------
-// BUG-016 — export --out 的模块标识与绝对路径无关
+// export --out 的模块标识与绝对路径无关
 // ---------------------------------------------------------------------------
-describe("[cli-] BUG-016 — export --out 的模块标识与绝对路径无关", () => {
+describe("export --out 的模块标识与绝对路径无关", () => {
 /**
- * BUG-016 —— `nudo export --out` 用**绝对源路径**当模块标识 ⇒ 产物重复 +
+ * `nudo export --out` 用**绝对源路径**当模块标识 ⇒ 产物重复 +
  * 输出不可复现。
  *
  * 症状：同一份源码放在两个目录里分别导出到同一个 `--out` 目录 ⇒ 第二个模块被
@@ -42,7 +42,7 @@ afterAll(() => {
 
 const SRC = "export function clean(x) {\n  return x + 1;\n}\nclean(1);\n";
 
-describe("BUG-016 — export --out 的模块标识与绝对路径无关", () => {
+describe("export --out 的模块标识与绝对路径无关", () => {
   it("同一份源码在两个目录下导出到同一 out 目录 ⇒ 只有一份产物", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-b016-"));
     dirs.push(dir);
@@ -87,11 +87,11 @@ describe("BUG-016 — export --out 的模块标识与绝对路径无关", () => 
 });
 
 // ---------------------------------------------------------------------------
-// BUG-028 — stdout 不劫持用户导出名
+// stdout 不劫持用户导出名
 // ---------------------------------------------------------------------------
-describe("[cli-] BUG-028 — stdout 不劫持用户导出名", () => {
+describe("stdout 不劫持用户导出名", () => {
 /**
- * BUG-028 —— `export --format all` 的 stdout 会**劫持用户自己的导出名**，且与
+ * `export --format all` 的 stdout 会**劫持用户自己的导出名**，且与
  * `--out` 产物不一致。
  *
  * 症状：用户模块里有 `fooInput` / `fooOutput`（极常见的命名）时，zod 段生成的
@@ -124,7 +124,7 @@ const SRC = [
 
 const DTS_DECL = /^export declare function .*$/gm;
 
-describe("BUG-028 — stdout 不劫持用户导出名", () => {
+describe("stdout 不劫持用户导出名", () => {
   it("用户导出名在 stdout 的 dts 段保持原名（不出现 *Dts 后缀）", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-b028-"));
     dirs.push(dir);
@@ -164,11 +164,11 @@ describe("BUG-028 — stdout 不劫持用户导出名", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-033 — 纯 barrel 也出模块面产物
+// 纯 barrel 也出模块面产物
 // ---------------------------------------------------------------------------
-describe("[cli-] BUG-033 — 纯 barrel 也出模块面产物", () => {
+describe("纯 barrel 也出模块面产物", () => {
 /**
- * BUG-033 —— 纯 re-export 模块（barrel）`export --format dts` 不产出任何产物。
+ * 纯 re-export 模块（barrel）`export --format dts` 不产出任何产物。
  *
  * 症状：`export { helper } from "./cjs.js";` 单独成文件时，`functions.length`
  * 为 0 ⇒ 早退发生在**模块面组装之前** ⇒ 再导出被整个丢掉，只打印
@@ -202,7 +202,7 @@ function fixture(): string {
   return dir;
 }
 
-describe("BUG-033 — 纯 barrel 也出模块面产物", () => {
+describe("纯 barrel 也出模块面产物", () => {
   it("只有再导出的模块：dts 产出再导出声明（不是「无函数」早退）", () => {
     const dir = fixture();
     const r = runCliTsx(["export", join(dir, "reexp.js"), "--format", "dts"]);
@@ -230,11 +230,11 @@ describe("BUG-033 — 纯 barrel 也出模块面产物", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-040 —— --draft --fn 按导出名匹配（别名导出）
+// --draft --fn 按导出名匹配（别名导出）
 // ---------------------------------------------------------------------------
-describe("[cli-] BUG-040 —— --draft --fn 按导出名匹配（别名导出）", () => {
+describe("--draft --fn 按导出名匹配（别名导出）", () => {
 /**
- * BUG-040 —— `nudo contract --draft --fn renamed` 静默产出**空草稿**（exit 0）。
+ * `nudo contract --draft --fn renamed` 静默产出**空草稿**（exit 0）。
  *
  * 契约身份恒为**导出名**（DESIGN-003），但 `--fn` 过滤把用户的导出名直接与
  * `analysis.functions[].name`（**本地名**）比较、且 CLI 的「一个都没命中」
@@ -265,7 +265,7 @@ function makeFixture(): string {
   return dir;
 }
 
-describe("BUG-040 —— --draft --fn 按导出名匹配（别名导出）", () => {
+describe("-draft --fn 按导出名匹配（别名导出）", () => {
   it("--fn renamed ⇒ 草拟出 `export const renamed = fn(`（不再是空草稿）", () => {
     const dir = makeFixture();
     const r = runCli(["contract", "--draft", "--fn", "renamed", "--", "lib.js"], { cwd: dir });
@@ -288,11 +288,11 @@ describe("BUG-040 —— --draft --fn 按导出名匹配（别名导出）", () 
 });
 
 // ---------------------------------------------------------------------------
-// nudo contract --draft --fn 未命中 · BUG-042 · 不许静默空草稿
+// nudo contract --draft --fn 未命中 · 不许静默空草稿
 // ---------------------------------------------------------------------------
-describe("[cli-] nudo contract --draft --fn 未命中 · BUG-042 · 不许静默空草稿", () => {
+describe("nudo contract --draft --fn 未命中 · 不许静默空草稿", () => {
 /**
- * BUG-042 —— `nudo contract --draft --fn <写错的名字>` 是**静默 no-op**（空草稿 + exit 0）。
+ * `nudo contract --draft --fn <写错的名字>` 是**静默 no-op**（空草稿 + exit 0）。
  *
  * 改前（`contract-draft.ts`）：`fnNames` 原样传进 `draftContract`，
  * **没有「一个都没命中」的门禁** ⇒ 发射器把全部条目丢弃 ⇒ 落盘一份只有头部的
@@ -329,7 +329,7 @@ function makeFixture(): string {
   return dir;
 }
 
-describe("nudo contract --draft --fn 未命中 · BUG-042 · 不许静默空草稿", () => {
+describe("nudo contract --draft --fn 未命中 · 不许静默空草稿", () => {
   it("名字写错 ⇒ 用法错误（exit 1）+ 列出可用导出名 + **不落盘**", () => {
     const dir = makeFixture();
 
@@ -392,16 +392,16 @@ describe("nudo contract --draft --fn 未命中 · BUG-042 · 不许静默空草�
 });
 
 // ---------------------------------------------------------------------------
-// BUG-045 · CJS `module.exports = { … }` 导出面与 dot 形态同口径
+// CJS `module.exports = { … }` 导出面与 dot 形态同口径
 // ---------------------------------------------------------------------------
-describe("[cli-] BUG-045 · CJS `module.exports = { … }` 导出面与 dot 形态同口径", () => {
+describe("CJS `module.exports = { … }` 导出面与 dot 形态同口径", () => {
 /**
- * BUG-045 CLI 回归：CJS `module.exports = { … }` 形态的导出面三方言。
+ * CLI 回归：CJS `module.exports = { … }` 形态的导出面三方言。
  *
  * 症状（修前）：同一份 `x + 1`，`module.exports = { h(x) { … } }` 的
- *   - dts   → `export declare function h(x: unknown): unknown;`（check 面说 `number | string`）
- *   - zod   → `hOutput = z.unknown()`（接受一切）
- *   - guard → `return true;`（校验器空操作 = 假绿）
+ * - dts → `export declare function h(x: unknown): unknown;`（check 面说 `number | string`）
+ * - zod → `hOutput = z.unknown()`（接受一切）
+ * - guard → `return true;`（校验器空操作 = 假绿）
  * 而对照写法 `module.exports.h = fn` 三方言都正常。
  *
  * 这里钉的是**产物面**（用户实际拿到的校验器），根因与求值面回归见
@@ -440,7 +440,7 @@ function fixture(): { obj: string; dot: string } {
   return { obj, dot };
 }
 
-describe("BUG-045 · CJS `module.exports = { … }` 导出面与 dot 形态同口径", () => {
+describe("CJS `module.exports = { … }` 导出面与 dot 形态同口径", () => {
   it("dts 面：返回位是真类型（不是 unknown），且与 dot 形态逐字一致", () => {
     const { obj, dot } = fixture();
     const o = runCliTsx(["export", "--format", "dts", obj]);
@@ -474,11 +474,11 @@ describe("BUG-045 · CJS `module.exports = { … }` 导出面与 dot 形态同�
 });
 
 // ---------------------------------------------------------------------------
-// BUG-055（CLI）— freeze 不得把违反被调方契约的见证写进被调方
+// （CLI）— freeze 不得把违反被调方契约的见证写进被调方
 // ---------------------------------------------------------------------------
-describe("[cli-] BUG-055（CLI）— freeze 不得把违反被调方契约的见证写进被调方", () => {
+describe("（CLI）— freeze 不得把违反被调方契约的见证写进被调方", () => {
 /**
- * BUG-055（CLI 面）：`nudo test --freeze` 把**违反被调方契约**的见证写进被调方
+ * （CLI 面）：`nudo test --freeze` 把**违反被调方契约**的见证写进被调方
  * ⇒ 一个本来绿色的被调方被自己的 freeze 操作冻成红色（`nudo:case-inconsistency`），
  * 且 `--freeze=update` 原样重记 ⇒ 没有自愈路径。
  *
@@ -521,7 +521,7 @@ needsPositive(-1);
   return { dir, lib: join(dir, "lib.js"), usage: join(dir, "usage.js") };
 }
 
-describe("BUG-055（CLI）— freeze 不得把违反被调方契约的见证写进被调方", () => {
+describe("（CLI）— freeze 不得把违反被调方契约的见证写进被调方", () => {
   it("违约见证不写入；固化后 check 仍绿（旧行为：check FAILED + exit 1）", () => {
     const { dir, lib, usage } = project();
     try {
@@ -530,8 +530,8 @@ describe("BUG-055（CLI）— freeze 不得把违反被调方契约的见证写�
 
       const freeze = runCliTsx(["test", lib, "--from", usage, "--freeze"]);
       // 退出码不是本条的判据：调用点上确实存在违反契约的实参 ⇒ 分析面如实报
-      // `nudo:contract-domain-exceeds`（error 级，BUG-014 口径）⇒ exit 1 是**正确**的。
-      // BUG-055 的判据是「固化不得把该违约搬进被调方」。
+      // `nudo:contract-domain-exceeds`（error 级，口径）⇒ exit 1 是**正确**的。
+      // 的判据是「固化不得把该违约搬进被调方」。
       expect(freeze.stdout).toContain("freeze →");
       expect(freeze.stdout).toContain("nudo:contract-domain-exceeds");
 
@@ -566,11 +566,11 @@ describe("BUG-055（CLI）— freeze 不得把违反被调方契约的见证写�
 });
 
 // ---------------------------------------------------------------------------
-// BUG-074 — stdout 平铺面的 default 导出必须是 ambient 合法形态
+// stdout 平铺面的 default 导出必须是 ambient 合法形态
 // ---------------------------------------------------------------------------
-describe("[cli-] BUG-074 — stdout 平铺面的 default 导出必须是 ambient 合法形态", () => {
+describe("stdout 平铺面的 default 导出必须是 ambient 合法形态", () => {
 /**
- * BUG-074 — `nudo export --format all` 的 stdout 平铺面在模块有 `default`
+ * `nudo export --format all` 的 stdout 平铺面在模块有 `default`
  * 导出时**不是合法 TS 模块**（TS2391 / TS2390）。
  *
  * dts 生成器写的是 `.d.ts` 上下文：具名导出带 `declare`，但 `default` 导出
@@ -618,7 +618,7 @@ function withProject(files: Record<string, string>, fn: (dir: string) => void): 
   }
 }
 
-describe("BUG-074 — stdout 平铺面的 default 导出必须是 ambient 合法形态", () => {
+describe("stdout 平铺面的 default 导出必须是 ambient 合法形态", () => {
   it("default 函数：declare function + `export { main as default }`", () => {
     withProject({ "defexp.js": DEFAULT_FN }, (dir) => {
       const out = runCliTsx(["export", join(dir, "defexp.js"), "--format", "all"]).stdout;
@@ -657,11 +657,11 @@ describe("BUG-074 — stdout 平铺面的 default 导出必须是 ambient 合法
 });
 
 // ---------------------------------------------------------------------------
-// nudo contract --from-dts · BUG-100 · 不许静默吞旗标
+// nudo contract --from-dts · 不许静默吞旗标
 // ---------------------------------------------------------------------------
-describe("[cli-] nudo contract --from-dts · BUG-100 · 不许静默吞旗标", () => {
+describe("nudo contract --from-dts · 不许静默吞旗标", () => {
 /**
- * BUG-100 —— `nudo contract --from-dts` 把 `--emit` / `--fn` / `--all` /
+ * `nudo contract --from-dts` 把 `--emit` / `--fn` / `--all` /
  * `--dry-run` / `--exit-on-diff` **静默吞掉** ⇒ 漂移门禁恒 exit 0（假绿）。
  *
  * 改前（`contract.ts` 的分派）：`--from-dts` 只把 `write` / `dryRun` / `force`
@@ -690,7 +690,7 @@ function makeFixture(): string {
   return dir;
 }
 
-describe("nudo contract --from-dts · BUG-100 · 不许静默吞旗标", () => {
+describe("nudo contract --from-dts · 不许静默吞旗标", () => {
   it("--from-dts + --emit/--all/--dry-run/--exit-on-diff ⇒ 用法错误（exit 1）+ 不写侧车", () => {
     const dir = makeFixture();
 
@@ -758,11 +758,11 @@ describe("nudo contract --from-dts · BUG-100 · 不许静默吞旗标", () => {
 });
 
 // ---------------------------------------------------------------------------
-// nudo contract --emit · BUG-122 · 派生分支 vs 主分支 = 净效果
+// nudo contract --emit · 派生分支 vs 主分支 = 净效果
 // ---------------------------------------------------------------------------
-describe("[cli-] nudo contract --emit · BUG-122 · 派生分支 vs 主分支 = 净效果", () => {
+describe("nudo contract --emit · 派生分支 vs 主分支 = 净效果", () => {
 /**
- * BUG-122 —— `nudo contract --emit` 的**派生分支**与**主分支**各写一次同一侧车
+ * `nudo contract --emit` 的**派生分支**与**主分支**各写一次同一侧车
  * 且段格式不一致 ⇒ `--dry-run` 的 diff ≠ 真实写盘 ⇒ `--exit-on-diff` 永久 exit 1。
  *
  * 场景：侧车里既有**手写段**（`tag`），源里又有同名导出 ⇒ 派生分支
@@ -773,17 +773,17 @@ describe("[cli-] nudo contract --emit · BUG-122 · 派生分支 vs 主分支 = 
  * ② `--dry-run` 打印一份**永不落盘**的 diff（要求加 `// derived-from:` 行）；
  * ③ `--exit-on-diff` 因此**永久 exit 1** ⇒ CI 漂移门禁永远红。
  *
- * BUG-196 之后的钉法（单写者 + 同源）：
+ * 之后的钉法（单写者 + 同源）：
  * - 根侧车由 **CLI** 写（直写分支永远 dry-run；派生分支 `skipWrite` 跳过它）；
  * - 最终文本 = 派生分支在**直写分支产物**之上做的**段级合并**：直写正文优先，
- *   `// derived-from:` 标签行**并进去**（不再被随后那次整段重写抹掉）；
+ * `// derived-from:` 标签行**并进去**（不再被随后那次整段重写抹掉）；
  * - 判定 = 落盘内容 vs 写前内容（逐字）⇒ 预览与写盘同源。
  *
  * ⇒ 这里的期望随之改写：
  * ① 首次 `--emit --all` **真的补上**标签行（报告 `Updated` 与文件一致）；
  * ② 第二次逐字不变、不报 `Updated`（收敛）；
  * ③ `--dry-run --exit-on-diff` 首次 exit 1（有净漂移，且 diff 里的标签行
- *    真实写盘会产生）；**收敛后 exit 0**、不打印 diff。
+ * 真实写盘会产生）；**收敛后 exit 0**、不打印 diff。
  *
  * ⚠ CLI 子进程的 `@nudojs/service/emit` 解析会按 **cwd** 找 tsconfig：cwd 是
  * 临时夹具 ⇒ 落到 `packages/service/dist/`（可能是旧构建）。夹具里写一份
@@ -816,7 +816,7 @@ export const tag = fn({ n: number().gt(0) }, string());
 export const wrap = fn({ text: number() }, string());
 `;
 
-/** 收敛态：直写正文 + 派生分支并进来的溯源行（BUG-196） */
+/** 收敛态：直写正文 + 派生分支并进来的溯源行（） */
 const SIDECAR_CONVERGED = `import { fn, number } from "@nudojs/core";
 
 // 手写段（tag）：API 表面想强制的契约
@@ -839,7 +839,7 @@ function makeFixture(): string {
   return dir;
 }
 
-describe("nudo contract --emit · BUG-122 · 派生分支 vs 主分支 = 净效果", () => {
+describe("nudo contract --emit · 派生分支 vs 主分支 = 净效果", () => {
   it("首次 --emit --all：标签行真落盘（Updated 与文件一致）；第二次逐字不变（幂等）", () => {
     const dir = makeFixture();
     const sidecar = join(dir, "lib.nudo.js");
@@ -847,7 +847,7 @@ describe("nudo contract --emit · BUG-122 · 派生分支 vs 主分支 = 净效�
     const r = runCli(["contract", "lib.js", "--emit", "--all"], { cwd: dir });
 
     expect(r.status).toBe(0);
-    // BUG-196：派生分支的溯源行**真的落盘**（直写正文 + 标签行），不再被整段覆盖
+    // 派生分支的溯源行**真的落盘**（直写正文 + 标签行），不再被整段覆盖
     expect(readFileSync(sidecar, "utf-8")).toBe(SIDECAR_CONVERGED);
     // 真的变了 ⇒ 报告必须说 Updated（台账与文件一致）
     expect(r.stdout).toContain("Updated");
@@ -911,32 +911,32 @@ describe("nudo contract --emit · BUG-122 · 派生分支 vs 主分支 = 净效�
 });
 
 // ---------------------------------------------------------------------------
-// nudo contract --emit · BUG-196 · 同一侧车同一段 = 一个写者
+// nudo contract --emit · 同一侧车同一段 = 一个写者
 // ---------------------------------------------------------------------------
-describe("[cli-] nudo contract --emit · BUG-196 · 同一侧车同一段 = 一个写者", () => {
+describe("nudo contract --emit · 同一侧车同一段 = 一个写者", () => {
 /**
- * BUG-196 —— `nudo contract --emit` 的**派生分支**与**直写分支**抢同一侧车的
+ * `nudo contract --emit` 的**派生分支**与**直写分支**抢同一侧车的
  * 同一段：两个写者、两种段格式 ⇒
  * ① 派生分支算出的 `// derived-from:` 溯源行**永不落盘**（被直写分支整段覆盖）；
  * ② 落盘字节不变，报告却说「Updated」（台账与文件不符）；
  * ③ `--dry-run` 预览要求加一行**真实写盘从不产生**的行 ⇒ 预览与写盘相反，
- *    `--exit-on-diff` 因此**永不收敛**（恒 exit 1 ⇒ CI 漂移门禁永远红）。
+ * `--exit-on-diff` 因此**永不收敛**（恒 exit 1 ⇒ CI 漂移门禁永远红）。
  *
  * 钉（单写者 + 同源）：
  * - 根侧车**只有 CLI 一个写者**：直写分支永远 dry-run（只算），派生分支
- *   `skipWrite` 跳过该文件；最终文本在 CLI 里一次决定、一次落盘。
+ * `skipWrite` 跳过该文件；最终文本在 CLI 里一次决定、一次落盘。
  * - 段级合并：直写正文**优先**，派生分支只把 `// derived-from:` 标签行并进去。
  * - 判定 = 落盘内容 vs 写前内容（逐字）⇒ **预览 == 写盘**（字节级）。
  * - 幂等：连跑两次 `--emit --all`，第二次无 `Updated` 且 md5 不变；
- *   收敛后 `--dry-run --exit-on-diff` ⇒ exit 0。
+ * 收敛后 `--dry-run --exit-on-diff` ⇒ exit 0。
  *
- * 夹具（与 `tmp/repro/bug-196` 同形，但测试自建临时目录 ⇒ 不读写 tmp/）：
+ * 夹具（与 `tmp/repro/` 同形，但测试自建临时目录 ⇒ 不读写 tmp/）：
  * `lib.js` 里 `@nudo:contract` 让 `bar` 成为 root ⇒ 派生推导点名下游导出
  * `foo`（派生段 = `fn({ a: lit(1) }, lit(2))`），而 `foo` 同时被直写分支覆盖
  * （`fn({ a: number() }, number())`）⇒ 同一段两个写者。
  *
  * ⚠ CLI 子进程的 `@nudojs/service/emit` 解析会按 **cwd** 找 tsconfig：cwd 是
- * 临时夹具 ⇒ 落到 `packages/service/dist/`（可能是旧构建，BUG-196 的语义
+ * 临时夹具 ⇒ 落到 `packages/service/dist/`（可能是旧构建，的语义
  * 在 service 源码里）⇒ 夹具里写一份 `writeSrcTsconfig` 钉到仓内 src。
  */
 
@@ -988,7 +988,7 @@ function addedLines(diff: string): string[] {
     .map((l) => l.slice(1));
 }
 
-describe("nudo contract --emit · BUG-196 · 同一侧车同一段 = 一个写者", () => {
+describe("nudo contract --emit · 同一侧车同一段 = 一个写者", () => {
   it("两个分支都命中同一导出 ⇒ 直写正文优先 + `derived-from` 标签行真落盘", () => {
     const { dir, sidecar } = makeFixture();
 
@@ -1063,11 +1063,11 @@ describe("nudo contract --emit · BUG-196 · 同一侧车同一段 = 一个写�
 });
 
 // ---------------------------------------------------------------------------
-// BUG-233 —— export 不得静默吞掉接口冲突诊断
+// export 不得静默吞掉接口冲突诊断
 // ---------------------------------------------------------------------------
-describe("[cli-] BUG-233 —— export 不得静默吞掉接口冲突诊断", () => {
+describe("export 不得静默吞掉接口冲突诊断", () => {
 /**
- * BUG-233 —— `nudo export` 静默吞掉自己已收集的 `nudo:contract-conflict`。
+ * `nudo export` 静默吞掉自己已收集的 `nudo:contract-conflict`。
  *
  * `collectExportDiagnostics` 的阻断判据只看 `severity === "error"`，而
  * `nudo:contract-conflict` 是 **warning** 级；`export.ts` 又只在 `blocking`
@@ -1099,7 +1099,7 @@ function makeFixture(): string {
   return dir;
 }
 
-describe("BUG-233 —— export 不得静默吞掉接口冲突诊断", () => {
+describe("export 不得静默吞掉接口冲突诊断", () => {
   it("warning 级 nudo:contract-conflict ⇒ 阻断（诊断上屏 + exit 1）", () => {
     const dir = makeFixture();
     const r = runCli(["export", "lib.js", "--format", "all"], { cwd: dir });
@@ -1110,11 +1110,11 @@ describe("BUG-233 —— export 不得静默吞掉接口冲突诊断", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 446 —— TS-only 的模块出口语句必须被剥除（产物是合法 JS）
+// TS-only 的模块出口语句必须被剥除（产物是合法 JS）
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 446 —— TS-only 的模块出口语句必须被剥除（产物是合法 JS）", () => {
+describe("TS-only 的模块出口语句必须被剥除（产物是合法 JS）", () => {
 /**
- * Bug 446 —— TS-only 的 `export =` / `export as namespace` 未剥 ⇒ 产物**根本
+ * TS-only 的 `export =` / `export as namespace` 未剥 ⇒ 产物**根本
  * 不是合法 JS**（`node --check` 报 SyntaxError），而 `migrate verify` 对同一
  * 文件**报 OK / exit 0**（假绿）。
  *
@@ -1150,7 +1150,7 @@ function nodeCheck(path: string): { status: number; stderr: string } {
   return { status: r.status ?? 1, stderr: r.stderr ?? "" };
 }
 
-describe("Bug 446 —— TS-only 的模块出口语句必须被剥除（产物是合法 JS）", () => {
+describe("TS-only 的模块出口语句必须被剥除（产物是合法 JS）", () => {
   it("`export =` 被剥除 ⇒ 产物 `node --check` 过", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-cli-bug-446-"));
     dirs.push(dir);
@@ -1206,11 +1206,11 @@ describe("Bug 446 —— TS-only 的模块出口语句必须被剥除（产物�
 });
 
 // ---------------------------------------------------------------------------
-// export — @nudo:skip 的函数不被静默丢掉（Bug 600）
+// export — @nudo:skip 的函数不被静默丢掉（）
 // ---------------------------------------------------------------------------
-describe("[cli-] export — @nudo:skip 的函数不被静默丢掉（Bug 600）", () => {
+describe("export — @nudo:skip 的函数不被静默丢掉（）", () => {
 /**
- * Bug 600 —— `@nudo:skip` 的函数被导出入口 filter **静默丢掉**。
+ * `@nudo:skip` 的函数被导出入口 filter **静默丢掉**。
  *
  * 根因：`selectExportFunctions` 只放行「有 case 见证」的函数，而 `@nudo:skip`
  * 按设计**不合成** entry@ 见证（零 case）⇒ skip 函数永远进不了导出面 ⇒
@@ -1248,7 +1248,7 @@ export function skipped(a) {
   );
 }
 
-describe("export — @nudo:skip 的函数不被静默丢掉（Bug 600）", () => {
+describe("export — @nudo:skip 的函数不被静默丢掉（）", () => {
   it("skip 函数进导出面（zod / standard / dts / guard 四面都有）", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug600-"));
     writeSkipFixture(dir);
@@ -1286,11 +1286,11 @@ describe("export — @nudo:skip 的函数不被静默丢掉（Bug 600）", () =>
 });
 
 // ---------------------------------------------------------------------------
-// nudo export --out · Bug 617 · 不覆盖手写产物
+// nudo export --out · 不覆盖手写产物
 // ---------------------------------------------------------------------------
-describe("[cli-] nudo export --out · Bug 617 · 不覆盖手写产物", () => {
+describe("nudo export --out · 不覆盖手写产物", () => {
 /**
- * Bug 617 — `nudo export --out` **静默覆盖手写的 `.d.ts`** ⇒ 类型精度倒退，
+ * `nudo export --out` **静默覆盖手写的 `.d.ts`** ⇒ 类型精度倒退，
  * exit 0、零提示。
  *
  * 钉：目标已存在且**不是本工具生成的** ⇒ 拒绝覆盖（exit 1 + 可诊断的
@@ -1304,7 +1304,7 @@ describe("[cli-] nudo export --out · Bug 617 · 不覆盖手写产物", () => {
 
 const HANDWRITTEN = "export declare function add(a: number, b: number): number;\n";
 
-describe("nudo export --out · Bug 617 · 不覆盖手写产物", () => {
+describe("nudo export --out · 不覆盖手写产物", () => {
   it("手写 .d.ts 在 out 目录里 ⇒ 拒绝覆盖 + exit 1 + 文件逐字不变", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug-617-"));
     const file = join(dir, "lib.js");
@@ -1343,11 +1343,11 @@ describe("nudo export --out · Bug 617 · 不覆盖手写产物", () => {
 });
 
 // ---------------------------------------------------------------------------
-// export — 四个产物面共用导出面闸门（Bug 621）
+// export — 四个产物面共用导出面闸门（）
 // ---------------------------------------------------------------------------
-describe("[cli-] export — 四个产物面共用导出面闸门（Bug 621）", () => {
+describe("export — 四个产物面共用导出面闸门（）", () => {
 /**
- * Bug 621 —— 四个产物面「哪些函数算公开」有**四套口径**：dts 面按模块导出面
+ * 四个产物面「哪些函数算公开」有**四套口径**：dts 面按模块导出面
  * 裁剪，zod / standard / guard 三面**不裁剪** ⇒ 源模块**一个导出都没有**时，
  * 三个运行时校验器产物照样产出（内部实现被当成公开契约），`.d.ts` 却静默缺席。
  *
@@ -1361,7 +1361,7 @@ describe("[cli-] export — 四个产物面共用导出面闸门（Bug 621）", 
 
 
 
-/** 只有一个**非导出**函数的模块（Bug 621 的原始夹具形状）。 */
+/** 只有一个**非导出**函数的模块（的原始夹具形状）。 */
 function writeInternalOnlyFixture(dir: string): void {
   writeFileSync(
     join(dir, "lib.js"),
@@ -1374,7 +1374,7 @@ function internal(x) {
   );
 }
 
-describe("export — 四个产物面共用导出面闸门（Bug 621）", () => {
+describe("export — 四个产物面共用导出面闸门（）", () => {
   it("非导出函数不进 zod / standard / guard 三面（stdout 面）", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug621-"));
     writeInternalOnlyFixture(dir);
@@ -1425,11 +1425,11 @@ export function public1(x) {
 });
 
 // ---------------------------------------------------------------------------
-// nudo contract --emit --fn 未命中 · Bug 657 · 过滤器不降级
+// nudo contract --emit --fn 未命中 · 过滤器不降级
 // ---------------------------------------------------------------------------
-describe("[cli-] nudo contract --emit --fn 未命中 · Bug 657 · 过滤器不降级", () => {
+describe("nudo contract --emit --fn 未命中 · 过滤器不降级", () => {
 /**
- * Bug 657 —— `nudo contract --emit --fn <拼错的名字>` **静默丢弃过滤器**。
+ * `nudo contract --emit --fn <拼错的名字>` **静默丢弃过滤器**。
  *
  * 改前（`runContractEmit`）：`--fn` 名单经 `localNamedExports` 过滤后，
  * **命中数为 0 时把过滤结果整段降级成 `undefined`** ⇒ 发射器收不到任何
@@ -1438,12 +1438,12 @@ describe("[cli-] nudo contract --emit --fn 未命中 · Bug 657 · 过滤器不�
  *
  * 钉（族 20 · 片 C）：
  * ① **全部未命中** ⇒ 当**用法错误**：列出本地导出名候选、**exit 1**、**不写盘**
- *    （侧车逐字不变 ⇒ 作用域没有被放大）；
+ * （侧车逐字不变 ⇒ 作用域没有被放大）；
  * ② **部分命中** ⇒ 未命中的名字**原样**传给发射器 ⇒ 走发射器**已存在**的
- *    `skipped <fn> (not-an-export)` 通道（与 LSP / agent 面同款文案）；
+ * `skipped <fn> (not-an-export)` 通道（与 LSP / agent 面同款文案）；
  * ③ 对照组：名字正确时**只**改那一个（作用域没被放大）。
  *
- * ⚠ **BUG-021 口径变更后的重钉**（对照组里的 alpha 段）：调用点**点观测**不再
+ * ⚠ **口径变更后的重钉**（对照组里的 alpha 段）：调用点**点观测**不再
  * 直接成为字面量契约 —— 先 `widenObservationAbs` 再 `joinThenProject` ⇒ 一次
  * 调用 `alpha({ x: 5 })` 折出 `shape({ x: number() })` / `number()`，而不是
  * `shape({ x: lit(5) })` / `lit(5)`。
@@ -1486,7 +1486,7 @@ function makeFixture(): string {
   return dir;
 }
 
-describe("nudo contract --emit --fn 未命中 · Bug 657 · 过滤器不降级", () => {
+describe("nudo contract --emit --fn 未命中 · 过滤器不降级", () => {
   it("全部未命中 ⇒ 用法错误（exit 1）+ 列出候选 + **侧车逐字不变**", () => {
     const dir = makeFixture();
     const sidecar = join(dir, "lib.nudo.js");
@@ -1558,7 +1558,7 @@ describe("nudo contract --emit --fn 未命中 · Bug 657 · 过滤器不降级",
     );
 
     expect(r.status).toBe(0);
-    // BUG-021：调用点**点观测**不再直接成为字面量契约 —— 先 `widenObservationAbs`
+    // 调用点**点观测**不再直接成为字面量契约 —— 先 `widenObservationAbs`
     // 再 `joinThenProject` ⇒ 一次调用 `alpha({ x: 5 })` 折出
     // `shape({ x: number() })` / `number()`（不是 `lit(5)`）。
     expect(r.stdout).toContain("+export const alpha = fn({ p: shape({ x: number() }) }, number());");
@@ -1570,11 +1570,11 @@ describe("nudo contract --emit --fn 未命中 · Bug 657 · 过滤器不降级",
 });
 
 // ---------------------------------------------------------------------------
-// Bug 658 —— contract --json 的 stdout 必须是**一份** JSON（跨文件聚合）
+// contract --json 的 stdout 必须是**一份** JSON（跨文件聚合）
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 658 —— contract --json 的 stdout 必须是**一份** JSON（跨文件聚合）", () => {
+describe("contract --json 的 stdout 必须是**一份** JSON（跨文件聚合）", () => {
 /**
- * Bug 658 —— `nudo contract <目录> --draft --json` 的 stdout 是 **N 份 JSON 拼接**
+ * `nudo contract <目录> --draft --json` 的 stdout 是 **N 份 JSON 拼接**
  * （`JSON.parse` 抛 "Unexpected non-whitespace character after JSON"）。
  *
  * 根因：JSON 出口是**单文档**（每个 root 一次 `console.log`），而命令层对每个
@@ -1612,7 +1612,7 @@ type JsonEntry = {
   diff?: string;
 };
 
-describe("Bug 658 —— contract --json 的 stdout 必须是**一份** JSON（跨文件聚合）", () => {
+describe("contract --json 的 stdout 必须是**一份** JSON（跨文件聚合）", () => {
   it("目录 + --draft --json：stdout 可被 JSON.parse 解析（改前抛）", () => {
     const r = runCli(["contract", ".", "--draft", "--json"], { cwd: dir });
     expect(r.status).toBe(0);
@@ -1676,11 +1676,11 @@ describe("Bug 658 —— contract --json 的 stdout 必须是**一份** JSON（�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 659 —— --from-dts 不得绕过用法校验（先校验、后分派）
+// --from-dts 不得绕过用法校验（先校验、后分派）
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 659 —— --from-dts 不得绕过用法校验（先校验、后分派）", () => {
+describe("--from-dts 不得绕过用法校验（先校验、后分派）", () => {
 /**
- * Bug 659 —— `nudo contract --from-dts` 在**所有用法校验之前**短路
+ * `nudo contract --from-dts` 在**所有用法校验之前**短路
  * ⇒ `--emit` / `--draft` / `--json` 被静默吞掉。
  *
  * 改前：`--from-dts … --emit --draft` **不报**互斥错误、exit 0、直接出 draft 正文；
@@ -1712,7 +1712,7 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("Bug 659 —— --from-dts 不得绕过用法校验（先校验、后分派）", () => {
+describe("-from-dts 不得绕过用法校验（先校验、后分派）", () => {
   it("--from-dts + --emit --draft：报互斥错误 + exit 1（改前：静默出 draft、exit 0）", () => {
     const r = runCli(["contract", "--from-dts", dts, "--emit", "--draft"], { cwd: dir });
     expect(r.status).toBe(1);
@@ -1750,15 +1750,15 @@ describe("Bug 659 —— --from-dts 不得绕过用法校验（先校验、后�
     const r = runCli(["contract", "--from-dts", dts, "--write"], { cwd: dir });
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("wrote");
-    // ⚠ 族 20 · Bug 944（片 C）起：草稿落点是**贴着源 `.d.ts`**的
-    //   `sidecarDraftPath` 口径，**不再**是以 CWD 为基准的
-    //   `types.nudo.draft.js`（那会静默覆盖同基名的另一个文件的草稿）。
-    //   ⚠ 落点名的 `.d.` 段按 BUG-264（`tmp/bug-report/sections/BUG-264.md`
-    //   + `.changeset/fix-bug-cat-09-cli-check.md`）：`.d.ts` 源的侧车/草稿名
-    //   **不得含 `.d.`**（basename 含 `.d.` ⇒ TypeScript 判成声明文件 ⇒
-    //   草稿与它建议的复制落点都过不了 `tsc --strict`，TS1254）⇒
-    //   `types.d.ts` ⇒ `types.nudo.draft.ts`（**不是** `types.d.nudo.draft.ts`）。
-    //   用例意图不变：「--from-dts + --write」是合法组合，不被用法校验误伤。
+    // ⚠ 族 20 · （片 C）起：草稿落点是**贴着源 `.d.ts`**的
+    // `sidecarDraftPath` 口径，**不再**是以 CWD 为基准的
+    // `types.nudo.draft.js`（那会静默覆盖同基名的另一个文件的草稿）。
+    // ⚠ 落点名的 `.d.` 段按 （`tmp/bug-report/sections/.md`
+    // + `.changeset/fix-bug-cat-09-cli-check.md`）：`.d.ts` 源的侧车/草稿名
+    // **不得含 `.d.`**（basename 含 `.d.` ⇒ TypeScript 判成声明文件 ⇒
+    // 草稿与它建议的复制落点都过不了 `tsc --strict`，TS1254）⇒
+    // `types.d.ts` ⇒ `types.nudo.draft.ts`（**不是** `types.d.nudo.draft.ts`）。
+    // 用例意图不变：「--from-dts + --write」是合法组合，不被用法校验误伤。
     expect(existsSync(join(dir, "types.nudo.draft.ts"))).toBe(true);
     expect(existsSync(join(dir, "types.nudo.draft.js"))).toBe(false);
   });
@@ -1774,11 +1774,11 @@ describe("Bug 659 —— --from-dts 不得绕过用法校验（先校验、后�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 660 —— contract --draft --write --dry-run 必须打 unified diff
+// contract --draft --write --dry-run 必须打 unified diff
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 660 —— contract --draft --write --dry-run 必须打 unified diff", () => {
+describe("contract --draft --write --dry-run 必须打 unified diff", () => {
 /**
- * Bug 660 —— `nudo contract --draft --write --dry-run` **不打 unified diff**
+ * `nudo contract --draft --write --dry-run` **不打 unified diff**
  * （只打一行「[dry-run] would write → …」），而 CLI Reference 承诺
  * `--dry-run` = "Print a unified diff instead of writing"
  * （`packages/website/docs/api/cli-reference.md` 的 contract 选项表）。
@@ -1814,7 +1814,7 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("Bug 660 —— contract --draft --write --dry-run 必须打 unified diff", () => {
+describe("contract --draft --write --dry-run 必须打 unified diff", () => {
   it("dry-run 打 unified diff（--- a/ + ++ b/ + @@ hunk）且**不写盘**", () => {
     const r = runCli(["contract", "--draft", "--write", "--dry-run", "calc.js"], { cwd: dir });
 
@@ -1870,11 +1870,11 @@ describe("Bug 660 —— contract --draft --write --dry-run 必须打 unified di
 });
 
 // ---------------------------------------------------------------------------
-// nudo contract --emit --dry-run · Bug 662 · 预览标签取侧车
+// nudo contract --emit --dry-run · 预览标签取侧车
 // ---------------------------------------------------------------------------
-describe("[cli-] nudo contract --emit --dry-run · Bug 662 · 预览标签取侧车", () => {
+describe("nudo contract --emit --dry-run · 预览标签取侧车", () => {
 /**
- * Bug 662 —— `nudo contract --emit --dry-run` 的**预览标签点名源文件**，
+ * `nudo contract --emit --dry-run` 的**预览标签点名源文件**，
  * 而 **diff 的目标是侧车** ⇒ 工具声称「会更新 `lib.js`」，实际只会改
  * `lib.nudo.js`；同文件另两分支（派生分支 / 写盘分支）都取**侧车** ⇒
  * **单点笔误**，不是取舍。
@@ -1919,7 +1919,7 @@ function makeFixture(): string {
   return dir;
 }
 
-describe("nudo contract --emit --dry-run · Bug 662 · 预览标签取侧车", () => {
+describe("nudo contract --emit --dry-run · 预览标签取侧车", () => {
   it("dry-run 标签点名**侧车**（与 diff 头同口径），不再点名源文件", () => {
     const dir = makeFixture();
 
@@ -1941,11 +1941,11 @@ describe("nudo contract --emit --dry-run · Bug 662 · 预览标签取侧车", (
 });
 
 // ---------------------------------------------------------------------------
-// Bug 663 —— contract --draft --json --write 必须**显式拒绝**
+// contract --draft --json --write 必须**显式拒绝**
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 663 —— contract --draft --json --write 必须**显式拒绝**", () => {
+describe("contract --draft --json --write 必须**显式拒绝**", () => {
 /**
- * Bug 663 —— `nudo contract --draft --json --write`：`--write` 被**静默丢弃**
+ * `nudo contract --draft --json --write`：`--write` 被**静默丢弃**
  * ⇒ 草稿**根本没落盘**、**exit 0**、**零提示**（stdout 是合法 JSON、无
  * 「Draft written」）⇒ agent / CI 据此认为「契约已落盘」，磁盘上**没有**
  * 侧车草稿 ⇒ **假绿 + 静默数据丢失**。
@@ -1958,8 +1958,8 @@ describe("[cli-] Bug 663 —— contract --draft --json --write 必须**显式�
  * ⇒ 「给了不生效且不报错」不再可能。
  *
  * ⚠ 机器面（`--json`）：stdout 仍是**一份合法 JSON 文档**（命令层的跨文件
- *   聚合层会把它收进恒定数组外壳）⇒ 载荷形状与命令层的 per-root 失败条目
- *   同款（`{file, errors:[{code, message}]}`）。
+ * 聚合层会把它收进恒定数组外壳）⇒ 载荷形状与命令层的 per-root 失败条目
+ * 同款（`{file, errors:[{code, message}]}`）。
  *
  * ⚠ 本钉的夹具**全部写在临时目录**里（cwd = 临时目录）⇒ 绝不往仓里写文件。
  */
@@ -2003,7 +2003,7 @@ function firstDoc(stdout: string): JsonEntry {
   return Array.isArray(parsed) ? (parsed[0] as JsonEntry) : parsed;
 }
 
-describe("Bug 663 —— contract --draft --json --write 必须**显式拒绝**", () => {
+describe("contract --draft --json --write 必须**显式拒绝**", () => {
   it("--json + --write：exit 1 + 机器面给出理由 + 草稿**没有**落盘", () => {
     const r = runCli(["contract", "--draft", "--json", "--write", "lib.js"], { cwd: dir });
 
@@ -2041,17 +2041,17 @@ describe("Bug 663 —— contract --draft --json --write 必须**显式拒绝**"
 });
 
 // ---------------------------------------------------------------------------
-// Bug 664 —— contract --json 遇语法错文件：失败 root 必须进载荷
+// contract --json 遇语法错文件：失败 root 必须进载荷
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 664 —— contract --json 遇语法错文件：失败 root 必须进载荷", () => {
+describe("contract --json 遇语法错文件：失败 root 必须进载荷", () => {
 /**
- * Bug 664 —— `nudo contract --draft --json` 遇**语法错文件**：
+ * `nudo contract --draft --json` 遇**语法错文件**：
  * 单文件 ⇒ stdout **0 字节** + exit 1（违反同文件里自己写下的「绝不空 stdout +
  * exit 1」不变量）；多文件 ⇒ stdout 是一份**只含好文件**的合法 JSON，
  * **失败文件在载荷里彻底消失** ⇒ 机器消费者无法从 JSON 知道哪个文件失败。
  *
  * 修法（族 20 · 片 A）：per-root `catch` 在 `--json` 形态下**必须产 JSON body**
- * ⇒ 失败 root 进聚合结果的 `errors[]`（聚合层见 Bug 658）⇒ stdout 永不为空、
+ * ⇒ 失败 root 进聚合结果的 `errors[]`（聚合层见 ）⇒ stdout 永不为空、
  * 载荷不缺项。
  */
 
@@ -2082,7 +2082,7 @@ type JsonDoc = {
   errors?: { code: string; message: string }[];
 };
 
-describe("Bug 664 —— contract --json 遇语法错文件：失败 root 必须进载荷", () => {
+describe("contract --json 遇语法错文件：失败 root 必须进载荷", () => {
   it("单文件（语法错）+ --draft --json：stdout 非空 + 合法 JSON + errors[] + exit 1", () => {
     const r = runCli(["contract", broken, "--draft", "--json"], { cwd: dir });
     expect(r.status).toBe(1);
@@ -2128,17 +2128,17 @@ describe("Bug 664 —— contract --json 遇语法错文件：失败 root 必须
 });
 
 // ---------------------------------------------------------------------------
-// nudo contract --json --emit · Bug 667 · 机器面拿得到合法载荷
+// nudo contract --json --emit · 机器面拿得到合法载荷
 // ---------------------------------------------------------------------------
-describe("[cli-] nudo contract --json --emit · Bug 667 · 机器面拿得到合法载荷", () => {
+describe("nudo contract --json --emit · 机器面拿得到合法载荷", () => {
 /**
- * Bug 667 —— `nudo contract --json --emit` **静默忽略 `--json`**。
+ * `nudo contract --json --emit` **静默忽略 `--json`**。
  *
  * 改前（`runContractEmit`）：opts 类型里**没有** `json` 字段、函数体**不读**它，
  * action 的 emit 分支也**不传** ⇒ stdout 是**人类文本**、exit 0 ⇒ 机器面拿到
  * **非法 JSON** 且**无失败信号**。
  *
- * ⚠ 勘误（族 20 · 实测）：族 21 的 Bug 670 修好了 `--json`（无 `--draft`）那一支；
+ * ⚠ 勘误（族 20 · 实测）：族 21 的 修好了 `--json`（无 `--draft`）那一支；
  * **本条只剩 `--json --emit` 一支**。且片 A 的 658/664 聚合层落地后，
  * 症状从「人类文本 + exit 0」变成「聚合信封里塞 `nudo:contract-json-payload-invalid`
  * 错误条目 + exit 1」⇒ **emit 结果仍然拿不到机器载荷**（退化成了 `output` 字符串）。
@@ -2184,7 +2184,7 @@ function makeFixture(): string {
   return dir;
 }
 
-describe("nudo contract --json --emit · Bug 667 · 机器面拿得到合法载荷", () => {
+describe("nudo contract --json --emit · 机器面拿得到合法载荷", () => {
   it("--json --emit ⇒ stdout 是合法 JSON 且载荷是 emit 的机器文档", () => {
     const dir = makeFixture();
 
@@ -2228,10 +2228,10 @@ describe("nudo contract --json --emit · Bug 667 · 机器面拿得到合法载�
 });
 
 // ---------------------------------------------------------------------------
-// [merged] cli-bug-944-from-dts-draft-invariants.test.ts
+// [merged] from-dts-draft-invariants
 // ---------------------------------------------------------------------------
-describe("[cli-] [merged] cli-bug-944-from-dts-draft-invariants.test.ts", () => {
-// MERGED (topic-related bug pins): cli-bug-944-from-dts-draft-invariants.test.ts + cli-bug-944-from-dts-dry-run-diff.test.ts + cli-bug-944-from-dts-write-path.test.ts
+describe("from-dts-draft-invariants", () => {
+// MERGED (topic-related bug pins): from-dts-draft-invariants + from-dts-dry-run-diff + from-dts-write-path
 // Each absorbed file keeps its own describe scope so file-level hooks stay
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 
@@ -2240,26 +2240,26 @@ describe("[cli-] [merged] cli-bug-944-from-dts-draft-invariants.test.ts", () => 
 
 
 
-describe("[merged] cli-bug-944-from-dts-draft-invariants.test.ts", () => {
+describe("from-dts-draft-invariants", () => {
 /**
- * `--from-dts --write` 的**草稿落点族**不变量（族 20 · Bug 944 / 1147 的
- * 收口回归；与 `cli-bug-944-from-dts-write-path.test.ts` /
+ * `--from-dts --write` 的**草稿落点族**不变量（族 20 · 的
+ * 收口回归；与 `from-dts-write-path` /
  * `nudojs--contract-cli-text.part.ts` 互补 —— 那两处钉的是
  * 「用例意图」，这里钉的是**规则本身**）。
  *
  * 钉：
  * ① 落点**贴着源 `.d.ts`**（`sidecarDraftPath` 口径）⇒ **不以 CWD 为基准**
- *    ⇒ CWD 里的同名草稿不会被静默覆盖；
- * ② 落点名的 basename **不含 `.d.`**（BUG-264：`tmp/bug-report/sections/
- *    BUG-264.md` + `.changeset/fix-bug-cat-09-cli-check.md`）—— basename 含
- *    `.d.` ⇒ TypeScript 的 `getDeclarationFileExtension` 判它是**声明文件**
- *    ⇒ 草稿与工具建议的复制落点都过不了 `tsc --strict`（TS1254）⇒
- *    「next」提示点名的侧车路径同样不得含 `.d.`；
+ * ⇒ CWD 里的同名草稿不会被静默覆盖；
+ * ② 落点名的 basename **不含 `.d.`**（`tmp/bug-report/sections/
+ * .md` + `.changeset/fix-bug-cat-09-cli-check.md`）—— basename 含
+ * `.d.` ⇒ TypeScript 的 `getDeclarationFileExtension` 判它是**声明文件**
+ * ⇒ 草稿与工具建议的复制落点都过不了 `tsc --strict`（TS1254）⇒
+ * 「next」提示点名的侧车路径同样不得含 `.d.`；
  * ③ 既有草稿**存在且内容不同** ⇒ **拒绝覆盖**（exit 1）+ 提示，提示**同时**
- *    给出两个放行口子（CLI 旗标 `--force` **与** 环境变量 `NUDO_DRAFT_FORCE`）
- *    并说明「人工改过的草稿永不被覆盖」；
+ * 给出两个放行口子（CLI 旗标 `--force` **与** 环境变量 `NUDO_DRAFT_FORCE`）
+ * 并说明「人工改过的草稿永不被覆盖」；
  * ④ 放行口子是真的：**机器原稿**（内容不同）+ `--force` / `NUDO_DRAFT_FORCE=1`
- *    ⇒ 覆盖成功；**人工改过的草稿** ⇒ `--force` 也**不放行**（逐字不变）。
+ * ⇒ 覆盖成功；**人工改过的草稿** ⇒ `--force` 也**不放行**（逐字不变）。
  */
 
 
@@ -2280,7 +2280,7 @@ function makeFixture(dts: string = DTS): string {
   return dir;
 }
 
-/** 落点（贴着源 `.d.ts`；BUG-264：basename 不含 `.d.`） */
+/** 落点（贴着源 `.d.ts`；basename 不含 `.d.`） */
 function draftPathOf(dir: string): string {
   return join(dir, "types", "index.nudo.draft.ts");
 }
@@ -2294,7 +2294,7 @@ describe("nudo contract --from-dts --write · 草稿落点族不变量", () => {
     expect(r.status).toBe(0);
     const draft = draftPathOf(dir);
     expect(existsSync(draft)).toBe(true);
-    // BUG-264：basename 含 `.d.` ⇒ TypeScript 判成声明文件 ⇒ 草稿过不了 tsc
+    // basename 含 `.d.` ⇒ TypeScript 判成声明文件 ⇒ 草稿过不了 tsc
     expect(basename(draft)).not.toContain(".d.");
     expect(readFileSync(draft, "utf-8")).toContain("export const mul");
     // 不以 CWD 为基准 ⇒ CWD 里**没有**同名新草稿，别的文件的草稿逐字不变
@@ -2311,7 +2311,7 @@ describe("nudo contract --from-dts --write · 草稿落点族不变量", () => {
 
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("types/index.nudo.ts");
-    // BUG-264：旧名 `types/index.d.nudo.ts` 过不了 `tsc --strict`（TS1254）
+    // 旧名 `types/index.d.nudo.ts` 过不了 `tsc --strict`（TS1254）
     expect(r.stdout).not.toContain("types/index.d.nudo.ts");
   }, 60000); // 1 个 CLI 子进程
 
@@ -2421,26 +2421,26 @@ describe("nudo contract --from-dts --write · 草稿落点族不变量", () => {
 });
 });
 
-describe("[merged] cli-bug-944-from-dts-dry-run-diff.test.ts", () => {
+describe("from-dts-dry-run-diff", () => {
 /**
- * Bug 944（续）—— `nudo contract --from-dts --write --dry-run` 的预览是
+ * （续）—— `nudo contract --from-dts --write --dry-run` 的预览是
  * **整份草稿正文的 dump**，不是 unified diff；且「既有草稿不同 ⇒ 拒绝覆盖」
  * 那一关跑在 dry-run 分支**之前** ⇒ dry-run 遇到既有草稿**直接报错退出**，
  * **连 diff 都看不到**。
  *
  * 改后（同一片修）：
  * ① dry-run 打 **unified diff**（对照面 = 既有草稿文件的磁盘内容；文件不存在
- *    ⇒ 对空串求 diff ⇒ 整份都是新增行），**不再**倾倒草稿全文；
+ * ⇒ 对空串求 diff ⇒ 整份都是新增行），**不再**倾倒草稿全文；
  * ② 标签行 `[dry-run] would write <path>` 保留（用户仍看得到目标路径）；
  * ③ dry-run 的**退出码与真写盘同口径**：真写会被拒（既有草稿不同且无
- *    `--force` / 人工改过的草稿即使有 `--force`）⇒ dry-run 也 exit 1，但
- *    **预览照打**（diff 仍然可见）；会写成功 ⇒ exit 0；
+ * `--force` / 人工改过的草稿即使有 `--force`）⇒ dry-run 也 exit 1，但
+ * **预览照打**（diff 仍然可见）；会写成功 ⇒ exit 0；
  * ④ dry-run **绝不写盘**（既有草稿逐字不变、新草稿不被创建）。
  *
  * ⚠ 夹具全部写在临时目录里（cwd = 临时目录），`finally` 里清理；夹具里写
- *   `writeSrcTsconfig`（CLI 子进程按 cwd 找 tsconfig，否则 `@nudojs/*` 落到
- *   `<pkg>/dist` 的旧构建 ⇒ 断言会测到陈旧实现）。夹具**不**依赖
- *   `package.json`（`--from-dts` 的落点贴着源 `.d.ts`，不需要项目根）。
+ * `writeSrcTsconfig`（CLI 子进程按 cwd 找 tsconfig，否则 `@nudojs/*` 落到
+ * `<pkg>/dist` 的旧构建 ⇒ 断言会测到陈旧实现）。夹具**不**依赖
+ * `package.json`（`--from-dts` 的落点贴着源 `.d.ts`，不需要项目根）。
  */
 
 
@@ -2480,7 +2480,7 @@ function linesWith(stdout: string, needle: string): string[] {
   return stdout.split("\n").filter((l) => l.includes(needle));
 }
 
-describe("nudo contract --from-dts --write --dry-run · Bug 944（续）· unified diff 预览", () => {
+describe("nudo contract --from-dts --write --dry-run · （续）· unified diff 预览", () => {
   it("无既有草稿 ⇒ exit 0，打 unified diff（不再是全文 dump），且**不建**草稿文件", () => {
     withFixture((dir) => {
       const r = runCli(["contract", "--from-dts", "types/index.d.ts", "--write", "--dry-run"], {
@@ -2589,26 +2589,26 @@ describe("nudo contract --from-dts --write --dry-run · Bug 944（续）· unifi
 });
 });
 
-describe("[merged] cli-bug-944-from-dts-write-path.test.ts", () => {
+describe("from-dts-write-path", () => {
 /**
- * Bug 944 —— `nudo contract --from-dts --write` 把草稿写进 **CWD**
+ * `nudo contract --from-dts --write` 把草稿写进 **CWD**
  * （不是源 `.d.ts` 旁边）且**无条件覆盖** ⇒ 静默覆盖同基名的**另一个文件**的
  * 草稿，零告警、exit 0。
  *
  * 钉（族 20 · 片 C）：
  * ① 输出路径**贴着源 `.d.ts`**（`sidecarDraftPath` 口径，与 `--draft --write`
- *    同款）⇒ **不再**以 CWD 为基准 ⇒ CWD 里的同名草稿**逐字不变**；
+ * 同款）⇒ **不再**以 CWD 为基准 ⇒ CWD 里的同名草稿**逐字不变**；
  * ② 写盘前做**存在性检查**（已存在且内容不同 ⇒ **拒绝覆盖** + 提示、exit 1）;
  * ③ 写盘**复用** service 的写盘助手（五重保护）；
  * ④ 「next」提示**点名目标侧车路径**。
  *
- * ⚠ 落点名的 `.d.` 段按 **BUG-264**（`tmp/bug-report/sections/BUG-264.md`
- *   + `.changeset/fix-bug-cat-09-cli-check.md`）：`.d.ts` 源的侧车/草稿名
- *   **不得含 `.d.`** —— basename 含 `.d.` ⇒ TypeScript 的
- *   `getDeclarationFileExtension` 判它是**声明文件** ⇒ 草稿与工具建议的
- *   复制落点都过不了 `tsc --strict`（TS1254）⇒ `types/index.d.ts` 的草稿是
- *   `types/index.nudo.draft.ts`、侧车是 `types/index.nudo.ts`
- *   （**不是** `types/index.d.nudo.draft.ts` / `types/index.d.nudo.ts`）。
+ * ⚠ 落点名的 `.d.` 段按 ****（`tmp/bug-report/sections/.md`
+ * + `.changeset/fix-bug-cat-09-cli-check.md`）：`.d.ts` 源的侧车/草稿名
+ * **不得含 `.d.`** —— basename 含 `.d.` ⇒ TypeScript 的
+ * `getDeclarationFileExtension` 判它是**声明文件** ⇒ 草稿与工具建议的
+ * 复制落点都过不了 `tsc --strict`（TS1254）⇒ `types/index.d.ts` 的草稿是
+ * `types/index.nudo.draft.ts`、侧车是 `types/index.nudo.ts`
+ * （**不是** `types/index.d.nudo.draft.ts` / `types/index.d.nudo.ts`）。
  */
 
 
@@ -2645,14 +2645,14 @@ function makeFixture(dts: string = DTS): string {
   return dir;
 }
 
-describe("nudo contract --from-dts --write · Bug 944 · 落盘位置与覆盖保护", () => {
+describe("nudo contract --from-dts --write · 落盘位置与覆盖保护", () => {
   it("草稿落在**源 .d.ts 旁边**（不再是 CWD）⇒ CWD 里的同名草稿逐字不变", () => {
     const dir = makeFixture();
 
     const r = runCli(["contract", "--from-dts", "types/index.d.ts", "--write"], { cwd: dir });
 
     expect(r.status).toBe(0);
-    // 产物贴着源 .d.ts（落点名不含 `.d.` 段 —— BUG-264）
+    // 产物贴着源 .d.ts（落点名不含 `.d.` 段 —— ）
     const draft = join(dir, "types", "index.nudo.draft.ts");
     expect(existsSync(draft)).toBe(true);
     expect(readFileSync(draft, "utf-8")).toContain("export const mul");

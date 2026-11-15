@@ -1,5 +1,5 @@
 /**
- * Bug 20（运行时内建建模）：Object.defineProperty accessor 描述符
+ * （运行时内建建模）：Object.defineProperty accessor 描述符
  * （get/set）只校验不安装——get/set 字段仅用于判定（非函数/与 value
  * 共存 → return unknown），安装路径 putSlots 只装 litOf(value)。
  * 后果：getter 定义后 o.x 折裸 undefined（错值）；setter 场景 x 被当
@@ -17,7 +17,7 @@ function throwsName(r: { throws: { shape: { k: string; name?: string } } }): str
   return r.throws.shape.k === "brand" ? r.throws.shape.name : undefined;
 }
 
-describe("Bug 20: defineProperty accessor descriptors install and validate", () => {
+describe("defineProperty accessor descriptors install and validate", () => {
   it("getter 定义后 o.x 折字面量返回体（get(){return 7} → 7）", () => {
     const r = call(
       `export function getterCall() { const o = {}; Object.defineProperty(o, "x", { get() { return 7; } }); return o.x; }`,

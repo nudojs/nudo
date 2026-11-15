@@ -49,7 +49,7 @@ describe("evalRunCache key", () => {
   });
 });
 
-describe("evalRunCache LRU order (BUG-012)", () => {
+describe("evalRunCache LRU order ()", () => {
   const mk = (v: number) => `export function f() { return ${v}; }`;
 
   afterEach(() => {

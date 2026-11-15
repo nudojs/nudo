@@ -8,12 +8,12 @@
  *
  * 修复（与实例方法 __this 载体同构）：
  * - 静态方法 impl 首参 __this；$staticInvoke / $invoke（沿链 findStaticMethod）
- *   注入类值（沿链调用时 = 调用类，非定义类）；
+ * 注入类值（沿链调用时 = 调用类，非定义类）；
  * - 静态方法体 transpile 边界 = methodOptsBase（thisParam/className/
- *   循环-try 归零）——箭头经词法 thisParam 捕获类值；
+ * 循环-try 归零）——箭头经词法 thisParam 捕获类值；
  * - 静态字段值改 thunk，$class 建类值后以类值为 this 逐槽求值（源序）；
  * - super.k = v / super.m() 静态面：$setSuperStatic / $staticSuperInvoke
- *  （父类静态 setter 派发；数据字段/缺槽 → 接收者类值自有写）。
+ * （父类静态 setter 派发；数据字段/缺槽 → 接收者类值自有写）。
  */
 import {describe, it, expect} from "vitest";
 import {litValue} from "@nudojs/core";

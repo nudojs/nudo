@@ -6,15 +6,15 @@
  *
  * 机制（loop-widen.ts + control.ts widenLoopJoin + postcondition.ts）：
  * - diffGrowth tuple 长度失配 → {el}（长度维增长，arr 形状抹除），宽化走
- *   arrify：元素域 = 全部观测元素域 join（空 tuple 成员贡献空）；
+ * arrify：元素域 = 全部观测元素域 join（空 tuple 成员贡献空）；
  * - OOB undefined 是**读位**事实（$idx 抽象下标读已并入元素 ∪ undefined，
- *   与 splice/sort 降 arr 同口径），不烘焙进元素域；
+ * 与 splice/sort 降 arr 同口径），不烘焙进元素域；
  * - 打包容器槽位 join（joinValues）不结构合并 obj 值 → sum-of-objs 里的
- *   顺序状态先 joinObjects 归一（normalizeForWiden），零元素成员不再独自
- *   放大成 arr(unknown)；
+ * 顺序状态先 joinObjects 归一（normalizeForWiden），零元素成员不再独自
+ * 放大成 arr(unknown)；
  * - postcondition：conf=widened 的 arr/tuple/obj 结构臂对 array(...)/
- *   shape(...) 契约放行进入逐元素/逐字段对账（宽化丢长度/键开闭/界与
- *   路径证据，不丢结构域；叶子带界义务照旧 unprovable）。
+ * shape(...) 契约放行进入逐元素/逐字段对账（宽化丢长度/键开闭/界与
+ * 路径证据，不丢结构域；叶子带界义务照旧 unprovable）。
  *
  * 对照干净：`xs.map((x) => ({ v: x }))` 不经 loop-widen（{ v: string }[]）。
  * 守卫：interrupted（break 打断、效应不可观测）保持诚实 unknown[] 顶；

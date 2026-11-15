@@ -1,5 +1,5 @@
 /**
- * Bug 452 —— 依赖指纹**漏掉「仅副作用 import」** ⇒ 磁盘缓存键不失效 ⇒
+ * 依赖指纹**漏掉「仅副作用 import」** ⇒ 磁盘缓存键不失效 ⇒
  * `nudo check` 继续吐**上一次的陈旧签名**（`load-deps-fp.ts` 文件头
  * 「more misses, **never a stale hit**」承诺被证伪）。
  *
@@ -24,7 +24,7 @@ function makeLoad(deps: Record<string, string>) {
   };
 }
 
-describe("Bug 452: 仅副作用 import / 模板字符串 require 进依赖指纹", () => {
+describe("仅副作用 import / 模板字符串 require 进依赖指纹", () => {
   it("仅副作用 import（import \"./setup.js\"）进说明符集", () => {
     const specs = extractAllLoadSpecs(`import { n } from "./lib.js";
 import "./setup.js";

@@ -2,16 +2,16 @@
  * 差分门 unmask 后暴露的五类 wrong-definite（native 抛、引擎折值且
  * throws=never）——本文件为对应修复的永久回归：
  * - M1 null-proto 对象字符串拼接：无 toString/valueOf/@@toPrimitive 可回退
- *   → ToPrimitive 定抛 TypeError（此前折出定值字符串）；
+ * → ToPrimitive 定抛 TypeError（此前折出定值字符串）；
  * - M2 自由 arguments（模块顶层，无函数边界）→ 定抛 ReferenceError；
- *   typeof 自由 arguments → "undefined"（对不可解析引用 typeof 不抛）；
+ * typeof 自由 arguments → "undefined"（对不可解析引用 typeof 不抛）；
  * - M3 bigint prim 缺失方法调用（方法集封闭：toString/toLocaleString/
- *   valueOf + Object.prototype 名）→ 定抛 TypeError（属性读不抛）；
+ * valueOf + Object.prototype 名）→ 定抛 TypeError（属性读不抛）；
  * - M4 sort 比较器抛错：effectFree facet（transpile 保守静态判定）回调
- *   真执行——全对抛 → 定抛；副作用回调不执行（多执行不可回滚）；
- *   一致比较器（反对称+传递）稳定插入排序精确折叠；
+ * 真执行——全对抛 → 定抛；副作用回调不执行（多执行不可回滚）；
+ * 一致比较器（反对称+传递）稳定插入排序精确折叠；
  * - M5 Object.assign 装箱 prim target：string 字面量下标键 < length →
- *   String wrapper 下标只读 → 定抛；bigint 恒抛；安全 string 源折原始串。
+ * String wrapper 下标只读 → 定抛；bigint 恒抛；安全 string 源折原始串。
  */
 import {describe, it, expect} from "vitest";
 // 相对路径引 src（eval-helpers 口径：@nudojs/core 别名在 vitest 下落 dist）

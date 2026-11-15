@@ -2,7 +2,7 @@
  * D3（族 22 / lsp-signature）共享 harness：起**真 LSP server**（内存 mock
  * connection）+ 打开若干文件 + 发真协议请求。
  *
- * 只服务 D3 自己的测试文件（`lsp-bug-70x|71x|72x-*.test.ts`），
+ * 只服务 D3 自己的测试文件（`lsp-|71x|72x-*.test.ts`），
  * 不改动 `helpers.ts`（共享文件，避免与其它分片冲突）。
  */
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";

@@ -4,10 +4,10 @@
  * 回归背景：evalArrayStatic 的 of 分支把首参当 arr 元素类型
  * （`Array.of(7)` → `7[]`、`Array.of(1,2,3)` → `1[]`），与原生
  * `Array.of` 完全不符——原生把全部实参打包成 tuple：
- *   Array.of()       → []
- *   Array.of(7)      → [7]        （不是长度为 7 的空洞数组！）
- *   Array.of(1,2,3)  → [1, 2, 3]
- *   Array.of(7).length → 1
+ * Array.of() → []
+ * Array.of(7) → [7] （不是长度为 7 的空洞数组！）
+ * Array.of(1,2,3) → [1, 2, 3]
+ * Array.of(7).length → 1
  *
  * 同类排查：makeArrayCtorAbs（Array()/new Array）语义正确；
  * Array.from 刻意返回 arr 元素联合。仅 Array.of 一处混淆了

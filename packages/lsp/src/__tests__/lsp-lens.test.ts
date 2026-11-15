@@ -11,21 +11,21 @@ import { createNudoServer } from "../server.ts";
 import { computeObservationLenses } from "../agent-tools.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 769 — 导出类实例方法的 contract 档 lens
+// 导出类实例方法的 contract 档 lens
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 769 — 导出类实例方法的 contract 档 lens", () => {
+describe("导出类实例方法的 contract 档 lens", () => {
 /**
- * Bug 769：导出类的实例方法（`Counter.inc`）在 LSP CodeLens / inlayHint 面
+ * 导出类的实例方法（`Counter.inc`）在 LSP CodeLens / inlayHint 面
  * 完全不存在。
  *
  * 症状（真 server 协议面）：
  * - `textDocument/codeLens` 里 `Counter.inc` 只有 entry@ 观察层，
- *   **没有** `● contract / imp` / `⚡ persist contract` / `⚡ draft contract`；
+ * **没有** `● contract / imp` / `⚡ persist contract` / `⚡ draft contract`；
  * - `textDocument/inlayHint` 里 `Counter.inc` 没有任何提示（既没有 contract
- *   档投影，也没有 `: by + 1 · derived` 返回 inlay）；
+ * 档投影，也没有 `: by + 1 · derived` 返回 inlay）；
  * - 而 `textDocument/hover` **能**看到 `Counter.inc(by: any) => number | string`
- *   与 `● contract / imp` —— 四面不一致（design §3.2：导出类的实例方法与
- *   顶层导出函数同为消费者可见入口）。
+ * 与 `● contract / imp` —— 四面不一致（design §3.2：导出类的实例方法与
+ * 顶层导出函数同为消费者可见入口）。
  *
  * 根因：两处枚举都不认类方法——
  * - `topLevelFunctionSlots`（agent-tools.ts，CodeLens / contract inlay 面）；
@@ -55,7 +55,7 @@ type Lens = {
   command?: { title: string; command: string; arguments?: unknown[] };
 };
 
-describe("Bug 769 — 导出类实例方法的 contract 档 lens", () => {
+describe("导出类实例方法的 contract 档 lens", () => {
   it("codeLens 出现 Counter.inc 的 contract 档（契约键 Class.method）", async () => {
     await withLspServer({ "a.js": SRC }, async ({ req, uri }) => {
       const lenses = req("textDocument/codeLens")({
@@ -145,19 +145,19 @@ describe("Bug 769 — 导出类实例方法的 contract 档 lens", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1034 — 跨模块调用点的 call@ 观察 lens
+// 跨模块调用点的 call@ 观察 lens
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 1034 — 跨模块调用点的 call@ 观察 lens", () => {
+describe("跨模块调用点的 call@ 观察 lens", () => {
 /**
- * Bug 1034：跨模块调用点（`call@`）在调用方文件的 LSP CodeLens 面上整段消失。
+ * 跨模块调用点（`call@`）在调用方文件的 LSP CodeLens 面上整段消失。
  *
  * 症状（真 server 协议面）：
  * - `lib.js` 导出 `add`，`main.js` 里 `import { add } from "./lib.js"` 后调用
- *   `add(x, 2)` —— `main.js` 的 `textDocument/codeLens` **没有** `call@L4` 观察层；
+ * `add(x, 2)` —— `main.js` 的 `textDocument/codeLens` **没有** `call@L4` 观察层；
  * - 同一文件内的调用（同文件 `add`）却有 `call@L6` lens；
  * - 而 CLI `nudo test main.js` **已经**打印
- *   `--- …/lib.js (imported) ---` / `=== add ===` / `call@L4 …` ——
- *   产品面有事实，LSP 面没有投影。
+ * `--- …/lib.js (imported) ---` / `=== add ===` / `call@L4 …` ——
+ * 产品面有事实，LSP 面没有投影。
  *
  * 根因：`computeObservationLenses` 只消费 `analysis.functions`（本文件函数），
  * 没消费 `analysis.externalFunctions`（跨模块调用点事实）。
@@ -203,7 +203,7 @@ type Lens = {
 const callLenses = (lenses: Lens[]): Lens[] =>
   lenses.filter((l) => l.command?.title.startsWith("call@"));
 
-describe("Bug 1034 — 跨模块调用点的 call@ 观察 lens", () => {
+describe("跨模块调用点的 call@ 观察 lens", () => {
   it("调用方文件的 codeLens 出现跨模块 call@ lens", async () => {
     await withLspServer(
       { "lib.js": LIB_SRC, "main.js": CROSS_MAIN_SRC },
@@ -252,19 +252,19 @@ describe("Bug 1034 — 跨模块调用点的 call@ 观察 lens", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 753 — export default function 的 contract 档 lens
+// export default function 的 contract 档 lens
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 753 — export default function 的 contract 档 lens", () => {
+describe("export default function 的 contract 档 lens", () => {
 /**
- * Bug 753：`export default function` 在 LSP CodeLens / inlayHint 面整段消失。
+ * `export default function` 在 LSP CodeLens / inlayHint 面整段消失。
  *
  * 症状（真 server 协议面）：
  * - `textDocument/codeLens` 只有 entry@ 观察层，**没有** `● contract / imp`
- *   / `⚡ persist contract` / `⚡ draft contract` 三条 contract 档 lens；
+ * / `⚡ persist contract` / `⚡ draft contract` 三条 contract 档 lens；
  * - `textDocument/inlayHint` 没有 `● contract / imp` 投影
- *   （CodeLens 不可见的客户端靠它看到契约档）；
+ * （CodeLens 不可见的客户端靠它看到契约档）；
  * - 而 hover / documentSymbol / semanticTokens 面**都**能看到 `compute` ——
- *   枚举面与导出面分裂。
+ * 枚举面与导出面分裂。
  *
  * 根因：`topLevelFunctionSlots`（agent-tools.ts）只认 `ExportNamedDeclaration`
  * 与裸声明，不认 `ExportDefaultDeclaration` —— 默认导出从未进入 contract 档
@@ -294,7 +294,7 @@ type Lens = {
   command?: { title: string; command: string; arguments?: unknown[] };
 };
 
-describe("Bug 753 — export default function 的 contract 档 lens", () => {
+describe("export default function 的 contract 档 lens", () => {
   it("codeLens 出现默认导出的 contract 档（● contract / imp + 固化动作）", async () => {
     await withLspServer({ "a.js": DEFAULT_EXPORT_SRC }, async ({ req, uri }) => {
       const lenses = req("textDocument/codeLens")({
@@ -347,11 +347,11 @@ describe("Bug 753 — export default function 的 contract 档 lens", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 757 — 选择器变更必须同时刷新 codeLens 与 inlayHint
+// 选择器变更必须同时刷新 codeLens 与 inlayHint
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 757 — 选择器变更必须同时刷新 codeLens 与 inlayHint", () => {
+describe("选择器变更必须同时刷新 codeLens 与 inlayHint", () => {
 /**
- * Bug 757 —— 选择器变更只广播 `workspace/codeLens/refresh`，从不广播
+ * 选择器变更只广播 `workspace/codeLens/refresh`，从不广播
  * `workspace/inlayHint/refresh`。
  *
  * inlay 是「无 CodeLens UI 的客户端」唯一的选择器状态镜像（lsp.md §inlay）；
@@ -409,7 +409,7 @@ function refreshMethods(mock: ReturnType<typeof createMockConnection>): string[]
   return mock.sentRequests.map((r: { type?: { method?: string } }) => r.type?.method ?? "?");
 }
 
-describe("Bug 757 — 选择器变更必须同时刷新 codeLens 与 inlayHint", () => {
+describe("选择器变更必须同时刷新 codeLens 与 inlayHint", () => {
   it("nudo.selectCase 之后 inlayHint refresh 与 codeLens refresh 成对出现", async () => {
     const mock = startServer();
     mock.sentRequests.length = 0;
@@ -443,7 +443,7 @@ describe("Bug 757 — 选择器变更必须同时刷新 codeLens 与 inlayHint",
 // ---------------------------------------------------------------------------
 // computeObservationLenses
 // ---------------------------------------------------------------------------
-describe("[lsp-] computeObservationLenses", () => {
+describe("computeObservationLenses", () => {
 /**
  * 合成 call@ / entry@ 观察 CodeLens：CLI `nudo test` 的源码内投影。
  */

@@ -1,5 +1,5 @@
 /**
- * BUG-013 / S4-001 回归：类型表达式任意代码执行（RCE）。
+ * / S4-001 回归：类型表达式任意代码执行（RCE）。
  *
  * 设计文法是「约束构建器 / 字面量」受限语法；实现曾把整条表达式交给
  * execNudoModule → new Function 完整 JS 求值。CONSTRAINT_EXPR_RE 只做前缀
@@ -68,7 +68,7 @@ afterEach(() => {
   clearPayload();
 });
 
-describe("BUG-013: malicious type expressions must not execute", () => {
+describe("malicious type expressions must not execute", () => {
   it("parseCaseArgExpr: sequence payload has no side effect", () => {
     const abs = parseCaseArgExpr(PAYLOAD_SEQ);
     expect(payloadFired()).toBe(false);
@@ -108,7 +108,7 @@ describe("BUG-013: malicious type expressions must not execute", () => {
   });
 });
 
-describe("BUG-013: four directive chains reject payload", () => {
+describe("four directive chains reject payload", () => {
   it("@nudo:case chain: no side effect + diagnostic", () => {
     const src = `
 /**
@@ -144,7 +144,7 @@ function f() { return x; }
   });
 });
 
-describe("BUG-013: legal type expressions still work", () => {
+describe("legal type expressions still work", () => {
   it("builder + chain methods parse", () => {
     expect(parseCaseArgExpr("number()").shape.k).toBe("prim");
     expect(parseCaseArgExpr("number().gt(1)").shape.k).toBe("prim");

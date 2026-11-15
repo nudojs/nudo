@@ -27,11 +27,11 @@ import { $lit } from "../exec/runtime/state.ts";
 import { abs as abs_____abs_ts, abs as abs_____abs_ts_1, litValue, type Abs } from "../abs.ts";
 
 // ---------------------------------------------------------------------------
-// BUG-023 drift 的今日域证据包含函数体内的调用点
+// drift 的今日域证据包含函数体内的调用点
 // ---------------------------------------------------------------------------
-describe("[] BUG-023 drift 的今日域证据包含函数体内的调用点", () => {
+describe("drift 的今日域证据包含函数体内的调用点", () => {
 /**
- * BUG-023：`nudo:contract-drift` 对**函数体内**的调用点恒不触发 ⇒ 陈旧
+ * `nudo:contract-drift` 对**函数体内**的调用点恒不触发 ⇒ 陈旧
  * `@generated` 段零告警（假绿）。
  *
  * 根因：drift 的「今日域」证据（AbsCallRecord）收集窗口只包**模块顶层**
@@ -65,7 +65,7 @@ function check(src: string) {
   });
 }
 
-describe("BUG-023 drift 的今日域证据包含函数体内的调用点", () => {
+describe("drift 的今日域证据包含函数体内的调用点", () => {
   beforeEach(() => {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
@@ -130,11 +130,11 @@ export function caller() {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-029 嵌套 union 拼写不得报假 drift
+// 嵌套 union 拼写不得报假 drift
 // ---------------------------------------------------------------------------
-describe("[] BUG-029 嵌套 union 拼写不得报假 drift", () => {
+describe("嵌套 union 拼写不得报假 drift", () => {
 /**
- * BUG-029：`nudo:contract-drift` 对「同一域的**嵌套 union 拼写**」报假阳性
+ * `nudo:contract-drift` 对「同一域的**嵌套 union 拼写**」报假阳性
  * ⇒ `nudo health` exit 1 卡 CI。
  *
  * 平铺 `union(lit(1),lit(2),lit(3))` 经 `constraintToEntryAbs` 的
@@ -175,7 +175,7 @@ function driftOf(sidecar: string) {
 const HEAD = `import { fn, lit, union } from "@nudojs/core";
 `;
 
-describe("BUG-029 嵌套 union 拼写不得报假 drift", () => {
+describe("嵌套 union 拼写不得报假 drift", () => {
   beforeEach(() => {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
@@ -209,11 +209,11 @@ export const pick = fn({ v: union(kinds, lit(4)) });`);
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1033：`!! throws` 的位置锚收紧
+// `!! throws` 的位置锚收紧
 // ---------------------------------------------------------------------------
-describe("[] Bug 1033：`!! throws` 的位置锚收紧", () => {
+describe("`!! throws` 的位置锚收紧", () => {
 /**
- * Bug 1033：`!! throws` 的**位置信息在扫描阶段丢失** ⇒ 散文行、case **名字**
+ * `!! throws` 的**位置信息在扫描阶段丢失** ⇒ 散文行、case **名字**
  * 字符串内部都被读成**函数级**抛错申报 ⇒ `filterGateThrows` 把实际抛错
  * **全部放行** ⇒ L2 `nudo:entry-may-throw` 门禁被**静默关掉**（假绿、零诊断），
  * 而签名面仍打印 `throws TypeError` ⇒ **两面打架**。
@@ -234,7 +234,7 @@ function check(src: string, file = "/t/bug-1033.js") {
   return checkSource(file, src, pTrue);
 }
 
-describe("Bug 1033：`!! throws` 的位置锚收紧", () => {
+describe("`!! throws` 的位置锚收紧", () => {
   it("散文行里的 `!! throws` 不再被读成函数级申报", () => {
     expect(scanThrowsDecl(["Note: this helper uses !! throws"])).toBeUndefined();
     expect(scanThrowsDecl(["Note: this helper uses !! throws internally"])).toBeUndefined();
@@ -318,11 +318,11 @@ export function h(x) {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1080: Φ 侧只按「同项」口径计入证据面
+// Φ 侧只按「同项」口径计入证据面
 // ---------------------------------------------------------------------------
-describe("[] Bug 1080: Φ 侧只按「同项」口径计入证据面", () => {
+describe("Φ 侧只按「同项」口径计入证据面", () => {
 /**
- * Bug 1080 —— 后置证明通道的 **Φ 侧（路径前提）**此前**从未被接入**：
+ * 后置证明通道的 **Φ 侧（路径前提）**此前**从未被接入**：
  * `assertImplies` 的 `opts.phi` 恒为 `pTrue`（唯一生产调用方
  * `check-return.ts` 不传 opts）⇒ 证据面「Φ ∧ ret.pred」退化成 `ret.pred`
  * ——本分支注释声称的「关系事实落在 Φ 里，两边都要看」这一半从不生效。
@@ -336,7 +336,7 @@ describe("[] Bug 1080: Φ 侧只按「同项」口径计入证据面", () => {
  * 形态算同一项的界）；`check-return.ts` 的审计上下文开 `phi` 口子
  * （返回点的路径前提）。
  *
- * Bug 1094 追加：Φ 侧计入证据面的条件再收紧为「同项 ∧ **蕴含**该约束的
+ * 追加：Φ 侧计入证据面的条件再收紧为「同项 ∧ **蕴含**该约束的
  * pred」——同项但**界弱于**契约的 Φ（`y > 0` vs `y > 5`）不再被当成返回值
  * 的带界证据 ⇒ 判「证不出」而非「确定违约」（旧口径 ⇒ **假红**）。
  */
@@ -362,7 +362,7 @@ const phiOnY = gt(v("y"), { op: "lit", value: 0 });
 /** 契约：number().gt(0) */
 const positive = number().gt(0);
 
-describe("Bug 1080: Φ 侧只按「同项」口径计入证据面", () => {
+describe("Φ 侧只按「同项」口径计入证据面", () => {
   it("Φ 约束的是另一个项 ⇒ 判『证不出』（unprovable），不得判『确定违约』（disproved）", () => {
     // 改前：Φ 的界原子（x > 0）被当成 y 的值域证据 ⇒ 蕴含失败 ⇒ error（假红）
     const r = assertImplies(retY, positive, { phi: phiOnX });
@@ -419,35 +419,35 @@ describe("Bug 1080: Φ 侧只按「同项」口径计入证据面", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1096 — 构造器 may-throw 证据的归因落点
+// 构造器 may-throw 证据的归因落点
 // ---------------------------------------------------------------------------
-describe("[] Bug 1096 — 构造器 may-throw 证据的归因落点", () => {
+describe("构造器 may-throw 证据的归因落点", () => {
 /**
- * Bug 1096 回归 —— 构造器 may-throw 证据的**归因落点**（两条通道，同根因）。
+ * 回归 —— 构造器 may-throw 证据的**归因落点**（两条通道，同根因）。
  *
  * 缺陷 A（**假绿**）：`export class TotalCtor { constructor(x) { throw new TypeError("boom"); } }`
- *   —— 构造器**无条件抛**是 `new A()` 这个**真实入口**的可判定事实，但此前
- *   ① 实例方法桥把构造器跑在独立 may-throw 会话里（证据不进方法入口的收集
- *   域），② 硬抛被 `catch {}` 吞掉，③ **类导出本身不在入口表**
- *   （`scan-top-functions.ts` 只登记 `Class.method`）⇒ 构造器必抛在 check 闸门
- *   与 `nudo test` 见证面**双面不可见** ⇒ **CI 闸门假绿**（0 error / 0 warning
- *   / exit 0）。
+ * —— 构造器**无条件抛**是 `new A()` 这个**真实入口**的可判定事实，但此前
+ * ① 实例方法桥把构造器跑在独立 may-throw 会话里（证据不进方法入口的收集
+ * 域），② 硬抛被 `catch {}` 吞掉，③ **类导出本身不在入口表**
+ * （`scan-top-functions.ts` 只登记 `Class.method`）⇒ 构造器必抛在 check 闸门
+ * 与 `nudo test` 见证面**双面不可见** ⇒ **CI 闸门假绿**（0 error / 0 warning
+ * / exit 0）。
  *
  * 缺陷 B（**假红**）：同一「裸实例兜底」在**值域**通道（`generalize.ts`）产出
- *   **自信的错值** —— 兜底实例的内层是**空 obj** ⇒ 构造器写过的字段被建模成
- *   「确定不存在」⇒ `this.v` 读成**确定的 undefined**；`this.v.toFixed(2)` 在
- *   **虚构实例**上抛 TypeError ⇒ 方法签名被折成 `never`（谎称「该方法必抛、
- *   恒返回 never」）⇒ 连带 **error 级 `nudo:entry-may-throw`**（假红，直接卡
- *   用户 CI）。
+ * **自信的错值** —— 兜底实例的内层是**空 obj** ⇒ 构造器写过的字段被建模成
+ * 「确定不存在」⇒ `this.v` 读成**确定的 undefined**；`this.v.toFixed(2)` 在
+ * **虚构实例**上抛 TypeError ⇒ 方法签名被折成 `never`（谎称「该方法必抛、
+ * 恒返回 never」）⇒ 连带 **error 级 `nudo:entry-may-throw`**（假红，直接卡
+ * 用户 CI）。
  *
  * 修法（两处**就地复刻**的孪生实现，必须同构）：
  * - 证据通道（`check-may-throw.ts`）：**类导出入口**（`new C()`）进 L2 入口
- *   表 ⇒ 构造器的**硬抛**（无条件 throw）进 throws 域 ⇒ 报在**类声明位置**的
- *   `Class` 入口上；构造器的**软效果**（any 补位的强制转换，Bug 1070 口径）
- *   **不进** ⇒ 普通类不触发 error 级 `nudo:entry-may-throw`（不假红）。
+ * 表 ⇒ 构造器的**硬抛**（无条件 throw）进 throws 域 ⇒ 报在**类声明位置**的
+ * `Class` 入口上；构造器的**软效果**（any 补位的强制转换，口径）
+ * **不进** ⇒ 普通类不触发 error 级 `nudo:entry-may-throw`（不假红）。
  * - 值域通道（`generalize.ts`）：裸实例的内层改 **unknown**（构造器写过的字段
- *   = **不可知**，不是「确定不存在」）⇒ 不折确定的 undefined / NaN，不在虚构
- *   实例上抛 ⇒ 签名落 `unknown`（或等价的不确定形态），不折 `never`。
+ * = **不可知**，不是「确定不存在」）⇒ 不折确定的 undefined / NaN，不在虚构
+ * 实例上抛 ⇒ 签名落 `unknown`（或等价的不确定形态），不折 `never`。
  *
  * 端到端接线（**check.ts**，见交付报告）：`names` 需并入类导出入口清单
  * （`listClassEntryNames`）⇒ 类入口才进 L2 门禁。接线前本文件用**门禁同口径
@@ -530,7 +530,7 @@ function classEntryGate(
   return out;
 }
 
-describe("Bug 1096 — 构造器 may-throw 证据的归因落点", () => {
+describe("构造器 may-throw 证据的归因落点", () => {
   it("类导出入口进 L2 入口表（`new C()` 是真实入口）", () => {
     expect(listClassEntryNames(CTOR_THROW)).toEqual(["ThrowCtor"]);
     expect(listClassEntryNames(CTOR_SOFT)).toEqual(["SoftCtor"]);
@@ -593,7 +593,7 @@ describe("Bug 1096 — 构造器 may-throw 证据的归因落点", () => {
   });
 });
 
-describe("Bug 1096 — 兜底实例不得产出自信的错值（值域通道）", () => {
+describe("兜底实例不得产出自信的错值（值域通道）", () => {
   it("构造器抛 + 方法读字段 ⇒ 签名不得是确定的 undefined（修前：undefined）", () => {
     const r = checkSource("acct-field.js", CTOR_THROW_FIELD, pTrue, stdOpts);
     const desc = sigOf(r, "FieldCtor.describe");
@@ -640,11 +640,11 @@ describe("Bug 1096 — 兜底实例不得产出自信的错值（值域通道）
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1114 —— 同一实参位不重复报同一条违例
+// 同一实参位不重复报同一条违例
 // ---------------------------------------------------------------------------
-describe("[] Bug 1114 —— 同一实参位不重复报同一条违例", () => {
+describe("同一实参位不重复报同一条违例", () => {
 /**
- * Bug 1114 —— **重复诊断**：同一实参位上同一条违例被报两次。
+ * **重复诊断**：同一实参位上同一条违例被报两次。
  *
  * 症状 A（typeof 通道 + eq 通道双报）：
  * `lit(1n)` 契约收到 `1` ⇒ 同时发「typeof x = "bigint"」与「x = 1n」。
@@ -658,9 +658,9 @@ describe("[] Bug 1114 —— 同一实参位不重复报同一条违例", () => 
  *
  * 修法（**同一实参位**内让位，别的形参位不受影响）：
  * - **数值界**通道在 typeof 通道**已报**时让位（类型都不对时「x > 0」这类
- *   界判据对实参没有意义 ⇒ 同一条违例只报一次）；
+ * 界判据对实参没有意义 ⇒ 同一条违例只报一次）；
  * - 结构通道**已报「实参不是 object」** ⇒ 同一实参位的谓词通道让位
- *   （`checkShapeReqs` 把这批形参下标回传，谓词通道按集合跳过）。
+ * （`checkShapeReqs` 把这批形参下标回传，谓词通道按集合跳过）。
  *
  * ⚠ **值义务（eq）通道不让位**（`lit(1n)` 收到 `1` 仍报 2 条）—— 见文末
  * 「未修的一半」。
@@ -696,7 +696,7 @@ function violated(r: { issues: { code: string }[] }): { expected?: string }[] {
     .map((i) => i as { expected?: string });
 }
 
-describe("Bug 1114 —— 同一实参位不重复报同一条违例", () => {
+describe("同一实参位不重复报同一条违例", () => {
   it("shape({id:number().gt(0)}) 收到 null ⇒ 只报一条（结构通道）", () => {
     const r = check(`/** @nudo:contract x idShape */
 function s(x) { return x; }
@@ -754,12 +754,12 @@ export function use() { return s(-1, -2); }
  * 独立义务**；类型不符**与**值不符是**两个事实**。族 48（主 agent 追认
  * 2026-10-23）明确要求 bigint 字面量契约**补齐 typeof 义务** ⇒ 类型不符时
  * **多报一条**「类型义务」诊断；既有门禁
- * `core-bug-1020-bigint-lit-contract-tautology` 与
- * `eval-bug-1046-bigint-prim` 钉住条数（各 2 条）。
+ * `core-bigint-lit-contract-tautology` 与
+ * `eval-bigint-prim` 钉住条数（各 2 条）。
  *
  * ⇒ 本项**保持现状**（不把 eq / 值义务通道纳入让位范围），在此钉住口径。
  */
-describe("Bug 1114 未修的一半 —— 值义务（eq）与类型义务是两条独立义务", () => {
+describe("未修的一半 —— 值义务（eq）与类型义务是两条独立义务", () => {
   it("lit(1n) 收到 1 ⇒ 报两条（类型义务 + 值义务，族 48 口径）", () => {
     const r = check(`/** @nudo:contract x bigOne */
 function k(x) { return x; }
@@ -773,11 +773,11 @@ export function use() { return k(1); }
 });
 
 // ---------------------------------------------------------------------------
-// BUG-210 申报集合 = 源码 ∪ 侧车（并集口径）
+// 申报集合 = 源码 ∪ 侧车（并集口径）
 // ---------------------------------------------------------------------------
-describe("[] BUG-210 申报集合 = 源码 ∪ 侧车（并集口径）", () => {
+describe("申报集合 = 源码 ∪ 侧车（并集口径）", () => {
 /**
- * BUG-210：源码 `@nudo:throws TypeError` **遮蔽**侧车 `fn(..., { throws })`
+ * 源码 `@nudo:throws TypeError` **遮蔽**侧车 `fn(..., { throws })`
  * ⇒ 门禁只认源码声明、整份侧车声明被丢弃 ⇒ 已申报的 `RangeError` 仍报
  * 「未申报」（假红）；**删掉源码那一行**同样的文件立刻变绿 ⇒ 非单调。
  *
@@ -810,7 +810,7 @@ export function use(x) {
 }
 `;
 
-describe("BUG-210 申报集合 = 源码 ∪ 侧车（并集口径）", () => {
+describe("申报集合 = 源码 ∪ 侧车（并集口径）", () => {
   beforeEach(() => {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
@@ -866,11 +866,11 @@ ${BODY}`,
 });
 
 // ---------------------------------------------------------------------------
-// Bug 283: unknown callee **不**记 may-throw（引擎令牌 ≠ 不是函数）
+// unknown callee **不**记 may-throw（引擎令牌 ≠ 不是函数）
 // ---------------------------------------------------------------------------
-describe("[] Bug 283: unknown callee **不**记 may-throw（引擎令牌 ≠ 不是函数）", () => {
+describe("unknown callee **不**记 may-throw（引擎令牌 ≠ 不是函数）", () => {
 /**
- * Bug 283：**`unknown` 形状的被调者**不在可调用判定表内。
+ * **`unknown` 形状的被调者**不在可调用判定表内。
  *
  * ## 裁决（按 oracle 改判 · 主 agent 2026-10-23）
  *
@@ -879,17 +879,17 @@ describe("[] Bug 283: unknown callee **不**记 may-throw（引擎令牌 ≠ 不
  * 该修法被 oracle 证伪：
  *
  * 1. **报告的症状本来就不走这条路径** —— 报告的 P1 夹具是 `o.a.b()`
- *    （成员调用），实测**成员调用走 `exec/class/invoke.ts` 的 `$invokeInner`**，
- *    **从不进 `$callDispatch`** ⇒ 在 `$callDispatch` 记账修不到报告的症状。
+ * （成员调用），实测**成员调用走 `exec/class/invoke.ts` 的 `$invokeInner`**，
+ * **从不进 `$callDispatch`** ⇒ 在 `$callDispatch` 记账修不到报告的症状。
  * 2. **该修法对普通代码是假阳性** —— `unknown` 是引擎的 **fail-closed 令牌**，
- *    只说明「引擎不知道被调者」，**不说明「它不是函数」**。实测三类形态：
- *    - `import { add2 } from "./add.js"`（**add2 存在**）+ `add2(x)`
- *      ⇒ 引擎把导入绑定折成 unknown Abs ⇒ 记 TypeError ⇒
- *      `nudo check` 对**合法代码**报 `nudo:entry-may-throw`（error 级）⇒ **假阳性**；
- *    - 未解析的导入绑定 ⇒ 原生是**模块装载错误**（不是调用点 TypeError）⇒ 错记；
- *    - `any` 档 ⇒ 「无约束值」（可能是非函数）⇒ 记 may 是对的 ⇒ **两个档必须分开**。
+ * 只说明「引擎不知道被调者」，**不说明「它不是函数」**。实测三类形态：
+ * - `import { add2 } from "./add.js"`（**add2 存在**）+ `add2(x)`
+ * ⇒ 引擎把导入绑定折成 unknown Abs ⇒ 记 TypeError ⇒
+ * `nudo check` 对**合法代码**报 `nudo:entry-may-throw`（error 级）⇒ **假阳性**；
+ * - 未解析的导入绑定 ⇒ 原生是**模块装载错误**（不是调用点 TypeError）⇒ 错记；
+ * - `any` 档 ⇒ 「无约束值」（可能是非函数）⇒ 记 may 是对的 ⇒ **两个档必须分开**。
  * 3. **报告的症状已被成员读侧覆盖** —— 实测「成员缺失」（`o.a.b()` 在 number
- *    接收者上）⇒ 读侧产出 error 级 `nudo:entry-may-throw` ⇒ **283 无需额外记账**。
+ * 接收者上）⇒ 读侧产出 error 级 `nudo:entry-may-throw` ⇒ **283 无需额外记账**。
  *
  * ⇒ **最终口径**：`$call(unknown)` **不记** may-throw（引擎不知道 ≠ 不是函数）；
  * 值域仍折 `unknown`；`nudo:opaque-result` 诚实报出这层精度债。
@@ -916,7 +916,7 @@ function collectEffects(fn: () => unknown): MayThrowEffect[] {
   return eff;
 }
 
-describe("Bug 283: unknown callee **不**记 may-throw（引擎令牌 ≠ 不是函数）", () => {
+describe("unknown callee **不**记 may-throw（引擎令牌 ≠ 不是函数）", () => {
   it("$call(unknown) → 不记 TypeError 效果（守卫：防止再被当成「不是函数」）", () => {
     const unknownCallee = abs___nudojs_core({ k: "unknown" }, undefined, undefined, "path");
     expect(collectEffects(() => $call(unknownCallee, [])).length).toBe(0);
@@ -978,15 +978,15 @@ export function f(x) {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 335：长度界契约不得拿数字当长度比（类型义务须在位）
+// 长度界契约不得拿数字当长度比（类型义务须在位）
 // ---------------------------------------------------------------------------
-describe("[] Bug 335：长度界契约不得拿数字当长度比（类型义务须在位）", () => {
+describe("长度界契约不得拿数字当长度比（类型义务须在位）", () => {
 /**
- * Bug 335 —— 「prim + 界」契约的**长度界**通道对非字符串实参回落到普通数值界
+ * 「prim + 界」契约的**长度界**通道对非字符串实参回落到普通数值界
  * ⇒ 违规与否取决于数字大小（`5` 撞 `string().max(3)` 报「长度 5 > 3」，
  * `2` 撞 `string().max(3)` 静默通过）⇒ 同一类类型错配给出两种结论。
  *
- * core 侧根因同 Bug 333：实例化时丢了 prim 的类型义务 ⇒ 执法层只剩长度界
+ * core 侧根因同 实例化时丢了 prim 的类型义务 ⇒ 执法层只剩长度界
  * 可用，只能拿数字当长度比。本钉钉住 core 侧：类型义务必须在实例化谓词里，
  * 且产品面的 `expected` 必须点名类型（而不是只报长度界）。
  *
@@ -1011,7 +1011,7 @@ ${src}`,
   );
 }
 
-describe("Bug 335：长度界契约不得拿数字当长度比（类型义务须在位）", () => {
+describe("长度界契约不得拿数字当长度比（类型义务须在位）", () => {
   it("string().max(3) 实例化带 typeof 类型义务", () => {
     const p = predToString(instantiateConstraint(string().max(3), "s"));
     expect(p).toContain('typeof s = "string"');
@@ -1045,11 +1045,11 @@ needsShort("ab");
 });
 
 // ---------------------------------------------------------------------------
-// Bug 337：__nudo_self__ 占位符不得泄漏进实例化谓词 / 产品文本
+// __nudo_self__ 占位符不得泄漏进实例化谓词 / 产品文本
 // ---------------------------------------------------------------------------
-describe("[] Bug 337：__nudo_self__ 占位符不得泄漏进实例化谓词 / 产品文本", () => {
+describe("__nudo_self__ 占位符不得泄漏进实例化谓词 / 产品文本", () => {
 /**
- * Bug 337 —— `length()` 用内部占位符 `__nudo_self__`（`SELF`）表达长度界，
+ * `length()` 用内部占位符 `__nudo_self__`（`SELF`）表达长度界，
  * 而 `substTerm` 只替换 `var` 与 `app("get", …)` 两种形态，**不递归
  * `app("length", […])` 的实参** ⇒ 占位符原样进入实例化谓词与产品 `expected`
  * 文本（内部实现细节泄漏进用户可见输出）。
@@ -1064,7 +1064,7 @@ describe("[] Bug 337：__nudo_self__ 占位符不得泄漏进实例化谓词 / �
 
 
 
-describe("Bug 337：__nudo_self__ 占位符不得泄漏进实例化谓词 / 产品文本", () => {
+describe("__nudo_self__ 占位符不得泄漏进实例化谓词 / 产品文本", () => {
   it("string().min(2) 实例化不含内部占位符", () => {
     const p = predToString(instantiateConstraint(string().min(2), "s"));
     expect(p).not.toContain(SELF);
@@ -1112,11 +1112,11 @@ needsShort("abcd");
 });
 
 // ---------------------------------------------------------------------------
-// Bug 343 同文件：callee 违约 ⇒ caller 的返回契约不得被证得
+// 同文件：callee 违约 ⇒ caller 的返回契约不得被证得
 // ---------------------------------------------------------------------------
-describe("[] Bug 343 同文件：callee 违约 ⇒ caller 的返回契约不得被证得", () => {
+describe("同文件：callee 违约 ⇒ caller 的返回契约不得被证得", () => {
 /**
- * Bug 343 —— callee 违反自己的返回契约时，调用点**不得**用「声明面」替换
+ * callee 违反自己的返回契约时，调用点**不得**用「声明面」替换
  * 真实返回值。
  *
  * 旧行为（presentCallResultFace 无条件替换）：引擎已经算出 callee 的真实
@@ -1152,7 +1152,7 @@ function tplOpts(file: string) {
   };
 }
 
-describe("Bug 343 同文件：callee 违约 ⇒ caller 的返回契约不得被证得", () => {
+describe("同文件：callee 违约 ⇒ caller 的返回契约不得被证得", () => {
   const src = `${LIB}
 /**
  * @nudo:contract return unit01
@@ -1179,7 +1179,7 @@ export function outer(d, max) {
   });
 });
 
-describe("Bug 343 跨模块：callee 在依赖文件里违约 ⇒ 调用方也红", () => {
+describe("跨模块：callee 在依赖文件里违约 ⇒ 调用方也红", () => {
   /** 依赖模块求值一次，按导出名桥接成 fn Abs（与 service 的模块导出面同构） */
   function bridgeDep(depSrc: string, names: string[]): Record<string, unknown> {
     const run = runTranspiled(depSrc, { mode: "analyze" });
@@ -1233,15 +1233,15 @@ export function outer(d, max) {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 357：fn() 第三实参（throws）形态校验
+// fn() 第三实参（throws）形态校验
 // ---------------------------------------------------------------------------
-describe("[] Bug 357：fn() 第三实参（throws）形态校验", () => {
+describe("fn() 第三实参（throws）形态校验", () => {
 /**
- * Bug 357 —— 侧车 `fn()` 的**第三实参**（`{ throws: … }`）零形态校验：
+ * 侧车 `fn()` 的**第三实参**（`{ throws: … }`）零形态校验：
  * - `opts` 传非对象（如 `fn(p, r, "Error")`）⇒ `opts?.throws` 是 undefined
- *   ⇒ 整条 throws 申报被**静默丢弃**（零诊断）；
+ * ⇒ 整条 throws 申报被**静默丢弃**（零诊断）；
  * - `opts.throws` 归一后抠不出错误名（`{ throws: 42 }` / `{ throws: null }`）
- *   ⇒ throws 义务整条消失 ⇒ 用户已申报却仍报「may throw」，零诊断说明申报被吞。
+ * ⇒ throws 义务整条消失 ⇒ 用户已申报却仍报「may throw」，零诊断说明申报被吞。
  *
  * 修法（core/algebra/constraint.ts `fn`）：第三实参做形态校验 ——
  * `opts` 必须是对象；`opts.throws` 归一后必须能抽出至少一个错误名
@@ -1250,7 +1250,7 @@ describe("[] Bug 357：fn() 第三实参（throws）形态校验", () => {
 
 
 
-describe("Bug 357：fn() 第三实参（throws）形态校验", () => {
+describe("fn() 第三实参（throws）形态校验", () => {
   it("opts 非对象 → 抛指名道姓的错误（不再静默丢弃申报）", () => {
     expect(() => fn({ x: number() }, number(), "Error" as never)).toThrow(
       /third argument must be an options object/,
@@ -1301,11 +1301,11 @@ describe("Bug 357：fn() 第三实参（throws）形态校验", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 358：pick / omit 的 keys 必须是字符串数组
+// pick / omit 的 keys 必须是字符串数组
 // ---------------------------------------------------------------------------
-describe("[] Bug 358：pick / omit 的 keys 必须是字符串数组", () => {
+describe("pick / omit 的 keys 必须是字符串数组", () => {
 /**
- * Bug 358 —— `pick()` / `omit()` 的 `keys` 实参**零类型校验**：
+ * `pick()` / `omit()` 的 `keys` 实参**零类型校验**：
  * 字符串可迭代 ⇒ `for…of` / `new Set(keys)` 把它当字符列表逐字迭代。
  * 同一笔误（`"id"` 应为 `["id"]`）在 `pick` 上把契约**放松成空**（假绿），
  * 在 `omit` 上让约束**变更严**（假红），两向都错且零诊断。
@@ -1317,7 +1317,7 @@ describe("[] Bug 358：pick / omit 的 keys 必须是字符串数组", () => {
 
 
 
-describe("Bug 358：pick / omit 的 keys 必须是字符串数组", () => {
+describe("pick / omit 的 keys 必须是字符串数组", () => {
   it("pick 收到字符串 → 报错点名（不再逐字符迭代放松成空契约）", () => {
     expect(() => pick(shape({ id: number() }), "id" as never)).toThrow(
       /keys must be an array of strings/,
@@ -1355,10 +1355,10 @@ describe("Bug 358：pick / omit 的 keys 必须是字符串数组", () => {
 });
 
 // ---------------------------------------------------------------------------
-// [merged] core-bug-363-assign-fn-body.test.ts
+// [merged] assign-fn-body
 // ---------------------------------------------------------------------------
-describe("[] [merged] core-bug-363-assign-fn-body.test.ts", () => {
-// MERGED (topic-related bug pins): core-bug-363-assign-fn-body.test.ts + core-bug-363-assign-pred-fp.test.ts
+describe("assign-fn-body", () => {
+// MERGED (topic-related bug pins): assign-fn-body + assign-pred-fp
 // Each absorbed file keeps its own describe scope so file-level hooks stay
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 
@@ -1366,11 +1366,11 @@ describe("[] [merged] core-bug-363-assign-fn-body.test.ts", () => {
 
 
 
-describe("[merged] core-bug-363-assign-fn-body.test.ts", () => {
+describe("assign-fn-body", () => {
 /**
- * Bug 363 回归：`nudo:assign-mismatch` 必须覆盖**函数体内**的赋值。
+ * 回归：`nudo:assign-mismatch` 必须覆盖**函数体内**的赋值。
  *
- * 机制（Bug 363）：赋值记录收集器（`setEvalAssignCollector`）的**作用域窗口**
+ * 机制（）：赋值记录收集器（`setEvalAssignCollector`）的**作用域窗口**
  * 只包住**模块顶层求值**；而函数体在 `generalizeFromAst`（check.ts 的函数
  * 循环里）就**早于**收集器安装求过一遍 ⇒ 函数体内的 `$assignRecord` 全部
  * 落空 ⇒ `nudo:assign-mismatch` 只覆盖顶层（真实代码里赋值的主要发生地
@@ -1410,7 +1410,7 @@ function assignIssues(src: string, file = "bug-363.js") {
   );
 }
 
-describe("Bug 363：assign-mismatch 必须覆盖函数体内的赋值", () => {
+describe("assign-mismatch 必须覆盖函数体内的赋值", () => {
   it("函数体内的标量改型 ⇒ 报 nudo:assign-mismatch（修前 0 条）", () => {
     const issues = assignIssues(FN_BODY);
     expect(issues.length).toBe(1);
@@ -1463,16 +1463,16 @@ describe("Bug 363：assign-mismatch 必须覆盖函数体内的赋值", () => {
 });
 });
 
-describe("[merged] core-bug-363-assign-pred-fp.test.ts", () => {
+describe("assign-pred-fp", () => {
 /**
  * 族 07 收口片 Z —— `nudo:assign-mismatch` 在**形状兼容**时的假阳性
  * （真实包 `ms@2.1.3`）。
  *
  * 形态（`ms` 的 `parse(str) { str = String(str); … }`，`ms/index.js:49`）：
- *   - 新值 `String(str)`：shape `prim string`、**pred 无信息**；
- *   - 旧值 `str`：shape `prim string`、pred `typeof text = "string"`
- *     ——那是**调用点派生的精化**（`parseAge("2d")` 对**调用方**变量 `text`
- *     的事实），**不是**绑定 `str` 自身的值域约束。
+ * - 新值 `String(str)`：shape `prim string`、**pred 无信息**；
+ * - 旧值 `str`：shape `prim string`、pred `typeof text = "string"`
+ * ——那是**调用点派生的精化**（`parseAge("2d")` 对**调用方**变量 `text`
+ * 的事实），**不是**绑定 `str` 自身的值域约束。
  * 两者**形状相同**⇒ 结构上完全可赋值（运行时 `String(str)` 确实是 string），
  * 但判定走 `leqAbs(next, prev)` ⇒ 还要判 **pred 蕴含** ⇒ 新值没有那条精化
  * ⇒ 判失败 ⇒ 报「assignment ⊭ existing shape」⇒ **真实包 `ms` 假红**
@@ -1485,10 +1485,10 @@ describe("[merged] core-bug-363-assign-pred-fp.test.ts", () => {
  * 两侧都守住：
  * - 形状兼容 + 旧值带**调用点派生 pred** ⇒ **不**报；
  * - 形状改型（标量改型 / 元素改型）与缺槽 ⇒ **仍**报
- *   （金标 assign-prim-mismatch-violates / assign-missing-slot-violates）。
+ * （金标 assign-prim-mismatch-violates / assign-missing-slot-violates）。
  *
  * 反向闸：本钉在「族 07 接线前」的基线上必须红（函数体内的赋值面是
- * Bug 363 的产品承诺，钉住它 ⇒ 覆盖面被回退时也会红）。
+ * 的产品承诺，钉住它 ⇒ 覆盖面被回退时也会红）。
  */
 
 
@@ -1555,29 +1555,29 @@ describe("族 07 收口片 Z：形状兼容的赋值不得报 nudo:assign-mismat
 });
 
 // ---------------------------------------------------------------------------
-// [merged] core-bug-364-call-site-verification.test.ts
+// [merged] call-site-verification
 // ---------------------------------------------------------------------------
-describe("[] [merged] core-bug-364-call-site-verification.test.ts", () => {
-// MERGED (topic-related bug pins): core-bug-364-call-site-verification.test.ts + core-bug-364-partial-result-call-site-noise.test.ts
+describe("call-site-verification", () => {
+// MERGED (topic-related bug pins): call-site-verification + partial-result-call-site-noise
 // Each absorbed file keeps its own describe scope so file-level hooks stay
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 
 
 
 
-describe("[merged] core-bug-364-call-site-verification.test.ts", () => {
+describe("call-site-verification", () => {
 /**
- * Bug 364 —— `checkArg` / `checkCall` 是**死码**（无生产者）⇒ 文档承诺的
+ * `checkArg` / `checkCall` 是**死码**（无生产者）⇒ 文档承诺的
  * 调用点验证面在产品里**整体静默**：`nudo:arg-count` / `nudo:arg-opaque` /
  * `nudo:constraint-unproven` / `nudo:fn-not-found` / `nudo:partial-result`
  * 五个码在 `nudo check` 里**从不产生**。
  *
  * 修法（core/algebra/diagnostics.ts + core/algebra/scan-literal-calls.ts）：
  * ① 把调用点验证接进产品路径——调用点扫描调 `checkCallSite`（通用化参数面
- *    的实参个数 / 实参义务 / 结果置信度）；
+ * 的实参个数 / 实参义务 / 结果置信度）；
  * ② `checkArg` 判定前把期望 pred 的**主题项**对齐到实参 term（此前
- *    expect 的主题项是参数位 term（`A1`）、实参 pred 相对实参 term（`x`）
- *    ⇒ 永不同一 ⇒ 任何非字面量实参都被判 `nudo:constraint-unproven` 假红）。
+ * expect 的主题项是参数位 term（`A1`）、实参 pred 相对实参 term（`x`）
+ * ⇒ 永不同一 ⇒ 任何非字面量实参都被判 `nudo:constraint-unproven` 假红）。
  *
  * 口径：`nudo:fn-not-found` **不**进产品路径（调用点能否解析由调用点扫描
  * 判，宿主全局 / 跨文件导入另有码）⇒ 此处报会误伤。
@@ -1588,7 +1588,7 @@ describe("[merged] core-bug-364-call-site-verification.test.ts", () => {
 const codes = (r: { issues: Array<{ code: string }> }): string[] =>
   r.issues.map((i) => i.code);
 
-describe("Bug 364：调用点验证面接进产品路径（五个码不再是死码）", () => {
+describe("调用点验证面接进产品路径（五个码不再是死码）", () => {
   it("少传必填实参 → nudo:arg-count（此前从不产生）", () => {
     const r = checkSource(
       "arity.js",
@@ -1654,20 +1654,20 @@ add(1, 2);
 });
 });
 
-describe("[merged] core-bug-364-partial-result-call-site-noise.test.ts", () => {
+describe("partial-result-call-site-noise", () => {
 /**
  * 族 07 收口片 Z —— `nudo:partial-result` 的 info 噪声（**产品面回归**）。
  *
- * Bug 364 把调用点验证接进产品路径（core/algebra/diagnostics.ts 的
+ * 把调用点验证接进产品路径（core/algebra/diagnostics.ts 的
  * `checkCallSite`）。接线时顺带把「被调方通用化结果的置信度」也挂到了
  * **每一个调用点**上 ⇒ `nudo:partial-result`（info）在产品面**复活**
  * （364 之前它是死码：产品路径从不产）：
- *   - 文档页 `getting-started/troubleshooting.md` 的 day0 场景从
- *     `2 error · 0 warning · 0 info · 2 fn` 漂到 `… · 1 info · 2 fn`
- *     （多出 `[INFO L9 scale] scale(...) result confidence partial`）；
- *   - 文档页 `guides/errors-vs-typescript.md` 从 `12 error · 0 warning ·
- *     1 info · 10 fn` 漂到 `… · 2 info · 10 fn`；
- *   - 真实包 `ms` 的每个导出各挂一条（同一件事报 N 次）。
+ * - 文档页 `getting-started/troubleshooting.md` 的 day0 场景从
+ * `2 error · 0 warning · 0 info · 2 fn` 漂到 `… · 1 info · 2 fn`
+ * （多出 `[INFO L9 scale] scale(...) result confidence partial`）；
+ * - 文档页 `guides/errors-vs-typescript.md` 从 `12 error · 0 warning ·
+ * 1 info · 10 fn` 漂到 `… · 2 info · 10 fn`；
+ * - 真实包 `ms` 的每个导出各挂一条（同一件事报 N 次）。
  *
  * 修法：`checkCallSite` **不产** `nudo:partial-result`——被调方的精度问题
  * 不是**调用点**的问题（挂在每个调用点上只会把 info 面刷满）。
@@ -1675,10 +1675,10 @@ describe("[merged] core-bug-364-partial-result-call-site-noise.test.ts", () => {
  * 两侧都守住：
  * - 产品面（`checkSource`）**不**产 `nudo:partial-result`；
  * - **既有公共 API** `checkCall` **仍**产（`DIAG.partialResult` 与
- *   `checkCall` 里那段语义**一字不改**）——该码是公共 API 的既有语义。
+ * `checkCall` 里那段语义**一字不改**）——该码是公共 API 的既有语义。
  *
  * 反向闸：本钉在「族 07 接线前」的基线上必须红（`nudo:arg-count` 那条
- * 接线本身是 Bug 364 的产品承诺，钉住它 ⇒ 接线被整条拆掉时也会红）。
+ * 接线本身是 的产品承诺，钉住它 ⇒ 接线被整条拆掉时也会红）。
  */
 
 
@@ -1698,7 +1698,7 @@ const DAY0 = [
   'formatName("Ada", "Lovelace");',
 ].join("\n");
 
-/** Bug 364 的产品承诺：调用点验证面（实参个数）接线在产品路径里 */
+/** 的产品承诺：调用点验证面（实参个数）接线在产品路径里 */
 const ARITY = ["export function add(a, b) {", "  return a + b;", "}", "add(1);"].join("\n");
 
 const partialResults = (r: { issues: Array<{ code: string }> }): number =>
@@ -1742,13 +1742,13 @@ describe("族 07 收口片 Z：nudo:partial-result 不得在产品调用点面�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 366：drift 判定必须吃 --from 的跨文件调用点证据
+// drift 判定必须吃 --from 的跨文件调用点证据
 // ---------------------------------------------------------------------------
-describe("[] Bug 366：drift 判定必须吃 --from 的跨文件调用点证据", () => {
+describe("drift 判定必须吃 --from 的跨文件调用点证据", () => {
 /**
- * Bug 366 回归：`nudo:contract-drift` 必须吃**跨文件**的调用点证据。
+ * 回归：`nudo:contract-drift` 必须吃**跨文件**的调用点证据。
  *
- * 机制（Bug 366）：drift 判定的「今日域」证据**只**来自 `checkSource` 评估
+ * 机制（）：drift 判定的「今日域」证据**只**来自 `checkSource` 评估
  * **被检查文件自身**时产生的 `AbsCallRecord` ⇒ 调用点在别的文件里时，
  * `--from` 写出的生成段**永远判不出陈旧**（落盘契约静默陈旧）。
  *
@@ -1795,7 +1795,7 @@ function driftIssues(extra: Record<string, unknown> = {}) {
   );
 }
 
-describe("Bug 366：drift 判定必须吃 --from 的跨文件调用点证据", () => {
+describe("drift 判定必须吃 --from 的跨文件调用点证据", () => {
   it("跨文件证据 ⇒ 报 nudo:contract-drift（修前 0 条）", () => {
     const issues = driftIssues({ from: [FROM_RECORD] });
     expect(issues.length).toBe(1);
@@ -1830,18 +1830,18 @@ describe("Bug 366：drift 判定必须吃 --from 的跨文件调用点证据", (
 });
 
 // ---------------------------------------------------------------------------
-// Bug 370：带界义务的判据 = 有界证据（不是「有 pred」）
+// 带界义务的判据 = 有界证据（不是「有 pred」）
 // ---------------------------------------------------------------------------
-describe("[] Bug 370：带界义务的判据 = 有界证据（不是「有 pred」）", () => {
+describe("带界义务的判据 = 有界证据（不是「有 pred」）", () => {
 /**
- * Bug 370 的判据已被 **Bug 1116 撤销**（返回契约的带界义务**不得**把「只有
+ * 的判据已被 **撤销**（返回契约的带界义务**不得**把「只有
  * `typeof` 证据」的**声明域参数**当成「不可判定」）。
  *
- * Bug 370 的口径：`isBoundedEvidenceMissing` 的判据 = 「证据面（Φ ∧ ret.pred）
+ * 的口径：`isBoundedEvidenceMissing` 的判据 = 「证据面（Φ ∧ ret.pred）
  * **含界原子**（gt/ge/lt/le）」⇒ `typeof` 级证据（`@nudo:contract x num` 的
  * 声明域参数）被判成「无证据」⇒ 降级 `nudo:unproven-return`（**warning**）。
  *
- * Bug 1116 的口径（现行）：判据 = 「`ret.pred` 有事实」⇒ 声明域参数的值域
+ * 的口径（现行）：判据 = 「`ret.pred` 有事实」⇒ 声明域参数的值域
  * **已知**（`number()` ⇒ 任意 number，含 NaN）⇒ 返回契约是对**所有**输入成立
  * 的后置 ⇒ 值域 ⊄ 契约域（x=0 即违约）⇒ **契约不成立** ⇒ 判
  * `nudo:constraint-violated`（**error**）。warning 不改 exit code ⇒ 门禁空转
@@ -1874,11 +1874,11 @@ function retDiags(r: { issues: Array<{ code: string; severity: string }> }): str
     .map((i) => `${i.severity}:${i.code}`);
 }
 
-describe("Bug 370：带界义务的判据 = 有界证据（不是「有 pred」）", () => {
+describe("带界义务的判据 = 有界证据（不是「有 pred」）", () => {
   it("声明域参数 ⇒ 值域已知 ⇒ 判「确定违约」（error）；派生项 ⇒ 判「证不出」（warning）", () => {
     const bare = retDiags(check("  return x;"));
     const arith = retDiags(check("  return x + 1;"));
-    // Bug 1116：`return x` 的返回项是**声明域参数**（x: number()）⇒ 值域已知
+    // `return x` 的返回项是**声明域参数**（x: number()）⇒ 值域已知
     // ⇒ `positive` 不蕴含 ⇒ 契约不成立（x=0 即违约）⇒ error。
     expect(bare).toEqual(["error:nudo:constraint-violated"]);
     // 派生项的值域未被跟踪 ⇒ 既证不出也反证不了 ⇒ warning（fail-closed）。
@@ -1927,13 +1927,13 @@ describe("Bug 370：带界义务的判据 = 有界证据（不是「有 pred」�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 374：四类诊断必须带出错指令的位置
+// 四类诊断必须带出错指令的位置
 // ---------------------------------------------------------------------------
-describe("[] Bug 374：四类诊断必须带出错指令的位置", () => {
+describe("四类诊断必须带出错指令的位置", () => {
 /**
- * Bug 374 回归：指令文法 / 引理前提 / 接口冲突类诊断必须带**位置**。
+ * 回归：指令文法 / 引理前提 / 接口冲突类诊断必须带**位置**。
  *
- * 机制（Bug 374）：`nudo:assume-invalid`（2 个 push 点）、`nudo:invariant-invalid`
+ * 机制（）：`nudo:assume-invalid`（2 个 push 点）、`nudo:invariant-invalid`
  * （2 个 push 点）、`nudo:contract-conflict`（2 个 push 点）与
  * `nudo:contract-syntax` 构造 issue 时只带 `fn` 不带位置 ⇒ LSP 把红线画在
  * **文件第 1 行第 1 列**、CLI `--json` 的 `issues[].line` 是 `null`
@@ -2010,7 +2010,7 @@ function issuesOf(
   }).issues.filter((i) => i.code === code);
 }
 
-describe("Bug 374：四类诊断必须带出错指令的位置", () => {
+describe("四类诊断必须带出错指令的位置", () => {
   it("nudo:assume-invalid ⇒ 行 2 / 列 3", () => {
     const issues = issuesOf(ASSUME_INVALID, "nudo:assume-invalid");
     expect(issues.length).toBe(1);
@@ -2072,11 +2072,11 @@ describe("Bug 374：四类诊断必须带出错指令的位置", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 376：赋值右侧是函数声明 ⇒ 判定层不得抛（整轮门禁不得腰斩）
+// 赋值右侧是函数声明 ⇒ 判定层不得抛（整轮门禁不得腰斩）
 // ---------------------------------------------------------------------------
-describe("[] Bug 376：赋值右侧是函数声明 ⇒ 判定层不得抛（整轮门禁不得腰斩）", () => {
+describe("赋值右侧是函数声明 ⇒ 判定层不得抛（整轮门禁不得腰斩）", () => {
 /**
- * Bug 376 回归：赋值右侧是**函数声明**时，记录里的 `next` 是**宿主函数值**
+ * 回归：赋值右侧是**函数声明**时，记录里的 `next` 是**宿主函数值**
  * （不是 Abs）⇒ `r.next.shape.k` 抛 TypeError ⇒ `nudo check` 整轮崩溃
  * （零诊断、exit 1）。
  *
@@ -2095,7 +2095,7 @@ describe("[] Bug 376：赋值右侧是函数声明 ⇒ 判定层不得抛（整�
 
 
 
-/** 赋值右侧是函数声明 —— Bug 376 的触发形态 */
+/** 赋值右侧是函数声明 —— 的触发形态 */
 const FN_DECL_RHS = [
   "function h(x = 1) {",
   "  return x;",
@@ -2129,7 +2129,7 @@ function recordWithHostNext(): AbsAssignRecord {
   } as AbsAssignRecord;
 }
 
-describe("Bug 376：赋值右侧是函数声明 ⇒ 判定层不得抛（整轮门禁不得腰斩）", () => {
+describe("赋值右侧是函数声明 ⇒ 判定层不得抛（整轮门禁不得腰斩）", () => {
   it("产品面：函数声明作右侧 ⇒ checkSource 不抛", () => {
     let report: ReturnType<typeof checkSource> | undefined;
     expect(() => {
@@ -2195,11 +2195,11 @@ describe("Bug 376：赋值右侧是函数声明 ⇒ 判定层不得抛（整轮�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 964 单份契约内部矛盾要报 conflict
+// 单份契约内部矛盾要报 conflict
 // ---------------------------------------------------------------------------
-describe("[] Bug 964 单份契约内部矛盾要报 conflict", () => {
+describe("单份契约内部矛盾要报 conflict", () => {
 /**
- * Bug 964：单份契约**内部**自相矛盾零诊断（静默假绿）。
+ * 单份契约**内部**自相矛盾零诊断（静默假绿）。
  *
  * `number().gt(10).lt(5)` 归一化进同一约束节点的多个 pred ⇒ 域为空。
  * 旧实现只在「两份契约合并」时做交叉比对（`crossBoundConflict`）⇒ 单份
@@ -2216,7 +2216,7 @@ describe("[] Bug 964 单份契约内部矛盾要报 conflict", () => {
 
 
 
-describe("Bug 964 单份契约内部矛盾要报 conflict", () => {
+describe("单份契约内部矛盾要报 conflict", () => {
   beforeEach(() => {
     resetCheckSourceMemo();
     resetGeneralizeMemo();

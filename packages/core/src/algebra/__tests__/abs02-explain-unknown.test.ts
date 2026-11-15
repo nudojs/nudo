@@ -3,7 +3,7 @@
  *
  * 断言面：
  * - 分类覆盖：budget / missing-env / unsupported / eval-failure /
- *   no-contract / explicit-any / inference-failure；
+ * no-contract / explicit-any / inference-failure；
  * - 去重 + 稳定排序（快照可钉）；
  * - 纯函数：不读全局 collector、不改 Abs / absKey / leq（结构面零依赖）。
  */

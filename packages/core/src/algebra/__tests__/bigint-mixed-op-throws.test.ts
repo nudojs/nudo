@@ -4,11 +4,11 @@
  * 回归背景：foldBigintBinOp / foldNumericBinOp / toNumberAbs 注释已写明
  * 「原生抛 TypeError → unknown」，但 unknown 不携带 throws——L2 把
  * `1n + 1` 判成 entry-may-throw=never，catch 分支不可达（假精确）：
- *   1n + 1     原生 TypeError，引擎 unknown + throws=never
- *   1n | 1     同上
- *   1n >>> 1n  原生 TypeError（bigint 无 >>>），引擎 unknown
- *   2n ** -1n  原生 RangeError，引擎 unknown
- *   +1n        原生 TypeError，引擎 unknown
+ * 1n + 1 原生 TypeError，引擎 unknown + throws=never
+ * 1n | 1 同上
+ * 1n >>> 1n 原生 TypeError（bigint 无 >>>），引擎 unknown
+ * 2n ** -1n 原生 RangeError，引擎 unknown
+ * +1n 原生 TypeError，引擎 unknown
  *
  * 同类排查：arithmetic.add/sub/mul/div/mod 的 foldBigintBinOp、
  * surface.foldNumericBinOp（位运算/移位/幂）、surface.toNumberAbs（一元 +）。

@@ -61,7 +61,7 @@ describe("P1c: filter/reduce/flatMap relation", () => {
         return xs.flatMap(f);
       }
     `;
-    // Bug 84：非数组映射值原生合法（FlattenIntoArray 原样追加）——
+    // 非数组映射值原生合法（FlattenIntoArray 原样追加）——
     // x => x 型关系回调不得再把结果折 unknown，元素域 = 回调返回面
     const f = relationFn([a1], num());
     const r = analyzeExport(src, "fanout", [arrA1, f]);

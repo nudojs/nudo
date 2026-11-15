@@ -100,7 +100,7 @@ describe("check --fix", () => {
   });
 });
 
-describe("BUG-022: check --fix 门禁语义（S5-004 方案A）", () => {
+describe("check --fix 门禁语义（S5-004 方案A）", () => {
   const FIXTURE = `export function staticName(node) {
   return node.type;
 }
@@ -135,10 +135,10 @@ describe("BUG-022: check --fix 门禁语义（S5-004 方案A）", () => {
     const r = runCli(["check", file, "--fix", "--json"], dir);
     expect(r.code).toBe(1);
     // ⚠ 口径更新：`--json` 面的用法错误落一份**机器可读信封到 stdout**
-    // （Bug 954 的产品契约：`nudo check --json` 的用法错误不得留空 stdout；
-    //  同一 `--fix + --json` 组合另见
-    //  `nudojs--json-usage-error-envelope.part.ts`）⇒ 断言改看 stdout；
-    //  **非 `--json` 面**才是 stderr 文案（954 的另一条用例守着）。
+    // （的产品契约：`nudo check --json` 的用法错误不得留空 stdout；
+    // 同一 `--fix + --json` 组合另见
+    // `nudojs--json-usage-error-envelope.part.ts`）⇒ 断言改看 stdout；
+    // **非 `--json` 面**才是 stderr 文案（954 的另一条用例守着）。
     expect(r.stdout).toContain("cannot be combined");
     const env = JSON.parse(r.stdout) as {
       ok: boolean;

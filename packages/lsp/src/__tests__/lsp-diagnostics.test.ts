@@ -17,7 +17,7 @@ import { applyEdits, codeActionParams, mountCodeActions, sidecarEdits, type Code
 // ---------------------------------------------------------------------------
 // Abs check as LSP diagnostics
 // ---------------------------------------------------------------------------
-describe("[lsp-] Abs check as LSP diagnostics", () => {
+describe("Abs check as LSP diagnostics", () => {
 /** LSP 3.18 Diagnostic.message 为 string | MarkupContent；本产品始终写纯字符串。 */
 function msgText(m: string | { value: string }): string {
   return typeof m === "string" ? m : m.value;
@@ -154,12 +154,12 @@ function f(x) { return x; }
 // ---------------------------------------------------------------------------
 // LSP nudo:env-unresolved 诊断（validation 面）
 // ---------------------------------------------------------------------------
-describe("[lsp-] LSP nudo:env-unresolved 诊断（validation 面）", () => {
+describe("LSP nudo:env-unresolved 诊断（validation 面）", () => {
 /**
  * LSP 侧 nudo:env-unresolved（issue #88 后续）：验证链路此前只 preload path env
  * 不查错误表——env 加载失败/文件缺失在 IDE 面完全静默。契约：
  * - 坏 env（缺失/导入失败）→ warning 诊断，code=nudo:env-unresolved，
- *   消息与 CLI 同源（`path env failed to load: <path> — <error>`）
+ * 消息与 CLI 同源（`path env failed to load: <path> — <error>`）
  * - 好 env → 无该诊断；env 项移除后陈旧错误不误报；缓存命中轮仍发布（live 瞬态）
  */
 const OK_ENV = `export function defineEnv() {
@@ -274,11 +274,11 @@ describe("LSP nudo:env-unresolved 诊断（validation 面）", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 470/937 LSP：按名字发的 env 诊断不再被过滤掉
+// LSP：按名字发的 env 诊断不再被过滤掉
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 470/937 LSP：按名字发的 env 诊断不再被过滤掉", () => {
+describe("LSP：按名字发的 env 诊断不再被过滤掉", () => {
 /**
- * Bug 470 / 937 回归（LSP 面）
+ * 回归（LSP 面）
  *
  * 注：env 名的指令文法只收「词字符」或「path 形态」（core parseEnvPayload）
  * ⇒ 未知名用 `bogusenvname` 这类词字符形态（带连字符会被指令层过滤掉，
@@ -288,8 +288,8 @@ describe("[lsp-] Bug 470/937 LSP：按名字发的 env 诊断不再被过滤掉"
  * `resolvePath(baseDir, name)` 过滤 ⇒ 这类诊断在 IDE 里被整条吃掉。
  *
  * 本文件锁：
- *  ① 未知 env 名 ⇒ IDE 里看得见 `nudo:env-unresolved`；
- *  ② 同目录**别的文件**的无 path 诊断不得误吸进来（不串台）。
+ * ① 未知 env 名 ⇒ IDE 里看得见 `nudo:env-unresolved`；
+ * ② 同目录**别的文件**的无 path 诊断不得误吸进来（不串台）。
  */
 
 
@@ -311,7 +311,7 @@ async function publish(filePath: string, source: string): Promise<any[]> {
   return sent;
 }
 
-describe("Bug 470/937 LSP：按名字发的 env 诊断不再被过滤掉", () => {
+describe("LSP：按名字发的 env 诊断不再被过滤掉", () => {
   it("未知 env 名 ⇒ IDE 里出现 nudo:env-unresolved", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-lsp-470-"));
     try {
@@ -355,11 +355,11 @@ describe("Bug 470/937 LSP：按名字发的 env 诊断不再被过滤掉", () =>
 });
 
 // ---------------------------------------------------------------------------
-// Bug 495 LSP：坏侧车的 contract-load error 不被分析器取走
+// LSP：坏侧车的 contract-load error 不被分析器取走
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 495 LSP：坏侧车的 contract-load error 不被分析器取走", () => {
+describe("LSP：坏侧车的 contract-load error 不被分析器取走", () => {
 /**
- * Bug 495 回归（LSP 面）：service 分析器会**消费** core 的 contract 诊断
+ * 回归（LSP 面）：service 分析器会**消费** core 的 contract 诊断
  * 通道（把「侧车加载失败」转成 service 诊断），而 LSP 的两个分析入口
  * （analyzeFileAsync 先、checkSource 后）**共用同一个 collector scope**
  * ⇒ 顺序上「service 分析先跑」可能把 check 路径的 `nudo:contract-load`
@@ -395,7 +395,7 @@ async function publish(filePath: string, source: string): Promise<any[]> {
   return sent;
 }
 
-describe("Bug 495 LSP：坏侧车的 contract-load error 不被分析器取走", () => {
+describe("LSP：坏侧车的 contract-load error 不被分析器取走", () => {
   it("分析器先跑 ⇒ IDE 里仍有 error 级 nudo:contract-load", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-lsp-495-"));
     try {
@@ -441,11 +441,11 @@ describe("Bug 495 LSP：坏侧车的 contract-load error 不被分析器取走",
 });
 
 // ---------------------------------------------------------------------------
-// Bug 778 — 诊断 range 必须夹在文档内（整行哨兵 column:999）
+// 诊断 range 必须夹在文档内（整行哨兵 column:999）
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 778 — 诊断 range 必须夹在文档内（整行哨兵 column:999）", () => {
+describe("诊断 range 必须夹在文档内（整行哨兵 column:999）", () => {
 /**
- * Bug 778 —— 诊断 range 越界（`nudo:case-expected` 的 `column: 999` 整行哨兵）。
+ * 诊断 range 越界（`nudo:case-expected` 的 `column: 999` 整行哨兵）。
  *
  * 症状：service 用 `column: 999` 当「整行」哨兵，诊断原样转成 LSP range ⇒
  * `end.character = 999` 越出文档（协议层 Position 必须在文档内）⇒ 客户端按
@@ -496,7 +496,7 @@ function openSession(src: string): {
   };
 }
 
-describe("Bug 778 — 诊断 range 必须夹在文档内（整行哨兵 column:999）", () => {
+describe("诊断 range 必须夹在文档内（整行哨兵 column:999）", () => {
   it("push 通道：nudo:case-expected 的 range 不越过行尾", async () => {
     const { mock, uri, cleanup } = openSession(SRC);
     try {
@@ -581,11 +581,11 @@ describe("Bug 778 — 诊断 range 必须夹在文档内（整行哨兵 column:9
 });
 
 // ---------------------------------------------------------------------------
-// Bug 758 — 选择器变更必须广播 diagnostic refresh（pull 诊断面）
+// 选择器变更必须广播 diagnostic refresh（pull 诊断面）
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 758 — 选择器变更必须广播 diagnostic refresh（pull 诊断面）", () => {
+describe("选择器变更必须广播 diagnostic refresh（pull 诊断面）", () => {
 /**
- * Bug 758 —— 选择器变更从不广播 `workspace/diagnostic/refresh`。
+ * 选择器变更从不广播 `workspace/diagnostic/refresh`。
  *
  * 改前：切 case 后 pull 诊断客户端永远拿不到切换后的新诊断（只有 codeLens
  * refresh）。改后：selectCase / selectContract 都广播 diagnostic refresh。
@@ -641,7 +641,7 @@ function refreshMethods(mock: ReturnType<typeof createMockConnection>): string[]
   return mock.sentRequests.map((r: { type?: { method?: string } }) => r.type?.method ?? "?");
 }
 
-describe("Bug 758 — 选择器变更必须广播 diagnostic refresh（pull 诊断面）", () => {
+describe("选择器变更必须广播 diagnostic refresh（pull 诊断面）", () => {
   it("nudo.selectCase 之后发出 workspace/diagnostic/refresh", async () => {
     const mock = startServer();
     mock.sentRequests.length = 0;
@@ -669,11 +669,11 @@ describe("Bug 758 — 选择器变更必须广播 diagnostic refresh（pull 诊�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 459 — nudo:directive-syntax 只发布一次
+// nudo:directive-syntax 只发布一次
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 459 — nudo:directive-syntax 只发布一次", () => {
+describe("nudo:directive-syntax 只发布一次", () => {
 /**
- * Bug 459 回归钉：同一条 `nudo:directive-syntax` 不得被发布两次。
+ * 回归钉：同一条 `nudo:directive-syntax` 不得被发布两次。
  *
  * 改前：check 通道（checkToLspDiagnostics 显式 extract）与 eval 通道
  * （service drain）各抽一次同一条指令诊断；两通道渲染的**消息不同**
@@ -716,7 +716,7 @@ function msgText(m: string | { value: string }): string {
   return typeof m === "string" ? m : m.value;
 }
 
-describe("Bug 459 — nudo:directive-syntax 只发布一次", () => {
+describe("nudo:directive-syntax 只发布一次", () => {
   it("validateText 发布面：同一条指令文法诊断只出现 1 次（改前：2 次）", async () => {
     const published: Array<{ uri: string; diagnostics: LspDiagnostic[] }> = [];
     const deps = makeValidateDeps({ onPublish: (p) => published.push(p) });
@@ -769,11 +769,11 @@ describe("Bug 459 — nudo:directive-syntax 只发布一次", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-080 残留 — @nudo:as 载体不支持的诊断在 IDE 编辑器面可见
+// 残留 — @nudo:as 载体不支持的诊断在 IDE 编辑器面可见
 // ---------------------------------------------------------------------------
-describe("[lsp-] BUG-080 残留 — @nudo:as 载体不支持的诊断在 IDE 编辑器面可见", () => {
+describe("残留 — @nudo:as 载体不支持的诊断在 IDE 编辑器面可见", () => {
 /**
- * BUG-080 残留（LSP IDE 编辑器面）：`@nudo:as` 挂在**不支持的承载语句**上
+ * 残留（LSP IDE 编辑器面）：`@nudo:as` 挂在**不支持的承载语句**上
  * （表达式语句 / 函数声明 …）⇒ service 面发一条显式 `nudo:directive-syntax`
  * （warning；见 packages/service/src/eval-injection.ts 的 `asOverrideApplies`
  * 分支——适用形态只有 VariableDeclaration / ReturnStatement /
@@ -783,12 +783,12 @@ describe("[lsp-] BUG-080 残留 — @nudo:as 载体不支持的诊断在 IDE 编
  * `getCachedCheckDiags` / `collectCheckSupplementIssues` → `checkIssueToLspDiagnostic`，
  * warning 级、`source: "nudo-check"`）；只有 `buildLspInjection()`（hover / 补全的
  * 注入表装配，不是诊断面）采集内联指令时不带 diags 汇。本文件的作用是**钉住**
- * 「IDE 面看得见」，而不是修一个不可见的缺口——BUG-080 的 changeset 曾把它写成
+ * 「IDE 面看得见」，而不是修一个不可见的缺口——的 changeset 曾把它写成
  * 「新诊断在 IDE 面不可见」，本回归用于证伪那句话说法的持续有效性。
  *
  * 本文件钉住 IDE 面（编辑器诊断）**确实**看得见这条诊断：
  * - check 通道（`checkToLspDiagnostics` → `collectCheckSupplementIssues` →
- *   `collectEvalReplacements(source, { diags })`）⇒ 码 / 档 / 来源都对；
+ * `collectEvalReplacements(source, { diags })`）⇒ 码 / 档 / 来源都对；
  * - push 通道（`validateText` → `sendDiagnostics`）⇒ 诊断随发布上屏；
  * - 负控制：适用形态（变量声明 / return）⇒ 零 `nudo:directive-syntax`。
  *
@@ -851,7 +851,7 @@ async function publishDiagnostics(
   return published[published.length - 1]!.diagnostics;
 }
 
-describe("BUG-080 残留 — @nudo:as 载体不支持的诊断在 IDE 编辑器面可见", () => {
+describe("残留 — @nudo:as 载体不支持的诊断在 IDE 编辑器面可见", () => {
   it("check 通道：表达式语句载体 ⇒ 一条 nudo:directive-syntax（warning，非硬错）", () => {
     const diags = checkToLspDiagnostics("/t/as-expr.js", INVALID_EXPR_STMT);
     const syntax = syntaxDiags(diags);
@@ -901,11 +901,11 @@ describe("BUG-080 残留 — @nudo:as 载体不支持的诊断在 IDE 编辑器�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1099: 项目级 env 的加载失败必须在 LSP 面可见（路径按项目根）
+// 项目级 env 的加载失败必须在 LSP 面可见（路径按项目根）
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 1099: 项目级 env 的加载失败必须在 LSP 面可见（路径按项目根）", () => {
+describe("项目级 env 的加载失败必须在 LSP 面可见（路径按项目根）", () => {
 /**
- * Bug 1099 —— LSP 的 `nudo:env-unresolved` 诊断**只取文件目录**的失败记录
+ * LSP 的 `nudo:env-unresolved` 诊断**只取文件目录**的失败记录
  * ⇒ **项目级** env（`package.json#nudo.env`，按**项目根**解析）的加载失败
  * 被静默吞掉 ⇒ IDE 假绿（诊断不可见），且与 CLI 面口径分裂。
  *
@@ -921,7 +921,7 @@ describe("[lsp-] Bug 1099: 项目级 env 的加载失败必须在 LSP 面可见�
  *
  * 钉：
  * ④ 项目根下的项目级 env 失败 ⇒ 子目录文件也必须报（路径指向**项目根**下
- *    解析出的真实路径，不得是文件目录下的臆造路径）；
+ * 解析出的真实路径，不得是文件目录下的臆造路径）；
  * ⑤ 项目根下的文件 ⇒ 诊断**仍可见**（不得因修复而丢失）；
  * ⑥ 文件级 env（按文件目录解析）语义**不受影响**。
  */
@@ -967,7 +967,7 @@ function envMsgs(diags: LspDiagnostic[]): string[] {
     .map((d) => (typeof d.message === "string" ? d.message : d.message.value));
 }
 
-describe("Bug 1099: 项目级 env 的加载失败必须在 LSP 面可见（路径按项目根）", () => {
+describe("项目级 env 的加载失败必须在 LSP 面可见（路径按项目根）", () => {
   beforeEach(() => {
     // 进程级 live 记录是全局的 ⇒ 每例前清干净（否则跨例串台）
     clearPathEnvCaches();
@@ -1033,18 +1033,18 @@ describe("Bug 1099: 项目级 env 的加载失败必须在 LSP 面可见（路�
     const codes = sent.map((d) => d.code);
     // `MAGIC` 是 env 全局 ⇒ 不得报「内建 API 未覆盖」（修前 IDE 直接发布假阳）
     expect(codes).not.toContain("nudo:builtin-unknown");
-    // 注：LSP **check 通道**的项目级 env 绝对化已由 Bug 1104（`absolutizeEnvSpec`）
+    // 注：LSP **check 通道**的项目级 env 绝对化已由 （`absolutizeEnvSpec`）
     // 修好 ⇒ 项目级 env 在该通道同样可见，不再是 IDE 红 / CLI 绿的假红来源。
   });
 });
 });
 
 // ---------------------------------------------------------------------------
-// BUG-140: 分析失败（门禁判红的文件）必须出现在 IDE 面
+// 分析失败（门禁判红的文件）必须出现在 IDE 面
 // ---------------------------------------------------------------------------
-describe("[lsp-] BUG-140: 分析失败（门禁判红的文件）必须出现在 IDE 面", () => {
+describe("分析失败（门禁判红的文件）必须出现在 IDE 面", () => {
 /**
- * BUG-140 回归（LSP 面）：CLI 的 `nudo:internal`（**分析失败 ⇒ 门禁无法裁决**）
+ * 回归（LSP 面）：CLI 的 `nudo:internal`（**分析失败 ⇒ 门禁无法裁决**）
  * 必须在 IDE 面同样可见。
  *
  * 病灶：CLI 的 check 编排在**包装层**（`packages/nudojs/src/commands/check.ts`）
@@ -1061,7 +1061,7 @@ describe("[lsp-] BUG-140: 分析失败（门禁判红的文件）必须出现在
  *
  * 负控制：正常文件不得出现 `nudo:internal`（不得把整条诊断面变成噪声）。
  *
- * **口径变更（BUG-073 之后）**：同一事实（模块级原生异常 ⇒ 模块无法装载）现在被
+ * **口径变更（之后）**：同一事实（模块级原生异常 ⇒ 模块无法装载）现在被
  * 归类为 **`nudo:module-throw`**（用户代码的异常不再是引擎内部缺陷），码不再是
  * `nudo:internal`。本用例断言随之改到新码，但**契约不变**：CLI 判红的文件，IDE
  * 面必须同样可见，且 severity 必须是 error、range 不得编造行号。
@@ -1111,7 +1111,7 @@ async function published(dir: string, name: string, src: string): Promise<LspDia
   return sent;
 }
 
-describe("BUG-140: 分析失败（门禁判红的文件）必须出现在 IDE 面", () => {
+describe("分析失败（门禁判红的文件）必须出现在 IDE 面", () => {
   it("模块求值失败 ⇒ 发布一条 error 级 nudo:module-throw（与 CLI exit ≠ 0 同结论）", async () => {
     const dir = project();
     const diags = await published(dir, "f.js", BROKEN_SRC);
@@ -1133,14 +1133,14 @@ describe("BUG-140: 分析失败（门禁判红的文件）必须出现在 IDE �
 });
 
 // ---------------------------------------------------------------------------
-// BUG-090 — 模块环不再丢图 ⇒ 截断归因诊断上屏
+// 模块环不再丢图 ⇒ 截断归因诊断上屏
 // ---------------------------------------------------------------------------
-describe("[lsp-] BUG-090 — 模块环不再丢图 ⇒ 截断归因诊断上屏", () => {
+describe("模块环不再丢图 ⇒ 截断归因诊断上屏", () => {
 /**
- * BUG-090 —— LSP 面在**模块环**上丢弃整张依赖图 ⇒ CLI `nudo check` 报的
+ * LSP 面在**模块环**上丢弃整张依赖图 ⇒ CLI `nudo check` 报的
  * `nudo:recursion-truncated` 在 IDE **永不出现**（verbose 档也一样）。
  *
- * 症状（tmp/repro/bug-090/，a.js ↔ b.js 互相 import，package.json 开
+ * 症状（tmp/repro//，a.js ↔ b.js 互相 import，package.json 开
  * `nudo.analysis.diagnostics: "verbose"`）：CLI `check --json` 的 issue 码集合为
  * `{nudo:opaque-result, nudo:recursion-truncated, nudo:module-cycle}`，
  * 而 LSP 的 push / pull 两个通道都只有
@@ -1148,7 +1148,7 @@ describe("[lsp-] BUG-090 — 模块环不再丢图 ⇒ 截断归因诊断上屏"
  * 放宽」的唯一归因 ⇒ IDE 用户无法判断要不要补 case/预算。
  *
  * 根因：`validation.ts` 的 `evalAnalysisModules` 检出环就 `return undefined`
- * （整图丢弃），而 CLI 早已废弃该分支（Bug 456：环由引擎有界处理，求值层由
+ * （整图丢弃），而 CLI 早已废弃该分支（环由引擎有界处理，求值层由
  * call-budget 截断并归因）。图被丢 ⇒ 环内 import 全部落空 ⇒ 截断归因诊断消失。
  *
  * 修法：环时**不再丢图**（`graph.modules` 非空即返回），环本身仍由
@@ -1187,7 +1187,7 @@ const PKG = JSON.stringify({
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-describe("BUG-090 — 模块环不再丢图 ⇒ 截断归因诊断上屏", () => {
+describe("模块环不再丢图 ⇒ 截断归因诊断上屏", () => {
   it("pull 通道对 a.js 报告 nudo:recursion-truncated + nudo:module-cycle", async () => {
     await withLspServer(
       { "a.js": A, "b.js": B, "package.json": PKG },
@@ -1257,11 +1257,11 @@ describe("BUG-090 — 模块环不再丢图 ⇒ 截断归因诊断上屏", () =>
 });
 
 // ---------------------------------------------------------------------------
-// Bug 781 — pull 诊断必须含 env 通道
+// pull 诊断必须含 env 通道
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 781 — pull 诊断必须含 env 通道", () => {
+describe("pull 诊断必须含 env 通道", () => {
 /**
- * Bug 781 —— pull 诊断面**没有** env 通道。
+ * pull 诊断面**没有** env 通道。
  *
  * 症状：`@nudo:env` 指向的 path env 加载失败时，**push** 面（validateText）
  * 会发 `nudo:env-unresolved` 告警，**pull** 面（`textDocument/diagnostic`）
@@ -1286,7 +1286,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const SRC = '/// @nudo:env "./nope.mjs"\nexport function g2() {\n  return 1;\n}\n';
 
-describe("Bug 781 — pull 诊断必须含 env 通道", () => {
+describe("pull 诊断必须含 env 通道", () => {
   it("@nudo:env 指向缺失文件 ⇒ pull 里有 nudo:env-unresolved", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug781-"));
     try {
@@ -1318,11 +1318,11 @@ describe("Bug 781 — pull 诊断必须含 env 通道", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 992 — push 与 pull 诊断面同形（env 通道 parity）
+// push 与 pull 诊断面同形（env 通道 parity）
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 992 — push 与 pull 诊断面同形（env 通道 parity）", () => {
+describe("push 与 pull 诊断面同形（env 通道 parity）", () => {
 /**
- * Bug 992 —— push 与 pull 两个诊断面**不一致**（env 通道缺失）。
+ * push 与 pull 两个诊断面**不一致**（env 通道缺失）。
  *
  * 症状：同一个文件，push 面（`publishDiagnostics`）有 `nudo:env-unresolved`
  * 告警，pull 面（`textDocument/diagnostic`）没有 ⇒ IDE 里看到的诊断集合
@@ -1348,7 +1348,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const SRC = '/// @nudo:env "./nope.mjs"\nexport function g2() {\n  return 1;\n}\n';
 
-describe("Bug 992 — push 与 pull 诊断面同形（env 通道 parity）", () => {
+describe("push 与 pull 诊断面同形（env 通道 parity）", () => {
   it("push 与 pull 的诊断 code 集合一致", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug992-"));
     try {
@@ -1388,11 +1388,11 @@ describe("Bug 992 — push 与 pull 诊断面同形（env 通道 parity）", () 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 369 — LSP 面：返回契约违例画在真实行（不得是第 1 行）
+// LSP 面：返回契约违例画在真实行（不得是第 1 行）
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 369 — LSP 面：返回契约违例画在真实行（不得是第 1 行）", () => {
+describe("LSP 面：返回契约违例画在真实行（不得是第 1 行）", () => {
 /**
- * Bug 369 回归钉（LSP 面）—— 返回契约类诊断不带 `line` / `column` ⇒ LSP 把诊断
+ * 回归钉（LSP 面）—— 返回契约类诊断不带 `line` / `column` ⇒ LSP 把诊断
  * 画在**第 1 行第 0 列**（`range {0,0}-{0,1}`），而函数其实在第 10 行。
  *
  * 修法（族 07 片 S4）：core 的 `checkReturnConstraint` 在 issue 构造处补上
@@ -1428,7 +1428,7 @@ export const deep = fn({ x: number().gt(0) }, number().gt(0));
 const loadModule = (spec: string): string | undefined =>
   spec.endsWith(".nudo.js") ? SIDECAR : undefined;
 
-describe("Bug 369 — LSP 面：返回契约违例画在真实行（不得是第 1 行）", () => {
+describe("LSP 面：返回契约违例画在真实行（不得是第 1 行）", () => {
   it("nudo:constraint-violated 的 range 落在函数声明行", () => {
     const diags = checkToLspDiagnostics("/t/bug369.js", SRC, loadModule);
     const d = diags.find((x) => x.code === "nudo:constraint-violated");
@@ -1442,14 +1442,14 @@ describe("Bug 369 — LSP 面：返回契约违例画在真实行（不得是第
 });
 
 // ---------------------------------------------------------------------------
-// Bug 135 · unproven-return 的 relax 必须真的写到推断面
+// unproven-return 的 relax 必须真的写到推断面
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 135 · unproven-return 的 relax 必须真的写到推断面", () => {
+describe("unproven-return 的 relax 必须真的写到推断面", () => {
 /**
- * BUG-135 —— `nudo:unproven-return` 的 review quickfix **标题声称「放宽到
+ * `nudo:unproven-return` 的 review quickfix **标题声称「放宽到
  * 推断面」而落盘的是基类型**（`number()`）⇒ 标题说谎 + 诊断不消。
  *
- * 夹具（`tmp/repro/bug-135/` 逐字）：
+ * 夹具（`tmp/repro//` 逐字）：
  *
  * ```js
  * // g.nudo.js
@@ -1458,12 +1458,12 @@ describe("[lsp-] Bug 135 · unproven-return 的 relax 必须真的写到推断�
  * export function g(o) { return o.x; }
  * ```
  *
- * 推断面（诊断的 `actual`）= `any  #path`；旧实现走 `relaxSidecarConstraint`
+ * 推断面（诊断的 `actual`）= `any #path`；旧实现走 `relaxSidecarConstraint`
  * ⇒ 只**剥数值谓词** ⇒ 落盘 `number()`（基类型）——既不是推断面，也消不掉
  * 诊断（`any ⊭ number()`）⇒ 用户点完「修复」diff 出来了、诊断一条不少。
  *
  * 同一条承诺在 CLI 机器面（`nudo check --json` 的 `actions[].label`，
- * core `actionsForIssue`）里逐字重复 ⇒ 两个面同源地说谎（BUG-135 的第二面）。
+ * core `actionsForIssue`）里逐字重复 ⇒ 两个面同源地说谎（的第二面）。
  *
  * 修复后钉：
  * 1. 落盘 = **推断面**（`any()`），不是基类型；
@@ -1481,7 +1481,7 @@ describe("[lsp-] Bug 135 · unproven-return 的 relax 必须真的写到推断�
 
 
 
-/** BUG-135 夹具：返回 `o.x`（`any`）⊭ 返回槽 `number().gt(40)` */
+/** 夹具：返回 `o.x`（`any`）⊭ 返回槽 `number().gt(40)` */
 const G_JS = `export function g(o) {
   return o.x;
 }
@@ -1544,7 +1544,7 @@ function unprovenAfter(dir: string, js: string, landedSidecar: string): Diag[] {
   return all.filter(isUnprovenReturn);
 }
 
-describe("Bug 135 · unproven-return 的 relax 必须真的写到推断面", () => {
+describe("unproven-return 的 relax 必须真的写到推断面", () => {
   it("落盘 = 推断面（any()），不是基类型（number()）；且诊断消失", () => {
     const { actions, diags, scText, uri } = actionsFor("nudo-lsp-135a-", G_JS, G_SC);
     // 诊断面先钉住：推断面是 any（不是 number）
@@ -1620,7 +1620,7 @@ describe("Bug 135 · unproven-return 的 relax 必须真的写到推断面", () 
 // ---------------------------------------------------------------------------
 // push diagnostics face (LSP-G6)
 // ---------------------------------------------------------------------------
-describe("[lsp-] push diagnostics face (LSP-G6)", () => {
+describe("push diagnostics face (LSP-G6)", () => {
 /**
  * LSP-G6：老客户端只消费 push（textDocument/publishDiagnostics），
  * 不用 pull diagnosticProvider。打开/校验路径必须仍走 sendDiagnostics。
@@ -1649,7 +1649,7 @@ describe("push diagnostics face (LSP-G6)", () => {
         published.push(p);
       },
     });
-    // Bug 8（wave 3）：any 形参算术不再 clean（may TypeError）——clean 样本
+    // （wave 3）：any 形参算术不再 clean（may TypeError）——clean 样本
     // 改用恒总 identity，本用例意图（clean 文件 → 空诊断 publish）不变。
     const src = `export function id(x) { return x; }\n`;
     await validateText("/t/ok.js", "file:///t/ok.js", src, 1, deps, false, true);

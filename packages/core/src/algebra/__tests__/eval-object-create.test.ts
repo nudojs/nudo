@@ -1,12 +1,12 @@
 /**
- * Bug 23 回归：Object.create(proto, props) 的 ToPropertyDescriptor 面。
+ * 回归：Object.create(proto, props) 的 ToPropertyDescriptor 面。
  * props 此前只有 nullish 定抛 / any-unknown-sum may / obj 枚举安装三臂，
  * 字符串与数组字面量落到「装箱零可枚举键」尾注口径静默——node 实测：
  * - 非空串 props：装箱后 "0".."n-1" 下标键值全为单字符 string（非对象）
- *   → 定抛 TypeError（空串零键静默）；
+ * → 定抛 TypeError（空串零键静默）；
  * - 数组字面量 props：下标槽即自有可枚举键——非对象元素（string/null/
- *   undefined/prim/symbol）定抛，对象元素安装 "i"（[{}] 落键 "0"，
- *   "0" in o 原生 true），hole 位无键跳过；
+ * undefined/prim/symbol）定抛，对象元素安装 "i"（[{}] 落键 "0"，
+ * "0" in o 原生 true），hole 位无键跳过；
  * - 抽象 string（可能非空）/ 抽象数组（元素可能非对象）→ may TypeError；
  * - 其余 prim 装箱（5/true/1n/Symbol()）零可枚举自有键 → 静默不装。
  * 控制组：obj props 安装面（getter/writable/多键/空描述符）与 proto 面
@@ -64,9 +64,9 @@ function evalAbs(
   };
 }
 
-// --- Bug 23：props 校验矩阵 ---------------------------------------------------
+// --- props 校验矩阵 ---------------------------------------------------
 
-describe("Bug 23: Object.create props 字符串/数组字面量定抛", () => {
+describe("Object.create props 字符串/数组字面量定抛", () => {
   it("非空字符串字面量 props → 定抛 TypeError（装箱下标键值非对象）", () => {
     for (const src of [
       `export function f() { return Object.create(null, "x"); }`,
@@ -172,9 +172,9 @@ describe("Bug 23: Object.create props 字符串/数组字面量定抛", () => {
   });
 });
 
-// --- 控制组：obj props 安装面（Bug 32 机器不回退） ---------------------------
+// --- 控制组：obj props 安装面（机器不回退） ---------------------------
 
-describe("Bug 23 控制组: obj props 安装面", () => {
+describe("控制组: obj props 安装面", () => {
   it("value/getter/setter/writable/多键描述符", () => {
     expect(litValue(call(`export function f() { return Object.create(null, { y: { value: 2 } }).y; }`).result))
       .toEqual({ ok: true, value: 2 });
@@ -197,7 +197,7 @@ describe("Bug 23 控制组: obj props 安装面", () => {
 
 // --- 控制组：proto 面 --------------------------------------------------------
 
-describe("Bug 23 控制组: proto 面", () => {
+describe("控制组: proto 面", () => {
   it("null / 对象 proto 合法；字面量 proto 定抛（既有臂不回退）", () => {
     // null proto：nullProto 标记，Object.prototype 成员缺席
     const np = call(`export function f() { const o = Object.create(null); return "toString" in o; }`);

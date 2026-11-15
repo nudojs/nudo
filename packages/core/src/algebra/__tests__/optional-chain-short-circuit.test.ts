@@ -5,10 +5,10 @@
  * 回归背景：transpile 把 `o?.user.name` 编成 `$get($optionalGet(o, "user"), "name")`。
  * `$optionalGet` 只短路**当前一跳**（nullish → undefined），下一跳 `$get(undefined, "name")`
  * 走 nullish 成员硬抛 TypeError。ES 语义：
- *   `a?.b.c` ≡ `a == null ? undefined : a.b.c`   // a 非 nullish 后，.b.c 正常（null.name 仍抛）
+ * `a?.b.c` ≡ `a == null ? undefined : a.b.c` // a 非 nullish 后，.b.c 正常（null.name 仍抛）
  * 同类缺口：
- *   - `o?.length` / `o?.[k]` 路由到 $len/$idx，忽略 optional，不短路
- *   - `g?.()` 标识符调用路径忽略 optionalCall
+ * - `o?.length` / `o?.[k]` 路由到 $len/$idx，忽略 optional，不短路
+ * - `g?.()` 标识符调用路径忽略 optionalCall
  */
 import {describe, it, expect} from "vitest";
 import {runTranspiled, callTranspiledExportFull, litValue, formatAbs} from "@nudojs/core";

@@ -1,5 +1,5 @@
 /**
- * 审计 34 · D4：跨文件证据的**名字路**（BUG-013）。
+ * 审计 34 · D4：跨文件证据的**名字路**（）。
  *
  * 调用记录里的 `targetExport` 是**导出名**（`"default"`），而 check 面按
  * **函数普查名**匹配 ⇒ 重命名默认导入 / `import {default as g}` / `ns.default()`
@@ -41,7 +41,7 @@ function codes(dir: string, from: string): string[] {
   return (json.issues ?? []).map((i) => i.code);
 }
 
-describe("BUG-013 · 默认导出的跨文件证据名字路", () => {
+describe("默认导出的跨文件证据名字路", () => {
   it("对照：本地名 = 函数名（基线，此前已通过）", () => {
     const dir = fixture({ "use.js": 'import f from "./lib.js";\nf(-1);\n' });
     expect(codes(dir, "use.js")).toContain("nudo:contract-domain-exceeds");

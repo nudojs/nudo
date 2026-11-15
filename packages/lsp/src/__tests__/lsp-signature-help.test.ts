@@ -14,11 +14,11 @@ import { parse } from "@nudojs/parser";
 import { findEnclosingCall } from "../server-ide.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 463/484 IDE 面：跨模块 fn 形参名（真名，非 argN 假名）
+// IDE 面：跨模块 fn 形参名（真名，非 argN 假名）
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 463/484 IDE 面：跨模块 fn 形参名（真名，非 argN 假名）", () => {
+describe("IDE 面：跨模块 fn 形参名（真名，非 argN 假名）", () => {
 /**
- * Bug 463 / 484：IDE 面（补全 detail + 签名弹窗）的跨模块 fn 形参名——
+ * ：IDE 面（补全 detail + 签名弹窗）的跨模块 fn 形参名——
  * 改前 `export function` 的形参显示成合成假名 `arg0/arg1`（源码里没有的名字），
  * 带默认值的形参整个丢失（`b = 2` → arg1），rest 形参连个数一起被吞。
  *
@@ -44,14 +44,14 @@ function tmpFile(src: string): { dir: string; file: string } {
   return { dir, file };
 }
 
-describe("Bug 463/484 IDE 面：跨模块 fn 形参名（真名，非 argN 假名）", () => {
+describe("IDE 面：跨模块 fn 形参名（真名，非 argN 假名）", () => {
   it("补全 detail 用源码真名与真个数（改前：(arg0) => ? / (arg0, arg1) => ?）", () => {
     const { dir, file } = tmpFile(SRC);
     try {
       const items = getCompletionsAtPosition(file, SRC, SRC.split("\n").length - 1, 0);
       const detailOf = (label: string): string | undefined =>
         items.find((i) => i.label === label)?.detail;
-      // BUG-091：detail 不再用 `?` 占位返回值，改为与 hover / check 同口径的
+      // detail 不再用 `?` 占位返回值，改为与 hover / check 同口径的
       // 签名渲染（`<name>(<param>: <T>, …) => <R>`）；本用例仍钉「源码真名与
       // 真个数」（不是 arg0/arg1 假名）。
       expect(detailOf("withDefault")).toBe("withDefault(x: any, y: any) => any");
@@ -77,7 +77,7 @@ describe("Bug 463/484 IDE 面：跨模块 fn 形参名（真名，非 argN 假�
       const col = "export function use() { return withDefault(".length;
       const res = sig({ textDocument: { uri }, position: { line: 3, character: col } });
       const label = res!.signatures[0]!.label;
-      // BUG-104：裸标识符 callee 不再用 evaluator 的 arity-only fn Abs 冒充
+      // 裸标识符 callee 不再用 evaluator 的 arity-only fn Abs 冒充
       // 签名（返回位是占位 `unknown`）⇒ 落到与 hover 同源的 poly-fn 解析，
       // 返回位是真实推断（`x + y` ⇒ `number | string`）。
       expect(label).toBe("(x: any, y: any) => number | string");
@@ -93,7 +93,7 @@ describe("Bug 463/484 IDE 面：跨模块 fn 形参名（真名，非 argN 假�
     try {
       const items = getCompletionsAtPosition(file, src, 1, 0);
       const arrow = items.find((i) => i.label === "arrow");
-      // BUG-091：detail 改为完整签名（不再 `?` 占位）；负控制仍钉「形参面
+      // detail 改为完整签名（不再 `?` 占位）；负控制仍钉「形参面
       // 用源码真名 m/n 且个数为 2」（不是 arg0/arg1 假名）。
       expect(arrow?.detail).toBe("arrow(m: any, n: any) => any");
     } finally {
@@ -104,11 +104,11 @@ describe("Bug 463/484 IDE 面：跨模块 fn 形参名（真名，非 argN 假�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 718 signatureHelp：activeParameter 不越界
+// signatureHelp：activeParameter 不越界
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 718 signatureHelp：activeParameter 不越界", () => {
+describe("signatureHelp：activeParameter 不越界", () => {
 /**
- * Bug 718：LSP `signatureHelp` 的 `activeParameter` **越界**——
+ * LSP `signatureHelp` 的 `activeParameter` **越界**——
  * 2 参签名在第 2 个实参之后报 index 2（协议规定下标须落在签名参数表内；
  * 越界值客户端只能回落 0 ⇒ 高亮错误的参数）。
  *
@@ -135,7 +135,7 @@ const SRC = [
   "}",
 ].join("\n");
 
-/** `  two(1, 2);` 的列：`1` / `,` / `2` / `)` / `;` */
+/** ` two(1, 2);` 的列：`1` / `,` / `2` / `)` / `;` */
 const LINE = SRC.split("\n")[5]!;
 const COL_ARG1 = LINE.indexOf("1");
 const COL_COMMA = LINE.indexOf(",");
@@ -150,7 +150,7 @@ function tmpFile(src: string): { dir: string; file: string } {
   return { dir, file };
 }
 
-describe("Bug 718 signatureHelp：activeParameter 不越界", () => {
+describe("signatureHelp：activeParameter 不越界", () => {
   it("纯函数面：buildSignatureHelp 把 activeParameter 夹进签名参数表内", () => {
     const fn = absFunction(["x", "y"], { apply: () => num() });
     // 越界输入（光标在末参之后 / 实参多于形参）⇒ 夹到最后一个形参
@@ -239,11 +239,11 @@ describe("Bug 718 signatureHelp：activeParameter 不越界", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 985 signatureHelp：export default 的 callee 也有签名弹窗
+// signatureHelp：export default 的 callee 也有签名弹窗
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 985 signatureHelp：export default 的 callee 也有签名弹窗", () => {
+describe("signatureHelp：export default 的 callee 也有签名弹窗", () => {
 /**
- * Bug 985：`export default function defFn(…)` 的**默认导出** callee
+ * `export default function defFn(…)` 的**默认导出** callee
  * ⇒ LSP `signatureHelp` **整面无响应**（null）。
  *
  * 根因（HEAD 实测）：`AnalysisResult.bindings` **只收具名导出** ⇒
@@ -268,7 +268,7 @@ const SRC = [
   "}",
 ].join("\n");
 
-/** `  return defFn(1, 2);` 的列 */
+/** ` return defFn(1, 2);` 的列 */
 const LINE = SRC.split("\n")[5]!;
 const COL_CALLEE = LINE.indexOf("defFn");
 const COL_ARG1 = LINE.indexOf("1");
@@ -281,7 +281,7 @@ function tmpFile(src: string): { dir: string; file: string } {
   return { dir, file };
 }
 
-describe("Bug 985 signatureHelp：export default 的 callee 也有签名弹窗", () => {
+describe("signatureHelp：export default 的 callee 也有签名弹窗", () => {
   it("协议面（真 server）：defFn(1, 2) 给出 2 参签名（改前 null）", async () => {
     const { dir, file } = tmpFile(SRC);
     try {
@@ -355,10 +355,10 @@ describe("Bug 985 signatureHelp：export default 的 callee 也有签名弹窗",
       const res = sig({ textDocument: { uri }, position: { line: 5, character: col } });
       expect(res).not.toBeNull();
       expect(res!.signatures[0]!.parameters).toHaveLength(2);
-      // 返回类型部分随 **BUG-104** 的修复变精确。
+      // 返回类型部分随 **** 的修复变精确。
       //
-      // 旧期望 `"(a: any, b: any) => unknown"` 钉的正是 BUG-104 判红的
-      // **症状**：`tmp/bug-report/sections/BUG-104.md` §期望 vs 实际 明写
+      // 旧期望 `"(a: any, b: any) => unknown"` 钉的正是 判红的
+      // **症状**：`tmp/bug-report/sections/.md` §期望 vs 实际 明写
       // signatureHelp 的 label 期望是**精确签名**、实际是
       // 「`(user: any) => unknown`」（声明空壳：形参一律 any、返回一律
       // unknown）⇒ 与同一 LSP 面的 hover 及 CLI `nudo check` 互斥。
@@ -377,11 +377,11 @@ describe("Bug 985 signatureHelp：export default 的 callee 也有签名弹窗",
 });
 
 // ---------------------------------------------------------------------------
-// Bug 986 signatureHelp：局部 callee 也有签名弹窗
+// signatureHelp：局部 callee 也有签名弹窗
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 986 signatureHelp：局部 callee 也有签名弹窗", () => {
+describe("signatureHelp：局部 callee 也有签名弹窗", () => {
 /**
- * Bug 986：LSP `signatureHelp` 对**函数体内的局部 callee**
+ * LSP `signatureHelp` 对**函数体内的局部 callee**
  * （局部函数声明 / 局部箭头常量）**完全没有签名弹窗**。
  *
  * 根因：局部绑定不在**模块级**绑定表（`AnalysisResult.bindings`）里
@@ -407,7 +407,7 @@ const SRC = [
   "}",
 ].join("\n");
 
-/** `  inner(1, 2);` / `  arrow(3, 4);` 的列 */
+/** ` inner(1, 2);` / ` arrow(3, 4);` 的列 */
 const LINE_INNER = SRC.split("\n")[5]!;
 const LINE_ARROW = SRC.split("\n")[6]!;
 
@@ -418,7 +418,7 @@ function tmpFile(src: string): { dir: string; file: string } {
   return { dir, file };
 }
 
-describe("Bug 986 signatureHelp：局部 callee 也有签名弹窗", () => {
+describe("signatureHelp：局部 callee 也有签名弹窗", () => {
   it("协议面（真 server）：局部函数声明 inner(1, 2) 给出 2 参签名（改前 null）", async () => {
     const { dir, file } = tmpFile(SRC);
     try {
@@ -519,10 +519,10 @@ describe("Bug 986 signatureHelp：局部 callee 也有签名弹窗", () => {
         position: { line: 2, character: src.split("\n")[2]!.indexOf("1") },
       });
       expect(res).not.toBeNull();
-      // 返回类型部分随 **BUG-104** 的修复变精确。
+      // 返回类型部分随 **** 的修复变精确。
       //
-      // 旧期望 `"(a: any, b: any) => unknown"` 钉的正是 BUG-104 判红的
-      // **症状**：`tmp/bug-report/sections/BUG-104.md` §期望 vs 实际 明写
+      // 旧期望 `"(a: any, b: any) => unknown"` 钉的正是 判红的
+      // **症状**：`tmp/bug-report/sections/.md` §期望 vs 实际 明写
       // signatureHelp 的 label 期望是**精确签名**、实际是
       // 「`(user: any) => unknown`」（声明空壳：形参一律 any、返回一律
       // unknown）⇒ 与同一 LSP 面的 hover 及 CLI `nudo check` 互斥。
@@ -541,11 +541,11 @@ describe("Bug 986 signatureHelp：局部 callee 也有签名弹窗", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 720 signatureHelp：成员调用（obj.method）也有签名弹窗
+// signatureHelp：成员调用（obj.method）也有签名弹窗
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 720 signatureHelp：成员调用（obj.method）也有签名弹窗", () => {
+describe("signatureHelp：成员调用（obj.method）也有签名弹窗", () => {
 /**
- * Bug 720：LSP `signatureHelp` 对**方法调用**（`obj.method(…)`）
+ * LSP `signatureHelp` 对**方法调用**（`obj.method(…)`）
  * **完全没有签名弹窗**，尽管引擎解析得出该方法的签名（成员补全面能给出
  * `method` 的 2 个具名形参 x / y）。
  *
@@ -568,7 +568,7 @@ const SRC = [
   "}",
 ].join("\n");
 
-/** `  obj.method(1, 2);` 的列 */
+/** ` obj.method(1, 2);` 的列 */
 const LINE = SRC.split("\n")[3]!;
 const COL_OBJ = LINE.indexOf("obj");
 const COL_METHOD = LINE.indexOf("method");
@@ -583,7 +583,7 @@ function tmpFile(src: string): { dir: string; file: string } {
   return { dir, file };
 }
 
-describe("Bug 720 signatureHelp：成员调用（obj.method）也有签名弹窗", () => {
+describe("signatureHelp：成员调用（obj.method）也有签名弹窗", () => {
   it("协议面（真 server）：obj.method(1, 2) 给出方法的 2 参签名", async () => {
     const { dir, file } = tmpFile(SRC);
     try {
@@ -664,11 +664,11 @@ describe("Bug 720 signatureHelp：成员调用（obj.method）也有签名弹窗
 });
 
 // ---------------------------------------------------------------------------
-// Bug 711 signatureHelp：嵌套调用弹**最内层**函数的签名
+// signatureHelp：嵌套调用弹**最内层**函数的签名
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 711 signatureHelp：嵌套调用弹**最内层**函数的签名", () => {
+describe("signatureHelp：嵌套调用弹**最内层**函数的签名", () => {
 /**
- * Bug 711：LSP **嵌套调用**的 `signatureHelp` 弹**外层函数**的签名
+ * LSP **嵌套调用**的 `signatureHelp` 弹**外层函数**的签名
  * （内层调用完全不参与）。
  *
  * 原生 oracle：光标在内层实参里 ⇒ 弹**内层**函数的签名
@@ -704,7 +704,7 @@ function tmpFile(src: string): { dir: string; file: string } {
   return { dir, file };
 }
 
-describe("Bug 711 signatureHelp：嵌套调用弹**最内层**函数的签名", () => {
+describe("signatureHelp：嵌套调用弹**最内层**函数的签名", () => {
   it("纯函数面：光标在内层实参 ⇒ findEnclosingCall 命中内层调用", () => {
     const ast = parse(SRC);
     const hit = findEnclosingCall(ast, 3, COL_INNER_ARG);
@@ -771,7 +771,7 @@ describe("Bug 711 signatureHelp：嵌套调用弹**最内层**函数的签名", 
         position: { line: 2, character: COL_OUTER_ARG2 },
       });
       expect(res).not.toBeNull();
-      // BUG-104：裸标识符 callee 落到与 hover 同源的 poly-fn 签名 ⇒ 返回位是
+      // 裸标识符 callee 落到与 hover 同源的 poly-fn 签名 ⇒ 返回位是
       // 真实推断（`a + b + c` ⇒ `number | string`），不再是 arity-only 占位
       // `unknown`。本用例的主断言（弹 outer 的 3 参签名 / activeParameter）不变。
       expect(res!.signatures[0]!.label).toBe("(a: any, b: any, c: any) => number | string");
@@ -784,11 +784,11 @@ describe("Bug 711 signatureHelp：嵌套调用弹**最内层**函数的签名", 
 });
 
 // ---------------------------------------------------------------------------
-// BUG-104 — signatureHelp 取内涵面，不返回 arity-only 声明空壳
+// signatureHelp 取内涵面，不返回 arity-only 声明空壳
 // ---------------------------------------------------------------------------
-describe("[lsp-] BUG-104 — signatureHelp 取内涵面，不返回 arity-only 声明空壳", () => {
+describe("signatureHelp 取内涵面，不返回 arity-only 声明空壳", () => {
 /**
- * BUG-104 —— `textDocument/signatureHelp` 把模块级 callee 渲染成
+ * `textDocument/signatureHelp` 把模块级 callee 渲染成
  * 「形参一律 `any`、返回一律 `unknown`」的**声明空壳** ⇒ 与同一 LSP 面的 hover
  * 及 CLI `nudo check` 给出互斥结论。
  *
@@ -813,7 +813,7 @@ describe("[lsp-] BUG-104 — signatureHelp 取内涵面，不返回 arity-only �
 
 
 
-/** 复现夹具（tmp/repro/bug-104/lib.js）：模块级 callee 的调用点在第 5 行。 */
+/** 复现夹具（tmp/repro//lib.js）：模块级 callee 的调用点在第 5 行。 */
 const LIB = `export function add(user) {
   return user.name;
 }
@@ -822,16 +822,16 @@ export function caller() {
 }
 `;
 
-/** 侧车契约（tmp/repro/bug-104/lib.nudo.js）：形参 `{ name: string }`，返回 `string`。 */
+/** 侧车契约（tmp/repro//lib.nudo.js）：形参 `{ name: string }`，返回 `string`。 */
 const SIDECAR = `import { fn, shape, string } from "@nudojs/core";
 
 export const add = fn({ user: shape({ name: string() }) }, string());
 `;
 
-describe("BUG-104 — signatureHelp 取内涵面，不返回 arity-only 声明空壳", () => {
+describe("signatureHelp 取内涵面，不返回 arity-only 声明空壳", () => {
   it("裸标识符 callee 的签名含侧车契约的形参类型与返回类型", async () => {
     await withLspServer({ "lib.js": LIB, "lib.nudo.js": SIDECAR }, async (ctx) => {
-      // LSP 位置（0 基行 / 列）：`  return add({ id: 1 });` 的 `add` 内
+      // LSP 位置（0 基行 / 列）：` return add({ id: 1 });` 的 `add` 内
       const position = { line: 4, character: 10 };
       const sh: any = await ctx.req("textDocument/signatureHelp")({
         textDocument: { uri: ctx.uri("lib.js") },
@@ -868,7 +868,7 @@ describe("BUG-104 — signatureHelp 取内涵面，不返回 arity-only 声明�
 // ---------------------------------------------------------------------------
 // findEnclosingCall (P-IDE7)
 // ---------------------------------------------------------------------------
-describe("[lsp-] findEnclosingCall (P-IDE7)", () => {
+describe("findEnclosingCall (P-IDE7)", () => {
 /**
  * findEnclosingCall（P-IDE7）：@babel/traverse 实现 + 完整区间参数下标。
  *
@@ -900,7 +900,7 @@ function at(src: string, line: number, column: number) {
 
 describe("findEnclosingCall (P-IDE7)", () => {
   it("multi-line args: cursor inside arg i selects param i (old visitor said i+1)", () => {
-    // line 4 `    1,`：`1` 区间 [4,5)。旧实现按「start 在 cursor 前 → +1」
+    // line 4 ` 1,`：`1` 区间 [4,5)。旧实现按「start 在 cursor 前 → +1」
     // 判成 1（跨行场景全错）；新实现按完整区间 → 0。
     expect(at(MULTI_LINE, 4, 4)).toMatchObject({
       calleeLine: 3,
@@ -912,13 +912,13 @@ describe("findEnclosingCall (P-IDE7)", () => {
   });
 
   it("trailing comma: cursor after the last arg selects arity (not beyond)", () => {
-    // line 6 (`    3,`)：`3` 区间 [4,5)，逗号 col 5 之后全是「已越过末参」
+    // line 6 (` 3,`)：`3` 区间 [4,5)，逗号 col 5 之后全是「已越过末参」
     expect(at(MULTI_LINE, 6, 6)?.currentParamIndex).toBe(3);
     expect(at(MULTI_LINE, 6, 6)?.currentParamIndex).toBeLessThanOrEqual(3);
   });
 
   it("cursor before first arg (right after '(') selects param 0", () => {
-    // line 3 `  return call(`：`(` col 13，cursor col 14 在首参之前
+    // line 3 ` return call(`：`(` col 13，cursor col 14 在首参之前
     expect(at(MULTI_LINE, 3, 14)?.currentParamIndex).toBe(0);
   });
 
@@ -957,7 +957,7 @@ describe("findEnclosingCall (P-IDE7)", () => {
 // ---------------------------------------------------------------------------
 // buildSignatureHelp (LSP-G7)
 // ---------------------------------------------------------------------------
-describe("[lsp-] buildSignatureHelp (LSP-G7)", () => {
+describe("buildSignatureHelp (LSP-G7)", () => {
 describe("buildSignatureHelp (LSP-G7)", () => {
   it("projects paramTypes and returnType, not unknown placeholders", () => {
     const fn = relationFn([num(), str()], str(), {

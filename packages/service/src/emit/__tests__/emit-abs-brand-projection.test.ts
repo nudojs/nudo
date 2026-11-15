@@ -1,13 +1,13 @@
 /**
  * A11 · `brand` 槽位的 service / dts 侧回归钉。
  *
- * Bug 554 已让 `iteratorTSType` 按 `next` 槽启发式投影 `Generator<T>`；本槽位
+ * 已让 `iteratorTSType` 按 `next` 槽启发式投影 `Generator<T>`；本槽位
  * 让身份**随 Abs 值携带** ⇒ 重建 / 快照产物即使丢了内部协议槽，仍能投影。
  * 关键纪律：泛型实参仍由数字下标元素槽推导，输出恒为 `Generator<T>` /
  * `AsyncGenerator<T>`，**绝不输出裸 `Generator`**（TS2314，见
- * `BUILTIN_GENERIC_BRANDS` 与 emit-bug-521）。
+ * `BUILTIN_GENERIC_BRANDS` 与 emit-）。
  *
- * 空槽位时 `iteratorTSType` 的旧路径逐字不变（既有 Bug 554 钉不退化）。
+ * 空槽位时 `iteratorTSType` 的旧路径逐字不变（既有 钉不退化）。
  */
 import { describe, it, expect } from "vitest";
 import { abs, numLit, type Abs } from "@nudojs/core";

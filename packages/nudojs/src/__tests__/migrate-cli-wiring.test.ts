@@ -106,7 +106,7 @@ describe("族 16 接线 —— migrate 命令层（status 多路径 / retire 多
     const r = runCliTsx(["migrate", "retire", bad, "--json"]);
     expect(r.status).toBe(1);
     // stdout 必须是合法 JSON（机器面契约：--json 下 stdout 永不为空且可解析）
-    // BUG-017：`--json` 顶层形状**恒为数组**（失败信封是单元素数组）
+    // `--json` 顶层形状**恒为数组**（失败信封是单元素数组）
     const envelope = JSON.parse(r.stdout) as Array<{ ok: boolean; error: string }>;
     expect(Array.isArray(envelope)).toBe(true);
     const parsed = envelope[0]!;

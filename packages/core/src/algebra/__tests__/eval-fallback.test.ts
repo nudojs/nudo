@@ -1,10 +1,10 @@
 /**
  * B 回落观测（能力知识单一事实源在转译点）：
  * - 未 lowering 的构造（动态 import / 顶层 this / 未知语句）→ transpile 抛
- *   NudoUnsupportedError → tryRunTranspiled 记录 `unsupported:*` 并回落；
+ * NudoUnsupportedError → tryRunTranspiled 记录 `unsupported:*` 并回落；
  * - 引擎自身缺陷（转译器/运行时异常）→ 记录 `internal:*`；
  * - 语料内零回落不变量：差分 corpus 全量跑在收集器下，internal 必须为零
- *   （unsupported 也应为零——语料均为可托管形态）。
+ * （unsupported 也应为零——语料均为可托管形态）。
  */
 import {describe, it, expect} from "vitest";
 import {runTranspiled, tryRunTranspiled, callTranspiledExportFull, setEvalFallbackCollector, litValue, type EvalFallback} from "@nudojs/core";
@@ -93,7 +93,7 @@ describe("call-boundary internal fallback canary (DEC-006 / D6-A)", () => {
     const { result, fallbacks } = withCollector(() =>
       callTranspiledExportFull(exports as never, "boom", []),
     );
-    // 异常进 throws 域（BUG-008），且 canary 记 internal 回落（不静默）
+    // 异常进 throws 域（），且 canary 记 internal 回落（不静默）
     expect(result.throws.shape.k).not.toBe("never");
     expect(fallbacks.some((f) => f.reason === "internal" && /host boom/.test(f.message))).toBe(true);
     const stats = getEvalFallbackStats();

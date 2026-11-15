@@ -2,11 +2,11 @@
  * 求值引擎 class 值是函数：JS 里 class 声明/表达式本身是 constructor 函数，
  * 而非普通对象。此前 $class 把类值建模为 brand（typeofName → "object"），
  * 且实例语义挂在同一 brand 上：
- *   - typeof A → "object"（原生 "function"）
- *   - A instanceof Function → false（原生 true）
- *   - A.prototype → undefined（原生 prototype 对象）
- *   - typeof A.m（静态方法一等读取）→ "undefined"（原生 "function"）
- *   - typeof A.call / A.apply → "undefined"（原生 "function"，Function.prototype）
+ * - typeof A → "object"（原生 "function"）
+ * - A instanceof Function → false（原生 true）
+ * - A.prototype → undefined（原生 prototype 对象）
+ * - typeof A.m（静态方法一等读取）→ "undefined"（原生 "function"）
+ * - typeof A.call / A.apply → "undefined"（原生 "function"，Function.prototype）
  * 修复：markClassValue 标记类值；typeofAbs 对类值折 "function"；
  * $instanceof 类值对 Function/Object 恒 true；$get 类值路径补 staticMethods
  * 一等读取、prototype 与 call/apply/bind 形状；$class 补 name 槽。

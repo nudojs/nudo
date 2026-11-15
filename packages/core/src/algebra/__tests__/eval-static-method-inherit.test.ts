@@ -1,5 +1,5 @@
 /**
- * Bug 18（运行时内建建模）：空派生类静态方法继承断链——$invoke 类值分支
+ * （运行时内建建模）：空派生类静态方法继承断链——$invoke 类值分支
  * 与 $staticInvoke 只查自有 staticMethods，不沿 superName 链。原生静态
  * 方法挂构造器 [[Prototype]] 链（B.__proto__ = A），`class B extends A {}`
  * 的 B.m() 不断链。
@@ -10,7 +10,7 @@ import { describe, it, expect } from "vitest";
 import { litValue } from "@nudojs/core";
 import { call } from "./eval-helpers.ts";
 
-describe("Bug 18: static methods inherit along the superName chain", () => {
+describe("static methods inherit along the superName chain", () => {
   it("class B extends A {} 的 B.m() → 1", () => {
     const r = call(
       `export function staticInherit() { class A { static m() { return 1; } } class B extends A {} return B.m(); }`,

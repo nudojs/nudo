@@ -15,15 +15,15 @@ import { buildSymbolTable, findDefinition, findReferences } from "../symbols.ts"
 import { openLspDocument, requestCompletion } from "./lsp-harness-d4.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 024 — 协议面 hover 必须带注入包（@nudo:mock 覆盖表）
+// 协议面 hover 必须带注入包（@nudo:mock 覆盖表）
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 024 — 协议面 hover 必须带注入包（@nudo:mock 覆盖表）", () => {
+describe("协议面 hover 必须带注入包（@nudo:mock 覆盖表）", () => {
 /**
- * Bug 024 —— LSP **协议面** hover 从不传 `inject` ⇒ `@nudo:mock` 覆盖表缺席
+ * LSP **协议面** hover 从不传 `inject` ⇒ `@nudo:mock` 覆盖表缺席
  * ⇒ 推导链塌缩成 `unknown`（Nudo 词汇里 = 「推断失败」），而 `nudo check`
  * 对同一函数给出精确类型。
  *
- * 已有回归 `lsp-bug-786-inject-handoff.test.ts` 只钉了 **agent 工具面**
+ * 已有回归 `inject-handoff` 只钉了 **agent 工具面**
  * （`buildLspInjection` 产物 + agent hover 载荷）⇒ 协议装配器漏传也没人发现。
  *
  * 修复：`server-ide.ts` 的协议 hover / inlayHint 用
@@ -39,7 +39,7 @@ describe("[lsp-] Bug 024 — 协议面 hover 必须带注入包（@nudo:mock 覆
 
 
 
-/** 与 `tmp/repro/bug-024/mockfx.js` 逐字同文（hover 坐标依赖固定行号） */
+/** 与 `tmp/repro//mockfx.js` 逐字同文（hover 坐标依赖固定行号） */
 const SRC = [
   "/**",
   ' * @nudo:mock dep = (x) => ({ id: 1, name: "ada" })',
@@ -62,7 +62,7 @@ function nudoSigLine(contents: string): string {
   return idx >= 0 ? (lines[idx + 1] ?? "") : "";
 }
 
-describe("Bug 024 — 协议面 hover 必须带注入包（@nudo:mock 覆盖表）", () => {
+describe("协议面 hover 必须带注入包（@nudo:mock 覆盖表）", () => {
   it("真实 server 的 hover 签名行 = check 精确类型（不是 unknown）", async () => {
     await withLspServer({ "mockfx.js": SRC }, async ({ req, uri }) => {
       const res = req("textDocument/hover")({
@@ -97,11 +97,11 @@ describe("Bug 024 — 协议面 hover 必须带注入包（@nudo:mock 覆盖表�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 034 — 类方法 hover 的 throws 尾缀与 check 同源
+// 类方法 hover 的 throws 尾缀与 check 同源
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 034 — 类方法 hover 的 throws 尾缀与 check 同源", () => {
+describe("类方法 hover 的 throws 尾缀与 check 同源", () => {
 /**
- * Bug 034 —— LSP hover 对**类方法**丢掉 `throws` 尾缀 ⇒ IDE 说「total」
+ * LSP hover 对**类方法**丢掉 `throws` 尾缀 ⇒ IDE 说「total」
  * 而 `nudo check` 说「may throw」（`f * 2` 里 `f: any` ⇒ ToNumeric 强转 ⇒
  * `TypeError`）。
  *
@@ -119,10 +119,10 @@ describe("[lsp-] Bug 034 — 类方法 hover 的 throws 尾缀与 check 同源",
 
 
 
-/** 与 `tmp/repro/bug-034/cls.js` 逐字同文 */
+/** 与 `tmp/repro//cls.js` 逐字同文 */
 const SRC = ["export class C {", "  m(f) { return f * 2; }", "}", ""].join("\n");
 
-/** `nudo check` 的签名行（core formatCheckReport）：`name(params) => ret  throws X` */
+/** `nudo check` 的签名行（core formatCheckReport）：`name(params) => ret throws X` */
 const CHECK_SIG = "C.m(f: any) => number  throws TypeError";
 
 type Hover = { contents: { value: string } } | null;
@@ -134,7 +134,7 @@ function nudoSigLine(contents: string): string {
   return idx >= 0 ? (lines[idx + 1] ?? "") : "";
 }
 
-describe("Bug 034 — 类方法 hover 的 throws 尾缀与 check 同源", () => {
+describe("类方法 hover 的 throws 尾缀与 check 同源", () => {
   it("纯装配面：类方法 hover 签名行 = check 签名行（含 throws 尾缀）", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug034-"));
     try {
@@ -164,17 +164,17 @@ describe("Bug 034 — 类方法 hover 的 throws 尾缀与 check 同源", () => 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1007 — 私有成员 #name 不再解析到无关的同名绑定
+// 私有成员 #name 不再解析到无关的同名绑定
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 1007 — 私有成员 #name 不再解析到无关的同名绑定", () => {
+describe("私有成员 #name 不再解析到无关的同名绑定", () => {
 /**
- * Bug 1007 — LSP 的 **definition / references / rename** 对**类私有成员 `#name`**
+ * LSP 的 **definition / references / rename** 对**类私有成员 `#name`**
  * 全部**解析到无关的同名绑定** ⇒ 私有成员**根本没被改名**，反而把**无关的导出
  * 符号跨文件改掉**并毁掉它的导出语句 ⇒ 模块图断裂。
  *
  * 根因：babel 把私有成员的键 / 用点包在 `PrivateName` 里 ⇒
  * - `isBindingIdentifier` 对 `PrivateName` 里的标识符**放行**（当成普通绑定）
- *   ⇒ `#total` 被当成普通标识符 `total`；
+ * ⇒ `#total` 被当成普通标识符 `total`；
  * - 符号表**按名字**收定义 / 引用 ⇒ 同名的模块级 `export const total` 命中。
  * ⇒ definition 跳到无关的模块级 `total`，rename 把它连同 importer 一起改掉。
  *
@@ -235,9 +235,9 @@ function posOf(src: string, needle: string, occurrence = 0): { line: number; cha
   throw new Error(`needle not found: ${needle}`);
 }
 
-/** 私有方法声明位（`  #total() {` ⇒ 标识符 total 在 col 3） */
+/** 私有方法声明位（` #total() {` ⇒ 标识符 total 在 col 3） */
 const PRIV_DECL = offset(posOf(DEF, "#total"), 1);
-/** 私有方法用点位（`    return this.#total();` ⇒ 标识符 total 在 col 17） */
+/** 私有方法用点位（` return this.#total();` ⇒ 标识符 total 在 col 17） */
 const PRIV_USE = offset(posOf(DEF, "this.#total"), 6);
 /** 模块级 `export const total`（对照组） */
 const MODULE_TOTAL = posOf(DEF, "total = 42");
@@ -252,7 +252,7 @@ function rel(uri: string, root: string): string {
   return p.startsWith(root) ? p.slice(root.length + 1) : p;
 }
 
-describe("Bug 1007 — 私有成员 #name 不再解析到无关的同名绑定", () => {
+describe("私有成员 #name 不再解析到无关的同名绑定", () => {
   it("definition @ 私有成员声明位 ⇒ 私有成员自己（改前跳到模块级 export const total）", async () => {
     let defs: Loc[] = [];
     let root = "";
@@ -370,11 +370,11 @@ describe("Bug 1007 — 私有成员 #name 不再解析到无关的同名绑定",
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1024 · make optional 保留 TS 类型标注
+// make optional 保留 TS 类型标注
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 1024 · make optional 保留 TS 类型标注", () => {
+describe("make optional 保留 TS 类型标注", () => {
 /**
- * Bug 1024 —— 「Change signature: make `'x'` optional」打在 **TypeScript 形参**上
+ * 「Change signature: make `'x'` optional」打在 **TypeScript 形参**上
  * ⇒ 编辑范围覆盖 `x: number` **整段** ⇒ **静默删掉用户的类型标注**。
  *
  * 根因（`packages/lsp/src/refactor-b2.ts` 的 `makeParamOptionalAt`）：
@@ -393,10 +393,10 @@ describe("[lsp-] Bug 1024 · make optional 保留 TS 类型标注", () => {
  * 并把「改前会变红」钉成对照。
  *
  * oracle（动作面 / 门禁面）：
- *   改前 edit[0] = [0:23 → 0:32] "x = undefined"（覆盖 "x: number" ⇒ 标注被删）
- *        ⇒ `nudo check` → 1 error（`nudo:entry-may-throw`）
- *   改后 edit[0] = [0:23 → 0:32] "x: number = undefined"（标注保留）
- *        ⇒ `nudo check` → 0 error
+ * 改前 edit[0] = [0:23 → 0:32] "x = undefined"（覆盖 "x: number" ⇒ 标注被删）
+ * ⇒ `nudo check` → 1 error（`nudo:entry-may-throw`）
+ * 改后 edit[0] = [0:23 → 0:32] "x: number = undefined"（标注保留）
+ * ⇒ `nudo check` → 0 error
  */
 
 
@@ -414,7 +414,7 @@ const SRC = `export function scaled(x: number, label: string): number {
 const LINE = 1;
 const COLUMN = 23;
 
-describe("Bug 1024 · make optional 保留 TS 类型标注", () => {
+describe("make optional 保留 TS 类型标注", () => {
   it("新文本把类型标注拼回去", () => {
     const r = makeParamOptionalAt(SRC, LINE, COLUMN);
     expect(r && "edits" in r).toBe(true);
@@ -496,26 +496,26 @@ describe("Bug 1024 · make optional 保留 TS 类型标注", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 709 — 遮蔽的同名绑定按作用域解析
+// 遮蔽的同名绑定按作用域解析
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 709 — 遮蔽的同名绑定按作用域解析", () => {
+describe("遮蔽的同名绑定按作用域解析", () => {
 /**
- * Bug 709 回归钉：符号表按**名字**索引 ⇒ **遮蔽**的同名局部变量上 F12 /
+ * 回归钉：符号表按**名字**索引 ⇒ **遮蔽**的同名局部变量上 F12 /
  * Find-references 会落到**另一个作用域**的声明。
  *
  * 改前（协议面实测，见 tmp/probe/fix-r30/d1-before.txt）：
- *   源：
- *     export function a() {
- *       const v = 1;
- *       return v;
- *     }
- *     export function b() {
- *       const v = 2;
- *       return v;
- *     }
- *   definition on `v`（a 内）⇒ 跳到 **b 里的 v** ❌（应跳 a 里的 v）
- *   references on `v`（a 内）⇒ [b 的 v 声明, a 的 v 声明, a 的 v 用点] ❌
- *     （混进 b 的声明）
+ * 源：
+ * export function a() {
+ * const v = 1;
+ * return v;
+ * }
+ * export function b() {
+ * const v = 2;
+ * return v;
+ * }
+ * definition on `v`（a 内）⇒ 跳到 **b 里的 v** ❌（应跳 a 里的 v）
+ * references on `v`（a 内）⇒ [b 的 v 声明, a 的 v 声明, a 的 v 用点] ❌
+ * （混进 b 的声明）
  *
  * 根因：`buildSymbolTable` 的 `definitions` 是 `Map<string, SymbolInfo>` ——
  * 无作用域维度，`VariableDeclarator` 无条件 `definitions.set(name, …)`
@@ -540,7 +540,7 @@ export function b() {
 }
 `;
 
-describe("Bug 709 — 遮蔽的同名绑定按作用域解析", () => {
+describe("遮蔽的同名绑定按作用域解析", () => {
   it("buildSymbolTable：同名绑定各存一条（不被覆盖）", () => {
     const ast = parse(SHADOW_SRC);
     const table = buildSymbolTable(ast, "file:///t/s.js");
@@ -614,11 +614,11 @@ describe("Bug 709 — 遮蔽的同名绑定按作用域解析", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 739 · make optional 必须补括号（无括号箭头形参）
+// make optional 必须补括号（无括号箭头形参）
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 739 · make optional 必须补括号（无括号箭头形参）", () => {
+describe("make optional 必须补括号（无括号箭头形参）", () => {
 /**
- * Bug 739 —— 「Change signature: make `'x'` optional」打在**无括号箭头形参**上
+ * 「Change signature: make `'x'` optional」打在**无括号箭头形参**上
  * ⇒ 产出 `x = undefined => …`（被重新解析成**赋值**）⇒ 运行时 `ReferenceError`。
  *
  * 根因（`packages/lsp/src/refactor-b2.ts` 的 `makeParamOptionalAt`）：编辑文本
@@ -629,10 +629,10 @@ describe("[lsp-] Bug 739 · make optional 必须补括号（无括号箭头形�
  * ⇒ 产出 `(v = undefined) => …`（两种形态都合法，且语义是「可选形参」）。
  *
  * oracle（动作面 / 语义面）：
- *   改前 edit[0] = [1:24 → 1:25] "v = undefined" ⇒ 应用后 `items.map(v = undefined => v * 3)`
- *        ⇒ `node --check` 仍 OK，但运行即 `ReferenceError: v is not defined`
- *   改后 edit[0] = [1:24 → 1:25] "(v = undefined)" ⇒ 应用后 `items.map((v = undefined) => v * 3)`
- *        ⇒ 运行 `scale([1,2,3])` = [3,6,9]
+ * 改前 edit[0] = [1:24 → 1:25] "v = undefined" ⇒ 应用后 `items.map(v = undefined => v * 3)`
+ * ⇒ `node --check` 仍 OK，但运行即 `ReferenceError: v is not defined`
+ * 改后 edit[0] = [1:24 → 1:25] "(v = undefined)" ⇒ 应用后 `items.map((v = undefined) => v * 3)`
+ * ⇒ 运行 `scale([1,2,3])` = [3,6,9]
  */
 
 
@@ -649,7 +649,7 @@ const SRC = `export function scale(items) {
 const LINE = 2;
 const COLUMN = 24;
 
-describe("Bug 739 · make optional 必须补括号（无括号箭头形参）", () => {
+describe("make optional 必须补括号（无括号箭头形参）", () => {
   it("无括号箭头形参 ⇒ 新文本带括号", () => {
     const r = makeParamOptionalAt(SRC, LINE, COLUMN);
     expect(r && "edits" in r).toBe(true);
@@ -710,11 +710,11 @@ describe("Bug 739 · make optional 必须补括号（无括号箭头形参）", 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 771 — sum 接收者：原始值臂让交集判空
+// sum 接收者：原始值臂让交集判空
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 771 — sum 接收者：原始值臂让交集判空", () => {
+describe("sum 接收者：原始值臂让交集判空", () => {
 /**
- * Bug 771 — union（sum）接收者的补全**跳过「零成员」的那一支**。
+ * union（sum）接收者的补全**跳过「零成员」的那一支**。
  *
  * 症状：`u = { x, y } | 5`（对象臂 | **原始值臂**）在 `u.` 处给出 `x` / `y`
  * ⇒ 用户接受补全后 `u.x` 在原始值臂上是 TypeError（补全 detail 只显示对象臂
@@ -768,7 +768,7 @@ async function labelsAt(
   return (items as { label: string }[]).map((i) => i.label);
 }
 
-describe("Bug 771 — sum 接收者：原始值臂让交集判空", () => {
+describe("sum 接收者：原始值臂让交集判空", () => {
   it("对象臂 | 原始值臂 ⇒ 无候选（取属性在原始值臂上是 TypeError）", async () => {
     await withLspServer({ "union.js": SRC }, async ({ req, uri }) => {
       expect(await labelsAt(req, uri("union.js"), "return uPrim.x")).toEqual([]);
@@ -792,11 +792,11 @@ describe("Bug 771 — sum 接收者：原始值臂让交集判空", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 772 — 嵌套成员访问的接收者是整条路径
+// 嵌套成员访问的接收者是整条路径
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 772 — 嵌套成员访问的接收者是整条路径", () => {
+describe("嵌套成员访问的接收者是整条路径", () => {
 /**
- * Bug 772 — 成员补全把嵌套成员访问的接收者取成「最后一段标识符」。
+ * 成员补全把嵌套成员访问的接收者取成「最后一段标识符」。
  *
  * 症状：`a = { b: { right: 2 } }` 且模块级另有 `b = { wrong: 1 }` 时，
  * `a.b.` 的候选是**顶层绑定 `b`** 的成员（`wrong`）——`a.b` 上根本没有这个
@@ -826,7 +826,7 @@ function cursorAfter(src: string, needle: string): { line: number; character: nu
   throw new Error(`needle not found: ${needle}`);
 }
 
-describe("Bug 772 — 嵌套成员访问的接收者是整条路径", () => {
+describe("嵌套成员访问的接收者是整条路径", () => {
   it("a.b. 的候选是 a.b 的成员，不是同名顶层绑定的成员", async () => {
     await withLspServer({ "nested.js": SRC }, async ({ req, uri }) => {
       const lines = SRC.split("\n");
@@ -879,11 +879,11 @@ describe("Bug 772 — 嵌套成员访问的接收者是整条路径", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 774 —— 无契约形参的 hover 回落 design §2 的 `any`
+// 无契约形参的 hover 回落 design §2 的 `any`
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 774 —— 无契约形参的 hover 回落 design §2 的 `any`", () => {
+describe("无契约形参的 hover 回落 design §2 的 `any`", () => {
 /**
- * Bug 774 —— 无契约函数的**形参位置 hover 完全为空**
+ * 无契约函数的**形参位置 hover 完全为空**
  * （同一 hover 的函数名面却显示 `x: any`）。
  *
  * 改前：形参位 hover 的两条路径都要求「有契约 / 有 entryShape」
@@ -902,7 +902,7 @@ const SRC = `export function add(x, y) {
 }
 `;
 
-describe("Bug 774 —— 无契约形参的 hover 回落 design §2 的 `any`", () => {
+describe("无契约形参的 hover 回落 design §2 的 `any`", () => {
   it("形参声明位：`x: any`（改前整个 hover 为空）", async () => {
     await withLspServer({ "hover774.js": SRC }, async ({ req, uri }) => {
       const hover = req("textDocument/hover");
@@ -944,11 +944,11 @@ describe("Bug 774 —— 无契约形参的 hover 回落 design §2 的 `any`", 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 782 — 非 ASCII 接收者的成员补全
+// 非 ASCII 接收者的成员补全
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 782 — 非 ASCII 接收者的成员补全", () => {
+describe("非 ASCII 接收者的成员补全", () => {
 /**
- * Bug 782 — 成员补全对**非 ASCII 接收者**失效。
+ * 成员补全对**非 ASCII 接收者**失效。
  *
  * 症状：接收者匹配正则只认 `\w`（ASCII）⇒ `对象.` 匹配失败 ⇒ 回落成
  * **顶层变量表**（`obj` / `对象` / `useAscii` / …），而该对象的成员
@@ -995,7 +995,7 @@ async function labelsAt(
   return (items as { label: string }[]).map((i) => i.label);
 }
 
-describe("Bug 782 — 非 ASCII 接收者的成员补全", () => {
+describe("非 ASCII 接收者的成员补全", () => {
   it("CJK 接收者：给出该对象的成员（不是顶层变量表）", async () => {
     await withLspServer({ "cjk.js": SRC }, async ({ req, uri }) => {
       const labels = await labelsAt(req, uri("cjk.js"), "return 对象.alpha");
@@ -1037,11 +1037,11 @@ describe("Bug 782 — 非 ASCII 接收者的成员补全", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 787 — 字面量 / 括号 / 字符串接收者走内建原型表
+// 字面量 / 括号 / 字符串接收者走内建原型表
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 787 — 字面量 / 括号 / 字符串接收者走内建原型表", () => {
+describe("字面量 / 括号 / 字符串接收者走内建原型表", () => {
 /**
- * Bug 787 — 成员补全的**接收者识别**失败时回落成顶层变量表。
+ * 成员补全的**接收者识别**失败时回落成顶层变量表。
  *
  * 症状：`(42).toF` / `(true).toS` / `"abc".toU` 这类**字面量 / 括号 / 字符串**
  * 接收者不被识别 ⇒ 协议层返回**顶层变量表**（`obj` / `useNum` / …）
@@ -1100,7 +1100,7 @@ async function labelsAt(
   return (items as { label: string }[]).map((i) => i.label);
 }
 
-describe("Bug 787 — 字面量 / 括号 / 字符串接收者走内建原型表", () => {
+describe("字面量 / 括号 / 字符串接收者走内建原型表", () => {
   it("数字字面量接收者 ⇒ Number 的成员，且不含顶层变量", async () => {
     await withLspServer({ "lit.js": SRC }, async ({ req, uri }) => {
       const labels = await labelsAt(req, uri("lit.js"), "return (42).toF");
@@ -1137,11 +1137,11 @@ describe("Bug 787 — 字面量 / 括号 / 字符串接收者走内建原型表"
 });
 
 // ---------------------------------------------------------------------------
-// Bug 788 — prim 接收者按类型分派到内建原型表
+// prim 接收者按类型分派到内建原型表
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 788 — prim 接收者按类型分派到内建原型表", () => {
+describe("prim 接收者按类型分派到内建原型表", () => {
 /**
- * Bug 788 — 成员补全的 **prim 分支只投影 `String`**。
+ * 成员补全的 **prim 分支只投影 `String`**。
  *
  * 症状：同一份文件、同一个补全面，只有 string 接收者有候选；
  * `num.`（number）与 `flag.`（boolean）**零候选**——而求值器的内建原型
@@ -1195,7 +1195,7 @@ async function labelsAt(
   return (items as { label: string }[]).map((i) => i.label);
 }
 
-describe("Bug 788 — prim 接收者按类型分派到内建原型表", () => {
+describe("prim 接收者按类型分派到内建原型表", () => {
   it("number 接收者 ⇒ Number 的成员（不再是零候选）", async () => {
     await withLspServer({ "prim.js": SRC }, async ({ req, uri }) => {
       const labels = await labelsAt(req, uri("prim.js"), "return num.toF");
@@ -1221,11 +1221,11 @@ describe("Bug 788 — prim 接收者按类型分派到内建原型表", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 789 — 成员补全的接收者绑定表下沉函数体
+// 成员补全的接收者绑定表下沉函数体
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 789 — 成员补全的接收者绑定表下沉函数体", () => {
+describe("成员补全的接收者绑定表下沉函数体", () => {
 /**
- * Bug 789：成员补全的**接收者绑定表不下沉函数体** ⇒ 函数局部 / 形参接收者
+ * 成员补全的**接收者绑定表不下沉函数体** ⇒ 函数局部 / 形参接收者
  * 一律**零候选**（连 `string` 局部量也是 0 项），而**模块级**同类接收者正常。
  *
  * 根因：接收者 Abs 的唯一来源是**模块级**绑定面（`AnalysisResult.bindings`，
@@ -1280,7 +1280,7 @@ function lineOf(src: string, needle: string): { line: number; text: string } {
 
 const labels = (items: { label: string }[]): string[] => items.map((i) => i.label);
 
-describe("Bug 789 — 成员补全的接收者绑定表下沉函数体", () => {
+describe("成员补全的接收者绑定表下沉函数体", () => {
   it("函数体内的局部量接收者 ⇒ 与模块级同款候选（string 原型表）", async () => {
     const { mock, uri } = await openLspDocument(SRC, "file:///tmp/nudo-bug-789/a.js");
     const mod = lineOf(SRC, "modStr.toUpperCase");

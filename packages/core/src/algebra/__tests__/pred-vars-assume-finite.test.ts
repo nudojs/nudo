@@ -1,10 +1,10 @@
 /**
- * collectPredVars assumeFinite 分支回归（BUG-017 / S1-004）。
+ * collectPredVars assumeFinite 分支回归（/ S1-004）。
  * 回归背景：collectPredVars 的 switch 漏 case "assumeFinite"——
  * 只出现在 assumeFinite(t) 里的自由变元不进 acc：
- *  - instantiateMemoKey 的 varOrder 漏它 → 同构不同名实例不共享条目；
- *  - 更糟的是 alphaRenameResult 命中缓存后不把它改回当前名，
- *    返回的 Abs 引用着上一次调用的变量 id。
+ * - instantiateMemoKey 的 varOrder 漏它 → 同构不同名实例不共享条目；
+ * - 更糟的是 alphaRenameResult 命中缓存后不把它改回当前名，
+ * 返回的 Abs 引用着上一次调用的变量 id。
  * 对照：pred.ts predVars / 本文件 renamePred / hof.ts 均有该分支。
  */
 import { describe, it, expect } from "vitest";
@@ -15,7 +15,7 @@ import { abs } from "../index.ts";
 
 const ONE = abs({ k: "prim", type: "number" }, { op: "lit", value: 1 }, undefined, "exact");
 
-describe("collectPredVars: assumeFinite 变元收集（BUG-017）", () => {
+describe("collectPredVars: assumeFinite 变元收集（）", () => {
   it("collects vars under assumeFinite", () => {
     const acc = new Set<string>();
     collectPredVars(assumeFinite(v("x")), acc);

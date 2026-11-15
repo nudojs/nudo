@@ -1,10 +1,10 @@
 /**
- * BUG-001 回归：原型链裸查找（导出面 / 槽位表）。
+ * 回归：原型链裸查找（导出面 / 槽位表）。
  *
  * 导出名或槽位键为 Object.prototype 成员（toString / constructor /
  * hasOwnProperty / valueOf…）且目标无同名自有属性时：
- *   - 裸 `slots[key]` / `named[name]` 命中宿主原型方法（truthy 函数）
- *   - `fnName in exports` 把继承名当真实导出
+ * - 裸 `slots[key]` / `named[name]` 命中宿主原型方法（truthy 函数）
+ * - `fnName in exports` 把继承名当真实导出
  * 轻则把原型方法当导出调用伪造结果，重则宿主 TypeError 打穿 fail-closed。
  * 统一口径：跨来源 key 的槽位/导出读取必须走自有属性语义
  * （core 内 slots 用 getSlot，导出表用 Object.hasOwn）。

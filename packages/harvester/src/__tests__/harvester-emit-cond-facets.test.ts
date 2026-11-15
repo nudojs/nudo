@@ -1,5 +1,5 @@
 /**
- * BUG-252 回归：`emitEnvModule` 的 `emitAbs` `case "fn"` 只补 `ctor` / 静态槽，
+ * 回归：`emitEnvModule` 的 `emitAbs` `case "fn"` 只补 `ctor` / 静态槽，
  * 丢掉条件类型的 `inferFrom` / `condFallback` ⇒ 同一份 `.d.ts` 的三条物化路径
  * 不同型（落盘面 `unwrapPromise(Promise.resolve("hi"))` 折成 `any`）。
  *
@@ -44,7 +44,7 @@ function relOf(a: Abs): Rel {
   return (getFnImpl(a)?.relation ?? {}) as Rel;
 }
 
-describe("BUG-252 —— 落盘源码面保留条件类型的两个 facet", () => {
+describe("落盘源码面保留条件类型的两个 facet", () => {
   it("内存收割面带 inferFrom / condFallback（基线）", () => {
     const rel = relOf(env.globals.unwrapPromise!);
     expect(rel.inferFrom).toEqual({ fromVar: "T", via: "promise", inferVar: "U" });

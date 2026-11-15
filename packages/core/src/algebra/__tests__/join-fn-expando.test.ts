@@ -3,16 +3,16 @@
  *
  * 修复前：
  * - `joinFunctions` 对同名同参直接返回 `a`，忽略 expando `slots` /
- *   optionalParams / ctor ⇒ 分支两侧不同的 `g.x` 折成单个 exact 值；
+ * optionalParams / ctor ⇒ 分支两侧不同的 `g.x` 折成单个 exact 值；
  * - `absShapeKey` 的 fn 分支同样忽略这些字段 ⇒ `flattenSum` 去重会把
- *   两个不同的函数值塌缩成一个；
+ * 两个不同的函数值塌缩成一个；
  * - `$copy` 对 fn 形状直接返回原 Abs（fork 两臂共享同一槽面）⇒ 兄弟臂的
- *   `g.x = …` 互相覆盖（`if (cond) { g.x = 1 } else { g.x = 2 }` → 2 #exact）。
+ * `g.x = …` 互相覆盖（`if (cond) { g.x = 1 } else { g.x = 2 }` → 2 #exact）。
  * - `flattenSum` 按结构键去重，而 fn 结构键不含**实现身份** ⇒ 两个不同
- *   函数体（匿名箭头 / 同名同参函数）被塌缩成一个
- *   （`cond ? (() => 1) : (() => 2)` 调用折 1 #exact）。makeSum 去重键
- *   现附加 per-process impl 身份（WeakMap id）；`joinFunctions` 的同名
- *   同参早退同样要求 impl 相同。
+ * 函数体（匿名箭头 / 同名同参函数）被塌缩成一个
+ * （`cond ? (() => 1) : (() => 2)` 调用折 1 #exact）。makeSum 去重键
+ * 现附加 per-process impl 身份（WeakMap id）；`joinFunctions` 的同名
+ * 同参早退同样要求 impl 相同。
  */
 import { describe, it, expect } from "vitest";
 import { abs, litValue, numLit, strLit, unknown, type Abs } from "../abs.ts";

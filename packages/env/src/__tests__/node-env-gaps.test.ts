@@ -36,7 +36,7 @@ function walk(a: Abs, ...keys: string[]): Abs | undefined {
       cur = cur.shape.shape as Abs | undefined;
     }
     // fn 形全局（Buffer 等**构造器**）的静态面在 fn 的 slots 上
-    // （Bug 878：Buffer 从 objAbs 改成 envFn + ctor:true）
+    // （Buffer 从 objAbs 改成 envFn + ctor:true）
     if (cur && cur.shape.k === "fn") {
       const slots = (cur.shape as { slots?: Record<string, { value: Abs }> }).slots;
       const fslot = slots?.[k];
@@ -205,7 +205,7 @@ describe("node env high-frequency gaps (B3)", () => {
     const envFmt = shapeOf(walk(process, "env"));
     expectLeafClean(envFmt, "process.env");
     expect(envFmt).toContain("string");
-    // empty `{  }` is not a leaf-clean Record semantics
+    // empty `{ }` is not a leaf-clean Record semantics
     expect(envFmt.replace(/\s+/g, " ").trim()).not.toBe("{  }");
     const nextTickFmt = shapeOf(walk(process, "nextTick"));
     expectLeafClean(nextTickFmt, "process.nextTick");

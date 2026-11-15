@@ -20,39 +20,39 @@ import { createNudoServer } from "../server.ts";
 import { decodeSemanticTokens } from "./lsp-harness-d4.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 1025 — 别名 import 的 imported 侧：definition 落到正确模块、references 不为空
+// 别名 import 的 imported 侧：definition 落到正确模块、references 不为空
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 1025 — 别名 import 的 imported 侧：definition 落到正确模块、references 不为空", () => {
+describe("别名 import 的 imported 侧：definition 落到正确模块、references 不为空", () => {
 /**
- * Bug 1025 —— import 绑定表只以「本地名」为键 ⇒ 别名 import 的 **imported 侧**
+ * import 绑定表只以「本地名」为键 ⇒ 别名 import 的 **imported 侧**
  * 标识符在引擎眼里不是 import 绑定 ⇒ ① `references` 返回 `[]`（假绿）
  * ② `definition` 退化到**工作区同名导出**兜底 ⇒ 跳到**无关文件**（假跳转）。
  *
  * 报告说的症状（**假阳性 —— 两个症状都不复现**）：
- *   夹具：`aaa.js` 与 `zzz.js` **同名导出 `helper`**；`plain.js` 走**无别名**
- *   import、`aliased.js` 走**别名** import（两者都从 `./zzz.js` 导入 ⇒
- *   **唯一变量 = 有没有别名**）。
- *   报告实测：别名 import 的 imported 侧 `helper` ⇒ `definition = aaa.js`、
- *   `references = []`。
+ * 夹具：`aaa.js` 与 `zzz.js` **同名导出 `helper`**；`plain.js` 走**无别名**
+ * import、`aliased.js` 走**别名** import（两者都从 `./zzz.js` 导入 ⇒
+ * **唯一变量 = 有没有别名**）。
+ * 报告实测：别名 import 的 imported 侧 `helper` ⇒ `definition = aaa.js`、
+ * `references = []`。
  *
  * 实测（HEAD `dd22619e` 上逐字，见 `tmp/probe/fix-r91/D/oracle-before-head.txt`）：
- *   · `aliased.js` 的 **imported 侧** `helper`@0:9 ⇒
- *     `definition = ["zzz.js:0:16-0:22"]` ⇒ **跳到正确的模块**（**不是** `aaa.js`）；
- *     `references = ["zzz.js:0:16-0:22","plain.js:0:9-0:15","plain.js:2:17-2:23",
- *     "aliased.js:0:9-0:15"]` ⇒ **不是 `[]`**，且与**无别名形态**（`plain.js`
- *     的 imported 侧）**完全一致**。
- *   · `aliased.js` 的 **local 侧** `p`@0:19 ⇒
- *     `definition = ["zzz.js:0:16-0:22","aliased.js:0:19-0:20"]` ⇒ 正确。
+ * · `aliased.js` 的 **imported 侧** `helper`@0:9 ⇒
+ * `definition = ["zzz.js:0:16-0:22"]` ⇒ **跳到正确的模块**（**不是** `aaa.js`）；
+ * `references = ["zzz.js:0:16-0:22","plain.js:0:9-0:15","plain.js:2:17-2:23",
+ * "aliased.js:0:9-0:15"]` ⇒ **不是 `[]`**，且与**无别名形态**（`plain.js`
+ * 的 imported 侧）**完全一致**。
+ * · `aliased.js` 的 **local 侧** `p`@0:19 ⇒
+ * `definition = ["zzz.js:0:16-0:22","aliased.js:0:19-0:20"]` ⇒ 正确。
  *
  * ⇒ **症状**已被覆盖：`findEdgeAt`（`symbols.ts`，**位置感知**）先拿到光标处
- *   **那一条具体的 import 说明符** ⇒ imported 侧不再靠「本地名」猜模块；
- *   `resolveDefinitionLocations` 的 `at` 透传让 `workspaceFallback` 只在
- *   `out.length === 0` 时才走 ⇒ **不会**落到无关的同名导出。
+ * **那一条具体的 import 说明符** ⇒ imported 侧不再靠「本地名」猜模块；
+ * `resolveDefinitionLocations` 的 `at` 透传让 `workspaceFallback` 只在
+ * `out.length === 0` 时才走 ⇒ **不会**落到无关的同名导出。
  *
  * ⚠ **根因字面仍成立**：`collectImportBindings`（`symbols.ts`）的键**仍只取本地名**
- *   ⇒ 当前之所以没炸，是因为上面那条**位置感知旁路**恰好绕开了它
- *   ⇒ **一旦有人删改那条旁路，1025 的症状会原样复活**
- *   ⇒ 本钉就是「别把旁路改坏」的护栏（**族 24 残留项**，本片不修）。
+ * ⇒ 当前之所以没炸，是因为上面那条**位置感知旁路**恰好绕开了它
+ * ⇒ **一旦有人删改那条旁路，1025 的症状会原样复活**
+ * ⇒ 本钉就是「别把旁路改坏」的护栏（**族 24 残留项**，本片不修）。
  *
  * 本文件是**反向守护钉**：钉住「**已修**」的行为 ⇒ **在 HEAD 上必须通过**
  * （闸④ 反向闸）。
@@ -114,7 +114,7 @@ const ZZZ_DECL: Loc = {
   endCharacter: 22,
 };
 
-describe("Bug 1025 — 别名 import 的 imported 侧：definition 落到正确模块、references 不为空", () => {
+describe("别名 import 的 imported 侧：definition 落到正确模块、references 不为空", () => {
   it("definition@imported 侧：落到真正被导入的模块，不得落到同名导出的无关文件", async () => {
     await withLspServer(
       { "aaa.js": AAA, "zzz.js": ZZZ, "plain.js": PLAIN, "aliased.js": ALIASED },
@@ -186,11 +186,11 @@ describe("Bug 1025 — 别名 import 的 imported 侧：definition 落到正确�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1104: LSP check 通道必须看得见项目级 path env（IDE 红 / CLI 绿 ⇒ 假红）
+// LSP check 通道必须看得见项目级 path env（IDE 红 / CLI 绿 ⇒ 假红）
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 1104: LSP check 通道必须看得见项目级 path env（IDE 红 / CLI 绿 ⇒ 假红）", () => {
+describe("LSP check 通道必须看得见项目级 path env（IDE 红 / CLI 绿 ⇒ 假红）", () => {
 /**
- * Bug 1104 —— LSP **check 通道**看不见**项目级** path env ⇒ IDE 假红
+ * LSP **check 通道**看不见**项目级** path env ⇒ IDE 假红
  * （`nudo:entry-may-throw`），而 CLI `nudo check` 绿（两面口径相反）。
  *
  * 机制：`buildLspInjection`（`packages/lsp/src/agent-tools.ts`）把
@@ -207,9 +207,9 @@ describe("[lsp-] Bug 1104: LSP check 通道必须看得见项目级 path env（I
  *
  * 钉：
  * - 正控制：项目根有 path env + 被检查文件在**子目录**且声明了文件级 env
- *   ⇒ LSP check 通道**不得**报 L2 `nudo:entry-may-throw`（env 全局可见）；
+ * ⇒ LSP check 通道**不得**报 L2 `nudo:entry-may-throw`（env 全局可见）；
  * - 负控制：**真违约**（入口真的 throw）⇒ 仍**必须**报 L2 `nudo:entry-may-throw`
- *   （防止把闸门整体关掉）。
+ * （防止把闸门整体关掉）。
  */
 
 
@@ -271,7 +271,7 @@ function codes(diags: LspDiagnostic[]): string[] {
   return diags.map((d) => String(d.code));
 }
 
-describe("Bug 1104: LSP check 通道必须看得见项目级 path env（IDE 红 / CLI 绿 ⇒ 假红）", () => {
+describe("LSP check 通道必须看得见项目级 path env（IDE 红 / CLI 绿 ⇒ 假红）", () => {
   beforeEach(() => {
     clearValidationState();
     clearPathEnvCaches();
@@ -317,11 +317,11 @@ describe("Bug 1104: LSP check 通道必须看得见项目级 path env（IDE 红 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 133 · 放宽侧车契约必须打在被违反的参数槽
+// 放宽侧车契约必须打在被违反的参数槽
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 133 · 放宽侧车契约必须打在被违反的参数槽", () => {
+describe("放宽侧车契约必须打在被违反的参数槽", () => {
 /**
- * BUG-133 —— 「放宽侧车契约」quickfix 对**参数违例**打到**返回槽**
+ * 「放宽侧车契约」quickfix 对**参数违例**打到**返回槽**
  *
  * 现象：诊断是 `argument ⊭ precondition`（参数违例），动作却把侧车的**返回槽**
  * 改掉（`number().gt(40)` → `number()`）⇒ 参数诊断原样保留、返回契约被静默削弱。
@@ -330,12 +330,12 @@ describe("[lsp-] Bug 133 · 放宽侧车契约必须打在被违反的参数槽"
  *
  * 钉（修复后行为）：
  * 1. 参数违例的放宽动作只能改**被违反形参**的槽：标题带 `greet.u`、
- *    编辑只剥 `u` 的数值谓词，返回槽的 `.gt(40)` 原样保留；
+ * 编辑只剥 `u` 的数值谓词，返回槽的 `.gt(40)` 原样保留；
  * 2. 落盘后目标参数诊断**真的消失**（动作可执行，不是假修复）；
  * 3. 改不动参数槽时（shape 参数）**不下发**放宽动作 —— 尤其不得退化成
- *    「改返回槽」（旧症状：参数诊断仍在 + 返回契约被削弱）；
+ * 「改返回槽」（旧症状：参数诊断仍在 + 返回契约被削弱）；
  * 4. 证据面：旧的那份返回槽编辑（`.gt(40)` → `number()`）对参数诊断
- *    一字无效 ⇒ 不下发是被诊断验证的，不是拍脑袋。
+ * 一字无效 ⇒ 不下发是被诊断验证的，不是拍脑袋。
  */
 
 
@@ -345,7 +345,7 @@ describe("[lsp-] Bug 133 · 放宽侧车契约必须打在被违反的参数槽"
 
 
 
-/** BUG-133 段内夹具（逐字） */
+/** 段内夹具（逐字） */
 const GREET_JS = `export function greet(u) {
   return u.name;
 }
@@ -403,7 +403,7 @@ function actionsFor(
   });
 }
 
-describe("Bug 133 · 放宽侧车契约必须打在被违反的参数槽", () => {
+describe("放宽侧车契约必须打在被违反的参数槽", () => {
   it("参数违例：动作标题带 greet.u，编辑只剥形参谓词（返回槽 .gt(40) 不动）", () => {
     const { actions, scText, uri } = actionsFor("nudo-lsp-133a-", GREET_JS_NUM, SC_NUM_RET, isParamDiag);
     const relax = actions.filter(isRelax);
@@ -477,11 +477,11 @@ export const greet = fn({ u: number() }, number());
 });
 
 // ---------------------------------------------------------------------------
-// Bug 134 · 放宽侧车契约不得下发消不掉诊断的假修复
+// 放宽侧车契约不得下发消不掉诊断的假修复
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 134 · 放宽侧车契约不得下发消不掉诊断的假修复", () => {
+describe("放宽侧车契约不得下发消不掉诊断的假修复", () => {
 /**
- * BUG-134 —— 「放宽侧车契约」quickfix 对**基类型不匹配**（`string ⊭ number`）
+ * 「放宽侧车契约」quickfix 对**基类型不匹配**（`string ⊭ number`）
  * 永远消不掉诊断 ⇒ 建议不可执行
  *
  * 现象：返回值基类型就与侧车返回槽冲突时，动作只会剥数值谓词
@@ -493,9 +493,9 @@ describe("[lsp-] Bug 134 · 放宽侧车契约不得下发消不掉诊断的假�
  * 钉（修复后行为）：
  * 1. 基类型冲突（不可解）⇒ **不下发**放宽动作（无 diff 可清诊断）；
  * 2. 证据面：旧动作的落盘结果（返回槽 → `number()`）诊断原样还在
- *    ⇒ 不下发是被诊断验证的，不是拍脑袋；
+ * ⇒ 不下发是被诊断验证的，不是拍脑袋；
  * 3. 校准（正控制）：返回槽**数值**冲突可解时动作仍在、落盘后诊断消失
- *    ⇒ 门不是「一刀切封杀」，判据 = 编辑是否真的清掉目标诊断；
+ * ⇒ 门不是「一刀切封杀」，判据 = 编辑是否真的清掉目标诊断；
  * 4. 返回槽没有可放宽的数值精化（`number()`）⇒ 不下发（无 edit 空转）。
  */
 
@@ -506,7 +506,7 @@ describe("[lsp-] Bug 134 · 放宽侧车契约不得下发消不掉诊断的假�
 
 
 
-/** BUG-134 段内夹具（逐字）：返回 `u.name`（string）⊭ 返回槽 number().gt(40) */
+/** 段内夹具（逐字）：返回 `u.name`（string）⊭ 返回槽 number().gt(40) */
 const GREET_JS = `export function greet(u) {
   return u.name;
 }
@@ -558,7 +558,7 @@ function actionsFor(
   });
 }
 
-describe("Bug 134 · 放宽侧车契约不得下发消不掉诊断的假修复", () => {
+describe("放宽侧车契约不得下发消不掉诊断的假修复", () => {
   it("返回基类型冲突（string ⊭ number）⇒ 不下发放宽动作、不产生侧车编辑", () => {
     const { actions, messages, uri } = actionsFor(
       "nudo-lsp-134a-",
@@ -630,29 +630,29 @@ export const greet = fn({ u: number() }, number());
 });
 
 // ---------------------------------------------------------------------------
-// Bug 136 — codeLens 标题与 CLI nudo test 见证行逐字符同形
+// codeLens 标题与 CLI nudo test 见证行逐字符同形
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 136 — codeLens 标题与 CLI nudo test 见证行逐字符同形", () => {
+describe("codeLens 标题与 CLI nudo test 见证行逐字符同形", () => {
 /**
- * Bug 136 —— LSP codeLens 标题与 CLI `nudo test` 见证行**不同形**。
+ * LSP codeLens 标题与 CLI `nudo test` 见证行**不同形**。
  *
  * 症状（同文件、同分析，两面并排）：
- * - CLI `nudo test` 见证行：`"  entry@L1  (any) => unknown   throws TypeError"`
- *   （2 格容器缩进 + throws 前 **3** 空格）；
- * - LSP lens 标题：`"entry@L1  (any) => unknown  throws TypeError"`
- *   （无容器缩进 + throws 前 **2** 空格）。
+ * - CLI `nudo test` 见证行：`" entry@L1 (any) => unknown throws TypeError"`
+ * （2 格容器缩进 + throws 前 **3** 空格）；
+ * - LSP lens 标题：`"entry@L1 (any) => unknown throws TypeError"`
+ * （无容器缩进 + throws 前 **2** 空格）。
  *
  * `agent-tools.ts` 的注释明文承诺「**标题与 test 报告同形**」⇒ 同一事实
  * 两面渲染不一致（非 throws 分支当时是一致的，只有 throws 分支分裂）。
  *
  * 修法：LSP 的 `observationTitle` 与 CLI 的 `formatCaseLine` 采用同一模板
  * （throws 前 3 空格；lens 标题不带容器缩进，CLI 报告在 `caseLines.push` 处加
- * 2 空格）⇒ 比对口径 = `"  " + lens.title`。
+ * 2 空格）⇒ 比对口径 = `" " + lens.title`。
  *
  * 钉（同一 fixture、两条**产品**路径，不 spawn CLI）：
  * - CLI 侧：`buildTestReport(file, analyzeFileAsync(...))` 的 `caseLines`；
  * - LSP 侧：`computeObservationLenses(source, file)` 的 `title`；
- * ⇒ 逐字符相等：`caseLines` 含 `"  " + lens.title`（且反向：每条
+ * ⇒ 逐字符相等：`caseLines` 含 `" " + lens.title`（且反向：每条
  * `call@` / `entry@` 见证行都有同标题的 lens）。
  */
 
@@ -663,14 +663,14 @@ describe("[lsp-] Bug 136 — codeLens 标题与 CLI nudo test 见证行逐字符
 
 
 
-/** `tmp/repro/bug-136/half.js` 逐字内容 */
+/** `tmp/repro//half.js` 逐字内容 */
 const HALF_SRC = `export function f(x) {
   return x.a.b;
 }
 f(undefined);
 `;
 
-describe("Bug 136 — codeLens 标题与 CLI nudo test 见证行逐字符同形", () => {
+describe("codeLens 标题与 CLI nudo test 见证行逐字符同形", () => {
   it("每条 lens 标题在 CLI 报告里是 `  <title>`；throws 分支为 3 空格", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug136-"));
     try {
@@ -725,11 +725,11 @@ describe("Bug 136 — codeLens 标题与 CLI nudo test 见证行逐字符同形"
 });
 
 // ---------------------------------------------------------------------------
-// Bug 634: LSP check 面施加 inject 通道（@nudo:mock 生效）
+// LSP check 面施加 inject 通道（@nudo:mock 生效）
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 634: LSP check 面施加 inject 通道（@nudo:mock 生效）", () => {
+describe("LSP check 面施加 inject 通道（@nudo:mock 生效）", () => {
 /**
- * Bug 634 回归（LSP 编辑器面）：check 通道必须施加 **inject 通道**
+ * 回归（LSP 编辑器面）：check 通道必须施加 **inject 通道**
  * （`@nudo:mock` / `@nudo:as` / `@nudo:replace` / env 全局），与 CLI
  * `nudo check` 同源同口径。
  *
@@ -769,7 +769,7 @@ function codes(diags: { code?: string | number }[]): string[] {
   return diags.map((d) => String(d.code ?? ""));
 }
 
-describe("Bug 634: LSP check 面施加 inject 通道（@nudo:mock 生效）", () => {
+describe("LSP check 面施加 inject 通道（@nudo:mock 生效）", () => {
   it("@nudo:mock 覆盖的依赖不得再报 nudo:entry-may-throw（与 CLI 同口径：绿）", () => {
     withTempDir("nudo-lsp-bug-634-", (dir) => {
       const file = join(dir, "lib.js");
@@ -791,24 +791,24 @@ describe("Bug 634: LSP check 面施加 inject 通道（@nudo:mock 生效）", ()
 });
 
 // ---------------------------------------------------------------------------
-// Bug 702 — references 不得重复声明位 / 混入语句级伪引用
+// references 不得重复声明位 / 混入语句级伪引用
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 702 — references 不得重复声明位 / 混入语句级伪引用", () => {
+describe("references 不得重复声明位 / 混入语句级伪引用", () => {
 /**
- * Bug 702 回归钉：LSP `textDocument/references` 不得把**声明位点返回两次**，
+ * 回归钉：LSP `textDocument/references` 不得把**声明位点返回两次**，
  * 也不得混入语句级伪引用。
  *
  * 改前（协议面实测，见 tmp/probe/fix-r30/d1-before.txt）：
- *   references on `score`（`export function score(row) {...}` 的声明位）
- *     → [0:16-0:21]（声明）、[0:16-0:21]（**同一个声明再来一次**）、
- *       [0:0-2:1]（**整条 export 声明**）、…（跨文件引用）
- *   ⇒ 同一个位置出现两次；客户端按位置高亮会出现重影。
+ * references on `score`（`export function score(row) {...}` 的声明位）
+ * → [0:16-0:21]（声明）、[0:16-0:21]（**同一个声明再来一次**）、
+ * [0:0-2:1]（**整条 export 声明**）、…（跨文件引用）
+ * ⇒ 同一个位置出现两次；客户端按位置高亮会出现重影。
  *
  * 根因（两条）：
- *   1) `resolveReferences` 把「符号表里的声明位」与「引用集合里的声明位」
- *      各推一次（两处坐标相同）⇒ 重复；
- *   2) 导出绑定的 `referencePaths` 里混着 `ExportNamedDeclaration` **语句
- *      节点** ⇒ 变成一条覆盖整条声明的伪引用（与 Bug 699 同源）。
+ * 1) `resolveReferences` 把「符号表里的声明位」与「引用集合里的声明位」
+ * 各推一次（两处坐标相同）⇒ 重复；
+ * 2) 导出绑定的 `referencePaths` 里混着 `ExportNamedDeclaration` **语句
+ * 节点** ⇒ 变成一条覆盖整条声明的伪引用（与 同源）。
  *
  * 修法：① 引用集合按 (uri, 位置) 去重；② `collectBindingReferences` 的
  * referencePaths 只收 Identifier 节点（语句级目标不再进引用集合）。
@@ -823,7 +823,7 @@ const C_SRC = `export function score(row) {
 }
 `;
 
-describe("Bug 702 — references 不得重复声明位 / 混入语句级伪引用", () => {
+describe("references 不得重复声明位 / 混入语句级伪引用", () => {
   it("collectBindingReferences：导出绑定不产生语句级伪引用", () => {
     const ast = parse(C_SRC);
     const refs = collectBindingReferences(ast, "score", { line: 1, column: 17 }, "file:///t/c.js");
@@ -875,11 +875,11 @@ describe("Bug 702 — references 不得重复声明位 / 混入语句级伪引�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 703 — export default 的跨文件 references
+// export default 的跨文件 references
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 703 — export default 的跨文件 references", () => {
+describe("export default 的跨文件 references", () => {
 /**
- * Bug 703 — export default 的跨文件 references 为空。
+ * export default 的跨文件 references 为空。
  *
  * 症状：definition 能跳到 default 导出的定义，references 却查不到任何调用方
  * （自相矛盾）。根因：跨文件引用匹配用的是**导出名**，而 default 导入的
@@ -905,7 +905,7 @@ export function use() {
 }
 `;
 
-describe("Bug 703 — export default 的跨文件 references", () => {
+describe("export default 的跨文件 references", () => {
   it("default 导出的定义处能查到 default 导入方的 import 说明符与调用点", async () => {
     h = await startLspWithFiles({ "a.js": A, "b.js": B });
     const refs = locationsOf(
@@ -954,11 +954,11 @@ describe("Bug 703 — export default 的跨文件 references", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 713 — 成员属性不触发同名导出兜底
+// 成员属性不触发同名导出兜底
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 713 — 成员属性不触发同名导出兜底", () => {
+describe("成员属性不触发同名导出兜底", () => {
 /**
- * Bug 713 — 成员属性（`obj.x` 的 x）F12 跳到工作区里无关文件的同名导出。
+ * 成员属性（`obj.x` 的 x）F12 跳到工作区里无关文件的同名导出。
  *
  * 症状：`o.helper()` 的 helper 没有来源，却命中「同名导出兜底」跳到
  * 另一个文件里毫不相干的 `export function helper`。
@@ -981,7 +981,7 @@ const USER = `export function go(o) {
 }
 `;
 
-describe("Bug 713 — 成员属性不触发同名导出兜底", () => {
+describe("成员属性不触发同名导出兜底", () => {
   it("成员属性 helper 的 definition 不得跳到无关文件的同名导出", async () => {
     h = await startLspWithFiles({ "other.js": OTHER, "user.js": USER });
     const defs = locationsOf(
@@ -1021,18 +1021,18 @@ describe("Bug 713 — 成员属性不触发同名导出兜底", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 714 — references 的 includeDeclaration:false 必须剔除声明位
+// references 的 includeDeclaration:false 必须剔除声明位
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 714 — references 的 includeDeclaration:false 必须剔除声明位", () => {
+describe("references 的 includeDeclaration:false 必须剔除声明位", () => {
 /**
- * Bug 714 回归钉：LSP `textDocument/references` 的
+ * 回归钉：LSP `textDocument/references` 的
  * `context.includeDeclaration: false` **仍返回声明位点**。
  *
  * 改前（协议面实测，见 tmp/probe/fix-r30/d1-before.txt）：
- *   references on `v`（a 内），includeDeclaration=false
- *     → [1:8-1:9]（**a 里 v 的声明位**）、[2:9-2:10]（用点）❌
- *   （includeDeclaration 只作用于 `resolveReferences` 的那一个 `decl` 数组，
- *     管不到引用集合里的声明位）
+ * references on `v`（a 内），includeDeclaration=false
+ * → [1:8-1:9]（**a 里 v 的声明位**）、[2:9-2:10]（用点）❌
+ * （includeDeclaration 只作用于 `resolveReferences` 的那一个 `decl` 数组，
+ * 管不到引用集合里的声明位）
  *
  * 根因：`collectBindingReferences` 无条件把绑定声明位（`binding.identifier`）
  * 收进引用集合 ⇒ `includeDeclaration` 只关掉了「另一处」的声明。
@@ -1052,7 +1052,7 @@ const SHADOW_SRC = `export function a() {
 }
 `;
 
-describe("Bug 714 — references 的 includeDeclaration:false 必须剔除声明位", () => {
+describe("references 的 includeDeclaration:false 必须剔除声明位", () => {
   it("collectBindingReferences：includeDeclaration=false 不含声明位", () => {
     const ast = parse(SHADOW_SRC);
     const withDecl = collectBindingReferences(ast, "v", { line: 3, column: 10 }, "file:///t/s.js");
@@ -1098,11 +1098,11 @@ describe("Bug 714 — references 的 includeDeclaration:false 必须剔除声明
 });
 
 // ---------------------------------------------------------------------------
-// Bug 726 — 跨文件导航必须用打开文档的 buffer
+// 跨文件导航必须用打开文档的 buffer
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 726 — 跨文件导航必须用打开文档的 buffer", () => {
+describe("跨文件导航必须用打开文档的 buffer", () => {
 /**
- * Bug 726 — 跨文件导航读**磁盘**文本，而不是编辑器 buffer。
+ * 跨文件导航读**磁盘**文本，而不是编辑器 buffer。
  *
  * 症状：def.js 已被编辑（未保存）⇒ 磁盘上还是旧内容 ⇒ F12 / references /
  * rename 全部按磁盘坐标给位点 ⇒ 跳错行、改名改坏用户代码（两套坐标）。
@@ -1133,7 +1133,7 @@ export function oldName(n) {
 }
 `;
 
-describe("Bug 726 — 跨文件导航必须用打开文档的 buffer", () => {
+describe("跨文件导航必须用打开文档的 buffer", () => {
   it("definition 落在 buffer 坐标（磁盘坐标会跳错行）", async () => {
     h = await startLspWithFiles({ "def.js": DEF, "use.js": USE });
     h.changeBuffer("def.js", DEF_BUFFER);
@@ -1197,11 +1197,11 @@ describe("Bug 726 — 跨文件导航必须用打开文档的 buffer", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 731 · 侧车补字段的插入点契约
+// 侧车补字段的插入点契约
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 731 · 侧车补字段的插入点契约", () => {
+describe("侧车补字段的插入点契约", () => {
 /**
- * Bug 731 —— A6「Add 'X' to <fn> contract shape」往侧车 `fn(...)` 的**顶层**
+ * A6「Add 'X' to <fn> contract shape」往侧车 `fn(...)` 的**顶层**
  * 插字段 ⇒ 契约被写坏。
  *
  * 根因：`findFnContractInsertPos`（旧实现）**不解析形参表结构**，只找 `fn(`
@@ -1213,7 +1213,7 @@ describe("[lsp-] Bug 731 · 侧车补字段的插入点契约", () => {
  * 2. 目标形参的契约类型不是**内联** shape（共享标识符 / 标量）⇒ 不给插入点；
  * 3. 字段**已在**契约里 ⇒ 不给插入点（不写重复键）；
  * 4. LSP 面：契约已声明该字段时**不下发**「往契约 shape 补字段」的动作
- *    （落盘即写坏契约 ⇒ 多一条 `nudo:contract-param-mismatch`）。
+ * （落盘即写坏契约 ⇒ 多一条 `nudo:contract-param-mismatch`）。
  */
 
 
@@ -1237,7 +1237,7 @@ const GREET_JS = `export function greet(u) {
 greet({ id: 2 });
 `;
 
-describe("Bug 731 · 侧车补字段的插入点契约", () => {
+describe("侧车补字段的插入点契约", () => {
   it("插入点落进目标形参的 shape({ … }) 内部（不是形参表顶层）", () => {
     const lines = SC_NO_NAME.split("\n");
     const pos = findFnContractInsertPos(lines, "greet", { param: "u", path: ["name"] });
@@ -1319,11 +1319,11 @@ describe("Bug 731 · 侧车补字段的插入点契约", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 737 · 调用点插入点必须是对象字面量实参（不是字符串里的 `{`）
+// 调用点插入点必须是对象字面量实参（不是字符串里的 `{`）
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 737 · 调用点插入点必须是对象字面量实参（不是字符串里的 `{`）", () => {
+describe("调用点插入点必须是对象字面量实参（不是字符串里的 `{`）", () => {
 /**
- * Bug 737 —— A6「Add missing field 'X' to call」的插入点用**行内文本启发式**
+ * A6「Add missing field 'X' to call」的插入点用**行内文本启发式**
  * 定位（`indexOf("{")` + 行内 `{` 计数 == 1）⇒ 诊断所在行的第一个 `{` 落在
  * **字符串 / 模板串**里时，字段被插进字面量内部 ⇒ 源码语义被改坏。
  *
@@ -1349,7 +1349,7 @@ const GREET_SC = `import { fn, shape, string } from "@nudojs/core";
 export const greet = fn({ u: shape({ name: string() }) }, string());
 `;
 
-describe("Bug 737 · 调用点插入点必须是对象字面量实参（不是字符串里的 `{`）", () => {
+describe("调用点插入点必须是对象字面量实参（不是字符串里的 `{`）", () => {
   it("插入点落进对象字面量，字符串字面量原样保留", () => {
     withTempDir("nudo-lsp-737-", (dir) => {
       writeFileSync(join(dir, "greet.js"), GREET_JS_737, "utf-8");
@@ -1394,11 +1394,11 @@ greet("{", { id: 1 });
 });
 
 // ---------------------------------------------------------------------------
-// Bug 752 — agent nudo/check 并入 mock 装载失败通道
+// agent nudo/check 并入 mock 装载失败通道
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 752 — agent nudo/check 并入 mock 装载失败通道", () => {
+describe("agent nudo/check 并入 mock 装载失败通道", () => {
 /**
- * Bug 752 — LSP agent 工具 `nudo/check` 丢掉 CLI 的 **mock 装载失败通道**。
+ * LSP agent 工具 `nudo/check` 丢掉 CLI 的 **mock 装载失败通道**。
  *
  * 症状（改前）：夹具 `@nudo:mock helper from "./no-such-mock.js"`（mock 文件
  * 不存在）⇒ CLI `nudo check --json` 报 **error 级 `nudo:module-missing`**
@@ -1421,7 +1421,7 @@ export function add(a) {
 }
 `;
 
-describe("Bug 752 — agent nudo/check 并入 mock 装载失败通道", () => {
+describe("agent nudo/check 并入 mock 装载失败通道", () => {
   it("slash 形式：mock 文件缺失 ⇒ error 级 nudo:module-missing（门禁红）", async () => {
     await withLspServer({ "mockonly.js": MOCKONLY }, async ({ req, dir }) => {
       const r = await req("nudo/check")({ file: `${dir}/mockonly.js`, format: "json" });
@@ -1458,17 +1458,17 @@ describe("Bug 752 — agent nudo/check 并入 mock 装载失败通道", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 762：contract.emit 走 root 驱动下行推导
+// contract.emit 走 root 驱动下行推导
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 762：contract.emit 走 root 驱动下行推导", () => {
+describe("contract.emit 走 root 驱动下行推导", () => {
 /**
- * Bug 762 —— `nudo.contract.emit` 必须走 **root 驱动下行推导**
+ * `nudo.contract.emit` 必须走 **root 驱动下行推导**
  * （`emitDerivedFromRoot`），与 CLI `nudo contract --emit` 同序同口径。
  *
  * 症状（改前）：工具**从不**调 `emitDerivedFromRoot` ⇒
  * - CLI 写得出的下游侧车（`add.nudo.js`）在 IDE 面**永远不产生**；
  * - 结果文本只报「no contract changes / skipped add4 (name-clash)」，
- *   把「引擎没做的那一步」说成「本地侧车被手写占用」——误导性诊断。
+ * 把「引擎没做的那一步」说成「本地侧车被手写占用」——误导性诊断。
  *
  * 协议面回归钉：真 server（mock connection）+ 真协议请求。
  */
@@ -1506,7 +1506,7 @@ const FIXTURE = {
   "lib.nudo.js": LIB_NUDO,
 };
 
-describe("Bug 762：contract.emit 走 root 驱动下行推导", () => {
+describe("contract.emit 走 root 驱动下行推导", () => {
   it("工具面：下游侧车 add.nudo.js 被写出来，且文本点名 derived-from", async () => {
     await withLspServer(FIXTURE, async ({ dir }) => {
       const libJs = join(dir, "lib.js");
@@ -1565,11 +1565,11 @@ describe("Bug 762：contract.emit 走 root 驱动下行推导", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 766：emit 写盘边界按路径分量判定
+// emit 写盘边界按路径分量判定
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 766：emit 写盘边界按路径分量判定", () => {
+describe("emit 写盘边界按路径分量判定", () => {
 /**
- * Bug 766 —— emit 写盘边界按**路径分量**判定，不按字符串前缀。
+ * emit 写盘边界按**路径分量**判定，不按字符串前缀。
  *
  * 症状（改前）：`pathInsideRoot` 用 `rel.startsWith("..")` 判逃逸 ⇒
  * `..dotted.js` / `...triple.js` / `..cfg/x.js` 这些**合法**的相对路径
@@ -1590,7 +1590,7 @@ const SRC = `export function f() {
 }
 `;
 
-describe("Bug 766：emit 写盘边界按路径分量判定", () => {
+describe("emit 写盘边界按路径分量判定", () => {
   it("root 内以 `..` 开头的合法路径名 ⇒ 允许写侧车", async () => {
     await withLspServer(
       {
@@ -1659,11 +1659,11 @@ describe("Bug 766：emit 写盘边界按路径分量判定", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 770 — agent nudo/check + nudo/test 的分析目标闸门
+// agent nudo/check + nudo/test 的分析目标闸门
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 770 — agent nudo/check + nudo/test 的分析目标闸门", () => {
+describe("agent nudo/check + nudo/test 的分析目标闸门", () => {
 /**
- * Bug 770 — LSP agent 工具 `nudo/check` / `nudo/test` **没有「分析目标」
+ * LSP agent 工具 `nudo/check` / `nudo/test` **没有「分析目标」
  * 闸门** ⇒ 对**侧车契约文件**报「OK / 0 error / 0 fn」（假绿），而 CLI 对
  * 同一文件 exit 1「Not an analysis target」；`nudo/test` 还把契约 **DSL
  * 构造器**（`fn(...)` / `shape(...)` / `string()`）当成真实调用点报成 case。
@@ -1680,7 +1680,7 @@ const SIDECAR = `import { fn, shape, string } from "@nudojs/core";
 export const getName = fn({ u: shape({ name: string() }) }, string());
 `;
 
-describe("Bug 770 — agent nudo/check + nudo/test 的分析目标闸门", () => {
+describe("agent nudo/check + nudo/test 的分析目标闸门", () => {
   it("nudo/check：侧车 ⇒ 明确错误（不再是 0 fn 判绿）", async () => {
     await withLspServer({ "lib.nudo.js": SIDECAR }, async ({ req, dir }) => {
       const r = await req("nudo/check")({
@@ -1737,11 +1737,11 @@ describe("Bug 770 — agent nudo/check + nudo/test 的分析目标闸门", () =>
 });
 
 // ---------------------------------------------------------------------------
-// Bug 773 —— 早退守卫的 else 分支不得被当成「其后非空」
+// 早退守卫的 else 分支不得被当成「其后非空」
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 773 —— 早退守卫的 else 分支不得被当成「其后非空」", () => {
+describe("早退守卫的 else 分支不得被当成「其后非空」", () => {
 /**
- * Bug 773 —— hover 的「早退守卫去 nullish」**忽略 `else` 分支**
+ * hover 的「早退守卫去 nullish」**忽略 `else` 分支**
  * ⇒ 窄化出**不成立**的类型（与 `nudo check` 自相矛盾）。
  *
  * 改前：`applyStmtFact` 只看 `if` 的 then 分支是否以 return/throw 结束 ⇒
@@ -1783,7 +1783,7 @@ function hoverText(value: string | undefined): string {
   return value ?? "";
 }
 
-describe("Bug 773 —— 早退守卫的 else 分支不得被当成「其后非空」", () => {
+describe("早退守卫的 else 分支不得被当成「其后非空」", () => {
   it("带 else 的早退守卫：其后形参保持 nullish（改前被窄化成非空）", async () => {
     await withLspServer(
       { "hover773.js": SRC, "hover773.nudo.js": SIDECAR },
@@ -1821,17 +1821,17 @@ describe("Bug 773 —— 早退守卫的 else 分支不得被当成「其后非�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 775 —— 契约形参的 hover 文本与 `nudo check` 同口径
+// 契约形参的 hover 文本与 `nudo check` 同口径
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 775 —— 契约形参的 hover 文本与 `nudo check` 同口径", () => {
+describe("契约形参的 hover 文本与 `nudo check` 同口径", () => {
 /**
- * Bug 775 —— hover 的侧车契约面用**声明形态**、`nudo check` 用**推断形态**
+ * hover 的侧车契约面用**声明形态**、`nudo check` 用**推断形态**
  * ⇒ 同一函数两套参数类型文本（IDE 说的是侧车 DSL 原文，CLI 说的是类型）。
  *
  * 改前（协议面 hover 签名块）：
- *   `addc(x: number().gt(0), y: number().gt(0)) => number`
+ * `addc(x: number().gt(0), y: number().gt(0)) => number`
  * 而 `nudo check` 的签名行是：
- *   `addc(x: number, y: number) => number`
+ * `addc(x: number, y: number) => number`
  *
  * 修法（hover.ts）：契约形参的展示文本改用 **check 同口径**的推断 shape
  * （core `check-signatures.formatEntryParamShape` 同公式：showLits +
@@ -1861,7 +1861,7 @@ const UNION_SIDECAR = `import { fn, number, nullable } from "@nudojs/core";
 export const addn = fn({ p: nullable(number()) }, number());
 `;
 
-describe("Bug 775 —— 契约形参的 hover 文本与 `nudo check` 同口径", () => {
+describe("契约形参的 hover 文本与 `nudo check` 同口径", () => {
   it("签名块：prim 契约参数用推断 shape（改前是侧车 DSL 原文）", async () => {
     await withLspServer(
       { "hover775.js": SRC, "hover775.nudo.js": SIDECAR },
@@ -1914,11 +1914,11 @@ describe("Bug 775 —— 契约形参的 hover 文本与 `nudo check` 同口径"
 });
 
 // ---------------------------------------------------------------------------
-// Bug 779 — check 通道的 info 级诊断在 verbose 档必须上屏
+// check 通道的 info 级诊断在 verbose 档必须上屏
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 779 — check 通道的 info 级诊断在 verbose 档必须上屏", () => {
+describe("check 通道的 info 级诊断在 verbose 档必须上屏", () => {
 /**
- * Bug 779 —— check 通道的 **info 级**诊断被提前砍掉 ⇒ 永不���屏。
+ * check 通道的 **info 级**诊断被提前砍掉 ⇒ 永不���屏。
  *
  * 症状：`checkToLspDiagnostics` 在转换前就 `filter(severity === "error" ||
  * "warning")` ⇒ 下游的档位过滤器（`filterCheckLspByLevel`）永远看不到 info ⇒
@@ -1991,7 +1991,7 @@ const VERBOSE_PKG = {
 
 const DEFAULT_PKG = { name: "bug779-default", private: true, type: "module" };
 
-describe("Bug 779 — check 通道的 info 级诊断在 verbose 档必须上屏", () => {
+describe("check 通道的 info 级诊断在 verbose 档必须上屏", () => {
   it("push 通道：verbose 档下 nudo:assume-relied 上屏（severity=Information）", async () => {
     const { mock, uri, cleanup } = openSession(VERBOSE_PKG);
     try {
@@ -2039,19 +2039,19 @@ describe("Bug 779 — check 通道的 info 级诊断在 verbose 档必须上屏"
 });
 
 // ---------------------------------------------------------------------------
-// Bug 991 — agent nudo/check 接上补充诊断通道
+// agent nudo/check 接上补充诊断通道
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 991 — agent nudo/check 接上补充诊断通道", () => {
+describe("agent nudo/check 接上补充诊断通道", () => {
 /**
- * Bug 991 — agent 工具 `nudo/check` 只跑裸 `checkSource` ⇒ CLI / LSP 并入
+ * agent 工具 `nudo/check` 只跑裸 `checkSource` ⇒ CLI / LSP 并入
  * check 报告的**补充诊断通道**一条都没接 ⇒ 同一文件三个面三份 issue 集。
  *
  * 本钉覆盖两条旁路通道：
  * 1. **指令文法诊断**（`nudo:directive-syntax`）——parser 的 extract 与
- *    service 的 `collectEvalReplacements` 写进调用方自备的 `diags` 数组，
- *    不会流进 `checkSource` 的返回值；
+ * service 的 `collectEvalReplacements` 写进调用方自备的 `diags` 数组，
+ * 不会流进 `checkSource` 的返回值；
  * 2. **path env 未解析**（`nudo:env-unresolved`）——service 进程级 live 状态
- *    （`getPathEnvLoadErrors`），既不是 `checkSource` 的入参也不是返回值。
+ * （`getPathEnvLoadErrors`），既不是 `checkSource` 的入参也不是返回值。
  *
  * 改前 agent 面：`summary.warnings = 0`、`issues` 为空、`ok: true` ⇒ 一个按
  * `nudo/check` 结果决策的 agent 会认为「文件完全干净」。
@@ -2073,7 +2073,7 @@ export function add(a) {
 }
 `;
 
-describe("Bug 991 — agent nudo/check 接上补充诊断通道", () => {
+describe("agent nudo/check 接上补充诊断通道", () => {
   it("指令文法诊断（nudo:directive-syntax）并入 issues + summary", async () => {
     await withLspServer({ "d1_syntax.js": D1_SYNTAX }, async ({ req, dir }) => {
       const r = await req("nudo/check")({ file: `${dir}/d1_syntax.js`, format: "json" });
@@ -2113,11 +2113,11 @@ describe("Bug 991 — agent nudo/check 接上补充诊断通道", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 994：三个 contract 工具的 --from 等价通道
+// 三个 contract 工具的 --from 等价通道
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 994：三个 contract 工具的 --from 等价通道", () => {
+describe("三个 contract 工具的 --from 等价通道", () => {
 /**
- * Bug 994 —— agent 的三个 contract 工具要有 `--from`（使用点记录）等价通道。
+ * agent 的三个 contract 工具要有 `--from`（使用点记录）等价通道。
  *
  * 症状（改前）：`nudo/contract` / `nudo/contract.draft` / `nudo/contract.emit`
  * 都没有 `from` 参数 ⇒ 跨文件调用点证据**系统性丢失**：
@@ -2145,7 +2145,7 @@ const MAIN = `import { addOne } from "./lib.js";
 addOne(2);
 `;
 
-describe("Bug 994：三个 contract 工具的 --from 等价通道", () => {
+describe("三个 contract 工具的 --from 等价通道", () => {
   it("协议面 nudo/contract：带 from ⇒ 使用点证据参与求解", async () => {
     await withLspServer(
       { "lib.js": LIB, "main.js": MAIN },
@@ -2211,11 +2211,11 @@ describe("Bug 994：三个 contract 工具的 --from 等价通道", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 998 — CJS 成员导出的符号 / 观察面
+// CJS 成员导出的符号 / 观察面
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 998 — CJS 成员导出的符号 / 观察面", () => {
+describe("CJS 成员导出的符号 / 观察面", () => {
 /**
- * Bug 998：CJS 成员导出（`exports.f = fn` / `module.exports.f = fn`）在 LSP 的
+ * CJS 成员导出（`exports.f = fn` / `module.exports.f = fn`）在 LSP 的
  * 4 个符号 / 观察面 + codeLens 的 contract 档上**整段消失**。
  *
  * 症状（真 server 协议面，改前）：
@@ -2260,7 +2260,7 @@ type Lens = {
   command?: { title: string; command: string; arguments?: unknown[] };
 };
 
-describe("Bug 998 — CJS 成员导出的符号 / 观察面", () => {
+describe("CJS 成员导出的符号 / 观察面", () => {
   it("documentSymbol 出 CJS 成员导出（函数档，detail 带 export）", async () => {
     await withLspServer({ "a.js": CJS_SRC }, async ({ req, uri }) => {
       const syms = req("textDocument/documentSymbol")({

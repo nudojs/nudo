@@ -9,11 +9,11 @@ import { codeActionParams, missingFieldDiag, mountCodeActions } from "./lsp-harn
 import { tmpdir } from "node:os";
 
 // ---------------------------------------------------------------------------
-// Bug 956 — agent 工具的路径错误通道
+// agent 工具的路径错误通道
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 956 — agent 工具的路径错误通道", () => {
+describe("agent 工具的路径错误通道", () => {
 /**
- * Bug 956 — LSP agent 工具 `nudo/test` / `nudo/check` **没有路径错误通道**
+ * LSP agent 工具 `nudo/test` / `nudo/check` **没有路径错误通道**
  * ⇒ 文件不存在 ⇒ 返回**裸 ENOENT 文本**（没有 `pathErrors[]`、没有
  * `nudo:path-not-found` 码、没有 suggestion）；而 CLI `test --json` /
  * `check --json` 对同一文件给**结构化信封**。
@@ -26,7 +26,7 @@ describe("[lsp-] Bug 956 — agent 工具的路径错误通道", () => {
 
 const SRC = "export function add(a) {\n  return a + 1;\n}\n";
 
-describe("Bug 956 — agent 工具的路径错误通道", () => {
+describe("agent 工具的路径错误通道", () => {
   it("nudo/test：JSON 面是结构化 pathErrors（不是裸 errno 文本）", async () => {
     await withLspServer({ "a.js": SRC }, async ({ req, dir }) => {
       const r = await req("nudo/test")({ file: `${dir}/nope.js`, format: "json" });
@@ -74,11 +74,11 @@ describe("Bug 956 — agent 工具的路径错误通道", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 735 · codeAction 面不得因 agentToolDeps 未回填而全瘫
+// codeAction 面不得因 agentToolDeps 未回填而全瘫
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 735 · codeAction 面不得因 agentToolDeps 未回填而全瘫", () => {
+describe("codeAction 面不得因 agentToolDeps 未回填而全瘫", () => {
 /**
- * Bug 735 —— `attachCodeActions` 在**真 server 的挂载后状态**下把
+ * `attachCodeActions` 在**真 server 的挂载后状态**下把
  * `agentToolDeps` 提前捕获 ⇒ 闭包里的常量恒为 `undefined` ⇒
  * `agentToolDeps.getOpenText?.(…)` 在可选链生效**之前**就抛 TypeError
  * ⇒ 整个 `textDocument/codeAction` 面全瘫（0 个 action）。
@@ -107,7 +107,7 @@ const GREET_SC = `import { fn, shape, string } from "@nudojs/core";
 export const greet = fn({ u: shape({ name: string() }) }, string());
 `;
 
-describe("Bug 735 · codeAction 面不得因 agentToolDeps 未回填而全瘫", () => {
+describe("codeAction 面不得因 agentToolDeps 未回填而全瘫", () => {
   it("agentToolDeps = undefined（真 server 挂载后状态）时不抛且给出 action", () => {
     withTempDir("nudo-lsp-735-", (dir) => {
       writeFileSync(join(dir, "greet.js"), GREET_JS, "utf-8");
@@ -158,18 +158,18 @@ describe("Bug 735 · codeAction 面不得因 agentToolDeps 未回填而全瘫", 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 993：agent 工具走异步入口 ⇒ path 型 env 必被预载
+// agent 工具走异步入口 ⇒ path 型 env 必被预载
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 993：agent 工具走异步入口 ⇒ path 型 env 必被预载", () => {
+describe("agent 工具走异步入口 ⇒ path 型 env 必被预载", () => {
 /**
- * Bug 993 —— agent 工具走**同步** `analyzeFile` ⇒ path 型 env 不被预载 ⇒
+ * agent 工具走**同步** `analyzeFile` ⇒ path 型 env 不被预载 ⇒
  * 工具输出取决于「同一进程里谁先被调用过」：
  *
  * - 文件**未在编辑器打开**时，`nudo/trace` 看不到 env 里的全局 ⇒ case 结果
- *   是 `unknown`（报告里的 `never` 同源）；文件被打开过（push 诊断走
- *   `analyzeFileAsync` ⇒ 预载了 env）⇒ 同一工具、同一文件给出 `99`。
+ * 是 `unknown`（报告里的 `never` 同源）；文件被打开过（push 诊断走
+ * `analyzeFileAsync` ⇒ 预载了 env）⇒ 同一工具、同一文件给出 `99`。
  * - 「先同步（未预载）、后异步（已预载）」时，分析缓存会把**无 env 的陈旧
- *   结果**喂给后续调用（键里只有 env 文件的**内容**，没有**预载状态**）。
+ * 结果**喂给后续调用（键里只有 env 文件的**内容**，没有**预载状态**）。
  *
  * 修法：观察类工具走 `analyzeFileAsync`（先 `await preloadPathEnvs`），且
  * 分析缓存键纳入 env 预载状态。
@@ -207,7 +207,7 @@ const APP_SRC = [
 ].join("\n");
 
 /** 每个用例一套**独立命名**的 env 文件：env 工厂注册表按**说明符**键，
- *  同名 env 会「先预载者赢」⇒ 用例之间必须互不遮蔽。 */
+ * 同名 env 会「先预载者赢」⇒ 用例之间必须互不遮蔽。 */
 function setup(envName: string): void {
   dir = mkdtempSync(join(tmpdir(), "nudo-a4-993-"));
   writeFileSync(join(dir, envName), ENV_SRC, "utf-8");
@@ -224,7 +224,7 @@ afterEach(() => {
   dir = "";
 });
 
-describe("Bug 993：agent 工具走异步入口 ⇒ path 型 env 必被预载", () => {
+describe("agent 工具走异步入口 ⇒ path 型 env 必被预载", () => {
   it("文件未打开时 nudo/trace 也能看到 env 的全局（99，而非 unknown）", async () => {
     const mock = createMockConnection();
     const { createNudoServer } = await import("../server.ts");
@@ -272,11 +272,11 @@ describe("Bug 993：agent 工具走异步入口 ⇒ path 型 env 必被预载", 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 767：agent 工具失败路径带 isError:true（协议面）
+// agent 工具失败路径带 isError:true（协议面）
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 767：agent 工具失败路径带 isError:true（协议面）", () => {
+describe("agent 工具失败路径带 isError:true（协议面）", () => {
 /**
- * Bug 767 —— agent 工具的**失败路径**必须带 `isError: true`
+ * agent 工具的**失败路径**必须带 `isError: true`
  * （协议层可与成功区分；此前失败与成功同形，客户端只能解析文本猜）。
  *
  * 覆盖面（本分片 A4 的工具面）：
@@ -296,7 +296,7 @@ const SRC = [
   "",
 ].join("\n");
 
-describe("Bug 767：agent 工具失败路径带 isError:true（协议面）", () => {
+describe("agent 工具失败路径带 isError:true（协议面）", () => {
   it("trace / suggestCase 的「函数不存在」是失败（isError），成功面不带", async () => {
     await withLspServer({ "a4-767.js": SRC }, async ({ req, uri }) => {
       const file = uri("a4-767.js");
@@ -319,18 +319,18 @@ describe("Bug 767：agent 工具失败路径带 isError:true（协议面）", ()
 });
 
 // ---------------------------------------------------------------------------
-// [merged] lsp-bug-955-agent-tool-file-validation.test.ts
+// [merged] agent-tool-file-validation
 // ---------------------------------------------------------------------------
-describe("[lsp-] [merged] lsp-bug-955-agent-tool-file-validation.test.ts", () => {
-// MERGED (topic-related bug pins): lsp-bug-955-agent-tool-file-validation.test.ts + lsp-bug-955-file-param-validation.test.ts
+describe("agent-tool-file-validation", () => {
+// MERGED (topic-related bug pins): agent-tool-file-validation + file-param-validation
 // Each absorbed file keeps its own describe scope so file-level hooks stay
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 
 
 
-describe("[merged] lsp-bug-955-agent-tool-file-validation.test.ts", () => {
+describe("agent-tool-file-validation", () => {
 /**
- * Bug 955 —— `file` 入参零校验（**A4 的共用入口闸**：`normalizeFilePath`）。
+ * `file` 入参零校验（**A4 的共用入口闸**：`normalizeFilePath`）。
  *
  * AGENT-CONTEXT §5 裁决：`file` 的形状校验放在 A4 的共用入口
  * （`normalizeFilePath`），A1/A2/A5 的工具都走这里 ⇒ 一处改，全覆盖。
@@ -353,7 +353,7 @@ const SRC = [
   "",
 ].join("\n");
 
-describe("Bug 955（共用入口）：agent 工具的 file 入参非法 ⇒ 结构化工具错误", () => {
+describe("（共用入口）：agent 工具的 file 入参非法 ⇒ 结构化工具错误", () => {
   it("nudo/whatIf / hover / trace / suggestCase：file 非字符串/空串/缺失 ⇒ isError", async () => {
     await withLspServer({ "a4-955.js": SRC }, async ({ req, uri }) => {
       const good = uri("a4-955.js");
@@ -379,9 +379,9 @@ describe("Bug 955（共用入口）：agent 工具的 file 入参非法 ⇒ 结�
 });
 });
 
-describe("[merged] lsp-bug-955-file-param-validation.test.ts", () => {
+describe("file-param-validation", () => {
 /**
- * Bug 955 —— `file` 入参零校验。
+ * `file` 入参零校验。
  *
  * 改前：file=42（非字符串）→ 裸 TypeError（"file.startsWith is not a
  * function"）逃出工具 ⇒ 客户端拿到 JSON-RPC **协议错误**而非 isError 工具
@@ -402,7 +402,7 @@ export function f(x) {
 }
 `;
 
-describe("Bug 955 — file 入参非法时不得让异常逃出工具", () => {
+describe("file 入参非法时不得让异常逃出工具", () => {
   it("nudo/getActiveCases：file 非字符串 / 空串 / 缺失 ⇒ 结构化错误，不抛异常", async () => {
     await withLspServer({ "sel.js": SRC }, async ({ req }) => {
       const get = req("nudo/getActiveCases");

@@ -1,17 +1,17 @@
 /**
- * Bug 1094 —— 返回点的**路径前提 Φ**真正接进生产（`postcondition.ts` 的
+ * 返回点的**路径前提 Φ**真正接进生产（`postcondition.ts` 的
  * `assertImplies` / `check-return.ts` 的 `audit.phi` / `check.ts` 的接线）。
  *
- * 背景（Bug 1080 收口后的遗留）：Φ 侧此前**从未被接入**（`opts.phi` 恒为
+ * 背景（收口后的遗留）：Φ 侧此前**从未被接入**（`opts.phi` 恒为
  * `pTrue`），而按文档语义直接接线**不健全**——Φ 里的界原子可能约束的是
  * **另一个项**（`if (x > 0) return y`），旧口径把「含同项界原子」当成带界
  * 证据 ⇒ `implies` 失败落到 `disproved`（error）——而真实结论是「证不出」。
  *
  * 本文件覆盖：
  * - 任务 1：Φ 侧证据判据 = **同项 ∧ 蕴含**该约束的 pred ⇒ Φ 只能把
- *   `unprovable` 变 `proved`，**绝不**产生 `disproved`（假红）。
+ * `unprovable` 变 `proved`，**绝不**产生 `disproved`（假红）。
  * - 任务 2：生产接线（`@nudo:assume` 前提 Φ ⇒ 返回点 Φ）+ 归因可见
- *   （`nudo:assume-relied`）。
+ * （`nudo:assume-relied`）。
  * - 任务 3：假红不变式（遍历若干「同项但不足」的组合 ⇒ 永不 `disproved`）。
  */
 import { describe, it, expect, vi } from "vitest";
@@ -42,14 +42,14 @@ const phiOnY = gt(v("y"), { op: "lit", value: 0 });
 /** Φ：约束返回项本身 y，且**强于**契约 `y > 10` */
 const phiOnYStrong = gt(v("y"), { op: "lit", value: 20 });
 
-describe("Bug 1094（任务 1）：Φ 侧证据判据 = 同项 ∧ 蕴含", () => {
+describe("（任务 1）：Φ 侧证据判据 = 同项 ∧ 蕴含", () => {
   it("Φ 同项且**蕴含**约束 ⇒ 义务可证（proved）", () => {
     const r = assertImplies(retY, number().gt(10), { phi: phiOnYStrong });
     expect(r.status).toBe("proved");
   });
 
   it("Φ 同项但**不足以**蕴含约束 ⇒ 仍『证不出』（unprovable），不是『确定违约』", () => {
-    // 改前（Bug 1080 口径）：同项界原子即算带界证据 ⇒ 蕴含失败 ⇒
+    // 改前（口径）：同项界原子即算带界证据 ⇒ 蕴含失败 ⇒
     // `disproved`（error）——而 Φ = `y > 0` 与契约 `y > 10` 只能推出
     // 「证不出」（返回值可能是 20）⇒ **假红**。
     const r = assertImplies(retY, number().gt(10), { phi: phiOnY });
@@ -147,7 +147,7 @@ describe("Bug 1094（任务 1）：Φ 侧证据判据 = 同项 ∧ 蕴含", () =
   });
 });
 
-describe("Bug 1094（任务 2）：Φ 归因——公理不得被静默消费", () => {
+describe("（任务 2）：Φ 归因——公理不得被静默消费", () => {
   it("Φ 真的被依赖 ⇒ 前提记进账本 ⇒ 报 nudo:assume-relied", () => {
     resetAssumeConsumed();
     // Φ = `y > 20`（同项且蕴含 `y > 10`）⇒ 去掉 Φ 证不出 ⇒ 本次证明
@@ -195,7 +195,7 @@ describe("Bug 1094（任务 2）：Φ 归因——公理不得被静默消费", 
   });
 });
 
-describe("Bug 1094（任务 2）：生产接线端到端（@nudo:assume ⇒ 返回点 Φ）", () => {
+describe("（任务 2）：生产接线端到端（@nudo:assume ⇒ 返回点 Φ）", () => {
   it("生产接线：@nudo:assume + 返回契约 ⇒ 项身份能对上（前提项 = 返回项）", () => {
     // 实测口径：`@nudo:contract d num` 时入口形参锚在**真实名** `d`
     //（constraintToEntryAbs）⇒ 返回项 term = `d` ⇒ 与前提项 `d` 同项。
@@ -241,7 +241,7 @@ export function f(d, max) {
 }
 `;
     const r = issuesOf(src, "/t/phi-wiring.js");
-    // Bug 1116：返回项 `d` 是**声明域参数**（d: num）⇒ 值域已知（任意 number）
+    // 返回项 `d` 是**声明域参数**（d: num）⇒ 值域已知（任意 number）
     // ⇒ `positive` 不蕴含 ⇒ 契约不成立（d=0 即违约）⇒ error（不再降级成
     // warning——warning 不改 exit code ⇒ 门禁空转）。
     expect(r.issues.filter((i) => i.code === "nudo:constraint-violated")).toHaveLength(1);
@@ -262,7 +262,7 @@ export function f(d, max) {
 }
 `;
     const r = issuesOf(src, "/t/phi-wiring.js");
-    // Bug 1116：同上的声明域参数口径 ⇒ error（无公理时也成立：契约不成立
+    // 同上的声明域参数口径 ⇒ error（无公理时也成立：契约不成立
     // 与 Φ 无关——Φ 只影响「能否证成」，不影响「能否反证」）。
     expect(r.issues.filter((i) => i.code === "nudo:constraint-violated")).toHaveLength(1);
     expect(r.issues.filter((i) => i.code === "nudo:unproven-return")).toEqual([]);

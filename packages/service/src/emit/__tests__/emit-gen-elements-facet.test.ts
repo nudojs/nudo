@@ -3,12 +3,12 @@
  *
  * 两条纪律：
  * ① `iteratorTSType` 的 T 优先取 `facets.genElements`（完整序列）；
- *    字段缺省时**严格 fallback** 到 shape 数字槽 ⇒ 手工夹具 / harvest
- *    / 旧 Abs 的产物逐字不变。
+ * 字段缺省时**严格 fallback** 到 shape 数字槽 ⇒ 手工夹具 / harvest
+ * / 旧 Abs 的产物逐字不变。
  * ② 实现是事实、声明是断言：冲突只落 `nudo:return-annotation-mismatch`
- *    台账，**绝不覆盖观测产物**（避免 BUG-168 在形参位修掉的「两面相反」
- *    在返回位复现）。判据刻意收窄到「两侧都是单一基类型且互斥」，
- *    联合 / 泛型 / 字面量 / unknown 一律不判 ⇒ 零假阳性。
+ * 台账，**绝不覆盖观测产物**（避免 在形参位修掉的「两面相反」
+ * 在返回位复现）。判据刻意收窄到「两侧都是单一基类型且互斥」，
+ * 联合 / 泛型 / 字面量 / unknown 一律不判 ⇒ 零假阳性。
  */
 import { describe, it, expect } from "vitest";
 import { abs, numLit, type Abs } from "@nudojs/core";

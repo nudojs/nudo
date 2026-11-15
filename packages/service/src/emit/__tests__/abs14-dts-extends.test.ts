@@ -4,7 +4,7 @@
  * 口径（计划 §5 实现拆分 4b + ABS-03「不可表达时诚实省略」）：
  * - 可表达：`typeof` 基元标签、`eq(var, lit)` 字面量、`or` 全可表达时联合；
  * - 不可表达：数值界 / 长度 / 否定 / `typeof object|function` ⇒ 跳过，
- *   且**输出与无界基线逐字节一致**（不得悄悄收紧已发布签名）；
+ * 且**输出与无界基线逐字节一致**（不得悄悄收紧已发布签名）；
  * - 投影单向，不改 Abs 分析结果；生成的声明必须能过 `tsc --noEmit`。
  */
 import { describe, it, expect, afterAll } from "vitest";

@@ -34,20 +34,20 @@ import { relGuardOf } from "../exec/transpile/stmt/predicates.ts";
 import { absShapeForTsTypeText } from "../contract/ts-type-shape.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 1046 — bigint 字面量契约的 prim 标注
+// bigint 字面量契约的 prim 标注
 // ---------------------------------------------------------------------------
-describe("[] Bug 1046 — bigint 字面量契约的 prim 标注", () => {
+describe("bigint 字面量契约的 prim 标注", () => {
 /**
- * Bug 1046（core 面）—— bigint 字面量契约必须带 `prim: "bigint"`。
+ * （core 面）—— bigint 字面量契约必须带 `prim: "bigint"`。
  *
  * 病灶：`litC(v)` 只给 number / string / boolean 标 prim，**bigint 字面量不带
  * prim** ⇒ `constraintOnTermAbs` 落到「有界但无 prim ⇒ 按 number 处理」的兜底
  * ⇒ 契约 Abs 的 shape 说 number、pred 说 bigint（`x = 1n`）：
  * - guard 面渲染成 `(typeof data === "number") && (data === 1n)` ⇒ 契约申报的
- *   **唯一合法值 `1n` 被守卫拒收**（假红）；
+ * **唯一合法值 `1n` 被守卫拒收**（假红）；
  * - dts 面把 bigint 契约的返回类型写成 `number`；
  * - union 成员面更糟：`samePrimLiteralUnionAbs` 按 `typeof v` 归类，bigint 落到
- *   兜底分支 ⇒ `union(lit(1n))` 的 shape 说 **boolean**。
+ * 兜底分支 ⇒ `union(lit(1n))` 的 shape 说 **boolean**。
  *
  * 修法：`litC` 补 bigint 分支 ⇒ `prim: "bigint"`，与 number / string / boolean
  * 字面量契约**同款口径**（`constraint-builders.test.ts` 钉的
@@ -98,7 +98,7 @@ export function f(x) { return x; }
 export function use() { return f(${arg}); }`;
 }
 
-describe("Bug 1046 — bigint 字面量契约的 prim 标注", () => {
+describe("bigint 字面量契约的 prim 标注", () => {
   beforeEach(() => {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
@@ -110,7 +110,7 @@ describe("Bug 1046 — bigint 字面量契约的 prim 标注", () => {
     expect(litC(1).prim).toBe("number");
     expect(litC("a").prim).toBe("string");
     expect(litC(true).prim).toBe("boolean");
-    // nullish 字面量仍**无** prim（Bug 24：nullish 有独立编码，不落 number 兜底）
+    // nullish 字面量仍**无** prim（nullish 有独立编码，不落 number 兜底）
     expect(litC(null).prim).toBeUndefined();
     expect(litC(undefined).prim).toBeUndefined();
   });
@@ -154,7 +154,7 @@ describe("Bug 1046 — bigint 字面量契约的 prim 标注", () => {
 
   it("schema 面入口：absToConstraint 对 prim bigint 仍返回 undefined（zod 面走 eq 主导支）", () => {
     // zod / standard 面按「pred 主导」投影：bigint prim 无解码器 ⇒ 仍落 eq 支
-    // ⇒ 节点仍是 {k:"lit", value:1n}（Bug 1046 的 zod 面判定，见 service 侧钉）。
+    // ⇒ 节点仍是 {k:"lit", value:1n}（的 zod 面判定，见 service 侧钉）。
     expect(absToConstraint(constraintToEntryAbs(litC(1n), "x"))).toBeUndefined();
   });
 
@@ -174,19 +174,19 @@ describe("Bug 1046 — bigint 字面量契约的 prim 标注", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 136: 赋值目标的引用求值顺序 + 计算键只求值一次
+// 赋值目标的引用求值顺序 + 计算键只求值一次
 // ---------------------------------------------------------------------------
-describe("[] Bug 136: 赋值目标的引用求值顺序 + 计算键只求值一次", () => {
+describe("赋值目标的引用求值顺序 + 计算键只求值一次", () => {
 /**
- * Bug 136：赋值目标**引用求值顺序**颠倒（RHS 先于对象 / 计算键）+ 计算键 /
+ * 赋值目标**引用求值顺序**颠倒（RHS 先于对象 / 计算键）+ 计算键 /
  * 自增自减 / delete 的键**重复求值**。
  *
  * 根因（转译层，core/src/algebra/exec/transpile）：
  * - 成员写把 RHS 提成 IIFE **实参**（`((__v) => { …写… })(rhs)`）⇒ 实参先于
- *   体内求值 ⇒ RHS 跑在**引用**（对象 + 计算键）之前（原生顺序是
- *   EvaluatePropertyAccess → GetValue → RHS → PutValue）；
+ * 体内求值 ⇒ RHS 跑在**引用**（对象 + 计算键）之前（原生顺序是
+ * EvaluatePropertyAccess → GetValue → RHS → PutValue）；
  * - 路径层把**计算键**内联进读/写两处（`$get(o, KEY)` + `$idxSet(o, KEY, …)`）
- *   ⇒ 键跑两次（原生各一次）。
+ * ⇒ 键跑两次（原生各一次）。
  *
  * 修法：引用（根 + 各层键 + 中间层取值）先求值并落临时量，RHS 落在其后；
  * 计算键绑临时量、读/写共用同一绑定（各求值一次）。
@@ -201,7 +201,7 @@ function v(src: string) {
   return litValue(call(src, "f").result);
 }
 
-describe("Bug 136: 赋值目标的引用求值顺序 + 计算键只求值一次", () => {
+describe("赋值目标的引用求值顺序 + 计算键只求值一次", () => {
   it("A1 赋值：计算键先于 RHS（原生 k,v）", () => {
     expect(
       v(
@@ -330,11 +330,11 @@ describe("Bug 136: 赋值目标的引用求值顺序 + 计算键只求值一次"
 });
 
 // ---------------------------------------------------------------------------
-// Bug 164: @nudo:as 命中的表达式仍求值（副作用 + throws 域保留）
+// @nudo:as 命中的表达式仍求值（副作用 + throws 域保留）
 // ---------------------------------------------------------------------------
-describe("[] Bug 164: @nudo:as 命中的表达式仍求值（副作用 + throws 域保留）", () => {
+describe("@nudo:as 命中的表达式仍求值（副作用 + throws 域保留）", () => {
 /**
- * Bug 164 回归（core 转译层）：`@nudo:as` 是**类型覆盖**（文档口径）——
+ * 回归（core 转译层）：`@nudo:as` 是**类型覆盖**（文档口径）——
  * 被断言的表达式**仍要求值**：副作用与 throws 域保留，**结果**取断言值。
  *
  * 修复前：`asVar` 分支在**转译期**把 init / return 实参整段换成注入常量
@@ -343,7 +343,7 @@ describe("[] Bug 164: @nudo:as 命中的表达式仍求值（副作用 + throws 
  * 门禁**假绿**）；③ 运行时值被换掉 ⇒ 下游观测到错值。
  *
  * 修复后：发射 `(原表达式, 注入值)`——原表达式求值一次（副作用与 throws 域
- * 保留），本次的值取注入值（与 @nudo:replace / Bug 165 同款修法）。
+ * 保留），本次的值取注入值（与 @nudo:replace / 同款修法）。
  *
  * 负控制钉住：未被标注的语句照常求值；无指令的对照源码行为不变。
  */
@@ -410,7 +410,7 @@ function callAs(src: string, fnName = "f", args: Abs[] = []) {
   return callTranspiledExportFull(exports, fnName, args);
 }
 
-describe("Bug 164: @nudo:as 命中的表达式仍求值（副作用 + throws 域保留）", () => {
+describe("@nudo:as 命中的表达式仍求值（副作用 + throws 域保留）", () => {
   it("副作用保留：被断言的调用仍被调用", () => {
     const src = `let counter = 0;
 function bump() { counter = counter + 1; return counter; }
@@ -484,11 +484,11 @@ export function f() {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 165: @nudo:replace 命中的子表达式仍求值
+// @nudo:replace 命中的子表达式仍求值
 // ---------------------------------------------------------------------------
-describe("[] Bug 165: @nudo:replace 命中的子表达式仍求值", () => {
+describe("@nudo:replace 命中的子表达式仍求值", () => {
 /**
- * Bug 165 回归（core 转译层）：@nudo:replace 命中的子表达式**仍要求值**。
+ * 回归（core 转译层）：@nudo:replace 命中的子表达式**仍要求值**。
  *
  * 修复前：命中节点被**整段替换**成注入变量 → 原表达式从不求值 →
  * ① 副作用归零（`bump()` 不被调用）；② 抛错域消失（`JSON.parse` 的
@@ -535,7 +535,7 @@ function callInjected(
   return callTranspiledExportFull(exports, fnName, args);
 }
 
-describe("Bug 165: @nudo:replace 命中的子表达式仍求值", () => {
+describe("@nudo:replace 命中的子表达式仍求值", () => {
   it("被替换的调用仍被调用（副作用保留）", () => {
     const src = `let counter = 0;
 function bump() { counter = counter + 1; return counter; }
@@ -610,10 +610,10 @@ function boom() { throw new TypeError("boom"); }
 });
 
 // ---------------------------------------------------------------------------
-// [merged] eval-bug-198-s20-residual-live-iter.test.ts
+// [merged] s20-residual-live-iter
 // ---------------------------------------------------------------------------
-describe("[] [merged] eval-bug-198-s20-residual-live-iter.test.ts", () => {
-// MERGED (topic-related bug pins): eval-bug-198-s20-residual-live-iter.test.ts + eval-bug-198-collection-live-iter.test.ts
+describe("s20-residual-live-iter", () => {
+// MERGED (topic-related bug pins): s20-residual-live-iter + collection-live-iter
 // Each absorbed file keeps its own describe scope so file-level hooks stay
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 
@@ -624,24 +624,24 @@ describe("[] [merged] eval-bug-198-s20-residual-live-iter.test.ts", () => {
 
 
 
-describe("[merged] eval-bug-198-s20-residual-live-iter.test.ts", () => {
+describe("s20-residual-live-iter", () => {
 /**
- * Bug 198 残留修补（S20）回归：live 迭代器的**元素面 / 长度 / @@iterator 读值**
+ * 残留修补（S20）回归：live 迭代器的**元素面 / 长度 / @@iterator 读值**
  * 三条口径必须与原生一致。
  *
  * 1. **$arrRest 的「侧表迭代物」门**（iterate.ts）：S17 把 live 集合迭代器的
- *    **静态侧表**去掉后（静态表 = 创建期拷贝，会把元素面与长度冻结在创建
- *    时刻），`$arrRest` 只查静态侧表 ⇒ live 迭代物**不被认成迭代物** ⇒
- *    `const [x, ...rest] = m.keys()` 的 rest 退 `<abs:unknown>`（精度回退）。
- *    门改为「静态侧表 **或** 消费视图」。
+ * **静态侧表**去掉后（静态表 = 创建期拷贝，会把元素面与长度冻结在创建
+ * 时刻），`$arrRest` 只查静态侧表 ⇒ live 迭代物**不被认成迭代物** ⇒
+ * `const [x, ...rest] = m.keys()` 的 rest 退 `<abs:unknown>`（精度回退）。
+ * 门改为「静态侧表 **或** 消费视图」。
  * 2. **数组迭代器的静态侧表陈旧**（invoke-arr.ts）：数组迭代器**显式**登记了
- *    一面「与 live 同步的剩余元素镜像」⇒ 长度探针（sideIterLen）读到**陈旧**
- *    的剩余长度 ⇒ for-of 轮数停在创建时刻（`a.values(); a.push(3)` 后原生再跑
- *    2 轮，引擎只跑 1 轮）。静态侧表整体删除，元素面交给 live 消费视图。
+ * 一面「与 live 同步的剩余元素镜像」⇒ 长度探针（sideIterLen）读到**陈旧**
+ * 的剩余长度 ⇒ for-of 轮数停在创建时刻（`a.values(); a.push(3)` 后原生再跑
+ * 2 轮，引擎只跑 1 轮）。静态侧表整体删除，元素面交给 live 消费视图。
  * 3. **Map/Set 原型的 @@iterator 臂**（member.ts）：`@@iterator` 臂直接吃
- *    **快照**（mapEntriesAbs / setElementsAbs）⇒ 迭代期间的增删不可见；且
- *    `m[Symbol.iterator]` 直读折成 **no-op fn** ⇒ 调用折 `<abs:never>`
- *    （**自信的错值**——原生返回集合迭代器）。
+ * **快照**（mapEntriesAbs / setElementsAbs）⇒ 迭代期间的增删不可见；且
+ * `m[Symbol.iterator]` 直读折成 **no-op fn** ⇒ 调用折 `<abs:never>`
+ * （**自信的错值**——原生返回集合迭代器）。
  *
  * 负控制：生成器 rest 解构、普通数组 rest 解构、静态快照语义（`[...m.keys()]`
  * 在改动前后都取当前条目表）不受影响。
@@ -892,9 +892,9 @@ describe("S20-③：Map/Set 的 @@iterator 是原型上的同一个函数对象"
 });
 });
 
-describe("[merged] eval-bug-198-collection-live-iter.test.ts", () => {
+describe("collection-live-iter", () => {
 /**
- * Bug 198 回归：`Map` / `Set` 的**集合条目遍历必须是接收者的 live 视图**。
+ * 回归：`Map` / `Set` 的**集合条目遍历必须是接收者的 live 视图**。
  *
  * ES 语义：`Set.prototype.forEach` / `Map.prototype.forEach` / `for-of`（走
  * 集合自身的迭代器）都是**活**的——回调里新增/删除条目，迭代必须看到
@@ -917,7 +917,7 @@ describe("[merged] eval-bug-198-collection-live-iter.test.ts", () => {
 
 
 
-describe("Bug 198：Map/Set 集合条目遍历是接收者的 live 视图", () => {
+describe("Map/Set 集合条目遍历是接收者的 live 视图", () => {
   it("Set.forEach：回调里删除条目 → 被删条目不再被访问", () => {
     expect(
       val(`export function f() {
@@ -1033,12 +1033,12 @@ describe("Bug 198：Map/Set 集合条目遍历是接收者的 live 视图", () =
  * live 视图**——原生迭代器持条目指针（Map/Set）或 nextIndex 指针（数组）：
  * - Map/Set：迭代期间**新增**的条目被访问、**删除**的条目被跳过；
  * - 数组：每次 next() 按**当前** LengthOfArrayLike(O) 判结束、按当前内容取值
- *   （push / unshift / shift 对迭代可见）。
+ * （push / unshift / shift 对迭代可见）。
  *
  * 修复前：手动迭代器是**创建时的快照** ⇒ 删除的条目仍被访问、新增的条目
  * 看不到、数组迭代器读到陈旧值（wrong-exact）。
  */
-describe("Bug 198：手动迭代器是接收者的 live 视图", () => {
+describe("手动迭代器是接收者的 live 视图", () => {
   it("Map.keys()：迭代期间删除条目 → 被删条目不再被访问（done 提前为 true）", () => {
     expect(
       val(`export function f() {
@@ -1168,19 +1168,19 @@ describe("Bug 198：手动迭代器是接收者的 live 视图", () => {
 });
 
 /**
- * S17 收尾接线（Bug 198 根治点）：
+ * S17 收尾接线（根治点）：
  *
  * ① **投影同口径**：Map/Set 的 keys/values/entries 迭代器，`next().value`
- *    必须是**投影后**的值（Map 的键 / 值；Set 的 [el,el] 元组）——live 视图
- *    与快照路径走同一份 project 逻辑。此前 live 视图吐的是**未投影**的原始
- *    条目 ⇒ next().value 给原始条目（wrong-exact）。
+ * 必须是**投影后**的值（Map 的键 / 值；Set 的 [el,el] 元组）——live 视图
+ * 与快照路径走同一份 project 逻辑。此前 live 视图吐的是**未投影**的原始
+ * 条目 ⇒ next().value 给原始条目（wrong-exact）。
  *
  * ② **live 迭代器不登记静态元素侧表**：静态表一旦登记，matchIterElements 会
- *    命中创建期快照 ⇒ 长度探针（sideIterLen）读到**冻结**的剩余长度 ⇒
- *    for-of 的迭代轮数停在创建时刻（迭代器不再随接收者变化）。
- *    修前：`it.next()` 后接收者新增条目 ⇒ for-of 只跑 1 轮（原生 2 轮）。
+ * 命中创建期快照 ⇒ 长度探针（sideIterLen）读到**冻结**的剩余长度 ⇒
+ * for-of 的迭代轮数停在创建时刻（迭代器不再随接收者变化）。
+ * 修前：`it.next()` 后接收者新增条目 ⇒ for-of 只跑 1 轮（原生 2 轮）。
  */
-describe("Bug 198（S17）：投影同口径 + live 迭代器不登记静态侧表", () => {
+describe("（S17）：投影同口径 + live 迭代器不登记静态侧表", () => {
   it("① Map.keys() 的 next().value 是键（不是 [k,v] 条目元组）", () => {
     expect(
       val(`export function f() {
@@ -1308,7 +1308,7 @@ describe("Bug 198（S17）：投影同口径 + live 迭代器不登记静态侧�
  * 「live 视图与快照同口径投影」这条不变量的直钉——修前 live 视图吐的是
  * **未投影**的原始条目（Map 给 [k,v] 元组而不是键 / 值）。
  */
-describe("Bug 198（S17）：collectionIteratorFor 的 live 视图与快照同口径投影", () => {
+describe("（S17）：collectionIteratorFor 的 live 视图与快照同口径投影", () => {
   /** 迭代器对象的 next().value（litValue 后的字面量值；tuple → 元素数组） */
   function nextValue(iter: Abs_____abs_ts): unknown {
     const slots = (iter.shape as { slots: Record<string, { value: Abs_____abs_ts }> }).slots;
@@ -1375,11 +1375,11 @@ describe("Bug 198（S17）：collectionIteratorFor 的 live 视图与快照同�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 213 — 宿主 / 命名空间对象的自有属性投影（不止可枚举键）
+// 宿主 / 命名空间对象的自有属性投影（不止可枚举键）
 // ---------------------------------------------------------------------------
-describe("[] Bug 213 — 宿主 / 命名空间对象的自有属性投影（不止可枚举键）", () => {
+describe("宿主 / 命名空间对象的自有属性投影（不止可枚举键）", () => {
 /**
- * Bug 213 回归：宿主 / 命名空间对象（`Math` / `JSON` / `Reflect`）的自有属性
+ * 回归：宿主 / 命名空间对象（`Math` / `JSON` / `Reflect`）的自有属性
  * 投影**不得只取可枚举键**。
  *
  * 根因：`litAbsFromJs` 用 `Object.entries` 投影宿主对象——只取**可枚举**自有
@@ -1411,7 +1411,7 @@ function v(src: string) {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 213 — 宿主 / 命名空间对象的自有属性投影（不止可枚举键）", () => {
+describe("宿主 / 命名空间对象的自有属性投影（不止可枚举键）", () => {
   it("gOPN(Math) 非空（此前折 exact 0）", () => {
     expect(v(wrap(`return Object.getOwnPropertyNames(Math).length > 0;`))).toEqual({
       ok: true,
@@ -1511,11 +1511,11 @@ describe("Bug 213 — 宿主 / 命名空间对象的自有属性投影（不止�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 217 — 开放对象读臂使用声明的索引值域
+// 开放对象读臂使用声明的索引值域
 // ---------------------------------------------------------------------------
-describe("[] Bug 217 — 开放对象读臂使用声明的索引值域", () => {
+describe("开放对象读臂使用声明的索引值域", () => {
 /**
- * Bug 217 回归（core 侧接线）：**开放对象**的成员读必须使用声明的索引值域
+ * 回归（core 侧接线）：**开放对象**的成员读必须使用声明的索引值域
  * （`shape.index.value`），不得无条件退 unknown。
  *
  * 语境：`process.env` 是开放键对象（值域 `string | undefined`）、
@@ -1540,7 +1540,7 @@ function openObj(value: Abs___nudojs_core_1): Abs___nudojs_core_1 {
   return objOf({}, { open: true, index: { key: str(), value } });
 }
 
-describe("Bug 217 — 开放对象读臂使用声明的索引值域", () => {
+describe("开放对象读臂使用声明的索引值域", () => {
   it("有索引声明 → 成员读返回该值域（string | undefined）", () => {
     const domain = abs(
       { k: "sum", members: [str(), undef()] },
@@ -1571,19 +1571,19 @@ describe("Bug 217 — 开放对象读臂使用声明的索引值域", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 222 — sort 保留稀疏数组的空洞
+// sort 保留稀疏数组的空洞
 // ---------------------------------------------------------------------------
-describe("[] Bug 222 — sort 保留稀疏数组的空洞", () => {
+describe("sort 保留稀疏数组的空洞", () => {
 /**
- * Bug 222：Array.prototype.sort 把稀疏数组的空洞（hole）实体化成 undefined
+ * Array.prototype.sort 把稀疏数组的空洞（hole）实体化成 undefined
  * 元素 → Object.keys 多一键、`in` 变真、HOF 不再跳过。
  *
  * 原生语义（node 实测）：
  * - 就地 `sort`：hole 位**不参与比较**、排序后**仍是 hole**
- *   （`[3,,1].sort()` → Object.keys = ["0","1"]、length 3、`2 in a` false、
- *   forEach 回调 2 次、filter 结果长度 2）。
+ * （`[3,,1].sort()` → Object.keys = ["0","1"]、length 3、`2 in a` false、
+ * forEach 回调 2 次、filter 结果长度 2）。
  * - `toSorted`：拷贝面走 Get（hole 读成 undefined 并**写实**为元素）→
- *   Object.keys = ["0","1","2"]（本钉是负控制：不得把 toSorted 也改成保留洞）。
+ * Object.keys = ["0","1","2"]（本钉是负控制：不得把 toSorted 也改成保留洞）。
  * - 真实 `undefined` **元素**与 hole 不同：它始终是自有可枚举键。
  */
 
@@ -1596,7 +1596,7 @@ function v(src: string): unknown {
   return r.ok ? r.value : undefined;
 }
 
-describe("Bug 222 — sort 保留稀疏数组的空洞", () => {
+describe("sort 保留稀疏数组的空洞", () => {
   it("sort 后 Object.keys 不含洞位（改前多出 '2'）", () => {
     expect(v(`const a=[3,,1]; a.sort(); return Object.keys(a).join(",");`)).toBe("0,1");
   });
@@ -1651,11 +1651,11 @@ describe("Bug 222 — sort 保留稀疏数组的空洞", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 224 — 实例字段初始化器里的 new.target 恒为 undefined
+// 实例字段初始化器里的 new.target 恒为 undefined
 // ---------------------------------------------------------------------------
-describe("[] Bug 224 — 实例字段初始化器里的 new.target 恒为 undefined", () => {
+describe("实例字段初始化器里的 new.target 恒为 undefined", () => {
 /**
- * Bug 224 回归：**实例字段初始化器里的 `new.target`** 折成类值（原生恒为
+ * 回归：**实例字段初始化器里的 `new.target`** 折成类值（原生恒为
  * undefined）。
  *
  * 修复前：`class A { f = new.target; }` → `new A().f` 是类值（原生 undefined
@@ -1678,7 +1678,7 @@ function v(src: string) {
   return litValue(call(src, "f").result);
 }
 
-describe("Bug 224 — 实例字段初始化器里的 new.target 恒为 undefined", () => {
+describe("实例字段初始化器里的 new.target 恒为 undefined", () => {
   it("字段初始化器直接读 new.target → undefined", () => {
     expect(
       v(wrap(`class A { f = new.target; } return new A().f === undefined;`)),
@@ -1726,11 +1726,11 @@ describe("Bug 224 — 实例字段初始化器里的 new.target 恒为 undefined
 });
 
 // ---------------------------------------------------------------------------
-// Bug 226 — 对象 rest 解构触发 getter
+// 对象 rest 解构触发 getter
 // ---------------------------------------------------------------------------
-describe("[] Bug 226 — 对象 rest 解构触发 getter", () => {
+describe("对象 rest 解构触发 getter", () => {
 /**
- * Bug 226：对象 **rest 解构**不触发 getter → getter 的副作用丢失。
+ * 对象 **rest 解构**不触发 getter → getter 的副作用丢失。
  *
  * 原生语义：对象 rest 是 CopyDataProperties —— 对每个**保留**键发一次 Get，
  * 访问器被调用（副作用发生），rest 里落的是 getter 的**返回值**。
@@ -1746,7 +1746,7 @@ function v(src: string): unknown {
   return r.ok ? r.value : undefined;
 }
 
-describe("Bug 226 — 对象 rest 解构触发 getter", () => {
+describe("对象 rest 解构触发 getter", () => {
   it("rest 解构调用 getter（副作用可见，改前为 0）", () => {
     expect(
       v(`let n=0; const o={get g(){n++;return 1;}, a:2}; const {a, ...r}=o; return String(n);`),
@@ -1784,11 +1784,11 @@ describe("Bug 226 — 对象 rest 解构触发 getter", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 239 — union 接收者的 .length 保留各成员长度
+// union 接收者的 .length 保留各成员长度
 // ---------------------------------------------------------------------------
-describe("[] Bug 239 — union 接收者的 .length 保留各成员长度", () => {
+describe("union 接收者的 .length 保留各成员长度", () => {
 /**
- * Bug 239：core 对 **union 接收者**读 `.length` 时丢弃各成员的长度、恒返回
+ * core 对 **union 接收者**读 `.length` 时丢弃各成员的长度、恒返回
  * `number` ⇒ L1 契约门禁**假绿**（`number()` 契约被判定成立，零诊断）。
  *
  * 原生语义：`"ab" | 7` 的 `.length` 是 `2 | undefined`（数字分支没有 length
@@ -1815,7 +1815,7 @@ export function pickStrNum(x) { if (x) { return "ab"; } return 7; }
 export function lenOf(y) { return pickStrNum(y).length; }
 `;
 
-describe("Bug 239 — union 接收者的 .length 保留各成员长度", () => {
+describe("union 接收者的 .length 保留各成员长度", () => {
   it("union 接收者读 .length 带 undefined 臂（改前恒 number）", () => {
     const r = call(
       `export function f(y) { function p(x){ if (x) { return "ab"; } return 7; } return p(y).length; }`,
@@ -1863,11 +1863,11 @@ describe("Bug 239 — union 接收者的 .length 保留各成员长度", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 291 — 宿主函数 → Abs 的稳定门面
+// 宿主函数 → Abs 的稳定门面
 // ---------------------------------------------------------------------------
-describe("[] Bug 291 — 宿主函数 → Abs 的稳定门面", () => {
+describe("宿主函数 → Abs 的稳定门面", () => {
 /**
- * Bug 291 回归（**主 agent 接线面**）：宿主函数 → Abs 的**稳定门面**。
+ * 回归（**主 agent 接线面**）：宿主函数 → Abs 的**稳定门面**。
  *
  * 接线（主 agent 已落地，本文件只钉行为，不改源码）：
  * `exec/runtime/state.ts` 的 `asAbsVal` 对宿主函数走 `WeakMap` 缓存
@@ -1879,11 +1879,11 @@ describe("[] Bug 291 — 宿主函数 → Abs 的稳定门面", () => {
  * 与「谁在读它」无关：
  * - `function g(){} Object.freeze(g); Object.isFrozen(g)` → true；
  * - `function g(){} Object.freeze(g); Object.isSealed(g)` → true（freeze ⇒ seal）；
- * - `function g(){} Object.seal(g); Object.isSealed(g)`   → true；
+ * - `function g(){} Object.seal(g); Object.isSealed(g)` → true；
  * - `function g(){} const a = g; Object.freeze(g); Object.isFrozen(a)` → true
- *   （别名读同一对象 ⇒ 标志可见）；
+ * （别名读同一对象 ⇒ 标志可见）；
  * - 跨函数边界同样可见：helper 里 freeze ⇒ 外面读 isFrozen → true；
- *   helper 里读 isFrozen → true；
+ * helper 里读 isFrozen → true；
  * - `g === g` → true；两次读 `const a = g; const b = g; a === b` → true。
  *
  * 修前：每次 `asAbsVal(hostFn)` 都新建 Abs ⇒ 旁表跨读丢失 ⇒
@@ -1903,7 +1903,7 @@ function v(body: string): { ok: boolean; value?: unknown } {
   return litValue(call(`export function f() { ${body} }`, "f").result);
 }
 
-describe("Bug 291 — 宿主函数 → Abs 的稳定门面", () => {
+describe("宿主函数 → Abs 的稳定门面", () => {
   it("函数声明 freeze 后 isFrozen 可见（修前折 false）", () => {
     expect(v(`function g(){} Object.freeze(g); return Object.isFrozen(g);`)).toEqual({
       ok: true,
@@ -1993,37 +1993,37 @@ describe("Bug 291 — 宿主函数 → Abs 的稳定门面", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 318 — 装箱 BigInt 的 valueOf 面（原生 "bigint"，修前 "object"）
+// 装箱 BigInt 的 valueOf 面（原生 "bigint"，修前 "object"）
 // ---------------------------------------------------------------------------
-describe("[] Bug 318 — 装箱 BigInt 的 valueOf 面（原生 \"bigint\"，修前 \"object\"）", () => {
+describe("装箱 BigInt 的 valueOf 面（原生 \"bigint\"，修前 \"object\"）", () => {
 /**
- * Bug 318 / 329 回归：`Object(prim)` 装箱面的 `valueOf` / `description` 语义。
+ * 回归：`Object(prim)` 装箱面的 `valueOf` / `description` 语义。
  *
  * 原生依据（node v26.10.0 实测，取证命令见文件末尾「取证」段）：
- *   typeof Object(1n).valueOf()               → "bigint"
- *   String(Object(1n) + 1)                    → **抛 TypeError**
- *                                            （"Cannot mix BigInt and other types,
- *                                              use explicit conversions"）
- *   Object(1n) + 1                           → **抛 TypeError**（同款）
- *   String(Object(1n).valueOf())              → "1"
- *   typeof Object(1n)                         → "object"
- *   typeof Object("s").valueOf()              → "string"
- *   String(Object(Symbol("x")).description)   → "x"
- *   typeof Object(Symbol("x")).description    → "string"
- *   Symbol("x").description                   → "x"（非装箱路径，对照组）
+ * typeof Object(1n).valueOf() → "bigint"
+ * String(Object(1n) + 1) → **抛 TypeError**
+ * （"Cannot mix BigInt and other types,
+ * use explicit conversions"）
+ * Object(1n) + 1 → **抛 TypeError**（同款）
+ * String(Object(1n).valueOf()) → "1"
+ * typeof Object(1n) → "object"
+ * typeof Object("s").valueOf() → "string"
+ * String(Object(Symbol("x")).description) → "x"
+ * typeof Object(Symbol("x")).description → "string"
+ * Symbol("x").description → "x"（非装箱路径，对照组）
  *
  * 修前：
  * - 装箱 BigInt 的 `valueOf` 折 **"object"**（自信的错值；原生是 "bigint"）
- *   ⇒ `Object(1n) + 1` 落 BigInt 混算的**错臂** ⇒ **不抛**（原生确定抛
- *   TypeError）⇒ 假绿（漏报真实的 may-throw）。
+ * ⇒ `Object(1n) + 1` 落 BigInt 混算的**错臂** ⇒ **不抛**（原生确定抛
+ * TypeError）⇒ 假绿（漏报真实的 may-throw）。
  * - 装箱 Symbol 的 `description` 折 exact **undefined**（原生是 "x"）
- *   ⇒ 对「装箱符号的描述」给出自信的错值。
+ * ⇒ 对「装箱符号的描述」给出自信的错值。
  *
  * 取证（原生 oracle）：
- *   node -e 'console.log(typeof Object(1n).valueOf(), String(Object(1n).valueOf()),
- *     typeof Object(1n), typeof Object("s").valueOf(),
- *     Object(Symbol("x")).description, Symbol("x").description);
- *     try { String(Object(1n)+1) } catch (e) { console.log(e.constructor.name) }'
+ * node -e 'console.log(typeof Object(1n).valueOf(), String(Object(1n).valueOf()),
+ * typeof Object(1n), typeof Object("s").valueOf(),
+ * Object(Symbol("x")).description, Symbol("x").description);
+ * try { String(Object(1n)+1) } catch (e) { console.log(e.constructor.name) }'
  */
 
 
@@ -2031,7 +2031,7 @@ describe("[] Bug 318 — 装箱 BigInt 的 valueOf 面（原生 \"bigint\"，修
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 318 — 装箱 BigInt 的 valueOf 面（原生 \"bigint\"，修前 \"object\"）", () => {
+describe("装箱 BigInt 的 valueOf 面（原生 \"bigint\"，修前 \"object\"）", () => {
   it("typeof Object(1n).valueOf() → \"bigint\"（修前是 \"object\"——自信的错值）", () => {
     const r = call(wrap(`return typeof Object(1n).valueOf();`), "f");
     expect(litValue(r.result)).toEqual({ ok: true, value: "bigint" });
@@ -2061,7 +2061,7 @@ describe("Bug 318 — 装箱 BigInt 的 valueOf 面（原生 \"bigint\"，修前
   });
 });
 
-describe("Bug 329 — 装箱 Symbol 的 description 面（原生 \"x\"，修前 exact undefined）", () => {
+describe("装箱 Symbol 的 description 面（原生 \"x\"，修前 exact undefined）", () => {
   it("String(Object(Symbol(\"x\")).description) → \"x\"", () => {
     const r = call(wrap(`return String(Object(Symbol("x")).description);`), "f");
     expect(litValue(r.result)).toEqual({ ok: true, value: "x" });
@@ -2079,7 +2079,7 @@ describe("Bug 329 — 装箱 Symbol 的 description 面（原生 \"x\"，修前 
   });
 });
 
-describe("Bug 318/329 — 负控制（其它装箱原语面不回归）", () => {
+describe("负控制（其它装箱原语面不回归）", () => {
   it("typeof Object(\"s\").valueOf() → \"string\"（装箱字符串的 valueOf 面）", () => {
     const r = call(wrap(`return typeof Object("s").valueOf();`), "f");
     expect(litValue(r.result)).toEqual({ ok: true, value: "string" });
@@ -2098,44 +2098,44 @@ describe("Bug 318/329 — 负控制（其它装箱原语面不回归）", () => 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 325 — 函数种类标签（async × generator 四象限）
+// 函数种类标签（async × generator 四象限）
 // ---------------------------------------------------------------------------
-describe("[] Bug 325 — 函数种类标签（async × generator 四象限）", () => {
+describe("函数种类标签（async × generator 四象限）", () => {
 /**
- * Bug 325 回归（**主 agent 接线面**）：函数**种类**戳（async × generator 四象限）
+ * 回归（**主 agent 接线面**）：函数**种类**戳（async × generator 四象限）
  * 驱动的 `Object.prototype.toString.call(f)` 标签。
  *
  * 接线（主 agent 已落地，本文件只钉行为，不改源码）：
  * - `algebra/abs-fn.ts`：`AbsFnImpl` 新增独立字段 `fnKind`
- *   （"function" | "async" | "generator" | "async-generator"）——与 `impl.kind`
- *   **分开**（`kind` 是「派发角色」维度，如 "protoMethod"）；
+ * （"function" | "async" | "generator" | "async-generator"）——与 `impl.kind`
+ * **分开**（`kind` 是「派发角色」维度，如 "protoMethod"）；
  * - `exec/runtime/state.ts`：`$fnVal` 的 opts 新增 `fnKind`，透传到 impl；
  * - `exec/transpile/helpers.ts`：新增 `fnKindSrc(fn)`（发射 `, fnKind: "..."`
- *   源码片段）与 `fnKindOf(fn)`（纯值）；
+ * 源码片段）与 `fnKindOf(fn)`（纯值）；
  * - `exec/transpile/expr/function.ts`（函数表达式）、
- *   `exec/transpile/expr/object.ts`（方法简写 + 方法型函数表达式）、
- *   `exec/transpile/class-emit.ts`（类方法 / 静态类方法，种类随 spec 的
- *   `methodKinds` / `staticMethodKinds` 下传）三条产生路径都打戳；
+ * `exec/transpile/expr/object.ts`（方法简写 + 方法型函数表达式）、
+ * `exec/transpile/class-emit.ts`（类方法 / 静态类方法，种类随 spec 的
+ * `methodKinds` / `staticMethodKinds` 下传）三条产生路径都打戳；
  * - `builtins/object-proto.ts`：`Object.prototype.toString.call(f)` 按
- *   `impl.fnKind` 给标签。
+ * `impl.fnKind` 给标签。
  *
  * 原生依据（node v26.10.0 实测，`Object.prototype.toString.call(x)`）：
- * - `function(){}`          → "[object Function]"；
- * - `async function(){}`    → "[object AsyncFunction]"；
- * - `function*(){}`         → "[object GeneratorFunction]"；
- * - `async function*(){}`   → "[object AsyncGeneratorFunction]"；
+ * - `function(){}` → "[object Function]"；
+ * - `async function(){}` → "[object AsyncFunction]"；
+ * - `function*(){}` → "[object GeneratorFunction]"；
+ * - `async function*(){}` → "[object AsyncGeneratorFunction]"；
  * - 箭头 `() => 1` → "[object Function]"、`async () => 1` → "[object AsyncFunction]"；
- * - `{m(){}}.m`             → "[object Function]"；
- * - `{async m(){}}.m`       → "[object AsyncFunction]"；
- * - `{*m(){}}.m`            → "[object GeneratorFunction]"；
- * - `{async *m(){}}.m`      → "[object AsyncGeneratorFunction]"；
+ * - `{m(){}}.m` → "[object Function]"；
+ * - `{async m(){}}.m` → "[object AsyncFunction]"；
+ * - `{*m(){}}.m` → "[object GeneratorFunction]"；
+ * - `{async *m(){}}.m` → "[object AsyncGeneratorFunction]"；
  * - `class A{m(){}}` 的 `A.prototype.m` → "[object Function]"；
  * - `class A{async m(){}}` 的 `A.prototype.m` → "[object AsyncFunction]"；
  * - `class A{*m(){}}` 的 `A.prototype.m` → "[object GeneratorFunction]"；
  * - `class A{static async m(){}}` 的 `A.m` → "[object AsyncFunction]"；
  * - `class A{static m(){}}` / `{static *m(){}}` / `{static async *m(){}}` 的
- *   `A.m` → "[object Function]" / "[object GeneratorFunction]" /
- *   "[object AsyncGeneratorFunction]"；
+ * `A.m` → "[object Function]" / "[object GeneratorFunction]" /
+ * "[object AsyncGeneratorFunction]"；
  * - `Object` / `Array.prototype.slice` → "[object Function]"（宿主内建无种类戳）。
  *
  * **函数声明形态**（`export async function f(){}` 等）此前是已知缺口：
@@ -2173,7 +2173,7 @@ const ASYNC = "[object AsyncFunction]";
 const GENERATOR = "[object GeneratorFunction]";
 const ASYNC_GENERATOR = "[object AsyncGeneratorFunction]";
 
-describe("Bug 325 — 函数种类标签（async × generator 四象限）", () => {
+describe("函数种类标签（async × generator 四象限）", () => {
   it("函数表达式：四种象限各折原生标签", () => {
     expect(tag(`return Object.prototype.toString.call(function () {});`)).toEqual({
       ok: true,
@@ -2298,11 +2298,11 @@ const early = f();
 });
 
 // ---------------------------------------------------------------------------
-// Bug 325 — 函数种类标签（AsyncFunction / GeneratorFunction / …）
+// 函数种类标签（AsyncFunction / GeneratorFunction / …）
 // ---------------------------------------------------------------------------
-describe("[] Bug 325 — 函数种类标签（AsyncFunction / GeneratorFunction / …）", () => {
+describe("函数种类标签（AsyncFunction / GeneratorFunction / …）", () => {
 /**
- * Bug 325 回归：Object.prototype.toString 的**函数种类标签**。
+ * 回归：Object.prototype.toString 的**函数种类标签**。
  *
  * 原生（node v26 实测）：
  * - 普通函数 / 箭头 ⇒ "[object Function]"；
@@ -2330,7 +2330,7 @@ function v(src: string) {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 325 — 函数种类标签（AsyncFunction / GeneratorFunction / …）", () => {
+describe("函数种类标签（AsyncFunction / GeneratorFunction / …）", () => {
   it("async 函数 ⇒ [object AsyncFunction]（改前折 [object Function]）", () => {
     expect(v(wrap(`return Object.prototype.toString.call(async () => 1);`))).toEqual({
       ok: true,
@@ -2376,26 +2376,26 @@ describe("Bug 325 — 函数种类标签（AsyncFunction / GeneratorFunction / �
 });
 
 // ---------------------------------------------------------------------------
-// Bug 479：.ts 形参类型注解进入推断
+// .ts 形参类型注解进入推断
 // ---------------------------------------------------------------------------
-describe("[] Bug 479：.ts 形参类型注解进入推断", () => {
+describe(".ts 形参类型注解进入推断", () => {
 /**
- * Bug 479 —— `.ts` 源的**形参类型注解**从未进入推断：剥除 pass（core 的
+ * `.ts` 源的**形参类型注解**从未进入推断：剥除 pass（core 的
  * `strip-types.ts`）在解析阶段就 `delete` 掉 `typeAnnotation` ⇒ 形参一律
  * `any` ⇒ 合法 TypeScript 拿到 **`nudo:entry-may-throw` 假红**，诊断还宣称
  * 「unconstrained value」。
  *
  * 修法（core 侧）：
  * - `strip-types.ts`：删注解前把**类型注解的源码文本**留在节点上
- *   （`nudoTypeText`）——存字符串而非 AST 节点，AST 遍历器看不见它 ⇒
- *   分析管线语义零变化；
+ * （`nudoTypeText`）——存字符串而非 AST 节点，AST 遍历器看不见它 ⇒
+ * 分析管线语义零变化；
  * - `param-surface.ts`：`FormalParam.tsType` 带出该文本；
  * - `generalize.ts`：入口形参按声明类型建 Abs（基本类型子集）⇒ 不再是
- *   「无约束 any」。
+ * 「无约束 any」。
  *
  * 本文件钉住：
  * - 正控制：`.ts` 源的形参按声明类型推断（string），且**不再**报
- *   `nudo:entry-may-throw` 假红；
+ * `nudo:entry-may-throw` 假红；
  * - 负控制：同形 `.js` 源**行为不变**（形参仍是 any，may-throw 仍在）；
  * - 原生 oracle 对拍（node 另起进程）：`upper("x")` 返回 "X"，不抛。
  */
@@ -2423,7 +2423,7 @@ const JS_SOURCE = `export function upper(a) {
 }
 `;
 
-describe("Bug 479：.ts 形参类型注解进入推断", () => {
+describe(".ts 形参类型注解进入推断", () => {
   it("形参按声明类型推断（string），不再是 any", () => {
     const r = checkSource("/t/upper.ts", TS_SOURCE, pTrue);
     const sig = r.signatures.find((s) => s.name === "upper");
@@ -2472,7 +2472,7 @@ console.log(JSON.stringify({ value: upper("x") }));
     const native = JSON.parse(res.stdout.trim()) as { value: string };
     expect(native.value).toBe("X");
 
-    // 引擎侧：.ts 源的同一函数不得报 may-throw（原生不抛）
+    // 引擎侧。ts 源的同一函数不得报 may-throw（原生不抛）
     const r = checkSource("/t/upper.ts", TS_SOURCE, pTrue);
     expect(r.issues.filter((i) => i.code === "nudo:entry-may-throw")).toEqual([]);
   });
@@ -2480,11 +2480,11 @@ console.log(JSON.stringify({ value: upper("x") }));
 });
 
 // ---------------------------------------------------------------------------
-// Bug 489：具名 default 导出的 check 面查表兜底
+// 具名 default 导出的 check 面查表兜底
 // ---------------------------------------------------------------------------
-describe("[] Bug 489：具名 default 导出的 check 面查表兜底", () => {
+describe("具名 default 导出的 check 面查表兜底", () => {
 /**
- * Bug 489 —— `export default function f() { … }` 的**入口求值按「局部名」查
+ * `export default function f() { … }` 的**入口求值按「局部名」查
  * 导出表** ⇒ ESM 语义下默认导出只挂在 `default` 槽 ⇒ 查表落空 ⇒ 签名退成
  * `unknown` + 一条**指向错误**的 `nudo:opaque-result`。
  *
@@ -2493,10 +2493,10 @@ describe("[] Bug 489：具名 default 导出的 check 面查表兜底", () => {
  *
  * 本文件钉住：
  * - 正控制：具名 default 导出的签名是**实值**（不是 unknown），且不再产生
- *   那条指向错误的 nudo:opaque-result；
+ * 那条指向错误的 nudo:opaque-result；
  * - 负控制：普通具名导出的行为**不变**；default 导出**不得劫持**别的函数；
  * - 原生 oracle 对拍（node 另起进程，ESM 严格模式）：默认槽挂的就是那个
- *   函数，调用返回同样的值。
+ * 函数，调用返回同样的值。
  */
 
 
@@ -2518,7 +2518,7 @@ const DEFAULT_EXPORT_SRC = `export default function f() {
 }
 `;
 
-describe("Bug 489：具名 default 导出的 check 面查表兜底", () => {
+describe("具名 default 导出的 check 面查表兜底", () => {
   it("签名是实值（41+1），不是 unknown", () => {
     const r = checkSource("/t/d.js", DEFAULT_EXPORT_SRC, pTrue);
     const sig = r.signatures.find((s) => s.name === "f");
@@ -2599,11 +2599,11 @@ console.log(JSON.stringify({ type: typeof def, value: def() }));
 });
 
 // ---------------------------------------------------------------------------
-// Bug 499：依赖不可读不得炸穿整轮 check
+// 依赖不可读不得炸穿整轮 check
 // ---------------------------------------------------------------------------
-describe("[] Bug 499：依赖不可读不得炸穿整轮 check", () => {
+describe("依赖不可读不得炸穿整轮 check", () => {
 /**
- * Bug 499 —— 依赖模块**不可读**（EACCES / EIO / EMFILE…）⇒ core 侧两个装载
+ * 依赖模块**不可读**（EACCES / EIO / EMFILE…）⇒ core 侧两个装载
  * 消费点（check.ts 的 memo 包装、scan-call-graph.ts 的 loadSpecFrom）把异常
  * 抛到 `nudo check` 的整轮外面（stdout 0 字节、无任何报告）。
  *
@@ -2637,7 +2637,7 @@ const throwingLoader = (code: string, path: string) => () => {
   throw Object.assign(new Error(`${code}: permission denied, open '${path}'`), { code, path });
 };
 
-describe("Bug 499：依赖不可读不得炸穿整轮 check", () => {
+describe("依赖不可读不得炸穿整轮 check", () => {
   it("EACCES 依赖 ⇒ 不抛异常，且产出一条明确诊断", () => {
     let r!: ReturnType<typeof checkSource>;
     expect(() => {
@@ -2694,22 +2694,22 @@ describe("Bug 499：依赖不可读不得炸穿整轮 check", () => {
 // ---------------------------------------------------------------------------
 // 族 60 · 第 1 条：assume 的用户界落进入口 Abs 谓词
 // ---------------------------------------------------------------------------
-describe("[] 族 60 · 第 1 条：assume 的用户界落进入口 Abs 谓词", () => {
+describe("族 60 · 第 1 条：assume 的用户界落进入口 Abs 谓词", () => {
 /**
  * 族 60 · core 代数层 5 条精度债的钉（片 W10）。
  *
  * 逐条对应（台账原文 → 本钉的落点）：
  * 1. **core `buildArgsFromAssume` 写死 `x > 0`** —— 被假设形参的入口 Abs 谓词
- *    必须是**用户写的界**，不是引擎发明的界（族 08 · Bug 976 已修；本钉**锁**）。
+ * 必须是**用户写的界**，不是引擎发明的界（族 08 · 已修；本钉**锁**）。
  * 2. **S11-534 core 字面量渲染** —— bigint 字面量必须与 number 字面量
- *    **可分**（`lit(10n)` vs `lit(10)`；族 06 · Bug 361 已修；本钉**锁**）。
+ * **可分**（`lit(10n)` vs `lit(10)`；族 06 · 已修；本钉**锁**）。
  * 3. **S6-1008 观测层根因（core）** —— rest 形参的**元数信息**在 core 层可读
- *    （必选元数 + 变长标记；**本片新修**）。
+ * （必选元数 + 变长标记；**本片新修**）。
  * 4. **复合测试不接关系守卫** —— `relGuardOf` 认**复合**（合取）关系式
- *    （**本片新修**；补集方向**不**接 ⇒ 不假绿）。
+ * （**本片新修**；补集方向**不**接 ⇒ 不假绿）。
  * 5. **core 侧 `absShapeForTsTypeText` 未公共化** —— 正解必然新增公共导出 ⇒
- *    触及公共 API 冻结面 ⇒ **本片只报告不擅自新增**；本钉锁住「内部可用 /
- *    公共面缺席」的现状（**负控**）。
+ * 触及公共 API 冻结面 ⇒ **本片只报告不擅自新增**；本钉锁住「内部可用 /
+ * 公共面缺席」的现状（**负控**）。
  *
  * 负控贯穿：非相关形态**逐字不变**（数字字面量渲染、单关系式守卫、非 rest
  * 形参、公共导出面）。
@@ -2886,7 +2886,7 @@ export function f(x) {
 }`);
     const r = checkSource_____index_ts("/t/bug60.js", src, pTrue_____index_ts, stdOpts);
     // 后续路径**不**断言否定界（`x <= 0`）——值域仍是「任意 number」⇒
-    // Bug 1116：声明域参数的值域已知 ⇒ `positive` 不蕴含 ⇒ 契约不成立
+    // 声明域参数的值域已知 ⇒ `positive` 不蕴含 ⇒ 契约不成立
     // （x=0 即违约）⇒ error。**不**是「假红」：否定界没被断言，判违约的依据
     // 是「值域 ⊄ 契约域」，不是「断言了 x <= 0」。
     expect(r.issues.filter((i) => i.code === "nudo:constraint-violated").length).toBe(1);
@@ -2917,7 +2917,7 @@ describe("族 60 · 第 5 条：absShapeForTsTypeText 不进**公共**面（负�
 // ---------------------------------------------------------------------------
 // 族 65 · 第 1 条 —— Object.getOwnPropertySymbols 自有 symbol 键面
 // ---------------------------------------------------------------------------
-describe("[] 族 65 · 第 1 条 —— Object.getOwnPropertySymbols 自有 symbol 键面", () => {
+describe("族 65 · 第 1 条 —— Object.getOwnPropertySymbols 自有 symbol 键面", () => {
 /**
  * 族 65 · core 剩余 6 条（BC #28 / #44 / #45 + 族 62 的 3 条）——新钉。
  *
@@ -2927,19 +2927,19 @@ describe("[] 族 65 · 第 1 条 —— Object.getOwnPropertySymbols 自有 symb
  *
  * 覆盖面：
  * - 第 1 条 · BC #44：`Object.getOwnPropertySymbols` 的自有 symbol 键面
- *   （原生：普通对象 / 数组 / 字符串 / 数字 / 函数 / Error 实例 / TA 实例 /
- *   **生成器对象** ⇒ `[]`；Math / JSON / Intl / Reflect ⇒ `[Symbol.toStringTag]`）。
+ * （原生：普通对象 / 数组 / 字符串 / 数字 / 函数 / Error 实例 / TA 实例 /
+ * **生成器对象** ⇒ `[]`；Math / JSON / Intl / Reflect ⇒ `[Symbol.toStringTag]`）。
  * - 第 2 条 · BC #45：生成器身份面（`Object.prototype.toString.call(g())`
- *   原生 "[object Generator]"）——**不扩 Abs 形状**的部分（生成器对象仍是
- *   闭 obj；类型投影面仍与空对象同形 ⇒ 属 A 类架构债，见交回报告）。
+ * 原生 "[object Generator]"）——**不扩 Abs 形状**的部分（生成器对象仍是
+ * 闭 obj；类型投影面仍与空对象同形 ⇒ 属 A 类架构债，见交回报告）。
  * - 第 3 条 · BC #28：try/catch 与控制流信号（break / continue 穿过 catch；
- *   块内早退提升不得把「后续路径的值」当函数返回值）。
+ * 块内早退提升不得把「后续路径的值」当函数返回值）。
  * - 第 4 条 · 族 62①：`Intl.Collator` 实例面（compare / resolvedOptions）。
  * - 第 5 条 · 族 62③：Error 的 `cause` 槽（**继承**面：原生
- *   `new Error("m", Object.create({cause: 1})).cause` === 1 ⇒ 存在性确定；
- *   键不可判时读出 unknown，不得读出「确定不存在」）。
+ * `new Error("m", Object.create({cause: 1})).cause` === 1 ⇒ 存在性确定；
+ * 键不可判时读出 unknown，不得读出「确定不存在」）。
  * - 第 6 条 · 族 62④：类型化数组的元素**值**面（原生
- *   `new Int8Array(["3"])[0]` === 3）。
+ * `new Int8Array(["3"])[0]` === 3）。
  */
 
 
@@ -3059,7 +3059,7 @@ describe("族 65 · 第 3 条 —— try/catch 与控制流信号", () => {
   });
 
   it("3.3 try 块内的早退提升：后续路径的值不得被当成函数返回值 （原生：1）", () => {
-    // 原生：let n=0; try { if (0) return 42; n++; } catch (e) {} return n;  ⇒ 1
+    // 原生：let n=0; try { if (0) return 42; n++; } catch (e) {} return n; ⇒ 1
     // （此前引擎折 undefined —— 把「块内后续路径的值」当成了函数返回值）
     expect(
       val(`export function f() { let n=0; try { if (0) return 42; n++; } catch (e) {} return n; }`),
@@ -3222,11 +3222,11 @@ describe("族 65 · 第 6 条 —— 类型化数组的元素值面", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 932: 具名导入的 fn 绑定保留 env 声明类型
+// 具名导入的 fn 绑定保留 env 声明类型
 // ---------------------------------------------------------------------------
-describe("[] Bug 932: 具名导入的 fn 绑定保留 env 声明类型", () => {
+describe("具名导入的 fn 绑定保留 env 声明类型", () => {
 /**
- * Bug 932 回归：env 模块的**具名导入**（`import { promisify } from "node:util"`）
+ * 回归：env 模块的**具名导入**（`import { promisify } from "node:util"`）
  * 不得把 env 里**声明完整**的 fn 导出包成 JS 箭头 wrapper。
  *
  * 缺陷：具名导入的绑定值是 wrapper（`w = (...args) => $call(v, args)`，原 Abs 只
@@ -3263,7 +3263,7 @@ function sigOf(src: string, fn: string): string {
   return formatShape(r.result as Abs___nudojs_core_2);
 }
 
-describe("Bug 932: 具名导入的 fn 绑定保留 env 声明类型", () => {
+describe("具名导入的 fn 绑定保留 env 声明类型", () => {
   const src = `
 import { promisify } from "node:util";
 import * as util from "node:util";

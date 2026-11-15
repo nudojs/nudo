@@ -1,5 +1,5 @@
 /**
- * Bug 58 —— `@nudo:mock` 在 `test` / `export` 面跨函数泄漏（同文件未声明该
+ * `@nudo:mock` 在 `test` / `export` 面跨函数泄漏（同文件未声明该
  * mock 的函数也被替换）⇒ 伪造见证 + 错误 d.ts，而 `check` 面正确。
  *
  * 根因：作用域覆盖表（`MOCK_SCOPE_OVERRIDES`）只为**重名冲突**而建；单条
@@ -32,7 +32,7 @@ const ONE_MOCK = `/**
 export function onlyA() { return remote(); }
 export function onlyB() { return remote(); }`;
 
-/** 两个函数各声明同名 mock（Bug 455 冲突场景，必须仍各取各的） */
+/** 两个函数各声明同名 mock（冲突场景，必须仍各取各的） */
 const TWO_MOCKS = `/**
  * @nudo:mock getPort = stub().returns(8080)
  */
@@ -46,7 +46,7 @@ function seedsOf(source: string, fromFile: string) {
   return mockDirectivesToAbsSeeds(extractDirectivesQuiet(parse(source)), { fromFile });
 }
 
-describe("Bug 58 — 单条 @nudo:mock 只在声明函数内生效", () => {
+describe("单条 @nudo:mock 只在声明函数内生效", () => {
   it("全量作用域声明表随表流转；无冲突时重名覆盖表仍为空（既有钉不回归）", () => {
     const mocks = mockSeedsToAbsMocks(seedsOf(ONE_MOCK, "/tmp/bug58-a.js"));
     const decls = mockScopeDeclsOf(mocks);

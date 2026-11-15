@@ -7,9 +7,9 @@
  * 口径（ADR §7 / §10 决议 4、5）：
  * - 正向断言：新索引**必须**登记每个形态（验证 binder 正确性）；
  * - 影子对拍：只**输出**与旧扫描面的分歧清单，不修行为、不设失败门槛、
- *   **不设白名单**；旧面结论一律不作修改。
- * - 范围：仅 ESM / CJS 主路径（BUG-002/004/015/016/017/023/024/032）；
- *   namespace / .ts 参数属性留阶段 1。
+ * **不设白名单**；旧面结论一律不作修改。
+ * - 范围：仅 ESM / CJS 主路径（/004/015/016/017/023/024/032）；
+ * namespace / .ts 参数属性留阶段 1。
  */
 import { describe, it, expect } from "vitest";
 import { parseSource, resetParseSourceCache } from "../parse-source.ts";

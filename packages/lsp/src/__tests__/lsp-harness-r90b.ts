@@ -3,7 +3,7 @@
  * 把 `inlineVariableAt` / `makeParamOptionalAt` 产出的 TextEdit **落到源码上**，
  * 再取**语义面**证据（`node --check` 的 stderr / 落盘后源码的运行结果）。
  *
- * 只服务本片的 `lsp-bug-733|738|739|741|744|970|1024-*.test.ts`；
+ * 只服务本片的 `lsp-|738|739|741|744|970|1024-*.test.ts`；
  * 不改动共享的 `helpers.ts`（族 24 片 C 的地盘）——协议面复用它的 `withLspServer`。
  */
 import { execFileSync } from "node:child_process";

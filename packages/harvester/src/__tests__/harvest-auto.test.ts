@@ -14,11 +14,11 @@ import { fileURLToPath } from "node:url";
 /**
  * B4 — harvest auto path three-state behavior.
  *
- * | Import target                         | Path                                      |
+ * | Import target | Path |
  * |---------------------------------------|-------------------------------------------|
- * | JS source package (commander, ms)     | execution / checkSource — not d.ts harvest|
- * | @types / package ships .d.ts          | harvestPackage → env modules              |
- * | neither                               | empty modules → mock/hint required        |
+ * | JS source package (commander, ms) | execution / checkSource — not d.ts harvest|
+ * | @types / package ships .d.ts | harvestPackage → env modules |
+ * | neither | empty modules → mock/hint required |
  */
 
 const monorepoRoot = resolve(

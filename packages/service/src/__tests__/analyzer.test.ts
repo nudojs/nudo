@@ -93,7 +93,7 @@ describe("analyzeFile", () => {
     const fn = result.functions[0];
     // 两条**点观测**见证 + 一条入口兜底见证（entry@）：无断言的 case 指令只是
     // 见证、不是调用域声明 ⇒ 该函数仍走 entry@ 合成（返回面由推断域承担，
-    // Bug 511）⇒ 台账里多一条 entry@ 见证。
+    // ）⇒ 台账里多一条 entry@ 见证。
     expect(fn.cases).toHaveLength(3);
 
     const negativeCaseThrows = fn.cases[1].throwsAbs;
@@ -369,7 +369,7 @@ exports.applyToDefaults = function _apply(src, opts) {
 };
 `;
     const result = analyzeFile("/test/cjs-named-fn.js", source);
-    // Bug 997：普查名取**导出槽名**（applyToDefaults）——内层函数 id（_apply）
+    // 普查名取**导出槽名**（applyToDefaults）——内层函数 id（_apply）
     // 不是导出槽名，取它会让侧车契约整个不绑定 + 签名表里导出符号消失。
     const fn = result.functions.find((f) => f.name === "applyToDefaults");
     expect(fn).toBeDefined();
@@ -659,7 +659,7 @@ describe("buildModuleGraph / computeDirtySet / topoSortDirty", () => {
       expect(ordered.indexOf(b)).toBeLessThan(ordered.indexOf(a));
     }));
 
-  // BUG-006：re-export / require 边必须进脏图——仅 barrel 形态时 base 变更 → barrel 进 dirty set
+  // re-export / require 边必须进脏图——仅 barrel 形态时 base 变更 → barrel 进 dirty set
   it("collects export * from / export {} from re-export edges into the dirty graph", () =>
     withTmpProject("nudo-graph-reexport-", (dir) => {
       const star = writeTmpFile(dir, "star.js", `export * from "./base.js";\n`);

@@ -7,23 +7,23 @@
  *
  * 六条各自：
  * - **第 1 条**：`node:crypto` 同族兄弟（`createHmac` / `createCipheriv` /
- *   `createDecipheriv` / `scryptSync` / `generateKeyPairSync` / `createSign` /
- *   `createVerify`）**恒不抛** ⇒ 补实参域 throws 面（宿主实测为准）。
+ * `createDecipheriv` / `scryptSync` / `generateKeyPairSync` / `createSign` /
+ * `createVerify`）**恒不抛** ⇒ 补实参域 throws 面（宿主实测为准）。
  * - **第 2 条**：`node:crypto` **缺 `webcrypto` 导出**（宿主有）⇒ 补
- *   `webcrypto` / `subtle` / `getRandomValues`（三者宿主实测都是自有键）。
+ * `webcrypto` / `subtle` / `getRandomValues`（三者宿主实测都是自有键）。
  * - **第 3 条**：`fs.openSync` 未声明；`fs/promises` 缺 `lstat` / `statfs` /
- *   `opendir` ⇒ 补齐（宿主实测为准）。
+ * `opendir` ⇒ 补齐（宿主实测为准）。
  * - **第 4 条**：**已随族 35 关闭**（`navigator.userAgent` 已是 `prim.str()`；
- *   node env 全局表里已无 unknown 值的槽）⇒ 本文件钉成**回归钉**（防回退）。
+ * node env 全局表里已无 unknown 值的槽）⇒ 本文件钉成**回归钉**（防回退）。
  * - **第 5 条**：ESM 上下文宿主平台全局（v26 = 141：184 − 43 个 Node 内建模块
- *   命名空间）vs env 声明 **130** ⇒ v26 上实测缺口 **13** 个（台账的「11」是
- *   平台全局−130 的粗算，未扣 env 多出的 `__dirname` / `__filename`）⇒ 逐个
- *   给出**不声明**的理由（多数是**金标要求**），并钉住「不许悄悄漂移」。
- *   **宿主面随 Node 版本漂移**（v24.11 平台全局 135）⇒ 两个方向都按**逐名**
- *   对账（未声明的宿主必有理由 / 声明的宿主缺失项必有登记），不钉 184 / 141。
+ * 命名空间）vs env 声明 **130** ⇒ v26 上实测缺口 **13** 个（台账的「11」是
+ * 平台全局−130 的粗算，未扣 env 多出的 `__dirname` / `__filename`）⇒ 逐个
+ * 给出**不声明**的理由（多数是**金标要求**），并钉住「不许悄悄漂移」。
+ * **宿主面随 Node 版本漂移**（v24.11 平台全局 135）⇒ 两个方向都按**逐名**
+ * 对账（未声明的宿主必有理由 / 声明的宿主缺失项必有登记），不钉 184 / 141。
  * - **第 6 条**：env 覆盖基线剩下的 2 条 mock-required + 6 条 signature-level
- *   **都是设计边界**（不是缺口）⇒ 钉住「新声明是 leaf-clean」+「报告是脚本
- *   生成的」。
+ * **都是设计边界**（不是缺口）⇒ 钉住「新声明是 leaf-clean」+「报告是脚本
+ * 生成的」。
  *
  * 负控：既有 env 成员的声明**逐字不变**（crypto / fs / fs-promises 的成员名单
  * 与 formatShape 快照）。
@@ -263,7 +263,7 @@ describe("族 61-1 · node:crypto 同族兄弟不再恒不抛（假绿收口）"
   });
 
   it("1.13 负控：既有五个 crypto 入口的 throws 面与声明逐字不变", () => {
-    // 族 29 Bug 885 建的五个入口：行为不变
+    // 族 29 建的五个入口：行为不变
     const bad = callSite(cryptoMod.createHash!, [strLit("nope")]);
     expect(bad.threw).toBeTruthy();
     expect(brandName((bad.threw as { absValue: Abs }).absValue)).toBe("Error");
@@ -521,8 +521,8 @@ describe("族 61-5 · ESM 上下文全局面：宿主平台全局 vs 130（env �
     // 宿主平台全局面**随 Node 版本漂移**（v26.10 = 141 平台全局，v24.11 = 135：
     // 少的是 Float16Array / DisposableStack 这类新平台 API）⇒ 钉两个**逐名**方向，
     // 而不是 184 / 141 这种绝对值（钉绝对值的版本 CI 上红过两次）：
-    //   (a) 宿主有、env 没声明 ⇒ **必须**在 UNDECLARED_REASONS 里逐条给理由；
-    //   (b) env 声明、宿主没有 ⇒ **只许**是 CJS 作用域名或登记过的超前声明。
+    // (a) 宿主有、env 没声明 ⇒ **必须**在 UNDECLARED_REASONS 里逐条给理由；
+    // (b) env 声明、宿主没有 ⇒ **只许**是 CJS 作用域名或登记过的超前声明。
     const undeclared = platform.filter((g) => !declared.includes(g));
     for (const name of undeclared) {
       expect(UNDECLARED_REASONS[name], `宿主全局 ${name} 未声明却没有理由（不许悄悄漂移）`)

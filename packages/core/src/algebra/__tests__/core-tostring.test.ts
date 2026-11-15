@@ -1,5 +1,5 @@
 /**
- * Bug 81 残留回归（第一波只修了 `${x}` 模板插值）：
+ * 残留回归（第一波只修了 `${x}` 模板插值）：
  *
  * 其余 **ToString 消费点**此前仍用 **ToNumber-hint** 判据
  * （`methods.ts:toStringArgTier` 的 `prim ? "ok" : "may"`、
@@ -70,7 +70,7 @@ const DATE_CASES: Array<[string, string]> = [
   ["String.raw substitution", withDate('String.raw({ raw: ["a", "b"] }, D)')],
 ];
 
-describe("Bug 81 — ToString 消费点统一用 ToString 分档判据", () => {
+describe("ToString 消费点统一用 ToString 分档判据", () => {
   it.each(DATE_CASES)("%s：Date 不记 TypeError", (_name, src) => {
     expect(effects(src)).not.toContain("TypeError");
   });
@@ -98,7 +98,7 @@ describe("Bug 81 — ToString 消费点统一用 ToString 分档判据", () => {
   });
 });
 
-describe("Bug 81 对照组 — 打点不越界", () => {
+describe("对照组 — 打点不越界", () => {
   it("any 操作数的 Math.abs / concat 仍记 may TypeError（既定 policy）", () => {
     expect(effects(wrapAny("return Math.abs(x);"))).toContain("TypeError");
     expect(effects(wrapAny('return "x".concat(x);'))).toContain("TypeError");

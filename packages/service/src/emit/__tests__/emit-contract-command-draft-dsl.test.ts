@@ -1,5 +1,5 @@
 /**
- * 缺陷分册 04-contract-command · Bug 50 回归：
+ * 缺陷分册 04-contract-command · 回归：
  * `nudo contract --draft` 把**嵌套 shape 的可选位**内移一层，草稿与证据相反。
  *
  * 旧 `toDraftBuilderDsl` 用 `([^,}\n]+)` 捕获 `k?: T` 的值 ⇒ 遇到嵌套
@@ -10,7 +10,7 @@
 import { describe, it, expect } from "vitest";
 import { toDraftBuilderDsl } from "../contract-draft.ts";
 
-describe("Bug 50 · toDraftBuilderDsl 嵌套 shape 可选位", () => {
+describe("toDraftBuilderDsl 嵌套 shape 可选位", () => {
   it("扁平可选槽：k?: T → k: T.optional()（既有语义不回退）", () => {
     const dsl = toDraftBuilderDsl(`shape({ email?: string(), age: number() })`);
     expect(dsl).not.toMatch(/\w\?:/);

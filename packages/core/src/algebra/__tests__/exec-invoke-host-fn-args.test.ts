@@ -1,5 +1,5 @@
 /**
- * Bug 85（函数声明绑定是裸宿主函数）：statement.ts 直发 host function，
+ * （函数声明绑定是裸宿主函数）：statement.ts 直发 host function，
  * 作**实参**流入 $invoke 派发的 Object/Reflect 静态、$in、JSON.stringify、
  * 强制转换全局时，Abs 解引用点（target.shape.k 等）读宿主函数对象 →
  * 内部 `TypeError: Cannot read properties of undefined`——无 try 折
@@ -16,7 +16,7 @@ import { diffBody } from "./differential/harness.ts";
 
 const run = (src: string) => litValue(call(src).result);
 
-describe("Bug 85: 声明函数作实参不再内部 TypeError", () => {
+describe("声明函数作实参不再内部 TypeError", () => {
   it("try/catch 不再吞引擎错误（此前 caught:TypeError）", () => {
     expect(
       run(`export function f() { function g(a) { return 1; } try { Object.keys(g); return "ok"; } catch (e) { return "caught:" + e.name; } }`),
@@ -73,7 +73,7 @@ describe("Bug 85: 声明函数作实参不再内部 TypeError", () => {
   });
 });
 
-describe("Bug 85 controls：宿主函数直调与表达式孪生不回归", () => {
+describe("controls：宿主函数直调与表达式孪生不回归", () => {
   it("函数表达式 / 箭头（$fnVal 面）同样无内部错误", () => {
     expect(
       run(`export function f() { const g = function (a) { return 1; }; return Object.getPrototypeOf(g) === Function.prototype; }`),

@@ -11,10 +11,10 @@
  *
  * 修法（窄修复，全部在算术层）：
  * ① sub 自反折叠：同一 Abs 对象 或 结构相等 ∧ isDeterministicTerm
- *   （term.ts 新增：len#N 唯一铸造 + 确定性宿主白名单）⇒ x-x = 0；
- *   NaN 检查不过 ⇒ 真值域 {NaN, 0}（minMaxAbs NaN 臂同款）。
+ * （term.ts 新增：len#N 唯一铸造 + 确定性宿主白名单）⇒ x-x = 0；
+ * NaN 检查不过 ⇒ 真值域 {NaN, 0}（minMaxAbs NaN 臂同款）。
  * ② subAssumeBounds（镜像 divAssumeBounds）：le(b,a) 前提 ⇒ a-b ≥ 0；
- *   le(a,b) 前提 ⇒ a-b ≤ 0。
+ * le(a,b) 前提 ⇒ a-b ≤ 0。
  * ③ $sub 线程 currentAssumePremises()（镜像 $div）。
  *
  * 对照组：结构不等（len 集不同）不折；adoption 重锚的 get 项（非确定性）

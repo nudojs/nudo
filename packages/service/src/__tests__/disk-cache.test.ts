@@ -369,7 +369,7 @@ describe("B3 path key portability (F-6 / FIX-D3)", () => {
     const b = makeCheckout("node_modules");
     try {
       expect(a.root).not.toBe(b.root);
-      // BUG-241：**入口文件**的键带项目身份 ⇒ 两个 checkout 的同相对路径
+      // **入口文件**的键带项目身份 ⇒ 两个 checkout 的同相对路径
       // 不再同键（这正是「共享 NUDO_CACHE_DIR 不得互相污染」的要求）。
       // 依赖**段**的可移植性由下面的 relativizePath 断言钉住。
       expect(relativizePath(a.depPath, a.projectDir)).toBe("node_modules/foo/lib.js");
@@ -389,7 +389,7 @@ describe("B3 path key portability (F-6 / FIX-D3)", () => {
     try {
       expect(relativizePath(a.depPath, a.projectDir)).toBe("node_modules/foo/lib.js");
       expect(relativizePath(b.depPath, b.projectDir)).toBe("node_modules/foo/lib.js");
-      // BUG-241：入口键带项目身份（不同 checkout ⇒ 不同键）；路径维仍可移植
+      // 入口键带项目身份（不同 checkout ⇒ 不同键）；路径维仍可移植
       expect(keyFor(a, "export const positive = 1;\n")).not.toBe(
         keyFor(b, "export const positive = 1;\n"),
       );
@@ -405,7 +405,7 @@ describe("B3 path key portability (F-6 / FIX-D3)", () => {
     try {
       expect(relativizePath(a.depPath, a.projectDir)).toBe("shared/util.js");
       expect(relativizePath(b.depPath, b.projectDir)).toBe("shared/util.js");
-      // BUG-241：入口键带项目身份（不同 checkout ⇒ 不同键）；路径维仍可移植
+      // 入口键带项目身份（不同 checkout ⇒ 不同键）；路径维仍可移植
       expect(keyFor(a, "export const positive = 1;\n")).not.toBe(
         keyFor(b, "export const positive = 1;\n"),
       );

@@ -2,11 +2,11 @@
  * 求值引擎 for 语句 init 形态：此前 transpile 只支持 `for (let i = …;…)` 单一
  * 声明 init——extractForInitName 对表达式/空 init 返回 null，整条循环被丢弃
  * （`// unsupported for-init`），循环体零次执行：
- *   - for(;;) 无限循环变空跑
- *   - for(;cond;) / for(;cond;step) 外部计数变量循环全废
- *   - for(i=0;…) 赋值表达式 init 全废（continue/break 同损）
- *   - for(i=0,j=N;…) 逗号序列 init 全废
- *   - 逗号在 test/update 部位同样触发丢弃
+ * - for(;;) 无限循环变空跑
+ * - for(;cond;) / for(;cond;step) 外部计数变量循环全废
+ * - for(i=0;…) 赋值表达式 init 全废（continue/break 同损）
+ * - for(i=0,j=N;…) 逗号序列 init 全废
+ * - 逗号在 test/update 部位同样触发丢弃
  * 修复：非声明 init 回退路径——init 就地求值（副作用写真实绑定），
  * 以合成计数器为 $for 状态线程，test/update/body 闭包读真实绑定。
  */

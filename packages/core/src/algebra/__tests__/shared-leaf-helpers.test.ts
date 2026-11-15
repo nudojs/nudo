@@ -3,9 +3,9 @@
  *
  * 两处此前是重复实现：
  * - `check-case-scan.ts` 的 `projectCaseArgField` 与 `scan/literal-shapes.ts`
- *   的 `projectArgPath` 逐字相同 ⇒ 现共用 `projectAbsPath`；
+ * 的 `projectArgPath` 逐字相同 ⇒ 现共用 `projectAbsPath`；
  * - `array-length.ts` 与 `proto-set.ts` 各有一份 `MAX_PROTO_DEPTH` +
- *   `ownPropHolder` ⇒ 现共用 `proto-walk.ts`（链解析**不**共享：两处不同）。
+ * `ownPropHolder` ⇒ 现共用 `proto-walk.ts`（链解析**不**共享：两处不同）。
  *
  * 本测试钉住共享部分的语义（brand 拆壳 / 缺槽 / 非 obj / 无自有槽形态）。
  */

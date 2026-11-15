@@ -8,9 +8,9 @@
  * 修复验收（调用计数断言）：
  * - 同一 (file, version) 连续 N 次入口 → analyzeFile 只跑 1 次；
  * - reuse 路径（result.bindings）→ lsp-surface 的
- *   collectAbsBindingsFromGraph 0 次；
+ * collectAbsBindingsFromGraph 0 次；
  * - IDE 处理器 catch 静默吞错修复：分析 throw → connection.console.error
- *   留痕且返回语义不变（null / []）。
+ * 留痕且返回语义不变（null / []）。
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { mkdtempSync, writeFileSync, rmSync, utimesSync } from "node:fs";

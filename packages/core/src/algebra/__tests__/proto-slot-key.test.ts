@@ -4,18 +4,18 @@
  * 回归背景：slots 是普通 JS 对象，`slots[k] = v` 在 k==="__proto__" 时
  * 触发 [[SetPrototypeOf]]，键静默丢失（历史 bug 模式，objects.ts getSlot
  * 只修了读侧）。同族漏网点：
- *   JSON.parse('{"__proto__":1}')  keys=[] / o.__proto__=undefined（原生有键）
- *   { __proto__: {x:1} }           原生设原型，引擎空对象 + o.x 折 undefined #exact
- *   { __proto__: null }            原生 null-proto，引擎仍回落 Object.prototype
- *   o.__proto__ = {x:1}            原生设原型，引擎键丢失
- *   Object.create(null); o.__proto__=1  原生自有键，引擎丢键
+ * JSON.parse('{"__proto__":1}') keys=[] / o.__proto__=undefined（原生有键）
+ * { __proto__: {x:1} } 原生设原型，引擎空对象 + o.x 折 undefined #exact
+ * { __proto__: null } 原生 null-proto，引擎仍回落 Object.prototype
+ * o.__proto__ = {x:1} 原生设原型，引擎键丢失
+ * Object.create(null); o.__proto__=1 原生自有键，引擎丢键
  *
  * ES 三分：
  * - 对象字面量非计算 `__proto__: v` → 特殊原型设定（v 为 object/null）；
- *   原始值忽略、不建自有键
+ * 原始值忽略、不建自有键
  * - 对象字面量计算 `{['__proto__']: v}` / JSON.parse / defineProperty → 自有数据属性
  * - `o.__proto__ = v` / `o[k] = v`（k 为 "__proto__"）→ 走 setter（设原型）；
- *   null-proto 目标无 setter → 自有数据属性
+ * null-proto 目标无 setter → 自有数据属性
  */
 import { describe, it, expect } from "vitest";
 import { litValue, formatAbs } from "@nudojs/core";
@@ -135,7 +135,7 @@ describe("spread / assign copies a __proto__ own key without hitting the setter"
   });
 
   it("Object.assign({}, JSON.parse('{\"__proto__\":1}')) does NOT create an own key", () => {
-    // Bug 128：assign 逐键 [[Set]]——__proto__ 非自有键走 Object.prototype
+    // assign 逐键 [[Set]]——__proto__ 非自有键走 Object.prototype
     // 原型 setter，原始值被静默忽略（原生 keys=0；此前直写自有槽 → 假键）。
     // spread（CreateDataProperty）保留自有键，见上。
     expect(

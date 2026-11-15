@@ -1,11 +1,11 @@
 /**
- * 工具链接入分册回归：Bug 59 / Bug 95（harvester 面）。
+ * 工具链接入分册回归：/ （harvester 面）。
  *
- * - Bug 59：`emitEnvModule` 落盘源码面丢 fn `overloads` 与 tuple `rest`
- *   ⇒ 内存 / 磁盘 / 落盘三面不同型（convert(1) 退成并集、[number, ...string[]]
- *   退成 [number]）。
- * - Bug 95：收割面丢 `declare class` 的 static 成员 ⇒ Api.create / Api.version
- *   读成 unknown。
+ * - `emitEnvModule` 落盘源码面丢 fn `overloads` 与 tuple `rest`
+ * ⇒ 内存 / 磁盘 / 落盘三面不同型（convert(1) 退成并集、[number, ...string[]]
+ * 退成 [number]）。
+ * - 收割面丢 `declare class` 的 static 成员 ⇒ Api.create / Api.version
+ * 读成 unknown。
  *
  * 落盘面按「真实求值」验证：把生成代码剥掉 ESM import / TS 类型注解后注入
  * core 导出求值，不写仓库内临时文件。
@@ -90,7 +90,7 @@ function fnShape(a: Abs): { overloads?: unknown[]; slots?: Record<string, { valu
 }
 
 // ---------------------------------------------------------------------------
-// Bug 59
+// 
 // ---------------------------------------------------------------------------
 
 const b59 = writeDts(
@@ -105,7 +105,7 @@ const b59 = writeDts(
 const env59 = harvestDts([b59]);
 const code59 = emitEnvModule(env59, "fx59");
 
-describe("Bug 59 —— emitEnvModule 落盘面保留 fn overloads 与 tuple rest", () => {
+describe("emitEnvModule 落盘面保留 fn overloads 与 tuple rest", () => {
   it("内存 / 磁盘两面基线（overloads=2、convert(1)=number、tup 带 rest）", () => {
     const conv = env59.globals.convert!;
     expect(fnShape(conv).overloads?.length).toBe(2);
@@ -131,7 +131,7 @@ describe("Bug 59 —— emitEnvModule 落盘面保留 fn overloads 与 tuple res
 });
 
 // ---------------------------------------------------------------------------
-// Bug 95
+// 
 // ---------------------------------------------------------------------------
 
 const b95 = writeDts(
@@ -147,7 +147,7 @@ const b95 = writeDts(
 );
 const env95 = harvestDts([b95]);
 
-describe("Bug 95 —— declare class 的 static 成员进类值 slots", () => {
+describe("declare class 的 static 成员进类值 slots", () => {
   it("Api 是 fn 类值且带 static slots（version / create）", () => {
     const api = env95.globals.Api!;
     expect(api.shape.k).toBe("fn");

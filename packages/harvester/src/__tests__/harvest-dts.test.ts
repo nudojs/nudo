@@ -16,21 +16,21 @@ import { execFileSync } from "node:child_process";
 import { makeWorkDir as makeWorkDir____harvest_bug_h8b_helpers_ts, removeWorkDir as removeWorkDir____harvest_bug_h8b_helpers_ts, runNudoCheck as runNudoCheck____harvest_bug_h8b_helpers_ts, writeSidecar as writeSidecar____harvest_bug_h8b_helpers_ts } from "./harvest-helpers-h8b.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 1011 —— 草稿面：同文件的 type 别名**被解析**（不再零义务）
+// 草稿面：同文件的 type 别名**被解析**（不再零义务）
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 1011 —— 草稿面：同文件的 type 别名**被解析**（不再零义务）", () => {
+describe("草稿面：同文件的 type 别名**被解析**（不再零义务）", () => {
 /**
- * Bug 1011 回归（harvester **草稿面**）：同文件的 `type` 别名**不解析**
+ * 回归（harvester **草稿面**）：同文件的 `type` 别名**不解析**
  * ⇒ `string` 降成 `any()` ⇒ 契约**零义务** ⇒ **假绿**；而**收割面**给的是
  * `(string) => string`（同一个声明，两个产物面答案不同）。
  *
  * oracle（`tsc --strict`，tmp/probe/fix-r27/h8a/e2e/b1011.ts ⇒ TS2322）：
- *   `function withAlias(x: string): string { return 42; }`
+ * `function withAlias(x: string): string { return 42; }`
  *
  * 改前（git HEAD 的草稿面）：`type Id = string;` 不在符号表里 ⇒
- *   `fn({ x: any() }, any())` ⇒ 零义务 ⇒ 绿。
+ * `fn({ x: any() }, any())` ⇒ 零义务 ⇒ 绿。
  * 改后（tmp/probe/fix-r27/h8a/probe.ts）：
- *   `export const withAlias = fn({ x: string() }, string());`
+ * `export const withAlias = fn({ x: string() }, string());`
  *
  * **两个产物面同答案**：收割面 `(string) => string`，草稿面
  * `fn({ x: string() }, string())` ⇒ 两侧都要求 string ⇒ 同一答案。
@@ -64,7 +64,7 @@ const DTS = `type Id = string;
 export declare function withAlias(x: Id): Id;
 `;
 
-describe("Bug 1011 —— 草稿面：同文件的 type 别名**被解析**（不再零义务）", () => {
+describe("草稿面：同文件的 type 别名**被解析**（不再零义务）", () => {
   it("别名 `type Id = string` ⇒ string()，不是 any()", () => {
     const p = writeDts("fx.d.ts", DTS);
     const draft = dtsToContractDraft([p], "fx");
@@ -132,23 +132,23 @@ export declare function takeExt(e: Ext): void;
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1012 —— 草稿面：Partial<T> 的字段**变可选**（不比 TS 严）
+// 草稿面：Partial<T> 的字段**变可选**（不比 TS 严）
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 1012 —— 草稿面：Partial<T> 的字段**变可选**（不比 TS 严）", () => {
+describe("草稿面：Partial<T> 的字段**变可选**（不比 TS 严）", () => {
 /**
- * Bug 1012 回归（harvester **草稿面**）：`Partial<T>` 特判把内层字段**原样
+ * 回归（harvester **草稿面**）：`Partial<T>` 特判把内层字段**原样
  * 透传** ⇒ 字段仍是**必填** ⇒ 契约**比 TS 更严** ⇒ **假红**（tsc 绿，
  * `nudo check` 红）。
  *
  * oracle（`tsc --strict`，tmp/probe/fix-r27/h8a/e2e/b1012.ts ⇒ 无错）：
- *   `function givePartial(): Partial<{a: number; b: string}> { return {}; }`
- *   ⇒ TS 允许 `{}`（两个字段都可选）⇒ 绿。
+ * `function givePartial(): Partial<{a: number; b: string}> { return {}; }`
+ * ⇒ TS 允许 `{}`（两个字段都可选）⇒ 绿。
  *
  * 改前（git HEAD 的草稿面）：`Partial<{a: number; b: string}>` ⇒
- *   `shape({ a: number(), b: string() })` —— 字段**必填** ⇒ 传 `{}` 违约
- *   ⇒ 比 TS 严 ⇒ 假红。
+ * `shape({ a: number(), b: string() })` —— 字段**必填** ⇒ 传 `{}` 违约
+ * ⇒ 比 TS 严 ⇒ 假红。
  * 改后（tmp/probe/fix-r27/h8a/probe.ts）：
- *   `fn({ p: partial(shape({ a: number(), b: string() })) }, any())`
+ * `fn({ p: partial(shape({ a: number(), b: string() })) }, any())`
  *
  * **两个产物面同答案**：收割面不建模 `Partial<T>`（该位 `unknown` ⇒ 无义务），
  * 草稿面按 TS 口径把字段**变可选** ⇒ 两侧都**接受** `{}` ⇒ 同一答案
@@ -179,7 +179,7 @@ function writeDts(name: string, content: string): string {
 const DTS = `export declare function takePartial(p: Partial<{ a: number; b: string }>): void;
 `;
 
-describe("Bug 1012 —— 草稿面：Partial<T> 的字段**变可选**（不比 TS 严）", () => {
+describe("草稿面：Partial<T> 的字段**变可选**（不比 TS 严）", () => {
   it("草稿是 partial(shape({…}))，不是原样透传的 shape({…})", () => {
     const p = writeDts("fx.d.ts", DTS);
     const draft = dtsToContractDraft([p], "fx");
@@ -223,29 +223,29 @@ export function use() { return takePartial({}); }
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1013 —— 草稿面：Record 的值域**落到实现**（或如实降级，不放绿）
+// 草稿面：Record 的值域**落到实现**（或如实降级，不放绿）
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 1013 —— 草稿面：Record 的值域**落到实现**（或如实降级，不放绿）", () => {
+describe("草稿面：Record 的值域**落到实现**（或如实降级，不放绿）", () => {
 /**
- * Bug 1013 回归（harvester **草稿面**）：`Record<K,V>` 特判把**值域整个丢掉**
+ * 回归（harvester **草稿面**）：`Record<K,V>` 特判把**值域整个丢掉**
  * （只写进注释）⇒ 契约**比 TS 更松** ⇒ **放绿** TS2322。
  *
  * oracle（`tsc --strict`，tmp/probe/fix-r27/h8a/e2e/b1013.ts ⇒ TS2322）：
- *   `function getRecord(): Record<string, number> { return { x: "str" }; }`
- *   ⇒ TS2322（红）。
+ * `function getRecord(): Record<string, number> { return { x: "str" }; }`
+ * ⇒ TS2322（红）。
  *
  * 改前（git HEAD 的草稿面）：`Record<string, number>` ⇒ `shape({})` ＋
- *   一条注释「open Record → number()」—— **注释宣称有值域、实现里却没有**
- *   ⇒ 调用点传 `{x: "str"}` 也不违约 ⇒ 放绿。
+ * 一条注释「open Record → number()」—— **注释宣称有值域、实现里却没有**
+ * ⇒ 调用点传 `{x: "str"}` 也不违约 ⇒ 放绿。
  * 改后（tmp/probe/fix-r27/h8a/probe.ts）：
  * - 键是**字面量集合**（`Record<"a" | "b", number>`）⇒ **值域落到实现**：
- *   `shape({ a: number(), b: number() })` ⇒ 该位不再放绿；
+ * `shape({ a: number(), b: number() })` ⇒ 该位不再放绿；
  * - 键不是字面量（`Record<string, number>`）⇒ 契约 DSL **没有索引签名**
- *   ⇒ **如实降级**：`shape({})` ＋ note 明说「值域**未**建模（比 TS 松）」
- *   ＋ 计入 `skipped` ⇒ 丢失**可见**，不静默。
+ * ⇒ **如实降级**：`shape({})` ＋ note 明说「值域**未**建模（比 TS 松）」
+ * ＋ 计入 `skipped` ⇒ 丢失**可见**，不静默。
  *
  * **两个产物面同口径**：收割面把 `Record<string, number>` 建成**开放对象**
- * 且**带索引值域**（`index.value = number`，见 Bug 803）⇒ 值域在收割面没丢；
+ * 且**带索引值域**（`index.value = number`，见 ）⇒ 值域在收割面没丢；
  * 草稿面如实说「DSL 表达不了」⇒ 两侧对**值域是什么**答案一致
  * （都是 number），草稿面不冒充已建模。
  *
@@ -287,7 +287,7 @@ function paramObjShape(abs: unknown): {
   return p?.k === "obj" ? p : undefined;
 }
 
-describe("Bug 1013 —— 草稿面：Record 的值域**落到实现**（或如实降级，不放绿）", () => {
+describe("草稿面：Record 的值域**落到实现**（或如实降级，不放绿）", () => {
   it("键是字面量集合时，**值域落到实现**（shape 的字段就是值域）", () => {
     const p = writeDts(
       "fx.d.ts",
@@ -349,24 +349,24 @@ export function use() { return takeRecordLit({ a: "str", b: 1 }); }
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1054 —— TS 类型谓词的返回类型（boolean / void，不是 unknown）
+// TS 类型谓词的返回类型（boolean / void，不是 unknown）
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 1054 —— TS 类型谓词的返回类型（boolean / void，不是 unknown）", () => {
+describe("TS 类型谓词的返回类型（boolean / void，不是 unknown）", () => {
 /**
- * Bug 1054 回归（harvester 收割面）：harvester 把 **TS 类型谓词**的返回类型
+ * 回归（harvester 收割面）：harvester 把 **TS 类型谓词**的返回类型
  * （`x is T` / `asserts x is T`）收割成 **`unknown`** ⇒
- *   - 调用方的签名面变成 `unknown` ⇒ 触发 `nudo:unknown-inference`
- *     误导诊断（把「谓词返回 boolean」说成「推断失败」）；
- *   - dts 面写 `unknown` ⇒ 消费方 tsc TS2322 假红。
+ * - 调用方的签名面变成 `unknown` ⇒ 触发 `nudo:unknown-inference`
+ * 误导诊断（把「谓词返回 boolean」说成「推断失败」）；
+ * - dts 面写 `unknown` ⇒ 消费方 tsc TS2322 假红。
  *
  * 根因：`mapType` 的类型节点分派表**没有 `TypePredicate` 分支**
  * ⇒ 谓词落进兜底分支（`default: return absUnknown()`）。
  *
  * 真值（TS 语义，运行时）：
- *   - `x is T` ⇒ 返回 **`boolean`**（`T` 是**收窄信息**，是调用点的副作用，
- *     **不是**返回面）；
- *   - `asserts x is T` / `asserts x` ⇒ 返回 **`void`**（断言函数运行时返回
- *     `undefined`）⇒ 与 `: void` 返回同口径。
+ * - `x is T` ⇒ 返回 **`boolean`**（`T` 是**收窄信息**，是调用点的副作用，
+ * **不是**返回面）；
+ * - `asserts x is T` / `asserts x` ⇒ 返回 **`void`**（断言函数运行时返回
+ * `undefined`）⇒ 与 `: void` 返回同口径。
  *
  * 负控：普通返回类型（number / string / 联合 / 泛型 / void / unknown /
  * 对象 / 数组 / 字面量 / nullable）的收割结果**不变**。
@@ -402,7 +402,7 @@ function returnTypeOf(a: unknown): { shape: { k?: string; type?: string }; term?
   return (shape.returnType as { shape: { k?: string; type?: string }; term?: unknown });
 }
 
-describe("Bug 1054 —— TS 类型谓词的返回类型（boolean / void，不是 unknown）", () => {
+describe("TS 类型谓词的返回类型（boolean / void，不是 unknown）", () => {
   it("`x is T` 的返回面是 boolean（不是 unknown，也不是被谓词的 T）", () => {
     const p = writeTemp(
       "fx.d.ts",
@@ -542,27 +542,27 @@ export declare function retNullable(): string | null;
 });
 
 // ---------------------------------------------------------------------------
-// Bug 791 —— 泛型实例化缓存键编码实参身份（不是实参个数）
+// 泛型实例化缓存键编码实参身份（不是实参个数）
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 791 —— 泛型实例化缓存键编码实参身份（不是实参个数）", () => {
+describe("泛型实例化缓存键编码实参身份（不是实参个数）", () => {
 /**
- * Bug 791 回归（harvester 收割面）：泛型实例化缓存键只编码**实参个数** ⇒
+ * 回归（harvester 收割面）：泛型实例化缓存键只编码**实参个数** ⇒
  * 同一接口的不同类型实参命中同一条缓存 ⇒ `Box<number>` 被折成 `Box<string>`。
  *
  * 改前（tmp/probe/fix-r27/h2/before-after.ts，BEFORE 行）：
- *   Box<string>.value=string  Box<number>.value=string  sameAbs=true
+ * Box<string>.value=string Box<number>.value=string sameAbs=true
  * 改后：
- *   Box<string>.value=string  Box<number>.value=number  sameAbs=false
+ * Box<string>.value=string Box<number>.value=number sameAbs=false
  *
  * oracle（`tsc --strict`，tmp/probe/fix-r27/h2/oracle/）：
  * - `o791-use.ts`（`a: Box<string>` / `b: Box<number>` 分别取 `value`）
- *   ⇒ tsc exit=0 ⇒ 两个 `value` 的类型**不同**（string / number）。
+ * ⇒ tsc exit=0 ⇒ 两个 `value` 的类型**不同**（string / number）。
  * - `o791-neg.ts`（把 `a.value` 赋给 `number`）⇒ TS2322 ⇒ `Box<string>.value`
- *   确为 string（反证 `Box<number>.value` 确为 number）。
+ * 确为 string（反证 `Box<number>.value` 确为 number）。
  *
  * 契约（双向）：
- *   1. 不同类型实参 ⇒ 不同实例（缓存键必须编码实参**身份**，不是个数）；
- *   2. 同一类型实参 ⇒ 同一个实例对象（缓存仍然有效，不退化成每次重算）。
+ * 1. 不同类型实参 ⇒ 不同实例（缓存键必须编码实参**身份**，不是个数）；
+ * 2. 同一类型实参 ⇒ 同一个实例对象（缓存仍然有效，不退化成每次重算）。
  */
 
 
@@ -596,7 +596,7 @@ function slots(a: Abs): Record<string, Abs> {
   return {};
 }
 
-describe("Bug 791 —— 泛型实例化缓存键编码实参身份（不是实参个数）", () => {
+describe("泛型实例化缓存键编码实参身份（不是实参个数）", () => {
   it("不同类型实参 ⇒ 不同实例（改前 Box<number> 被折成 Box<string>）", () => {
     const p = writeTemp(
       "box.d.ts",
@@ -658,23 +658,23 @@ describe("Bug 791 —— 泛型实例化缓存键编码实参身份（不是实�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 792 —— 命名空间限定类型引用不得并入其它命名空间的同名接口
+// 命名空间限定类型引用不得并入其它命名空间的同名接口
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 792 —— 命名空间限定类型引用不得并入其它命名空间的同名接口", () => {
+describe("命名空间限定类型引用不得并入其它命名空间的同名接口", () => {
 /**
- * Bug 792 回归（harvester 收割面）：**命名空间限定**类型引用（`A.Opts`）解析到
+ * 回归（harvester 收割面）：**命名空间限定**类型引用（`A.Opts`）解析到
  * **所有同名短名接口** ⇒ `A.Opts` 继承了 `B.Opts` 的成员。
  *
  * 改前（tmp/probe/fix-r27/h3/probe-h3.ts，BEFORE 行）：
- *   useA 的形参 brand 槽位 = { a: number, b: string }   ← 混进了 B.Opts 的 b
- *   useB 的形参 brand 槽位 = { b: string, a: number }
+ * useA 的形参 brand 槽位 = { a: number, b: string } ← 混进了 B.Opts 的 b
+ * useB 的形参 brand 槽位 = { b: string, a: number }
  * 改后：
- *   useA 的形参 brand 槽位 = { a: number }
- *   useB 的形参 brand 槽位 = { b: string }
+ * useA 的形参 brand 槽位 = { a: number }
+ * useB 的形参 brand 槽位 = { b: string }
  *
  * oracle（`tsc --strict`，tmp/probe/fix-r27/h3/oracle/o792.ts）：
- *   `oa.b`（`oa: A.Opts`）⇒ TS2339 "Property 'b' does not exist on type 'Opts'"
- *   ⇒ TS 侧 A.Opts 上**没有** b ⇒ 收割面不得有 b。
+ * `oa.b`（`oa: A.Opts`）⇒ TS2339 "Property 'b' does not exist on type 'Opts'"
+ * ⇒ TS 侧 A.Opts 上**没有** b ⇒ 收割面不得有 b。
  *
  * 根因：`ctx.interfaces`（短名桶）不带命名空间身份 ⇒ 限定名解析无条件并入短名桶。
  * 修法：限定名只精确命中自己的限定桶；短名回退**只**认「ambient 模块块里的模块
@@ -721,7 +721,7 @@ export declare function useA(o: A.Opts): number;
 export declare function useB(o: B.Opts): string;
 `;
 
-describe("Bug 792 —— 命名空间限定类型引用不得并入其它命名空间的同名接口", () => {
+describe("命名空间限定类型引用不得并入其它命名空间的同名接口", () => {
   it("A.Opts 只有 A 的成员（不含 B.Opts 的 b）", () => {
     const p = writeTemp("ns.d.ts", TWO_NS);
     const env = harvestDts([p]);
@@ -788,23 +788,23 @@ declare namespace _ {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 794 —— `this` 形参不算实参（元数不因它 +1）
+// `this` 形参不算实参（元数不因它 +1）
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 794 —— `this` 形参不算实参（元数不因它 +1）", () => {
+describe("`this` 形参不算实参（元数不因它 +1）", () => {
 /**
- * Bug 794 回归（harvester 收割面）：harvester 把 `this` 形参当**普通形参**收割
+ * 回归（harvester 收割面）：harvester 把 `this` 形参当**普通形参**收割
  * ⇒ **元数错位**（arity +1，第一个真实实参被绑到 `this` 槽）+ 生成的契约草稿
  * **凭空多一个必填参数**。
  *
  * oracle（`tsc --strict`，见 tmp/probe/fix-r27/h5/e2e/this/）：
  * - `export declare function withThis(this: Ctx, x: number): string;`
- *   ⇒ 调用方只传 **1** 个实参（`withThis(1)`），`this` 是**调用上下文**的类型标注，
- *   不是实参（TS 编译通过，exit 0）。
+ * ⇒ 调用方只传 **1** 个实参（`withThis(1)`），`this` 是**调用上下文**的类型标注，
+ * 不是实参（TS 编译通过，exit 0）。
  *
  * 收割侧契约：
- *   1. `this` 形参**不是**实参 ⇒ 收割时跳过（不占参数位）；
- *   2. 元数因此正确（`(number) => string`，不是 `(Ctx, number) => string`）；
- *   3. 接口方法签名上的 `this` 形参同口径。
+ * 1. `this` 形参**不是**实参 ⇒ 收割时跳过（不占参数位）；
+ * 2. 元数因此正确（`(number) => string`，不是 `(Ctx, number) => string`）；
+ * 3. 接口方法签名上的 `this` 形参同口径。
  *
  * ⚠️ 草稿面（`dts-contract-draft.ts`）是 **H8 的文件**：本分片不改它，
  * 对应改法见交付报告（草稿里仍会出现 `this: shape({...})` 这个多余的必填参数）。
@@ -836,7 +836,7 @@ function arity(a: unknown): number {
   return shape.paramTypes?.length ?? -1;
 }
 
-describe("Bug 794 —— `this` 形参不算实参（元数不因它 +1）", () => {
+describe("`this` 形参不算实参（元数不因它 +1）", () => {
   it("顶层函数的 `this` 形参被跳过（元数 = 真实实参数）", () => {
     const p = writeTemp(
       "fx.d.ts",
@@ -901,22 +901,22 @@ export declare const i: I;
 });
 
 // ---------------------------------------------------------------------------
-// Bug 796 —— declare class 的实例成员不再整体丢失，绑定不再消失
+// declare class 的实例成员不再整体丢失，绑定不再消失
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 796 —— declare class 的实例成员不再整体丢失，绑定不再消失", () => {
+describe("declare class 的实例成员不再整体丢失，绑定不再消失", () => {
 /**
- * Bug 796 回归（harvester 收割面）：`declare class` 的**实例成员整体丢失**，且
+ * 回归（harvester 收割面）：`declare class` 的**实例成员整体丢失**，且
  * `const p: Point` 这个**绑定从 globals 里彻底消失**。
  *
  * oracle（`tsc --strict`，见 tmp/probe/fix-r27/h5/e2e/cls/）：
  * - `export declare class Point { x: number; y: number; … }` + `export declare const p: Point;`
- *   ⇒ `p` 是 `Point` 的实例（`p.x` 是 number），`dist(a, b)` 的参数面是 `Point`；
- *   `tsc --strict` exit 0。
+ * ⇒ `p` 是 `Point` 的实例（`p.x` 是 number），`dist(a, b)` 的参数面是 `Point`；
+ * `tsc --strict` exit 0。
  *
  * 收割侧契约：
- *   1. `declare class` 的**实例成员**进实例面（属性 / 方法 / 访问器；`static` 不进）；
- *   2. `const p: Point` 这个**绑定保留**在 globals 里（类型是 `Point` 的实例面）；
- *   3. 以类名做参数类型时，参数面是 `Point`（不是 unknown）。
+ * 1. `declare class` 的**实例成员**进实例面（属性 / 方法 / 访问器；`static` 不进）；
+ * 2. `const p: Point` 这个**绑定保留**在 globals 里（类型是 `Point` 的实例面）；
+ * 3. 以类名做参数类型时，参数面是 `Point`（不是 unknown）。
  *
  * 改前（实测）：`globals = ["Point", "dist"]`（`p` 整个不见了），
  * `Point: () => unknown`（空壳），`dist: (unknown, unknown) => number`。
@@ -967,7 +967,7 @@ function slotNames(a: unknown): string[] {
   return [];
 }
 
-describe("Bug 796 —— declare class 的实例成员不再整体丢失，绑定不再消失", () => {
+describe("declare class 的实例成员不再整体丢失，绑定不再消失", () => {
   it("`const p: Point` 绑定保留在 globals 里（改前整个消失）", () => {
     const p = writeTemp("fx.d.ts", CLS);
     const env = harvestDts([p]);
@@ -1013,19 +1013,19 @@ export declare const w: WithStatic;
 });
 
 // ---------------------------------------------------------------------------
-// Bug 797 —— extends 判定按字面量值比（不是只比 prim 标签）
+// extends 判定按字面量值比（不是只比 prim 标签）
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 797 —— extends 判定按字面量值比（不是只比 prim 标签）", () => {
+describe("extends 判定按字面量值比（不是只比 prim 标签）", () => {
 /**
- * Bug 797 回归（harvester 收割面）：条件类型的 `extends` 判定**只比 prim 标签**
+ * 回归（harvester 收割面）：条件类型的 `extends` 判定**只比 prim 标签**
  * ⇒ 字面量信息（在 `term` 上，不在 `shape` 上）被忽略 ⇒
  * `number extends 1` / `"a" extends "b"` / `1 extends 2` **恒判为真**。
  *
  * 改前（tmp/probe/fix-r27/h1a/probe.ts，BEFORE 行）：
- *   number extends 1  → "yes"   （TS："no"）
- *   "a" extends "b"   → "yes"   （TS："no"）
- *   string extends "a"→ "yes"   （TS："no"）
- *   1 extends 2       → "yes"   （TS："no"）
+ * number extends 1 → "yes" （TS："no"）
+ * "a" extends "b" → "yes" （TS："no"）
+ * string extends "a"→ "yes" （TS："no"）
+ * 1 extends 2 → "yes" （TS："no"）
  * 改后：四条全是 "no"；方向正确的三条（`1 extends 1` / `1 extends number` /
  * `"a" extends string`）仍是 "yes" ⇒ 不是「一律判假」。
  *
@@ -1033,9 +1033,9 @@ describe("[harvest-] Bug 797 —— extends 判定按字面量值比（不是只
  * ⇒ TS 认定 `number extends 1` 等四条的真值都是 "no"。
  *
  * 契约（双向）：
- *   1. 字面量 vs 字面量 ⇒ **按值**比（"a" ≠ "b" ⇒ 假；1 = 1 ⇒ 真）；
- *   2. 字面量 vs 类型 ⇒ 字面量可赋值给对应 prim（1 extends number ⇒ 真）；
- *   3. 类型 vs 字面量 ⇒ 假（number extends 1 ⇒ 假，方向不能反）。
+ * 1. 字面量 vs 字面量 ⇒ **按值**比（"a" ≠ "b" ⇒ 假；1 = 1 ⇒ 真）；
+ * 2. 字面量 vs 类型 ⇒ 字面量可赋值给对应 prim（1 extends number ⇒ 真）；
+ * 3. 类型 vs 字面量 ⇒ 假（number extends 1 ⇒ 假，方向不能反）。
  */
 
 
@@ -1075,7 +1075,7 @@ const decls = [
   `export declare function b797g(): "a" extends string ? "yes" : "no";`,
 ].join("\n");
 
-describe("Bug 797 —— extends 判定按字面量值比（不是只比 prim 标签）", () => {
+describe("extends 判定按字面量值比（不是只比 prim 标签）", () => {
   it("类型 vs 字面量 ⇒ 假（number extends 1 / string extends \"a\"）", () => {
     const p = writeTemp("a.d.ts", decls);
     const env = harvestDts([p]);
@@ -1119,19 +1119,19 @@ describe("Bug 797 —— extends 判定按字面量值比（不是只比 prim �
 });
 
 // ---------------------------------------------------------------------------
-// Bug 798 —— (infer E)[] 的括号穿透 + 绑定替换真支
+// (infer E)[] 的括号穿透 + 绑定替换真支
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 798 —— (infer E)[] 的括号穿透 + 绑定替换真支", () => {
+describe("(infer E)[] 的括号穿透 + 绑定替换真支", () => {
 /**
- * Bug 798 回归（harvester 收割面）：`matchExtendsInfer` **不认括号节点** ⇒
+ * 回归（harvester 收割面）：`matchExtendsInfer` **不认括号节点** ⇒
  * `(infer E)[]` 里的 `infer E` 外面套了一层 `ParenthesizedTypeNode` ⇒
  * 模式匹配落到兜底分支 ⇒ **E 不绑定** ⇒ 真支退化成 α 变量 ⇒
  * `number[] extends (infer E)[] ? E : never` 收割成 `any`（TS：`number`）。
  *
  * 改前（tmp/probe/fix-r27/h1a/probe.ts，BEFORE 行）：
- *   parenArr() => any      （TS：number）
- *   parenObj() => any      （TS：number）
- *   prom()     => number   （TS：number —— `Promise<infer U>` 无括号，能绑）
+ * parenArr() => any （TS：number）
+ * parenObj() => any （TS：number）
+ * prom() => number （TS：number —— `Promise<infer U>` 无括号，能绑）
  * 改后：三条全是 number ⇒ 同一语义只差一层括号不再有别。
  *
  * oracle（`tsc --strict`，tmp/probe/fix-r27/h1a/ts/oracle.ts）：exit=0
@@ -1142,9 +1142,9 @@ describe("[harvest-] Bug 798 —— (infer E)[] 的括号穿透 + 绑定替换�
  * 对照组；能去括号的对照构造是 `Promise<infer U>`（本文件已含）。
  *
  * 契约（双向）：
- *   1. 括号必须**穿透**（`infer` 收集与模式匹配都要过括号）；
- *   2. 绑定值必须**替换**真支里的 infer 变量引用（真支 `E` 是 TypeReferenceNode，
- *      不是 InferTypeNode —— 不查绑定表就会退化成 α）。
+ * 1. 括号必须**穿透**（`infer` 收集与模式匹配都要过括号）；
+ * 2. 绑定值必须**替换**真支里的 infer 变量引用（真支 `E` 是 TypeReferenceNode，
+ * 不是 InferTypeNode —— 不查绑定表就会退化成 α）。
  */
 
 
@@ -1180,7 +1180,7 @@ const decls = [
   `export declare function b798c(): Promise<number> extends Promise<infer U> ? U : never;`,
 ].join("\n");
 
-describe("Bug 798 —— (infer E)[] 的括号穿透 + 绑定替换真支", () => {
+describe("(infer E)[] 的括号穿透 + 绑定替换真支", () => {
   it("带括号的数组 infer 绑定元素类型（改前 any）", () => {
     const p = writeTemp("a.d.ts", decls);
     const env = harvestDts([p]);
@@ -1219,21 +1219,21 @@ describe("Bug 798 —— (infer E)[] 的括号穿透 + 绑定替换真支", () =
 });
 
 // ---------------------------------------------------------------------------
-// Bug 799 —— 交叉类型合并两侧成员（不再只保留 A）
+// 交叉类型合并两侧成员（不再只保留 A）
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 799 —— 交叉类型合并两侧成员（不再只保留 A）", () => {
+describe("交叉类型合并两侧成员（不再只保留 A）", () => {
 /**
- * Bug 799 回归（harvester 收割面）：交叉类型 `A & B` **只保留 A**
+ * 回归（harvester 收割面）：交叉类型 `A & B` **只保留 A**
  * ⇒ `Point & Size` 与 `Point` 在 Abs 层面**完全不可区分**（错值）。
  *
  * oracle（`tsc --strict`，见 tmp/probe/fix-r27/h1b/oracle/u799.ts，tsc exit=0）：
- *   `interface Point { x: number; y: number }` + `interface Size { w: number; h: number }`
- *   ⇒ `ps: Point & Size` 的 `.x` / `.w` **都是 number**（交叉类型的成员是并集）。
+ * `interface Point { x: number; y: number }` + `interface Size { w: number; h: number }`
+ * ⇒ `ps: Point & Size` 的 `.x` / `.w` **都是 number**（交叉类型的成员是并集）。
  *
  * 改前（tmp/probe/fix-r27/h1b/before.ts，before-h1 快照 = git HEAD）：
- *   ps: Point      pt: Point      same? true     ← Size 的成员整个没了
+ * ps: Point pt: Point same? true ← Size 的成员整个没了
  * 改后（tmp/probe/fix-r27/h1b/probe.ts）：
- *   ps: { x: number, y: number, w: number, h: number }   pt: Point   same? false
+ * ps: { x: number, y: number, w: number, h: number } pt: Point same? false
  *
  * 根因：`mapType` 的交叉分支的合并守卫要求每个成员都是 `obj` 形状，
  * 而**接口引用经 `instanceFor` 产出的是 `brand` 形状** ⇒ 守卫失败 ⇒
@@ -1269,7 +1269,7 @@ function memberNames(a: unknown): string[] {
   return [];
 }
 
-describe("Bug 799 —— 交叉类型合并两侧成员（不再只保留 A）", () => {
+describe("交叉类型合并两侧成员（不再只保留 A）", () => {
   it("Point & Size 的成员是并集（x/y/w/h 四个）", () => {
     const p = writeTemp(
       "fx.d.ts",
@@ -1340,21 +1340,21 @@ export declare const ab: A & B;
 });
 
 // ---------------------------------------------------------------------------
-// Bug 800 —— 泛型别名按类型实参实例化（实参不再被丢弃）
+// 泛型别名按类型实参实例化（实参不再被丢弃）
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 800 —— 泛型别名按类型实参实例化（实参不再被丢弃）", () => {
+describe("泛型别名按类型实参实例化（实参不再被丢弃）", () => {
 /**
- * Bug 800 回归（harvester 收割面）：泛型**别名** `Box<number>` 与 `Box<string>`
+ * 回归（harvester 收割面）：泛型**别名** `Box<number>` 与 `Box<string>`
  * **完全相同**且成员值域丢失（`{ v: unknown }`）（错值）。
  *
  * oracle（`tsc --strict`，见 tmp/probe/fix-r27/h1b/oracle/u800.ts，tsc exit=0）：
- *   `type Box<T> = { v: T }` ⇒ `bn: Box<number>` 的 `.v` 是 **number**，
- *   `bs: Box<string>` 的 `.v` 是 **string**（`bn.v` 赋给 string ⇒ TS 报错）。
+ * `type Box<T> = { v: T }` ⇒ `bn: Box<number>` 的 `.v` 是 **number**，
+ * `bs: Box<string>` 的 `.v` 是 **string**（`bn.v` 赋给 string ⇒ TS 报错）。
  *
  * 改前（tmp/probe/fix-r27/h1b/before.ts，before-h1 快照 = git HEAD）：
- *   a: { v: unknown }   b: { v: unknown }   same? true
+ * a: { v: unknown } b: { v: unknown } same? true
  * 改后（tmp/probe/fix-r27/h1b/probe.ts）：
- *   a: { v: number }    b: { v: string }    same? false
+ * a: { v: number } b: { v: string } same? false
  *
  * 根因：`mapTypeRef` 的别名分支直接展开别名体、**丢弃实参** ⇒ 别名体内的
  * `T` 没有实参可代入 ⇒ 落到 `unknown`。同一文件里**接口**路径
@@ -1395,7 +1395,7 @@ function memberSlots(a: unknown): Record<string, string> {
   return {};
 }
 
-describe("Bug 800 —— 泛型别名按类型实参实例化（实参不再被丢弃）", () => {
+describe("泛型别名按类型实参实例化（实参不再被丢弃）", () => {
   it("Box<number> / Box<string> 的成员值域分别是 number / string", () => {
     const p = writeTemp(
       "fx.d.ts",
@@ -1464,19 +1464,19 @@ export declare const p: Pair;
 });
 
 // ---------------------------------------------------------------------------
-// Bug 801 —— 草稿面：TS 的 null 是**真 null 面**（不是 any()）
+// 草稿面：TS 的 null 是**真 null 面**（不是 any()）
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 801 —— 草稿面：TS 的 null 是**真 null 面**（不是 any()）", () => {
+describe("草稿面：TS 的 null 是**真 null 面**（不是 any()）", () => {
 /**
- * Bug 801 回归（harvester **草稿面**）：TypeScript 的 `null` 被映射成
+ * 回归（harvester **草稿面**）：TypeScript 的 `null` 被映射成
  * `any()` ⇒ 契约**是空的** ⇒ **假绿**（tsc 报 TS2322，`nudo check` 却绿）。
  *
  * oracle（`tsc --strict`，tmp/probe/fix-r27/h8a/e2e/b801.ts ⇒ TS2322）：
- *   `function choose(flag: boolean): number | null { return "totally wrong"; }`
+ * `function choose(flag: boolean): number | null { return "totally wrong"; }`
  *
  * 改前（git HEAD 的草稿面）：`null` → `any()` ⇒ 返回位无约束 ⇒ 绿。
  * 改后（tmp/probe/fix-r27/h8a/probe.ts）：
- *   `export const choose = fn({ flag: boolean() }, union(number(), null));`
+ * `export const choose = fn({ flag: boolean() }, union(number(), null));`
  *
  * **两个产物面同口径**：收割面把 `null` 建成 `{shape: unknown, term: lit null}`
  * （真 null 面，渲染成 `number | null`）；草稿面的 `union(…, null)` 经 core 的
@@ -1508,7 +1508,7 @@ function writeDts(name: string, content: string): string {
   return p;
 }
 
-describe("Bug 801 —— 草稿面：TS 的 null 是**真 null 面**（不是 any()）", () => {
+describe("草稿面：TS 的 null 是**真 null 面**（不是 any()）", () => {
   it("`number | null` 的草稿是 union(number(), null)，不是 any()", () => {
     const p = writeDts(
       "fx.d.ts",
@@ -1585,21 +1585,21 @@ export declare const v: "1.0";
 });
 
 // ---------------------------------------------------------------------------
-// Bug 802 —— 元组按逐槽映射（不再按首元素近似）
+// 元组按逐槽映射（不再按首元素近似）
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 802 —— 元组按逐槽映射（不再按首元素近似）", () => {
+describe("元组按逐槽映射（不再按首元素近似）", () => {
 /**
- * Bug 802 回归（harvester 收割面）：元组类型按「**首元素**」近似
+ * 回归（harvester 收割面）：元组类型按「**首元素**」近似
  * ⇒ 槽位 ≥1 的元素域是**错的具体类型**（假红 + 假绿）。
  *
  * oracle（`tsc --strict`，见 tmp/probe/fix-r27/h1b/oracle/u802.ts，tsc exit=0）：
- *   `t1: [number, string]` ⇒ `t1[1]` 是 **string**；
- *   `t2: [number, boolean]` ⇒ `t2[1]` 是 **boolean**（赋给 string ⇒ TS 报错）。
+ * `t1: [number, string]` ⇒ `t1[1]` 是 **string**；
+ * `t2: [number, boolean]` ⇒ `t2[1]` 是 **boolean**（赋给 string ⇒ TS 报错）。
  *
  * 改前（tmp/probe/fix-r27/h1b/before.ts，before-h1 快照 = git HEAD）：
- *   t1: number[]   t2: number[]   t3: number[]     ← 三个不同类型完全同形
+ * t1: number[] t2: number[] t3: number[] ← 三个不同类型完全同形
  * 改后（tmp/probe/fix-r27/h1b/probe.ts）：
- *   t1: [number, string]   t2: [number, boolean]   t3: [number, ...string[]]
+ * t1: [number, string] t2: [number, boolean] t3: [number, ...string[]]
  *
  * 根因：`mapType` 的元组分支 `for (…) { return absArr(…) }` ⇒ **取首元素就返回**。
  * 这不是精度债，是**错的**具体类型（真实值域与断言值域不相交）。
@@ -1631,7 +1631,7 @@ function tupleElements(a: unknown): string[] {
   return (s.elements ?? []).map((e) => formatShape(e as never));
 }
 
-describe("Bug 802 —— 元组按逐槽映射（不再按首元素近似）", () => {
+describe("元组按逐槽映射（不再按首元素近似）", () => {
   it("[number, string] 的槽位分别是 number / string", () => {
     const p = writeTemp(
       "fx.d.ts",
@@ -1693,23 +1693,23 @@ export declare const t2: [number, boolean];
 });
 
 // ---------------------------------------------------------------------------
-// Bug 803 —— Record / 索引签名建成开放对象（带索引值域）
+// Record / 索引签名建成开放对象（带索引值域）
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 803 —— Record / 索引签名建成开放对象（带索引值域）", () => {
+describe("Record / 索引签名建成开放对象（带索引值域）", () => {
 /**
- * Bug 803 回归（harvester 收割面）：`Record<K,V>` / 索引签名对象被建成
+ * 回归（harvester 收割面）：`Record<K,V>` / 索引签名对象被建成
  * **闭**空对象 ⇒ 成员读出 **exact undefined** ⇒ 链式读取定抛 TypeError
  * （假红 + 错值）。
  *
  * oracle（`tsc --strict`，见 tmp/probe/fix-r27/h1b/oracle/u803.ts，tsc exit=0）：
- *   `rec: Record<string, number>` ⇒ `rec.anyKey` 是 **number**；
- *   `recS: Record<string, string>` ⇒ `recS.anyKey` 是 **string**。
+ * `rec: Record<string, number>` ⇒ `rec.anyKey` 是 **number**；
+ * `recS: Record<string, string>` ⇒ `recS.anyKey` 是 **string**。
  *
  * 改前（tmp/probe/fix-r27/h1b/before.ts，before-h1 快照 = git HEAD）：
- *   r.shape: {"k":"obj","slots":{}}          ← 闭、无索引值域
- *   r: {  }   r2: {  }                        ← 两个 Record 完全同形
+ * r.shape: {"k":"obj","slots":{}} ← 闭、无索引值域
+ * r: { } r2: { } ← 两个 Record 完全同形
  * 改后（tmp/probe/fix-r27/h1b/probe.ts）：
- *   r.shape: {"k":"obj","slots":{},"index":{"key":string→…,"value":number},"open":true}
+ * r.shape: {"k":"obj","slots":{},"index":{"key":string→…,"value":number},"open":true}
  *
  * 根因：`mapTypeRef` 的 `Record` 分支 `return absObj({})` —— 注释说
  * 「approximated as an open object type」，代码给的是**闭** `absObj({})`
@@ -1754,7 +1754,7 @@ function objShapeOf(a: unknown): ObjShape | undefined {
   return undefined;
 }
 
-describe("Bug 803 —— Record / 索引签名建成开放对象（带索引值域）", () => {
+describe("Record / 索引签名建成开放对象（带索引值域）", () => {
   it("Record<string, number> 是开放对象且带索引值域 number", () => {
     const p = writeTemp(
       "fx.d.ts",
@@ -1826,22 +1826,22 @@ export declare const recS: Record<string, string>;
 });
 
 // ---------------------------------------------------------------------------
-// Bug 804 —— 类型判不出时 `declare const` 绑定仍保留（不判 ReferenceError）
+// 类型判不出时 `declare const` 绑定仍保留（不判 ReferenceError）
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 804 —— 类型判不出时 `declare const` 绑定仍保留（不判 ReferenceError）", () => {
+describe("类型判不出时 `declare const` 绑定仍保留（不判 ReferenceError）", () => {
 /**
- * Bug 804 回归（harvester 收割面）：映射类型 / 模板字面量类型 / 索引访问类型
+ * 回归（harvester 收割面）：映射类型 / 模板字面量类型 / 索引访问类型
  * （以及 `keyof` / `typeof`）落 `unknown` 后，**`declare const` 整条绑定被丢弃**
  * ⇒ 用户代码引用它时被判「**确定抛 ReferenceError**」（L2 假红）。
  *
  * oracle（`tsc --strict`，见 tmp/probe/fix-r27/h5/e2e/unknown/）：
  * - `declare const mappedLit: { [K in "a" | "b"]: number };` 等在 .d.ts 里是
- *   **运行时存在的全局**（TS 编译通过，exit 0）⇒ 引擎不得判 ReferenceError。
+ * **运行时存在的全局**（TS 编译通过，exit 0）⇒ 引擎不得判 ReferenceError。
  *
  * 收割侧契约：
- *   1. 类型判不出（退成 `unknown`）时**绑定仍要保留** —— 收割 env 是分析面
- *      唯一的全局事实来源，绑定被删 ⇒ 引擎判决与事实相反；
- *   2. 「类型未建模」是**降级**（值域未知），不是「符号不存在」。
+ * 1. 类型判不出（退成 `unknown`）时**绑定仍要保留** —— 收割 env 是分析面
+ * 唯一的全局事实来源，绑定被删 ⇒ 引擎判决与事实相反；
+ * 2. 「类型未建模」是**降级**（值域未知），不是「符号不存在」。
  *
  * 改前（实测）：`globals` 里 m1 / m3 / m4 / m5 / m6 一个都没有，
  * `stats.skipped` 8 → 13（+5 正好是这 5 条）。
@@ -1874,7 +1874,7 @@ export declare const keyOfBox: keyof Box;
 export declare const typeOfIdx: typeof idxA;
 `;
 
-describe("Bug 804 —— 类型判不出时 `declare const` 绑定仍保留（不判 ReferenceError）", () => {
+describe("类型判不出时 `declare const` 绑定仍保留（不判 ReferenceError）", () => {
   it("映射类型 / 模板字面量 / 索引访问 / keyof / typeof 的绑定全部保留", () => {
     const p = writeTemp("fx.d.ts", FIXTURE);
     const env = harvestDts([p]);
@@ -1914,26 +1914,26 @@ export declare const named: string;
 });
 
 // ---------------------------------------------------------------------------
-// Bug 805 —— 接口成员的重载集全部保留
+// 接口成员的重载集全部保留
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 805 —— 接口成员的重载集全部保留", () => {
+describe("接口成员的重载集全部保留", () => {
 /**
- * Bug 805 回归（harvester 收割面）：接口成员的**重载集**只保留第一个 overload ⇒
+ * 回归（harvester 收割面）：接口成员的**重载集**只保留第一个 overload ⇒
  * 第二个 overload 的返回类型被**整体抹除**（假红 + 假绿，与 TS 完全倒置）。
  *
  * 改前（tmp/probe/fix-r27/h2/before-after.ts，BEFORE 行）：
- *   member m = (number) => string
+ * member m = (number) => string
  * 改后：
- *   member m = (number | string) => string | number
+ * member m = (number | string) => string | number
  *
  * oracle（`tsc --strict`，tmp/probe/fix-r27/h2/oracle/）：
  * - `o805-use.ts`：`iov.m("hello")` 赋给 `number`、`iov.m(1)` 赋给 `string`
- *   ⇒ tsc exit=0 ⇒ TS 按**实参类型**选 overload（两个返回类型都在契约里）。
+ * ⇒ tsc exit=0 ⇒ TS 按**实参类型**选 overload（两个返回类型都在契约里）。
  *
  * 契约：
- *   1. 成员面上的重载集**全部保留**（返回位并集，参数位逐位并集）；
- *   2. 与顶层函数路径（materialize 的 fn 分支，H4 的 Bug 827）**同口径**——
- *      同一实体两条收割路径不得给出两种形态。
+ * 1. 成员面上的重载集**全部保留**（返回位并集，参数位逐位并集）；
+ * 2. 与顶层函数路径（materialize 的 fn 分支，H4 的 ）**同口径**——
+ * 同一实体两条收割路径不得给出两种形态。
  */
 
 
@@ -1977,7 +1977,7 @@ function paramTypesOf(a: Abs | undefined): string {
   return (a.shape.paramTypes ?? []).map((p) => formatShape(p)).join(" | ");
 }
 
-describe("Bug 805 —— 接口成员的重载集全部保留", () => {
+describe("接口成员的重载集全部保留", () => {
   it("同名 overload 的返回类型不再被抹除（并集）", () => {
     const p = writeTemp(
       "over.d.ts",
@@ -2046,28 +2046,28 @@ describe("Bug 805 —— 接口成员的重载集全部保留", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 806 —— 递归类型别名惰性/引用式建模（不指数展开）
+// 递归类型别名惰性/引用式建模（不指数展开）
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 806 —— 递归类型别名惰性/引用式建模（不指数展开）", () => {
+describe("递归类型别名惰性/引用式建模（不指数展开）", () => {
 /**
- * Bug 806 回归（harvester 收割面）：递归**类型别名**按 depth 硬展开 ⇒
+ * 回归（harvester 收割面）：递归**类型别名**按 depth 硬展开 ⇒
  * 展开 8 层且**指数级**（6 个自引用成员 ⇒ 54MB env 模块）⇒ 末层折成 unknown。
  *
  * 改前（tmp/probe/fix-r27/h2/probe-h2.ts）：
- *   tree = { v: number, kids: { v: number, kids: { … 8 层 … unknown[] }[] }[] }
- *   blow6: harvest 673ms, env module 54083943 bytes
+ * tree = { v: number, kids: { v: number, kids: { … 8 层 … unknown[] }[] }[] }
+ * blow6: harvest 673ms, env module 54083943 bytes
  * 改后：
- *   tree = brand(Tree) { v: number, kids: brand(Tree){unknown}[] }   ← 惰性/引用式
- *   blow6: harvest 0ms, env module 983 bytes（≈ 55000× 更小）
+ * tree = brand(Tree) { v: number, kids: brand(Tree){unknown}[] } ← 惰性/引用式
+ * blow6: harvest 0ms, env module 983 bytes（≈ 55000× 更小）
  *
  * oracle（`tsc --strict`，tmp/probe/fix-r27/h2/oracle/）：
  * - `o806-use.ts`（`tree.v` 与 `tree.kids[0].v` 都赋给 `number`）⇒ tsc exit=0
- *   ⇒ TS 侧递归别名可以任意深度解引用。
+ * ⇒ TS 侧递归别名可以任意深度解引用。
  *
  * 契约：
- *   1. 递归别名**惰性/引用式**建模（自引用点 = 按名 brand 引用，不内联展开）；
- *   2. 展开深度有界（自引用点的内层是「形状待定」，不是又一层展开）；
- *   3. 规模有界（env 模块体积不随自引用成员数指数增长）。
+ * 1. 递归别名**惰性/引用式**建模（自引用点 = 按名 brand 引用，不内联展开）；
+ * 2. 展开深度有界（自引用点的内层是「形状待定」，不是又一层展开）；
+ * 3. 规模有界（env 模块体积不随自引用成员数指数增长）。
  */
 
 
@@ -2101,7 +2101,7 @@ function slots(a: Abs): Record<string, Abs> {
   return {};
 }
 
-describe("Bug 806 —— 递归类型别名惰性/引用式建模（不指数展开）", () => {
+describe("递归类型别名惰性/引用式建模（不指数展开）", () => {
   it("递归别名 = 按名 brand（不是内联展开的对象）", () => {
     const p = writeTemp(
       "tree.d.ts",
@@ -2182,25 +2182,25 @@ describe("Bug 806 —— 递归类型别名惰性/引用式建模（不指数展
 });
 
 // ---------------------------------------------------------------------------
-// Bug 807 —— 同一接口方法在两条收割路径上必须是同一个类型
+// 同一接口方法在两条收割路径上必须是同一个类型
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 807 —— 同一接口方法在两条收割路径上必须是同一个类型", () => {
+describe("同一接口方法在两条收割路径上必须是同一个类型", () => {
 /**
- * Bug 807 回归（harvester 收割面）：同一个接口方法被收割成**两个不同类型**
+ * 回归（harvester 收割面）：同一个接口方法被收割成**两个不同类型**
  * （brand 成员 vs 模块级提升全局）。
  *
  * 两条收割路径：
- *   - brand 面（`instanceFor`）：接口成员 → brand 槽位；
- *   - 提升面（`expandInterfaceAsModuleMembers`）：接口成员 → 模块级 fn/var。
+ * - brand 面（`instanceFor`）：接口成员 → brand 槽位；
+ * - 提升面（`expandInterfaceAsModuleMembers`）：接口成员 → 模块级 fn/var。
  * 此前两条路径用了**两套不同的重载合并策略** ⇒ 同一方法、同一份 .d.ts，两个类型。
  *
  * 改前（报告 tmp/probe/r15h/ifmeth.d.ts）：
- *   brand `M.three` = (number) => string            ← 只剩第一个 overload
- *   全局 `three`    = (number) => string | number | boolean
+ * brand `M.three` = (number) => string ← 只剩第一个 overload
+ * 全局 `three` = (number) => string | number | boolean
  * 改后：两条路径给出**同一个**形态（返回位并集 / 参数位逐位并集）。
  *
  * oracle（`tsc --strict`，tmp/probe/fix-r27/h3/oracle/o807.ts）：exit=0
- *   ⇒ TS 侧三个 overload 都在契约里（按实参类型选分支）。
+ * ⇒ TS 侧三个 overload 都在契约里（按实参类型选分支）。
  *
  * 泛型接口的补充口径：提升路径**看不到类型实参** ⇒ 提升出来的是未绑定 α，
  * 与 brand 面（实参已代入）不是同一个类型 ⇒ 泛型接口的成员不提升。
@@ -2247,7 +2247,7 @@ const OVERLOADS = `declare module "m" {
 }
 `;
 
-describe("Bug 807 —— 同一接口方法在两条收割路径上必须是同一个类型", () => {
+describe("同一接口方法在两条收割路径上必须是同一个类型", () => {
   it("brand 成员与**模块级**提升成员的形态完全一致（BUG-253：提升只对模块作用域成立）", () => {
     const p = writeTemp("ifmeth.d.ts", OVERLOADS);
     const env = harvestDts([p]);
@@ -2309,11 +2309,11 @@ describe("Bug 807 —— 同一接口方法在两条收割路径上必须是同�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 809 —— 接口 extends 的继承成员并入实例模型
+// 接口 extends 的继承成员并入实例模型
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 809 —— 接口 extends 的继承成员并入实例模型", () => {
+describe("接口 extends 的继承成员并入实例模型", () => {
 /**
- * Bug 809 回归（harvester 收割面）：接口 `extends` 的**继承成员在实例模型里整体消失**
+ * 回归（harvester 收割面）：接口 `extends` 的**继承成员在实例模型里整体消失**
  * ⇒ `derived.b` 折 `undefined`、`.length` **定抛 TypeError**（L2 假红）。
  *
  * 根因：收接口成员时只搬接口**自身**声明的成员，**不解析 `extends` 子句**
@@ -2321,16 +2321,16 @@ describe("[harvest-] Bug 809 —— 接口 extends 的继承成员并入实例�
  * `undefined` → 后续 `.length` 被判「确定抛 TypeError」。
  *
  * 改前（tmp/probe/fix-r27/h3/probe-h3b.ts，BEFORE 行）：
- *   brand Derived 槽位 = { d: number }        ← 继承来的 b 整条消失
+ * brand Derived 槽位 = { d: number } ← 继承来的 b 整条消失
  * 改后：
- *   brand Derived 槽位 = { d: number, b: string }
+ * brand Derived 槽位 = { d: number, b: string }
  *
  * oracle（`tsc --strict`，tmp/probe/fix-r27/h3/oracle/o809.ts）：exit=0
- *   `derived.b` 是 string、`derived.b.length` 是 number ⇒ TS 侧继承成员必然存在。
+ * `derived.b` 是 string、`derived.b.length` 是 number ⇒ TS 侧继承成员必然存在。
  *
  * 产品面（`nudo check`，tmp/probe/fix-r27/h3/e2e/inherit/）：
- *   改前 `readBaseFieldLen() => never  throws TypeError`（L2 假红）
- *   改后 `readBaseFieldLen() => number`
+ * 改前 `readBaseFieldLen() => never throws TypeError`（L2 假红）
+ * 改后 `readBaseFieldLen() => number`
  */
 
 
@@ -2370,7 +2370,7 @@ export declare const derived: Derived;
 export declare const base: Base;
 `;
 
-describe("Bug 809 —— 接口 extends 的继承成员并入实例模型", () => {
+describe("接口 extends 的继承成员并入实例模型", () => {
   it("Derived 的实例面含基接口的成员 b", () => {
     const p = writeTemp("ext.d.ts", EXTENDS);
     const env = harvestDts([p]);
@@ -2421,24 +2421,24 @@ export declare const plain: Plain;
 });
 
 // ---------------------------------------------------------------------------
-// Bug 810 —— 方法的类型形参遮蔽外层同名形参（α 作用域隔离）
+// 方法的类型形参遮蔽外层同名形参（α 作用域隔离）
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 810 —— 方法的类型形参遮蔽外层同名形参（α 作用域隔离）", () => {
+describe("方法的类型形参遮蔽外层同名形参（α 作用域隔离）", () => {
 /**
- * Bug 810 回归（harvester 收割面）：泛型**方法**自带类型形参与**接口**形参
+ * 回归（harvester 收割面）：泛型**方法**自带类型形参与**接口**形参
  * **同名** ⇒ 接口的 α 代入把方法自身的 α 一并替换 ⇒ 方法被**去泛型化**
  * ⇒ `sh.m("text")` 折 `number`（真值 `string`）。
  *
  * oracle（`tsc --strict`，见 tmp/probe/fix-r27/h1b/oracle/u810.ts，tsc exit=0）：
- *   `interface Shadow<T> { v: T; m<T>(x: T): T }` + `sh: Shadow<number>`
- *   ⇒ `sh.v` 是 number（接口的 T）；
- *     `sh.m("text")` 是 **string**（方法自己的 `<T>` **就近遮蔽**接口的 `<T>`，
- *     m 对任意参数返回同类型）。
+ * `interface Shadow<T> { v: T; m<T>(x: T): T }` + `sh: Shadow<number>`
+ * ⇒ `sh.v` 是 number（接口的 T）；
+ * `sh.m("text")` 是 **string**（方法自己的 `<T>` **就近遮蔽**接口的 `<T>`，
+ * m 对任意参数返回同类型）。
  *
  * 改前（tmp/probe/fix-r27/h1b/before.ts，before-h1 快照 = git HEAD）：
- *   sh.v: string   sh.m: (string) => string    ← 方法被接口的实参去泛型化
+ * sh.v: string sh.m: (string) => string ← 方法被接口的实参去泛型化
  * 改后（tmp/probe/fix-r27/h1b/probe.ts）：
- *   sh.v: string   sh.m: (T@1fu64lg34) => T@1fu64lg34   ← 方法的 α 活着
+ * sh.v: string sh.m: (T@1fu64lg34) => T@1fu64lg34 ← 方法的 α 活着
  *
  * 根因：`ctx.typeParams` 是一个**扁平集合**（接口的 `T` 与方法自己的 `T`
  * 混在一起）⇒ `substAbs` 代入接口实参时把方法内部的 α 一并替换。
@@ -2494,7 +2494,7 @@ function varIds(a: unknown): string[] {
   return out;
 }
 
-describe("Bug 810 —— 方法的类型形参遮蔽外层同名形参（α 作用域隔离）", () => {
+describe("方法的类型形参遮蔽外层同名形参（α 作用域隔离）", () => {
   it("接口的 α 照常代入（sh.v 是实参类型）", () => {
     const p = writeTemp(
       "fx.d.ts",
@@ -2562,29 +2562,29 @@ export declare const b: Box<string>;
 });
 
 // ---------------------------------------------------------------------------
-// Bug 812 —— 递归 interface 的自引用 = 形状待定（不是闭合空 brand）
+// 递归 interface 的自引用 = 形状待定（不是闭合空 brand）
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 812 —— 递归 interface 的自引用 = 形状待定（不是闭合空 brand）", () => {
+describe("递归 interface 的自引用 = 形状待定（不是闭合空 brand）", () => {
 /**
- * Bug 812 回归（harvester 收割面）：递归 interface 的自引用被铸成**空 brand**
+ * 回归（harvester 收割面）：递归 interface 的自引用被铸成**空 brand**
  * （`absBrand(name, {})` ⇒ 闭合空对象）⇒ 成员读走「槽位缺失 ⇒ exact undefined」
  * ⇒ 合法代码被判「定抛 TypeError」（L2 门禁假红）；且三条收割路径给出三种类型。
  *
  * 改前（tmp/probe/fix-r27/h2/before-after.ts，BEFORE 行）：
- *   next.inner = {  }            （闭合空对象）
- *   $get(next).value = undefined  conf=exact   ← 假红的成因
+ * next.inner = { } （闭合空对象）
+ * $get(next).value = undefined conf=exact ← 假红的成因
  * 改后：
- *   next.inner = unknown         （形状待定）
- *   $get(next).value = unknown    conf=partial  ← 不再折成 exact undefined
+ * next.inner = unknown （形状待定）
+ * $get(next).value = unknown conf=partial ← 不再折成 exact undefined
  *
  * oracle（`tsc --strict`，tmp/probe/fix-r27/h2/oracle/）：
  * - `o812-use.ts`（`node.next.value` 赋给 `number`，再 `.toFixed(2)`）⇒ tsc exit=0
- *   ⇒ TS 侧递归 interface 的成员读完全合法。
+ * ⇒ TS 侧递归 interface 的成员读完全合法。
  *
  * 契约：
- *   1. 递归引用点 = 按名 brand + **形状待定**（不是闭合空对象）；
- *   2. 成员读不得折成 exact undefined（否则 L2 门禁假红）；
- *   3. 三条收割路径（收割面 / 磁盘往返面 / 落盘发射面）给出**同一个**类型。
+ * 1. 递归引用点 = 按名 brand + **形状待定**（不是闭合空对象）；
+ * 2. 成员读不得折成 exact undefined（否则 L2 门禁假红）；
+ * 3. 三条收割路径（收割面 / 磁盘往返面 / 落盘发射面）给出**同一个**类型。
  */
 
 
@@ -2628,7 +2628,7 @@ const RECURSE_DTS =
   `export interface Node { value: number; next: Node; }\n` +
   `export declare const node: Node;\n`;
 
-describe("Bug 812 —— 递归 interface 的自引用 = 形状待定（不是闭合空 brand）", () => {
+describe("递归 interface 的自引用 = 形状待定（不是闭合空 brand）", () => {
   it("自引用点是 brand 且内层「形状待定」", () => {
     const p = writeTemp("node.d.ts", RECURSE_DTS);
     const env = harvestDts([p]);
@@ -2680,28 +2680,28 @@ describe("Bug 812 —— 递归 interface 的自引用 = 形状待定（不是�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 813 —— 泛型类型形参默认值生效（不留未绑定 α）
+// 泛型类型形参默认值生效（不留未绑定 α）
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 813 —— 泛型类型形参默认值生效（不留未绑定 α）", () => {
+describe("泛型类型形参默认值生效（不留未绑定 α）", () => {
 /**
- * Bug 813 回归（harvester 收割面）：泛型**类型形参默认值**被丢弃 ⇒ 无参引用
+ * 回归（harvester 收割面）：泛型**类型形参默认值**被丢弃 ⇒ 无参引用
  * 留下**未绑定 α**（T）⇒ 引擎侧「未绑定 α」= 无约束值 ⇒ 其上的任意方法调用
  * 被建模为定抛 TypeError（L2 门禁假红）。
  *
  * 改前（tmp/probe/fix-r27/h2/before-after.ts，BEFORE 行）：
- *   Box(no args).v = any
+ * Box(no args).v = any
  * 改后：
- *   Box(no args).v = string      （默认值生效）
+ * Box(no args).v = string （默认值生效）
  *
  * oracle（`tsc --strict`，tmp/probe/fix-r27/h2/oracle/）：
  * - `o813-use.ts`（`box.v.toUpperCase()` 赋给 `string`）⇒ tsc exit=0
- *   ⇒ TS 侧 `Box`（无实参）取形参默认值 `string`。
+ * ⇒ TS 侧 `Box`（无实参）取形参默认值 `string`。
  *
  * 契约：
- *   1. 类型形参默认值生效（无实参 ⇒ 取默认值）；
- *   2. 无默认值时取约束（TS 语义：推断不出 ⇒ 约束面）；
- *   3. 两者皆无 ⇒ 推断 unknown（不留未绑定 α ⇒ 不产生「定抛」假红）；
- *   4. `Box` ≡ `Box<string>`（默认路径与显式实参路径同形）。
+ * 1. 类型形参默认值生效（无实参 ⇒ 取默认值）；
+ * 2. 无默认值时取约束（TS 语义：推断不出 ⇒ 约束面）；
+ * 3. 两者皆无 ⇒ 推断 unknown（不留未绑定 α ⇒ 不产生「定抛」假红）；
+ * 4. `Box` ≡ `Box<string>`（默认路径与显式实参路径同形）。
  */
 
 
@@ -2735,7 +2735,7 @@ function slots(a: Abs): Record<string, Abs> {
   return {};
 }
 
-describe("Bug 813 —— 泛型类型形参默认值生效（不留未绑定 α）", () => {
+describe("泛型类型形参默认值生效（不留未绑定 α）", () => {
   it("无实参引用取默认值（改前是 any = 未绑定 α）", () => {
     const p = writeTemp(
       "box.d.ts",
@@ -2812,26 +2812,26 @@ describe("Bug 813 —— 泛型类型形参默认值生效（不留未绑定 α�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 816 —— brand-vs-brand 按结构判 extends（不是只比名字）
+// brand-vs-brand 按结构判 extends（不是只比名字）
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 816 —— brand-vs-brand 按结构判 extends（不是只比名字）", () => {
+describe("brand-vs-brand 按结构判 extends（不是只比名字）", () => {
 /**
- * Bug 816 回归（harvester 收割面）：条件类型的 `extends` 判定在 **brand-vs-brand**
+ * 回归（harvester 收割面）：条件类型的 `extends` 判定在 **brand-vs-brand**
  * 上**只比名字** ⇒ 结构相同、名字不同的两个 interface 被判「不 extends」⇒
  * 条件类型**确定地**走错分支（**硬错值**：与 TS 相反的确切字面量）。
  *
  * 改前（tmp/probe/fix-r27/h1a/probe.ts，BEFORE 行）：
- *   same() => "no"   （TS："yes" —— A/B 结构相同）
- *   diff() => "no"   （TS："no"  —— A/C 成员类型不同，碰巧对）
- *   self() => "yes"  （TS："yes" —— 靠**同名**蒙对）
+ * same() => "no" （TS："yes" —— A/B 结构相同）
+ * diff() => "no" （TS："no" —— A/C 成员类型不同，碰巧对）
+ * self() => "yes" （TS："yes" —— 靠**同名**蒙对）
  * 改后：same() => "yes"、diff() => "no"、self() => "yes"。
  *
  * oracle（`tsc --strict`，tmp/probe/fix-r27/h1a/ts/oracle.ts）：exit=0
  * ⇒ TS 认定 `B816A extends B816B` 成立（结构可赋值）、`B816A extends B816C` 不成立。
  *
  * 契约（双向）：
- *   1. brand 比较要看**结构**（同构即等），不能只比名字；
- *   2. 结构不同 ⇒ 仍然判假（不是「一律判真」的放宽）。
+ * 1. brand 比较要看**结构**（同构即等），不能只比名字；
+ * 2. 结构不同 ⇒ 仍然判假（不是「一律判真」的放宽）。
  */
 
 
@@ -2870,7 +2870,7 @@ const decls = [
   `export declare function b816c(): B816A extends B816A ? "yes" : "no";`,
 ].join("\n");
 
-describe("Bug 816 —— brand-vs-brand 按结构判 extends（不是只比名字）", () => {
+describe("brand-vs-brand 按结构判 extends（不是只比名字）", () => {
   it("结构相同的两个 interface ⇒ 判真（改前按名字判假）", () => {
     const p = writeTemp("a.d.ts", decls);
     const env = harvestDts([p]);
@@ -2915,32 +2915,32 @@ describe("Bug 816 —— brand-vs-brand 按结构判 extends（不是只比名�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 819 —— 内联类型字面量的访问器成员不再被丢掉
+// 内联类型字面量的访问器成员不再被丢掉
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 819 —— 内联类型字面量的访问器成员不再被丢掉", () => {
+describe("内联类型字面量的访问器成员不再被丢掉", () => {
 /**
- * Bug 819 回归（harvester 收割面）：**内联类型字面量**丢 `get` / `set`
+ * 回归（harvester 收割面）：**内联类型字面量**丢 `get` / `set`
  * 访问器 ⇒ 成员从**闭合对象**上读出 **exact `undefined`**（真值是 number）。
  *
  * oracle（`tsc --strict`，见 tmp/probe/fix-r27/h1b/oracle/u819.ts，tsc exit=0）：
- *   `inline: { get value(): number; plain: string }` ⇒ `inline.value` 是
- *   **number**、`inline.plain` 是 string；`vi: I`（interface 形态）同口径。
+ * `inline: { get value(): number; plain: string }` ⇒ `inline.value` 是
+ * **number**、`inline.plain` 是 string；`vi: I`（interface 形态）同口径。
  *
  * 改前（tmp/probe/fix-r27/h1b/before.ts，before-h1 快照 = git HEAD）：
- *   inline slots: [ 'plain' ]        ← 访问器 `value` 整条被丢掉
- *   iface  slots: [ 'value', 'plain' ]  ← interface 路径是好的（instanceFor）
+ * inline slots: [ 'plain' ] ← 访问器 `value` 整条被丢掉
+ * iface slots: [ 'value', 'plain' ] ← interface 路径是好的（instanceFor）
  * 改后（tmp/probe/fix-r27/h1b/probe.ts）：
- *   inline slots: [ 'plain', 'value' ]   inline.value: number
+ * inline slots: [ 'plain', 'value' ] inline.value: number
  *
  * 根因：`mapTypeMembers`（内联类型字面量路径）只处理 `isPropertySignature` /
  * `isMethodSignature`，**没有访问器分支** ⇒ 访问器成员被静默跳过 ⇒ 对象面
  * **闭合** ⇒ 未建模成员的读取语义是 **exact undefined**（一个**具体的错值**）。
  *
  * 契约：
- *   1. 内联类型字面量与 interface 两条路径的**成员集合必须一致**；
- *   2. 读面来自 **getter**（TS 的 `getTypeOfSymbol` 对 get/set 对取 getter
- *      的返回类型），且**与声明顺序无关**（set 在前 / get 在后也取 getter）；
- *   3. 写面（setter 的形参类型）与读面**分开建模**。
+ * 1. 内联类型字面量与 interface 两条路径的**成员集合必须一致**；
+ * 2. 读面来自 **getter**（TS 的 `getTypeOfSymbol` 对 get/set 对取 getter
+ * 的返回类型），且**与声明顺序无关**（set 在前 / get 在后也取 getter）；
+ * 3. 写面（setter 的形参类型）与读面**分开建模**。
  */
 
 
@@ -2976,7 +2976,7 @@ function memberSlots(a: unknown): Record<string, string> {
   return {};
 }
 
-describe("Bug 819 —— 内联类型字面量的访问器成员不再被丢掉", () => {
+describe("内联类型字面量的访问器成员不再被丢掉", () => {
   it("内联字面量与 interface 两条路径的成员集合**一致**", () => {
     const p = writeTemp(
       "fx.d.ts",
@@ -3046,11 +3046,11 @@ export declare const getFirst: { get value(): number; set value(v: number); };
 });
 
 // ---------------------------------------------------------------------------
-// Bug 821 —— 条件元数据按条目隔离（不跨签名泄漏）
+// 条件元数据按条目隔离（不跨签名泄漏）
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 821 —— 条件元数据按条目隔离（不跨签名泄漏）", () => {
+describe("条件元数据按条目隔离（不跨签名泄漏）", () => {
 /**
- * Bug 821 回归（harvester 收割面）：条件类型的 `infer` 元数据经**上下文级单槽**
+ * 回归（harvester 收割面）：条件类型的 `infer` 元数据经**上下文级单槽**
  * （`ctx.pendingCond`）泄漏进**下一条**签名 ⇒ **逐字相同**的两条声明得到
  * **不同**类型 ⇒ 门禁**冷缓存假红 / 热缓存绿**（结论随缓存状态翻转）。
  *
@@ -3059,22 +3059,22 @@ describe("[harvest-] Bug 821 —— 条件元数据按条目隔离（不跨签�
  * `condFallback`（假支）⇒ 调用点折出 `0` 而不是 `string`。
  *
  * 改前（tmp/probe/fix-r27/h1a/probe.ts，BEFORE 行）：
- *   one.inferFrom = {"fromVar":"T","via":"promise","inferVar":"U"}   ← 捡来的
- *   two.inferFrom = undefined
- *   one(x) => 0        ← ★ 泄漏的 condFallback（假支）
- *   two(x) => string
+ * one.inferFrom = {"fromVar":"T","via":"promise","inferVar":"U"} ← 捡来的
+ * two.inferFrom = undefined
+ * one(x) => 0 ← ★ 泄漏的 condFallback（假支）
+ * two(x) => string
  * 改后：
- *   one.inferFrom = undefined   two.inferFrom = undefined
- *   one(x) => string            two(x) => string
+ * one.inferFrom = undefined two.inferFrom = undefined
+ * one(x) => string two(x) => string
  *
  * oracle（`tsc --strict`，tmp/probe/fix-r27/h1a/ts/oracle.ts）：exit=0
  * ⇒ TS 认为 one / two 都返回 string（逐字相同 ⇒ 必须一致）。
  *
  * 契约（双向）：
- *   1. 条件元数据**按条目隔离**：属性位 / 类型位的元数据不属于任何签名，
- *      不许被下一条签名捡走；
- *   2. **逐字相同**的两条声明必须得到**完全相同**的类型（不论遍历顺序、
- *      不论收割几次 ⇒ 冷 / 热缓存两种状态同口径）。
+ * 1. 条件元数据**按条目隔离**：属性位 / 类型位的元数据不属于任何签名，
+ * 不许被下一条签名捡走；
+ * 2. **逐字相同**的两条声明必须得到**完全相同**的类型（不论遍历顺序、
+ * 不论收割几次 ⇒ 冷 / 热缓存两种状态同口径）。
  */
 
 
@@ -3121,7 +3121,7 @@ const sameFile = [
   `export declare function two(x: Box<Promise<string>>): string;`,
 ].join("\n");
 
-describe("Bug 821 —— 条件元数据按条目隔离（不跨签名泄漏）", () => {
+describe("条件元数据按条目隔离（不跨签名泄漏）", () => {
   it("逐字相同的两条声明 ⇒ 调用点返回类型完全一致", () => {
     const p = writeTemp("a.d.ts", sameFile);
     const env = harvestDts([p]);
@@ -3189,31 +3189,31 @@ describe("Bug 821 —— 条件元数据按条目隔离（不跨签名泄漏）"
 });
 
 // ---------------------------------------------------------------------------
-// Bug 822 —— extends 位判不出 ⇒ 不取支（不是恒真）
+// extends 位判不出 ⇒ 不取支（不是恒真）
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 822 —— extends 位判不出 ⇒ 不取支（不是恒真）", () => {
+describe("extends 位判不出 ⇒ 不取支（不是恒真）", () => {
 /**
- * Bug 822 回归（harvester 收割面）：`keyof` / `typeof` / 未解析类型在条件类型的
+ * 回归（harvester 收割面）：`keyof` / `typeof` / 未解析类型在条件类型的
  * **`extends` 位**被当成 `unknown`（退化哨兵）⇒ 判定**恒为真** ⇒ 条件类型
  * **取错支**（与 TS 相反的确切字面量）。
  *
  * 改前（tmp/probe/fix-r27/h1a/probe.ts，BEFORE 行）：
- *   ko()  => "yes"   （TS："no"  —— "z" 不是 {a,b} 的键）
- *   ko2() => "yes"   （TS："yes" —— 碰巧对）
- *   tq()  => "yes"   （typeof 判不出 ⇒ 不该取支）
- *   un()  => "yes"   （未解析类型 ⇒ 不该取支）
+ * ko() => "yes" （TS："no" —— "z" 不是 {a,b} 的键）
+ * ko2() => "yes" （TS："yes" —— 碰巧对）
+ * tq() => "yes" （typeof 判不出 ⇒ 不该取支）
+ * un() => "yes" （未解析类型 ⇒ 不该取支）
  * 改后：ko() => "no"、ko2() => "yes"、tq()/un() => "yes" | "no"（判不出 ⇒
  * **不取支**，取两支并集）。
  *
  * oracle（`tsc --strict`，tmp/probe/fix-r27/h1a/ts/oracle.ts）：exit=0
  * ⇒ TS 认定 `"z" extends keyof { a: 1; b: 2 }` 为假（真值 "no"）、
- *   `"a" extends keyof { a: 1; b: 2 }` 为真（真值 "yes"）。
+ * `"a" extends keyof { a: 1; b: 2 }` 为真（真值 "yes"）。
  *
  * 契约（双向）：
- *   1. `extends` 位**判不出**（退化哨兵）⇒ 结果是 **unknown**（三分支里的第三
- *      支）⇒ **不取支**（取两支并集），绝不能当 unknown 恒真；
- *   2. `keyof` **能算出来**时（字面量键名集合）必须**照常判定**
- *      —— 不能因为「keyof 一律判不出」而把 "no" 也放成并集。
+ * 1. `extends` 位**判不出**（退化哨兵）⇒ 结果是 **unknown**（三分支里的第三
+ * 支）⇒ **不取支**（取两支并集），绝不能当 unknown 恒真；
+ * 2. `keyof` **能算出来**时（字面量键名集合）必须**照常判定**
+ * —— 不能因为「keyof 一律判不出」而把 "no" 也放成并集。
  */
 
 
@@ -3250,7 +3250,7 @@ const decls = [
   `export declare function b822d(): "z" extends UnresolvedThing ? "yes" : "no";`,
 ].join("\n");
 
-describe("Bug 822 —— extends 位判不出 ⇒ 不取支（不是恒真）", () => {
+describe("extends 位判不出 ⇒ 不取支（不是恒真）", () => {
   it("keyof 可算 ⇒ 照常判定（\"z\" 不在 {a,b} ⇒ 假）", () => {
     const p = writeTemp("a.d.ts", decls);
     const env = harvestDts([p]);
@@ -3297,29 +3297,29 @@ describe("Bug 822 —— extends 位判不出 ⇒ 不取支（不是恒真）", 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 823 —— 真支是嵌套条件类型 ⇒ 递归求值（不被 infer 变量顶替）
+// 真支是嵌套条件类型 ⇒ 递归求值（不被 infer 变量顶替）
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 823 —— 真支是嵌套条件类型 ⇒ 递归求值（不被 infer 变量顶替）", () => {
+describe("真支是嵌套条件类型 ⇒ 递归求值（不被 infer 变量顶替）", () => {
 /**
- * Bug 823 回归（harvester 收割面）：外层条件类型的**真支本身是嵌套条件类型**时，
+ * 回归（harvester 收割面）：外层条件类型的**真支本身是嵌套条件类型**时，
  * 真支被 `infer` 变量**顶替** ⇒ 返回**错误确切字面量**（与 TS 相反）。
  *
  * 改前（tmp/probe/fix-r27/h1a/probe.ts，BEFORE 行）：
- *   nst()  => any    ← 真支（嵌套条件类型）被 infer 变量 E 顶替
- *   nst2() => any
+ * nst() => any ← 真支（嵌套条件类型）被 infer 变量 E 顶替
+ * nst2() => any
  * 改后：
- *   nst()  => "s" | "n" | "x"   ← 真支**递归求值**（"s"/"n"）+ 假支 "x"
- *   nst2() => any                ← 真支**就是** infer 变量（合法的 α 捷径）
+ * nst() => "s" | "n" | "x" ← 真支**递归求值**（"s"/"n"）+ 假支 "x"
+ * nst2() => any ← 真支**就是** infer 变量（合法的 α 捷径）
  *
  * oracle（`tsc --strict`，tmp/probe/fix-r27/h1a/ts/oracle.ts）：exit=0
  * ⇒ TS 认定 `b823(["a"])` 的类型是 "s"（外层真支 → 内层 `E extends string`
- *   成立 ⇒ "s"）；改前的 "any" 与之相反（把元素值域当成了结果）。
+ * 成立 ⇒ "s"）；改前的 "any" 与之相反（把元素值域当成了结果）。
  *
  * 契约（双向）：
- *   1. 真支是**嵌套条件类型** ⇒ 必须**递归求值**（真支的取值出现在结果里），
- *      不得被 infer 变量顶替；
- *   2. 真支**就是** infer 变量 ⇒ 仍走 α 捷径（`relation.inferFrom` 在位，
- *      调用点能绑出元素类型）—— 不能把这条路径一起砍掉。
+ * 1. 真支是**嵌套条件类型** ⇒ 必须**递归求值**（真支的取值出现在结果里），
+ * 不得被 infer 变量顶替；
+ * 2. 真支**就是** infer 变量 ⇒ 仍走 α 捷径（`relation.inferFrom` 在位，
+ * 调用点能绑出元素类型）—— 不能把这条路径一起砍掉。
  */
 
 
@@ -3354,7 +3354,7 @@ const decls = [
   `export declare function b823b<T>(x: T): T extends (infer E)[] ? E : "x";`,
 ].join("\n");
 
-describe("Bug 823 —— 真支是嵌套条件类型 ⇒ 递归求值（不被 infer 变量顶替）", () => {
+describe("真支是嵌套条件类型 ⇒ 递归求值（不被 infer 变量顶替）", () => {
   it("嵌套条件类型的真支被递归求值（真支取值出现在结果里）", () => {
     const p = writeTemp("a.d.ts", decls);
     const env = harvestDts([p]);
@@ -3397,17 +3397,17 @@ describe("Bug 823 —— 真支是嵌套条件类型 ⇒ 递归求值（不被 i
 });
 
 // ---------------------------------------------------------------------------
-// Bug 825 —— --from-dts 的重载集
+// --from-dts 的重载集
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 825 —— --from-dts 的重载集", () => {
+describe("--from-dts 的重载集", () => {
 /**
- * Bug 825 —— `nudo contract --from-dts` 把**重载集静默塌成第一个 overload**
+ * `nudo contract --from-dts` 把**重载集静默塌成第一个 overload**
  * ⇒ 草稿**少声明**签名，且被丢掉的 overload **不计入 `skipped`**
  * ⇒ 汇总行**看不出任何丢失**。
  *
  * 修法（草稿面）：
  * 1. 重载**全部保留**：合并后的返回类型取**全部 overload 的 union**
- *    （与收割面 `harvest-dts.ts` 的重载合并**同口径**），形参取首个；
+ * （与收割面 `harvest-dts.ts` 的重载合并**同口径**），形参取首个；
  * 2. 每条 overload 的**签名写进 note** ⇒ 审阅者看得见「这里本来有 N 条」；
  * 3. 被合并掉的 overload **计入 `stats.skipped`** ⇒ 汇总行说真话。
  *
@@ -3432,7 +3432,7 @@ function writeDts(name: string, src: string): string {
   return file;
 }
 
-describe("Bug 825 —— --from-dts 的重载集", () => {
+describe("-from-dts 的重载集", () => {
   it("重载集保留**全部** overload 的返回类型（不被塌成第一个）", () => {
     const file = writeDts(
       "kt14.d.ts",
@@ -3504,24 +3504,24 @@ export declare function over(x: string, y: number, z: boolean): boolean;
 });
 
 // ---------------------------------------------------------------------------
-// Bug 826 —— 收割的 declare class 类值带 ctor facet（new 不再 may-throw）
+// 收割的 declare class 类值带 ctor facet（new 不再 may-throw）
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 826 —— 收割的 declare class 类值带 ctor facet（new 不再 may-throw）", () => {
+describe("收割的 declare class 类值带 ctor facet（new 不再 may-throw）", () => {
 /**
- * Bug 826 回归（harvester 收割面）：收割的 **`declare class` 类值没有 `ctor` facet**
+ * 回归（harvester 收割面）：收割的 **`declare class` 类值没有 `ctor` facet**
  * ⇒ `new X()` 被判「**可能抛 TypeError**（可构造性未知）」⇒ **L2 假红**
  * （`tsc --strict` 对同一份代码 exit 0）。
  *
  * oracle（`tsc --strict`，见 tmp/probe/fix-r27/h5/e2e/cls/app.ts，tsc exit=0）：
  * - `export declare class Gadget { label: string; compute(input: number): number }`
- *   ⇒ `new Gadget()` 是**构造调用**（合法），`g.label` 是 string。
+ * ⇒ `new Gadget()` 是**构造调用**（合法），`g.label` 是 string。
  *
  * 收割侧契约：
- *   1. 类值（构造函数）带 **`ctor: true` facet** —— core 的 `new` 路径按 callee 的
- *      `ctor` facet 判可构造性（`Shape k:"fn".ctor`）：缺省 = 「可构造性未知」
- *      ⇒ 记 may TypeError；
- *   2. mock 化（`harvestedValueToAbs`）时**透传**该 facet（否则又变回未知）；
- *   3. `new X()` 走构造分支 ⇒ 产出**实例面**（不是 may-throw）。
+ * 1. 类值（构造函数）带 **`ctor: true` facet** —— core 的 `new` 路径按 callee 的
+ * `ctor` facet 判可构造性（`Shape k:"fn".ctor`）：缺省 = 「可构造性未知」
+ * ⇒ 记 may TypeError；
+ * 2. mock 化（`harvestedValueToAbs`）时**透传**该 facet（否则又变回未知）；
+ * 3. `new X()` 走构造分支 ⇒ 产出**实例面**（不是 may-throw）。
  *
  * 产品面（闸②）：改前 `buildGadget() => number | string throws TypeError`
  * （`new on function value of unknown constructibility`）；改后 0 error。
@@ -3572,7 +3572,7 @@ function newEffects(callee: Abs): { kinds: string[]; value: string } {
   return { kinds: effects.map((e) => e.kind), value };
 }
 
-describe("Bug 826 —— 收割的 declare class 类值带 ctor facet（new 不再 may-throw）", () => {
+describe("收割的 declare class 类值带 ctor facet（new 不再 may-throw）", () => {
   it("类值带 `ctor: true` facet（改前缺省 = 可构造性未知）", () => {
     const p = writeTemp("fx.d.ts", CLS);
     const env = harvestDts([p]);
@@ -3630,26 +3630,26 @@ describe("Bug 826 —— 收割的 declare class 类值带 ctor facet（new 不�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 827 —— 顶层函数的重载集不被塌成单个签名
+// 顶层函数的重载集不被塌成单个签名
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 827 —— 顶层函数的重载集不被塌成单个签名", () => {
+describe("顶层函数的重载集不被塌成单个签名", () => {
 /**
- * Bug 827 回归（harvester 收割面）：顶层函数的**重载集塌成 union 返回**
+ * 回归（harvester 收割面）：顶层函数的**重载集塌成 union 返回**
  * （参数只取第一个 overload）⇒ union 面上调用 ⇒ **L5 假红**（`tsc --strict` exit 0）。
  *
  * oracle（`tsc --strict`，见 tmp/probe/fix-r27/h4/e2e/app-ovpkg.ts，tsc exit=0）：
  * - `export declare function convert(x: string): string;` + `export declare function convert(x: number): number;`
- *   ⇒ `convert("a").toUpperCase()` 与 `convert(1).toFixed()` **都合法**（TS 按实参选 arm）。
+ * ⇒ `convert("a").toUpperCase()` 与 `convert(1).toFixed()` **都合法**（TS 按实参选 arm）。
  *
  * 收割侧契约（本次交付的部分）：
- *   1. 重载集**不塌成单个签名**：参数位保留**每个** overload 的参数类型（逐位 union），
- *      返回位是各 overload 返回类型的 union —— 不再只取 `sigs[0]` 的参数。
- *   2. 收割产物里 overload 的信息**不丢**（两个 arm 的参数与返回都进面）。
+ * 1. 重载集**不塌成单个签名**：参数位保留**每个** overload 的参数类型（逐位 union），
+ * 返回位是各 overload 返回类型的 union —— 不再只取 `sigs[0]` 的参数。
+ * 2. 收割产物里 overload 的信息**不丢**（两个 arm 的参数与返回都进面）。
  *
  * ⚠️ 仍未闭环（core 侧，越界发现见交付报告）：
- *   - 「按实参形态选 arm」需要 core 的 Abs fn 形状承载 overload 集合（现在没有），
- *     且 core 的 union 方法分派只认 `string` 成员（Bug 771 / 263）——
- *     假红本身要 core 改完才消；harvester 侧无法单独消掉 L5 假红。
+ * - 「按实参形态选 arm」需要 core 的 Abs fn 形状承载 overload 集合（现在没有），
+ * 且 core 的 union 方法分派只认 `string` 成员（）——
+ * 假红本身要 core 改完才消；harvester 侧无法单独消掉 L5 假红。
  */
 
 
@@ -3702,7 +3702,7 @@ function returnPrims(a: unknown): string[] {
   return primLabels(rel?.returnType);
 }
 
-describe("Bug 827 —— 顶层函数的重载集不被塌成单个签名", () => {
+describe("顶层函数的重载集不被塌成单个签名", () => {
   it("参数位保留每个 overload 的参数类型（不再只取 sigs[0]）", () => {
     const p = writeTemp(
       "fx.d.ts",
@@ -3799,26 +3799,26 @@ export declare function convert(x: number): number;
 });
 
 // ---------------------------------------------------------------------------
-// Bug 829 —— 构造签名投影成**可构造**面（ctor facet）
+// 构造签名投影成**可构造**面（ctor facet）
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 829 —— 构造签名投影成**可构造**面（ctor facet）", () => {
+describe("构造签名投影成**可构造**面（ctor facet）", () => {
 /**
- * Bug 829 回归（harvester 收割面）：类型字面量的**构造签名**
+ * 回归（harvester 收割面）：类型字面量的**构造签名**
  * （`{ new (x: number): T }`）被投影成**普通可调用 fn** ⇒ `new C(1)`
  * **假红**（may-throw）+ `C(1)` **假绿**（TS 明确 TS2348 不可调用）。
  *
  * oracle（`tsc --strict`，见 tmp/probe/fix-r27/h1b/oracle/u829.ts，tsc exit=0）：
- *   `new WidgetCtor(1)` 合法 ⇒ `w.v` 是 number；
- *   `WidgetCtor(1)` **不合法**（TS2348: 不带 `new` 的调用）⇒ 夹具里用
- *   `@ts-expect-error` 钉住（tsc 消费掉了它 ⇒ TS 确实报错）。
+ * `new WidgetCtor(1)` 合法 ⇒ `w.v` 是 number；
+ * `WidgetCtor(1)` **不合法**（TS2348: 不带 `new` 的调用）⇒ 夹具里用
+ * `@ts-expect-error` 钉住（tsc 消费掉了它 ⇒ TS 确实报错）。
  *
  * 改前（tmp/probe/fix-r27/h1b/before.ts，before-h1 快照 = git HEAD）：
- *   C: (number) => { tag: string }    ctor facet: undefined
- *   ⇒ `new C(1)` 落 core 的「fn 形 callee 可构造性未知」臂 ⇒ **记 may-throw**
- *     ⇒ L2 门禁假红。
+ * C: (number) => { tag: string } ctor facet: undefined
+ * ⇒ `new C(1)` 落 core 的「fn 形 callee 可构造性未知」臂 ⇒ **记 may-throw**
+ * ⇒ L2 门禁假红。
  * 改后（tmp/probe/fix-r27/h1b/probe.ts）：
- *   C: (number) => { tag: string }    ctor facet: true
- *   ⇒ core 的 `fs.ctor === true` 臂 ⇒ 走声明的实例面 ⇒ **不记 may-throw**。
+ * C: (number) => { tag: string } ctor facet: true
+ * ⇒ core 的 `fs.ctor === true` 臂 ⇒ 走声明的实例面 ⇒ **不记 may-throw**。
  *
  * 根因：`mapType` 的类型字面量分支对构造签名只产出 `absFnSig` —— 一个
  * **没有构造面**的普通可调用 fn（注释明写「是构造函数形状」，实现没给）。
@@ -3855,7 +3855,7 @@ type FnShape = {
   slots?: Record<string, { value: unknown }>;
 };
 
-describe("Bug 829 —— 构造签名投影成**可构造**面（ctor facet）", () => {
+describe("构造签名投影成**可构造**面（ctor facet）", () => {
   it("构造签名产出 fn 形状且带 ctor: true facet", () => {
     const p = writeTemp(
       "fx.d.ts",
@@ -3922,22 +3922,22 @@ export declare const WidgetCtor: { new (x: number): Widget };
 });
 
 // ---------------------------------------------------------------------------
-// Bug 830 —— 调用签名投影成 fn（不再折成空对象）
+// 调用签名投影成 fn（不再折成空对象）
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 830 —— 调用签名投影成 fn（不再折成空对象）", () => {
+describe("调用签名投影成 fn（不再折成空对象）", () => {
 /**
- * Bug 830 回归（harvester 收割面）：类型字面量的**调用签名**
+ * 回归（harvester 收割面）：类型字面量的**调用签名**
  * （`{ (a: number): string }`）**整条跳过** ⇒ 该值被折成**空对象** ⇒
  * 调用即 `TypeError` ⇒ **L2 假红**（`tsc --strict` exit 0 的合法代码被判
  * 「确定抛」）。
  *
  * oracle（`tsc --strict`，见 tmp/probe/fix-r27/h1b/oracle/u830.ts，tsc exit=0）：
- *   `handler: { (a: number): string }` ⇒ `handler(1)` 是 **string**（完全合法）。
+ * `handler: { (a: number): string }` ⇒ `handler(1)` 是 **string**（完全合法）。
  *
  * 改前（tmp/probe/fix-r27/h1b/before.ts，before-h1 快照 = git HEAD）：
- *   f: {  }    k: obj      ← 零槽位的空对象 ⇒ 引擎按「不是函数」判 ⇒ 调用即 TypeError
+ * f: { } k: obj ← 零槽位的空对象 ⇒ 引擎按「不是函数」判 ⇒ 调用即 TypeError
  * 改后（tmp/probe/fix-r27/h1b/probe.ts）：
- *   f: (number) => string    k: fn
+ * f: (number) => string k: fn
  *
  * 根因：`mapType` 的类型字面量分支先找构造签名、找不到就走
  * `absObj(mapTypeMembers(...))`；而 `mapTypeMembers` 把**调用签名成员跳过**
@@ -3971,7 +3971,7 @@ type FnShape = {
   slots?: Record<string, { value: unknown }>;
 };
 
-describe("Bug 830 —— 调用签名投影成 fn（不再折成空对象）", () => {
+describe("调用签名投影成 fn（不再折成空对象）", () => {
   it("调用签名产出 fn 形状（不是空 obj）", () => {
     const p = writeTemp(
       "fx.d.ts",
@@ -4037,11 +4037,11 @@ describe("Bug 830 —— 调用签名投影成 fn（不再折成空对象）", (
 });
 
 // ---------------------------------------------------------------------------
-// Bug 832 —— 计算成员名（[Symbol.iterator]）不得整条丢弃
+// 计算成员名（[Symbol.iterator]）不得整条丢弃
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 832 —— 计算成员名（[Symbol.iterator]）不得整条丢弃", () => {
+describe("计算成员名（[Symbol.iterator]）不得整条丢弃", () => {
 /**
- * Bug 832 回归（harvester 收割面）：接口的**计算成员名**（`[Symbol.iterator]()`）
+ * 回归（harvester 收割面）：接口的**计算成员名**（`[Symbol.iterator]()`）
  * **整条丢弃** ⇒ 接口的**迭代协议整体丢失** ⇒ `for…of` 被判「对不可迭代值迭代」
  * ⇒ L2 假红（而 `tsc --strict` 对同一份代码 exit 0）。
  *
@@ -4053,11 +4053,11 @@ describe("[harvest-] Bug 832 —— 计算成员名（[Symbol.iterator]）不得
  * 改后：brand Range 槽位 = { size, "@@iterator" }（引擎把 symbol 键投影成 `@@name`）
  *
  * oracle（`tsc --strict`，tmp/probe/fix-r27/h3/oracle/o832.ts）：exit=0
- *   ⇒ `for (const v of range)` 在 TS 侧完全合法。
+ * ⇒ `for (const v of range)` 在 TS 侧完全合法。
  *
  * 产品面（`nudo check`，tmp/probe/fix-r27/h3/e2e/iter/）：
- *   改前 `drain() => number | string  throws TypeError`（L2 假红）
- *   改后 `drain() => number | string`（无 throws）
+ * 改前 `drain() => number | string throws TypeError`（L2 假红）
+ * 改后 `drain() => number | string`（无 throws）
  */
 
 
@@ -4095,7 +4095,7 @@ const ITER = `export interface Range { [Symbol.iterator](): Iterator<number>; si
 export declare const range: Range;
 `;
 
-describe("Bug 832 —— 计算成员名（[Symbol.iterator]）不得整条丢弃", () => {
+describe("计算成员名（[Symbol.iterator]）不得整条丢弃", () => {
   it("迭代协议成员进入实例模型（@@iterator 槽存在且可调用）", () => {
     const p = writeTemp("iter.d.ts", ITER);
     const env = harvestDts([p]);
@@ -4145,11 +4145,11 @@ export declare const dyn: Dyn;
 });
 
 // ---------------------------------------------------------------------------
-// Bug 834 —— --from-dts 的属性键转义
+// --from-dts 的属性键转义
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 834 —— --from-dts 的属性键转义", () => {
+describe("--from-dts 的属性键转义", () => {
 /**
- * Bug 834 —— `nudo contract --from-dts` 对**带引号 / 连字符的属性键**产出
+ * `nudo contract --from-dts` 对**带引号 / 连字符的属性键**产出
  * **语法非法**的草稿 ⇒ 按草稿指引抄进 `*.nudo.js` 后 sidecar **加载失败**
  * ⇒ `nudo check` 门禁由绿转红（exit 1）。
  *
@@ -4204,7 +4204,7 @@ function nodeCheck(file: string): { ok: boolean; stderr: string } {
   }
 }
 
-describe("Bug 834 —— --from-dts 的属性键转义", () => {
+describe("-from-dts 的属性键转义", () => {
   it("带引号 / 连字符的键产出**合法**的 DSL（引号串形态）", () => {
     const file = writeDts("keys.d.ts", KEYS_DTS);
     const draft = dtsToContractDraft([file], "keys");
@@ -4271,7 +4271,7 @@ describe("Bug 834 —— --from-dts 的属性键转义", () => {
   }, 120_000);
 
   it("导出名撞 builder import ⇒ 走别名形态（草稿仍是合法 JS）", () => {
-    // 与 Bug 545 同一族（草稿的 import ↔ export 撞名 ⇒ SyntaxError）：
+    // 与 同一族（草稿的 import ↔ export 撞名 ⇒ SyntaxError）：
     // 这里用**当前**的 builder（`number`）钉住「撞名走别名」这条不变量。
     const src = formatDtsContractDraft("types", ["types.d.ts"], [
       { name: "number", dsl: "number()", kind: "value" },
@@ -4289,25 +4289,25 @@ describe("Bug 834 —— --from-dts 的属性键转义", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 916 —— 草稿面：Promise 外壳**不剥**（与收割面同口径，不假红）
+// 草稿面：Promise 外壳**不剥**（与收割面同口径，不假红）
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 916 —— 草稿面：Promise 外壳**不剥**（与收割面同口径，不假红）", () => {
+describe("草稿面：Promise 外壳**不剥**（与收割面同口径，不假红）", () => {
 /**
- * Bug 916 回归（harvester **草稿面**）：`Promise<T>` 特判**剥掉**了 Promise
+ * 回归（harvester **草稿面**）：`Promise<T>` 特判**剥掉**了 Promise
  * 外壳 ⇒ 契约要求的是 **resolve 之后**的值 ⇒ 契约**先天不可满足**
  * ⇒ **假红**（tsc 绿，`nudo check` 红）；且与**收割面相反**（收割面保留
  * `eff/promise` 外壳）。
  *
  * oracle（`tsc --strict`，tmp/probe/fix-r27/h8a/e2e/b916.ts ⇒ 无错）：
- *   `function fetchUser(id: number): Promise<{id: number; name: string}> {
- *      return Promise.resolve({ id, name: "n" });
- *    }`
+ * `function fetchUser(id: number): Promise<{id: number; name: string}> {
+ * return Promise.resolve({ id, name: "n" });
+ * }`
  *
  * 改前（git HEAD 的草稿面）：`Promise<T>` → `fn({…}, shape({ id: number(), name: string() }))`
- *   ⇒ 返回义务落在 resolve 后的值上 ⇒ 实现返回 Promise ⇒ 必然违约。
+ * ⇒ 返回义务落在 resolve 后的值上 ⇒ 实现返回 Promise ⇒ 必然违约。
  * 改后（tmp/probe/fix-r27/h8a/probe.ts）：
- *   `export const fetchUser = fn({ id: number() }, any());`
- *   ＋ note 明说「Promise 外壳保留（与收割面同口径），该位无约束」。
+ * `export const fetchUser = fn({ id: number() }, any());`
+ * ＋ note 明说「Promise 外壳保留（与收割面同口径），该位无约束」。
  *
  * **两个产物面同口径**：收割面保留外壳（`(number) => promise<{…}>`），
  * 草稿面也**不剥**（该位无约束 + 标注丢失）⇒ 两侧都不对 resolve 后的值
@@ -4338,7 +4338,7 @@ function writeDts(name: string, content: string): string {
 const DTS = `export declare function fetchUser(id: number): Promise<{ id: number; name: string }>;
 `;
 
-describe("Bug 916 —— 草稿面：Promise 外壳**不剥**（与收割面同口径，不假红）", () => {
+describe("草稿面：Promise 外壳**不剥**（与收割面同口径，不假红）", () => {
   it("草稿的返回位**不是** resolve 后的类型（外壳不被剥掉）", () => {
     const p = writeDts("fx.d.ts", DTS);
     const draft = dtsToContractDraft([p], "fx");
@@ -4381,21 +4381,21 @@ describe("Bug 916 —— 草稿面：Promise 外壳**不剥**（与收割面同�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 945 —— 草稿面：方法签名成员**不被丢**（不悄悄放宽）
+// 草稿面：方法签名成员**不被丢**（不悄悄放宽）
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 945 —— 草稿面：方法签名成员**不被丢**（不悄悄放宽）", () => {
+describe("草稿面：方法签名成员**不被丢**（不悄悄放宽）", () => {
 /**
- * Bug 945 回归（harvester **草稿面**）：类型字面量里的**方法签名**成员被丢
+ * 回归（harvester **草稿面**）：类型字面量里的**方法签名**成员被丢
  * ⇒ 契约被**悄悄放宽** ⇒ **假绿**（tsc 报 TS2345，`nudo check` 却绿）。
  *
  * oracle（`tsc --strict`，tmp/probe/fix-r27/h8a/e2e/b945.ts ⇒ TS2345）：
- *   `takeCfg({ host: "h" })` —— 缺 `port` ⇒ TS2345（红）。
+ * `takeCfg({ host: "h" })` —— 缺 `port` ⇒ TS2345（红）。
  *
  * 改前（git HEAD 的草稿面）：`{ host: string; port(): number }` ⇒
- *   `shape({ host: string() })` —— `port` **整个消失** ⇒ 调用点少传一个成员
- *   也不违约 ⇒ 假绿。
+ * `shape({ host: string() })` —— `port` **整个消失** ⇒ 调用点少传一个成员
+ * 也不违约 ⇒ 假绿。
  * 改后（tmp/probe/fix-r27/h8a/probe.ts）：
- *   `fn({ c: shape({ host: string(), port: fn({}, number()) }) }, string())`
+ * `fn({ c: shape({ host: string(), port: fn({}, number()) }) }, string())`
  *
  * 同族：**数字键成员**（`{ 0: string; 1: number }`）也不能被丢。
  *
@@ -4428,7 +4428,7 @@ function writeDts(name: string, content: string): string {
 const DTS = `export declare function takeCfg(c: { host: string; port(): number }): string;
 `;
 
-describe("Bug 945 —— 草稿面：方法签名成员**不被丢**（不悄悄放宽）", () => {
+describe("草稿面：方法签名成员**不被丢**（不悄悄放宽）", () => {
   it("方法成员进契约：`port: fn({}, number())`", () => {
     const p = writeDts("fx.d.ts", DTS);
     const draft = dtsToContractDraft([p], "fx");
@@ -4476,11 +4476,11 @@ export function use() { return takeCfg({ host: "h" }); }
 });
 
 // ---------------------------------------------------------------------------
-// Bug 977 —— 可选方法成员与可选属性同口径
+// 可选方法成员与可选属性同口径
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 977 —— 可选方法成员与可选属性同口径", () => {
+describe("可选方法成员与可选属性同口径", () => {
 /**
- * Bug 977 回归（harvester 收割面）：可选**方法**成员的 `?` 丢失（同函数里的可选
+ * 回归（harvester 收割面）：可选**方法**成员的 `?` 丢失（同函数里的可选
  * **属性**却保住了）⇒ 成员被断言成「**必定存在**」⇒ `nudo check` 放行，
  * `tsc --strict` 报 **TS2722**（**假绿**）。
  *
@@ -4489,14 +4489,14 @@ describe("[harvest-] Bug 977 —— 可选方法成员与可选属性同口径",
  * 的可省性被静默丢掉 ⇒ 收割出的形状把「可能不存在的方法」断言成「必定存在」。
  *
  * 改前（tmp/probe/fix-r27/h3/probe-h3b.ts，BEFORE 行）：
- *   brand Holder 槽位 m = () => undefined      ← 没有任何 optional 标记
+ * brand Holder 槽位 m = () => undefined ← 没有任何 optional 标记
  * 改后：
- *   brand Holder 槽位 m = (() => undefined) | undefined
- *   （与同接口的可选属性 p = number | undefined 同口径）
+ * brand Holder 槽位 m = (() => undefined) | undefined
+ * （与同接口的可选属性 p = number | undefined 同口径）
  *
  * oracle（`tsc --strict`，tmp/probe/fix-r27/h3/oracle/o977.ts）：
- *   `i.m()` ⇒ TS2722 "Cannot invoke an object which is possibly 'undefined'"
- *   ⇒ TS 侧 m 确实「可能不存在」⇒ 收割面不得断言它必定存在。
+ * `i.m()` ⇒ TS2722 "Cannot invoke an object which is possibly 'undefined'"
+ * ⇒ TS 侧 m 确实「可能不存在」⇒ 收割面不得断言它必定存在。
  */
 
 
@@ -4539,14 +4539,14 @@ function hasUndefined(a: Abs | undefined): boolean {
   return false;
 }
 
-// BUG-253：成员提升只对**模块作用域**成立（顶层值位置声明不得泄漏成全局）
+// 成员提升只对**模块作用域**成立（顶层值位置声明不得泄漏成全局）
 const HOLDER = `declare module "holder" {
   export interface Holder { m?(): void; p?: number; q(): string; }
   export declare const h: Holder;
 }
 `;
 
-describe("Bug 977 —— 可选方法成员与可选属性同口径", () => {
+describe("可选方法成员与可选属性同口径", () => {
   it("可选方法的槽位含 undefined（可能不存在，不是必定存在）", () => {
     const p = writeTemp("holder.d.ts", HOLDER);
     const env = harvestDts([p]);
@@ -4594,11 +4594,11 @@ describe("Bug 977 —— 可选方法成员与可选属性同口径", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-126 —— 可选 / rest 形参的可省略性
+// 可选 / rest 形参的可省略性
 // ---------------------------------------------------------------------------
-describe("[harvest-] BUG-126 —— 可选 / rest 形参的可省略性", () => {
+describe("可选 / rest 形参的可省略性", () => {
 /**
- * BUG-126 回归：可选 / rest 形参的「可省略」语义丢失 ⇒ 收割出的 fn 最少实参数
+ * 回归：可选 / rest 形参的「可省略」语义丢失 ⇒ 收割出的 fn 最少实参数
  * 偏大（`g(a: string, b?: number)` 被数成 2 个必填，而 TS `minArgumentCount` = 1）
  * ⇒ 收割结果**不满足它自己声明的类型**。
  *
@@ -4656,7 +4656,7 @@ export declare function req(a: string, b: number): void;
   ),
 ]);
 
-describe("BUG-126 —— 可选 / rest 形参的可省略性", () => {
+describe("可选 / rest 形参的可省略性", () => {
   it("可选形参记进 optionalParams，必选元数 = TS minArgumentCount（1）", () => {
     const s = fnShape(env.globals.g);
     expect(s.params).toHaveLength(2);
@@ -4687,11 +4687,11 @@ describe("BUG-126 —— 可选 / rest 形参的可省略性", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-141 —— 同名 namespace 的成员取并集
+// 同名 namespace 的成员取并集
 // ---------------------------------------------------------------------------
-describe("[harvest-] BUG-141 —— 同名 namespace 的成员取并集", () => {
+describe("同名 namespace 的成员取并集", () => {
 /**
- * BUG-141 回归：同名 `namespace` 的第二份声明（TS declaration merging）成员
+ * 回归：同名 `namespace` 的第二份声明（TS declaration merging）成员
  * 被整块丢弃（只留一个 `skipped++`）⇒ 调用它们被判「未定义」⇒ L2 假红。
  *
  * 契约：同名 namespace 的成员取**并集**，且与声明顺序无关。
@@ -4747,7 +4747,7 @@ declare namespace Foo {
 }
 `;
 
-describe("BUG-141 —— 同名 namespace 的成员取并集", () => {
+describe("同名 namespace 的成员取并集", () => {
   it("第二份声明的成员不丢（extra 在）", () => {
     const env = harvestDts([writeTemp(FIRST)]);
     const names = Object.keys(slotsOf(env.globals.Foo));
@@ -4764,11 +4764,11 @@ describe("BUG-141 —— 同名 namespace 的成员取并集", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-142 —— overload 合并不得留下悬空 α
+// overload 合并不得留下悬空 α
 // ---------------------------------------------------------------------------
-describe("[harvest-] BUG-142 —— overload 合并不得留下悬空 α", () => {
+describe("overload 合并不得留下悬空 α", () => {
 /**
- * BUG-142 回归：合并 α（类型形参）overload 时按「带 α 的那一池」**整池替换**
+ * 回归：合并 α（类型形参）overload 时按「带 α 的那一池」**整池替换**
  * 返回类型 ⇒ 其它 overload 的返回类型被抹掉 + 悬空 α ⇒ CLI **静默 `any`、零诊断**，
  * 且结论随声明顺序翻转。
  *
@@ -4813,7 +4813,7 @@ const GENERIC_FIRST = `declare function h<T>(x: T): T;
 declare function h(x: string): string;
 `;
 
-describe("BUG-142 —— overload 合并不得留下悬空 α", () => {
+describe("overload 合并不得留下悬空 α", () => {
   it("具体 overload 在前：返回位保留具体类型（不是悬空 T / any）", () => {
     const h = harvestDts([writeTemp(CONCRETE_FIRST)]).globals.h!;
     expect(formatShape(h)).toBe("(string) => string");
@@ -4836,11 +4836,11 @@ describe("BUG-142 —— overload 合并不得留下悬空 α", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-144 —— 收割面保留 enum 成员与字面值
+// 收割面保留 enum 成员与字面值
 // ---------------------------------------------------------------------------
-describe("[harvest-] BUG-144 —— 收割面保留 enum 成员与字面值", () => {
+describe("收割面保留 enum 成员与字面值", () => {
 /**
- * BUG-144 回归：收割面的 `case "enum"` 把 enum 整体抹成 `unknown`（成员 / 字面值
+ * 回归：收割面的 `case "enum"` 把 enum 整体抹成 `unknown`（成员 / 字面值
  * 全丢）却报 `skipped: 0`，而同一 harvester 的契约草稿面完整建模成
  * `shape({ Red: 1, Green: 2 })` ⇒ **两面矛盾**。
  *
@@ -4887,7 +4887,7 @@ function slotLits(a: Abs | undefined): Record<string, unknown> {
 const file = writeTemp();
 const env = harvestDts([file]);
 
-describe("BUG-144 —— 收割面保留 enum 成员与字面值", () => {
+describe("收割面保留 enum 成员与字面值", () => {
   it("数字 / 字符串 / const enum 都有成员面（不再是 unknown）", () => {
     for (const name of ["Color", "Name", "CE"]) {
       expect(env.globals[name]!.shape.k).toBe("obj");
@@ -4913,11 +4913,11 @@ describe("BUG-144 —— 收割面保留 enum 成员与字面值", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-213 —— 可选成员在共享 DAG 上不得指数爆炸
+// 可选成员在共享 DAG 上不得指数爆炸
 // ---------------------------------------------------------------------------
-describe("[harvest-] BUG-213 —— 可选成员在共享 DAG 上不得指数爆炸", () => {
+describe("可选成员在共享 DAG 上不得指数爆炸", () => {
 /**
- * BUG-213 回归：可选成员建模走 `absUnion` ⇒ core 的 `absShapeKey` 在**共享 DAG**
+ * 回归：可选成员建模走 `absUnion` ⇒ core 的 `absShapeKey` 在**共享 DAG**
  * 上做去重键（键长 ∝ 路径数）⇒ 指数增长 ⇒ `RangeError: Invalid string length`
  * （或进程 OOM）。同一接口的必选形态毫秒级完成 ⇒ 触发点是「可选」这条路径。
  *
@@ -4970,7 +4970,7 @@ function memberOfHolder(a: Abs, key: string): Abs {
   return slot.value;
 }
 
-describe("BUG-213 —— 可选成员在共享 DAG 上不得指数爆炸", () => {
+describe("可选成员在共享 DAG 上不得指数爆炸", () => {
   it("必选形态完成（基线）", () => {
     const t0 = Date.now();
     const env = harvestDts([reqFile]);
@@ -4988,11 +4988,11 @@ describe("BUG-213 —— 可选成员在共享 DAG 上不得指数爆炸", () =>
 });
 
 // ---------------------------------------------------------------------------
-// Bug 545 —— --from-dts 草稿的 import ↔ export 撞名
+// --from-dts 草稿的 import ↔ export 撞名
 // ---------------------------------------------------------------------------
-describe("[harvest-] Bug 545 —— --from-dts 草稿的 import ↔ export 撞名", () => {
+describe("--from-dts 草稿的 import ↔ export 撞名", () => {
 /**
- * Bug 545 —— `nudo contract --from-dts` 写出的草稿模块里，**builder 的 import
+ * `nudo contract --from-dts` 写出的草稿模块里，**builder 的 import
  * 绑定**与生成的 `export const <name>` **撞名** ⇒ 写出的文件是**非法
  * JavaScript**（`node --check` 直接 SyntaxError）。
  *
@@ -5036,7 +5036,7 @@ function nodeCheck(file: string): { ok: boolean; stderr: string } {
   }
 }
 
-describe("Bug 545 —— --from-dts 草稿的 import ↔ export 撞名", () => {
+describe("-from-dts 草稿的 import ↔ export 撞名", () => {
   it("导出名撞 builder import ⇒ 走别名形态（改前：export const number）", () => {
     const src = formatDtsContractDraft("types", ["types.d.ts"], [
       { name: "number", dsl: `fn({ l: union(number(), number()) }, any())`, kind: "function" },

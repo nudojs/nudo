@@ -1,5 +1,5 @@
 /**
- * Bug 953 —— VS Code 扩展的 `nudo.selectCase` 处理器把「CodeLens 调用」
+ * VS Code 扩展的 `nudo.selectCase` 处理器把「CodeLens 调用」
  * （一定带 4 个位置参数）与「命令面板调用」（**一个参数都不带**）当成同一种
  * ⇒ 处理器**既无 `uri` fallback 也无缺参校验** ⇒ 面板路径把 4 个
  * `undefined` 原样发给服务端 ⇒ 面板入口 100% 静默无效（不发错、不提示）。
@@ -36,7 +36,7 @@ const SOURCE = [
   "",
 ].join("\n");
 
-describe("Bug 953 —— nudo.selectCase 的命令面板入口不再静默无效", () => {
+describe("nudo.selectCase 的命令面板入口不再静默无效", () => {
   beforeAll(async () => {
     const { activate } = await import("../extension.ts");
     await activate(makeExtensionContext() as never);

@@ -9,9 +9,9 @@ import { checkSource } from "../index.ts";
  *
  * 分层（design-cli-semantics §3 / conflicts E3）：
  * - **L2 off 基线**：本套件 `entryThrows: "off"`，只锁显式契约/调用点证据的
- *   zero-FP（ERROR_CODES）。入口 may-throw 不进此表。
+ * zero-FP（ERROR_CODES）。入口 may-throw 不进此表。
  * - **L2 on**：`nudo:entry-may-throw` 默认 error，真实包上常见；由
- *   check-recall-gold L2 用例与 CLI `--ignore-throws` 覆盖，不在此 zero-FP 内。
+ * check-recall-gold L2 用例与 CLI `--ignore-throws` 覆盖，不在此 zero-FP 内。
  *
  * 门禁必须响：任一包解析失败、文件读取失败、checkSource 抛错或候选
  * 文件数为 0 都直接红。

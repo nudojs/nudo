@@ -12,11 +12,11 @@ import { noteEnvPathDeps, clearEnvPathDeps } from "@nudojs/service";
 import { startCheckWatch } from "../commands/check-command.ts";
 
 // ---------------------------------------------------------------------------
-// BUG-036: 见证身份必须保留现场组件（同号不同现场 ≠ 同一调用点）
+// 见证身份必须保留现场组件（同号不同现场 ≠ 同一调用点）
 // ---------------------------------------------------------------------------
-describe("[cli-] BUG-036: 见证身份必须保留现场组件（同号不同现场 ≠ 同一调用点）", () => {
+describe("见证身份必须保留现场组件（同号不同现场 ≠ 同一调用点）", () => {
 /**
- * BUG-036：`nudo health` 的见证身份把「不同现场文件里的**同号**调用点」折叠成
+ * `nudo health` 的见证身份把「不同现场文件里的**同号**调用点」折叠成
  * 一个（`call@a.js:L2` 与 `call@b.js:L2` 都归一成 `call@L2`）⇒ **调用点被删除**
  * 这种最典型的漂移完全看不见（「调用被挪走抓得住、调用被删掉抓不住」）。
  *
@@ -64,7 +64,7 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("BUG-036: 见证身份必须保留现场组件（同号不同现场 ≠ 同一调用点）", () => {
+describe("见证身份必须保留现场组件（同号不同现场 ≠ 同一调用点）", () => {
   it("另一现场文件的调用点被**删除** ⇒ 报 drift + exit 1（旧行为：0 drift / OK / exit 0）", () => {
     writeFileSync(p("b.js"), B_DELETED);
     const r = runCliTsx(["health", p("lib.js"), "--from", p("a.js"), p("b.js")], { cwd: dir });
@@ -86,11 +86,11 @@ describe("BUG-036: 见证身份必须保留现场组件（同号不同现场 ≠
 });
 
 // ---------------------------------------------------------------------------
-// BUG-037: 从未冻结的文件 + --from ⇒ 0 drift（不发假红）
+// 从未冻结的文件 + --from ⇒ 0 drift（不发假红）
 // ---------------------------------------------------------------------------
-describe("[cli-] BUG-037: 从未冻结的文件 + --from ⇒ 0 drift（不发假红）", () => {
+describe("从未冻结的文件 + --from ⇒ 0 drift（不发假红）", () => {
 /**
- * BUG-037：`nudo health --from` 对**从未冻结**（没有任何 `call@` 见证）的文件
+ * `nudo health --from` 对**从未冻结**（没有任何 `call@` 见证）的文件
  * 发**假红**——重新固化后多出来的见证被算成 `added`。
  *
  * 代码自己的不变量（health.ts 的 683 注释 / CHANGELOG 936）：
@@ -128,7 +128,7 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("BUG-037: 从未冻结的文件 + --from ⇒ 0 drift（不发假红）", () => {
+describe("从未冻结的文件 + --from ⇒ 0 drift（不发假红）", () => {
   it("文本面：0 case drift / Result: OK / exit 0（旧行为：1 case drift / FAIL / exit 1）", () => {
     const r = runCliTsx(["health", p("lib2.js"), "--from", p("tests/usage.js")], { cwd: dir });
     expect(r.stdout, r.stdout).toContain("0 case drift");
@@ -154,11 +154,11 @@ describe("BUG-037: 从未冻结的文件 + --from ⇒ 0 drift（不发假红）"
 });
 
 // ---------------------------------------------------------------------------
-// BUG-038: health --json 的缺失路径必须进 pathErrors[] / targetErrors[]
+// health --json 的缺失路径必须进 pathErrors[] / targetErrors[]
 // ---------------------------------------------------------------------------
-describe("[cli-] BUG-038: health --json 的缺失路径必须进 pathErrors[] / targetErrors[]", () => {
+describe("health --json 的缺失路径必须进 pathErrors[] / targetErrors[]", () => {
 /**
- * BUG-038：`nudo health --json <缺失路径>` 的缺失路径**不进** `pathErrors[]` /
+ * `nudo health --json <缺失路径>` 的缺失路径**不进** `pathErrors[]` /
  * `targetErrors[]` ⇒ 机器面只有 `ok:false` + 一句没有机器码的自然语言
  * （`check --json` 对同一路径给了码 + 修复建议）。
  *
@@ -172,7 +172,7 @@ describe("[cli-] BUG-038: health --json 的缺失路径必须进 pathErrors[] / 
 
 
 
-describe("BUG-038: health --json 的缺失路径必须进 pathErrors[] / targetErrors[]", () => {
+describe("health --json 的缺失路径必须进 pathErrors[] / targetErrors[]", () => {
   it("--json 面：机器码 nudo:path-not-found + errors 只计 1", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug-038-"));
     const missing = join(dir, "nope.js");
@@ -221,11 +221,11 @@ describe("BUG-038: health --json 的缺失路径必须进 pathErrors[] / targetE
 });
 
 // ---------------------------------------------------------------------------
-// BUG-113: health --json 的用法错误也必须产出 JSON 信封
+// health --json 的用法错误也必须产出 JSON 信封
 // ---------------------------------------------------------------------------
-describe("[cli-] BUG-113: health --json 的用法错误也必须产出 JSON 信封", () => {
+describe("health --json 的用法错误也必须产出 JSON 信封", () => {
 /**
- * BUG-113：`nudo health --json --from <file>`（**无位置路径**）⇒ usage 错误只写
+ * `nudo health --json --from <file>`（**无位置路径**）⇒ usage 错误只写
  * stderr、stdout **0 字节** ⇒ 机器消费方 `JSON.parse("")` 直接抛
  * （违反 `--json` 契约：stdout 永不为空 / 绝不「空 stdout + 非零 exit」）。
  *
@@ -255,7 +255,7 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("BUG-113: health --json 的用法错误也必须产出 JSON 信封", () => {
+describe("health --json 的用法错误也必须产出 JSON 信封", () => {
   it("--json --from <file>（无位置路径）⇒ stdout 可解析 + ok:false + exit 1", () => {
     const r = runCliTsx(["health", "--json", "--from", p("lib.js")], { cwd: dir });
     expect(r.status).toBe(1);
@@ -276,11 +276,11 @@ describe("BUG-113: health --json 的用法错误也必须产出 JSON 信封", ()
 });
 
 // ---------------------------------------------------------------------------
-// BUG-199: health 与 contract --emit 的漂移结论必须一致
+// health 与 contract --emit 的漂移结论必须一致
 // ---------------------------------------------------------------------------
-describe("[cli-] BUG-199: health 与 contract --emit 的漂移结论必须一致", () => {
+describe("health 与 contract --emit 的漂移结论必须一致", () => {
 /**
- * BUG-199：`nudo health` 的 contract drift 口径（`checkSource` 的
+ * `nudo health` 的 contract drift 口径（`checkSource` 的
  * `nudo:contract-drift` = **@generated 槽的内容**）与
  * `nudo contract --emit --dry-run --exit-on-diff` 的口径（**整段文本**，含段头
  * 标签 `// derived-from:`）**不同** ⇒ 段头漂移**只对 emit 可见** ⇒ 同一份侧车
@@ -320,7 +320,7 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("BUG-199: health 与 contract --emit 的漂移结论必须一致", () => {
+describe("health 与 contract --emit 的漂移结论必须一致", () => {
   it("段头漂移：health 报 contract drift（旧行为：0 / OK / exit 0）且与 emit 同结论", () => {
     writeFileSync(p("lib.nudo.js"), STALE_HEADER_SIDECAR);
     const health = runCliTsx(["health", p("lib.js")], { cwd: dir });
@@ -351,11 +351,11 @@ describe("BUG-199: health 与 contract --emit 的漂移结论必须一致", () =
 });
 
 // ---------------------------------------------------------------------------
-// BUG-228: 文件级 @nudo:env 按文件目录解析（与 check 同口径）
+// 文件级 @nudo:env 按文件目录解析（与 check 同口径）
 // ---------------------------------------------------------------------------
-describe("[cli-] BUG-228: 文件级 @nudo:env 按文件目录解析（与 check 同口径）", () => {
+describe("文件级 @nudo:env 按文件目录解析（与 check 同口径）", () => {
 /**
- * BUG-228：`nudo health` 的契约漂移判定把**文件级** `@nudo:env` 的**相对**说明符
+ * `nudo health` 的契约漂移判定把**文件级** `@nudo:env` 的**相对**说明符
  * 按**项目根**解析（应为**文件所在目录**）⇒ env 全局丢失 ⇒ 同一份陈旧
  * `@generated` 段：`nudo check` 报 `nudo:contract-drift`，`nudo health` 报
  * 「0 contract drift」（漂移计数相反 / 假绿）。
@@ -406,7 +406,7 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("BUG-228: 文件级 @nudo:env 按文件目录解析（与 check 同口径）", () => {
+describe("文件级 @nudo:env 按文件目录解析（与 check 同口径）", () => {
   it("health 与 check 同计数：陈旧的 @generated 段 ⇒ 报 contract drift（旧行为：0）", () => {
     const check = runCliTsx(["check", p("src/m.js")], { cwd: dir });
     expect(check.stdout, check.stdout).toContain("nudo:contract-drift");
@@ -422,31 +422,31 @@ describe("BUG-228: 文件级 @nudo:env 按文件目录解析（与 check 同口�
 // ---------------------------------------------------------------------------
 // 族 63-1: health Summary 的漂移数与明细行同量纲（见证条数）
 // ---------------------------------------------------------------------------
-describe("[cli-] 族 63-1: health Summary 的漂移数与明细行同量纲（见证条数）", () => {
+describe("族 63-1: health Summary 的漂移数与明细行同量纲（见证条数）", () => {
 /**
  * 族 63 · nudojs CLI 协议面（W16）—— health 文本面量纲 / `pathErrors[]` 命名 /
  * watch 多轮 JSON 形态，三条精度债。
  *
  * 1. **health 文本面两处量纲不一**：Summary 的「N case drift」计**有漂移的文件数**，
- *    明细行计**见证条数** ⇒ 同一份报告里两个「N」量纲不同（用户读到的数自相矛盾）。
- *    修法：Summary 的数 = **见证（case）条数**（= Σ 明细行的条数）⇒ 标签
- *    「case drift」与数字终于同义；`--json` 的 `summary.drift` 同一量纲。
+ * 明细行计**见证条数** ⇒ 同一份报告里两个「N」量纲不同（用户读到的数自相矛盾）。
+ * 修法：Summary 的数 = **见证（case）条数**（= Σ 明细行的条数）⇒ 标签
+ * 「case drift」与数字终于同义；`--json` 的 `summary.drift` 同一量纲。
  * 2. **`pathErrors[]` 命名漂移**：C1 把「分析目标闸门」错误也推进了同一个 sink
- *    ⇒ 该数组名不再只表示「--from 路径错误」。
- *    修法：**`pathErrors[]` 字段名与内容逐字保留**（兼容既有机器消费者），
- *    **新增可选字段 `targetErrors[]`**（分析目标闸门错误的精确子集）⇒ 语义可见。
+ * ⇒ 该数组名不再只表示「--from 路径错误」。
+ * 修法：**`pathErrors[]` 字段名与内容逐字保留**（兼容既有机器消费者），
+ * **新增可选字段 `targetErrors[]`**（分析目标闸门错误的精确子集）⇒ 语义可见。
  * 3. **watch 多轮累积的 JSON 形态**：第 2 轮起 stdout 里会有第 2 份文档
- *    ⇒ 机器消费者 `JSON.parse(stdout)` 炸。
- *    修法：watch `--json` ⇒ **JSON Lines**（每行一份完整 JSON 文档）；
- *    **非 watch 的单轮输出逐字不变**（既有金标钉的形态）。
+ * ⇒ 机器消费者 `JSON.parse(stdout)` 炸。
+ * 修法：watch `--json` ⇒ **JSON Lines**（每行一份完整 JSON 文档）；
+ * **非 watch 的单轮输出逐字不变**（既有金标钉的形态）。
  *
  * 钉法：
  * - 文本面 / JSON 面：真跑 CLI（`runCliTsx`），断言**等式**（Summary 的数 ==
- *   Σ 明细行的条数）。
+ * Σ 明细行的条数）。
  * - watch 面：真起常驻进程（`runWatchCli`），**改文件触发第 2 轮** ⇒ stdout
- *   必须是**两行**，每行各自 `JSON.parse` 得通。
+ * 必须是**两行**，每行各自 `JSON.parse` 得通。
  * - 负控：**非 watch 的单轮 stdout 逐字不变**（用 `git archive HEAD` 抽出的
- *   改前输出做基线常量，逐字比对）。
+ * 改前输出做基线常量，逐字比对）。
  */
 
 
@@ -805,11 +805,11 @@ describe("族 63 负控: 非 watch 的单轮 stdout 逐字不变", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 674: health 的分析错误必须进判定面（不得假绿）
+// health 的分析错误必须进判定面（不得假绿）
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 674: health 的分析错误必须进判定面（不得假绿）", () => {
+describe("health 的分析错误必须进判定面（不得假绿）", () => {
 /**
- * Bug 674 — `nudo health` 把**所有非 drift 的分析诊断**丢掉 → 坏掉的侧车在
+ * `nudo health` 把**所有非 drift 的分析诊断**丢掉 → 坏掉的侧车在
  * health 面**绿灯**（假绿）。
  *
  * 口径（guides/health.md:18）：health 的门 = 「Analysis errors + call-site
@@ -843,7 +843,7 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("Bug 674: health 的分析错误必须进判定面（不得假绿）", () => {
+describe("health 的分析错误必须进判定面（不得假绿）", () => {
   it("文本面：坏侧车 ⇒ 报分析错误 + exit 1（不得 Result: OK）", { timeout: 60_000 }, () => {
     const r = runCliTsx(["health", p("main.js")]);
     expect(r.status).toBe(1);
@@ -873,11 +873,11 @@ describe("Bug 674: health 的分析错误必须进判定面（不得假绿）", 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 682: witness drift 计数 = 实际变更条数
+// witness drift 计数 = 实际变更条数
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 682: witness drift 计数 = 实际变更条数", () => {
+describe("witness drift 计数 = 实际变更条数", () => {
 /**
- * Bug 682 — `nudo health` 的 witness drift 计数报的是「新集合大小 + 旧集合大小」
+ * `nudo health` 的 witness drift 计数报的是「新集合大小 + 旧集合大小」
  * 的和式，而不是**实际变更数** ⇒ 只改 1 条见证报「2 条变更」（且与同屏 Summary
  * 的「1 case drift」自相矛盾）。
  *
@@ -915,7 +915,7 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("Bug 682: witness drift 计数 = 实际变更条数", () => {
+describe("witness drift 计数 = 实际变更条数", () => {
   it("文本面：只改 1 条见证 ⇒ 报「1 witness directive(s) changed」", { timeout: 60_000 }, () => {
     const r = runCliTsx(["health", p("lib.js"), "--from", p("usage.js")]);
     expect(r.stdout).toContain("1 witness directive(s) changed");
@@ -951,11 +951,11 @@ describe("Bug 682: witness drift 计数 = 实际变更条数", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 683: --from 零调用记录 ⇒ 不得静默跳过漂移检测
+// --from 零调用记录 ⇒ 不得静默跳过漂移检测
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 683: --from 零调用记录 ⇒ 不得静默跳过漂移检测", () => {
+describe("--from 零调用记录 ⇒ 不得静默跳过漂移检测", () => {
 /**
- * Bug 683 — `nudo health --from` 的使用点若**一条调用记录都没有**，整段 drift
+ * `nudo health --from` 的使用点若**一条调用记录都没有**，整段 drift
  * 检测被跳过 ⇒ **假绿**（见证早已陈旧仍报 `Result: OK` / exit 0）。
  *
  * 口径：零调用记录 ⇒「**无法判定漂移**」，不是「无漂移」⇒ 必须显式报出并判红。
@@ -992,7 +992,7 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("Bug 683: --from 零调用记录 ⇒ 不得静默跳过漂移检测", () => {
+describe("-from 零调用记录 ⇒ 不得静默跳过漂移检测", () => {
   it("文本面：显式报「无法判定漂移」+ exit 1（不得 Result: OK）", { timeout: 60_000 }, () => {
     const r = runCliTsx(["health", p("lib.js"), "--from", p("usage-no-call.js")]);
     expect(r.status).toBe(1);
@@ -1026,11 +1026,11 @@ describe("Bug 683: --from 零调用记录 ⇒ 不得静默跳过漂移检测", (
 });
 
 // ---------------------------------------------------------------------------
-// Bug 684 — watch 多路径且首个是文件 ⇒ 增量轮不再永不触发
+// watch 多路径且首个是文件 ⇒ 增量轮不再永不触发
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 684 — watch 多路径且首个是文件 ⇒ 增量轮不再永不触发", () => {
+describe("watch 多路径且首个是文件 ⇒ 增量轮不再永不触发", () => {
 /**
- * Bug 684 — `nudo check/test/health --watch` 在**多路径且首个路径是文件**时
+ * `nudo check/test/health --watch` 在**多路径且首个路径是文件**时
  * watch **彻底失效**（增量轮永不触发）。
  *
  * 根因：监视根只取**第 0 个路径**（`isDir ? primary : dirname(primary)`）——
@@ -1038,7 +1038,7 @@ describe("[cli-] Bug 684 — watch 多路径且首个是文件 ⇒ 增量轮不�
  * 产出**不存在的目录形式路径** ⇒ dirty 集恒空 ⇒ 增量轮早退。
  *
  * 修法：监视根**按每个路径各自解析**（目录→该目录，文件→其所在目录），
- * 事件路径按所属监视根换算（见 cli-bug-685 / cli-bug-686 同族用例）。
+ * 事件路径按所属监视根换算（见 cli-/ cli-同族用例）。
  */
 
 
@@ -1056,7 +1056,7 @@ const waitUntil = async (pred: () => boolean, ms = 15000): Promise<void> => {
 
 const SRC = (n: number) => `export function f${n}() {\n  return ${n};\n}\n`;
 
-describe("Bug 684 — watch 多路径且首个是文件 ⇒ 增量轮不再永不触发", () => {
+describe("watch 多路径且首个是文件 ⇒ 增量轮不再永不触发", () => {
   const dirs: string[] = [];
   afterEach(() => {
     vi.restoreAllMocks();
@@ -1126,11 +1126,11 @@ describe("Bug 684 — watch 多路径且首个是文件 ⇒ 增量轮不再永�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 685 — watch 事件路径归属真实变更文件
+// watch 事件路径归属真实变更文件
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 685 — watch 事件路径归属真实变更文件", () => {
+describe("watch 事件路径归属真实变更文件", () => {
 /**
- * Bug 685 — `nudo check/test --watch` 在**同目录多文件**时把变更文件
+ * `nudo check/test --watch` 在**同目录多文件**时把变更文件
  * **误记成首个路径** ⇒ 被改的文件**永不被重新分析**。
  *
  * 根因：非目录分支 `const fullPath = isDir ? join(watchTarget, filename) : primary;`
@@ -1154,7 +1154,7 @@ const waitUntil = async (pred: () => boolean, ms = 15000): Promise<void> => {
 
 const SRC = (n: number) => `export function f${n}() {\n  return ${n};\n}\n`;
 
-describe("Bug 685 — watch 事件路径归属真实变更文件", () => {
+describe("watch 事件路径归属真实变更文件", () => {
   const dirs: string[] = [];
   afterEach(() => {
     vi.restoreAllMocks();
@@ -1219,11 +1219,11 @@ describe("Bug 685 — watch 事件路径归属真实变更文件", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 686 — watch 监视根覆盖全部路径目录
+// watch 监视根覆盖全部路径目录
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 686 — watch 监视根覆盖全部路径目录", () => {
+describe("watch 监视根覆盖全部路径目录", () => {
 /**
- * Bug 686 — `nudo check/test/health --watch` 在路径**跨多个目录**时，只监视
+ * `nudo check/test/health --watch` 在路径**跨多个目录**时，只监视
  * **第一个目录** ⇒ 其余目录下的文件**永不被重跑**。
  *
  * 根因：监视根只由**第 0 个路径**决定（`isDir ? primary : dirname(primary)`），
@@ -1250,7 +1250,7 @@ const waitUntil = async (pred: () => boolean, ms = 15000): Promise<void> => {
 
 const SRC = (n: number) => `export function f${n}() {\n  return ${n};\n}\n`;
 
-describe("Bug 686 — watch 监视根覆盖全部路径目录", () => {
+describe("watch 监视根覆盖全部路径目录", () => {
   const dirs: string[] = [];
   afterEach(() => {
     vi.restoreAllMocks();
@@ -1284,7 +1284,7 @@ describe("Bug 686 — watch 监视根覆盖全部路径目录", () => {
       // 改**第二个目录**里的文件 ⇒ 必须触发增量轮
       // 断言用 toContain 而非 toEqual([fileB])：fs.watch 在 macOS 上会合并
       // / 重复投递**初始扫描**事件，高并发全量运行时残留事件可能落在
-      // `seen.length = 0` 之后（实测 Received = [b/o.js, a/x.js]）。Bug 686
+      // `seen.length = 0` 之后（实测 Received = [b/o.js, a/x.js]）。
       // 的核心语义是「该目录的变更被监视到」，不是「恰好只投递一个事件」；
       // 严格相等把宿主事件投递行为当成产品契约，会造成与产品无关的假红。
       writeFileSync(fileB, SRC(22), "utf-8");
@@ -1330,11 +1330,11 @@ describe("Bug 686 — watch 监视根覆盖全部路径目录", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 687: health 文本面与 --json 面的 error 计数同源
+// health 文本面与 --json 面的 error 计数同源
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 687: health 文本面与 --json 面的 error 计数同源", () => {
+describe("health 文本面与 --json 面的 error 计数同源", () => {
 /**
- * Bug 687：`nudo health` 的**文本面与 --json 面给出两个 error 计数**。
+ * `nudo health` 的**文本面与 --json 面给出两个 error 计数**。
  *
  * 旧实现：JSON 面 `summary.errors = errorCount + fromErrors.length`（把
  * --from 的**路径错误**也算进去），文本面 Summary 只用 `errorCount`
@@ -1359,7 +1359,7 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("Bug 687: health 文本面与 --json 面的 error 计数同源", () => {
+describe("health 文本面与 --json 面的 error 计数同源", () => {
   it("同一轮：文本面 Summary 的 error 数 == JSON summary.errors（路径错误计入）", { timeout: 30_000 }, () => {
     const file = join(dir, "lib.js");
     writeFileSync(file, "export function libFn(x) {\n  return x + 1;\n}\n");
@@ -1407,20 +1407,20 @@ describe("Bug 687: health 文本面与 --json 面的 error 计数同源", () => 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 688: health --from 多文件与 check/contract 同口径
+// health --from 多文件与 check/contract 同口径
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 688: health --from 多文件与 check/contract 同口径", () => {
+describe("health --from 多文件与 check/contract 同口径", () => {
 /**
- * Bug 688：`nudo health` 拒绝**多文件** `--from`（`check` / `contract` 接受）
+ * `nudo health` 拒绝**多文件** `--from`（`check` / `contract` 接受）
  * ⇒ 错误文案**失实**（"received no paths"，但 paths 明明收到了）+ 建议的
  * 解法把**目标与使用点对调** ⇒ 照做后静默分析错文件、exit 0。
  *
  * 钉（与 check / contract 同口径）：
  * - `nudo health <target> --from a.js b.js`：**接受**多文件 --from，
- *   分析目标仍是 <target>（不得静默换成 b.js）；
+ * 分析目标仍是 <target>（不得静默换成 b.js）；
  * - 没有任何位置路径时（`nudo health --from a.js b.js`）：仍是 usage error，
- *   且文案**如实**（此时 paths 确实为空——"received no paths" 属实），
- *   与 check / test / contract 同款。
+ * 且文案**如实**（此时 paths 确实为空——"received no paths" 属实），
+ * 与 check / test / contract 同款。
  */
 
 
@@ -1453,7 +1453,7 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("Bug 688: health --from 多文件与 check/contract 同口径", () => {
+describe("health --from 多文件与 check/contract 同口径", () => {
   it("health <target> --from a.js b.js：接受多文件 --from，分析目标不变", { timeout: 30_000 }, () => {
     const r = runCliTsx(["health", lib, "--from", a, b]);
     expect(r.status).toBe(0);
@@ -1497,11 +1497,11 @@ describe("Bug 688: health --from 多文件与 check/contract 同口径", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 689 — watch 扫描应用 nudo.analysis.include / exclude
+// watch 扫描应用 nudo.analysis.include / exclude
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 689 — watch 扫描应用 nudo.analysis.include / exclude", () => {
+describe("watch 扫描应用 nudo.analysis.include / exclude", () => {
 /**
- * Bug 689 — CLI `nudo check/test <dir> --watch` 的**扫描面不应用**
+ * CLI `nudo check/test <dir> --watch` 的**扫描面不应用**
  * `nudo.analysis.include` / `exclude` ⇒ watch 门禁对**项目范围外**的文件仍然
  * 报错，且与 IDE 对同一文件口径相反（文档明写 watch 扫描「应用」）。
  *
@@ -1510,7 +1510,7 @@ describe("[cli-] Bug 689 — watch 扫描应用 nudo.analysis.include / exclude"
  * （docs/design/cli-semantics.md §7 的「入口 × include/exclude」表：
  * watch 扫描「应用」include/exclude、「不应用 mode」）。
  *
- * 分工（与 Bug 1026）：CLI **非 watch** 的目标扫描**忽略** include/exclude
+ * 分工（与 ）：CLI **非 watch** 的目标扫描**忽略** include/exclude
  * （「点名路径即意图」，文档明写）⇒ 本用例同时钉住这条边界。
  */
 
@@ -1529,7 +1529,7 @@ const waitUntil = async (pred: () => boolean, ms = 15000): Promise<void> => {
 
 const SRC = (n: number) => `export function f${n}() {\n  return ${n};\n}\n`;
 
-describe("Bug 689 — watch 扫描应用 nudo.analysis.include / exclude", () => {
+describe("watch 扫描应用 nudo.analysis.include / exclude", () => {
   const dirs: string[] = [];
   afterEach(() => {
     vi.restoreAllMocks();
@@ -1597,11 +1597,11 @@ describe("Bug 689 — watch 扫描应用 nudo.analysis.include / exclude", () =>
 });
 
 // ---------------------------------------------------------------------------
-// Bug 693: watch --json 的 stdout 必须是纯 JSON
+// watch --json 的 stdout 必须是纯 JSON
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 693: watch --json 的 stdout 必须是纯 JSON", () => {
+describe("watch --json 的 stdout 必须是纯 JSON", () => {
 /**
- * Bug 693：`nudo test --watch --json` / `nudo health --watch --json` 的
+ * `nudo test --watch --json` / `nudo health --watch --json` 的
  * **watch 横幅写进 stdout** ⇒ stdout = 横幅 + JSON + 横幅 ⇒
  * `JSON.parse(stdout)` 直接抛 SyntaxError（机器面契约破）。
  *
@@ -1623,7 +1623,7 @@ describe("[cli-] Bug 693: watch --json 的 stdout 必须是纯 JSON", () => {
 
 const ONE = `export function one(){ return 1; }\n`;
 
-describe("Bug 693: watch --json 的 stdout 必须是纯 JSON", () => {
+describe("watch --json 的 stdout 必须是纯 JSON", () => {
   it("nudo test --watch --json → JSON.parse(stdout) 不抛", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-c4-693-"));
     try {
@@ -1662,11 +1662,11 @@ describe("Bug 693: watch --json 的 stdout 必须是纯 JSON", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 697: env 模板变更 ⇒ 依赖它的源文件复分析
+// env 模板变更 ⇒ 依赖它的源文件复分析
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 697: env 模板变更 ⇒ 依赖它的源文件复分析", () => {
+describe("env 模板变更 ⇒ 依赖它的源文件复分析", () => {
 /**
- * Bug 697：CLI watch 的 **env 模板失效分支是死代码** ⇒ 目录 watch 下改了
+ * CLI watch 的 **env 模板失效分支是死代码** ⇒ 目录 watch 下改了
  * env 模板，依赖它的源文件**永不复分析**（IDE/watch 面板里类型一直是旧值）。
  *
  * 根因：`runIncremental` 的路径判定顺序 —— env 模板扩展名
@@ -1700,7 +1700,7 @@ afterEach(() => {
   clearEnvPathDeps();
 });
 
-describe("Bug 697: env 模板变更 ⇒ 依赖它的源文件复分析", () => {
+describe("env 模板变更 ⇒ 依赖它的源文件复分析", () => {
   it("改了 globals.env.ts → main.js 在增量轮被重新分析", async () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     vi.spyOn(console, "error").mockImplementation(() => {});
@@ -1752,11 +1752,11 @@ describe("Bug 697: env 模板变更 ⇒ 依赖它的源文件复分析", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 925: health --json 序列化 budget 截断快照
+// health --json 序列化 budget 截断快照
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 925: health --json 序列化 budget 截断快照", () => {
+describe("health --json 序列化 budget 截断快照", () => {
 /**
- * Bug 925：`nudo health --json` 的机器面**整条丢掉 budget 截断快照**。
+ * `nudo health --json` 的机器面**整条丢掉 budget 截断快照**。
  *
  * `HealthReport` 类型声明了 `budget?: AbsBudgetStats`（注释明写与
  * `nudo check --json` 的 budget **同源同义**），分析后也填了、文本分支
@@ -1797,7 +1797,7 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("Bug 925: health --json 序列化 budget 截断快照", () => {
+describe("health --json 序列化 budget 截断快照", () => {
   it("截断文件：JSON 面带 budget.truncated=true + summary.budgetTruncated；文本面报截断", { timeout: 30_000 }, () => {
     const deep = join(dir, "deep.js");
     writeFileSync(deep, DEEP);
@@ -1840,11 +1840,11 @@ describe("Bug 925: health --json 序列化 budget 截断快照", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 927: health --watch 的路径错误通道可达
+// health --watch 的路径错误通道可达
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 927: health --watch 的路径错误通道可达", () => {
+describe("health --watch 的路径错误通道可达", () => {
 /**
- * Bug 927：`nudo health --watch <不存在的路径>`：**路径错误被 watch 的文件
+ * `nudo health --watch <不存在的路径>`：**路径错误被 watch 的文件
  * 收集整个吞掉** ⇒ exit 0 / 零报告 / 静默空会话 ⇒ 假绿；而 `nudo health`
  * （无 watch）对**同一路径** exit 1。
  *
@@ -1873,7 +1873,7 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("Bug 927: health --watch 的路径错误通道可达", () => {
+describe("health --watch 的路径错误通道可达", () => {
   it("health --watch <不存在路径>：路径错误上屏 + exit 1 + 进程自己退出（不装 watch）", { timeout: 40_000 }, async () => {
     const r = await runWatchCli(["health", missing], { waitFor: "exit", timeoutMs: 12_000 });
     expect(r.stdout, `stderr=${r.stderr}`).toContain("File not found");
@@ -1896,11 +1896,11 @@ describe("Bug 927: health --watch 的路径错误通道可达", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 928 — watch 每轮重采 --from 调用点证据
+// watch 每轮重采 --from 调用点证据
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 928 — watch 每轮重采 --from 调用点证据", () => {
+describe("watch 每轮重采 --from 调用点证据", () => {
 /**
- * Bug 928：`check --watch --from` 的调用点证据是**启动快照** ⇒ 每轮从不刷新
+ * `check --watch --from` 的调用点证据是**启动快照** ⇒ 每轮从不刷新
  * ⇒ 同一轮里两个文件对同一次调用给出相反裁决，且与同一磁盘状态下的**全新**
  * 非 watch 运行结论相反。
  *
@@ -1946,7 +1946,7 @@ afterEach(() => {
   process.exitCode = undefined;
 });
 
-describe("Bug 928 — watch 每轮重采 --from 调用点证据", () => {
+describe("watch 每轮重采 --from 调用点证据", () => {
   it("调用点改了之后，重新分析依赖方时用的是**当前**证据（不是启动快照）", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-cli-928-watch-"));
     const lib = join(dir, "lib.js");
@@ -2000,11 +2000,11 @@ describe("Bug 928 — watch 每轮重采 --from 调用点证据", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 929: health --watch 一轮只产出一份报告
+// health --watch 一轮只产出一份报告
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 929: health --watch 一轮只产出一份报告", () => {
+describe("health --watch 一轮只产出一份报告", () => {
 /**
- * Bug 929：`nudo health --watch <含 N 个文件的目录>`：**watch runner 把自己的
+ * `nudo health --watch <含 N 个文件的目录>`：**watch runner 把自己的
  * per-file 目标整个丢掉** ⇒ 每次都重跑整个路径集 ⇒ 首轮把完整报告打印
  * **N** 遍、`--json` 面 stdout 出 **N** 份完整 JSON 文档（JSON.parse 抛错）、
  * 分析工作量放大 N 倍。
@@ -2029,7 +2029,7 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("Bug 929: health --watch 一轮只产出一份报告", () => {
+describe("health --watch 一轮只产出一份报告", () => {
   it("人类面：首轮完整报告只打印 1 份（Summary 行数 = 1，不是文件数）", { timeout: 40_000 }, async () => {
     const r = await runWatchCli(["health", dir], { timeoutMs: 25_000 });
     const summaries = r.stdout.match(/^Summary:/gm) ?? [];
@@ -2057,11 +2057,11 @@ describe("Bug 929: health --watch 一轮只产出一份报告", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 947: health 必须与分析目标闸门同口径
+// health 必须与分析目标闸门同口径
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 947: health 必须与分析目标闸门同口径", () => {
+describe("health 必须与分析目标闸门同口径", () => {
 /**
- * Bug 947 — `nudo health` **不设「分析目标」闸门** ⇒ 把 `.d.ts` / 侧车 / `.jsx`
+ * `nudo health` **不设「分析目标」闸门** ⇒ 把 `.d.ts` / 侧车 / `.jsx`
  * 当成**已检查的源文件**并报「Result: OK」（exit 0），而 `nudo check` /
  * `nudo test` 对**同一路径** exit 1「Not an analysis target」⇒ 假绿 + 跨动词
  * 自相矛盾。
@@ -2087,7 +2087,7 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("Bug 947: health 必须与分析目标闸门同口径", () => {
+describe("health 必须与分析目标闸门同口径", () => {
   it("文本面：.d.ts 目标 ⇒ exit 1 + Not an analysis target（不得 Result: OK）", { timeout: 60_000 }, () => {
     const r = runCliTsx(["health", p("types.d.ts")]);
     expect(r.status).toBe(1);
@@ -2129,11 +2129,11 @@ describe("Bug 947: health 必须与分析目标闸门同口径", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 948: 空目标集不得报「一切正常」
+// 空目标集不得报「一切正常」
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 948: 空目标集不得报「一切正常」", () => {
+describe("空目标集不得报「一切正常」", () => {
 /**
- * Bug 948 — `nudo health --json` 在**空目标集**时给出 `"ok": true` + `"files": []`
+ * `nudo health --json` 在**空目标集**时给出 `"ok": true` + `"files": []`
  * + exit 0 ⇒ 机器消费者读到「一切正常」，而实际上**一个文件都没检查**（文本面
  * 仅一行「No files to check.」）。
  *
@@ -2158,7 +2158,7 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("Bug 948: 空目标集不得报「一切正常」", () => {
+describe("空目标集不得报「一切正常」", () => {
   it("--json 面：ok:false + files:[] + 非零 exit", { timeout: 60_000 }, () => {
     const r = runCliTsx(["health", "--json", emptyDir]);
     const parsed = JSON.parse(r.stdout) as {
@@ -2189,11 +2189,11 @@ describe("Bug 948: 空目标集不得报「一切正常」", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 949: uncovered 指标不得恒为 0
+// uncovered 指标不得恒为 0
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 949: uncovered 指标不得恒为 0", () => {
+describe("uncovered 指标不得恒为 0", () => {
 /**
- * Bug 949 — `nudo health` 的 `uncovered` 指标**在结构上恒为 0**（过滤式恰好
+ * `nudo health` 的 `uncovered` 指标**在结构上恒为 0**（过滤式恰好
  * 排除了文档定义的「entry fallback」那一类）⇒ 文档承诺的「uncovered ⇒
  * **Reported**, informational only」**永不成立**；机器面读出的 `"uncovered": 0`
  * 恒为假 ⇒ 消费者据此判断「全部函数都有覆盖」。
@@ -2234,7 +2234,7 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("Bug 949: uncovered 指标不得恒为 0", () => {
+describe("uncovered 指标不得恒为 0", () => {
   it("--json 面：无调用点证据的函数进 uncovered + summary.uncovered ≥ 1", { timeout: 60_000 }, () => {
     const r = runCliTsx(["health", "--json", p("no-evidence.js")]);
     const parsed = JSON.parse(r.stdout) as {
@@ -2267,11 +2267,11 @@ describe("Bug 949: uncovered 指标不得恒为 0", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1085 — watch 面的 JSON Lines 契约（早退分支也不打 pretty 文档）
+// watch 面的 JSON Lines 契约（早退分支也不打 pretty 文档）
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 1085 — watch 面的 JSON Lines 契约（早退分支也不打 pretty 文档）", () => {
+describe("watch 面的 JSON Lines 契约（早退分支也不打 pretty 文档）", () => {
 /**
- * Bug 1085：`nudo check --json --watch <不存在的路径>` /
+ * `nudo check --json --watch <不存在的路径>` /
  * `nudo test --json --watch <不存在的路径>` 的**路径错误早退分支**仍打
  * **pretty 多行** JSON 文档 ⇒ 破坏 watch 面「stdout = JSON Lines（每行一份
  * 完整 JSON 文档，各自可 `JSON.parse`）」的契约。
@@ -2300,7 +2300,7 @@ type Doc = {
   pathErrors?: Array<{ path: string; code: string; message: string }>;
 };
 
-describe("Bug 1085 — watch 面的 JSON Lines 契约（早退分支也不打 pretty 文档）", () => {
+describe("watch 面的 JSON Lines 契约（早退分支也不打 pretty 文档）", () => {
   const verbs = ["check", "test"] as const;
 
   for (const verb of verbs) {
@@ -2370,11 +2370,11 @@ describe("Bug 1085 — watch 面的 JSON Lines 契约（早退分支也不打 pr
 });
 
 // ---------------------------------------------------------------------------
-// Bug 461 CLI：check 与 health 的 entry-only 口径一致
+// CLI：check 与 health 的 entry-only 口径一致
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 461 CLI：check 与 health 的 entry-only 口径一致", () => {
+describe("CLI：check 与 health 的 entry-only 口径一致", () => {
 /**
- * Bug 461 回归（CLI 面）：`nudo:contract-entry-only` 在 **check** 面不可达
+ * 回归（CLI 面）：`nudo:contract-entry-only` 在 **check** 面不可达
  * （分析器产出 info，但普通 check 路径不跑分析器 ⇒ 诊断被丢弃），而
  * `nudo health` 走另一条统计路径仍报「N entry-only」⇒ 同一事实两 verb
  * 口径分裂。
@@ -2384,11 +2384,11 @@ describe("[cli-] Bug 461 CLI：check 与 health 的 entry-only 口径一致", ()
  * 侧车加载失败去重表按作用域共享；反序会让分析器误报「无契约根」）。
  *
  * 本文件锁：
- *  ① 无契约根 + 无调用点域 ⇒ check 报 entry-only info，条数 == health 的
- *     entry-only 计数（**本次修复的正面**）；
- *  ② 同文件被调用的导出不算 entry-only（调用点域口径一致）；
- *  ③ 有契约根（有侧车）的导出：check 不报「无契约根」info——但 health 的
- *     entry-only 计数仍为 1（**两个口径本就不同的两个事实**，见下）。
+ * ① 无契约根 + 无调用点域 ⇒ check 报 entry-only info，条数 == health 的
+ * entry-only 计数（**本次修复的正面**）；
+ * ② 同文件被调用的导出不算 entry-only（调用点域口径一致）；
+ * ③ 有契约根（有侧车）的导出：check 不报「无契约根」info——但 health 的
+ * entry-only 计数仍为 1（**两个口径本就不同的两个事实**，见下）。
  *
  * 关于 ③：health 的「entry-only」计数是**覆盖率**事实（该函数回落到了
  * entry@ 见证 = 没有调用点证据）；check 的 `nudo:contract-entry-only` 诊断是
@@ -2454,7 +2454,7 @@ function healthEntryOnly(dir: string): number {
   return m ? Number(m[1]) : 0;
 }
 
-describe("Bug 461 CLI：check 与 health 的 entry-only 口径一致", () => {
+describe("CLI：check 与 health 的 entry-only 口径一致", () => {
   it("无契约根的导出：check 报 entry-only info，条数 == health 的计数", () => {
     const dir = fixture(SOLO);
     try {
@@ -2505,11 +2505,11 @@ describe("Bug 461 CLI：check 与 health 的 entry-only 口径一致", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 645 — --watch 不再被 --json 静默丢弃
+// --watch 不再被 --json 静默丢弃
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 645 — --watch 不再被 --json 静默丢弃", () => {
+describe("--watch 不再被 --json 静默丢弃", () => {
 /**
- * Bug 645：`nudo check --watch --json` ⇒ **watch 从未启动**（--json 早退把它吞了）。
+ * `nudo check --watch --json` ⇒ **watch 从未启动**（--json 早退把它吞了）。
  *
  * 症状：--json 分支在 watch 安装之前就 return ⇒ 进程跑完 JSON 即退出，
  * 「Watching for changes...」永不出现、文件监听从未启动（用户以为在盯盘）。
@@ -2533,7 +2533,7 @@ function makeProject(): { cwd: string; file: string } {
   return { cwd: dir, file };
 }
 
-describe("Bug 645 — --watch 不再被 --json 静默丢弃", () => {
+describe("-watch 不再被 --json 静默丢弃", () => {
   it("CLI：--watch --json ⇒ 监听真的启动（横幅出现 + 进程常驻 + stdout 仍是 CheckJson）", async () => {
     const { cwd, file } = makeProject();
     try {
@@ -2566,11 +2566,11 @@ describe("Bug 645 — --watch 不再被 --json 静默丢弃", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 926: watch 面单文件分析失败必须置红（不得吞掉异常保持绿）
+// watch 面单文件分析失败必须置红（不得吞掉异常保持绿）
 // ---------------------------------------------------------------------------
-describe("[cli-] Bug 926: watch 面单文件分析失败必须置红（不得吞掉异常保持绿）", () => {
+describe("watch 面单文件分析失败必须置红（不得吞掉异常保持绿）", () => {
 /**
- * Bug 926：`nudo test --watch` 把**单文件分析失败整个吞掉** ⇒ 门禁**保持绿（exit 0）**；
+ * `nudo test --watch` 把**单文件分析失败整个吞掉** ⇒ 门禁**保持绿（exit 0）**；
  * 而**同一目录**的 `nudo check --watch` / `nudo health --watch` / 非 watch 的
  * `nudo test` **全部 exit 1** ⇒ **watch 面上唯一的假绿**（共享 watch 循环吞掉
  * `runOne` 抛出的异常，从不置红）。
@@ -2581,8 +2581,8 @@ describe("[cli-] Bug 926: watch 面单文件分析失败必须置红（不得吞
  * 一致。
  *
  * ⚠ **不中断整轮**：一个坏文件不该中止整轮（这是现在的行为，也是对的；
- *   错的只是「不置红」）——本文件同时锁住「坏文件不中止整轮」与
- *   「下一轮绿则退出码复位 0（不得引入粘滞红）」。
+ * 错的只是「不置红」）——本文件同时锁住「坏文件不中止整轮」与
+ * 「下一轮绿则退出码复位 0（不得引入粘滞红）」。
  *
  * 本钉直接驱动**共享** watch 循环（check / test / health 三个面走同一个
  * `startWatch`）——`runOne` 以 runCheck/runTest 同语义模拟：门禁红置 1、绿不置；
@@ -2632,7 +2632,7 @@ afterEach(() => {
   process.exitCode = undefined;
 });
 
-describe("Bug 926: watch 面单文件分析失败必须置红（不得吞掉异常保持绿）", () => {
+describe("watch 面单文件分析失败必须置红（不得吞掉异常保持绿）", () => {
   it("全量轮：坏文件分析失败 ⇒ exit 1（改前：吞掉异常 ⇒ exit 0 假绿）", async () => {
     const { rounds } = installConsole();
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug-926-"));

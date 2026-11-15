@@ -55,9 +55,9 @@ describe("evaluator Array.from mapFn", () => {
   });
 });
 
-// --- Bug 104：array-like length 的 ArrayCreate 上限 -------------------------
+// --- array-like length 的 ArrayCreate 上限 -------------------------
 
-describe("Bug 104: Array.from array-like length ceiling", () => {
+describe("Array.from array-like length ceiling", () => {
   it("字面量 length > 2^32-1 → definite RangeError（含折算字符串/Infinity）", () => {
     for (const src of [
       `export function f() { return Array.from({ length: 2 ** 32 }); }`,
@@ -95,13 +95,13 @@ describe("Bug 104: Array.from array-like length ceiling", () => {
   });
 });
 
-// --- Bug 110：普通对象 @@iterator 先行（iterator beats array-like） ---------
+// --- 普通对象 @@iterator 先行（iterator beats array-like） ---------
 
-describe("Bug 110: Array.from 普通对象 @@iterator", () => {
+describe("Array.from 普通对象 @@iterator", () => {
   it("带 @@iterator 的普通对象 → 迭代路径：驱动用户迭代器（exact 元素域 + 确切长度）", () => {
     const r = call(`export function f() { const o = { [Symbol.iterator]: function* () { yield 1; yield 2; } }; return Array.from(o); }`);
     const s = r.result as { shape?: { k?: string; elements?: unknown[] } };
-    // Bug 202：obj 臂**实际驱动**用户迭代器（GetIterator + IteratorNext）
+    // obj 臂**实际驱动**用户迭代器（GetIterator + IteratorNext）
     // ⇒ 元素按迭代序精确取出（native [1,2]）——此前只判「可迭代」不驱动，
     // 元素域折 unknown、长度不可判。
     expect(s.shape?.k).toBe("tuple");
@@ -118,7 +118,7 @@ describe("Bug 110: Array.from 普通对象 @@iterator", () => {
 
   it("iterator beats length：{...iterObj, length: 0} 仍走迭代（不折 exact 0）", () => {
     const r = call(`export function f() { const g = { [Symbol.iterator]: function* () { yield 1; yield 2; } }; return Array.from({ ...g, length: 0 }).length; }`);
-    // Bug 202：迭代路径实际驱动用户迭代器 ⇒ 长度 = 迭代出的元素数（native 2），
+    // 迭代路径实际驱动用户迭代器 ⇒ 长度 = 迭代出的元素数（native 2），
     // **不是** length 槽的 0——「iterator beats length」的口径不变。
     expect(litValue(r.result)).toEqual({ ok: true, value: 2 });
   });

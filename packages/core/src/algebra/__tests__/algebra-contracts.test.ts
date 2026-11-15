@@ -17,11 +17,11 @@ import type { CheckIssue } from "../check/check-report.ts";
 import { v } from "../term.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 1141: 结构型合取不得静默丢掉另一侧的义务
+// 结构型合取不得静默丢掉另一侧的义务
 // ---------------------------------------------------------------------------
-describe("[] Bug 1141: 结构型合取不得静默丢掉另一侧的义务", () => {
+describe("结构型合取不得静默丢掉另一侧的义务", () => {
 /**
- * Bug 1141 —— 契约合取的**结构型义务被静默丢掉** ⇒ 门禁**假绿**。
+ * 契约合取的**结构型义务被静默丢掉** ⇒ 门禁**假绿**。
  *
  * 位置：packages/core/src/algebra/contract.ts 的 `conjoinOrConflict`——任一侧是
  * 结构型就直接 `return prev` ⇒ 另一侧的结构义务**整条蒸发**。
@@ -36,7 +36,7 @@ describe("[] Bug 1141: 结构型合取不得静默丢掉另一侧的义务", () 
  *
  * 本文件钉住：
  * - 侧车的 `name` 义务**不被丢掉**（调用点可见违例）；
- * - 合法合取（两侧同形）⇒ 不得被判成 conflict（零假红，Bug 340 口径）；
+ * - 合法合取（两侧同形）⇒ 不得被判成 conflict（零假红，口径）；
  * - 合不了的形态组合 ⇒ 显式诊断（不静默）。
  */
 
@@ -63,7 +63,7 @@ function check(src: string, files: Record<string, string> = { "/t/src.nudo.js": 
   return checkSource("/t/src.js", src, pTrue, { loadModule, fromFile: "/t/src.js" });
 }
 
-describe("Bug 1141: 结构型合取不得静默丢掉另一侧的义务", () => {
+describe("结构型合取不得静默丢掉另一侧的义务", () => {
   it("侧车的 name 义务不被丢掉（调用点可见违例）", () => {
     const r = check(`/// @nudo:import { srcShape } from "./src.nudo.js"
 /**
@@ -148,11 +148,11 @@ export function f(p) {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-261 @nudo:contract 返回段的文法判据
+// @nudo:contract 返回段的文法判据
 // ---------------------------------------------------------------------------
-describe("[] BUG-261 @nudo:contract 返回段的文法判据", () => {
+describe("@nudo:contract 返回段的文法判据", () => {
 /**
- * BUG-261：`@nudo:contract` 的**返回位**约束名写成 **builder 调用**
+ * `@nudo:contract` 的**返回位**约束名写成 **builder 调用**
  * （`return number()`）⇒ 整条契约被**静默丢弃**、零诊断 ⇒ 声明的后置条件
  * 从未执法（假绿）；而**参数位**同款写法有 `nudo:contract-syntax` 警告
  * ⇒ 两处判据不对称。
@@ -178,7 +178,7 @@ beforeEach(() => {
   takeRefineDiags();
 });
 
-describe("BUG-261 @nudo:contract 返回段的文法判据", () => {
+describe("@nudo:contract 返回段的文法判据", () => {
   it("return number()（builder 调用）⇒ 发 nudo:contract-syntax（不再静默丢弃）", () => {
     const src = `/**
  * @nudo:contract return number()
@@ -238,19 +238,19 @@ export function f() {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 351: fn 形态的返回义务
+// fn 形态的返回义务
 // ---------------------------------------------------------------------------
-describe("[] Bug 351: fn 形态的返回义务", () => {
+describe("fn 形态的返回义务", () => {
 /**
- * Bug 351 回归：源码 `@nudo:contract return <fn 形态模板>` 的返回义务
+ * 回归：源码 `@nudo:contract return <fn 形态模板>` 的返回义务
  * **整条不被执法**——返回槽装的是整个 fn 约束，而 postcondition 的 fn 分支
  * 把 fn 形态直接判「已证明」⇒ 零诊断假绿。
  *
  * 修法（不改公开返回型，仍是**单条**返回槽）：
  * - `refine.ts` 的 return 段提取：fn 形态模板取其 `fn.returns`（**真正的返回
- *   义务**）——与侧车口径（`sidecarFn?.fn.returns`）一致；
+ * 义务**）——与侧车口径（`sidecarFn?.fn.returns`）一致；
  * - `postcondition.ts`：fn 形态**无法执法**时不再返回 `proved()`，返回
- *   `unprovable`（无法证明 ≠ 已证明 ⇒ 出 warning `nudo:unproven-return`）。
+ * `unprovable`（无法证明 ≠ 已证明 ⇒ 出 warning `nudo:unproven-return`）。
  */
 
 
@@ -278,7 +278,7 @@ export function other(d) {
 }
 `;
 
-describe("Bug 351: fn 形态的返回义务", () => {
+describe("fn 形态的返回义务", () => {
   it("返回槽取 fn.returns（不是整个 fn 约束）", () => {
     const { loadModule } = makeFiles({
       "/t/retfn.nudo.js": RETFN_SIDECAR,
@@ -323,11 +323,11 @@ describe("Bug 351: fn 形态的返回义务", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 367 — assume-relied 归因只认真正消费过的引理
+// assume-relied 归因只认真正消费过的引理
 // ---------------------------------------------------------------------------
-describe("[] Bug 367 — assume-relied 归因只认真正消费过的引理", () => {
+describe("assume-relied 归因只认真正消费过的引理", () => {
 /**
- * Bug 367 回归钉 —— `nudo:assume-relied` 审计标注**误归因**。
+ * 回归钉 —— `nudo:assume-relied` 审计标注**误归因**。
  *
  * 症状：审计归因用的是「**函数上有没有**这条引理」这个代理量，而不是
  * 「**证明链上真正消费了**哪条引理」⇒ 只要返回契约证得（proof.status ===
@@ -357,7 +357,7 @@ const opts = (file: string) => ({
   fromFile: file,
 });
 
-describe("Bug 367 — assume-relied 归因只认真正消费过的引理", () => {
+describe("assume-relied 归因只认真正消费过的引理", () => {
   it("① 引理未被消费（函数体不用它）⇒ 不得宣称 proved via @nudo:assume", () => {
     const r = checkSource(
       "/t/bug367-a.js",
@@ -423,11 +423,11 @@ export function sim(d, max, lim) {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 369 — 返回契约类诊断带 line/column
+// 返回契约类诊断带 line/column
 // ---------------------------------------------------------------------------
-describe("[] Bug 369 — 返回契约类诊断带 line/column", () => {
+describe("返回契约类诊断带 line/column", () => {
 /**
- * Bug 369 回归钉 —— 返回契约类诊断**不带 `line` / `column`** ⇒ LSP 把诊断画在
+ * 回归钉 —— 返回契约类诊断**不带 `line` / `column`** ⇒ LSP 把诊断画在
  * **第 1 行第 0 列**、vite 打印 `:1:0`、JSON 里 `line=null`。
  *
  * 根因（族 07 片 S4 实测）：`checkReturnConstraint` 的 `push` 构造 issue 时只带
@@ -470,7 +470,7 @@ const opts = {
   fromFile: "/t/bug369.js",
 };
 
-describe("Bug 369 — 返回契约类诊断带 line/column", () => {
+describe("返回契约类诊断带 line/column", () => {
   it("L1 违例 issue 带函数声明位置（不得是首行 / 不得缺字段）", () => {
     const r = checkSource("/t/bug369.js", SRC, pTrue, opts);
     const violated = r.issues.find((i) => i.code === "nudo:constraint-violated");
@@ -518,15 +518,15 @@ export const sim = fn({ d: number().ge(0), max: number().ge(1) }, number().ge(0)
 });
 
 // ---------------------------------------------------------------------------
-// Bug 372 — L1 违例诊断的 CI 注解面 / JSON 机器契约面落真实行
+// L1 违例诊断的 CI 注解面 / JSON 机器契约面落真实行
 // ---------------------------------------------------------------------------
-describe("[] Bug 372 — L1 违例诊断的 CI 注解面 / JSON 机器契约面落真实行", () => {
+describe("L1 违例诊断的 CI 注解面 / JSON 机器契约面落真实行", () => {
 /**
- * Bug 372 回归钉 —— L1 契约违约诊断（`nudo:constraint-violated`）不带行号
+ * 回归钉 —— L1 契约违约诊断（`nudo:constraint-violated`）不带行号
  * ⇒ **GitHub Actions 注解 / GitLab Code Quality / JSON 机器契约**三个面全部把
  * 错误定位到文件**第 1 行第 1 列**（实测函数在第 10 行）。
  *
- * 与 Bug 369 同根因（issue 构造处丢位置），但**验收面不同**：369 = LSP 单面；
+ * 与 同根因（issue 构造处丢位置），但**验收面不同**：369 = LSP 单面；
  * 372 = **issue 字段 + CI 注解面**（GHA `::error …,line=…,col=…` / GitLab
  * `location.lines.begin` / `--json` 的 `line` / `column` 字段）。
  *
@@ -560,7 +560,7 @@ const opts = {
   fromFile: "/proj/src/deep.js",
 };
 
-describe("Bug 372 — L1 违例诊断的 CI 注解面 / JSON 机器契约面落真实行", () => {
+describe("L1 违例诊断的 CI 注解面 / JSON 机器契约面落真实行", () => {
   it("issue 字段带 line / column（第 10 行）", () => {
     const r = checkSource("/proj/src/deep.js", SRC, pTrue, opts);
     const violated = r.issues.find((i) => i.code === "nudo:constraint-violated");
@@ -597,11 +597,11 @@ describe("Bug 372 — L1 违例诊断的 CI 注解面 / JSON 机器契约面落�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 378 — 返回契约文案反映真实约束来源
+// 返回契约文案反映真实约束来源
 // ---------------------------------------------------------------------------
-describe("[] Bug 378 — 返回契约文案反映真实约束来源", () => {
+describe("返回契约文案反映真实约束来源", () => {
 /**
- * Bug 378 回归钉 —— 返回契约的诊断文案**硬指 `@nudo:contract return`** ⇒
+ * 回归钉 —— 返回契约的诊断文案**硬指 `@nudo:contract return`** ⇒
  * 约束来源是**侧车 `fn()` 返回槽**时也被说成「源码里那条指令」⇒ 源文件里
  * **根本没有**这条指令，而同一条诊断的 `fix:` 提示又说「emit a sidecar
  * draft」⇒ 一条诊断里两处归因互相矛盾。
@@ -621,7 +621,7 @@ const sidecarOnly = `import { fn, number } from "@nudojs/core";
 export const bad = fn({}, number().gt(0));
 `;
 
-describe("Bug 378 — 返回契约文案反映真实约束来源", () => {
+describe("返回契约文案反映真实约束来源", () => {
   it("侧车 fn() 返回槽来源 ⇒ 消息说 sidecar，不得说源码指令", () => {
     const r = checkSource(
       "/t/bug378-sidecar.js",
@@ -671,11 +671,11 @@ export function bad() {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 401 未契约的兄弟绑定不进形参形状
+// 未契约的兄弟绑定不进形参形状
 // ---------------------------------------------------------------------------
-describe("[] Bug 401 未契约的兄弟绑定不进形参形状", () => {
+describe("未契约的兄弟绑定不进形参形状", () => {
 /**
- * Bug 401 —— 对象解构形参：**未契约的兄弟绑定**被整个丢弃 ⇒ 合成出的形参
+ * 对象解构形参：**未契约的兄弟绑定**被整个丢弃 ⇒ 合成出的形参
  * 形状是**闭对象** ⇒ 读兄弟绑定得 **exact `undefined`**（自信的错值；native
  * 是实值）。
  *
@@ -738,7 +738,7 @@ function checkOf(src: string): {
   };
 }
 
-describe("Bug 401 未契约的兄弟绑定不进形参形状", () => {
+describe("未契约的兄弟绑定不进形参形状", () => {
   it("只契约 a：形参形状含 b（unknown），不是闭对象", () => {
     const r = checkOf(PARTIAL);
     expect(r.paramTypes[0]).toContain("b");
@@ -784,18 +784,18 @@ describe("Bug 401 未契约的兄弟绑定不进形参形状", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 431 / 1020 —— 非标量实参撞标量 / union 契约不再零义务
+// —— 非标量实参撞标量 / union 契约不再零义务
 // ---------------------------------------------------------------------------
-describe("[] Bug 431 / 1020 —— 非标量实参撞标量 / union 契约不再零义务", () => {
+describe("—— 非标量实参撞标量 / union 契约不再零义务", () => {
 /**
- * Bug 431 / 1020 —— **非标量实参**撞标量 / union 契约时的义务（假绿那一半）。
+ * —— **非标量实参**撞标量 / union 契约时的义务（假绿那一半）。
  *
  * 症状（族 11 / S6 修前实测，闸① oracle）：
- *   - `union(number(), string())` 收到 `{}` ⇒ 0 违例（**假绿**）
- *   - `union(number(), string())` 收到 `[]` ⇒ 0 违例（**假绿**）
- *   - `lit(1n)`              收到 `{}` ⇒ 0 违例（**假绿**）
- *   - `lit(1n)`              收到 `[]` ⇒ 0 违例（**假绿**）
- *   - `union(lit(1), lit(2))` 收到 `{}` ⇒ 0 违例（**假绿**）
+ * - `union(number(), string())` 收到 `{}` ⇒ 0 违例（**假绿**）
+ * - `union(number(), string())` 收到 `[]` ⇒ 0 违例（**假绿**）
+ * - `lit(1n)` 收到 `{}` ⇒ 0 违例（**假绿**）
+ * - `lit(1n)` 收到 `[]` ⇒ 0 违例（**假绿**）
+ * - `union(lit(1), lit(2))` 收到 `{}` ⇒ 0 违例（**假绿**）
  *
  * 根因：`scan/literal-shapes.ts` 的 `checkReqs` 里 `lv` **值类型门**
  * （`if (lv === undefined) continue;` + `typeof lv === number|string|boolean`）
@@ -807,10 +807,10 @@ describe("[] Bug 431 / 1020 —— 非标量实参撞标量 / union 契约不再
  * 取不到标量值就跳过（那是假绿）。
  *
  * 修法（S6）：
- *   - `eq` 分支：实参是精确字面量 ⇒ 按**字面量同一性**比；实参不是字面量
- *     但**形态确定** ⇒ **类型级**判定（形态 ≠ 字面量端类型 ⇒ 确定违例）。
- *   - `or` 分支：`or` 聚合臂**移出** `lv` 值类型门（对所有实参可达）⇒
- *     `typeof` 成员 / nullish 成员 / 字面量成员都能参与逐支求值。
+ * - `eq` 分支：实参是精确字面量 ⇒ 按**字面量同一性**比；实参不是字面量
+ * 但**形态确定** ⇒ **类型级**判定（形态 ≠ 字面量端类型 ⇒ 确定违例）。
+ * - `or` 分支：`or` 聚合臂**移出** `lv` 值类型门（对所有实参可达）⇒
+ * `typeof` 成员 / nullish 成员 / 字面量成员都能参与逐支求值。
  *
  * ── 任务③：`or` 聚合臂的 `unknown` 语义收紧 ─────────────────────────────
  * 聚合规则从「含 undefined 不猜」收紧为「**全部成员都判不了**才算不可判定」：
@@ -853,7 +853,7 @@ export function f(x) { return x; }
 export function use() { return f(${arg}); }`;
 }
 
-describe("Bug 431 / 1020 —— 非标量实参撞标量 / union 契约不再零义务", () => {
+describe("— 非标量实参撞标量 / union 契约不再零义务", () => {
   it("union(number(), string()) 收到对象 ⇒ 判违例（改前 0 违例 = 假绿）", () => {
     const r = check(call("numOrStr", "{}"));
     const vs = violated(r);
@@ -934,11 +934,11 @@ export function use() { return f({}); }`);
 });
 
 // ---------------------------------------------------------------------------
-// Bug 976 --assume 的界落进形参 pred（core 半）
+// assume 的界落进形参 pred（core 半）
 // ---------------------------------------------------------------------------
-describe("[] Bug 976 --assume 的界落进形参 pred（core 半）", () => {
+describe("assume 的界落进形参 pred（core 半）", () => {
 /**
- * Bug 976（core 半）—— `buildArgsFromAssume` 把被假设形参的**前提硬编码成
+ * （core 半）—— `buildArgsFromAssume` 把被假设形参的**前提硬编码成
  * `x > 0`** ⇒ `--assume` 的**非正界**（`x>-5` / `x>-100`）被静默替换成
  * `x>0` ⇒ 引擎**过度收窄** ⇒ 合法分支被剪掉（错值 / 假绿）。
  *
@@ -967,7 +967,7 @@ const SRC = `export function k(x) {
 
 const assumeIds = new Set(["x"]);
 
-describe("Bug 976 --assume 的界落进形参 pred（core 半）", () => {
+describe("assume 的界落进形参 pred（core 半）", () => {
   it("没有声明界 ⇒ 不写界（不得替用户发明 x > 0）", () => {
     const args = buildArgsFromAssume(SRC, "k", assumeIds);
     expect(args.length).toBe(1);

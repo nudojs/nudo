@@ -63,10 +63,10 @@ describe("validateSchemaNode", () => {
   });
 
   it("promise 需真 Promise；unknown 放行；fn / brand 有运行时判据", () => {
-    // BUG-025：`promise` 节点此前**放行一切**（非 Promise 也被接受 ⇒ 假绿，
+    // `promise` 节点此前**放行一切**（非 Promise 也被接受 ⇒ 假绿，
     // Standard Schema 校验器接受 `42`）。现按 `instanceof Promise` 判定。
     // `unknown` 无约束 ⇒ 仍放行。
-    // fn / brand 自 Bug 535 / 531 起**不再恒真**：fn 要 `typeof === "function"`、
+    // fn / brand 自 起**不再恒真**：fn 要 `typeof === "function"`、
     // brand（全局构造器）要 `instanceof` —— 与 zod 面同口径（z.function() /
     // z.instanceof(Date)）。
     const thenable = { then() {} };
@@ -108,7 +108,7 @@ describe("validateSchemaNode", () => {
     const fixed = abs({ k: "tuple", elements: [numLit(1)] }, undefined, undefined, "exact");
     const { node } = absToSchemaNode(fixed);
     // 定长元组：长度必须与 elements 一致（引擎 leqAbs 的 tuple arity 判定 +
-    // zod 面 z.tuple 同口径）——旧语义「不设长度上限」是 Bug 522（假绿）。
+    // zod 面 z.tuple 同口径）——旧语义「不设长度上限」是 （假绿）。
     const over = validateSchemaNode(node, [1, 2]);
     expect(over.issues?.[0]?.message).toContain("expected tuple of length 1");
     expect(validateSchemaNode(node, [1])).toEqual({ value: [1] });
@@ -176,7 +176,7 @@ describe("absToStandardSchemaModule", () => {
   });
 });
 
-describe("BUG-018: 缺键 ≠ 显式 undefined（S6-003 第 5 次同族）", () => {
+describe("缺键 ≠ 显式 undefined（S6-003 第 5 次同族）", () => {
   /** lit(undefined) 的 Abs：schema 投影为 { k: "lit", value: undefined }。 */
   const undefLitAbs = (): Abs =>
     abs({ k: "prim", type: "number" }, { op: "lit", value: undefined }, undefined, "exact");

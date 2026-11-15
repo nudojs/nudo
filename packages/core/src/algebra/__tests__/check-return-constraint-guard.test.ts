@@ -1,5 +1,5 @@
 /**
- * Bug 1 回归：守卫过的普通变量返回不再触发 `nudo:constraint-violated` 假阳。
+ * 回归：守卫过的普通变量返回不再触发 `nudo:constraint-violated` 假阳。
  *
  * 根因：`if (x >= 0) return x` 的守卫事实 ge(x,0) 只进 exec Φ（算术折叠
  * 消费），裸变量读取丢界 → checkReturnConstraint 的 g.symbolic 臂是
@@ -20,7 +20,7 @@ function retViolations(src: string) {
 
 /**
  * 返回义务「证不出」诊断（warning）。
- * Bug 370：无界证据（只有 typeof 级 pred）下，带界义务**既证不出、也反证不了**
+ * 无界证据（只有 typeof 级 pred）下，带界义务**既证不出、也反证不了**
  * ⇒ 判 `nudo:unproven-return`（warning），**不得**判 `nudo:constraint-violated`
  * （确定违约 = 假红：`x` 既可能是 5（满足）也可能是 -1（不满足））。
  */
@@ -28,7 +28,7 @@ function retUnproven(src: string) {
   return issuesOf(src, "/t/ret-guard.js").issues.filter((i) => i.code === "nudo:unproven-return");
 }
 
-describe("Bug 1: 守卫后普通变量返回（假阳 → 无 issue）", () => {
+describe("守卫后普通变量返回（假阳 → 无 issue）", () => {
   it("ok: if (x >= 0) return x; return 0 —— nonNeg", () => {
     expect(
       retViolations(`
@@ -148,7 +148,7 @@ function f(x) {
     ).toEqual([]);
   });
 
-  // review fix：Bug 1 早退提升路径（if-return 后接非尾语句）
+  // review fix：早退提升路径（if-return 后接非尾语句）
   // 与 IfStatement 分叉路径同口径补 narrowRelArmThunk——
   // 此前 cons 臂裸 `return x` 丢守卫界 → 假阳
   it("ok: 早退提升 if (x >= 0) return x; <非尾语句>; return 1 —— nonNeg", () => {
@@ -184,9 +184,9 @@ function f(x) {
   });
 });
 
-describe("Bug 1: 真实违规控制组（精度红线——仍报 error）", () => {
+describe("真实违规控制组（精度红线——仍报 error）", () => {
   it("error: 无守卫裸 return x ⊭ positive（声明域参数 ⇒ 值域已知 ⇒ 确定违约）", () => {
-    // Bug 1116（回退 Bug 370 的语义降级）：`x: number()` 是**声明域参数** ⇒
+    // （回退 的语义降级）：`x: number()` 是**声明域参数** ⇒
     // 返回项的值域**已知**（任意 number，含 NaN）⇒ 返回契约是对**所有**输入
     // 成立的后置 ⇒ 值域 ⊄ 契约域（x=0 即违约）⇒ **契约不成立** ⇒ 判
     // `nudo:constraint-violated`（error）。判 warning 会让 `nudo check` 门禁
@@ -223,7 +223,7 @@ function f(x) {
 
   it("error: 补集臂 NaN 面（x < 0 ? 0 : x 的 else 含 NaN ⊭ nonNeg）", () => {
     // NaN < 0 为假 → else 臂可达且 NaN ⊭ ge(0) ⇒ 违约输入**存在** ⇒ 契约不成立
-    // ⇒ error（Bug 1116：else 臂的返回项是声明域参数 ⇒ 值域已知 ⇒ 可判定）。
+    // ⇒ error（else 臂的返回项是声明域参数 ⇒ 值域已知 ⇒ 可判定）。
     const src = `
 /**
  * @nudo:contract x num

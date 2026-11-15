@@ -242,7 +242,7 @@ describe("draftContract", () => {
     const r = await draftContract(file);
     const entry = r.entries.find((e) => e.fn === "combo");
     // 返回位：观测集（lit(1)）只是真实返回域（number | string）的子集 ⇒
-    // 义务若只写 number() 会被自己的草稿判违规（Bug 509）⇒ 不投影返回义务
+    // 义务若只写 number() 会被自己的草稿判违规（）⇒ 不投影返回义务
     expect(entry!.dsl).toBe("fn({ a: shape({ x: number() }) })");
     expect(entry!.returns?.projected).toBe(false);
     expect(entry!.returns?.display).toContain("is not covered");

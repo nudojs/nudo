@@ -1,5 +1,5 @@
 /**
- * BUG-013 回归：文件级 @nudo:env / @nudo:mock-module 前缀契约统一。
+ * 回归：文件级 @nudo:env / @nudo:mock-module 前缀契约统一。
  * `//` 与 `///` 等价；字符串/块注释里的同形文本不算。
  * 三套抽取器（parser extractFileDirectives / check fileEnvNamesFromText /
  * load-deps extractAllLoadSpecs）不合并，但识别面必须一致。

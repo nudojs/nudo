@@ -58,7 +58,7 @@ describe("absToTSType legality (E1)", () => {
 
   it("wraps function types under optional property", () => {
     const ts = absToTSType(optSlot(fnAbs(["x"], num())));
-    // optional 槽渲染成 TS 可选属性（Bug 543 / 560）：旧口径 `f: T | undefined`
+    // optional 槽渲染成 TS 可选属性（）：旧口径 `f: T | undefined`
     // 在 TS 里是「键必需」⇒ 比契约 / zod / standard / check 四个面都严。
     expect(ts).toBe("{ f?: ((x: unknown) => number) }");
     const check = tscNoEmit(`export type T = ${ts};`);

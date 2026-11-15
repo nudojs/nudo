@@ -1,9 +1,9 @@
 /**
- * BUG-008 调用边界异常语义回归（三面）：
+ * 调用边界异常语义回归（三面）：
  * 1. 原生异常不得折成 result=unknown, throws=never（假「保证不抛」）
  * 2. 抛出载荷必须进 CallRecord（$callNamed 与 class.ts 同约定）
  * 3. compiled-body NudoThrow 与 apply 同径 rethrow，record 不得落成
- *    never+never 被 isLeakedCallRecord 丢弃
+ * never+never 被 isLeakedCallRecord 丢弃
  */
 import { describe, it, expect } from "vitest";
 import { parse } from "@babel/parser";
@@ -28,7 +28,7 @@ function bodyFn(src: string): Abs {
   return absFunction(["x"], { body: decl.body });
 }
 
-describe("BUG-008 face 1: native error → throws, never throws=never", () => {
+describe("face 1: native error → throws, never throws=never", () => {
   it("host mock throwing TypeError yields throws=TypeError brand, not never", () => {
     const exports = {
       boom: () => {
@@ -67,7 +67,7 @@ describe("BUG-008 face 1: native error → throws, never throws=never", () => {
   });
 });
 
-describe("BUG-008 face 2: throw payload lands in CallRecord", () => {
+describe("face 2: throw payload lands in CallRecord", () => {
   it("$callNamed record keeps custom throw payload (not unknown)", () => {
     const src = `
       export function f() { throw "custom-payload"; }
@@ -110,7 +110,7 @@ describe("BUG-008 face 2: throw payload lands in CallRecord", () => {
   });
 });
 
-describe("BUG-008 face 3: compiled-body throw is not a leaked record", () => {
+describe("face 3: compiled-body throw is not a leaked record", () => {
   it("$call on compiled body rethrows NudoThrow (align with apply)", () => {
     const f = bodyFn("function boom(x) { throw 'cb-payload'; }");
     let caught: unknown;
@@ -147,7 +147,7 @@ describe("BUG-008 face 3: compiled-body throw is not a leaked record", () => {
   });
 });
 
-describe("BUG-008: errorTypeAbs helper sanity", () => {
+describe("errorTypeAbs helper sanity", () => {
   it("errorTypeAbs produces brand Error shape", () => {
     const t = errorTypeAbs("TypeError");
     expect(t.shape.k).toBe("brand");

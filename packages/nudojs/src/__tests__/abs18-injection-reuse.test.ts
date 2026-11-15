@@ -10,7 +10,7 @@
  * - 依赖的 inert 编辑（尾部注释）⇒ 仍 hit，报告不变；
  * - 依赖的语义编辑 ⇒ miss，且报告反映新值（复用不陈旧）；
  * - `noCache`（指纹截断/读错误）⇒ 不查不写（由 core 侧指纹夹具覆盖 fail-closed
- *   口径，本文件用「不同输入 ⇒ 不同键」间接钉住）。
+ * 口径，本文件用「不同输入 ⇒ 不同键」间接钉住）。
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";

@@ -3,10 +3,10 @@
  * mock-seed 组装 throw）必须挡 exit，且降级产物不得回写磁盘缓存。
  * 旧实现两处假绿：
  * ①单文件 --json 末段 `process.exitCode = checkJson.ok ? 0 : 1`
- *   无条件覆盖 catch 已置的 1——降级分析（无注入）往往零诊断
- *   （ok:true）→ exit 0；多文件信封 `envelope.ok ? 0 : 1` 同族。
+ * 无条件覆盖 catch 已置的 1——降级分析（无注入）往往零诊断
+ * （ok:true）→ exit 0；多文件信封 `envelope.ok ? 0 : 1` 同族。
  * ②降级分析仍写磁盘缓存 → 下次 check 命中缓存整体跳过注入装配
- *   → 静默转绿。
+ * → 静默转绿。
  *
  * 注入装配的 throw 无法从输入面稳定构造（各装载路径 fail-closed，
  * 走 issue / fromErrors 通道而非异常），故进程内 vi.mock 注入异常并

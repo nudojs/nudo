@@ -33,11 +33,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 // ---------------------------------------------------------------------------
-// Bug 1044 · brand 接收者的「确定缺失」判定
+// brand 接收者的「确定缺失」判定
 // ---------------------------------------------------------------------------
-describe("[] Bug 1044 · brand 接收者的「确定缺失」判定", () => {
+describe("brand 接收者的「确定缺失」判定", () => {
 /**
- * Bug 1044 —— **brand 接收者**的「确定缺失」判定（族 46 · 片 S12）。
+ * **brand 接收者**的「确定缺失」判定（族 46 · 片 S12）。
  *
  * 背景（族 35 · 片 S1 的遗留）：
  * env node 的 `Response.json(...)` 返回域已修对（brand `Response`），但
@@ -53,7 +53,7 @@ describe("[] Bug 1044 · brand 接收者的「确定缺失」判定", () => {
  * 口径要点（soundness 护栏）：
  * - 内层 unknown / prim / arr / open / 带 index 键 ⇒ 域不封闭 ⇒ 不判；
  * - 引擎已为该 brand 建模原型面（内建 brand / 装箱 brand / Proxy / Intl.* /
- *   原型对象 brand）⇒ 表外名**不可证缺席** ⇒ 不判；
+ * 原型对象 brand）⇒ 表外名**不可证缺席** ⇒ 不判；
  * - 注册用户类（类注册表持有原型方法面）⇒ 不判（域不同）；
  * - Object.prototype 名 ⇒ 原型上恒有 ⇒ 不判。
  *
@@ -126,7 +126,7 @@ function evalSrc(
   return { result: rec.result as Abs, throws: rec.throws };
 }
 
-/** env 声明形的 Response 实例面（Bug 1044 的形状）：json / text / status 在槽表里 */
+/** env 声明形的 Response 实例面（的形状）：json / text / status 在槽表里 */
 const jsonFn = absFunction([], { apply: () => strPrim }, { name: "json" });
 const textFn = absFunction([], { apply: () => strPrim }, { name: "text" });
 const RESPONSE = envBrand("Response", {
@@ -136,7 +136,7 @@ const RESPONSE = envBrand("Response", {
   text: textFn,
 });
 
-describe("Bug 1044 · brand 接收者的「确定缺失」判定", () => {
+describe("brand 接收者的「确定缺失」判定", () => {
   it("brand 接收者 · 闭合 obj · 表外成员（then）⇒ 记 may-throw（never throws TypeError）", () => {
     const r = evalSrc(`export function f() { return resp.then(function () {}); }`, {
       resp: RESPONSE,
@@ -259,11 +259,11 @@ export function f() {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1045 后续（S16）: sum 里的 fn（构造器）成员的静态成员派发
+// 后续（S16）: sum 里的 fn（构造器）成员的静态成员派发
 // ---------------------------------------------------------------------------
-describe("[] Bug 1045 后续（S16）: sum 里的 fn（构造器）成员的静态成员派发", () => {
+describe("后续（S16）: sum 里的 fn（构造器）成员的静态成员派发", () => {
 /**
- * Bug 1045 后续（S16）：sum 里的**构造器成员**（fn 形状）被误判「确定没有此方法」。
+ * 后续（S16）：sum 里的**构造器成员**（fn 形状）被误判「确定没有此方法」。
  *
  * 背景（族 36 / 片 S2 把 `@nudo:env` 多名合并改成**并集**引出的精度回退）：
  * 合并后 `Response` 是两个构造器声明的 **sum** ⇒ core 的 `$invoke` sum 臂用
@@ -281,19 +281,19 @@ describe("[] Bug 1045 后续（S16）: sum 里的 fn（构造器）成员的静�
  * 成员挂在 fn 的 `shape.slots` 上）里有没有这个名」：
  * - 静态槽里有 ⇒ 可派发；
  * - 静态槽**明确不含** ⇒ 确定没有（原生读 undefined ⇒ 调用 TypeError ⇒ 记
- *   may-throw + 跳过该成员——该分支不贡献值）；
+ * may-throw + 跳过该成员——该分支不贡献值）；
  * - fn **没有静态面模型**（`shape.slots` 缺席）⇒ 判据不足 ⇒ **保守放行**
- *   （不可判不可抛：宁可多派发一次，不可凭空造 may-throw ⇒ 假红）。
+ * （不可判不可抛：宁可多派发一次，不可凭空造 may-throw ⇒ 假红）。
  *
  * 断言面：
  * 1. fn⊕fn 上调用**两臂都有**的静态成员 ⇒ 值域是**两臂返回域之并**（不是 unknown）；
  * 2. fn⊕fn 上调用**只有一臂有**的静态成员 ⇒ 该臂派发；另一臂按原生记 may-throw
- *    （**不要**把两臂都当有）；
+ * （**不要**把两臂都当有）；
  * 3. 负控：fn 静态面模型为**空**（确实没有该静态成员）⇒ 仍判「确定没有」（记
- *    may-throw + 不贡献值）；
+ * may-throw + 不贡献值）；
  * 4. 负控：fn **无**静态面模型 ⇒ 判据不足 ⇒ 保守放行（**不记** may-throw）；
  * 5. 负控：Function.prototype / Object.prototype 名（toString）⇒ 沿函数对象恒
- *    可得 ⇒ 不得判缺席（不记 may-throw）；
+ * 可得 ⇒ 不得判缺席（不记 may-throw）；
  * 6. 负控：prim / brand / obj / arr / tuple / eff 的既有 sum 派发行为**逐字不变**；
  * 7. 端到端：env 全局是 fn⊕fn sum 时，`Response.json(x)` 的签名**不是 unknown**。
  */
@@ -353,7 +353,7 @@ function sumMemberLiterals(a: Abs): string[] {
     .sort();
 }
 
-describe("Bug 1045 后续（S16）: sum 里的 fn（构造器）成员的静态成员派发", () => {
+describe("后续（S16）: sum 里的 fn（构造器）成员的静态成员派发", () => {
   it("fn⊕fn：两臂都有的静态成员 ⇒ 值域是两臂返回域之并（不是 unknown）", () => {
     const a = ctorFn("CtorA", { json: strMember("A-json") });
     const b = ctorFn("CtorB", { json: numMember(42) });
@@ -488,11 +488,11 @@ describe("Bug 1045 后续（S16）: sum 里的 fn（构造器）成员的静态�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 139 — 实例字段计算键：定义期求值一次
+// 实例字段计算键：定义期求值一次
 // ---------------------------------------------------------------------------
-describe("[] Bug 139 — 实例字段计算键：定义期求值一次", () => {
+describe("实例字段计算键：定义期求值一次", () => {
 /**
- * Bug 139 回归：实例字段的**计算键**求值时机/次数。
+ * 回归：实例字段的**计算键**求值时机/次数。
  *
  * ES 语义（ClassDefinitionEvaluation → ClassFieldDefinitionEvaluation）：
  * 计算属性键 `class A { [k()] = 1 }` 的键表达式在**类定义期**求值**一次**，
@@ -523,7 +523,7 @@ function throwName(src: string): string {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 139 — 实例字段计算键：定义期求值一次", () => {
+describe("实例字段计算键：定义期求值一次", () => {
   it("键表达式在类定义期求值 1 次（此前 0 次）", () => {
     expect(
       v(wrap(`let n = 0; function k(){ n++; return "x"; } class A { [k()] = 1; } return n;`)),
@@ -591,11 +591,11 @@ describe("Bug 139 — 实例字段计算键：定义期求值一次", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 142 — static 块与静态字段按源码顺序执行
+// static 块与静态字段按源码顺序执行
 // ---------------------------------------------------------------------------
-describe("[] Bug 142 — static 块与静态字段按源码顺序执行", () => {
+describe("static 块与静态字段按源码顺序执行", () => {
 /**
- * Bug 142 回归：static 块与静态字段初始化器的**类体源码顺序**。
+ * 回归：static 块与静态字段初始化器的**类体源码顺序**。
  *
  * ES 语义（ClassDefinitionEvaluation → InitializeStaticElements）：静态元素
  * （静态字段初始化器 + static 块）按**类体源码顺序**依次执行。
@@ -616,7 +616,7 @@ function v(src: string) {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 142 — static 块与静态字段按源码顺序执行", () => {
+describe("static 块与静态字段按源码顺序执行", () => {
   it("static 块在前的静态字段读到块内写入（原生 2）", () => {
     expect(
       v(wrap(`class A { static { A.q = 1; } static r = A.q + 1; } return A.r;`)),
@@ -664,19 +664,19 @@ describe("Bug 142 — static 块与静态字段按源码顺序执行", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 143 — 重复键：后写的数据属性覆盖先写的访问器
+// 重复键：后写的数据属性覆盖先写的访问器
 // ---------------------------------------------------------------------------
-describe("[] Bug 143 — 重复键：后写的数据属性覆盖先写的访问器", () => {
+describe("重复键：后写的数据属性覆盖先写的访问器", () => {
 /**
- * Bug 143 回归：对象字面量**重复键**——后写的定义覆盖先写的定义。
+ * 回归：对象字面量**重复键**——后写的定义覆盖先写的定义。
  *
  * ES 语义（OrdinaryOwnPropertyKeys / DefinePropertyOrThrow）：同一键在字面量
  * 里出现多次时，**最后一次**定义生效，且定义形态（数据属性 / 访问器）也随
  * 之一并替换：
  * - `{ get x(){}, x: 2 }` → x 是**数据属性** 2（getter 被丢弃，o.x = 9 是
- *   普通写，不抛）；
+ * 普通写，不抛）；
  * - `{ x: 2, get x(){} }` → x 是**访问器**（读走 getter，写抛 TypeError——
- *   getter-only，与原生同）。
+ * getter-only，与原生同）。
  *
  * 修复前：静态键访问器在字面量**末尾**统一 `$objAccessor` 注册（无条件），
  * 于是「访问器在前、数据属性在后」时数据属性被访问器吞掉（读折 getter 值、
@@ -704,7 +704,7 @@ function throwName(src: string): string {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 143 — 重复键：后写的数据属性覆盖先写的访问器", () => {
+describe("重复键：后写的数据属性覆盖先写的访问器", () => {
   it("{ get x(){}, x: 2 } → 读得数据属性 2", () => {
     expect(v(wrap(`const o = { get x(){ return 1; }, x: 2 }; return o.x;`))).toEqual({
       ok: true,
@@ -797,7 +797,7 @@ describe("Bug 143 — 重复键：后写的数据属性覆盖先写的访问器"
   });
 });
 
-describe("Bug 143 — 负控制：单访问器 / 访问器对 / 数据-数据 等既有语义不回归", () => {
+describe("负控制：单访问器 / 访问器对 / 数据-数据 等既有语义不回归", () => {
   it("单访问器：{ get x(){ return 7 } } → 7", () => {
     expect(v(wrap(`const o = { get x(){ return 7; } }; return o.x;`))).toEqual({ ok: true, value: 7 });
   });
@@ -888,14 +888,14 @@ describe("Bug 143 — 负控制：单访问器 / 访问器对 / 数据-数据 �
 });
 
 // ---------------------------------------------------------------------------
-// Bug 152: 调用点成员访问器先于实参求值
+// 调用点成员访问器先于实参求值
 // ---------------------------------------------------------------------------
-describe("[] Bug 152: 调用点成员访问器先于实参求值", () => {
+describe("调用点成员访问器先于实参求值", () => {
 /**
- * Bug 152 回归（core exec/transpile）：调用点成员**访问器**在**实参之后**才求值。
+ * 回归（core exec/transpile）：调用点成员**访问器**在**实参之后**才求值。
  *
  * 原生 CallExpression（`o.m(args)`）的求值顺序：
- *   ① 求 `o` → ② 取 `o.m`（**访问器 getter 在此触发**）→ ③ 求实参 → ④ 调用。
+ * ① 求 `o` → ② 取 `o.m`（**访问器 getter 在此触发**）→ ③ 求实参 → ④ 调用。
  * 修复前引擎把接收者/成员名作为 `$invoke(recv, name, [args])` 的实参传入，
  * 实参数组字面量**先于** $invoke 内的成员读求值 ⇒ getter 跑晚了
  * （`o.m(b())` 原生 "mbc" / 引擎 "bmc"）。
@@ -917,7 +917,7 @@ function v(src: string): unknown {
   return r.ok ? r.value : `<not-lit:${(call(src, "f").result as { shape?: { k?: string } }).shape?.k}>`;
 }
 
-describe("Bug 152: 调用点成员访问器先于实参求值", () => {
+describe("调用点成员访问器先于实参求值", () => {
   it("对象字面量访问器：getter 在实参之前跑（原生 mbc / 改前 bmc）", () => {
     const src = `export function f() {
       let s = "";
@@ -1020,7 +1020,7 @@ describe("Bug 152: 调用点成员访问器先于实参求值", () => {
   });
 });
 
-describe("Bug 152 负控制：非访问器成员 / super / 私有名 / 数组方法不受影响", () => {
+describe("负控制：非访问器成员 / super / 私有名 / 数组方法不受影响", () => {
   it("数据槽方法：成员读无副作用，调用仍在实参之后（原生 bm）", () => {
     const src = `export function f() {
       let s = "";
@@ -1099,11 +1099,11 @@ describe("Bug 152 负控制：非访问器成员 / super / 私有名 / 数组方
 });
 
 // ---------------------------------------------------------------------------
-// Bug 157 — static 块内 super 读父类静态成员
+// static 块内 super 读父类静态成员
 // ---------------------------------------------------------------------------
-describe("[] Bug 157 — static 块内 super 读父类静态成员", () => {
+describe("static 块内 super 读父类静态成员", () => {
 /**
- * Bug 157 回归：static 块里的 `super`（home object = 类自身）。
+ * 回归：static 块里的 `super`（home object = 类自身）。
  *
  * ES 语义：static 块/静态字段/静态方法体内的 `super` 以**类自身**为 home
  * object——`super.<父类静态成员>` 读父类构造器面。
@@ -1122,7 +1122,7 @@ function v(src: string) {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 157 — static 块内 super 读父类静态成员", () => {
+describe("static 块内 super 读父类静态成员", () => {
   it("static { this.x = super.m } → 父类静态成员值（原生 1）", () => {
     expect(
       v(wrap(`class A { static m = 1; } class B extends A { static { this.x = super.m; } } return B.x;`)),
@@ -1168,11 +1168,11 @@ describe("Bug 157 — static 块内 super 读父类静态成员", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 158 — 私有名按声明类作用域化
+// 私有名按声明类作用域化
 // ---------------------------------------------------------------------------
-describe("[] Bug 158 — 私有名按声明类作用域化", () => {
+describe("私有名按声明类作用域化", () => {
 /**
- * Bug 158 回归：私有名（Private Name）的**类作用域**。
+ * 回归：私有名（Private Name）的**类作用域**。
  *
  * ES 语义：Private Name 逐**类定义**——A 的 #x 与 B 的 #x 是两个不同私有名：
  * - 不同类的同名私有互不串值（各自 brand 独立）；
@@ -1206,7 +1206,7 @@ function throwName(src: string): string {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 158 — 私有名按声明类作用域化", () => {
+describe("私有名按声明类作用域化", () => {
   it("读外类私有 → TypeError（此前返回外类的值）", () => {
     expect(
       throwName(
@@ -1278,11 +1278,11 @@ describe("Bug 158 — 私有名按声明类作用域化", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 162：解构成员目标带默认值 → 写回不丢
+// 解构成员目标带默认值 → 写回不丢
 // ---------------------------------------------------------------------------
-describe("[] Bug 162：解构成员目标带默认值 → 写回不丢", () => {
+describe("解构成员目标带默认值 → 写回不丢", () => {
 /**
- * Bug 162 回归：解构的**成员目标**带**默认值**时（`({ a: o.x = 1 } = src)`），
+ * 回归：解构的**成员目标**带**默认值**时（`({ a: o.x = 1 } = src)`），
  * 赋值**写回不能丢**。
  *
  * 修复前：成员目标落进「嵌套 + 默认」分支后被当子模式递归——成员写回
@@ -1292,7 +1292,7 @@ describe("[] Bug 162：解构成员目标带默认值 → 写回不丢", () => {
 
 
 
-describe("Bug 162：解构成员目标带默认值 → 写回不丢", () => {
+describe("解构成员目标带默认值 → 写回不丢", () => {
   it("属性为 undefined → 取默认值并写回成员", () => {
     expect(
       val(`export function f() { const src = { a: undefined }; const o = { x: 0 }; ({ a: o.x = 1 } = src); return o.x; }`),
@@ -1341,11 +1341,11 @@ describe("Bug 162：解构成员目标带默认值 → 写回不丢", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 174 — 默认参数表达式的 this 是本函数自己的 this
+// 默认参数表达式的 this 是本函数自己的 this
 // ---------------------------------------------------------------------------
-describe("[] Bug 174 — 默认参数表达式的 this 是本函数自己的 this", () => {
+describe("默认参数表达式的 this 是本函数自己的 this", () => {
 /**
- * Bug 174 回归：默认参数表达式里的 `this` 绑到**外层作用域**的 this。
+ * 回归：默认参数表达式里的 `this` 绑到**外层作用域**的 this。
  *
  * 原生语义：默认参数表达式在**被调函数自己的作用域**求值 ⇒ 其中的 `this`
  * 是**被调函数自己的** this（严格模式：undefined / 调用接收者），**不是**外层
@@ -1353,11 +1353,11 @@ describe("[] Bug 174 — 默认参数表达式的 this 是本函数自己的 thi
  *
  * 修复前：`fnBodyHasThis` 只扫函数**体** ⇒ 形参默认值里的 `this` 不可见 ⇒
  * 默认表达式沿用外层 `thisParam`：
- *   - `const o = { v: 3, m(){ return (function (x = this.v) { return x; })(); } }`
- *     原生抛 TypeError（严格模式 this = undefined ⇒ `undefined.v`），引擎给 3
- *     （**外层对象**的 v）——自信错值 + 漏抛；
- *   - `function (x = this) {}` + `.call({ v: 1 })` 原生返回接收者，引擎给
- *     undefined（外层 this = undefined）。
+ * - `const o = { v: 3, m(){ return (function (x = this.v) { return x; })(); } }`
+ * 原生抛 TypeError（严格模式 this = undefined ⇒ `undefined.v`），引擎给 3
+ * （**外层对象**的 v）——自信错值 + 漏抛；
+ * - `function (x = this) {}` + `.call({ v: 1 })` 原生返回接收者，引擎给
+ * undefined（外层 this = undefined）。
  *
  * 不变量（负控制钉住）：普通调用仍是 undefined（严格模式）；箭头表达式的
  * `this` 仍词法继承外层；方法**自身**的默认值（`m(x = this.v)`）仍是 3。
@@ -1371,7 +1371,7 @@ function v(src: string, ...args: unknown[]) {
   return litValue___nudojs_core_5(callLit(src, "f", ...args).result);
 }
 
-describe("Bug 174 — 默认参数表达式的 this 是本函数自己的 this", () => {
+describe("默认参数表达式的 this 是本函数自己的 this", () => {
   it("函数表达式 + .call(receiver)：默认值读到接收者", () => {
     const src = `export function f() {
       const g = function (x = this) { return x; };
@@ -1409,7 +1409,7 @@ describe("Bug 174 — 默认参数表达式的 this 是本函数自己的 this",
   });
 });
 
-describe("Bug 174 — 负控制：this 归属不被改写", () => {
+describe("负控制：this 归属不被改写", () => {
   it("普通调用（严格模式）this = undefined（不是全局对象）", () => {
     const src = `export function f() {
       const g = function (x = this) { return x; };
@@ -1445,11 +1445,11 @@ describe("Bug 174 — 负控制：this 归属不被改写", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 178 — for (o.x of …) 成员头每轮写回成员槽
+// for (o.x of …) 成员头每轮写回成员槽
 // ---------------------------------------------------------------------------
-describe("[] Bug 178 — for (o.x of …) 成员头每轮写回成员槽", () => {
+describe("for (o.x of …) 成员头每轮写回成员槽", () => {
 /**
- * Bug 178 回归：`for (o.x of …)` / `for (o.x in …)` 的**成员表达式头**。
+ * 回归：`for (o.x of …)` / `for (o.x in …)` 的**成员表达式头**。
  *
  * ES 语义（ForIn/OfHeadEvaluation 的 AssignmentElement 形态）：头目标是
  * **赋值目标**——每轮把迭代项**写回**该成员槽（`o.x` = 末轮项）。
@@ -1480,7 +1480,7 @@ function native(body: string): unknown {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 178 — for (o.x of …) 成员头每轮写回成员槽", () => {
+describe("for (o.x of …) 成员头每轮写回成员槽", () => {
   it("for (o.x of [1,2,3]) 后 o.x === 3", () => {
     const src = wrap(`const o={x:0}; for (o.x of [1,2,3]) {} return o.x;`);
     expect(v(src)).toEqual({ ok: true, value: 3 });
@@ -1532,7 +1532,7 @@ describe("Bug 178 — for (o.x of …) 成员头每轮写回成员槽", () => {
   });
 });
 
-describe("Bug 178 — 产品面：nudo check 签名不再折出旧值", () => {
+describe("产品面：nudo check 签名不再折出旧值", () => {
   const NUDO_SRC = `
 export const num = number();
 `;
@@ -1559,7 +1559,7 @@ export function f() {
   });
 });
 
-describe("Bug 178 — 负控制：无头赋值的目标保持旧值", () => {
+describe("负控制：无头赋值的目标保持旧值", () => {
   it("const 头不写回外层绑定（仍是块级每轮新绑定）", () => {
     const src = wrap(`let x=0; for (const y of [1,2]) {} return x;`);
     expect(v(src)).toEqual({ ok: true, value: 0 });
@@ -1584,11 +1584,11 @@ describe("Bug 178 — 负控制：无头赋值的目标保持旧值", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 180: 成员目标自增的写回时刻（测试位 / 判别位 / 步进位）
+// 成员目标自增的写回时刻（测试位 / 判别位 / 步进位）
 // ---------------------------------------------------------------------------
-describe("[] Bug 180: 成员目标自增的写回时刻（测试位 / 判别位 / 步进位）", () => {
+describe("成员目标自增的写回时刻（测试位 / 判别位 / 步进位）", () => {
 /**
- * Bug 180 回归（core 转译层）：**成员目标** `o.n++` 的写回必须发生在宿主
+ * 回归（core 转译层）：**成员目标** `o.n++` 的写回必须发生在宿主
  * 表达式求值的**那一刻**（先读旧值参与比较，再写回）⇒ if 测试位 / switch
  * 判别位 / for·while 步进位都走对分支。
  *
@@ -1597,7 +1597,7 @@ describe("[] Bug 180: 成员目标自增的写回时刻（测试位 / 判别位 
  * if/switch 里排在宿主表达式**之前**（⇒ 测试读到写回后的值 ⇒ 走错分支），
  * 在 for/while 步进闭包里干脆**不存在**（⇒ 计数器不前进 ⇒ 跑到迭代上限）。
  *
- * 现状：成员臂已随 Bug 155 的修法**自包含**（一次 Get + 一次 Put，写回
+ * 现状：成员臂已随 的修法**自包含**（一次 Get + 一次 Put，写回
  * 下沉到表达式内）⇒ 四个位同时正确。本测试把这四个位**钉住**，防止回退。
  *
  * 负控制钉住：标识符目标（本就正确）、`+=` 复合赋值、语句位 `o.n++`。
@@ -1612,7 +1612,7 @@ function valOf(src: string): unknown {
   return r.ok ? r.value : "not-lit";
 }
 
-describe("Bug 180: 成员目标自增的写回时刻（测试位 / 判别位 / 步进位）", () => {
+describe("成员目标自增的写回时刻（测试位 / 判别位 / 步进位）", () => {
   it("if 测试位：比较用旧值，写回在求值点", () => {
     // 原生：[1]（o.n++ 读旧值 0 参与比较 → then；写回后 o.n = 1）
     expect(valOf(`export function f() {
@@ -1690,11 +1690,11 @@ describe("Bug 180: 成员目标自增的写回时刻（测试位 / 判别位 / �
 });
 
 // ---------------------------------------------------------------------------
-// Bug 189 — __proto__ 值表达式在其属性位置求值（原生源码序）
+// __proto__ 值表达式在其属性位置求值（原生源码序）
 // ---------------------------------------------------------------------------
-describe("[] Bug 189 — __proto__ 值表达式在其属性位置求值（原生源码序）", () => {
+describe("__proto__ 值表达式在其属性位置求值（原生源码序）", () => {
 /**
- * Bug 189 回归：对象字面量 `__proto__: <表达式>` 的**值表达式**必须在其
+ * 回归：对象字面量 `__proto__: <表达式>` 的**值表达式**必须在其
  * 属性位置求值（原生按源码序），不得被推迟到字面量末尾。
  *
  * ES 语义（PropertyDefinitionEvaluation）：`{ a: A, __proto__: P, b: B }` 的
@@ -1720,7 +1720,7 @@ function v(src: string) {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 189 — __proto__ 值表达式在其属性位置求值（原生源码序）", () => {
+describe("__proto__ 值表达式在其属性位置求值（原生源码序）", () => {
   it("{ __proto__: P, b: B } → 副作用序 P → B", () => {
     expect(
       v(wrap(`const log = []; const o = { __proto__: (log.push("a"), null), b: log.push("b") }; return log.join(",");`)),
@@ -1772,7 +1772,7 @@ describe("Bug 189 — __proto__ 值表达式在其属性位置求值（原生源
   });
 });
 
-describe("Bug 189 — 负控制：既有语义不回归", () => {
+describe("负控制：既有语义不回归", () => {
   it("primitive 原型值被忽略（原型仍是 Object.prototype）", () => {
     expect(
       v(wrap(`const o = { __proto__: 5, x: 1 }; return Object.getPrototypeOf(o) === Object.prototype;`)),
@@ -1820,11 +1820,11 @@ describe("Bug 189 — 负控制：既有语义不回归", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 190: 成员路径写回不得打到根（中间层是访问器时）
+// 成员路径写回不得打到根（中间层是访问器时）
 // ---------------------------------------------------------------------------
-describe("[] Bug 190: 成员路径写回不得打到根（中间层是访问器时）", () => {
+describe("成员路径写回不得打到根（中间层是访问器时）", () => {
 /**
- * Bug 190：成员路径写回链在「中间层是访问器」时仍把写回打到**根对象** ⇒
+ * 成员路径写回链在「中间层是访问器」时仍把写回打到**根对象** ⇒
  * `o.a.b = 2`（`a` 是 getter）写错了对象（原生只改 getter 返回的对象，
  * **永不**对 `o.a` 做 [[Set]]）。
  *
@@ -1856,7 +1856,7 @@ function throwsName(src: string): string | null {
   return t.shape.k === "brand" ? (t.shape.name ?? "brand") : (t.shape.k as string);
 }
 
-describe("Bug 190: 成员路径写回不得打到根（中间层是访问器时）", () => {
+describe("成员路径写回不得打到根（中间层是访问器时）", () => {
   it("D1 o.a.b = 2：写在 getter 返回的对象上（原生 1——getter 每次新对象）", () => {
     expect(
       v(`export function f() { const o = { get a() { return { b: 1 }; } }; o.a.b = 2; return o.a.b; }`),
@@ -1965,11 +1965,11 @@ describe("Bug 190: 成员路径写回不得打到根（中间层是访问器时�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 191: 访问器占位槽不得投影成 exact undefined
+// 访问器占位槽不得投影成 exact undefined
 // ---------------------------------------------------------------------------
-describe("[] Bug 191: 访问器占位槽不得投影成 exact undefined", () => {
+describe("访问器占位槽不得投影成 exact undefined", () => {
 /**
- * Bug 191（对象字面量访问器的**投影面**把 getter 占位槽渲染成 exact `undefined`）。
+ * （对象字面量访问器的**投影面**把 getter 占位槽渲染成 exact `undefined`）。
  *
  * 背景：访问器不住在 shape 槽里——transpile 只落一个 `$lit(void 0)` 占位槽
  * （保键存在性），真 getter 住 accessorTable 侧表。**读**通道（$get）先查
@@ -2012,7 +2012,7 @@ function fieldLit(a: Abs, field: string): unknown {
   return eq.b.op === "lit" ? eq.b.value : undefined;
 }
 
-describe("Bug 191: 访问器占位槽不得投影成 exact undefined", () => {
+describe("访问器占位槽不得投影成 exact undefined", () => {
   it("getter 槽投影成读域值（原生读 1），不是 exact undefined", () => {
     const src = `export function f() { return { get ab() { return 1; } }; }`;
     expect(shapeOf(src)).toBe("{ ab: 1 }");
@@ -2047,7 +2047,7 @@ describe("Bug 191: 访问器占位槽不得投影成 exact undefined", () => {
 
   it("守卫面按 getter 读域判定（原生读 data.ab 得 1）", () => {
     const src = `export function f() { return { get ab() { return 1; } }; }`;
-    // 口径更新（族 09 / Bug 409 + 410）：guard 面现在还带
+    // 口径更新（族 09 / + 410）：guard 面现在还带
     // ① 数组排除（`!Array.isArray(data)`）② 必填槽的**独立存在性子句**
     // （`Object.hasOwn(data, "ab") || ("ab" in data && …)`）——
     // 访问器键的**读域判定**（`data.ab === 1`）不变。
@@ -2081,7 +2081,7 @@ export function f() { return { get ab() { return 1; } }; }
   });
 });
 
-describe("Bug 191 负控制：非 getter 槽不受影响", () => {
+describe("负控制：非 getter 槽不受影响", () => {
   it("普通数据属性仍渲染成它的值类型", () => {
     const src = `export function f() { return { plain: 5 }; }`;
     expect(shapeOf(src)).toBe("{ plain: 5 }");
@@ -2116,11 +2116,11 @@ describe("Bug 191 负控制：非 getter 槽不受影响", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 192 — X.prototype 上的 owner 实例方法：值读 / in
+// X.prototype 上的 owner 实例方法：值读 / in
 // ---------------------------------------------------------------------------
-describe("[] Bug 192 — X.prototype 上的 owner 实例方法：值读 / in", () => {
+describe("X.prototype 上的 owner 实例方法：值读 / in", () => {
 /**
- * Bug 192 回归：`X.prototype.<ownMethod>` 的**值读**与 `in` 判定必须认 owner 类。
+ * 回归：`X.prototype.<ownMethod>` 的**值读**与 `in` 判定必须认 owner 类。
  *
  * ES 语义：类体的实例方法就挂在 `X.prototype` 上——`typeof A.prototype.m` 是
  * "function"、`"m" in A.prototype` 是 true、`A.prototype.hasOwnProperty("m")`
@@ -2146,7 +2146,7 @@ function v(src: string) {
   return litValue___nudojs_core_9(call(src, "f").result);
 }
 
-describe("Bug 192 — X.prototype 上的 owner 实例方法：值读 / in", () => {
+describe("X.prototype 上的 owner 实例方法：值读 / in", () => {
   it("typeof A.prototype.m → \"function\"（owner 自有方法）", () => {
     expect(v(wrap(`class A { m(){ return 1; } } return typeof A.prototype.m;`))).toEqual({
       ok: true,
@@ -2249,11 +2249,11 @@ describe("Bug 192 — X.prototype 上的 owner 实例方法：值读 / in", () =
 });
 
 // ---------------------------------------------------------------------------
-// Bug 194 — 原型方法删除钩子（deleteProtoMethod）
+// 原型方法删除钩子（deleteProtoMethod）
 // ---------------------------------------------------------------------------
-describe("[] Bug 194 — 原型方法删除钩子（deleteProtoMethod）", () => {
+describe("原型方法删除钩子（deleteProtoMethod）", () => {
 /**
- * Bug 194 回归：`delete X.prototype.m` 不从**方法注册表**移除（删除后仍可调用
+ * 回归：`delete X.prototype.m` 不从**方法注册表**移除（删除后仍可调用
  * / 继承面不更新）。
  *
  * 根因：方法在**方法注册表**（`spec.methods`）里，不在原型对象的槽上；
@@ -2281,7 +2281,7 @@ function v(src: string) {
   return litValue___nudojs_core_10(call(src, "f").result);
 }
 
-describe("Bug 194 — 原型方法删除钩子（deleteProtoMethod）", () => {
+describe("原型方法删除钩子（deleteProtoMethod）", () => {
   it("钩子把方法条目从注册表摘掉（findMethod 沿链不再命中）", () => {
     call(wrap(`class DelMe194 { m(){ return 1; } } class DelMe194Sub extends DelMe194 {} return 1;`), "f");
     expect(findMethod("DelMe194", "m")).toBeDefined();
@@ -2342,17 +2342,17 @@ describe("Bug 194 — 原型方法删除钩子（deleteProtoMethod）", () => {
 });
 
 /**
- * Bug 194 · S19（**调用面**）：`delete X.prototype.m` 之后**调用** `a.m()`——
+ * S19（**调用面**）：`delete X.prototype.m` 之后**调用** `a.m()`——
  * 原生定抛 TypeError（`a.m is not a function`），引擎此前折 unknown
  * （never throws ⇒ L2 `nudo:entry-may-throw` 门禁假绿）。
  *
  * 修法（packages/core/src/algebra/exec/class/invoke.ts）：调用点读不到
  * **可调用**目标时记 TypeError——两种情形原生同抛：
- *  - 方法确实不存在（delete 之后 / 从未定义）；
- *  - 方法在但值不是函数（`a.m = undefined`）。
+ * - 方法确实不存在（delete 之后 / 从未定义）；
+ * - 方法在但值不是函数（`a.m = undefined`）。
  * 读面**不抛**（读 `a.m` 得 undefined 不抛）——本片只改调用面。
  */
-describe("Bug 194 · S19 — 调用面：delete X.prototype.m 后调用定抛 TypeError", () => {
+describe("S19 — 调用面：delete X.prototype.m 后调用定抛 TypeError", () => {
   it("repro：delete A.prototype.m 后 a.m() → throws TypeError（原生同抛）", () => {
     const r = call(
       wrap(`class A { m(){ return 1; } } class B extends A {} delete A.prototype.m; const a = new B(); return a.m();`),
@@ -2471,16 +2471,16 @@ describe("Bug 194 · S19 — 调用面：delete X.prototype.m 后调用定抛 Ty
 });
 
 // ---------------------------------------------------------------------------
-// Bug 195：标签模板对象是冻结的数组 exotic
+// 标签模板对象是冻结的数组 exotic
 // ---------------------------------------------------------------------------
-describe("[] Bug 195：标签模板对象是冻结的数组 exotic", () => {
+describe("标签模板对象是冻结的数组 exotic", () => {
 /**
- * Bug 195 回归：标签模板对象（GetTemplateObject）必须是**冻结的数组 exotic**。
+ * 回归：标签模板对象（GetTemplateObject）必须是**冻结的数组 exotic**。
  *
  * ES 语义（GetTemplateObject）：`CreateArrayFromList(cooked)` + `SetIntegrityLevel(frozen)`
  * ⇒ 模板对象是**真数组**，且
  * - `length` / `raw` / `@@iterator` 是**非枚举**自有属性（原生三者全非枚举；
- *   `Object.keys(s)` 只有下标 "0".."n-1"）；
+ * `Object.keys(s)` 只有下标 "0".."n-1"）；
  * - `Object.isFrozen(s)` / `Object.isFrozen(s.raw)` 均为 true；
  * - `JSON.stringify(s)` 走**数组序列化**（`["a","b"]`）。
  *
@@ -2498,7 +2498,7 @@ describe("[] Bug 195：标签模板对象是冻结的数组 exotic", () => {
 const TPL = (expr: string) =>
   `export function f() { function tag(s) { return ${expr}; } return tag\`a\${1}b\`; }`;
 
-describe("Bug 195：标签模板对象是冻结的数组 exotic", () => {
+describe("标签模板对象是冻结的数组 exotic", () => {
   it("Object.isFrozen(s) → true（原生冻结）", () => {
     expect(val(TPL("Object.isFrozen(s)"))).toEqual({ ok: true, value: true });
   });
@@ -2577,7 +2577,7 @@ describe("Bug 195：标签模板对象是冻结的数组 exotic", () => {
  * 修复前：引擎 isArray 只认 arr/tuple 形状 ⇒ 模板对象（obj 形状）折
  * **false**（wrong-exact）。
  */
-describe("Bug 195：Array.isArray(标签模板对象) → true", () => {
+describe("Array.isArray(标签模板对象) → true", () => {
   it("Array.isArray(s) → true（模板对象是数组 exotic）", () => {
     expect(val(TPL("Array.isArray(s)"))).toEqual({ ok: true, value: true });
   });
@@ -2604,11 +2604,11 @@ describe("Bug 195：Array.isArray(标签模板对象) → true", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 196 — 借用类方法按方法体执行（this = 接收者），不按接收者成员表反查
+// 借用类方法按方法体执行（this = 接收者），不按接收者成员表反查
 // ---------------------------------------------------------------------------
-describe("[] Bug 196 — 借用类方法按方法体执行（this = 接收者），不按接收者成员表反查", () => {
+describe("借用类方法按方法体执行（this = 接收者），不按接收者成员表反查", () => {
 /**
- * Bug 196 回归：**借用类方法**（`.call` / `.apply` / `.bind` / HOF 传递）按
+ * 回归：**借用类方法**（`.call` / `.apply` / `.bind` / HOF 传递）按
  * **接收者成员表**反查被调用者 ⇒ 非本类实例的接收者一律假抛 TypeError。
  *
  * 修复前：`class A { m(){ return this.x; } } const m = new A().m;
@@ -2637,7 +2637,7 @@ function throwName(src: string): string {
   return t.shape.k === "brand" ? (t.shape.name ?? "") : (t.shape.k as string);
 }
 
-describe("Bug 196 — 借用类方法按方法体执行（this = 接收者），不按接收者成员表反查", () => {
+describe("借用类方法按方法体执行（this = 接收者），不按接收者成员表反查", () => {
   it(".call(外来对象) → 方法体以该对象为 this 执行", () => {
     expect(
       v(wrap(`class A { m(){ return this.x; } } const a = new A(); const m = a.m; return m.call({ x: 1 });`)),
@@ -2718,19 +2718,19 @@ describe("Bug 196 — 借用类方法按方法体执行（this = 接收者），
 });
 
 // ---------------------------------------------------------------------------
-// [merged] eval-bug-197-class-instance-set-gate.test.ts
+// [merged] class-instance-set-gate
 // ---------------------------------------------------------------------------
-describe("[] [merged] eval-bug-197-class-instance-set-gate.test.ts", () => {
-// MERGED (topic-related bug pins): eval-bug-197-class-instance-set-gate.test.ts + eval-bug-197-reflect-set-mirror.test.ts + eval-bug-197-set-write-gate.test.ts
+describe("class-instance-set-gate", () => {
+// MERGED (topic-related bug pins): class-instance-set-gate + reflect-set-mirror + set-write-gate
 // Each absorbed file keeps its own describe scope so file-level hooks stay
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 
 
 
 
-describe("[merged] eval-bug-197-class-instance-set-gate.test.ts", () => {
+describe("class-instance-set-gate", () => {
 /**
- * Bug 197 回归（**类实例面**的 [[Set]] 原型链写门）。
+ * 回归（**类实例面**的 [[Set]] 原型链写门）。
  *
  * 背景：core 侧 $set（strict 赋值）与 Reflect.set 共用
  * exec/runtime/proto-set.ts 的 protoChainSetVerdict——receiver **无自有该键**
@@ -2744,10 +2744,10 @@ describe("[merged] eval-bug-197-class-instance-set-gate.test.ts", () => {
  *
  * 修法（S16）：
  * - proto-set.ts 改用 protoOfRecv（builtins/ctor.ts）解析**类注册表 / 品牌
- *   名面**——类实例的 [[Prototype]] 是 `A.prototype`（protoBrandAbs 按名驻留
- *   的 brand Abs，与 `A.prototype` 成员读同一引用）；
+ * 名面**——类实例的 [[Prototype]] 是 `A.prototype`（protoBrandAbs 按名驻留
+ * 的 brand Abs，与 `A.prototype` 成员读同一引用）；
  * - exec/runtime/containers/member.ts 的**类实例臂**（strict 赋值通道）也过
- *   同一道门——此前类实例面完全不过写门。
+ * 同一道门——此前类实例面完全不过写门。
  *
  * 口径：Reflect.set 写门失败**返 false（不抛）**；strict 赋值**抛 TypeError**。
  *
@@ -2770,7 +2770,7 @@ function threw(src: string, name = "TypeError"): boolean {
   return isNever(r.result) && throwsError(r.throws, name);
 }
 
-describe("Bug 197 — 类实例面 Reflect.set 的原型链写门", () => {
+describe("类实例面 Reflect.set 的原型链写门", () => {
   it("原型上 writable:false → Reflect.set 返 false（此前返 true）", () => {
     expect(
       v(`export function f() {
@@ -2835,7 +2835,7 @@ describe("Bug 197 — 类实例面 Reflect.set 的原型链写门", () => {
   });
 });
 
-describe("Bug 197 — 类实例面 strict 赋值的原型链写门", () => {
+describe("类实例面 strict 赋值的原型链写门", () => {
   it("原型上 writable:false → a.x = 2 抛 TypeError（此前静默写穿）", () => {
     expect(
       threw(`export function f() {
@@ -2885,27 +2885,27 @@ describe("Bug 197 — 类实例面 strict 赋值的原型链写门", () => {
 });
 });
 
-describe("[merged] eval-bug-197-reflect-set-mirror.test.ts", () => {
+describe("reflect-set-mirror", () => {
 /**
- * Bug 197 回归（**Reflect.set 镜像** + **原型槽落地**）：
+ * 回归（**Reflect.set 镜像** + **原型槽落地**）：
  *
  * ① Reflect.set 镜像：core 侧 $set（strict 赋值）按 [[Set]] 原型链写门判定
- *    （exec/runtime/proto-set.ts 的 protoChainSetVerdict）——receiver 无自有
- *    该键时沿 [[Prototype]] 链上溯，首个持有该键的原型的访问器（无 setter）/
- *    不可写数据属性 / frozen 原型 ⇒ **strict 赋值抛 TypeError**。原生
- *    **Reflect.set 在写门失败时返 false（不抛）**——抛错是 strict 赋值的
- *    语义。此前 Reflect.set 直接走 $set ⇒ 写门失败时抛 TypeError（原生不抛
- *    ——B197-04 的 1 条不一致）。
- *    本文件覆盖 **Object.create(proto)** 口径（protoTable 有登记 ⇒ 门可见）。
+ * （exec/runtime/proto-set.ts 的 protoChainSetVerdict）——receiver 无自有
+ * 该键时沿 [[Prototype]] 链上溯，首个持有该键的原型的访问器（无 setter）/
+ * 不可写数据属性 / frozen 原型 ⇒ **strict 赋值抛 TypeError**。原生
+ * **Reflect.set 在写门失败时返 false（不抛）**——抛错是 strict 赋值的
+ * 语义。此前 Reflect.set 直接走 $set ⇒ 写门失败时抛 TypeError（原生不抛
+ * ——B197-04 的 1 条不一致）。
+ * 本文件覆盖 **Object.create(proto)** 口径（protoTable 有登记 ⇒ 门可见）。
  *
  * ② 原型槽落地：`Object.defineProperty(X.prototype, k, desc)` 此前走不可变
- *    更新——造出新 brand Abs，而类注册表 / 实例原型链仍持旧 brand ⇒ 装上的
- *    属性**无人可见**（`X.prototype.hasOwnProperty(k)` 折 false、实例读不到）。
- *    descriptor.ts 改为**原地装**进注册表持有的原型对象（原型槽的既有约定）。
+ * 更新——造出新 brand Abs，而类注册表 / 实例原型链仍持旧 brand ⇒ 装上的
+ * 属性**无人可见**（`X.prototype.hasOwnProperty(k)` 折 false、实例读不到）。
+ * descriptor.ts 改为**原地装**进注册表持有的原型对象（原型槽的既有约定）。
  *
  * 遗留（越界，见交付报告）：
  * - 类实例读原型上的**动态访问器**仍走类注册表（spec.accessors）⇒ 读不到
- *   getter 的值（S8 侧）；本文件只钉住**数据属性**与 presence 面。
+ * getter 的值（S8 侧）；本文件只钉住**数据属性**与 presence 面。
  *
  * 已接线（S16）：类实例的原型链写门——proto-set.ts 改用 protoOfRecv（类注册表
  * / 品牌名面）解析类实例的 [[Prototype]]（此前只查 protoTable，类实例未登记
@@ -2925,7 +2925,7 @@ function threw(src: string, name = "TypeError"): boolean {
   return isNever(r.result) && throwsError(r.throws, name);
 }
 
-describe("Bug 197 — Reflect.set 写门失败返 false（不抛）", () => {
+describe("Reflect.set 写门失败返 false（不抛）", () => {
   it("原型链 getter-only → Reflect.set 返 false（此前抛 TypeError）", () => {
     expect(
       v(`export function f() {
@@ -2999,7 +2999,7 @@ describe("Bug 197 — Reflect.set 写门失败返 false（不抛）", () => {
   });
 });
 
-describe("Bug 197 — defineProperty 装到 X.prototype 上（原型槽落地）", () => {
+describe("defineProperty 装到 X.prototype 上（原型槽落地）", () => {
   it("X.prototype.hasOwnProperty(k) → true（此前折 false：装到无人持有的新 brand）", () => {
     expect(
       v(`export function f() {
@@ -3082,16 +3082,16 @@ describe("Bug 197 — defineProperty 装到 X.prototype 上（原型槽落地）
 });
 });
 
-describe("[merged] eval-bug-197-set-write-gate.test.ts", () => {
+describe("set-write-gate", () => {
 /**
- * Bug 197：[[Set]] 写门只看**自有**槽与类注册表——原型链上的访问器 / 不可写
+ * [[Set]] 写门只看**自有**槽与类注册表——原型链上的访问器 / 不可写
  * 槽被跳过，显式 `writable:false` 在 fn / 索引臂根本不被查。
  *
  * 修法（containers/member.ts 的 $set 写面 + containers/arr-index.ts 的
  * $idxSet 写面 + exec/runtime/proto-set.ts 新叶子）：
  * - receiver **无自有该键**时沿 [[Prototype]] 链上溯（OrdinarySet）：
- *   访问器（无 setter）→ strict TypeError；带 setter → 派发 setter；
- *   数据属性 writable:false / frozen 原型 → strict TypeError；
+ * 访问器（无 setter）→ strict TypeError；带 setter → 派发 setter；
+ * 数据属性 writable:false / frozen 原型 → strict TypeError；
  * - fn 臂 / 静态类值臂 / 数组下标臂补查 defineProperty 的 writable:false。
  *
  * 负控制：自有可写属性、类字面量访问器、Object.assign 到继承 non-writable
@@ -3111,7 +3111,7 @@ function threw(src: string, name = "TypeError"): boolean {
   return isNever(r.result) && throwsError(r.throws, name);
 }
 
-describe("Bug 197: [[Set]] 原型链写门 / writable:false 全面覆盖", () => {
+describe("[[Set]] 原型链写门 / writable:false 全面覆盖", () => {
   it("原型链 getter-only（Object.create）→ strict TypeError", () => {
     expect(
       threw(`export function f() {
@@ -3252,19 +3252,19 @@ describe("Bug 197: [[Set]] 原型链写门 / writable:false 全面覆盖", () =>
 });
 
 // ---------------------------------------------------------------------------
-// [merged] eval-bug-200-brand-proto-write.test.ts
+// [merged] brand-proto-write
 // ---------------------------------------------------------------------------
-describe("[] [merged] eval-bug-200-brand-proto-write.test.ts", () => {
-// MERGED (topic-related bug pins): eval-bug-200-brand-proto-write.test.ts + eval-bug-200-for-in-proto-keys.test.ts
+describe("brand-proto-write", () => {
+// MERGED (topic-related bug pins): brand-proto-write + for-in-proto-keys
 // Each absorbed file keeps its own describe scope so file-level hooks stay
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 
 
 
 
-describe("[merged] eval-bug-200-brand-proto-write.test.ts", () => {
+describe("brand-proto-write", () => {
 /**
- * Bug 200 回归（**写侧接线**）：`Object.assign(A.prototype, {…})` /
+ * 回归（**写侧接线**）：`Object.assign(A.prototype, {…})` /
  * `Object.defineProperty(A.prototype, k, {…})` 写的是**原型对象**——原生
  * for-in 沿原型链能看到这些键。
  *
@@ -3272,10 +3272,10 @@ describe("[merged] eval-bug-200-brand-proto-write.test.ts", () => {
  * containers/iterate.ts 的 brandProtoEnumerableKeys 枚举的正是它），而
  * 写侧此前：
  * - Object.assign 走 runtimeAssignObject（exec/class/assign.ts）——brand
- *   目标**无分支** ⇒ 静默丢弃；
+ * 目标**无分支** ⇒ 静默丢弃；
  * - Object.defineProperty 走不可变更新（builtins/object/descriptor.ts 的
- *   applyPropertyDescriptor）——造出新 brand Abs，而类注册表 / 实例原型链
- *   仍持旧 brand ⇒ 装上了也**无人可见**。
+ * applyPropertyDescriptor）——造出新 brand Abs，而类注册表 / 实例原型链
+ * 仍持旧 brand ⇒ 装上了也**无人可见**。
  *
  * 修法：两处都**原地写**进注册表持有的原型对象（原型槽的既有约定——
  * `A.prototype.x = 1` 落同一 memo 对象）。
@@ -3290,7 +3290,7 @@ function v(src: string) {
   return litValue(call(src, "f").result);
 }
 
-describe("Bug 200 — 写侧接线：assign / defineProperty 写进原型对象", () => {
+describe("写侧接线：assign / defineProperty 写进原型对象", () => {
   it("Object.assign(A.prototype, {b:1}) → for-in 看得到 b（此前静默丢弃）", () => {
     expect(
       v(`export function f() {
@@ -3382,9 +3382,9 @@ describe("Bug 200 — 写侧接线：assign / defineProperty 写进原型对象"
 });
 });
 
-describe("[merged] eval-bug-200-for-in-proto-keys.test.ts", () => {
+describe("for-in-proto-keys", () => {
 /**
- * Bug 200 回归：`for..in` 遍历 **brand 实例**必须沿原型链枚举可枚举键。
+ * 回归：`for..in` 遍历 **brand 实例**必须沿原型链枚举可枚举键。
  *
  * ES 语义（EnumerateObjectProperties）：`for..in` 枚举对象**自身**的可枚举
  * 属性，再沿**原型链**向上继续（同名键不重复）。class / function 的实例的
@@ -3400,7 +3400,7 @@ describe("[merged] eval-bug-200-for-in-proto-keys.test.ts", () => {
 
 
 
-describe("Bug 200：for..in 遍历 brand 实例沿原型链枚举可枚举键", () => {
+describe("for..in 遍历 brand 实例沿原型链枚举可枚举键", () => {
   it("class 实例：原型上的可枚举属性被枚举", () => {
     expect(
       val(`export function f() {
@@ -3517,10 +3517,10 @@ describe("Bug 200：for..in 遍历 brand 实例沿原型链枚举可枚举键", 
 });
 
 // ---------------------------------------------------------------------------
-// [merged] eval-bug-203-class-static-symbol-hasinstance.test.ts
+// [merged] class-static-symbol-hasinstance
 // ---------------------------------------------------------------------------
-describe("[] [merged] eval-bug-203-class-static-symbol-hasinstance.test.ts", () => {
-// MERGED (topic-related bug pins): eval-bug-203-class-static-symbol-hasinstance.test.ts + eval-bug-203-hasinstance-string-key.test.ts
+describe("class-static-symbol-hasinstance", () => {
+// MERGED (topic-related bug pins): class-static-symbol-hasinstance + hasinstance-string-key
 // Each absorbed file keeps its own describe scope so file-level hooks stay
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 
@@ -3528,21 +3528,21 @@ describe("[] [merged] eval-bug-203-class-static-symbol-hasinstance.test.ts", () 
 
 
 
-describe("[merged] eval-bug-203-class-static-symbol-hasinstance.test.ts", () => {
+describe("class-static-symbol-hasinstance", () => {
 /**
- * Bug 203 回归（**类体静态成员**形态）：普通字符串键 `static "@@hasInstance"`
+ * 回归（**类体静态成员**形态）：普通字符串键 `static "@@hasInstance"`
  * 不是 `Symbol.hasInstance` 钩子——原生 `instanceof` 只看**符号键**；
  * 符号键形态 `static [Symbol.hasInstance](v){…}` 仍是钩子，且其类值同名槽
  * 带 **symbolKey 标记**（读面据此把符号键槽与普通字符串键槽分开——同族 01
- * 的 Bug 149「符号键投影 → "@@X" 槽 + symbolKey 标记」同机制）。
+ * 的 「符号键投影 → "@@X" 槽 + symbolKey 标记」同机制）。
  *
  * ES 语义（原生）：
  * - `class A { static "@@hasInstance"(){…} }` → 一个**普通静态属性**（键是
- *   字符串 "@@hasInstance"）：`A["@@hasInstance"]` 读得到该方法；`1 instanceof
- *   A` 走 OrdinaryHasInstance → **false**（不当钩子）；
+ * 字符串 "@@hasInstance"）：`A["@@hasInstance"]` 读得到该方法；`1 instanceof
+ * A` 走 OrdinaryHasInstance → **false**（不当钩子）；
  * - `class A { static [Symbol.hasInstance](v){…} }` → **符号键**静态成员：
- *   `1 instanceof A` 调该钩子（首参 = 左操作数）；`A[Symbol.hasInstance]`
- *   读得到该方法。
+ * `1 instanceof A` 调该钩子（首参 = 左操作数）；`A[Symbol.hasInstance]`
+ * 读得到该方法。
  *
  * 修复前：两者在类 spec 里同键（"@@hasInstance"）⇒ 字符串键形态被当钩子
  * 调用（`1 instanceof A` 折 true），且 `A["@@hasInstance"]` 读到的是钩子
@@ -3550,10 +3550,10 @@ describe("[merged] eval-bug-203-class-static-symbol-hasinstance.test.ts", () => 
  *
  * 修法（transpile/class-emit.ts）：
  * - 字符串键形态**不进** spec 的 staticMethods/statics（进了则
- *   members.ts 的 classDeclaresHasInstance 判「类声明了钩子」）→ 改以类值
- *   **自有槽**安装（$set 写 own slot，槽无 symbolKey 标记 ⇒ 不是钩子）；
+ * members.ts 的 classDeclaresHasInstance 判「类声明了钩子」）→ 改以类值
+ * **自有槽**安装（$set 写 own slot，槽无 symbolKey 标记 ⇒ 不是钩子）；
  * - 符号键形态仍进 spec（$class 侧造钩子适配器），并在类定义后置一步给
- *   类值同名槽打 **symbolKey 标记**。
+ * 类值同名槽打 **symbolKey 标记**。
  */
 
 
@@ -3567,7 +3567,7 @@ function v(src: string) {
   return litValue(call(src, "f").result);
 }
 
-describe("Bug 203 — 类体 static \"@@hasInstance\"（字符串键）不是 Symbol.hasInstance 钩子", () => {
+describe("类体 static \"@@hasInstance\"（字符串键）不是 Symbol.hasInstance 钩子", () => {
   it("字符串键静态方法 → 1 instanceof A 折 false（不当钩子）", () => {
     expect(v(wrap(`class A { static "@@hasInstance"() { return true; } } return 1 instanceof A;`))).toEqual({
       ok: true,
@@ -3711,17 +3711,17 @@ describe("Bug 203 — 类体 static \"@@hasInstance\"（字符串键）不是 Sy
 });
 });
 
-describe("[merged] eval-bug-203-hasinstance-string-key.test.ts", () => {
+describe("hasinstance-string-key", () => {
 /**
- * Bug 203 回归：普通字符串键 `"@@hasInstance"` 与 `Symbol.hasInstance` **不得**
+ * 回归：普通字符串键 `"@@hasInstance"` 与 `Symbol.hasInstance` **不得**
  * 混同——前者是用户自有的普通属性（原生不参与 instanceof 判定），后者才是
  * instanceof 的钩子。
  *
  * ES 语义：
  * - `o["@@hasInstance"] = fn` → 普通字符串键；`1 instanceof o` → RHS 非
- *   callable → **TypeError**（钩子缺席）；
+ * callable → **TypeError**（钩子缺席）；
  * - `A["@@hasInstance"] = fn`（类值）→ 普通字符串键；`1 instanceof A` →
- *   OrdinaryHasInstance → **false**（不抛、不当钩子）；
+ * OrdinaryHasInstance → **false**（不抛、不当钩子）；
  * - `o[Symbol.hasInstance] = fn` → 符号键钩子 → 调 fn → ToBoolean 结果；
  * - `class A { static [Symbol.hasInstance](x){…} }` → 类体符号键钩子。
  *
@@ -3746,7 +3746,7 @@ function throwName(src: string): string {
   return t.shape.k === "brand" ? (t.shape.name ?? "") : (t.shape.k as string);
 }
 
-describe("Bug 203 — 普通字符串键 \"@@hasInstance\" 不是 Symbol.hasInstance 钩子", () => {
+describe("普通字符串键 \"@@hasInstance\" 不是 Symbol.hasInstance 钩子", () => {
   it("obj 的字符串键钩子 → TypeError（RHS 非 callable）", () => {
     const src = wrap(
       `const o={}; o["@@hasInstance"]=function(){return false;}; try { return 1 instanceof o; } catch(e) { return e.constructor.name; }`,
@@ -3785,7 +3785,7 @@ describe("Bug 203 — 普通字符串键 \"@@hasInstance\" 不是 Symbol.hasInst
   });
 });
 
-describe("Bug 203 — 负控制：真 Symbol.hasInstance 钩子不回归", () => {
+describe("负控制：真 Symbol.hasInstance 钩子不回归", () => {
   it("obj 的符号键钩子 → 调 fn 并 ToBoolean", () => {
     expect(v(wrap(`const o={}; o[Symbol.hasInstance]=function(){return true;}; return 1 instanceof o;`))).toEqual({
       ok: true,
@@ -3829,11 +3829,11 @@ describe("Bug 203 — 负控制：真 Symbol.hasInstance 钩子不回归", () =>
 });
 
 // ---------------------------------------------------------------------------
-// Bug 204 — 内建原型对象上的 well-known Symbol 成员
+// 内建原型对象上的 well-known Symbol 成员
 // ---------------------------------------------------------------------------
-describe("[] Bug 204 — 内建原型对象上的 well-known Symbol 成员", () => {
+describe("内建原型对象上的 well-known Symbol 成员", () => {
 /**
- * Bug 204 回归：内建**原型对象**上的 well-known Symbol 成员必须可读
+ * 回归：内建**原型对象**上的 well-known Symbol 成员必须可读
  * （`Map.prototype[Symbol.toStringTag]` / `Array.prototype[Symbol.unscopables]`
  * / `Date.prototype[Symbol.toPrimitive]` …）。
  *
@@ -3854,7 +3854,7 @@ function v(src: string) {
   return litValue___nudojs_core_12(call(src, "f").result);
 }
 
-describe("Bug 204 — 内建原型对象上的 well-known Symbol 成员", () => {
+describe("内建原型对象上的 well-known Symbol 成员", () => {
   it("Symbol.toStringTag：Map / Set / Promise 原型上是字符串标签", () => {
     expect(v(wrap(`return String(Map.prototype[Symbol.toStringTag]);`))).toEqual({
       ok: true,
@@ -3942,10 +3942,10 @@ describe("Bug 204 — 内建原型对象上的 well-known Symbol 成员", () => 
 });
 
 // ---------------------------------------------------------------------------
-// [merged] eval-bug-205-instanceof-proto-chain.test.ts
+// [merged] instanceof-proto-chain
 // ---------------------------------------------------------------------------
-describe("[] [merged] eval-bug-205-instanceof-proto-chain.test.ts", () => {
-// MERGED (topic-related bug pins): eval-bug-205-instanceof-proto-chain.test.ts + eval-bug-205-instanceof-prototype-chain.test.ts
+describe("instanceof-proto-chain", () => {
+// MERGED (topic-related bug pins): instanceof-proto-chain + instanceof-prototype-chain
 // Each absorbed file keeps its own describe scope so file-level hooks stay
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 
@@ -3953,23 +3953,23 @@ describe("[] [merged] eval-bug-205-instanceof-proto-chain.test.ts", () => {
 
 
 
-describe("[merged] eval-bug-205-instanceof-proto-chain.test.ts", () => {
+describe("instanceof-proto-chain", () => {
 /**
- * Bug 205（族 43 · 片 S7）：`instanceof` 必须按**真实原型链**判定 —— 补面 +
+ * （族 43 · 片 S7）：`instanceof` 必须按**真实原型链**判定 —— 补面 +
  * 口径钉。
  *
- * 本文件是 `eval-bug-205-instanceof-prototype-chain.test.ts`（族 02 · S22 已
+ * 本文件是 `instanceof-prototype-chain`（族 02 · S22 已
  * 落地：原型被替换 / 实例原型置 null 的面）的**补面**，两处分工：
  * - S22：brand 实例侧（`F.prototype = {}` / `Object.setPrototypeOf(f, null)`）
- *   —— 引擎此前按构造器**名**匹配折 exact true（unsound 的肯定判断）。
+ * —— 引擎此前按构造器**名**匹配折 exact true（unsound 的肯定判断）。
  * - 本片（S7）：
- *   1. **闭 obj 接收者**（对象字面量）：其 [[Prototype]] 恰是 Object.prototype
- *      ⇒ 原型链恰是 [Object.prototype] ⇒ 与 RHS 的 prototype 做**身份**比较
- *      即可定论（原生 false；此前只对**内建**构造器名折 exact false，用户类 /
- *      用户函数折抽象 boolean —— 精度债）。
- *   2. **左操作数是宿主函数**（`F instanceof Function`）：转译的函数声明 /
- *      函数表达式不是 Abs，此前直读 `left.shape` 崩 ⇒ 引擎 fail-closed 折
- *      unknown（原生 true —— 精度债）。
+ * 1. **闭 obj 接收者**（对象字面量）：其 [[Prototype]] 恰是 Object.prototype
+ * ⇒ 原型链恰是 [Object.prototype] ⇒ 与 RHS 的 prototype 做**身份**比较
+ * 即可定论（原生 false；此前只对**内建**构造器名折 exact false，用户类 /
+ * 用户函数折抽象 boolean —— 精度债）。
+ * 2. **左操作数是宿主函数**（`F instanceof Function`）：转译的函数声明 /
+ * 函数表达式不是 Abs，此前直读 `left.shape` 崩 ⇒ 引擎 fail-closed 折
+ * unknown（原生 true —— 精度债）。
  *
  * **口径更正（宿主实测）**：`new F() instanceof Function` 的原生值是
  * **false**，不是 true——普通函数 `F` 的实例原型链是
@@ -3982,7 +3982,7 @@ describe("[merged] eval-bug-205-instanceof-proto-chain.test.ts", () => {
  * **已知债（不在本片范围，钉住「不误判」侧）**：替换 / setPrototypeOf 进来的
  * 新原型，其**自身**的 [[Prototype]] 链未建模 ⇒ 引擎诚实降 boolean（原生
  * true/false vs 引擎 boolean —— sound 不误判）。本片**不改**既有钉
- * `eval-bug-205-instanceof-prototype-chain.test.ts` 的该条断言。
+ * `instanceof-prototype-chain` 的该条断言。
  */
 
 
@@ -4006,7 +4006,7 @@ function threw(src: string, name: string): boolean {
   return throwsError(call(src, "f").throws, name);
 }
 
-describe("Bug 205（片 S7）— instanceof 按真实原型链判定：回归面（族 02 已落地）", () => {
+describe("（片 S7）— instanceof 按真实原型链判定：回归面（族 02 已落地）", () => {
   it("函数 / 类实例 instanceof 自身 → true", () => {
     expect(v(wrap(`function F(){} const f=new F(); return f instanceof F;`))).toEqual({
       ok: true,
@@ -4053,7 +4053,7 @@ describe("Bug 205（片 S7）— instanceof 按真实原型链判定：回归面
   });
 });
 
-describe("Bug 205（片 S7）— instanceof Function 的宿主口径（原生 false）", () => {
+describe("（片 S7）— instanceof Function 的宿主口径（原生 false）", () => {
   it("普通函数 / 类的实例 instanceof Function → false（原生 false，非 true）", () => {
     // 原生：`new F() instanceof Function` ⇒ false（Function.prototype 不在
     // `f → F.prototype → Object.prototype` 链里）
@@ -4092,7 +4092,7 @@ describe("Bug 205（片 S7）— instanceof Function 的宿主口径（原生 fa
   });
 });
 
-describe("Bug 205（片 S7）— 负控：闭 obj 接收者（对象字面量）", () => {
+describe("（片 S7）— 负控：闭 obj 接收者（对象字面量）", () => {
   it("对象字面量 instanceof 用户函数 / 用户类 → false（此前折抽象 boolean）", () => {
     expect(v(wrap(`function F(){} return ({} ) instanceof F;`))).toEqual({
       ok: true,
@@ -4116,11 +4116,11 @@ describe("Bug 205（片 S7）— 负控：闭 obj 接收者（对象字面量）
   });
 });
 
-describe("Bug 205（片 S7）— 不误判护栏：RHS 的 prototype 不可判 ⇒ 降抽象", () => {
+describe("（片 S7）— 不误判护栏：RHS 的 prototype 不可判 ⇒ 降抽象", () => {
   it("箭头函数 RHS（原生定抛 TypeError）不得折 exact false", () => {
     const src = wrap(`const F = () => {}; return ({} ) instanceof F;`);
     expect(v(src)).not.toEqual({ ok: true, value: false });
-    // BUG-175 部分收口：箭头函数无 .prototype ⇒ OrdinaryHasInstance 定抛
+    // 部分收口：箭头函数无 .prototype ⇒ OrdinaryHasInstance 定抛
     // TypeError（node 实测），故 shape 为 never。生成器 / bind 产物仍折抽象
     // boolean（见下方两例）。
     expect(shapeOf(src)).toBe("never");
@@ -4146,10 +4146,10 @@ describe("Bug 205（片 S7）— 不误判护栏：RHS 的 prototype 不可判 �
   });
 });
 
-describe("Bug 205（片 S7）— 已知债：替换进来的原型其 [[Prototype]] 链未建模", () => {
+describe("（片 S7）— 已知债：替换进来的原型其 [[Prototype]] 链未建模", () => {
   it("setPrototypeOf(f, {}) 之后 instanceof F → 抽象 boolean（不得 exact true）", () => {
     // 原生 false；替换进来的原型的**自身**原型链未建模 ⇒ 诚实降 boolean
-    // （既有钉 eval-bug-205-instanceof-prototype-chain.test.ts 同时钉住
+    // （既有钉 instanceof-prototype-chain 同时钉住
     // 「不得 exact false」——本片不改该钉）
     const src = wrap(`function F(){} const f=new F(); Object.setPrototypeOf(f,{}); return f instanceof F;`);
     expect(v(src)).not.toEqual({ ok: true, value: true });
@@ -4163,7 +4163,7 @@ describe("Bug 205（片 S7）— 已知债：替换进来的原型其 [[Prototyp
   });
 });
 
-describe("Bug 205（片 S7）— RHS 的 prototype 非对象 ⇒ 原生定抛 TypeError", () => {
+describe("（片 S7）— RHS 的 prototype 非对象 ⇒ 原生定抛 TypeError", () => {
   it("F.prototype = 5 之后 f instanceof F → TypeError", () => {
     expect(
       threw(wrap(`function F(){} const f=new F(); F.prototype=5; return f instanceof F;`), "TypeError"),
@@ -4172,9 +4172,9 @@ describe("Bug 205（片 S7）— RHS 的 prototype 非对象 ⇒ 原生定抛 Ty
 });
 });
 
-describe("[merged] eval-bug-205-instanceof-prototype-chain.test.ts", () => {
+describe("instanceof-prototype-chain", () => {
 /**
- * Bug 205 回归：`instanceof` 必须沿实例的**真实原型链**判定，不得按构造器
+ * 回归：`instanceof` 必须沿实例的**真实原型链**判定，不得按构造器
  * **名字**匹配折 exact true。
  *
  * ES 语义：`Object.setPrototypeOf(f, null)` 之后 `f instanceof F` → false
@@ -4186,14 +4186,14 @@ describe("[merged] eval-bug-205-instanceof-prototype-chain.test.ts", () => {
  * 原型**替换**面（`F.prototype = {}` / `= 5`）需要「实例记录真实
  * [[Prototype]]」的建模（构造期捕获 + 写面更新）——S22 落地：
  * - `member.ts`：`$set` 对**宿主函数**建 facade，让 `F.prototype = {}` 的写
- *   落进槽（此前写穿后引擎完全无感）；
+ * 落进槽（此前写穿后引擎完全无感）；
  * - `declare.ts`：实例**构造期**记录 [[Prototype]]（brand 实例带一条原型
- *   链记录）；
+ * 链记录）；
  * - `objects.ts`：`setPrototypeOf` 对 **brand 接收者**也记（此前只对 obj
- *   接收者记）；
+ * 接收者记）；
  * - `members.ts`：`$instanceof` 沿**记录的链**做**身份**比较（RHS 的
- *   prototype 身份，不是名字）；原型不可判时降 boolean（不得 exact true）；
- *   RHS 的 `prototype` 为非对象时按 spec 抛 TypeError。
+ * prototype 身份，不是名字）；原型不可判时降 boolean（不得 exact true）；
+ * RHS 的 `prototype` 为非对象时按 spec 抛 TypeError。
  */
 
 
@@ -4211,7 +4211,7 @@ function threw(src: string, name: string): boolean {
   return throwsError(call(src, "f").throws, name);
 }
 
-describe("Bug 205 — 原型被改写后 instanceof 不得折 exact true", () => {
+describe("原型被改写后 instanceof 不得折 exact true", () => {
   it("函数构造器实例：Object.setPrototypeOf(f, null) → false", () => {
     expect(
       v(wrap(`function F(){} const f=new F(); Object.setPrototypeOf(f,null); return f instanceof F;`)),
@@ -4309,11 +4309,11 @@ describe("Bug 205 — 原型被改写后 instanceof 不得折 exact true", () =>
 });
 
 // ---------------------------------------------------------------------------
-// Bug 206 — 类值的 prototype 不可写：写必抛 strict TypeError
+// 类值的 prototype 不可写：写必抛 strict TypeError
 // ---------------------------------------------------------------------------
-describe("[] Bug 206 — 类值的 prototype 不可写：写必抛 strict TypeError", () => {
+describe("类值的 prototype 不可写：写必抛 strict TypeError", () => {
 /**
- * Bug 206 回归：类值的 `prototype` 是**不可写** own property——
+ * 回归：类值的 `prototype` 是**不可写** own property——
  * `A.prototype = {}` 在 strict 下原生定抛 TypeError。
  *
  * ES 语义（ClassDefinitionEvaluation）：类定义的 `prototype` 属性是
@@ -4347,7 +4347,7 @@ function throwName(src: string): string {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 206 — 类值的 prototype 不可写：写必抛 strict TypeError", () => {
+describe("类值的 prototype 不可写：写必抛 strict TypeError", () => {
   it("A.prototype = {} → TypeError（catch 吸收）", () => {
     const src = wrap(`class A {} try { A.prototype = {}; return "no-throw"; } catch (e) { return e.constructor.name; }`);
     expect(v(src)).toEqual({ ok: true, value: "TypeError" });
@@ -4375,7 +4375,7 @@ describe("Bug 206 — 类值的 prototype 不可写：写必抛 strict TypeError
   });
 });
 
-describe("Bug 206 — 负控制：原型对象面 / 静态面 / defineProperty 写回不回归", () => {
+describe("负控制：原型对象面 / 静态面 / defineProperty 写回不回归", () => {
   it("原型对象上的普通写不受影响（A.prototype.m = 1 → 读回 1）", () => {
     const src = wrap(`class A {} A.prototype.m = 1; return A.prototype.m;`);
     expect(throwName(src)).toBe("");
@@ -4414,11 +4414,11 @@ describe("Bug 206 — 负控制：原型对象面 / 静态面 / defineProperty �
 });
 
 // ---------------------------------------------------------------------------
-// Bug 207 — 内建父类子类实例的内建原型面
+// 内建父类子类实例的内建原型面
 // ---------------------------------------------------------------------------
-describe("[] Bug 207 — 内建父类子类实例的内建原型面", () => {
+describe("内建父类子类实例的内建原型面", () => {
 /**
- * Bug 207 回归：内建父类（`class M extends Set/Map/Date/…`）的**实例**必须
+ * 回归：内建父类（`class M extends Set/Map/Date/…`）的**实例**必须
  * 读得到内建原型面（方法值读 / `@@iterator` / `size`）。
  *
  * ES 语义：派生类实例的 [[Prototype]] 是内建父类的.prototype ⇒ 内建方法
@@ -4442,7 +4442,7 @@ function v(src: string) {
   return litValue___nudojs_core_14(call(src, "f").result);
 }
 
-describe("Bug 207 — 内建父类子类实例的内建原型面", () => {
+describe("内建父类子类实例的内建原型面", () => {
   it("Set / Map / WeakMap 子类实例读得到内建方法", () => {
     expect(v(wrap(`class M extends Set {} const s = new M([1,2]); return String(typeof s.add);`))).toEqual({
       ok: true,
@@ -4527,11 +4527,11 @@ describe("Bug 207 — 内建父类子类实例的内建原型面", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 208 — 内建原型对象上的自有写优先于内建方法表（调用面）
+// 内建原型对象上的自有写优先于内建方法表（调用面）
 // ---------------------------------------------------------------------------
-describe("[] Bug 208 — 内建原型对象上的自有写优先于内建方法表（调用面）", () => {
+describe("内建原型对象上的自有写优先于内建方法表（调用面）", () => {
 /**
- * Bug 208 回归：内建**原型对象**上的写被**内建方法表遮蔽**——读面 / 调用面
+ * 回归：内建**原型对象**上的写被**内建方法表遮蔽**——读面 / 调用面
  * 都不认用户的改写（改成非函数也不抛 TypeError）。
  *
  * 修复前：`Array.prototype.push = function(){ return 99; }; [1].push(2)` → 2
@@ -4578,7 +4578,7 @@ afterEach(() => {
   );
 });
 
-describe("Bug 208 — 内建原型对象上的自有写优先于内建方法表（调用面）", () => {
+describe("内建原型对象上的自有写优先于内建方法表（调用面）", () => {
   it("Array.prototype.push 改写后 → 数组实例调用走用户写的实现", () => {
     expect(
       v(wrap(`Array.prototype.push = function(){ return 99; }; const a = [1]; return a.push(2);`)),
@@ -4655,11 +4655,11 @@ describe("Bug 208 — 内建原型对象上的自有写优先于内建方法表�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 214 — Symbol.prototype.description 定抛 TypeError
+// Symbol.prototype.description 定抛 TypeError
 // ---------------------------------------------------------------------------
-describe("[] Bug 214 — Symbol.prototype.description 定抛 TypeError", () => {
+describe("Symbol.prototype.description 定抛 TypeError", () => {
 /**
- * Bug 214 回归：`Symbol.prototype.description` 必须**定抛 TypeError**
+ * 回归：`Symbol.prototype.description` 必须**定抛 TypeError**
  * （getter 的 thisSymbolValue brand check——`Symbol.prototype` 不是 symbol）。
  *
  * ES 语义：`Symbol.prototype.description` 是 Symbol.prototype 上的**自有
@@ -4686,7 +4686,7 @@ function throwName(src: string): string {
   return t.shape.k === "brand" ? (t.shape.name ?? "") : (t.shape.k as string);
 }
 
-describe("Bug 214 — Symbol.prototype.description 定抛 TypeError", () => {
+describe("Symbol.prototype.description 定抛 TypeError", () => {
   it("Symbol.prototype.description → TypeError（brand check）", () => {
     const src = wrap(`try { return String(Symbol.prototype.description); } catch(e) { return e.constructor.name; }`);
     expect(v(src)).toEqual({ ok: true, value: "TypeError" });
@@ -4715,11 +4715,11 @@ describe("Bug 214 — Symbol.prototype.description 定抛 TypeError", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 218 — prim 读不存在的成员 → undefined（不是 unknown）
+// prim 读不存在的成员 → undefined（不是 unknown）
 // ---------------------------------------------------------------------------
-describe("[] Bug 218 — prim 读不存在的成员 → undefined（不是 unknown）", () => {
+describe("prim 读不存在的成员 → undefined（不是 unknown）", () => {
 /**
- * Bug 218 回归：number / boolean / bigint **原始值**读不存在的成员 →
+ * 回归：number / boolean / bigint **原始值**读不存在的成员 →
  * 原生 undefined（不是 unknown），且**后续读该值**记 may-throw TypeError。
  *
  * ES 语义：原始值的属性访问走 `ToObject(v)` 后的 [[Get]]——原型链上没有
@@ -4735,7 +4735,7 @@ describe("[] Bug 218 — prim 读不存在的成员 → undefined（不是 unkno
  * - string prim 早有同款语义（不回归）；
  * - prim 自己的原型方法照常可读可调（toFixed / toString …）；
  * - Object.prototype 继承名（toString / valueOf / hasOwnProperty）不是
- *   「确定缺失」；
+ * 「确定缺失」；
  * - 对象（obj）面的缺失成员读语义不受影响。
  */
 
@@ -4756,7 +4756,7 @@ function throwName(src: string): string {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 218 — prim 读不存在的成员 → undefined（不是 unknown）", () => {
+describe("prim 读不存在的成员 → undefined（不是 unknown）", () => {
   it("(5).foo → undefined", () => {
     expect(v(wrap(`const n = 5; return n.foo;`))).toEqual({ ok: true, value: undefined });
   });
@@ -4774,7 +4774,7 @@ describe("Bug 218 — prim 读不存在的成员 → undefined（不是 unknown�
   });
 });
 
-describe("Bug 218 — 后续读该值记 may-throw TypeError（L2 门禁不再假绿）", () => {
+describe("后续读该值记 may-throw TypeError（L2 门禁不再假绿）", () => {
   it("(5).foo.bar → TypeError", () => {
     expect(throwName(wrap(`const n = 5; return n.foo.bar;`))).toBe("TypeError");
   });
@@ -4796,7 +4796,7 @@ describe("Bug 218 — 后续读该值记 may-throw TypeError（L2 门禁不再�
   });
 });
 
-describe("Bug 218 — 负控制：prim 原型方法 / 继承名 / 对象面不回归", () => {
+describe("负控制：prim 原型方法 / 继承名 / 对象面不回归", () => {
   it("(5).toFixed(2) → \"5.00\"（prim 自有原型方法）", () => {
     expect(v(wrap(`const n = 5; return n.toFixed(2);`))).toEqual({ ok: true, value: "5.00" });
   });
@@ -4828,20 +4828,20 @@ describe("Bug 218 — 负控制：prim 原型方法 / 继承名 / 对象面不�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 219 — Symbol 实例的 toString / toLocaleString 走 Symbol.prototype
+// Symbol 实例的 toString / toLocaleString 走 Symbol.prototype
 // ---------------------------------------------------------------------------
-describe("[] Bug 219 — Symbol 实例的 toString / toLocaleString 走 Symbol.prototype", () => {
+describe("Symbol 实例的 toString / toLocaleString 走 Symbol.prototype", () => {
 /**
- * Bug 219 回归：Symbol 实例上的 `toString` / `toLocaleString` 解析到
+ * 回归：Symbol 实例上的 `toString` / `toLocaleString` 解析到
  * **Symbol.prototype 自己的面**（带 brand check），不是 Object.prototype 泛型版。
  *
  * ES 语义：
  * - `Symbol.prototype.toString` 是 Symbol.prototype **自有**方法（thisSymbolValue
- *   brand check）——借用调用非 symbol 接收者定抛 TypeError
- *   （`Symbol().toString.call(1)` 抛）；返回 "Symbol(desc)"；
+ * brand check）——借用调用非 symbol 接收者定抛 TypeError
+ * （`Symbol().toString.call(1)` 抛）；返回 "Symbol(desc)"；
  * - `Symbol.prototype.valueOf` 自有（brand check）——返回符号自身；
  * - `Symbol.prototype.toLocaleString` **不存在**（继承 Object.prototype 的
- *   toLocaleString → ToObject(this).toString()）——symbol 接收者得 "Symbol(desc)"。
+ * toLocaleString → ToObject(this).toString()）——symbol 接收者得 "Symbol(desc)"。
  *
  * 修复前：这些成员值读落 Object.prototype 泛型版（**无 brand check**）→
  * 错值 "[object Number]" / "[object Symbol]"，且借用调用漏抛 TypeError。
@@ -4870,7 +4870,7 @@ function throwName(src: string): string {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 219 — Symbol 实例的 toString / toLocaleString 走 Symbol.prototype", () => {
+describe("Symbol 实例的 toString / toLocaleString 走 Symbol.prototype", () => {
   it("Symbol('x').toString() → \"Symbol(x)\"", () => {
     expect(v(wrap(`return Symbol("x").toString();`))).toEqual({ ok: true, value: "Symbol(x)" });
   });
@@ -4900,7 +4900,7 @@ describe("Bug 219 — Symbol 实例的 toString / toLocaleString 走 Symbol.prot
   });
 });
 
-describe("Bug 219 — 负控制：其它 prim 的 toString / 泛型 Object.prototype 面不回归", () => {
+describe("负控制：其它 prim 的 toString / 泛型 Object.prototype 面不回归", () => {
   it("(5).toString() → \"5\"", () => {
     expect(v(wrap(`return (5).toString();`))).toEqual({ ok: true, value: "5" });
   });
@@ -4934,11 +4934,11 @@ describe("Bug 219 — 负控制：其它 prim 的 toString / 泛型 Object.proto
 });
 
 // ---------------------------------------------------------------------------
-// Bug 223: sealed 数组 length 截断写 / mutator
+// sealed 数组 length 截断写 / mutator
 // ---------------------------------------------------------------------------
-describe("[] Bug 223: sealed 数组 length 截断写 / mutator", () => {
+describe("sealed 数组 length 截断写 / mutator", () => {
 /**
- * Bug 223：`Object.seal` 过的数组——截断型 `length` 写 / `pop()` / `shift()`
+ * `Object.seal` 过的数组——截断型 `length` 写 / `pop()` / `shift()`
  * 不抛 TypeError（原生硬抛）。
  *
  * 修法（containers/member.ts 的 $set length 写面 + exec/runtime/array-length.ts）：
@@ -4966,7 +4966,7 @@ function threw(src: string, name = "TypeError"): boolean {
   return isNever(r.result) && throwsError(r.throws, name);
 }
 
-describe("Bug 223: sealed 数组 length 截断写 / mutator", () => {
+describe("sealed 数组 length 截断写 / mutator", () => {
   it("sealed 数组 length 截断写 → TypeError", () => {
     expect(
       threw(`export function f() {
@@ -5136,11 +5136,11 @@ describe("Bug 223: sealed 数组 length 截断写 / mutator", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 225 — getter-only 静态访问器的写定抛 strict TypeError
+// getter-only 静态访问器的写定抛 strict TypeError
 // ---------------------------------------------------------------------------
-describe("[] Bug 225 — getter-only 静态访问器的写定抛 strict TypeError", () => {
+describe("getter-only 静态访问器的写定抛 strict TypeError", () => {
 /**
- * Bug 225 回归：getter-only **静态**访问器的写不抛 strict TypeError。
+ * 回归：getter-only **静态**访问器的写不抛 strict TypeError。
  *
  * ES 语义（ClassStaticElement / Set）：类定义体恒 strict——`A.g = v`（g 是
  * static getter，无 static setter）原生定抛 TypeError（与实例面
@@ -5175,7 +5175,7 @@ function throwName(src: string): string {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 225 — getter-only 静态访问器的写定抛 strict TypeError", () => {
+describe("getter-only 静态访问器的写定抛 strict TypeError", () => {
   it("A.g = 5（static getter-only）→ TypeError（catch 吸收）", () => {
     const src = wrap(`class A { static get g(){ return 1; } } try { A.g = 5; return "no-throw"; } catch (e) { return e.constructor.name; }`);
     expect(v(src)).toEqual({ ok: true, value: "TypeError" });
@@ -5191,7 +5191,7 @@ describe("Bug 225 — getter-only 静态访问器的写定抛 strict TypeError",
   });
 });
 
-describe("Bug 225 — 负控制：实例面 / 带 setter 的静态面 / 静态数据属性不回归", () => {
+describe("负控制：实例面 / 带 setter 的静态面 / 静态数据属性不回归", () => {
   it("实例面 getter-only 仍定抛（既有语义）", () => {
     expect(throwName(wrap(`class A { get g(){ return 1; } } const a = new A(); a.g = 5; return "ok";`))).toBe(
       "TypeError",
@@ -5223,18 +5223,18 @@ describe("Bug 225 — 负控制：实例面 / 带 setter 的静态面 / 静态�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 228: for (let i) 的 continue 之前的循环变量写不得丢弃
+// for (let i) 的 continue 之前的循环变量写不得丢弃
 // ---------------------------------------------------------------------------
-describe("[] Bug 228: for (let i) 的 continue 之前的循环变量写不得丢弃", () => {
+describe("for (let i) 的 continue 之前的循环变量写不得丢弃", () => {
 /**
- * Bug 228 回归（core 转译层）：`for (let i = …)` 主路径——`continue` **之前**对
+ * 回归（core 转译层）：`for (let i = …)` 主路径——`continue` **之前**对
  * 循环变量的写不得被丢弃。
  *
  * 修复前：循环变量是**状态线程形参**（`(i) => { … return i; }`），体对它的写
  * 留在形参槽里；`continue` 抛信号跳出体 ⇒ 体的 `return i` 不执行 ⇒ `$for` 的
  * continue 臂只能拿「体入口的旧 state」⇒ 迭代次数与结果全错
  * （`for (var i)` 走 fallback 路径、循环变量是真绑定 ⇒ 行为分叉）。
- *   `for (let i=0;i<3;i++){ c=c+1; i=5; continue; }` 原生 c=1，修复前 c=3。
+ * `for (let i=0;i<3;i++){ c=c+1; i=5; continue; }` 原生 c=1，修复前 c=3。
  *
  * 修复后：体用 try/finally 把「体退出瞬间的循环变量最新写」写回共享槽，
  * `$for` 的 continue 臂经 `loopVar` 回调取用 ⇒ 步进基于本轮真实值
@@ -5261,7 +5261,7 @@ function engine(body: string): unknown {
   return lv.ok ? lv.value : `not-lit:${r.result}`;
 }
 
-describe("Bug 228: for (let i) 的 continue 之前的循环变量写不得丢弃", () => {
+describe("for (let i) 的 continue 之前的循环变量写不得丢弃", () => {
   it("continue 之前的写生效：只跑 1 轮", () => {
     const body = `let c=0; for(let i=0;i<3;i++){ c=c+1; i=5; continue; } return c;`;
     expect(native(body)).toBe(1);
@@ -5320,19 +5320,19 @@ describe("Bug 228: for (let i) 的 continue 之前的循环变量写不得丢弃
 });
 
 // ---------------------------------------------------------------------------
-// [merged] eval-bug-230-delete-array-length.test.ts
+// [merged] delete-array-length
 // ---------------------------------------------------------------------------
-describe("[] [merged] eval-bug-230-delete-array-length.test.ts", () => {
-// MERGED (topic-related bug pins): eval-bug-230-delete-array-length.test.ts + eval-bug-230-proxy-delete-invariant.test.ts
+describe("delete-array-length", () => {
+// MERGED (topic-related bug pins): delete-array-length + proxy-delete-invariant
 // Each absorbed file keeps its own describe scope so file-level hooks stay
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 
 
 
 
-describe("[merged] eval-bug-230-delete-array-length.test.ts", () => {
+describe("delete-array-length", () => {
 /**
- * Bug 230：`delete a.length` 不抛 TypeError（原生 strict：不可配置自有属性
+ * `delete a.length` 不抛 TypeError（原生 strict：不可配置自有属性
  * → TypeError）→ 引擎把删除当成成功（`true`）→ 门禁假绿。
  *
  * 根因：`delete` 的两个通道都在 `exec/runtime/members.ts`
@@ -5359,7 +5359,7 @@ function threw(src: string, name = "TypeError"): boolean {
   return isNever(r.result) && throwsError(r.throws, name);
 }
 
-describe("Bug 230: delete a.length 必抛 TypeError", () => {
+describe("delete a.length 必抛 TypeError", () => {
   it("delete a.length → TypeError（表达式位：不可配置自有属性）", () => {
     expect(
       threw(`export function f() {
@@ -5453,21 +5453,21 @@ describe("Bug 230: delete a.length 必抛 TypeError", () => {
 });
 });
 
-describe("[merged] eval-bug-230-proxy-delete-invariant.test.ts", () => {
+describe("proxy-delete-invariant", () => {
 /**
- * Bug 230 回归（**Proxy [[Delete]] 不变量** + **字符串 prim 的 length 删除门**）：
+ * 回归（**Proxy [[Delete]] 不变量** + **字符串 prim 的 length 删除门**）：
  *
  * ① Proxy [[Delete]] 规范不变量（ES2024 10.5.9 step 10）——deleteProperty
- *    陷阱返回 **true** 时，若靶上该键是**不可配置**自有属性 ⇒ 原生定抛
- *    TypeError。此前引擎直接返 true（假绿：原生必抛的写门被当成"删除成功"）。
- *    落点：builtins/reflect.ts 的 Reflect.deleteProperty 臂（陷阱结果算出
- *    后过 builtins/object/descriptor.ts 的 enforceProxyDeleteInvariant）；
- *    `delete p.x` **运算符**路径（exec/runtime/members.ts 的 $delRes）已接线。
+ * 陷阱返回 **true** 时，若靶上该键是**不可配置**自有属性 ⇒ 原生定抛
+ * TypeError。此前引擎直接返 true（假绿：原生必抛的写门被当成"删除成功"）。
+ * 落点：builtins/reflect.ts 的 Reflect.deleteProperty 臂（陷阱结果算出
+ * 后过 builtins/object/descriptor.ts 的 enforceProxyDeleteInvariant）；
+ * `delete p.x` **运算符**路径（exec/runtime/members.ts 的 $delRes）已接线。
  *
  * ② `delete s.length`（**字符串 prim** 接收者）：String 包装对象的 length 是
- *    **不可配置**自有属性 ⇒ strict（ESM）下恒 TypeError。此前 prim 臂不拦
- *    ⇒ 引擎折 unknown（假绿）。落点：exec/runtime/array-length.ts 的
- *    arrayLengthIsNonConfigurable（prim 臂补齐）。
+ * **不可配置**自有属性 ⇒ strict（ESM）下恒 TypeError。此前 prim 臂不拦
+ * ⇒ 引擎折 unknown（假绿）。落点：exec/runtime/array-length.ts 的
+ * arrayLengthIsNonConfigurable（prim 臂补齐）。
  */
 
 
@@ -5483,7 +5483,7 @@ function threw(src: string, name = "TypeError"): boolean {
   return isNever(r.result) && throwsError(r.throws, name);
 }
 
-describe("Bug 230 — Proxy [[Delete]] 不变量（不可配置属性）", () => {
+describe("Proxy [[Delete]] 不变量（不可配置属性）", () => {
   it("Reflect.deleteProperty(靶含不可配置键, 陷阱返 true) → TypeError", () => {
     expect(
       threw(`export function f() {
@@ -5572,7 +5572,7 @@ describe("Bug 230 — Proxy [[Delete]] 不变量（不可配置属性）", () =>
   });
 });
 
-describe("Bug 230 — delete s.length（字符串 prim 接收者）", () => {
+describe("delete s.length（字符串 prim 接收者）", () => {
   it("delete 字符串字面量的 length → TypeError（此前折 unknown）", () => {
     expect(
       threw(`export function f() {
@@ -5607,11 +5607,11 @@ describe("Bug 230 — delete s.length（字符串 prim 接收者）", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 234 — 类值的 constructor 是内建 Function
+// 类值的 constructor 是内建 Function
 // ---------------------------------------------------------------------------
-describe("[] Bug 234 — 类值的 constructor 是内建 Function", () => {
+describe("类值的 constructor 是内建 Function", () => {
 /**
- * Bug 234 回归：类值（class 声明 / 有体类表达式）的 `constructor` 槽解析成
+ * 回归：类值（class 声明 / 有体类表达式）的 `constructor` 槽解析成
  * **内建 Function**（原生 `Widget.constructor === Function`、`.name` 是
  * "Function"），不是「以类名命名的内建构造器」。
  *
@@ -5639,7 +5639,7 @@ function v(src: string) {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 234 — 类值的 constructor 是内建 Function", () => {
+describe("类值的 constructor 是内建 Function", () => {
   it("Widget.constructor === Function → true", () => {
     expect(v(wrap(`class Widget {} return Widget.constructor === Function;`))).toEqual({
       ok: true,
@@ -5676,7 +5676,7 @@ describe("Bug 234 — 类值的 constructor 是内建 Function", () => {
   });
 });
 
-describe("Bug 234 — 负控制：实例面 / 原型面 / 内建 brand 的 constructor 不回归", () => {
+describe("负控制：实例面 / 原型面 / 内建 brand 的 constructor 不回归", () => {
   it("new Widget().constructor === Widget → true（实例面解析到类值）", () => {
     expect(v(wrap(`class Widget {} return new Widget().constructor === Widget;`))).toEqual({
       ok: true,
@@ -5705,19 +5705,19 @@ describe("Bug 234 — 负控制：实例面 / 原型面 / 内建 brand 的 const
 });
 
 // ---------------------------------------------------------------------------
-// [merged] eval-bug-235-proxy-fresh-instance-mark.test.ts
+// [merged] proxy-fresh-instance-mark
 // ---------------------------------------------------------------------------
-describe("[] [merged] eval-bug-235-proxy-fresh-instance-mark.test.ts", () => {
-// MERGED (topic-related bug pins): eval-bug-235-proxy-fresh-instance-mark.test.ts + eval-bug-235-proxy-get-receiver.test.ts
+describe("proxy-fresh-instance-mark", () => {
+// MERGED (topic-related bug pins): proxy-fresh-instance-mark + proxy-get-receiver
 // Each absorbed file keeps its own describe scope so file-level hooks stay
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 
 
 
 
-describe("[merged] eval-bug-235-proxy-fresh-instance-mark.test.ts", () => {
+describe("proxy-fresh-instance-mark", () => {
 /**
- * Bug 235 回归（Proxy「新鲜实例标」打在**构造点**）：原生 `new Proxy(t, h)`
+ * 回归（Proxy「新鲜实例标」打在**构造点**）：原生 `new Proxy(t, h)`
  * 每次都是**新对象**——与靶 `t`、与其它代理必不同引用。⇒ 引擎在**构造点**
  * （makeProxyAbs）就打「新鲜实例」标 ⇒ 「**不经任何 Proxy 面读**」的
  * `p === t` / `p1 === p2` 也**可判**（折 false）。
@@ -5739,7 +5739,7 @@ function v(src: string) {
   return litValue(call(src, "f").result);
 }
 
-describe("Bug 235 — Proxy 新鲜实例标打在构造点（不经 Proxy 面读也可判）", () => {
+describe("Proxy 新鲜实例标打在构造点（不经 Proxy 面读也可判）", () => {
   it("p === t → false（代理与靶不同引用，无需读 Proxy 面）", () => {
     expect(v(wrap(`const t = { a: 1 }; const p = new Proxy(t, {}); return p === t;`))).toEqual({
       ok: true,
@@ -5788,9 +5788,9 @@ describe("Bug 235 — Proxy 新鲜实例标打在构造点（不经 Proxy 面读
 });
 });
 
-describe("[merged] eval-bug-235-proxy-get-receiver.test.ts", () => {
+describe("proxy-get-receiver", () => {
 /**
- * Bug 235 回归：Proxy **没有 get 陷阱**时回退读靶——getter 的 `this` 必须
+ * 回归：Proxy **没有 get 陷阱**时回退读靶——getter 的 `this` 必须
  * 绑到 **receiver（= proxy）**，不是 target。
  *
  * ES 语义（Proxy [[Get]]）：无 get 陷阱时 `proxy.[[Get]](P, key, Receiver)`
@@ -5817,7 +5817,7 @@ function v(src: string) {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 235 — Proxy 无 get 陷阱：靶上 getter 的 this 是 proxy", () => {
+describe("Proxy 无 get 陷阱：靶上 getter 的 this 是 proxy", () => {
   it("p.self（this === t）→ false（receiver = proxy）", () => {
     expect(v(wrap(`const t = { get self(){ return this === t; } }; const p = new Proxy(t, {}); return p.self;`))).toEqual({
       ok: true,
@@ -5832,7 +5832,7 @@ describe("Bug 235 — Proxy 无 get 陷阱：靶上 getter 的 this 是 proxy", 
   });
 });
 
-describe("Bug 235 — 负控制：直接读靶 / 有 get 陷阱 / 普通属性穿透不回归", () => {
+describe("负控制：直接读靶 / 有 get 陷阱 / 普通属性穿透不回归", () => {
   it("直接读靶：t.self（this === t）→ true（this 是靶）", () => {
     expect(v(wrap(`const t = { get self(){ return this === t; } }; return t.self;`))).toEqual({
       ok: true,
@@ -5870,11 +5870,11 @@ describe("Bug 235 — 负控制：直接读靶 / 有 get 陷阱 / 普通属性�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 237 — 内建原型对象上的字符串键成员值读
+// 内建原型对象上的字符串键成员值读
 // ---------------------------------------------------------------------------
-describe("[] Bug 237 — 内建原型对象上的字符串键成员值读", () => {
+describe("内建原型对象上的字符串键成员值读", () => {
 /**
- * Bug 237 回归：内建**原型对象**上的字符串键成员值读必须取到原生值
+ * 回归：内建**原型对象**上的字符串键成员值读必须取到原生值
  * （`RegExp.prototype.flags` / `Error.prototype.name` / …）。
  *
  * ES 语义：原型对象上的自有数据属性（RegExp.prototype.source === "(?:)"、
@@ -5896,7 +5896,7 @@ function v(src: string) {
   return litValue___nudojs_core_22(call(src, "f").result);
 }
 
-describe("Bug 237 — 内建原型对象上的字符串键成员值读", () => {
+describe("内建原型对象上的字符串键成员值读", () => {
   it("RegExp 原型：source === \"(?:)\"、flags === \"\"", () => {
     expect(v(wrap(`return String(RegExp.prototype.source);`))).toEqual({
       ok: true,
@@ -5966,11 +5966,11 @@ describe("Bug 237 — 内建原型对象上的字符串键成员值读", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 238 — Map/Set.prototype.size 定抛 TypeError
+// Map/Set.prototype.size 定抛 TypeError
 // ---------------------------------------------------------------------------
-describe("[] Bug 238 — Map/Set.prototype.size 定抛 TypeError", () => {
+describe("Map/Set.prototype.size 定抛 TypeError", () => {
 /**
- * Bug 238 回归：`Map.prototype.size` / `Set.prototype.size` 必须**定抛
+ * 回归：`Map.prototype.size` / `Set.prototype.size` 必须**定抛
  * TypeError**（getter 的 brand check——`Map.prototype` 不是 Map 实例）。
  *
  * ES 语义：`size` 是 Map.prototype / Set.prototype 上的**自有 getter**
@@ -5990,7 +5990,7 @@ function v(src: string) {
   return litValue___nudojs_core_23(call(src, "f").result);
 }
 
-describe("Bug 238 — Map/Set.prototype.size 定抛 TypeError", () => {
+describe("Map/Set.prototype.size 定抛 TypeError", () => {
   it("Map.prototype.size → TypeError", () => {
     const src = wrap(`try { return String(Map.prototype.size); } catch(e) { return e.constructor.name; }`);
     expect(v(src)).toEqual({ ok: true, value: "TypeError" });
@@ -6026,11 +6026,11 @@ describe("Bug 238 — Map/Set.prototype.size 定抛 TypeError", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 243 — Intl.<Sub>.prototype 的 brand-check getter 定抛 TypeError
+// Intl.<Sub>.prototype 的 brand-check getter 定抛 TypeError
 // ---------------------------------------------------------------------------
-describe("[] Bug 243 — Intl.<Sub>.prototype 的 brand-check getter 定抛 TypeError", () => {
+describe("Intl.<Sub>.prototype 的 brand-check getter 定抛 TypeError", () => {
 /**
- * Bug 243 回归：`Intl.<Sub>.prototype` 上的 **brand-check getter** 读必须
+ * 回归：`Intl.<Sub>.prototype` 上的 **brand-check getter** 读必须
  * **定抛 TypeError**（原生 getter 内 RequireInternalSlot(this, …)——this 是
  * 原型对象、不是实例）。
  *
@@ -6057,7 +6057,7 @@ function throwName(src: string): string {
   return t.shape.k === "brand" ? (t.shape.name ?? "") : (t.shape.k as string);
 }
 
-describe("Bug 243 — Intl.<Sub>.prototype 的 brand-check getter 定抛 TypeError", () => {
+describe("Intl.<Sub>.prototype 的 brand-check getter 定抛 TypeError", () => {
   it("Intl.NumberFormat.prototype.format → TypeError", () => {
     expect(throwName(wrap(`return Intl.NumberFormat.prototype.format;`))).toBe("TypeError");
     expect(
@@ -6108,22 +6108,22 @@ describe("Bug 243 — Intl.<Sub>.prototype 的 brand-check getter 定抛 TypeErr
 });
 
 // ---------------------------------------------------------------------------
-// Bug 291 — freeze / seal 键级标志 + isFrozen/isSealed 平凡真
+// freeze / seal 键级标志 + isFrozen/isSealed 平凡真
 // ---------------------------------------------------------------------------
-describe("[] Bug 291 — freeze / seal 键级标志 + isFrozen/isSealed 平凡真", () => {
+describe("freeze / seal 键级标志 + isFrozen/isSealed 平凡真", () => {
 /**
- * Bug 291 回归：Object.freeze / Object.seal 的**键级标志**落地 +
+ * 回归：Object.freeze / Object.seal 的**键级标志**落地 +
  * isFrozen / isSealed 的**平凡真**判定 + fn 接收者。
  *
  * 原生（node v26 实测）：
  * - `Object.freeze(o)` ⇒ 每个自有键的 writable / configurable 折 false；
- *   `Object.seal(o)` ⇒ configurable 折 false（writable 保持）；
+ * `Object.seal(o)` ⇒ configurable 折 false（writable 保持）；
  * - `Object.isFrozen(Object.seal({}))` === true（空对象密封即冻结——
- *   规范 §7.3.15/16：不可扩展 ∧ 每个自有属性不可配置 ∧（数据属性）不可写）；
+ * 规范 §7.3.15/16：不可扩展 ∧ 每个自有属性不可配置 ∧（数据属性）不可写）；
  * - `Object.isSealed(Object.preventExtensions({}))` === true（空对象同理）；
  * - `Object.isFrozen(Object.preventExtensions({ a: 1 }))` === false；
  * - `Object.getOwnPropertyDescriptors({get a(){}}).a.get` 是**函数**
- *   （访问器描述符是 {get, set, enumerable, configurable}——无 value/writable）。
+ * （访问器描述符是 {get, set, enumerable, configurable}——无 value/writable）。
  *
  * 修复前：freeze/seal 只打一个 extState 标签 ⇒ 描述符面完全看不到冻结
  * （gOPD(o,"a").writable 仍折 true / configurable 仍折 true）；isFrozen /
@@ -6139,7 +6139,7 @@ function v(src: string) {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 291 — freeze / seal 键级标志 + isFrozen/isSealed 平凡真", () => {
+describe("freeze / seal 键级标志 + isFrozen/isSealed 平凡真", () => {
   it("freeze：自有键的 writable / configurable 折 false（改前仍折 true）", () => {
     expect(
       v(
@@ -6230,24 +6230,24 @@ describe("Bug 291 — freeze / seal 键级标志 + isFrozen/isSealed 平凡真",
 });
 
 // ---------------------------------------------------------------------------
-// Bug 292 — defineProperty 实现 ValidateAndApplyPropertyDescriptor
+// defineProperty 实现 ValidateAndApplyPropertyDescriptor
 // ---------------------------------------------------------------------------
-describe("[] Bug 292 — defineProperty 实现 ValidateAndApplyPropertyDescriptor", () => {
+describe("defineProperty 实现 ValidateAndApplyPropertyDescriptor", () => {
 /**
- * Bug 292 回归：`Object.defineProperty` 实现 ValidateAndApplyPropertyDescriptor
+ * 回归：`Object.defineProperty` 实现 ValidateAndApplyPropertyDescriptor
  * （ES2024 10.4.9）——不可配置属性的标志/值不可变、不可扩展目标不建新键、
  * ToPropertyDescriptor 的**字段存在性**语义。
  *
  * 原生（node v26 实测）：
  * - `Object.defineProperty(o,"a",{value:1,writable:false})` → 该属性
- *   **不可配置**（新建属性未指定的字段缺省 false）⇒ 再次
- *   `defineProperty(o,"a",{value:2})` 抛 TypeError（同值则允许）；
+ * **不可配置**（新建属性未指定的字段缺省 false）⇒ 再次
+ * `defineProperty(o,"a",{value:2})` 抛 TypeError（同值则允许）；
  * - 不可配置属性改 writable/configurable/enumerable → TypeError；
  * - seal / freeze / preventExtensions 之后 defineProperty **新键** → TypeError；
  * - `{get: undefined, value: 1}` → TypeError（Invalid property descriptor：
- *   get 字段与 value 字段共存——`get: undefined` 仍是「有 get 字段」）；
+ * get 字段与 value 字段共存——`get: undefined` 仍是「有 get 字段」）；
  * - 已有（可配置）属性：未指定字段保持当前值，显式字段**双向**覆盖
- *   （enumerable:false → enumerable:true 可恢复）。
+ * （enumerable:false → enumerable:true 可恢复）。
  *
  * 修复前：只校验「数据 ↔ 访问器」机制切换，标志单向收紧、值可被改写、
  * 不可扩展目标静默建键 ⇒ 假绿（门禁恒绿且行为与原生相反）。
@@ -6271,7 +6271,7 @@ function thrown(src: string): string | undefined {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 292 — defineProperty 实现 ValidateAndApplyPropertyDescriptor", () => {
+describe("defineProperty 实现 ValidateAndApplyPropertyDescriptor", () => {
   it("不可写属性被改值 → TypeError（改前静默改写成功）", () => {
     expect(
       thrown(
@@ -6378,19 +6378,19 @@ describe("Bug 292 — defineProperty 实现 ValidateAndApplyPropertyDescriptor",
 });
 
 // ---------------------------------------------------------------------------
-// Bug 294 — array-like 的访问器 length / 索引不再被忽略
+// array-like 的访问器 length / 索引不再被忽略
 // ---------------------------------------------------------------------------
-describe("[] Bug 294 — array-like 的访问器 length / 索引不再被忽略", () => {
+describe("array-like 的访问器 length / 索引不再被忽略", () => {
 /**
- * Bug 294 回归：array-like 的 `length` / 索引是**访问器**时不再整体失效。
+ * 回归：array-like 的 `length` / 索引是**访问器**时不再整体失效。
  *
  * ES 语义（node 实测）：
  * - `Array.from(arrayLike)` 走 array-like 路径时**先** GetMethod(items,
- *   @@iterator)（无 ⇒ 走 length 路径），随后 `len = ToLength(Get(items,
- *   "length"))`，再对 k ∈ [0, len) 逐个 `Get(items, k)`；
+ * @@iterator)（无 ⇒ 走 length 路径），随后 `len = ToLength(Get(items,
+ * "length"))`，再对 k ∈ [0, len) 逐个 `Get(items, k)`；
  * - 对象字面量的 `get length()` / `get 0()` 是**真访问器**——每次
- *   Array.from 恰好读一次 length、每个索引各读一次（getter 的副作用
- *   真实发生）。
+ * Array.from 恰好读一次 length、每个索引各读一次（getter 的副作用
+ * 真实发生）。
  *
  * 修复前：array-like 读数**裸读 shape 槽**，而 transpile 只在槽里留
  * `$lit(void 0)` 占位（真 getter 住 accessorTable 侧表）⇒ length 被当
@@ -6417,7 +6417,7 @@ function v(src: string) {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 294 — array-like 的访问器 length / 索引不再被忽略", () => {
+describe("array-like 的访问器 length / 索引不再被忽略", () => {
   it("Array.from：访问器 length 决定元素数（原生 \"a,b\"，改前 \"\"）", () => {
     expect(
       v(wrap(`const o = { get length(){ return 2; }, 0: "a", 1: "b" }; return Array.from(o).join(",");`)),
@@ -6477,7 +6477,7 @@ describe("Bug 294 — array-like 的访问器 length / 索引不再被忽略", (
   });
 });
 
-describe("Bug 294 负控制：非访问器形态不受影响", () => {
+describe("负控制：非访问器形态不受影响", () => {
   it("data-length 的 array-like 仍按槽读", () => {
     expect(
       v(wrap(`const o = { length: 2, 0: "a", 1: "b" }; return Array.from(o).join(",");`)),
@@ -6530,7 +6530,7 @@ describe("Bug 294 负控制：非访问器形态不受影响", () => {
   });
 });
 
-describe("Bug 294 越界待办（读面 / apply 面仍绕过访问器侧表）", () => {
+describe("越界待办（读面 / apply 面仍绕过访问器侧表）", () => {
   // 下列三处的读数在**我方文件之外**（arr-index.ts 的 $len / $idx、
   // invoke.ts 的 expandApplyArgs）——裸读槽 ⇒ 拿到占位 undefined。
   // 修法：同款经 accessorReadDomain（accessors.ts 已导出）取读域。
@@ -6541,11 +6541,11 @@ describe("Bug 294 越界待办（读面 / apply 面仍绕过访问器侧表）",
 });
 
 // ---------------------------------------------------------------------------
-// Bug 296 — Array.from 的第三实参 thisArg 透传给回调
+// Array.from 的第三实参 thisArg 透传给回调
 // ---------------------------------------------------------------------------
-describe("[] Bug 296 — Array.from 的第三实参 thisArg 透传给回调", () => {
+describe("Array.from 的第三实参 thisArg 透传给回调", () => {
 /**
- * Bug 296 回归：`Array.from(items, mapFn, thisArg)` 的**第三实参**不再被丢弃。
+ * 回归：`Array.from(items, mapFn, thisArg)` 的**第三实参**不再被丢弃。
  *
  * ES 语义（node 实测）：`Array.from(items, mapFn, thisArg)` 的 mapFn 以
  * `thisArg` 为 this 调用（GetThisBinding）；未给 thisArg ⇒ this 为
@@ -6554,7 +6554,7 @@ describe("[] Bug 296 — Array.from 的第三实参 thisArg 透传给回调", ()
  * 修复前：`evalArrayFrom` 的 `mapOne` 调 `applyCallbackValue` 时**不传**
  * thisVal ⇒ 回调的 this 恒 undefined ⇒ 回调体读 `this.k` 走
  * "property 'k' on undefined" **假抛 TypeError**、把计数器永远写成 0。
- * 数组 HOF 通道（invoke-arr.ts 的 callFn）本就传 thisVal（Bug 21 已钉）——
+ * 数组 HOF 通道（invoke-arr.ts 的 callFn）本就传 thisVal（已钉）——
  * `Array.from` 是唯一把 thisArg 传丢的高阶内建。
  *
  * 负控制钉住：数组 HOF 的 thisArg（不变）、无 thisArg 的回调（this 仍是
@@ -6580,7 +6580,7 @@ function throwName(src: string): string {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 296 — Array.from 的第三实参 thisArg 透传给回调", () => {
+describe("Array.from 的第三实参 thisArg 透传给回调", () => {
   it("回调 this 是 thisArg（原生 20，改前假抛 TypeError）", () => {
     const src = wrap(
       `let n = 0; Array.from([1,2], function(){ n += this.k; }, {k:10}); return n;`,
@@ -6639,7 +6639,7 @@ describe("Bug 296 — Array.from 的第三实参 thisArg 透传给回调", () =>
   });
 });
 
-describe("Bug 296 负控制：无 thisArg / 其它通道不受影响", () => {
+describe("负控制：无 thisArg / 其它通道不受影响", () => {
   it("数组 HOF 的 thisArg 仍正确（原生 14）", () => {
     const src = wrap(`let n = 0; [1,2].map(function(){ n += this.k; }, {k:7}); return n;`);
     expect(v(src)).toEqual({ ok: true, value: 14 });
@@ -6681,7 +6681,7 @@ describe("Bug 296 负控制：无 thisArg / 其它通道不受影响", () => {
   });
 });
 
-describe("Bug 296 越界待办（TypedArray.from 同款遗漏）", () => {
+describe("越界待办（TypedArray.from 同款遗漏）", () => {
   // `Uint8Array.from(items, mapFn, thisArg)` 在 builtins/error/binary.ts
   // （G 分片地盘）有同款遗漏——mapper 调用不传 thisVal。
   it.todo("原生 Uint8Array.from([1,2], fn, {k:3}) 计数器 === 6（引擎当前假抛）——需 binary.ts 的 mapper 传 thisVal");
@@ -6689,26 +6689,26 @@ describe("Bug 296 越界待办（TypedArray.from 同款遗漏）", () => {
 });
 
 // ---------------------------------------------------------------------------
-// [merged] eval-bug-300-proxy-get-own-property-descriptor.test.ts
+// [merged] proxy-get-own-property-descriptor
 // ---------------------------------------------------------------------------
-describe("[] [merged] eval-bug-300-proxy-get-own-property-descriptor.test.ts", () => {
-// MERGED (topic-related bug pins): eval-bug-300-proxy-get-own-property-descriptor.test.ts + eval-bug-300-proxy-gopd-trap.test.ts
+describe("proxy-get-own-property-descriptor", () => {
+// MERGED (topic-related bug pins): proxy-get-own-property-descriptor + proxy-gopd-trap
 // Each absorbed file keeps its own describe scope so file-level hooks stay
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 
 
 
 
-describe("[merged] eval-bug-300-proxy-get-own-property-descriptor.test.ts", () => {
+describe("proxy-get-own-property-descriptor", () => {
 /**
- * Bug 300 回归：Proxy 的 **getOwnPropertyDescriptor 陷阱**派发
+ * 回归：Proxy 的 **getOwnPropertyDescriptor 陷阱**派发
  * （[[GetOwnProperty]]）——此前陷阱名并集里没有它 ⇒ 陷阱**从不派发**，
  * handler 提供的描述符被完全忽略（描述符面退化成「靶面 | undefined」并定抛）。
  *
  * 原生（node v26 实测）：
  * - `Reflect.getOwnPropertyDescriptor(proxy, "a")` 走 handler 的
- *   getOwnPropertyDescriptor 陷阱（实参 (target, key)）→ 返回**补全后**的
- *   描述符对象（缺省字段取原生默认）；
+ * getOwnPropertyDescriptor 陷阱（实参 (target, key)）→ 返回**补全后**的
+ * 描述符对象（缺省字段取原生默认）；
  * - 陷阱返回**非对象** → TypeError（ToPropertyDescriptor 前置）。
  *
  * 修复前：Reflect 面恒走「靶面 | undefined」并集 ⇒ 读 .value 定抛 TypeError。
@@ -6734,7 +6734,7 @@ function thrown(src: string): string | undefined {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 300 — Proxy getOwnPropertyDescriptor 陷阱派发", () => {
+describe("Proxy getOwnPropertyDescriptor 陷阱派发", () => {
   it("Reflect 面：陷阱派发并返回补全后的描述符（改前定抛 TypeError）", () => {
     expect(
       v(
@@ -6769,9 +6769,9 @@ describe("Bug 300 — Proxy getOwnPropertyDescriptor 陷阱派发", () => {
 });
 });
 
-describe("[merged] eval-bug-300-proxy-gopd-trap.test.ts", () => {
+describe("proxy-gopd-trap", () => {
 /**
- * Bug 300 回归：**`Object.getOwnPropertyDescriptor(proxy, k)` 派发 Proxy 的
+ * 回归：**`Object.getOwnPropertyDescriptor(proxy, k)` 派发 Proxy 的
  * getOwnPropertyDescriptor 陷阱**（[[GetOwnProperty]]）。
  *
  * 本文件钉的是**主 agent 刚完成的接线**：`builtins/object/methods.ts` 的
@@ -6786,20 +6786,20 @@ describe("[merged] eval-bug-300-proxy-gopd-trap.test.ts", () => {
  *
  * 原生依据（node v26.10.0 实测）：
  * - `Object.getOwnPropertyDescriptor(new Proxy({a:1}, {getOwnPropertyDescriptor(){
- *   return {value:42,writable:true,enumerable:true,configurable:true}}}), "a").value`
- *   === `42`（陷阱返回的描述符被**补全**后原样给出）；
+ * return {value:42,writable:true,enumerable:true,configurable:true}}}), "a").value`
+ * === `42`（陷阱返回的描述符被**补全**后原样给出）；
  * - 陷阱对**任意键**派发（实参 (target, key)）⇒ 键 "zz" 也得到 value 42；
  * - `Object.getOwnPropertyDescriptor({a:1}, "a").value` === `1`；
- *   `Object.getOwnPropertyDescriptor({a:1}, "b")` === `undefined`；
+ * `Object.getOwnPropertyDescriptor({a:1}, "b")` === `undefined`；
  * - `Reflect.getOwnPropertyDescriptor(proxy, "a").value` === `42`（Reflect 面
- *   本来就有 ⇒ 两面口径一致）；
+ * 本来就有 ⇒ 两面口径一致）；
  * - 陷阱返回 `undefined` ⇒ 原生返回 `undefined`（**引擎当前折 unknown**——
- *   精度缺口，见下方 TODO(族05)）；
+ * 精度缺口，见下方 TODO(族05)）；
  * - 陷阱返回**非对象** ⇒ TypeError（原生
- *   "'getOwnPropertyDescriptor' on proxy: trap returned neither object nor
- *   undefined for property 'a'"）；
+ * "'getOwnPropertyDescriptor' on proxy: trap returned neither object nor
+ * undefined for property 'a'"）；
  * - `Object.getOwnPropertyDescriptor({}, "toString")` === `undefined`
- *   （原型链上的键**不是自有属性** ⇒ 负控制）。
+ * （原型链上的键**不是自有属性** ⇒ 负控制）。
  */
 
 
@@ -6812,7 +6812,7 @@ function shapeK(r: unknown): string | undefined {
   return (r as { shape?: { k?: string } } | undefined)?.shape?.k;
 }
 
-describe("Bug 300 — Object.getOwnPropertyDescriptor 派发 Proxy 陷阱", () => {
+describe("Object.getOwnPropertyDescriptor 派发 Proxy 陷阱", () => {
   it("陷阱派发：value 42（修前读 .value 定抛 TypeError）", () => {
     const r = call(
       wrap(
@@ -6896,7 +6896,7 @@ describe("Bug 300 — Object.getOwnPropertyDescriptor 派发 Proxy 陷阱", () =
   });
 });
 
-describe("Bug 300 — 负控制（邻近形态不回归）", () => {
+describe("负控制（邻近形态不回归）", () => {
   it("原型链上的键不是自有属性：gOPD({}, \"toString\") === undefined", () => {
     const r = call(wrap(`return typeof Object.getOwnPropertyDescriptor({}, "toString");`), "f");
     expect(litValue(r.result)).toEqual({ ok: true, value: "undefined" });
@@ -6918,16 +6918,16 @@ describe("Bug 300 — 负控制（邻近形态不回归）", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 301 — freeze / seal 的 Proxy 陷阱派发
+// freeze / seal 的 Proxy 陷阱派发
 // ---------------------------------------------------------------------------
-describe("[] Bug 301 — freeze / seal 的 Proxy 陷阱派发", () => {
+describe("freeze / seal 的 Proxy 陷阱派发", () => {
 /**
- * Bug 301 回归：Object.freeze / Object.seal 对 **Proxy** 的陷阱派发。
+ * 回归：Object.freeze / Object.seal 对 **Proxy** 的陷阱派发。
  *
  * 原生（node v26 实测）：SetIntegrityLevel（ES2024 10.4.6）=
  * 1) [[PreventExtensions]]（→ preventExtensions 陷阱）；falsy ⇒ TypeError；
  * 2) 每个自有键 [[DefineOwnProperty]]（→ defineProperty 陷阱）；falsy ⇒
- *    TypeError。
+ * TypeError。
  *
  * 修复前：freeze / seal **完全无视**陷阱（直接落 extState 标签）⇒ 代理的
  * 不可扩展性与键级标志全被跳过（假冻结：陷阱返回 false 也不抛）。
@@ -6949,7 +6949,7 @@ function thrown(src: string): string | undefined {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 301 — freeze / seal 的 Proxy 陷阱派发", () => {
+describe("freeze / seal 的 Proxy 陷阱派发", () => {
   it("freeze：preventExtensions 陷阱返回 false ⇒ TypeError（改前不抛）", () => {
     expect(
       thrown(
@@ -7007,19 +7007,19 @@ describe("Bug 301 — freeze / seal 的 Proxy 陷阱派发", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 302 — Reflect.defineProperty 的反射口径（失败返 false 不抛）
+// Reflect.defineProperty 的反射口径（失败返 false 不抛）
 // ---------------------------------------------------------------------------
-describe("[] Bug 302 — Reflect.defineProperty 的反射口径（失败返 false 不抛）", () => {
+describe("Reflect.defineProperty 的反射口径（失败返 false 不抛）", () => {
 /**
- * Bug 302 回归：`Reflect.defineProperty` 走**反射口径**——失败返 **false
+ * 回归：`Reflect.defineProperty` 走**反射口径**——失败返 **false
  * 不抛**（Object.defineProperty 才是定抛 TypeError）。
  *
  * 原生（node v26 实测）：
  * - `Reflect.defineProperty(proxy, "a", desc)` 走 handler 的 defineProperty
- *   陷阱 → 返回 ToBoolean(陷阱结果)（false ⇒ 返 false，**不抛**）；
+ * 陷阱 → 返回 ToBoolean(陷阱结果)（false ⇒ 返 false，**不抛**）；
  * - 普通对象上重定义失败（不可配置属性改值）⇒ 返 **false**（不抛）；
  * - 描述符**非法**（非对象 / get-set 与 value 共存）⇒ 仍定抛 TypeError
- *   （ToPropertyDescriptor 前置，与 Object 面同款）。
+ * （ToPropertyDescriptor 前置，与 Object 面同款）。
  *
  * 修复前：Reflect 复用 Object 面 ⇒ 陷阱返 false 时定抛 TypeError；成功时
  * 返回抽象 boolean（恒真不可判）。
@@ -7043,7 +7043,7 @@ function thrown(src: string): string | undefined {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 302 — Reflect.defineProperty 的反射口径（失败返 false 不抛）", () => {
+describe("Reflect.defineProperty 的反射口径（失败返 false 不抛）", () => {
   it("Proxy defineProperty 陷阱返 false → 返 false（改前定抛 TypeError）", () => {
     expect(
       v(wrap(`const p = new Proxy({ a: 1 }, { defineProperty: () => false }); return String(Reflect.defineProperty(p, "a", { value: 2 }));`)),
@@ -7094,11 +7094,11 @@ describe("Bug 302 — Reflect.defineProperty 的反射口径（失败返 false �
 });
 
 // ---------------------------------------------------------------------------
-// Bug 306 — Reflect.get 查访问器侧表（getter 不再被忽略）
+// Reflect.get 查访问器侧表（getter 不再被忽略）
 // ---------------------------------------------------------------------------
-describe("[] Bug 306 — Reflect.get 查访问器侧表（getter 不再被忽略）", () => {
+describe("Reflect.get 查访问器侧表（getter 不再被忽略）", () => {
 /**
- * Bug 306 回归：`Reflect.get` 查**访问器侧表**——对象字面量的 getter
+ * 回归：`Reflect.get` 查**访问器侧表**——对象字面量的 getter
  * （真身住 accessorTable，槽里只有 transpile 落的 `$lit(void 0)` 占位）
  * 此前被折成 exact undefined，getter **从不执行**。
  *
@@ -7119,7 +7119,7 @@ function v(src: string) {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 306 — Reflect.get 查访问器侧表（getter 不再被忽略）", () => {
+describe("Reflect.get 查访问器侧表（getter 不再被忽略）", () => {
   it("getter 值被取到（原生 42，改前 undefined）", () => {
     expect(
       v(wrap(`const o = { get x() { return 42; } }; return String(Reflect.get(o, "x"));`)),
@@ -7161,21 +7161,21 @@ describe("Bug 306 — Reflect.get 查访问器侧表（getter 不再被忽略）
 });
 
 // ---------------------------------------------------------------------------
-// Bug 307 — Function.prototype 的 [[Prototype]] 是 Object.prototype
+// Function.prototype 的 [[Prototype]] 是 Object.prototype
 // ---------------------------------------------------------------------------
-describe("[] Bug 307 — Function.prototype 的 [[Prototype]] 是 Object.prototype", () => {
+describe("Function.prototype 的 [[Prototype]] 是 Object.prototype", () => {
 /**
- * Bug 307 回归：`Object.getPrototypeOf(Function.prototype)` 必须是
+ * 回归：`Object.getPrototypeOf(Function.prototype)` 必须是
  * `Object.prototype`（ES 的 [[Prototype]] 链：Function.prototype 的原型
  * 就是 Object.prototype）。
  *
  * 原生依据（node v26.10.0 实测，取证命令见文件末尾「取证」段）：
- *   Object.getPrototypeOf(Function.prototype) === Object.prototype → true
- *   Object.getPrototypeOf(Object.prototype) === null              → true
- *   Object.getPrototypeOf([]) === Array.prototype                 → true
- *   Object.getPrototypeOf(Array.prototype) === Object.prototype   → true
- *   Object.getPrototypeOf(userFn) === Function.prototype          → true
- *   typeof Function.prototype                                     → "function"
+ * Object.getPrototypeOf(Function.prototype) === Object.prototype → true
+ * Object.getPrototypeOf(Object.prototype) === null → true
+ * Object.getPrototypeOf([]) === Array.prototype → true
+ * Object.getPrototypeOf(Array.prototype) === Object.prototype → true
+ * Object.getPrototypeOf(userFn) === Function.prototype → true
+ * typeof Function.prototype → "function"
  *
  * 修前：引擎把 Function.prototype 的 [[Prototype]] 压成 undefined ⇒
  * `getPrototypeOf(Function.prototype) === Object.prototype` 恒 **false**
@@ -7187,11 +7187,11 @@ describe("[] Bug 307 — Function.prototype 的 [[Prototype]] 是 Object.prototy
  * 本文件按**原生**把 typeof 钉成 "function"，并单列一条断言防回退。
  *
  * 取证（原生 oracle）：
- *   node -e 'console.log(Object.getPrototypeOf(Function.prototype)===Object.prototype,
- *     Object.getPrototypeOf(Object.prototype)===null,
- *     Object.getPrototypeOf([])===Array.prototype,
- *     Object.getPrototypeOf(Array.prototype)===Object.prototype,
- *     typeof Function.prototype)'
+ * node -e 'console.log(Object.getPrototypeOf(Function.prototype)===Object.prototype,
+ * Object.getPrototypeOf(Object.prototype)===null,
+ * Object.getPrototypeOf([])===Array.prototype,
+ * Object.getPrototypeOf(Array.prototype)===Object.prototype,
+ * typeof Function.prototype)'
  */
 
 
@@ -7199,7 +7199,7 @@ describe("[] Bug 307 — Function.prototype 的 [[Prototype]] 是 Object.prototy
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 307 — Function.prototype 的 [[Prototype]] 是 Object.prototype", () => {
+describe("Function.prototype 的 [[Prototype]] 是 Object.prototype", () => {
   it("Object.getPrototypeOf(Function.prototype) === Object.prototype → true（修前恒 false）", () => {
     const r = call(
       wrap(`return Object.getPrototypeOf(Function.prototype) === Object.prototype;`),
@@ -7233,7 +7233,7 @@ describe("Bug 307 — Function.prototype 的 [[Prototype]] 是 Object.prototype"
   });
 });
 
-describe("Bug 307 — 负控制（报告的 typeof 勘误 + 相邻原型面不回归）", () => {
+describe("负控制（报告的 typeof 勘误 + 相邻原型面不回归）", () => {
   it("typeof Function.prototype → \"function\"（原生同款；报告称 \"object\" 是**报告的错误**）", () => {
     // node v26.10.0：typeof Function.prototype === "function"
     // （Function.prototype 本身可调用——它就是「所有函数共用的那个函数」）。
@@ -7244,7 +7244,7 @@ describe("Bug 307 — 负控制（报告的 typeof 勘误 + 相邻原型面不�
 
   it("typeof Object.getPrototypeOf(Function.prototype) → \"object\"（原型对象本身是对象）", () => {
     // 原生：Object.getPrototypeOf(Function.prototype) === Object.prototype
-    //       ⇒ typeof 是 "object"
+    // ⇒ typeof 是 "object"
     const r = call(wrap(`return typeof Object.getPrototypeOf(Function.prototype);`), "f");
     expect(litValue___nudojs_core_32(r.result)).toEqual({ ok: true, value: "object" });
   });
@@ -7275,22 +7275,22 @@ describe("Bug 307 — 负控制（报告的 typeof 勘误 + 相邻原型面不�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 314 — 迭代器对象的 @@iterator 返回自身
+// 迭代器对象的 @@iterator 返回自身
 // ---------------------------------------------------------------------------
-describe("[] Bug 314 — 迭代器对象的 @@iterator 返回自身", () => {
+describe("迭代器对象的 @@iterator 返回自身", () => {
 /**
- * Bug 314 回归：迭代器对象的 `@@iterator` 必须**返回自身**（迭代器协议）。
+ * 回归：迭代器对象的 `@@iterator` 必须**返回自身**（迭代器协议）。
  *
  * 原生依据（node v26.10.0 实测，取证命令见文件末尾「取证」段）：
- *   new Set([1,2])[Symbol.iterator]()[Symbol.iterator]() === it → true
- *   new Map([[1,2]])[Symbol.iterator]()[Symbol.iterator]() === it → true
- *   [1,2][Symbol.iterator]()[Symbol.iterator]() === it → true
- *   "ab"[Symbol.iterator]()[Symbol.iterator]() === it → true
- *   两个**不同**迭代器对象互比 → false（不是「所有迭代器都相等」）
+ * new Set([1,2])[Symbol.iterator]()[Symbol.iterator]() === it → true
+ * new Map([[1,2]])[Symbol.iterator]()[Symbol.iterator]() === it → true
+ * [1,2][Symbol.iterator]()[Symbol.iterator]() === it → true
+ * "ab"[Symbol.iterator]()[Symbol.iterator]() === it → true
+ * 两个**不同**迭代器对象互比 → false（不是「所有迭代器都相等」）
  *
  * 修前：引擎的迭代器对象**没有自协议**——
  * - Set / Map 迭代器：`it[Symbol.iterator]` 取不到 ⇒ 调用**确定抛
- *   TypeError** ⇒ 返回值折 never（自信的错值）；
+ * TypeError** ⇒ 返回值折 never（自信的错值）；
  * - 数组 / 字符串迭代器：给出**错的 "diff"**（原生是 same / true）。
  *
  * 口径说明（**别被报告的措辞带偏**）：报告里的 "same" / "diff" 是
@@ -7298,11 +7298,11 @@ describe("[] Bug 314 — 迭代器对象的 @@iterator 返回自身", () => {
  * 断言（引擎当前也给精确 true）。
  *
  * 取证（原生 oracle）：
- *   node -e 'const s=new Set([1,2])[Symbol.iterator](),
- *     m=new Map([[1,2]])[Symbol.iterator](),
- *     a=[1,2][Symbol.iterator](), t="ab"[Symbol.iterator]();
- *     console.log(s[Symbol.iterator]()===s, m[Symbol.iterator]()===m,
- *       a[Symbol.iterator]()===a, t[Symbol.iterator]()===t)'
+ * node -e 'const s=new Set([1,2])[Symbol.iterator](),
+ * m=new Map([[1,2]])[Symbol.iterator](),
+ * a=[1,2][Symbol.iterator](), t="ab"[Symbol.iterator]();
+ * console.log(s[Symbol.iterator]()===s, m[Symbol.iterator]()===m,
+ * a[Symbol.iterator]()===a, t[Symbol.iterator]()===t)'
  */
 
 
@@ -7310,7 +7310,7 @@ describe("[] Bug 314 — 迭代器对象的 @@iterator 返回自身", () => {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 314 — 迭代器对象的 @@iterator 返回自身", () => {
+describe("迭代器对象的 @@iterator 返回自身", () => {
   it("Set 迭代器：it[Symbol.iterator]() === it → true（修前：确定抛 TypeError）", () => {
     const r = call(
       wrap(`const it = new Set([1,2])[Symbol.iterator](); return it[Symbol.iterator]() === it;`),
@@ -7349,7 +7349,7 @@ describe("Bug 314 — 迭代器对象的 @@iterator 返回自身", () => {
   });
 });
 
-describe("Bug 314 — 负控制（自协议 ≠ 「所有迭代器都相等」）", () => {
+describe("负控制（自协议 ≠ 「所有迭代器都相等」）", () => {
   it("两个不同集合迭代器互比 → false（原生同款）", () => {
     const r = call(
       wrap(
@@ -7374,11 +7374,11 @@ describe("Bug 314 — 负控制（自协议 ≠ 「所有迭代器都相等」�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 321: Error.prototype own data properties name / message
+// Error.prototype own data properties name / message
 // ---------------------------------------------------------------------------
-describe("[] Bug 321: Error.prototype own data properties name / message", () => {
+describe("Error.prototype own data properties name / message", () => {
 /**
- * Bug 321：Error.prototype 的自有数据属性 name / message 缺席。
+ * Error.prototype 的自有数据属性 name / message 缺席。
  *
  * 原生：Error 家族（Error / TypeError / RangeError / SyntaxError /
  * ReferenceError / EvalError / URIError / AggregateError）的 prototype 上
@@ -7387,19 +7387,19 @@ describe("[] Bug 321: Error.prototype own data properties name / message", () =>
  * 其余内建原型**无**自有 name / message（原生 gOPN 逐个核对）。
  *
  * node v26.10.0 原生实测（oracle）：
- *   hasOwnProperty.call(Error.prototype,"name")    → true
- *   hasOwnProperty.call(Error.prototype,"message") → true
- *   Error.prototype.name                           → "Error"
- *   Error.prototype.message                        → ""
- *   "name" in Error.prototype                      → true
- *   "message" in Error.prototype                   → true
- *   Error.prototype.propertyIsEnumerable("name")   → false（不可枚举）
- *   for (const k in Error.prototype) 计数           → 0
- *   TypeError.prototype.name                       → "TypeError"（其余七族同款）
- *   hasOwnProperty.call(Array.prototype,"name")    → false（原生无）
- *   hasOwnProperty.call(Object.prototype,"name")   → false（原生无）
- *   hasOwnProperty.call(Map.prototype,"name")      → false（原生无）
- *   "name" in Array.prototype                      → false
+ * hasOwnProperty.call(Error.prototype,"name") → true
+ * hasOwnProperty.call(Error.prototype,"message") → true
+ * Error.prototype.name → "Error"
+ * Error.prototype.message → ""
+ * "name" in Error.prototype → true
+ * "message" in Error.prototype → true
+ * Error.prototype.propertyIsEnumerable("name") → false（不可枚举）
+ * for (const k in Error.prototype) 计数 → 0
+ * TypeError.prototype.name → "TypeError"（其余七族同款）
+ * hasOwnProperty.call(Array.prototype,"name") → false（原生无）
+ * hasOwnProperty.call(Object.prototype,"name") → false（原生无）
+ * hasOwnProperty.call(Map.prototype,"name") → false（原生无）
+ * "name" in Array.prototype → false
  *
  * 修前：protoBrandAbs 的原型面只装 `constructor` 一个槽 ⇒
  * hasOwnProperty / "name" in 全部折 false（原生 true）。
@@ -7430,7 +7430,7 @@ const ERROR_FAMILY = [
   "AggregateError",
 ] as const;
 
-describe("Bug 321: Error.prototype own data properties name / message", () => {
+describe("Error.prototype own data properties name / message", () => {
   it("Error.prototype 自有 name / message（hasOwnProperty true）", () => {
     expect(v(`export function f() { return ${HOP}(Error.prototype, "name"); }`)).toBe(true);
     expect(v(`export function f() { return ${HOP}(Error.prototype, "message"); }`)).toBe(true);
@@ -7480,11 +7480,11 @@ describe("Bug 321: Error.prototype own data properties name / message", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 323 — Object.create(o, undefined) 整步跳过
+// Object.create(o, undefined) 整步跳过
 // ---------------------------------------------------------------------------
-describe("[] Bug 323 — Object.create(o, undefined) 整步跳过", () => {
+describe("Object.create(o, undefined) 整步跳过", () => {
 /**
- * Bug 323 回归：Object.create(o, **显式 undefined**) 的第二实参判定。
+ * 回归：Object.create(o, **显式 undefined**) 的第二实参判定。
  *
  * 原生（node v26 实测）：规范 ES2024 20.1.2.2「If properties is not
  * undefined」⇒ 显式传 `undefined` 与**不传**同义（整步跳过：只建对象、
@@ -7513,7 +7513,7 @@ function thrown(src: string): string | undefined {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 323 — Object.create(o, undefined) 整步跳过", () => {
+describe("Object.create(o, undefined) 整步跳过", () => {
   it("显式 undefined 第二实参 ⇒ 返回对象、不抛（改前定抛 TypeError）", () => {
     expect(v(wrap(`const o = { a: 1 }; return typeof Object.create(o, undefined);`))).toEqual({
       ok: true,
@@ -7550,18 +7550,18 @@ describe("Bug 323 — Object.create(o, undefined) 整步跳过", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 324 — Object.defineProperties(o, <原始值>) 走 ToObject
+// Object.defineProperties(o, <原始值>) 走 ToObject
 // ---------------------------------------------------------------------------
-describe("[] Bug 324 — Object.defineProperties(o, <原始值>) 走 ToObject", () => {
+describe("Object.defineProperties(o, <原始值>) 走 ToObject", () => {
 /**
- * Bug 324 回归：Object.defineProperties(o, **原始值**) 的第二实参判定。
+ * 回归：Object.defineProperties(o, **原始值**) 的第二实参判定。
  *
  * 原生（node v26 实测）：第二实参走 **ToObject** ——
  * - `null` / `undefined` ⇒ TypeError；
  * - number / boolean / bigint / symbol ⇒ 装箱成**零自有可枚举属性**的
- *   包装器 ⇒ **不定义任何属性、不抛**；
+ * 包装器 ⇒ **不定义任何属性、不抛**；
  * - 非空字符串 ⇒ 装箱后有下标键（"0"/"1"…）⇒ 每个「描述符」是字符（非
- *   对象）⇒ ToPropertyDescriptor 定抛 TypeError；空串零键 ⇒ 不抛。
+ * 对象）⇒ ToPropertyDescriptor 定抛 TypeError；空串零键 ⇒ 不抛。
  *
  * 修复前：第二实参是 prim ⇒ 判**确定抛 TypeError** ⇒ L1 门禁假红 +
  * 返回值错折 never。
@@ -7583,7 +7583,7 @@ function thrown(src: string): string | undefined {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 324 — Object.defineProperties(o, <原始值>) 走 ToObject", () => {
+describe("Object.defineProperties(o, <原始值>) 走 ToObject", () => {
   it("数字第二实参 ⇒ 不抛、不改属性（改前定抛 TypeError）", () => {
     expect(thrown(wrap(`const o = { a: 1 }; Object.defineProperties(o, 5);`))).toBeUndefined();
     expect(v(wrap(`const o = { a: 1 }; Object.defineProperties(o, 5); return JSON.stringify(o);`))).toEqual({
@@ -7622,20 +7622,20 @@ describe("Bug 324 — Object.defineProperties(o, <原始值>) 走 ToObject", () 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 328 — 内建原型的 [[Prototype]] 链不再被压扁
+// 内建原型的 [[Prototype]] 链不再被压扁
 // ---------------------------------------------------------------------------
-describe("[] Bug 328 — 内建原型的 [[Prototype]] 链不再被压扁", () => {
+describe("内建原型的 [[Prototype]] 链不再被压扁", () => {
 /**
- * Bug 328 回归：内建原型的 [[Prototype]] 链**不再被压扁**。
+ * 回归：内建原型的 [[Prototype]] 链**不再被压扁**。
  *
  * 原生依据（node v26.10.0 实测，取证命令见文件末尾「取证」段）：
- *   Object.getPrototypeOf(Uint8Array.prototype) === Object.prototype
- *     → **false**（Uint8Array.prototype 的原型是 %TypedArray%.prototype，
- *       它才是 Object.prototype 的子原型——原生是**两层**）
- *   Object.getPrototypeOf(Object.getPrototypeOf(Uint8Array.prototype))
- *     === Object.prototype → **true**（链条错一级的症状已修）
- *   Object.getPrototypeOf(Array.prototype) === Object.prototype → **true**
- *     （Array.prototype 的上一层**就是** Object.prototype——原生是**一层**）
+ * Object.getPrototypeOf(Uint8Array.prototype) === Object.prototype
+ * → **false**（Uint8Array.prototype 的原型是 %TypedArray%.prototype，
+ * 它才是 Object.prototype 的子原型——原生是**两层**）
+ * Object.getPrototypeOf(Object.getPrototypeOf(Uint8Array.prototype))
+ * === Object.prototype → **true**（链条错一级的症状已修）
+ * Object.getPrototypeOf(Array.prototype) === Object.prototype → **true**
+ * （Array.prototype 的上一层**就是** Object.prototype——原生是**一层**）
  *
  * 修前：引擎把内建原型的 [[Prototype]] **一律**压成 Object.prototype
  * ⇒ 对 Uint8Array.prototype 这类「原型之上还有一层」的内建给出**自信的
@@ -7649,9 +7649,9 @@ describe("[] Bug 328 — 内建原型的 [[Prototype]] 链不再被压扁", () =
  * true（那是修前的错值）。
  *
  * 取证（原生 oracle）：
- *   node -e 'console.log(Object.getPrototypeOf(Uint8Array.prototype)===Object.prototype,
- *     Object.getPrototypeOf(Object.getPrototypeOf(Uint8Array.prototype))===Object.prototype,
- *     Object.getPrototypeOf(Array.prototype)===Object.prototype)'
+ * node -e 'console.log(Object.getPrototypeOf(Uint8Array.prototype)===Object.prototype,
+ * Object.getPrototypeOf(Object.getPrototypeOf(Uint8Array.prototype))===Object.prototype,
+ * Object.getPrototypeOf(Array.prototype)===Object.prototype)'
  */
 
 
@@ -7659,7 +7659,7 @@ describe("[] Bug 328 — 内建原型的 [[Prototype]] 链不再被压扁", () =
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 328 — 内建原型的 [[Prototype]] 链不再被压扁", () => {
+describe("内建原型的 [[Prototype]] 链不再被压扁", () => {
   it("getProto(getProto(Uint8Array.prototype)) === Object.prototype → true（链条错一级已修）", () => {
     const r = call(
       wrap(
@@ -7695,7 +7695,7 @@ describe("Bug 328 — 内建原型的 [[Prototype]] 链不再被压扁", () => {
   });
 });
 
-describe("Bug 328 — 负控制（内建原型链的相邻形态不回归）", () => {
+describe("负控制（内建原型链的相邻形态不回归）", () => {
   it("getProto(Object.prototype) === null → true（链顶恒 null）", () => {
     const r = call(wrap(`return Object.getPrototypeOf(Object.prototype) === null;`), "f");
     expect(litValue___nudojs_core_36(r.result)).toEqual({ ok: true, value: true });
@@ -7717,11 +7717,11 @@ describe("Bug 328 — 负控制（内建原型链的相邻形态不回归）", (
 });
 
 // ---------------------------------------------------------------------------
-// Bug 330 — Array.prototype 三键的 nullish 接收者记抛
+// Array.prototype 三键的 nullish 接收者记抛
 // ---------------------------------------------------------------------------
-describe("[] Bug 330 — Array.prototype 三键的 nullish 接收者记抛", () => {
+describe("Array.prototype 三键的 nullish 接收者记抛", () => {
 /**
- * Bug 330 回归：`Array.prototype.join/toString/toLocaleString` 的
+ * 回归：`Array.prototype.join/toString/toLocaleString` 的
  * **nullish 接收者**必须记抛（ToObject）——不再让 L2 门禁假绿。
  *
  * ES 语义（node 实测）：`Array.prototype.join.call(null)` /
@@ -7769,7 +7769,7 @@ function isDefiniteThrow(src: string, name: string): boolean {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 330 — Array.prototype 三键的 nullish 接收者记抛", () => {
+describe("Array.prototype 三键的 nullish 接收者记抛", () => {
   it("join.call(null) / join.call(undefined) ⇒ TypeError（改前不记抛）", () => {
     for (const body of [
       `return Array.prototype.join.call(null);`,
@@ -7808,7 +7808,7 @@ describe("Bug 330 — Array.prototype 三键的 nullish 接收者记抛", () => 
   });
 });
 
-describe("Bug 330 负控制：非 nullish 接收者不抛", () => {
+describe("负控制：非 nullish 接收者不抛", () => {
   it("数组接收者仍折出值（原生 \"1,2\"）", () => {
     expect(v(wrap(`return Array.prototype.join.call([1,2]);`))).toEqual({
       ok: true,
@@ -7893,24 +7893,24 @@ describe("Bug 330 负控制：非 nullish 接收者不抛", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 族 59 · 第 1 条 · const 绑定的函数上的成员写（Bug 205 / 族 43 遗留 5）
+// 族 59 · 第 1 条 · const 绑定的函数上的成员写（/ 族 43 遗留 5）
 // ---------------------------------------------------------------------------
-describe("[] 族 59 · 第 1 条 · const 绑定的函数上的成员写（Bug 205 / 族 43 遗留 5）", () => {
+describe("族 59 · 第 1 条 · const 绑定的函数上的成员写（/ 族 43 遗留 5）", () => {
 /**
  * 族 59 · core 类与转译面（W9）——四条精度债的钉。
  *
  * 覆盖：
- * 1. **Bug 205**（台账族 43 遗留 5）：`const F = function(){}; F.prototype = {}`
- *    ——转译侧此前走**根绑定重绑**（引擎未建模 const 不可重绑）⇒ 写污染了根
- *    绑定。原生：**不报错**（成员写是对函数对象的 [[Set]]，不动绑定），
- *    `F.prototype` 被替换 ⇒ 引擎不得重绑 const 根。
+ * 1. （台账族 43 遗留 5）：`const F = function(){}; F.prototype = {}`
+ * ——转译侧此前走**根绑定重绑**（引擎未建模 const 不可重绑）⇒ 写污染了根
+ * 绑定。原生：**不报错**（成员写是对函数对象的 [[Set]]，不动绑定），
+ * `F.prototype` 被替换 ⇒ 引擎不得重绑 const 根。
  * 2. **族 45 遗留 3**：`exec/body-fn.ts` 的 body 编译路径**不传 source** ⇒
- *    转译侧内部临时名的避让集恒空 ⇒ 用户标识符与引擎临时名相撞 ⇒ 产物非法
- *    JS（重复词法声明）⇒ 整模块 fail-closed。
- * 3. **Bug 194 遗留**：`super.m()` 在父类方法被 `delete` 后折 unknown——原生
- *    `super.m is not a function` ⇒ **TypeError**（可被用户 try/catch 吸收）。
- * 4. **Bug 194 / 208**（含内建父的类链）：`class MyMap extends Map {}` 的实例
- *    读不回内建父的条目面（`.get` / `.size` / `.has` 折 unknown = 假阴性）。
+ * 转译侧内部临时名的避让集恒空 ⇒ 用户标识符与引擎临时名相撞 ⇒ 产物非法
+ * JS（重复词法声明）⇒ 整模块 fail-closed。
+ * 3. **遗留**：`super.m()` 在父类方法被 `delete` 后折 unknown——原生
+ * `super.m is not a function` ⇒ **TypeError**（可被用户 try/catch 吸收）。
+ * 4. ****（含内建父的类链）：`class MyMap extends Map {}` 的实例
+ * 读不回内建父的条目面（`.get` / `.size` / `.has` 折 unknown = 假阴性）。
  *
  * 追加（主 agent 交办 · 族 57 第 8 条 · 归属 W9）：复合赋值到「根不可重绑」
  * 成员（`mk().x += 2`）此前**丢 compoundFn** ⇒ 只发右值（折 2，原生 3）。
@@ -7936,7 +7936,7 @@ function bodyFn(body: string, params: string[] = ["x"]): ReturnType<typeof absFu
   return absFunction(params, { body: decl.body });
 }
 
-describe("族 59 · 第 1 条 · const 绑定的函数上的成员写（Bug 205 / 族 43 遗留 5）", () => {
+describe("族 59 · 第 1 条 · const 绑定的函数上的成员写（/ 族 43 遗留 5）", () => {
   it("原生不报错：新 prototype 读得出（node v26.10.0：typeof F.prototype.x === 'number'）", () => {
     const src = `export function f() {
       const F = function(){};
@@ -8023,7 +8023,7 @@ describe("族 59 · 第 2 条 · body-fn 无 source 路径的临时名避让（�
   });
 });
 
-describe("族 59 · 第 3 条 · super.m() 在删方法后（Bug 194 遗留）", () => {
+describe("族 59 · 第 3 条 · super.m() 在删方法后（遗留）", () => {
   it("删方法后 super 调用定抛 TypeError（原生：TypeError）", () => {
     const src = `export function f() {
       class A { m(){ return 1; } }
@@ -8117,7 +8117,7 @@ describe("族 57 · 第 8 条（追加 · W9 承接）· 复合赋值到「根�
   });
 });
 
-describe("族 59 · 第 4 条 · 含内建父的类链（Bug 194 / 208）", () => {
+describe("族 59 · 第 4 条 · 含内建父的类链（）", () => {
   it("派生 Map 实例读得回条目（原生：1 / true / 1）", () => {
     const get = `export function f() {
       class MyMap extends Map {}
@@ -8186,11 +8186,11 @@ describe("族 59 · 第 4 条 · 含内建父的类链（Bug 194 / 208）", () =
 });
 
 // ---------------------------------------------------------------------------
-// Bug 995：CJS 对象字面量导出的 check 面成员桥接
+// CJS 对象字面量导出的 check 面成员桥接
 // ---------------------------------------------------------------------------
-describe("[] Bug 995：CJS 对象字面量导出的 check 面成员桥接", () => {
+describe("CJS 对象字面量导出的 check 面成员桥接", () => {
 /**
- * Bug 995 —— `module.exports = { f: fn }`（CJS 对象字面量导出）的函数在
+ * `module.exports = { f: fn }`（CJS 对象字面量导出）的函数在
  * **core 的 check 面**不可见：导出表里只有 `module.exports` 本身（default
  * 槽），成员 `f` 查不到 ⇒ 签名退成 `unknown` + 指向错误的 nudo:opaque-result。
  *
@@ -8200,11 +8200,11 @@ describe("[] Bug 995：CJS 对象字面量导出的 check 面成员桥接", () =
  *
  * 本文件钉住：
  * - 正控制：CJS 对象字面量导出的成员在 check 面**可按名查到**，签名是实值，
- *   且不再产生 nudo:opaque-result；
+ * 且不再产生 nudo:opaque-result；
  * - 负控制：普通 CJS 具名导出（`exports.f = fn`）行为不变；CJS 成员桥
- *   不得劫持无关的本地函数；
+ * 不得劫持无关的本地函数；
  * - 原生 oracle 对拍（node 另起进程，CJS）：成员挂在 exports 对象上，
- *   调用返回同样的值。
+ * 调用返回同样的值。
  */
 
 
@@ -8228,7 +8228,7 @@ const CJS_OBJECT_SRC = `module.exports = {
 };
 `;
 
-describe("Bug 995：CJS 对象字面量导出的 check 面成员桥接", () => {
+describe("CJS 对象字面量导出的 check 面成员桥接", () => {
   it("成员在签名面可按名查到，返回类型是实值（string）", () => {
     const r = checkSource("/t/cjs.js", CJS_OBJECT_SRC, pTrue);
     const sig = r.signatures.find((s) => s.name === "greet");

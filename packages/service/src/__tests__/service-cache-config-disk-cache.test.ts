@@ -1,10 +1,10 @@
 /**
  * 分册 12 回归：磁盘缓存签名 / 路径身份。
  *
- * - Bug 1：HMAC 签名绑定缓存键 ⇒ 跨键复制合法签发的条目必须判 miss；旧格式
- *   （签名不含键）条目只当 miss、不崩（向后兼容）。
- * - Bug 2：入口文件相对化失败时保留路径身份（ext:），同内容不同路径必不同键；
- *   依赖路径的 cnt: 内容指纹跨机复用保持不变（disk-cache.test.ts:472 口径）。
+ * - HMAC 签名绑定缓存键 ⇒ 跨键复制合法签发的条目必须判 miss；旧格式
+ * （签名不含键）条目只当 miss、不崩（向后兼容）。
+ * - 入口文件相对化失败时保留路径身份（ext:），同内容不同路径必不同键；
+ * 依赖路径的 cnt: 内容指纹跨机复用保持不变（disk-cache.test.ts:472 口径）。
  */
 import { describe, it, expect } from "vitest";
 import { createHash, createHmac } from "node:crypto";
@@ -33,7 +33,7 @@ function entryWithFile(nsDir: string, name: string): string | undefined {
   });
 }
 
-describe("Bug 1 — 磁盘缓存签名绑定缓存键（跨键重放伪造绿）", () => {
+describe("磁盘缓存签名绑定缓存键（跨键重放伪造绿）", () => {
   it("合法签发的绿条目被复制到另一键路径 => get(另一键) 判 miss，绝不返回绿", () =>
     withTmpProject("nudo-bug1-replay-", (root) => {
       const c = new DiskCache({ root, namespace: "check", signKey: "s3cret" });
@@ -87,7 +87,7 @@ describe("Bug 1 — 磁盘缓存签名绑定缓存键（跨键重放伪造绿）
     }));
 });
 
-describe("Bug 2 — 入口路径相对化失败保留路径身份", () => {
+describe("入口路径相对化失败保留路径身份", () => {
   it("同内容、不同路径的入口文件 => 不同缓存键（修复前同为 cnt: 内容指纹 ⇒ 同键、file 指错）", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug2-entry-"));
     const content = "export const x = 1;\n";

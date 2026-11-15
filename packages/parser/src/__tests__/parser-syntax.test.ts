@@ -9,11 +9,11 @@ import type { ClassDeclaration } from "@babel/types";
 import { classInstanceMethods, classMemberKeyName, getClassMembers, methodFunctionNode } from "../ast-guards.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 849: string concatenation is not a string literal
+// string concatenation is not a string literal
 // ---------------------------------------------------------------------------
-describe("[parser-] Bug 849: string concatenation is not a string literal", () => {
+describe("string concatenation is not a string literal", () => {
 /**
- * Bug 849 回归：`@nudo:case` **期望值**面的字符串字面量**贪婪切片**。
+ * 回归：`@nudo:case` **期望值**面的字符串字面量**贪婪切片**。
  *
  * 旧实现的守卫只做 `startsWith(quote) && endsWith(quote)` ⇒ `"a" + "b"`
  * 的首引号在 0、末引号在末尾 ⇒ `slice(1, -1)` 把**两个独立字面量之间的
@@ -29,7 +29,7 @@ describe("[parser-] Bug 849: string concatenation is not a string literal", () =
 
 
 
-describe("Bug 849: string concatenation is not a string literal", () => {
+describe("string concatenation is not a string literal", () => {
   it("does not fold \"a\" + \"b\" into a literal value", () => {
     const abs = parseCaseArgExpr('"a" + "b"');
     expect(["unknown", "never"]).toContain(abs.shape.k);
@@ -84,11 +84,11 @@ export function a() { return "ab"; }
 });
 
 // ---------------------------------------------------------------------------
-// BUG-854: 表达式形态的字面量（括号 / 一元 / 模板 / bigint）必须被解析
+// 表达式形态的字面量（括号 / 一元 / 模板 / bigint）必须被解析
 // ---------------------------------------------------------------------------
-describe("[parser-] BUG-854: 表达式形态的字面量（括号 / 一元 / 模板 / bigint）必须被解析", () => {
+describe("表达式形态的字面量（括号 / 一元 / 模板 / bigint）必须被解析", () => {
 /**
- * BUG-854 回归：case 见证 / 期望值的**表达式形态**（括号 / 一元 / 模板字面量 /
+ * 回归：case 见证 / 期望值的**表达式形态**（括号 / 一元 / 模板字面量 /
  * bigint / 进制内分隔符）落 unknown —— 而 unknown 是顶类型
  * （`leqAbs(actual, unknown)` 恒 ok）⇒ 断言**空洞通过**（期望侧）与
  * 见证满足任何契约（见证侧）= 假绿。
@@ -114,7 +114,7 @@ function extractWithDiags(source: string) {
   return { fns, diags };
 }
 
-describe("BUG-854: 表达式形态的字面量（括号 / 一元 / 模板 / bigint）必须被解析", () => {
+describe("表达式形态的字面量（括号 / 一元 / 模板 / bigint）必须被解析", () => {
   it("括号包裹与一元符号", () => {
     expect(valueOf("(7)")).toBe(7);
     expect(valueOf("( 7 )")).toBe(7);
@@ -174,11 +174,11 @@ function f(x) { return x; }`);
 });
 
 // ---------------------------------------------------------------------------
-// BUG-853: legacy octal 按八进制取值（不再按十进制读成错值）
+// legacy octal 按八进制取值（不再按十进制读成错值）
 // ---------------------------------------------------------------------------
-describe("[parser-] BUG-853: legacy octal 按八进制取值（不再按十进制读成错值）", () => {
+describe("legacy octal 按八进制取值（不再按十进制读成错值）", () => {
 /**
- * BUG-853 回归：legacy octal（`0` 开头 + 全八进制数字）被 `Number("017")`
+ * 回归：legacy octal（`0` 开头 + 全八进制数字）被 `Number("017")`
  * 按**十进制**读成 17（native sloppy 是 15 = 八进制）⇒ 见证 / 期望值折出
  * **自信的错值**（假红 / 假绿）。
  *
@@ -204,7 +204,7 @@ function extractWithDiags(source: string) {
   return { fns, diags };
 }
 
-describe("BUG-853: legacy octal 按八进制取值（不再按十进制读成错值）", () => {
+describe("legacy octal 按八进制取值（不再按十进制读成错值）", () => {
   it("0 开头 + 全八进制数字 ⇒ 八进制", () => {
     expect(numOf("017")).toBe(15);
     expect(numOf("010")).toBe(8);
@@ -249,11 +249,11 @@ function f(x) { return x; }`);
 });
 
 // ---------------------------------------------------------------------------
-// BUG-839: 合法 JS 数字写法必须被解析（不再落 unknown）
+// 合法 JS 数字写法必须被解析（不再落 unknown）
 // ---------------------------------------------------------------------------
-describe("[parser-] BUG-839: 合法 JS 数字写法必须被解析（不再落 unknown）", () => {
+describe("合法 JS 数字写法必须被解析（不再落 unknown）", () => {
 /**
- * BUG-839 回归：case 实参 / 期望值的数字文法只认一条十进制正则
+ * 回归：case 实参 / 期望值的数字文法只认一条十进制正则
  * （/^-?\d+(\.\d+)?$/）⇒ 指数 / 进制 / 分隔符 / 前导点 / 尾点 / 一元 等
  * **合法** JS 数字写法全部落 unknown —— 而 unknown 是顶类型
  * （`leqAbs(actual, unknown)` 恒 ok）⇒ 见证满足任何契约 = 假绿。
@@ -280,7 +280,7 @@ function extractWithDiags(source: string) {
   return { fns, diags };
 }
 
-describe("BUG-839: 合法 JS 数字写法必须被解析（不再落 unknown）", () => {
+describe("合法 JS 数字写法必须被解析（不再落 unknown）", () => {
   it("指数 / 进制 / 分隔符 / 前导点 / 尾点 / 一元正号", () => {
     expect(numOf("1e3")).toBe(1000);
     expect(numOf("1e-3")).toBe(0.001);
@@ -344,11 +344,11 @@ function f(x) { return x; }`);
 });
 
 // ---------------------------------------------------------------------------
-// Bug 855: object literal properties without a top-level colon are not silently dropped
+// object literal properties without a top-level colon are not silently dropped
 // ---------------------------------------------------------------------------
-describe("[parser-] Bug 855: object literal properties without a top-level colon are not silently dropped", () => {
+describe("object literal properties without a top-level colon are not silently dropped", () => {
 /**
- * Bug 855 回归：对象字面量里**无顶层冒号**的属性（getter / 方法简写 /
+ * 回归：对象字面量里**无顶层冒号**的属性（getter / 方法简写 /
  * 简写属性）不得被**静默丢弃**。
  *
  * 改前 `parseObjectLiteral` 对 `findTopLevelColon(entry) === -1` 直接
@@ -367,7 +367,7 @@ function parseWithDiags(expr: string): { abs: ReturnType<typeof parseCaseArgExpr
   return { abs, diags };
 }
 
-describe("Bug 855: object literal properties without a top-level colon are not silently dropped", () => {
+describe("object literal properties without a top-level colon are not silently dropped", () => {
   it("getter property → unknown + named diagnostic", () => {
     const { abs, diags } = parseWithDiags("{ get port() { return 8080; } }");
     expect(abs.shape.k).toBe("unknown");
@@ -422,11 +422,11 @@ describe("Bug 855: object literal properties without a top-level colon are not s
 });
 
 // ---------------------------------------------------------------------------
-// Bug 859: shape optional flag is projected into the case-arg slot
+// shape optional flag is projected into the case-arg slot
 // ---------------------------------------------------------------------------
-describe("[parser-] Bug 859: shape optional flag is projected into the case-arg slot", () => {
+describe("shape optional flag is projected into the case-arg slot", () => {
 /**
- * Bug 859 回归：`@nudo:case` **期望值**里的 shape 槽必须保留 **optional** 标记。
+ * 回归：`@nudo:case` **期望值**里的 shape 槽必须保留 **optional** 标记。
  *
  * 改前 `constraintToCaseArgAbs` 只投影 `field.constraint`、丢掉
  * `field.optional` ⇒ 期望 Abs 里可选槽变**必填** ⇒ 缺该字段的**合法**
@@ -446,7 +446,7 @@ function slotsOf(expr: string): Record<string, { value: unknown; optional?: bool
   return abs.shape.slots;
 }
 
-describe("Bug 859: shape optional flag is projected into the case-arg slot", () => {
+describe("shape optional flag is projected into the case-arg slot", () => {
   it("shape({ a: number().optional() }) → optional slot", () => {
     const slots = slotsOf("shape({ a: number().optional() })");
     expect(slots.a!.optional).toBe(true);
@@ -474,30 +474,30 @@ describe("Bug 859: shape optional flag is projected into the case-arg slot", () 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 856: static method census — parser contract + service-side precondition
+// static method census — parser contract + service-side precondition
 // ---------------------------------------------------------------------------
-describe("[parser-] Bug 856: static method census — parser contract + service-side precondition", () => {
+describe("static method census — parser contract + service-side precondition", () => {
 /**
- * Bug 856 判定钉：静态类方法在**两套**类成员收集器上口径相反。
+ * 判定钉：静态类方法在**两套**类成员收集器上口径相反。
  *
  * - core 的 `scan-top-functions`（`nudo check` 签名面）**收**静态方法
- *   （注释明写「static 与实例方法同为入口可见」）；
+ * （注释明写「static 与实例方法同为入口可见」）；
  * - parser 的 `classInstanceMethods`（`ast-guards.ts`）**跳过** static
- *   ⇒ service 的 `collectClassMethods`（`analyzer-ast.ts`）构造出的
- *   `analysis.functions` 里静态方法**不存在** ⇒ `nudo test` / `nudo health`
- *   / `nudo contract` 的函数普查与 `nudo check` 不一致。
+ * ⇒ service 的 `collectClassMethods`（`analyzer-ast.ts`）构造出的
+ * `analysis.functions` 里静态方法**不存在** ⇒ `nudo test` / `nudo health`
+ * / `nudo contract` 的函数普查与 `nudo check` 不一致。
  *
  * **裁决（主 agent）**：走 service 侧，用**已导出**的 `getClassMembers`
  * 自行收集 static ⇒ **不改** parser 已发布符号 `classInstanceMethods` 的
  * 契约（其 doc 明写「Skips … static members」），parser 导出面零变化。
  *
  * 本钉因此钉住两件事：
- *  ① parser 侧契约**不变**：`classInstanceMethods` 只收实例方法
- *     （防止有人顺手改语义，把 service 侧收口的前提改掉）；
- *  ② service 侧收口所需的**能力**已在 parser 导出面就位：
- *     `getClassMembers` **能看见** static 成员，且
- *     `classMemberKeyName` / `methodFunctionNode` 能读出它的 key 与函数体
- *     ——否则 service 侧无从收口（这正是本条的真落点）。
+ * ① parser 侧契约**不变**：`classInstanceMethods` 只收实例方法
+ * （防止有人顺手改语义，把 service 侧收口的前提改掉）；
+ * ② service 侧收口所需的**能力**已在 parser 导出面就位：
+ * `getClassMembers` **能看见** static 成员，且
+ * `classMemberKeyName` / `methodFunctionNode` 能读出它的 key 与函数体
+ * ——否则 service 侧无从收口（这正是本条的真落点）。
  */
 
 
@@ -520,7 +520,7 @@ function utilClass(): ClassDeclaration {
   return decl;
 }
 
-describe("Bug 856: static method census — parser contract + service-side precondition", () => {
+describe("static method census — parser contract + service-side precondition", () => {
   it("parser contract unchanged: classInstanceMethods skips static members", () => {
     const members = classInstanceMethods(utilClass());
     expect(members.map((m) => m.name)).toEqual(["instanceMethod"]);
@@ -546,11 +546,11 @@ describe("Bug 856: static method census — parser contract + service-side preco
 });
 
 // ---------------------------------------------------------------------------
-// Bug 840: string literal escapes follow JS semantics
+// string literal escapes follow JS semantics
 // ---------------------------------------------------------------------------
-describe("[parser-] Bug 840: string literal escapes follow JS semantics", () => {
+describe("string literal escapes follow JS semantics", () => {
 /**
- * Bug 840 回归：`@nudo:case` 见证的**字符串转义不解释**。
+ * 回归：`@nudo:case` 见证的**字符串转义不解释**。
  *
  * 旧实现按「首尾是引号」原样 slice（`s.slice(1, -1)`），转义序列保持**字面
  * 反斜杠** ⇒ 见证值 `a\tb`（4 字符）与侧车契约（真实 JS 求值 `a<TAB>b`，
@@ -571,7 +571,7 @@ function firstCase(source: string): { name: string; argsAbs: Abs[] } {
   return d as { name: string; argsAbs: Abs[] };
 }
 
-describe("Bug 840: string literal escapes follow JS semantics", () => {
+describe("string literal escapes follow JS semantics", () => {
   it("interprets \\t as TAB", () => {
     expect(litValue(parseCaseArgExpr('"a\\tb"'))).toEqual({ ok: true, value: "a\tb" });
   });
@@ -620,11 +620,11 @@ export function f(x) { return x; }
 });
 
 // ---------------------------------------------------------------------------
-// Bug 852: structure literal branches validate the whole text
+// structure literal branches validate the whole text
 // ---------------------------------------------------------------------------
-describe("[parser-] Bug 852: structure literal branches validate the whole text", () => {
+describe("structure literal branches validate the whole text", () => {
 /**
- * Bug 852 回归：`@nudo:case` 实参 / 期望值的**结构字面量分支**（对象 / 数组）
+ * 回归：`@nudo:case` 实参 / 期望值的**结构字面量分支**（对象 / 数组）
  * 必须校验**整段**文本。
  *
  * 改前只看首尾两个字符 ⇒ 尾随文本被吞进槽位 / 元素 ⇒ 折出**自信的错值**
@@ -639,7 +639,7 @@ describe("[parser-] Bug 852: structure literal branches validate the whole text"
 
 
 
-describe("Bug 852: structure literal branches validate the whole text", () => {
+describe("structure literal branches validate the whole text", () => {
   it("trailing member access after an array literal is not folded into the tuple", () => {
     // 改前：`[unknown]`（一个**错的** tuple，不是「不认识」）
     expect(parseCaseArgExpr("[1][0]").shape.k).toBe("unknown");

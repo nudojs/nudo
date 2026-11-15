@@ -2,12 +2,12 @@
  * 族 53 · 第 8 条 —— **manifest 漏登记 `nudo.selectContract`**。
  *
  * 症状：扩展的 handler 认 `nudo.selectContract`（`NUDO_CLIENT_COMMAND_IDS`
- *   里有 ⇒ languageclient 自动注册成 VS Code 命令 ⇒ 可被 CodeLens 调用），
- *   但 manifest 的 `contributes.commands` **没有**它 ⇒ **命令面板里看不见**
- *   （用户只能从 CodeLens 点，命令面板搜不到）。
+ * 里有 ⇒ languageclient 自动注册成 VS Code 命令 ⇒ 可被 CodeLens 调用），
+ * 但 manifest 的 `contributes.commands` **没有**它 ⇒ **命令面板里看不见**
+ * （用户只能从 CodeLens 点，命令面板搜不到）。
  *
  * 修法：登记进 `packages/vscode/package.json` 的 `contributes.commands`
- *   （标题与兄弟命令同款风格）。
+ * （标题与兄弟命令同款风格）。
  */
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";

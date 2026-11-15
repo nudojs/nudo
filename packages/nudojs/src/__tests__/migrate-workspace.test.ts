@@ -12,11 +12,11 @@ import { execFileSync } from "node:child_process";
 import { collectNudoFiles } from "../commands/shared.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 063: workflow 改写记录条数必须等于实际改写的行数
+// workflow 改写记录条数必须等于实际改写的行数
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 063: workflow 改写记录条数必须等于实际改写的行数", () => {
+describe("workflow 改写记录条数必须等于实际改写的行数", () => {
 /**
- * BUG-063 —— `nudo migrate retire` 的 workflow 改写**少报**（去重键 `file+from+to`
+ * `nudo migrate retire` 的 workflow 改写**少报**（去重键 `file+from+to`
  * 不含位置）⇒ 同一 workflow 里**两处**相同的 tsc 命令只记 1 条记录，
  * 而落盘改了 2 处、`migrate status` 数到 2 行 ⇒ 报告 / 审计 / 落盘三面不一致。
  *
@@ -72,7 +72,7 @@ function pkgWith(ci: string): string {
   return dir;
 }
 
-describe("Bug 063: workflow 改写记录条数必须等于实际改写的行数", () => {
+describe("workflow 改写记录条数必须等于实际改写的行数", () => {
   it("两处相同命令 ⇒ 报告 2 条（带位置）、落盘 2 处、status 数到 0（已改写）", () => {
     const dir = pkgWith(CI_TWO);
     // 改前 status 数到 2 行
@@ -103,11 +103,11 @@ describe("Bug 063: workflow 改写记录条数必须等于实际改写的行数"
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1005 — 跨行的 shell 命令被按行拆坏
+// 跨行的 shell 命令被按行拆坏
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 1005 — 跨行的 shell 命令被按行拆坏", () => {
+describe("跨行的 shell 命令被按行拆坏", () => {
 /**
- * Bug 1005 — `nudo migrate retire` 改写 CI workflow 时**按行**处理 YAML，
+ * `nudo migrate retire` 改写 CI workflow 时**按行**处理 YAML，
  * 把**跨行的 shell 命令**拆开 ⇒ 原本可用的 CI 门禁被改坏
  * （续行标记被吃 ⇒ 命令裂成两条；折叠标量 ⇒ 旗标被并进命令）。
  *
@@ -167,7 +167,7 @@ function fixture(): string {
   return dir;
 }
 
-describe("Bug 1005 — 跨行的 shell 命令被按行拆坏", () => {
+describe("跨行的 shell 命令被按行拆坏", () => {
   it("rewriteWorkflowText 把块标量当成一条命令改写", () => {
     const { text } = rewriteWorkflowText(WF);
     // A：续行标记与续行内容一起被改写，不得留下落单的残段
@@ -201,11 +201,11 @@ describe("Bug 1005 — 跨行的 shell 命令被按行拆坏", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 102: status 的 workflow blocker 归属与 retire 的作用域同口径
+// status 的 workflow blocker 归属与 retire 的作用域同口径
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 102: status 的 workflow blocker 归属与 retire 的作用域同口径", () => {
+describe("status 的 workflow blocker 归属与 retire 的作用域同口径", () => {
 /**
- * BUG-102 —— `nudo migrate status` 把**仓库根**共享 workflow 的 tsc 行算作
+ * `nudo migrate status` 把**仓库根**共享 workflow 的 tsc 行算作
  * **每个子包**的 blocker ⇒ 子包 `retire` 成功后 blocker 永不消失
  * （status 与 retire 结论矛盾）。
  *
@@ -262,7 +262,7 @@ function row(root: string, target: string) {
   return migrateStatus(target).find((r) => r.root === abs)!;
 }
 
-describe("Bug 102: status 的 workflow blocker 归属与 retire 的作用域同口径", () => {
+describe("status 的 workflow blocker 归属与 retire 的作用域同口径", () => {
   it("子包：不继承仓库根共享 workflow 的 tsc 行", () => {
     const root = monorepo();
     const sub = row(root, join(root, "packages", "a"));
@@ -292,11 +292,11 @@ describe("Bug 102: status 的 workflow blocker 归属与 retire 的作用域同�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 112: 未知 action 在 --json 下必须出合法信封
+// 未知 action 在 --json 下必须出合法信封
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 112: 未知 action 在 --json 下必须出合法信封", () => {
+describe("未知 action 在 --json 下必须出合法信封", () => {
 /**
- * BUG-112 —— `nudo migrate --json <未知 action>` ⇒ **stdout 空**（0 字节）
+ * `nudo migrate --json <未知 action>` ⇒ **stdout 空**（0 字节）
  * ⇒ 机器消费方 `JSON.parse("")` 抛「Unexpected end of JSON input」。
  *
  * 违反设计文档的明文契约（`docs/design/cli-semantics.md`）：
@@ -308,12 +308,12 @@ describe("[migrate-] Bug 112: 未知 action 在 --json 下必须出合法信封"
 
 
 
-describe("Bug 112: 未知 action 在 --json 下必须出合法信封", () => {
+describe("未知 action 在 --json 下必须出合法信封", () => {
   it("stdout 非空、可解析、ok:false、error 点名 action", () => {
     const r = runCliTsx(["migrate", "--json", "frobnicate"]);
     expect(r.status).toBe(1);
     expect(r.stdout.length).toBeGreaterThan(0);
-    // BUG-017：`--json` 顶层形状恒为数组（信封是单元素数组）
+    // `--json` 顶层形状恒为数组（信封是单元素数组）
     const __env = JSON.parse(r.stdout) as Array<{ ok: boolean; action: string; error: string }>;
     const parsed = __env[0]!;
     expect(parsed.ok).toBe(false);
@@ -337,15 +337,15 @@ describe("Bug 112: 未知 action 在 --json 下必须出合法信封", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 234: enum 计算成员的 strip 产物必须能在宿主里跑
+// enum 计算成员的 strip 产物必须能在宿主里跑
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 234: enum 计算成员的 strip 产物必须能在宿主里跑", () => {
+describe("enum 计算成员的 strip 产物必须能在宿主里跑", () => {
 /**
- * BUG-234（协议面）—— `nudo migrate strip` 对 **enum 的计算成员**原样保留初始化
+ * （协议面）—— `nudo migrate strip` 对 **enum 的计算成员**原样保留初始化
  * 表达式 ⇒ 产物引用**未绑定全局** ⇒ 运行时 ReferenceError；而 strip 的 note
  * 还宣称「TS enum semantics kept」。
  *
- * 本文件是**运行期**回归钉（`cli-bug-913` 只钉「产物可解析」，没钉「跑得起来」）：
+ * 本文件是**运行期**回归钉（`cli-` 只钉「产物可解析」，没钉「跑得起来」）：
  * 四种 enum 形态（数值 / 混合 / 字符串 / const）的 strip 产物都必须在宿主里
  * 跑出与 tsc 一致的结果。
  *
@@ -390,7 +390,7 @@ function runProduct(code: string): { stdout: string; status: number } {
   }
 }
 
-describe("Bug 234: enum 计算成员的 strip 产物必须能在宿主里跑", () => {
+describe("enum 计算成员的 strip 产物必须能在宿主里跑", () => {
   it("数值 enum：`A = 1, B = A * 10, C` ⇒ [1,10,11]", () => {
     const { code } = runStrip(
       "export enum E { A = 1, B = A * 10, C }\nconsole.log(JSON.stringify([E.A, E.B, E.C]));\n",
@@ -451,11 +451,11 @@ describe("Bug 234: enum 计算成员的 strip 产物必须能在宿主里跑", (
 });
 
 // ---------------------------------------------------------------------------
-// Bug 571: migrate status 的 nudo 门禁判定看命令文本，不看脚本名
+// migrate status 的 nudo 门禁判定看命令文本，不看脚本名
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 571: migrate status 的 nudo 门禁判定看命令文本，不看脚本名", () => {
+describe("migrate status 的 nudo 门禁判定看命令文本，不看脚本名", () => {
 /**
- * Bug 571 — `migrate status` 的「no nudo check/test script yet」是**假阻塞**：
+ * `migrate status` 的「no nudo check/test script yet」是**假阻塞**：
  * 判定用脚本**名**（`/check|test/` 匹配脚本名），采集用脚本**命令**（`/\bnudo\b/`）。
  * ⇒ 命令已经是 `nudo check .` / `npx nudojs check .`、但脚本名叫 `lint` / `typecheck2`
  * 的包被报成「还没有 nudo 门禁」；retire 改写后（`npx nudojs check .`）该阻塞**永不消失**。
@@ -485,7 +485,7 @@ function pkg(name: string, scripts: Record<string, string>, extra: Record<string
   return dir;
 }
 
-describe("Bug 571: migrate status 的 nudo 门禁判定看命令文本，不看脚本名", () => {
+describe("migrate status 的 nudo 门禁判定看命令文本，不看脚本名", () => {
   it("脚本名不含 check/test、命令是 nudo check ⇒ 不得报「no nudo check/test script yet」", () => {
     const dir = pkg("named2-pkg", { lint: "nudo check ." }, {
       devDependencies: { typescript: "^5.0.0" },
@@ -529,11 +529,11 @@ describe("Bug 571: migrate status 的 nudo 门禁判定看命令文本，不看�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 572: migrate status 的依赖口径必须含 peerDependencies
+// migrate status 的依赖口径必须含 peerDependencies
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 572: migrate status 的依赖口径必须含 peerDependencies", () => {
+describe("migrate status 的依赖口径必须含 peerDependencies", () => {
 /**
- * Bug 572 — `peerDependencies.typescript` 不在 `status` 的作用域里：
+ * `peerDependencies.typescript` 不在 `status` 的作用域里：
  * status 的依赖集合只合并 `dependencies` + `devDependencies` ⇒
  * 只把 typescript 放在 peerDependencies 的包被报成「typescript dep: no」（假绿），
  * 且没有「typescript still in dependencies」阻塞（三个动词对同一事实三种答案）。
@@ -570,7 +570,7 @@ function pkg(name: string, deps: Record<string, unknown>) {
   return dir;
 }
 
-describe("Bug 572: migrate status 的依赖口径必须含 peerDependencies", () => {
+describe("migrate status 的依赖口径必须含 peerDependencies", () => {
   it("peerDependencies.typescript ⇒ typescriptDep 为 true 且报出阻塞", () => {
     const dir = pkg("pkg-b", { peerDependencies: { typescript: "^5.0.0" } });
     const rows = migrateStatus(dir);
@@ -612,11 +612,11 @@ describe("Bug 572: migrate status 的依赖口径必须含 peerDependencies", ()
 });
 
 // ---------------------------------------------------------------------------
-// Bug 573: migrate status 的 tsFiles 按 workspace 包边界统计
+// migrate status 的 tsFiles 按 workspace 包边界统计
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 573: migrate status 的 tsFiles 按 workspace 包边界统计", () => {
+describe("migrate status 的 tsFiles 按 workspace 包边界统计", () => {
 /**
- * Bug 573 — `migrate status` 根行的 `tsFiles` 把**所有嵌套 workspace 包**的 .ts
+ * `migrate status` 根行的 `tsFiles` 把**所有嵌套 workspace 包**的 .ts
  * 重复计入（listFiles 是目录递归，不按包边界裁剪）⇒ 根行 = 全仓库面，
  * 且与各包行重复计数（审计面「表面积」数字错）。
  *
@@ -655,7 +655,7 @@ function workspace() {
   return dir;
 }
 
-describe("Bug 573: migrate status 的 tsFiles 按 workspace 包边界统计", () => {
+describe("migrate status 的 tsFiles 按 workspace 包边界统计", () => {
   it("根包自己 0 个 .ts ⇒ 根行 tsFiles 为 0（不重复计入子包）", () => {
     const dir = workspace();
     const rows = migrateStatus(dir);
@@ -697,11 +697,11 @@ describe("Bug 573: migrate status 的 tsFiles 按 workspace 包边界统计", ()
 });
 
 // ---------------------------------------------------------------------------
-// Bug 578: 注入的 check:nudo 必须真的落盘
+// 注入的 check:nudo 必须真的落盘
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 578: 注入的 check:nudo 必须真的落盘", () => {
+describe("注入的 check:nudo 必须真的落盘", () => {
 /**
- * Bug 578 — `nudo migrate retire` 注入的 `check:nudo` **从未落盘**，
+ * `nudo migrate retire` 注入的 `check:nudo` **从未落盘**，
  * 但 CLI 输出与审计记录**都谎报「已改写」**。
  *
  * 根因：`pkg.scripts ?? {}` 产生**局部新对象**，注入写进局部副本，`pkg.scripts` 从未被赋值。
@@ -732,7 +732,7 @@ function noScriptsPkg(): string {
   return dir;
 }
 
-describe("Bug 578: 注入的 check:nudo 必须真的落盘", () => {
+describe("注入的 check:nudo 必须真的落盘", () => {
   it("库面：package.json 出现 scripts.check:nudo（报告与落盘一致）", () => {
     const dir = noScriptsPkg();
     const result = migrateRetire(dir, { workflows: false });
@@ -749,7 +749,7 @@ describe("Bug 578: 注入的 check:nudo 必须真的落盘", () => {
     const dir = noScriptsPkg();
     const r = runCliTsx(["migrate", "retire", dir, "--json"]);
     expect(r.status).toBe(0);
-    // Bug 675 收口：`migrate retire --json` 的顶层形状**恒为数组**（1 个包
+    // 收口：`migrate retire --json` 的顶层形状**恒为数组**（1 个包
     // 也是数组）⇒ 取第一条结果。
     const reported = JSON.parse(r.stdout) as Array<{
       rewrittenScripts: Array<{ name: string }>;
@@ -785,11 +785,11 @@ describe("Bug 578: 注入的 check:nudo 必须真的落盘", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 579 — workflow 里非命令位的 tsc 被当命令改写（数据损坏）
+// workflow 里非命令位的 tsc 被当命令改写（数据损坏）
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 579 — workflow 里非命令位的 tsc 被当命令改写（数据损坏）", () => {
+describe("workflow 里非命令位的 tsc 被当命令改写（数据损坏）", () => {
 /**
- * Bug 579 — `nudo migrate retire` 把 workflow 里**任何提到 tsc 的行**当命令改写
+ * `nudo migrate retire` 把 workflow 里**任何提到 tsc 的行**当命令改写
  * ⇒ 数据损坏（env 变量的值 / 描述性文字被改成门禁命令）。
  *
  * 契约：workflow YAML 里**只有 `run:` 的标量是命令位**；
@@ -842,7 +842,7 @@ function fixture(): string {
   return dir;
 }
 
-describe("Bug 579 — workflow 里非命令位的 tsc 被当命令改写（数据损坏）", () => {
+describe("workflow 里非命令位的 tsc 被当命令改写（数据损坏）", () => {
   it("status 的 tsc 行数只数真正的命令行（1 条，不是 3 条）", () => {
     const dir = fixture();
     expect(listWorkflowTscLines(dir).length).toBe(1);
@@ -874,11 +874,11 @@ describe("Bug 579 — workflow 里非命令位的 tsc 被当命令改写（数�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 580 — YAML 引号包住的 run: tsc 命令被漏改（假绿）
+// YAML 引号包住的 run: tsc 命令被漏改（假绿）
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 580 — YAML 引号包住的 run: tsc 命令被漏改（假绿）", () => {
+describe("YAML 引号包住的 run: tsc 命令被漏改（假绿）", () => {
 /**
- * Bug 580 — `nudo migrate retire` **漏改** YAML 引号包住的 `run:` tsc 命令
+ * `nudo migrate retire` **漏改** YAML 引号包住的 `run:` tsc 命令
  * ⇒ 报「已退役」但 CI 的 tsc 门禁原样保留（假绿）。
  *
  * 契约：YAML 的标量引号 ≠ shell 的引号——处理 `run:` 时按 **YAML 语义**取标量
@@ -930,7 +930,7 @@ function fixture(): string {
   return dir;
 }
 
-describe("Bug 580 — YAML 引号包住的 run: tsc 命令被漏改（假绿）", () => {
+describe("YAML 引号包住的 run: tsc 命令被漏改（假绿）", () => {
   it("rewriteWorkflowText 改写引号标量里的 tsc（保留原引号风格）", () => {
     const { text, changes } = rewriteWorkflowText(WF);
     expect(changes.length).toBe(3);
@@ -959,11 +959,11 @@ describe("Bug 580 — YAML 引号包住的 run: tsc 命令被漏改（假绿）"
 });
 
 // ---------------------------------------------------------------------------
-// Bug 581 — 对象式 workspaces（{ packages: [...] }）不被忽略
+// 对象式 workspaces（{ packages: [...] }）不被忽略
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 581 — 对象式 workspaces（{ packages: [...] }）不被忽略", () => {
+describe("对象式 workspaces（{ packages: [...] }）不被忽略", () => {
 /**
- * Bug 581 —— `nudo migrate status` / `retire --all` **整个忽略对象式 workspaces**
+ * `nudo migrate status` / `retire --all` **整个忽略对象式 workspaces**
  * （`{ "packages": [...] }`，npm / yarn berry 经典写法）⇒ 子包不可见、
  * 其 tsc 门禁留着却报「已退役」（假绿）。
  *
@@ -1013,7 +1013,7 @@ function objectFormFixture(): { dir: string; sub: string } {
   return { dir, sub };
 }
 
-describe("Bug 581 — 对象式 workspaces（{ packages: [...] }）不被忽略", () => {
+describe("对象式 workspaces（{ packages: [...] }）不被忽略", () => {
   it("status 能看到对象式 workspaces 的子包（改前：整行消失）", () => {
     const { dir, sub } = objectFormFixture();
     const rows = migrateStatus(dir);
@@ -1077,11 +1077,11 @@ describe("Bug 581 — 对象式 workspaces（{ packages: [...] }）不被忽略"
 });
 
 // ---------------------------------------------------------------------------
-// Bug 584 — pnpm 负向模式（`!packages/legacy`）真的排除
+// pnpm 负向模式（`!packages/legacy`）真的排除
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 584 — pnpm 负向模式（`!packages/legacy`）真的排除", () => {
+describe("pnpm 负向模式（`!packages/legacy`）真的排除", () => {
 /**
- * Bug 584 —— `nudo migrate` 把 pnpm 用 `!packages/legacy` **显式排除**的包
+ * `nudo migrate` 把 pnpm 用 `!packages/legacy` **显式排除**的包
  * 当成 workspace 包 ⇒ `retire --all` **真的改写**了被排除的包
  * （删 typescript 依赖 / 改 tsc 脚本 / 写退役 marker）——单向退役闸门下的数据损坏。
  *
@@ -1147,7 +1147,7 @@ function negativePatternFixture(): { dir: string; app: string; legacy: string } 
   return { dir, app, legacy };
 }
 
-describe("Bug 584 — pnpm 负向模式（`!packages/legacy`）真的排除", () => {
+describe("pnpm 负向模式（`!packages/legacy`）真的排除", () => {
   it("status 不列出被 pnpm 排除的包（改前：legacy 占一行）", () => {
     const { dir, app, legacy } = negativePatternFixture();
     const roots = migrateStatus(dir).map((r) => resolve(r.root));
@@ -1195,16 +1195,16 @@ describe("Bug 584 — pnpm 负向模式（`!packages/legacy`）真的排除", ()
 });
 
 // ---------------------------------------------------------------------------
-// Bug 586: 编译脚本不得被改写成 nudo check
+// 编译脚本不得被改写成 nudo check
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 586: 编译脚本不得被改写成 nudo check", () => {
+describe("编译脚本不得被改写成 nudo check", () => {
 /**
- * Bug 586 — `nudo migrate retire` 把**编译脚本**（`build`）改写成 `nudo check .`
+ * `nudo migrate retire` 把**编译脚本**（`build`）改写成 `nudo check .`
  * —— 构建不再产出任何产物，却绿灯通过并写下「已退役」标记。
  *
  * 期望：只改写**门禁角色**的脚本（`--noEmit` / 裸 tsc）；
- *       编译角色脚本（脚本名是构建角色 / 发射旗标 / `-b` / `-p` 无 `--noEmit`）**原样保留**，
- *       并且 typescript 依赖因此保留（摘掉它 build 当场坏掉）。
+ * 编译角色脚本（脚本名是构建角色 / 发射旗标 / `-b` / `-p` 无 `--noEmit`）**原样保留**，
+ * 并且 typescript 依赖因此保留（摘掉它 build 当场坏掉）。
  * 反向闸：门禁脚本照常改写（断言非永真）。
  */
 
@@ -1242,7 +1242,7 @@ function buildPkg(scripts: Record<string, string>): string {
   return dir;
 }
 
-describe("Bug 586: 编译脚本不得被改写成 nudo check", () => {
+describe("编译脚本不得被改写成 nudo check", () => {
   it("build（tsc -p tsconfig.build.json）原样保留，门禁脚本照常改写", () => {
     const dir = buildPkg({ build: "tsc -p tsconfig.build.json", typecheck: "tsc --noEmit" });
     const result = migrateRetire(dir, { workflows: false });
@@ -1295,11 +1295,11 @@ describe("Bug 586: 编译脚本不得被改写成 nudo check", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 587 — migrate strip 改写相对说明符
+// migrate strip 改写相对说明符
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 587 — migrate strip 改写相对说明符", () => {
+describe("migrate strip 改写相对说明符", () => {
 /**
- * Bug 587 — `migrate strip` 不改写相对模块说明符 ⇒ 产物里留着 `from "./helper"`。
+ * `migrate strip` 不改写相对模块说明符 ⇒ 产物里留着 `from "./helper"`。
  *
  * 根因：strip 只做 AST 级 TS 剥除，不碰 `import.source`；ESM 规定相对说明符
  * 必须带显式扩展名 ⇒ Node 加载不了（ERR_MODULE_NOT_FOUND），而 strip / verify /
@@ -1318,7 +1318,7 @@ afterAll(() => {
   for (const d of dirs) rmSync(d, { recursive: true, force: true });
 });
 
-describe("Bug 587 — migrate strip 改写相对说明符", () => {
+describe("migrate strip 改写相对说明符", () => {
   it("import \"./helper\" ⇒ 产物写 \"./helper.js\"", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-bug-587-"));
     dirs.push(dir);
@@ -1373,11 +1373,11 @@ describe("Bug 587 — migrate strip 改写相对说明符", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 588: migrate status 区分「package.json 不存在」与「解析失败」
+// migrate status 区分「package.json 不存在」与「解析失败」
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 588: migrate status 区分「package.json 不存在」与「解析失败」", () => {
+describe("migrate status 区分「package.json 不存在」与「解析失败」", () => {
 /**
- * Bug 588 — `migrate status` **吞掉畸形的 package.json**（readJson 解析失败 ⇒ undefined，
+ * `migrate status` **吞掉畸形的 package.json**（readJson 解析失败 ⇒ undefined，
  * 与「文件不存在」不可区分）⇒ 报「typescript dep: no」＋「tscScripts: []」（假绿）。
  * 同一份文件在 `nudo check` 面被明确报成「package.json parse failed」。
  *
@@ -1412,7 +1412,7 @@ function malformed() {
   return dir;
 }
 
-describe("Bug 588: migrate status 区分「package.json 不存在」与「解析失败」", () => {
+describe("migrate status 区分「package.json 不存在」与「解析失败」", () => {
   it("解析失败 ⇒ blockers 显式报出 + packageJsonError 字段", () => {
     const dir = malformed();
     const rows = migrateStatus(dir);
@@ -1474,11 +1474,11 @@ describe("Bug 588: migrate status 区分「package.json 不存在」与「解析
 });
 
 // ---------------------------------------------------------------------------
-// Bug 590: migrate status 的 blockers 汇总不得泄漏占位符「—」
+// migrate status 的 blockers 汇总不得泄漏占位符「—」
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 590: migrate status 的 blockers 汇总不得泄漏占位符「—」", () => {
+describe("migrate status 的 blockers 汇总不得泄漏占位符「—」", () => {
 /**
- * Bug 590 — `nudo migrate status` 的 `blockers` 串里**泄漏占位符「—」**：
+ * `nudo migrate status` 的 `blockers` 串里**泄漏占位符「—」**：
  * blockers 用「—」表示「本项无」，汇总成逗号串时没过滤占位符 ⇒
  * 用户 / 脚本看到 `1 tsc line(s) in .github/workflows; —` 会以为有**两条**待办。
  *
@@ -1514,7 +1514,7 @@ function pkgWithWorkflowTsc() {
   return dir;
 }
 
-describe("Bug 590: migrate status 的 blockers 汇总不得泄漏占位符「—」", () => {
+describe("migrate status 的 blockers 汇总不得泄漏占位符「—」", () => {
   it("blockers 数组里没有「—」元素", () => {
     const dir = pkgWithWorkflowTsc();
     const rows = migrateStatus(dir);
@@ -1573,11 +1573,11 @@ describe("Bug 590: migrate status 的 blockers 汇总不得泄漏占位符「—
 });
 
 // ---------------------------------------------------------------------------
-// Bug 591 — migrate strip --backup 撞名不静默跳过
+// migrate strip --backup 撞名不静默跳过
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 591 — migrate strip --backup 撞名不静默跳过", () => {
+describe("migrate strip --backup 撞名不静默跳过", () => {
 /**
- * Bug 591 — `migrate strip --backup` 撞到已存在的 `<file>.ts.bak` 时**静默跳过备份**。
+ * `migrate strip --backup` 撞到已存在的 `<file>.ts.bak` 时**静默跳过备份**。
  *
  * 根因：备份分支的条件是 `!existsSync(`${file}.bak`)` ⇒ 撞名就什么都不做，
  * exit 0、输出里也没有一行说明 ⇒ 用户以为备份了，其实在写一份「看起来像备份、
@@ -1596,7 +1596,7 @@ afterAll(() => {
   for (const d of dirs) rmSync(d, { recursive: true, force: true });
 });
 
-describe("Bug 591 — migrate strip --backup 撞名不静默跳过", () => {
+describe("migrate strip --backup 撞名不静默跳过", () => {
   it("已有 keep.ts.bak ⇒ 换名留底（keep.ts.1.bak），且旧备份原样保留", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-bug-591-"));
     dirs.push(dir);
@@ -1638,11 +1638,11 @@ describe("Bug 591 — migrate strip --backup 撞名不静默跳过", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 594: migrate status --json 的 blockers 无 blocker 时必须是 []
+// migrate status --json 的 blockers 无 blocker 时必须是 []
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 594: migrate status --json 的 blockers 无 blocker 时必须是 []", () => {
+describe("migrate status --json 的 blockers 无 blocker 时必须是 []", () => {
 /**
- * Bug 594 — `nudo migrate status --json` 的 `blockers` **数组元素**是占位符 `"—"`：
+ * `nudo migrate status --json` 的 `blockers` **数组元素**是占位符 `"—"`：
  * 机器面把「无 blocker」当成**一条 blocker**（文本面会过滤掉它）⇒
  * 消费方按 `blockers.length` 判「能否退役」永远 ≥ 1 ⇒ 自动化误判。
  *
@@ -1671,7 +1671,7 @@ function cleanPkg() {
   return dir;
 }
 
-describe("Bug 594: migrate status --json 的 blockers 无 blocker 时必须是 []", () => {
+describe("migrate status --json 的 blockers 无 blocker 时必须是 []", () => {
   it("JSON 面 blockers 为空数组（不是 ['—']）", () => {
     const dir = cleanPkg();
     const r = runCliTsx(["migrate", "status", "--json", dir]);
@@ -1708,11 +1708,11 @@ describe("Bug 594: migrate status --json 的 blockers 无 blocker 时必须是 [
 });
 
 // ---------------------------------------------------------------------------
-// Bug 597 — pnpm 嵌套 / 多段 workspace pattern 看得见
+// pnpm 嵌套 / 多段 workspace pattern 看得见
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 597 — pnpm 嵌套 / 多段 workspace pattern 看得见", () => {
+describe("pnpm 嵌套 / 多段 workspace pattern 看得见", () => {
 /**
- * Bug 597 —— `migrate status` / `retire --all` **看不见 pnpm 嵌套 workspace 包**
+ * `migrate status` / `retire --all` **看不见 pnpm 嵌套 workspace 包**
  * （`packages/**` 只展开一层、多段 pattern 整条静默丢弃）⇒ 仍带 `typescript` + `tsc`
  * 的成员包**完全不存在**于审计与退役范围里 ⇒ `retire --all` 报「nothing to retire」
  * 并 exit 0（**退役假绿**）。
@@ -1791,7 +1791,7 @@ function multiSegmentFixture(): { dir: string; nested: string } {
   return { dir, nested };
 }
 
-describe("Bug 597 — pnpm 嵌套 / 多段 workspace pattern 看得见", () => {
+describe("pnpm 嵌套 / 多段 workspace pattern 看得见", () => {
   it("status 列出嵌套成员（一层与深层都在）", () => {
     const { dir, plain, nested } = nestedFixture();
     const roots = migrateStatus(dir).map((r) => resolve(r.root));
@@ -1841,11 +1841,11 @@ describe("Bug 597 — pnpm 嵌套 / 多段 workspace pattern 看得见", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 598: scripts 的值为 null 时 migrate status 不崩
+// scripts 的值为 null 时 migrate status 不崩
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 598: scripts 的值为 null 时 migrate status 不崩", () => {
+describe("scripts 的值为 null 时 migrate status 不崩", () => {
 /**
- * Bug 598 — `package.json` 的 `scripts` 值是 `null` 时 `migrate status` / `retire` 抛
+ * `package.json` 的 `scripts` 值是 `null` 时 `migrate status` / `retire` 抛
  * 裸 TypeError（`Cannot read properties of null (reading 'split')`）——
  * 没有包名、没有文件路径、没有 `error:` / `fix:` 引导。
  * 根因：`as Record<string, string>` 只是编译期断言；`?? {}` 只兜「scripts 整个缺失」。
@@ -1878,7 +1878,7 @@ function nullScriptPkg() {
   return dir;
 }
 
-describe("Bug 598: scripts 的值为 null 时 migrate status 不崩", () => {
+describe("scripts 的值为 null 时 migrate status 不崩", () => {
   it("API 面不抛，null 脚本不算 tsc", () => {
     const dir = nullScriptPkg();
     const rows = migrateStatus(dir);
@@ -1928,16 +1928,16 @@ describe("Bug 598: scripts 的值为 null 时 migrate status 不崩", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 920: retire 子包的 workflow 改写作用域必须限定在该包
+// retire 子包的 workflow 改写作用域必须限定在该包
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 920: retire 子包的 workflow 改写作用域必须限定在该包", () => {
+describe("retire 子包的 workflow 改写作用域必须限定在该包", () => {
 /**
- * Bug 920 — `nudo migrate retire <子包>` 的 **workflow 改写作用域是「仓库根的整个
+ * `nudo migrate retire <子包>` 的 **workflow 改写作用域是「仓库根的整个
  * `.github/workflows` 目录」**，与被退役包的边界无关 ⇒ 未退役的根包 / 其它包的
  * CI 类型门禁被静默替换成 `npx nudojs check .`。
  *
  * 期望：退役子包时只改写**该包自有**的 `.github/workflows`；仓库根共享的 workflow
- *       属于整仓作用域，退役子包不得越界改写。
+ * 属于整仓作用域，退役子包不得越界改写。
  * 反向闸：被退役包**自有**的 workflow 照常改写（断言非永真）。
  */
 
@@ -1997,7 +1997,7 @@ function monoRepo(subOwnWorkflow: boolean): { root: string; sub: string } {
   return { root, sub: join(root, "packages", "a") };
 }
 
-describe("Bug 920: retire 子包的 workflow 改写作用域必须限定在该包", () => {
+describe("retire 子包的 workflow 改写作用域必须限定在该包", () => {
   it("库面：仓库根的共享 workflow 零改动，根包 package.json 零改动", () => {
     const { root, sub } = monoRepo(false);
     const rootWfBefore = readFileSync(join(root, ".github", "workflows", "ci.yml"), "utf-8");
@@ -2032,11 +2032,11 @@ describe("Bug 920: retire 子包的 workflow 改写作用域必须限定在该�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 923 — strip 后的门禁按模块计数（不翻倍）
+// strip 后的门禁按模块计数（不翻倍）
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 923 — strip 后的门禁按模块计数（不翻倍）", () => {
+describe("strip 后的门禁按模块计数（不翻倍）", () => {
 /**
- * Bug 923 — `migrate strip --write` 保留源 `.ts`，门禁把「源 + 产物」当两个模块分析两遍。
+ * `migrate strip --write` 保留源 `.ts`，门禁把「源 + 产物」当两个模块分析两遍。
  *
  * 根因：`strip` 默认（不加 `--backup`）把源 `.ts` 留在原地，产物 `.js` 落在旁边 ⇒
  * 目录级分析把同一个模块收了两份 ⇒ 机器面 `summary.errors` / `functions` /
@@ -2060,7 +2060,7 @@ afterAll(() => {
 
 const SRC = `export function setDelay(ms: number): number {\n  return ms.toFixed(2);\n}\n`;
 
-describe("Bug 923 — strip 后的门禁按模块计数（不翻倍）", () => {
+describe("strip 后的门禁按模块计数（不翻倍）", () => {
   it("strip --write 后：目录级分析只收一份（源 .ts 与产物 .js 是同一模块）", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-bug-923-"));
     dirs.push(dir);
@@ -2073,7 +2073,7 @@ describe("Bug 923 — strip 后的门禁按模块计数（不翻倍）", () => {
 
     // 源与产物都在（strip 默认保留源）⇒ 门禁不得把两者算成两个模块
     //
-    // **Bug 1053（主 agent 追认，2026-10-23）**：同 stem 冲突时**代表文件由
+    // **（主 agent 追认，2026-10-23）**：同 stem 冲突时**代表文件由
     // 「取源 `.ts`」改为「取产物 `.js`」—— 因为 `migrate strip --write` 之后
     // 源 `.ts` 是**退役后不再被编译的死源**，门禁必须查**发布出去的产物**
     // （否则发布的产物零覆盖 ⇒ 假绿，且与 `migrate verify` 给出相反结论）。
@@ -2120,11 +2120,11 @@ describe("Bug 923 — strip 后的门禁按模块计数（不翻倍）", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 924 — CI 表达式 ${{ … }} 被截断成字面量路径
+// CI 表达式 ${{ … }} 被截断成字面量路径
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 924 — CI 表达式 ${{ … }} 被截断成字面量路径", () => {
+describe("CI 表达式 ${{ … }} 被截断成字面量路径", () => {
 /**
- * Bug 924 — `nudo migrate retire` 改写 CI 步骤时**按空白切词解析 tsc argv**
+ * `nudo migrate retire` 改写 CI 步骤时**按空白切词解析 tsc argv**
  * ⇒ GitHub Actions 的 `${{ … }}` 表达式被截断并单引号封死
  * ⇒ 写下**一条必然红**的 CI 命令（`npx nudojs check 'packages/${{'`）。
  *
@@ -2182,7 +2182,7 @@ function fixture(): string {
   return dir;
 }
 
-describe("Bug 924 — CI 表达式 ${{ … }} 被截断成字面量路径", () => {
+describe("CI 表达式 ${{ … }} 被截断成字面量路径", () => {
   it("rewriteTscCommand 不把 ${{ … }} 切开", () => {
     const out = rewriteTscCommand("npx tsc -p packages/${{ matrix.pkg }}/tsconfig.json").cmd;
     // 表达式整体保留（不得被截成 `packages/${{`）
@@ -2218,11 +2218,11 @@ describe("Bug 924 — CI 表达式 ${{ … }} 被截断成字面量路径", () =
 });
 
 // ---------------------------------------------------------------------------
-// Bug 966 — 命令替换 $( … ) 被截断后粘到门禁路径上
+// 命令替换 $( … ) 被截断后粘到门禁路径上
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 966 — 命令替换 $( … ) 被截断后粘到门禁路径上", () => {
+describe("命令替换 $( … ) 被截断后粘到门禁路径上", () => {
 /**
- * Bug 966 — `nudo migrate retire` 改写 tsc 命令时把 shell 的 `$( … )` 命令替换
+ * `nudo migrate retire` 改写 tsc 命令时把 shell 的 `$( … )` 命令替换
  * 留在改写结果里、并直接粘到门禁路径上
  * ⇒ 落盘命令要么是 bash 语法错误、要么指向不存在的路径。
  *
@@ -2250,7 +2250,7 @@ function fixture(scripts: Record<string, string>): string {
   return dir;
 }
 
-describe("Bug 966 — 命令替换 $( … ) 被截断后粘到门禁路径上", () => {
+describe("命令替换 $( … ) 被截断后粘到门禁路径上", () => {
   it("旗标值里的命令替换被整体消费（不留尾巴）", () => {
     const out = rewriteTscCommand("tsc --outDir $(pwd)/dist").cmd;
     expect(out).toBe("nudo check .");
@@ -2299,11 +2299,11 @@ describe("Bug 966 — 命令替换 $( … ) 被截断后粘到门禁路径上", 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 967 — 脚本面缺「命令位」预筛 ⇒ 非命令位的 tsc 被改写
+// 脚本面缺「命令位」预筛 ⇒ 非命令位的 tsc 被改写
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 967 — 脚本面缺「命令位」预筛 ⇒ 非命令位的 tsc 被改写", () => {
+describe("脚本面缺「命令位」预筛 ⇒ 非命令位的 tsc 被改写", () => {
 /**
- * Bug 967 — `nudo migrate retire` 的 package.json 脚本面**没有「命令位」预筛**
+ * `nudo migrate retire` 的 package.json 脚本面**没有「命令位」预筛**
  * ⇒ 非命令位置的 tsc（描述文字 / 旗标值）被当 tsc 调用改写
  * ⇒ 脚本语义被改坏（`eslint --rule tsc` → `eslint --rule nudo check .`）。
  *
@@ -2340,7 +2340,7 @@ function fixture(scripts: Record<string, string>): string {
   return dir;
 }
 
-describe("Bug 967 — 脚本面缺「命令位」预筛 ⇒ 非命令位的 tsc 被改写", () => {
+describe("脚本面缺「命令位」预筛 ⇒ 非命令位的 tsc 被改写", () => {
   it("非命令位置的 tsc 一律不改写", () => {
     for (const cmd of NON_COMMAND) {
       expect(rewriteTscCommand(cmd).changed).toBe(false);

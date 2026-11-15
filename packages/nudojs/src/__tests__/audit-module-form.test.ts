@@ -1,5 +1,5 @@
 /**
- * 审计 34 · BUG-008：`.cjs` 单值导出的**模块形态**。
+ * 审计 34 · `.cjs` 单值导出的**模块形态**。
  *
  * 运行期 `require("./real.cjs")` 是那个值本身（函数 / 类），但产物此前一律按
  * ESM 发射（`export declare function real`）⇒ 消费方 `import real from` 报
@@ -36,7 +36,7 @@ function dts(file: string): string {
   return r.stdout;
 }
 
-describe("BUG-008 · CJS 单值导出 = `export =`", () => {
+describe("CJS 单值导出 = `export =`", () => {
   it("`module.exports = real` ⇒ `declare function` + `export = real`", () => {
     const out = dts(
       fixture("real.cjs", `function real() { return 7; }\nmodule.exports = real;\n`),
@@ -80,7 +80,7 @@ describe("BUG-008 · CJS 单值导出 = `export =`", () => {
   }, 60000);
 
   it("对照：镜像的 `export interface` 同样算「其它导出」⇒ 不切 `export =`", () => {
-    // BUG-005 让本地类型原文镜像进产物；`export =` 与 `export interface` 共存
+    // 让本地类型原文镜像进产物；`export =` 与 `export interface` 共存
     // 会让产物直接 TS2309（`nudo export` 却 exit 0）⇒ 这类混用保持具名投影
     // （与 TS 自己的 --declaration 同答案）。
     const out = dts(

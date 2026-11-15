@@ -12,11 +12,11 @@ import { generateGuardFunctionFromAbs } from "../guard-generator.ts";
 import { loadGeneratedModule } from "./fixtures.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 1046 — 契约申报的 bigint 字面量在 zod 面不得被静默放宽
+// 契约申报的 bigint 字面量在 zod 面不得被静默放宽
 // ---------------------------------------------------------------------------
-describe("[schema-] Bug 1046 — 契约申报的 bigint 字面量在 zod 面不得被静默放宽", () => {
+describe("契约申报的 bigint 字面量在 zod 面不得被静默放宽", () => {
 /**
- * Bug 1046 —— **契约申报的** bigint 字面量在 **zod 面被静默放宽成 `z.unknown()`**、
+ * **契约申报的** bigint 字面量在 **zod 面被静默放宽成 `z.unknown()`**、
  * 且**零台账** ⇒ 与 standard / guard 面**接受集自相矛盾**（假绿）。
  *
  * 病灶（改前）：`packages/service/src/emit/schema-generator.ts` 的 zod 渲染臂
@@ -35,7 +35,7 @@ describe("[schema-] Bug 1046 — 契约申报的 bigint 字面量在 zod 面不�
  *
  * 本文件钉住：
  * - 契约申报的 bigint 字面量（返回面 + 形参面）⇒ zod 源码是 `z.literal(10n)`，
- *   **不含** `z.unknown()`；
+ * **不含** `z.unknown()`；
  * - **跨面一致**：zod 面的接受集与 standard 面（**真执行生成产物**）逐值一致；
  * - **负控**：确实无法投影的形态仍降级，但**留痕可见**（既有 dropped 通道）。
  *
@@ -79,7 +79,7 @@ function zodLiteralAccepts(source: string, value: unknown): boolean {
   return value === BigInt(m[1]!);
 }
 
-describe("Bug 1046 — 契约申报的 bigint 字面量在 zod 面不得被静默放宽", () => {
+describe("契约申报的 bigint 字面量在 zod 面不得被静默放宽", () => {
   it("返回面：zod 源码是 z.literal(10n)（不是 z.unknown()）", () => {
     const source = absToSchemaSource(contractBigInt());
     expect(source).toBe("z.literal(10n)");
@@ -152,7 +152,7 @@ describe("Bug 1046 — 契约申报的 bigint 字面量在 zod 面不得被静�
       "exact",
     );
     const { node, dropped } = absToSchemaNode(observed);
-    // BUG-032：观测路径的 bigint 字面量改保**基类型**（`{k:"prim",type:"bigint"}`
+    // 观测路径的 bigint 字面量改保**基类型**（`{k:"prim",type:"bigint"}`
     // ⇒ `z.bigint()`）；改前是 `{k:"unknown"}` ⇒ 校验器接受**任何**值
     // （字符串 / 对象 / 数字都行），与 guard 面 `data === 10n` 接受集不相交。
     expect(node).toEqual({ k: "prim", type: "bigint", refinements: [] });
@@ -185,17 +185,17 @@ describe("Bug 1046 — 契约申报的 bigint 字面量在 zod 面不得被静�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1065：zod 产物面必须保真写 -0（不许静默放宽成 0）
+// zod 产物面必须保真写 -0（不许静默放宽成 0）
 // ---------------------------------------------------------------------------
-describe("[schema-] Bug 1065：zod 产物面必须保真写 -0（不许静默放宽成 0）", () => {
+describe("zod 产物面必须保真写 -0（不许静默放宽成 0）", () => {
 /**
- * Bug 1065 —— zod 产物面把 `lit(-0)` 写成 `z.literal(0)` ⇒ **比门禁宽** ⇒ 假绿。
+ * zod 产物面把 `lit(-0)` 写成 `z.literal(0)` ⇒ **比门禁宽** ⇒ 假绿。
  *
  * 改前：`schemaNodeToZod` 的 `case "lit"` 数字分支用模板串 `z.literal(${v})`
  * ⇒ `String(-0) === "0"` ⇒ 负号被抹掉 ⇒ 产物写 `z.literal(0)`：
  *
- *   export const fInput = z.object({ o: z.object({ v: z.literal(0) }) });
- *   export const fOutput = z.literal(0);
+ * export const fInput = z.object({ o: z.object({ v: z.literal(0) }) });
+ * export const fOutput = z.literal(0);
  *
  * 门禁（`nudo check`）按侧车的 `lit(-0)` 判红、zod 产物却放行 `0`
  * ⇒ 消费方拿到一个**比 CI 门禁宽松**的校验器 ⇒ 假绿。
@@ -215,7 +215,7 @@ describe("[schema-] Bug 1065：zod 产物面必须保真写 -0（不许静默放
 const litNeg0: Abs = abs({ k: "prim", type: "number" }, { op: "lit", value: -0 }, undefined, "exact");
 const lit42: Abs = abs({ k: "prim", type: "number" }, { op: "lit", value: 42 }, undefined, "exact");
 
-describe("Bug 1065：zod 产物面必须保真写 -0（不许静默放宽成 0）", () => {
+describe("zod 产物面必须保真写 -0（不许静默放宽成 0）", () => {
   it("lit(-0) 渲染成 z.literal(-0)，不是 z.literal(0)", () => {
     const source = absToSchemaSource(litNeg0);
     expect(source).toContain("z.literal(-0)");
@@ -248,7 +248,7 @@ describe("Bug 1065：zod 产物面必须保真写 -0（不许静默放宽成 0�
 // ---------------------------------------------------------------------------
 // schema length/bound anchoring
 // ---------------------------------------------------------------------------
-describe("[schema-] schema length/bound anchoring", () => {
+describe("schema length/bound anchoring", () => {
 /**
  * schema 投影的 pred 必须锚定 self。回归背景：lengthBound 只认 `fn==="length"`、
  * numericBound 把任意 var 当 self——`length(other)>=1` / `gt(other,0)` 会被
@@ -268,7 +268,7 @@ const strWith = (pred: Parameters<typeof abs>[2]) =>
 const numWith = (pred: Parameters<typeof abs>[2]) =>
   abs({ k: "prim", type: "number" }, { op: "var", id: "x" }, pred, "exact");
 
-/** Bug 1001：Abs 的 number prim 域 = 全部 JS number（含 NaN / ±Infinity）⇒ zod 侧放宽 */
+/** Abs 的 number prim 域 = 全部 JS number（含 NaN / ±Infinity）⇒ zod 侧放宽 */
 const WIDE_NUMBER = "z.number().or(z.nan()).or(z.literal(Infinity)).or(z.literal(-Infinity))";
 
 describe("schema length/bound anchoring", () => {
@@ -288,13 +288,13 @@ describe("schema length/bound anchoring", () => {
     // fallback 路径（absToConstraint 对 length(s) 会改写为 __nudo_self__；
     // 这里直接断言锚定 length(s) 仍可投影）
     const a = strWith(ge(app("length", [v("s")]), lit(1)));
-    // BUG-203：长度界按 **UTF-16 码元** 判定（refine），不映射 zod 的码点 API
+    // 长度界按 **UTF-16 码元** 判定（refine），不映射 zod 的码点 API
     expect(absToSchemaSource(a)).toBe("z.string().refine((s) => s.length >= 1)");
   });
 
   it("length(__nudo_self__) projects min (constraint path)", () => {
     const a = strWith(ge(app("length", [v(SELF)]), lit(1)));
-    // BUG-203：长度界按 **UTF-16 码元** 判定（refine），不映射 zod 的码点 API
+    // 长度界按 **UTF-16 码元** 判定（refine），不映射 zod 的码点 API
     expect(absToSchemaSource(a)).toBe("z.string().refine((s) => s.length >= 1)");
   });
 
@@ -346,11 +346,11 @@ describe("schema length/bound anchoring", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1082: 生成产物内联副本必须与库函数版同口径处理 -0
+// 生成产物内联副本必须与库函数版同口径处理 -0
 // ---------------------------------------------------------------------------
-describe("[schema-] Bug 1082: 生成产物内联副本必须与库函数版同口径处理 -0", () => {
+describe("生成产物内联副本必须与库函数版同口径处理 -0", () => {
 /**
- * Bug 1082 —— standard-schema 生成产物**内联副本**的 `__nudoDescribe` 未处理
+ * standard-schema 生成产物**内联副本**的 `__nudoDescribe` 未处理
  * `-0` ⇒ 与**库函数副本**（`describeValue`）口径分叉。
  *
  * 修前：库函数版给 `expected 1, got -0`；生成产物内联版给 `expected 1, got 0`
@@ -370,7 +370,7 @@ describe("[schema-] Bug 1082: 生成产物内联副本必须与库函数版同�
 
 
 
-describe("Bug 1082: 生成产物内联副本必须与库函数版同口径处理 -0", () => {
+describe("生成产物内联副本必须与库函数版同口径处理 -0", () => {
   it("库函数版与生成产物版对 -0 给出逐字相同的消息", async () => {
     const { node } = absToSchemaNode(numLit(1));
     const { source } = absToStandardSchema(numLit(1), { name: "one" });

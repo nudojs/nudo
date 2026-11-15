@@ -1,10 +1,10 @@
 /**
- * 工具链接入分册回归：Bug 14 / Bug 35（CLI 面）。
+ * 工具链接入分册回归：/ （CLI 面）。
  *
- * - Bug 14：`migrate retire` 用 `consumeTscArgv` 重写 tsc 命令短语时吞掉
- *   文件描述符数字（`2>&1` → `>&1`）⇒ 重定向语义静默改变。
- * - Bug 35：`init` 用目录名启发式判「workspace / 容器根」：仅含
- *   `services/<pkg>/package.json` 的普通仓被拒写。
+ * - `migrate retire` 用 `consumeTscArgv` 重写 tsc 命令短语时吞掉
+ * 文件描述符数字（`2>&1` → `>&1`）⇒ 重定向语义静默改变。
+ * - `init` 用目录名启发式判「workspace / 容器根」：仅含
+ * `services/<pkg>/package.json` 的普通仓被拒写。
  *
  * 用共享 CLI runner（cwd = 仓库根、目标指向 /tmp 独立夹具），避免落到 dist。
  */
@@ -19,7 +19,7 @@ const TMP_PREFIX = "nudo-bugtooling-cli-";
 // 缓存开关对 init / migrate 无意义，但显式清空以免继承外部 env 干扰。
 const cleanEnv = { NUDO_CACHE_DIR: "", NUDO_CACHE_KEY: "" };
 
-describe("Bug 14 —— migrate retire 保留 fd 重定向前缀", () => {
+describe("migrate retire 保留 fd 重定向前缀", () => {
   const dir = mkTmpProject(TMP_PREFIX);
   writeFileSync(
     join(dir, "package.json"),
@@ -68,7 +68,7 @@ describe("Bug 14 —— migrate retire 保留 fd 重定向前缀", () => {
   });
 });
 
-describe("Bug 35 —— 未声明 workspace 的普通仓 init <dir> 不假拒绝", () => {
+describe("未声明 workspace 的普通仓 init <dir> 不假拒绝", () => {
   it("仅含 services/api/package.json 的普通仓：init src 写进最近的根 package.json", { timeout: 120_000 }, () => {
     const dir = mkTmpProject(TMP_PREFIX);
     writeFileSync(join(dir, "package.json"), '{ "name": "rpt35", "version": "1.0.0" }\n');

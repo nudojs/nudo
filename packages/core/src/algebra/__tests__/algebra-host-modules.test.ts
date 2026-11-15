@@ -22,11 +22,11 @@ import { resolveExportSource } from "../scan/scan-call-graph.ts";
 import { resetCheckSourceMemo } from "../check/check.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 28 · 导入绑定再绑定的六条调用形态
+// 导入绑定再绑定的六条调用形态
 // ---------------------------------------------------------------------------
-describe("[] Bug 28 · 导入绑定再绑定的六条调用形态", () => {
+describe("导入绑定再绑定的六条调用形态", () => {
 /**
- * 分册 03 · Bug 28 —— 导入函数经本地**别名 / 对象成员**再绑定后 L1 零执法。
+ * 分册 03 · 导入函数经本地**别名 / 对象成员**再绑定后 L1 零执法。
  *
  * 根因：`bindExternal()` 把 `import { f }` 写进 `externalFn` /
  * `frame.externals`，而再绑定收集器只查**本地** `knownSet` ⇒
@@ -61,7 +61,7 @@ function violations(r: { issues: Array<{ code: string; actual?: string }> }) {
   return r.issues.filter((i) => i.code === "nudo:constraint-violated");
 }
 
-describe("Bug 28 · 导入绑定再绑定的六条调用形态", () => {
+describe("导入绑定再绑定的六条调用形态", () => {
   it("六形态（-1…-6）各报一条 nudo:constraint-violated", () => {
     const r = check(`import { f } from "./lib.js";
 const alias = f;
@@ -103,11 +103,11 @@ export function okObj() { return o.f(3); }
 });
 
 // ---------------------------------------------------------------------------
-// Bug 82 — sloppy 源的写入语义
+// sloppy 源的写入语义
 // ---------------------------------------------------------------------------
-describe("[] Bug 82 — sloppy 源的写入语义", () => {
+describe("sloppy 源的写入语义", () => {
 /**
- * Bug 82 回归：sloppy 源（`type: commonjs` / `.cjs`）的不可变写入与隐式
+ * 回归：sloppy 源（`type: commonjs` / `.cjs`）的不可变写入与隐式
  * 全局赋值按 **sloppy** 语义（静默失败 / 建全局），不得按 strict 判确定
  * TypeError / ReferenceError。引擎既已按 sloppy 建模 Annex B 提升，写门
  * 必须同源（run.ts 算出的 sourceStrict 现在进入 Abs 层写门）。
@@ -124,7 +124,7 @@ const CJS = [
   `module.exports = { readonlyWrite, getterOnlyWrite, nonExtensibleNewKey, implicitGlobal };`,
 ].join("\n");
 
-describe("Bug 82 — sloppy 源的写入语义", () => {
+describe("sloppy 源的写入语义", () => {
   for (const [fn, expected] of [
     ["readonlyWrite", 1],
     ["getterOnlyWrite", 7],
@@ -157,11 +157,11 @@ describe("Bug 82 — sloppy 源的写入语义", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 9 · 函数内 const 实参不再静默跳过
+// 函数内 const 实参不再静默跳过
 // ---------------------------------------------------------------------------
-describe("[] Bug 9 · 函数内 const 实参不再静默跳过", () => {
+describe("函数内 const 实参不再静默跳过", () => {
 /**
- * 分册 03 · Bug 9 —— 实参是**函数内 `const`** 的调用点整条跳过（假绿）。
+ * 分册 03 · 实参是**函数内 `const`** 的调用点整条跳过（假绿）。
  *
  * 根因：`varAbs` 只由模块级求值绑定表构造 ⇒ `const v = -1; f(v)` 的
  * `Identifier` 实参退化成 `absUnknown()` ⇒ `hasInfo === false` ⇒
@@ -195,7 +195,7 @@ export function f(x) { return x; }
 const TOP = -1;
 `;
 
-describe("Bug 9 · 函数内 const 实参不再静默跳过", () => {
+describe("函数内 const 实参不再静默跳过", () => {
   it("字面量 / 模块级 const / 函数内 const 三条调用点各报一条", () => {
     const r = check(`${DECL}export function literal() { return f(-1); }
 export function topConst() { return f(TOP); }
@@ -223,11 +223,11 @@ export function localConst() { const v = -1; return f(v); }`);
 });
 
 // ---------------------------------------------------------------------------
-// BUG-073 native user-code exception is a program throw
+// native user-code exception is a program throw
 // ---------------------------------------------------------------------------
-describe("[] BUG-073 native user-code exception is a program throw", () => {
+describe("native user-code exception is a program throw", () => {
 /**
- * BUG-073：用户代码的宿主原生异常（ReferenceError）被归 `nudo:internal`
+ * 用户代码的宿主原生异常（ReferenceError）被归 `nudo:internal`
  * 「引擎内部缺陷」⇒ 误导排障。修复：`evalFallbackOf` 把非 NudoThrow 的
  * 原生异常归 `module-throw`（程序自身抛），门禁按确定性装载期抛出诊断。
  */
@@ -242,7 +242,7 @@ export function fmt(v) {
 fmt(1);
 `;
 
-describe("BUG-073 native user-code exception is a program throw", () => {
+describe("native user-code exception is a program throw", () => {
   it("fallback reason is module-throw, not internal", () => {
     const attempt = tryRunTranspiledDetailed(SRC, { mode: "analyze" });
     expect(attempt.run).toBeUndefined();
@@ -263,11 +263,11 @@ describe("BUG-073 native user-code exception is a program throw", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-078 renameAbs preserves shape facets
+// renameAbs preserves shape facets
 // ---------------------------------------------------------------------------
-describe("[] BUG-078 renameAbs preserves shape facets", () => {
+describe("renameAbs preserves shape facets", () => {
 /**
- * BUG-078：`renameAbs` 重建 shape 时丢 facet（fn.optionalParams /
+ * `renameAbs` 重建 shape 时丢 facet（fn.optionalParams /
  * tuple.holes）⇒ α-重命名后稀疏元组被误判可赋给稠密元组（假绿）。
  */
 
@@ -293,7 +293,7 @@ const tupleAbs = (holes?: number[]): Abs =>
 
 const RENAME = new Map([["A1", "zzz"]]);
 
-describe("BUG-078 renameAbs preserves shape facets", () => {
+describe("renameAbs preserves shape facets", () => {
   it("keeps fn.optionalParams", () => {
     const renamed = renameAbs(fnAbs([true]), RENAME);
     expect(renamed.shape).toMatchObject({ k: "fn", optionalParams: [true] });
@@ -312,11 +312,11 @@ describe("BUG-078 renameAbs preserves shape facets", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-083：goal 侧 gt/lt 不得按实数环抵消常量
+// goal 侧 gt/lt 不得按实数环抵消常量
 // ---------------------------------------------------------------------------
-describe("[] BUG-083：goal 侧 gt/lt 不得按实数环抵消常量", () => {
+describe("goal 侧 gt/lt 不得按实数环抵消常量", () => {
 /**
- * BUG-083：目标侧 `gt` / `lt` 的**常量抵消**丢掉内层 IEEE 舍入
+ * 目标侧 `gt` / `lt` 的**常量抵消**丢掉内层 IEEE 舍入
  *
  * 目标侧严格比较走 `normCmp` 的「`a − b op 0`」归一，常量被**精确抵消**
  * ⇒ `fl(x+1) − 1` 被当成 `x` ⇒ 内层的 `fl` 吸收被抹掉
@@ -338,7 +338,7 @@ const x = v("x");
 const plus = (t: ReturnType<typeof v>, k: number) => app("+", [t, lit(k)]);
 const minus = (t: ReturnType<typeof v>, k: number) => app("-", [t, lit(k)]);
 
-describe("BUG-083：goal 侧 gt/lt 不得按实数环抵消常量", () => {
+describe("goal 侧 gt/lt 不得按实数环抵消常量", () => {
   it("宿主 IEEE 见证：2^-53 + 1 被吸收成 1", () => {
     expect(2 ** -53 + 1).toBe(1);
   });
@@ -368,7 +368,7 @@ describe("BUG-083：goal 侧 gt/lt 不得按实数环抵消常量", () => {
   });
 });
 
-describe("BUG-083：不抵消常量的真事实仍可证（精度不回退）", () => {
+describe("不抵消常量的真事实仍可证（精度不回退）", () => {
   it("x > 0 ⊨ x + 1 > 0（常量未被抵消，端点保留 1 ULP 余量）", () => {
     expect(implies(gt(x, lit(0)), gt(plus(x, 1), lit(0)))).toBe(true);
   });
@@ -390,18 +390,18 @@ describe("BUG-083：不抵消常量的真事实仍可证（精度不回退）", 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1051 · lastIndexOf 的 fromIndex 第三态
+// lastIndexOf 的 fromIndex 第三态
 // ---------------------------------------------------------------------------
-describe("[] Bug 1051 · lastIndexOf 的 fromIndex 第三态", () => {
+describe("lastIndexOf 的 fromIndex 第三态", () => {
 /**
- * Bug 1051 — `Array.prototype.lastIndexOf(x, undefined)`：**fromIndex 缺省**
+ * `Array.prototype.lastIndexOf(x, undefined)`：**fromIndex 缺省**
  * 与 **fromIndex 显式 undefined** 被混为一谈（`toIOI` 对两者都返回
  * undefined）⇒ 起始下标取 `len-1`（扫全表）而原生取 0（只扫第 0 位）。
  *
  * 原生规则（ES2023 Array.prototype.lastIndexOf）：
  * - `lastIndexOf(x)`（fromIndex 缺省）⇒ pos = len - 1；
  * - `lastIndexOf(x, undefined)`（fromIndex **在场**）⇒
- *   `ToIntegerOrInfinity(undefined) = 0` ⇒ pos = 0。
+ * `ToIntegerOrInfinity(undefined) = 0` ⇒ pos = 0。
  *
  * 根修：fromIndex 取第三态（缺省 / 显式 undefined / 数值）——`toIOIArg`
  * （arr-methods.ts）在 `toIOI` 的数值判定之上只补「实参在不在」这一维。
@@ -414,7 +414,7 @@ const val = (body: string): unknown => {
   return (r.result as { term?: { op?: string; value?: unknown } })?.term?.value;
 };
 
-describe("Bug 1051 · lastIndexOf 的 fromIndex 第三态", () => {
+describe("lastIndexOf 的 fromIndex 第三态", () => {
   it("lastIndexOf(2, undefined)：起始下标 0 ⇒ 扫不到 ⇒ -1（原生）", () => {
     expect(val(`return [1,2,3].lastIndexOf(2, undefined);`)).toBe(-1);
   });
@@ -435,11 +435,11 @@ describe("Bug 1051 · lastIndexOf 的 fromIndex 第三态", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1140: @nudo:skip 的机器面必须与人类面一致
+// @nudo:skip 的机器面必须与人类面一致
 // ---------------------------------------------------------------------------
-describe("[] Bug 1140: @nudo:skip 的机器面必须与人类面一致", () => {
+describe("@nudo:skip 的机器面必须与人类面一致", () => {
 /**
- * Bug 1140 —— `@nudo:skip` 签名分支仍输出**旧机器面** ⇒ 机器面与人类面不一致。
+ * `@nudo:skip` 签名分支仍输出**旧机器面** ⇒ 机器面与人类面不一致。
  *
  * 位置：packages/core/src/algebra/check.ts 的 `@nudo:skip` 分支——其它签名路径
  * 都用 `formatSigCached`（display = **人类面**渲染 `formatShape`，与终端签名行
@@ -447,7 +447,7 @@ describe("[] Bug 1140: @nudo:skip 的机器面必须与人类面一致", () => {
  * `formatAbsMultiline`（带 `#conf` 段与引擎内部 term 文本）。
  *
  * 现象：`/** @nudo:skip => number() *\/ export function f(){return 1}` 的 JSON
- * `display` 是 `"number  #exact"`，而终端显示 `"number"` ⇒ 同一函数两个面。
+ * `display` 是 `"number #exact"`，而终端显示 `"number"` ⇒ 同一函数两个面。
  *
  * 修法：skip 分支改用 `formatSigCached(retAbs, name)`（与其它路径同款）。
  */
@@ -467,7 +467,7 @@ beforeEach(() => {
 const numAbs: Abs = { shape: { k: "prim", type: "number" }, conf: "exact" };
 /**
  * 带**引擎内部计数器 id** 的项（`len#3` 一族）——编号随进程漂移 ⇒ 不得进对外
- * 载荷（Bug 413 同款：稳定化后应是 `len`）。
+ * 载荷（同款：稳定化后应是 `len`）。
  */
 const lenAbs: Abs = {
   shape: { k: "prim", type: "number" },
@@ -480,7 +480,7 @@ function terminalReturn(abs: Abs): string {
   return formatShape(abs);
 }
 
-describe("Bug 1140: @nudo:skip 的机器面必须与人类面一致", () => {
+describe("@nudo:skip 的机器面必须与人类面一致", () => {
   it("JSON display 与终端一致（无 #conf 段）", () => {
     const src = `
 /** @nudo:skip => number() */
@@ -542,28 +542,28 @@ export function h() {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1155：装载期的转译拒绝归因给每个入口
+// 装载期的转译拒绝归因给每个入口
 // ---------------------------------------------------------------------------
-describe("[] Bug 1155：装载期的转译拒绝归因给每个入口", () => {
+describe("装载期的转译拒绝归因给每个入口", () => {
 /**
- * Bug 1155：转译器拒绝的构造落在**模块装载期**（module-init）代码里 ⇒
+ * 转译器拒绝的构造落在**模块装载期**（module-init）代码里 ⇒
  * L2 fail-closed 归因给**每个**入口。
  *
- * 根因：Bug 380 / Bug 1153 的归因只认「入口自身跨度 ∪ 入口**可达**的顶层绑定」，
+ * 根因：/ 的归因只认「入口自身跨度 ∪ 入口**可达**的顶层绑定」，
  * 而装载期代码（顶层语句体 / 顶层初始化表达式 / 类定义期的 `static {}`、
  * 静态字段初始化器、计算键、`extends` 表达式）不在任何入口的执行路径里 ⇒
  * 无人背账 ⇒ L2 静默转绿：
- *   `export function f(a) { return a.b; }`              → f 有 1 条真实 TypeError
- *   `const g = () => ({x:1}); g().x++;` 加上面两行     → 零 error（假绿）
+ * `export function f(a) { return a.b; }` → f 有 1 条真实 TypeError
+ * `const g = () => ({x:1}); g().x++;` 加上面两行 → 零 error（假绿）
  * 但装载期代码先于**任何**入口调用执行 ⇒ 转译器拒绝装载期构造时，每个入口的
  * total 性都不可判定（同一条 fail-closed 证据形状，`@nudo:throws` /
  * `--ignore-throws` 照常放行）。
  *
  * 边界：函数体 / 参数默认值（调用时跑）、实例字段初始化器 / 构造器 / 方法体
- * （`new` / 调用时跑）**不**算装载期 ⇒ 仍按 Bug 1153 的可达性归因（不可达
+ * （`new` / 调用时跑）**不**算装载期 ⇒ 仍按 的可达性归因（不可达
  * 的陪葬入口不背账）。
  *
- * **TS-only 声明语句例外（Bug 895）**：`namespace` / `import x = require()` 这类
+ * **TS-only 声明语句例外（）**：`namespace` / `import x = require()` 这类
  * 类型层 / 声明层语法的转译拒绝**不**是「入口可能抛」的证据（`.ts` 源码必须
  * 保持零诊断；`namespace` 体里「程序自己的抛」属 module-throw 族，门禁面已
  * 静默）⇒ 不做装载期归因，`nudo check` 与干净模块同判 OK。
@@ -576,7 +576,7 @@ const G = `const g = () => ({ x: 1 });`;
 const ENTRIES = `export function f(a) { return a.b; }
 export function safe() { return 1; }`;
 
-describe("Bug 1155：装载期的转译拒绝归因给每个入口", () => {
+describe("装载期的转译拒绝归因给每个入口", () => {
   it("顶层裸语句里的不支持构造 ⇒ f / safe 各 1 条 L2（改前：零 error）", () => {
     const src = `${G}
 g().x++;
@@ -765,11 +765,11 @@ export function safe() { return 2; }`,
 });
 
 // ---------------------------------------------------------------------------
-// BUG-159 host global constructor probe
+// host global constructor probe
 // ---------------------------------------------------------------------------
-describe("[] BUG-159 host global constructor probe", () => {
+describe("host global constructor probe", () => {
 /**
- * BUG-159：`new Storage()` 被引擎判成 brand `Storage`（自信的错值），
+ * `new Storage()` 被引擎判成 brand `Storage`（自信的错值），
  * 与 `new globalThis.Storage()` 的诚实结论自相矛盾。修复：宿主全局构造器
  * 走宿主可构造性探针 ⇒ 不再把未建模宿主全局当确定类值。
  */
@@ -782,7 +782,7 @@ export function s1() { return new Storage(); }
 export function s2() { return new globalThis.Storage(); }
 `;
 
-describe("BUG-159 host global constructor probe", () => {
+describe("host global constructor probe", () => {
   it("bare host ctor is not reported as a confident brand", () => {
     const r = checkSource("/t/bug-159.js", SRC, pTrue);
     expect(sigOf(r, "s1")).not.toBe("Storage");
@@ -792,11 +792,11 @@ describe("BUG-159 host global constructor probe", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-182 — hostFnCtorFacet 的 IsConstructor 判据
+// hostFnCtorFacet 的 IsConstructor 判据
 // ---------------------------------------------------------------------------
-describe("[] BUG-182 — hostFnCtorFacet 的 IsConstructor 判据", () => {
+describe("hostFnCtorFacet 的 IsConstructor 判据", () => {
 /**
- * BUG-182 回归：宿主函数可构造性 facet 必须用**规范 IsConstructor 探针**
+ * 回归：宿主函数可构造性 facet 必须用**规范 IsConstructor 探针**
  * （`Reflect.construct(noop, [], v)` + 恒抛内建表），不得用「有无 prototype
  * 属性」代理。
  *
@@ -813,7 +813,7 @@ describe("[] BUG-182 — hostFnCtorFacet 的 IsConstructor 判据", () => {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("BUG-182 — hostFnCtorFacet 的 IsConstructor 判据", () => {
+describe("hostFnCtorFacet 的 IsConstructor 判据", () => {
   it("Proxy：无 prototype 但可构造 ⇒ true（旧 prototype 启发式给 false）", () => {
     expect(hostFnCtorFacet(Proxy)).toBe(true);
   });
@@ -833,7 +833,7 @@ describe("BUG-182 — hostFnCtorFacet 的 IsConstructor 判据", () => {
   });
 });
 
-describe("BUG-182 — Reflect.construct 面的假红/假绿", () => {
+describe("Reflect.construct 面的假红/假绿", () => {
   it("construct(Proxy, [target, handler]) 不抛（此前假红 never）", () => {
     const src = wrap(`return Reflect.construct(Proxy, [{}, {}]);`);
     const r = call(src);
@@ -868,11 +868,11 @@ describe("BUG-182 — Reflect.construct 面的假红/假绿", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 219：in / delete 的宿主全局接收者不得炸引擎
+// in / delete 的宿主全局接收者不得炸引擎
 // ---------------------------------------------------------------------------
-describe("[] Bug 219：in / delete 的宿主全局接收者不得炸引擎", () => {
+describe("in / delete 的宿主全局接收者不得炸引擎", () => {
 /**
- * Bug 219：`delete <宿主全局>.x` / `"x" in <宿主全局>` 把**宿主真对象**喂进
+ * `delete <宿主全局>.x` / `"x" in <宿主全局>` 把**宿主真对象**喂进
  * `$del` / `$delRes` / `$in` ⇒ 引擎**裸 TypeError 崩溃** ⇒ 回落 `internal`
  * ⇒ `nudo check` 对**合法代码**假红（exit 1，还把引擎内部报错原文吐给用户）。
  *
@@ -902,7 +902,7 @@ function withFallbacks<T>(body: () => T): { out: T; fallbacks: EvalFallback[] } 
   }
 }
 
-describe("Bug 219：in / delete 的宿主全局接收者不得炸引擎", () => {
+describe("in / delete 的宿主全局接收者不得炸引擎", () => {
   it(`"FLAG" in globalThis ⇒ 模块正常求值（改前：裸 TypeError / internal 回落）`, () => {
     const src = `export function f(){ return "FLAG" in globalThis; }`;
     const { out, fallbacks } = withFallbacks(() => runTranspiled(src, { mode: "analyze" }));
@@ -939,11 +939,11 @@ export function g(){ const o = { a: 1 }; return delete o.a; }`,
 });
 
 // ---------------------------------------------------------------------------
-// BUG-223 contract 档单一读取口不为导出别名伪造派生档
+// contract 档单一读取口不为导出别名伪造派生档
 // ---------------------------------------------------------------------------
-describe("[] BUG-223 contract 档单一读取口不为导出别名伪造派生档", () => {
+describe("contract 档单一读取口不为导出别名伪造派生档", () => {
 /**
- * BUG-223：LSP `semanticTokens` 把「导出别名」（`export const alias = target;`）
+ * LSP `semanticTokens` 把「导出别名」（`export const alias = target;`）
  * 判成 **函数 + 契约档(derived)**，而 `documentSymbol` 判 Variable、
  * CodeLens / hover 判**不在契约档** ⇒ 同一绑定三面互斥。
  *
@@ -977,7 +977,7 @@ function tier(name: string, source = SRC) {
   return contractTierOf(source, name, "/t/a.js", { loadModule, fromFile: "/t/a.js" });
 }
 
-describe("BUG-223 contract 档单一读取口不为导出别名伪造派生档", () => {
+describe("contract 档单一读取口不为导出别名伪造派生档", () => {
   beforeEach(() => {
     resetSidecarLoadFailureCache();
     takeContractDiags();
@@ -1005,11 +1005,11 @@ describe("BUG-223 contract 档单一读取口不为导出别名伪造派生档",
 });
 
 // ---------------------------------------------------------------------------
-// Bug 254：env 全局名是 strict-mode 保留字时不得打挂整个模块
+// env 全局名是 strict-mode 保留字时不得打挂整个模块
 // ---------------------------------------------------------------------------
-describe("[] Bug 254：env 全局名是 strict-mode 保留字时不得打挂整个模块", () => {
+describe("env 全局名是 strict-mode 保留字时不得打挂整个模块", () => {
 /**
- * Bug 254：core 把 env 全局注入成裸 `let <名字>` 绑定 ⇒ 名字是
+ * core 把 env 全局注入成裸 `let <名字>` 绑定 ⇒ 名字是
  * **strict-mode 保留字**（`default` / `static` / `implements` …）时
  * `new Function` 抛 `SyntaxError: Unexpected strict mode reserved word`
  * ⇒ **整个模块 fail-closed**（导出全退 unknown）⇒ `nudo:internal` + exit 1。
@@ -1019,7 +1019,7 @@ describe("[] Bug 254：env 全局名是 strict-mode 保留字时不得打挂整�
  * 导出的包必产一个 `default` 全局（`@types/lodash` 的 `export = _` 即命中）
  * ⇒ 那份 env 模块让**引用它的每个工程**整模块求值失败。
  *
- * 修法（与 Bug 273「模块级绑定优先」同族、同一个拼接点）：注入前校验
+ * 修法（与 「模块级绑定优先」同族、同一个拼接点）：注入前校验
  * **绑定名合法性**（合法标识符 ∧ 非关键字 ∧ 非 strict-mode 保留字 ∧ 非
  * `eval`/`arguments`/`await`）；非法名**不注入**——该 env 全局当不存在，
  * 绝不让一个 env 文件里的名字把用户的整个文件打挂。
@@ -1033,7 +1033,7 @@ const NUM: Abs = abs({ k: "prim", type: "number" }, undefined, undefined, "exact
 
 const MODULE = `export function use() { return 1; }`;
 
-describe("Bug 254：env 全局名是 strict-mode 保留字时不得打挂整个模块", () => {
+describe("env 全局名是 strict-mode 保留字时不得打挂整个模块", () => {
   it("globals { default } ⇒ 模块仍可求值（改前：new Function SyntaxError / 整模块失败）", () => {
     const out = runTranspiled(MODULE, { envGlobals: { default: NUM } });
     expect(Object.keys(out)).toContain("use");
@@ -1064,11 +1064,11 @@ describe("Bug 254：env 全局名是 strict-mode 保留字时不得打挂整个�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 344: 同名 @nudo:import 绑定
+// 同名 @nudo:import 绑定
 // ---------------------------------------------------------------------------
-describe("[] Bug 344: 同名 @nudo:import 绑定", () => {
+describe("同名 @nudo:import 绑定", () => {
 /**
- * Bug 344 回归：两条 `@nudo:import` 绑**同一个本地名** ⇒ 静默取后者。
+ * 回归：两条 `@nudo:import` 绑**同一个本地名** ⇒ 静默取后者。
  *
  * 根因：`collectConstraints` 用 `map.set(name, v)`，后写覆盖先写，零冲突
  * 检测零诊断 ⇒ 契约裁决随**行序**翻转（native ESM 是 SyntaxError：模块
@@ -1097,7 +1097,7 @@ export function inc(x) {
 }
 `;
 
-describe("Bug 344: 同名 @nudo:import 绑定", () => {
+describe("同名 @nudo:import 绑定", () => {
   it("报 nudo:contract-name-clash 并点名冲突的本地名与两个来源", () => {
     const diags: Array<{ code: string; message: string }> = [];
     setRefineDiagCollector((d) => diags.push(d));
@@ -1154,11 +1154,11 @@ export function inc(x) {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 373：工作区根裁剪要过路径边界（兄弟目录不得被裁）
+// 工作区根裁剪要过路径边界（兄弟目录不得被裁）
 // ---------------------------------------------------------------------------
-describe("[] Bug 373：工作区根裁剪要过路径边界（兄弟目录不得被裁）", () => {
+describe("工作区根裁剪要过路径边界（兄弟目录不得被裁）", () => {
 /**
- * Bug 373 —— GHA / GitLab 注解读取用**裸 `startsWith` 前缀**裁工作区路径 ⇒
+ * GHA / GitLab 注解读取用**裸 `startsWith` 前缀**裁工作区路径 ⇒
  * **兄弟目录**（`…/app` vs `…/app2`）被裁成 `2/src/x.js`（指向**不存在**的
  * 文件）⇒ 注解的 `file=` / Code Quality 的 `location.path` / `fingerprint`
  * **全错**。
@@ -1188,7 +1188,7 @@ const report = (file: string): CheckReport => ({
 
 const WS = "/ws/app";
 
-describe("Bug 373：工作区根裁剪要过路径边界（兄弟目录不得被裁）", () => {
+describe("工作区根裁剪要过路径边界（兄弟目录不得被裁）", () => {
   it("GHA 注解：兄弟目录 app2 不得被裁成 2/src/x.js", () => {
     const out = formatGithubAnnotations(report("/ws/app2/src/x.js"), {
       workspaceRoot: WS,
@@ -1228,11 +1228,11 @@ describe("Bug 373：工作区根裁剪要过路径边界（兄弟目录不得被
 });
 
 // ---------------------------------------------------------------------------
-// Bug 377：签名 detail 不得串号（共享 never Abs 的第 2/3 个函数）
+// 签名 detail 不得串号（共享 never Abs 的第 2/3 个函数）
 // ---------------------------------------------------------------------------
-describe("[] Bug 377：签名 detail 不得串号（共享 never Abs 的第 2/3 个函数）", () => {
+describe("签名 detail 不得串号（共享 never Abs 的第 2/3 个函数）", () => {
 /**
- * Bug 377 —— `nudo check --json` 的 `signatures[].detail` **串号**：共享同一
+ * `nudo check --json` 的 `signatures[].detail` **串号**：共享同一
  * `never` Abs（模块级单例）的第 2、3 个函数显示的是**第一个函数的名字** ⇒
  * JSON 信封**字段间自相矛盾**（`name` 与 `detail` 对不上）。
  *
@@ -1252,7 +1252,7 @@ export function b() { throw new Error("y"); }
 export function c() { throw new Error("z"); }
 `;
 
-describe("Bug 377：签名 detail 不得串号（共享 never Abs 的第 2/3 个函数）", () => {
+describe("签名 detail 不得串号（共享 never Abs 的第 2/3 个函数）", () => {
   it("三个函数的 detail 各自带自己的名字", () => {
     const r = checkSource("/t/bug377.js", SRC, pTrue);
     const sigs = r.signatures.filter((s) => ["a", "b", "c"].includes(s.name));
@@ -1275,18 +1275,18 @@ describe("Bug 377：签名 detail 不得串号（共享 never Abs 的第 2/3 个
 });
 
 // ---------------------------------------------------------------------------
-// Bug 381 · `+` 运算符面的用户转换钩子真调用
+// `+` 运算符面的用户转换钩子真调用
 // ---------------------------------------------------------------------------
-describe("[] Bug 381 · `+` 运算符面的用户转换钩子真调用", () => {
+describe("`+` 运算符面的用户转换钩子真调用", () => {
 /**
- * Bug 381 —— 用户转换钩子（`valueOf` / `toString` / `@@toPrimitive` / `toJSON`）
+ * 用户转换钩子（`valueOf` / `toString` / `@@toPrimitive` / `toJSON`）
  * 从不被调用：确定 `no-throw` 假阴性 + 状态确折错值。
  *
  * 修前（HEAD）：隐式强转路径对 user obj 的钩子槽**只做存在性判定**（探到槽就
  * 不折默认标签）⇒ 钩子体**从不执行** ⇒
- *   - 钩子副作用（计数器 / 捕获变量写）全丢：`valueOfCounter() => 0`
- *   - 钩子体**确定抛错**的代码被折成**确定不抛**：`hookThrowerCall() => "no-throw"`
- *     （native "threw"）——L2 `entry-may-throw` 对必然抛错的入口完全无感。
+ * - 钩子副作用（计数器 / 捕获变量写）全丢：`valueOfCounter() => 0`
+ * - 钩子体**确定抛错**的代码被折成**确定不抛**：`hookThrowerCall() => "no-throw"`
+ * （native "threw"）——L2 `entry-may-throw` 对必然抛错的入口完全无感。
  *
  * 修后：钩子体**真调用**（`$invoke` 调用面：objects.ts 的
  * `coercionHookOf` / `invokeToPrimitiveHook` / `invokeCoercionHook`）——
@@ -1298,7 +1298,7 @@ describe("[] Bug 381 · `+` 运算符面的用户转换钩子真调用", () => {
 
 
 
-describe("Bug 381 · `+` 运算符面的用户转换钩子真调用", () => {
+describe("`+` 运算符面的用户转换钩子真调用", () => {
   it("`o + o`：valueOf 被调两次（native：每个操作数各一次）", () => {
     expect(
       val(`export function f() { let n = 0; const o = { valueOf(){ n++; return 1; } }; o + o; return n; }`),
@@ -1326,7 +1326,7 @@ describe("Bug 381 · `+` 运算符面的用户转换钩子真调用", () => {
   });
 });
 
-describe("Bug 381 · 钩子体抛错 ⇒ 抛错域不再被折成 no-throw", () => {
+describe("钩子体抛错 ⇒ 抛错域不再被折成 no-throw", () => {
   it("`o + 1` 的 valueOf 抛错 ⇒ 用户 try/catch 捕到（native：\"threw\"）", () => {
     expect(
       val(
@@ -1352,7 +1352,7 @@ describe("Bug 381 · 钩子体抛错 ⇒ 抛错域不再被折成 no-throw", () 
   });
 });
 
-describe("Bug 381 · JSON.stringify 的 toJSON 步真调用", () => {
+describe("JSON.stringify 的 toJSON 步真调用", () => {
   it("toJSON 钩子被调一次（native：1）", () => {
     expect(
       val(`export function f() { let n = 0; const o = { toJSON(){ n++; return 1; } }; JSON.stringify(o); return n; }`),
@@ -1368,7 +1368,7 @@ describe("Bug 381 · JSON.stringify 的 toJSON 步真调用", () => {
   });
 });
 
-describe("Bug 381 · new Error(对象实参) 走 ToString ⇒ 钩子真调用", () => {
+describe("new Error(对象实参) 走 ToString ⇒ 钩子真调用", () => {
   it("toString 钩子抛错 ⇒ 构造面抛（native：throw Error: boom）", () => {
     const rec = call(
       `export function f() { return new Error({ toString(){ throw new Error("boom"); } }).message; }`,
@@ -1377,7 +1377,7 @@ describe("Bug 381 · new Error(对象实参) 走 ToString ⇒ 钩子真调用", 
   });
 });
 
-describe("Bug 381 · 对照组（无钩子 / 直接调用）不得回归", () => {
+describe("对照组（无钩子 / 直接调用）不得回归", () => {
   it("无钩子的对象不产生任何钩子副作用", () => {
     expect(val(`export function f() { let n = 0; const o = {}; o + ""; return n; }`)).toEqual({
       ok: true,
@@ -1401,11 +1401,11 @@ describe("Bug 381 · 对照组（无钩子 / 直接调用）不得回归", () =>
 });
 
 // ---------------------------------------------------------------------------
-// Bug 416: block-comment @nudo:import is not a file-level import
+// block-comment @nudo:import is not a file-level import
 // ---------------------------------------------------------------------------
-describe("[] Bug 416: block-comment @nudo:import is not a file-level import", () => {
+describe("block-comment @nudo:import is not a file-level import", () => {
 /**
- * Bug 416 —— `@nudo:import` 写在**块注释**里也是**生效的**文件级 import
+ * `@nudo:import` 写在**块注释**里也是**生效的**文件级 import
  * （而 `@nudo:env` / `@nudo:mock-module` 在块注释里被忽略并告警）。
  *
  * 根因（core 文本扫描通道）：`directiveCommentLinesRaw` 把行注释与块注释
@@ -1423,7 +1423,7 @@ const JSDOC = `/** @nudo:import { positive } from "./c.nudo.js" */\nexport funct
 const LINE = `/// @nudo:import { positive } from "./c.nudo.js"\nexport function inc(x) { return x + 1; }\n`;
 const LINE2 = `// @nudo:import { positive } from "./c.nudo.js"\nexport function inc(x) { return x + 1; }\n`;
 
-describe("Bug 416: block-comment @nudo:import is not a file-level import", () => {
+describe("block-comment @nudo:import is not a file-level import", () => {
   it("block comment form yields no import record (was effective)", () => {
     expect(extractNudoImportRecords(BLOCK)).toEqual([]);
   });
@@ -1452,11 +1452,11 @@ describe("Bug 416: block-comment @nudo:import is not a file-level import", () =>
 });
 
 // ---------------------------------------------------------------------------
-// Bug 424 — 同名遮蔽：按名查找取最浅的 scope
+// 同名遮蔽：按名查找取最浅的 scope
 // ---------------------------------------------------------------------------
-describe("[] Bug 424 — 同名遮蔽：按名查找取最浅的 scope", () => {
+describe("同名遮蔽：按名查找取最浅的 scope", () => {
 /**
- * Bug 424 —— 函数级指令 scope **按名字查找 + 文档序首个命中**
+ * 函数级指令 scope **按名字查找 + 文档序首个命中**
  * ⇒ **遮蔽函数**偷走导出函数的 `@nudo:throws` ⇒ **L2 门禁假绿**。
  *
  * 根因（`directive-scan.ts` 的 `findFnDirectiveScope`）：scope 名**不唯一**
@@ -1502,7 +1502,7 @@ function scopesOf(src: string) {
   return listFnDirectiveScopes(parseSource(src));
 }
 
-describe("Bug 424 — 同名遮蔽：按名查找取最浅的 scope", () => {
+describe("同名遮蔽：按名查找取最浅的 scope", () => {
   it("按名查找命中的是导出的 f（不是内层遮蔽的 f）", () => {
     const scope = findFnDirectiveScope(parseSource(SHADOW), "f");
     expect(scope?.commentLines ?? []).not.toContain("@nudo:throws *");
@@ -1538,11 +1538,11 @@ describe("Bug 424 — 同名遮蔽：按名查找取最浅的 scope", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 635: export 包装形态的 @nudo:as 覆盖命中内层声明
+// export 包装形态的 @nudo:as 覆盖命中内层声明
 // ---------------------------------------------------------------------------
-describe("[] Bug 635: export 包装形态的 @nudo:as 覆盖命中内层声明", () => {
+describe("export 包装形态的 @nudo:as 覆盖命中内层声明", () => {
 /**
- * Bug 635 回归（core 转译层）：`@nudo:as` 写在 **export 包装**形态的声明
+ * 回归（core 转译层）：`@nudo:as` 写在 **export 包装**形态的声明
  * 前面时，覆盖必须命中**内层声明**。
  *
  * 病灶：指令的**载体节点**是 `ExportNamedDeclaration`（Babel 把前置注释挂
@@ -1575,7 +1575,7 @@ function rangeOf(src: string, needle: string): { start: number; end: number } {
   return { start, end: start + needle.length };
 }
 
-describe("Bug 635: export 包装形态的 @nudo:as 覆盖命中内层声明", () => {
+describe("export 包装形态的 @nudo:as 覆盖命中内层声明", () => {
   it("export const：登记区间 = export 语句 ⇒ 内层声明被覆盖", () => {
     const src = `export const raw = 1;\n`;
     const target = rangeOf(src, "export const raw = 1;");
@@ -1629,11 +1629,11 @@ describe("Bug 635: export 包装形态的 @nudo:as 覆盖命中内层声明", ()
 });
 
 // ---------------------------------------------------------------------------
-// Bug 910 再导出链不被未导出的同名本地函数短路
+// 再导出链不被未导出的同名本地函数短路
 // ---------------------------------------------------------------------------
-describe("[] Bug 910 再导出链不被未导出的同名本地函数短路", () => {
+describe("再导出链不被未导出的同名本地函数短路", () => {
 /**
- * Bug 910：跨文件**再导出链**被中间模块里一个**未导出的同名本地函数**
+ * 跨文件**再导出链**被中间模块里一个**未导出的同名本地函数**
  * 短路 ⇒ 被再导出的函数的契约静默失效 ⇒ 真实违约不报（L1 门禁假绿）。
  *
  * 根因：`resolveExportSource` 的短路判据是「源码里出现过这个名字」
@@ -1670,7 +1670,7 @@ const MAIN = `import { g } from "./cc.js";
 g(0);
 `;
 
-describe("Bug 910 再导出链不被未导出的同名本地函数短路", () => {
+describe("再导出链不被未导出的同名本地函数短路", () => {
   beforeEach(() => {
     resetCheckSourceMemo();
   });

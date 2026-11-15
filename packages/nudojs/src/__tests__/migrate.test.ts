@@ -158,7 +158,7 @@ describe("nudo migrate", () => {
     expect(okRows[0]!.nudoOk).toBe(true);
   });
 
-  // BUG-005: verify 的 ok 必须与 nudo check 同源——@nudo:skip 由 host 下传
+  // verify 的 ok 必须与 nudo check 同源——@nudo:skip 由 host 下传
   // （skips: collectSkipReturns），verify 漏传会把 check 认为干净的文件判红。
   it("verify agrees with nudo check on @nudo:skip (both gates green)", { timeout: 30_000 }, async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-verify-skip-"));
@@ -467,7 +467,7 @@ describe("nudo migrate", () => {
     );
   });
 
-  // BUG-019 / F-4：重写后的路径必须是安全字面量，不得引入 shell 注入面
+  // / F-4：重写后的路径必须是安全字面量，不得引入 shell 注入面
   it("rewriteTscCommand: path with shell metacharacters stays a safe literal", () => {
     // 原先单引号字面量被去壳后裸写 → $( ) 在 CI 展开
     expect(rewriteTscCommand("tsc -p 'x$(id)'").cmd).toBe("nudo check 'x$(id)'");
@@ -568,7 +568,7 @@ describe("nudo migrate", () => {
     expect(r.stdout).toContain('"packageJson"');
   });
 
-  // BUG-009 / F-4: 不存在路径禁止 silent dirname 回退到真实 package 根
+  // / F-4: 不存在路径禁止 silent dirname 回退到真实 package 根
   it("missing path is rejected by status/retire/retireAll (never falls back to parent root)", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-missing-"));
     dirs.push(dir);
@@ -630,7 +630,7 @@ describe("nudo migrate", () => {
     expect(existsSync(join(dir, ".nudo", "migrate-retired.json"))).toBe(true);
   });
 
-  // BUG-010 / F-4: retire 持久化必须原子——注入写失败时树一致或可恢复
+  // / F-4: retire 持久化必须原子——注入写失败时树一致或可恢复
   function setupRetireFixture(name: string): {
     dir: string;
     pkgPath: string;

@@ -1,11 +1,11 @@
 /**
- * BUG-004：`export * as ns` 全链导出 ns 槽 + `import * as ns` 命名空间 open+path。
+ * `export * as ns` 全链导出 ns 槽 + `import * as ns` 命名空间 open+path。
  *
  * 修复前：
  * - ExportNamespaceSpecifier 在 transpile / rewriteExportStatements /
- *   collectAbsExports / localNamedExports 全链被静默丢弃（导出面无 ns）。
+ * collectAbsExports / localNamedExports 全链被静默丢弃（导出面无 ns）。
  * - bindImports 的 `import * as ns` 造闭 exact 对象，缺失成员被
- *   definitelyUncallableMember 判「运行时缺失」假抛 TypeError。
+ * definitelyUncallableMember 判「运行时缺失」假抛 TypeError。
  */
 import {describe, it, expect} from "vitest";
 import {parseSource} from "../parse-source.ts";

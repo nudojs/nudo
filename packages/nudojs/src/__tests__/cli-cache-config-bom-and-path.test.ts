@@ -1,9 +1,9 @@
 /**
  * 分册 12 回归：package.json BOM / 入口路径 file 归因（CLI 端到端）。
  *
- * - Bug 15：package.json 带 UTF-8 BOM ⇒ check / init / migrate status 三面都正常，
- *   配置照常生效、init 幂等 / 写入保留 BOM、migrate 不再「package.json parse failed」。
- * - Bug 2：NUDO_CACHE_DIR + 双同内容文件 ⇒ --json 的 file 字段各归各文件。
+ * - package.json 带 UTF-8 BOM ⇒ check / init / migrate status 三面都正常，
+ * 配置照常生效、init 幂等 / 写入保留 BOM、migrate 不再「package.json parse failed」。
+ * - NUDO_CACHE_DIR + 双同内容文件 ⇒ --json 的 file 字段各归各文件。
  *
  * CLI 子进程 cwd 保持仓库根（runCliTsx 默认），@nudojs/* 解析到 src；目标一律
  * 传 /tmp 夹具的绝对路径（配置查找基于目标文件所在目录，与 cwd 无关）。
@@ -28,7 +28,7 @@ function makeBomProject(withConfig: boolean): string {
   return dir;
 }
 
-describe("Bug 15 — package.json 带 BOM 仍正常读配置", () => {
+describe("package.json 带 BOM 仍正常读配置", () => {
   it("helper：先剥 BOM 再 parse；无 BOM 原样", () => {
     expect(stripBom(BOM + '{"a":1}')).toBe('{"a":1}');
     expect(stripBom('{"a":1}')).toBe('{"a":1}');
@@ -74,7 +74,7 @@ describe("Bug 15 — package.json 带 BOM 仍正常读配置", () => {
   });
 });
 
-describe("Bug 2 — NUDO_CACHE_DIR + 双同内容文件，file 字段各归各文件", () => {
+describe("NUDO_CACHE_DIR + 双同内容文件，file 字段各归各文件", () => {
   it("check b.js 的 file 不是 a.js（修复前共用 cnt: 缓存）", { timeout: 60_000 }, () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug2-cli-"));
     const content = "export function f(x) { return x + 1; }\n";

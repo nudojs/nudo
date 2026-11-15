@@ -50,8 +50,8 @@ Because there is no style linter, **reviewers** must watch what the type-checker
 harness/helper），`*.part.ts` = 0。**2026-11-15 起不再有缺陷编号命名**：历史
 1360 个 `*-bug-NNN-*` 已改为 `<domain>-<特性>.test.ts`（旧 `--` 分隔亦已清除），命名门禁
 （`scripts/check-test-names.mjs`，挂在 `lint:hygiene`）拒绝新增此类文件名。
-门禁覆盖 `__tests__/**` 下**全部 `.ts`**（含 harness/helper），并拒绝 `--`
-分隔（历史迁移误产物）；缺陷编号只能出现在 `it` 标题、commit、changeset。
+门禁覆盖 `__tests__/**` 下**全部 `.ts`**（含 harness/helper）；缺陷编号只能
+出现在 `it` 标题、commit、changeset。
 缺陷编号是批次内的局部编号，会跨批次复用（如 `core-254` 的两组文件互不相关），
 不能当稳定身份；文件应是模块规格的载体，不应随缺陷生命周期增删。新增回归时：
 

@@ -21,10 +21,10 @@ import { defaultLoadModule } from "../../load-module.ts";
 import { deriveFromRoot, emitDerivedFromRoot } from "../contract-derivation.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 507 — freeze 写回的 JSDoc 块按声明语句列缩进
+// freeze 写回的 JSDoc 块按声明语句列缩进
 // ---------------------------------------------------------------------------
-describe("[emit-] Bug 507 — freeze 写回的 JSDoc 块按声明语句列缩进", () => {
-// emit--freeze-indent.part.ts — Bug 507：
+describe("freeze 写回的 JSDoc 块按声明语句列缩进", () => {
+// emit--freeze-indent.part.ts — 
 // `nudo test --freeze` 为**导出函数**写回的 JSDoc 块缩进错位
 //（按 `function` 关键字列号缩进，而非声明语句列号）。
 //
@@ -38,7 +38,7 @@ describe("[emit-] Bug 507 — freeze 写回的 JSDoc 块按声明语句列缩进
 // 用例含：
 // - 改前会失败的形态（导出函数 / 默认导出函数 ⇒ 块必须在列 0）；
 // - 负控制（嵌套函数仍按声明行缩进 ⇒ 修复不把所有块拍平到列 0；
-//   已有 JSDoc 块的注入位置不受影响）。
+// 已有 JSDoc 块的注入位置不受影响）。
 
 
 
@@ -78,7 +78,7 @@ function indentOf(source: string, lineText: string): number {
   return line === undefined ? -1 : line.length - line.trimStart().length;
 }
 
-describe("Bug 507 — freeze 写回的 JSDoc 块按声明语句列缩进", () => {
+describe("freeze 写回的 JSDoc 块按声明语句列缩进", () => {
   it("export function：块落在列 0（不是 function 关键字的列 7）", () => {
     const source = `export function greet(u) {
   return u.name;
@@ -160,10 +160,10 @@ const r = add(1, 2);
 });
 
 // ---------------------------------------------------------------------------
-// Bug 547 — freeze 写回不污染 CRLF 源文件的行尾
+// freeze 写回不污染 CRLF 源文件的行尾
 // ---------------------------------------------------------------------------
-describe("[emit-] Bug 547 — freeze 写回不污染 CRLF 源文件的行尾", () => {
-// emit--freeze-crlf.part.ts — Bug 547：
+describe("freeze 写回不污染 CRLF 源文件的行尾", () => {
+// emit--freeze-crlf.part.ts — 
 // `nudo test --freeze` 把新 `@nudo:case` 块写进 **CRLF 源文件** ⇒ **混合行尾**
 //（源文件被污染：原行保留 CRLF，新插入的行是裸 LF）。
 //
@@ -176,7 +176,7 @@ describe("[emit-] Bug 547 — freeze 写回不污染 CRLF 源文件的行尾", (
 // 用例含：
 // - 改前会失败的形态（CRLF 文件写回后不得出现裸 LF）；
 // - 负控制（LF 文件仍是 LF；原行行尾逐行保留；指令文本本身不变；
-//   二次固化幂等 ⇒ already-generated、不再写盘）。
+// 二次固化幂等 ⇒ already-generated、不再写盘）。
 
 
 
@@ -214,7 +214,7 @@ function bareLfCount(text: string): number {
   return lf - crlf;
 }
 
-describe("Bug 547 — freeze 写回不污染 CRLF 源文件的行尾", () => {
+describe("freeze 写回不污染 CRLF 源文件的行尾", () => {
   const CRLF_SOURCE = "export function f(x) {\r\n  return x + 1;\r\n}\r\n";
 
   it("CRLF 文件：固化后仍是纯 CRLF（新块不带裸 LF）", () => {
@@ -287,11 +287,11 @@ describe("Bug 547 — freeze 写回不污染 CRLF 源文件的行尾", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-069 —— 二次固化必须是被行号漂移免疫的 no-op
+// 二次固化必须是被行号漂移免疫的 no-op
 // ---------------------------------------------------------------------------
-describe("[emit-] BUG-069 —— 二次固化必须是被行号漂移免疫的 no-op", () => {
+describe("二次固化必须是被行号漂移免疫的 no-op", () => {
 /**
- * BUG-069 —— `nudo test --freeze`（默认 `add` 模式）**不幂等**：固化把 JSDoc 块
+ * `nudo test --freeze`（默认 `add` 模式）**不幂等**：固化把 JSDoc 块
  * 插到函数声明之上 ⇒ 同一调用点的行号整体下移 ⇒ 见证名 `call@L6` → `call@L9`
  * ⇒ 「已固化」判定（只比名字）命中不了 ⇒ 再写一条语义重复的 `@nudo:case`
  * ⇒ 源码每跑一次长一条（无界增长），且 `--freeze --dry-run --exit-on-diff`
@@ -321,7 +321,7 @@ function caseCount(source: string): number {
   return (source.match(/@nudo:case/g) ?? []).length;
 }
 
-describe("BUG-069 —— 二次固化必须是被行号漂移免疫的 no-op", () => {
+describe("二次固化必须是被行号漂移免疫的 no-op", () => {
   it("第二次固化（重新分析改写后的源码）不再写重复指令", () => {
     const first = insertGeneratedCaseDirectives(SOURCE, analyzeFile("/t/one.js", SOURCE));
     expect(first.written.length).toBe(1);
@@ -406,10 +406,10 @@ export function caller2() {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 564 — 末行无终止符的 diff 可被 git apply 接受
+// 末行无终止符的 diff 可被 git apply 接受
 // ---------------------------------------------------------------------------
-describe("[emit-] Bug 564 — 末行无终止符的 diff 可被 git apply 接受", () => {
-// emit--eof-diff.part.ts — Bug 564：
+describe("末行无终止符的 diff 可被 git apply 接受", () => {
+// emit--eof-diff.part.ts — 
 //
 // 源文件**末尾缺少换行**时，`nudo test --freeze --dry-run` 产出的 unified diff
 // **不可 apply**（缺 `\ No newline at end of file` 标记 + EOF 行模型多算一格）
@@ -419,7 +419,7 @@ describe("[emit-] Bug 564 — 末行无终止符的 diff 可被 git apply 接受
 // `git diff` 同口径（末行无终止符 ⇒ 输出标记；末尾有无换行本身是内容差异）。
 //
 // 本文件同时是**字节保真族**的四形态验收矩阵：
-//   ① LF + 有末尾换行 ② LF + 无末尾换行 ③ CRLF ④ UTF-8 BOM
+// ① LF + 有末尾换行 ② LF + 无末尾换行 ③ CRLF ④ UTF-8 BOM
 // 每形态都断言：行尾属性不变 / BOM 位置不变 / 末尾换行不变 / diff 可 apply。
 
 
@@ -476,7 +476,7 @@ function gitApplyAccepts(oldSource: string, newSource: string): boolean {
   }
 }
 
-describe("Bug 564 — 末行无终止符的 diff 可被 git apply 接受", () => {
+describe("末行无终止符的 diff 可被 git apply 接受", () => {
   it("末行没有换行时输出 `\\ No newline at end of file` 标记（native diff 同口径）", () => {
     const a = "const x = add(1, 2);\nexport function add(a, b) {\n  return a + b;\n}";
     const b = "const x = add(1, 2);\n/**\n * @nudo:case \"call@L1\" (1, 2)\n */\nexport function add(a, b) {\n  return a + b;\n}";
@@ -540,11 +540,11 @@ describe("字节保真四形态矩阵（写回只增不改 + diff 可 apply）",
 });
 
 // ---------------------------------------------------------------------------
-// Bug 523 — emit --fn 不重排既有生成段
+// emit --fn 不重排既有生成段
 // ---------------------------------------------------------------------------
-describe("[emit-] Bug 523 — emit --fn 不重排既有生成段", () => {
+describe("emit --fn 不重排既有生成段", () => {
 /**
- * Bug 523 — `nudo contract --emit --fn <name>` 把侧车里的 `@generated` 段
+ * `nudo contract --emit --fn <name>` 把侧车里的 `@generated` 段
  * **重排**（非目标段排到目标段前面）→ 纯顺序 diff → `--exit-on-diff` 在 CI 上
  * **假红**。
  *
@@ -569,7 +569,7 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-// BUG-035：`@nudo:case` 的**纯点观测见证**（实参全是字面量、无断言）不是契约
+// `@nudo:case` 的**纯点观测见证**（实参全是字面量、无断言）不是契约
 // 产物 ⇒ 本夹具的两条 case 改为**带断言的域声明**（`=> 期望值`），契约内容
 // （`fn({ x: lit(1) }, lit(2))`）不变，段序语义不变。
 const SRC = `/**
@@ -585,7 +585,7 @@ export function beta(x) { return x * 2; }
 /**
  * 侧车：alpha 在前、beta 在后（首次 emit 生成的形态）。
  *
- * BUG-035 证据范围收口：生成段现为**四行**（`@generated` / `source` /
+ * 证据范围收口：生成段现为**四行**（`@generated` / `source` /
  * `evidence` / export）⇒ 本夹具按**当轮格式**更新（断言文本一条未动：这里钉的
  * 是「段序不重排 / 无改动」，不是段的行数）。
  */
@@ -600,7 +600,7 @@ export const alpha = fn({ x: lit(1) }, lit(2));
 export const beta = fn({ x: lit(2) }, lit(4));
 `;
 
-describe("Bug 523 — emit --fn 不重排既有生成段", () => {
+describe("emit --fn 不重排既有生成段", () => {
   it("keeps the section order (no reorder diff) when refreshing one target", async () => {
     const file = join(dir, "e.js");
     writeFileSync(file, SRC);
@@ -658,14 +658,14 @@ export const beta = fn({ x: lit(2) }, lit(4));
 });
 
 // ---------------------------------------------------------------------------
-// BUG-035 残留 —— 证据消失 ⇒ 陈旧生成段被刷新（删除）
+// 残留 —— 证据消失 ⇒ 陈旧生成段被刷新（删除）
 // ---------------------------------------------------------------------------
-describe("[emit-] BUG-035 残留 —— 证据消失 ⇒ 陈旧生成段被刷新（删除）", () => {
+describe("残留 —— 证据消失 ⇒ 陈旧生成段被刷新（删除）", () => {
 /**
- * BUG-035 残留 —— **证据消失后旧生成段不得留存**（侧车的刷新语义）。
+ * 残留 —— **证据消失后旧生成段不得留存**（侧车的刷新语义）。
  *
- * 现象（BUG-035 改后仍留的残渣）：改前 `@nudo:case` 的**调试见证**被写成
- * 契约（`fn({ x: lit(5) }, lit(6))`）并落进侧车；BUG-035 改后见证不再产
+ * 现象（改后仍留的残渣）：改前 `@nudo:case` 的**调试见证**被写成
+ * 契约（`fn({ x: lit(5) }, lit(6))`）并落进侧车；改后见证不再产
  * 契约，**但改前落盘的旧段还留在侧车里** ⇒ 侧车继续承诺「f 只接受 x = 5、
  * 只返回 6」，而门禁说「f(x: any) => number | string」——**同一份源码，
  * 侧车与门禁互相矛盾**，且没有任何东西会把它清掉。
@@ -674,11 +674,11 @@ describe("[emit-] BUG-035 残留 —— 证据消失 ⇒ 陈旧生成段被刷�
  * update 模式下今天的分析对该导出**没有证据**时，既有生成段必须被**刷新**
  * （无新证据 ⇒ 删段）。但只有**可证**证据已消失的段才删：
  * - 段钉住**单点字面量**（某个顶层槽是 `lit(...)`）⇒ 今天的发射模型里调用点
- *   观测一律拓宽（BUG-021）⇒ 单点字面量域**只可能**来自文件内证据
- *   （`@nudo:case` 域声明 / 入口推断）⇒ 当前分析对文件内证据的视野完整
- *   ⇒ 「今天没证据」= 「证据没了」⇒ 删段；
+ * 观测一律拓宽（）⇒ 单点字面量域**只可能**来自文件内证据
+ * （`@nudo:case` 域声明 / 入口推断）⇒ 当前分析对文件内证据的视野完整
+ * ⇒ 「今天没证据」= 「证据没了」⇒ 删段；
  * - 其余段（宽域，可能来自 `--from` 跨文件记录）⇒ **不可证** ⇒ 保留
- *   （「没看到证据」≠「证据没了」⇒ 不得据此删用户契约）。
+ * （「没看到证据」≠「证据没了」⇒ 不得据此删用户契约）。
  *
  * 删段的**双条件**（缺一不可）：今天的投影是 `noEvidence`（真的**什么证据都没有**
  * ——不是「证据在但投影不出」，也不是 `@nudo:skip` 关掉分析）**且**该段的证据
@@ -722,7 +722,7 @@ f(9);
 `;
 
 /**
- * BUG-035 改前落盘的**见证契约段**（点观测见证被当成契约写进侧车）。
+ * 改前落盘的**见证契约段**（点观测见证被当成契约写进侧车）。
  * 单点字面量域 ⇒ 在今天的发射模型里只可能来自文件内证据。
  */
 const STALE_WITNESS_SECTION = `// @generated by nudo — do not edit; regenerate with \`nudo contract --emit\`
@@ -752,7 +752,7 @@ function fixture(src: string, sidecar: string): { file: string; sidecarPath: str
   return { file, sidecarPath };
 }
 
-describe("BUG-035 残留 —— 证据消失 ⇒ 陈旧生成段被刷新（删除）", () => {
+describe("残留 —— 证据消失 ⇒ 陈旧生成段被刷新（删除）", () => {
   it("见证契约段在证据消失后被删（+ 台账 removed + info 诊断）", async () => {
     const { file, sidecarPath } = fixture(SRC_NO_EVIDENCE, STALE_WITNESS_SECTION);
     const r = await emitContract(file, { mode: "update" });
@@ -821,7 +821,7 @@ describe("BUG-035 残留 —— 证据消失 ⇒ 陈旧生成段被刷新（删�
     expect(r.removed).toBeUndefined();
     expect(r.written).toEqual(["f"]);
     const after = readFileSync(sidecarPath, "utf-8");
-    // BUG-021：调用点点观测拓宽到基类型 ⇒ 段被改写成宽域
+    // 调用点点观测拓宽到基类型 ⇒ 段被改写成宽域
     expect(after).toContain("export const f = fn({ x: number() }, number());");
     expect(after).not.toContain("lit(5)");
   });
@@ -857,11 +857,11 @@ describe("BUG-035 残留 —— 证据消失 ⇒ 陈旧生成段被刷新（删�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 411: 行注释清洗器口径（模块私有）
+// 行注释清洗器口径（模块私有）
 // ---------------------------------------------------------------------------
-describe("[emit-] Bug 411: 行注释清洗器口径（模块私有）", () => {
+describe("行注释清洗器口径（模块私有）", () => {
 /**
- * Bug 411 —— 行注释（`//`）上下文被**块注释**的转义口径污染
+ * 行注释（`//`）上下文被**块注释**的转义口径污染
  *
  * 根因：core 的 `sanitizeCommentText`（`core/src/algebra/codegen-escape.ts`）
  * 只有**一种**行为——无条件把块注释闭合序列（星号 + 斜杠）转义成 `*\/`。那是
@@ -911,7 +911,7 @@ function fnAnalysis(cases: CaseResult[]): FunctionAnalysis {
   };
 }
 
-describe("Bug 411: 行注释清洗器口径（模块私有）", () => {
+describe("行注释清洗器口径（模块私有）", () => {
   it("行注释里原样保留块注释闭合序列（不转义）", () => {
     expect(sanitizeLineCommentText("/* no evidence — tighten */")).toBe(
       "/* no evidence — tighten */",
@@ -932,7 +932,7 @@ describe("Bug 411: 行注释清洗器口径（模块私有）", () => {
   });
 });
 
-describe("Bug 411: 契约草案的行注释不得被转义污染", () => {
+describe("契约草案的行注释不得被转义污染", () => {
   const draft = formatDraftModule(
     "/tmp/demo/lib.js",
     [
@@ -966,7 +966,7 @@ describe("Bug 411: 契约草案的行注释不得被转义污染", () => {
   });
 });
 
-describe("Bug 411: dropped 注记的行注释不得被转义污染", () => {
+describe("dropped 注记的行注释不得被转义污染", () => {
   it("zod: `//   ` 注记行保留闭合序列", () => {
     const a = objAbs({ "a*/b": numWithUnprojectable() });
     const { source, dropped } = absToZodSchemaModule({ out: a });
@@ -988,7 +988,7 @@ describe("Bug 411: dropped 注记的行注释不得被转义污染", () => {
   });
 });
 
-describe("Bug 411 反向闸: 块注释（JSDoc）侧仍必须转义闭合序列", () => {
+describe("反向闸: 块注释（JSDoc）侧仍必须转义闭合序列", () => {
   it("dts JSDoc 注释体里的闭合序列仍被转义（未被本片改动波及）", () => {
     const c: CaseResult = {
       name: "x*/ process.exit(1); /*",
@@ -1006,11 +1006,11 @@ describe("Bug 411 反向闸: 块注释（JSDoc）侧仍必须转义闭合序列"
 });
 
 // ---------------------------------------------------------------------------
-// Bug 540 — 侧车写盘的字节保真（行尾 / BOM / 末尾换行）
+// 侧车写盘的字节保真（行尾 / BOM / 末尾换行）
 // ---------------------------------------------------------------------------
-describe("[emit-] Bug 540 — 侧车写盘的字节保真（行尾 / BOM / 末尾换行）", () => {
+describe("侧车写盘的字节保真（行尾 / BOM / 末尾换行）", () => {
 /**
- * Bug 540 — 侧车发射把 **CRLF** 侧车写成**混合行尾**（`file(1)` 报
+ * 侧车发射把 **CRLF** 侧车写成**混合行尾**（`file(1)` 报
  * “with CRLF, LF line terminators”）→ 手写段保持 CRLF、新追加的 `@generated`
  * 段是**裸 LF**。
  *
@@ -1039,7 +1039,7 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-// BUG-035：`@nudo:case` 的**纯点观测见证**（实参全是字面量、无断言）不是契约
+// `@nudo:case` 的**纯点观测见证**（实参全是字面量、无断言）不是契约
 // 产物 ⇒ 夹具的 case 改为**带断言的域声明**（`=> 期望值`），契约内容
 // （`fn({ x: lit(1) }, lit(2))`）与字节保真语义不变。
 const SRC = `/**
@@ -1056,7 +1056,7 @@ const countEols = (s: string): { crlf: number; lf: number } => ({
   lf: (s.match(/(?<!\r)\n/g) ?? []).length,
 });
 
-describe("Bug 540 — 侧车写盘的字节保真（行尾 / BOM / 末尾换行）", () => {
+describe("侧车写盘的字节保真（行尾 / BOM / 末尾换行）", () => {
   it("keeps a CRLF sidecar pure CRLF (no mixed line terminators)", async () => {
     const file = join(dir, "h.js");
     writeFileSync(file, SRC);
@@ -1123,16 +1123,16 @@ describe("Bug 540 — 侧车写盘的字节保真（行尾 / BOM / 末尾换行�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 562 — 固化写回保住 UTF-8 BOM 的位置
+// 固化写回保住 UTF-8 BOM 的位置
 // ---------------------------------------------------------------------------
-describe("[emit-] Bug 562 — 固化写回保住 UTF-8 BOM 的位置", () => {
-// emit--bom-fidelity.part.ts — Bug 562（+ Bug 938 的 case-emitter 侧）：
+describe("固化写回保住 UTF-8 BOM 的位置", () => {
+// emit--bom-fidelity.part.ts — （+ 的 case-emitter 侧）：
 //
 // 562：`nudo test --freeze` 的**源码写回**摧毁 UTF-8 BOM ⇒ BOM 从文件首字节
-//      被挪到文件中段（`export` 那一行）⇒ 文件不再是「UTF-8 with BOM」，
-//      而 BOM 以 U+FEFF 零宽字符的形式夹在源码中间。
+// 被挪到文件中段（`export` 那一行）⇒ 文件不再是「UTF-8 with BOM」，
+// 而 BOM 以 U+FEFF 零宽字符的形式夹在源码中间。
 // 938（case-emitter 侧）：diff 的**行内容**里出现 BOM ⇒ 「只有 BOM 不同」被
-//      渲染成一处内容变更（`--exit-on-diff` 假红 / diff 噪音）。
+// 渲染成一处内容变更（`--exit-on-diff` 假红 / diff 噪音）。
 //
 // 不变量：写回只增不改 ⇒ BOM 留在**文件最前**、全文只有一枚、且不进 diff 内容。
 
@@ -1153,7 +1153,7 @@ const SRC = `export function add(a, b) {
 const x = add(1, 2);
 `;
 
-describe("Bug 562 — 固化写回保住 UTF-8 BOM 的位置", () => {
+describe("固化写回保住 UTF-8 BOM 的位置", () => {
   it("BOM 仍在文件最前（不被挪到文件中段），全文只有一枚", () => {
     const src = BOM + SRC;
     const analysis = analyzeFile("/test/bom.js", src);
@@ -1207,7 +1207,7 @@ export function add(a, b) {
   });
 });
 
-describe("Bug 938（case-emitter 侧）— diff 字节保真（BOM 留在行内容里）", () => {
+describe("（case-emitter 侧）— diff 字节保真（BOM 留在行内容里）", () => {
   it("两侧都带 BOM ⇒ 首行是公共行（无内容差异）", () => {
     expect(unifiedDiff(`${BOM}a\nb\n`, `${BOM}a\nb\n`, "t.txt")).toBe("");
     expect(unifiedDiff(`${BOM}a\nb\n`, `${BOM}a\nB\n`, "t.txt")).not.toContain("-a");
@@ -1229,22 +1229,22 @@ describe("Bug 938（case-emitter 侧）— diff 字节保真（BOM 留在行内�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 988 —— 同一被推导函数的派生契约不得随 root 调用点个数漂移
+// 同一被推导函数的派生契约不得随 root 调用点个数漂移
 // ---------------------------------------------------------------------------
-describe("[emit-] Bug 988 —— 同一被推导函数的派生契约不得随 root 调用点个数漂移", () => {
+describe("同一被推导函数的派生契约不得随 root 调用点个数漂移", () => {
 /**
- * 族 15 / 分片 S14 —— Bug 988 回归钉。
+ * 族 15 / 分片 S14 —— 回归钉。
  *
- * Bug 988：同一被推导函数的**派生契约随 root 调用点个数漂移**（组合式精确 vs
+ * 同一被推导函数的**派生契约随 root 调用点个数漂移**（组合式精确 vs
  * 展开式 **1 ULP 外推**）⇒ 派生产物**不可复现**，且两种形态的**接受集合在边界
  * 值上相反**（`x = 1`：组合式 `x > 1` 违约，展开式 `x > 0.9999999999999999`
  * 通过）。
  *
  * 夹具：`add2(x) => x + 2`（实现逐字相同），root 分别写
- *   one：`add2(x + 1) + 1`（1 个调用点）
- *   two：`add2(x + 1) + add2(x + 1)`（2 个调用点）
+ * one：`add2(x + 1) + 1`（1 个调用点）
+ * two：`add2(x + 1) + add2(x + 1)`（2 个调用点）
  * ⇒ 改前：one = 组合式 `fn({ x }, x.shift(2))`；two = 展开式
- *   `fn({ x: number().gt(0.9999999999999999) }, number().gt(2.9999999999999996))`
+ * `fn({ x: number().gt(0.9999999999999999) }, number().gt(2.9999999999999996))`
  * ⇒ 改后：两者**完全一致**（组合式、精确、接受集合相同）。
  *
  * 负控制：两个调用点**实参不同**（各链不一致）⇒ 退回展开式 / 不可投影，
@@ -1319,7 +1319,7 @@ function effectiveContract(sub: string): { param: string; ret: string } {
   };
 }
 
-describe("Bug 988 —— 同一被推导函数的派生契约不得随 root 调用点个数漂移", () => {
+describe("同一被推导函数的派生契约不得随 root 调用点个数漂移", () => {
   it("调用点 1 次 vs 2 次：派生行（参数位 + 返回位）完全一致", () => {
     writeAddFixture("add2(x + 1) + 1", "one");
     writeAddFixture("add2(x + 1) + add2(x + 1)", "two");

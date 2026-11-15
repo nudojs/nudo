@@ -27,11 +27,11 @@ import { analyzeFileAsync as analyzeFileAsync___nudojs_service, clearEvalCache }
 import { moduleResolveCandidates, resolveModuleFile } from "../load-module.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 282：env 模块的 ESM 默认导入（service 侧 env 模块表）
+// env 模块的 ESM 默认导入（service 侧 env 模块表）
 // ---------------------------------------------------------------------------
-describe("[] Bug 282：env 模块的 ESM 默认导入（service 侧 env 模块表）", () => {
+describe("env 模块的 ESM 默认导入（service 侧 env 模块表）", () => {
 /**
- * Bug 282 —— env 模块的 ESM **默认导入**（`import fs from "node:fs"`）
+ * env 模块的 ESM **默认导入**（`import fs from "node:fs"`）
  * 此前全量降级 `unknown` + **假** `nudo:unknown-inference` + 门禁**假绿**
  * （与同一模块的命名空间导入门禁结论相反）。
  *
@@ -45,12 +45,12 @@ describe("[] Bug 282：env 模块的 ESM 默认导入（service 侧 env 模块�
  * `defaultImportBindingOf` 据此回退）。
  *
  * 口径边界：**只装在 env 表上**——用户模块表不动 ⇒ 用户模块缺 default 仍是
- * `unknown`（Bug 990 口径：模块表有该 mod 但没有 default ⇒ 就是没有 default）。
+ * `unknown`（口径：模块表有该 mod 但没有 default ⇒ 就是没有 default）。
  *
  * 钉：
  * - env 表的 `node:fs` 必须有 default 槽（= 命名空间）+ 互操作标记；
  * - 默认导入与命名空间导入给出**同一个**签名（`number` + throws Error），
- *   且**不再**有那条假的 `nudo:unknown-inference`；
+ * 且**不再**有那条假的 `nudo:unknown-inference`；
  * - **负控制**：env 表的具名导出槽不得被 default 槽污染。
  */
 
@@ -84,7 +84,7 @@ beforeEach(() => {
   resetGeneralizeMemo();
 });
 
-describe("Bug 282：env 模块的 ESM 默认导入（service 侧 env 模块表）", () => {
+describe("env 模块的 ESM 默认导入（service 侧 env 模块表）", () => {
   it("env 模块表补 default 槽（= 命名空间）+ 互操作标记", () => {
     const mods = collectEnvModules(["node"]);
     const fsMod = mods["node:fs"];
@@ -125,11 +125,11 @@ describe("Bug 282：env 模块的 ESM 默认导入（service 侧 env 模块表�
 });
 
 // ---------------------------------------------------------------------------
-// BUG-012 — 函数级缓存对 env 内容敏感
+// 函数级缓存对 env 内容敏感
 // ---------------------------------------------------------------------------
-describe("[] BUG-012 — 函数级缓存对 env 内容敏感", () => {
+describe("函数级缓存对 env 内容敏感", () => {
 /**
- * BUG-012 回归：函数级分析缓存的 env 维度必须与另外两层（文件级
+ * 回归：函数级分析缓存的 env 维度必须与另外两层（文件级
  * `analysisFileCacheKey`、求值器 memo）**同口径**——用**内容指纹**，不是 mtime。
  *
  * 改前函数级键只编码 `pathEnvPreloadFingerprint()`（mtime）⇒ `cp -p` / `tar -x`
@@ -160,7 +160,7 @@ beforeEach(() => {
   clearFnAnalysisCache();
 });
 
-describe("BUG-012 — 函数级缓存对 env 内容敏感", () => {
+describe("函数级缓存对 env 内容敏感", () => {
   it("env 内容变、mtime 不变 ⇒ 第二次分析必须看到新类型（不得命中函数级旧条目）", async () => {
     const dir = tmpProject("nudo-b012-env-", {
       "package.json": JSON.stringify({ name: "p", nudo: { env: ["./env.ts"] } }),
@@ -198,11 +198,11 @@ describe("BUG-012 — 函数级缓存对 env 内容敏感", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-101 — 目录目标扩展名集合
+// 目录目标扩展名集合
 // ---------------------------------------------------------------------------
-describe("[] BUG-101 — 目录目标扩展名集合", () => {
+describe("目录目标扩展名集合", () => {
 /**
- * BUG-101 回归：`nudo check` 的目录目标判定必须覆盖与 `migrate verify`
+ * 回归：`nudo check` 的目录目标判定必须覆盖与 `migrate verify`
  * 一致的文件集，否则 `migrate retire` 装出的门禁 `nudo check .` 在该包上
  * **恒红**（对目标目录返回空集 ⇒ `nudo:path-empty-dir` ⇒ exit 1）。
  *
@@ -211,7 +211,7 @@ describe("[] BUG-101 — 目录目标扩展名集合", () => {
 
 
 
-describe("BUG-101 — 目录目标扩展名集合", () => {
+describe("目录目标扩展名集合", () => {
   it("与 migrate verify 同口径：.js/.mjs/.cjs/.ts/.mts/.cts 都是目标", () => {
     for (const p of ["a.js", "a.mjs", "a.cjs", "a.ts", "a.mts", "a.cts", "src/lib.MTS"]) {
       expect(isNudoTargetPath(p), p).toBe(true);
@@ -236,11 +236,11 @@ describe("BUG-101 — 目录目标扩展名集合", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1045 · @nudo:env 多名合并取并集（顺序无关）
+// @nudo:env 多名合并取并集（顺序无关）
 // ---------------------------------------------------------------------------
-describe("[] Bug 1045 · @nudo:env 多名合并取并集（顺序无关）", () => {
+describe("@nudo:env 多名合并取并集（顺序无关）", () => {
 /**
- * Bug 1045 回归：多个 `@nudo:env` 名的合并必须取**并集**（与书写顺序无关）。
+ * 回归：多个 `@nudo:env` 名的合并必须取**并集**（与书写顺序无关）。
  *
  * 病灶（`packages/service/src/evaluator/env-loader.ts` · `applyEnvDefinition`）：
  * 同名全局被**整块替换**（后一个 env 赢）⇒ `@nudo:env node, web` 与
@@ -343,7 +343,7 @@ function staticSlotNames(a: Abs): Set<string> {
   return new Set();
 }
 
-describe("Bug 1045 · @nudo:env 多名合并取并集（顺序无关）", () => {
+describe("@nudo:env 多名合并取并集（顺序无关）", () => {
   it("env 名顺序互换 ⇒ 签名逐字相同 + 门禁结论相同", () => {
     const a = checkWithEnvNames(["node", "web"], "/t/env-1045-node-web.js");
     const b = checkWithEnvNames(["web", "node"], "/t/env-1045-web-node.js");
@@ -445,18 +445,18 @@ describe("Bug 1045 · @nudo:env 多名合并取并集（顺序无关）", () => 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1081: 项目级 path env 必须按项目根解析（文件级按文件目录）
+// 项目级 path env 必须按项目根解析（文件级按文件目录）
 // ---------------------------------------------------------------------------
-describe("[] Bug 1081: 项目级 path env 必须按项目根解析（文件级按文件目录）", () => {
+describe("项目级 path env 必须按项目根解析（文件级按文件目录）", () => {
 /**
- * Bug 1081（重犯 Bug 647）—— 项目级 path env 被按「**被分析文件所在目录**」
+ * （重犯 ）—— 项目级 path env 被按「**被分析文件所在目录**」
  * 解析 ⇒ agent 面（`collectCheckSupplementIssues`）两种错都犯：
  *
  * - **假阳**：项目级 env 文件明明在**项目根**存在，却被报成
- *   `path env not found: <proj>/src/env.ts`——那个路径**根本不存在**；
+ * `path env not found: <proj>/src/env.ts`——那个路径**根本不存在**；
  * - **假阴**：项目级 env 的**真实加载失败**（如不导出 `defineEnv`）记在
- *   **项目根**基准下（CLI 按项目根预载），而本模块只按文件目录取
- *   ⇒ 取不到 ⇒ **零诊断**（真实失败被静默丢弃）。
+ * **项目根**基准下（CLI 按项目根预载），而本模块只按文件目录取
+ * ⇒ 取不到 ⇒ **零诊断**（真实失败被静默丢弃）。
  *
  * 口径（与 CLI `assembleEnvs` 同源，见 `packages/nudojs/src/commands/check.ts`）：
  * **项目级**（`package.json#nudo.env`）按**项目根**解析；**文件级**
@@ -481,7 +481,7 @@ const ENV_OK = `export function defineEnv() { return { globals: { MAGIC: 1 } }; 
 const ENV_NO_DEFINE = `export const notDefineEnv = 1;\n`;
 const APP_SRC = `export function f() { return 1; }\n`;
 
-describe("Bug 1081: 项目级 path env 必须按项目根解析（文件级按文件目录）", () => {
+describe("项目级 path env 必须按项目根解析（文件级按文件目录）", () => {
   beforeEach(() => {
     // 进程级 live 记录是全局的 ⇒ 每例前清干净（否则跨例串台）
     clearPathEnvCaches();
@@ -533,18 +533,18 @@ describe("Bug 1081: 项目级 path env 必须按项目根解析（文件级按�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1083: 项目级 path env 的内容指纹必须按项目根解析
+// 项目级 path env 的内容指纹必须按项目根解析
 // ---------------------------------------------------------------------------
-describe("[] Bug 1083: 项目级 path env 的内容指纹必须按项目根解析", () => {
+describe("项目级 path env 的内容指纹必须按项目根解析", () => {
 /**
- * Bug 1083 —— 整文件分析缓存键里新增的「项目级 path env **内容**」维度用错了
+ * 整文件分析缓存键里新增的「项目级 path env **内容**」维度用错了
  * **基准目录**。
  *
  * 修前：`analysisFileCacheKey` 用 `pathEnvContentFingerprint(projectEnvNames,
  * dirname(filePath))` ⇒ 项目级 env（`package.json#nudo.env: ["./env.ts"]`，文件
  * 在**项目根**）在被分析文件位于子目录（`src/app.js`）时，指纹读的是**不存在**
  * 的 `<proj>/src/env.ts` ⇒ 内容退化成 `"<unreadable>"` 的常量哈希 ⇒ 键对该 env
- * 的内容**实际不敏感**（Bug 501 想要的「env 文件内容进键」在项目根以外的文件上
+ * 的内容**实际不敏感**（想要的「env 文件内容进键」在项目根以外的文件上
  * 失效）。
  *
  * 修后：项目级 env 名按**项目根**解析（与 CLI `assembleEnvs` 同一口径）⇒
@@ -566,7 +566,7 @@ const CFG = {
 const ENV_V1 = `export function defineEnv() { return { globals: { MAGIC: 1 } }; }\n`;
 const ENV_V2 = `export function defineEnv() { return { globals: { MAGIC: 2 } }; }\n`;
 
-describe("Bug 1083: 项目级 path env 的内容指纹必须按项目根解析", () => {
+describe("项目级 path env 的内容指纹必须按项目根解析", () => {
   it("env 文件在项目根、被分析文件在子目录 ⇒ 改 env 内容必须 miss", () => {
     const dir = tmpProject("nudo-1083-env-fp-", {
       "package.json": JSON.stringify({ name: "proj", nudo: { env: ["./env.ts"] } }),
@@ -603,31 +603,31 @@ describe("Bug 1083: 项目级 path env 的内容指纹必须按项目根解析",
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1098: 项目级 path env 必须对分析器通道可见（文件带 @nudo:env 时也不丢）
+// 项目级 path env 必须对分析器通道可见（文件带 @nudo:env 时也不丢）
 // ---------------------------------------------------------------------------
-describe("[] Bug 1098: 项目级 path env 必须对分析器通道可见（文件带 @nudo:env 时也不丢）", () => {
+describe("项目级 path env 必须对分析器通道可见（文件带 @nudo:env 时也不丢）", () => {
 /**
- * Bug 1098 —— 项目级 path env（`package.json#nudo.env`）在**分析器通道**
+ * 项目级 path env（`package.json#nudo.env`）在**分析器通道**
  * 对「声明了任何 `@nudo:env` 的文件」**完全不可见**（假阳 + 假绿 + 口径分裂）。
  *
  * 机制（同一根因的两面）：
  * - 预载侧（`analyzeFileAsync`）把项目级 env 的相对说明符按**项目根**绝对化
- *   后登记 ⇒ 注册表 key = `<proj>/env.mjs`；
+ * 后登记 ⇒ 注册表 key = `<proj>/env.mjs`；
  * - 收集侧（`analyzeFileUncachedInner`）却仍用**原始相对名**（`./env.mjs`）
- *   查表，而查表基准 = 「最后一次 preload 的目录」= **文件目录**（文件级 env
- *   预载在后）⇒ 相对说明符的**唯一候选** = `<proj>/src/env.mjs` ⇒ 与预载登记
- *   的 key 不匹配 ⇒ **查表落空** ⇒ env 全局丢失。
+ * 查表，而查表基准 = 「最后一次 preload 的目录」= **文件目录**（文件级 env
+ * 预载在后）⇒ 相对说明符的**唯一候选** = `<proj>/src/env.mjs` ⇒ 与预载登记
+ * 的 key 不匹配 ⇒ **查表落空** ⇒ env 全局丢失。
  *
  * 后果（实测）：
  * - **假阳**：被分析文件只要声明了**任何** `@nudo:env`（哪怕内建名 `node`），
- *   返回面退化成 `never`（ReferenceError: MAGIC is not defined）+
- *   `nudo:builtin-unknown` 警告（IDE 面直接发布 ⇒ 假阳告警 + hover 显示 never）；
+ * 返回面退化成 `never`（ReferenceError: MAGIC is not defined）+
+ * `nudo:builtin-unknown` 警告（IDE 面直接发布 ⇒ 假阳告警 + hover 显示 never）；
  * - **假绿**：env 缺失 ⇒ 大量 unknown/never ⇒ check 的 analyzer 通道弱化判定；
  * - **口径分裂**：同一文件 CLI `nudo check` 显示 `f() => 42`，IDE 通道显示 never。
  *
  * 钉：
  * ① 文件带 `/// @nudo:env node` ⇒ 项目级 env 仍可见（返回面不是 never、
- *    无 `nudo:builtin-unknown` 假阳）；
+ * 无 `nudo:builtin-unknown` 假阳）；
  * ② 文件不带 `@nudo:env` ⇒ 行为不回退（仍能解析项目级 env）；
  * ③ 分析器通道与 CLI `nudo check` 结论一致（都 `f() => 42`）。
  */
@@ -698,7 +698,7 @@ async function cliCheckJson(file: string): Promise<{
   return JSON.parse(jsonText!);
 }
 
-describe("Bug 1098: 项目级 path env 必须对分析器通道可见（文件带 @nudo:env 时也不丢）", () => {
+describe("项目级 path env 必须对分析器通道可见（文件带 @nudo:env 时也不丢）", () => {
   beforeEach(() => {
     // 进程级 live 记录是全局的 ⇒ 每例前清干净（否则跨例串台）
     clearPathEnvCaches();
@@ -751,11 +751,11 @@ describe("Bug 1098: 项目级 path env 必须对分析器通道可见（文件�
 });
 
 // ---------------------------------------------------------------------------
-// BUG-162 env constructor arity gate
+// env constructor arity gate
 // ---------------------------------------------------------------------------
-describe("[] BUG-162 env constructor arity gate", () => {
+describe("env constructor arity gate", () => {
 /**
- * BUG-162：`instantiateReturn` 无视关系元数 / 构造性 ⇒ 无参 `new Event()`
+ * `instantiateReturn` 无视关系元数 / 构造性 ⇒ 无参 `new Event()`
  * 之类被误判。修复：关系 arity 门 + `shape.ctor === true` + 声明可选性。
  *
  * 该 bug 的可见面在 env 注入之后（env 里的构造器），因此按 node / web 两张
@@ -789,7 +789,7 @@ function sig(src: string, env: string[], name: string): string {
   return r.signatures.find((s) => s.name === name)?.display ?? "(missing)";
 }
 
-describe("BUG-162 env constructor arity gate", () => {
+describe("env constructor arity gate", () => {
   it("web env: real constructors keep their brands", () => {
     const env = ["web"];
     expect(sig(WEB_SRC, env, "a")).toBe("Event");
@@ -807,11 +807,11 @@ describe("BUG-162 env constructor arity gate", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-238 — 裸包消费形态透传
+// 裸包消费形态透传
 // ---------------------------------------------------------------------------
-describe("[] BUG-238 — 裸包消费形态透传", () => {
+describe("裸包消费形态透传", () => {
 /**
- * BUG-238 回归：裸包的**消费形态**（ESM `import` / CJS `require`）必须透传到
+ * 回归：裸包的**消费形态**（ESM `import` / CJS `require`）必须透传到
  * `exports` 条件解析——dual package 的 `require` 消费方要拿 `require` 构建。
  *
  * 改前 `importSpecs` 把说明符压成 `string[]`（形态在类型上就消失）⇒ 一律按
@@ -849,7 +849,7 @@ beforeEach(() => {
   clearAbsModuleCache();
 });
 
-describe("BUG-238 — 裸包消费形态透传", () => {
+describe("裸包消费形态透传", () => {
   it("require 消费方 ⇒ 取 exports.require 构建", () => {
     const dir = project();
     const src = 'const { kind } = require("dualpkg");\nmodule.exports = { kind };\n';
@@ -865,11 +865,11 @@ describe("BUG-238 — 裸包消费形态透传", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-239 — exports 条件键按声明顺序挑选
+// exports 条件键按声明顺序挑选
 // ---------------------------------------------------------------------------
-describe("[] BUG-239 — exports 条件键按声明顺序挑选", () => {
+describe("exports 条件键按声明顺序挑选", () => {
 /**
- * BUG-239 回归：`exports` 条件对象必须按 **package.json 的声明顺序**取首个
+ * 回归：`exports` 条件对象必须按 **package.json 的声明顺序**取首个
  * 命中的条件（Node `PACKAGE_TARGET_RESOLVE`），而不是按固定优先级表。
  *
  * 改前按表序（`import` 先于 `default`）⇒ `{ default, import }` 这种声明顺序下
@@ -897,7 +897,7 @@ function makePkg(exportsField: unknown, files: Record<string, string>): {
   return { dir, pkgDir: join(dir, "node_modules", "dual") };
 }
 
-describe("BUG-239 — exports 条件键按声明顺序挑选", () => {
+describe("exports 条件键按声明顺序挑选", () => {
   it("`default` 声明在 `import` 之前 ⇒ 宿主取 default（引擎同结论）", () => {
     const { dir, pkgDir } = makePkg(
       { ".": { default: "./default.js", import: "./esm.mjs" } },
@@ -931,11 +931,11 @@ describe("BUG-239 — exports 条件键按声明顺序挑选", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-240 — 裸包依赖进依赖图（脏传播不缺边）
+// 裸包依赖进依赖图（脏传播不缺边）
 // ---------------------------------------------------------------------------
-describe("[] BUG-240 — 裸包依赖进依赖图（脏传播不缺边）", () => {
+describe("裸包依赖进依赖图（脏传播不缺边）", () => {
 /**
- * BUG-240 回归：依赖图里**裸包说明符也必须成边**。
+ * 回归：依赖图里**裸包说明符也必须成边**。
  *
  * 改前 `extractImportEdges` 直接丢弃裸包说明符 ⇒ `dependents` 缺边 ⇒
  * `computeDirtySet` 拿不到裸包消费者的路径 ⇒ watch / LSP 增量轮整轮跳过
@@ -966,7 +966,7 @@ function project(): { dir: string; consumer: string; pkgEntry: string } {
   };
 }
 
-describe("BUG-240 — 裸包依赖进依赖图（脏传播不缺边）", () => {
+describe("裸包依赖进依赖图（脏传播不缺边）", () => {
   it("裸包入口变更 ⇒ 消费者进脏集", () => {
     const { consumer, pkgEntry } = project();
     const graph = buildModuleGraph([consumer]);
@@ -993,11 +993,11 @@ describe("BUG-240 — 裸包依赖进依赖图（脏传播不缺边）", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-241 — 缓存键路径维含项目身份
+// 缓存键路径维含项目身份
 // ---------------------------------------------------------------------------
-describe("[] BUG-241 — 缓存键路径维含项目身份", () => {
+describe("缓存键路径维含项目身份", () => {
 /**
- * BUG-241 回归：`check` 磁盘缓存键的路径维必须带**项目身份**。
+ * 回归：`check` 磁盘缓存键的路径维必须带**项目身份**。
  *
  * 改前树内文件只取相对项目根的路径 ⇒ 共享 `NUDO_CACHE_DIR` 下两个 checkout
  * 的 `src/a.js` 得到同一个键 ⇒ 互相污染（命中另一份 checkout 的报告，
@@ -1008,7 +1008,7 @@ describe("[] BUG-241 — 缓存键路径维含项目身份", () => {
 
 const SOURCE = "export function f(a) { return a + 1; }\n";
 
-describe("BUG-241 — 缓存键路径维含项目身份", () => {
+describe("缓存键路径维含项目身份", () => {
   it("同相对路径 + 同内容 + 不同项目根 ⇒ 不同键（check）", () => {
     const a = checkCacheKey("/checkout1/src/a.js", SOURCE, {
       autoBind: false,
@@ -1057,11 +1057,11 @@ describe("BUG-241 — 缓存键路径维含项目身份", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-267 — exports 模式键 tie-break（PATTERN_KEY_COMPARE）
+// exports 模式键 tie-break（PATTERN_KEY_COMPARE）
 // ---------------------------------------------------------------------------
-describe("[] BUG-267 — exports 模式键 tie-break（PATTERN_KEY_COMPARE）", () => {
+describe("exports 模式键 tie-break（PATTERN_KEY_COMPARE）", () => {
 /**
- * BUG-267 回归：`exports` 模式键的 tie-break 必须按 Node `PATTERN_KEY_COMPARE`
+ * 回归：`exports` 模式键的 tie-break 必须按 Node `PATTERN_KEY_COMPARE`
  * ——**前缀长度平手时比整键长度**（更长者胜），且结论不得随 package.json 里的
  * 声明顺序变化。
  *
@@ -1091,7 +1091,7 @@ function makePkg(exportsField: unknown, files: Record<string, string>): {
   return { dir, pkgDir: join(dir, "node_modules", "pkg") };
 }
 
-describe("BUG-267 — exports 模式键 tie-break（PATTERN_KEY_COMPARE）", () => {
+describe("exports 模式键 tie-break（PATTERN_KEY_COMPARE）", () => {
   it("前缀长度平手 ⇒ 取整键更长者（与声明顺序无关）", () => {
     // 两个键的 `*` 前前缀都是 "./x/"（长度 4）；"./x/*b" 更长 ⇒ 宿主取它。
     const longFirst = makePkg(
@@ -1135,11 +1135,11 @@ describe("BUG-267 — exports 模式键 tie-break（PATTERN_KEY_COMPARE）", () 
 });
 
 // ---------------------------------------------------------------------------
-// BUG-268 — 最近的包 exports 拒绝 ⇒ 不得上溯到同名副本
+// 最近的包 exports 拒绝 ⇒ 不得上溯到同名副本
 // ---------------------------------------------------------------------------
-describe("[] BUG-268 — 最近的包 exports 拒绝 ⇒ 不得上溯到同名副本", () => {
+describe("最近的包 exports 拒绝 ⇒ 不得上溯到同名副本", () => {
 /**
- * BUG-268 回归：包目录遍历必须区分「本层**没有**该包」（可继续向上）与
+ * 回归：包目录遍历必须区分「本层**没有**该包」（可继续向上）与
  * 「本层**有**该包但 `exports` 不认这个子路径」（Node 直接
  * `ERR_PACKAGE_PATH_NOT_EXPORTED`，**不得**继续向上找同名副本）。
  *
@@ -1175,7 +1175,7 @@ function nested(nearExports: Record<string, string>, parentHasSub: boolean): str
   return dir;
 }
 
-describe("BUG-268 — 最近的包 exports 拒绝 ⇒ 不得上溯到同名副本", () => {
+describe("最近的包 exports 拒绝 ⇒ 不得上溯到同名副本", () => {
   it("就近层 exports 无 './sub' 而父级副本有 ⇒ 必须判不可用（不解析到父级副本）", () => {
     const dir = nested({ ".": "./index.js" }, true);
     const r = resolveNpmJsEntryDetailed("nearpkg/sub", join(dir, "app"));
@@ -1202,11 +1202,11 @@ describe("BUG-268 — 最近的包 exports 拒绝 ⇒ 不得上溯到同名副�
 });
 
 // ---------------------------------------------------------------------------
-// BUG-270 — exports 目标数组：只有非法目标才回退
+// exports 目标数组：只有非法目标才回退
 // ---------------------------------------------------------------------------
-describe("[] BUG-270 — exports 目标数组：只有非法目标才回退", () => {
+describe("exports 目标数组：只有非法目标才回退", () => {
 /**
- * BUG-270 回归：`exports` **目标数组**的回退判据只能是「目标**非法**」
+ * 回归：`exports` **目标数组**的回退判据只能是「目标**非法**」
  * （Node `ERR_INVALID_PACKAGE_TARGET`），**不得**用「文件是否存在」。
  *
  * Node 语义：目标合法但文件缺失时解析就停在这个目标上，随后装载阶段抛
@@ -1237,7 +1237,7 @@ function makePkg(exportsField: unknown, files: Record<string, string>): {
   return { dir, pkgDir: join(dir, "node_modules", "vp") };
 }
 
-describe("BUG-270 — exports 目标数组：只有非法目标才回退", () => {
+describe("exports 目标数组：只有非法目标才回退", () => {
   it("首个目标**合法但缺失** ⇒ 停在该目标（不可用 + 记账），不得取下一个存在的文件", () => {
     const { dir } = makePkg({ "./sub": ["./missing.js", "./real.js"] }, {
       "real.js": "export const v = 'ARRAY_REAL';\nexport default v;\n",
@@ -1277,11 +1277,11 @@ describe("BUG-270 — exports 目标数组：只有非法目标才回退", () =>
 });
 
 // ---------------------------------------------------------------------------
-// BUG-273 — ESM 下禁止目录导入（不补 index 候选）
+// ESM 下禁止目录导入（不补 index 候选）
 // ---------------------------------------------------------------------------
-describe("[] BUG-273 — ESM 下禁止目录导入（不补 index 候选）", () => {
+describe("ESM 下禁止目录导入（不补 index 候选）", () => {
 /**
- * BUG-273 回归：包内文件候选**不能**无条件补 `index.*`。
+ * 回归：包内文件候选**不能**无条件补 `index.*`。
  *
  * Node 的 **ESM** 装载器从不做目录 / index 解析 ⇒ `exports` 目标或旧式子路径
  * 指向目录时宿主抛 `ERR_UNSUPPORTED_DIR_IMPORT`（模块根本加载不上）；
@@ -1308,7 +1308,7 @@ function makePkg(pkgJson: Record<string, unknown>, files: Record<string, string>
   return { dir, pkgDir: join(dir, "node_modules", "vp") };
 }
 
-describe("BUG-273 — ESM 下禁止目录导入（不补 index 候选）", () => {
+describe("ESM 下禁止目录导入（不补 index 候选）", () => {
   it("`exports` 目标指向目录 ⇒ 不可用（宿主 ERR_UNSUPPORTED_DIR_IMPORT）+ 诊断记账", () => {
     const { dir } = makePkg({ exports: { ".": "./dir" } }, {
       "dir/index.js": "export const v = 'DIRIDX';\n",
@@ -1344,11 +1344,11 @@ describe("BUG-273 — ESM 下禁止目录导入（不补 index 候选）", () =>
 });
 
 // ---------------------------------------------------------------------------
-// Bug 456 ESM import 环：环内调用恒定值
+// ESM import 环：环内调用恒定值
 // ---------------------------------------------------------------------------
-describe("[] Bug 456 ESM import 环：环内调用恒定值", () => {
+describe("ESM import 环：环内调用恒定值", () => {
 /**
- * Bug 456：ESM import 环（a ⇄ b）——环内第一次调用恒定值、同一导出按调用次序不再漂移。
+ * ESM import 环（a ⇄ b）——环内第一次调用恒定值、同一导出按调用次序不再漂移。
  *
  * 原生 oracle（node ESM）：probe(2) → 0（a(2) → b(1) → a(0) → 0），连续三次都是 0。
  * 改前：环内先求值的一侧（b）绑定到 unknown（a 尚未求值）⇒ 第一次调用得 unknown，
@@ -1382,7 +1382,7 @@ function callProbeThrice(dir: string): Abs[] {
   return [0, 1, 2].map(() => callTranspiledExportFull(run, "probe", []).result);
 }
 
-describe("Bug 456 ESM import 环：环内调用恒定值", () => {
+describe("ESM import 环：环内调用恒定值", () => {
   it("环内第一次调用即得正确值（改前：unknown）", () => {
     const dir = tmpProject({ "a.js": A, "b.js": B, "index.js": ENTRY });
     clearAbsModuleCache();
@@ -1440,17 +1440,17 @@ export function probe() { return double(21); }
 });
 
 // ---------------------------------------------------------------------------
-// Bug 457 JSON 依赖装载
+// JSON 依赖装载
 // ---------------------------------------------------------------------------
-describe("[] Bug 457 JSON 依赖装载", () => {
+describe("JSON 依赖装载", () => {
 /**
- * Bug 457：JSON 依赖（`.json`）——此前一律当 JS 转译（`{"a": 1}` 不是合法 JS
+ * JSON 依赖（`.json`）——此前一律当 JS 转译（`{"a": 1}` 不是合法 JS
  * 表达式语句）→ fail-closed 空导出表且**零诊断** ⇒ 值被静默丢弃。
  *
  * 原生 oracle（node）：
- *   - `require("./data.json").a` → 1；
- *   - `import d from "./data.json"`（带 import attribute）→ d.a → 1；
- *   - `import { a } from "./data.json"` → 原生报错（JSON 模块没有具名导出）。
+ * - `require("./data.json").a` → 1；
+ * - `import d from "./data.json"`（带 import attribute）→ d.a → 1；
+ * - `import { a } from "./data.json"` → 原生报错（JSON 模块没有具名导出）。
  */
 
 
@@ -1469,7 +1469,7 @@ function callGetA(dir: string, src: string): { value: unknown; issues: string[] 
   return { value: r.result.term, issues: graph.issues.map((i) => `${i.kind}: ${i.label}`) };
 }
 
-describe("Bug 457 JSON 依赖装载", () => {
+describe("JSON 依赖装载", () => {
   it("require(\"./data.json\") 取到真实值（改前：unknown）", () => {
     const dir = makeTmpProject("nudo-b457-", { "data.json": DATA });
     const src = `const d = require("./data.json");
@@ -1533,11 +1533,11 @@ export function getA() { return a; }
 });
 
 // ---------------------------------------------------------------------------
-// Bug 462 — @nudo:pure marker lands on the call-site function value
+// @nudo:pure marker lands on the call-site function value
 // ---------------------------------------------------------------------------
-describe("[] Bug 462 — @nudo:pure marker lands on the call-site function value", () => {
+describe("@nudo:pure marker lands on the call-site function value", () => {
 /**
- * Bug 462：@nudo:pure 的纯度标记必须落在**调用点真正解析到的那个函数值**上。
+ * @nudo:pure 的纯度标记必须落在**调用点真正解析到的那个函数值**上。
  *
  * memo 以**对象身份**为键（pureCallMemo / pureMemo：WeakMap<fnObj, argsKey, …>），
  * 标记到"等价但不同一"的对象上不命中。修复前 service 从 globalEnv 取标记对象，
@@ -1545,12 +1545,12 @@ describe("[] Bug 462 — @nudo:pure marker lands on the call-site function value
  * 落下，@nudo:pure 恒为空转（纯函数指令无任何求值语义）。
  *
  * 本测试锁住：
- *   ① 纯函数（无副作用）：加不加指令结果一致（文档承诺："analysis results
- *      stay correct with or without the directive"）
- *   ② 纯度标记落在**分析实例的函数值**上（宿主 JS 函数对象 / Abs fn 值两种形态）
+ * ① 纯函数（无副作用）：加不加指令结果一致（文档承诺："analysis results
+ * stay correct with or without the directive"）
+ * ② 纯度标记落在**分析实例的函数值**上（宿主 JS 函数对象 / Abs fn 值两种形态）
  *
  * 注：端到端的「同实参二次调用命中缓存」还要求**调用面用的实例**也带标记——
- * 调用面当前按用例新建独立模块实例（Bug 472 的 fresh 设计），落点在
+ * 调用面当前按用例新建独立模块实例（的 fresh 设计），落点在
  * eval-run 的调用面 / core 转译面（见本轮报告的越界项）。本测试锁住
  * service 侧可独立保证的那一段（标记确实落下）。
  */
@@ -1586,7 +1586,7 @@ const next = () => { k = k + 1; return k; };
 export function use() { const a = next(); const b = next(); return a + b; }
 `;
 
-describe("Bug 462 — @nudo:pure marker lands on the call-site function value", () => {
+describe("@nudo:pure marker lands on the call-site function value", () => {
   it("pure function: directive does not change the result (doc promise)", () => {
     const pick = (r: ReturnType<typeof analyzeFile>) => {
       const fn = r.functions.find((f) => f.name === "useDouble");
@@ -1638,11 +1638,11 @@ describe("Bug 462 — @nudo:pure marker lands on the call-site function value", 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 468 — nudo 键形状非法必须可观测且不得谎报成配置
+// nudo 键形状非法必须可观测且不得谎报成配置
 // ---------------------------------------------------------------------------
-describe("[] Bug 468 — nudo 键形状非法必须可观测且不得谎报成配置", () => {
+describe("nudo 键形状非法必须可观测且不得谎报成配置", () => {
 /**
- * Bug 468 —— `package.json#nudo` 键**值不是对象**时被静默忽略：
+ * `package.json#nudo` 键**值不是对象**时被静默忽略：
  * 零诊断（用户零线索），且真值型非对象还**抑制 onboarding 提示**
  * （下游 check.ts 的 filesWithConfig++ 以「找到了真值 nudo 键」为判据）。
  *
@@ -1684,7 +1684,7 @@ function rootWithConfig(): string {
   return root;
 }
 
-describe("Bug 468 — nudo 键形状非法必须可观测且不得谎报成配置", () => {
+describe("nudo 键形状非法必须可观测且不得谎报成配置", () => {
   beforeEach(() => {
     evictProjectConfigMemo();
   });
@@ -1770,11 +1770,11 @@ describe("Bug 468 — nudo 键形状非法必须可观测且不得谎报成配�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 470 — 未知名 env 不得静默忽略
+// 未知名 env 不得静默忽略
 // ---------------------------------------------------------------------------
-describe("[] Bug 470 — 未知名 env 不得静默忽略", () => {
+describe("未知名 env 不得静默忽略", () => {
 /**
- * Bug 470 — `@nudo:env <未知名>`（bogus / nodejs / Node）被静默忽略：
+ * `@nudo:env <未知名>`（bogus / nodejs / Node）被静默忽略：
  * 零诊断、env 不生效、分析退化。
  *
  * 契约：未知名 env 必须产出一条**可见**诊断（nudo:env-unresolved 通道，
@@ -1790,7 +1790,7 @@ beforeEach(() => {
   clearPathEnvCaches();
 });
 
-describe("Bug 470 — 未知名 env 不得静默忽略", () => {
+describe("未知名 env 不得静默忽略", () => {
   it("loadEnvs：未知名产出可见诊断且不注入任何全局", () => {
     for (const name of ["bogus", "nodejs", "Node"]) {
       const dir = tmpProject("nudo-bug-470-");
@@ -1843,11 +1843,11 @@ describe("Bug 470 — 未知名 env 不得静默忽略", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 475 — 显式 nudo.cache 值一律压过 NUDO_CACHE_DIR
+// 显式 nudo.cache 值一律压过 NUDO_CACHE_DIR
 // ---------------------------------------------------------------------------
-describe("[] Bug 475 — 显式 nudo.cache 值一律压过 NUDO_CACHE_DIR", () => {
+describe("显式 nudo.cache 值一律压过 NUDO_CACHE_DIR", () => {
 /**
- * Bug 475 —— `nudo.cache: ""`（**显式**空串）不压过 `NUDO_CACHE_DIR`
+ * `nudo.cache: ""`（**显式**空串）不压过 `NUDO_CACHE_DIR`
  * → 缓存目录仍被创建 → 违反 config.md 明文优先级
  * 「any explicit `nudo.cache` value (including `false`) wins over
  * `NUDO_CACHE_DIR`; the env var is only consulted when `nudo.cache` is unset」。
@@ -1875,7 +1875,7 @@ function withEnv(value: string | undefined, fn: () => void): void {
   fn();
 }
 
-describe("Bug 475 — 显式 nudo.cache 值一律压过 NUDO_CACHE_DIR", () => {
+describe("显式 nudo.cache 值一律压过 NUDO_CACHE_DIR", () => {
   it("显式空串（\"\"）压过 env：缓存关闭（不返回 env 目录）", () => {
     let root: string | undefined;
     withEnv("/tmp/nudo-cache-env", () => {
@@ -1941,11 +1941,11 @@ describe("Bug 475 — 显式 nudo.cache 值一律压过 NUDO_CACHE_DIR", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 477 — exports 条件键按消费形态分表
+// exports 条件键按消费形态分表
 // ---------------------------------------------------------------------------
-describe("[] Bug 477 — exports 条件键按消费形态分表", () => {
+describe("exports 条件键按消费形态分表", () => {
 /**
- * Bug 477 回归：裸包 `exports` 的**条件键必须按消费形态选**
+ * 回归：裸包 `exports` 的**条件键必须按消费形态选**
  * （ESM `import` → "import" 条件；CJS `require` → "require" 条件）。
  *
  * 改前：一张固定顺序的表把 "require" 排在 "import" 前 ⇒ ESM import 解析到
@@ -1971,7 +1971,7 @@ function dualPkg(prefix: string): { dir: string; pkgDir: string } {
   return { dir, pkgDir: join(dir, "node_modules", "dual") };
 }
 
-describe("Bug 477 — exports 条件键按消费形态分表", () => {
+describe("exports 条件键按消费形态分表", () => {
   it("import 形态命中 import 条件（ESM 构建），不是 require 分支", () => {
     const { dir, pkgDir } = dualPkg("nudo-477-import-");
     const r = resolveNpmJsEntryDetailed("dual", dir, "import");
@@ -2031,11 +2031,11 @@ describe("Bug 477 — exports 条件键按消费形态分表", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 478 — 相对 path env 按发起方目录解析
+// 相对 path env 按发起方目录解析
 // ---------------------------------------------------------------------------
-describe("[] Bug 478 — 相对 path env 按发起方目录解析", () => {
+describe("相对 path env 按发起方目录解析", () => {
 /**
- * Bug 478 — 相对路径 `@nudo:env` 按**进程级全局 baseDir 注册表**解析：
+ * 相对路径 `@nudo:env` 按**进程级全局 baseDir 注册表**解析：
  * 先预载的 `./env.ts` 赢下所有同名拼写 ⇒ 别的目录拿到别人的 env（错值 + 零诊断）。
  *
  * 契约：相对说明符（`./env.js`）只按**发起方文件的目录**解析；
@@ -2057,7 +2057,7 @@ beforeEach(() => {
   clearPathEnvCaches();
 });
 
-describe("Bug 478 — 相对 path env 按发起方目录解析", () => {
+describe("相对 path env 按发起方目录解析", () => {
   it("两个目录各有 ./env.js：先预载者不得赢下所有同名拼写", async () => {
     const dirX = tmpProject("nudo-bug-478-x-", { "env.js": envFile(11) });
     const dirY = tmpProject("nudo-bug-478-y-", { "env.js": envFile(22) });
@@ -2105,11 +2105,11 @@ describe("Bug 478 — 相对 path env 按发起方目录解析", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 487 — autoBind 归一成布尔（三面同口径）
+// autoBind 归一成布尔（三面同口径）
 // ---------------------------------------------------------------------------
-describe("[] Bug 487 — autoBind 归一成布尔（三面同口径）", () => {
+describe("autoBind 归一成布尔（三面同口径）", () => {
 /**
- * Bug 487 —— `nudo.contract.autoBind` 写成**非布尔值**时，check 与
+ * `nudo.contract.autoBind` 写成**非布尔值**时，check 与
  * contract / export **三面分裂**（一边说「绑侧车」、一边说「不绑」），
  * 且磁盘缓存会把结论**投毒**到另一种取值上。
  *
@@ -2157,7 +2157,7 @@ function projectWithAutoBind(autoBind: unknown): string {
   return root;
 }
 
-describe("Bug 487 — autoBind 归一成布尔（三面同口径）", () => {
+describe("autoBind 归一成布尔（三面同口径）", () => {
   beforeEach(() => {
     evictProjectConfigMemo();
   });
@@ -2233,11 +2233,11 @@ describe("Bug 487 — autoBind 归一成布尔（三面同口径）", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 490 — 非法 NUDO_MAX_FORKS 回默认（不是配置键）
+// 非法 NUDO_MAX_FORKS 回默认（不是配置键）
 // ---------------------------------------------------------------------------
-describe("[] Bug 490 — 非法 NUDO_MAX_FORKS 回默认（不是配置键）", () => {
+describe("非法 NUDO_MAX_FORKS 回默认（不是配置键）", () => {
 /**
- * Bug 490 —— `NUDO_MAX_FORKS` 给了**非法值**时，实现让
+ * `NUDO_MAX_FORKS` 给了**非法值**时，实现让
  * `nudo.analysis.maxForks` 顶上来；而文档与**源码自己的注释**都写
  * 「非法值回**默认**（5000）」——实现与二者都不符。
  *
@@ -2268,7 +2268,7 @@ function captureStderr(fn: () => void): string {
 
 const CFG_200 = { analysis: { maxForks: 200 } };
 
-describe("Bug 490 — 非法 NUDO_MAX_FORKS 回默认（不是配置键）", () => {
+describe("非法 NUDO_MAX_FORKS 回默认（不是配置键）", () => {
   beforeEach(() => {
     evictProjectConfigMemo();
   });
@@ -2319,11 +2319,11 @@ describe("Bug 490 — 非法 NUDO_MAX_FORKS 回默认（不是配置键）", () 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 498 — #imports（包内子路径映射）
+// #imports（包内子路径映射）
 // ---------------------------------------------------------------------------
-describe("[] Bug 498 — #imports（包内子路径映射）", () => {
+describe("#imports（包内子路径映射）", () => {
 /**
- * Bug 498 回归：Node 的 `#imports`（**导入方** package.json 的 imports 字段）
+ * 回归：Node 的 `#imports`（**导入方** package.json 的 imports 字段）
  * 必须被解析——改前 `#helper` 被当成「包名」⇒ `node_modules/#helper` 必 miss
  * ⇒ 跨模块值塌成 unknown 且零诊断。
  */
@@ -2332,7 +2332,7 @@ describe("[] Bug 498 — #imports（包内子路径映射）", () => {
 
 
 
-describe("Bug 498 — #imports（包内子路径映射）", () => {
+describe("#imports（包内子路径映射）", () => {
   it("精确键：#helper → 导入方包内的 ./helper.js", () => {
     const dir = tmpProject("nudo-498-exact-", {
       "package.json": JSON.stringify({
@@ -2430,11 +2430,11 @@ describe("Bug 498 — #imports（包内子路径映射）", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 500 — node_modules 逐级向上查找
+// node_modules 逐级向上查找
 // ---------------------------------------------------------------------------
-describe("[] Bug 500 — node_modules 逐级向上查找", () => {
+describe("node_modules 逐级向上查找", () => {
 /**
- * Bug 500 回归：裸包 `node_modules` 查找必须**逐级向上**
+ * 回归：裸包 `node_modules` 查找必须**逐级向上**
  * （Node 语义：每层 node_modules 都试一遍，包不在本层就继续往上）——
  * 改前只取「第一个存在的 node_modules 目录」，包只装在父级时 JS 入口不解析
  * ⇒ 回落 @types harvest ⇒ L2 门禁由红转绿。
@@ -2465,7 +2465,7 @@ function parentInstall(prefix: string): { dir: string; appDir: string; pkgDir: s
   };
 }
 
-describe("Bug 500 — node_modules 逐级向上查找", () => {
+describe("node_modules 逐级向上查找", () => {
   it("包只装在父级 node_modules ⇒ JS 入口照样解析（不再回落 @types）", () => {
     const { appDir, pkgDir } = parentInstall("nudo-500-parent-");
     const r = resolveNpmJsEntryDetailed("mypkg", appDir);
@@ -2516,11 +2516,11 @@ describe("Bug 500 — node_modules 逐级向上查找", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 501 — 项目级 path env 的内容进缓存键
+// 项目级 path env 的内容进缓存键
 // ---------------------------------------------------------------------------
-describe("[] Bug 501 — 项目级 path env 的内容进缓存键", () => {
+describe("项目级 path env 的内容进缓存键", () => {
 /**
- * Bug 501 —— 项目级 path env 的**文件内容**是缓存键的维度。
+ * 项目级 path env 的**文件内容**是缓存键的维度。
  *
  * 改前：分析缓存键（analysisFileCacheKey 的 envSeg）与 evaluator memo 键
  * （tryRunEval 的 envKey）只编码 env **名字** ⇒ 同一个 env 名指向的文件
@@ -2550,7 +2550,7 @@ async function magicShape(file: string, source: string): Promise<string> {
   return fn ? formatShape(fn.cases[0].abs) : "<no-fn>";
 }
 
-describe("Bug 501 — 项目级 path env 的内容进缓存键", () => {
+describe("项目级 path env 的内容进缓存键", () => {
   it("同进程内改 env 文件内容，类型面跟着变", async () => {
     clearEvalCache();
     const dir = tmpProject("nudo-bug501-", {
@@ -2573,7 +2573,7 @@ describe("Bug 501 — 项目级 path env 的内容进缓存键", () => {
 });
 
 /** 负控制：不该被这条修复波及的邻近形态 */
-describe("Bug 501 — 负控制", () => {
+describe("负控制", () => {
   it("文件级 /// @nudo:env 的同款行为保持正确（本就由 dep 指纹覆盖）", async () => {
     clearEvalCache();
     const dir = tmpProject("nudo-bug501-file-", {
@@ -2607,21 +2607,21 @@ describe("Bug 501 — 负控制", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 502 — @nudo:env globals reach the service analysis
+// @nudo:env globals reach the service analysis
 // ---------------------------------------------------------------------------
-describe("[] Bug 502 — @nudo:env globals reach the service analysis", () => {
+describe("@nudo:env globals reach the service analysis", () => {
 /**
- * Bug 502：@nudo:env 的 globals 必须进入 service 的分析面。
+ * @nudo:env 的 globals 必须进入 service 的分析面。
  *
  * 口径：env globals 由 collectEnvGlobals(envNames) 统一物化——
- *   - 命名 env（node / es / web）：同步可见
- *   - path 型 env（`/// @nudo:env ./env.ts`）：需先 preload（analyzeFileAsync
- *     预载后同步面才可见）——同步面看不到时保持"无信息"（fail-closed），
- *     不假装有类型。
+ * - 命名 env（node / es / web）：同步可见
+ * - path 型 env（`/// @nudo:env ./env.ts`）：需先 preload（analyzeFileAsync
+ * 预载后同步面才可见）——同步面看不到时保持"无信息"（fail-closed），
+ * 不假装有类型。
  *
  * 本测试锁住：
- *   ① 分析环境（globalEnv → buildNodeTypeMap 的节点类型面）带上 env globals
- *   ② 异步入口（唯一预载 path 型 env 的入口）解析出 env 全局值
+ * ① 分析环境（globalEnv → buildNodeTypeMap 的节点类型面）带上 env globals
+ * ② 异步入口（唯一预载 path 型 env 的入口）解析出 env 全局值
  *
  * 注：IDE 诊断面的假红（`nudo:entry-may-throw: may throw ReferenceError`）
  * 根因在 LSP 侧 checkSource 未注入 envGlobals（packages/lsp/src/validation.ts，
@@ -2643,7 +2643,7 @@ export function useGlobal() {
 }
 `;
 
-describe("Bug 502 — @nudo:env globals reach the service analysis", () => {
+describe("@nudo:env globals reach the service analysis", () => {
   it("async entry (preloads path env) resolves env globals", async () => {
     const dir = tmpProject("nudo-b502-", { "env.ts": ENV_FILE, "main.js": MAIN_FILE });
     const path = `${dir}/main.js`;
@@ -2674,11 +2674,11 @@ export function useProcess() { return process.cwd(); }
 });
 
 // ---------------------------------------------------------------------------
-// Bug 505 — CJS / ESM 两条解析算法分表
+// CJS / ESM 两条解析算法分表
 // ---------------------------------------------------------------------------
-describe("[] Bug 505 — CJS / ESM 两条解析算法分表", () => {
+describe("CJS / ESM 两条解析算法分表", () => {
 /**
- * Bug 505 回归：模块解析必须**按加载形态分表**（Node 的两条算法），不再合成一张：
+ * 回归：模块解析必须**按加载形态分表**（Node 的两条算法），不再合成一张：
  * - CJS（require）：LOAD_AS_FILE —— 猜扩展名（含 `.json`）+ index 入口；
  * - ESM（import）：ESM_RESOLVE —— **不猜扩展名**（必须写全）+ 不做目录 import。
  *
@@ -2692,7 +2692,7 @@ describe("[] Bug 505 — CJS / ESM 两条解析算法分表", () => {
 
 
 /** CJS 包：package.json type=commonjs；同目录**只有** data.json（Node 的
- *  LOAD_AS_FILE 会试 .json——改前的候选表没有 .json ⇒ 假红「文件不存在」）。 */
+ * LOAD_AS_FILE 会试 .json——改前的候选表没有 .json ⇒ 假红「文件不存在」）。 */
 function cjsProject(prefix: string): { dir: string; main: string } {
   const dir = tmpProject(prefix, {
     "package.json": JSON.stringify({ name: "cjsapp", version: "1.0.0", type: "commonjs" }),
@@ -2712,7 +2712,7 @@ function esmProject(prefix: string): { dir: string; main: string } {
   return { dir, main: join(dir, "main.js") };
 }
 
-describe("Bug 505 — CJS / ESM 两条解析算法分表", () => {
+describe("CJS / ESM 两条解析算法分表", () => {
   it("CJS 形态：require('./data') 解析到同目录的 data.json（不再是「文件不存在」）", () => {
     const { main } = cjsProject("nudo-505-cjs-");
     expect(resolveModuleFile("./data", main)).toBe(join(main, "..", "data.json"));
@@ -2788,11 +2788,11 @@ describe("Bug 505 — CJS / ESM 两条解析算法分表", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 636: effectiveMaxForks —— env 优先的 fork 预算生效值
+// effectiveMaxForks —— env 优先的 fork 预算生效值
 // ---------------------------------------------------------------------------
-describe("[] Bug 636: effectiveMaxForks —— env 优先的 fork 预算生效值", () => {
+describe("effectiveMaxForks —— env 优先的 fork 预算生效值", () => {
 /**
- * Bug 636 回归：fork 预算的**生效值**（env `NUDO_MAX_FORKS` 优先）必须进
+ * 回归：fork 预算的**生效值**（env `NUDO_MAX_FORKS` 优先）必须进
  * 磁盘缓存键。
  *
  * 病灶：缓存键（`checkCacheKey` 的 `analysisCfg.maxForks`）喂的是
@@ -2822,7 +2822,7 @@ afterEach(() => {
   else process.env[ENV_KEY] = saved;
 });
 
-describe("Bug 636: effectiveMaxForks —— env 优先的 fork 预算生效值", () => {
+describe("effectiveMaxForks —— env 优先的 fork 预算生效值", () => {
   it("env NUDO_MAX_FORKS 优先于 package.json#nudo.analysis.maxForks", () => {
     process.env[ENV_KEY] = "7";
     expect(effectiveMaxForks({ analysis: { maxForks: 100 } })).toBe(7);
@@ -2859,7 +2859,7 @@ describe("Bug 636: effectiveMaxForks —— env 优先的 fork 预算生效值",
   });
 });
 
-describe("Bug 636: analysisConfig().maxForks 是 env 生效值（缓存键的输入）", () => {
+describe("analysisConfig().maxForks 是 env 生效值（缓存键的输入）", () => {
   it("env 改 fork 预算 ⇒ analysisConfig().maxForks 随之变", () => {
     delete process.env[ENV_KEY];
     expect(analysisConfig({ analysis: { maxForks: 100 } }).maxForks).toBe(100);
@@ -2915,11 +2915,11 @@ describe("Bug 636: analysisConfig().maxForks 是 env 生效值（缓存键的输
 });
 
 // ---------------------------------------------------------------------------
-// Bug 935 — env 项元素级校验（非字符串元素不得裸崩）
+// env 项元素级校验（非字符串元素不得裸崩）
 // ---------------------------------------------------------------------------
-describe("[] Bug 935 — env 项元素级校验（非字符串元素不得裸崩）", () => {
+describe("env 项元素级校验（非字符串元素不得裸崩）", () => {
 /**
- * Bug 935 — `package.json#nudo.env` 的**数组元素**不是字符串（[42] / [null] /
+ * `package.json#nudo.env` 的**数组元素**不是字符串（[42] / [null] /
  * [{}] / [[]]）⇒ service 层 `isPathEnvName` 裸崩（name.includes is not a
  * function / Cannot read properties of null）⇒ 影响所有消费者。
  *
@@ -2955,7 +2955,7 @@ function captureStderr(fn: () => void): string {
 
 const BAD_ELEMENTS: unknown[] = [42, null, {}, []];
 
-describe("Bug 935 — env 项元素级校验（非字符串元素不得裸崩）", () => {
+describe("env 项元素级校验（非字符串元素不得裸崩）", () => {
   it("loadEnvs：四种非法元素都不崩、无全局注入、产出可见告警", () => {
     const dir = tmpProject("nudo-bug-935-load-");
     const env = createEnvironment();
@@ -2993,7 +2993,7 @@ describe("Bug 935 — env 项元素级校验（非字符串元素不得裸崩）
   });
 });
 
-describe("Bug 935 — 项目级 package.json#nudo.env 的元素级校验", () => {
+describe("项目级 package.json#nudo.env 的元素级校验", () => {
   it("非字符串元素：丢弃 + 可见诊断（不裸崩、不静默）", () => {
     const dir = tmpProject("nudo-bug-935-proj-", {
       "package.json": JSON.stringify({ name: "p935", nudo: { env: ["node", 42, null] } }),
@@ -3034,11 +3034,11 @@ describe("Bug 935 — 项目级 package.json#nudo.env 的元素级校验", () =>
 });
 
 // ---------------------------------------------------------------------------
-// Bug 936 — 假值 nudo 键遮断祖先配置（存在性 ≠ 真值性）
+// 假值 nudo 键遮断祖先配置（存在性 ≠ 真值性）
 // ---------------------------------------------------------------------------
-describe("[] Bug 936 — 假值 nudo 键遮断祖先配置（存在性 ≠ 真值性）", () => {
+describe("假值 nudo 键遮断祖先配置（存在性 ≠ 真值性）", () => {
 /**
- * Bug 936 —— 子包 `package.json` 的 **`"nudo"` 键是假值**
+ * 子包 `package.json` 的 **`"nudo"` 键是假值**
  * （`false` / `null` / `0` / `""`）⇒ **不遮断**祖先包配置 ⇒ 子包**静默继承**
  * 根包的 `check.ignoreThrows`（把 L2 error 吞掉 ⇒ 门禁假绿）与 `nudo.env`
  * （跨包串味）——与文档「uses the **nearest** `package.json` that contains a
@@ -3092,7 +3092,7 @@ function subPackage(root: string, nudo: unknown): string {
   return sub;
 }
 
-describe("Bug 936 — 假值 nudo 键遮断祖先配置（存在性 ≠ 真值性）", () => {
+describe("假值 nudo 键遮断祖先配置（存在性 ≠ 真值性）", () => {
   beforeEach(() => {
     evictProjectConfigMemo();
   });

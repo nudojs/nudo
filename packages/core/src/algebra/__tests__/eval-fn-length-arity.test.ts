@@ -1,7 +1,7 @@
 /**
- * Bug 69：fn.length 原生边界 = 首个默认值/rest 形参前的形参数。修复前
+ * fn.length 原生边界 = 首个默认值/rest 形参前的形参数。修复前
  * transpile 把默认参解糖成宿主真参（`function f(a, _p1)` → 宿主 length 2）
- * ——声明经 Bug 9 宿主函数泄漏面折 wrong-exact；$fnVal 产物无长度记录落
+ * ——声明经 宿主函数泄漏面折 wrong-exact；$fnVal 产物无长度记录落
  * 抽象 number。修复：声明宿主签名占位补 `= void 0`（宿主 length 对齐）；
  * $fnVal 记录 nativeParamArity（$len 的 impl.length 通道）。
  */
@@ -28,7 +28,7 @@ const DECL_CASES: Array<[string, number]> = [
   ["function g({ a }, b = 1) {}", 1],
 ];
 
-describe("Bug 69: 函数声明 f.length（六 Scope 变体 + 控制）", () => {
+describe("函数声明 f.length（六 Scope 变体 + 控制）", () => {
   for (const [decl, want] of DECL_CASES) {
     it(`${decl} → length ${want}`, () => {
       expect(v(`export function f() { ${decl} return g.length; }`)).toEqual({ ok: true, value: want });
@@ -40,7 +40,7 @@ describe("Bug 69: 函数声明 f.length（六 Scope 变体 + 控制）", () => {
   });
 });
 
-describe("Bug 69: 函数表达式 / 箭头 / 方法（$fnVal length 通道）", () => {
+describe("函数表达式 / 箭头 / 方法（$fnVal length 通道）", () => {
   it("函数表达式：(function(a, b = 1) {}).length → 1", () => {
     expect(v(`export function f() { return (function (a, b = 1) {}).length; }`)).toEqual({ ok: true, value: 1 });
   });

@@ -1,5 +1,5 @@
 /**
- * Bug 22：`nudo:unknown-inference` 不得对**精确 undefined 返回**误报。
+ * `nudo:unknown-inference` 不得对**精确 undefined 返回**误报。
  *
  * undefAbs 是 unknown 形状 + lit(undefined) term——带 lit term 即有值证据，
  * 不是引擎债。`return undefined` / `void 0` / 缺省 return / 箭头空体 /
@@ -16,7 +16,7 @@ function warnFns(src: string): string[] {
     .map((i) => i.fn ?? "");
 }
 
-describe("exact undefined return is not unknown-inference (Bug 22)", () => {
+describe("exact undefined return is not unknown-inference ()", () => {
   it("explicit `return undefined` / `void 0` 不报，签名显示 undefined", () => {
     const r = checkSource(
       "/t/undef.js",

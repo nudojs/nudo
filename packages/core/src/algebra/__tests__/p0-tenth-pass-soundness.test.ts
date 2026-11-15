@@ -46,7 +46,7 @@ describe("P0 for-of empty / abstract accumulators", () => {
     const src = `export function f(a) { let s = 0; for (const x of a) { s = s + 1; } return s; }`;
     const absArr = { shape: { k: "arr", element: { shape: { k: "prim", type: "number" }, conf: "path" } }, conf: "path" } as never;
     const r = callAbs(src, "f", [absArr]);
-    // Bug 47：单代表迭代 + 增长宽化——计数器域 = 无上界 number（native
+    // 单代表迭代 + 增长宽化——计数器域 = 无上界 number（native
     // a.length 任意，{0,1} 不是超集），0 次出口由 number 域覆盖
     const shown = formatAbs(r.result);
     expect(shown).toContain("number");
@@ -56,7 +56,7 @@ describe("P0 for-of empty / abstract accumulators", () => {
   });
 
   it("for-of over a number-typed receiver is a definite TypeError (numbers are never iterable)", () => {
-    // 原生：for (const x of 5) → TypeError（Bug 6 迭代守卫；此前静默迭代为错误）
+    // 原生：for (const x of 5) → TypeError（迭代守卫；此前静默迭代为错误）
     const src = `export function f(a) { let s = 0; for (const x of a) { s = s + 1; } return s; }`;
     const r = callAbs(src, "f", [absNum]);
     expect(formatAbs(r.throws)).toContain("TypeError");

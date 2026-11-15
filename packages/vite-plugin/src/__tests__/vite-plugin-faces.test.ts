@@ -17,11 +17,11 @@ beforeEach(() => {
 import { assembleCheckOutcome } from "../check-assembly.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 1002 —— buildEnd 汇总行走 Vite logger（受 build.logLevel 管辖）
+// buildEnd 汇总行走 Vite logger（受 build.logLevel 管辖）
 // ---------------------------------------------------------------------------
-describe("[vite-] Bug 1002 —— buildEnd 汇总行走 Vite logger（受 build.logLevel 管辖）", () => {
+describe("buildEnd 汇总行走 Vite logger（受 build.logLevel 管辖）", () => {
 /**
- * Bug 1002 —— vite-plugin 的 `buildEnd` 汇总行走 `console.log` ⇒ **绕过 Vite 的
+ * vite-plugin 的 `buildEnd` 汇总行走 `console.log` ⇒ **绕过 Vite 的
  * `build.logLevel`** ⇒ 用户设了 `logLevel: "silent"` 仍然**只**剩下
  * `[nudo] Analysis complete: N error(s)` 一行，而那 N 条**诊断一条都没被打印**
  * ⇒ 静默失效 + 汇总与日志互相矛盾。
@@ -68,7 +68,7 @@ async function fixture(): Promise<{ dir: string; id: string }> {
   return { dir, id };
 }
 
-describe("Bug 1002 —— buildEnd 汇总行走 Vite logger（受 build.logLevel 管辖）", () => {
+describe("buildEnd 汇总行走 Vite logger（受 build.logLevel 管辖）", () => {
   it("汇总行走 ctx.info（vite logger），不再走裸 console.log", async () => {
     const { dir, id } = await fixture();
     try {
@@ -136,11 +136,11 @@ describe("Bug 1002 —— buildEnd 汇总行走 Vite logger（受 build.logLevel
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1018 —— include / exclude 按「绝对路径 + 项目相对路径」双口径匹配
+// include / exclude 按「绝对路径 + 项目相对路径」双口径匹配
 // ---------------------------------------------------------------------------
-describe("[vite-] Bug 1018 —— include / exclude 按「绝对路径 + 项目相对路径」双口径匹配", () => {
+describe("include / exclude 按「绝对路径 + 项目相对路径」双口径匹配", () => {
 /**
- * Bug 1018 —— vite-plugin 的 `include` / `exclude` **选项**按**绝对模块 id**匹配
+ * vite-plugin 的 `include` / `exclude` **选项**按**绝对模块 id**匹配
  * ⇒ **项目相对 glob 静默失效** ⇒ `exclude: ["other/**"]` 不排除（仍报错 / 假红），
  * `include: ["src/**"]` 把**整份分析**静默归零（假绿）⇒ 与**同名**的项目配置
  * `nudo.analysis.include` / `nudo.analysis.exclude` **判定相反**。
@@ -219,7 +219,7 @@ async function diagnosticsOf(plugin: Plugin, code: string, id: string): Promise<
   ];
 }
 
-describe("Bug 1018 —— include / exclude 按「绝对路径 + 项目相对路径」双口径匹配", () => {
+describe("include / exclude 按「绝对路径 + 项目相对路径」双口径匹配", () => {
   it("exclude: [\"other/**\"] ⇒ other/b.js 被排除（改前仍被分析并报错）", async () => {
     const { dir, otherId } = fixture("exclude");
     try {
@@ -293,11 +293,11 @@ describe("Bug 1018 —— include / exclude 按「绝对路径 + 项目相对路
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1056 —— 软链依赖（realpath id）不得被当项目源码分析
+// 软链依赖（realpath id）不得被当项目源码分析
 // ---------------------------------------------------------------------------
-describe("[vite-] Bug 1056 —— 软链依赖（realpath id）不得被当项目源码分析", () => {
+describe("软链依赖（realpath id）不得被当项目源码分析", () => {
 /**
- * Bug 1056 —— 默认排除的「node_modules 段」规则**匹配不到软链工作区依赖的真实路径**
+ * 默认排除的「node_modules 段」规则**匹配不到软链工作区依赖的真实路径**
  * ⇒ Vite 构建期对**别的包源码**报错，而同项目的 `nudo check` 是绿的
  * ⇒ **跨面自相矛盾 + 假红**。
  *
@@ -394,7 +394,7 @@ function physicalFixture(): { dir: string; depId: string; srcId: string } {
   return { dir, depId, srcId };
 }
 
-describe("Bug 1056 —— 软链依赖（realpath id）不得被当项目源码分析", () => {
+describe("软链依赖（realpath id）不得被当项目源码分析", () => {
   it("软链依赖的 realpath id ⇒ 零诊断（改前报 entry-may-throw）", async () => {
     const { dir, realId } = symlinkFixture();
     try {
@@ -447,11 +447,11 @@ describe("Bug 1056 —— 软链依赖（realpath id）不得被当项目源码�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1088 —— 软链工程根下的源文件不得被判「依赖」
+// 软链工程根下的源文件不得被判「依赖」
 // ---------------------------------------------------------------------------
-describe("[vite-] Bug 1088 —— 软链工程根下的源文件不得被判「依赖」", () => {
+describe("软链工程根下的源文件不得被判「依赖」", () => {
 /**
- * Bug 1088 —— 工程根含**软链**时，全部源文件被判「依赖」⇒ 插件**静默空转**
+ * 工程根含**软链**时，全部源文件被判「依赖」⇒ 插件**静默空转**
  * （零诊断、零构建失败、零提示 = 假绿）。
  *
  * 根因（`scope.ts` 的 `scopePath`）：`projectRootAbs()` 只做 `path.resolve`
@@ -549,7 +549,7 @@ afterEach(() => {
   setProjectRoot(undefined);
 });
 
-describe("Bug 1088 —— 软链工程根下的源文件不得被判「依赖」", () => {
+describe("软链工程根下的源文件不得被判「依赖」", () => {
   it("软链 root + 软链形态 id ⇒ 分析（改前 skip:exclude）", () => {
     const { base, linkRoot, linkId } = symlinkRootFixture();
     try {
@@ -637,11 +637,11 @@ describe("Bug 1088 —— 软链工程根下的源文件不得被判「依赖」
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1089 —— check 通道的无位置 issue 不再被伪造成 :1:0
+// check 通道的无位置 issue 不再被伪造成 :1:0
 // ---------------------------------------------------------------------------
-describe("[vite-] Bug 1089 —— check 通道的无位置 issue 不再被伪造成 :1:0", () => {
+describe("check 通道的无位置 issue 不再被伪造成 :1:0", () => {
 /**
- * Bug 1089 —— vite-plugin 的 **check 通道** issue 无 `line` 时被伪造成 `:1:0`
+ * vite-plugin 的 **check 通道** issue 无 `line` 时被伪造成 `:1:0`
  * ⇒ 构建日志把「另一个文件不可读」这类**无源位置**的门禁诊断定位到
  * **当前文件第 1 行第 0 列**。
  *
@@ -651,10 +651,10 @@ describe("[vite-] Bug 1089 —— check 通道的无位置 issue 不再被伪造
  *
  * 三面不一致：
  * - 本包 `report.ts` 的 `renderLocation` 契约明写「**不编造**第 1 行
- *   （`:1:0`）」；
+ * （`:1:0`）」；
  * - CLI 人类面（`core/src/algebra/check-report.ts`：`i.line != null ?
- *   \`L${i.line}\` : ""`）无位置就不打位置；
- * - Bug 982 的既有钉：占位 range（`line: 0`）渲染时整段省略位置。
+ * \`L${i.line}\` : ""`）无位置就不打位置；
+ * - 的既有钉：占位 range（`line: 0`）渲染时整段省略位置。
  *
  * 修法：**不编造位置** —— 无 `line` 时用 service 的占位约定
  * `{line: 0, column: 0}` ⇒ `renderLocation`（`line <= 0` ⇒ 省略
@@ -709,7 +709,7 @@ function projectWithVerboseDiagnostics(dir: string): void {
   );
 }
 
-describe("Bug 1089 —— check 通道的无位置 issue 不再被伪造成 :1:0", () => {
+describe("check 通道的无位置 issue 不再被伪造成 :1:0", () => {
   it("无 `line` 的 check issue ⇒ range 用占位 0（不是编造的 1）", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-vite-1089-"));
     try {
@@ -779,11 +779,11 @@ describe("Bug 1089 —— check 通道的无位置 issue 不再被伪造成 :1:0
 });
 
 // ---------------------------------------------------------------------------
-// BUG-110: vite-plugin 的 ignoreThrows 与 CLI / LSP 同口径
+// vite-plugin 的 ignoreThrows 与 CLI / LSP 同口径
 // ---------------------------------------------------------------------------
-describe("[vite-] BUG-110: vite-plugin 的 ignoreThrows 与 CLI / LSP 同口径", () => {
+describe("vite-plugin 的 ignoreThrows 与 CLI / LSP 同口径", () => {
 /**
- * BUG-110 回归（vite-plugin 构建期）：`package.json#nudo.check.ignoreThrows`
+ * 回归（vite-plugin 构建期）：`package.json#nudo.check.ignoreThrows`
  * 必须与 **CLI / LSP 同口径**解析 —— 裸字符串 / 逗号分隔都生效。
  *
  * 病灶：`assembleCheckOutcome` 走 service 的 `checkConfig`，其 `ignoreThrows`
@@ -875,7 +875,7 @@ const LEGAL_WRITINGS: Array<[label: string, raw: unknown]> = [
   ["字符串数组", ["TypeError"]],
 ];
 
-describe("BUG-110: vite-plugin 的 ignoreThrows 与 CLI / LSP 同口径", () => {
+describe("vite-plugin 的 ignoreThrows 与 CLI / LSP 同口径", () => {
   for (const [label, raw] of LEGAL_WRITINGS) {
     it(`${label}（${JSON.stringify(raw)}）⇒ 该 throw 类不再报，构建不中断`, async () => {
       const dir = mkdtempSync(join(tmpdir(), "nudo-vite-bug-110-"));
@@ -905,11 +905,11 @@ describe("BUG-110: vite-plugin 的 ignoreThrows 与 CLI / LSP 同口径", () => 
 });
 
 // ---------------------------------------------------------------------------
-// BUG-111: 同名模块下 env ∪ harvest 必须合并（不得丢弃 harvest 专有导出）
+// 同名模块下 env ∪ harvest 必须合并（不得丢弃 harvest 专有导出）
 // ---------------------------------------------------------------------------
-describe("[vite-] BUG-111: 同名模块下 env ∪ harvest 必须合并（不得丢弃 harvest 专有导出）", () => {
+describe("同名模块下 env ∪ harvest 必须合并（不得丢弃 harvest 专有导出）", () => {
 /**
- * BUG-111 回归（vite-plugin 构建期）：env 模块与 harvest 模块**同名**合并时
+ * 回归（vite-plugin 构建期）：env 模块与 harvest 模块**同名**合并时
  * 必须走 `mergeHarvestUnderEnv`（同名槽 env 赢、harvest 填其余空位）。
  *
  * 病灶：`buildViteCheckInjection` 用**对象展开**
@@ -917,7 +917,7 @@ describe("[vite-] BUG-111: 同名模块下 env ∪ harvest 必须合并（不得
  * 被整体丢弃** ⇒ 插件面绑定缺失 ⇒ 类型退化成 `unknown` + **误导性**
  * `nudo:unknown-inference`，而 CLI 面（`nudo check`，已走
  * `mergeHarvestUnderEnv`）**无诊断、签名精确** ⇒ 同一个仓库
- * `nudo check` 绿 / `vite build` 红（Bug 1037 的同族插件面）。
+ * `nudo check` 绿 / `vite build` 红（的同族插件面）。
  *
  * 触发面：模块名与 env 键同名（`util` / `path` / `url` / `os` / `crypto` /
  * `events` / `stream` / `assert` … 都是真实存在的 npm 包名）。
@@ -998,7 +998,7 @@ async function run(dir: string, code: string): Promise<Run> {
   return { warns, errors, all: [...warns, ...errors].join("\n") };
 }
 
-describe("BUG-111: 同名模块下 env ∪ harvest 必须合并（不得丢弃 harvest 专有导出）", () => {
+describe("同名模块下 env ∪ harvest 必须合并（不得丢弃 harvest 专有导出）", () => {
   it("harvest 专有导出可解析 ⇒ 不再误报 nudo:unknown-inference（与 CLI 同结论）", async () => {
     const dir = project();
     try {
@@ -1022,11 +1022,11 @@ describe("BUG-111: 同名模块下 env ∪ harvest 必须合并（不得丢弃 h
 });
 
 // ---------------------------------------------------------------------------
-// BUG-221: 项目级 env 按项目根解析（插件两个面同结论、非单调性消失）
+// 项目级 env 按项目根解析（插件两个面同结论、非单调性消失）
 // ---------------------------------------------------------------------------
-describe("[vite-] BUG-221: 项目级 env 按项目根解析（插件两个面同结论、非单调性消失）", () => {
+describe("项目级 env 按项目根解析（插件两个面同结论、非单调性消失）", () => {
 /**
- * BUG-221 回归（vite-plugin 构建期）：**项目级** env（`package.json#nudo.env`）
+ * 回归（vite-plugin 构建期）：**项目级** env（`package.json#nudo.env`）
  * 的**相对说明符**必须按**项目根**解析，而不是被 `env-loader` 的「进程级
  * 单槽基准」（= **最后一次** preload 的目录）带走。
  *
@@ -1120,7 +1120,7 @@ async function run(dir: string, file: string, code: string): Promise<Run> {
   return { warns, errors, all: [...warns, ...errors].join("\n") };
 }
 
-describe("BUG-221: 项目级 env 按项目根解析（插件两个面同结论、非单调性消失）", () => {
+describe("项目级 env 按项目根解析（插件两个面同结论、非单调性消失）", () => {
   it("无文件级 @nudo:env ⇒ 不报 ReferenceError（基线，一直是对的）", async () => {
     const { dir, file } = project("", ["./env/web.ts"]);
     try {
@@ -1172,11 +1172,11 @@ describe("BUG-221: 项目级 env 按项目根解析（插件两个面同结论�
 });
 
 // ---------------------------------------------------------------------------
-// BUG-222: 项目级 env 装载失败必须上屏（nudo:env-unresolved）
+// 项目级 env 装载失败必须上屏（nudo:env-unresolved）
 // ---------------------------------------------------------------------------
-describe("[vite-] BUG-222: 项目级 env 装载失败必须上屏（nudo:env-unresolved）", () => {
+describe("项目级 env 装载失败必须上屏（nudo:env-unresolved）", () => {
 /**
- * BUG-222 回归（vite-plugin 构建期）：**项目级** env
+ * 回归（vite-plugin 构建期）：**项目级** env
  * （`package.json#nudo.env`）装载失败必须可见（`nudo:env-unresolved`），
  * 与 CLI / LSP 同口径。
  *
@@ -1190,7 +1190,7 @@ describe("[vite-] BUG-222: 项目级 env 装载失败必须上屏（nudo:env-unr
  *
  * 修法（`packages/vite-plugin/src/report.ts`）：**双 baseDir** 取错误
  * （文件目录 + 项目根），并按「项目级按项目根绝对化后」的期望路径集过滤
- * —— 与 CLI `packages/nudojs/src/commands/check.ts`（Bug 647）和 LSP
+ * —— 与 CLI `packages/nudojs/src/commands/check.ts`（）和 LSP
  * `packages/lsp/src/validation.ts` 的 `envUnresolvedDiags` 同款。
  *
  * 负控制：项目 env 正常（文件存在且契约合法）⇒ 不得报 `nudo:env-unresolved`。
@@ -1262,7 +1262,7 @@ async function run(dir: string, file: string, code: string): Promise<string> {
   return msgs.join("\n");
 }
 
-describe("BUG-222: 项目级 env 装载失败必须上屏（nudo:env-unresolved）", () => {
+describe("项目级 env 装载失败必须上屏（nudo:env-unresolved）", () => {
   it("项目级 env 缺失 ⇒ 构建期 warning 指名项目根下的路径", async () => {
     const { dir, file } = project(["./missing-env.ts"]);
     try {
@@ -1301,11 +1301,11 @@ describe("BUG-222: 项目级 env 装载失败必须上屏（nudo:env-unresolved�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 470/937 vite-plugin：按名字发的 env 诊断不再被过滤掉
+// vite-plugin：按名字发的 env 诊断不再被过滤掉
 // ---------------------------------------------------------------------------
-describe("[vite-] Bug 470/937 vite-plugin：按名字发的 env 诊断不再被过滤掉", () => {
+describe("vite-plugin：按名字发的 env 诊断不再被过滤掉", () => {
 /**
- * Bug 470 / 937 回归（vite-plugin 面）：service 侧**按名字**发的 env 诊断
+ * 回归（vite-plugin 面）：service 侧**按名字**发的 env 诊断
  * （未知 env 名 / 非字符串 env 项）记录的 path 是**名字本身**，不是解析后的
  * 绝对路径 ⇒ vite-plugin 原先只按 `resolvePath(baseDir, name)` 过滤 ⇒ 这类
  * 诊断在构建日志里被整条吃掉（env 静默不生效，零提示）。
@@ -1344,7 +1344,7 @@ export function g() {
 }
 `;
 
-describe("Bug 470/937 vite-plugin：按名字发的 env 诊断不再被过滤掉", () => {
+describe("vite-plugin：按名字发的 env 诊断不再被过滤掉", () => {
   it("未知 env 名 ⇒ 构建期 warning（nudo:env-unresolved）", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-vite-bug-470-"));
     try {
@@ -1385,11 +1385,11 @@ describe("Bug 470/937 vite-plugin：按名字发的 env 诊断不再被过滤掉
 });
 
 // ---------------------------------------------------------------------------
-// Bug 474: vite-plugin 报出 path-env 加载失败
+// vite-plugin 报出 path-env 加载失败
 // ---------------------------------------------------------------------------
-describe("[vite-] Bug 474: vite-plugin 报出 path-env 加载失败", () => {
+describe("vite-plugin 报出 path-env 加载失败", () => {
 /**
- * Bug 474：vite-plugin **从不读** path-env 加载失败通道 ⇒ `@nudo:env ./missing.js`
+ * vite-plugin **从不读** path-env 加载失败通道 ⇒ `@nudo:env ./missing.js`
  * 加载失败零诊断（env 静默不生效：该 env 提供的全局退化成 unknown / 宿主真身，
  * 构建日志里没有任何一行提示）。
  *
@@ -1437,7 +1437,7 @@ function fixture(): string {
   return dir;
 }
 
-describe("Bug 474: vite-plugin 报出 path-env 加载失败", () => {
+describe("vite-plugin 报出 path-env 加载失败", () => {
   it("@nudo:env 指向缺失文件 → 构建期 warning（nudo:env-unresolved）", async () => {
     const dir = fixture();
     try {
@@ -1490,11 +1490,11 @@ describe("Bug 474: vite-plugin 报出 path-env 加载失败", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 634: vite-plugin check 面施加 inject 通道（@nudo:mock 生效）
+// vite-plugin check 面施加 inject 通道（@nudo:mock 生效）
 // ---------------------------------------------------------------------------
-describe("[vite-] Bug 634: vite-plugin check 面施加 inject 通道（@nudo:mock 生效）", () => {
+describe("vite-plugin check 面施加 inject 通道（@nudo:mock 生效）", () => {
 /**
- * Bug 634 回归（vite-plugin 构建期）：check 通道必须施加 **inject 通道**
+ * 回归（vite-plugin 构建期）：check 通道必须施加 **inject 通道**
  * （`@nudo:mock` / `@nudo:as` / `@nudo:replace` / env 全局），与 CLI
  * `nudo check` 同源同口径。
  *
@@ -1544,7 +1544,7 @@ const UNMOCKED_SRC = `export function g() {
 }
 `;
 
-describe("Bug 634: vite-plugin check 面施加 inject 通道（@nudo:mock 生效）", () => {
+describe("vite-plugin check 面施加 inject 通道（@nudo:mock 生效）", () => {
   it("@nudo:mock 覆盖的依赖不得再报 nudo:entry-may-throw（与 CLI 同口径：绿）", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-vite-bug-634-"));
     try {
@@ -1580,11 +1580,11 @@ describe("Bug 634: vite-plugin check 面施加 inject 通道（@nudo:mock 生效
 });
 
 // ---------------------------------------------------------------------------
-// Bug 779（vite 半）— info 级 check 诊断在 verbose 档必须上屏
+// （vite 半）— info 级 check 诊断在 verbose 档必须上屏
 // ---------------------------------------------------------------------------
-describe("[vite-] Bug 779（vite 半）— info 级 check 诊断在 verbose 档必须上屏", () => {
+describe("（vite 半）— info 级 check 诊断在 verbose 档必须上屏", () => {
 /**
- * Bug 779（vite 半）—— vite-plugin 把 **info 级 check 诊断丢在噪声档过滤
+ * （vite 半）—— vite-plugin 把 **info 级 check 诊断丢在噪声档过滤
  * 之前** ⇒ `nudo:assume-relied` / `nudo:invariant-relied` / `nudo:opaque-result`
  * **永不上屏**，且 `nudo.analysis.diagnostics: "verbose"` 对 check 诊断
  * **完全是空操作**。
@@ -1674,7 +1674,7 @@ const VERBOSE_PKG = {
 
 const DEFAULT_PKG = { name: "bug779-vite-default", private: true, type: "module" };
 
-describe("Bug 779（vite 半）— info 级 check 诊断在 verbose 档必须上屏", () => {
+describe("（vite 半）— info 级 check 诊断在 verbose 档必须上屏", () => {
   it("verbose 档：nudo:assume-relied 走 info 通道上屏（不混进 warn 流）", async () => {
     const { warn, info } = await runVite(VERBOSE_PKG);
     const hit = info.filter((m) => m.includes(ASSUME_CODE));
@@ -1694,11 +1694,11 @@ describe("Bug 779（vite 半）— info 级 check 诊断在 verbose 档必须上
 });
 
 // ---------------------------------------------------------------------------
-// vite-plugin-nudo Bug 895 — enforce: 'pre'（TS 源码里的 @nudo: 指令必须可见）
+// vite-plugin-nudo enforce: 'pre'（TS 源码里的 @nudo: 指令必须可见）
 // ---------------------------------------------------------------------------
-describe("[vite-] vite-plugin-nudo Bug 895 — enforce: 'pre'（TS 源码里的 @nudo: 指令必须可见）", () => {
+describe("vite-plugin-nudo enforce: 'pre'（TS 源码里的 @nudo: 指令必须可见）", () => {
 /**
- * Bug 895 —— 插件对象缺 `enforce: "pre"` ⇒ 排在核心插件 `vite:esbuild` **之后**
+ * 插件对象缺 `enforce: "pre"` ⇒ 排在核心插件 `vite:esbuild` **之后**
  * ⇒ `transform` 收到的是 esbuild 的**转译产物**（TS loader 剥光注释）⇒
  * `.ts` 源里**只存在于注释**的 `@nudo:` 指令全部不可见 ⇒ 分析按「无指令普通模块」
  * 跑 ⇒ 报出 `nudo check` **不会**报的 error（**假红**面）。
@@ -1751,7 +1751,7 @@ export {
 };
 `;
 
-describe("vite-plugin-nudo Bug 895 — enforce: 'pre'（TS 源码里的 @nudo: 指令必须可见）", () => {
+describe("vite-plugin-nudo enforce: 'pre'（TS 源码里的 @nudo: 指令必须可见）", () => {
   const dirs: string[] = [];
   afterEach(() => {
     for (const d of dirs) rmSync(d, { recursive: true, force: true });
@@ -1771,12 +1771,12 @@ describe("vite-plugin-nudo Bug 895 — enforce: 'pre'（TS 源码里的 @nudo: �
   }
 
   /**
-   * 走一遍插件的**真实生命周期**：`configResolved`（记录 `config.root`）→
-   * `transform`。⚠ `scope.ts` 的项目根是**模块级状态** ⇒ 直接驱动 `transform`
-   * 而不先给根，会沿用**上一个**用例留下的根 ⇒ 文件被当成「工程根之外的依赖」
-   * 而跳过（`scope.ts` 的 1056 语义）⇒ 诊断消失。真实构建里 Vite 必先调
-   * `configResolved`，这里如实模拟。
-   */
+ * 走一遍插件的**真实生命周期**：`configResolved`（记录 `config.root`）→
+ * `transform`。⚠ `scope.ts` 的项目根是**模块级状态** ⇒ 直接驱动 `transform`
+ * 而不先给根，会沿用**上一个**用例留下的根 ⇒ 文件被当成「工程根之外的依赖」
+ * 而跳过（`scope.ts` 的 1056 语义）⇒ 诊断消失。真实构建里 Vite 必先调
+ * `configResolved`，这里如实模拟。
+ */
   function bindRoot(plugin: { configResolved?: unknown }, root: string): void {
     // ⚠ HEAD（族 30 之前）副本没有 `configResolved` 钩子 ⇒ 跳过（反向闸
     // 的失败原因必须来自**行为**，不能来自「钩子不存在」这种基线差异）。
@@ -1951,11 +1951,11 @@ export class A { x = 1; }
 });
 
 // ---------------------------------------------------------------------------
-// Bug 896 —— 虚拟模块 id 必须被跳过（不再触发侧车加载失败）
+// 虚拟模块 id 必须被跳过（不再触发侧车加载失败）
 // ---------------------------------------------------------------------------
-describe("[vite-] Bug 896 —— 虚拟模块 id 必须被跳过（不再触发侧车加载失败）", () => {
+describe("虚拟模块 id 必须被跳过（不再触发侧车加载失败）", () => {
 /**
- * Bug 896 —— Vite **虚拟模块 id**（`\0` 前缀 / `virtual:` 前缀）触发侧车加载失败
+ * Vite **虚拟模块 id**（`\0` 前缀 / `virtual:` 前缀）触发侧车加载失败
  * ⇒ 干净模块被判 **error**；`failOnError: true` 时**抛错中断构建**。
  *
  * 根因：`transform` 入口不判「虚拟模块」⇒ 插件把 id 原样拼成侧车路径
@@ -1987,7 +1987,7 @@ function transformOf(plugin: Plugin) {
 const CLEAN = `export const a = 1;
 `;
 
-describe("Bug 896 —— 虚拟模块 id 必须被跳过（不再触发侧车加载失败）", () => {
+describe("虚拟模块 id 必须被跳过（不再触发侧车加载失败）", () => {
   it("\\0 前缀虚拟 id + 干净源码 + failOnError: true ⇒ 不抛、零诊断", async () => {
     const plugin = nudoPlugin({ failOnError: true });
     const warnFn = vi.fn();
@@ -2041,11 +2041,11 @@ describe("Bug 896 —— 虚拟模块 id 必须被跳过（不再触发侧车加
 });
 
 // ---------------------------------------------------------------------------
-// Bug 897: vite-plugin 读项目配置的 L2 门禁档位（entryThrows / ignoreThrows）
+// vite-plugin 读项目配置的 L2 门禁档位（entryThrows / ignoreThrows）
 // ---------------------------------------------------------------------------
-describe("[vite-] Bug 897: vite-plugin 读项目配置的 L2 门禁档位（entryThrows / ignoreThrows）", () => {
+describe("vite-plugin 读项目配置的 L2 门禁档位（entryThrows / ignoreThrows）", () => {
 /**
- * Bug 897 回归（vite-plugin 构建期）：check 面必须把**项目配置**里的
+ * 回归（vite-plugin 构建期）：check 面必须把**项目配置**里的
  * L2 门禁档位（`package.json#nudo.check.entryThrows` / `ignoreThrows`）
  * 传给 `checkSource` —— 与 CLI / LSP **同口径**。
  *
@@ -2127,7 +2127,7 @@ function project(dir: string, nudo?: Record<string, unknown>): void {
   writeFileSync(join(dir, "a.js"), ENTRY_SRC, "utf-8");
 }
 
-describe("Bug 897: vite-plugin 读项目配置的 L2 门禁档位（entryThrows / ignoreThrows）", () => {
+describe("vite-plugin 读项目配置的 L2 门禁档位（entryThrows / ignoreThrows）", () => {
   it("entryThrows=warning ⇒ 报 warning 而不是 error（与 CLI 同口径）", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-vite-bug-897-"));
     try {
@@ -2212,11 +2212,11 @@ describe("Bug 897: vite-plugin 读项目配置的 L2 门禁档位（entryThrows 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 898: vite-plugin check 面传 Abs 模块图（跨模块返回契约可证 ⇒ 不报 unproven-return）
+// vite-plugin check 面传 Abs 模块图（跨模块返回契约可证 ⇒ 不报 unproven-return）
 // ---------------------------------------------------------------------------
-describe("[vite-] Bug 898: vite-plugin check 面传 Abs 模块图（跨模块返回契约可证 ⇒ 不报 unproven-return）", () => {
+describe("vite-plugin check 面传 Abs 模块图（跨模块返回契约可证 ⇒ 不报 unproven-return）", () => {
 /**
- * Bug 898 回归（vite-plugin 构建期）：check 面必须把 **Abs 模块图**
+ * 回归（vite-plugin 构建期）：check 面必须把 **Abs 模块图**
  * （`modules`）传给 `checkSource` —— 与 CLI / LSP 同口径。
  *
  * 病灶（勘察基线 `7af5520c`）：插件调 `checkSource` 时**不传** `modules`
@@ -2230,7 +2230,7 @@ describe("[vite-] Bug 898: vite-plugin check 面传 Abs 模块图（跨模块返
  * 对照：族 18 之前的基线（`7af5520c`）上本钉会失败。
  *
  * 负控制：真违约（返回 `string()` 而实际返回 `number`）必须仍然报
- * `nudo:constraint-violated`（**error** 级）—— 见 Bug 983 的钉。
+ * `nudo:constraint-violated`（**error** 级）—— 见 的钉。
  */
 
 
@@ -2306,7 +2306,7 @@ function project(dir: string): void {
   writeFileSync(join(dir, "app.nudo.js"), APP_SIDECAR, "utf-8");
 }
 
-describe("Bug 898: vite-plugin check 面传 Abs 模块图（跨模块返回契约可证 ⇒ 不报 unproven-return）", () => {
+describe("vite-plugin check 面传 Abs 模块图（跨模块返回契约可证 ⇒ 不报 unproven-return）", () => {
   it("跨模块调用可证时不得报 nudo:unproven-return / unknown #opaque（与 CLI 同口径：绿）", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-vite-bug-898-"));
     try {
@@ -2344,11 +2344,11 @@ describe("Bug 898: vite-plugin check 面传 Abs 模块图（跨模块返回契�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 899 —— off 档不得抹掉 check 门禁通道
+// off 档不得抹掉 check 门禁通道
 // ---------------------------------------------------------------------------
-describe("[vite-] Bug 899 —— off 档不得抹掉 check 门禁通道", () => {
+describe("off 档不得抹掉 check 门禁通道", () => {
 /**
- * Bug 899 —— `nudo.analysis.diagnostics: "off"` 档把 **L1/L2 check 门禁**
+ * `nudo.analysis.diagnostics: "off"` 档把 **L1/L2 check 门禁**
  * 一起抹掉 ⇒ `vite build` 零诊断通过（CI 假绿）。
  *
  * 根因：插件把 **check 门禁诊断与 evaluator 诊断合并后**再交给
@@ -2404,7 +2404,7 @@ function offFixture(): { dir: string; id: string } {
   return { dir, id };
 }
 
-describe("Bug 899 —— off 档不得抹掉 check 门禁通道", () => {
+describe("off 档不得抹掉 check 门禁通道", () => {
   it("off 档 + failOnError: true ⇒ 仍然抛（构建红，不再 CI 假绿）", async () => {
     const { dir, id } = offFixture();
     try {
@@ -2467,11 +2467,11 @@ describe("Bug 899 —— off 档不得抹掉 check 门禁通道", () => {
 });
 
 // ---------------------------------------------------------------------------
-// vite-plugin-nudo Bug 900 — enforce: 'pre'（.ts 源的契约不得被静默放绿）
+// vite-plugin-nudo enforce: 'pre'（.ts 源的契约不得被静默放绿）
 // ---------------------------------------------------------------------------
-describe("[vite-] vite-plugin-nudo Bug 900 — enforce: 'pre'（.ts 源的契约不得被静默放绿）", () => {
+describe("vite-plugin-nudo enforce: 'pre'（.ts 源的契约不得被静默放绿）", () => {
 /**
- * Bug 900 —— Bug 895 的**反方向面**：插件对象缺 `enforce: "pre"` ⇒ 排在
+ * 的**反方向面**：插件对象缺 `enforce: "pre"` ⇒ 排在
  * `vite:esbuild` **之后** ⇒ `transform` 收到 esbuild 的**转译产物**
  * （TS loader 剥光注释）⇒ `.ts` 源里的 `@nudo:contract` / `@nudo:case`
  * **全部不可见** ⇒ 门禁**静默放绿**（同一份契约：`.js` 源报红、`.ts` 源零诊断）。
@@ -2518,7 +2518,7 @@ const JS_SOURCE = `/// @nudo:import { positive } from "./std.nudo.js"
 export function areaJs(x) { return x; }
 `;
 
-describe("vite-plugin-nudo Bug 900 — enforce: 'pre'（.ts 源的契约不得被静默放绿）", () => {
+describe("vite-plugin-nudo enforce: 'pre'（.ts 源的契约不得被静默放绿）", () => {
   const dirs: string[] = [];
   afterEach(() => {
     for (const d of dirs) rmSync(d, { recursive: true, force: true });
@@ -2538,12 +2538,12 @@ describe("vite-plugin-nudo Bug 900 — enforce: 'pre'（.ts 源的契约不得�
   }
 
   /**
-   * 走一遍插件的**真实生命周期**：`configResolved`（记录 `config.root`）→
-   * `transform`。⚠ `scope.ts` 的项目根是**模块级状态** ⇒ 直接驱动 `transform`
-   * 而不先给根，会沿用**上一个**用例留下的根 ⇒ 文件被当成「工程根之外的依赖」
-   * 而跳过（`scope.ts` 的 1056 语义）⇒ 诊断消失。真实构建里 Vite 必先调
-   * `configResolved`，这里如实模拟。
-   */
+ * 走一遍插件的**真实生命周期**：`configResolved`（记录 `config.root`）→
+ * `transform`。⚠ `scope.ts` 的项目根是**模块级状态** ⇒ 直接驱动 `transform`
+ * 而不先给根，会沿用**上一个**用例留下的根 ⇒ 文件被当成「工程根之外的依赖」
+ * 而跳过（`scope.ts` 的 1056 语义）⇒ 诊断消失。真实构建里 Vite 必先调
+ * `configResolved`，这里如实模拟。
+ */
   function bindRoot(plugin: { configResolved?: unknown }, root: string): void {
     // ⚠ HEAD（族 30 之前）副本没有 `configResolved` 钩子 ⇒ 跳过（反向闸
     // 的失败原因必须来自**行为**，不能来自「钩子不存在」这种基线差异）。
@@ -2686,11 +2686,11 @@ describe("vite-plugin-nudo Bug 900 — enforce: 'pre'（.ts 源的契约不得�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 901 —— info 不计入 warning 计数 + info 走 this.info 上屏
+// info 不计入 warning 计数 + info 走 this.info 上屏
 // ---------------------------------------------------------------------------
-describe("[vite-] Bug 901 —— info 不计入 warning 计数 + info 走 this.info 上屏", () => {
+describe("info 不计入 warning 计数 + info 走 this.info 上屏", () => {
 /**
- * Bug 901 —— `buildEnd` 汇总行把 **info 级诊断算成 warning**，而这些 info
+ * `buildEnd` 汇总行把 **info 级诊断算成 warning**，而这些 info
  * **从头到尾没被打印过** ⇒ 汇总行与构建日志自相矛盾。
  *
  * 报告原断言：汇总行 `[nudo] Analysis complete: X error(s), Y warning(s)` 里的
@@ -2698,21 +2698,21 @@ describe("[vite-] Bug 901 —— info 不计入 warning 计数 + info 走 this.i
  * 「说 Y 条告警，日志里一条告警都找不到」。
  *
  * ⚠ **本片是族 30 唯一的假阳性片**：核心症状已被**族 26**（提交 `f87c9f9d`
- * 的「Bug 779 vite 半」）修掉 —— `warnCount` 改成只数 `severity === "warning"`，
+ * 的「vite 半」）修掉 —— `warnCount` 改成只数 `severity === "warning"`，
  * 上报循环新增 info → `this.info` 分支 ⇒ **本文件不改任何实现**，只补
  * **反向守护钉**：钉住这两条**已成立**的行为。
  *
  * 钉住（两条）：
  * 1. **info 不计入 warning 计数** —— 汇总行的 `Y warning(s)` 只数 warning 级
- *    诊断；info 级诊断不计入，且汇总行**不得**比「实际 warning 条数」多。
+ * 诊断；info 级诊断不计入，且汇总行**不得**比「实际 warning 条数」多。
  * 2. **info 走 `this.info` 上屏** —— info 级诊断出现在 vite 的 **info 通道**，
- *    **不混进 warn 流**（否则 info 冒充告警）。
+ * **不混进 warn 流**（否则 info 冒充告警）。
  *
  * 与族 26 的 `vite--info-level-diagnostics.part.ts` 的分工：779 钉的是
  * **check 面** info（`nudo:assume-relied`，verbose 档）上屏；本钉钉的是
  * **evaluator 面** info（不可达代码 / 无契约根）**与汇总计数口径** ⇒ 不重复。
  *
- * ⚠ 汇总行的**输出通道**（S3 的 Bug 1002 已把它从裸 `console.log` 迁到 Vite
+ * ⚠ 汇总行的**输出通道**（S3 的 已把它从裸 `console.log` 迁到 Vite
  * logger 的 info 通道）**不在**本钉的断言面内 ⇒ 本钉从「console.log + vite 的
  * warn/info 两条通道」三处一起找汇总行 ⇒ 通道迁移前后本钉都成立。
  */
@@ -2833,7 +2833,7 @@ function classify(c: Captured) {
   return { diags, errors, warnings, info };
 }
 
-describe("Bug 901 —— info 不计入 warning 计数 + info 走 this.info 上屏", () => {
+describe("info 不计入 warning 计数 + info 走 this.info 上屏", () => {
   it("info 级诊断走 vite 的 info 通道上屏，且不混进 warn 流", async () => {
     const c = await runFixture();
     const { info } = classify(c);
@@ -2886,11 +2886,11 @@ describe("Bug 901 —— info 不计入 warning 计数 + info 走 this.info 上�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 902 —— 畸形入参不得抛未捕获异常
+// 畸形入参不得抛未捕获异常
 // ---------------------------------------------------------------------------
-describe("[vite-] Bug 902 —— 畸形入参不得抛未捕获异常", () => {
+describe("畸形入参不得抛未捕获异常", () => {
 /**
- * Bug 902 —— `transform()` 对 `code = null` **抛未捕获异常**（异常在 `try` 之外，
+ * `transform()` 对 `code = null` **抛未捕获异常**（异常在 `try` 之外，
  * 插件自己的兜底 `catch` 接不到）。
  *
  * 根因：`shouldAnalyzeFile` 的守卫是 `text !== undefined`（**漏掉 `null`**）⇒
@@ -2946,7 +2946,7 @@ function fixture(mode: string): { dir: string; id: string } {
   return { dir, id };
 }
 
-describe("Bug 902 —— 畸形入参不得抛未捕获异常", () => {
+describe("畸形入参不得抛未捕获异常", () => {
   for (const mode of ["exports", "directives", "all"]) {
     it(`mode=${mode}：code=null ⇒ 不抛、返回 null、零诊断`, async () => {
       const { dir, id } = fixture(mode);
@@ -3021,11 +3021,11 @@ describe("Bug 902 —— 畸形入参不得抛未捕获异常", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 903 —— HMR 的 ?t= query id 不得让整份文件被跳过
+// HMR 的 ?t= query id 不得让整份文件被跳过
 // ---------------------------------------------------------------------------
-describe("[vite-] Bug 903 —— HMR 的 ?t= query id 不得让整份文件被跳过", () => {
+describe("HMR 的 ?t= query id 不得让整份文件被跳过", () => {
 /**
- * Bug 903 —— `vite dev` 下 HMR 的 `?t=<timestamp>` module id 让插件**整份跳过**
+ * `vite dev` 下 HMR 的 `?t=<timestamp>` module id 让插件**整份跳过**
  * 刚编辑的文件 ⇒ **dev 期诊断消失**（假绿）。
  *
  * 根因：`transform` 入口拿**带 query 的原始 Vite module id** 去比锚定正则
@@ -3086,7 +3086,7 @@ async function diagnosticsOf(plugin: Plugin, code: string, id: string): Promise<
   ];
 }
 
-describe("Bug 903 —— HMR 的 ?t= query id 不得让整份文件被跳过", () => {
+describe("HMR 的 ?t= query id 不得让整份文件被跳过", () => {
   it("带 ?t=<ts> 的 id 与不带 query 的 id 产出同样的诊断", async () => {
     const { dir, id } = fixture();
     try {
@@ -3131,11 +3131,11 @@ describe("Bug 903 —— HMR 的 ?t= query id 不得让整份文件被跳过", (
 });
 
 // ---------------------------------------------------------------------------
-// Bug 904 —— failOnError 档下每条 error 诊断都要上报
+// failOnError 档下每条 error 诊断都要上报
 // ---------------------------------------------------------------------------
-describe("[vite-] Bug 904 —— failOnError 档下每条 error 诊断都要上报", () => {
+describe("failOnError 档下每条 error 诊断都要上报", () => {
 /**
- * Bug 904 —— `failOnError: true` 只报**第一条** error，其余 error 级诊断被
+ * `failOnError: true` 只报**第一条** error，其余 error 级诊断被
  * **静默丢弃** ⇒ 构建摘要说「2 error(s)」而报错里只有 1 条。
  *
  * 根因：`fatal` 是**单个字符串**、`??` 短路只留首条 ⇒ 第二条 error 诊断在
@@ -3177,7 +3177,7 @@ export function b(u) {
 }
 `;
 
-describe("Bug 904 —— failOnError 档下每条 error 诊断都要上报", () => {
+describe("failOnError 档下每条 error 诊断都要上报", () => {
   it("两条 error ⇒ 首条 this.error 抛出 + 其余逐条 this.warn（不静默丢弃）", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-vite-904-"));
     try {
@@ -3264,11 +3264,11 @@ describe("Bug 904 —— failOnError 档下每条 error 诊断都要上报", () 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 982 —— 无源位置的诊断不渲染位置（不写 :0:0）
+// 无源位置的诊断不渲染位置（不写 :0:0）
 // ---------------------------------------------------------------------------
-describe("[vite-] Bug 982 —— 无源位置的诊断不渲染位置（不写 :0:0）", () => {
+describe("无源位置的诊断不渲染位置（不写 :0:0）", () => {
 /**
- * Bug 982 —— vite-plugin 把「**无源位置**」的诊断渲染成 `:0:0`（行号越界）
+ * vite-plugin 把「**无源位置**」的诊断渲染成 `:0:0`（行号越界）
  * / `:1:0`（编造第 1 行）⇒ 构建日志里的位置**不可信**（CLI 同一诊断**不打位置**）。
  *
  * 根因（插件侧）：`report.ts` 的 `renderDiagnostic` 把 `diag.range.start.line`
@@ -3326,7 +3326,7 @@ async function reported(id: string): Promise<string[]> {
   return warns;
 }
 
-describe("Bug 982 —— 无源位置的诊断不渲染位置（不写 :0:0）", () => {
+describe("无源位置的诊断不渲染位置（不写 :0:0）", () => {
   it("占位 range（line 0）⇒ 省略 :line:col，且不出现越界行号", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-vite-982-"));
     try {
@@ -3370,11 +3370,11 @@ describe("Bug 982 —— 无源位置的诊断不渲染位置（不写 :0:0）",
 });
 
 // ---------------------------------------------------------------------------
-// Bug 983: 跨模块返回契约真违例 ⇒ error 级 constraint-violated（failOnError 拦得住）
+// 跨模块返回契约真违例 ⇒ error 级 constraint-violated（failOnError 拦得住）
 // ---------------------------------------------------------------------------
-describe("[vite-] Bug 983: 跨模块返回契约真违例 ⇒ error 级 constraint-violated（failOnError 拦得住）", () => {
+describe("跨模块返回契约真违例 ⇒ error 级 constraint-violated（failOnError 拦得住）", () => {
 /**
- * Bug 983 回归（vite-plugin 构建期）：**同 898 的反方向面** —— 跨模块
+ * 回归（vite-plugin 构建期）：**同 898 的反方向面** —— 跨模块
  * 返回契约**真违例**时，插件必须给出 **error** 级的
  * `nudo:constraint-violated`，而不是被降级成 **warning** 级的
  * `nudo:unproven-return`。
@@ -3385,10 +3385,10 @@ describe("[vite-] Bug 983: 跨模块返回契约真违例 ⇒ error 级 constrai
  * 现状：**族 18（`169ed526`）的 `buildViteCheckInjection` 已经把
  * `modules`（+ `inject`）一起传给 `checkSource`** ⇒ 模块图到位后，
  * 真违约回到 CLI 的 `nudo:constraint-violated`（error）⇒ 本条早已闭合；
- * 本钉的作用是**锁住「必须回到 error 级」这一面**（与 Bug 898 的钉
+ * 本钉的作用是**锁住「必须回到 error 级」这一面**（与 的钉
  * 合起来覆盖同一根因的两个方向）。
  *
- * 负控制：返回契约**可证**时不得报 error（见 Bug 898 的钉）。
+ * 负控制：返回契约**可证**时不得报 error（见 的钉）。
  */
 
 
@@ -3466,7 +3466,7 @@ function project(dir: string): void {
   writeFileSync(join(dir, "app.nudo.js"), APP_SIDECAR_VIOLATION, "utf-8");
 }
 
-describe("Bug 983: 跨模块返回契约真违例 ⇒ error 级 constraint-violated（failOnError 拦得住）", () => {
+describe("跨模块返回契约真违例 ⇒ error 级 constraint-violated（failOnError 拦得住）", () => {
   it("真违例必须是 nudo:constraint-violated 且为 error 级（不是 warning 级 unproven-return）", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-vite-bug-983-"));
     try {
@@ -3498,11 +3498,11 @@ describe("Bug 983: 跨模块返回契约真违例 ⇒ error 级 constraint-viola
 });
 
 // ---------------------------------------------------------------------------
-// Bug 987 —— 两个诊断来源的文本格式归一（都带 (nudo:code)）
+// 两个诊断来源的文本格式归一（都带 (nudo:code)）
 // ---------------------------------------------------------------------------
-describe("[vite-] Bug 987 —— 两个诊断来源的文本格式归一（都带 (nudo:code)）", () => {
+describe("两个诊断来源的文本格式归一（都带 (nudo:code)）", () => {
 /**
- * Bug 987 —— vite-plugin 的 **evaluator 面**诊断**丢掉 `(nudo:code)`** ⇒
+ * vite-plugin 的 **evaluator 面**诊断**丢掉 `(nudo:code)`** ⇒
  * 同一次构建里两种诊断**两种文本格式**，日志里**无法按码检索**。
  *
  * 根因：两个诊断来源走**两套装配路径** —— check 面自己拼 `parts`（带码），
@@ -3560,7 +3560,7 @@ async function reported(id: string): Promise<string[]> {
   return warns;
 }
 
-describe("Bug 987 —— 两个诊断来源的文本格式归一（都带 (nudo:code)）", () => {
+describe("两个诊断来源的文本格式归一（都带 (nudo:code)）", () => {
   it("evaluator 面诊断也带 (nudo:code)（此前恒丢）", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-vite-987-"));
     try {

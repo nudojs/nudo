@@ -6,14 +6,14 @@
  * `packages/vscode/src/extension.ts` through `activate()`.
  *
  * The stub mirrors the host semantics the pins depend on:
- *   - `commands.registerCommand` throws `command '<id>' already exists` on a
- *     duplicate id (VS Code 1.91 `extHostCommands` semantics — the mechanism
- *     behind Bug 972),
- *   - the command palette invokes a command **without arguments**,
- *   - `window.showWarningMessage` / `showErrorMessage` / `showInformationMessage`
- *     / `showQuickPick` are recorded (that is the whole user-visible surface
- *     the palette paths were missing),
- *   - `editor.setDecorations` records the active-case highlight ranges.
+ * - `commands.registerCommand` throws `command '<id>' already exists` on a
+ * duplicate id (VS Code 1.91 `extHostCommands` semantics — the mechanism
+ * behind ),
+ * - the command palette invokes a command **without arguments**,
+ * - `window.showWarningMessage` / `showErrorMessage` / `showInformationMessage`
+ * / `showQuickPick` are recorded (that is the whole user-visible surface
+ * the palette paths were missing),
+ * - `editor.setDecorations` records the active-case highlight ranges.
  *
  * The fake `LanguageClient` keeps the `middleware` the extension configured
  * and answers `sendRequest` from `state.responses` (the server side is stubbed

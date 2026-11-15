@@ -1,5 +1,5 @@
 /**
- * Bug 828 回归（harvester 收割面）：导出表 / 成员表用**普通对象 + 原型链裸读裸写**
+ * 回归（harvester 收割面）：导出表 / 成员表用**普通对象 + 原型链裸读裸写**
  * ⇒ 名字撞 `Object.prototype` 成员的导出**整条静默丢失**（skipped 计数还是 0）
  * ⇒ 端到端 L2 假红。
  *
@@ -56,7 +56,7 @@ const PROTO_NAMES = ["toString", "valueOf", "hasOwnProperty", "constructor", "__
 
 type AbsLike = { shape?: { k: string } };
 
-describe("Bug 828 — 撞 Object.prototype 成员的导出不得整条丢失", () => {
+describe("撞 Object.prototype 成员的导出不得整条丢失", () => {
   it("globals 表里这些名字都是自有键，且值是收割到的 Abs", () => {
     for (const name of PROTO_NAMES) {
       expect(Object.hasOwn(env.globals, name), `globals.${name} 必须是自有键`).toBe(true);

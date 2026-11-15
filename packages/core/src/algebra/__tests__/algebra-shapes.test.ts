@@ -25,11 +25,11 @@ import { formatShape } from "../format/format.ts";
 import { listTopFunctions } from "../scan/scan.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 66 — own 属性遮蔽原型方法
+// own 属性遮蔽原型方法
 // ---------------------------------------------------------------------------
-describe("[] Bug 66 — own 属性遮蔽原型方法", () => {
+describe("own 属性遮蔽原型方法", () => {
 /**
- * Bug 66 回归：[[Get]] 是 **own → prototype**。内置 brand 实例 / 数组上的
+ * 回归：[[Get]] 是 **own → prototype**。内置 brand 实例 / 数组上的
  * `a.push = 1` 确实建了自有槽，读面不得再被原型方法表（BUILTIN_BRAND_METHODS /
  * ARRAY_PROTO_METHOD_NAMES）顶掉。此前 typeof a.push 恒折 "function"。
  */
@@ -38,7 +38,7 @@ describe("[] Bug 66 — own 属性遮蔽原型方法", () => {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 66 — own 属性遮蔽原型方法", () => {
+describe("own 属性遮蔽原型方法", () => {
   it("数组 a.push = 1 读回 1（改前折函数）", () => {
     expect(val(wrap(`const a = []; a.push = 1; return a.push;`))).toEqual({ ok: true, value: 1 });
     expect(val(wrap(`const a = []; a.push = 1; return typeof a.push;`))).toEqual({ ok: true, value: "number" });
@@ -70,22 +70,22 @@ describe("Bug 66 — own 属性遮蔽原型方法", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-006: nullable(...) 对结构化返回值必须判违约（error）
+// nullable(...) 对结构化返回值必须判违约（error）
 // ---------------------------------------------------------------------------
-describe("[] BUG-006: nullable(...) 对结构化返回值必须判违约（error）", () => {
+describe("nullable(...) 对结构化返回值必须判违约（error）", () => {
 /**
- * BUG-006 回归：含 nullish 字面量成员的 union（`nullable(...)`）无法**证违**
+ * 回归：含 nullish 字面量成员的 union（`nullable(...)`）无法**证违**
  * 结构化返回值 ⇒ 违约事实被降级成 `nudo:unproven-return`（warning）⇒ 门禁
  * 判 OK、exit 0（假绿）。同一条契约在参数侧是 error 级拦截。
  *
  * 根因（两环）：
  * 1. `lit(null)` / `lit(undefined)` 的约束**没有 prim**（域靠 `eq(self, null)`
- *    承载）⇒ `assertScalar` 的 prim 门不触发；值相等义务随后落到
- *    `isBoundedEvidenceMissing` 的兜底「无证据」⇒ `unprovable`——该函数把
- *    **值相等义务**误分类成**带界义务**（gt/ge/lt/le），而结构化形状本身
- *    已确定「不是 nullish」。
+ * 承载）⇒ `assertScalar` 的 prim 门不触发；值相等义务随后落到
+ * `isBoundedEvidenceMissing` 的兜底「无证据」⇒ `unprovable`——该函数把
+ * **值相等义务**误分类成**带界义务**（gt/ge/lt/le），而结构化形状本身
+ * 已确定「不是 nullish」。
  * 2. union 聚合「任一成员 unprovable ⇒ 整体 unprovable」⇒ 已被确定证伪的
- *    `number()` 成员被伪不可判定的 nullish 成员掩盖 ⇒ disproved 降级 unprovable。
+ * `number()` 成员被伪不可判定的 nullish 成员掩盖 ⇒ disproved 降级 unprovable。
  *
  * 修法：值相等义务在返回项形状与其字面量域**不相交**时可判定 ⇒ 不蕴含即
  * `disproved`；于是全部成员被证伪 ⇒ union 整体 `disproved`（error）。
@@ -125,7 +125,7 @@ const violation = (r: ReturnType<typeof check>) =>
 const unproven = (r: ReturnType<typeof check>) =>
   r.issues.find((i) => i.code === "nudo:unproven-return" && i.fn === "f");
 
-describe("BUG-006: nullable(...) 对结构化返回值必须判违约（error）", () => {
+describe("nullable(...) 对结构化返回值必须判违约（error）", () => {
   it.each([
     ["[]", "空数组"],
     ["{}", "空对象"],
@@ -182,11 +182,11 @@ describe("BUG-006: nullable(...) 对结构化返回值必须判违约（error）
 });
 
 // ---------------------------------------------------------------------------
-// BUG-018 跨槽 ref 的 binder 传递
+// 跨槽 ref 的 binder 传递
 // ---------------------------------------------------------------------------
-describe("[] BUG-018 跨槽 ref 的 binder 传递", () => {
+describe("跨槽 ref 的 binder 传递", () => {
 /**
- * BUG-018 回归钉：跨槽 `ref()` 的 binder 表必须进 generalize 的形参投影。
+ * 回归钉：跨槽 `ref()` 的 binder 表必须进 generalize 的形参投影。
  *
  * 修前：`constraintToEntryAbs(c, param)` 未传 `eff.binders` ⇒ `ref("a")` 在
  * 别的槽位的树里 ⇒ `resolveRef` 抛错 ⇒ 被 generalize 的裸 `catch {}` 吞掉
@@ -215,7 +215,7 @@ function run(sidecar: string) {
   });
 }
 
-describe("BUG-018 跨槽 ref 的 binder 传递", () => {
+describe("跨槽 ref 的 binder 传递", () => {
   it("ref(\"a\") 解析到另一槽位的 bind ⇒ 无 error，y 位是 number", () => {
     const r = run(SIDECAR);
     expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
@@ -235,11 +235,11 @@ describe("BUG-018 跨槽 ref 的 binder 传递", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1021：顶层结构约束对 nullish 实参不再零诊断
+// 顶层结构约束对 nullish 实参不再零诊断
 // ---------------------------------------------------------------------------
-describe("[] Bug 1021：顶层结构约束对 nullish 实参不再零诊断", () => {
+describe("顶层结构约束对 nullish 实参不再零诊断", () => {
 /**
- * Bug 1021：顶层「结构约束」位对 `null` / `undefined` 实参**零诊断**（假绿）
+ * 顶层「结构约束」位对 `null` / `undefined` 实参**零诊断**（假绿）
  * ⇒ 同一个实参位、同一个 nullish 实参，仅因约束是 `shape()` 而非标量就
  * 给出相反裁决 ⇒ 引擎内部第 4 套「nullish 是否满足契约」口径。
  *
@@ -275,7 +275,7 @@ export function g(o) { return o; }
 export function gScalar(x) { return x; }
 `;
 
-describe("Bug 1021：顶层结构约束对 nullish 实参不再零诊断", () => {
+describe("顶层结构约束对 nullish 实参不再零诊断", () => {
   it("null 实参报违例（object shape at o）", () => {
     const r = check(`${DECLS}\ng(null);\n`);
     const v = violated(r, "g");
@@ -305,11 +305,11 @@ describe("Bug 1021：顶层结构约束对 nullish 实参不再零诊断", () =>
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1109 —— union 的不可判定成员不再被当成失败
+// union 的不可判定成员不再被当成失败
 // ---------------------------------------------------------------------------
-describe("[] Bug 1109 —— union 的不可判定成员不再被当成失败", () => {
+describe("union 的不可判定成员不再被当成失败", () => {
 /**
- * Bug 1109 —— `or`（union / nullable）契约中「**不可判定**」的成员被当成失败
+ * `or`（union / nullable）契约中「**不可判定**」的成员被当成失败
  * ⇒ 假红（P1）。
  *
  * 复现：`union(number().gt(0), lit("a"))` 收到**非字面量 number**
@@ -318,11 +318,11 @@ describe("[] Bug 1109 —— union 的不可判定成员不再被当成失败", 
  * 根因（`scan/literal-shapes.ts` 的 `judgeOrMember` + `checkReqs` 的 `or`
  * 聚合臂）：
  * - `instantiateOnTerm` 对「prim + preds」的成员**不带** typeof 原子 ⇒
- *   `union(number().gt(0), lit("a"))` 实例化成 `or(gt(x,0), eq(x,"a"))`；
+ * `union(number().gt(0), lit("a"))` 实例化成 `or(gt(x,0), eq(x,"a"))`；
  * - `gt(x,0)` 对**非字面量** number 实参**不可判定**（值未知）；
  * - `eq(x,"a")` 的类型级兜底按形态判 ⇒ number ≠ string ⇒ **false**；
  * - 旧聚合规则「**任一支 false ⇒ 违例**」⇒ 把「不可判定且域兼容（number）」
- *   的成员误判成违例 ⇒ 假红（实参完全可能满足 `x > 0` 那支）。
+ * 的成员误判成违例 ⇒ 假红（实参完全可能满足 `x > 0` 那支）。
  *
  * 修法：三值聚合改成「**全部**成员确定假才报」；成员「不可判定」时再看**域
  * 类型**（`memberDomainKind`）：域与实参形态**兼容**（或判不出）⇒ 整条 union
@@ -358,7 +358,7 @@ function violations(r: { issues: { code: string }[] }): number {
   return r.issues.filter((i) => i.code === "nudo:constraint-violated").length;
 }
 
-describe("Bug 1109 —— union 的不可判定成员不再被当成失败", () => {
+describe("union 的不可判定成员不再被当成失败", () => {
   it("union(number().gt(0), lit('a')) 收到非字面量 number ⇒ 不报（域兼容 ⇒ 未决）", () => {
     const r = check(`/** @nudo:contract x posOrLit */
 function u(x) { return x; }
@@ -409,7 +409,7 @@ export function use() { return u("a"); }
  * （object / array vs number|null）⇒ **不得**静默 ⇒ 必须报 1 条违例；
  * 合法成员（null / 正数字面量）仍不报。
  */
-describe("Bug 1109 残留 —— union(number().gt(0), lit(null)) 的域不兼容实参不得静默", () => {
+describe("残留 —— union(number().gt(0), lit(null)) 的域不兼容实参不得静默", () => {
   it.each([["{}"], ["[]"]])(
     "对象/数组实参 %s ⇒ 恰好 1 条 nudo:constraint-violated",
     (arg) => {
@@ -432,18 +432,18 @@ export function use() { return u(${arg}); }
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1112 —— fn() 字段表实参守卫
+// fn() 字段表实参守卫
 // ---------------------------------------------------------------------------
-describe("[] Bug 1112 —— fn() 字段表实参守卫", () => {
+describe("fn() 字段表实参守卫", () => {
 /**
- * Bug 1112 —— `fn()` 缺少**字段表实参守卫**（Bug 352 / 353 同源）。
+ * `fn()` 缺少**字段表实参守卫**（ 同源）。
  *
  * 缺陷：
  * - `fn()`（缺参）⇒ 宿主 `Object.entries(undefined)` 抛
- *   "Cannot convert undefined or null to object" ⇒ **宿主原文泄进产品诊断**
- *   （用户看不懂、也不是 Nudo 诊断）。
+ * "Cannot convert undefined or null to object" ⇒ **宿主原文泄进产品诊断**
+ * （用户看不懂、也不是 Nudo 诊断）。
  * - `fn(42)`（非对象）⇒ `Object.entries(42)` ⇒ `{}` ⇒ 契约被**静默削弱成空参表**
- *   （门禁零诊断 = 假绿：用户以为声明了参数约束，其实一条都没生效）。
+ * （门禁零诊断 = 假绿：用户以为声明了参数约束，其实一条都没生效）。
  *
  * 修法：复用 `constraint.ts` 里 `shape()` 用的 `requireFieldsObject("fn", …)`
  * —— 缺参 / 非对象都**点名构造器 + 说明缺参**，宿主原文不进产品。
@@ -460,7 +460,7 @@ beforeEach(() => {
   takeContractDiags();
 });
 
-describe("Bug 1112 —— fn() 字段表实参守卫", () => {
+describe("fn() 字段表实参守卫", () => {
   it("fn() 缺参 ⇒ 点名构造器报错，不泄露宿主原文", () => {
     let err: unknown;
     try {
@@ -498,11 +498,11 @@ describe("Bug 1112 —— fn() 字段表实参守卫", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-137 union 里的 unknown 同样算引擎债
+// union 里的 unknown 同样算引擎债
 // ---------------------------------------------------------------------------
-describe("[] BUG-137 union 里的 unknown 同样算引擎债", () => {
+describe("union 里的 unknown 同样算引擎债", () => {
 /**
- * BUG-137：`nudo:unknown-inference`（引擎债诊断）在 **unknown 出现在 union 里**
+ * `nudo:unknown-inference`（引擎债诊断）在 **unknown 出现在 union 里**
  * 时漏报 ⇒ 同一个 `document` 对象上「一个报一个不报」；违反设计文档
  * `cli-semantics` 的**禁止条款**「在 check 中对 unknown（失败）静默通过而不报
  * 引擎债相关诊断」。
@@ -550,7 +550,7 @@ function check(globals: Record<string, unknown>) {
   );
 }
 
-describe("BUG-137 union 里的 unknown 同样算引擎债", () => {
+describe("union 里的 unknown 同样算引擎债", () => {
   beforeEach(() => {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
@@ -584,11 +584,11 @@ describe("BUG-137 union 里的 unknown 同样算引擎债", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 273：mock 名与模块级绑定同名 ⇒ 不撞名（文件不再 fail-closed）
+// mock 名与模块级绑定同名 ⇒ 不撞名（文件不再 fail-closed）
 // ---------------------------------------------------------------------------
-describe("[] Bug 273：mock 名与模块级绑定同名 ⇒ 不撞名（文件不再 fail-closed）", () => {
+describe("mock 名与模块级绑定同名 ⇒ 不撞名（文件不再 fail-closed）", () => {
 /**
- * Bug 273 —— `@nudo:mock <名>` 与**模块级绑定同名**时整份文件求值静默失败。
+ * `@nudo:mock <名>` 与**模块级绑定同名**时整份文件求值静默失败。
  *
  * 改前：env/mock 注入面把 mock 与 env **合进同一张表**并**无条件前置注入**
  * `let <name> = …`；而 `rewriteUserImports` 也生成 `let <name> = …`
@@ -611,7 +611,7 @@ const num = (v: number) =>
 const mockFn = (v: number) =>
   absFunction(["x"], { apply: () => num(v) });
 
-describe("Bug 273：mock 名与模块级绑定同名 ⇒ 不撞名（文件不再 fail-closed）", () => {
+describe("mock 名与模块级绑定同名 ⇒ 不撞名（文件不再 fail-closed）", () => {
   it("mock 名与 import 绑定同名：mock 覆盖 import，文件正常求值", () => {
     const src = `import { getPort } from "./v-port.js";
 /** @nudo:mock getPort = stub().returns(8080) */
@@ -654,11 +654,11 @@ export function readHelper() { return helper; }`;
 });
 
 // ---------------------------------------------------------------------------
-// Bug 281 — pure memo 键值基（同一变量重绑定不得命中旧缓存）
+// pure memo 键值基（同一变量重绑定不得命中旧缓存）
 // ---------------------------------------------------------------------------
-describe("[] Bug 281 — pure memo 键值基（同一变量重绑定不得命中旧缓存）", () => {
+describe("pure memo 键值基（同一变量重绑定不得命中旧缓存）", () => {
 /**
- * Bug 281：@nudo:pure 的记忆化键必须是**值基**，不能是**变量身份**（term）。
+ * @nudo:pure 的记忆化键必须是**值基**，不能是**变量身份**（term）。
  *
  * 旧实现：pureMemoKey = callBudgetKey("pure", "", args) ⇒ 键 = shape 种类 +
  * termToString(term) ⇒ term 是**变量 id**（不是值内容）⇒ 同一变量重绑定为
@@ -669,9 +669,9 @@ describe("[] Bug 281 — pure memo 键值基（同一变量重绑定不得命中
  * - Abs 层（$call + markPureFn）：同一变量重绑定 ⇒ 缓存失效（重算）；
  * - Abs 层：不同变量同值 ⇒ 缓存命中（记忆化按**值**承诺）；
  * - 宿主函数路径（_memoize = "p"，同 service/eval-pure.ts 的落法）：同一变量
- *   重绑定 ⇒ use() 得 "2,4"；不同变量同值 ⇒ 命中；不同变量不同值 ⇒ 不得命中；
+ * 重绑定 ⇒ use() 得 "2,4"；不同变量同值 ⇒ 命中；不同变量不同值 ⇒ 不得命中；
  * - 不可比较的实参（函数值）⇒ **不缓存**（宁可不算命中，也不能算出错误的
- *   命中——错误的命中 = 陈旧值 = 本条 bug 的根因）。
+ * 命中——错误的命中 = 陈旧值 = 本条 bug 的根因）。
  */
 
 
@@ -730,7 +730,7 @@ function hostUse(src: string, entry = "use"): string {
   return v.ok ? String(v.value) : "<no-lit>";
 }
 
-describe("Bug 281 — pure memo 键值基（同一变量重绑定不得命中旧缓存）", () => {
+describe("pure memo 键值基（同一变量重绑定不得命中旧缓存）", () => {
   it("Abs 层：同一变量重绑定为不同值 ⇒ 缓存失效（重算）", () => {
     const c = { n: 0 };
     const fn = pureDouble(c);
@@ -810,11 +810,11 @@ export function use() {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 333：prim + 界契约实例化保留 typeof 类型义务
+// prim + 界契约实例化保留 typeof 类型义务
 // ---------------------------------------------------------------------------
-describe("[] Bug 333：prim + 界契约实例化保留 typeof 类型义务", () => {
+describe("prim + 界契约实例化保留 typeof 类型义务", () => {
 /**
- * Bug 333 —— 「prim + 界」契约（`number().gt(0)` / `string().max(3)`）实例化时
+ * 「prim + 界」契约（`number().gt(0)` / `string().max(3)`）实例化时
  * **丢掉 prim 的类型义务**：`instantiateConstraint` 只在 `preds.length === 0`
  * 时补 `typeof` 谓词 ⇒ 有界契约的实例化结果里没有类型义务 ⇒ 执法层无从判类型。
  *
@@ -827,7 +827,7 @@ describe("[] Bug 333：prim + 界契约实例化保留 typeof 类型义务", () 
 
 
 
-describe("Bug 333：prim + 界契约实例化保留 typeof 类型义务", () => {
+describe("prim + 界契约实例化保留 typeof 类型义务", () => {
   it("number().gt(0) 实例化 = typeof 义务 ∧ 数值界", () => {
     const p = predToString(instantiateConstraint(number().gt(0), "ms"));
     expect(p).toContain('typeof ms = "number"');
@@ -873,16 +873,16 @@ needsPos("a");
 });
 
 // ---------------------------------------------------------------------------
-// Bug 340 非标量合取不再误报 nudo:contract-conflict
+// 非标量合取不再误报 nudo:contract-conflict
 // ---------------------------------------------------------------------------
-describe("[] Bug 340 非标量合取不再误报 nudo:contract-conflict", () => {
+describe("非标量合取不再误报 nudo:contract-conflict", () => {
 /**
- * Bug 340：非标量约束的合取被误报成「语义不可满足」。
+ * 非标量约束的合取被误报成「语义不可满足」。
  *
  * `and()` 的两类 throw 被 `conjoinOrConflict` 一律当成 conflict：
  * - 形态不支持（shape/array/union/fn 合取）——Phase 1 的能力边界，两条
- *   约束可能**逐字相同**（最常见：源码 @nudo:contract 与同名侧车绑定
- *   都写 shape）；
+ * 约束可能**逐字相同**（最常见：源码 @nudo:contract 与同名侧车绑定
+ * 都写 shape）；
  * - 语义真矛盾（number() ∧ string()）。
  *
  * 误报的后果是双面的：
@@ -902,7 +902,7 @@ describe("[] Bug 340 非标量合取不再误报 nudo:contract-conflict", () => 
 const SHAPES = `import { shape, number, string } from "@nudojs/core";\nexport const userShape = shape({ id: number(), name: string() });`;
 const SIDECAR = `import { fn, shape, number, string } from "@nudojs/core";\nexport const t = fn({ o: shape({ id: number(), name: string() }) }, number());`;
 
-describe("Bug 340 非标量合取不再误报 nudo:contract-conflict", () => {
+describe("非标量合取不再误报 nudo:contract-conflict", () => {
   beforeEach(() => {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
@@ -953,11 +953,11 @@ describe("Bug 340 非标量合取不再误报 nudo:contract-conflict", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 349 check 签名面：fn 形参不出现内部占位 term
+// check 签名面：fn 形参不出现内部占位 term
 // ---------------------------------------------------------------------------
-describe("[] Bug 349 check 签名面：fn 形参不出现内部占位 term", () => {
+describe("check 签名面：fn 形参不出现内部占位 term", () => {
 /**
- * Bug 349 —— check 签名面里 fn 形参的**内部占位 term** 不回显。
+ * check 签名面里 fn 形参的**内部占位 term** 不回显。
  *
  * 契约 fn（`fn({ x: number() }, number())`）的槽位 term 是 constraint.ts 生成的
  * 内部占位名（`x${i}` / `ret`），回显进签名面长成 TS 默认参数：
@@ -977,7 +977,7 @@ export const f = fn({ cb: fn({ x: number() }, number()) }, number());
 
 const SRC = `export function f(cb) { return cb(1); }`;
 
-describe("Bug 349 check 签名面：fn 形参不出现内部占位 term", () => {
+describe("check 签名面：fn 形参不出现内部占位 term", () => {
   const r = checkSource___nudojs_core("/t/b349.js", SRC, pTrue___nudojs_core, {
     loadModule: (spec: string): string | undefined =>
       spec.includes("b349.nudo.js") ? SIDE : undefined,
@@ -998,7 +998,7 @@ describe("Bug 349 check 签名面：fn 形参不出现内部占位 term", () => 
   });
 });
 
-describe("Bug 349 formatShape：fn 内层槽位压占位 term、留 α 名", () => {
+describe("formatShape：fn 内层槽位压占位 term、留 α 名", () => {
   it("占位 term（x0 / ret）不回显", () => {
     const slot = abs({ k: "prim", type: "number" }, termVar("x0"), undefined, "exact");
     const ret = abs({ k: "prim", type: "number" }, termVar("ret"), undefined, "exact");
@@ -1026,11 +1026,11 @@ describe("Bug 349 formatShape：fn 内层槽位压占位 term、留 α 名", () 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 353 · shape 缺参诊断（宿主原文不得冒泡）
+// shape 缺参诊断（宿主原文不得冒泡）
 // ---------------------------------------------------------------------------
-describe("[] Bug 353 · shape 缺参诊断（宿主原文不得冒泡）", () => {
+describe("shape 缺参诊断（宿主原文不得冒泡）", () => {
 /**
- * Bug 353 — `shape()` **少传实参**：宿主原生 TypeError 原文
+ * `shape()` **少传实参**：宿主原生 TypeError 原文
  * 「Cannot convert undefined or null to object」直接进产品诊断 ⇒
  * 误导诊断（用户看不出是哪个构造器缺参）+ 整份契约当场丢失。
  *
@@ -1045,7 +1045,7 @@ describe("[] Bug 353 · shape 缺参诊断（宿主原文不得冒泡）", () =>
 
 
 
-describe("Bug 353 · shape 缺参诊断（宿主原文不得冒泡）", () => {
+describe("shape 缺参诊断（宿主原文不得冒泡）", () => {
   beforeEach(() => {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
@@ -1095,11 +1095,11 @@ export function f(o) {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 403 —— formatShape 的数组元素给函数类型加括号
+// formatShape 的数组元素给函数类型加括号
 // ---------------------------------------------------------------------------
-describe("[] Bug 403 —— formatShape 的数组元素给函数类型加括号", () => {
+describe("formatShape 的数组元素给函数类型加括号", () => {
 /**
- * Bug 403 —— `formatShape` 的**数组元素**不给**函数类型**加括号。
+ * `formatShape` 的**数组元素**不给**函数类型**加括号。
  *
  * 症状（改前）：`arr(fn)` 渲染成 `(1) => 1[]` ⇒ 按 TS 解析规则，`[]` 绑定到
  * **函数的返回类型**而不是数组元素 ⇒ 「函数数组」被读成「返回 `1[]` 的函数」
@@ -1128,7 +1128,7 @@ function fnAbs(): Abs {
   );
 }
 
-describe("Bug 403 —— formatShape 的数组元素给函数类型加括号", () => {
+describe("formatShape 的数组元素给函数类型加括号", () => {
   it("arr(fn)：函数元素加括号（改前 `(1) => 1[]`）", () => {
     const a = abs({ k: "arr", element: fnAbs() }, undefined, undefined, "exact");
     expect(formatShape(a)).toBe("((1) => 1)[]");
@@ -1186,11 +1186,11 @@ describe("Bug 403 —— formatShape 的数组元素给函数类型加括号", (
 });
 
 // ---------------------------------------------------------------------------
-// Bug 404 —— formatShape 的 union 成员给函数类型加括号
+// formatShape 的 union 成员给函数类型加括号
 // ---------------------------------------------------------------------------
-describe("[] Bug 404 —— formatShape 的 union 成员给函数类型加括号", () => {
+describe("formatShape 的 union 成员给函数类型加括号", () => {
 /**
- * Bug 404 —— `formatShape` 的 **union 成员**不给**函数类型**加括号。
+ * `formatShape` 的 **union 成员**不给**函数类型**加括号。
  *
  * 症状（改前）：`sum(fn, number)` 渲染成 `(1) => 1 | 2` ⇒ 按 TS 解析规则，
  * `|` 绑定到**函数的返回类型** ⇒ 「函数或 number」被读成「返回 `1 | 2` 的
@@ -1198,7 +1198,7 @@ describe("[] Bug 404 —— formatShape 的 union 成员给函数类型加括号
  * `((a: 1) => 1) | 2` ⇒ **同一个 Abs 两个渲染器两种读法**。
  *
  * 根因：`formatShapeInner` 的 `case "sum"` 把成员文本用 `" | "` 直接拼接、
- * **不做分组**。与 Bug 403 是**同一处缺口**（缺「需要分组」谓词），只是位置
+ * **不做分组**。与 是**同一处缺口**（缺「需要分组」谓词），只是位置
  * 在 `sum` 臂而不是 `arr` 臂 ⇒ 同一处谓词（`needsGrouping`）两处共用。
  *
  * 修法（族 09 · S1）：`case "sum"` 的成员文本在 `needsGrouping` 命中时加括号
@@ -1230,7 +1230,7 @@ function fnStrAbs(): Abs {
   );
 }
 
-describe("Bug 404 —— formatShape 的 union 成员给函数类型加括号", () => {
+describe("formatShape 的 union 成员给函数类型加括号", () => {
   it("sum(fn, number)：函数成员加括号（改前 `(1) => 1 | 2`）", () => {
     const a = abs(
       { k: "sum", members: [fnAbs(), numLit(2)] },
@@ -1299,10 +1299,10 @@ describe("Bug 404 —— formatShape 的 union 成员给函数类型加括号", 
 });
 
 // ---------------------------------------------------------------------------
-// [merged] core-bug-429-union-nullish-false-red.test.ts
+// [merged] union-nullish-false-red
 // ---------------------------------------------------------------------------
-describe("[] [merged] core-bug-429-union-nullish-false-red.test.ts", () => {
-// MERGED (topic-related bug pins): core-bug-429-union-nullish-false-red.test.ts + core-bug-429-union-nullish-member-obligation.test.ts
+describe("union-nullish-false-red", () => {
+// MERGED (topic-related bug pins): union-nullish-false-red + union-nullish-member-obligation
 // Each absorbed file keeps its own describe scope so file-level hooks stay
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 
@@ -1310,17 +1310,17 @@ describe("[] [merged] core-bug-429-union-nullish-false-red.test.ts", () => {
 
 
 
-describe("[merged] core-bug-429-union-nullish-false-red.test.ts", () => {
+describe("union-nullish-false-red", () => {
 /**
- * Bug 429 —— union / nullable 契约的**假红那一半**：`or` 析取臂对 nullish
+ * union / nullable 契约的**假红那一半**：`or` 析取臂对 nullish
  * 实参**无条件报违例** ⇒ **合法实参被报红**。
  *
  * 症状（族 11 / S6 修前实测，闸① oracle；S1 只钉了「假绿那一半」）：
- *   - `union(number().gt(0), lit(null))` 收到 `null`      ⇒ 1 违例（**假红**）
- *   - `nullable(number().gt(0))`         收到 `null`      ⇒ 1 违例（**假红**）
- *   - `nullable(number().gt(0))`         收到 `undefined` ⇒ 1 违例（**假红**）
- *   - `union(number(), lit(null))`        收到 `null`      ⇒ 1 违例（**假红**）
- *   - `union(number().gt(0), lit(undefined))` 收到 `undefined` ⇒ 1 违例（**假红**）
+ * - `union(number().gt(0), lit(null))` 收到 `null` ⇒ 1 违例（**假红**）
+ * - `nullable(number().gt(0))` 收到 `null` ⇒ 1 违例（**假红**）
+ * - `nullable(number().gt(0))` 收到 `undefined` ⇒ 1 违例（**假红**）
+ * - `union(number(), lit(null))` 收到 `null` ⇒ 1 违例（**假红**）
+ * - `union(number().gt(0), lit(undefined))` 收到 `undefined` ⇒ 1 违例（**假红**）
  *
  * 根因：`scan/literal-shapes.ts` 的 `checkReqs` 里「确定 undefined」早退臂
  * （nullish 实参）对 `gt/ge/lt/le/eq/**or**` 一律报违例 ⇒ 析取契约**没有
@@ -1330,9 +1330,9 @@ describe("[merged] core-bug-429-union-nullish-false-red.test.ts", () => {
  * 落到 `or` 聚合臂，**逐支求值**（任一支真即过）。
  *
  * ── 与 S1 的 429 钉的分工 ────────────────────────────────────────────────
- *   - `core-bug-429-union-nullish-member-obligation.test.ts`（S1 已钉）
- *     ⇒ **假绿那一半**（nullish 成员判不了 ⇒ 整条 union 零义务）
- *   - **本钉** ⇒ **假红那一半**（合法 nullish 实参撞 union 契约被报红）
+ * - `union-nullish-member-obligation`（S1 已钉）
+ * ⇒ **假绿那一半**（nullish 成员判不了 ⇒ 整条 union 零义务）
+ * - **本钉** ⇒ **假红那一半**（合法 nullish 实参撞 union 契约被报红）
  *
  * ⚠ **不要**把这个口径搬到别处：nullish 是**两个域**（`null` 与 `undefined`
  * 互不相等）——`union(number().gt(0), lit(null))` 收到 `undefined` 仍然**该
@@ -1374,7 +1374,7 @@ export function f(x) { return x; }
 export function use() { return f(${arg}); }`;
 }
 
-describe("Bug 429 —— union / nullable 契约的假红那一半（合法 nullish 实参不再报红）", () => {
+describe("union / nullable 契约的假红那一半（合法 nullish 实参不再报红）", () => {
   it("union(number().gt(0), lit(null)) 收到 null ⇒ 放行（改前 1 违例 = 假红）", () => {
     const r = check(call("posOrNull", "null"));
     expect(violated(r).length).toBe(0);
@@ -1441,15 +1441,15 @@ export function use() { return f(null); }`);
 });
 });
 
-describe("[merged] core-bug-429-union-nullish-member-obligation.test.ts", () => {
+describe("union-nullish-member-obligation", () => {
 /**
- * Bug 429 —— union / nullable 契约的**成员义务**：or 析取臂对 **nullish 成员**
+ * union / nullable 契约的**成员义务**：or 析取臂对 **nullish 成员**
  * 判不了 ⇒ 聚合臂的 `unknown` 抑制 ⇒ **整条 union 契约零义务**（越界实参全放行）。
  *
  * 症状（族 11 / S1 修前实测，闸① oracle）：
- *   - `union(number().gt(0), lit(null))` 收到 `0`   ⇒ 0 违例（**假绿**）
- *   - `nullable(number().gt(0))`         收到 `0`   ⇒ 0 违例（**假绿**）
- *   - `union(number(), lit(null))`        收到 `"x"` ⇒ 0 违例（**假绿**）
+ * - `union(number().gt(0), lit(null))` 收到 `0` ⇒ 0 违例（**假绿**）
+ * - `nullable(number().gt(0))` 收到 `0` ⇒ 0 违例（**假绿**）
+ * - `union(number(), lit(null))` 收到 `"x"` ⇒ 0 违例（**假绿**）
  *
  * 根因：`scan/literal-preds.ts` 的 `judgeLiteralPred` 判不了 nullish 的 eq 原子
  * （裸值表达不了 `undefined` ⇒ 此前只能取 undefined 哨兵）⇒ or 聚合臂拿到
@@ -1505,7 +1505,7 @@ export function f(x) { return x; }
 export function use() { return f(${arg}); }`;
 }
 
-describe("Bug 429 —— union / nullable 契约的成员义务（or 析取臂不再被 unknown 抑制）", () => {
+describe("union / nullable 契约的成员义务（or 析取臂不再被 unknown 抑制）", () => {
   it("union(number().gt(0), lit(null)) 收到 0 ⇒ 判违例（改前 0 违例 = 假绿）", () => {
     const r = check(call("posOrNull", "0"));
     const vs = violated(r);
@@ -1548,11 +1548,11 @@ export function use() { return f(0); }`);
 });
 
 // ---------------------------------------------------------------------------
-// Bug 430 —— 布尔字面量实参走快路径（顶层与函数体内同判）
+// 布尔字面量实参走快路径（顶层与函数体内同判）
 // ---------------------------------------------------------------------------
-describe("[] Bug 430 —— 布尔字面量实参走快路径（顶层与函数体内同判）", () => {
+describe("布尔字面量实参走快路径（顶层与函数体内同判）", () => {
 /**
- * Bug 430 —— 实参快路径**不认 `BooleanLiteral`** ⇒ 同一个调用点，
+ * 实参快路径**不认 `BooleanLiteral`** ⇒ 同一个调用点，
  * **顶层语句报错、函数体内静默放行**（作用域相关的假绿）。
  *
  * 根因：`scan/literal-args.ts` 的 `parseCallArgs` 快路径分派表
@@ -1567,7 +1567,7 @@ describe("[] Bug 430 —— 布尔字面量实参走快路径（顶层与函数�
  * 与 `NullLiteral` 分支同款）⇒ `hasInfo` 不再依赖执行态回退 ⇒
  * **顶层与函数体内给出同一条诊断**。
  *
- * 注：`NullLiteral` 分支由族 06（Bug 965）补上；本条只剩 `BooleanLiteral`。
+ * 注：`NullLiteral` 分支由族 06（）补上；本条只剩 `BooleanLiteral`。
  */
 
 
@@ -1605,7 +1605,7 @@ function violations(r: {
   );
 }
 
-describe("Bug 430 —— 布尔字面量实参走快路径（顶层与函数体内同判）", () => {
+describe("布尔字面量实参走快路径（顶层与函数体内同判）", () => {
   it("顶层 `f(true)` ⇒ 报违例（改前也报，走的是执行态回退）", () => {
     const r = check(`
 /** @nudo:contract x numC */
@@ -1700,11 +1700,11 @@ export function g() { f(0); return 1; }
 });
 
 // ---------------------------------------------------------------------------
-// Bug 436：缺字段违例只报一次
+// 缺字段违例只报一次
 // ---------------------------------------------------------------------------
-describe("[] Bug 436：缺字段违例只报一次", () => {
+describe("缺字段违例只报一次", () => {
 /**
- * Bug 436：同一条「缺字段」违例被**上报两次**（`checkShapeReqs` + `checkReqs`
+ * 同一条「缺字段」违例被**上报两次**（`checkShapeReqs` + `checkReqs`
  * 两条并行通道各发一份）⇒ `nudo check` 的错误计数翻倍。
  *
  * 修法：「投影失败 → missing field」的报告**收敛到一处**——`checkReqs`
@@ -1738,7 +1738,7 @@ export function fObj({ a, b }) {
 }
 `;
 
-describe("Bug 436：缺字段违例只报一次", () => {
+describe("缺字段违例只报一次", () => {
   it("缺字段只产出 1 条诊断（不是 2 条）", () => {
     const r = check(`${DECL}\nfObj({ a: 1 });\n`);
     const v = violated(r);
@@ -1770,11 +1770,11 @@ describe("Bug 436：缺字段违例只报一次", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 437 — 静态与实例同名：普查名不得重复
+// 静态与实例同名：普查名不得重复
 // ---------------------------------------------------------------------------
-describe("[] Bug 437 — 静态与实例同名：普查名不得重复", () => {
+describe("静态与实例同名：普查名不得重复", () => {
 /**
- * Bug 437 —— **静态**类方法与**实例**方法**同名**（都叫 `C.m`）→ 静态方法的签名被
+ * **静态**类方法与**实例**方法**同名**（都叫 `C.m`）→ 静态方法的签名被
  * **报错成实例方法的**（native `"stat"` vs 引擎 `"inst"`）→ **错误类型声明**。
  *
  * 根因：类方法名由 `${cname}.${keyName}` 合成，**不区分 `static` 与实例** ⇒ 同一个
@@ -1810,7 +1810,7 @@ const DIFF_NAME = `export class C {
 }
 `;
 
-describe("Bug 437 — 静态与实例同名：普查名不得重复", () => {
+describe("静态与实例同名：普查名不得重复", () => {
   it("同名 ⇒ 普查名只出现一次（静态方法不另起名）", () => {
     const names = listTopFunctions(SAME_NAME);
     expect(names).toEqual(["C.m"]);
@@ -1842,11 +1842,11 @@ describe("Bug 437 — 静态与实例同名：普查名不得重复", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 439：lazy 包装的结构义务不再丢失
+// lazy 包装的结构义务不再丢失
 // ---------------------------------------------------------------------------
-describe("[] Bug 439：lazy 包装的结构义务不再丢失", () => {
+describe("lazy 包装的结构义务不再丢失", () => {
 /**
- * Bug 439：`lazy(() => shape(...))` / `lazy(() => array(...))` 的**结构义务
+ * `lazy(() => shape(...))` / `lazy(() => array(...))` 的**结构义务
  * 整体丢失**（假绿）——`lazy` 包装自身 `fields` / `element` / `prim` 全空，
  * 执法侧的闸门只看约束自身 ⇒ 整条结构义务被 `continue` 掉。
  *
@@ -1884,7 +1884,7 @@ export function takeArr(x) { return x; }
 export function takeNested(x) { return x; }
 `;
 
-describe("Bug 439：lazy 包装的结构义务不再丢失", () => {
+describe("lazy 包装的结构义务不再丢失", () => {
   it("lazy(() => shape(...))：非对象实参报违例", () => {
     const r = check(`${DECLS}\ntakeShape(1);\n`);
     const v = violated(r, "takeShape");
@@ -1914,17 +1914,17 @@ describe("Bug 439：lazy 包装的结构义务不再丢失", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 914：字段 / 元素位的 nullish 实参不再零诊断
+// 字段 / 元素位的 nullish 实参不再零诊断
 // ---------------------------------------------------------------------------
-describe("[] Bug 914：字段 / 元素位的 nullish 实参不再零诊断", () => {
+describe("字段 / 元素位的 nullish 实参不再零诊断", () => {
 /**
- * Bug 914：字段位 / 数组元素位的 `null` / `undefined` 实参**完全不被执法**
+ * 字段位 / 数组元素位的 `null` / `undefined` 实参**完全不被执法**
  * （假绿）——顶层标量位与返回值面判违例，字段 / 元素位静默放行 ⇒ 引擎内
  * 3 套「nullish 是否满足契约」口径。
  *
  * 修法：消费侧（`scan/literal-shapes.ts` 的 `checkFieldConstraint`）
- *   ① prim 门：nullish 实参（有 term 的 unknown）**不满足**裸 prim 契约；
- *   ② 数值界门：nullish / boolean 实参不满足数值界（与顶层标量面同口径）。
+ * ① prim 门：nullish 实参（有 term 的 unknown）**不满足**裸 prim 契约；
+ * ② 数值界门：nullish / boolean 实参不满足数值界（与顶层标量面同口径）。
  */
 
 
@@ -1958,7 +1958,7 @@ export function arr(a) { return a; }
 export function fldBounded(o) { return o; }
 `;
 
-describe("Bug 914：字段 / 元素位的 nullish 实参不再零诊断", () => {
+describe("字段 / 元素位的 nullish 实参不再零诊断", () => {
   it("顶层标量位：null 报违例（基线口径不变）", () => {
     const r = check(`${DECLS}\ntop(null);\n`);
     const v = violated(r, "top");
@@ -2002,11 +2002,11 @@ describe("Bug 914：字段 / 元素位的 nullish 实参不再零诊断", () => 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 997 — CJS 普查名取导出槽名，不取内层函数 id
+// CJS 普查名取导出槽名，不取内层函数 id
 // ---------------------------------------------------------------------------
-describe("[] Bug 997 — CJS 普查名取导出槽名，不取内层函数 id", () => {
+describe("CJS 普查名取导出槽名，不取内层函数 id", () => {
 /**
- * Bug 997 —— CJS 成员赋值用**具名函数表达式**时，普查名取**内层函数 id** 而不是
+ * CJS 成员赋值用**具名函数表达式**时，普查名取**内层函数 id** 而不是
  * **导出槽名** ⇒ **侧车契约整个不绑定** ⇒ L1 门禁**假绿**（零诊断）；且
  * `nudo check` 的签名表里**导出符号整个消失**（只剩内层名）、`nudo contract
  * --draft` 报 0 个可草拟导出 ⇒ CLI 各面互相矛盾。
@@ -2041,7 +2041,7 @@ const OBJ_LITERAL = `module.exports = {
 };
 `;
 
-describe("Bug 997 — CJS 普查名取导出槽名，不取内层函数 id", () => {
+describe("CJS 普查名取导出槽名，不取内层函数 id", () => {
   it("成员赋值 + 具名函数表达式 ⇒ 普查名是导出槽名", () => {
     expect(listTopFunctions(NAMED_FN_EXPR)).toEqual(["greet"]);
   });

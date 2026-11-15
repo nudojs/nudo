@@ -1,13 +1,13 @@
 /**
- * 类 C 抽象求值回归（Bug 4 / 19）——spread / 迭代元素域污染：
- * - Bug 4：数组/字符串字面量 spread（`[...xs]` / `[...s]`）经 $concat，arr
- *   分支把空 tuple 的 join 操作数取成 unknown（top）→ 元素域被污染成
- *   `number | unknown`；抽象字符串接收者走 sideEl 无 prim-string 臂 →
- *   `unknown[]`（字符串按 code point 可迭代是 total 面，元素域恒 string）。
- * - Bug 19：`for (const c of s)` / `yield* s`（抽象字符串）循环变量 →
- *   unknown → `c.length` / `n += c` 级联污染（`+` 的字符串拼接臂凭空出现）。
- *   elemsOf 补 prim-string 臂（单代表元素 [string]，字面量 code point 展开
- *   优先级不变）。
+ * 类 C 抽象求值回归（）——spread / 迭代元素域污染：
+ * - 数组/字符串字面量 spread（`[...xs]` / `[...s]`）经 $concat，arr
+ * 分支把空 tuple 的 join 操作数取成 unknown（top）→ 元素域被污染成
+ * `number | unknown`；抽象字符串接收者走 sideEl 无 prim-string 臂 →
+ * `unknown[]`（字符串按 code point 可迭代是 total 面，元素域恒 string）。
+ * - `for (const c of s)` / `yield* s`（抽象字符串）循环变量 →
+ * unknown → `c.length` / `n += c` 级联污染（`+` 的字符串拼接臂凭空出现）。
+ * elemsOf 补 prim-string 臂（单代表元素 [string]，字面量 code point 展开
+ * 优先级不变）。
  * 原生 ground truth：node v26 实测（[..."ab"] → ["a","b"]）。
  */
 import { describe, it, expect } from "vitest";
@@ -47,7 +47,7 @@ function callWith(
   };
 }
 
-describe("Bug 4: 字面量 spread 元素域不被污染", () => {
+describe("字面量 spread 元素域不被污染", () => {
   it("[...xs]（xs: number[]）→ number[]（不再 number | unknown[]）", () => {
     const r = callWith(`export function f(xs) { return [...xs]; }`, [arrNum]);
     expect(r.value).toBe("number[]");
@@ -83,7 +83,7 @@ describe("Bug 4: 字面量 spread 元素域不被污染", () => {
   });
 });
 
-describe("Bug 19: 抽象字符串 for-of / yield* 循环变量 = string", () => {
+describe("抽象字符串 for-of / yield* 循环变量 = string", () => {
   it("for (const c of s)：return c → string（不再 unknown）", () => {
     const r = callWith(
       `export function f(s) { for (const c of s) { return c; } return ""; }`,

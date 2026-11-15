@@ -1,5 +1,5 @@
 /**
- * async-plan 判定表 ↔ 发射侧**对齐守卫**（评审 #6；钉 Bug 1139 类事故）。
+ * async-plan 判定表 ↔ 发射侧**对齐守卫**（评审 #6；钉 类事故）。
  *
  * 事故形态：async 体的真挂起靠宿主生成器（`$asyncGen(function*(){…})` +
  * `await` 发射裸 `yield`）实现 ⇒ `yield` 必须落在生成器**体内联**位置。
@@ -13,19 +13,19 @@
  *
  * 1. `transpileSource`（**不开** disableAsyncGen）；
  * 2. 剥 runtime import 行（`RUNTIME_IMPORT_RE`——单一真值源）与 `export `
- *    前缀后经 `compileRuntimeModuleUnit` 编译（**编译即足够，不执行**——
- *    与 run.ts 模块体同口径：`$` 前缀运行时符号以形参注入）；
+ * 前缀后经 `compileRuntimeModuleUnit` 编译（**编译即足够，不执行**——
+ * 与 run.ts 模块体同口径：`$` 前缀运行时符号以形参注入）；
  * 3. 断言**编译通过**（双模式都跑：默认生成器模式 + disableAsyncGen 安全
- *    网模式），并按形态钉住**判定方向**（防守卫退化成「全都回落同步路径
- *    也绿」的空转）：
- *    - `gen`：生成器路径激活（`$asyncGen(` + 裸 `yield` ≥ 1）；
- *    - `fallback`：该体判定不可整体走生成器 ⇒ 无 `$asyncGen` / 裸 `yield`
- *      （`await` 退化为 `$await` 同步近似；无 await 表达式的 thunk 级
- *      for await 连 `$await` 也没有——同步驱动不发门）；
- *    - `mixed`：同文件多函数，两路径并存。
+ * 网模式），并按形态钉住**判定方向**（防守卫退化成「全都回落同步路径
+ * 也绿」的空转）：
+ * - `gen`：生成器路径激活（`$asyncGen(` + 裸 `yield` ≥ 1）；
+ * - `fallback`：该体判定不可整体走生成器 ⇒ 无 `$asyncGen` / 裸 `yield`
+ * （`await` 退化为 `$await` 同步近似；无 await 表达式的 thunk 级
+ * for await 连 `$await` 也没有——同步驱动不发门）；
+ * - `mixed`：同文件多函数，两路径并存。
  *
  * 与 core--await-position-compile-fail.part.ts 的关系：该测试钉
- * Bug 1139 修复的回归面（表达式/语句位矩阵 + L2 闸门面）；本守卫按
+ * 修复的回归面（表达式/语句位矩阵 + L2 闸门面）；本守卫按
  * async-plan.ts **头注释的形态清单**逐位对齐（含 for await 三级位置 /
  * 嵌套 async 边界 / async 生成器声明 / 双模式 / 方向钉），两侧语料独立
  * 维护——判定表加新臂时两处都要补样例。
@@ -84,7 +84,7 @@ const ASYNC_SHAPES: ReadonlyArray<readonly [string, string, Level]> = [
   ["gen 级 for-of 右值", `export async function f() { for (const x of await xs) { g(x); break; } }`, "gen"],
   ["gen 级 switch 判别式", `export async function f(x) { switch (await x) { case 1: break; default: break; } }`, "gen"],
   ["gen 级 try 块/catch/finally", `export async function f() { try { g(await 1); } catch (e) { g(2); } finally { g(3); } }`, "gen"],
-  // ---- async 生成器声明（Bug 1072：$gen 第二实参 async 近似，同步驱动）----
+  // ---- async 生成器声明（$gen 第二实参 async 近似，同步驱动）----
   ["async 生成器声明", `export async function* ag(x) { yield await x; }`, "fallback"],
   // ---- 同文件多路径并存 ----
   [

@@ -1,14 +1,14 @@
 /**
  * 缺陷报告类别 08 ——「产物落盘与文件集合」8 条回归钉：
  *
- * - Bug 24：无方法的类 / 纯 namespace 模块的 `export` 空产物早退
- * - Bug 26：`migrate strip` 把 `.ts` 与 `.cts` 映射到同一产物路径
- * - Bug 27：目标越出 cwd 时 diff 头拼成 `--- a//<绝对路径>`
- * - Bug 31：第二道空产物早退丢弃已组装好的 `dtsChunks`
- * - Bug 32：`.mjs/.mts/.cjs/.cts` 源恒写 `<stem>.d.ts`（TS 永不查）
- * - Bug 43：dts 相对说明符重基到**源文件**而非产物旁边的兄弟声明
- * - Bug 46：`standard --out` 按函数名落盘且从不回收陈旧产物
- * - Bug 67：`migrate verify` 目录扫描不套用「产物压掉同 stem 源」规则
+ * - 无方法的类 / 纯 namespace 模块的 `export` 空产物早退
+ * - `migrate strip` 把 `.ts` 与 `.cts` 映射到同一产物路径
+ * - 目标越出 cwd 时 diff 头拼成 `--- a//<绝对路径>`
+ * - 第二道空产物早退丢弃已组装好的 `dtsChunks`
+ * - `.mjs/.mts/.cjs/.cts` 源恒写 `<stem>.d.ts`（TS 永不查）
+ * - dts 相对说明符重基到**源文件**而非产物旁边的兄弟声明
+ * - `standard --out` 按函数名落盘且从不回收陈旧产物
+ * - `migrate verify` 目录扫描不套用「产物压掉同 stem 源」规则
  *
  * 夹具一律 `writeSrcTsconfig` ⇒ 子进程解析 `@nudojs/*` 到仓内 `src`，
  * 不测上一次构建的 dist。

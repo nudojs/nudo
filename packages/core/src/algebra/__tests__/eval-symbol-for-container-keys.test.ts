@@ -1,5 +1,5 @@
 /**
- * Bug 61：Symbol.for 容器键此前走抽象键臂 → fresh 未注册 symbol →
+ * Symbol.for 容器键此前走抽象键臂 → fresh 未注册 symbol →
  * `Symbol.for([1]) === Symbol.for("1")` 错折 false。修复：键 ToString
  * 具体化（闭 tuple join(",") / 闭普通对象 "[object Object]"，复用模板
  * ToString 投影）→ 按具体串入注册表（与同串调用同一符号）；不可判定键
@@ -11,7 +11,7 @@ import { litValue, formatShape, anyAbs, unknown } from "@nudojs/core";
 import { runTranspiled, callTranspiledExportFull } from "../exec/run.ts";
 import { call } from "./eval-helpers.ts";
 
-describe("Bug 61: Symbol.for container-literal keys intern by ToString", () => {
+describe("Symbol.for container-literal keys intern by ToString", () => {
   it("Symbol.for([1]) === Symbol.for(\"1\")", () => {
     expect(litValue(call(`export function f() { return Symbol.for([1]) === Symbol.for("1"); }`).result))
       .toEqual({ ok: true, value: true });

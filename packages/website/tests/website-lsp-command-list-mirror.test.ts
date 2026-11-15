@@ -1,18 +1,18 @@
 // 族 32（文档 / 站点一致性）T2 的回归钉。
 //
-// Bug 941 —— 发布文档页（en + zh-Hans）「Public API 冻结面」表里的
-//   executeCommand / custom requests 两行是**手抄**的清单，与实现侧
-//   `packages/lsp/src/public-api.ts` 的两张冻结表没有共同来源 ⇒ 增删命令时
-//   站点页必然漂移（漂了一行：漏 `nudo.selectContract` / `nudo/selectContract`），
-//   于是**同一页两份清单互相打架**（页内生成块那份是对的）。
-//   本钉**从实现侧取清单**（import 冻结表常量，不硬编码任何命令名），
-//   断言站点页的清单 == 实现侧清单，且页内生成块那份也 == 实现侧清单。
+// 发布文档页（en + zh-Hans）「Public API 冻结面」表里的
+// executeCommand / custom requests 两行是**手抄**的清单，与实现侧
+// `packages/lsp/src/public-api.ts` 的两张冻结表没有共同来源 ⇒ 增删命令时
+// 站点页必然漂移（漂了一行：漏 `nudo.selectContract` / `nudo/selectContract`），
+// 于是**同一页两份清单互相打架**（页内生成块那份是对的）。
+// 本钉**从实现侧取清单**（import 冻结表常量，不硬编码任何命令名），
+// 断言站点页的清单 == 实现侧清单，且页内生成块那份也 == 实现侧清单。
 //
-// Bug 912 —— `concepts/mocking.md` 曾写「未 mock 的全局会真跑 ⇒ ERR_INVALID_URL
-//   崩掉整轮（exit 1）」，与实现相反：宿主副作用函数在分析期**不执行** ⇒
-//   结果加宽 `unknown#opaque` ⇒ 上报 `nudo:host-effect-blocked`（Info）⇒
-//   整轮不崩、退出码不受影响。本钉断言文档与实现口径一致：被拦截的宿主名单
-//   取自 core 的真源（`NEVER_EXEC_HOST_FN_NAMES`，只读扫描，不改 core）。
+// `concepts/mocking.md` 曾写「未 mock 的全局会真跑 ⇒ ERR_INVALID_URL
+// 崩掉整轮（exit 1）」，与实现相反：宿主副作用函数在分析期**不执行** ⇒
+// 结果加宽 `unknown#opaque` ⇒ 上报 `nudo:host-effect-blocked`（Info）⇒
+// 整轮不崩、退出码不受影响。本钉断言文档与实现口径一致：被拦截的宿主名单
+// 取自 core 的真源（`NEVER_EXEC_HOST_FN_NAMES`，只读扫描，不改 core）。
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -80,7 +80,7 @@ function blockedHostNames(): string[] {
   return [...block[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
 }
 
-describe("Bug 941 — site freeze-row command lists mirror the implementation", () => {
+describe("site freeze-row command lists mirror the implementation", () => {
   it("the implementation freezes a non-empty inventory (guard against a vacuous gate)", () => {
     expect(NUDO_EXECUTE_COMMANDS.length).toBeGreaterThan(5);
     expect(NUDO_SLASH_REQUESTS.length).toBeGreaterThan(5);
@@ -127,7 +127,7 @@ describe("Bug 941 — site freeze-row command lists mirror the implementation", 
   });
 });
 
-describe("Bug 912 — mocking pages state the implemented host-effect policy", () => {
+describe("mocking pages state the implemented host-effect policy", () => {
   it("the implementation blocks a non-empty host side-effect inventory", () => {
     expect(blockedHostNames().length).toBeGreaterThan(5);
   });

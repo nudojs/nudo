@@ -1,12 +1,12 @@
 /**
  * 类定义/构造语义回归（wave 4 — Bugs 9/11）：
- * - Bug 9：非构造函数值的 new（箭头/generator/async/async-generator/方法）——
- *   原生 definite TypeError；引擎此前执行调用并报 throws=never。
- *   fn shape 新增可构造性 facet（ctor?: boolean，joinNote 纪律：不进等价）。
- * - Bug 11：class extends 非构造器——原生在类定义期求值 superclass，非
- *   null/构造器即 TypeError；引擎此前静默丢弃 extends。hasExtends 标记区分
- *   `extends undefined` 与无 extends 子句；extends null 定义合法但 new 抛
- *   （隐式/显式 super()）。
+ * - 非构造函数值的 new（箭头/generator/async/async-generator/方法）——
+ * 原生 definite TypeError；引擎此前执行调用并报 throws=never。
+ * fn shape 新增可构造性 facet（ctor?: boolean，joinNote 纪律：不进等价）。
+ * - class extends 非构造器——原生在类定义期求值 superclass，非
+ * null/构造器即 TypeError；引擎此前静默丢弃 extends。hasExtends 标记区分
+ * `extends undefined` 与无 extends 子句；extends null 定义合法但 new 抛
+ * （隐式/显式 super()）。
  *
  * 原生 ground truth：node v26（TypeError 以原生为准）。
  * 断言三面：value（值域）/ throws（NudoThrow 边界收成面）/ effects（recordMayThrow 软效果）。
@@ -54,9 +54,9 @@ function evalSrc(
   };
 }
 
-// --- Bug 9：非构造函数值的 new ---------------------------------------------
+// --- 非构造函数值的 new ---------------------------------------------
 
-describe("Bug 9: new on non-constructible function values", () => {
+describe("new on non-constructible function values", () => {
   it("arrow / generator / async / async-generator / method → definite TypeError (native: TypeError)", () => {
     const cases: Array<[string, string]> = [
       ["arrow", `export function f() { const a = () => 1; return new a(); }`],
@@ -181,9 +181,9 @@ describe("Bug 9: new on non-constructible function values", () => {
   });
 });
 
-// --- Bug 11：class extends 非构造器 ----------------------------------------
+// --- class extends 非构造器 ----------------------------------------
 
-describe("Bug 11: class extends non-constructor", () => {
+describe("class extends non-constructor", () => {
   it("prim / undefined / string / arrow superclass → definite TypeError at definition (native: TypeError)", () => {
     for (const sup of ["1", "undefined", '"s"', "(() => 1)"]) {
       const r = evalSrc(
@@ -271,7 +271,7 @@ describe("Bug 11: class extends non-constructor", () => {
 
 // --- 跨模块桥接（bindImport wrapper 不得误判构造性） ------------------------
 
-describe("Bug 9/11: import bridge constructibility", () => {
+describe("import bridge constructibility", () => {
   /** 经 modules 注入 + __nudoBindImport（真 wrapper 路径）求值 */
   function evalWithModule(fnAbs: unknown): { value: string; throws: string } {
     const src = `import { F } from "./lib.js";\nexport function f() { return new F(); }`;
@@ -287,7 +287,7 @@ describe("Bug 9/11: import bridge constructibility", () => {
 
   it("imported regular function is constructible (wrapper must not read as arrow)", () => {
     // lib 导出构造函数 → 桥接 fn ctor:true；bindImport **原样直出声明 Abs**
-    //（Bug 932 起不再包成 JS 可调用 wrapper）——$new 须回 Abs 派发，不得
+    //（起不再包成 JS 可调用 wrapper）——$new 须回 Abs 派发，不得
     // 按箭头误判假抛。
     const ctorFn = absFunction([], { apply: () => $lit(1) }, { ctor: true });
     const r = evalWithModule(ctorFn);

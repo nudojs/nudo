@@ -3,12 +3,12 @@
  *
  * 原生语义：
  * - `a.length = n`：n 必须是非负整数且 ≤ 2^32-1（4294967295），否则 RangeError
- *   （负数、小数、NaN、Infinity、2^32 起全部 RangeError）。合法但巨大的 n
- *   使数组稀疏化——分析侧物化 n 个槽会 OOM（差分 corpus 中 a[4294967294]=1
- *   曾把 harness 打到 exit 137）。
+ * （负数、小数、NaN、Infinity、2^32 起全部 RangeError）。合法但巨大的 n
+ * 使数组稀疏化——分析侧物化 n 个槽会 OOM（差分 corpus 中 a[4294967294]=1
+ * 曾把 harness 打到 exit 137）。
  * - `a[i] = v`：0 ≤ i ≤ 2^32-2（4294967294）是数组下标（length 增长到 i+1，
- *   中间槽全是 hole）；i ≥ 2^32-1 是普通 expando 属性（length 不变，
- *   `i in a`/`a[i]`/Object.keys 都可见）。
+ * 中间槽全是 hole）；i ≥ 2^32-1 是普通 expando 属性（length 不变，
+ * `i in a`/`a[i]`/Object.keys 都可见）。
  *
  * 修复口径：下标/length 超过物化上限（与 new Array(n) 的 4096 同源）时
  * 就地降级为 arr（元素 join、长度未知）——保持引用语义与 sound，不物化巨 tuple；
@@ -109,7 +109,7 @@ describe("check signatures: length assignment", () => {
     return r.signatures[0]?.display;
   }
 
-  /** 置信度（`display` 自 Bug 413 起是人类面口径，不再带 `#conf` 段） */
+  /** 置信度（`display` 自 起是人类面口径，不再带 `#conf` 段） */
   function confOf(src: string): string | undefined {
     const r = checkSource("/t/idx.js", withStdImport(src), pTrue, stdOpts);
     return r.signatures[0]?.conf;
@@ -141,7 +141,7 @@ describe("check signatures: length assignment", () => {
     // `.length` 读携带非负 pred（issue #98：`new Array(b.length+1)` 的
     // RangeError note 依此豁免）——巨大长度不折 exact，保持 number + len≥0
     //
-    // ⚠ Bug 413：`display` 自此是人类面口径的 shape 渲染（不再带
+    // ⚠ `display` 自此是人类面口径的 shape 渲染（不再带
     // `= len#N where len#N ≥ 0` 注记）⇒ 形状断言看 display、谓词证据看
     // `detail`（内部计数器 id 已换成稳定名 `len` —— 编号曾随进程漂移）。
     const src = `export function f() { const a=[1,2,3]; a.length=5000; return a.length; }`;

@@ -11,18 +11,18 @@ import { parseArrowFunctionExpr } from "../directives/expr-scan.ts";
 import { parseSinonExpr } from "../directives/mock-expr.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 415: unparsable @nudo:mock-module payload is diagnosed
+// unparsable @nudo:mock-module payload is diagnosed
 // ---------------------------------------------------------------------------
-describe("[parser-] Bug 415: unparsable @nudo:mock-module payload is diagnosed", () => {
+describe("unparsable @nudo:mock-module payload is diagnosed", () => {
 /**
  * 族 10 片 1 —— 415 / 416 / 417 的**诊断落点**（parser AST 通道）。
  *
  * - 415：`@nudo:mock-module` 标签命中但**载荷解析失败** ⇒ 不再静默丢弃
- *   （此前无 else 分支 ⇒ 指令静默蒸发：mock 不生效、门禁照常绿）。
+ * （此前无 else 分支 ⇒ 指令静默蒸发：mock 不生效、门禁照常绿）。
  * - 416：`@nudo:import` 属文件级指令族 ⇒ 块注释形态被**忽略并告警**
- *   （口径与 core 文本通道分档后一致）。
+ * （口径与 core 文本通道分档后一致）。
  * - 417：`@nudo:env` **裸标签**（没写 env 名）⇒ 告警（此前整行不匹配 ⇒
- *   零诊断地丢弃 ⇒ env 未解析 ⇒ 全局 unknown）。
+ * 零诊断地丢弃 ⇒ env 未解析 ⇒ 全局 unknown）。
  */
 
 
@@ -35,7 +35,7 @@ function fileDiags(src: string): DirectiveDiag[] {
   return diags;
 }
 
-describe("Bug 415: unparsable @nudo:mock-module payload is diagnosed", () => {
+describe("unparsable @nudo:mock-module payload is diagnosed", () => {
   it("malformed mock-module payload → nudo:directive-syntax warning", () => {
     const diags = fileDiags(
       `/// @nudo:mock-module axios from ./m.js\nimport axios from "axios";\n`,
@@ -54,7 +54,7 @@ describe("Bug 415: unparsable @nudo:mock-module payload is diagnosed", () => {
   });
 });
 
-describe("Bug 416: block-comment @nudo:import is ignored with a warning", () => {
+describe("block-comment @nudo:import is ignored with a warning", () => {
   it("block comment form → nudo:directive-syntax warning", () => {
     const diags = fileDiags(`/* @nudo:import { a } from "./x.nudo.js" */\nexport function f(){}\n`);
     expect(diags).toHaveLength(1);
@@ -73,7 +73,7 @@ describe("Bug 416: block-comment @nudo:import is ignored with a warning", () => 
   });
 });
 
-describe("Bug 417: bare @nudo:env tag is diagnosed", () => {
+describe("bare @nudo:env tag is diagnosed", () => {
   it("bare tag → nudo:directive-syntax warning", () => {
     const diags = fileDiags(`/// @nudo:env\nexport function f(){}\n`);
     expect(diags).toHaveLength(1);
@@ -103,11 +103,11 @@ describe("Bug 417: bare @nudo:env tag is diagnosed", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 842: `@nudo:as` payload separator is optional (parenthesised form must not evaporate)
+// `@nudo:as` payload separator is optional (parenthesised form must not evaporate)
 // ---------------------------------------------------------------------------
-describe("[parser-] Bug 842: `@nudo:as` payload separator is optional (parenthesised form must not evaporate)", () => {
+describe("`@nudo:as` payload separator is optional (parenthesised form must not evaporate)", () => {
 /**
- * Bug 842 —— `@nudo:as` 的**值格**与**类型格**之间**没有空格**（`@nudo:as(string())`）
+ * `@nudo:as` 的**值格**与**类型格**之间**没有空格**（`@nudo:as(string())`）
  * ⇒ 整条指令被**静默丢弃**（零诊断）⇒ 类型覆盖**不生效**（假绿）。
  *
  * 根因（inline-directives.ts）：`AS_LINE_REGEX`（值格要求**至少一个空白**）与
@@ -136,7 +136,7 @@ function inlineOf(source: string): {
   return { dirs, diags };
 }
 
-describe("Bug 842: `@nudo:as` payload separator is optional (parenthesised form must not evaporate)", () => {
+describe("`@nudo:as` payload separator is optional (parenthesised form must not evaporate)", () => {
   it("`@nudo:as(string())` (no space) yields a type — not an evaporated directive", () => {
     const { dirs, diags } = inlineOf("// @nudo:as(string())\nconst value = 1;");
     expect(dirs).toHaveLength(1);
@@ -191,11 +191,11 @@ describe("Bug 842: `@nudo:as` payload separator is optional (parenthesised form 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 843: trailing comment in `@nudo:as` is cut by lexical boundary
+// trailing comment in `@nudo:as` is cut by lexical boundary
 // ---------------------------------------------------------------------------
-describe("[parser-] Bug 843: trailing comment in `@nudo:as` is cut by lexical boundary", () => {
+describe("trailing comment in `@nudo:as` is cut by lexical boundary", () => {
 /**
- * Bug 843 —— `@nudo:as` 的类型表达式里**尾注释前没有空格**（`string()// why`）⇒
+ * `@nudo:as` 的类型表达式里**尾注释前没有空格**（`string()// why`）⇒
  * 注释被并进表达式 ⇒ **合法类型被判「unsafe」并降级为 unknown**（合法类型覆盖
  * 静默失效）。
  *
@@ -222,7 +222,7 @@ function inlineOf(source: string): {
   return { dirs, diags };
 }
 
-describe("Bug 843: trailing comment in `@nudo:as` is cut by lexical boundary", () => {
+describe("trailing comment in `@nudo:as` is cut by lexical boundary", () => {
   it("`string()// why` (no space) keeps the type (no unknown downgrade)", () => {
     const { dirs, diags } = inlineOf("// @nudo:as string()// why\nconst value = 1;");
     expect(dirs).toHaveLength(1);
@@ -262,18 +262,18 @@ describe("Bug 843: trailing comment in `@nudo:as` is cut by lexical boundary", (
 });
 
 // ---------------------------------------------------------------------------
-// Bug 846: directives inside a malformed @nudo:case must not leak
+// directives inside a malformed @nudo:case must not leak
 // ---------------------------------------------------------------------------
-describe("[parser-] Bug 846: directives inside a malformed @nudo:case must not leak", () => {
+describe("directives inside a malformed @nudo:case must not leak", () => {
 /**
- * Bug 846 —— **畸形**的 `@nudo:case` 不登记**参数区间掩码** ⇒ case 参数里的
+ * **畸形**的 `@nudo:case` 不登记**参数区间掩码** ⇒ case 参数里的
  * `@nudo:mock` / `@nudo:skip` **泄漏**成真指令 ⇒ 假红 / d.ts 丢方法。
  *
  * 根因（core `directive-scan.ts` 的 `scanCaseArgSpans`）：只登记**合法** case 形态
  * （双引号名 + 同行实参括号）的区间；畸形形态（单引号名 / 空名 / 缺括号…）的实参
  * 区间没被遮罩 ⇒ 实参里的标签被当成真指令扫描。
  *
- * 掩码落在 core（core-bug-846 同族钉），本钉钉**产品面**（parser 抽取面）：畸形
+ * 掩码落在 core（core-同族钉），本钉钉**产品面**（parser 抽取面）：畸形
  * case 的实参里不再产出 mock 指令，且「畸形 case 名」诊断仍在。
  */
 
@@ -301,7 +301,7 @@ export function f(a) {
 }
 `;
 
-describe("Bug 846: directives inside a malformed @nudo:case must not leak", () => {
+describe("directives inside a malformed @nudo:case must not leak", () => {
   it("the inner @nudo:mock does not become a real mock directive", () => {
     expect(kinds(MALFORMED_CASE)).not.toContain("mock");
   });
@@ -326,11 +326,11 @@ export function f(a) {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 844: a trailing comment must not void the @nudo:case expectation
+// a trailing comment must not void the @nudo:case expectation
 // ---------------------------------------------------------------------------
-describe("[parser-] Bug 844: a trailing comment must not void the @nudo:case expectation", () => {
+describe("a trailing comment must not void the @nudo:case expectation", () => {
 /**
- * Bug 844 —— `@nudo:case` 的**期望值**里带**尾注释**（`=> string() // 注释`）
+ * `@nudo:case` 的**期望值**里带**尾注释**（`=> string() // 注释`）
  * ⇒ 期望值解析失败 ⇒ 回退成**显式 unknown** ⇒ **断言被静默作废**（报「1 passed」、
  * exit 0 的**假绿**）。
  *
@@ -374,7 +374,7 @@ export function f(a) {
 }
 `;
 
-describe("Bug 844: a trailing comment must not void the @nudo:case expectation", () => {
+describe("a trailing comment must not void the @nudo:case expectation", () => {
   it("the expected type is parsed (not degraded to unknown)", () => {
     expect(caseExpected(WITH_COMMENT)).toBe("string");
   });
@@ -400,7 +400,7 @@ export function f(a) {
   });
 });
 
-describe("Bug 844 (same family): the @nudo:skip return type must not be voided by a trailing comment", () => {
+describe("(same family): the @nudo:skip return type must not be voided by a trailing comment", () => {
   function skipReturns(src: string): string | undefined {
     const fns = extractDirectives(parse(src), { diags: [] });
     for (const fn of fns) {
@@ -449,16 +449,16 @@ export function f(a) {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 978: a glued @nudo:case"name" tag must be visible to the scanner
+// a glued @nudo:case"name" tag must be visible to the scanner
 // ---------------------------------------------------------------------------
-describe("[parser-] Bug 978: a glued @nudo:case\"name\" tag must be visible to the scanner", () => {
+describe("a glued @nudo:case\"name\" tag must be visible to the scanner", () => {
 /**
- * Bug 978 —— `@nudo:case"c1" (1, 2)`（标签与名字之间**无空白**）⇒ 抽取侧（严格
+ * `@nudo:case"c1" (1, 2)`（标签与名字之间**无空白**）⇒ 抽取侧（严格
  * `[ \t]+`）**不匹配** + 诊断侧（宽松 `[ \t]*`）**判合法** ⇒ 整条 case **静默
  * 蒸发** ⇒ `nudo test` 一个 case 都不跑、**零诊断**（假绿）。
  *
  * 改后：诊断面按**抽取侧的真实文法**判定 ⇒ 粘连写法命中
- * `nudo:directive-syntax`（口径与族 28 的 Bug 980 `@nudo:mock` 粘连写法一致）。
+ * `nudo:directive-syntax`（口径与族 28 的 `@nudo:mock` 粘连写法一致）。
  */
 
 
@@ -484,7 +484,7 @@ export function add(a, b) {
 }
 `;
 
-describe("Bug 978: a glued @nudo:case\"name\" tag must be visible to the scanner", () => {
+describe("a glued @nudo:case\"name\" tag must be visible to the scanner", () => {
   it("emits nudo:directive-syntax naming the missing space", () => {
     const diags = fnDiags(GLUED);
     expect(diags).toHaveLength(1);
@@ -513,11 +513,11 @@ export function add(a, b) {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 848: diagnostic dedup identity carries the position
+// diagnostic dedup identity carries the position
 // ---------------------------------------------------------------------------
-describe("[parser-] Bug 848: diagnostic dedup identity carries the position", () => {
+describe("diagnostic dedup identity carries the position", () => {
 /**
- * Bug 848 —— 指令诊断的**去重身份 = 文案**（无位置）⇒ 同文件两处**逐字相同**的
+ * 指令诊断的**去重身份 = 文案**（无位置）⇒ 同文件两处**逐字相同**的
  * 畸形指令**塌缩成一条** ⇒ 第二处**完全不可见**（用户修好第一处后以为已经修完）。
  *
  * 根因（diag.ts `emitDirectiveDiag`）：去重键 = `code \0 message`——`DirectiveDiag`
@@ -535,7 +535,7 @@ describe("[parser-] Bug 848: diagnostic dedup identity carries the position", ()
 
 
 
-describe("Bug 848: diagnostic dedup identity carries the position", () => {
+describe("diagnostic dedup identity carries the position", () => {
   it("same code+message at two positions → two diagnostics", () => {
     const diags: DirectiveDiag[] = [];
     runWithDirectiveDiags(diags, () => {
@@ -641,11 +641,11 @@ describe("Bug 848: diagnostic dedup identity carries the position", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 918: `=>` with a missing expected expression must not be silent
+// `=>` with a missing expected expression must not be silent
 // ---------------------------------------------------------------------------
-describe("[parser-] Bug 918: `=>` with a missing expected expression must not be silent", () => {
+describe("`=>` with a missing expected expression must not be silent", () => {
 /**
- * Bug 918 —— `=> expected` 在「`=>` 后为空」时被**静默丢弃** ⇒ 该 case 判
+ * `=> expected` 在「`=>` 后为空」时被**静默丢弃** ⇒ 该 case 判
  * `[unchecked]` ⇒ 断言**不执法**、`nudo test` **exit 0**、**屏幕上零诊断**
  * （完全静默的假绿）。
  *
@@ -668,7 +668,7 @@ function caseDirectives(src: string): unknown[] {
   );
 }
 
-describe("Bug 918: `=>` with a missing expected expression must not be silent", () => {
+describe("`=>` with a missing expected expression must not be silent", () => {
   it("emits nudo:directive-syntax for the empty `=>` tail", () => {
     const diags = fnDiags(`/** @nudo:case "empty" (1) =>  */
 export function f(x) {
@@ -723,11 +723,11 @@ export function f(x) {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-841: 期望值解析失败不得空洞通过（断言层必须看到失败）
+// 期望值解析失败不得空洞通过（断言层必须看到失败）
 // ---------------------------------------------------------------------------
-describe("[parser-] BUG-841: 期望值解析失败不得空洞通过（断言层必须看到失败）", () => {
+describe("期望值解析失败不得空洞通过（断言层必须看到失败）", () => {
 /**
- * BUG-841 回归：`@nudo:case` 的**期望值**解析失败与「显式 unknown」共用同一个
+ * 回归：`@nudo:case` 的**期望值**解析失败与「显式 unknown」共用同一个
  * unknown Abs ⇒ 断言面把「没读懂用户的期望」记成「断言通过」
  * （[ok] / 1 passed / exit 0 = 假绿）。
  *
@@ -751,7 +751,7 @@ function extractWithDiags(source: string) {
 
 const EXPECTED_CTX = '@nudo:case "t" => expected';
 
-describe("BUG-841: 期望值解析失败不得空洞通过（断言层必须看到失败）", () => {
+describe("期望值解析失败不得空洞通过（断言层必须看到失败）", () => {
   it("directive.expected：解析失败 ⇒ 失败表示；显式 unknown ⇒ unknown", () => {
     const { fns } = extractWithDiags(`/**
  * @nudo:case "malformed" (1) => bogus()
@@ -801,11 +801,11 @@ function f(x) { return x; }`);
 });
 
 // ---------------------------------------------------------------------------
-// BUG-837: 解析失败 ≠ 显式 unknown（失败必须传到断言层）
+// 解析失败 ≠ 显式 unknown（失败必须传到断言层）
 // ---------------------------------------------------------------------------
-describe("[parser-] BUG-837: 解析失败 ≠ 显式 unknown（失败必须传到断言层）", () => {
+describe("解析失败 ≠ 显式 unknown（失败必须传到断言层）", () => {
 /**
- * BUG-837 回归：`parseAbsExprDiag` 把**解析失败**折成**显式 unknown Abs**
+ * 回归：`parseAbsExprDiag` 把**解析失败**折成**显式 unknown Abs**
  * ⇒ `leqAbs(actual, unknown)` 恒 ok（unknown 是顶类型）⇒ 断言**空洞通过**
  * （报「1 passed」、exit 0 = 假绿）。
  *
@@ -825,7 +825,7 @@ function withDiags<T>(fn: () => T): { value: T; diags: DirectiveDiag[] } {
 
 const EXPECTED_CTX = '@nudo:case "t" => expected';
 
-describe("BUG-837: 解析失败 ≠ 显式 unknown（失败必须传到断言层）", () => {
+describe("解析失败 ≠ 显式 unknown（失败必须传到断言层）", () => {
   it("解析失败 ⇒ 失败表示（never），不是 unknown（顶类型）", () => {
     const { value } = withDiags(() => parseAbsExprDiag("bogus()", EXPECTED_CTX));
     expect(value.shape.k).toBe("never");
@@ -859,11 +859,11 @@ describe("BUG-837: 解析失败 ≠ 显式 unknown（失败必须传到断言层
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1090: file-level directives in a class / object body are not file scope
+// file-level directives in a class / object body are not file scope
 // ---------------------------------------------------------------------------
-describe("[parser-] Bug 1090: file-level directives in a class / object body are not file scope", () => {
+describe("file-level directives in a class / object body are not file scope", () => {
 /**
- * Bug 1090 —— Bug 847 的「文件级指令**位置闸门**」漏掉 **class 体 / 对象字面量体**
+ * 的「文件级指令**位置闸门**」漏掉 **class 体 / 对象字面量体**
  * ⇒ 方法（字段）**上方**的 `/// @nudo:env` 被**静默提升**成**整文件** env（零诊断）。
  *
  * 根因（`file-directives.ts` 的 `functionBodyRanges`）：闸门区间取自
@@ -922,7 +922,7 @@ const MOCK_MODULE_IN_CLASS = `export class A {
 }
 `;
 
-describe("Bug 1090: file-level directives in a class / object body are not file scope", () => {
+describe("file-level directives in a class / object body are not file scope", () => {
   it("`/// @nudo:env node` above a class method is not promoted + is diagnosed", () => {
     const diags = fileDiags(ENV_IN_CLASS);
     expect(diags).toHaveLength(1);
@@ -979,16 +979,16 @@ describe("Bug 1090: file-level directives in a class / object body are not file 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1101: file-level directives in an array / destructuring body are not file scope
+// file-level directives in an array / destructuring body are not file scope
 // ---------------------------------------------------------------------------
-describe("[parser-] Bug 1101: file-level directives in an array / destructuring body are not file scope", () => {
+describe("file-level directives in an array / destructuring body are not file scope", () => {
 /**
- * Bug 1101 —— 文件级指令的**位置闸门**漏掉 **ArrayExpression（数组字面量体）**
+ * 文件级指令的**位置闸门**漏掉 **ArrayExpression（数组字面量体）**
  * 与 **ObjectPattern（解构模式体）** ⇒ 写在数组元素 / 解构键**上方**的
  * `/// @nudo:env` 被**静默提升**成**整文件** env（零诊断）。
  *
- * 根因：闸门区间只覆盖「函数体」（Bug 847）+「类体 / 对象字面量体」
- * （Bug 1088）；数组字面量体与解构模式体同属**嵌套体**，却**不在**闸门区间内
+ * 根因：闸门区间只覆盖「函数体」（）+「类体 / 对象字面量体」
+ * （）；数组字面量体与解构模式体同属**嵌套体**，却**不在**闸门区间内
  * ⇒ 同族洞未闭合（两条通道**同口径**地漏，不是通道漂移）。
  *
  * 修法：闸门区间再纳入 `ArrayExpression` 与 `ObjectPattern`（+ 同族孪生
@@ -1046,7 +1046,7 @@ function coreMockModules(src: string): Array<{
 }
 
 // ---------------------------------------------------------------------------
-// 样例（Bug 1101 新增两类嵌套体）
+// 样例（新增两类嵌套体）
 // ---------------------------------------------------------------------------
 
 /** 数组字面量体：元素上方的文件级指令。 */
@@ -1097,7 +1097,7 @@ const ENV_IN_NESTED_ARRAY = `export const a = [
 // 验收 1 / 2：数组字面量体 + 解构模式体
 // ---------------------------------------------------------------------------
 
-describe("Bug 1101: file-level directives in an array / destructuring body are not file scope", () => {
+describe("file-level directives in an array / destructuring body are not file scope", () => {
   it("`/// @nudo:env node` above an array element is not promoted + is diagnosed", () => {
     const diags = fileDiags(ENV_IN_ARRAY);
     expect(diags).toHaveLength(1);
@@ -1152,10 +1152,10 @@ describe("Bug 1101: file-level directives in an array / destructuring body are n
 });
 
 // ---------------------------------------------------------------------------
-// 验收 3：类体 / 对象字面量体（Bug 1088 / 1090 行为不得回退）
+// 验收 3：类体 / 对象字面量体（ 行为不得回退）
 // ---------------------------------------------------------------------------
 
-describe("Bug 1101: the class / object body gate (Bug 1088) is not regressed", () => {
+describe("the class / object body gate () is not regressed", () => {
   it("`/// @nudo:env node` above a class method is still blocked + diagnosed", () => {
     const src = `export class A {\n  /// @nudo:env node\n  m() {\n    return 1;\n  }\n}\n`;
     const diags = fileDiags(src);
@@ -1188,7 +1188,7 @@ describe("Bug 1101: the class / object body gate (Bug 1088) is not regressed", (
 // 验收 4 / 5：合法顶层位置放行（不得过度拦截）
 // ---------------------------------------------------------------------------
 
-describe("Bug 1101: legal top-level positions still pass (no over-blocking)", () => {
+describe("legal top-level positions still pass (no over-blocking)", () => {
   it("a top-of-file directive still works", () => {
     const src = `/// @nudo:env node\nexport function f() {\n  return 1;\n}\n`;
     expect(fileDiags(src)).toEqual([]);
@@ -1245,7 +1245,7 @@ describe("Bug 1101: legal top-level positions still pass (no over-blocking)", ()
 // 验收 6：函数级语义不变
 // ---------------------------------------------------------------------------
 
-describe("Bug 1101: function-level directive semantics are unchanged", () => {
+describe("function-level directive semantics are unchanged", () => {
   it("`@nudo:env` in a function body is still diagnosed + not promoted (Bug 847)", () => {
     const src = `export function f() {\n  /// @nudo:env node\n  return 1;\n}\n`;
     const diags = fileDiags(src);
@@ -1378,7 +1378,7 @@ const SAMPLES: Array<{ name: string; src: string }> = [
   },
 ];
 
-describe("Bug 1101: the parser AST channel and the core text channel agree case by case", () => {
+describe("the parser AST channel and the core text channel agree case by case", () => {
   it.each(SAMPLES.map((s) => [s.name, s.src] as const))(
     "env extraction matches on: %s",
     (_name, src) => {
@@ -1396,11 +1396,11 @@ describe("Bug 1101: the parser AST channel and the core text channel agree case 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 847: file-level directives inside a function body are not file scope
+// file-level directives inside a function body are not file scope
 // ---------------------------------------------------------------------------
-describe("[parser-] Bug 847: file-level directives inside a function body are not file scope", () => {
+describe("file-level directives inside a function body are not file scope", () => {
 /**
- * Bug 847 —— **文件级** `@nudo:env` / `@nudo:mock-module` 写在**函数体内部**也被当成
+ * **文件级** `@nudo:env` / `@nudo:mock-module` 写在**函数体内部**也被当成
  * 文件级指令 ⇒ 整文件 env / 模块替换被静默改写，**零诊断**。
  *
  * 根因：文件级指令的**作用域 = 词法位置**这一约束只在**块注释**分支被检查；行注释
@@ -1431,7 +1431,7 @@ const MOCK_MODULE_IN_FN = `export function f(a) {
 }
 `;
 
-describe("Bug 847: file-level directives inside a function body are not file scope", () => {
+describe("file-level directives inside a function body are not file scope", () => {
   it("`/// @nudo:env node` in a function body is not promoted + is diagnosed", () => {
     const diags = fileDiags(ENV_IN_FN);
     expect(diags).toHaveLength(1);
@@ -1475,20 +1475,20 @@ describe("Bug 847: file-level directives inside a function body are not file sco
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1032：行内指令的粘连形态必须发诊断
+// 行内指令的粘连形态必须发诊断
 // ---------------------------------------------------------------------------
-describe("[parser-] Bug 1032：行内指令的粘连形态必须发诊断", () => {
+describe("行内指令的粘连形态必须发诊断", () => {
 /**
- * Bug 1032（parser 面）：行内指令的**粘连**形态此前对扫描器**完全不可见**
+ * （parser 面）：行内指令的**粘连**形态此前对扫描器**完全不可见**
  * ⇒ **零诊断**地蒸发。
  *
  * - `@nudo:replaceFoo <target> <typeExpr>` ⇒ 既不匹配严格正则、也不匹配宽松
- *   正则 ⇒ 整条行内指令消失（连同它本该替换的类型）。
+ * 正则 ⇒ 整条行内指令消失（连同它本该替换的类型）。
  *
  * 修复：粘连形态**看得见** ⇒ 发既有码 `nudo:directive-syntax`。
  *
  * ⚠ `@nudo:as` 侧**未改**：标签名被延长（`@nudo:asXYZ`）⇒ 不是 `@nudo:as`
- * 指令、且零诊断——族 28（Bug 842）已合入并钉死该行为
+ * 指令、且零诊断——族 28（）已合入并钉死该行为
  * （`parser--as-payload-separator.part.ts` 的「tag boundary」用例）⇒
  * 本片不推翻（越界发现，见交付报告）。
  */
@@ -1504,7 +1504,7 @@ function extractInlineWithDiags(source: string) {
   return { dirs, diags };
 }
 
-describe("Bug 1032：行内指令的粘连形态必须发诊断", () => {
+describe("行内指令的粘连形态必须发诊断", () => {
   it("@nudo:replaceFoo（粘连）→ nudo:directive-syntax，无指令", () => {
     const { dirs, diags } = extractInlineWithDiags(`/**
  * @nudo:replaceFoo x number()
@@ -1548,11 +1548,11 @@ const a = 1;`);
 });
 
 // ---------------------------------------------------------------------------
-// BUG-195 — 行注释形态的 @nudo:import 位置错位必须可见
+// 行注释形态的 @nudo:import 位置错位必须可见
 // ---------------------------------------------------------------------------
-describe("[parser-] BUG-195 — 行注释形态的 @nudo:import 位置错位必须可见", () => {
+describe("行注释形态的 @nudo:import 位置错位必须可见", () => {
 /**
- * BUG-195 —— `@nudo:import` 的**行注释**形态写在函数体 / 类体 / 对象体 /
+ * `@nudo:import` 的**行注释**形态写在函数体 / 类体 / 对象体 /
  * 数组体 / 解构模式体内 ⇒ **零诊断**地失效（core 文本路的位置闸门把它拦下，
  * 引用它的 `@nudo:contract` 被静默丢弃 ⇒ 门禁假绿）；而同一位置上的
  * **块注释**形态却会明确告警「这是文件级指令」⇒ 同一指令两形态口径相反。
@@ -1579,7 +1579,7 @@ function importDiags(src: string): DirectiveDiag[] {
   return fileDiags(src).filter((d) => d.message.includes("@nudo:import"));
 }
 
-describe("BUG-195 — 行注释形态的 @nudo:import 位置错位必须可见", () => {
+describe("行注释形态的 @nudo:import 位置错位必须可见", () => {
   it("函数体内的 /// @nudo:import ⇒ 一条 nudo:directive-syntax（改前：零诊断）", () => {
     const diags = importDiags(`/**
  * @nudo:contract y positive
@@ -1650,11 +1650,11 @@ export function bar(y) { return y; }
 });
 
 // ---------------------------------------------------------------------------
-// Bug 857: async arrow payload keeps its async flag
+// async arrow payload keeps its async flag
 // ---------------------------------------------------------------------------
-describe("[parser-] Bug 857: async arrow payload keeps its async flag", () => {
+describe("async arrow payload keeps its async flag", () => {
 /**
- * Bug 857 —— `@nudo:mock f = async (x) => x + 1` 的 **async 语义被静默丢弃**
+ * `@nudo:mock f = async (x) => x + 1` 的 **async 语义被静默丢弃**
  * ⇒ mock 被建模成**同步**函数 ⇒ 调用点 `f(1).then(…)` 报「method 'then'
  * missing on number receiver」⇒ **error 级** `nudo:entry-may-throw` **假红**
  * （native 不抛：native 返回 Promise）。
@@ -1680,7 +1680,7 @@ function mockOf(source: string): MockDirective {
   return mocks[0]!;
 }
 
-describe("Bug 857: async arrow payload keeps its async flag", () => {
+describe("async arrow payload keeps its async flag", () => {
   it("`async (x) => x + 1` is scanned as async", () => {
     const r = parseArrowFunctionExpr("async (x) => x + 1");
     expect(r).not.toBeNull();
@@ -1747,11 +1747,11 @@ export function caller() { return f(1); }`,
 });
 
 // ---------------------------------------------------------------------------
-// Bug 845: an empty @nudo:mock payload must not evaporate silently
+// an empty @nudo:mock payload must not evaporate silently
 // ---------------------------------------------------------------------------
-describe("[parser-] Bug 845: an empty @nudo:mock payload must not evaporate silently", () => {
+describe("an empty @nudo:mock payload must not evaporate silently", () => {
 /**
- * Bug 845 —— `@nudo:mock` 的**载荷为空**（`@nudo:mock fetch =` / `@nudo:mock g from`）
+ * `@nudo:mock` 的**载荷为空**（`@nudo:mock fetch =` / `@nudo:mock g from`）
  * ⇒ 指令**静默蒸发**、零诊断 ⇒ mock 丢失 ⇒ 分析退化成 unknown / 假红。
  *
  * 根因：宽松标签正则（`@nudo:mock\b[ \t]*([^\n]*)`）看得到标签，但两条严格文法
@@ -1789,7 +1789,7 @@ export function f(a) {
 }
 `;
 
-describe("Bug 845: an empty @nudo:mock payload must not evaporate silently", () => {
+describe("an empty @nudo:mock payload must not evaporate silently", () => {
   it("`@nudo:mock fetch =` → nudo:directive-syntax (empty payload)", () => {
     const diags = fnDiags(EMPTY_INLINE);
     expect(diags).toHaveLength(1);
@@ -1833,11 +1833,11 @@ export function f(u) {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 980: a glued @nudo:mock<name> tag must be visible to the scanner
+// a glued @nudo:mock<name> tag must be visible to the scanner
 // ---------------------------------------------------------------------------
-describe("[parser-] Bug 980: a glued @nudo:mock<name> tag must be visible to the scanner", () => {
+describe("a glued @nudo:mock<name> tag must be visible to the scanner", () => {
 /**
- * Bug 980 —— `@nudo:mock<name> = …`（标签与名字之间**无空白**）⇒ **连宽松标签正则
+ * `@nudo:mock<name> = …`（标签与名字之间**无空白**）⇒ **连宽松标签正则
  * 都不匹配** ⇒ 整条 mock **对扫描器完全不可见** ⇒ **零诊断** ⇒ **分析跑在真身上**
  * （`promise<unknown>` 而非 `promise<{ id: 1 }>`）⇒ **假绿**。
  *
@@ -1869,7 +1869,7 @@ export async function f(url) {
 }
 `;
 
-describe("Bug 980: a glued @nudo:mock<name> tag must be visible to the scanner", () => {
+describe("a glued @nudo:mock<name> tag must be visible to the scanner", () => {
   it("emits nudo:directive-syntax naming the missing space", () => {
     const diags = fnDiags(GLUED);
     expect(diags).toHaveLength(1);
@@ -1898,11 +1898,11 @@ export async function f(url) {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 838: file-level @nudo:mock-module is not a function-level @nudo:mock
+// file-level @nudo:mock-module is not a function-level @nudo:mock
 // ---------------------------------------------------------------------------
-describe("[parser-] Bug 838: file-level @nudo:mock-module is not a function-level @nudo:mock", () => {
+describe("file-level @nudo:mock-module is not a function-level @nudo:mock", () => {
 /**
- * Bug 838 —— 文件级 `/// @nudo:mock-module` 被**函数级** `@nudo:mock` 标签正则
+ * 文件级 `/// @nudo:mock-module` 被**函数级** `@nudo:mock` 标签正则
  * 误捕：正确写法产生**伪造的** nudo:directive-syntax 警告（"Malformed @nudo:mock:
  * cannot parse name … — got: -module …"）。
  *
@@ -1931,7 +1931,7 @@ export function f() {
 }
 `;
 
-describe("Bug 838: file-level @nudo:mock-module is not a function-level @nudo:mock", () => {
+describe("file-level @nudo:mock-module is not a function-level @nudo:mock", () => {
   it("produces no nudo:directive-syntax warning", () => {
     expect(fnDiags(FILE_LEVEL_MOCK_MODULE)).toEqual([]);
     expect(fileDiags(FILE_LEVEL_MOCK_MODULE)).toEqual([]);
@@ -1965,11 +1965,11 @@ export function f(u) {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 858: mock payload params carry binding semantics
+// mock payload params carry binding semantics
 // ---------------------------------------------------------------------------
-describe("[parser-] Bug 858: mock payload params carry binding semantics", () => {
+describe("mock payload params carry binding semantics", () => {
 /**
- * Bug 858 —— `@nudo:mock g = ({ a, b }) => a + b` 的**形参根本没被绑定** ⇒
+ * `@nudo:mock g = ({ a, b }) => a + b` 的**形参根本没被绑定** ⇒
  * mock 体读到未声明全局 ⇒ `ReferenceError` ⇒ **error 级**假红 + dts 产物写出
  * `caller(): never`（**错误类型声明**）。
  *
@@ -1980,10 +1980,10 @@ describe("[parser-] Bug 858: mock payload params carry binding semantics", () =>
  *
  * 修法（parser 侧）：形参表现在带**绑定语义**——
  * - `params`：**JS 源码形态**（消费面拼函数签名用）：标识符是名字、默认形参保留
- *   默认值（`a = 1`）、rest 保留 `...`、解构保留源码形态（`{ a, b }`）；
+ * 默认值（`a = 1`）、rest 保留 `...`、解构保留源码形态（`{ a, b }`）；
  * - `paramPatterns`：形参 AST（原样，1:1 对齐）——消费面可自行解构绑定；
  * - `boundNames`：**绑定的名字**（解构列出顶层绑定名；rest 是裸名；默认是绑定名）
- *   ——自由标识符分析（作用域）按此判定「已被形参绑定」。
+ * ——自由标识符分析（作用域）按此判定「已被形参绑定」。
  */
 
 
@@ -1999,7 +1999,7 @@ function mockOf(source: string): MockDirective {
   return mocks[0]!;
 }
 
-describe("Bug 858: mock payload params carry binding semantics", () => {
+describe("mock payload params carry binding semantics", () => {
   it("object destructuring keeps the pattern and exposes the bound names", () => {
     const r = parseArrowFunctionExpr("({ a, b }) => a + b");
     expect(r).not.toBeNull();
@@ -2064,17 +2064,17 @@ export function caller() { return g({ a: 1, b: 2 }); }`,
 });
 
 // ---------------------------------------------------------------------------
-// Bug 851: skip / mock declaration faces reject non-literals
+// skip / mock declaration faces reject non-literals
 // ---------------------------------------------------------------------------
-describe("[parser-] Bug 851: skip / mock declaration faces reject non-literals", () => {
+describe("skip / mock declaration faces reject non-literals", () => {
 /**
- * Bug 851 回归：同一贪婪切片在 `@nudo:skip` / `@nudo:mock` **声明面**。
+ * 回归：同一贪婪切片在 `@nudo:skip` / `@nudo:mock` **声明面**。
  *
  * `@nudo:skip => "a" + "b"` 的声明返回类型、`@nudo:mock` 载荷里的字符串值
  * 都走同一套字符串分支 ⇒ 旧实现把 `a" + "b` 折成**声明的类型 / mock 值**
  * ⇒ 签名与 dts 给出**错误的类型声明**（谁也没写过的字符串）。
  *
- * 修法：与 Bug 849 同源——字符串分支的词法边界判定单源在
+ * 修法：与 同源——字符串分支的词法边界判定单源在
  * `directives/string-literal.ts`；非单个字面量 ⇒ unknown（不折错值）。
  */
 
@@ -2084,7 +2084,7 @@ describe("[parser-] Bug 851: skip / mock declaration faces reject non-literals",
 
 
 
-describe("Bug 851: skip / mock declaration faces reject non-literals", () => {
+describe("skip / mock declaration faces reject non-literals", () => {
   it("@nudo:skip return type is unknown, not a wrong string", () => {
     const fns = extractDirectives(
       parse(`
@@ -2126,11 +2126,11 @@ export function f() { return "ab"; }
 });
 
 // ---------------------------------------------------------------------------
-// Bug 979: @nudo:skip=> <expr> (no space) must not drop the payload
+// @nudo:skip=> <expr> (no space) must not drop the payload
 // ---------------------------------------------------------------------------
-describe("[parser-] Bug 979: @nudo:skip=> <expr> (no space) must not drop the payload", () => {
+describe("@nudo:skip=> <expr> (no space) must not drop the payload", () => {
 /**
- * Bug 979 —— `@nudo:skip=> <expr>`（标签与载荷之间**无空白**）⇒ **载荷被静默丢弃**、
+ * `@nudo:skip=> <expr>`（标签与载荷之间**无空白**）⇒ **载荷被静默丢弃**、
  * 零诊断 ⇒ 声明的返回类型**没生效** ⇒ 签名从 `f() => number` 退化成 `f() => any`
  * ⇒ **any 泄漏到产物面** + **假绿**。
  *
@@ -2174,7 +2174,7 @@ export function f() {
 }
 `;
 
-describe("Bug 979: @nudo:skip=> <expr> (no space) must not drop the payload", () => {
+describe("@nudo:skip=> <expr> (no space) must not drop the payload", () => {
   it("tight form yields the declared return type", () => {
     expect(skipReturns(TIGHT)).toBe("number");
   });
@@ -2214,17 +2214,17 @@ export function f() {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 850: case witness concatenation is not a literal
+// case witness concatenation is not a literal
 // ---------------------------------------------------------------------------
-describe("[parser-] Bug 850: case witness concatenation is not a literal", () => {
+describe("case witness concatenation is not a literal", () => {
 /**
- * Bug 850 回归：同一贪婪切片在 `@nudo:case` **见证**面。
+ * 回归：同一贪婪切片在 `@nudo:case` **见证**面。
  *
  * 见证实参走 `parseAbsExprDiag` → `parseCaseArgExpr`；旧实现的字符串分支
  * 只查首尾引号 ⇒ `("a" + "b")` 折成 `a" + "b`（自信的错值）⇒ 见证 ⊭ 契约
  * ⇒ 契约门禁**假红**（用户写的见证恰好就是契约要求的值）。
  *
- * 修法：与 Bug 849 同源（字符串分支的词法边界判定）⇒ 非单个字面量落
+ * 修法：与 同源（字符串分支的词法边界判定）⇒ 非单个字面量落
  * unknown（诊断给出），不再折出错值。
  *
  * 注：`nudo check` 的见证执法面在 core `algebra/check-case-scan.ts`
@@ -2243,7 +2243,7 @@ function caseArgs(source: string): Abs[] {
   return d.argsAbs;
 }
 
-describe("Bug 850: case witness concatenation is not a literal", () => {
+describe("case witness concatenation is not a literal", () => {
   it("witness argument of a concatenation is unknown, not a wrong string", () => {
     const args = caseArgs(`
 /**

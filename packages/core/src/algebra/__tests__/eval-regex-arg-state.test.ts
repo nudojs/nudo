@@ -1,5 +1,5 @@
 /**
- * Bug 96 回归：语句位 `"s".match/replace/replaceAll(r)` 不重置参数位 RegExp
+ * 回归：语句位 `"s".match/replace/replaceAll(r)` 不重置参数位 RegExp
  * 的 lastIndex。值通道 stringRegexMethod 在实参 regex 的副本上执行，spec
  * @@match/@replace 对**原正则** Set lastIndex（全局 → 0）从未反映回绑定。
  * 修复：emit 语句位写回 pass 对 StringLiteral 接收者 + Identifier 实参发射
@@ -22,7 +22,7 @@ function expectVal(body: string, expected: unknown) {
   expect(litValue(rec.result), `value for: ${body}`).toEqual({ ok: true, value: expected });
 }
 
-describe("statement-position string regex methods reset argument lastIndex (Bug 96)", () => {
+describe("statement-position string regex methods reset argument lastIndex ()", () => {
   it("全局 replace 重置参数 lastIndex → 0", () => {
     // node: const r = /a/g; r.test("a") → 1；"aaa".replace(r,"b") 全局 → 0
     expectVal(`const r = /a/g; r.test("a"); "aaa".replace(r, "b"); return r.lastIndex;`, 0);

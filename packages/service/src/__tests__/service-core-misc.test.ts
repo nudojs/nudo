@@ -30,16 +30,16 @@ import { loadModuleOutcome, guardedLoadModule, ModuleReadError } from "../load-m
 import { collectEvalDiagnostics } from "../eval-diagnostics.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 242 — 产物面不得出现内部伪名 brand（Intl 未建模子构造器）
+// 产物面不得出现内部伪名 brand（Intl 未建模子构造器）
 // ---------------------------------------------------------------------------
-describe("[] Bug 242 — 产物面不得出现内部伪名 brand（Intl 未建模子构造器）", () => {
+describe("产物面不得出现内部伪名 brand（Intl 未建模子构造器）", () => {
 /**
- * Bug 242 产物面回归：`new Intl.Collator('en')` 等**未建模子构造器**返回内部
+ * 产物面回归：`new Intl.Collator('en')` 等**未建模子构造器**返回内部
  * 伪名 brand（`__nudoFnParentN`），该伪名泄漏进产品面产物 ⇒
  * - dts 产物：`export declare function f(): __nudoFnParent1;` —— 伪名是**合法
- *   JS 标识符**却从未声明 ⇒ 消费方 tsc 报 **TS2304**；
+ * JS 标识符**却从未声明 ⇒ 消费方 tsc 报 **TS2304**；
  * - schema 产物：`z.instanceof(__nudoFnParent1)` —— 生成模块**import 即崩**
- *   （ReferenceError），整个产物作废。
+ * （ReferenceError），整个产物作废。
  *
  * 本文件钉住**产物面**：产物里不得出现内部伪名，也不得引用未声明的绑定；
  * zod 产物必须可求值（import 即用）。
@@ -92,7 +92,7 @@ function evaluateZodModule(source: string, exportNames: string[]): { ok: boolean
   }
 }
 
-describe("Bug 242 — 产物面不得出现内部伪名 brand（Intl 未建模子构造器）", () => {
+describe("产物面不得出现内部伪名 brand（Intl 未建模子构造器）", () => {
   it("引擎侧：实例 brand 名不是内部伪名", () => {
     const out = newCollatorOutputAbs();
     const name = out.shape.k === "brand" ? (out.shape.name ?? "") : "";
@@ -131,17 +131,17 @@ describe("Bug 242 — 产物面不得出现内部伪名 brand（Intl 未建模�
 });
 
 // ---------------------------------------------------------------------------
-// BUG-003 —— 类形参归一为 TS unknown（TS 投影面）
+// 类形参归一为 TS unknown（TS 投影面）
 // ---------------------------------------------------------------------------
-describe("[] BUG-003 —— 类形参归一为 TS unknown（TS 投影面）", () => {
+describe("类形参归一为 TS unknown（TS 投影面）", () => {
 /**
- * BUG-003 —— `export --format dts` 的类成员投影。
+ * `export --format dts` 的类成员投影。
  *
  * 三个丢信息点（`dtsClassDeclaration`）：① 构造器 / 静态方法形参无类型
  * 证据；② 静态方法返回硬编码 `unknown`；③ 实例方法返回只吃
  * case/combinedAbs 证据（分析面对类成员给的就是 `unknown`）。
  *
- * 历史：BUG-003 曾把 ① 从硬编码 `unknown` 改成 `any`，理由是
+ * 历史：曾把 ① 从硬编码 `unknown` 改成 `any`，理由是
  * `CLAUDE.md` 的展示面分面约定（无约束 ⇒ any）。2026-11-06 产品裁定
  * 「nudo any ≈ TS unknown」明确该规则只管 **nudo 展示 / CLI 面**；
  * **TS 投影面**把无约束 any 映成 TS `unknown`（top）⇒ ① 回到 `unknown`，
@@ -167,7 +167,7 @@ function classDts(): string {
   return mod.lines.join("\n");
 }
 
-describe("BUG-003 —— 类形参归一为 TS unknown（TS 投影面）", () => {
+describe("类形参归一为 TS unknown（TS 投影面）", () => {
   it("构造器形参 = unknown（nudo 展示面仍为 any，两个作用域不同）", () => {
     const dts = classDts();
     expect(dts).toContain("constructor(w: unknown, h: unknown);");
@@ -177,11 +177,11 @@ describe("BUG-003 —— 类形参归一为 TS unknown（TS 投影面）", () =>
 });
 
 // ---------------------------------------------------------------------------
-// BUG-013 — @nudo:replace 挂在裸块语句上必须生效
+// @nudo:replace 挂在裸块语句上必须生效
 // ---------------------------------------------------------------------------
-describe("[] BUG-013 — @nudo:replace 挂在裸块语句上必须生效", () => {
+describe("@nudo:replace 挂在裸块语句上必须生效", () => {
 /**
- * BUG-013 —— `@nudo:replace` 的「紧随语句」是**裸块语句** `{ … }` 时，收集面
+ * `@nudo:replace` 的「紧随语句」是**裸块语句** `{ … }` 时，收集面
  * 的**作用域边界**守卫把 walk 的**根节点**也挡住了 ⇒ 候选区间恒空 ⇒
  * 替换**永不生效**，而诊断还谎称「该指令所标注语句的作用域内没有匹配表达式」
  * ——匹配目标就在它所标注的那个块里。
@@ -248,7 +248,7 @@ function signatureOf(src: string, name: string): { display: string; throws?: str
   return { display: sig!.display, throws: sig!.throws };
 }
 
-describe("BUG-013 — @nudo:replace 挂在裸块语句上必须生效", () => {
+describe("@nudo:replace 挂在裸块语句上必须生效", () => {
   it("裸块语句上的指令登记了**节点身份**区间（改前恒空）", () => {
     const reps = collectEvalReplacements(BLOCK_TARGET);
     expect(reps.targets).toHaveLength(1);
@@ -278,11 +278,11 @@ describe("BUG-013 — @nudo:replace 挂在裸块语句上必须生效", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-041 —— 溯源标签与 cwd 无关
+// 溯源标签与 cwd 无关
 // ---------------------------------------------------------------------------
-describe("[] BUG-041 —— 溯源标签与 cwd 无关", () => {
+describe("溯源标签与 cwd 无关", () => {
 /**
- * BUG-041 —— 派生段的溯源标签 `// derived-from: <root>:<fn>` 用 **cwd 相对**
+ * 派生段的溯源标签 `// derived-from: <root>:<fn>` 用 **cwd 相对**
  * 路径 ⇒ 同一个 root 在不同 cwd 下重算得到两种拼写；合并逻辑又取**并集**
  * ⇒ 同一个 root 在一行里出现两次，且**永久留存**（再跑也不清理）。
  *
@@ -335,7 +335,7 @@ function labels(): string[] {
   return (m?.[1] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 }
 
-describe("BUG-041 —— 溯源标签与 cwd 无关", () => {
+describe("溯源标签与 cwd 无关", () => {
   it("两个不同 cwd 各跑一次 ⇒ 标签逐字相同且只有一条", () => {
     const { root, pkgDir } = fixture();
 
@@ -374,11 +374,11 @@ describe("BUG-041 —— 溯源标签与 cwd 无关", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-043 —— 侧车解析失败必须点名侧车
+// 侧车解析失败必须点名侧车
 // ---------------------------------------------------------------------------
-describe("[] BUG-043 —— 侧车解析失败必须点名侧车", () => {
+describe("侧车解析失败必须点名侧车", () => {
 /**
- * BUG-043 —— 侧车不可解析时诊断点名**源文件**而不是侧车。
+ * 侧车不可解析时诊断点名**源文件**而不是侧车。
  *
  * `collectGeneratedSections` 抛的是无路径的 `"sidecar is not parseable"`
  * （注释说「由调用方补充路径上下文」，但调用方直接让异常冒泡）⇒ 紧随其后的
@@ -403,7 +403,7 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("BUG-043 —— 侧车解析失败必须点名侧车", () => {
+describe("侧车解析失败必须点名侧车", () => {
   it("错误消息含侧车文件名（不是源文件名）", async () => {
     writeFileSync(join(dir, "lib.js"), `export function f(a) {\n  return a + 1;\n}\nf(1);\n`, "utf-8");
     // 语法的确崩：`const x = ;`
@@ -417,11 +417,11 @@ describe("BUG-043 —— 侧车解析失败必须点名侧车", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-107 —— 解构形参的默认值 ⇒ 可省
+// 解构形参的默认值 ⇒ 可省
 // ---------------------------------------------------------------------------
-describe("[] BUG-107 —— 解构形参的默认值 ⇒ 可省", () => {
+describe("解构形参的默认值 ⇒ 可省", () => {
 /**
- * BUG-107 —— 「解构 + 默认值」的形参被**必填化** ⇒ 产出的 `.d.ts` 让 TS 报
+ * 「解构 + 默认值」的形参被**必填化** ⇒ 产出的 `.d.ts` 让 TS 报
  * **TS2554**（合法调用 `f()` 被拒）。
  *
  * 根因：`declaredParams` 的 `case "pattern"` 硬编码 `hasDefault: false`，
@@ -433,7 +433,7 @@ describe("[] BUG-107 —— 解构形参的默认值 ⇒ 可省", () => {
 
 
 
-describe("BUG-107 —— 解构形参的默认值 ⇒ 可省", () => {
+describe("解构形参的默认值 ⇒ 可省", () => {
   it("`{ x = 1, y = x + 1 } = {}` ⇒ 形参可省（不是必填）", () => {
     const dts = generateDts(
       analyzeFile___nudojs_service_1("/test/bug107.js", `export function f({ x = 1, y = x + 1 } = {}) { return y; }\n`),
@@ -459,9 +459,9 @@ describe("BUG-107 —— 解构形参的默认值 ⇒ 可省", () => {
 // ---------------------------------------------------------------------------
 // 1145 · service 观测面：模块级求值失败按文件可见
 // ---------------------------------------------------------------------------
-describe("[] 1145 · service 观测面：模块级求值失败按文件可见", () => {
+describe("1145 · service 观测面：模块级求值失败按文件可见", () => {
 /**
- * Bug 1145 回归：**模块级求值失败**（闸门无法裁决该文件的回落）必须被**按文件**
+ * 回归：**模块级求值失败**（闸门无法裁决该文件的回落）必须被**按文件**
  * 观测到——否则闸门看不到任何入口 ⇒ 零诊断 + exit 0（**假绿**：合法代码与
  * 违约代码都判绿）。
  *
@@ -471,7 +471,7 @@ describe("[] 1145 · service 观测面：模块级求值失败按文件可见", 
  * 修法（service 观测面）：`analyzeFileWithEvalFailures` 为**每个文件**装一个
  * 回落 collector，把该文件分析期间的回落按文件收集起来。
  *
- * **标签 ≠ 可见性**（BUG-073 之后的两维口径）：core 的回落事件带两个维度——
+ * **标签 ≠ 可见性**（之后的两维口径）：core 的回落事件带两个维度——
  * 标签 `reason`（谁的责任：`unsupported:*` 能力边界 / `module-throw` 程序
  * 自身抛 / `internal` 引擎缺陷）与可见性 `gateFatal`（闸门能不能裁决该文件）。
  * 失败信号按**可见性**收（`internal` 恒进；`module-throw` 仅装载期逃逸进；
@@ -479,11 +479,11 @@ describe("[] 1145 · service 观测面：模块级求值失败按文件可见", 
  *
  * 断言面：
  * 1. 模块级求值失败（装载期逃逸）⇒ 观测面**看见**该文件的回落
- *    （reason=module-throw，file=被分析文件）——这是闸门 fail-closed 的
- *    信号源（**标签**随 BUG-073 改为 module-throw：**可见性**不变）；
+ * （reason=module-throw，file=被分析文件）——这是闸门 fail-closed 的
+ * 信号源（**标签**随 改为 module-throw：**可见性**不变）；
  * 2. **假红防线**：`unsupported:*`（能力边界）回落 **不**进失败信号；
  * 3. **假红防线**：**建模内抛**（NudoThrow ⇒ 引擎知道程序在抛 ⇒ 归
- *    `nudo:module-throw` 通道）**不**进失败信号；
+ * `nudo:module-throw` 通道）**不**进失败信号；
  * 4. 干净文件 ⇒ 零回落（不得凭空造失败）。
  */
 
@@ -547,12 +547,12 @@ describe("1145 · service 观测面：模块级求值失败按文件可见", () 
     const file = `${dir}/boom.js`;
     const { evalFailures } = analyzeFileWithEvalFailures(file, MODULE_EVAL_FAILS);
     expect(evalFailures.length).toBeGreaterThan(0);
-    // **重钉（BUG-073 §修复方向：用户代码抛出的原生异常归 `module-throw`，
-    // 不再算引擎缺陷；BUG-072 §修复方向：「模块未分析 ⇒ 不得给绿灯」）**：
+    // **重钉（§修复方向：用户代码抛出的原生异常归 `module-throw`，
+    // 不再算引擎缺陷；§修复方向：「模块未分析 ⇒ 不得给绿灯」）**：
     // 模块体里的原生异常（这里 `undefined()` ⇒ TypeError）是**用户代码自身
     // 抛**，标签由 `internal` 改为 `module-throw`（不是引擎缺陷 ⇒ 不该报
     // 「engine bug」）。
-    // **可见性不变**（1145 / BUG-072 的契约）：装载期逃逸 ⇒ 该模块装载失败
+    // **可见性不变**（1145 / 的契约）：装载期逃逸 ⇒ 该模块装载失败
     // （导出全丢）⇒ 闸门无法裁决该文件 ⇒ 仍进失败信号（fail-closed）。
     expect(evalFailures.every((f) => f.reason === "module-throw")).toBe(true);
     // 失败信号必须**能定位到文件**
@@ -585,11 +585,11 @@ describe("1145 · service 观测面：模块级求值失败按文件可见", () 
 });
 
 // ---------------------------------------------------------------------------
-// BUG-139 — 静态字段不是方法
+// 静态字段不是方法
 // ---------------------------------------------------------------------------
-describe("[] BUG-139 — 静态字段不是方法", () => {
+describe("静态字段不是方法", () => {
 /**
- * BUG-139 回归：**类的静态字段**不得被当成方法收进函数表。
+ * 回归：**类的静态字段**不得被当成方法收进函数表。
  *
  * 改前 kind 过滤写成 `m.kind !== undefined && m.kind !== "method"`，而 Babel 的
  * 类字段节点是 `ClassProperty`（**没有** `kind` 字段）⇒ 过滤放行 ⇒ `K.s`
@@ -608,7 +608,7 @@ const SRC = `export class K {
 }
 `;
 
-describe("BUG-139 — 静态字段不是方法", () => {
+describe("静态字段不是方法", () => {
   it("静态方法进函数表，静态字段不进", () => {
     const names = withTmpProject("nudo-139-", (dir) => {
       const file = writeTmpFile(dir, "k.js", SRC);
@@ -622,11 +622,11 @@ describe("BUG-139 — 静态字段不是方法", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-152 — 匿名 default class 可见
+// 匿名 default class 可见
 // ---------------------------------------------------------------------------
-describe("[] BUG-152 — 匿名 default class 可见", () => {
+describe("匿名 default class 可见", () => {
 /**
- * BUG-152 回归：**匿名** `export default class { … }` 必须进导出表。
+ * 回归：**匿名** `export default class { … }` 必须进导出表。
  *
  * 改前两个分支都落空（无 id ⇒ 不是 `ClassDeclaration && defaultClassName`；
  * `asIdentifier(d)` 也不是 Identifier）⇒ `continue` 彻底丢掉 ⇒ 四面全盲、
@@ -643,7 +643,7 @@ const SRC = `export default class {
 }
 `;
 
-describe("BUG-152 — 匿名 default class 可见", () => {
+describe("匿名 default class 可见", () => {
   it("成员按导出槽名 `default` 登记（不再被整体丢弃）", () => {
     const names = withTmpProject("nudo-152-", (dir) => {
       const file = writeTmpFile(dir, "anon.js", SRC);
@@ -663,11 +663,11 @@ describe("BUG-152 — 匿名 default class 可见", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-205 — 精确 null 字面量不判「推不出来」
+// 精确 null 字面量不判「推不出来」
 // ---------------------------------------------------------------------------
-describe("[] BUG-205 — 精确 null 字面量不判「推不出来」", () => {
+describe("精确 null 字面量不判「推不出来」", () => {
 /**
- * BUG-205 回归：精确推出的 `null` / `undefined` 字面量**不是**「引擎推不出」。
+ * 回归：精确推出的 `null` / `undefined` 字面量**不是**「引擎推不出」。
  *
  * 改前第三态判据只看 `shape.k === "unknown"`，而 `null` / `undefined` 字面量的
  * Abs 正是 `shape.k === "unknown"` + `term = lit(null|undefined)` +
@@ -709,7 +709,7 @@ export function g(o) {
 }
 `;
 
-describe("BUG-205 — 精确 null 字面量不判「推不出来」", () => {
+describe("精确 null 字面量不判「推不出来」", () => {
   it("`=> lit(null)` 的精确结果被判定（不是 unchecked）", () => {
     const r = reportOf(NULL_CASE);
     const o = r.outcomes.find((x) => x.caseName === "null")!;
@@ -734,18 +734,18 @@ describe("BUG-205 — 精确 null 字面量不判「推不出来」", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-206 — never 期望 vs never 实测
+// never 期望 vs never 实测
 // ---------------------------------------------------------------------------
-describe("[] BUG-206 — never 期望 vs never 实测", () => {
+describe("never 期望 vs never 实测", () => {
 /**
- * BUG-206 回归：实测 `never` 配期望 `never` 时 `never ⊑ never` 成立 ⇒
+ * 回归：实测 `never` 配期望 `never` 时 `never ⊑ never` 成立 ⇒
  * 断言必须可判 **ok**。
  *
  * 改前守卫无条件拒绝（`if (actual.shape.k === "never") return false;`）⇒ 报告
  * 印出两个相同的 `never` 却判 `[FAIL]`，诊断文案写成
  * 「expected never, got never」——报告 / 诊断 / 判定三者自相矛盾。
  *
- * ⚠ Bug 649 不得回归：实测 never + 期望**不是** never ⇒ 仍不得判 ok。
+ * ⚠ 不得回归：实测 never + 期望**不是** never ⇒ 仍不得判 ok。
  */
 
 
@@ -764,7 +764,7 @@ export function boom() {
 }
 `;
 
-describe("BUG-206 — never 期望 vs never 实测", () => {
+describe("never 期望 vs never 实测", () => {
   it("判定层：never 配 never ⇒ 满足（Bug 649 不回归：配 number() ⇒ 不满足）", () => {
     expect(caseExpectedSatisfied(neverAbs, parseCaseArgExpr("never"))).toBe(true);
     expect(caseExpectedSatisfied(neverAbs, parseCaseArgExpr("number()"))).toBe(false);
@@ -791,11 +791,11 @@ describe("BUG-206 — never 期望 vs never 实测", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-207 — 嵌套槽谓词执法 + 渲染
+// 嵌套槽谓词执法 + 渲染
 // ---------------------------------------------------------------------------
-describe("[] BUG-207 — 嵌套槽谓词执法 + 渲染", () => {
+describe("嵌套槽谓词执法 + 渲染", () => {
 /**
- * BUG-207 回归：**嵌套**值级谓词（`shape({ n: number().gt(0) })`）必须与
+ * 回归：**嵌套**值级谓词（`shape({ n: number().gt(0) })`）必须与
  * 顶层写法（`number().gt(0)`）**同结论、同可读性**。
  *
  * 改前：顶层谓词才走值级判定与渲染 ⇒ 同一谓词放槽里既不执法（`[FAIL]`）
@@ -808,7 +808,7 @@ describe("[] BUG-207 — 嵌套槽谓词执法 + 渲染", () => {
 const nestedExpected = () => parseCaseArgExpr("shape({ n: number().gt(0) })");
 const topExpected = () => parseCaseArgExpr("number().gt(0)");
 
-describe("BUG-207 — 嵌套槽谓词执法 + 渲染", () => {
+describe("嵌套槽谓词执法 + 渲染", () => {
   it("槽谓词满足 ⇒ 判 ok（与顶层写法一致）", () => {
     expect(caseExpectedSatisfied(parseCaseArgExpr("{ n: 3 }"), nestedExpected())).toBe(true);
     expect(caseExpectedSatisfied(parseCaseArgExpr("3"), topExpected())).toBe(true);
@@ -832,11 +832,11 @@ describe("BUG-207 — 嵌套槽谓词执法 + 渲染", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-266 —— 派生分支的 .nudo.ts 必须带 builder 声明头
+// 派生分支的 .nudo.ts 必须带 builder 声明头
 // ---------------------------------------------------------------------------
-describe("[] BUG-266 —— 派生分支的 .nudo.ts 必须带 builder 声明头", () => {
+describe("派生分支的 .nudo.ts 必须带 builder 声明头", () => {
 /**
- * BUG-266 —— `nudo contract --emit` 的**派生分支**写 `.nudo.ts` 侧车时
+ * `nudo contract --emit` 的**派生分支**写 `.nudo.ts` 侧车时
  * **不补 builder 类型声明** ⇒ 产物里 `fn` 是未声明标识符 ⇒ `tsc` **TS2304**；
  * 而主分支（`contract-emitter.ts`）的 `.nudo.ts` 有 `declare const fn: …`
  * ⇒ 同一命令、同一个侧车扩展名，两个分支两个结论。
@@ -860,7 +860,7 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("BUG-266 —— 派生分支的 .nudo.ts 必须带 builder 声明头", () => {
+describe("派生分支的 .nudo.ts 必须带 builder 声明头", () => {
   it("下游是 .ts ⇒ 派生产物补 `declare const fn: …`", () => {
     writeFileSync(
       join(dir, "add.ts"),
@@ -924,11 +924,11 @@ describe("BUG-266 —— 派生分支的 .nudo.ts 必须带 builder 声明头", 
 });
 
 // ---------------------------------------------------------------------------
-// BUG-269 — export * 同名冲突是歧义导出（不可用）
+// export * 同名冲突是歧义导出（不可用）
 // ---------------------------------------------------------------------------
-describe("[] BUG-269 — export * 同名冲突是歧义导出（不可用）", () => {
+describe("export * 同名冲突是歧义导出（不可用）", () => {
 /**
- * BUG-269 回归：相对 `export *` 的**同名冲突**是 ESM 的**歧义导出**——按规范
+ * 回归：相对 `export *` 的**同名冲突**是 ESM 的**歧义导出**——按规范
  * 该名**不导出**，宿主的导入方在链接期
  * `SyntaxError: contains conflicting star exports for name 'x'`。
  *
@@ -962,7 +962,7 @@ beforeEach(() => {
   clearAbsModuleCache();
 });
 
-describe("BUG-269 — export * 同名冲突是歧义导出（不可用）", () => {
+describe("export * 同名冲突是歧义导出（不可用）", () => {
   it("两个星号导出同名 ⇒ 该名不导出（导入方报缺名），顺序无关", () => {
     for (const cBody of [
       'export * from "./a.mjs";\nexport * from "./b.mjs";\n',
@@ -998,14 +998,14 @@ describe("BUG-269 — export * 同名冲突是歧义导出（不可用）", () =
 });
 
 // ---------------------------------------------------------------------------
-// Bug 463/483/484 跨模块 fn 形参面（声明形参，非假名）
+// 跨模块 fn 形参面（声明形参，非假名）
 // ---------------------------------------------------------------------------
-describe("[] Bug 463/483/484 跨模块 fn 形参面（声明形参，非假名）", () => {
+describe("跨模块 fn 形参面（声明形参，非假名）", () => {
 /**
- * Bug 463 / 483 / 484：跨模块导出的 fn 形参面——
- *  - 463：`export function` 的形参名显示成合成假名 `arg0/arg1`（源码里没有的名字）；
- *  - 483：带默认值 / rest 的形参**个数**被吞（用运行期 `Function.length` 当声明形参数）；
- *  - 484：带默认值的形参名整个丢失（`b = 2` 的真名 b 不认 → 显示 arg1）。
+ * ：跨模块导出的 fn 形参面——
+ * - 463：`export function` 的形参名显示成合成假名 `arg0/arg1`（源码里没有的名字）；
+ * - 483：带默认值 / rest 的形参**个数**被吞（用运行期 `Function.length` 当声明形参数）；
+ * - 484：带默认值的形参名整个丢失（`b = 2` 的真名 b 不认 → 显示 arg1）。
  *
  * 原生 oracle：声明形参是源码里的名字与个数（`export function f(a, b = 2)` 声明 2 个形参，
  * a / b；`function.length` 按规范不计带默认值 / rest 的形参 ⇒ 不能当声明形参数用）。
@@ -1041,7 +1041,7 @@ function paramsOf(src: string, dir: string): Map<string, string[]> {
   return out;
 }
 
-describe("Bug 463/483/484 跨模块 fn 形参面（声明形参，非假名）", () => {
+describe("跨模块 fn 形参面（声明形参，非假名）", () => {
   it("export function 的形参用源码真名（改前：arg0/arg1）", () => {
     const dir = makeTmpProject("nudo-b463-", { "main.js": SRC });
     const params = paramsOf(SRC, dir);
@@ -1074,29 +1074,29 @@ describe("Bug 463/483/484 跨模块 fn 形参面（声明形参，非假名）",
 });
 
 // ---------------------------------------------------------------------------
-// Bug 469：export const/let/var f = fn 进普查
+// export const/let/var f = fn 进普查
 // ---------------------------------------------------------------------------
-describe("[] Bug 469：export const/let/var f = fn 进普查", () => {
+describe("export const/let/var f = fn 进普查", () => {
 /**
- * Bug 469 / 489 / 995 回归钉 —— service 面**顶层函数普查**
+ * 回归钉 —— service 面**顶层函数普查**
  * （`collectTopLevelFunctions`）的导出形态覆盖 + 入口求值的**导出槽**解析。
  *
  * 三条同源：service 面的普查比 core 面（`listTopFunctions`）窄 ⇒
  * `nudo check` 看得见的函数，`nudo test` / `export` / `contract` / `health`
  * 看不见（或看不见返回值）——两个面互相矛盾。
  *
- *   469：`export const f = fn` —— ExportNamedDeclaration 分支只收
- *        FunctionDeclaration，不收 VariableDeclaration 的声明符 ⇒ 普查 0 项。
- *   489：`export default function f` —— 普查按**局部名** f 登记，但模块的
- *        导出键是 `default`（f 只是模块内局部名）⇒ 入口求值按导出表键查表
- *        落空 ⇒ 签名退 `unknown`。
- *   995：`module.exports = { f: fn }` —— 普查不下钻对象字面量 ⇒ 成员函数
- *        不可见。
+ * 469：`export const f = fn` —— ExportNamedDeclaration 分支只收
+ * FunctionDeclaration，不收 VariableDeclaration 的声明符 ⇒ 普查 0 项。
+ * 489：`export default function f` —— 普查按**局部名** f 登记，但模块的
+ * 导出键是 `default`（f 只是模块内局部名）⇒ 入口求值按导出表键查表
+ * 落空 ⇒ 签名退 `unknown`。
+ * 995：`module.exports = { f: fn }` —— 普查不下钻对象字面量 ⇒ 成员函数
+ * 不可见。
  *
  * 原生 oracle（node）：
- *   export const f = () => 1    → 具名导入后 f() === 1
- *   export default function f() → 默认导入后 f() === 1
- *   module.exports = { f: fn }  → require(...).f() === 1
+ * export const f = () => 1 → 具名导入后 f() === 1
+ * export default function f() → 默认导入后 f() === 1
+ * module.exports = { f: fn } → require(...).f() === 1
  */
 
 
@@ -1122,7 +1122,7 @@ const censusSlots = (source: string): string[] =>
 const analysisNames = (source: string, file = "/test/census.js"): string[] =>
   analyzeFile_____analyzer_ts_2(file, source).functions.map((f) => f.name);
 
-describe("Bug 469：export const/let/var f = fn 进普查", () => {
+describe("export const/let/var f = fn 进普查", () => {
   it("export const 箭头 / 函数表达式都进普查（普查名 = 导出槽名）", () => {
     expect(censusNames("export const f = () => 1;")).toEqual(["f"]);
     expect(censusNames("export const f = function () { return 1; };")).toEqual(["f"]);
@@ -1149,7 +1149,7 @@ describe("Bug 469：export const/let/var f = fn 进普查", () => {
   });
 });
 
-describe("Bug 489：具名 default 导出按 default 槽回退求值", () => {
+describe("具名 default 导出按 default 槽回退求值", () => {
   it("普查名 = 局部名，导出槽 = default", () => {
     expect(censusSlots("export default function f() { return 1; }")).toEqual(["f@default"]);
   });
@@ -1170,7 +1170,7 @@ describe("Bug 489：具名 default 导出按 default 槽回退求值", () => {
   });
 });
 
-describe("Bug 995：module.exports = { f: fn } 的成员函数进普查", () => {
+describe("module.exports = { f: fn } 的成员函数进普查", () => {
   it("对象字面量的成员函数逐个收（key 名 = 导出槽名）", () => {
     expect(censusNames("module.exports = { greet: function () { return 1; } };")).toEqual(["greet"]);
     expect(censusNames("module.exports = { greet: () => 1 };")).toEqual(["greet"]);
@@ -1182,7 +1182,7 @@ describe("Bug 995：module.exports = { f: fn } 的成员函数进普查", () => 
   });
 
   it("导出槽名优先于命名函数表达式的自有 id（Bug 997，与 core listTopFunctions 同口径）", () => {
-    // Bug 997：普查名取**导出槽名**（greet）——内层函数 id（named）不是导出槽名，
+    // 普查名取**导出槽名**（greet）——内层函数 id（named）不是导出槽名，
     // 取它会让侧车契约整个不绑定 + 签名表里导出符号消失。
     expect(censusNames("module.exports = { greet: function named() { return 1; } };")).toEqual([
       "greet",
@@ -1239,14 +1239,14 @@ describe("普查口径与 core listTopFunctions 对齐（check 面不与 service
   }
 
   it("getter 形态：两面都不收（Bug 996 已收口）", () => {
-    // Bug 996：core scan-top-functions.ts 的 ObjectMethod 分支已按 kind 过滤
+    // core scan-top-functions.ts 的 ObjectMethod 分支已按 kind 过滤
     // （getter/setter 不是可调用入口）⇒ 两面口径一致（无差异）。
     expect(listTopFunctions("module.exports = { get g() { return 1; } };")).toEqual([]);
     expect(censusNames("module.exports = { get g() { return 1; } };")).toEqual([]);
   });
 
   it("匿名 module.exports = fn：两面都按 default 登记（Bug 6 后 core 侧不再漏）", () => {
-    // Bug 6：CJS 默认导出形态（`module.exports = fn`）此前不在 L2 入口表 ⇒
+    // CJS 默认导出形态（`module.exports = fn`）此前不在 L2 入口表 ⇒
     // 假绿。修复后 core 普查面与 service 面同口径登记 `default`。
     expect(censusNames("module.exports = function () { return 1; };")).toEqual(["default"]);
     expect(listTopFunctions("module.exports = function () { return 1; };")).toEqual(["default"]);
@@ -1255,11 +1255,11 @@ describe("普查口径与 core listTopFunctions 对齐（check 面不与 service
 });
 
 // ---------------------------------------------------------------------------
-// Bug 473 — 注入表解析入口
+// 注入表解析入口
 // ---------------------------------------------------------------------------
-describe("[] Bug 473 — 注入表解析入口", () => {
+describe("注入表解析入口", () => {
 /**
- * Bug 473 —— 依赖模块里的行内指令（@nudo:as / @nudo:replace）注入。
+ * 依赖模块里的行内指令（@nudo:as / @nudo:replace）注入。
  *
  * 注入表此前**只对 root source** 采集（tryRunEval 的
  * `collectEvalReplacements(source)`）；依赖模块走 abs-modules-graph 的另一条
@@ -1288,7 +1288,7 @@ const cfg = JSON.parse("{}");
 export function getCfg() { return cfg; }
 `;
 
-describe("Bug 473 — 注入表解析入口", () => {
+describe("注入表解析入口", () => {
   it("带指令的源码解析出注入包（as 目标 + 覆盖值）", () => {
     const inj = resolveEvalInjection_____eval_run_ts(DEP_JS);
     expect(inj).toBeDefined();
@@ -1307,7 +1307,7 @@ describe("Bug 473 — 注入表解析入口", () => {
   });
 });
 
-describe("Bug 473 — 根侧注入不受影响", () => {
+describe("根侧注入不受影响", () => {
   it("作为根分析时，@nudo:as 覆盖承载语句的值", () => {
     const dir = tmpProject("nudo-bug473-root-");
     const source = `/// @nudo:env es
@@ -1323,7 +1323,7 @@ export function f() {
   });
 });
 
-describe("Bug 473 — 依赖侧注入（接线后转绿）", () => {
+describe("依赖侧注入（接线后转绿）", () => {
   it("依赖模块里的 @nudo:as 生效（依赖侧接线后转绿）", () => {
     const dir = tmpProject("nudo-bug473-dep-", {
       "dep.js": DEP_JS,
@@ -1342,20 +1342,20 @@ export function call() { return getCfg(); }
 });
 
 // ---------------------------------------------------------------------------
-// Bug 476 — 跨模块活绑定（依赖内部变异对导入方可见）
+// 跨模块活绑定（依赖内部变异对导入方可见）
 // ---------------------------------------------------------------------------
-describe("[] Bug 476 — 跨模块活绑定（依赖内部变异对导入方可见）", () => {
+describe("跨模块活绑定（依赖内部变异对导入方可见）", () => {
 /**
- * Bug 476 —— 跨模块**活绑定**在 service 合并面被快照化。
+ * 跨模块**活绑定**在 service 合并面被快照化。
  *
  * 改前：`mergeHarvestUnderEnv` 用对象展开搬运导出表（`{ ...exports.named }`）
  * ⇒ **求值**了依赖模块导出槽上的活 getter ⇒ 冻结成快照 ⇒ 依赖模块的内部
  * 变异对导入方不可见。
  *
  * 原生真值（真实 JS）：
- *   m.js:  `export let val = 0; export function setStr() { val = "hello"; }`
- *   entry: `import { val, setStr } from "./m.js";
- *           export function get() { setStr(); return val; }` → "hello"
+ * m.js: `export let val = 0; export function setStr() { val = "hello"; }`
+ * entry: `import { val, setStr } from "./m.js";
+ * export function get() { setStr(); return val; }` → "hello"
  * 引擎改前给 0（快照）⇒ 类型面与原生不一致。
  */
 
@@ -1375,7 +1375,7 @@ function entryShape(files: Record<string, string>, entry: string): string {
   return fn ? formatShape(fn.cases[0].abs) : "<no-fn>";
 }
 
-describe("Bug 476 — 跨模块活绑定（依赖内部变异对导入方可见）", () => {
+describe("跨模块活绑定（依赖内部变异对导入方可见）", () => {
   it("依赖模块内部改写导出值后，导入方读到当前值", () => {
     const shape = entryShape(
       { "m.js": M_JS, "entry.js": `import { val, setStr } from "./m.js";
@@ -1399,7 +1399,7 @@ export function get() { return val; }
 });
 
 /** 负控制：不该被这条修复波及的邻近形态 */
-describe("Bug 476 — 负控制", () => {
+describe("负控制", () => {
   it("依赖未改写导出值时，导入方读到初值", () => {
     const shape = entryShape(
       { "m.js": M_JS, "entry.js": `import { val, setStr } from "./m.js";
@@ -1426,40 +1426,40 @@ export function read() { return n; }
 });
 
 // ---------------------------------------------------------------------------
-// Bug 479：.ts 形参类型注解进入推断（缺口已闭合）
+// .ts 形参类型注解进入推断（缺口已闭合）
 // ---------------------------------------------------------------------------
-describe("[] Bug 479：.ts 形参类型注解进入推断（缺口已闭合）", () => {
+describe(".ts 形参类型注解进入推断（缺口已闭合）", () => {
 /**
- * Bug 479 —— `.ts` 源的**形参类型注解**从未进入推断（回归钉 + 缺口论证）。
+ * `.ts` 源的**形参类型注解**从未进入推断（回归钉 + 缺口论证）。
  *
- * 报告定位（`tmp/bugs/14-service-eval.md` Bug 479）：「`analyzer-ast.ts:45-64`
+ * 报告定位（`tmp/bugs/14-service-eval.md` ）：「`analyzer-ast.ts:45-64`
  * 的 `extractParamNames` **只取形参名**，**完全丢弃 TypeScript 类型注解**」。
  *
  * ── 根因更正（本轮实测，报告的文件定位有误）────────────────────────────
  * **不是** service 侧「只取名字」，而是**解析层就把注解删掉了**：
- *   - Babel（`@babel/parser` + TypeScript 插件）**确实**解析出注解——
- *     `parseSource(src, { keepTs: true })` 的 AST 上有
- *     `param.typeAnnotation` / `fn.returnType`（探针：
- *     `tmp/probe/fix-r24-e/b479-parse.ts`）；
- *   - 但**分析面走的默认路径会剥除**：`packages/core/src/algebra/parse-source.ts:42`
- *     → `stripTypes(ast)` → `packages/core/src/strip-types.ts:173,175`
- *     **delete 掉 `typeAnnotation` / `returnType`**。
- *   ⇒ service（`packages/service/src/analyzer-orchestrate-uncached.ts:132`
- *     `parse(source)`）与 core check 面拿到的 AST **本来就没有注解**——
- *     `extractParamNames` 即便想读也读不到。
+ * - Babel（`@babel/parser` + TypeScript 插件）**确实**解析出注解——
+ * `parseSource(src, { keepTs: true })` 的 AST 上有
+ * `param.typeAnnotation` / `fn.returnType`（探针：
+ * `tmp/probe/fix-r24-e/b479-parse.ts`）；
+ * - 但**分析面走的默认路径会剥除**：`packages/core/src/algebra/parse-source.ts:42`
+ * → `stripTypes(ast)` → `packages/core/src/strip-types.ts:173,175`
+ * **delete 掉 `typeAnnotation` / `returnType`**。
+ * ⇒ service（`packages/service/src/analyzer-orchestrate-uncached.ts:132`
+ * `parse(source)`）与 core check 面拿到的 AST **本来就没有注解**——
+ * `extractParamNames` 即便想读也读不到。
  *
  * ── 修法边界（**已闭合**，2026-10-21 接线片）──────────────────────────────
  * 注解要进推断，至少要动四处：
- *   1. `packages/core/src/algebra/parse-source.ts` / `strip-types.ts`
- *      —— 分析面保留**类型注解文本**（旁路 `nudoTypeText` / `nudoReturnTypeText`）
- *      ✅ 已由 core 侧完成；
- *   2. `packages/service/src/analyzer-orchestrate-uncached-cases.ts`
- *      —— 入口实参按声明类型构造 Abs ✅ **本接线片完成**
- *      （`tsAnnotationArgAbs(f.tsType)`；不可映射的类型仍回落 any）；
- *   3. `packages/service/src/emit/dts-generator.ts` —— dts 面优先用注解
- *      ✅ **本接线片完成**（声明位优先级：手写契约 > TS 注解 > case 观测值）；
- *   4. `packages/core/src/algebra/generalize.ts`（check 面的入口形参类型）
- *      ✅ 已由 core 侧完成（`absShapeForTsTypeText`）。
+ * 1. `packages/core/src/algebra/parse-source.ts` / `strip-types.ts`
+ * —— 分析面保留**类型注解文本**（旁路 `nudoTypeText` / `nudoReturnTypeText`）
+ * ✅ 已由 core 侧完成；
+ * 2. `packages/service/src/analyzer-orchestrate-uncached-cases.ts`
+ * —— 入口实参按声明类型构造 Abs ✅ **本接线片完成**
+ * （`tsAnnotationArgAbs(f.tsType)`；不可映射的类型仍回落 any）；
+ * 3. `packages/service/src/emit/dts-generator.ts` —— dts 面优先用注解
+ * ✅ **本接线片完成**（声明位优先级：手写契约 > TS 注解 > case 观测值）；
+ * 4. `packages/core/src/algebra/generalize.ts`（check 面的入口形参类型）
+ * ✅ 已由 core 侧完成（`absShapeForTsTypeText`）。
  *
  * 本文件的三条 todo 已随缺口闭合转为**实断言**；负控制（`.js` 同形源行为
  * 不变）保留。**更完整的回归钉**（entry@ 实参 / dts 形参 / 契约优先级）见
@@ -1486,7 +1486,7 @@ const JS_SOURCE = `export function upper(a) {
 }
 `;
 
-describe("Bug 479：.ts 形参类型注解进入推断（缺口已闭合）", () => {
+describe(".ts 形参类型注解进入推断（缺口已闭合）", () => {
   it("原生：upper(a: string) 的 a 按 string 推断（形参注解进入推断）", () => {
     const result = analyzeFile_____analyzer_ts_5("/test/bug479.ts", TS_SOURCE);
     const entry = result.functions[0]!.cases.find((c) => c.name.startsWith("entry@"));
@@ -1532,11 +1532,11 @@ describe("Bug 479：.ts 形参类型注解进入推断（缺口已闭合）", ()
 });
 
 // ---------------------------------------------------------------------------
-// Bug 495：侧车加载失败 ≠ 没有契约根
+// 侧车加载失败 ≠ 没有契约根
 // ---------------------------------------------------------------------------
-describe("[] Bug 495：侧车加载失败 ≠ 没有契约根", () => {
+describe("侧车加载失败 ≠ 没有契约根", () => {
 /**
- * Bug 495：侧车（`*.nudo.js`）**加载失败**被误报成「没有契约根」
+ * 侧车（`*.nudo.js`）**加载失败**被误报成「没有契约根」
  * （`nudo:contract-entry-only`）⇒ 事实陈述错误 + 修复建议误导。
  *
  * 根因（analyzer-orchestrate-uncached-cases.ts）：用 `effectiveContract(...)`
@@ -1558,7 +1558,7 @@ function codes(result: { diagnostics: readonly { code?: string }[] }): (string |
   return result.diagnostics.map((d) => d.code);
 }
 
-describe("Bug 495：侧车加载失败 ≠ 没有契约根", () => {
+describe("侧车加载失败 ≠ 没有契约根", () => {
   it("坏侧车：报 nudo:contract-load（error），不发 nudo:contract-entry-only", () =>
     withTmpProject("nudo-b495-", (dir) => {
       const src = `export function add(a, b) { return a + b; }\n`;
@@ -1603,18 +1603,18 @@ export const add = fn({ a: number(), b: number() });
 });
 
 // ---------------------------------------------------------------------------
-// Bug 499 — 不可读依赖：missing 与 unreadable 必须分开
+// 不可读依赖：missing 与 unreadable 必须分开
 // ---------------------------------------------------------------------------
-describe("[] Bug 499 — 不可读依赖：missing 与 unreadable 必须分开", () => {
+describe("不可读依赖：missing 与 unreadable 必须分开", () => {
 /**
- * Bug 499 回归：**依赖模块不可读（EACCES）**不得被折叠成「文件不存在」。
+ * 回归：**依赖模块不可读（EACCES）**不得被折叠成「文件不存在」。
  *
  * 本分片在 service 侧提供两件东西（根因行的其余消费点在 core / nudojs 侧，
  * 见交付报告的「越界」段）：
  * - `loadModuleOutcome`：三态结果（ok / missing / unreadable）——模块图侧
- *   据此把「不可读」报成不可读，而不是「Module file not found」。
+ * 据此把「不可读」报成不可读，而不是「Module file not found」。
  * - `guardedLoadModule`：宿主 loader 的容错包装——读失败退化为「该依赖不可用」
- *   + 一次性可见告警，**不得让异常穿透到 CLI 顶层**（整轮分析被带走）。
+ * + 一次性可见告警，**不得让异常穿透到 CLI 顶层**（整轮分析被带走）。
  */
 
 
@@ -1626,7 +1626,7 @@ describe("[] Bug 499 — 不可读依赖：missing 与 unreadable 必须分开",
 /** root 对 chmod 000 免疫，真实 EACCES 用例无法生效 */
 const isRoot = process.geteuid?.() === 0;
 
-describe("Bug 499 — 不可读依赖：missing 与 unreadable 必须分开", () => {
+describe("不可读依赖：missing 与 unreadable 必须分开", () => {
   it("不存在的依赖 → missing（不是 unreadable）", () => {
     const dir = tmpProject("nudo-499-missing-");
     const from = join(dir, "main.js");
@@ -1734,17 +1734,17 @@ describe("Bug 499 — 不可读依赖：missing 与 unreadable 必须分开", ()
 });
 
 // ---------------------------------------------------------------------------
-// Bug 504 — import/export alias and label are name positions
+// import/export alias and label are name positions
 // ---------------------------------------------------------------------------
-describe("[] Bug 504 — import/export alias and label are name positions", () => {
+describe("import/export alias and label are name positions", () => {
 /**
- * Bug 504：nudo:builtin-unknown 把「导入/导出的别名」与「标签名」当成
+ * nudo:builtin-unknown 把「导入/导出的别名」与「标签名」当成
  * 「未被覆盖的内建 API」误报。
  *
  * 原生 oracle（tmp/probe/fix-r24-m/native504.mjs / native504b.mjs）：
  * - `import { alpha as betaAlias }` → 正常执行，无 ReferenceError
  * - `export { y as renamed }` → 正常执行（导出名不是模块作用域绑定，但也不
- *   是自由全局引用）
+ * 是自由全局引用）
  * - `outer:` / `break outer` → 正常执行（标签是独立命名空间）
  *
  * 修法（service 侧 eval-diagnostics）：这些位置是**名字位**不是**引用位**——
@@ -1759,7 +1759,7 @@ describe("[] Bug 504 — import/export alias and label are name positions", () =
 const names = (src: string): string[] =>
   collectEvalDiagnostics(src).builtinUnknown.map((b) => b.name);
 
-describe("Bug 504 — import/export alias and label are name positions", () => {
+describe("import/export alias and label are name positions", () => {
   it("does not flag an import alias source name (imported)", () => {
     const src = `
 import { alpha as betaAlias, default as def } from "./m.js";
@@ -1872,11 +1872,11 @@ export function f(o) {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 649：实测 never（抛错）的 case 带声明期望 ⇒ 不得判 ok
+// 实测 never（抛错）的 case 带声明期望 ⇒ 不得判 ok
 // ---------------------------------------------------------------------------
-describe("[] Bug 649：实测 never（抛错）的 case 带声明期望 ⇒ 不得判 ok", () => {
+describe("实测 never（抛错）的 case 带声明期望 ⇒ 不得判 ok", () => {
 /**
- * Bug 649：抛错函数的 `@nudo:case` **声明期望恒通过**（假绿）。
+ * 抛错函数的 `@nudo:case` **声明期望恒通过**（假绿）。
  *
  * 根因（`packages/service/src/analyzer-orchestrate-uncached-cases.ts` 的
  * `caseExpectedSatisfied`）：实测 Abs 是 `never`（函数抛了 ⇒ 没有返回值），
@@ -1935,7 +1935,7 @@ function caseExpectedMessage(src: string): string {
   return d?.message ?? "";
 }
 
-describe("Bug 649：实测 never（抛错）的 case 带声明期望 ⇒ 不得判 ok", () => {
+describe("实测 never（抛错）的 case 带声明期望 ⇒ 不得判 ok", () => {
   it("抛错 + 声明期望（=> 42）⇒ 报 nudo:case-expected（改前恒 0 条）", () => {
     const src = `/**
  * @nudo:case "t" (1) => 42
@@ -2001,7 +2001,7 @@ export function f(x) { throw new Error("boom"); }
   });
 });
 
-describe("Bug 649：caseExpectedSatisfied 的 never 前置条件（消费侧单测）", () => {
+describe("caseExpectedSatisfied 的 never 前置条件（消费侧单测）", () => {
   const one = numLit(1);
 
   it("实测 never ⇒ 不满足（底元素恒真被拦住）", () => {

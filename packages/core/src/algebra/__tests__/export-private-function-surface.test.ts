@@ -6,10 +6,10 @@
  * （`const exportKw = depth === 0 ? "export " : ""`）⇒ run.ts 的文本回收把
  * **未导出**的顶层函数也当导出：
  * 1. `function foo(){} export * from "./x.js"` —— 本地私有 foo 压过 star，
- *    依赖模块的 foo 被遮蔽（原生：star 值胜出）；
+ * 依赖模块的 foo 被遮蔽（原生：star 值胜出）；
  * 2. `import {helper} from "./m.js"`（helper 私有）被静默接受（漏
- *    nudo:missing-export；service 侧回归见
- *    service/__tests__/export-private-function-missing.test.ts）；
+ * nudo:missing-export；service 侧回归见
+ * service/__tests__/export-private-function-missing.test.ts）；
  * 3. transpileSource 产物作为真实 ESM 时多出 `export function helper`。
  *
  * 修法：transpileFile 从源 AST 收真实静态导出名（TranspileOptions.

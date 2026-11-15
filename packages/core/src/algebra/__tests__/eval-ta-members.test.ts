@@ -1,20 +1,20 @@
 /**
- * Bug 37/38/39 回归：TypedArray/ArrayBuffer 成员面三案。
+ * 回归：TypedArray/ArrayBuffer 成员面三案。
  *
- * - Bug 37：%TypedArray%.from(items, mapFn) —— mapFn GetMethod 前置校验
- *   此前完全缺失（args[1] 被忽略）：非函数 mapFn 不抛（native 先于任何
- *   元素映射定抛 TypeError）、L2 假阴（Array.from 孪生已正确记 may）。
- *   修复口径：validateCallableArg({undefinedOk}) 对齐 Array.from + 字面量
- *   元素（tuple items）的 mapper 逐元素执行（副作用/抛错传播）。
- * - Bug 38：%TypedArray%.prototype.set(source, offset) —— 原生三段校验
- *   （offset ToIndex / source ToObject / offset+srcLen>targetLen）此前全缺：
- *   定抛臂一律 no-throw、L2 假阴。修复口径：enforceToIndex + nullish 源
- *   TypeError + length 槽折叠的越界档；new <TA>(n) 数字长度入槽
- *   （enumerable:false，对齐原生不可枚举数据属性）。
- * - Bug 39：ArrayBuffer.prototype.resize —— 此前无派发：非 resizable 不抛
- *   TypeError、超 max 不抛 RangeError、resize 是 no-op（byteLength 保持
- *   构造值的 wrong-exact）。修复口径：resizable/ToIndex/超 max 三档 +
- *   成功臂 byteLength 槽原地更新（$set 引用语义惯例）。
+ * - %TypedArray%.from(items, mapFn) —— mapFn GetMethod 前置校验
+ * 此前完全缺失（args[1] 被忽略）：非函数 mapFn 不抛（native 先于任何
+ * 元素映射定抛 TypeError）、L2 假阴（Array.from 孪生已正确记 may）。
+ * 修复口径：validateCallableArg({undefinedOk}) 对齐 Array.from + 字面量
+ * 元素（tuple items）的 mapper 逐元素执行（副作用/抛错传播）。
+ * - %TypedArray%.prototype.set(source, offset) —— 原生三段校验
+ * （offset ToIndex / source ToObject / offset+srcLen>targetLen）此前全缺：
+ * 定抛臂一律 no-throw、L2 假阴。修复口径：enforceToIndex + nullish 源
+ * TypeError + length 槽折叠的越界档；new <TA>(n) 数字长度入槽
+ * （enumerable:false，对齐原生不可枚举数据属性）。
+ * - ArrayBuffer.prototype.resize —— 此前无派发：非 resizable 不抛
+ * TypeError、超 max 不抛 RangeError、resize 是 no-op（byteLength 保持
+ * 构造值的 wrong-exact）。修复口径：resizable/ToIndex/超 max 三档 +
+ * 成功臂 byteLength 槽原地更新（$set 引用语义惯例）。
  */
 import { describe, it, expect } from "vitest";
 // 相对路径引 src 引擎面（不经 @nudojs/core 别名——本 worktree 的 vite8
@@ -42,10 +42,10 @@ function check(src: string) {
 }
 
 // ---------------------------------------------------------------------------
-// Bug 37：%TypedArray%.from(items, mapFn) mapFn IsCallable 前置校验
+// %TypedArray%.from(items, mapFn) mapFn IsCallable 前置校验
 // ---------------------------------------------------------------------------
 
-describe("Bug 37：TA from 非函数 mapFn 定抛 TypeError（GetMethod 前置）", () => {
+describe("TA from 非函数 mapFn 定抛 TypeError（GetMethod 前置）", () => {
   it.each([
     ["number", `Uint8Array.from([1], 1)`],
     ["null", `Uint8Array.from([1], null)`],
@@ -85,7 +85,7 @@ describe("Bug 37：TA from 非函数 mapFn 定抛 TypeError（GetMethod 前置�
   });
 });
 
-describe("Bug 37：TA from 合法 mapper 逐元素执行（副作用/抛错传播）", () => {
+describe("TA from 合法 mapper 逐元素执行（副作用/抛错传播）", () => {
   it("副作用计数器落地（tuple items 逐元素）", () => {
     expect(val(`export function f() { let n = 0; Uint8Array.from([1, 2, 3], x => { n += 1; return x; }); return n; }`))
       .toEqual({ ok: true, value: 3 });
@@ -97,7 +97,7 @@ describe("Bug 37：TA from 合法 mapper 逐元素执行（副作用/抛错传�
   });
 });
 
-describe("Bug 37：L2 gate 面（any mapFn 记 may TypeError）", () => {
+describe("L2 gate 面（any mapFn 记 may TypeError）", () => {
   it("Uint8Array.from([1], x) 记 may TypeError", () => {
     const src = `export function f(x) { return Uint8Array.from([1], x); }`;
     expect(l2Count(check(src))).toBeGreaterThan(0);
@@ -112,10 +112,10 @@ describe("Bug 37：L2 gate 面（any mapFn 记 may TypeError）", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 38：%TypedArray%.prototype.set(source, offset)
+// %TypedArray%.prototype.set(source, offset)
 // ---------------------------------------------------------------------------
 
-describe("Bug 38：TA set offset ToIndex（负/越界定抛 RangeError）", () => {
+describe("TA set offset ToIndex（负/越界定抛 RangeError）", () => {
   it.each([
     ["offset 超界", `new Uint8Array(8).set([1], 100)`],
     ["offset 负", `new Uint8Array(8).set([1], -1)`],
@@ -148,7 +148,7 @@ describe("Bug 38：TA set offset ToIndex（负/越界定抛 RangeError）", () =
   });
 });
 
-describe("Bug 38：TA set source ToObject（nullish 定抛 TypeError）", () => {
+describe("TA set source ToObject（nullish 定抛 TypeError）", () => {
   it.each([
     ["null 源", `new Uint8Array(8).set(null)`],
     ["undefined 源", `new Uint8Array(8).set(undefined)`],
@@ -177,7 +177,7 @@ describe("Bug 38：TA set source ToObject（nullish 定抛 TypeError）", () => 
   });
 });
 
-describe("Bug 38：new <TA>(n) 数字 length 入槽", () => {
+describe("new <TA>(n) 数字 length 入槽", () => {
   it("length 精确折叠（原生不可枚举自有数据属性）", () => {
     expect(val(`export function f() { return new Uint8Array(8).length; }`))
       .toEqual({ ok: true, value: 8 });
@@ -192,7 +192,7 @@ describe("Bug 38：new <TA>(n) 数字 length 入槽", () => {
 
   it("length 不入枚举视图；下标键入枚举视图（Bug 125）", () => {
     // Object.keys(ta) = 下标键 "0".."n-1"（整数索引异质属性——自有可枚举，
-    // Bug 125 修复口径）；length 槽 enumerable:false 不在键集（原生 length
+    // 修复口径）；length 槽 enumerable:false 不在键集（原生 length
     // 是 %TypedArray%.prototype 访问器非自有键）
     const r = call(`export function f() { return Object.keys(new Uint8Array(8)); }`);
     expect(r.result.shape.k).toBe("tuple");
@@ -203,7 +203,7 @@ describe("Bug 38：new <TA>(n) 数字 length 入槽", () => {
   });
 });
 
-describe("Bug 38：L2 gate 面（any offset/source 记 may）", () => {
+describe("L2 gate 面（any offset/source 记 may）", () => {
   it("set([1], x) 记 may RangeError", () => {
     const src = `export function f(x) { return new Uint8Array(8).set([1], x); }`;
     expect(l2Count(check(src))).toBeGreaterThan(0);
@@ -217,10 +217,10 @@ describe("Bug 38：L2 gate 面（any offset/source 记 may）", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 39：ArrayBuffer.prototype.resize
+// ArrayBuffer.prototype.resize
 // ---------------------------------------------------------------------------
 
-describe("Bug 39：resize 非 resizable 缓冲定抛 TypeError", () => {
+describe("resize 非 resizable 缓冲定抛 TypeError", () => {
   it.each([
     ["无 options", `new ArrayBuffer(8).resize(4)`],
     ["maxByteLength 缺省 undefined", `new ArrayBuffer(8, { maxByteLength: undefined }).resize(4)`],
@@ -231,7 +231,7 @@ describe("Bug 39：resize 非 resizable 缓冲定抛 TypeError", () => {
   });
 });
 
-describe("Bug 39：resize newLength 校验（ToIndex / 超 max → RangeError）", () => {
+describe("resize newLength 校验（ToIndex / 超 max → RangeError）", () => {
   it.each([
     ["超 max", `new ArrayBuffer(8, { maxByteLength: 16 }).resize(17)`],
     ["负", `new ArrayBuffer(8, { maxByteLength: 16 }).resize(-1)`],
@@ -252,7 +252,7 @@ describe("Bug 39：resize newLength 校验（ToIndex / 超 max → RangeError）
   });
 });
 
-describe("Bug 39：合法 resize 更新 byteLength（字面量折叠）+ 返回 undefined", () => {
+describe("合法 resize 更新 byteLength（字面量折叠）+ 返回 undefined", () => {
   it("b.resize(4); b.byteLength → 4（不再保持构造值 8）", () => {
     expect(val(`export function f() { const b = new ArrayBuffer(8, { maxByteLength: 16 }); b.resize(4); return b.byteLength; }`))
       .toEqual({ ok: true, value: 4 });
@@ -285,7 +285,7 @@ describe("Bug 39：合法 resize 更新 byteLength（字面量折叠）+ 返回 
   });
 });
 
-describe("Bug 39：L2 gate 面", () => {
+describe("L2 gate 面", () => {
   it("非 resizable + any newLength → 定抛 TypeError 进 L2", () => {
     const src = `export function f(x) { const b = new ArrayBuffer(8); return b.resize(x); }`;
     expect(l2Count(check(src))).toBeGreaterThan(0);

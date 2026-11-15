@@ -1,10 +1,10 @@
 /**
  * 字符串 slice/substring/concat 与数组 fill 的位置参数假精确：
  * - 'abc'.substring(Symbol()) / slice(Symbol()) / concat(Symbol()) 原生 THROW
- *   （Cannot convert a symbol to a number/string），求值引擎把抽象实参当缺省
- *   折出精确 "abc"；
+ * （Cannot convert a symbol to a number/string），求值引擎把抽象实参当缺省
+ * 折出精确 "abc"；
  * - 表达式级 [1,2,3].fill(9, start, end) 完全忽略 start/end，
- *   fill(9, 1) 折 [9,9,9]（原生 [1,9,9]）。
+ * fill(9, 1) 折 [9,9,9]（原生 [1,9,9]）。
  * 修复：非字面量位置参数 → 保守（prim/arr），字面量 start/end 复用
  * runtime 的 fillTuple 精确折叠。
  */

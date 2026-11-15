@@ -10,11 +10,11 @@ import { getCompletionsAtPosition } from "../lsp-surface/completions.ts";
 import { getHoverAtPosition } from "../lsp-surface/hover.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 708 — 指令补全只在注释里出
+// 指令补全只在注释里出
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 708 — 指令补全只在注释里出", () => {
+describe("指令补全只在注释里出", () => {
 /**
- * Bug 708：指令补全的假阳性——乘号之后也弹 `@nudo:` 指令。
+ * 指令补全的假阳性——乘号之后也弹 `@nudo:` 指令。
  *
  * 症状：光标在 `x * ` 之后（乘法运算符）时，补全面给出 11 条 `@nudo:` 指令；
  * 旧口径是「前面出现过 `*` 或 `nudo`」的子串匹配（`@?n?u?d?o?:?` 全可选）。
@@ -28,7 +28,7 @@ describe("[lsp-] Bug 708 — 指令补全只在注释里出", () => {
 
 const isDirective = (label: string): boolean => label.startsWith("@nudo:");
 
-describe("Bug 708 — 指令补全只在注释里出", () => {
+describe("指令补全只在注释里出", () => {
   it("乘号之后：不出指令项（出的是变量补全）", async () => {
     const src = "export function f(x, y) {\n  return x * y;\n}\n";
     const { mock, uri } = await openLspDocument(src, "file:///tmp/nudo-bug-708/a.js");
@@ -63,11 +63,11 @@ describe("Bug 708 — 指令补全只在注释里出", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-091 — completion 的函数 detail 与 hover / check 签名同形
+// completion 的函数 detail 与 hover / check 签名同形
 // ---------------------------------------------------------------------------
-describe("[lsp-] BUG-091 — completion 的函数 detail 与 hover / check 签名同形", () => {
+describe("completion 的函数 detail 与 hover / check 签名同形", () => {
 /**
- * BUG-091 —— LSP completion 的函数条目 detail 用 `?` 占位返回值 ⇒ 与同一 LSP 面的
+ * LSP completion 的函数条目 detail 用 `?` 占位返回值 ⇒ 与同一 LSP 面的
  * hover、以及 `nudo check` 签名给出两种渲染。
  *
  * 症状：同一文件里 `lit` / `obj` 的 detail 是真实类型，而 `ident` 是 `(x) => ?`
@@ -92,13 +92,13 @@ describe("[lsp-] BUG-091 — completion 的函数 detail 与 hover / check 签�
 
 
 
-/** 复现夹具（tmp/repro/bug-091/c.js）：变量 / 函数 / 对象三种形态并排。 */
+/** 复现夹具（tmp/repro//c.js）：变量 / 函数 / 对象三种形态并排。 */
 const SRC = `export const lit = 42;
 export function ident(x) { return x; }
 export const obj = { a: 1 };
 `;
 
-describe("BUG-091 — completion 的函数 detail 与 hover / check 签名同形", () => {
+describe("completion 的函数 detail 与 hover / check 签名同形", () => {
   it("fn 绑定 detail = `ident(x: any) => any`（不是 `(x) => ?`），且与 hover.signature 一致", () => {
     withTempDir("nudo-bug091-", (dir) => {
       const file = join(dir, "c.js");
@@ -119,7 +119,7 @@ describe("BUG-091 — completion 的函数 detail 与 hover / check 签名同形
       expect(detailOf("ident")).toBe("ident(x: any) => any");
       expect(detailOf("ident")).not.toContain("?");
 
-      // 同一面同口径：补全 detail ≡ hover 的 check 签名（BUG-091 的两面矛盾）
+      // 同一面同口径：补全 detail ≡ hover 的 check 签名（的两面矛盾）
       const hover = getHoverAtPosition(file, SRC, 2, 16);
       expect(hover?.signature).toBe("ident(x: any) => any");
     });
@@ -128,11 +128,11 @@ describe("BUG-091 — completion 的函数 detail 与 hover / check 签名同形
 });
 
 // ---------------------------------------------------------------------------
-// Bug 717 — 模块级函数补全 kind = Function
+// 模块级函数补全 kind = Function
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 717 — 模块级函数补全 kind = Function", () => {
+describe("模块级函数补全 kind = Function", () => {
 /**
- * Bug 717：模块级函数的补全 kind 串档。
+ * 模块级函数的补全 kind 串档。
  *
  * 症状：顶层 `function` / 箭头函数绑定在补全面里是 `CompletionItemKind.Method`
  * （2）——它不是任何对象的成员，IDE 会把它渲染成「方法」。
@@ -154,7 +154,7 @@ const SRC = [
   "",
 ].join("\n");
 
-describe("Bug 717 — 模块级函数补全 kind = Function", () => {
+describe("模块级函数补全 kind = Function", () => {
   it("顶层 fn 绑定 → Function(3)，非函数绑定 → Variable(6)", async () => {
     const { mock, uri } = await openLspDocument(SRC, "file:///tmp/nudo-bug-717/a.js");
     const items = requestCompletion(mock, uri, 4, 0);
@@ -177,11 +177,11 @@ describe("Bug 717 — 模块级函数补全 kind = Function", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 952 — 补全面判词法上下文
+// 补全面判词法上下文
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 952 — 补全面判词法上下文", () => {
+describe("补全面判词法上下文", () => {
 /**
- * Bug 952：LSP `textDocument/completion` **不判词法上下文** ⇒ 光标落在
+ * LSP `textDocument/completion` **不判词法上下文** ⇒ 光标落在
  * **字符串 / 模板字面量内部**时照样弹出成员候选与指令候选；**接受任一项即把
  * 标识符写进字面量内部** ⇒ 静默改写字符串的运行时值（协议层返回与代码位
  * **逐字节相同**的候选）。
@@ -217,7 +217,7 @@ function lineOf(src: string, needle: string): { line: number; text: string } {
 
 const labels = (items: { label: string }[]): string[] => items.map((i) => i.label);
 
-describe("Bug 952 — 补全面判词法上下文", () => {
+describe("补全面判词法上下文", () => {
   it("字符串字面量内部 ⇒ 零候选（改前给成员表）", async () => {
     const { mock, uri } = await openLspDocument(SRC, "file:///tmp/nudo-bug-952/a.js");
     const at = lineOf(SRC, '"modObj."');
@@ -256,11 +256,11 @@ describe("Bug 952 — 补全面判词法上下文", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 700 — @nudo:sample 补全项如实描述
+// @nudo:sample 补全项如实描述
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 700 — @nudo:sample 补全项如实描述", () => {
+describe("@nudo:sample 补全项如实描述", () => {
 /**
- * Bug 700：`@nudo:sample` 补全项的 detail / insertText 不实。
+ * `@nudo:sample` 补全项的 detail / insertText 不实。
  *
  * 症状：detail 吹成「Control loop iteration sampling」，但该指令**只被解析、
  * 不被消费**（reserved / no-op）；insertText 是 `@nudo:sample `（缺 count）
@@ -273,7 +273,7 @@ describe("[lsp-] Bug 700 — @nudo:sample 补全项如实描述", () => {
 // JSDoc 里的 ` * @nudo:` —— 光标在 `@nudo:` 之后
 const SRC = "/**\n * @nudo:\n */\nexport const k = 1;\n";
 
-describe("Bug 700 — @nudo:sample 补全项如实描述", () => {
+describe("@nudo:sample 补全项如实描述", () => {
   it("detail 说明是 reserved / no-op", async () => {
     const { mock, uri } = await openLspDocument(SRC, "file:///tmp/nudo-bug-700/a.js");
     const items = requestCompletion(mock, uri, 1, 9);
@@ -304,11 +304,11 @@ describe("Bug 700 — @nudo:sample 补全项如实描述", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 698 — 尾随点号补全不再清零
+// 尾随点号补全不再清零
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 698 — 尾随点号补全不再清零", () => {
+describe("尾随点号补全不再清零", () => {
 /**
- * Bug 698：尾随点号（编辑中间态）⇒ 补全整面清零。
+ * 尾随点号（编辑中间态）⇒ 补全整面清零。
  *
  * 症状：用户刚敲下 `obj.` 时 buffer 文本语法非法 ⇒ 原文分析直接抛
  * （parse 不容错）⇒ completion 返回 [] 并在 console 报错。
@@ -319,7 +319,7 @@ describe("[lsp-] Bug 698 — 尾随点号补全不再清零", () => {
 
 const SRC = "export const obj = { alpha: 1, beta: 2 };\nobj.\n";
 
-describe("Bug 698 — 尾随点号补全不再清零", () => {
+describe("尾随点号补全不再清零", () => {
   it("尾随点号：给出 obj 的成员，且不报 console 错", async () => {
     const { mock, uri } = await openLspDocument(SRC, "file:///tmp/nudo-bug-698/a.js");
     const items = requestCompletion(mock, uri, 1, 4);

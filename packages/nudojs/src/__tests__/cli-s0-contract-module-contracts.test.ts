@@ -12,11 +12,11 @@
  *
  * 锁住：
  * 1. 三个新模块**各自只导出一个**被搬走的函数（导出面冻结 ⇒ 后续片
- *    只能改函数内部，不许改签名、不许再加导出）。
+ * 只能改函数内部，不许改签名、不许再加导出）。
  * 2. `contract.ts` 变成**薄壳**：不再定义那三个分支函数，只导出
- *    `registerContractCommand`。
+ * `registerContractCommand`。
  * 3. **零新增公开导出**：`packages/nudojs/src/index.ts` 仍然零 `export`
- *    （`nudojs` 的 `exports` 只有 `"."` ⇒ 新模块不在公开面上）。
+ * （`nudojs` 的 `exports` 只有 `"."` ⇒ 新模块不在公开面上）。
  */
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";

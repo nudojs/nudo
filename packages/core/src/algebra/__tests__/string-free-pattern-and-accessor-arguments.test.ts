@@ -2,17 +2,17 @@
  * String 方法的**模式实参是自由标识符**（179）+ 访问器里的 `arguments`（151）
  * 回归。
  *
- * Bug 179：语句位 `String.prototype.match/replace/replaceAll` 的正则状态写回
+ * 语句位 `String.prototype.match/replace/replaceAll` 的正则状态写回
  * 给**任意标识符实参**生成赋值（`re = $reStateCall(re, …)`）：
- *  - `eval` / `arguments` ⇒ strict 模式 **SyntaxError**（整模块中止 ⇒ 契约从
- *    ERROR 降级成 WARNING ⇒ 门禁假绿）；
- *  - `undefined` / `NaN` ⇒ strict TypeError（凭空抛 ⇒ L2 假红）；
- *  - 实参还按**标识符文本**传给运行时（宿主全局值而非 Abs）⇒ `.shape` 上抛。
+ * - `eval` / `arguments` ⇒ strict 模式 **SyntaxError**（整模块中止 ⇒ 契约从
+ * ERROR 降级成 WARNING ⇒ 门禁假绿）；
+ * - `undefined` / `NaN` ⇒ strict TypeError（凭空抛 ⇒ L2 假红）；
+ * - 实参还按**标识符文本**传给运行时（宿主全局值而非 Abs）⇒ `.shape` 上抛。
  * 修法：写回改为**就地**更新 lastIndex（`$reStateCall` 就地改槽）——不再需要
  * 赋值，也不需要重绑根绑定；实参走**求值源**；非 RegExp 模式按 RegExpCreate
  * / ToString 语义处理，不记抛。
  *
- * Bug 151：访问器（对象字面量 / 类）是**普通函数**——原生 `arguments` 天然
+ * 访问器（对象字面量 / 类）是**普通函数**——原生 `arguments` 天然
  * 存在（getter 长度 0 / setter 长度 1）。此前访问器 thunk 不发 `__nudoArgs`
  * 槽绑定 ⇒ 体里的 `arguments` 定抛 ReferenceError（原生返回 0）。
  *

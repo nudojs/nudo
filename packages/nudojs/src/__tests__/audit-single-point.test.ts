@@ -37,7 +37,7 @@ function codes(dir: string, file: string): string[] {
   return (json.issues ?? []).map((i) => i.code);
 }
 
-describe("D8 · 局部绑定表（BUG-003）", () => {
+describe("D8 · 局部绑定表（）", () => {
   it("形参 / catch / for-of 遮蔽模块级 const：不把外层值当实参（0 违规）", () => {
     const dir = fixture({
       "f.js": CALLEE,
@@ -81,7 +81,7 @@ describe("D8 · 局部绑定表（BUG-003）", () => {
   }, 60000);
 });
 
-describe("D8 · 循环头 const（BUG-001）", () => {
+describe("D8 · 循环头 const（）", () => {
   it("`for (const i = 0; i < 4; i++)` 判必抛", () => {
     const dir = fixture({
       "c1.js": "export function f() { let s = 0; for (const i = 0; i < 4; i++) { s += i; } return s; }\n",
@@ -97,7 +97,7 @@ describe("D8 · 循环头 const（BUG-001）", () => {
   }, 60000);
 });
 
-describe("D8 · 能力档诊断（BUG-026）", () => {
+describe("D8 · 能力档诊断（）", () => {
   it("strict 档下 check 也报 capability-denied（与 test 同口径）", () => {
     const dir = fixture({
       "cap-fs.cjs": [
@@ -120,7 +120,7 @@ describe("D8 · 能力档诊断（BUG-026）", () => {
   }, 60000);
 });
 
-describe("D3 · 模块装载期必抛（BUG-025）", () => {
+describe("D3 · 模块装载期必抛（）", () => {
   it("BigInt 混型 `1n + 1` ⇒ module-throw", () => {
     const dir = fixture({
       "bigint.js": 'export const x = 1n + 1;\n',

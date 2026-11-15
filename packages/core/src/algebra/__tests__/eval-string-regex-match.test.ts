@@ -4,8 +4,8 @@
  * 原生语义：
  * - match(/re/g) 无命中 → null（不是空数组）；有命中 → 命中串数组。
  * - matchAll(/re/) 要求正则带 g 标志，否则 TypeError
- *   （"String.prototype.matchAll argument must not be a non-global
- *   regular expression"）；带 g 时迭代全部命中（每项 [full, ...groups]）。
+ * （"String.prototype.matchAll argument must not be a non-global
+ * regular expression"）；带 g 时迭代全部命中（每项 [full, ...groups]）。
  *
  * 修复前：match(/d/g) 无命中把 null 折成 []（假精确）；
  * matchAll 完全未建模——非全局不抛（假控制流），`[...'aaa'.matchAll(/a/g)].length`

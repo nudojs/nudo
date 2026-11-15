@@ -1,5 +1,5 @@
 /**
- * Bug 29 —— `test --freeze` 把**自己解析不了**的 `union(...)` 写进源码
+ * `test --freeze` 把**自己解析不了**的 `union(...)` 写进源码
  * （数组 / 对象 / `Infinity` 成员）⇒ 见证永久退化 unknown。
  *
  * 根因：`sum` 成员按 case 实参文法里的**字面量**形态递归序列化
@@ -54,7 +54,7 @@ export function f(a) { return a; }`;
   expect(diags.filter((d) => d.code === "nudo:directive-syntax"), text).toEqual([]);
 }
 
-describe("Bug 29 — 折叠见证写出可往返的约束形态", () => {
+describe("折叠见证写出可往返的约束形态", () => {
   it("数组 / 对象成员 ⇒ union(array(...), shape(...))，不再写 union([2], {k:3})", () => {
     const text = serializeCaseArg(sum(tuple([absLit(2)]), obj({ k: absLit(3) })));
     expect(text).toBe("union(array(2), shape({ k: 3 }))");

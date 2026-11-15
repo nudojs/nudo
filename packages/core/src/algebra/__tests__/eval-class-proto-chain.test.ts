@@ -1,26 +1,26 @@
 /**
- * 原型链 / instanceof 家族回归（Bug 50 / 58 / 64 / 65 / 67）：
+ * 原型链 / instanceof 家族回归（）：
  *
- * - Bug 65：`Object.prototype instanceof Object` —— Object.prototype 的
- *   [[Prototype]] 是 null（链终结符），OrdinaryHasInstance 从
- *   O.[[Prototype]] 起步比较 → instanceof 任何构造器恒 false。
- * - Bug 50：类值 `static [Symbol.hasInstance]` 此前只进 staticMethods/
- *   computedKeys，从不作为 @@hasInstance 槽挂到类值 → $instanceof 忽略。
- *   修复：计算键求值为宿主 well-known Symbol.hasInstance 时投影为
- *   "@@hasInstance" 槽（镜像对象字面量 [Symbol.X] → "@@X" 投影）；
- *   继承（D extends C）经 registry 链查找。
- * - Bug 58：protoOfRecv 无类值分支——`Object.getPrototypeOf(B) === A`
- *   折假 false。修复：类值（markClassValue）→ 父构造器（注册类值回取，
- *   引用恒等）/ Function.prototype（基类）；B.__proto__ 同款。
- * - Bug 64（链走半）：evalClassChain 按 owner 走 ".prototype" 后缀品牌——
- *   `X.prototype instanceof Super` 命中 owner 的 super 链（含内建错误
- *   层级 BUILTIN_ERROR_SUPER），`X.prototype instanceof X` 保持 false。
- *   （$get(X,"prototype") → protoBrandAbs 的品牌化半由 ContainerIdentity
- *   负责；品牌输入到达前的链逻辑用合成 protoBrandAbs 钉。）
- * - Bug 67：`class A extends null {}` 的 A.prototype [[Prototype]] 是
- *   null——protoOfRecv 的类原型品牌臂按 owner extends 投影（null /
- *   super.prototype / Object.prototype），extends null 的
- *   instanceof Object 不折 true。
+ * - `Object.prototype instanceof Object` —— Object.prototype 的
+ * [[Prototype]] 是 null（链终结符），OrdinaryHasInstance 从
+ * O.[[Prototype]] 起步比较 → instanceof 任何构造器恒 false。
+ * - 类值 `static [Symbol.hasInstance]` 此前只进 staticMethods/
+ * computedKeys，从不作为 @@hasInstance 槽挂到类值 → $instanceof 忽略。
+ * 修复：计算键求值为宿主 well-known Symbol.hasInstance 时投影为
+ * "@@hasInstance" 槽（镜像对象字面量 [Symbol.X] → "@@X" 投影）；
+ * 继承（D extends C）经 registry 链查找。
+ * - protoOfRecv 无类值分支——`Object.getPrototypeOf(B) === A`
+ * 折假 false。修复：类值（markClassValue）→ 父构造器（注册类值回取，
+ * 引用恒等）/ Function.prototype（基类）；B.__proto__ 同款。
+ * - （链走半）：evalClassChain 按 owner 走 ".prototype" 后缀品牌——
+ * `X.prototype instanceof Super` 命中 owner 的 super 链（含内建错误
+ * 层级 BUILTIN_ERROR_SUPER），`X.prototype instanceof X` 保持 false。
+ * （$get(X,"prototype") → protoBrandAbs 的品牌化半由 ContainerIdentity
+ * 负责；品牌输入到达前的链逻辑用合成 protoBrandAbs 钉。）
+ * - `class A extends null {}` 的 A.prototype [[Prototype]] 是
+ * null——protoOfRecv 的类原型品牌臂按 owner extends 投影（null /
+ * super.prototype / Object.prototype），extends null 的
+ * instanceof Object 不折 true。
  *
  * 原生 ground truth 均为 node 实测（strict）。
  */
@@ -44,7 +44,7 @@ function expectNotWrong(src: string, native: boolean) {
   else expect(lv.ok).toBe(false);
 }
 
-describe("Bug 65 — Object.prototype instanceof X（链终结符）", () => {
+describe("Object.prototype instanceof X（链终结符）", () => {
   it("Object.prototype instanceof Object → false", () => {
     expectExact(`export function f() { return Object.prototype instanceof Object; }`, false);
   });
@@ -59,7 +59,7 @@ describe("Bug 65 — Object.prototype instanceof X（链终结符）", () => {
   });
 });
 
-describe("Bug 50 — 类值 static [Symbol.hasInstance]", () => {
+describe("类值 static [Symbol.hasInstance]", () => {
   it("method form: 5 instanceof C → true / -5 → false", () => {
     expectExact(
       `export function f() { class C { static [Symbol.hasInstance](x) { return x > 0; } } return 5 instanceof C; }`,
@@ -114,7 +114,7 @@ describe("Bug 50 — 类值 static [Symbol.hasInstance]", () => {
   });
 });
 
-describe("Bug 58 — Object.getPrototypeOf(Derived) 静态链", () => {
+describe("Object.getPrototypeOf(Derived) 静态链", () => {
   it("Object.getPrototypeOf(B) === A → true", () => {
     expectExact(
       `export function f() { class A {} class B extends A {} return Object.getPrototypeOf(B) === A; }`,
@@ -172,7 +172,7 @@ describe("Bug 58 — Object.getPrototypeOf(Derived) 静态链", () => {
   });
 });
 
-describe("Bug 64 — X.prototype instanceof SuperCtor（品牌链走半）", () => {
+describe("X.prototype instanceof SuperCtor（品牌链走半）", () => {
   // $get(X,"prototype") 的品牌化（protoBrandAbs）由 ContainerIdentity 半负责；
   // 链逻辑在此用合成 protoBrandAbs 输入钉（品牌到达即正确）。
   it("synthetic: builtin error-subclass prototypes instanceof Error → true", () => {
@@ -218,7 +218,7 @@ class Deep extends Mid {}`,
     expectExact(`export function f() { return Error.prototype instanceof Object; }`, true);
     expectExact(`export function f() { return Error.prototype instanceof Error; }`, false);
     // RangeError 非命名空间表内 ctor：$get(RangeError,"prototype") 的品牌化
-    // 由 ContainerIdentity/Bug 68 半负责——品牌到达后此处折 exact true
+    // 由 ContainerIdentity/半负责——品牌到达后此处折 exact true
     expectNotWrong(
       `export function f() { return Object.getPrototypeOf(RangeError.prototype) === Error.prototype; }`,
       true,
@@ -227,7 +227,7 @@ class Deep extends Mid {}`,
   });
 });
 
-describe("Bug 67 — class A extends null 的原型投影", () => {
+describe("class A extends null 的原型投影", () => {
   it("synthetic: protoOfRecv(A.prototype) → null（owner extends null）", () => {
     runTranspiled(`class NullBase extends null {}`, { mode: "analyze" });
     expect(litValue(protoOfRecv(protoBrandAbs("NullBase")) as never)).toEqual({ ok: true, value: null });

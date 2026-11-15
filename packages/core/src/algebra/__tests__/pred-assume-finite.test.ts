@@ -1,7 +1,7 @@
 /**
  * assumeFinite 恢复分配律 / 环消去精度（DEC-007C）。
  *
- * 背景：BUG-001 / DEC-007A 后 linOf / linSub 对环消去 fail-closed，
+ * 背景：/ DEC-007A 后 linOf / linSub 对环消去 fail-closed，
  * 损失 k*(x+1) 分配律、x-x 消去等精度。assumeFinite 谓词（显式有限证据）
  * 与 typeof=number ∧ 双侧有限界自动导出，在已证有限时恢复环化简。
  * 默认关闭：无有限证据仍 fail-closed，Inf/NaN 不得假证。
@@ -98,7 +98,7 @@ describe("assumeFinite 开启分配律", () => {
   });
 });
 
-describe("无有限证据仍 fail-closed（不回退 BUG-001 / DEC-007A）", () => {
+describe("无有限证据仍 fail-closed（不回退 / DEC-007A）", () => {
   it("x>0 ⊬ 2*(x+1)>2", () => {
     const phi = gt(x, tLit(0));
     const twoXp1 = app("*", [tLit(2), app("+", [x, tLit(1)])]);
@@ -236,9 +236,9 @@ describe("健全性不回退：Inf/NaN 仍不得假证", () => {
 
 describe("真线性事实不受影响", () => {
   it("y>1 ⊬ y+1>2（吸收：fl(nextUp(1) + 1) ties-to-even 回 2）", () => {
-    // 重钉（BUG-200，parent 授权）：旧断言 true 是**假证**。y > 1 ⇒ y ≥ nextUp(1)
+    // 重钉（，parent 授权）：旧断言 true 是**假证**。y > 1 ⇒ y ≥ nextUp(1)
     // = 1 + 2^-52，(1+2^-52)+1 恰为 2 与 2+2^-51 的中点 ⇒ ties-to-even ⇒ 2，
-    // 不 > 2。依据：BUG-200 section「触发形态」`x>1 ⊢ x+1>2`；
+    // 不 > 2。依据：section「触发形态」`x>1 ⊢ x+1>2`；
     // 原生反例 `node -e '(1+2**-52)+1'` === 2。
     expect((1 + 2 ** -52) + 1).toBe(2);
     expect(implies(gt(y, tLit(1)), gt(app("+", [y, tLit(1)]), tLit(2)))).toBe(false);

@@ -1,5 +1,5 @@
 /**
- * BUG-016 回归：目录 import（`import "./utils"` + 仅有 `utils/index.ts`）必须在
+ * 回归：目录 import（`import "./utils"` + 仅有 `utils/index.ts`）必须在
  * 所有装载管线（load-module / 模块图 / 脏图边 / env 装载 / abs 局部绑定）解析到同一文件。
  * 三套扩展名表漂移曾导致 check 能装载、模块图侧报 missing。
  */
@@ -25,7 +25,7 @@ function dirIndexFixture(): { dir: string; main: string; indexTs: string; src: s
   return { dir, main, indexTs, src };
 }
 
-describe("module resolve candidate table (BUG-016 ext-table drift)", () => {
+describe("module resolve candidate table (ext-table drift)", () => {
   it("candidate table always includes file exts and index.js/.mjs/.ts entries", () => {
     const { main } = dirIndexFixture();
     const cands = moduleResolveCandidates("./utils", main);

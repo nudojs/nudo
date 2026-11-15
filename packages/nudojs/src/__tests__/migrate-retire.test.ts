@@ -9,11 +9,11 @@ import { runCliTsx } from "./helpers/run-cli.ts";
 import { migrateRetireAll, migrateStatus, migrateRetire, stripTsToJs, formatStatusTable, migrateStrip, migrateRetireMany } from "../migrate.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 051: 多目标批次里不得用「无可退役」掩盖「有活没干」
+// 多目标批次里不得用「无可退役」掩盖「有活没干」
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 051: 多目标批次里不得用「无可退役」掩盖「有活没干」", () => {
+describe("多目标批次里不得用「无可退役」掩盖「有活没干」", () => {
 /**
- * BUG-051 —— `nudo migrate retire <a> <b>` **静默跳过**可退役的包并 exit 0。
+ * `nudo migrate retire <a> <b>` **静默跳过**可退役的包并 exit 0。
  *
  * 根因（命令层）：`commands/migrate.ts` 把批次错误按「**所有**失败项都以
  * `nothing to retire` 开头」整体判为良性 ⇒ exit 0 + 成功信封 ⇒ 同一批里
@@ -22,9 +22,9 @@ describe("[migrate-] Bug 051: 多目标批次里不得用「无可退役」掩�
  * 期望：
  * - 有活的目标**照常退役**（落盘）；
  * - 无可退役的目标**明确报出**（不得静默）；
- * - 「nothing to retire」仍是正常结果（exit 0，Bug 567 口径不变）。
+ * - 「nothing to retire」仍是正常结果（exit 0，口径不变）。
  *
- * 库面的**原子性**不变（`migrateRetireMany` 仍整批报错，Bug 595 / 族 56 的
+ * 库面的**原子性**不变（`migrateRetireMany` 仍整批报错，/ 族 56 的
  * 契约）：本文件只钉命令层的「不得谎报」。
  */
 
@@ -78,7 +78,7 @@ function nothingToRetire(root: string, name: string): string {
   return dir;
 }
 
-describe("Bug 051: 多目标批次里不得用「无可退役」掩盖「有活没干」", () => {
+describe("多目标批次里不得用「无可退役」掩盖「有活没干」", () => {
   it("可退役 + 无可退役 ⇒ 可退役的那个**真的退役**（不是 exit 0 什么都没做）", () => {
     const root = scratch();
     const a = retirable(root, "p11a");
@@ -131,11 +131,11 @@ describe("Bug 051: 多目标批次里不得用「无可退役」掩盖「有活�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 052: retire --all 必须与单目标同口径（含 workflow-only 的根包）
+// retire --all 必须与单目标同口径（含 workflow-only 的根包）
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 052: retire --all 必须与单目标同口径（含 workflow-only 的根包）", () => {
+describe("retire --all 必须与单目标同口径（含 workflow-only 的根包）", () => {
 /**
- * BUG-052 —— `nudo migrate retire --all` 跳过 workspace **根**的 workflow tsc 行
+ * `nudo migrate retire --all` 跳过 workspace **根**的 workflow tsc 行
  * ⇒ 退役不完整且 exit 0（子包退役了，根的 CI 仍跑 `tsc`）。
  *
  * 根因：`migrateRetireAll` 的工作集判据只看「可摘的依赖 + 门禁脚本」，
@@ -192,7 +192,7 @@ function workspace(): string {
   return root;
 }
 
-describe("Bug 052: retire --all 必须与单目标同口径（含 workflow-only 的根包）", () => {
+describe("retire --all 必须与单目标同口径（含 workflow-only 的根包）", () => {
   it("根包只有 workflow 里的 tsc 行 ⇒ --all 仍要改写它", () => {
     const root = workspace();
     const results = migrateRetireAll(root);
@@ -237,11 +237,11 @@ describe("Bug 052: retire --all 必须与单目标同口径（含 workflow-only 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 053: dry-run 与真跑的机器面必须可区分
+// dry-run 与真跑的机器面必须可区分
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 053: dry-run 与真跑的机器面必须可区分", () => {
+describe("dry-run 与真跑的机器面必须可区分", () => {
 /**
- * BUG-053 —— `nudo migrate retire --dry-run --json` 与**真跑**的 JSON 输出
+ * `nudo migrate retire --dry-run --json` 与**真跑**的 JSON 输出
  * **逐字相同** ⇒ 机器消费者无法区分「这是计划」与「已经执行了」。
  *
  * 修复：`RetireResult` 带 `dryRun: true`（只在 dry-run 时出现 ⇒ 真跑的输出
@@ -278,7 +278,7 @@ function pkg(): string {
   return dir;
 }
 
-describe("Bug 053: dry-run 与真跑的机器面必须可区分", () => {
+describe("dry-run 与真跑的机器面必须可区分", () => {
   it("库面：dry-run 的 result 带 dryRun: true，且零写盘", () => {
     const dir = pkg();
     const before = readFileSync(join(dir, "package.json"), "utf-8");
@@ -311,11 +311,11 @@ describe("Bug 053: dry-run 与真跑的机器面必须可区分", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 062: 退役完成的包必须真的装了门禁
+// 退役完成的包必须真的装了门禁
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 062: 退役完成的包必须真的装了门禁", () => {
+describe("退役完成的包必须真的装了门禁", () => {
 /**
- * BUG-062 —— `nudo migrate retire` 在已有**非门禁** `check:nudo` 脚本时**不装门禁**，
+ * `nudo migrate retire` 在已有**非门禁** `check:nudo` 脚本时**不装门禁**，
  * 却报「retired」并写审计标记 ⇒ 摘掉 typescript 后**零类型检查**；紧接着
  * `migrate status` 又报「no nudo check/test script yet」⇒ 两个子命令结论相反。
  *
@@ -327,7 +327,7 @@ describe("[migrate-] Bug 062: 退役完成的包必须真的装了门禁", () =>
  * 时**覆写**它。
  *
  * 反向闸：真的已有门禁（`typecheck: "tsc --noEmit"` 被改写成 `nudo check .`）
- * 时不重复注入（Bug 567 反向闸口径不变）。
+ * 时不重复注入（反向闸口径不变）。
  */
 
 
@@ -357,7 +357,7 @@ function scriptsOf(dir: string): Record<string, string> {
   }).scripts;
 }
 
-describe("Bug 062: 退役完成的包必须真的装了门禁", () => {
+describe("退役完成的包必须真的装了门禁", () => {
   it("`check:nudo: echo placeholder` ⇒ 被覆写成 nudo 门禁", () => {
     const dir = pkg({ "check:nudo": "echo placeholder" }, { typescript: "^5.4.0" });
     const result = migrateRetire(dir, { workflows: false });
@@ -389,11 +389,11 @@ describe("Bug 062: 退役完成的包必须真的装了门禁", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 065: 损坏的审计标记必须 fail-closed（不得静默覆盖）
+// 损坏的审计标记必须 fail-closed（不得静默覆盖）
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 065: 损坏的审计标记必须 fail-closed（不得静默覆盖）", () => {
+describe("损坏的审计标记必须 fail-closed（不得静默覆盖）", () => {
 /**
- * BUG-065 —— `nudo migrate retire` 遇到**损坏的** `.nudo/migrate-retired.json`
+ * `nudo migrate retire` 遇到**损坏的** `.nudo/migrate-retired.json`
  * ⇒ 静默丢弃并覆盖审计记录（exit 0）。
  *
  * 根因：`readJson` 把「文件不存在」与「JSON 解析失败」压成同一个 `undefined`
@@ -435,7 +435,7 @@ function pkg(): string {
 
 const BROKEN = '{ "retiredAt": "2020-01-01T00:00:00.000Z", "removedDeps": ["dependencies"], ';
 
-describe("Bug 065: 损坏的审计标记必须 fail-closed（不得静默覆盖）", () => {
+describe("损坏的审计标记必须 fail-closed（不得静默覆盖）", () => {
   it("库面：半截 JSON ⇒ 抛错，且原标记**逐字未变**", () => {
     const dir = pkg();
     mkdirSync(join(dir, ".nudo"), { recursive: true });
@@ -470,15 +470,15 @@ describe("Bug 065: 损坏的审计标记必须 fail-closed（不得静默覆盖�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1006: retire --all 必须包间原子
+// retire --all 必须包间原子
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 1006: retire --all 必须包间原子", () => {
+describe("retire --all 必须包间原子", () => {
 /**
- * Bug 1006 — `nudo migrate retire --all` **包间非原子**：第 N 个包失败时前 N−1 个包
+ * `nudo migrate retire --all` **包间非原子**：第 N 个包失败时前 N−1 个包
  * 已落盘退役，而错误消息既不点名已提交的包、也不留任何「本批被中断」的痕迹。
  *
  * 期望：**全批原子** —— 任一包失败 ⇒ 整批零写盘（前 N−1 个包也不落盘），
- *       错误消息点名本批涉及的包。
+ * 错误消息点名本批涉及的包。
  * 反向闸：全批成功时每个包都退役（断言非永真）。
  */
 
@@ -527,7 +527,7 @@ function batchRepo(): string {
   return root;
 }
 
-describe("Bug 1006: retire --all 必须包间原子", () => {
+describe("retire --all 必须包间原子", () => {
   it("第 2 个包不可写 ⇒ 整批零写盘（前面的包也不落盘）", () => {
     const root = batchRepo();
     chmodSync(join(root, "packages", "b"), 0o555);
@@ -577,11 +577,11 @@ describe("Bug 1006: retire --all 必须包间原子", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1028: rewrittenWorkflows 在 stdout 与落盘 marker 里必须同型同值
+// rewrittenWorkflows 在 stdout 与落盘 marker 里必须同型同值
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 1028: rewrittenWorkflows 在 stdout 与落盘 marker 里必须同型同值", () => {
+describe("rewrittenWorkflows 在 stdout 与落盘 marker 里必须同型同值", () => {
 /**
- * Bug 1028 — `nudo migrate retire` 的**同一个键 `rewrittenWorkflows` 在两份产物里是两种类型**：
+ * `nudo migrate retire` 的**同一个键 `rewrittenWorkflows` 在两份产物里是两种类型**：
  * stdout 的 `--json` 报文是 `[{file,from,to}]`（对象数组），落盘的
  * `.nudo/migrate-retired.json` 是 `["<path>"]`（字符串数组）⇒ 同键异型（协议层非法值），
  * 且落盘的审计记录丢掉 CI 改写的前后内容。
@@ -640,7 +640,7 @@ function marker(dir: string): Record<string, unknown> {
   >;
 }
 
-describe("Bug 1028: rewrittenWorkflows 在 stdout 与落盘 marker 里必须同型同值", () => {
+describe("rewrittenWorkflows 在 stdout 与落盘 marker 里必须同型同值", () => {
   it("库面：结果与 marker 的 rewrittenWorkflows 逐元素相等（对象数组，带 from/to）", () => {
     const dir = wfPkg();
     const result = migrateRetire(dir);
@@ -658,7 +658,7 @@ describe("Bug 1028: rewrittenWorkflows 在 stdout 与落盘 marker 里必须同�
     const dir = wfPkg();
     const r = runCliTsx(["migrate", "retire", dir, "--json"]);
     expect(r.status).toBe(0);
-    // Bug 675 收口：`migrate retire --json` 的顶层形状**恒为数组**（1 个包
+    // 收口：`migrate retire --json` 的顶层形状**恒为数组**（1 个包
     // 也是数组）⇒ 取第一条结果与 marker 比较。
     const reported = JSON.parse(r.stdout) as Array<{ rewrittenWorkflows: unknown }>;
     expect(Array.isArray(reported)).toBe(true);
@@ -679,11 +679,11 @@ describe("Bug 1028: rewrittenWorkflows 在 stdout 与落盘 marker 里必须同�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 103: 半完成标记必须能被重跑 retire 清掉
+// 半完成标记必须能被重跑 retire 清掉
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 103: 半完成标记必须能被重跑 retire 清掉", () => {
+describe("半完成标记必须能被重跑 retire 清掉", () => {
 /**
- * BUG-103 —— 残留的 `migrate-retiring.json`（半完成标记）且已无 tsc/typescript
+ * 残留的 `migrate-retiring.json`（半完成标记）且已无 tsc/typescript
  * 可退役时 ⇒ 「nothing to retire」直接 exit 0，**半完成标记永不清理**
  * ⇒ `status` 永远报「partial migrate retire — re-run nudo migrate retire」
  * （指引指向的命令是 no-op）。
@@ -692,7 +692,7 @@ describe("[migrate-] Bug 103: 半完成标记必须能被重跑 retire 清掉", 
  * 存在 ⇒ 走**恢复路径**（清 in-progress + 写已完成标记），而不是抛
  * `nothing to retire`。
  *
- * 反向闸：没有 in-progress 标记且无活可干 ⇒ 仍是 `nothing to retire`（Bug 567）。
+ * 反向闸：没有 in-progress 标记且无活可干 ⇒ 仍是 `nothing to retire`（）。
  */
 
 
@@ -733,7 +733,7 @@ function recoveringPkg(): string {
   return dir;
 }
 
-describe("Bug 103: 半完成标记必须能被重跑 retire 清掉", () => {
+describe("半完成标记必须能被重跑 retire 清掉", () => {
   it("status 先报 partial migrate retire（反向闸：前提成立）", () => {
     const dir = recoveringPkg();
     const blocks = migrateStatus(dir)[0]!.blockers;
@@ -766,11 +766,11 @@ describe("Bug 103: 半完成标记必须能被重跑 retire 清掉", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 116: 已存在的说明符不得报 could-not-be-resolved
+// 已存在的说明符不得报 could-not-be-resolved
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 116: 已存在的说明符不得报 could-not-be-resolved", () => {
+describe("已存在的说明符不得报 could-not-be-resolved", () => {
 /**
- * BUG-116 —— `nudo migrate strip` 对**确实存在**的相对说明符报
+ * `nudo migrate strip` 对**确实存在**的相对说明符报
  * 「could not be resolved」⇒ 输出与事实相反。
  *
  * 根因：`resolveProductSpecifier` 的候选表**从不包含「说明符原样」**——
@@ -805,7 +805,7 @@ function dirWith(files: string[]): string {
 const MAIN = (spec: string) =>
   `import { v } from "${spec}";\nexport const main = () => v;\n`;
 
-describe("Bug 116: 已存在的说明符不得报 could-not-be-resolved", () => {
+describe("已存在的说明符不得报 could-not-be-resolved", () => {
   it("`./foo.js`（foo.js 存在）⇒ 无 note，说明符保持原样", () => {
     const dir = dirWith(["foo.js"]);
     const { code, notes } = stripTsToJs(MAIN("./foo.js"), {
@@ -838,11 +838,11 @@ describe("Bug 116: 已存在的说明符不得报 could-not-be-resolved", () => 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 117: 已退役包的机器面不得把历史台账当成本次改动
+// 已退役包的机器面不得把历史台账当成本次改动
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 117: 已退役包的机器面不得把历史台账当成本次改动", () => {
+describe("已退役包的机器面不得把历史台账当成本次改动", () => {
 /**
- * BUG-117 —— `nudo migrate retire` 对**已退役的包**重跑 ⇒ **谎报**「本次摘掉了
+ * `nudo migrate retire` 对**已退役的包**重跑 ⇒ **谎报**「本次摘掉了
  * 依赖 / 改写了脚本」（实际字节未变），且与同一包 `--all` 入口的结论互斥。
  *
  * 根因：`planRetirePackage` 的 `result` 直接取 marker 里的**累计**台账
@@ -881,7 +881,7 @@ function tsPkg(name: string): string {
   return dir;
 }
 
-describe("Bug 117: 已退役包的机器面不得把历史台账当成本次改动", () => {
+describe("已退役包的机器面不得把历史台账当成本次改动", () => {
   it("首次退役：delta 非空（断言非永真）", () => {
     const dir = tsPkg("first");
     const first = migrateRetire(dir, { workflows: false });
@@ -929,11 +929,11 @@ describe("Bug 117: 已退役包的机器面不得把历史台账当成本次改�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 118: --all 必须一次报全坏包，且 --json 信封带 failedTargets
+// --all 必须一次报全坏包，且 --json 信封带 failedTargets
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 118: --all 必须一次报全坏包，且 --json 信封带 failedTargets", () => {
+describe("--all 必须一次报全坏包，且 --json 信封带 failedTargets", () => {
 /**
- * BUG-118 —— `nudo migrate retire --all` 与显式多目标列表对**同一批坏包**给出
+ * `nudo migrate retire --all` 与显式多目标列表对**同一批坏包**给出
  * **不同的失败清单**；`--all` 的 `--json` 失败信封**缺 `failedTargets`**。
  *
  * 根因：`migrateRetireAll` 在第一个 `package.json` 解析失败的包上**立刻 throw**
@@ -984,7 +984,7 @@ function batch(): { root: string; a: string; b: string; c: string } {
   return { root, a, b, c };
 }
 
-describe("Bug 118: --all 必须一次报全坏包，且 --json 信封带 failedTargets", () => {
+describe("-all 必须一次报全坏包，且 --json 信封带 failedTargets", () => {
   it("库面：一次报全两个坏包（不再 fail-fast 只报第一个）", () => {
     const { root, b, c } = batch();
     let failures: Failures | undefined;
@@ -1007,7 +1007,7 @@ describe("Bug 118: --all 必须一次报全坏包，且 --json 信封带 failedT
     const { root, b, c } = batch();
     const all = runCliTsx(["migrate", "retire", root, "--all", "--json"]);
     expect(all.status).toBe(1);
-    // BUG-017：`--json` 顶层形状恒为数组（信封是单元素数组）
+    // `--json` 顶层形状恒为数组（信封是单元素数组）
     const __env = JSON.parse(all.stdout) as Array<{
       ok: boolean;
       failedTargets?: Failures;
@@ -1054,18 +1054,18 @@ describe("Bug 118: --all 必须一次报全坏包，且 --json 信封带 failedT
 });
 
 // ---------------------------------------------------------------------------
-// Bug 178: status 与 retire 必须同结论（有意保留的项不算 blocker）
+// status 与 retire 必须同结论（有意保留的项不算 blocker）
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 178: status 与 retire 必须同结论（有意保留的项不算 blocker）", () => {
+describe("status 与 retire 必须同结论（有意保留的项不算 blocker）", () => {
 /**
- * BUG-178 —— `nudo migrate status` 与 `nudo migrate retire` 对**同一项目**给出
+ * `nudo migrate status` 与 `nudo migrate retire` 对**同一项目**给出
  * **相反结论**：`retired: true` 却仍报 2 个 blocker（正是 `retire` **有意保留**
  * 的两项：编译器角色的 tsc 脚本 + 它带出的 typescript 依赖）；且 `next:` 提示
  * **无条件**输出 ⇒ 已退役项目仍被建议「再退一次」。
  *
  * 修复：
  * - blocker 判定与 `retire` 的**保留**决策同源（gate / compiler 分类）——
- *   有意保留的项不算 blocker；
+ * 有意保留的项不算 blocker；
  * - 机器面新增 `preserved`（真 blocker 与有意保留**可区分**）；
  * - `formatStatusTable` 的 `next:` **按状态分支**。
  *
@@ -1107,7 +1107,7 @@ function project(): string {
   return dir;
 }
 
-describe("Bug 178: status 与 retire 必须同结论（有意保留的项不算 blocker）", () => {
+describe("status 与 retire 必须同结论（有意保留的项不算 blocker）", () => {
   it("retire 明确记录了「有意保留」的两项", () => {
     const dir = project();
     const result = migrateRetire(dir);
@@ -1159,20 +1159,20 @@ describe("Bug 178: status 与 retire 必须同结论（有意保留的项不算 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 179: 重复 retire 的人类面不得重放首次的 diff
+// 重复 retire 的人类面不得重放首次的 diff
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 179: 重复 retire 的人类面不得重放首次的 diff", () => {
+describe("重复 retire 的人类面不得重放首次的 diff", () => {
 /**
- * BUG-179 —— `nudo migrate retire` **重复运行**时，人类面输出的 diff「`-` 侧」
+ * `nudo migrate retire` **重复运行**时，人类面输出的 diff「`-` 侧」
  * 与文件**当前内容**不符（重放首次计划，不读当前状态）⇒ 报告说谎 + 人读面的
  * 幂等性被破。
  *
  * 根因：人类面直接打印 marker 的**累计台账**（合并后的 `rewrittenScripts` /
- * `rewrittenWorkflows`），并把它们挂在 `retired  <root>` 标题下 ⇒ 第二次运行
+ * `rewrittenWorkflows`），并把它们挂在 `retired <root>` 标题下 ⇒ 第二次运行
  * 打印 `- (none)` / `- npx tsc --noEmit`，而这两处**早已是** `nudo check .` /
  * `npx nudojs check .`。
  *
- * 修复（与 BUG-117 同一处根因）：`result` 只含**本次 delta**；人类面在
+ * 修复（与 同一处根因）：`result` 只含**本次 delta**；人类面在
  * 「本次零改动」时打 `already retired` + `nothing to do` / `no changes`。
  *
  * 反向闸：首次运行**必须**打印 `- (none)`（否则「第二次不打印」是永真）。
@@ -1218,7 +1218,7 @@ function scriptsOf(dir: string): Record<string, string> {
   }).scripts;
 }
 
-describe("Bug 179: 重复 retire 的人类面不得重放首次的 diff", () => {
+describe("重复 retire 的人类面不得重放首次的 diff", () => {
   it("第一次：真的打印 `- (none)` / `- npx tsc --noEmit`（反向闸）", () => {
     const dir = project();
     const first = runCliTsx(["migrate", "retire", dir]);
@@ -1269,15 +1269,15 @@ describe("Bug 179: 重复 retire 的人类面不得重放首次的 diff", () => 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 567: retire 对「无 tsc 可退役」的包必须 no-op
+// retire 对「无 tsc 可退役」的包必须 no-op
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 567: retire 对「无 tsc 可退役」的包必须 no-op", () => {
+describe("retire 对「无 tsc 可退役」的包必须 no-op", () => {
 /**
- * Bug 567 — `nudo migrate retire` 对「无 tsc 可退役」的包仍写退役标记并注入脚本。
+ * `nudo migrate retire` 对「无 tsc 可退役」的包仍写退役标记并注入脚本。
  *
  * 夹具：纯 JS 包（无 typescript 依赖、无任何 tsc 脚本、无 CI workflow）。
  * 期望：retire 是 no-op —— 不注入 `check:nudo`、不写 `.nudo/migrate-retired.json`、
- *       明确报「nothing to retire」；不得 exit 0 谎报「retired」。
+ * 明确报「nothing to retire」；不得 exit 0 谎报「retired」。
  * 反向闸：有 tsc 面的包照常退役（断言非永真）。
  */
 
@@ -1300,7 +1300,7 @@ function plainJsPkg(): string {
   return dir;
 }
 
-describe("Bug 567: retire 对「无 tsc 可退役」的包必须 no-op", () => {
+describe("retire 对「无 tsc 可退役」的包必须 no-op", () => {
   it("库面：无 TS 面 ⇒ 抛 nothing to retire，且零写盘", () => {
     const dir = plainJsPkg();
     const before = readFileSync(join(dir, "package.json"), "utf-8");
@@ -1350,13 +1350,13 @@ describe("Bug 567: retire 对「无 tsc 可退役」的包必须 no-op", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 576: 二次 retire 不得擦掉退役审计记录
+// 二次 retire 不得擦掉退役审计记录
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 576: 二次 retire 不得擦掉退役审计记录", () => {
+describe("二次 retire 不得擦掉退役审计记录", () => {
 /**
- * Bug 576 — `nudo migrate retire` **二次运行擦掉退役审计记录**
+ * `nudo migrate retire` **二次运行擦掉退役审计记录**
  * （`.nudo/migrate-retired.json` 的 `removedDeps` / `rewrittenScripts` /
- *  `rewrittenWorkflows` 被清空、`retiredAt` 被改写）。
+ * `rewrittenWorkflows` 被清空、`retiredAt` 被改写）。
  *
  * 期望：二次运行 **合并** 既有审计记录（并集 + 保留首次 `retiredAt`）。
  * 反向闸：首次运行必须真的记下审计内容（否则「不被清空」是永真）。
@@ -1396,7 +1396,7 @@ function marker(dir: string): Record<string, unknown> {
   >;
 }
 
-describe("Bug 576: 二次 retire 不得擦掉退役审计记录", () => {
+describe("二次 retire 不得擦掉退役审计记录", () => {
   it("库面：二次运行的 marker 保留首次的 removedDeps / rewrittenScripts / retiredAt", () => {
     const dir = auditPkg();
     migrateRetire(dir, { workflows: false });
@@ -1437,11 +1437,11 @@ describe("Bug 576: 二次 retire 不得擦掉退役审计记录", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 585 — migrate strip 的草稿落在草稿路径
+// migrate strip 的草稿落在草稿路径
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 585 — migrate strip 的草稿落在草稿路径", () => {
+describe("migrate strip 的草稿落在草稿路径", () => {
 /**
- * Bug 585 — `migrate strip` 生成的侧车草稿落在**正式侧车路径**（`lib.nudo.js`）。
+ * `migrate strip` 生成的侧车草稿落在**正式侧车路径**（`lib.nudo.js`）。
  *
  * 根因：草稿用 `sidecarPathOf(outFile)` 定位 ⇒ 与正式侧车同名同路径 ⇒
  * 草稿被 ambient 侧车表当成真契约加载（草稿内容是「待审模板」，
@@ -1461,7 +1461,7 @@ afterAll(() => {
   for (const d of dirs) rmSync(d, { recursive: true, force: true });
 });
 
-describe("Bug 585 — migrate strip 的草稿落在草稿路径", () => {
+describe("migrate strip 的草稿落在草稿路径", () => {
   it("草稿写进 lib.nudo.draft.js，正式侧车路径 lib.nudo.js 不被占用", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-bug-585-"));
     dirs.push(dir);
@@ -1502,9 +1502,9 @@ describe("Bug 585 — migrate strip 的草稿落在草稿路径", () => {
 // ---------------------------------------------------------------------------
 // 族 16 接线 —— 586 的判据：脚本会不会**真的**产出产物
 // ---------------------------------------------------------------------------
-describe("[migrate-] 族 16 接线 —— 586 的判据：脚本会不会**真的**产出产物", () => {
+describe("族 16 接线 —— 586 的判据：脚本会不会**真的**产出产物", () => {
 /**
- * 族 16 主 agent 接线钉 —— Bug 586 的**判据**收口。
+ * 族 16 主 agent 接线钉 —— 的**判据**收口。
  *
  * 报告 586 的诉求是「**编译脚本**被改成 `nudo check .` ⇒ 构建不再产出任何产物，
  * 却绿灯通过并写下『已退役』标记」。判定必须以「**这个脚本会不会真的产出产物**」
@@ -1512,11 +1512,11 @@ describe("[migrate-] 族 16 接线 —— 586 的判据：脚本会不会**真�
  *
  * 旧判定（按形态猜）会把两种东西都判错：
  * - `tsc -p tsconfig.build.json`（带 `outDir` + `declaration`）⇒ **真的会 emit**
- *   ⇒ 编译器角色 ⇒ 原样保留（**报告 586 要的就是这个**）；
+ * ⇒ 编译器角色 ⇒ 原样保留（**报告 586 要的就是这个**）；
  * - `tsc -p .` 而 tsconfig 里 `compilerOptions.noEmit: true` ⇒ **不产出任何产物**
- *   ⇒ 它其实是**类型门禁** ⇒ 应改写成 `nudo check` 且 typescript 依赖**可摘**
- *   （仓内公开样板 `docs/examples/migrate/before` 正是这一形状 —— 它的 tsconfig
- *   带 `noEmit: true`，旧判定会让「退役 tsc」的故事落空：依赖摘不掉）。
+ * ⇒ 它其实是**类型门禁** ⇒ 应改写成 `nudo check` 且 typescript 依赖**可摘**
+ * （仓内公开样板 `docs/examples/migrate/before` 正是这一形状 —— 它的 tsconfig
+ * 带 `noEmit: true`，旧判定会让「退役 tsc」的故事落空：依赖摘不掉）。
  *
  * 这里的钉覆盖两种形状 + `extends` 链 + 反向闸。
  */
@@ -1709,11 +1709,11 @@ describe("族 16 接线 —— 586 的判据：脚本会不会**真的**产出�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 592 — migrate strip 的 draft 标注与落盘位置一致
+// migrate strip 的 draft 标注与落盘位置一致
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 592 — migrate strip 的 draft 标注与落盘位置一致", () => {
+describe("migrate strip 的 draft 标注与落盘位置一致", () => {
 /**
- * Bug 592 — `migrate strip` 的草稿写进**正式侧车路径** ⇒ CLI 标注与落盘位置不一致，
+ * `migrate strip` 的草稿写进**正式侧车路径** ⇒ CLI 标注与落盘位置不一致，
  * 且草稿被 ambient 侧车表当成真契约。
  *
  * 根因：草稿用 `sidecarPathOf(outFile)` 定位（正式侧车路径），而草稿抬头自述
@@ -1732,7 +1732,7 @@ afterAll(() => {
   for (const d of dirs) rmSync(d, { recursive: true, force: true });
 });
 
-describe("Bug 592 — migrate strip 的 draft 标注与落盘位置一致", () => {
+describe("migrate strip 的 draft 标注与落盘位置一致", () => {
   it("CLI 打印的 draft 路径就是草稿路径，正式侧车路径不被占用", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-bug-592-"));
     dirs.push(dir);
@@ -1745,7 +1745,7 @@ describe("Bug 592 — migrate strip 的 draft 标注与落盘位置一致", () =
     const r = runCliTsx(["migrate", "strip", "lib.ts", "--write"], { cwd: dir });
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("draft  lib.nudo.draft.js");
-    // 改前：stdout 打印 "draft  lib.nudo.js" 且该文件真的存在（草稿冒充契约）
+    // 改前：stdout 打印 "draft lib.nudo.js" 且该文件真的存在（草稿冒充契约）
     expect(r.stdout).not.toContain("draft  lib.nudo.js");
     expect(existsSync(join(dir, "lib.nudo.draft.js"))).toBe(true);
     expect(existsSync(join(dir, "lib.nudo.js"))).toBe(false);
@@ -1754,11 +1754,11 @@ describe("Bug 592 — migrate strip 的 draft 标注与落盘位置一致", () =
 });
 
 // ---------------------------------------------------------------------------
-// Bug 595: 多目标退役必须全退役或全报错
+// 多目标退役必须全退役或全报错
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 595: 多目标退役必须全退役或全报错", () => {
+describe("多目标退役必须全退役或全报错", () => {
 /**
- * Bug 595 — `nudo migrate retire <a> <b>` **只退役 `a`**，`b` 被**静默跳过**且 exit 0。
+ * `nudo migrate retire <a> <b>` **只退役 `a`**，`b` 被**静默跳过**且 exit 0。
  *
  * 库面修法：新增 `migrateRetireMany(paths)` —— **全退役或全报错**（原子）。
  * CLI 面（`packages/nudojs/src/commands/migrate.ts`，非本分片所有）仍需接线：
@@ -1802,7 +1802,7 @@ function plainPkg(): string {
   return dir;
 }
 
-describe("Bug 595: 多目标退役必须全退役或全报错", () => {
+describe("多目标退役必须全退役或全报错", () => {
   it("两个目标都被退役（不得静默只处理第一个）", () => {
     const a = tsPkg("pkg-a");
     const b = tsPkg("pkg-b");
@@ -1836,11 +1836,11 @@ describe("Bug 595: 多目标退役必须全退役或全报错", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 596 — migrate strip 的 notes 基于 AST 事实
+// migrate strip 的 notes 基于 AST 事实
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 596 — migrate strip 的 notes 基于 AST 事实", () => {
+describe("migrate strip 的 notes 基于 AST 事实", () => {
 /**
- * Bug 596 — `migrate strip` 的 notes 用**裸正则**扫源码 ⇒ 注释 / 字符串里的
+ * `migrate strip` 的 notes 用**裸正则**扫源码 ⇒ 注释 / 字符串里的
  * "enum " / "namespace " 被当成声明 ⇒ 提示与事实相反。
  *
  * 根因：notes 由 `/\benum\s+[A-Za-z_$]/.test(source)` 这类正则产生，
@@ -1868,7 +1868,7 @@ async function notesOf(src: string): Promise<string[]> {
   return results.flatMap((r) => r.notes);
 }
 
-describe("Bug 596 — migrate strip 的 notes 基于 AST 事实", () => {
+describe("migrate strip 的 notes 基于 AST 事实", () => {
   it("注释 / 字符串里的 enum / namespace ⇒ 不产生提示", async () => {
     const notes = await notesOf(
       `export function f(x: number): number {\n  // TODO: convert this enum later\n  const s = "the namespace is fine";\n  return x + 1;\n}\n`,
@@ -1907,11 +1907,11 @@ describe("Bug 596 — migrate strip 的 notes 基于 AST 事实", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 969 — 单文件 strip 也迁移既有侧车
+// 单文件 strip 也迁移既有侧车
 // ---------------------------------------------------------------------------
-describe("[migrate-] Bug 969 — 单文件 strip 也迁移既有侧车", () => {
+describe("单文件 strip 也迁移既有侧车", () => {
 /**
- * Bug 969 — `migrate strip <file>`（单文件路径）不迁移既有的 `*.nudo.ts` 侧车。
+ * `migrate strip <file>`（单文件路径）不迁移既有的 `*.nudo.ts` 侧车。
  *
  * 根因：单文件路径只处理「用户点名的那个文件」⇒ 源模块迁到 `.js` 后，
  * 它的侧车还留在 `.nudo.ts` ⇒ 产物 `lib.js` 的侧车（`lib.nudo.js`）不存在
@@ -1935,7 +1935,7 @@ afterAll(() => {
 const LIB_TS = `export function f(x) {\n  return x;\n}\n\nexport function caller() {\n  return f(1);\n}\n`;
 const SIDECAR = `export const f = fn({ x: number().gt(10) });\n`;
 
-describe("Bug 969 — 单文件 strip 也迁移既有侧车", () => {
+describe("单文件 strip 也迁移既有侧车", () => {
   it("既有 lib.nudo.ts ⇒ 产物侧车 lib.nudo.js 被创建（契约不丢）", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-bug-969-"));
     dirs.push(dir);

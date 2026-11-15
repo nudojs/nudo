@@ -228,7 +228,7 @@ export function gen(x) {
     ).toBeUndefined();
     expect(r.ok).toBe(true);
     // generated params 进 generalize：签名展示带上入口约束（展示/推导面可用）
-    // ⚠ 谓词证据在 `detail` 的 pred 行（`display` 自 Bug 413 起是人类面口径
+    // ⚠ 谓词证据在 `detail` 的 pred 行（`display` 自 起是人类面口径
     // 的 shape 渲染，不再带 term / pred 注记）
     const sig = r.signatures.find((s) => s.name === "gen");
     expect(sig).toBeDefined();

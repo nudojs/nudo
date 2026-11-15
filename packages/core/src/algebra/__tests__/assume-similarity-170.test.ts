@@ -3,11 +3,11 @@
  *
  * 背景：`@nudo:assume d <= max` 下 `1 - d/max ∈ [0,1]` 的证明缺三步——
  * ① `$eq`/`$ne` 不可判定时落裸 bool()，`max === 0` 守卫分支收不到
- *   eq/ne 路径事实（假臂 Φ 无 ne(max,0)）；
+ * eq/ne 路径事实（假臂 Φ 无 ne(max,0)）；
  * ② numericBounds 不折 `ne(x,n) ∧ x≥n ⇒ x>n`（分母正性供不出，
- *   divAssumeBounds 的 posDen 需要严格下界）；
+ * divAssumeBounds 的 posDen 需要严格下界）；
  * ③ `d = cond ? 0 : Math.max(...)` 的 fork 合并 sum 无根 term——引理
- *   项不匹配 + 字面量 0 臂无界污染 join。
+ * 项不匹配 + 字面量 0 臂无界污染 join。
  *
  * 修法：① cmp("eq"/"ne") 符号面（ops.ts $eq/$ne）；② numericBounds
  * 端点等值排除收紧（arithmetic.ts collectExclusions*）；③ $assumeAnchor

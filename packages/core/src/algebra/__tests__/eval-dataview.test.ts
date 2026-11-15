@@ -1,5 +1,5 @@
 /**
- * Bug 35 回归：DataView 存取族（get/set 全家）与构造器越界——
+ * 回归：DataView 存取族（get/set 全家）与构造器越界——
  * out-of-bounds 访问必须定抛 RangeError（node oracle 钉全矩阵），
  * 抽象 offset/视图 → may RangeError（L2 gate），合法构造/边界读不回退。
  *
@@ -9,14 +9,14 @@
  *
  * 原生 ground truth（node v26 实测）：
  * - get/set 全族：offset + 元素宽 > 视图 byteLength → RangeError
- *   （子视图按视图长度：new DataView(buf8, 4, 2).getUint8(2) 抛）；
+ * （子视图按视图长度：new DataView(buf8, 4, 2).getUint8(2) 抛）；
  * - 方法 byteOffset 过 ToIndex：负 → RangeError；缺省/undefined → 0；
  * - ctor：byteOffset > buffer.byteLength 或 off+len > bufLen → RangeError；
  * - byteLength 实参 undefined ≡ 缺省（填满缓冲区——先判 undefined 再
- *   ToIndex：new DataView(buf8, 2, undefined).byteLength === 6；null 仍
- *   ToIndex → 0）；
+ * ToIndex：new DataView(buf8, 2, undefined).byteLength === 6；null 仍
+ * ToIndex → 0）；
  * - 读返回域：number 家族 → number、BigInt64/BigUint64 → bigint；
- *   写恒 undefined（元素值域未建模的诚实 imprecision）。
+ * 写恒 undefined（元素值域未建模的诚实 imprecision）。
  */
 import { describe, it, expect } from "vitest";
 // 相对路径引 src 引擎面（不经 @nudojs/core 别名——本 worktree 的 vite8
@@ -75,7 +75,7 @@ const DV8 = `new DataView(new ArrayBuffer(8))`;
 const caught = (expr: string) =>
   `export function f() { try { ${expr}; return "no-throw"; } catch (e) { return e.constructor.name; } }`;
 
-describe("Bug 35：get/set 全族越界定抛 RangeError（8 字节视图）", () => {
+describe("get/set 全族越界定抛 RangeError（8 字节视图）", () => {
   // partial-read 偏移（元素宽越出视图尾）+ 远越界
   it.each([
     ["getInt8(8)", `${DV8}.getInt8(8)`],
@@ -143,7 +143,7 @@ describe("Bug 35：get/set 全族越界定抛 RangeError（8 字节视图）", (
   });
 });
 
-describe("Bug 35：构造器越界（byteOffset/byteLength 相对缓冲区）", () => {
+describe("构造器越界（byteOffset/byteLength 相对缓冲区）", () => {
   it.each([
     ["(buf8, 100)", `new DataView(new ArrayBuffer(8), 100)`], // byteOffset OOB
     ["(buf8, 9)", `new DataView(new ArrayBuffer(8), 9)`], // 电池形态
@@ -184,7 +184,7 @@ describe("Bug 35：构造器越界（byteOffset/byteLength 相对缓冲区）", 
   });
 });
 
-describe("Bug 35：抽象面 may RangeError + L2 gate 假阴修复", () => {
+describe("抽象面 may RangeError + L2 gate 假阴修复", () => {
   it("抽象 byteOffset（any 实参）→ may RangeError（get/set 两面）", () => {
     expect(effects(`export function f(x) { return ${DV8}.getFloat64(x); }`, [anyAbs])).toContain("RangeError");
     expect(effects(`export function f(x) { return ${DV8}.setUint8(x, 1); }`, [anyAbs])).toContain("RangeError");
@@ -217,7 +217,7 @@ describe("Bug 35：抽象面 may RangeError + L2 gate 假阴修复", () => {
   });
 });
 
-describe("Bug 91：未建模方法不得命中宿主 DATAVIEW_ACCESS_BITS（Object.prototype 名）", () => {
+describe("未建模方法不得命中宿主 DATAVIEW_ACCESS_BITS（Object.prototype 名）", () => {
   // 表是宿主普通对象，裸 table[method] 原型链取值令 toString/valueOf/
   // hasOwnProperty/… 全部命中（host 函数 ≠ undefined）——被当建模的
   // 字节偏移访问器：每个未建模方法折 number 域、Symbol/BigInt 实参假
@@ -274,7 +274,7 @@ describe("Bug 91：未建模方法不得命中宿主 DATAVIEW_ACCESS_BITS（Obje
   it("L2 假阳消除：toString/hasOwnProperty 不再记 entry-may-throw", () => {
     expect(l2Count(check(`export function g() { const x = ${DV}; return x.toString(); }`), "g")).toBe(0);
     expect(l2Count(check(`export function g() { const x = ${DV}; return x.hasOwnProperty("x"); }`), "g")).toBe(0);
-    // 真 may 面（抽象 offset 越界，Bug 35 既有口径）不回退
+    // 真 may 面（抽象 offset 越界，既有口径）不回退
     expect(l2Count(check(`export function g(x) { const v = ${DV}; return v.getUint8(x); }`), "g")).toBeGreaterThan(0);
   });
 });

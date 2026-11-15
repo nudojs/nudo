@@ -419,7 +419,7 @@ export function scale(x) { return x * 2 + 1; }
     const scale = cached.signatures.find((s) => s.name === "scale") as CachedCheckSig;
     expect(add.ret).toBe("number | string");
     expect(scale.ret).toBe("number");
-    // display 本体是**人类面口径**（formatShape，Bug 413：机器面与人类面
+    // display 本体是**人类面口径**（formatShape，机器面与人类面
     // 签名行同源）⇒ term 注记改看 `detail`
     // （display 带 throws 后缀 ⇒ 与 `ret`（去掉 throws 的返回段）不同形）
     expect(add.display).toBe("number | string throws TypeError");

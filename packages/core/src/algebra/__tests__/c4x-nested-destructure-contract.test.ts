@@ -3,8 +3,8 @@
  * - param-surface：nestedPaths 收集（含 rename / 平铺点键 / 数组元素不可寻址）
  * - locateContractParam：fieldPath 多段；平铺精确匹配先于点路径解析
  * - 端到端：`fn({ 'card.grade': string() })` 零 param-mismatch、签名非
- *   `_p0: any`、违例调用报 constraint-violated（expected 含点路径）；
- *   平铺整对象绑定可用；绑内层平铺叶名仍 fail-closed（param-mismatch）。
+ * `_p0: any`、违例调用报 constraint-violated（expected 含点路径）；
+ * 平铺整对象绑定可用；绑内层平铺叶名仍 fail-closed（param-mismatch）。
  */
 import { describe, it, expect } from "vitest";
 import {

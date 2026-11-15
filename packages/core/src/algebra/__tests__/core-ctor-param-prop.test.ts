@@ -1,5 +1,5 @@
 /**
- * Bug 48 次要期望 —— 带默认值的构造器参数属性
+ * 次要期望 —— 带默认值的构造器参数属性
  * （`readonly active: boolean = true`）在 `check` 签名里显示成 `_p2`。
  *
  * 根因：`strip-types.ts` 的 `lowerConstructorParameterProperties` 只解包
@@ -34,7 +34,7 @@ const SRC = `export class Account {
 }
 `;
 
-describe("Bug 48 — 带默认值的参数属性降级保留绑定名", () => {
+describe("带默认值的参数属性降级保留绑定名", () => {
   it("三个参数属性全部降级为普通形参，且第三个名字是 active（不是 _p2）", () => {
     const ctor = ctorOf(SRC, "Account");
     const params = ctor.params as Node[];

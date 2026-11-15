@@ -3,9 +3,9 @@
  *
  * 回归背景：
  * - `$forInKeys` 用 Object.keys(slots) 不查 getPropFlags().enumerable
- *   —— Object.keys(o) 自己有 enumKeys 过滤，for-in 没有（同类不一致）。
+ * —— Object.keys(o) 自己有 enumKeys 过滤，for-in 没有（同类不一致）。
  * - `runtimeAssignObject` / evalObjectMethod("assign") 同样不滤 non-enumerable，
- *   把 hidden 一并拷过去。
+ * 把 hidden 一并拷过去。
  *
  * ES：for-in 与 Object.assign 都走 [[OwnPropertyKeys]] + enumerable 过滤
  * （assign 还走 Set，与 spread 对 __proto__ 的语义不同——本套只覆盖 enumerable）。
@@ -76,9 +76,9 @@ describe("enumerable filter: for-in and Object.assign", () => {
   });
 });
 
-// --- Bug 109：spread / rest 的枚举视图（CopyDataProperties） ----------------
+// --- spread / rest 的枚举视图（CopyDataProperties） ----------------
 
-describe("Bug 109: spread/rest enumerable view (CopyDataProperties)", () => {
+describe("spread/rest enumerable view (CopyDataProperties)", () => {
   it("非枚举键不进 spread 结果（in 检查 + 键序 + JSON 投影）", () => {
     const setup109 = `
       const src = {};

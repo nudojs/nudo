@@ -1,21 +1,21 @@
 /**
- * 类 A 调用位派发缺口回归（Bug 1/2/5/7/8/11/12/24/26/38/50/51/55）：
- * - Bug 1：Number.isSafeInteger 缺 case → unknown（env 声明被硬编码表遮蔽）。
- * - Bug 2：抽象字符串接收者 search/match/matchAll 派发表缺臂 → unknown。
- * - Bug 5：宿主全局 encodeURIComponent 等 8 个（抽象 string 实参）→ unknown。
- * - Bug 7：Date.parse / Date.UTC 静态缺 case → unknown（含全字面量）。
- * - Bug 8：Object.defineProperties / getOwnPropertyDescriptors 缺 case → unknown。
- * - Bug 11：trimLeft/trimRight（ES2019 别名）→ 假 unknown + 假 may-throw。
- * - Bug 12：String.raw 标签模板 → unknown。
- * - Bug 24：Array.fromAsync / Promise.withResolvers / URL.canParse → unknown。
- * - Bug 26：宿主全局函数值的一等公民面（return parseInt / map(Number) /
- *   .call / obj 槽 / then 回调）→ unknown。
- * - Bug 38：字符串 pattern 的 match/search/matchAll（字面量接收者）→ unknown
- *  （语料 batch1.ts:48,50 钉住却静默漏网）。
- * - Bug 50：s.at(n) 抽象接收者缺 undefined 臂（欠近似）。
- * - Bug 51：Array.from(<obj>) array-like 索引槽不读 + 非具体 length →
- *   假 unknown / 错误值 undefined[]。
- * - Bug 55：Annex B HTML 字符串方法（bold/anchor/…）→ 假 unknown。
+ * 类 A 调用位派发缺口回归（）：
+ * - Number.isSafeInteger 缺 case → unknown（env 声明被硬编码表遮蔽）。
+ * - 抽象字符串接收者 search/match/matchAll 派发表缺臂 → unknown。
+ * - 宿主全局 encodeURIComponent 等 8 个（抽象 string 实参）→ unknown。
+ * - Date.parse / Date.UTC 静态缺 case → unknown（含全字面量）。
+ * - Object.defineProperties / getOwnPropertyDescriptors 缺 case → unknown。
+ * - trimLeft/trimRight（ES2019 别名）→ 假 unknown + 假 may-throw。
+ * - String.raw 标签模板 → unknown。
+ * - Array.fromAsync / Promise.withResolvers / URL.canParse → unknown。
+ * - 宿主全局函数值的一等公民面（return parseInt / map(Number) /
+ * .call / obj 槽 / then 回调）→ unknown。
+ * - 字符串 pattern 的 match/search/matchAll（字面量接收者）→ unknown
+ * （语料 batch1.ts:48,50 钉住却静默漏网）。
+ * - s.at(n) 抽象接收者缺 undefined 臂（欠近似）。
+ * - Array.from(<obj>) array-like 索引槽不读 + 非具体 length →
+ * 假 unknown / 错误值 undefined[]。
+ * - Annex B HTML 字符串方法（bold/anchor/…）→ 假 unknown。
  *
  * 原生 ground truth：node v26.10.0 实测对照。
  */
@@ -68,7 +68,7 @@ function evalWithArgs(
 const numAbs = abs({ k: "prim", type: "number" }, undefined, undefined, "path");
 const strAbs = abs({ k: "prim", type: "string" }, undefined, undefined, "path");
 
-describe("Bug 1: Number.isSafeInteger", () => {
+describe("Number.isSafeInteger", () => {
   it("字面量精确折叠（与 isInteger 同族同款）", () => {
     expect(litValue(call(`export function f() { return Number.isSafeInteger(1); }`).result))
       .toEqual({ ok: true, value: true });
@@ -88,7 +88,7 @@ describe("Bug 1: Number.isSafeInteger", () => {
   });
 });
 
-describe("Bug 2: 抽象字符串接收者 search/match/matchAll", () => {
+describe("抽象字符串接收者 search/match/matchAll", () => {
   it("search → number（值域与接收者具体性无关）", () => {
     const r = evalWithArgs(`export function f(s) { return s.search(/a/); }`, [strAbs]);
     expect(r.value).toBe("number");
@@ -115,7 +115,7 @@ describe("Bug 2: 抽象字符串接收者 search/match/matchAll", () => {
   });
 });
 
-describe("Bug 5: 宿主全局 URI/escape 族（抽象 string 实参）", () => {
+describe("宿主全局 URI/escape 族（抽象 string 实参）", () => {
   it("值域恒 string（env 声明 prim.str()→prim.str() 不再被遮蔽）", () => {
     for (const g of [
       "encodeURIComponent",
@@ -165,7 +165,7 @@ describe("Bug 5: 宿主全局 URI/escape 族（抽象 string 实参）", () => {
   });
 });
 
-describe("Bug 7: Date.parse / Date.UTC", () => {
+describe("Date.parse / Date.UTC", () => {
   it("全字面量 → 精确时间戳（node 实测折叠）", () => {
     expect(litValue(call(`export function f() { return Date.parse("2020-01-01"); }`).result))
       .toEqual({ ok: true, value: 1577836800000 });
@@ -194,7 +194,7 @@ describe("Bug 7: Date.parse / Date.UTC", () => {
   });
 });
 
-describe("Bug 8: Object.defineProperties / getOwnPropertyDescriptors", () => {
+describe("Object.defineProperties / getOwnPropertyDescriptors", () => {
   it("defineProperties 返回 target（描述符逐键安装，defineProperty 机器共用）", () => {
     const r = call(`export function f() { return Object.defineProperties({ a: 1 }, { b: { value: 2 } }); }`);
     const s = fmt(r.result) ?? "";
@@ -235,7 +235,7 @@ describe("Bug 8: Object.defineProperties / getOwnPropertyDescriptors", () => {
   });
 });
 
-describe("Bug 11: trimLeft / trimRight（ES2019 别名）", () => {
+describe("trimLeft / trimRight（ES2019 别名）", () => {
   it("字面量接收者精确折叠（≡ trimStart/trimEnd）", () => {
     expect(litValue(call(`export function f() { return " ab ".trimLeft(); }`).result))
       .toEqual({ ok: true, value: "ab " });
@@ -253,7 +253,7 @@ describe("Bug 11: trimLeft / trimRight（ES2019 别名）", () => {
   });
 });
 
-describe("Bug 12: String.raw 标签模板", () => {
+describe("String.raw 标签模板", () => {
   it("全字面量 → 精确拼接", () => {
     expect(litValue(call("export function f() { return String.raw`a${1}b`; }").result))
       .toEqual({ ok: true, value: "a1b" });
@@ -275,7 +275,7 @@ describe("Bug 12: String.raw 标签模板", () => {
   });
 });
 
-describe("Bug 24: ES2024 命名空间静态", () => {
+describe("ES2024 命名空间静态", () => {
   it("Array.fromAsync → promise<元素域>（from 同步投影 + thenable 解包）", () => {
     expect(formatAbs(call(`export function f() { return Array.fromAsync([1]); }`).result))
       .toContain("promise<1[]");
@@ -301,7 +301,7 @@ describe("Bug 24: ES2024 命名空间静态", () => {
   });
 });
 
-describe("Bug 26: 宿主全局函数值的一等公民面", () => {
+describe("宿主全局函数值的一等公民面", () => {
   it("return 位 → fn Abs（不再弃成 unknown）", () => {
     expect(fmt(call(`export function f() { return parseInt; }`).result)).toBe("(arg0, arg1) => ?");
     expect(fmt(call(`export function f() { return Number; }`).result)).toBe("(arg0) => ?");
@@ -335,7 +335,7 @@ describe("Bug 26: 宿主全局函数值的一等公民面", () => {
   });
 });
 
-describe("Bug 38: 字符串 pattern 的 match/search/matchAll（字面量接收者）", () => {
+describe("字符串 pattern 的 match/search/matchAll（字面量接收者）", () => {
   it("search(\"c\") ≡ search(/c/) 精确折叠（RegExpCreate 语义）", () => {
     expect(litValue(call(`export function f() { return "abc123".search("c"); }`).result))
       .toEqual({ ok: true, value: 2 });
@@ -348,7 +348,7 @@ describe("Bug 38: 字符串 pattern 的 match/search/matchAll（字面量接收�
     expect(s).toContain('input: "abc"');
   });
 
-  // Bug 449：原钉「matchAll(字符串) → 恒无 g 定抛 TypeError」**钉死了错误
+  // 原钉「matchAll(字符串) → 恒无 g 定抛 TypeError」**钉死了错误
   // 行为**（ES2023：非 RegExp 实参走 RegExpCreate(ToString(pattern), "g")，
   // "g" 由算法自补 ⇒ 返回迭代器；只有「实参确定是 RegExp 且 flags 确定不含
   // g」才抛 TypeError）⇒ 改写为迭代器 + 不抛。
@@ -359,7 +359,7 @@ describe("Bug 38: 字符串 pattern 的 match/search/matchAll（字面量接收�
   });
 });
 
-describe("Bug 50: s.at(n) 抽象接收者缺 undefined 臂", () => {
+describe("s.at(n) 抽象接收者缺 undefined 臂", () => {
   it("抽象接收者 / 非折叠位置 → string | undefined（与 codePointAt 同款）", () => {
     const r1 = evalWithArgs(`export function f(s) { return s.at(0); }`, [strAbs]);
     expect(r1.value).toContain("undefined");
@@ -376,7 +376,7 @@ describe("Bug 50: s.at(n) 抽象接收者缺 undefined 臂", () => {
   });
 });
 
-describe("Bug 51: Array.from(<obj>) array-like 面", () => {
+describe("Array.from(<obj>) array-like 面", () => {
   it("closed obj + 具体 length → 逐索引槽精确元组（不再错误值 undefined[]）", () => {
     const r = call(`export function f() { return Array.from({ 0: "a", 1: "b", length: 2 }); }`);
     expect(fmt(r.result)).toBe('["a", "b"]');
@@ -398,7 +398,7 @@ describe("Bug 51: Array.from(<obj>) array-like 面", () => {
   });
 });
 
-describe("Bug 55: Annex B HTML 字符串方法", () => {
+describe("Annex B HTML 字符串方法", () => {
   it("字面量接收者按原生模板精确折叠", () => {
     expect(litValue(call(`export function f() { return "ab".bold(); }`).result))
       .toEqual({ ok: true, value: "<b>ab</b>" });

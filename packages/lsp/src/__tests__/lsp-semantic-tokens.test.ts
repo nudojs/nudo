@@ -6,11 +6,11 @@ import { openLspDocument, requestSemanticTokens, decodeSemanticTokens } from "./
 import { SEMANTIC_TOKEN_TYPES, buildSemanticTokens, SEMANTIC_TOKEN_MODIFIERS, contractTierModifierBit } from "../semantic-tokens.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 701 — 类 / 解构 / 方法形参的语义 token
+// 类 / 解构 / 方法形参的语义 token
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 701 — 类 / 解构 / 方法形参的语义 token", () => {
+describe("类 / 解构 / 方法形参的语义 token", () => {
 /**
- * Bug 701：语义 token 面漏标——类名 / 类方法 / 类字段 / 方法形参 / 解构绑定。
+ * 语义 token 面漏标——类名 / 类方法 / 类字段 / 方法形参 / 解构绑定。
  *
  * 症状（真 server semanticTokens/full）：
  * - `export class K { m(p) {…} }` 只有 `p` 上色，`K` / `m` 全丢；
@@ -41,7 +41,7 @@ const SRC = [
   "",
 ].join("\n");
 
-describe("Bug 701 — 类 / 解构 / 方法形参的语义 token", () => {
+describe("类 / 解构 / 方法形参的语义 token", () => {
   it("真 server 返回完整 token 列表（位置 + 档位）", async () => {
     const { mock, uri } = await openLspDocument(SRC, "file:///tmp/nudo-bug-701/a.js");
     const tokens = requestSemanticTokens(mock, uri);
@@ -67,11 +67,11 @@ describe("Bug 701 — 类 / 解构 / 方法形参的语义 token", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 723 — 转义标识符的 token 长度按源码跨度
+// 转义标识符的 token 长度按源码跨度
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 723 — 转义标识符的 token 长度按源码跨度", () => {
+describe("转义标识符的 token 长度按源码跨度", () => {
 /**
- * Bug 723：标识符 token 的长度按「名字」算 ⇒ 转义写法的源码跨度对不上。
+ * 标识符 token 的长度按「名字」算 ⇒ 转义写法的源码跨度对不上。
  *
  * 症状：`const \u0061bc = 1;` 里 `Identifier.name` 是解码后的 `abc`（3），
  * 但源码写法 `\u0061bc` 是 **8** 个字符 ⇒ token 只盖住转义序列前半截，
@@ -86,7 +86,7 @@ describe("[lsp-] Bug 723 — 转义标识符的 token 长度按源码跨度", ()
 
 const TYPE_VARIABLE = SEMANTIC_TOKEN_TYPES.indexOf("variable");
 
-describe("Bug 723 — 转义标识符的 token 长度按源码跨度", () => {
+describe("转义标识符的 token 长度按源码跨度", () => {
   it("`\\u0061bc` 的 token 覆盖整个源码写法（8 个 UTF-16 code unit）", () => {
     const tokens = decodeSemanticTokens(
       buildSemanticTokens("/tmp/nudo-bug-723.js", "export const \\u0061bc = 1;\n"),
@@ -117,11 +117,11 @@ describe("Bug 723 — 转义标识符的 token 长度按源码跨度", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1091 —— 降级路径不得在字符串字面量内部产出 token
+// 降级路径不得在字符串字面量内部产出 token
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 1091 —— 降级路径不得在字符串字面量内部产出 token", () => {
+describe("降级路径不得在字符串字面量内部产出 token", () => {
 /**
- * Bug 1091 —— LSP 语义 token 的**降级路径**（parse 失败 ⇒ 词法扫描）里，字符串
+ * LSP 语义 token 的**降级路径**（parse 失败 ⇒ 词法扫描）里，字符串
  * **遮罩判据反了** ⇒ 字符串字面量**内部**产生假 token。
  *
  * 根因（`semantic-tokens.ts` 的本地 `maskCommentsAndStrings`）：
@@ -185,7 +185,7 @@ const STRING_LINE = 2;
 const STRING_INNER_START = 10;
 const STRING_INNER_END = 20;
 
-describe("Bug 1091 —— 降级路径不得在字符串字面量内部产出 token", () => {
+describe("降级路径不得在字符串字面量内部产出 token", () => {
   it("parse 失败的 buffer：字符串内部的文本不产生 token", () => {
     const tokens = decode(buildSemanticTokens("/t/broken.js", BROKEN));
     const inside = tokens.filter(
@@ -216,7 +216,7 @@ describe("Bug 1091 —— 降级路径不得在字符串字面量内部产出 to
 }
 `;
     const tokens = decode(buildSemanticTokens("/t/broken2.js", src));
-    // `  return typeof "const fake";` ⇒ 字符串内容在 char 17..26
+    // ` return typeof "const fake";` ⇒ 字符串内容在 char 17..26
     const inside = tokens.filter(
       (t) => t.line === STRING_LINE && t.char < 27 && t.char + t.length > 17,
     );
@@ -226,16 +226,16 @@ describe("Bug 1091 —— 降级路径不得在字符串字面量内部产出 to
 });
 
 // ---------------------------------------------------------------------------
-// Bug 721 — 解构绑定 / 简写引用的语义 token
+// 解构绑定 / 简写引用的语义 token
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 721 — 解构绑定 / 简写引用的语义 token", () => {
+describe("解构绑定 / 简写引用的语义 token", () => {
 /**
- * Bug 721：解构绑定被上成 property；对象字面量简写 `{ x }` 被当属性定义。
+ * 解构绑定被上成 property；对象字面量简写 `{ x }` 被当属性定义。
  *
  * 症状（真 server semanticTokens/full）：
  * - `export const { a, b } = obj;` 的 `a` / `b` → property 档（应是 variable 绑定）；
  * - `export const obj = { x, y: 2 };` 的 `x`（简写引用）→ property 档 **且带
- *   declaration modifier**（它是对变量的引用，不是属性定义）。
+ * declaration modifier**（它是对变量的引用，不是属性定义）。
  *
  * 期望：
  * - 对象解构的**绑定名** → variable（declaration）；
@@ -250,7 +250,7 @@ const TYPE_VARIABLE = SEMANTIC_TOKEN_TYPES.indexOf("variable");
 const TYPE_PROPERTY = SEMANTIC_TOKEN_TYPES.indexOf("property");
 const MOD_DECLARATION = 1 << SEMANTIC_TOKEN_MODIFIERS.indexOf("declaration");
 
-describe("Bug 721 — 解构绑定 / 简写引用的语义 token", () => {
+describe("解构绑定 / 简写引用的语义 token", () => {
   it("对象解构绑定 → variable（declaration）", async () => {
     const src = "export const { a, b } = obj;\n";
     const { mock, uri } = await openLspDocument(src, "file:///tmp/nudo-bug-721/a.js");
@@ -281,7 +281,7 @@ describe("Bug 721 — 解构绑定 / 简写引用的语义 token", () => {
 // ---------------------------------------------------------------------------
 // buildSemanticTokens × contract 档 (A7)
 // ---------------------------------------------------------------------------
-describe("[lsp-] buildSemanticTokens × contract 档 (A7)", () => {
+describe("buildSemanticTokens × contract 档 (A7)", () => {
 /**
  * A7：semantic tokens 对齐 contract 档
  * - export 函数绑定带 contract / generated / derived modifier

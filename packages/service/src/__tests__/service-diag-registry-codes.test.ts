@@ -1,5 +1,5 @@
 /**
- * Bug 1084 —— 两条新诊断码在 service 侧**硬编码字面量**，与 core 的 `DIAG`
+ * 两条新诊断码在 service 侧**硬编码字面量**，与 core 的 `DIAG`
  * 注册表重复。
  *
  * 修前：`analyzer-orchestrate-uncached.ts` 写的是
@@ -24,7 +24,7 @@ import { tmpProject, writeTmpFile } from "./tmp-project.ts";
 
 const UNCACHED_SRC = fileURLToPath(new URL("../analyzer-orchestrate-uncached.ts", import.meta.url));
 
-describe("Bug 1084: 诊断码必须取自 core 的 DIAG 注册表（唯一真理源）", () => {
+describe("诊断码必须取自 core 的 DIAG 注册表（唯一真理源）", () => {
   it("core 注册表里确有这两个码（service 侧引用的目标存在）", () => {
     expect(DIAG.moduleUnreadable).toBe("nudo:module-unreadable");
     expect(DIAG.jsonInvalid).toBe("nudo:json-invalid");

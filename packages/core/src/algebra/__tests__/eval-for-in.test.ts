@@ -67,7 +67,7 @@ describe("evaluator for-in", () => {
   });
 });
 
-describe("Bug 98：for-in 访问已被删除的键（快照后逐迭代重查在场）", () => {
+describe("for-in 访问已被删除的键（快照后逐迭代重查在场）", () => {
   it("体内 delete 未访问键 → 不再被访问（node 实测 n=1）", () => {
     const r = call(
       `export function f() { const o = { a: 1, b: 2 }; let n = 0; for (const k in o) { delete o.b; n++; } return n; }`,

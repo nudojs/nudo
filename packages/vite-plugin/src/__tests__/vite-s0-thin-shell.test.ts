@@ -11,14 +11,14 @@
  *
  * 锁住：
  * 1. **薄壳的公共导出面**：`index.ts` 的运行时导出**有且只有** `default`
- *    （`export type NudoPluginOptions` 是类型导出，不在运行时面上）⇒
- *    三个内部模块（`scope.ts` / `check-assembly.ts` / `report.ts`）
- *    **零新增公共导出**（S1–S4 不许从 `index.ts` re-export）。
+ * （`export type NudoPluginOptions` 是类型导出，不在运行时面上）⇒
+ * 三个内部模块（`scope.ts` / `check-assembly.ts` / `report.ts`）
+ * **零新增公共导出**（S1–S4 不许从 `index.ts` re-export）。
  * 2. **可观测行为逐字不变**：诊断文本格式（`[nudo] <id>:<line>:<col> <sev>: <msg>`）、
- *    三条上报通道的路由（error / warning → warn，info → info）、`failOnError`
- *    的红构建语义、`buildEnd` 汇总行文本。
+ * 三条上报通道的路由（error / warning → warn，info → info）、`failOnError`
+ * 的红构建语义、`buildEnd` 汇总行文本。
  * 3. **一条端到端构建行为**（真 `vite build`）：契约违例经 vite logger 上屏、
- *    构建成功、产物落盘。
+ * 构建成功、产物落盘。
  *
  * ⚠ 三个内部模块的**签名契约**在 `vite-s0-module-contracts.test.ts` 里
  * （那三个模块在 HEAD 上**不存在** ⇒ 那一面是**前向锁**，不参与反向闸）。
@@ -237,7 +237,7 @@ export const sim = fn({ d: number().ge(0), max: number().ge(1) }, number().ge(0)
       hookFn(plugin.buildEnd).call(ctx);
       // ⚠ `mockRestore()` 会**清空** `mock.calls` ⇒ 必须在 restore 之前取。
       logged = spy.mock.calls.map((c) => String(c[0]));
-      // ⚠ **S3 更新（族 30 · S3 · Bug 1002）**：汇总行改走 **vite logger**
+      // ⚠ **S3 更新（族 30 · S3 · ）**：汇总行改走 **vite logger**
       // （`this.info`）⇒ 不再从 `console.log` 逃逸（否则 `logLevel:"silent"`
       // 挡不住它）。文本本身**逐字不变**。
       summary = infos.filter((m) => m.includes("Analysis complete"));

@@ -19,7 +19,7 @@ import { createNudoServer } from "../server.ts";
 // ---------------------------------------------------------------------------
 // A7 CodeLens ↔ hover 同源
 // ---------------------------------------------------------------------------
-describe("[lsp-] A7 CodeLens ↔ hover 同源", () => {
+describe("A7 CodeLens ↔ hover 同源", () => {
 /**
  * A7：CodeLens `● contract` 与 hover / inlay 同源
  * （design-refine-derivation §8）
@@ -152,7 +152,7 @@ describe("A7 agent hoverTool payload 同源", () => {
 // ---------------------------------------------------------------------------
 // nudo.hover agent tool
 // ---------------------------------------------------------------------------
-describe("[lsp-] nudo.hover agent tool", () => {
+describe("nudo.hover agent tool", () => {
 describe("nudo.hover agent tool", () => {
   it("hover on identifier resolves via binding table (node table removed)", () => {
     const src = `const x = 1 + 2;\n`;
@@ -183,7 +183,7 @@ describe("nudo.hover agent tool", () => {
 // ---------------------------------------------------------------------------
 // LSP hover 重放：成员写回后仍拿到求值态
 // ---------------------------------------------------------------------------
-describe("[lsp-] LSP hover 重放：成员写回后仍拿到求值态", () => {
+describe("LSP hover 重放：成员写回后仍拿到求值态", () => {
 /**
  * LSP hover 重放面：成员写回的**赋值目标**必须是可赋值绑定回归。
  *
@@ -228,7 +228,7 @@ describe("LSP hover 重放：成员写回后仍拿到求值态", () => {
           "",
         ].join("\n"),
       );
-      // 第 3 行 `  return o.a;`——列 10 = `o.a` 的 o
+      // 第 3 行 ` return o.a;`——列 10 = `o.a` 的 o
       const abs = hoverAbs(src, file, 3, 10) as string | null;
       expect(abs).not.toBeNull();
       // 求值态：写回后的 o（a: 2）；修前是声明形态（a: number）
@@ -240,10 +240,10 @@ describe("LSP hover 重放：成员写回后仍拿到求值态", () => {
 });
 
 // ---------------------------------------------------------------------------
-// [merged] lsp-bug-247-hover-axiom.test.ts
+// [merged] hover-axiom
 // ---------------------------------------------------------------------------
-describe("[lsp-] [merged] lsp-bug-247-hover-axiom.test.ts", () => {
-// MERGED (topic-related bug pins): lsp-bug-247-hover-axiom.test.ts + lsp-bug-247-inlay-hover-parity.test.ts
+describe("hover-axiom", () => {
+// MERGED (topic-related bug pins): hover-axiom + inlay-hover-parity
 // Each absorbed file keeps its own describe scope so file-level hooks stay
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 
@@ -253,12 +253,12 @@ describe("[lsp-] [merged] lsp-bug-247-hover-axiom.test.ts", () => {
 
 
 
-describe("[merged] lsp-bug-247-hover-axiom.test.ts", () => {
+describe("hover-axiom", () => {
 /**
- * Bug 247 —— LSP hover **不消费用户公理**（`@nudo:invariant`）⇒ IDE 印出
+ * LSP hover **不消费用户公理**（`@nudo:invariant`）⇒ IDE 印出
  * 「没有那条公理的程序」的类型。
  *
- * 夹具（`tmp/repro/bug-247/inv/m1.js`）：函数体靠 `@nudo:invariant dp[*] >= 0`
+ * 夹具（`tmp/repro//inv/m1.js`）：函数体靠 `@nudo:invariant dp[*] >= 0`
  * 的循环界把返回位证成 `0 | number`；去掉公理那一行（对照组 `ctrl/m1.js`）
  * 同一函数体只能给 `number`。
  *
@@ -278,7 +278,7 @@ describe("[merged] lsp-bug-247-hover-axiom.test.ts", () => {
 
 
 
-/** 有公理：`tmp/repro/bug-247/inv/m1.js` 逐字内容 */
+/** 有公理：`tmp/repro//inv/m1.js` 逐字内容 */
 const INV_SRC = `/**
  * @nudo:invariant dp[*] >= 0
  */
@@ -331,7 +331,7 @@ function signatureOf(dir: string, name: string, source: string): string {
   return sig!;
 }
 
-describe("Bug 247 — hover 返回位必须消费 @nudo:invariant（check-identical）", () => {
+describe("hover 返回位必须消费 @nudo:invariant（check-identical）", () => {
   it("有公理 ⇒ hover 返回位 `0 | number`；无公理 ⇒ `number`；两者不同", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug247-"));
     try {
@@ -364,17 +364,17 @@ describe("Bug 247 — hover 返回位必须消费 @nudo:invariant（check-identi
 });
 });
 
-describe("[merged] lsp-bug-247-inlay-hover-parity.test.ts", () => {
+describe("inlay-hover-parity", () => {
 /**
- * Bug 247（协议面）—— 同一 IDE 会话里 **hover 签名面** 与 **inlayHint 返回面**
+ * （协议面）—— 同一 IDE 会话里 **hover 签名面** 与 **inlayHint 返回面**
  * 必须对同一份源码给出**同一份类型**。
  *
- * 夹具（`tmp/repro/bug-247/`）：同一函数体，只差 `@nudo:invariant dp[*] >= 0`
+ * 夹具（`tmp/repro//`）：同一函数体，只差 `@nudo:invariant dp[*] >= 0`
  * 那一行。该公理只由 check 的动态域播种（`check.ts` 的 `withAssumePremises` /
  * `withInvariantSpecs`）⇒ 自算 generalize 的 IDE 面会印「没有那条公理的程序」
  * 的类型 ⇒ 同一会话内诊断面（承认公理）与 hover 面（无视公理）互斥。
  *
- * 改前实测（BUG-247 正文）：
+ * 改前实测（正文）：
  *
  * | 面 | 有公理 | 无公理 |
  * |---|---|---|
@@ -390,7 +390,7 @@ describe("[merged] lsp-bug-247-inlay-hover-parity.test.ts", () => {
 
 
 
-/** 有公理：`tmp/repro/bug-247/inv/m1.js` 逐字内容 */
+/** 有公理：`tmp/repro//inv/m1.js` 逐字内容 */
 const INV_SRC = `/**
  * @nudo:invariant dp[*] >= 0
  */
@@ -451,7 +451,7 @@ function hoverReturnOf(hover: HoverLike): string {
     .trim();
 }
 
-/** inlayHint 的返回角标文本（`: <ret>  · derived` → `<ret>`） */
+/** inlayHint 的返回角标文本（`: <ret> · derived` → `<ret>`） */
 function inlayReturnOf(hints: Hint[]): string {
   const ret = hints.filter((h) => h.label.startsWith(": "));
   expect(ret, `inlayHint 里没有返回角标：${JSON.stringify(hints)}`).toHaveLength(1);
@@ -461,7 +461,7 @@ function inlayReturnOf(hints: Hint[]): string {
     .trim();
 }
 
-describe("Bug 247 · hover 面 ≡ inlayHint 面（同一份精确类型）", () => {
+describe("hover 面 ≡ inlayHint 面（同一份精确类型）", () => {
   it("两面对同一份源码给出同一份返回类型，且随公理变化", async () => {
     await withLspServer(
       { "inv.js": INV_SRC, "ctrl.js": CTRL_SRC },
@@ -504,11 +504,11 @@ describe("Bug 247 · hover 面 ≡ inlayHint 面（同一份精确类型）", ()
 });
 
 // ---------------------------------------------------------------------------
-// Bug 071 — 侧车契约收窄形参时 hover 不得多报 throws（check-identical）
+// 侧车契约收窄形参时 hover 不得多报 throws（check-identical）
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 071 — 侧车契约收窄形参时 hover 不得多报 throws（check-identical）", () => {
+describe("侧车契约收窄形参时 hover 不得多报 throws（check-identical）", () => {
 /**
- * Bug 071 —— LSP hover 的 `throws` 尾缀**不是 check-identical**：侧车契约
+ * LSP hover 的 `throws` 尾缀**不是 check-identical**：侧车契约
  * 收窄形参时 hover 多报 `throws TypeError`（`nudo check` 判绿）。
  *
  * 根因：形参 / 返回取**契约种子化**的 generalize 结果，throws 却取 service
@@ -516,7 +516,7 @@ describe("[lsp-] Bug 071 — 侧车契约收窄形参时 hover 不得多报 thro
  * `TypeError`）—— 两套参数域混用。修复：返回位 + throws 尾缀统一读
  * `checkSource` 的签名（契约域 may-throw 为空 ⇒ 无 throws 尾缀）。
  *
- * 夹具与 `tmp/repro/bug-071/` 同文：`up.js` + 手写侧车 `up.nudo.js`
+ * 夹具与 `tmp/repro//` 同文：`up.js` + 手写侧车 `up.nudo.js`
  * （`s: string()`）。真实 server 走真实 `didOpen` + 真实 `textDocument/hover`。
  */
 
@@ -547,7 +547,7 @@ function nudoSigLine(contents: string): string {
   return idx >= 0 ? (lines[idx + 1] ?? "") : "";
 }
 
-describe("Bug 071 — 侧车契约收窄形参时 hover 不得多报 throws（check-identical）", () => {
+describe("侧车契约收窄形参时 hover 不得多报 throws（check-identical）", () => {
   it("真实 server：hover 签名行 = check 契约域签名（无 throws）", async () => {
     await withLspServer(
       { "up.js": JS_SRC, "up.nudo.js": SIDECAR_SRC },
@@ -588,10 +588,10 @@ describe("Bug 071 — 侧车契约收窄形参时 hover 不得多报 throws（ch
 });
 
 // ---------------------------------------------------------------------------
-// [merged] lsp-bug-786-hover-inject.test.ts
+// [merged] hover-inject
 // ---------------------------------------------------------------------------
-describe("[lsp-] [merged] lsp-bug-786-hover-inject.test.ts", () => {
-// MERGED (topic-related bug pins): lsp-bug-786-hover-inject.test.ts + lsp-bug-786-inject-handoff.test.ts
+describe("hover-inject", () => {
+// MERGED (topic-related bug pins): hover-inject + inject-handoff
 // Each absorbed file keeps its own describe scope so file-level hooks stay
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 
@@ -601,9 +601,9 @@ describe("[lsp-] [merged] lsp-bug-786-hover-inject.test.ts", () => {
 
 
 
-describe("[merged] lsp-bug-786-hover-inject.test.ts", () => {
+describe("hover-inject", () => {
 /**
- * Bug 786（hover 半）—— hover 的签名面**从不传 `inject`**
+ * （hover 半）—— hover 的签名面**从不传 `inject`**
  * ⇒ IDE 显示 `unknown`（Nudo 词汇里 = 「推断失败」）而 CLI 门禁显示
  * `number`/`string` ⇒ 跨产品面自相矛盾，且违反 lsp.md 明写的
  * “check-identical signature” 承诺。
@@ -650,7 +650,7 @@ function fixture(): { dir: string; file: string } {
   return { dir, file };
 }
 
-describe("Bug 786（hover 半）—— hover 的签名面必须接收 inject 通道", () => {
+describe("（hover 半）—— hover 的签名面必须接收 inject 通道", () => {
   it("注入生效：hover 签名给出推断类型（改前塌缩成 unknown）", () => {
     const { dir, file } = fixture();
     try {
@@ -678,9 +678,9 @@ describe("Bug 786（hover 半）—— hover 的签名面必须接收 inject 通
 });
 });
 
-describe("[merged] lsp-bug-786-inject-handoff.test.ts", () => {
+describe("inject-handoff", () => {
 /**
- * Bug 786 —— LSP 签名面（hover / inlayHint）**从不传 `inject`**
+ * LSP 签名面（hover / inlayHint）**从不传 `inject`**
  * ⇒ IDE 显示 `unknown`（Nudo 词汇里 = 「推断失败」）而 CLI 门禁显示
  * `number` ⇒ 跨产品面自相矛盾，且违反 lsp.md 的 “check-identical signature”
  * 承诺。
@@ -692,11 +692,11 @@ describe("[merged] lsp-bug-786-inject-handoff.test.ts", () => {
  *
  * 修法（片 F / 片 C 协作）：
  * - 片 F：`packages/core/src/algebra/inlay.ts` 的 `CollectAbsInlaysOpts`
- *   加 `inject` 字段并透传给 `generalizeFromAst`（**只改内部函数体**，
- *   零新增 core 导出）；`packages/lsp/src/agent-tools.ts` 新增注入装配器
- *   `buildLspInjection` 并在 agent hover 工具面装配 inject；
+ * 加 `inject` 字段并透传给 `generalizeFromAst`（**只改内部函数体**，
+ * 零新增 core 导出）；`packages/lsp/src/agent-tools.ts` 新增注入装配器
+ * `buildLspInjection` 并在 agent hover 工具面装配 inject；
  * - 片 C（`hover.ts` 单一 owner）：`HoverContractOpts` 加 `inject` 字段，
- *   传进 hover.ts 的 **3 处** `generalizeFromAst`。
+ * 传进 hover.ts 的 **3 处** `generalizeFromAst`。
  *
  * 钉（本片能改的一侧）：
  * - 注入装配器 `buildLspInjection` 的产物形状（协议面）；
@@ -751,7 +751,7 @@ function fixture(src: string, name: string): { dir: string; file: string } {
   return { dir, file };
 }
 
-describe("Bug 786 — 注入装配器 + inject 传递协议", () => {
+describe("注入装配器 + inject 传递协议", () => {
   it("buildLspInjection 采集 @nudo:replace 的覆盖表（replacements + targets）", () => {
     const { dir, file } = fixture(REPL_SRC, "repl");
     try {
@@ -816,18 +816,18 @@ describe("Bug 786 — 注入装配器 + inject 传递协议", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 768：nudo/hover 位置入参校验 + column 键恒在
+// nudo/hover 位置入参校验 + column 键恒在
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 768：nudo/hover 位置入参校验 + column 键恒在", () => {
+describe("nudo/hover 位置入参校验 + column 键恒在", () => {
 /**
- * Bug 768 —— `nudo/hover` 的位置入参**零校验**：
+ * `nudo/hover` 的位置入参**零校验**：
  *
  * 1. `line` 传字符串（`"2"`）等非法值时，工具**原样回显**并把分析字段全落
- *    `null` —— 调用方分不清「此处没有 hover」与「我传的参数类型不对」。
- *    ⇒ 非法位置参数 ⇒ 工具错误（`isError: true`）。
+ * `null` —— 调用方分不清「此处没有 hover」与「我传的参数类型不对」。
+ * ⇒ 非法位置参数 ⇒ 工具错误（`isError: true`）。
  * 2. `column` 缺省时载荷里**没有** `column` 键 —— 与文档承诺的
- *    `{ file, line, column, … }` 形状不符。
- *    ⇒ `column` 缺省 0（键恒在）；给了但不是 0-based 整数 ⇒ 工具错误。
+ * `{ file, line, column, … }` 形状不符。
+ * ⇒ `column` 缺省 0（键恒在）；给了但不是 0-based 整数 ⇒ 工具错误。
  *
  * 协议面回归钉：真 server（mock connection）+ 真协议请求。
  */
@@ -836,7 +836,7 @@ describe("[lsp-] Bug 768：nudo/hover 位置入参校验 + column 键恒在", ()
 
 const SRC = ["export function inner() {", "  const v = 7;", "  return v;", "}", ""].join("\n");
 
-describe("Bug 768：nudo/hover 位置入参校验 + column 键恒在", () => {
+describe("nudo/hover 位置入参校验 + column 键恒在", () => {
   it("非法 line / column ⇒ 工具错误；缺省 column ⇒ 载荷带 column 键", async () => {
     await withLspServer({ "a4-768.js": SRC }, async ({ req, uri }) => {
       const file = uri("a4-768.js");
@@ -868,11 +868,11 @@ describe("Bug 768：nudo/hover 位置入参校验 + column 键恒在", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 951 hover 签名块：返回类型与 check 同预算（不按 maxDepth 4 截断）
+// hover 签名块：返回类型与 check 同预算（不按 maxDepth 4 截断）
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 951 hover 签名块：返回类型与 check 同预算（不按 maxDepth 4 截断）", () => {
+describe("hover 签名块：返回类型与 check 同预算（不按 maxDepth 4 截断）", () => {
 /**
- * Bug 951 —— LSP hover 的**函数签名块**把返回类型按 `maxDepth: 4` 截断。
+ * LSP hover 的**函数签名块**把返回类型按 `maxDepth: 4` 截断。
  *
  * 改前：同一份源码、同一函数、同一次分析下，`nudo check` 签名行 /
  * 同文档的 inlayHint / `nudo.hover` 载荷给出**三个互不相同的类型**，
@@ -918,7 +918,7 @@ async function hoverSignatureAt(
   return idx >= 0 ? (lines[idx + 1] ?? "") : "";
 }
 
-describe("Bug 951 hover 签名块：返回类型与 check 同预算（不按 maxDepth 4 截断）", () => {
+describe("hover 签名块：返回类型与 check 同预算（不按 maxDepth 4 截断）", () => {
   it("5 层嵌套：hover 签名给出完整返回类型（改前截成 `{ d: … }`）", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug951-"));
     const file = join(dir, "deep.js");
@@ -973,11 +973,11 @@ describe("Bug 951 hover 签名块：返回类型与 check 同预算（不按 max
 });
 
 // ---------------------------------------------------------------------------
-// Bug 911 hover 签名块：throws 通道不得丢失（check-identical）
+// hover 签名块：throws 通道不得丢失（check-identical）
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 911 hover 签名块：throws 通道不得丢失（check-identical）", () => {
+describe("hover 签名块：throws 通道不得丢失（check-identical）", () => {
 /**
- * Bug 911 —— LSP `textDocument/hover` 的签名块**整段丢掉 `throws` 通道**。
+ * LSP `textDocument/hover` 的签名块**整段丢掉 `throws` 通道**。
  *
  * 改前：hover 签名块只吃 formatShape/formatAbs（Abs 的四槽
  * `shape × term × pred × conf` 没有 throws 槽）⇒ IDE 里显示「不会抛」，
@@ -1028,7 +1028,7 @@ async function hoverSignatureAt(
   return idx >= 0 ? (lines[idx + 1] ?? "") : "";
 }
 
-describe("Bug 911 hover 签名块：throws 通道不得丢失（check-identical）", () => {
+describe("hover 签名块：throws 通道不得丢失（check-identical）", () => {
   it("会抛的导出函数：hover 签名带 `throws TypeError`（改前静默省略）", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug911-"));
     const file = join(dir, "throws.js");
@@ -1048,7 +1048,7 @@ describe("Bug 911 hover 签名块：throws 通道不得丢失（check-identical�
     writeFileSync(file, SRC);
     try {
       const sig = await hoverSignatureAt(file, SRC, 0, 16);
-      // `nudo check` 的人面签名行（core formatCheckReport）：`name(params) => ret  throws X`
+      // `nudo check` 的人面签名行（core formatCheckReport）：`name(params) => ret throws X`
       const checkLine = "risky(x: any) => number | string  throws TypeError";
       expect(sig).toBe(checkLine);
     } finally {
@@ -1098,11 +1098,11 @@ export function other() {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 724 hover tier 行：与 CodeLens 同源（选中 case ⇒ 契约档 ○）
+// hover tier 行：与 CodeLens 同源（选中 case ⇒ 契约档 ○）
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 724 hover tier 行：与 CodeLens 同源（选中 case ⇒ 契约档 ○）", () => {
+describe("hover tier 行：与 CodeLens 同源（选中 case ⇒ 契约档 ○）", () => {
 /**
- * Bug 724 —— LSP **hover** 的 contract tier 行**硬编码 `active=true`**。
+ * LSP **hover** 的 contract tier 行**硬编码 `active=true`**。
  *
  * 改前：hover 首行恒 `● contract / <src>`，而同一文件的 CodeLens 在
  * 选中 case 后已翻成 `○ contract / <src>` ⇒ 同一个 IDE 里两个面打架
@@ -1153,7 +1153,7 @@ async function open(file: string, text: string) {
   return { mock, uri, firstLine, contractLens, exec };
 }
 
-describe("Bug 724 hover tier 行：与 CodeLens 同源（选中 case ⇒ 契约档 ○）", () => {
+describe("hover tier 行：与 CodeLens 同源（选中 case ⇒ 契约档 ○）", () => {
   it("选中 case 后 hover 首行翻成 ○ contract / imp（与 CodeLens 标题逐字相同）", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug724-"));
     const file = join(dir, "tier.js");

@@ -1,5 +1,5 @@
 /**
- * Bug 52 —— 文档注释里**提到**诊断码被当成畸形指令（error 级假红）。
+ * 文档注释里**提到**诊断码被当成畸形指令（error 级假红）。
  *
  * 根因：`directiveTagForm` 用 `line.startsWith(tag)` 判标签名，标签后紧跟 `-`
  * 的连字符形态（`@nudo:assume-invalid` / `@nudo:assume-relied`，以及同族
@@ -7,8 +7,8 @@
  * ⇒ `scanAssumeSegments` 产出「坏段」⇒ check 发 error `nudo:assume-invalid`。
  *
  * 修法：标签后紧跟 `-` 一律判「不是本标签」（与 parser `fn-directives.ts`
- * 的 `(?!-)` 边界同口径，Bug 838 / 980）。词字符**直接粘连**
- * （`@nudo:assumed d <= max`）仍判 `glued` —— Bug 421 / 1032 的坏段通道
+ * 的 `(?!-)` 边界同口径，）。词字符**直接粘连**
+ * （`@nudo:assumed d <= max`）仍判 `glued` —— 的坏段通道
  * 必须保留，不得回归。
  */
 import { describe, it, expect } from "vitest";
@@ -25,7 +25,7 @@ function prose(tag: string): string {
 export function f(x) { return x; }`;
 }
 
-describe("Bug 52 — 诊断码散文行不是指令申报", () => {
+describe("诊断码散文行不是指令申报", () => {
   it("@nudo:assume-invalid / assume-relied：无 nudo:assume-invalid、无 error（改前 exit 1）", () => {
     for (const tag of ["assume-invalid", "assume-relied"]) {
       const issues = issuesOf(prose(tag), `/t/bug52-${tag}.js`);

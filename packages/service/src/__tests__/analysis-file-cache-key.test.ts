@@ -1,7 +1,7 @@
 /**
  * analysisFileCacheKey：default loader 也必须吃 dep 指纹与 project nudo.env，
  * 否则入口 source 未变时文件级 memo 陈旧命中。
- * 另钉：maxForks / externalCallRecords 内容指纹（BUG-007）。
+ * 另钉：maxForks / externalCallRecords 内容指纹（）。
  */
 import { describe, it, expect } from "vitest";
 import { writeFileSync } from "node:fs";

@@ -1,16 +1,16 @@
 /**
- * BUG-108 / BUG-109 —— 入参面的**可选性**在四个产物面之间必须一致。
+ * / 入参面的**可选性**在四个产物面之间必须一致。
  *
- * BUG-108：形参**声明级带默认值**（`f(a = 1)`）却有参数契约时，zod 面与 dts 面
+ * 形参**声明级带默认值**（`f(a = 1)`）却有参数契约时，zod 面与 dts 面
  * 只取契约级可选性（契约没写 `optional` ⇒ 必填）⇒ 发布出去的入参面**拒绝
  * 实现允许的零参调用**（`f()`：dts TS2554 / zod 校验失败），而同一份源码的
  * `nudo check` 签名面与 standard 面都说该位可省。
- *   判据：契约级 ∪ 声明级默认值（与 standard 面同口径）。
+ * 判据：契约级 ∪ 声明级默认值（与 standard 面同口径）。
  *
- * BUG-109：剩余参数位在**对象槽面**（zod 的 `{ rest: … }`）上是**必填**槽 ⇒
+ * 剩余参数位在**对象槽面**（zod 的 `{ rest: … }`）上是**必填**槽 ⇒
  * `g()`（rest 为空，合法调用）被入参 schema 拒绝。
- *   判据：rest 槽恒可选（缺省 = 空 rest 数组），且槽值是**一层**数组
- *   （元素类型 = 契约/观测的元素 Abs，不是 `unknown[][]`）。
+ * 判据：rest 槽恒可选（缺省 = 空 rest 数组），且槽值是**一层**数组
+ * （元素类型 = 契约/观测的元素 Abs，不是 `unknown[][]`）。
  *
  * 本文件放在产物面实现旁边（`packages/nudojs/src/commands/export/`）：修复点
  * 是 `unifiedParamFace`（zod / standard 共用的唯一参数面），dts 面走
@@ -76,7 +76,7 @@ export const num = number();
 `,
 };
 
-describe("BUG-108 —— 契约级 ∪ 声明级默认值（zod / standard / dts 同口径）", () => {
+describe("契约级 ∪ 声明级默认值（zod / standard / dts 同口径）", () => {
   const ENTRY = {
     ...NUM_CONTRACT,
     "a.js": `/// @nudo:import { num } from "./contracts.nudo.js"
@@ -131,7 +131,7 @@ export function need(a) {
   });
 });
 
-describe("BUG-109 —— rest 槽在对象槽面上可选且只有一层数组", () => {
+describe("rest 槽在对象槽面上可选且只有一层数组", () => {
   const ENTRY = {
     "b.js": `export function g(...rest) {
   return rest.length;

@@ -14,10 +14,10 @@
  * | 7 | `collectStatement` 未登记缺口 | **匿名**默认导出（函数 / 类）不再是「丢了」⇒ 模块的 `default` 导出在 |
  *
  * oracle（`tsc --strict`，tmp/probe/fix-r95/W2/oracle/）：
- *   - `import { bar } from "x"`（namespace Y 里的成员）⇒ TS2305
- *   - `import { Y } from "x"` ⇒ OK
- *   - `export = ns` 的模块 ⇒ `import { bar } from "y"` ⇒ OK
- *   - `import { O_RDONLY } from "node:fs"` ⇒ TS2305；`import { constants } from "node:fs"` ⇒ OK
+ * - `import { bar } from "x"`（namespace Y 里的成员）⇒ TS2305
+ * - `import { Y } from "x"` ⇒ OK
+ * - `export = ns` 的模块 ⇒ `import { bar } from "y"` ⇒ OK
+ * - `import { O_RDONLY } from "node:fs"` ⇒ TS2305；`import { constants } from "node:fs"` ⇒ OK
  */
 import { describe, it, expect, afterAll } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";

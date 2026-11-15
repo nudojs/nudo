@@ -3,7 +3,7 @@
  * - forEach 未建模：typeof m.forEach 折 undefined、回调零次调用；
  * - Symbol.iterator 属性读取 undefined（for-of 展开虽已工作，属性访问缺失）；
  * - Set 侧表用 === 比较（SameValue 非 SameValueZero）：NaN 键 has miss、
- *   add 不去重、delete 删不掉。
+ * add 不去重、delete 删不掉。
  */
 import { describe, it, expect } from "vitest";
 import { litValue, formatShape } from "@nudojs/core";

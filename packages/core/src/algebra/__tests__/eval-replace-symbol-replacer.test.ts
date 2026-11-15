@@ -1,5 +1,5 @@
 /**
- * Bug 1（运行时内建建模）：String#replace/replaceAll 回调返回 Symbol——
+ * （运行时内建建模）：String#replace/replaceAll 回调返回 Symbol——
  * 原生 GetSubstitution 对 replacer 返回值做 ToString，Symbol 定抛
  * TypeError（"ab".replace("a", () => Symbol())）；此前 replWrapper 的
  * String(r.term.value) 分支把 symbol-prim（无 lit 项）吞进 anyUnknown →
@@ -16,7 +16,7 @@ function throwsName(r: { throws: { shape: { k: string; name?: string } } }): str
   return r.throws.shape.k === "brand" ? r.throws.shape.name : undefined;
 }
 
-describe("Bug 1: replace/replaceAll replacer returning Symbol throws TypeError", () => {
+describe("replace/replaceAll replacer returning Symbol throws TypeError", () => {
   it('"ab".replace("a", () => Symbol()) → throws TypeError（值 never）', () => {
     const r = call(
       `export function f() { return "ab".replace("a", () => Symbol()); }`,

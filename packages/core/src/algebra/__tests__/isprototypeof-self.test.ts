@@ -1,7 +1,7 @@
 /**
  * Object.prototype.isPrototypeOf(V)：先 V = V.[[GetPrototypeOf]]()，再 SameValue
  * —— 对象**不在**自己的原型链上：
- *   Object.prototype.isPrototypeOf(Object.prototype)  原生 false，引擎 true
+ * Object.prototype.isPrototypeOf(Object.prototype) 原生 false，引擎 true
  */
 import { describe, it, expect } from "vitest";
 import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";

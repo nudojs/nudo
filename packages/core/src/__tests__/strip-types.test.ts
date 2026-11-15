@@ -8,18 +8,18 @@ import { call } from "../algebra/__tests__/eval-helpers.ts";
 import { litValue } from "../algebra/abs.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 1071：派生类的构造器参数属性赋值必须落在 super(...) 之后
+// 派生类的构造器参数属性赋值必须落在 super(...) 之后
 // ---------------------------------------------------------------------------
-describe("[core--strip] Bug 1071：派生类的构造器参数属性赋值必须落在 super(...) 之后", () => {
+describe("派生类的构造器参数属性赋值必须落在 super(...) 之后", () => {
 /**
- * Bug 1071 —— `strip-types` 把构造器参数属性赋值插到 `super()` **之前** ⇒
+ * `strip-types` 把构造器参数属性赋值插到 `super()` **之前** ⇒
  * `migrate strip` 产出**运行期即抛**的 `.js`。
  *
  * 触发：派生类 + 构造器参数属性
  * ```ts
  * export class Base {}
  * export class Point extends Base {
- *   constructor(private x: number) { super(); }
+ * constructor(private x: number) { super(); }
  * }
  * ```
  * 改前产物：`constructor(x) {this.x = x;super();}` ⇒ `new Point(1)` 实跑 ⇒
@@ -151,7 +151,7 @@ export class Point extends Base {
 }
 `;
 
-describe("Bug 1071：派生类的构造器参数属性赋值必须落在 super(...) 之后", () => {
+describe("派生类的构造器参数属性赋值必须落在 super(...) 之后", () => {
   it("派生类：赋值在 super(...) 之后（改前：super 在后 ⇒ ReferenceError）", () => {
     const { params, stmts } = ctorStmts(derivedSrc, "Point");
     expect(params).toEqual(["x"]);
@@ -210,11 +210,11 @@ export class Point extends Base {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 234: enum 计算成员里的成员引用必须改写成 E["KEY"]
+// enum 计算成员里的成员引用必须改写成 E["KEY"]
 // ---------------------------------------------------------------------------
-describe("[core--strip] Bug 234: enum 计算成员里的成员引用必须改写成 E[\"KEY\"]", () => {
+describe("enum 计算成员里的成员引用必须改写成 E[\"KEY\"]", () => {
 /**
- * BUG-234 —— TS enum 的**计算成员**原样保留初始化表达式（不把成员引用改写成
+ * TS enum 的**计算成员**原样保留初始化表达式（不把成员引用改写成
  * `E["A"]`）⇒ strip 产物引用**未绑定全局** ⇒ 运行时 ReferenceError。
  *
  * 根因：`strip-types.ts` 的 `synthesizeEnum` 对计算成员只做
@@ -285,7 +285,7 @@ function bareIdentifiers(node: unknown, out: string[] = []): string[] {
   return out;
 }
 
-describe("Bug 234: enum 计算成员里的成员引用必须改写成 E[\"KEY\"]", () => {
+describe("enum 计算成员里的成员引用必须改写成 E[\"KEY\"]", () => {
   it("数值 enum：`B = A * 10` 的 A 变成 E[\"A\"]（不再是未绑定全局）", () => {
     const stmts = enumStmts(`export enum E { A = 1, B = A * 10, C }`);
     const b = assignedValue(stmts[1]!);
@@ -360,11 +360,11 @@ describe("Bug 234: enum 计算成员里的成员引用必须改写成 E[\"KEY\"]
 });
 
 // ---------------------------------------------------------------------------
-// Bug 445: 值位置的类型专用导入被消掉（tsc import elision 同口径）
+// 值位置的类型专用导入被消掉（tsc import elision 同口径）
 // ---------------------------------------------------------------------------
-describe("[core--strip] Bug 445: 值位置的类型专用导入被消掉（tsc import elision 同口径）", () => {
+describe("值位置的类型专用导入被消掉（tsc import elision 同口径）", () => {
 /**
- * Bug 445 —— 值位置的「类型专用导入」未消除 ⇒ 产物 Node 加载不了。
+ * 值位置的「类型专用导入」未消除 ⇒ 产物 Node 加载不了。
  *
  * 根因：strip-types.ts 的 import 判定只看**语法标记**（importKind === "type"），
  * 不看「绑定是否只在类型位置被使用」。tsc 的 import elision 会把只用在类型
@@ -383,7 +383,7 @@ const imports = (src: string) =>
     specifiers: { local: { name: string } }[];
   }[];
 
-describe("Bug 445: 值位置的类型专用导入被消掉（tsc import elision 同口径）", () => {
+describe("值位置的类型专用导入被消掉（tsc import elision 同口径）", () => {
   it("绑定只在类型位置被用到 ⇒ 整条 import 消失（产物可加载）", () => {
     expect(
       imports(`import { Foo } from "./types.js";\nexport function use(f: Foo): string { return "ok"; }`),
@@ -445,11 +445,11 @@ describe("Bug 445: 值位置的类型专用导入被消掉（tsc import elision 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 446: TS-only 的模块出口语句被剥除
+// TS-only 的模块出口语句被剥除
 // ---------------------------------------------------------------------------
-describe("[core--strip] Bug 446: TS-only 的模块出口语句被剥除", () => {
+describe("TS-only 的模块出口语句被剥除", () => {
 /**
- * Bug 446 —— TS-only 的 `export =` / `export as namespace` 未剥 ⇒ 产物不是合法 JS。
+ * TS-only 的 `export =` / `export as namespace` 未剥 ⇒ 产物不是合法 JS。
  *
  * 根因：strip-types.ts 的 `isTypeOnlyStatement` 语句级 switch 缺
  * `TSExportAssignment` / `TSNamespaceExportDeclaration` 两个 case ⇒ 这两条
@@ -462,7 +462,7 @@ describe("[core--strip] Bug 446: TS-only 的模块出口语句被剥除", () => 
 
 const body = (src: string) => parseSource(src).program.body;
 
-describe("Bug 446: TS-only 的模块出口语句被剥除", () => {
+describe("TS-only 的模块出口语句被剥除", () => {
   it("export = X（TSExportAssignment）整条删除", () => {
     const b = body(`declare namespace N { const x: number; }\nexport = N;`);
     expect(b.map((n) => n.type)).not.toContain("TSExportAssignment");
@@ -487,17 +487,17 @@ describe("Bug 446: TS-only 的模块出口语句被剥除", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 447: 类成员的 definite / optional 被剥除
+// 类成员的 definite / optional 被剥除
 // ---------------------------------------------------------------------------
-describe("[core--strip] Bug 447: 类成员的 definite / optional 被剥除", () => {
+describe("类成员的 definite / optional 被剥除", () => {
 /**
- * Bug 447 —— 类成员的 `x!`（确定赋值断言）/ `y?`（可选属性）/ `m?()`（可选方法）
+ * 类成员的 `x!`（确定赋值断言）/ `y?`（可选属性）/ `m?()`（可选方法）
  * 未剥 ⇒ 产物不是合法 JS（`node --check` ⇒ SyntaxError: Unexpected token '!' / '?'）。
  *
  * 根因：strip-types.ts 的 `deleteTypeSyntaxFields` 里
  * - `definite`（Babel 的 ClassProperty.definite）**根本没有**删除逻辑；
  * - `optional` 的删除白名单只有 Identifier / ObjectPattern / ArrayPattern /
- *   RestElement —— **不含类成员节点**。
+ * RestElement —— **不含类成员节点**。
  *
  * 修法：两个字段都在「只在类成员节点族上删」的块里删（与 accessibility /
  * readonly / abstract / override / declare 同块）。⚠ 表达式节点自己的
@@ -515,7 +515,7 @@ const classMembers = (src: string): Member[] => {
   return decl?.declaration?.body?.body ?? [];
 };
 
-describe("Bug 447: 类成员的 definite / optional 被剥除", () => {
+describe("类成员的 definite / optional 被剥除", () => {
   it("x!: number 的 definite 被删", () => {
     const members = classMembers(`export class A { x!: number; }`);
     expect(members).toHaveLength(1);
@@ -563,11 +563,11 @@ describe("Bug 447: 类成员的 definite / optional 被剥除", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 448: TS 的 this 形参从形参数组里删除
+// TS 的 this 形参从形参数组里删除
 // ---------------------------------------------------------------------------
-describe("[core--strip] Bug 448: TS 的 this 形参从形参数组里删除", () => {
+describe("TS 的 this 形参从形参数组里删除", () => {
 /**
- * Bug 448 —— TS 的 `this` 形参未剥 ⇒ 产物 `function f(this, a)` Node 加载不了。
+ * TS 的 `this` 形参未剥 ⇒ 产物 `function f(this, a)` Node 加载不了。
  *
  * 根因：Babel 把 TS 的 `this` 形参表示成**一个名叫 `this` 的 `Identifier`**，
  * 而 strip-types.ts 的 `deleteTypeSyntaxFields` 只删它的 `typeAnnotation`
@@ -592,7 +592,7 @@ const fnOf = (src: string): Fn => {
   return d?.declarations?.[0]?.init ?? {};
 };
 
-describe("Bug 448: TS 的 this 形参从形参数组里删除", () => {
+describe("TS 的 this 形参从形参数组里删除", () => {
   it("function f(this: T, a) ⇒ 只剩 a", () => {
     const fn = fnOf(`export function f(this: { x: number }, a: number): number { return a + 1; }`);
     expect(fn.params?.map((p) => p.name)).toEqual(["a"]);
@@ -624,11 +624,11 @@ describe("Bug 448: TS 的 this 形参从形参数组里删除", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 913: TS enum 被合成成运行时对象
+// TS enum 被合成成运行时对象
 // ---------------------------------------------------------------------------
-describe("[core--strip] Bug 913: TS enum 被合成成运行时对象", () => {
+describe("TS enum 被合成成运行时对象", () => {
 /**
- * Bug 913 —— TS 的 `enum` 被整段删除 ⇒ 成员引用退化成未绑定全局读取 ⇒
+ * TS 的 `enum` 被整段删除 ⇒ 成员引用退化成未绑定全局读取 ⇒
  * 门禁 error 级 `nudo:entry-may-throw`（假红）+ dts / zod / standard / guard
  * 四个产物面把返回类型落成 `never`。
  *
@@ -646,7 +646,7 @@ describe("[core--strip] Bug 913: TS enum 被合成成运行时对象", () => {
 
 const body = (src: string) => parseSource(src).program.body;
 
-describe("Bug 913: TS enum 被合成成运行时对象", () => {
+describe("TS enum 被合成成运行时对象", () => {
   it("enum 声明不再被删除 ⇒ 变成一个 var 声明", () => {
     const b = body(`export enum E { A = 1 }`);
     expect(b.map((n) => n.type)).not.toContain("TSEnumDeclaration");
@@ -708,11 +708,11 @@ describe("Bug 913: TS enum 被合成成运行时对象", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 968: 被删语句上的文件级指令被转挂到幸存节点
+// 被删语句上的文件级指令被转挂到幸存节点
 // ---------------------------------------------------------------------------
-describe("[core--strip] Bug 968: 被删语句上的文件级指令被转挂到幸存节点", () => {
+describe("被删语句上的文件级指令被转挂到幸存节点", () => {
 /**
- * Bug 968 —— 挂在「将被删除的语句」上的文件级指令被静默丢掉 ⇒ 门禁红 → 绿
+ * 挂在「将被删除的语句」上的文件级指令被静默丢掉 ⇒ 门禁红 → 绿
  * （假绿）。
  *
  * 根因：Babel 把文件级 `///` 指令挂成**下一条语句**的 `leadingComments`；strip
@@ -745,7 +745,7 @@ const leadingTexts = (node: unknown): string[] => {
   return (rec.leadingComments ?? []).map((c) => c.value ?? "");
 };
 
-describe("Bug 968: 被删语句上的文件级指令被转挂到幸存节点", () => {
+describe("被删语句上的文件级指令被转挂到幸存节点", () => {
   it("指令挂在被删的 import type 上 ⇒ 转挂给下一个幸存语句", () => {
     const { ast } = stripped(
       `/// @nudo:import { positive } from "./shapes.nudo.js"\n` +

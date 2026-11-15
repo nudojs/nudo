@@ -19,11 +19,11 @@ import { findFnContractInsertPos } from "../sidecar-insert.ts";
 import { resolveDefinitionLocations, findIdentifierAtPosition } from "../symbols.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 487 LSP：配置指纹用归一后的 autoBind
+// LSP：配置指纹用归一后的 autoBind
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 487 LSP：配置指纹用归一后的 autoBind", () => {
+describe("LSP：配置指纹用归一后的 autoBind", () => {
 /**
- * Bug 487 回归（LSP 面）：项目配置指纹用了**未归一**的 `autoBind`
+ * 回归（LSP 面）：项目配置指纹用了**未归一**的 `autoBind`
  * （`cfg.contract?.autoBind ?? true`），而分析面读的是 **service 侧归一后**
  * 的值（`contractConfig`）⇒ 两者口径分裂。
  *
@@ -32,9 +32,9 @@ describe("[lsp-] Bug 487 LSP：配置指纹用归一后的 autoBind", () => {
  * 处无效写法也会 miss analysisCache ⇒ 全量重算（性能）＋ 行为漂移风险。
  *
  * 本文件锁：
- *  ① 非法非布尔 autoBind ⇒ 指纹与「不写 autoBind」**相同**（归一后行为相同
- *     ⇒ 指纹必须相同）；
- *  ② 合法 `autoBind: false` ⇒ 指纹**不同**（有效行为确实变了 ⇒ 必须 miss）。
+ * ① 非法非布尔 autoBind ⇒ 指纹与「不写 autoBind」**相同**（归一后行为相同
+ * ⇒ 指纹必须相同）；
+ * ② 合法 `autoBind: false` ⇒ 指纹**不同**（有效行为确实变了 ⇒ 必须 miss）。
  */
 
 
@@ -59,7 +59,7 @@ function fingerprintOf(dir: string): string {
   return projectConfigFingerprint(file);
 }
 
-describe("Bug 487 LSP：配置指纹用归一后的 autoBind", () => {
+describe("LSP：配置指纹用归一后的 autoBind", () => {
   it("非法非布尔 autoBind ⇒ 指纹与「不写」相同（行为相同 ⇒ 不得 miss 缓存）", () => {
     const noAutoBind = project({ contract: { autoBind: true } });
     const bogusAutoBind = project({ contract: { autoBind: "false" } });
@@ -99,15 +99,15 @@ describe("Bug 487 LSP：配置指纹用归一后的 autoBind", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 743 · 侧车 quickfix 不得把侧车写成重复 export
+// 侧车 quickfix 不得把侧车写成重复 export
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 743 · 侧车 quickfix 不得把侧车写成重复 export", () => {
+describe("侧车 quickfix 不得把侧车写成重复 export", () => {
 /**
- * Bug 743 —— 侧车 quickfix 的 edit **退化成头插**（`0:0 → 0:0`）⇒ 落盘后侧车
+ * 侧车 quickfix 的 edit **退化成头插**（`0:0 → 0:0`）⇒ 落盘后侧车
  * 出现重复 `export const <fn>` ⇒ 侧车整体 SyntaxError ⇒ 侧车里**所有**契约
  * 一起失效（`nudo:contract-load`）⇒ 门禁从「有诊断」变成「装载失败」。
  *
- * 根因与 Bug 735 同源：`agentToolDeps` 被提前捕获（挂载期还是 `undefined`）
+ * 根因与 同源：`agentToolDeps` 被提前捕获（挂载期还是 `undefined`）
  * ⇒ 侧车文本读不到 ⇒ `scSource` 退化成 `""` ⇒ edit 范围只剩头插一行。
  *
  * 钉：
@@ -144,7 +144,7 @@ const LIB_SC_WITHOUT_ALPHA = `import { fn, any, number, string, shape } from "@n
 export const beta = fn({ y: string() }, number());
 `;
 
-describe("Bug 743 · 侧车 quickfix 不得把侧车写成重复 export", () => {
+describe("侧车 quickfix 不得把侧车写成重复 export", () => {
   it("侧车已有该 fn 的契约 ⇒ 不下发会写坏侧车的计划", () => {
     withTempDir("nudo-lsp-743-", (dir) => {
       writeFileSync(join(dir, "lib.js"), LIB_JS, "utf-8");
@@ -193,11 +193,11 @@ describe("Bug 743 · 侧车 quickfix 不得把侧车写成重复 export", () => 
 });
 
 // ---------------------------------------------------------------------------
-// Bug 728 — 侧车契约定义只认引擎真正消费的绑定
+// 侧车契约定义只认引擎真正消费的绑定
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 728 — 侧车契约定义只认引擎真正消费的绑定", () => {
+describe("侧车契约定义只认引擎真正消费的绑定", () => {
 /**
- * Bug 728 — 侧车里**对契约毫无作用**的绑定被当成契约定义。
+ * 侧车里**对契约毫无作用**的绑定被当成契约定义。
  *
  * 症状：`lib.nudo.js` 里 `export const positive = number().gt(0)`（值模板）
  * 不是引擎消费的契约形态（引擎只消费 `fn({ … }, …)` 形态的导出绑定，
@@ -230,7 +230,7 @@ const LIB2_SIDECAR_FN = `import { fn, number } from "@nudojs/core";
 export const good = fn({ x: number().gt(0) }, number());
 `;
 
-describe("Bug 728 — 侧车契约定义只认引擎真正消费的绑定", () => {
+describe("侧车契约定义只认引擎真正消费的绑定", () => {
   it("值模板绑定不得被当成契约定义", async () => {
     h = await startLspWithFiles({
       "lib.js": LIB,
@@ -270,11 +270,11 @@ describe("Bug 728 — 侧车契约定义只认引擎真正消费的绑定", () =
 });
 
 // ---------------------------------------------------------------------------
-// Bug 765：emit 不得拿未保存的 buffer 覆盖磁盘
+// emit 不得拿未保存的 buffer 覆盖磁盘
 // ---------------------------------------------------------------------------
-describe("[lsp-] Bug 765：emit 不得拿未保存的 buffer 覆盖磁盘", () => {
+describe("emit 不得拿未保存的 buffer 覆盖磁盘", () => {
 /**
- * Bug 765 —— 「⚡ persist contract」不得按**未保存的 buffer** 写侧车。
+ * 「⚡ persist contract」不得按**未保存的 buffer** 写侧车。
  *
  * 症状（改前）：侧车守卫只挡了**侧车自己**的脏 buffer；源文件的脏 buffer
  * 没有对称守卫 ⇒ 侧车里落的是**未保存**的代码形状（3 参契约），
@@ -306,7 +306,7 @@ export function add(x, y, z) {
 }
 `;
 
-describe("Bug 765：emit 不得拿未保存的 buffer 覆盖磁盘", () => {
+describe("emit 不得拿未保存的 buffer 覆盖磁盘", () => {
   it("源文件 buffer 与磁盘不一致 ⇒ 拒写盘并给出可诊断的错误", async () => {
     await withLspServer({ "lib.js": DISK }, async ({ dir }) => {
       const file = join(dir, "lib.js");
@@ -362,9 +362,9 @@ describe("Bug 765：emit 不得拿未保存的 buffer 覆盖磁盘", () => {
 // ---------------------------------------------------------------------------
 // findFnContractInsertPos
 // ---------------------------------------------------------------------------
-describe("[lsp-] findFnContractInsertPos", () => {
+describe("findFnContractInsertPos", () => {
 /**
- * `findFnContractInsertPos` 的契约（族 23 片 A / Bug 731 收口后）：
+ * `findFnContractInsertPos` 的契约（族 23 片 A / 收口后）：
  * 插入点落进**目标形参对应的 `shape({ … })` 内部**（不再落进 `fn(…)` 的
  * **形参表**顶层 —— 那是「往形参表里多加一个形参」⇒ 契约被写坏）。
  *
@@ -477,7 +477,7 @@ describe("findFnContractInsertPos", () => {
 // ---------------------------------------------------------------------------
 // A4 sidecar unsaved buffer
 // ---------------------------------------------------------------------------
-describe("[lsp-] A4 sidecar unsaved buffer", () => {
+describe("A4 sidecar unsaved buffer", () => {
 describe("A4 sidecar unsaved buffer", () => {
   it("prefers open buffer text over disk for relative sidecar", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-a4-"));
@@ -520,7 +520,7 @@ describe("A5 go-to sidecar contract", () => {
       const src = "export function add2(x) {\n  return x + 2;\n}\n";
       writeFileSync(srcPath, src);
       // 侧车必须是**引擎真正消费**的形态：`fn({ … }, …)` 的导出绑定。
-      // 值模板（`number().int()`）不是契约（见 Bug 728），不应出现在 definition 结果里。
+      // 值模板（`number().int()`）不是契约（见 ），不应出现在 definition 结果里。
       writeFileSync(
         sidecarPath,
         'import { fn, number } from "@nudojs/core";\nexport const add2 = fn({ x: number().int() }, number());\n',

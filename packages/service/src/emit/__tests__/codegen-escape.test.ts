@@ -1,5 +1,5 @@
 /**
- * 生成代码转义回归（BUG-003）。
+ * 生成代码转义回归（）。
  * 用户可控字符串进代码/类型/注释/守卫时必须转义，否则语法错误或注入：
  * 1. guard 属性访问：`data.${key}` 裸拼 → 恒真 / SyntaxError
  * 2. dts 模板固定段：反引号 / `${` / 反斜杠 未转义 → 类型注入
@@ -272,7 +272,7 @@ describe("export binding names: reserved words and post-clean collisions", () =>
     expect(idents).toHaveLength(2);
     expect(new Set(idents).size).toBe(2);
     expect(idents).toContain("a_b");
-    // number prim 的 zod 渲染是 `.or()` 链（Bug 1001：域含 NaN / ±Infinity）
+    // number prim 的 zod 渲染是 `.or()` 链（域含 NaN / ±Infinity）
     // ⇒ 桩必须是合法成员表达式（`1.or(...)` 是非法 JS）
     const body = asScript(source).replace(/z\.number\(\)/g, "z.number");
     expect(() => new Function(body)).not.toThrow();
@@ -291,7 +291,7 @@ describe("export binding names: reserved words and post-clean collisions", () =>
     const exports: Record<string, Abs> = {};
     for (const n of names) exports[n] = num();
     const mod = absToZodSchemaModule(exports);
-    // number prim 的 zod 渲染是 `.or()` 链（Bug 1001）⇒ 桩必须是合法成员表达式
+    // number prim 的 zod 渲染是 `.or()` 链（）⇒ 桩必须是合法成员表达式
     const body = asScript(mod.source).replace(/z\.number\(\)/g, "z.number");
     expect(() => new Function(body)).not.toThrow();
     const ss = absToStandardSchemaModule(exports);
@@ -313,7 +313,7 @@ describe("export binding names: reserved words and post-clean collisions", () =>
     // each call is a separate snippet; both must be valid bindings
     expect(g1).toMatch(/export function a_b\(/);
     expect(g2).toMatch(/export function a_b\(/);
-    // 守卫产物是 .ts（带类型标注——Bug 512）⇒ 用 TS 感知装载（解析失败 ⇒ import 拒绝）
+    // 守卫产物是 .ts（带类型标注——）⇒ 用 TS 感知装载（解析失败 ⇒ import 拒绝）
     await expect(loadGeneratedModule(g1)).resolves.toBeTruthy();
     await expect(loadGeneratedModule(g2)).resolves.toBeTruthy();
   });

@@ -9,17 +9,17 @@
  *
  * 覆盖面（跨模块走 checkSource opts.modules 桥接 Abs——CLI 的
  * evalAbsModuleGraph 注入面同构；同文件走 ambient 侧车同名绑定）：
- *   (a) issue 四变体（立即比较 / const 绑定 / 字面量右元 / 变量右元）跨模块清零；
- *   (b) 同文件四变体清零（callee 自身 unproven-return 警告保留）；
- *   (c) probe 形态（纯转发 / 存 const）清零，调用方签名呈契约返回面 number；
- *   (d) callee 自身 check 不变：unproven-return 警告在场 + 推断签名（含
- *       #102 标记臂 undefined）保留；
- *   (e) 精度控制：字面量实参结果保留字面量精度（不退化为 prim 面）；
- *   (f) 返回约束精度：number().ge(0) 返回面让调用方 `d + 1 ≥ 1` /
- *       `100 - d ≤ 100`（issue 的 `1 - d/max ≤ 1` 同形上界链）可证；
- *       对照组（裸 number() 返回契约）调用方 unproven-return；
- *   (g) 对照组：无契约 callee + 无约束实参仍诚实记录 may-throw（无面可采，
- *       行为不变——zero-FP 纪律）。
+ * (a) issue 四变体（立即比较 / const 绑定 / 字面量右元 / 变量右元）跨模块清零；
+ * (b) 同文件四变体清零（callee 自身 unproven-return 警告保留）；
+ * (c) probe 形态（纯转发 / 存 const）清零，调用方签名呈契约返回面 number；
+ * (d) callee 自身 check 不变：unproven-return 警告在场 + 推断签名（含
+ * #102 标记臂 undefined）保留；
+ * (e) 精度控制：字面量实参结果保留字面量精度（不退化为 prim 面）；
+ * (f) 返回约束精度：number().ge(0) 返回面让调用方 `d + 1 ≥ 1` /
+ * `100 - d ≤ 100`（issue 的 `1 - d/max ≤ 1` 同形上界链）可证；
+ * 对照组（裸 number() 返回契约）调用方 unproven-return；
+ * (g) 对照组：无契约 callee + 无约束实参仍诚实记录 may-throw（无面可采，
+ * 行为不变——zero-FP 纪律）。
  */
 import { describe, it, expect } from "vitest";
 import {
@@ -34,7 +34,7 @@ import { l2Count, sigOf } from "./nudo-constraints.ts";
 /**
  * 签名的**多行明细**（谓词证据所在处）。
  *
- * ⚠ `display` 自 Bug 413 起是**人类面口径**的 shape 渲染（与 `nudo check`
+ * ⚠ `display` 自 起是**人类面口径**的 shape 渲染（与 `nudo check`
  * 签名行逐字同源）⇒ 不再带 term / pred 注记 ⇒ 谓词证据改看 `detail`。
  */
 function sigDetailOf(
@@ -77,7 +77,7 @@ export function vLtVar(a, b){ const d = levenshtein(a, b); const lim = 2; return
 `;
 
 /** (e)/(f)/(g) 的依赖库：gain（带 ge(0) 返回契约）/ gainPlain（对照）/
- *  echo（恒等）/ rawRel（无契约——may-throw 对照） */
+ * echo（恒等）/ rawRel（无契约——may-throw 对照） */
 const LIB = `
 export function gain(x) { return x; }
 export function gainPlain(x) { return x; }
@@ -230,7 +230,7 @@ describe("#123 (d) callee 自身 check 不变（distance.js 单独检查）", ()
     // 契约参数面上屏（callee 自身路径的既有行为，不因调用边界面改变）
     expect(sig!.paramTypes).toEqual(["string", "string"]);
     // 推断返回签名保留：#102 标记臂（undefined）未被返回面洗白。
-    // 真实臂经 Bug 48 循环携带宽化（DP 表 cell 增长 → 无上界 prim 域），
+    // 真实臂经 循环携带宽化（DP 表 cell 增长 → 无上界 prim 域），
     // 字面量枚举（0 | 1..7）折 number——`0` 臂不再单独保留（与
     // eval-loop-carried-widen 同口径）
     expect(sig!.display).toMatch(/undefined/);

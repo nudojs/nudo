@@ -1,14 +1,14 @@
 /**
- * Bug 795 回归（harvester 落盘面）：`emitEnvModule` 把 `bigint` / `symbol`
+ * 回归（harvester 落盘面）：`emitEnvModule` 把 `bigint` / `symbol`
  * 降级为 `unknown` ⇒ **内存收割与落盘产物对同一份 .d.ts 给出不同答案**。
  *
  * oracle：`tsc --strict` 认为 `bigint` / `symbol` 声明完全合法（见
  * tmp/probe/fix-r27/h6/fixture/use.ts，tsc exit=0）⇒ 收割器不得降级。
  *
  * 契约：
- *   1. 内存面（harvestDts）保留 bigint / symbol 原语；
- *   2. 落盘面（emitEnvModule 产物的**实际求值结果**）与内存面同口径；
- *   3. 磁盘投影面（harvest-json 的签名投影）同样保留这两个原语。
+ * 1. 内存面（harvestDts）保留 bigint / symbol 原语；
+ * 2. 落盘面（emitEnvModule 产物的**实际求值结果**）与内存面同口径；
+ * 3. 磁盘投影面（harvest-json 的签名投影）同样保留这两个原语。
  */
 import { describe, it, expect, afterAll } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -61,7 +61,7 @@ function fnPrims(a: unknown): { param: string | undefined; ret: string | undefin
   };
 }
 
-describe("Bug 795 — 落盘面不得把 bigint / symbol 降级成 unknown", () => {
+describe("落盘面不得把 bigint / symbol 降级成 unknown", () => {
   it("内存面保留 bigint / symbol 原语", () => {
     expect(fnPrims(env.globals.big)).toEqual({ param: "bigint", ret: "bigint" });
     expect(fnPrims(env.globals.sym)).toEqual({ param: "symbol", ret: "symbol" });

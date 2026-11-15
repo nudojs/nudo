@@ -1,5 +1,5 @@
 /**
- * 工具链接入分册回归：Bug 56（vite-plugin 默认 include）。
+ * 工具链接入分册回归：（vite-plugin 默认 include）。
  *
  * 默认 `DEFAULT_INCLUDE` 漏 `.cjs` / `.mts` / `.cts`，与 `isNudoTargetPath`
  * 的六后缀口径不一致 ⇒ 构建期诊断静默缺席（scopeDecision 早退
@@ -20,7 +20,7 @@ afterEach(() => {
   configureScope({ include: DEFAULT_INCLUDE, exclude: DEFAULT_EXCLUDE });
 });
 
-describe("Bug 56 —— 默认 include 覆盖 isNudoTargetPath 六后缀", () => {
+describe("默认 include 覆盖 isNudoTargetPath 六后缀", () => {
   it("DEFAULT_INCLUDE 恰为六后缀（与 target-path.ts 单源一致）", () => {
     expect(DEFAULT_INCLUDE).toEqual([
       "**/*.js",

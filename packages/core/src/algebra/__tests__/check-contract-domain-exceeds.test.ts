@@ -2,12 +2,12 @@
  * nudo:contract-domain-exceeds（T10b）：跨文件注入的调用点域证据 ⊄ 手写契约。
  *
  * - helper 面（checkInjectedDomainEvidence）：正例 / 负例 / null 预过滤 /
- *   conf 门槛（widened 字面量证据不触发）/ never∧never 泄漏记录不触发 /
- *   generated 与 implicit 来源不执法 / HOF fn 参数位豁免 / 证据去重与
- *   每函数每参数位最多一条
+ * conf 门槛（widened 字面量证据不触发）/ never∧never 泄漏记录不触发 /
+ * generated 与 implicit 来源不执法 / HOF fn 参数位豁免 / 证据去重与
+ * 每函数每参数位最多一条
  * - 来源分流铁律（checkSource 面）：写在被分析文件里的调用点违例（含
- *   require 跨文件被调路径）维持 nudo:constraint-violated 原码原语义，
- *   不产生 domain-exceeds
+ * require 跨文件被调路径）维持 nudo:constraint-violated 原码原语义，
+ * 不产生 domain-exceeds
  *
  * 证据门槛依据（§6）：CallRecord 无截断字段（evaluator.ts 声明仅
  * fnName/argTypes/resultType/throws/callLoc/targetModule/targetExport/

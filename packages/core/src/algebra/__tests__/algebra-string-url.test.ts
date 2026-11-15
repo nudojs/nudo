@@ -25,11 +25,11 @@ import { formatShape } from "../format/format.ts";
 import { concatString } from "../template.ts";
 
 // ---------------------------------------------------------------------------
-// Bug 37 — URL 组件写入可写性
+// URL 组件写入可写性
 // ---------------------------------------------------------------------------
-describe("[] Bug 37 — URL 组件写入可写性", () => {
+describe("URL 组件写入可写性", () => {
 /**
- * Bug 37 回归：`BUILTIN_BRAND_ACCESSORS.URL` 是 `$in` presence 表，不是
+ * 回归：`BUILTIN_BRAND_ACCESSORS.URL` 是 `$in` presence 表，不是
  * 只读声明——WHATWG URL 的 href/protocol/…/hash 都带 setter，仅 origin /
  * searchParams 是 getter-only。此前写门把整张表当 getter-only ⇒ 合法写被
  * 判确定 TypeError、签名塌 never。
@@ -38,7 +38,7 @@ describe("[] Bug 37 — URL 组件写入可写性", () => {
 
 
 
-describe("Bug 37 — URL 组件写入可写性", () => {
+describe("URL 组件写入可写性", () => {
   it("u.href = … 合法且读回新值（改前 never throws TypeError）", () => {
     const r = call(
       `export function f() { const u = new URL("https://a.example/p?q=1#h"); u.href = "https://b.example/y"; return u.href; }`,
@@ -71,11 +71,11 @@ export function f() { return new URL().href; }`);
 });
 
 // ---------------------------------------------------------------------------
-// Bug 4 — 字符串数组解构按码点
+// 字符串数组解构按码点
 // ---------------------------------------------------------------------------
-describe("[] Bug 4 — 字符串数组解构按码点", () => {
+describe("字符串数组解构按码点", () => {
 /**
- * Bug 4 回归：字符串数组解构按 **code point** 迭代（原生
+ * 回归：字符串数组解构按 **code point** 迭代（原生
  * GetIterator + String.prototype[Symbol.iterator]），不是按 UTF-16 码元
  * 下标。此前 `$iterCheck` 对字符串返回 null ⇒ readAt 回落 `$idx(str,i)`
  * ⇒ 增补平面字符解出孤立代理项。
@@ -83,7 +83,7 @@ describe("[] Bug 4 — 字符串数组解构按码点", () => {
 
 
 
-describe("Bug 4 — 字符串数组解构按码点", () => {
+describe("字符串数组解构按码点", () => {
   it("const [a] = '𠮷' ⇒ a.length === 2（改前 1）", () => {
     expect(val(`export function f() { const [a] = "\\u{20BB7}"; return a.length; }`)).toEqual({
       ok: true,
@@ -114,18 +114,18 @@ describe("Bug 4 — 字符串数组解构按码点", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 65 — URL.searchParams 回写父 URL
+// URL.searchParams 回写父 URL
 // ---------------------------------------------------------------------------
-describe("[] Bug 65 — URL.searchParams 回写父 URL", () => {
+describe("URL.searchParams 回写父 URL", () => {
 /**
- * Bug 65 回归：`URL.searchParams` 是与父 URL 同源的 **live view**——
+ * 回归：`URL.searchParams` 是与父 URL 同源的 **live view**——
  * 对它的 set / append / delete 会改写 u.search 与 u.href。此前 URL 组件
  * 是构造期快照，searchParams 的条目表变更后父 URL 不回写 ⇒ 自信错值。
  */
 
 
 
-describe("Bug 65 — URL.searchParams 回写父 URL", () => {
+describe("URL.searchParams 回写父 URL", () => {
   it("set 后 u.search 是 '?b=2'（改前 '?b=1'）", () => {
     expect(
       val(`export function f() { const u = new URL("https://x.com/a?b=1"); u.searchParams.set("b", "2"); return u.search; }`),
@@ -156,11 +156,11 @@ describe("Bug 65 — URL.searchParams 回写父 URL", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 81 — 模板插值用 ToString 判据
+// 模板插值用 ToString 判据
 // ---------------------------------------------------------------------------
-describe("[] Bug 81 — 模板插值用 ToString 判据", () => {
+describe("模板插值用 ToString 判据", () => {
 /**
- * Bug 81 回归：模板插值 `${x}` 是 **ToString（string hint）** 面，须用引擎
+ * 回归：模板插值 `${x}` 是 **ToString（string hint）** 面，须用引擎
  * 自带的 ToString 分档判据（mayToStringThrowOperand），不得复用 ToNumber 面
  * 的 noteCoercionMayThrow（对 brand/obj/fn 一律 may）⇒ Date / Map / 普通闭
  * 对象在 `${x}` 里被假记 TypeError（L2 假红）。
@@ -170,7 +170,7 @@ describe("[] Bug 81 — 模板插值用 ToString 判据", () => {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Bug 81 — 模板插值用 ToString 判据", () => {
+describe("模板插值用 ToString 判据", () => {
   for (const [name, expr] of [
     ["Date", `const d = new Date(0); return \`created at \${d}\`;`],
     ["Map", `const m = new Map(); return \`m=\${m}\`;`],
@@ -195,11 +195,11 @@ describe("Bug 81 — 模板插值用 ToString 判据", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-009：正则字面量的 flags 按规范序
+// 正则字面量的 flags 按规范序
 // ---------------------------------------------------------------------------
-describe("[] BUG-009：正则字面量的 flags 按规范序", () => {
+describe("正则字面量的 flags 按规范序", () => {
 /**
- * BUG-009 回归：正则**字面量**的 `flags` 必须按 ES 规范序
+ * 回归：正则**字面量**的 `flags` 必须按 ES 规范序
  * （`d g i m s u v y`）返回。
  *
  * 根因：`packages/core/src/algebra/builtins/regexp.ts` 的 `regexpBrandSlots`
@@ -222,7 +222,7 @@ const lit = (src: string): unknown => {
 
 const wrap = (body: string): string => `export function f() { ${body} }`;
 
-describe("BUG-009：正则字面量的 flags 按规范序", () => {
+describe("正则字面量的 flags 按规范序", () => {
   it("/a/gimuyds.flags ⇒ \"dgimsuy\"（源码序 ≠ 规范序）", () => {
     expect(lit(wrap("return /a/gimuyds.flags;"))).toBe("dgimsuy");
   });
@@ -256,11 +256,11 @@ describe("BUG-009：正则字面量的 flags 按规范序", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-058 · `String(o)` 走 string hint（不调 valueOf）
+// `String(o)` 走 string hint（不调 valueOf）
 // ---------------------------------------------------------------------------
-describe("[] BUG-058 · `String(o)` 走 string hint（不调 valueOf）", () => {
+describe("`String(o)` 走 string hint（不调 valueOf）", () => {
 /**
- * BUG-058 —— `String(x)` / 模板插值用 **default hint** 调 ToPrimitive 钩子
+ * `String(x)` / 模板插值用 **default hint** 调 ToPrimitive 钩子
  * ⇒ 原生**根本不调** `valueOf`，nudo 调了 ⇒ 用户可见副作用凭空多出。
  *
  * 根因：`objects.ts` 的 `isNullProtoWithoutCoercer`（ToPrimitive 前置闸门的
@@ -275,9 +275,9 @@ describe("[] BUG-058 · `String(o)` 走 string hint（不调 valueOf）", () => 
  * - `builtins/global.ts` 的 `String()` 面传 `"string"`；
  * - `methods.ts` 的 `String.prototype.concat` 传 `"string"`；
  * - 模板插值：降级点（`exec/transpile/expr/atom.ts` 的 TemplateLiteral）给
- *   每个插值位包 `$toStr(...)`（`exec/runtime/ops.ts`），值面沿用既有拼接臂
- *   `concatString`（纯判定，不重调钩子）⇒ `${o}` 与用户手写的 `"" + o`
- *   **不再同形**，`+` 保持 default hint。
+ * 每个插值位包 `$toStr(...)`（`exec/runtime/ops.ts`），值面沿用既有拼接臂
+ * `concatString`（纯判定，不重调钩子）⇒ `${o}` 与用户手写的 `"" + o`
+ * **不再同形**，`+` 保持 default hint。
  * string hint 下无自有 toString 钩子 ⇒ `invokeToPrimitiveHook` 直接返回
  * undefined，**不回退 valueOf**；用户 toString 返回非原语时仍回退（ES
  * OrdinaryToPrimitive 规定，node 实测）。
@@ -287,7 +287,7 @@ describe("[] BUG-058 · `String(o)` 走 string hint（不调 valueOf）", () => 
 
 
 
-describe("BUG-058 · `String(o)` 走 string hint（不调 valueOf）", () => {
+describe("`String(o)` 走 string hint（不调 valueOf）", () => {
   it("`String({valueOf})`：valueOf 不调用（native：0）", () => {
     expect(
       val(
@@ -327,7 +327,7 @@ describe("BUG-058 · `String(o)` 走 string hint（不调 valueOf）", () => {
   });
 });
 
-describe("BUG-058 · `+` 运算符面保持 default hint（回归）", () => {
+describe("`+` 运算符面保持 default hint（回归）", () => {
   it("`o + 1`：valueOf 调一次（native：1）", () => {
     expect(
       val(
@@ -353,7 +353,7 @@ describe("BUG-058 · `+` 运算符面保持 default hint（回归）", () => {
   });
 });
 
-describe("BUG-058 · 模板插值走 string hint（`$toStr` 降级位）", () => {
+describe("模板插值走 string hint（`$toStr` 降级位）", () => {
   it("`${o}`：valueOf 不调用（native：0）", () => {
     expect(
       val(
@@ -421,11 +421,11 @@ describe("BUG-058 · 模板插值走 string hint（`$toStr` 降级位）", () =>
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1040 · includes 的 fromIndex 校验
+// includes 的 fromIndex 校验
 // ---------------------------------------------------------------------------
-describe("[] Bug 1040 · includes 的 fromIndex 校验", () => {
+describe("includes 的 fromIndex 校验", () => {
 /**
- * Bug 1040 — `Array.prototype.includes(searchElement, fromIndex)` **不校验
+ * `Array.prototype.includes(searchElement, fromIndex)` **不校验
  * fromIndex**：原生 `ToIntegerOrInfinity(fromIndex)` 对 bigint / symbol
  * **确定 TypeError**（node: `[1,2,3].includes(0, 1n)` → TypeError: Cannot
  * convert a BigInt value to a number）——引擎此前完全不校验 ⇒ 判「不抛」⇒
@@ -436,7 +436,7 @@ describe("[] Bug 1040 · includes 的 fromIndex 校验", () => {
 
 
 
-describe("Bug 1040 · includes 的 fromIndex 校验", () => {
+describe("includes 的 fromIndex 校验", () => {
   it("includes(x, 1n)：原生确定 TypeError（bigint 不能转 number）", () => {
     const r = call(`export function f() { return [1,2,3].includes(0, 1n); }`);
     expect(throwsError(r.throws, "TypeError")).toBe(true);
@@ -463,28 +463,28 @@ describe("Bug 1040 · includes 的 fromIndex 校验", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 1121 — 模板字面量里的伪导出不被当成导出（不变量锁定）
+// 模板字面量里的伪导出不被当成导出（不变量锁定）
 // ---------------------------------------------------------------------------
-describe("[] Bug 1121 — 模板字面量里的伪导出不被当成导出（不变量锁定）", () => {
+describe("模板字面量里的伪导出不被当成导出（不变量锁定）", () => {
 /**
- * Bug 1121 —— `export-names.ts` 把**模板字面量**里的 `export const z` 行
+ * `export-names.ts` 把**模板字面量**里的 `export const z` 行
  * 当成导出（**报告自称「未复现」** ⇒ 本文件是**复现结论 + 不变量锁定**）。
  *
  * 复现结论：**当前架构下不可复现**（非缺陷）——
- *   `stripStaticExportDecls(js, source?)` 的 `js` **恒为 transpile 产物**
- *   （唯一调用点：exec/run.ts）。而 transpile 的发射约定是：
- *     - 字符串 / 模板字面量 / 正则字面量 ⇒ `$lit(JSON.stringify(...))` /
- *       `$tpl(JSON.stringify(...), …)` ⇒ 内容里的换行被**转义**成 `\n`
- *       ⇒ **不可能**出现「行首是 `export const z`」的裸文本；
- *     - 注释 ⇒ **整体丢弃**（不进产物）。
- *   ⇒ 正则 `^export (?:const|let) <名>`（`m` 标志，**行首锚**）永远碰不到
- *     模板 / 注释里的伪导出。
- *   源侧另有 AST 口径 `sourceStaticExportNames`（源 AST 的
- *   `ExportNamedDeclaration`）⇒ 模板字面量是**字符串字面量**，不是导出声明。
+ * `stripStaticExportDecls(js, source?)` 的 `js` **恒为 transpile 产物**
+ * （唯一调用点：exec/run.ts）。而 transpile 的发射约定是：
+ * - 字符串 / 模板字面量 / 正则字面量 ⇒ `$lit(JSON.stringify(...))` /
+ * `$tpl(JSON.stringify(...), …)` ⇒ 内容里的换行被**转义**成 `\n`
+ * ⇒ **不可能**出现「行首是 `export const z`」的裸文本；
+ * - 注释 ⇒ **整体丢弃**（不进产物）。
+ * ⇒ 正则 `^export (?:const|let) <名>`（`m` 标志，**行首锚**）永远碰不到
+ * 模板 / 注释里的伪导出。
+ * 源侧另有 AST 口径 `sourceStaticExportNames`（源 AST 的
+ * `ExportNamedDeclaration`）⇒ 模板字面量是**字符串字面量**，不是导出声明。
  *
  * ⇒ **不改源码**（不瞎改）。本文件把上述**不变量**钉死：若将来 transpile 改
- *   发射格式（例如把字符串内容原样吐出），本测试会**立刻变红** ⇒ 缺陷不会
- *   静默回归。
+ * 发射格式（例如把字符串内容原样吐出），本测试会**立刻变红** ⇒ 缺陷不会
+ * 静默回归。
  */
 
 
@@ -503,7 +503,7 @@ beforeEach(() => {
 /** 文本口径的导出名（transpile 产物 ⇒ 真实发射格式） */
 const namesOf = (src: string): string[] => stripStaticExportDecls(transpileSource(src)).names;
 
-describe("Bug 1121 — 模板字面量里的伪导出不被当成导出（不变量锁定）", () => {
+describe("模板字面量里的伪导出不被当成导出（不变量锁定）", () => {
   it("单行模板字面量里的 `export const z` 不是导出", () => {
     const src = "const s = `export const z = 1;`;\nexport const y = 2;";
     // 产物里伪导出只以「字符串内容」形态存在（JSON 转义 ⇒ 换行不成行）
@@ -543,11 +543,11 @@ describe("Bug 1121 — 模板字面量里的伪导出不被当成导出（不变
 });
 
 // ---------------------------------------------------------------------------
-// BUG-138 ReferenceError 建议的真实归因
+// ReferenceError 建议的真实归因
 // ---------------------------------------------------------------------------
-describe("[] BUG-138 ReferenceError 建议的真实归因", () => {
+describe("ReferenceError 建议的真实归因", () => {
 /**
- * BUG-138：`nudo:entry-may-throw` 的 ReferenceError 建议**无条件**断言
+ * `nudo:entry-may-throw` 的 ReferenceError 建议**无条件**断言
  * 「re-export `export { x } from` 不是局部绑定」，且标识符 `x` 是**硬编码**的：
  * - 对「未定义全局 / env 缺项 / 拼写错误」指错方向（文件里根本没有 re-export）；
  * - 即便真是 re-export 形态，点名的也未必是用户 re-export 的那个名字。
@@ -569,7 +569,7 @@ function suggestionOf(src: string): string {
   return issue!.suggestion ?? "";
 }
 
-describe("BUG-138 ReferenceError 建议的真实归因", () => {
+describe("ReferenceError 建议的真实归因", () => {
   beforeEach(() => {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
@@ -620,11 +620,11 @@ export function f() {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-157：URLSearchParams 的 @@entries 内部槽
+// URLSearchParams 的 @@entries 内部槽
 // ---------------------------------------------------------------------------
-describe("[] BUG-157：URLSearchParams 的 @@entries 内部槽", () => {
+describe("URLSearchParams 的 @@entries 内部槽", () => {
 /**
- * BUG-157 回归：`URLSearchParams` 的 `@@entries` 是**内部槽**（原生不可枚举 /
+ * 回归：`URLSearchParams` 的 `@@entries` 是**内部槽**（原生不可枚举 /
  * 不可见），不得被投影面发布成必填自有属性。
  *
  * 根因：`packages/core/src/algebra/builtins/error/web.ts` 的
@@ -650,7 +650,7 @@ const lit = (src: string): unknown => {
 };
 const wrap = (body: string): string => `export function f() { ${body} }`;
 
-describe("BUG-157：URLSearchParams 的 @@entries 内部槽", () => {
+describe("URLSearchParams 的 @@entries 内部槽", () => {
   it("@@entries 槽带 internal 标记（投影面据此剔除）", () => {
     const brand = makeUrlSearchParamsAbs($lit("a=1&b=2" as never));
     const inner = brand.shape.k === "brand" ? brand.shape.shape : undefined;
@@ -685,11 +685,11 @@ describe("BUG-157：URLSearchParams 的 @@entries 内部槽", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-160 TextEncoder member surface
+// TextEncoder member surface
 // ---------------------------------------------------------------------------
-describe("[] BUG-160 TextEncoder member surface", () => {
+describe("TextEncoder member surface", () => {
 /**
- * BUG-160：`TextEncoder` 在 PROTOTYPED_BRAND_NAMES 里登记但两张成员表只有
+ * `TextEncoder` 在 PROTOTYPED_BRAND_NAMES 里登记但两张成员表只有
  * `TextDecoder` ⇒ 成员读折 exact undefined（`e.encoding === undefined` 判 true）。
  * 修复：`new TextEncoder()` 建模 encoding/encode/encodeInto。
  */
@@ -716,7 +716,7 @@ export function decEncoding() {
 }
 `;
 
-describe("BUG-160 TextEncoder member surface", () => {
+describe("TextEncoder member surface", () => {
   it("encoding / encode / encodeInto are present", () => {
     const r = checkSource("/t/bug-160.js", SRC, pTrue);
     expect(sigOf(r, "encIsUndef")).toBe("false");
@@ -732,11 +732,11 @@ describe("BUG-160 TextEncoder member surface", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-163：URL brand 的 host 槽
+// URL brand 的 host 槽
 // ---------------------------------------------------------------------------
-describe("[] BUG-163：URL brand 的 host 槽", () => {
+describe("URL brand 的 host 槽", () => {
 /**
- * BUG-163 回归（`host` 面）：`URL` brand 的 `host` 槽此前漏建模 ⇒ 成员读折
+ * 回归（`host` 面）：`URL` brand 的 `host` 槽此前漏建模 ⇒ 成员读折
  * **exact undefined**（假绿：`u.host === undefined` 恒 true）、`in` 面折
  * **exact false**（假红：宿主 true）。
  *
@@ -761,7 +761,7 @@ const lit = (src: string): unknown => {
 };
 const wrap = (body: string): string => `export function f() { const u = new URL("http://example.com/a"); ${body} }`;
 
-describe("BUG-163：URL brand 的 host 槽", () => {
+describe("URL brand 的 host 槽", () => {
   it("u.host ⇒ \"example.com\"（不是 undefined）", () => {
     expect(lit(wrap("return u.host;"))).toBe("example.com");
   });
@@ -788,20 +788,20 @@ describe("BUG-163：URL brand 的 host 槽", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-174：new TextDecoder(label, options) 的 options 位
+// new TextDecoder(label, options) 的 options 位
 // ---------------------------------------------------------------------------
-describe("[] BUG-174：new TextDecoder(label, options) 的 options 位", () => {
+describe("new TextDecoder(label, options) 的 options 位", () => {
 /**
- * BUG-174：`new TextDecoder(label, options?)` 的 **options 位**此前被整段
+ * `new TextDecoder(label, options?)` 的 **options 位**此前被整段
  * 丢弃（建模函数只收 label）⇒ 宿主必抛的 `TypeError: The "options"
  * argument must be of type object.` 漏判（假绿）。
  *
  * 宿主 node v26.10.0 实测口径（本文件全部钉死）：
  * - `new TextDecoder("utf-8", "extra")` / `(…, 42)` → 确定 TypeError；
  * - `(…, undefined)` / `(…, null)` / `(…, {fatal:true})` / 函数 / 数组 →
- *   合法（null ≡ 空字典）；
+ * 合法（null ≡ 空字典）；
  * - label ToString 先于 options 字典转换：
- *   `new TextDecoder(Symbol(), 42)` → Symbol 的 TypeError（不是 options 的）；
+ * `new TextDecoder(Symbol(), 42)` → Symbol 的 TypeError（不是 options 的）；
  * - 抽象 prim options 恒非对象 → 确定 TypeError；any/含对象臂的 union → may。
  */
 
@@ -864,7 +864,7 @@ function evalWithOptions(optionsAbs: (typeof anyAbs) | undefined): {
   };
 }
 
-describe("BUG-174：new TextDecoder(label, options) 的 options 位", () => {
+describe("new TextDecoder(label, options) 的 options 位", () => {
   it("非对象字面量 options ⇒ 确定抛 TypeError（此前假绿）", () => {
     for (const src of [
       `export function f() { return new TextDecoder("utf-8", "extra"); }`,
@@ -932,11 +932,11 @@ describe("BUG-174：new TextDecoder(label, options) 的 options 位", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-183：btoa/atob 缺参 ⇒ 确定 TypeError
+// btoa/atob 缺参 ⇒ 确定 TypeError
 // ---------------------------------------------------------------------------
-describe("[] BUG-183：btoa/atob 缺参 ⇒ 确定 TypeError", () => {
+describe("btoa/atob 缺参 ⇒ 确定 TypeError", () => {
 /**
- * BUG-183：`btoa()` / `atob()` **少传必填实参**被折叠成「显式 undefined」
+ * `btoa()` / `atob()` **少传必填实参**被折叠成「显式 undefined」
  * ⇒ `btoa()` 假绿 + 返回值错（`"dW5kZWZpbmVk"`，宿主抛 TypeError）、
  * `atob()` 抛错种类错（引擎 InvalidCharacterError / 宿主 TypeError ⇒ L2
  * 建议 `@nudo:throws InvalidCharacterError` 不可执行）。
@@ -950,7 +950,7 @@ describe("[] BUG-183：btoa/atob 缺参 ⇒ 确定 TypeError", () => {
 
 
 
-describe("BUG-183：btoa/atob 缺参 ⇒ 确定 TypeError", () => {
+describe("btoa/atob 缺参 ⇒ 确定 TypeError", () => {
   it("btoa() 折 never + TypeError（此前假绿返回 \"dW5kZWZpbmVk\"）", () => {
     const r = call(`export function f() { return btoa(); }`);
     expect(isNever(r.result)).toBe(true);
@@ -999,11 +999,11 @@ describe("BUG-183：btoa/atob 缺参 ⇒ 确定 TypeError", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUG-278：inherited→own 覆写后 gOPN 次序
+// inherited→own 覆写后 gOPN 次序
 // ---------------------------------------------------------------------------
-describe("[] BUG-278：inherited→own 覆写后 gOPN 次序", () => {
+describe("inherited→own 覆写后 gOPN 次序", () => {
 /**
- * BUG-278 回归：Error 实例上公有覆写原型链 `inherited` 槽 `name` 后，
+ * 回归：Error 实例上公有覆写原型链 `inherited` 槽 `name` 后，
  * `Object.getOwnPropertyNames` 的**次序**必须与宿主一致。
  *
  * 根因：`packages/core/src/algebra/exec/runtime/containers/member.ts`（`$set`
@@ -1025,7 +1025,7 @@ const lit = (src: string): unknown => {
   return r.ok ? r.value : undefined;
 };
 
-describe("BUG-278：inherited→own 覆写后 gOPN 次序", () => {
+describe("inherited→own 覆写后 gOPN 次序", () => {
   it("e.name = \"CustomError\" ⇒ [\"stack\",\"message\",\"name\"]（宿主次序）", () => {
     const r = call(`export function f() {
       const e = new TypeError("boom");
@@ -1078,11 +1078,11 @@ describe("BUG-278：inherited→own 覆写后 gOPN 次序", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 289：export * as "<名>" 被转译（模块不再整体求值失败）
+// export * as "<名>" 被转译（模块不再整体求值失败）
 // ---------------------------------------------------------------------------
-describe("[] Bug 289：export * as \"<名>\" 被转译（模块不再整体求值失败）", () => {
+describe("export * as \"<名>\" 被转译（模块不再整体求值失败）", () => {
 /**
- * Bug 289 —— `export * as "<任意名>" from "..."`（ES2022 任意模块导出名）
+ * `export * as "<任意名>" from "..."`（ES2022 任意模块导出名）
  * **不被转译** ⇒ 转译产物是**非法 JS** ⇒ **整个模块**求值失败 ⇒ 全部
  * 导出被静默清空 ⇒ L1 门禁假绿。
  *
@@ -1100,7 +1100,7 @@ describe("[] Bug 289：export * as \"<名>\" 被转译（模块不再整体求�
 const num = (v: number) =>
   abs({ k: "prim", type: "number" }, { op: "lit", value: v }, pTrue_____pred_ts, "exact");
 
-describe("Bug 289：export * as \"<名>\" 被转译（模块不再整体求值失败）", () => {
+describe("export * as \"<名>\" 被转译（模块不再整体求值失败）", () => {
   it("字符串字面量导出名：模块正常求值且带出该导出", () => {
     const src = `export * as "my-ns" from "./dep.js";
 export function f() { return 5; }`;
@@ -1135,11 +1135,11 @@ export function f() { return 5; }`;
 });
 
 // ---------------------------------------------------------------------------
-// Bug 365：Error 家族覆盖用户自定义 Error 子类
+// Error 家族覆盖用户自定义 Error 子类
 // ---------------------------------------------------------------------------
-describe("[] Bug 365：Error 家族覆盖用户自定义 Error 子类", () => {
+describe("Error 家族覆盖用户自定义 Error 子类", () => {
 /**
- * Bug 365 —— `@nudo:throws Error` / `package.json#nudo.check.ignoreThrows =
+ * `@nudo:throws Error` / `package.json#nudo.check.ignoreThrows =
  * ["Error"]` **盖不住用户自定义的 Error 子类** ⇒ L2 门禁**假红**（文档承诺
  * 「与 instanceof 语义一致 / 覆盖全部子类」）。
  *
@@ -1172,7 +1172,7 @@ class LeafErr extends MidErr {}
 export function boom() { throw new LeafErr("x"); }
 `;
 
-describe("Bug 365：Error 家族覆盖用户自定义 Error 子类", () => {
+describe("Error 家族覆盖用户自定义 Error 子类", () => {
   it("@nudo:throws Error 盖住用户自定义 Error 子类", () => {
     const r = checkSource(
       "my-err.js",
@@ -1226,28 +1226,28 @@ export function boom() { throw new MyError("x"); }
 });
 
 // ---------------------------------------------------------------------------
-// Bug 402: 字符串 union 拼接必须是成员级并联
+// 字符串 union 拼接必须是成员级并联
 // ---------------------------------------------------------------------------
-describe("[] Bug 402: 字符串 union 拼接必须是成员级并联", () => {
+describe("字符串 union 拼接必须是成员级并联", () => {
 /**
- * Bug 402 —— 字符串 union 拼接**伪造不可能字面量**（成员级并联回归钉）
+ * 字符串 union 拼接**伪造不可能字面量**（成员级并联回归钉）
  *
  * 根因（core/src/algebra/template.ts）：
- *   `coerceToStringParts` 的 sum 分支把每个 union 成员的 parts **平铺进同
- *   一个数组**（`parts.push(...mp)`）⇒ 丢掉「成员级并联」信息；`concatString`
- *   再把两侧 parts 合成**单个** template；`createTemplateAbs` 对全字面量
- *   parts 折叠成**一个** lit ⇒ `("a"|"b") + "!"` 折成 `"ab!"`（原生只有
- *   `"a!"` / `"b!"` ⇒ `"ab!"` 是**不含任何真实可能值**的确定字面量）。
+ * `coerceToStringParts` 的 sum 分支把每个 union 成员的 parts **平铺进同
+ * 一个数组**（`parts.push(...mp)`）⇒ 丢掉「成员级并联」信息；`concatString`
+ * 再把两侧 parts 合成**单个** template；`createTemplateAbs` 对全字面量
+ * parts 折叠成**一个** lit ⇒ `("a"|"b") + "!"` 折成 `"ab!"`（原生只有
+ * `"a!"` / `"b!"` ⇒ `"ab!"` 是**不含任何真实可能值**的确定字面量）。
  *
  * 修法：
- *   - `coerceToStringParts` 保留「成员 → parts 数组」的边界（模块私有）
- *   - `concatString` 对 sum 侧做**成员级叉乘** ⇒ 产出 `sum` 而不是单个 `lit`
- *   - 上游触发点（core/src/algebra/arithmetic/addsub.ts）：`add()` 的字符串
- *     快路径在「任一侧是 sum」时必须让位给 `distributeSumBinOp`（否则正确
- *     的并联分发器根本没机会介入）
+ * - `coerceToStringParts` 保留「成员 → parts 数组」的边界（模块私有）
+ * - `concatString` 对 sum 侧做**成员级叉乘** ⇒ 产出 `sum` 而不是单个 `lit`
+ * - 上游触发点（core/src/algebra/arithmetic/addsub.ts）：`add()` 的字符串
+ * 快路径在「任一侧是 sum」时必须让位给 `distributeSumBinOp`（否则正确
+ * 的并联分发器根本没机会介入）
  *
  * 原生对照：f("a")="a!" / f("b")="b!"；g("a")="v=a" / g("b")="v=b"；
- *            h("a")="a-!" / h("b")="b-!"。
+ * h("a")="a-!" / h("b")="b-!"。
  */
 
 
@@ -1268,7 +1268,7 @@ function memberLits(a: Abs): unknown[] {
   return members.map((m) => (m.term?.op === "lit" ? m.term.value : undefined));
 }
 
-describe("Bug 402: 字符串 union 拼接必须是成员级并联", () => {
+describe("字符串 union 拼接必须是成员级并联", () => {
   it("concatString: (\"a\"|\"b\") + \"!\" ⇒ \"a!\" | \"b!\"（旧实现折成 \"ab!\"）", () => {
     const r = concatString(strUnion("a", "b"), strLit("!"));
     expect(r.shape.k).toBe("sum");
@@ -1316,37 +1316,37 @@ describe("Bug 402: 字符串 union 拼接必须是成员级并联", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 449: matchAll(<非 RegExp>) → RegExpCreate(ToString(pattern), "g") 迭代器
+// matchAll(<非 RegExp>) → RegExpCreate(ToString(pattern), "g") 迭代器
 // ---------------------------------------------------------------------------
-describe("[] Bug 449: matchAll(<非 RegExp>) → RegExpCreate(ToString(pattern), \"g\") 迭代器", () => {
+describe("matchAll(<非 RegExp>) → RegExpCreate(ToString(pattern), \"g\") 迭代器", () => {
 /**
- * Bug 449 回归：`String.prototype.matchAll(<非 RegExp 实参>)` **不得**折**确定**
+ * 回归：`String.prototype.matchAll(<非 RegExp 实参>)` **不得**折**确定**
  * TypeError（FALSE-THROW）。
  *
  * 原生语义（ES2023 String.prototype.matchAll，node v26.10.0 逐字实测）：
  * - 实参**确定是 RegExp**（IsRegExp(pattern) 为 true）⇒ 取其 flags；flags 确定
- *   不含 "g" ⇒ **确定 TypeError**（"String.prototype.matchAll argument must not
- *   be a non-global regular expression"）。
+ * 不含 "g" ⇒ **确定 TypeError**（"String.prototype.matchAll argument must not
+ * be a non-global regular expression"）。
  * - 实参**确定不是 RegExp** ⇒ matcher = RegExpCreate(ToString(pattern), "g")
- *   （**"g" 由算法自补**）⇒ 返回**迭代器**；模式非法 ⇒ SyntaxError。
- *   ⇒ "abc".matchAll("b") / matchAll(1) / matchAll() / matchAll(null) 全部
- *   **正常返回迭代器**（原生实测命中数 1 / 1 / 4 / 0，见各断言注释）。
+ * （**"g" 由算法自补**）⇒ 返回**迭代器**；模式非法 ⇒ SyntaxError。
+ * ⇒ "abc".matchAll("b") / matchAll(1) / matchAll() / matchAll(null) 全部
+ * **正常返回迭代器**（原生实测命中数 1 / 1 / 4 / 0，见各断言注释）。
  *
  * 改前（缺陷链闭合）：
  * - class-regex.ts 的 matchAll 尾段：非 brand pattern ⇒ `return undefined`
- *   （"本臂不接管"哨兵）⇒ 回落 methods.ts 的抽象臂；
+ * （"本臂不接管"哨兵）⇒ 回落 methods.ts 的抽象臂；
  * - methods.ts 的 matchAllAbstractArm：把「无 g 旗标 ⇒ TypeError」从「实参
- *   **确定是 RegExp**」错误推广到**所有非 RegExp 实参** ⇒ `definiteNonRegExp`
- *   **硬抛 TypeError**；
+ * **确定是 RegExp**」错误推广到**所有非 RegExp 实参** ⇒ `definiteNonRegExp`
+ * **硬抛 TypeError**；
  * ⇒ 结果：shape.k=never + throws=brand:TypeError（假抛 ⇒ L2 entry-may-throw
- *   假红，且真实返回的迭代器被折成「永不返回」）。
+ * 假红，且真实返回的迭代器被折成「永不返回」）。
  *
  * 改后：
  * - class-regex.ts（字面量接收者 + 字面量 pattern）⇒ new RegExp(strPat, "g")
- *   **真迭代** ⇒ RegExpMatchIterator（元素 = **RegExpExecArray 匹配数组**，
- *   不是字符串）；strPat 编译失败 ⇒ **确定 SyntaxError**（不回落哨兵）。
+ * **真迭代** ⇒ RegExpMatchIterator（元素 = **RegExpExecArray 匹配数组**，
+ * 不是字符串）；strPat 编译失败 ⇒ **确定 SyntaxError**（不回落哨兵）。
  * - methods.ts（抽象接收者 / 抽象 pattern）⇒ **迭代器**（元素域保守 unknown，
- *   协议面齐），**不抛** TypeError；RegExp brand 无 g 的定抛**保留**。
+ * 协议面齐），**不抛** TypeError；RegExp brand 无 g 的定抛**保留**。
  *
  * ⚠ 协议面（迭代器协议：next / @@iterator / @@toStringTag）与元素域（匹配
  * 数组）**分列**：前者由 matchIteratorAbs 保证，后者由 matchResultAbs 保证。
@@ -1364,7 +1364,7 @@ function v(src: string, args: Abs___nudojs_core[] = []): unknown {
   return r.ok ? r.value : undefined;
 }
 
-describe("Bug 449: matchAll(<非 RegExp>) → RegExpCreate(ToString(pattern), \"g\") 迭代器", () => {
+describe("matchAll(<非 RegExp>) → RegExpCreate(ToString(pattern), \"g\") 迭代器", () => {
   it("字符串 pattern → 迭代器（原生 \"abc\".matchAll(\"b\") 命中 1）", () => {
     const r = call(`export function f() { return [... "abc".matchAll("b")].length; }`);
     expect(isNever(r.result)).toBe(false);
@@ -1462,7 +1462,7 @@ describe("Bug 449: matchAll(<非 RegExp>) → RegExpCreate(ToString(pattern), \"
   });
 });
 
-describe("Bug 449: 抽象接收者的 matchAll 抽象臂（methods.ts matchAllAbstractArm）", () => {
+describe("抽象接收者的 matchAll 抽象臂（methods.ts matchAllAbstractArm）", () => {
   it("抽象 string 接收者 + 字符串 pattern → 迭代器（**不抛** TypeError）", () => {
     const r = call(`export function f(s) { return s.matchAll("b"); }`, "f", [strAbs]);
     expect(isNever(r.result)).toBe(false);

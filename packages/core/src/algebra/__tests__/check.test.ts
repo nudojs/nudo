@@ -45,7 +45,7 @@ function scale(x) { return add(x, 1); }
 `;
     const report = checkSource("t.js", withStdImport(src), pTrue, stdOpts);
     const scale = report.signatures.find((f) => f.name === "scale");
-    // α 名证据在 `detail` 的 term 行（`display` 自 Bug 413 起是人类面口径的
+    // α 名证据在 `detail` 的 term 行（`display` 自 起是人类面口径的
     // shape 渲染，不再带 term 注记）
     expect(scale!.detail).toContain("A1");
   });

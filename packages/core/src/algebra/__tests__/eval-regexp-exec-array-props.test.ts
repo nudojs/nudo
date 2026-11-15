@@ -1,5 +1,5 @@
 /**
- * Bug 11（运行时内建建模）：RegExp#exec / String#match 结果的
+ * （运行时内建建模）：RegExp#exec / String#match 结果的
  * .index/.input/.groups 折 undefined——exec 分支只返回 capture tuple
  * （{k:"tuple", elements}），丢失 RegExpExecArray 的附加属性。
  * 原生：m.index = 匹配下标、m.input = 原串、m.groups = 具名组对象
@@ -15,7 +15,7 @@ import { describe, it, expect } from "vitest";
 import { type Abs, litValue } from "@nudojs/core";
 import { call, isNever, tupleEls } from "./eval-helpers.ts";
 
-describe("Bug 11: exec/match result carries index/input/groups", () => {
+describe("exec/match result carries index/input/groups", () => {
   it("exec().index → 匹配下标", () => {
     const r = call(
       `export function f1() { const m = /a(b)/.exec("xab"); return m.index; }`,

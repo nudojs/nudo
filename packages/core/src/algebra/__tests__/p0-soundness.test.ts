@@ -106,7 +106,7 @@ export function f(flag) {
 });
 
 describe("P0.3 Array#at index semantics", () => {
-  // at(-1)/at(1)/OOB/抽象下标回归已由 eval-array-methods-w7 Bug 67 控制组
+  // at(-1)/at(1)/OOB/抽象下标回归已由 eval-array-methods-w7 控制组
   // 同源码覆盖；此处仅保留 w7 未以同源码覆盖的显式字面量下标 at(0)。
   it("a.at(0) is first element", () => {
     const r = call(

@@ -1,5 +1,5 @@
 /**
- * Bug 43：FinalizationRegistry.prototype.register/unregister 此前落空 brand
+ * FinalizationRegistry.prototype.register/unregister 此前落空 brand
  * 兜底不校验 target（FCR 实例是 $new 空 brand 兜底产物，$invokeInner 品牌
  * 派发直达 evalBuiltinInstanceMethod 但无 case → 不抛、不记 may，L2 漏报）。
  * 修复：register 的 target 与「给出且非 undefined」的 unregisterToken、

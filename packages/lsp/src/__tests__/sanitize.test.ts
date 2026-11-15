@@ -1,5 +1,5 @@
 /**
- * sanitizeErrorMessage（BUG-023 / S5-005）：
+ * sanitizeErrorMessage（/ S5-005）：
  * LSP 诊断 / agent 工具结果会进 IDE 与远端 LLM
  * 会话——原始 err.message 的绝对路径等于回传
  * 工作区布局。
@@ -14,7 +14,7 @@ import { checkTool, type AgentToolDeps } from "../agent-tools.ts";
 import { makeValidateDeps } from "./helpers.ts";
 import type { MarkupContent } from "vscode-languageserver/node";
 
-describe("sanitizeErrorMessage (BUG-023)", () => {
+describe("sanitizeErrorMessage ()", () => {
   it("replaces home-directory prefix with ~", () => {
     const home = homedir();
     const msg = `ENOENT: no such file or directory, open '${home}/proj/a.js'`;

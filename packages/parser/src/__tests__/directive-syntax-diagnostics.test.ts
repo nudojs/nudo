@@ -333,7 +333,7 @@ const b = 2;`);
   });
 });
 
-describe("BUG-015 S4-003: unclosed argument list no longer silently dropped", () => {
+describe("S4-003: unclosed argument list no longer silently dropped", () => {
   it(`/* @nudo:case "a" (1 */ → zero cases + unclosed diagnostic`, () => {
     const { fns, diags } = extractWithDiags(`/* @nudo:case "a" (1 */
 function f(x) { return x; }`);
@@ -401,7 +401,7 @@ function f(x) { return x; }`);
   });
 });
 
-describe("BUG-015 S4-004: tag/payload separation stays on one line", () => {
+describe("S4-004: tag/payload separation stays on one line", () => {
   it("empty @nudo:case tag does not glue the next line into a case", () => {
     const { fns, diags } = extractWithDiags(`/*
 @nudo:case
@@ -501,7 +501,7 @@ function f(x) { return x; }`);
   });
 });
 
-describe("BUG-015 S4-006: inline directives accept JSDoc `* ` continuation lines", () => {
+describe("S4-006: inline directives accept JSDoc `* ` continuation lines", () => {
   it("/**\\n * @nudo:as number()\\n */ → one as, prim type, no diagnostics", () => {
     const { dirs, diags } = extractInlineWithDiags(`/**
  * @nudo:as number()

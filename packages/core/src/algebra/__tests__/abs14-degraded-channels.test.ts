@@ -9,7 +9,7 @@
  * - 替换结果 ≡ `runBodyPath` 的真实 body 结论（逐字节）；
  * - 只有 `unknown #opaque` 会被碰，已有结论不许被覆盖；
  * - 无摘要 / 实参不同构 / 完整前置不被蕴含 / formal 数不符 / 变元未映射 ⇒
- *   一律 fail-closed，绝不静默放宽；
+ * 一律 fail-closed，绝不静默放宽；
  * - 预算截断样本在通道开启下仍是 `unknown #opaque` 且不写摘要（无假绿）；
  * - 三条通道默认全启用。
  */

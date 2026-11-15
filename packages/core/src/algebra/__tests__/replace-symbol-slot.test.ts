@@ -1,5 +1,5 @@
 /**
- * Bug 81 回归：String.prototype.replace/replaceAll 的 @@replace 槽委托。
+ * 回归：String.prototype.replace/replaceAll 的 @@replace 槽委托。
  *
  * 原生 replace/replaceAll 第一步 GetMethod(pattern, @@replace)——
  * `re[Symbol.replace] = fn` 覆盖宿主正则分派；此前 RegExp brand 直接重建
@@ -13,7 +13,7 @@
 import { describe, it, expect } from "vitest";
 import { val, call, throwsError } from "./eval-helpers.ts";
 
-describe("Bug 81: replace/replaceAll dispatches the @@replace slot", () => {
+describe("replace/replaceAll dispatches the @@replace slot", () => {
   it("hook overrides the host regex path", () => {
     expect(
       val(`export function f() { const re = /a/; re[Symbol.replace] = () => "X"; return "aa".replace(re, "b"); }`),

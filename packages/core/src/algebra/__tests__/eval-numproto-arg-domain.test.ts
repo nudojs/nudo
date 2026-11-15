@@ -1,5 +1,5 @@
 /**
- * 求值引擎 Number.prototype digits/radix 实参域检查提升（Bug 107）：
+ * 求值引擎 Number.prototype digits/radix 实参域检查提升（）：
  * 此前字面量实参域检查在各方法臂的接收者字面量守卫之内——抽象 number
  * 接收者（Math.random() 等）先折抽象 string 早退，Math.random().toFixed(500)
  * 的确定 RangeError 被漏（throws 域 never 假 total）。修复：字面量
@@ -22,7 +22,7 @@ const litOf = (src: string): unknown => {
   return r.ok ? r.value : undefined;
 };
 
-describe("Bug 107: literal digits/radix domain hoisted above receiver guard", () => {
+describe("literal digits/radix domain hoisted above receiver guard", () => {
   it("抽象 number 接收者（Math.random()）+ 界外字面量 → definite RangeError", () => {
     for (const src of [
       `export function f() { return Math.random().toFixed(500); }`,

@@ -1,11 +1,11 @@
 /**
- * BUG-024：variadic 旗标（`--from <paths…>` 等）吞噬
+ * variadic 旗标（`--from <paths…>` 等）吞噬
  * 其后的位置参数——定向 usage error + `--` 终止符。
  */
 import { describe, it, expect } from "vitest";
 import { runCliNode as runCli } from "./helpers/run-cli.ts";
 
-describe("BUG-024: variadic 旗标吞噬位置参数", () => {
+describe("variadic 旗标吞噬位置参数", () => {
   it("check --from a.js target.js → targeted usage error pointing at --from", () => {
     const r = runCli(["check", "--from", "a.js", "target.js"]);
     expect(r.status).toBe(1);

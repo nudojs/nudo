@@ -21,11 +21,11 @@ import { brandOf, objAbs, prim } from "../abs-helpers.ts";
 import { inherits as nodeInherits, promisify as nodePromisify, types as hostTypes } from "node:util";
 
 // ---------------------------------------------------------------------------
-// Bug 863 — node env 全局清单补齐（未建模构造器不再铸空 brand）
+// node env 全局清单补齐（未建模构造器不再铸空 brand）
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 863 — node env 全局清单补齐（未建模构造器不再铸空 brand）", () => {
+describe("node env 全局清单补齐（未建模构造器不再铸空 brand）", () => {
 /**
- * Bug 863 — env node：全局清单只覆盖 41/139；未建模的宿主构造器被 core 的
+ * env node：全局清单只覆盖 41/139；未建模的宿主构造器被 core 的
  * `$new` 兜底铸成**空 brand**（闭 obj 无槽）⇒ 成员读 exact undefined ⇒
  * 再链式读一次就成「定抛 TypeError」（假红）；未建模的**全局对象**
  * （crypto / performance / navigator …）退化成 unknown + 误导诊断
@@ -78,7 +78,7 @@ function check(src: string) {
   });
 }
 
-describe("Bug 863 — node env 全局清单补齐（未建模构造器不再铸空 brand）", () => {
+describe("node env 全局清单补齐（未建模构造器不再铸空 brand）", () => {
   it("原生 oracle：报告点名的 17 个构造器在真实 Node 上确实存在", () => {
     // 报告的 17 个构造器（可构造的）+ 真实 Node 上确实可 new
     // 宿主版本漂移：直接引用标识符在缺席宿主上是 ReferenceError（URLPattern
@@ -166,15 +166,15 @@ describe("Bug 863 — node env 全局清单补齐（未建模构造器不再铸�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 155 — node env declares host functions as functions
+// node env declares host functions as functions
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 155 — node env declares host functions as functions", () => {
+describe("node env declares host functions as functions", () => {
 /**
- * 族 15 · BUG-155 — node env 把宿主上的**函数 / 构造器**声明成 brand（数据值）：
+ * 族 15 · node env 把宿主上的**函数 / 构造器**声明成 brand（数据值）：
  * - `AbortSignal.any`（静态工厂）⇒ `typeof` 折 `"object"`（宿主 `"function"`）；
  * - `WebAssembly.Module/Instance/Memory/Table/Global` 与
- *   `Temporal.Instant/PlainDate/PlainTime/PlainDateTime/ZonedDateTime`
- *   （可 `new` 的构造器）⇒ 同样折 `"object"`。
+ * `Temporal.Instant/PlainDate/PlainTime/PlainDateTime/ZonedDateTime`
+ * （可 `new` 的构造器）⇒ 同样折 `"object"`。
  *
  * 后果：`if (typeof X.y === "function")` 的特性探测分支被判**恒假**
  * ⇒ 用户会据此删掉真实有效的分支（自信的错字面量）。
@@ -205,7 +205,7 @@ const MEMBERS: Array<[label: string, expr: string]> = [
  * 宿主面随 Node 版本漂移：`Temporal` 全局是 Node 26 才进 ESM 全局面的
  * （Node 24 没有）⇒ `typeof Temporal.Instant` 在旧宿主上直接 `ReferenceError`。
  * env 的 node 面按**最新宿主**声明 ⇒ `Temporal` 是登记过的「超前声明」
- * （见 env-bug-61 的 `DECLARED_AHEAD_OF_HOST` 漂移闸）⇒ 宿主缺失按 `null` 记，
+ * （见 env-的 `DECLARED_AHEAD_OF_HOST` 漂移闸）⇒ 宿主缺失按 `null` 记，
  * 不许让旧宿主把整个 oracle 炸掉。
  */
 function hostMemberTypes(): Array<string | null> {
@@ -218,7 +218,7 @@ function hostMemberTypes(): Array<string | null> {
   return JSON.parse(out) as Array<string | null>;
 }
 
-describe("Bug 155 — node env declares host functions as functions", () => {
+describe("node env declares host functions as functions", () => {
   it("host oracle: every host-provided member is typeof function", () => {
     const types = hostMemberTypes();
     expect(types).toHaveLength(MEMBERS.length);
@@ -261,11 +261,11 @@ describe("Bug 155 — node env declares host functions as functions", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 875 — process.hrtime 是可调用的（不再 unknown + 误导诊断）
+// process.hrtime 是可调用的（不再 unknown + 误导诊断）
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 875 — process.hrtime 是可调用的（不再 unknown + 误导诊断）", () => {
+describe("process.hrtime 是可调用的（不再 unknown + 误导诊断）", () => {
 /**
- * Bug 875 — node env 的 `process.hrtime` 被建模成**不可调用的对象** ⇒
+ * node env 的 `process.hrtime` 被建模成**不可调用的对象** ⇒
  * `process.hrtime()` 退化成 `unknown` + **误导诊断** `nudo:unknown-inference`
  * （把责任指向用户代码）。
  *
@@ -311,7 +311,7 @@ function check(src: string) {
   });
 }
 
-describe("Bug 875 — process.hrtime 是可调用的（不再 unknown + 误导诊断）", () => {
+describe("process.hrtime 是可调用的（不再 unknown + 误导诊断）", () => {
   it("原生 oracle：process.hrtime 是函数，返回 [seconds, nanos]；bigint() 返回 bigint", () => {
     expect(typeof process.hrtime).toBe("function");
     const t = process.hrtime();
@@ -346,11 +346,11 @@ describe("Bug 875 — process.hrtime 是可调用的（不再 unknown + 误导�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 892 — process 再补 7 个真实成员（不再定抛 TypeError）
+// process 再补 7 个真实成员（不再定抛 TypeError）
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 892 — process 再补 7 个真实成员（不再定抛 TypeError）", () => {
+describe("process 再补 7 个真实成员（不再定抛 TypeError）", () => {
 /**
- * Bug 892 — env node 的 `process` 成员表**再缺 7 个真实成员**
+ * env node 的 `process` 成员表**再缺 7 个真实成员**
  * （`umask` / `getActiveResourcesInfo` / `resourceUsage` / `availableMemory` /
  * `loadEnvFile` / `getBuiltinModule` / `constrainedMemory`）⇒ 正确代码拿到 7 处
  * `nudo:entry-may-throw` 假红。
@@ -390,7 +390,7 @@ function check(src: string) {
   });
 }
 
-describe("Bug 892 — process 再补 7 个真实成员（不再定抛 TypeError）", () => {
+describe("process 再补 7 个真实成员（不再定抛 TypeError）", () => {
   it("原生 oracle：七个成员在真实 Node 上都存在", () => {
     expect(typeof process.umask).toBe("function");
     expect(typeof process.getActiveResourcesInfo).toBe("function");
@@ -438,11 +438,11 @@ describe("Bug 892 — process 再补 7 个真实成员（不再定抛 TypeError�
 });
 
 // ---------------------------------------------------------------------------
-// Bug 876 — process 补 5 个真实成员（不再定抛 TypeError）
+// process 补 5 个真实成员（不再定抛 TypeError）
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 876 — process 补 5 个真实成员（不再定抛 TypeError）", () => {
+describe("process 补 5 个真实成员（不再定抛 TypeError）", () => {
 /**
- * Bug 876 — node env 的 `process` 成员表**缺 5 个真实成员**
+ * node env 的 `process` 成员表**缺 5 个真实成员**
  * （`emitWarning` / `abort` / `kill` / `release` / `features`）⇒ 正确代码拿到
  * 5 处 `nudo:entry-may-throw` 假红（成员读出 exact undefined ⇒ 调用 undefined
  * ⇒ 引擎**证明**「必抛 TypeError」）。
@@ -483,7 +483,7 @@ function check(src: string) {
   });
 }
 
-describe("Bug 876 — process 补 5 个真实成员（不再定抛 TypeError）", () => {
+describe("process 补 5 个真实成员（不再定抛 TypeError）", () => {
   it("原生 oracle：五个成员在真实 Node 上都存在", () => {
     expect(typeof process.emitWarning).toBe("function");
     expect(typeof process.abort).toBe("function");
@@ -521,11 +521,11 @@ describe("Bug 876 — process 补 5 个真实成员（不再定抛 TypeError）"
 });
 
 // ---------------------------------------------------------------------------
-// Bug 869 — process.stdin 成员表补全（不再定抛 TypeError）
+// process.stdin 成员表补全（不再定抛 TypeError）
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 869 — process.stdin 成员表补全（不再定抛 TypeError）", () => {
+describe("process.stdin 成员表补全（不再定抛 TypeError）", () => {
 /**
- * Bug 869 — env node：`process.stdin` 只建模 `{on}` ⇒ `process.stdin.setEncoding("utf8")`
+ * env node：`process.stdin` 只建模 `{on}` ⇒ `process.stdin.setEncoding("utf8")`
  * 被判**定抛 TypeError**（假红；原生不抛）。
  *
  * 修法：process 的三个流（stdin / stdout / stderr）共用一张 Socket 面
@@ -564,7 +564,7 @@ function check(src: string) {
   });
 }
 
-describe("Bug 869 — process.stdin 成员表补全（不再定抛 TypeError）", () => {
+describe("process.stdin 成员表补全（不再定抛 TypeError）", () => {
   it("原生 oracle：process.stdin 真的有 setEncoding / pause / resume / read", () => {
     expect(typeof process.stdin.setEncoding).toBe("function");
     expect(typeof process.stdin.pause).toBe("function");
@@ -598,11 +598,11 @@ describe("Bug 869 — process.stdin 成员表补全（不再定抛 TypeError）"
 });
 
 // ---------------------------------------------------------------------------
-// Bug 871 — process.stdout / stderr 成员表补全（不再定抛 TypeError）
+// process.stdout / stderr 成员表补全（不再定抛 TypeError）
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 871 — process.stdout / stderr 成员表补全（不再定抛 TypeError）", () => {
+describe("process.stdout / stderr 成员表补全（不再定抛 TypeError）", () => {
 /**
- * Bug 871 — node env 的 `process.stdout` / `process.stderr` 面**只有 `write`**
+ * node env 的 `process.stdout` / `process.stderr` 面**只有 `write`**
  * ⇒ `.on(...)` 必抛 TypeError ⇒ L2 门禁假红。
  *
  * 修法：stdout / stderr 与 stdin 共用 Socket 面（packages/env/src/node.ts 的
@@ -639,7 +639,7 @@ function check(src: string) {
   });
 }
 
-describe("Bug 871 — process.stdout / stderr 成员表补全（不再定抛 TypeError）", () => {
+describe("process.stdout / stderr 成员表补全（不再定抛 TypeError）", () => {
   it("原生 oracle：stdout / stderr 真的有 on / once / off / emit / write", () => {
     for (const s of [process.stdout, process.stderr]) {
       expect(typeof s.on).toBe("function");
@@ -676,19 +676,19 @@ describe("Bug 871 — process.stdout / stderr 成员表补全（不再定抛 Typ
 });
 
 // ---------------------------------------------------------------------------
-// Bug 256 — process.title is modelled
+// process.title is modelled
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 256 — process.title is modelled", () => {
+describe("process.title is modelled", () => {
 /**
- * 族 15 · BUG-256 — 全局 `process` 是**封闭对象**且槽表漏 `title`
+ * 族 15 · 全局 `process` 是**封闭对象**且槽表漏 `title`
  * ⇒ 读 `process.title` 得到 exact `undefined` ⇒
  * - `process.title.length` 判「确定抛 TypeError」（L2 假红，exit 1）；
  * - `typeof process.title` 折成 **`"undefined"`**（宿主 `"string"`）
- *   ⇒ 特性探测分支被**反向**折叠（控制流也错）。
+ * ⇒ 特性探测分支被**反向**折叠（控制流也错）。
  *
  * 反向钉：删掉 `title` 槽 ⇒ 本文件必挂。
  */
-describe("Bug 256 — process.title is modelled", () => {
+describe("process.title is modelled", () => {
   it("host oracle: process.title is a string", () => {
     expect(typeof process.title).toBe("string");
     expect(process.title.length).toBeGreaterThan(0);
@@ -721,11 +721,11 @@ export function b(){ return typeof process.version; }`);
 });
 
 // ---------------------------------------------------------------------------
-// Bug 891 · fs/promises 结果对象与同步族共用成员表
+// fs/promises 结果对象与同步族共用成员表
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 891 · fs/promises 结果对象与同步族共用成员表", () => {
+describe("fs/promises 结果对象与同步族共用成员表", () => {
 /**
- * 族 29 · Bug 891：`fs/promises` 的结果对象是同步族的**裁剪副本**
+ * 族 29 · `fs/promises` 的结果对象是同步族的**裁剪副本**
  * ——`fsPromisesModule.stat` 只抄了 12 个槽（比同步族少 9 个），且
  * `readdir` 的 `Dirent` 是**空 shape 的 brand** ⇒ 成员读出
  * **exact `undefined` / `NaN` / `never`**——那是**确定的错值**，不是精度债。
@@ -764,7 +764,7 @@ function sumMember(a: Abs | undefined, brandNameWanted: string): Abs | undefined
   return s.members?.find((m) => m.shape.k === "brand" && (m.shape as { name: string }).name === brandNameWanted);
 }
 
-describe("Bug 891 · fs/promises 结果对象与同步族共用成员表", () => {
+describe("fs/promises 结果对象与同步族共用成员表", () => {
   it("1. 原生 oracle：同步族与 promise 族的 Stats 成员表一致", async () => {
     const sync = fs.statSync("/tmp");
     const promised = await fsp.stat("/tmp");
@@ -841,11 +841,11 @@ describe("Bug 891 · fs/promises 结果对象与同步族共用成员表", () =>
 });
 
 // ---------------------------------------------------------------------------
-// Bug 880 · node:fs 同步族的 throws 面
+// node:fs 同步族的 throws 面
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 880 · node:fs 同步族的 throws 面", () => {
+describe("node:fs 同步族的 throws 面", () => {
 /**
- * 族 29 · Bug 880：`node:fs` **同步族**被建模成「**永不抛**」⇒
+ * 族 29 · `node:fs` **同步族**被建模成「**永不抛**」⇒
  * `readFileSync("/nope/x")` 这类原生**必抛**（`Error` + `code=ENOENT`）的
  * 调用，引擎判「不抛」——**L2 假绿**。
  *
@@ -862,7 +862,7 @@ describe("[env-] Bug 880 · node:fs 同步族的 throws 面", () => {
 
 
 
-/** 同步族里「原生可能抛」的成员（Bug 880 的修法清单）。 */
+/** 同步族里「原生可能抛」的成员（的修法清单）。 */
 const MAY_THROW = [
   "readFileSync",
   "writeFileSync",
@@ -902,7 +902,7 @@ const NATIVE_THROWS: Array<[string, () => unknown]> = [
   ["accessSync", () => fs.accessSync("/nope/nope.txt")],
 ];
 
-describe("Bug 880 · node:fs 同步族的 throws 面", () => {
+describe("node:fs 同步族的 throws 面", () => {
   it("1. 原生 oracle：同步族对不存在的路径抛 Error（带 code=ENOENT）", () => {
     for (const [name, fn] of NATIVE_THROWS) {
       let caught: unknown;
@@ -968,11 +968,11 @@ describe("Bug 880 · node:fs 同步族的 throws 面", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 893 · statSync / fs.promises.stat 的返回域（含 undefined 分支）
+// statSync / fs.promises.stat 的返回域（含 undefined 分支）
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 893 · statSync / fs.promises.stat 的返回域（含 undefined 分支）", () => {
+describe("statSync / fs.promises.stat 的返回域（含 undefined 分支）", () => {
 /**
- * 族 29 · Bug 893：`statSync` / `fs.promises.stat` 的**返回域声明过窄**
+ * 族 29 · `statSync` / `fs.promises.stat` 的**返回域声明过窄**
  * ——原生 `statSync(p, { throwIfNoEntry: false })` 在路径不存在时**返回
  * undefined**（不抛），紧接着的成员读**必抛 TypeError**；旧面把返回域声明成
  * 「永不返回 undefined」⇒ 引擎判「不抛」还给出**自信的** `boolean` / `number`
@@ -1002,7 +1002,7 @@ function promiseInner(a: unknown): Abs | undefined {
 /** `{ throwIfNoEntry: false }` 选项对象。 */
 const NO_ENTRY = objOf({ throwIfNoEntry: { value: boolLit(false) } });
 
-describe("Bug 893 · statSync / fs.promises.stat 的返回域（含 undefined 分支）", () => {
+describe("statSync / fs.promises.stat 的返回域（含 undefined 分支）", () => {
   it("1. 原生 oracle：throwIfNoEntry:false ⇒ 返回 undefined（不抛）", () => {
     expect(fs.statSync("/nope/nope.txt", { throwIfNoEntry: false })).toBeUndefined();
     expect(() => fs.statSync("/nope/nope.txt")).toThrow();
@@ -1059,11 +1059,11 @@ describe("Bug 893 · statSync / fs.promises.stat 的返回域（含 undefined �
 });
 
 // ---------------------------------------------------------------------------
-// Bug 877 · node:path 族实参类型执法
+// node:path 族实参类型执法
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 877 · node:path 族实参类型执法", () => {
+describe("node:path 族实参类型执法", () => {
 /**
- * 族 29 · Bug 877：`node:path` 族的**实参类型从不被执法** ⇒
+ * 族 29 · `node:path` 族的**实参类型从不被执法** ⇒
  * `path.join(123)` / `path.isAbsolute(123)` / `path.basename("/x/y.txt", 5)`
  * 这类原生**必抛 TypeError** 的调用被判「不抛」，还给出原生产不出的
  * **自信精确字面量**（`basename("/x/y.txt", 5)` → `"y.txt"`——坏实参被静默
@@ -1073,7 +1073,7 @@ describe("[env-] Bug 877 · node:path 族实参类型执法", () => {
  * - 实参**确定**非字符串 ⇒ **必抛** TypeError（原生必抛）；
  * - 实参**抽象**（unknown / any / 非 exact）⇒ **may-throw** TypeError；
  * - `undefined` 字面量：必填位 ⇒ 必抛；可选位（`basename(p, undefined)`）⇒
- *   视作未传（原生不抛）。
+ * 视作未传（原生不抛）。
  *
  * 原生 oracle（Node v26）：见每个 case 的 `native` 回调（测试内直接对拍）。
  */
@@ -1140,7 +1140,7 @@ const GOOD: Case[] = [
   { name: "parse('/x/y.txt')", member: "parse", args: [strLit("/x/y.txt")], native: () => nodePath.parse("/x/y.txt") },
 ];
 
-describe("Bug 877 · node:path 族实参类型执法", () => {
+describe("node:path 族实参类型执法", () => {
   it("1. 实参确定非字符串 ⇒ 必抛 TypeError（原生 oracle 同样必抛）", () => {
     for (const c of BAD) {
       // 原生 oracle：必抛 TypeError
@@ -1205,11 +1205,11 @@ describe("Bug 877 · node:path 族实参类型执法", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 255 — path.posix / path.win32 carry parse and format
+// path.posix / path.win32 carry parse and format
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 255 — path.posix / path.win32 carry parse and format", () => {
+describe("path.posix / path.win32 carry parse and format", () => {
 /**
- * 族 15 · BUG-255 — `path.posix` / `path.win32` 用的是**另一份手抄成员表**，
+ * 族 15 · `path.posix` / `path.win32` 用的是**另一份手抄成员表**，
  * 漏了 `parse` / `format` ⇒ 读这两个成员得到 **exact `undefined`**
  * （闭 obj 缺槽）⇒ 调用 ⇒ **确定抛 TypeError** ⇒ L2 门禁假红（exit 1），
  * 而宿主 `path.posix.parse("/a/b.txt")` 完全正常。
@@ -1224,7 +1224,7 @@ function parsedOf(pathObj: unknown, input: string): string {
   );
 }
 
-describe("Bug 255 — path.posix / path.win32 carry parse and format", () => {
+describe("path.posix / path.win32 carry parse and format", () => {
   it("host oracle: posix.parse / win32.parse / posix.format all work", () => {
     expect(nodePath.posix.parse("/a/b.txt")).toEqual(nodePath.parse("/a/b.txt"));
     expect(nodePath.win32.parse("a\\b.txt")).toEqual({
@@ -1279,22 +1279,22 @@ describe("Bug 255 — path.posix / path.win32 carry parse and format", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 894 · pathToFileURL 返回完整 URL 面
+// pathToFileURL 返回完整 URL 面
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 894 · pathToFileURL 返回完整 URL 面", () => {
+describe("pathToFileURL 返回完整 URL 面", () => {
 /**
- * Bug 894 — env node 的 `url.pathToFileURL` 返回域被声明成 **1 槽闭合对象 `{ href }`**
+ * env node 的 `url.pathToFileURL` 返回域被声明成 **1 槽闭合对象 `{ href }`**
  * ⇒ `.pathname` / `.protocol` / `.host` … 读出 **exact `undefined`**（真值是
  * "/tmp/x.txt" 等），且 `.pathname.length` 被判**定抛 TypeError**（L2 假红）。
  *
  * 原生 oracle（Node v26.10.0 独立进程实测，pathToFileURL("/tmp/x.txt")）：
- *   href     = "file:///tmp/x.txt"
- *   pathname = "/tmp/x.txt"
- *   protocol = "file:"
- *   host     = ""      hostname = ""      port   = ""
- *   search   = ""      hash     = ""      origin = "null"
- *   username = ""      password = ""
- *   toString() = "file:///tmp/x.txt"     toJSON() = "file:///tmp/x.txt"
+ * href = "file:///tmp/x.txt"
+ * pathname = "/tmp/x.txt"
+ * protocol = "file:"
+ * host = "" hostname = "" port = ""
+ * search = "" hash = "" origin = "null"
+ * username = "" password = ""
+ * toString() = "file:///tmp/x.txt" toJSON() = "file:///tmp/x.txt"
  *
  * 旧实现：`objAbs({ href: prim.str() })` ⇒ 闭对象**只有 href 一个槽** ⇒ 其余成员
  * 读出 exact `undefined`（**错值**），再链式读一次（`.pathname.length`）⇒ 引擎
@@ -1330,7 +1330,7 @@ function litOf(a: Abs | undefined): string | undefined {
   return t?.op === "lit" ? String(t.value) : undefined;
 }
 
-describe("Bug 894 · pathToFileURL 返回完整 URL 面", () => {
+describe("pathToFileURL 返回完整 URL 面", () => {
   it("1. 字面量路径 ⇒ 实例面含全部 11 个 URL 组件 + toString / toJSON", () => {
     const site = callSite____env_bug_s4_helpers_ts(url.pathToFileURL!, [strLit("/tmp/x.txt")]);
     expect(site.threw).toBeUndefined();
@@ -1390,11 +1390,11 @@ describe("Bug 894 · pathToFileURL 返回完整 URL 面", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 867 · os.cpus() 的 times 成员表
+// os.cpus() 的 times 成员表
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 867 · os.cpus() 的 times 成员表", () => {
+describe("os.cpus() 的 times 成员表", () => {
 /**
- * 族 29 · Bug 867：`os.cpus()` 的结果对象**缺 `times` 槽** ⇒
+ * 族 29 · `os.cpus()` 的结果对象**缺 `times` 槽** ⇒
  * `cpus()[0].times.user` 读出 **exact `undefined`** ⇒ 引擎判「property
  * 'user' on undefined ⇒ 定抛 TypeError」——**假红**（原生正常返回数字）。
  *
@@ -1408,7 +1408,7 @@ describe("[env-] Bug 867 · os.cpus() 的 times 成员表", () => {
 
 
 
-describe("Bug 867 · os.cpus() 的 times 成员表", () => {
+describe("os.cpus() 的 times 成员表", () => {
   it("1. cpus() 元素含 times 槽（user/nice/sys/idle/irq 全在）", () => {
     const ret = envMember("node:os", "cpus");
     expect(ret.shape.k).toBe("fn");
@@ -1451,18 +1451,18 @@ describe("Bug 867 · os.cpus() 的 times 成员表", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 866 · env node 模块导出构造器带 ctor:true
+// env node 模块导出构造器带 ctor:true
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 866 · env node 模块导出构造器带 ctor:true", () => {
+describe("env node 模块导出构造器带 ctor:true", () => {
 /**
- * Bug 866 — env node：`node:url` / `node:util` 的**模块导出构造器缺 `ctor: true`**
+ * env node：`node:url` / `node:util` 的**模块导出构造器缺 `ctor: true`**
  * ⇒ 合法 `new URL(…)` / `new TextEncoder()` 被判**定抛 TypeError**（**假红**）。
  *
  * 原生 oracle（Node v26.10.0 独立进程实测）：
- *   new URL("https://x.dev/a")      → OK（href = "https://x.dev/a"）
- *   new URLSearchParams("a=1")      → OK
- *   new TextEncoder()               → OK
- *   new TextDecoder("utf-8")        → OK
+ * new URL("https://x.dev/a") → OK（href = "https://x.dev/a"）
+ * new URLSearchParams("a=1") → OK
+ * new TextEncoder() → OK
+ * new TextDecoder("utf-8") → OK
  * —— **一个都不抛**。
  *
  * 旧实现：模块导出是 fn 形 callee 且**没有 `ctor` 标记** ⇒ core 的 `$new`
@@ -1500,7 +1500,7 @@ function newSite(
   return { value, mayThrows };
 }
 
-describe("Bug 866 · env node 模块导出构造器带 ctor:true", () => {
+describe("env node 模块导出构造器带 ctor:true", () => {
   it("1. 四个模块导出构造器都带 ctor:true（URL / URLSearchParams / TextEncoder / TextDecoder）", () => {
     for (const ctor of [url.URL, url.URLSearchParams, util.TextEncoder, util.TextDecoder]) {
       expect(ctor, "module-exported constructor must exist").toBeTruthy();
@@ -1564,11 +1564,11 @@ function formatLit(a: Abs): string | undefined {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 861 · console 成员表补全（es env）
+// console 成员表补全（es env）
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 861 · console 成员表补全（es env）", () => {
+describe("console 成员表补全（es env）", () => {
 /**
- * 族 29 · Bug 861 —— es env 的 `console` 成员表不完整 ⇒ 缺成员读出
+ * 族 29 · es env 的 `console` 成员表不完整 ⇒ 缺成员读出
  * **exact undefined** ⇒ `console.timeStamp()` 折「调用 undefined」=
  * **定抛 TypeError**，而原生**不抛** ⇒ L2 `nudo:entry-may-throw` **假红**。
  *
@@ -1578,10 +1578,10 @@ describe("[env-] Bug 861 · console 成员表补全（es env）", () => {
  *
  * 断言双向：
  * - 正向：成员表**含** node v26 的公有 console 方法集；调用这些成员
- *   **不**产生 entry-may-throw；签名按原生拆（log 变参 / time 收 label? /
- *   assert 收 (condition, ...args)）。
+ * **不**产生 entry-may-throw；签名按原生拆（log 变参 / time 收 label? /
+ * assert 收 (condition, ...args)）。
  * - 反向：把成员表改回旧白名单 ⇒ 本文件必须失败（成员表断言 + 引擎
- *   诊断断言双侧都会红）。
+ * 诊断断言双侧都会红）。
  */
 
 
@@ -1615,7 +1615,7 @@ function paramsOf(fn: Abs): string[] {
   return (fn.shape as { params: string[] }).params;
 }
 
-describe("Bug 861 · console 成员表补全（es env）", () => {
+describe("console 成员表补全（es env）", () => {
   it("1. 成员表含 node v26 的公有 console 方法集（旧白名单缺 4 个）", () => {
     // node v26 实测（Object.getOwnPropertyNames(console) 的公有方法面）
     const expected = [
@@ -1690,24 +1690,24 @@ describe("Bug 861 · console 成员表补全（es env）", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 931 · spawnSync 返回域补齐 pid / output / signal
+// spawnSync 返回域补齐 pid / output / signal
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 931 · spawnSync 返回域补齐 pid / output / signal", () => {
+describe("spawnSync 返回域补齐 pid / output / signal", () => {
 /**
- * Bug 931 — node env 的 `node:child_process.spawnSync` 返回域是**闭合 4 槽对象**
+ * node env 的 `node:child_process.spawnSync` 返回域是**闭合 4 槽对象**
  * （status / stdout / stderr / error）⇒ 缺 `pid` / `output` / `signal` ⇒
  * `spawnSync(...).pid` 读出 **exact `undefined`**（**错值**：原生是 number）、
  * `spawnSync(...).output[0]` 落「在 undefined 上取下标」⇒ 引擎**证明**
  * 「必抛 TypeError」⇒ L2 门禁**假红**。
  *
  * 原生 oracle（Node v26.10.0 独立进程实测）：
- *   Object.keys(spawnSync(process.execPath, ["-e", "0"])) =
- *     ["status", "signal", "output", "pid", "stdout", "stderr"]
- *   （`error` 只在 spawn 失败时出现——失败时原生**确实**带 error 键）
- *   pid     = number（进程 pid）
- *   output  = [null, Buffer, Buffer]（stdio 未接管 stdout 时首项为 null）
- *   signal  = null（成功时）
- *   status  = 0（成功时）
+ * Object.keys(spawnSync(process.execPath, ["-e", "0"])) =
+ * ["status", "signal", "output", "pid", "stdout", "stderr"]
+ * （`error` 只在 spawn 失败时出现——失败时原生**确实**带 error 键）
+ * pid = number（进程 pid）
+ * output = [null, Buffer, Buffer]（stdio 未接管 stdout 时首项为 null）
+ * signal = null（成功时）
+ * status = 0（成功时）
  *
  * 新建模：返回域补齐 `pid` / `output` / `signal`（并保留 `error`：spawn 失败时
  * 原生确实带该键）。
@@ -1741,7 +1741,7 @@ function declaredFace(): Abs {
   return rt!;
 }
 
-describe("Bug 931 · spawnSync 返回域补齐 pid / output / signal", () => {
+describe("spawnSync 返回域补齐 pid / output / signal", () => {
   it("1. 声明返回面含原生全部成员（pid / output / signal / status / stdout / stderr）", () => {
     const slots = slotsOf(declaredFace());
     for (const key of ["pid", "output", "signal", "status", "stdout", "stderr"]) {
@@ -1775,11 +1775,11 @@ describe("Bug 931 · spawnSync 返回域补齐 pid / output / signal", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 888 — queueMicrotask keeps core's callable-arg validation
+// queueMicrotask keeps core's callable-arg validation
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 888 — queueMicrotask keeps core's callable-arg validation", () => {
+describe("queueMicrotask keeps core's callable-arg validation", () => {
 /**
- * 族 29 Bug 888 — web env 的 `queueMicrotask` 声明**挡掉** core 的可调用实参校验。
+ * 族 29 web env 的 `queueMicrotask` 声明**挡掉** core 的可调用实参校验。
  *
  * 根因：env 的 `queueMicrotask` 是一条**纯类型声明** ⇒ 引擎把该全局整体换成
  * env 声明路径 ⇒ core 的 `blockHostSideEffect` / `validateCallableArg`
@@ -1790,12 +1790,12 @@ describe("[env-] Bug 888 — queueMicrotask keeps core's callable-arg validation
  * 的 `validateCallableArg` 生效 ⇒ 记 TypeError。
  *
  * 原生 oracle（node v26.10.0）：
- *   queueMicrotask(1) → TypeError: The "callback" argument must be of type
- *                        function. Received type number (1)
+ * queueMicrotask(1) → TypeError: The "callback" argument must be of type
+ * function. Received type number (1)
  *
  * 反向钉：把 `queueMicrotask` 加回 env 全局表 ⇒ 本文件必挂。
  */
-describe("Bug 888 — queueMicrotask keeps core's callable-arg validation", () => {
+describe("queueMicrotask keeps core's callable-arg validation", () => {
   it("queueMicrotask is NOT declared in the web env", () => {
     expect(webEnvGlobals()["queueMicrotask"]).toBeUndefined();
   });
@@ -1820,23 +1820,23 @@ describe("Bug 888 — queueMicrotask keeps core's callable-arg validation", () =
 });
 
 // ---------------------------------------------------------------------------
-// Bug 879 · node:assert 族有真实 throws 面
+// node:assert 族有真实 throws 面
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 879 · node:assert 族有真实 throws 面", () => {
+describe("node:assert 族有真实 throws 面", () => {
 /**
- * Bug 879 — env 的 `node:assert` 族**建模成永不抛** ⇒ L2 门禁**假绿**。
+ * env 的 `node:assert` 族**建模成永不抛** ⇒ L2 门禁**假绿**。
  *
  * 原生 oracle（Node v26.10.0 独立进程实测）：
- *   ok(false)                  ⇒ 抛 AssertionError（ERR_ASSERTION）
- *   ok(0) / ok(undefined)       ⇒ 抛 AssertionError
- *   ok(true) / ok(1)           ⇒ 不抛
- *   strictEqual(1, 2)          ⇒ 抛 AssertionError
- *   strictEqual(1, 1)          ⇒ 不抛
- *   deepStrictEqual({a:1},{a:1}) ⇒ 不抛；{a:1} vs {a:2} ⇒ 抛 AssertionError
- *   notStrictEqual(1, 1)       ⇒ 抛 AssertionError；notStrictEqual(1, 2) ⇒ 不抛
- *   match("abc", /b/)          ⇒ 不抛；match("abc", /z/) ⇒ 抛 AssertionError
- *   fail() / fail("boom")      ⇒ **恒抛** AssertionError
- *   strictEqual(1)（缺参）      ⇒ 抛 TypeError [ERR_MISSING_ARGS]（**不是** AssertionError）
+ * ok(false) ⇒ 抛 AssertionError（ERR_ASSERTION）
+ * ok(0) / ok(undefined) ⇒ 抛 AssertionError
+ * ok(true) / ok(1) ⇒ 不抛
+ * strictEqual(1, 2) ⇒ 抛 AssertionError
+ * strictEqual(1, 1) ⇒ 不抛
+ * deepStrictEqual({a:1},{a:1}) ⇒ 不抛；{a:1} vs {a:2} ⇒ 抛 AssertionError
+ * notStrictEqual(1, 1) ⇒ 抛 AssertionError；notStrictEqual(1, 2) ⇒ 不抛
+ * match("abc", /b/) ⇒ 不抛；match("abc", /z/) ⇒ 抛 AssertionError
+ * fail() / fail("boom") ⇒ **恒抛** AssertionError
+ * strictEqual(1)（缺参） ⇒ 抛 TypeError [ERR_MISSING_ARGS]（**不是** AssertionError）
  *
  * 旧实现：六个函数全是 relation 面（**恒不抛**）⇒ 六个必抛入口一次放行（假绿）。
  *
@@ -1876,7 +1876,7 @@ function nativeErrorName(fn: () => void): string | undefined {
   }
 }
 
-describe("Bug 879 · node:assert 族有真实 throws 面", () => {
+describe("node:assert 族有真实 throws 面", () => {
   it("1. ok(false) ⇒ 必抛 AssertionError（旧实现恒不抛）", () => {
     // 原生 oracle：ok(false) 抛 AssertionError
     expect(nativeErrorName(() => nodeOk(false))).toBe("AssertionError");
@@ -1966,11 +1966,11 @@ describe("Bug 879 · node:assert 族有真实 throws 面", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 882 · node:util 品牌形参函数：具名导入调用面不得 L2 假红
+// node:util 品牌形参函数：具名导入调用面不得 L2 假红
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 882 · node:util 品牌形参函数：具名导入调用面不得 L2 假红", () => {
+describe("node:util 品牌形参函数：具名导入调用面不得 L2 假红", () => {
 /**
- * Bug 882（族 29 · S6）—— **core 侧根因**回归钉。
+ * （族 29 · S6）—— **core 侧根因**回归钉。
  *
  * 现象：`node:util` 的**品牌形参**函数（`promisify` / `callbackify` /
  * `inherits` / `isDeepStrictEqual`）在**具名导入**调用面
@@ -1979,7 +1979,7 @@ describe("[env-] Bug 882 · node:util 品牌形参函数：具名导入调用面
  * 而**成员调用**面（`util.promisify(readFile)`）完全正常
  * ⇒ 同一函数**两种口径**。
  *
- * 根因（core 侧）：Bug 85 的**实参归一化**只补在 `$invoke`（成员调用面），
+ * 根因（core 侧）：的**实参归一化**只补在 `$invoke`（成员调用面），
  * 没补在**普通调用面**（具名导入 / 直接调用）。普通调用面把**裸宿主值**
  * （宿主函数 / 宿主构造器 / 用户函数声明——transpile 侧直发 host function）
  * 原样灌进 `bindTypeVars`（`packages/core/src/algebra/hof.ts`）
@@ -1988,11 +1988,11 @@ describe("[env-] Bug 882 · node:util 品牌形参函数：具名导入调用面
  *
  * 修法（core · S6）：
  * 1. `packages/core/src/algebra/hof.ts` 的 `bindTypeVars`：实参**无形状**
- *    ⇒ **不参与类型变量绑定**（不再崩）。
+ * ⇒ **不参与类型变量绑定**（不再崩）。
  * 2. **普通调用面也做实参归一化**（与
- *    `packages/core/src/algebra/exec/class/invoke.ts` 的 Bug 85 段同款）：
- *    `hof.ts` 的 `setRawArgNormalizer` 注册 `asAbsVal` 门面
- *    ⇒ 成员调用面 / 普通调用面共用同一门面 ⇒ **两种口径一致**。
+ * `packages/core/src/algebra/exec/class/invoke.ts` 的 段同款）：
+ * `hof.ts` 的 `setRawArgNormalizer` 注册 `asAbsVal` 门面
+ * ⇒ 成员调用面 / 普通调用面共用同一门面 ⇒ **两种口径一致**。
  *
  * 本钉直接驱动引擎（core 的 `checkSource` + env 模块直注），
  * 不经 service 的 `@nudo:env` 指令层。
@@ -2055,7 +2055,7 @@ function sigOf(src: string, name: string): { display: string; throws?: string } 
 /** L2 入口 may-throw 门禁（假红就是它） */
 const MAY_THROW = "nudo:entry-may-throw";
 
-describe("Bug 882 · node:util 品牌形参函数：具名导入调用面不得 L2 假红", () => {
+describe("node:util 品牌形参函数：具名导入调用面不得 L2 假红", () => {
   const NAMED = `/// @nudo:env node
 import { promisify } from "node:util";
 import { readFile } from "node:fs";
@@ -2154,16 +2154,16 @@ export function use() { return readFileSync("/definitely/not/here.txt", "utf8");
 });
 
 // ---------------------------------------------------------------------------
-// Bug 882 · node:util 品牌形参不参与类型变量绑定（env 侧）
+// node:util 品牌形参不参与类型变量绑定（env 侧）
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 882 · node:util 品牌形参不参与类型变量绑定（env 侧）", () => {
+describe("node:util 品牌形参不参与类型变量绑定（env 侧）", () => {
 /**
- * Bug 882 — `node:util` 的**品牌形参**函数（promisify / callbackify / inherits /
+ * `node:util` 的**品牌形参**函数（promisify / callbackify / inherits /
  * isDeepStrictEqual）在**具名导入**调用下 ⇒ L2 门禁**假红**（原生必不抛）。
  *
  * 原生 oracle（Node v26.10.0 独立进程实测）：
- *   promisify(readFile) / callbackify(asyncFn) / inherits(Sub, Object) /
- *   isDeepStrictEqual({a:1},{a:1}) —— **一个都不抛**。
+ * promisify(readFile) / callbackify(asyncFn) / inherits(Sub, Object) /
+ * isDeepStrictEqual({a:1},{a:1}) —— **一个都不抛**。
  *
  * 旧实现：这四个函数是 relation 面 ⇒ 调用走 core 的 relation 实例化
  * （`bindTypeVars` 做类型变量绑定）。**具名导入**调用时实参可能是**裸宿主值**
@@ -2173,9 +2173,9 @@ describe("[env-] Bug 882 · node:util 品牌形参不参与类型变量绑定（
  * 本文件钉的是 **env 侧**那一半（core 侧由 S6 负责：调用面实参归一化 +
  * 绑定保护）：
  * - 这四个函数走 **apply 面** ⇒ **不进入 relation 实例化** ⇒ 品牌形参
- *   **不参与类型变量绑定**（建模侧规避，不依赖实参是否已被归一化）；
+ * **不参与类型变量绑定**（建模侧规避，不依赖实参是否已被归一化）；
  * - 签名面（paramTypes / returnType）**不变** ⇒ format 仍是
- *   "(Function, Function) => undefined" 这类干净文本。
+ * "(Function, Function) => undefined" 这类干净文本。
  *
  * 断言双向：正向钉住「有 apply + 裸宿主实参不炸 + 签名不变」；
  * 反向（把 apply 去掉、改回 relation 面）本文件必须失败。
@@ -2193,7 +2193,7 @@ const util = env.modules!.util!;
 /** 裸宿主函数（**不是** Abs）——具名导入调用时引擎拿到的就是这种实参 */
 const HOST_FN = function Sub(): void {};
 
-describe("Bug 882 · node:util 品牌形参不参与类型变量绑定（env 侧）", () => {
+describe("node:util 品牌形参不参与类型变量绑定（env 侧）", () => {
   it("1. 四个品牌形参函数都走 apply 面 ⇒ 不进 relation 实例化", () => {
     for (const fn of [util.promisify, util.callbackify, util.inherits, util.isDeepStrictEqual]) {
       expect(fn, "node:util member must exist").toBeTruthy();
@@ -2255,11 +2255,11 @@ describe("Bug 882 · node:util 品牌形参不参与类型变量绑定（env 侧
 });
 
 // ---------------------------------------------------------------------------
-// Bug 257 — util.types models every host predicate
+// util.types models every host predicate
 // ---------------------------------------------------------------------------
-describe("[env-] Bug 257 — util.types models every host predicate", () => {
+describe("util.types models every host predicate", () => {
 /**
- * 族 15 · BUG-257 — `util.types` 是**封闭对象**且只建模 **8** 个谓词，
+ * 族 15 · `util.types` 是**封闭对象**且只建模 **8** 个谓词，
  * 宿主上有 **43** 个（缺 35，含 `isMap` / `isSet` / `isProxy` /
  * `isWeakMap` / `isUint8Array` …）⇒ 缺的成员读出 **exact `undefined`**
  * ⇒ `types.isMap(new Map())` 被判「确定抛 TypeError」⇒ L2 门禁假红（exit 1）。
@@ -2268,7 +2268,7 @@ describe("[env-] Bug 257 — util.types models every host predicate", () => {
  *
  * 反向钉：删掉任一补上的谓词 ⇒ 差分断言必挂。
  */
-describe("Bug 257 — util.types models every host predicate", () => {
+describe("util.types models every host predicate", () => {
   it("host oracle: the predicates in question exist and return true", () => {
     expect(hostTypes.isMap(new Map())).toBe(true);
     expect(hostTypes.isSet(new Set())).toBe(true);

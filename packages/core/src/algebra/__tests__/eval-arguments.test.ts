@@ -2,10 +2,10 @@
  * 求值引擎 `arguments` 对象（strict/ESM 语义）：
  * - 类数组 tuple：length / 下标 / typeof / spread / Array.from 可展开实参；
  * - 与形参**独立映射**（strict）：写 arguments[i] 不改形参，写形参不改 arguments。
- *   （sloppy 非严格是 mapped arguments object，二者互相写回——Nudo 按 ESM/strict，
- *   与差分 native `'use strict'` 对齐。）
+ * （sloppy 非严格是 mapped arguments object，二者互相写回——Nudo 按 ESM/strict，
+ * 与差分 native `'use strict'` 对齐。）
  * - 箭头无自己的 arguments：体直接引用且外层非箭头建槽时沿词法外层；否则诚实 unknown
- *   （差分 harness 外层是箭头 IIFE，native 为 ReferenceError）。
+ * （差分 harness 外层是箭头 IIFE，native 为 ReferenceError）。
  * - 默认参 length 按实参个数；rest 的 arguments.length 同实参个数。
  * - rest 绑定仍走真实 arguments/rest 形参（transpile restBind），与本槽解耦。
  */
@@ -179,9 +179,9 @@ describe("evaluator arguments object (strict/ESM)", () => {
   });
 });
 
-// --- Bug 116：求值引擎模块体 strict 化（seam） ------------------------------
+// --- 求值引擎模块体 strict 化（seam） ------------------------------
 
-describe("Bug 116: module body strict seam (new Function \"use strict\")", () => {
+describe("module body strict seam (new Function \"use strict\")", () => {
   it("arguments / this / 递归既有面不回归（control）", () => {
     expect(litValue(call(`export function f(a, b) { return arguments.length }`, "f", [lit(1), lit(2)]).result)).toEqual({ ok: true, value: 2 });
     expect(litValue(call(`export function f(a) { return arguments[0] }`, "f", [lit(7)]).result)).toEqual({ ok: true, value: 7 });

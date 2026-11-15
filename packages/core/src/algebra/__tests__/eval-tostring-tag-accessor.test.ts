@@ -1,5 +1,5 @@
 /**
- * Bug 72：访问器形 @@toStringTag 被 Object.prototype.toString 忽略。
+ * 访问器形 @@toStringTag 被 Object.prototype.toString 忽略。
  * 对象字面量 getter（get [Symbol.toStringTag]() { return "T"; }）在
  * transpile 期以占位槽 lit(void 0) 落 shape、真身注册 accessorTable——
  * typeTagOf 只读槽的数据值折不到标签，"[object T]" 错折 "[object Object]"。
@@ -19,7 +19,7 @@ function v(src: string): unknown {
 
 const GETTER_FORM = `const o = { get [Symbol.toStringTag]() { return "T"; } };`;
 
-describe("Bug 72: accessor-form Symbol.toStringTag", () => {
+describe("accessor-form Symbol.toStringTag", () => {
   it("Object.prototype.toString.call → \"[object T]\"", () => {
     expect(v(`export function f() { ${GETTER_FORM} return Object.prototype.toString.call(o); }`)).toBe("[object T]");
   });

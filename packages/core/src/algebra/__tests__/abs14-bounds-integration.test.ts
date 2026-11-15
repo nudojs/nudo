@@ -9,7 +9,7 @@
  * - `entryReqs` / `display` 保持实参名空间原貌（零行为变化）；
  * - 简单条件 + 单向依赖校验在重锚后仍生效（反向 / binder / app 一律丢）；
  * - 界是良构元数据：`implies` 可直接判定，作为条目 `pre` 时门槛行为正确。
- *   **当前无产品消费方**（write-only）——快路径的门槛是形成时的完整 Φ。
+ * **当前无产品消费方**（write-only）——快路径的门槛是形成时的完整 Φ。
  *
  * 设计边界（不在此打通，也不该打通）：`opts.refine` 会让 `summaryScope`
  * 返回 undefined（ABS-10：refine 改变 body 语义且闭包身份不可哈希），所以
@@ -32,7 +32,7 @@ import { resetFnSummaryCache, type FnSummaryEntry } from "../key/fn-summary.ts";
 import { fnLevelFields, tryFnLevelFastPath } from "../key/summary-fastpath.ts";
 
 // ---------------------------------------------------------------------------
-// 契约构造（沿用 generalize.test.ts / core-bug-082 的既有写法）
+// 契约构造（沿用 generalize.test.ts / core-的既有写法）
 // ---------------------------------------------------------------------------
 
 const CONTRACT_SRC = `

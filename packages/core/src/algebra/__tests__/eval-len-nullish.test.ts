@@ -1,5 +1,5 @@
 /**
- * Bug 3 回归：`.length` 在 nullish 接收者上必须与 $get 同口径——
+ * 回归：`.length` 在 nullish 接收者上必须与 $get 同口径——
  * 记 throws 域并硬抛 TypeError；any 接收者（无约束入口参）记 L2
  * entry-may-throw。此前转译器把 `.length` 路由到 $len（而非 $get），
  * $len 无 nullish/any 守卫直落形状分发尾 unknown——catch 永不触发、
@@ -57,7 +57,7 @@ function l2Issues(r: ReturnType<typeof check>, fn: string) {
   return r.issues.filter((i) => i.code === "nudo:entry-may-throw" && i.fn === fn);
 }
 
-describe("Bug 3：nullish 接收者 .length 定抛 TypeError", () => {
+describe("nullish 接收者 .length 定抛 TypeError", () => {
   it("null.length in try/catch → caught（原生 TypeError）", () => {
     expectCaught(`export function f() { try { return null.length; } catch (e) { return "caught"; } }`);
   });
@@ -87,7 +87,7 @@ describe("Bug 3：nullish 接收者 .length 定抛 TypeError", () => {
   });
 });
 
-describe("Bug 3：any 接收者（无约束入口参）的 L2 gate", () => {
+describe("any 接收者（无约束入口参）的 L2 gate", () => {
   it("x.length → nudo:entry-may-throw（TypeError，点名 length）", () => {
     const r = check(`export function f(x) { return x.length; }`);
     const issues = l2Issues(r, "f");
@@ -112,7 +112,7 @@ describe("Bug 3：any 接收者（无约束入口参）的 L2 gate", () => {
   });
 });
 
-describe("Bug 3：可选链与精确面不回退", () => {
+describe("可选链与精确面不回退", () => {
   it("o?.length on null → 精确 undefined，不抛", () => {
     expectExactUndefined(`export function f() { const o = null; return o?.length; }`);
   });

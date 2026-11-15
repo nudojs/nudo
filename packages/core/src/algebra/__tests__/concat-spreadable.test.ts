@@ -1,9 +1,9 @@
 /**
- * Bug 83：Array.prototype.concat 的 Symbol.isConcatSpreadable 语义。
+ * Array.prototype.concat 的 Symbol.isConcatSpreadable 语义。
  * native 对每个实参先查 o[Symbol.isConcatSpreadable]（计算符号键投影槽
  * "@@isConcatSpreadable"，只有 obj / brand inner 槽面可携带）：
  * - lit true（ToBoolean）→ 按 array-like 展开（length 槽 ToLength +
- *   逐位 String(i) 索引槽，缺席位 native Get 得 undefined）
+ * 逐位 String(i) 索引槽，缺席位 native Get 得 undefined）
  * - lit false → 单元素追加
  * - 槽缺席 → 默认：tuple/arr 展开、其余单元素
  * - 槽抽象 / length 非字面量 → 展开性未知 → 整体降 arr（sound）
@@ -32,7 +32,7 @@ function callWith(src: string, args: unknown[]) {
   return callTranspiledExportFull(exports, "f", args as never);
 }
 
-describe("Array.prototype.concat @@isConcatSpreadable (Bug 83)", () => {
+describe("Array.prototype.concat @@isConcatSpreadable ()", () => {
   it("spreadable obj without length spreads zero elements", () => {
     expect(
       evalExec(`const o = { [Symbol.isConcatSpreadable]: true }; return [].concat(o).length;`),
@@ -166,7 +166,7 @@ describe("Array.prototype.concat @@isConcatSpreadable (Bug 83)", () => {
     expect(r).toBeUndefined();
   });
 
-  describe("regressions (Bug 66 default behavior preserved)", () => {
+  describe("regressions (default behavior preserved)", () => {
     it("array args still spread by default", () => {
       expect(evalExec(`return [].concat([1,2],[3]).join(",");`)).toBe("1,2,3");
     });

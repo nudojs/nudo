@@ -3,11 +3,11 @@
  *
  * 两个断言族：
  * 1. fallback（无作用域）= 收敛前的模块全局语义——含交错下的串台
- *    （「await 窗口偷诊断」事故形态的活体证明：collector 被交错方覆盖后，
- *    本分析的发射全部落进别人的 collector / 静默丢失）。
+ * （「await 窗口偷诊断」事故形态的活体证明：collector 被交错方覆盖后，
+ * 本分析的发射全部落进别人的 collector / 静默丢失）。
  * 2. runWithCollectorScope 内：交错分析各开各的 store，互不串台；
- *    new Function 求值路径（transpile 注入的 runtime 跨帧读 collector）
- *    在嵌套 + await 间隔两场景下仍读到最内层正确值。
+ * new Function 求值路径（transpile 注入的 runtime 跨帧读 collector）
+ * 在嵌套 + await 间隔两场景下仍读到最内层正确值。
  */
 import {describe, it, expect} from "vitest";
 import {runWithCollectorScope, createScopedSlot} from "../collector-scope.ts";
@@ -60,9 +60,9 @@ describe("collector 作用域：scoped slot / channel 原语", () => {
 
 describe("collector 作用域：await 窗口交错", () => {
   /**
-   * 一次「分析」：装 truncation collector → await（窗口）→ 发射 → restore。
-   * scope=true 时整段包 runWithCollectorScope。
-   */
+ * 一次「分析」：装 truncation collector → await（窗口）→ 发射 → restore。
+ * scope=true 时整段包 runWithCollectorScope。
+ */
   async function observedAnalysis(
     tag: string,
     delayMs: number,

@@ -1,5 +1,5 @@
 /**
- * Bug 148（族 01）——块作用域里的 `const` 重assign 必须 TypeError。
+ * （族 01）——块作用域里的 `const` 重assign 必须 TypeError。
  *
  * 回归背景：`constNames` 名单只在「函数体 / BlockStatement 臂」上由
  * `computeConstScope` 计算；try / catch / finally / 循环体这些**同样是块作用域**
@@ -24,7 +24,7 @@ function expectTypeError(src: string, fnName = "f") {
   expect(throwsError(r.throws, "TypeError")).toBe(true);
 }
 
-describe("Bug 148：块作用域 const 重赋抛 TypeError", () => {
+describe("块作用域 const 重赋抛 TypeError", () => {
   it("try 体：const 重赋被 catch 接住", () => {
     const r = call(
       `export function f() { try { const c = 1; c = 2; return c; } catch (e) { return "caught"; } }`,

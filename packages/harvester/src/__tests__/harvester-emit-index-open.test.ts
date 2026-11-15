@@ -1,5 +1,5 @@
 /**
- * BUG-124 回归：`emitEnvModule` 的 `obj` 分支只发 `slots` ⇒ 索引签名 / open
+ * 回归：`emitEnvModule` 的 `obj` 分支只发 `slots` ⇒ 索引签名 / open
  * 标记全丢 ⇒ 同一份 `.d.ts`，内存面 `total() => number`、落盘面 `total() => NaN`。
  *
  * 契约：落盘源码面（`emitEnvModule` 产物的**实际求值结果**）与内存收割面同口径。
@@ -38,7 +38,7 @@ const fx = writeTemp("rec.d.ts", "export declare function makeRec(): Record<stri
 const env = harvestDts([fx]);
 const code = emitEnvModule(env, "recpkg");
 
-describe("BUG-124 —— 落盘面保留索引签名 / open 标记", () => {
+describe("落盘面保留索引签名 / open 标记", () => {
   it("内存面有 index + open", () => {
     const s = retShape(env.globals.makeRec);
     expect(s.k).toBe("obj");

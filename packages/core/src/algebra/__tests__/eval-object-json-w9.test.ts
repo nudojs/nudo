@@ -1,30 +1,30 @@
 /**
  * wave 9 回归：Object 静态 / JSON 族的 throws 域 + 值域（bug-report
- * Bug 27/33/35/39/40/44/46/48/61/76）。
+ * ）。
  *
  * 不变量：原生异常不得折成 result=…, throws=never；node v26 为准（与
  * bug 文本冲突处以 node 实测为准）：
- * - Bug 27 setPrototypeOf：nullish target 定抛；prim **target 原生合法**
- *   （Type(O) 非 Object → 返回原值，node 实测 (1,{}) → 1）；prim proto
- *   （含 symbol prim，无 lit 项）定抛；any target/proto → may。
- * - Bug 33 create：prim proto（symbol prim / 抽象 prim）定抛；any → may。
- * - Bug 35 getOwnPropertyNames/Symbols/Descriptor 建模：nullish 接收者
- *   定抛；obj/tuple/string 投影自有字符串键（含 length/不可枚举）；
- *   any → may + 保守值。
- * - Bug 39 defineProperty：非对象描述符（缺省/nullish/prim）定抛；
- *   any → may；[] 等对象描述符合法。
- * - Bug 40 JSON.parse：symbol prim 定抛（ToString）；any 文本 → may。
- * - Bug 44 fromEntries：非可迭代接收者/非对象条目（含字符串条目与
- *   hole）定抛；[k,v] 元组投影；symbol 键保留（node：不 ToString）。
- * - Bug 46 JSON.stringify：any/抽象接收者 may（BigInt/循环/toJSON）；
- *   symbol/fn 成员原生**省略不抛**（{a:Symbol()} → "{}"、[Symbol()] →
- *   "[null]" 折叠）；bigint prim 任何位置定抛。
- * - Bug 48 JSON.parse reviver：node 实测**非 callable reviver 原生忽略**
- *   （parse("{}",1) → {}，无 TypeError）——bug 文本校正；callable reviver
- *   值域保守 unknown；解析失败 SyntaxError 先于 reviver。
- * - Bug 61 keys/values/entries：缺省/nullish 定抛；any → may。
- * - Bug 76 assign/getPrototypeOf：symbol prim 接收者定抛（V8 ToObject
- *   特例）；number/string/boolean/bigint 装箱合法。
+ * - setPrototypeOf：nullish target 定抛；prim **target 原生合法**
+ * （Type(O) 非 Object → 返回原值，node 实测 (1,{}) → 1）；prim proto
+ * （含 symbol prim，无 lit 项）定抛；any target/proto → may。
+ * - create：prim proto（symbol prim / 抽象 prim）定抛；any → may。
+ * - getOwnPropertyNames/Symbols/Descriptor 建模：nullish 接收者
+ * 定抛；obj/tuple/string 投影自有字符串键（含 length/不可枚举）；
+ * any → may + 保守值。
+ * - defineProperty：非对象描述符（缺省/nullish/prim）定抛；
+ * any → may；[] 等对象描述符合法。
+ * - JSON.parse：symbol prim 定抛（ToString）；any 文本 → may。
+ * - fromEntries：非可迭代接收者/非对象条目（含字符串条目与
+ * hole）定抛；[k,v] 元组投影；symbol 键保留（node：不 ToString）。
+ * - JSON.stringify：any/抽象接收者 may（BigInt/循环/toJSON）；
+ * symbol/fn 成员原生**省略不抛**（{a:Symbol()} → "{}"、[Symbol()] →
+ * "[null]" 折叠）；bigint prim 任何位置定抛。
+ * - JSON.parse reviver：node 实测**非 callable reviver 原生忽略**
+ * （parse("{}",1) → {}，无 TypeError）——bug 文本校正；callable reviver
+ * 值域保守 unknown；解析失败 SyntaxError 先于 reviver。
+ * - keys/values/entries：缺省/nullish 定抛；any → may。
+ * - assign/getPrototypeOf：symbol prim 接收者定抛（V8 ToObject
+ * 特例）；number/string/boolean/bigint 装箱合法。
  */
 import { describe, it, expect } from "vitest";
 import { runTranspiled, callTranspiledExportFull, litValue, abs } from "@nudojs/core";
@@ -57,9 +57,9 @@ function evalSrc(
   };
 }
 
-// --- Bug 27：Object.setPrototypeOf ------------------------------------------
+// --- Object.setPrototypeOf ------------------------------------------
 
-describe("Bug 27: Object.setPrototypeOf target/proto validation", () => {
+describe("Object.setPrototypeOf target/proto validation", () => {
   it("nullish target throws TypeError", () => {
     for (const src of [
       `export function f() { return Object.setPrototypeOf(null, {}); }`,
@@ -105,9 +105,9 @@ describe("Bug 27: Object.setPrototypeOf target/proto validation", () => {
   });
 });
 
-// --- Bug 33：Object.create ---------------------------------------------------
+// --- Object.create ---------------------------------------------------
 
-describe("Bug 33: Object.create proto validation", () => {
+describe("Object.create proto validation", () => {
   it("symbol-prim proto throws TypeError", () => {
     const r = call(`export function f() { return Object.create(Symbol()); }`);
     expect(isNever(r.result)).toBe(true);
@@ -127,9 +127,9 @@ describe("Bug 33: Object.create proto validation", () => {
   });
 });
 
-// --- Bug 35：getOwnPropertyNames / Symbols / Descriptor ----------------------
+// --- getOwnPropertyNames / Symbols / Descriptor ----------------------
 
-describe("Bug 35: Object.getOwnPropertyNames/Symbols/Descriptor", () => {
+describe("Object.getOwnPropertyNames/Symbols/Descriptor", () => {
   it("nullish receiver throws TypeError", () => {
     for (const src of [
       `export function f() { return Object.getOwnPropertyNames(null); }`,
@@ -166,7 +166,7 @@ describe("Bug 35: Object.getOwnPropertyNames/Symbols/Descriptor", () => {
   });
 
   it("getOwnPropertySymbols folds own symbol keys (native: [] for a plain object)", () => {
-    // 族 65 · Bug 240（BC #44）：自有 symbol 键集**可判**时折精确元组——
+    // 族 65 · （BC #44）：自有 symbol 键集**可判**时折精确元组——
     // 原生 Object.getOwnPropertySymbols({a:1}) === []（node v26.10.0 实测：
     // 普通对象 / 数组 / 字符串 / 数字 / 函数 / Error 实例 / TA 实例 /
     // 生成器对象 ⇒ []；Math / JSON / Intl / Reflect ⇒ [Symbol.toStringTag]）。
@@ -198,9 +198,9 @@ describe("Bug 35: Object.getOwnPropertyNames/Symbols/Descriptor", () => {
   });
 });
 
-// --- Bug 39：Object.defineProperty 描述符校验 ---------------------------------
+// --- Object.defineProperty 描述符校验 ---------------------------------
 
-describe("Bug 39: Object.defineProperty descriptor validation", () => {
+describe("Object.defineProperty descriptor validation", () => {
   it("non-object descriptor throws TypeError", () => {
     for (const src of [
       `export function f() { return Object.defineProperty({}, "a", 1); }`,
@@ -237,9 +237,9 @@ describe("Bug 39: Object.defineProperty descriptor validation", () => {
   });
 });
 
-// --- Bug 40 / 48：JSON.parse -------------------------------------------------
+// --- ：JSON.parse -------------------------------------------------
 
-describe("Bug 40: JSON.parse symbol ToString", () => {
+describe("JSON.parse symbol ToString", () => {
   it("symbol-prim arg throws TypeError", () => {
     const r = call(`export function f() { return JSON.parse(Symbol()); }`);
     expect(isNever(r.result)).toBe(true);
@@ -259,7 +259,7 @@ describe("Bug 40: JSON.parse symbol ToString", () => {
   });
 });
 
-describe("Bug 48: JSON.parse reviver (node-corrected: non-callable ignored)", () => {
+describe("JSON.parse reviver (node-corrected: non-callable ignored)", () => {
   it("non-callable / nullish reviver ignored — folds parsed value, no throw", () => {
     for (const src of [
       `export function f() { return JSON.parse("{}", 1); }`,
@@ -294,9 +294,9 @@ describe("Bug 48: JSON.parse reviver (node-corrected: non-callable ignored)", ()
   });
 });
 
-// --- Bug 46：JSON.stringify ---------------------------------------------------
+// --- JSON.stringify ---------------------------------------------------
 
-describe("Bug 46: JSON.stringify abstract may-throw + symbol/fn omission", () => {
+describe("JSON.stringify abstract may-throw + symbol/fn omission", () => {
   it("abstract receiver records may TypeError, stays string partial", () => {
     for (const src of [
       `export function f(x) { return JSON.stringify(x); }`,
@@ -331,9 +331,9 @@ describe("Bug 46: JSON.stringify abstract may-throw + symbol/fn omission", () =>
   });
 });
 
-// --- Bug 61：Object.keys/values/entries 抽象臂 ---------------------------------
+// --- Object.keys/values/entries 抽象臂 ---------------------------------
 
-describe("Bug 61: Object.keys/values/entries abstract receiver may-throw", () => {
+describe("Object.keys/values/entries abstract receiver may-throw", () => {
   it("abstract receiver records may TypeError, partial value unchanged", () => {
     const k = evalSrc(`export function f(x) { return Object.keys(x); }`);
     expect(k.effects).toContain("TypeError");
@@ -362,9 +362,9 @@ describe("Bug 61: Object.keys/values/entries abstract receiver may-throw", () =>
   });
 });
 
-// --- Bug 76：assign / getPrototypeOf symbol 接收者 ------------------------------
+// --- assign / getPrototypeOf symbol 接收者 ------------------------------
 
-describe("Bug 76: Object.assign/getPrototypeOf symbol-prim receiver", () => {
+describe("Object.assign/getPrototypeOf symbol-prim receiver", () => {
   it("symbol-prim assign target throws TypeError (both engine faces)", () => {
     for (const src of [
       `export function f() { return Object.assign(Symbol(), {}); }`,
@@ -395,9 +395,9 @@ describe("Bug 76: Object.assign/getPrototypeOf symbol-prim receiver", () => {
   });
 });
 
-// --- Bug 44：Object.fromEntries ------------------------------------------------
+// --- Object.fromEntries ------------------------------------------------
 
-describe("Bug 44: Object.fromEntries validation + projection", () => {
+describe("Object.fromEntries validation + projection", () => {
   it("non- iterable receiver / non-object entries throw TypeError", () => {
     for (const src of [
       `export function f() { return Object.fromEntries(1); }`,

@@ -1,5 +1,5 @@
 /**
- * Bug 1019 —— vscode 扩展的 **active-case 高亮从不随文档编辑重算**：
+ * vscode 扩展的 **active-case 高亮从不随文档编辑重算**：
  * 装饰是**基于文本快照算出的绝对行号区间**，而刷新只挂在
  * `window.onDidChangeActiveTextEditor` 上 ⇒ `workspace.onDidChangeTextDocument`
  * **未订阅** ⇒ 任何**不切换编辑器**的编辑（打字 / 粘贴 / 格式化）都会让
@@ -35,7 +35,7 @@ const SOURCE = [
 /** 顶部插入 5 行 ⇒ 真实位置整体下移 5 行。 */
 const SHIFTED = ["// 1", "// 2", "// 3", "// 4", "// 5", ""].join("\n") + SOURCE;
 
-describe("Bug 1019 —— active-case 高亮随文档编辑重算", () => {
+describe("active-case 高亮随文档编辑重算", () => {
   beforeAll(async () => {
     const { activate } = await import("../extension.ts");
     await activate(makeExtensionContext() as never);

@@ -100,7 +100,7 @@ const EVAL_CASES: readonly EvalCase[] = [
   {label: "箭头默认参数同名 ⇒ 49（原生 49；修前：NaN）", src: "const __this = 5;\nexport function f() {\n  class C { m() { const g = (__this = 7) => this.x + __this; return g(); } }\n  const c = new C(); c.x = 42;\n  return c.m();\n}", expected: 49},
 ];
 
-describe("[table] 撞名求值面（发射点 × 用户同名绑定）", () => {
+describe("撞名求值面（发射点 × 用户同名绑定）", () => {
   beforeEach(() => {
     resetEngineCaches();
     takeRefineDiags();
@@ -116,25 +116,25 @@ describe("[table] 撞名求值面（发射点 × 用户同名绑定）", () => {
 // ---------------------------------------------------------------------------
 // 成员路径 / 赋值族（__nudoMp*）
 // ---------------------------------------------------------------------------
-describe("[site] 成员路径 / 赋值族（__nudoMp*）", () => {
+describe("成员路径 / 赋值族（__nudoMp*）", () => {
 /**
- * Bug 1127 回归钉：成员路径 / 赋值族的引擎**内部临时名**（`__nudoMp*`）必须
+ * 回归钉：成员路径 / 赋值族的引擎**内部临时名**（`__nudoMp*`）必须
  * 与用户标识符**避让**。
  *
- * 背景：Bug 1058 / 1059 已约定「生成名必须避开用户标识符」
+ * 背景： 已约定「生成名必须避开用户标识符」
  * （`transpile/helpers.ts` 的 `internalTmpName`）。但 `__nudoMp*` 族此前是
  * **写死**的 ⇒ 用户源码里写了同名标识符时两种失效形态都成立：
  *
  * - **遮蔽**（本条主形态）：成员路径 IIFE **在自身作用域里求值用户表达式**
- *   （计算键 / RHS）⇒ IIFE 里的 `const __nudoMpRoot = …` / `const
- *   __nudoMpOld = …` 遮蔽用户同名绑定 ⇒ 用户的表达式读到**引擎临时量**
- *   （自信的错值）——原生值被算成别的值 ⇒ 签名面写错 ⇒ 门禁**假绿**；
+ * （计算键 / RHS）⇒ IIFE 里的 `const __nudoMpRoot = …` / `const
+ * __nudoMpOld = …` 遮蔽用户同名绑定 ⇒ 用户的表达式读到**引擎临时量**
+ * （自信的错值）——原生值被算成别的值 ⇒ 签名面写错 ⇒ 门禁**假绿**；
  * - **TDZ ReferenceError**：`const __nudoMpK0 = __nudoMpDelK;`（引擎自引用）
- *   或 `const __nudoMpRoot = __nudoMpRoot;` ⇒ 求值期 ReferenceError ⇒ 整条
- *   表达式退化为 unknown / 抛。
+ * 或 `const __nudoMpRoot = __nudoMpRoot;` ⇒ 求值期 ReferenceError ⇒ 整条
+ * 表达式退化为 unknown / 抛。
  *
  * 修法：生成名经 `internalTmpNameSet` 分配（`userIdentInfoOf(opts)` 避让集 =
- * 源文本词形 ∪ `opts.userIdents`；撞名加 `_k` 后缀）——与 Bug 1058/1059 同款
+ * 源文本词形 ∪ `opts.userIdents`；撞名加 `_k` 后缀）——与 同款
  * 口径，**不造第二套命名机制**。无碰撞时基名原样返回 ⇒ 产物逐字不变；
  * 同一源文本 ⇒ 同一名 ⇒ 产物确定性（缓存键 / 差分语料依赖它）。
  *
@@ -193,7 +193,7 @@ const SRC_KEY = `export function f() {
   return o.k;
 }`;
 
-describe("Bug 1127：__nudoMp* 内部临时名与用户标识符避让", () => {
+describe("__nudoMp* 内部临时名与用户标识符避让", () => {
   beforeEach(() => {
     resetEngineCaches();
     takeRefineDiags();
@@ -362,20 +362,20 @@ describe("Bug 1127：__nudoMp* 内部临时名与用户标识符避让", () => {
 // ---------------------------------------------------------------------------
 // defineProperty / RegExp 状态写回族
 // ---------------------------------------------------------------------------
-describe("[site] defineProperty / RegExp 状态写回族", () => {
+describe("defineProperty / RegExp 状态写回族", () => {
 /**
- * Bug 1146 回归钉：调用族（`exec/transpile/expr/call.ts`）的引擎**内部临时名**
+ * 回归钉：调用族（`exec/transpile/expr/call.ts`）的引擎**内部临时名**
  * 必须与用户标识符**避让**。
  *
- * 背景：Bug 1058 / 1059 已约定「引擎内部临时名必须避开用户标识符」
- * （`transpile/helpers.ts` 的 `internalTmpName`），Bug 1127 把该口径落到
+ * 背景： 已约定「引擎内部临时名必须避开用户标识符」
+ * （`transpile/helpers.ts` 的 `internalTmpName`），把该口径落到
  * `__nudoMp*` 族（member-path / assignment）。本条落到**调用族**：
  *
  * - `Object.defineProperty(o, "x", { value: __nudoDefR })` 的**实参在
- *   `const __nudoDefR = $invoke(…)` 的初始化器内求值** ⇒ 用户源码里的同名
- *   绑定被引擎临时量遮蔽（读到引擎临时量 ⇒ 自信的错值 ⇒ 签名面写错 ⇒ 门禁
- *   **假绿**）或撞上引擎自引用（TDZ ⇒ ReferenceError ⇒ 原生值被算成
- *   `never throws ReferenceError` ⇒ 门禁**假红**）；
+ * `const __nudoDefR = $invoke(…)` 的初始化器内求值** ⇒ 用户源码里的同名
+ * 绑定被引擎临时量遮蔽（读到引擎临时量 ⇒ 自信的错值 ⇒ 签名面写错 ⇒ 门禁
+ * **假绿**）或撞上引擎自引用（TDZ ⇒ ReferenceError ⇒ 原生值被算成
+ * `never throws ReferenceError` ⇒ 门禁**假红**）；
  * - 正则状态写回 IIFE 同款（`const __nudoReArgs = [实参]` / `const __v = …`）。
  *
  * 修法：生成名经 `internalTmpName` / `internalTmpNameSet` 分配（与 Bug
@@ -481,7 +481,7 @@ const ALL_SOURCES = [
   SRC_RE_EXEC,
 ];
 
-describe("Bug 1146：调用族内部临时名（__nudoDefR / __nudoReArgs / __v）与用户标识符避让", () => {
+describe("调用族内部临时名（__nudoDefR / __nudoReArgs / __v）与用户标识符避让", () => {
   beforeEach(() => {
     resetEngineCaches();
     takeRefineDiags();
@@ -559,30 +559,30 @@ describe("Bug 1146：调用族内部临时名（__nudoDefR / __nudoReArgs / __v�
 // ---------------------------------------------------------------------------
 // 可选链 / 短路 / 对象族
 // ---------------------------------------------------------------------------
-describe("[site] 可选链 / 短路 / 对象族", () => {
+describe("可选链 / 短路 / 对象族", () => {
 /**
- * Bug 1149 回归钉：剩余族的引擎**内部临时名**必须与用户标识符**避让**。
+ * 回归钉：剩余族的引擎**内部临时名**必须与用户标识符**避让**。
  *
- * 背景：Bug 1058 / 1059 已约定「引擎内部临时名必须避开用户标识符」
+ * 背景： 已约定「引擎内部临时名必须避开用户标识符」
  * （`transpile/helpers.ts` 的 `internalTmpName` / `internalTmpNameSet`），
- * Bug 1127 落到 `__nudoMp*` 族，Bug 1146 落到调用族（`expr/call.ts`）。
+ * 落到 `__nudoMp*` 族，落到调用族（`expr/call.ts`）。
  * 本条落到**其余落点**：
  *
  * - `expr/optional-chain.ts`（1149-a）：可选链整链短路的 IIFE 在**自身作用域
- *   里求值用户表达式**（正则实参 / 删除键 / 计算键 / 接收者剪枝源）⇒ 写死名
- *   （`__nudoReArgs` / `__v` / `__nudoDelP` / `__nudoDelK` / `__oc` / `$__oc`
- *   / `$__fn`）会与用户同名绑定相撞：
- *   - **遮蔽** ⇒ 用户表达式读到引擎临时量（自信的错值 ⇒ 签名面写错 ⇒ 门禁
- *     **假绿**）；
- *   - **TDZ ReferenceError** ⇒ 原生值被算成 `never throws ReferenceError`
- *     ⇒ 门禁**假红**；
+ * 里求值用户表达式**（正则实参 / 删除键 / 计算键 / 接收者剪枝源）⇒ 写死名
+ * （`__nudoReArgs` / `__v` / `__nudoDelP` / `__nudoDelK` / `__oc` / `$__oc`
+ * / `$__fn`）会与用户同名绑定相撞：
+ * - **遮蔽** ⇒ 用户表达式读到引擎临时量（自信的错值 ⇒ 签名面写错 ⇒ 门禁
+ * **假绿**）；
+ * - **TDZ ReferenceError** ⇒ 原生值被算成 `never throws ReferenceError`
+ * ⇒ 门禁**假红**；
  * - `expr/short-circuit.ts`（1149-b）：fork 臂 IIFE 同款（`__v` 臂值载体 /
- *   `__test` 左绑定 / `__sc0` 左绑定 / `__r` fork 结果载体）；另「复用左绑定」
- *   哨兵 `"__test"` **只按字符串比对** ⇒ 用户标识符恰好叫 `__test` 时被误判
- *   成哨兵 ⇒ 臂返回左绑定而不是用户的值（自信错值 ⇒ 假绿）；
+ * `__test` 左绑定 / `__sc0` 左绑定 / `__r` fork 结果载体）；另「复用左绑定」
+ * 哨兵 `"__test"` **只按字符串比对** ⇒ 用户标识符恰好叫 `__test` 时被误判
+ * 成哨兵 ⇒ 臂返回左绑定而不是用户的值（自信错值 ⇒ 假绿）；
  * - `expr/object.ts`（1149-b）：setter thunk 的首参载体（`__v`）/ 计算键 IIFE
- *   形参（`__k` / `__nudoObjBase`）/ proto 段链 IIFE 形参（`__nudoProtoBox`）
- *   ——thunk/IIFE 在自身作用域求值用户表达式 ⇒ 同款相撞。
+ * 形参（`__k` / `__nudoObjBase`）/ proto 段链 IIFE 形参（`__nudoProtoBox`）
+ * ——thunk/IIFE 在自身作用域求值用户表达式 ⇒ 同款相撞。
  *
  * 修法：生成名经 `internalTmpName` / `internalTmpNameSet` 分配（与 Bug
  * 1058/1059 / 1127 / 1146 同款避让口径 = `userIdentInfoOf(opts)` 避让集 ∪
@@ -753,7 +753,7 @@ const ALL_SOURCES = [
   SRC_D7,
 ];
 
-describe("Bug 1149：剩余族内部临时名（可选链 / 短路 / 对象）与用户标识符避让", () => {
+describe("剩余族内部临时名（可选链 / 短路 / 对象）与用户标识符避让", () => {
   beforeEach(() => {
     resetEngineCaches();
     takeRefineDiags();
@@ -877,11 +877,11 @@ describe("Bug 1149：剩余族内部临时名（可选链 / 短路 / 对象）�
 // ---------------------------------------------------------------------------
 // 类 setter thunk / fork 协议 / 赋值 IIFE
 // ---------------------------------------------------------------------------
-describe("[site] 类 setter thunk / fork 协议 / 赋值 IIFE", () => {
+describe("类 setter thunk / fork 协议 / 赋值 IIFE", () => {
 /**
- * Bug 1151 回归钉：类 setter thunk 形参载体 + fork 绑定名的内部临时名避让。
+ * 回归钉：类 setter thunk 形参载体 + fork 绑定名的内部临时名避让。
  *
- * 背景：Bug 1058 / 1059 / 1127 / 1146 / 1149 已建立统一口径——**引擎内部临时名
+ * 背景： 已建立统一口径——**引擎内部临时名
  * 必须避开用户标识符**（否则用户同名绑定被引擎 `const`/`var`/形参遮蔽 ⇒
  * **自信错值** 或 TDZ **ReferenceError** ⇒ 闸门**假红**；模块级同名还会撞出
  * 重复声明 SyntaxError ⇒ **整模块 fail-closed** ⇒ 闸门**假绿**）。
@@ -891,31 +891,31 @@ describe("[site] 类 setter thunk / fork 协议 / 赋值 IIFE", () => {
  * 不变**。本条落在**类访问器**与**fork 协议**两族。
  *
  * - 1151-a（`exec/transpile/class-emit.ts`）：**类 setter thunk 的形参载体
- *   `__v`**。setter thunk（`(__this, <v>) => {…}`）在**自身作用域**里求值
- *   用户表达式（setter 体）⇒ 写死名 `__v` 会**遮蔽**用户同名外层绑定 ⇒
- *   setter 体读到引擎临时量（自信错值 ⇒ 闸门**假绿**）。
- *   修法：形参名走 `internalTmpName`（与 Bug 1149 已修好的
- *   `exec/transpile/expr/object.ts` setter 路径**同款**——照它的做法抄）。
+ * `__v`**。setter thunk（`(__this, <v>) => {…}`）在**自身作用域**里求值
+ * 用户表达式（setter 体）⇒ 写死名 `__v` 会**遮蔽**用户同名外层绑定 ⇒
+ * setter 体读到引擎临时量（自信错值 ⇒ 闸门**假绿**）。
+ * 修法：形参名走 `internalTmpName`（与 已修好的
+ * `exec/transpile/expr/object.ts` setter 路径**同款**——照它的做法抄）。
  * - 1151-b（`exec/transpile/emit.ts` + `stmt/statement.ts` +
- *   `stmt/fn-body.ts` + `expr/short-circuit.ts`）：**fork 协议绑定名**
- *   （`__fk0_${n}` / `__fk1_${n}` / `__fk2_${n}` / `__fk1_set_${n}` /
- *   `__fk2_set_${n}` / `__cont` / `__fkT` / `__fkR`；switch 族 `__sw0_${n}` /
- *   `__sw${i}_${n}` / `__sw${i}set_${n}` / `__swD` / `__swR` / `__p`）。`n` 是
- *   **用户绑定名** ⇒ 用户标识符恰为 `__fk0_a` 时即撞。**已修**（原生 42 /
- *   引擎 0 与 `true` ⇒ 修后 42）：
- *   新增**共享分配器** `emit.ts` 的 `forkTmpNames` / `switchTmpNames`（走
- *   `internalTmpNameSet` / `internalTmpName`）——声明点（`forkBindingDecls`）
- *   与**全部**引用点（`forkArmThunk` / `forkArmThunkExpr` /
- *   `forkJoinBindings` / `expr/short-circuit.ts` 的调用点）**同源分配**
- *   ⇒ 「成对一致」不破（`stmt/statement.ts` 与 `stmt/fn-body.ts` 共用
- *   `forkArmThunkExpr`，不再各自内联副本）。
- *   覆盖三条发射路径：`if` 分叉（statement.ts）、**早退提升**（fn-body.ts）、
- *   **短路协议**（short-circuit.ts）+ switch 臂。
+ * `stmt/fn-body.ts` + `expr/short-circuit.ts`）：**fork 协议绑定名**
+ * （`__fk0_${n}` / `__fk1_${n}` / `__fk2_${n}` / `__fk1_set_${n}` /
+ * `__fk2_set_${n}` / `__cont` / `__fkT` / `__fkR`；switch 族 `__sw0_${n}` /
+ * `__sw${i}_${n}` / `__sw${i}set_${n}` / `__swD` / `__swR` / `__p`）。`n` 是
+ * **用户绑定名** ⇒ 用户标识符恰为 `__fk0_a` 时即撞。**已修**（原生 42 /
+ * 引擎 0 与 `true` ⇒ 修后 42）：
+ * 新增**共享分配器** `emit.ts` 的 `forkTmpNames` / `switchTmpNames`（走
+ * `internalTmpNameSet` / `internalTmpName`）——声明点（`forkBindingDecls`）
+ * 与**全部**引用点（`forkArmThunk` / `forkArmThunkExpr` /
+ * `forkJoinBindings` / `expr/short-circuit.ts` 的调用点）**同源分配**
+ * ⇒ 「成对一致」不破（`stmt/statement.ts` 与 `stmt/fn-body.ts` 共用
+ * `forkArmThunkExpr`，不再各自内联副本）。
+ * 覆盖三条发射路径：`if` 分叉（statement.ts）、**早退提升**（fn-body.ts）、
+ * **短路协议**（short-circuit.ts）+ switch 臂。
  * - 1151-c（`exec/transpile/expr/assignment.ts`）：赋值 IIFE 形参 `__v`
- *   **遮蔽赋值目标**与 **super 计算键**——IIFE 体内求值用户表达式（写目标
- *   / 计算键）⇒ 写死名 `__v` 会遮蔽用户同名绑定 ⇒ 自信错值 ⇒ 闸门**假绿**。
- *   **已修**：形参名走 `internalTmpName`（照 `class-emit.ts` 的 `SETTER_V_BASE`
- *   路径抄）；**实参面保持原样**（IIFE 实参在作用域外求值 ⇒ 不遮蔽）。
+ * **遮蔽赋值目标**与 **super 计算键**——IIFE 体内求值用户表达式（写目标
+ * / 计算键）⇒ 写死名 `__v` 会遮蔽用户同名绑定 ⇒ 自信错值 ⇒ 闸门**假绿**。
+ * **已修**：形参名走 `internalTmpName`（照 `class-emit.ts` 的 `SETTER_V_BASE`
+ * 路径抄）；**实参面保持原样**（IIFE 实参在作用域外求值 ⇒ 不遮蔽）。
  *
  * 锚定值均为 **node v26.10.0** 原生实测（见各断言注释）。
  */
@@ -1082,7 +1082,7 @@ const SRC_C3 = `export function f() {
   return y;
 }`;
 
-describe("Bug 1151：类 setter thunk 形参载体（__v）避开用户标识符", () => {
+describe("类 setter thunk 形参载体（__v）避开用户标识符", () => {
   beforeEach(() => {
     resetEngineCaches();
     takeRefineDiags();
@@ -1122,7 +1122,7 @@ describe("Bug 1151：类 setter thunk 形参载体（__v）避开用户标识符
         return out;
       }`;
       const js = transpileSource(src, { source: src });
-      // 载体名（Bug 1160 起经单元共享分配）不属于本测试的断言面——只钉
+      // 载体名（起经单元共享分配）不属于本测试的断言面——只钉
       // 1151 自己的 `__v` 基名不遭改名。
       expect(js).not.toMatch(/__v[A-Za-z0-9_]*_1\b/);
     });
@@ -1136,7 +1136,7 @@ describe("Bug 1151：类 setter thunk 形参载体（__v）避开用户标识符
         return out;
       }`;
       const js = transpileSource(src, { source: src });
-      // 载体名（Bug 1160 起经单元共享分配）不属于本测试的断言面——只钉
+      // 载体名（起经单元共享分配）不属于本测试的断言面——只钉
       // 1151 自己的 `__v` 基名不遭改名。
       expect(js).not.toMatch(/__v[A-Za-z0-9_]*_1\b/);
     });
@@ -1234,58 +1234,57 @@ describe("Bug 1151：类 setter thunk 形参载体（__v）避开用户标识符
 // ---------------------------------------------------------------------------
 // switch 辅助 / 标签 / 自增 / 类 setter 别名
 // ---------------------------------------------------------------------------
-describe("[site] switch 辅助 / 标签 / 自增 / 类 setter 别名", () => {
+describe("switch 辅助 / 标签 / 自增 / 类 setter 别名", () => {
 /**
- * Bug 1159 回归钉：附录 A#4「同族写死名残留」—— 登记为「实测无害」的三处，
+ * 回归钉：附录 A#4「同族写死名残留」—— 登记为「实测无害」的三处，
  * 经本条实测**全部可触发**（体内确有用户表达式），另在同文件内发现两处同族
  * 残留。
  *
- * 背景：Bug 1058/1059 已约定「引擎内部临时名必须避开用户标识符」
+ * 背景： 已约定「引擎内部临时名必须避开用户标识符」
  * （`transpile/helpers.ts` 的 `internalTmpName` / `internalTmpNameSet`），
- * Bug 1127 / 1146 / 1149 / 1151 陆续落到 `__nudoMp*` / 调用族 / 可选链 /
+ * 陆续落到 `__nudoMp*` / 调用族 / 可选链 /
  * 短路 / 对象 / 类形参。本条的落点：
  *
  * - `stmt/statement.ts`（1159-a）：switch 的 **case 测试辅助族**（`__swT` /
- *   `__swTV` / `__swTD` / `__swAllDone` / `__swTestRead` / `__swEval` /
- *   `__swEvalAll`，及其形参 `__swI` / 循环变量 `__swJ`）与**共享体名**
- *   `__swBody{n}` 是**块级词法绑定**，而 case 测试 thunk
- *   （`() => (用户 case 表达式)`）与臂 thunk 都在该块作用域里求值用户表达式
- *   ⇒ 写死名会：
- *   - **遮蔽**用户同名外层绑定 ⇒ 臂体读到引擎临时量（自信错值 ⇒ 闸门假绿）：
- *     `const __swAllDone = 42` 被读成引擎的 `false`；
- *   - 撞 **TDZ ReferenceError**：臂入口注入的 `if (!__swTestRead)` 在用户
- *     `let __swTestRead` 声明之前读 ⇒ 原生值被算成 never。
+ * `__swTV` / `__swTD` / `__swAllDone` / `__swTestRead` / `__swEval` /
+ * `__swEvalAll`，及其形参 `__swI` / 循环变量 `__swJ`）与**共享体名**
+ * `__swBody{n}` 是**块级词法绑定**，而 case 测试 thunk
+ * （`() => (用户 case 表达式)`）与臂 thunk 都在该块作用域里求值用户表达式
+ * ⇒ 写死名会：
+ * - **遮蔽**用户同名外层绑定 ⇒ 臂体读到引擎临时量（自信错值 ⇒ 闸门假绿）：
+ * `const __swAllDone = 42` 被读成引擎的 `false`；
+ * - 撞 **TDZ ReferenceError**：臂入口注入的 `if (!__swTestRead)` 在用户
+ * `let __swTestRead` 声明之前读 ⇒ 原生值被算成 never。
  * - `stmt/statement.ts`（1159-b）：switch 臂的 break 标签 `__nudoSw{n}` 是
- *   **信号字符串**（`$loopBreak(标签)` / `$isBreakTo` 按字符串比对）⇒ 与用户
- *   同名标签块相撞时，臂内**无标签** `break` 的信号被用户的标签块 catch
- *   吸收 ⇒ switch 不退出、块后续语句照跑（自信错值）。
+ * **信号字符串**（`$loopBreak(标签)` / `$isBreakTo` 按字符串比对）⇒ 与用户
+ * 同名标签块相撞时，臂内**无标签** `break` 的信号被用户的标签块 catch
+ * 吸收 ⇒ switch 不退出、块后续语句照跑（自信错值）。
  * - `expr/operators.ts`（1159-c）：私有名自增 IIFE 形参 `__v` / `__old`——
- *   IIFE 体**重复发射接收者表达式**（用户源码）⇒ 遮蔽用户同名绑定；同文件
- *   另两处同族残留：标识符后缀 IIFE 的 `__old`（体内含**写目标标识符**）与
- *   非路径 delete IIFE 的 `__nudoDelP` / `__nudoDelK` / `__nudoDelD`（体内
- *   求值父对象 / 计算键 ⇒ TDZ）。
+ * IIFE 体**重复发射接收者表达式**（用户源码）⇒ 遮蔽用户同名绑定；同文件
+ * 另两处同族残留：标识符后缀 IIFE 的 `__old`（体内含**写目标标识符**）与
+ * 非路径 delete IIFE 的 `__nudoDelP` / `__nudoDelK` / `__nudoDelD`（体内
+ * 求值父对象 / 计算键 ⇒ TDZ）。
  * - `stmt/statement.ts`（1159-c 补）：for-in 接收者临时名 `__fir{n}`（按
- *   grep 指令同文件发现的第 4 处）——`const __fir{n} = (用户接收者表达式)`
- *   的初始化器与循环体都在该块里求值用户代码；首轮编译失败后的 Bug 1139
- *   重试只是**碰巧**推高计数器躲开单名碰撞，两次尝试的序号都落在用户占用面
- *   时重试仍 SyntaxError ⇒ 宿主异常冒出（`runTranspiled` 直接抛）。
+ * grep 指令同文件发现的第 4 处）——`const __fir{n} = (用户接收者表达式)`
+ * 的初始化器与循环体都在该块里求值用户代码；首轮编译失败后的 * 重试只是**碰巧**推高计数器躲开单名碰撞，两次尝试的序号都落在用户占用面
+ * 时重试仍 SyntaxError ⇒ 宿主异常冒出（`runTranspiled` 直接抛）。
  * - `stmt/statement.ts`（1159-c 再补）：循环协议的两处写死名——`for` fallback
- *   的 `$for` 状态线程形参 `__n`（测试 / 体 thunk 都内联用户源码）与 do-while
- *   首轮标记 `__nudoDwFirst`（块级绑定 + 体 thunk 内联用户体）⇒ 遮蔽用户同名
- *   绑定（条件 / 体读合成计数器或引擎布尔 ⇒ 自信错值）。
+ * 的 `$for` 状态线程形参 `__n`（测试 / 体 thunk 都内联用户源码）与 do-while
+ * 首轮标记 `__nudoDwFirst`（块级绑定 + 体 thunk 内联用户体）⇒ 遮蔽用户同名
+ * 绑定（条件 / 体读合成计数器或引擎布尔 ⇒ 自信错值）。
  * - `class-emit.ts`（1159-d）：setter thunk 的别名载体 `__nab{i}` / 回收载体
- *   `__nabs`——thunk 体内求值用户 setter 体 ⇒ 遮蔽用户同名外层绑定。
+ * `__nabs`——thunk 体内求值用户 setter 体 ⇒ 遮蔽用户同名外层绑定。
  * - `expr/function.ts` / `expr/assignment.ts`（1159-d 补，按同族 grep 指令
- *   扩展）：宿主 rest 形参名 `__rest_raw`（与用户同名 rest 形参**重复声明**
- *   ⇒ SyntaxError）与解构赋值 IIFE 形参 `__d`（默认值表达式在 IIFE 体内求值
- *   ⇒ 读成 IIFE 实参对象）。
+ * 扩展）：宿主 rest 形参名 `__rest_raw`（与用户同名 rest 形参**重复声明**
+ * ⇒ SyntaxError）与解构赋值 IIFE 形参 `__d`（默认值表达式在 IIFE 体内求值
+ * ⇒ 读成 IIFE 实参对象）。
  *
  * 未纳入（**另族**）：宿主注入的 `$` / `__nudo*` 运行时族（附录 A#3，可解析
- * 面爆炸半径过大）。`__this` 载体当时也留到独立一波，**已由 Bug 1160 收口**
+ * 面爆炸半径过大）。`__this` 载体当时也留到独立一波，**已由 收口**
  * （`thisCarrierOf` 单元共享分配；1149 / 1151 中钉 `(__this, …)` 字面形态的
  * 断言已按行为不变口径改写/删除）。
  *
- * 修法：全部改经 `internalTmpName` / `internalTmpNameSet`（与 Bug 1149 同款
+ * 修法：全部改经 `internalTmpName` / `internalTmpNameSet`（与 同款
  * 避让口径 = `userIdentInfoOf(opts)` 避让集 ∪ `opts.userIdents`，撞名加 `_k`
  * 后缀）——**不造第二套命名机制**。无碰撞时基名原样返回 ⇒ 产物逐字不变
  * （9507 条差分语料 + 手写 switch / label / 类 / 私有名 / delete 语料，旧发射器
@@ -1454,8 +1453,7 @@ export function f() { const c = new C(); return c.inc(c); }`;
 
 /**
  * 触发 C6：for-in 接收者临时名 `__fir{n}`（同族第 4 处，grep 在 statement.ts
- * 另发现）撞用户声明 ⇒ 原生 3（修前：首轮重复声明 SyntaxError + Bug 1139
- * 重试后再撞 ⇒ 宿主 SyntaxError 冒出）。
+ * 另发现）撞用户声明 ⇒ 原生 3（修前：首轮重复声明 SyntaxError + * 重试后再撞 ⇒ 宿主 SyntaxError 冒出）。
  *
  * 声明 1..80：模块级计数器跨转译单调递增且重试会再推 3 格 ⇒ 宽区间保证
  * 首轮/重试两次尝试的序号都落在用户占用面上（修前可触发；修后经分配器避让，
@@ -1594,7 +1592,7 @@ const ALL_SOURCES = [
   SRC_D2,
 ];
 
-describe("Bug 1159：附录 A#4 残留写死名（switch 辅助族 / break 标签 / 自增 IIFE / 类 setter 别名）", () => {
+describe("附录 A#4 残留写死名（switch 辅助族 / break 标签 / 自增 IIFE / 类 setter 别名）", () => {
   beforeEach(() => {
     resetEngineCaches();
     takeRefineDiags();
@@ -1776,11 +1774,11 @@ describe("Bug 1159：附录 A#4 残留写死名（switch 辅助族 / break 标�
 // ---------------------------------------------------------------------------
 // this 载体（__this）
 // ---------------------------------------------------------------------------
-describe("[site] this 载体（__this）", () => {
+describe("this 载体（__this）", () => {
 /**
- * Bug 1160 回归钉：this 载体名（`__this`）必须避开用户标识符。
+ * 回归钉：this 载体名（`__this`）必须避开用户标识符。
  *
- * 背景：Bug 1058 / 1059 / 1127 / 1146 / 1149 / 1151 / 1159 已约定「引擎内部
+ * 背景： 已约定「引擎内部
  * 临时名必须避开用户标识符」——撞名的两种失效形态（同作用域重复词法声明
  * ⇒ 产物非法 JS ⇒ 整模块 fail-closed；内层遮蔽用户同名绑定 ⇒ 自信错值）。
  * 附录 A#4 把 `__this` 载体登记为「实测无害」并显式留到独立一波——本条实测
@@ -1790,16 +1788,16 @@ describe("[site] this 载体（__this）", () => {
  * 作用域里求值的是用户源码 ⇒ 用户声明同名绑定即相撞：
  *
  * - 真函数（声明 / 表达式 / 生成器）：形参同名 ⇒ `let __this` 与形参重复
- *   声明 SyntaxError；外层 / 块级同名 ⇒ 体内 `this` 读到用户绑定（或用户
- *   读载体）⇒ 自信错值。
+ * 声明 SyntaxError；外层 / 块级同名 ⇒ 体内 `this` 读到用户绑定（或用户
+ * 读载体）⇒ 自信错值。
  * - 类方法 / 构造器 / 对象方法（含函数表达式值）：宿主签名是
- *   `(__this, <用户形参>)` ⇒ 用户形参同名 ⇒ 箭头重复形参 SyntaxError；
- *   体内 / 默认参数 / 访问器 / 字段初始化器 / 静态块读外层 `__this` ⇒
- *   读到载体。
+ * `(__this, <用户形参>)` ⇒ 用户形参同名 ⇒ 箭头重复形参 SyntaxError；
+ * 体内 / 默认参数 / 访问器 / 字段初始化器 / 静态块读外层 `__this` ⇒
+ * 读到载体。
  * - 静态块 / 字段 thunk 首参 + `@@hasInstance` 安装 thunk：同款遮蔽；具名类
- *   的 `let C = __this` 绑定也随载体改名。
+ * 的 `let C = __this` 绑定也随载体改名。
  * - 构造器 `super()` 的接收者重绑（`<载体> = $super(<载体>, …)`）与
- *   `super.x` 读：载体改名必须与声明同名，块级 `let __this` 不得劫持重绑。
+ * `super.x` 读：载体改名必须与声明同名，块级 `let __this` 不得劫持重绑。
  *
  * 修法：**单一来源** `exec/transpile/helpers.ts` 的 `thisCarrierOf(opts)`——
  * 根转译单元（`transpileFile` / `transpileBodyNode`）经
@@ -2160,7 +2158,7 @@ const CTRL_ARROW = `export function f() {
 
 
 
-describe("Bug 1160：this 载体名（`__this`）避开用户标识符", () => {
+describe("this 载体名（`__this`）避开用户标识符", () => {
   beforeEach(() => {
     resetEngineCaches();
     takeRefineDiags();

@@ -152,7 +152,7 @@ describe("evaluator object invariants", () => {
   });
 });
 
-describe("Bug 120: Object.setPrototypeOf extensibility", () => {
+describe("Object.setPrototypeOf extensibility", () => {
   // ES2024 OrdinarySetPrototypeOf step 4：不可扩展目标改原型 → TypeError
   //（此前无条件 setProtoAbs——frozen/sealed/nonext 目标静默改原型）。
   it("frozen/sealed/non-extensible 目标改原型 → 定抛 TypeError", () => {
@@ -193,7 +193,7 @@ describe("Bug 120: Object.setPrototypeOf extensibility", () => {
   });
 });
 
-describe("Bug 129: freeze/seal 非空 TypedArray", () => {
+describe("freeze/seal 非空 TypedArray", () => {
   // SetIntegrityLevel 对整数索引异质对象不可行：length > 0 定抛
   //（V8「Cannot freeze|seal array buffer views with elements」）；空 TA 合法。
   it("freeze/seal 非空 TA（数字形态，length 槽可证）→ 定抛 TypeError", () => {

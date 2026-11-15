@@ -11,16 +11,16 @@
  *
  * 覆盖：
  * - `scope.ts`：`normalizeModuleId` / `isVirtualModuleId` / `setProjectRoot` /
- *   `configureScope` / `scopeDecision`（三处早退的唯一落点）/ 默认匹配表。
+ * `configureScope` / `scopeDecision`（三处早退的唯一落点）/ 默认匹配表。
  * - `check-assembly.ts`：`assembleCheckOutcome` 的中间态形状（位置与 code
- *   **原样带出**，不自己拼文本）。
+ * **原样带出**，不自己拼文本）。
  * - `report.ts`：`renderDiagnostic`（位置与消息装配的**唯一出口**）/
- *   `emitDiagnostics`（三条通道的路由 + `failOnError` 聚合）/
- *   `logAnalysisSummary`（汇总行文本）。
+ * `emitDiagnostics`（三条通道的路由 + `failOnError` 聚合）/
+ * `logAnalysisSummary`（汇总行文本）。
  *
  * ⚠ **S3 更新（族 30 · S3）**：本文件原是「S0 重构前后行为等价」的钉；
  * S3 按主 agent 裁决**故意**改了两处可观测行为（**签名契约未变**）：
- * **Bug 987**（消息统一追加 ` (<code>)`）与 **Bug 1002**（汇总行改走
+ * （消息统一追加 ` (<code>)`）与 （汇总行改走
  * vite logger，不再 `console.log`）⇒ 相关断言已随之更新并在用例内注明。
  * - `index.ts` 的 `configResolved` 惰性钩子（只记录 `config.root`）。
  */
@@ -157,10 +157,10 @@ describe("族 30 S0 —— report.ts 的契约（只抽不改）", () => {
   // ⚠ **S3 更新（族 30 · S3 = 982 / 987 / 1002 的落点）**：本组断言原为
   // 「S0 重构前后逐字一致」的**等价性钉**；S3 按主 agent 裁决**故意**改了两处
   // 可观测行为 ⇒ 本钉随之更新（**签名契约未变**）：
-  // - **Bug 987**：两个诊断来源的消息**统一**在尾部追加 ` (<code>)`
-  //   ⇒ `renderDiagnostic` 的输出多出码后缀（此前 evaluator 面恒丢码）。
-  // - **Bug 1002**：汇总行改走 **Vite logger**（`ctx.info` → `ctx.warn` 兜底），
-  //   **不再**用裸 `console.log` ⇒ 汇总行不再出现在 console.log 上。
+  // - ：两个诊断来源的消息**统一**在尾部追加 ` (<code>)`
+  // ⇒ `renderDiagnostic` 的输出多出码后缀（此前 evaluator 面恒丢码）。
+  // - ：汇总行改走 **Vite logger**（`ctx.info` → `ctx.warn` 兜底），
+  // **不再**用裸 `console.log` ⇒ 汇总行不再出现在 console.log 上。
   it("renderDiagnostic 是位置与消息装配的唯一出口（逐字 + 码后缀）", () => {
     expect(renderDiagnostic("/a/b.js", diag("error"))).toBe(
       "[nudo] /a/b.js:3:5 error: boom-error (nudo:demo)",

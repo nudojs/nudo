@@ -5,9 +5,9 @@
  * 可扩展类）：URL / ArrayBuffer / SharedArrayBuffer / DataView / WeakRef /
  * FinalizationRegistry。此前 superBuiltinHost 不放行：
  * - 静态读 typeof AB.isView / U.canParse 折精确 undefined（wrong-exact，
- *   原生 "function"）；缺席键同样不可判；
+ * 原生 "function"）；缺席键同样不可判；
  * - 构造面 new AB(8).byteLength 折 undefined（原生 8——constructClass 的
- *   !spec 分支原样返回 thisVal，args 丢弃）。
+ * !spec 分支原样返回 thisVal，args 丢弃）。
  * 修复：hostBuiltinCtorOf 增 NAMESPACE_ONLY_HOST_CTORS 身份校验（静态读
  * 走宿主通道——出席键 ns 投影 / 缺席键折 undefined）；constructClass 对
  * 宿主父名路由 evalBuiltinNew（内建槽嫁接到被构造 brand 名——instanceof

@@ -141,7 +141,7 @@ describe("exports condition keys (browser)", () => {
         "esm/index.js": "export default {};",
       },
     );
-    // 条件键按**消费形态**分表（Bug 477）：require 面命中嵌套的 require 条件，
+    // 条件键按**消费形态**分表（）：require 面命中嵌套的 require 条件，
     // import 面 miss 后落到 default —— 固定顺序的表做不到这一点。
     expect(resolveNpmJsEntryDetailed("pkg", dir, "require").path).toBe(
       join(pkgDir, "cjs", "index.js"),
@@ -153,7 +153,7 @@ describe("exports condition keys (browser)", () => {
 });
 
 describe("exports array fallback", () => {
-  // BUG-270：Node 的数组回退只看「目标**非法**」，**不看存在性**——
+  // Node 的数组回退只看「目标**非法**」，**不看存在性**——
   // 首个目标合法但文件缺失时解析就停在该目标上（装载期 ERR_MODULE_NOT_FOUND）。
   // 旧用例（"skips missing file and hits next in array"）固化的是这条缺陷。
   it("stops at the first valid target even when the file is missing (BUG-270)", () => {

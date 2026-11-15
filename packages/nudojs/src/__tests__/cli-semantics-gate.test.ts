@@ -214,7 +214,7 @@ describe("CLI flag contract", () => {
   });
 });
 
-describe("check --json ok↔exit single source (BUG-008)", () => {
+describe("check --json ok↔exit single source ()", () => {
   it("good+missing mixed: stdout non-empty, ok:false ⇔ exit 1", () => {
     const a = write("mix-good.js", "export function id(x){ return x; }\n");
     const missing = join(dir, "mix-missing.js");
@@ -281,7 +281,7 @@ describe("check --json ok↔exit single source (BUG-008)", () => {
   });
 });
 
-describe("health --json ok↔exit single source (BUG-004)", () => {
+describe("health --json ok↔exit single source ()", () => {
   it("bad --from path: ok:false + pathErrors, exit 1 (never ok:true + exit 1)", () => {
     const a = write("health-good.js", "export function id(x){ return x; }\n");
     const r = runCli(["health", a, "--json", "--from", "/no/such/file.js"]);

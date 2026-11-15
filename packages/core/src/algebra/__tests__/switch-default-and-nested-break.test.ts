@@ -1,12 +1,12 @@
 /**
  * switch default 双发射（146）+ 臂内嵌套循环 break 被吞（173）回归。
  *
- * Bug 146：`case 1: default: body`——default 的 consequent 与前一个 case 臂
+ * `case 1: default: body`——default 的 consequent 与前一个 case 臂
  * **共享同一份语句**（case 臂负责「命中 case 1 落入 default 体」，default 臂
  * 负责「全不命中也落入 default 体」）。合并阶段（fall-through 把后续臂体串
  * 进当前臂）又串了一份 ⇒ 体在同一条臂里执行两次（返回值 "dd"、副作用翻倍）。
  *
- * Bug 173：switch 臂的 `inSwitchArm` 标记**带进了嵌套循环**（循环体 opts
+ * switch 臂的 `inSwitchArm` 标记**带进了嵌套循环**（循环体 opts
  * 从不清除）⇒ 循环内的无标签 break 被当成「臂结束」（`return;`）⇒ 循环跑到
  * 结束（迭代数错：`f() => 3`，原生 1）。
  *

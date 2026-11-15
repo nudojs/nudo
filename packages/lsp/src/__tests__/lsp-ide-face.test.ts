@@ -29,7 +29,7 @@ import {
   resolveReferences,
 } from "../symbols.ts";
 import { positionalCommandParams } from "../agent-tools.ts";
-// ignoreThrows 解析已单源：service gate-config.ts（BUG-110），lsp `gate-config.ts`
+// ignoreThrows 解析已单源：service gate-config.ts（），lsp `gate-config.ts`
 // 与 nudojs `check-gate-config.ts` 都只 re-export 同一实现——不再需要 CLI 侧
 // 测试 oracle，镜像相等断言随之移除（同义反复），改为直接值断言。
 import { configIgnoreThrows, parseIgnoreThrows } from "../gate-config.ts";
@@ -76,7 +76,7 @@ const ENV_SRC = `export function defineEnv(){ return { globals: { MAGIC: 1 } }; 
 /** 坏掉的 env 模板：不导出 defineEnv ⇒ 加载失败（可见 warning） */
 const ENV_BROKEN = `export const notDefineEnv = 1;\n`;
 /** 依赖 env 模板的源文件（**扩展名缺省**形态 ⇒ LSP 自己的 dep 表对不上，
- *  只有 service 的 env 反向边表能命中） */
+ * 只有 service 的 env 反向边表能命中） */
 const MAIN_NOEXT = `/// @nudo:env ./globals.env
 export function useGlobal(){ return MAGIC; }
 `;
@@ -194,8 +194,8 @@ describe("族 53 · 第 2 条：指令补全的前缀过滤（前缀匹配语义
 
   it("2-4 协议面：`@nudo:c` ⇒ 命中**所有**以 `@nudo:c` 开头的指令（前缀语义）", async () => {
     // ⚠ 前缀语义说明：`@nudo:case` 与 `@nudo:contract` **都**真前缀于 `@nudo:c`
-    //   ⇒ 两者都该出现；被排除的是「不是 typed 前缀」的 label（子串语义才会把
-    //   `@nudo:mock` / `@nudo:replace` 这类**含** `c` 的 label 误纳进来）。
+    // ⇒ 两者都该出现；被排除的是「不是 typed 前缀」的 label（子串语义才会把
+    // `@nudo:mock` / `@nudo:replace` 这类**含** `c` 的 label 误纳进来）。
     const src = "// @nudo:c\nexport const k = 1;\n";
     const { mock, uri } = await openLspDocument(src, "file:///tmp/nudo-f53-dir/c.js");
     expect(directiveLabels(requestCompletion(mock, uri, 0, 10)).sort()).toEqual([

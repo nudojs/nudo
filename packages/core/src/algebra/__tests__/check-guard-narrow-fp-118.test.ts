@@ -3,31 +3,31 @@
  *
  * 三种守卫形态下 optional 槽 / nullable 参数的属性读、迭代曾误报
  * nudo:entry-may-throw（1.3.10 实测）：
- *   1. 成员真值守卫：`if (report.scorecard) return report.scorecard.grade`
- *      ——truthy ⇒ 槽值非 nullish 且槽必在场（optional 摘除），此前
- *      `$get` 对 optional 槽 join(value, undef) 导致 `.grade` 撞 undefined
- *      记假 may-throw（`property 'grade' on undefined`）。
- *   2. 复合混合析取：`if (!doc || typeof doc !== 'object') return 'none'`
- *      ——穿透臂里 `!doc` 假 ⇒ doc 非 nullish；此前 compositeNullishGuardOf
- *      要求两侧都是同标识符 nullish 守卫，遇 typeof 型右操作数直接放弃，
- *      `doc.lockfileVersion` 撞 null 记假（`property … on null`）。
- *   3. 可选链守卫后迭代：`if (!files?.length) return []` ——`files?.length`
- *      truthy ⇒ files 非 nullish ⇒ for-of 可迭代；此前不识别
- *      OptionalMemberExpression 真值守卫，记假
- *      `iteration over possibly non-iterable value`。
+ * 1. 成员真值守卫：`if (report.scorecard) return report.scorecard.grade`
+ * ——truthy ⇒ 槽值非 nullish 且槽必在场（optional 摘除），此前
+ * `$get` 对 optional 槽 join(value, undef) 导致 `.grade` 撞 undefined
+ * 记假 may-throw（`property 'grade' on undefined`）。
+ * 2. 复合混合析取：`if (!doc || typeof doc !== 'object') return 'none'`
+ * ——穿透臂里 `!doc` 假 ⇒ doc 非 nullish；此前 compositeNullishGuardOf
+ * 要求两侧都是同标识符 nullish 守卫，遇 typeof 型右操作数直接放弃，
+ * `doc.lockfileVersion` 撞 null 记假（`property … on null`）。
+ * 3. 可选链守卫后迭代：`if (!files?.length) return []` ——`files?.length`
+ * truthy ⇒ files 非 nullish ⇒ for-of 可迭代；此前不识别
+ * OptionalMemberExpression 真值守卫，记假
+ * `iteration over possibly non-iterable value`。
  *
  * 修复（#118）：
- *   - stmt-predicates.ts：NullishGuard 增 memberKey（单层成员真值守卫，
- *     `o.p`/`!o.p`/`o?.p`/`!o?.p`，非计算键 + Identifier 基名）；
- *     compositeNullishGuardOf 放宽为单侧成立（另一侧 typeof 守卫/任意谓词
- *     不否定该事实；两侧同为 nullish 守卫但异名仍保守 undefined）。
- *   - 新运行时助手 $removeMemberNullish(a, key)：重建 obj slots——槽值剥
- *     nullish 成员 + 摘 optional 标记（$get 的 join(value, undef) 消失）；
- *     键缺席/非 obj/裸宿主值透传（与 $removeNullish 同契约）。
- *   - 接线：narrowNullishArmThunk 按 memberKey 发射
- *     $removeMemberNullish($removeNullish(o), key)；stmt.ts 早退提升路径
- *     cons 臂同样剪影（`if (o.p) return o.p.q` 的读在真值臂内）；
- *     expr.ts 内联三元经 nullishRemoveCallOf 分发（不再硬编码 $removeNullish）。
+ * - stmt-predicates.ts：NullishGuard 增 memberKey（单层成员真值守卫，
+ * `o.p`/`!o.p`/`o?.p`/`!o?.p`，非计算键 + Identifier 基名）；
+ * compositeNullishGuardOf 放宽为单侧成立（另一侧 typeof 守卫/任意谓词
+ * 不否定该事实；两侧同为 nullish 守卫但异名仍保守 undefined）。
+ * - 新运行时助手 $removeMemberNullish(a, key)：重建 obj slots——槽值剥
+ * nullish 成员 + 摘 optional 标记（$get 的 join(value, undef) 消失）；
+ * 键缺席/非 obj/裸宿主值透传（与 $removeNullish 同契约）。
+ * - 接线：narrowNullishArmThunk 按 memberKey 发射
+ * $removeMemberNullish($removeNullish(o), key)；stmt.ts 早退提升路径
+ * cons 臂同样剪影（`if (o.p) return o.p.q` 的读在真值臂内）；
+ * expr.ts 内联三元经 nullishRemoveCallOf 分发（不再硬编码 $removeNullish）。
  *
  * 控制组（守卫剪影不越界）：无守卫的成员读/基名读/for-of 仍报 L2；
  * `!o.p` 真值臂（o.p falsy——可能是 nullish）内的读不剪仍报；两层嵌套
@@ -77,7 +77,7 @@ export function nullGuard(doc) { if (!doc || typeof doc !== 'object') return 'no
     expect(l2Count(r, "nullGuard")).toBe(0);
     expect(r.summary.errors).toBe(0);
     expect(sigOf(r, "nullGuard")).toMatch(/^"none" \| "v3" \| "v2"$/);
-    // 置信度仍是 exact（`display` 自 Bug 413 起是人类面口径的 shape 渲染，
+    // 置信度仍是 exact（`display` 自 起是人类面口径的 shape 渲染，
     // 不再带 `#conf` 段 ⇒ 置信度改看 `conf` 字段）
     expect(r.signatures.find((s) => s.name === "nullGuard")?.conf).toBe("exact");
   });
