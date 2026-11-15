@@ -2,9 +2,5 @@
 // One of 15 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./lsp--config-deep-merge.part.ts";
 import "./lsp--check-info-level.part.ts";
-import "./lsp--trace-positional-bridge.part.ts";
 import "./lsp--non-ascii-receiver.part.ts";
-import "./lsp--workspace-folders.part.ts";
-import "./lsp--malformed-uri-initialize.part.ts";
