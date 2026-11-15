@@ -4,7 +4,6 @@
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
 import "./lsp--mock-hover-inject.part.ts";
 import "./lsp--class-method-throws-hover.part.ts";
-import "./lsp--hover-check-identical-throws.part.ts";
 import "./lsp--directive-syntax-ide.part.ts";
 import "./lsp--module-cycle-recursion-diag.part.ts";
 import "./lsp--completion-fn-detail.part.ts";

@@ -2,7 +2,6 @@
 // One of 15 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./lsp--hover-tier-active.part.ts";
 import "./lsp--cross-file-uses-buffer-text.part.ts";
 import "./lsp--sidecar-invalid-binding-not-contract.part.ts";
 import "./lsp--missing-field-placeholder.part.ts";

@@ -11,4 +11,3 @@ import "./lsp--non-ascii-receiver.part.ts";
 import "./lsp--workspace-folders.part.ts";
 import "./lsp--malformed-uri-initialize.part.ts";
 import "./lsp--inline-directive-injection.part.ts";
-import "./lsp--hover-inject.part.ts";

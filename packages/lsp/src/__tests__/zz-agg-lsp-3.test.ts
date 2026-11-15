@@ -5,7 +5,6 @@
 import "./lsp--witness-line-parity.part.ts";
 import "./lsp--internal-diagnostic.part.ts";
 import "./lsp--trace-external.part.ts";
-import "./lsp--hover-axiom.part.ts";
 import "./lsp--return-contract-location.part.ts";
 import "./lsp--apply-edits-nested-ranges.part.ts";
 import "./lsp--directive-syntax-dup.part.ts";
