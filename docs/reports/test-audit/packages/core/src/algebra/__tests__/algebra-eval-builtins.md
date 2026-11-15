@@ -345,4 +345,10 @@ title	rootCause	gap	action	status	evidence
 "Math.max(x,0) < 0：x<0 时原生恒 \"nonneg\"（与 min 臂对称）"	"修复前：`loMin`（min 的 lo）与 `hiMax`（max 的 hi）照抄了析取位的条件 （`b.strict && !a.strict → b`）⇒ 取了**更严**的一侧 ⇒ 端点同值时产出 **不可满足**谓词（`min(x,0) > 0 ∧ min(x,0) ≤ 0`）⇒ ① 证明器 ex falso 放电 ⇒ L1 返回契约门禁**假绿**（恒为 0 的函数被判 满足 `number().gt(0)`）； ② 分支选择把不可满足谓词当恒真 ⇒ 走错臂且 `conf: exact` （`Math.min(x,0) > 0 ? \"pos\" : \"nonpos\"` 折成 `\"pos\"`，原生恒 `\"nonpos\"`）。"	没测该层	keep	keep	—
 "字面量折叠路径不变：Math.min(3,5)=3 / Math.max(3,5)=5"	"修复前：`loMin`（min 的 lo）与 `hiMax`（max 的 hi）照抄了析取位的条件 （`b.strict && !a.strict → b`）⇒ 取了**更严**的一侧 ⇒ 端点同值时产出 **不可满足**谓词（`min(x,0) > 0 ∧ min(x,0) ≤ 0`）⇒ ① 证明器 ex falso 放电 ⇒ L1 返回契约门禁**假绿**（恒为 0 的函数被判 满足 `number().gt(0)`）； ② 分支选择把不可满足谓词当恒真 ⇒ 走错臂且 `conf: exact` （`Math.min(x,0) > 0 ? \"pos\" : \"nonpos\"` 折成 `\"pos\"`，原生恒 `\"nonpos\"`）。"	没测该层	keep	keep	—
 "round / abs 不走区间合并路径，结果不变"	"修复前：`loMin`（min 的 lo）与 `hiMax`（max 的 hi）照抄了析取位的条件 （`b.strict && !a.strict → b`）⇒ 取了**更严**的一侧 ⇒ 端点同值时产出 **不可满足**谓词（`min(x,0) > 0 ∧ min(x,0) ≤ 0`）⇒ ① 证明器 ex falso 放电 ⇒ L1 返回契约门禁**假绿**（恒为 0 的函数被判 满足 `number().gt(0)`）； ② 分支选择把不可满足谓词当恒真 ⇒ 走错臂且 `conf: exact` （`Math.min(x,0) > 0 ? \"pos\" : \"nonpos\"` 折成 `\"pos\"`，原生恒 `\"nonpos\"`）。"	没测该层	keep	keep	—
+"%s → RangeError"	表驱动用例：%s → RangeError；枚举同一不变量下的输入/期望组合，属既有表行补齐。	夹具漏形态	keep	keep	—
+"%s"	表驱动用例：%s；枚举同一不变量下的输入/期望组合，属既有表行补齐。	夹具漏形态	keep	keep	—
+"%s → TypeError"	表驱动用例：%s → TypeError；枚举同一不变量下的输入/期望组合，属既有表行补齐。	夹具漏形态	keep	keep	—
+"%s → no-throw"	表驱动用例：%s → no-throw；枚举同一不变量下的输入/期望组合，属既有表行补齐。	夹具漏形态	keep	keep	—
+"%s → no-throw"	同名表行在另一 describe 中重复出现；逐处保留审计记录。	夹具漏形态	keep	keep	—
+"%s"	同名表行在多处 describe 重复；逐处保留审计记录。	夹具漏形态	keep	keep	—
 ```

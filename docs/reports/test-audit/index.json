@@ -43,6 +43,7 @@
     "packages/lsp/src/__tests__/lsp-signature-help.test.ts",
     "packages/lsp/src/__tests__/lsp-symbols.test.ts",
     "packages/lsp/src/__tests__/lsp-test-command.test.ts",
+    "packages/nudojs/src/__tests__/capabilities-flag.test.ts",
     "packages/nudojs/src/__tests__/cli-check.test.ts",
     "packages/nudojs/src/__tests__/cli-config.test.ts",
     "packages/nudojs/src/__tests__/cli-contract.test.ts",

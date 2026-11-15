@@ -488,4 +488,12 @@ title	rootCause	gap	action	status	evidence
 "`export * from './m.js'`：来源不可达时不产生任何导出槽"	"`collectAbsExports` 的 **re-export 在 `modules` 表缺席时退化成 「本地导出」** ⇒ 凭空造出 named / **default** 导出槽（协议层非法值： default 槽的**存在性**表示「该模块确实有 default 导出」）； 同文件的 `bindImports` 亦**不查 `mod.default`** ⇒ `import { default as d }` 绑成 unknown（与 `import d from` **不等价**）。 断言：expect(noMods).toBe(\"named={} default=absent\");；expect(noMods).toB"	没测该层	keep	keep	—
 "本地导出（无 source）不受影响：仍是本地导出表"	"`collectAbsExports` 的 **re-export 在 `modules` 表缺席时退化成 「本地导出」** ⇒ 凭空造出 named / **default** 导出槽（协议层非法值： default 槽的**存在性**表示「该模块确实有 default 导出」）； 同文件的 `bindImports` 亦**不查 `mod.default`** ⇒ `import { default as d }` 绑成 unknown（与 `import d from` **不等价**）。 断言：expect(Object.keys(r.named)).toEqual([\"a\"]);"	没测该层	keep	keep	—
 "bindImports：`import { default as d }` 与 `import d from` 绑定同一个值"	"`collectAbsExports` 的 **re-export 在 `modules` 表缺席时退化成 「本地导出」** ⇒ 凭空造出 named / **default** 导出槽（协议层非法值： default 槽的**存在性**表示「该模块确实有 default 导出」）； 同文件的 `bindImports` 亦**不查 `mod.default`** ⇒ `import { default as d }` 绑成 unknown（与 `import d from` **不等价**）。 断言：expect(stmt?.type).toBe(\"ImportDeclaration\");；expect(bind(`import"	没测该层	keep	keep	—
+"numOrStr（number().gt(0) | string().min(1)）收到 %s ⇒ 1 条违例"	表驱动用例：numOrStr（number().gt(0) | string().min(1)）收到 %s ⇒ 1 条违例；枚举同一不变量下的输入/期望组合，属既有表行补齐。	夹具漏形态	keep	keep	—
+"负控制：numOrStr 收到满足某一支的 %s ⇒ 零违例"	表驱动用例：负控制：numOrStr 收到满足某一支的 %s ⇒ 零违例；枚举同一不变量下的输入/期望组合，属既有表行补齐。	夹具漏形态	keep	keep	—
+"shapeOrNum 收到 %s ⇒ 1 条违例"	表驱动用例：shapeOrNum 收到 %s ⇒ 1 条违例；枚举同一不变量下的输入/期望组合，属既有表行补齐。	夹具漏形态	keep	keep	—
+"负控制：shapeOrNum 收到满足某一支的 %s ⇒ 零违例"	表驱动用例：负控制：shapeOrNum 收到满足某一支的 %s ⇒ 零违例；枚举同一不变量下的输入/期望组合，属既有表行补齐。	夹具漏形态	keep	keep	—
+"numOrStrNoLen 收到 %s ⇒ 仍报 1 条"	表驱动用例：numOrStrNoLen 收到 %s ⇒ 仍报 1 条；枚举同一不变量下的输入/期望组合，属既有表行补齐。	夹具漏形态	keep	keep	—
+"%s 收到 %s ⇒ %i 条违例（%s）"	表驱动用例：%s 收到 %s ⇒ %i 条违例（%s）；枚举同一不变量下的输入/期望组合，属既有表行补齐。	夹具漏形态	keep	keep	—
+"契约 x>0 ⇒ return>0 对 `%s` 成立 ⇒ 不得报违约"	表驱动用例：契约 x>0 ⇒ return>0 对 `%s` 成立 ⇒ 不得报违约；枚举同一不变量下的输入/期望组合，属既有表行补齐。	夹具漏形态	keep	keep	—
+"契约 x>0 ⇒ return>0 对 `%s` 成立 ⇒ 不得报违约"	同名表行在另一 describe 中重复出现；逐处保留审计记录。	夹具漏形态	keep	keep	—
 ```

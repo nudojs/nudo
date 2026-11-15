@@ -118,4 +118,7 @@ title	rootCause	gap	action	status	evidence
 "成员赋值 + 匿名函数表达式 ⇒ 普查名是导出槽名（对照）"	"CJS 成员赋值用**具名函数表达式**时，普查名取**内层函数 id** 而不是 **导出槽名** ⇒ **侧车契约整个不绑定** ⇒ L1 门禁**假绿**（零诊断）； 根因：`scan-top-functions.ts` 的 `pushFnFromInit` 写的是 `r.id?.name ?? fallbackName` （内层 id 优先）； 断言：expect(listTopFunctions(ANON_FN_EXPR)).toEqual([\"greet\"]);"	没测该层	keep	keep	—
 "对象字面量成员 + 具名函数表达式 ⇒ 普查名是导出槽名（键名）"	"CJS 成员赋值用**具名函数表达式**时，普查名取**内层函数 id** 而不是 **导出槽名** ⇒ **侧车契约整个不绑定** ⇒ L1 门禁**假绿**（零诊断）； 根因：`scan-top-functions.ts` 的 `pushFnFromInit` 写的是 `r.id?.name ?? fallbackName` （内层 id 优先）； 断言：expect(listTopFunctions(OBJ_LITERAL)).toEqual([\"greet\"]);"	没测该层	keep	keep	—
 "侧车契约按导出槽名绑定 ⇒ 契约义务真的执法（不假绿）"	"断言：expect(r.signatures.some((s) => s.name === \"greet\")).toBe(true);；expect(r.signatures.some((s) => s.name === \"inner\")).toBe(false);"	没测该层	keep	keep	—
+"返回 %s（%s）⊭ nullable(number()) ⇒ error"	表驱动用例：返回 %s（%s）⊭ nullable(number()) ⇒ error；枚举同一不变量下的输入/期望组合，属既有表行补齐。	夹具漏形态	keep	keep	—
+"对象/数组实参 %s ⇒ 恰好 1 条 nudo:constraint-violated"	表驱动用例：对象/数组实参 %s ⇒ 恰好 1 条 nudo:constraint-violated；枚举同一不变量下的输入/期望组合，属既有表行补齐。	夹具漏形态	keep	keep	—
+"合法成员 %s ⇒ 不报"	表驱动用例：合法成员 %s ⇒ 不报；枚举同一不变量下的输入/期望组合，属既有表行补齐。	夹具漏形态	keep	keep	—
 ```

@@ -66,4 +66,6 @@ title	rootCause	gap	action	status	evidence
 "第二个分析作用域（exec 缓存命中）仍报 contract-load"	"侧车装载失败（`nudo:contract-load`）在 **check 门禁面彻底隐形** ⇒ 门禁假绿（exit 0）。 根因在 core（`packages/core/src/algebra/refine.ts`）：侧车装载诊断在 `execSidecar` **内部**产生 ⇒ exec 结果进缓存后，**缓存命中不再跑 exec** ⇒ 该诊断在后续分析里消失。 断言：expect(cold.some((m) => m.includes(\"is not an injected builder\"))).toBe(true);；expect("	没测该层	keep	keep	—
 "同一作用域内重复装载 ⇒ 诊断只报一次（作用域内去重，不刷屏）"	"侧车装载失败（`nudo:contract-load`）在 **check 门禁面彻底隐形** ⇒ 门禁假绿（exit 0）。 根因在 core（`packages/core/src/algebra/refine.ts`）：侧车装载诊断在 `execSidecar` **内部**产生 ⇒ exec 结果进缓存后，**缓存命中不再跑 exec** ⇒ 该诊断在后续分析里消失。 断言：expect(msgs.filter((m) => m.includes(\"is not an injected builder\"))).toHaveLength(1);"	没测该层	keep	keep	—
 "resetNudoModuleExecCache ⇒ 侧车**重新求值**（导出对象身份变化），诊断仍可见"	"同上，但**连导出对象一起**返回——「是否重新求值」只能靠**对象身份**观测 （诊断是**有意重放**的 ⇒ 诊断可见与否证明不了重新求值）。 断言：expect(first.msgs.length).toBeGreaterThan(0);；expect(cached.exports).toBe(first.exports);"	夹具漏形态	keep	keep	—
+"%s → %s"	表驱动用例：%s → %s；枚举同一不变量下的输入/期望组合，属既有表行补齐。	夹具漏形态	keep	keep	—
+"draft %s → %s"	表驱动用例：draft %s → %s；枚举同一不变量下的输入/期望组合，属既有表行补齐。	夹具漏形态	keep	keep	—
 ```

@@ -234,4 +234,6 @@ title	rootCause	gap	action	status	evidence
 "非内部 id 的 term 段仍在（verbose 明细不丢信息 —— D2 契约）"	"三条症状： ① 机器面载荷含**内部符号**（`len#N` 不是一个用户能理解的名字）； ② 编号随**同一次调用内的文件顺序**漂移（`len#0` / `len#2` / `len#4`） ⇒ **单个文件的 JSON 载荷是它在参数列表中位置的函数**，不是文件内容的 函数（机器消费方拿到的不是可比对的内容）； 断言：expect(formatCheckReport(r, { verbose: true })).toContain(\"term:\");"	没测该层	keep	keep	—
 "不带内部 id 的签名：term / pred 证据仍在（契约面不被无谓收紧）"	"三条症状： ① 机器面载荷含**内部符号**（`len#N` 不是一个用户能理解的名字）； ② 编号随**同一次调用内的文件顺序**漂移（`len#0` / `len#2` / `len#4`） ⇒ **单个文件的 JSON 载荷是它在参数列表中位置的函数**，不是文件内容的 函数（机器消费方拿到的不是可比对的内容）； 断言：expect(sig.display).toContain(\"number | string\");；expect(sig.display).not.toContain(\"= (A1 + A2)\");"	没测该层	keep	keep	—
 "内部计数器 id 换成稳定名（谓词证据不丢）"	"三条症状： ① 机器面载荷含**内部符号**（`len#N` 不是一个用户能理解的名字）； ② 编号随**同一次调用内的文件顺序**漂移（`len#0` / `len#2` / `len#4`） ⇒ **单个文件的 JSON 载荷是它在参数列表中位置的函数**，不是文件内容的 函数（机器消费方拿到的不是可比对的内容）； 断言：expect(sig.detail).toContain(\"term: len\");；expect(sig.detail).toContain(\"pred: len ≥ 0\");"	没测该层	keep	keep	—
+"可克隆形态（%s）：零 throws 面（native 不抛 ⇒ 原口径是假红）"	表驱动用例：可克隆形态（%s）：零 throws 面（native 不抛 ⇒ 原口径是假红）；枚举同一不变量下的输入/期望组合，属既有表行补齐。	夹具漏形态	keep	keep	—
+"不可克隆形态（%s）：throws 面 = DataCloneError（不是 TypeError）"	表驱动用例：不可克隆形态（%s）：throws 面 = DataCloneError（不是 TypeError）；枚举同一不变量下的输入/期望组合，属既有表行补齐。	夹具漏形态	keep	keep	—
 ```

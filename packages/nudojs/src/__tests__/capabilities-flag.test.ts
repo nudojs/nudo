@@ -1,5 +1,5 @@
 /**
- * ABS-12 · CLI `--capabilities strict|trusted` 开关。
+ * 模块套件：CLI `--capabilities strict|trusted` 开关。
  *
  * strict（默认）：denied 宿主面报 `nudo:capability-denied`；
  * trusted：退回旧面 `nudo:builtin-unknown`；
@@ -15,7 +15,7 @@ let dir: string;
 let file: string;
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), "nudo-abs12-flag-"));
+  dir = mkdtempSync(join(tmpdir(), "nudo-capabilities-flag-"));
   file = join(dir, "fetch.js");
   writeFileSync(
     file,
@@ -30,29 +30,30 @@ afterEach(() => {
 
 const out = (r: { stdout: string; stderr: string }): string => `${r.stdout}\n${r.stderr}`;
 
-describe("ABS-12 · CLI --capabilities", () => {
-  it("默认 strict：denied 全局报 capability-denied", () => {
-    const r = runCliNode(["test", file]);
-    expect(r.status).toBe(0);
-    expect(out(r)).toContain("nudo:capability-denied");
-  });
+type Case = {
+  name: string;
+  argv: string[];
+  exit: number;
+  contains?: string[];
+  absent?: string[];
+};
 
-  it("--capabilities trusted：退回 builtin-unknown", () => {
-    const r = runCliNode(["test", "--capabilities", "trusted", file]);
-    expect(r.status).toBe(0);
-    expect(out(r)).toContain("nudo:builtin-unknown");
-    expect(out(r)).not.toContain("nudo:capability-denied");
-  });
+const CASES: Case[] = [
+  { name: "test 默认 strict ⇒ capability-denied", argv: ["test"], exit: 0, contains: ["nudo:capability-denied"] },
+  { name: "check 默认 strict ⇒ 接受旗标但不产 capability 诊断", argv: ["check"], exit: 0, absent: ["nudo:capability-denied", "nudo:builtin-unknown"] },
+  { name: "test trusted ⇒ builtin-unknown 且无 capability-denied", argv: ["test", "--capabilities", "trusted"], exit: 0, contains: ["nudo:builtin-unknown"], absent: ["nudo:capability-denied"] },
+  { name: "check trusted ⇒ 同样不产 capability 诊断", argv: ["check", "--capabilities", "trusted"], exit: 0, absent: ["nudo:capability-denied", "nudo:builtin-unknown"] },
+  { name: "test --capabilities=trusted（等号形态）⇒ 无 capability-denied", argv: ["test", "--capabilities=trusted"], exit: 0, absent: ["nudo:capability-denied"] },
+  { name: "test 非法取值 ⇒ exit 1 + 点名旗标", argv: ["test", "--capabilities", "nope"], exit: 1, contains: ['--capabilities expects "strict" or "trusted"'] },
+  { name: "check 非法取值 ⇒ 同一 usage error", argv: ["check", "--capabilities", "nope"], exit: 1, contains: ['--capabilities expects "strict" or "trusted"'] },
+];
 
-  it("非法取值：usage error（exit 1）", () => {
-    const r = runCliNode(["test", "--capabilities", "nope", file]);
-    expect(r.status).toBe(1);
-    expect(out(r)).toContain('--capabilities expects "strict" or "trusted"');
-  });
-
-  it("check 同样接受该开关（trusted 下不再报 capability-denied）", () => {
-    const r = runCliNode(["check", "--capabilities", "trusted", file]);
-    expect(r.status).toBe(0);
-    expect(out(r)).not.toContain("nudo:capability-denied");
+describe("[matrix] CLI --capabilities：命令面 × 取值 × 退出码", () => {
+  it.each(CASES)("$name", ({ argv, exit, contains = [], absent = [] }) => {
+    const r = runCliNode([...argv, file]);
+    const text = out(r);
+    expect(r.status).toBe(exit);
+    for (const s of contains) expect(text).toContain(s);
+    for (const s of absent) expect(text).not.toContain(s);
   });
 });

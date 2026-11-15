@@ -111,4 +111,5 @@ title	rootCause	gap	action	status	evidence
 "resolveExportSource：星号再导出 + 同名未导出本地函数 ⇒ 跳到 dd.js"	"跨文件**再导出链**被中间模块里一个**未导出的同名本地函数** 短路 ⇒ 被再导出的函数的契约静默失效 ⇒ 真实违约不报（L1 门禁假绿）。 根因：`resolveExportSource` 的短路判据是「源码里出现过这个名字」 （listTopFunctions 含**未导出**的本地函数）⇒ 未导出的本地函数被误判成 「该导出名由本模块定义」⇒ 再导出链从不再往下跳。 断言：expect(r.source).toBe(DD);；expect(r.fromFile).toBe(\"/t/dd.js\");"	夹具漏形态	keep	keep	—
 "resolveExportSource：命名再导出 + 同名未导出本地函数 ⇒ 跳到 dd.js"	"跨文件**再导出链**被中间模块里一个**未导出的同名本地函数** 短路 ⇒ 被再导出的函数的契约静默失效 ⇒ 真实违约不报（L1 门禁假绿）。 根因：`resolveExportSource` 的短路判据是「源码里出现过这个名字」 （listTopFunctions 含**未导出**的本地函数）⇒ 未导出的本地函数被误判成 「该导出名由本模块定义」⇒ 再导出链从不再往下跳。 断言：expect(r.source).toBe(DD);；expect(r.fromFile).toBe(\"/t/dd.js\");"	夹具漏形态	keep	keep	—
 "端到端：跨再导出链的调用点报 nudo:constraint-violated"	"跨文件**再导出链**被中间模块里一个**未导出的同名本地函数** 短路 ⇒ 被再导出的函数的契约静默失效 ⇒ 真实违约不报（L1 门禁假绿）。 根因：`resolveExportSource` 的短路判据是「源码里出现过这个名字」 （listTopFunctions 含**未导出**的本地函数）⇒ 未导出的本地函数被误判成 「该导出名由本模块定义」⇒ 再导出链从不再往下跳。 断言：expect(violated.length).toBe(1);；expect(r.ok).toBe(false);"	夹具漏形态	keep	keep	—
+"%s 单独出现也报一条（import 前缀自动补）"	表驱动用例：%s 单独出现也报一条（import 前缀自动补）；枚举同一不变量下的输入/期望组合，属既有表行补齐。	夹具漏形态	keep	keep	—
 ```

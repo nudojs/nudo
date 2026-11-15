@@ -131,4 +131,6 @@ title	rootCause	gap	action	status	evidence
 "witness argument of a concatenation is unknown, not a wrong string"	"旧实现的字符串分支 只查首尾引号 ⇒ `(\"a\" + \"b\")` 折成 `a\" + \"b`（自信的错值）⇒ 见证 ⊭ 契约 ⇒ 契约门禁**假红**（用户写的见证恰好就是契约要求的值）。 修法：与 同源（字符串分支的词法边界判定）⇒ 非单个字面量落 unknown（诊断给出），不再折出错值。 断言：expect(args).toHaveLength(1);；expect([\"unknown\", \"never\"]).toContain(args[0]!.shape.k);"	旧断言钉错	keep	keep	—
 "the wrong value \"a\\\" + \\\"b\" is never produced"	"`@nudo:mock g = ({ a, b }) => a + b` 的**形参根本没被绑定** ⇒ mock 体读到未声明全局 ⇒ `ReferenceError` ⇒ **error 级**假红 + dts 产物写出 `caller(): never`（**错误类型声明**）。 根因（expr-scan.ts `parseArrowFunctionExpr` 的形参循环）：形参被降级成 「名字 / 占位名」而**无绑定语义**——解构形参退化成占位名 `__destructured_0`、 `AssignmentPattern`（默认值）**整条丢弃**（连同 `params` / `paramPatterns` 的 下标对"	没测该层	keep	keep	—
 "a literal witness is unaffected"	"`@nudo:skip => \"a\" + \"b\"` 的声明返回类型、`@nudo:mock` 载荷里的字符串值 都走同一套字符串分支 ⇒ 旧实现把 `a\" + \"b` 折成**声明的类型 / mock 值** ⇒ 签名与 dts 给出**错误的类型声明**（谁也没写过的字符串）。 修法：与 同源——字符串分支的词法边界判定单源在 `directives/string-literal.ts`； 断言：expect(litValue(args[0]!)).toEqual({ ok: true, value: \"ab\" });"	夹具漏形态	keep	keep	—
+"env extraction matches on: %s"	表驱动用例：env extraction matches on: %s；枚举同一不变量下的输入/期望组合，属既有表行补齐。	夹具漏形态	keep	keep	—
+"mock-module extraction matches on: %s"	表驱动用例：mock-module extraction matches on: %s；枚举同一不变量下的输入/期望组合，属既有表行补齐。	夹具漏形态	keep	keep	—
 ```

@@ -274,4 +274,9 @@ title	rootCause	gap	action	status	evidence
 "memberToFn 收下本地类实例成员（c.m ⇒ C.m）"	"**类方法**的侧车契约在任何调用点都不执法 （`c.m(-1)` 违反 `a > 0` 却零诊断 ⇒ 假绿）——而契约面 / 签名面都声称 它生效（`C.m [handwritten] (a: number().gt(0))`）。 根因：调用图的被调名解析只认**对象字面量**成员（memberToFn 只收 `const api = { f }`），不认**本地类实例**（`const c = new C()`）⇒ `c.m` 解析不出源码函数名 ⇒ 整条调用被跳过（绑定面认 `C_m` ↔ `C.m`， 执法面不认 ⇒ 两面名字空间不一致）。 断言：expect(known).toContain(\"C.m\");；expect("	夹具漏形态	keep	keep	—
 "c.m(-1) 违反类方法契约 ⇒ nudo:constraint-violated"	"**类方法**的侧车契约在任何调用点都不执法 （`c.m(-1)` 违反 `a > 0` 却零诊断 ⇒ 假绿）——而契约面 / 签名面都声称 它生效（`C.m [handwritten] (a: number().gt(0))`）。 根因：调用图的被调名解析只认**对象字面量**成员（memberToFn 只收 `const api = { f }`），不认**本地类实例**（`const c = new C()`）⇒ `c.m` 解析不出源码函数名 ⇒ 整条调用被跳过（绑定面认 `C_m` ↔ `C.m`， 执法面不认 ⇒ 两面名字空间不一致）。 断言：expect(violated.length).toBe(2);；expect"	夹具漏形态	keep	keep	—
 "满足契约的实参不报（c.m(1) 放行）"	"union 契约的 **prim 成员**：成员实例化成 `typeof` 原子 （`union(number(), string())` ⇒ `or(typeof(x,\"number\"), typeof(x,\"string\"))`） ⇒ 执法侧判不了 `typeof` 原子 ⇒ or 聚合臂拿到 `unknown` ⇒ **整条 union 契约零义务**（不在成员域内的实参全放行 = 假绿）。 症状（族 11 / S1 修前实测，闸① oracle）： - `union(number(), string())` 收到 `true` ⇒ 0 违例（**假绿**） - `union(number(), boolean())` 收到"	没测该层	keep	keep	—
+"%s 收到 1.5 ⇒ 报 x is int"	表驱动用例：%s 收到 1.5 ⇒ 报 x is int；枚举同一不变量下的输入/期望组合，属既有表行补齐。	夹具漏形态	keep	keep	—
+"负控制：%s 收到满足某一支的 %s ⇒ 零违例"	表驱动用例：负控制：%s 收到满足某一支的 %s ⇒ 零违例；枚举同一不变量下的输入/期望组合，属既有表行补齐。	夹具漏形态	keep	keep	—
+"%s 收到 %s ⇒ 报一条违例（改前假绿）"	表驱动用例：%s 收到 %s ⇒ 报一条违例（改前假绿）；枚举同一不变量下的输入/期望组合，属既有表行补齐。	夹具漏形态	keep	keep	—
+"负控制：%s 收到 undefined ⇒ 零违例（088 不回归）"	表驱动用例：负控制：%s 收到 undefined ⇒ 零违例（088 不回归）；枚举同一不变量下的输入/期望组合，属既有表行补齐。	夹具漏形态	keep	keep	—
+"负控制：%s 收到满足界的 %s ⇒ 零违例"	表驱动用例：负控制：%s 收到满足界的 %s ⇒ 零违例；枚举同一不变量下的输入/期望组合，属既有表行补齐。	夹具漏形态	keep	keep	—
 ```

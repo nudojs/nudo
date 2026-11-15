@@ -94,4 +94,5 @@ title	rootCause	gap	action	status	evidence
 "COLLISION_COVERED 不残留已删除的基名"	"这不是白名单：新增基名必须要么补端到端撞名例进 COLLISION_COVERED，要么 显式登记到本表并说明端到端不可构造的理由。 断言：expect([...COLLISION_COVERED].filter((b) => !bases.has(b))).toEqual([]);"	夹具漏形态	keep	keep	—
 "分配器本身对每个基名都避让（撞名 ⇒ <base>_1；无撞名 ⇒ 原名）"	"这不是白名单：新增基名必须要么补端到端撞名例进 COLLISION_COVERED，要么 显式登记到本表并说明端到端不可构造的理由。 断言：expect(bad).toEqual([]);"	夹具漏形态	keep	keep	—
 "发射点不写死内部名（字面量 ⊆ 分配器调用 / const 间接）"	"发射点门禁：`__` 基名字面量必须出现在分配器调用实参内，或经 const 间接作为分配器入参（含数组/对象常量的一层闭包）。 断言：expect(hardcodedInternalNames()).toEqual([]);"	夹具漏形态	keep	keep	—
+"$label"	表驱动用例：$label；枚举同一不变量下的输入/期望组合，属既有表行补齐。	夹具漏形态	keep	keep	—
 ```
