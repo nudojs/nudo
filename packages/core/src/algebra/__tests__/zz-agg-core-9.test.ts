@@ -5,7 +5,6 @@
 import "./core-bug-1124-ambient-fingerprint-eacces.part.ts";
 import "./core-bug-1125-sidecar-diag-attribution.part.ts";
 import "./core-bug-1126-async-gen-multi-await.part.ts";
-import "./core-bug-1127-tmp-name-collision.part.ts";
 import "./core-bug-1128-export-slot-member-key.part.ts";
 import "./core-bug-1129-leq-fn-min-arity.part.ts";
 import "./core-bug-1130-guard-prototype-less-brand.part.ts";

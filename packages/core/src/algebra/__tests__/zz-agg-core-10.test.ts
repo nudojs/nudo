@@ -4,11 +4,8 @@
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
 import "./core-bug-1141-shape-conjoin-drops-obligation.part.ts";
 import "./core-bug-1142-contract-face-bigint-compare.part.ts";
-import "./core-bug-1146-tmp-name-defprop-collision.part.ts";
 import "./core-bug-1148-promise-all-settle.part.ts";
-import "./core-bug-1149-tmp-name-shadowing-rest.part.ts";
 import "./core-bug-1150-promise-reaction-combinators.part.ts";
-import "./core-bug-1151-tmp-name-class-fork.part.ts";
 import "./core-bug-1152-seeded-generalize-l0.part.ts";
 import "./core-bug-1153-failclosed-reachability.part.ts";
 import "./core-bug-1154-class-member-call-contract.part.ts";

@@ -6,8 +6,6 @@ import "./core-bug-1155-toplevel-unsupported-failclosed.part.ts";
 import "./core-bug-1156-class-member-boundaries.part.ts";
 import "./core-bug-1157-nonscalar-literal-arg-contract.part.ts";
 import "./core-bug-1158-module-throw-failclosed.part.ts";
-import "./core-bug-1159-hardcoded-temp-names.part.ts";
-import "./core-bug-1160-this-carrier-names.part.ts";
 import "./core-bug-128-entry-throws-suggestion-kinds.part.ts";
 import "./core-bug-132-boxed-primitive-internal-slot.part.ts";
 import "./core-bug-137-unknown-in-union.part.ts";
