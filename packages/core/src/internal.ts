@@ -14,6 +14,9 @@ export { CHECK_FACE_DIAG_CODES, DIAG, type DiagCode } from "./algebra/diagnostic
 // BUG-021/199：调用点观测拓宽（emit 写盘面与 contract-drift 对账面共用）
 export { isPointConstraint, widenObservationAbs } from "./algebra/widen-observation.ts";
 
+// BUG-034：类成员表（实例 / 静态分面）——LSP 成员补全与 check 的成员面同源
+export { localClassMemberTable } from "./algebra/scan/scan-call-graph.ts";
+
 // leak / budgets / memo keys
 export {
   stripCommentsAndStrings, stripStringsKeepComments,

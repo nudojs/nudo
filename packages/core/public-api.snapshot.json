@@ -1507,6 +1507,7 @@
       "knownSuffixOfViews",
       "listTopFunctions",
       "loadModuleDepsFingerprint",
+      "localClassMemberTable",
       "makeSymbolicRestAbs",
       "maskCommentsAndStrings",
       "mayThrowEffectsToAbs",

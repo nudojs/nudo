@@ -507,6 +507,48 @@ function classMemberInfoOf(decl: object): ClassMemberInfo {
  * ⚠ 只并入**调用点扫描**的 knownFns（`scan-literal-calls`）——不改签名普查面
  * （`nudo check` 的签名列表不因本地类扩面）；未契约的方法仍然零诊断。
  */
+/**
+ * 类成员表（BUG-034）：类名 → 实例成员 / 静态成员。
+ *
+ * 与 `localClassMemberNames` 同源（同一 `classMemberInfoOf`），但保留
+ * **实例 vs 静态**的区分——IDE 的 `k.` 与 `K.` 是两套成员面，补全不得混用。
+ * 唯一真值：类体 AST 扫描只此一处。
+ */
+export function localClassMemberTable(
+  source: string,
+  file?: ReturnType<typeof parse>,
+): Map<string, { instance: string[]; static: string[] }> {
+  const out = new Map<string, { instance: string[]; static: string[] }>();
+  // IDE 面的源码**经常不完整**（`k.` 悬空、写到一半）⇒ 严格解析会抛，成员面就
+  // 整块消失。这里退到容错解析：结构与 CLI 同源，只是允许尾部语法错。
+  let f: ReturnType<typeof parse>;
+  try {
+    f = file ?? parse(source);
+  } catch {
+    try {
+      f = parse(source, { errorRecovery: true }) as unknown as ReturnType<typeof parse>;
+    } catch {
+      return out;
+    }
+  }
+  for (const stmt of f.program.body) {
+    const decl = (
+      stmt.type === "ExportNamedDeclaration" || stmt.type === "ExportDefaultDeclaration"
+        ? (stmt as { declaration?: unknown }).declaration
+        : stmt
+    ) as { type?: string; id?: { name?: string } } | undefined;
+    if (decl?.type !== "ClassDeclaration") continue;
+    const cname = decl.id?.name;
+    if (!cname) continue;
+    const info = classMemberInfoOf(decl);
+    out.set(cname, {
+      instance: [...info.instance].sort(),
+      static: [...info.static].filter((m) => !info.instance.has(m)).sort(),
+    });
+  }
+  return out;
+}
+
 export function localClassMemberNames(
   source: string,
   file?: ReturnType<typeof parse>,
