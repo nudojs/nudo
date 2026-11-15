@@ -1,8 +1,9 @@
 import { defineConfig } from "vitest/config";
 import { vitestAlias } from "./scripts/workspace-aliases.mjs";
 
-// PR / --changed 覆盖率只出报告、不判全局阈值（子集天然低于全量基线）；
-// 硬阈值仍由夜间全量 test-coverage 守。见 .github/workflows/ci.yml。
+// PR / --changed 覆盖率、夜间分片覆盖率都只出报告、不判阈值（子集/单片必然
+// 低于全量基线）；硬阈值统一由夜间 coverage-merge（合并 blob 后）守。
+// 见 .github/workflows/ci.yml。
 const coverageGate = process.env.NUDO_COVERAGE_THRESHOLDS !== "off";
 
 export default defineConfig({
