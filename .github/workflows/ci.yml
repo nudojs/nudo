@@ -448,8 +448,11 @@ jobs:
 
   test-coverage:
     name: Test & Coverage (shard ${{ matrix.shard }}/2)
-    # 夜间/手动：全量 + 硬阈值。分 2 shard 各写 blob 报告（含 coverage），
+    # 夜间/手动：全量覆盖率。分 2 shard 各写 blob 报告（含 coverage），
     # 由 coverage-merge 合并后判阈值；不再单 runner 串行跑全量。
+    # 阈值必须在这里关掉：单个 shard 只跑了约一半用例，per-package 聚合
+    # 天然低于全量基线（v8 reportThresholds 在每次 coverage 运行结束就判，
+    # 不看 shard 构成）⇒ 开着必红。硬阈值统一由 coverage-merge 判。
     if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     needs: build
     strategy:
@@ -459,6 +462,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       NUDO_TEST_CLI: dist
+      NUDO_COVERAGE_THRESHOLDS: off
     steps:
       - name: Checkout
         # v7（SHA 钉住：supply-chain；升级时更新 pin 与注释）
