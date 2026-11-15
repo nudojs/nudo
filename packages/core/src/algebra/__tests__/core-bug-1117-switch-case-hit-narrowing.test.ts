@@ -24,13 +24,10 @@
  */
 import {describe, it, expect, beforeEach} from "vitest";
 import {checkSource, pTrue} from "../index.ts";
-import {resetCheckSourceMemo} from "../check/check.ts";
-import {resetGeneralizeMemo} from "../generalize.ts";
-import {resetNudoModuleExecCache, takeRefineDiags} from "../refine.ts";
-import {resetSidecarLoadFailureCache, takeContractDiags} from "../contract/contract.ts";
-import {resetParseSourceCache} from "../parse-source.ts";
-import {resetAbsCallBudget, resetEvalForkBudget} from "../call-budget.ts";
+import {takeRefineDiags} from "../refine.ts";
+import {takeContractDiags} from "../contract/contract.ts";
 import {withStdImport, stdOpts, l2Count, sigOf} from "./nudo-constraints.ts";
+import { resetEngineCaches } from "./eval-helpers.ts";
 
 /** check 一次（整段函数源码；带标准 import） */
 function check(src: string, file = "/t/bug1117.js") {
@@ -39,15 +36,9 @@ function check(src: string, file = "/t/bug1117.js") {
 
 describe("Bug 1117：switch 分组 case 标签的 hit 收窄必须安全", () => {
   beforeEach(() => {
-    resetCheckSourceMemo();
-    resetGeneralizeMemo();
-    resetNudoModuleExecCache();
+    resetEngineCaches();
     takeRefineDiags();
-    resetSidecarLoadFailureCache();
     takeContractDiags();
-    resetParseSourceCache();
-    resetAbsCallBudget();
-    resetEvalForkBudget();
   });
 
   it("分组标签（case null + case \"ab\" 共享体）⇒ 不得把 null 重绑成 \"ab\"", () => {

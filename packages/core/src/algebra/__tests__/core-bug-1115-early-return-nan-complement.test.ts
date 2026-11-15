@@ -27,13 +27,10 @@
  */
 import {describe, it, expect, beforeEach} from "vitest";
 import {checkSource, pTrue} from "../index.ts";
-import {resetCheckSourceMemo} from "../check/check.ts";
-import {resetGeneralizeMemo} from "../generalize.ts";
-import {resetNudoModuleExecCache, takeRefineDiags} from "../refine.ts";
-import {resetSidecarLoadFailureCache, takeContractDiags} from "../contract/contract.ts";
-import {resetParseSourceCache} from "../parse-source.ts";
-import {resetAbsCallBudget, resetEvalForkBudget} from "../call-budget.ts";
+import {takeRefineDiags} from "../refine.ts";
+import {takeContractDiags} from "../contract/contract.ts";
 import {withStdImport, stdOpts} from "./nudo-constraints.ts";
+import { resetEngineCaches } from "./eval-helpers.ts";
 
 /** 返回义务诊断（违约 error + 证不出 warning）的 "severity:code" 列表 */
 function retDiags(body: string, cname: string, file = "/t/bug1115.js"): string[] {
@@ -60,15 +57,9 @@ function native(body: string, arg: unknown): string {
 
 describe("Bug 1115：早返回的关系补集不再默认「x 不是 NaN」（不得假绿）", () => {
   beforeEach(() => {
-    resetCheckSourceMemo();
-    resetGeneralizeMemo();
-    resetNudoModuleExecCache();
+    resetEngineCaches();
     takeRefineDiags();
-    resetSidecarLoadFailureCache();
     takeContractDiags();
-    resetParseSourceCache();
-    resetAbsCallBudget();
-    resetEvalForkBudget();
   });
 
   it("原生 oracle：早返回形态在 x=NaN 时返回 NaN（违反 nonNeg）", () => {

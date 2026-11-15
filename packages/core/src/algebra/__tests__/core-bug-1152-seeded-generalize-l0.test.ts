@@ -25,21 +25,12 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { checkSource, pTrue, generalizeFromAst, parseSource, formatAbs } from "../index.ts";
 import { sidecarOpts } from "./nudo-constraints.ts";
-import { resetCheckSourceMemo } from "../check/check.ts";
-import { resetGeneralizeMemo } from "../generalize.ts";
-import { resetParseSourceCache } from "../parse-source.ts";
-import { resetAbsCallBudget, resetEvalForkBudget } from "../call-budget.ts";
-import { resetNudoModuleExecCache, takeRefineDiags } from "../refine.ts";
-import { resetSidecarLoadFailureCache, takeContractDiags } from "../contract/contract.ts";
+import { takeRefineDiags } from "../refine.ts";
+import { takeContractDiags } from "../contract/contract.ts";
+import { resetEngineCaches } from "./eval-helpers.ts";
 
 beforeEach(() => {
-  resetCheckSourceMemo();
-  resetGeneralizeMemo();
-  resetParseSourceCache();
-  resetAbsCallBudget();
-  resetEvalForkBudget();
-  resetNudoModuleExecCache();
-  resetSidecarLoadFailureCache();
+  resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
 });
@@ -93,7 +84,6 @@ describe("Bug 1152 —— 种子（assume）求值不得命中 L0", () => {
     const o = sidecarOpts("std.nudo", SIDE, f);
     const c = { ...o, entryThrows: "off" as const };
     expect(reliedCount(checkSource(f, srcWithLemma(1), pTrue, c))).toBe(1);
-    resetCheckSourceMemo();
     const r = checkSource(f, srcWithLemma(1), pTrue, c);
     expect(reliedCount(r)).toBe(1);
     expect(r.issues.some((i) => i.code === "nudo:unproven-return")).toBe(false);
@@ -128,8 +118,6 @@ describe("Bug 1152 —— 种子（assume）求值不得命中 L0", () => {
     const coldFmt = formatAbs(unseeded("sim", src, o)!.symbolic);
     // 冷跑（无种子）不含引理折出的界
     expect(coldFmt).not.toContain("≥ 0");
-    resetCheckSourceMemo();
-    resetGeneralizeMemo();
     const o2 = sidecarOpts("std.nudo", SIDE, f);
     const c = { ...o2, entryThrows: "off" as const };
     expect(reliedCount(checkSource(f, src, pTrue, c))).toBe(1);
@@ -144,7 +132,6 @@ describe("Bug 1152 —— 种子（assume）求值不得命中 L0", () => {
     const cold = checkSource(f, srcNoLemma(1), pTrue, c);
     expect(reliedCount(cold)).toBe(0);
     expect(cold.issues.some((i) => i.code === "nudo:unproven-return" && i.fn === "sim")).toBe(true);
-    resetCheckSourceMemo();
     const again = checkSource(f, srcNoLemma(1), pTrue, c);
     expect(issueSet(again)).toEqual(issueSet(cold));
   });
@@ -184,8 +171,6 @@ describe("Bug 1152 —— 种子（invariant）求值不得命中 L0", () => {
     const o = sidecarOpts("nudo", SCALAR_SIDE, f);
     const coldFmt = formatAbs(unseeded("lastLoop", scalarSrc, o)!.symbolic);
     expect(coldFmt).not.toContain("inv#");
-    resetCheckSourceMemo();
-    resetGeneralizeMemo();
     const o2 = sidecarOpts("nudo", SCALAR_SIDE, f);
     expect(invariantRelied(checkSource(f, scalarSrc, pTrue, { ...o2, entryThrows: "off" as const }))).toBe(1);
     const afterFmt = formatAbs(unseeded("lastLoop", scalarSrc, o2)!.symbolic);

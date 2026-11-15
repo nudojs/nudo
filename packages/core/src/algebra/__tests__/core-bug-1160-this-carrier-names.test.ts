@@ -32,13 +32,9 @@
  * 锚定值均为 node v26.10.0 原生实测（`"use strict"` vm，与引擎同源程序）。
  */
 import {describe, it, expect, beforeEach} from "vitest";
-import {call, val, tupleEls} from "./eval-helpers.ts";
-import {resetCheckSourceMemo} from "../check/check.ts";
-import {resetGeneralizeMemo} from "../generalize.ts";
-import {resetNudoModuleExecCache, takeRefineDiags} from "../refine.ts";
-import {resetSidecarLoadFailureCache, takeContractDiags} from "../contract/contract.ts";
-import {resetParseSourceCache} from "../parse-source.ts";
-import {resetAbsCallBudget, resetEvalForkBudget} from "../call-budget.ts";
+import {call, val, tupleEls, resetEngineCaches} from "./eval-helpers.ts";
+import {takeRefineDiags} from "../refine.ts";
+import {takeContractDiags} from "../contract/contract.ts";
 
 /** 引擎求值结果的字面量值（失败面原样返回） */
 function v(src: string): unknown {
@@ -387,15 +383,9 @@ const CTRL_ARROW = `export function f() {
 
 describe("Bug 1160：this 载体名（`__this`）避开用户标识符", () => {
   beforeEach(() => {
-    resetCheckSourceMemo();
-    resetGeneralizeMemo();
-    resetNudoModuleExecCache();
+    resetEngineCaches();
     takeRefineDiags();
-    resetSidecarLoadFailureCache();
     takeContractDiags();
-    resetParseSourceCache();
-    resetAbsCallBudget();
-    resetEvalForkBudget();
   });
 
   describe("真函数族（prologue / 生成器 hoist）", () => {

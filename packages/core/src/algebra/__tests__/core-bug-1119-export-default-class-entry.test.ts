@@ -17,24 +17,15 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { checkSource } from "../check/check.ts";
 import { pTrue } from "../pred.ts";
 import { listClassEntryNames } from "../scan/scan-top-functions.ts";
-import { resetCheckSourceMemo } from "../check/check.ts";
-import { resetGeneralizeMemo } from "../generalize.ts";
-import { resetNudoModuleExecCache, takeRefineDiags } from "../refine.ts";
-import { resetSidecarLoadFailureCache, takeContractDiags } from "../contract/contract.ts";
-import { resetParseSourceCache } from "../parse-source.ts";
-import { resetAbsCallBudget, resetEvalForkBudget } from "../call-budget.ts";
+import { takeRefineDiags } from "../refine.ts";
+import { takeContractDiags } from "../contract/contract.ts";
+import { resetEngineCaches } from "./eval-helpers.ts";
 
 /** 缓存重置（仓库惯例） */
 beforeEach(() => {
-  resetCheckSourceMemo();
-  resetGeneralizeMemo();
-  resetNudoModuleExecCache();
-  resetSidecarLoadFailureCache();
+  resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
-  resetParseSourceCache();
-  resetAbsCallBudget();
-  resetEvalForkBudget();
 });
 
 /** 本地类 + `export default <标识符>`；构造器**无条件抛** */

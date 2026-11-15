@@ -16,24 +16,15 @@
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { scanCaseTags } from "../directive-scan.ts";
-import { resetCheckSourceMemo } from "../check/check.ts";
-import { resetGeneralizeMemo } from "../generalize.ts";
-import { resetNudoModuleExecCache, takeRefineDiags } from "../refine.ts";
-import { resetSidecarLoadFailureCache, takeContractDiags } from "../contract/contract.ts";
-import { resetParseSourceCache } from "../parse-source.ts";
-import { resetAbsCallBudget, resetEvalForkBudget } from "../call-budget.ts";
+import { takeRefineDiags } from "../refine.ts";
+import { takeContractDiags } from "../contract/contract.ts";
+import { resetEngineCaches } from "./eval-helpers.ts";
 
 /** 缓存重置（仓库惯例） */
 beforeEach(() => {
-  resetCheckSourceMemo();
-  resetGeneralizeMemo();
-  resetNudoModuleExecCache();
-  resetSidecarLoadFailureCache();
+  resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
-  resetParseSourceCache();
-  resetAbsCallBudget();
-  resetEvalForkBudget();
 });
 
 /** 预算：修后线性（实测 ≈ 0ms）⇒ 给足余量仍远低于旧式的二次方耗时 */

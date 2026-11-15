@@ -44,18 +44,14 @@
  * 方 promise 停在 `inner=unknown` 且**不带 `unsettled` 标记**。
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { call } from "./eval-helpers.ts";
+import { call, resetEngineCaches } from "./eval-helpers.ts";
 import { sigOf } from "./nudo-constraints.ts";
 import { $await } from "../exec/runtime/async.ts";
 import { litValue, type Abs } from "../abs.ts";
 import { formatAbs } from "@nudojs/core";
 import { checkSource, pTrue } from "../index.ts";
-import { resetCheckSourceMemo } from "../check/check.ts";
-import { resetGeneralizeMemo } from "../generalize.ts";
-import { resetNudoModuleExecCache, takeRefineDiags } from "../refine.ts";
-import { resetSidecarLoadFailureCache, takeContractDiags } from "../contract/contract.ts";
-import { resetParseSourceCache } from "../parse-source.ts";
-import { resetAbsCallBudget, resetEvalForkBudget } from "../call-budget.ts";
+import { takeRefineDiags } from "../refine.ts";
+import { takeContractDiags } from "../contract/contract.ts";
 
 /** 调用导出的 f，返回其 promise 兑现值的字面量（await 之后的结果） */
 function awaitedVal(src: string, fnName = "f"): unknown {
@@ -77,15 +73,9 @@ const INNER_REJECT = `async function innerRej() { await null; await null; throw 
 
 describe("Bug 1150：promise 反应面（.then/.catch）与组合子（race/any/allSettled）不抢跑", () => {
   beforeEach(() => {
-    resetCheckSourceMemo();
-    resetGeneralizeMemo();
-    resetNudoModuleExecCache();
+    resetEngineCaches();
     takeRefineDiags();
-    resetSidecarLoadFailureCache();
     takeContractDiags();
-    resetParseSourceCache();
-    resetAbsCallBudget();
-    resetEvalForkBudget();
   });
 
   // ---------- 1150-a：反应面在 pending 接收者上抢跑 ----------

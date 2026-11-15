@@ -34,18 +34,14 @@
  * `Promise.all([...]).then(cb)` 的 `cb` 仍读到占位符（反应面未等 settle）。
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { call } from "./eval-helpers.ts";
+import { call, resetEngineCaches } from "./eval-helpers.ts";
 import { sigOf } from "./nudo-constraints.ts";
 import { $await } from "../exec/runtime/async.ts";
 import { litValue, type Abs } from "../abs.ts";
 import { formatAbs } from "@nudojs/core";
 import { checkSource, pTrue } from "../index.ts";
-import { resetCheckSourceMemo } from "../check/check.ts";
-import { resetGeneralizeMemo } from "../generalize.ts";
-import { resetNudoModuleExecCache, takeRefineDiags } from "../refine.ts";
-import { resetSidecarLoadFailureCache, takeContractDiags } from "../contract/contract.ts";
-import { resetParseSourceCache } from "../parse-source.ts";
-import { resetAbsCallBudget, resetEvalForkBudget } from "../call-budget.ts";
+import { takeRefineDiags } from "../refine.ts";
+import { takeContractDiags } from "../contract/contract.ts";
 
 /** 调用导出的 f，返回其 promise 兑现值的字面量（await 之后的结果） */
 function awaitedVal(src: string, fnName = "f"): unknown {
@@ -64,15 +60,9 @@ const INNER_TWO_AWAIT = `async function inner() { await null; await null; return
 
 describe("Bug 1148：Promise.all 等元素 settle 后才兑现（不取调用期快照）", () => {
   beforeEach(() => {
-    resetCheckSourceMemo();
-    resetGeneralizeMemo();
-    resetNudoModuleExecCache();
+    resetEngineCaches();
     takeRefineDiags();
-    resetSidecarLoadFailureCache();
     takeContractDiags();
-    resetParseSourceCache();
-    resetAbsCallBudget();
-    resetEvalForkBudget();
   });
 
   it("await Promise.all([inner(), inner()])（inner 2 个 await）= 4（原生 4）", () => {

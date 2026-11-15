@@ -18,13 +18,11 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { leqAbs } from "../leq.ts";
 import { abs, type Abs, type Shape } from "../abs.ts";
-import { checkSource, resetCheckSourceMemo } from "../check/check.ts";
+import { checkSource } from "../check/check.ts";
 import { pTrue } from "../pred.ts";
-import { resetGeneralizeMemo } from "../generalize.ts";
-import { resetNudoModuleExecCache, takeRefineDiags } from "../refine.ts";
-import { resetSidecarLoadFailureCache, takeContractDiags } from "../contract/contract.ts";
-import { resetParseSourceCache } from "../parse-source.ts";
-import { resetAbsCallBudget, resetEvalForkBudget } from "../call-budget.ts";
+import { takeRefineDiags } from "../refine.ts";
+import { takeContractDiags } from "../contract/contract.ts";
+import { resetEngineCaches } from "./eval-helpers.ts";
 
 /** fn shape（可选带 `optionalParams` 标记——写侧口径，同 Bug 399 钉） */
 function fnAbs(params: string[], optionalParams?: boolean[]): Abs {
@@ -38,15 +36,9 @@ function fnAbs(params: string[], optionalParams?: boolean[]): Abs {
 
 describe("Bug 1129 — fn arity 按「最后一个必选参数的位置」比较", () => {
   beforeEach(() => {
-    resetCheckSourceMemo();
-    resetGeneralizeMemo();
-    resetNudoModuleExecCache();
+    resetEngineCaches();
     takeRefineDiags();
-    resetSidecarLoadFailureCache();
     takeContractDiags();
-    resetParseSourceCache();
-    resetAbsCallBudget();
-    resetEvalForkBudget();
   });
 
   it("原生 oracle：可选参数之后的必选参数 ⇒ 少传就炸", () => {

@@ -26,17 +26,13 @@
  * 提前兑现（原生：Promise.all 等所有元素 settle 才兑现）。
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { call } from "./eval-helpers.ts";
+import { call, resetEngineCaches } from "./eval-helpers.ts";
 import { sigOf } from "./nudo-constraints.ts";
 import { $await } from "../exec/runtime/async.ts";
 import { litValue } from "../abs.ts";
 import { checkSource, pTrue } from "../index.ts";
-import { resetCheckSourceMemo } from "../check/check.ts";
-import { resetGeneralizeMemo } from "../generalize.ts";
-import { resetNudoModuleExecCache, takeRefineDiags } from "../refine.ts";
-import { resetSidecarLoadFailureCache, takeContractDiags } from "../contract/contract.ts";
-import { resetParseSourceCache } from "../parse-source.ts";
-import { resetAbsCallBudget, resetEvalForkBudget } from "../call-budget.ts";
+import { takeRefineDiags } from "../refine.ts";
+import { takeContractDiags } from "../contract/contract.ts";
 
 /** 调用导出的 f，返回同步段观测到的字面量值 */
 function syncVal(src: string): unknown {
@@ -54,15 +50,9 @@ function awaitedVal(src: string, fnName = "f"): unknown {
 
 describe("Bug 1126：async 体的多 await（≥2 个挂起点）", () => {
   beforeEach(() => {
-    resetCheckSourceMemo();
-    resetGeneralizeMemo();
-    resetNudoModuleExecCache();
+    resetEngineCaches();
     takeRefineDiags();
-    resetSidecarLoadFailureCache();
     takeContractDiags();
-    resetParseSourceCache();
-    resetAbsCallBudget();
-    resetEvalForkBudget();
   });
 
   it("callee 2 个 await：caller 恢复后读到 callee 的终值（原生 \"1,2,3\"）", () => {
@@ -176,15 +166,8 @@ describe("Bug 1126：async 体的多 await（≥2 个挂起点）", () => {
 
 describe("Bug 1126：check 面（签名）不受多 await 影响", () => {
   beforeEach(() => {
-    resetCheckSourceMemo();
-    resetGeneralizeMemo();
-    resetNudoModuleExecCache();
     takeRefineDiags();
-    resetSidecarLoadFailureCache();
     takeContractDiags();
-    resetParseSourceCache();
-    resetAbsCallBudget();
-    resetEvalForkBudget();
   });
 
   it("readCache：await 2-await callee 后的 cache 仍是 \"warm\"", () => {

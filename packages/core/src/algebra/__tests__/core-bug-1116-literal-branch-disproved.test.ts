@@ -27,13 +27,10 @@
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { checkSource, pTrue } from "../index.ts";
-import { resetCheckSourceMemo } from "../check/check.ts";
-import { resetGeneralizeMemo } from "../generalize.ts";
-import { resetNudoModuleExecCache, takeRefineDiags } from "../refine.ts";
-import { resetSidecarLoadFailureCache, takeContractDiags } from "../contract/contract.ts";
-import { resetParseSourceCache } from "../parse-source.ts";
-import { resetAbsCallBudget, resetEvalForkBudget } from "../call-budget.ts";
+import { takeRefineDiags } from "../refine.ts";
+import { takeContractDiags } from "../contract/contract.ts";
 import { withStdImport, stdOpts } from "./nudo-constraints.ts";
+import { resetEngineCaches } from "./eval-helpers.ts";
 
 /** 返回义务诊断（违约 error + 证不出 warning）的 "severity:code" 列表 */
 function retDiags(body: string, cname: string, file = "/t/bug1116.js"): string[] {
@@ -53,15 +50,9 @@ export function f(x) {${body}}
 
 describe("Bug 1116：声明域参数 / 字面量分支的返回义务判 error（不得降级成 warning）", () => {
   beforeEach(() => {
-    resetCheckSourceMemo();
-    resetGeneralizeMemo();
-    resetNudoModuleExecCache();
+    resetEngineCaches();
     takeRefineDiags();
-    resetSidecarLoadFailureCache();
     takeContractDiags();
-    resetParseSourceCache();
-    resetAbsCallBudget();
-    resetEvalForkBudget();
   });
 
   it("字面量分支（eq/or 路径事实把值钉在违规字面量上）⇒ error", () => {

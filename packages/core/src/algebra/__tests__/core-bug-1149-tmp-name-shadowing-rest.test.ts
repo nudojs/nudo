@@ -31,15 +31,11 @@
  * 锚定值均为 node v26.10.0 原生实测（见各断言注释）。
  */
 import {describe, it, expect, beforeEach} from "vitest";
-import {call, val, throwsError} from "./eval-helpers.ts";
+import {call, val, throwsError, resetEngineCaches} from "./eval-helpers.ts";
 import {sigOf} from "./nudo-constraints.ts";
 import {checkSource, pTrue, transpileSource} from "../index.ts";
-import {resetCheckSourceMemo} from "../check/check.ts";
-import {resetGeneralizeMemo} from "../generalize.ts";
-import {resetNudoModuleExecCache, takeRefineDiags} from "../refine.ts";
-import {resetSidecarLoadFailureCache, takeContractDiags} from "../contract/contract.ts";
-import {resetParseSourceCache} from "../parse-source.ts";
-import {resetAbsCallBudget, resetEvalForkBudget} from "../call-budget.ts";
+import {takeRefineDiags} from "../refine.ts";
+import {takeContractDiags} from "../contract/contract.ts";
 
 /** 引擎求值结果的字面量值（失败面原样返回） */
 function v(src: string): unknown {
@@ -197,15 +193,9 @@ const ALL_SOURCES = [
 
 describe("Bug 1149：剩余族内部临时名（可选链 / 短路 / 对象）与用户标识符避让", () => {
   beforeEach(() => {
-    resetCheckSourceMemo();
-    resetGeneralizeMemo();
-    resetNudoModuleExecCache();
+    resetEngineCaches();
     takeRefineDiags();
-    resetSidecarLoadFailureCache();
     takeContractDiags();
-    resetParseSourceCache();
-    resetAbsCallBudget();
-    resetEvalForkBudget();
   });
 
   describe("1149-a：可选链正则状态写回族（__nudoReArgs / __v）", () => {

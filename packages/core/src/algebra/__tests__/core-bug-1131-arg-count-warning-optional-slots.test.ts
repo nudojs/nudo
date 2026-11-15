@@ -15,13 +15,11 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { checkCallSite } from "../diagnostics/diagnostics.ts";
 import { numLit } from "../abs.ts";
-import { checkSource, resetCheckSourceMemo } from "../check/check.ts";
+import { checkSource } from "../check/check.ts";
 import { pTrue } from "../pred.ts";
-import { resetGeneralizeMemo } from "../generalize.ts";
-import { resetNudoModuleExecCache, takeRefineDiags } from "../refine.ts";
-import { resetSidecarLoadFailureCache, takeContractDiags } from "../contract/contract.ts";
-import { resetParseSourceCache } from "../parse-source.ts";
-import { resetAbsCallBudget, resetEvalForkBudget } from "../call-budget.ts";
+import { takeRefineDiags } from "../refine.ts";
+import { takeContractDiags } from "../contract/contract.ts";
+import { resetEngineCaches } from "./eval-helpers.ts";
 
 /** 调一次调用点，返回 issue 码 + 消息 */
 function callSite(src: string, callee: string, args: number[]) {
@@ -31,15 +29,9 @@ function callSite(src: string, callee: string, args: number[]) {
 
 describe("Bug 1131 — 超参 warning 只按**非 rest 形参总数**判", () => {
   beforeEach(() => {
-    resetCheckSourceMemo();
-    resetGeneralizeMemo();
-    resetNudoModuleExecCache();
+    resetEngineCaches();
     takeRefineDiags();
-    resetSidecarLoadFailureCache();
     takeContractDiags();
-    resetParseSourceCache();
-    resetAbsCallBudget();
-    resetEvalForkBudget();
   });
 
   it("默认形参吃下第 2 个实参 ⇒ 不报超参", () => {

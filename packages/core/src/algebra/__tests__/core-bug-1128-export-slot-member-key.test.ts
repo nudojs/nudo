@@ -20,14 +20,12 @@
  * 修法：导出槽表**只用成员键**（普查名口径 = 成员键）。
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { checkSource, resetCheckSourceMemo } from "../check/check.ts";
+import { checkSource } from "../check/check.ts";
 import { pTrue } from "../pred.ts";
-import { resetGeneralizeMemo } from "../generalize.ts";
-import { resetNudoModuleExecCache, takeRefineDiags } from "../refine.ts";
-import { resetSidecarLoadFailureCache, takeContractDiags } from "../contract/contract.ts";
-import { resetParseSourceCache } from "../parse-source.ts";
-import { resetAbsCallBudget, resetEvalForkBudget } from "../call-budget.ts";
+import { takeRefineDiags } from "../refine.ts";
+import { takeContractDiags } from "../contract/contract.ts";
 import { makeFiles, sigOf } from "./nudo-constraints.ts";
+import { resetEngineCaches } from "./eval-helpers.ts";
 
 /** 侧车：`greet` 的返回必须是 > 0 的数（源码返回 -1 ⇒ 应报 constraint-violated） */
 const SIDECAR = `import { fn, number } from "@nudojs/core";
@@ -47,15 +45,9 @@ const codesOf = (r: { issues: { code: string }[] }): string[] => r.issues.map((i
 
 describe("Bug 1128 — CJS 对象字面量导出的普查键必须是**成员键**", () => {
   beforeEach(() => {
-    resetCheckSourceMemo();
-    resetGeneralizeMemo();
-    resetNudoModuleExecCache();
+    resetEngineCaches();
     takeRefineDiags();
-    resetSidecarLoadFailureCache();
     takeContractDiags();
-    resetParseSourceCache();
-    resetAbsCallBudget();
-    resetEvalForkBudget();
   });
 
   it("具名函数表达式：侧车契约绑定 ⇒ 报 constraint-violated（修前：只有 unproven-return + unknown）", () => {

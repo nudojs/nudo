@@ -19,22 +19,13 @@
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { checkSource, pTrue } from "../index.ts";
-import { resetCheckSourceMemo } from "../check/check.ts";
-import { resetGeneralizeMemo } from "../generalize.ts";
-import { resetNudoModuleExecCache, takeRefineDiags } from "../refine.ts";
-import { resetSidecarLoadFailureCache, takeContractDiags } from "../contract/contract.ts";
-import { resetParseSourceCache } from "../parse-source.ts";
-import { resetAbsCallBudget, resetEvalForkBudget } from "../call-budget.ts";
+import { takeRefineDiags } from "../refine.ts";
+import { takeContractDiags } from "../contract/contract.ts";
 import { makeFiles } from "./nudo-constraints.ts";
+import { resetEngineCaches } from "./eval-helpers.ts";
 
 beforeEach(() => {
-  resetCheckSourceMemo();
-  resetGeneralizeMemo();
-  resetNudoModuleExecCache();
-  resetSidecarLoadFailureCache();
-  resetParseSourceCache();
-  resetAbsCallBudget();
-  resetEvalForkBudget();
+  resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
 });

@@ -24,24 +24,15 @@ import { checkSource } from "../check/check.ts";
 import { pTrue } from "../pred.ts";
 import { scanThrowsDecl } from "../directive-scan.ts";
 import { extractDeclaredThrows } from "../refine.ts";
-import { resetCheckSourceMemo } from "../check/check.ts";
-import { resetGeneralizeMemo } from "../generalize.ts";
-import { resetNudoModuleExecCache, takeRefineDiags } from "../refine.ts";
-import { resetSidecarLoadFailureCache, takeContractDiags } from "../contract/contract.ts";
-import { resetParseSourceCache } from "../parse-source.ts";
-import { resetAbsCallBudget, resetEvalForkBudget } from "../call-budget.ts";
+import { takeRefineDiags } from "../refine.ts";
+import { takeContractDiags } from "../contract/contract.ts";
+import { resetEngineCaches } from "./eval-helpers.ts";
 
 /** 缓存重置（仓库惯例）：同名文件跑不同源码 ⇒ 模块执行缓存 / memo 会串台 */
 beforeEach(() => {
-  resetCheckSourceMemo();
-  resetGeneralizeMemo();
-  resetNudoModuleExecCache();
-  resetSidecarLoadFailureCache();
+  resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
-  resetParseSourceCache();
-  resetAbsCallBudget();
-  resetEvalForkBudget();
 });
 
 /** 多行 case 声明（实参跨行 ⇒ 旧口径读不到后缀） */

@@ -23,14 +23,10 @@
  */
 import {describe, it, expect, beforeEach} from "vitest";
 import {litValue} from "../abs.ts";
-import {call} from "./eval-helpers.ts";
+import {call, resetEngineCaches} from "./eval-helpers.ts";
 import {checkSource, pTrue, transpileSource} from "../index.ts";
-import {resetCheckSourceMemo} from "../check/check.ts";
-import {resetGeneralizeMemo} from "../generalize.ts";
-import {resetNudoModuleExecCache, takeRefineDiags} from "../refine.ts";
-import {resetSidecarLoadFailureCache, takeContractDiags} from "../contract/contract.ts";
-import {resetParseSourceCache} from "../parse-source.ts";
-import {resetAbsCallBudget, resetEvalForkBudget} from "../call-budget.ts";
+import {takeRefineDiags} from "../refine.ts";
+import {takeContractDiags} from "../contract/contract.ts";
 
 /** 引擎求值结果的字面量值（失败面原样返回） */
 function v(src: string): unknown {
@@ -80,15 +76,9 @@ const SRC_KEY = `export function f() {
 
 describe("Bug 1127：__nudoMp* 内部临时名与用户标识符避让", () => {
   beforeEach(() => {
-    resetCheckSourceMemo();
-    resetGeneralizeMemo();
-    resetNudoModuleExecCache();
+    resetEngineCaches();
     takeRefineDiags();
-    resetSidecarLoadFailureCache();
     takeContractDiags();
-    resetParseSourceCache();
-    resetAbsCallBudget();
-    resetEvalForkBudget();
   });
 
   describe("报告 3 条触发（逐条）", () => {

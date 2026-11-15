@@ -40,16 +40,12 @@
  * 锚定值均为 **node v26.10.0** 原生实测（见各断言注释）。
  */
 import {describe, it, expect, beforeEach} from "vitest";
-import {val} from "./eval-helpers.ts";
+import {val, resetEngineCaches} from "./eval-helpers.ts";
 import {$lit} from "../exec/runtime/state.ts";
 import {sigOf} from "./nudo-constraints.ts";
 import {checkSource, pTrue, transpileSource} from "../index.ts";
-import {resetCheckSourceMemo} from "../check/check.ts";
-import {resetGeneralizeMemo} from "../generalize.ts";
-import {resetNudoModuleExecCache, takeRefineDiags} from "../refine.ts";
-import {resetSidecarLoadFailureCache, takeContractDiags} from "../contract/contract.ts";
-import {resetParseSourceCache} from "../parse-source.ts";
-import {resetAbsCallBudget, resetEvalForkBudget} from "../call-budget.ts";
+import {takeRefineDiags} from "../refine.ts";
+import {takeContractDiags} from "../contract/contract.ts";
 
 /** 引擎求值结果的字面量值（失败面原样返回） */
 function v(src: string): unknown {
@@ -208,15 +204,9 @@ const SRC_C3 = `export function f() {
 
 describe("Bug 1151：类 setter thunk 形参载体（__v）避开用户标识符", () => {
   beforeEach(() => {
-    resetCheckSourceMemo();
-    resetGeneralizeMemo();
-    resetNudoModuleExecCache();
+    resetEngineCaches();
     takeRefineDiags();
-    resetSidecarLoadFailureCache();
     takeContractDiags();
-    resetParseSourceCache();
-    resetAbsCallBudget();
-    resetEvalForkBudget();
   });
 
   describe("1151-a：求值面（原生 = 引擎）", () => {
