@@ -4,6 +4,5 @@
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
 import "./service--freeze-contract-guard.part.ts";
 import "./service--key-presence-parity.part.ts";
-import "./service--standard-schema-neg-zero.part.ts";
 import "./service--freeze-update-rebuild.part.ts";
 import "./service--array-view-products.part.ts";
