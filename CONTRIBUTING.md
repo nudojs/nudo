@@ -44,14 +44,26 @@ Because there is no style linter, **reviewers** must watch what the type-checker
 - **`as` creep in tests** — type assertions that hide real type errors or paper over API drift. Prefer fixing types over `as`.
 - **Comment rot** — comments that describe deleted behavior, wrong invariants, or stale design decisions. Update or delete them in the same PR.
 
-### 回归钉：按特性族聚合，不再一 bug 一文件
+### 回归测试：按模块/不变量归属，不按缺陷编号拆文件
 
-`packages/*/src/__tests__/` 现有 2355 个测试模块（1049 个入口 + 1306 个
-`*.part.ts`），其中 1366 个是 `*-bug-NNN-*` 回归钉。文件数本身已成为 CI 调度成本
-（`vitest.config.ts` 的 4 worker / 30s 超时 / 2 shard）。新增回归时：
+`packages/*/src/__tests__/` 现有 2350 个测试模块（1050 个入口 + 1300 个
+`*.part.ts`），其中 1360 个仍带 `*-bug-NNN-*` 文件名——这是历史审计批次遗留的
+**按缺陷编号拆分**，不是推荐形态。缺陷编号是批次内的局部编号，会跨批次复用
+（如 `core-254` 的两组文件互不相关），不能当稳定身份；文件应是模块规格的
+载体，不应随缺陷生命周期增删。新增回归时：
 
-- **优先**追加到同族的表驱动文件（`it.each` / case 表），或并入已有的同族 `-bug-`
-  文件；确需新文件时在 PR 里说明为什么不能合并。
+- **先回答“原测试为什么没覆盖”**，四选一并据此选动作：① 该层/该形态没测；
+  ② 夹具形状漏了（array-like / spread / 可选链……）⇒ 修原夹具；③ 旧断言钉了
+  错误行为 ⇒ 改/删旧断言，**不得**并存 re-pin；④ 门禁没跑到（路径/矩阵遗漏）
+  ⇒ 修门禁。答案写进 PR，不写成一个新文件的由来。
+- **默认修改该模块的表驱动用例**（`it.each` / case 表）；同一根因的多个面是
+  加行/加维度，不是加文件。
+- **文件名描述模块/特性，缺陷编号只出现在 `it` 标题、commit、changeset。**
+  不要按缺陷编号新建测试文件。
+- 仅三种理由允许新建文件：该模块没有套件；需要不同 harness（spawn CLI / fs
+  布局 / native oracle）；跨模块产品契约（CLI exit code / dts）。
+- 表 / 镜像 / 注册表类根因必须同时补**完整性/漂移门禁**（枚举发射点或键集，
+  新成员未入表即红），不要只补样例。
 - **按族收敛入口已对 21 个族启用**：`scripts/aggregate-tests.mjs` 把同族
   `*-bug-NNN-*.test.ts` 原地改名为 `*.part.ts`，由 `zz-agg-<族>.test.ts` import，
   vitest 入口从 N 降到 1。2026-11-05 全量试点（20 族 / 1329 文件）曾暴露
