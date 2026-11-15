@@ -188,6 +188,7 @@ export { CHECK_FACE_DIAG_CODES } from "@nudojs/core/internal";
  * `commands/check.ts` 与 `migrate.ts` 按名 import，改名会断其 import。
  */
 export { checkIssuesFromDiagnostics as domainIssuesFromDiagnostics } from "@nudojs/core/internal";
+export { dropUnexplainedCapabilityDenied } from "@nudojs/core/internal";
 
 // ---------------------------------------------------------------------------
 // Bug 643 —— `--from` 的调用点义务必须与**同文件通道同判据**

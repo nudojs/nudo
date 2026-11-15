@@ -26,6 +26,12 @@ description: "仓库设计笔记索引——产品页背后的架构真源（Abs
 | [`generator-laziness.md`](https://github.com/nudojs/nudo/blob/main/docs/design/generator-laziness.md) | 生成器体仍在构造期跑完（Bug 212）：为什么在现有 eager 快照模型下无法实现惰性生成器、受影响的消费面清单，以及把它变成 sound 过近似的最小转译侧路径 | 架构债（已登记） |
 | [`architecture-debt.md`](https://github.com/nudojs/nudo/blob/main/docs/design/architecture-debt.md) | 卡在求值模型 / `Abs` 表示层的 10 条欠账（生成器体 eager、relation/apply 结果缺 throws 通道、union 按成员名分派、fn 形状无 overload 承载位）——为什么它们必须单独排期 | 架构债（台账） |
 
+## 决策记录（ADR）
+
+| ADR | 覆盖内容 | 状态 |
+|---|---|---|
+| [`adr-0001-semantic-index-and-evidence.md`](https://github.com/nudojs/nudo/blob/main/docs/design/adr-0001-semantic-index-and-evidence.md) | 分析面事实一致性：单一绑定索引（`SemanticIndex`）+ 显式降级证据（`Evidence<T>`），2026-11-14 审计 34 条 bug 的根因方案 | 已接受（阶段 1 切片 4.2） |
+
 ## 过程记录
 
 | 笔记 | 覆盖内容 |

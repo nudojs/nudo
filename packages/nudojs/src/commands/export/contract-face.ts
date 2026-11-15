@@ -279,14 +279,22 @@ export function unifiedParamFace(
             });
           }
         } else {
-          // 对象解构（BUG-120）：顶层键取**形参名**（`FormalParam.placeholder`），
-          // 值是那个实参对象的形状 —— 与无契约的解构分支、数组解构分支、普通
-          // 形参分支**同口径** ⇒ `<fn>Input` 的顶层键集合 ≡ 形参名集合。
-          // 旧实现逐绑定名建顶层键（`{a, b}`）⇒ 与普通形参的「实参包」语义相反
-          // ⇒ `plainInput` 拒绝 `.d.ts` 明文声明的调用形态。
-          const slots = Object.create(null) as Record<string, { value: Abs }>;
-          for (const [key, tree] of trees) slots[key] = { value: treeAbs(tree) };
-          out.push({ name: formal.placeholder, abs: obj(slots), optional: false });
+          // 对象解构（BUG-030）：顶层键取**解构出来的字段名**，与 `.d.ts` 明文
+          // 声明的调用形态同形（`f({ card })` ⇒ `{ card: … }`）。
+          //
+          // BUG-120 曾把整段收进一个键、槽名取 `FormalParam.placeholder`，理由
+          // 是「顶层键 ≡ 形参名」；但解构形参**没有**公共名，`_p0` / `_p0_1` 是
+          // 求值占位（tmp-names.ts）⇒ 发布的校验器对唯一合法调用报
+          // `required@_p0`，对一个永不出现的 `{_p0: …}` 放行（BUG-030）。
+          // 公共面不得出现占位名（`PublicName` 的构造子会直接 throw）。
+          for (const [key, tree] of trees) {
+            out.push({
+              name: key,
+              abs: treeAbs(tree),
+              optional: optionals.get(key) === true,
+              ...(paths.get(key) ? { fieldPath: paths.get(key) } : {}),
+            });
+          }
         }
       }
       if (wholeIdx < 0 && fieldHits.length === 0) {

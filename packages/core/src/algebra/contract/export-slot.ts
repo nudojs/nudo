@@ -169,6 +169,57 @@ function cjsDefaultInnerNameOf(file: AstFileLike): string | undefined {
  * 会与别的成员键**碰撞**（`{ a: function b(){}, b: () => … }` ⇒ 映射串成
  * `b -> a`）。成员键是导出面的唯一口径 ⇒ 映射**只用成员键**（Bug 1128）。
  */
+/**
+ * BUG-002：CJS **成员赋值**导出口 `exports.<slot> = <localFn>` /
+ * `module.exports.<slot> = <localFn>` / `exports['<slot>'] = <localFn>`。
+ *
+ * 旧映射只认精确同名、ESM 别名、`module.exports = {…}` 对象成员与 CJS
+ * 单导出内层 id ⇒ 「槽名 ≠ 本地名」的成员赋值整条落空，普查名 `boom`
+ * 在导出表里查不到 ⇒ L2 入口求值缺位 ⇒ 必抛函数长期假绿。
+ */
+function cjsMemberAssignmentSlotOf(file: AstFileLike, localName: string): string | undefined {
+  for (const stmt of file.program.body as NodeLike[]) {
+    if (stmt.type !== "ExpressionStatement") continue;
+    const expr = stmt.expression as NodeLike | undefined;
+    if (!expr || expr.type !== "AssignmentExpression" || expr.operator !== "=") continue;
+    const left = expr.left as NodeLike | undefined;
+    const right = expr.right as NodeLike | undefined;
+    if (!left || !right || left.type !== "MemberExpression") continue;
+    const obj = left.object as NodeLike | undefined;
+    const isExportsObject =
+      identName(obj) === "exports" ||
+      (obj?.type === "MemberExpression" &&
+        identName(obj.object as NodeLike) === "module" &&
+        identName(obj.property as NodeLike) === "exports");
+    if (!isExportsObject) continue;
+    // MemberExpression 的属性在 `.property`（对象字面量成员才在 `.key`）；
+    // identName 同时覆盖 `exports.greet` 与 `exports['greet']`。
+    const slot = identName(left.property as NodeLike | undefined);
+    if (!slot) continue;
+    if (right.type !== "Identifier" || identName(right) !== localName) continue;
+    return slot;
+  }
+  return undefined;
+}
+
+/**
+ * BUG-023：CJS 单导出指向**本地声明标识符**（`module.exports = C`）。
+ * 导出表只有 default 槽，而普查名 / 类名是 `C` ⇒ 类值 Abs 取不到 ⇒
+ * 构造器与实例方法在 L2 完全不可见。与具名函数表达式内层 id（Bug 6）不同，
+ * 这里是顶层已有的本地绑定。
+ */
+function cjsDefaultLocalTargetOf(file: AstFileLike): string | undefined {
+  for (const stmt of file.program.body as NodeLike[]) {
+    if (stmt.type !== "ExpressionStatement") continue;
+    const expr = stmt.expression as NodeLike | undefined;
+    if (!expr || expr.type !== "AssignmentExpression" || expr.operator !== "=") continue;
+    if (!isExportsTarget(expr.left as NodeLike | undefined)) continue;
+    const right = expr.right as NodeLike | undefined;
+    if (right?.type === "Identifier") return identName(right);
+  }
+  return undefined;
+}
+
 function cjsMemberSlotsOf(file: AstFileLike): Map<string, string> {
   const out = new Map<string, string>();
   for (const stmt of file.program.body as NodeLike[]) {
@@ -226,10 +277,20 @@ export function resolveExportSlotCall(
   if (member !== undefined && Object.hasOwn(evalRun, "default")) {
     return { kind: "cjs-member", key: "default", member };
   }
+  // BUG-002：`exports.greet = boom` / `module.exports.greet = boom` ——
+  // 本地名映射到成员赋值槽名（不是对象字面量成员，也不是精确同名）。
+  const assignedSlot = cjsMemberAssignmentSlotOf(file, fnName);
+  if (assignedSlot !== undefined && Object.hasOwn(evalRun, assignedSlot)) {
+    return { kind: "named", key: assignedSlot };
+  }
   // Bug 6：CJS 具名函数表达式 `module.exports = function getName(){}` 的
   // 本地名是内层 id，导出槽是 default ⇒ 映射到 default 槽（签名 / L2 不再塌
   // unknown + nudo:opaque-result）。放在成员槽之后（精确命中优先）。
   if (cjsDefaultInnerNameOf(file) === fnName && Object.hasOwn(evalRun, "default")) {
+    return { kind: "default", key: "default" };
+  }
+  // BUG-023：`module.exports = C`（右值是本地类/函数标识符）
+  if (cjsDefaultLocalTargetOf(file) === fnName && Object.hasOwn(evalRun, "default")) {
     return { kind: "default", key: "default" };
   }
   return undefined;

@@ -27,9 +27,11 @@ import {
   runWithEvalMissingSlot,
   fnFingerprints,
   setAbsTruncationCollector,
+  defaultExportLocalName,
   suggestedCallsCeiling,
   suggestedDepthCeiling,
   suggestedForkCeiling,
+  semanticIndexEntryFaceSegment,
 } from "@nudojs/core/internal";
 import {
   parse,
@@ -85,6 +87,7 @@ import {
   resolveFunctionNode,
   fnNameLoc,
   collectTopLevelFunctions,
+  recordServiceEntryFace,
   findSingleModuleExportsFunction,
   collectBindings,
   buildNodeTypeMap,
@@ -526,6 +529,9 @@ export function analyzeFileUncachedInner(
   // noDeclaration 分类（类方法作用域名 "C.m" 落到 dts 投影上 → 产出
   // `export declare function C.m(...)` 这种非法 TS，#494）。
   const topLevelFns = collectTopLevelFunctions(ast);
+  // ADR 0001 阶段 1 · 切片 2：与 core 绑定索引做只读对照（默认关闭、零开销）。
+  // 普查结果本身不改写 ⇒ 分析面门禁结论不变。
+  recordServiceEntryFace(ast, topLevelFns);
   const noDeclByNode = new Map<Node, boolean>();
   const noDeclByName = new Map<string, boolean>();
   for (const t of topLevelFns) {
@@ -640,6 +646,8 @@ export function analyzeFileUncachedInner(
             analysisFnKey,
             fnDepSeg ?? "-",
             `cm=${caseMode}`,
+            // ADR 0001 切片 3：索引面 / 旧面两档互不回放（文件级键同纪律）。
+            `face=${semanticIndexEntryFaceSegment()}`,
           ].join("\0")
         : undefined;
     const dLen0 = diagnostics.length;
@@ -818,6 +826,10 @@ export function analyzeFileUncachedInner(
   };
   const currentModulePath = normalizeModulePath(resolve(filePath));
   const singleExportFn = findSingleModuleExportsFunction(ast);
+  // BUG-013：`export default function f` 的本地名。记录里的 `targetExport` 是
+  // 导出名 `"default"`，而这里按**函数名**匹配 ⇒ 重命名默认导入（`import other
+  // from`）/ `import {default as g}` / `ns.default(...)` 的跨文件证据全被丢弃。
+  const defaultExportName = defaultExportLocalName(source) ?? undefined;
 
   // T10b：跨文件注入的调用点域证据 ⊄ 手写契约 → nudo:contract-domain-exceeds
   // （error）。带 @nudo:case 的函数同样检查——case 路径只覆盖本文件内 case
@@ -832,6 +844,8 @@ export function analyzeFileUncachedInner(
     const nameRoutes = (r: CallRecord): boolean =>
       r.fnName === name ||
       r.targetExport === name ||
+      // 默认导出：导出名 `"default"` ↔ 本地函数名（BUG-013）
+      (r.targetExport === "default" && defaultExportName === name) ||
       (r.targetAliases?.includes(name) ?? false) ||
       (singleExportHit && (r.fnModule !== undefined || r.targetModule !== undefined));
     const matchingExternal = (r: CallRecord): boolean => {

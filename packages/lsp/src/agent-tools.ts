@@ -94,6 +94,7 @@ import {
   checkIssuesFromDiagnostics,
   collectAbsInlays,
   DIAG,
+  dropUnexplainedCapabilityDenied,
 } from "@nudojs/core/internal";
 import { evalAnalysisModules } from "./validation.ts";
 import { exportedNamesOfLocal } from "./symbols.ts";
@@ -570,7 +571,13 @@ export function checkTool(
       // 同一事实可能两通道同文（mock 文件缺失 ⇒ module-missing）⇒ 按
       // (code, message) 去重（与 CLI `dedupeAgainstIssues` 同键）
       const seen = new Set(report.issues.map((i) => `${i.code}\u0000${i.message}`));
-      const analysisIssues = checkIssuesFromDiagnostics(analysis.diagnostics).filter(
+      // BUG-026 精确化：capability-denied 只在它确实造成推断失败时上屏
+      // （与 CLI 同一判据，单一实现：core `dropUnexplainedCapabilityDenied`）。
+      const gated = dropUnexplainedCapabilityDenied(
+        checkIssuesFromDiagnostics(analysis.diagnostics),
+        report.issues,
+      );
+      const analysisIssues = gated.filter(
         (i) => !seen.has(`${i.code}\u0000${i.message}`),
       );
       reportWithAnalysis = mergeCheckIssues(report, analysisIssues);

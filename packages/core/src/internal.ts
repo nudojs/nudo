@@ -14,6 +14,10 @@ export { CHECK_FACE_DIAG_CODES, DIAG, type DiagCode } from "./algebra/diagnostic
 // BUG-021/199：调用点观测拓宽（emit 写盘面与 contract-drift 对账面共用）
 export { isPointConstraint, widenObservationAbs } from "./algebra/widen-observation.ts";
 
+// BUG-034：类成员表（实例 / 静态分面）——LSP 成员补全与 check 的成员面同源
+export { localClassMemberTable } from "./algebra/scan/scan-call-graph.ts";
+export { defaultExportLocalName } from "./algebra/scan/scan-top-functions.ts";
+
 // leak / budgets / memo keys
 export {
   stripCommentsAndStrings, stripStringsKeepComments,
@@ -47,6 +51,9 @@ export {
   // 共用；Bug 632 / 1038 手抄漂移的闭合点）
   checkIssuesFromDiagnostics,
   type AnalyzerDiagnosticLike,
+  // BUG-026 精确化：capability-denied 只在它确实造成推断失败时上屏
+  // （CLI check 与 lsp agent-tools 共用同一判据，不各写一份）
+  dropUnexplainedCapabilityDenied,
   // 截断 suggestion 具体修值单源（core check 面 + service analyzer 截断臂
   // 共用——analyz器面不得手写第二份公式）
   suggestedForkCeiling, suggestedDepthCeiling, suggestedCallsCeiling,
@@ -221,3 +228,42 @@ export { formatEntryParamShape } from "./algebra/check/check-signatures.ts";
 // JS Error 家族构造器名（service 补全近似表 builtin-prototype 的错误类
 // 判定复用；此前 8 名复刻 BUILTIN_ERROR_CLASSES 靠"保持同步"注释互钉）
 export { ERROR_CTOR_NAMES } from "./algebra/diagnostics/error-names.ts";
+// ADR 0001 绑定索引层：经 internal 供 service / lsp 消费；`.` 产品面不泄漏
+// （见 kernel-merge.md「绑定索引层」）。阶段 1 切片 1 只暴露最小只读面。
+export {
+  buildSemanticIndex,
+  type SemanticIndex,
+  type SymbolId,
+} from "./algebra/scan/semantic-index.ts";
+export {
+  compareEntryFaces,
+  recordSemanticIndexShadow,
+  resolveEntryFace,
+  semanticIndexEntryFaceSegment,
+  semanticIndexShadowActive,
+  setSemanticIndexEntryFace,
+  setSemanticIndexShadow,
+  takeSemanticIndexShadow,
+  type EntryFaceDiff,
+} from "./algebra/scan/entry-face-shadow.ts";
+// ADR 0001 阶段 1 切片 4.1：Evidence 只读面 + 发布门影子双读。
+// 仍经 internal 通道；`.` 产品面不泄漏（§10 决议 3）。
+export {
+  declaredOf,
+  degradedOf,
+  observedOf,
+  publishBlockedBy,
+  resolvePublicType,
+  type Evidence,
+  type ModuleForm,
+  type PublicName,
+} from "./algebra/diagnostics/evidence.ts";
+export {
+  comparePublishGates,
+  isDegradedCode,
+  recordPublishGateShadow,
+  setPublishGateShadow,
+  takePublishGateShadow,
+  type PublishGateShadow,
+  type RawDiagnostic,
+} from "./algebra/diagnostics/evidence-shadow.ts";

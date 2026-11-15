@@ -2,7 +2,13 @@
  * cache 背面：整文件 memo 键（含 dep 指纹）+ 结果克隆/行号平移。
  * 自 analyzer.ts 机械拆出；语义未改。
  */
-import { loadModuleDepsFingerprint, hashSource, stableAnalyzeKeySource, stablePathKey } from "@nudojs/core/internal";
+import {
+  loadModuleDepsFingerprint,
+  hashSource,
+  stableAnalyzeKeySource,
+  stablePathKey,
+  semanticIndexEntryFaceSegment,
+} from "@nudojs/core/internal";
 import { defaultLoadModule } from "./load-module.ts";
 import { absStructureKey, type CallRecord } from "./evaluator/call-record.ts";
 import { pathEnvContentFingerprint } from "./eval-run.ts";
@@ -137,6 +143,9 @@ export function analysisFileCacheKey(
     // 同一名单不同顺序/重复不产生不同键
     auxKey:
       `${cases}\0${ext}\0${cfg}\0${lm}\0${envSeg}\0${envPreloadSeg}\0${abSeg}\0${depSeg}\0cm=${caseMode}` +
+      // ADR 0001 阶段 1 切片 3：check / service 共用的索引面状态。fallback
+      // 开关翻转时不得回放另一档 AnalysisResult（与 checkMemoKey 同纪律）。
+      `\0face=${semanticIndexEntryFaceSegment()}` +
       (alsoSynthesizeCases === undefined
         ? ""
         : alsoSynthesizeCases === true || !Array.isArray(alsoSynthesizeCases)

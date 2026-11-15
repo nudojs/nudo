@@ -9,7 +9,7 @@
  * SurfaceReuse——直接 import 叶子模块）。
  */
 import { formatAbs, formatShape, type Abs, type PrimName } from "@nudojs/core";
-import { maskCommentsAndStrings } from "@nudojs/core/internal";
+import { localClassMemberTable, maskCommentsAndStrings } from "@nudojs/core/internal";
 import { extractDirectivesQuiet, parse } from "@nudojs/parser";
 import {
   builtinProtoMember,
@@ -130,7 +130,51 @@ function getMemberCompletions(
     bound = next;
   }
   if (bound.shape.k === "unknown" || bound.shape.k === "never") return [];
-  return getCompletionsForAbs(bound);
+  const base = getCompletionsForAbs(bound);
+  // BUG-034：类实例的品牌 shape 只带 own 字段槽，原型方法不在里面 ⇒ 补全区
+  // 必须并入类成员表（与 check / hover 的成员面同源：`localClassMemberTable`）。
+  if (bound.shape.k === "brand") {
+    // 类**值**本身也是 brand（静态槽挂在同一个品牌上）⇒ 接收者就是类名时
+    // 走静态面，否则是实例面。两面成员集合不同，不得混用。
+    const cls = bound.shape.name;
+    const face = receiver.segments.length === 1 && root === cls ? "static" : "instance";
+    return mergeMemberItems(base, classMemberItems(source, cls, face));
+  }
+  // 类值面（`K.`）：静态方法同样不在静态字段槽里。
+  if (receiver.segments.length === 1) {
+    return mergeMemberItems(base, classMemberItems(source, root, "static"));
+  }
+  return base;
+}
+
+/** 类成员补全项（`localClassMemberTable` 的唯一真值；未知类 ⇒ 空） */
+function classMemberItems(
+  source: string,
+  className: string,
+  face: "instance" | "static",
+): CompletionItem[] {
+  let table: ReturnType<typeof localClassMemberTable>;
+  try {
+    // 与绑定面同源：先补 `x.` → `x._`（不完整源码否则整体解析失败，成员面为空）
+    table = localClassMemberTable(sanitizeSourceForParsing(source));
+  } catch {
+    return [];
+  }
+  const entry = table.get(className);
+  if (!entry) return [];
+  const names = face === "instance" ? entry.instance : entry.static;
+  return names.map((name) => ({
+    label: name,
+    kind: "method" as const,
+    detail: `${name}@${className}`,
+  }));
+}
+
+/** 合并成员项（同 label 以 Abs 面为准——它带签名） */
+function mergeMemberItems(base: CompletionItem[], extra: CompletionItem[]): CompletionItem[] {
+  if (extra.length === 0) return base;
+  const seen = new Set(base.map((i) => i.label));
+  return [...base, ...extra.filter((i) => !seen.has(i.label))];
 }
 
 /**
@@ -508,50 +552,194 @@ export function cursorLexicalContext(
   line: number,
   character: number,
 ): LexicalContext {
-  const masked = maskCommentsAndStrings(source);
   const lineStarts = lineStartOffsets(source);
   const offset = offsetOfPosition(source, lineStarts, line, character);
   if (offset <= 0) return "code";
-  const ctx = offset - 1;
-  // 掩码里非空白 ⇒ 代码区（注释/字符串被整段掩成空格）
-  if (masked[ctx] !== " ") return "code";
+  // BUG-019：判据必须是**逐字符扫描的扫描器状态**，不是「本行空白段回溯」
+  // ——多行模板 / 多行块注释的续行、正则体都不在「本行以注释符开头」的形态里，
+  // 回溯法因此把字面量内部误判成 code（接受补全即静默改写字符串运行时值）。
+  return scanLexicalState(source, offset);
+}
 
-  // 定位光标所在的空白段（行内；换行不是空白段的一部分）
-  let segStart = ctx;
-  while (segStart > 0 && masked[segStart - 1] === " ") segStart--;
-  let segEnd = ctx + 1;
-  while (segEnd < masked.length && masked[segEnd] === " ") segEnd++;
+/** 关键词后允许正则字面量（`return /re/`、`typeof /re/`） */
+const REGEX_PREFIX_KEYWORDS = new Set([
+  "return",
+  "typeof",
+  "instanceof",
+  "case",
+  "in",
+  "of",
+  "new",
+  "delete",
+  "void",
+  "do",
+  "else",
+  "yield",
+  "await",
+  "throw",
+]);
 
-  const lineEnd = (l: number): number =>
-    l + 1 < lineStarts.length ? lineStarts[l + 1]! - 1 : source.length;
+/**
+ * 逐字符扫描到 `target` 偏移，返回该处所在的词法状态（BUG-019 的单一判据）。
+ *
+ * 覆盖：行注释 / 块注释 / 单双引号字符串 / 模板字面量（含 `${}` 嵌套与回到
+ * 模板串）/ 正则字面量（按前一个 token 判断除法还是正则）/ 转义。
+ */
+function scanLexicalState(source: string, target: number): LexicalContext {
+  type State = "code" | "line-comment" | "block-comment" | "string" | "template" | "regex";
+  let state: State = "code";
+  let quote = "";
+  /** `${` 嵌套栈：栈内数值 = 当前模板表达式里的花括号深度 */
+  const templateStack: number[] = [];
+  /** 上一个「有意义」的 token（正则 / 除法的判据） */
+  let prevToken = "";
+  let i = 0;
+  const isWordChar = (c: string): boolean => /[A-Za-z0-9_$]/.test(c);
+  /** 正则允许出现：运算符 / 开括号 / 关键字之后 */
+  const regexAllowed = (): boolean => {
+    if (prevToken === "") return true;
+    if (REGEX_PREFIX_KEYWORDS.has(prevToken)) return true;
+    return /^[(,=:[!&|?{};+\-*%~^<>]$/.test(prevToken);
+  };
 
-  let curLine = line;
-  let curSegStart = segStart;
-  let curSegEnd = segEnd;
-  for (let guard = 0; guard < 10_000; guard++) {
-    const text = source.slice(curSegStart, curSegEnd).trimStart();
-    if (text.startsWith("//") || text.startsWith("/*")) return "comment";
-    if (
-      text.startsWith('"') ||
-      text.startsWith("'") ||
-      text.startsWith("`") ||
-      text.startsWith("}")
-    ) {
-      return "string";
+  while (i < target) {
+    const ch = source[i]!;
+    const next = source[i + 1];
+    switch (state) {
+      case "line-comment": {
+        if (ch === "\n") state = "code";
+        i++;
+        continue;
+      }
+      case "block-comment": {
+        if (ch === "*" && next === "/") {
+          state = "code";
+          i += 2;
+          continue;
+        }
+        i++;
+        continue;
+      }
+      case "string": {
+        if (ch === "\\") {
+          i += 2;
+          continue;
+        }
+        if (ch === quote) {
+          state = "code";
+          prevToken = "x"; // 字符串字面量是值 ⇒ 后面跟 `/` 是除法
+        }
+        i++;
+        continue;
+      }
+      case "template": {
+        if (ch === "\\") {
+          i += 2;
+          continue;
+        }
+        if (ch === "`") {
+          state = "code";
+          prevToken = "x";
+          i++;
+          continue;
+        }
+        if (ch === "$" && next === "{") {
+          templateStack.push(0);
+          state = "code";
+          prevToken = "{";
+          i += 2;
+          continue;
+        }
+        i++;
+        continue;
+      }
+      case "regex": {
+        if (ch === "\\") {
+          i += 2;
+          continue;
+        }
+        // 字符类里的 `/` 不结束正则
+        if (ch === "[" ) {
+          let j = i + 1;
+          while (j < target && source[j] !== "]") {
+            if (source[j] === "\\") j++;
+            j++;
+          }
+          i = j + 1;
+          continue;
+        }
+        if (ch === "/") {
+          state = "code";
+          prevToken = "x";
+        }
+        i++;
+        continue;
+      }
+      default: {
+        // code
+        if (ch === "/" && next === "/") {
+          state = "line-comment";
+          i += 2;
+          continue;
+        }
+        if (ch === "/" && next === "*") {
+          state = "block-comment";
+          i += 2;
+          continue;
+        }
+        if (ch === '"' || ch === "'") {
+          state = "string";
+          quote = ch;
+          i++;
+          continue;
+        }
+        if (ch === "`") {
+          state = "template";
+          i++;
+          continue;
+        }
+        if (ch === "/" && regexAllowed()) {
+          state = "regex";
+          i++;
+          continue;
+        }
+        if (ch === "}" && templateStack.length > 0) {
+          const depth = templateStack[templateStack.length - 1]!;
+          if (depth === 0) {
+            templateStack.pop();
+            state = "template";
+            i++;
+            continue;
+          }
+          templateStack[templateStack.length - 1] = depth - 1;
+          prevToken = "}";
+          i++;
+          continue;
+        }
+        if (ch === "{") {
+          if (templateStack.length > 0) {
+            templateStack[templateStack.length - 1] = templateStack[templateStack.length - 1]! + 1;
+          }
+          prevToken = "{";
+          i++;
+          continue;
+        }
+        if (isWordChar(ch)) {
+          let j = i;
+          while (j < target && isWordChar(source[j]!)) j++;
+          prevToken = source.slice(i, j);
+          i = j;
+          continue;
+        }
+        if (!/\s/.test(ch)) prevToken = ch;
+        i++;
+        continue;
+      }
     }
-    // 空白段（代码里的空白 / 段已结束）⇒ 不是注释
-    if (text === "") return "code";
-    // 跨行块注释：只有「本段一直延伸到行尾」才可能续到上一行
-    if (curSegEnd !== lineEnd(curLine)) return "code";
-    if (curLine === 0) return "code";
-    curLine -= 1;
-    const prevStart = lineStarts[curLine]!;
-    const prevEnd = lineEnd(curLine);
-    let p = prevEnd - 1;
-    while (p >= prevStart && masked[p] === " ") p--;
-    curSegStart = p + 1;
-    curSegEnd = prevEnd;
   }
+
+  if (state === "line-comment" || state === "block-comment") return "comment";
+  if (state === "string" || state === "template" || state === "regex") return "string";
   return "code";
 }
 

@@ -84,6 +84,63 @@ parser ──▶ core
   `$`op 经 `rt.ts` 绑定表解析，与二者无关）。exec/→algebra/ 的正向边
   （如 `exec/call.ts` import `objects/hof`）是引擎消费内核，保留。
 
+## 绑定索引层（ADR 0001 · 不是第二 IR）
+
+> 决策与迁移计划见 `adr-0001-semantic-index-and-evidence.md`。本节只钉**架构边界**。
+
+- `algebra/scan/semantic-index.ts` 一次 binding 产出**纯数据索引**：`SymbolId`
+  （`scopeUid + declarationStart`）是跨面引用的唯一身份；`refs` /
+  `exportSlots` / `entries` / `members` / `spans` / `calls` 一律只读。
+  索引是**绑定元数据，不是值 IR**：不参与求值、不进 Abs shape、不改
+  `leqAbs` / `formatShape` / 缓存 ABI。Abs 仍是唯一类型表示。
+- `algebra/diagnostics/evidence.ts` 是**分析期证据标签**（`declared` /
+  `observed` / `degraded`），同样不是 Abs 槽位；`unknown` 只由 `degraded`
+  产生，没有「降级成 `any`」的构造子。
+- 跨包唯一出口是 `@nudojs/core/internal`；`.`（产品面）不得泄漏索引符号。
+  投影仍单向有损，「Nothing reads a projection back」不变。
+- 索引缓存以 `File` 为键（`WeakMap<File, SemanticIndex>`），与 `parseSource`
+  的 AST 同生命周期，不引入第二套 AST 缓存。
+- `algebra/scan` 不得 import `exec/transpile`（沿用上文「模块边界」纪律）；
+  解构模式收集与该处同形实现，不制造反向依赖。
+- 阶段 1 起逐面迁移：`check` 面先影子双读、**旧面为准**，确认零回归后才
+  允许切换，再逐个删除孪生扫描器。切换前 `Evidence` 不得进入任何分析结论，
+  故暂不纳入 `analysisFileCacheKey` / `fnDepSeg`。
+- 阶段 1 切片 2：`check` 的入口名表经 `resolveEntryFace` 可显式切到
+  `SemanticIndex.entries`；切换口径是 `entries ∪ 旧面缺口`：迁移期不得让任何
+  旧入口消失；索引为空时 fail-closed 回退旧面。service 的
+  `collectTopLevelFunctions` 仍是「名称 + 节点」孪生扫描器（节点供形参 /
+  定位 / `noDeclaration`），索引只有名字，**不能替换它**；
+  `recordServiceEntryFace` 只读索引产出分歧快照，不改写普查结果。
+- 阶段 1 切片 3：`check` 索引面**默认开启**（`entryFaceEnabled = true`），
+  `setSemanticIndexEntryFace(false)` 是可回退旧面的 fallback（阶段 3 删除）。
+  两个开关职责分离：`shadowEnabled` 只管**只读观察**（service 快照与
+  `takeSemanticIndexShadow`），`entryFaceEnabled` 只管**入口口径**；二者的
+  状态都由 core 单点持有，service 不得自建开关。尤其：索引面默认开启后
+  service 只读快照**不得**随之开启，否则每次 `analyzeFile` 都多建一次索引。
+- **缓存键纪律（切片 3 起）**：索引面状态经
+  `semanticIndexEntryFaceSegment()`（`idx1` / `idx0`）进入 core
+  `checkMemoKey`、service `analysisFileCacheKey` 的 `auxKey` 与函数级
+  `fnCacheKey`，两档结论互不回放；因此 fallback 开关可在同一进程内翻转
+  （切片 2 的「不得热切换」限制随之解除）。`Evidence` 仍未进入任何分析
+  结论，故暂不单独纳入 `analysisFileCacheKey` / `fnDepSeg`；D2 首次接入
+  产品面时再补。
+- 索引 `entries` 只收**模块顶层**的可调用形态：函数体内嵌套声明、
+  getter / setter 访问器都不得成为公共入口（否则名字解析不到 ⇒ 假
+  `nudo:opaque-result` / `entry-may-throw`）。绑定表（`symbols` / `refs` /
+  `spans` / `calls`）仍遍历整棵 AST，不受此门控影响。
+- **证据层（切片 4.1 / 4.2 / 4.3）**：`algebra/diagnostics/evidence.ts` 的
+  `Evidence<T>` 经 `@nudojs/core/internal` 暴露只读面；`evidence-shadow.ts` 把
+  发布门的「按码白名单」与 `publishBlockedBy` 语义判据做**影子双读**（默认关闭、
+  只输出分歧清单）。切片 4.2 起 export 的**上屏面**默认走降级证据族（degraded
+  诊断不再被按码丢弃）；切片 4.3 起**阻断判据也是语义门**（不再按码白名单）：
+  `公开面降级证据 ∧ 申报过契约`，其中契约面诊断恒阻断、一般降级族（`internal` /
+  `unknown-inference`）按 `fn` 归因到**申报过契约的入口**（无 `fn` 的模块级降级
+  保守阻断）⇒ 未申报入口的降级只上屏、不卡别人的契约。诊断按 §10 决议 2 复用
+  现有码。语义阻断（`publishBlockedBy`）须先有 `effectiveContract` 的**无副作用
+  探测口**：该函数会经 `takeRefineDiagsSince` 把装载诊断转发进全局 `contractDiags`，
+  不得在诊断汇总后逐入口重探。Evidence 仍未进入分析结论 ⇒ 暂不纳入
+  `analysisFileCacheKey` / `fnDepSeg`。
+
 ## Collector 作用域（ALS）
 
 - **动机**：collector / 诊断通道曾是模块级单变量 + set→finally→restore 配对；

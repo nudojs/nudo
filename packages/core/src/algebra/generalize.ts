@@ -229,12 +229,38 @@ function evalRunOf(
 /** 类声明的构造器形参个数（类方法桥实例化用：无显式 ctor → 0）
  *
  *  导出（模块内）：check-may-throw.ts 的**实例方法桥**（Bug 379）须与此处
- *  同口径实例化（构造实参补 any）——两处各写一份会漂移。 */
+ *  同口径实例化（构造实参取 {@link ctorParamAbsArgs}）——两处各写一份会漂移。 */
 export function ctorParamCountOf(
   fileAst: ReturnType<typeof babelParse>,
   clsName: string,
 ): number {
   return ctorParamNodesOf(fileAst, clsName).length;
+}
+
+/**
+ * 类方法桥 / 类入口的**构造实参**（BUG-020）。
+ *
+ * 此前一律补 `any` ⇒ 构造器体 `this.size = size` 把 `any` 写进实例槽 ⇒
+ * 方法体里的 `this.size` 恒为 `any`：签名退成 `any`，而「any 参与的算术 /
+ * 成员运算」升级成 **error 级** `nudo:entry-may-throw` ⇒ 合法 `.ts` 类卡 CI。
+ * 同一份源码的 dts 面却给出 `size: number` —— 两面结论相反。
+ *
+ * 构造器形参的注解本来就在形参面上（`FormalParam.tsType`，与类入口签名同源，
+ * 含参数属性 `constructor(private size: number)`）⇒ **注解即域**：有注解按
+ * {@link absShapeForTsTypeText} 映射，无注解才补 `any`（与普通入口「未约束 =
+ * any」同口径，不是 unknown）。
+ *
+ * 参数属性在本仓的默认解析下已糖化成 `this.<name> = <name>` 赋值 ⇒ 实参带上
+ * 注解后槽位自然得到域，不需要另建播种通道。
+ */
+export function ctorParamAbsArgs(
+  fileAst: ReturnType<typeof babelParse>,
+  clsName: string,
+): Abs[] {
+  return ctorFormalsOf(fileAst, clsName).map((f) => {
+    const shape = absShapeForTsTypeText(f.tsType);
+    return abs(shape ?? { k: "any" }, undefined, pTrue, "path");
+  });
 }
 
 /**
@@ -246,8 +272,8 @@ export function ctorParamCountOf(
  * 否则空指针 TypeError 被调用点的空 catch 吞掉 ⇒ 类方法签名塌 unknown ⇒
  * 契约违规降级 ⇒ check 假绿）。
  *
- * ctorParamCountOf（「构造实参补 any」的个数）与 ctorFormalsOf（类入口
- * 签名面形参表）共用同一遍历 ⇒ 个数与形参表永远一致（否则签名面显示 N
+ * ctorParamAbsArgs（构造实参，BUG-020 起按注解构造）与 ctorFormalsOf（类
+ * 入口签名面形参表）共用同一遍历 ⇒ 个数与形参表永远一致（否则签名面显示 N
  * 个形参、而构造实参只补 M 个 ⇒ 两面自相矛盾）。
  */
 function ctorParamNodesOf(
@@ -354,6 +380,14 @@ export function classMethodIsStatic(
       decl = s.declaration;
     }
     const c = decl as ClassNode | undefined;
+    // BUG-017 / Bug 1156：匿名 `export default class { … }` 的导出槽名就是
+    // "default"，方法键前缀也是 `default.m`。classes 表里若没有 "default"
+    // 条目，`classMethodIsStatic` 会返回 undefined ⇒ 求值桥按静态方法走，
+    // 实例方法体的必抛被折成 unknown（假绿）。
+    if (s.type === "ExportDefaultDeclaration" && c?.type === "ClassDeclaration" && !c.id?.name) {
+      classes.set("default", c);
+      continue;
+    }
     if (c?.type === "ClassDeclaration" && c.id?.name) {
       if (!classes.has(c.id.name)) classes.set(c.id.name, c);
       continue;
@@ -717,6 +751,12 @@ export type PolyFn = {
   display: string;
   /** 入口契约（@nudo:contract），供签名/inlay 展示 */
   entryReqs?: Array<{ param: string; pred: import("./pred.ts").Pred; display?: string }>;
+  /**
+   * 该入口的有效契约来源（`effectiveContract` 的真值，ADR 0001 §4 D3）。
+   * 省略 = 无申报（纯推导）。发布门据此判断「用户是否申报过契约」——
+   * 不读源码字符串、不按诊断码反推。
+   */
+  contractSource?: "handwritten" | "generated";
   /**
    * 形参表面（C4.1）：默认/rest/解构的契约可绑定名。
    * 与 params（求值展示名）并列；检查/侧车匹配走 formals。
@@ -1507,6 +1547,12 @@ function generalizeFromAstUncached(
   });
 
   let entryReqs: Array<{ param: string; pred: import("./pred.ts").Pred; display?: string }> | undefined;
+  /**
+   * 有效契约来源（ADR 0001 §4 D3）：`effectiveContract` 返回非 undefined 即
+   * 「该入口申报过契约」。这是唯一真值点——generalize 本来就要解析它，这里
+   * 只是把结果带出去，供 check 签名面 / 发布门消费（零二次解析）。
+   */
+  let contractSource: "handwritten" | "generated" | undefined;
   /** refine 契约带来的 entryShapes（source=refine，不重复提升） */
   const refineEntryShapes = new Map<
     string,
@@ -1528,6 +1574,13 @@ function generalizeFromAstUncached(
         hasDirective || sc !== undefined
           ? effectiveContract(source, fnName, r)
           : undefined;
+      // BUG-018：`EffectiveContract.binders` 是跨槽 binder 表（Record），
+      // 投影侧用的是 ReadonlyMap；在这里转换一次，三处 `constraintToEntryAbs`
+      // 共用同一张表，避免每个投影分支各判一次。
+      const contractBinders =
+        eff?.binders !== undefined ? new Map(Object.entries(eff.binders)) : undefined;
+      // `source === "implicit"` 只是占位档（无申报），不构成申报证据。
+      if (eff !== undefined && eff.source !== "implicit") contractSource = eff.source;
       const reqs = eff?.params ?? [];
       if (reqs.length > 0) {
         entryReqs = reqs.map((e) => ({
@@ -1552,7 +1605,11 @@ function generalizeFromAstUncached(
             // BUG-082：默认值初始化式的类型并入定义域（契约域 ∪ 默认值类型）
             // ——否则 `s = "abc"` 配 `s: number()` 在被调方 L1 面判绿（假绿）。
             const entryAbs = contractDomainOf(
-              constraintToEntryAbs(e.constraint, e.param),
+              // BUG-018：跨槽 `ref()` 的 binder 表必须整体带上——与 check 的
+              // `@nudo:skip` 分支、dts 的 `contractParamFace` 同口径。漏传会
+              // 让 `resolveRef` 找不到别的槽位的 `bind`，异常被外层 catch 吞掉
+              // ⇒ 该位静默退回 any ⇒ 合法调用被判 may-throw（假红）。
+              constraintToEntryAbs(e.constraint, e.param, undefined, contractBinders),
               e.param,
               idx,
             );
@@ -1574,7 +1631,7 @@ function generalizeFromAstUncached(
               bag = {};
               patternFields.set(hit.index, bag);
             }
-            const fieldAbs = constraintToEntryAbs(e.constraint, e.param);
+            const fieldAbs = constraintToEntryAbs(e.constraint, e.param, undefined, contractBinders);
             const leaf: PatternFieldNode = {
               abs: fieldAbs,
               ...(e.constraint.isOptional ? { optional: true } : {}),
@@ -1606,7 +1663,8 @@ function generalizeFromAstUncached(
             }
           } else if (hit) {
             // placeholder / `_` / rest 裸名：整参契约
-            const entryAbs = constraintToEntryAbs(e.constraint, e.param);
+            // BUG-018：同上，跨槽 binder 表整体带上（裸名 / `_` / rest 槽）。
+            const entryAbs = constraintToEntryAbs(e.constraint, e.param, undefined, contractBinders);
             typeParams[hit.index] = {
               id: typeParams[hit.index]!.id,
               value: entryAbs,
@@ -1812,7 +1870,7 @@ function generalizeFromAstUncached(
           /* B 失败 fail-closed */
           return undefined;
         } else if (fnName.includes(".")) {
-          // 类方法桥：模块导出表取类 Abs → $new（构造参数 any）→ $invoke。
+          // 类方法桥：模块导出表取类 Abs → $new（构造参数按形参注解）→ $invoke。
           // 构造器抛 ⇒ 裸实例兜底（Bug 1093）：共享实现在 bridge-instance.ts；
           // 值域不传 isolate（证据域 check-may-throw 传 runWithMayThrowSession）。
           const [clsName, methodName] = fnName.split(".", 2);
@@ -1837,11 +1895,12 @@ function generalizeFromAstUncached(
                 throw e;
               }
             }
-            const nCtor = ctorParamCountOf(fileAst, clsName ?? "");
             const inst = instanceForMethodBridge(
               clsAbs as Abs,
               clsName ?? "",
-              Array.from({ length: nCtor }, () => abs({ k: "any" }, undefined, pTrue, "path")),
+              // BUG-020：构造实参按构造器形参注解构造（注解即域）——一律 any
+              // 会让构造器写入的实例槽失去域，方法体读 `this.x` 退 any。
+              ctorParamAbsArgs(fileAst, clsName ?? ""),
             );
             try {
               return withExecPhi(phi, () => $invoke(inst, methodName ?? "", args));
@@ -2121,6 +2180,7 @@ function generalizeFromAstUncached(
     ),
     ...(formals.length > 0 ? { formals } : {}),
     ...(entryReqs ? { entryReqs } : {}),
+    ...(contractSource !== undefined ? { contractSource } : {}),
     ...(fnRels ? { fnRels } : {}),
     ...(entryShapes ? { entryShapes } : {}),
     ...(hofSites ? { hofSites } : {}),

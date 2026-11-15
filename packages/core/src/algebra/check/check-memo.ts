@@ -20,6 +20,7 @@ import { runTranspiledOptionsMemoKey } from "../exec/run.ts";
 import type { CheckOptions } from "./check-types.ts";
 import { DependencyMemo } from "../key/memo-store.ts";
 import { loadModuleId, moduleMapId } from "../key/memo-identity.ts";
+import { semanticIndexEntryFaceSegment } from "../scan/entry-face-shadow.ts";
 
 /**
  * 整文件 CheckReport memo 容量。
@@ -109,6 +110,9 @@ export function checkMemoKey(
     // 证据不得互为陈旧命中：无证据那档会把有证据的 drift 吞掉，有证据那档
     // 会把 drift 回放进无证据的检查（假阳）。
     fromKey(identityOpts.from),
+    // ADR 0001 阶段 1 切片 3：索引普查面 / 旧面是两种入口口径，开关翻转
+    // 不得回放另一档报告（switch 是迁移期 fallback，不是缓存外的自由变量）。
+    semanticIndexEntryFaceSegment(),
   ].join("|");
 }
 

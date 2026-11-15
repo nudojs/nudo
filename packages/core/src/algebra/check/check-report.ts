@@ -120,6 +120,15 @@ export type NudoSig = {
   throws?: string;
   /** 模块边界入口（export / default / CJS exports） */
   entry?: boolean;
+  /**
+   * 有效契约来源（ADR 0001 §4 D3）：`handwritten` = 源码 `@nudo:contract` 行
+   * 或手写侧车；`generated` = 侧车生成段。省略 = 该入口无申报（纯推导）。
+   *
+   * 这是发布门「用户是否申报过契约」的**唯一真值**，由 generalize 解析
+   * `effectiveContract` 时一并带出（零二次解析）。不读源码字符串、不按诊断
+   * 码反推 —— 后者会把「注释里提到 @nudo:contract」误判成申报（BUG-021）。
+   */
+  contract?: "handwritten" | "generated";
 };
 
 export type CheckIssue = Diagnostic & {
@@ -206,6 +215,28 @@ export function checkIssuesFromDiagnostics(
         suggestion: d.suggestions?.[0],
       };
     });
+}
+
+/**
+ * BUG-026 精确化：`nudo:capability-denied` 是 unknown 的**成因**诊断，不是
+ * 能力清单。只有本报告确实观测到推断失败（`nudo:unknown-inference`）时才上屏；
+ * 否则每个 `module.exports = …` 文件都会因引擎对 `module` 全局的 deny 出现一条
+ * 与结论无关的 warning（`exports.` 拼写同一导出面却完全不报 = 同一事实两种信号，
+ * 而导出面本身已被 loader 正常解析）。
+ *
+ * 通道纪律：分析器通道的诊断与 check 面自产诊断在此汇合 ⇒ 两侧的
+ * `unknown-inference` 都算证据（后者是 check 签名面唯一的失败信号）。
+ */
+export function dropUnexplainedCapabilityDenied<T extends { code?: string }>(
+  issues: T[],
+  reportIssues: readonly { code?: string }[],
+): T[] {
+  if (!issues.some((i) => i.code === DIAG.capabilityDenied)) return issues;
+  const hasInferenceFailure =
+    issues.some((i) => i.code === DIAG.unknownInference) ||
+    reportIssues.some((i) => i.code === DIAG.unknownInference);
+  if (hasInferenceFailure) return issues;
+  return issues.filter((i) => i.code !== DIAG.capabilityDenied);
 }
 
 export type CheckReport = {

@@ -870,12 +870,27 @@ function resolveCalleePolyFn(
 ): PolyFn | undefined {
   if (!callee || callee.type !== "Identifier") return undefined;
   try {
+    // BUG-028：signatureHelp 的 generalize 装配必须与 hover / check 同源。
+    // 缺 modules ⇒ 跨模块被调者全绑 unknown；缺 inject ⇒ @nudo:mock /
+    // @nudo:as / @nudo:replace 失真；缺 autoBind ⇒ 项目显式关掉的侧车绑定
+    // 被重新绑上。三者缺一都会让签名弹窗塌成 unknown 或给出错值。
+    const analysisModules = evalAnalysisModules(filePath, source);
+    let inject: ReturnType<typeof buildLspInjection> | undefined;
+    try {
+      inject = buildLspInjection(filePath, source);
+    } catch {
+      inject = undefined; // 语法非法的编辑中间态 ⇒ 空注入，不拖垮签名面
+    }
+    const autoBind = contractConfig(findProjectConfig(dirname(filePath))?.config).autoBind;
     return generalizeFromAst(callee.name, source, {
       file: ast,
       refine: {
         fromFile: filePath,
         loadModule,
+        ...(autoBind === false ? { autoBind: false } : {}),
       },
+      ...(analysisModules ? { modules: analysisModules } : {}),
+      ...(inject && Object.keys(inject).length > 0 ? { inject } : {}),
     });
   } catch {
     // fail-closed：泛化失败 → 无签名面（调用方降级）

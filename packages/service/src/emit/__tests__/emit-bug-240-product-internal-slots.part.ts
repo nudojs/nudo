@@ -107,7 +107,10 @@ describe("Bug 240 —— 产物面不得发布 internal 槽", () => {
     );
     expect(dts).toContain("declare class Counter");
     expect(dts).not.toContain("#priv");
-    expect(dts).toContain("v: number");
+    // 字段类型取**构造器形参域**（`this.v = v`，v 无约束 ⇒ unknown）——这是
+    // BUG-007 的口径：单个构造点的 brand 观测（这里的 fake brand 说 number）
+    // 不得把公开字段钉成比构造器签名更窄的类型。
+    expect(dts).toContain("v: unknown");
   });
 
   it("schema 单值面：内部槽不进 zod 对象", () => {

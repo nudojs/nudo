@@ -12,6 +12,7 @@
 
 import { isBuiltin } from "node:module";
 import { parseSource as parse } from "../parse-source.ts";
+import { recordSemanticIndexShadow, resolveEntryFace } from "../scan/entry-face-shadow.ts";
 import { identBoundaryRegex, stripStringsKeepComments } from "../format/code-text.ts";
 import { extractFileEnvNames } from "../directive-scan.ts";
 import {
@@ -320,10 +321,20 @@ function checkSourceInScope(
   const file = parse(source);
   // Bug 1096：类导出入口（`new C()`）并入 L2 入口表——构造器必抛有了真实
   // 归因落点（此前构造器证据被丢弃 ⇒ 闸门假绿）。
-  const names = [
+  const oldNames = [
     ...listTopFunctions(source, file),
     ...listClassEntryNames(source, file),
   ];
+  // ADR 0001 阶段 1：入口面影子双读（切片 1，只记录分歧），再经索引普查面
+  // （切片 2 引入、切片 3 起默认开启；`setSemanticIndexEntryFace(false)` 可
+  // 一键回退旧面）。索引面状态已进 checkMemoKey，两档结论互不回放。
+  recordSemanticIndexShadow(file, oldNames);
+  const names = resolveEntryFace(file, oldNames);
+  // D1：只有「索引相对旧普查面**新增**」的名字才是新的导出槽形态。
+  // 整个 names 含顶层非导出函数声明，全量并入会让内部函数的 any 操作被
+  // 当导出入口执法（check-recall-gold 17 条假红）⇒ 只传增量。
+  const oldNameSet = new Set(oldNames);
+  const addedNames = names.filter((n) => !oldNameSet.has(n));
 
   // 侧车路径登记进 memo 依赖：`*.nudo.js` 变更后定向逐出
   const memoPaths =
@@ -364,6 +375,7 @@ function checkSourceInScope(
         opts,
         depsFp,
         sidecarFp,
+        addedNames,
       );
       // 侧车诊断 side-channel 收口：nudo:contract-load / contract-cycle 等
       // 不再静默（同源重复收集按 code+message 去重）。用 since 锚避免窃取
@@ -1044,13 +1056,18 @@ function checkSourceInner(
   identityOpts: CheckOptions = opts,
   depsFp?: LoadDepsFingerprint,
   sidecarFp?: string,
+  addedNames: readonly string[] = [],
 ): CheckReport {
   // 整文件一次判定，避免 per-function includes 全文扫
   // 指令住注释：字符串里的 `@nudo:contract` 不是契约来源
   const hasRefineDirective = stripStringsKeepComments(source).includes("@nudo:contract");
   // L2：模块边界入口表（export / default / CJS exports）— 只执法这些函数；
   // ambient 侧车同名绑定与入口表同源（localNamedExports），复用同一次 parse
-  const entryNames = localNamedExports(source);
+  // ADR 0001 D1：把索引相对旧普查面新增的导出槽形态并入门禁候选。
+  // 这些名字在签名面可见却不执法（假绿）；**不并整个 names**——它含顶层
+  // 非导出函数声明，全量并入会把内部函数的 any 操作当导出入口判红。
+  // 合并而非替换：localNamedExports 还含常量等非函数导出，既有口径不变。
+  const entryNames = new Set<string>([...localNamedExports(source), ...addedNames]);
   const exportedNames = sidecarFp !== undefined ? entryNames : undefined;
   const entryThrowsMode = opts.entryThrows ?? "error";
   const ignoreThrows = opts.ignoreThrows;
@@ -1236,6 +1253,8 @@ function checkSourceInner(
   // fail-closed：记录通道唯一源 = B（EvalCallRecord/$assignRecord）
   const bCalls: EvalCallRecord[] = [];
   const prevCall = setEvalCallCollector((r) => bCalls.push(r));
+  // 签名行的「有声明面」判据（见 synthetic 分支）：类入口名一次算好。
+  const localClassEntries = new Set(listClassEntryNames(source, file));
   for (const name of names) {
     // #152：@nudo:assume 校验 + 入口前提种子（无 assume → undefined，零行为变化）
     const assumePhi = assumePremisesPhiOf(name, source, file, issues);
@@ -1294,6 +1313,10 @@ function checkSourceInner(
         display: skipFmt.display,
         detail: skipFmt.detail,
         conf: retAbs.conf,
+        // ADR 0001 §4 D3：契约申报的真值随签名面走（发布门据此判断，不读源码）。
+        ...(eff?.source !== undefined && eff.source !== "implicit"
+          ? { contract: eff.source }
+          : {}),
         ...(isEntryFn ? { entry: true } : {}),
       });
       // 返回后置照常执法：声明了返回类型就对着契约查（未声明 = any → 不猜）
@@ -1374,19 +1397,32 @@ function checkSourceInner(
           pushEntryMayThrowIssue(name, gateDisplay, remaining,
             `${name}(…)    throws ${gateDisplay}`);
         }
-        signatures.push({
-          name,
-          params: synthetic.params,
-          paramTypes: synthetic.params.map(() => "any"),
-          abs: synthetic.symbolic,
-          display: throwsDisplayFallback
-            ? `any throws ${throwsDisplayFallback}`
-            : "any",
-          detail: `${name}: any`,
-          conf: "path",
-          ...(throwsDisplayFallback ? { throws: throwsDisplayFallback } : {}),
-          entry: true,
-        });
+        // 名字在本文件里**有声明面**才给签名行：类入口（`C` / `C.m`）、默认
+        // 导出、以及 `extractFn` 能定位的函数（声明式 / const 箭头 / 类方法）。
+        // 索引新增的 CJS 出口槽名（`exports.greet = boom` 的 `greet`）在源码里
+        // 没有声明 ⇒ 这里的 `_p0` 是**求值占位**（不是公共名，见 BUG-030 的
+        // 同一论点），且被别名指向的本地函数本来已有一行 ⇒ 同一函数两条记录。
+        // 入口执法（上面的 may-throw 归因）不受影响：只省掉伪造的签名行。
+        const hasDeclaration =
+          name === "default" ||
+          name.includes(".") ||
+          localClassEntries.has(name) ||
+          extractFn(source, name, file) !== undefined;
+        if (hasDeclaration) {
+          signatures.push({
+            name,
+            params: synthetic.params,
+            paramTypes: synthetic.params.map(() => "any"),
+            abs: synthetic.symbolic,
+            display: throwsDisplayFallback
+              ? `any throws ${throwsDisplayFallback}`
+              : "any",
+            detail: `${name}: any`,
+            conf: "path",
+            ...(throwsDisplayFallback ? { throws: throwsDisplayFallback } : {}),
+            entry: true,
+          });
+        }
         continue;
       }
       issues.push({
@@ -1448,6 +1484,7 @@ function checkSourceInner(
       detail: fmt.detail,
       conf: g.symbolic.conf,
       ...(throwsDisplay ? { throws: throwsDisplay } : {}),
+      ...(g.contractSource !== undefined ? { contract: g.contractSource } : {}),
       ...(isEntry ? { entry: true } : {}),
     });
 

@@ -508,7 +508,10 @@ export function registerMigrateCommand(program: Command): void {
             };
             let results: Awaited<ReturnType<typeof migrateRetireAll>>;
             if (opts.all === true) {
-              results = migrateRetireAll(targets[0]!, retireOpts);
+              // BUG-022：`--all` 分支曾只取 targets[0] ⇒ 其余位置目标静默
+              // 忽略却报成功。逐个根退役并合并结果（与 else 分支的多目标
+              // 口径一致）；`targets` 已在上游去重。
+              results = targets.flatMap((t) => migrateRetireAll(t, retireOpts));
             } else {
               // Bug 595：旧实现只退役 `targets[0]` ⇒ `retire <a> <b>` 静默跳过 b。
               // 改用多目标入口（**全退役或全报错**，任一失败 ⇒ 整批零写盘）。

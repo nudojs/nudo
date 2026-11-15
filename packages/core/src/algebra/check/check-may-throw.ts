@@ -41,7 +41,7 @@ import type { Phi } from "../pred.ts";
 import { pTrue } from "../pred.ts";
 import { formatShape } from "../format/format.ts";
 import type { PolyFn } from "../generalize.ts";
-import { classMethodIsStatic, ctorParamCountOf, entrySelfReferenceCount, injectForFunctionScope } from "../generalize.ts";
+import { classMethodIsStatic, ctorParamAbsArgs, entrySelfReferenceCount, injectForFunctionScope } from "../generalize.ts";
 import type { CheckOptions } from "./check-types.ts";
 import { $invoke, $new, withExecPhi } from "../exec/index.ts";
 import { currentEvalRoundEpoch } from "../collector-scope.ts";
@@ -70,6 +70,7 @@ import {
 const MAX_EVAL_RUN_MEMO = 256;
 import { instanceForMethodBridge } from "../bridge-instance.ts";
 import { resolveExportSlotCall } from "../contract/export-slot.ts";
+import { OBJECT_PROTO_NAMES } from "../object-proto-names.ts";
 /** 节点跨度 / 装载期判定共用 `fn-fp.ts` 的勘测（`nodeSpan`）与推迟面清单。 */
 import {
   deferredExecutionSpans,
@@ -359,7 +360,7 @@ export function evalThrowsOutcome(
               const inst = instanceForMethodBridge(
                 clsAbs,
                 clsName ?? "",
-                ctorAnyArgs(file, clsName ?? ""),
+                ctorArgs(file, clsName ?? ""),
                 runWithMayThrowSession,
               );
               return $invoke(inst, methodName ?? "", args);
@@ -519,9 +520,10 @@ function isClassValueAbs(v: Abs): boolean {
  * 口径（与实例方法桥的构造器隔离**孪生**，两处同构）：
  * - 构造器在**独立 may-throw 会话**里跑 ⇒ 软效果（`recordMayThrow`：any
  *   补位的强制转换 / any 成员访问）与 try 帧栈都**不进**本入口的收集域。
- *   依据 Bug 1070：构造器实参一律补 any ⇒ `x + 1` / `x.toFixed()` 必产
- *   TypeError ⇒ 那是 any 补位的**伪影**（真实调用点传具体实参时构造器可能
- *   是 total 的）⇒ 报它 = 假红（一个普通类就能卡死用户 CI）。
+ *   依据 Bug 1070：构造器体里的 `x + 1` / `x.toFixed()` 在**无注解**形参上
+ *   必产 TypeError ⇒ 那是 any 补位的**伪影**（真实调用点传具体实参时构造器
+ *   可能 是 total 的）⇒ 报它 = 假红（一个普通类就能卡死用户 CI）。注释掉的
+ *   形参（BUG-020 起按注解构造，不再补 any）同理不归因给入口。
  * - **硬抛**（NudoThrow：构造器里的无条件 `throw`）**进** throws 域 ⇒ 这是
  *   `new C()` 的真实 may-throw ⇒ 归因落点 = 类声明处的 `Class` 入口（此前
  *   构造器必抛被 `catch {}` 吞掉 ⇒ check 闸门与 `nudo test` 见证面双面
@@ -538,15 +540,22 @@ function classEntryThrows(
   phi: Phi,
 ): TranspiledCallResult {
   return invokeAsThrows(
-    () => runWithMayThrowSession(() => $new(clsAbs, ctorAnyArgs(file, clsName))),
+    () => runWithMayThrowSession(() => $new(clsAbs, ctorArgs(file, clsName))),
     phi,
   );
 }
 
-/** 构造实参（any 补位；与 generalize.ts 的类方法桥同口径） */
-function ctorAnyArgs(file: ParsedFile | undefined, clsName: string): Abs[] {
-  const n = file ? ctorParamCountOf(file, clsName) : 0;
-  return Array.from({ length: n }, () => abs({ k: "any" }, undefined, pTrue, "path"));
+/**
+ * 构造实参（与 generalize.ts 的类方法桥同口径：唯一实现 `ctorParamAbsArgs`）。
+ *
+ * BUG-020：此前一律补 `any`。而构造器体 `this.size = size` 正是实例槽的
+ * **写入点** ⇒ 槽值 = any ⇒ 方法体里 `this.size * 2` 走「any 算术 ⇒
+ * ToNumber 强制转换」升级成 error 级 `nudo:entry-may-throw`（假红），同一份
+ * 源码的 dts 面却写着 `size: number`。构造器形参的注解（含参数属性）在形参面
+ * 上本来就有 ⇒ 按注解构造实参后槽位自带域，无注解仍补 any（未约束入口口径）。
+ */
+function ctorArgs(file: ParsedFile | undefined, clsName: string): Abs[] {
+  return file ? ctorParamAbsArgs(file, clsName) : [];
 }
 
 /** Babel 类成员的宽松形状（ClassMethod / ClassProperty / StaticBlock…）。 */
@@ -1057,6 +1066,44 @@ function isDefinitelyNonCallable(node: unknown, ctx: DefiniteCtx): boolean {
     return true;
   }
   if (n.type === "TemplateLiteral") return true;
+  // BUG-025：对象字面量的**不存在成员**被调用（`({}).m()`）——成员集已知且
+  // 该键缺席 ⇒ 值一定是 undefined ⇒ TypeError。有 spread / 计算键时不判。
+  if (n.type === "MemberExpression" && n.computed !== true) {
+    const obj = n.object as AnyAst | undefined;
+    const prop = n.property as AnyAst | undefined;
+    const key =
+      prop?.type === "Identifier" && typeof prop.name === "string"
+        ? prop.name
+        : prop?.type === "StringLiteral" && typeof prop.value === "string"
+          ? (prop.value as string)
+          : undefined;
+    if (obj?.type === "ObjectExpression" && key !== undefined) {
+      const props = (obj.properties as AnyAst[] | undefined) ?? [];
+      const hasSpread = props.some((p) => p.type === "SpreadElement");
+      // 对象字面量**继承 Object.prototype** ⇒ `({}).toString()` /
+      // `hasOwnProperty` / `valueOf` 是存在的可调用成员，缺席的只是 own 键。
+      // 只有 `__proto__: null` 的字面量才是真正封闭的成员集。
+      // （否则「成员集已知」这一前提不成立：会把原生合法的调用判成必抛，
+      // 且一旦引擎因宿主近似回落 module-throw，这类调用会伪造出句法证据。）
+      const nullProto = props.some((p) => {
+        if (p.computed === true || p.type !== "ObjectProperty") return false;
+        const k = p.key as AnyAst | undefined;
+        const name =
+          k?.type === "Identifier" ? (k.name as string) : (k?.value as string | undefined);
+        return name === "__proto__" && (p.value as AnyAst | undefined)?.type === "NullLiteral";
+      });
+      if (!hasSpread && (nullProto || !OBJECT_PROTO_NAMES.has(key))) {
+        const hasKey = props.some((p) => {
+          if (p.computed === true) return true; // 计算键 ⇒ 不确定，不当证据
+          const k = p.key as AnyAst | undefined;
+          const name =
+            k?.type === "Identifier" ? (k.name as string) : (k?.value as string | undefined);
+          return name === key;
+        });
+        if (!hasKey) return true;
+      }
+    }
+  }
   return isNullishValue(n, ctx);
 }
 
@@ -1190,6 +1237,89 @@ function scopedCtx(ctx: DefiniteCtx): DefiniteCtx {
  * 形态（变量初始化 / 表达式语句里的裸读，见 Identifier 臂）与**已知值面**
  * 形态（nullish 成员访问 / 确定不可调用的被调值）。
  */
+
+/** 算术 / 位运算（BigInt 混型在这些算符上必抛 TypeError） */
+const BIGINT_ARITH_OPS = new Set([
+  "+",
+  "-",
+  "*",
+  "/",
+  "%",
+  "**",
+  "&",
+  "|",
+  "^",
+  "<<",
+  ">>",
+  ">>>",
+]);
+
+/** 数值字面量种类（含一元正负号）：BigInt vs Number */
+function numericKindOf(node: AnyAst | undefined): "bigint" | "number" | undefined {
+  if (!node) return undefined;
+  if (node.type === "BigIntLiteral") return "bigint";
+  if (node.type === "NumericLiteral") return "number";
+  if (node.type === "UnaryExpression" && (node.operator === "-" || node.operator === "+")) {
+    return numericKindOf(node.argument as AnyAst | undefined);
+  }
+  return undefined;
+}
+
+/** 字面量是否数值 0（BigInt `0n` 与 Number `0` 都算） */
+function isZeroNumeric(node: AnyAst | undefined): boolean {
+  if (!node) return false;
+  if (node.type === "UnaryExpression" && (node.operator === "-" || node.operator === "+")) {
+    return isZeroNumeric(node.argument as AnyAst | undefined);
+  }
+  if (node.type !== "NumericLiteral" && node.type !== "BigIntLiteral") return false;
+  const raw = String(node.value ?? "").replace(/_/g, "").replace(/n$/, "");
+  return /^0+$/.test(raw);
+}
+
+/**
+ * 二元表达式的**确定**原生抛（BUG-025）。
+ *
+ * 只认值面已知的字面量组合——不做类型推导：
+ * - BigInt 与 Number 混用（`1n + 1`）⇒ TypeError；
+ * - BigInt 除 / 模零（`1n / 0n`）⇒ RangeError；
+ * - `in` 的右操作数是原始值（`"abc" in 5`）⇒ TypeError。
+ */
+function binaryDefiniteThrow(e: AnyAst, ctx: DefiniteCtx): ThrowSite | undefined {
+  const op = e.operator as string | undefined;
+  if (!op) return undefined;
+  const left = e.left as AnyAst | undefined;
+  const right = e.right as AnyAst | undefined;
+  if (op === "in") {
+    // 右操作数必须是对象；字面量原始值必然抛
+    const rightKind = right?.type;
+    if (
+      rightKind === "NumericLiteral" ||
+      rightKind === "StringLiteral" ||
+      rightKind === "BooleanLiteral" ||
+      rightKind === "NullLiteral" ||
+      rightKind === "BigIntLiteral"
+    ) {
+      return siteOf(e, "TypeError");
+    }
+    return undefined;
+  }
+  if (!BIGINT_ARITH_OPS.has(op)) return undefined;
+  const lk = numericKindOf(left);
+  const rk = numericKindOf(right);
+  if (lk !== undefined && rk !== undefined && lk !== rk) return siteOf(e, "TypeError");
+  // Unit 之外的 BigInt 混型（`1n * "s"`）也必抛，但字符串字的语义留给求值面
+  if (
+    (op === "/" || op === "%") &&
+    lk === "bigint" &&
+    rk === "bigint" &&
+    isZeroNumeric(right)
+  ) {
+    return siteOf(e, "RangeError");
+  }
+  void ctx;
+  return undefined;
+}
+
 function exprDefiniteThrow(
   expr: unknown,
   ctx: DefiniteCtx,
@@ -1302,7 +1432,10 @@ function exprDefiniteThrow(
     case "BinaryExpression": {
       const hit = exprDefiniteThrow(e.left, ctx);
       if (hit) return hit;
-      return exprDefiniteThrow(e.right, ctx);
+      const rightHit = exprDefiniteThrow(e.right, ctx);
+      if (rightHit) return rightHit;
+      // BUG-025：算符级的**确定**原生抛（值面已知，不依赖上下文）
+      return binaryDefiniteThrow(e, ctx);
     }
     case "UnaryExpression": {
       // `typeof <未声明名>` 不抛（安全探测）；其余操作数照常求值。

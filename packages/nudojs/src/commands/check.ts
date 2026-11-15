@@ -57,7 +57,7 @@ import {
   type DirectiveDiag,
 } from "@nudojs/parser";
 import { applyTextEdits, materializeAction, unifiedDiff } from "@nudojs/service/emit";
-import { DIAG } from "@nudojs/core/internal";
+import { DIAG, defaultExportLocalName } from "@nudojs/core/internal";
 import {
   preloadPathEnvs,
   getPathEnvLoadErrors,
@@ -94,6 +94,7 @@ import {
   dedupeAgainstIssues,
   dedupeFromStaticIssues,
   domainIssuesFromDiagnostics,
+  dropUnexplainedCapabilityDenied,
   ENV_UNRESOLVED_CODE,
   mergeJsonIssues,
   reportFromCachedJson,
@@ -1119,7 +1120,11 @@ export async function runCheck(file: string, opts: RunCheckOptions = {}): Promis
     // （此前今日域证据只来自被检查文件自身的求值 ⇒ 靠 --from 写出的生成段
     // 永远判不出陈旧）。归因口径见 externalAbsCallRecords（只收指向本文件
     // 的记录 ⇒ 别的模块里的同名函数不污染本文件的判定）。
-    const externalAbsRecords = externalAbsCallRecords(filePath, opts.from);
+    const externalAbsRecords = externalAbsCallRecords(
+      filePath,
+      opts.from,
+      defaultExportLocalName(source),
+    );
     // 分析输入装配**单源**（checkSourceOptions）——`--fix` 面走同一构造
     // （Bug 640：两条命令喂给分析器的输入集必须一致）。
     checkPhaseStart = performance.now();
@@ -1265,10 +1270,14 @@ export async function runCheck(file: string, opts: RunCheckOptions = {}): Promis
   // 项目配置」（三者都在磁盘缓存键里）⇒ 命中轮从缓存读回同一结论，
   // 既不重复求值也不会陈旧。
   if (domainIssues.length > 0) {
+    // BUG-026 精确化：`capability-denied` 只在**它确实造成**推断失败时上屏
+    // （同报告内存在 `nudo:unknown-inference`）。否则每个 `module.exports = …`
+    // 文件都会因引擎对 `module` 全局的 deny 出现与结论无关的 warning。
+    const gatedDomainIssues = dropUnexplainedCapabilityDenied(domainIssues, report.issues);
     // 白名单扩容后，分析器通道与 check 面的 mock 通道可能报**同一事实**
     // （`@nudo:mock fs from "..."` 的文件缺失 ⇒ mock 通道一条 +
     // 模块图通道一条，同码同文）⇒ 追加前先按（code, message）去重。
-    const fresh = dedupeAgainstIssues(report.issues, domainIssues);
+    const fresh = dedupeAgainstIssues(report.issues, gatedDomainIssues);
     if (fresh.length > 0) {
       report = mergeCheckIssues(report, fresh);
     }
