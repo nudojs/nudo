@@ -41,7 +41,7 @@ import type { Phi } from "../pred.ts";
 import { pTrue } from "../pred.ts";
 import { formatShape } from "../format/format.ts";
 import type { PolyFn } from "../generalize.ts";
-import { classMethodIsStatic, ctorParamCountOf, entrySelfReferenceCount, injectForFunctionScope } from "../generalize.ts";
+import { classMethodIsStatic, ctorParamAbsArgs, entrySelfReferenceCount, injectForFunctionScope } from "../generalize.ts";
 import type { CheckOptions } from "./check-types.ts";
 import { $invoke, $new, withExecPhi } from "../exec/index.ts";
 import { currentEvalRoundEpoch } from "../collector-scope.ts";
@@ -359,7 +359,7 @@ export function evalThrowsOutcome(
               const inst = instanceForMethodBridge(
                 clsAbs,
                 clsName ?? "",
-                ctorAnyArgs(file, clsName ?? ""),
+                ctorArgs(file, clsName ?? ""),
                 runWithMayThrowSession,
               );
               return $invoke(inst, methodName ?? "", args);
@@ -519,9 +519,10 @@ function isClassValueAbs(v: Abs): boolean {
  * 口径（与实例方法桥的构造器隔离**孪生**，两处同构）：
  * - 构造器在**独立 may-throw 会话**里跑 ⇒ 软效果（`recordMayThrow`：any
  *   补位的强制转换 / any 成员访问）与 try 帧栈都**不进**本入口的收集域。
- *   依据 Bug 1070：构造器实参一律补 any ⇒ `x + 1` / `x.toFixed()` 必产
- *   TypeError ⇒ 那是 any 补位的**伪影**（真实调用点传具体实参时构造器可能
- *   是 total 的）⇒ 报它 = 假红（一个普通类就能卡死用户 CI）。
+ *   依据 Bug 1070：构造器体里的 `x + 1` / `x.toFixed()` 在**无注解**形参上
+ *   必产 TypeError ⇒ 那是 any 补位的**伪影**（真实调用点传具体实参时构造器
+ *   可能 是 total 的）⇒ 报它 = 假红（一个普通类就能卡死用户 CI）。注释掉的
+ *   形参（BUG-020 起按注解构造，不再补 any）同理不归因给入口。
  * - **硬抛**（NudoThrow：构造器里的无条件 `throw`）**进** throws 域 ⇒ 这是
  *   `new C()` 的真实 may-throw ⇒ 归因落点 = 类声明处的 `Class` 入口（此前
  *   构造器必抛被 `catch {}` 吞掉 ⇒ check 闸门与 `nudo test` 见证面双面
@@ -538,15 +539,22 @@ function classEntryThrows(
   phi: Phi,
 ): TranspiledCallResult {
   return invokeAsThrows(
-    () => runWithMayThrowSession(() => $new(clsAbs, ctorAnyArgs(file, clsName))),
+    () => runWithMayThrowSession(() => $new(clsAbs, ctorArgs(file, clsName))),
     phi,
   );
 }
 
-/** 构造实参（any 补位；与 generalize.ts 的类方法桥同口径） */
-function ctorAnyArgs(file: ParsedFile | undefined, clsName: string): Abs[] {
-  const n = file ? ctorParamCountOf(file, clsName) : 0;
-  return Array.from({ length: n }, () => abs({ k: "any" }, undefined, pTrue, "path"));
+/**
+ * 构造实参（与 generalize.ts 的类方法桥同口径：唯一实现 `ctorParamAbsArgs`）。
+ *
+ * BUG-020：此前一律补 `any`。而构造器体 `this.size = size` 正是实例槽的
+ * **写入点** ⇒ 槽值 = any ⇒ 方法体里 `this.size * 2` 走「any 算术 ⇒
+ * ToNumber 强制转换」升级成 error 级 `nudo:entry-may-throw`（假红），同一份
+ * 源码的 dts 面却写着 `size: number`。构造器形参的注解（含参数属性）在形参面
+ * 上本来就有 ⇒ 按注解构造实参后槽位自带域，无注解仍补 any（未约束入口口径）。
+ */
+function ctorArgs(file: ParsedFile | undefined, clsName: string): Abs[] {
+  return file ? ctorParamAbsArgs(file, clsName) : [];
 }
 
 /** Babel 类成员的宽松形状（ClassMethod / ClassProperty / StaticBlock…）。 */

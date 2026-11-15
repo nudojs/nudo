@@ -229,12 +229,38 @@ function evalRunOf(
 /** 类声明的构造器形参个数（类方法桥实例化用：无显式 ctor → 0）
  *
  *  导出（模块内）：check-may-throw.ts 的**实例方法桥**（Bug 379）须与此处
- *  同口径实例化（构造实参补 any）——两处各写一份会漂移。 */
+ *  同口径实例化（构造实参取 {@link ctorParamAbsArgs}）——两处各写一份会漂移。 */
 export function ctorParamCountOf(
   fileAst: ReturnType<typeof babelParse>,
   clsName: string,
 ): number {
   return ctorParamNodesOf(fileAst, clsName).length;
+}
+
+/**
+ * 类方法桥 / 类入口的**构造实参**（BUG-020）。
+ *
+ * 此前一律补 `any` ⇒ 构造器体 `this.size = size` 把 `any` 写进实例槽 ⇒
+ * 方法体里的 `this.size` 恒为 `any`：签名退成 `any`，而「any 参与的算术 /
+ * 成员运算」升级成 **error 级** `nudo:entry-may-throw` ⇒ 合法 `.ts` 类卡 CI。
+ * 同一份源码的 dts 面却给出 `size: number` —— 两面结论相反。
+ *
+ * 构造器形参的注解本来就在形参面上（`FormalParam.tsType`，与类入口签名同源，
+ * 含参数属性 `constructor(private size: number)`）⇒ **注解即域**：有注解按
+ * {@link absShapeForTsTypeText} 映射，无注解才补 `any`（与普通入口「未约束 =
+ * any」同口径，不是 unknown）。
+ *
+ * 参数属性在本仓的默认解析下已糖化成 `this.<name> = <name>` 赋值 ⇒ 实参带上
+ * 注解后槽位自然得到域，不需要另建播种通道。
+ */
+export function ctorParamAbsArgs(
+  fileAst: ReturnType<typeof babelParse>,
+  clsName: string,
+): Abs[] {
+  return ctorFormalsOf(fileAst, clsName).map((f) => {
+    const shape = absShapeForTsTypeText(f.tsType);
+    return abs(shape ?? { k: "any" }, undefined, pTrue, "path");
+  });
 }
 
 /**
@@ -246,8 +272,8 @@ export function ctorParamCountOf(
  * 否则空指针 TypeError 被调用点的空 catch 吞掉 ⇒ 类方法签名塌 unknown ⇒
  * 契约违规降级 ⇒ check 假绿）。
  *
- * ctorParamCountOf（「构造实参补 any」的个数）与 ctorFormalsOf（类入口
- * 签名面形参表）共用同一遍历 ⇒ 个数与形参表永远一致（否则签名面显示 N
+ * ctorParamAbsArgs（构造实参，BUG-020 起按注解构造）与 ctorFormalsOf（类
+ * 入口签名面形参表）共用同一遍历 ⇒ 个数与形参表永远一致（否则签名面显示 N
  * 个形参、而构造实参只补 M 个 ⇒ 两面自相矛盾）。
  */
 function ctorParamNodesOf(
@@ -1844,7 +1870,7 @@ function generalizeFromAstUncached(
           /* B 失败 fail-closed */
           return undefined;
         } else if (fnName.includes(".")) {
-          // 类方法桥：模块导出表取类 Abs → $new（构造参数 any）→ $invoke。
+          // 类方法桥：模块导出表取类 Abs → $new（构造参数按形参注解）→ $invoke。
           // 构造器抛 ⇒ 裸实例兜底（Bug 1093）：共享实现在 bridge-instance.ts；
           // 值域不传 isolate（证据域 check-may-throw 传 runWithMayThrowSession）。
           const [clsName, methodName] = fnName.split(".", 2);
@@ -1869,11 +1895,12 @@ function generalizeFromAstUncached(
                 throw e;
               }
             }
-            const nCtor = ctorParamCountOf(fileAst, clsName ?? "");
             const inst = instanceForMethodBridge(
               clsAbs as Abs,
               clsName ?? "",
-              Array.from({ length: nCtor }, () => abs({ k: "any" }, undefined, pTrue, "path")),
+              // BUG-020：构造实参按构造器形参注解构造（注解即域）——一律 any
+              // 会让构造器写入的实例槽失去域，方法体读 `this.x` 退 any。
+              ctorParamAbsArgs(fileAst, clsName ?? ""),
             );
             try {
               return withExecPhi(phi, () => $invoke(inst, methodName ?? "", args));
