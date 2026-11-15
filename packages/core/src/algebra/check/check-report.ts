@@ -120,6 +120,15 @@ export type NudoSig = {
   throws?: string;
   /** 模块边界入口（export / default / CJS exports） */
   entry?: boolean;
+  /**
+   * 有效契约来源（ADR 0001 §4 D3）：`handwritten` = 源码 `@nudo:contract` 行
+   * 或手写侧车；`generated` = 侧车生成段。省略 = 该入口无申报（纯推导）。
+   *
+   * 这是发布门「用户是否申报过契约」的**唯一真值**，由 generalize 解析
+   * `effectiveContract` 时一并带出（零二次解析）。不读源码字符串、不按诊断
+   * 码反推 —— 后者会把「注释里提到 @nudo:contract」误判成申报（BUG-021）。
+   */
+  contract?: "handwritten" | "generated";
 };
 
 export type CheckIssue = Diagnostic & {

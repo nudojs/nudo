@@ -1311,6 +1311,10 @@ function checkSourceInner(
         display: skipFmt.display,
         detail: skipFmt.detail,
         conf: retAbs.conf,
+        // ADR 0001 §4 D3：契约申报的真值随签名面走（发布门据此判断，不读源码）。
+        ...(eff?.source !== undefined && eff.source !== "implicit"
+          ? { contract: eff.source }
+          : {}),
         ...(isEntryFn ? { entry: true } : {}),
       });
       // 返回后置照常执法：声明了返回类型就对着契约查（未声明 = any → 不猜）
@@ -1465,6 +1469,7 @@ function checkSourceInner(
       detail: fmt.detail,
       conf: g.symbolic.conf,
       ...(throwsDisplay ? { throws: throwsDisplay } : {}),
+      ...(g.contractSource !== undefined ? { contract: g.contractSource } : {}),
       ...(isEntry ? { entry: true } : {}),
     });
 

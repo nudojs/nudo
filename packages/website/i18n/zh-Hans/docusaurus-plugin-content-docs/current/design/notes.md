@@ -30,7 +30,7 @@ description: "仓库设计笔记索引——产品页背后的架构真源（Abs
 
 | ADR | 覆盖内容 | 状态 |
 |---|---|---|
-| [`adr-0001-semantic-index-and-evidence.md`](https://github.com/nudojs/nudo/blob/main/docs/design/adr-0001-semantic-index-and-evidence.md) | 分析面事实一致性：单一绑定索引（`SemanticIndex`）+ 显式降级证据（`Evidence<T>`），2026-11-14 审计 34 条 bug 的根因方案 | 已接受（阶段 1 切片 4.1） |
+| [`adr-0001-semantic-index-and-evidence.md`](https://github.com/nudojs/nudo/blob/main/docs/design/adr-0001-semantic-index-and-evidence.md) | 分析面事实一致性：单一绑定索引（`SemanticIndex`）+ 显式降级证据（`Evidence<T>`），2026-11-14 审计 34 条 bug 的根因方案 | 已接受（阶段 1 切片 4.2） |
 
 ## 过程记录
 

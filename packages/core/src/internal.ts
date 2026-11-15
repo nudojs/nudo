@@ -253,6 +253,7 @@ export {
 } from "./algebra/diagnostics/evidence.ts";
 export {
   comparePublishGates,
+  isDegradedCode,
   recordPublishGateShadow,
   setPublishGateShadow,
   takePublishGateShadow,

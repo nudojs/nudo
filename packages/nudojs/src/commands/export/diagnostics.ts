@@ -13,11 +13,8 @@
 import { checkSource, pTrue, type EffectiveContractOpts } from "@nudojs/core";
 import {
   DIAG,
+  isDegradedCode,
   recordPublishGateShadow,
-  publishBlockedBy,
-  degradedOf,
-  stripStringsKeepComments,
-  type DiagCode,
 } from "@nudojs/core/internal";
 import { collectSkipReturns, type AnalysisResult } from "@nudojs/service";
 
@@ -60,7 +57,8 @@ export type ExportDiagnosticOptions = {
 };
 
 /**
- * 阻断级诊断码（契约面三族）：
+ * 契约面三族（ADR 0001 §4 D3）。它们**既是**上屏码，**也是**「用户申报过契约」
+ * 的证据——这三族只可能由契约解析 / 装载 / 合取产生：
  * - `nudo:contract-load`：侧车 / 模板装载失败 ⇒ 整条契约丢失（产物面把「未
  *   申报」当「无约束」发布）；
  * - `nudo:contract-param-mismatch`：契约形参名不在声明形参表 ⇒ 槽位名错位
@@ -71,20 +69,35 @@ export const EXPORT_BLOCKING_CODES: readonly string[] = [
   DIAG.contractLoad,
   DIAG.contractParamMismatch,
   DIAG.contractConflict,
-  // BUG-021：`nudo:contract-syntax` 同样是「整条契约丢失」，check 面是
-  // warning（合规），但 export 按码枚举时漏了这一族 ⇒ 发布「接受一切」的
-  // 校验器且 exit 0、零诊断。与另外三族同口径上屏并阻断。
-  DIAG.contractSyntax,
 ];
 
-/** 诊断条目化：非阻断族诊断一律丢弃（导出面只关心契约面三族）。 */
+/**
+ * 「用户申报过契约」的证据码：这些诊断**只可能**由契约解析 / 装载 / 合取产生，
+ * 因此它们的存在本身就是申报意图的证明（不是阻断码表）。
+ *
+ * 必须含 `nudo:contract-syntax`（BUG-021）：契约**解析失败**时签名面拿不到
+ * provenance，诊断是唯一的申报痕迹。
+ */
+const CONTRACT_DECLARATION_EVIDENCE: ReadonlySet<string> = new Set<string>([
+  ...EXPORT_BLOCKING_CODES,
+  DIAG.contractSyntax,
+]);
+
+/**
+ * 诊断条目化：保留「阻断族 ∪ 全部降级证据族」。
+ *
+ * 此前只保留三族 ⇒ `nudo:contract-syntax` / `nudo:internal` /
+ * `nudo:unknown-inference` 连上屏都被丢，产物静默「接受一切」（BUG-021）。
+ * 阻断判据不在这里——见 `collectExportDiagnostics` 的语义门。
+ */
 function toExportDiagnostic(d: {
   severity: string;
   code?: string;
   message: string;
   fn?: string;
 }): ExportDiagnostic | undefined {
-  if (d.code === undefined || !EXPORT_BLOCKING_CODES.includes(d.code)) return undefined;
+  if (d.code === undefined) return undefined;
+  if (!EXPORT_BLOCKING_CODES.includes(d.code) && !isDegradedCode(d.code)) return undefined;
   const severity =
     d.severity === "error" ? "error" : d.severity === "warning" ? "warning" : "info";
   return {
@@ -108,6 +121,8 @@ function toExportDiagnostic(d: {
 function checkFaceIssues(opts: ExportDiagnosticOptions): {
   entries: ExportDiagnostic[];
   raw: readonly { readonly code?: string }[];
+  /** 契约申报真值（check 签名面自带 provenance）；check 面抛错时为 undefined */
+  declaredContract: boolean;
 } {
   const out: ExportDiagnostic[] = [];
   const autoBind =
@@ -126,9 +141,17 @@ function checkFaceIssues(opts: ExportDiagnosticOptions): {
       if (entry !== undefined) out.push(entry);
     }
     // 原始诊断（过滤前）只供影子双读使用；开关关闭时不复制、不构造 Evidence。
-    return { entries: out, raw: report.issues };
+    return {
+      entries: out,
+      raw: report.issues,
+      // ADR 0001 §4 D3：申报真值只能来自 `effectiveContract` 的解析结果
+      // （generalize 顺带带进签名面）。不读源码字符串、不按诊断码反推。
+      declaredContract: report.signatures.some(
+        (s) => s.entry === true && s.contract !== undefined,
+      ),
+    };
   } catch {
-    return { entries: [], raw: [] };
+    return { entries: [], raw: [], declaredContract: false };
   }
 }
 
@@ -167,29 +190,35 @@ export function collectExportDiagnostics(opts: ExportDiagnosticOptions): ExportD
     push(entry);
   }
   // ADR 0001 阶段 1 切片 4.1：发布门影子双读。默认关闭 ⇒ 一次布尔判断、
-  // 零行为变更；开启后把「按码白名单 vs 语义判据」的分歧输出成清单，
-  // 为切片 4.2 切换判据留基线（不设白名单，§10 决议 4）。
+  // 零行为变更；开启后把「按码白名单 vs 语义判据」的分歧输出成清单
+  // （不设白名单，§10 决议 4）。
   recordPublishGateShadow([checkFace.raw, opts.result.diagnostics], EXPORT_BLOCKING_CODES);
 
-  // ADR 0001 切片 4.2：阻断判据改由 Evidence 的语义门给出（决议 2 不按码
-  // 枚举）。「用户申报过契约」的真值：源码含手写 @nudo:contract 指令，或
-  // 诊断里已出现契约族（这些诊断只可能由契约解析产生，本身就是申报证据）。
-  // 迁移期保留 EXPORT_BLOCKING_CODES 作为上屏过滤清单（阶段 3 删旧）。
+  // ADR 0001 §4 D3：阻断 = **语义判据**，不是码表（BUG-021 / 决议 2）。
+  //
+  //   公开面存在降级证据 ∧ 用户申报过契约 ⇒ 阻断
+  //
+  // 「申报过契约」的真值有两处，都来自契约解析本身，不做源码字符串近似：
+  //   ① check 签名面自带的 provenance（`effectiveContract` 解析成功时）；
+  //   ② 契约面诊断（装载 / 合取 / 语法）——这些码**只可能**由「申报了契约」
+  //      产生，因此也是申报意图的证据。② 是覆盖率的关键：契约本身解析失败
+  //      时（BUG-021 的 `nudo:contract-syntax`）① 必然拿不到 provenance。
+  //
+  // 两者取并集后，阻断条件只剩「有降级证据」。这带来两处有意的行为变更：
+  //   - `nudo:contract-syntax` 从此阻断（此前 exit 0 且零上屏）；
+  //   - 申报过契约的入口出现 `nudo:internal` / `unknown-inference` 也阻断。
+  // 未申报契约的纯推导文件不受影响（降级只是上屏，不阻断）——否则每个
+  // 无注解文件都会因推断失败而无法发布。
+  const degradedOnSurface = entries.filter((d) => isDegradedCode(d.code));
   const declaredContract =
-    stripStringsKeepComments(opts.source).includes("@nudo:contract") ||
-    entries.some((d) => EXPORT_BLOCKING_CODES.includes(d.code));
-  const semanticBlocking = entries.some(
-    (d) =>
-      publishBlockedBy(degradedOf<unknown>(d.code as DiagCode), declaredContract) !== undefined,
-  );
+    checkFace.declaredContract ||
+    degradedOnSurface.some((d) => CONTRACT_DECLARATION_EVIDENCE.has(d.code));
 
   return {
     entries,
     contractLoad: entries.filter((d) => d.code === DIAG.contractLoad),
     conflicts: entries.filter((d) => d.code === DIAG.contractConflict),
-    // BUG-233：severity === "error" 不足以覆盖 warning 级 contract-conflict；
-    // 语义门对「申报过契约 + degraded」一律阻断，不靠码表逐条枚举。
-    blocking: entries.some((d) => d.severity === "error") || semanticBlocking,
+    blocking: declaredContract && degradedOnSurface.length > 0,
   };
 }
 

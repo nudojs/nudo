@@ -1,10 +1,11 @@
 /**
- * ADR 0001 阶段 1 · 切片 4.1：发布门**留基线**。
+ * ADR 0001 §4 D3：export 发布门 = **语义判据**（不是码表）。
  *
- * 本文件逐字钉住「按码白名单」的现行行为，包括 BUG-021 的缺口
- * （`nudo:internal` / `nudo:unknown-inference` 这类降级诊断连上屏都被丢）。
- * 影子开关只输出对照清单、不改结论；切片 4.2 切换判据时，这里的
- * 「零行为变更」断言会按预期变成变更记录，而不是悄悄漂移。
+ * 判据：`公开面存在降级证据 ∧ 用户申报过契约 ⇒ 阻断`。
+ * 「申报」的真值只来自契约解析本身（签名面 provenance 或契约面诊断），
+ * 不读源码字符串、不按阻断码表反推。
+ *
+ * 本文件同时钉住 BUG-021（`contract-syntax` 此前 exit 0、零上屏）。
  */
 import { describe, it, expect, afterEach } from "vitest";
 import { DIAG, setPublishGateShadow, takePublishGateShadow } from "@nudojs/core/internal";
@@ -14,68 +15,114 @@ import {
   EXPORT_BLOCKING_CODES,
 } from "../commands/export/diagnostics.ts";
 
-const SOURCE = `export function f(n) { return n; }`;
+/** 无契约申报：纯推导。 */
+const PLAIN = `export function f(n) { return n; }`;
+/** 申报合法契约（约束名经 sidecar 导入）。 */
+const DECLARED = `/// @nudo:import { num } from "./f.nudo.js"
+/**
+ * @nudo:contract x num
+ */
+export function f(x) { return x; }`;
+/** 申报但契约写坏（BUG-021）：约束名不是合法约束。 */
+const BROKEN = `/**
+ * @nudo:contract x number()
+ */
+export function f(x) { return x; }`;
+
+/** 侧车（`f.nudo.js`）：`num` 的唯一定义处。 */
+const SIDECAR = `export const num = number();`;
 
 function makeOpts(
+  source: string,
   diagnostics: Array<{ severity: string; code?: string; message: string; fn?: string }>,
 ) {
   return {
     filePath: "/t/export-shadow/f.js",
-    source: SOURCE,
+    source,
     result: { diagnostics } as unknown as AnalysisResult,
-    effOpts: {},
+    effOpts: {
+      // 侧车装载口与生产同形：只回字符串，不碰磁盘。
+      loadModule: (spec: string, from: string): string | undefined =>
+        spec === "./f.nudo.js" && from.endsWith("/f.js") ? SIDECAR : undefined,
+    },
   };
 }
 
 const CONFLICT = { severity: "warning", code: DIAG.contractConflict, message: "conflict" };
+const SYNTAX = {
+  severity: "warning",
+  code: DIAG.contractSyntax,
+  message: "Malformed @nudo:contract segment",
+};
 const INTERNAL = { severity: "error", code: DIAG.internal, message: "engine has no evidence" };
 const UNKNOWN = { severity: "error", code: DIAG.unknownInference, message: "inference failed" };
 
 afterEach(() => setPublishGateShadow(false));
 
-describe("ADR 0001 阶段 1 · export 发布门基线", () => {
-  it("现行判据：清单码阻断并上屏，非清单码诊断被丢弃（BUG-021 基线）", () => {
-    const diags = collectExportDiagnostics(makeOpts([CONFLICT, INTERNAL, UNKNOWN]));
+describe("ADR 0001 §4 D3 · 语义发布门", () => {
+  it("无申报 + 降级证据：上屏但不阻断（纯推导文件不得因推断失败而无法发布）", () => {
+    const diags = collectExportDiagnostics(makeOpts(PLAIN, [INTERNAL, UNKNOWN]));
+    expect(diags.entries.map((d) => d.code)).toEqual([DIAG.internal, DIAG.unknownInference]);
+    expect(diags.blocking).toBe(false);
+  });
+
+  it("申报 + 无降级：不阻断（契约正常生效）", () => {
+    const diags = collectExportDiagnostics(makeOpts(DECLARED, []));
+    expect(diags.blocking).toBe(false);
+  });
+
+  it("申报 + 降级证据：阻断（契约在，但公开面掉了保证）", () => {
+    const diags = collectExportDiagnostics(makeOpts(DECLARED, [INTERNAL]));
+    expect(diags.entries.map((d) => d.code)).toContain(DIAG.internal);
     expect(diags.blocking).toBe(true);
-    expect(diags.entries.map((d) => d.code)).toEqual([DIAG.contractConflict]);
+  });
+
+  it("BUG-021：契约解析失败 ⇒ 诊断上屏且阻断（此前 exit 0、零诊断）", () => {
+    const diags = collectExportDiagnostics(makeOpts(BROKEN, []));
+    const syntax = diags.entries.find((d) => d.code === DIAG.contractSyntax);
+    expect(syntax).toBeDefined();
+    expect(diags.blocking).toBe(true);
+  });
+
+  it("BUG-233：warning 级 contract-conflict 仍阻断（不靠 severity）", () => {
+    const diags = collectExportDiagnostics(makeOpts(PLAIN, [CONFLICT]));
+    expect(diags.blocking).toBe(true);
     expect(diags.conflicts).toHaveLength(1);
   });
 
-  it("影子开关默认关闭：无对照记录", () => {
-    collectExportDiagnostics(makeOpts([CONFLICT, INTERNAL]));
+  it("契约族诊断本身就是申报证据：无签名 provenance 也阻断", () => {
+    const diags = collectExportDiagnostics(makeOpts(PLAIN, [SYNTAX]));
+    expect(diags.blocking).toBe(true);
+  });
+
+  it("白名单仍是三族（判定不再依赖它枚举阻断）", () => {
+    expect(EXPORT_BLOCKING_CODES).toEqual([
+      DIAG.contractLoad,
+      DIAG.contractParamMismatch,
+      DIAG.contractConflict,
+    ]);
+  });
+});
+
+describe("ADR 0001 阶段 1 · 影子双读不改结论", () => {
+  it("默认关闭：无对照记录", () => {
+    collectExportDiagnostics(makeOpts(PLAIN, [CONFLICT, INTERNAL]));
     expect(takePublishGateShadow()).toBeUndefined();
   });
 
-  it("影子开启后输出分歧清单，发布结论逐字不变", () => {
-    const before = collectExportDiagnostics(makeOpts([CONFLICT, INTERNAL, UNKNOWN]));
+  it("开启后输出分歧清单，发布结论逐字不变", () => {
+    const before = collectExportDiagnostics(makeOpts(PLAIN, [CONFLICT, INTERNAL, UNKNOWN]));
     setPublishGateShadow(true);
-    const after = collectExportDiagnostics(makeOpts([CONFLICT, INTERNAL, UNKNOWN]));
+    const after = collectExportDiagnostics(makeOpts(PLAIN, [CONFLICT, INTERNAL, UNKNOWN]));
     const shadow = takePublishGateShadow()!;
 
     expect(shadow.byCode).toEqual([DIAG.contractConflict]);
-    expect(shadow.lostByCodeFilter).toEqual([DIAG.internal, DIAG.unknownInference]);
+    expect(shadow.notBlockedByCode).toEqual([DIAG.internal, DIAG.unknownInference]);
     expect(shadow.semanticIfDeclared).toContain(DIAG.internal);
 
     expect(after.entries).toEqual(before.entries);
     expect(after.blocking).toBe(before.blocking);
     expect(after.contractLoad).toEqual(before.contractLoad);
     expect(after.conflicts).toEqual(before.conflicts);
-  });
-
-  it("清单含契约四族，contract-syntax 不再被静默丢弃（BUG-021）", () => {
-    expect(EXPORT_BLOCKING_CODES).toContain(DIAG.contractSyntax);
-    const SYNTAX = { severity: "warning", code: DIAG.contractSyntax, message: "malformed" };
-    const diags = collectExportDiagnostics(makeOpts([SYNTAX]));
-    expect(diags.entries.map((d) => d.code)).toContain(DIAG.contractSyntax);
-    expect(diags.blocking).toBe(true);
-  });
-
-  it("白名单本身不扩张到非契约族（决议 2 不新增码）", () => {
-    expect(EXPORT_BLOCKING_CODES).toEqual([
-      DIAG.contractLoad,
-      DIAG.contractParamMismatch,
-      DIAG.contractConflict,
-      DIAG.contractSyntax,
-    ]);
   });
 });

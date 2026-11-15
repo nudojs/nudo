@@ -24,17 +24,23 @@ export interface PublishGateShadow {
   readonly byCode: readonly string[];
   /** 全部「降级证据」码（按来源分派到现有诊断码，不新增）。 */
   readonly degraded: readonly string[];
-  /** degraded 但不在白名单 ⇒ 当前被 `toExportDiagnostic` 直接丢掉（BUG-021）。 */
-  readonly lostByCodeFilter: readonly string[];
+  /** degraded 但不在白名单 ⇒ 按码判据不会阻断它（BUG-021 的剩余缺口）。 */
+  readonly notBlockedByCode: readonly string[];
   /** 语义判据在「用户申报过契约」档下会返回的码。 */
   readonly semanticIfDeclared: readonly string[];
 }
 
-/** 降级证据族：与 publishBlockedBy 的 `degraded` 判据同源。 */
+/**
+ * 降级证据族：与 publishBlockedBy 的 `degraded` 判据同源。
+ *
+ * `contractSyntax` 是 BUG-021 的缺口本体：契约**解析失败**同样意味着「用户
+ * 申报的保证拿不到」——它必须是降级证据，否则发布门看不见它。
+ */
 const DEGRADED_CODES: ReadonlySet<string> = new Set<string>([
   DIAG.contractLoad,
   DIAG.contractParamMismatch,
   DIAG.contractConflict,
+  DIAG.contractSyntax,
   DIAG.internal,
   DIAG.unknownInference,
 ]);
@@ -55,17 +61,22 @@ export function comparePublishGates(
   }
   const byCode = uniq(all.filter((c) => blockingCodes.includes(c)));
   const degraded = uniq(all.filter((c) => DEGRADED_CODES.has(c)));
-  const lostByCodeFilter = uniq(degraded.filter((c) => !blockingCodes.includes(c)));
+  const notBlockedByCode = uniq(degraded.filter((c) => !blockingCodes.includes(c)));
   const semanticIfDeclared = uniq(
     degraded
       .map((c) => publishBlockedBy(degradedOf<unknown>(c as DiagCode), true))
       .filter((c): c is DiagCode => c !== undefined),
   );
-  return { byCode, degraded, lostByCodeFilter, semanticIfDeclared };
+  return { byCode, degraded, notBlockedByCode, semanticIfDeclared };
 }
 
 let enabled = false;
 let last: PublishGateShadow | undefined;
+
+/** 降级证据族判定：供 export 面上屏过滤复用（不新增码）。 */
+export function isDegradedCode(code: string): boolean {
+  return DEGRADED_CODES.has(code);
+}
 
 /** 迁移期开关；`false` 时清空已记录的对照。 */
 export function setPublishGateShadow(on: boolean): void {

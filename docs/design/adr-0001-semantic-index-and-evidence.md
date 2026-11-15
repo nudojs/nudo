@@ -463,4 +463,57 @@ BUG-1149 SRC_D2         old=[f] indexed=[f,g] ON codes=[nudo:opaque-result]   �
 
 **切片 4.2 入口**：把发布门从按码白名单切到 `publishBlockedBy`（`hasDeclaredContract` 由 `effectiveContract` 取真值），同时补 Evidence 缓存键；基线测试中「零行为变更」断言按预期改为变更记录。之后才是 `resolvePublicType` 优先级格（007/014/033）、`ModuleForm` / `PublicName`（008/030）、裸 catch → `degraded`（018）。
 
+---
 
+## 19. 阶段 1 · 切片 4.2 / 4.3 实施记录（2026-11-15）
+
+**范围**：把 export 发布门从「按诊断码白名单」切到**语义判据**（ADR §10 决议 2、§4 D3）。
+
+判据（唯一一处）：
+
+```text
+公开面存在降级证据 ∧ 用户申报过契约 ⇒ 阻断
+```
+
+「申报过契约」的真值有两处，都来自契约解析本身，**不读源码字符串**：
+
+1. **签名面 provenance**：`generalize` 解析 `effectiveContract` 时顺带把 `source`
+   （`handwritten` / `generated`）带到 `PolyFn.contractSource` → `NudoSig.contract`。
+   零二次解析、零额外遍历。
+2. **契约面诊断**：`contract-load` / `contract-param-mismatch` / `contract-conflict` /
+   `contract-syntax`。这些码**只可能**由「申报了契约」产生，因此也是申报证据。
+   ② 是覆盖率的关键——契约**解析失败**时 ① 必然拿不到 provenance（BUG-021）。
+
+| 改动 | 文件 |
+|---|---|
+| 申报真值随签名面走 | `core/.../generalize.ts`（`PolyFn.contractSource`）、`check/check-report.ts`（`NudoSig.contract`）、`check/check.ts`（两处 push 点） |
+| 降级证据族补 `contract-syntax` | `core/.../diagnostics/evidence-shadow.ts`（`DEGRADED_CODES`） |
+| 上屏面不再按码丢弃 | `nudojs/.../export/diagnostics.ts`：`toExportDiagnostic` 保留「阻断族 ∪ 降级族」 |
+| 阻断改成语义门 | 同上：`blocking = declaredContract && degradedOnSurface.length > 0` |
+| 迁移期开关删除 | `publishGateEnabled` / `setPublishGate` 一并移除——两档并存是漂移源，判据只留一处 |
+| 出口 / 快照 | internal values 222 → 220（删两个开关） |
+
+**有意的行为变更**（不是回归）：
+
+- `nudo:contract-syntax` 从此阻断：`nudo export` 在这些文件上 exit 1、不写产物、
+  诊断上屏（BUG-021 的复现命令已实测：`warning: [nudo:contract-syntax] …` + exit 1）；
+- 申报过契约的入口出现 `nudo:internal` / `nudo:unknown-inference` 也阻断（此前只上屏）；
+- **未申报契约**的纯推导文件不受影响：降级只上屏、不阻断——否则每个无注解文件
+  都会因推断失败而无法发布。
+
+**为什么不复用 `stripStringsKeepComments(source).includes("@nudo:contract")`**：它把
+注释/文档里的字样当成申报，§18 决策 4 已明确禁止；本轮改为「解析结果即真值」。
+
+**验收**：
+
+| 项 | 结果 |
+|---|---|
+| `pnpm run build` | ✓ |
+| `pnpm run lint` | ✓ |
+| `public-api-freeze` | ✓（internal values 220，types 41） |
+| `export-publish-gate-shadow` / `evidence-shadow` | ✓ 14/14（含 BUG-021 的 `contract-syntax` 阻断、申报×降级四象限） |
+| `cli-bug-233` / `cli-bug-621` / `cli-bug-628` | ✓ 24/24 |
+| BUG-021 端到端 | ✓ `export` exit 1、零产物、`contract-syntax` 上屏 |
+
+**下一步**：`resolvePublicType` 优先级格（007/014/033）与 `ModuleForm`（008）——
+两者都在 `dts-generator.ts`，一起改才不会在投影器里重复写一遍优先级。

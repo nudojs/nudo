@@ -30,7 +30,7 @@ Architecture truth lives in the repository, not on this site: [`docs/design/`](h
 
 | ADR | Covers | Status |
 |---|---|---|
-| [`adr-0001-semantic-index-and-evidence.md`](https://github.com/nudojs/nudo/blob/main/docs/design/adr-0001-semantic-index-and-evidence.md) | Analysis-face consistency: one binding index (`SemanticIndex`) + typed evidence with fail-closed degradation (`Evidence<T>`); root-cause plan for the 34-bug audit (2026-11-14) | Accepted (stage 1 slice 4.1) |
+| [`adr-0001-semantic-index-and-evidence.md`](https://github.com/nudojs/nudo/blob/main/docs/design/adr-0001-semantic-index-and-evidence.md) | Analysis-face consistency: one binding index (`SemanticIndex`) + typed evidence with fail-closed degradation (`Evidence<T>`); root-cause plan for the 34-bug audit (2026-11-14) | Accepted (stage 1 slice 4.2) |
 
 ## Process notes
 

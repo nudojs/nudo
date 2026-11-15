@@ -128,12 +128,15 @@ parser ──▶ core
   getter / setter 访问器都不得成为公共入口（否则名字解析不到 ⇒ 假
   `nudo:opaque-result` / `entry-may-throw`）。绑定表（`symbols` / `refs` /
   `spans` / `calls`）仍遍历整棵 AST，不受此门控影响。
-- **证据层（切片 4.1）**：`algebra/diagnostics/evidence.ts` 的 `Evidence<T>`
+- **证据层（切片 4.1 / 4.2）**：`algebra/diagnostics/evidence.ts` 的 `Evidence<T>`
   经 `@nudojs/core/internal` 暴露只读面；`evidence-shadow.ts` 把发布门的
-  「按码白名单」与 `publishBlockedBy` 语义判据做**影子双读**，默认关闭、
-  只输出分歧清单、不改结论。诊断按 §10 决议 2 复用现有码。影子阶段
-  Evidence 尚未进入任何分析结论 ⇒ **不纳入** `analysisFileCacheKey` /
-  `fnDepSeg`；切片 4.2 首次切换判据时同步补键纪律。
+  「按码白名单」与 `publishBlockedBy` 语义判据做**影子双读**（默认关闭、只输出
+  分歧清单）。切片 4.2 起 export 的**上屏面**默认走降级证据族（degraded 诊断
+  不再被按码丢弃），**阻断判据仍按 `EXPORT_BLOCKING_CODES`** ⇒ 上屏变多、exit
+  code 不变。诊断按 §10 决议 2 复用现有码。语义阻断（`publishBlockedBy`）须先有
+  `effectiveContract` 的**无副作用探测口**：该函数会经 `takeRefineDiagsSince`
+  把装载诊断转发进全局 `contractDiags`，不得在诊断汇总后逐入口重探。Evidence
+  仍未进入分析结论 ⇒ 暂不纳入 `analysisFileCacheKey` / `fnDepSeg`。
 
 ## Collector 作用域（ALS）
 
