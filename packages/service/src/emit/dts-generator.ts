@@ -2798,6 +2798,16 @@ export interface DtsModuleSurface {
    * 命名空间限定超类（`extends NS.Base`）需要补 `import * as NS` 才可解析。
    */
   namespaceImports?: Map<string, string>;
+  /**
+   * BUG-008：CJS `module.exports = <单值>` 的模块形态。`local` = 承载该值的
+   * 本地名；`""` = 匿名右值（`module.exports = function () {}`），产物用
+   * `_default` 承载。`exportBindings` 里对应条目只是内部记账（让名字可解析），
+   * 不表示模块是 ESM。
+   *
+   * 仅在「除该值外没有别的导出」时设置：`export =` 不得与其他导出共存
+   * （TS2309），混用时保持既有 ESM 投影。
+   */
+  exportEquals?: { readonly local: string };
 }
 
 /** AST 节点最小形状（Babel AST 的鸭子类型——不引 @babel/types） */
@@ -3480,6 +3490,8 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
     typeParamClauses: new Map(),
     namespaceImports: new Map(),
   };
+  /** BUG-008：`module.exports = <单值>` 的目标（`""` = 匿名右值）；见 surface.exportEquals */
+  let exportEqualsCandidate: string | undefined;
   let ast: { program: { body: SurfaceNode[] } };
   try {
     // `keepTs`：导出面扫描要看到 **TS 语法本身** —— `import type`（BUG-168：
@@ -3512,8 +3524,7 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
     if (!name || surface.values.has(name)) return;
     surface.values.set(name, { kind: "const", typeText: valueTypeTextOfInit(init) });
   };
-  /** `module.exports` / `exports` → true */
-  const isExportsTarget = (n: SurfaceNode | undefined): boolean => {
+  /** `module.exports` / `exports` → true */  const isExportsTarget = (n: SurfaceNode | undefined): boolean => {
     if (!n) return false;
     if (n.type === "Identifier") return n.name === "exports";
     if (n.type === "MemberExpression") {
@@ -3780,11 +3791,24 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
       }
       if (right.type === "Identifier") {
         const n = surfaceName(right);
-        if (n) bind(n, n);
+        if (n) {
+          bind(n, n);
+          // BUG-008：`module.exports = real` —— 模块形态是 `export =`。
+          exportEqualsCandidate = n;
+        }
         continue;
       }
       bind("default", "");
+      // BUG-008：`module.exports = function () {}`（匿名右值）同样是 `export =`
+      exportEqualsCandidate = "";
     }
+  }
+
+  // BUG-008：只有「这个值就是模块本身」时才是 `export =`——`module.exports`
+  // 之外还有别的导出（`exports.x = …`）时不设，`export =` 与其他导出共存是
+  // TS2309，保持既有 ESM 投影。
+  if (exportEqualsCandidate !== undefined && surface.exportBindings.size === 1) {
+    surface.exportEquals = { local: exportEqualsCandidate };
   }
 
   // ── 模块级值声明（BUG-190）──
@@ -3995,6 +4019,13 @@ type DtsExportForm =
   | { kind: "named"; exportName: string; extras?: DtsExportExtra[] }
   | { kind: "member"; memberName: string }
   | { kind: "default"; localName: string; extras?: DtsExportExtra[] }
+  /**
+   * BUG-008：CJS `module.exports = <单值>`。运行期 `require()` 拿到的就是那个
+   * 值，ESM 的 `export default` / `export declare function` 声明与真实形态不符
+   * ⇒ 消费方 `import f from "./x.cjs"` 报 TS2349（没有调用签名）。
+   * `localName` = 产物里承载该值的本地名（匿名右值用 `_default`）。
+   */
+  | { kind: "exportEquals"; localName: string }
   | {
       kind: "alias";
       exportName: string;
@@ -4011,6 +4042,14 @@ function dtsExportForm(
   if (!surface) {
     if (localName === "default") return { kind: "default", localName: "" };
     return { kind: "named", exportName: dtsIdentifier(localName) };
+  }
+  // BUG-008：`module.exports = <单值>` 的模块形态是 `export =`，不是 ESM 导出。
+  // 必须先于 exportBindings 判定——扫描面为了「名字可解析」把该本地名登记成
+  // 具名导出，但那只是内部记账，不是模块形态。
+  if (surface.exportEquals !== undefined) {
+    const target = surface.exportEquals.local;
+    const hit = target === "" ? localName === "default" : localName === target;
+    if (hit) return { kind: "exportEquals", localName: target === "" ? "_default" : target };
   }
   const names = dtsExportNamesOf(surface, localName);
   const exportName = names[0];
@@ -4047,6 +4086,9 @@ function dtsFormExportName(form: DtsExportForm): string | undefined {
       return form.exportName;
     case "default":
       return "default";
+    case "exportEquals":
+      // `export = X` 对 ESM 消费方等价于 default 导入；台账按导出名记账。
+      return form.localName;
     default:
       return undefined;
   }
@@ -4101,6 +4143,13 @@ function dtsExportDeclaration(
         `declare function ${form.localName}${signature};`,
         `export { ${form.localName} as ${form.exportNameRepr} };`,
         ...dtsExtraExportLines(form.localName, form.extras),
+      ];
+    case "exportEquals":
+      // `export = <local>` 只允许一条，且不得与其他导出语句共存（TS2309）；
+      // 声明本身必须**不带 export**（否则变成 ESM 具名导出 + TS2309）。
+      return [
+        `declare function ${form.localName}${signature};`,
+        `export = ${form.localName};`,
       ];
     default:
       return [];
@@ -4274,6 +4323,24 @@ function projectModuleDtsInner(
         superClauseText(className, surface),
       ),
     );
+  }
+
+  // ── BUG-008：`module.exports = C`（类）→ `declare class C` + `export = C` ──
+  // 函数形态走 `DtsExportForm.exportEquals`；类走类声明通道（一次一类），
+  // 所以在这里把该类的导出前缀摘掉并补 `export =`。`export =` 不得与其它
+  // 导出共存（TS2309）——surface.exportEquals 只在单值导出时设置。
+  if (surface?.exportEquals !== undefined && surface.exportEquals.local !== "") {
+    const target = surface.exportEquals.local;
+    const prefix = `export declare class ${dtsIdentifier(target)}`;
+    let converted = false;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]!;
+      if (line.startsWith(prefix)) {
+        lines[i] = line.slice("export ".length);
+        converted = true;
+      }
+    }
+    if (converted) lines.push(`export = ${dtsIdentifier(target)};`);
   }
 
   // ── 模块级值声明（BUG-190）──
