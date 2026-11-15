@@ -49,13 +49,15 @@ function parseFile(file) {
   return {imports, body: body.trim(), total, label};
 }
 
+const baseParsed = m.base ? parseFile(`${DIR}/${m.target}`) : null;
 const parsed = SOURCES.map(parseFile);
+const allParsed = baseParsed ? [baseParsed, ...parsed] : parsed;
 const totalIts = parsed.reduce((n, p) => n + p.total, 0);
 const remaining = parsed.reduce((n, p) => n + (p.body.match(/\bit\(/g) ?? []).length, 0);
 if (remaining !== totalIts) throw new Error(`count drift ${remaining} != ${totalIts}`);
 
 const localMods = new Map();
-for (const p of parsed) for (const im of p.imports) {
+for (const p of allParsed) for (const im of p.imports) {
   if (im.kind !== "named") continue;
   if (!localMods.has(im.local)) localMods.set(im.local, []);
   localMods.get(im.local).push(im.mod);
@@ -115,7 +117,7 @@ for (const p of parsed) {
   if (aliases.size) p.body = renameIdents(p.body, aliases);
 }
 const byMod = new Map();
-for (const p of parsed) for (const im of p.imports) {
+for (const p of allParsed) for (const im of p.imports) {
   if (!byMod.has(im.mod)) byMod.set(im.mod, {default: null, namespace: null, named: new Map(), side: false});
   const slot = byMod.get(im.mod);
   if (im.kind === "side") slot.side = true;
@@ -150,7 +152,7 @@ for (const [mod, slot] of byMod) {
     importLines.push(`import ${allType ? "type " : ""}{ ${inner.join(", ")} } from "${mod}";`);
   }
 }
-const content = `/**\n * ${m.header}\n */\n${importLines.join("\n")}\n\n${parsed.map((p) => `// ---------------------------------------------------------------------------\n// ${p.label}\n// ---------------------------------------------------------------------------\ndescribe(${JSON.stringify(`[${m.prefix.replace(/-$/, "")}] ${p.label}`)}, () => {\n${p.body}\n});`).join("\n\n")}\n`;
+const content = `/**\n * ${m.header}\n */\n${importLines.join("\n")}\n\n${baseParsed ? baseParsed.body + "\n\n" : ""}${parsed.map((p) => `// ---------------------------------------------------------------------------\n// ${p.label}\n// ---------------------------------------------------------------------------\ndescribe(${JSON.stringify(`[${m.prefix.replace(/-$/, "")}] ${p.label}`)}, () => {\n${p.body}\n});`).join("\n\n")}\n`;
 
 if (!apply) {
   console.log(`dry: total=${totalIts} files=${parsed.length}`);
@@ -158,7 +160,7 @@ if (!apply) {
   process.exit(0);
 }
 const targetAbs = join(repoRoot, `${DIR}/${m.target}`);
-if (existsSync(targetAbs)) throw new Error("target exists");
+if (!m.base && existsSync(targetAbs)) throw new Error("target exists");
 writeFileSync(targetAbs, content, "utf8");
 for (const f of SOURCES) execFileSync("git", ["rm", "-q", f], { cwd: repoRoot });
 const names = SOURCES.filter((f) => f.endsWith(".part.ts")).map((f) => basename(f));

@@ -2,16 +2,3 @@
 // One vitest entry per (directory, family). Each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./harvester--ghost-interface-exports.part.ts";
-import "./harvester--optional-params-arity.part.ts";
-import "./harvester--namespace-merge.part.ts";
-import "./harvester--overload-alpha-return.part.ts";
-import "./harvester--exported-namespace.part.ts";
-import "./harvester--enum-members.part.ts";
-import "./harvester--ns-first-function.part.ts";
-import "./harvester--optional-dag-no-explosion.part.ts";
-import "./harvester--ghost-globals.part.ts";
-import "./harvester--promoted-not-emitted-globals.part.ts";
-import "./harvester--module-private-not-exported.part.ts";
-import "./harvester--disk-literal-conf.part.ts";
-import "./harvester--from-dts-import-clash.part.ts";
