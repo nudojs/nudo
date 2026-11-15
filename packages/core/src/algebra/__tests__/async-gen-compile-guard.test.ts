@@ -24,7 +24,7 @@
  *      for await 连 `$await` 也没有——同步驱动不发门）；
  *    - `mixed`：同文件多函数，两路径并存。
  *
- * 与 core-bug-1139-await-position-compile-fail.test.ts 的关系：该测试钉
+ * 与 core-bug-1139-await-position-compile-fail.part.ts 的关系：该测试钉
  * Bug 1139 修复的回归面（表达式/语句位矩阵 + L2 闸门面）；本守卫按
  * async-plan.ts **头注释的形态清单**逐位对齐（含 for await 三级位置 /
  * 嵌套 async 边界 / async 生成器声明 / 双模式 / 方向钉），两侧语料独立

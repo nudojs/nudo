@@ -11,7 +11,7 @@
  *    （2026-11-06 裁定：nudo any ≈ TS unknown，TS 投影面归一）且 stderr **不**打提示；
  *    `unknown` + `note: <fn>.<param> rendered as unknown …` 只出现在窄路径
  *    （`@nudo:skip` / 无 case + 手写契约参数位，见
- *    `cli-bug-076-unevidenced-any.test.ts`）；
+ *    `cli-bug-076-unevidenced-any.part.ts`）；
  * 5. 有函数但无导出声明时 stdout 如实说明（exit 0）。
  *
  * runner 注：spawn 型 CLI 子进程对 @nudojs/* 的解析不经 vitest 别名——

@@ -74,7 +74,7 @@ function hasUnusablePrototype(name: string): boolean {
  * service，故保留这一份副本；改动须两面同步）：`Object.prototype.toString`
  * 读内置 toStringTag ⇒ 跨 realm 可判，代价是 `Symbol.toStringTag` 可伪造。
  * 不包 `body` 的括号是为了让「按顶层 ` && ` 拆条款」的既有回归钉
- * （`eval-bug-240-guard-internal-slots.test.ts`）仍逐条可见。
+ * （`eval-bug-240-generator-own-properties.part.ts`，含原 guard-internal-slots 钉）仍逐条可见。
  */
 function generatorIdentityClause(a: Abs, v: string): string | undefined {
   const brand = a.facets?.brand;

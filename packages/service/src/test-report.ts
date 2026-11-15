@@ -70,7 +70,7 @@ function caseLabel(c: CaseResult): string {
  * 的 `observationTitle`）的**共享格式**。两面此前各自手写（throws 前 2 vs 3
  * 空格）⇒ 同一事实两种渲染。格式只在这里定义一次：CLI 报告在
  * `caseLines.push` 处加容器缩进，LSP lens 标题**不带**缩进按同一模板渲染
- * （一致性由 `lsp-bug-136-witness-line-parity.test.ts` 逐字符钉住）。
+ * （一致性由 `lsp-bug-136-witness-line-parity.part.ts` 逐字符钉住）。
  */
 function formatCaseLine(c: CaseResult): string {
   const argsStr = c.argAbs.map((a) => formatShape(a)).join(", ");

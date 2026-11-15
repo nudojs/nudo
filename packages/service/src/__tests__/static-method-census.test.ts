@@ -12,7 +12,7 @@
  * 修法（service 侧）：复用 parser **已导出**的 `getClassMembers` /
  * `classMemberKeyName` / `methodFunctionNode` 自行收集 static
  * ⇒ **parser 导出面零新增**（parser 侧的判定钉见
- * `packages/parser/src/__tests__/parser-bug-856-static-method-census.test.ts`）。
+ * `packages/parser/src/__tests__/parser-bug-856-static-method-census.part.ts`）。
  */
 import { describe, it, expect } from "vitest";
 import { writeFileSync } from "node:fs";

@@ -6,8 +6,8 @@
  *
  * | 面 | 问的问题 | 同一性 | 由谁钉死 |
  * |---|---|---|---|
- * | ① **赋值 / 期望面**（`leq.ts` 的 `leqAbs`） | 「实现给出的值**是不是同一个值**？」 | **SameValue**（`Object.is`） | Bug 398 钉（`core-bug-398-lit-samevalue.test.ts`） |
- * | ② **契约 / 类型执法面**（`scan/literal-preds.ts` + `scan/domain-membership.ts`） | 「这个值**是不是落在这个契约的类型域内**？」 | **SameValueZero**（`===` + NaN 特例） | Bug 915 钉（`core-bug-915-literal-identity.test.ts`） |
+ * | ① **赋值 / 期望面**（`leq.ts` 的 `leqAbs`） | 「实现给出的值**是不是同一个值**？」 | **SameValue**（`Object.is`） | Bug 398 钉（`core-bug-398-lit-samevalue.part.ts`） |
+ * | ② **契约 / 类型执法面**（`scan/literal-preds.ts` + `scan/domain-membership.ts`） | 「这个值**是不是落在这个契约的类型域内**？」 | **SameValueZero**（`===` + NaN 特例） | Bug 915 钉（`core-bug-915-literal-identity.part.ts`） |
  * | ③ **项身份**（`term.ts` 的 `termEquals`） | 「这两个**项**是不是同一个项？」（不是精确期望） | **`===` + NaN**（= ②） | 本钉 |
  *
  * ①与②**故意不同**：`-0` 与 `0` 在 JS 里 `===` 为 **true** ⇒ 在**类型域**上

@@ -46,13 +46,13 @@ Because there is no style linter, **reviewers** must watch what the type-checker
 
 ### 回归钉：按特性族聚合，不再一 bug 一文件
 
-`packages/*/src/__tests__/` 现有 2150+ 个测试文件，其中约 1350 个是 `*-bug-NNN-*.test.ts`
-单案回归钉。文件数本身已成为 CI 调度成本（`vitest.config.ts` 的 4 worker / 30s 超时 /
-2 shard）。新增回归时：
+`packages/*/src/__tests__/` 现有 2355 个测试模块（1049 个入口 + 1306 个
+`*.part.ts`），其中 1366 个是 `*-bug-NNN-*` 回归钉。文件数本身已成为 CI 调度成本
+（`vitest.config.ts` 的 4 worker / 30s 超时 / 2 shard）。新增回归时：
 
 - **优先**追加到同族的表驱动文件（`it.each` / case 表），或并入已有的同族 `-bug-`
   文件；确需新文件时在 PR 里说明为什么不能合并。
-- **按族收敛入口已对 16 个族启用**：`scripts/aggregate-tests.mjs` 把同族
+- **按族收敛入口已对 21 个族启用**：`scripts/aggregate-tests.mjs` 把同族
   `*-bug-NNN-*.test.ts` 原地改名为 `*.part.ts`，由 `zz-agg-<族>.test.ts` import，
   vitest 入口从 N 降到 1。2026-11-05 全量试点（20 族 / 1329 文件）曾暴露
   **模块共享污染**（同一入口内的 part 共享模块实例 ⇒ 全局注册表 / oracle /
@@ -68,9 +68,11 @@ Because there is no style linter, **reviewers** must watch what the type-checker
   `--revert-only <key>` 单族回退；`vscode-host-stub.ts::makeExtensionContext`
   补 activate 前的注册表面复位。`vscode/.../lsp` 6 + `service/.../service` 114
   = **120 文件 → 2 入口**（全仓 1769 → 1651），逐族验证 0 新增失败。
-  **剩余 4 个 R 级族 / 795 文件仍不得套用**：全量试聚合新增 7 条失败
-  （core/eval/lsp/cli 共享 memo / registry / stub 与 watch 事件假设），已用
-  `--revert-only` 精确回退 ⇒ 需逐族补统一复位后再验证。
+  **2026-11-15 收口剩余 4 个 R 级族**：core 314 + eval 145 + misc 22 + lsp 141
+  + cli 154 = **776 个 part → 81 个入口**（`--max-parts 10` 切分），逐族全绿；
+  历史「共享 memo / registry / stub」污染在统一复位（`resetEngineCaches`）后
+  未复现。全仓入口 1744 → 1049（含 113 个 `zz-agg` 入口）。大族必须继续按
+  `--max-parts 10` 切分，不要一次性整族单入口聚合（单入口会钉死 shard）。
   **纪律**：① 每次 `--apply` 必须带 `--only <完整 key>`（不带会一次性套用
   全部剩余族，`--only` 是**精确 key 相等**，不是目录前缀）；② `--revert`
   是**全局**的且忽略 `--only`（会还原全部已启用族）——单族回退用
