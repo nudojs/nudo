@@ -1620,7 +1620,10 @@ function generalizeFromAstUncached(
             }
           } else if (hit) {
             // placeholder / `_` / rest 裸名：整参契约
-            const entryAbs = constraintToEntryAbs(e.constraint, e.param);
+            // BUG-018：裸名 / `_` / rest 槽同样要带跨槽 binder 表——漏传会让
+            // `resolveRef` 在别的槽位的树里找不到 bind，异常被外层 catch 吞掉
+            // ⇒ 该位静默退回 any（check 判假红、dts 面却精确）。
+            const entryAbs = constraintToEntryAbs(e.constraint, e.param, undefined, binderTable);
             typeParams[hit.index] = {
               id: typeParams[hit.index]!.id,
               value: entryAbs,
