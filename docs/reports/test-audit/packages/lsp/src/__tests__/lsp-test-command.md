@@ -1,0 +1,36 @@
+# packages/lsp/src/__tests__/lsp-test-command.test.ts
+
+模块套件：29 个用例。根因底稿取自现有注释；动作与缺口待逐行复核。
+
+```audit
+title	rootCause	gap	action	status	evidence
+"越界 caseIndex 回结构化错误，活动档表不变"	"前置：合法 case 选中 活动档表仍是合法的 0（越界写入不再污染） `nudo.selectCase` 不校验 caseIndex。 改前：caseIndex=-1 让分析崩溃（\"Cannot read properties of undefined (reading 'argsAbs')\" 诊断）、caseIndex=99 静默改掉观察档（活动档表写出 {\"f\":99}）——两者都回 success:true。"	没测该层	keep	keep	—
+"越界 caseIndex 不产生分析崩溃诊断（argsAbs 越界）"	"`nudo.selectCase` 不校验 caseIndex。 改前：caseIndex=-1 让分析崩溃（\"Cannot read properties of undefined (reading 'argsAbs')\" 诊断）、caseIndex=99 静默改掉观察档（活动档表写出 {\"f\":99}）——两者都回 success:true。"	没测该层	keep	keep	—
+"非整数 caseIndex 回结构化错误"	"`nudo.selectCase` 不校验 caseIndex。 改前：caseIndex=-1 让分析崩溃（\"Cannot read properties of undefined (reading 'argsAbs')\" 诊断）、caseIndex=99 静默改掉观察档（活动档表写出 {\"f\":99}）——两者都回 success:true。"	没测该层	keep	keep	—
+"空串 / 不存在的函数名回结构化错误，活动档表无幽灵条目"	"幽灵条目不再出现 `nudo.selectCase` 不校验 functionName。 改前：任意名字（空串 \"\"、文件里不存在的 \"doesNotExist\"）都被当成真写进 活动档表 ⇒ getActiveCases 如实上报幽灵条目（{\"\":0} / {\"doesNotExist\":0}）。"	没测该层	keep	keep	—
+"文件里存在但没有 @nudo:case 的函数回结构化错误"	"`nudo.selectCase` 不校验 functionName。 改前：任意名字（空串 \"\"、文件里不存在的 \"doesNotExist\"）都被当成真写进 活动档表 ⇒ getActiveCases 如实上报幽灵条目（{\"\":0} / {\"doesNotExist\":0}）。"	没测该层	keep	keep	—
+"合法函数名仍然选中并写入活动档表"	"`nudo.selectCase` 不校验 functionName。 改前：任意名字（空串 \"\"、文件里不存在的 \"doesNotExist\"）都被当成真写进 活动档表 ⇒ getActiveCases 如实上报幽灵条目（{\"\":0} / {\"doesNotExist\":0}）。"	没测该层	keep	keep	—
+"目标函数不存在时回结构化错误，不写幽灵条目"	"改前：目标函数不存在（\"noSuchFn\"）、甚至参数全缺时也回 {\"success\":true} ——协议层假成功，客户端以为契约已切回。 改后：目标不在该文件里 ⇒ 结构化错误（success:false + isError），且活动 档表不产生幽灵条目。"	没测该层	keep	keep	—
+"参数缺失（无 functionName）时回结构化错误"	"改前：目标函数不存在（\"noSuchFn\"）、甚至参数全缺时也回 {\"success\":true} ——协议层假成功，客户端以为契约已切回。 改后：目标不在该文件里 ⇒ 结构化错误（success:false + isError），且活动 档表不产生幽灵条目。"	没测该层	keep	keep	—
+"合法目标（文件里的导出函数）仍然成功，且取消该函数的激活 case"	"改前：目标函数不存在（\"noSuchFn\"）、甚至参数全缺时也回 {\"success\":true} ——协议层假成功，客户端以为契约已切回。 改后：目标不在该文件里 ⇒ 结构化错误（success:false + isError），且活动 档表不产生幽灵条目。"	没测该层	keep	keep	—
+"建议里的 case 名不落在合成 / 冻结名字空间（改前是 call@L<n>）"	"合成 case 的原名不得泄漏进建议（改前：`* @nudo:case \"call@L4\" (\"bob\")`） LSP agent 工具 `nudo/suggestCase` 的建议：**名字**与**期望**。 ⚠ 勘误：报告断言的「贴回后零断言、期望永不被判定」**已不复现** —— 引擎侧 的「按名字前缀降级」已被族 14/15（）修掉（判据改成**来源** `c.source !== \"directive\"`）⇒ 贴回后是**声明 case**（进断言面、但没写 `=> expected` ⇒ `unche"	没测该层	keep	keep	—
+"建议带 `=> expected`（观测值）⇒ 贴回后真的产生断言，而不是 unchecked"	"LSP agent 工具 `nudo/suggestCase` 的建议：**名字**与**期望**。 ⚠ 勘误：报告断言的「贴回后零断言、期望永不被判定」**已不复现** —— 引擎侧 的「按名字前缀降级」已被族 14/15（）修掉（判据改成**来源** `c.source !== \"directive\"`）⇒ 贴回后是**声明 case**（进断言面、但没写 `=> expected` ⇒ `unchecked`）。"	没测该层	keep	keep	—
+"把建议原样贴回源码 ⇒ 声明 case 进断言面并判 ok（passed 1 / failed 0 / unchecked 0）"	"贴回的是**声明** case（不是合成观察）⇒ 不带 call@ / entry@ 前缀 LSP agent 工具 `nudo/suggestCase` 的建议：**名字**与**期望**。 ⚠ 勘误：报告断言的「贴回后零断言、期望永不被判定」**已不复现** —— 引擎侧 的「按名字前缀降级」已被族 14/15（）修掉（判据改成**来源** `c.source !== \"directive\"`）⇒ 贴回后是**声明 case**（进断言面、但没写 `=> expected` ⇒ `unchecked`）。"	没测该层	keep	keep	—
+"同一份源码的建议名稳定（可重复贴回，不会每次换名）"	"LSP agent 工具 `nudo/suggestCase` 的建议：**名字**与**期望**。 ⚠ 勘误：报告断言的「贴回后零断言、期望永不被判定」**已不复现** —— 引擎侧 的「按名字前缀降级」已被族 14/15（）修掉（判据改成**来源** `c.source !== \"directive\"`）⇒ 贴回后是**声明 case**（进断言面、但没写 `=> expected` ⇒ `unchecked`）。"	没测该层	keep	keep	—
+"只有合成见证（call@）时给建议，不报 'already has N case(s)'"	"**上游已修（报告结论不成立）**：反向钉，钉住「当前行为正确」。 本钉锁住该行为：改前（HEAD）与改后都必须绿。"	没测该层	keep	keep	—
+"手写 @nudo:case 时报 'already has 1 case(s)'（且不重复建议）"	"**上游已修（报告结论不成立）**：反向钉，钉住「当前行为正确」。 本钉锁住该行为：改前（HEAD）与改后都必须绿。"	没测该层	keep	keep	—
+"JSON 面含 assertions 键（passed / failed / unchecked）"	"LSP agent 工具 `nudo/test` 丢掉 CLI 的 **`assertions` 通道** ⇒ agent 面分不出「见证通过」与「见证失败」。 症状（改前）：CLI `nudo test --json` 的顶层键含 `assertions` （`{\"passed\": 1, \"failed\": 1, \"unchecked\": 0}`），agent 工具的 JSON 里 **根本没有 `assertions` 这个键**。"	没测该层	keep	keep	—
+"通过 / 失败的见证被分开计数（不是「全部通过」）"	"LSP agent 工具 `nudo/test` 丢掉 CLI 的 **`assertions` 通道** ⇒ agent 面分不出「见证通过」与「见证失败」。 症状（改前）：CLI `nudo test --json` 的顶层键含 `assertions` （`{\"passed\": 1, \"failed\": 1, \"unchecked\": 0}`），agent 工具的 JSON 里 **根本没有 `assertions` 这个键**。"	没测该层	keep	keep	—
+"dot 形式同样含 assertions（协议别名不降级）"	"LSP agent 工具 `nudo/test` 丢掉 CLI 的 **`assertions` 通道** ⇒ agent 面分不出「见证通过」与「见证失败」。 症状（改前）：CLI `nudo test --json` 的顶层键含 `assertions` （`{\"passed\": 1, \"failed\": 1, \"unchecked\": 0}`），agent 工具的 JSON 里 **根本没有 `assertions` 这个键**。"	没测该层	keep	keep	—
+"summary.cases == payload 里的实际 case 总数（含外部 case）"	"根因：过滤分支只替换了 `functions` 与 `summary` 两个键，`externalFunctions` （连同它的 case）原封不动留在 payload 里 ⇒ 「summary 说 1、payload 有 2」。 修法口径（与 bug 报告一致）：外部函数**不在** `functions` 过滤范围内 ⇒ 其 case 仍留在 payload 里 ⇒ `summary.cases` 必须**含**外部 case。"	没测该层	keep	keep	—
+"summary.externalFunctions 与 payload 里的外部函数数一致"	"根因：过滤分支只替换了 `functions` 与 `summary` 两个键，`externalFunctions` （连同它的 case）原封不动留在 payload 里 ⇒ 「summary 说 1、payload 有 2」。 修法口径（与 bug 报告一致）：外部函数**不在** `functions` 过滤范围内 ⇒ 其 case 仍留在 payload 里 ⇒ `summary.cases` 必须**含**外部 case。"	没测该层	keep	keep	—
+"未过滤时 summary.cases 同样与 payload 同源（含外部 case）"	"根因：过滤分支只替换了 `functions` 与 `summary` 两个键，`externalFunctions` （连同它的 case）原封不动留在 payload 里 ⇒ 「summary 说 1、payload 有 2」。 修法口径（与 bug 报告一致）：外部函数**不在** `functions` 过滤范围内 ⇒ 其 case 仍留在 payload 里 ⇒ `summary.cases` 必须**含**外部 case。"	没测该层	keep	keep	—
+"functions 传字符串 ⇒ 工具错误（不是全空报告）"	"改前两种畸形形态： 1. 传**字符串** ⇒ 按**字符**建集合 ⇒ 函数全被过滤掉 ⇒ 返回一份**完全 合法但全空**的报告（`0 fn · 0 case`）⇒ agent 得出「这个文件没有 函数」的**假空**结论（无错误、无警告、零信号）； 2. 传**数字 / 对象** ⇒ `params.functions.length` 为 undefined ⇒ 过滤被 **整体跳过** ⇒ 请求**静默失效**（拿到的是未过滤的全量报告）。"	夹具漏形态	keep	keep	—
+"functions 传数字 ⇒ 工具错误（不再静默跳过过滤）"	"改前两种畸形形态： 1. 传**字符串** ⇒ 按**字符**建集合 ⇒ 函数全被过滤掉 ⇒ 返回一份**完全 合法但全空**的报告（`0 fn · 0 case`）⇒ agent 得出「这个文件没有 函数」的**假空**结论（无错误、无警告、零信号）； 2. 传**数字 / 对象** ⇒ `params.functions.length` 为 undefined ⇒ 过滤被 **整体跳过** ⇒ 请求**静默失效**（拿到的是未过滤的全量报告）。"	夹具漏形态	keep	keep	—
+"functions 传对象 ⇒ 工具错误"	"改前两种畸形形态： 1. 传**字符串** ⇒ 按**字符**建集合 ⇒ 函数全被过滤掉 ⇒ 返回一份**完全 合法但全空**的报告（`0 fn · 0 case`）⇒ agent 得出「这个文件没有 函数」的**假空**结论（无错误、无警告、零信号）； 2. 传**数字 / 对象** ⇒ `params.functions.length` 为 undefined ⇒ 过滤被 **整体跳过** ⇒ 请求**静默失效**（拿到的是未过滤的全量报告）。"	夹具漏形态	keep	keep	—
+"functions 传非字符串元素的数组 ⇒ 工具错误"	"改前两种畸形形态： 1. 传**字符串** ⇒ 按**字符**建集合 ⇒ 函数全被过滤掉 ⇒ 返回一份**完全 合法但全空**的报告（`0 fn · 0 case`）⇒ agent 得出「这个文件没有 函数」的**假空**结论（无错误、无警告、零信号）； 2. 传**数字 / 对象** ⇒ `params.functions.length` 为 undefined ⇒ 过滤被 **整体跳过** ⇒ 请求**静默失效**（拿到的是未过滤的全量报告）。"	夹具漏形态	keep	keep	—
+"合法数组仍然过滤（回归护栏）"	"改前两种畸形形态： 1. 传**字符串** ⇒ 按**字符**建集合 ⇒ 函数全被过滤掉 ⇒ 返回一份**完全 合法但全空**的报告（`0 fn · 0 case`）⇒ agent 得出「这个文件没有 函数」的**假空**结论（无错误、无警告、零信号）； 2. 传**数字 / 对象** ⇒ `params.functions.length` 为 undefined ⇒ 过滤被 **整体跳过** ⇒ 请求**静默失效**（拿到的是未过滤的全量报告）。"	夹具漏形态	keep	keep	—
+"缺省（不传 functions）仍然返回全量报告"	"改前两种畸形形态： 1. 传**字符串** ⇒ 按**字符**建集合 ⇒ 函数全被过滤掉 ⇒ 返回一份**完全 合法但全空**的报告（`0 fn · 0 case`）⇒ agent 得出「这个文件没有 函数」的**假空**结论（无错误、无警告、零信号）； 2. 传**数字 / 对象** ⇒ `params.functions.length` 为 undefined ⇒ 过滤被 **整体跳过** ⇒ 请求**静默失效**（拿到的是未过滤的全量报告）。"	夹具漏形态	keep	keep	—
+"文本面含 (imported) 段头与外部函数"	"LSP agent 工具 `nudo/test` 的**文本面**丢掉 **imported（外部） 函数** ⇒ CLI 文本面有的 `(imported)` 段在 IDE 面整段消失，而头部计数**仍 把外部 case 算进去**（「2 fn · 3 case」却只列出 2 个函数块）。"	没测该层	keep	keep	—
+"头部 case 计数与正文印出的 case 一致（不再「3 case 只印 2 条」）"	"LSP agent 工具 `nudo/test` 的**文本面**丢掉 **imported（外部） 函数** ⇒ CLI 文本面有的 `(imported)` 段在 IDE 面整段消失，而头部计数**仍 把外部 case 算进去**（「2 fn · 3 case」却只列出 2 个函数块）。"	没测该层	keep	keep	—
+```
