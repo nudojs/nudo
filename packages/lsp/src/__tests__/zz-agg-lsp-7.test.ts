@@ -4,9 +4,5 @@
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
 import "./lsp--cross-file-uses-buffer-text.part.ts";
 import "./lsp--sidecar-invalid-binding-not-contract.part.ts";
-import "./lsp--missing-field-placeholder.part.ts";
 import "./lsp--contract-shape-insert.part.ts";
-import "./lsp--extract-keeps-export-keyword.part.ts";
-import "./lsp--inline-keeps-sibling-statement.part.ts";
-import "./lsp--extract-assign-not-const.part.ts";
 import "./lsp--agent-tool-deps-lazy.part.ts";

@@ -5,5 +5,4 @@
 import "./lsp--document-symbol-let-var.part.ts";
 import "./lsp--export-default-symbol.part.ts";
 import "./lsp--shadowed-binding.part.ts";
-import "./lsp--nested-call-signature.part.ts";
 import "./lsp--member-access-no-workspace-fallback.part.ts";

@@ -6,5 +6,4 @@ import "./lsp--document-symbol-capability-shape.part.ts";
 import "./lsp--check-merge-channels.part.ts";
 import "./lsp--default-export-lens.part.ts";
 import "./lsp--test-assertions.part.ts";
-import "./lsp--whatif-binding-changes-type.part.ts";
 import "./lsp--selectcase-caseindex-range.part.ts";

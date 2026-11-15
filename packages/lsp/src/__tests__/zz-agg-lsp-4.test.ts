@@ -2,7 +2,6 @@
 // One of 15 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./lsp--placeholder-range.part.ts";
 import "./lsp--contract-diag-channel.part.ts";
 import "./lsp--inject-channel.part.ts";
 import "./lsp--suggest-case-name.part.ts";

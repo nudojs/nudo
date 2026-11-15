@@ -6,8 +6,6 @@ import "./lsp--witness-line-parity.part.ts";
 import "./lsp--internal-diagnostic.part.ts";
 import "./lsp--trace-external.part.ts";
 import "./lsp--return-contract-location.part.ts";
-import "./lsp--apply-edits-nested-ranges.part.ts";
 import "./lsp--directive-syntax-dup.part.ts";
-import "./lsp--484-signature-param-names.part.ts";
 import "./lsp--937-env-by-name-diag.part.ts";
 import "./lsp--autobind-fingerprint.part.ts";

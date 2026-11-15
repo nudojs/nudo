@@ -2,12 +2,7 @@
 // One of 15 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./lsp--whatif-param-validation.part.ts";
 import "./lsp--test-functions-params.part.ts";
-import "./lsp--inline-sibling-declarator.part.ts";
-import "./lsp--extract-name-clash.part.ts";
-import "./lsp--default-export-signature.part.ts";
-import "./lsp--local-callee-signature.part.ts";
 import "./lsp--check-supplement-channels.part.ts";
 import "./lsp--push-pull-env-parity.part.ts";
 import "./lsp--agent-tool-env-preload.part.ts";

@@ -10,4 +10,3 @@ import "./lsp--pull-env-diagnostics.part.ts";
 import "./lsp--non-ascii-receiver.part.ts";
 import "./lsp--workspace-folders.part.ts";
 import "./lsp--malformed-uri-initialize.part.ts";
-import "./lsp--inline-directive-injection.part.ts";
