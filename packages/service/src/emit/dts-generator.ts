@@ -1173,16 +1173,12 @@ function tsParamAnnotation(
   for (const name of annotationTypeRefs(text)) {
     if (TS_TYPE_TOKENS.has(name)) continue;
     const surface = ctx?.surface;
-    // 可解析 = 环境内建类型名（Date / Error / URL …）/ 产物里会声明的本地类 /
-    // 产物里会补 `import type` 的导入名。
-    const resolvable =
-      isRuntimeGlobalCtorName(name) ||
-      (surface !== undefined &&
-        (surface.classes.has(name) || surface.imports?.has(name) === true));
-    if (!resolvable) {
+    // 可解析 = 环境内建 / 本地类 / 本地 interface·type / 会补 import type 的导入名。
+    if (!isTypeNameResolvable(name, surface)) {
       ctx?.dropped?.push(`${fn.name}.${getParamName(fn, index)}: ${name}`);
       return undefined;
     }
+    // 需要产物补声明的两类才记引用（内建 / 本地类型声明自带）
     if (surface?.classes.has(name) || surface?.imports?.has(name) === true) {
       ctx?.typeRefs?.add(name);
     }
@@ -1345,6 +1341,12 @@ type DeclaredParam = {
   boundIndex: Record<string, number>;
   /** 契约名 → 源属性键（rename `{a: b}` → propKey.b = "a"） */
   propKey: Record<string, string>;
+  /**
+   * BUG-029：#137 的**点路径**契约面（`{ card: { grade } }` ⇒ `card.grade`）。
+   * 内层绑定名不在 `propKey` 里（那张表只覆盖顶层 rename）⇒ 只按 `bound`
+   * 查契约会整条落空，形参退成 `_p0: unknown`（契约明明在，dts 面却看不见）。
+   */
+  nestedPaths?: string[];
 };
 
 /** 声明形参表（fn.formals 优先；paramNames 兜底——旧缓存 / 合成函数无 formals） */
@@ -1399,6 +1401,7 @@ function declaredParams(fn: FunctionAnalysis): DeclaredParam[] {
             bound: [...f.bound],
             boundIndex: { ...(f.boundIndex ?? {}) },
             propKey: { ...f.propKey },
+            nestedPaths: [...(f.nestedPaths ?? [])],
           };
       }
     });
@@ -1416,6 +1419,36 @@ function declaredParams(fn: FunctionAnalysis): DeclaredParam[] {
   }));
 }
 
+/**
+ * 点路径契约 → 公共形参名（BUG-029）：`["card.grade"]` ⇒ `{ card: { grade } }`。
+ *
+ * 解构形参没有公共名，而 `_p0` / `_p0_1` 是求值占位（tmp-names.ts）——公共面
+ * 只允许源码里写得出来的形态。顶层绑定全覆盖时仍用 `{ a, b }`（既有口径）；
+ * 这里只处理「契约只覆盖了内层路径」的情形，保证声明的**名字**与**类型**同形。
+ */
+function patternNameFromPaths(paths: readonly string[]): string | undefined {
+  type Node = { children: Map<string, Node> };
+  const root: Node = { children: new Map() };
+  for (const p of paths) {
+    const segs = p.split(".").filter(Boolean);
+    if (segs.length < 2) return undefined; // 混入顶层键 ⇒ 交给既有口径
+    let cur = root;
+    for (const seg of segs) {
+      const next = cur.children.get(seg) ?? { children: new Map() };
+      cur.children.set(seg, next);
+      cur = next;
+    }
+  }
+  // 每层自己带花括号：`card: { grade }`（漏括号会渲成 `{ card: grade }` —— 名字
+  // 与类型对不上，产物 tsc 直接报错）
+  const render = (node: Node): string =>
+    [...node.children.entries()]
+      .map(([k, c]) => (c.children.size === 0 ? k : `${k}: { ${render(c)} }`))
+      .join(", ");
+  const body = render(root);
+  return body.length > 0 ? `{ ${body} }` : undefined;
+}
+
 /** 契约位查找结果 */
 type ContractSlot = {
   /** 命中的契约 Abs（undefined = 无契约证据） */
@@ -1425,6 +1458,32 @@ type ContractSlot = {
   /** 解构形参命中的**字段键**集合（具名形参为空） */
   keys: string[];
 };
+
+/**
+ * 把 `card.grade` 这样的点路径插成嵌套槽（BUG-029）。
+ *
+ * 已存在的中间槽若是 `obj` 就并入（同一首段的多个点路径合成一棵树），否则
+ * 覆盖成新对象（标量契约与子路径契约并存时以子路径为准——标量无法承载成员）。
+ */
+function insertNestedSlot(
+  slots: Record<string, { value: Abs }>,
+  path: string[],
+  abs: Abs,
+): void {
+  const [head, ...rest] = path;
+  if (head === undefined) return;
+  if (rest.length === 0) {
+    slots[head] = { value: abs };
+    return;
+  }
+  const prev = slots[head]?.value;
+  const inner: Record<string, { value: Abs }> =
+    prev && prev.shape.k === "obj"
+      ? { ...(prev.shape.slots as Record<string, { value: Abs }>) }
+      : {};
+  insertNestedSlot(inner, rest, abs);
+  slots[head] = { value: makeAbs({ k: "obj", slots: inner }, undefined, undefined, "path") };
+}
 
 /**
  * 契约位查找：
@@ -1460,6 +1519,15 @@ function lookupContractSlot(
     const key = decl.propKey[b] ?? b;
     slots[key] = { value: hit.abs };
     keys.push(key);
+    if (hit.optional === true) optional = true;
+  }
+  // BUG-029：点路径契约（`card.grade`）。按源属性路径建**嵌套槽**——把
+  // `card.grade: string()` 平铺成 `{ "card.grade": ... }` 会产出非法的属性名。
+  for (const path of decl.nestedPaths ?? []) {
+    const hit = contractByParam.get(path);
+    if (!hit) continue;
+    insertNestedSlot(slots, path.split(".").filter(Boolean), hit.abs);
+    keys.push(path);
     if (hit.optional === true) optional = true;
   }
   if (keys.length === 0) return { keys: [] };
@@ -1651,8 +1719,15 @@ function computeMainSignature(
       decl?.isPattern === true &&
       decl.bound.length > 0 &&
       decl.bound.every((b) => patternKeys.includes(decl.propKey[b] ?? b));
+    // BUG-029：契约只覆盖内层点路径（`card.grade`）时，按路径还原模式名。
+    const pathPattern =
+      decl?.isPattern === true && !boundCovered && contractHit.abs
+        ? patternNameFromPaths(contractHit.keys)
+        : undefined;
     let name: string;
-    if (boundCovered) {
+    if (pathPattern !== undefined) {
+      name = pathPattern;
+    } else if (boundCovered) {
       // Bug 394：数组解构渲染成**数组形态** `[ a, b ]`（与源码一致）——
       // 此前一律 `{ a, b }` ⇒ 声明面看得出是对象，与真实形参形态相反。
       name =
@@ -2198,7 +2273,11 @@ function contractOnlySignature(
       decl.isPattern &&
       decl.bound.length > 0 &&
       decl.bound.every((b) => hit.keys.includes(decl.propKey[b] ?? b));
-    let name = boundCovered ? `{ ${decl.bound.join(", ")} }` : sanitizeParamName(raw, i);
+    // BUG-029：只覆盖内层点路径时按路径还原模式名（`{ card: { grade } }`）
+    const pathPattern =
+      !boundCovered && hit.abs !== undefined ? patternNameFromPaths(hit.keys) : undefined;
+    let name =
+      pathPattern ?? (boundCovered ? `{ ${decl.bound.join(", ")} }` : sanitizeParamName(raw, i));
     if (usedNames.has(name)) {
       let n = 2;
       while (usedNames.has(`${name}${n}`)) n++;
@@ -2751,6 +2830,12 @@ export interface DtsImportSurface {
   specifier: string;
   /** 导入形态：具名（`import type { X } from "…"`）/ 默认（`import type X from "…"`） */
   kind: "named" | "default";
+  /**
+   * BUG-012：具名导入的**原名**（`import { X as Y }` 里的 X）。再导出链条
+   * （`export { Y as Z }`）要按原名写 `export { X as Z } from "…"`——按本地名
+   * 写会引用到产物里不存在的绑定。
+   */
+  importedName?: string;
 }
 
 /** 模块导出面（源文件的导出面：导出名 → 本地绑定 + 类面 + 再导出 + 导入面） */
@@ -2788,6 +2873,13 @@ export interface DtsModuleSurface {
    * 成员引用私有类型时在产物里可解析（否则 TS2304）。
    */
   typeDeclarations?: string[];
+  /**
+   * BUG-005：本模块**声明过的类型名**（`interface` / `type` 别名，导出与否都算）。
+   * 它们会被原文镜像进同一份产物 ⇒ 形参 / 字段注解里引用它们是可解析的，
+   * 旧判据只认「本地类 / 导入名 / TS 全局名」⇒ 本地 interface 注解被丢成
+   * `unknown`，台账还谎报「未在本模块声明」。
+   */
+  typeNames?: Set<string>;
   /**
    * Bug 57：函数 / 方法级**类型形参子句**原文（`<T>` / `<A, B>` / `<T = string>`）。
    * 键是普查名（模块级 `gen`；类方法 `C.m`）；值直接切源码原文。
@@ -2965,17 +3057,38 @@ function nodeAnnotationText(n: SurfaceNode | undefined, source: string | undefin
 }
 
 /**
+ * 「该类型名在产物里可解析」——**唯一**判据（ADR §4 D6 / BUG-005）。
+ *
+ * 产物自带三类声明，加上环境内建：
+ *   ① 本地类（`declare class`）与本地 `interface` / `type` 原文镜像；
+ *   ② 会补 `import type` 的导入名；
+ *   ③ TS 内建 token 与运行时全局构造器名（`Date` / `Error` / `URL` …）。
+ *
+ * 此前形参注解与字段注解各写一套（前者漏了 ①，后者连 ② 也没有）⇒ 同一个
+ * 本地 `Point` 在形参位被丢成 `unknown`，在类字段位连导入名都不放行。
+ */
+function isTypeNameResolvable(name: string, surface: DtsModuleSurface | undefined): boolean {
+  if (TS_TYPE_TOKENS.has(name) || isRuntimeGlobalCtorName(name)) return true;
+  if (surface === undefined) return false;
+  return (
+    surface.classes.has(name) ||
+    surface.imports?.has(name) === true ||
+    surface.typeNames?.has(name) === true
+  );
+}
+
+/**
  * Bug 44：字段的类型注解只有**引用都在产物里可解析**时才放行。
  * 私有类型名（`Hidden` / 未导入名）落进 .d.ts 会 TS2304 ⇒ 回落 `unknown`
- * （与模块级注解的安全降级同口径）。基元 / TS 内建 / 全局构造器名放行。
+ * （与模块级注解的安全降级同口径）。
  */
-function safeFieldTypeAnnotation(text: string | undefined): string | undefined {
+function safeFieldTypeAnnotation(
+  text: string | undefined,
+  isResolvable?: (name: string) => boolean,
+): string | undefined {
   if (!text) return undefined;
-  return annotationTypeRefs(text).every(
-    (n) => TS_TYPE_TOKENS.has(n) || isRuntimeGlobalCtorName(n),
-  )
-    ? text
-    : undefined;
+  const ok = isResolvable ?? ((n: string) => TS_TYPE_TOKENS.has(n) || isRuntimeGlobalCtorName(n));
+  return annotationTypeRefs(text).every(ok) ? text : undefined;
 }
 
 /** Bug 88：类体 `TSIndexSignature` → ambient 声明文本（`[key: string]: …;`）。 */
@@ -3047,7 +3160,9 @@ function scanClassSurface(
       ? mem.accessibility
       : undefined;
   const fieldAnnotation = (mem: SurfaceNode): string | undefined =>
-    safeFieldTypeAnnotation(nodeAnnotationText(mem, source));
+    // 与形参注解走同一「可解析」判据（本地类 / interface·type / 导入名 / 内建）；
+    // 具体名字面由调用方注入（模块面扫描传的是含本地类型名的版本）。
+    safeFieldTypeAnnotation(nodeAnnotationText(mem, source), isResolvable);
 
   const addField = (
     name: string,
@@ -3410,6 +3525,14 @@ function namespaceClassLines(decl: SurfaceNode, source: string): string[] {
   if (!name) return [];
   const scanned = scanClassSurface(decl, () => true, source);
   const lines: string[] = [];
+  // BUG-031：`export class C extends Base` 的 extends 子句此前整条丢掉 ⇒
+  // 消费方拿不到基类成员（TS2339），产物与源码形态不符。类型形参同理。
+  const tps = typeParamClauseText(decl.typeParameters as SurfaceNode | undefined, source) ?? "";
+  const superName = surfaceQualifiedName(decl.superClass as SurfaceNode | undefined);
+  const superArgs = superTypeArgsText(
+    decl.superTypeArguments as SurfaceNode | undefined,
+    source,
+  );
   if (scanned.hasPrivateIdentifier) lines.push("#private;");
   for (const idx of scanned.indexSignatures ?? []) lines.push(idx);
   if (scanned.ctorParams) {
@@ -3444,9 +3567,15 @@ function namespaceClassLines(decl: SurfaceNode, source: string): string[] {
   for (const f of scanned.instanceFields ?? []) {
     lines.push(`${fieldPrefix(f)}${formatPropKey(f.name)}: ${f.type};`);
   }
+  const header =
+    superName !== undefined
+      ? `export class ${name}${tps} extends ${superName}${
+          superArgs.length > 0 ? `<${superArgs.join(", ")}>` : ""
+        }`
+      : `export class ${name}${tps}`;
   return lines.length > 0
-    ? [`export class ${name} {`, ...lines.map((l) => `  ${l}`), `}`]
-    : [`export class ${name} {}`];
+    ? [`${header} {`, ...lines.map((l) => `  ${l}`), `}`]
+    : [`${header} {}`];
 }
 
 /**
@@ -3484,7 +3613,14 @@ function namespaceMemberLines(
       );
       const rt = decl.returnType as SurfaceNode | undefined;
       const ret = surfaceSlice(source, rt?.typeAnnotation as SurfaceNode | undefined) ?? "unknown";
-      return [`export function ${name}(${params.join(", ")}): ${ret};`];
+      // BUG-027：类型形参子句必须跟着走，否则 `id<T>(v: T): T` 落成
+      // `id(v: T): T` —— `T` 在产物里无处声明，`tsc --strict` 直接 TS2304，
+      // 而 `nudo export` / `nudo check` 双绿。
+      const tps = typeParamClauseText(
+        decl.typeParameters as SurfaceNode | undefined,
+        source,
+      ) ?? "";
+      return [`export function ${name}${tps}(${params.join(", ")}): ${ret};`];
     }
     case "ClassDeclaration": {
       // Bug 76：ambient 声明体合法 ⇒ 发射成员，不再无条件空类体。
@@ -3551,6 +3687,7 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
     values: new Map(),
     namespaces: new Map(),
     typeDeclarations: [],
+    typeNames: new Set(),
     typeParamClauses: new Map(),
     namespaceImports: new Map(),
   };
@@ -3684,6 +3821,11 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
       if (!imports.has(exported)) {
         imports.set(exported, { specifier, kind: "named" });
       }
+      // BUG-012：`import { X as Y }` —— 本地名 Y 也要能查到来源（再导出用）。
+      const local = surfaceName(spec.local as SurfaceNode | undefined);
+      if (local && local !== exported && !imports.has(local)) {
+        imports.set(local, { specifier, kind: "named", importedName: exported });
+      }
     }
   }
 
@@ -3815,12 +3957,15 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
         continue;
       }
       // Bug 20：非函数 / 非标识符的 `export default <表达式>`（42 / "x" /
-      // {…} / fac()）从 dts 模块面整体消失 ⇒ 登记一条合成值绑定 `_default`，
-      // 类型取初始化器形状（分析面对这种 default 表达式没有绑定可用）。
+      // {…} / fac()）从 dts 模块面整体消失 ⇒ 登记一条合成值绑定 `_default`。
+      //
+      // BUG-009：类型必须走 `valueTypeTextOfInit`（对象逐成员 / 数组按元素
+      // join）——`classFieldTypeOfInit` 只给宽类型 `object` / `unknown[]`，
+      // 消费方 `cfg.a` 直接 TS2339。与 CJS `module.exports = {…}` 同口径。
       if (!surface.values.has("_default")) {
         surface.values.set("_default", {
           kind: "const",
-          typeText: classFieldTypeOfInit(decl),
+          typeText: valueTypeTextOfInit(decl),
         });
       }
       bind("default", "_default");
@@ -3956,17 +4101,23 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
   // 导出的（`export interface Top`）切整个 ExportNamedDeclaration（带 `export`）；
   // 未导出的私有类型（`interface Hidden`）只发声明（tsc `--declaration` 同口径）
   // ⇒ namespace 成员引用私有类型时产物里可解析（否则 TS2304）。
+  const noteTypeDecl = (slice: SurfaceNode, decl: SurfaceNode): void => {
+    // 切 `slice`（`export interface X` 要带 export；`decl` 只是内层声明）
+    const text = surfaceSlice(source, slice);
+    if (text) surface.typeDeclarations!.push(text);
+    // BUG-005：类型名要进「产物里可解析」的名字面（形参 / 字段注解可引用它）。
+    const name = surfaceName(decl.id as SurfaceNode | undefined);
+    if (name) surface.typeNames!.add(name);
+  };
   for (const stmt of body) {
     if (stmt.type === "TSInterfaceDeclaration" || stmt.type === "TSTypeAliasDeclaration") {
-      const text = surfaceSlice(source, stmt);
-      if (text) surface.typeDeclarations!.push(text);
+      noteTypeDecl(stmt, stmt);
       continue;
     }
     if (stmt.type === "ExportNamedDeclaration") {
       const d = stmt.declaration as SurfaceNode | null | undefined;
       if (d?.type === "TSInterfaceDeclaration" || d?.type === "TSTypeAliasDeclaration") {
-        const text = surfaceSlice(source, stmt);
-        if (text) surface.typeDeclarations!.push(text);
+        noteTypeDecl(stmt, d);
       }
     }
   }
@@ -4029,7 +4180,16 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
       const root = name.split(".")[0]!;
       return surface.namespaceImports!.has(root) || imports.has(root);
     }
-    return classDecls.has(name) || imports.has(name) || isRuntimeGlobalCtorName(name);
+    // BUG-005：本地 interface / type 别名同样可解析（会被原文镜像进产物）。
+    // TS 内建 token（`number` / `string` / 联合里的 `null` …）必须先放行——
+    // 这个判据同时服务**字段注解**，漏掉它任何 `x: number` 都会被丢。
+    return (
+      TS_TYPE_TOKENS.has(name) ||
+      classDecls.has(name) ||
+      imports.has(name) ||
+      isRuntimeGlobalCtorName(name) ||
+      surface.typeNames?.has(name) === true
+    );
   };
   for (const [local, decl] of classDecls) {
     const scanned = scanClassSurface(decl, isResolvableName, source);
@@ -4439,13 +4599,46 @@ function projectModuleDtsInner(
     }
   }
 
+  // ── BUG-012：再导出 **导入绑定**（`import D from "…"; export default D;`
+  // / `export { D as E }`）──
+  // 这类导出没有本地声明可挂：声明面按「本地名」找导出名，而本地名是导入来的
+  // ⇒ 产物里 default / E 整条消失（消费方 TS2305 / TS2351），但文件头部的
+  // 导出名表又声称它有 ⇒ 产物自相矛盾。
+  // 修法是把它写成**再导出语句**（值语义），按导入原名做一次映射。
+  if (surface) {
+    const declaredLocally = new Set<string>([
+      ...declaredLocals,
+      ...classNames,
+      ...surface.values.keys(),
+      ...(surface.namespaces?.keys() ?? []),
+    ]);
+    for (const [exportName, local] of surface.exportBindings) {
+      if (!local || declaredLocally.has(local)) continue;
+      const imp = surface.imports?.get(local);
+      if (!imp) continue;
+      const fromName = imp.kind === "default" ? "default" : (imp.importedName ?? local);
+      lines.push(
+        `export { ${exportNameRepr(fromName)} as ${exportNameRepr(exportName)} } from ${JSON.stringify(
+          imp.specifier,
+        )};`,
+      );
+    }
+  }
+
   // ── Bug 233：brand 引用的类来自 import ⇒ 补 import type（否则 TS2304）──
   const importLines: string[] = [];
+  // BUG-006：**镜像类型声明**（`interface` / `type` 原文）里引用的导入名同样
+  // 要补 `import type`，否则产物里那句声明自己就是 TS2304（`export` 与
+  // `check` 双绿、消费方编译不过）。此前只统计签名 / 注解里的引用。
+  const typeDeclRefs = new Set<string>();
+  for (const t of surface?.typeDeclarations ?? []) {
+    for (const n of annotationTypeRefs(t)) typeDeclRefs.add(n);
+  }
   if (surface?.imports) {
     for (const [name, imp] of surface.imports) {
-      // 只为**被引用**的名字补 import：brand 类名（Bug 233）或注解原文引用的
-      // 类型名（BUG-168：注解放行的前提是它在产物里可解析）。
-      if (!brands.has(name) && !annotationRefs.has(name)) continue;
+      // 只为**被引用**的名字补 import：brand 类名（Bug 233）/ 注解原文引用的
+      // 类型名（BUG-168）/ 镜像类型声明里的引用（BUG-006）。
+      if (!brands.has(name) && !annotationRefs.has(name) && !typeDeclRefs.has(name)) continue;
       if (surface.classes.has(name)) continue; // 本地已声明 ⇒ 走 declare class
       const src = JSON.stringify(imp.specifier);
       importLines.push(

@@ -61,15 +61,18 @@ describe("BUG-168 — 注解原文的类型名必须在产物里可解析", () =
     expect(dts).not.toContain("b: B)");
   });
 
-  it("本地 interface 不放行（产物不发射 interface 声明）⇒ 回落 + 台账", () => {
+  // BUG-005 之后口径变更：模块级 `interface` / `type` 会被**原文镜像**进同一份
+  // 产物（见 dtsModuleSurface 的 typeDeclarations）⇒ 引用它是可解析的，不再回落。
+  // 真正的「不可解析」只剩类型形参与未声明 / 未导入的名字（上面两条已覆盖）。
+  it("本地 interface 放行（原文镜像进产物）⇒ 注解保留、零台账", () => {
     const dts = moduleDts(`interface Point { x: number; y: number }
 export function dist(p: Point): number {
   return p.x + p.y;
 }
 `);
-    expect(dts).toContain("export declare function dist(p: unknown)");
-    expect(dts).not.toContain("declare interface Point");
-    expect(dts).toContain("nudo:dropped-type-annotation dist.p: Point");
+    expect(dts).toContain("dist(p: Point)");
+    expect(dts).toContain("interface Point { x: number; y: number }");
+    expect(dts).not.toContain("nudo:dropped-type-annotation dist.p: Point");
   });
 
   it("TS 全局类型名照旧放行（Date / Record / Promise 不产生台账）", () => {

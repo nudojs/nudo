@@ -2,6 +2,11 @@
  * BUG-120 —— `<fn>Input` 的**键语义**在解构形参与普通形参上相反 ⇒
  * `plainInput` 拒绝 `.d.ts` 明文声明的调用形态。
  *
+ * **口径已由 BUG-030 修正**：BUG-120 把解构形参整段收进一个以**求值占位**
+ * （`_p0`）命名的槽 —— 占位名不是公共名，发布的校验器因此对唯一合法调用报
+ * `required@_p0`。现口径：解构形参按**字段名**建顶层键（与 dts 声明的调用形态
+ * 同形）；普通形参仍按形参名。
+ *
  * 症状：解构形参 `destr({ a, b })` ⇒ `destrInput` 的顶层键是**绑定名**
  * （`{a, b}` = 实参的**值**）；普通形参 `plain(o)` ⇒ 顶层键是**形参名**
  * （`{o: …}` = 实参的**包**）⇒ 同一份导出包里两个函数的 Input 语义相反，而
@@ -63,28 +68,27 @@ function inputNode(stdout: string, exportName: string): string {
   return m![1]!;
 }
 
-describe("BUG-120 — `<fn>Input` 的顶层键 = 形参名（解构 / 普通同口径）", () => {
-  it("zod：解构形参也按**形参名**建键，值是那个对象的形状", () => {
+describe("BUG-120 / BUG-030 — `<fn>Input` 的顶层键", () => {
+  // 口径（BUG-030 覆盖 BUG-120 的槽名部分）：解构形参**没有公共名**，`_p0` 是
+  // 求值占位 ⇒ 公共面只允许源码里写得出来的键。解构形参因此按**字段名**建顶层
+  // 键（= `.d.ts` 明文声明的调用形态 `f({ a, b })`）；普通形参仍按形参名建键。
+  it("zod：解构形参按**字段名**建顶层键（不再是内部占位 `_p0`）", () => {
     const dir = fixture();
     const r = runCliTsx(["export", join(dir, "lib.js"), "--format", "schema"]);
     expect(r.status).toBe(0);
-    // 解构形参：形参名 `_p0`（引擎的绑定占位名）⇒ 值是 { a, b }
-    expect(r.stdout).toMatch(/export const destrInput = z\.object\(\{ _p0: z\.object\(\{ a:/);
-    // 普通形参：形参名 `o` ⇒ 值同样是 { a, b }
+    expect(r.stdout).toMatch(/export const destrInput = z\.object\(\{ a:/);
+    expect(r.stdout).not.toContain("_p0");
+    // 普通形参：形参名 `o` ⇒ 值是该对象的形状
     expect(r.stdout).toMatch(/export const plainInput = z\.object\(\{ o: z\.object\(\{ a:/);
-    // 改前的形态：解构形参按**绑定名**摊成顶层键（实参值语义）
-    expect(r.stdout).not.toMatch(/export const destrInput = z\.object\(\{ a:/);
   }, 60000);
 
-  it("standard：解构形参的 Input 槽节点是**一个**对象槽（与 zod 同口径）", () => {
+  it("standard：解构形参的顶层槽是字段名（无占位名）", () => {
     const dir = fixture();
     const r = runCliTsx(["export", join(dir, "lib.js"), "--format", "standard"]);
     expect(r.status).toBe(0);
-    // `<fn>Input` 的顶层槽 = 形参名；值 = 那个实参对象的形状
-    expect(inputNode(r.stdout, "destrInput")).toContain('"key":"_p0","node":{"k":"obj","slots":[{"key":"a"');
+    expect(inputNode(r.stdout, "destrInput")).toContain('"key":"a"');
+    expect(inputNode(r.stdout, "destrInput")).not.toContain("_p0");
     expect(inputNode(r.stdout, "plainInput")).toContain('"key":"o","node":{"k":"obj"');
-    // 改前的形态：Input 的顶层槽直接是绑定名（实参值语义）
-    expect(inputNode(r.stdout, "destrInput")).not.toMatch(/^\{"k":"obj","slots":\[\{"key":"a"/);
   }, 60000);
 
   it("负控制：数组解构的字段级契约仍是元组（Bug 394 口径不变）", () => {
