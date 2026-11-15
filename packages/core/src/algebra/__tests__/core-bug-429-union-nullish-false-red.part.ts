@@ -3,7 +3,7 @@
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 import { describe, it, expect, beforeEach } from "vitest";
 import { checkSource, pTrue, resetCheckSourceMemo, resetGeneralizeMemo } from "@nudojs/core";
-import type { type CheckIssue } from "../check/check-report.ts";
+import type { CheckIssue } from "../check/check-report.ts";
 import { sidecarOpts } from "./nudo-constraints.ts";
 
 describe("[merged] core-bug-429-union-nullish-false-red.test.ts", () => {

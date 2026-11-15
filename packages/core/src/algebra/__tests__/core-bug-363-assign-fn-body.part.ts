@@ -4,7 +4,7 @@
 import { describe, it, expect } from "vitest";
 import { checkSource, pTrue, abs, v, ptypeof } from "../index.ts";
 import { structuralAssignIssues } from "../check/check-assign.ts";
-import type { type AbsAssignRecord } from "../ast-records.ts";
+import type { AbsAssignRecord } from "../ast-records.ts";
 
 describe("[merged] core-bug-363-assign-fn-body.test.ts", () => {
 /**
