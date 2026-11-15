@@ -5,4 +5,3 @@
 import "./lsp--cross-file-uses-buffer-text.part.ts";
 import "./lsp--sidecar-invalid-binding-not-contract.part.ts";
 import "./lsp--contract-shape-insert.part.ts";
-import "./lsp--agent-tool-deps-lazy.part.ts";

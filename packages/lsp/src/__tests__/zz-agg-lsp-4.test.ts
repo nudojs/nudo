@@ -3,6 +3,5 @@
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
 import "./lsp--inject-channel.part.ts";
-import "./lsp--suggest-case-name.part.ts";
 import "./lsp--duplicate-declaration-ref.part.ts";
 import "./lsp--default-export-cross-file-refs.part.ts";

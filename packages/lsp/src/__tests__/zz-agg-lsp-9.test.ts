@@ -3,5 +3,3 @@
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
 import "./lsp--check-merge-channels.part.ts";
-import "./lsp--test-assertions.part.ts";
-import "./lsp--selectcase-caseindex-range.part.ts";

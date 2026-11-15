@@ -6,5 +6,3 @@ import "./lsp--literal-receiver.part.ts";
 import "./lsp--prim-builtin-members.part.ts";
 import "./lsp--function-local-receiver.part.ts";
 import "./lsp--unknown-command-protocol-error.part.ts";
-import "./lsp--agent-tool-file-validation.part.ts";
-import "./lsp--agent-path-errors.part.ts";

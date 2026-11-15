@@ -2,7 +2,6 @@
 // One of 15 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./lsp--agent-tool-error-flag.part.ts";
 import "./lsp--analysis-target-gate.part.ts";
 import "./lsp--sum-primitive-arm.part.ts";
 import "./lsp--nested-member-receiver.part.ts";

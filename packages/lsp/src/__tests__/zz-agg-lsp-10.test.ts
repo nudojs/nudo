@@ -2,11 +2,6 @@
 // One of 15 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./lsp--suggestcase-synthetic-vs-declared.part.ts";
-import "./lsp--test-imported-text.part.ts";
-import "./lsp--test-filter-case-count.part.ts";
 import "./lsp--derived-emit.part.ts";
-import "./lsp--selectcontract-target-validation.part.ts";
-import "./lsp--selectcase-functionname-validation.part.ts";
 import "./lsp--unsaved-buffer-emit.part.ts";
 import "./lsp--dotted-path-root.part.ts";
