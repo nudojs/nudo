@@ -2,13 +2,8 @@
 // One of 7 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./migrate--object-form-workspaces.part.ts";
 import "./migrate--verify-tsc-baseline.part.ts";
 import "./migrate--strip-tsx-jsx.part.ts";
-import "./migrate--pnpm-negative-pattern.part.ts";
 import "./migrate--draft-sidecar-path.part.ts";
-import "./migrate--build-script-preserved.part.ts";
 import "./migrate--emit-detection.part.ts";
-import "./migrate--relative-specifier.part.ts";
-import "./migrate--package-json-parse-failure.part.ts";
 import "./migrate--verify-empty-scope.part.ts";

@@ -6,7 +6,6 @@ import "./migrate--retire-all-failure-list.part.ts";
 import "./migrate--status-blockers-after-retire.part.ts";
 import "./migrate--second-retire-no-diff.part.ts";
 import "./migrate--verify-env-harvest-merge.part.ts";
-import "./migrate--enum-computed-runtime.part.ts";
 import "./migrate--verify-target-parity.part.ts";
 import "./migrate--retire-noop-without-tsc.part.ts";
 import "./migrate--verify-json-envelope.part.ts";

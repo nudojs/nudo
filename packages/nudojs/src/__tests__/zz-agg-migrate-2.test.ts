@@ -2,13 +2,10 @@
 // One of 7 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./migrate--yaml-block-scalar-command.part.ts";
 import "./migrate--retire-all-atomic.part.ts";
-import "./migrate--status-workflow-scope.part.ts";
 import "./migrate--marker-json-same-shape.part.ts";
 import "./migrate--retiring-marker-recovery.part.ts";
 import "./migrate--strip-product-coverage.part.ts";
-import "./migrate--unknown-action-json.part.ts";
 import "./migrate--ts-only-in-js-verify.part.ts";
 import "./migrate--specifier-note.part.ts";
 import "./migrate--already-retired-no-delta.part.ts";

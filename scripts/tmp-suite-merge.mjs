@@ -134,7 +134,14 @@ for (const [mod, slot] of byMod) {
     return v.typeOnly ? `type ${spec}` : spec;
   });
   if (slot.side && !slot.default && !slot.namespace && slot.named.size === 0) importLines.push(`import "${mod}";`);
-  else if (slot.namespace) importLines.push(`import ${slot.namespace.typeOnly ? "type " : ""}* as ${slot.namespace.local} from "${mod}";`);
+  else if (slot.namespace) {
+    importLines.push(`import ${slot.namespace.typeOnly ? "type " : ""}* as ${slot.namespace.local} from "${mod}";`);
+    if (named.length) {
+      const allType = [...slot.named.values()].every((v) => v.typeOnly);
+      const inner = allType ? named.map((s) => s.replace(/^type /, "")) : named;
+      importLines.push(`import ${allType ? "type " : ""}{ ${inner.join(", ")} } from "${mod}";`);
+    }
+  }
   else if (slot.default && named.length) importLines.push(`import ${slot.default.typeOnly ? "type " : ""}${slot.default.local}, { ${named.join(", ")} } from "${mod}";`);
   else if (slot.default) importLines.push(`import ${slot.default.typeOnly ? "type " : ""}${slot.default.local} from "${mod}";`);
   else if (named.length) {

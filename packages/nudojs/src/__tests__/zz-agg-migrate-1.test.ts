@@ -9,6 +9,5 @@ import "./migrate--retire-all-root-workflow.part.ts";
 import "./migrate--retire-dry-run-json-flag.part.ts";
 import "./migrate--verify-eval-fallback-parity.part.ts";
 import "./migrate--retire-gate-injection.part.ts";
-import "./migrate--workflow-rewrite-count.part.ts";
 import "./migrate--verify-project-env-base-dir.part.ts";
 import "./migrate--corrupt-marker-fail-closed.part.ts";

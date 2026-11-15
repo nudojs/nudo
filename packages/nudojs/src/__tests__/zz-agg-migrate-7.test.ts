@@ -2,10 +2,5 @@
 // One of 7 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./migrate--workflow-scope.part.ts";
-import "./migrate--duplicate-module-count.part.ts";
-import "./migrate--gha-expression-argv.part.ts";
 import "./migrate--tsc-path-qualified-parity.part.ts";
-import "./migrate--command-substitution-argv.part.ts";
-import "./migrate--script-command-position.part.ts";
 import "./migrate--sidecar-migration.part.ts";

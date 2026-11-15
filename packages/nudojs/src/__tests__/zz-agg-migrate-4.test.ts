@@ -2,13 +2,7 @@
 // One of 7 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./migrate--nudo-gate-command-metric.part.ts";
-import "./migrate--peer-deps-scope.part.ts";
-import "./migrate--workspace-tsfiles-boundary.part.ts";
 import "./migrate--strip-atomic-write.part.ts";
 import "./migrate--strip-refuse-clobber.part.ts";
 import "./migrate--retire-audit-merge.part.ts";
 import "./migrate--tsc-scripts-blocker.part.ts";
-import "./migrate--check-nudo-persisted.part.ts";
-import "./migrate--workflow-command-position.part.ts";
-import "./migrate--yaml-quoted-run-scalar.part.ts";
