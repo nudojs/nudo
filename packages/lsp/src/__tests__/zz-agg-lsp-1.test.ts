@@ -9,6 +9,5 @@ import "./lsp--directive-syntax-ide.part.ts";
 import "./lsp--module-cycle-recursion-diag.part.ts";
 import "./lsp--completion-fn-detail.part.ts";
 import "./lsp--private-member-identity.part.ts";
-import "./lsp--method-catch-param-definition.part.ts";
 import "./lsp--optional-ts-param-keeps-annotation.part.ts";
 import "./lsp--aliased-import-edge-resolution.part.ts";

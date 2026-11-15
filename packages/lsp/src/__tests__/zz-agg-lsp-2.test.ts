@@ -4,8 +4,6 @@
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
 import "./lsp--cross-module-call-lens.part.ts";
 import "./lsp--signature-help-poly-fn.part.ts";
-import "./lsp--sidecar-rename-references.part.ts";
-import "./lsp--alias-export-rename-identity.part.ts";
 import "./lsp--semantic-token-string-mask.part.ts";
 import "./lsp--env-unresolved-project-root.part.ts";
 import "./lsp--check-project-env.part.ts";

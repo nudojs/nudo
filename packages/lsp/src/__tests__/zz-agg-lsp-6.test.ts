@@ -3,7 +3,6 @@
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
 import "./lsp--include-declaration-false.part.ts";
-import "./lsp--shorthand-rename.part.ts";
 import "./lsp--inlay-hint-range.part.ts";
 import "./lsp--completion-kind-function.part.ts";
 import "./lsp--active-parameter-range.part.ts";

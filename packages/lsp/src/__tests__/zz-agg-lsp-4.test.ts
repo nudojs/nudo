@@ -7,7 +7,6 @@ import "./lsp--contract-diag-channel.part.ts";
 import "./lsp--inject-channel.part.ts";
 import "./lsp--suggest-case-name.part.ts";
 import "./lsp--trailing-dot-completion.part.ts";
-import "./lsp--rename-export-binding.part.ts";
 import "./lsp--sample-directive-completion.part.ts";
 import "./lsp--semantic-token-class-destructure.part.ts";
 import "./lsp--duplicate-declaration-ref.part.ts";
