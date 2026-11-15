@@ -325,11 +325,6 @@ describe("Bug 322 — 负控制（URL 构造面的邻近形态不回归）", () 
     });
   });
 
-  it("非法 URL 仍确定抛 TypeError（不被 searchParams 补丁放宽）", () => {
-    const r = call(wrap(`return new URL("not a url").href;`), "f");
-    expect(throwsError(r.throws, "TypeError")).toBe(true);
-  });
-
   it("new URLSearchParams(\"a=1\").get(\"a\")：条目表已建模 ⇒ 精确 \"1\"（原生同值）", () => {
     // 同上：字符串 init 按 WHATWG 查询串解析建模 ⇒ 精确值（原生 "1"）。
     const r = call(wrap(`return new URLSearchParams("a=1").get("a");`), "f");

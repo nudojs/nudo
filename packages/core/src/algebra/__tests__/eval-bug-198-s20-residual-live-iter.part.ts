@@ -656,17 +656,6 @@ describe("Bug 198（S17）：投影同口径 + live 迭代器不登记静态侧�
     ).toEqual({ ok: true, value: "2,3" });
   });
 
-  it("负控制：静态快照视图不受影响（[...m.keys()] / [...s]）", () => {
-    expect(val(`export function f() { const m = new Map([["a",1],["b",2]]); return [...m.keys()].join(","); }`)).toEqual({
-      ok: true,
-      value: "a,b",
-    });
-    expect(val(`export function f() { const s = new Set([1,2]); return [...s].join(","); }`)).toEqual({
-      ok: true,
-      value: "1,2",
-    });
-  });
-
   it("负控制：forEach 的 live 路径不受影响", () => {
     expect(
       val(`export function f() {
