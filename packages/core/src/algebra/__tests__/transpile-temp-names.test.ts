@@ -18,6 +18,7 @@ import { takeRefineDiags } from "../refine.ts";
 import { takeContractDiags } from "../contract/contract.ts";
 import { sigOf } from "./nudo-constraints.ts";
 import { $lit } from "../exec/runtime/state.ts";
+import { safeTmpName, userIdentInfo } from "../exec/transpile/helper/tmp-names.ts";
 import { readFileSync as readSource, readdirSync } from "node:fs";
 import { dirname, join as joinPath } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -2306,8 +2307,13 @@ const COLLISION_COVERED = new Set([
   "__cont"
 ]);
 
-/** 已登记缺口：分配器已接入但撞名例未补（新增基名不得直接落这里）。 */
-const KNOWN_GAPS = new Set([
+/**
+ * 无端到端撞名例、但由**分配器 + 发射点**双重门禁覆盖的基名。
+ *
+ * 这不是白名单：新增基名必须要么补端到端撞名例进 COLLISION_COVERED，要么
+ * 显式登记到本表并说明端到端不可构造的理由。
+ */
+const ALLOCATOR_GATED = new Set([
   "__allArgs",
   "__fkArmMemo",
   "__fkCons",
@@ -2340,8 +2346,7 @@ const KNOWN_GAPS = new Set([
   "__xs"
 ]);
 
-/** 从转译器源码枚举「作为分配器入参」的基名（字面量 / 数组元素）。 */
-function allocatorBases(): Set<string> {
+function transpilerFiles(): string[] {
   const root = dirname(fileURLToPath(import.meta.url));
   const execDir = joinPath(root, "..", "exec");
   const files: string[] = [joinPath(execDir, "transpile.ts")];
@@ -2353,9 +2358,14 @@ function allocatorBases(): Set<string> {
     }
   };
   walk(joinPath(execDir, "transpile"));
+  return files;
+}
+
+/** 从转译器源码枚举「作为分配器入参」的基名（字面量 / 数组元素）。 */
+function allocatorBases(): Set<string> {
   const out = new Set<string>();
   const re = /(?:internalTmpName|internalTmpNameSet|safeTmpName|forkTmpNames|switchTmpNames)\s*\(\s*(\[[\s\S]*?\]|["'][^"']+["'])/g;
-  for (const f of files) {
+  for (const f of transpilerFiles()) {
     const text = readSource(f, "utf8");
     for (const m of text.matchAll(re)) {
       for (const lit of m[1].matchAll(/["']([^"']+)["']/g)) out.add(lit[1]);
@@ -2364,10 +2374,91 @@ function allocatorBases(): Set<string> {
   return out;
 }
 
+const CONST_INIT_RE = /const\s+([A-Za-z_$][\w$]*)[^=]*=\s*([^;]+);/g;
+/** 非发射位的协议字面量（哨兵 / 宿主内建名 / 模块前导簿记名）。 */
+const ALLOWED_HARDCODED = new Set([
+  // 短路协议哨兵（只按字符串比对，且带 nodes-empty 守卫；见 short-circuit.ts）
+  "__test",
+  // 宿主内建 / 属性键
+  "__proto__", "__dirname", "__filename",
+  // analyze 模式的簿记调用名（host 函数名，不是词法绑定）
+  "__nudoExport", "__nudoExportLazy", "__nudoExportStar",
+  "__nudoRecordBinding", "__nudoRecordAssign", "__nudoRegisterImportRefresh",
+  // CJS 前导名的预留集（collectTopLevelNames 负责，不经分配器）
+  "__nudoCjsOrig", "__nudoCjsThis",
+]);
+
+/** 从分配器调用起点起做括号配平，返回完整实参窗口 [start, end]。 */
+function allocatorCallWindows(text: string): Array<[number, number]> {
+  const startRe = /(?:internalTmpName|internalTmpNameSet|safeTmpName|forkTmpNames|switchTmpNames)\s*\(/g;
+  const out: Array<[number, number]> = [];
+  for (const m of text.matchAll(startRe)) {
+    const start = m.index! + m[0].length;
+    let depth = 1;
+    let i = start;
+    let quote: string | null = null;
+    for (; i < text.length; i++) {
+      const ch = text[i];
+      if (quote) {
+        if (ch === "\\") { i++; continue; }
+        if (ch === quote) quote = null;
+        continue;
+      }
+      if (ch === '"' || ch === "'" || ch === "`") { quote = ch; continue; }
+      if (ch === "(") depth++;
+      else if (ch === ")") {
+        depth--;
+        if (depth === 0) break;
+      }
+    }
+    out.push([start, i]);
+  }
+  return out;
+}
+
+/**
+ * 发射点门禁：`__` 基名字面量必须出现在分配器调用实参内，或经 const
+ * 间接作为分配器入参（含数组/对象常量的一层闭包）。写死发射会在此红。
+ */
+function hardcodedInternalNames(): string[] {
+  const bad: string[] = [];
+  for (const f of transpilerFiles()) {
+    const text = readSource(f, "utf8");
+    const windows = allocatorCallWindows(text);
+    const argText = windows.map(([s, e]) => text.slice(s, e)).join("\n");
+    const consts = new Map<string, string>();
+    for (const m of text.matchAll(CONST_INIT_RE)) consts.set(m[1], m[2]);
+    // const 闭包：被分配器引用的常量，其初始化式里的名字也算被引用。
+    const referenced = new Set<string>();
+    for (const m of argText.matchAll(/[A-Za-z_$][\w$]*/g)) referenced.add(m[0]);
+    for (let changed = true; changed; ) {
+      changed = false;
+      for (const [name, init] of consts) {
+        if (referenced.has(name)) continue;
+        if (![...referenced].some((tok) => init.includes(tok))) continue;
+        referenced.add(name);
+        for (const m of init.matchAll(/[A-Za-z_$][\w$]*/g)) referenced.add(m[0]);
+        changed = true;
+      }
+    }
+    const inWindow = (at: number): boolean => windows.some(([s, e]) => at >= s && at <= e);
+    for (const m of text.matchAll(/(["'])(__[A-Za-z][^"']*)\1/g)) {
+      const value = m[2];
+      if (ALLOWED_HARDCODED.has(value)) continue;
+      const at = m.index!;
+      if (inWindow(at)) continue;
+      const constName = [...consts].find(([, init]) => init.includes(`"${value}"`) || init.includes(`'${value}'`) || init.includes("`" + value + "`"))?.[0];
+      if (constName && referenced.has(constName)) continue;
+      bad.push(`${f}:${text.slice(0, at).split("\n").length} ${value}`);
+    }
+  }
+  return bad;
+}
+
 describe("漂移门禁：分配器基名必须登记撞名覆盖", () => {
-  it("分配器基名 ⊆ COLLISION_COVERED ∪ KNOWN_GAPS", () => {
+  it("分配器基名 ⊆ COLLISION_COVERED ∪ ALLOCATOR_GATED", () => {
     const uncovered = [...allocatorBases()].filter(
-      (b) => !COLLISION_COVERED.has(b) && !KNOWN_GAPS.has(b),
+      (b) => !COLLISION_COVERED.has(b) && !ALLOCATOR_GATED.has(b),
     );
     expect(uncovered).toEqual([]);
   });
@@ -2375,5 +2466,18 @@ describe("漂移门禁：分配器基名必须登记撞名覆盖", () => {
   it("COLLISION_COVERED 不残留已删除的基名", () => {
     const bases = allocatorBases();
     expect([...COLLISION_COVERED].filter((b) => !bases.has(b))).toEqual([]);
+  });
+
+  it("分配器本身对每个基名都避让（撞名 ⇒ <base>_1；无撞名 ⇒ 原名）", () => {
+    const bad: string[] = [];
+    for (const base of allocatorBases()) {
+      if (safeTmpName(base, userIdentInfo(`const ${base} = 1;`)) !== `${base}_1`) bad.push(base);
+      if (safeTmpName(base, userIdentInfo("const unrelated = 1;")) !== base) bad.push(`${base}(无撞名)`);
+    }
+    expect(bad).toEqual([]);
+  });
+
+  it("发射点不写死内部名（字面量 ⊆ 分配器调用 / const 间接）", () => {
+    expect(hardcodedInternalNames()).toEqual([]);
   });
 });
