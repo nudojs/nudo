@@ -3035,6 +3035,8 @@ function scanClassSurface(
   let ctorParams: string[] | undefined;
   let ctorParamTypes: Array<string | undefined> | undefined;
   const instanceFields: DtsClassFieldSurface[] = [];
+  /** BUG-033：无注解 getter（待按返回值观测补类型） */
+  const pendingGetters: Array<{ index: number; fn: SurfaceNode; isStatic: boolean }> = [];
   const fieldNames = new Set<string>();
   const staticFieldNames = new Set<string>();
 
@@ -3198,6 +3200,12 @@ function scanClassSurface(
         ...(mem.static === true ? { isStatic: true } : {}),
         ...(accessibility ? { accessibility } : {}),
       });
+      // BUG-033：无注解的 getter 与同类方法 / 对象 getter 同口径——按**返回值
+      // 观测**给类型，而不是一律 `unknown`（消费方 TS2322 / TS18046）。
+      // 解析推迟到主循环之后：字段表要先收齐（`get value() { return this.n }`）。
+      if (kind === "get" && returnType === undefined) {
+        pendingGetters.push({ index: accessors.length - 1, fn: fnNode, isStatic: mem.static === true });
+      }
       continue;
     }
     if (kind !== "method") continue;
@@ -3212,6 +3220,62 @@ function scanClassSurface(
     if (mem.static === true) staticMethods.push(entry);
     else instanceMethods.push(entry);
   }
+  // BUG-033：getter 的返回值观测（无注解档）。
+  // 与「对象字面量 getter 取读域」同一口径：**读**出来的类型才是公开类型。
+  // 只认两种形态——字面量族（初始化器映射）与 `this.<字段>`（字段类型已知）；
+  // 其余表达式一律保留 `unknown`（不猜），避免把 getter 变成第二个推断引擎。
+  for (const g of pendingGetters) {
+    const observed = getterObservedType(g.fn, g.isStatic);
+    const prev = accessors[g.index];
+    if (observed !== undefined && prev !== undefined) {
+      accessors[g.index] = { ...prev, type: observed };
+    }
+  }
+  function getterObservedType(fnNode: SurfaceNode, isStatic: boolean): string | undefined {
+    const ret = firstReturnArgument(fnNode.body as SurfaceNode | undefined);
+    if (ret === undefined) return undefined;
+    if (ret.type === "MemberExpression") {
+      const obj = ret.object as SurfaceNode | undefined;
+      const key = surfaceName(ret.property as SurfaceNode | undefined);
+      if (obj?.type !== "ThisExpression" || !key || ret.computed === true) return undefined;
+      const table = isStatic ? staticFields : instanceFields;
+      return table.find((f) => f.name === key)?.type;
+    }
+    const t = classFieldTypeOfInit(ret);
+    return t === "unknown" ? undefined : t;
+  }
+  /** 首个 `return <expr>` 的 expr（不跨函数边界） */
+  function firstReturnArgument(node: SurfaceNode | undefined): SurfaceNode | undefined {
+    if (!node || typeof node !== "object") return undefined;
+    if (
+      node.type === "FunctionExpression" ||
+      node.type === "ArrowFunctionExpression" ||
+      node.type === "FunctionDeclaration" ||
+      node.type === "ClassMethod" ||
+      node.type === "MethodDefinition"
+    ) {
+      return undefined;
+    }
+    if (node.type === "ReturnStatement") {
+      return node.argument as SurfaceNode | undefined;
+    }
+    for (const value of Object.values(node)) {
+      if (Array.isArray(value)) {
+        for (const v of value) {
+          if (!v || typeof v !== "object") continue;
+          const hit = firstReturnArgument(v as SurfaceNode);
+          if (hit !== undefined || (v as SurfaceNode).type === "ReturnStatement") return hit;
+        }
+        continue;
+      }
+      if (value && typeof value === "object") {
+        const hit = firstReturnArgument(value as SurfaceNode);
+        if (hit !== undefined) return hit;
+      }
+    }
+    return undefined;
+  }
+
   return {
     instanceMethods,
     staticMethods,
@@ -3255,17 +3319,17 @@ function enumInitText(node: SurfaceNode | undefined): string | undefined {
 }
 
 /**
- * 类字段初始化器 → dts 类型串（BUG-151）。
+ * 类字段公开类型 = **唯一优先级格**（ADR §4 D2）：声明 > 观测。
  *
- * 只映射**初始化器的形状**（字面量 → 基类型、数组 / 对象 → 宽类型）；表达式
- * 一律 `unknown`（声明面有该字段，但类型不猜——与入口无约束参数的口径一致）。
+ * - `declared`：源码类型注解。mutable 字段的公开类型**不得窄于**注解——
+ *   `z: number | null = 1` 若发射成 `number`，消费方按注解写 `null` 就 TS2322
+ *   （BUG-014）。这是不可靠的说法：注解允许的值，产物必须允许。
+ * - `observed`：初始化器形状（无注解时才用；仍不猜表达式）。
+ * - 否则 `unknown`（不是「无类型」，是「未观测到」）。
  */
 function classFieldType(init: SurfaceNode | undefined, annotation?: string): string {
-  const fromInit = classFieldTypeOfInit(init);
-  if (fromInit !== "unknown") return fromInit;
-  // Bug 44：只有类型注解、没有初始化器的字段（`id: number;`）——类型来自源码
-  // 显式声明，不是推导失败 ⇒ 不该落 `unknown`。
-  return annotation ?? "unknown";
+  if (annotation !== undefined) return annotation;
+  return classFieldTypeOfInit(init);
 }
 
 /** 初始化器形状 → 基类型（供 `classFieldType` 与 default 表达式投影复用）。 */
@@ -4287,16 +4351,20 @@ function projectModuleDtsInner(
     const memberNames = new Set((members.get(className) ?? []).map((m) => m.member));
     const out: DtsClassFieldSurface[] = [];
     const seen = new Set<string>();
-    // brand 字段优先（分析面观测，更精确）
-    for (const f of brandFieldLines(brands.get(className), memberNames)) {
-      if (seen.has(f.name)) continue;
-      seen.add(f.name);
-      out.push(f);
-    }
+    // 源码字段优先（BUG-007）：构造器里的 `this.x = <expr>` 与字段注解是**声明
+    // 面**的事实；brand 是**某个构造点**的观测快照——`static make(){ return new
+    // C() }` 这种零实参内部构造会把 `x` 钉成 `undefined`，与构造器签名自相矛盾。
+    // 因而 brand 只作兜底（补源码里看不到的槽，如方法内赋值）。
     const cls = surface?.classes.get(className);
     for (const f of cls?.instanceFields ?? []) {
       if (seen.has(f.name)) continue;
       if (memberNames.has(f.name)) continue; // 与实例方法同名 ⇒ 方法是权威
+      seen.add(f.name);
+      out.push(f);
+    }
+    // brand 兜底（分析面观测到的、源码声明面没有的槽）
+    for (const f of brandFieldLines(brands.get(className), memberNames)) {
+      if (seen.has(f.name)) continue;
       seen.add(f.name);
       out.push(f);
     }
