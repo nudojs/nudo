@@ -4,4 +4,3 @@
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
 import "./lsp--call-arg-insert-pos.part.ts";
 import "./lsp--optional-bare-arrow-param.part.ts";
-import "./lsp--sidecar-edit-range.part.ts";

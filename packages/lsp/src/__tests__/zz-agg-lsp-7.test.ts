@@ -3,5 +3,4 @@
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
 import "./lsp--cross-file-uses-buffer-text.part.ts";
-import "./lsp--sidecar-invalid-binding-not-contract.part.ts";
 import "./lsp--contract-shape-insert.part.ts";

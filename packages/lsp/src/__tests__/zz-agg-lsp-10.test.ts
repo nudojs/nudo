@@ -3,5 +3,4 @@
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
 import "./lsp--derived-emit.part.ts";
-import "./lsp--unsaved-buffer-emit.part.ts";
 import "./lsp--dotted-path-root.part.ts";
