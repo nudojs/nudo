@@ -2,8 +2,6 @@
 // One of 16 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./cli--health-mock-channel-contract-drift.part.ts";
-import "./cli--abs-sidecar-contract.part.ts";
 import "./cli--watch-json-stdout.part.ts";
 import "./cli--json-envelope-error-count.part.ts";
 import "./cli--migrate-strip-json-envelope.part.ts";

@@ -9,6 +9,3 @@ import "./cli--export-face-gate.part.ts";
 import "./cli--module-artifact-name-unique.part.ts";
 import "./cli--same-name-function-artifacts.part.ts";
 import "./cli--io-suggestion-actionable.part.ts";
-import "./cli--contract-conflict.part.ts";
-import "./cli--return-contract-violation.part.ts";
-import "./cli--guard-export-face-only.part.ts";

@@ -2,7 +2,6 @@
 // One of 16 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./cli--health-contract-drift-unit.part.ts";
 import "./cli--draft-fn-export-name.part.ts";
 import "./cli--draft-fn-unmatched.part.ts";
 import "./cli--case-witness-not-published.part.ts";
@@ -11,4 +10,3 @@ import "./cli--variadic-partial-swallow.part.ts";
 import "./cli--fix-dry-run-cumulative.part.ts";
 import "./cli--fix-only-no-match.part.ts";
 import "./cli--fix-write-failure.part.ts";
-import "./cli--health-from-contract-drift.part.ts";

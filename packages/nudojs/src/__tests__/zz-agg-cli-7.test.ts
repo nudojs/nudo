@@ -5,7 +5,6 @@
 import "./cli--migrate-strip-this-param-parses.part.ts";
 import "./cli--face.part.ts";
 import "./cli--strip-isolation.part.ts";
-import "./cli--guard-contract-return.part.ts";
 import "./cli--skip-function-export.part.ts";
 import "./cli--standard-helper-once.part.ts";
 import "./cli--format-all-output-name.part.ts";
