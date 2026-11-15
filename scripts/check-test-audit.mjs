@@ -26,7 +26,11 @@ function titlesOf(file) {
       const isEach = ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.expression) &&
         (callee.expression.text === "it" || callee.expression.text === "test") &&
         (callee.name.text === "each" || callee.name.text === "skip" || callee.name.text === "only");
-      if ((isIt || isEach) && n.arguments[0] && ts.isStringLiteralLike(n.arguments[0])) {
+      const isEachFactory = ts.isCallExpression(callee) && ts.isPropertyAccessExpression(callee.expression) &&
+        ts.isIdentifier(callee.expression.expression) &&
+        (callee.expression.expression.text === "it" || callee.expression.expression.text === "test") &&
+        callee.expression.name.text === "each";
+      if ((isIt || isEach || isEachFactory) && n.arguments[0] && ts.isStringLiteralLike(n.arguments[0])) {
         out.push(n.arguments[0].text.replace(/\s+/g, " ").trim());
       }
     }
