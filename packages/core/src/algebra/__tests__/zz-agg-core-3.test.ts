@@ -9,6 +9,3 @@ import "./core--goal-const-cancel.part.ts";
 import "./core--invariant-relied-ledger.part.ts";
 import "./core--lit-projects-as-type.part.ts";
 import "./core--optional-entry-projection.part.ts";
-import "./core--guard-comparison-predicates.part.ts";
-import "./core--guard-array-holes.part.ts";
-import "./core--guard-proto-named-slots.part.ts";

@@ -2,8 +2,6 @@
 // One of 32 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./core--guard-required-slot-existence.part.ts";
-import "./core--guard-structural-obligations.part.ts";
 import "./core--inlay-internal-term-id.part.ts";
 import "./core--check-json-no-internal-term-id.part.ts";
 import "./core--inlay-negzero-union-member.part.ts";

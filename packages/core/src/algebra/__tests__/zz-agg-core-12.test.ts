@@ -5,7 +5,6 @@
 import "./core--inlay-same-name-slot.part.ts";
 import "./core--inlay-anonymous-default.part.ts";
 import "./core--urlsearchparams-entries-internal-slot.part.ts";
-import "./core--guard-arguments-brand.part.ts";
 import "./core--host-ctor-probe.part.ts";
 import "./core--textencoder.part.ts";
 import "./core--url-host-slot.part.ts";

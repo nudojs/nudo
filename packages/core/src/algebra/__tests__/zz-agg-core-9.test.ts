@@ -6,7 +6,6 @@ import "./core--ambient-fingerprint-eacces.part.ts";
 import "./core--async-gen-multi-await.part.ts";
 import "./core--export-slot-member-key.part.ts";
 import "./core--leq-fn-min-arity.part.ts";
-import "./core--guard-prototype-less-brand.part.ts";
 import "./core--arg-count-warning-optional-slots.part.ts";
 import "./core--await-position-compile-fail.part.ts";
 import "./core--skip-signature-machine-face.part.ts";

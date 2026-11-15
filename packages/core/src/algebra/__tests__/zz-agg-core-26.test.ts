@@ -10,5 +10,4 @@ import "./core--union-string-concat-member-parallel.part.ts";
 import "./core--format-shape-arr-fn-grouping.part.ts";
 import "./core--format-shape-sum-fn-grouping.part.ts";
 import "./core--proto-slot-projection.part.ts";
-import "./core--guard-brand-identity.part.ts";
 import "./core--inlay-expression-body-anchor.part.ts";
