@@ -68,5 +68,5 @@ title	rootCause	gap	action	status	evidence
 "resetNudoModuleExecCache ⇒ 侧车**重新求值**（导出对象身份变化），诊断仍可见"	"同上，但**连导出对象一起**返回——「是否重新求值」只能靠**对象身份**观测 （诊断是**有意重放**的 ⇒ 诊断可见与否证明不了重新求值）。 断言：expect(first.msgs.length).toBeGreaterThan(0);；expect(cached.exports).toBe(first.exports);"	夹具漏形态	keep	keep	—
 "%s → %s"	表驱动用例：%s → %s；枚举同一不变量下的输入/期望组合，属既有表行补齐。	夹具漏形态	keep	keep	—
 "draft %s → %s"	表驱动用例：draft %s → %s；枚举同一不变量下的输入/期望组合，属既有表行补齐。	夹具漏形态	keep	keep	—
-$name	装载器缺少「场景 × 诊断码 × 归属」模块矩阵：missing/load-failure/orphan/template/alias/跨文件六条路径散落在 bug 用例里；新增表驱动不变量。	没测该层	add	done	commit:PENDING
+$name	装载器缺少「场景 × 诊断码 × 归属」模块矩阵：missing/load-failure/orphan/template/alias/跨文件六条路径散落在 bug 用例里；新增表驱动不变量。	没测该层	add	done	commit:b21fcb34
 ```
