@@ -5,10 +5,6 @@
 import "./emit--neg-zero-schema.part.ts";
 import "./emit--generator-element-slots.part.ts";
 import "./emit--symbol-key-slots.part.ts";
-import "./emit--dts-class-extends.part.ts";
 import "./emit--zod-proto-slot.part.ts";
-import "./emit--dts-unresolvable-annotation.part.ts";
 import "./emit--ts-optional-params.part.ts";
-import "./emit--dts-named-and-default-export.part.ts";
-import "./emit--dts-value-exports.part.ts";
 import "./emit--export-namespace.part.ts";

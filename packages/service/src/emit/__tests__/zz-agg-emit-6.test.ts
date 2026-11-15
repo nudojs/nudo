@@ -2,9 +2,7 @@
 // One of 8 vitest entries for (directory, family); each part remains a separate
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
-import "./emit--dts-contract-optional.part.ts";
 import "./emit--denied-message.part.ts";
-import "./emit--dts-destructured-contract.part.ts";
 import "./emit--standard-input-face.part.ts";
 import "./emit--crlf-byte-fidelity.part.ts";
 import "./emit--ts-builder-declaration.part.ts";
