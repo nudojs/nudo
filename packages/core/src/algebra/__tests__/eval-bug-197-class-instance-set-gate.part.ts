@@ -1,4 +1,4 @@
-// GENERATED MERGE (scripts/tmp-merge-bugs.mjs): eval-bug-197-class-instance-set-gate.test.ts + eval-bug-197-reflect-set-mirror.test.ts + eval-bug-197-set-write-gate.test.ts
+// MERGED (topic-related bug pins): eval-bug-197-class-instance-set-gate.test.ts + eval-bug-197-reflect-set-mirror.test.ts + eval-bug-197-set-write-gate.test.ts
 // Each absorbed file keeps its own describe scope so file-level hooks stay
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 import { describe, it, expect } from "vitest";

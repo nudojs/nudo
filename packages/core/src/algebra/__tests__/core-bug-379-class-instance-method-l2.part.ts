@@ -1,4 +1,4 @@
-// GENERATED MERGE (scripts/tmp-merge-bugs.mjs): core-bug-379-class-instance-method-l2.test.ts + core-bug-379-instance-method-bridge.test.ts
+// MERGED (topic-related bug pins): core-bug-379-class-instance-method-l2.test.ts + core-bug-379-instance-method-bridge.test.ts
 // Each absorbed file keeps its own describe scope so file-level hooks stay
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 import { describe, it, expect } from "vitest";

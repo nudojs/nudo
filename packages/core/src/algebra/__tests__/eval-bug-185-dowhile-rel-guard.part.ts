@@ -1,4 +1,4 @@
-// GENERATED MERGE (scripts/tmp-merge-bugs.mjs): eval-bug-185-dowhile-rel-guard.test.ts + eval-bug-185-while-rel-guard.test.ts
+// MERGED (topic-related bug pins): eval-bug-185-dowhile-rel-guard.test.ts + eval-bug-185-while-rel-guard.test.ts
 // Each absorbed file keeps its own describe scope so file-level hooks stay
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 import { describe, it, expect } from "vitest";

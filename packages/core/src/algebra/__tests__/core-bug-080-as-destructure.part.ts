@@ -1,4 +1,4 @@
-// GENERATED MERGE (scripts/tmp-merge-bugs.mjs): core-bug-080-as-destructure.test.ts + core-bug-080-destructure-binding.test.ts
+// MERGED (topic-related bug pins): core-bug-080-as-destructure.test.ts + core-bug-080-destructure-binding.test.ts
 // Each absorbed file keeps its own describe scope so file-level hooks stay
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 import { describe, it, expect } from "vitest";

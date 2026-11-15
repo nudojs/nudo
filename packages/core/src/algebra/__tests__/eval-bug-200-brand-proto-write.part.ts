@@ -1,4 +1,4 @@
-// GENERATED MERGE (scripts/tmp-merge-bugs.mjs): eval-bug-200-brand-proto-write.test.ts + eval-bug-200-for-in-proto-keys.test.ts
+// MERGED (topic-related bug pins): eval-bug-200-brand-proto-write.test.ts + eval-bug-200-for-in-proto-keys.test.ts
 // Each absorbed file keeps its own describe scope so file-level hooks stay
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 import { describe, it, expect } from "vitest";

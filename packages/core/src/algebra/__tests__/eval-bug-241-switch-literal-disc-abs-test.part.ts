@@ -1,4 +1,4 @@
-// GENERATED MERGE (scripts/tmp-merge-bugs.mjs): eval-bug-241-switch-literal-disc-abs-test.test.ts + eval-bug-241-switch-miss-path-narrowing.test.ts
+// MERGED (topic-related bug pins): eval-bug-241-switch-literal-disc-abs-test.test.ts + eval-bug-241-switch-miss-path-narrowing.test.ts
 // Each absorbed file keeps its own describe scope so file-level hooks stay
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 import { describe, it, expect } from "vitest";

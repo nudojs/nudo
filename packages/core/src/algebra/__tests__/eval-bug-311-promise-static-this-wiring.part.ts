@@ -1,4 +1,4 @@
-// GENERATED MERGE (scripts/tmp-merge-bugs.mjs): eval-bug-311-promise-static-this-wiring.test.ts + eval-bug-311-promise-static-this.test.ts
+// MERGED (topic-related bug pins): eval-bug-311-promise-static-this-wiring.test.ts + eval-bug-311-promise-static-this.test.ts
 // Each absorbed file keeps its own describe scope so file-level hooks stay
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 import { describe, it, expect } from "vitest";

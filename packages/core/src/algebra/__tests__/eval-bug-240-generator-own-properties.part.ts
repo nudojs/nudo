@@ -1,4 +1,4 @@
-// GENERATED MERGE (scripts/tmp-merge-bugs.mjs): eval-bug-240-generator-own-properties.test.ts + eval-bug-240-guard-internal-slots.test.ts
+// MERGED (topic-related bug pins): eval-bug-240-generator-own-properties.test.ts + eval-bug-240-guard-internal-slots.test.ts
 // Each absorbed file keeps its own describe scope so file-level hooks stay
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 import { describe, it, expect } from "vitest";

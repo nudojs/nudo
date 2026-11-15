@@ -1,4 +1,4 @@
-// GENERATED MERGE (scripts/tmp-merge-bugs.mjs): lsp-bug-247-hover-axiom.test.ts + lsp-bug-247-inlay-hover-parity.test.ts
+// MERGED (topic-related bug pins): lsp-bug-247-hover-axiom.test.ts + lsp-bug-247-inlay-hover-parity.test.ts
 // Each absorbed file keeps its own describe scope so file-level hooks stay
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 import { describe, expect, it } from "vitest";

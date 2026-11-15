@@ -1,4 +1,4 @@
-// GENERATED MERGE (scripts/tmp-merge-bugs.mjs): core-bug-397-this-param-transpile.test.ts + core-bug-397-this-parameter.test.ts
+// MERGED (topic-related bug pins): core-bug-397-this-param-transpile.test.ts + core-bug-397-this-parameter.test.ts
 // Each absorbed file keeps its own describe scope so file-level hooks stay
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 import { describe, it, expect } from "vitest";

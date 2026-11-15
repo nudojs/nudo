@@ -1,4 +1,4 @@
-// GENERATED MERGE (scripts/tmp-merge-bugs.mjs): lsp-bug-786-hover-inject.test.ts + lsp-bug-786-inject-handoff.test.ts
+// MERGED (topic-related bug pins): lsp-bug-786-hover-inject.test.ts + lsp-bug-786-inject-handoff.test.ts
 // Each absorbed file keeps its own describe scope so file-level hooks stay
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 import { describe, it, expect } from "vitest";

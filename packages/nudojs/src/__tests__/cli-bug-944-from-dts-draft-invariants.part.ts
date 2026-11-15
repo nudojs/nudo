@@ -1,4 +1,4 @@
-// GENERATED MERGE (scripts/tmp-merge-bugs.mjs): cli-bug-944-from-dts-draft-invariants.test.ts + cli-bug-944-from-dts-dry-run-diff.test.ts + cli-bug-944-from-dts-write-path.test.ts
+// MERGED (topic-related bug pins): cli-bug-944-from-dts-draft-invariants.test.ts + cli-bug-944-from-dts-dry-run-diff.test.ts + cli-bug-944-from-dts-write-path.test.ts
 // Each absorbed file keeps its own describe scope so file-level hooks stay
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 import { describe, it, expect } from "vitest";

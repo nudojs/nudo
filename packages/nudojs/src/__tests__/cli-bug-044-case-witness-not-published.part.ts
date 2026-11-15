@@ -1,4 +1,4 @@
-// GENERATED MERGE (scripts/tmp-merge-bugs.mjs): cli-bug-044-case-witness-not-published.test.ts + cli-bug-044-export-case-not-contract.test.ts
+// MERGED (topic-related bug pins): cli-bug-044-case-witness-not-published.test.ts + cli-bug-044-export-case-not-contract.test.ts
 // Each absorbed file keeps its own describe scope so file-level hooks stay
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 import { describe, it, expect, afterAll } from "vitest";

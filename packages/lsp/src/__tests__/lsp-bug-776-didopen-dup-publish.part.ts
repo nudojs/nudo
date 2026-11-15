@@ -1,4 +1,4 @@
-// GENERATED MERGE (scripts/tmp-merge-bugs.mjs): lsp-bug-776-didopen-dup-publish.test.ts + lsp-bug-776-validation-self-exclusion.test.ts
+// MERGED (topic-related bug pins): lsp-bug-776-didopen-dup-publish.test.ts + lsp-bug-776-validation-self-exclusion.test.ts
 // Each absorbed file keeps its own describe scope so file-level hooks stay
 // local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
 import { describe, it, expect, beforeEach } from "vitest";
