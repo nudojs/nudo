@@ -7862,3 +7862,32 @@ describe("re-export 的分支条件只看 source，不看 modules 表在不在",
   });
 });
 });
+
+// ---------------------------------------------------------------------------
+// 模块矩阵：字面量算术折叠必须与原生 IEEE 754 一致
+// ---------------------------------------------------------------------------
+describe("模块矩阵：数值折叠 = 原生 IEEE 754", () => {
+const EXPRS = [
+  "1 + 2",
+  "0.1 + 0.2",
+  "1 / 0",
+  "0 / 0",
+  "-0 * 1",
+  "5 % 0",
+  "2 ** 1024",
+  "Number.MIN_VALUE / 2",
+  "-0 + 0",
+  "1 - 0.9",
+  "Infinity - Infinity",
+  "(-0) ** 1",
+  "Number.MAX_SAFE_INTEGER + 1",
+  "1e308 * 10",
+];
+
+it.each(EXPRS)("%s ⇒ 与原生 Object.is 一致", (expr) => {
+  const native = Function(`return (${expr});`)() as unknown;
+  const r = val(`export function f() { return ${expr}; }`) as { ok: boolean; value?: unknown };
+  expect(r.ok).toBe(true);
+  expect(Object.is(r.value, native), `engine=${String(r.value)} native=${String(native)}`).toBe(true);
+});
+});

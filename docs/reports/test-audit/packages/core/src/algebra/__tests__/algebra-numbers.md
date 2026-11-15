@@ -496,4 +496,5 @@ title	rootCause	gap	action	status	evidence
 "%s 收到 %s ⇒ %i 条违例（%s）"	表驱动用例：%s 收到 %s ⇒ %i 条违例（%s）；枚举同一不变量下的输入/期望组合，属既有表行补齐。	夹具漏形态	keep	keep	—
 "契约 x>0 ⇒ return>0 对 `%s` 成立 ⇒ 不得报违约"	表驱动用例：契约 x>0 ⇒ return>0 对 `%s` 成立 ⇒ 不得报违约；枚举同一不变量下的输入/期望组合，属既有表行补齐。	夹具漏形态	keep	keep	—
 "契约 x>0 ⇒ return>0 对 `%s` 成立 ⇒ 不得报违约"	同名表行在另一 describe 中重复出现；逐处保留审计记录。	夹具漏形态	keep	keep	—
+$name	数值折叠缺少「运算符 × IEEE 边界值」模块矩阵：0.1+0.2、±0、NaN、Infinity、MIN_VALUE/2、MAX_SAFE_INTEGER+1 等只由零散端点钉覆盖；新增原生 Object.is 对拍表。	没测该层	add	done	commit:PENDING
 ```
