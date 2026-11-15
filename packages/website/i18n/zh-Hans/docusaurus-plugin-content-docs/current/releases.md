@@ -11,238 +11,196 @@ slug: /releases
 
 | 包 | 当前版本 |
 |----|----------|
-| `@nudojs/core` | 1.20.0 |
-| `@nudojs/service` | 1.12.2 |
-| `nudojs (CLI)` | 1.9.2 |
-| `@nudojs/parser` | 1.5.10 |
-| `@nudojs/lsp` | 1.10.2 |
-| `@nudojs/env` | 0.5.10 |
-| `@nudojs/harvester` | 0.6.2 |
-| `vite-plugin-nudo` | 0.7.3 |
-| `nudo-vscode` | 0.3.58 |
+| `@nudojs/core` | 1.20.1 |
+| `@nudojs/service` | 1.12.3 |
+| `nudojs (CLI)` | 1.9.3 |
+| `@nudojs/parser` | 1.5.11 |
+| `@nudojs/lsp` | 1.10.3 |
+| `@nudojs/env` | 0.5.11 |
+| `@nudojs/harvester` | 0.6.3 |
+| `vite-plugin-nudo` | 0.7.4 |
+| `nudo-vscode` | 0.3.59 |
 
 **按包跳转:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
 
-## @nudojs/core 1.20.0 {#pkg-core}
+## @nudojs/core 1.20.1 {#pkg-core}
 
-## 1.20.0
-
-### Minor Changes
-
-- aff6b7c: Add `number().finite()` and sound relation-complement narrowing.
-  
-  `number()` includes `NaN` and `±Infinity`, so a sequential guard such as
-  `if (x < 1) return 0; return x + y;` cannot assume `x >= 1` on the fall-through
-  path (`NaN < 1` is false). `number().finite()` adds the missing non-NaN evidence;
-  when it (or any numeric bound) is present, the evaluator refines the
-  fall-through / else arm with the complement of the relation guard at runtime
-  (`$refineRelComplement`, fail-closed without evidence; the arm's Phi and
-  `$refineNotNaN` also count as evidence). NaN guards (`Number.isNaN(x)`,
-  `x !== x`, `x === x`, `!Number.isNaN(x)`) establish `ne(x, NaN)` on the arm
-  where that holds; `Number.isFinite(x)` is one-sided (true arm only). A `const` / `let` /
-  `var` alias such as `const ok = Number.isNaN(x); if (!ok) { … }` is resolved in
-  the same function body or at module top level (a written alias name or guarded
-  variable, loop-header shadowing/assignment, catch parameters and function
-  boundaries drop the alias). A user-shadowed `Number` disables the builtin
-  guard fact (fail-closed). De Morgan spellings
-  (`x < 1 || y < 2`) are complemented per disjunct. The previous unproven results
-  for bare `number()` are unchanged.
-  
-  Literal `NaN` / `±Infinity` arguments (including `0/0`, `Number.NaN`,
-  `Number.POSITIVE_INFINITY`) now violate a `finite` precondition instead of
-  passing silently; `NaN` and `±Infinity` globals are modeled as literals.
-  
-  兼容性：新增 builder 方法与非 NaN 证据下的精度收紧；未使用 `.finite()` 的
-  既有契约输出逐字节不变。
+## 1.20.1
 
 ### Patch Changes
 
-- c93a32d: Cache directive-scope scanning per AST and version facet keys.
+- 795e322: Close the 34 bugs from the ABS-15 audit, grouped by root cause rather than patched one at a time.
   
-  `listFnDirectiveScopes` was re-walking the whole AST for every function query
-  (`findFnDirectiveScope` is called per function by `checkSource`), i.e.
-  O(functions × nodes). A WeakMap keyed by the parsed AST makes it one walk per
-  file: `@babel/parser/lib/index.js` (0.49 MB) check
-  13,179ms → 4,675ms (-64%). The AST is immutable during analysis and
-  `parseSource` returns the same object for the same source, so caching cannot
-  change results; a regression test pins the identity.
+  **`check`** — one judgment per decision, so the faces cannot disagree:
   
-  `facetKey` now carries a `v1:` prefix (`FACET_KEY_VERSION = 1`) so future
-  kind/prefix/order semantics changes get a fresh key space; empty facets still
-  encode as `""`. Facets are also pinned as observation-only (not part of
-  `leqAbs` / `formatShape`) — promoting a slot to value semantics requires the
-  Shape migration gate (gold + real-package zero-FP + differential corpus).
+  - a `.ts` constructor annotation (including parameter properties) is now the instance field's domain, so `constructor(private size: number)` + `area() { return this.size * this.size }` reports `number` instead of an `any`-arithmetic `nudo:entry-may-throw` error while the dts face already said `number`;
+  - definite throws during module initialization are detected: BigInt/Number mixing, division by a BigInt zero, `in` on a primitive right-hand side, and calling a member an object literal does not have;
+  - the call-site local binding table records every declaration shape (parameters, `catch`, `for-of`/`in`, `let`/`var`, destructuring) as an explicit "no information" entry, so shadowing no longer reads the module-level `const` (false red) and destructured declarations reach the obligation check (false green);
+  - a classic `for (const i = 0; …; i++)` head is a `const` again, so the always-throwing step is reported instead of staying green;
+  - `nudo:capability-denied` joins the check-face diagnostic whitelist, so `nudo check` can report the cause of `unknown` like `nudo test` — gated on the report actually showing an inference failure (`nudo:unknown-inference`), so a plain `module.exports = …` file does not grow a warning about the `module` global while the same exports written as `exports.x` report nothing.
+  - cross-file evidence from `--from` now resolves the default export name on both sides, so a renamed default import, `import { default as g }` and `ns.default(...)` are no longer silently dropped.
   
-  兼容性：内部缓存键与性能变化；未使用 facets 的 Abs 键逐字节不变。
-- 190761e: Propagate the source filename into parse-mode selection for pure-JS paths.
+  **`nudo export`** — the publish gate is a semantic judgment (`degraded evidence on the published surface AND a declared contract`) instead of a three-code whitelist, with declaration truth taken from `effectiveContract`'s own resolution. Contract-face diagnostics always block; general degradation (`nudo:internal` / `nudo:unknown-inference`) blocks only when it is attributed to an entry that declared a contract (or carries no function, i.e. is module-level). Compatibility: a module whose contract fails to parse (`nudo:contract-syntax`) now blocks the export (exit 1, no artifacts, diagnostics surfaced) instead of publishing an "accepts everything" validator with exit 0; unannotated modules — and unannotated sibling entries — keep publishing and only see the degradation surfaced.
   
-  `parseSource` already skips the strip-types pass for `.js/.mjs/.cjs/.jsx`
-  (structurally a no-op there), but service / transpile / module-graph / fingerprint
-  / directive-scan call sites omitted the filename, so JS sources were parsed in
-  ts mode and paid two extra full-AST walks. Threading `filename` from
-  `analyzeFile`, `transpileModule`/`runTranspiled`, the abs module graph, load-deps
-  fingerprints, directive extractors and `localNamedExports` drops a 9.14 MB
-  self-contained JS file from 20,755ms to 14,594ms (-29.7%); the remaining
-  strip-types share in the profile is ~2% (`checkSource` path 1.7%).
+  **dts projection** — one resolvability predicate for type names (TS tokens, runtime globals, local classes, mirrored `interface`/`type`, imported names) plus the missing branches it exposed: `export =` for single-value CJS modules, member-wise types for `export default {…}` and arrays, real re-export statements for imported bindings, `extends`/type-parameter clauses on namespace members, and destructured parameters that render as a pattern the source can actually write. Compatibility: `<fn>Input` keys a destructured parameter by its field names rather than the internal `_p0` placeholder, which is not a public name and made the published validator reject the only legal call shape. Two boundaries are pinned: a module that exports a type (`export interface` / `export type`) alongside `module.exports = value` keeps the named-export projection (TS forbids `export =` next to any other exported element, which would make the artifact uncompilable), and an unannotated class getter whose body has more than one `return` projects `unknown` instead of the first return's type (a single-return pick would be narrower than the runtime value).
   
-  兼容性：解析模式由文件扩展名决定（缺省仍为 ts 模式，未知扩展名行为不变）；
-  `.js` 里的 TS-only 语法仍是 syntax-error（Bug 114 / Bug 451 口径不变）。
+  **LSP** — completion decides the lexical context with a per-character scanner (line and block comments, quotes, templates with `${}` nesting, regex bodies and character classes), so a continuation line inside a multi-line template or comment no longer offers rewrites of the literal; member completion merges the instance/static class member table from core's single class-body scan.
+  
+  The `check` entry census behind these runs on the semantic binding index (ADR 0001 stage 1), and stage 1 slice 4.3 replaces the publish gate's shadow comparison with the semantic verdict it was measuring. The public `.` export surface is unchanged.
+- 161d156: Switch the `check` entry census to the semantic binding index by default (ADR 0001 stage 1, slice 3). This closes the audit's false-green export shapes: destructured exports, default object literals, anonymous default classes, CJS / ESM class expressions are now real entries. Two index-precision fixes land with it: getters / setters are no longer treated as callable entries, and nested function declarations are no longer mistaken for module-level entries (previously produced false `nudo:opaque-result`). The legacy census remains reachable via an internal fallback switch, and the index-face state is part of the check memo and service file/function cache keys so flipping it cannot replay stale results. The public `.` export surface is unchanged. Stage 1 slice 4.1 adds an internal, off-by-default publish-gate shadow comparison between the existing diagnostic-code whitelist and the typed `Evidence` verdict; it only records divergences and does not change any export decision. Stage 1 slice 4.2 switches only the **diagnostic surface**: `nudo export` now prints degraded evidence codes (`nudo:internal`, `nudo:unknown-inference`, …) instead of silently dropping them; blocking and exit codes still follow `EXPORT_BLOCKING_CODES`, so no export decision changes.
 
-更早版本（61）→ [完整发布历史](./releases-history.md#pkg-core)
+更早版本（62）→ [完整发布历史](./releases-history.md#pkg-core)
 
-## @nudojs/service 1.12.2 {#pkg-service}
+## @nudojs/service 1.12.3 {#pkg-service}
 
-## 1.12.2
+## 1.12.3
 
 ### Patch Changes
 
-- 190761e: Propagate the source filename into parse-mode selection for pure-JS paths.
+- 795e322: Close the 34 bugs from the ABS-15 audit, grouped by root cause rather than patched one at a time.
   
-  `parseSource` already skips the strip-types pass for `.js/.mjs/.cjs/.jsx`
-  (structurally a no-op there), but service / transpile / module-graph / fingerprint
-  / directive-scan call sites omitted the filename, so JS sources were parsed in
-  ts mode and paid two extra full-AST walks. Threading `filename` from
-  `analyzeFile`, `transpileModule`/`runTranspiled`, the abs module graph, load-deps
-  fingerprints, directive extractors and `localNamedExports` drops a 9.14 MB
-  self-contained JS file from 20,755ms to 14,594ms (-29.7%); the remaining
-  strip-types share in the profile is ~2% (`checkSource` path 1.7%).
+  **`check`** — one judgment per decision, so the faces cannot disagree:
   
-  兼容性：解析模式由文件扩展名决定（缺省仍为 ts 模式，未知扩展名行为不变）；
-  `.js` 里的 TS-only 语法仍是 syntax-error（Bug 114 / Bug 451 口径不变）。
-- Updated dependencies [c93a32d]
-- Updated dependencies [190761e]
-- Updated dependencies [aff6b7c]
-  - @nudojs/core@1.20.0
-  - @nudojs/parser@1.5.10
-  - @nudojs/env@0.5.10
-  - @nudojs/harvester@0.6.2
+  - a `.ts` constructor annotation (including parameter properties) is now the instance field's domain, so `constructor(private size: number)` + `area() { return this.size * this.size }` reports `number` instead of an `any`-arithmetic `nudo:entry-may-throw` error while the dts face already said `number`;
+  - definite throws during module initialization are detected: BigInt/Number mixing, division by a BigInt zero, `in` on a primitive right-hand side, and calling a member an object literal does not have;
+  - the call-site local binding table records every declaration shape (parameters, `catch`, `for-of`/`in`, `let`/`var`, destructuring) as an explicit "no information" entry, so shadowing no longer reads the module-level `const` (false red) and destructured declarations reach the obligation check (false green);
+  - a classic `for (const i = 0; …; i++)` head is a `const` again, so the always-throwing step is reported instead of staying green;
+  - `nudo:capability-denied` joins the check-face diagnostic whitelist, so `nudo check` can report the cause of `unknown` like `nudo test` — gated on the report actually showing an inference failure (`nudo:unknown-inference`), so a plain `module.exports = …` file does not grow a warning about the `module` global while the same exports written as `exports.x` report nothing.
+  - cross-file evidence from `--from` now resolves the default export name on both sides, so a renamed default import, `import { default as g }` and `ns.default(...)` are no longer silently dropped.
+  
+  **`nudo export`** — the publish gate is a semantic judgment (`degraded evidence on the published surface AND a declared contract`) instead of a three-code whitelist, with declaration truth taken from `effectiveContract`'s own resolution. Contract-face diagnostics always block; general degradation (`nudo:internal` / `nudo:unknown-inference`) blocks only when it is attributed to an entry that declared a contract (or carries no function, i.e. is module-level). Compatibility: a module whose contract fails to parse (`nudo:contract-syntax`) now blocks the export (exit 1, no artifacts, diagnostics surfaced) instead of publishing an "accepts everything" validator with exit 0; unannotated modules — and unannotated sibling entries — keep publishing and only see the degradation surfaced.
+  
+  **dts projection** — one resolvability predicate for type names (TS tokens, runtime globals, local classes, mirrored `interface`/`type`, imported names) plus the missing branches it exposed: `export =` for single-value CJS modules, member-wise types for `export default {…}` and arrays, real re-export statements for imported bindings, `extends`/type-parameter clauses on namespace members, and destructured parameters that render as a pattern the source can actually write. Compatibility: `<fn>Input` keys a destructured parameter by its field names rather than the internal `_p0` placeholder, which is not a public name and made the published validator reject the only legal call shape. Two boundaries are pinned: a module that exports a type (`export interface` / `export type`) alongside `module.exports = value` keeps the named-export projection (TS forbids `export =` next to any other exported element, which would make the artifact uncompilable), and an unannotated class getter whose body has more than one `return` projects `unknown` instead of the first return's type (a single-return pick would be narrower than the runtime value).
+  
+  **LSP** — completion decides the lexical context with a per-character scanner (line and block comments, quotes, templates with `${}` nesting, regex bodies and character classes), so a continuation line inside a multi-line template or comment no longer offers rewrites of the literal; member completion merges the instance/static class member table from core's single class-body scan.
+  
+  The `check` entry census behind these runs on the semantic binding index (ADR 0001 stage 1), and stage 1 slice 4.3 replaces the publish gate's shadow comparison with the semantic verdict it was measuring. The public `.` export surface is unchanged.
+- 161d156: Switch the `check` entry census to the semantic binding index by default (ADR 0001 stage 1, slice 3). This closes the audit's false-green export shapes: destructured exports, default object literals, anonymous default classes, CJS / ESM class expressions are now real entries. Two index-precision fixes land with it: getters / setters are no longer treated as callable entries, and nested function declarations are no longer mistaken for module-level entries (previously produced false `nudo:opaque-result`). The legacy census remains reachable via an internal fallback switch, and the index-face state is part of the check memo and service file/function cache keys so flipping it cannot replay stale results. The public `.` export surface is unchanged. Stage 1 slice 4.1 adds an internal, off-by-default publish-gate shadow comparison between the existing diagnostic-code whitelist and the typed `Evidence` verdict; it only records divergences and does not change any export decision. Stage 1 slice 4.2 switches only the **diagnostic surface**: `nudo export` now prints degraded evidence codes (`nudo:internal`, `nudo:unknown-inference`, …) instead of silently dropping them; blocking and exit codes still follow `EXPORT_BLOCKING_CODES`, so no export decision changes.
+- Updated dependencies [795e322]
+- Updated dependencies [161d156]
+  - @nudojs/core@1.20.1
+  - @nudojs/env@0.5.11
+  - @nudojs/harvester@0.6.3
+  - @nudojs/parser@1.5.11
 
-更早版本（63）→ [完整发布历史](./releases-history.md#pkg-service)
+更早版本（64）→ [完整发布历史](./releases-history.md#pkg-service)
 
-## nudojs (CLI) 1.9.2 {#pkg-nudojs}
+## nudojs (CLI) 1.9.3 {#pkg-nudojs}
 
-## 1.9.2
+## 1.9.3
 
 ### Patch Changes
 
-- Updated dependencies [c93a32d]
-- Updated dependencies [190761e]
-- Updated dependencies [aff6b7c]
-  - @nudojs/core@1.20.0
-  - @nudojs/parser@1.5.10
-  - @nudojs/service@1.12.2
-  - @nudojs/env@0.5.10
-  - @nudojs/harvester@0.6.2
+- 795e322: Close the 34 bugs from the ABS-15 audit, grouped by root cause rather than patched one at a time.
+  
+  **`check`** — one judgment per decision, so the faces cannot disagree:
+  
+  - a `.ts` constructor annotation (including parameter properties) is now the instance field's domain, so `constructor(private size: number)` + `area() { return this.size * this.size }` reports `number` instead of an `any`-arithmetic `nudo:entry-may-throw` error while the dts face already said `number`;
+  - definite throws during module initialization are detected: BigInt/Number mixing, division by a BigInt zero, `in` on a primitive right-hand side, and calling a member an object literal does not have;
+  - the call-site local binding table records every declaration shape (parameters, `catch`, `for-of`/`in`, `let`/`var`, destructuring) as an explicit "no information" entry, so shadowing no longer reads the module-level `const` (false red) and destructured declarations reach the obligation check (false green);
+  - a classic `for (const i = 0; …; i++)` head is a `const` again, so the always-throwing step is reported instead of staying green;
+  - `nudo:capability-denied` joins the check-face diagnostic whitelist, so `nudo check` can report the cause of `unknown` like `nudo test` — gated on the report actually showing an inference failure (`nudo:unknown-inference`), so a plain `module.exports = …` file does not grow a warning about the `module` global while the same exports written as `exports.x` report nothing.
+  - cross-file evidence from `--from` now resolves the default export name on both sides, so a renamed default import, `import { default as g }` and `ns.default(...)` are no longer silently dropped.
+  
+  **`nudo export`** — the publish gate is a semantic judgment (`degraded evidence on the published surface AND a declared contract`) instead of a three-code whitelist, with declaration truth taken from `effectiveContract`'s own resolution. Contract-face diagnostics always block; general degradation (`nudo:internal` / `nudo:unknown-inference`) blocks only when it is attributed to an entry that declared a contract (or carries no function, i.e. is module-level). Compatibility: a module whose contract fails to parse (`nudo:contract-syntax`) now blocks the export (exit 1, no artifacts, diagnostics surfaced) instead of publishing an "accepts everything" validator with exit 0; unannotated modules — and unannotated sibling entries — keep publishing and only see the degradation surfaced.
+  
+  **dts projection** — one resolvability predicate for type names (TS tokens, runtime globals, local classes, mirrored `interface`/`type`, imported names) plus the missing branches it exposed: `export =` for single-value CJS modules, member-wise types for `export default {…}` and arrays, real re-export statements for imported bindings, `extends`/type-parameter clauses on namespace members, and destructured parameters that render as a pattern the source can actually write. Compatibility: `<fn>Input` keys a destructured parameter by its field names rather than the internal `_p0` placeholder, which is not a public name and made the published validator reject the only legal call shape. Two boundaries are pinned: a module that exports a type (`export interface` / `export type`) alongside `module.exports = value` keeps the named-export projection (TS forbids `export =` next to any other exported element, which would make the artifact uncompilable), and an unannotated class getter whose body has more than one `return` projects `unknown` instead of the first return's type (a single-return pick would be narrower than the runtime value).
+  
+  **LSP** — completion decides the lexical context with a per-character scanner (line and block comments, quotes, templates with `${}` nesting, regex bodies and character classes), so a continuation line inside a multi-line template or comment no longer offers rewrites of the literal; member completion merges the instance/static class member table from core's single class-body scan.
+  
+  The `check` entry census behind these runs on the semantic binding index (ADR 0001 stage 1), and stage 1 slice 4.3 replaces the publish gate's shadow comparison with the semantic verdict it was measuring. The public `.` export surface is unchanged.
+- Updated dependencies [795e322]
+- Updated dependencies [161d156]
+  - @nudojs/core@1.20.1
+  - @nudojs/service@1.12.3
+  - @nudojs/env@0.5.11
+  - @nudojs/harvester@0.6.3
+  - @nudojs/parser@1.5.11
 
-更早版本（60）→ [完整发布历史](./releases-history.md#pkg-nudojs)
+更早版本（61）→ [完整发布历史](./releases-history.md#pkg-nudojs)
 
-## @nudojs/parser 1.5.10 {#pkg-parser}
+## @nudojs/parser 1.5.11 {#pkg-parser}
 
-## 1.5.10
+## 1.5.11
 
 ### Patch Changes
 
-- 190761e: Propagate the source filename into parse-mode selection for pure-JS paths.
-  
-  `parseSource` already skips the strip-types pass for `.js/.mjs/.cjs/.jsx`
-  (structurally a no-op there), but service / transpile / module-graph / fingerprint
-  / directive-scan call sites omitted the filename, so JS sources were parsed in
-  ts mode and paid two extra full-AST walks. Threading `filename` from
-  `analyzeFile`, `transpileModule`/`runTranspiled`, the abs module graph, load-deps
-  fingerprints, directive extractors and `localNamedExports` drops a 9.14 MB
-  self-contained JS file from 20,755ms to 14,594ms (-29.7%); the remaining
-  strip-types share in the profile is ~2% (`checkSource` path 1.7%).
-  
-  兼容性：解析模式由文件扩展名决定（缺省仍为 ts 模式，未知扩展名行为不变）；
-  `.js` 里的 TS-only 语法仍是 syntax-error（Bug 114 / Bug 451 口径不变）。
-- Updated dependencies [c93a32d]
-- Updated dependencies [190761e]
-- Updated dependencies [aff6b7c]
-  - @nudojs/core@1.20.0
+- Updated dependencies [795e322]
+- Updated dependencies [161d156]
+  - @nudojs/core@1.20.1
 
-更早版本（60）→ [完整发布历史](./releases-history.md#pkg-parser)
+更早版本（61）→ [完整发布历史](./releases-history.md#pkg-parser)
 
-## @nudojs/lsp 1.10.2 {#pkg-lsp}
+## @nudojs/lsp 1.10.3 {#pkg-lsp}
 
-## 1.10.2
+## 1.10.3
 
 ### Patch Changes
 
-- Updated dependencies [c93a32d]
-- Updated dependencies [190761e]
-- Updated dependencies [aff6b7c]
-  - @nudojs/core@1.20.0
-  - @nudojs/parser@1.5.10
-  - @nudojs/service@1.12.2
+- 795e322: Close the 34 bugs from the ABS-15 audit, grouped by root cause rather than patched one at a time.
+  
+  **`check`** — one judgment per decision, so the faces cannot disagree:
+  
+  - a `.ts` constructor annotation (including parameter properties) is now the instance field's domain, so `constructor(private size: number)` + `area() { return this.size * this.size }` reports `number` instead of an `any`-arithmetic `nudo:entry-may-throw` error while the dts face already said `number`;
+  - definite throws during module initialization are detected: BigInt/Number mixing, division by a BigInt zero, `in` on a primitive right-hand side, and calling a member an object literal does not have;
+  - the call-site local binding table records every declaration shape (parameters, `catch`, `for-of`/`in`, `let`/`var`, destructuring) as an explicit "no information" entry, so shadowing no longer reads the module-level `const` (false red) and destructured declarations reach the obligation check (false green);
+  - a classic `for (const i = 0; …; i++)` head is a `const` again, so the always-throwing step is reported instead of staying green;
+  - `nudo:capability-denied` joins the check-face diagnostic whitelist, so `nudo check` can report the cause of `unknown` like `nudo test` — gated on the report actually showing an inference failure (`nudo:unknown-inference`), so a plain `module.exports = …` file does not grow a warning about the `module` global while the same exports written as `exports.x` report nothing.
+  - cross-file evidence from `--from` now resolves the default export name on both sides, so a renamed default import, `import { default as g }` and `ns.default(...)` are no longer silently dropped.
+  
+  **`nudo export`** — the publish gate is a semantic judgment (`degraded evidence on the published surface AND a declared contract`) instead of a three-code whitelist, with declaration truth taken from `effectiveContract`'s own resolution. Contract-face diagnostics always block; general degradation (`nudo:internal` / `nudo:unknown-inference`) blocks only when it is attributed to an entry that declared a contract (or carries no function, i.e. is module-level). Compatibility: a module whose contract fails to parse (`nudo:contract-syntax`) now blocks the export (exit 1, no artifacts, diagnostics surfaced) instead of publishing an "accepts everything" validator with exit 0; unannotated modules — and unannotated sibling entries — keep publishing and only see the degradation surfaced.
+  
+  **dts projection** — one resolvability predicate for type names (TS tokens, runtime globals, local classes, mirrored `interface`/`type`, imported names) plus the missing branches it exposed: `export =` for single-value CJS modules, member-wise types for `export default {…}` and arrays, real re-export statements for imported bindings, `extends`/type-parameter clauses on namespace members, and destructured parameters that render as a pattern the source can actually write. Compatibility: `<fn>Input` keys a destructured parameter by its field names rather than the internal `_p0` placeholder, which is not a public name and made the published validator reject the only legal call shape. Two boundaries are pinned: a module that exports a type (`export interface` / `export type`) alongside `module.exports = value` keeps the named-export projection (TS forbids `export =` next to any other exported element, which would make the artifact uncompilable), and an unannotated class getter whose body has more than one `return` projects `unknown` instead of the first return's type (a single-return pick would be narrower than the runtime value).
+  
+  **LSP** — completion decides the lexical context with a per-character scanner (line and block comments, quotes, templates with `${}` nesting, regex bodies and character classes), so a continuation line inside a multi-line template or comment no longer offers rewrites of the literal; member completion merges the instance/static class member table from core's single class-body scan.
+  
+  The `check` entry census behind these runs on the semantic binding index (ADR 0001 stage 1), and stage 1 slice 4.3 replaces the publish gate's shadow comparison with the semantic verdict it was measuring. The public `.` export surface is unchanged.
+- Updated dependencies [795e322]
+- Updated dependencies [161d156]
+  - @nudojs/core@1.20.1
+  - @nudojs/service@1.12.3
+  - @nudojs/parser@1.5.11
 
-更早版本（64）→ [完整发布历史](./releases-history.md#pkg-lsp)
+更早版本（65）→ [完整发布历史](./releases-history.md#pkg-lsp)
 
-## @nudojs/env 0.5.10 {#pkg-env}
+## @nudojs/env 0.5.11 {#pkg-env}
 
-## 0.5.10
+## 0.5.11
 
 ### Patch Changes
 
-- aff6b7c: Add `number().finite()` and sound relation-complement narrowing.
-  
-  `number()` includes `NaN` and `±Infinity`, so a sequential guard such as
-  `if (x < 1) return 0; return x + y;` cannot assume `x >= 1` on the fall-through
-  path (`NaN < 1` is false). `number().finite()` adds the missing non-NaN evidence;
-  when it (or any numeric bound) is present, the evaluator refines the
-  fall-through / else arm with the complement of the relation guard at runtime
-  (`$refineRelComplement`, fail-closed without evidence; the arm's Phi and
-  `$refineNotNaN` also count as evidence). NaN guards (`Number.isNaN(x)`,
-  `x !== x`, `x === x`, `!Number.isNaN(x)`) establish `ne(x, NaN)` on the arm
-  where that holds; `Number.isFinite(x)` is one-sided (true arm only). A `const` / `let` /
-  `var` alias such as `const ok = Number.isNaN(x); if (!ok) { … }` is resolved in
-  the same function body or at module top level (a written alias name or guarded
-  variable, loop-header shadowing/assignment, catch parameters and function
-  boundaries drop the alias). A user-shadowed `Number` disables the builtin
-  guard fact (fail-closed). De Morgan spellings
-  (`x < 1 || y < 2`) are complemented per disjunct. The previous unproven results
-  for bare `number()` are unchanged.
-  
-  Literal `NaN` / `±Infinity` arguments (including `0/0`, `Number.NaN`,
-  `Number.POSITIVE_INFINITY`) now violate a `finite` precondition instead of
-  passing silently; `NaN` and `±Infinity` globals are modeled as literals.
-  
-  兼容性：新增 builder 方法与非 NaN 证据下的精度收紧；未使用 `.finite()` 的
-  既有契约输出逐字节不变。
-- Updated dependencies [c93a32d]
-- Updated dependencies [190761e]
-- Updated dependencies [aff6b7c]
-  - @nudojs/core@1.20.0
+- Updated dependencies [795e322]
+- Updated dependencies [161d156]
+  - @nudojs/core@1.20.1
 
-更早版本（60）→ [完整发布历史](./releases-history.md#pkg-env)
+更早版本（61）→ [完整发布历史](./releases-history.md#pkg-env)
 
-## @nudojs/harvester 0.6.2 {#pkg-harvester}
+## @nudojs/harvester 0.6.3 {#pkg-harvester}
 
-## 0.6.2
+## 0.6.3
 
 ### Patch Changes
 
-- Updated dependencies [c93a32d]
-- Updated dependencies [190761e]
-- Updated dependencies [aff6b7c]
-  - @nudojs/core@1.20.0
-  - @nudojs/parser@1.5.10
-  - @nudojs/env@0.5.10
+- Updated dependencies [795e322]
+- Updated dependencies [161d156]
+  - @nudojs/core@1.20.1
+  - @nudojs/env@0.5.11
+  - @nudojs/parser@1.5.11
 
-更早版本（60）→ [完整发布历史](./releases-history.md#pkg-harvester)
+更早版本（61）→ [完整发布历史](./releases-history.md#pkg-harvester)
 
-## vite-plugin-nudo 0.7.3 {#pkg-vite-plugin}
+## vite-plugin-nudo 0.7.4 {#pkg-vite-plugin}
 
-## 0.7.3
+## 0.7.4
 
 ### Patch Changes
 
-- Updated dependencies [c93a32d]
-- Updated dependencies [190761e]
-- Updated dependencies [aff6b7c]
-  - @nudojs/core@1.20.0
-  - @nudojs/service@1.12.2
+- Updated dependencies [795e322]
+- Updated dependencies [161d156]
+  - @nudojs/core@1.20.1
+  - @nudojs/service@1.12.3
 
-更早版本（63）→ [完整发布历史](./releases-history.md#pkg-vite-plugin)
+更早版本（64）→ [完整发布历史](./releases-history.md#pkg-vite-plugin)
 
 ## nudo-vscode 0.3.7 {#pkg-vscode}
 
