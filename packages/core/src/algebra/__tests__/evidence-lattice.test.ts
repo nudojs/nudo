@@ -61,9 +61,15 @@ describe("Evidence · 优先级格（ADR D2）", () => {
   });
 
   it("复用现有诊断码：按来源分派，未新增码（决议 2）", () => {
-    expect(degradedOf(DIAG.contractLoad).reason).toBe(DIAG.contractLoad);
-    expect(degradedOf(DIAG.internal).reason).toBe(DIAG.internal);
-    expect(degradedOf(DIAG.unknownInference).reason).toBe(DIAG.unknownInference);
+    // `degradedOf` 的返回类型是 `Evidence<T>` 联合 ⇒ 直接读 `.reason` 在
+    // 类型面不成立（只有 degraded 分支才有该字段）。这里整体比较结构：断言
+    // 更强（码 + kind 一起钉），也不依赖窄化顺序。
+    expect(degradedOf(DIAG.contractLoad)).toEqual({ kind: "degraded", reason: DIAG.contractLoad });
+    expect(degradedOf(DIAG.internal)).toEqual({ kind: "degraded", reason: DIAG.internal });
+    expect(degradedOf(DIAG.unknownInference)).toEqual({
+      kind: "degraded",
+      reason: DIAG.unknownInference,
+    });
   });
 });
 
