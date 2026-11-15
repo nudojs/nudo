@@ -1444,6 +1444,7 @@
       "decideIncludes",
       "decideStartsWith",
       "declaredOf",
+      "defaultExportLocalName",
       "defaultLeakBudget",
       "definitelyUncallableMember",
       "degradedOf",

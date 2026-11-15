@@ -60,6 +60,34 @@ function superClassNameOf(d: unknown): string | undefined {
   return sc?.type === "Identifier" && typeof sc.name === "string" ? sc.name : undefined;
 }
 
+/**
+ * BUG-013：`export default function f` 的**本地名**（`f`）。
+ *
+ * 跨文件调用记录里的 `targetExport` 是导出名（`"default"`），而 check 的漂移
+ * 判定按**函数普查名**匹配；两者对不上时整条跨文件证据被丢弃（重命名 default
+ * 导入 ⇒ 门禁假绿）。匿名默认导出返回 `"default"`（普查名本身就是它）。
+ */
+export function defaultExportLocalName(
+  source: string,
+  file?: ReturnType<typeof parse>,
+): string | undefined {
+  let f: ReturnType<typeof parse>;
+  try {
+    f = file ?? parse(source);
+  } catch {
+    return undefined;
+  }
+  for (const stmt of f.program.body) {
+    if (stmt.type !== "ExportDefaultDeclaration") continue;
+    const decl = (stmt as { declaration?: { type?: string; id?: { name?: string } } })
+      .declaration;
+    if (!decl) return "default";
+    if (decl.id?.name) return decl.id.name;
+    return "default";
+  }
+  return undefined;
+}
+
 export function listTopFunctions(source: string, file?: ReturnType<typeof parse>): string[] {
   const f = file ?? parse(source);
   const names: string[] = [];

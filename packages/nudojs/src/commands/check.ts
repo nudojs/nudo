@@ -57,7 +57,7 @@ import {
   type DirectiveDiag,
 } from "@nudojs/parser";
 import { applyTextEdits, materializeAction, unifiedDiff } from "@nudojs/service/emit";
-import { DIAG } from "@nudojs/core/internal";
+import { DIAG, defaultExportLocalName } from "@nudojs/core/internal";
 import {
   preloadPathEnvs,
   getPathEnvLoadErrors,
@@ -1119,7 +1119,11 @@ export async function runCheck(file: string, opts: RunCheckOptions = {}): Promis
     // （此前今日域证据只来自被检查文件自身的求值 ⇒ 靠 --from 写出的生成段
     // 永远判不出陈旧）。归因口径见 externalAbsCallRecords（只收指向本文件
     // 的记录 ⇒ 别的模块里的同名函数不污染本文件的判定）。
-    const externalAbsRecords = externalAbsCallRecords(filePath, opts.from);
+    const externalAbsRecords = externalAbsCallRecords(
+      filePath,
+      opts.from,
+      defaultExportLocalName(source),
+    );
     // 分析输入装配**单源**（checkSourceOptions）——`--fix` 面走同一构造
     // （Bug 640：两条命令喂给分析器的输入集必须一致）。
     checkPhaseStart = performance.now();

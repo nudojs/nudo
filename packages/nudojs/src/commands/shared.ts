@@ -598,6 +598,13 @@ export function collectExternalRecords(
 export function externalAbsCallRecords(
   filePath: string,
   records: readonly CallRecord[] | undefined,
+  /**
+   * BUG-013：被检查文件的默认导出**本地名**（`export default function f` ⇒ "f"）。
+   * 记录里的 `targetExport` 是导出名 `"default"`，而漂移判定按函数普查名匹配
+   * ——不换算的话，重命名默认导入（`import other from`）/ `import {default as g}`
+   * / `ns.default(...)` 的跨文件证据全部静默丢弃（门禁假绿）。
+   */
+  defaultExportName?: string,
 ): AbsCallRecord[] {
   if (!records || records.length === 0) return [];
   const current = normalizeRealPath(filePath);
@@ -608,9 +615,13 @@ export function externalAbsCallRecords(
       (r.targetModule !== undefined && normalizeRealPath(r.targetModule) === current);
     if (!attributed) continue;
     const targetExport = r.targetExport;
+    const resolvedTarget =
+      targetExport === "default" && defaultExportName !== undefined
+        ? defaultExportName
+        : targetExport;
     const fnName =
-      targetExport !== undefined && targetExport !== "*" && targetExport !== ""
-        ? targetExport
+      resolvedTarget !== undefined && resolvedTarget !== "*" && resolvedTarget !== ""
+        ? resolvedTarget
         : r.fnName;
     if (!fnName) continue;
     out.push({ fnName, args: r.argAbs, result: r.resultAbs });

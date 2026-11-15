@@ -27,6 +27,7 @@ import {
   runWithEvalMissingSlot,
   fnFingerprints,
   setAbsTruncationCollector,
+  defaultExportLocalName,
   suggestedCallsCeiling,
   suggestedDepthCeiling,
   suggestedForkCeiling,
@@ -825,6 +826,10 @@ export function analyzeFileUncachedInner(
   };
   const currentModulePath = normalizeModulePath(resolve(filePath));
   const singleExportFn = findSingleModuleExportsFunction(ast);
+  // BUG-013：`export default function f` 的本地名。记录里的 `targetExport` 是
+  // 导出名 `"default"`，而这里按**函数名**匹配 ⇒ 重命名默认导入（`import other
+  // from`）/ `import {default as g}` / `ns.default(...)` 的跨文件证据全被丢弃。
+  const defaultExportName = defaultExportLocalName(source) ?? undefined;
 
   // T10b：跨文件注入的调用点域证据 ⊄ 手写契约 → nudo:contract-domain-exceeds
   // （error）。带 @nudo:case 的函数同样检查——case 路径只覆盖本文件内 case
@@ -839,6 +844,8 @@ export function analyzeFileUncachedInner(
     const nameRoutes = (r: CallRecord): boolean =>
       r.fnName === name ||
       r.targetExport === name ||
+      // 默认导出：导出名 `"default"` ↔ 本地函数名（BUG-013）
+      (r.targetExport === "default" && defaultExportName === name) ||
       (r.targetAliases?.includes(name) ?? false) ||
       (singleExportHit && (r.fnModule !== undefined || r.targetModule !== undefined));
     const matchingExternal = (r: CallRecord): boolean => {

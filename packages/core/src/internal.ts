@@ -16,6 +16,7 @@ export { isPointConstraint, widenObservationAbs } from "./algebra/widen-observat
 
 // BUG-034：类成员表（实例 / 静态分面）——LSP 成员补全与 check 的成员面同源
 export { localClassMemberTable } from "./algebra/scan/scan-call-graph.ts";
+export { defaultExportLocalName } from "./algebra/scan/scan-top-functions.ts";
 
 // leak / budgets / memo keys
 export {
