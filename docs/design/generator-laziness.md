@@ -265,9 +265,9 @@ Abs = `shape × term × pred × conf`（`packages/core/src/algebra/abs.ts`）—
 
 `packages/core/src/algebra/__tests__/`：`exec-generator.test.ts`、`exec-generator-consumption.test.ts`、
 `exec-generator-precision.test.ts`、`exec-generator-protocol.test.ts`、`eval-generator-semantics.test.ts`、
-`eval-bug-141-async-generator.test.ts`、`eval-bug-141-decl-async-generator.test.ts`、
-`eval-bug-141-async-iter-elems.test.ts`、`eval-bug-229-yield-star-return-forward.test.ts`、
-`eval-bug-240-generator-own-properties.test.ts`、`eval-bug-240-guard-internal-slots.test.ts`、
+`eval-bug-141-async-generator.test.ts`（合并 decl / iter-elems 两钉）、
+`eval-bug-229-yield-star-return-forward.test.ts`、
+`eval-bug-240-generator-own-properties.test.ts`（合并 guard-internal-slots 钉）、
 `eval-bug-212-generator-body-eager.test.ts`（**本族**：4 条 `it.todo` = 未闭合缺口）、
 `eval-loop-return-join.test.ts`（`$gen` 本地作用域臂）、`eval-bug-198-s20-residual-live-iter.test.ts`。
 

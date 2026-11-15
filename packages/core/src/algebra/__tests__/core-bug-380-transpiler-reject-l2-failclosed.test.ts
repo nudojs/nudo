@@ -1,3 +1,13 @@
+// GENERATED MERGE (scripts/tmp-merge-bugs.mjs): core-bug-380-transpiler-reject-l2-failclosed.test.ts + core-bug-380-unanalyzable-outcome.test.ts
+// Each absorbed file keeps its own describe scope so file-level hooks stay
+// local. Test titles are unchanged; run one with: pnpm vitest run <this> -t <name>
+import { describe, it, expect } from "vitest";
+import { checkSource, pTrue } from "../index.ts";
+import { stdOpts, l2Count, sigOf } from "./nudo-constraints.ts";
+import { effects } from "./eval-helpers.ts";
+import { evalThrowsOutcome } from "../check/check-may-throw.ts";
+
+describe("[merged] core-bug-380-transpiler-reject-l2-failclosed.test.ts", () => {
 /**
  * Bug 380：**转译器「不支持的构造」让 L2 入口 may-throw 门禁由红转绿**。
  *
@@ -13,10 +23,10 @@
  * ⇒ 不能证明入口 total）。用户可用 `@nudo:throws Error` / `--ignore-throws
  * Error` 显式放行。
  */
-import { describe, it, expect } from "vitest";
-import { checkSource, pTrue } from "../index.ts";
-import { stdOpts, l2Count, sigOf } from "./nudo-constraints.ts";
-import { effects } from "./eval-helpers.ts";
+
+
+
+
 
 const updSrc = `export function f(g) { return g().x++; }`;
 const delSrc = `export function f(g) { return delete (g() + 1); }`;
@@ -58,4 +68,36 @@ export function tricky(g) { return g().x++; }`;
     // 转译器拒绝 ⇒ 模块整体未求值（这正是「证据整条丢失」的根因）
     expect(() => effects(updSrc, "f")).toThrow();
   });
+});
+});
+
+describe("[merged] core-bug-380-unanalyzable-outcome.test.ts", () => {
+/**
+ * Bug 380（单元层）：转译器拒绝构造 ⇒ 求值结局必须是「不可判定」。
+ *
+ * `evalThrowsOf` 把「转译失败」与「无桥接」都折成 undefined ⇒ L2 证据面
+ * 分不出「没分析出 may-throw」与「分析出没有 may-throw」。新增的
+ * `evalThrowsOutcome` 把三种结局分开：**unanalyzable**（转译失败）/ analyzed
+ * （已求值）/ absent（无桥接）。
+ */
+
+
+
+
+const updSrc = `export function f(g) { return g().x++; }`;
+
+describe("Bug 380：转译失败的求值结局（单元层）", () => {
+  it("转译器拒绝 ⇒ 结局是 unanalyzable（不是 analyzed / absent）", () => {
+    const out = evalThrowsOutcome(updSrc, "f", []);
+    expect(out.kind).toBe("unanalyzable");
+    if (out.kind !== "unanalyzable") return;
+    expect(out.reason).toContain("unsupported:");
+  });
+
+  it("可分析的入口 ⇒ 结局仍是 analyzed（fail-closed 不得误伤正常路径）", () => {
+    const src = `export function f(g) { return g().x; }`;
+    const out = evalThrowsOutcome(src, "f", []);
+    expect(out.kind).toBe("analyzed");
+  });
+});
 });
