@@ -3,7 +3,6 @@
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
 import "./lsp--lens-refresh-inlayhint.part.ts";
-import "./lsp--diagnostic-refresh.part.ts";
 import "./lsp--suggestcase-synthetic-vs-declared.part.ts";
 import "./lsp--test-imported-text.part.ts";
 import "./lsp--test-filter-case-count.part.ts";

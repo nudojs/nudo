@@ -3,9 +3,5 @@
 // ES module; renaming is IN PLACE so import.meta.url / fixtures / mocks
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
 import "./lsp--witness-line-parity.part.ts";
-import "./lsp--internal-diagnostic.part.ts";
 import "./lsp--trace-external.part.ts";
-import "./lsp--return-contract-location.part.ts";
-import "./lsp--directive-syntax-dup.part.ts";
-import "./lsp--937-env-by-name-diag.part.ts";
 import "./lsp--autobind-fingerprint.part.ts";

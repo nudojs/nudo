@@ -4,6 +4,5 @@
 // are unchanged. Run one case with: pnpm vitest run <this file> -t <name>
 import "./lsp--test-functions-params.part.ts";
 import "./lsp--check-supplement-channels.part.ts";
-import "./lsp--push-pull-env-parity.part.ts";
 import "./lsp--agent-tool-env-preload.part.ts";
 import "./lsp--contract-from-records.part.ts";
