@@ -512,6 +512,7 @@ describe("没有可用 prototype 的构造器 ⇒ 守卫跳过 brand 身份子�
     const check = runner(g);
     const p = new Proxy({ a: 1 }, {});
     expect(() => check(p)).not.toThrow();
+    expect(check(p)).toBe(true);
   });
 
   it("Proxy brand 的守卫仍保留内层 shape 判定（不是「恒真」）", () => {
