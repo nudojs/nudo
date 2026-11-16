@@ -271,33 +271,26 @@ function check(src: string) {
 }
 
 describe("Buffer 是构造器（new Buffer(...) 不再定抛 TypeError）", () => {
-  it("原生 oracle：new Buffer(1) / new Buffer(\"ab\") 正常返回（仅弃用警告，不抛）", () => {
+  it("宿主 new Buffer 正常；env ctor:true + Buffer 实例面；引擎零假红", () => {
     expect(new Buffer(1).length).toBe(1);
     expect(new Buffer("ab").length).toBe(2);
-  });
-
-  it("env：Buffer 是 fn 形全局且带 ctor:true，实例面是 Buffer 形状", () => {
+    const env = defineEnv();
     const g = env.globals.Buffer!;
-    expect(g, "global Buffer missing").toBeTruthy();
-    expect(g.shape.k, "Buffer 形状").toBe("fn");
-    expect((g.shape as { ctor?: boolean }).ctor, "Buffer ctor").toBe(true);
+    expect(g.shape.k).toBe("fn");
+    expect((g.shape as { ctor?: boolean }).ctor).toBe(true);
     const inst = (g.shape as { returnType: { shape: { k: string; name?: string } } }).returnType;
     expect(inst.shape.k).toBe("brand");
     expect(inst.shape.name).toBe("Buffer");
-  });
-
-  it("引擎探针：new Buffer(1) 不再是「never throws TypeError」", () => {
-    const r = check(`
-      export function f() { return new Buffer(1); }
-      export function g() { return new Buffer("ab"); }
-    `);
+    resetGeneralizeMemo();
+    const r = checkSource("/t/env-bug-878.js", `export function f() { return new Buffer(1); }
+export function g() { return new Buffer("ab"); }`, pTrue, { inject: { envGlobals: env.globals } });
     expect(r.issues.filter((i) => i.code === "nudo:entry-may-throw")).toEqual([]);
     for (const s of r.signatures) {
-      expect(s.throws, `${s.name} 不应有 throws 面`).toBeUndefined();
+      expect(s.throws, s.name).toBeUndefined();
       expect(s.display).toMatch(/^Buffer\b/);
     }
   });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -352,27 +345,29 @@ function check(src: string) {
 }
 
 describe("Buffer 实例面补 byteLength / buffer / byteOffset", () => {
-  it("原生 oracle：Buffer.alloc(4) 的三个成员是真值（不是 undefined）", () => {
+  it("宿主真值；env 实例槽 number/ArrayBuffer/number；引擎读出精确类型", () => {
     const b = Buffer.alloc(4);
     expect(b.byteLength).toBe(4);
     expect(b.byteOffset).toBe(0);
     expect(b.buffer).toBeInstanceOf(ArrayBuffer);
-  });
-
-  it("env：Buffer 实例形状带三个槽，且类型正确", () => {
-    const inst = bufferInstance();
-    expect(shapeOf(walk(inst, "byteLength"), "byteLength")).toContain("number");
-    expect(shapeOf(walk(inst, "byteOffset"), "byteOffset")).toContain("number");
-    expect(shapeOf(walk(inst, "buffer"), "buffer")).toContain("ArrayBuffer");
-  });
-
-  it("引擎探针：三个成员读出 number / ArrayBuffer / number（不再是 exact undefined）", () => {
-    const src = `
-      export function b1() { return Buffer.alloc(4).byteLength; }
-      export function b2() { return Buffer.alloc(4).buffer; }
-      export function b3() { return Buffer.alloc(4).byteOffset; }
-    `;
-    const r = check(src);
+    const env = defineEnv();
+    const inst = (env.globals.Buffer!.shape as { returnType: Abs }).returnType;
+    const walk = (a: Abs, ...keys: string[]): Abs | undefined => {
+      let cur: Abs | undefined = a;
+      for (const k of keys) {
+        if (cur?.shape.k === "brand") cur = cur.shape.shape as Abs | undefined;
+        if (!cur || cur.shape.k !== "obj") return undefined;
+        cur = cur.shape.slots[k]?.value;
+      }
+      return cur;
+    };
+    expect(formatShape(walk(inst, "byteLength")!)).toContain("number");
+    expect(formatShape(walk(inst, "byteOffset")!)).toContain("number");
+    expect(formatShape(walk(inst, "buffer")!)).toContain("ArrayBuffer");
+    resetGeneralizeMemo();
+    const r = checkSource("/t/env-bug-868.js", `export function b1() { return Buffer.alloc(4).byteLength; }
+export function b2() { return Buffer.alloc(4).buffer; }
+export function b3() { return Buffer.alloc(4).byteOffset; }`, pTrue, { inject: { envGlobals: env.globals } });
     expect(r.issues.filter((i) => i.code === "nudo:entry-may-throw")).toEqual([]);
     expect(r.issues.filter((i) => i.code === "nudo:unknown-inference")).toEqual([]);
     const byName = new Map(r.signatures.map((s) => [s.name, s.display]));
@@ -380,7 +375,7 @@ describe("Buffer 实例面补 byteLength / buffer / byteOffset", () => {
     expect(byName.get("b2")).toMatch(/^ArrayBuffer\b/);
     expect(byName.get("b3")).toMatch(/^number\b/);
   });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -404,51 +399,21 @@ function host(script: string): string {
 }
 
 describe("Buffer has no isUtf8/transcode/constants statics", () => {
-  it("host oracle: the four names are not Buffer statics (they are module exports)", () => {
-    const out = host(`
-      const b = require("node:buffer");
-      console.log(JSON.stringify({
-        bufferStatics: ["compareBuffers", "isUtf8", "transcode", "constants"].map((k) => typeof Buffer[k]),
-        moduleExports: ["isUtf8", "transcode", "constants"].map((k) => typeof b[k]),
-      }));
-    `);
-    expect(JSON.parse(out)).toEqual({
-      bufferStatics: ["undefined", "undefined", "undefined", "undefined"],
-      moduleExports: ["function", "function", "object"],
-    });
-  });
-
-  it("the env Buffer static table no longer declares them", () => {
-    for (const name of ["compareBuffers", "isUtf8", "transcode", "constants"]) {
-      expect(staticSlotOf("Buffer", name), `Buffer.${name} must not be declared`).toBeUndefined();
-    }
-    // 真实静态仍在（负控：不是把整张表删空）
+  const host = (script: string) => execFileSync(process.execPath, ["-e", script], { encoding: "utf-8" }).trim();
+  it("四个名字不是 Buffer 静态；env 不声明；读面 unknown；模块面在 node:buffer", () => {
+    const out = host(`const b = require("node:buffer"); console.log(JSON.stringify({ bufferStatics: ["compareBuffers","isUtf8","transcode","constants"].map((k) => typeof Buffer[k]), moduleExports: ["isUtf8","transcode","constants"].map((k) => typeof b[k]) }));`);
+    expect(JSON.parse(out)).toEqual({ bufferStatics: ["undefined","undefined","undefined","undefined"], moduleExports: ["function","function","object"] });
+    for (const name of ["compareBuffers","isUtf8","transcode","constants"]) expect(staticSlotOf("Buffer", name), name).toBeUndefined();
     expect(staticSlotOf("Buffer", "compare")).toBeTruthy();
     expect(staticSlotOf("Buffer", "isBuffer")).toBeTruthy();
+    expect(checkNode('export function f1(){ return Buffer.isUtf8(Buffer.from("x")); }').signatures[0]!.display).toBe("unknown");
+    expect(checkNode('export function f3(){ return Buffer.constants.MAX_LENGTH; }').signatures[0]!.display).toBe("unknown");
+    for (const name of ["isUtf8","transcode","constants"]) expect(envMember("node:buffer", name), name).toBeTruthy();
+    const good = checkNode('export function f4(){ return Buffer.compare(Buffer.from("a"), Buffer.from("b")); }');
+    expect(good.throwBrands).toEqual([]);
+    expect(good.signatures[0]!.display).toBe("number");
   });
-
-  it("calling Buffer.isUtf8(...) is no longer a confident value (was green)", () => {
-    const out = checkNode(`export function f1(){ return Buffer.isUtf8(Buffer.from("x")); }`);
-    // 修复前：`boolean`（引擎说「不抛 + 有值」），宿主必抛 TypeError。
-    // 修复后：该名字**不再声明** ⇒ 读面诚实落 unknown（不再给自信错值）。
-    expect(out.signatures[0]!.display).toBe("unknown");
-    expect(out.throwBrands).not.toContain("TypeError");
-  });
-
-  it("Buffer.constants.MAX_LENGTH is no longer a confident number", () => {
-    const out = checkNode(`export function f3(){ return Buffer.constants.MAX_LENGTH; }`);
-    expect(out.signatures[0]!.display).toBe("unknown");
-  });
-
-  it("the module face node:buffer declares them at module scope", () => {
-    for (const name of ["isUtf8", "transcode", "constants"]) {
-      expect(envMember("node:buffer", name), `node:buffer.${name}`).toBeTruthy();
-    }
-    const out = checkNode(`export function f4(){ return Buffer.compare(Buffer.from("a"), Buffer.from("b")); }`);
-    expect(out.throwBrands).toEqual([]);
-    expect(out.signatures[0]!.display).toBe("number");
-  });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -491,31 +456,24 @@ function check(src: string) {
 }
 
 describe("Buffer 静态面补 of（不再定抛 TypeError）", () => {
-  it("原生 oracle：Buffer.of 存在且返回 Buffer（长度 2）", () => {
+  it("宿主 Buffer.of 返回 Buffer；env 静态 of 是变长 fn；调用零 throws", () => {
     expect(typeof Buffer.of).toBe("function");
     const b = Buffer.of(1, 2);
     expect(Buffer.isBuffer(b)).toBe(true);
     expect(b.length).toBe(2);
-  });
-
-  it("env：Buffer 静态面带 of（变长 fn）", () => {
-    const of = staticSlot(env.globals.Buffer, "of");
-    expect(of, "Buffer.of 缺失").toBeTruthy();
-    expect(shapeOf(of, "Buffer.of")).toContain("=>");
-    // 变长：params 末位是 rest
+    const env = defineEnv();
+    const of = (env.globals.Buffer!.shape as { slots?: Record<string, { value: Abs }> }).slots?.of?.value;
+    expect(of).toBeTruthy();
+    expect(formatShape(of!)).toContain("=>");
     const params = (of!.shape as { params?: string[] }).params ?? [];
     expect(params[params.length - 1]).toMatch(/^\.\.\./);
-  });
-
-  it("引擎探针：Buffer.of(1, 2) 不再定抛 TypeError", () => {
-    const r = check(`export function useBufferOf() { return Buffer.of(1, 2); }`);
+    resetGeneralizeMemo();
+    const r = checkSource("/t/env-bug-874.js", "export function useBufferOf() { return Buffer.of(1, 2); }", pTrue, { inject: { envGlobals: env.globals } });
     expect(r.issues.filter((i) => i.code === "nudo:entry-may-throw")).toEqual([]);
-    for (const s of r.signatures) {
-      expect(s.throws, `${s.name} 不应有 throws 面`).toBeUndefined();
-    }
+    for (const s of r.signatures) expect(s.throws, s.name).toBeUndefined();
     expect(r.signatures[0]?.display).toMatch(/^Buffer\b/);
   });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -569,82 +527,43 @@ function nativeErrorName(fn: () => unknown): string | undefined {
 }
 
 describe("node:crypto 族有实参域 throws 面", () => {
-  it("1. createHash：不支持的算法名 ⇒ 必抛 Error（旧实现恒不抛）", () => {
+  const env = defineEnv();
+  const cryptoMod = env.modules!.crypto!;
+  const nativeErrorName = (fn: () => unknown): string | undefined => { try { fn(); return undefined; } catch (e) { return (e as Error).name; } };
+  it("五个入口越界必抛对应品牌；合法零抛；抽象 may-throw", () => {
     expect(nativeErrorName(() => nodeCreateHash("nope"))).toBe("Error");
-    const bad = callSite(cryptoMod.createHash!, [strLit("nope")]);
-    expect(bad.threw, "unsupported digest must be an always-throw").toBeTruthy();
-    expect(brandName((bad.threw as { absValue: Abs }).absValue)).toBe("Error");
+    const badHash = callSite(cryptoMod.createHash!, [strLit("nope")]);
+    expect(badHash.threw).toBeTruthy();
+    expect(brandName((badHash.threw as { absValue: Abs }).absValue)).toBe("Error");
+    expect(callSite(cryptoMod.createHash!, [strLit("sha256")]).exits).toHaveLength(0);
 
-    const good = callSite(cryptoMod.createHash!, [strLit("sha256")]);
-    expect(good.threw).toBeUndefined();
-    expect(good.exits).toHaveLength(0);
-  });
-
-  it("2. randomBytes：size 越界 ⇒ 必抛 RangeError；合法 size 零抛", () => {
     expect(nativeErrorName(() => nodeRandomBytes(-1))).toBe("RangeError");
-    const bad = callSite(cryptoMod.randomBytes!, [numLit(-1)]);
-    expect(bad.threw).toBeTruthy();
-    expect(brandName((bad.threw as { absValue: Abs }).absValue)).toBe("RangeError");
+    const badBytes = callSite(cryptoMod.randomBytes!, [numLit(-1)]);
+    expect(brandName((badBytes.threw as { absValue: Abs }).absValue)).toBe("RangeError");
+    expect(callSite(cryptoMod.randomBytes!, [numLit(8)]).exits).toHaveLength(0);
 
-    const good = callSite(cryptoMod.randomBytes!, [numLit(8)]);
-    expect(good.threw).toBeUndefined();
-    expect(good.exits).toHaveLength(0);
-  });
-
-  it("3. randomInt：max <= min ⇒ 必抛 RangeError；合法区间零抛", () => {
     expect(nativeErrorName(() => nodeRandomInt(5, 1))).toBe("RangeError");
-    const bad = callSite(cryptoMod.randomInt!, [numLit(5), numLit(1)]);
-    expect(bad.threw).toBeTruthy();
-    expect(brandName((bad.threw as { absValue: Abs }).absValue)).toBe("RangeError");
+    const badInt = callSite(cryptoMod.randomInt!, [numLit(5), numLit(1)]);
+    expect(brandName((badInt.threw as { absValue: Abs }).absValue)).toBe("RangeError");
+    expect(callSite(cryptoMod.randomInt!, [numLit(1), numLit(5)]).exits).toHaveLength(0);
 
-    const good = callSite(cryptoMod.randomInt!, [numLit(1), numLit(5)]);
-    expect(good.threw).toBeUndefined();
-    expect(good.exits).toHaveLength(0);
-  });
-
-  it("4. pbkdf2Sync：iterations = 0 ⇒ 必抛 RangeError；合法参数零抛", () => {
     expect(nativeErrorName(() => nodePbkdf2Sync("p", "s", 0, 8, "sha256"))).toBe("RangeError");
-    const bad = callSite(cryptoMod.pbkdf2Sync!, [
-      strLit("p"),
-      strLit("s"),
-      numLit(0),
-      numLit(8),
-      strLit("sha256"),
-    ]);
-    expect(bad.threw).toBeTruthy();
-    expect(brandName((bad.threw as { absValue: Abs }).absValue)).toBe("RangeError");
+    const badPbkdf2 = callSite(cryptoMod.pbkdf2Sync!, [strLit("p"), strLit("s"), numLit(0), numLit(8), strLit("sha256")]);
+    expect(brandName((badPbkdf2.threw as { absValue: Abs }).absValue)).toBe("RangeError");
+    expect(callSite(cryptoMod.pbkdf2Sync!, [strLit("p"), strLit("s"), numLit(1), numLit(8), strLit("sha256")]).exits).toHaveLength(0);
 
-    const good = callSite(cryptoMod.pbkdf2Sync!, [
-      strLit("p"),
-      strLit("s"),
-      numLit(1),
-      numLit(8),
-      strLit("sha256"),
-    ]);
-    expect(good.threw).toBeUndefined();
-    expect(good.exits).toHaveLength(0);
-  });
+    expect(nativeErrorName(() => nodeTimingSafeEqual(Buffer.alloc(1), Buffer.alloc(2)))).toBe("RangeError");
+    const safe = callSite(cryptoMod.timingSafeEqual!, [env.globals.Buffer as Abs, env.globals.Buffer as Abs]);
+    expect(safe.threw).toBeUndefined();
+    expect(safe.exits).toHaveLength(1);
+    expect(brandName(safe.exits[0]!)).toBe("RangeError");
 
-  it("5. timingSafeEqual：长度不等 ⇒ RangeError（env 的 Buffer 面不建模长度 ⇒ may-throw）", () => {
-    expect(
-      nativeErrorName(() => nodeTimingSafeEqual(Buffer.alloc(1), Buffer.alloc(2))),
-    ).toBe("RangeError");
-    const site = callSite(cryptoMod.timingSafeEqual!, [
-      env.globals.Buffer as Abs,
-      env.globals.Buffer as Abs,
-    ]);
-    expect(site.threw, "undecidable length must not be a hard throw").toBeUndefined();
-    expect(site.exits).toHaveLength(1);
-    expect(brandName(site.exits[0]!)).toBe("RangeError");
+    const abstract = callSite(cryptoMod.createHash!, [prim.str()]);
+    expect(abstract.threw).toBeUndefined();
+    expect(abstract.exits).toHaveLength(1);
+    expect(brandName(abstract.exits[0]!)).toBe("Error");
   });
-
-  it("6. 抽象实参 ⇒ may-throw（原生在该域上确实可能抛）", () => {
-    const site = callSite(cryptoMod.createHash!, [prim.str()]);
-    expect(site.threw).toBeUndefined();
-    expect(site.exits).toHaveLength(1);
-    expect(brandName(site.exits[0]!)).toBe("Error");
-  });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -669,55 +588,29 @@ function host(script: string): string {
 }
 
 describe("crypto.getRandomValues takes a TypedArray, returns it", () => {
-  it("host oracle: array argument throws, TypedArray is returned by identity", () => {
-    const out = host(`
-      const a = new Uint8Array(4);
-      const r = crypto.getRandomValues(a);
-      let threw = null;
-      try { crypto.getRandomValues([1, 2, 3]); } catch (e) { threw = e.constructor.name; }
-      console.log(JSON.stringify({ same: r === a, threw }));
-    `);
+  const host = (script: string) => execFileSync(process.execPath, ["-e", script], { encoding: "utf-8" }).trim();
+  it("数组/浮点 TypedArray 拒绝；整数 TypedArray 保持同一性；参数域非 Array", () => {
+    const out = host(`const a = new Uint8Array(4); const r = crypto.getRandomValues(a); let threw = null; try { crypto.getRandomValues([1, 2, 3]); } catch (e) { threw = e.constructor.name; } console.log(JSON.stringify({ same: r === a, threw }));`);
     expect(JSON.parse(out)).toEqual({ same: true, threw: "DOMException" });
-  });
-
-  it("array literal argument is rejected (was green)", () => {
-    const out = checkNode(`export function fill(){ return crypto.getRandomValues([1, 2, 3]); }`);
-    // 运行时必抛 ⇒ 引擎也必须判必抛（never + TypeError）
-    expect(displayOf(out, "fill")).toContain("never");
-    expect(out.throwBrands).toContain("TypeError");
-    expect(out.errorCodes).toContain("nudo:entry-may-throw");
-  });
-
-  it("legal integer TypedArray is not a throw and keeps its identity", () => {
-    const out = checkNode(`export function ok(){ return crypto.getRandomValues(new Uint8Array(16)); }`);
-    expect(out.throwBrands).toEqual([]);
-    expect(displayOf(out, "ok")).toBe("Uint8Array");
-  });
-
-  it("float TypedArray is rejected by the host → rejected by the env", () => {
-    const thrown = host(`
-      let name = null;
-      try { crypto.getRandomValues(new Float32Array(4)); } catch (e) { name = e.constructor.name; }
-      console.log(String(name));
-    `);
+    const arr = checkNode("export function fill(){ return crypto.getRandomValues([1, 2, 3]); }");
+    expect(displayOf(arr, "fill")).toContain("never");
+    expect(arr.throwBrands).toContain("TypeError");
+    expect(arr.errorCodes).toContain("nudo:entry-may-throw");
+    const ok = checkNode("export function ok(){ return crypto.getRandomValues(new Uint8Array(16)); }");
+    expect(ok.throwBrands).toEqual([]);
+    expect(displayOf(ok, "ok")).toBe("Uint8Array");
+    const thrown = host(`let name = null; try { crypto.getRandomValues(new Float32Array(4)); } catch (e) { name = e.constructor.name; } console.log(String(name));`);
     expect(thrown).toBe("DOMException");
-    const out = checkNode(`export function flt(){ return crypto.getRandomValues(new Float32Array(4)); }`);
-    expect(displayOf(out, "flt")).toContain("never");
-  });
-
-  it("the declared parameter domain is integer TypedArrays, never a JS Array", () => {
-    const fn = nodeSlotOf("crypto", "getRandomValues");
-    expect(fn?.shape.k).toBe("fn");
-    const param = (fn!.shape as { paramTypes?: Abs[] }).paramTypes?.[0];
-    expect(param?.shape.k, "param must be a union of TypedArray brands").toBe("sum");
-    const names = (param!.shape as { members: Abs[] }).members.map(
-      (m) => (m.shape as { name?: string }).name ?? "",
-    );
+    expect(displayOf(checkNode("export function flt(){ return crypto.getRandomValues(new Float32Array(4)); }"), "flt")).toContain("never");
+    const fn = nodeSlotOf("crypto", "getRandomValues")!;
+    const param = (fn.shape as { paramTypes?: Abs[] }).paramTypes?.[0]!;
+    expect(param.shape.k).toBe("sum");
+    const names = (param.shape as { members: Abs[] }).members.map((m) => (m.shape as { name?: string }).name ?? "");
     expect(names).not.toContain("Array");
     expect(names).toContain("Uint8Array");
     expect(names.every((n) => n.endsWith("Array"))).toBe(true);
   });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -742,75 +635,27 @@ function host(script: string): string {
 }
 
 describe("Headers/FormData iterators are not arrays (both envs)", () => {
-  it("host oracle: keys() is an Iterator, not an Array", () => {
-    const out = host(`
-      const h = new Headers({ a: "b" });
-      const k = h.keys();
-      console.log(JSON.stringify({
-        isArray: Array.isArray(k),
-        length: typeof k.length,
-        ctor: k.constructor.name,
-        first: [...k][0],
-      }));
-    `);
-    expect(JSON.parse(out)).toEqual({
-      isArray: false,
-      length: "undefined",
-      ctor: "Iterator",
-      first: "a",
-    });
-  });
-
-  it("node: Array.isArray(headers.keys()) folds to false (was true)", () => {
-    const out = checkNode(`export function f(){
-  const h = new Headers({ a: "b" });
-  return Array.isArray(h.keys());
-}`);
-    expect(out.signatures[0]!.display).toBe("false");
-  });
-
-  it("node: keys() has no array length / index (was number / string)", () => {
-    const out = checkNode(`export function f(){
-  const h = new Headers({ a: "b" });
-  const k = h.keys();
-  return [k.length, k[0]];
-}`);
-    const d = out.signatures[0]!.display;
-    expect(d).not.toContain("number");
-    expect(d).not.toContain("string");
-  });
-
-  it("node: the declared face is an iterator object (has @@iterator), not arr", () => {
-    const keys = slotOfAbs(instanceFaceOf("Headers"), "keys");
-    const ret = (keys!.shape as { returnType?: { shape: { k: string; slots?: Record<string, unknown> } } }).returnType;
+  const host = (script: string) => execFileSync(process.execPath, ["-e", script], { encoding: "utf-8" }).trim();
+  it("迭代器非数组、无 length/index、带 @@iterator；web 展开合法；FormData 同径", () => {
+    const out = host(`const h = new Headers({ a: "b" }); const k = h.keys(); console.log(JSON.stringify({ isArray: Array.isArray(k), length: typeof k.length, ctor: k.constructor.name, first: [...k][0] }));`);
+    expect(JSON.parse(out)).toEqual({ isArray: false, length: "undefined", ctor: "Iterator", first: "a" });
+    expect(checkNode('export function f(){ const h = new Headers({ a: "b" }); return Array.isArray(h.keys()); }').signatures[0]!.display).toBe("false");
+    const shapeOut = checkNode('export function f(){ const h = new Headers({ a: "b" }); const k = h.keys(); return [k.length, k[0]]; }');
+    expect(shapeOut.signatures[0]!.display).not.toContain("number");
+    expect(shapeOut.signatures[0]!.display).not.toContain("string");
+    const keys = slotOfAbs(instanceFaceOf("Headers"), "keys")!;
+    const ret = (keys.shape as { returnType?: { shape: { k: string; slots?: Record<string, unknown> } } }).returnType;
     expect(ret?.shape.k).toBe("obj");
     expect(Object.keys(ret!.shape.slots ?? {})).toContain("@@iterator");
-  });
-
-  it("web: spreading headers.keys() is legal (was may-throw TypeError)", () => {
-    const out = checkWeb(`export function f(){
-  const h = new Headers({ a: "b" });
-  return [...h.keys()].length;
-}`);
-    expect(out.signatures[0]!.display).toBe("number");
-    expect(out.throwBrands).toEqual([]);
-  });
-
-  it("FormData entries are iterators too (both envs)", () => {
-    const node = checkNode(`export function f(){
-  const d = new FormData();
-  return Array.isArray(d.entries());
-}`);
-    expect(node.signatures[0]!.display).toBe("false");
-    const web = checkWeb(`export function f(){
-  const d = new FormData();
-  d.append("a", "b");
-  return [...d.entries()].length;
-}`);
-    expect(web.throwBrands).toEqual([]);
+    const spread = checkWeb('export function f(){ const h = new Headers({ a: "b" }); return [...h.keys()].length; }');
+    expect(spread.signatures[0]!.display).toBe("number");
+    expect(spread.throwBrands).toEqual([]);
+    expect(checkNode('export function f(){ const d = new FormData(); return Array.isArray(d.entries()); }').signatures[0]!.display).toBe("false");
+    const webForm = checkWeb('export function f(){ const d = new FormData(); d.append("a", "b"); return [...d.entries()].length; }');
+    expect(webForm.throwBrands).toEqual([]);
     expect(slotOfAbs(instanceFaceOf("FormData"), "entries")).toBeTruthy();
   });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -910,82 +755,36 @@ function sigOf(
 const TRY_CATCH_BODY = (expr: string) => `try { ${expr} return "ok"; } catch (e) { return "boom"; }`;
 
 describe("env promise 必须带 rejected 通道（catch 臂是活代码）", () => {
-  describe("core 对照组（现在就绿——证明 core 侧无需改动）", () => {
-    it("带 rejected 通道的 promise（executor fork）⇒ catch 臂活", () => {
-      const src = `export async function use(c) {
-        ${TRY_CATCH_BODY(`await new Promise((res, rej) => { if (c) { res(1); } else { rej(2); } });`)}
-      }`;
-      const display = sigOf(src, "use", nodeEnv);
-      expect(display, "catch 臂必须是活代码（值域含 catch 分支的 \"boom\"）").toContain(
-        '"boom"',
-      );
-    });
+  const nodeEnv = defineNodeEnv();
+  const webEnv = defineWebEnv();
+  const modulesOf = (def: { modules?: Record<string, Record<string, Abs>> }) => {
+    const out: Record<string, AbsModuleExports> = {};
+    for (const [spec, named] of Object.entries(def.modules ?? {})) out[spec] = { named: { ...named } };
+    return out;
+  };
+  const sigOf = (src: string, def: { modules?: Record<string, Record<string, Abs>>; globals: Record<string, Abs> }) => {
+    resetGeneralizeMemo();
+    const modules = modulesOf(def);
+    const r = checkSource("/t/x.js", src, pTrue, { modules, inject: { envGlobals: def.globals, modules } });
+    return r.signatures.find((s) => s.name === "use")!.display;
+  };
+  const body = (expr: string) => `try { ${expr} return "ok"; } catch (e) { return "boom"; }`;
+  it("core 对照组：executor 两臂 ⇒ boom；Promise.resolve ⇒ 无 boom；env 三个 promise ⇒ boom", () => {
+    expect(sigOf(`export async function use(c) { ${body("await new Promise((res, rej) => { if (c) { res(1); } else { rej(2); } });")} }`, nodeEnv)).toContain('"boom"');
+    expect(sigOf(`export async function use(c) { ${body("await Promise.resolve(1);")} }`, nodeEnv)).not.toContain('"boom"');
 
-    it("确定 fulfilled 的 promise（Promise.resolve）⇒ catch 臂死（原生同款）", () => {
-      const src = `export async function use(c) {
-        ${TRY_CATCH_BODY("await Promise.resolve(1);")}
-      }`;
-      const display = sigOf(src, "use", nodeEnv);
-      expect(display, "确定 fulfilled ⇒ catch 臂是死代码").not.toContain('"boom"');
-    });
-
-    it("反向对照：把「带 rejected 通道」换成「确定 fulfilled」⇒ 断言必须失败", () => {
-      // 同一断言（display 含 "boom"）作用在确定 fulfilled 的 promise 上必须不成立
-      const src = `export async function use(c) {
-        ${TRY_CATCH_BODY("await Promise.resolve(1);")}
-      }`;
-      const display = sigOf(src, "use", nodeEnv);
-      expect(display).not.toContain('"boom"');
-    });
-  });
-
-  describe("env 侧（promiseOf 补 rejected 通道 ⇒ catch 臂活）", () => {
-    it("fs/promises.readFile ⇒ catch 臂是活代码", () => {
-      const src = `/// @nudo:env node
+    const fsSrc = `/// @nudo:env node
 import { readFile } from "node:fs/promises";
-export async function use() {
-  ${TRY_CATCH_BODY(`const b = await readFile("x.txt", "utf8");`)}
-}
-`;
-      const display = sigOf(src, "use", nodeEnv);
-      expect(
-        display,
-        'catch 臂是死代码 ⇒ env promise 缺 rejected 通道（promiseOf 接线后应含 "boom"）',
-      ).toContain('"boom"');
-    });
-
-    it("fetch（web）⇒ catch 臂是活代码", () => {
-      const src = `/// @nudo:env web
-export async function use() {
-  ${TRY_CATCH_BODY(`const r = await fetch("https://example.com");`)}
-}
-`;
-      const display = sigOf(src, "use", webEnv);
-      expect(
-        display,
-        'catch 臂是死代码 ⇒ env promise 缺 rejected 通道（promiseOf 接线后应含 "boom"）',
-      ).toContain('"boom"');
-    });
-
-    it("crypto.subtle.digest（node 全局 crypto）⇒ catch 臂是活代码", () => {
-      // 用**全局** `crypto`（node env 的 `crypto` 全局带完整的
-      // `subtle.digest` 声明 ⇒ 返回 env 造的 promise）。
-      // ⚠️ 不要用 `import { webcrypto } from "node:crypto"`——node env 的
-      // `node:crypto` 模块**未声明** `webcrypto`（越界发现）⇒ 那是缺失绑定，
-      // 根本不是 env promise，接线 `promiseOf` 也不会转绿。
-      const src = `/// @nudo:env node
-export async function use() {
-  ${TRY_CATCH_BODY(`const d = await crypto.subtle.digest("SHA-256", new Uint8Array([1]));`)}
-}
-`;
-      const display = sigOf(src, "use", nodeEnv);
-      expect(
-        display,
-        'catch 臂是死代码 ⇒ env promise 缺 rejected 通道（promiseOf 接线后应含 "boom"）',
-      ).toContain('"boom"');
-    });
+export async function use() { ${body('const b = await readFile("x.txt", "utf8");')} }`;
+    expect(sigOf(fsSrc, nodeEnv)).toContain('"boom"');
+    const fetchSrc = `/// @nudo:env web
+export async function use() { ${body('const r = await fetch("https://example.com");')} }`;
+    expect(sigOf(fetchSrc, webEnv)).toContain('"boom"');
+    const cryptoSrc = `/// @nudo:env node
+export async function use() { ${body('const d = await crypto.subtle.digest("SHA-256", new Uint8Array([1]));')} }`;
+    expect(sigOf(cryptoSrc, nodeEnv)).toContain('"boom"');
   });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -1026,39 +825,22 @@ function check(src: string) {
 }
 
 describe("node env 不再声明 structuredClone（宿主 throws 面不再被遮蔽）", () => {
-  it("原生 oracle：structuredClone 对不可克隆值抛错（不是恒不抛）", () => {
+  it("宿主可克隆成功/不可克隆抛；env 不声明；引擎 throws 面回归且 env 不改变结论", () => {
     expect(structuredClone({ a: 1 })).toEqual({ a: 1 });
     expect(() => structuredClone(Symbol("x"))).toThrow();
-  });
-
-  it("env：node env 不声明 structuredClone（回落宿主路径）", () => {
-    expect(env.globals.structuredClone, "structuredClone 不应被 node env 声明").toBeUndefined();
-  });
-
-  it("引擎探针：带 node env 时 structuredClone 仍有 throws 面（假绿修掉）", () => {
-    // 探针实参取**不可克隆**值（函数）：宿主对不可克隆值抛 DataCloneError ⇒
-    // throws 面必须存在（口径：可克隆实参不记抛，见下一例）。
-    const r = check(`export function s1() { return structuredClone(() => 1); }`);
-    const sig = r.signatures[0];
-    expect(sig, "无签名").toBeTruthy();
-    // throws 面回来了（宿主全局字面量守卫的 may-throw 口径）
-    expect(sig!.throws, "structuredClone 应带 throws 面").toBeTruthy();
-    expect(r.issues.some((i) => i.code === "nudo:entry-may-throw")).toBe(true);
-  });
-
-  it("引擎探针：不开 env 时结论一致（env 不再改变门禁结论）", () => {
-    const withEnv = check(`export function s1() { return structuredClone(() => 1); }`);
-    const withoutEnv = checkSource("/t/env-bug-884.js", `export function s1() { return structuredClone(() => 1); }`, pTrue, {});
-    expect(withoutEnv.signatures[0]?.throws).toBeTruthy();
+    const env = defineEnv();
+    expect(env.globals.structuredClone).toBeUndefined();
+    resetGeneralizeMemo();
+    const withEnv = checkSource("/t/env-bug-884.js", "export function s1() { return structuredClone(() => 1); }", pTrue, { inject: { envGlobals: env.globals } });
     expect(withEnv.signatures[0]?.throws).toBeTruthy();
+    expect(withEnv.issues.some((i) => i.code === "nudo:entry-may-throw")).toBe(true);
+    const withoutEnv = checkSource("/t/env-bug-884b.js", "export function s1() { return structuredClone(() => 1); }", pTrue, {});
+    expect(withoutEnv.signatures[0]?.throws).toBeTruthy();
+    const cloneable = checkSource("/t/env-bug-884c.js", "export function s1() { return structuredClone({ a: 1 }); }", pTrue, { inject: { envGlobals: env.globals } });
+    expect(cloneable.signatures[0]?.throws).toBeUndefined();
+    expect(cloneable.issues.some((i) => i.code === "nudo:entry-may-throw")).toBe(false);
   });
-
-  it("Bug 288 口径：可克隆实参（{ a: 1 }）native 不抛 ⇒ 引擎不得记 throws 面", () => {
-    const r = check(`export function s1() { return structuredClone({ a: 1 }); }`);
-    expect(r.signatures[0]?.throws, "可克隆实参不应带 throws 面").toBeUndefined();
-    expect(r.issues.some((i) => i.code === "nudo:entry-may-throw")).toBe(false);
-  });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -1083,35 +865,23 @@ describe("TextDecoder keeps core's precise RangeError", () => {
  * 反向钉：把 `TextDecoder` 加回 env 全局表 ⇒ 本文件必挂。
  */
 describe("TextDecoder keeps core's precise RangeError", () => {
-  it("TextDecoder is NOT declared in the web env (it shadowed core's exact model)", () => {
+  it("web env 不声明；非法 label 记 RangeError；默认干净；env/host 同口径；合法 label 精确", () => {
     expect(webEnvGlobals()["TextDecoder"]).toBeUndefined();
-  });
-
-  it("new TextDecoder('bad-$$') records RangeError (not TypeError)", () => {
-    const out = checkWeb(`export function f(){ return new TextDecoder("bad-$$"); }`);
-    expect(out.throwBrands).toContain("RangeError");
-    expect(out.throwBrands).not.toContain("TypeError");
-  });
-
-  it("new TextDecoder() is clean", () => {
-    const out = checkWeb(`export function f(){ return new TextDecoder(); }`);
-    expect(out.errorCodes).toEqual([]);
-    expect(out.throwBrands).toEqual([]);
-  });
-
-  it("the env path and the host path agree on the error brand", () => {
-    const withEnv = checkWeb(`export function f(){ return new TextDecoder("bad-$$"); }`, true);
-    const hostOnly = checkWeb(`export function f(){ return new TextDecoder("bad-$$"); }`, false);
+    const bad = checkWeb('export function f(){ return new TextDecoder("bad-$$"); }');
+    expect(bad.throwBrands).toContain("RangeError");
+    expect(bad.throwBrands).not.toContain("TypeError");
+    const empty = checkWeb("export function f(){ return new TextDecoder(); }");
+    expect(empty.errorCodes).toEqual([]);
+    expect(empty.throwBrands).toEqual([]);
+    const withEnv = checkWeb('export function f(){ return new TextDecoder("bad-$$"); }', true);
+    const hostOnly = checkWeb('export function f(){ return new TextDecoder("bad-$$"); }', false);
     expect(withEnv.throwBrands).toEqual(hostOnly.throwBrands);
     expect(withEnv.throwBrands).toContain("RangeError");
+    const known = checkWeb('export function f(){ const d = new TextDecoder("utf-8"); return d.encoding; }');
+    expect(known.errorCodes).toEqual([]);
+    expect(displayOf(known)).toMatch(/^"utf-8"/);
   });
-
-  it("core's exact model still folds a known label (encoding slot)", () => {
-    const out = checkWeb(`export function f(){ const d = new TextDecoder("utf-8"); return d.encoding; }`);
-    expect(out.errorCodes).toEqual([]);
-    expect(displayOf(out)).toMatch(/^"utf-8"/);
-  });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -1140,38 +910,20 @@ describe("TextEncoder / TextDecoder are classes, not plain functions", () => {
  * 反向钉：把 TextEncoder / TextDecoder 加回 env 全局表 ⇒ 本文件必挂。
  */
 describe("TextEncoder / TextDecoder are classes, not plain functions", () => {
-  it("TextEncoder / TextDecoder are NOT declared in the web env", () => {
+  it("web env 不声明；裸调 TypeError；new 干净；env/host 同口径", () => {
     expect(webEnvGlobals()["TextEncoder"]).toBeUndefined();
     expect(webEnvGlobals()["TextDecoder"]).toBeUndefined();
-  });
-
-  it("bare TextEncoder() records TypeError (native: class without new)", () => {
-    const out = checkWeb(`export function f(){ return TextEncoder(); }`);
-    expect(out.throwBrands).toContain("TypeError");
-  });
-
-  it("bare TextDecoder('utf-8') records TypeError (native: class without new)", () => {
-    const out = checkWeb(`export function f(){ return TextDecoder("utf-8"); }`);
-    expect(out.throwBrands).toContain("TypeError");
-  });
-
-  it("new TextEncoder() / new TextDecoder() are clean", () => {
-    const out = checkWeb(`export function f(){
-  const e = new TextEncoder();
-  const d = new TextDecoder();
-  return [e, d];
-}`);
-    expect(out.errorCodes).toEqual([]);
-    expect(out.throwBrands).toEqual([]);
-  });
-
-  it("the env path and the host path agree on the bare-call verdict", () => {
-    const withEnv = checkWeb(`export function f(){ return TextEncoder(); }`, true);
-    const hostOnly = checkWeb(`export function f(){ return TextEncoder(); }`, false);
+    expect(checkWeb("export function f(){ return TextEncoder(); }").throwBrands).toContain("TypeError");
+    expect(checkWeb('export function f(){ return TextDecoder("utf-8"); }').throwBrands).toContain("TypeError");
+    const ctor = checkWeb("export function f(){ const e = new TextEncoder(); const d = new TextDecoder(); return [e, d]; }");
+    expect(ctor.errorCodes).toEqual([]);
+    expect(ctor.throwBrands).toEqual([]);
+    const withEnv = checkWeb("export function f(){ return TextEncoder(); }", true);
+    const hostOnly = checkWeb("export function f(){ return TextEncoder(); }", false);
     expect(withEnv.throwBrands).toEqual(hostOnly.throwBrands);
     expect(withEnv.throwBrands).toContain("TypeError");
   });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -1219,64 +971,39 @@ function mayThrowMessages(r: CheckResult): string[] {
 }
 
 describe("URI 族不再吞掉 URIError（es env）", () => {
-  it("1. 畸形 % 序列 ⇒ 记 URIError（原生恒抛，门禁必须红）", () => {
-    const cases: Array<[string, string]> = [
-      ["decodeURI", 'decodeURI("%")'],
-      ["decodeURIComponent", 'decodeURIComponent("%")'],
-      ["decodeURI", 'decodeURI("%E0%A4%A")'],
-      ["decodeURIComponent", 'decodeURIComponent("%E0%A4%A")'],
-      ["encodeURI", 'encodeURI("\\uD800")'],
-      ["encodeURIComponent", 'encodeURIComponent("\\uD800")'],
-    ];
-    for (const [id, expr] of cases) {
-      const r = checkWithEs(`export function f() { return ${expr}; }`);
-      const msgs = mayThrowMessages(r);
-      expect(msgs.length, `${id}: ${expr} must report may-throw`).toBeGreaterThan(0);
-      expect(msgs.join(" | "), `${id}: ${expr}`).toContain("URIError");
-      // 原生恒抛 ⇒ 值面是 never（旧行为：回落 string ⇒ 假绿）
-      const sig = r.signatures.find((s) => s.name === "f");
-      expect(sig, `${id}: f must have a signature`).toBeTruthy();
-      expect(formatShape(sig!.abs), `${id}: ${expr}`).toMatch(/\bnever\b/);
+  const esEnv = defineEnv_____es_ts();
+  const checkEs = (src: string) => {
+    resetGeneralizeMemo();
+    return checkSource("/t/env-bug-864.js", src, pTrue, { inject: { envGlobals: esEnv.globals } });
+  };
+  const mayThrow = (r: ReturnType<typeof checkSource>) => r.issues.filter((i) => i.code === "nudo:entry-may-throw").map((i) => i.message);
+  it("畸形入参记 URIError/never；合法入参零抛且精确；抽象入参 string + may-throw；四全局有 throws 面", () => {
+    const bad: Array<[string, string]> = [["decodeURI",'decodeURI("%")'],["decodeURIComponent",'decodeURIComponent("%")'],["decodeURI",'decodeURI("%E0%A4%A")'],["decodeURIComponent",'decodeURIComponent("%E0%A4%A")'],["encodeURI",'encodeURI("\\uD800")'],["encodeURIComponent",'encodeURIComponent("\\uD800")']];
+    for (const [id, expr] of bad) {
+      const r = checkEs(`export function f() { return ${expr}; }`);
+      const msgs = mayThrow(r);
+      expect(msgs.length, id).toBeGreaterThan(0);
+      expect(msgs.join(" | "), id).toContain("URIError");
+      expect(formatShape(r.signatures.find((s) => s.name === "f")!.abs), id).toMatch(/\bnever\b/);
     }
-  });
-
-  it("2. 合法入参 ⇒ **不**抛（不误红）且值精确", () => {
-    const cases: Array<[string, string, string]> = [
-      ["decodeURI", 'decodeURI("a b")', '"a b"'],
-      ["encodeURI", 'encodeURI("a b")', '"a%20b"'],
-      ["encodeURIComponent", 'encodeURIComponent("a b")', '"a%20b"'],
-      ["decodeURIComponent", 'decodeURIComponent("a%20b")', '"a b"'],
-    ];
-    for (const [id, expr, expected] of cases) {
-      const r = checkWithEs(`export function f() { return ${expr}; }`);
-      expect(mayThrowMessages(r), `${id}: ${expr} must not report may-throw`).toEqual([]);
-      const sig = r.signatures.find((s) => s.name === "f");
-      expect(formatShape(sig!.abs), `${id}: ${expr}`).toContain(expected);
+    const good: Array<[string, string, string]> = [["decodeURI",'decodeURI("a b")','"a b"'],["encodeURI",'encodeURI("a b")','"a%20b"'],["encodeURIComponent",'encodeURIComponent("a b")','"a%20b"'],["decodeURIComponent",'decodeURIComponent("a%20b")','"a b"']];
+    for (const [id, expr, expected] of good) {
+      const r = checkEs(`export function f() { return ${expr}; }`);
+      expect(mayThrow(r), id).toEqual([]);
+      expect(formatShape(r.signatures.find((s) => s.name === "f")!.abs), id).toContain(expected);
     }
-  });
-
-  it("3. 抽象实参 ⇒ 回落声明域 string（不折自信精确字面量）+ may-throw URIError", () => {
-    const r = checkWithEs("export function f(x) { return decodeURI(x); }");
-    const sig = r.signatures.find((s) => s.name === "f");
-    const display = formatShape(sig!.abs);
-    // 值面 = 声明域 string（不是某个具体字面量）
+    const abstract = checkEs("export function f(x) { return decodeURI(x); }");
+    const display = formatShape(abstract.signatures.find((s) => s.name === "f")!.abs);
     expect(display).toContain("string");
     expect(display).not.toMatch(/"[^"]*"/);
-    // 抽象串可能畸形 ⇒ may-throw URIError（与无 env 的宿主路径同口径）
-    const msgs = mayThrowMessages(r);
-    expect(msgs.join(" | ")).toContain("URIError");
-  });
-
-  it("4. 四个 URI 全局都声明了 throws 面（errBrand('URIError')）", () => {
-    const env = defineEnv_____es_ts();
-    for (const name of ["encodeURI", "decodeURI", "encodeURIComponent", "decodeURIComponent"]) {
-      const fn = env.globals[name];
-      expect(fn, `${name} must be declared`).toBeTruthy();
-      expect(fn!.shape.k, `${name} must be a function`).toBe("fn");
-      const shape = fn!.shape as { paramTypes?: Abs[]; returnType?: Abs };
-      expect(shape.paramTypes?.[0]?.shape.k, `${name} param`).toBe("prim");
-      expect(shape.returnType?.shape.k, `${name} return`).toBe("prim");
+    expect(mayThrow(abstract).join(" | ")).toContain("URIError");
+    for (const name of ["encodeURI","decodeURI","encodeURIComponent","decodeURIComponent"]) {
+      const fn = esEnv.globals[name]!;
+      expect(fn.shape.k, name).toBe("fn");
+      const shape = fn.shape as { paramTypes?: Abs[]; returnType?: Abs };
+      expect(shape.paramTypes?.[0]?.shape.k, name).toBe("prim");
+      expect(shape.returnType?.shape.k, name).toBe("prim");
     }
   });
-});
+});;
 });
