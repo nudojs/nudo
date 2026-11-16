@@ -4,8 +4,6 @@ title	rootCause	gap	action	status	evidence
 内建 mock 生效/产品面同值/负控；绑定图第二合并点同口径	内建 mock/孤儿表	没测该层	keep	keep	—
 新四指令识别并纳入；既有指令不回退；无指令/字符串假命中仍排除	覆盖/模式契约表	没测该层	keep	keep	—
 各函数取各自 mock（顺序无关）；单 mock 不泄漏；产物面同值	覆盖/模式契约表	没测该层	keep	keep	—
-分析面覆盖生效；无指令邻句/非语句节点/空源负控	覆盖/模式契约表	没测该层	keep	keep	—
-14 个容器都收集 @nudo:as；for 体 @nudo:replace 也收集	覆盖/模式契约表	没测该层	keep	keep	—
 rejects 是 promise 面不是 never；string() 契约报 unproven；resolves/returns 不变	severity/ctor/rejects 表	没测该层	keep	keep	—
 箭头不可构造；function 表达式可构造；from/本地箭头仍是 caught	severity/ctor/rejects 表	没测该层	keep	keep	—
 表达式解析失败 = warning（两通道一致）；缺 mock 文件仍是 error	severity/ctor/rejects 表	没测该层	keep	keep	—
@@ -101,4 +99,6 @@ resolves 形态在同契约下同样报 unproven-return（口径一致）	dup:�
 孤儿 + 一条生效的 @nudo:as ⇒ 孤儿诊断**仍然在场**（改前被抑制为 0）	dup:内建 mock/孤儿表	commit:86932bb1
 生效的那条 @nudo:as 照旧进入收集表（抑制解除没有副作用）	dup:内建 mock/孤儿表	commit:86932bb1
 两处孤儿各报一条（改前合并成一条）	dup:内建 mock/孤儿表	commit:86932bb1
+分析面覆盖生效；无指令邻句/非语句节点/空源负控	dup:覆盖收集表	commit:5a0a879a
+14 个容器都收集 @nudo:as；for 体 @nudo:replace 也收集	dup:覆盖收集表	commit:5a0a879a
 ```
