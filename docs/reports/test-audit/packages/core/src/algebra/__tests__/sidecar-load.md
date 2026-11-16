@@ -10,7 +10,6 @@ title	rootCause	gap	action	status	evidence
 "持久读错误响亮：恒抛 → error 级 nudo:contract-load + ok=false"	"可变模式 loader：同一函数对象跨 checkSource 调用（loadModuleId 身份稳定， memo 键不因换 loader 而分叉），模式切换模拟 fs 状态变迁。 断言：expect(r.ok).toBe(false);；expect(errs.length).toBeGreaterThanOrEqual(1);"	夹具漏形态	keep	keep	—
 "持久错误轮不钉 memo：随后真 miss 轮回到干净（不陈旧命中错误报告）"	"可变模式 loader：同一函数对象跨 checkSource 调用（loadModuleId 身份稳定， memo 键不因换 loader 而分叉），模式切换模拟 fs 状态变迁。 断言：expect(rErr.ok).toBe(false);；expect(rMiss.issues.filter((i) => i.code === \"nudo:contract-load\")).toEqual([]);"	夹具漏形态	keep	keep	—
 "miss 轮不吞错误轮：先真 miss（干净、进 memo），后恒抛必须响亮（不陈旧命中干净报告）"	"可变模式 loader：同一函数对象跨 checkSource 调用（loadModuleId 身份稳定， memo 键不因换 loader 而分叉），模式切换模拟 fs 状态变迁。 断言：expect(rMiss.ok).toBe(true);；expect(rErr.ok).toBe(false);"	夹具漏形态	keep	keep	—
-"真 miss（无侧车文件）→ 静默零诊断（反向回归钉）"	"#135：check 输出在两个稳定集间翻转（28↔22）——少集 = 契约族诊断整体 静默消失、exit 0 假绿。 根因链：fs 读错误被上游折叠成「无侧车」miss 后， checkSourceInScope 的 per-call loadModule 缓存把首次 miss 的 undefined 钉死整场。 断言：expect(r.issues.filter((i) => i.code === \"nudo:contract-load\")).toEqual([]);；expect("	没测该层	keep	keep	—
 "装载抛错 ≠ miss：readerr: 前缀 + readError=true，不产 sidecar 条目"	"#135：check 输出在两个稳定集间翻转（28↔22）——少集 = 契约族诊断整体 静默消失、exit 0 假绿。 根因链：fs 读错误被上游折叠成「无侧车」miss 后， checkSourceInScope 的 per-call loadModule 缓存把首次 miss 的 undefined 钉死整场。 断言：expect(r.readError).toBe(true);；expect(r.truncated).toBe(false);"	没测该层	keep	keep	—
 "真 miss 无前缀、readError=false；正常内容轮含 sidecar 条目"	"#135：check 输出在两个稳定集间翻转（28↔22）——少集 = 契约族诊断整体 静默消失、exit 0 假绿。 根因链：fs 读错误被上游折叠成「无侧车」miss 后， checkSourceInScope 的 per-call loadModule 缓存把首次 miss 的 undefined 钉死整场。 断言：expect(rMiss.readError).toBe(false);；expect(rMiss.fp).toBe(\"\");"	没测该层	keep	keep	—
 "keeps only relative .nudo.js/.nudo.ts specs (any import form)"	"- 内容变 → 指纹变（check 整文件 memo / generalize L0 借此失效）； - 无侧车 → 不加任何条目，指纹与扩展前算法逐字节一致（旧调用方零回归）。 断言：expect(sidecarSpecsOf(src)).toEqual(["	没测该层	keep	keep	—
@@ -30,7 +29,6 @@ title	rootCause	gap	action	status	evidence
 "node_modules sidecar stays blocked even inside projectDir"	"projectDir 提供时，树外侧车不 ambient 加载； 断言：expect(eff?.source !== \"handwritten\").toBe(true);"	没测该层	keep	keep	—
 "checkSource with projectDir does not load out-of-tree sidecar"	"projectDir 提供时，树外侧车不 ambient 加载； 断言：expect("	没测该层	keep	keep	—
 "sidecar read throws (EACCES) → nudo:contract-load，不静默"	"侧车 spec 命中时抛错，模拟 readFileSync EACCES 断言：expect(loadErrs.length).toBeGreaterThan(0);；expect(loadErrs[0]!.message).toContain(\"failed to load\");"	没测该层	keep	keep	—
-"no sidecar file (undefined) → 保持静默，无 contract-load"	"侧车不存在：返回 undefined（auto-bind 常态） 断言：expect(loadErrs).toEqual([]);"	没测该层	keep	keep	—
 "读失败按 (路径, 原因) 去重：多导出只报一条"	"缺陷编号只出现在 it 标题的 provenance。 断言：expect(loadErrs).toHaveLength(1);；expect(loadErrs[0]!.message).toContain(\"multi-io.nudo.js\");"	没测该层	keep	keep	—
 "显式 @nudo:import 读失败 → 报诊断（不再炸穿或静默）"	"读失败必须报 nudo:contract-load； 此前 defaultLoadModule 全吞 catch → 两者同形，约束静默 回落 any。 断言：expect(loadErrs.length).toBeGreaterThan(0);；expect(loadErrs.some((i) => i.message.includes(\"std.nudo.js\") && i.message.includes(\"EACCES\"))).toBe(true);"	没测该层	keep	keep	—
 "sidecar binds only alpha → load failure reported once, not per source export"	"#64：侧车加载失败按 (路径, 原因) 去重，不按源导出逐个上报。 最小复现：侧车只绑定 alpha，但 import 打错（null_ 不是构建器）→ 修复前 alpha/beta/gamma 各报一条相同的 ERROR； 断言：expect(loadErrs).toHaveLength(1);；expect(loadErrs[0]!.message).not.toMatch(/for '/);"	没测该层	keep	keep	—
@@ -42,9 +40,6 @@ title	rootCause	gap	action	status	evidence
 "对照：被调方与调用方同目录 ⇒ 侧车同目录 ⇒ 正常解析（零 contract-load）"	"跨文件调用时，**被调方**的 `@nudo:import` 侧车说明符按**调用方目录** 解析 ⇒ 侧车明明在**被调方旁边**却报「failed to load」⇒ **error 级** `nudo:contract-load` + `nudo:contract-syntax` 假红。 现状：**假阳性** —— 症状已被修掉：`scan-literal-calls.ts` 的 `checkArgStructures` 把**被调方的定义路径**（`ext.fromFile`，经第 6 参 `contractFromFile` 传进来） 用作 `refine.fromFile`（`refineFromFile = !same"	没测该层	keep	keep	—
 "诊断点名**依赖侧车路径**（旧口径只说导入方坏了）"	"断言：expect(err).toBeDefined();；expect(message).toContain(\"./std.nudo.js\");"	没测该层	keep	keep	—
 "依赖侧车正常时，导入方的契约**照常执法**（不再连坐作废）"	"断言：expect(Object.keys(out)).toContain(\"good\");；expect(v?.fn).toBeDefined();"	没测该层	keep	keep	—
-"侧车导出名与源码函数名不匹配 ⇒ 报孤儿导出（点名侧车导出名）"	"断言：expect(orphan).toHaveLength(1);；expect(orphan[0]!.message).toContain(\"'ff'\");"	没测该层	keep	keep	—
-"名字对得上 ⇒ 无孤儿诊断（不误报）"	"断言：expect(r.issues.filter((i) => i.code === \"nudo:contract-load\")).toEqual([]);"	没测该层	keep	keep	—
-"非 fn() 形态的孤儿导出（模板）不报（模板是 @nudo:import 的料）"	"跨文件调用时，**被调方**的 `@nudo:import` 侧车说明符按**调用方目录** 解析 ⇒ 侧车明明在**被调方旁边**却报「failed to load」⇒ **error 级** `nudo:contract-load` + `nudo:contract-syntax` 假红。 现状：**假阳性** —— 症状已被修掉：`scan-literal-calls.ts` 的 `checkArgStructures` 把**被调方的定义路径**（`ext.fromFile`，经第 6 参 `contractFromFile` 传进来） 用作 `refine.fromFile`（`refineFromFile = !same"	没测该层	keep	keep	—
 "已被 @nudo:import 认领的名字不算孤儿"	"跨文件调用时，**被调方**的 `@nudo:import` 侧车说明符按**调用方目录** 解析 ⇒ 侧车明明在**被调方旁边**却报「failed to load」⇒ **error 级** `nudo:contract-load` + `nudo:contract-syntax` 假红。 现状：**假阳性** —— 症状已被修掉：`scan-literal-calls.ts` 的 `checkArgStructures` 把**被调方的定义路径**（`ext.fromFile`，经第 6 参 `contractFromFile` 传进来） 用作 `refine.fromFile`（`refineFromFile = !same"	没测该层	keep	keep	—
 "`export const pick = fn(…)`（pick 是构建器名）→ 侧车可加载，导出可见"	"回归：侧车自身的绑定名与**构建器名**同名 ⇒ 侧车根本加载不了。 根因：`execSidecar` 用 `new Function(...Object.keys(sidecarInjects), …)` 把 15 个构建器名当**形参**注入； 断言：expect(Object.keys(out)).toContain(\"pick\");；expect(v).toBeDefined();"	夹具漏形态	keep	keep	—
 "侧车里的 `const number = …`（number 是构建器名）→ 可加载，不抛 SyntaxError"	"回归：侧车自身的绑定名与**构建器名**同名 ⇒ 侧车根本加载不了。 根因：`execSidecar` 用 `new Function(...Object.keys(sidecarInjects), …)` 把 15 个构建器名当**形参**注入； 断言：expect(Object.keys(out)).toContain(\"number\");"	夹具漏形态	keep	keep	—
@@ -69,4 +64,13 @@ title	rootCause	gap	action	status	evidence
 "%s → %s"	表驱动用例：%s → %s；枚举同一不变量下的输入/期望组合，属既有表行补齐。	夹具漏形态	keep	keep	—
 "draft %s → %s"	表驱动用例：draft %s → %s；枚举同一不变量下的输入/期望组合，属既有表行补齐。	夹具漏形态	keep	keep	—
 $name	装载器缺少「场景 × 诊断码 × 归属」模块矩阵：missing/load-failure/orphan/template/alias/跨文件六条路径散落在 bug 用例里；新增表驱动不变量。	没测该层	add	done	commit:b21fcb34
+```
+
+```audit-deleted
+title	reason	evidence
+真 miss（无侧车文件）→ 静默零诊断（反向回归钉）	dup:模块矩阵：sidecar 装载面	commit:PENDING
+no sidecar file (undefined) → 保持静默，无 contract-load	dup:模块矩阵：sidecar 装载面	commit:PENDING
+侧车导出名与源码函数名不匹配 ⇒ 报孤儿导出（点名侧车导出名）	dup:模块矩阵：sidecar 装载面	commit:PENDING
+非 fn() 形态的孤儿导出（模板）不报（模板是 @nudo:import 的料）	dup:模块矩阵：sidecar 装载面	commit:PENDING
+名字对得上 ⇒ 无孤儿诊断（不误报）	dup:模块矩阵：sidecar 装载面	commit:PENDING
 ```

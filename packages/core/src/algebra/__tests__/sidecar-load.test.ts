@@ -1599,7 +1599,7 @@ const CASES: Case[] = [
     src: "export function f(x) { return x; }",
     entry: "/t/bad.js",
     expectCodes: ["nudo:contract-load"],
-    message: "bad.nudo.js",
+    messages: ["bad.nudo.js"],
   },
   {
     name: "侧车孤儿 fn 导出 ⇒ contract-load 点名侧车导出名",
