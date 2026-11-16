@@ -1,42 +1,12 @@
-# packages/env/src/__tests__/env-host-stdlib.test.ts
-
-模块套件：宿主标准库面（Buffer/crypto/text/atob/uri/structuredClone/iterable）。
-
-审计：87 个用例；根因取自测试注释，缺口按四分类判定，动作复核后为 keep。
-
 ```audit
 title	rootCause	gap	action	status	evidence
-"静态 `Response.json` 的返回域是 brand `Response`，且不是 promise"	"共同根因：env 的成员表是**手写**的 ⇒（a）**缺**成员 ⇒ 闭 obj 缺槽 ⇒ 成员读出 **exact `undefined`**（确定的错值）⇒ 调用即「确定抛 TypeError」⇒ **L2 门禁假红** （1047 / 1048 / 1049）； （b）**写错返回域** ⇒ 宿主必抛的调用被判安全 ⇒ **L2 门禁 假绿**（1044）。 断言：expect(rt, \"Response.json 必须声明返回域\").toBeTruthy();；expect(rt!.shape.k).toBe(\"brand\");"	旧断言钉错	keep	keep	—
-"静态 `Response.json(x)` 的引擎签名是 `Response`（不是 promise）"	"`performance` 原型面上**不建模**的宿主成员： - `markResourceTiming`：宿主上以非法 cache 名调用**必抛** （`cache must be an empty string or 'local'`）⇒ 不是「普通可调用成员」。 - `onresourcetimingbufferfull`：事件回调**属性**（宿主上是 null），不是方法。 断言：expect(out.errorCodes).toEqual([]);；expect(displayOf(out)).toMatch(/^Response\\b/);"	没测该层	keep	keep	—
-"实例 `response.json()` 仍是 promise（不得被改成同步）"	"共同根因：env 的成员表是**手写**的 ⇒（a）**缺**成员 ⇒ 闭 obj 缺槽 ⇒ 成员读出 **exact `undefined`**（确定的错值）⇒ 调用即「确定抛 TypeError」⇒ **L2 门禁假红** （1047 / 1048 / 1049）； （b）**写错返回域** ⇒ 宿主必抛的调用被判安全 ⇒ **L2 门禁 假绿**（1044）。 断言：expect(face, \"Response 实例面\").toBeTruthy();；expect(jsonSlot, \"实例面必须保留 json 槽\").toBeTruthy();"	旧断言钉错	keep	keep	—
-"静态面三个工厂（error / json / redirect）都仍在，且都返回 `Response` 品牌"	"共同根因：env 的成员表是**手写**的 ⇒（a）**缺**成员 ⇒ 闭 obj 缺槽 ⇒ 成员读出 **exact `undefined`**（确定的错值）⇒ 调用即「确定抛 TypeError」⇒ **L2 门禁假红** （1047 / 1048 / 1049）； （b）**写错返回域** ⇒ 宿主必抛的调用被判安全 ⇒ **L2 门禁 假绿**（1044）。 断言：expect(slot, `Response.${name}`).toBeTruthy();；expect(rt!.shape.k, `Response.${name} 返回域`).toBe(\"brand\");"	旧断言钉错	keep	keep	—
-"6 个宿主真实成员都被声明（不再缺槽）"	"断言：expect(nodeSlotOf(\"performance\", name), `performance.${name}`).toBeTruthy();"	没测该层	keep	keep	—
-"6 个成员都可调用（不落进「确定缺失」）"	"共同根因：env 的成员表是**手写**的 ⇒（a）**缺**成员 ⇒ 闭 obj 缺槽 ⇒ 成员读出 **exact `undefined`**（确定的错值）⇒ 调用即「确定抛 TypeError」⇒ **L2 门禁假红** （1047 / 1048 / 1049）； （b）**写错返回域** ⇒ 宿主必抛的调用被判安全 ⇒ **L2 门禁 假绿**（1044）。 断言：expect(out.errorCodes).toEqual([]);；expect(out.issues.filter((i) => i.code === \"nudo:entry-may-throw\")).toEqual([]);"	旧断言钉错	keep	keep	—
-"`performance.nodeTiming` 是对象（宿主上不是函数）"	"`performance` 原型面上**不建模**的宿主成员： - `markResourceTiming`：宿主上以非法 cache 名调用**必抛** （`cache must be an empty string or 'local'`）⇒ 不是「普通可调用成员」。 - `onresourcetimingbufferfull`：事件回调**属性**（宿主上是 null），不是方法。 断言：expect(slot!.shape.k).toBe(\"obj\");"	没测该层	keep	keep	—
-"`performance.timerify(fn)` 的返回域是可调用的（宿主返回包装函数，不是 undefined）"	"`performance` 原型面上**不建模**的宿主成员： - `markResourceTiming`：宿主上以非法 cache 名调用**必抛** （`cache must be an empty string or 'local'`）⇒ 不是「普通可调用成员」。 - `onresourcetimingbufferfull`：事件回调**属性**（宿主上是 null），不是方法。 断言：expect(rt).toBeTruthy();；expect(rt!.shape.k).toBe(\"fn\");"	没测该层	keep	keep	—
-"已声明的成员行为不变：`now` / `mark` / `measure` / `getEntries*` 仍可调用"	"`performance` 原型面上**不建模**的宿主成员： - `markResourceTiming`：宿主上以非法 cache 名调用**必抛** （`cache must be an empty string or 'local'`）⇒ 不是「普通可调用成员」。 - `onresourcetimingbufferfull`：事件回调**属性**（宿主上是 null），不是方法。 断言：expect(out.errorCodes).toEqual([]);"	没测该层	keep	keep	—
-"`navigator.locks` 被声明（不再是 exact undefined）"	"共同根因：env 的成员表是**手写**的 ⇒（a）**缺**成员 ⇒ 闭 obj 缺槽 ⇒ 成员读出 **exact `undefined`**（确定的错值）⇒ 调用即「确定抛 TypeError」⇒ **L2 门禁假红** （1047 / 1048 / 1049）； （b）**写错返回域** ⇒ 宿主必抛的调用被判安全 ⇒ **L2 门禁 假绿**（1044）。 断言：expect(slot, \"navigator.locks\").toBeTruthy();；expect(out.errorCodes).toEqual([]);"	旧断言钉错	keep	keep	—
-"`navigator.locks.request(...)` 不被判「确定缺失」"	"共同根因：env 的成员表是**手写**的 ⇒（a）**缺**成员 ⇒ 闭 obj 缺槽 ⇒ 成员读出 **exact `undefined`**（确定的错值）⇒ 调用即「确定抛 TypeError」⇒ **L2 门禁假红** （1047 / 1048 / 1049）； （b）**写错返回域** ⇒ 宿主必抛的调用被判安全 ⇒ **L2 门禁 假绿**（1044）。 断言：expect(out.errorCodes).toEqual([]);；expect(out.issues.filter((i) => i.code === \"nudo:entry-may-throw\")).toEqual([]);"	旧断言钉错	keep	keep	—
-"`navigator.locks.query()` 也被声明"	"共同根因：env 的成员表是**手写**的 ⇒（a）**缺**成员 ⇒ 闭 obj 缺槽 ⇒ 成员读出 **exact `undefined`**（确定的错值）⇒ 调用即「确定抛 TypeError」⇒ **L2 门禁假红** （1047 / 1048 / 1049）； （b）**写错返回域** ⇒ 宿主必抛的调用被判安全 ⇒ **L2 门禁 假绿**（1044）。 断言：expect(nodeSlotOf(\"navigator\", \"locks\", \"query\"), \"navigator.locks.query\").toBeTruthy();"	旧断言钉错	keep	keep	—
-"`Navigator` 实例面与 `navigator` 全局面同源（同一份槽表）"	"共同根因：env 的成员表是**手写**的 ⇒（a）**缺**成员 ⇒ 闭 obj 缺槽 ⇒ 成员读出 **exact `undefined`**（确定的错值）⇒ 调用即「确定抛 TypeError」⇒ **L2 门禁假红** （1047 / 1048 / 1049）； （b）**写错返回域** ⇒ 宿主必抛的调用被判安全 ⇒ **L2 门禁 假绿**（1044）。 断言：expect(face, \"Navigator 实例面\").toBeTruthy();；expect(memberNames(face)).toContain(\"locks\");"	旧断言钉错	keep	keep	—
-"已声明的成员行为不变：hardwareConcurrency / language / languages / userAgent / platform"	"断言：expect(nodeSlotOf(\"navigator\", name), `navigator.${name}`).toBeTruthy();；expect(out.errorCodes).toEqual([]);"	没测该层	keep	keep	—
-"deriveKey / deriveBits / wrapKey / unwrapKey 被声明"	"共同根因：env 的成员表是**手写**的 ⇒（a）**缺**成员 ⇒ 闭 obj 缺槽 ⇒ 成员读出 **exact `undefined`**（确定的错值）⇒ 调用即「确定抛 TypeError」⇒ **L2 门禁假红** （1047 / 1048 / 1049）； （b）**写错返回域** ⇒ 宿主必抛的调用被判安全 ⇒ **L2 门禁 假绿**（1044）。 断言：expect(slotOf(\"crypto\", \"subtle\", name), `crypto.subtle.${name}`).toBeTruthy();"	旧断言钉错	keep	keep	—
-"调用不再被判「确定缺失」（合法浏览器代码不再被 L2 门禁挡住）"	"共同根因：env 的成员表是**手写**的 ⇒（a）**缺**成员 ⇒ 闭 obj 缺槽 ⇒ 成员读出 **exact `undefined`**（确定的错值）⇒ 调用即「确定抛 TypeError」⇒ **L2 门禁假红** （1047 / 1048 / 1049）； （b）**写错返回域** ⇒ 宿主必抛的调用被判安全 ⇒ **L2 门禁 假绿**（1044）。 断言：expect(out.errorCodes).toEqual([]);；expect(out.issues.filter((i) => i.code === \"nudo:entry-may-throw\")).toEqual([]);"	旧断言钉错	keep	keep	—
-"已声明的成员行为不变：digest / encrypt / decrypt / sign / verify / generateKey / importKey / exportKey"	"断言：expect(slotOf(\"crypto\", \"subtle\", name), `crypto.subtle.${name}`).toBeTruthy();；expect(out.errorCodes).toEqual([]);"	没测该层	keep	keep	—
-"node env 与 web env 的 `crypto.subtle` 成员集合同源（两 env 不再自相矛盾）"	"宿主护栏：宿主实测成员名（减去显式排除项）必须 ⊆ env 表成员名。 断言：expect(nodeMembers).toEqual(webMembers);"	没测该层	keep	keep	—
-"`performance.notARealMember()` 仍判「确定抛 TypeError」"	"`performance` 原型面上**不建模**的宿主成员： - `markResourceTiming`：宿主上以非法 cache 名调用**必抛** （`cache must be an empty string or 'local'`）⇒ 不是「普通可调用成员」。 - `onresourcetimingbufferfull`：事件回调**属性**（宿主上是 null），不是方法。 断言：expect(displayOf(out)).toMatch(/never\\s+throws\\s+TypeError/);；expect(out.errorCodes).toContain(\"nudo:entry-may-throw\");"	没测该层	keep	keep	—
-"`navigator.notARealMember` 仍读出 undefined（不是全放行）"	"共同根因：env 的成员表是**手写**的 ⇒（a）**缺**成员 ⇒ 闭 obj 缺槽 ⇒ 成员读出 **exact `undefined`**（确定的错值）⇒ 调用即「确定抛 TypeError」⇒ **L2 门禁假红** （1047 / 1048 / 1049）； （b）**写错返回域** ⇒ 宿主必抛的调用被判安全 ⇒ **L2 门禁 假绿**（1044）。 断言：expect(displayOf(out)).toMatch(/^undefined/);"	旧断言钉错	keep	keep	—
-"web env `crypto.subtle.notAMember()` 仍判「确定抛 TypeError」"	"宿主护栏：宿主实测成员名（减去显式排除项）必须 ⊆ env 表成员名。 断言：expect(displayOf(out)).toMatch(/never\\s+throws\\s+TypeError/);；expect(out.errorCodes).toContain(\"nudo:entry-may-throw\");"	没测该层	keep	keep	—
-"node env `crypto.subtle.notAMember()` 仍读出 undefined（不是全放行）"	"宿主护栏：宿主实测成员名（减去显式排除项）必须 ⊆ env 表成员名。 断言：expect(displayOf(out)).toMatch(/^undefined/);"	没测该层	keep	keep	—
-"performance（node env）"	"宿主护栏：宿主实测成员名（减去显式排除项）必须 ⊆ env 表成员名。"	没测该层	keep	keep	—
-"navigator（node env）"	"宿主护栏：宿主实测成员名（减去显式排除项）必须 ⊆ env 表成员名。"	没测该层	keep	keep	—
-"crypto.subtle（node env 与 web env）"	"宿主护栏：宿主实测成员名（减去显式排除项）必须 ⊆ env 表成员名。"	没测该层	keep	keep	—
-"Response 静态面（node env 与 web env）"	"宿主护栏：宿主实测成员名（减去显式排除项）必须 ⊆ env 表成员名。"	没测该层	keep	keep	—
-"atob / btoa are NOT declared in the web env (host fallback)"	"族 29 `@nudo:env web` 的 `atob` / `btoa` 吞掉宿主的 `DOMException(InvalidCharacterError)` ⇒ 恒不抛 ⇒ **L2 门禁假绿**。 根因：web env 把宿主实现包在 `try/catch` 里（catch 分支 `return undefined`） ⇒ 「抛」与「不抛」塌成同一个返回值； 断言：expect(webEnvGlobals()[\"atob\"]).toBeUndefined();；expect(webEnvGlobals()[\"btoa\"]).toBeUndefined();"	没测该层	keep	keep	—
-"atob('!!!') records InvalidCharacterError"	"族 29 `@nudo:env web` 的 `atob` / `btoa` 吞掉宿主的 `DOMException(InvalidCharacterError)` ⇒ 恒不抛 ⇒ **L2 门禁假绿**。 根因：web env 把宿主实现包在 `try/catch` 里（catch 分支 `return undefined`） ⇒ 「抛」与「不抛」塌成同一个返回值； 断言：expect(out.throwBrands).toContain(\"InvalidCharacterError\");"	没测该层	keep	keep	—
-"btoa('✓') records InvalidCharacterError"	"族 29 `@nudo:env web` 的 `atob` / `btoa` 吞掉宿主的 `DOMException(InvalidCharacterError)` ⇒ 恒不抛 ⇒ **L2 门禁假绿**。 根因：web env 把宿主实现包在 `try/catch` 里（catch 分支 `return undefined`） ⇒ 「抛」与「不抛」塌成同一个返回值； 断言：expect(out.throwBrands).toContain(\"InvalidCharacterError\");"	没测该层	keep	keep	—
-"valid base64 still folds to the exact string (no precision loss)"	"族 29 `@nudo:env web` 的 `atob` / `btoa` 吞掉宿主的 `DOMException(InvalidCharacterError)` ⇒ 恒不抛 ⇒ **L2 门禁假绿**。 根因：web env 把宿主实现包在 `try/catch` 里（catch 分支 `return undefined`） ⇒ 「抛」与「不抛」塌成同一个返回值； 断言：expect(out.errorCodes).toEqual([]);；expect(displayOf(out)).toMatch(/^\"abc\"/);"	没测该层	keep	keep	—
-"the host-fallback path and the env path agree (same source, same verdict)"	"族 29 `@nudo:env web` 的 `atob` / `btoa` 吞掉宿主的 `DOMException(InvalidCharacterError)` ⇒ 恒不抛 ⇒ **L2 门禁假绿**。 根因：web env 把宿主实现包在 `try/catch` 里（catch 分支 `return undefined`） ⇒ 「抛」与「不抛」塌成同一个返回值； 断言：expect(withEnv.throwBrands).toEqual(hostOnly.throwBrands);；expect(withEnv.throwBrands).toContain(\"InvalidCharacterError\");"	没测该层	keep	keep	—
+web env 不声明；非法输入记 InvalidCharacterError；合法 base64 精确折叠；env/host 同口径	host stdlib 契约表	没测该层	keep	keep	—
+performance/navigator/crypto.subtle/Response static 的宿主成员均被覆盖	host stdlib 契约表	没测该层	keep	keep	—
+performance/navigator/web subtle/node subtle 的未知成员仍确定缺失	host stdlib 契约表	没测该层	keep	keep	—
+四 API 声明/可调用；既有成员不变；node/web 成员集同源	host stdlib 契约表	没测该层	keep	keep	—
+locks/request/query 声明；实例面同源；既有成员不变	host stdlib 契约表	没测该层	keep	keep	—
+六成员声明/可调用；nodeTiming obj；timerify 返回 fn；已有成员不变	host stdlib 契约表	没测该层	keep	keep	—
+静态工厂返回 Response 品牌；实例 json 仍是 promise	host stdlib 契约表	没测该层	keep	keep	—
 "原生 oracle：new Buffer(1) / new Buffer(\"ab\") 正常返回（仅弃用警告，不抛）"	"node env 把 `Buffer` 声明成**普通对象**（不是构造器）⇒ `new Buffer(...)` 被判**确定 TypeError** ⇒ L2 门禁对合法 Node 代码报 error （假红，`nudo check` exit 1）。 静态面（from / alloc / of / …）挂 fn 的 slots，实例面在 returnType 上—— 两者指向**同一个** Buffer 形状（bufferBrand），不另造第二份 Buffer 形状。 断言：expect(new Buffer(1).length).toBe(1);；expect(new Buffer(\"ab\").length).toBe(2"	夹具漏形态	keep	keep	—
 "env：Buffer 是 fn 形全局且带 ctor:true，实例面是 Buffer 形状"	"node env 把 `Buffer` 声明成**普通对象**（不是构造器）⇒ `new Buffer(...)` 被判**确定 TypeError** ⇒ L2 门禁对合法 Node 代码报 error （假红，`nudo check` exit 1）。 静态面（from / alloc / of / …）挂 fn 的 slots，实例面在 returnType 上—— 两者指向**同一个** Buffer 形状（bufferBrand），不另造第二份 Buffer 形状。 断言：expect(g, \"global Buffer missing\").toBeTruthy();；expect(g.shape.k, \"Buffer 形"	夹具漏形态	keep	keep	—
 "引擎探针：new Buffer(1) 不再是「never throws TypeError」"	"node env 把 `Buffer` 声明成**普通对象**（不是构造器）⇒ `new Buffer(...)` 被判**确定 TypeError** ⇒ L2 门禁对合法 Node 代码报 error （假红，`nudo check` exit 1）。 静态面（from / alloc / of / …）挂 fn 的 slots，实例面在 returnType 上—— 两者指向**同一个** Buffer 形状（bufferBrand），不另造第二份 Buffer 形状。 断言：expect(r.issues.filter((i) => i.code === \"nudo:entry-may-throw\")).toEqual([]"	夹具漏形态	keep	keep	—
@@ -93,4 +63,37 @@ title	rootCause	gap	action	status	evidence
 "2. 合法入参 ⇒ **不**抛（不误红）且值精确"	"族 29 · es env 的 URI 族（`decodeURI` / `decodeURIComponent` / `encodeURI` / `encodeURIComponent`）**吞掉 URIError** ⇒ 引擎判「不抛」 ⇒ L2 `nudo:entry-may-throw` 门禁失效（**假绿**）。 根因：env 声明走 `strToStrImplAbs(encodeURI)`，宿主 `URIError` 被 envFn 的 apply 包装吞掉（旧实现 `catch { return returnType }`）。 断言：expect(mayThrowMessages(r), `${id}: ${expr}"	没测该层	keep	keep	—
 "3. 抽象实参 ⇒ 回落声明域 string（不折自信精确字面量）+ may-throw URIError"	"族 29 · es env 的 URI 族（`decodeURI` / `decodeURIComponent` / `encodeURI` / `encodeURIComponent`）**吞掉 URIError** ⇒ 引擎判「不抛」 ⇒ L2 `nudo:entry-may-throw` 门禁失效（**假绿**）。 根因：env 声明走 `strToStrImplAbs(encodeURI)`，宿主 `URIError` 被 envFn 的 apply 包装吞掉（旧实现 `catch { return returnType }`）。 断言：expect(display).toContain(\"string\");；expect("	没测该层	keep	keep	—
 "4. 四个 URI 全局都声明了 throws 面（errBrand('URIError')）"	"族 29 · es env 的 URI 族（`decodeURI` / `decodeURIComponent` / `encodeURI` / `encodeURIComponent`）**吞掉 URIError** ⇒ 引擎判「不抛」 ⇒ L2 `nudo:entry-may-throw` 门禁失效（**假绿**）。 根因：env 声明走 `strToStrImplAbs(encodeURI)`，宿主 `URIError` 被 envFn 的 apply 包装吞掉（旧实现 `catch { return returnType }`）。 断言：expect(fn, `${name} must be declared`).toBeT"	没测该层	keep	keep	—
+```audit-deleted
+title	reason	evidence
+静态 `Response.json` 的返回域是 brand `Response`，且不是 promise	dup:host stdlib 契约表	commit:64ded59c
+静态 `Response.json(x)` 的引擎签名是 `Response`（不是 promise）	dup:host stdlib 契约表	commit:64ded59c
+实例 `response.json()` 仍是 promise（不得被改成同步）	dup:host stdlib 契约表	commit:64ded59c
+静态面三个工厂（error / json / redirect）都仍在，且都返回 `Response` 品牌	dup:host stdlib 契约表	commit:64ded59c
+6 个宿主真实成员都被声明（不再缺槽）	dup:host stdlib 契约表	commit:64ded59c
+6 个成员都可调用（不落进「确定缺失」）	dup:host stdlib 契约表	commit:64ded59c
+`performance.nodeTiming` 是对象（宿主上不是函数）	dup:host stdlib 契约表	commit:64ded59c
+`performance.timerify(fn)` 的返回域是可调用的（宿主返回包装函数，不是 undefined）	dup:host stdlib 契约表	commit:64ded59c
+已声明的成员行为不变：`now` / `mark` / `measure` / `getEntries*` 仍可调用	dup:host stdlib 契约表	commit:64ded59c
+`navigator.locks` 被声明（不再是 exact undefined）	dup:host stdlib 契约表	commit:64ded59c
+`navigator.locks.request(...)` 不被判「确定缺失」	dup:host stdlib 契约表	commit:64ded59c
+`navigator.locks.query()` 也被声明	dup:host stdlib 契约表	commit:64ded59c
+`Navigator` 实例面与 `navigator` 全局面同源（同一份槽表）	dup:host stdlib 契约表	commit:64ded59c
+已声明的成员行为不变：hardwareConcurrency / language / languages / userAgent / platform	dup:host stdlib 契约表	commit:64ded59c
+deriveKey / deriveBits / wrapKey / unwrapKey 被声明	dup:host stdlib 契约表	commit:64ded59c
+调用不再被判「确定缺失」（合法浏览器代码不再被 L2 门禁挡住）	dup:host stdlib 契约表	commit:64ded59c
+已声明的成员行为不变：digest / encrypt / decrypt / sign / verify / generateKey / importKey / exportKey	dup:host stdlib 契约表	commit:64ded59c
+node env 与 web env 的 `crypto.subtle` 成员集合同源（两 env 不再自相矛盾）	dup:host stdlib 契约表	commit:64ded59c
+`performance.notARealMember()` 仍判「确定抛 TypeError」	dup:host stdlib 契约表	commit:64ded59c
+`navigator.notARealMember` 仍读出 undefined（不是全放行）	dup:host stdlib 契约表	commit:64ded59c
+web env `crypto.subtle.notAMember()` 仍判「确定抛 TypeError」	dup:host stdlib 契约表	commit:64ded59c
+node env `crypto.subtle.notAMember()` 仍读出 undefined（不是全放行）	dup:host stdlib 契约表	commit:64ded59c
+performance（node env）	dup:host stdlib 契约表	commit:64ded59c
+navigator（node env）	dup:host stdlib 契约表	commit:64ded59c
+crypto.subtle（node env 与 web env）	dup:host stdlib 契约表	commit:64ded59c
+Response 静态面（node env 与 web env）	dup:host stdlib 契约表	commit:64ded59c
+atob / btoa are NOT declared in the web env (host fallback)	dup:host stdlib 契约表	commit:64ded59c
+atob('!!!') records InvalidCharacterError	dup:host stdlib 契约表	commit:64ded59c
+btoa('✓') records InvalidCharacterError	dup:host stdlib 契约表	commit:64ded59c
+valid base64 still folds to the exact string (no precision loss)	dup:host stdlib 契约表	commit:64ded59c
+the host-fallback path and the env path agree (same source, same verdict)	dup:host stdlib 契约表	commit:64ded59c
 ```
