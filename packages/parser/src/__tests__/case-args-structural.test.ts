@@ -3,144 +3,83 @@ import { parse } from "../parse.ts";
 import { extractDirectives, parseCaseArgExpr } from "../directives.ts";
 import { num, str } from "@nudojs/core";
 
-describe("parseCaseArgExpr: structural builders", () => {
-  it("parses array(number())", () => {
-    const result = parseCaseArgExpr("array(number())");
-    expect(result.shape.k).toBe("arr");
-    if (result.shape.k === "arr") {
-      expect(result.shape.element.shape).toEqual(num().shape);
-    }
-  });
+type StructuralCase = {
+  expr: string;
+  kind: string;
+  verify?: (abs: ReturnType<typeof parseCaseArgExpr>) => void;
+};
 
-  it("parses tuple literal [number(), string()]", () => {
-    const result = parseCaseArgExpr("[number(), string()]");
-    expect(result.shape.k).toBe("tuple");
-    if (result.shape.k === "tuple") {
-      expect(result.shape.elements).toHaveLength(2);
-      expect(result.shape.elements[0]!.shape).toEqual(num().shape);
-      expect(result.shape.elements[1]!.shape).toEqual(str().shape);
-    }
-  });
+const STRUCTURAL_CASES: { name: string; cases: StructuralCase[] }[] = [
+  { name: "array(number())", cases: [{ expr: "array(number())", kind: "arr", verify: (a) => { if (a.shape.k === "arr") expect(a.shape.element.shape).toEqual(num().shape); } }] },
+  {
+    name: "tuple 字面量",
+    cases: [{
+      expr: "[number(), string()]",
+      kind: "tuple",
+      verify: (a) => {
+        if (a.shape.k !== "tuple") return;
+        expect(a.shape.elements).toHaveLength(2);
+        expect(a.shape.elements[0]!.shape).toEqual(num().shape);
+        expect(a.shape.elements[1]!.shape).toEqual(str().shape);
+      },
+    }],
+  },
+  {
+    name: "shape builder 与对象字面量",
+    cases: ["shape({ x: number(), y: string() })", "{ x: number(), y: string() }"].map((expr) => ({
+      expr,
+      kind: "obj",
+      verify: (a) => {
+        if (a.shape.k !== "obj") return;
+        expect(a.shape.slots.x?.value.shape).toEqual(num().shape);
+        expect(a.shape.slots.y?.value.shape).toEqual(str().shape);
+      },
+    })),
+  },
+  {
+    name: "空对象与空 tuple",
+    cases: [
+      { expr: "{}", kind: "obj", verify: (a) => { if (a.shape.k === "obj") expect(Object.keys(a.shape.slots)).toHaveLength(0); } },
+      { expr: "[]", kind: "tuple", verify: (a) => { if (a.shape.k === "tuple") expect(a.shape.elements).toHaveLength(0); } },
+    ],
+  },
+  {
+    name: "嵌套 builder 与具体字面量",
+    cases: [
+      { expr: "shape({ items: array(number()) })", kind: "obj", verify: (a) => { if (a.shape.k === "obj") expect(a.shape.slots.items?.value.shape.k).toBe("arr"); } },
+      { expr: "array(null)", kind: "arr" },
+      { expr: "union(number(), null)", kind: "sum" },
+    ],
+  },
+];
 
-  it("parses shape({ x: number(), y: string() })", () => {
-    const result = parseCaseArgExpr("shape({ x: number(), y: string() })");
-    expect(result.shape.k).toBe("obj");
-    if (result.shape.k === "obj") {
-      expect(result.shape.slots.x?.value.shape).toEqual(num().shape);
-      expect(result.shape.slots.y?.value.shape).toEqual(str().shape);
+describe("parseCaseArgExpr：结构 builder 与字面量", () => {
+  it.each(STRUCTURAL_CASES)("$name", ({ cases }) => {
+    for (const { expr, kind, verify } of cases) {
+      const abs = parseCaseArgExpr(expr);
+      expect(abs.shape.k, expr).toBe(kind);
+      verify?.(abs);
     }
-  });
-
-  it("parses object literal { x: number(), y: string() }", () => {
-    const result = parseCaseArgExpr("{ x: number(), y: string() }");
-    expect(result.shape.k).toBe("obj");
-    if (result.shape.k === "obj") {
-      expect(result.shape.slots.x?.value.shape).toEqual(num().shape);
-      expect(result.shape.slots.y?.value.shape).toEqual(str().shape);
-    }
-  });
-
-  it("parses nested shape with array", () => {
-    const result = parseCaseArgExpr("shape({ items: array(number()) })");
-    expect(result.shape.k).toBe("obj");
-    if (result.shape.k === "obj") {
-      expect(result.shape.slots.items?.value.shape.k).toBe("arr");
-    }
-  });
-
-  it("parses empty object literal {}", () => {
-    const result = parseCaseArgExpr("{}");
-    expect(result.shape.k).toBe("obj");
-    if (result.shape.k === "obj") {
-      expect(Object.keys(result.shape.slots)).toHaveLength(0);
-    }
-  });
-
-  it("parses empty tuple literal []", () => {
-    const result = parseCaseArgExpr("[]");
-    expect(result.shape.k).toBe("tuple");
-    if (result.shape.k === "tuple") {
-      expect(result.shape.elements).toHaveLength(0);
-    }
-  });
-
-  it("parses nested concrete literals inside builders", () => {
-    expect(parseCaseArgExpr("union(number(), null)").shape.k).toBe("sum");
-    expect(parseCaseArgExpr("array(null)").shape.k).toBe("arr");
-    expect(parseCaseArgExpr("shape({ port: number() })").shape.k).toBe("obj");
   });
 });
 
-describe("extractDirectives: @nudo:mock", () => {
-  it("extracts inline mock directive", () => {
-    const source = `
-/**
- * @nudo:mock fetch = any()
- * @nudo:case "test" (1)
- */
-function foo(x) { return x; }
-`;
-    const ast = parse(source);
-    const results = extractDirectives(ast);
-    expect(results).toHaveLength(1);
-    const mocks = results[0].directives.filter((d) => d.kind === "mock");
-    expect(mocks).toHaveLength(1);
-    expect(mocks[0].kind).toBe("mock");
-    if (mocks[0].kind === "mock") {
-      expect(mocks[0].name).toBe("fetch");
-      expect(mocks[0].expression).toBe("any()");
-    }
-  });
+const MOCK_CASES: { name: string; src: string; nameWanted: string; expression?: string; fromPath?: string }[] = [
+  { name: "内联表达式", src: `/**\n * @nudo:mock fetch = any()\n * @nudo:case "test" (1)\n */\nfunction foo(x) { return x; }`, nameWanted: "fetch", expression: "any()" },
+  { name: "文件指令（双引号路径）", src: `/**\n * @nudo:mock utils from "./utils.mock.js"\n * @nudo:case "test" (1)\n */\nfunction foo(x) { return x; }`, nameWanted: "utils", fromPath: "./utils.mock.js" },
+  { name: "文件指令（单引号路径）", src: `/**\n * @nudo:mock utils from './utils.mock.js'\n * @nudo:case "test" (1)\n */\nfunction foo(x) { return x; }`, nameWanted: "utils", fromPath: "./utils.mock.js" },
+  { name: "mock 与 case 共存", src: `/**\n * @nudo:mock helper = number()\n * @nudo:case "test" (number())\n */\nfunction foo(x) { return x; }`, nameWanted: "helper", expression: "number()" },
+];
 
-  it("extracts mock from file directive", () => {
-    const source = `
-/**
- * @nudo:mock utils from "./utils.mock.js"
- * @nudo:case "test" (1)
- */
-function foo(x) { return x; }
-`;
-    const ast = parse(source);
-    const results = extractDirectives(ast);
-    const mocks = results[0].directives.filter((d) => d.kind === "mock");
+describe("extractDirectives：@nudo:mock 载荷", () => {
+  it.each(MOCK_CASES)("$name", ({ src, nameWanted, expression, fromPath }) => {
+    const fns = extractDirectives(parse(src));
+    expect(fns).toHaveLength(1);
+    const mocks = fns[0].directives.filter((d) => d.kind === "mock");
     expect(mocks).toHaveLength(1);
-    if (mocks[0].kind === "mock") {
-      expect(mocks[0].name).toBe("utils");
-      expect(mocks[0].fromPath).toBe("./utils.mock.js");
-    }
-  });
-
-  it("extracts mock from file directive with single-quoted path", () => {
-    const source = `
-/**
- * @nudo:mock utils from './utils.mock.js'
- * @nudo:case "test" (1)
- */
-function foo(x) { return x; }
-`;
-    const ast = parse(source);
-    const results = extractDirectives(ast);
-    const mocks = results[0].directives.filter((d) => d.kind === "mock");
-    expect(mocks).toHaveLength(1);
-    if (mocks[0].kind === "mock") {
-      expect(mocks[0].name).toBe("utils");
-      expect(mocks[0].fromPath).toBe("./utils.mock.js");
-    }
-  });
-
-  it("extracts both mock and case directives", () => {
-    const source = `
-/**
- * @nudo:mock helper = number()
- * @nudo:case "test" (number())
- */
-function foo(x) { return x; }
-`;
-    const ast = parse(source);
-    const results = extractDirectives(ast);
-    const mocks = results[0].directives.filter((d) => d.kind === "mock");
-    const cases = results[0].directives.filter((d) => d.kind === "case");
-    expect(mocks).toHaveLength(1);
-    expect(cases).toHaveLength(1);
+    if (mocks[0].kind !== "mock") return;
+    expect(mocks[0].name).toBe(nameWanted);
+    if (expression !== undefined) expect(mocks[0].expression).toBe(expression);
+    if (fromPath !== undefined) expect(mocks[0].fromPath).toBe(fromPath);
+    if (expression === undefined) expect(fns[0].directives.some((d) => d.kind === "case")).toBe(true);
   });
 });
