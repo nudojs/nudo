@@ -1,5 +1,10 @@
 ```audit
 title	rootCause	gap	action	status	evidence
+六种违约各一条诊断点名 env 文件；结构违约装载期即报；契约满足/语法错负控	产品面尾部表	没测该层	keep	keep	—
+契约/声明级可选接受 undefined；Input 槽可缺席；未申报可选拒收	产品面尾部表	没测该层	keep	keep	—
+契约/观测/并存都恒为 <fn>Output；导出名集合相同；契约优先	产品面尾部表	没测该层	keep	keep	—
+同 used 集合去重；不同名不受影响；不传 used 只清洗；字符清洗生效	产品面尾部表	没测该层	keep	keep	—
+指令路径继承 noDeclaration；dts 清洗点号；防御门同样清洗	产品面尾部表	没测该层	keep	keep	—
 js 无注解仍 any；dts unknown；ts 未标注仍 any；契约优先于注解；无契约注解生效	产品面中段表	没测该层	keep	keep	—
 string / string[] / 多形参 / rest / JSDoc 注解保留	产品面中段表	没测该层	keep	keep	—
 TS 注解映射 entry@ 实参；不可映射回落 any	产品面中段表	没测该层	keep	keep	—
@@ -17,9 +22,6 @@ zod 方言保 z.bigint 并记 dropped；schema 节点 prim bigint	产品面契�
 生成器 brand 不引用 GeneratorFunction；模块可求值；非全局降级 unknown；全局仍 instanceof；standard 不受影响	产品面契约表	没测该层	keep	keep	—
 数据属性 / 显式 undefined / setter-only / 空对象	产品面契约表	没测该层	keep	keep	—
 getter 读域：数字/字符串/this/嵌套/抛 unknown；不出现 exact undefined	产品面契约表	没测该层	keep	keep	—
-"directive path inherits the noDeclaration classification"	"dts 投影不得产出非法 TS 标识符。 带 @nudo: 指令的类方法此前走**指令路径**，丢掉了顶层函数普查的 noDeclaration 分类 ⇒ dts 投影把作用域名 \"C.m\" 直接当函数名，产出 `export declare function C.m(x: number): unknown; 断言：expect(fn).toBeDefined();；expect(fn!.noDeclaration).toBe(true);"	没测该层	keep	keep	—
-"dts projection never emits a dotted function name"	"dts 投影不得产出非法 TS 标识符。 带 @nudo: 指令的类方法此前走**指令路径**，丢掉了顶层函数普查的 noDeclaration 分类 ⇒ dts 投影把作用域名 \"C.m\" 直接当函数名，产出 `export declare function C.m(x: number): unknown; 断言：expect(proj.lines.length).toBeGreaterThan(0);；expect(decl).toBeDefined();"	没测该层	keep	keep	—
-"defensive gate: an illegal name is cleaned even without the noDeclaration flag"	"dts 投影不得产出非法 TS 标识符。 带 @nudo: 指令的类方法此前走**指令路径**，丢掉了顶层函数普查的 noDeclaration 分类 ⇒ dts 投影把作用域名 \"C.m\" 直接当函数名，产出 `export declare function C.m(x: number): unknown; 断言：expect(proj.lines.length).toBeGreaterThan(0);；expect(decl).toBeDefined();"	没测该层	keep	keep	—
 "mock-<name>.<ext> / <name>.mock.<ext> 对族内全部扩展名都判 true"	"族 54 · service **协议面**（3 条缺口）的钉。 第 1 条 —— env 模板族的扩展名表（`isEnvTemplatePath`）： env 模板族 = `.env.<ext>` / `mock-<name>.<ext>` / `<name>.mock.<ext>`， **三支同表**：`js / mjs / ts / cjs / cts / mts`（族 21 遗留 697：mock 两支 曾只认 `js|mjs|ts` ⇒ `mock-foo.cjs` / `fs.mock.cts` 这类模板改动不进 watch 门禁 ⇒ 不触发依赖源文件复分析）。 断言：expect(isEnvTemplatePath(`"	没测该层	keep	keep	—
 ".env.<ext> 分支（族内另一支）判定的扩展名不变"	"族 54 · service **协议面**（3 条缺口）的钉。 第 1 条 —— env 模板族的扩展名表（`isEnvTemplatePath`）： env 模板族 = `.env.<ext>` / `mock-<name>.<ext>` / `<name>.mock.<ext>`， **三支同表**：`js / mjs / ts / cjs / cts / mts`（族 21 遗留 697：mock 两支 曾只认 `js|mjs|ts` ⇒ `mock-foo.cjs` / `fs.mock.cts` 这类模板改动不进 watch 门禁 ⇒ 不触发依赖源文件复分析）。 断言：expect(isEnvTemplatePath(`"	没测该层	keep	keep	—
 "mock 前缀支锚在 basename 起点（相对路径形态同样成立）"	"族 54 · service **协议面**（3 条缺口）的钉。 第 1 条 —— env 模板族的扩展名表（`isEnvTemplatePath`）： env 模板族 = `.env.<ext>` / `mock-<name>.<ext>` / `<name>.mock.<ext>`， **三支同表**：`js / mjs / ts / cjs / cts / mts`（族 21 遗留 697：mock 两支 曾只认 `js|mjs|ts` ⇒ `mock-foo.cjs` / `fs.mock.cts` 这类模板改动不进 watch 门禁 ⇒ 不触发依赖源文件复分析）。 断言：expect(isEnvTemplatePath(\""	没测该层	keep	keep	—
@@ -28,21 +30,6 @@ getter 读域：数字/字符串/this/嵌套/抛 unknown；不出现 exact undef
 "有调用点见证（模块级调用点路径）：函数级承载位带函数级 throws 证据"	"族 54 · service **协议面**（3 条缺口）的钉。 第 1 条 —— env 模板族的扩展名表（`isEnvTemplatePath`）： env 模板族 = `.env.<ext>` / `mock-<name>.<ext>` / `<name>.mock.<ext>`， **三支同表**：`js / mjs / ts / cjs / cts / mts`（族 21 遗留 697：mock 两支 曾只认 `js|mjs|ts` ⇒ `mock-foo.cjs` / `fs.mock.cts` 这类模板改动不进 watch 门禁 ⇒ 不触发依赖源文件复分析）。 断言：expect(fn.cases.map((c) =>"	没测该层	keep	keep	—
 "选中 case：被选函数不产 entry@ 见证，函数级承载位带函数级 throws 证据"	"族 54 · service **协议面**（3 条缺口）的钉。 第 1 条 —— env 模板族的扩展名表（`isEnvTemplatePath`）： env 模板族 = `.env.<ext>` / `mock-<name>.<ext>` / `<name>.mock.<ext>`， **三支同表**：`js / mjs / ts / cjs / cts / mts`（族 21 遗留 697：mock 两支 曾只认 `js|mjs|ts` ⇒ `mock-foo.cjs` / `fs.mock.cts` 这类模板改动不进 watch 门禁 ⇒ 不触发依赖源文件复分析）。 断言：expect(fn.cases.map((c) =>"	没测该层	keep	keep	—
 "负控：无调用点见证时 entry@ 见证的 throws 证据与推断域不变"	"族 54 · service **协议面**（3 条缺口）的钉。 第 1 条 —— env 模板族的扩展名表（`isEnvTemplatePath`）： env 模板族 = `.env.<ext>` / `mock-<name>.<ext>` / `<name>.mock.<ext>`， **三支同表**：`js / mjs / ts / cjs / cts / mts`（族 21 遗留 697：mock 两支 曾只认 `js|mjs|ts` ⇒ `mock-foo.cjs` / `fs.mock.cts` 这类模板改动不进 watch 门禁 ⇒ 不触发依赖源文件复分析）。 断言：expect(fn.cases.map((c) =>"	没测该层	keep	keep	—
-"同一个 used 集合 ⇒ 清洗后同名的两个守卫拿到不同导出名"	"**guard 面**的导出名只过字符清洗（`safeExportIdent(name)`）⇒ **没有模块内去重集合** ⇒ 两个不同的源函数清洗后同名 （类方法 `A.b` 与顶层函数 `A_b` ⇒ 两个 `export function isA_bOutput`） ⇒ 产物在 node 下 `SyntaxError: Identifier 'isA_bOutput' has already been declared`、在 tsc 下 `TS2323` / `TS2393`。 负控制：不传 `used` 时行为与旧版一致（只清洗、不去重）——旧调用方零影响。 断言：expect(exportedGuardNames(a))."	夹具漏形态	keep	keep	—
-"used 集合跨守卫共享 ⇒ 去重只影响同名者（不同名不受影响）"	"**guard 面**的导出名只过字符清洗（`safeExportIdent(name)`）⇒ **没有模块内去重集合** ⇒ 两个不同的源函数清洗后同名 （类方法 `A.b` 与顶层函数 `A_b` ⇒ 两个 `export function isA_bOutput`） ⇒ 产物在 node 下 `SyntaxError: Identifier 'isA_bOutput' has already been declared`、在 tsc 下 `TS2323` / `TS2393`。 负控制：不传 `used` 时行为与旧版一致（只清洗、不去重）——旧调用方零影响。 断言：expect(exportedGuardNames(a))."	夹具漏形态	keep	keep	—
-"负控制：不传 used ⇒ 只清洗、不去重（旧调用方行为不变）"	"**guard 面**的导出名只过字符清洗（`safeExportIdent(name)`）⇒ **没有模块内去重集合** ⇒ 两个不同的源函数清洗后同名 （类方法 `A.b` 与顶层函数 `A_b` ⇒ 两个 `export function isA_bOutput`） ⇒ 产物在 node 下 `SyntaxError: Identifier 'isA_bOutput' has already been declared`、在 tsc 下 `TS2323` / `TS2393`。 负控制：不传 `used` 时行为与旧版一致（只清洗、不去重）——旧调用方零影响。 断言：expect(exportedGuardNames(a))."	夹具漏形态	keep	keep	—
-"字符清洗仍然生效（A.b → isA_bOutput）"	"**guard 面**的导出名只过字符清洗（`safeExportIdent(name)`）⇒ **没有模块内去重集合** ⇒ 两个不同的源函数清洗后同名 （类方法 `A.b` 与顶层函数 `A_b` ⇒ 两个 `export function isA_bOutput`） ⇒ 产物在 node 下 `SyntaxError: Identifier 'isA_bOutput' has already been declared`、在 tsc 下 `TS2323` / `TS2393`。 负控制：不传 `used` 时行为与旧版一致（只清洗、不去重）——旧调用方零影响。 断言：expect(exportedGuardNames(src)"	夹具漏形态	keep	keep	—
-"契约返回 ⇒ 恒叫 <fn>Output（不再叫 <fn>Return）"	"**standard 面**的返回面导出名与**符号来源耦合**：有契约返回叫 `<fn>Return`，走观测叫 `<fn>Output` ⇒ 同一函数在不同源码状态下拿到**不同 名字** ⇒ 下游 `import { <fn>Output } from \"*.nudo.standard\"` 直接报错 （而同一次导出的 zod 面**恒叫** `<fn>Output` ⇒ 两面同物异名）。 断言：expect(source).toContain(\"export const alphaOutput\");；expect(source).not.toContain(\"export const alphaReturn\");"	没测该层	keep	keep	—
-"观测返回 ⇒ 同样叫 <fn>Output（两面同名同义）"	"**standard 面**的返回面导出名与**符号来源耦合**：有契约返回叫 `<fn>Return`，走观测叫 `<fn>Output` ⇒ 同一函数在不同源码状态下拿到**不同 名字** ⇒ 下游 `import { <fn>Output } from \"*.nudo.standard\"` 直接报错 （而同一次导出的 zod 面**恒叫** `<fn>Output` ⇒ 两面同物异名）。 断言：expect(source).toContain(\"export const alphaOutput\");；expect(source).not.toContain(\"export const alphaReturn\");"	没测该层	keep	keep	—
-"同一函数的两种来源 ⇒ 导出名集合相同（名字与来源解耦）"	"断言：expect(names(fromContract)).toEqual(names(fromObservation));；expect(names(fromContract)).toEqual([\"alpha_x\", \"alphaInput\", \"alphaOutput\"]);"	没测该层	keep	keep	—
-"契约返回优先于观测返回（内容口径不变，只是名字恒定）"	"断言：expect([...source.matchAll(/export const alphaOutput/g)].length).toBe(1);；expect(mod.alphaOutput![\"~standard\"].validate(1).issues).toBeUndefined();"	没测该层	keep	keep	—
-"契约级可选位：整参校验器接受 undefined（契约 number().optional()）"	"**standard 面**把契约「顶层形参的**可选性**」整条丢掉：顶层形参 导出走的是**独立值节点**（不是对象槽）⇒ 结构上**无处挂 `optional`** ⇒ 发布的 `act_x` 校验器**运行时拒收**契约允许的 `undefined` （契约 `number().optional()` ⇒ `act_x.validate(undefined)` 应通过）。 修法（service 侧）： - `StandardSchemaFunctionSpec.inputs[].optional`（契约级可选性，同 dts 面 `DtsContractFace.params[].optional` 口径）——`constra"	夹具漏形态	keep	keep	—
-"契约级可选位：<fn>Input 的槽位可缺席（键可缺、显式 undefined 合法）"	"**standard 面**把契约「顶层形参的**可选性**」整条丢掉：顶层形参 导出走的是**独立值节点**（不是对象槽）⇒ 结构上**无处挂 `optional`** ⇒ 发布的 `act_x` 校验器**运行时拒收**契约允许的 `undefined` （契约 `number().optional()` ⇒ `act_x.validate(undefined)` 应通过）。 修法（service 侧）： - `StandardSchemaFunctionSpec.inputs[].optional`（契约级可选性，同 dts 面 `DtsContractFace.params[].optional` 口径）——`constra"	夹具漏形态	keep	keep	—
-"声明级可选位（默认形参）同样保真"	"**standard 面**把契约「顶层形参的**可选性**」整条丢掉：顶层形参 导出走的是**独立值节点**（不是对象槽）⇒ 结构上**无处挂 `optional`** ⇒ 发布的 `act_x` 校验器**运行时拒收**契约允许的 `undefined` （契约 `number().optional()` ⇒ `act_x.validate(undefined)` 应通过）。 修法（service 侧）： - `StandardSchemaFunctionSpec.inputs[].optional`（契约级可选性，同 dts 面 `DtsContractFace.params[].optional` 口径）——`constra"	夹具漏形态	keep	keep	—
-"负控制：未申报可选的位仍拒收 undefined"	"**standard 面**把契约「顶层形参的**可选性**」整条丢掉：顶层形参 导出走的是**独立值节点**（不是对象槽）⇒ 结构上**无处挂 `optional`** ⇒ 发布的 `act_x` 校验器**运行时拒收**契约允许的 `undefined` （契约 `number().optional()` ⇒ `act_x.validate(undefined)` 应通过）。 修法（service 侧）： - `StandardSchemaFunctionSpec.inputs[].optional`（契约级可选性，同 dts 面 `DtsContractFace.params[].optional` 口径）——`constra"	夹具漏形态	keep	keep	—
-"结构违约（不导出 / 不是函数）在**装载期**即报（不待工厂调用）"	"path 型 env 文件违反 `defineEnv()` 契约（不导出 / 不是函数 / 抛异常 / 返回非 {globals}）⇒ **零 env 诊断** ⇒ env 静默失效 ⇒ 用户代码被 判「必然抛 ReferenceError」（假红），而同目录里**语法错**的 env 文件 反而有 nudo:env-unresolved 警告（口径分裂）。 契约：四种违约形态各给一条明确诊断（复用 nudo:env-unresolved 通道）， 诊断必须点名 env 文件； 断言：expect(errs).toHaveLength(1);；expect(errs[0]!.path).toBe(envFile);"	夹具漏形态	keep	keep	—
-"负控制：契约满足的 env 文件生效且零告警"	"path 型 env 文件违反 `defineEnv()` 契约（不导出 / 不是函数 / 抛异常 / 返回非 {globals}）⇒ **零 env 诊断** ⇒ env 静默失效 ⇒ 用户代码被 判「必然抛 ReferenceError」（假红），而同目录里**语法错**的 env 文件 反而有 nudo:env-unresolved 警告（口径分裂）。 契约：四种违约形态各给一条明确诊断（复用 nudo:env-unresolved 通道）， 诊断必须点名 env 文件； 断言：expect(getPathEnvLoadErrors(dir)).toHaveLength(0);；expect(formatShape(loade"	夹具漏形态	keep	keep	—
-"负控制：语法错的 env 文件仍走既有措辞（不与契约诊断混口径）"	"path 型 env 文件违反 `defineEnv()` 契约（不导出 / 不是函数 / 抛异常 / 返回非 {globals}）⇒ **零 env 诊断** ⇒ env 静默失效 ⇒ 用户代码被 判「必然抛 ReferenceError」（假红），而同目录里**语法错**的 env 文件 反而有 nudo:env-unresolved 警告（口径分裂）。 契约：四种违约形态各给一条明确诊断（复用 nudo:env-unresolved 通道）， 诊断必须点名 env 文件； 断言：expect(errs).toHaveLength(1);；expect(errs[0]!.error).not.toContain(\"must ex"	夹具漏形态	keep	keep	—
 ```audit-deleted
 title	reason	evidence
 getter 返数字：dts 取读域 number（原生读 1）	dup:产品面契约表	commit:52dbd878
@@ -111,4 +98,22 @@ dts 的 JSDoc @param 与声明位一致（string，不是 unknown）	dup:产品�
 `.ts` 源里未标注的形参：仍是 any（无注解 = 无约束）	dup:产品面中段表	commit:c64c7632
 手写契约仍优先于 TS 注解（既有口径「声明位取侧车契约」）	dup:产品面中段表	commit:c64c7632
 无契约时 TS 注解生效（同一函数，去掉契约面后是 string）	dup:产品面中段表	commit:c64c7632
+directive path inherits the noDeclaration classification	dup:产品面尾部表	commit:9a85ec09
+dts projection never emits a dotted function name	dup:产品面尾部表	commit:9a85ec09
+defensive gate: an illegal name is cleaned even without the noDeclaration flag	dup:产品面尾部表	commit:9a85ec09
+同一个 used 集合 ⇒ 清洗后同名的两个守卫拿到不同导出名	dup:产品面尾部表	commit:9a85ec09
+used 集合跨守卫共享 ⇒ 去重只影响同名者（不同名不受影响）	dup:产品面尾部表	commit:9a85ec09
+负控制：不传 used ⇒ 只清洗、不去重（旧调用方行为不变）	dup:产品面尾部表	commit:9a85ec09
+字符清洗仍然生效（A.b → isA_bOutput）	dup:产品面尾部表	commit:9a85ec09
+契约返回 ⇒ 恒叫 <fn>Output（不再叫 <fn>Return）	dup:产品面尾部表	commit:9a85ec09
+观测返回 ⇒ 同样叫 <fn>Output（两面同名同义）	dup:产品面尾部表	commit:9a85ec09
+同一函数的两种来源 ⇒ 导出名集合相同（名字与来源解耦）	dup:产品面尾部表	commit:9a85ec09
+契约返回优先于观测返回（内容口径不变，只是名字恒定）	dup:产品面尾部表	commit:9a85ec09
+契约级可选位：整参校验器接受 undefined（契约 number().optional()）	dup:产品面尾部表	commit:9a85ec09
+契约级可选位：<fn>Input 的槽位可缺席（键可缺、显式 undefined 合法）	dup:产品面尾部表	commit:9a85ec09
+声明级可选位（默认形参）同样保真	dup:产品面尾部表	commit:9a85ec09
+负控制：未申报可选的位仍拒收 undefined	dup:产品面尾部表	commit:9a85ec09
+结构违约（不导出 / 不是函数）在**装载期**即报（不待工厂调用）	dup:产品面尾部表	commit:9a85ec09
+负控制：契约满足的 env 文件生效且零告警	dup:产品面尾部表	commit:9a85ec09
+负控制：语法错的 env 文件仍走既有措辞（不与契约诊断混口径）	dup:产品面尾部表	commit:9a85ec09
 ```
