@@ -8,8 +8,12 @@ import { abs, obj, strLit, type Abs, gt, lit, v, numLit, eq, app, bool, boolLit,
 import { denoteGuard } from "@nudojs/core/internal";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+/** 本仓 devDependency 的 tsc 入口（`pnpm exec tsc` 每次多付 ~0.7s）。 */
+const tscBin = createRequire(import.meta.url).resolve("typescript/bin/tsc");
 
 // ---------------------------------------------------------------------------
 // `arguments`（非数组 exotic）不得以 Array.isArray 为前提
@@ -386,8 +390,8 @@ const protoSlots = (): Abs =>
     let failure = "";
     try {
       execFileSync(
-        "pnpm",
-        ["exec", "tsc", "--noEmit", "--strict", "--skipLibCheck", "--ignoreConfig", p],
+        process.execPath,
+        [tscBin, "--noEmit", "--strict", "--skipLibCheck", "--ignoreConfig", p],
         { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] },
       );
     } catch (e) {

@@ -23,12 +23,17 @@
  * 5. it 标题的场景段不得为空或相邻重复（`a；；b` / `a；a`）。
  */
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import ts from "typescript";
 
-const files = execFileSync("git", ["ls-files", "packages"], { encoding: "utf8" })
+// git ls-files 仍列出未提交的删除；本地跑 gate 时跳过它们。同时纳入未跟踪
+// 的新测试文件（否则新拆的文件在提交前不被本门禁检查）。
+const files = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "packages"], {
+  encoding: "utf8",
+})
   .split("\n")
-  .filter((f) => f.endsWith(".test.ts"));
+  .filter((f) => f.endsWith(".test.ts"))
+  .filter((f) => existsSync(f));
 
 const isFn = (n) => ts.isArrowFunction(n) || ts.isFunctionExpression(n);
 const unparen = (n) => (ts.isParenthesizedExpression(n) ? unparen(n.expression) : n);

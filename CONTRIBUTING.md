@@ -13,11 +13,18 @@ pnpm run lint           # tsc --noEmit -p tsconfig.lint.json
 pnpm run lint:tests     # tsc --noEmit -p tsconfig.test-lint.json
 pnpm run lint:hygiene   # 静态卫生 + core 子域边界（两条 node 脚本）
 pnpm run test           # vitest run
+pnpm run test:local     # 本地快车道：按需 build + CLI e2e 走 dist（见下）
 pnpm run verify:examples  # docs/examples command matrix (exit codes)
 pnpm run verify:docs      # doc code samples still run
 ```
 
 **Build before test is mandatory.** Vitest aliases packages to `src`, but `@nudo:env` dynamic imports resolve `@nudojs/*` through package.json `exports` to `dist/`. CI runs `build` before `test` for the same reason; do the same locally.
+
+`pnpm run test:local -- [vitest args]` 是本地开发循环的快车道：dist 落后于
+非测试源码时才重建（纯测试改动跳过），然后以 `NUDO_TEST_CLI=dist` 跑 CLI e2e
+（每次 spawn 0.9s → 0.22s）；worker 数按本机核数取（CI 仍 4）。2026-11-17
+实测全量 975 文件 / 12439 用例（16 核）：`pnpm run test` 423s →
+`test:local` 117s。
 
 Also useful:
 
@@ -75,10 +82,12 @@ BDD 口径落在 vitest 树上：
 
 ### 回归测试：按模块/不变量归属，不按缺陷编号拆文件
 
-`packages/**/__tests__/` 现有 1033 个测试相关 `.ts`（968 个入口 + 65 个
+`packages/**/__tests__/` 现有 1033 个测试相关 `.ts`（975 个入口 + 58 个
 harness/helper），`*.part.ts` = 0。**2026-11-15 起不再有缺陷编号命名**：历史
 1360 个 `*-bug-NNN-*` 已改为 `<domain>-<特性>.test.ts`（旧 `--` 分隔亦已清除），命名门禁
 （`scripts/check-test-names.mjs`，挂在 `lint:hygiene`）拒绝新增此类文件名。
+**巨型 e2e 套件按面拆分，不要聚合成单文件**：vitest 以文件为并行粒度（1 文件
+= 1 worker），单文件内用例串行；CLI e2e 单文件 200s+ 会把全量墙钟钉死。
 门禁覆盖 `__tests__/**` 下**全部 `.ts`**（含 harness/helper）；缺陷编号与计划
 批次代号（`absNN` / `p0` / `c41` / `phase2` / `w9` …）都不得作为文件名；编号
 只能出现在 `it` 标题、commit、changeset。

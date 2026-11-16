@@ -1,35 +1,9 @@
-import { describe, it, expect, afterAll } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { execFileSync } from "node:child_process";
+import { describe, it, expect } from "vitest";
 import { abs, num, v, type Abs } from "@nudojs/core";
 import { absToTSType, generateDts } from "../dts-generator.ts";
 import { analyzeFile } from "@nudojs/service";
 import { resetAllAnalysisCaches } from "@nudojs/service";
-
-const dirs: string[] = [];
-afterAll(() => {
-  for (const d of dirs) rmSync(d, { recursive: true, force: true });
-});
-
-function tscNoEmit(dts: string): { ok: boolean; stderr: string } {
-  const dir = mkdtempSync(join(tmpdir(), "nudo-hof-dts-"));
-  dirs.push(dir);
-  const p = join(dir, "mod.d.ts");
-  writeFileSync(p, dts.endsWith("\n") ? dts : dts + "\n", "utf-8");
-  try {
-    execFileSync(
-      "pnpm",
-      ["exec", "tsc", "--noEmit", "--strict", "--skipLibCheck", "--ignoreConfig", p],
-      { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] },
-    );
-    return { ok: true, stderr: "" };
-  } catch (e) {
-    const err = e as { stderr?: string; stdout?: string; message?: string };
-    return { ok: false, stderr: `${err.stderr ?? ""}${err.stdout ?? err.message ?? ""}` };
-  }
-}
+import { tscNoEmitSingle as tscNoEmit } from "./dts-tsc.ts";
 
 const anyVar = (id: string): Abs => abs({ k: "any" }, v(id), undefined, "path");
 

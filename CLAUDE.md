@@ -18,6 +18,7 @@ Product CLI face (`docs/design/cli-semantics.md`): primary verbs are `check` / `
 pnpm install            # Install dependencies (requires pnpm@11.28.0, see packageManager)
 pnpm run build          # Build all packages with tsup
 pnpm run test           # Run all tests (vitest run)
+pnpm run test:local     # Local fast lane: build-if-stale + NUDO_TEST_CLI=dist (see CONTRIBUTING)
 pnpm run test:watch     # Run tests in watch mode
 pnpm run lint           # Type-check all packages (tsc --noEmit -p tsconfig.lint.json)
 pnpm run check <file>   # gate + signatures (Day 0 / CI)

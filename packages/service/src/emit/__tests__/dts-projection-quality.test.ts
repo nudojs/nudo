@@ -1,11 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { execFileSync } from "node:child_process";
 import { abs, num, str, bool, objOf, type Abs } from "@nudojs/core";
 import { absToTSType, generateDts } from "../dts-generator.ts";
 import { tupleSparse, tupleDense } from "./fixtures.ts";
-import { tmpProject } from "../../__tests__/tmp-project.ts";
+import { tscNoEmitSingle as tscNoEmit } from "./dts-tsc.ts";
 
 const arrOf = (element: Abs): Abs => abs({ k: "arr", element }, undefined, undefined, "exact");
 const tupleOf = (elements: Abs[], rest?: Abs): Abs =>
@@ -21,23 +18,6 @@ const brandOf = (name: string, shape: Abs = objOf({})): Abs =>
   abs({ k: "brand", name, shape }, undefined, undefined, "path");
 const optSlot = (value: Abs): Abs =>
   ({ shape: { k: "obj", slots: { f: { value, optional: true } } }, conf: "exact" }) as Abs;
-
-function tscNoEmit(dts: string): { ok: boolean; stderr: string } {
-  const dir = tmpProject("nudo-dts-q-");
-  const p = join(dir, "mod.d.ts");
-  writeFileSync(p, dts.endsWith("\n") ? dts : dts + "\n", "utf-8");
-  try {
-    execFileSync(
-      "pnpm",
-      ["exec", "tsc", "--noEmit", "--strict", "--skipLibCheck", "--ignoreConfig", p],
-      { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] },
-    );
-    return { ok: true, stderr: "" };
-  } catch (e) {
-    const err = e as { stderr?: string; stdout?: string; message?: string };
-    return { ok: false, stderr: `${err.stderr ?? ""}${err.stdout ?? err.message ?? ""}` };
-  }
-}
 
 describe("absToTSType legality (E1)", () => {
   it("wraps function types inside unions", () => {

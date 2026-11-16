@@ -1,3 +1,4 @@
+import { availableParallelism } from "node:os";
 import { defineConfig } from "vitest/config";
 import { vitestAlias } from "./scripts/workspace-aliases.mjs";
 
@@ -34,7 +35,11 @@ export default defineConfig({
     ],
     // lodash harvest + relationFn 图会顶爆默认 isolate 堆
     pool: "forks",
-    maxWorkers: 4,
+    // CI 的 2 shard 各自跑在 4 vCPU runner 上，单 shard 4 worker 已足够；
+    // 本地 16 核机器沿用 4 会浪费 3/4 硬件（实测全量 4w 423s / 12w 306s，
+    // 平均只有 5 核在忙）。本地按核数减 4 个（留出 CLI e2e 的 tsx/node
+    // 子进程与主进程），CI 保持 4 不变。
+    maxWorkers: process.env.CI ? 4 : Math.max(4, availableParallelism() - 4),
     // 默认 5s 是**单测**口径；CLI e2e（`nudojs/src/__tests__` 里 spawn
     // `tsx <cli src>` 的那批）每条用例 spawn 1–5 个 tsx 子进程，单次 ≈1.5–2.5s
     // ——在 4 worker / 2 core 的 CI shard 上会因 CPU 争用翻到 5s 以上（同一用例

@@ -11,9 +11,9 @@ import { absToStandardSchemaModule, validateSchemaNode, absToStandardSchemaFunct
 import type { DirectiveDiag } from "@nudojs/parser";
 import { collectEvalReplacements } from "../eval-run.ts";
 import { mkdtempSync, writeFileSync, rmSync, readFileSync } from "node:fs";
-import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { tscNoEmitSingle } from "../emit/__tests__/dts-tsc.ts";
 import { denoteGuard, formatThrowsAbs } from "@nudojs/core/internal";
 import { generateGuardFunctionFromAbs } from "../emit/guard-generator.ts";
 import { emitContract } from "../emit/contract-emitter.ts";
@@ -514,18 +514,8 @@ function uint8Abs(): Abs {
   it("guard 产物过 tsc --strict 且运行时语义不变", () => {
     const source = generateGuardFunctionFromAbs("isbytesOutput", uint8Abs());
     expect(source).toContain("const data: any = value as Record<string, any>;");
-    const dir = mkdtempSync(join(tmpdir(), "nudo-bug250-"));
-    dirs.push(dir);
-    const p = join(dir, "lib.nudo.guard.ts");
-    writeFileSync(p, source + "\n", "utf-8");
-    let failure = "";
-    try {
-      execFileSync("pnpm", ["exec", "tsc", "--noEmit", "--strict", "--skipLibCheck", "--ignoreConfig", p], { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
-    } catch (e) {
-      const err = e as { stderr?: string; stdout?: string; message?: string };
-      failure = `${err.stderr ?? ""}${err.stdout ?? err.message ?? ""}`;
-    }
-    expect(failure).toBe("");
+    const gate = tscNoEmitSingle(source, "lib.nudo.guard.ts");
+    expect(gate.stderr).toBe("");
     const check = new Function("data", `return ${denoteGuard(uint8Abs(), "data")};`) as (v: unknown) => boolean;
     expect(check(new Uint8Array([1, 2]))).toBe(true);
     expect(check({ 0: 1, 1: 2, length: 2 })).toBe(false);

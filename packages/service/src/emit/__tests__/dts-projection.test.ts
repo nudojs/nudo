@@ -7,10 +7,6 @@ import { absToTSType, dtsModuleSurface, projectFunctionDts, projectModuleDts, ge
 import { tscNoEmit } from "./dts-tsc.ts";
 import { analyzeFile } from "@nudojs/service";
 import type { AnalysisResult, FunctionAnalysis } from "../../analyzer-types.ts";
-import { writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { execFileSync } from "node:child_process";
-import { tmpProject } from "../../__tests__/tmp-project.ts";
 import { absToSchemaSource } from "../schema-generator.ts";
 
 /**
@@ -595,27 +591,6 @@ describe("dts 顶层形参吃契约级可选性", () => {
 const neverAbs = (): Abs =>
   ({ shape: { k: "never" }, conf: "exact" }) as unknown as Abs;
 
-/** tsc --noEmit --strict 实测 */
-function tscNoEmit(files: Record<string, string>): { ok: boolean; stderr: string } {
-  const dir = tmpProject("nudo-dts-copt-");
-  const paths: string[] = [];
-  for (const [rel, content] of Object.entries(files)) {
-    const p = join(dir, rel);
-    writeFileSync(p, content.endsWith("\n") ? content : content + "\n", "utf-8");
-    paths.push(p);
-  }
-  try {
-    execFileSync(
-      "pnpm",
-      ["exec", "tsc", "--noEmit", "--strict", "--ignoreConfig", ...paths],
-      { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] },
-    );
-    return { ok: true, stderr: "" };
-  } catch (e) {
-    const err = e as { stderr?: string; stdout?: string; message?: string };
-    return { ok: false, stderr: `${err.stderr ?? ""}${err.stdout ?? err.message ?? ""}` };
-  }
-}
 
 
   it("契约声明 optional 的**尾部**形参渲染成 `x?: T`；契约声明 optional 的**中间**形参渲染成 `T | undefined`（TS1016：`?` 不能跟在必填位后）；消费方按契约允许的调用（传 undefined / 省略）不再吃 TS2345；负控制：契约未申报可选的形参仍是必填；负控制：契约覆盖 ⇒ 观测元数不再把契约位标成可选（不裁剪契约义务）", () => {
@@ -743,27 +718,6 @@ describe("dts 解构形参吃契约", () => {
 const neverAbs = (): Abs =>
   ({ shape: { k: "never" }, conf: "exact" }) as unknown as Abs;
 
-/** tsc --noEmit --strict 实测 */
-function tscNoEmit(files: Record<string, string>): { ok: boolean; stderr: string } {
-  const dir = tmpProject("nudo-dts-destr-");
-  const paths: string[] = [];
-  for (const [rel, content] of Object.entries(files)) {
-    const p = join(dir, rel);
-    writeFileSync(p, content.endsWith("\n") ? content : content + "\n", "utf-8");
-    paths.push(p);
-  }
-  try {
-    execFileSync(
-      "pnpm",
-      ["exec", "tsc", "--noEmit", "--strict", "--ignoreConfig", ...paths],
-      { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] },
-    );
-    return { ok: true, stderr: "" };
-  } catch (e) {
-    const err = e as { stderr?: string; stdout?: string; message?: string };
-    return { ok: false, stderr: `${err.stderr ?? ""}${err.stdout ?? err.message ?? ""}` };
-  }
-}
 
 
   it("契约的字段级条目聚合成该形参的形状（不再是 unknown）；消费方错误调用不再静默放行（改前 exit 0）；负控制：契约缺该绑定时回落求值占位（不产出不可编译的模式形态）；负控制：具名形参的契约投影不受影响", () => {
@@ -1481,28 +1435,6 @@ describe("dts 剩余参数", () => {
 
 
 
-
-/** tsc --noEmit --strict 实测（.d.ts 必须真能编译） */
-function tscNoEmit(files: Record<string, string>): { ok: boolean; stderr: string } {
-  const dir = tmpProject("nudo-dts-rest-");
-  const paths: string[] = [];
-  for (const [rel, content] of Object.entries(files)) {
-    const p = join(dir, rel);
-    writeFileSync(p, content.endsWith("\n") ? content : content + "\n", "utf-8");
-    paths.push(p);
-  }
-  try {
-    execFileSync(
-      "pnpm",
-      ["exec", "tsc", "--noEmit", "--strict", "--ignoreConfig", ...paths],
-      { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] },
-    );
-    return { ok: true, stderr: "" };
-  } catch (e) {
-    const err = e as { stderr?: string; stdout?: string; message?: string };
-    return { ok: false, stderr: `${err.stderr ?? ""}${err.stdout ?? err.message ?? ""}` };
-  }
-}
 
 /** rest 形参提升为数组（元素类型词随类型渲染面口径变化） */
 const REST_ARRAY_RE = (name: string) =>

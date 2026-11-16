@@ -19,10 +19,7 @@
  * 求值），不在 `emit` 侧，本分片不可修 ⇒ 不在此钉，交由主代理整合。
  */
 import { describe, it, expect } from "vitest";
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { tscNoEmitSingle } from "./dts-tsc.ts";
 import {
   $objAccessor,
   abs,
@@ -56,21 +53,7 @@ const lenPred = (n: number, op: "ge" | "le" | "gt" | "lt"): Pred =>
 
 /** 真跑 `tsc --noEmit --strict`（与 emit-同口径）。 */
 function tscStrictOk(source: string): boolean {
-  const dir = mkdtempSync(join(tmpdir(), "nudo-b97-guard-"));
-  const file = join(dir, "guard.ts");
-  try {
-    writeFileSync(file, source.endsWith("\n") ? source : source + "\n", "utf-8");
-    execFileSync(
-      "pnpm",
-      ["exec", "tsc", "--noEmit", "--strict", "--skipLibCheck", "--ignoreConfig", file],
-      { stdio: "pipe" },
-    );
-    return true;
-  } catch {
-    return false;
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
+  return tscNoEmitSingle(source, "guard.ts").ok;
 }
 
 describe("zod `<fn>Input` 不得丢掉嵌套数组的长度界", () => {

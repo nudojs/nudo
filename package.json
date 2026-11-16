@@ -17,6 +17,7 @@
     "build": "pnpm run build:packages",
     "build:packages": "pnpm -r --filter '@nudojs/*' --filter 'nudojs' --filter 'vite-plugin-nudo' run build",
     "test": "NODE_OPTIONS=--max-old-space-size=8192 vitest run",
+    "test:local": "node scripts/test-local.mjs",
     "test:ci": "pnpm run build && pnpm run test",
     "test:coverage": "NODE_OPTIONS=--max-old-space-size=8192 vitest run --coverage",
     "test:coverage:diff": "NUDO_COVERAGE_THRESHOLDS=off NODE_OPTIONS=--max-old-space-size=8192 vitest run --coverage",

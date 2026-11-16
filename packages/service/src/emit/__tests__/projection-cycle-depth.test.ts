@@ -13,40 +13,14 @@
  * 带类型标注，不再是纯 JS）
  * - serializeCaseArg：null（既有「不可表达」信号）
  */
-import { describe, it, expect, afterAll } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { execFileSync } from "node:child_process";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { describe, it, expect } from "vitest";
 import { abs as makeAbs, num, runTranspiled, formatShape, type Abs } from "@nudojs/core";
 import { absToTSType } from "../dts-generator.ts";
 import { absToSchemaNode } from "../schema-generator.ts";
 import { generateGuardFunctionFromAbs } from "../guard-generator.ts";
 import { serializeCaseArg } from "../case-emitter.ts";
 import { loadGeneratedModule } from "./fixtures.ts";
-
-const dirs: string[] = [];
-afterAll(() => {
-  for (const d of dirs) rmSync(d, { recursive: true, force: true });
-});
-
-/** dts-projection-quality 同款 tsc 门：截断标记必须是合法 TS */
-function tscNoEmit(dts: string): { ok: boolean; stderr: string } {
-  const dir = mkdtempSync(join(tmpdir(), "nudo-trunc-"));
-  dirs.push(dir);
-  const p = join(dir, "mod.d.ts");
-  writeFileSync(p, dts.endsWith("\n") ? dts : dts + "\n", "utf-8");
-  try {
-    execFileSync("pnpm", ["exec", "tsc", "--noEmit", "--strict", "--skipLibCheck", "--ignoreConfig", p], {
-      encoding: "utf-8",
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    return { ok: true, stderr: "" };
-  } catch (e) {
-    const err = e as { stderr?: string; stdout?: string; message?: string };
-    return { ok: false, stderr: `${err.stderr ?? ""}${err.stdout ?? err.message ?? ""}` };
-  }
-}
+import { tscNoEmitSingle as tscNoEmit } from "./dts-tsc.ts";
 
 /** evaluator 产出真环：`const a = {}; a.self = a; export default a` */
 function evaluatorCyclicAbs(): Abs {

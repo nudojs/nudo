@@ -11,14 +11,13 @@ import { DIAG, denoteGuard } from "@nudojs/core/internal";
 import { materializeAction, type MaterializeInput, addThrowsAnnotation, applyTextEdits, findFnDeclStart } from "../quickfix-edits.ts";
 import { absToSchemaNode, absToSchemaSource, absToZodSchemaModule } from "../schema-generator.ts";
 import { generateGuardFunctionFromAbs } from "../guard-generator.ts";
-import { execFileSync } from "node:child_process";
 import { absToStandardSchema, validateSchemaNode } from "../standard-schema.ts";
 import { loadGeneratedModule } from "./fixtures.ts";
 import { deriveFromRoot, emitDerivedFromRoot } from "../contract-derivation.ts";
 import { formatContractSurfaceLine, contractSurface } from "../contract-surface.ts";
 import { absToTSType, generateDts, projectFunctionDts, dtsModuleSurface } from "../dts-generator.ts";
 import { analyzeFile } from "@nudojs/service";
-import { tscNoEmit } from "./dts-tsc.ts";
+import { tscNoEmit, tscNoEmitConfig, tscNoEmitSingle } from "./dts-tsc.ts";
 import type { FunctionAnalysis } from "../../analyzer-types.ts";
 import { parse } from "@nudojs/parser";
 import { insertGeneratedCaseDirectives } from "../case-emitter.ts";
@@ -786,20 +785,7 @@ const brandOf = (name: string): Abs =>
 
 /** 真跑 tsc --noEmit --strict（产物必须过 strict 门） */
 function tscStrict(source: string): { ok: boolean; stderr: string } {
-  const dir = mkdtempSync(join(tmpdir(), "nudo-guard-strict-"));
-  dirs.push(dir);
-  const p = join(dir, "guard.nudo.guard.ts");
-  writeFileSync(p, source.endsWith("\n") ? source : source + "\n", "utf-8");
-  try {
-    execFileSync("pnpm", ["exec", "tsc", "--noEmit", "--strict", "--skipLibCheck", "--ignoreConfig", p], {
-      encoding: "utf-8",
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    return { ok: true, stderr: "" };
-  } catch (e) {
-    const err = e as { stderr?: string; stdout?: string; message?: string };
-    return { ok: false, stderr: `${err.stderr ?? ""}${err.stdout ?? err.message ?? ""}` };
-  }
+  return tscNoEmitSingle(source, "guard.nudo.guard.ts");
 }
 
 
@@ -1881,7 +1867,6 @@ describe("TS 侧车必须自带 builder import（产物过 tsc）", () => {
 
 
 const REPO_ROOT = join(import.meta.dirname, "..", "..", "..", "..", "..");
-const TSC = join(REPO_ROOT, "node_modules", "typescript", "bin", "tsc");
 const CORE_TYPES = join(REPO_ROOT, "packages", "core", "dist", "index.d.ts");
 
 const SOURCE = `export function risky(x: any) {
@@ -1903,7 +1888,7 @@ function draftSidecar(sidecarPath: string): string {
   return plan!.sidecar!.newText;
 }
 
-/** 产物真的过 `tsc --noEmit --strict` 吗 */
+/** 产物真的过 `tsc --noEmit --strict` 吗（夹具 tsconfig 带 @nudojs/core paths） */
 function tscNoEmit(fileName: string, text: string): { ok: boolean; out: string } {
   const dir = mkdtempSync(join(tmpdir(), "nudo-546-"));
   const file = join(dir, fileName);
@@ -1924,15 +1909,8 @@ function tscNoEmit(fileName: string, text: string): { ok: boolean; out: string }
     }),
     "utf-8",
   );
-  try {
-    const out = execFileSync(process.execPath, [TSC, "--noEmit", "-p", join(dir, "tsconfig.json")], {
-      encoding: "utf-8",
-    });
-    return { ok: true, out };
-  } catch (e) {
-    const err = e as { stdout?: string; stderr?: string };
-    return { ok: false, out: `${err.stdout ?? ""}${err.stderr ?? ""}` };
-  }
+  const result = tscNoEmitConfig(join(dir, "tsconfig.json"));
+  return { ok: result.ok, out: result.stderr };
 }
 
 

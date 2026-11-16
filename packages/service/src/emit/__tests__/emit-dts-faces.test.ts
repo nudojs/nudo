@@ -13,8 +13,6 @@ import { loadGeneratedModule } from "./fixtures.ts";
 import { buildCaseDirective, insertGeneratedCaseDirectives } from "../case-emitter.ts";
 import { writeFileSync, mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { join, dirname } from "node:path";
-import { execFileSync } from "node:child_process";
-import { tmpProject } from "../../__tests__/tmp-project.ts";
 import { tscNoEmit } from "./dts-tsc.ts";
 import { tmpdir } from "node:os";
 import { defaultLoadModule } from "../../load-module.ts";
@@ -1131,28 +1129,6 @@ describe("—— dts 顶层形参可选性来自声明形参表", () => {
 
 
 
-/** tsc --noEmit --strict 实测 */
-function tscNoEmit(files: Record<string, string>): { ok: boolean; stderr: string } {
-  const dir = tmpProject("nudo-dts-opt-");
-  const paths: string[] = [];
-  for (const [rel, content] of Object.entries(files)) {
-    const p = join(dir, rel);
-    writeFileSync(p, content.endsWith("\n") ? content : content + "\n", "utf-8");
-    paths.push(p);
-  }
-  try {
-    execFileSync(
-      "pnpm",
-      ["exec", "tsc", "--noEmit", "--strict", "--ignoreConfig", ...paths],
-      { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] },
-    );
-    return { ok: true, stderr: "" };
-  } catch (e) {
-    const err = e as { stderr?: string; stdout?: string; message?: string };
-    return { ok: false, stderr: `${err.stderr ?? ""}${err.stdout ?? err.message ?? ""}` };
-  }
-}
-
 describe("— dts 顶层形参可选性来自声明形参表", () => {
   it("带默认值的形参渲染成可选（无调用证据时也是）；有调用证据时形参表不缩水（观测元数不再裁剪声明形参表）；默认值为 undefined 的形参同样可选；消费方按实现允许的零参调用不再吃 TS2554；负控制：无默认值的形参仍是必填（不假造可选性）", () => {
   {
@@ -1234,27 +1210,9 @@ describe("—— dts 槽位可选性", () => {
 const objOf = (slots: Record<string, { value: Abs; optional?: boolean }>): Abs =>
   abs({ k: "obj", slots }, undefined, undefined, "exact");
 
-/** tsc --noEmit --strict 实测（产物面必须真能编译） */
-function tscNoEmit(files: Record<string, string>): { ok: boolean; stderr: string } {
-  const dir = tmpProject("nudo-dts-slot-opt-");
-  const paths: string[] = [];
-  for (const [rel, content] of Object.entries(files)) {
-    const p = join(dir, rel);
-    writeFileSync(p, content.endsWith("\n") ? content : content + "\n", "utf-8");
-    paths.push(p);
-  }
-  try {
-    execFileSync(
-      "pnpm",
-      ["exec", "tsc", "--noEmit", "--strict", "--skipLibCheck", "--ignoreConfig", ...paths],
-      { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] },
-    );
-    return { ok: true, stderr: "" };
-  } catch (e) {
-    const err = e as { stderr?: string; stdout?: string; message?: string };
-    return { ok: false, stderr: `${err.stderr ?? ""}${err.stdout ?? err.message ?? ""}` };
-  }
-}
+/** tsc --noEmit --strict 实测（产物面必须真能编译；本块沿用既有 skipLibCheck 口径） */
+const tscNoEmitSkipLib = (files: Record<string, string>) =>
+  tscNoEmit(files, { skipLibCheck: true });
 
 describe("— dts 槽位可选性", () => {
   it("optional 槽渲染成 TS 可选属性 `k?: T`（不再是 `k: T | undefined`）；负控制：必填槽仍是必填（不误伤 `k: T`）；两层嵌套的 optional 槽同样带 `?`（任意深度成立）；消费方省略可选键不再吃 TS2345 / TS2741（改前：键被声明为必需）；负控制：必填键缺失仍报 TS2345（可选性投影不得放宽必填键）", () => {
@@ -1274,7 +1232,7 @@ describe("— dts 槽位可选性", () => {
   }
   {
     const dts = "export declare function f(o: { id?: number }): number;\n";
-    const check = tscNoEmit({
+    const check = tscNoEmitSkipLib({
       "mod.d.ts": dts,
       // 契约 / zod / standard / check 四个面都放行 `{ o: {} }`
       "use.ts": 'import { f } from "./mod.js";\nexport const r = f({});\n',
@@ -1283,7 +1241,7 @@ describe("— dts 槽位可选性", () => {
   }
   {
     const dts = "export declare function f(o: { id: number }): number;\n";
-    const check = tscNoEmit({
+    const check = tscNoEmitSkipLib({
       "mod.d.ts": dts,
       "use.ts": 'import { f } from "./mod.js";\nexport const r = f({});\n',
     });
