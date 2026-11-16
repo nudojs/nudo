@@ -27,6 +27,7 @@ env / mock-module 在函数体内都拦截并告警	parser-directives 尾部契�
 粘连形态诊断且不产 case；空格形态正常且静默	指令解析面整表化	没测该层	keep	keep	—
 内部 mock 不成为真指令；畸形名有诊断；合法 case 保持参数	指令解析面整表化	没测该层	keep	keep	—
 env extraction matches on: %s	parser 通道对拍	没测该层	keep	keep	—
+mock-module extraction matches on: %s	parser 通道对拍	没测该层	keep	keep	—
 ```audit-deleted
 title	reason	evidence
 malformed mock-module payload → nudo:directive-syntax warning	dup:指令解析面整表化	commit:4b8e51ee
