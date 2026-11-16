@@ -1,27 +1,13 @@
-# packages/service/src/__tests__/service-mock-directive.test.ts
-
-模块套件：service mock/directive/replace/skip 面。
-
-审计：79 个用例；根因取自测试注释，缺口按四分类判定，动作复核后为 keep。
-
 ```audit
 title	rootCause	gap	action	status	evidence
-"@nudo:mock Number 生效（宿主 Number 不再应答）"	"负控制：没有 mock ⇒ 宿主应答 断言：expect(got.isLiteral).toBe(true);；expect(got.value).toBe(42);"	没测该层	keep	keep	—
-"@nudo:mock Math 生效（宿主 Math.floor 不再应答）"	"负控制：没有 mock ⇒ 宿主应答 断言：expect(got.value).not.toBe(1);"	没测该层	keep	keep	—
-"@nudo:mock JSON 生效（宿主 JSON.stringify 不再应答）"	"负控制：没有 mock ⇒ 宿主应答 断言：expect(got.value).not.toBe('{\"a\":1}');"	没测该层	keep	keep	—
-"@nudo:mock Date 生效（宿主 Date.now 不再应答）"	"负控制：没有 mock ⇒ 宿主应答 断言：expect(got.isLiteral).toBe(false);"	没测该层	keep	keep	—
-"产品面（analyzeFileAsync / nudo test 的 case 值）同值"	"service 侧剩余半边：mock 与 env 必须**分表传**。 根因（core 侧已由片 C 修好，service 侧此前还差半边）： - core 的注入面把 env 全局与 mock 分**两张表**过滤：「不遮蔽宿主内建」 跳过表（ENV_SHADOW_SKIP）**只作用于 env 全局**，mock 键集不过滤 （mock 的值本身就是一个 Abs，没有宿主对象身份需要保全——遮蔽宿主全局 正是 mock 的意图）。 断言：expect(fn, \"function run missing\").toBeDefined();；expect(lit.ok).toBe(true);"	夹具漏形态	keep	keep	—
+点名缺失 fail-closed；提供者 overlay；未点名回落；多缺失/ default；check 面；全替换不受影响	mock/点名缺失契约表	没测该层	keep	keep	—
+第二合并点：collectAbsBindingsFromGraph 也尊重宿主内建 mock	mock/点名缺失契约表	没测该层	keep	keep	—
+宿主内建 mock 生效；产品面同值；负控制普通名/优先级/跳过表/无 mock	mock/点名缺失契约表	没测该层	keep	keep	—
 "普通名 mock 仍生效（改前就生效，不得回退）"	"负控制：没有 mock ⇒ 宿主应答 断言：expect(got.value).toBe(\"MOCKED\");"	没测该层	keep	keep	—
 "mock 覆盖 env 的优先级不变（同名时 mock 赢）"	"负控制：没有 mock ⇒ 宿主应答 断言：expect(got.value).toBe(\"MOCKED\");"	没测该层	keep	keep	—
 "env 全局仍受跳过表约束（env 的 Math 不遮蔽宿主 Math）"	"负控制：env（node）与 mock **同名** ⇒ mock 必须赢（既有优先级语义） 断言：expect(got.value).toBe(7);"	夹具漏形态	keep	keep	—
 "没有 mock 时宿主应答不变"	"负控制：没有 mock ⇒ 宿主应答 断言：expect(got.value).toBe(7);"	没测该层	keep	keep	—
 "collectAbsBindingsFromGraph：宿主内建名的 mock 生效（顶层 const 求值面）"	"负控制：没有 mock ⇒ 宿主应答 断言：expect(binds.has(\"x\")).toBe(true);；expect(lit.ok).toBe(true);"	没测该层	keep	keep	—
-"a named export the mock does not provide is a fail-closed error, not a silent fall-through"	"原模块导出槽（哨兵值：与 mock 的值刻意不同 ⇒ 能看出「谁活下来了」）。 断言：expect(r.errors).toHaveLength(1);；expect(r.errors[0]!.message).toContain('does not export \"otherFn\"');"	没测该层	keep	keep	—
-"names the mock does provide still overlay, unnamed exports still fall through (regression guard)"	"原模块导出槽（哨兵值：与 mock 的值刻意不同 ⇒ 能看出「谁活下来了」）。 断言：expect(r.applied).toBe(true);；expect(r.errors).toHaveLength(0);"	没测该层	keep	keep	—
-"reports every missing named export"	"`@nudo:mock-module` 的**局部（点名）形态**：被**点名**但 mock 文件 **没有导出**的名字被 `pickNamed` **静默跳过** ⇒ `{ ...orig.named, ...overlay.named }` 让**原模块的同名导出原封不动活下来** ⇒ 分析跑在「**一半 mock、一半原模块**」的 **混合程序**上； 该分支**无条件 `applied = true`、零 error** ⇒ 违反本模块自陈的 fail-closed 不变式（\"missing mock file / eval failure / empty binding → error, not a silent d"	夹具漏形态	keep	keep	—
-"a missing `default` named export is reported the same way"	"`@nudo:mock-module` 的**局部（点名）形态**：被**点名**但 mock 文件 **没有导出**的名字被 `pickNamed` **静默跳过** ⇒ `{ ...orig.named, ...overlay.named }` 让**原模块的同名导出原封不动活下来** ⇒ 分析跑在「**一半 mock、一半原模块**」的 **混合程序**上； 该分支**无条件 `applied = true`、零 error** ⇒ 违反本模块自陈的 fail-closed 不变式（\"missing mock file / eval failure / empty binding → error, not a silent d"	夹具漏形态	keep	keep	—
-"surfaces on the check face as nudo:module-missing (error)"	"`@nudo:mock-module` 的**局部（点名）形态**：被**点名**但 mock 文件 **没有导出**的名字被 `pickNamed` **静默跳过** ⇒ `{ ...orig.named, ...overlay.named }` 让**原模块的同名导出原封不动活下来** ⇒ 分析跑在「**一半 mock、一半原模块**」的 **混合程序**上； 该分支**无条件 `applied = true`、零 error** ⇒ 违反本模块自陈的 fail-closed 不变式（\"missing mock file / eval failure / empty binding → error, not a silent d"	夹具漏形态	keep	keep	—
-"full replacement (no names list) is unaffected"	"断言：expect(r.applied).toBe(true);；expect(r.errors).toHaveLength(0);"	没测该层	keep	keep	—
 "被替换调用的 throws 域保留（L2 门禁不再假绿）"	"修复前：命中节点整段替换 → 原表达式从不求值 → 副作用归零、抛错域消失 （`JSON.parse(input)` 的 TypeError 被吞 → L2 假绿）。 指令作用范围按 **AST 节点身份**（源文本字符区间）判定，不是 「同一行号窗口」——不再泄漏进嵌套语句 / 嵌套函数体 / 同行下一条语句 （文档承诺「only affects the immediately following statement」）。 断言：expect(l2Count(check(withDirective), \"f\")).toBe(1);；expect(l2Count(check(control), \"f\")).toBe(1);"	没测该层	keep	keep	—
 "被替换调用的副作用保留（求值发生，结果取注入值）"	"断言：expect(witness(withDirective)).toBe(\"1\");；expect(witness(control)).toBe(\"1\");"	没测该层	keep	keep	—
 "负控制：未被标注的相邻子表达式照常求值"	"修复前：命中节点整段替换 → 原表达式从不求值 → 副作用归零、抛错域消失 （`JSON.parse(input)` 的 TypeError 被吞 → L2 假绿）。 指令作用范围按 **AST 节点身份**（源文本字符区间）判定，不是 「同一行号窗口」——不再泄漏进嵌套语句 / 嵌套函数体 / 同行下一条语句 （文档承诺「only affects the immediately following statement」）。 断言：expect(witness(src)).toBe(\"110\");"	没测该层	keep	keep	—
@@ -85,4 +71,17 @@ title	rootCause	gap	action	status	evidence
 "resolves 形态仍是 promise<42>"	"`@nudo:mock` 的 **`rejects`** 形态被建模成「返回 never」 ⇒ 返回契约**空洞成立**（`never ⊑ string()` ⇒ 假绿，零诊断） + 签名/dts 写出 `never`（错误类型声明）。 修法（族 14 · 分片 I）：`rejects` 建模成「必定 reject 的 promise」 （与 `resolves` 分支同形：eff/promise），内层 never = 永不 fulfill。 断言：expect(sig!.abs.shape.k).toBe(\"eff\");；expect(formatShape(sig!.abs)).toContain(\"42\");"	夹具漏形态	keep	keep	—
 "returns 形态仍是同步值 42"	"负控制：普通 returns 形态（同步返回值，不受本条影响） 断言：expect(sig!.abs.shape.k).toBe(\"prim\");；expect(formatShape(sig!.abs)).toContain(\"42\");"	夹具漏形态	keep	keep	—
 "resolves 形态在同契约下同样报 unproven-return（口径一致）"	"负控制：普通 returns 形态（同步返回值，不受本条影响） 断言：expect(report.issues.filter((i) => i.code === \"nudo:unproven-return\").length).toBeGreaterThanOrEqual(1);"	夹具漏形态	keep	keep	—
+```audit-deleted
+title	reason	evidence
+@nudo:mock Number 生效（宿主 Number 不再应答）	dup:mock/点名缺失契约表	commit:439e7ca5
+@nudo:mock Math 生效（宿主 Math.floor 不再应答）	dup:mock/点名缺失契约表	commit:439e7ca5
+@nudo:mock JSON 生效（宿主 JSON.stringify 不再应答）	dup:mock/点名缺失契约表	commit:439e7ca5
+@nudo:mock Date 生效（宿主 Date.now 不再应答）	dup:mock/点名缺失契约表	commit:439e7ca5
+产品面（analyzeFileAsync / nudo test 的 case 值）同值	dup:mock/点名缺失契约表	commit:439e7ca5
+a named export the mock does not provide is a fail-closed error, not a silent fall-through	dup:mock/点名缺失契约表	commit:439e7ca5
+names the mock does provide still overlay, unnamed exports still fall through (regression guard)	dup:mock/点名缺失契约表	commit:439e7ca5
+reports every missing named export	dup:mock/点名缺失契约表	commit:439e7ca5
+a missing `default` named export is reported the same way	dup:mock/点名缺失契约表	commit:439e7ca5
+surfaces on the check face as nudo:module-missing (error)	dup:mock/点名缺失契约表	commit:439e7ca5
+full replacement (no names list) is unaffected	dup:mock/点名缺失契约表	commit:439e7ca5
 ```
