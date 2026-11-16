@@ -1,5 +1,9 @@
 ```audit
 title	rootCause	gap	action	status	evidence
+非法值回默认 true + 提示；严格布尔；contract 面绑侧车；合法 false 不绑；合法值不告警	配置优先级表	没测该层	keep	keep	—
+import/require/auto 分表；仅 require 与无条件键负控	配置优先级表	没测该层	keep	keep	—
+显式 ""/false/true/相对路径压过 env；未设才读 env；off/0 关闭	配置优先级表	没测该层	keep	keep	—
+未知名/原型键可见诊断；合法内建名与依赖展开零诊断	配置优先级表	没测该层	keep	keep	—
 指令不改变结果；标记落分析实例；调用面命中 memo	环/JSON/pure 表	没测该层	keep	keep	—
 require/default import 取值；具名导入缺名；非法 JSON 专用诊断；JS 依赖负控	环/JSON/pure 表	没测该层	keep	keep	—
 首次即 0、三次不漂移、环仍报告；非环与显式实参负控	环/JSON/pure 表	没测该层	keep	keep	—
@@ -27,33 +31,10 @@ default 槽 + interop 标记；默认/命名空间同签名；无假 unknown-inf
 "合法 nudo 键（对象）：照旧返回配置"	"根包带 nudo 配置（用于验证「非法 nudo 键不得继承祖先配置」） 断言：expect(found?.projectDir).toBe(root);；expect(found?.config.contract?.autoBind).toBe(false);"	没测该层	keep	keep	—
 "空对象 nudo 键：照旧算「有配置」（截断祖先搜索）"	"根包带 nudo 配置（用于验证「非法 nudo 键不得继承祖先配置」） 断言：expect(found?.projectDir).toBe(sub);；expect(found?.config).toEqual({});"	没测该层	keep	keep	—
 "无 nudo 键：照旧向上找到祖先配置（monorepo 继承，文档承诺）"	"根包带 nudo 配置（用于验证「非法 nudo 键不得继承祖先配置」） 断言：expect(found?.projectDir).toBe(root);；expect(found?.config.check?.ignoreThrows).toEqual([\"SyntaxError\"]);"	没测该层	keep	keep	—
-"loadEnvs：未知名产出可见诊断且不注入任何全局"	"断言：expect(Object.keys(loaded.globals)).toHaveLength(0);；expect(errs).toHaveLength(1);"	没测该层	keep	keep	—
-"preload 通道同样可见（CLI check 的诊断来源）"	"`@nudo:env <未知名>`（bogus / nodejs / Node）被静默忽略： 零诊断、env 不生效、分析退化。 契约：未知名 env 必须产出一条**可见**诊断（nudo:env-unresolved 通道， CLI check/test 与 LSP 同源消费），不得静默 `continue`； 断言：expect(errs).toHaveLength(1);；expect(errs[0]!.error).toContain('unknown env name \"bogus\"');"	没测该层	keep	keep	—
-"原型键（constructor）不得取到 Object 构造器并炸掉"	"断言：expect(Object.keys(loaded.globals)).toHaveLength(0);；expect(errs).toHaveLength(1);"	没测该层	keep	keep	—
-"负控制：合法内建名（node / es）照常生效且零诊断"	"`@nudo:env <未知名>`（bogus / nodejs / Node）被静默忽略： 零诊断、env 不生效、分析退化。 契约：未知名 env 必须产出一条**可见**诊断（nudo:env-unresolved 通道， CLI check/test 与 LSP 同源消费），不得静默 `continue`； 断言：expect(Object.keys(node.globals).length).toBeGreaterThan(0);；expect(getPathEnvLoadErrors(dir)).toHaveLength(0);"	没测该层	keep	keep	—
-"负控制：内建名的依赖展开（web ⇒ es）不被误判为未知名"	"`@nudo:env <未知名>`（bogus / nodejs / Node）被静默忽略： 零诊断、env 不生效、分析退化。 契约：未知名 env 必须产出一条**可见**诊断（nudo:env-unresolved 通道， CLI check/test 与 LSP 同源消费），不得静默 `continue`； 断言：expect(Object.keys(loaded.globals).length).toBeGreaterThan(0);；expect(getPathEnvLoadErrors(dir)).toHaveLength(0);"	没测该层	keep	keep	—
-"显式空串（\"\"）压过 env：缓存关闭（不返回 env 目录）"	"`nudo.cache: \"\"`（**显式**空串）不压过 `NUDO_CACHE_DIR` → 缓存目录仍被创建 → 违反 config.md 明文优先级 「any explicit `nudo.cache` value (including `false`) wins over `NUDO_CACHE_DIR`; 根因（config.ts diskCacheRoot）：用「**值的形状**」而不是「**键是否被设置**」 判断优先级 —— `false` 有专门早退分支，`\"\"` 没有 ⇒ 空串被当作「未设置」。 断言：expect(root).toBeUndefined();"	夹具漏形态	keep	keep	—
-"显式 false 压过 env（既有行为不得回退）"	"`nudo.cache: \"\"`（**显式**空串）不压过 `NUDO_CACHE_DIR` → 缓存目录仍被创建 → 违反 config.md 明文优先级 「any explicit `nudo.cache` value (including `false`) wins over `NUDO_CACHE_DIR`; 根因（config.ts diskCacheRoot）：用「**值的形状**」而不是「**键是否被设置**」 判断优先级 —— `false` 有专门早退分支，`\"\"` 没有 ⇒ 空串被当作「未设置」。 断言：expect(root).toBeUndefined();"	夹具漏形态	keep	keep	—
-"true → <projectDir>/.nudo/cache（压过 env）"	"`nudo.cache: \"\"`（**显式**空串）不压过 `NUDO_CACHE_DIR` → 缓存目录仍被创建 → 违反 config.md 明文优先级 「any explicit `nudo.cache` value (including `false`) wins over `NUDO_CACHE_DIR`; 根因（config.ts diskCacheRoot）：用「**值的形状**」而不是「**键是否被设置**」 判断优先级 —— `false` 有专门早退分支，`\"\"` 没有 ⇒ 空串被当作「未设置」。 断言：expect(root).toBe(\"/proj/.nudo/cache\");"	夹具漏形态	keep	keep	—
-"非空字符串 → 相对 projectDir 解析（压过 env）"	"`nudo.cache: \"\"`（**显式**空串）不压过 `NUDO_CACHE_DIR` → 缓存目录仍被创建 → 违反 config.md 明文优先级 「any explicit `nudo.cache` value (including `false`) wins over `NUDO_CACHE_DIR`; 根因（config.ts diskCacheRoot）：用「**值的形状**」而不是「**键是否被设置**」 判断优先级 —— `false` 有专门早退分支，`\"\"` 没有 ⇒ 空串被当作「未设置」。 断言：expect(root).toBe(\"/proj/custom/dir\");"	夹具漏形态	keep	keep	—
-"键未设置（undefined）→ 才读 env"	"`nudo.cache: \"\"`（**显式**空串）不压过 `NUDO_CACHE_DIR` → 缓存目录仍被创建 → 违反 config.md 明文优先级 「any explicit `nudo.cache` value (including `false`) wins over `NUDO_CACHE_DIR`; 根因（config.ts diskCacheRoot）：用「**值的形状**」而不是「**键是否被设置**」 判断优先级 —— `false` 有专门早退分支，`\"\"` 没有 ⇒ 空串被当作「未设置」。 断言：expect(root).toBe(\"/tmp/nudo-cache-env\");"	夹具漏形态	keep	keep	—
-"键未设置 + 无 env → 关闭（默认）"	"`nudo.cache: \"\"`（**显式**空串）不压过 `NUDO_CACHE_DIR` → 缓存目录仍被创建 → 违反 config.md 明文优先级 「any explicit `nudo.cache` value (including `false`) wins over `NUDO_CACHE_DIR`; 根因（config.ts diskCacheRoot）：用「**值的形状**」而不是「**键是否被设置**」 判断优先级 —— `false` 有专门早退分支，`\"\"` 没有 ⇒ 空串被当作「未设置」。 断言：expect(root).toBeUndefined();"	夹具漏形态	keep	keep	—
-"env 为 off / 0 → 关闭（键未设置时）"	"`nudo.cache: \"\"`（**显式**空串）不压过 `NUDO_CACHE_DIR` → 缓存目录仍被创建 → 违反 config.md 明文优先级 「any explicit `nudo.cache` value (including `false`) wins over `NUDO_CACHE_DIR`; 根因（config.ts diskCacheRoot）：用「**值的形状**」而不是「**键是否被设置**」 判断优先级 —— `false` 有专门早退分支，`\"\"` 没有 ⇒ 空串被当作「未设置」。 断言：expect(root).toBeUndefined();；expect(root).toBeUndefine"	夹具漏形态	keep	keep	—
-"import 形态命中 import 条件（ESM 构建），不是 require 分支"	"回归：裸包 `exports` 的**条件键必须按消费形态选** （ESM `import` → \"import\" 条件； 改前：一张固定顺序的表把 \"require\" 排在 \"import\" 前 ⇒ ESM import 解析到 包的 CommonJS 构建（原生 5 / 引擎 {default:10,named:\"cjs\"}）。 断言：expect(r.path).toBe(join(pkgDir, \"esm.mjs\"));；expect(r.exportsUnresolved).toBe(false);"	夹具漏形态	keep	keep	—
-"require 形态命中 require 条件（CJS 构建）"	"回归：裸包 `exports` 的**条件键必须按消费形态选** （ESM `import` → \"import\" 条件； 改前：一张固定顺序的表把 \"require\" 排在 \"import\" 前 ⇒ ESM import 解析到 包的 CommonJS 构建（原生 5 / 引擎 {default:10,named:\"cjs\"}）。 断言：expect(r.path).toBe(join(pkgDir, \"cjs.cjs\"));；expect(r.exportsUnresolved).toBe(false);"	夹具漏形态	keep	keep	—
-"形态未给出时按 import → require 顺序尝试（ESM 构建优先）"	"回归：裸包 `exports` 的**条件键必须按消费形态选** （ESM `import` → \"import\" 条件； 改前：一张固定顺序的表把 \"require\" 排在 \"import\" 前 ⇒ ESM import 解析到 包的 CommonJS 构建（原生 5 / 引擎 {default:10,named:\"cjs\"}）。 断言：expect(resolveNpmJsEntryDetailed(\"dual\", dir).path).toBe(join(pkgDir, \"esm.mjs\"));"	夹具漏形态	keep	keep	—
-"负控制：只有 require 条件的包不被误判 miss（auto 兜底到 require 面）"	"回归：裸包 `exports` 的**条件键必须按消费形态选** （ESM `import` → \"import\" 条件； 改前：一张固定顺序的表把 \"require\" 排在 \"import\" 前 ⇒ ESM import 解析到 包的 CommonJS 构建（原生 5 / 引擎 {default:10,named:\"cjs\"}）。 断言：expect(resolveNpmJsEntryDetailed(\"onlyreq\", dir).path).toBe(；expect(strict.path).toBeNull();"	夹具漏形态	keep	keep	—
-"负控制：无条件键的包仍走 default（不因分表而 miss）"	"回归：裸包 `exports` 的**条件键必须按消费形态选** （ESM `import` → \"import\" 条件； 改前：一张固定顺序的表把 \"require\" 排在 \"import\" 前 ⇒ ESM import 解析到 包的 CommonJS 构建（原生 5 / 引擎 {default:10,named:\"cjs\"}）。 断言：expect(resolveNpmJsEntryDetailed(\"plain\", dir, mode).path).toBe("	夹具漏形态	keep	keep	—
 "两个目录各有 ./env.js：先预载者不得赢下所有同名拼写"	"相对路径 `@nudo:env` 按**进程级全局 baseDir 注册表**解析： 先预载的 `./env.ts` 赢下所有同名拼写 ⇒ 别的目录拿到别人的 env（错值 + 零诊断）。 同一进程内两个目录各有自己的 `./env.js` 时必须各取各的。 断言：expect(formatShape(lx.globals.MAGIC!)).toBe(\"11\");；expect(formatShape(ly.globals.MAGIC!)).toBe(\"22\");"	旧断言钉错	keep	keep	—
 "反向预载顺序同样各取各的（不得依赖预载次序）"	"断言：expect(formatShape(lx.globals.MAGIC!)).toBe(\"11\");；expect(formatShape(ly.globals.MAGIC!)).toBe(\"22\");"	没测该层	keep	keep	—
 "负控制：同一目录重复装载结果一致（不因缓存漂移）"	"`@nudo:env <未知名>`（bogus / nodejs / Node）被静默忽略： 零诊断、env 不生效、分析退化。 契约：未知名 env 必须产出一条**可见**诊断（nudo:env-unresolved 通道， CLI check/test 与 LSP 同源消费），不得静默 `continue`； 断言：expect(formatShape(a.globals.MAGIC!)).toBe(\"11\");；expect(formatShape(b.globals.MAGIC!)).toBe(\"11\");"	没测该层	keep	keep	—
 "负控制：绝对路径说明符照旧按绝对路径解析"	"`@nudo:env <未知名>`（bogus / nodejs / Node）被静默忽略： 零诊断、env 不生效、分析退化。 契约：未知名 env 必须产出一条**可见**诊断（nudo:env-unresolved 通道， CLI check/test 与 LSP 同源消费），不得静默 `continue`； 断言：expect(formatShape(loaded.globals.MAGIC!)).toBe(\"11\");；expect(getPathEnvLoadErrors(dirX)).toHaveLength(0);"	没测该层	keep	keep	—
-"非布尔 autoBind（\"false\" / 0 / 对象）→ 回落默认 true + stderr 提示"	"`nudo.contract.autoBind` 写成**非布尔值**时，check 与 contract / export **三面分裂**（一边说「绑侧车」、一边说「不绑」）， 且磁盘缓存会把结论**投毒**到另一种取值上。 根因（config.ts contractConfig）：`autoBind: config?.contract?.autoBind ?? true` **不校验类型**、原样透传 ⇒ check 面（`=== false` 判「关」）与 contract/export 面（core `sidecarAutoBindAllowed` 把非 true/非函数读成「关」）结论相反。 断言：expect(valu"	没测该层	keep	keep	—
-"归一后是**严格布尔**：check 面（=== false）与 core 面（!== true）同口径"	"`nudo.contract.autoBind` 写成**非布尔值**时，check 与 contract / export **三面分裂**（一边说「绑侧车」、一边说「不绑」）， 且磁盘缓存会把结论**投毒**到另一种取值上。 根因（config.ts contractConfig）：`autoBind: config?.contract?.autoBind ?? true` **不校验类型**、原样透传 ⇒ check 面（`=== false` 判「关」）与 contract/export 面（core `sidecarAutoBindAllowed` 把非 true/非函数读成「关」）结论相反。 断言：expect(type"	没测该层	keep	keep	—
-"contract 面（contractSurface）：非法 autoBind 仍绑侧车（= 默认 true）"	"`nudo.contract.autoBind` 写成**非布尔值**时，check 与 contract / export **三面分裂**（一边说「绑侧车」、一边说「不绑」）， 且磁盘缓存会把结论**投毒**到另一种取值上。 根因（config.ts contractConfig）：`autoBind: config?.contract?.autoBind ?? true` **不校验类型**、原样透传 ⇒ check 面（`=== false` 判「关」）与 contract/export 面（core `sidecarAutoBindAllowed` 把非 true/非函数读成「关」）结论相反。 断言：expect(fn)."	没测该层	keep	keep	—
-"contract 面：合法 autoBind:false 仍不绑侧车（负控制）"	"`nudo.contract.autoBind` 写成**非布尔值**时，check 与 contract / export **三面分裂**（一边说「绑侧车」、一边说「不绑」）， 且磁盘缓存会把结论**投毒**到另一种取值上。 根因（config.ts contractConfig）：`autoBind: config?.contract?.autoBind ?? true` **不校验类型**、原样透传 ⇒ check 面（`=== false` 判「关」）与 contract/export 面（core `sidecarAutoBindAllowed` 把非 true/非函数读成「关」）结论相反。 断言：expect(fn)."	没测该层	keep	keep	—
-"合法 true / false / 缺席：语义不变且不告警"	"`nudo.contract.autoBind` 写成**非布尔值**时，check 与 contract / export **三面分裂**（一边说「绑侧车」、一边说「不绑」）， 且磁盘缓存会把结论**投毒**到另一种取值上。 根因（config.ts contractConfig）：`autoBind: config?.contract?.autoBind ?? true` **不校验类型**、原样透传 ⇒ check 面（`=== false` 判「关」）与 contract/export 面（core `sidecarAutoBindAllowed` 把非 true/非函数读成「关」）结论相反。 断言：expect(cont"	没测该层	keep	keep	—
-"项目配置读到的 autoBind 也是归一后的布尔（findProjectConfig → contractConfig）"	"`nudo.contract.autoBind` 写成**非布尔值**时，check 与 contract / export **三面分裂**（一边说「绑侧车」、一边说「不绑」）， 且磁盘缓存会把结论**投毒**到另一种取值上。 根因（config.ts contractConfig）：`autoBind: config?.contract?.autoBind ?? true` **不校验类型**、原样透传 ⇒ check 面（`=== false` 判「关」）与 contract/export 面（core `sidecarAutoBindAllowed` 把非 true/非函数读成「关」）结论相反。 断言：expect(cfg."	没测该层	keep	keep	—
 "非法 env + 合法配置键 → 回默认 5000 + stderr 提示"	"而文档与**源码自己的注释**都写 「非法值回**默认**（5000）」——实现与二者都不符。 根因（config.ts applyBForkBudgetFromConfig）：`parseMaxForks` 把「非法」 折成 `undefined`，与「**没设**」同值 ⇒ `??` 链无法区分「env 非法 （应回默认）」与「env 未设（应看配置）」。 断言：expect(eff).toBe(5000);；expect(currentBForkBudgetLimit()).toBe(5000);"	没测该层	keep	keep	—
 "非法 env（0 / 负数 / 非数字）+ 配置键 → 一律回默认"	"而文档与**源码自己的注释**都写 「非法值回**默认**（5000）」——实现与二者都不符。 根因（config.ts applyBForkBudgetFromConfig）：`parseMaxForks` 把「非法」 折成 `undefined`，与「**没设**」同值 ⇒ `??` 链无法区分「env 非法 （应回默认）」与「env 未设（应看配置）」。 断言：expect(eff, raw).toBe(5000);"	没测该层	keep	keep	—
 "合法 env 压过配置键"	"而文档与**源码自己的注释**都写 「非法值回**默认**（5000）」——实现与二者都不符。 根因（config.ts applyBForkBudgetFromConfig）：`parseMaxForks` 把「非法」 折成 `undefined`，与「**没设**」同值 ⇒ `??` 链无法区分「env 非法 （应回默认）」与「env 未设（应看配置）」。 断言：expect(applyBForkBudgetFromConfig(CFG_200, { NUDO_MAX_FORKS: \"999\" })).toBe(999);；expect(applyBForkBudgetFromConfig(CFG_200, { NUDO_MAX"	没测该层	keep	keep	—
@@ -167,4 +148,27 @@ pure function: directive does not change the result (doc promise)	dup:环/JSON/p
 marker lands on the analyzed instance (top-level function declaration)	dup:环/JSON/pure 表	commit:0d39a8e2
 marker lands on the analyzed instance (const arrow function → Abs fn value)	dup:环/JSON/pure 表	commit:0d39a8e2
 call surface (fresh instance) actually hits the pure memo	dup:环/JSON/pure 表	commit:0d39a8e2
+loadEnvs：未知名产出可见诊断且不注入任何全局	dup:配置优先级表	commit:9eb57f3e
+preload 通道同样可见（CLI check 的诊断来源）	dup:配置优先级表	commit:9eb57f3e
+原型键（constructor）不得取到 Object 构造器并炸掉	dup:配置优先级表	commit:9eb57f3e
+负控制：合法内建名（node / es）照常生效且零诊断	dup:配置优先级表	commit:9eb57f3e
+负控制：内建名的依赖展开（web ⇒ es）不被误判为未知名	dup:配置优先级表	commit:9eb57f3e
+显式空串（""）压过 env：缓存关闭（不返回 env 目录）	dup:配置优先级表	commit:9eb57f3e
+显式 false 压过 env（既有行为不得回退）	dup:配置优先级表	commit:9eb57f3e
+true → <projectDir>/.nudo/cache（压过 env）	dup:配置优先级表	commit:9eb57f3e
+非空字符串 → 相对 projectDir 解析（压过 env）	dup:配置优先级表	commit:9eb57f3e
+键未设置（undefined）→ 才读 env	dup:配置优先级表	commit:9eb57f3e
+键未设置 + 无 env → 关闭（默认）	dup:配置优先级表	commit:9eb57f3e
+env 为 off / 0 → 关闭（键未设置时）	dup:配置优先级表	commit:9eb57f3e
+import 形态命中 import 条件（ESM 构建），不是 require 分支	dup:配置优先级表	commit:9eb57f3e
+require 形态命中 require 条件（CJS 构建）	dup:配置优先级表	commit:9eb57f3e
+形态未给出时按 import → require 顺序尝试（ESM 构建优先）	dup:配置优先级表	commit:9eb57f3e
+负控制：只有 require 条件的包不被误判 miss（auto 兜底到 require 面）	dup:配置优先级表	commit:9eb57f3e
+负控制：无条件键的包仍走 default（不因分表而 miss）	dup:配置优先级表	commit:9eb57f3e
+非布尔 autoBind（"false" / 0 / 对象）→ 回落默认 true + stderr 提示	dup:配置优先级表	commit:9eb57f3e
+归一后是**严格布尔**：check 面（=== false）与 core 面（!== true）同口径	dup:配置优先级表	commit:9eb57f3e
+contract 面（contractSurface）：非法 autoBind 仍绑侧车（= 默认 true）	dup:配置优先级表	commit:9eb57f3e
+contract 面：合法 autoBind:false 仍不绑侧车（负控制）	dup:配置优先级表	commit:9eb57f3e
+合法 true / false / 缺席：语义不变且不告警	dup:配置优先级表	commit:9eb57f3e
+项目配置读到的 autoBind 也是归一后的布尔（findProjectConfig → contractConfig）	dup:配置优先级表	commit:9eb57f3e
 ```
