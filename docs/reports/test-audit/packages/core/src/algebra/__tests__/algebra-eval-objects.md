@@ -191,20 +191,7 @@ new Widget().constructor === Widget → true（实例面解析到类值）	计�
 Widget.prototype.constructor === Widget → true	计算键/static 表	没测该层	keep	keep	—
 Widget.constructor === Widget → false（不是同一个东西）	计算键/static 表	没测该层	keep	keep	—
 内建 brand（Date）的 constructor 仍解析到 Date	计算键/static 表	没测该层	keep	keep	—
-p === t → false（代理与靶不同引用，无需读 Proxy 面）	计算键/static 表	没测该层	keep	keep	—
-p === t（别名传播后，仍不经 Proxy 面读）→ false	计算键/static 表	没测该层	keep	keep	—
-p1 === p2（两个代理）→ false（每次 new Proxy 都是新对象）	计算键/static 表	没测该层	keep	keep	—
-p === p → true（同一代理自反）	计算键/static 表	没测该层	keep	keep	—
-靶自反仍为 true（代理构造不污染靶的新鲜身份）	计算键/static 表	没测该层	keep	keep	—
-无陷阱代理的读面仍走靶（S2b 读面口径不回归）	计算键/static 表	没测该层	keep	keep	—
-无 get 陷阱时回退读靶、this 绑 receiver（proxy ≠ target）	计算键/static 表	没测该层	keep	keep	—
-p.self（this === t）→ false（receiver = proxy）	计算键/static 表	没测该层	keep	keep	—
-p.self === p → true（this 就是 proxy 自己）	计算键/static 表	没测该层	keep	keep	—
-直接读靶：t.self（this === t）→ true（this 是靶）	计算键/static 表	没测该层	keep	keep	—
-有 get 陷阱：陷阱优先（实参 target/key/receiver 不变）	计算键/static 表	没测该层	keep	keep	—
-无 getter 的普通属性读穿透不变（p.x === 1）	计算键/static 表	没测该层	keep	keep	—
-无 getter 的普通属性写穿透不变（p.x = 2 → 靶变）	计算键/static 表	没测该层	keep	keep	—
-get 陷阱里的 receiver 仍是 proxy（this 语义不变）	计算键/static 表	没测该层	keep	keep	—
+构造点新鲜标：p≠t、两代理不等、自反、靶自反；无陷阱读/写穿透；getter this=proxy；陷阱优先	Proxy 新鲜标表	没测该层	keep	keep	—
 RegExp 原型：source === "(?:)"、flags === ""	计算键/static 表	没测该层	keep	keep	—
 RegExp 原型：global 等布尔 getter 在原型上读 undefined（原生同）	计算键/static 表	没测该层	keep	keep	—
 Error 家族原型：name / message 是原生值	计算键/static 表	没测该层	keep	keep	—
@@ -700,4 +687,18 @@ getter + 数据属性同对象：各按各自读域投影	dup:proto/访问器投
 仅 setter 的访问器：原生读值恒 undefined，占位槽本就正确	dup:proto/访问器投影表	commit:7ece5a50
 getter 抛（读域不可刻画）→ unknown，不得回落 definite undefined	dup:proto/访问器投影表	commit:7ece5a50
 无访问器的对象不受影响（空对象）	dup:proto/访问器投影表	commit:7ece5a50
+p === t → false（代理与靶不同引用，无需读 Proxy 面）	dup:Proxy 新鲜标表	commit:9b7ac32b
+p === t（别名传播后，仍不经 Proxy 面读）→ false	dup:Proxy 新鲜标表	commit:9b7ac32b
+p1 === p2（两个代理）→ false（每次 new Proxy 都是新对象）	dup:Proxy 新鲜标表	commit:9b7ac32b
+p === p → true（同一代理自反）	dup:Proxy 新鲜标表	commit:9b7ac32b
+靶自反仍为 true（代理构造不污染靶的新鲜身份）	dup:Proxy 新鲜标表	commit:9b7ac32b
+无陷阱代理的读面仍走靶（S2b 读面口径不回归）	dup:Proxy 新鲜标表	commit:9b7ac32b
+无 get 陷阱时回退读靶、this 绑 receiver（proxy ≠ target）	dup:Proxy 新鲜标表	commit:9b7ac32b
+p.self（this === t）→ false（receiver = proxy）	dup:Proxy 新鲜标表	commit:9b7ac32b
+p.self === p → true（this 就是 proxy 自己）	dup:Proxy 新鲜标表	commit:9b7ac32b
+直接读靶：t.self（this === t）→ true（this 是靶）	dup:Proxy 新鲜标表	commit:9b7ac32b
+有 get 陷阱：陷阱优先（实参 target/key/receiver 不变）	dup:Proxy 新鲜标表	commit:9b7ac32b
+无 getter 的普通属性读穿透不变（p.x === 1）	dup:Proxy 新鲜标表	commit:9b7ac32b
+无 getter 的普通属性写穿透不变（p.x = 2 → 靶变）	dup:Proxy 新鲜标表	commit:9b7ac32b
+get 陷阱里的 receiver 仍是 proxy（this 语义不变）	dup:Proxy 新鲜标表	commit:9b7ac32b
 ```
