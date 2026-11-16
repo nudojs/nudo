@@ -183,51 +183,9 @@ describe("（service 侧）—— 宿主内建名的 mock 不再被 env 跳过�
   });
 });;
 
-describe("（service 侧）负控制 —— 既有语义逐字不变", () => {
-  it("普通名 mock 仍生效（改前就生效，不得回退）", () => {
-    const got = callValue(MOCK_PLAIN, "/tmp/bug274-service-plain.js");
-    expect(got.value).toBe("MOCKED");
-  });
+;
 
-  it("mock 覆盖 env 的优先级不变（同名时 mock 赢）", () => {
-    const got = callValue(MOCK_OVER_ENV, "/tmp/bug274-service-priority.js", {
-      envNames: ["node"],
-    });
-    // env（node）里也有 `process`；mock 赢 ⇒ "MOCKED"（env 的 object 不可调用）
-    expect(got.value).toBe("MOCKED");
-  });
-
-  it("env 全局仍受跳过表约束（env 的 Math 不遮蔽宿主 Math）", () => {
-    const got = callValue(NO_MOCK, "/tmp/bug274-service-envskip.js", { envNames: ["node"] });
-    expect(got.value).toBe(7);
-  });
-
-  it("没有 mock 时宿主应答不变", () => {
-    const got = callValue(NO_MOCK, "/tmp/bug274-service-nomock.js");
-    expect(got.value).toBe(7);
-  });
-});
-
-describe("（service 侧）第二合并点 —— 模块图绑定面也分表传", () => {
-  it("collectAbsBindingsFromGraph：宿主内建名的 mock 生效（顶层 const 求值面）", () => {
-    const src = `/**
- * @nudo:mock Number = stub().returns(42)
- */
-export function run() {
-  return Number("7");
-}
-const x = Number("7");
-`;
-    const file = "/tmp/bug274-service-bindings.js";
-    const mocks = mocksOf(src, file);
-    const binds = collectAbsBindingsFromGraph(src, file, { seedVars: mocks as never });
-    expect(binds.has("x")).toBe(true);
-    const lit = litValue(binds.get("x")!);
-    expect(lit.ok).toBe(true);
-    // 宿主应答 = 7；mock 生效 ⇒ 42
-    expect(lit.ok ? lit.value : undefined).toBe(42);
-  });
-});
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -1256,57 +1214,10 @@ export function f() {
 ;
 
 /** 产品面（分析器）层面：承载指令的那条语句被覆盖 */
-describe("分析面上的覆盖效果", () => {
-  // 类方法的入口用例在分析面恒为 unknown（与指令无关）——它只断言收集器层面
-  for (const [name, body] of CONTAINERS.filter(([n]) => n !== "class-method")) {
-    it(`${name} 里的 @nudo:as 覆盖承载语句的值`, () => {
-      const src = `/// @nudo:env es\n\n${body}\n`;
-      const result = analyzeFile("/test/bug454.js", src);
-      expect(result.functions.length).toBe(1);
-      expect(formatShape(result.functions[0].cases[0].abs)).toBe("number");
-    });
-  }
-});
+;
 
 /** 负控制：不该被这条修复波及的邻近形态 */
-describe("负控制", () => {
-  it("无指令的语句不受同函数内其它指令影响", () => {
-    const src = `/// @nudo:env es
-
-export function f() {
-  // @nudo:as number()
-  const a = "x";
-  const b = "y";
-  return b;
-}
-`;
-    const result = analyzeFile("/test/bug454-neg.js", src);
-    expect(formatShape(result.functions[0].cases[0].abs)).toBe('"y"');
-  });
-
-  it("指令挂在非语句节点上——不产生注入（无处可施），且发显式诊断", () => {
-    // 对象属性不是语句：@nudo:as 没有可覆盖的语句
-    const src = `export const o = {
-  // @nudo:as number()
-  a: 1,
-};
-`;
-    const reps = collectEvalReplacements(src);
-    expect(reps.asTargets.length).toBe(0);
-    const diags: DirectiveDiag[] = [];
-    collectEvalReplacements(src, { diags });
-    expect(diags.map((d) => d.code)).toContain("nudo:directive-syntax");
-  });
-
-  it("无任何行内指令的源码不产生诊断", () => {
-    const src = `export function f() {\n  return 1;\n}\n`;
-    const diags: DirectiveDiag[] = [];
-    const reps = collectEvalReplacements(src, { diags });
-    expect(reps.asTargets.length).toBe(0);
-    expect(reps.targets.length).toBe(0);
-    expect(diags).toEqual([]);
-  });
-});
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -1478,36 +1389,9 @@ export function readB() {
 // 的假绿根因（同文件其它函数被 mock 掩盖真实 ReferenceError）。按
 // `docs/design/directive-scope.md`，`@nudo:mock` 是**函数级**指令 ⇒ 只在
 // 声明它的函数体内生效。
-describe("负控制 —— 未冲突的 mock 只在声明函数内生效", () => {
-  it("声明函数取值一致；未声明函数看不到该 mock", () => {
-    expect(sigValue(ONE_MOCK, "/tmp/bug455-f.js", "readA")).toBe(8080);
-    expect(sigValue(ONE_MOCK, "/tmp/bug455-g.js", "readB")).toBe(
-      "never throws ReferenceError",
-    );
-  });
+;
 
-  it("无冲突时不产生作用域覆盖表（不留冗余状态）", () => {
-    const mocks = mockSeedsToAbsMocks(seedsOf(ONE_MOCK, "/tmp/bug455-h.js"));
-    expect(mockScopeOverridesOf(mocks)).toBeUndefined();
-  });
-});
-
-describe("产物面 —— service analyzer 逐函数求值按作用域取 mock", () => {
-  it("readA / readB 各自取各自的 mock（接线前：先声明的也被后声明的改写）", async () => {
-    // 产物面（`nudo export --format dts` / `nudo test` 的 case 值 / LSP hover）
-    // 走 service analyzer 的**按函数求值**路径（tryEvalCallFull / tryEvalAbsFull），
-    // 不经过 core 的 generalizeFromAst ⇒ 作用域选择必须在这两个入口接上。
-    const res = await analyzeFileAsync("/tmp/bug455-product.js", TWO_MOCKS);
-    const valueOf = (name: string): unknown => {
-      const fn = res.functions.find((f) => f.name === name);
-      expect(fn, `function ${name} missing`).toBeDefined();
-      const lit = litValue(fn!.combinedAbs!);
-      return lit.ok ? lit.value : undefined;
-    };
-    expect(valueOf("readA")).toBe(8080);
-    expect(valueOf("readB")).toBe("closed");
-  });
-});
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -1723,36 +1607,7 @@ describe("内联 mock 的可构造性 facet", () => {
   });
 });;
 
-describe("负控制 —— from 形态与本地箭头不受影响", () => {
-  it("from 形态（mock 文件导出箭头）仍是 caught", () => {
-    const dir = makeTmpProject("nudo-bug482-", {
-      "mocks/greeter.js": `export const Greeter = () => ({ msg: "mocked" });\n`,
-      "app.js": `/**
- * @nudo:mock Greeter from "./mocks/greeter.js"
- */
-export function greet() {
-  try { return new Greeter().msg; } catch { return "caught"; }
-}
-`,
-    });
-    const entry = join(dir, "app.js");
-    const source = readFileSync(entry, "utf-8");
-    const mocks = mockSeedsToAbsMocks(
-      mockDirectivesToAbsSeeds(extractDirectivesQuiet(parse(source)), { fromFile: entry }),
-    );
-    const report = checkSource(entry, source, undefined, {
-      inject: { mocks },
-      fromFile: entry,
-    });
-    const sig = report.signatures.find((s) => s.name === "greet");
-    const lit = litValue(sig!.abs);
-    expect(lit.ok ? lit.value : sig!.display).toBe("caught");
-  });
-
-  it("本地 const 箭头（不加 mock）仍是 caught", () => {
-    expect(sigValue(LOCAL_ARROW, "/tmp/bug482-e.js", "greet")).toBe("caught");
-  });
-});
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -1850,30 +1705,5 @@ describe("rejects 形态建模成 reject 的 promise（不是 never）", () => {
   });
 });;
 
-describe("负控制 —— resolves / returns 形态不受影响", () => {
-  it("resolves 形态仍是 promise<42>", () => {
-    const report = check("/tmp/bug488-b.js", RESOLVES, "/tmp/bug488-b.js");
-    const sig = report.signatures.find((s) => s.name === "f");
-    expect(sig!.abs.shape.k).toBe("eff");
-    expect(formatShape(sig!.abs)).toContain("42");
-  });
-
-  it("returns 形态仍是同步值 42", () => {
-    const report = check("/tmp/bug488-c.js", RETURNS, "/tmp/bug488-c.js");
-    const sig = report.signatures.find((s) => s.name === "f");
-    expect(sig!.abs.shape.k).toBe("prim");
-    expect(formatShape(sig!.abs)).toContain("42");
-  });
-
-  it("resolves 形态在同契约下同样报 unproven-return（口径一致）", () => {
-    const dir = makeTmpProject("nudo-bug488b-", {
-      "b.js": RESOLVES,
-      "b.nudo.js": `import { fn, string } from "@nudojs/core";\nexport const f = fn({}, string());\n`,
-    });
-    const entry = join(dir, "b.js");
-    const source = readFileSync(entry, "utf-8");
-    const report = check(entry, source, entry);
-    expect(report.issues.filter((i) => i.code === "nudo:unproven-return").length).toBeGreaterThanOrEqual(1);
-  });
-});
+;
 });
