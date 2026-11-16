@@ -1,19 +1,8 @@
-# packages/service/src/__tests__/service-env-cache.test.ts
-
-模块套件：service env/cache/exports/resolve 面。
-
-审计：148 个用例；根因取自测试注释，缺口按四分类判定，动作复核后为 keep。
-
 ```audit
 title	rootCause	gap	action	status	evidence
-"env 模块表补 default 槽（= 命名空间）+ 互操作标记"	"env 模块的 ESM **默认导入**（`import fs from \"node:fs\"`） 此前全量降级 `unknown` + **假** `nudo:unknown-inference` + 门禁**假绿** （与同一模块的命名空间导入门禁结论相反）。 根因（service 侧）：`collectEnvModules` 构造 env 模块表时**只装 named、 不装 default 槽** ⇒ core 的 `bindImport` 在 `name === \"default\"` 分支取不到 值 ⇒ 折 `unknown`。 断言：expect(fsMod).toBeDefined();；expect(fsMod!.de"	夹具漏形态	keep	keep	—
-"默认导入与命名空间导入给出同一个签名（不再是 unknown）"	"env 模块的 ESM **默认导入**（`import fs from \"node:fs\"`） 此前全量降级 `unknown` + **假** `nudo:unknown-inference` + 门禁**假绿** （与同一模块的命名空间导入门禁结论相反）。 根因（service 侧）：`collectEnvModules` 构造 env 模块表时**只装 named、 不装 default 槽** ⇒ core 的 `bindImport` 在 `name === \"default\"` 分支取不到 值 ⇒ 折 `unknown`。 断言：expect(sigDef).toBeDefined();；expect(sigNs).t"	夹具漏形态	keep	keep	—
-"默认导入侧不再产出那条假的 nudo:unknown-inference"	"env 模块的 ESM **默认导入**（`import fs from \"node:fs\"`） 此前全量降级 `unknown` + **假** `nudo:unknown-inference` + 门禁**假绿** （与同一模块的命名空间导入门禁结论相反）。 根因（service 侧）：`collectEnvModules` 构造 env 模块表时**只装 named、 不装 default 槽** ⇒ core 的 `bindImport` 在 `name === \"default\"` 分支取不到 值 ⇒ 折 `unknown`。 断言：expect(r.issues.filter((i) => i.code === \"nud"	夹具漏形态	keep	keep	—
-"负控制：env 表的具名导出槽不被 default 槽污染"	"env 模块的 ESM **默认导入**（`import fs from \"node:fs\"`） 此前全量降级 `unknown` + **假** `nudo:unknown-inference` + 门禁**假绿** （与同一模块的命名空间导入门禁结论相反）。 根因（service 侧）：`collectEnvModules` 构造 env 模块表时**只装 named、 不装 default 槽** ⇒ core 的 `bindImport` 在 `name === \"default\"` 分支取不到 值 ⇒ 折 `unknown`。 断言：expect(named.readFileSync).toBeDefined();；exp"	夹具漏形态	keep	keep	—
-"env 内容变、mtime 不变 ⇒ 第二次分析必须看到新类型（不得命中函数级旧条目）"	"回归：函数级分析缓存的 env 维度必须与另外两层（文件级 `analysisFileCacheKey`、求值器 memo）**同口径**——用**内容指纹**，不是 mtime。 改前函数级键只编码 `pathEnvPreloadFingerprint()`（mtime）⇒ `cp -p` / `tar -x` / 同秒编辑（内容变、mtime 不变）时文件级缓存正确失效并重跑，函数级却命中 **旧的**推断类型 ⇒ 两层结论不一致。 断言：expect(await returnShapeOf(mainPath, source)).toBe(\"1\");；expect(await returnShapeOf(mainPath, so"	没测该层	keep	keep	—
-"对照组：env 内容不变 ⇒ 两次结论一致（缓存仍可命中，不引入抖动）"	"回归：函数级分析缓存的 env 维度必须与另外两层（文件级 `analysisFileCacheKey`、求值器 memo）**同口径**——用**内容指纹**，不是 mtime。 改前函数级键只编码 `pathEnvPreloadFingerprint()`（mtime）⇒ `cp -p` / `tar -x` / 同秒编辑（内容变、mtime 不变）时文件级缓存正确失效并重跑，函数级却命中 **旧的**推断类型 ⇒ 两层结论不一致。 断言：expect(await returnShapeOf(mainPath, source)).toBe(\"1\");；expect(await returnShapeOf(mainPath, so"	没测该层	keep	keep	—
-"与 migrate verify 同口径：.js/.mjs/.cjs/.ts/.mts/.cts 都是目标"	"回归：`nudo check` 的目录目标判定必须覆盖与 `migrate verify` 一致的文件集，否则 `migrate retire` 装出的门禁 `nudo check .` 在该包上 **恒红**（对目标目录返回空集 ⇒ `nudo:path-empty-dir` ⇒ exit 1）。 改前只认 `.js/.mjs/.ts` ⇒ `.mts`/`.cts`/`.cjs` 包装上就是红的。 断言：expect(isNudoTargetPath(p), p).toBe(true);"	门禁未跑	keep	keep	—
-"仍排除：声明文件 / 侧车 / draft / JSX（能力边界）"	"断言：expect(isNudoTargetPath(p), p).toBe(false);"	没测该层	keep	keep	—
+覆盖 .js/.mjs/.cjs/.ts/.mts/.cts；排除声明/侧车/draft/JSX	env 缓存首表	没测该层	keep	keep	—
+env 内容变 mtime 不变 ⇒ 必须 miss；内容不变两次一致	env 缓存首表	没测该层	keep	keep	—
+default 槽 + interop 标记；默认/命名空间同签名；无假 unknown-inference；具名槽不污染	env 缓存首表	没测该层	keep	keep	—
 "env 名顺序互换 ⇒ 签名逐字相同 + 门禁结论相同"	"回归：多个 `@nudo:env` 名的合并必须取**并集**（与书写顺序无关）。 病灶（`packages/service/src/evaluator/env-loader.ts` · `applyEnvDefinition`）： 同名全局被**整块替换**（后一个 env 赢）⇒ `@nudo:env node, web` 与 `@nudo:env web, node` 得到两张不同的全局表 ⇒ **同一份源码**签名不同、 门禁结论相反（OK vs FAILED）——与文档承诺的 env 名之间是 union 相悖。 断言：expect(a.sigs).toEqual(b.sigs);；expect(a.issues).toE"	夹具漏形态	keep	keep	—
 "合并后的 Response 是并集：实例面覆盖 web 侧与 node 侧的全部槽位"	"回归：多个 `@nudo:env` 名的合并必须取**并集**（与书写顺序无关）。 病灶（`packages/service/src/evaluator/env-loader.ts` · `applyEnvDefinition`）： 同名全局被**整块替换**（后一个 env 赢）⇒ `@nudo:env node, web` 与 `@nudo:env web, node` 得到两张不同的全局表 ⇒ **同一份源码**签名不同、 门禁结论相反（OK vs FAILED）——与文档承诺的 env 名之间是 union 相悖。 断言：expect(mergedSlots.has(\"type\")).toBe(true); // web 侧"	夹具漏形态	keep	keep	—
 "合并后的 performance 含 web 侧独有的 toJSON + node 侧槽位（逐槽并集）"	"回归：多个 `@nudo:env` 名的合并必须取**并集**（与书写顺序无关）。 病灶（`packages/service/src/evaluator/env-loader.ts` · `applyEnvDefinition`）： 同名全局被**整块替换**（后一个 env 赢）⇒ `@nudo:env node, web` 与 `@nudo:env web, node` 得到两张不同的全局表 ⇒ **同一份源码**签名不同、 门禁结论相反（OK vs FAILED）——与文档承诺的 env 名之间是 union 相悖。 断言：expect(mergedSlots.has(\"toJSON\")).toBe(true);；expect"	夹具漏形态	keep	keep	—
@@ -154,4 +143,14 @@ title	rootCause	gap	action	status	evidence
 "\"nudo\": {}（空对象）：遮断祖先搜索，配置为空"	"子包 `package.json` 的 **`\"nudo\"` 键是假值** （`false` / `null` / `0` / `\"\"`）⇒ **不遮断**祖先包配置 ⇒ 子包**静默继承** 根包的 `check.ignoreThrows`（把 L2 error 吞掉 ⇒ 门禁假绿）与 `nudo.env` （跨包串味）——与文档「uses the **nearest** `package.json` that contains a `nudo` key」直接冲突。 根因（config.ts findProjectConfig）：`if (nudo)` 用**真值**判定代替 「**键是否存在**」⇒ 假值 nudo 键被当成「这"	没测该层	keep	keep	—
 "无 nudo 键：照旧继承根配置（文档承诺的 monorepo 行为）"	"子包 `package.json` 的 **`\"nudo\"` 键是假值** （`false` / `null` / `0` / `\"\"`）⇒ **不遮断**祖先包配置 ⇒ 子包**静默继承** 根包的 `check.ignoreThrows`（把 L2 error 吞掉 ⇒ 门禁假绿）与 `nudo.env` （跨包串味）——与文档「uses the **nearest** `package.json` that contains a `nudo` key」直接冲突。 根因（config.ts findProjectConfig）：`if (nudo)` 用**真值**判定代替 「**键是否存在**」⇒ 假值 nudo 键被当成「这"	没测该层	keep	keep	—
 "子包无 package.json：照旧继承根配置"	"子包 `package.json` 的 **`\"nudo\"` 键是假值** （`false` / `null` / `0` / `\"\"`）⇒ **不遮断**祖先包配置 ⇒ 子包**静默继承** 根包的 `check.ignoreThrows`（把 L2 error 吞掉 ⇒ 门禁假绿）与 `nudo.env` （跨包串味）——与文档「uses the **nearest** `package.json` that contains a `nudo` key」直接冲突。 根因（config.ts findProjectConfig）：`if (nudo)` 用**真值**判定代替 「**键是否存在**」⇒ 假值 nudo 键被当成「这"	没测该层	keep	keep	—
+```audit-deleted
+title	reason	evidence
+env 模块表补 default 槽（= 命名空间）+ 互操作标记	dup:env 缓存首表	commit:4e046aad
+默认导入与命名空间导入给出同一个签名（不再是 unknown）	dup:env 缓存首表	commit:4e046aad
+默认导入侧不再产出那条假的 nudo:unknown-inference	dup:env 缓存首表	commit:4e046aad
+负控制：env 表的具名导出槽不被 default 槽污染	dup:env 缓存首表	commit:4e046aad
+env 内容变、mtime 不变 ⇒ 第二次分析必须看到新类型（不得命中函数级旧条目）	dup:env 缓存首表	commit:4e046aad
+对照组：env 内容不变 ⇒ 两次结论一致（缓存仍可命中，不引入抖动）	dup:env 缓存首表	commit:4e046aad
+与 migrate verify 同口径：.js/.mjs/.cjs/.ts/.mts/.cts 都是目标	dup:env 缓存首表	commit:4e046aad
+仍排除：声明文件 / 侧车 / draft / JSX（能力边界）	dup:env 缓存首表	commit:4e046aad
 ```
