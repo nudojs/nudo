@@ -1676,76 +1676,44 @@ function fileIn(dir: string, rel: string): string {
 const SRC = "export function f(x) {\n  return x;\n}\n";
 
 describe("nudo.analysis.include 的字面量要能命中（路径形态，非子串）", () => {
-  it("include: [\"src\"] 命中 src 下的文件（改前：永不命中 → 白名单作废）", () => {
-    const dir = project(["src"]);
-    const hit = fileIn(dir, "src/a.js");
-    const nested = fileIn(dir, "src/nested/b.js");
-    expect(shouldAnalyzeFile(hit, SRC)).toBe(true);
-    expect(shouldAnalyzeFile(nested, SRC)).toBe(true);
-  });
-
-  it("include: [\"src\"] 不命中 src-other / lib（字面量不是子串搜索）", () => {
-    const dir = project(["src"]);
-    const sibling = fileIn(dir, "src-other/c.js");
-    const other = fileIn(dir, "lib/d.js");
-    expect(shouldAnalyzeFile(sibling, SRC)).toBe(false);
-    expect(shouldAnalyzeFile(other, SRC)).toBe(false);
-  });
-
-  it("include: [\"src/a.js\"] 只命中这一个文件", () => {
-    const dir = project(["src/a.js"]);
-    const exact = fileIn(dir, "src/a.js");
-    const sibling = fileIn(dir, "src/b.js");
-    expect(shouldAnalyzeFile(exact, SRC)).toBe(true);
-    expect(shouldAnalyzeFile(sibling, SRC)).toBe(false);
-  });
-
-  it("include: [\"src/**\"] 命中整个子树，不命中 lib", () => {
-    const dir = project(["src/**"]);
-    const nested = fileIn(dir, "src/nested/b.js");
-    const other = fileIn(dir, "lib/d.js");
-    expect(shouldAnalyzeFile(nested, SRC)).toBe(true);
-    expect(shouldAnalyzeFile(other, SRC)).toBe(false);
-  });
-
-  it("include: [\"src/*.js\"] 不跨 /（段内通配）", () => {
-    const dir = project(["src/*.js"]);
-    const top = fileIn(dir, "src/a.js");
-    const nested = fileIn(dir, "src/nested/b.js");
-    expect(shouldAnalyzeFile(top, SRC)).toBe(true);
-    expect(shouldAnalyzeFile(nested, SRC)).toBe(false);
-  });
-
-  it("include: [\"**/*.js\"] 命中任意目录的 .js", () => {
-    const dir = project(["**/*.js"]);
-    const other = fileIn(dir, "lib/d.js");
-    expect(shouldAnalyzeFile(other, SRC)).toBe(true);
-  });
-
-  it("include 多条：任一命中即纳入", () => {
-    const dir = project(["lib", "src/a.js"]);
-    const inLib = fileIn(dir, "lib/d.js");
-    const exact = fileIn(dir, "src/a.js");
-    const miss = fileIn(dir, "src/b.js");
-    expect(shouldAnalyzeFile(inLib, SRC)).toBe(true);
-    expect(shouldAnalyzeFile(exact, SRC)).toBe(true);
-    expect(shouldAnalyzeFile(miss, SRC)).toBe(false);
-  });
-
-  it("负控制：include 为空 → 不过滤（mode=all 全纳入）", () => {
-    const dir = project(undefined);
-    const any = fileIn(dir, "lib/d.js");
-    expect(shouldAnalyzeFile(any, SRC)).toBe(true);
-  });
-
-  it("负控制：exclude 的字面量子串语义不变（src/vendored 命中子树）", () => {
-    const dir = project(undefined, ["src/vendored"]);
-    const vendored = fileIn(dir, "src/vendored/lib.js");
-    const keep = fileIn(dir, "src/lib.js");
-    expect(shouldAnalyzeFile(vendored, SRC)).toBe(false);
-    expect(shouldAnalyzeFile(keep, SRC)).toBe(true);
+  const project = (include: string[] | undefined, exclude?: string[]): string => {
+    const analysis: Record<string, unknown> = { mode: "all" };
+    if (include) analysis.include = include;
+    if (exclude) analysis.exclude = exclude;
+    return makeTmpProject("nudo-scope-480-", { "package.json": JSON.stringify({ name: "fx", nudo: { analysis } }) });
+  };
+  const fileIn = (dir: string, rel: string): string => {
+    const file = join(dir, ...rel.split("/"));
+    mkdirSync(join(file, ".."), { recursive: true });
+    writeFileSync(file, "export function f(x) {\n  return x;\n}\n");
+    return file;
+  };
+  const SRC = "export function f(x) {\n  return x;\n}\n";
+  const hit = (include: string[] | undefined, rel: string, want: boolean, exclude?: string[]) => {
+    const dir = project(include, exclude);
+    expect(shouldAnalyzeFile(fileIn(dir, rel), SRC), `${JSON.stringify(include ?? null)} ${rel}`).toBe(want);
+  };
+  it("目录/文件/glob/多条/空/排除的命中矩阵", () => {
+    hit(["src"], "src/a.js", true);
+    hit(["src"], "src/nested/b.js", true);
+    hit(["src"], "src-other/c.js", false);
+    hit(["src"], "lib/d.js", false);
+    hit(["src/a.js"], "src/a.js", true);
+    hit(["src/a.js"], "src/b.js", false);
+    hit(["src/**"], "src/nested/b.js", true);
+    hit(["src/**"], "lib/d.js", false);
+    hit(["src/*.js"], "src/a.js", true);
+    hit(["src/*.js"], "src/nested/b.js", false);
+    hit(["**/*.js"], "lib/d.js", true);
+    hit(["lib", "src/a.js"], "lib/d.js", true);
+    hit(["lib", "src/a.js"], "src/a.js", true);
+    hit(["lib", "src/a.js"], "src/b.js", false);
+    hit(undefined, "lib/d.js", true);
+    hit(undefined, "src/vendored/lib.js", false, ["src/vendored"]);
+    hit(undefined, "src/lib.js", true, ["src/vendored"]);
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -1777,73 +1745,54 @@ function project(prefix: string, nudo: unknown): string {
 }
 
 describe("项目级预算/上限必须随每次解析重写（顺序无关）", () => {
+  const project = (prefix: string, nudo: unknown): string => tmpProject(prefix, { "package.json": JSON.stringify({ name: "p", nudo }) });
   beforeEach(() => {
     evictProjectConfigMemo();
     resetSessionCacheLimitState();
   });
   afterEach(() => {
-    // 进程级单槽是全局的：收尾复位，避免污染同文件后续用例
     applyBForkBudgetFromConfig(null, {});
     resetSessionCacheLimitState();
   });
-
-  it("A → B → A（memo 命中）：预算回到 A 的值（不是 B 的最后写入者）", () => {
-    const a = project("nudo-bug481-a-", { analysis: { maxForks: 11 } });
-    const b = project("nudo-bug481-b-", { analysis: { maxForks: 22 } });
-
+  it("A→B→A 预算与会话 LRU 回到 A；无 nudo 回落默认；重复稳定；env 压过配置", () => {
+    const a = project("nudo-b481-a-", { analysis: { maxForks: 11 } });
+    const b = project("nudo-b481-b-", { analysis: { maxForks: 22 } });
     findProjectConfig(a);
     expect(currentBForkBudgetLimit()).toBe(11);
     findProjectConfig(b);
     expect(currentBForkBudgetLimit()).toBe(22);
-    // 旧实现：memo 命中直接返回、不重写 → 仍是 B 的 22
     findProjectConfig(a);
     expect(currentBForkBudgetLimit()).toBe(11);
     findProjectConfig(b);
     expect(currentBForkBudgetLimit()).toBe(22);
-  });
 
-  it("A → B → A：会话 LRU 上限同样随本次解析回到 A", () => {
-    const a = project("nudo-bug481-sa-", { sessionCache: { maxFiles: 7 } });
-    const b = project("nudo-bug481-sb-", { sessionCache: { maxFiles: 9 } });
-
-    findProjectConfig(a);
+    const sa = project("nudo-b481-sa-", { sessionCache: { maxFiles: 7 } });
+    const sb = project("nudo-b481-sb-", { sessionCache: { maxFiles: 9 } });
+    findProjectConfig(sa);
     expect(getSessionCacheLimits({}).maxFiles).toBe(7);
-    findProjectConfig(b);
+    findProjectConfig(sb);
     expect(getSessionCacheLimits({}).maxFiles).toBe(9);
-    findProjectConfig(a);
+    findProjectConfig(sa);
     expect(getSessionCacheLimits({}).maxFiles).toBe(7);
-  });
 
-  it("无 nudo 键的目录：预算回落默认（不是上一个项目的值）", () => {
-    const a = project("nudo-bug481-na-", { analysis: { maxForks: 11 } });
-    const plain = tmpProject("nudo-bug481-nb-", {
-      "package.json": JSON.stringify({ name: "plain" }),
-    });
-
+    const plain = tmpProject("nudo-b481-nb-", { "package.json": JSON.stringify({ name: "plain" }) });
     findProjectConfig(a);
-    expect(currentBForkBudgetLimit()).toBe(11);
     findProjectConfig(plain);
-    // 旧实现：memo 命中不重写 → 仍是 11（上一个项目的预算泄漏）
     expect(currentBForkBudgetLimit()).not.toBe(11);
-  });
 
-  // ── 负控制：单项目重复解析不得改变结论 ──────────────────────────
-  it("同一项目重复解析：预算稳定", () => {
-    const a = project("nudo-bug481-stable-", { analysis: { maxForks: 33 } });
-    findProjectConfig(a);
+    const stable = project("nudo-b481-stable-", { analysis: { maxForks: 33 } });
+    findProjectConfig(stable);
     expect(currentBForkBudgetLimit()).toBe(33);
-    findProjectConfig(a);
+    findProjectConfig(stable);
     expect(currentBForkBudgetLimit()).toBe(33);
-    findProjectConfig(join(a, "src"));
+    findProjectConfig(join(stable, "src"));
     expect(currentBForkBudgetLimit()).toBe(33);
-  });
 
-  it("env NUDO_MAX_FORKS 仍压过项目配置（优先级不变）", () => {
-    const a = project("nudo-bug481-env-", { analysis: { maxForks: 11 } });
+    const envProject = project("nudo-b481-env-", { analysis: { maxForks: 11 } });
     const saved = process.env.NUDO_MAX_FORKS;
     process.env.NUDO_MAX_FORKS = "77";
     try {
-      findProjectConfig(a);
+      findProjectConfig(envProject);
       expect(currentBForkBudgetLimit()).toBe(77);
     } finally {
       if (saved === undefined) delete process.env.NUDO_MAX_FORKS;
@@ -1851,6 +1800,7 @@ describe("项目级预算/上限必须随每次解析重写（顺序无关）", 
     }
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
