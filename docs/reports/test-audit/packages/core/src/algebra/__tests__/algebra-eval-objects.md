@@ -434,29 +434,11 @@ ToString 通道不受影响（原生 "1,2"）	计算键/static 表	没测该层	
 同对象上其它方法的既有报红不变（原生 TypeError）	计算键/static 表	没测该层	keep	keep	—
 L2 门禁不再假绿：nullish 接收者的导出函数被判 may-throw	计算键/static 表	没测该层	keep	keep	—
 L2 门禁负控制：非 nullish 接收者仍是 total（0 诊断）	计算键/static 表	没测该层	keep	keep	—
-原生不报错：新 prototype 读得出（node v26.10.0：typeof F.prototype.x === 'number'）	计算键/static 表	没测该层	keep	keep	—
-转译侧不得重绑 const 根（原生：成员写不动绑定）	计算键/static 表	没测该层	keep	keep	—
-负控：let 绑定维持既有根重绑通道（B1：现经 $rebindable 守卫）	计算键/static 表	没测该层	keep	keep	—
-负控：非函数表达式的 const 绑定维持既有根重绑通道（收窄口径）	计算键/static 表	没测该层	keep	keep	—
-负控：函数声明（宿主函数）维持既有根重绑通道	计算键/static 表	没测该层	keep	keep	—
-用户标识符撞引擎临时名：求值不得 fail-closed（node：12）	计算键/static 表	没测该层	keep	keep	—
-catch 临时名撞名同样不丢（node：12）	计算键/static 表	没测该层	keep	keep	—
-负控：不撞名的 body 求值逐字不变（node：12）	计算键/static 表	没测该层	keep	keep	—
-避让集来自 AST 词形（body 内 Identifier + 形参）	计算键/static 表	没测该层	keep	keep	—
-删方法后 super 调用定抛 TypeError（原生：TypeError）	计算键/static 表	没测该层	keep	keep	—
-用户的 try/catch 吸收该 TypeError（原生：'TypeError'）	计算键/static 表	没测该层	keep	keep	—
-负控：方法未删时 super 调用照常（原生：1）	计算键/static 表	没测该层	keep	keep	—
-负控：Object.prototype 成员不判缺席（super.toString 原生存在）	计算键/static 表	没测该层	keep	keep	—
-负控：动态原型写（注册表外）不判缺席（原生有该方法 ⇒ 不抛）	计算键/static 表	没测该层	keep	keep	—
-mk().x += 2 折 3（原生 3）	计算键/static 表	没测该层	keep	keep	—
-计算键同款：mk()[k] += 2 折 3（原生 3）	计算键/static 表	没测该层	keep	keep	—
-负控：可重绑根的复合赋值逐字不变（原生 3）	计算键/static 表	没测该层	keep	keep	—
-负控：接收者只求值一次（原生 [3, 1]）	计算键/static 表	没测该层	keep	keep	—
-派生 Map 实例读得回条目（原生：1 / true / 1）	计算键/static 表	没测该层	keep	keep	—
-派生 Set 实例读得回元素面（原生：2 / true）	计算键/static 表	没测该层	keep	keep	—
-负控：缺席键仍折 undefined（原生：undefined）	计算键/static 表	没测该层	keep	keep	—
-负控：用户同名方法优先（原生：'own'）	计算键/static 表	没测该层	keep	keep	—
-负控：普通 Map 逐字不变（原生：1）	计算键/static 表	没测该层	keep	keep	—
+const 函数成员写：值可读、不抛、不重绑；let/非函数/函数声明负控	const 成员写族表	没测该层	keep	keep	—
+body-fn 临时名避让：用户撞名仍求值；不撞名负控；避让集来自 AST	const 成员写族表	没测该层	keep	keep	—
+super.m() 删除后抛 TypeError、可 catch；未删/toString/动态原型负控	const 成员写族表	没测该层	keep	keep	—
+复合赋值到不可重绑成员：直接/计算键折 3；可重绑与只求值一次负控	const 成员写族表	没测该层	keep	keep	—
+含内建父的派生 Map/Set 读回条目；缺席/同名/普通 Map 负控	const 成员写族表	没测该层	keep	keep	—
 成员在签名面可按名查到，返回类型是实值（string）	计算键/static 表	没测该层	keep	keep	—
 不再产生指向错误的 nudo:opaque-result	计算键/static 表	没测该层	keep	keep	—
 负控制：普通 CJS 具名导出行为不变（exports.f = fn）	计算键/static 表	没测该层	keep	keep	—
@@ -685,4 +667,27 @@ Array.isArray(s) → true（模板对象是数组 exotic）	dup:私有名/模板
 Array.isArray(s) → true（多段模板同样成立）	dup:私有名/模板表	commit:92dabeaf
 负控制：普通对象 / 非数组值 → false	dup:私有名/模板表	commit:92dabeaf
 负控制：迭代器对象仍不是数组	dup:私有名/模板表	commit:92dabeaf
+原生不报错：新 prototype 读得出（node v26.10.0：typeof F.prototype.x === 'number'）	dup:const 成员写族表	commit:bc9988af
+转译侧不得重绑 const 根（原生：成员写不动绑定）	dup:const 成员写族表	commit:bc9988af
+负控：let 绑定维持既有根重绑通道（B1：现经 $rebindable 守卫）	dup:const 成员写族表	commit:bc9988af
+负控：非函数表达式的 const 绑定维持既有根重绑通道（收窄口径）	dup:const 成员写族表	commit:bc9988af
+负控：函数声明（宿主函数）维持既有根重绑通道	dup:const 成员写族表	commit:bc9988af
+用户标识符撞引擎临时名：求值不得 fail-closed（node：12）	dup:const 成员写族表	commit:bc9988af
+catch 临时名撞名同样不丢（node：12）	dup:const 成员写族表	commit:bc9988af
+负控：不撞名的 body 求值逐字不变（node：12）	dup:const 成员写族表	commit:bc9988af
+避让集来自 AST 词形（body 内 Identifier + 形参）	dup:const 成员写族表	commit:bc9988af
+删方法后 super 调用定抛 TypeError（原生：TypeError）	dup:const 成员写族表	commit:bc9988af
+用户的 try/catch 吸收该 TypeError（原生：'TypeError'）	dup:const 成员写族表	commit:bc9988af
+负控：方法未删时 super 调用照常（原生：1）	dup:const 成员写族表	commit:bc9988af
+负控：Object.prototype 成员不判缺席（super.toString 原生存在）	dup:const 成员写族表	commit:bc9988af
+负控：动态原型写（注册表外）不判缺席（原生有该方法 ⇒ 不抛）	dup:const 成员写族表	commit:bc9988af
+mk().x += 2 折 3（原生 3）	dup:const 成员写族表	commit:bc9988af
+计算键同款：mk()[k] += 2 折 3（原生 3）	dup:const 成员写族表	commit:bc9988af
+负控：可重绑根的复合赋值逐字不变（原生 3）	dup:const 成员写族表	commit:bc9988af
+负控：接收者只求值一次（原生 [3, 1]）	dup:const 成员写族表	commit:bc9988af
+派生 Map 实例读得回条目（原生：1 / true / 1）	dup:const 成员写族表	commit:bc9988af
+派生 Set 实例读得回元素面（原生：2 / true）	dup:const 成员写族表	commit:bc9988af
+负控：缺席键仍折 undefined（原生：undefined）	dup:const 成员写族表	commit:bc9988af
+负控：用户同名方法优先（原生：'own'）	dup:const 成员写族表	commit:bc9988af
+负控：普通 Map 逐字不变（原生：1）	dup:const 成员写族表	commit:bc9988af
 ```
