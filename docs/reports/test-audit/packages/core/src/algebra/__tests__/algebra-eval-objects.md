@@ -10,19 +10,6 @@ title	rootCause	gap	action	status	evidence
 fn 两臂/单臂/空静态面/无面/原型名；prim/brand/obj/tuple/eff 既有派发；端到端响应	brand/fn-sum 表	没测该层	keep	keep	—
 定义期一次/构造不重复/键不漂移/抛错在定义期/两处定义各一次；静态键与公有字段不变；抽象键不挂名	计算键/static 表	没测该层	keep	keep	—
 块在前/三段交错/副作用序；字段在前/外层变量/块内 this 负控	计算键/static 表	没测该层	keep	keep	—
-{ get x(){}, x: 2 } → 读得数据属性 2	计算键/static 表	没测该层	keep	keep	—
-{ get x(){}, x: 2 } 后的写不再定抛（数据属性写语义）	计算键/static 表	没测该层	keep	keep	—
-{ get x(){}, x: 2 } 的自有描述符是数据属性（value = 2）	计算键/static 表	没测该层	keep	keep	—
-{ x: 1, get x(){}, x: 3 } → 最后一个定义（数据属性 3）胜出	计算键/static 表	没测该层	keep	keep	—
-{ get x(){}, x: 2 } 展开后仍是数据属性 2	计算键/static 表	没测该层	keep	keep	—
-{ get x(){}, x: 2 } 经 Object.assign 拷贝后仍是数据属性 2	计算键/static 表	没测该层	keep	keep	—
-被覆盖的 getter 不再被调用（副作用归零）	计算键/static 表	没测该层	keep	keep	—
-重复键的数据属性仍可枚举（键存在性不丢）	计算键/static 表	没测该层	keep	keep	—
-方法简写是数据属性：{ get x(){}, x(){} } → 方法胜出	计算键/static 表	没测该层	keep	keep	—
-symbol 键同键仲裁：{ get [Symbol.iterator](), [Symbol.iterator]: 2 } → 数据属性胜出	计算键/static 表	没测该层	keep	keep	—
-动态计算键同键仲裁：{ get [k](), [k]: 2 } → 数据属性胜出（定义语义）	计算键/static 表	没测该层	keep	keep	—
-动态计算键同键仲裁后写语义不塌成定抛（数据属性写）	计算键/static 表	没测该层	keep	keep	—
-动态计算键：键表达式仍只求值一次	计算键/static 表	没测该层	keep	keep	—
 单访问器：{ get x(){ return 7 } } → 7	计算键/static 表	没测该层	keep	keep	—
 数据在前、访问器在后 → 访问器胜出（读走 getter）	计算键/static 表	没测该层	keep	keep	—
 数据在前、访问器在后 → 写仍是 getter-only 的 TypeError	计算键/static 表	没测该层	keep	keep	—
@@ -670,4 +657,17 @@ fn⊕fn：反向（只有 B 有）⇒ 同样只派发有的一臂	dup:brand/fn-s
 负控：Function.prototype 名（toString）沿函数对象恒可得 ⇒ 不判缺席	dup:brand/fn-sum 表	commit:7a646432
 负控：prim / brand / obj / arr / tuple / eff 的既有 sum 派发行为逐字不变	dup:brand/fn-sum 表	commit:7a646432
 端到端：env 全局是 fn⊕fn sum ⇒ Response.json(x) 的签名不是 unknown	dup:brand/fn-sum 表	commit:7a646432
+{ get x(){}, x: 2 } → 读得数据属性 2	dup:重复键表	commit:3e52f562
+{ get x(){}, x: 2 } 后的写不再定抛（数据属性写语义）	dup:重复键表	commit:3e52f562
+{ get x(){}, x: 2 } 的自有描述符是数据属性（value = 2）	dup:重复键表	commit:3e52f562
+{ x: 1, get x(){}, x: 3 } → 最后一个定义（数据属性 3）胜出	dup:重复键表	commit:3e52f562
+{ get x(){}, x: 2 } 展开后仍是数据属性 2	dup:重复键表	commit:3e52f562
+{ get x(){}, x: 2 } 经 Object.assign 拷贝后仍是数据属性 2	dup:重复键表	commit:3e52f562
+被覆盖的 getter 不再被调用（副作用归零）	dup:重复键表	commit:3e52f562
+重复键的数据属性仍可枚举（键存在性不丢）	dup:重复键表	commit:3e52f562
+方法简写是数据属性：{ get x(){}, x(){} } → 方法胜出	dup:重复键表	commit:3e52f562
+symbol 键同键仲裁：{ get [Symbol.iterator](), [Symbol.iterator]: 2 } → 数据属性胜出	dup:重复键表	commit:3e52f562
+动态计算键同键仲裁：{ get [k](), [k]: 2 } → 数据属性胜出（定义语义）	dup:重复键表	commit:3e52f562
+动态计算键同键仲裁后写语义不塌成定抛（数据属性写）	dup:重复键表	commit:3e52f562
+动态计算键：键表达式仍只求值一次	dup:重复键表	commit:3e52f562
 ```
