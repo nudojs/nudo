@@ -1,5 +1,9 @@
 ```audit
 title	rootCause	gap	action	status	evidence
+函数体内调用合成 call@ 且撤 entry@；顶层照旧；非导出保留 entry@	双入口/intension/what-if 表	没测该层	keep	keep	—
+未知名/T.* 降 unknown；降级回显实际注入；联合整条降级；可表达不变；显式 unknown/any；未声明 unapplied	双入口/intension/what-if 表	没测该层	keep	keep	—
+跨模块 display 由求值面合成；同模块保持符号面；失败如实 unknown；全量不矛盾	双入口/intension/what-if 表	没测该层	keep	keep	—
+browser/node/legacy 锚第 1 行；单入口/非入口零 issue；eval 面同锚	双入口/intension/what-if 表	没测该层	keep	keep	—
 barrel 归因定义文件并照报门禁；改名跟导出名；直接 import 照报；他处不污染；未导出回落	call@/类方法/再导出表	没测该层	keep	keep	—
 模块状态不同见证值 = 现场 5/6；无状态差异值不变 3	call@/类方法/再导出表	没测该层	keep	keep	—
 实例方法求值确切值；顶层函数口径不变；不可判如实 unknown	call@/类方法/再导出表	没测该层	keep	keep	—
@@ -31,26 +35,6 @@ strict/无 profile 非法值文案 error；合法值与 profile 预设不告警	
 调用点字面量投影基类型；带断言 case 保留字面量	观测/顺序/见证表	没测该层	keep	keep	—
 全部超限整组跳过；正常记录照常合成	归因/超限表	没测该层	keep	keep	—
 ESM/CJS 命名空间带接收者限定并可归因；具名/对象方法无前缀；产品面 error	归因/超限表	没测该层	keep	keep	—
-"anchors the dual-entry issue on line 1 (not the line-0 placeholder)"	"下游 `i.line ?? 1` 的文件级兜底同口径，不需再换算。 负控制：单入口包 / 非入口文件仍然零 issue（位置修复不得放宽触发面）。 断言：expect(issue).not.toBeNull();；expect(issue!.line).toBe(1);"	没测该层	keep	keep	—
-"anchors the node face on line 1 too (both variants)"	"下游 `i.line ?? 1` 的文件级兜底同口径，不需再换算。 负控制：单入口包 / 非入口文件仍然零 issue（位置修复不得放宽触发面）。 断言：expect(issue).not.toBeNull();；expect(issue!.line).toBe(1);"	没测该层	keep	keep	—
-"keeps the legacy browser-field package shape anchored"	"\\\"] 命中整个子树，不命中 lib\", () => { const dir = project([\"src/**\"]); it(\"include: [\\\"src/*.js\\\"] 不跨 /（段内通配）\", () => { const dir = project([\"src/*.js\"]); 断言：expect(issue).not.toBeNull();；expect(issue!.line).toBe(1);"	没测该层	keep	keep	—
-"negative control: single-entry package still yields no issue at all"	"下游 `i.line ?? 1` 的文件级兜底同口径，不需再换算。 负控制：单入口包 / 非入口文件仍然零 issue（位置修复不得放宽触发面）。 断言：expect(entryVariantIssueForFile(join(dir, \"index.js\"))).toBeNull();"	没测该层	keep	keep	—
-"negative control: non-entry helper inside a dual package yields no issue"	"下游 `i.line ?? 1` 的文件级兜底同口径，不需再换算。 负控制：单入口包 / 非入口文件仍然零 issue（位置修复不得放宽触发面）。 断言：expect(entryVariantIssueForFile(join(dir, \"lib\", \"helper.js\"))).toBeNull();"	没测该层	keep	keep	—
-"analyzeFile 的 dual-entry 诊断落在第 1 行（不是 line 0 占位）"	"下游 `i.line ?? 1` 的文件级兜底同口径，不需再换算。 负控制：单入口包 / 非入口文件仍然零 issue（位置修复不得放宽触发面）。 断言：expect(d).toBeDefined();；expect(d!.range.start.line).toBeGreaterThanOrEqual(1);"	没测该层	keep	keep	—
-"跨模块：display 由求值面合成，与 resultAbs / nudo check 签名一致"	"根因（analyzer-abs-eval.ts 的 tryAttachIntension）：`display` 走**符号面** （generalizeFromAst → formatPoly），`abs` 走**求值面**； 跨模块时被调方是 import 进来的绑定，符号面解析不出 ⇒ display 退成 `() => unknown`，而求值 面有确切的 7。 断言：expect(fn).toBeDefined();；expect(entry).toBeDefined();"	没测该层	keep	keep	—
-"负控制：同模块（符号面有效）display 保持符号面形态"	"根因（analyzer-abs-eval.ts 的 tryAttachIntension）：`display` 走**符号面** （generalizeFromAst → formatPoly），`abs` 走**求值面**； 跨模块时被调方是 import 进来的绑定，符号面解析不出 ⇒ display 退成 `() => unknown`，而求值 面有确切的 7。 断言：expect(entry!.intension?.display).toBe(\"inner2: () => 7\");"	没测该层	keep	keep	—
-"负控制：真推断失败时 display 仍如实说 unknown（与 payload 一致）"	"根因（analyzer-abs-eval.ts 的 tryAttachIntension）：`display` 走**符号面** （generalizeFromAst → formatPoly），`abs` 走**求值面**； 跨模块时被调方是 import 进来的绑定，符号面解析不出 ⇒ display 退成 `() => unknown`，而求值 面有确切的 7。 断言：expect(entry).toBeDefined();；expect(entry!.intension?.abs).toContain(\"unknown\");"	没测该层	keep	keep	—
-"不变量：任何 case 的 display 不得与同一条 payload 的 abs 矛盾"	"根因（analyzer-abs-eval.ts 的 tryAttachIntension）：`display` 走**符号面** （generalizeFromAst → formatPoly），`abs` 走**求值面**； 跨模块时被调方是 import 进来的绑定，符号面解析不出 ⇒ display 退成 `() => unknown`，而求值 面有确切的 7。 断言：expect(display, `${fn.name}/${c.name}`).not.toContain(\"unknown\");"	没测该层	keep	keep	—
-"does not launder an unrecognized name into any()"	"what-if 把**认不出**的类型表达式静默洗成 `any()`，却仍报 「Bindings applied: <用户原文>」——报告与实际注入不符。 原生 oracle（tmp/probe/fix-r24-m/engine497-grammar.ts）： `@nudo:as` 的类型文法（`parseCaseArgExpr`）里 `any()` / `unknown` / `any` / 裸名字**全是同一个 Abs** `{k:\"unknown\"}` ⇒ 洗成 `any()` 既不改变推断结果， 又把「表达不了」藏了起来（`any()` 命中 `isExplicitUnknownExpr` ⇒ 指令文法 连 `nudo:di"	没测该层	keep	keep	—
-"does not launder a TS type reference (T.*) into any()"	"what-if 把**认不出**的类型表达式静默洗成 `any()`，却仍报 「Bindings applied: <用户原文>」——报告与实际注入不符。 原生 oracle（tmp/probe/fix-r24-m/engine497-grammar.ts）： `@nudo:as` 的类型文法（`parseCaseArgExpr`）里 `any()` / `unknown` / `any` / 裸名字**全是同一个 Abs** `{k:\"unknown\"}` ⇒ 洗成 `any()` 既不改变推断结果， 又把「表达不了」藏了起来（`any()` 命中 `isExplicitUnknownExpr` ⇒ 指令文法 连 `nudo:di"	没测该层	keep	keep	—
-"echoes the actual injection instead of the user text when degraded"	"what-if 把**认不出**的类型表达式静默洗成 `any()`，却仍报 「Bindings applied: <用户原文>」——报告与实际注入不符。 原生 oracle（tmp/probe/fix-r24-m/engine497-grammar.ts）： `@nudo:as` 的类型文法（`parseCaseArgExpr`）里 `any()` / `unknown` / `any` / 裸名字**全是同一个 Abs** `{k:\"unknown\"}` ⇒ 洗成 `any()` 既不改变推断结果， 又把「表达不了」藏了起来（`any()` 命中 `isExplicitUnknownExpr` ⇒ 指令文法 连 `nudo:di"	没测该层	keep	keep	—
-"degrades a union with one unrecognized member as a whole"	"回归：引擎「放弃求值」必须在 **test 面可观测**。 症状（修前）：同一份递归源码，`nudo check` / `nudo health` 都报「求值被 截断」，而 `nudo test`（人类面 + `--json`）**零诊断** —— 把放宽后的类型 （`0 | number | string`）当一次正常观测打印，断言段还报「0 failed」全绿。 断言：expect(source).toContain(\"// @nudo:as unknown\");；expect(source).not.toContain(\"union(\");"	没测该层	keep	keep	—
-"negative control: expressible expressions keep their mapping and echo"	"回归：被调方的**调用点域**不得被「首次 settle」截断。 症状（修前）：同一组函数，只改**声明顺序**就得到不同的调用点域 —— 被调方先定义时只留下第一个调用方的调用点（`callee(2)` / `callee(3)` 被 静默丢弃），于是 `nudo test` 少报见证、`nudo contract --emit` 写出偏窄的 契约（合法调用被判违约），`nudo contract --draft` 沿「官方推荐路径」直接 产出假红。 断言：expect(typeExprToDirective(\"number\")).toBe(\"number()\");；expect(typeExprToDirective(\"stri"	没测该层	keep	keep	—
-"negative control: explicit unknown / any stay expressible (no degradation note)"	"what-if 把**认不出**的类型表达式静默洗成 `any()`，却仍报 「Bindings applied: <用户原文>」——报告与实际注入不符。 原生 oracle（tmp/probe/fix-r24-m/engine497-grammar.ts）： `@nudo:as` 的类型文法（`parseCaseArgExpr`）里 `any()` / `unknown` / `any` / 裸名字**全是同一个 Abs** `{k:\"unknown\"}` ⇒ 洗成 `any()` 既不改变推断结果， 又把「表达不了」藏了起来（`any()` 命中 `isExplicitUnknownExpr` ⇒ 指令文法 连 `nudo:di"	没测该层	keep	keep	—
-"negative control: bindings with no top-level declaration stay unapplied"	"\\\"] 命中整个子树，不命中 lib\", () => { const dir = project([\"src/**\"]); it(\"include: [\\\"src/*.js\\\"] 不跨 /（段内通配）\", () => { const dir = project([\"src/*.js\"]); 断言：expect(applied).toEqual([]);；expect(unapplied).toEqual([\"nope\"]);"	没测该层	keep	keep	—
-"函数体内调用：被调方有 call@ 见证（改前只有 entry@）"	"调用点位于**导出函数体内**时，Nudo 从不合成 `call@` case ⇒ 回落 成 `entry@` ⇒ 该函数的调用点域完全丢失（误报 entry-only）。 根因（analyzer-orchestrate-uncached-cases.ts / analyzer-orchestrate-uncached.ts）： `call@` 合成只消费**外部传入**的 records； 断言：expect(names.some((n) => n.startsWith(\"call@\"))).toBe(true);；expect(names.some((n) => n.startsWith(\"entry@\"))).toBe(fal"	没测该层	keep	keep	—
-"负控制：顶层调用点口径不变（call@ 见证仍在）"	"调用点位于**导出函数体内**时，Nudo 从不合成 `call@` case ⇒ 回落 成 `entry@` ⇒ 该函数的调用点域完全丢失（误报 entry-only）。 根因（analyzer-orchestrate-uncached-cases.ts / analyzer-orchestrate-uncached.ts）： `call@` 合成只消费**外部传入**的 records； 断言：expect(names.some((n) => n.startsWith(\"call@\"))).toBe(true);；expect(names.some((n) => n.startsWith(\"entry@\"))).toBe(fal"	没测该层	keep	keep	—
-"负控制：非导出函数口径不变（保留 entry@ 见证）"	"调用点位于**导出函数体内**时，Nudo 从不合成 `call@` case ⇒ 回落 成 `entry@` ⇒ 该函数的调用点域完全丢失（误报 entry-only）。 根因（analyzer-orchestrate-uncached-cases.ts / analyzer-orchestrate-uncached.ts）： `call@` 合成只消费**外部传入**的 records； 断言：expect(names.some((n) => n.startsWith(\"entry@\"))).toBe(true);"	没测该层	keep	keep	—
 ```audit-deleted
 title	reason	evidence
 ESM `import * as dep`：记录名带接收者限定，且归因到被调模块	dup:归因/超限表	commit:75e79cab
@@ -171,4 +155,24 @@ export * barrel：记录归因到定义文件，domain-exceeds 门禁照报	dup:
 负控制：直接 import（无 barrel）行为不变——门禁照报	dup:call@/类方法/再导出表	commit:46b51565
 负控制：别处的记录不得在本文件报门禁（跨文件污染守卫）	dup:call@/类方法/再导出表	commit:46b51565
 负控制：模块未导出该名 → 回落 import 目标（不猜、不崩）	dup:call@/类方法/再导出表	commit:46b51565
+anchors the dual-entry issue on line 1 (not the line-0 placeholder)	dup:双入口/intension/what-if 表	commit:22670220
+anchors the node face on line 1 too (both variants)	dup:双入口/intension/what-if 表	commit:22670220
+keeps the legacy browser-field package shape anchored	dup:双入口/intension/what-if 表	commit:22670220
+negative control: single-entry package still yields no issue at all	dup:双入口/intension/what-if 表	commit:22670220
+negative control: non-entry helper inside a dual package yields no issue	dup:双入口/intension/what-if 表	commit:22670220
+analyzeFile 的 dual-entry 诊断落在第 1 行（不是 line 0 占位）	dup:双入口/intension/what-if 表	commit:22670220
+跨模块：display 由求值面合成，与 resultAbs / nudo check 签名一致	dup:双入口/intension/what-if 表	commit:22670220
+负控制：同模块（符号面有效）display 保持符号面形态	dup:双入口/intension/what-if 表	commit:22670220
+负控制：真推断失败时 display 仍如实说 unknown（与 payload 一致）	dup:双入口/intension/what-if 表	commit:22670220
+不变量：任何 case 的 display 不得与同一条 payload 的 abs 矛盾	dup:双入口/intension/what-if 表	commit:22670220
+does not launder an unrecognized name into any()	dup:双入口/intension/what-if 表	commit:22670220
+does not launder a TS type reference (T.*) into any()	dup:双入口/intension/what-if 表	commit:22670220
+echoes the actual injection instead of the user text when degraded	dup:双入口/intension/what-if 表	commit:22670220
+degrades a union with one unrecognized member as a whole	dup:双入口/intension/what-if 表	commit:22670220
+negative control: expressible expressions keep their mapping and echo	dup:双入口/intension/what-if 表	commit:22670220
+negative control: explicit unknown / any stay expressible (no degradation note)	dup:双入口/intension/what-if 表	commit:22670220
+negative control: bindings with no top-level declaration stay unapplied	dup:双入口/intension/what-if 表	commit:22670220
+函数体内调用：被调方有 call@ 见证（改前只有 entry@）	dup:双入口/intension/what-if 表	commit:22670220
+负控制：顶层调用点口径不变（call@ 见证仍在）	dup:双入口/intension/what-if 表	commit:22670220
+负控制：非导出函数口径不变（保留 entry@ 见证）	dup:双入口/intension/what-if 表	commit:22670220
 ```
