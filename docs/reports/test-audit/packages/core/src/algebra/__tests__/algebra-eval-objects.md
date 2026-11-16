@@ -24,22 +24,8 @@ symbol 键：{ [Symbol.iterator]: 2, get [Symbol.iterator](){} } → 访问器�
 方法简写在后：{ x(){}, get x(){} } → 访问器胜出（读 undefined）	计算键/static 表	没测该层	keep	keep	—
 其它键不受重复键仲裁牵连	计算键/static 表	没测该层	keep	keep	—
 无重复键的字面量不受影响（普通数据属性）	计算键/static 表	没测该层	keep	keep	—
-对象字面量访问器：getter 在实参之前跑（原生 mbc / 改前 bmc）	计算键/static 表	没测该层	keep	keep	—
-对象字面量访问器 + 两个实参：getter → 实参 → 调用（原生 mabc）	计算键/static 表	没测该层	keep	keep	—
-类访问器：getter 先于实参（原生 gmbc / 改前 bgmc）	计算键/static 表	没测该层	keep	keep	—
-静态类访问器：getter 先于实参（原生 smbc / 改前 bsmc）	计算键/static 表	没测该层	keep	keep	—
-嵌套访问器：外层 getter → 内层 getter → 实参（原生 pmbc）	计算键/static 表	没测该层	keep	keep	—
-计算键调用：键 → 成员读 → 实参（原生 kmbc / 改前 kbmc）	计算键/static 表	没测该层	keep	keep	—
-getter 抛：实参**不**求值（原生 mT / 改前 bmT）	计算键/static 表	没测该层	keep	keep	—
-getter 返回非函数：getter → 实参 → TypeError（原生 mbT / 改前 bmT）	计算键/static 表	没测该层	keep	keep	—
-getter 只跑一次（不得因预读 + 派发各读一次而跑两遍）	计算键/static 表	没测该层	keep	keep	—
-数据槽方法：成员读无副作用，调用仍在实参之后（原生 bm）	计算键/static 表	没测该层	keep	keep	—
-普通函数调用：实参从左到右（原生 abf）	计算键/static 表	没测该层	keep	keep	—
-计算键 + 数据槽方法：键先求值（原生 kbm）	计算键/static 表	没测该层	keep	keep	—
-super 调用：父类方法仍被派发（this 绑实例）	计算键/static 表	没测该层	keep	keep	—
-私有名方法调用：this.#m() 仍走类注册表派发	计算键/static 表	没测该层	keep	keep	—
-数组方法：map 回调仍逐元素跑	计算键/static 表	没测该层	keep	keep	—
-this 绑定：对象方法体内的 this 仍是接收者	计算键/static 表	没测该层	keep	keep	—
+getter 先于实参：对象/类/静态/嵌套/计算键/抛错/非函数/只读一次	访问器求值序表	没测该层	keep	keep	—
+负控：数据槽/super/私有名/数组方法/this 绑定不变	访问器求值序表	没测该层	keep	keep	—
 static { this.x = super.m } → 父类静态成员值（原生 1）	计算键/static 表	没测该层	keep	keep	—
 static 块内 super.m 参与运算（原生 3）	计算键/static 表	没测该层	keep	keep	—
 负控制：静态字段里的 super 仍读父类静态成员	计算键/static 表	没测该层	keep	keep	—
@@ -678,4 +664,20 @@ function 原型：原型上的可枚举属性被枚举	dup:brand 原型写表	co
 负控制：普通对象的 for..in 不变	dup:brand 原型写表	commit:d842d398
 负控制：Object.keys 仍只给自有可枚举键（原型键不混入）	dup:brand 原型写表	commit:d842d398
 负控制：原型上的属性读取仍正常	dup:brand 原型写表	commit:d842d398
+对象字面量访问器：getter 在实参之前跑（原生 mbc / 改前 bmc）	dup:访问器求值序表	commit:87577dcc
+对象字面量访问器 + 两个实参：getter → 实参 → 调用（原生 mabc）	dup:访问器求值序表	commit:87577dcc
+类访问器：getter 先于实参（原生 gmbc / 改前 bgmc）	dup:访问器求值序表	commit:87577dcc
+静态类访问器：getter 先于实参（原生 smbc / 改前 bsmc）	dup:访问器求值序表	commit:87577dcc
+嵌套访问器：外层 getter → 内层 getter → 实参（原生 pmbc）	dup:访问器求值序表	commit:87577dcc
+计算键调用：键 → 成员读 → 实参（原生 kmbc / 改前 kbmc）	dup:访问器求值序表	commit:87577dcc
+getter 抛：实参**不**求值（原生 mT / 改前 bmT）	dup:访问器求值序表	commit:87577dcc
+getter 返回非函数：getter → 实参 → TypeError（原生 mbT / 改前 bmT）	dup:访问器求值序表	commit:87577dcc
+getter 只跑一次（不得因预读 + 派发各读一次而跑两遍）	dup:访问器求值序表	commit:87577dcc
+数据槽方法：成员读无副作用，调用仍在实参之后（原生 bm）	dup:访问器求值序表	commit:87577dcc
+普通函数调用：实参从左到右（原生 abf）	dup:访问器求值序表	commit:87577dcc
+计算键 + 数据槽方法：键先求值（原生 kbm）	dup:访问器求值序表	commit:87577dcc
+super 调用：父类方法仍被派发（this 绑实例）	dup:访问器求值序表	commit:87577dcc
+私有名方法调用：this.#m() 仍走类注册表派发	dup:访问器求值序表	commit:87577dcc
+数组方法：map 回调仍逐元素跑	dup:访问器求值序表	commit:87577dcc
+this 绑定：对象方法体内的 this 仍是接收者	dup:访问器求值序表	commit:87577dcc
 ```
