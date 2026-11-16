@@ -275,25 +275,6 @@ Symbol.unscopables：Array 原型上是 16 键对象	计算键/static 表	没测
 实例面经原型链继承同一成员（new Map()[Symbol.toStringTag]）	计算键/static 表	没测该层	keep	keep	—
 Map 原型的 @@iterator 借调落到集合迭代派发（不再假抛）	计算键/static 表	没测该层	keep	keep	—
 负控制：字符串键成员不受影响（Map.prototype.get 仍是函数）	计算键/static 表	没测该层	keep	keep	—
-函数 / 类实例 instanceof 自身 → true	计算键/static 表	没测该层	keep	keep	—
-派生类实例 instanceof 父类 → true	计算键/static 表	没测该层	keep	keep	—
-原型被替换后旧实例 instanceof 构造器 → false	计算键/static 表	没测该层	keep	keep	—
-原型被替换后新造的实例 instanceof 构造器 → true	计算键/static 表	没测该层	keep	keep	—
-实例原型置 null 后 instanceof 构造器 / Object → false（链 null 终止）	计算键/static 表	没测该层	keep	keep	—
-普通函数 / 类的实例 instanceof Function → false（原生 false，非 true）	计算键/static 表	没测该层	keep	keep	—
-以 Function 为基类的类实例 instanceof Function → true	计算键/static 表	没测该层	keep	keep	—
-函数值本身 instanceof Function / Object → true（本片修：此前直读 left.shape 崩 ⇒ unknown）	计算键/static 表	没测该层	keep	keep	—
-函数值 instanceof 内建构造器（Array） → false	计算键/static 表	没测该层	keep	keep	—
-对象字面量 instanceof 用户函数 / 用户类 → false（此前折抽象 boolean）	计算键/static 表	没测该层	keep	keep	—
-F.prototype = Object.prototype 之后对象字面量 instanceof F → true（原型身份命中）	计算键/static 表	没测该层	keep	keep	—
-对象字面量 instanceof Object → true；instanceof Array → false（既有口径不变）	计算键/static 表	没测该层	keep	keep	—
-箭头函数 RHS（原生定抛 TypeError）不得折 exact false	计算键/static 表	没测该层	keep	keep	—
-生成器函数 RHS（原生 false）不得折 exact true	计算键/static 表	没测该层	keep	keep	—
-bind 产物 RHS（原生 false）不得折 exact false / true	计算键/static 表	没测该层	keep	keep	—
-生成器对象替身（内部槽 obj）不得折 exact（既有钉 exec-review-fixes 复钉）	计算键/static 表	没测该层	keep	keep	—
-setPrototypeOf(f, {}) 之后 instanceof F → 抽象 boolean（不得 exact true）	计算键/static 表	没测该层	keep	keep	—
-F.prototype={} 之后新实例 instanceof Object → 抽象 boolean（原生 true）	计算键/static 表	没测该层	keep	keep	—
-F.prototype = 5 之后 f instanceof F → TypeError	计算键/static 表	没测该层	keep	keep	—
 函数构造器实例：Object.setPrototypeOf(f, null) → false	计算键/static 表	没测该层	keep	keep	—
 类实例：Object.setPrototypeOf(a, null) → false	计算键/static 表	没测该层	keep	keep	—
 负控制：未改写原型的实例仍折 exact true	计算键/static 表	没测该层	keep	keep	—
@@ -670,4 +651,23 @@ symbol 键同键仲裁：{ get [Symbol.iterator](), [Symbol.iterator]: 2 } → �
 动态计算键同键仲裁：{ get [k](), [k]: 2 } → 数据属性胜出（定义语义）	dup:重复键表	commit:3e52f562
 动态计算键同键仲裁后写语义不塌成定抛（数据属性写）	dup:重复键表	commit:3e52f562
 动态计算键：键表达式仍只求值一次	dup:重复键表	commit:3e52f562
+函数 / 类实例 instanceof 自身 → true	dup:instanceof 表	commit:a28dada3
+派生类实例 instanceof 父类 → true	dup:instanceof 表	commit:a28dada3
+原型被替换后旧实例 instanceof 构造器 → false	dup:instanceof 表	commit:a28dada3
+原型被替换后新造的实例 instanceof 构造器 → true	dup:instanceof 表	commit:a28dada3
+实例原型置 null 后 instanceof 构造器 / Object → false（链 null 终止）	dup:instanceof 表	commit:a28dada3
+普通函数 / 类的实例 instanceof Function → false（原生 false，非 true）	dup:instanceof 表	commit:a28dada3
+以 Function 为基类的类实例 instanceof Function → true	dup:instanceof 表	commit:a28dada3
+函数值本身 instanceof Function / Object → true（本片修：此前直读 left.shape 崩 ⇒ unknown）	dup:instanceof 表	commit:a28dada3
+函数值 instanceof 内建构造器（Array） → false	dup:instanceof 表	commit:a28dada3
+对象字面量 instanceof 用户函数 / 用户类 → false（此前折抽象 boolean）	dup:instanceof 表	commit:a28dada3
+F.prototype = Object.prototype 之后对象字面量 instanceof F → true（原型身份命中）	dup:instanceof 表	commit:a28dada3
+对象字面量 instanceof Object → true；instanceof Array → false（既有口径不变）	dup:instanceof 表	commit:a28dada3
+箭头函数 RHS（原生定抛 TypeError）不得折 exact false	dup:instanceof 表	commit:a28dada3
+生成器函数 RHS（原生 false）不得折 exact true	dup:instanceof 表	commit:a28dada3
+bind 产物 RHS（原生 false）不得折 exact false / true	dup:instanceof 表	commit:a28dada3
+生成器对象替身（内部槽 obj）不得折 exact（既有钉 exec-review-fixes 复钉）	dup:instanceof 表	commit:a28dada3
+setPrototypeOf(f, {}) 之后 instanceof F → 抽象 boolean（不得 exact true）	dup:instanceof 表	commit:a28dada3
+F.prototype={} 之后新实例 instanceof Object → 抽象 boolean（原生 true）	dup:instanceof 表	commit:a28dada3
+F.prototype = 5 之后 f instanceof F → TypeError	dup:instanceof 表	commit:a28dada3
 ```
