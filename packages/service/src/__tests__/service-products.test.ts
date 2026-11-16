@@ -1031,128 +1031,63 @@ describe("族 54 · service 协议面", () => {
 const ENV_TEMPLATE_EXTS = ["js", "mjs", "ts", "cjs", "cts", "mts"] as const;
 
 describe("族 54 · service 协议面", () => {
-  describe("第 1 条 · env 模板族扩展名表", () => {
-    it("mock-<name>.<ext> / <name>.mock.<ext> 对族内全部扩展名都判 true", () => {
-      for (const ext of ENV_TEMPLATE_EXTS) {
-        expect(isEnvTemplatePath(`/env/mock-fs.${ext}`), `mock-fs.${ext}`).toBe(true);
-        expect(isEnvTemplatePath(`/env/fs.mock.${ext}`), `fs.mock.${ext}`).toBe(true);
-      }
-    });
-
-    it(".env.<ext> 分支（族内另一支）判定的扩展名不变", () => {
-      for (const ext of ENV_TEMPLATE_EXTS) {
-        expect(isEnvTemplatePath(`/env/custom.env.${ext}`), `custom.env.${ext}`).toBe(true);
-      }
-    });
-
-    it("mock 前缀支锚在 basename 起点（相对路径形态同样成立）", () => {
-      expect(isEnvTemplatePath("mock-fs.js")).toBe(true);
-      expect(isEnvTemplatePath("fs.mock.js")).toBe(true);
-    });
-
-    it("负控：非 env 模板路径逐字不变（仍为 false）", () => {
-      for (const p of [
-        "/env/lib.js",
-        "/env/lib.ts",
-        "/env/lib.mjs",
-        "/env/mock-fs.json",
-        "/env/fs.mock.json",
-        "/env/custom.env.json",
-        "/env/mock-fs.d.txt",
-        "/env/mock-dir/lib.js",
-        "/env/not-mock-fs.js",
-        "/env/fs.mockish.js",
-      ]) {
-        expect(isEnvTemplatePath(p), p).toBe(false);
-      }
-    });
+  const ENV_TEMPLATE_EXTS = ["js", "mjs", "ts", "cjs", "cts", "mts"] as const;
+  it("env 模板族扩展名：三支同表、basename 锚定、非模板负控", () => {
+    for (const ext of ENV_TEMPLATE_EXTS) {
+      expect(isEnvTemplatePath(`/env/mock-fs.${ext}`), ext).toBe(true);
+      expect(isEnvTemplatePath(`/env/fs.mock.${ext}`), ext).toBe(true);
+      expect(isEnvTemplatePath(`/env/custom.env.${ext}`), ext).toBe(true);
+    }
+    expect(isEnvTemplatePath("mock-fs.js")).toBe(true);
+    expect(isEnvTemplatePath("fs.mock.js")).toBe(true);
+    for (const p of ["/env/lib.js","/env/lib.ts","/env/lib.mjs","/env/mock-fs.json","/env/fs.mock.json","/env/custom.env.json","/env/mock-fs.d.txt","/env/mock-dir/lib.js","/env/not-mock-fs.js","/env/fs.mockish.js"]) {
+      expect(isEnvTemplatePath(p), p).toBe(false);
+    }
   });
 
-  describe("第 2 条 · hover 的 throws 段（service 侧可观测面）", () => {
-    /** 入口无约束参数 = any ⇒ `x.foo` 落 any 成员访问 ⇒ 函数级 throws 域 = TypeError */
-    const MAY_THROW_SRC = `export function risky(x) {
-  return x.foo;
-}
-`;
-
-    it("有调用点见证：函数级 throws 证据落在**函数级承载位**（见证数与推断域不变）", () => {
-      const dir = tmpProject("nudo-bug54-callsite-", {
-        "main.js": `${MAY_THROW_SRC}export function run() {
-  return risky({});
-}
-`,
-      });
-      const file = `${dir}/main.js`;
-      const r = analyzeFile_____analyzer_ts_4(file, `${MAY_THROW_SRC}export function run() {
-  return risky({});
-}
-`);
+  it("函数级 throws 证据：调用点/模块级/选中 case 都有，entry@ 负控不变", () => {
+    const MAY_THROW_SRC = "export function risky(x) {\n  return x.foo;\n}\n";
+    const callsiteSrc = `${MAY_THROW_SRC}export function run() {\n  return risky({});\n}\n`;
+    {
+      const dir = tmpProject("nudo-bug54-callsite-", { "main.js": callsiteSrc });
+      const r = analyzeFile(`${dir}/main.js`, callsiteSrc);
       const fn = r.functions.find((f) => f.name === "risky")!;
-      // 调用点见证在场（entry@ 已被撤掉）
       expect(fn.cases.map((c) => c.name)).toEqual(["call@L5"]);
-      // 函数级 throws 证据在**函数级承载位** ⇒ hover 的 throws 段有内容
       expect(fn.entryThrowsAbs).toBeDefined();
       expect(fn.entryThrowsAbs!.shape.k).not.toBe("never");
       expect(formatThrowsAbs(fn.entryThrowsAbs!)).toBe("TypeError");
-      // **负控**：调用点见证自己的 throwsAbs **不得**被函数级域污染 ——
-      // `risky({})` 这次调用**没抛**（`{}.foo` 是 undefined）⇒ 该见证自己的
-      // throws 域仍是 never。并进去 ⇒ 草稿面（按「这次调用抛了吗」筛返回义务）
-      // 丢返回义务 ⇒ **契约产物变弱**（假绿方向）。
       expect(fn.cases[0]!.throwsAbs.shape.k).toBe("never");
-      // 推断域仍是**调用点域**（入口域不得渗进产物面）
       expect(formatShape(fn.combinedAbs!)).toBe("undefined");
-    });
-
-    it("有调用点见证（模块级调用点路径）：函数级承载位带函数级 throws 证据", () => {
-      const src = `${MAY_THROW_SRC}risky({});
-`;
+    }
+    {
+      const src = `${MAY_THROW_SRC}risky({});\n`;
       const dir = tmpProject("nudo-bug54-toplevel-", { "top.js": src });
-      const file = `${dir}/top.js`;
-      const r = analyzeFile_____analyzer_ts_4(file, src);
+      const r = analyzeFile(`${dir}/top.js`, src);
       const fn = r.functions.find((f) => f.name === "risky")!;
-      // 这条路径从不产 entry@ 见证（调用点域直接接管）
       expect(fn.cases.map((c) => c.name)).toEqual(["call@L4"]);
-      expect(fn.entryThrowsAbs).toBeDefined();
-      expect(fn.entryThrowsAbs!.shape.k).not.toBe("never");
       expect(formatThrowsAbs(fn.entryThrowsAbs!)).toBe("TypeError");
-      // **负控**：调用点见证自己的 throws 域不被污染（这次调用没抛）
       expect(fn.cases[0]!.throwsAbs.shape.k).toBe("never");
-      // 推断域仍是**调用点域**（入口域不得渗进产物面）
       expect(formatShape(fn.combinedAbs!)).toBe("undefined");
-    });
-
-    it("选中 case：被选函数不产 entry@ 见证，函数级承载位带函数级 throws 证据", () => {
-      const src = `/**
- * @nudo:case "c1" (1) => number()
- */
-export function risky(x) {
-  return x.foo;
-}
-`;
+    }
+    {
+      const src = '/**\n * @nudo:case "c1" (1) => number()\n */\nexport function risky(x) {\n  return x.foo;\n}\n';
       const dir = tmpProject("nudo-bug54-selected-", { "sel.js": src });
-      const file = `${dir}/sel.js`;
-      const r = analyzeFile_____analyzer_ts_4(file, src, new Map([["risky", 0]]), undefined, undefined, "selected");
+      const r = analyzeFile(`${dir}/sel.js`, src, new Map([["risky", 0]]), undefined, undefined, "selected");
       const fn = r.functions.find((f) => f.name === "risky")!;
-      // 选中态：只有选中的那条 case 见证（无 entry@）
       expect(fn.cases.map((c) => c.name)).toEqual(["c1"]);
-      expect(fn.entryThrowsAbs).toBeDefined();
-      expect(fn.entryThrowsAbs!.shape.k).not.toBe("never");
       expect(formatThrowsAbs(fn.entryThrowsAbs!)).toBe("TypeError");
-      // 推断域仍是**case 声明的域**（入口域不得渗进产物面）
       expect(formatShape(fn.combinedAbs!)).toBe("undefined");
-    });
-
-    it("负控：无调用点见证时 entry@ 见证的 throws 证据与推断域不变", () => {
+    }
+    {
       const dir = tmpProject("nudo-bug54-entry-", { "entry.js": MAY_THROW_SRC });
-      const file = `${dir}/entry.js`;
-      const r = analyzeFile_____analyzer_ts_4(file, MAY_THROW_SRC);
+      const r = analyzeFile(`${dir}/entry.js`, MAY_THROW_SRC);
       const fn = r.functions.find((f) => f.name === "risky")!;
       expect(fn.cases.map((c) => c.name)).toEqual(["entry@L1"]);
       expect(formatThrowsAbs(fn.cases[0]!.throwsAbs)).toBe("TypeError");
       expect(formatShape(fn.combinedAbs!)).toBe("any");
-    });
+    }
   });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
