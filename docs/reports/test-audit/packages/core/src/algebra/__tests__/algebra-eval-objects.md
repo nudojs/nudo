@@ -144,26 +144,8 @@ A.prototype.hasOwnProperty("m") → true（owner 自有方法）	计算键/stati
 负控制：缺席键 → false	计算键/static 表	没测该层	keep	keep	—
 A.prototype.propertyIsEnumerable("m") → false（类方法非枚举）	计算键/static 表	没测该层	keep	keep	—
 Object.getOwnPropertyDescriptor(A.prototype,"m") → 精确描述符（此前折并 ⇒ 读 .value 定抛）	计算键/static 表	没测该层	keep	keep	—
-钩子把方法条目从注册表摘掉（findMethod 沿链不再命中）	计算键/static 表	没测该层	keep	keep	—
-钩子不误伤静态方法（原生：delete A.prototype.m 不动 A.m）	计算键/static 表	没测该层	keep	keep	—
-钩子对不存在的方法返回 false（幂等）	计算键/static 表	没测该层	keep	keep	—
-负控制：删除钩子不动别的类	计算键/static 表	没测该层	keep	keep	—
-端到端：delete A.prototype.m 后 A.prototype.m / B.prototype.m → undefined、"m" in B.prototype → false	计算键/static 表	没测该层	keep	keep	—
-负控制：delete A.prototype.m 不动别的类的方法	计算键/static 表	没测该层	keep	keep	—
-负控制：delete A.prototype.<不存在的键> → 原有方法仍在	计算键/static 表	没测该层	keep	keep	—
-repro：delete A.prototype.m 后 a.m() → throws TypeError（原生同抛）	计算键/static 表	没测该层	keep	keep	—
-自有类实例同折：delete A.prototype.m 后 new A().m() → TypeError	计算键/static 表	没测该层	keep	keep	—
-方法从未定义同折：a.neverDefined() → TypeError（原生同抛）	计算键/static 表	没测该层	keep	keep	—
-方法在但值不是函数：ctor `this.m = undefined` → a.m() → TypeError（原生同抛）	计算键/static 表	没测该层	keep	keep	—
-user try/catch 可吸收（原生同：抛错被 catch 捕获）	计算键/static 表	没测该层	keep	keep	—
-负控制：**读面**不抛——a.m 读回 undefined（调用面才抛）	计算键/static 表	没测该层	keep	keep	—
-负控制：方法仍在 → 调用不变（a.m() → 1，不抛）	计算键/static 表	没测该层	keep	keep	—
-负控制：删除不误伤别的类（new C().m() → 2，不抛）	计算键/static 表	没测该层	keep	keep	—
-负控制：Object.prototype 名恒可得（a.toString() 不抛）	计算键/static 表	没测该层	keep	keep	—
-负控制：静态面不受影响（A.s() → 2，不抛）	计算键/static 表	没测该层	keep	keep	—
-负控制：内建 brand 实例不受影响（new Date().getTime() 不抛）	计算键/static 表	没测该层	keep	keep	—
-负控制：ctor 自有 fn 槽调用不变（this.m = fn → 42，不抛）	计算键/static 表	没测该层	keep	keep	—
-负控制：内建父类链保守不判（class MyMap extends Map {} → 链有内建父，原型面不完备）	计算键/static 表	没测该层	keep	keep	—
+钩子摘条目/继承面同步/不误伤静态与别的类/幂等；端到端读面与 in 面	原型删除钩子表	没测该层	keep	keep	—
+调用面：删除/从未定义/非函数值均抛；try/catch 可吸收；读面与静态/内建负控	原型删除钩子表	没测该层	keep	keep	—
 Object.isFrozen(s) → true（原生冻结）	计算键/static 表	没测该层	keep	keep	—
 Object.isFrozen(s.raw) → true（raw 数组同样冻结）	计算键/static 表	没测该层	keep	keep	—
 Object.keys(s) 只有下标（length/raw/@@iterator 非枚举）	计算键/static 表	没测该层	keep	keep	—
@@ -674,4 +656,24 @@ delete p.x（运算符路径）→ TypeError（exec/runtime/members.ts 的 $delR
 delete 字符串字面量的 length → TypeError（此前折 unknown）	dup:delete 写门表	commit:476ed1e0
 负控制：delete 数组的 length → TypeError（既有正确）	dup:delete 写门表	commit:476ed1e0
 负控制：delete 字符串的其它键 → 不抛（length 之外的键不受管）	dup:delete 写门表	commit:476ed1e0
+钩子把方法条目从注册表摘掉（findMethod 沿链不再命中）	dup:原型删除钩子表	commit:8cb582bc
+钩子不误伤静态方法（原生：delete A.prototype.m 不动 A.m）	dup:原型删除钩子表	commit:8cb582bc
+钩子对不存在的方法返回 false（幂等）	dup:原型删除钩子表	commit:8cb582bc
+负控制：删除钩子不动别的类	dup:原型删除钩子表	commit:8cb582bc
+端到端：delete A.prototype.m 后 A.prototype.m / B.prototype.m → undefined、"m" in B.prototype → false	dup:原型删除钩子表	commit:8cb582bc
+负控制：delete A.prototype.m 不动别的类的方法	dup:原型删除钩子表	commit:8cb582bc
+负控制：delete A.prototype.<不存在的键> → 原有方法仍在	dup:原型删除钩子表	commit:8cb582bc
+repro：delete A.prototype.m 后 a.m() → throws TypeError（原生同抛）	dup:原型删除钩子表	commit:8cb582bc
+自有类实例同折：delete A.prototype.m 后 new A().m() → TypeError	dup:原型删除钩子表	commit:8cb582bc
+方法从未定义同折：a.neverDefined() → TypeError（原生同抛）	dup:原型删除钩子表	commit:8cb582bc
+方法在但值不是函数：ctor `this.m = undefined` → a.m() → TypeError（原生同抛）	dup:原型删除钩子表	commit:8cb582bc
+user try/catch 可吸收（原生同：抛错被 catch 捕获）	dup:原型删除钩子表	commit:8cb582bc
+负控制：**读面**不抛——a.m 读回 undefined（调用面才抛）	dup:原型删除钩子表	commit:8cb582bc
+负控制：方法仍在 → 调用不变（a.m() → 1，不抛）	dup:原型删除钩子表	commit:8cb582bc
+负控制：删除不误伤别的类（new C().m() → 2，不抛）	dup:原型删除钩子表	commit:8cb582bc
+负控制：Object.prototype 名恒可得（a.toString() 不抛）	dup:原型删除钩子表	commit:8cb582bc
+负控制：静态面不受影响（A.s() → 2，不抛）	dup:原型删除钩子表	commit:8cb582bc
+负控制：内建 brand 实例不受影响（new Date().getTime() 不抛）	dup:原型删除钩子表	commit:8cb582bc
+负控制：ctor 自有 fn 槽调用不变（this.m = fn → 42，不抛）	dup:原型删除钩子表	commit:8cb582bc
+负控制：内建父类链保守不判（class MyMap extends Map {} → 链有内建父，原型面不完备）	dup:原型删除钩子表	commit:8cb582bc
 ```
