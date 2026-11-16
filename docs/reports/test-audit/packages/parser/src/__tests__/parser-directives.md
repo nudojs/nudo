@@ -1,5 +1,7 @@
 ```audit
 title	rootCause	gap	action	status	evidence
+文件首 / class 上方 / 对象 / 数组 / 两种解构 / 数组后置都放行且两通道一致	文件级作用域嵌套体表	没测该层	keep	keep	—
+class 体 / 对象字面量体 / 字段 / mock-module 均拦截并告警	文件级作用域嵌套体表	没测该层	keep	keep	—
 失败 ⇒ never + 诊断；as/replace/skip 上下文保持 unknown	指令解析面整表化	没测该层	keep	keep	—
 空 `=>` 尾告警；无 `=>` 保持静默	指令解析面整表化	没测该层	keep	keep	—
 显式 emit：不同位置两条、同位置一条、无位置沿用旧身份	指令解析面整表化	没测该层	keep	keep	—
@@ -17,10 +19,6 @@ case 期望值带尾注释仍解析，且与无注释形态一致、零诊断	�
 块注释 / JSDoc 的 import 告警；行注释静默	指令解析面整表化	没测该层	keep	keep	—
 畸形 mock-module 告警；单引号合法载荷静默并产出	指令解析面整表化	没测该层	keep	keep	—
 "emits nudo:directive-syntax naming the missing space"	"`@nudo:case\"c1\" (1, 2)`（标签与名字之间**无空白**）⇒ 抽取侧（严格 `[ \\t]+`）**不匹配** + 诊断侧（宽松 `[ \\t]*`）**判合法** ⇒ 整条 case **静默 蒸发** ⇒ `nudo test` 一个 case 都不跑、**零诊断**（假绿）。 断言：expect(diags).toHaveLength(1);；expect(diags[0]!.code).toBe(\"nudo:directive-syntax\");"	没测该层	keep	keep	—
-"`/// @nudo:env node` above a class method is not promoted + is diagnosed"	"的「文件级指令**位置闸门**」漏掉 **class 体 / 对象字面量体** ⇒ 方法（字段）**上方**的 `/// @nudo:env` 被**静默提升**成**整文件** env（零诊断）。 根因（`file-directives.ts` 的 `functionBodyRanges`）：闸门区间取自 `listFnDirectiveScopes` 的 `scope.node.start/end`； 断言：expect(diags).toHaveLength(1);；expect(diags[0]!.code).toBe(\"nudo:directive-syntax\");"	夹具漏形态	keep	keep	—
-"`/// @nudo:env node` above an array element is not promoted + is diagnosed"	"文件级指令的**位置闸门**漏掉 **ArrayExpression（数组字面量体）** 与 **ObjectPattern（解构模式体）** ⇒ 写在数组元素 / 解构键**上方**的 `/// @nudo:env` 被**静默提升**成**整文件** env（零诊断）。 根因：闸门区间只覆盖「函数体」（）+「类体 / 对象字面量体」 （）； 断言：expect(diags).toHaveLength(1);；expect(diags[0]!.code).toBe(\"nudo:directive-syntax\");"	夹具漏形态	keep	keep	—
-"`/// @nudo:env node` above a class method is still blocked + diagnosed"	"文件级指令的**位置闸门**漏掉 **ArrayExpression（数组字面量体）** 与 **ObjectPattern（解构模式体）** ⇒ 写在数组元素 / 解构键**上方**的 `/// @nudo:env` 被**静默提升**成**整文件** env（零诊断）。 根因：闸门区间只覆盖「函数体」（）+「类体 / 对象字面量体」 （）； 断言：expect(diags).toHaveLength(1);；expect(diags[0]!.code).toBe(\"nudo:directive-syntax\");"	夹具漏形态	keep	keep	—
-"a top-of-file directive still works"	"文件级指令的**位置闸门**漏掉 **ArrayExpression（数组字面量体）** 与 **ObjectPattern（解构模式体）** ⇒ 写在数组元素 / 解构键**上方**的 `/// @nudo:env` 被**静默提升**成**整文件** env（零诊断）。 根因：闸门区间只覆盖「函数体」（）+「类体 / 对象字面量体」 （）； 断言：expect(fileDiags(src)).toEqual([]);；expect(extractFileDirectives(parse(src), { diags: [] })).toEqual(["	夹具漏形态	keep	keep	—
 "`@nudo:env` in a function body is still diagnosed + not promoted (Bug 847)"	"文件级指令的**位置闸门**漏掉 **ArrayExpression（数组字面量体）** 与 **ObjectPattern（解构模式体）** ⇒ 写在数组元素 / 解构键**上方**的 `/// @nudo:env` 被**静默提升**成**整文件** env（零诊断）。 根因：闸门区间只覆盖「函数体」（）+「类体 / 对象字面量体」 （）； 断言：expect(diags).toHaveLength(1);；expect(diags[0]!.code).toBe(\"nudo:directive-syntax\");"	夹具漏形态	keep	keep	—
 "`/// @nudo:env node` in a function body is not promoted + is diagnosed"	"根因：文件级指令的**作用域 = 词法位置**这一约束只在**块注释**分支被检查； 行注释 分支**没有位置闸门**。 断言：expect(diags).toHaveLength(1);；expect(diags[0]!.code).toBe(\"nudo:directive-syntax\");"	没测该层	keep	keep	—
 "@nudo:replaceFoo（粘连）→ nudo:directive-syntax，无指令"	"（parser 面）：行内指令的**粘连**形态此前对扫描器**完全不可见** ⇒ **零诊断**地蒸发。 - `@nudo:replaceFoo <target> <typeExpr>` ⇒ 既不匹配严格正则、也不匹配宽松 正则 ⇒ 整条行内指令消失（连同它本该替换的类型）。 断言：expect(dirs.filter((d) => d.kind === \"replace\")).toHaveLength(0);；expect("	夹具漏形态	keep	keep	—
@@ -174,4 +172,8 @@ bare @nudo:skip still declares nothing	dup:指令解析面整表化	commit:064f9
 @nudo:skipped is still not a skip directive	dup:指令解析面整表化	commit:064f93bf
 the wrong value "a\" + \"b" is never produced	dup:指令解析面整表化	commit:064f93bf
 a literal witness is unaffected	dup:指令解析面整表化	commit:064f93bf
+`/// @nudo:env node` above a class method is not promoted + is diagnosed	dup:文件级作用域嵌套体表	commit:94422142
+`/// @nudo:env node` above an array element is not promoted + is diagnosed	dup:文件级作用域嵌套体表	commit:94422142
+`/// @nudo:env node` above a class method is still blocked + diagnosed	dup:文件级作用域嵌套体表	commit:94422142
+a top-of-file directive still works	dup:文件级作用域嵌套体表	commit:94422142
 ```
