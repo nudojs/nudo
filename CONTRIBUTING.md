@@ -44,9 +44,38 @@ Because there is no style linter, **reviewers** must watch what the type-checker
 - **`as` creep in tests** — type assertions that hide real type errors or paper over API drift. Prefer fixing types over `as`.
 - **Comment rot** — comments that describe deleted behavior, wrong invariants, or stale design decisions. Update or delete them in the same PR.
 
+### 测试结构：describe = 特性/上下文，it = 单一可观测行为
+
+BDD 口径落在 vitest 树上：
+
+- `describe` 描述**被验证的特性/上下文**（Given），可以套嵌表达前置条件；不得
+  用同名 describe 再包一层，也不得带缺陷号/批次代号（`Bug 123` / `族 12` / `#123`）。
+- `it` 描述**一个可观测行为**（When → Then）：返回值、诊断码/文案、退出码、
+  产物文本。断言必须钉具体可观测值，不得只断言「不抛 / 非空」。
+- 矩阵化套件（同一 describe 下大量同构场景）允许把多个场景名合并进一个 `it`
+  标题，用 `；` 分隔；场景体用独立**块语句**承载：
+
+  ```ts
+  describe("absToTSType", () => {
+    it("字面量 number ⇒ 42；字面量 string ⇒ \"hello\"", () => {
+      { expect(absToTSType(numLit(42))).toBe("42"); }
+      { expect(absToTSType(strLit("hello"))).toBe('"hello"'); }
+    });
+  });
+  ```
+
+  需要提前退出用 labeled block（`__scenario_1: { … break __scenario_1; … }`），
+  **禁止** `(() => { … })()` / `await (async () => { … })()` 承载场景：它会毁掉
+  失败定位、`-t` 过滤与覆盖率归因，并留下 `;;` 空语句。
+- 场景段不得为空或相邻重复；同一场景的多个面拆成同一块的多个断言，而不是
+  重复场景名。
+
+门禁：`scripts/check-test-structure.mjs`（挂在 `lint:hygiene`）拒绝 IIFE 场景、
+空语句、同名 describe 套嵌、describe 标题里的缺陷号/批次代号、空/重复场景段。
+
 ### 回归测试：按模块/不变量归属，不按缺陷编号拆文件
 
-`packages/*/src/__tests__/` 现有 1037 个测试相关 `.ts`（972 个入口 + 65 个
+`packages/**/__tests__/` 现有 1033 个测试相关 `.ts`（968 个入口 + 65 个
 harness/helper），`*.part.ts` = 0。**2026-11-15 起不再有缺陷编号命名**：历史
 1360 个 `*-bug-NNN-*` 已改为 `<domain>-<特性>.test.ts`（旧 `--` 分隔亦已清除），命名门禁
 （`scripts/check-test-names.mjs`，挂在 `lint:hygiene`）拒绝新增此类文件名。
