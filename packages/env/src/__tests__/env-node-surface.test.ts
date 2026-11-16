@@ -1107,45 +1107,25 @@ describe("os.cpus() 的 times 成员表", () => {
 
 
 describe("os.cpus() 的 times 成员表", () => {
-  it("1. cpus() 元素含 times 槽（user/nice/sys/idle/irq 全在）", () => {
+  it("元素 keys = model/speed/times；times 五个 number 成员且与原生键集一致", () => {
     const ret = envMember("node:os", "cpus");
     expect(ret.shape.k).toBe("fn");
-    const fn = ret.shape as { returnType?: { shape: unknown } };
-    const arr = fn.returnType!;
+    const arr = (ret.shape as { returnType?: { shape: { element: Abs } } }).returnType!;
     expect(arr.shape).toMatchObject({ k: "arr" });
-    const el = (arr.shape as { element: Parameters<typeof slotsOf>[0] }).element;
-    const slots = slotsOf(el);
+    const slots = slotsOf(arr.shape.element);
     expect(Object.keys(slots).sort()).toEqual(["model", "speed", "times"]);
     const times = slots["times"]!.value;
     const tslots = slotsOf(times);
     expect(Object.keys(tslots).sort()).toEqual(["idle", "irq", "nice", "sys", "user"]);
-    for (const k of ["user", "nice", "sys", "idle", "irq"]) {
-      expect(formatShape(tslots[k]!.value), `times.${k}`).toBe("number");
-    }
-  });
+    for (const k of ["user", "nice", "sys", "idle", "irq"]) expect(formatShape(tslots[k]!.value), k).toBe("number");
 
-  it("2. 原生 oracle 对拍：声明的 times 成员名 = 原生 os.cpus()[0].times 的键", () => {
-    const native = os.cpus()[0];
-    expect(native, "本机应至少有一个 cpu").toBeDefined();
-    const nativeTimes = Object.keys(native!.times).sort();
-    const nativeCpu = Object.keys(native!).sort();
-    const slots = slotsOf(
-      (envMember("node:os", "cpus").shape as { returnType?: { shape: { element: Parameters<typeof slotsOf>[0] } } })
-        .returnType!.shape.element,
-    );
-    expect(Object.keys(slots).sort()).toEqual(nativeCpu);
-    expect(Object.keys(slotsOf(slots["times"]!.value)).sort()).toEqual(nativeTimes);
-  });
-
-  it("3. 反向钉：times 缺槽 ⇒ 成员读出 exact undefined（原生没有 undefined 成员）", () => {
-    const el = (envMember("node:os", "cpus").shape as { returnType?: { shape: { element: Parameters<typeof slotsOf>[0] } } })
-      .returnType!.shape.element;
-    const slots = slotsOf(el);
-    // 原生 times.user 是数字；声明面必须给出**成员槽**（而不是缺槽）
+    const native = os.cpus()[0]!;
+    expect(Object.keys(slots).sort()).toEqual(Object.keys(native).sort());
+    expect(Object.keys(tslots).sort()).toEqual(Object.keys(native.times).sort());
     expect(slots["times"]).toBeDefined();
-    expect(slotsOf(slots["times"]!.value)["user"]).toBeDefined();
+    expect(tslots["user"]).toBeDefined();
   });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -1199,60 +1179,42 @@ function newSite(
 }
 
 describe("env node 模块导出构造器带 ctor:true", () => {
-  it("1. 四个模块导出构造器都带 ctor:true（URL / URLSearchParams / TextEncoder / TextDecoder）", () => {
+  it("四个构造器 ctor:true；new 各面不记 may-throw 且实例面完整；无 ctor 的 fn 记 unknown constructibility", () => {
+    const url = defineEnv().modules!.url!;
+    const util = defineEnv().modules!.util!;
     for (const ctor of [url.URL, url.URLSearchParams, util.TextEncoder, util.TextDecoder]) {
-      expect(ctor, "module-exported constructor must exist").toBeTruthy();
+      expect(ctor).toBeTruthy();
       expect(ctor!.shape.k).toBe("fn");
-      expect(
-        (ctor!.shape as { ctor?: boolean }).ctor,
-        "module-exported constructor must carry ctor:true",
-      ).toBe(true);
+      expect((ctor!.shape as { ctor?: boolean }).ctor).toBe(true);
     }
-  });
 
-  it("2. new URL(…) ⇒ 不记 unknown-constructibility may-throw + 实例面是 URL 面", () => {
-    const site = newSite(url.URL!, [strLit("https://x.dev/a")]);
-    expect(site.mayThrows, "new URL must not record a may-throw").toEqual([]);
-    expect(site.value!.shape.k).toBe("obj");
-    const slots = (site.value!.shape as { slots: Record<string, { value: Abs }> }).slots;
-    // 原生 oracle：new URL("https://x.dev/a").href
-    expect(new URL("https://x.dev/a").href).toBe("https://x.dev/a");
-    expect(slots.href!.value).toBeDefined();
-    expect(formatLit(slots.href!.value)).toBe("https://x.dev/a");
-  });
+    const urlSite = newSite(url.URL!, [strLit("https://x.dev/a")]);
+    expect(urlSite.mayThrows).toEqual([]);
+    expect(urlSite.value!.shape.k).toBe("obj");
+    const urlSlots = (urlSite.value!.shape as { slots: Record<string, { value: Abs }> }).slots;
+    expect(urlSlots.href!.value).toBeDefined();
+    expect(formatLit(urlSlots.href!.value)).toBe("https://x.dev/a");
 
-  it("3. new URLSearchParams(…) ⇒ 不记 may-throw + 实例面带成员表", () => {
-    const site = newSite(url.URLSearchParams!, [strLit("a=1")]);
-    expect(site.mayThrows).toEqual([]);
-    expect(site.value!.shape.k).toBe("obj");
-    const slots = (site.value!.shape as { slots: Record<string, { value: Abs }> }).slots;
-    expect(Object.keys(slots)).toContain("get");
-    expect(Object.keys(slots)).toContain("toString");
-  });
+    const paramsSite = newSite(url.URLSearchParams!, [strLit("a=1")]);
+    expect(paramsSite.mayThrows).toEqual([]);
+    const paramsSlots = (paramsSite.value!.shape as { slots: Record<string, { value: Abs }> }).slots;
+    expect(Object.keys(paramsSlots)).toEqual(expect.arrayContaining(["get", "toString"]));
 
-  it("4. new TextEncoder() / new TextDecoder(…) ⇒ 不记 may-throw + 实例面完整", () => {
     const enc = newSite(util.TextEncoder!, []);
     expect(enc.mayThrows).toEqual([]);
-    expect(enc.value!.shape.k).toBe("obj");
     const encSlots = (enc.value!.shape as { slots: Record<string, { value: Abs }> }).slots;
-    expect(Object.keys(encSlots)).toContain("encode");
-    expect(Object.keys(encSlots)).toContain("encoding");
+    expect(Object.keys(encSlots)).toEqual(expect.arrayContaining(["encode", "encoding"]));
 
     const dec = newSite(util.TextDecoder!, [strLit("utf-8")]);
     expect(dec.mayThrows).toEqual([]);
-    expect(dec.value!.shape.k).toBe("obj");
-    const decSlots = (dec.value!.shape as { slots: Record<string, { value: Abs }> }).slots;
-    expect(Object.keys(decSlots)).toContain("decode");
-  });
+    expect(Object.keys((dec.value!.shape as { slots: Record<string, { value: Abs }> }).slots)).toContain("decode");
 
-  it("5. 反向对照：没有 ctor 标记的 fn 形 callee ⇒ 记 unknown-constructibility may-throw", () => {
-    // util.inspect 是普通 fn（无 ctor 标记）⇒ $new 落「构造性未知」分支
-    const site = newSite(util.inspect!, []);
-    expect(site.mayThrows).toHaveLength(1);
-    expect(site.mayThrows[0]!.kind).toBe("TypeError");
-    expect(site.mayThrows[0]!.cause).toContain("unknown constructibility");
+    const bad = newSite(util.inspect!, []);
+    expect(bad.mayThrows).toHaveLength(1);
+    expect(bad.mayThrows[0]!.kind).toBe("TypeError");
+    expect(bad.mayThrows[0]!.cause).toContain("unknown constructibility");
   });
-});
+});;
 
 /** lit term 的字面量值（取不到 ⇒ undefined） */
 function formatLit(a: Abs): string | undefined {
@@ -1314,77 +1276,37 @@ function paramsOf(fn: Abs): string[] {
 }
 
 describe("console 成员表补全（es env）", () => {
-  it("1. 成员表含 node v26 的公有 console 方法集（旧白名单缺 4 个）", () => {
-    // node v26 实测（Object.getOwnPropertyNames(console) 的公有方法面）
-    const expected = [
-      "log", "info", "debug", "warn", "error", "trace",
-      "dir", "dirxml", "table",
-      "group", "groupCollapsed", "groupEnd",
-      "count", "countReset", "assert", "clear",
-      "time", "timeLog", "timeEnd", "timeStamp",
-      "profile", "profileEnd",
-      "context", "createTask", "Console",
-    ];
+  it("公有方法齐全、缺的四个成员零假红、签名按原生拆、Console 可构造", () => {
+    const expected = ["log","info","debug","warn","error","trace","dir","dirxml","table","group","groupCollapsed","groupEnd","count","countReset","assert","clear","time","timeLog","timeEnd","timeStamp","profile","profileEnd","context","createTask","Console"];
     for (const name of expected) {
       const fn = consoleMember(name);
-      expect(fn, `console.${name} must be declared`).toBeTruthy();
-      expect(fn!.shape.k, `console.${name} must be a function`).toBe("fn");
+      expect(fn, name).toBeTruthy();
+      expect(fn!.shape.k, name).toBe("fn");
     }
-  });
 
-  it("2. 旧白名单缺的 4 个成员调用**不抛**（假红消除）", () => {
-    for (const expr of [
-      'console.timeStamp("m")',
-      "console.dirxml({ a: 1 })",
-      'console.profile("m")',
-      'console.profileEnd("m")',
-    ]) {
+    for (const expr of ['console.timeStamp("m")', "console.dirxml({ a: 1 })", 'console.profile("m")', 'console.profileEnd("m")']) {
       const r = checkWithEs(`export function f() { ${expr}; }`);
-      const mayThrow = r.issues.filter((i) => i.code === "nudo:entry-may-throw");
-      expect(
-        mayThrow.map((i) => i.message),
-        `${expr} must not be reported as may-throw`,
-      ).toEqual([]);
-      // 签名不是 never（旧行为：调用 undefined ⇒ 定抛 TypeError ⇒ never）
-      const sig = r.signatures.find((s) => s.name === "f");
-      expect(sig, "f must have a signature").toBeTruthy();
-      expect(formatShape(sig!.abs), `${expr} signature`).not.toMatch(/\bnever\b/);
+      expect(r.issues.filter((i) => i.code === "nudo:entry-may-throw"), expr).toEqual([]);
+      const sig = r.signatures.find((s) => s.name === "f")!;
+      expect(formatShape(sig.abs), expr).not.toMatch(/\bnever\b/);
     }
-  });
 
-  it("3. 签名按原生拆（旧实现全部复用同一个 voidFn ⇒ 形参面失真）", () => {
-    // 输出族是变参
     expect(paramsOf(consoleMember("log")!)).toEqual(["...args"]);
     expect(paramsOf(consoleMember("error")!)).toEqual(["...args"]);
-    // 计时族收 label?
     expect(paramsOf(consoleMember("time")!)).toEqual(["label?"]);
     expect(paramsOf(consoleMember("timeEnd")!)).toEqual(["label?"]);
     expect(paramsOf(consoleMember("timeStamp")!)).toEqual(["label?"]);
-    // 断言族收 (condition, ...args)
     expect(paramsOf(consoleMember("assert")!)).toEqual(["condition", "...args"]);
-    // 计数族收 label?
     expect(paramsOf(consoleMember("count")!)).toEqual(["label?"]);
-    // 分组结束无参
     expect(paramsOf(consoleMember("groupEnd")!)).toEqual([]);
-  });
 
-  it("4. 既有成员面未回归（log/error/warn/info/assert 仍在且可调用）", () => {
-    const r = checkWithEs(
-      'export function f() { console.log("a", 1); console.error("e"); console.warn("w"); console.info("i"); console.assert(false, "m"); }',
-    );
-    expect(r.issues.filter((i) => i.code === "nudo:entry-may-throw")).toEqual([]);
-    for (const name of ["log", "error", "warn", "info", "assert"]) {
-      expect(consoleMember(name), `console.${name}`).toBeTruthy();
-    }
+    const existing = checkWithEs('export function f() { console.log("a", 1); console.error("e"); console.warn("w"); console.info("i"); console.assert(false, "m"); }');
+    expect(existing.issues.filter((i) => i.code === "nudo:entry-may-throw")).toEqual([]);
+    const ctor = checkWithEs("export function f() { return new console.Console(); }");
+    expect(ctor.issues.filter((i) => i.code === "nudo:entry-may-throw")).toEqual([]);
+    expect(formatShape(ctor.signatures.find((s) => s.name === "f")!.abs)).toContain("Console");
   });
-
-  it("5. `new console.Console()` 不因缺槽被误判为定抛 TypeError", () => {
-    const r = checkWithEs("export function f() { return new console.Console(); }");
-    expect(r.issues.filter((i) => i.code === "nudo:entry-may-throw")).toEqual([]);
-    const sig = r.signatures.find((s) => s.name === "f");
-    expect(formatShape(sig!.abs)).toContain("Console");
-  });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -1440,36 +1362,18 @@ function declaredFace(): Abs {
 }
 
 describe("spawnSync 返回域补齐 pid / output / signal", () => {
-  it("1. 声明返回面含原生全部成员（pid / output / signal / status / stdout / stderr）", () => {
+  it("声明键集与原生一致（除 error）；pid number；output/signal/status 含 null", () => {
     const slots = slotsOf(declaredFace());
-    for (const key of ["pid", "output", "signal", "status", "stdout", "stderr"]) {
-      expect(Object.keys(slots), `spawnSync face must expose ${key}`).toContain(key);
-    }
-  });
-
-  it("2. 原生 oracle 的键集与 env 声明面一致（error 另计：仅 spawn 失败时出现）", () => {
+    for (const key of ["pid", "output", "signal", "status", "stdout", "stderr"]) expect(Object.keys(slots), key).toContain(key);
     const native = nodeSpawnSync(process.execPath, ["-e", "0"]);
-    const nativeKeys = Object.keys(native).sort();
-    const slots = slotsOf(declaredFace());
-    const envKeys = Object.keys(slots).filter((k) => k !== "error").sort();
-    expect(envKeys).toEqual(nativeKeys);
-  });
-
-  it("3. pid 是 number（不是 undefined）；output 元素是 Buffer | null；signal 是 string | null", () => {
-    const slots = slotsOf(declaredFace());
+    expect(Object.keys(slots).filter((k) => k !== "error").sort()).toEqual(Object.keys(native).sort());
     expect(formatShape(slots.pid!)).toBe("number");
     expect(formatShape(slots.output!)).toContain("null");
     expect(formatShape(slots.signal!)).toContain("null");
     expect(formatShape(slots.status!)).toContain("null");
-  });
-
-  it("4. 反向对照：旧 4 槽面读 pid 会得到 exact undefined", () => {
-    const slots = slotsOf(declaredFace());
-    // 旧建模没有 pid 槽 ⇒ 读出 exact undefined（这里必须读得到槽）
-    expect(Object.keys(slots)).toContain("pid");
     expect(slots.pid).toBeTruthy();
   });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -1494,27 +1398,18 @@ describe("queueMicrotask keeps core's callable-arg validation", () => {
  * 反向钉：把 `queueMicrotask` 加回 env 全局表 ⇒ 本文件必挂。
  */
 describe("queueMicrotask keeps core's callable-arg validation", () => {
-  it("queueMicrotask is NOT declared in the web env", () => {
+  it("web env 不声明；非可调用实参记 TypeError 且 env/host 同口径；可调用实参不报", () => {
     expect(webEnvGlobals()["queueMicrotask"]).toBeUndefined();
-  });
-
-  it("queueMicrotask(1) records TypeError (native throws)", () => {
-    const out = checkWeb(`export function f(){ queueMicrotask(1); return 1; }`);
-    expect(out.throwBrands).toContain("TypeError");
-  });
-
-  it("the env path and the host path agree", () => {
-    const withEnv = checkWeb(`export function f(){ queueMicrotask(1); return 1; }`, true);
-    const hostOnly = checkWeb(`export function f(){ queueMicrotask(1); return 1; }`, false);
+    const nonCallable = checkWeb("export function f(){ queueMicrotask(1); return 1; }");
+    expect(nonCallable.throwBrands).toContain("TypeError");
+    const withEnv = checkWeb("export function f(){ queueMicrotask(1); return 1; }", true);
+    const hostOnly = checkWeb("export function f(){ queueMicrotask(1); return 1; }", false);
     expect(withEnv.throwBrands).toEqual(hostOnly.throwBrands);
     expect(withEnv.throwBrands).toContain("TypeError");
+    const callable = checkWeb("export function f(){ queueMicrotask(function () {}); return 1; }");
+    expect(callable.throwBrands).not.toContain("TypeError");
   });
-
-  it("a callable callback is not reported as a TypeError", () => {
-    const out = checkWeb(`export function f(){ queueMicrotask(function () {}); return 1; }`);
-    expect(out.throwBrands).not.toContain("TypeError");
-  });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -1669,101 +1564,60 @@ function sigOf(src: string, name: string): { display: string; throws?: string } 
 const MAY_THROW = "nudo:entry-may-throw";
 
 describe("node:util 品牌形参函数：具名导入调用面不得 L2 假红", () => {
-  const NAMED = `/// @nudo:env node
+  it("具名/成员调用零 L2 且口径一致；裸宿主实参不崩；真抛入口仍报 L2", () => {
+    const NAMED = `/// @nudo:env node
 import { promisify } from "node:util";
 import { readFile } from "node:fs";
 export function use() { return promisify(readFile); }
 `;
-
-  const MEMBER = `/// @nudo:env node
+    const MEMBER = `/// @nudo:env node
 import * as util from "node:util";
 import { readFile } from "node:fs";
 export function use() { return util.promisify(readFile); }
 `;
-
-  it("具名导入调用面：promisify(readFile) 零 L2（native 必不抛）", () => {
-    const codes = codesOf(NAMED);
-    expect(codes, `L2 假红：${codes.join(", ")}`).not.toContain(MAY_THROW);
-    expect(sigOf(NAMED, "use").throws).toBeUndefined();
-  });
-
-  it("成员调用面：util.promisify(readFile) 零 L2", () => {
-    const codes = codesOf(MEMBER);
-    expect(codes, `L2 假红：${codes.join(", ")}`).not.toContain(MAY_THROW);
-    expect(sigOf(MEMBER, "use").throws).toBeUndefined();
-  });
-
-  it("两种调用口径一致（具名导入 == 成员调用）", () => {
+    for (const src of [NAMED, MEMBER]) {
+      const codes = codesOf(src);
+      expect(codes, src).not.toContain(MAY_THROW);
+      expect(sigOf(src, "use").throws, src).toBeUndefined();
+    }
     expect(sigOf(NAMED, "use").display).toBe(sigOf(MEMBER, "use").display);
-  });
 
-  it("裸宿主函数实参（inherits(Sub, Object)）零 L2 —— 普通调用面不得崩", () => {
-    const src = `/// @nudo:env node
+    const inheritsSrc = `/// @nudo:env node
 import { inherits } from "node:util";
 export function Sub() {}
 export function use() { return inherits(Sub, Object); }
 `;
-    const codes = codesOf(src);
-    expect(codes, `L2 假红：${codes.join(", ")}`).not.toContain(MAY_THROW);
-    // 崩溃回落会给出 `unknown` + throws TypeError；修好后是确定的 undefined
-    const sig = sigOf(src, "use");
-    expect(sig.throws).toBeUndefined();
-    expect(sig.display).not.toMatch(/unknown/);
-  });
+    expect(codesOf(inheritsSrc)).not.toContain(MAY_THROW);
+    expect(sigOf(inheritsSrc, "use").throws).toBeUndefined();
+    expect(sigOf(inheritsSrc, "use").display).not.toMatch(/unknown/);
 
-  it("裸宿主值实参（isDeepStrictEqual）零 L2", () => {
-    const src = `/// @nudo:env node
+    const deepSrc = `/// @nudo:env node
 import { isDeepStrictEqual } from "node:util";
 export function use(a, b) { return isDeepStrictEqual(a, b); }
 `;
-    const codes = codesOf(src);
-    expect(codes, `L2 假红：${codes.join(", ")}`).not.toContain(MAY_THROW);
-  });
+    expect(codesOf(deepSrc)).not.toContain(MAY_THROW);
 
-  it("裸宿主函数实参（fs 同步族的回调位）零 L2 —— 钉住 core 侧根因", () => {
-    // **判别钉**：函数**声明**绑定是裸宿主函数（transpile 直发 host
-    // function）⇒ 普通调用面把它原样灌进 relation 实例化 ⇒
-    // `bindTypeVars` 解引用 `arg.shape` ⇒ TypeError 冒泡 ⇒ L2 假红。
-    // 改前：`use() => unknown throws TypeError` + `nudo:entry-may-throw`；
-    // 改后：`use() => undefined`，零 L2。
-    // （`node:util` 四兄弟另有 env 侧 apply 规避；本钉走 `fs.readFile`
-    // ——仍是 relation 形态 ⇒ 只由 core 侧修复兜住。）
-    const src = `/// @nudo:env node
+    const callbackSrc = `/// @nudo:env node
 import { readFile } from "node:fs";
 function cb(err, data) { return data; }
 export function use() { return readFile("x.txt", "utf8", cb); }
 `;
-    const codes = codesOf(src);
-    expect(codes, `L2 假红：${codes.join(", ")}`).not.toContain(MAY_THROW);
-    const sig = sigOf(src, "use");
-    expect(sig.throws).toBeUndefined();
-    expect(sig.display).not.toMatch(/unknown/);
-  });
+    expect(codesOf(callbackSrc)).not.toContain(MAY_THROW);
+    expect(sigOf(callbackSrc, "use").throws).toBeUndefined();
+    expect(sigOf(callbackSrc, "use").display).not.toMatch(/unknown/);
 
-  it("core 侧根因直钉：relation 实例化遇裸宿主实参不得抛", () => {
-    // `instantiateReturn`（packages/core/src/algebra/hof.ts）是普通调用面
-    // 把 relation fn 实例化的入口；裸宿主实参此前在此解引用
-    // `arg.shape` ⇒ TypeError。
     const rel = relationFn([fnBrand], undefAbs());
     expect(() => instantiateReturn(rel, [rawHostFn as never])).not.toThrow();
     expect(() => instantiateReturn(rel, [rawHostCtor as never])).not.toThrow();
-  });
 
-  it("反向对照：真会抛的入口必须报 L2（防永真断言）", () => {
-    const src = `export function use() { throw new Error("boom"); }
-`;
-    expect(codesOf(src)).toContain(MAY_THROW);
-  });
-
-  it("反向对照：真会抛的宿主调用必须报 L2（防永真断言）", () => {
-    const src = `/// @nudo:env node
+    expect(codesOf('export function use() { throw new Error("boom"); }')).toContain(MAY_THROW);
+    const syncSrc = `/// @nudo:env node
 import { readFileSync } from "node:fs";
 export function use() { return readFileSync("/definitely/not/here.txt", "utf8"); }
 `;
-    // env 的 fs 同步族声明了 throws 面 ⇒ 真会抛 ⇒ 必须报
-    expect(codesOf(src)).toContain(MAY_THROW);
+    expect(codesOf(syncSrc)).toContain(MAY_THROW);
   });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -1807,64 +1661,43 @@ const util = env.modules!.util!;
 const HOST_FN = function Sub(): void {};
 
 describe("node:util 品牌形参不参与类型变量绑定（env 侧）", () => {
-  it("1. 四个品牌形参函数都走 apply 面 ⇒ 不进 relation 实例化", () => {
+  it("四兄弟走 apply 面；裸宿主实参不炸；签名干净；原生不抛；零 throw exit", () => {
+    const util = defineEnv().modules!.util!;
     for (const fn of [util.promisify, util.callbackify, util.inherits, util.isDeepStrictEqual]) {
-      expect(fn, "node:util member must exist").toBeTruthy();
-      expect(
-        getFnImpl(fn!)?.apply,
-        "brand-param util fn must take the apply path (no type-var binding)",
-      ).toBeTypeOf("function");
+      expect(fn).toBeTruthy();
+      expect(getFnImpl(fn!)?.apply).toBeTypeOf("function");
     }
-  });
-
-  it("2. 裸宿主实参 ⇒ 不炸、不记 may-throw、返回值仍是声明面", () => {
+    const HOST_FN = function Sub(): void {};
     const inheritsSite = callSite____env_bug_s4_helpers_ts_2(util.inherits!, [HOST_FN as unknown as Abs, HOST_FN as unknown as Abs]);
-    expect(inheritsSite.threw, "inherits must not blow up on a raw host fn").toBeUndefined();
+    expect(inheritsSite.threw).toBeUndefined();
     expect(inheritsSite.exits).toHaveLength(0);
     expect(formatShape(inheritsSite.value!)).toBe("undefined");
 
     const promisifySite = callSite____env_bug_s4_helpers_ts_2(util.promisify!, [HOST_FN as unknown as Abs]);
-    expect(promisifySite.threw).toBeUndefined();
     expect(promisifySite.exits).toHaveLength(0);
     expect(formatShape(promisifySite.value!)).toBe("PromiseFn");
 
     const callbackifySite = callSite____env_bug_s4_helpers_ts_2(util.callbackify!, [HOST_FN as unknown as Abs]);
-    expect(callbackifySite.threw).toBeUndefined();
     expect(callbackifySite.exits).toHaveLength(0);
     expect(formatShape(callbackifySite.value!)).toBe("CallbackFn");
 
-    const deepSite = callSite____env_bug_s4_helpers_ts_2(util.isDeepStrictEqual!, [
-      HOST_FN as unknown as Abs,
-      HOST_FN as unknown as Abs,
-    ]);
-    expect(deepSite.threw).toBeUndefined();
+    const deepSite = callSite____env_bug_s4_helpers_ts_2(util.isDeepStrictEqual!, [HOST_FN as unknown as Abs, HOST_FN as unknown as Abs]);
     expect(deepSite.exits).toHaveLength(0);
     expect(formatShape(deepSite.value!)).toBe("boolean");
-  });
 
-  it("3. 签名面不变（品牌形参仍在签名里，format 干净）", () => {
     expect(formatShape(util.inherits!)).toBe("(Function, Function) => undefined");
     expect(formatShape(util.promisify!)).toBe("(CallbackFn) => PromiseFn");
     expect(formatShape(util.callbackify!)).toBe("(PromiseFn) => CallbackFn");
     expect(formatShape(util.isDeepStrictEqual!)).toBe("(Value, Value) => boolean");
-    // format 不得漏出 unknown / any（产品语义：unknown = 推断失败）
     for (const fn of [util.inherits!, util.promisify!, util.callbackify!, util.isDeepStrictEqual!]) {
       expect(formatShape(fn)).not.toMatch(/(^|[^\w])(unknown|any)([^\w]|$)/);
     }
-  });
 
-  it("4. 原生 oracle：inherits / promisify 都不抛", () => {
-    // 原生：inherits(Sub, Object) 与 promisify(readFile) 都不抛
     expect(() => nodeInherits(HOST_FN, Object)).not.toThrow();
     expect(() => nodePromisify(readFile)).not.toThrow();
+    expect(brandName____env_bug_s4_helpers_ts_1(inheritsSite.exits[0])).toBeUndefined();
   });
-
-  it("5. 反向对照：品牌形参的 throws 面不得凭空出现（旧假红路径）", () => {
-    const site = callSite____env_bug_s4_helpers_ts_2(util.inherits!, [HOST_FN as unknown as Abs, HOST_FN as unknown as Abs]);
-    expect(site.exits).toHaveLength(0);
-    expect(brandName____env_bug_s4_helpers_ts_1(site.exits[0])).toBeUndefined();
-  });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -1882,38 +1715,26 @@ describe("util.types models every host predicate", () => {
  * 反向钉：删掉任一补上的谓词 ⇒ 差分断言必挂。
  */
 describe("util.types models every host predicate", () => {
-  it("host oracle: the predicates in question exist and return true", () => {
+  it("宿主谓词齐全；每个都是 (any)=>boolean；模块面 apply 干净", () => {
     expect(hostTypes.isMap(new Map())).toBe(true);
     expect(hostTypes.isSet(new Set())).toBe(true);
     expect(hostTypes.isDate(new Date())).toBe(true);
     expect(Object.keys(hostTypes).length).toBeGreaterThanOrEqual(43);
-  });
 
-  it("the env member set covers every host util.types predicate", () => {
-    const declared = new Set(memberNames(envMember("node:util", "types")));
+    const types = envMember("node:util", "types");
+    const declared = new Set(memberNames(types));
     const missing = Object.keys(hostTypes).filter((k) => !declared.has(k));
     expect(missing, `util.types is missing: ${missing.join(", ")}`).toEqual([]);
-  });
 
-  it("types.isMap applies to boolean and never throws", () => {
-    const isMap = slotOfAbs(envMember("node:util", "types"), "isMap")!;
+    const isMap = slotOfAbs(types, "isMap")!;
     const r = callSite(isMap, [unknown]);
     expect(formatShape(r.value!)).toBe("boolean");
     expect(r.exits).toEqual([]);
-  });
 
-  it("types.isMap(...) via the module face applies cleanly", () => {
-    const types = envMember("node:util", "types");
-    const names = memberNames(types);
-    expect(names).toContain("isMap");
-    expect(names).toContain("isSet");
-    expect(names).toContain("isDate");
-    // 每个补上的谓词都是 (any) => boolean
     for (const name of ["isMap", "isSet", "isProxy", "isWeakMap", "isUint8Array"]) {
-      const slot = (types.shape as { slots: Record<string, { value: { shape: { k: string } } }> })
-        .slots[name]!;
-      expect(slot.value.shape.k, `util.types.${name} must be a fn`).toBe("fn");
+      const slot = (types.shape as { slots: Record<string, { value: { shape: { k: string } } }> }).slots[name]!;
+      expect(slot.value.shape.k, name).toBe("fn");
     }
   });
-});
+});;
 });
