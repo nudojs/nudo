@@ -7,8 +7,8 @@ function getDirectives(source: string) {
   return extractDirectives(ast);
 }
 
-describe("@nudo:pure directive", () => {
-  it("parses @nudo:pure", () => {
+describe("@nudo:pure", () => {
+  it("pure 与 case 可同时出现在一个 JSDoc 块", () => {
     const fns = getDirectives(`
       /**
        * @nudo:pure
@@ -16,140 +16,58 @@ describe("@nudo:pure directive", () => {
        */
       function add(a, b) { return a + b; }
     `);
-    expect(fns.length).toBe(1);
-    const directives = fns[0].directives;
-    expect(directives.some((d) => d.kind === "pure")).toBe(true);
-    expect(directives.some((d) => d.kind === "case")).toBe(true);
+    expect(fns).toHaveLength(1);
+    expect(fns[0].directives.map((d) => d.kind)).toEqual(expect.arrayContaining(["pure", "case"]));
   });
 });
 
-describe("@nudo:skip directive", () => {
-  it("parses @nudo:skip without return type", () => {
-    const fns = getDirectives(`
-      /**
-       * @nudo:skip
-       */
-      function external() {}
-    `);
-    expect(fns.length).toBe(1);
-    const skip = fns[0].directives.find((d) => d.kind === "skip");
-    expect(skip).toBeDefined();
-    if (skip && skip.kind === "skip") {
-      expect(skip.returns).toBeUndefined();
-    }
-  });
+type SkipCase = { name: string; srcs: string[]; returnType: "number" | undefined };
+const SKIP_CASES: SkipCase[] = [
+  { name: "无返回类型", srcs: ["@nudo:skip"], returnType: undefined },
+  { name: "=> number()（箭头形式）", srcs: ["@nudo:skip => number()"], returnType: "number" },
+  { name: "(number())（括号形式）", srcs: ["@nudo:skip (number())"], returnType: "number" },
+  { name: "散文 / 裸类型不是类型表达式", srcs: ["@nudo:skip this function is flaky", "@nudo:skip number()"], returnType: undefined },
+];
 
-  it("parses @nudo:skip => number() (explicit arrow form)", () => {
-    const fns = getDirectives(`
-      /**
-       * @nudo:skip => number()
-       */
-      function external() {}
-    `);
-    expect(fns.length).toBe(1);
-    const skip = fns[0].directives.find((d) => d.kind === "skip");
-    expect(skip).toBeDefined();
-    if (skip && skip.kind === "skip") {
-      expect(skip.returns?.shape.k).toBe("prim");
-      if (skip.returns?.shape.k === "prim") {
-        expect(skip.returns.shape.type).toBe("number");
+describe("@nudo:skip 返回位语法", () => {
+  it.each(SKIP_CASES)("$name", ({ srcs, returnType }) => {
+    for (const line of srcs) {
+      const fns = getDirectives(`
+        /**
+         * ${line}
+         */
+        function external() {}
+      `);
+      expect(fns).toHaveLength(1);
+      const skip = fns[0].directives.find((d) => d.kind === "skip");
+      expect(skip, `缺 skip：${line}`).toBeDefined();
+      if (skip?.kind !== "skip") return;
+      if (returnType === undefined) {
+        expect(skip.returns).toBeUndefined();
+      } else {
+        expect(skip.returns?.shape.k).toBe("prim");
+        if (skip.returns?.shape.k === "prim") expect(skip.returns.shape.type).toBe(returnType);
       }
-    }
-  });
-
-  it("parses @nudo:skip (number()) (explicit paren form)", () => {
-    const fns = getDirectives(`
-      /**
-       * @nudo:skip (number())
-       */
-      function external() {}
-    `);
-    expect(fns.length).toBe(1);
-    const skip = fns[0].directives.find((d) => d.kind === "skip");
-    expect(skip).toBeDefined();
-    if (skip && skip.kind === "skip") {
-      expect(skip.returns?.shape.k).toBe("prim");
-      if (skip.returns?.shape.k === "prim") {
-        expect(skip.returns.shape.type).toBe("number");
-      }
-    }
-  });
-
-  it("skip prose does not pollute returns (D1=A1 grammar)", () => {
-    const fns = getDirectives(`
-      /**
-       * @nudo:skip this function is flaky
-       */
-      function external() {}
-    `);
-    expect(fns.length).toBe(1);
-    const skip = fns[0].directives.find((d) => d.kind === "skip");
-    expect(skip).toBeDefined();
-    if (skip && skip.kind === "skip") {
-      // 散文不是类型表达式：returns 不得是 unknown #partial
-      expect(skip.returns).toBeUndefined();
-    }
-  });
-
-  it("skip bare type without => or parens is prose, not a type", () => {
-    const fns = getDirectives(`
-      /**
-       * @nudo:skip number()
-       */
-      function external() {}
-    `);
-    expect(fns.length).toBe(1);
-    const skip = fns[0].directives.find((d) => d.kind === "skip");
-    expect(skip).toBeDefined();
-    if (skip && skip.kind === "skip") {
-      // D1=A1：类型须 `=>` 或括号显式形式；裸 number() 是散文
-      expect(skip.returns).toBeUndefined();
     }
   });
 });
 
-describe("@nudo:sample directive", () => {
-  it("parses @nudo:sample with count", () => {
-    const fns = getDirectives(`
-      /**
-       * @nudo:sample 5
-       * @nudo:case "test" (number())
-       */
-      function loop(n) { return n; }
-    `);
-    expect(fns.length).toBe(1);
-    const sample = fns[0].directives.find((d) => d.kind === "sample");
-    expect(sample).toBeDefined();
-    if (sample && sample.kind === "sample") {
-      expect(sample.count).toBe(5);
-    }
-  });
+const SAMPLE_CASES = [
+  { name: "整数 count", count: 5 },
+  { name: "小数 count 不截断", count: 3.5 },
+  { name: "负数 count 不静默丢弃", count: -2 },
+];
 
-  it("parses decimal count without truncation (3.5 stays 3.5)", () => {
+describe("@nudo:sample count", () => {
+  it.each(SAMPLE_CASES)("$name", ({ count }) => {
     const fns = getDirectives(`
       /**
-       * @nudo:sample 3.5
+       * @nudo:sample ${count}
        */
       function loop(n) { return n; }
     `);
     const sample = fns[0]?.directives.find((d) => d.kind === "sample");
     expect(sample).toBeDefined();
-    if (sample && sample.kind === "sample") {
-      expect(sample.count).toBe(3.5);
-    }
-  });
-
-  it("parses negative count (-2 is matched, not silently dropped)", () => {
-    const fns = getDirectives(`
-      /**
-       * @nudo:sample -2
-       */
-      function loop(n) { return n; }
-    `);
-    const sample = fns[0]?.directives.find((d) => d.kind === "sample");
-    expect(sample).toBeDefined();
-    if (sample && sample.kind === "sample") {
-      expect(sample.count).toBe(-2);
-    }
+    if (sample?.kind === "sample") expect(sample.count).toBe(count);
   });
 });
