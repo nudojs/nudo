@@ -109,11 +109,11 @@ Tests are the executable spec of a **product module/face**, not a ledger of hist
 - **Oracle anchoring**: use real runtime / `tsc` / CLI output as the oracle where possible. Exact product surfaces (signatures, diagnostics, exit codes, dts text) are contracts; internal helper names are not, unless explicitly a cache/determinism contract.
 - **Bug intake**: before adding a case, answer “why didn’t the existing matrix catch it?” — missing axis → add rows/dimension; fixture-shape gap → extend the fixture space; old assertion wrong → replace/delete it; gate/path not executed → fix the gate. If the case only restates an existing row, do not add it.
 - **Merge, then delete**: when a matrix row absorbs a bug-specific case (same invariant, same or stronger assertions), delete the old case in the same change. Keep a standalone case only for a distinct contract face that cannot be tabulated (brand/exotic objects, `tsc` compile gates, process/fs layout, native oracles with incompatible harnesses).
-- **Deletion discipline**: delete only exact duplicates or assertions of wrong behavior; record evidence in `docs/reports/test-audit/*.md` under `audit-deleted` (`dup:` / `incorrect:` + commit). No silent deletion and no assertion weakening.
+- **Deletion discipline**: delete only exact duplicates or assertions of wrong behavior; record evidence in the commit message (`dup:` / `incorrect:` + commit). No silent deletion and no assertion weakening.
 - **No bug-only suites**: provenance may stay in `it` titles, but the structure must be module contract; new bug-number/plan-code file names are rejected by `scripts/check-test-names.mjs`.
 - **Axis growth, not prose growth**: extend tables by adding an axis or boundary value, not by re-stating the same invariant in new prose. Suites that are entirely one-off narratives should be collapsed into `it.each`.
-- **Audit is a map, not the deliverable**: `docs/reports/test-audit/` locates coverage and records deletions; product tests are the deliverable. A module is not “audited” by adding keep rows only.
-- **Verification**: targeted suite + `pnpm run lint:tests`; per batch run `node scripts/check-test-audit.mjs`, full `pnpm exec vitest run --maxWorkers=4`, and `pnpm run test:baseline -- <log>`.
+- **The matrix is the map, not the deliverable**: it locates coverage; deletion evidence lives in commits. Product tests are the deliverable. A module is not “audited” by adding keep rows only.
+- **Verification**: targeted suite + `pnpm run lint:tests`; per batch run full `pnpm exec vitest run --maxWorkers=4` and `pnpm run test:baseline -- <log>`.
 
 ## TypeScript Config
 

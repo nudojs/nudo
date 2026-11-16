@@ -171,11 +171,7 @@ jobs:
             packages/website/i18n/zh-Hans/docusaurus-plugin-content-docs/current/guides/versioning.md \
             packages/website/i18n/zh-Hans/docusaurus-plugin-content-docs/current/api
 
-      # B1 — fail when committed docs/reports baseline drifted from env sources
-      - name: Env coverage baseline check
-        run: pnpm run coverage:env -- --check
-
-      # Regenerate for artifact upload (does not gate)
+      # Regenerate for artifact upload (generated artifacts are gitignored, not gated)
       - name: Env coverage baseline regenerate
         if: always()
         run: pnpm run coverage:env
@@ -187,8 +183,8 @@ jobs:
         with:
           name: env-coverage-baseline
           path: |
-            docs/reports/env-coverage-baseline.json
-            docs/reports/env-coverage-baseline.md
+            tmp/reports/env-coverage-baseline.json
+            tmp/reports/env-coverage-baseline.md
           if-no-files-found: warn
 
   build:

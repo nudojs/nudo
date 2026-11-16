@@ -136,7 +136,7 @@ harness/helper），`*.part.ts` = 0。**2026-11-15 起不再有缺陷编号命�
 - **全仓基线对比（按宿主）**：宿主面（`Float16Array` / ES 全局清单）、`fs.watch`
   事件数与临时路径归一化会随平台 / Node 大版本漂移，基线按
   `<platform>/<node major>`（如 `darwin/22`、`linux/24`）分桶，固化在
-  `docs/reports/test-baseline-failures.json`。全量跑完用
+  `tmp/test-baseline-failures.json`（本地生成，不入库）。全量跑完用
   `pnpm run test:baseline -- /tmp/nudo-test.log` 对比**当前宿主**的桶：**新增失败一律判红**，
   基线项偶尔不出现只告警（flaky 不制造假红）。修好某条或聚合改了文件名后
   跑 `pnpm run test:baseline -- --update /tmp/nudo-test.log` 只重写当前宿主条目；

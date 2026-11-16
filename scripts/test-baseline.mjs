@@ -17,12 +17,12 @@
  * 记录键是「失败用例全名」（文件 > describe > it），聚合改文件名时会显式报
  * 「新增 + 消失」，提示人工更新基线。
  */
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
-const baselinePath = join(repoRoot, "docs/reports/test-baseline-failures.json");
+const baselinePath = join(repoRoot, "tmp", "test-baseline-failures.json");
 const ANSI = /\x1b\[[0-9;]*m/g;
 const HOST_KEY = `${process.platform}/${process.versions.node.split(".")[0]}`;
 
@@ -75,6 +75,7 @@ if (update) {
   doc.hosts = Object.fromEntries(
     Object.entries(doc.hosts).sort(([a], [b]) => a.localeCompare(b)),
   );
+  mkdirSync(dirname(baselinePath), { recursive: true });
   writeFileSync(baselinePath, `${JSON.stringify(doc, null, 2)}\n`, "utf8");
   console.log(`baseline updated: ${actual.size} failed tests → ${HOST_KEY} (${baselinePath})`);
   process.exit(0);

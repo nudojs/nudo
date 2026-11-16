@@ -4,7 +4,7 @@
  * 用法：node --import tsx scripts/builtins-consistency-report.ts [--check]
  *   --check：报告与磁盘不一致 ⇒ exit 1（CI freshness 门可用）。
  */
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -13,7 +13,7 @@ import {
 } from "../packages/core/src/algebra/__tests__/builtins-consistency-matrix.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const out = resolve(here, "..", "docs/reports/builtins-consistency.md");
+const out = resolve(here, "..", "tmp/reports/builtins-consistency.md");
 const result = runMatrix();
 const text = renderMatrixReport(result);
 if (process.argv.includes("--check")) {

@@ -2,20 +2,11 @@
  * ABS-06：内建一致性门禁（host oracle 矩阵）。
  *
  * 门禁：**covered 集合内 wrong-exact = 0**（假精确是唯一门禁项；unknown
- * 保持诚实，不以 100% 覆盖为目标）。报告是生成物（`docs/reports/
- * builtins-consistency.md`），本测试同时钉住它与矩阵同源（freshness）。
+ * 保持诚实，不以 100% 覆盖为目标）。报告是可选生成物（`scripts/
+ * builtins-consistency-report.ts`），测试只钉矩阵不变量，不读磁盘。
  */
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import {
-  renderMatrixReport,
-  runMatrix,
-} from "./builtins-consistency-matrix.ts";
-
-const here = dirname(fileURLToPath(import.meta.url));
-const reportPath = resolve(here, "../../../../../docs/reports/builtins-consistency.md");
+import { runMatrix } from "./builtins-consistency-matrix.ts";
 
 describe("ABS-06 builtin consistency matrix", () => {
   const result = runMatrix();
@@ -45,10 +36,5 @@ describe("ABS-06 builtin consistency matrix", () => {
     for (const name of ["throw.json-parse-bad", "throw.uint8-negative", "throw.array-reduce-empty"]) {
       expect(byName.get(name)?.verdict, name).toBe("modeled");
     }
-  });
-
-  it("报告是生成物：磁盘内容与矩阵渲染逐字节一致（freshness）", () => {
-    const text = readFileSync(reportPath, "utf-8");
-    expect(text).toBe(renderMatrixReport(result));
   });
 });

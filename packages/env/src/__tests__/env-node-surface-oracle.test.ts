@@ -34,7 +34,6 @@
  */
 import { describe, it, expect } from "vitest";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import {
   createCipheriv as nodeCreateCipheriv,
@@ -59,6 +58,7 @@ import {
   returnTypeOf,
 } from "./env-member-tables-helpers.ts";
 import { brandName, callSite } from "./env-helpers-call-site.ts";
+import { buildEnvCoverageReport } from "../../../../scripts/env-coverage-baseline.ts";
 
 const env = defineEnv();
 const cryptoMod = env.modules!.crypto!;
@@ -626,35 +626,14 @@ describe("6 · env 覆盖基线：新增声明是 leaf-clean，报告是脚本�
     );
   });
 
-  it("6.2 覆盖基线报告是**脚本生成**的（不许手改），且 unknown 计数为 0", () => {
-    const md = readFileSync(
-      new URL("../../../../docs/reports/env-coverage-baseline.md", import.meta.url),
-      "utf-8",
-    );
-    expect(md).toContain("Generated** by `scripts/env-coverage-baseline.ts`");
-    const json = JSON.parse(
-      readFileSync(
-        new URL("../../../../docs/reports/env-coverage-baseline.json", import.meta.url),
-        "utf-8",
-      ),
-    ) as { nodeProbes: { counts: Record<string, number> } };
-    expect(json.nodeProbes.counts.unknown, "基线里不应再有 unknown").toBe(0);
+  it("6.2 覆盖基线由脚本内存生成，且 unknown 计数为 0", () => {
+    const report = buildEnvCoverageReport();
+    expect(Number.isNaN(Date.parse(report.generatedAt))).toBe(false);
+    expect(report.nodeProbes.counts.unknown, "基线里不应再有 unknown").toBe(0);
   });
 
   it("6.3 剩下的 2 条 mock-required + 6 条 signature-level 是**设计边界**（不是缺口）", () => {
-    const json = JSON.parse(
-      readFileSync(
-        new URL("../../../../docs/reports/env-coverage-baseline.json", import.meta.url),
-        "utf-8",
-      ),
-    ) as {
-      nodeProbes: {
-        counts: Record<string, number>;
-        leaf: { clean: number; mentionsUnknown: number };
-        results: Array<{ id: string; status: string; leaf?: string; reason: string }>;
-      };
-    };
-    const { counts, leaf, results } = json.nodeProbes;
+    const { counts, leaf, results } = buildEnvCoverageReport().nodeProbes;
     expect(counts.unknown, "基线里不应再有 unknown").toBe(0);
     // 基线只许**前进**（不许回退）
     expect(counts["mock-required"]).toBeLessThanOrEqual(2);
