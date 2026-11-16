@@ -1,5 +1,9 @@
 ```audit
 title	rootCause	gap	action	status	evidence
+exports/旧式子路径指向目录不可用；显式文件与 legacy main 可解析	exports 解析表	没测该层	keep	keep	—
+合法但缺失即停；条件内数组同款；非法目标回退；首目标存在取首	exports 解析表	没测该层	keep	keep	—
+近层拒绝不上溯；本层无包可上溯；近层命中胜出	exports 解析表	没测该层	keep	keep	—
+前缀平手取整键更长；前缀更长优先；#imports 同口径	exports 解析表	没测该层	keep	keep	—
 不同项目根不同键（check/contract）；同根同键；键无明文路径	裸包/exports/缓存键表	没测该层	keep	keep	—
 裸包入口变更消费者进脏集；相对依赖同口径；解析不到不进边	裸包/exports/缓存键表	没测该层	keep	keep	—
 default 先声明取 default；import 先声明取 import；require 面同序	裸包/exports/缓存键表	没测该层	keep	keep	—
@@ -15,20 +19,6 @@ default 槽 + interop 标记；默认/命名空间同签名；无假 unknown-inf
 "③ 分析器通道与 CLI `nudo check` 结论一致（都 f() => 42）"	"被分析文件**不带** `@nudo:env`（基线：项目级 env 恰好可见）。 断言：expect(sig).toBeDefined();；expect(sig!.display).toContain(\"42\");"	没测该层	keep	keep	—
 "web env: real constructors keep their brands"	"`instantiateReturn` 无视关系元数 / 构造性 ⇒ 无参 `new Event()` 之类被误判。 修复：关系 arity 门 + `shape.ctor === true` + 声明可选性。 断言：expect(sig(WEB_SRC, env, \"a\")).toBe(\"Event\");；expect(sig(WEB_SRC, env, \"b\")).toBe(\"CustomEvent\");"	夹具漏形态	keep	keep	—
 "node env: illegal no-arg constructions are honest may-throw TypeError"	"`instantiateReturn` 无视关系元数 / 构造性 ⇒ 无参 `new Event()` 之类被误判。 修复：关系 arity 门 + `shape.ctor === true` + 声明可选性。 断言：expect(sig(NODE_SRC, env, name)).toBe(\"never throws TypeError\");"	夹具漏形态	keep	keep	—
-"前缀长度平手 ⇒ 取整键更长者（与声明顺序无关）"	"回归：`exports` 模式键的 tie-break 必须按 Node `PATTERN_KEY_COMPARE` ——**前缀长度平手时比整键长度**（更长者胜），且结论不得随 package.json 里的 声明顺序变化。 改前只比前缀长度且用严格大于 ⇒ 平手保留先声明者，宿主却取更长的键 ⇒ 引擎解析到另一个文件（假红 / 假绿 + 自信的错值）。 断言：expect(resolveNpmJsEntry(\"pkg/x/ab\", longFirst.dir)).toBe(；expect(resolveNpmJsEntry(\"pkg/x/ab\", shortFirst.dir)).toBe("	旧断言钉错	keep	keep	—
-"前缀更长者胜过整键更长者（第一判据优先）"	"断言：expect(resolveNpmJsEntry(\"pkg/x/y/abcd\", dir)).toBe(join(pkgDir, \"deep\", \"abcd.js\"));"	没测该层	keep	keep	—
-"#imports 面同口径（同一 tie-break）"	"回归：`exports` 模式键的 tie-break 必须按 Node `PATTERN_KEY_COMPARE` ——**前缀长度平手时比整键长度**（更长者胜），且结论不得随 package.json 里的 声明顺序变化。 改前只比前缀长度且用严格大于 ⇒ 平手保留先声明者，宿主却取更长的键 ⇒ 引擎解析到另一个文件（假红 / 假绿 + 自信的错值）。 断言：expect(resolveNpmJsEntry(\"#x/ab\", dir)).toBe(join(dir, \"special\", \"a.js\"));"	旧断言钉错	keep	keep	—
-"就近层 exports 无 './sub' 而父级副本有 ⇒ 必须判不可用（不解析到父级副本）"	"回归：包目录遍历必须区分「本层**没有**该包」（可继续向上）与 「本层**有**该包但 `exports` 不认这个子路径」（Node 直接 `ERR_PACKAGE_PATH_NOT_EXPORTED`，**不得**继续向上找同名副本）。 改前继续向上 ⇒ 解析到运行时永不加载的父级副本 ⇒ 门禁假绿，且 `exportsUnresolved` 被清零 ⇒ `nudo:exports-unresolved` 诊断被吞。 断言：expect(r.path).toBeNull();；expect(r.exportsUnresolved).toBe(true);"	夹具漏形态	keep	keep	—
-"对照组：本层没有该包 ⇒ 继续向上并正常解析（合法提升）"	"断言：expect(r.path).toBe(join(dir, \"node_modules\", \"nearpkg\", \"sub.js\"));；expect(r.exportsUnresolved).toBe(false);"	没测该层	keep	keep	—
-"就近层命中时绝不上溯（近层胜出）"	"断言：expect(r.path).toBe(join(dir, \"app\", \"node_modules\", \"nearpkg\", \"index.js\"));"	没测该层	keep	keep	—
-"首个目标**合法但缺失** ⇒ 停在该目标（不可用 + 记账），不得取下一个存在的文件"	"断言：expect(r.path).toBeNull();；expect(r.exportsUnresolved).toBe(true);"	没测该层	keep	keep	—
-"嵌套在条件对象里的数组同款（{ import: [...] }）"	"回归：`exports` 条件对象必须按 **package.json 的声明顺序**取首个 命中的条件（Node `PACKAGE_TARGET_RESOLVE`），而不是按固定优先级表。 改前按表序（`import` 先于 `default`）⇒ `{ default, import }` 这种声明顺序下 引擎取 `import` 构建、宿主取 `default` 构建 ⇒ 双向判反（假绿 + 假红）。 断言：expect(r.path).toBeNull();；expect(r.exportsUnresolved).toBe(true);"	夹具漏形态	keep	keep	—
-"对照组：首目标**非法**（逃出包目录）⇒ 回退到下一个合法目标"	"回归：`exports` **目标数组**的回退判据只能是「目标**非法**」 （Node `ERR_INVALID_PACKAGE_TARGET`），**不得**用「文件是否存在」。 Node 语义：目标合法但文件缺失时解析就停在这个目标上，随后装载阶段抛 `ERR_MODULE_NOT_FOUND`； 断言：expect(r.path).toBe(join(pkgDir, \"real.js\"));；expect(r.exportsUnresolved).toBe(false);"	夹具漏形态	keep	keep	—
-"对照组：首目标存在 ⇒ 取首目标"	"断言：expect(resolveNpmJsEntryDetailed(\"vp/sub\", dir).path).toBe(join(pkgDir, \"a.js\"));"	没测该层	keep	keep	—
-"`exports` 目标指向目录 ⇒ 不可用（宿主 ERR_UNSUPPORTED_DIR_IMPORT）+ 诊断记账"	"回归：包内文件候选**不能**无条件补 `index.*`。 Node 的 **ESM** 装载器从不做目录 / index 解析 ⇒ `exports` 目标或旧式子路径 指向目录时宿主抛 `ERR_UNSUPPORTED_DIR_IMPORT`（模块根本加载不上）； 断言：expect(r.path).toBeNull();；expect(r.exportsUnresolved).toBe(true);"	没测该层	keep	keep	—
-"旧式 ESM 子路径指向目录 ⇒ 同样不可用"	"回归：包内文件候选**不能**无条件补 `index.*`。 Node 的 **ESM** 装载器从不做目录 / index 解析 ⇒ `exports` 目标或旧式子路径 指向目录时宿主抛 `ERR_UNSUPPORTED_DIR_IMPORT`（模块根本加载不上）； 断言：expect(r.path).toBeNull();"	没测该层	keep	keep	—
-"对照组：`exports` 目标显式指向文件 ⇒ 正常解析"	"回归：包内文件候选**不能**无条件补 `index.*`。 Node 的 **ESM** 装载器从不做目录 / index 解析 ⇒ `exports` 目标或旧式子路径 指向目录时宿主抛 `ERR_UNSUPPORTED_DIR_IMPORT`（模块根本加载不上）； 断言：expect(resolveNpmJsEntryDetailed(\"vp\", dir).path).toBe(join(pkgDir, \"dir\", \"index.js\"));"	没测该层	keep	keep	—
-"对照组：legacy `main` 指向目录 ⇒ Node 允许 index 解析"	"回归：包内文件候选**不能**无条件补 `index.*`。 Node 的 **ESM** 装载器从不做目录 / index 解析 ⇒ `exports` 目标或旧式子路径 指向目录时宿主抛 `ERR_UNSUPPORTED_DIR_IMPORT`（模块根本加载不上）； 断言：expect(resolveNpmJsEntryDetailed(\"vp\", dir).path).toBe(join(pkgDir, \"dir\", \"index.js\"));"	没测该层	keep	keep	—
 "环内第一次调用即得正确值（改前：unknown）"	"ESM import 环（a ⇄ b）——环内第一次调用恒定值、同一导出按调用次序不再漂移。 改前：环内先求值的一侧（b）绑定到 unknown（a 尚未求值）⇒ 第一次调用得 unknown， 第二次起才正确（同一导出按调用次序给出不同结果）。 断言：expect(results[0]!.shape.k).not.toBe(\"unknown\");；expect(results[0]!.term).toEqual({ op: \"lit\", value: 0 });"	没测该层	keep	keep	—
 "同一导出按调用次序不再漂移（改前：unknown / 0 / 0）"	"ESM import 环（a ⇄ b）——环内第一次调用恒定值、同一导出按调用次序不再漂移。 改前：环内先求值的一侧（b）绑定到 unknown（a 尚未求值）⇒ 第一次调用得 unknown， 第二次起才正确（同一导出按调用次序给出不同结果）。 断言：expect(r.shape.k).not.toBe(\"unknown\");；expect(r.term).toEqual({ op: \"lit\", value: 0 });"	没测该层	keep	keep	—
 "环仍被报为装载问题（诊断面不变）"	"断言：expect(graph.issues.some((i) => i.kind === \"cycle\")).toBe(true);"	没测该层	keep	keep	—
@@ -160,4 +150,18 @@ require 面同理：`default` 先声明 ⇒ 取 default（不按表序重排）	
 同相对路径 + 同内容 + 不同项目根 ⇒ 不同键（contract）	dup:裸包/exports/缓存键表	commit:ffb566cc
 同一项目根下重复计算 ⇒ 同键（可复用性不受影响）	dup:裸包/exports/缓存键表	commit:ffb566cc
 键里不出现项目根的绝对路径明文	dup:裸包/exports/缓存键表	commit:ffb566cc
+前缀长度平手 ⇒ 取整键更长者（与声明顺序无关）	dup:exports 解析表	commit:d4d0b693
+前缀更长者胜过整键更长者（第一判据优先）	dup:exports 解析表	commit:d4d0b693
+#imports 面同口径（同一 tie-break）	dup:exports 解析表	commit:d4d0b693
+就近层 exports 无 './sub' 而父级副本有 ⇒ 必须判不可用（不解析到父级副本）	dup:exports 解析表	commit:d4d0b693
+对照组：本层没有该包 ⇒ 继续向上并正常解析（合法提升）	dup:exports 解析表	commit:d4d0b693
+就近层命中时绝不上溯（近层胜出）	dup:exports 解析表	commit:d4d0b693
+首个目标**合法但缺失** ⇒ 停在该目标（不可用 + 记账），不得取下一个存在的文件	dup:exports 解析表	commit:d4d0b693
+嵌套在条件对象里的数组同款（{ import: [...] }）	dup:exports 解析表	commit:d4d0b693
+对照组：首目标**非法**（逃出包目录）⇒ 回退到下一个合法目标	dup:exports 解析表	commit:d4d0b693
+对照组：首目标存在 ⇒ 取首目标	dup:exports 解析表	commit:d4d0b693
+`exports` 目标指向目录 ⇒ 不可用（宿主 ERR_UNSUPPORTED_DIR_IMPORT）+ 诊断记账	dup:exports 解析表	commit:d4d0b693
+旧式 ESM 子路径指向目录 ⇒ 同样不可用	dup:exports 解析表	commit:d4d0b693
+对照组：`exports` 目标显式指向文件 ⇒ 正常解析	dup:exports 解析表	commit:d4d0b693
+对照组：legacy `main` 指向目录 ⇒ Node 允许 index 解析	dup:exports 解析表	commit:d4d0b693
 ```
