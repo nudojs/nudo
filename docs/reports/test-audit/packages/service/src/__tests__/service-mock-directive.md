@@ -1,5 +1,9 @@
 ```audit
 title	rootCause	gap	action	status	evidence
+新四指令识别并纳入；既有指令不回退；无指令/字符串假命中仍排除	覆盖/模式契约表	没测该层	keep	keep	—
+各函数取各自 mock（顺序无关）；单 mock 不泄漏；产物面同值	覆盖/模式契约表	没测该层	keep	keep	—
+分析面覆盖生效；无指令邻句/非语句节点/空源负控	覆盖/模式契约表	没测该层	keep	keep	—
+14 个容器都收集 @nudo:as；for 体 @nudo:replace 也收集	覆盖/模式契约表	没测该层	keep	keep	—
 rejects 是 promise 面不是 never；string() 契约报 unproven；resolves/returns 不变	severity/ctor/rejects 表	没测该层	keep	keep	—
 箭头不可构造；function 表达式可构造；from/本地箭头仍是 caught	severity/ctor/rejects 表	没测该层	keep	keep	—
 表达式解析失败 = warning（两通道一致）；缺 mock 文件仍是 error	severity/ctor/rejects 表	没测该层	keep	keep	—
@@ -23,21 +27,12 @@ throws/副作用保留；覆盖仍生效；相邻子表达式不受影响	mock �
 "孤儿 + 一条生效的 @nudo:as ⇒ 孤儿诊断**仍然在场**（改前被抑制为 0）"	"两处孤儿（同一文案、不同位置）⇒ 各报一条（位置进身份） 断言：expect(orphanDiags(ORPHAN_PLUS_WORKING)).toHaveLength(1);；expect(orphanDiags(ORPHAN_PLUS_WORKING)[0]!.message).toBe("	没测该层	keep	keep	—
 "生效的那条 @nudo:as 照旧进入收集表（抑制解除没有副作用）"	"根因：`packages/service/src/eval-injection.ts` 的 `collectInto` 只在 「收集表**全空**」（`acc.targets.length === 0 && acc.asTargets.length === 0`） 时才发那条 `nudo:directive-syntax`； 断言非永真：改前 `ORPHAN_PLUS_WORKING` 的孤儿诊断数为 **0**（`ORPHAN_ONLY` 为 1）⇒ 同一份写错的指令只因文件里多了一条有效指令就隐身。 断言：expect(collectEvalReplacements_____eval_injection_ts(ORPHAN_PL"	没测该层	keep	keep	—
 "两处孤儿各报一条（改前合并成一条）"	"断言：expect(orphanDiags(TWO_ORPHANS)).toHaveLength(2);"	没测该层	keep	keep	—
-"收集 for 循环体里的 @nudo:replace"	"收集器层面：每个容器位置的指令都必须进注入表 断言：expect(reps.targets.length).toBeGreaterThan(0);"	没测该层	keep	keep	—
 "无指令的语句不受同函数内其它指令影响"	"断言：expect(formatShape(result.functions[0].cases[0].abs)).toBe('\"y\"');"	没测该层	keep	keep	—
 "指令挂在非语句节点上——不产生注入（无处可施），且发显式诊断"	"根因：`packages/service/src/eval-injection.ts` 的 `collectInto` 只在 「收集表**全空**」（`acc.targets.length === 0 && acc.asTargets.length === 0`） 时才发那条 `nudo:directive-syntax`； 断言非永真：改前 `ORPHAN_PLUS_WORKING` 的孤儿诊断数为 **0**（`ORPHAN_ONLY` 为 1）⇒ 同一份写错的指令只因文件里多了一条有效指令就隐身。 断言：expect(reps.asTargets.length).toBe(0);；expect(diags.map((d) =>"	没测该层	keep	keep	—
 "无任何行内指令的源码不产生诊断"	"断言：expect(reps.asTargets.length).toBe(0);；expect(reps.targets.length).toBe(0);"	没测该层	keep	keep	—
-"先声明的函数不再被后声明的同名 mock 改写成错类型"	"负控制：只有一个 mock 名（无冲突）⇒ 只在声明函数内可见 断言：expect(sigValue(TWO_MOCKS, \"/tmp/bug455-a.js\", \"readA\")).toBe(8080);；expect(sigValue(TWO_MOCKS, \"/tmp/bug455-b.js\", \"readB\")).toBe(\"closed\");"	没测该层	keep	keep	—
-"声明顺序互换不改变各自的取值（不再纯源序 last-wins）"	"断言：expect(sigValue(TWO_MOCKS_REVERSED, \"/tmp/bug455-c.js\", \"readA\")).toBe(8080);；expect(sigValue(TWO_MOCKS_REVERSED, \"/tmp/bug455-d.js\", \"readB\")).toBe(\"closed\");"	没测该层	keep	keep	—
-"种子表保留每个作用域各自的那一份（scoped + 覆盖表）"	"两个函数声明**同名** `@nudo:mock`：后者全文件胜出， 先声明的函数被改写成**错误的类型**（并进入发布的 d.ts）。 修法（族 14 · 分片 I）： - mock 种子表按**函数作用域**组织（`mock-abs.ts` 的 `scoped` + 覆盖表） - 按**被求值的函数**取作用域覆盖（core `generalize.ts` 的按函数求值边界） 负控制（/ 口径修正）：未冲突的 mock **只在其声明函数内** 生效，不再文件级可见——函数级指令不得泄漏到同文件其它函数。 断言：expect(seeds.scoped?.map((s) => s.scope)).toEqual([\"readA\","	夹具漏形态	keep	keep	—
 "声明函数取值一致；未声明函数看不到该 mock"	"负控制：只有一个 mock 名（无冲突）⇒ 只在声明函数内可见 断言：expect(sigValue(ONE_MOCK, \"/tmp/bug455-f.js\", \"readA\")).toBe(8080);；expect(sigValue(ONE_MOCK, \"/tmp/bug455-g.js\", \"readB\")).toBe("	没测该层	keep	keep	—
 "无冲突时不产生作用域覆盖表（不留冗余状态）"	"断言：expect(mockScopeOverridesOf(mocks)).toBeUndefined();"	没测该层	keep	keep	—
 "readA / readB 各自取各自的 mock（接线前：先声明的也被后声明的改写）"	"负控制：只有一个 mock 名（无冲突）⇒ 只在声明函数内可见 断言：expect(fn, `function ${name} missing`).toBeDefined();；expect(valueOf(\"readA\")).toBe(8080);"	没测该层	keep	keep	—
-"hasNudoDirectives 认得 assume/invariant/throws/budget"	"回归钉：只含 @nudo:assume / @nudo:invariant / @nudo:throws / @nudo:budget 的文件，在 analysis.mode=directives 下必须**纳入分析面**。 改前：hasNudoDirectives 的名单漏掉这四个指令名 → 文件被判定为 「非 nudo 文件」→ LSP 静默跳过（整份文件零诊断，假绿）。 断言：expect(hasNudoDirectives(sourceWith(name)), name).toBe(true);"	没测该层	keep	keep	—
-"shouldAnalyzeFile 纳入只含这四个指令的文件（改前：整份文件被跳过 → 假绿）"	"改前已在名单里的指令名（负控制：不得回退）。 断言：expect(shouldAnalyzeFile(file, source), name).toBe(true);"	没测该层	keep	keep	—
-"负控制：无指令 / 指令只在字符串里 → 仍不纳入"	"改前已在名单里的指令名（负控制：不得回退）。 断言：expect(shouldAnalyzeFile(plain, plainSrc)).toBe(false);；expect(shouldAnalyzeFile(strOnly, strSrc)).toBe(false);"	没测该层	keep	keep	—
-"负控制：已在名单里的指令名不得回退"	"改前已在名单里的指令名（负控制：不得回退）。 断言：expect(hasNudoDirectives(sourceWith(name)), name).toBe(true);"	没测该层	keep	keep	—
-"文件级指令形态（/// @nudo:env）也纳入"	"回归钉：只含 @nudo:assume / @nudo:invariant / @nudo:throws / @nudo:budget 的文件，在 analysis.mode=directives 下必须**纳入分析面**。 改前：hasNudoDirectives 的名单漏掉这四个指令名 → 文件被判定为 「非 nudo 文件」→ LSP 静默跳过（整份文件零诊断，假绿）。 断言：expect(shouldAnalyzeFile(file, source)).toBe(true);"	没测该层	keep	keep	—
 "from 形态（mock 文件导出箭头）仍是 caught"	"负控制：同一段代码不加 mock（本地 const 箭头） 断言：expect(lit.ok ? lit.value : sig!.display).toBe(\"caught\");"	没测该层	keep	keep	—
 "本地 const 箭头（不加 mock）仍是 caught"	"负控制：同一段代码不加 mock（本地 const 箭头） 断言：expect(sigValue(LOCAL_ARROW, \"/tmp/bug482-e.js\", \"greet\")).toBe(\"caught\");"	没测该层	keep	keep	—
 "resolves 形态仍是 promise<42>"	"`@nudo:mock` 的 **`rejects`** 形态被建模成「返回 never」 ⇒ 返回契约**空洞成立**（`never ⊑ string()` ⇒ 假绿，零诊断） + 签名/dts 写出 `never`（错误类型声明）。 修法（族 14 · 分片 I）：`rejects` 建模成「必定 reject 的 promise」 （与 `resolves` 分支同形：eff/promise），内层 never = 永不 fulfill。 断言：expect(sig!.abs.shape.k).toBe(\"eff\");；expect(formatShape(sig!.abs)).toContain(\"42\");"	夹具漏形态	keep	keep	—
@@ -95,4 +90,13 @@ missing mock file stays an error (no fake green)	dup:severity/ctor/rejects 表	c
 内联 function 表达式 mock：可构造（ctor:true），不走 catch 分支	dup:severity/ctor/rejects 表	commit:fa5d4c96
 返回类型是 promise 面（eff/promise），不是 never	dup:severity/ctor/rejects 表	commit:fa5d4c96
 返回契约不再被 never 空洞满足（string() 判为不满足 ⇒ 报 unproven-return）	dup:severity/ctor/rejects 表	commit:fa5d4c96
+收集 for 循环体里的 @nudo:replace	dup:覆盖/模式契约表	commit:692ab090
+先声明的函数不再被后声明的同名 mock 改写成错类型	dup:覆盖/模式契约表	commit:692ab090
+声明顺序互换不改变各自的取值（不再纯源序 last-wins）	dup:覆盖/模式契约表	commit:692ab090
+种子表保留每个作用域各自的那一份（scoped + 覆盖表）	dup:覆盖/模式契约表	commit:692ab090
+hasNudoDirectives 认得 assume/invariant/throws/budget	dup:覆盖/模式契约表	commit:692ab090
+shouldAnalyzeFile 纳入只含这四个指令的文件（改前：整份文件被跳过 → 假绿）	dup:覆盖/模式契约表	commit:692ab090
+负控制：无指令 / 指令只在字符串里 → 仍不纳入	dup:覆盖/模式契约表	commit:692ab090
+负控制：已在名单里的指令名不得回退	dup:覆盖/模式契约表	commit:692ab090
+文件级指令形态（/// @nudo:env）也纳入	dup:覆盖/模式契约表	commit:692ab090
 ```
