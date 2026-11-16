@@ -1,20 +1,15 @@
 ```audit
 title	rootCause	gap	action	status	evidence
+点名声明落在自己前面；两条都 applied	截断/锚点表	没测该层	keep	keep	—
+假设落在被点名声明自己的行；行尾注释不消费；未声明进 unapplied	截断/锚点表	没测该层	keep	keep	—
+自递归一条 info 锚函数声明；cycle 措辞；无截断零误报	截断/锚点表	没测该层	keep	keep	—
+恒真循环一条 info 锚文件起点；措辞 iteration budget；无截断零误报	截断/锚点表	没测该层	keep	keep	—
 依赖调用不贴现场文件；同号不同列保留现场调用	观测/顺序/见证表	没测该层	keep	keep	—
 同行两调用点加列维度；唯一调用点格式不变；列缺失退回序号	观测/顺序/见证表	没测该层	keep	keep	—
 先定义不截断；顺序无关 combined 一致；有调用点不再误报 entry-only	观测/顺序/见证表	没测该层	keep	keep	—
 调用点字面量投影基类型；带断言 case 保留字面量	观测/顺序/见证表	没测该层	keep	keep	—
 全部超限整组跳过；正常记录照常合成	归因/超限表	没测该层	keep	keep	—
 ESM/CJS 命名空间带接收者限定并可归因；具名/对象方法无前缀；产品面 error	归因/超限表	没测该层	keep	keep	—
-"恒具体真的循环产出 nudo:loop-truncated（info，锚在函数声明处）"	"（loop 面）回归：循环迭代预算截断必须在 **test 面**报**专用码**。 症状（修前）：`nudo check` 对「退出条件恒具体为真」的循环报 `nudo:loop-truncated`，而 `nudo test` 只把放宽后的结果（如 `-1024`） 当正常观测打印、零诊断； 断言：expect(loops).toHaveLength(1);；expect(d!.severity).toBe(\"info\");"	没测该层	keep	keep	—
-"无截断文件零误报"	"断言：expect(codes).not.toContain(\"nudo:loop-truncated\");；expect(codes).not.toContain(\"nudo:recursion-truncated\");"	没测该层	keep	keep	—
-"自递归截断产出 nudo:recursion-truncated（info，锚在函数声明处）"	"回归：引擎「放弃求值」必须在 **test 面可观测**。 症状（修前）：同一份递归源码，`nudo check` / `nudo health` 都报「求值被 截断」，而 `nudo test`（人类面 + `--json`）**零诊断** —— 把放宽后的类型 （`0 | number | string`）当一次正常观测打印，断言段还报「0 failed」全绿。 断言：expect(trunc).toHaveLength(1);；expect(d!.severity).toBe(\"info\");"	没测该层	keep	keep	—
-"无截断文件零误报"	"断言：expect(codes).not.toContain(\"nudo:recursion-truncated\");；expect(codes).not.toContain(\"nudo:fork-truncated\");"	没测该层	keep	keep	—
-"假设落在被点名的声明**自己**的那一行（不是上一行）"	"回归：调用记录的「调用现场文件」不得用**行数上界**猜。 改前 `rec.callLoc.line > lineCount` 是唯一判据：依赖模块里的调用 （`dep.js` 第 2 行）在「行号 ≤ 现场文件行数」时被误贴成现场文件 ⇒ 见证名 `call@usage.js:L2` 指向现场文件里根本不是该调用的行（甚至注释行）， 并与现场文件自己的调用**撞名**。 断言：expect(unapplied).toEqual([]);；expect(applied).toEqual([\"beta: string\"]);"	没测该层	keep	keep	—
-"负控制：行尾注释不是指令 ⇒ 不得被当成行内指令消费"	"回归：`injectBindings` 的**声明锚点**必须绑到「声明语句自身」， 不能被上一条语句的**行尾注释**劫持。 // 说明` 的行尾注释**同时**被挂成 下一条声明的 `leadingComments[0]` ⇒ 旧口径 `stmt.leadingComments?.[0]?.loc?.start.line` 把 `const b = 2; 断言：expect(source.split(\"\\n\")[at + 1]).toContain(\"const gamma = 3;\");；expect(source.split(\"\\n\")[at]).not.toContain(\"const alpha\");"	没测该层	keep	keep	—
-"负控制：不是顶层声明的名字仍进 unapplied"	"回归：`injectBindings` 的**声明锚点**必须绑到「声明语句自身」， 不能被上一条语句的**行尾注释**劫持。 // 说明` 的行尾注释**同时**被挂成 下一条声明的 `leadingComments[0]` ⇒ 旧口径 `stmt.leadingComments?.[0]?.loc?.start.line` 把 `const b = 2; 断言：expect(applied).toEqual([]);；expect(unapplied).toEqual([\"nope\"]);"	没测该层	keep	keep	—
-"点名的声明落在**自己**的前面（不被同行的前一条声明吃掉）"	"回归：调用记录的「调用现场文件」不得用**行数上界**猜。 改前 `rec.callLoc.line > lineCount` 是唯一判据：依赖模块里的调用 （`dep.js` 第 2 行）在「行号 ≤ 现场文件行数」时被误贴成现场文件 ⇒ 见证名 `call@usage.js:L2` 指向现场文件里根本不是该调用的行（甚至注释行）， 并与现场文件自己的调用**撞名**。 断言：expect(unapplied).toEqual([]);；expect(applied).toEqual([\"epsilon: string\"]);"	没测该层	keep	keep	—
-"同行两条声明各自被点名 ⇒ 两条都 applied（不再有「丢弃 + 编造理由」）"	"回归：`injectBindings` 的**声明锚点**必须绑到「声明语句自身」， 不能被上一条语句的**行尾注释**劫持。 // 说明` 的行尾注释**同时**被挂成 下一条声明的 `leadingComments[0]` ⇒ 旧口径 `stmt.leadingComments?.[0]?.loc?.start.line` 把 `const b = 2; 断言：expect(unapplied).toEqual([]);；expect(applied).toEqual([\"delta: number\", \"epsilon: string\"]);"	没测该层	keep	keep	—
 "② 重复声明 ⇒ 分析器诊断的码是 nudo:mock-invalid"	"分析器诊断里「重复声明」那一条（按文案筛，不依赖码 ⇒ 改码不会让它消失）。 断言：expect(dups).toHaveLength(1);；expect(dups[0]!.code).toBe(\"nudo:mock-invalid\");"	没测该层	keep	keep	—
 "② 重复声明 ⇒ 该诊断**不得**再被说成 nudo:module-missing"	"分析器诊断里「重复声明」那一条（按文案筛，不依赖码 ⇒ 改码不会让它消失）。 断言：expect(misattributed).toEqual([]);"	没测该层	keep	keep	—
 "② 重复声明 ⇒ warning 级（同码同级：mock-invalid = 指令写法有歧义）"	"分析器诊断里「重复声明」那一条（按文案筛，不依赖码 ⇒ 改码不会让它消失）。 断言：expect(dups[0]!.severity).toBe(\"warning\");"	没测该层	keep	keep	—
@@ -146,4 +141,13 @@ CJS `const dep = require(...)`：同样带接收者限定且可归因	dup:归因
 三个及以上同行调用点：列缺失时退回序号（仍唯一）	dup:观测/顺序/见证表	commit:342167e1
 依赖模块里的调用不得带现场文件（行号落在注释行）	dup:观测/顺序/见证表	commit:342167e1
 同号不同列（collide）⇒ 现场调用保留现场文件，依赖调用不贴	dup:观测/顺序/见证表	commit:342167e1
+恒具体真的循环产出 nudo:loop-truncated（info，锚在函数声明处）	dup:截断/锚点表	commit:72990e36
+无截断文件零误报	dup:截断/锚点表	commit:72990e36
+自递归截断产出 nudo:recursion-truncated（info，锚在函数声明处）	dup:截断/锚点表	commit:72990e36
+无截断文件零误报	dup:截断/锚点表	commit:72990e36
+假设落在被点名的声明**自己**的那一行（不是上一行）	dup:截断/锚点表	commit:72990e36
+负控制：行尾注释不是指令 ⇒ 不得被当成行内指令消费	dup:截断/锚点表	commit:72990e36
+负控制：不是顶层声明的名字仍进 unapplied	dup:截断/锚点表	commit:72990e36
+点名的声明落在**自己**的前面（不被同行的前一条声明吃掉）	dup:截断/锚点表	commit:72990e36
+同行两条声明各自被点名 ⇒ 两条都 applied（不再有「丢弃 + 编造理由」）	dup:截断/锚点表	commit:72990e36
 ```
