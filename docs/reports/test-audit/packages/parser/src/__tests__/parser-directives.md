@@ -1,5 +1,9 @@
 ```audit
 title	rootCause	gap	action	status	evidence
+case 与 skip 带尾注释仍解析、与无注释一致、零诊断	文件级/as 表	没测该层	keep	keep	—
+尾注释只报一条且类型保留；字符串内注释符不算	文件级/as 表	没测该层	keep	keep	—
+括号/空格/嵌套都产出；裸标签与不可识别诊断；标签边界不吞邻近词	文件级/as 表	没测该层	keep	keep	—
+mock-module/import/env 的合法与畸形载荷矩阵	文件级/as 表	没测该层	keep	keep	—
 拼接见证落 unknown/never 且无错值；字面量见证不受影响	parser-directives 尾部契约表	没测该层	keep	keep	—
 紧贴形态与空格形态同返回类型、零诊断；裸标签/ skipped 无返回	parser-directives 尾部契约表	没测该层	keep	keep	—
 skip 返回 / mock 值 / sinon 返回值都不折错字符串；字面量不受影响	parser-directives 尾部契约表	没测该层	keep	keep	—
@@ -15,20 +19,10 @@ class 体 / 对象字面量体 / 字段 / mock-module 均拦截并告警	文件�
 失败 ⇒ never + 诊断；as/replace/skip 上下文保持 unknown	指令解析面整表化	没测该层	keep	keep	—
 空 `=>` 尾告警；无 `=>` 保持静默	指令解析面整表化	没测该层	keep	keep	—
 显式 emit：不同位置两条、同位置一条、无位置沿用旧身份	指令解析面整表化	没测该层	keep	keep	—
-env extraction matches on: %s	文件级指令两通道一致	没测该层	keep	keep	—
 粘连形态诊断且不产 case；空格形态正常且静默	指令解析面整表化	没测该层	keep	keep	—
-skip 返回类型带尾注释仍解析，且与无注释形态一致、零诊断	指令解析面整表化	没测该层	keep	keep	—
-case 期望值带尾注释仍解析，且与无注释形态一致、零诊断	指令解析面整表化	没测该层	keep	keep	—
 内部 mock 不成为真指令；畸形名有诊断；合法 case 保持参数	指令解析面整表化	没测该层	keep	keep	—
-字符串内的注释符不是尾注释	指令解析面整表化	没测该层	keep	keep	—
-无空格 / 有空格 / `)` 后注释：类型保留且只报尾注释一条	指令解析面整表化	没测该层	keep	keep	—
-裸标签 / 无法识别载荷有诊断；标签边界不吞 assume/ascii/asXYZ	指令解析面整表化	没测该层	keep	keep	—
-无空格 / 有空格 / 嵌套括号都产出类型且零诊断	指令解析面整表化	没测该层	keep	keep	—
-空格分隔的 env 列表合法并产出	指令解析面整表化	没测该层	keep	keep	—
-裸 / 尾随空白 / 不可读 env 列表都告警	指令解析面整表化	没测该层	keep	keep	—
-块注释 / JSDoc 的 import 告警；行注释静默	指令解析面整表化	没测该层	keep	keep	—
-畸形 mock-module 告警；单引号合法载荷静默并产出	指令解析面整表化	没测该层	keep	keep	—
 "`@nudo:env` in a function body is still diagnosed + not promoted (Bug 847)"	"文件级指令的**位置闸门**漏掉 **ArrayExpression（数组字面量体）** 与 **ObjectPattern（解构模式体）** ⇒ 写在数组元素 / 解构键**上方**的 `/// @nudo:env` 被**静默提升**成**整文件** env（零诊断）。 根因：闸门区间只覆盖「函数体」（）+「类体 / 对象字面量体」 （）； 断言：expect(diags).toHaveLength(1);；expect(diags[0]!.code).toBe(\"nudo:directive-syntax\");"	夹具漏形态	keep	keep	—
+env extraction matches on: %s	文件级/as 表	没测该层	keep	keep	—
 ```audit-deleted
 title	reason	evidence
 malformed mock-module payload → nudo:directive-syntax warning	dup:指令解析面整表化	commit:4b8e51ee
@@ -186,4 +180,14 @@ sinon mock return value is unknown, not a wrong string	dup:parser-directives 尾
 a literal mock payload is unaffected	dup:parser-directives 尾部契约表	commit:7b50ab18
 tight form yields the declared return type	dup:parser-directives 尾部契约表	commit:7b50ab18
 witness argument of a concatenation is unknown, not a wrong string	dup:parser-directives 尾部契约表	commit:7b50ab18
+skip 返回类型带尾注释仍解析，且与无注释形态一致、零诊断	dup:文件级/as 表	commit:23c028c2
+case 期望值带尾注释仍解析，且与无注释形态一致、零诊断	dup:文件级/as 表	commit:23c028c2
+字符串内的注释符不是尾注释	dup:文件级/as 表	commit:23c028c2
+无空格 / 有空格 / `)` 后注释：类型保留且只报尾注释一条	dup:文件级/as 表	commit:23c028c2
+裸标签 / 无法识别载荷有诊断；标签边界不吞 assume/ascii/asXYZ	dup:文件级/as 表	commit:23c028c2
+无空格 / 有空格 / 嵌套括号都产出类型且零诊断	dup:文件级/as 表	commit:23c028c2
+空格分隔的 env 列表合法并产出	dup:文件级/as 表	commit:23c028c2
+裸 / 尾随空白 / 不可读 env 列表都告警	dup:文件级/as 表	commit:23c028c2
+块注释 / JSDoc 的 import 告警；行注释静默	dup:文件级/as 表	commit:23c028c2
+畸形 mock-module 告警；单引号合法载荷静默并产出	dup:文件级/as 表	commit:23c028c2
 ```
