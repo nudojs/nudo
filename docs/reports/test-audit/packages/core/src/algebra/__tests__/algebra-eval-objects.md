@@ -48,35 +48,12 @@ getter 中间层：新对象/同对象/不触发 setter/冻结根内层可写/�
 负控：单层 Put 访问器语义与数据属性链不变	成员路径/sealed 表	没测该层	keep	keep	—
 getter 读域投影/formatAbs/this/嵌套/混排/guard/契约字段/契约门禁	proto/访问器投影表	没测该层	keep	keep	—
 负控：数据属性/显式 undefined/仅 setter/getter 抛/空对象	proto/访问器投影表	没测该层	keep	keep	—
-typeof A.prototype.m → "function"（owner 自有方法）	计算键/static 表	没测该层	keep	keep	—
-"m" in A.prototype → true	计算键/static 表	没测该层	keep	keep	—
-派生类自有方法：B.prototype.own → "function" / in → true	计算键/static 表	没测该层	keep	keep	—
-祖先类方法（原型链继承）：B.prototype.base → "function"	计算键/static 表	没测该层	keep	keep	—
-方法恒等：A.prototype.m === new A().m（同一函数对象）	计算键/static 表	没测该层	keep	keep	—
-负控制：缺席方法仍是 undefined / in → false	计算键/static 表	没测该层	keep	keep	—
-负控制：A.prototype instanceof A → false（owner 不在自己的原型链上）	计算键/static 表	没测该层	keep	keep	—
-负控制：B.prototype instanceof A → true（原型链继承）	计算键/static 表	没测该层	keep	keep	—
-A.prototype.hasOwnProperty("m") → true（owner 自有方法）	计算键/static 表	没测该层	keep	keep	—
-负控制：祖先类方法不在 B.prototype 自有面 → false	计算键/static 表	没测该层	keep	keep	—
-负控制：缺席键 → false	计算键/static 表	没测该层	keep	keep	—
-A.prototype.propertyIsEnumerable("m") → false（类方法非枚举）	计算键/static 表	没测该层	keep	keep	—
-Object.getOwnPropertyDescriptor(A.prototype,"m") → 精确描述符（此前折并 ⇒ 读 .value 定抛）	计算键/static 表	没测该层	keep	keep	—
+值读/in/派生继承/恒等/hasOwn/枚举/描述符；缺席与祖先自有负控	owner/借用方法表	没测该层	keep	keep	—
 钩子摘条目/继承面同步/不误伤静态与别的类/幂等；端到端读面与 in 面	原型删除钩子表	没测该层	keep	keep	—
 调用面：删除/从未定义/非函数值均抛；try/catch 可吸收；读面与静态/内建负控	原型删除钩子表	没测该层	keep	keep	—
 冻结/枚举/序列化/for-in/数组方法；普通对象不外溢	私有名/模板表	没测该层	keep	keep	—
 模板对象与多段均 true；普通对象/字符串/迭代器 false	私有名/模板表	没测该层	keep	keep	—
-.call(外来对象) → 方法体以该对象为 this 执行	计算键/static 表	没测该层	keep	keep	—
-.apply(外来对象) → 同口径	计算键/static 表	没测该层	keep	keep	—
-.bind(外来对象)() → 同口径	计算键/static 表	没测该层	keep	keep	—
-.call(undefined) → this=undefined，方法体不碰 this 时不抛	计算键/static 表	没测该层	keep	keep	—
-静态方法借用（.call）→ 静态方法体 + 该接收者	计算键/static 表	没测该层	keep	keep	—
-静态方法摘下后借用 → 静态方法体	计算键/static 表	没测该层	keep	keep	—
-HOF 传递（数组 map 回调）→ 方法体正常执行（this=undefined 不抛）	计算键/static 表	没测该层	keep	keep	—
-派生类实例的方法借用 → 沿派生类方法体执行	计算键/static 表	没测该层	keep	keep	—
-借用给本类实例 → this = 该实例（this.x 为 undefined）	计算键/static 表	没测该层	keep	keep	—
-借用不记 may-throw（throws 域干净）	计算键/static 表	没测该层	keep	keep	—
-负控制：对象字面量方法的借用不受影响（原本就正确）	计算键/static 表	没测该层	keep	keep	—
-负控制：方法体真读 undefined 接收者的 this 时定抛 TypeError	计算键/static 表	没测该层	keep	keep	—
+call/apply/bind/undefined/静态/HOF/派生/同类借用；不记抛；负控	owner/借用方法表	没测该层	keep	keep	—
 类实例 Reflect.set：原型 writable:false/getter-only/派生类返 false；可写与新键负控	类实例 [[Set]] 写门表	没测该层	keep	keep	—
 类实例 strict：原型 writable:false/getter-only 抛；可写与自有字段不抛	类实例 [[Set]] 写门表	没测该层	keep	keep	—
 Reflect.set 镜像返 false 不抛；原型槽落地可见；strict 赋值仍抛	类实例 [[Set]] 写门表	没测该层	keep	keep	—
@@ -707,4 +684,29 @@ data-length 的 array-like 仍按槽读	dup:for-of/array-like 表	commit:2d90700
 访问器 length 返回 undefined ⇒ ToLength 0（原生 0）	dup:for-of/array-like 表	commit:2d907008
 访问器 length 返回字符串 "2" ⇒ ToLength 2（原生 2）	dup:for-of/array-like 表	commit:2d907008
 L2 门禁：访问器 array-like 是**纯值错**——门禁恒绿，差异在签名	dup:for-of/array-like 表	commit:2d907008
+typeof A.prototype.m → "function"（owner 自有方法）	dup:owner/借用方法表	commit:2d85a5f8
+"m" in A.prototype → true	dup:owner/借用方法表	commit:2d85a5f8
+派生类自有方法：B.prototype.own → "function" / in → true	dup:owner/借用方法表	commit:2d85a5f8
+祖先类方法（原型链继承）：B.prototype.base → "function"	dup:owner/借用方法表	commit:2d85a5f8
+方法恒等：A.prototype.m === new A().m（同一函数对象）	dup:owner/借用方法表	commit:2d85a5f8
+负控制：缺席方法仍是 undefined / in → false	dup:owner/借用方法表	commit:2d85a5f8
+负控制：A.prototype instanceof A → false（owner 不在自己的原型链上）	dup:owner/借用方法表	commit:2d85a5f8
+负控制：B.prototype instanceof A → true（原型链继承）	dup:owner/借用方法表	commit:2d85a5f8
+A.prototype.hasOwnProperty("m") → true（owner 自有方法）	dup:owner/借用方法表	commit:2d85a5f8
+负控制：祖先类方法不在 B.prototype 自有面 → false	dup:owner/借用方法表	commit:2d85a5f8
+负控制：缺席键 → false	dup:owner/借用方法表	commit:2d85a5f8
+A.prototype.propertyIsEnumerable("m") → false（类方法非枚举）	dup:owner/借用方法表	commit:2d85a5f8
+Object.getOwnPropertyDescriptor(A.prototype,"m") → 精确描述符（此前折并 ⇒ 读 .value 定抛）	dup:owner/借用方法表	commit:2d85a5f8
+.call(外来对象) → 方法体以该对象为 this 执行	dup:owner/借用方法表	commit:2d85a5f8
+.apply(外来对象) → 同口径	dup:owner/借用方法表	commit:2d85a5f8
+.bind(外来对象)() → 同口径	dup:owner/借用方法表	commit:2d85a5f8
+.call(undefined) → this=undefined，方法体不碰 this 时不抛	dup:owner/借用方法表	commit:2d85a5f8
+静态方法借用（.call）→ 静态方法体 + 该接收者	dup:owner/借用方法表	commit:2d85a5f8
+静态方法摘下后借用 → 静态方法体	dup:owner/借用方法表	commit:2d85a5f8
+HOF 传递（数组 map 回调）→ 方法体正常执行（this=undefined 不抛）	dup:owner/借用方法表	commit:2d85a5f8
+派生类实例的方法借用 → 沿派生类方法体执行	dup:owner/借用方法表	commit:2d85a5f8
+借用给本类实例 → this = 该实例（this.x 为 undefined）	dup:owner/借用方法表	commit:2d85a5f8
+借用不记 may-throw（throws 域干净）	dup:owner/借用方法表	commit:2d85a5f8
+负控制：对象字面量方法的借用不受影响（原本就正确）	dup:owner/借用方法表	commit:2d85a5f8
+负控制：方法体真读 undefined 接收者的 this 时定抛 TypeError	dup:owner/借用方法表	commit:2d85a5f8
 ```
