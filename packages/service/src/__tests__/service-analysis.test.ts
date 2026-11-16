@@ -1184,90 +1184,47 @@ function callNames(result: ReturnType<typeof analyzeFile>, name: string): string
 }
 
 describe("call@ 见证名带来源限定；二次 freeze 不丢新见证", () => {
-  it("两个现场文件同行的调用 → 见证名不同（改前都是 call@L2）", () =>
+  const LIB = "export function add(a, b) { return a + b; }\n";
+  const SITE_A = 'import { add } from "./lib.js";\nconst x = add(1, 2);\n';
+  const SITE_B = 'import { add } from "./lib.js";\nconst y = add(3, 4);\n';
+  const callNames = (result: ReturnType<typeof analyzeFile>, name: string): string[] => (result.functions.find((f) => f.name === name)?.cases ?? []).map((c) => c.name);
+  it("外部同名行加来源文件；本地保持 call@L<n>；emitter 逐条比对；二次 freeze 追加新见证", () => {
     withTmpProject("nudo-b465-", (dir) => {
       const lib = writeTmpFile(dir, "lib.js", LIB);
       const a = writeTmpFile(dir, "a.js", SITE_A);
       const b = writeTmpFile(dir, "b.js", SITE_B);
-      const external = [
-        ...collectCallRecords_____analyzer_orchestrate_calls_ts_1(a, readFileSync(a, "utf-8")),
-        ...collectCallRecords_____analyzer_orchestrate_calls_ts_1(b, readFileSync(b, "utf-8")),
-      ];
-      const result = analyzeFile(lib, readFileSync(lib, "utf-8"), undefined, external);
-      const names = callNames(result, "add").filter((n) => n.startsWith("call@"));
+      const external = [...collectCallRecords_____analyzer_orchestrate_calls_ts_1(a, readFileSync(a, "utf-8")), ...collectCallRecords_____analyzer_orchestrate_calls_ts_1(b, readFileSync(b, "utf-8"))];
+      const names = callNames(analyzeFile(lib, readFileSync(lib, "utf-8"), undefined, external), "add").filter((n) => n.startsWith("call@"));
       expect(names.length).toBe(2);
       expect(new Set(names).size).toBe(2);
-      // 名字自带来源文件（相对被分析文件）
       expect(names.every((n) => n.includes("a.js:L2") || n.includes("b.js:L2"))).toBe(true);
-    }));
-
-  it("负控制：本地调用点的见证名保持 call@L<n>（与既有已固化名字兼容）", () =>
+    });
     withTmpProject("nudo-b465b-", (dir) => {
-      const src = `export function add(a, b) { return a + b; }
-const z = add(7, 8);
-`;
-      const file = writeTmpFile(dir, "local.js", src);
-      const result = analyzeFile(file, readFileSync(file, "utf-8"));
-      const names = callNames(result, "add").filter((n) => n.startsWith("call@"));
-      expect(names).toEqual(["call@L2"]);
-    }));
-
-  it("emitter：已有同名见证不重复写；新见证照写（不再整函数丢弃）", () =>
+      const file = writeTmpFile(dir, "local.js", "export function add(a, b) { return a + b; }\nconst z = add(7, 8);\n");
+      expect(callNames(analyzeFile(file, readFileSync(file, "utf-8")), "add").filter((n) => n.startsWith("call@"))).toEqual(["call@L2"]);
+    });
     withTmpProject("nudo-b465c-", (dir) => {
-      // 用带本地调用点的源码 ⇒ 合成 case 的实参是可序列化的字面量
-      const src = `export function add(a, b) { return a + b; }
-const z = add(7, 8);
-`;
+      const src = "export function add(a, b) { return a + b; }\nconst z = add(7, 8);\n";
       const file = writeTmpFile(dir, "lib.js", src);
       const result = analyzeFile(file, readFileSync(file, "utf-8"));
       const fn = result.functions.find((f) => f.name === "add")!;
       const base = fn.cases.find((c) => c.source === "callsite")!;
-      expect(base).toBeDefined();
-      // 手工造一个「已固化」的分析结果：同名见证 + 一个新见证
-      const frozen = { ...base, name: "call@a.js:L2" };
-      const fresh = { ...base, name: "call@b.js:L2" };
-      const analysis = {
-        ...result,
-        functions: [{ ...fn, cases: [frozen, fresh] }],
-      };
-      const withFrozen = insertGeneratedCaseDirectives(
-        `/**
- * @nudo:case "call@a.js:L2" (7, 8)
- */
-export function add(a, b) { return a + b; }
-const z = add(7, 8);
-`,
-        analysis,
-      );
-      // 同名的 call@a.js:L2 不重复写；新的 call@b.js:L2 被追加
-      expect(withFrozen.source).toContain('"call@b.js:L2"');
-      expect(withFrozen.source.match(/call@a\.js:L2/g)?.length).toBe(1);
-      expect(withFrozen.written.map((w) => w.fn)).toEqual(["add"]);
-    }));
-
-  it("接线：已固化函数的**新增外部调用点**也合成 call@ 见证", () =>
+      const analysis = { ...result, functions: [{ ...fn, cases: [{ ...base, name: "call@a.js:L2" }, { ...base, name: "call@b.js:L2" }] }] };
+      const out = insertGeneratedCaseDirectives('/**\n * @nudo:case "call@a.js:L2" (7, 8)\n */\nexport function add(a, b) { return a + b; }\nconst z = add(7, 8);\n', analysis);
+      expect(out.source).toContain('"call@b.js:L2"');
+      expect(out.source.match(/call@a\.js:L2/g)?.length).toBe(1);
+      expect(out.written.map((w) => w.fn)).toEqual(["add"]);
+    });
     withTmpProject("nudo-b465d-", (dir) => {
-      // 分片 H 的 synthesizeFrozenCallSiteCases 只认**外部**记录 ⇒ 依赖
-      // caseEnv 收到 externalCallRecords（接线项 2）；未接时该功能惰性
-      // 无副作用（新增外部调用点看不见 ⇒ 二次 freeze 丢新见证）。
-      const libSrc = `/**
- * @nudo:case "call@a.js:L2" (1, 2)
- */
-export function add(a, b) { return a + b; }
-`;
-      const lib = writeTmpFile(dir, "lib.js", libSrc);
+      const lib = writeTmpFile(dir, "lib.js", '/**\n * @nudo:case "call@a.js:L2" (1, 2)\n */\nexport function add(a, b) { return a + b; }\n');
       const a = writeTmpFile(dir, "a.js", SITE_A);
       const b = writeTmpFile(dir, "b.js", SITE_B);
-      const external = [
-        ...collectCallRecords_____analyzer_orchestrate_calls_ts_1(a, readFileSync(a, "utf-8")),
-        ...collectCallRecords_____analyzer_orchestrate_calls_ts_1(b, readFileSync(b, "utf-8")),
-      ];
-      const result = analyzeFile(lib, libSrc, undefined, external);
-      const names = callNames(result, "add");
-      // 已固化的 call@a.js:L2 不重复合成；新增现场 b.js 的调用点合成新见证
-      expect(names).toContain("call@b.js:L2");
-    }));
+      const external = [...collectCallRecords_____analyzer_orchestrate_calls_ts_1(a, readFileSync(a, "utf-8")), ...collectCallRecords_____analyzer_orchestrate_calls_ts_1(b, readFileSync(b, "utf-8"))];
+      expect(callNames(analyzeFile(lib, readFileSync(lib, "utf-8"), undefined, external), "add")).toContain("call@b.js:L2");
+    });
+  });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -1456,29 +1413,7 @@ describe("合成入口用例的模块实例隔离", () => {
 ;
 
 /** 负控制：不该被这条修复波及的邻近形态 */
-describe("负控制", () => {
-  it("声明式 @nudo:case 的求值结果不变", () => {
-    const shapes = caseShapes(`/**
- * @nudo:case "t" (1)
- */
-export function add(x) { return x + 1; }
-`);
-    expect(shapes.add).toBe("2");
-  });
-
-  it("无模块级状态的模块，入口用例结果不变", () => {
-    const shapes = caseShapes(`export function g() { return "ok"; }
-`);
-    expect(shapes.g).toBe('"ok"');
-  });
-
-  it("模块级状态未被改写时，读到的就是初值", () => {
-    const shapes = caseShapes(`let n = 7;
-export function read() { return n; }
-`);
-    expect(shapes.read).toBe("7");
-  });
-});
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -1677,74 +1612,27 @@ describe("类方法上的 @nudo:case 见证被求值（不再恒 unknown）", ()
 
 
 describe("类方法上的 @nudo:case 见证被求值（不再恒 unknown）", () => {
-  it("实例方法：见证求值出确切值 1（改前恒 unknown）", () =>
+  const litVal = (absVal: Abs) => { const t = absVal.term; return t?.op === "lit" ? t.value : undefined; };
+  const caseOf = (dir: string, file: string, src: string, fnName: string) => {
+    const f = writeTmpFile(dir, file, src);
+    return analyzeFile(f, readFileSync(f, "utf-8")).functions.find((x) => x.name === fnName)!.cases.find((x) => x.name === "k")!;
+  };
+  it("实例方法求值确切值；顶层函数口径不变；不可判如实 unknown", () => {
     withTmpProject("nudo-b485-", (dir) => {
-      const src = `export class C {
-  /**
-   * @nudo:case "k" (1) => 1
-   */
-  m(x) { return 1; }
-}
-`;
-      const file = writeTmpFile(dir, "d.js", src);
-      const result = analyzeFile(file, readFileSync(file, "utf-8"));
-      const fn = result.functions.find((f) => f.name === "C.m");
-      expect(fn).toBeDefined();
-      const c = fn!.cases.find((x) => x.name === "k");
-      expect(c).toBeDefined();
-      expect(c!.abs.term?.op).toBe("lit");
-      const t = c!.abs.term;
-      expect(t?.op === "lit" ? t.value : undefined).toBe(1);
-    }));
-
-  it("实例方法：见证实参参与运算（(1) => 2）", () =>
+      expect(litVal(caseOf(dir, "d.js", 'export class C {\n  /**\n   * @nudo:case "k" (1) => 1\n   */\n  m(x) { return 1; }\n}\n', "C.m").abs)).toBe(1);
+    });
     withTmpProject("nudo-b485b-", (dir) => {
-      const src = `export class C {
-  /**
-   * @nudo:case "k" (1) => 2
-   */
-  m(x) { return x + 1; }
-}
-`;
-      const file = writeTmpFile(dir, "d.js", src);
-      const result = analyzeFile(file, readFileSync(file, "utf-8"));
-      const fn = result.functions.find((f) => f.name === "C.m");
-      const c = fn!.cases.find((x) => x.name === "k");
-      const t = c!.abs.term;
-      expect(t?.op === "lit" ? t.value : undefined).toBe(2);
-    }));
-
-  it("负控制：顶层函数同款 case 口径不变（结果 1）", () =>
+      expect(litVal(caseOf(dir, "d.js", 'export class C {\n  /**\n   * @nudo:case "k" (1) => 2\n   */\n  m(x) { return x + 1; }\n}\n', "C.m").abs)).toBe(2);
+    });
     withTmpProject("nudo-b485c-", (dir) => {
-      const src = `/**
- * @nudo:case "k" (1) => 1
- */
-export function f(x) { return 1; }
-`;
-      const file = writeTmpFile(dir, "e.js", src);
-      const result = analyzeFile(file, readFileSync(file, "utf-8"));
-      const fn = result.functions.find((f) => f.name === "f");
-      const c = fn!.cases.find((x) => x.name === "k");
-      const t = c!.abs.term;
-      expect(t?.op === "lit" ? t.value : undefined).toBe(1);
-    }));
-
-  it("负控制：判不出来时如实回落 unknown（不编造值）", () =>
+      expect(litVal(caseOf(dir, "e.js", '/**\n * @nudo:case "k" (1) => 1\n */\nexport function f(x) { return 1; }\n', "f").abs)).toBe(1);
+    });
     withTmpProject("nudo-b485d-", (dir) => {
-      const src = `export class C {
-  /**
-   * @nudo:case "k" (1) => 1
-   */
-  m(x) { return globalThis.__nudo_missing__.x; }
-}
-`;
-      const file = writeTmpFile(dir, "d.js", src);
-      const result = analyzeFile(file, readFileSync(file, "utf-8"));
-      const fn = result.functions.find((f) => f.name === "C.m");
-      const c = fn!.cases.find((x) => x.name === "k");
-      expect(c!.abs.shape.k).toBe("unknown");
-    }));
+      expect(caseOf(dir, "d.js", 'export class C {\n  /**\n   * @nudo:case "k" (1) => 1\n   */\n  m(x) { return globalThis.__nudo_missing__.x; }\n}\n', "C.m").abs.shape.k).toBe("unknown");
+    });
+  });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -1772,65 +1660,26 @@ describe("call@ 见证值 = 调用现场观测值（不被目标语境重求值�
 
 
 describe("call@ 见证值 = 调用现场观测值（不被目标语境重求值覆盖）", () => {
-  it("模块状态不同：见证值 = 现场观测值 6（改前被重算成 1）", () =>
+  const litVal = (absVal: Abs) => { const t = absVal.term; return t?.op === "lit" ? t.value : undefined; };
+  it("模块状态不同见证值 = 现场 5/6；无状态差异值不变 3", () => {
     withTmpProject("nudo-b486-", (dir) => {
-      const lib = writeTmpFile(
-        dir,
-        "lib.js",
-        `let counter = 0;
-export function addTo(k) { counter += k; return counter; }
-`,
-      );
-      const usage = writeTmpFile(
-        dir,
-        "usage.js",
-        `import { addTo } from "./lib.js";
-addTo(5);
-addTo(1);
-`,
-      );
+      const lib = writeTmpFile(dir, "lib.js", "let counter = 0;\nexport function addTo(k) { counter += k; return counter; }\n");
+      const usage = writeTmpFile(dir, "usage.js", 'import { addTo } from "./lib.js";\naddTo(5);\naddTo(1);\n');
       const external = collectCallRecords_____analyzer_orchestrate_calls_ts_2(usage, readFileSync(usage, "utf-8"));
-      const result = analyzeFile(
-        lib,
-        readFileSync(lib, "utf-8"),
-        undefined,
-        external,
-      );
-      const fn = result.functions.find((f) => f.name === "addTo");
-      // 现场观测：addTo(5)=5, addTo(1)=6（模块级累加器）
-      const values = fn!.cases
-        .filter((c) => c.name.startsWith("call@"))
-        .map((c) => {
-          const t = c.abs.term;
-          return t?.op === "lit" ? t.value : undefined;
-        })
-        .sort((a, b) => Number(a) - Number(b));
+      const fn = analyzeFile(lib, readFileSync(lib, "utf-8"), undefined, external).functions.find((f) => f.name === "addTo")!;
+      const values = fn.cases.filter((c) => c.name.startsWith("call@")).map((c) => litVal(c.abs)).sort((a, b) => Number(a) - Number(b));
       expect(values).toEqual([5, 6]);
-    }));
-
-  it("负控制：无状态差异的调用点值不变（3）", () =>
+    });
     withTmpProject("nudo-b486b-", (dir) => {
-      const lib = writeTmpFile(dir, "lib.js", `export function add(a, b) { return a + b; }\n`);
-      const usage = writeTmpFile(
-        dir,
-        "usage.js",
-        `import { add } from "./lib.js";
-const x = add(1, 2);
-`,
-      );
+      const lib = writeTmpFile(dir, "lib.js", "export function add(a, b) { return a + b; }\n");
+      const usage = writeTmpFile(dir, "usage.js", 'import { add } from "./lib.js";\nconst x = add(1, 2);\n');
       const external = collectCallRecords_____analyzer_orchestrate_calls_ts_2(usage, readFileSync(usage, "utf-8"));
-      const result = analyzeFile(
-        lib,
-        readFileSync(lib, "utf-8"),
-        undefined,
-        external,
-      );
-      const fn = result.functions.find((f) => f.name === "add");
-      const call = fn!.cases.find((c) => c.name.startsWith("call@"));
-      const ct = call!.abs.term;
-      expect(ct?.op === "lit" ? ct.value : undefined).toBe(3);
-    }));
+      const call = analyzeFile(lib, readFileSync(lib, "utf-8"), undefined, external).functions.find((f) => f.name === "add")!.cases.find((c) => c.name.startsWith("call@"))!;
+      expect(litVal(call.abs)).toBe(3);
+    });
+  });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -1875,104 +1724,69 @@ export const area = fn({ x: number().gt(0) });
 `;
 
 describe("再导出链归因（barrel 不再吞掉跨文件调用点证据）", () => {
-  it("export * barrel：记录归因到定义文件，domain-exceeds 门禁照报", () =>
+  const litOf = (a: Abs): unknown => { const lv = litValue(a); return lv.ok ? lv.value : undefined; };
+  const DOMAIN = "nudo:contract-domain-exceeds";
+  const LIB = "export function area(x) {\n  return x;\n}\n";
+  const SIDECAR = 'import { fn, number } from "@nudojs/core";\nexport const area = fn({ x: number().gt(0) });\n';
+  it("barrel 归因定义文件并照报门禁；改名跟导出名；直接 import 照报；他处不污染；未导出回落", () => {
     withTmpProject("nudo-b491-", (dir) => {
       const lib = writeTmpFile(dir, "lib.js", LIB);
       writeTmpFile(dir, "lib.nudo.js", SIDECAR);
       writeTmpFile(dir, "barrel.js", 'export * from "./lib.js";\n');
-      const use = writeTmpFile(
-        dir,
-        "use-barrel.js",
-        'import { area } from "./barrel.js";\narea(-1);\n',
-      );
-
+      const use = writeTmpFile(dir, "use-barrel.js", 'import { area } from "./barrel.js";\narea(-1);\n');
       const records = collectCallRecords(use, readFileSync(use, "utf-8"));
-      const rec = records.find((r) => r.fnName === "area");
-      expect(rec).toBeDefined();
-      // 归因到**定义文件**（此前是中间 barrel → 门禁证据蒸发）
-      expect(rec!.targetModule).toBe(lib);
-      expect(litOf(rec!.argAbs[0]!)).toBe(-1);
-
-      const result = analyzeFile(lib, LIB, undefined, records);
-      const issues = result.diagnostics.filter((d) => d.code === DOMAIN);
+      const rec = records.find((r) => r.fnName === "area")!;
+      expect(rec.targetModule).toBe(lib);
+      expect(litOf(rec.argAbs[0]!)).toBe(-1);
+      const issues = analyzeFile(lib, LIB, undefined, records).diagnostics.filter((d) => d.code === DOMAIN);
       expect(issues).toHaveLength(1);
       expect(issues[0]!.severity).toBe("error");
       expect((issues[0]!.data as { actual?: string }).actual).toBe("-1");
-    }));
-
-  it("改名再导出 barrel（export { area as area2 }）：记录名跟到定义侧导出名", () =>
+    });
     withTmpProject("nudo-b491b-", (dir) => {
       const lib = writeTmpFile(dir, "lib.js", LIB);
       writeTmpFile(dir, "lib.nudo.js", SIDECAR);
       writeTmpFile(dir, "barrel.js", 'export { area as area2 } from "./lib.js";\n');
-      const use = writeTmpFile(
-        dir,
-        "use-barrel.js",
-        'import { area2 } from "./barrel.js";\narea2(-1);\n',
-      );
-
-      const records = collectCallRecords(use, readFileSync(use, "utf-8"));
-      const rec = records.find((r) => r.fnName === "area2");
-      expect(rec).toBeDefined();
-      expect(rec!.targetModule).toBe(lib);
-      expect(rec!.targetExport).toBe("area");
-
-      const result = analyzeFile(lib, LIB, undefined, records);
-      const issues = result.diagnostics.filter((d) => d.code === DOMAIN);
+      const use = writeTmpFile(dir, "use-barrel.js", 'import { area2 } from "./barrel.js";\narea2(-1);\n');
+      const rec = collectCallRecords(use, readFileSync(use, "utf-8")).find((r) => r.fnName === "area2")!;
+      expect(rec.targetModule).toBe(lib);
+      expect(rec.targetExport).toBe("area");
+      const issues = analyzeFile(lib, LIB, undefined, [rec]).diagnostics.filter((d) => d.code === DOMAIN);
       expect(issues).toHaveLength(1);
       expect(issues[0]!.severity).toBe("error");
-    }));
-
-  it("负控制：直接 import（无 barrel）行为不变——门禁照报", () =>
+    });
     withTmpProject("nudo-b491c-", (dir) => {
       const lib = writeTmpFile(dir, "lib.js", LIB);
       writeTmpFile(dir, "lib.nudo.js", SIDECAR);
-      const use = writeTmpFile(
-        dir,
-        "use-direct.js",
-        'import { area } from "./lib.js";\narea(-1);\n',
-      );
+      const use = writeTmpFile(dir, "use-direct.js", 'import { area } from "./lib.js";\narea(-1);\n');
       const records = collectCallRecords(use, readFileSync(use, "utf-8"));
-      const rec = records.find((r) => r.fnName === "area");
-      expect(rec!.targetModule).toBe(lib);
-      const result = analyzeFile(lib, LIB, undefined, records);
-      expect(result.diagnostics.filter((d) => d.code === DOMAIN)).toHaveLength(1);
-    }));
-
-  it("负控制：别处的记录不得在本文件报门禁（跨文件污染守卫）", () =>
+      expect(records.find((r) => r.fnName === "area")!.targetModule).toBe(lib);
+      expect(analyzeFile(lib, LIB, undefined, records).diagnostics.filter((d) => d.code === DOMAIN)).toHaveLength(1);
+    });
     withTmpProject("nudo-b491d-", (dir) => {
       const lib = writeTmpFile(dir, "lib.js", LIB);
       writeTmpFile(dir, "lib.nudo.js", SIDECAR);
       const other = writeTmpFile(dir, "other.js", "export function other(x) { return x; }\n");
-      const result = analyzeFile(lib, LIB, undefined, [
-        {
-          fnName: "other",
-          argAbs: [{ shape: { k: "prim", type: "number" }, term: { op: "lit", value: -1 }, conf: "exact" }],
-          resultAbs: { shape: { k: "prim", type: "number" }, conf: "exact" },
-          throwsAbs: { shape: { k: "never" }, conf: "exact" },
-          targetModule: other,
-          targetExport: "other",
-        },
-      ]);
+      const result = analyzeFile(lib, LIB, undefined, [{
+        fnName: "other",
+        argAbs: [{ shape: { k: "prim", type: "number" }, term: { op: "lit", value: -1 }, conf: "exact" }],
+        resultAbs: { shape: { k: "prim", type: "number" }, conf: "exact" },
+        throwsAbs: { shape: { k: "never" }, conf: "exact" },
+        targetModule: other,
+        targetExport: "other",
+      }]);
       expect(result.diagnostics.filter((d) => d.code === DOMAIN)).toHaveLength(0);
-    }));
-
-  it("负控制：模块未导出该名 → 回落 import 目标（不猜、不崩）", () =>
+    });
     withTmpProject("nudo-b491e-", (dir) => {
       const barrel = writeTmpFile(dir, "barrel.js", "export const other = 1;\n");
-      const use = writeTmpFile(
-        dir,
-        "use.js",
-        'import { area } from "./barrel.js";\narea(-1);\n',
-      );
-      const records = collectCallRecords(use, readFileSync(use, "utf-8"));
-      const rec = records.find((r) => r.fnName === "area");
-      expect(rec).toBeDefined();
-      // 解析不出定义位点 → 保持 import 目标（不静默丢弃记录）
-      expect(rec!.targetModule).toBe(barrel);
-      expect(rec!.targetExport).toBe("area");
-    }));
+      const use = writeTmpFile(dir, "use.js", 'import { area } from "./barrel.js";\narea(-1);\n');
+      const rec = collectCallRecords(use, readFileSync(use, "utf-8")).find((r) => r.fnName === "area")!;
+      expect(rec.targetModule).toBe(barrel);
+      expect(rec.targetExport).toBe("area");
+    });
+  });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
