@@ -38,7 +38,9 @@ const x = add(1, 2);
 `;
 
 describe("`nudo test --freeze <path>` 不得把路径吞成取值", () => {
-  it("旗标在前 + 路径在后 ⇒ 正常固化见证（旧行为：Usage error / exit 1 / 零写盘）", () => {
+  it("旗标在前 + 路径在后 ⇒ 正常固化见证（旧行为：Usage error / exit 1 / 零写盘）；白名单取值仍是模式：`--freeze update`（缺路径）仍是用法错误", () => {
+(() => {
+
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug-018-"));
     const file = join(dir, "lib.js");
     try {
@@ -52,9 +54,9 @@ describe("`nudo test --freeze <path>` 不得把路径吞成取值", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  }, 60_000);
+  })();
+(() => {
 
-  it("白名单取值仍是模式：`--freeze update`（缺路径）仍是用法错误", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug-018b-"));
     try {
       const r = runCliTsx(["test", "--freeze", "update"], { cwd: dir });
@@ -63,7 +65,10 @@ describe("`nudo test --freeze <path>` 不得把路径吞成取值", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  }, 60_000);
+  })();
+});;
+
+  ;
 });
 });
 
@@ -130,7 +135,9 @@ function claimedLine(text: string): number | undefined {
 }
 
 describe("-freeze=update 的见证坐标", () => {
-  it("首轮 add 之后的 update 把见证名改成真实行号，且再跑一次幂等", () => {
+  it("首轮 add 之后的 update 把见证名改成真实行号，且再跑一次幂等；已正确的见证不被改错（写盘污染回归）；过期见证被刷新（不再「no changes」）；update 运行的展示面含已冻结的指令 case（不退回剥离坐标系的 entry@）；普通 test 对同一次调用只记一条（指令见证与合成调用点不并存）", () => {
+(() => {
+
     const { dir, file } = project(BASE);
     try {
       expect(runCliTsx(["test", file, "--freeze"]).status).toBe(0);
@@ -151,9 +158,9 @@ describe("-freeze=update 的见证坐标", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+(() => {
 
-  it("已正确的见证不被改错（写盘污染回归）", () => {
     const file = frozenFile(8, 1); // 调用点真的在第 8 行
     const { dir, file: path } = project(file);
     try {
@@ -165,9 +172,9 @@ describe("-freeze=update 的见证坐标", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+(() => {
 
-  it("过期见证被刷新（不再「no changes」）", () => {
     const { dir, file } = project(frozenFile(4, 1)); // 名字 L4，真实调用在 L8
     try {
       expect(callLine(readFileSync(file, "utf-8"))).toBe(8);
@@ -178,9 +185,9 @@ describe("-freeze=update 的见证坐标", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+(() => {
 
-  it("update 运行的展示面含已冻结的指令 case（不退回剥离坐标系的 entry@）", () => {
     const { dir, file } = project(frozenFile(8, 1));
     try {
       const r = runCliTsx(["test", file, "--freeze=update"]);
@@ -193,9 +200,9 @@ describe("-freeze=update 的见证坐标", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+(() => {
 
-  it("普通 test 对同一次调用只记一条（指令见证与合成调用点不并存）", () => {
     const { dir, file } = project(frozenFile(8, 1));
     try {
       const r = runCliTsx(["test", file]);
@@ -205,7 +212,16 @@ describe("-freeze=update 的见证坐标", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -252,7 +268,9 @@ function project(libSource = LIB): { dir: string; lib: string; site: string } {
 }
 
 describe("（CLI）— update 不得净删除活着的见证", () => {
-  it("update 后仍活着的见证一条都不少（旧行为：静默删除 call@site.js:L2）", () => {
+  it("update 后仍活着的见证一条都不少（旧行为：静默删除 call@site.js:L2）；health 推荐的刷新动作不再是破坏动作：照做一遍见证一条不少；真的删除时不谎报：汇总报出条数与被删见证名（旧行为：「0 directive(s)」）", () => {
+(() => {
+
     const { dir, lib, site } = project();
     try {
       const dry = runCliTsx(["test", lib, "--from", site, "--freeze=update", "--dry-run"]);
@@ -270,9 +288,9 @@ describe("（CLI）— update 不得净删除活着的见证", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+(() => {
 
-  it("health 推荐的刷新动作不再是破坏动作：照做一遍见证一条不少", () => {
     const { dir, lib, site } = project();
     try {
       const h = runCliTsx(["health", lib, "--from", site]);
@@ -285,9 +303,9 @@ describe("（CLI）— update 不得净删除活着的见证", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+(() => {
 
-  it("真的删除时不谎报：汇总报出条数与被删见证名（旧行为：「0 directive(s)」）", () => {
     // 该块**没有**手写 case ⇒ update 照常重同步：陈旧见证（行号已漂）被改写
     const { dir, lib } = project(`/**
  * @nudo:case "call@L1" (1, 2)
@@ -306,7 +324,12 @@ add(3, 4);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
 
@@ -356,7 +379,9 @@ function init(): { code: number; out: string[]; err: string[] } {
 }
 
 describe("重复的 nudo 成员 ⇒ 写入必须对生效配置有效", () => {
-  it("重复成员：落盘只剩一个 nudo 成员，且加载器读到 adoption baseline", () => {
+  it("重复成员：落盘只剩一个 nudo 成员，且加载器读到 adoption baseline；单个非法值（对照）：同样落盘为基线且加载器可见", () => {
+(() => {
+
     const d = makePkg(`{\n  "name": "p14",\n  "version": "1.0.0",\n  "nudo": null,\n  "nudo": null\n}\n`);
     const r = init();
     expect(r.code, r.err.join("\n")).toBe(0);
@@ -367,15 +392,18 @@ describe("重复的 nudo 成员 ⇒ 写入必须对生效配置有效", () => {
     expect(JSON.parse(written).nudo).toEqual(BASELINE);
     // 陈述 == 事实：加载器读到的配置就是写入的基线
     expect(findProjectConfig(d)?.config).toEqual(BASELINE);
-  }, 60_000);
+  })();
+(() => {
 
-  it("单个非法值（对照）：同样落盘为基线且加载器可见", () => {
     const d = makePkg(`{\n  "name": "p14",\n  "version": "1.0.0",\n  "nudo": null\n}\n`);
     const r = init();
     expect(r.code).toBe(0);
     expect(JSON.parse(readFileSync(join(d, "package.json"), "utf-8")).nudo).toEqual(BASELINE);
     expect(findProjectConfig(d)?.config).toEqual(BASELINE);
-  }, 60_000);
+  })();
+});;
+
+  ;
 });
 });
 
@@ -423,7 +451,9 @@ function advertisedModes(help: string): string[] {
 }
 
 describe("-help 承诺的 --freeze 模式必须都被实现接受", () => {
-  it("帮助文本承诺 update | add，且两个模式都能被实现接受", () => {
+  it("帮助文本承诺 update | add，且两个模式都能被实现接受；非法取值仍被拒（且错误文案列出的合法取值与帮助一致）", () => {
+(() => {
+
     const { cwd, file } = makeProject();
     try {
       const help = runCli(["test", "--help"], { cwd });
@@ -440,9 +470,9 @@ describe("-help 承诺的 --freeze 模式必须都被实现接受", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  }, 60000);
+  })();
+(() => {
 
-  it("非法取值仍被拒（且错误文案列出的合法取值与帮助一致）", () => {
     const { cwd, file } = makeProject();
     try {
       const help = runCli(["test", "--help"], { cwd });
@@ -457,7 +487,10 @@ describe("-help 承诺的 --freeze 模式必须都被实现接受", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  }, 60000);
+  })();
+});;
+
+  ;
 });
 });
 
@@ -495,7 +528,9 @@ function makeProject(): { cwd: string; file: string } {
 }
 
 describe("-freeze=add 被接受（与省略取值同义）", () => {
-  it("--freeze=add --dry-run：exit 0（旧行为：exit 1 + Invalid --freeze value）", () => {
+  it("--freeze=add --dry-run：exit 0（旧行为：exit 1 + Invalid --freeze value）；--freeze=add 与省略取值（默认 add）产出逐字一致；--freeze=update 仍是 update 模式（不回归）；非法取值仍被拒 + exit 1", () => {
+(() => {
+
     const { cwd, file } = makeProject();
     try {
       const r = runCli(["test", file, "--freeze=add", "--dry-run"], { cwd });
@@ -507,9 +542,9 @@ describe("-freeze=add 被接受（与省略取值同义）", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  }, 30000);
+  })();
+(() => {
 
-  it("--freeze=add 与省略取值（默认 add）产出逐字一致", () => {
     const { cwd, file } = makeProject();
     try {
       const explicit = runCli(["test", file, "--freeze=add", "--dry-run"], { cwd });
@@ -520,9 +555,9 @@ describe("-freeze=add 被接受（与省略取值同义）", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  }, 30000);
+  })();
+(() => {
 
-  it("--freeze=update 仍是 update 模式（不回归）", () => {
     const { cwd, file } = makeProject();
     try {
       const r = runCli(["test", file, "--freeze=update", "--dry-run"], { cwd });
@@ -531,9 +566,9 @@ describe("-freeze=add 被接受（与省略取值同义）", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  }, 30000);
+  })();
+(() => {
 
-  it("非法取值仍被拒 + exit 1", () => {
     const { cwd, file } = makeProject();
     try {
       const r = runCli(["test", file, "--freeze=bogus", "--dry-run"], { cwd });
@@ -542,7 +577,14 @@ describe("-freeze=add 被接受（与省略取值同义）", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  }, 30000);
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -587,33 +629,42 @@ function pkgDir(content: string): string {
 const io = { out: () => {}, err: () => {} };
 
 describe("init 的幂等判据 = 配置加载器的真值判据", () => {
-  it("nudo 值为 null（形状非法 ⇒ 加载器按「无配置」处理）⇒ init 写入基线", () => {
+  it("nudo 值为 null（形状非法 ⇒ 加载器按「无配置」处理）⇒ init 写入基线；nudo 值为标量（形状非法）⇒ init 写入基线；nudo 值为有效对象 ⇒ 幂等：只打印、不写盘（与加载器「配置在场」一致）；nudo 值为空对象 {} ⇒ 仍是**有效配置**（加载器据此截断祖先继承）⇒ 幂等不写", () => {
+(() => {
+
     const dir = pkgDir('{ "name": "x", "nudo": null }\n');
     expect(runInit(dir, io)).toBe(0);
     const parsed = JSON.parse(readFileSync(join(dir, "package.json"), "utf-8"));
     expect(parsed.nudo).toEqual({ check: { profile: "adoption" } });
-  });
+  })();
+(() => {
 
-  it("nudo 值为标量（形状非法）⇒ init 写入基线", () => {
     const dir = pkgDir('{ "name": "x", "nudo": 42 }\n');
     expect(runInit(dir, io)).toBe(0);
     const parsed = JSON.parse(readFileSync(join(dir, "package.json"), "utf-8"));
     expect(parsed.nudo).toEqual({ check: { profile: "adoption" } });
-  });
+  })();
+(() => {
 
-  it("nudo 值为有效对象 ⇒ 幂等：只打印、不写盘（与加载器「配置在场」一致）", () => {
     const before = '{ "name": "x", "nudo": { "check": { "profile": "strict" } } }\n';
     const dir = pkgDir(before);
     expect(runInit(dir, io)).toBe(0);
     expect(readFileSync(join(dir, "package.json"), "utf-8")).toBe(before);
-  });
+  })();
+(() => {
 
-  it("nudo 值为空对象 {} ⇒ 仍是**有效配置**（加载器据此截断祖先继承）⇒ 幂等不写", () => {
     const before = '{ "name": "x", "nudo": {} }\n';
     const dir = pkgDir(before);
     expect(runInit(dir, io)).toBe(0);
     expect(readFileSync(join(dir, "package.json"), "utf-8")).toBe(before);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -667,7 +718,9 @@ function monoRepo(): { root: string; sub: string } {
 }
 
 describe("init 不得用 nudo 键遮蔽祖先配置", () => {
-  it("祖先有 nudo 配置 ⇒ init 拒绝写盘（exit 1）且子包 package.json 逐字不变", () => {
+  it("祖先有 nudo 配置 ⇒ init 拒绝写盘（exit 1）且子包 package.json 逐字不变；拒绝之后根配置仍然生效（门禁不翻绿）：nudo check 仍然 exit 1；没有祖先配置时 init 照常写基线（不得过度拦截）", () => {
+(() => {
+
     const { sub } = monoRepo();
     const before = readFileSync(join(sub, "package.json"), "utf-8");
     const errors: string[] = [];
@@ -677,9 +730,9 @@ describe("init 不得用 nudo 键遮蔽祖先配置", () => {
     expect(errors.join("\n")).toContain("error:");
     expect(errors.join("\n")).toContain("inherits a nudo config from");
     expect(errors.join("\n")).toContain("fix:");
-  });
+  })();
+(() => {
 
-  it("拒绝之后根配置仍然生效（门禁不翻绿）：nudo check 仍然 exit 1", () => {
     const { sub } = monoRepo();
     const before = runCliTsx(["check", join(sub, "a.js")]);
     expect(before.status, before.stderr).toBe(1);
@@ -688,16 +741,21 @@ describe("init 不得用 nudo 键遮蔽祖先配置", () => {
     const after = runCliTsx(["check", join(sub, "a.js")]);
     expect(after.status, after.stderr).toBe(1);
     expect(after.stdout).toContain("nudo:entry-may-throw");
-  });
+  })();
+(() => {
 
-  it("没有祖先配置时 init 照常写基线（不得过度拦截）", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-cli-bug-677-ok-"));
     dirs.push(dir);
     writeFileSync(join(dir, "package.json"), '{ "name": "solo" }\n', "utf-8");
     expect(runInit(dir, { out: () => {}, err: () => {} })).toBe(0);
     const parsed = JSON.parse(readFileSync(join(dir, "package.json"), "utf-8"));
     expect(parsed.nudo).toEqual({ check: { profile: "adoption" } });
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
 
@@ -749,7 +807,9 @@ function monoRepo(extra?: { pnpmWorkspace?: boolean }): { root: string; target: 
 }
 
 describe("init 不得向上逃逸到仓库根", () => {
-  it("未声明 workspace 的 monorepo（packages/* 形态）⇒ 不假拒绝（Bug 35 新口径）", () => {
+  it("未声明 workspace 的 monorepo（packages/* 形态）⇒ 不假拒绝（Bug 35 新口径）；pnpm workspace（pnpm-workspace.yaml）⇒ 同样拒绝写盘；package.json#workspaces ⇒ 同样拒绝写盘；单包仓库（无子包）⇒ 照常写到本包的 package.json（不得过度拦截）", () => {
+(() => {
+
     const { root, target } = monoRepo();
     const errors: string[] = [];
     const code = runInit(target, { out: () => {}, err: (l) => errors.push(l) });
@@ -761,16 +821,16 @@ describe("init 不得向上逃逸到仓库根", () => {
       unknown
     >;
     expect(parsed.nudo).toEqual({ check: { profile: "adoption" } });
-  });
+  })();
+(() => {
 
-  it("pnpm workspace（pnpm-workspace.yaml）⇒ 同样拒绝写盘", () => {
     const { root, target } = monoRepo({ pnpmWorkspace: true });
     const before = readFileSync(join(root, "package.json"), "utf-8");
     expect(runInit(target, { out: () => {}, err: () => {} })).toBe(1);
     expect(readFileSync(join(root, "package.json"), "utf-8")).toBe(before);
-  });
+  })();
+(() => {
 
-  it("package.json#workspaces ⇒ 同样拒绝写盘", () => {
     const root = mkdtempSync(join(tmpdir(), "nudo-cli-bug-678-ws-"));
     dirs.push(root);
     const target = join(root, "packages", "newpkg");
@@ -783,9 +843,9 @@ describe("init 不得向上逃逸到仓库根", () => {
     const before = readFileSync(join(root, "package.json"), "utf-8");
     expect(runInit(target, { out: () => {}, err: () => {} })).toBe(1);
     expect(readFileSync(join(root, "package.json"), "utf-8")).toBe(before);
-  });
+  })();
+(() => {
 
-  it("单包仓库（无子包）⇒ 照常写到本包的 package.json（不得过度拦截）", () => {
     const root = mkdtempSync(join(tmpdir(), "nudo-cli-bug-678-solo-"));
     dirs.push(root);
     mkdirSync(join(root, "src"), { recursive: true });
@@ -793,7 +853,14 @@ describe("init 不得向上逃逸到仓库根", () => {
     expect(runInit(join(root, "src"), { out: () => {}, err: () => {} })).toBe(0);
     const parsed = JSON.parse(readFileSync(join(root, "package.json"), "utf-8"));
     expect(parsed.nudo).toEqual({ check: { profile: "adoption" } });
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -836,7 +903,9 @@ function pkgDir(content: string): string {
 const canTestPermissions = typeof process.getuid !== "function" || process.getuid() !== 0;
 
 describe("init 的 IO 失败路径可区分", () => {
-  it("package.json 不可读 ⇒ 「cannot read」（不是「不是合法 JSON」）+ exit 1", () => {
+  it("package.json 不可读 ⇒ 「cannot read」（不是「不是合法 JSON」）+ exit 1；package.json 只读 ⇒ 「cannot write」+ fix 引导 + exit 1（不再抛裸 errno）；真·非法 JSON ⇒ 仍是「is not valid JSON」+ 解析错误位置（不被 IO 路径吞掉）", () => {
+(() => {
+
     if (!canTestPermissions) return;
     const dir = pkgDir('{ "name": "noread" }\n');
     const pkgPath = join(dir, "package.json");
@@ -852,9 +921,9 @@ describe("init 的 IO 失败路径可区分", () => {
     expect(errors.join("\n")).toContain("error: cannot read");
     expect(errors.join("\n")).not.toContain("is not valid JSON");
     expect(errors.join("\n")).toContain("fix:");
-  });
+  })();
+(() => {
 
-  it("package.json 只读 ⇒ 「cannot write」+ fix 引导 + exit 1（不再抛裸 errno）", () => {
     if (!canTestPermissions) return;
     const dir = pkgDir('{ "name": "ro" }\n');
     const pkgPath = join(dir, "package.json");
@@ -871,16 +940,21 @@ describe("init 的 IO 失败路径可区分", () => {
     expect(errors.join("\n")).toContain("fix:");
     // 文件内容未被改动
     expect(readFileSync(pkgPath, "utf-8")).toBe('{ "name": "ro" }\n');
-  });
+  })();
+(() => {
 
-  it("真·非法 JSON ⇒ 仍是「is not valid JSON」+ 解析错误位置（不被 IO 路径吞掉）", () => {
     const dir = pkgDir('{ "name": "badjson", }\n');
     const errors: string[] = [];
     expect(runInit(dir, { out: () => {}, err: (l) => errors.push(l) })).toBe(1);
     expect(errors.join("\n")).toContain("is not valid JSON — nothing written");
     expect(errors.join("\n")).toContain("fix:  repair it first (parse error:");
     expect(errors.join("\n")).not.toContain("cannot read");
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
 
@@ -921,7 +995,9 @@ function pkgDir(content: string): string {
 const io = { out: () => {}, err: () => {} };
 
 describe("init 写盘只改目标键（最小改动）", () => {
-  it("4 空格缩进 + 无尾换行 ⇒ 缩进与尾换行状态逐字保留，只多出 nudo 成员", () => {
+  it("4 空格缩进 + 无尾换行 ⇒ 缩进与尾换行状态逐字保留，只多出 nudo 成员；整数样键的相对顺序不变（JSON.parse 会把它们重排）；紧凑单行文件 ⇒ 保持紧凑（不引入换行）；已有 nudo 键（形状非法）⇒ 只替换它的值，其余字节不动", () => {
+(() => {
+
     const before = '{\n    "name": "s1",\n    "version": "1.0.0"\n}';
     const dir = pkgDir(before);
     expect(runInit(dir, io)).toBe(0);
@@ -932,9 +1008,9 @@ describe("init 写盘只改目标键（最小改动）", () => {
     // 非目标键的字节逐字不变（把新插入的成员切掉 ⇒ 与原文件相同）
     expect(written.replace(/,\n {4}"nudo": \{[\s\S]*?\n {4}\}\n\}$/, "\n}")).toBe(before);
     expect(written.endsWith("\n")).toBe(false);
-  });
+  })();
+(() => {
 
-  it("整数样键的相对顺序不变（JSON.parse 会把它们重排）", () => {
     const dir = pkgDir('{\n  "name": "s2",\n  "2": "two",\n  "1": "one",\n  "10": "ten",\n  "b": true\n}\n');
     expect(runInit(dir, io)).toBe(0);
     const written = readFileSync(join(dir, "package.json"), "utf-8");
@@ -947,16 +1023,16 @@ describe("init 写盘只改目标键（最小改动）", () => {
     expect(written.startsWith('{\n  "name": "s2",\n  "2": "two",\n  "1": "one",\n  "10": "ten",\n  "b": true,\n')).toBe(
       true,
     );
-  });
+  })();
+(() => {
 
-  it("紧凑单行文件 ⇒ 保持紧凑（不引入换行）", () => {
     const dir = pkgDir('{"name":"up"}');
     expect(runInit(dir, io)).toBe(0);
     const written = readFileSync(join(dir, "package.json"), "utf-8");
     expect(written).toBe('{"name":"up","nudo":{"check":{"profile":"adoption"}}}');
-  });
+  })();
+(() => {
 
-  it("已有 nudo 键（形状非法）⇒ 只替换它的值，其余字节不动", () => {
     const before = '{\n  "name": "x",\n  "nudo": null,\n  "version": "1.0.0"\n}\n';
     const dir = pkgDir(before);
     expect(runInit(dir, io)).toBe(0);
@@ -964,7 +1040,14 @@ describe("init 写盘只改目标键（最小改动）", () => {
     expect(written).toBe(
       '{\n  "name": "x",\n  "nudo": {\n    "check": {\n      "profile": "adoption"\n    }\n  },\n  "version": "1.0.0"\n}\n',
     );
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -1022,7 +1105,9 @@ function humanErrorCount(stdout: string): number {
 }
 
 describe("信封 summary.errors = Σreports[] = 人类面计数", () => {
-  it("单元：attachPathErrors 不把路径错误并进 summary.errors（只挂 ok:false + pathErrors）", () => {
+  it("单元：attachPathErrors 不把路径错误并进 summary.errors（只挂 ok:false + pathErrors）；CLI：三处一致（信封 = Σreports[] = 人类面），路径错误仍在 pathErrors[]；CLI：无路径错误时信封计数 = 人类面计数（未回归）；CLI：语法错文件走 pathErrors ⇒ 信封计数仍是**分析诊断数**（= Σreports[] = 人类面）", () => {
+(() => {
+
     const envelope: {
       ok: boolean;
       summary: { errors: number; warnings: number; infos: number; functions: number; files: number };
@@ -1039,9 +1124,9 @@ describe("信封 summary.errors = Σreports[] = 人类面计数", () => {
     expect(out.summary.errors).toBe(3);
     expect(out.ok).toBe(false);
     expect(out.pathErrors).toHaveLength(1);
-  });
+  })();
+(() => {
 
-  it("CLI：三处一致（信封 = Σreports[] = 人类面），路径错误仍在 pathErrors[]", () => {
     const { cwd, files, missing } = makeProject();
     try {
       const json = runCliTsx(["check", ...files, "--from", missing, "--json"], { cwd });
@@ -1067,9 +1152,9 @@ describe("信封 summary.errors = Σreports[] = 人类面计数", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  })();
+(() => {
 
-  it("CLI：无路径错误时信封计数 = 人类面计数（未回归）", () => {
     const { cwd, files } = makeProject();
     try {
       const json = runCliTsx(["check", ...files, "--json"], { cwd });
@@ -1086,9 +1171,9 @@ describe("信封 summary.errors = Σreports[] = 人类面计数", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  })();
+(() => {
 
-  it("CLI：语法错文件走 pathErrors ⇒ 信封计数仍是**分析诊断数**（= Σreports[] = 人类面）", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-cli-695-syntax-"));
     const broken = join(dir, "broken.js");
     const clean = join(dir, "clean.js");
@@ -1113,7 +1198,14 @@ describe("信封 summary.errors = Σreports[] = 人类面计数", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -1169,7 +1261,9 @@ type StripEnvelope = {
 };
 
 describe("migrate strip --json 的失败面（stdout 永不为空 + 结果不丢）", () => {
-  it("语法错文件 ⇒ stdout 是合法 JSON（非 0 字节）且带文件名", () => {
+  it("语法错文件 ⇒ stdout 是合法 JSON（非 0 字节）且带文件名；一个目标失败 + 另一个目标成功 ⇒ 成功目标的 results 不丢；全成功 ⇒ stdout 仍是顶��数组（形状不变）；非 JSON 面：失败目标进 stderr（带文件名），成功目标仍进 stdout", () => {
+(() => {
+
     const dir = dirWith({ "good.ts": GOOD, "bad.ts": BAD });
     const r = runCliTsx(["migrate", "strip", "--json", dir]);
     expect(r.status).toBe(1);
@@ -1183,9 +1277,9 @@ describe("migrate strip --json 的失败面（stdout 永不为空 + 结果不丢
     expect(parsed.action).toBe("strip");
     expect(parsed.pathErrors?.length ?? 0).toBeGreaterThan(0);
     expect(r.stderr).toContain("bad.ts");
-  });
+  })();
+(() => {
 
-  it("一个目标失败 + 另一个目标成功 ⇒ 成功目标的 results 不丢", () => {
     const bad = dirWith({ "bad.ts": BAD });
     const good = dirWith({ "good.ts": GOOD });
     const r = runCliTsx(["migrate", "strip", "--json", bad, good]);
@@ -1198,25 +1292,32 @@ describe("migrate strip --json 的失败面（stdout 永不为空 + 结果不丢
     expect(parsed.results?.length ?? 0).toBe(1);
     expect(parsed.results?.[0]?.file).toContain("good.ts");
     expect(parsed.pathErrors?.length ?? 0).toBe(1);
-  });
+  })();
+(() => {
 
-  it("全成功 ⇒ stdout 仍是顶��数组（形状不变）", () => {
     const dir = dirWith({ "good.ts": GOOD });
     const r = runCliTsx(["migrate", "strip", "--json", dir]);
     expect(r.status, r.stderr).toBe(0);
     const parsed = JSON.parse(r.stdout);
     expect(Array.isArray(parsed)).toBe(true);
     expect(parsed).toHaveLength(1);
-  });
+  })();
+(() => {
 
-  it("非 JSON 面：失败目标进 stderr（带文件名），成功目标仍进 stdout", () => {
     const bad = dirWith({ "bad.ts": BAD });
     const good = dirWith({ "good.ts": GOOD });
     const r = runCliTsx(["migrate", "strip", bad, good]);
     expect(r.status).toBe(1);
     expect(r.stdout).toContain("good.ts");
     expect(r.stderr).toContain("bad.ts");
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -1262,7 +1363,9 @@ function makeProject(envJson: string): { cwd: string; file: string; pkg: string 
 }
 
 describe("package.json#nudo.env 非数组：原生报告而非裸崩", () => {
-  it("人类面：exit 0（不裸崩）+ 报告面有文件名与诊断码 config-shape", () => {
+  it("人类面：exit 0（不裸崩）+ 报告面有文件名与诊断码 config-shape；机器面（--json）：issues 里有 config-shape 告警（文件名 + 值）；其它形状（布尔 / 对象）同样不裸崩 + 报告面可见；合法 env 数组：无 config-shape 告警（未回归）", () => {
+(() => {
+
     const { cwd, file, pkg } = makeProject("42");
     try {
       const r = runCliTsx(["check", file], { cwd });
@@ -1276,9 +1379,9 @@ describe("package.json#nudo.env 非数组：原生报告而非裸崩", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  })();
+(() => {
 
-  it("机器面（--json）：issues 里有 config-shape 告警（文件名 + 值）", () => {
     const { cwd, file, pkg } = makeProject("42");
     try {
       const r = runCliTsx(["check", file, "--json"], { cwd });
@@ -1295,9 +1398,9 @@ describe("package.json#nudo.env 非数组：原生报告而非裸崩", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  })();
+(() => {
 
-  it("其它形状（布尔 / 对象）同样不裸崩 + 报告面可见", () => {
     for (const envJson of ["true", '{"a":1}']) {
       const { cwd, file, pkg } = makeProject(envJson);
       try {
@@ -1310,9 +1413,9 @@ describe("package.json#nudo.env 非数组：原生报告而非裸崩", () => {
         rmSync(cwd, { recursive: true, force: true });
       }
     }
-  });
+  })();
+(() => {
 
-  it("合法 env 数组：无 config-shape 告警（未回归）", () => {
     const { cwd, file } = makeProject('["node"]');
     try {
       const r = runCliTsx(["check", file], { cwd });
@@ -1321,7 +1424,14 @@ describe("package.json#nudo.env 非数组：原生报告而非裸崩", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -1399,7 +1509,9 @@ export function key(dir, name) {
 }
 
 describe("env 模块合并须走 mergeHarvestUnderEnv（harvest 填空位）", () => {
-  it("check 面：harvest 的非冲突导出不再被丢弃（unknown ⇒ string）", { timeout: 90_000 }, () => {
+  it("check 面：harvest 的非冲突导出不再被丢弃（unknown ⇒ string）；check 面与 test 面结论一致（同一文件、同一个精确签名）", () => {
+(() => {
+
     const dir = project();
     const r = runCli(["check", join(dir, "lib.js")]);
     const out = r.stdout + r.stderr;
@@ -1408,9 +1520,9 @@ describe("env 模块合并须走 mergeHarvestUnderEnv（harvest 填空位）", (
     expect(out).not.toContain("harvested(a: any) => unknown");
     // 误导诊断（真 unknown）必须消失
     expect(out).not.toContain("nudo:unknown-inference");
-  });
+  })();
+(() => {
 
-  it("check 面与 test 面结论一致（同一文件、同一个精确签名）", { timeout: 90_000 }, () => {
     const dir = project();
     const file = join(dir, "lib.js");
     const c = runCli(["check", file]);
@@ -1420,7 +1532,10 @@ describe("env 模块合并须走 mergeHarvestUnderEnv（harvest 填空位）", (
     // test 面 case 表：(any) => string
     expect(t.stdout + t.stderr).toContain("(any) => string");
     expect(c.stdout + c.stderr).not.toContain("=> unknown");
-  });
+  })();
+});;
+
+  ;
 });
 });
 
@@ -1486,7 +1601,9 @@ function writeHarvestConflictFixture(dir: string): void {
 }
 
 describe("check — env-harvest-conflict 上屏（）", () => {
-  it("人面上屏 nudo:env-harvest-conflict（warning，不挡门禁）", () => {
+  it("人面上屏 nudo:env-harvest-conflict（warning，不挡门禁）；--json 面同码同 severity（warning）", () => {
+(() => {
+
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug1038-"));
     writeHarvestConflictFixture(dir);
 
@@ -1495,9 +1612,9 @@ describe("check — env-harvest-conflict 上屏（）", () => {
     expect(out).toContain("(nudo:env-harvest-conflict)");
     // 告警级 ⇒ 门禁不红（exit 0）
     expect(r.status).toBe(0);
-  });
+  })();
+(() => {
 
-  it("--json 面同码同 severity（warning）", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug1038-json-"));
     writeHarvestConflictFixture(dir);
 
@@ -1508,7 +1625,10 @@ describe("check — env-harvest-conflict 上屏（）", () => {
     const hit = (parsed.issues ?? []).find((i) => i.code === "nudo:env-harvest-conflict");
     expect(hit).toBeDefined();
     expect(hit?.severity).toBe("warning");
-  });
+  })();
+});;
+
+  ;
 });
 });
 
@@ -1567,13 +1687,15 @@ function ancestorWithInvalidChild(): { root: string; sub: string } {
 }
 
 describe("init 的祖先继承口径 = 加载器口径（不得死锁）", () => {
-  it("加载器口径：本包 nudo 键形状非法 ⇒ **不继承**祖先配置（fail-closed）", () => {
+  it("加载器口径：本包 nudo 键形状非法 ⇒ **不继承**祖先配置（fail-closed）；死锁回归：无效 nudo 值 + 祖先有有效配置 ⇒ 以基线替换并告警（不得拒绝）；死锁回归：拒绝信息不得谎称「it inherits」（加载器并不继承）；反向闸：本包**没有** nudo 键 + 祖先有有效配置 ⇒ 仍拒绝遮蔽（loader 口径）；显式 init <容器根>：写盘 + 作用域告警（不越界）；从容器根的子目录 init：拒绝越界写盘（exit 1）", () => {
+(() => {
+
     const { sub } = ancestorWithInvalidChild();
     // 加载器：本包的 nudo 键存在 ⇒ 截断祖先搜索 ⇒ 无配置
     expect(findProjectConfig(sub)).toBeNull();
-  });
+  })();
+(() => {
 
-  it("死锁回归：无效 nudo 值 + 祖先有有效配置 ⇒ 以基线替换并告警（不得拒绝）", () => {
     const { sub } = ancestorWithInvalidChild();
     const errors: string[] = [];
     const code = runInit(sub, { out: () => {}, err: (l) => errors.push(l) });
@@ -1581,16 +1703,16 @@ describe("init 的祖先继承口径 = 加载器口径（不得死锁）", () =>
     const parsed = JSON.parse(readFileSync(join(sub, "package.json"), "utf-8"));
     expect(parsed.nudo).toEqual({ check: { profile: "adoption" } });
     expect(errors.join("\n")).toContain("replaced with the adoption baseline");
-  });
+  })();
+(() => {
 
-  it("死锁回归：拒绝信息不得谎称「it inherits」（加载器并不继承）", () => {
     const { sub } = ancestorWithInvalidChild();
     const errors: string[] = [];
     runInit(sub, { out: () => {}, err: (l) => errors.push(l) });
     expect(errors.join("\n")).not.toContain("it inherits a nudo config from");
-  });
+  })();
+(() => {
 
-  it("反向闸：本包**没有** nudo 键 + 祖先有有效配置 ⇒ 仍拒绝遮蔽（loader 口径）", () => {
     const root = mkdtempSync(join(tmpdir(), "nudo-cli-1144-shadow-"));
     dirs.push(root);
     const sub = join(root, "pkg");
@@ -1610,9 +1732,9 @@ describe("init 的祖先继承口径 = 加载器口径（不得死锁）", () =>
     expect(readFileSync(join(sub, "package.json"), "utf-8")).toBe(before);
     // 拒绝理由与加载器口径一致（确实继承）
     expect(errors.join("\n")).toContain("it inherits a nudo config from");
-  });
+  })();
+(() => {
 
-  it("显式 init <容器根>：写盘 + 作用域告警（不越界）", () => {
     const root = mkdtempSync(join(tmpdir(), "nudo-cli-1144-container-"));
     dirs.push(root);
     writeFileSync(join(root, "pnpm-workspace.yaml"), "packages:\n  - packages/*\n", "utf-8");
@@ -1627,9 +1749,9 @@ describe("init 的祖先继承口径 = 加载器口径（不得死锁）", () =>
     expect(parsed.nudo).toEqual({ check: { profile: "adoption" } });
     // 作用域必须说清（nudo 键对下层所有包生效）
     expect(errors.join("\n")).toContain("workspace / container root");
-  });
+  })();
+(() => {
 
-  it("从容器根的子目录 init：拒绝越界写盘（exit 1）", () => {
     const root = mkdtempSync(join(tmpdir(), "nudo-cli-1144-cross-"));
     dirs.push(root);
     writeFileSync(join(root, "pnpm-workspace.yaml"), "packages:\n  - packages/*\n", "utf-8");
@@ -1644,7 +1766,18 @@ describe("init 的祖先继承口径 = 加载器口径（不得死锁）", () =>
     expect(code).toBe(1);
     expect(readFileSync(join(root, "package.json"), "utf-8")).toBe(before);
     expect(errors.join("\n")).toContain("workspace / container root");
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -1697,7 +1830,9 @@ type Json = {
 };
 
 describe("CLI：nudo:mock-invalid 严重度对齐文档（warning）", () => {
-  it("mock 表达式解析失败 ⇒ warning（不红门禁）", () => {
+  it("mock 表达式解析失败 ⇒ warning（不红门禁）；mock 文件缺失仍是 error（不引入假绿）；负控制：文件面只出现一条 mock-invalid（无重复报告）", () => {
+(() => {
+
     const dir = fixture(MOCK_EXPR);
     try {
       const r = runCli(["check", "--json", "probe.js"], { cwd: dir });
@@ -1711,9 +1846,9 @@ describe("CLI：nudo:mock-invalid 严重度对齐文档（warning）", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+(() => {
 
-  it("mock 文件缺失仍是 error（不引入假绿）", () => {
     const dir = fixture(MOCK_MISSING_FILE);
     try {
       const r = runCli(["check", "--json", "probe.js"], { cwd: dir });
@@ -1727,9 +1862,9 @@ describe("CLI：nudo:mock-invalid 严重度对齐文档（warning）", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+(() => {
 
-  it("负控制：文件面只出现一条 mock-invalid（无重复报告）", () => {
     const dir = fixture(MOCK_EXPR);
     try {
       const r = runCli(["check", "--json", "probe.js"], { cwd: dir });
@@ -1739,7 +1874,12 @@ describe("CLI：nudo:mock-invalid 严重度对齐文档（warning）", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
 
@@ -1779,7 +1919,9 @@ function projectWithNudo(nudo: unknown): string {
 }
 
 describe("CLI：nudo 键形状非法 ⇒ 报告面可见（不静默）", () => {
-  it("check --json：config-shape warning 进 issues 段", () => {
+  it("check --json：config-shape warning 进 issues 段；check 人类面：issues 段看得见 config-shape；health 人类面：config 提示行可见；health --json：configShape 字段可见；936：假值 nudo 键（false）同样可见（且措辞说 falsy）；负控制：合法 nudo 对象 ⇒ 无 config-shape 诊断", () => {
+(() => {
+
     const dir = projectWithNudo(true);
     try {
       const r = runCli(["check", "--json", "probe.js"], { cwd: dir });
@@ -1794,9 +1936,9 @@ describe("CLI：nudo 键形状非法 ⇒ 报告面可见（不静默）", () => 
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+(() => {
 
-  it("check 人类面：issues 段看得见 config-shape", () => {
     const dir = projectWithNudo(true);
     try {
       const r = runCli(["check", "probe.js"], { cwd: dir });
@@ -1805,9 +1947,9 @@ describe("CLI：nudo 键形状非法 ⇒ 报告面可见（不静默）", () => 
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+(() => {
 
-  it("health 人类面：config 提示行可见", () => {
     const dir = projectWithNudo(true);
     try {
       const r = runCli(["health", "probe.js"], { cwd: dir });
@@ -1816,9 +1958,9 @@ describe("CLI：nudo 键形状非法 ⇒ 报告面可见（不静默）", () => 
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+(() => {
 
-  it("health --json：configShape 字段可见", () => {
     const dir = projectWithNudo(true);
     try {
       const r = runCli(["health", "--json", "probe.js"], { cwd: dir });
@@ -1830,9 +1972,9 @@ describe("CLI：nudo 键形状非法 ⇒ 报告面可见（不静默）", () => 
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+(() => {
 
-  it("936：假值 nudo 键（false）同样可见（且措辞说 falsy）", () => {
     const dir = projectWithNudo(false);
     try {
       const r = runCli(["check", "probe.js"], { cwd: dir });
@@ -1841,9 +1983,9 @@ describe("CLI：nudo 键形状非法 ⇒ 报告面可见（不静默）", () => 
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+(() => {
 
-  it("负控制：合法 nudo 对象 ⇒ 无 config-shape 诊断", () => {
     const dir = projectWithNudo({ check: { ignoreThrows: ["RangeError"] } });
     try {
       const r = runCli(["check", "--json", "probe.js"], { cwd: dir });
@@ -1852,11 +1994,24 @@ describe("CLI：nudo 键形状非法 ⇒ 报告面可见（不静默）", () => 
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 
 describe("CLI：配置形状诊断是 live 事实（磁盘缓存不得留痕/重复）", () => {
-  it("缓存命中轮：config-shape 仍恰 1 条（不重复）", () => {
+  it("缓存命中轮：config-shape 仍恰 1 条（不重复）；键被改好后：陈旧的 config-shape 告警不得留在缓存里", () => {
+(() => {
+
     const dir = projectWithNudo(true);
     try {
       const env = { NUDO_CACHE_DIR: join(dir, ".cache") };
@@ -1876,9 +2031,9 @@ describe("CLI：配置形状诊断是 live 事实（磁盘缓存不得留痕/重
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+(() => {
 
-  it("键被改好后：陈旧的 config-shape 告警不得留在缓存里", () => {
     const dir = projectWithNudo(true);
     try {
       const env = { NUDO_CACHE_DIR: join(dir, ".cache") };
@@ -1903,7 +2058,10 @@ describe("CLI：配置形状诊断是 live 事实（磁盘缓存不得留痕/重
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+});;
+
+  ;
 });
 
 /** 递归收集缓存条目文件 */
@@ -1994,7 +2152,9 @@ function count(haystack: string, needle: string): number {
 }
 
 describe("nudo.env 写成字符串：不展成逐字符 env 名列表（反向守护钉）", () => {
-  it("字符串 env：不裸崩 + 人类面产出 config-shape 形状告警", () => {
+  it("字符串 env：不裸崩 + 人类面产出 config-shape 形状告警；字符串 env：机器面（--json）恰一条 config-shape 告警（warning），且零条 env-unresolved；env 名列表不是逐字符：字符串 env ⇒ 0 条 env-unresolved；字符数组 env ⇒ 恰 4 条；env 列表被忽略：字符串 env ⇒ Buffer 不可用（env 侧不生效）；env:[\"node\"] ⇒ Buffer 可用；env 无关型代码：", () => {
+(() => {
+
     const { cwd, pkg } = makeProject('"node"', SRC_ENV_DEPENDENT);
     try {
       const r = runCli(["check", "a.js"], { cwd });
@@ -2014,9 +2174,9 @@ describe("nudo.env 写成字符串：不展成逐字符 env 名列表（反向�
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  })();
+(() => {
 
-  it("字符串 env：机器面（--json）恰一条 config-shape 告警（warning），且零条 env-unresolved", () => {
     const { cwd } = makeProject('"node"', SRC_ENV_DEPENDENT);
     try {
       const r = runCli(["check", "a.js", "--json"], { cwd });
@@ -2035,9 +2195,9 @@ describe("nudo.env 写成字符串：不展成逐字符 env 名列表（反向�
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  })();
+(() => {
 
-  it("env 名列表不是逐字符：字符串 env ⇒ 0 条 env-unresolved；字符数组 env ⇒ 恰 4 条", () => {
     // 被钉住的行为：字符串 env **不**产生任何逐字符 env 名
     const str = makeProject('"node"', SRC_ENV_DEPENDENT);
     try {
@@ -2060,9 +2220,9 @@ describe("nudo.env 写成字符串：不展成逐字符 env 名列表（反向�
     } finally {
       rmSync(chars.cwd, { recursive: true, force: true });
     }
-  });
+  })();
+(() => {
 
-  it("env 列表被忽略：字符串 env ⇒ Buffer 不可用（env 侧不生效）；env:[\"node\"] ⇒ Buffer 可用", () => {
     const str = makeProject('"node"', SRC_ENV_DEPENDENT);
     try {
       const r = runCli(["check", "a.js"], { cwd: str.cwd });
@@ -2084,9 +2244,9 @@ describe("nudo.env 写成字符串：不展成逐字符 env 名列表（反向�
     } finally {
       rmSync(arr.cwd, { recursive: true, force: true });
     }
-  });
+  })();
+(() => {
 
-  it("env 无关型代码：被忽略的 env 不制造假的 nudo:unknown-inference", () => {
     const { cwd } = makeProject('"node"', SRC_ENV_INDEPENDENT);
     try {
       const r = runCli(["check", "a.js"], { cwd });
@@ -2100,7 +2260,16 @@ describe("nudo.env 写成字符串：不展成逐字符 env 名列表（反向�
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -2169,7 +2338,9 @@ function project(): string {
 }
 
 describe("项目级 path env 按项目根解析（子目录文件也拿得到）", () => {
-  it("子目录文件：拿到 env ⇒ magic() => 42、无 env 告警、exit 0", { timeout: 90_000 }, () => {
+  it("子目录文件：拿到 env ⇒ magic() => 42、无 env 告警、exit 0；根目录文件：口径不变（magic() => 42、exit 0）；项目级 env 文件真缺时仍必须可见（nudo:env-unresolved 不许被过滤掉）", () => {
+(() => {
+
     const dir = project();
     const r = runCli(["check", join(dir, "src", "lib.js")]);
     const out = r.stdout + r.stderr;
@@ -2178,18 +2349,18 @@ describe("项目级 path env 按项目根解析（子目录文件也拿得到）
     expect(out).not.toContain("never");
     // 不得报 check 面从未请求过的路径（分析器通道按文件目录解析的旧记录）
     expect(out).not.toContain("env-unresolved");
-  });
+  })();
+(() => {
 
-  it("根目录文件：口径不变（magic() => 42、exit 0）", { timeout: 90_000 }, () => {
     const dir = project();
     const r = runCli(["check", join(dir, "rootlib.js")]);
     const out = r.stdout + r.stderr;
     expect(r.status, out).toBe(0);
     expect(out).toContain("magic() => 42");
     expect(out).not.toContain("env-unresolved");
-  });
+  })();
+(() => {
 
-  it("项目级 env 文件真缺时仍必须可见（nudo:env-unresolved 不许被过滤掉）", { timeout: 90_000 }, () => {
     const dir = project();
     writeFileSync(
       join(dir, "package.json"),
@@ -2204,7 +2375,12 @@ describe("项目级 path env 按项目根解析（子目录文件也拿得到）
     const r = runCli(["check", join(dir, "src", "lib.js")]);
     const out = r.stdout + r.stderr;
     expect(out).toContain("nudo:env-unresolved");
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
 
@@ -2273,7 +2449,9 @@ describe("-json 下用法错误也有机器可读信封（stdout 不得为空）
     });
   }
 
-  it("CLI：非 --json 面仍是 stderr 文案 + exit 1（旧口径不回归）", () => {
+  it("CLI：非 --json 面仍是 stderr 文案 + exit 1（旧口径不回归）；CLI：非 --json 面的组合拒绝仍是 stderr 文案（--fix + --watch）", () => {
+(() => {
+
     const { cwd } = makeProject();
     try {
       const r = runCliTsx(["check"], { cwd });
@@ -2283,9 +2461,9 @@ describe("-json 下用法错误也有机器可读信封（stdout 不得为空）
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  })();
+(() => {
 
-  it("CLI：非 --json 面的组合拒绝仍是 stderr 文案（--fix + --watch）", () => {
     const { cwd, file } = makeProject();
     try {
       const r = runCliTsx(["check", file, "--fix", "--watch"], { cwd });
@@ -2295,6 +2473,9 @@ describe("-json 下用法错误也有机器可读信封（stdout 不得为空）
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  })();
+});;
+
+  ;
 });
 });
