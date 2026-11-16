@@ -89,3 +89,8 @@ title	rootCause	gap	action	status	evidence
 "evaluator 面诊断也带 (nudo:code)（此前恒丢）"	"mock 目标文件不存在 ⇒ evaluator 面产出 `nudo:module-missing`（码在 `diag.code` 字段里，此前插件**从不读** ⇒ 码恒丢）； 断言：expect(mockMsg, JSON.stringify(msgs)).toBeDefined();；expect(mockMsg).toContain(\"(nudo:module-missing)\");"	没测该层	keep	keep	—
 "同一次构建里两类诊断同款结尾（ · (code) 分隔符归一）且码不重复"	"mock 目标文件不存在 ⇒ evaluator 面产出 `nudo:module-missing`（码在 `diag.code` 字段里，此前插件**从不读** ⇒ 码恒丢）； 断言：expect(coded.length, JSON.stringify(msgs)).toBe(msgs.length);；expect(codes.length, m).toBe(1);"	没测该层	keep	keep	—
 ```
+
+```audit-deleted
+title	reason	evidence
+插件对象带 enforce: 'pre'（排在 vite:esbuild 之前 ⇒ 看得到原始 TS 源码）	dup:插件对象带 enforce: 'pre'（排在 vite:esbuild 之前 ⇒ 看得到原始 TS 源码）（同文件两处逐字同体，保留首份）	commit:PENDING
+```

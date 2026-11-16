@@ -2598,9 +2598,7 @@ describe("vite-plugin-nudo enforce: 'pre'（.ts 源的契约不得被静默放�
     return { warnings, infos, failed, message };
   }
 
-  it("插件对象带 enforce: 'pre'（排在 vite:esbuild 之前 ⇒ 看得到原始 TS 源码）", () => {
-    expect(nudoPlugin().enforce).toBe("pre");
-  });
+  ;
 
   it(
     "真 vite build：.ts 源里的 @nudo:contract / @nudo:case 可见 ⇒ 门禁不再静默放绿",

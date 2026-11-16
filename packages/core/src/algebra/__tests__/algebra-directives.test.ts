@@ -312,17 +312,9 @@ describe("负控制（合法顶层位置不回归）", () => {
     ).toEqual(["node"]);
   });
 
-  it("文件头的 env 仍是文件级", () => {
-    expect(extractFileEnvNames(`/// @nudo:env node\nexport function f() { return 1; }\n`)).toEqual([
-      "node",
-    ]);
-  });
+  ;
 
-  it("class 体**之后**的顶层 env 仍是文件级", () => {
-    expect(
-      extractFileEnvNames(`export class A { m() {} }\n/// @nudo:env node\n`),
-    ).toEqual(["node"]);
-  });
+  ;
 });
 });
 

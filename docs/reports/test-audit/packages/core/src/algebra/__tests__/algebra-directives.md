@@ -153,3 +153,9 @@ title	rootCause	gap	action	status	evidence
 "合法 @nudo:contract 零 contract-syntax（不误伤）"	"`@nudo:contract` 的**粘连**形态（`@nudo:contractx …`）此前 **零诊断**地蒸发。 根因：段扫描用严格正则 `^@nudo:contract\\s+(.+)$`（标签后必须有分隔空白） ⇒ 粘连写法**整行不匹配**且**无 else 分支** ⇒ 契约整条不见 ⇒ 用户以为契约 生效了（**假绿**）； 断言：expect(r.issues.filter((i) => i.code === \"nudo:contract-syntax\")).toEqual([]);"	夹具漏形态	keep	keep	—
 "散文里的 @nudo:contract（行中提及）不算指令（不误伤）"	"`@nudo:contract` 的**粘连**形态（`@nudo:contractx …`）此前 **零诊断**地蒸发。 根因：段扫描用严格正则 `^@nudo:contract\\s+(.+)$`（标签后必须有分隔空白） ⇒ 粘连写法**整行不匹配**且**无 else 分支** ⇒ 契约整条不见 ⇒ 用户以为契约 生效了（**假绿**）； 断言：expect(r.issues.filter((i) => i.code === \"nudo:contract-syntax\")).toEqual([]);"	夹具漏形态	keep	keep	—
 ```
+
+```audit-deleted
+title	reason	evidence
+文件头的 env 仍是文件级	dup:文件头的 env 仍是文件级（同文件两处逐字同体，保留首份）	commit:PENDING
+class 体**之后**的顶层 env 仍是文件级	dup:class 体**之后**的顶层 env 仍是文件级（同文件两处逐字同体，保留首份）	commit:PENDING
+```

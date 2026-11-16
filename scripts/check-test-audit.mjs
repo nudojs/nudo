@@ -80,6 +80,17 @@ for (const suite of index.suites) {
     else if (m !== n) errors.push(`${docRel}: title count ${m} != ${n}: ${t}`);
   }
   for (const t of got.keys()) if (!want.has(t)) errors.push(`${docRel}: stale title: ${t}`);
+  const del = /```audit-deleted\n([\s\S]*?)```/.exec(doc);
+  if (del) {
+    const dl = del[1].split("\n").filter((l) => l.trim());
+    if (dl[0]?.trim() !== "title\treason\tevidence") errors.push(`bad deleted header: ${docRel}`);
+    for (const [i, l] of dl.slice(1).entries()) {
+      const r = l.split("\t");
+      if (r.length !== 3) { errors.push(`${docRel}:deleted:${i + 2} expected 3 columns`); continue; }
+      if (!/^(dup|incorrect):/.test(r[1])) errors.push(`${docRel}:deleted:${i + 2} reason needs dup:/incorrect:`);
+      if (!/commit:[0-9a-f]{7,}/.test(r[2]) && !(allowPending && /commit:PENDING/.test(r[2]))) errors.push(`${docRel}:deleted:${i + 2} missing commit evidence`);
+    }
+  }
 }
 
 if (errors.length) {
