@@ -6,149 +6,173 @@
 
 ```audit
 title	rootCause	gap	action	status	evidence
-"同名 static + 实例方法并存 ⇒ A.m() 跑静态体（native \"S\"）"	"类值接收者（`A.m()`）的方法派发**先查实例方法表** ⇒ 跑错方法 体、抛错方向**双向反转** ⇒ L2 门禁既**假绿**又**假红**。 **实例方法面不在其链上**（实例方法挂 A.prototype）⇒ - 同名 static + 实例方法并存 ⇒ `A.m()` 跑**静态**体；"	夹具漏形态	keep	keep	—
-"类值上无该静态成员 ⇒ 定抛 TypeError（native: A.m is not a function）"	"类值接收者（`A.m()`）的方法派发**先查实例方法表** ⇒ 跑错方法 体、抛错方向**双向反转** ⇒ L2 门禁既**假绿**又**假红**。 **实例方法面不在其链上**（实例方法挂 A.prototype）⇒ - 同名 static + 实例方法并存 ⇒ `A.m()` 跑**静态**体；"	夹具漏形态	keep	keep	—
-"control：实例接收者仍跑实例体（native \"I\"）"	"类值接收者（`A.m()`）的方法派发**先查实例方法表** ⇒ 跑错方法 体、抛错方向**双向反转** ⇒ L2 门禁既**假绿**又**假红**。 **实例方法面不在其链上**（实例方法挂 A.prototype）⇒ - 同名 static + 实例方法并存 ⇒ `A.m()` 跑**静态**体；"	夹具漏形态	keep	keep	—
-"control：只有静态方法 ⇒ A.m() 跑静态体（native \"S\"）"	"类值接收者（`A.m()`）的方法派发**先查实例方法表** ⇒ 跑错方法 体、抛错方向**双向反转** ⇒ L2 门禁既**假绿**又**假红**。 **实例方法面不在其链上**（实例方法挂 A.prototype）⇒ - 同名 static + 实例方法并存 ⇒ `A.m()` 跑**静态**体；"	夹具漏形态	keep	keep	—
-"control：静态方法沿构造器继承链（B extends A ⇒ B.m() → \"S\"）"	"测试「control：静态方法沿构造器继承链（B extends A ⇒ B.m() → \"S\"）」；原文件无独立根因注释，需按所在 describe 的契约人工复核。"	夹具漏形态	keep	keep	—
-"差分对账（native oracle）：改前 MISMATCH / 改后一致"	"类值接收者（`A.m()`）的方法派发**先查实例方法表** ⇒ 跑错方法 体、抛错方向**双向反转** ⇒ L2 门禁既**假绿**又**假红**。 **实例方法面不在其链上**（实例方法挂 A.prototype）⇒ - 同名 static + 实例方法并存 ⇒ `A.m()` 跑**静态**体； 断言：expect(；expect(diffBody(`class A1035d { m(){ return \"I\"; } } return A1035d.m();`)).toBeNull();"	夹具漏形态	keep	keep	—
-"const g = A.m（静态侧）⇒ g() 跑静态体（native \"S\"）"	"原生：`A.m` 取到的是**构造器上的静态方法**，`a.m` 取到的是**原型上的 实例方法**——两个不同函数对象 ⇒ 摘下调用各跑各自的方法体（接收者恒 undefined，但方法体是确定的）。 引擎此前：方法值的派发按 (home, name) 反查注册表 ⇒ 同名并存时**不可判** ⇒ 一律「取不到方法」⇒ 假抛 TypeError（FALSE-THROW）。"	夹具漏形态	keep	keep	—
-"const g = new A().m（实例侧）⇒ g() 跑实例体（native \"I\"）"	"原生：`A.m` 取到的是**构造器上的静态方法**，`a.m` 取到的是**原型上的 实例方法**——两个不同函数对象 ⇒ 摘下调用各跑各自的方法体（接收者恒 undefined，但方法体是确定的）。 引擎此前：方法值的派发按 (home, name) 反查注册表 ⇒ 同名并存时**不可判** ⇒ 一律「取不到方法」⇒ 假抛 TypeError（FALSE-THROW）。"	夹具漏形态	keep	keep	—
-"借用调用：g.call(A) ⇒ 跑静态体（native \"S\"）"	"原生：`A.m` 取到的是**构造器上的静态方法**，`a.m` 取到的是**原型上的 实例方法**——两个不同函数对象 ⇒ 摘下调用各跑各自的方法体（接收者恒 undefined，但方法体是确定的）。 引擎此前：方法值的派发按 (home, name) 反查注册表 ⇒ 同名并存时**不可判** ⇒ 一律「取不到方法」⇒ 假抛 TypeError（FALSE-THROW）。"	夹具漏形态	keep	keep	—
-"control：只有静态方法 ⇒ 摘下调用跑静态体（native \"S\"）"	"原生：`A.m` 取到的是**构造器上的静态方法**，`a.m` 取到的是**原型上的 实例方法**——两个不同函数对象 ⇒ 摘下调用各跑各自的方法体（接收者恒 undefined，但方法体是确定的）。 引擎此前：方法值的派发按 (home, name) 反查注册表 ⇒ 同名并存时**不可判** ⇒ 一律「取不到方法」⇒ 假抛 TypeError（FALSE-THROW）。"	夹具漏形态	keep	keep	—
-"control：只有实例方法 ⇒ 摘下调用跑实例体（native \"I\"）"	"原生：`A.m` 取到的是**构造器上的静态方法**，`a.m` 取到的是**原型上的 实例方法**——两个不同函数对象 ⇒ 摘下调用各跑各自的方法体（接收者恒 undefined，但方法体是确定的）。 引擎此前：方法值的派发按 (home, name) 反查注册表 ⇒ 同名并存时**不可判** ⇒ 一律「取不到方法」⇒ 假抛 TypeError（FALSE-THROW）。"	夹具漏形态	keep	keep	—
-"差分对账（native oracle）：改前 FALSE-THROW / 改后一致"	"原生：`A.m` 取到的是**构造器上的静态方法**，`a.m` 取到的是**原型上的 实例方法**——两个不同函数对象 ⇒ 摘下调用各跑各自的方法体（接收者恒 undefined，但方法体是确定的）。 引擎此前：方法值的派发按 (home, name) 反查注册表 ⇒ 同名并存时**不可判** ⇒ 一律「取不到方法」⇒ 假抛 TypeError（FALSE-THROW）。 断言：expect(；expect("	夹具漏形态	keep	keep	—
-"charAt(0, 1n) → \"a\"（此前判「必抛 TypeError」）"	"`String.prototype.charAt` / `charCodeAt` / `codePointAt` / `at` **没有第二实参**（元数均为 1）。 根因：`algebra/methods.ts` 的字符串方法表把 7 个**元数不同**的方法塞进 同一 case 分支，且该分支**无条件**校验 `args[1]`： `validateIndexArg(args[1], \"end\")` ⇒ `\"abc\".charAt(0, 1n)` 凭空判「必抛 TypeError」（原生正常返回 \"a\"）⇒ throws 域折 never ⇒ **L2 门禁假红**。 断言：expect(litValue(r.result))"	夹具漏形态	keep	keep	—
-"charCodeAt(0, 1n) → 97"	"`String.prototype.charAt` / `charCodeAt` / `codePointAt` / `at` **没有第二实参**（元数均为 1）。 根因：`algebra/methods.ts` 的字符串方法表把 7 个**元数不同**的方法塞进 同一 case 分支，且该分支**无条件**校验 `args[1]`： `validateIndexArg(args[1], \"end\")` ⇒ `\"abc\".charAt(0, 1n)` 凭空判「必抛 TypeError」（原生正常返回 \"a\"）⇒ throws 域折 never ⇒ **L2 门禁假红**。 断言：expect(litValue(r.result))"	夹具漏形态	keep	keep	—
-"codePointAt(0, 1n) → 97"	"`String.prototype.charAt` / `charCodeAt` / `codePointAt` / `at` **没有第二实参**（元数均为 1）。 根因：`algebra/methods.ts` 的字符串方法表把 7 个**元数不同**的方法塞进 同一 case 分支，且该分支**无条件**校验 `args[1]`： `validateIndexArg(args[1], \"end\")` ⇒ `\"abc\".charAt(0, 1n)` 凭空判「必抛 TypeError」（原生正常返回 \"a\"）⇒ throws 域折 never ⇒ **L2 门禁假红**。 断言：expect(litValue(r.result))"	夹具漏形态	keep	keep	—
-"at(0, 1n) → \"a\""	"断言：expect(litValue(r.result)).toEqual({ ok: true, value: \"a\" });；expect(r.throws === undefined || r.throws.shape.k === \"never\").toBe(true);"	没测该层	keep	keep	—
-"对照组：真有两实参的方法仍校验第二实参（slice / substring / substr）"	"`String.prototype.charAt` / `charCodeAt` / `codePointAt` / `at` **没有第二实参**（元数均为 1）。 根因：`algebra/methods.ts` 的字符串方法表把 7 个**元数不同**的方法塞进 同一 case 分支，且该分支**无条件**校验 `args[1]`： `validateIndexArg(args[1], \"end\")` ⇒ `\"abc\".charAt(0, 1n)` 凭空判「必抛 TypeError」（原生正常返回 \"a\"）⇒ throws 域折 never ⇒ **L2 门禁假红**。 断言：expect(throwsError(r.throw"	夹具漏形态	keep	keep	—
-"对照组：单参调用仍正常折叠"	"断言：expect(litValue(r.result)).toEqual({ ok: true, value: \"a\" });"	没测该层	keep	keep	—
-"A 模块实例的构造体与自有字段不被 B 模块的同名类顶掉"	"断言：expect(lit(d, \"readA\")).toBe(1);"	没测该层	keep	keep	—
-"B 模块实例保持自己的字段（对照：不是把两边都改坏）"	"断言：expect(lit(d, \"readB\")).toBe(2);"	没测该层	keep	keep	—
-"A 模块实例上不存在的成员判 undefined（不读到 B 的槽）"	"夹具（与 tmp/bug-report/sections/.md 的 repro 同构）： - a.js 定义 `class Config { this.a = 1 }` + `kind() { return \"A\" }` - b.js 定义 `class Config { this.b = 2 }` + `kind() { return \"B\" }` - d2.js 同时 import 两个模块，各自 `new Config()` 后读成员 修前（注册表裸名 last-wins）： - `mkA()` 的构造体解析到 **B 的 spec** ⇒ `this.b = 2` 落地、`this.a` 从未 初始化 ⇒ `mkA().a"	夹具漏形态	keep	keep	—
-"B 模块实例上不存在的成员判 undefined（不读到 A 的槽）"	"夹具（与 tmp/bug-report/sections/.md 的 repro 同构）： - a.js 定义 `class Config { this.a = 1 }` + `kind() { return \"A\" }` - b.js 定义 `class Config { this.b = 2 }` + `kind() { return \"B\" }` - d2.js 同时 import 两个模块，各自 `new Config()` 后读成员 修前（注册表裸名 last-wins）： - `mkA()` 的构造体解析到 **B 的 spec** ⇒ `this.b = 2` 落地、`this.a` 从未 初始化 ⇒ `mkA().a"	夹具漏形态	keep	keep	—
-"实例方法链首环用值自己的规格：mkA().kind() 恒为 A 的方法体"	"夹具（与 tmp/bug-report/sections/.md 的 repro 同构）： - a.js 定义 `class Config { this.a = 1 }` + `kind() { return \"A\" }` - b.js 定义 `class Config { this.b = 2 }` + `kind() { return \"B\" }` - d2.js 同时 import 两个模块，各自 `new Config()` 后读成员 修前（注册表裸名 last-wins）： - `mkA()` 的构造体解析到 **B 的 spec** ⇒ `this.b = 2` 落地、`this.a` 从未 初始化 ⇒ `mkA().a"	夹具漏形态	keep	keep	—
-"a) 无界迭代器：break 臂可达 ⇒ IteratorClose 的 return() 计入出口（宿主同结论）"	"无界（next() 永不报 done）用户迭代器的 for-of 代表元必须是 **元素域**（已采集元素 join / unknown），不得取首个具体元素去**决定**分支。 修后：代表元 = 整个未知元素域（采集触顶 / 条目过多折 unknown）⇒ 条件两侧 都探索 ⇒ break 臂可达，`return()` 对出口绑定的写不再丢失。 断言：expect(litValue(r.result)).toEqual({ ok: true, value: \"CLOSED\" });"	没测该层	keep	keep	—
-"b) 有界迭代器（报 done）仍逐元素精确展开：break 关闭 ⇒ CLOSED，自然耗尽 ⇒ 不关闭 ⇒ NOT"	"无界（next() 永不报 done）用户迭代器的 for-of 代表元必须是 **元素域**（已采集元素 join / unknown），不得取首个具体元素去**决定**分支。 修后：代表元 = 整个未知元素域（采集触顶 / 条目过多折 unknown）⇒ 条件两侧 都探索 ⇒ break 臂可达，`return()` 对出口绑定的写不再丢失。 断言：expect(litValue(withBreak.result)).toEqual({ ok: true, value: \"CLOSED\" });；expect(litValue(exhausted.result)).toEqual({ ok: true, value: \"NOT\""	没测该层	keep	keep	—
-"b2) 有界迭代仍精确：0+1+2 折 3 #exact（不得因代表元抽象而宽化）"	"无界（next() 永不报 done）用户迭代器的 for-of 代表元必须是 **元素域**（已采集元素 join / unknown），不得取首个具体元素去**决定**分支。 修后：代表元 = 整个未知元素域（采集触顶 / 条目过多折 unknown）⇒ 条件两侧 都探索 ⇒ break 臂可达，`return()` 对出口绑定的写不再丢失。 断言：expect(litValue(r.result)).toEqual({ ok: true, value: 3 });；expect(formatAbs(r.result)).toContain(\"#exact\");"	没测该层	keep	keep	—
-"c) 循环变量 = 元素域抽象（不折首元素 0）——修前 `return x` 折 0 #exact"	"无界（next() 永不报 done）用户迭代器的 for-of 代表元必须是 **元素域**（已采集元素 join / unknown），不得取首个具体元素去**决定**分支。 修后：代表元 = 整个未知元素域（采集触顶 / 条目过多折 unknown）⇒ 条件两侧 都探索 ⇒ break 臂可达，`return()` 对出口绑定的写不再丢失。 断言：expect(r.result.shape.k).toBe(\"unknown\");；expect(litValue(r.result)).not.toEqual({ ok: true, value: 0 });"	没测该层	keep	keep	—
-"c2) 代表元抽象后分支两侧都探索——修前 out 折 \"miss\" #exact"	"无界（next() 永不报 done）用户迭代器的 for-of 代表元必须是 **元素域**（已采集元素 join / unknown），不得取首个具体元素去**决定**分支。 修后：代表元 = 整个未知元素域（采集触顶 / 条目过多折 unknown）⇒ 条件两侧 都探索 ⇒ break 臂可达，`return()` 对出口绑定的写不再丢失。 断言：expect(litValue(r.result)).not.toEqual({ ok: true, value: \"miss\" });"	没测该层	keep	keep	—
-"A.prototype.m = fn ⇒ new A().m() 跑用户函数（native 2）"	"引擎此前：写侧（$set / this 成员写 / defineProperty）把值落进 brand 内层 obj 槽面（读面 chainProtoSlotOf 看得见），但**派发面只查注册表** ⇒ monkey-patch 全部静默失效（跑的还是旧方法体）； 写成非函数时也**不抛** TypeError。"	没测该层	keep	keep	—
-"a.m = fn ⇒ a.m() 跑用户函数（native 5）"	"引擎此前：写侧（$set / this 成员写 / defineProperty）把值落进 brand 内层 obj 槽面（读面 chainProtoSlotOf 看得见），但**派发面只查注册表** ⇒ monkey-patch 全部静默失效（跑的还是旧方法体）； 写成非函数时也**不抛** TypeError。"	没测该层	keep	keep	—
-"ctor 内 this.m = fn ⇒ new A().m() 跑用户函数（native 3）"	"引擎此前：写侧（$set / this 成员写 / defineProperty）把值落进 brand 内层 obj 槽面（读面 chainProtoSlotOf 看得见），但**派发面只查注册表** ⇒ monkey-patch 全部静默失效（跑的还是旧方法体）； 写成非函数时也**不抛** TypeError。"	没测该层	keep	keep	—
-"A.prototype.m = 5 ⇒ 调用定抛 TypeError（native: not a function）"	"引擎此前：写侧（$set / this 成员写 / defineProperty）把值落进 brand 内层 obj 槽面（读面 chainProtoSlotOf 看得见），但**派发面只查注册表** ⇒ monkey-patch 全部静默失效（跑的还是旧方法体）； 写成非函数时也**不抛** TypeError。"	没测该层	keep	keep	—
-"Object.defineProperty(A.prototype,'m',{value:fn}) ⇒ 跑用户函数（native 4）"	"引擎此前：写侧（$set / this 成员写 / defineProperty）把值落进 brand 内层 obj 槽面（读面 chainProtoSlotOf 看得见），但**派发面只查注册表** ⇒ monkey-patch 全部静默失效（跑的还是旧方法体）； 写成非函数时也**不抛** TypeError。"	没测该层	keep	keep	—
-"实例自有槽遮住原型上的写（native 6）"	"引擎此前：写侧（$set / this 成员写 / defineProperty）把值落进 brand 内层 obj 槽面（读面 chainProtoSlotOf 看得见），但**派发面只查注册表** ⇒ monkey-patch 全部静默失效（跑的还是旧方法体）； 写成非函数时也**不抛** TypeError。"	没测该层	keep	keep	—
-"control：未打补丁 ⇒ 仍走注册表方法体（native 1）"	"引擎此前：写侧（$set / this 成员写 / defineProperty）把值落进 brand 内层 obj 槽面（读面 chainProtoSlotOf 看得见），但**派发面只查注册表** ⇒ monkey-patch 全部静默失效（跑的还是旧方法体）； 写成非函数时也**不抛** TypeError。"	没测该层	keep	keep	—
-"control：原型上新名字（注册表无此名）⇒ 走写面（native 7）"	"引擎此前：写侧（$set / this 成员写 / defineProperty）把值落进 brand 内层 obj 槽面（读面 chainProtoSlotOf 看得见），但**派发面只查注册表** ⇒ monkey-patch 全部静默失效（跑的还是旧方法体）； 写成非函数时也**不抛** TypeError。"	没测该层	keep	keep	—
-"差分对账（native oracle）：改前 MISMATCH / 改后一致"	"引擎此前：写侧（$set / this 成员写 / defineProperty）把值落进 brand 内层 obj 槽面（读面 chainProtoSlotOf 看得见），但**派发面只查注册表** ⇒ monkey-patch 全部静默失效（跑的还是旧方法体）； 写成非函数时也**不抛** TypeError。 断言：expect(；expect("	没测该层	keep	keep	—
-"派生构造器不调 super()：new B() 定抛 ReferenceError"	"派生类构造器**未调 super()** / **重复调 super()** ⇒ ReferenceError。 - 基类构造器 / 隐式派生构造器（无显式 ctor）⇒ 不抛。 断言：expect(isNever(r.result)).toBe(true);；expect(throwsError(r.throws, \"ReferenceError\")).toBe(true);"	夹具漏形态	keep	keep	—
-"派生构造器重复调 super()：第二次定抛 ReferenceError"	"派生类构造器**未调 super()** / **重复调 super()** ⇒ ReferenceError。 - 基类构造器 / 隐式派生构造器（无显式 ctor）⇒ 不抛。 断言：expect(isNever(r.result)).toBe(true);；expect(throwsError(r.throws, \"ReferenceError\")).toBe(true);"	夹具漏形态	keep	keep	—
-"正常 super() 路径不受影响（值仍精确）"	"派生类构造器**未调 super()** / **重复调 super()** ⇒ ReferenceError。 - 基类构造器 / 隐式派生构造器（无显式 ctor）⇒ 不抛。 断言：expect("	夹具漏形态	keep	keep	—
-"基类构造器不受影响（无 super 需求）"	"派生类构造器**未调 super()** / **重复调 super()** ⇒ ReferenceError。 - 基类构造器 / 隐式派生构造器（无显式 ctor）⇒ 不抛。 断言：expect("	夹具漏形态	keep	keep	—
-"隐式派生构造器（无显式 ctor）不受影响"	"派生类构造器**未调 super()** / **重复调 super()** ⇒ ReferenceError。 - 基类构造器 / 隐式派生构造器（无显式 ctor）⇒ 不抛。 断言：expect("	夹具漏形态	keep	keep	—
-"多层派生链：内层 super() 不得被误判成外层「已调」（各层各记各的）"	"派生类构造器**未调 super()** / **重复调 super()** ⇒ ReferenceError。 - 基类构造器 / 隐式派生构造器（无显式 ctor）⇒ 不抛。 断言：expect("	夹具漏形态	keep	keep	—
-"类实例目标：源属性不丢"	"断言：expect(litValue(r.result)).toEqual({ ok: true, value: 2 });"	没测该层	keep	keep	—
-"类实例目标：自有键集合含源属性"	"断言：expect(litValue(r.result)).toEqual({ ok: true, value: \"a,b\" });"	没测该层	keep	keep	—
-"Error 实例目标：源属性不丢"	"派生类构造器**未调 super()** / **重复调 super()** ⇒ ReferenceError。 - 基类构造器 / 隐式派生构造器（无显式 ctor）⇒ 不抛。 断言：expect(litValue(r.result)).toEqual({ ok: true, value: \"EACCES\" });"	夹具漏形态	keep	keep	—
-"Date 实例目标：源属性不丢"	"断言：expect(litValue(r.result)).toEqual({ ok: true, value: 2 });"	没测该层	keep	keep	—
-"Map 实例目标：源属性不丢"	"断言：expect(litValue(r.result)).toEqual({ ok: true, value: 2 });"	没测该层	keep	keep	—
-"函数构造实例目标：源属性不丢"	"断言：expect(litValue(r.result)).toEqual({ ok: true, value: 2 });"	没测该层	keep	keep	—
-"父类 getter-only 同名访问器不拦截子类字段落地"	"实例字段落地必须是 **CreateDataPropertyOrThrow**（原生 DefineField）——在接收者上**创建自有数据属性**，**不沿原型链派发 setter**。 }` → `new B().x === 2`（字段是 B 实例的自有数据属性，父类 getter 不参与）。 断言：expect(isNever(r.result)).toBe(false);；expect(throwsError(r.throws, \"TypeError\")).toBe(false);"	没测该层	keep	keep	—
-"父类 setter-only：字段落地不调父类 setter（父类侧槽保持缺席）"	"实例字段落地必须是 **CreateDataPropertyOrThrow**（原生 DefineField）——在接收者上**创建自有数据属性**，**不沿原型链派发 setter**。 }` → `new B().x === 2`（字段是 B 实例的自有数据属性，父类 getter 不参与）。 断言：expect("	没测该层	keep	keep	—
-"父类 getter+setter 同款：字段落地仍不派发父类访问器"	"实例字段落地必须是 **CreateDataPropertyOrThrow**（原生 DefineField）——在接收者上**创建自有数据属性**，**不沿原型链派发 setter**。 }` → `new B().x === 2`（字段是 B 实例的自有数据属性，父类 getter 不参与）。 断言：expect("	没测该层	keep	keep	—
-"字段是自有可枚举属性（Object.keys 可见）"	"实例字段落地必须是 **CreateDataPropertyOrThrow**（原生 DefineField）——在接收者上**创建自有数据属性**，**不沿原型链派发 setter**。 }` → `new B().x === 2`（字段是 B 实例的自有数据属性，父类 getter 不参与）。 断言：expect("	没测该层	keep	keep	—
-"无访问器干扰的普通字段路径不受影响"	"断言：expect("	没测该层	keep	keep	—
-"typeof it.next → \"function\"（原生协议面；此前 \"undefined\"）"	"`String.prototype.matchAll` 的结果必须**是迭代器**。 原生 `matchAll` 返回 **RegExp String Iterator**： - `typeof it.next` → \"function\"（此前折 exact **\"undefined\"**——wrong-exact） - `typeof it[Symbol.iterator]` → \"function\"（协议面缺失） - `it.next()` → `{value: <匹配项 RegExpExecArray>, done: false}`； 断言：expect(litValue(r.result)).toEqual({ ok: tr"	没测该层	keep	keep	—
-"typeof it[Symbol.iterator] → \"function\""	"`String.prototype.matchAll` 的结果必须**是迭代器**。 原生 `matchAll` 返回 **RegExp String Iterator**： - `typeof it.next` → \"function\"（此前折 exact **\"undefined\"**——wrong-exact） - `typeof it[Symbol.iterator]` → \"function\"（协议面缺失） - `it.next()` → `{value: <匹配项 RegExpExecArray>, done: false}`； 断言：expect(litValue(r.result)).toEqual({ ok: tr"	没测该层	keep	keep	—
-"it.next().value[0] → 首个匹配项"	"`String.prototype.matchAll` 的结果必须**是迭代器**。 原生 `matchAll` 返回 **RegExp String Iterator**： - `typeof it.next` → \"function\"（此前折 exact **\"undefined\"**——wrong-exact） - `typeof it[Symbol.iterator]` → \"function\"（协议面缺失） - `it.next()` → `{value: <匹配项 RegExpExecArray>, done: false}`； 断言：expect(litValue(r.result)).toEqual({ ok: tr"	没测该层	keep	keep	—
-"it.next() 逐次推进同一游标（第二次 → 第二项）"	"`String.prototype.matchAll` 的结果必须**是迭代器**。 原生 `matchAll` 返回 **RegExp String Iterator**： - `typeof it.next` → \"function\"（此前折 exact **\"undefined\"**——wrong-exact） - `typeof it[Symbol.iterator]` → \"function\"（协议面缺失） - `it.next()` → `{value: <匹配项 RegExpExecArray>, done: false}`； 断言：expect(litValue(r.result)).toEqual({ ok: tr"	没测该层	keep	keep	—
-"耗尽后 done → true、value → undefined"	"`String.prototype.matchAll` 的结果必须**是迭代器**。 原生 `matchAll` 返回 **RegExp String Iterator**： - `typeof it.next` → \"function\"（此前折 exact **\"undefined\"**——wrong-exact） - `typeof it[Symbol.iterator]` → \"function\"（协议面缺失） - `it.next()` → `{value: <匹配项 RegExpExecArray>, done: false}`； 断言：expect(litValue(r.result)).toEqual({ ok: tr"	没测该层	keep	keep	—
-"Object.prototype.toString.call(it) → \"[object RegExp String Iterator]\""	"`String.prototype.matchAll` 的结果必须**是迭代器**。 原生 `matchAll` 返回 **RegExp String Iterator**： - `typeof it.next` → \"function\"（此前折 exact **\"undefined\"**——wrong-exact） - `typeof it[Symbol.iterator]` → \"function\"（协议面缺失） - `it.next()` → `{value: <匹配项 RegExpExecArray>, done: false}`； 断言：expect(litValue(r.result)).toEqual({ ok: tr"	没测该层	keep	keep	—
-"协议槽是原型的（非自有可枚举）：Object.keys 空、hasOwnProperty 假、in 真"	"`String.prototype.matchAll` 的结果必须**是迭代器**。 原生 `matchAll` 返回 **RegExp String Iterator**： - `typeof it.next` → \"function\"（此前折 exact **\"undefined\"**——wrong-exact） - `typeof it[Symbol.iterator]` → \"function\"（协议面缺失） - `it.next()` → `{value: <匹配项 RegExpExecArray>, done: false}`； 断言：expect(litValue(r.result)).toEqual({ ok: tr"	没测该层	keep	keep	—
-"展开 / for-of 仍按侧表精确迭代（对照组）"	"`String.prototype.matchAll` 的结果必须**是迭代器**。 原生 `matchAll` 返回 **RegExp String Iterator**： - `typeof it.next` → \"function\"（此前折 exact **\"undefined\"**——wrong-exact） - `typeof it[Symbol.iterator]` → \"function\"（协议面缺失） - `it.next()` → `{value: <匹配项 RegExpExecArray>, done: false}`； 断言：expect(litValue(r.result)).toEqual({ ok: tr"	没测该层	keep	keep	—
-"宿主构造器返回数组：new F() 是数组"	"引擎此前把「对象」窄化成 `brand|obj` 两个形态 ⇒ 数组 / 函数返回被静默 换回 this（`Array.isArray` 假 false、`instanceof` 假 true）。 断言：expect("	夹具漏形态	keep	keep	—
-"宿主构造器返回数组：内容可读（不是被换回的 this）"	"引擎此前把「对象」窄化成 `brand|obj` 两个形态 ⇒ 数组 / 函数返回被静默 换回 this（`Array.isArray` 假 false、`instanceof` 假 true）。 断言：expect("	夹具漏形态	keep	keep	—
-"宿主构造器返回函数：typeof new F() === 'function'"	"引擎此前把「对象」窄化成 `brand|obj` 两个形态 ⇒ 数组 / 函数返回被静默 换回 this（`Array.isArray` 假 false、`instanceof` 假 true）。 断言：expect("	夹具漏形态	keep	keep	—
-"宿主构造器返回箭头函数：typeof new F() === 'function'"	"引擎此前把「对象」窄化成 `brand|obj` 两个形态 ⇒ 数组 / 函数返回被静默 换回 this（`Array.isArray` 假 false、`instanceof` 假 true）。 断言：expect("	夹具漏形态	keep	keep	—
-"宿主构造器返回原始值：忽略并返回 this（typeof 仍 'object'）"	"引擎此前把「对象」窄化成 `brand|obj` 两个形态 ⇒ 数组 / 函数返回被静默 换回 this（`Array.isArray` 假 false、`instanceof` 假 true）。 断言：expect("	夹具漏形态	keep	keep	—
-"宿主构造器返回普通对象：仍用它（既有口径不退化）"	"断言：expect("	没测该层	keep	keep	—
-"类构造器返回数组：new C() 是数组（既有口径不退化）"	"引擎此前把「对象」窄化成 `brand|obj` 两个形态 ⇒ 数组 / 函数返回被静默 换回 this（`Array.isArray` 假 false、`instanceof` 假 true）。 断言：expect("	夹具漏形态	keep	keep	—
-"Number.prototype.toLocaleString 保留千分位（此前折成 toString）"	"两处根因（族 03 报告 + 实测）： 1. `exec/class/invoke.ts` number 臂把 `toLocaleString` **重定向成宿主 `toString`** ⇒ 值错（丢千分位 / `-0` / 指数形态）： `(1234567.5).toLocaleString()` 原生 \"1,234,567.5\"、引擎 \"1234567.5\"； 2. 三臂（number / bigint / 字符串 `toLocaleUpperCase|toLocaleLowerCase`） **都不校验 locales 实参** ⇒ `null`（原生 TypeError）、非法 language tag（原生 RangeE"	夹具漏形态	keep	keep	—
-"Number.prototype.toLocaleString 保留 -0 的符号"	"两处根因（族 03 报告 + 实测）： 1. `exec/class/invoke.ts` number 臂把 `toLocaleString` **重定向成宿主 `toString`** ⇒ 值错（丢千分位 / `-0` / 指数形态）： `(1234567.5).toLocaleString()` 原生 \"1,234,567.5\"、引擎 \"1234567.5\"； 2. 三臂（number / bigint / 字符串 `toLocaleUpperCase|toLocaleLowerCase`） **都不校验 locales 实参** ⇒ `null`（原生 TypeError）、非法 language tag（原生 RangeE"	夹具漏形态	keep	keep	—
-"Number.prototype.toLocaleString 保留指数形态的分组展开"	"两处根因（族 03 报告 + 实测）： 1. `exec/class/invoke.ts` number 臂把 `toLocaleString` **重定向成宿主 `toString`** ⇒ 值错（丢千分位 / `-0` / 指数形态）： `(1234567.5).toLocaleString()` 原生 \"1,234,567.5\"、引擎 \"1234567.5\"； 2. 三臂（number / bigint / 字符串 `toLocaleUpperCase|toLocaleLowerCase`） **都不校验 locales 实参** ⇒ `null`（原生 TypeError）、非法 language tag（原生 RangeE"	夹具漏形态	keep	keep	—
-"BigInt.prototype.toLocaleString 保留千分位"	"两处根因（族 03 报告 + 实测）： 1. `exec/class/invoke.ts` number 臂把 `toLocaleString` **重定向成宿主 `toString`** ⇒ 值错（丢千分位 / `-0` / 指数形态）： `(1234567.5).toLocaleString()` 原生 \"1,234,567.5\"、引擎 \"1234567.5\"； 2. 三臂（number / bigint / 字符串 `toLocaleUpperCase|toLocaleLowerCase`） **都不校验 locales 实参** ⇒ `null`（原生 TypeError）、非法 language tag（原生 RangeE"	夹具漏形态	keep	keep	—
-"默认 locale 也不再折成 toString 的裸数字串"	"两处根因（族 03 报告 + 实测）： 1. `exec/class/invoke.ts` number 臂把 `toLocaleString` **重定向成宿主 `toString`** ⇒ 值错（丢千分位 / `-0` / 指数形态）： `(1234567.5).toLocaleString()` 原生 \"1,234,567.5\"、引擎 \"1234567.5\"； 2. 三臂（number / bigint / 字符串 `toLocaleUpperCase|toLocaleLowerCase`） **都不校验 locales 实参** ⇒ `null`（原生 TypeError）、非法 language tag（原生 RangeE"	夹具漏形态	keep	keep	—
-"locales 为 null → 确定 TypeError（number）"	"两处根因（族 03 报告 + 实测）： 1. `exec/class/invoke.ts` number 臂把 `toLocaleString` **重定向成宿主 `toString`** ⇒ 值错（丢千分位 / `-0` / 指数形态）： `(1234567.5).toLocaleString()` 原生 \"1,234,567.5\"、引擎 \"1234567.5\"； 2. 三臂（number / bigint / 字符串 `toLocaleUpperCase|toLocaleLowerCase`） **都不校验 locales 实参** ⇒ `null`（原生 TypeError）、非法 language tag（原生 RangeE"	夹具漏形态	keep	keep	—
-"locales 为 null → 确定 TypeError（bigint）"	"两处根因（族 03 报告 + 实测）： 1. `exec/class/invoke.ts` number 臂把 `toLocaleString` **重定向成宿主 `toString`** ⇒ 值错（丢千分位 / `-0` / 指数形态）： `(1234567.5).toLocaleString()` 原生 \"1,234,567.5\"、引擎 \"1234567.5\"； 2. 三臂（number / bigint / 字符串 `toLocaleUpperCase|toLocaleLowerCase`） **都不校验 locales 实参** ⇒ `null`（原生 TypeError）、非法 language tag（原生 RangeE"	夹具漏形态	keep	keep	—
-"locales 为 null → 确定 TypeError（字符串 toLocaleUpperCase）"	"两处根因（族 03 报告 + 实测）： 1. `exec/class/invoke.ts` number 臂把 `toLocaleString` **重定向成宿主 `toString`** ⇒ 值错（丢千分位 / `-0` / 指数形态）： `(1234567.5).toLocaleString()` 原生 \"1,234,567.5\"、引擎 \"1234567.5\"； 2. 三臂（number / bigint / 字符串 `toLocaleUpperCase|toLocaleLowerCase`） **都不校验 locales 实参** ⇒ `null`（原生 TypeError）、非法 language tag（原生 RangeE"	夹具漏形态	keep	keep	—
-"locales 为非法 language tag → 确定 RangeError"	"两处根因（族 03 报告 + 实测）： 1. `exec/class/invoke.ts` number 臂把 `toLocaleString` **重定向成宿主 `toString`** ⇒ 值错（丢千分位 / `-0` / 指数形态）： `(1234567.5).toLocaleString()` 原生 \"1,234,567.5\"、引擎 \"1234567.5\"； 2. 三臂（number / bigint / 字符串 `toLocaleUpperCase|toLocaleLowerCase`） **都不校验 locales 实参** ⇒ `null`（原生 TypeError）、非法 language tag（原生 RangeE"	夹具漏形态	keep	keep	—
-"无实参 / 非 string 实参 → 仍 total（原生忽略 symbol / 数字 locales）"	"两处根因（族 03 报告 + 实测）： 1. `exec/class/invoke.ts` number 臂把 `toLocaleString` **重定向成宿主 `toString`** ⇒ 值错（丢千分位 / `-0` / 指数形态）： `(1234567.5).toLocaleString()` 原生 \"1,234,567.5\"、引擎 \"1234567.5\"； 2. 三臂（number / bigint / 字符串 `toLocaleUpperCase|toLocaleLowerCase`） **都不校验 locales 实参** ⇒ `null`（原生 TypeError）、非法 language tag（原生 RangeE"	夹具漏形态	keep	keep	—
-"search(\"(\") → SyntaxError（此前 throws 域折 never）"	"`String.prototype.search` / `match` 的**无效字符串模式**必须 进 throws 面（确定 SyntaxError）。 根因：`exec/class-regex.ts` 的 `stringRegexMethod` 把模式编译失败 `catch { return undefined }` ——「编译失败」与「本臂不接管」混成同一 哨兵 ⇒ 回落抽象臂（search → numPrim / match → matchResultDomain） ⇒ **throws 域折 never**（假 no-throw，L2 门禁假绿）。 断言：expect(throwsError(r.throws, \"Syn"	夹具漏形态	keep	keep	—
-"match(\"(\") → SyntaxError"	"`String.prototype.search` / `match` 的**无效字符串模式**必须 进 throws 面（确定 SyntaxError）。 根因：`exec/class-regex.ts` 的 `stringRegexMethod` 把模式编译失败 `catch { return undefined }` ——「编译失败」与「本臂不接管」混成同一 哨兵 ⇒ 回落抽象臂（search → numPrim / match → matchResultDomain） ⇒ **throws 域折 never**（假 no-throw，L2 门禁假绿）。 断言：expect(throwsError(r.throws, \"Syn"	夹具漏形态	keep	keep	—
-"match(\"*\") → SyntaxError（非法量词）"	"`String.prototype.search` / `match` 的**无效字符串模式**必须 进 throws 面（确定 SyntaxError）。 根因：`exec/class-regex.ts` 的 `stringRegexMethod` 把模式编译失败 `catch { return undefined }` ——「编译失败」与「本臂不接管」混成同一 哨兵 ⇒ 回落抽象臂（search → numPrim / match → matchResultDomain） ⇒ **throws 域折 never**（假 no-throw，L2 门禁假绿）。 断言：expect(throwsError(r.throws, \"Syn"	夹具漏形态	keep	keep	—
-"matchAll(\"(\") → SyntaxError"	"`String.prototype.search` / `match` 的**无效字符串模式**必须 进 throws 面（确定 SyntaxError）。 根因：`exec/class-regex.ts` 的 `stringRegexMethod` 把模式编译失败 `catch { return undefined }` ——「编译失败」与「本臂不接管」混成同一 哨兵 ⇒ 回落抽象臂（search → numPrim / match → matchResultDomain） ⇒ **throws 域折 never**（假 no-throw，L2 门禁假绿）。 断言：expect(throwsError(r.throws, \"Syn"	夹具漏形态	keep	keep	—
-"抽象接收者路径同样进 throws 面"	"`String.prototype.search` / `match` 的**无效字符串模式**必须 进 throws 面（确定 SyntaxError）。 根因：`exec/class-regex.ts` 的 `stringRegexMethod` 把模式编译失败 `catch { return undefined }` ——「编译失败」与「本臂不接管」混成同一 哨兵 ⇒ 回落抽象臂（search → numPrim / match → matchResultDomain） ⇒ **throws 域折 never**（假 no-throw，L2 门禁假绿）。 断言：expect(throwsError(r.throws, \"Syn"	夹具漏形态	keep	keep	—
-"合法模式不受影响（对照组）"	"断言：expect(litValue(r.result)).toEqual({ ok: true, value: 1 });；expect(r.throws === undefined || r.throws.shape.k === \"never\").toBe(true);"	没测该层	keep	keep	—
-"try/catch 可吸收（原生同款）"	"`String.prototype.search` / `match` 的**无效字符串模式**必须 进 throws 面（确定 SyntaxError）。 根因：`exec/class-regex.ts` 的 `stringRegexMethod` 把模式编译失败 `catch { return undefined }` ——「编译失败」与「本臂不接管」混成同一 哨兵 ⇒ 回落抽象臂（search → numPrim / match → matchResultDomain） ⇒ **throws 域折 never**（假 no-throw，L2 门禁假绿）。 断言：expect(litValue(r.result)).toEqua"	夹具漏形态	keep	keep	—
-"宿主函数 bind 产物：new B() 的 this = 新实例（绑定实参前置）"	"引擎此前 bind 产物只带 apply 钩子 ⇒ `$new` 复用 `impl.apply` ⇒ 目标 构造器在 `this === boundThis`（null）上执行 ⇒ `new B()` 假抛 TypeError （never）。 构造 facet 走 declare.ts 的模块级 WeakMap 侧表（不改公共 类型 AbsFnImpl）。 断言：expect(isNever(r.result)).toBe(false);；expect(throwsError(r.throws, \"TypeError\")).toBe(false);"	夹具漏形态	keep	keep	—
-"类值 bind 产物：new B() 造的是目标类的实例"	"引擎此前 bind 产物只带 apply 钩子 ⇒ `$new` 复用 `impl.apply` ⇒ 目标 构造器在 `this === boundThis`（null）上执行 ⇒ `new B()` 假抛 TypeError （never）。 构造 facet 走 declare.ts 的模块级 WeakMap 侧表（不改公共 类型 AbsFnImpl）。 断言：expect(val("	夹具漏形态	keep	keep	—
-"二次 bind 产物仍可构造（绑定实参逐层前置）"	"引擎此前 bind 产物只带 apply 钩子 ⇒ `$new` 复用 `impl.apply` ⇒ 目标 构造器在 `this === boundThis`（null）上执行 ⇒ `new B()` 假抛 TypeError （never）。 构造 facet 走 declare.ts 的模块级 WeakMap 侧表（不改公共 类型 AbsFnImpl）。 断言：expect(val("	夹具漏形态	keep	keep	—
-"普通调用面不受影响（B(9) 走绑定 thisArg——原生同口径抛 TypeError）"	"引擎此前 bind 产物只带 apply 钩子 ⇒ `$new` 复用 `impl.apply` ⇒ 目标 构造器在 `this === boundThis`（null）上执行 ⇒ `new B()` 假抛 TypeError （never）。 构造 facet 走 declare.ts 的模块级 WeakMap 侧表（不改公共 类型 AbsFnImpl）。 断言：expect(throwsError(r.throws, \"TypeError\")).toBe(true);"	夹具漏形态	keep	keep	—
-"靶不可构造（箭头函数）：定抛 TypeError"	"`$new` 的 Proxy 分支必须先判 **IsConstructor(target)**。 原生（node 实测）： - `new Proxy(() => 1, { construct(){ ... } })` → **TypeError**（\"not a constructor\"），且**构造陷阱不派发**（陷阱副作用不发生）。 断言：expect(isNever(r.result)).toBe(true);；expect(throwsError(r.throws, \"TypeError\")).toBe(true);"	夹具漏形态	keep	keep	—
-"靶不可构造（普通对象）：定抛 TypeError"	"`$new` 的 Proxy 分支必须先判 **IsConstructor(target)**。 原生（node 实测）： - `new Proxy(() => 1, { construct(){ ... } })` → **TypeError**（\"not a constructor\"），且**构造陷阱不派发**（陷阱副作用不发生）。 断言：expect(isNever(r.result)).toBe(true);；expect(throwsError(r.throws, \"TypeError\")).toBe(true);"	夹具漏形态	keep	keep	—
-"靶不可构造：construct 陷阱**不派发**（副作用不发生）"	"`$new` 的 Proxy 分支必须先判 **IsConstructor(target)**。 原生（node 实测）： - `new Proxy(() => 1, { construct(){ ... } })` → **TypeError**（\"not a constructor\"），且**构造陷阱不派发**（陷阱副作用不发生）。 断言：expect(val("	夹具漏形态	keep	keep	—
-"靶可构造（函数表达式）：construct 陷阱照常派发"	"`$new` 的 Proxy 分支必须先判 **IsConstructor(target)**。 原生（node 实测）： - `new Proxy(() => 1, { construct(){ ... } })` → **TypeError**（\"not a constructor\"），且**构造陷阱不派发**（陷阱副作用不发生）。 断言：expect(val("	夹具漏形态	keep	keep	—
-"apply({length:2,0:1,1:2}) ⇒ 2 个实参（native 2）"	"引擎此前：array-like 实参（非 tuple / 非 arr）一律折 `[unknown]`（1 个未知 实参）⇒ 实参面塌陷（`arguments.length` 折 1； `a + b` 折未知和）。"	没测该层	keep	keep	—
-"apply 的实参值参与运算（native 3）"	"引擎此前：array-like 实参（非 tuple / 非 arr）一律折 `[unknown]`（1 个未知 实参）⇒ 实参面塌陷（`arguments.length` 折 1； `a + b` 折未知和）。"	没测该层	keep	keep	—
-"apply({length:0}) ⇒ 0 个实参（native 0）"	"引擎此前：array-like 实参（非 tuple / 非 arr）一律折 `[unknown]`（1 个未知 实参）⇒ 实参面塌陷（`arguments.length` 折 1； `a + b` 折未知和）。"	没测该层	keep	keep	—
-"apply({length:1,0:9}) ⇒ 1 个实参（native 1）"	"引擎此前：array-like 实参（非 tuple / 非 arr）一律折 `[unknown]`（1 个未知 实参）⇒ 实参面塌陷（`arguments.length` 折 1； `a + b` 折未知和）。"	没测该层	keep	keep	—
-"control：apply 真数组 ⇒ 3 个实参（native 3）"	"引擎此前：array-like 实参（非 tuple / 非 arr）一律折 `[unknown]`（1 个未知 实参）⇒ 实参面塌陷（`arguments.length` 折 1； `a + b` 折未知和）。"	没测该层	keep	keep	—
-"差分对账（native oracle）：改前 MISMATCH / 改后一致"	"引擎此前：array-like 实参（非 tuple / 非 arr）一律折 `[unknown]`（1 个未知 实参）⇒ 实参面塌陷（`arguments.length` 折 1； `a + b` 折未知和）。 断言：expect(；expect("	没测该层	keep	keep	—
-"派生类 static 字段遮蔽继承的 static 方法 → 原生 TypeError"	"派生类的 `static` 字段**不遮蔽**继承的 `static` 方法 → `B.m()` 调到父类方法（原生是 `TypeError: B.m is not a function`）。 根因：`findStaticMethod`（`exec/class/declare.ts`）只查类注册表 `spec.staticMethods` 并沿 `superName` 链走，**不看类值 own 槽**——静态 字段 `static m = 2` 落在类值 own 槽里（原生 own 属性优先于 [[Prototype]] 链上的继承静态成员），于是被继承的静态方法遮蔽。 断言：expect(isNever(r.result)).t"	没测该层	keep	keep	—
-"三级链同样遮蔽（C extends B extends A）"	"实例字段落地必须是 **CreateDataPropertyOrThrow**（原生 DefineField）——在接收者上**创建自有数据属性**，**不沿原型链派发 setter**。 }` → `new B().x === 2`（字段是 B 实例的自有数据属性，父类 getter 不参与）。 断言：expect(isNever(r.result)).toBe(true);；expect(throwsError(r.throws, \"TypeError\")).toBe(true);"	没测该层	keep	keep	—
-"读面不受影响：B.m 仍是 own 静态字段值 2"	"派生类的 `static` 字段**不遮蔽**继承的 `static` 方法 → `B.m()` 调到父类方法（原生是 `TypeError: B.m is not a function`）。 根因：`findStaticMethod`（`exec/class/declare.ts`）只查类注册表 `spec.staticMethods` 并沿 `superName` 链走，**不看类值 own 槽**——静态 字段 `static m = 2` 落在类值 own 槽里（原生 own 属性优先于 [[Prototype]] 链上的继承静态成员），于是被继承的静态方法遮蔽。 断言：expect(litValue(r.result))."	没测该层	keep	keep	—
-"无自有静态字段时不回归：空派生类继承父类 static 方法"	"派生类的 `static` 字段**不遮蔽**继承的 `static` 方法 → `B.m()` 调到父类方法（原生是 `TypeError: B.m is not a function`）。 根因：`findStaticMethod`（`exec/class/declare.ts`）只查类注册表 `spec.staticMethods` 并沿 `superName` 链走，**不看类值 own 槽**——静态 字段 `static m = 2` 落在类值 own 槽里（原生 own 属性优先于 [[Prototype]] 链上的继承静态成员），于是被继承的静态方法遮蔽。 断言：expect(litValue(r.result))."	没测该层	keep	keep	—
-"自有静态方法覆盖不回归（own static method wins）"	"派生类的 `static` 字段**不遮蔽**继承的 `static` 方法 → `B.m()` 调到父类方法（原生是 `TypeError: B.m is not a function`）。 根因：`findStaticMethod`（`exec/class/declare.ts`）只查类注册表 `spec.staticMethods` 并沿 `superName` 链走，**不看类值 own 槽**——静态 字段 `static m = 2` 落在类值 own 槽里（原生 own 属性优先于 [[Prototype]] 链上的继承静态成员），于是被继承的静态方法遮蔽。 断言：expect(litValue(r.result))."	没测该层	keep	keep	—
-"祖先的静态字段同样遮蔽（原生 own 查找序：B.__proto__ = A）"	"派生类的 `static` 字段**不遮蔽**继承的 `static` 方法 → `B.m()` 调到父类方法（原生是 `TypeError: B.m is not a function`）。 根因：`findStaticMethod`（`exec/class/declare.ts`）只查类注册表 `spec.staticMethods` 并沿 `superName` 链走，**不看类值 own 槽**——静态 字段 `static m = 2` 落在类值 own 槽里（原生 own 属性优先于 [[Prototype]] 链上的继承静态成员），于是被继承的静态方法遮蔽。 断言：expect(isNever(r.result)).t"	没测该层	keep	keep	—
-"own 静态字段值可调用 → 调用它（this = 类值）"	"派生类的 `static` 字段**不遮蔽**继承的 `static` 方法 → `B.m()` 调到父类方法（原生是 `TypeError: B.m is not a function`）。 根因：`findStaticMethod`（`exec/class/declare.ts`）只查类注册表 `spec.staticMethods` 并沿 `superName` 链走，**不看类值 own 槽**——静态 字段 `static m = 2` 落在类值 own 槽里（原生 own 属性优先于 [[Prototype]] 链上的继承静态成员），于是被继承的静态方法遮蔽。 断言：expect(litValue(r.result))."	没测该层	keep	keep	—
-"TypeError 可被 try/catch 吸收（原生同口径）"	"派生类的 `static` 字段**不遮蔽**继承的 `static` 方法 → `B.m()` 调到父类方法（原生是 `TypeError: B.m is not a function`）。 根因：`findStaticMethod`（`exec/class/declare.ts`）只查类注册表 `spec.staticMethods` 并沿 `superName` 链走，**不看类值 own 槽**——静态 字段 `static m = 2` 落在类值 own 槽里（原生 own 属性优先于 [[Prototype]] 链上的继承静态成员），于是被继承的静态方法遮蔽。 断言：expect(litValue(r.result))."	没测该层	keep	keep	—
-"number 侧成员不再被排除：pick(y).toFixed() 的值是 number 分支结果（native \"1\"）"	"string 侧没有 ⇒ 该分支调用 undefined ⇒ **定抛 TypeError**。 引擎此前： - number 成员被**无条件排除** ⇒ 值域塌成 unknown（且 L2 门禁把「成员 不支持该方法」误报成「成员缺方法」——诊断点名的是 string 侧）； 断言：expect(r.value).toEqual(\"1\");"	没测该层	keep	keep	—
-"string 侧缺该方法 ⇒ 该分支记 TypeError may-throw（原生该分支定抛）"	"string 侧没有 ⇒ 该分支调用 undefined ⇒ **定抛 TypeError**。 引擎此前： - number 成员被**无条件排除** ⇒ 值域塌成 unknown（且 L2 门禁把「成员 不支持该方法」误报成「成员缺方法」——诊断点名的是 string 侧）； 断言：expect(eff).toContain(\"TypeError\");"	没测该层	keep	keep	—
-"number 侧缺该方法（toUpperCase）⇒ 同样记 TypeError may-throw（改前无记录 = 假绿）"	"string 侧没有 ⇒ 该分支调用 undefined ⇒ **定抛 TypeError**。 引擎此前： - number 成员被**无条件排除** ⇒ 值域塌成 unknown（且 L2 门禁把「成员 不支持该方法」误报成「成员缺方法」——诊断点名的是 string 侧）； 断言：expect(eff).toContain(\"TypeError\");"	没测该层	keep	keep	—
-"两侧都有该方法（toString）⇒ 不记 throws，值域是两侧的并"	"string 侧没有 ⇒ 该分支调用 undefined ⇒ **定抛 TypeError**。 引擎此前： - number 成员被**无条件排除** ⇒ 值域塌成 unknown（且 L2 门禁把「成员 不支持该方法」误报成「成员缺方法」——诊断点名的是 string 侧）； 断言：expect(eff).not.toContain(\"TypeError\");；expect(rec.result.shape.k).toEqual(\"sum\");"	没测该层	keep	keep	—
-"control：字面量 number 的 toFixed 仍是精确值（native \"1\"）"	"string 侧没有 ⇒ 该分支调用 undefined ⇒ **定抛 TypeError**。 引擎此前： - number 成员被**无条件排除** ⇒ 值域塌成 unknown（且 L2 门禁把「成员 不支持该方法」误报成「成员缺方法」——诊断点名的是 string 侧）； 断言：expect(r.ok).toBe(true);；expect(r.ok ? r.value : undefined).toEqual(\"1\");"	没测该层	keep	keep	—
-"control：字面量 string 的 toFixed 记 TypeError may-throw（原生定抛）"	"string 侧没有 ⇒ 该分支调用 undefined ⇒ **定抛 TypeError**。 引擎此前： - number 成员被**无条件排除** ⇒ 值域塌成 unknown（且 L2 门禁把「成员 不支持该方法」误报成「成员缺方法」——诊断点名的是 string 侧）； 断言：expect(eff).toContain(\"TypeError\");"	没测该层	keep	keep	—
-"Math.clamp(1,0,2) ⇒ TypeError"	"内建**命名空间对象**上调用**不存在**的静态方法 ⇒ 引擎不记 may-throw ⇒ L2 门禁**假绿**（原生确定抛 TypeError）。 成员**存在**但不是函数（`Math.PI()`）也抛。"	夹具漏形态	keep	keep	—
-"JSON.foo(1) ⇒ TypeError"	"内建**命名空间对象**上调用**不存在**的静态方法 ⇒ 引擎不记 may-throw ⇒ L2 门禁**假绿**（原生确定抛 TypeError）。 成员**存在**但不是函数（`Math.PI()`）也抛。"	夹具漏形态	keep	keep	—
-"Object.foo(1) ⇒ TypeError"	"内建**命名空间对象**上调用**不存在**的静态方法 ⇒ 引擎不记 may-throw ⇒ L2 门禁**假绿**（原生确定抛 TypeError）。 成员**存在**但不是函数（`Math.PI()`）也抛。"	夹具漏形态	keep	keep	—
-"Number.foo(1) ⇒ TypeError"	"内建**命名空间对象**上调用**不存在**的静态方法 ⇒ 引擎不记 may-throw ⇒ L2 门禁**假绿**（原生确定抛 TypeError）。 成员**存在**但不是函数（`Math.PI()`）也抛。"	夹具漏形态	keep	keep	—
-"Reflect.foo(1) ⇒ TypeError"	"内建**命名空间对象**上调用**不存在**的静态方法 ⇒ 引擎不记 may-throw ⇒ L2 门禁**假绿**（原生确定抛 TypeError）。 成员**存在**但不是函数（`Math.PI()`）也抛。"	夹具漏形态	keep	keep	—
-"成员存在但不是函数（Math.PI()）⇒ TypeError"	"内建**命名空间对象**上调用**不存在**的静态方法 ⇒ 引擎不记 may-throw ⇒ L2 门禁**假绿**（原生确定抛 TypeError）。 成员**存在**但不是函数（`Math.PI()`）也抛。"	夹具漏形态	keep	keep	—
-"control：Math.max(1,3) ⇒ 3（原生一致）"	"内建**命名空间对象**上调用**不存在**的静态方法 ⇒ 引擎不记 may-throw ⇒ L2 门禁**假绿**（原生确定抛 TypeError）。 成员**存在**但不是函数（`Math.PI()`）也抛。 断言：expect(rec.result.term?.op).toEqual(\"lit\");"	夹具漏形态	keep	keep	—
-"control：JSON.parse(\"2\") ⇒ 2（原生一致）"	"内建**命名空间对象**上调用**不存在**的静态方法 ⇒ 引擎不记 may-throw ⇒ L2 门禁**假绿**（原生确定抛 TypeError）。 成员**存在**但不是函数（`Math.PI()`）也抛。 断言：expect(rec.result.term?.op).toEqual(\"lit\");"	夹具漏形态	keep	keep	—
-"差分对账（native oracle）：改前 MISSED-THROW / 改后一致"	"内建**命名空间对象**上调用**不存在**的静态方法 ⇒ 引擎不记 may-throw ⇒ L2 门禁**假绿**（原生确定抛 TypeError）。 成员**存在**但不是函数（`Math.PI()`）也抛。 断言：expect(diffBody(`return Math.clamp(1, 0, 2);`)).toBeNull();；expect(diffBody(`return JSON.foo(1);`)).toBeNull();"	夹具漏形态	keep	keep	—
-"数组元组上调用不存在的方法 → 原生 TypeError"	"**非 prim / 非 obj** 接收者（数组元组 / 内建 brand / 用户类实例） 上调用**确实不存在**的方法 ⇒ 引擎**不记 may-throw** ⇒ L2 门禁**假绿** （原生恒抛 `TypeError`）。 根因：「缺失方法终判」链只覆盖 prim / obj / 注册用户类实例 （`callSiteHasNoCallableTarget`）——tuple / arr / 内建 brand 一律折 unknown 且不记 throws。 断言：expect(isNever(r.result), src).toBe(true);；expect(throwsError(r.throws, \"TypeErro"	夹具漏形态	keep	keep	—
-"内建 brand 上调用不存在的方法 → 原生 TypeError"	"**非 prim / 非 obj** 接收者（数组元组 / 内建 brand / 用户类实例） 上调用**确实不存在**的方法 ⇒ 引擎**不记 may-throw** ⇒ L2 门禁**假绿** （原生恒抛 `TypeError`）。 根因：「缺失方法终判」链只覆盖 prim / obj / 注册用户类实例 （`callSiteHasNoCallableTarget`）——tuple / arr / 内建 brand 一律折 unknown 且不记 throws。 断言：expect(isNever(r.result), src).toBe(true);；expect(throwsError(r.throws, \"TypeErro"	夹具漏形态	keep	keep	—
-"TypeError 可被 try/catch 吸收（原生同口径）"	"**非 prim / 非 obj** 接收者（数组元组 / 内建 brand / 用户类实例） 上调用**确实不存在**的方法 ⇒ 引擎**不记 may-throw** ⇒ L2 门禁**假绿** （原生恒抛 `TypeError`）。 根因：「缺失方法终判」链只覆盖 prim / obj / 注册用户类实例 （`callSiteHasNoCallableTarget`）——tuple / arr / 内建 brand 一律折 unknown 且不记 throws。 断言：expect(litValue(r.result)).toEqual({ ok: true, value: \"throw\" });"	夹具漏形态	keep	keep	—
-"原型面内的方法不回归：数组方法照常派发"	"断言：expect(litValue(r.result)).toEqual({ ok: true, value: \"2,3\" });"	没测该层	keep	keep	—
-"原型面内的方法不回归：内建 brand 方法照常派发"	"**非 prim / 非 obj** 接收者（数组元组 / 内建 brand / 用户类实例） 上调用**确实不存在**的方法 ⇒ 引擎**不记 may-throw** ⇒ L2 门禁**假绿** （原生恒抛 `TypeError`）。 根因：「缺失方法终判」链只覆盖 prim / obj / 注册用户类实例 （`callSiteHasNoCallableTarget`）——tuple / arr / 内建 brand 一律折 unknown 且不记 throws。 断言：expect(litValue(r.result)).toEqual({ ok: true, value: 1 });"	夹具漏形态	keep	keep	—
-"Object.prototype 名不回归（数组上的 toString / hasOwnProperty）"	"**非 prim / 非 obj** 接收者（数组元组 / 内建 brand / 用户类实例） 上调用**确实不存在**的方法 ⇒ 引擎**不记 may-throw** ⇒ L2 门禁**假绿** （原生恒抛 `TypeError`）。 根因：「缺失方法终判」链只覆盖 prim / obj / 注册用户类实例 （`callSiteHasNoCallableTarget`）——tuple / arr / 内建 brand 一律折 unknown 且不记 throws。 断言：expect(litValue(r.result)).toEqual({ ok: true, value: \"true\" });"	夹具漏形态	keep	keep	—
-"注册用户类实例不回归（域不同：callSiteHasNoCallableTarget 判）"	"**非 prim / 非 obj** 接收者（数组元组 / 内建 brand / 用户类实例） 上调用**确实不存在**的方法 ⇒ 引擎**不记 may-throw** ⇒ L2 门禁**假绿** （原生恒抛 `TypeError`）。 根因：「缺失方法终判」链只覆盖 prim / obj / 注册用户类实例 （`callSiteHasNoCallableTarget`）——tuple / arr / 内建 brand 一律折 unknown 且不记 throws。 断言：expect(isNever(r.result)).toBe(true);；expect(throwsError(r.throws, \"TypeError\"))."	夹具漏形态	keep	keep	—
-"闭对象接收者不回归（既有 definitelyUncallableMember 路径）"	"`String.prototype.search` / `match` 的**无效字符串模式**必须 进 throws 面（确定 SyntaxError）。 根因：`exec/class-regex.ts` 的 `stringRegexMethod` 把模式编译失败 `catch { return undefined }` ——「编译失败」与「本臂不接管」混成同一 哨兵 ⇒ 回落抽象臂（search → numPrim / match → matchResultDomain） ⇒ **throws 域折 never**（假 no-throw，L2 门禁假绿）。 断言：expect(isNever(r.result)).toBe(tr"	夹具漏形态	keep	keep	—
-"prim 接收者的软判定不回归（number 上缺失方法 → unknown + may-throw）"	"**非 prim / 非 obj** 接收者（数组元组 / 内建 brand / 用户类实例） 上调用**确实不存在**的方法 ⇒ 引擎**不记 may-throw** ⇒ L2 门禁**假绿** （原生恒抛 `TypeError`）。 根因：「缺失方法终判」链只覆盖 prim / obj / 注册用户类实例 （`callSiteHasNoCallableTarget`）——tuple / arr / 内建 brand 一律折 unknown 且不记 throws。 断言：expect(isNever(r.result)).toBe(false);"	夹具漏形态	keep	keep	—
-"super.constructor.name = 父类名"	"`super.constructor` 必须是**父类构造器本身**（原生父类原型上的 \"constructor\" 自有属性 ⇒ 父类值）。 } }` → \"Base\"（引擎此前折 \"Object\"——确定错值）。 断言：expect(val("	旧断言钉错	keep	keep	—
-"super.constructor === 父类（引用恒等）"	"`super.constructor` 必须是**父类构造器本身**（原生父类原型上的 \"constructor\" 自有属性 ⇒ 父类值）。 } }` → \"Base\"（引擎此前折 \"Object\"——确定错值）。 断言：expect(val("	旧断言钉错	keep	keep	—
-"无显式构造器的父类同样取到父类名"	"断言：expect(val("	没测该层	keep	keep	—
-"search(undefined) → 0（空模式在 0 处匹配）"	"报告结论复核：`exec/class-regex.ts` 的 `stringRegexMethod` 里 `litTerm.value === undefined ? \"\" : String(litTerm.value)` —— 这**已是 的空模式修复**（修入 6ec8afc6）：ES2023 `RegExpCreate` 规定 pattern 为 undefined ⇒ P = \"\"（**不是** \"undefined\"）。 报告引用的 「`String(litTerm.value)` 把 undefined 变 \"undefined\"」在当前树**不成立** ⇒ **不改实现**，只钉住「已修」的行为（本钉在 HEAD 只读"	没测该层	keep	keep	—
-"search(void 0) → 0"	"报告结论复核：`exec/class-regex.ts` 的 `stringRegexMethod` 里 `litTerm.value === undefined ? \"\" : String(litTerm.value)` —— 这**已是 的空模式修复**（修入 6ec8afc6）：ES2023 `RegExpCreate` 规定 pattern 为 undefined ⇒ P = \"\"（**不是** \"undefined\"）。 报告引用的 「`String(litTerm.value)` 把 undefined 变 \"undefined\"」在当前树**不成立** ⇒ **不改实现**，只钉住「已修」的行为（本钉在 HEAD 只读"	没测该层	keep	keep	—
-"match(undefined)[0] → \"\""	"报告结论复核：`exec/class-regex.ts` 的 `stringRegexMethod` 里 `litTerm.value === undefined ? \"\" : String(litTerm.value)` —— 这**已是 的空模式修复**（修入 6ec8afc6）：ES2023 `RegExpCreate` 规定 pattern 为 undefined ⇒ P = \"\"（**不是** \"undefined\"）。 报告引用的 「`String(litTerm.value)` 把 undefined 变 \"undefined\"」在当前树**不成立** ⇒ **不改实现**，只钉住「已修」的行为（本钉在 HEAD 只读"	没测该层	keep	keep	—
-"match(undefined).length → 1"	"报告结论复核：`exec/class-regex.ts` 的 `stringRegexMethod` 里 `litTerm.value === undefined ? \"\" : String(litTerm.value)` —— 这**已是 的空模式修复**（修入 6ec8afc6）：ES2023 `RegExpCreate` 规定 pattern 为 undefined ⇒ P = \"\"（**不是** \"undefined\"）。 报告引用的 「`String(litTerm.value)` 把 undefined 变 \"undefined\"」在当前树**不成立** ⇒ **不改实现**，只钉住「已修」的行为（本钉在 HEAD 只读"	没测该层	keep	keep	—
-"Object.keys(F.prototype) → ''（原生空）"	"报告结论复核：原型对象的 `constructor` 槽**已按原生不可枚举建模** ⇒ **不改实现**，只钉住「已修」的行为（本钉在 HEAD 只读副本上**必须通过**）。 断言：expect(litValue(r.result)).toEqual({ ok: true, value: \"\" });"	夹具漏形态	keep	keep	—
-"constructor 描述符 enumerable → false"	"报告结论复核：原型对象的 `constructor` 槽**已按原生不可枚举建模** ⇒ **不改实现**，只钉住「已修」的行为（本钉在 HEAD 只读副本上**必须通过**）。 断言：expect(litValue(r.result)).toEqual({ ok: true, value: false });"	夹具漏形态	keep	keep	—
-"Object.getOwnPropertyNames(F.prototype) → 'constructor'（自有但在枚举视图外）"	"报告结论复核：原型对象的 `constructor` 槽**已按原生不可枚举建模** ⇒ **不改实现**，只钉住「已修」的行为（本钉在 HEAD 只读副本上**必须通过**）。 断言：expect(litValue(r.result)).toEqual({ ok: true, value: \"constructor\" });"	夹具漏形态	keep	keep	—
-"Object.assign 不复制 constructor（原生不复制不可枚举键）"	"报告结论复核：原型对象的 `constructor` 槽**已按原生不可枚举建模** ⇒ **不改实现**，只钉住「已修」的行为（本钉在 HEAD 只读副本上**必须通过**）。 断言：expect(litValue(r.result)).toEqual({ ok: true, value: \"\" });"	夹具漏形态	keep	keep	—
-"复制出的对象上 constructor !== 原型（原生不复制）"	"报告结论复核：原型对象的 `constructor` 槽**已按原生不可枚举建模** ⇒ **不改实现**，只钉住「已修」的行为（本钉在 HEAD 只读副本上**必须通过**）。 断言：expect(litValue(r.result)).toEqual({ ok: true, value: false });"	夹具漏形态	keep	keep	—
-"spread 同样不复制 constructor"	"报告结论复核：原型对象的 `constructor` 槽**已按原生不可枚举建模** ⇒ **不改实现**，只钉住「已修」的行为（本钉在 HEAD 只读副本上**必须通过**）。 断言：expect(litValue(r.result)).toEqual({ ok: true, value: \"\" });"	夹具漏形态	keep	keep	—
+同名 static + 实例方法并存 ⇒ A.m() 跑静态体（native "S"）；类值上无该静态成员 ⇒ 定抛 TypeError（native: A.m is not a function）；control：实例接收者仍跑实例体（native "I"）；control：只有静态方法 ⇒ A.m() 跑静态体（native "S"）；control：静态方法沿构造器继承链（B extends A ⇒ B.m() → "S"）；差分对账（native oracle）：改前	exec-transpile 聚合矩阵	没测该层	keep	keep	—
+const g = A.m（静态侧）⇒ g() 跑静态体（native "S"）；const g = new A().m（实例侧）⇒ g() 跑实例体（native "I"）；借用调用：g.call(A) ⇒ 跑静态体（native "S"）；control：只有静态方法 ⇒ 摘下调用跑静态体（native "S"）；control：只有实例方法 ⇒ 摘下调用跑实例体（native "I"）；差分对账（native oracle）：改前 FALSE-THROW / 改后一致	exec-transpile 聚合矩阵	没测该层	keep	keep	—
+charAt(0, 1n) → "a"（此前判「必抛 TypeError」）；charCodeAt(0, 1n) → 97；codePointAt(0, 1n) → 97；at(0, 1n) → "a"；对照组：真有两实参的方法仍校验第二实参（slice / substring / substr）；对照组：单参调用仍正常折叠	exec-transpile 聚合矩阵	没测该层	keep	keep	—
+A 模块实例的构造体与自有字段不被 B 模块的同名类顶掉；B 模块实例保持自己的字段（对照：不是把两边都改坏）；A 模块实例上不存在的成员判 undefined（不读到 B 的槽）；B 模块实例上不存在的成员判 undefined（不读到 A 的槽）；实例方法链首环用值自己的规格：mkA().kind() 恒为 A 的方法体	exec-transpile 聚合矩阵	没测该层	keep	keep	—
+a) 无界迭代器：break 臂可达 ⇒ IteratorClose 的 return() 计入出口（宿主同结论）；b) 有界迭代器（报 done）仍逐元素精确展开：break 关闭 ⇒ CLOSED，自然耗尽 ⇒ 不关闭 ⇒ NOT；b2) 有界迭代仍精确：0+1+2 折 3 #exact（不得因代表元抽象而宽化）；c) 循环变量 = 元素域抽象（不折首元素 0）——修前 `return x` 折 0 #exact；c2) 代表元抽象后分支两侧都探索——修前 out 折 "	exec-transpile 聚合矩阵	没测该层	keep	keep	—
+A.prototype.m = fn ⇒ new A().m() 跑用户函数（native 2）；a.m = fn ⇒ a.m() 跑用户函数（native 5）；ctor 内 this.m = fn ⇒ new A().m() 跑用户函数（native 3）；A.prototype.m = 5 ⇒ 调用定抛 TypeError（native: not a function）；Object.defineProperty(A.prototype,'m',{value:fn})	exec-transpile 聚合矩阵	没测该层	keep	keep	—
+派生构造器不调 super()：new B() 定抛 ReferenceError；派生构造器重复调 super()：第二次定抛 ReferenceError；正常 super() 路径不受影响（值仍精确）；基类构造器不受影响（无 super 需求）；隐式派生构造器（无显式 ctor）不受影响；多层派生链：内层 super() 不得被误判成外层「已调」（各层各记各的）	exec-transpile 聚合矩阵	没测该层	keep	keep	—
+类实例目标：源属性不丢；类实例目标：自有键集合含源属性；Error 实例目标：源属性不丢；Date 实例目标：源属性不丢；Map 实例目标：源属性不丢；函数构造实例目标：源属性不丢	exec-transpile 聚合矩阵	没测该层	keep	keep	—
+父类 getter-only 同名访问器不拦截子类字段落地；父类 setter-only：字段落地不调父类 setter（父类侧槽保持缺席）；父类 getter+setter 同款：字段落地仍不派发父类访问器；字段是自有可枚举属性（Object.keys 可见）；无访问器干扰的普通字段路径不受影响	exec-transpile 聚合矩阵	没测该层	keep	keep	—
+typeof it.next → "function"（原生协议面；此前 "undefined"）；typeof it[Symbol.iterator] → "function"；it.next().value[0] → 首个匹配项；it.next() 逐次推进同一游标（第二次 → 第二项）；耗尽后 done → true、value → undefined；Object.prototype.toString.call(it) → "[object RegExp String	exec-transpile 聚合矩阵	没测该层	keep	keep	—
+宿主构造器返回数组：new F() 是数组；宿主构造器返回数组：内容可读（不是被换回的 this）；宿主构造器返回函数：typeof new F() === 'function'；宿主构造器返回箭头函数：typeof new F() === 'function'；宿主构造器返回原始值：忽略并返回 this（typeof 仍 'object'）；宿主构造器返回普通对象：仍用它（既有口径不退化）；类构造器返回数组：new C() 是数组（既有口径不退化）	exec-transpile 聚合矩阵	没测该层	keep	keep	—
+Number.prototype.toLocaleString 保留千分位（此前折成 toString）；Number.prototype.toLocaleString 保留 -0 的符号；Number.prototype.toLocaleString 保留指数形态的分组展开；BigInt.prototype.toLocaleString 保留千分位；默认 locale 也不再折成 toString 的裸数字串；locales 为 null → 确定 TypeError（nu	exec-transpile 聚合矩阵	没测该层	keep	keep	—
+search("(") → SyntaxError（此前 throws 域折 never）；match("(") → SyntaxError；match("*") → SyntaxError（非法量词）；matchAll("(") → SyntaxError；抽象接收者路径同样进 throws 面；合法模式不受影响（对照组）；try/catch 可吸收（原生同款）	exec-transpile 聚合矩阵	没测该层	keep	keep	—
+宿主函数 bind 产物：new B() 的 this = 新实例（绑定实参前置）；类值 bind 产物：new B() 造的是目标类的实例；二次 bind 产物仍可构造（绑定实参逐层前置）；普通调用面不受影响（B(9) 走绑定 thisArg——原生同口径抛 TypeError）	exec-transpile 聚合矩阵	没测该层	keep	keep	—
+靶不可构造（箭头函数）：定抛 TypeError；靶不可构造（普通对象）：定抛 TypeError；靶不可构造：construct 陷阱**不派发**（副作用不发生）；靶可构造（函数表达式）：construct 陷阱照常派发	exec-transpile 聚合矩阵	没测该层	keep	keep	—
+apply({length:2,0:1,1:2}) ⇒ 2 个实参（native 2）；apply 的实参值参与运算（native 3）；apply({length:0}) ⇒ 0 个实参（native 0）；apply({length:1,0:9}) ⇒ 1 个实参（native 1）；control：apply 真数组 ⇒ 3 个实参（native 3）；差分对账（native oracle）：改前 MISMATCH / 改后一致	exec-transpile 聚合矩阵	没测该层	keep	keep	—
+派生类 static 字段遮蔽继承的 static 方法 → 原生 TypeError；三级链同样遮蔽（C extends B extends A）；读面不受影响：B.m 仍是 own 静态字段值 2；无自有静态字段时不回归：空派生类继承父类 static 方法；自有静态方法覆盖不回归（own static method wins）；祖先的静态字段同样遮蔽（原生 own 查找序：B.__proto__ = A）；own 静态字段值可调用 → 调用它（this = 类值）；Ty	exec-transpile 聚合矩阵	没测该层	keep	keep	—
+number 侧成员不再被排除：pick(y).toFixed() 的值是 number 分支结果（native "1"）；string 侧缺该方法 ⇒ 该分支记 TypeError may-throw（原生该分支定抛）；number 侧缺该方法（toUpperCase）⇒ 同样记 TypeError may-throw（改前无记录 = 假绿）；两侧都有该方法（toString）⇒ 不记 throws，值域是两侧的并；control：字面量 number 的 toFixed	exec-transpile 聚合矩阵	没测该层	keep	keep	—
+Math.clamp(1,0,2) ⇒ TypeError；JSON.foo(1) ⇒ TypeError；Object.foo(1) ⇒ TypeError；Number.foo(1) ⇒ TypeError；Reflect.foo(1) ⇒ TypeError；成员存在但不是函数（Math.PI()）⇒ TypeError；control：Math.max(1,3) ⇒ 3（原生一致）；control：JSON.parse("2") ⇒ 2（原生一致）；差分对账（nati	exec-transpile 聚合矩阵	没测该层	keep	keep	—
+数组元组上调用不存在的方法 → 原生 TypeError；内建 brand 上调用不存在的方法 → 原生 TypeError；TypeError 可被 try/catch 吸收（原生同口径）；原型面内的方法不回归：数组方法照常派发；原型面内的方法不回归：内建 brand 方法照常派发；Object.prototype 名不回归（数组上的 toString / hasOwnProperty）；注册用户类实例不回归（域不同：callSiteHasNoCallableTarget	exec-transpile 聚合矩阵	没测该层	keep	keep	—
+super.constructor.name = 父类名；super.constructor === 父类（引用恒等）；无显式构造器的父类同样取到父类名	exec-transpile 聚合矩阵	没测该层	keep	keep	—
+search(undefined) → 0（空模式在 0 处匹配）；search(void 0) → 0；match(undefined)[0] → ""；match(undefined).length → 1	exec-transpile 聚合矩阵	没测该层	keep	keep	—
+Object.keys(F.prototype) → ''（原生空）；constructor 描述符 enumerable → false；Object.getOwnPropertyNames(F.prototype) → 'constructor'（自有但在枚举视图外）；Object.assign 不复制 constructor（原生不复制不可枚举键）；复制出的对象上 constructor !== 原型（原生不复制）；spread 同样不复制 constructor	exec-transpile 聚合矩阵	没测该层	keep	keep	—
+```
+
+```audit-deleted
+title	reason	evidence
+同名 static + 实例方法并存 ⇒ A.m() 跑静态体（native "S"）	dup:exec-transpile 聚合矩阵	commit:54f54850
+类值上无该静态成员 ⇒ 定抛 TypeError（native: A.m is not a function）	dup:exec-transpile 聚合矩阵	commit:54f54850
+control：实例接收者仍跑实例体（native "I"）	dup:exec-transpile 聚合矩阵	commit:54f54850
+control：只有静态方法 ⇒ A.m() 跑静态体（native "S"）	dup:exec-transpile 聚合矩阵	commit:54f54850
+control：静态方法沿构造器继承链（B extends A ⇒ B.m() → "S"）	dup:exec-transpile 聚合矩阵	commit:54f54850
+差分对账（native oracle）：改前 MISMATCH / 改后一致	dup:exec-transpile 聚合矩阵	commit:54f54850
+const g = A.m（静态侧）⇒ g() 跑静态体（native "S"）	dup:exec-transpile 聚合矩阵	commit:54f54850
+const g = new A().m（实例侧）⇒ g() 跑实例体（native "I"）	dup:exec-transpile 聚合矩阵	commit:54f54850
+借用调用：g.call(A) ⇒ 跑静态体（native "S"）	dup:exec-transpile 聚合矩阵	commit:54f54850
+control：只有静态方法 ⇒ 摘下调用跑静态体（native "S"）	dup:exec-transpile 聚合矩阵	commit:54f54850
+control：只有实例方法 ⇒ 摘下调用跑实例体（native "I"）	dup:exec-transpile 聚合矩阵	commit:54f54850
+差分对账（native oracle）：改前 FALSE-THROW / 改后一致	dup:exec-transpile 聚合矩阵	commit:54f54850
+charAt(0, 1n) → "a"（此前判「必抛 TypeError」）	dup:exec-transpile 聚合矩阵	commit:54f54850
+charCodeAt(0, 1n) → 97	dup:exec-transpile 聚合矩阵	commit:54f54850
+codePointAt(0, 1n) → 97	dup:exec-transpile 聚合矩阵	commit:54f54850
+at(0, 1n) → "a"	dup:exec-transpile 聚合矩阵	commit:54f54850
+对照组：真有两实参的方法仍校验第二实参（slice / substring / substr）	dup:exec-transpile 聚合矩阵	commit:54f54850
+对照组：单参调用仍正常折叠	dup:exec-transpile 聚合矩阵	commit:54f54850
+A 模块实例的构造体与自有字段不被 B 模块的同名类顶掉	dup:exec-transpile 聚合矩阵	commit:54f54850
+B 模块实例保持自己的字段（对照：不是把两边都改坏）	dup:exec-transpile 聚合矩阵	commit:54f54850
+A 模块实例上不存在的成员判 undefined（不读到 B 的槽）	dup:exec-transpile 聚合矩阵	commit:54f54850
+B 模块实例上不存在的成员判 undefined（不读到 A 的槽）	dup:exec-transpile 聚合矩阵	commit:54f54850
+实例方法链首环用值自己的规格：mkA().kind() 恒为 A 的方法体	dup:exec-transpile 聚合矩阵	commit:54f54850
+a) 无界迭代器：break 臂可达 ⇒ IteratorClose 的 return() 计入出口（宿主同结论）	dup:exec-transpile 聚合矩阵	commit:54f54850
+b) 有界迭代器（报 done）仍逐元素精确展开：break 关闭 ⇒ CLOSED，自然耗尽 ⇒ 不关闭 ⇒ NOT	dup:exec-transpile 聚合矩阵	commit:54f54850
+b2) 有界迭代仍精确：0+1+2 折 3 #exact（不得因代表元抽象而宽化）	dup:exec-transpile 聚合矩阵	commit:54f54850
+c) 循环变量 = 元素域抽象（不折首元素 0）——修前 `return x` 折 0 #exact	dup:exec-transpile 聚合矩阵	commit:54f54850
+c2) 代表元抽象后分支两侧都探索——修前 out 折 "miss" #exact	dup:exec-transpile 聚合矩阵	commit:54f54850
+A.prototype.m = fn ⇒ new A().m() 跑用户函数（native 2）	dup:exec-transpile 聚合矩阵	commit:54f54850
+a.m = fn ⇒ a.m() 跑用户函数（native 5）	dup:exec-transpile 聚合矩阵	commit:54f54850
+ctor 内 this.m = fn ⇒ new A().m() 跑用户函数（native 3）	dup:exec-transpile 聚合矩阵	commit:54f54850
+A.prototype.m = 5 ⇒ 调用定抛 TypeError（native: not a function）	dup:exec-transpile 聚合矩阵	commit:54f54850
+Object.defineProperty(A.prototype,'m',{value:fn}) ⇒ 跑用户函数（native 4）	dup:exec-transpile 聚合矩阵	commit:54f54850
+实例自有槽遮住原型上的写（native 6）	dup:exec-transpile 聚合矩阵	commit:54f54850
+control：未打补丁 ⇒ 仍走注册表方法体（native 1）	dup:exec-transpile 聚合矩阵	commit:54f54850
+control：原型上新名字（注册表无此名）⇒ 走写面（native 7）	dup:exec-transpile 聚合矩阵	commit:54f54850
+派生构造器不调 super()：new B() 定抛 ReferenceError	dup:exec-transpile 聚合矩阵	commit:54f54850
+派生构造器重复调 super()：第二次定抛 ReferenceError	dup:exec-transpile 聚合矩阵	commit:54f54850
+正常 super() 路径不受影响（值仍精确）	dup:exec-transpile 聚合矩阵	commit:54f54850
+基类构造器不受影响（无 super 需求）	dup:exec-transpile 聚合矩阵	commit:54f54850
+隐式派生构造器（无显式 ctor）不受影响	dup:exec-transpile 聚合矩阵	commit:54f54850
+多层派生链：内层 super() 不得被误判成外层「已调」（各层各记各的）	dup:exec-transpile 聚合矩阵	commit:54f54850
+类实例目标：源属性不丢	dup:exec-transpile 聚合矩阵	commit:54f54850
+类实例目标：自有键集合含源属性	dup:exec-transpile 聚合矩阵	commit:54f54850
+Error 实例目标：源属性不丢	dup:exec-transpile 聚合矩阵	commit:54f54850
+Date 实例目标：源属性不丢	dup:exec-transpile 聚合矩阵	commit:54f54850
+Map 实例目标：源属性不丢	dup:exec-transpile 聚合矩阵	commit:54f54850
+函数构造实例目标：源属性不丢	dup:exec-transpile 聚合矩阵	commit:54f54850
+父类 getter-only 同名访问器不拦截子类字段落地	dup:exec-transpile 聚合矩阵	commit:54f54850
+父类 setter-only：字段落地不调父类 setter（父类侧槽保持缺席）	dup:exec-transpile 聚合矩阵	commit:54f54850
+父类 getter+setter 同款：字段落地仍不派发父类访问器	dup:exec-transpile 聚合矩阵	commit:54f54850
+字段是自有可枚举属性（Object.keys 可见）	dup:exec-transpile 聚合矩阵	commit:54f54850
+无访问器干扰的普通字段路径不受影响	dup:exec-transpile 聚合矩阵	commit:54f54850
+typeof it.next → "function"（原生协议面；此前 "undefined"）	dup:exec-transpile 聚合矩阵	commit:54f54850
+typeof it[Symbol.iterator] → "function"	dup:exec-transpile 聚合矩阵	commit:54f54850
+it.next().value[0] → 首个匹配项	dup:exec-transpile 聚合矩阵	commit:54f54850
+it.next() 逐次推进同一游标（第二次 → 第二项）	dup:exec-transpile 聚合矩阵	commit:54f54850
+耗尽后 done → true、value → undefined	dup:exec-transpile 聚合矩阵	commit:54f54850
+Object.prototype.toString.call(it) → "[object RegExp String Iterator]"	dup:exec-transpile 聚合矩阵	commit:54f54850
+协议槽是原型的（非自有可枚举）：Object.keys 空、hasOwnProperty 假、in 真	dup:exec-transpile 聚合矩阵	commit:54f54850
+展开 / for-of 仍按侧表精确迭代（对照组）	dup:exec-transpile 聚合矩阵	commit:54f54850
+宿主构造器返回数组：new F() 是数组	dup:exec-transpile 聚合矩阵	commit:54f54850
+宿主构造器返回数组：内容可读（不是被换回的 this）	dup:exec-transpile 聚合矩阵	commit:54f54850
+宿主构造器返回函数：typeof new F() === 'function'	dup:exec-transpile 聚合矩阵	commit:54f54850
+宿主构造器返回箭头函数：typeof new F() === 'function'	dup:exec-transpile 聚合矩阵	commit:54f54850
+宿主构造器返回原始值：忽略并返回 this（typeof 仍 'object'）	dup:exec-transpile 聚合矩阵	commit:54f54850
+宿主构造器返回普通对象：仍用它（既有口径不退化）	dup:exec-transpile 聚合矩阵	commit:54f54850
+类构造器返回数组：new C() 是数组（既有口径不退化）	dup:exec-transpile 聚合矩阵	commit:54f54850
+Number.prototype.toLocaleString 保留千分位（此前折成 toString）	dup:exec-transpile 聚合矩阵	commit:54f54850
+Number.prototype.toLocaleString 保留 -0 的符号	dup:exec-transpile 聚合矩阵	commit:54f54850
+Number.prototype.toLocaleString 保留指数形态的分组展开	dup:exec-transpile 聚合矩阵	commit:54f54850
+BigInt.prototype.toLocaleString 保留千分位	dup:exec-transpile 聚合矩阵	commit:54f54850
+默认 locale 也不再折成 toString 的裸数字串	dup:exec-transpile 聚合矩阵	commit:54f54850
+locales 为 null → 确定 TypeError（number）	dup:exec-transpile 聚合矩阵	commit:54f54850
+locales 为 null → 确定 TypeError（bigint）	dup:exec-transpile 聚合矩阵	commit:54f54850
+locales 为 null → 确定 TypeError（字符串 toLocaleUpperCase）	dup:exec-transpile 聚合矩阵	commit:54f54850
+locales 为非法 language tag → 确定 RangeError	dup:exec-transpile 聚合矩阵	commit:54f54850
+无实参 / 非 string 实参 → 仍 total（原生忽略 symbol / 数字 locales）	dup:exec-transpile 聚合矩阵	commit:54f54850
+search("(") → SyntaxError（此前 throws 域折 never）	dup:exec-transpile 聚合矩阵	commit:54f54850
+match("(") → SyntaxError	dup:exec-transpile 聚合矩阵	commit:54f54850
+match("*") → SyntaxError（非法量词）	dup:exec-transpile 聚合矩阵	commit:54f54850
+matchAll("(") → SyntaxError	dup:exec-transpile 聚合矩阵	commit:54f54850
+抽象接收者路径同样进 throws 面	dup:exec-transpile 聚合矩阵	commit:54f54850
+合法模式不受影响（对照组）	dup:exec-transpile 聚合矩阵	commit:54f54850
+try/catch 可吸收（原生同款）	dup:exec-transpile 聚合矩阵	commit:54f54850
+宿主函数 bind 产物：new B() 的 this = 新实例（绑定实参前置）	dup:exec-transpile 聚合矩阵	commit:54f54850
+类值 bind 产物：new B() 造的是目标类的实例	dup:exec-transpile 聚合矩阵	commit:54f54850
+二次 bind 产物仍可构造（绑定实参逐层前置）	dup:exec-transpile 聚合矩阵	commit:54f54850
+普通调用面不受影响（B(9) 走绑定 thisArg——原生同口径抛 TypeError）	dup:exec-transpile 聚合矩阵	commit:54f54850
+靶不可构造（箭头函数）：定抛 TypeError	dup:exec-transpile 聚合矩阵	commit:54f54850
+靶不可构造（普通对象）：定抛 TypeError	dup:exec-transpile 聚合矩阵	commit:54f54850
+靶不可构造：construct 陷阱**不派发**（副作用不发生）	dup:exec-transpile 聚合矩阵	commit:54f54850
+靶可构造（函数表达式）：construct 陷阱照常派发	dup:exec-transpile 聚合矩阵	commit:54f54850
+apply({length:2,0:1,1:2}) ⇒ 2 个实参（native 2）	dup:exec-transpile 聚合矩阵	commit:54f54850
+apply 的实参值参与运算（native 3）	dup:exec-transpile 聚合矩阵	commit:54f54850
+apply({length:0}) ⇒ 0 个实参（native 0）	dup:exec-transpile 聚合矩阵	commit:54f54850
+apply({length:1,0:9}) ⇒ 1 个实参（native 1）	dup:exec-transpile 聚合矩阵	commit:54f54850
+control：apply 真数组 ⇒ 3 个实参（native 3）	dup:exec-transpile 聚合矩阵	commit:54f54850
+派生类 static 字段遮蔽继承的 static 方法 → 原生 TypeError	dup:exec-transpile 聚合矩阵	commit:54f54850
+三级链同样遮蔽（C extends B extends A）	dup:exec-transpile 聚合矩阵	commit:54f54850
+读面不受影响：B.m 仍是 own 静态字段值 2	dup:exec-transpile 聚合矩阵	commit:54f54850
+无自有静态字段时不回归：空派生类继承父类 static 方法	dup:exec-transpile 聚合矩阵	commit:54f54850
+自有静态方法覆盖不回归（own static method wins）	dup:exec-transpile 聚合矩阵	commit:54f54850
+祖先的静态字段同样遮蔽（原生 own 查找序：B.__proto__ = A）	dup:exec-transpile 聚合矩阵	commit:54f54850
+own 静态字段值可调用 → 调用它（this = 类值）	dup:exec-transpile 聚合矩阵	commit:54f54850
+TypeError 可被 try/catch 吸收（原生同口径）	dup:exec-transpile 聚合矩阵	commit:54f54850
+number 侧成员不再被排除：pick(y).toFixed() 的值是 number 分支结果（native "1"）	dup:exec-transpile 聚合矩阵	commit:54f54850
+string 侧缺该方法 ⇒ 该分支记 TypeError may-throw（原生该分支定抛）	dup:exec-transpile 聚合矩阵	commit:54f54850
+number 侧缺该方法（toUpperCase）⇒ 同样记 TypeError may-throw（改前无记录 = 假绿）	dup:exec-transpile 聚合矩阵	commit:54f54850
+两侧都有该方法（toString）⇒ 不记 throws，值域是两侧的并	dup:exec-transpile 聚合矩阵	commit:54f54850
+control：字面量 number 的 toFixed 仍是精确值（native "1"）	dup:exec-transpile 聚合矩阵	commit:54f54850
+control：字面量 string 的 toFixed 记 TypeError may-throw（原生定抛）	dup:exec-transpile 聚合矩阵	commit:54f54850
+Math.clamp(1,0,2) ⇒ TypeError	dup:exec-transpile 聚合矩阵	commit:54f54850
+JSON.foo(1) ⇒ TypeError	dup:exec-transpile 聚合矩阵	commit:54f54850
+Object.foo(1) ⇒ TypeError	dup:exec-transpile 聚合矩阵	commit:54f54850
+Number.foo(1) ⇒ TypeError	dup:exec-transpile 聚合矩阵	commit:54f54850
+Reflect.foo(1) ⇒ TypeError	dup:exec-transpile 聚合矩阵	commit:54f54850
+成员存在但不是函数（Math.PI()）⇒ TypeError	dup:exec-transpile 聚合矩阵	commit:54f54850
+control：Math.max(1,3) ⇒ 3（原生一致）	dup:exec-transpile 聚合矩阵	commit:54f54850
+control：JSON.parse("2") ⇒ 2（原生一致）	dup:exec-transpile 聚合矩阵	commit:54f54850
+差分对账（native oracle）：改前 MISSED-THROW / 改后一致	dup:exec-transpile 聚合矩阵	commit:54f54850
+数组元组上调用不存在的方法 → 原生 TypeError	dup:exec-transpile 聚合矩阵	commit:54f54850
+内建 brand 上调用不存在的方法 → 原生 TypeError	dup:exec-transpile 聚合矩阵	commit:54f54850
+原型面内的方法不回归：数组方法照常派发	dup:exec-transpile 聚合矩阵	commit:54f54850
+原型面内的方法不回归：内建 brand 方法照常派发	dup:exec-transpile 聚合矩阵	commit:54f54850
+Object.prototype 名不回归（数组上的 toString / hasOwnProperty）	dup:exec-transpile 聚合矩阵	commit:54f54850
+注册用户类实例不回归（域不同：callSiteHasNoCallableTarget 判）	dup:exec-transpile 聚合矩阵	commit:54f54850
+闭对象接收者不回归（既有 definitelyUncallableMember 路径）	dup:exec-transpile 聚合矩阵	commit:54f54850
+prim 接收者的软判定不回归（number 上缺失方法 → unknown + may-throw）	dup:exec-transpile 聚合矩阵	commit:54f54850
+super.constructor.name = 父类名	dup:exec-transpile 聚合矩阵	commit:54f54850
+super.constructor === 父类（引用恒等）	dup:exec-transpile 聚合矩阵	commit:54f54850
+无显式构造器的父类同样取到父类名	dup:exec-transpile 聚合矩阵	commit:54f54850
+search(undefined) → 0（空模式在 0 处匹配）	dup:exec-transpile 聚合矩阵	commit:54f54850
+search(void 0) → 0	dup:exec-transpile 聚合矩阵	commit:54f54850
+match(undefined)[0] → ""	dup:exec-transpile 聚合矩阵	commit:54f54850
+match(undefined).length → 1	dup:exec-transpile 聚合矩阵	commit:54f54850
+Object.keys(F.prototype) → ''（原生空）	dup:exec-transpile 聚合矩阵	commit:54f54850
+constructor 描述符 enumerable → false	dup:exec-transpile 聚合矩阵	commit:54f54850
+Object.getOwnPropertyNames(F.prototype) → 'constructor'（自有但在枚举视图外）	dup:exec-transpile 聚合矩阵	commit:54f54850
+Object.assign 不复制 constructor（原生不复制不可枚举键）	dup:exec-transpile 聚合矩阵	commit:54f54850
+复制出的对象上 constructor !== 原型（原生不复制）	dup:exec-transpile 聚合矩阵	commit:54f54850
+spread 同样不复制 constructor	dup:exec-transpile 聚合矩阵	commit:54f54850
 ```

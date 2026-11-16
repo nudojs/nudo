@@ -6,225 +6,294 @@
 
 ```audit
 title	rootCause	gap	action	status	evidence
-"module-missing（error）⇒ exit 1 且诊断上屏"	"error 级分析诊断：import 的模块不存在 ⇒ `nudo:module-missing`（error）。 断言：expect(r.status).toBe(1);；expect(r.stdout).toContain(\"[error]\");"	没测该层	keep	keep	—
-"--json：ok=false 且 summary.errors 反映 error 计数"	"error 级分析诊断：import 的模块不存在 ⇒ `nudo:module-missing`（error）。 断言：expect(r.status).toBe(1);；expect(json.ok).toBe(false);"	没测该层	keep	keep	—
-"干净文件：ok=true、errors=0、exit 0"	"`nudo test` 看不到**分析面 error 级诊断** ⇒ 假绿。 两个可观察面（同一根因：`commands/test.ts` 的退出码只由声明断言 + pathErrors 决定，error 级分析诊断完全不参与）： - 模块装载失败（`nudo:module-missing`，error）⇒ `nudo check` 判红，`nudo test` 此前报绿（exit 0）； 断言：expect(r.status).toBe(0);；expect(json.ok).toBe(true);"	没测该层	keep	keep	—
-"warning 级诊断（模块环）不得把 test 判红"	"`nudo test` 看不到**分析面 error 级诊断** ⇒ 假绿。 两个可观察面（同一根因：`commands/test.ts` 的退出码只由声明断言 + pathErrors 决定，error 级分析诊断完全不参与）： - 模块装载失败（`nudo:module-missing`，error）⇒ `nudo check` 判红，`nudo test` 此前报绿（exit 0）； 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain(\"nudo:module-cycle\");"	没测该层	keep	keep	—
-"zod 入参槽 = z.array(z.unknown())（不是数组的数组）"	"`export --format all` 把 rest 参数投影成「**数组的数组**」， 而 dts 面是单数组 ⇒ 同一份产物集里两个方言给出不同的接受集。 根因：`observedRestAbs` 按「rest 位之后每个实参一个槽」遍历 `argAbs`，但 入口见证（`entry@`）把剩余参数编码成**一个数组实参** ⇒ 那个数组被当成 「单个 rest 实参」再包一层。 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain(\"rest: z.array(z.unknown())\");"	夹具漏形态	keep	keep	—
-"standard 面 rest 槽节点只有一层 arr（与 dts 的 ...rest: unknown[] 同形）"	"`export --format all` 把 rest 参数投影成「**数组的数组**」， 而 dts 面是单数组 ⇒ 同一份产物集里两个方言给出不同的接受集。 根因：`observedRestAbs` 按「rest 位之后每个实参一个槽」遍历 `argAbs`，但 入口见证（`entry@`）把剩余参数编码成**一个数组实参** ⇒ 那个数组被当成 「单个 rest 实参」再包一层。 断言：expect(all.status).toBe(0);；expect(all.stdout).toContain('{\"key\":\"rest\",\"node\":{\"k\":\"arr\",\"element\":{\"k\":\"unknown\"}},\"opt"	夹具漏形态	keep	keep	—
-"`check clean.js --only <code> broken.js` ⇒ 定向 usage error + exit 1"	"`nudo check --only <codes…>` **部分吞掉**后面的路径 ⇒ 被吞的 文件**从未被检查** ⇒ exit 0 假绿。 旧守卫只在「paths 全被吞空」（`paths.length === 0`）时触发； 断言：expect(both.status).toBe(1);；expect(swallow.status).toBe(1);"	没测该层	keep	keep	—
-"对照：把 variadic 旗标放在 `--` 前、路径放后面 ⇒ 正常检查（不误报）"	"`nudo check --only <codes…>` **部分吞掉**后面的路径 ⇒ 被吞的 文件**从未被检查** ⇒ exit 0 假绿。 旧守卫只在「paths 全被吞空」（`paths.length === 0`）时触发； 断言：expect(r.status).toBe(1);；expect(r.stderr).not.toContain(\"consumed the following path(s)\");"	没测该层	keep	keep	—
-"第二份 diff 以第一份为基准（累积），不是又一份「新建文件」"	"`nudo check --fix` 的 dry-run 打印的计划必须等于 `--write` 的 实际写入，且 stdout 可被 `git apply --check -p1` 消费。 旧实现把「推进到计划文本」（`source = next` / `sidecarText = next`）放在 `if (opts.write)` 分支内 ⇒ dry-run 时后续 issue 仍按**修改前**的文本算： 同一文件打出两份互相冲突的「新建文件」diff（`@@ -0,0 +1,2 @@`）， 第二份丢掉第一份的修改 ⇒ git 拒绝、且与 --write 结果不一致。 断言：expect(hunks.length).toBe"	没测该层	keep	keep	—
-"dry-run 的 diff 可被 `git apply --check -p1` 消费"	"`nudo check --fix` 的 dry-run 打印的计划必须等于 `--write` 的 实际写入，且 stdout 可被 `git apply --check -p1` 消费。 旧实现把「推进到计划文本」（`source = next` / `sidecarText = next`）放在 `if (opts.write)` 分支内 ⇒ dry-run 时后续 issue 仍按**修改前**的文本算： 同一文件打出两份互相冲突的「新建文件」diff（`@@ -0,0 +1,2 @@`）， 第二份丢掉第一份的修改 ⇒ git 拒绝、且与 --write 结果不一致。 断言：expect(init.status, `git"	没测该层	keep	keep	—
-"dry-run 与 --write 得到同一份侧车内容"	"`nudo check --fix` 的 dry-run 打印的计划必须等于 `--write` 的 实际写入，且 stdout 可被 `git apply --check -p1` 消费。 旧实现把「推进到计划文本」（`source = next` / `sidecarText = next`）放在 `if (opts.write)` 分支内 ⇒ dry-run 时后续 issue 仍按**修改前**的文本算： 同一文件打出两份互相冲突的「新建文件」diff（`@@ -0,0 +1,2 @@`）， 第二份丢掉第一份的修改 ⇒ git 拒绝、且与 --write 结果不一致。 断言：expect(dry.status).toBe(1"	没测该层	keep	keep	—
-"拼错的码 ⇒ usage error + exit 1（不再静默 no-op）"	"未约束 entry ⇒ nudo:entry-may-throw（error）+ entry-only（info） 断言：expect(r.status).toBe(1);；expect(r.stderr).toContain(\"unknown diagnostic code(s): nudo:bogus-code\");"	没测该层	keep	keep	—
-"合法码但本次无该诊断 ⇒ 末尾报「matched no diagnostic」"	"`nudo check --fix --only <码>` 匹配不到任何诊断时是**静默 no-op**：拼错的码与「这些诊断确实没有可自动应用的修复」输出完全一样。 现在两个面都可见： - `--only` 的取值必须落在诊断码注册表（DIAG）内 ⇒ 拼错 ⇒ usage error + exit 1 - 合法码但本次目标没有该诊断 ⇒ 末尾明确报「matched no diagnostic」 断言：expect(r.stdout).toContain(\"--only nudo:arg-count matched no diagnostic\");"	没测该层	keep	keep	—
+module-missing（error）⇒ exit 1 且诊断上屏；--json：ok=false 且 summary.errors 反映 error 计数；干净文件：ok=true、errors=0、exit 0；warning 级诊断（模块环）不得把 test 判红	cli-io 聚合矩阵	没测该层	keep	keep	—
+zod 入参槽 = z.array(z.unknown())（不是数组的数组）；standard 面 rest 槽节点只有一层 arr（与 dts 的 ...rest: unknown[] 同形）	cli-io 聚合矩阵	没测该层	keep	keep	—
+`check clean.js --only <code> broken.js` ⇒ 定向 usage error + exit 1；对照：把 variadic 旗标放在 `--` 前、路径放后面 ⇒ 正常检查（不误报）	cli-io 聚合矩阵	没测该层	keep	keep	—
+第二份 diff 以第一份为基准（累积），不是又一份「新建文件」；dry-run 的 diff 可被 `git apply --check -p1` 消费；dry-run 与 --write 得到同一份侧车内容	cli-io 聚合矩阵	没测该层	keep	keep	—
+拼错的码 ⇒ usage error + exit 1（不再静默 no-op）；合法码但本次无该诊断 ⇒ 末尾报「matched no diagnostic」	cli-io 聚合矩阵	没测该层	keep	keep	—
 "不可写目录 ⇒ 有措辞的 error + 其余目标仍被处理"	"`nudo check --fix --write` 写盘失败抛**裸 Node 异常**（EACCES） 且**不再处理其余文件**（整次运行中断）。 断言：expect(r.stderr).toContain(\"error: check --fix cannot write\");；expect(r.stderr).toContain(\"EACCES\");"	没测该层	keep	keep	—
 "foo.js + foo.mjs 共存 ⇒ 拒绝落盘、兄弟模块错误数不变"	"`nudo check --fix --write` 写的侧车污染同目录**共享同一侧车 路径**的兄弟模块（`foo.js` 与 `foo.mjs` 都映射到 `foo.nudo.js`）： 给未被修复的兄弟**新增** error，且自己的 fix 被静默丢弃。 现在：检测到共享 ⇒ **拒绝落盘**（可见 error + 点名共享者 + 汇总计数）， 不再新写入任何共享侧车 ⇒ 兄弟模块的错误数不增加。 断言：expect(errorCount(before.stdout)).toBe(1);；expect(fix.stderr).toContain(\"refuses to write sidecar\");"	没测该层	keep	keep	—
-"用户导出 `z` + zod 段 import ⇒ 产物可编译（tsc --strict rc 0）"	"zod 桩：平铺产物只 import `{ z }`，类型面 any 即可（编译面判的是作用域冲突）。 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain(\"export declare function z(x: number): number;\");"	没测该层	keep	keep	—
-"用户导出 `__nudoCheck`（standard 段的非导出 helper 同名）⇒ 不重复声明"	"`export --format all` 的 stdout 平铺**跨段去重只认「导出声明」** ⇒ 与 zod 段的 `import { z }` / standard 段的非导出 helper 撞名 （TS2440 + `z.object` 被解析到用户自己的 `z` ⇒ **语义串味**）。 断言：expect(r.status).toBe(0);；expect(helperDecls).toBe(1);"	没测该层	keep	keep	—
-"主路径：完全无证据的导出函数 ⇒ 参数 unknown，stderr 点名提示"	"导出指南 en/zh 与 `docs/design/cli-semantics.md` §2 原本承诺：未被观测的 export 参数渲染为 **`unknown`** 并在 stderr 打一行**点名提示**。 历史实现 （把 `abs.md:100` 的 display 规则误引到 .d.ts 产物面）渲染成 **`any`** 且不打提示，本文件曾钉住那处「文档 vs 实现」矛盾。 断言：expect(r.status, r.stdout + r.stderr).toBe(0);；expect(r.stdout).toContain(\"export declare function neverCalled(a: unknow"	没测该层	keep	keep	—
-"主路径：契约只覆盖部分形参时，未覆盖位同样是 unknown"	"导出指南 en/zh 与 `docs/design/cli-semantics.md` §2 原本承诺：未被观测的 export 参数渲染为 **`unknown`** 并在 stderr 打一行**点名提示**。 历史实现 （把 `abs.md:100` 的 display 规则误引到 .d.ts 产物面）渲染成 **`any`** 且不打提示，本文件曾钉住那处「文档 vs 实现」矛盾。 断言：expect(r.status, r.stdout + r.stderr).toBe(0);；expect(r.stdout).toContain(\"export declare function partialFn(a: number,"	没测该层	keep	keep	—
-"窄路径：@nudo:skip + 契约未覆盖的形参 ⇒ 该位 unknown + stderr 点名提示"	"导出指南 en/zh 与 `docs/design/cli-semantics.md` §2 原本承诺：未被观测的 export 参数渲染为 **`unknown`** 并在 stderr 打一行**点名提示**。 历史实现 （把 `abs.md:100` 的 display 规则误引到 .d.ts 产物面）渲染成 **`any`** 且不打提示，本文件曾钉住那处「文档 vs 实现」矛盾。 断言：expect(r.status, r.stdout + r.stderr).toBe(0);；expect(r.stdout).toContain(\"export declare function sk3(a: number, b: unk"	没测该层	keep	keep	—
-"test 文本面与 --json 面都带 nudo:recursion-truncated"	"CLI 回归：截断诊断必须**跨面可见**。 断言：expect(text.stdout).toContain(`(${CODE})`);；expect(text.stdout).toContain(\"Recursive evaluation of 'loop'\");"	没测该层	keep	keep	—
-"check 面同码同源（跨面口径一致，info 不挡门禁）"	"CLI 回归：截断诊断必须**跨面可见**。 断言：expect(r.stdout).toContain(`(${CODE})`);；expect(r.stdout).toContain(\"nudo:entry-may-throw\");"	没测该层	keep	keep	—
-"collectNudoFiles 不收 dist/ 与 coverage/ 下的文件（改前：收进来）"	"后果（本次逐条钉住）： ① `nudo test <pkg>` 因**陈旧构建产物**里的过期见证而**红**（假红） ② **CLI 与 IDE / vite 对同一文件结论相反**（service 闸门恒不分析 dist/） ③ **watch 扫描**同样扫进 `dist/` 修法：目录发现复用产品唯一的范围闸门（`shouldAnalyzeFile`）⇒ `DEFAULT_ANALYSIS_EXCLUDE`（node_modules / dist / coverage）三条全生效。 断言：expect(names).toEqual([\"src/lib.js\"]);"	没测该层	keep	keep	—
-"CLI check <pkg> 的文件集合里没有 dist/（改前：多出 dist/lib.js）"	"后果（本次逐条钉住）： ① `nudo test <pkg>` 因**陈旧构建产物**里的过期见证而**红**（假红） ② **CLI 与 IDE / vite 对同一文件结论相反**（service 闸门恒不分析 dist/） ③ **watch 扫描**同样扫进 `dist/` 修法：目录发现复用产品唯一的范围闸门（`shouldAnalyzeFile`）⇒ `DEFAULT_ANALYSIS_EXCLUDE`（node_modules / dist / coverage）三条全生效。 断言：expect(r.stdout).not.toContain(\"dist/lib.js\");；expect(r.stdout).not.t"	没测该层	keep	keep	—
-"CLI test <pkg> 不因陈旧构建产物而红（改前：exit 1 假红）"	"后果（本次逐条钉住）： ① `nudo test <pkg>` 因**陈旧构建产物**里的过期见证而**红**（假红） ② **CLI 与 IDE / vite 对同一文件结论相反**（service 闸门恒不分析 dist/） ③ **watch 扫描**同样扫进 `dist/` 修法：目录发现复用产品唯一的范围闸门（`shouldAnalyzeFile`）⇒ `DEFAULT_ANALYSIS_EXCLUDE`（node_modules / dist / coverage）三条全生效。 断言：expect(r.status).toBe(0);；expect(r.stdout).not.toContain(\"stale\");"	没测该层	keep	keep	—
-"跨面一致：CLI 目录发现与 IDE/vite 的 service 闸门对同一批文件给出相同结论"	"后果（本次逐条钉住）： ① `nudo test <pkg>` 因**陈旧构建产物**里的过期见证而**红**（假红） ② **CLI 与 IDE / vite 对同一文件结论相反**（service 闸门恒不分析 dist/） ③ **watch 扫描**同样扫进 `dist/` 修法：目录发现复用产品唯一的范围闸门（`shouldAnalyzeFile`）⇒ `DEFAULT_ANALYSIS_EXCLUDE`（node_modules / dist / coverage）三条全生效。 断言：expect(shouldAnalyzeFile(distFile, DIST_LIB)).toBe(false);；expect(sho"	没测该层	keep	keep	—
-"--format standard：台账标题不再宣称 zod（没有 zod 产物）"	"`nudo export` 的 stdout `dropped preds` 台账恒称「not projected into zod」⇒ `--format standard`（**根本没产 zod 产物**）也这么写 ⇒ 误导诊断 （标题与内容张冠李戴）。 机制：台账**标题**取 `effectiveDialect`（`schemaDialectOf` 不看 `_format` ⇒ 恒 `\"zod\"`），而台账**内容**来自 **standard** 面的 dropped 记录 ⇒ 不同源。 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain(\"// dropped"	没测该层	keep	keep	—
-"--format all：zod 台账与 standard 台账各一次（标题不再同名重复）"	"`nudo export` 的 stdout `dropped preds` 台账恒称「not projected into zod」⇒ `--format standard`（**根本没产 zod 产物**）也这么写 ⇒ 误导诊断 （标题与内容张冠李戴）。 机制：台账**标题**取 `effectiveDialect`（`schemaDialectOf` 不看 `_format` ⇒ 恒 `\"zod\"`），而台账**内容**来自 **standard** 面的 dropped 记录 ⇒ 不同源。 断言：expect(r.status).toBe(0);；expect(count(r.stdout, /not projected i"	没测该层	keep	keep	—
-"--format dts：无台账（dts 面不携带 dropped 记录）"	"夹具：返回 bigint 的函数（lit bigint 不可投影 ⇒ 有 dropped 记录）。 断言：expect(r.status).toBe(0);；expect(r.stdout).not.toContain(\"dropped preds\");"	夹具漏形态	keep	keep	—
-"路径不存在 ⇒ ok:false + summary.pathErrors = 1（summary.errors 仍只数诊断）"	"`check --json` 的信封里 `summary.errors` **不含** `pathErrors` （695 口径），而设计文档写的是「并计入」⇒ 只读 `summary.errors` 的机器 消费方把「路径失败」读成「0 错」（`ok` 才是 false）。 现在信封给出**不含歧义**的字段 `summary.pathErrors`（路径错误 / 文件级 硬错误条数），`summary.errors` 仍是分析诊断数（= Σ reports[]，core 契约）， 绿运行不加该字段（JSON 逐字节不变）。 断言：expect(r.status).toBe(1);；expect(env.ok).toBe(fals"	没测该层	keep	keep	—
-"绿运行 ⇒ 不带 pathErrors 字段（JSON 形态不漂移）"	"`check --json` 的信封里 `summary.errors` **不含** `pathErrors` （695 口径），而设计文档写的是「并计入」⇒ 只读 `summary.errors` 的机器 消费方把「路径失败」读成「0 错」（`ok` 才是 false）。 现在信封给出**不含歧义**的字段 `summary.pathErrors`（路径错误 / 文件级 硬错误条数），`summary.errors` 仍是分析诊断数（= Σ reports[]，core 契约）， 绿运行不加该字段（JSON 逐字节不变）。 断言：expect(r.status).toBe(0);；expect(env.ok).toBe(true"	没测该层	keep	keep	—
-"zod：解构形参按**字段名**建顶层键（不再是内部占位 `_p0`）"	"**口径已由 修正**：把解构形参整段收进一个以**求值占位** （`_p0`）命名的槽 —— 占位名不是公共名，发布的校验器因此对唯一合法调用报 `required@_p0`。 症状：解构形参 `destr({ a, b })` ⇒ `destrInput` 的顶层键是**绑定名** （`{a, b}` = 实参的**值**）； 断言：expect(r.status).toBe(0);；expect(r.stdout).toMatch(/export const destrInput = z\\.object\\(\\{ a:/);"	没测该层	keep	keep	—
-"standard：解构形参的顶层槽是字段名（无占位名）"	"**口径已由 修正**：把解构形参整段收进一个以**求值占位** （`_p0`）命名的槽 —— 占位名不是公共名，发布的校验器因此对唯一合法调用报 `required@_p0`。 症状：解构形参 `destr({ a, b })` ⇒ `destrInput` 的顶层键是**绑定名** （`{a, b}` = 实参的**值**）； 断言：expect(r.status).toBe(0);；expect(inputNode(r.stdout, \"destrInput\")).toContain('\"key\":\"a\"');"	没测该层	keep	keep	—
-"负控制：数组解构的字段级契约仍是元组（Bug 394 口径不变）"	"**口径已由 修正**：把解构形参整段收进一个以**求值占位** （`_p0`）命名的槽 —— 占位名不是公共名，发布的校验器因此对唯一合法调用报 `required@_p0`。 症状：解构形参 `destr({ a, b })` ⇒ `destrInput` 的顶层键是**绑定名** （`{a, b}` = 实参的**值**）； 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain(\"z.tuple(\");"	没测该层	keep	keep	—
-"同一缺失路径给两次 ⇒ 只登记一条错误"	"断言：expect(sink).toHaveLength(1);"	没测该层	keep	keep	—
-"同一现场文件给两次 ⇒ 记录不重复（按调用点身份各一条）"	"断言：expect(twice?.length ?? 0).toBe(once?.length ?? 0);"	没测该层	keep	keep	—
-"standard 段的槽键是原形参名（导出名让位，数据不动）"	"`export --format all`（stdout）的跨段改名是**裸文本替换** ⇒ 把 standard 段 `{\"key\":\"<形参名>\"}` 这个**数据**一并改名 ⇒ 导出的 standard schema 要求一个根本不存在的形参名，与同一产物里的 zod 段 / dts 段结论相反。 根因：`renameIdentifier` 只做标识符边界判断，不区分「绑定名」与「字符串 字面量里的数据」。 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain('{\"key\":\"f1Input\",\"node\"');"	夹具漏形态	keep	keep	—
-"负控制：--out 落盘的 standard 产物槽键同样是原形参名（两条投递路径同结论）"	"`export --format all`（stdout）的跨段改名是**裸文本替换** ⇒ 把 standard 段 `{\"key\":\"<形参名>\"}` 这个**数据**一并改名 ⇒ 导出的 standard schema 要求一个根本不存在的形参名，与同一产物里的 zod 段 / dts 段结论相反。 根因：`renameIdentifier` 只做标识符边界判断，不区分「绑定名」与「字符串 字面量里的数据」。 断言：expect(r.status).toBe(0);；expect(name).toBeDefined();"	夹具漏形态	keep	keep	—
-"同名两个模块 + 同模块重导 ⇒ 无编号副本、无陈旧内容"	"`nudo export --out` 的「唯一名兜底」分支**不查「同一模块」** ⇒ 同一模块重导落盘产生**内容互斥**的陈旧副本并逐次累积。 症状：两个同名模块（`a/lib.js` / `b/lib.js`）导出到同一 `--out` 目录后再改 `b` 的源码重导 ⇒ 每次新增 `.2` / `.3` 编号副本，旧的保留 ⇒ 同一目录里两份 文件自称同一模块的投影却给出互斥的返回形态（`=> 3` vs `=> 201`）。 断言：expect(exportDts(join(dir, \"a\", \"lib.js\")).status).toBe(0);；expect(exportDts(join(dir, \"b\", \"lib"	夹具漏形态	keep	keep	—
-"幂等重导：内容不变时仍是一份产物"	"断言：expect(runCliTsx([\"export\", join(dir, f, \"lib.js\"), \"--format\", \"dts\", \"--out\", out]).status).toBe(0);；expect(readdirSync(out).filter((f) => f.endsWith(\".d.ts\"))).toHaveLength(2);"	没测该层	keep	keep	—
+用户导出 `z` + zod 段 import ⇒ 产物可编译（tsc --strict rc 0）；用户导出 `__nudoCheck`（standard 段的非导出 helper 同名）⇒ 不重复声明	cli-io 聚合矩阵	没测该层	keep	keep	—
+主路径：完全无证据的导出函数 ⇒ 参数 unknown，stderr 点名提示；主路径：契约只覆盖部分形参时，未覆盖位同样是 unknown；窄路径：@nudo:skip + 契约未覆盖的形参 ⇒ 该位 unknown + stderr 点名提示	cli-io 聚合矩阵	没测该层	keep	keep	—
+test 文本面与 --json 面都带 nudo:recursion-truncated；check 面同码同源（跨面口径一致，info 不挡门禁）	cli-io 聚合矩阵	没测该层	keep	keep	—
+collectNudoFiles 不收 dist/ 与 coverage/ 下的文件（改前：收进来）；CLI check <pkg> 的文件集合里没有 dist/（改前：多出 dist/lib.js）；CLI test <pkg> 不因陈旧构建产物而红（改前：exit 1 假红）；跨面一致：CLI 目录发现与 IDE/vite 的 service 闸门对同一批文件给出相同结论	cli-io 聚合矩阵	没测该层	keep	keep	—
+--format standard：台账标题不再宣称 zod（没有 zod 产物）；--format all：zod 台账与 standard 台账各一次（标题不再同名重复）；--format dts：无台账（dts 面不携带 dropped 记录）	cli-io 聚合矩阵	没测该层	keep	keep	—
+路径不存在 ⇒ ok:false + summary.pathErrors = 1（summary.errors 仍只数诊断）；绿运行 ⇒ 不带 pathErrors 字段（JSON 形态不漂移）	cli-io 聚合矩阵	没测该层	keep	keep	—
+zod：解构形参按**字段名**建顶层键（不再是内部占位 `_p0`）；standard：解构形参的顶层槽是字段名（无占位名）；负控制：数组解构的字段级契约仍是元组（Bug 394 口径不变）	cli-io 聚合矩阵	没测该层	keep	keep	—
+同一缺失路径给两次 ⇒ 只登记一条错误；同一现场文件给两次 ⇒ 记录不重复（按调用点身份各一条）	cli-io 聚合矩阵	没测该层	keep	keep	—
+standard 段的槽键是原形参名（导出名让位，数据不动）；负控制：--out 落盘的 standard 产物槽键同样是原形参名（两条投递路径同结论）	cli-io 聚合矩阵	没测该层	keep	keep	—
+同名两个模块 + 同模块重导 ⇒ 无编号副本、无陈旧内容；幂等重导：内容不变时仍是一份产物	cli-io 聚合矩阵	没测该层	keep	keep	—
 "写出的 .d.ts 里的相对说明符从输出目录可解析（不再指向源目录）"	"`nudo export --format dts --out <dir>` 不重基相对模块说明符。 不再指向源目录）。 断言：expect(r.status, name).toBe(0);；expect(existsSync(produced)).toBe(true);"	没测该层	keep	keep	—
-"optional 契约 + `{ a: undefined }` / `{}` / `{ a: 'x' }` ⇒ exit 0、无 constraint-violated"	"这里走**真子进程**（`runCliTsx` + 绝对路径，`cwd` 保持 repo 根——CLI 的 `@nudojs/service/emit` 解析依赖 cwd，指向夹具目录会落进陈旧 dist）。 required 对照必须仍然 exit 1。 断言：expect(r.status).toBe(0);；expect(json.ok).toBe(true);"	夹具漏形态	keep	keep	—
-"required 对照 + `{ a: undefined }` ⇒ exit 1 且报 nudo:constraint-violated"	"这里走**真子进程**（`runCliTsx` + 绝对路径，`cwd` 保持 repo 根——CLI 的 `@nudojs/service/emit` 解析依赖 cwd，指向夹具目录会落进陈旧 dist）。 required 对照必须仍然 exit 1。 断言：expect(r.status).toBe(1);；expect(json.ok).toBe(false);"	夹具漏形态	keep	keep	—
-"required 对照 + `{ a: 'x' }` ⇒ exit 0（对照组正例）"	"这里走**真子进程**（`runCliTsx` + 绝对路径，`cwd` 保持 repo 根——CLI 的 `@nudojs/service/emit` 解析依赖 cwd，指向夹具目录会落进陈旧 dist）。 required 对照必须仍然 exit 1。 断言：expect(r.status).toBe(0);；expect(json.issues.filter((i) => i.code === \"nudo:constraint-violated\")).toHaveLength(0);"	夹具漏形态	keep	keep	—
-"A 组（无调用点）：zod / standard 槽是一层数组，dts 同形"	"`nudo export --format dts --out <dir>` 不重基相对模块说明符。 不再指向源目录）。 断言：expect(schema.status).toBe(0);；expect(schema.stdout).toContain(\"export const restOneInput = z.object({ args: z.array(z.unknown()).optional() })\");"	没测该层	keep	keep	—
-"A 组 standard 校验器**接受**该函数自己的合法调用 `{args:[1,2]}`"	"`export --format all`（stdout）的跨段改名是**裸文本替换** ⇒ 把 standard 段 `{\"key\":\"<形参名>\"}` 这个**数据**一并改名 ⇒ 导出的 standard schema 要求一个根本不存在的形参名，与同一产物里的 zod 段 / dts 段结论相反。 根因：`renameIdentifier` 只做标识符边界判断，不区分「绑定名」与「字符串 字面量里的数据」。 断言：expect(runCliTsx([\"export\", join(dir, \"lib.js\"), \"--format\", \"standard\", \"--out\", out]).status).toBe(0);；ex"	夹具漏形态	keep	keep	—
-"对照组（有调用点证据）：同样是**一层**数组，接受集与 A 组一致"	"**口径已由 修正**：把解构形参整段收进一个以**求值占位** （`_p0`）命名的槽 —— 占位名不是公共名，发布的校验器因此对唯一合法调用报 `required@_p0`。 症状：解构形参 `destr({ a, b })` ⇒ `destrInput` 的顶层键是**绑定名** （`{a, b}` = 实参的**值**）； 断言：expect(schema.status).toBe(0);；expect(schema.stdout).not.toContain(\"z.array(z.array(\");"	没测该层	keep	keep	—
-"--gha 单独 ⇒ 注解在 stdout（不回归）"	"`check --gha --gitlab`（**非** `--json`）⇒ GHA 注解整段丢弃 （`::error` 计数 0），而同一语义只多一个无关的 `--json` 就恢复 ⇒ 「同一语义两种写法两个结论」。 现在：非 `--json` 面遇 `--gitlab`（stdout 被 Code Quality 数组占住）时 GHA 注解**改走 stderr**（与 `--json` 分支同形），一个通道都不丢。 断言：expect(r.status).toBe(1);；expect(annCount(r)).toBeGreaterThanOrEqual(1);"	夹具漏形态	keep	keep	—
-"--gha --gitlab ⇒ stdout 仍是 GitLab 数组、stderr 有 ::error（不被丢弃）"	"`check --gha --gitlab`（**非** `--json`）⇒ GHA 注解整段丢弃 （`::error` 计数 0），而同一语义只多一个无关的 `--json` 就恢复 ⇒ 「同一语义两种写法两个结论」。 现在：非 `--json` 面遇 `--gitlab`（stdout 被 Code Quality 数组占住）时 GHA 注解**改走 stderr**（与 `--json` 分支同形），一个通道都不丢。 断言：expect(r.status).toBe(1);；expect(Array.isArray(rows)).toBe(true);"	夹具漏形态	keep	keep	—
-"单变量对照：加 --json 后 GHA 计数不变（不再取决于无关旗标）"	"`check --gha --gitlab`（**非** `--json`）⇒ GHA 注解整段丢弃 （`::error` 计数 0），而同一语义只多一个无关的 `--json` 就恢复 ⇒ 「同一语义两种写法两个结论」。 现在：非 `--json` 面遇 `--gitlab`（stdout 被 Code Quality 数组占住）时 GHA 注解**改走 stderr**（与 `--json` 分支同形），一个通道都不丢。 断言：expect(annCount(withJson)).toBeGreaterThanOrEqual(1);；expect(annCount(both)).toBe(annCount(withJson));"	夹具漏形态	keep	keep	—
-"check --from <使用现场> -- <被检查文件> ⇒ 报 nudo:contract-drift（改前 0 条）"	"`nudo check --from <使用现场文件>` 必须能判出**跨文件**调用点 带来的生成段陈旧（`nudo:contract-drift`）。 症状（改前）：drift 的「今日域」证据**只**来自 checkSource 评估**被检查 文件自身**时产生的 AbsCallRecord ⇒ 调用点在别的文件里时，`--from` 写出的 生成段**永远判不出陈旧**（落盘契约静默陈旧，0 warning 假绿）。 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain(\"nudo:contract-drift\");"	没测该层	keep	keep	—
-"控制组：没有跨文件证据 ⇒ 不报 drift（无证据不判）"	"`nudo check --from <使用现场文件>` 必须能判出**跨文件**调用点 带来的生成段陈旧（`nudo:contract-drift`）。 症状（改前）：drift 的「今日域」证据**只**来自 checkSource 评估**被检查 文件自身**时产生的 AbsCallRecord ⇒ 调用点在别的文件里时，`--from` 写出的 生成段**永远判不出陈旧**（落盘契约静默陈旧，0 warning 假绿）。 断言：expect(r.status).toBe(0);；expect(r.stdout).not.toContain(\"nudo:contract-drift\");"	没测该层	keep	keep	—
-"归因闸：别的模块的同名调用点证据不得污染本文件的判定"	"断言：expect(r.stdout).not.toContain(\"nudo:contract-drift\");"	没测该层	keep	keep	—
-"zod 入参面：数组解构 + 字段级契约 ⇒ 元组槽（改前是对象槽 `a`）"	"症状（改前）：`export function f7([a, b])` + 侧车契约 `fn({ a: number() })` ⇒ zod 给出 `f7Input = z.object({ a: z.number()… })` —— 校验器要求一个**键名叫 `a`** 的属性，而真实调用传的是**数组** ⇒ 合法的数组调用被判红、非法的对象调用被放行（与真实形参形态完全颠倒）。 根因：统一参数面（`export/contract-face.ts`）按**绑定名**收侧车契约， 而数组解构的绑定名是**元素下标**（`[a, b]` 的 `a` 是下标 0 的元素）⇒ 必须**按下标**合成**元组槽**，不能摊成对象槽。 断言"	夹具漏形态	keep	keep	—
-"standard 面：数组解构形参的槽节点是元组"	"症状（改前）：`export function f7([a, b])` + 侧车契约 `fn({ a: number() })` ⇒ zod 给出 `f7Input = z.object({ a: z.number()… })` —— 校验器要求一个**键名叫 `a`** 的属性，而真实调用传的是**数组** ⇒ 合法的数组调用被判红、非法的对象调用被放行（与真实形参形态完全颠倒）。 根因：统一参数面（`export/contract-face.ts`）按**绑定名**收侧车契约， 而数组解构的绑定名是**元素下标**（`[a, b]` 的 `a` 是下标 0 的元素）⇒ 必须**按下标**合成**元组槽**，不能摊成对象槽。 断言"	夹具漏形态	keep	keep	—
-"负控制：对象解构 + 字段级契约仍摊成对象槽（既有口径不变）"	"症状（改前）：`export function f7([a, b])` + 侧车契约 `fn({ a: number() })` ⇒ zod 给出 `f7Input = z.object({ a: z.number()… })` —— 校验器要求一个**键名叫 `a`** 的属性，而真实调用传的是**数组** ⇒ 合法的数组调用被判红、非法的对象调用被放行（与真实形参形态完全颠倒）。 根因：统一参数面（`export/contract-face.ts`）按**绑定名**收侧车契约， 而数组解构的绑定名是**元素下标**（`[a, b]` 的 `a` 是下标 0 的元素）⇒ 必须**按下标**合成**元组槽**，不能摊成对象槽。 断言"	夹具漏形态	keep	keep	—
-"负控制：无契约的数组解构仍是观测元组（既有口径不变）"	"症状（改前）：`export function f7([a, b])` + 侧车契约 `fn({ a: number() })` ⇒ zod 给出 `f7Input = z.object({ a: z.number()… })` —— 校验器要求一个**键名叫 `a`** 的属性，而真实调用传的是**数组** ⇒ 合法的数组调用被判红、非法的对象调用被放行（与真实形参形态完全颠倒）。 根因：统一参数面（`export/contract-face.ts`）按**绑定名**收侧车契约， 而数组解构的绑定名是**元素下标**（`[a, b]` 的 `a` 是下标 0 的元素）⇒ 必须**按下标**合成**元组槽**，不能摊成对象槽。 断言"	夹具漏形态	keep	keep	—
-"--target 指向函数名：返回域取自函数面（不再是 `() => ?`）"	"症状（改前）： ''' $ nudo check c.js --what-if raw:string --target useRaw Type of \"useRaw\": () => ? #exact ''' 而**同一份文件**的签名表里写着 `useRaw() => 3` ⇒ 两条面互相矛盾； `?` 既不是 合法 TS 类型也不是 Nudo 的类型记号（对 AI/agent 消费者等于「返回域未知」）。 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain('Type of \"useRaw\":');"	没测该层	keep	keep	—
-"两条面不再互相矛盾：--target 的返回域与签名表一致"	"症状（改前）： ''' $ nudo check c.js --what-if raw:string --target useRaw Type of \"useRaw\": () => ? #exact ''' 而**同一份文件**的签名表里写着 `useRaw() => 3` ⇒ 两条面互相矛盾； `?` 既不是 合法 TS 类型也不是 Nudo 的类型记号（对 AI/agent 消费者等于「返回域未知」）。 断言：expect(whatIf.status).toBe(0);；expect(table.status).toBe(0);"	没测该层	keep	keep	—
-"控制：--target 指向非函数绑定时行为不变"	"症状（改前）： ''' $ nudo check c.js --what-if raw:string --target useRaw Type of \"useRaw\": () => ? #exact ''' 而**同一份文件**的签名表里写着 `useRaw() => 3` ⇒ 两条面互相矛盾； `?` 既不是 合法 TS 类型也不是 Nudo 的类型记号（对 AI/agent 消费者等于「返回域未知」）。 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain('Type of \"raw\": string');"	没测该层	keep	keep	—
-"控制：--target 指向不存在的名字时仍是 unknown"	"症状（改前）： ''' $ nudo check c.js --what-if raw:string --target useRaw Type of \"useRaw\": () => ? #exact ''' 而**同一份文件**的签名表里写着 `useRaw() => 3` ⇒ 两条面互相矛盾； `?` 既不是 合法 TS 类型也不是 Nudo 的类型记号（对 AI/agent 消费者等于「返回域未知」）。 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain('Type of \"nope\": unknown');"	没测该层	keep	keep	—
-"类型专用的值位置 import 被消掉 ⇒ 产物 `node --check` 过且真 import() 成功"	"真 ESM 加载（链接期检查 —— `node --check` 抓不到这一层） 断言：expect(r.status, r.stderr).toBe(0);；expect(r.stderr).not.toContain(\"TypeScript syntax\");"	没测该层	keep	keep	—
-"产物里的 import 不得指向「没有该运行时导出」的模块（链接面）"	"值位置的「类型专用导入」未消除 ⇒ 产物 Node **加载不了** （ESM 链接期 `SyntaxError: does not provide an export named 'Foo'`）， 而 `migrate strip` / `migrate verify` 双双绿灯。 本钉是**产物面**的回归钉：产物必须能被 Node **真实加载**（`node --check` 只验语法、抓不到本条的链接失败）。 断言：expect(r.status, r.stderr).toBe(0);；expect(types.trim()).toBe(\"\");"	门禁未跑	keep	keep	—
-"字段的 `x!` / `y?` 被剥 ⇒ 产物 `node --check` 过"	"node --check（语法检查，不执行） 断言：expect(r.status, r.stderr).toBe(0);；expect(r.stderr).not.toContain(\"TypeScript syntax\");"	没测该层	keep	keep	—
-"可选方法 `m?()` 被剥 ⇒ 产物 `node --check` 过"	"node --check（语法检查，不执行） 断言：expect(r.status, r.stderr).toBe(0);；expect(r.stderr).not.toContain(\"TypeScript syntax\");"	没测该层	keep	keep	—
-"`this` 形参被剥 ⇒ 产物 `node --check` 过且形参表只剩 `a`"	"node --check（语法检查，不执行） 断言：expect(r.status, r.stderr).toBe(0);；expect(r.stderr).not.toContain(\"TypeScript syntax\");"	没测该层	keep	keep	—
-"函数体里的 `this` **表达式**必须保留（只有形参位被删）"	"TS 的 `this` 形参未剥 ⇒ 产物 `function f(this, a)` **Node 根本 加载不了**（strict 与 sloppy 都不允许 `this` 作形参名），而 `migrate strip` 报「wrote」/ exit 0。 本钉是**产物面**的回归钉：产物必须 `node --check` 过，且形参表里不得再有 `this`。 断言：expect(r.status, r.stderr).toBe(0);；expect(code).toContain(\"this.x\");"	没测该层	keep	keep	—
-"第 1 条：排除清单上 stdout（--json 面可解析；文本面 stdout 不含被排除的包）"	"无任何排除模式的 workspace（负控：stdout 逐字不变） 断言：expect(r.status, r.stderr).toBe(0);；expect(Array.isArray(parsed)).toBe(true);"	没测该层	keep	keep	—
-"第 1 条：retire --all --json 同样带排除清单（机器面统一口径）"	"族 56 · nudojs **CLI 面** 3 条（机器消费者能看见的问题）： | # | 项 | 断言要点 | |---|---|---| | 1 | **排除清单未上 stdout** | 排除清单（pnpm 负向模式命中的包）此前**只在 stderr** ⇒ 机器消费者看不到「哪些包被排除了」。 **无排除 ⇒ JSON 逐字不变**（负控）。 断言：expect(r.status, r.stderr).toBe(0);；expect(Array.isArray(parsed)).toBe(true);"	没测该层	keep	keep	—
-"第 1 条 · 负控：无排除的 workspace ⇒ --json 逐字不变（不出现 excluded 键）"	"无任何排除模式的 workspace（负控：stdout 逐字不变） 断言：expect(r.status, r.stderr).toBe(0);；expect(r.stdout).not.toContain(\"excluded\");"	没测该层	keep	keep	—
-"第 2 条：多个目标失败 ⇒ 消息列出**全部**失败目标，且整批零写盘"	"族 56 · nudojs **CLI 面** 3 条（机器消费者能看见的问题）： | # | 项 | 断言要点 | |---|---|---| | 1 | **排除清单未上 stdout** | 排除清单（pnpm 负向模式命中的包）此前**只在 stderr** ⇒ 机器消费者看不到「哪些包被排除了」。 **无排除 ⇒ JSON 逐字不变**（负控）。 断言：expect(err, \"两个目标都无可退役 ⇒ 必须抛错\").toBeDefined();；expect(err!.message).toContain(a.dir);"	没测该层	keep	keep	—
-"第 2 条：CLI 面 —— 失败目标全部可见（文本面 + --json 的 failedTargets）"	"族 56 · nudojs **CLI 面** 3 条（机器消费者能看见的问题）： | # | 项 | 断言要点 | |---|---|---| | 1 | **排除清单未上 stdout** | 排除清单（pnpm 负向模式命中的包）此前**只在 stderr** ⇒ 机器消费者看不到「哪些包被排除了」。 **无排除 ⇒ JSON 逐字不变**（负控）。 断言：expect(r.status).toBe(0); // 「无可退役」是正常结果（口径不变）；expect(all).toContain(a.dir);"	没测该层	keep	keep	—
-"第 2 条：真错误与「无可退役」混在一批 ⇒ 报红（不再被当成正常结果吞成 exit 0）"	"畸形清单（真错误，不是「无可退役」） 断言：expect(r.status).toBe(1);；expect(all).toContain(plain.dir);"	没测该层	keep	keep	—
-"第 2 条 · 反向闸：单个失败 ⇒ 消息与旧实现逐字同形"	"族 56 · nudojs **CLI 面** 3 条（机器消费者能看见的问题）： | # | 项 | 断言要点 | |---|---|---| | 1 | **排除清单未上 stdout** | 排除清单（pnpm 负向模式命中的包）此前**只在 stderr** ⇒ 机器消费者看不到「哪些包被排除了」。 **无排除 ⇒ JSON 逐字不变**（负控）。 断言：expect(err).toBeDefined();；expect(err!.message).toBe("	没测该层	keep	keep	—
-"第 3 条：verify 的目标集合含 `.jsx`（JSX 产物不再对迁移闸门隐形）"	"族 56 · nudojs **CLI 面** 3 条（机器消费者能看见的问题）： | # | 项 | 断言要点 | |---|---|---| | 1 | **排除清单未上 stdout** | 排除清单（pnpm 负向模式命中的包）此前**只在 stderr** ⇒ 机器消费者看不到「哪些包被排除了」。 **无排除 ⇒ JSON 逐字不变**（负控）。 断言：expect(r.stdout).toContain(\"Comp.jsx\");；expect(r.stdout).not.toContain(\"Not an analysis target\");"	没测该层	keep	keep	—
-"第 3 条 · 反向闸：声明文件 / 侧车**仍不是** verify 的目标（Bug 566 同口径不变）"	"族 56 · nudojs **CLI 面** 3 条（机器消费者能看见的问题）： | # | 项 | 断言要点 | |---|---|---| | 1 | **排除清单未上 stdout** | 排除清单（pnpm 负向模式命中的包）此前**只在 stderr** ⇒ 机器消费者看不到「哪些包被排除了」。 **无排除 ⇒ JSON 逐字不变**（负控）。 断言：expect(r.stdout).not.toContain(\"types.d.ts\");；expect(r.stdout).not.toContain(\"sidecar.nudo.js\");"	没测该层	keep	keep	—
-"同目标内一个文件语法错 ⇒ 库面不 throw + 成功文件的结果仍返回"	"族 56b · 的**库面半边** —— `migrateStrip` 的**逐文件错误隔离**。 背景（台账原描述「`migrate verify` 库面整批 abort」经 W4 取证**已不成立**）： `migrateVerify` 早已逐文件隔离（同目标内部分文件语法错 ⇒ 失败文件记 `analysis-error`、成功文件照常返回）； 断言：expect(good).toHaveLength(1);；expect(good[0]!.outFile.endsWith(\"a-good.js\")).toBe(true);"	门禁未跑	keep	keep	—
-"原子性仍成立 ⇒ 有失败时一个字节都不落盘（含好文件）"	"断言：expect(existsSync(join(dir, \"a-good.js\"))).toBe(false);；expect(existsSync(join(dir, \"z-bad.js\"))).toBe(false);"	没测该层	keep	keep	—
-"失败行带文件名 + 失败码与 migrateVerify 同码（同款结构）"	"族 56b · 的**库面半边** —— `migrateStrip` 的**逐文件错误隔离**。 背景（台账原描述「`migrate verify` 库面整批 abort」经 W4 取证**已不成立**）： `migrateVerify` 早已逐文件隔离（同目标内部分文件语法错 ⇒ 失败文件记 `analysis-error`、成功文件照常返回）； 断言：expect(stripFail).toBeDefined();；expect(String(stripFail!.error)).toContain(\"z-bad.ts\");"	门禁未跑	keep	keep	—
-"负控：全部成功 ⇒ 返回行的字段逐字不变（无 code / error 键）"	"族 56b · 的**库面半边** —— `migrateStrip` 的**逐文件错误隔离**。 背景（台账原描述「`migrate verify` 库面整批 abort」经 W4 取证**已不成立**）： `migrateVerify` 早已逐文件隔离（同目标内部分文件语法错 ⇒ 失败文件记 `analysis-error`、成功文件照常返回）； 断言：expect(rows).toHaveLength(1);；expect(Object.keys(rows[0]!).sort()).toEqual([\"file\", \"notes\", \"outFile\"]);"	门禁未跑	keep	keep	—
-"CLI 面：失败目标的 stdout/stderr 与旧版逐字同形（失败详情带文件名）"	"族 56b · 的**库面半边** —— `migrateStrip` 的**逐文件错误隔离**。 背景（台账原描述「`migrate verify` 库面整批 abort」经 W4 取证**已不成立**）： `migrateVerify` 早已逐文件隔离（同目标内部分文件语法错 ⇒ 失败文件记 `analysis-error`、成功文件照常返回）； 断言：expect(r.status).toBe(1);；expect(parsed.ok).toBe(false);"	门禁未跑	keep	keep	—
-"stdout 里 helper / 类型别名各只出现一次（两个函数 ⇒ 两块）"	"`nudo export --format standard` 到 stdout 时产出**重复的 helper 声明** （TS2393 / TS2300 ⇒ 产物不可用）。 机制（AGENT-CONTEXT §4 已裁决）：产物头**没有** helper； 断言：expect(r.status).toBe(0);；expect(count(r.stdout, /^function __nudoTypeOf/gm)).toBe(1);"	没测该层	keep	keep	—
-"剥前导不丢内容：两个函数的导出体都在"	"断言：expect(r.status).toBe(0);；expect(r.stdout).toContain(\"export const alpha_x\");"	没测该层	keep	keep	—
-"--out 落盘不变（每函数一份文件，各带一份 helper ⇒ 互不冲突）"	"`nudo export --format standard` 到 stdout 时产出**重复的 helper 声明** （TS2393 / TS2300 ⇒ 产物不可用）。 机制（AGENT-CONTEXT §4 已裁决）：产物头**没有** helper； 断言：expect(r.status).toBe(0);；expect(files.length).toBe(2);"	没测该层	keep	keep	—
-"stdout 里 `fooOutput` 只声明一次（standard 段改名）"	"一个 TS 模块作用域里同名声明只能出现一次 ⇒ 重复即产物不可用。 断言：expect(r.status).toBe(0);；expect(count(r.stdout, /^export const fooOutput\\b/gm)).toBe(1);"	夹具漏形态	keep	keep	—
-"stdout 流里没有重复的顶层声明（产物可编译）"	"一个 TS 模块作用域里同名声明只能出现一次 ⇒ 重复即产物不可用。 断言：expect(r.status).toBe(0);；expect(duplicateTopLevelNames(r.stdout)).toEqual([]);"	夹具漏形态	keep	keep	—
-"--out 落盘不变（各方言各占一个文件 ⇒ 产品名不漂移）"	"一个 TS 模块作用域里同名声明只能出现一次 ⇒ 重复即产物不可用。 断言：expect(r.status).toBe(0);；expect(zodName).toBeDefined();"	夹具漏形态	keep	keep	—
-"stdout 里 `fooInput` 只声明一次（standard 段改名）"	"同一 stdout 产物里 zod 段的 `<fn>Input` 与另一段的 `<fn>Input` **标识符冲突**（TS2300 / TS2451）⇒ 产物不可用。 ⚠ 勘误（AGENT-CONTEXT §4）：报告说的「dts 段 `export declare function <fn>Input`」**不存在**（dts 生成器全文件无 `Input` 字样）⇒ 真实撞名对是 **zod 段 vs standard 段**（两段各自自洽，合进同一作用域即冲突）。 断言：expect(r.status).toBe(0);；expect(count(r.stdout, /^export const fooInput\\b/gm"	没测该层	keep	keep	—
-"dts 段不产 `<fn>Input`（报告的撞名对不存在 ⇒ 治的是 zod ↔ standard）"	"同一 stdout 产物里 zod 段的 `<fn>Input` 与另一段的 `<fn>Input` **标识符冲突**（TS2300 / TS2451）⇒ 产物不可用。 ⚠ 勘误（AGENT-CONTEXT §4）：报告说的「dts 段 `export declare function <fn>Input`」**不存在**（dts 生成器全文件无 `Input` 字样）⇒ 真实撞名对是 **zod 段 vs standard 段**（两段各自自洽，合进同一作用域即冲突）。 断言：expect(r.status).toBe(0);；expect(r.stdout).not.toContain(\"fooInput\");"	没测该层	keep	keep	—
-"--format standard 单方言时导出名不漂移（无冲突 ⇒ 不改名）"	"同一 stdout 产物里 zod 段的 `<fn>Input` 与另一段的 `<fn>Input` **标识符冲突**（TS2300 / TS2451）⇒ 产物不可用。 ⚠ 勘误（AGENT-CONTEXT §4）：报告说的「dts 段 `export declare function <fn>Input`」**不存在**（dts 生成器全文件无 `Input` 字样）⇒ 真实撞名对是 **zod 段 vs standard 段**（两段各自自洽，合进同一作用域即冲突）。 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain(\"export const fooInput\")"	没测该层	keep	keep	—
-"zod 入参面：槽名取裸名、槽值是数组、不凭空造 argN 槽"	"症状（改前）：`export function sumAll(first, ...rest)` 在 `sumAll(1, 2, 3)` 的调用点上产出 `z.object({ first: z.literal(1), \"...rest\": z.literal(2), arg2: z.literal(3) })` —— 三个槽：剩余参数被拆成「`...rest` 一个槽 + `arg2` 一个槽」，而调用面里 剩余参数**是一个数组**。 根因（族 17 · S1）：`export/contract-face.ts` 的统一参数面以**观测实参个数** 为槽数、以 `fn.paramNames[i]` 为槽名 ⇒ 剩余参数与多出来的实"	夹具漏形态	keep	keep	—
-"standard 面：剩余参数位导出名取裸名，节点是数组"	"同一 stdout 产物里 zod 段的 `<fn>Input` 与另一段的 `<fn>Input` **标识符冲突**（TS2300 / TS2451）⇒ 产物不可用。 ⚠ 勘误（AGENT-CONTEXT §4）：报告说的「dts 段 `export declare function <fn>Input`」**不存在**（dts 生成器全文件无 `Input` 字样）⇒ 真实撞名对是 **zod 段 vs standard 段**（两段各自自洽，合进同一作用域即冲突）。 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain(\"sumAll_rest\");"	没测该层	keep	keep	—
-"槽表把 `__proto__` 落为自有键（改前：普通对象 ⇒ 被原型 setter 吞掉）"	"形参名 `__proto__` 在 **zod Input 装配**时被普通对象吞掉 ⇒ zod 面丢形参。 症状（改前）：`export function f(__proto__, normal)` ⇒ zod 产物 `fInput = z.object({ normal: z.literal(3) })`（`__proto__` 形参**消失**）， 而 dts 面是对的（`f(__proto__: number, normal: number)`）⇒ 跨产物面自相矛盾。 断言：expect(Object.keys(slots)).toEqual([\"__proto__\", \"normal\"]);；expect(Object.g"	夹具漏形态	keep	keep	—
-"继承键（constructor / toString）同样不被原型吞掉"	"形参名 `__proto__` 在 **zod Input 装配**时被普通对象吞掉 ⇒ zod 面丢形参。 症状（改前）：`export function f(__proto__, normal)` ⇒ zod 产物 `fInput = z.object({ normal: z.literal(3) })`（`__proto__` 形参**消失**）， 而 dts 面是对的（`f(__proto__: number, normal: number)`）⇒ 跨产物面自相矛盾。 断言：expect(Object.keys(slots)).toEqual([\"constructor\", \"toString\"]);；expect(Obje"	夹具漏形态	keep	keep	—
-"产品面 zod Input 含 `__proto__` 形参（core 两处补丁后：projection 字段表无原型 + 键走计算键）"	"形参名 `__proto__` 在 **zod Input 装配**时被普通对象吞掉 ⇒ zod 面丢形参。 症状（改前）：`export function f(__proto__, normal)` ⇒ zod 产物 `fInput = z.object({ normal: z.literal(3) })`（`__proto__` 形参**消失**）， 而 dts 面是对的（`f(__proto__: number, normal: number)`）⇒ 跨产物面自相矛盾。 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain(\"__proto__\");"	夹具漏形态	keep	keep	—
-"同名函数在两个模块里 ⇒ 两份 standard 产物都在（先导出的不被覆盖）"	"`nudo export --out` 的 standard 产物按**函数名**命名 ⇒ 两个不同 模块里的同名函数落到同一路径 ⇒ 后写覆盖先写（先导出的那份静默丢失）。 钉：两个不同源文件、同名导出函数 ⇒ out 目录里**两份产物都在**（规范名 + 带模块键后缀的唯一名），先导出的那份内容不被覆盖。 断言：expect(r1.status).toBe(0);；expect(first).toHaveLength(1);"	夹具漏形态	keep	keep	—
-"同名函数的第二份产物名带模块键后缀（不是同一个路径）"	"断言：expect(r1.status).toBe(0);；expect(r2.status).toBe(0);"	没测该层	keep	keep	—
-"zod 入参面：带默认值的形参位是可选槽（与 dts 面同口径）"	"声明级默认值（`b = 2`）在产物面里**不参与槽位可选性** ⇒ 带默认值的 形参被渲染成必填槽。 症状（改前）：`export function f(a, b = 2)` 的 zod 入参面产出 `z.object({ a: z.literal(1), b: z.literal(2) })` 而同一函数的 dts 面是 `f(a: number, b?: number)` ⇒ 两个产物面自相矛盾 （dts 的可选性三来源口径是对的：契约级 → 声明级默认值 → 观测级最短元数）。 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain(\"b: z.literal(2).o"	没测该层	keep	keep	—
-"dts 面仍声明可选位 `b?`（两面的可选性口径一致）"	"声明级默认值（`b = 2`）在产物面里**不参与槽位可选性** ⇒ 带默认值的 形参被渲染成必填槽。 症状（改前）：`export function f(a, b = 2)` 的 zod 入参面产出 `z.object({ a: z.literal(1), b: z.literal(2) })` 而同一函数的 dts 面是 `f(a: number, b?: number)` ⇒ 两个产物面自相矛盾 （dts 的可选性三来源口径是对的：契约级 → 声明级默认值 → 观测级最短元数）。 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain(\"export declare fu"	没测该层	keep	keep	—
+optional 契约 + `{ a: undefined }` / `{}` / `{ a: 'x' }` ⇒ exit 0、无 constraint-violated；required 对照 + `{ a: undefined }` ⇒ exit 1 且报 nudo:constraint-violated；required 对照 + `{ a: 'x' }` ⇒ exit 0（对照组正例）	cli-io 聚合矩阵	没测该层	keep	keep	—
+A 组（无调用点）：zod / standard 槽是一层数组，dts 同形；A 组 standard 校验器**接受**该函数自己的合法调用 `{args:[1,2]}`；对照组（有调用点证据）：同样是**一层**数组，接受集与 A 组一致	cli-io 聚合矩阵	没测该层	keep	keep	—
+--gha 单独 ⇒ 注解在 stdout（不回归）；--gha --gitlab ⇒ stdout 仍是 GitLab 数组、stderr 有 ::error（不被丢弃）；单变量对照：加 --json 后 GHA 计数不变（不再取决于无关旗标）	cli-io 聚合矩阵	没测该层	keep	keep	—
+check --from <使用现场> -- <被检查文件> ⇒ 报 nudo:contract-drift（改前 0 条）；控制组：没有跨文件证据 ⇒ 不报 drift（无证据不判）；归因闸：别的模块的同名调用点证据不得污染本文件的判定	cli-io 聚合矩阵	没测该层	keep	keep	—
+zod 入参面：数组解构 + 字段级契约 ⇒ 元组槽（改前是对象槽 `a`）；standard 面：数组解构形参的槽节点是元组；负控制：对象解构 + 字段级契约仍摊成对象槽（既有口径不变）；负控制：无契约的数组解构仍是观测元组（既有口径不变）	cli-io 聚合矩阵	没测该层	keep	keep	—
+--target 指向函数名：返回域取自函数面（不再是 `() => ?`）；两条面不再互相矛盾：--target 的返回域与签名表一致；控制：--target 指向非函数绑定时行为不变；控制：--target 指向不存在的名字时仍是 unknown	cli-io 聚合矩阵	没测该层	keep	keep	—
+类型专用的值位置 import 被消掉 ⇒ 产物 `node --check` 过且真 import() 成功；产物里的 import 不得指向「没有该运行时导出」的模块（链接面）	cli-io 聚合矩阵	没测该层	keep	keep	—
+字段的 `x!` / `y?` 被剥 ⇒ 产物 `node --check` 过；可选方法 `m?()` 被剥 ⇒ 产物 `node --check` 过	cli-io 聚合矩阵	没测该层	keep	keep	—
+`this` 形参被剥 ⇒ 产物 `node --check` 过且形参表只剩 `a`；函数体里的 `this` **表达式**必须保留（只有形参位被删）	cli-io 聚合矩阵	没测该层	keep	keep	—
+第 1 条：排除清单上 stdout（--json 面可解析；文本面 stdout 不含被排除的包）；第 1 条：retire --all --json 同样带排除清单（机器面统一口径）；第 1 条 · 负控：无排除的 workspace ⇒ --json 逐字不变（不出现 excluded 键）；第 2 条：多个目标失败 ⇒ 消息列出**全部**失败目标，且整批零写盘；第 2 条：CLI 面 —— 失败目标全部可见（文本面 + --json 的 failedTargets）	cli-io 聚合矩阵	没测该层	keep	keep	—
+同目标内一个文件语法错 ⇒ 库面不 throw + 成功文件的结果仍返回；原子性仍成立 ⇒ 有失败时一个字节都不落盘（含好文件）；失败行带文件名 + 失败码与 migrateVerify 同码（同款结构）；负控：全部成功 ⇒ 返回行的字段逐字不变（无 code / error 键）；CLI 面：失败目标的 stdout/stderr 与旧版逐字同形（失败详情带文件名）	cli-io 聚合矩阵	没测该层	keep	keep	—
+stdout 里 helper / 类型别名各只出现一次（两个函数 ⇒ 两块）；剥前导不丢内容：两个函数的导出体都在；--out 落盘不变（每函数一份文件，各带一份 helper ⇒ 互不冲突）	cli-io 聚合矩阵	没测该层	keep	keep	—
+stdout 里 `fooOutput` 只声明一次（standard 段改名）；stdout 流里没有重复的顶层声明（产物可编译）；--out 落盘不变（各方言各占一个文件 ⇒ 产品名不漂移）	cli-io 聚合矩阵	没测该层	keep	keep	—
+stdout 里 `fooInput` 只声明一次（standard 段改名）；dts 段不产 `<fn>Input`（报告的撞名对不存在 ⇒ 治的是 zod ↔ standard）；--format standard 单方言时导出名不漂移（无冲突 ⇒ 不改名）	cli-io 聚合矩阵	没测该层	keep	keep	—
+zod 入参面：槽名取裸名、槽值是数组、不凭空造 argN 槽；standard 面：剩余参数位导出名取裸名，节点是数组	cli-io 聚合矩阵	没测该层	keep	keep	—
+槽表把 `__proto__` 落为自有键（改前：普通对象 ⇒ 被原型 setter 吞掉）；继承键（constructor / toString）同样不被原型吞掉；产品面 zod Input 含 `__proto__` 形参（core 两处补丁后：projection 字段表无原型 + 键走计算键）	cli-io 聚合矩阵	没测该层	keep	keep	—
+同名函数在两个模块里 ⇒ 两份 standard 产物都在（先导出的不被覆盖）；同名函数的第二份产物名带模块键后缀（不是同一个路径）	cli-io 聚合矩阵	没测该层	keep	keep	—
+zod 入参面：带默认值的形参位是可选槽（与 dts 面同口径）；dts 面仍声明可选位 `b?`（两面的可选性口径一致）	cli-io 聚合矩阵	没测该层	keep	keep	—
 "写失败 ⇒ stdout 回放已落盘产物 + stderr 点名失败文件"	"`nudo export --out` **写失败**时：产物已经部分落盘，但 stdout 一行「wrote」都没有 ⇒ 用户以为「什么都没写」，实际磁盘上多了半个产物集； 错误文案也不带**是哪个文件**失败。 断言：expect(r.status).toBe(1);；expect(wrote.length).toBeGreaterThan(0);"	没测该层	keep	keep	—
-"zod 返回面保留 promise 包装"	"async 函数的**返回约束被当成整个返回类型** ⇒ `Promise<…>` 包装丢失。 症状（改前）：`@nudo:contract return num` 的 async 函数，zod 面产出 `fOutput = z.number()…`（**不是** Promise）、dts 面产出 `export declare function f(x: number): number; 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain(\"z.promise(\");"	没测该层	keep	keep	—
-"dts 面返回类型是 Promise<number>（不是 number）"	"async 函数的**返回约束被当成整个返回类型** ⇒ `Promise<…>` 包装丢失。 症状（改前）：`@nudo:contract return num` 的 async 函数，zod 面产出 `fOutput = z.number()…`（**不是** Promise）、dts 面产出 `export declare function f(x: number): number; 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain(\"export declare function f(x: number): Promise<number>;\");"	没测该层	keep	keep	—
-"两个目录下的同名模块 ⇒ 两份 .d.ts 都在（先导出的不被覆盖）"	"`nudo export --out` 的 dts / zod / guard 三面按源文件 **stem** 命名 ⇒ 不同目录下的同名模块映射到同一批产物路径 ⇒ 后写覆盖先写（先导出的那份 无声丢失）⇒ 消费方拿到别的模块的声明。 钉：两个不同目录下的同名模块导出到同一个 out 目录 ⇒ 两份产物都在， 先导出的那份内容不被覆盖。 断言：expect(r1.status).toBe(0);；expect(dtsFiles).toHaveLength(1);"	夹具漏形态	keep	keep	—
-"同 stem 模块 ⇒ zod / guard 面同样不互相覆盖"	"`nudo export --out` 的 dts / zod / guard 三面按源文件 **stem** 命名 ⇒ 不同目录下的同名模块映射到同一批产物路径 ⇒ 后写覆盖先写（先导出的那份 无声丢失）⇒ 消费方拿到别的模块的声明。 钉：两个不同目录下的同名模块导出到同一个 out 目录 ⇒ 两份产物都在， 先导出的那份内容不被覆盖。 断言：expect(guardFirst).toHaveLength(1);；expect(guardAfter).toHaveLength(2);"	夹具漏形态	keep	keep	—
+zod 返回面保留 promise 包装；dts 面返回类型是 Promise<number>（不是 number）	cli-io 聚合矩阵	没测该层	keep	keep	—
+两个目录下的同名模块 ⇒ 两份 .d.ts 都在（先导出的不被覆盖）；同 stem 模块 ⇒ zod / guard 面同样不互相覆盖	cli-io 聚合矩阵	没测该层	keep	keep	—
 "同一文件里两个同名方法 ⇒ 两份 standard 产物都在"	"钉（写盘面）：同一个类里两个同名方法 ⇒ standard 产物**两份都在** （`C.m.nudo.standard.ts` + `C.m.2.nudo.standard.ts`），先写的那份不被覆盖。 断言：expect(r.status).toBe(0);；expect(files).toHaveLength(2);"	夹具漏形态	keep	keep	—
-"--out 指向已有文件 ⇒ 提示不再指向不存在的 check --out"	"`nudo export --out` 写失败的 `fix:` 提示硬编码成 **不存在的** `check --out` ⇒ 用户照做只会再吃一个 `unknown option '--out'`。 钉：写失败的提示指向**本命令**且可执行（不含 `check --out`）。 断言：expect(r.status).toBe(1);；expect(r.stderr).toContain(\"export --out mkdir failed\");"	没测该层	keep	keep	—
-"目标路径是目录 ⇒ 写失败提示点名该文件且指向本命令（EISDIR 走写失败通道）"	"断言：expect(r.status).toBe(1);；expect(r.stderr).toContain(\"export --out write failed\");"	没测该层	keep	keep	—
-"分析目标闸门错误：pathErrors[] 逐字不变 + targetErrors[] 精确只装闸门错误"	"「分析目标闸门」错误条目（`nudo:path-not-target`）——**改前**的既有内容 （逐字钉住：`pathErrors[]` 的名字 / 条数 / 码 / `suggestion` / 顺序）。 断言：expect(r.status).toBe(1);；expect(parsed.ok).toBe(false);"	没测该层	keep	keep	—
-"--from 路径错误**不**进 targetErrors[]（它是精确入口，不是副本）"	"`--from` 路径错误条目（`nudo:path-missing-callsite`） 断言：expect(r.status).toBe(1);；expect(parsed.pathErrors).toEqual([fromEntry(p(\"no-such-from.js\"))]);"	没测该层	keep	keep	—
-"闸门错误 + `--from` 错误并存：pathErrors[] 全集（顺序不变）+ targetErrors[] 只装闸门"	"`--from` 路径错误条目（`nudo:path-missing-callsite`） 断言：expect(r.status).toBe(1);；expect(parsed.pathErrors).toEqual(["	没测该层	keep	keep	—
-"分析目标闸门错误：pathErrors[] 逐字不变 + targetErrors[] 精确只装闸门错误"	"「分析目标闸门」错误条目（`nudo:path-not-target`）——**改前**的既有内容 （逐字钉住：`pathErrors[]` 的名字 / 条数 / 码 / `suggestion` / 顺序）。 断言：expect(r.status).toBe(1);；expect(parsed.pathErrors).toEqual([gateEntry(p(\"types.d.ts\"))]);"	没测该层	keep	keep	—
-"--from 路径错误**不**进 targetErrors[]"	"`--from` 路径错误条目（`nudo:path-missing-callsite`） 断言：expect(r.status).toBe(1);；expect(parsed.pathErrors).toEqual([fromEntry(p(\"no-such-from.js\"))]);"	没测该层	keep	keep	—
-"分析目标闸门错误：pathErrors[] 逐字不变 + targetErrors[] 精确只装闸门错误"	"「分析目标闸门」错误条目（`nudo:path-not-target`）——**改前**的既有内容 （逐字钉住：`pathErrors[]` 的名字 / 条数 / 码 / `suggestion` / 顺序）。 断言：expect(r.status).toBe(1);；expect(errDocs).toHaveLength(1);"	没测该层	keep	keep	—
-"--from 路径错误**不**进 targetErrors[]"	"`--from` 路径错误条目（`nudo:path-missing-callsite`） 断言：expect(r.status).toBe(1);；expect(errDocs).toHaveLength(1);"	没测该层	keep	keep	—
-"check --json（干净文件）：stdout 与改前基线逐字一致 + 无 targetErrors"	"`--json` 面的路径错误条目形状 断言：expect(r.status).toBe(0);；expect(normalize(r.stdout)).toBe(CHECK_CLEAN_JSON_BEFORE);"	夹具漏形态	keep	keep	—
-"test --json（干净文件）：stdout 与改前基线逐字一致 + 无 targetErrors"	"`--json` 面的路径错误条目形状 断言：expect(r.status).toBe(0);；expect(normalize(r.stdout)).toBe(TEST_CLEAN_JSON_BEFORE);"	夹具漏形态	keep	keep	—
-"contract --json（干净文件）：stdout 与改前基线逐字一致 + 无 targetErrors"	"`--json` 面的路径错误条目形状 断言：expect(r.status).toBe(0);；expect(normalize(r.stdout)).toBe(CONTRACT_CLEAN_JSON_BEFORE);"	夹具漏形态	keep	keep	—
-"人类面（闸门错误）：stderr 文案与改前逐字一致（机器面改动不外溢）"	"**根因**：`pathErrors[]` 这个名字原本只承诺「`--from` 路径错误」，但 C1 把 「**分析目标闸门**」错误（路径不存在 / 空目录 / 非分析目标）也推进了**同一个** sink ⇒ 数组名不再副实 ⇒ **机器消费者**读 `pathErrors[]` 时会误以为里面 全是 `--from` 路径问题。 **口径**（与 health 面（W16）**同款**，三个动词统一）： - `pathErrors[]`：**有序全集**，**字段名 + 内容 + 顺序逐字不变** （既有机器消费者零影响）； 断言：expect(r.status).toBe(1);；expect(r.stdout).toBe"	夹具漏形态	keep	keep	—
-"人类面：文件名 + 行:列 + 摘录 + ^ 指位（不再是无路径的裸 message）"	"旧行为：Babel 解析异常上浮到顶层 catch ⇒ stderr 只有一行 `Unexpected keyword 'return'. (2:2)`（**没有文件名**、没有行:列、没有 源码摘录），`--json` 面的序列化点排在异常之后 ⇒ stdout 一个字节都没有 ⇒ 机器面 `JSON.parse(stdout)` 直接炸。 修复：`runTest` 复用 check 面的语法错分支（`check-report.ts` 的 `syntaxErrorInfo` / `formatSyntaxErrorBlock`）——人类面给 tsc 风格块 （路径 + 行:列 + 摘录 + `^` 指位），`--json` 面并入"	没测该层	keep	keep	—
-"--json 面：stdout 是 CaseJson 失败信封（pathErrors[{code:\"syntax-error\"}]）+ exit 1"	"旧行为：Babel 解析异常上浮到顶层 catch ⇒ stderr 只有一行 `Unexpected keyword 'return'. (2:2)`（**没有文件名**、没有行:列、没有 源码摘录），`--json` 面的序列化点排在异常之后 ⇒ stdout 一个字节都没有 ⇒ 机器面 `JSON.parse(stdout)` 直接炸。 修复：`runTest` 复用 check 面的语法错分支（`check-report.ts` 的 `syntaxErrorInfo` / `formatSyntaxErrorBlock`）——人类面给 tsc 风格块 （路径 + 行:列 + 摘录 + `^` 指位），`--json` 面并入"	没测该层	keep	keep	—
-"对照面：nudo check 对同一文件给同码 pathErrors（两个 verb 机器面同形）"	"旧行为：Babel 解析异常上浮到顶层 catch ⇒ stderr 只有一行 `Unexpected keyword 'return'. (2:2)`（**没有文件名**、没有行:列、没有 源码摘录），`--json` 面的序列化点排在异常之后 ⇒ stdout 一个字节都没有 ⇒ 机器面 `JSON.parse(stdout)` 直接炸。 修复：`runTest` 复用 check 面的语法错分支（`check-report.ts` 的 `syntaxErrorInfo` / `formatSyntaxErrorBlock`）——人类面给 tsc 风格块 （路径 + 行:列 + 摘录 + `^` 指位），`--json` 面并入"	没测该层	keep	keep	—
-"无 --freeze：报用法错误 + exit 1（旧行为：静默忽略 + exit 0）"	"根因：旗标校验被**嵌在 `if (opts.freeze !== undefined)` 块内** ⇒ `--exit-on-diff` 的前置条件（需 `--freeze` / `--dry-run`）只在有 `--freeze` 时才被检查； 修复：前置校验**移到分支外** ⇒ 无 `--freeze` 时也报**用法错误** （与 `nudo contract --exit-on-diff` 的口径对齐）。 断言：expect(r.status).toBe(1);；expect(r.stderr).toContain(\"--exit-on-diff\");"	没测该层	keep	keep	—
-"有 --freeze 无 --dry-run：仍是既有的「requires --dry-run」用法错误"	"根因：旗标校验被**嵌在 `if (opts.freeze !== undefined)` 块内** ⇒ `--exit-on-diff` 的前置条件（需 `--freeze` / `--dry-run`）只在有 `--freeze` 时才被检查； 修复：前置校验**移到分支外** ⇒ 无 `--freeze` 时也报**用法错误** （与 `nudo contract --exit-on-diff` 的口径对齐）。 断言：expect(r.status).toBe(1);；expect(r.stderr).toContain(\"--exit-on-diff requires --dry-run\");"	没测该层	keep	keep	—
-"合法组合 --freeze --dry-run --exit-on-diff：照常跑（不误伤）"	"根因：旗标校验被**嵌在 `if (opts.freeze !== undefined)` 块内** ⇒ `--exit-on-diff` 的前置条件（需 `--freeze` / `--dry-run`）只在有 `--freeze` 时才被检查； 修复：前置校验**移到分支外** ⇒ 无 `--freeze` 时也报**用法错误** （与 `nudo contract --exit-on-diff` 的口径对齐）。 断言：expect(r.status).toBe(0);；expect(r.stderr).not.toContain(\"--exit-on-diff requires\");"	没测该层	keep	keep	—
-"print 形态 + 缺失路径：stdout 是合法 JSON 且带 pathErrors[] + exit 1"	"`nudo contract --json`（**非** `--draft` 形态）把**路径错误整个吞掉** ⇒ exit 1 但 stdout 的 JSON 里**没有** `pathErrors`、stderr 0 字节 ⇒ 「置红的那个原因没有任何地方说得出来」。 修法（族 20 · 片 A）：`--json` 形态下**路径错误必须进 JSON body** （`pathErrors[]`）⇒ print / emit / draft **三形态统一**。 断言：expect(r.status).toBe(1);；expect(Array.isArray(docs)).toBe(true);"	夹具漏形态	keep	keep	—
-"draft 形态 + 缺失路径：同一套 pathErrors[]（三形态统一）"	"`nudo contract --json`（**非** `--draft` 形态）把**路径错误整个吞掉** ⇒ exit 1 但 stdout 的 JSON 里**没有** `pathErrors`、stderr 0 字节 ⇒ 「置红的那个原因没有任何地方说得出来」。 修法（族 20 · 片 A）：`--json` 形态下**路径错误必须进 JSON body** （`pathErrors[]`）⇒ print / emit / draft **三形态统一**。 断言：expect(r.status).toBe(1);；expect(errDocs).toHaveLength(1);"	夹具漏形态	keep	keep	—
-"全部路径都缺失（无 root）：stdout 仍是**非空**合法 JSON + pathErrors[] + exit 1"	"`nudo contract --json`（**非** `--draft` 形态）把**路径错误整个吞掉** ⇒ exit 1 但 stdout 的 JSON 里**没有** `pathErrors`、stderr 0 字节 ⇒ 「置红的那个原因没有任何地方说得出来」。 修法（族 20 · 片 A）：`--json` 形态下**路径错误必须进 JSON body** （`pathErrors[]`）⇒ print / emit / draft **三形态统一**。 断言：expect(r.status).toBe(1);；expect(r.stdout.trim().length).toBeGreaterThan(0);"	夹具漏形态	keep	keep	—
-"对照面：非 --json 的人类面仍在 stderr（不因 --json 消失）"	"`nudo contract --json`（**非** `--draft` 形态）把**路径错误整个吞掉** ⇒ exit 1 但 stdout 的 JSON 里**没有** `pathErrors`、stderr 0 字节 ⇒ 「置红的那个原因没有任何地方说得出来」。 修法（族 20 · 片 A）：`--json` 形态下**路径错误必须进 JSON body** （`pathErrors[]`）⇒ print / emit / draft **三形态统一**。 断言：expect(r.status).toBe(1);；expect(r.stderr).toContain(\"Not found:\");"	夹具漏形态	keep	keep	—
-"进程内：CLI 半 + service 半（都走 src）⇒ `..data/f.js` 的草稿**写出来了**"	"进程内跑一次 `runContractDraft`，收走 console 与 exit code（不污染测试进程）。 断言：expect(r.stderr).not.toContain(\"outside project root\");；expect(r.exitCode).not.toBe(1);"	没测该层	keep	keep	—
-"CLI 级：CLI 半**不再**用那句「is outside project root」拒写文案"	"根因：`relative()` 返回的是**相对路径字符串**——「向上逃逸」的判据是 「整段等于 `..`」或「以 `..` + 路径分隔符开头」，**不是**裸 `startsWith(\"..\")`：后者把 `..data/` / `...cfg/` 这类**合法**相对路径 （目录名以 `..` 开头）误判成父目录逃逸。 ⚠ 本钉的夹具**全部写在临时目录**里 ⇒ 绝不往仓里写文件。 断言：expect(r.stderr).not.toContain(\"is outside project root\");"	夹具漏形态	keep	keep	—
-"负控制：同一项目根下的普通文件照常写出（不误伤）"	"症状（改前）：`export function f7([a, b])` + 侧车契约 `fn({ a: number() })` ⇒ zod 给出 `f7Input = z.object({ a: z.number()… })` —— 校验器要求一个**键名叫 `a`** 的属性，而真实调用传的是**数组** ⇒ 合法的数组调用被判红、非法的对象调用被放行（与真实形参形态完全颠倒）。 根因：统一参数面（`export/contract-face.ts`）按**绑定名**收侧车契约， 而数组解构的绑定名是**元素下标**（`[a, b]` 的 `a` 是下标 0 的元素）⇒ 必须**按下标**合成**元组槽**，不能摊成对象槽。 断言"	夹具漏形态	keep	keep	—
-"migrate status <a> <b> ⇒ 两个包都被审计（不得只报第一个）"	"族 16（commit e5b3f388）已在**命令层**修好（`packages/nudojs/src/commands/ migrate.ts` 的 status 分支改为**全量审计**）⇒ 本文件是**回归钉**（防止 回退到「只报 targets[0]」），不是重复修复。 反向闸（断言非永真）：把命令层换回**族 16 之前**的版本（`git show e5b3f388^:packages/nudojs/src/commands/migrate.ts`）⇒ 「两个包都被审计」 断言**必红**（旧实现只报 pkg-a）。 断言：expect(r.status, r.stderr).toBe(0);；expect(r.s"	没测该层	keep	keep	—
-"migrate status --json <a> <b> ⇒ 顶层数组含两个 root"	"族 16（commit e5b3f388）已在**命令层**修好（`packages/nudojs/src/commands/ migrate.ts` 的 status 分支改为**全量审计**）⇒ 本文件是**回归钉**（防止 回退到「只报 targets[0]」），不是重复修复。 反向闸（断言非永真）：把命令层换回**族 16 之前**的版本（`git show e5b3f388^:packages/nudojs/src/commands/migrate.ts`）⇒ 「两个包都被审计」 断言**必红**（旧实现只报 pkg-a）。 断言：expect(r.status, r.stderr).toBe(0);；expect(Arr"	没测该层	keep	keep	—
-"单路径时行为不变（不得因多路径支持而破坏单路径）"	"断言：expect(r.status, r.stderr).toBe(0);；expect(r.stdout).toContain(a);"	没测该层	keep	keep	—
-"collectNudoFiles 收进链接进来的 .js（改前：静默跳过）"	"旧实现用 `entry.isDirectory()` / `entry.isFile()` 判定 dirent ⇒ 符号链接 条目两者皆 false（既非 dir 也非 file）⇒ 被**静默丢弃**（既不分析、也不报 路径错误）⇒ `check <dir>` 对链接进来的坏文件**假绿**（exit 0），同一文件 直传却 FAILED（exit 1）。 断言：expect(names).toEqual([\"badlink.js\", \"good.js\"]);"	没测该层	keep	keep	—
-"符号链接目录被递归进入（改前：整棵链接目录被跳过）"	"「分析目标闸门」错误条目（`nudo:path-not-target`）——**改前**的既有内容 （逐字钉住：`pathErrors[]` 的名字 / 条数 / 码 / `suggestion` / 顺序）。 断言：expect(names).toEqual([\"inside.js\"]);"	没测该层	keep	keep	—
-"CLI check <dir>：链接进来的坏文件参与门禁（改前：exit 0 假绿）"	"旧实现用 `entry.isDirectory()` / `entry.isFile()` 判定 dirent ⇒ 符号链接 条目两者皆 false（既非 dir 也非 file）⇒ 被**静默丢弃**（既不分析、也不报 路径错误）⇒ `check <dir>` 对链接进来的坏文件**假绿**（exit 0），同一文件 直传却 FAILED（exit 1）。 断言：expect(r.stdout).toContain(\"badlink.js\");；expect(r.status).toBe(1);"	没测该层	keep	keep	—
-"同一文件直传与目录扫描结论一致（不再一个绿一个红）"	"断言：expect(direct.status).toBe(1);；expect(viaDir.status).toBe(direct.status);"	没测该层	keep	keep	—
-"产物必须落盘且能被 `node --check` 解析（成员修饰符已剥、参数属性已降级）"	"node --check（语法检查，不执行） 断言：expect(r.status, r.stderr).toBe(0);；expect(existsSync(product)).toBe(true);"	没测该层	keep	keep	—
-"命令层闸门是**兜底**：真源修好后常规路径不再触发它（不得误拦合法产物）"	"`nudo migrate strip --write` 写出的 `.js` **Node 无法解析** （`private` / `public` / `readonly` 未剥离； 命令层（`packages/nudojs/src/commands/migrate.ts`）另有一道**兜底闸门**： 写盘**之前**检出「剥完仍有 TS-only 语法」的目标并**拒绝写盘** + 响亮报错 （migrate 是一程闸门，写坏了没有回退路径）。 断言：expect(r.status, r.stderr).toBe(0);；expect(r.stderr).not.toContain(\"TypeScript syntax\");"	没测该层	keep	keep	—
-"对照：纯类型注解的 TS 源照常 strip（闸门不得过度拦截）"	"`nudo migrate strip --write` 写出的 `.js` **Node 无法解析** （`private` / `public` / `readonly` 未剥离； 命令层（`packages/nudojs/src/commands/migrate.ts`）另有一道**兜底闸门**： 写盘**之前**检出「剥完仍有 TS-only 语法」的目标并**拒绝写盘** + 响亮报错 （migrate 是一程闸门，写坏了没有回退路径）。 断言：expect(r.status, r.stderr).toBe(0);；expect(existsSync(product)).toBe(true);"	没测该层	keep	keep	—
-"解析器：等号形态切出 name/type（不是整串当绑定名）"	"`--what-if` 只认冒号 ⇒ 文档给的可复制命令（等号形态）原样跑不通。 症状：整串被当成绑定名 ⇒ 「Bindings not applied」+ exit 0（假设静默不生效， 用户以为假设生效了）。 断言：expect(parseWhatIfBindings([\"raw=string\"])).toEqual(["	夹具漏形态	keep	keep	—
-"解析器：冒号形态不变（旧口径不回归）"	"`--what-if` 只认冒号 ⇒ 文档给的可复制命令（等号形态）原样跑不通。 症状：整串被当成绑定名 ⇒ 「Bindings not applied」+ exit 0（假设静默不生效， 用户以为假设生效了）。 断言：expect(parseWhatIfBindings([\"raw:string\"])).toEqual(["	夹具漏形态	keep	keep	—
-"解析器：分隔符取最先出现的那个；无分隔符仍是 name=整串 / type=any"	"`--what-if` 只认冒号 ⇒ 文档给的可复制命令（等号形态）原样跑不通。 症状：整串被当成绑定名 ⇒ 「Bindings not applied」+ exit 0（假设静默不生效， 用户以为假设生效了）。 断言：expect(parseWhatIfBindings([\"a=b:c\"])).toEqual([{ name: \"a\", type: \"b:c\" }]);；expect(parseWhatIfBindings([\"m:a:b\"])).toEqual([{ name: \"m\", type: \"a:b\" }]);"	夹具漏形态	keep	keep	—
-"CLI：等号形态的假设真的生效（绑定被应用，类型按假设打印）"	"根因：`relative()` 返回的是**相对路径字符串**——「向上逃逸」的判据是 「整段等于 `..`」或「以 `..` + 路径分隔符开头」，**不是**裸 `startsWith(\"..\")`：后者把 `..data/` / `...cfg/` 这类**合法**相对路径 （目录名以 `..` 开头）误判成父目录逃逸。 ⚠ 本钉的夹具**全部写在临时目录**里 ⇒ 绝不往仓里写文件。 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain('Type of \"raw\": string');"	夹具漏形态	keep	keep	—
-"CLI：冒号形态仍然生效（两种写法同结果）"	"根因：`relative()` 返回的是**相对路径字符串**——「向上逃逸」的判据是 「整段等于 `..`」或「以 `..` + 路径分隔符开头」，**不是**裸 `startsWith(\"..\")`：后者把 `..data/` / `...cfg/` 这类**合法**相对路径 （目录名以 `..` 开头）误判成父目录逃逸。 ⚠ 本钉的夹具**全部写在临时目录**里 ⇒ 绝不往仓里写文件。 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain('Type of \"raw\": string');"	夹具漏形态	keep	keep	—
-"1 个可退役包 ⇒ 顶层仍是数组（不得退化为对象）"	"断言：expect(r.status, r.stderr).toBe(0);；expect(Array.isArray(parsed)).toBe(true);"	没测该层	keep	keep	—
-"2 个可退役包 ⇒ 顶层同样是数组（形状不随条数漂移）"	"断言：expect(r.status, r.stderr).toBe(0);；expect(Array.isArray(parsed)).toBe(true);"	没测该层	keep	keep	—
-"两个场景的顶层形状一致（都是数组）"	"断言：expect(one.status, one.stderr).toBe(0);；expect(two.status, two.stderr).toBe(0);"	没测该层	keep	keep	—
-"产物含运行时 enum 对象 ⇒ `node --check` 过且 `E.A === 1`"	"node --check（语法检查，不执行） 断言：expect(r.status, r.stderr).toBe(0);；expect(r.stderr).not.toContain(\"TypeScript syntax\");"	没测该层	keep	keep	—
-"门禁行为正确：`.ts` 源与 `.js` 产物都绿，签名是 `f() => 1`（不再是 never）"	"TS 的 `enum` 被整段删除 ⇒ 成员引用退化成**未绑定全局**读取 ⇒ 门禁报 error 级 `nudo:entry-may-throw`（**假红**）+ dts / zod / standard / guard 四个产物面把返回类型落成 `never`。 本钉是**产物面**的回归钉： ① 产物必须是可加载的运行时对象（不是空模块）； 断言：expect(strip.status, strip.stderr).toBe(0);；expect(c.status, `${name}\\n${c.stdout}\\n${c.stderr}`).toBe(0);"	夹具漏形态	keep	keep	—
-"推导失败 + 期望 number() ⇒ unchecked + exit 0（改前：FAIL + exit 1）"	"写一个临时项目（ESM）+ 一个带声明期望的 case 文件。 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain(\"0 passed · 0 failed · 1 unchecked\");"	没测该层	keep	keep	—
-"推导失败 + 期望 any() ⇒ 同样 unchecked（改前：空洞 ok「1 passed」）"	"写一个临时项目（ESM）+ 一个带声明期望的 case 文件。 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain(\"0 passed · 0 failed · 1 unchecked\");"	没测该层	keep	keep	—
-"诊断文本区分「无法判定」与「类型不匹配」，并指向 nudo:opaque-result 的补证据路径"	"引擎**推不出来**的函数体（`(x.get)().a ||= 2` 不被求值器支持 ⇒ 实测落到 `unknown`）——与 check 面的 `nudo:opaque-result` 同一事实。 断言：expect(r.stdout).toContain(\"cannot judge\");；expect(r.stdout).toContain(\"the engine could not infer the actual value\");"	没测该层	keep	keep	—
-"--json 面：assertions = {passed: 0, failed: 0, unchecked: 1}"	"`nudo test` 的断言判定**没有「推导失败」第三态**。 根因（`packages/nudojs/src/run-test.ts` 的报告面）：断言判定是**二值**的 ——实测侧 `unknown`（**引擎没推出来**）被压成「断言不符」（假红）， 而 `any()` 期望又借 core `leqAbs` 的「目标放宽 ⇒ 通过」捷径**空洞通过** （假绿）⇒ **同一事实两种期望都不可用**； 断言：expect(r.status).toBe(0);；expect(doc.assertions).toEqual({ passed: 0, failed: 0, unchecked: 1 });"	没测该层	keep	keep	—
-"负控制：推导成功 + 期望不符 ⇒ 仍是 FAIL / exit 1（既有行为不变）"	"推导成功（负控制）：实测是 `2`，期望 `string()` ⇒ 真失败。 断言：expect(r.status).toBe(1);；expect(r.stdout).toContain(\"[FAIL]\");"	没测该层	keep	keep	—
-"CLI：非 --json 面的人读文案不变（stderr 一行 + stdout 空 + exit 1）"	"`nudo test --json` 的**用法错误**路径产出「**空 stdout + 非零 exit**」⇒ 违反「`--json` 下 stdout 永不为空 / 绝不出现空 stdout + 非零 exit」的机器面契约； 根因：全部用法错误分支都排在 CaseJson 序列化点**之前**，且沿用「写 stderr + exit 1 + return」的人类面约定 ⇒ `--json` 下机器面根本没有机会 产出。 断言：expect(r.status).toBe(1);；expect(r.stdout).toBe(\"\");"	没测该层	keep	keep	—
-"CLI：非 --json 面的其它用法错误文案不变（--exit-on-diff 无 --freeze）"	"`nudo test --json` 的**用法错误**路径产出「**空 stdout + 非零 exit**」⇒ 违反「`--json` 下 stdout 永不为空 / 绝不出现空 stdout + 非零 exit」的机器面契约； 根因：全部用法错误分支都排在 CaseJson 序列化点**之前**，且沿用「写 stderr + exit 1 + return」的人类面约定 ⇒ `--json` 下机器面根本没有机会 产出。 断言：expect(r.status).toBe(1);；expect(r.stdout).toBe(\"\");"	没测该层	keep	keep	—
-"CLI：路径错误信封（对照）仍是 pathErrors 机器码，两条通道同形"	"`nudo test --json` 的**用法错误**路径产出「**空 stdout + 非零 exit**」⇒ 违反「`--json` 下 stdout 永不为空 / 绝不出现空 stdout + 非零 exit」的机器面契约； 根因：全部用法错误分支都排在 CaseJson 序列化点**之前**，且沿用「写 stderr + exit 1 + return」的人类面约定 ⇒ `--json` 下机器面根本没有机会 产出。 断言：expect(r.status).toBe(1);；expect(r.stdout.trim().length).toBeGreaterThan(0);"	没测该层	keep	keep	—
-"挂在被删语句上的 `/// @nudo:import` 必须在产物里存活"	"`nudo test --json` 的**用法错误**路径产出「**空 stdout + 非零 exit**」⇒ 违反「`--json` 下 stdout 永不为空 / 绝不出现空 stdout + 非零 exit」的机器面契约； 根因：全部用法错误分支都排在 CaseJson 序列化点**之前**，且沿用「写 stderr + exit 1 + return」的人类面约定 ⇒ `--json` 下机器面根本没有机会 产出。 断言：expect(r.status, r.stderr).toBe(0);；expect(r.stderr).not.toContain(\"TypeScript syntax\");"	没测该层	keep	keep	—
-"门禁行为正确：源红 / 产物**同样红**（契约仍被绑定 ⇒ 不是假绿）"	"挂在「将被删除的语句」上的**文件级指令**被静默丢掉 ⇒ 产物 **失去契约绑定** ⇒ 门禁从**红变绿**（假绿）。 本钉是**产物面**的回归钉： ① 指令必须在产物里**存活**； 断言：expect(strip.status, strip.stderr).toBe(0);；expect(c.status, `${name}\\n${c.stdout}\\n${c.stderr}`).toBe(1);"	没测该层	keep	keep	—
-"import 不存在的模块 ⇒ 明确报错 + exit 1（改前：零提示 + exit 0 假绿）"	"现场文件：import **不存在的导出** ⇒ 模块解析失败 断言：expect(r.status).toBe(1);；expect(r.stderr).toContain(\"Callsite file failed to load\");"	没测该层	keep	keep	—
-"import 不存在的导出 ⇒ 明确报错 + exit 1（改前：零提示 + exit 0 假绿）"	"现场文件：import **不存在的导出** ⇒ 模块解析失败 断言：expect(r.status).toBe(1);；expect(r.stderr).toContain(\"Callsite file failed to load\");"	没测该层	keep	keep	—
-"--json 面：pathErrors 收录该失败 + exit 1（改前：pathErrors 为空 + exit 0）"	"`nudo test --from <callsite>` 对**模块解析失败** （import 不存在的模块 / 不存在的导出）**静默放过**：零提示、零 `call@`、 **exit 0 假绿**（而语法错 / 顶层抛错**有**报错）—— **的半修** （只补了「求值抛错」这一档）。 修法（CLI 面，`packages/nudojs/src/commands/shared.ts`）：现场文件探针 `probeCallsiteFile` 补**第三档**「模块解析失败」——求值**成功**（lenient 装载器给未解析的 import 补 stub，模块体继续跑完）但引擎的 `moduleIssues` 报 `mis"	没测该层	keep	keep	—
-"负控制：现场文件模块可解析且有调用 ⇒ call@ 而非 entry@ + exit 0"	"`nudo test --from <callsite>` 对**模块解析失败** （import 不存在的模块 / 不存在的导出）**静默放过**：零提示、零 `call@`、 **exit 0 假绿**（而语法错 / 顶层抛错**有**报错）—— **的半修** （只补了「求值抛错」这一档）。 修法（CLI 面，`packages/nudojs/src/commands/shared.ts`）：现场文件探针 `probeCallsiteFile` 补**第三档**「模块解析失败」——求值**成功**（lenient 装载器给未解析的 import 补 stub，模块体继续跑完）但引擎的 `moduleIssues` 报 `mis"	没测该层	keep	keep	—
-"负控制：现场文件模块可解析但没有调用 ⇒ 不报错 + exit 0"	"`nudo test --from <callsite>` 对**模块解析失败** （import 不存在的模块 / 不存在的导出）**静默放过**：零提示、零 `call@`、 **exit 0 假绿**（而语法错 / 顶层抛错**有**报错）—— **的半修** （只补了「求值抛错」这一档）。 修法（CLI 面，`packages/nudojs/src/commands/shared.ts`）：现场文件探针 `probeCallsiteFile` 补**第三档**「模块解析失败」——求值**成功**（lenient 装载器给未解析的 import 补 stub，模块体继续跑完）但引擎的 `moduleIssues` 报 `mis"	没测该层	keep	keep	—
-"回归锁：语法错现场仍是 parse failed + exit 1（口径不得被第三档改写）"	"`nudo test --from <callsite>` 对**模块解析失败** （import 不存在的模块 / 不存在的导出）**静默放过**：零提示、零 `call@`、 **exit 0 假绿**（而语法错 / 顶层抛错**有**报错）—— **的半修** （只补了「求值抛错」这一档）。 修法（CLI 面，`packages/nudojs/src/commands/shared.ts`）：现场文件探针 `probeCallsiteFile` 补**第三档**「模块解析失败」——求值**成功**（lenient 装载器给未解析的 import 补 stub，模块体继续跑完）但引擎的 `moduleIssues` 报 `mis"	没测该层	keep	keep	—
-"回归锁：顶层抛错现场仍是 evaluation failed + exit 1（口径不得被第三档改写）"	"`nudo test --from <callsite>` 对**模块解析失败** （import 不存在的模块 / 不存在的导出）**静默放过**：零提示、零 `call@`、 **exit 0 假绿**（而语法错 / 顶层抛错**有**报错）—— **的半修** （只补了「求值抛错」这一档）。 修法（CLI 面，`packages/nudojs/src/commands/shared.ts`）：现场文件探针 `probeCallsiteFile` 补**第三档**「模块解析失败」——求值**成功**（lenient 装载器给未解析的 import 补 stub，模块体继续跑完）但引擎的 `moduleIssues` 报 `mis"	没测该层	keep	keep	—
-"混合目录 ⇒ results 保留成功文件的逐文件结果（不再整目标丢弃）"	"族 56b · 的**库面半边** —— `migrateStrip` 的**逐文件错误隔离**。 背景（台账原描述「`migrate verify` 库面整批 abort」经 W4 取证**已不成立**）： `migrateVerify` 早已逐文件隔离（同目标内部分文件语法错 ⇒ 失败文件记 `analysis-error`、成功文件照常返回）； 断言：expect(r.status).toBe(1);；expect(parsed.ok).toBe(false);"	门禁未跑	keep	keep	—
-"失败条目的 path 是**失败文件**（不是目标目录）⇒ 与 TS-only 闸门同量纲"	"`nudo migrate strip --json` 的 `pathErrors[].path` **混用两种量纲** （目标**目录** vs 失败**文件**），且同目标内**成功文件的逐文件结果被整条丢弃**。 症状（目标目录里混一个语法错文件：`a-good.ts` + `z-bad.ts`）： 1. 库面（`packages/nudojs/src/migrate.ts`，族 56b）已按**逐文件隔离**改好 —— `migrateStrip` 返回「成功行 + 失败行」，失败行自带 `file`； 断言：expect(r.status).toBe(1);；expect(parsed.pathErrors?.length"	没测该层	keep	keep	—
-"pathErrors[] 内所有 path 量纲一致（都是文件，不是目录）"	"`nudo migrate strip --json` 的 `pathErrors[].path` **混用两种量纲** （目标**目录** vs 失败**文件**），且同目标内**成功文件的逐文件结果被整条丢弃**。 症状（目标目录里混一个语法错文件：`a-good.ts` + `z-bad.ts`）： 1. 库面（`packages/nudojs/src/migrate.ts`，族 56b）已按**逐文件隔离**改好 —— `migrateStrip` 返回「成功行 + 失败行」，失败行自带 `file`； 断言：expect(r.status).toBe(1);；expect(paths.length).toBeGreater"	没测该层	keep	keep	—
-"--write：成功行带库面的「未写盘」注记，且原子性不变（一个字节都不落盘）"	"`nudo migrate strip --json` 的 `pathErrors[].path` **混用两种量纲** （目标**目录** vs 失败**文件**），且同目标内**成功文件的逐文件结果被整条丢弃**。 症状（目标目录里混一个语法错文件：`a-good.ts` + `z-bad.ts`）： 1. 库面（`packages/nudojs/src/migrate.ts`，族 56b）已按**逐文件隔离**改好 —— `migrateStrip` 返回「成功行 + 失败行」，失败行自带 `file`； 断言：expect(r.status).toBe(1);；expect(parsed.ok).toBe(false);"	没测该层	keep	keep	—
-"负控：全部成功 ⇒ stdout 仍是顶层数组（形状不变）"	"`nudo test --from <callsite>` 对**模块解析失败** （import 不存在的模块 / 不存在的导出）**静默放过**：零提示、零 `call@`、 **exit 0 假绿**（而语法错 / 顶层抛错**有**报错）—— **的半修** （只补了「求值抛错」这一档）。 修法（CLI 面，`packages/nudojs/src/commands/shared.ts`）：现场文件探针 `probeCallsiteFile` 补**第三档**「模块解析失败」——求值**成功**（lenient 装载器给未解析的 import 补 stub，模块体继续跑完）但引擎的 `moduleIssues` 报 `mis"	没测该层	keep	keep	—
+--out 指向已有文件 ⇒ 提示不再指向不存在的 check --out；目标路径是目录 ⇒ 写失败提示点名该文件且指向本命令（EISDIR 走写失败通道）	cli-io 聚合矩阵	没测该层	keep	keep	—
+分析目标闸门错误：pathErrors[] 逐字不变 + targetErrors[] 精确只装闸门错误；--from 路径错误**不**进 targetErrors[]（它是精确入口，不是副本）；闸门错误 + `--from` 错误并存：pathErrors[] 全集（顺序不变）+ targetErrors[] 只装闸门	cli-io 聚合矩阵	没测该层	keep	keep	—
+分析目标闸门错误：pathErrors[] 逐字不变 + targetErrors[] 精确只装闸门错误；--from 路径错误**不**进 targetErrors[]	cli-io 聚合矩阵	没测该层	keep	keep	—
+分析目标闸门错误：pathErrors[] 逐字不变 + targetErrors[] 精确只装闸门错误；--from 路径错误**不**进 targetErrors[]	cli-io 聚合矩阵	没测该层	keep	keep	—
+check --json（干净文件）：stdout 与改前基线逐字一致 + 无 targetErrors；test --json（干净文件）：stdout 与改前基线逐字一致 + 无 targetErrors；contract --json（干净文件）：stdout 与改前基线逐字一致 + 无 targetErrors；人类面（闸门错误）：stderr 文案与改前逐字一致（机器面改动不外溢）	cli-io 聚合矩阵	没测该层	keep	keep	—
+人类面：文件名 + 行:列 + 摘录 + ^ 指位（不再是无路径的裸 message）；--json 面：stdout 是 CaseJson 失败信封（pathErrors[{code:"syntax-error"}]）+ exit 1；对照面：nudo check 对同一文件给同码 pathErrors（两个 verb 机器面同形）	cli-io 聚合矩阵	没测该层	keep	keep	—
+无 --freeze：报用法错误 + exit 1（旧行为：静默忽略 + exit 0）；有 --freeze 无 --dry-run：仍是既有的「requires --dry-run」用法错误；合法组合 --freeze --dry-run --exit-on-diff：照常跑（不误伤）	cli-io 聚合矩阵	没测该层	keep	keep	—
+print 形态 + 缺失路径：stdout 是合法 JSON 且带 pathErrors[] + exit 1；draft 形态 + 缺失路径：同一套 pathErrors[]（三形态统一）；全部路径都缺失（无 root）：stdout 仍是**非空**合法 JSON + pathErrors[] + exit 1；对照面：非 --json 的人类面仍在 stderr（不因 --json 消失）	cli-io 聚合矩阵	没测该层	keep	keep	—
+进程内：CLI 半 + service 半（都走 src）⇒ `..data/f.js` 的草稿**写出来了**；CLI 级：CLI 半**不再**用那句「is outside project root」拒写文案；负控制：同一项目根下的普通文件照常写出（不误伤）	cli-io 聚合矩阵	没测该层	keep	keep	—
+migrate status <a> <b> ⇒ 两个包都被审计（不得只报第一个）；migrate status --json <a> <b> ⇒ 顶层数组含两个 root；单路径时行为不变（不得因多路径支持而破坏单路径）	cli-io 聚合矩阵	没测该层	keep	keep	—
+collectNudoFiles 收进链接进来的 .js（改前：静默跳过）；符号链接目录被递归进入（改前：整棵链接目录被跳过）；CLI check <dir>：链接进来的坏文件参与门禁（改前：exit 0 假绿）；同一文件直传与目录扫描结论一致（不再一个绿一个红）	cli-io 聚合矩阵	没测该层	keep	keep	—
+产物必须落盘且能被 `node --check` 解析（成员修饰符已剥、参数属性已降级）；命令层闸门是**兜底**：真源修好后常规路径不再触发它（不得误拦合法产物）；对照：纯类型注解的 TS 源照常 strip（闸门不得过度拦截）	cli-io 聚合矩阵	没测该层	keep	keep	—
+解析器：等号形态切出 name/type（不是整串当绑定名）；解析器：冒号形态不变（旧口径不回归）；解析器：分隔符取最先出现的那个；无分隔符仍是 name=整串 / type=any；CLI：等号形态的假设真的生效（绑定被应用，类型按假设打印）；CLI：冒号形态仍然生效（两种写法同结果）	cli-io 聚合矩阵	没测该层	keep	keep	—
+1 个可退役包 ⇒ 顶层仍是数组（不得退化为对象）；2 个可退役包 ⇒ 顶层同样是数组（形状不随条数漂移）；两个场景的顶层形状一致（都是数组）	cli-io 聚合矩阵	没测该层	keep	keep	—
+产物含运行时 enum 对象 ⇒ `node --check` 过且 `E.A === 1`；门禁行为正确：`.ts` 源与 `.js` 产物都绿，签名是 `f() => 1`（不再是 never）	cli-io 聚合矩阵	没测该层	keep	keep	—
+推导失败 + 期望 number() ⇒ unchecked + exit 0（改前：FAIL + exit 1）；推导失败 + 期望 any() ⇒ 同样 unchecked（改前：空洞 ok「1 passed」）；诊断文本区分「无法判定」与「类型不匹配」，并指向 nudo:opaque-result 的补证据路径；--json 面：assertions = {passed: 0, failed: 0, unchecked: 1}；负控制：推导成功 + 期望不符 ⇒ 仍是	cli-io 聚合矩阵	没测该层	keep	keep	—
+CLI：非 --json 面的人读文案不变（stderr 一行 + stdout 空 + exit 1）；CLI：非 --json 面的其它用法错误文案不变（--exit-on-diff 无 --freeze）；CLI：路径错误信封（对照）仍是 pathErrors 机器码，两条通道同形	cli-io 聚合矩阵	没测该层	keep	keep	—
+挂在被删语句上的 `/// @nudo:import` 必须在产物里存活；门禁行为正确：源红 / 产物**同样红**（契约仍被绑定 ⇒ 不是假绿）	cli-io 聚合矩阵	没测该层	keep	keep	—
+import 不存在的模块 ⇒ 明确报错 + exit 1（改前：零提示 + exit 0 假绿）；import 不存在的导出 ⇒ 明确报错 + exit 1（改前：零提示 + exit 0 假绿）；--json 面：pathErrors 收录该失败 + exit 1（改前：pathErrors 为空 + exit 0）；负控制：现场文件模块可解析且有调用 ⇒ call@ 而非 entry@ + exit 0；负控制：现场文件模块可解析但没有调用 ⇒ 不报错 + exit 0	cli-io 聚合矩阵	没测该层	keep	keep	—
+混合目录 ⇒ results 保留成功文件的逐文件结果（不再整目标丢弃）；失败条目的 path 是**失败文件**（不是目标目录）⇒ 与 TS-only 闸门同量纲；pathErrors[] 内所有 path 量纲一致（都是文件，不是目录）；--write：成功行带库面的「未写盘」注记，且原子性不变（一个字节都不落盘）；负控：全部成功 ⇒ stdout 仍是顶层数组（形状不变）	cli-io 聚合矩阵	没测该层	keep	keep	—
 "负控：非 --json 面仍是 stderr 文案 + exit 1（人读面不回归）"	"各动词的 `--json` 文档形状不同（check/test = 单文档； 断言：expect(r.status, `${verb}: ${r.stderr}`).toBe(1);；expect(r.stdout).toBe(\"\");"	夹具漏形态	keep	keep	—
-"验收 1：批内有失败文件 + --write ⇒ 人类面**不打** `wrote`，且磁盘上零产出"	"`nudo migrate strip --write` 把「**未写盘**」的成功行报成 `wrote`。 症状（目标目录里混一个语法错文件：`good.ts` + `bad.ts`）： 1. **人类面说谎**：stdout 打 `wrote good.ts → good.js`，而磁盘上**根本没有** `good.js`（库面原子性：批内有失败 ⇒ 整批零写盘，）⇒ 同一行下面还 跟着一句 `note: not written — …` ⇒ **同一行既说「wrote」又说「not written」**（自相矛盾）。 断言：expect(r.stdout).not.toMatch(/^wrote /m);；expect(r."	没测该层	keep	keep	—
-"验收 2：同场景 --json ⇒ results[] 的该行带**机器可判定**的「未写盘」标记"	"`nudo migrate strip --write` 把「**未写盘**」的成功行报成 `wrote`。 症状（目标目录里混一个语法错文件：`good.ts` + `bad.ts`）： 1. **人类面说谎**：stdout 打 `wrote good.ts → good.js`，而磁盘上**根本没有** `good.js`（库面原子性：批内有失败 ⇒ 整批零写盘，）⇒ 同一行下面还 跟着一句 `note: not written — …` ⇒ **同一行既说「wrote」又说「not written」**（自相矛盾）。 断言：expect(parsed.ok).toBe(false);；expect(parsed.action"	没测该层	keep	keep	—
-"验收 3：全部成功 + --write ⇒ 人类面照旧打 `wrote`，产物真实落盘，标记为「已写盘」"	"`nudo migrate strip --write` 把「**未写盘**」的成功行报成 `wrote`。 症状（目标目录里混一个语法错文件：`good.ts` + `bad.ts`）： 1. **人类面说谎**：stdout 打 `wrote good.ts → good.js`，而磁盘上**根本没有** `good.js`（库面原子性：批内有失败 ⇒ 整批零写盘，）⇒ 同一行下面还 跟着一句 `note: not written — …` ⇒ **同一行既说「wrote」又说「not written」**（自相矛盾）。 断言：expect(r.stdout).toMatch(/^wrote {2}good\\.ts → good"	没测该层	keep	keep	—
-"验收 4：退出码语义不变（有失败 ⇒ 非 0；全成功 ⇒ 0）"	"`nudo migrate strip --write` 把「**未写盘**」的成功行报成 `wrote`。 症状（目标目录里混一个语法错文件：`good.ts` + `bad.ts`）： 1. **人类面说谎**：stdout 打 `wrote good.ts → good.js`，而磁盘上**根本没有** `good.js`（库面原子性：批内有失败 ⇒ 整批零写盘，）⇒ 同一行下面还 跟着一句 `note: not written — …` ⇒ **同一行既说「wrote」又说「not written」**（自相矛盾）。 断言：expect(runCliTsx([\"migrate\", \"strip\", \"--write\", \"."	没测该层	keep	keep	—
-"负控：dry-run（不带 --write）⇒ 人类面是 `dry`（不是 `wrote`），标记为「计划」"	"`nudo migrate strip --write` 把「**未写盘**」的成功行报成 `wrote`。 症状（目标目录里混一个语法错文件：`good.ts` + `bad.ts`）： 1. **人类面说谎**：stdout 打 `wrote good.ts → good.js`，而磁盘上**根本没有** `good.js`（库面原子性：批内有失败 ⇒ 整批零写盘，）⇒ 同一行下面还 跟着一句 `note: not written — …` ⇒ **同一行既说「wrote」又说「not written」**（自相矛盾）。 断言：expect(r.stdout).not.toMatch(/^wrote /m);；expect(r."	没测该层	keep	keep	—
-"库面：写盘轮逐行给写盘状态（有失败 ⇒ not-written；全成功 ⇒ written）"	"`nudo migrate strip --write` 把「**未写盘**」的成功行报成 `wrote`。 症状（目标目录里混一个语法错文件：`good.ts` + `bad.ts`）： 1. **人类面说谎**：stdout 打 `wrote good.ts → good.js`，而磁盘上**根本没有** `good.js`（库面原子性：批内有失败 ⇒ 整批零写盘，）⇒ 同一行下面还 跟着一句 `note: not written — …` ⇒ **同一行既说「wrote」又说「not written」**（自相矛盾）。 断言：expect(good.writeStatus).toBe(\"not-written\");；expec"	没测该层	keep	keep	—
-"注册表里存在该码（键名 migrateStripFailed）"	"`nudo:migrate-strip-failed` 必须走**稳定诊断码注册表** （`@nudojs/core/internal` 的 `DIAG`），不得在 CLI 层直写字面量。 旧行为：`packages/nudojs/src/commands/migrate.ts` 的 `--json` 信封里直接写 `code: \"nudo:migrate-strip-failed\"` 字面量 ⇒ 绕过 `DIAG` 注册表 ⇒ - 码的**拼写**在生产面有两处真理源（注册表外的字面量 + 术语表）； 断言：expect(DIAG.migrateStripFailed).toBe(\"nudo:migrate-strip-faile"	夹具漏形态	keep	keep	—
-"产出的 pathErrors[].code 等于注册表常量（不是另写的字面量）"	"`nudo:migrate-strip-failed` 必须走**稳定诊断码注册表** （`@nudojs/core/internal` 的 `DIAG`），不得在 CLI 层直写字面量。 旧行为：`packages/nudojs/src/commands/migrate.ts` 的 `--json` 信封里直接写 `code: \"nudo:migrate-strip-failed\"` 字面量 ⇒ 绕过 `DIAG` 注册表 ⇒ - 码的**拼写**在生产面有两处真理源（注册表外的字面量 + 术语表）； 断言：expect(r.status).toBe(1);；expect(parsed.pathErrors?.length ??"	夹具漏形态	keep	keep	—
-"生产 src 不再残留该码的裸字面量赋值（`code: \"nudo:…\"` 形态）"	"`nudo:migrate-strip-failed` 必须走**稳定诊断码注册表** （`@nudojs/core/internal` 的 `DIAG`），不得在 CLI 层直写字面量。 旧行为：`packages/nudojs/src/commands/migrate.ts` 的 `--json` 信封里直接写 `code: \"nudo:migrate-strip-failed\"` 字面量 ⇒ 绕过 `DIAG` 注册表 ⇒ - 码的**拼写**在生产面有两处真理源（注册表外的字面量 + 术语表）； 断言：expect(src).not.toMatch(/code:\\s*\"nudo:migrate-strip-failed\"/)"	夹具漏形态	keep	keep	—
+验收 1：批内有失败文件 + --write ⇒ 人类面**不打** `wrote`，且磁盘上零产出；验收 2：同场景 --json ⇒ results[] 的该行带**机器可判定**的「未写盘」标记；验收 3：全部成功 + --write ⇒ 人类面照旧打 `wrote`，产物真实落盘，标记为「已写盘」；验收 4：退出码语义不变（有失败 ⇒ 非 0；全成功 ⇒ 0）；负控：dry-run（不带 --write）⇒ 人类面是 `dry`（不是 `wrote`），标记为「计划」	cli-io 聚合矩阵	没测该层	keep	keep	—
+注册表里存在该码（键名 migrateStripFailed）；产出的 pathErrors[].code 等于注册表常量（不是另写的字面量）；生产 src 不再残留该码的裸字面量赋值（`code: "nudo:…"` 形态）	cli-io 聚合矩阵	没测该层	keep	keep	—
 "负控制：依赖可读 ⇒ 无「cannot read module」诊断，门禁绿"	"回归（CLI 面）：**依赖模块不可读（EACCES）**不得被说成「文件不存在」， 也不得让异常冒到整轮外面。 口径（core 侧 load-guard + service 侧 ModuleReadError 同源）： - 不可读 ⇒ 一条明确诊断（写明「读不到」+ errno），严重级 error ⇒ 非零退出； 断言：expect(r.stdout).not.toContain(\"cannot read module\");；expect(r.stdout).toContain(\"run() => 0\");"	没测该层	keep	keep	—
-"export --format standard：Infinity 放行、null 拒绝（不再折成 null）"	"修前：standard 节点经 `JSON.stringify` 落地 ⇒ `Infinity` 静默变 `null` ⇒ 导出的校验器**拒绝函数必返的值**、**放行函数永不返回的 `null`**（schema 与 函数完全反向）； bigint 字面量则让整条 export **崩溃、零产物**（`--format all` 下四个方言的产物一起丢）。 断言：expect(r.status).toBe(0);；expect(existsSync(p)).toBe(true);"	夹具漏形态	keep	keep	—
-"export --format all：bigint 字面量契约不再让整条命令崩溃（零产物）"	"修前：standard 节点经 `JSON.stringify` 落地 ⇒ `Infinity` 静默变 `null` ⇒ 导出的校验器**拒绝函数必返的值**、**放行函数永不返回的 `null`**（schema 与 函数完全反向）； bigint 字面量则让整条 export **崩溃、零产物**（`--format all` 下四个方言的产物一起丢）。 断言：expect(r.status).toBe(0);；expect(r.stderr).not.toContain(\"Do not know how to serialize a BigInt\");"	夹具漏形态	keep	keep	—
-"CLI：--fix --write --dry-run 只打印计划、**不落盘**"	"症状：--dry-run 与 --write 同时给出时 write 胜出 ⇒ 磁盘被改、侧车被写； 修复：--dry-run 优先（与兄弟命令同款口径： `nudo contract --draft --write --dry-run` / `nudo test --freeze --dry-run` 都是「只打印、不落盘」）。 断言：expect(out).toContain(\"planned (dry-run)\");；expect(out).not.toContain(\"edit(s) written\");"	没测该层	keep	keep	—
-"CLI：--fix --write（不带 --dry-run）仍落盘（旧口径不回归）"	"症状：--dry-run 与 --write 同时给出时 write 胜出 ⇒ 磁盘被改、侧车被写； 修复：--dry-run 优先（与兄弟命令同款口径： `nudo contract --draft --write --dry-run` / `nudo test --freeze --dry-run` 都是「只打印、不落盘」）。 断言：expect(out).toContain(\"edit(s) written\");；expect(existsSync(sidecar)).toBe(true);"	没测该层	keep	keep	—
-"CLI：--fix（不带 --write）只打印计划、不落盘（默认值不回归）"	"症状：--dry-run 与 --write 同时给出时 write 胜出 ⇒ 磁盘被改、侧车被写； 修复：--dry-run 优先（与兄弟命令同款口径： `nudo contract --draft --write --dry-run` / `nudo test --freeze --dry-run` 都是「只打印、不落盘」）。 断言：expect(out).toContain(\"planned (dry-run)\");；expect(existsSync(sidecar)).toBe(false);"	没测该层	keep	keep	—
-"--json 面：stdout 非空 + 信封 ok:false + pathErrors[nudo:path-io] + exit 1"	"旧实现：`runCheck` 的 `readFileSync` 无 try/catch ⇒ 异常逃逸出命令层 ⇒ 顶层兜底只打一行裸 errno ⇒ `--json` 面 **stdout 0 字节** + exit 1 （违反 cli-semantics「--json 下 stdout 永不为空 / 绝不出现空 stdout + 非零 exit」）。 同族的其它路径错误（不存在 / 空目录 / 非目标）都走 `pathErrors[]` 信封，唯独「读输入」这条路漏了。 断言：expect(r.stdout.length, \"stdout 不得为空（--json 面永不为空）\").toBeGreaterThan(0);；expec"	没测该层	keep	keep	—
-"人类面：message + fix: 提示（不是裸 errno）+ exit 1"	"旧实现：`runCheck` 的 `readFileSync` 无 try/catch ⇒ 异常逃逸出命令层 ⇒ 顶层兜底只打一行裸 errno ⇒ `--json` 面 **stdout 0 字节** + exit 1 （违反 cli-semantics「--json 下 stdout 永不为空 / 绝不出现空 stdout + 非零 exit」）。 同族的其它路径错误（不存在 / 空目录 / 非目标）都走 `pathErrors[]` 信封，唯独「读输入」这条路漏了。 断言：expect(r.status).toBe(1);；expect(r.stderr).toContain(\"fix:\");"	没测该层	keep	keep	—
-"对照：缺文件走既有 nudo:path-not-found 信封（不被本次改动影响）"	"旧实现：`runCheck` 的 `readFileSync` 无 try/catch ⇒ 异常逃逸出命令层 ⇒ 顶层兜底只打一行裸 errno ⇒ `--json` 面 **stdout 0 字节** + exit 1 （违反 cli-semantics「--json 下 stdout 永不为空 / 绝不出现空 stdout + 非零 exit」）。 同族的其它路径错误（不存在 / 空目录 / 非目标）都走 `pathErrors[]` 信封，唯独「读输入」这条路漏了。 断言：expect(env.ok).toBe(false);；expect(env.pathErrors?.[0]?.code).toBe(\"nudo:path-"	没测该层	keep	keep	—
-"--json --gitlab：stdout 是 CheckJson 契约，stderr 是 Code Quality 数组"	"`nudo check --json --gitlab`：GitLab 注解数组被**整段丢弃** （既不进 stdout 也不进 stderr）。 根因（packages/nudojs/src/commands/check-report.ts）：注解分派把 GitLab 挂在 `--json` 的 `else` 上，而 `--json` 路径**恒**置 `jsonCollect` （check-command.ts）⇒ `opts.json && opts.jsonCollect` 永远成立 ⇒ `opts.gitlab` 分支永不可达 ⇒ 注解被静默吞掉（CI 面板上该文件的告警消失， 且没有任何提示说这个组合被忽略了）。 断"	夹具漏形态	keep	keep	—
-"--json（无 --gitlab）：stderr 不含任何 CI 注解（不回归泄漏）"	"`nudo check --json --gitlab`：GitLab 注解数组被**整段丢弃** （既不进 stdout 也不进 stderr）。 根因（packages/nudojs/src/commands/check-report.ts）：注解分派把 GitLab 挂在 `--json` 的 `else` 上，而 `--json` 路径**恒**置 `jsonCollect` （check-command.ts）⇒ `opts.json && opts.jsonCollect` 永远成立 ⇒ `opts.gitlab` 分支永不可达 ⇒ 注解被静默吞掉（CI 面板上该文件的告警消失， 且没有任何提示说这个组合被忽略了）。 断"	夹具漏形态	keep	keep	—
-"--gitlab（无 --json）：stdout 仍是恰好一份 Code Quality 数组（旧口径不变）"	"`nudo check --json --gitlab`：GitLab 注解数组被**整段丢弃** （既不进 stdout 也不进 stderr）。 根因（packages/nudojs/src/commands/check-report.ts）：注解分派把 GitLab 挂在 `--json` 的 `else` 上，而 `--json` 路径**恒**置 `jsonCollect` （check-command.ts）⇒ `opts.json && opts.jsonCollect` 永远成立 ⇒ `opts.gitlab` 分支永不可达 ⇒ 注解被静默吞掉（CI 面板上该文件的告警消失， 且没有任何提示说这个组合被忽略了）。 断"	夹具漏形态	keep	keep	—
-"依赖文件缺失 ⇒ nudo:module-missing 上屏 + 门禁红（exit 1）"	"`nudo check` **从不报告模块装载问题族** （`nudo:module-missing` / `nudo:missing-export` / `nudo:module-cycle` / `nudo:module-depth`）：依赖解析失败的源文件**门禁绿灯、exit 0**。 根因：模块图装载问题（service `composeEvalModules` → `pushBModuleIssues`） 只走**分析器诊断通道**； 断言：expect(out).toContain(\"(nudo:module-missing)\");；expect(r.status).toBe(1);"	没测该层	keep	keep	—
-"依赖文件存在但缺导出 ⇒ nudo:missing-export 上屏 + 门禁红（exit 1）"	"`nudo check` **从不报告模块装载问题族** （`nudo:module-missing` / `nudo:missing-export` / `nudo:module-cycle` / `nudo:module-depth`）：依赖解析失败的源文件**门禁绿灯、exit 0**。 根因：模块图装载问题（service `composeEvalModules` → `pushBModuleIssues`） 只走**分析器诊断通道**； 断言：expect(out).toContain(\"(nudo:missing-export)\");；expect(r.status).toBe(1);"	没测该层	keep	keep	—
-"--json 面同码同 severity（error）且 ok=false"	"从 `--json` 面解析出 issues（人面与 JSON 面必须同码同 severity）。 断言：expect(hit).toBeDefined();；expect(hit?.severity).toBe(\"error\");"	没测该层	keep	keep	—
-"不双报：mock 文件缺失（mock 通道 + 模块图通道同码同文）只报一条"	"`nudo check` **从不报告模块装载问题族** （`nudo:module-missing` / `nudo:missing-export` / `nudo:module-cycle` / `nudo:module-depth`）：依赖解析失败的源文件**门禁绿灯、exit 0**。 根因：模块图装载问题（service `composeEvalModules` → `pushBModuleIssues`） 只走**分析器诊断通道**； 断言：expect(missing.length).toBe(1);；expect(missing[0].severity).toBe(\"error\");"	没测该层	keep	keep	—
-"人类面：语法错块 + exit 1（此前 OK / exit 0）"	"`nudo check` 对 `.js` 里的 **TS-only 语法**判 **OK / exit 0** （CI 门禁假绿）：`node --check` 自己拒绝该文件（SyntaxError）。 修法（族 18 片 4）： - core `parseSource` 新增 `filename` 选项 ⇒ **按扩展名**选解析插件 （`.js` / `.mjs` / `.cjs` / `.jsx` **不开** typescript 插件）； 断言：expect(r.status, out).toBe(1);；expect(out).toContain(\"syntax error\");"	没测该层	keep	keep	—
-"--json 面：信封 ok:false + pathErrors[0].code=syntax-error"	"`nudo check` 对 `.js` 里的 **TS-only 语法**判 **OK / exit 0** （CI 门禁假绿）：`node --check` 自己拒绝该文件（SyntaxError）。 修法（族 18 片 4）： - core `parseSource` 新增 `filename` 选项 ⇒ **按扩展名**选解析插件 （`.js` / `.mjs` / `.cjs` / `.jsx` **不开** typescript 插件）； 断言：expect(json.ok).toBe(false);；expect(json.pathErrors?.[0]?.code).toBe(\"syntax-error\");"	没测该层	keep	keep	—
-"check --fix 不得静默跳过：残余 error ⇒ exit 1"	"`nudo check` 对 `.js` 里的 **TS-only 语法**判 **OK / exit 0** （CI 门禁假绿）：`node --check` 自己拒绝该文件（SyntaxError）。 修法（族 18 片 4）： - core `parseSource` 新增 `filename` 选项 ⇒ **按扩展名**选解析插件 （`.js` / `.mjs` / `.cjs` / `.jsx` **不开** typescript 插件）； 断言：expect(r.status, out).toBe(1);；expect(out).toContain(\"residual error\");"	没测该层	keep	keep	—
-"磁盘缓存不得把「假绿」固化：连跑两轮都判红"	"`nudo check` 对 `.js` 里的 **TS-only 语法**判 **OK / exit 0** （CI 门禁假绿）：`node --check` 自己拒绝该文件（SyntaxError）。 修法（族 18 片 4）： - core `parseSource` 新增 `filename` 选项 ⇒ **按扩展名**选解析插件 （`.js` / `.mjs` / `.cjs` / `.jsx` **不开** typescript 插件）； 断言：expect(first.status, first.stdout + first.stderr).toBe(1);；expect(second.status, second.s"	没测该层	keep	keep	—
-"纯 JS 文件不受影响：仍判绿（exit 0）"	"`nudo check` 对 `.js` 里的 **TS-only 语法**判 **OK / exit 0** （CI 门禁假绿）：`node --check` 自己拒绝该文件（SyntaxError）。 修法（族 18 片 4）： - core `parseSource` 新增 `filename` 选项 ⇒ **按扩展名**选解析插件 （`.js` / `.mjs` / `.cjs` / `.jsx` **不开** typescript 插件）； 断言：expect(r.status, r.stdout + r.stderr).toBe(0);"	没测该层	keep	keep	—
-"`.ts` 文件仍允许 TS 语法（按扩展名收紧，不误伤 TS 面）"	"`nudo check` 对 `.js` 里的 **TS-only 语法**判 **OK / exit 0** （CI 门禁假绿）：`node --check` 自己拒绝该文件（SyntaxError）。 修法（族 18 片 4）： - core `parseSource` 新增 `filename` 选项 ⇒ **按扩展名**选解析插件 （`.js` / `.mjs` / `.cjs` / `.jsx` **不开** typescript 插件）； 断言：expect(r.status, out).toBe(0);；expect(out).not.toContain(\"TypeScript-only syntax\");"	没测该层	keep	keep	—
-"profile:\"bogus\" + entryThrows:\"warning\" ⇒ 告警说 using warning（且不说 default strict）"	"旧文案写死「using default strict」⇒ 诊断说假话：配置里同层还有显式 `check.entryThrows:\"warning\"` 时，实际生效档位是 warning（门禁放行、 exit 0），告警却说「using default strict」（用户以为自己的文件没过）。 修复：文案按**最终解析出的档位**生成（解析链 = CLI 显式 > CLI profile > 配置 entryThrows > 配置 profile > 默认 strict）。 断言：expect(r.stderr).toContain(；expect(r.stderr).not.toContain(\"using default str"	没测该层	keep	keep	—
-"profile:\"bogus\" 单独 ⇒ 仍是 using default strict（默认档文案不变）+ strict 门禁 exit 1"	"L2-only：export 上未消化 may-throw ⇒ 档位可从 exit code 观测 断言：expect(r.stderr).toContain(；expect(r.status).toBe(1);"	没测该层	keep	keep	—
-"CLI --entry-throws warning 压过配置 profile typo ⇒ 告警说 using warning"	"旧文案写死「using default strict」⇒ 诊断说假话：配置里同层还有显式 `check.entryThrows:\"warning\"` 时，实际生效档位是 warning（门禁放行、 exit 0），告警却说「using default strict」（用户以为自己的文件没过）。 修复：文案按**最终解析出的档位**生成（解析链 = CLI 显式 > CLI profile > 配置 entryThrows > 配置 profile > 默认 strict）。 断言：expect(r.stderr).toContain(\"— using warning\");；expect(r.stderr).not.toContain"	没测该层	keep	keep	—
-"--json 面：冷/热/热三轮 issues 逐条相同（dual-entry 各 1 条）"	"根因（packages/nudojs/src/commands/check-report.ts）：该 issue 在**缓存 之后**注入（保证命中轮也上屏），但**上一轮的注入结果被写进了磁盘缓存** ⇒ 命中轮拿到的 report / cachedJson 已经含这条 issue，再把 live 的那一条 merge 上去 ⇒ 同文案重复两条（mergeCheckIssues / mergeJsonIssues 只追加、 不去重）。 修法：与 env-unresolved / 配置形状诊断同一口径 —— **写盘前剥除 + 读回后剥除**，由本轮 live 注入单一来源上屏 ⇒ miss 轮与命中轮的 issues 数组逐条相同"	夹具漏形态	keep	keep	—
-"人类面：热轮的 issues 段只有一行 dual-entry"	"根因（packages/nudojs/src/commands/check-report.ts）：该 issue 在**缓存 之后**注入（保证命中轮也上屏），但**上一轮的注入结果被写进了磁盘缓存** ⇒ 命中轮拿到的 report / cachedJson 已经含这条 issue，再把 live 的那一条 merge 上去 ⇒ 同文案重复两条（mergeCheckIssues / mergeJsonIssues 只追加、 不去重）。 修法：与 env-unresolved / 配置形状诊断同一口径 —— **写盘前剥除 + 读回后剥除**，由本轮 live 注入单一来源上屏 ⇒ miss 轮与命中轮的 issues 数组逐条相同"	夹具漏形态	keep	keep	—
-"写盘口径：磁盘缓存条目里不含 nudo:dual-entry"	"根因（packages/nudojs/src/commands/check-report.ts）：该 issue 在**缓存 之后**注入（保证命中轮也上屏），但**上一轮的注入结果被写进了磁盘缓存** ⇒ 命中轮拿到的 report / cachedJson 已经含这条 issue，再把 live 的那一条 merge 上去 ⇒ 同文案重复两条（mergeCheckIssues / mergeJsonIssues 只追加、 不去重）。 修法：与 env-unresolved / 配置形状诊断同一口径 —— **写盘前剥除 + 读回后剥除**，由本轮 live 注入单一来源上屏 ⇒ miss 轮与命中轮的 issues 数组逐条相同"	夹具漏形态	keep	keep	—
-"CLI：--json --what-if ⇒ 显式 usage error（stdout 是机器可读信封）"	"症状：--what-if 是早退分支 ⇒ --json/--abs/--gha/--gitlab/--from/--watch/--verbose 全部被静默丢弃（stdout 变成 `Type of \"raw\": …` 的人读文本、exit 0 ⇒ 机器面 `JSON.parse(stdout)` 直接炸）； 且多文件时**静默塌缩**成第 1 个（其余文件从未被分析）。 断言：expect(r.status).toBe(1);；expect(r.stdout).not.toContain('Type of \"raw\"');"	没测该层	keep	keep	—
-"CLI：--abs / --gha / --gitlab / --from / --watch 与 --what-if ⇒ 显式拒绝（exit 1）"	"症状：--what-if 是早退分支 ⇒ --json/--abs/--gha/--gitlab/--from/--watch/--verbose 全部被静默丢弃（stdout 变成 `Type of \"raw\": …` 的人读文本、exit 0 ⇒ 机器面 `JSON.parse(stdout)` 直接炸）； 且多文件时**静默塌缩**成第 1 个（其余文件从未被分析）。 断言：expect(r.status, combo.join(\" \")).toBe(1);；expect(out, combo.join(\" \")).toContain(\"--what-if cannot be combined with\");"	没测该层	keep	keep	—
-"CLI：多文件 --what-if 不再静默塌缩成第 1 个（显式报错）"	"症状：--what-if 是早退分支 ⇒ --json/--abs/--gha/--gitlab/--from/--watch/--verbose 全部被静默丢弃（stdout 变成 `Type of \"raw\": …` 的人读文本、exit 0 ⇒ 机器面 `JSON.parse(stdout)` 直接炸）； 且多文件时**静默塌缩**成第 1 个（其余文件从未被分析）。 断言：expect(r.status).toBe(1);；expect(out).toContain(\"--what-if needs exactly one file (got 2)\");"	没测该层	keep	keep	—
-"CLI：单文件 + 无机器旗标的 --what-if 仍正常回答（旧口径不回归）"	"症状：--what-if 是早退分支 ⇒ --json/--abs/--gha/--gitlab/--from/--watch/--verbose 全部被静默丢弃（stdout 变成 `Type of \"raw\": …` 的人读文本、exit 0 ⇒ 机器面 `JSON.parse(stdout)` 直接炸）； 且多文件时**静默塌缩**成第 1 个（其余文件从未被分析）。 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain('Type of \"raw\": string');"	没测该层	keep	keep	—
-"有环 / 无环：nudo check 的 exit code 逐字一致（门禁同判）"	"归一化三处**与分析结果无关**的差异： 1. 夹具目录路径（两个夹具在不同目录）； 2. 模块图**形状**诊断（`nudo:module-cycle` / `nudo:module-depth`）及其 docs 行 —— 环本身被诊断面报告是**期望**行为（模块装载问题族上屏）， 但它**不得**改变分析结果（签名 + L2 门禁判定）； 断言：expect(a.status).toBe(1);；expect(b.status).toBe(1);"	夹具漏形态	keep	keep	—
-"有环 / 无环：nudo check 的诊断文本逐字一致（归一化模块图形状诊断后）"	"归一化三处**与分析结果无关**的差异： 1. 夹具目录路径（两个夹具在不同目录）； 2. 模块图**形状**诊断（`nudo:module-cycle` / `nudo:module-depth`）及其 docs 行 —— 环本身被诊断面报告是**期望**行为（模块装载问题族上屏）， 但它**不得**改变分析结果（签名 + L2 门禁判定）； 断言：expect(normalizeGateOutput(a.stdout, cyc)).toBe(normalizeGateOutput(b.stdout, acyc));"	夹具漏形态	keep	keep	—
-"一致结果里仍有 constraint-violated（跨模块的值没有塌成 unknown）"	"（**反向守护钉** · 报告说法的假阳性）：`nudo check` 遇**模块环**时 **不得**把整张依赖图丢弃。 报告原始描述：`packages/nudojs/src/commands/check.ts` 有 `const hasCycle = graph.issues.some(i => i.kind === \"cycle\")` ⇒ 有环时 `mergedMods` 被整个换成 `envMods` 或空 ⇒ 跨模块值塌成 `unknown` ⇒ L1 契约门禁**假绿**。 断言：expect(r.stdout).toContain(\"run() => 5\");；expect(r.stdout).not.toMatch"	没测该层	keep	keep	—
-"夹具非空转：有环夹具真被检出环（nudo test 面），无环夹具没有"	"归一化三处**与分析结果无关**的差异： 1. 夹具目录路径（两个夹具在不同目录）； 2. 模块图**形状**诊断（`nudo:module-cycle` / `nudo:module-depth`）及其 docs 行 —— 环本身被诊断面报告是**期望**行为（模块装载问题族上屏）， 但它**不得**改变分析结果（签名 + L2 门禁判定）； 断言：expect(a.stdout).toContain(\"nudo:module-cycle\");；expect(a.stdout).toContain(\"Circular module load\");"	夹具漏形态	keep	keep	—
-"单份 ---/+++ 头 + 路径字段无说明文字 + 相对路径（无 a// 双斜杠）"	"`nudo check --fix` 打印的 unified diff **非法且不可 apply**。 旧实现（check.ts 的 diff 打印段）： - 自印一份 `--- <file>` / `+++ <file> ([fix] …)` **又**追加自带头的 `unifiedDiff(...)` ⇒ **双份头**； 断言：expect(minus, \"unified diff 只允许一对 ---/+++ 头\").toHaveLength(1);；expect(plus, \"unified diff 只允许一对 ---/+++ 头\").toHaveLength(1);"	没测该层	keep	keep	—
-"diff 可被 `git apply --check -p1` 消费（相对路径 ⇒ 剥掉 a/ 后是仓库内相对路径）"	"`nudo check --fix` 打印的 unified diff **非法且不可 apply**。 旧实现（check.ts 的 diff 打印段）： - 自印一份 `--- <file>` / `+++ <file> ([fix] …)` **又**追加自带头的 `unifiedDiff(...)` ⇒ **双份头**； 断言：expect(r.stdout).toContain(\"--- a/lib.nudo.js\");；expect("	没测该层	keep	keep	—
+export --format standard：Infinity 放行、null 拒绝（不再折成 null）；export --format all：bigint 字面量契约不再让整条命令崩溃（零产物）	cli-io 聚合矩阵	没测该层	keep	keep	—
+CLI：--fix --write --dry-run 只打印计划、**不落盘**；CLI：--fix --write（不带 --dry-run）仍落盘（旧口径不回归）；CLI：--fix（不带 --write）只打印计划、不落盘（默认值不回归）	cli-io 聚合矩阵	没测该层	keep	keep	—
+--json 面：stdout 非空 + 信封 ok:false + pathErrors[nudo:path-io] + exit 1；人类面：message + fix: 提示（不是裸 errno）+ exit 1；对照：缺文件走既有 nudo:path-not-found 信封（不被本次改动影响）	cli-io 聚合矩阵	没测该层	keep	keep	—
+--json --gitlab：stdout 是 CheckJson 契约，stderr 是 Code Quality 数组；--json（无 --gitlab）：stderr 不含任何 CI 注解（不回归泄漏）；--gitlab（无 --json）：stdout 仍是恰好一份 Code Quality 数组（旧口径不变）	cli-io 聚合矩阵	没测该层	keep	keep	—
+依赖文件缺失 ⇒ nudo:module-missing 上屏 + 门禁红（exit 1）；依赖文件存在但缺导出 ⇒ nudo:missing-export 上屏 + 门禁红（exit 1）；--json 面同码同 severity（error）且 ok=false；不双报：mock 文件缺失（mock 通道 + 模块图通道同码同文）只报一条	cli-io 聚合矩阵	没测该层	keep	keep	—
+人类面：语法错块 + exit 1（此前 OK / exit 0）；--json 面：信封 ok:false + pathErrors[0].code=syntax-error；check --fix 不得静默跳过：残余 error ⇒ exit 1；磁盘缓存不得把「假绿」固化：连跑两轮都判红；纯 JS 文件不受影响：仍判绿（exit 0）；`.ts` 文件仍允许 TS 语法（按扩展名收紧，不误伤 TS 面）	cli-io 聚合矩阵	没测该层	keep	keep	—
+profile:"bogus" + entryThrows:"warning" ⇒ 告警说 using warning（且不说 default strict）；profile:"bogus" 单独 ⇒ 仍是 using default strict（默认档文案不变）+ strict 门禁 exit 1；CLI --entry-throws warning 压过配置 profile typo ⇒ 告警说 using warning	cli-io 聚合矩阵	没测该层	keep	keep	—
+--json 面：冷/热/热三轮 issues 逐条相同（dual-entry 各 1 条）；人类面：热轮的 issues 段只有一行 dual-entry；写盘口径：磁盘缓存条目里不含 nudo:dual-entry	cli-io 聚合矩阵	没测该层	keep	keep	—
+CLI：--json --what-if ⇒ 显式 usage error（stdout 是机器可读信封）；CLI：--abs / --gha / --gitlab / --from / --watch 与 --what-if ⇒ 显式拒绝（exit 1）；CLI：多文件 --what-if 不再静默塌缩成第 1 个（显式报错）；CLI：单文件 + 无机器旗标的 --what-if 仍正常回答（旧口径不回归）	cli-io 聚合矩阵	没测该层	keep	keep	—
+有环 / 无环：nudo check 的 exit code 逐字一致（门禁同判）；有环 / 无环：nudo check 的诊断文本逐字一致（归一化模块图形状诊断后）；一致结果里仍有 constraint-violated（跨模块的值没有塌成 unknown）；夹具非空转：有环夹具真被检出环（nudo test 面），无环夹具没有	cli-io 聚合矩阵	没测该层	keep	keep	—
+单份 ---/+++ 头 + 路径字段无说明文字 + 相对路径（无 a// 双斜杠）；diff 可被 `git apply --check -p1` 消费（相对路径 ⇒ 剥掉 a/ 后是仓库内相对路径）	cli-io 聚合矩阵	没测该层	keep	keep	—
+```
+
+```audit-deleted
+title	reason	evidence
+module-missing（error）⇒ exit 1 且诊断上屏	dup:cli-io 聚合矩阵	commit:13806366
+--json：ok=false 且 summary.errors 反映 error 计数	dup:cli-io 聚合矩阵	commit:13806366
+干净文件：ok=true、errors=0、exit 0	dup:cli-io 聚合矩阵	commit:13806366
+warning 级诊断（模块环）不得把 test 判红	dup:cli-io 聚合矩阵	commit:13806366
+zod 入参槽 = z.array(z.unknown())（不是数组的数组）	dup:cli-io 聚合矩阵	commit:13806366
+standard 面 rest 槽节点只有一层 arr（与 dts 的 ...rest: unknown[] 同形）	dup:cli-io 聚合矩阵	commit:13806366
+`check clean.js --only <code> broken.js` ⇒ 定向 usage error + exit 1	dup:cli-io 聚合矩阵	commit:13806366
+对照：把 variadic 旗标放在 `--` 前、路径放后面 ⇒ 正常检查（不误报）	dup:cli-io 聚合矩阵	commit:13806366
+第二份 diff 以第一份为基准（累积），不是又一份「新建文件」	dup:cli-io 聚合矩阵	commit:13806366
+dry-run 的 diff 可被 `git apply --check -p1` 消费	dup:cli-io 聚合矩阵	commit:13806366
+dry-run 与 --write 得到同一份侧车内容	dup:cli-io 聚合矩阵	commit:13806366
+拼错的码 ⇒ usage error + exit 1（不再静默 no-op）	dup:cli-io 聚合矩阵	commit:13806366
+合法码但本次无该诊断 ⇒ 末尾报「matched no diagnostic」	dup:cli-io 聚合矩阵	commit:13806366
+用户导出 `z` + zod 段 import ⇒ 产物可编译（tsc --strict rc 0）	dup:cli-io 聚合矩阵	commit:13806366
+用户导出 `__nudoCheck`（standard 段的非导出 helper 同名）⇒ 不重复声明	dup:cli-io 聚合矩阵	commit:13806366
+主路径：完全无证据的导出函数 ⇒ 参数 unknown，stderr 点名提示	dup:cli-io 聚合矩阵	commit:13806366
+主路径：契约只覆盖部分形参时，未覆盖位同样是 unknown	dup:cli-io 聚合矩阵	commit:13806366
+窄路径：@nudo:skip + 契约未覆盖的形参 ⇒ 该位 unknown + stderr 点名提示	dup:cli-io 聚合矩阵	commit:13806366
+test 文本面与 --json 面都带 nudo:recursion-truncated	dup:cli-io 聚合矩阵	commit:13806366
+check 面同码同源（跨面口径一致，info 不挡门禁）	dup:cli-io 聚合矩阵	commit:13806366
+collectNudoFiles 不收 dist/ 与 coverage/ 下的文件（改前：收进来）	dup:cli-io 聚合矩阵	commit:13806366
+CLI check <pkg> 的文件集合里没有 dist/（改前：多出 dist/lib.js）	dup:cli-io 聚合矩阵	commit:13806366
+CLI test <pkg> 不因陈旧构建产物而红（改前：exit 1 假红）	dup:cli-io 聚合矩阵	commit:13806366
+跨面一致：CLI 目录发现与 IDE/vite 的 service 闸门对同一批文件给出相同结论	dup:cli-io 聚合矩阵	commit:13806366
+--format standard：台账标题不再宣称 zod（没有 zod 产物）	dup:cli-io 聚合矩阵	commit:13806366
+--format all：zod 台账与 standard 台账各一次（标题不再同名重复）	dup:cli-io 聚合矩阵	commit:13806366
+--format dts：无台账（dts 面不携带 dropped 记录）	dup:cli-io 聚合矩阵	commit:13806366
+路径不存在 ⇒ ok:false + summary.pathErrors = 1（summary.errors 仍只数诊断）	dup:cli-io 聚合矩阵	commit:13806366
+绿运行 ⇒ 不带 pathErrors 字段（JSON 形态不漂移）	dup:cli-io 聚合矩阵	commit:13806366
+zod：解构形参按**字段名**建顶层键（不再是内部占位 `_p0`）	dup:cli-io 聚合矩阵	commit:13806366
+standard：解构形参的顶层槽是字段名（无占位名）	dup:cli-io 聚合矩阵	commit:13806366
+负控制：数组解构的字段级契约仍是元组（Bug 394 口径不变）	dup:cli-io 聚合矩阵	commit:13806366
+同一缺失路径给两次 ⇒ 只登记一条错误	dup:cli-io 聚合矩阵	commit:13806366
+同一现场文件给两次 ⇒ 记录不重复（按调用点身份各一条）	dup:cli-io 聚合矩阵	commit:13806366
+standard 段的槽键是原形参名（导出名让位，数据不动）	dup:cli-io 聚合矩阵	commit:13806366
+负控制：--out 落盘的 standard 产物槽键同样是原形参名（两条投递路径同结论）	dup:cli-io 聚合矩阵	commit:13806366
+同名两个模块 + 同模块重导 ⇒ 无编号副本、无陈旧内容	dup:cli-io 聚合矩阵	commit:13806366
+幂等重导：内容不变时仍是一份产物	dup:cli-io 聚合矩阵	commit:13806366
+optional 契约 + `{ a: undefined }` / `{}` / `{ a: 'x' }` ⇒ exit 0、无 constraint-violated	dup:cli-io 聚合矩阵	commit:13806366
+required 对照 + `{ a: undefined }` ⇒ exit 1 且报 nudo:constraint-violated	dup:cli-io 聚合矩阵	commit:13806366
+required 对照 + `{ a: 'x' }` ⇒ exit 0（对照组正例）	dup:cli-io 聚合矩阵	commit:13806366
+A 组（无调用点）：zod / standard 槽是一层数组，dts 同形	dup:cli-io 聚合矩阵	commit:13806366
+A 组 standard 校验器**接受**该函数自己的合法调用 `{args:[1,2]}`	dup:cli-io 聚合矩阵	commit:13806366
+对照组（有调用点证据）：同样是**一层**数组，接受集与 A 组一致	dup:cli-io 聚合矩阵	commit:13806366
+--gha 单独 ⇒ 注解在 stdout（不回归）	dup:cli-io 聚合矩阵	commit:13806366
+--gha --gitlab ⇒ stdout 仍是 GitLab 数组、stderr 有 ::error（不被丢弃）	dup:cli-io 聚合矩阵	commit:13806366
+单变量对照：加 --json 后 GHA 计数不变（不再取决于无关旗标）	dup:cli-io 聚合矩阵	commit:13806366
+check --from <使用现场> -- <被检查文件> ⇒ 报 nudo:contract-drift（改前 0 条）	dup:cli-io 聚合矩阵	commit:13806366
+控制组：没有跨文件证据 ⇒ 不报 drift（无证据不判）	dup:cli-io 聚合矩阵	commit:13806366
+归因闸：别的模块的同名调用点证据不得污染本文件的判定	dup:cli-io 聚合矩阵	commit:13806366
+zod 入参面：数组解构 + 字段级契约 ⇒ 元组槽（改前是对象槽 `a`）	dup:cli-io 聚合矩阵	commit:13806366
+standard 面：数组解构形参的槽节点是元组	dup:cli-io 聚合矩阵	commit:13806366
+负控制：对象解构 + 字段级契约仍摊成对象槽（既有口径不变）	dup:cli-io 聚合矩阵	commit:13806366
+负控制：无契约的数组解构仍是观测元组（既有口径不变）	dup:cli-io 聚合矩阵	commit:13806366
+--target 指向函数名：返回域取自函数面（不再是 `() => ?`）	dup:cli-io 聚合矩阵	commit:13806366
+两条面不再互相矛盾：--target 的返回域与签名表一致	dup:cli-io 聚合矩阵	commit:13806366
+控制：--target 指向非函数绑定时行为不变	dup:cli-io 聚合矩阵	commit:13806366
+控制：--target 指向不存在的名字时仍是 unknown	dup:cli-io 聚合矩阵	commit:13806366
+类型专用的值位置 import 被消掉 ⇒ 产物 `node --check` 过且真 import() 成功	dup:cli-io 聚合矩阵	commit:13806366
+产物里的 import 不得指向「没有该运行时导出」的模块（链接面）	dup:cli-io 聚合矩阵	commit:13806366
+字段的 `x!` / `y?` 被剥 ⇒ 产物 `node --check` 过	dup:cli-io 聚合矩阵	commit:13806366
+可选方法 `m?()` 被剥 ⇒ 产物 `node --check` 过	dup:cli-io 聚合矩阵	commit:13806366
+`this` 形参被剥 ⇒ 产物 `node --check` 过且形参表只剩 `a`	dup:cli-io 聚合矩阵	commit:13806366
+函数体里的 `this` **表达式**必须保留（只有形参位被删）	dup:cli-io 聚合矩阵	commit:13806366
+第 1 条：排除清单上 stdout（--json 面可解析；文本面 stdout 不含被排除的包）	dup:cli-io 聚合矩阵	commit:13806366
+第 1 条：retire --all --json 同样带排除清单（机器面统一口径）	dup:cli-io 聚合矩阵	commit:13806366
+第 1 条 · 负控：无排除的 workspace ⇒ --json 逐字不变（不出现 excluded 键）	dup:cli-io 聚合矩阵	commit:13806366
+第 2 条：多个目标失败 ⇒ 消息列出**全部**失败目标，且整批零写盘	dup:cli-io 聚合矩阵	commit:13806366
+第 2 条：CLI 面 —— 失败目标全部可见（文本面 + --json 的 failedTargets）	dup:cli-io 聚合矩阵	commit:13806366
+第 2 条：真错误与「无可退役」混在一批 ⇒ 报红（不再被当成正常结果吞成 exit 0）	dup:cli-io 聚合矩阵	commit:13806366
+第 2 条 · 反向闸：单个失败 ⇒ 消息与旧实现逐字同形	dup:cli-io 聚合矩阵	commit:13806366
+第 3 条：verify 的目标集合含 `.jsx`（JSX 产物不再对迁移闸门隐形）	dup:cli-io 聚合矩阵	commit:13806366
+第 3 条 · 反向闸：声明文件 / 侧车**仍不是** verify 的目标（Bug 566 同口径不变）	dup:cli-io 聚合矩阵	commit:13806366
+同目标内一个文件语法错 ⇒ 库面不 throw + 成功文件的结果仍返回	dup:cli-io 聚合矩阵	commit:13806366
+原子性仍成立 ⇒ 有失败时一个字节都不落盘（含好文件）	dup:cli-io 聚合矩阵	commit:13806366
+失败行带文件名 + 失败码与 migrateVerify 同码（同款结构）	dup:cli-io 聚合矩阵	commit:13806366
+负控：全部成功 ⇒ 返回行的字段逐字不变（无 code / error 键）	dup:cli-io 聚合矩阵	commit:13806366
+CLI 面：失败目标的 stdout/stderr 与旧版逐字同形（失败详情带文件名）	dup:cli-io 聚合矩阵	commit:13806366
+stdout 里 helper / 类型别名各只出现一次（两个函数 ⇒ 两块）	dup:cli-io 聚合矩阵	commit:13806366
+剥前导不丢内容：两个函数的导出体都在	dup:cli-io 聚合矩阵	commit:13806366
+--out 落盘不变（每函数一份文件，各带一份 helper ⇒ 互不冲突）	dup:cli-io 聚合矩阵	commit:13806366
+stdout 里 `fooOutput` 只声明一次（standard 段改名）	dup:cli-io 聚合矩阵	commit:13806366
+stdout 流里没有重复的顶层声明（产物可编译）	dup:cli-io 聚合矩阵	commit:13806366
+--out 落盘不变（各方言各占一个文件 ⇒ 产品名不漂移）	dup:cli-io 聚合矩阵	commit:13806366
+stdout 里 `fooInput` 只声明一次（standard 段改名）	dup:cli-io 聚合矩阵	commit:13806366
+dts 段不产 `<fn>Input`（报告的撞名对不存在 ⇒ 治的是 zod ↔ standard）	dup:cli-io 聚合矩阵	commit:13806366
+--format standard 单方言时导出名不漂移（无冲突 ⇒ 不改名）	dup:cli-io 聚合矩阵	commit:13806366
+zod 入参面：槽名取裸名、槽值是数组、不凭空造 argN 槽	dup:cli-io 聚合矩阵	commit:13806366
+standard 面：剩余参数位导出名取裸名，节点是数组	dup:cli-io 聚合矩阵	commit:13806366
+槽表把 `__proto__` 落为自有键（改前：普通对象 ⇒ 被原型 setter 吞掉）	dup:cli-io 聚合矩阵	commit:13806366
+继承键（constructor / toString）同样不被原型吞掉	dup:cli-io 聚合矩阵	commit:13806366
+产品面 zod Input 含 `__proto__` 形参（core 两处补丁后：projection 字段表无原型 + 键走计算键）	dup:cli-io 聚合矩阵	commit:13806366
+同名函数在两个模块里 ⇒ 两份 standard 产物都在（先导出的不被覆盖）	dup:cli-io 聚合矩阵	commit:13806366
+同名函数的第二份产物名带模块键后缀（不是同一个路径）	dup:cli-io 聚合矩阵	commit:13806366
+zod 入参面：带默认值的形参位是可选槽（与 dts 面同口径）	dup:cli-io 聚合矩阵	commit:13806366
+dts 面仍声明可选位 `b?`（两面的可选性口径一致）	dup:cli-io 聚合矩阵	commit:13806366
+zod 返回面保留 promise 包装	dup:cli-io 聚合矩阵	commit:13806366
+dts 面返回类型是 Promise<number>（不是 number）	dup:cli-io 聚合矩阵	commit:13806366
+两个目录下的同名模块 ⇒ 两份 .d.ts 都在（先导出的不被覆盖）	dup:cli-io 聚合矩阵	commit:13806366
+同 stem 模块 ⇒ zod / guard 面同样不互相覆盖	dup:cli-io 聚合矩阵	commit:13806366
+--out 指向已有文件 ⇒ 提示不再指向不存在的 check --out	dup:cli-io 聚合矩阵	commit:13806366
+目标路径是目录 ⇒ 写失败提示点名该文件且指向本命令（EISDIR 走写失败通道）	dup:cli-io 聚合矩阵	commit:13806366
+分析目标闸门错误：pathErrors[] 逐字不变 + targetErrors[] 精确只装闸门错误	dup:cli-io 聚合矩阵	commit:13806366
+--from 路径错误**不**进 targetErrors[]（它是精确入口，不是副本）	dup:cli-io 聚合矩阵	commit:13806366
+闸门错误 + `--from` 错误并存：pathErrors[] 全集（顺序不变）+ targetErrors[] 只装闸门	dup:cli-io 聚合矩阵	commit:13806366
+--from 路径错误**不**进 targetErrors[]	dup:cli-io 聚合矩阵	commit:13806366
+check --json（干净文件）：stdout 与改前基线逐字一致 + 无 targetErrors	dup:cli-io 聚合矩阵	commit:13806366
+test --json（干净文件）：stdout 与改前基线逐字一致 + 无 targetErrors	dup:cli-io 聚合矩阵	commit:13806366
+contract --json（干净文件）：stdout 与改前基线逐字一致 + 无 targetErrors	dup:cli-io 聚合矩阵	commit:13806366
+人类面（闸门错误）：stderr 文案与改前逐字一致（机器面改动不外溢）	dup:cli-io 聚合矩阵	commit:13806366
+人类面：文件名 + 行:列 + 摘录 + ^ 指位（不再是无路径的裸 message）	dup:cli-io 聚合矩阵	commit:13806366
+--json 面：stdout 是 CaseJson 失败信封（pathErrors[{code:"syntax-error"}]）+ exit 1	dup:cli-io 聚合矩阵	commit:13806366
+对照面：nudo check 对同一文件给同码 pathErrors（两个 verb 机器面同形）	dup:cli-io 聚合矩阵	commit:13806366
+无 --freeze：报用法错误 + exit 1（旧行为：静默忽略 + exit 0）	dup:cli-io 聚合矩阵	commit:13806366
+有 --freeze 无 --dry-run：仍是既有的「requires --dry-run」用法错误	dup:cli-io 聚合矩阵	commit:13806366
+合法组合 --freeze --dry-run --exit-on-diff：照常跑（不误伤）	dup:cli-io 聚合矩阵	commit:13806366
+print 形态 + 缺失路径：stdout 是合法 JSON 且带 pathErrors[] + exit 1	dup:cli-io 聚合矩阵	commit:13806366
+draft 形态 + 缺失路径：同一套 pathErrors[]（三形态统一）	dup:cli-io 聚合矩阵	commit:13806366
+全部路径都缺失（无 root）：stdout 仍是**非空**合法 JSON + pathErrors[] + exit 1	dup:cli-io 聚合矩阵	commit:13806366
+对照面：非 --json 的人类面仍在 stderr（不因 --json 消失）	dup:cli-io 聚合矩阵	commit:13806366
+进程内：CLI 半 + service 半（都走 src）⇒ `..data/f.js` 的草稿**写出来了**	dup:cli-io 聚合矩阵	commit:13806366
+CLI 级：CLI 半**不再**用那句「is outside project root」拒写文案	dup:cli-io 聚合矩阵	commit:13806366
+负控制：同一项目根下的普通文件照常写出（不误伤）	dup:cli-io 聚合矩阵	commit:13806366
+migrate status <a> <b> ⇒ 两个包都被审计（不得只报第一个）	dup:cli-io 聚合矩阵	commit:13806366
+migrate status --json <a> <b> ⇒ 顶层数组含两个 root	dup:cli-io 聚合矩阵	commit:13806366
+单路径时行为不变（不得因多路径支持而破坏单路径）	dup:cli-io 聚合矩阵	commit:13806366
+collectNudoFiles 收进链接进来的 .js（改前：静默跳过）	dup:cli-io 聚合矩阵	commit:13806366
+符号链接目录被递归进入（改前：整棵链接目录被跳过）	dup:cli-io 聚合矩阵	commit:13806366
+CLI check <dir>：链接进来的坏文件参与门禁（改前：exit 0 假绿）	dup:cli-io 聚合矩阵	commit:13806366
+同一文件直传与目录扫描结论一致（不再一个绿一个红）	dup:cli-io 聚合矩阵	commit:13806366
+产物必须落盘且能被 `node --check` 解析（成员修饰符已剥、参数属性已降级）	dup:cli-io 聚合矩阵	commit:13806366
+命令层闸门是**兜底**：真源修好后常规路径不再触发它（不得误拦合法产物）	dup:cli-io 聚合矩阵	commit:13806366
+对照：纯类型注解的 TS 源照常 strip（闸门不得过度拦截）	dup:cli-io 聚合矩阵	commit:13806366
+解析器：等号形态切出 name/type（不是整串当绑定名）	dup:cli-io 聚合矩阵	commit:13806366
+解析器：冒号形态不变（旧口径不回归）	dup:cli-io 聚合矩阵	commit:13806366
+解析器：分隔符取最先出现的那个；无分隔符仍是 name=整串 / type=any	dup:cli-io 聚合矩阵	commit:13806366
+CLI：等号形态的假设真的生效（绑定被应用，类型按假设打印）	dup:cli-io 聚合矩阵	commit:13806366
+CLI：冒号形态仍然生效（两种写法同结果）	dup:cli-io 聚合矩阵	commit:13806366
+1 个可退役包 ⇒ 顶层仍是数组（不得退化为对象）	dup:cli-io 聚合矩阵	commit:13806366
+2 个可退役包 ⇒ 顶层同样是数组（形状不随条数漂移）	dup:cli-io 聚合矩阵	commit:13806366
+两个场景的顶层形状一致（都是数组）	dup:cli-io 聚合矩阵	commit:13806366
+产物含运行时 enum 对象 ⇒ `node --check` 过且 `E.A === 1`	dup:cli-io 聚合矩阵	commit:13806366
+门禁行为正确：`.ts` 源与 `.js` 产物都绿，签名是 `f() => 1`（不再是 never）	dup:cli-io 聚合矩阵	commit:13806366
+推导失败 + 期望 number() ⇒ unchecked + exit 0（改前：FAIL + exit 1）	dup:cli-io 聚合矩阵	commit:13806366
+推导失败 + 期望 any() ⇒ 同样 unchecked（改前：空洞 ok「1 passed」）	dup:cli-io 聚合矩阵	commit:13806366
+诊断文本区分「无法判定」与「类型不匹配」，并指向 nudo:opaque-result 的补证据路径	dup:cli-io 聚合矩阵	commit:13806366
+--json 面：assertions = {passed: 0, failed: 0, unchecked: 1}	dup:cli-io 聚合矩阵	commit:13806366
+负控制：推导成功 + 期望不符 ⇒ 仍是 FAIL / exit 1（既有行为不变）	dup:cli-io 聚合矩阵	commit:13806366
+CLI：非 --json 面的人读文案不变（stderr 一行 + stdout 空 + exit 1）	dup:cli-io 聚合矩阵	commit:13806366
+CLI：非 --json 面的其它用法错误文案不变（--exit-on-diff 无 --freeze）	dup:cli-io 聚合矩阵	commit:13806366
+CLI：路径错误信封（对照）仍是 pathErrors 机器码，两条通道同形	dup:cli-io 聚合矩阵	commit:13806366
+挂在被删语句上的 `/// @nudo:import` 必须在产物里存活	dup:cli-io 聚合矩阵	commit:13806366
+门禁行为正确：源红 / 产物**同样红**（契约仍被绑定 ⇒ 不是假绿）	dup:cli-io 聚合矩阵	commit:13806366
+import 不存在的模块 ⇒ 明确报错 + exit 1（改前：零提示 + exit 0 假绿）	dup:cli-io 聚合矩阵	commit:13806366
+import 不存在的导出 ⇒ 明确报错 + exit 1（改前：零提示 + exit 0 假绿）	dup:cli-io 聚合矩阵	commit:13806366
+--json 面：pathErrors 收录该失败 + exit 1（改前：pathErrors 为空 + exit 0）	dup:cli-io 聚合矩阵	commit:13806366
+负控制：现场文件模块可解析且有调用 ⇒ call@ 而非 entry@ + exit 0	dup:cli-io 聚合矩阵	commit:13806366
+负控制：现场文件模块可解析但没有调用 ⇒ 不报错 + exit 0	dup:cli-io 聚合矩阵	commit:13806366
+回归锁：语法错现场仍是 parse failed + exit 1（口径不得被第三档改写）	dup:cli-io 聚合矩阵	commit:13806366
+回归锁：顶层抛错现场仍是 evaluation failed + exit 1（口径不得被第三档改写）	dup:cli-io 聚合矩阵	commit:13806366
+混合目录 ⇒ results 保留成功文件的逐文件结果（不再整目标丢弃）	dup:cli-io 聚合矩阵	commit:13806366
+失败条目的 path 是**失败文件**（不是目标目录）⇒ 与 TS-only 闸门同量纲	dup:cli-io 聚合矩阵	commit:13806366
+pathErrors[] 内所有 path 量纲一致（都是文件，不是目录）	dup:cli-io 聚合矩阵	commit:13806366
+--write：成功行带库面的「未写盘」注记，且原子性不变（一个字节都不落盘）	dup:cli-io 聚合矩阵	commit:13806366
+负控：全部成功 ⇒ stdout 仍是顶层数组（形状不变）	dup:cli-io 聚合矩阵	commit:13806366
+验收 1：批内有失败文件 + --write ⇒ 人类面**不打** `wrote`，且磁盘上零产出	dup:cli-io 聚合矩阵	commit:13806366
+验收 2：同场景 --json ⇒ results[] 的该行带**机器可判定**的「未写盘」标记	dup:cli-io 聚合矩阵	commit:13806366
+验收 3：全部成功 + --write ⇒ 人类面照旧打 `wrote`，产物真实落盘，标记为「已写盘」	dup:cli-io 聚合矩阵	commit:13806366
+验收 4：退出码语义不变（有失败 ⇒ 非 0；全成功 ⇒ 0）	dup:cli-io 聚合矩阵	commit:13806366
+负控：dry-run（不带 --write）⇒ 人类面是 `dry`（不是 `wrote`），标记为「计划」	dup:cli-io 聚合矩阵	commit:13806366
+库面：写盘轮逐行给写盘状态（有失败 ⇒ not-written；全成功 ⇒ written）	dup:cli-io 聚合矩阵	commit:13806366
+注册表里存在该码（键名 migrateStripFailed）	dup:cli-io 聚合矩阵	commit:13806366
+产出的 pathErrors[].code 等于注册表常量（不是另写的字面量）	dup:cli-io 聚合矩阵	commit:13806366
+生产 src 不再残留该码的裸字面量赋值（`code: "nudo:…"` 形态）	dup:cli-io 聚合矩阵	commit:13806366
+export --format standard：Infinity 放行、null 拒绝（不再折成 null）	dup:cli-io 聚合矩阵	commit:13806366
+export --format all：bigint 字面量契约不再让整条命令崩溃（零产物）	dup:cli-io 聚合矩阵	commit:13806366
+CLI：--fix --write --dry-run 只打印计划、**不落盘**	dup:cli-io 聚合矩阵	commit:13806366
+CLI：--fix --write（不带 --dry-run）仍落盘（旧口径不回归）	dup:cli-io 聚合矩阵	commit:13806366
+CLI：--fix（不带 --write）只打印计划、不落盘（默认值不回归）	dup:cli-io 聚合矩阵	commit:13806366
+--json 面：stdout 非空 + 信封 ok:false + pathErrors[nudo:path-io] + exit 1	dup:cli-io 聚合矩阵	commit:13806366
+人类面：message + fix: 提示（不是裸 errno）+ exit 1	dup:cli-io 聚合矩阵	commit:13806366
+对照：缺文件走既有 nudo:path-not-found 信封（不被本次改动影响）	dup:cli-io 聚合矩阵	commit:13806366
+--json --gitlab：stdout 是 CheckJson 契约，stderr 是 Code Quality 数组	dup:cli-io 聚合矩阵	commit:13806366
+--json（无 --gitlab）：stderr 不含任何 CI 注解（不回归泄漏）	dup:cli-io 聚合矩阵	commit:13806366
+--gitlab（无 --json）：stdout 仍是恰好一份 Code Quality 数组（旧口径不变）	dup:cli-io 聚合矩阵	commit:13806366
+依赖文件缺失 ⇒ nudo:module-missing 上屏 + 门禁红（exit 1）	dup:cli-io 聚合矩阵	commit:13806366
+依赖文件存在但缺导出 ⇒ nudo:missing-export 上屏 + 门禁红（exit 1）	dup:cli-io 聚合矩阵	commit:13806366
+--json 面同码同 severity（error）且 ok=false	dup:cli-io 聚合矩阵	commit:13806366
+不双报：mock 文件缺失（mock 通道 + 模块图通道同码同文）只报一条	dup:cli-io 聚合矩阵	commit:13806366
+人类面：语法错块 + exit 1（此前 OK / exit 0）	dup:cli-io 聚合矩阵	commit:13806366
+--json 面：信封 ok:false + pathErrors[0].code=syntax-error	dup:cli-io 聚合矩阵	commit:13806366
+check --fix 不得静默跳过：残余 error ⇒ exit 1	dup:cli-io 聚合矩阵	commit:13806366
+磁盘缓存不得把「假绿」固化：连跑两轮都判红	dup:cli-io 聚合矩阵	commit:13806366
+纯 JS 文件不受影响：仍判绿（exit 0）	dup:cli-io 聚合矩阵	commit:13806366
+`.ts` 文件仍允许 TS 语法（按扩展名收紧，不误伤 TS 面）	dup:cli-io 聚合矩阵	commit:13806366
+profile:"bogus" + entryThrows:"warning" ⇒ 告警说 using warning（且不说 default strict）	dup:cli-io 聚合矩阵	commit:13806366
+profile:"bogus" 单独 ⇒ 仍是 using default strict（默认档文案不变）+ strict 门禁 exit 1	dup:cli-io 聚合矩阵	commit:13806366
+CLI --entry-throws warning 压过配置 profile typo ⇒ 告警说 using warning	dup:cli-io 聚合矩阵	commit:13806366
+--json 面：冷/热/热三轮 issues 逐条相同（dual-entry 各 1 条）	dup:cli-io 聚合矩阵	commit:13806366
+人类面：热轮的 issues 段只有一行 dual-entry	dup:cli-io 聚合矩阵	commit:13806366
+写盘口径：磁盘缓存条目里不含 nudo:dual-entry	dup:cli-io 聚合矩阵	commit:13806366
+CLI：--json --what-if ⇒ 显式 usage error（stdout 是机器可读信封）	dup:cli-io 聚合矩阵	commit:13806366
+CLI：--abs / --gha / --gitlab / --from / --watch 与 --what-if ⇒ 显式拒绝（exit 1）	dup:cli-io 聚合矩阵	commit:13806366
+CLI：多文件 --what-if 不再静默塌缩成第 1 个（显式报错）	dup:cli-io 聚合矩阵	commit:13806366
+CLI：单文件 + 无机器旗标的 --what-if 仍正常回答（旧口径不回归）	dup:cli-io 聚合矩阵	commit:13806366
+有环 / 无环：nudo check 的 exit code 逐字一致（门禁同判）	dup:cli-io 聚合矩阵	commit:13806366
+有环 / 无环：nudo check 的诊断文本逐字一致（归一化模块图形状诊断后）	dup:cli-io 聚合矩阵	commit:13806366
+一致结果里仍有 constraint-violated（跨模块的值没有塌成 unknown）	dup:cli-io 聚合矩阵	commit:13806366
+夹具非空转：有环夹具真被检出环（nudo test 面），无环夹具没有	dup:cli-io 聚合矩阵	commit:13806366
+单份 ---/+++ 头 + 路径字段无说明文字 + 相对路径（无 a// 双斜杠）	dup:cli-io 聚合矩阵	commit:13806366
+diff 可被 `git apply --check -p1` 消费（相对路径 ⇒ 剥掉 a/ 后是仓库内相对路径）	dup:cli-io 聚合矩阵	commit:13806366
 ```

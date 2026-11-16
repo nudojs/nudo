@@ -6,154 +6,183 @@
 
 ```audit
 title	rootCause	gap	action	status	evidence
-"@nudo:assumed → nudo:assume-invalid（error）"	"函数级指令的**粘连**形态此前在扫描层**整行不匹配且无 else 分支** ⇒ **零诊断**。 - `@nudo:assumed d <= max`（引理）⇒ 公理被丢弃 ⇒ 返回契约从「已证明」退回 「未证明」，而唯一信号是**归因错误**的 `nudo:unproven-return`。 断言：expect(bad).toHaveLength(1);；expect(bad[0]!.severity).toBe(\"error\");"	夹具漏形态	keep	keep	—
-"@nudo:invariantdp → nudo:invariant-invalid（warning）"	"函数级指令的**粘连**形态此前在扫描层**整行不匹配且无 else 分支** ⇒ **零诊断**。 - `@nudo:assumed d <= max`（引理）⇒ 公理被丢弃 ⇒ 返回契约从「已证明」退回 「未证明」，而唯一信号是**归因错误**的 `nudo:unproven-return`。 断言：expect(bad).toHaveLength(1);；expect(bad[0]!.severity).toBe(\"warning\");"	夹具漏形态	keep	keep	—
-"@nudo:throwsTypeError → nudo:directive-syntax（warning）"	"函数级指令的**粘连**形态此前在扫描层**整行不匹配且无 else 分支** ⇒ **零诊断**。 - `@nudo:assumed d <= max`（引理）⇒ 公理被丢弃 ⇒ 返回契约从「已证明」退回 「未证明」，而唯一信号是**归因错误**的 `nudo:unproven-return`。 断言：expect(bad).toHaveLength(1);；expect(bad[0]!.severity).toBe(\"warning\");"	夹具漏形态	keep	keep	—
-"合法形态零诊断（不误伤）"	"断言：expect(r.issues.filter((i) => i.code === \"nudo:assume-invalid\")).toEqual([]);；expect(r.issues.filter((i) => i.code === \"nudo:invariant-invalid\")).toEqual([]);"	没测该层	keep	keep	—
-"env inside a class body is not file-wide"	"回归：core **文本路径**（`directive-scan.ts`）的文件级指令位置闸门 漏掉 **class 体 / 对象字面量体** ⇒ 方法 / 字段上方的 `/// @nudo:env web` 被**静默提升**成**整文件** env（零诊断）。 根因：`functionBodyRanges` 的区间是「函数站点」区间； 断言：expect(extractFileEnvNames(ENV_IN_CLASS)).toEqual([]);"	夹具漏形态	keep	keep	—
-"env inside an object literal body is not file-wide"	"回归：core **文本路径**（`directive-scan.ts`）的文件级指令位置闸门 漏掉 **class 体 / 对象字面量体** ⇒ 方法 / 字段上方的 `/// @nudo:env web` 被**静默提升**成**整文件** env（零诊断）。 根因：`functionBodyRanges` 的区间是「函数站点」区间； 断言：expect(extractFileEnvNames(ENV_IN_OBJECT)).toEqual([]);"	夹具漏形态	keep	keep	—
-"mock-module inside a class body is not file-wide"	"回归：core **文本路径**（`directive-scan.ts`）的文件级指令位置闸门 漏掉 **class 体 / 对象字面量体** ⇒ 方法 / 字段上方的 `/// @nudo:env web` 被**静默提升**成**整文件** env（零诊断）。 根因：`functionBodyRanges` 的区间是「函数站点」区间； 断言：expect(extractMockModuleRecords(MOCK_IN_CLASS)).toEqual([]);"	夹具漏形态	keep	keep	—
-"@nudo:import inside a class body is not file-wide"	"回归：core **文本路径**（`directive-scan.ts`）的文件级指令位置闸门 漏掉 **class 体 / 对象字面量体** ⇒ 方法 / 字段上方的 `/// @nudo:env web` 被**静默提升**成**整文件** env（零诊断）。 根因：`functionBodyRanges` 的区间是「函数站点」区间； 断言：expect(extractNudoImportRecords(IMPORT_IN_CLASS)).toEqual([]);"	夹具漏形态	keep	keep	—
-"class **声明上方**的 env 仍是文件级（合法顶层位置）"	"回归：core **文本路径**（`directive-scan.ts`）的文件级指令位置闸门 漏掉 **class 体 / 对象字面量体** ⇒ 方法 / 字段上方的 `/// @nudo:env web` 被**静默提升**成**整文件** env（零诊断）。 根因：`functionBodyRanges` 的区间是「函数站点」区间； 断言：expect("	夹具漏形态	keep	keep	—
-"env inside an array literal body is not file-wide"	"回归：core **文本路径**（`directive-scan.ts`）的文件级指令位置闸门 漏掉 **array 字面量体（`ArrayExpression`）** 与 **解构模式体（`ObjectPattern`）** ⇒ 写在数组元素 / 解构键**上方**的 `/// @nudo:env web` 被**静默提升**成 **整文件** env（零诊断）。 根因：闸门区间只覆盖「函数体」（）+「类体 / 对象字面量体」 （）； 断言：expect(extractFileEnvNames(ENV_IN_ARRAY)).toEqual([]);"	夹具漏形态	keep	keep	—
-"env inside a destructuring pattern body is not file-wide"	"回归：core **文本路径**（`directive-scan.ts`）的文件级指令位置闸门 漏掉 **array 字面量体（`ArrayExpression`）** 与 **解构模式体（`ObjectPattern`）** ⇒ 写在数组元素 / 解构键**上方**的 `/// @nudo:env web` 被**静默提升**成 **整文件** env（零诊断）。 根因：闸门区间只覆盖「函数体」（）+「类体 / 对象字面量体」 （）； 断言：expect(extractFileEnvNames(ENV_IN_OBJECT_PATTERN)).toEqual([]);"	夹具漏形态	keep	keep	—
-"env inside an array-destructuring pattern body is not file-wide"	"回归：core **文本路径**（`directive-scan.ts`）的文件级指令位置闸门 漏掉 **array 字面量体（`ArrayExpression`）** 与 **解构模式体（`ObjectPattern`）** ⇒ 写在数组元素 / 解构键**上方**的 `/// @nudo:env web` 被**静默提升**成 **整文件** env（零诊断）。 根因：闸门区间只覆盖「函数体」（）+「类体 / 对象字面量体」 （）； 断言：expect(extractFileEnvNames(ENV_IN_ARRAY_PATTERN)).toEqual([]);"	夹具漏形态	keep	keep	—
-"env inside a nested array body is not file-wide"	"回归：core **文本路径**（`directive-scan.ts`）的文件级指令位置闸门 漏掉 **array 字面量体（`ArrayExpression`）** 与 **解构模式体（`ObjectPattern`）** ⇒ 写在数组元素 / 解构键**上方**的 `/// @nudo:env web` 被**静默提升**成 **整文件** env（零诊断）。 根因：闸门区间只覆盖「函数体」（）+「类体 / 对象字面量体」 （）； 断言：expect(extractFileEnvNames(ENV_IN_NESTED_ARRAY)).toEqual([]);"	夹具漏形态	keep	keep	—
-"mock-module inside an array body is not file-wide"	"回归：core **文本路径**（`directive-scan.ts`）的文件级指令位置闸门 漏掉 **array 字面量体（`ArrayExpression`）** 与 **解构模式体（`ObjectPattern`）** ⇒ 写在数组元素 / 解构键**上方**的 `/// @nudo:env web` 被**静默提升**成 **整文件** env（零诊断）。 根因：闸门区间只覆盖「函数体」（）+「类体 / 对象字面量体」 （）； 断言：expect(extractMockModuleRecords(MOCK_IN_ARRAY)).toEqual([]);"	夹具漏形态	keep	keep	—
-"@nudo:import inside a destructuring pattern body is not file-wide"	"回归：core **文本路径**（`directive-scan.ts`）的文件级指令位置闸门 漏掉 **array 字面量体（`ArrayExpression`）** 与 **解构模式体（`ObjectPattern`）** ⇒ 写在数组元素 / 解构键**上方**的 `/// @nudo:env web` 被**静默提升**成 **整文件** env（零诊断）。 根因：闸门区间只覆盖「函数体」（）+「类体 / 对象字面量体」 （）； 断言：expect(extractNudoImportRecords(IMPORT_IN_OBJECT_PATTERN)).toEqual([]);"	夹具漏形态	keep	keep	—
-"数组**声明上方**的 env 仍是文件级"	"回归：core **文本路径**（`directive-scan.ts`）的文件级指令位置闸门 漏掉 **array 字面量体（`ArrayExpression`）** 与 **解构模式体（`ObjectPattern`）** ⇒ 写在数组元素 / 解构键**上方**的 `/// @nudo:env web` 被**静默提升**成 **整文件** env（零诊断）。 根因：闸门区间只覆盖「函数体」（）+「类体 / 对象字面量体」 （）； 断言：expect(extractFileEnvNames(`/// @nudo:env node\\nexport const a = [1, 2];\\n`)).toEqual(["	夹具漏形态	keep	keep	—
-"解构**声明上方**的 env 仍是文件级"	"回归：core **文本路径**（`directive-scan.ts`）的文件级指令位置闸门 漏掉 **array 字面量体（`ArrayExpression`）** 与 **解构模式体（`ObjectPattern`）** ⇒ 写在数组元素 / 解构键**上方**的 `/// @nudo:env web` 被**静默提升**成 **整文件** env（零诊断）。 根因：闸门区间只覆盖「函数体」（）+「类体 / 对象字面量体」 （）； 断言：expect(extractFileEnvNames(`/// @nudo:env node\\nexport const { a, b } = obj;\\n`)).toEqual(["	夹具漏形态	keep	keep	—
-"数组解构**声明上方**的 env 仍是文件级"	"回归：core **文本路径**（`directive-scan.ts`）的文件级指令位置闸门 漏掉 **array 字面量体（`ArrayExpression`）** 与 **解构模式体（`ObjectPattern`）** ⇒ 写在数组元素 / 解构键**上方**的 `/// @nudo:env web` 被**静默提升**成 **整文件** env（零诊断）。 根因：闸门区间只覆盖「函数体」（）+「类体 / 对象字面量体」 （）； 断言：expect(extractFileEnvNames(`/// @nudo:env node\\nexport const [a, b] = arr;\\n`)).toEqual(["	夹具漏形态	keep	keep	—
-"class **声明上方**的 env 仍是文件级（Bug 1088 口径不变）"	"回归：core **文本路径**（`directive-scan.ts`）的文件级指令位置闸门 漏掉 **array 字面量体（`ArrayExpression`）** 与 **解构模式体（`ObjectPattern`）** ⇒ 写在数组元素 / 解构键**上方**的 `/// @nudo:env web` 被**静默提升**成 **整文件** env（零诊断）。 根因：闸门区间只覆盖「函数体」（）+「类体 / 对象字面量体」 （）； 断言：expect("	夹具漏形态	keep	keep	—
-"文件头的 env 仍是文件级"	"回归：core **文本路径**（`directive-scan.ts`）的文件级指令位置闸门 漏掉 **array 字面量体（`ArrayExpression`）** 与 **解构模式体（`ObjectPattern`）** ⇒ 写在数组元素 / 解构键**上方**的 `/// @nudo:env web` 被**静默提升**成 **整文件** env（零诊断）。 根因：闸门区间只覆盖「函数体」（）+「类体 / 对象字面量体」 （）； 断言：expect(extractFileEnvNames(`/// @nudo:env node\\nexport function f() { return 1; }\\n`)).toEqual(["	夹具漏形态	keep	keep	—
-"class 体**之后**的顶层 env 仍是文件级"	"回归：core **文本路径**（`directive-scan.ts`）的文件级指令位置闸门 漏掉 **array 字面量体（`ArrayExpression`）** 与 **解构模式体（`ObjectPattern`）** ⇒ 写在数组元素 / 解构键**上方**的 `/// @nudo:env web` 被**静默提升**成 **整文件** env（零诊断）。 根因：闸门区间只覆盖「函数体」（）+「类体 / 对象字面量体」 （）； 断言：expect("	夹具漏形态	keep	keep	—
-"分组标签（case null + case \"ab\" 共享体）⇒ 不得把 null 重绑成 \"ab\""	"switch **分组 case 标签**的 `hit` 收窄不安全 ⇒ L2 may-throw 假绿。 根因（core/algebra/exec/transpile/stmt-predicates.ts 的 `switchCaseFacts` + `narrowCaseLabelArmThunk`，本分支新增）： - `switchCaseFacts` 只用**原始 prim 标签**算 `hit`，**忽略** `mine.nullish` （`case null:`）与**非字面量** case 测试（`case v === null:`）⇒ 一个 共享体的多标签臂（`case null: case \"ab\":`）也被判成「"	夹具漏形态	keep	keep	—
-"含非字面量 case 测试的分组臂 ⇒ 同样不得按 prim 标签重绑"	"switch **分组 case 标签**的 `hit` 收窄不安全 ⇒ L2 may-throw 假绿。 根因（core/algebra/exec/transpile/stmt-predicates.ts 的 `switchCaseFacts` + `narrowCaseLabelArmThunk`，本分支新增）： - `switchCaseFacts` 只用**原始 prim 标签**算 `hit`，**忽略** `mine.nullish` （`case null:`）与**非字面量** case 测试（`case v === null:`）⇒ 一个 共享体的多标签臂（`case null: case \"ab\":`）也被判成「"	夹具漏形态	keep	keep	—
-"P2：`case 0:` 不得把 -0 谎报成 +0（1 / -0 = -Infinity）"	"switch **分组 case 标签**的 `hit` 收窄不安全 ⇒ L2 may-throw 假绿。 根因（core/algebra/exec/transpile/stmt-predicates.ts 的 `switchCaseFacts` + `narrowCaseLabelArmThunk`，本分支新增）： - `switchCaseFacts` 只用**原始 prim 标签**算 `hit`，**忽略** `mine.nullish` （`case null:`）与**非字面量** case 测试（`case v === null:`）⇒ 一个 共享体的多标签臂（`case null: case \"ab\":`）也被判成「"	夹具漏形态	keep	keep	—
-"负控制：单一 prim 标签的 hit 收窄**保留**（case \"ab\" ⇒ x.length = 2）"	"switch **分组 case 标签**的 `hit` 收窄不安全 ⇒ L2 may-throw 假绿。 根因（core/algebra/exec/transpile/stmt-predicates.ts 的 `switchCaseFacts` + `narrowCaseLabelArmThunk`，本分支新增）： - `switchCaseFacts` 只用**原始 prim 标签**算 `hit`，**忽略** `mine.nullish` （`case null:`）与**非字面量** case 测试（`case v === null:`）⇒ 一个 共享体的多标签臂（`case null: case \"ab\":`）也被判成「"	夹具漏形态	keep	keep	—
-"负控制：单一 nullish 标签的臂仍不产命中事实（case null ⇒ null.length 抛）"	"switch **分组 case 标签**的 `hit` 收窄不安全 ⇒ L2 may-throw 假绿。 根因（core/algebra/exec/transpile/stmt-predicates.ts 的 `switchCaseFacts` + `narrowCaseLabelArmThunk`，本分支新增）： - `switchCaseFacts` 只用**原始 prim 标签**算 `hit`，**忽略** `mine.nullish` （`case null:`）与**非字面量** case 测试（`case v === null:`）⇒ 一个 共享体的多标签臂（`case null: case \"ab\":`）也被判成「"	夹具漏形态	keep	keep	—
-"负控制：default 臂的 nullish 排除事实**保留**（x 非 null ⇒ 不抛）"	"switch **分组 case 标签**的 `hit` 收窄不安全 ⇒ L2 may-throw 假绿。 根因（core/algebra/exec/transpile/stmt-predicates.ts 的 `switchCaseFacts` + `narrowCaseLabelArmThunk`，本分支新增）： - `switchCaseFacts` 只用**原始 prim 标签**算 `hit`，**忽略** `mine.nullish` （`case null:`）与**非字面量** case 测试（`case v === null:`）⇒ 一个 共享体的多标签臂（`case null: case \"ab\":`）也被判成「"	夹具漏形态	keep	keep	—
-"扫描层：多行实参的 case 后缀产出申报（修前：undefined）"	"多行 case 声明（实参跨行 ⇒ 旧口径读不到后缀） 断言：expect(；expect(scanThrowsDecl(['@nudo:case \"neg\" (', \"0\", \") !! throws\"])).toBe(\"*\");"	没测该层	keep	keep	—
-"消费层：extractDeclaredThrows 消费得到多行形态的申报"	"回归 —— **多行** `@nudo:case … !! throws` 声明**丢失** ⇒ 闸门**假红**。 缺陷（假红）： `scanThrowsDecl` 的同行后缀正则要求 case 的两个括号**在同一行** （`\\([^\\n]*\\)`），续行口径又要求**前一行**以 `@nudo:case` 开头 ⇒ ''' @nudo:case \"neg\" ( 0 ) !! throws TypeError ''' 的申报**整条丢失** ⇒ `extractDeclaredThrows` 消费不到 ⇒ 用户**已申报** 仍被 `nudo:entry-may-throw`（error 级）卡住 ⇒ CI 闸门**假红**。"	没测该层	keep	keep	—
-"闸门层：已申报 ⇒ 不再假红（无声明 ⇒ 照常执法，对照组）"	"同一函数，**不写**声明 ⇒ 闸门必须执法（对照组：证明断言不空转） 断言：expect(l2(MULTILINE_CASE, \"/t/bug-1118-declared.js\")).toBe(0);；expect(l2(NO_DECL, \"/t/bug-1118-undeclared.js\")).toBe(1);"	没测该层	keep	keep	—
-"闸门层：多行形态 + 续行形态（`)` 行之后的下一行）都放行"	"断言：expect(extractDeclaredThrows(cont, \"boom\")).toEqual([\"TypeError\"]);；expect(l2(cont, \"/t/bug-1118-cont.js\")).toBe(0);"	没测该层	keep	keep	—
-"护栏：单行写法行为逐字不变（`*` / kind / 续行）"	"回归 —— **多行** `@nudo:case … !! throws` 声明**丢失** ⇒ 闸门**假红**。 缺陷（假红）： `scanThrowsDecl` 的同行后缀正则要求 case 的两个括号**在同一行** （`\\([^\\n]*\\)`），续行口径又要求**前一行**以 `@nudo:case` 开头 ⇒ ''' @nudo:case \"neg\" ( 0 ) !! throws TypeError ''' 的申报**整条丢失** ⇒ `extractDeclaredThrows` 消费不到 ⇒ 用户**已申报** 仍被 `nudo:entry-may-throw`（error 级）卡住 ⇒ CI 闸门**假红**。"	没测该层	keep	keep	—
-"护栏：位置锚不放宽（Bug 1033 口径）——散文 / case 名内部 / 期望侧都不产申报"	"多行 case 声明（实参跨行 ⇒ 旧口径读不到后缀） 断言：expect(scanThrowsDecl([\"Note: this helper uses !! throws\"])).toBeUndefined();；expect(scanThrowsDecl(['@nudo:case \"regression: !! throws\" (1)'])).toBeUndefined();"	没测该层	keep	keep	—
-"后缀不在行尾（尾部有其它字符）⇒ 不剥除，且耗时线性"	"断言：expect(tags).toHaveLength(1);；expect(tags[0]!.expectedText).toBe(`1 !! throws T${\" \".repeat(n)}!`);"	没测该层	keep	keep	—
-"后缀在行尾（后接大段空白）⇒ 照常剥除，且耗时线性"	"断言：expect(tags).toHaveLength(1);；expect(tags[0]!.expectedText).toBe(\"1\");"	没测该层	keep	keep	—
-"语义护栏：普通形态的剥除结果与旧式一致"	"断言：expect(scanCaseTags('@nudo:case \"x\" (0) => 1 !! throws TypeError')[0]!.expectedText).toBe(\"1\");；expect(scanCaseTags('@nudo:case \"x\" (0) => 1 !! throws')[0]!.expectedText).toBe(\"1\");"	没测该层	keep	keep	—
-"内层同名 function f() 的见证 ⇒ 不报 case-inconsistency"	"回归：`@nudo:case` 的**见证作用域**不得与 `@nudo:contract` 的 **契约作用域**按裸名字混在一起。 根因：`packages/core/src/algebra/check-case-scan.ts` 的 `scanCaseInconsistency` 遍历 `listFnDirectiveScopes(file)`，只按 `knownFns.includes(scope.name)` 做 **裸名字匹配**（无 depth 裁决）⇒ 导出函数体内**同名**辅助函数上的 `@nudo:case` 见证被拿去对着**外层**函数的 `@nudo:contract` 执法 ⇒ `nudo:case-i"	夹具漏形态	keep	keep	—
-"对照组 1：内层函数改名 g ⇒ 同样不报（单变量对照）"	"同一函数，**不写**声明 ⇒ 闸门必须执法（对照组：证明断言不空转） 断言：expect(r).toEqual([]);"	没测该层	keep	keep	—
-"对照组 2：外层函数自己的违例见证仍报 error（不因修复而假绿）"	"回归：`@nudo:case` 的**见证作用域**不得与 `@nudo:contract` 的 **契约作用域**按裸名字混在一起。 根因：`packages/core/src/algebra/check-case-scan.ts` 的 `scanCaseInconsistency` 遍历 `listFnDirectiveScopes(file)`，只按 `knownFns.includes(scope.name)` 做 **裸名字匹配**（无 depth 裁决）⇒ 导出函数体内**同名**辅助函数上的 `@nudo:case` 见证被拿去对着**外层**函数的 `@nudo:contract` 执法 ⇒ `nudo:case-i"	夹具漏形态	keep	keep	—
-"对照组 3：外层函数自己的合规见证不报"	"同一函数，**不写**声明 ⇒ 闸门必须执法（对照组：证明断言不空转） 断言：expect(r).toEqual([]);"	没测该层	keep	keep	—
-"含 $ 的导出函数名被回收"	"断言：expect(Object.keys(exports)).toEqual([\"$d\"]);"	没测该层	keep	keep	—
-"含非 ASCII 的导出函数名被回收"	"导出名回收正则的捕获组是 **ASCII-only**（`\\w`）⇒ 任何含 **`$`** 或**非 ASCII** 字符的**导出函数名被整条丢掉**：函数体**从不被 分析** ⇒ 签名塌 `unknown` ⇒ 追加**假** `nudo:unknown-inference` ⇒ L2 `nudo:entry-may-throw` 门禁假绿。 改前：`/^export function (\\w+)/gm` / `/^export (?:const|let) (\\w+)/gm` —— `\\w` 只认 ASCII 字母数字下划线。 断言：expect(Object.keys(exports)).toEqual([\"导出\"]);"	没测该层	keep	keep	—
-"含 $ / 非 ASCII 的导出 const 名被回收"	"导出名回收正则的捕获组是 **ASCII-only**（`\\w`）⇒ 任何含 **`$`** 或**非 ASCII** 字符的**导出函数名被整条丢掉**：函数体**从不被 分析** ⇒ 签名塌 `unknown` ⇒ 追加**假** `nudo:unknown-inference` ⇒ L2 `nudo:entry-may-throw` 门禁假绿。 改前：`/^export function (\\w+)/gm` / `/^export (?:const|let) (\\w+)/gm` —— `\\w` 只认 ASCII 字母数字下划线。 断言：expect(Object.keys(exports).sort()).toEqual([\""	没测该层	keep	keep	—
-"导出函数**被分析**（throws 面如实，不再从不被分析）"	"导出名回收正则的捕获组是 **ASCII-only**（`\\w`）⇒ 任何含 **`$`** 或**非 ASCII** 字符的**导出函数名被整条丢掉**：函数体**从不被 分析** ⇒ 签名塌 `unknown` ⇒ 追加**假** `nudo:unknown-inference` ⇒ L2 `nudo:entry-may-throw` 门禁假绿。 改前：`/^export function (\\w+)/gm` / `/^export (?:const|let) (\\w+)/gm` —— `\\w` 只认 ASCII 字母数字下划线。 断言：expect(full.throws?.shape?.k ?? \"never\").toBe("	没测该层	keep	keep	—
-"stripStaticExportDecls 文本口径也放宽（$ / 非 ASCII）"	"导出名回收正则的捕获组是 **ASCII-only**（`\\w`）⇒ 任何含 **`$`** 或**非 ASCII** 字符的**导出函数名被整条丢掉**：函数体**从不被 分析** ⇒ 签名塌 `unknown` ⇒ 追加**假** `nudo:unknown-inference` ⇒ L2 `nudo:entry-may-throw` 门禁假绿。 改前：`/^export function (\\w+)/gm` / `/^export (?:const|let) (\\w+)/gm` —— `\\w` 只认 ASCII 字母数字下划线。 断言：expect(stripStaticExportDecls(transpileSource("	没测该层	keep	keep	—
-"ASCII 同形口径不变（对照组）"	"导出名回收正则的捕获组是 **ASCII-only**（`\\w`）⇒ 任何含 **`$`** 或**非 ASCII** 字符的**导出函数名被整条丢掉**：函数体**从不被 分析** ⇒ 签名塌 `unknown` ⇒ 追加**假** `nudo:unknown-inference` ⇒ L2 `nudo:entry-may-throw` 门禁假绿。 改前：`/^export function (\\w+)/gm` / `/^export (?:const|let) (\\w+)/gm` —— `\\w` 只认 ASCII 字母数字下划线。 断言：expect(Object.keys(exports)).toEqual([\"ascii\"]"	没测该层	keep	keep	—
-"@nudo:assume 中文名 → 合法（不再是 malformed）"	"回归：指令文法（`@nudo:assume` / `@nudo:invariant` / `@nudo:contract` 目标名）用 ASCII 正则 ⇒ **中文标识符**被判 malformed ⇒ L1 假红； 断言：expect(segs).toHaveLength(1);；expect(segs[0]).toMatchObject({ kind: \"ok\", lhs: \"小数\", rhs: \"大数\" });"	没测该层	keep	keep	—
-"@nudo:assume `>=` 仍翻转为 le（中文名同样成立）"	"回归：指令文法（`@nudo:assume` / `@nudo:invariant` / `@nudo:contract` 目标名）用 ASCII 正则 ⇒ **中文标识符**被判 malformed ⇒ L1 假红； 断言：expect(segs).toMatchObject([{ kind: \"ok\", lhs: \"小数\", rhs: \"大数\" }]);"	没测该层	keep	keep	—
-"@nudo:invariant 中文名 → 合法"	"回归：指令文法（`@nudo:assume` / `@nudo:invariant` / `@nudo:contract` 目标名）用 ASCII 正则 ⇒ **中文标识符**被判 malformed ⇒ L1 假红； 断言：expect(segs).toHaveLength(1);；expect(segs[0]).toMatchObject({ kind: \"ok\", name: \"计数\", rel: \"ge\", value: 0 });"	没测该层	keep	keep	—
-"@nudo:invariant 中文路径段 → 合法"	"回归：指令文法（`@nudo:assume` / `@nudo:invariant` / `@nudo:contract` 目标名）用 ASCII 正则 ⇒ **中文标识符**被判 malformed ⇒ L1 假红； 断言：expect(segs).toHaveLength(1);；expect(segs[0]).toMatchObject({ kind: \"ok\", name: \"记录\" });"	没测该层	keep	keep	—
-"@nudo:contract 中文形参名 → 契约生效"	"回归：指令文法（`@nudo:assume` / `@nudo:invariant` / `@nudo:contract` 目标名）用 ASCII 正则 ⇒ **中文标识符**被判 malformed ⇒ L1 假红； 断言：expect(entries).toHaveLength(1);；expect(entries[0]!.param).toBe(\"计数\");"	没测该层	keep	keep	—
-"@nudo:contract `$x` 形参名 → 合法（旧 ASCII 正则不收 `$`）"	"回归：指令文法（`@nudo:assume` / `@nudo:invariant` / `@nudo:contract` 目标名）用 ASCII 正则 ⇒ **中文标识符**被判 malformed ⇒ L1 假红； 断言：expect(entries).toHaveLength(1);；expect(entries[0]!.param).toBe(\"$x\");"	没测该层	keep	keep	—
-"非法的形参名仍被判 malformed（不放宽成任意串）"	"回归：指令文法（`@nudo:assume` / `@nudo:invariant` / `@nudo:contract` 目标名）用 ASCII 正则 ⇒ **中文标识符**被判 malformed ⇒ L1 假红； 断言：expect(entries).toHaveLength(0);；expect("	没测该层	keep	keep	—
-"error: 对象见证 ⊭ 标量契约（number()）——改前机制②归一成 unknown 后静默跳过"	"回归钉：`@nudo:case` 见证**从不与字段级 / shape 契约比对** ⇒ 违反契约的见证**静默放行**（假绿，exit 0）。 改前有**两条独立**机制，任一条都足以让违例见证消失（只修一条不够）： ① 字段级 / shape 契约**整条跳过**：`if (entry.constraint.fields) continue; 断言：expect(errs.length).toBe(1);；expect(errs[0]!.severity).toBe(\"error\");"	没测该层	keep	keep	—
-"error: shape 契约的字段类型不符——改前机制①把 fields 契约整条跳过"	"回归钉：`@nudo:case` 见证**从不与字段级 / shape 契约比对** ⇒ 违反契约的见证**静默放行**（假绿，exit 0）。 改前有**两条独立**机制，任一条都足以让违例见证消失（只修一条不够）： ① 字段级 / shape 契约**整条跳过**：`if (entry.constraint.fields) continue; 断言：expect(errs.length).toBe(1);；expect(errs[0]!.severity).toBe(\"error\");"	没测该层	keep	keep	—
-"error: shape 契约缺字段 → missing field <path>"	"回归钉：`@nudo:case` 见证**从不与字段级 / shape 契约比对** ⇒ 违反契约的见证**静默放行**（假绿，exit 0）。 改前有**两条独立**机制，任一条都足以让违例见证消失（只修一条不够）： ① 字段级 / shape 契约**整条跳过**：`if (entry.constraint.fields) continue; 断言：expect(errs.length).toBe(1);；expect(errs[0]!.severity).toBe(\"error\");"	没测该层	keep	keep	—
-"error: 嵌套 shape 的字段违例（路径逐段下钻）"	"回归钉：`@nudo:case` 见证**从不与字段级 / shape 契约比对** ⇒ 违反契约的见证**静默放行**（假绿，exit 0）。 改前有**两条独立**机制，任一条都足以让违例见证消失（只修一条不够）： ① 字段级 / shape 契约**整条跳过**：`if (entry.constraint.fields) continue; 断言：expect(errs.length).toBe(1);；expect(errs[0]!.expected).toBe('typeof user.id = \"number\"');"	没测该层	keep	keep	—
-"error: shape 契约的字段数值界违例"	"回归钉：`@nudo:case` 见证**从不与字段级 / shape 契约比对** ⇒ 违反契约的见证**静默放行**（假绿，exit 0）。 改前有**两条独立**机制，任一条都足以让违例见证消失（只修一条不够）： ① 字段级 / shape 契约**整条跳过**：`if (entry.constraint.fields) continue; 断言：expect(errs.length).toBe(1);；expect(errs[0]!.severity).toBe(\"error\");"	没测该层	keep	keep	—
-"ok: 满足 shape 契约的见证不报"	"回归钉：`@nudo:case` 见证**从不与字段级 / shape 契约比对** ⇒ 违反契约的见证**静默放行**（假绿，exit 0）。 改前有**两条独立**机制，任一条都足以让违例见证消失（只修一条不够）： ① 字段级 / shape 契约**整条跳过**：`if (entry.constraint.fields) continue; 断言：expect(errs).toEqual([]);"	没测该层	keep	keep	—
-"ok: 满足标量契约的对象见证不报（any() 通吃结构）"	"断言：expect(errs).toEqual([]);"	没测该层	keep	keep	—
-"负控制: 既有标量通道输出零改动（bounds 违例仍报 x > 0）"	"回归钉：`@nudo:case` 见证**从不与字段级 / shape 契约比对** ⇒ 违反契约的见证**静默放行**（假绿，exit 0）。 改前有**两条独立**机制，任一条都足以让违例见证消失（只修一条不够）： ① 字段级 / shape 契约**整条跳过**：`if (entry.constraint.fields) continue; 断言：expect(errs.length).toBe(1);；expect(errs[0]!.expected).toContain(\">\");"	没测该层	keep	keep	—
-"error: 多行实参的违例见证（改前整条见证被跳过 ⇒ 零诊断 / 假绿）"	"回归钉：check 面的 case 实参**切分**必须与共享单源 （parser 的 `splitTopLevelArgs` + JSDoc 续行前缀剥离）**同口径**。 （多行实参 ⇒ 整条见证被静默跳过）： 共享单源 `scanCaseTags` 产出的 `argsText` **仍带 JSDoc 续行前缀 ` * `** ⇒ check 面不剥前缀 ⇒ 实参认不出 ⇒ 整条见证被静默跳过（假绿，exit 0）。 断言：expect(errs.length).toBe(1);；expect(errs[0]!.severity).toBe(\"error\");"	没测该层	keep	keep	—
-"ok: 多行实参满足契约不报"	"断言：expect(errs).toEqual([]);"	没测该层	keep	keep	—
-"负控制: 同一见证写成单行仍报同一条（改前只多行形态假绿）"	"回归钉：check 面的 case 实参**切分**必须与共享单源 （parser 的 `splitTopLevelArgs` + JSDoc 续行前缀剥离）**同口径**。 （多行实参 ⇒ 整条见证被静默跳过）： 共享单源 `scanCaseTags` 产出的 `argsText` **仍带 JSDoc 续行前缀 ` * `** ⇒ check 面不剥前缀 ⇒ 实参认不出 ⇒ 整条见证被静默跳过（假绿，exit 0）。 断言：expect(errs.length).toBe(1);；expect(errs[0]!.expected).toContain(\">\");"	没测该层	keep	keep	—
-"error: `\"a\\\", -1` 切 2 个实参 ⇒ 第二个实参的违例见证被检出"	"回归钉：check 面的 case 实参**切分**必须与共享单源 （parser 的 `splitTopLevelArgs` + JSDoc 续行前缀剥离）**同口径**。 （多行实参 ⇒ 整条见证被静默跳过）： 共享单源 `scanCaseTags` 产出的 `argsText` **仍带 JSDoc 续行前缀 ` * `** ⇒ check 面不剥前缀 ⇒ 实参认不出 ⇒ 整条见证被静默跳过（假绿，exit 0）。 断言：expect(errs.length).toBe(1);；expect(errs[0]!.severity).toBe(\"error\");"	没测该层	keep	keep	—
-"负控制: 无转义引号的同形见证报同一条（改前两条都报 ⇒ 实参个数相同）"	"回归钉：check 面的 case 实参**切分**必须与共享单源 （parser 的 `splitTopLevelArgs` + JSDoc 续行前缀剥离）**同口径**。 （多行实参 ⇒ 整条见证被静默跳过）： 共享单源 `scanCaseTags` 产出的 `argsText` **仍带 JSDoc 续行前缀 ` * `** ⇒ check 面不剥前缀 ⇒ 实参认不出 ⇒ 整条见证被静默跳过（假绿，exit 0）。 断言：expect(errs.length).toBe(1);；expect(errs[0]!.expected).toContain(\">\");"	没测该层	keep	keep	—
-"warning: 契约位上的实参认不出 ⇒ nudo:directive-syntax"	"回归钉：check 面的 case 实参**切分**必须与共享单源 （parser 的 `splitTopLevelArgs` + JSDoc 续行前缀剥离）**同口径**。 （多行实参 ⇒ 整条见证被静默跳过）： 共享单源 `scanCaseTags` 产出的 `argsText` **仍带 JSDoc 续行前缀 ` * `** ⇒ check 面不剥前缀 ⇒ 实参认不出 ⇒ 整条见证被静默跳过（假绿，exit 0）。 断言：expect(d).toBeDefined();；expect(d!.severity).toBe(\"warning\");"	没测该层	keep	keep	—
-"warning: 契约位上没有见证实参 ⇒ nudo:directive-syntax"	"回归钉：check 面的 case 实参**切分**必须与共享单源 （parser 的 `splitTopLevelArgs` + JSDoc 续行前缀剥离）**同口径**。 （多行实参 ⇒ 整条见证被静默跳过）： 共享单源 `scanCaseTags` 产出的 `argsText` **仍带 JSDoc 续行前缀 ` * `** ⇒ check 面不剥前缀 ⇒ 实参认不出 ⇒ 整条见证被静默跳过（假绿，exit 0）。 断言：expect(d).toBeDefined();；expect(d!.severity).toBe(\"warning\");"	没测该层	keep	keep	—
-"负控制: 无契约位的认不出实参不产见证面诊断（parser 面自行诊断）"	"回归钉：check 面的 case 实参**切分**必须与共享单源 （parser 的 `splitTopLevelArgs` + JSDoc 续行前缀剥离）**同口径**。 （多行实参 ⇒ 整条见证被静默跳过）： 共享单源 `scanCaseTags` 产出的 `argsText` **仍带 JSDoc 续行前缀 ` * `** ⇒ check 面不剥前缀 ⇒ 实参认不出 ⇒ 整条见证被静默跳过（假绿，exit 0）。 断言：expect(r.issues.filter((i) => i.code === \"nudo:directive-syntax\")).toEqual([]);"	没测该层	keep	keep	—
-"负控制: 约束构建器实参（number()）是合法形态 ⇒ 跳过但**不产诊断**"	"回归钉：check 面的 case 实参**切分**必须与共享单源 （parser 的 `splitTopLevelArgs` + JSDoc 续行前缀剥离）**同口径**。 （多行实参 ⇒ 整条见证被静默跳过）： 共享单源 `scanCaseTags` 产出的 `argsText` **仍带 JSDoc 续行前缀 ` * `** ⇒ check 面不剥前缀 ⇒ 实参认不出 ⇒ 整条见证被静默跳过（假绿，exit 0）。 断言：expect(r.issues.filter((i) => i.code === \"nudo:directive-syntax\")).toEqual([]);；expect(r.issues.filter(("	没测该层	keep	keep	—
-"space-separated env list is recognized (was dropped as one token)"	"`@nudo:env` 的载荷文法**静默丢掉整条列表**：空格分隔 （`node web`）与裸标签（`/// @nudo:env`）都不生效、零诊断。 根因（core 载荷文法）：`parseEnvPayload` **只按 `,` 切分** ⇒ 空格分隔 列表（`node web`）被切成**一个** token 后整条滤掉； 断言：expect(parseEnvPayload(\"node web\")).toEqual([\"node\", \"web\"]);；expect(extractFileEnvNames(`/// @nudo:env node web\\n`)).toEqual([\"node\", \"web\"]);"	没测该层	keep	keep	—
-"comma-separated env list still works (control)"	"`@nudo:env` 的载荷文法**静默丢掉整条列表**：空格分隔 （`node web`）与裸标签（`/// @nudo:env`）都不生效、零诊断。 根因（core 载荷文法）：`parseEnvPayload` **只按 `,` 切分** ⇒ 空格分隔 列表（`node web`）被切成**一个** token 后整条滤掉； 断言：expect(parseEnvPayload(\"node, web\")).toEqual([\"node\", \"web\"]);；expect(extractFileEnvNames(`/// @nudo:env node, web\\n`)).toEqual([\"node\", \"web\"]);"	没测该层	keep	keep	—
-"mixed separators are accepted"	"回归 —— **多行** `@nudo:case … !! throws` 声明**丢失** ⇒ 闸门**假红**。 缺陷（假红）： `scanThrowsDecl` 的同行后缀正则要求 case 的两个括号**在同一行** （`\\([^\\n]*\\)`），续行口径又要求**前一行**以 `@nudo:case` 开头 ⇒ ''' @nudo:case \"neg\" ( 0 ) !! throws TypeError ''' 的申报**整条丢失** ⇒ `extractDeclaredThrows` 消费不到 ⇒ 用户**已申报** 仍被 `nudo:entry-may-throw`（error 级）卡住 ⇒ CI 闸门**假红**。"	没测该层	keep	keep	—
-"trailing line comment is stripped"	"断言：expect(parseEnvPayload(\"node // only node\")).toEqual([\"node\"]);"	没测该层	keep	keep	—
-"path-like env names survive whitespace splitting"	"`@nudo:env` 的载荷文法**静默丢掉整条列表**：空格分隔 （`node web`）与裸标签（`/// @nudo:env`）都不生效、零诊断。 根因（core 载荷文法）：`parseEnvPayload` **只按 `,` 切分** ⇒ 空格分隔 列表（`node web`）被切成**一个** token 后整条滤掉； 断言：expect(parseEnvPayload(\"es ./other.env.ts\")).toEqual([\"es\", \"./other.env.ts\"]);"	没测该层	keep	keep	—
-"bare tag yields no env names (diagnostic lands on the AST channel)"	"`@nudo:env` 的载荷文法**静默丢掉整条列表**：空格分隔 （`node web`）与裸标签（`/// @nudo:env`）都不生效、零诊断。 根因（core 载荷文法）：`parseEnvPayload` **只按 `,` 切分** ⇒ 空格分隔 列表（`node web`）被切成**一个** token 后整条滤掉； 断言：expect(extractFileEnvNames(`/// @nudo:env\\n`)).toEqual([]);；expect(extractFileEnvNames(`/// @nudo:env \\n`)).toEqual([]);"	没测该层	keep	keep	—
-"truncated capture is still rejected (zero false positives)"	"断言：expect(parseEnvPayload(`node\";`)).toEqual([]);；expect(extractFileEnvNames(`// @nudo:env node\";\\n`)).toEqual([]);"	没测该层	keep	keep	—
-"内联形态：见证落在 f 上"	"箭头函数**初始化器上的** JSDoc 绑到 `<anonymous>` 而不是导出名 `f` → 见证落在错的函数名下（`nudo test` 打出 `=== <anonymous> ===`）。 根因（`directive-scan.ts` 的 `VariableDeclaration` 分支）：它按**语句**的 `leadingComments` 建了一个名为 `f` 的 scope（内联形态下为空），而**内联** JSDoc 落在初始化器（`ArrowFunctionExpression`）节点上 ⇒ 见证被登记在 `<anonymous>` 名下。 断言：expect(f?.commentLines).toConta"	夹具漏形态	keep	keep	—
-"内联形态：不再产生 <anonymous> 影子 scope"	"箭头函数**初始化器上的** JSDoc 绑到 `<anonymous>` 而不是导出名 `f` → 见证落在错的函数名下（`nudo test` 打出 `=== <anonymous> ===`）。 根因（`directive-scan.ts` 的 `VariableDeclaration` 分支）：它按**语句**的 `leadingComments` 建了一个名为 `f` 的 scope（内联形态下为空），而**内联** JSDoc 落在初始化器（`ArrowFunctionExpression`）节点上 ⇒ 见证被登记在 `<anonymous>` 名下。 断言：expect(names).toEqual([\"f\"]);；e"	夹具漏形态	keep	keep	—
-"内联形态：按名查找拿到 f 的注释行"	"箭头函数**初始化器上的** JSDoc 绑到 `<anonymous>` 而不是导出名 `f` → 见证落在错的函数名下（`nudo test` 打出 `=== <anonymous> ===`）。 根因（`directive-scan.ts` 的 `VariableDeclaration` 分支）：它按**语句**的 `leadingComments` 建了一个名为 `f` 的 scope（内联形态下为空），而**内联** JSDoc 落在初始化器（`ArrowFunctionExpression`）节点上 ⇒ 见证被登记在 `<anonymous>` 名下。 断言：expect(scope?.commentLines).toC"	夹具漏形态	keep	keep	—
-"语句级形态（对照）：见证同样落在 f 上"	"同一函数，**不写**声明 ⇒ 闸门必须执法（对照组：证明断言不空转） 断言：expect(f?.commentLines).toContain('@nudo:case \"inline\" (1)');；expect(scopesOf(ABOVE).map((s) => s.name)).toEqual([\"f\"]);"	没测该层	keep	keep	—
-"函数表达式初始化器的内联形态同样绑到绑定名"	"断言：expect(f?.commentLines).toContain('@nudo:case \"inline\" (1)');"	没测该层	keep	keep	—
-"extractBalancedParens: 双引号串里的 `\\\"` 不结束字符串"	"括号配平扫描器**不感知转义** ⇒ 双引号串里的 `\\\"` 被当成**字符串结束** ⇒ 括号**提前闭合** ⇒ **整条 case 被丢弃**（只剩一条归因错误的「unclosed argument list」警告）⇒ 断言从不运行、零见证（假绿）。 根因行：`packages/core/src/algebra/directive-scan.ts` 的 `extractBalancedParens` —— 字符串感知，但 `\\` 不当转义。 断言：expect(extractBalancedParens(text, 0)).toBe('\"a\\\\\"b\"');"	夹具漏形态	keep	keep	—
-"extractBalancedParens: 对象 / 数组字面量里的转义引号同样配平"	"括号配平扫描器**不感知转义** ⇒ 双引号串里的 `\\\"` 被当成**字符串结束** ⇒ 括号**提前闭合** ⇒ **整条 case 被丢弃**（只剩一条归因错误的「unclosed argument list」警告）⇒ 断言从不运行、零见证（假绿）。 根因行：`packages/core/src/algebra/directive-scan.ts` 的 `extractBalancedParens` —— 字符串感知，但 `\\` 不当转义。 断言：expect(extractBalancedParens('({ a: \"x\\\\\"y\" })', 0)).toBe('{ a: \"x\\\\\"y\" }');；expect(extract"	夹具漏形态	keep	keep	—
-"extractBalancedParens: 单引号串里的 `\\'` 不结束字符串"	"括号配平扫描器**不感知转义** ⇒ 双引号串里的 `\\\"` 被当成**字符串结束** ⇒ 括号**提前闭合** ⇒ **整条 case 被丢弃**（只剩一条归因错误的「unclosed argument list」警告）⇒ 断言从不运行、零见证（假绿）。 根因行：`packages/core/src/algebra/directive-scan.ts` 的 `extractBalancedParens` —— 字符串感知，但 `\\` 不当转义。 断言：expect(extractBalancedParens(\"('it\\\\'s')\", 0)).toBe(\"'it\\\\'s'\");"	夹具漏形态	keep	keep	—
-"scanCaseTags: 含转义引号的 case 被抽出（改前整条被丢弃）"	"括号配平扫描器**不感知转义** ⇒ 双引号串里的 `\\\"` 被当成**字符串结束** ⇒ 括号**提前闭合** ⇒ **整条 case 被丢弃**（只剩一条归因错误的「unclosed argument list」警告）⇒ 断言从不运行、零见证（假绿）。 根因行：`packages/core/src/algebra/directive-scan.ts` 的 `extractBalancedParens` —— 字符串感知，但 `\\` 不当转义。 断言：expect(tags).toHaveLength(1);；expect(tags[0]!.name).toBe(\"k\");"	夹具漏形态	keep	keep	—
-"负控制（Bug 1009 口径保留）: 串未闭合时回退宽松口径 ⇒ 实参个数不变"	"回归钉：check 面的 case 实参**切分**必须与共享单源 （parser 的 `splitTopLevelArgs` + JSDoc 续行前缀剥离）**同口径**。 （多行实参 ⇒ 整条见证被静默跳过）： 共享单源 `scanCaseTags` 产出的 `argsText` **仍带 JSDoc 续行前缀 ` * `** ⇒ check 面不剥前缀 ⇒ 实参认不出 ⇒ 整条见证被静默跳过（假绿，exit 0）。 断言：expect(extractBalancedParens('(\"a\\\\\", -1)', 0)).toBe('\"a\\\\\", -1');；expect(tags).toHaveLength(1);"	没测该层	keep	keep	—
-"负控制: 无转义引号的普通实参不受影响"	"回归钉：check 面的 case 实参**切分**必须与共享单源 （parser 的 `splitTopLevelArgs` + JSDoc 续行前缀剥离）**同口径**。 （多行实参 ⇒ 整条见证被静默跳过）： 共享单源 `scanCaseTags` 产出的 `argsText` **仍带 JSDoc 续行前缀 ` * `** ⇒ check 面不剥前缀 ⇒ 实参认不出 ⇒ 整条见证被静默跳过（假绿，exit 0）。 断言：expect(extractBalancedParens(\"(1, 2)\", 0)).toBe(\"1, 2\");；expect(extractBalancedParens(\"(\", 0)).toBeNull("	没测该层	keep	keep	—
-"@nudo:assume 空载荷 → nudo:assume-invalid（error）"	"`@nudo:assume` / `@nudo:invariant` 的**空载荷**此前**零诊断**。 根因：段扫描用严格正则 `^@nudo:assume\\s+(.+)$`（载荷非空）⇒ 空载荷行 **整行不匹配**且**无 else 分支** ⇒ 段列表为空 ⇒ 消费方（check）连一条 bad 段都拿不到 ⇒ 用户的引理/不变量**无声丢失**（返回契约从「已证明」退回 「未证明」，唯一信号是**归因错误**的 nudo:unproven-return）。 断言：expect(bad).toHaveLength(1);；expect(bad[0]!.severity).toBe(\"error\");"	没测该层	keep	keep	—
-"@nudo:invariant 空载荷 → nudo:invariant-invalid（warning）"	"`@nudo:assume` / `@nudo:invariant` 的**空载荷**此前**零诊断**。 根因：段扫描用严格正则 `^@nudo:assume\\s+(.+)$`（载荷非空）⇒ 空载荷行 **整行不匹配**且**无 else 分支** ⇒ 段列表为空 ⇒ 消费方（check）连一条 bad 段都拿不到 ⇒ 用户的引理/不变量**无声丢失**（返回契约从「已证明」退回 「未证明」，唯一信号是**归因错误**的 nudo:unproven-return）。 断言：expect(bad).toHaveLength(1);；expect(bad[0]!.severity).toBe(\"warning\");"	没测该层	keep	keep	—
-"空载荷（纯空白）与合法载荷不回归"	"`@nudo:assume` / `@nudo:invariant` 的**空载荷**此前**零诊断**。 根因：段扫描用严格正则 `^@nudo:assume\\s+(.+)$`（载荷非空）⇒ 空载荷行 **整行不匹配**且**无 else 分支** ⇒ 段列表为空 ⇒ 消费方（check）连一条 bad 段都拿不到 ⇒ 用户的引理/不变量**无声丢失**（返回契约从「已证明」退回 「未证明」，唯一信号是**归因错误**的 nudo:unproven-return）。 断言：expect(bad).toHaveLength(1);；expect(bad[0]!.fn).toBe(\"empty\");"	没测该层	keep	keep	—
-"合法 assume / invariant 零诊断（不误伤）"	"`@nudo:assume` / `@nudo:invariant` 的**空载荷**此前**零诊断**。 根因：段扫描用严格正则 `^@nudo:assume\\s+(.+)$`（载荷非空）⇒ 空载荷行 **整行不匹配**且**无 else 分支** ⇒ 段列表为空 ⇒ 消费方（check）连一条 bad 段都拿不到 ⇒ 用户的引理/不变量**无声丢失**（返回契约从「已证明」退回 「未证明」，唯一信号是**归因错误**的 nudo:unproven-return）。 断言：expect(r.issues.filter((i) => i.code === \"nudo:assume-invalid\")).toEqual([]);；ex"	没测该层	keep	keep	—
-"bare tag is reported as a malformed import"	"`@nudo:import` 的**空载荷**被**静默丢弃**（零诊断），而同一条 指令的**其它**未识别形态有 `nudo:contract-syntax` 警告。 根因（core 文本扫描通道）：空载荷在 `nudoImportPayloads` 这一层就被丢弃 （连 payload 都没产出）⇒ 畸形扫描器**永远看不到它** ⇒ 「标签命中但载荷 为空」**零诊断**。 断言：expect(scanMalformedNudoImports(`/// @nudo:import\\n`)).toEqual([\"malformed\"]);"	夹具漏形态	keep	keep	—
-"bare tag with trailing blank is reported as a malformed import"	"`@nudo:import` 的**空载荷**被**静默丢弃**（零诊断），而同一条 指令的**其它**未识别形态有 `nudo:contract-syntax` 警告。 根因（core 文本扫描通道）：空载荷在 `nudoImportPayloads` 这一层就被丢弃 （连 payload 都没产出）⇒ 畸形扫描器**永远看不到它** ⇒ 「标签命中但载荷 为空」**零诊断**。 断言：expect(scanMalformedNudoImports(`/// @nudo:import \\n`)).toEqual([\"malformed\"]);"	夹具漏形态	keep	keep	—
-"empty payload produces no import record (only a diagnostic)"	"`@nudo:import` 的**空载荷**被**静默丢弃**（零诊断），而同一条 指令的**其它**未识别形态有 `nudo:contract-syntax` 警告。 根因（core 文本扫描通道）：空载荷在 `nudoImportPayloads` 这一层就被丢弃 （连 payload 都没产出）⇒ 畸形扫描器**永远看不到它** ⇒ 「标签命中但载荷 为空」**零诊断**。 断言：expect(extractNudoImportRecords(`/// @nudo:import\\n`)).toEqual([]);"	夹具漏形态	keep	keep	—
-"empty payload is malformed at the grammar level too"	"`@nudo:import` 的**空载荷**被**静默丢弃**（零诊断），而同一条 指令的**其它**未识别形态有 `nudo:contract-syntax` 警告。 根因（core 文本扫描通道）：空载荷在 `nudoImportPayloads` 这一层就被丢弃 （连 payload 都没产出）⇒ 畸形扫描器**永远看不到它** ⇒ 「标签命中但载荷 为空」**零诊断**。 断言：expect(parseNudoImportPayload(\"\")).toBe(\"malformed\");；expect(parseNudoImportPayload(\" \")).toBe(\"malformed\");"	夹具漏形态	keep	keep	—
-"valid and other malformed forms keep their behaviour (control)"	"`@nudo:import` 的**空载荷**被**静默丢弃**（零诊断），而同一条 指令的**其它**未识别形态有 `nudo:contract-syntax` 警告。 根因（core 文本扫描通道）：空载荷在 `nudoImportPayloads` 这一层就被丢弃 （连 payload 都没产出）⇒ 畸形扫描器**永远看不到它** ⇒ 「标签命中但载荷 为空」**零诊断**。 断言：expect(scanMalformedNudoImports(`/// @nudo:import { a } from \"./x.nudo.js\"\\n`)).toEqual([]);；expect(scanMalformedNudoImports"	夹具漏形态	keep	keep	—
-"CRLF: 期望被抽出（改前整条期望消失）"	"CRLF 源文件里 `=> expected` 的期望值被**整条吞掉** ⇒ 该 case 判 `[unchecked]` ⇒ 断言**不执法**、`nudo test` **exit 0**、**屏幕上零诊断**（假绿）。 根因行：`packages/core/src/algebra/directive-scan.ts` 的 `extractCaseExpectedExpr` —— 切行用 `split(\"\\n\")`，取行尾用 `.`（**不匹配 `\\r`**）⇒ CRLF 的 `\\r` 留在 期望文本尾部 ⇒ 期望解析失败 ⇒ 期望被丢弃。 断言：expect(tags).toHaveLength(1);；expect(tag"	夹具漏形态	keep	keep	—
-"LF（负控制）: 期望照旧被抽出"	"回归钉：check 面的 case 实参**切分**必须与共享单源 （parser 的 `splitTopLevelArgs` + JSDoc 续行前缀剥离）**同口径**。 （多行实参 ⇒ 整条见证被静默跳过）： 共享单源 `scanCaseTags` 产出的 `argsText` **仍带 JSDoc 续行前缀 ` * `** ⇒ check 面不剥前缀 ⇒ 实参认不出 ⇒ 整条见证被静默跳过（假绿，exit 0）。 断言：expect(tags).toHaveLength(1);；expect(tags[0]!.expectedText).toBe(\"999\");"	没测该层	keep	keep	—
-"CRLF: 块注释续行形态的期望同样被抽出"	"CRLF 源文件里 `=> expected` 的期望值被**整条吞掉** ⇒ 该 case 判 `[unchecked]` ⇒ 断言**不执法**、`nudo test` **exit 0**、**屏幕上零诊断**（假绿）。 根因行：`packages/core/src/algebra/directive-scan.ts` 的 `extractCaseExpectedExpr` —— 切行用 `split(\"\\n\")`，取行尾用 `.`（**不匹配 `\\r`**）⇒ CRLF 的 `\\r` 留在 期望文本尾部 ⇒ 期望解析失败 ⇒ 期望被丢弃。 断言：expect(tags).toHaveLength(1);；expect(tag"	夹具漏形态	keep	keep	—
-"CRLF: 无期望的 case 不受影响（expectedText 仍为 undefined）"	"CRLF 源文件里 `=> expected` 的期望值被**整条吞掉** ⇒ 该 case 判 `[unchecked]` ⇒ 断言**不执法**、`nudo test` **exit 0**、**屏幕上零诊断**（假绿）。 根因行：`packages/core/src/algebra/directive-scan.ts` 的 `extractCaseExpectedExpr` —— 切行用 `split(\"\\n\")`，取行尾用 `.`（**不匹配 `\\r`**）⇒ CRLF 的 `\\r` 留在 期望文本尾部 ⇒ 期望解析失败 ⇒ 期望被丢弃。 断言：expect(tags).toHaveLength(1);；expect(tag"	夹具漏形态	keep	keep	—
-"后缀在 `=>` 之前: 期望照旧被抽出（改前整条期望消失）"	"case 行上的 `!! throws [Kind]` **后缀**（文档化形态）被当**期望值文本** ⇒ 期望**整条丢失**（后缀在 `=>` 之前：判 `[unchecked]`、零诊断）或**被腐蚀** （后缀在 `=>` 之后：`1 !! throws` 解析失败 ⇒ 退化成「什么都接受」/ 假红）。 根因行：`packages/core/src/algebra/directive-scan.ts` 的 `extractCaseExpectedExpr` —— 期望文本 = `=>` 之后的原始剩余，**不认** `!! throws` 后缀。 断言：expect(tags).toHaveLength(1);；expec"	夹具漏形态	keep	keep	—
-"后缀在 `=>` 之后: 期望文本不被腐蚀（改前是 `1 !! throws`）"	"case 行上的 `!! throws [Kind]` **后缀**（文档化形态）被当**期望值文本** ⇒ 期望**整条丢失**（后缀在 `=>` 之前：判 `[unchecked]`、零诊断）或**被腐蚀** （后缀在 `=>` 之后：`1 !! throws` 解析失败 ⇒ 退化成「什么都接受」/ 假红）。 根因行：`packages/core/src/algebra/directive-scan.ts` 的 `extractCaseExpectedExpr` —— 期望文本 = `=>` 之后的原始剩余，**不认** `!! throws` 后缀。 断言：expect(tags).toHaveLength(1);；expec"	夹具漏形态	keep	keep	—
-"后缀带 kind: 期望文本只剩期望本身"	"根因（directive-scan.ts，`CASE_THROWS_SUFFIX_TAIL_RE`）： 旧式 `/!!\\s*throws(?:\\s+[A-Za-z*][\\w*|,\\s]*)?\\s*$/i` 里，kind 组 `[\\w*|,\\s]*` **含空白**，其后又有结尾 `\\s*$` ⇒ 同一段空白有**多种切分** ⇒ 回溯**二次方**（实测：5 万空格 ≈ 1.7s； 修法：kind 改成**无歧义**切分 —— token 内**不含空白** （`[A-Za-z*][\\w*|,]*`），空白只能落在 token **之间**（`token (空白 token)*`） ⇒ 空白切分**唯一** ⇒ 线性。 断言：exp"	没测该层	keep	keep	—
-"文档化形态（只有后缀、没有 `=>`）: 没有期望（后缀是**申报**不是期望）"	"case 行上的 `!! throws [Kind]` **后缀**（文档化形态）被当**期望值文本** ⇒ 期望**整条丢失**（后缀在 `=>` 之前：判 `[unchecked]`、零诊断）或**被腐蚀** （后缀在 `=>` 之后：`1 !! throws` 解析失败 ⇒ 退化成「什么都接受」/ 假红）。 根因行：`packages/core/src/algebra/directive-scan.ts` 的 `extractCaseExpectedExpr` —— 期望文本 = `=>` 之后的原始剩余，**不认** `!! throws` 后缀。 断言：expect(tags).toHaveLength(1);；expec"	夹具漏形态	keep	keep	—
-"回归护栏: case 行本身不被改写 ⇒ `!! throws` 后缀申报仍在"	"case 行上的 `!! throws [Kind]` **后缀**（文档化形态）被当**期望值文本** ⇒ 期望**整条丢失**（后缀在 `=>` 之前：判 `[unchecked]`、零诊断）或**被腐蚀** （后缀在 `=>` 之后：`1 !! throws` 解析失败 ⇒ 退化成「什么都接受」/ 假红）。 根因行：`packages/core/src/algebra/directive-scan.ts` 的 `extractCaseExpectedExpr` —— 期望文本 = `=>` 之后的原始剩余，**不认** `!! throws` 后缀。 断言：expect(scanThrowsDecl(lines)).toBe("	夹具漏形态	keep	keep	—
-"回归护栏: 后缀在 `=>` 之后时**申报口径不变**（既有约定：后缀须紧跟实参括号）"	"case 行上的 `!! throws [Kind]` **后缀**（文档化形态）被当**期望值文本** ⇒ 期望**整条丢失**（后缀在 `=>` 之前：判 `[unchecked]`、零诊断）或**被腐蚀** （后缀在 `=>` 之后：`1 !! throws` 解析失败 ⇒ 退化成「什么都接受」/ 假红）。 根因行：`packages/core/src/algebra/directive-scan.ts` 的 `extractCaseExpectedExpr` —— 期望文本 = `=>` 之后的原始剩余，**不认** `!! throws` 后缀。 断言：expect(scanThrowsDecl(lines)).toBeU"	夹具漏形态	keep	keep	—
-"数字字面量: `=> (999)` ⇒ `999`"	"断言：expect(tags).toHaveLength(1);；expect(tags[0]!.expectedText).toBe(\"999\");"	没测该层	keep	keep	—
-"字符串字面量: `=> (\"abc\")` ⇒ `\"abc\"`"	"断言：expect(tags).toHaveLength(1);；expect(tags[0]!.expectedText).toBe('\"abc\"');"	没测该层	keep	keep	—
-"对象字面量: `=> ({ b: 1 })` ⇒ `{ b: 1 }`"	"回归：core **文本路径**（`directive-scan.ts`）的文件级指令位置闸门 漏掉 **array 字面量体（`ArrayExpression`）** 与 **解构模式体（`ObjectPattern`）** ⇒ 写在数组元素 / 解构键**上方**的 `/// @nudo:env web` 被**静默提升**成 **整文件** env（零诊断）。 根因：闸门区间只覆盖「函数体」（）+「类体 / 对象字面量体」 （）； 断言：expect(tags).toHaveLength(1);；expect(tags[0]!.expectedText).toBe(\"{ b: 1 }\");"	夹具漏形态	keep	keep	—
-"元组字面量: `=> ([1, 2])` ⇒ `[1, 2]`"	"断言：expect(tags).toHaveLength(1);；expect(tags[0]!.expectedText).toBe(\"[1, 2]\");"	没测该层	keep	keep	—
-"多层括号: 逐层剥到表达式本体"	"断言：expect(tags).toHaveLength(1);；expect(tags[0]!.expectedText).toBe(\"999\");"	没测该层	keep	keep	—
-"负控制: 无括号形态不受影响"	"回归钉：check 面的 case 实参**切分**必须与共享单源 （parser 的 `splitTopLevelArgs` + JSDoc 续行前缀剥离）**同口径**。 （多行实参 ⇒ 整条见证被静默跳过）： 共享单源 `scanCaseTags` 产出的 `argsText` **仍带 JSDoc 续行前缀 ` * `** ⇒ check 面不剥前缀 ⇒ 实参认不出 ⇒ 整条见证被静默跳过（假绿，exit 0）。 断言：expect(tags).toHaveLength(1);；expect(tags[0]!.expectedText).toBe(\"999\");"	没测该层	keep	keep	—
-"负控制: 箭头函数不被误剥（`(x) => y` 的括号不是冗余层）"	"回归钉：check 面的 case 实参**切分**必须与共享单源 （parser 的 `splitTopLevelArgs` + JSDoc 续行前缀剥离）**同口径**。 （多行实参 ⇒ 整条见证被静默跳过）： 共享单源 `scanCaseTags` 产出的 `argsText` **仍带 JSDoc 续行前缀 ` * `** ⇒ check 面不剥前缀 ⇒ 实参认不出 ⇒ 整条见证被静默跳过（假绿，exit 0）。 断言：expect(tags).toHaveLength(1);；expect(tags[0]!.expectedText).toBe(\"(x) => x + 1\");"	没测该层	keep	keep	—
-"无 filename 时 `<number>1` 解析成功（降级重试命中）"	"断言：expect(ast.program.body.length).toBe(2);"	没测该层	keep	keep	—
-"带 filename=x.ts 时同样解析成功"	"断言：expect(ast.program.body.length).toBe(2);"	没测该层	keep	keep	—
-"引擎端到端：`<number>1` 求值为字面量 1（剥除面已就绪）"	"断言：expect(v).toEqual({ ok: true, value: 1 });"	没测该层	keep	keep	—
-"泛型箭头 `<T>(x) => x`（无尾逗号）在硬失败路径下被重试救回"	"根因：`parseSource(source, opts)` 拿不到文件名 ⇒ 对所有源一律 `[\"typescript\", \"jsx\"]`； 修法（路线 A，单文件 / 零调用面改动 / `parseSource` 签名不变）： `packages/core/src/algebra/parse-source.ts` 的 `parseWithJsxFallback` —— 解析**硬失败**时去掉 `jsx` **重试一次**。 断言：expect(ast.program.body.length).toBe(2);"	没测该层	keep	keep	—
-"真 JSX 源不受降级影响（TS+JSX 本就解析成功 ⇒ 不触发重试）"	"根因：`parseSource(source, opts)` 拿不到文件名 ⇒ 对所有源一律 `[\"typescript\", \"jsx\"]`； 修法（路线 A，单文件 / 零调用面改动 / `parseSource` 签名不变）： `packages/core/src/algebra/parse-source.ts` 的 `parseWithJsxFallback` —— 解析**硬失败**时去掉 `jsx` **重试一次**。 断言：expect(ast.program.body.length).toBe(1);"	没测该层	keep	keep	—
-"模式分流仍在：`.ts` 收 TS 语法、`.js` 不收（缓存键含模式 ⇒ 不串味）"	"断言：expect(parseSource_____parse_source_ts(tsOnly, { filename: \"x.ts\" }).program.body.length).toBe(2);；expect(() => parseSource_____parse_source_ts(tsOnly, { filename: \"x.js\" })).toThrow();"	没测该层	keep	keep	—
-"the argument region of a malformed case is registered as a span"	"**畸形**的 `@nudo:case` 不登记**参数区间掩码** ⇒ case 参数里的 `@nudo:mock` / `@nudo:skip` **泄漏**成真指令 ⇒ 假红 / d.ts 丢方法。 根因：`scanCaseArgSpans` 只登记**合法** case 形态（双引号名 + 同行实参括号）的 区间； 断言：expect(spans).toHaveLength(1);；expect(spans.some(([s, e]) => mockIdx >= s && mockIdx < e)).toBe(true);"	夹具漏形态	keep	keep	—
-"the tag itself is NOT masked (the malformed-name diagnostic still fires)"	"`@nudo:import` 的**空载荷**被**静默丢弃**（零诊断），而同一条 指令的**其它**未识别形态有 `nudo:contract-syntax` 警告。 根因（core 文本扫描通道）：空载荷在 `nudoImportPayloads` 这一层就被丢弃 （连 payload 都没产出）⇒ 畸形扫描器**永远看不到它** ⇒ 「标签命中但载荷 为空」**零诊断**。 断言：expect(spans.some(([s, e]) => tagIdx >= s && tagIdx < e)).toBe(false);"	夹具漏形态	keep	keep	—
-"a well-formed case still masks its whole tag+arguments region"	"**畸形**的 `@nudo:case` 不登记**参数区间掩码** ⇒ case 参数里的 `@nudo:mock` / `@nudo:skip` **泄漏**成真指令 ⇒ 假红 / d.ts 丢方法。 根因：`scanCaseArgSpans` 只登记**合法** case 形态（双引号名 + 同行实参括号）的 区间； 断言：expect(spans).toHaveLength(1);；expect(spans.some(([s, e]) => tagIdx >= s && tagIdx < e)).toBe(true);"	夹具漏形态	keep	keep	—
-"a case without an argument list registers no span"	"**畸形**的 `@nudo:case` 不登记**参数区间掩码** ⇒ case 参数里的 `@nudo:mock` / `@nudo:skip` **泄漏**成真指令 ⇒ 假红 / d.ts 丢方法。 根因：`scanCaseArgSpans` 只登记**合法** case 形态（双引号名 + 同行实参括号）的 区间； 断言：expect(scanCaseArgSpans(`\\n * @nudo:case \"ok\"\\n`)).toEqual([]);"	夹具漏形态	keep	keep	—
-"env inside a function body is not file-wide"	"根因（core 文本路径）：`directiveCommentLinesRaw` 把注释**拍平成只带文本、不带 位置**的列表，`extractFileEnvNames` / `extractMockModuleRecords` / `nudoImportPayloads` 只按文本取载荷 ⇒ 函数体里的指令与文件顶部的指令**无法区分**。 位置闸门口径（与 parser AST 路径同口径）：文件级指令**不得落在任何函数体内**； 断言：expect(extractFileEnvNames(ENV_IN_FN)).toEqual([]);"	没测该层	keep	keep	—
-"mock-module inside a function body is not file-wide"	"根因（core 文本路径）：`directiveCommentLinesRaw` 把注释**拍平成只带文本、不带 位置**的列表，`extractFileEnvNames` / `extractMockModuleRecords` / `nudoImportPayloads` 只按文本取载荷 ⇒ 函数体里的指令与文件顶部的指令**无法区分**。 位置闸门口径（与 parser AST 路径同口径）：文件级指令**不得落在任何函数体内**； 断言：expect(extractMockModuleRecords(MOCK_MODULE_IN_FN)).toEqual([]);"	没测该层	keep	keep	—
-"@nudo:import inside a function body is not file-wide"	"根因（core 文本路径）：`directiveCommentLinesRaw` 把注释**拍平成只带文本、不带 位置**的列表，`extractFileEnvNames` / `extractMockModuleRecords` / `nudoImportPayloads` 只按文本取载荷 ⇒ 函数体里的指令与文件顶部的指令**无法区分**。 位置闸门口径（与 parser AST 路径同口径）：文件级指令**不得落在任何函数体内**； 断言：expect(extractNudoImportRecords(IMPORT_IN_FN)).toEqual([]);"	没测该层	keep	keep	—
-"the same directives at the top of the file are honored"	"期望表达式带**一层冗余括号**（`=> (999)` / `=> (\"a\")` / `=> ({ b: 1 })`） ⇒ 期望解析失败 ⇒ 断言退化成「什么都接受」（空洞通过）或**恒假红** ⇒ case 形同虚设。 根因行：`packages/core/src/algebra/directive-scan.ts` 的 `extractCaseExpectedExpr` —— 期望文本 = `=>` 之后的原始剩余（**不剥**外层括号），而实参侧 （`extractBalancedParens`）**剥**外层括号 ⇒ 两面口径不一致。 断言：expect(extractFileEnvNames(`/// @nudo:env"	没测该层	keep	keep	—
-"a top-level directive after other statements is still honored"	"根因（core 文本路径）：`directiveCommentLinesRaw` 把注释**拍平成只带文本、不带 位置**的列表，`extractFileEnvNames` / `extractMockModuleRecords` / `nudoImportPayloads` 只按文本取载荷 ⇒ 函数体里的指令与文件顶部的指令**无法区分**。 位置闸门口径（与 parser AST 路径同口径）：文件级指令**不得落在任何函数体内**； 断言：expect("	没测该层	keep	keep	—
-"a directive on an export line is still honored"	"根因（core 文本路径）：`directiveCommentLinesRaw` 把注释**拍平成只带文本、不带 位置**的列表，`extractFileEnvNames` / `extractMockModuleRecords` / `nudoImportPayloads` 只按文本取载荷 ⇒ 函数体里的指令与文件顶部的指令**无法区分**。 位置闸门口径（与 parser AST 路径同口径）：文件级指令**不得落在任何函数体内**； 断言：expect("	没测该层	keep	keep	—
-"形态 A: 期望值在下一行 ⇒ 期望被抽出"	"`=> expected` 在「期望值不与 `=>` 同行」（形态 A）或「`=>` 后为空」 （形态 B）时，期望被**静默丢弃** ⇒ 该 case 判 `[unchecked]` ⇒ 断言**不执法**、 `nudo test` **exit 0**、**屏幕上零诊断**（完全静默的假绿）。 根因行：`packages/core/src/algebra/directive-scan.ts` 的 `extractCaseExpectedExpr` —— 只取**同行**剩余； 断言：expect(tags).toHaveLength(1);；expect(tags[0]!.expectedText).toBe(\"4\");"	夹具漏形态	keep	keep	—
-"形态 A（无续行前缀）: 期望值在下一行 ⇒ 期望被抽出"	"`=> expected` 在「期望值不与 `=>` 同行」（形态 A）或「`=>` 后为空」 （形态 B）时，期望被**静默丢弃** ⇒ 该 case 判 `[unchecked]` ⇒ 断言**不执法**、 `nudo test` **exit 0**、**屏幕上零诊断**（完全静默的假绿）。 根因行：`packages/core/src/algebra/directive-scan.ts` 的 `extractCaseExpectedExpr` —— 只取**同行**剩余； 断言：expect(tags).toHaveLength(1);；expect(tags[0]!.expectedText).toBe(\"4\");"	夹具漏形态	keep	keep	—
-"形态 B: `=>` 后为空 ⇒ 没有期望，但**产出行首锚的语法错**（不再静默）"	"`=> expected` 在「期望值不与 `=>` 同行」（形态 A）或「`=>` 后为空」 （形态 B）时，期望被**静默丢弃** ⇒ 该 case 判 `[unchecked]` ⇒ 断言**不执法**、 `nudo test` **exit 0**、**屏幕上零诊断**（完全静默的假绿）。 根因行：`packages/core/src/algebra/directive-scan.ts` 的 `extractCaseExpectedExpr` —— 只取**同行**剩余； 断言：expect(tags).toHaveLength(1);；expect(tags[0]!.expectedText).toBeUndefined("	夹具漏形态	keep	keep	—
-"形态 B（续行也没有值）: 同样产出行首锚的语法错"	"`=> expected` 在「期望值不与 `=>` 同行」（形态 A）或「`=>` 后为空」 （形态 B）时，期望被**静默丢弃** ⇒ 该 case 判 `[unchecked]` ⇒ 断言**不执法**、 `nudo test` **exit 0**、**屏幕上零诊断**（完全静默的假绿）。 根因行：`packages/core/src/algebra/directive-scan.ts` 的 `extractCaseExpectedExpr` —— 只取**同行**剩余； 断言：expect(tags).toHaveLength(1);；expect(tags[0]!.expectedIssue).toBe(\"missing"	夹具漏形态	keep	keep	—
-"负控制: 同行形态照旧（期望被抽出、无语法错）"	"CRLF 源文件里 `=> expected` 的期望值被**整条吞掉** ⇒ 该 case 判 `[unchecked]` ⇒ 断言**不执法**、`nudo test` **exit 0**、**屏幕上零诊断**（假绿）。 根因行：`packages/core/src/algebra/directive-scan.ts` 的 `extractCaseExpectedExpr` —— 切行用 `split(\"\\n\")`，取行尾用 `.`（**不匹配 `\\r`**）⇒ CRLF 的 `\\r` 留在 期望文本尾部 ⇒ 期望解析失败 ⇒ 期望被丢弃。 断言：expect(tags).toHaveLength(1);；expect(tag"	夹具漏形态	keep	keep	—
-"负控制: 没有 `=>` 的 case（本就无期望）不产语法错"	"`=> expected` 在「期望值不与 `=>` 同行」（形态 A）或「`=>` 后为空」 （形态 B）时，期望被**静默丢弃** ⇒ 该 case 判 `[unchecked]` ⇒ 断言**不执法**、 `nudo test` **exit 0**、**屏幕上零诊断**（完全静默的假绿）。 根因行：`packages/core/src/algebra/directive-scan.ts` 的 `extractCaseExpectedExpr` —— 只取**同行**剩余； 断言：expect(tags).toHaveLength(1);；expect(tags[0]!.expectedText).toBeUndefined("	夹具漏形态	keep	keep	—
-"粘连写法: 不被抽成 case（抽取侧要求 `[ \\t]+`）"	"`@nudo:case\"c1\" (1, 2)`（标签与名字之间**无空白**）⇒ 抽取侧（严格 `[ \\t]+`）**不匹配** + 诊断侧（宽松 `[ \\t]*`）**判合法** ⇒ 整条 case **静默 蒸发** ⇒ `nudo test` 一个 case 都不跑、**零诊断**（假绿）。 根因：`CASE_NAME_REGEX`（抽取）与 `CASE_TAG_REGEX`（诊断）**文法不一致**； 断言：expect(tags).toEqual([]);"	没测该层	keep	keep	—
-"粘连写法: 在诊断面**看得见**（畸形剩余文本非空）"	"`@nudo:case\"c1\" (1, 2)`（标签与名字之间**无空白**）⇒ 抽取侧（严格 `[ \\t]+`）**不匹配** + 诊断侧（宽松 `[ \\t]*`）**判合法** ⇒ 整条 case **静默 蒸发** ⇒ `nudo test` 一个 case 都不跑、**零诊断**（假绿）。 根因：`CASE_NAME_REGEX`（抽取）与 `CASE_TAG_REGEX`（诊断）**文法不一致**； 断言：expect(rests).toEqual(['\"c1\" (1, 2)']);"	没测该层	keep	keep	—
-"负控制: 规范形态照旧被抽成 case、且不产畸形剩余"	"`@nudo:case\"c1\" (1, 2)`（标签与名字之间**无空白**）⇒ 抽取侧（严格 `[ \\t]+`）**不匹配** + 诊断侧（宽松 `[ \\t]*`）**判合法** ⇒ 整条 case **静默 蒸发** ⇒ `nudo test` 一个 case 都不跑、**零诊断**（假绿）。 根因：`CASE_NAME_REGEX`（抽取）与 `CASE_TAG_REGEX`（诊断）**文法不一致**； 断言：expect(tags).toHaveLength(1);；expect(tags[0]!.name).toBe(\"c1\");"	没测该层	keep	keep	—
-"负控制: 其它畸形形态仍被诊断面看见"	"回归钉：check 面的 case 实参**切分**必须与共享单源 （parser 的 `splitTopLevelArgs` + JSDoc 续行前缀剥离）**同口径**。 （多行实参 ⇒ 整条见证被静默跳过）： 共享单源 `scanCaseTags` 产出的 `argsText` **仍带 JSDoc 续行前缀 ` * `** ⇒ check 面不剥前缀 ⇒ 实参认不出 ⇒ 整条见证被静默跳过（假绿，exit 0）。 断言：expect(scanMalformedCaseTagRests(\"@nudo:case 'c1' (1, 2)\")).toEqual([\"'c1' (1, 2)\"]);"	没测该层	keep	keep	—
-"@nudo:contractx → nudo:contract-syntax（warning）"	"`@nudo:contract` 的**粘连**形态（`@nudo:contractx …`）此前 **零诊断**地蒸发。 根因：段扫描用严格正则 `^@nudo:contract\\s+(.+)$`（标签后必须有分隔空白） ⇒ 粘连写法**整行不匹配**且**无 else 分支** ⇒ 契约整条不见 ⇒ 用户以为契约 生效了（**假绿**）； 断言：expect(bad).toHaveLength(1);；expect(bad[0]!.severity).toBe(\"warning\");"	夹具漏形态	keep	keep	—
-"@nudo:contract 空载荷 → nudo:contract-syntax（warning）"	"`@nudo:contract` 的**粘连**形态（`@nudo:contractx …`）此前 **零诊断**地蒸发。 根因：段扫描用严格正则 `^@nudo:contract\\s+(.+)$`（标签后必须有分隔空白） ⇒ 粘连写法**整行不匹配**且**无 else 分支** ⇒ 契约整条不见 ⇒ 用户以为契约 生效了（**假绿**）； 断言：expect(bad).toHaveLength(1);；expect(bad[0]!.severity).toBe(\"warning\");"	夹具漏形态	keep	keep	—
-"合法 @nudo:contract 零 contract-syntax（不误伤）"	"`@nudo:contract` 的**粘连**形态（`@nudo:contractx …`）此前 **零诊断**地蒸发。 根因：段扫描用严格正则 `^@nudo:contract\\s+(.+)$`（标签后必须有分隔空白） ⇒ 粘连写法**整行不匹配**且**无 else 分支** ⇒ 契约整条不见 ⇒ 用户以为契约 生效了（**假绿**）； 断言：expect(r.issues.filter((i) => i.code === \"nudo:contract-syntax\")).toEqual([]);"	夹具漏形态	keep	keep	—
-"散文里的 @nudo:contract（行中提及）不算指令（不误伤）"	"`@nudo:contract` 的**粘连**形态（`@nudo:contractx …`）此前 **零诊断**地蒸发。 根因：段扫描用严格正则 `^@nudo:contract\\s+(.+)$`（标签后必须有分隔空白） ⇒ 粘连写法**整行不匹配**且**无 else 分支** ⇒ 契约整条不见 ⇒ 用户以为契约 生效了（**假绿**）； 断言：expect(r.issues.filter((i) => i.code === \"nudo:contract-syntax\")).toEqual([]);"	夹具漏形态	keep	keep	—
+@nudo:assumed → nudo:assume-invalid（error）；@nudo:invariantdp → nudo:invariant-invalid（warning）；@nudo:throwsTypeError → nudo:directive-syntax（warning）；合法形态零诊断（不误伤）	algebra-directives 聚合矩阵	没测该层	keep	keep	—
+env inside a class body is not file-wide；env inside an object literal body is not file-wide；mock-module inside a class body is not file-wide；@nudo:import inside a class body is not file-wide	algebra-directives 聚合矩阵	没测该层	keep	keep	—
+class **声明上方**的 env 仍是文件级（合法顶层位置）；文件头的 env 仍是文件级；class 体**之后**的顶层 env 仍是文件级	algebra-directives 聚合矩阵	没测该层	keep	keep	—
+env inside an array literal body is not file-wide；env inside a destructuring pattern body is not file-wide；env inside an array-destructuring pattern body is not file-wide；env inside a nested array body is not file-wide；mock-module inside an	algebra-directives 聚合矩阵	没测该层	keep	keep	—
+数组**声明上方**的 env 仍是文件级；解构**声明上方**的 env 仍是文件级；数组解构**声明上方**的 env 仍是文件级；class **声明上方**的 env 仍是文件级（Bug 1088 口径不变）	algebra-directives 聚合矩阵	没测该层	keep	keep	—
+分组标签（case null + case "ab" 共享体）⇒ 不得把 null 重绑成 "ab"；含非字面量 case 测试的分组臂 ⇒ 同样不得按 prim 标签重绑；P2：`case 0:` 不得把 -0 谎报成 +0（1 / -0 = -Infinity）；负控制：单一 prim 标签的 hit 收窄**保留**（case "ab" ⇒ x.length = 2）；负控制：单一 nullish 标签的臂仍不产命中事实（case null ⇒ null.length	algebra-directives 聚合矩阵	没测该层	keep	keep	—
+扫描层：多行实参的 case 后缀产出申报（修前：undefined）；消费层：extractDeclaredThrows 消费得到多行形态的申报；闸门层：已申报 ⇒ 不再假红（无声明 ⇒ 照常执法，对照组）；闸门层：多行形态 + 续行形态（`)` 行之后的下一行）都放行；护栏：单行写法行为逐字不变（`*` / kind / 续行）；护栏：位置锚不放宽（Bug 1033 口径）——散文 / case 名内部 / 期望侧都不产申报	algebra-directives 聚合矩阵	没测该层	keep	keep	—
+后缀不在行尾（尾部有其它字符）⇒ 不剥除，且耗时线性；后缀在行尾（后接大段空白）⇒ 照常剥除，且耗时线性；语义护栏：普通形态的剥除结果与旧式一致	algebra-directives 聚合矩阵	没测该层	keep	keep	—
+内层同名 function f() 的见证 ⇒ 不报 case-inconsistency；对照组 1：内层函数改名 g ⇒ 同样不报（单变量对照）；对照组 2：外层函数自己的违例见证仍报 error（不因修复而假绿）；对照组 3：外层函数自己的合规见证不报	algebra-directives 聚合矩阵	没测该层	keep	keep	—
+含 $ 的导出函数名被回收；含非 ASCII 的导出函数名被回收；含 $ / 非 ASCII 的导出 const 名被回收；导出函数**被分析**（throws 面如实，不再从不被分析）；stripStaticExportDecls 文本口径也放宽（$ / 非 ASCII）；ASCII 同形口径不变（对照组）	algebra-directives 聚合矩阵	没测该层	keep	keep	—
+@nudo:assume 中文名 → 合法（不再是 malformed）；@nudo:assume `>=` 仍翻转为 le（中文名同样成立）；@nudo:invariant 中文名 → 合法；@nudo:invariant 中文路径段 → 合法；@nudo:contract 中文形参名 → 契约生效；@nudo:contract `$x` 形参名 → 合法（旧 ASCII 正则不收 `$`）；非法的形参名仍被判 malformed（不放宽成任意串）	algebra-directives 聚合矩阵	没测该层	keep	keep	—
+error: 对象见证 ⊭ 标量契约（number()）——改前机制②归一成 unknown 后静默跳过；error: shape 契约的字段类型不符——改前机制①把 fields 契约整条跳过；error: shape 契约缺字段 → missing field <path>；error: 嵌套 shape 的字段违例（路径逐段下钻）；error: shape 契约的字段数值界违例；ok: 满足 shape 契约的见证不报；ok: 满足标量契约的对象见证不报（any() 通	algebra-directives 聚合矩阵	没测该层	keep	keep	—
+error: 多行实参的违例见证（改前整条见证被跳过 ⇒ 零诊断 / 假绿）；ok: 多行实参满足契约不报；负控制: 同一见证写成单行仍报同一条（改前只多行形态假绿）	algebra-directives 聚合矩阵	没测该层	keep	keep	—
+error: `"a\", -1` 切 2 个实参 ⇒ 第二个实参的违例见证被检出；负控制: 无转义引号的同形见证报同一条（改前两条都报 ⇒ 实参个数相同）	algebra-directives 聚合矩阵	没测该层	keep	keep	—
+warning: 契约位上的实参认不出 ⇒ nudo:directive-syntax；warning: 契约位上没有见证实参 ⇒ nudo:directive-syntax；负控制: 无契约位的认不出实参不产见证面诊断（parser 面自行诊断）；负控制: 约束构建器实参（number()）是合法形态 ⇒ 跳过但**不产诊断**	algebra-directives 聚合矩阵	没测该层	keep	keep	—
+space-separated env list is recognized (was dropped as one token)；comma-separated env list still works (control)；mixed separators are accepted；trailing line comment is stripped；path-like env names survive whitespace splitting；bare tag yield	algebra-directives 聚合矩阵	没测该层	keep	keep	—
+内联形态：见证落在 f 上；内联形态：不再产生 <anonymous> 影子 scope；内联形态：按名查找拿到 f 的注释行；语句级形态（对照）：见证同样落在 f 上；函数表达式初始化器的内联形态同样绑到绑定名	algebra-directives 聚合矩阵	没测该层	keep	keep	—
+extractBalancedParens: 双引号串里的 `\"` 不结束字符串；extractBalancedParens: 对象 / 数组字面量里的转义引号同样配平；extractBalancedParens: 单引号串里的 `\'` 不结束字符串；scanCaseTags: 含转义引号的 case 被抽出（改前整条被丢弃）；负控制（Bug 1009 口径保留）: 串未闭合时回退宽松口径 ⇒ 实参个数不变；负控制: 无转义引号的普通实参不受影响	algebra-directives 聚合矩阵	没测该层	keep	keep	—
+@nudo:assume 空载荷 → nudo:assume-invalid（error）；@nudo:invariant 空载荷 → nudo:invariant-invalid（warning）；空载荷（纯空白）与合法载荷不回归；合法 assume / invariant 零诊断（不误伤）	algebra-directives 聚合矩阵	没测该层	keep	keep	—
+bare tag is reported as a malformed import；bare tag with trailing blank is reported as a malformed import；empty payload produces no import record (only a diagnostic)；empty payload is malformed at the grammar level too；valid and other malfor	algebra-directives 聚合矩阵	没测该层	keep	keep	—
+CRLF: 期望被抽出（改前整条期望消失）；LF（负控制）: 期望照旧被抽出；CRLF: 块注释续行形态的期望同样被抽出；CRLF: 无期望的 case 不受影响（expectedText 仍为 undefined）	algebra-directives 聚合矩阵	没测该层	keep	keep	—
+后缀在 `=>` 之前: 期望照旧被抽出（改前整条期望消失）；后缀在 `=>` 之后: 期望文本不被腐蚀（改前是 `1 !! throws`）；后缀带 kind: 期望文本只剩期望本身；文档化形态（只有后缀、没有 `=>`）: 没有期望（后缀是**申报**不是期望）；回归护栏: case 行本身不被改写 ⇒ `!! throws` 后缀申报仍在；回归护栏: 后缀在 `=>` 之后时**申报口径不变**（既有约定：后缀须紧跟实参括号）	algebra-directives 聚合矩阵	没测该层	keep	keep	—
+数字字面量: `=> (999)` ⇒ `999`；字符串字面量: `=> ("abc")` ⇒ `"abc"`；对象字面量: `=> ({ b: 1 })` ⇒ `{ b: 1 }`；元组字面量: `=> ([1, 2])` ⇒ `[1, 2]`；多层括号: 逐层剥到表达式本体；负控制: 无括号形态不受影响；负控制: 箭头函数不被误剥（`(x) => y` 的括号不是冗余层）	algebra-directives 聚合矩阵	没测该层	keep	keep	—
+无 filename 时 `<number>1` 解析成功（降级重试命中）；带 filename=x.ts 时同样解析成功；引擎端到端：`<number>1` 求值为字面量 1（剥除面已就绪）；泛型箭头 `<T>(x) => x`（无尾逗号）在硬失败路径下被重试救回；真 JSX 源不受降级影响（TS+JSX 本就解析成功 ⇒ 不触发重试）；模式分流仍在：`.ts` 收 TS 语法、`.js` 不收（缓存键含模式 ⇒ 不串味）	algebra-directives 聚合矩阵	没测该层	keep	keep	—
+the argument region of a malformed case is registered as a span；the tag itself is NOT masked (the malformed-name diagnostic still fires)；a well-formed case still masks its whole tag+arguments region；a case without an argument list registers	algebra-directives 聚合矩阵	没测该层	keep	keep	—
+env inside a function body is not file-wide；mock-module inside a function body is not file-wide；@nudo:import inside a function body is not file-wide；the same directives at the top of the file are honored；a top-level directive after other st	algebra-directives 聚合矩阵	没测该层	keep	keep	—
+形态 A: 期望值在下一行 ⇒ 期望被抽出；形态 A（无续行前缀）: 期望值在下一行 ⇒ 期望被抽出；形态 B: `=>` 后为空 ⇒ 没有期望，但**产出行首锚的语法错**（不再静默）；形态 B（续行也没有值）: 同样产出行首锚的语法错；负控制: 同行形态照旧（期望被抽出、无语法错）；负控制: 没有 `=>` 的 case（本就无期望）不产语法错	algebra-directives 聚合矩阵	没测该层	keep	keep	—
+粘连写法: 不被抽成 case（抽取侧要求 `[ \t]+`）；粘连写法: 在诊断面**看得见**（畸形剩余文本非空）；负控制: 规范形态照旧被抽成 case、且不产畸形剩余；负控制: 其它畸形形态仍被诊断面看见	algebra-directives 聚合矩阵	没测该层	keep	keep	—
+@nudo:contractx → nudo:contract-syntax（warning）；@nudo:contract 空载荷 → nudo:contract-syntax（warning）；合法 @nudo:contract 零 contract-syntax（不误伤）；散文里的 @nudo:contract（行中提及）不算指令（不误伤）	algebra-directives 聚合矩阵	没测该层	keep	keep	—
 ```
 
 ```audit-deleted
 title	reason	evidence
 文件头的 env 仍是文件级	dup:文件头的 env 仍是文件级（同文件两处逐字同体，保留首份）	commit:e73bbdb8
 class 体**之后**的顶层 env 仍是文件级	dup:class 体**之后**的顶层 env 仍是文件级（同文件两处逐字同体，保留首份）	commit:e73bbdb8
+@nudo:assumed → nudo:assume-invalid（error）	dup:algebra-directives 聚合矩阵	commit:54f54850
+@nudo:invariantdp → nudo:invariant-invalid（warning）	dup:algebra-directives 聚合矩阵	commit:54f54850
+@nudo:throwsTypeError → nudo:directive-syntax（warning）	dup:algebra-directives 聚合矩阵	commit:54f54850
+合法形态零诊断（不误伤）	dup:algebra-directives 聚合矩阵	commit:54f54850
+env inside a class body is not file-wide	dup:algebra-directives 聚合矩阵	commit:54f54850
+env inside an object literal body is not file-wide	dup:algebra-directives 聚合矩阵	commit:54f54850
+mock-module inside a class body is not file-wide	dup:algebra-directives 聚合矩阵	commit:54f54850
+@nudo:import inside a class body is not file-wide	dup:algebra-directives 聚合矩阵	commit:54f54850
+class **声明上方**的 env 仍是文件级（合法顶层位置）	dup:algebra-directives 聚合矩阵	commit:54f54850
+env inside an array literal body is not file-wide	dup:algebra-directives 聚合矩阵	commit:54f54850
+env inside a destructuring pattern body is not file-wide	dup:algebra-directives 聚合矩阵	commit:54f54850
+env inside an array-destructuring pattern body is not file-wide	dup:algebra-directives 聚合矩阵	commit:54f54850
+env inside a nested array body is not file-wide	dup:algebra-directives 聚合矩阵	commit:54f54850
+mock-module inside an array body is not file-wide	dup:algebra-directives 聚合矩阵	commit:54f54850
+@nudo:import inside a destructuring pattern body is not file-wide	dup:algebra-directives 聚合矩阵	commit:54f54850
+数组**声明上方**的 env 仍是文件级	dup:algebra-directives 聚合矩阵	commit:54f54850
+解构**声明上方**的 env 仍是文件级	dup:algebra-directives 聚合矩阵	commit:54f54850
+数组解构**声明上方**的 env 仍是文件级	dup:algebra-directives 聚合矩阵	commit:54f54850
+class **声明上方**的 env 仍是文件级（Bug 1088 口径不变）	dup:algebra-directives 聚合矩阵	commit:54f54850
+文件头的 env 仍是文件级	dup:algebra-directives 聚合矩阵	commit:54f54850
+class 体**之后**的顶层 env 仍是文件级	dup:algebra-directives 聚合矩阵	commit:54f54850
+分组标签（case null + case "ab" 共享体）⇒ 不得把 null 重绑成 "ab"	dup:algebra-directives 聚合矩阵	commit:54f54850
+含非字面量 case 测试的分组臂 ⇒ 同样不得按 prim 标签重绑	dup:algebra-directives 聚合矩阵	commit:54f54850
+P2：`case 0:` 不得把 -0 谎报成 +0（1 / -0 = -Infinity）	dup:algebra-directives 聚合矩阵	commit:54f54850
+负控制：单一 prim 标签的 hit 收窄**保留**（case "ab" ⇒ x.length = 2）	dup:algebra-directives 聚合矩阵	commit:54f54850
+负控制：单一 nullish 标签的臂仍不产命中事实（case null ⇒ null.length 抛）	dup:algebra-directives 聚合矩阵	commit:54f54850
+负控制：default 臂的 nullish 排除事实**保留**（x 非 null ⇒ 不抛）	dup:algebra-directives 聚合矩阵	commit:54f54850
+扫描层：多行实参的 case 后缀产出申报（修前：undefined）	dup:algebra-directives 聚合矩阵	commit:54f54850
+消费层：extractDeclaredThrows 消费得到多行形态的申报	dup:algebra-directives 聚合矩阵	commit:54f54850
+闸门层：已申报 ⇒ 不再假红（无声明 ⇒ 照常执法，对照组）	dup:algebra-directives 聚合矩阵	commit:54f54850
+闸门层：多行形态 + 续行形态（`)` 行之后的下一行）都放行	dup:algebra-directives 聚合矩阵	commit:54f54850
+护栏：单行写法行为逐字不变（`*` / kind / 续行）	dup:algebra-directives 聚合矩阵	commit:54f54850
+护栏：位置锚不放宽（Bug 1033 口径）——散文 / case 名内部 / 期望侧都不产申报	dup:algebra-directives 聚合矩阵	commit:54f54850
+后缀不在行尾（尾部有其它字符）⇒ 不剥除，且耗时线性	dup:algebra-directives 聚合矩阵	commit:54f54850
+后缀在行尾（后接大段空白）⇒ 照常剥除，且耗时线性	dup:algebra-directives 聚合矩阵	commit:54f54850
+语义护栏：普通形态的剥除结果与旧式一致	dup:algebra-directives 聚合矩阵	commit:54f54850
+内层同名 function f() 的见证 ⇒ 不报 case-inconsistency	dup:algebra-directives 聚合矩阵	commit:54f54850
+对照组 1：内层函数改名 g ⇒ 同样不报（单变量对照）	dup:algebra-directives 聚合矩阵	commit:54f54850
+对照组 2：外层函数自己的违例见证仍报 error（不因修复而假绿）	dup:algebra-directives 聚合矩阵	commit:54f54850
+对照组 3：外层函数自己的合规见证不报	dup:algebra-directives 聚合矩阵	commit:54f54850
+含 $ 的导出函数名被回收	dup:algebra-directives 聚合矩阵	commit:54f54850
+含非 ASCII 的导出函数名被回收	dup:algebra-directives 聚合矩阵	commit:54f54850
+含 $ / 非 ASCII 的导出 const 名被回收	dup:algebra-directives 聚合矩阵	commit:54f54850
+导出函数**被分析**（throws 面如实，不再从不被分析）	dup:algebra-directives 聚合矩阵	commit:54f54850
+stripStaticExportDecls 文本口径也放宽（$ / 非 ASCII）	dup:algebra-directives 聚合矩阵	commit:54f54850
+ASCII 同形口径不变（对照组）	dup:algebra-directives 聚合矩阵	commit:54f54850
+@nudo:assume 中文名 → 合法（不再是 malformed）	dup:algebra-directives 聚合矩阵	commit:54f54850
+@nudo:assume `>=` 仍翻转为 le（中文名同样成立）	dup:algebra-directives 聚合矩阵	commit:54f54850
+@nudo:invariant 中文名 → 合法	dup:algebra-directives 聚合矩阵	commit:54f54850
+@nudo:invariant 中文路径段 → 合法	dup:algebra-directives 聚合矩阵	commit:54f54850
+@nudo:contract 中文形参名 → 契约生效	dup:algebra-directives 聚合矩阵	commit:54f54850
+@nudo:contract `$x` 形参名 → 合法（旧 ASCII 正则不收 `$`）	dup:algebra-directives 聚合矩阵	commit:54f54850
+非法的形参名仍被判 malformed（不放宽成任意串）	dup:algebra-directives 聚合矩阵	commit:54f54850
+error: 对象见证 ⊭ 标量契约（number()）——改前机制②归一成 unknown 后静默跳过	dup:algebra-directives 聚合矩阵	commit:54f54850
+error: shape 契约的字段类型不符——改前机制①把 fields 契约整条跳过	dup:algebra-directives 聚合矩阵	commit:54f54850
+error: shape 契约缺字段 → missing field <path>	dup:algebra-directives 聚合矩阵	commit:54f54850
+error: 嵌套 shape 的字段违例（路径逐段下钻）	dup:algebra-directives 聚合矩阵	commit:54f54850
+error: shape 契约的字段数值界违例	dup:algebra-directives 聚合矩阵	commit:54f54850
+ok: 满足 shape 契约的见证不报	dup:algebra-directives 聚合矩阵	commit:54f54850
+ok: 满足标量契约的对象见证不报（any() 通吃结构）	dup:algebra-directives 聚合矩阵	commit:54f54850
+负控制: 既有标量通道输出零改动（bounds 违例仍报 x > 0）	dup:algebra-directives 聚合矩阵	commit:54f54850
+error: 多行实参的违例见证（改前整条见证被跳过 ⇒ 零诊断 / 假绿）	dup:algebra-directives 聚合矩阵	commit:54f54850
+ok: 多行实参满足契约不报	dup:algebra-directives 聚合矩阵	commit:54f54850
+负控制: 同一见证写成单行仍报同一条（改前只多行形态假绿）	dup:algebra-directives 聚合矩阵	commit:54f54850
+error: `"a\", -1` 切 2 个实参 ⇒ 第二个实参的违例见证被检出	dup:algebra-directives 聚合矩阵	commit:54f54850
+负控制: 无转义引号的同形见证报同一条（改前两条都报 ⇒ 实参个数相同）	dup:algebra-directives 聚合矩阵	commit:54f54850
+warning: 契约位上的实参认不出 ⇒ nudo:directive-syntax	dup:algebra-directives 聚合矩阵	commit:54f54850
+warning: 契约位上没有见证实参 ⇒ nudo:directive-syntax	dup:algebra-directives 聚合矩阵	commit:54f54850
+负控制: 无契约位的认不出实参不产见证面诊断（parser 面自行诊断）	dup:algebra-directives 聚合矩阵	commit:54f54850
+负控制: 约束构建器实参（number()）是合法形态 ⇒ 跳过但**不产诊断**	dup:algebra-directives 聚合矩阵	commit:54f54850
+space-separated env list is recognized (was dropped as one token)	dup:algebra-directives 聚合矩阵	commit:54f54850
+comma-separated env list still works (control)	dup:algebra-directives 聚合矩阵	commit:54f54850
+mixed separators are accepted	dup:algebra-directives 聚合矩阵	commit:54f54850
+trailing line comment is stripped	dup:algebra-directives 聚合矩阵	commit:54f54850
+path-like env names survive whitespace splitting	dup:algebra-directives 聚合矩阵	commit:54f54850
+bare tag yields no env names (diagnostic lands on the AST channel)	dup:algebra-directives 聚合矩阵	commit:54f54850
+truncated capture is still rejected (zero false positives)	dup:algebra-directives 聚合矩阵	commit:54f54850
+内联形态：见证落在 f 上	dup:algebra-directives 聚合矩阵	commit:54f54850
+内联形态：不再产生 <anonymous> 影子 scope	dup:algebra-directives 聚合矩阵	commit:54f54850
+内联形态：按名查找拿到 f 的注释行	dup:algebra-directives 聚合矩阵	commit:54f54850
+语句级形态（对照）：见证同样落在 f 上	dup:algebra-directives 聚合矩阵	commit:54f54850
+函数表达式初始化器的内联形态同样绑到绑定名	dup:algebra-directives 聚合矩阵	commit:54f54850
+extractBalancedParens: 双引号串里的 `\"` 不结束字符串	dup:algebra-directives 聚合矩阵	commit:54f54850
+extractBalancedParens: 对象 / 数组字面量里的转义引号同样配平	dup:algebra-directives 聚合矩阵	commit:54f54850
+extractBalancedParens: 单引号串里的 `\'` 不结束字符串	dup:algebra-directives 聚合矩阵	commit:54f54850
+scanCaseTags: 含转义引号的 case 被抽出（改前整条被丢弃）	dup:algebra-directives 聚合矩阵	commit:54f54850
+负控制（Bug 1009 口径保留）: 串未闭合时回退宽松口径 ⇒ 实参个数不变	dup:algebra-directives 聚合矩阵	commit:54f54850
+负控制: 无转义引号的普通实参不受影响	dup:algebra-directives 聚合矩阵	commit:54f54850
+@nudo:assume 空载荷 → nudo:assume-invalid（error）	dup:algebra-directives 聚合矩阵	commit:54f54850
+@nudo:invariant 空载荷 → nudo:invariant-invalid（warning）	dup:algebra-directives 聚合矩阵	commit:54f54850
+空载荷（纯空白）与合法载荷不回归	dup:algebra-directives 聚合矩阵	commit:54f54850
+合法 assume / invariant 零诊断（不误伤）	dup:algebra-directives 聚合矩阵	commit:54f54850
+bare tag is reported as a malformed import	dup:algebra-directives 聚合矩阵	commit:54f54850
+bare tag with trailing blank is reported as a malformed import	dup:algebra-directives 聚合矩阵	commit:54f54850
+empty payload produces no import record (only a diagnostic)	dup:algebra-directives 聚合矩阵	commit:54f54850
+empty payload is malformed at the grammar level too	dup:algebra-directives 聚合矩阵	commit:54f54850
+valid and other malformed forms keep their behaviour (control)	dup:algebra-directives 聚合矩阵	commit:54f54850
+CRLF: 期望被抽出（改前整条期望消失）	dup:algebra-directives 聚合矩阵	commit:54f54850
+LF（负控制）: 期望照旧被抽出	dup:algebra-directives 聚合矩阵	commit:54f54850
+CRLF: 块注释续行形态的期望同样被抽出	dup:algebra-directives 聚合矩阵	commit:54f54850
+CRLF: 无期望的 case 不受影响（expectedText 仍为 undefined）	dup:algebra-directives 聚合矩阵	commit:54f54850
+后缀在 `=>` 之前: 期望照旧被抽出（改前整条期望消失）	dup:algebra-directives 聚合矩阵	commit:54f54850
+后缀在 `=>` 之后: 期望文本不被腐蚀（改前是 `1 !! throws`）	dup:algebra-directives 聚合矩阵	commit:54f54850
+后缀带 kind: 期望文本只剩期望本身	dup:algebra-directives 聚合矩阵	commit:54f54850
+文档化形态（只有后缀、没有 `=>`）: 没有期望（后缀是**申报**不是期望）	dup:algebra-directives 聚合矩阵	commit:54f54850
+回归护栏: case 行本身不被改写 ⇒ `!! throws` 后缀申报仍在	dup:algebra-directives 聚合矩阵	commit:54f54850
+回归护栏: 后缀在 `=>` 之后时**申报口径不变**（既有约定：后缀须紧跟实参括号）	dup:algebra-directives 聚合矩阵	commit:54f54850
+数字字面量: `=> (999)` ⇒ `999`	dup:algebra-directives 聚合矩阵	commit:54f54850
+字符串字面量: `=> ("abc")` ⇒ `"abc"`	dup:algebra-directives 聚合矩阵	commit:54f54850
+对象字面量: `=> ({ b: 1 })` ⇒ `{ b: 1 }`	dup:algebra-directives 聚合矩阵	commit:54f54850
+元组字面量: `=> ([1, 2])` ⇒ `[1, 2]`	dup:algebra-directives 聚合矩阵	commit:54f54850
+多层括号: 逐层剥到表达式本体	dup:algebra-directives 聚合矩阵	commit:54f54850
+负控制: 无括号形态不受影响	dup:algebra-directives 聚合矩阵	commit:54f54850
+负控制: 箭头函数不被误剥（`(x) => y` 的括号不是冗余层）	dup:algebra-directives 聚合矩阵	commit:54f54850
+无 filename 时 `<number>1` 解析成功（降级重试命中）	dup:algebra-directives 聚合矩阵	commit:54f54850
+带 filename=x.ts 时同样解析成功	dup:algebra-directives 聚合矩阵	commit:54f54850
+引擎端到端：`<number>1` 求值为字面量 1（剥除面已就绪）	dup:algebra-directives 聚合矩阵	commit:54f54850
+泛型箭头 `<T>(x) => x`（无尾逗号）在硬失败路径下被重试救回	dup:algebra-directives 聚合矩阵	commit:54f54850
+真 JSX 源不受降级影响（TS+JSX 本就解析成功 ⇒ 不触发重试）	dup:algebra-directives 聚合矩阵	commit:54f54850
+模式分流仍在：`.ts` 收 TS 语法、`.js` 不收（缓存键含模式 ⇒ 不串味）	dup:algebra-directives 聚合矩阵	commit:54f54850
+the argument region of a malformed case is registered as a span	dup:algebra-directives 聚合矩阵	commit:54f54850
+the tag itself is NOT masked (the malformed-name diagnostic still fires)	dup:algebra-directives 聚合矩阵	commit:54f54850
+a well-formed case still masks its whole tag+arguments region	dup:algebra-directives 聚合矩阵	commit:54f54850
+a case without an argument list registers no span	dup:algebra-directives 聚合矩阵	commit:54f54850
+env inside a function body is not file-wide	dup:algebra-directives 聚合矩阵	commit:54f54850
+mock-module inside a function body is not file-wide	dup:algebra-directives 聚合矩阵	commit:54f54850
+@nudo:import inside a function body is not file-wide	dup:algebra-directives 聚合矩阵	commit:54f54850
+the same directives at the top of the file are honored	dup:algebra-directives 聚合矩阵	commit:54f54850
+a top-level directive after other statements is still honored	dup:algebra-directives 聚合矩阵	commit:54f54850
+a directive on an export line is still honored	dup:algebra-directives 聚合矩阵	commit:54f54850
+形态 A: 期望值在下一行 ⇒ 期望被抽出	dup:algebra-directives 聚合矩阵	commit:54f54850
+形态 A（无续行前缀）: 期望值在下一行 ⇒ 期望被抽出	dup:algebra-directives 聚合矩阵	commit:54f54850
+形态 B: `=>` 后为空 ⇒ 没有期望，但**产出行首锚的语法错**（不再静默）	dup:algebra-directives 聚合矩阵	commit:54f54850
+形态 B（续行也没有值）: 同样产出行首锚的语法错	dup:algebra-directives 聚合矩阵	commit:54f54850
+负控制: 同行形态照旧（期望被抽出、无语法错）	dup:algebra-directives 聚合矩阵	commit:54f54850
+负控制: 没有 `=>` 的 case（本就无期望）不产语法错	dup:algebra-directives 聚合矩阵	commit:54f54850
+粘连写法: 不被抽成 case（抽取侧要求 `[ \t]+`）	dup:algebra-directives 聚合矩阵	commit:54f54850
+粘连写法: 在诊断面**看得见**（畸形剩余文本非空）	dup:algebra-directives 聚合矩阵	commit:54f54850
+负控制: 规范形态照旧被抽成 case、且不产畸形剩余	dup:algebra-directives 聚合矩阵	commit:54f54850
+负控制: 其它畸形形态仍被诊断面看见	dup:algebra-directives 聚合矩阵	commit:54f54850
+@nudo:contractx → nudo:contract-syntax（warning）	dup:algebra-directives 聚合矩阵	commit:54f54850
+@nudo:contract 空载荷 → nudo:contract-syntax（warning）	dup:algebra-directives 聚合矩阵	commit:54f54850
+合法 @nudo:contract 零 contract-syntax（不误伤）	dup:algebra-directives 聚合矩阵	commit:54f54850
+散文里的 @nudo:contract（行中提及）不算指令（不误伤）	dup:algebra-directives 聚合矩阵	commit:54f54850
 ```

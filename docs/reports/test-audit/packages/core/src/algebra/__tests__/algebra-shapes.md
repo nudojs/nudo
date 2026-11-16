@@ -6,119 +6,146 @@
 
 ```audit
 title	rootCause	gap	action	status	evidence
-"数组 a.push = 1 读回 1（改前折函数）"	"内置 brand 实例 / 数组上的 `a.push = 1` 确实建了自有槽，读面不得再被原型方法表（BUILTIN_BRAND_METHODS / ARRAY_PROTO_METHOD_NAMES）顶掉。 此前 typeof a.push 恒折 \"function\"。 断言：expect(val(wrap(`const a = []; a.push = 1; return a.push;`))).toEqual({ ok: true, value: 1 });；expect(val(wrap(`const a = []; a.push = 1; return typeof a.push;`))).toEqual({ ok: tr"	夹具漏形态	keep	keep	—
-"Map 实例 m.get = 1 读回 number"	"内置 brand 实例 / 数组上的 `a.push = 1` 确实建了自有槽，读面不得再被原型方法表（BUILTIN_BRAND_METHODS / ARRAY_PROTO_METHOD_NAMES）顶掉。 此前 typeof a.push 恒折 \"function\"。 断言：expect(val(wrap(`const m = new Map(); m.get = 1; return typeof m.get;`))).toEqual({ ok: true, value: \"number\" });"	夹具漏形态	keep	keep	—
-"Date / Set / RegExp 实例同形态"	"断言：expect(val(wrap(`const o = ${init}; o.${key} = 1; return typeof o.${key};`)), key).toEqual({"	没测该层	keep	keep	—
-"非表内键保持既有 unknown 口径（不假精确）；未写时表内键仍折函数"	"断言：expect(r.result.shape.k).toBe(\"unknown\");；expect(val(wrap(`const a = [1,2]; return typeof a.push;`))).toEqual({ ok: true, value: \"function\" });"	没测该层	keep	keep	—
-"union(number(), lit(null)) 同口径：数组返回值 ⇒ error"	"回归：含 nullish 字面量成员的 union（`nullable(...)`）无法**证违** 结构化返回值 ⇒ 违约事实被降级成 `nudo:unproven-return`（warning）⇒ 门禁 判 OK、exit 0（假绿）。 根因（两环）： 1. `lit(null)` / `lit(undefined)` 的约束**没有 prim**（域靠 `eq(self, null)` 承载）⇒ `assertScalar` 的 prim 门不触发； 断言：expect(v).toBeDefined();；expect(v!.severity).toBe(\"error\");"	夹具漏形态	keep	keep	—
-"不制造假红：null / undefined / number 返回值仍放行"	"回归：含 nullish 字面量成员的 union（`nullable(...)`）无法**证违** 结构化返回值 ⇒ 违约事实被降级成 `nudo:unproven-return`（warning）⇒ 门禁 判 OK、exit 0（假绿）。 根因（两环）： 1. `lit(null)` / `lit(undefined)` 的约束**没有 prim**（域靠 `eq(self, null)` 承载）⇒ `assertScalar` 的 prim 门不触发； 断言：expect(violation(check(\"maybeNumber\", \"null\"))).toBeUndefined();；expect(violation(che"	夹具漏形态	keep	keep	—
-"单元面：结构臂 ⊭ union ⇒ disproved（不是 unprovable）"	"回归：含 nullish 字面量成员的 union（`nullable(...)`）无法**证违** 结构化返回值 ⇒ 违约事实被降级成 `nudo:unproven-return`（warning）⇒ 门禁 判 OK、exit 0（假绿）。 根因（两环）： 1. `lit(null)` / `lit(undefined)` 的约束**没有 prim**（域靠 `eq(self, null)` 承载）⇒ `assertScalar` 的 prim 门不触发； 断言：expect(assertImplies(arrAbs, nullable(number())).status).toBe(\"disproved\");；expect(as"	夹具漏形态	keep	keep	—
-"护栏：同域值相等义务（lit(5) 对无 pred 的 number 返回值）不得升级成 error"	"回归：含 nullish 字面量成员的 union（`nullable(...)`）无法**证违** 结构化返回值 ⇒ 违约事实被降级成 `nudo:unproven-return`（warning）⇒ 门禁 判 OK、exit 0（假绿）。 根因（两环）： 1. `lit(null)` / `lit(undefined)` 的约束**没有 prim**（域靠 `eq(self, null)` 承载）⇒ `assertScalar` 的 prim 门不触发； 断言：expect(assertImplies(numNoPred, number().gt(0)).status).toBe(\"unprovable\");；expect(as"	夹具漏形态	keep	keep	—
-"ref(\"a\") 解析到另一槽位的 bind ⇒ 无 error，y 位是 number"	"回归钉：跨槽 `ref()` 的 binder 表必须进 generalize 的形参投影。 修前：`constraintToEntryAbs(c, param)` 未传 `eff.binders` ⇒ `ref(\"a\")` 在 别的槽位的树里 ⇒ `resolveRef` 抛错 ⇒ 被 generalize 的裸 `catch {}` 吞掉 ⇒ 该位静默退回 `any()` ⇒ `y(x)` 被判「调用任意值」⇒ 合法代码假红，且契约 义务在 check 面静默失效。 断言：expect(r.issues.filter((i) => i.severity === \"error\")).toEqual([]);；expect(sig)"	没测该层	keep	keep	—
-"对照：y 位写 any() 时逐字不变（无回归）"	"回归钉：跨槽 `ref()` 的 binder 表必须进 generalize 的形参投影。 修前：`constraintToEntryAbs(c, param)` 未传 `eff.binders` ⇒ `ref(\"a\")` 在 别的槽位的树里 ⇒ `resolveRef` 抛错 ⇒ 被 generalize 的裸 `catch {}` 吞掉 ⇒ 该位静默退回 `any()` ⇒ `y(x)` 被判「调用任意值」⇒ 合法代码假红，且契约 义务在 check 面静默失效。 断言：expect(r.issues.filter((i) => i.severity === \"error\")).toEqual([]);；expect(sig!"	没测该层	keep	keep	—
-"null 实参报违例（object shape at o）"	"顶层「结构约束」位对 `null` / `undefined` 实参**零诊断**（假绿） ⇒ 同一个实参位、同一个 nullish 实参，仅因约束是 `shape()` 而非标量就 给出相反裁决 ⇒ 引擎内部第 4 套「nullish 是否满足契约」口径。 修法：消费侧（`scan/literal-shapes.ts` 的 `checkShapeAgainstAbs`）的排除 条件从「`shape.k` 字面等于 unknown」改成「**无 term 的** unknown / any / never 才跳过」⇒ nullish（有 term）落入「不是 object ⇒ 报违例」。 断言：expect(v).toHaveLen"	没测该层	keep	keep	—
-"undefined 实参报违例"	"顶层「结构约束」位对 `null` / `undefined` 实参**零诊断**（假绿） ⇒ 同一个实参位、同一个 nullish 实参，仅因约束是 `shape()` 而非标量就 给出相反裁决 ⇒ 引擎内部第 4 套「nullish 是否满足契约」口径。 修法：消费侧（`scan/literal-shapes.ts` 的 `checkShapeAgainstAbs`）的排除 条件从「`shape.k` 字面等于 unknown」改成「**无 term 的** unknown / any / never 才跳过」⇒ nullish（有 term）落入「不是 object ⇒ 报违例」。 断言：expect(v).toHaveLen"	没测该层	keep	keep	—
-"同口径：顶层标量位对 null 也报违例（两套口径已统一）"	"顶层「结构约束」位对 `null` / `undefined` 实参**零诊断**（假绿） ⇒ 同一个实参位、同一个 nullish 实参，仅因约束是 `shape()` 而非标量就 给出相反裁决 ⇒ 引擎内部第 4 套「nullish 是否满足契约」口径。 修法：消费侧（`scan/literal-shapes.ts` 的 `checkShapeAgainstAbs`）的排除 条件从「`shape.k` 字面等于 unknown」改成「**无 term 的** unknown / any / never 才跳过」⇒ nullish（有 term）落入「不是 object ⇒ 报违例」。 断言：expect(v).toHaveLen"	没测该层	keep	keep	—
-"合规实参零诊断（nullish 执法没有误伤合法调用）"	"顶层「结构约束」位对 `null` / `undefined` 实参**零诊断**（假绿） ⇒ 同一个实参位、同一个 nullish 实参，仅因约束是 `shape()` 而非标量就 给出相反裁决 ⇒ 引擎内部第 4 套「nullish 是否满足契约」口径。 修法：消费侧（`scan/literal-shapes.ts` 的 `checkShapeAgainstAbs`）的排除 条件从「`shape.k` 字面等于 unknown」改成「**无 term 的** unknown / any / never 才跳过」⇒ nullish（有 term）落入「不是 object ⇒ 报违例」。 断言：expect(violated(r))"	没测该层	keep	keep	—
-"union(number().gt(0), lit('a')) 收到非字面量 number ⇒ 不报（域兼容 ⇒ 未决）"	"`or`（union / nullable）契约中「**不可判定**」的成员被当成失败 ⇒ 假红（P1）。 根因（`scan/literal-shapes.ts` 的 `judgeOrMember` + `checkReqs` 的 `or` 聚合臂）： - `instantiateOnTerm` 对「prim + preds」的成员**不带** typeof 原子 ⇒ `union(number().gt(0), lit(\"a\"))` 实例化成 `or(gt(x,0), eq(x,\"a\"))`； 断言：expect(violations(r)).toBe(0);"	没测该层	keep	keep	—
-"union(lit(1), lit('a')) 收到非字面量 number ⇒ 不报（域兼容 ⇒ 未决）"	"`or`（union / nullable）契约中「**不可判定**」的成员被当成失败 ⇒ 假红（P1）。 根因（`scan/literal-shapes.ts` 的 `judgeOrMember` + `checkReqs` 的 `or` 聚合臂）： - `instantiateOnTerm` 对「prim + preds」的成员**不带** typeof 原子 ⇒ `union(number().gt(0), lit(\"a\"))` 实例化成 `or(gt(x,0), eq(x,\"a\"))`； 断言：expect(violations(r)).toBe(0);"	没测该层	keep	keep	—
-"负控制：字面量不在 union 内 ⇒ 仍报违例"	"`or`（union / nullable）契约中「**不可判定**」的成员被当成失败 ⇒ 假红（P1）。 根因（`scan/literal-shapes.ts` 的 `judgeOrMember` + `checkReqs` 的 `or` 聚合臂）： - `instantiateOnTerm` 对「prim + preds」的成员**不带** typeof 原子 ⇒ `union(number().gt(0), lit(\"a\"))` 实例化成 `or(gt(x,0), eq(x,\"a\"))`； 断言：expect(violations(r)).toBe(1);"	没测该层	keep	keep	—
-"负控制：类型完全不符（boolean 实参 vs union(number(), string())）⇒ 仍报违例"	"`or`（union / nullable）契约中「**不可判定**」的成员被当成失败 ⇒ 假红（P1）。 根因（`scan/literal-shapes.ts` 的 `judgeOrMember` + `checkReqs` 的 `or` 聚合臂）： - `instantiateOnTerm` 对「prim + preds」的成员**不带** typeof 原子 ⇒ `union(number().gt(0), lit(\"a\"))` 实例化成 `or(gt(x,0), eq(x,\"a\"))`； 断言：expect(violations(r)).toBe(1);"	没测该层	keep	keep	—
-"负控制：满足其中一支（字面量 'a'）⇒ 不报"	"`or`（union / nullable）契约中「**不可判定**」的成员被当成失败 ⇒ 假红（P1）。 根因（`scan/literal-shapes.ts` 的 `judgeOrMember` + `checkReqs` 的 `or` 聚合臂）： - `instantiateOnTerm` 对「prim + preds」的成员**不带** typeof 原子 ⇒ `union(number().gt(0), lit(\"a\"))` 实例化成 `or(gt(x,0), eq(x,\"a\"))`； 断言：expect(violations(r)).toBe(0);"	没测该层	keep	keep	—
-"fn() 缺参 ⇒ 点名构造器报错，不泄露宿主原文"	"`fn()` 缺少**字段表实参守卫**（ 同源）。 缺陷： - `fn()`（缺参）⇒ 宿主 `Object.entries(undefined)` 抛 \"Cannot convert undefined or null to object\" ⇒ **宿主原文泄进产品诊断** （用户看不懂、也不是 Nudo 诊断）。 断言：expect(err).toBeInstanceOf(Error);；expect(msg).toContain(\"fn()\");"	没测该层	keep	keep	—
-"fn(42) 非对象 ⇒ 报错（不再静默变成 fn({})）"	"`fn()` 缺少**字段表实参守卫**（ 同源）。 缺陷： - `fn()`（缺参）⇒ 宿主 `Object.entries(undefined)` 抛 \"Cannot convert undefined or null to object\" ⇒ **宿主原文泄进产品诊断** （用户看不懂、也不是 Nudo 诊断）。 断言：expect(err).toBeInstanceOf(Error);；expect(msg).toContain(\"fn()\");"	没测该层	keep	keep	—
-"fn(null) ⇒ 报错"	"`fn()` 缺少**字段表实参守卫**（ 同源）。 缺陷： - `fn()`（缺参）⇒ 宿主 `Object.entries(undefined)` 抛 \"Cannot convert undefined or null to object\" ⇒ **宿主原文泄进产品诊断** （用户看不懂、也不是 Nudo 诊断）。 断言：expect(() => (fn as unknown as (x: unknown) => unknown)(null)).toThrow(/fn\\(\\)/);"	没测该层	keep	keep	—
-"fn({ id: number() }) 正常构造（负控制）"	"A3 残留回归钉（review F34 其它线索）：`union(number().gt(0), lit(null))` 收到**对象 / 数组**实参时，数值界成员「不可判定」且 null 成员类型为假 ⇒ 旧口径会把「不可判定」当「不违反」静默放过。 三值聚合修法后，域不兼容 （object / array vs number|null）⇒ **不得**静默 ⇒ 必须报 1 条违例； 断言：expect(() => fn({ id: number_____index_ts() })).not.toThrow();"	夹具漏形态	keep	keep	—
-"unknown | null 的返回 ⇒ nudo:unknown-inference"	"env 面「未建模宿主对象」形态：`unionOf(prim.unknown, nullLit())` （`packages/env/src/abs-helpers.ts:68` 的 nullLit = brand(\"null\") + lit term） 断言：expect(warn).toHaveLength(1);；expect(warn[0]!.severity).toBe(\"warning\");"	夹具漏形态	keep	keep	—
-"裸 unknown ⇒ 仍报（对照组，行为不变）"	"env 面「未建模宿主对象」形态：`unionOf(prim.unknown, nullLit())` （`packages/env/src/abs-helpers.ts:68` 的 nullLit = brand(\"null\") + lit term） 断言：expect(r.issues.filter((i) => i.code === \"nudo:unknown-inference\")).toHaveLength(1);"	夹具漏形态	keep	keep	—
-"有值证据（unknown 形状 + lit(undefined) term）不是引擎债 ⇒ 不报"	"env 面「未建模宿主对象」形态：`unionOf(prim.unknown, nullLit())` （`packages/env/src/abs-helpers.ts:68` 的 nullLit = brand(\"null\") + lit term） 断言：expect(r.issues.filter((i) => i.code === \"nudo:unknown-inference\")).toEqual([]);"	夹具漏形态	keep	keep	—
-"具体类型不受影响 ⇒ 不报"	"`nudo:unknown-inference`（引擎债诊断）在 **unknown 出现在 union 里** 时漏报 ⇒ 同一个 `document` 对象上「一个报一个不报」； 违反设计文档 `cli-semantics` 的**禁止条款**「在 check 中对 unknown（失败）静默通过而不报 引擎债相关诊断」。 断言：expect(r.issues.filter((i) => i.code === \"nudo:unknown-inference\")).toEqual([]);"	夹具漏形态	keep	keep	—
-"mock 名与 import 绑定同名：mock 覆盖 import，文件正常求值"	"改前：env/mock 注入面把 mock 与 env **合进同一张表**并**无条件前置注入** `let <name> = …`； 而 `rewriteUserImports` 也生成 `let <name> = …` ⇒ 同名 `let` 重复声明 ⇒ `new Function` SyntaxError ⇒ 整文件求值失败 ⇒ fail-closed `unknown` ⇒ 门禁绿灯 exit 0（假绿）。 断言：expect(Object.keys(exports)).toContain(\"readPort\");；expect(litValue(full.result)).toEqual({ ok: true, valu"	夹具漏形态	keep	keep	—
-"mock 名与用户顶层声明同名：模块级绑定胜出，文件照常求值（不抛）"	"改前：env/mock 注入面把 mock 与 env **合进同一张表**并**无条件前置注入** `let <name> = …`； 而 `rewriteUserImports` 也生成 `let <name> = …` ⇒ 同名 `let` 重复声明 ⇒ `new Function` SyntaxError ⇒ 整文件求值失败 ⇒ fail-closed `unknown` ⇒ 门禁绿灯 exit 0（假绿）。 断言：expect(Object.keys(exports).sort()).toEqual([\"getPort\", \"readPort\"]);；expect(litValue(full.result)).toEqua"	夹具漏形态	keep	keep	—
-"env 全局名与模块级绑定同名：同样不撞名（env 注入被跳过）"	"改前：env/mock 注入面把 mock 与 env **合进同一张表**并**无条件前置注入** `let <name> = …`； 而 `rewriteUserImports` 也生成 `let <name> = …` ⇒ 同名 `let` 重复声明 ⇒ `new Function` SyntaxError ⇒ 整文件求值失败 ⇒ fail-closed `unknown` ⇒ 门禁绿灯 exit 0（假绿）。 断言：expect(Object.keys(exports).sort()).toEqual([\"helper\", \"readHelper\"]);；expect(litValue(full.result)).toEqu"	夹具漏形态	keep	keep	—
-"Abs 层：同一变量重绑定为不同值 ⇒ 缓存失效（重算）"	"旧实现：pureMemoKey = callBudgetKey(\"pure\", \"\", args) ⇒ 键 = shape 种类 + termToString(term) ⇒ term 是**变量 id**（不是值内容）⇒ 同一变量重绑定为 不同值后仍命中旧缓存 ⇒ **陈旧结果**（宿主路径 use() 得 \"2,2\"，native 期望 \"2,4\"）。 本钉锁住： - Abs 层（$call + markPureFn）：同一变量重绑定 ⇒ 缓存失效（重算）； 断言：expect(litValue(r1)).toEqual({ ok: true, value: 2 });；expect(litValue(r2)).toEqual("	没测该层	keep	keep	—
-"Abs 层：不同变量同值 ⇒ 缓存命中（记忆化按值承诺）"	"旧实现：pureMemoKey = callBudgetKey(\"pure\", \"\", args) ⇒ 键 = shape 种类 + termToString(term) ⇒ term 是**变量 id**（不是值内容）⇒ 同一变量重绑定为 不同值后仍命中旧缓存 ⇒ **陈旧结果**（宿主路径 use() 得 \"2,2\"，native 期望 \"2,4\"）。 本钉锁住： - Abs 层（$call + markPureFn）：同一变量重绑定 ⇒ 缓存失效（重算）； 断言：expect(litValue(a)).toEqual({ ok: true, value: 2 });；expect(litValue(b)).toEqual({"	没测该层	keep	keep	—
-"Abs 层：不可比较的实参（函数值）⇒ 不缓存（不算命中）"	"旧实现：pureMemoKey = callBudgetKey(\"pure\", \"\", args) ⇒ 键 = shape 种类 + termToString(term) ⇒ term 是**变量 id**（不是值内容）⇒ 同一变量重绑定为 不同值后仍命中旧缓存 ⇒ **陈旧结果**（宿主路径 use() 得 \"2,2\"，native 期望 \"2,4\"）。 本钉锁住： - Abs 层（$call + markPureFn）：同一变量重绑定 ⇒ 缓存失效（重算）； 断言：expect(c.n).toBe(2);"	没测该层	keep	keep	—
-"宿主函数路径：同一变量重绑定 ⇒ use() 得 \"2,4\"（native 口径）"	"旧实现：pureMemoKey = callBudgetKey(\"pure\", \"\", args) ⇒ 键 = shape 种类 + termToString(term) ⇒ term 是**变量 id**（不是值内容）⇒ 同一变量重绑定为 不同值后仍命中旧缓存 ⇒ **陈旧结果**（宿主路径 use() 得 \"2,2\"，native 期望 \"2,4\"）。 本钉锁住： - Abs 层（$call + markPureFn）：同一变量重绑定 ⇒ 缓存失效（重算）； 断言：expect(out).toBe(\"2,4\");"	没测该层	keep	keep	—
-"宿主函数路径：不同变量同值 ⇒ 命中（函数体只跑一次）"	"旧实现：pureMemoKey = callBudgetKey(\"pure\", \"\", args) ⇒ 键 = shape 种类 + termToString(term) ⇒ term 是**变量 id**（不是值内容）⇒ 同一变量重绑定为 不同值后仍命中旧缓存 ⇒ **陈旧结果**（宿主路径 use() 得 \"2,2\"，native 期望 \"2,4\"）。 本钉锁住： - Abs 层（$call + markPureFn）：同一变量重绑定 ⇒ 缓存失效（重算）； 断言：expect(out).toBe(\"2,2,calls=1\");"	没测该层	keep	keep	—
-"宿主函数路径：不同变量不同值 ⇒ 不得命中（\"2,4,calls=2\"）"	"旧实现：pureMemoKey = callBudgetKey(\"pure\", \"\", args) ⇒ 键 = shape 种类 + termToString(term) ⇒ term 是**变量 id**（不是值内容）⇒ 同一变量重绑定为 不同值后仍命中旧缓存 ⇒ **陈旧结果**（宿主路径 use() 得 \"2,2\"，native 期望 \"2,4\"）。 本钉锁住： - Abs 层（$call + markPureFn）：同一变量重绑定 ⇒ 缓存失效（重算）； 断言：expect(out).toBe(\"2,4,calls=2\");"	没测该层	keep	keep	—
-"number().gt(0) 实例化 = typeof 义务 ∧ 数值界"	"「prim + 界」契约（`number().gt(0)` / `string().max(3)`）实例化时 **丢掉 prim 的类型义务**：`instantiateConstraint` 只在 `preds.length === 0` 时补 `typeof` 谓词 ⇒ 有界契约的实例化结果里没有类型义务 ⇒ 执法层无从判类型。 修法（core/algebra/constraint.ts `instantiateConstraint`）： 只要约束带 `prim`，就把 `typeof` 谓词与界谓词**合取**（不再二选一）。 断言：expect(p).toContain('typeof ms = \"number\"');；ex"	没测该层	keep	keep	—
-"string().max(3) 实例化 = typeof 义务 ∧ 长度界"	"「prim + 界」契约（`number().gt(0)` / `string().max(3)`）实例化时 **丢掉 prim 的类型义务**：`instantiateConstraint` 只在 `preds.length === 0` 时补 `typeof` 谓词 ⇒ 有界契约的实例化结果里没有类型义务 ⇒ 执法层无从判类型。 修法（core/algebra/constraint.ts `instantiateConstraint`）： 只要约束带 `prim`，就把 `typeof` 谓词与界谓词**合取**（不再二选一）。 断言：expect(p).toContain('typeof s = \"string\"');；exp"	没测该层	keep	keep	—
-"裸 prim 契约口径不变（仍是单条 typeof）"	"「prim + 界」契约（`number().gt(0)` / `string().max(3)`）实例化时 **丢掉 prim 的类型义务**：`instantiateConstraint` 只在 `preds.length === 0` 时补 `typeof` 谓词 ⇒ 有界契约的实例化结果里没有类型义务 ⇒ 执法层无从判类型。 修法（core/algebra/constraint.ts `instantiateConstraint`）： 只要约束带 `prim`，就把 `typeof` 谓词与界谓词**合取**（不再二选一）。 断言：expect(predToString(instantiateConstraint(numbe"	没测该层	keep	keep	—
-"产品面：类型错配的实参被抓住（此前零诊断静默放行）"	"断言：expect(errs.length).toBeGreaterThan(0);；expect("	没测该层	keep	keep	—
-"shape 约束（源码指令 × 同名侧车）⇒ 无 conflict 假红"	"非标量约束的合取被误报成「语义不可满足」。 `and()` 的两类 throw 被 `conjoinOrConflict` 一律当成 conflict： - 形态不支持（shape/array/union/fn 合取）——Phase 1 的能力边界，两条 约束可能**逐字相同**（最常见：源码 @nudo:contract 与同名侧车绑定 都写 shape）； 断言：expect(r.issues.filter((i) => i.code === \"nudo:contract-conflict\")).toEqual([]);"	夹具漏形态	keep	keep	—
-"conflict 位不再吃掉该形参的义务 ⇒ 调用点仍报违例（假绿修复）"	"非标量约束的合取被误报成「语义不可满足」。 `and()` 的两类 throw 被 `conjoinOrConflict` 一律当成 conflict： - 形态不支持（shape/array/union/fn 合取）——Phase 1 的能力边界，两条 约束可能**逐字相同**（最常见：源码 @nudo:contract 与同名侧车绑定 都写 shape）； 断言：expect(violated.length).toBeGreaterThan(0);"	夹具漏形态	keep	keep	—
-"语义真矛盾（number() ∧ string()）仍然报 conflict"	"非标量约束的合取被误报成「语义不可满足」。 `and()` 的两类 throw 被 `conjoinOrConflict` 一律当成 conflict： - 形态不支持（shape/array/union/fn 合取）——Phase 1 的能力边界，两条 约束可能**逐字相同**（最常见：源码 @nudo:contract 与同名侧车绑定 都写 shape）； 断言：expect(r.issues.filter((i) => i.code === \"nudo:contract-conflict\").length).toBeGreaterThan(0);"	夹具漏形态	keep	keep	—
-"形参类型是 (number) => number（无 x0 / ret）"	"check 签名面里 fn 形参的**内部占位 term** 不回显。 契约 fn（`fn({ x: number() }, number())`）的槽位 term 是 constraint.ts 生成的 内部占位名（`x${i}` / `ret`），回显进签名面长成 TS 默认参数： `f(cb: (number = x0) => number = ret) => number` —— 用户源码里根本没有这些名字。 断言：expect(sig).toBeDefined();；expect(sig!.paramTypes![0]).toBe(\"(number) => number\");"	没测该层	keep	keep	—
-"签名面不含占位名"	"断言：expect(line).not.toContain(\"x0\");；expect(line).not.toContain(\"ret\");"	没测该层	keep	keep	—
-"占位 term（x0 / ret）不回显"	"check 签名面里 fn 形参的**内部占位 term** 不回显。 契约 fn（`fn({ x: number() }, number())`）的槽位 term 是 constraint.ts 生成的 内部占位名（`x${i}` / `ret`），回显进签名面长成 TS 默认参数： `f(cb: (number = x0) => number = ret) => number` —— 用户源码里根本没有这些名字。 断言：expect(formatShape(f)).toBe(\"(number) => number\");"	没测该层	keep	keep	—
-"关系 fn 的 α 名（A1 / B1）照旧回显"	"check 签名面里 fn 形参的**内部占位 term** 不回显。 契约 fn（`fn({ x: number() }, number())`）的槽位 term 是 constraint.ts 生成的 内部占位名（`x${i}` / `ret`），回显进签名面长成 TS 默认参数： `f(cb: (number = x0) => number = ret) => number` —— 用户源码里根本没有这些名字。 断言：expect(formatShape(f)).toBe(\"(A1) => B1\");"	没测该层	keep	keep	—
-"shape() 抛 Nudo 原生诊断，点名构造器并说明缺参"	"`shape()` **少传实参**：宿主原生 TypeError 原文 「Cannot convert undefined or null to object」直接进产品诊断 ⇒ 误导诊断（用户看不出是哪个构造器缺参）+ 整份契约当场丢失。 修法：实参守卫（切片① 的共用校验 `requireFieldsObject`）—— 缺参 ⇒ 点名构造器 + 说明缺参的 Nudo 原生诊断，宿主异常不冒泡。 断言：expect(() => shape(undefined as never)).toThrow(/nudo shape\\(\\)/);；expect(() => shape(undefined as never)).toThrow"	夹具漏形态	keep	keep	—
-"诊断不含宿主 TypeError 原文"	"`shape()` **少传实参**：宿主原生 TypeError 原文 「Cannot convert undefined or null to object」直接进产品诊断 ⇒ 误导诊断（用户看不出是哪个构造器缺参）+ 整份契约当场丢失。 修法：实参守卫（切片① 的共用校验 `requireFieldsObject`）—— 缺参 ⇒ 点名构造器 + 说明缺参的 Nudo 原生诊断，宿主异常不冒泡。 断言：expect(msg).not.toContain(\"Cannot convert undefined or null to object\");；expect(msg).not.toContain(\"TypeError\");"	夹具漏形态	keep	keep	—
-"shape(undefined) 与 shape() 同口径"	"`shape()` **少传实参**：宿主原生 TypeError 原文 「Cannot convert undefined or null to object」直接进产品诊断 ⇒ 误导诊断（用户看不出是哪个构造器缺参）+ 整份契约当场丢失。 修法：实参守卫（切片① 的共用校验 `requireFieldsObject`）—— 缺参 ⇒ 点名构造器 + 说明缺参的 Nudo 原生诊断，宿主异常不冒泡。 断言：expect(() => shape(undefined as never)).toThrow(/fields object is required/);"	夹具漏形态	keep	keep	—
-"产品面：侧车诊断是 Nudo 原生文案，不是宿主原文"	"`shape()` **少传实参**：宿主原生 TypeError 原文 「Cannot convert undefined or null to object」直接进产品诊断 ⇒ 误导诊断（用户看不出是哪个构造器缺参）+ 整份契约当场丢失。 修法：实参守卫（切片① 的共用校验 `requireFieldsObject`）—— 缺参 ⇒ 点名构造器 + 说明缺参的 Nudo 原生诊断，宿主异常不冒泡。 断言：expect(load).toBeDefined();；expect(load!.message).toContain(\"nudo shape()\");"	夹具漏形态	keep	keep	—
-"arr(fn)：函数元素加括号（改前 `(1) => 1[]`）"	"`formatShape` 的**数组元素**不给**函数类型**加括号。 症状（改前）：`arr(fn)` 渲染成 `(1) => 1[]` ⇒ 按 TS 解析规则，`[]` 绑定到 **函数的返回类型**而不是数组元素 ⇒ 「函数数组」被读成「返回 `1[]` 的函数」 （类型被显示反了）。 断言：expect(formatShape(a)).toBe(\"((1) => 1)[]\");"	夹具漏形态	keep	keep	—
-"arr(arr(fn))：嵌套数组同样带括号"	"`formatShape` 的**数组元素**不给**函数类型**加括号。 症状（改前）：`arr(fn)` 渲染成 `(1) => 1[]` ⇒ 按 TS 解析规则，`[]` 绑定到 **函数的返回类型**而不是数组元素 ⇒ 「函数数组」被读成「返回 `1[]` 的函数」 （类型被显示反了）。 断言：expect(formatShape(outer)).toBe(\"((1) => 1)[][]\");"	夹具漏形态	keep	keep	—
-"控制：union 元素的既有分组判定保留"	"非标量约束的合取被误报成「语义不可满足」。 `and()` 的两类 throw 被 `conjoinOrConflict` 一律当成 conflict： - 形态不支持（shape/array/union/fn 合取）——Phase 1 的能力边界，两条 约束可能**逐字相同**（最常见：源码 @nudo:contract 与同名侧车绑定 都写 shape）； 断言：expect(formatShape(a)).toBe('(1 | \"x\")[]');"	夹具漏形态	keep	keep	—
-"控制：prim 元素不加冗余括号"	"「prim + 界」契约（`number().gt(0)` / `string().max(3)`）实例化时 **丢掉 prim 的类型义务**：`instantiateConstraint` 只在 `preds.length === 0` 时补 `typeof` 谓词 ⇒ 有界契约的实例化结果里没有类型义务 ⇒ 执法层无从判类型。 修法（core/algebra/constraint.ts `instantiateConstraint`）： 只要约束带 `prim`，就把 `typeof` 谓词与界谓词**合取**（不再二选一）。 断言：expect(formatShape(a)).toBe(\"1[]\");"	没测该层	keep	keep	—
-"控制：tuple 元素里的 fn 不在本片范围（不加括号）"	"`formatShape` 的**数组元素**不给**函数类型**加括号。 症状（改前）：`arr(fn)` 渲染成 `(1) => 1[]` ⇒ 按 TS 解析规则，`[]` 绑定到 **函数的返回类型**而不是数组元素 ⇒ 「函数数组」被读成「返回 `1[]` 的函数」 （类型被显示反了）。 断言：expect(formatShape(a)).toBe(\"[(1) => 1]\");"	夹具漏形态	keep	keep	—
-"控制：对象槽里的 fn 不在本片范围（不加括号）"	"`formatShape` 的**数组元素**不给**函数类型**加括号。 症状（改前）：`arr(fn)` 渲染成 `(1) => 1[]` ⇒ 按 TS 解析规则，`[]` 绑定到 **函数的返回类型**而不是数组元素 ⇒ 「函数数组」被读成「返回 `1[]` 的函数」 （类型被显示反了）。 断言：expect(formatShape(a)).toBe(\"{ cb: (1) => 1 }\");"	夹具漏形态	keep	keep	—
-"端到端：真实源码返回「函数数组」时不得渲染成「返回数组的函数」"	"`formatShape` 的**数组元素**不给**函数类型**加括号。 症状（改前）：`arr(fn)` 渲染成 `(1) => 1[]` ⇒ 按 TS 解析规则，`[]` 绑定到 **函数的返回类型**而不是数组元素 ⇒ 「函数数组」被读成「返回 `1[]` 的函数」 （类型被显示反了）。 断言：expect(r.result.shape.k).toBe(\"arr\");；expect(text).not.toContain(\"=> ?[]\");"	夹具漏形态	keep	keep	—
-"sum(fn, number)：函数成员加括号（改前 `(1) => 1 | 2`）"	"`formatShape` 的 **union 成员**不给**函数类型**加括号。 症状（改前）：`sum(fn, number)` 渲染成 `(1) => 1 | 2` ⇒ 按 TS 解析规则， `|` 绑定到**函数的返回类型** ⇒ 「函数或 number」被读成「返回 `1 | 2` 的 函数」。 断言：expect(formatShape(a)).toBe(\"((1) => 1) | 2\");"	没测该层	keep	keep	—
-"sum(fn, fn)：两个函数成员都加括号"	"`formatShape` 的 **union 成员**不给**函数类型**加括号。 症状（改前）：`sum(fn, number)` 渲染成 `(1) => 1 | 2` ⇒ 按 TS 解析规则， `|` 绑定到**函数的返回类型** ⇒ 「函数或 number」被读成「返回 `1 | 2` 的 函数」。 断言：expect(formatShape(a)).toBe('((1) => 1) | ((1) => \"s\")');"	没测该层	keep	keep	—
-"sum(arr(fn), number)：数组成员靠 arr 臂自己加括号（成员本身不是 fn）"	"`formatShape` 的 **union 成员**不给**函数类型**加括号。 症状（改前）：`sum(fn, number)` 渲染成 `(1) => 1 | 2` ⇒ 按 TS 解析规则， `|` 绑定到**函数的返回类型** ⇒ 「函数或 number」被读成「返回 `1 | 2` 的 函数」。 断言：expect(formatShape(a)).toBe(\"((1) => 1)[] | 2\");"	没测该层	keep	keep	—
-"控制：非函数成员的 union 不加括号"	"`formatShape` 的 **union 成员**不给**函数类型**加括号。 症状（改前）：`sum(fn, number)` 渲染成 `(1) => 1 | 2` ⇒ 按 TS 解析规则， `|` 绑定到**函数的返回类型** ⇒ 「函数或 number」被读成「返回 `1 | 2` 的 函数」。 断言：expect(formatShape(a)).toBe('1 | \"x\"');"	没测该层	keep	keep	—
-"去重：文本相同的两个 fn 成员只留一条（去重 key 用未包裹文本）"	"`formatShape` 的 **union 成员**不给**函数类型**加括号。 症状（改前）：`sum(fn, number)` 渲染成 `(1) => 1 | 2` ⇒ 按 TS 解析规则， `|` 绑定到**函数的返回类型** ⇒ 「函数或 number」被读成「返回 `1 | 2` 的 函数」。 断言：expect(formatShape(a)).toBe(\"((1) => 1)\");"	没测该层	keep	keep	—
-"端到端：真实源码返回「函数或 number」时 `|` 不得被返回类型吃掉"	"`formatShape` 的 **union 成员**不给**函数类型**加括号。 症状（改前）：`sum(fn, number)` 渲染成 `(1) => 1 | 2` ⇒ 按 TS 解析规则， `|` 绑定到**函数的返回类型** ⇒ 「函数或 number」被读成「返回 `1 | 2` 的 函数」。 断言：expect(r.result.shape.k).toBe(\"sum\");；expect(text).not.toContain(\"=> ? |\");"	没测该层	keep	keep	—
-"union(number().gt(0), lit(null)) 收到 null ⇒ 放行（改前 1 违例 = 假红）"	"union / nullable 契约的**假红那一半**：`or` 析取臂对 nullish 实参**无条件报违例** ⇒ **合法实参被报红**。 症状（族 11 / S6 修前实测，闸① oracle； 断言：expect(violated(r).length).toBe(0);"	没测该层	keep	keep	—
-"nullable(number().gt(0)) 收到 null ⇒ 放行（改前 1 违例 = 假红）"	"union / nullable 契约的**假红那一半**：`or` 析取臂对 nullish 实参**无条件报违例** ⇒ **合法实参被报红**。 症状（族 11 / S6 修前实测，闸① oracle； 断言：expect(violated(r).length).toBe(0);"	没测该层	keep	keep	—
-"nullable(number().gt(0)) 收到 undefined ⇒ 放行（改前 1 违例 = 假红）"	"union / nullable 契约的**假红那一半**：`or` 析取臂对 nullish 实参**无条件报违例** ⇒ **合法实参被报红**。 症状（族 11 / S6 修前实测，闸① oracle； 断言：expect(violated(r).length).toBe(0);"	没测该层	keep	keep	—
-"union(number(), lit(null)) 收到 null ⇒ 放行（改前 1 违例 = 假红）"	"union / nullable 契约的**假红那一半**：`or` 析取臂对 nullish 实参**无条件报违例** ⇒ **合法实参被报红**。 症状（族 11 / S6 修前实测，闸① oracle； 断言：expect(violated(r).length).toBe(0);"	没测该层	keep	keep	—
-"union(number(), lit(undefined)) 收到 undefined ⇒ 放行（改前 1 违例 = 假红）"	"union / nullable 契约的**假红那一半**：`or` 析取臂对 nullish 实参**无条件报违例** ⇒ **合法实参被报红**。 症状（族 11 / S6 修前实测，闸① oracle； 断言：expect(violated(r).length).toBe(0);"	没测该层	keep	keep	—
-"union(number().gt(0), lit(undefined)) 收到 undefined ⇒ 放行（改前 1 违例 = 假红）"	"union / nullable 契约的**假红那一半**：`or` 析取臂对 nullish 实参**无条件报违例** ⇒ **合法实参被报红**。 症状（族 11 / S6 修前实测，闸① oracle； 断言：expect(violated(r).length).toBe(0);"	没测该层	keep	keep	—
-"负控制：null 与 undefined 是两个域 —— posOrNull 收到 undefined 仍报违例"	"union / nullable 契约的**假红那一半**：`or` 析取臂对 nullish 实参**无条件报违例** ⇒ **合法实参被报红**。 症状（族 11 / S6 修前实测，闸① oracle； 断言：expect(vs.length).toBe(1);；expect(vs[0]?.expected).toBe(\"(x > 0 ∨ x = null)\");"	没测该层	keep	keep	—
-"负控制：posOrUndef 收到 null 仍报违例"	"union / nullable 契约的**假红那一半**：`or` 析取臂对 nullish 实参**无条件报违例** ⇒ **合法实参被报红**。 症状（族 11 / S6 修前实测，闸① oracle； 断言：expect(vs.length).toBe(1);；expect(vs[0]?.expected).toBe(\"(x > 0 ∨ x = undefined)\");"	没测该层	keep	keep	—
-"负控制：numOrNull 收到 undefined 仍报违例"	"union / nullable 契约的**假红那一半**：`or` 析取臂对 nullish 实参**无条件报违例** ⇒ **合法实参被报红**。 症状（族 11 / S6 修前实测，闸① oracle； 断言：expect(vs.length).toBe(1);；expect(vs[0]?.expected).toBe('(typeof x = \"number\" ∨ x = null)');"	没测该层	keep	keep	—
-"负控制：越界实参仍报违例（逐支求值不是「一律放行」）"	"union / nullable 契约的**假红那一半**：`or` 析取臂对 nullish 实参**无条件报违例** ⇒ **合法实参被报红**。 症状（族 11 / S6 修前实测，闸① oracle； 断言：expect(vs.length).toBe(1);；expect(vs[0]?.expected).toBe(\"(x > 0 ∨ x = null)\");"	没测该层	keep	keep	—
-"负控制：没有契约的形参收到 null ⇒ 零违例（违例来自契约，不是引擎噪声）"	"union / nullable 契约的**假红那一半**：`or` 析取臂对 nullish 实参**无条件报违例** ⇒ **合法实参被报红**。 症状（族 11 / S6 修前实测，闸① oracle； 断言：expect(violated(r).length).toBe(0);"	没测该层	keep	keep	—
-"union(number().gt(0), lit(null)) 收到 0 ⇒ 判违例（改前 0 违例 = 假绿）"	"union / nullable 契约的**成员义务**：or 析取臂对 **nullish 成员** 判不了 ⇒ 聚合臂的 `unknown` 抑制 ⇒ **整条 union 契约零义务**（越界实参全放行）。 症状（族 11 / S1 修前实测，闸① oracle）： - `union(number().gt(0), lit(null))` 收到 `0` ⇒ 0 违例（**假绿**） - `nullable(number().gt(0))` 收到 `0` ⇒ 0 违例（**假绿**） - `union(number(), lit(null))` 收到 `\"x\"` ⇒ 0 违例（**假绿**） 根因：`scan/literal-p"	没测该层	keep	keep	—
-"nullable(number().gt(0)) 收到 0 ⇒ 判违例（改前 0 违例 = 假绿）"	"union / nullable 契约的**成员义务**：or 析取臂对 **nullish 成员** 判不了 ⇒ 聚合臂的 `unknown` 抑制 ⇒ **整条 union 契约零义务**（越界实参全放行）。 症状（族 11 / S1 修前实测，闸① oracle）： - `union(number().gt(0), lit(null))` 收到 `0` ⇒ 0 违例（**假绿**） - `nullable(number().gt(0))` 收到 `0` ⇒ 0 违例（**假绿**） - `union(number(), lit(null))` 收到 `\"x\"` ⇒ 0 违例（**假绿**） 根因：`scan/literal-p"	没测该层	keep	keep	—
-"union(number(), lit(null)) 收到 'x' ⇒ 判违例（改前 0 违例 = 假绿）"	"union / nullable 契约的**成员义务**：or 析取臂对 **nullish 成员** 判不了 ⇒ 聚合臂的 `unknown` 抑制 ⇒ **整条 union 契约零义务**（越界实参全放行）。 症状（族 11 / S1 修前实测，闸① oracle）： - `union(number().gt(0), lit(null))` 收到 `0` ⇒ 0 违例（**假绿**） - `nullable(number().gt(0))` 收到 `0` ⇒ 0 违例（**假绿**） - `union(number(), lit(null))` 收到 `\"x\"` ⇒ 0 违例（**假绿**） 根因：`scan/literal-p"	没测该层	keep	keep	—
-"union(number(), lit(null)) 收到 1 ⇒ 放行（成员义务不误伤合法实参）"	"union / nullable 契约的**成员义务**：or 析取臂对 **nullish 成员** 判不了 ⇒ 聚合臂的 `unknown` 抑制 ⇒ **整条 union 契约零义务**（越界实参全放行）。 症状（族 11 / S1 修前实测，闸① oracle）： - `union(number().gt(0), lit(null))` 收到 `0` ⇒ 0 违例（**假绿**） - `nullable(number().gt(0))` 收到 `0` ⇒ 0 违例（**假绿**） - `union(number(), lit(null))` 收到 `\"x\"` ⇒ 0 违例（**假绿**） 根因：`scan/literal-p"	没测该层	keep	keep	—
-"union(number().gt(0), lit(null)) 收到 3 ⇒ 放行（成员义务不误伤合法实参）"	"union / nullable 契约的**成员义务**：or 析取臂对 **nullish 成员** 判不了 ⇒ 聚合臂的 `unknown` 抑制 ⇒ **整条 union 契约零义务**（越界实参全放行）。 症状（族 11 / S1 修前实测，闸① oracle）： - `union(number().gt(0), lit(null))` 收到 `0` ⇒ 0 违例（**假绿**） - `nullable(number().gt(0))` 收到 `0` ⇒ 0 违例（**假绿**） - `union(number(), lit(null))` 收到 `\"x\"` ⇒ 0 违例（**假绿**） 根因：`scan/literal-p"	没测该层	keep	keep	—
-"负控制：没有契约的形参收到任何实参 ⇒ 零违例（违例来自契约，不是引擎噪声）"	"union / nullable 契约的**假红那一半**：`or` 析取臂对 nullish 实参**无条件报违例** ⇒ **合法实参被报红**。 症状（族 11 / S6 修前实测，闸① oracle； 断言：expect(violated(r).length).toBe(0);"	没测该层	keep	keep	—
-"顶层 `f(true)` ⇒ 报违例（改前也报，走的是执行态回退）"	"实参快路径**不认 `BooleanLiteral`** ⇒ 同一个调用点， **顶层语句报错、函数体内静默放行**（作用域相关的假绿）。 根因：`scan/literal-args.ts` 的 `parseCallArgs` 快路径分派表 （NumericLiteral / Unary(-) / Object / Array / String / Null / **缺 Boolean** / Identifier / MemberExpression / SpreadElement / CallExpression / 兜底）里 **没有 `BooleanLiteral` 分支** ⇒ `f(true)` 落到兜底 `absUnk"	没测该层	keep	keep	—
-"★ 函数体内 `f(true)` ⇒ 报违例（改前**零诊断**——假绿）"	"实参快路径**不认 `BooleanLiteral`** ⇒ 同一个调用点， **顶层语句报错、函数体内静默放行**（作用域相关的假绿）。 根因：`scan/literal-args.ts` 的 `parseCallArgs` 快路径分派表 （NumericLiteral / Unary(-) / Object / Array / String / Null / **缺 Boolean** / Identifier / MemberExpression / SpreadElement / CallExpression / 兜底）里 **没有 `BooleanLiteral` 分支** ⇒ `f(true)` 落到兜底 `absUnk"	没测该层	keep	keep	—
-"★ 函数体内 `f(false)` ⇒ 报违例（改前零诊断）"	"实参快路径**不认 `BooleanLiteral`** ⇒ 同一个调用点， **顶层语句报错、函数体内静默放行**（作用域相关的假绿）。 根因：`scan/literal-args.ts` 的 `parseCallArgs` 快路径分派表 （NumericLiteral / Unary(-) / Object / Array / String / Null / **缺 Boolean** / Identifier / MemberExpression / SpreadElement / CallExpression / 兜底）里 **没有 `BooleanLiteral` 分支** ⇒ `f(true)` 落到兜底 `absUnk"	没测该层	keep	keep	—
-"作用域不再决定裁决：顶层与函数体内的诊断**逐字相同**"	"非标量约束的合取被误报成「语义不可满足」。 `and()` 的两类 throw 被 `conjoinOrConflict` 一律当成 conflict： - 形态不支持（shape/array/union/fn 合取）——Phase 1 的能力边界，两条 约束可能**逐字相同**（最常见：源码 @nudo:contract 与同名侧车绑定 都写 shape）； 断言：expect(a.actual).toBe(b.actual);；expect(a.expected).toBe(b.expected);"	夹具漏形态	keep	keep	—
-"负控制：契约是 boolean() 时 `f(true)` ⇒ 不报违例"	"实参快路径**不认 `BooleanLiteral`** ⇒ 同一个调用点， **顶层语句报错、函数体内静默放行**（作用域相关的假绿）。 根因：`scan/literal-args.ts` 的 `parseCallArgs` 快路径分派表 （NumericLiteral / Unary(-) / Object / Array / String / Null / **缺 Boolean** / Identifier / MemberExpression / SpreadElement / CallExpression / 兜底）里 **没有 `BooleanLiteral` 分支** ⇒ `f(true)` 落到兜底 `absUnk"	没测该层	keep	keep	—
-"负控制：契约是 boolean() 时 `f(false)` ⇒ 不报违例"	"实参快路径**不认 `BooleanLiteral`** ⇒ 同一个调用点， **顶层语句报错、函数体内静默放行**（作用域相关的假绿）。 根因：`scan/literal-args.ts` 的 `parseCallArgs` 快路径分派表 （NumericLiteral / Unary(-) / Object / Array / String / Null / **缺 Boolean** / Identifier / MemberExpression / SpreadElement / CallExpression / 兜底）里 **没有 `BooleanLiteral` 分支** ⇒ `f(true)` 落到兜底 `absUnk"	没测该层	keep	keep	—
-"回归：`f(null)` 仍照常执法（族 06 的 NullLiteral 分支没被弄坏）"	"实参快路径**不认 `BooleanLiteral`** ⇒ 同一个调用点， **顶层语句报错、函数体内静默放行**（作用域相关的假绿）。 根因：`scan/literal-args.ts` 的 `parseCallArgs` 快路径分派表 （NumericLiteral / Unary(-) / Object / Array / String / Null / **缺 Boolean** / Identifier / MemberExpression / SpreadElement / CallExpression / 兜底）里 **没有 `BooleanLiteral` 分支** ⇒ `f(true)` 落到兜底 `absUnk"	没测该层	keep	keep	—
-"回归：数值实参仍照常执法（两种作用域都报）"	"A3 残留回归钉（review F34 其它线索）：`union(number().gt(0), lit(null))` 收到**对象 / 数组**实参时，数值界成员「不可判定」且 null 成员类型为假 ⇒ 旧口径会把「不可判定」当「不违反」静默放过。 三值聚合修法后，域不兼容 （object / array vs number|null）⇒ **不得**静默 ⇒ 必须报 1 条违例； 断言：expect(vs.length).toBe(1);；expect(vs[0].actual).toContain(\"0\");"	夹具漏形态	keep	keep	—
-"缺字段只产出 1 条诊断（不是 2 条）"	"实参快路径**不认 `BooleanLiteral`** ⇒ 同一个调用点， **顶层语句报错、函数体内静默放行**（作用域相关的假绿）。 根因：`scan/literal-args.ts` 的 `parseCallArgs` 快路径分派表 （NumericLiteral / Unary(-) / Object / Array / String / Null / **缺 Boolean** / Identifier / MemberExpression / SpreadElement / CallExpression / 兜底）里 **没有 `BooleanLiteral` 分支** ⇒ `f(true)` 落到兜底 `absUnk"	没测该层	keep	keep	—
-"诊断文本与去重前一致（missing field b）"	"同一条「缺字段」违例被**上报两次**（`checkShapeReqs` + `checkReqs` 两条并行通道各发一份）⇒ `nudo check` 的错误计数翻倍。 修法：「投影失败 → missing field」的报告**收敛到一处**——`checkReqs` 独占（它对每条 req 都跑，`checkShapeReqs` 的闸门会跳过部分条目）， `checkShapeReqs` 的投影失败分支只 `continue`（不再自己发一份）。 断言：expect(v[0]!.message).toContain(\"fObj\");；expect(String(v[0]!.expected)).toBe(\"missing fi"	没测该层	keep	keep	—
-"两条**不同**的违例各报一次（缺字段 + 类型违例）"	"同一条「缺字段」违例被**上报两次**（`checkShapeReqs` + `checkReqs` 两条并行通道各发一份）⇒ `nudo check` 的错误计数翻倍。 修法：「投影失败 → missing field」的报告**收敛到一处**——`checkReqs` 独占（它对每条 req 都跑，`checkShapeReqs` 的闸门会跳过部分条目）， `checkShapeReqs` 的投影失败分支只 `continue`（不再自己发一份）。 断言：expect(texts.filter((t) => t.includes(\"missing field b\"))).toHaveLength(1);；expect(texts"	没测该层	keep	keep	—
-"合规实参零诊断（去重没有把合法调用打成红）"	"断言：expect(violated(r)).toEqual([]);"	没测该层	keep	keep	—
-"同名 ⇒ 普查名只出现一次（静态方法不另起名）"	"**静态**类方法与**实例**方法**同名**（都叫 `C.m`）→ 静态方法的签名被 **报错成实例方法的**（native `\"stat\"` vs 引擎 `\"inst\"`）→ **错误类型声明**。 根因：类方法名由 `${cname}.${keyName}` 合成，**不区分 `static` 与实例** ⇒ 同一个 类里 `m`（实例）与 `m`（静态）得到**同一个名字** ⇒ 按名字索引的签名表里两条记录 **互相顶替**（形参取自一个、返回值取自另一个 ⇒ 半真半假的签名）。 断言：expect(names).toEqual([\"C.m\"]);；expect(new Set(names).size).toBe(nam"	夹具漏形态	keep	keep	—
-"不同名 ⇒ 两个都在（静态方法仍是入口可见的）"	"断言：expect(listTopFunctions(DIFF_NAME)).toEqual([\"C.m\", \"C.n\"]);"	没测该层	keep	keep	—
-"同名 ⇒ check 签名面只有一条 C.m（不再两条互相顶替）"	"**静态**类方法与**实例**方法**同名**（都叫 `C.m`）→ 静态方法的签名被 **报错成实例方法的**（native `\"stat\"` vs 引擎 `\"inst\"`）→ **错误类型声明**。 根因：类方法名由 `${cname}.${keyName}` 合成，**不区分 `static` 与实例** ⇒ 同一个 类里 `m`（实例）与 `m`（静态）得到**同一个名字** ⇒ 按名字索引的签名表里两条记录 **互相顶替**（形参取自一个、返回值取自另一个 ⇒ 半真半假的签名）。 断言：expect(sigs.length).toBe(1);"	夹具漏形态	keep	keep	—
-"同名 ⇒ 实例方法的返回值不被静态方法顶替（native \"inst\"）"	"**静态**类方法与**实例**方法**同名**（都叫 `C.m`）→ 静态方法的签名被 **报错成实例方法的**（native `\"stat\"` vs 引擎 `\"inst\"`）→ **错误类型声明**。 根因：类方法名由 `${cname}.${keyName}` 合成，**不区分 `static` 与实例** ⇒ 同一个 类里 `m`（实例）与 `m`（静态）得到**同一个名字** ⇒ 按名字索引的签名表里两条记录 **互相顶替**（形参取自一个、返回值取自另一个 ⇒ 半真半假的签名）。 断言：expect(sig?.display).toContain('\"inst\"');"	夹具漏形态	keep	keep	—
-"不同名 ⇒ 两条签名都在（对照）"	"`nudo:unknown-inference`（引擎债诊断）在 **unknown 出现在 union 里** 时漏报 ⇒ 同一个 `document` 对象上「一个报一个不报」； 违反设计文档 `cli-semantics` 的**禁止条款**「在 check 中对 unknown（失败）静默通过而不报 引擎债相关诊断」。 断言：expect(r.signatures.filter((s) => s.name === \"C.m\").length).toBe(1);；expect(r.signatures.filter((s) => s.name === \"C.n\").length).toBe(1);"	夹具漏形态	keep	keep	—
-"lazy(() => shape(...))：非对象实参报违例"	"`lazy(() => shape(...))` / `lazy(() => array(...))` 的**结构义务 整体丢失**（假绿）——`lazy` 包装自身 `fields` / `element` / `prim` 全空， 执法侧的闸门只看约束自身 ⇒ 整条结构义务被 `continue` 掉。 断言：expect(v).toHaveLength(1);；expect(String(v[0]!.expected)).toContain(\"object shape at x\");"	没测该层	keep	keep	—
-"lazy(() => array(...))：元素类型不符报违例"	"`lazy(() => shape(...))` / `lazy(() => array(...))` 的**结构义务 整体丢失**（假绿）——`lazy` 包装自身 `fields` / `element` / `prim` 全空， 执法侧的闸门只看约束自身 ⇒ 整条结构义务被 `continue` 掉。 断言：expect(v).toHaveLength(1);；expect(String(v[0]!.expected)).toContain('typeof x[0] = \"number\"');"	没测该层	keep	keep	—
-"嵌套 lazy 包装（两层）也能解包"	"`lazy(() => shape(...))` / `lazy(() => array(...))` 的**结构义务 整体丢失**（假绿）——`lazy` 包装自身 `fields` / `element` / `prim` 全空， 执法侧的闸门只看约束自身 ⇒ 整条结构义务被 `continue` 掉。 断言：expect(v).toHaveLength(1);；expect(String(v[0]!.expected)).toContain(\"object shape at x\");"	没测该层	keep	keep	—
-"合规实参零诊断（deref 没有把合法调用打成红）"	"`lazy(() => shape(...))` / `lazy(() => array(...))` 的**结构义务 整体丢失**（假绿）——`lazy` 包装自身 `fields` / `element` / `prim` 全空， 执法侧的闸门只看约束自身 ⇒ 整条结构义务被 `continue` 掉。 断言：expect(violated(r)).toEqual([]);"	没测该层	keep	keep	—
-"顶层标量位：null 报违例（基线口径不变）"	"字段位 / 数组元素位的 `null` / `undefined` 实参**完全不被执法** （假绿）——顶层标量位与返回值面判违例，字段 / 元素位静默放行 ⇒ 引擎内 3 套「nullish 是否满足契约」口径。 修法：消费侧（`scan/literal-shapes.ts` 的 `checkFieldConstraint`） ① prim 门：nullish 实参（有 term 的 unknown）**不满足**裸 prim 契约； 断言：expect(v).toHaveLength(1);；expect(String(v[0]!.expected)).toContain('typeof x = \"number\"');"	夹具漏形态	keep	keep	—
-"字段位：{ v: null } 报违例"	"字段位 / 数组元素位的 `null` / `undefined` 实参**完全不被执法** （假绿）——顶层标量位与返回值面判违例，字段 / 元素位静默放行 ⇒ 引擎内 3 套「nullish 是否满足契约」口径。 修法：消费侧（`scan/literal-shapes.ts` 的 `checkFieldConstraint`） ① prim 门：nullish 实参（有 term 的 unknown）**不满足**裸 prim 契约； 断言：expect(v).toHaveLength(1);；expect(String(v[0]!.expected)).toContain('typeof o.v = \"number\"');"	夹具漏形态	keep	keep	—
-"数组元素位：[null] 报违例"	"字段位 / 数组元素位的 `null` / `undefined` 实参**完全不被执法** （假绿）——顶层标量位与返回值面判违例，字段 / 元素位静默放行 ⇒ 引擎内 3 套「nullish 是否满足契约」口径。 修法：消费侧（`scan/literal-shapes.ts` 的 `checkFieldConstraint`） ① prim 门：nullish 实参（有 term 的 unknown）**不满足**裸 prim 契约； 断言：expect(v).toHaveLength(1);；expect(String(v[0]!.expected)).toContain('typeof a[0] = \"number\"');"	夹具漏形态	keep	keep	—
-"字段位 undefined 同样报违例"	"字段位 / 数组元素位的 `null` / `undefined` 实参**完全不被执法** （假绿）——顶层标量位与返回值面判违例，字段 / 元素位静默放行 ⇒ 引擎内 3 套「nullish 是否满足契约」口径。 修法：消费侧（`scan/literal-shapes.ts` 的 `checkFieldConstraint`） ① prim 门：nullish 实参（有 term 的 unknown）**不满足**裸 prim 契约； 断言：expect(v).toHaveLength(1);；expect(String(v[0]!.expected)).toContain('typeof o.v = \"number\"');"	夹具漏形态	keep	keep	—
-"带界的字段位：null 不满足数值界"	"字段位 / 数组元素位的 `null` / `undefined` 实参**完全不被执法** （假绿）——顶层标量位与返回值面判违例，字段 / 元素位静默放行 ⇒ 引擎内 3 套「nullish 是否满足契约」口径。 修法：消费侧（`scan/literal-shapes.ts` 的 `checkFieldConstraint`） ① prim 门：nullish 实参（有 term 的 unknown）**不满足**裸 prim 契约； 断言：expect(v).toHaveLength(1);；expect(v[0]!.severity).toBe(\"error\");"	夹具漏形态	keep	keep	—
-"合规实参零诊断（nullish 执法没有误伤合法调用）"	"字段位 / 数组元素位的 `null` / `undefined` 实参**完全不被执法** （假绿）——顶层标量位与返回值面判违例，字段 / 元素位静默放行 ⇒ 引擎内 3 套「nullish 是否满足契约」口径。 修法：消费侧（`scan/literal-shapes.ts` 的 `checkFieldConstraint`） ① prim 门：nullish 实参（有 term 的 unknown）**不满足**裸 prim 契约； 断言：expect(violated(r)).toEqual([]);"	夹具漏形态	keep	keep	—
-"成员赋值 + 具名函数表达式 ⇒ 普查名是导出槽名"	"CJS 成员赋值用**具名函数表达式**时，普查名取**内层函数 id** 而不是 **导出槽名** ⇒ **侧车契约整个不绑定** ⇒ L1 门禁**假绿**（零诊断）； 根因：`scan-top-functions.ts` 的 `pushFnFromInit` 写的是 `r.id?.name ?? fallbackName` （内层 id 优先）； 断言：expect(listTopFunctions(NAMED_FN_EXPR)).toEqual([\"greet\"]);"	没测该层	keep	keep	—
-"成员赋值 + 匿名函数表达式 ⇒ 普查名是导出槽名（对照）"	"CJS 成员赋值用**具名函数表达式**时，普查名取**内层函数 id** 而不是 **导出槽名** ⇒ **侧车契约整个不绑定** ⇒ L1 门禁**假绿**（零诊断）； 根因：`scan-top-functions.ts` 的 `pushFnFromInit` 写的是 `r.id?.name ?? fallbackName` （内层 id 优先）； 断言：expect(listTopFunctions(ANON_FN_EXPR)).toEqual([\"greet\"]);"	没测该层	keep	keep	—
-"对象字面量成员 + 具名函数表达式 ⇒ 普查名是导出槽名（键名）"	"CJS 成员赋值用**具名函数表达式**时，普查名取**内层函数 id** 而不是 **导出槽名** ⇒ **侧车契约整个不绑定** ⇒ L1 门禁**假绿**（零诊断）； 根因：`scan-top-functions.ts` 的 `pushFnFromInit` 写的是 `r.id?.name ?? fallbackName` （内层 id 优先）； 断言：expect(listTopFunctions(OBJ_LITERAL)).toEqual([\"greet\"]);"	没测该层	keep	keep	—
-"侧车契约按导出槽名绑定 ⇒ 契约义务真的执法（不假绿）"	"断言：expect(r.signatures.some((s) => s.name === \"greet\")).toBe(true);；expect(r.signatures.some((s) => s.name === \"inner\")).toBe(false);"	没测该层	keep	keep	—
+数组 a.push = 1 读回 1（改前折函数）；Map 实例 m.get = 1 读回 number；Date / Set / RegExp 实例同形态；非表内键保持既有 unknown 口径（不假精确）；未写时表内键仍折函数	algebra-shapes 聚合矩阵	没测该层	keep	keep	—
 "返回 %s（%s）⊭ nullable(number()) ⇒ error"	表驱动用例：返回 %s（%s）⊭ nullable(number()) ⇒ error；枚举同一不变量下的输入/期望组合，属既有表行补齐。	夹具漏形态	keep	keep	—
+union(number(), lit(null)) 同口径：数组返回值 ⇒ error；不制造假红：null / undefined / number 返回值仍放行；单元面：结构臂 ⊭ union ⇒ disproved（不是 unprovable）；护栏：同域值相等义务（lit(5) 对无 pred 的 number 返回值）不得升级成 error	algebra-shapes 聚合矩阵	没测该层	keep	keep	—
+ref("a") 解析到另一槽位的 bind ⇒ 无 error，y 位是 number；对照：y 位写 any() 时逐字不变（无回归）	algebra-shapes 聚合矩阵	没测该层	keep	keep	—
+null 实参报违例（object shape at o）；undefined 实参报违例；同口径：顶层标量位对 null 也报违例（两套口径已统一）；合规实参零诊断（nullish 执法没有误伤合法调用）	algebra-shapes 聚合矩阵	没测该层	keep	keep	—
+union(number().gt(0), lit('a')) 收到非字面量 number ⇒ 不报（域兼容 ⇒ 未决）；union(lit(1), lit('a')) 收到非字面量 number ⇒ 不报（域兼容 ⇒ 未决）；负控制：字面量不在 union 内 ⇒ 仍报违例；负控制：类型完全不符（boolean 实参 vs union(number(), string())）⇒ 仍报违例；负控制：满足其中一支（字面量 'a'）⇒ 不报	algebra-shapes 聚合矩阵	没测该层	keep	keep	—
 "对象/数组实参 %s ⇒ 恰好 1 条 nudo:constraint-violated"	表驱动用例：对象/数组实参 %s ⇒ 恰好 1 条 nudo:constraint-violated；枚举同一不变量下的输入/期望组合，属既有表行补齐。	夹具漏形态	keep	keep	—
 "合法成员 %s ⇒ 不报"	表驱动用例：合法成员 %s ⇒ 不报；枚举同一不变量下的输入/期望组合，属既有表行补齐。	夹具漏形态	keep	keep	—
+fn() 缺参 ⇒ 点名构造器报错，不泄露宿主原文；fn(42) 非对象 ⇒ 报错（不再静默变成 fn({})）；fn(null) ⇒ 报错；fn({ id: number() }) 正常构造（负控制）	algebra-shapes 聚合矩阵	没测该层	keep	keep	—
+unknown | null 的返回 ⇒ nudo:unknown-inference；裸 unknown ⇒ 仍报（对照组，行为不变）；有值证据（unknown 形状 + lit(undefined) term）不是引擎债 ⇒ 不报；具体类型不受影响 ⇒ 不报	algebra-shapes 聚合矩阵	没测该层	keep	keep	—
+mock 名与 import 绑定同名：mock 覆盖 import，文件正常求值；mock 名与用户顶层声明同名：模块级绑定胜出，文件照常求值（不抛）；env 全局名与模块级绑定同名：同样不撞名（env 注入被跳过）	algebra-shapes 聚合矩阵	没测该层	keep	keep	—
+Abs 层：同一变量重绑定为不同值 ⇒ 缓存失效（重算）；Abs 层：不同变量同值 ⇒ 缓存命中（记忆化按值承诺）；Abs 层：不可比较的实参（函数值）⇒ 不缓存（不算命中）；宿主函数路径：同一变量重绑定 ⇒ use() 得 "2,4"（native 口径）；宿主函数路径：不同变量同值 ⇒ 命中（函数体只跑一次）；宿主函数路径：不同变量不同值 ⇒ 不得命中（"2,4,calls=2"）	algebra-shapes 聚合矩阵	没测该层	keep	keep	—
+number().gt(0) 实例化 = typeof 义务 ∧ 数值界；string().max(3) 实例化 = typeof 义务 ∧ 长度界；裸 prim 契约口径不变（仍是单条 typeof）；产品面：类型错配的实参被抓住（此前零诊断静默放行）	algebra-shapes 聚合矩阵	没测该层	keep	keep	—
+shape 约束（源码指令 × 同名侧车）⇒ 无 conflict 假红；conflict 位不再吃掉该形参的义务 ⇒ 调用点仍报违例（假绿修复）；语义真矛盾（number() ∧ string()）仍然报 conflict	algebra-shapes 聚合矩阵	没测该层	keep	keep	—
+形参类型是 (number) => number（无 x0 / ret）；签名面不含占位名	algebra-shapes 聚合矩阵	没测该层	keep	keep	—
+占位 term（x0 / ret）不回显；关系 fn 的 α 名（A1 / B1）照旧回显	algebra-shapes 聚合矩阵	没测该层	keep	keep	—
+shape() 抛 Nudo 原生诊断，点名构造器并说明缺参；诊断不含宿主 TypeError 原文；shape(undefined) 与 shape() 同口径；产品面：侧车诊断是 Nudo 原生文案，不是宿主原文	algebra-shapes 聚合矩阵	没测该层	keep	keep	—
+arr(fn)：函数元素加括号（改前 `(1) => 1[]`）；arr(arr(fn))：嵌套数组同样带括号；控制：union 元素的既有分组判定保留；控制：prim 元素不加冗余括号；控制：tuple 元素里的 fn 不在本片范围（不加括号）；控制：对象槽里的 fn 不在本片范围（不加括号）；端到端：真实源码返回「函数数组」时不得渲染成「返回数组的函数」	algebra-shapes 聚合矩阵	没测该层	keep	keep	—
+sum(fn, number)：函数成员加括号（改前 `(1) => 1 | 2`）；sum(fn, fn)：两个函数成员都加括号；sum(arr(fn), number)：数组成员靠 arr 臂自己加括号（成员本身不是 fn）；控制：非函数成员的 union 不加括号；去重：文本相同的两个 fn 成员只留一条（去重 key 用未包裹文本）；端到端：真实源码返回「函数或 number」时 `|` 不得被返回类型吃掉	algebra-shapes 聚合矩阵	没测该层	keep	keep	—
+union(number().gt(0), lit(null)) 收到 null ⇒ 放行（改前 1 违例 = 假红）；nullable(number().gt(0)) 收到 null ⇒ 放行（改前 1 违例 = 假红）；nullable(number().gt(0)) 收到 undefined ⇒ 放行（改前 1 违例 = 假红）；union(number(), lit(null)) 收到 null ⇒ 放行（改前 1 违例 = 假红）；union(number(), l	algebra-shapes 聚合矩阵	没测该层	keep	keep	—
+union(number().gt(0), lit(null)) 收到 0 ⇒ 判违例（改前 0 违例 = 假绿）；nullable(number().gt(0)) 收到 0 ⇒ 判违例（改前 0 违例 = 假绿）；union(number(), lit(null)) 收到 'x' ⇒ 判违例（改前 0 违例 = 假绿）；union(number(), lit(null)) 收到 1 ⇒ 放行（成员义务不误伤合法实参）；union(number().gt(0), lit(nu	algebra-shapes 聚合矩阵	没测该层	keep	keep	—
+顶层 `f(true)` ⇒ 报违例（改前也报，走的是执行态回退）；★ 函数体内 `f(true)` ⇒ 报违例（改前**零诊断**——假绿）；★ 函数体内 `f(false)` ⇒ 报违例（改前零诊断）；作用域不再决定裁决：顶层与函数体内的诊断**逐字相同**；负控制：契约是 boolean() 时 `f(true)` ⇒ 不报违例；负控制：契约是 boolean() 时 `f(false)` ⇒ 不报违例；回归：`f(null)` 仍照常执法（族 06 的 NullLit	algebra-shapes 聚合矩阵	没测该层	keep	keep	—
+缺字段只产出 1 条诊断（不是 2 条）；诊断文本与去重前一致（missing field b）；两条**不同**的违例各报一次（缺字段 + 类型违例）；合规实参零诊断（去重没有把合法调用打成红）	algebra-shapes 聚合矩阵	没测该层	keep	keep	—
+同名 ⇒ 普查名只出现一次（静态方法不另起名）；不同名 ⇒ 两个都在（静态方法仍是入口可见的）；同名 ⇒ check 签名面只有一条 C.m（不再两条互相顶替）；同名 ⇒ 实例方法的返回值不被静态方法顶替（native "inst"）；不同名 ⇒ 两条签名都在（对照）	algebra-shapes 聚合矩阵	没测该层	keep	keep	—
+lazy(() => shape(...))：非对象实参报违例；lazy(() => array(...))：元素类型不符报违例；嵌套 lazy 包装（两层）也能解包；合规实参零诊断（deref 没有把合法调用打成红）	algebra-shapes 聚合矩阵	没测该层	keep	keep	—
+顶层标量位：null 报违例（基线口径不变）；字段位：{ v: null } 报违例；数组元素位：[null] 报违例；字段位 undefined 同样报违例；带界的字段位：null 不满足数值界；合规实参零诊断（nullish 执法没有误伤合法调用）	algebra-shapes 聚合矩阵	没测该层	keep	keep	—
+成员赋值 + 具名函数表达式 ⇒ 普查名是导出槽名；成员赋值 + 匿名函数表达式 ⇒ 普查名是导出槽名（对照）；对象字面量成员 + 具名函数表达式 ⇒ 普查名是导出槽名（键名）；侧车契约按导出槽名绑定 ⇒ 契约义务真的执法（不假绿）	algebra-shapes 聚合矩阵	没测该层	keep	keep	—
+```
+
+```audit-deleted
+title	reason	evidence
+数组 a.push = 1 读回 1（改前折函数）	dup:algebra-shapes 聚合矩阵	commit:13806366
+Map 实例 m.get = 1 读回 number	dup:algebra-shapes 聚合矩阵	commit:13806366
+Date / Set / RegExp 实例同形态	dup:algebra-shapes 聚合矩阵	commit:13806366
+非表内键保持既有 unknown 口径（不假精确）；未写时表内键仍折函数	dup:algebra-shapes 聚合矩阵	commit:13806366
+union(number(), lit(null)) 同口径：数组返回值 ⇒ error	dup:algebra-shapes 聚合矩阵	commit:13806366
+不制造假红：null / undefined / number 返回值仍放行	dup:algebra-shapes 聚合矩阵	commit:13806366
+单元面：结构臂 ⊭ union ⇒ disproved（不是 unprovable）	dup:algebra-shapes 聚合矩阵	commit:13806366
+护栏：同域值相等义务（lit(5) 对无 pred 的 number 返回值）不得升级成 error	dup:algebra-shapes 聚合矩阵	commit:13806366
+ref("a") 解析到另一槽位的 bind ⇒ 无 error，y 位是 number	dup:algebra-shapes 聚合矩阵	commit:13806366
+对照：y 位写 any() 时逐字不变（无回归）	dup:algebra-shapes 聚合矩阵	commit:13806366
+null 实参报违例（object shape at o）	dup:algebra-shapes 聚合矩阵	commit:13806366
+undefined 实参报违例	dup:algebra-shapes 聚合矩阵	commit:13806366
+同口径：顶层标量位对 null 也报违例（两套口径已统一）	dup:algebra-shapes 聚合矩阵	commit:13806366
+合规实参零诊断（nullish 执法没有误伤合法调用）	dup:algebra-shapes 聚合矩阵	commit:13806366
+union(number().gt(0), lit('a')) 收到非字面量 number ⇒ 不报（域兼容 ⇒ 未决）	dup:algebra-shapes 聚合矩阵	commit:13806366
+union(lit(1), lit('a')) 收到非字面量 number ⇒ 不报（域兼容 ⇒ 未决）	dup:algebra-shapes 聚合矩阵	commit:13806366
+负控制：字面量不在 union 内 ⇒ 仍报违例	dup:algebra-shapes 聚合矩阵	commit:13806366
+负控制：类型完全不符（boolean 实参 vs union(number(), string())）⇒ 仍报违例	dup:algebra-shapes 聚合矩阵	commit:13806366
+负控制：满足其中一支（字面量 'a'）⇒ 不报	dup:algebra-shapes 聚合矩阵	commit:13806366
+fn() 缺参 ⇒ 点名构造器报错，不泄露宿主原文	dup:algebra-shapes 聚合矩阵	commit:13806366
+fn(42) 非对象 ⇒ 报错（不再静默变成 fn({})）	dup:algebra-shapes 聚合矩阵	commit:13806366
+fn(null) ⇒ 报错	dup:algebra-shapes 聚合矩阵	commit:13806366
+fn({ id: number() }) 正常构造（负控制）	dup:algebra-shapes 聚合矩阵	commit:13806366
+unknown | null 的返回 ⇒ nudo:unknown-inference	dup:algebra-shapes 聚合矩阵	commit:13806366
+裸 unknown ⇒ 仍报（对照组，行为不变）	dup:algebra-shapes 聚合矩阵	commit:13806366
+有值证据（unknown 形状 + lit(undefined) term）不是引擎债 ⇒ 不报	dup:algebra-shapes 聚合矩阵	commit:13806366
+具体类型不受影响 ⇒ 不报	dup:algebra-shapes 聚合矩阵	commit:13806366
+mock 名与 import 绑定同名：mock 覆盖 import，文件正常求值	dup:algebra-shapes 聚合矩阵	commit:13806366
+mock 名与用户顶层声明同名：模块级绑定胜出，文件照常求值（不抛）	dup:algebra-shapes 聚合矩阵	commit:13806366
+env 全局名与模块级绑定同名：同样不撞名（env 注入被跳过）	dup:algebra-shapes 聚合矩阵	commit:13806366
+Abs 层：同一变量重绑定为不同值 ⇒ 缓存失效（重算）	dup:algebra-shapes 聚合矩阵	commit:13806366
+Abs 层：不同变量同值 ⇒ 缓存命中（记忆化按值承诺）	dup:algebra-shapes 聚合矩阵	commit:13806366
+Abs 层：不可比较的实参（函数值）⇒ 不缓存（不算命中）	dup:algebra-shapes 聚合矩阵	commit:13806366
+宿主函数路径：同一变量重绑定 ⇒ use() 得 "2,4"（native 口径）	dup:algebra-shapes 聚合矩阵	commit:13806366
+宿主函数路径：不同变量同值 ⇒ 命中（函数体只跑一次）	dup:algebra-shapes 聚合矩阵	commit:13806366
+宿主函数路径：不同变量不同值 ⇒ 不得命中（"2,4,calls=2"）	dup:algebra-shapes 聚合矩阵	commit:13806366
+number().gt(0) 实例化 = typeof 义务 ∧ 数值界	dup:algebra-shapes 聚合矩阵	commit:13806366
+string().max(3) 实例化 = typeof 义务 ∧ 长度界	dup:algebra-shapes 聚合矩阵	commit:13806366
+裸 prim 契约口径不变（仍是单条 typeof）	dup:algebra-shapes 聚合矩阵	commit:13806366
+产品面：类型错配的实参被抓住（此前零诊断静默放行）	dup:algebra-shapes 聚合矩阵	commit:13806366
+shape 约束（源码指令 × 同名侧车）⇒ 无 conflict 假红	dup:algebra-shapes 聚合矩阵	commit:13806366
+conflict 位不再吃掉该形参的义务 ⇒ 调用点仍报违例（假绿修复）	dup:algebra-shapes 聚合矩阵	commit:13806366
+语义真矛盾（number() ∧ string()）仍然报 conflict	dup:algebra-shapes 聚合矩阵	commit:13806366
+形参类型是 (number) => number（无 x0 / ret）	dup:algebra-shapes 聚合矩阵	commit:13806366
+签名面不含占位名	dup:algebra-shapes 聚合矩阵	commit:13806366
+占位 term（x0 / ret）不回显	dup:algebra-shapes 聚合矩阵	commit:13806366
+关系 fn 的 α 名（A1 / B1）照旧回显	dup:algebra-shapes 聚合矩阵	commit:13806366
+shape() 抛 Nudo 原生诊断，点名构造器并说明缺参	dup:algebra-shapes 聚合矩阵	commit:13806366
+诊断不含宿主 TypeError 原文	dup:algebra-shapes 聚合矩阵	commit:13806366
+shape(undefined) 与 shape() 同口径	dup:algebra-shapes 聚合矩阵	commit:13806366
+产品面：侧车诊断是 Nudo 原生文案，不是宿主原文	dup:algebra-shapes 聚合矩阵	commit:13806366
+arr(fn)：函数元素加括号（改前 `(1) => 1[]`）	dup:algebra-shapes 聚合矩阵	commit:13806366
+arr(arr(fn))：嵌套数组同样带括号	dup:algebra-shapes 聚合矩阵	commit:13806366
+控制：union 元素的既有分组判定保留	dup:algebra-shapes 聚合矩阵	commit:13806366
+控制：prim 元素不加冗余括号	dup:algebra-shapes 聚合矩阵	commit:13806366
+控制：tuple 元素里的 fn 不在本片范围（不加括号）	dup:algebra-shapes 聚合矩阵	commit:13806366
+控制：对象槽里的 fn 不在本片范围（不加括号）	dup:algebra-shapes 聚合矩阵	commit:13806366
+端到端：真实源码返回「函数数组」时不得渲染成「返回数组的函数」	dup:algebra-shapes 聚合矩阵	commit:13806366
+sum(fn, number)：函数成员加括号（改前 `(1) => 1 | 2`）	dup:algebra-shapes 聚合矩阵	commit:13806366
+sum(fn, fn)：两个函数成员都加括号	dup:algebra-shapes 聚合矩阵	commit:13806366
+sum(arr(fn), number)：数组成员靠 arr 臂自己加括号（成员本身不是 fn）	dup:algebra-shapes 聚合矩阵	commit:13806366
+控制：非函数成员的 union 不加括号	dup:algebra-shapes 聚合矩阵	commit:13806366
+去重：文本相同的两个 fn 成员只留一条（去重 key 用未包裹文本）	dup:algebra-shapes 聚合矩阵	commit:13806366
+端到端：真实源码返回「函数或 number」时 `|` 不得被返回类型吃掉	dup:algebra-shapes 聚合矩阵	commit:13806366
+union(number().gt(0), lit(null)) 收到 null ⇒ 放行（改前 1 违例 = 假红）	dup:algebra-shapes 聚合矩阵	commit:13806366
+nullable(number().gt(0)) 收到 null ⇒ 放行（改前 1 违例 = 假红）	dup:algebra-shapes 聚合矩阵	commit:13806366
+nullable(number().gt(0)) 收到 undefined ⇒ 放行（改前 1 违例 = 假红）	dup:algebra-shapes 聚合矩阵	commit:13806366
+union(number(), lit(null)) 收到 null ⇒ 放行（改前 1 违例 = 假红）	dup:algebra-shapes 聚合矩阵	commit:13806366
+union(number(), lit(undefined)) 收到 undefined ⇒ 放行（改前 1 违例 = 假红）	dup:algebra-shapes 聚合矩阵	commit:13806366
+union(number().gt(0), lit(undefined)) 收到 undefined ⇒ 放行（改前 1 违例 = 假红）	dup:algebra-shapes 聚合矩阵	commit:13806366
+负控制：null 与 undefined 是两个域 —— posOrNull 收到 undefined 仍报违例	dup:algebra-shapes 聚合矩阵	commit:13806366
+负控制：posOrUndef 收到 null 仍报违例	dup:algebra-shapes 聚合矩阵	commit:13806366
+负控制：numOrNull 收到 undefined 仍报违例	dup:algebra-shapes 聚合矩阵	commit:13806366
+负控制：越界实参仍报违例（逐支求值不是「一律放行」）	dup:algebra-shapes 聚合矩阵	commit:13806366
+负控制：没有契约的形参收到 null ⇒ 零违例（违例来自契约，不是引擎噪声）	dup:algebra-shapes 聚合矩阵	commit:13806366
+union(number().gt(0), lit(null)) 收到 0 ⇒ 判违例（改前 0 违例 = 假绿）	dup:algebra-shapes 聚合矩阵	commit:13806366
+nullable(number().gt(0)) 收到 0 ⇒ 判违例（改前 0 违例 = 假绿）	dup:algebra-shapes 聚合矩阵	commit:13806366
+union(number(), lit(null)) 收到 'x' ⇒ 判违例（改前 0 违例 = 假绿）	dup:algebra-shapes 聚合矩阵	commit:13806366
+union(number(), lit(null)) 收到 1 ⇒ 放行（成员义务不误伤合法实参）	dup:algebra-shapes 聚合矩阵	commit:13806366
+union(number().gt(0), lit(null)) 收到 3 ⇒ 放行（成员义务不误伤合法实参）	dup:algebra-shapes 聚合矩阵	commit:13806366
+负控制：没有契约的形参收到任何实参 ⇒ 零违例（违例来自契约，不是引擎噪声）	dup:algebra-shapes 聚合矩阵	commit:13806366
+顶层 `f(true)` ⇒ 报违例（改前也报，走的是执行态回退）	dup:algebra-shapes 聚合矩阵	commit:13806366
+★ 函数体内 `f(true)` ⇒ 报违例（改前**零诊断**——假绿）	dup:algebra-shapes 聚合矩阵	commit:13806366
+★ 函数体内 `f(false)` ⇒ 报违例（改前零诊断）	dup:algebra-shapes 聚合矩阵	commit:13806366
+作用域不再决定裁决：顶层与函数体内的诊断**逐字相同**	dup:algebra-shapes 聚合矩阵	commit:13806366
+负控制：契约是 boolean() 时 `f(true)` ⇒ 不报违例	dup:algebra-shapes 聚合矩阵	commit:13806366
+负控制：契约是 boolean() 时 `f(false)` ⇒ 不报违例	dup:algebra-shapes 聚合矩阵	commit:13806366
+回归：`f(null)` 仍照常执法（族 06 的 NullLiteral 分支没被弄坏）	dup:algebra-shapes 聚合矩阵	commit:13806366
+回归：数值实参仍照常执法（两种作用域都报）	dup:algebra-shapes 聚合矩阵	commit:13806366
+缺字段只产出 1 条诊断（不是 2 条）	dup:algebra-shapes 聚合矩阵	commit:13806366
+诊断文本与去重前一致（missing field b）	dup:algebra-shapes 聚合矩阵	commit:13806366
+两条**不同**的违例各报一次（缺字段 + 类型违例）	dup:algebra-shapes 聚合矩阵	commit:13806366
+合规实参零诊断（去重没有把合法调用打成红）	dup:algebra-shapes 聚合矩阵	commit:13806366
+同名 ⇒ 普查名只出现一次（静态方法不另起名）	dup:algebra-shapes 聚合矩阵	commit:13806366
+不同名 ⇒ 两个都在（静态方法仍是入口可见的）	dup:algebra-shapes 聚合矩阵	commit:13806366
+同名 ⇒ check 签名面只有一条 C.m（不再两条互相顶替）	dup:algebra-shapes 聚合矩阵	commit:13806366
+同名 ⇒ 实例方法的返回值不被静态方法顶替（native "inst"）	dup:algebra-shapes 聚合矩阵	commit:13806366
+不同名 ⇒ 两条签名都在（对照）	dup:algebra-shapes 聚合矩阵	commit:13806366
+lazy(() => shape(...))：非对象实参报违例	dup:algebra-shapes 聚合矩阵	commit:13806366
+lazy(() => array(...))：元素类型不符报违例	dup:algebra-shapes 聚合矩阵	commit:13806366
+嵌套 lazy 包装（两层）也能解包	dup:algebra-shapes 聚合矩阵	commit:13806366
+合规实参零诊断（deref 没有把合法调用打成红）	dup:algebra-shapes 聚合矩阵	commit:13806366
+顶层标量位：null 报违例（基线口径不变）	dup:algebra-shapes 聚合矩阵	commit:13806366
+字段位：{ v: null } 报违例	dup:algebra-shapes 聚合矩阵	commit:13806366
+数组元素位：[null] 报违例	dup:algebra-shapes 聚合矩阵	commit:13806366
+字段位 undefined 同样报违例	dup:algebra-shapes 聚合矩阵	commit:13806366
+带界的字段位：null 不满足数值界	dup:algebra-shapes 聚合矩阵	commit:13806366
+成员赋值 + 具名函数表达式 ⇒ 普查名是导出槽名	dup:algebra-shapes 聚合矩阵	commit:13806366
+成员赋值 + 匿名函数表达式 ⇒ 普查名是导出槽名（对照）	dup:algebra-shapes 聚合矩阵	commit:13806366
+对象字面量成员 + 具名函数表达式 ⇒ 普查名是导出槽名（键名）	dup:algebra-shapes 聚合矩阵	commit:13806366
+侧车契约按导出槽名绑定 ⇒ 契约义务真的执法（不假绿）	dup:algebra-shapes 聚合矩阵	commit:13806366
 ```

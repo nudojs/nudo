@@ -6,204 +6,250 @@
 
 ```audit
 title	rootCause	gap	action	status	evidence
-"别名 `type Id = string` ⇒ string()，不是 any()"	"回归（harvester **草稿面**）：同文件的 `type` 别名**不解析** ⇒ `string` 降成 `any()` ⇒ 契约**零义务** ⇒ **假绿**； 而**收割面**给的是 `(string) => string`（同一个声明，两个产物面答案不同）。 断言：expect(draft.draftSource).toContain(\"fn({ x: string() }, string())\");；expect(draft.draftSource).not.toContain(\"any()\");"	没测该层	keep	keep	—
-"契约**真的**要求 string（域隶属判定 = 零义务已消除）"	"回归（harvester **草稿面**）：同文件的 `type` 别名**不解析** ⇒ `string` 降成 `any()` ⇒ 契约**零义务** ⇒ **假绿**； 而**收割面**给的是 `(string) => string`（同一个声明，两个产物面答案不同）。 断言：expect(literalMeetsConstraint(42, param)).toBe(false);；expect(literalMeetsConstraint(\"ok\", param)).toBe(true);"	没测该层	keep	keep	—
-"产品面：草稿抄进侧车后 `nudo check` **红**（与 tsc 的 TS2322 同向）"	"回归（harvester **草稿面**）：同文件的 `type` 别名**不解析** ⇒ `string` 降成 `any()` ⇒ 契约**零义务** ⇒ **假绿**； 而**收割面**给的是 `(string) => string`（同一个声明，两个产物面答案不同）。 断言：expect(res.status).not.toBe(0);；expect(res.stdout).toContain(\"constraint-violated\");"	没测该层	keep	keep	—
-"收割面同答案：(string) => string"	"回归（harvester **草稿面**）：同文件的 `type` 别名**不解析** ⇒ `string` 降成 `any()` ⇒ 契约**零义务** ⇒ **假绿**； 而**收割面**给的是 `(string) => string`（同一个声明，两个产物面答案不同）。 断言：expect(formatShape(env.globals.withAlias!)).toBe(\"(string) => string\");"	没测该层	keep	keep	—
-"类型别名指向对象时展开成 shape；interface 也展开"	"回归（harvester **草稿面**）：同文件的 `type` 别名**不解析** ⇒ `string` 降成 `any()` ⇒ 契约**零义务** ⇒ **假绿**； 而**收割面**给的是 `(string) => string`（同一个声明，两个产物面答案不同）。 断言：expect(draft.draftSource).toContain(\"shape({ a: number() })\");；expect(draft.draftSource).toContain(\"shape({ b: string() })\");"	没测该层	keep	keep	—
-"interface 的**继承成员**也在契约里（只展开自身成员 ⇒ 悄悄放宽）"	"回归（harvester **草稿面**）：同文件的 `type` 别名**不解析** ⇒ `string` 降成 `any()` ⇒ 契约**零义务** ⇒ **假绿**； 而**收割面**给的是 `(string) => string`（同一个声明，两个产物面答案不同）。 断言：expect(draft.draftSource).toContain(\"base: number()\");；expect(draft.draftSource).toContain(\"extra: string()\");"	没测该层	keep	keep	—
-"草稿是 partial(shape({…}))，不是原样透传的 shape({…})"	"回归（harvester **草稿面**）：`Partial<T>` 特判把内层字段**原样 透传** ⇒ 字段仍是**必填** ⇒ 契约**比 TS 更严** ⇒ **假红**（tsc 绿， `nudo check` 红）。 oracle（`tsc --strict`，tmp/probe/fix-r27/h8a/e2e/b1012.ts ⇒ 无错）： `function givePartial(): Partial<{a: number; 断言：expect(draft.draftSource).toContain(\"partial(shape({ a: number(), b: string() }))\");；expect(dr"	没测该层	keep	keep	—
-"契约里两个字段都**可选**（isOptional）"	"回归（harvester **草稿面**）：`Partial<T>` 特判把内层字段**原样 透传** ⇒ 字段仍是**必填** ⇒ 契约**比 TS 更严** ⇒ **假红**（tsc 绿， `nudo check` 红）。 oracle（`tsc --strict`，tmp/probe/fix-r27/h8a/e2e/b1012.ts ⇒ 无错）： `function givePartial(): Partial<{a: number; 断言：expect(param.fields?.a?.constraint.isOptional).toBe(true);；expect(param.fields?.b?.constraint."	没测该层	keep	keep	—
-"产品面：草稿抄进侧车后 `nudo check` **绿**（与 tsc 同向，不再假红）"	"回归（harvester **草稿面**）：`Partial<T>` 特判把内层字段**原样 透传** ⇒ 字段仍是**必填** ⇒ 契约**比 TS 更严** ⇒ **假红**（tsc 绿， `nudo check` 红）。 oracle（`tsc --strict`，tmp/probe/fix-r27/h8a/e2e/b1012.ts ⇒ 无错）： `function givePartial(): Partial<{a: number; 断言：expect(res.status).toBe(0);；expect(res.stdout).not.toContain(\"constraint-violated\");"	没测该层	keep	keep	—
-"收割面同答案：该位无义务（unknown）⇒ 两侧都接受 {}"	"回归（harvester **草稿面**）：`Partial<T>` 特判把内层字段**原样 透传** ⇒ 字段仍是**必填** ⇒ 契约**比 TS 更严** ⇒ **假红**（tsc 绿， `nudo check` 红）。 oracle（`tsc --strict`，tmp/probe/fix-r27/h8a/e2e/b1012.ts ⇒ 无错）： `function givePartial(): Partial<{a: number; 断言：expect(formatShape(env.globals.takePartial!)).toBe(\"(unknown) => undefined\");"	没测该层	keep	keep	—
-"键是字面量集合时，**值域落到实现**（shape 的字段就是值域）"	"回归（harvester **草稿面**）：`Record<K,V>` 特判把**值域整个丢掉** （只写进注释）⇒ 契约**比 TS 更松** ⇒ **放绿** TS2322。 改前（git HEAD 的草稿面）：`Record<string, number>` ⇒ `shape({})` ＋ 一条注释「open Record → number()」—— **注释宣称有值域、实现里却没有** ⇒ 调用点传 `{x: \"str\"}` 也不违约 ⇒ 放绿。 断言：expect(draft.draftSource).toContain(\"shape({ a: number(), b: number() })\");"	没测该层	keep	keep	—
-"键不是字面量时**如实降级**：不宣称值域 + note 明说未建模 + 计入 skipped"	"回归（harvester **草稿面**）：`Record<K,V>` 特判把**值域整个丢掉** （只写进注释）⇒ 契约**比 TS 更松** ⇒ **放绿** TS2322。 改前（git HEAD 的草稿面）：`Record<string, number>` ⇒ `shape({})` ＋ 一条注释「open Record → number()」—— **注释宣称有值域、实现里却没有** ⇒ 调用点传 `{x: \"str\"}` 也不违约 ⇒ 放绿。 断言：expect(draft.draftSource).not.toContain(\"open Record\");；expect(draft.draftSource).not.t"	没测该层	keep	keep	—
-"产品面：值域落地的 Record **红**（与 tsc 的 TS2322 同向，不再放绿）"	"回归（harvester **草稿面**）：`Record<K,V>` 特判把**值域整个丢掉** （只写进注释）⇒ 契约**比 TS 更松** ⇒ **放绿** TS2322。 改前（git HEAD 的草稿面）：`Record<string, number>` ⇒ `shape({})` ＋ 一条注释「open Record → number()」—— **注释宣称有值域、实现里却没有** ⇒ 调用点传 `{x: \"str\"}` 也不违约 ⇒ 放绿。 断言：expect(res.status).not.toBe(0);；expect(res.stdout).toContain(\"constraint-violated\");"	没测该层	keep	keep	—
-"收割面同口径：Record 是**开放对象且带索引值域**（值域没丢）"	"回归（harvester **草稿面**）：`Record<K,V>` 特判把**值域整个丢掉** （只写进注释）⇒ 契约**比 TS 更松** ⇒ **放绿** TS2322。 改前（git HEAD 的草稿面）：`Record<string, number>` ⇒ `shape({})` ＋ 一条注释「open Record → number()」—— **注释宣称有值域、实现里却没有** ⇒ 调用点传 `{x: \"str\"}` 也不违约 ⇒ 放绿。 断言：expect(obj.open).toBe(true);；expect(obj.index).toBeDefined();"	没测该层	keep	keep	—
-"`x is T` 的返回面是 boolean（不是 unknown，也不是被谓词的 T）"	"回归（harvester 收割面）：harvester 把 **TS 类型谓词**的返回类型 （`x is T` / `asserts x is T`）收割成 **`unknown`** ⇒ - 调用方的签名面变成 `unknown` ⇒ 触发 `nudo:unknown-inference` 误导诊断（把「谓词返回 boolean」说成「推断失败」）； - dts 面写 `unknown` ⇒ 消费方 tsc TS2322 假红。 断言：expect(formatShape(env.globals[\"isFoo\"]!)).toBe(\"(unknown) => boolean\");；expect(ret.shape.k).toBe("	没测该层	keep	keep	—
-"`asserts x is T` 的返回面与 `: void` 同口径（不是 unknown）"	"回归（harvester 收割面）：harvester 把 **TS 类型谓词**的返回类型 （`x is T` / `asserts x is T`）收割成 **`unknown`** ⇒ - 调用方的签名面变成 `unknown` ⇒ 触发 `nudo:unknown-inference` 误导诊断（把「谓词返回 boolean」说成「推断失败」）； - dts 面写 `unknown` ⇒ 消费方 tsc TS2322 假红。 断言：expect(formatShape(env.globals[\"assertFoo\"]!)).toBe(\"(unknown) => undefined\");；expect(returnTypeOf"	没测该层	keep	keep	—
-"`asserts x`（无 `is T`）也是 void 口径"	"回归（harvester 收割面）：harvester 把 **TS 类型谓词**的返回类型 （`x is T` / `asserts x is T`）收割成 **`unknown`** ⇒ - 调用方的签名面变成 `unknown` ⇒ 触发 `nudo:unknown-inference` 误导诊断（把「谓词返回 boolean」说成「推断失败」）； - dts 面写 `unknown` ⇒ 消费方 tsc TS2322 假红。 断言：expect(formatShape(env.globals[\"assertPlain\"]!)).toBe(\"(unknown) => undefined\");；expect(returnType"	没测该层	keep	keep	—
-"`this is T` / `asserts this is T` 同口径"	"回归（harvester 收割面）：harvester 把 **TS 类型谓词**的返回类型 （`x is T` / `asserts x is T`）收割成 **`unknown`** ⇒ - 调用方的签名面变成 `unknown` ⇒ 触发 `nudo:unknown-inference` 误导诊断（把「谓词返回 boolean」说成「推断失败」）； - dts 面写 `unknown` ⇒ 消费方 tsc TS2322 假红。 断言：expect(formatShape(env.globals[\"isThis\"]!)).toBe(\"(unknown) => boolean\");；expect(formatShape(env.g"	没测该层	keep	keep	—
-"谓词里的联合被谓词类型不影响返回面（仍是 boolean）"	"回归（harvester 收割面）：harvester 把 **TS 类型谓词**的返回类型 （`x is T` / `asserts x is T`）收割成 **`unknown`** ⇒ - 调用方的签名面变成 `unknown` ⇒ 触发 `nudo:unknown-inference` 误导诊断（把「谓词返回 boolean」说成「推断失败」）； - dts 面写 `unknown` ⇒ 消费方 tsc TS2322 假红。 断言：expect(formatShape(env.globals[\"isNumOrStr\"]!)).toBe(\"(unknown) => boolean\");；expect(returnTypeOf("	没测该层	keep	keep	—
-"接口方法签名上的谓词同口径"	"断言：expect(formatShape(slots[\"isFoo\"]!.value)).toBe(\"(unknown) => boolean\");；expect(formatShape(slots[\"assertFoo\"]!.value)).toBe(\"(unknown) => undefined\");"	没测该层	keep	keep	—
-"函数类型（type literal）上的谓词同口径"	"回归（harvester 收割面）：harvester 把 **TS 类型谓词**的返回类型 （`x is T` / `asserts x is T`）收割成 **`unknown`** ⇒ - 调用方的签名面变成 `unknown` ⇒ 触发 `nudo:unknown-inference` 误导诊断（把「谓词返回 boolean」说成「推断失败」）； - dts 面写 `unknown` ⇒ 消费方 tsc TS2322 假红。 断言：expect(formatShape(env.globals[\"fnType\"]!)).toBe(\"(unknown) => boolean\");；expect(formatShape(env.g"	没测该层	keep	keep	—
-"负控：普通返回类型的收割结果不变"	"回归（harvester 收割面）：harvester 把 **TS 类型谓词**的返回类型 （`x is T` / `asserts x is T`）收割成 **`unknown`** ⇒ - 调用方的签名面变成 `unknown` ⇒ 触发 `nudo:unknown-inference` 误导诊断（把「谓词返回 boolean」说成「推断失败」）； - dts 面写 `unknown` ⇒ 消费方 tsc TS2322 假红。 断言：expect(formatShape(env.globals[\"retNum\"]!)).toBe(\"() => number\");；expect(formatShape(env.globals[\""	没测该层	keep	keep	—
-"不同类型实参 ⇒ 不同实例（改前 Box<number> 被折成 Box<string>）"	"回归（harvester 收割面）：泛型实例化缓存键只编码**实参个数** ⇒ 同一接口的不同类型实参命中同一条缓存 ⇒ `Box<number>` 被折成 `Box<string>`。 改前（tmp/probe/fix-r27/h2/before-after.ts，BEFORE 行）： Box<string>.value=string Box<number>.value=string sameAbs=true 改后： Box<string>.value=string Box<number>.value=number sameAbs=false oracle（`tsc --strict`，tmp/probe/fix-r27/h2/o"	没测该层	keep	keep	—
-"同一类型实参 ⇒ 命中缓存（同一个实例对象）"	"回归（harvester 收割面）：泛型实例化缓存键只编码**实参个数** ⇒ 同一接口的不同类型实参命中同一条缓存 ⇒ `Box<number>` 被折成 `Box<string>`。 改前（tmp/probe/fix-r27/h2/before-after.ts，BEFORE 行）： Box<string>.value=string Box<number>.value=string sameAbs=true 改后： Box<string>.value=string Box<number>.value=number sameAbs=false oracle（`tsc --strict`，tmp/probe/fix-r27/h2/o"	没测该层	keep	keep	—
-"实参个数相同、类型不同 ⇒ 不共缓存（个数相同也必须分开）"	"断言：expect(formatShape(slots(env.globals.a!).value!)).toBe(\"string\");；expect(formatShape(slots(env.globals.b!).value!)).toBe(\"number\");"	没测该层	keep	keep	—
-"嵌套实参也按身份区分（Box<Box<string>> ≠ Box<Box<number>>）"	"回归（harvester 收割面）：泛型实例化缓存键只编码**实参个数** ⇒ 同一接口的不同类型实参命中同一条缓存 ⇒ `Box<number>` 被折成 `Box<string>`。 改前（tmp/probe/fix-r27/h2/before-after.ts，BEFORE 行）： Box<string>.value=string Box<number>.value=string sameAbs=true 改后： Box<string>.value=string Box<number>.value=number sameAbs=false oracle（`tsc --strict`，tmp/probe/fix-r27/h2/o"	没测该层	keep	keep	—
-"A.Opts 只有 A 的成员（不含 B.Opts 的 b）"	"改前（tmp/probe/fix-r27/h3/probe-h3.ts，BEFORE 行）： useA 的形参 brand 槽位 = { a: number, b: string } ← 混进了 B.Opts 的 b useB 的形参 brand 槽位 = { b: string, a: number } 改后： useA 的形参 brand 槽位 = { a: number } useB 的形参 brand 槽位 = { b: string } oracle（`tsc --strict`，tmp/probe/fix-r27/h3/oracle/o792.ts）： `oa.b`（`oa: A.Opts`）⇒ TS2339 \"Prop"	没测该层	keep	keep	—
-"B.Opts 只有 B 的成员（不含 A.Opts 的 a）"	"改前（tmp/probe/fix-r27/h3/probe-h3.ts，BEFORE 行）： useA 的形参 brand 槽位 = { a: number, b: string } ← 混进了 B.Opts 的 b useB 的形参 brand 槽位 = { b: string, a: number } 改后： useA 的形参 brand 槽位 = { a: number } useB 的形参 brand 槽位 = { b: string } oracle（`tsc --strict`，tmp/probe/fix-r27/h3/oracle/o792.ts）： `oa.b`（`oa: A.Opts`）⇒ TS2339 \"Prop"	没测该层	keep	keep	—
-"对照：单命名空间时成员照常可见（不是「全都丢了」）"	"回归（harvester 收割面）：泛型实例化缓存键只编码**实参个数** ⇒ 同一接口的不同类型实参命中同一条缓存 ⇒ `Box<number>` 被折成 `Box<string>`。 改前（tmp/probe/fix-r27/h2/before-after.ts，BEFORE 行）： Box<string>.value=string Box<number>.value=string sameAbs=true 改后： Box<string>.value=string Box<number>.value=number sameAbs=false oracle（`tsc --strict`，tmp/probe/fix-r27/h2/o"	没测该层	keep	keep	—
-"对照：非限定引用仍解析得到接口成员（既有口径不被破坏）"	"断言：expect(slotNames(env.globals.o!)).toEqual([\"a\"]);"	没测该层	keep	keep	—
-"对照：lodash 形态的模块增强仍与命名空间限定名合并"	"改前（tmp/probe/fix-r27/h3/probe-h3.ts，BEFORE 行）： useA 的形参 brand 槽位 = { a: number, b: string } ← 混进了 B.Opts 的 b useB 的形参 brand 槽位 = { b: string, a: number } 改后： useA 的形参 brand 槽位 = { a: number } useB 的形参 brand 槽位 = { b: string } oracle（`tsc --strict`，tmp/probe/fix-r27/h3/oracle/o792.ts）： `oa.b`（`oa: A.Opts`）⇒ TS2339 \"Prop"	没测该层	keep	keep	—
-"顶层函数的 `this` 形参被跳过（元数 = 真实实参数）"	"回归（harvester 收割面）：harvester 把 `this` 形参当**普通形参**收割 ⇒ **元数错位**（arity +1，第一个真实实参被绑到 `this` 槽）+ 生成的契约草稿 **凭空多一个必填参数**。 ` ⇒ 调用方只传 **1** 个实参（`withThis(1)`），`this` 是**调用上下文**的类型标注， 不是实参（TS 编译通过，exit 0）。 断言：expect(formatShape(env.globals[\"withThis\"]!)).toBe(\"(number) => string\");；expect(arity(env.globals[\"withThis\"]!)).toBe(1"	没测该层	keep	keep	—
-"`this` 形参的类型不进入参数位"	"回归（harvester 收割面）：harvester 把 `this` 形参当**普通形参**收割 ⇒ **元数错位**（arity +1，第一个真实实参被绑到 `this` 槽）+ 生成的契约草稿 **凭空多一个必填参数**。 ` ⇒ 调用方只传 **1** 个实参（`withThis(1)`），`this` 是**调用上下文**的类型标注， 不是实参（TS 编译通过，exit 0）。 断言：expect(shape.paramTypes).toHaveLength(1);；expect(shape.paramTypes[0]!.shape.type).toBe(\"number\");"	没测该层	keep	keep	—
-"多个真实实参时元数只算真实实参"	"断言：expect(formatShape(env.globals[\"two\"]!)).toBe(\"(number, string) => boolean\");；expect(arity(env.globals[\"two\"]!)).toBe(2);"	没测该层	keep	keep	—
-"接口方法签名上的 `this` 形参同口径（不进实例面的参数位）"	"回归（harvester 收割面）：harvester 把 `this` 形参当**普通形参**收割 ⇒ **元数错位**（arity +1，第一个真实实参被绑到 `this` 槽）+ 生成的契约草稿 **凭空多一个必填参数**。 ` ⇒ 调用方只传 **1** 个实参（`withThis(1)`），`this` 是**调用上下文**的类型标注， 不是实参（TS 编译通过，exit 0）。 断言：expect(m.shape.k).toBe(\"fn\");；expect(m.shape.paramTypes?.length ?? 0).toBe(1);"	没测该层	keep	keep	—
-"`const p: Point` 绑定保留在 globals 里（改前整个消失）"	"回归（harvester 收割面）：`declare class` 的**实例成员整体丢失**，且 `const p: Point` 这个**绑定从 globals 里彻底消失**。 `static` 不进）； 断言：expect(env.globals[\"p\"]).toBeDefined();；expect(Object.hasOwn(env.globals, \"p\")).toBe(true);"	没测该层	keep	keep	—
-"`p` 的类型是 Point 的实例面（不是 unknown）"	"回归（harvester 收割面）：`declare class` 的**实例成员整体丢失**，且 `const p: Point` 这个**绑定从 globals 里彻底消失**。 `static` 不进）； 断言：expect(formatShape(env.globals[\"p\"]!)).toBe(\"Point\");"	没测该层	keep	keep	—
-"实例成员进实例面（x / y / label / move / origin）"	"断言：expect(slotNames(inst)).toEqual(expect.arrayContaining([\"x\", \"y\", \"label\", \"move\", \"origin\"]));"	没测该层	keep	keep	—
-"以类名做参数类型时参数面是 Point（改前退化成 unknown）"	"回归（harvester 收割面）：`declare class` 的**实例成员整体丢失**，且 `const p: Point` 这个**绑定从 globals 里彻底消失**。 `static` 不进）； 断言：expect(formatShape(env.globals[\"dist\"]!)).toBe(\"(Point, Point) => number\");"	没测该层	keep	keep	—
-"静态成员不进实例面"	"断言：expect(names).toContain(\"value\");；expect(names).not.toContain(\"counter\");"	没测该层	keep	keep	—
-"类型 vs 字面量 ⇒ 假（number extends 1 / string extends \"a\"）"	"回归（harvester 收割面）：条件类型的 `extends` 判定**只比 prim 标签** ⇒ 字面量信息（在 `term` 上，不在 `shape` 上）被忽略 ⇒ `number extends 1` / `\"a\" extends \"b\"` / `1 extends 2` **恒判为真**。 改前（tmp/probe/fix-r27/h1a/probe.ts，BEFORE 行）： number extends 1 → \"yes\" （TS：\"no\"） \"a\" extends \"b\" → \"yes\" （TS：\"no\"） string extends \"a\"→ \"yes\" （TS：\"no\"） 1 extends 2 → \"y"	夹具漏形态	keep	keep	—
-"字面量 vs 字面量 ⇒ 按值比（\"a\" vs \"b\" 假；1 vs 1 真；1 vs 2 假）"	"回归（harvester 收割面）：条件类型的 `extends` 判定**只比 prim 标签** ⇒ 字面量信息（在 `term` 上，不在 `shape` 上）被忽略 ⇒ `number extends 1` / `\"a\" extends \"b\"` / `1 extends 2` **恒判为真**。 改前（tmp/probe/fix-r27/h1a/probe.ts，BEFORE 行）： number extends 1 → \"yes\" （TS：\"no\"） \"a\" extends \"b\" → \"yes\" （TS：\"no\"） string extends \"a\"→ \"yes\" （TS：\"no\"） 1 extends 2 → \"y"	夹具漏形态	keep	keep	—
-"字面量 vs 类型 ⇒ 真（1 extends number / \"a\" extends string）"	"回归（harvester 收割面）：条件类型的 `extends` 判定**只比 prim 标签** ⇒ 字面量信息（在 `term` 上，不在 `shape` 上）被忽略 ⇒ `number extends 1` / `\"a\" extends \"b\"` / `1 extends 2` **恒判为真**。 改前（tmp/probe/fix-r27/h1a/probe.ts，BEFORE 行）： number extends 1 → \"yes\" （TS：\"no\"） \"a\" extends \"b\" → \"yes\" （TS：\"no\"） string extends \"a\"→ \"yes\" （TS：\"no\"） 1 extends 2 → \"y"	夹具漏形态	keep	keep	—
-"判定不是「一律判假」：同值字面量仍然成立"	"回归（harvester 收割面）：条件类型的 `extends` 判定**只比 prim 标签** ⇒ 字面量信息（在 `term` 上，不在 `shape` 上）被忽略 ⇒ `number extends 1` / `\"a\" extends \"b\"` / `1 extends 2` **恒判为真**。 改前（tmp/probe/fix-r27/h1a/probe.ts，BEFORE 行）： number extends 1 → \"yes\" （TS：\"no\"） \"a\" extends \"b\" → \"yes\" （TS：\"no\"） string extends \"a\"→ \"yes\" （TS：\"no\"） 1 extends 2 → \"y"	夹具漏形态	keep	keep	—
-"带括号的数组 infer 绑定元素类型（改前 any）"	"回归（harvester 收割面）：`matchExtendsInfer` **不认括号节点** ⇒ `(infer E)[]` 里的 `infer E` 外面套了一层 `ParenthesizedTypeNode` ⇒ 模式匹配落到兜底分支 ⇒ **E 不绑定** ⇒ 真支退化成 α 变量 ⇒ `number[] extends (infer E)[] ? E : never` 收割成 `any`（TS：`number`）。 改前（tmp/probe/fix-r27/h1a/probe.ts，BEFORE 行）： parenArr() => any （TS：number） parenObj() => any （TS：number）"	没测该层	keep	keep	—
-"带括号的类型字面量 infer 绑定成员类型（改前 any）"	"回归（harvester 收割面）：`matchExtendsInfer` **不认括号节点** ⇒ `(infer E)[]` 里的 `infer E` 外面套了一层 `ParenthesizedTypeNode` ⇒ 模式匹配落到兜底分支 ⇒ **E 不绑定** ⇒ 真支退化成 α 变量 ⇒ `number[] extends (infer E)[] ? E : never` 收割成 `any`（TS：`number`）。 改前（tmp/probe/fix-r27/h1a/probe.ts，BEFORE 行）： parenArr() => any （TS：number） parenObj() => any （TS：number）"	没测该层	keep	keep	—
-"无括号的 Promise infer 仍然绑定（不被括号口径改坏）"	"回归（harvester 收割面）：`matchExtendsInfer` **不认括号节点** ⇒ `(infer E)[]` 里的 `infer E` 外面套了一层 `ParenthesizedTypeNode` ⇒ 模式匹配落到兜底分支 ⇒ **E 不绑定** ⇒ 真支退化成 α 变量 ⇒ `number[] extends (infer E)[] ? E : never` 收割成 `any`（TS：`number`）。 改前（tmp/probe/fix-r27/h1a/probe.ts，BEFORE 行）： parenArr() => any （TS：number） parenObj() => any （TS：number）"	没测该层	keep	keep	—
-"同一语义（带括号 / 不带括号）得到同一个值"	"回归（harvester 收割面）：`matchExtendsInfer` **不认括号节点** ⇒ `(infer E)[]` 里的 `infer E` 外面套了一层 `ParenthesizedTypeNode` ⇒ 模式匹配落到兜底分支 ⇒ **E 不绑定** ⇒ 真支退化成 α 变量 ⇒ `number[] extends (infer E)[] ? E : never` 收割成 `any`（TS：`number`）。 改前（tmp/probe/fix-r27/h1a/probe.ts，BEFORE 行）： parenArr() => any （TS：number） parenObj() => any （TS：number）"	没测该层	keep	keep	—
-"Point & Size 的成员是并集（x/y/w/h 四个）"	"回归（harvester 收割面）：交叉类型 `A & B` **只保留 A** ⇒ `Point & Size` 与 `Point` 在 Abs 层面**完全不可区分**（错值）。 改前（tmp/probe/fix-r27/h1b/before.ts，before-h1 快照 = git HEAD）： ps: Point pt: Point same? true ← Size 的成员整个没了 改后（tmp/probe/fix-r27/h1b/probe.ts）： ps: { x: number, y: number, w: number, h: number } pt: Point same? false 根因：`mapType`"	旧断言钉错	keep	keep	—
-"交叉类型与单侧**可区分**（改前两者完全同形）"	"回归（harvester 收割面）：交叉类型 `A & B` **只保留 A** ⇒ `Point & Size` 与 `Point` 在 Abs 层面**完全不可区分**（错值）。 改前（tmp/probe/fix-r27/h1b/before.ts，before-h1 快照 = git HEAD）： ps: Point pt: Point same? true ← Size 的成员整个没了 改后（tmp/probe/fix-r27/h1b/probe.ts）： ps: { x: number, y: number, w: number, h: number } pt: Point same? false 根因：`mapType`"	旧断言钉错	keep	keep	—
-"成员的值域保留（不是 unknown / never）"	"回归（harvester 收割面）：`matchExtendsInfer` **不认括号节点** ⇒ `(infer E)[]` 里的 `infer E` 外面套了一层 `ParenthesizedTypeNode` ⇒ 模式匹配落到兜底分支 ⇒ **E 不绑定** ⇒ 真支退化成 α 变量 ⇒ `number[] extends (infer E)[] ? E : never` 收割成 `any`（TS：`number`）。 改前（tmp/probe/fix-r27/h1a/probe.ts，BEFORE 行）： parenArr() => any （TS：number） parenObj() => any （TS：number）"	没测该层	keep	keep	—
-"同名冲突成员取 never（TS 的 A & B 属性冲突语义）"	"回归（harvester 收割面）：`matchExtendsInfer` **不认括号节点** ⇒ `(infer E)[]` 里的 `infer E` 外面套了一层 `ParenthesizedTypeNode` ⇒ 模式匹配落到兜底分支 ⇒ **E 不绑定** ⇒ 真支退化成 α 变量 ⇒ `number[] extends (infer E)[] ? E : never` 收割成 `any`（TS：`number`）。 改前（tmp/probe/fix-r27/h1a/probe.ts，BEFORE 行）： parenArr() => any （TS：number） parenObj() => any （TS：number）"	没测该层	keep	keep	—
-"纯字面量交叉（无对象面）不崩，兜底取第一侧"	"断言：expect(env.globals[\"s\"]).toBeDefined();"	没测该层	keep	keep	—
-"Box<number> / Box<string> 的成员值域分别是 number / string"	"回归（harvester 收割面）：泛型**别名** `Box<number>` 与 `Box<string>` **完全相同**且成员值域丢失（`{ v: unknown }`）（错值）。 oracle（`tsc --strict`，见 tmp/probe/fix-r27/h1b/oracle/u800.ts，tsc exit=0）： `type Box<T> = { v: T }` ⇒ `bn: Box<number>` 的 `.v` 是 **number**， `bs: Box<string>` 的 `.v` 是 **string**（`bn.v` 赋给 string ⇒ TS 报错）。 断言：expect(formatSha"	旧断言钉错	keep	keep	—
-"两个实例**可区分**（改前完全同形）"	"回归（harvester 收割面）：交叉类型 `A & B` **只保留 A** ⇒ `Point & Size` 与 `Point` 在 Abs 层面**完全不可区分**（错值）。 改前（tmp/probe/fix-r27/h1b/before.ts，before-h1 快照 = git HEAD）： ps: Point pt: Point same? true ← Size 的成员整个没了 改后（tmp/probe/fix-r27/h1b/probe.ts）： ps: { x: number, y: number, w: number, h: number } pt: Point same? false 根因：`mapType`"	旧断言钉错	keep	keep	—
-"别名路径与接口路径**同口径**（两者都会代入实参）"	"回归（harvester 收割面）：harvester 把 `this` 形参当**普通形参**收割 ⇒ **元数错位**（arity +1，第一个真实实参被绑到 `this` 槽）+ 生成的契约草稿 **凭空多一个必填参数**。 ` ⇒ 调用方只传 **1** 个实参（`withThis(1)`），`this` 是**调用上下文**的类型标注， 不是实参（TS 编译通过，exit 0）。 断言：expect(memberSlots(env.globals[\"a\"]!)).toEqual({ v: \"number\" });；expect(memberSlots(env.globals[\"b\"]!)).toEqual({ v: \"nu"	没测该层	keep	keep	—
-"别名体内是数组时也代入实参（Box<T> = T[]）"	"回归（harvester 收割面）：泛型**别名** `Box<number>` 与 `Box<string>` **完全相同**且成员值域丢失（`{ v: unknown }`）（错值）。 oracle（`tsc --strict`，见 tmp/probe/fix-r27/h1b/oracle/u800.ts，tsc exit=0）： `type Box<T> = { v: T }` ⇒ `bn: Box<number>` 的 `.v` 是 **number**， `bs: Box<string>` 的 `.v` 是 **string**（`bn.v` 赋给 string ⇒ TS 报错）。 断言：expect(formatSha"	旧断言钉错	keep	keep	—
-"非泛型别名不受影响（不凭空多出实参）"	"断言：expect(formatShape(env.globals[\"p\"]!)).toBe(\"{ a: number, b: string }\");"	没测该层	keep	keep	—
-"`number | null` 的草稿是 union(number(), null)，不是 any()"	"回归（harvester **草稿面**）：TypeScript 的 `null` 被映射成 `any()` ⇒ 契约**是空的** ⇒ **假绿**（tsc 报 TS2322，`nudo check` 却绿）。 }` 改前（git HEAD 的草稿面）：`null` → `any()` ⇒ 返回位无约束 ⇒ 绿。 断言：expect(draft.draftSource).toContain(\"union(number(), null)\");；expect(draft.draftSource).not.toContain(\"any()\");"	没测该层	keep	keep	—
-"契约**真的**拒绝字符串（域隶属判定 = 假绿已消除）"	"回归（harvester **草稿面**）：TypeScript 的 `null` 被映射成 `any()` ⇒ 契约**是空的** ⇒ **假绿**（tsc 报 TS2322，`nudo check` 却绿）。 }` 改前（git HEAD 的草稿面）：`null` → `any()` ⇒ 返回位无约束 ⇒ 绿。 断言：expect(literalMeetsConstraint(\"totally wrong\", ret)).toBe(false);；expect(literalMeetsConstraint(null, ret)).toBe(true);"	没测该层	keep	keep	—
-"产品面：草稿抄进侧车后 `nudo check` **红**（与 tsc 的 TS2322 同向）"	"回归（harvester **草稿面**）：TypeScript 的 `null` 被映射成 `any()` ⇒ 契约**是空的** ⇒ **假绿**（tsc 报 TS2322，`nudo check` 却绿）。 }` 改前（git HEAD 的草稿面）：`null` → `any()` ⇒ 返回位无约束 ⇒ 绿。 断言：expect(res.status).not.toBe(0);；expect(res.stdout).toContain(\"constraint-violated\");"	没测该层	keep	keep	—
-"收割面同口径：`null` 是真 null 面（渲染成 number | null）"	"回归（harvester **草稿面**）：TypeScript 的 `null` 被映射成 `any()` ⇒ 契约**是空的** ⇒ **假绿**（tsc 报 TS2322，`nudo check` 却绿）。 }` 改前（git HEAD 的草稿面）：`null` → `any()` ⇒ 返回位无约束 ⇒ 绿。 断言：expect(formatShape(env.globals.choose!)).toBe(\"(boolean) => number | null\");"	没测该层	keep	keep	—
-"约束位上的裸字面量是**真约束**（顶层 null 导出不是 `export const x = null`）"	"回归（harvester **草稿面**）：TypeScript 的 `null` 被映射成 `any()` ⇒ 契约**是空的** ⇒ **假绿**（tsc 报 TS2322，`nudo check` 却绿）。 }` 改前（git HEAD 的草稿面）：`null` → `any()` ⇒ 返回位无约束 ⇒ 绿。 断言：expect(draft.draftSource).toContain(\"export const x = union(null)\");；expect(draft.draftSource).toContain('export const v = union(\"1.0\")');"	没测该层	keep	keep	—
-"[number, string] 的槽位分别是 number / string"	"回归（harvester 收割面）：元组类型按「**首元素**」近似 ⇒ 槽位 ≥1 的元素域是**错的具体类型**（假红 + 假绿）。 `t2: [number, boolean]` ⇒ `t2[1]` 是 **boolean**（赋给 string ⇒ TS 报错）。 断言：expect(tupleElements(env.globals[\"t1\"]!)).toEqual([\"number\", \"string\"]);"	没测该层	keep	keep	—
-"槽位 ≥1 的元素域是**各自**的类型（不再与首元素相同）"	"回归（harvester 收割面）：元组类型按「**首元素**」近似 ⇒ 槽位 ≥1 的元素域是**错的具体类型**（假红 + 假绿）。 `t2: [number, boolean]` ⇒ `t2[1]` 是 **boolean**（赋给 string ⇒ TS 报错）。 断言：expect(tupleElements(env.globals[\"t1\"]!)).toEqual([\"number\", \"string\"]);；expect(tupleElements(env.globals[\"t2\"]!)).toEqual([\"number\", \"boolean\"]);"	没测该层	keep	keep	—
-"元组不再是数组（不再折成 number[]）"	"回归（harvester 收割面）：元组类型按「**首元素**」近似 ⇒ 槽位 ≥1 的元素域是**错的具体类型**（假红 + 假绿）。 `t2: [number, boolean]` ⇒ `t2[1]` 是 **boolean**（赋给 string ⇒ TS 报错）。 断言：expect(formatShape(env.globals[\"t1\"]!)).not.toBe(\"number[]\");；expect(env.globals[\"t1\"]!.shape.k).toBe(\"tuple\");"	没测该层	keep	keep	—
-"rest 槽位保留自己的元素类型（[number, ...string[]]）"	"回归（harvester 收割面）：元组类型按「**首元素**」近似 ⇒ 槽位 ≥1 的元素域是**错的具体类型**（假红 + 假绿）。 `t2: [number, boolean]` ⇒ `t2[1]` 是 **boolean**（赋给 string ⇒ TS 报错）。 断言：expect(shape.k).toBe(\"tuple\");；expect(shape.elements.map((e) => formatShape(e as never))).toEqual([\"number\"]);"	没测该层	keep	keep	—
-"具名元组成员保留自己的类型"	"断言：expect(tupleElements(env.globals[\"tn\"]!)).toEqual([\"number\", \"string\"]);"	没测该层	keep	keep	—
-"Record<string, number> 是开放对象且带索引值域 number"	"回归（harvester 收割面）：`Record<K,V>` / 索引签名对象被建成 **闭**空对象 ⇒ 成员读出 **exact undefined** ⇒ 链式读取定抛 TypeError （假红 + 错值）。 改前（tmp/probe/fix-r27/h1b/before.ts，before-h1 快照 = git HEAD）： r.shape: {\"k\":\"obj\",\"slots\":{}} ← 闭、无索引值域 r: { } r2: { } ← 两个 Record 完全同形 改后（tmp/probe/fix-r27/h1b/probe.ts）： r.shape: {\"k\":\"obj\",\"slots\":{},\"index\":"	旧断言钉错	keep	keep	—
-"两个不同的 Record **可区分**（改前都是闭空对象、完全同形）"	"回归（harvester 收割面）：`Record<K,V>` / 索引签名对象被建成 **闭**空对象 ⇒ 成员读出 **exact undefined** ⇒ 链式读取定抛 TypeError （假红 + 错值）。 改前（tmp/probe/fix-r27/h1b/before.ts，before-h1 快照 = git HEAD）： r.shape: {\"k\":\"obj\",\"slots\":{}} ← 闭、无索引值域 r: { } r2: { } ← 两个 Record 完全同形 改后（tmp/probe/fix-r27/h1b/probe.ts）： r.shape: {\"k\":\"obj\",\"slots\":{},\"index\":"	旧断言钉错	keep	keep	—
-"类型字面量的索引签名也建成开放对象"	"断言：expect(shape.open).toBe(true);；expect(formatShape(shape.index!.value as never)).toBe(\"number\");"	没测该层	keep	keep	—
-"索引签名 + 具名成员共存时两者都在（具名成员不被索引吞掉）"	"回归（harvester 收割面）：`Record<K,V>` / 索引签名对象被建成 **闭**空对象 ⇒ 成员读出 **exact undefined** ⇒ 链式读取定抛 TypeError （假红 + 错值）。 改前（tmp/probe/fix-r27/h1b/before.ts，before-h1 快照 = git HEAD）： r.shape: {\"k\":\"obj\",\"slots\":{}} ← 闭、无索引值域 r: { } r2: { } ← 两个 Record 完全同形 改后（tmp/probe/fix-r27/h1b/probe.ts）： r.shape: {\"k\":\"obj\",\"slots\":{},\"index\":"	旧断言钉错	keep	keep	—
-"没有索引签名的类型字面量仍是**闭**对象（开放性不被乱加）"	"回归（harvester 收割面）：`Record<K,V>` / 索引签名对象被建成 **闭**空对象 ⇒ 成员读出 **exact undefined** ⇒ 链式读取定抛 TypeError （假红 + 错值）。 改前（tmp/probe/fix-r27/h1b/before.ts，before-h1 快照 = git HEAD）： r.shape: {\"k\":\"obj\",\"slots\":{}} ← 闭、无索引值域 r: { } r2: { } ← 两个 Record 完全同形 改后（tmp/probe/fix-r27/h1b/probe.ts）： r.shape: {\"k\":\"obj\",\"slots\":{},\"index\":"	旧断言钉错	keep	keep	—
-"映射类型 / 模板字面量 / 索引访问 / keyof / typeof 的绑定全部保留"	"回归（harvester 收割面）：映射类型 / 模板字面量类型 / 索引访问类型 （以及 `keyof` / `typeof`）落 `unknown` 后，**`declare const` 整条绑定被丢弃** ⇒ 用户代码引用它时被判「**确定抛 ReferenceError**」（L2 假红）。 ` 等在 .d.ts 里是 **运行时存在的全局**（TS 编译通过，exit 0）⇒ 引擎不得判 ReferenceError。 断言：expect(Object.hasOwn(env.globals, name)).toBe(true);；expect(env.globals[name]).toBeDefined();"	夹具漏形态	keep	keep	—
-"值域未知时退成 unknown（降级，不是符号不存在）"	"回归（harvester 收割面）：映射类型 / 模板字面量类型 / 索引访问类型 （以及 `keyof` / `typeof`）落 `unknown` 后，**`declare const` 整条绑定被丢弃** ⇒ 用户代码引用它时被判「**确定抛 ReferenceError**」（L2 假红）。 ` 等在 .d.ts 里是 **运行时存在的全局**（TS 编译通过，exit 0）⇒ 引擎不得判 ReferenceError。 断言：expect(formatShape(env.globals[\"mappedLit\"]!)).toBe(\"unknown\");；expect(formatShape(env.globals[\"tpl"	夹具漏形态	keep	keep	—
-"可判定的类型不受影响（对照组：仍是确切类型）"	"回归（harvester 收割面）：`matchExtendsInfer` **不认括号节点** ⇒ `(infer E)[]` 里的 `infer E` 外面套了一层 `ParenthesizedTypeNode` ⇒ 模式匹配落到兜底分支 ⇒ **E 不绑定** ⇒ 真支退化成 α 变量 ⇒ `number[] extends (infer E)[] ? E : never` 收割成 `any`（TS：`number`）。 改前（tmp/probe/fix-r27/h1a/probe.ts，BEFORE 行）： parenArr() => any （TS：number） parenObj() => any （TS：number）"	没测该层	keep	keep	—
-"没有类型标注的 `declare const` 也保留绑定"	"回归（harvester 收割面）：映射类型 / 模板字面量类型 / 索引访问类型 （以及 `keyof` / `typeof`）落 `unknown` 后，**`declare const` 整条绑定被丢弃** ⇒ 用户代码引用它时被判「**确定抛 ReferenceError**」（L2 假红）。 ` 等在 .d.ts 里是 **运行时存在的全局**（TS 编译通过，exit 0）⇒ 引擎不得判 ReferenceError。 断言：expect(Object.hasOwn(env.globals, \"untyped\")).toBe(true);"	夹具漏形态	keep	keep	—
-"同名 overload 的返回类型不再被抹除（并集）"	"回归（harvester 收割面）：接口成员的**重载集**只保留第一个 overload ⇒ 第二个 overload 的返回类型被**整体抹除**（假红 + 假绿，与 TS 完全倒置）。 改前（tmp/probe/fix-r27/h2/before-after.ts，BEFORE 行）： member m = (number) => string 改后： member m = (number | string) => string | number oracle（`tsc --strict`，tmp/probe/fix-r27/h2/oracle/）： - `o805-use.ts`：`iov.m(\"hello\")` 赋给 `n"	没测该层	keep	keep	—
-"参数位逐位并集（与顶层函数路径同口径）"	"回归（harvester 收割面）：接口成员的**重载集**只保留第一个 overload ⇒ 第二个 overload 的返回类型被**整体抹除**（假红 + 假绿，与 TS 完全倒置）。 改前（tmp/probe/fix-r27/h2/before-after.ts，BEFORE 行）： member m = (number) => string 改后： member m = (number | string) => string | number oracle（`tsc --strict`，tmp/probe/fix-r27/h2/oracle/）： - `o805-use.ts`：`iov.m(\"hello\")` 赋给 `n"	没测该层	keep	keep	—
-"顶层函数路径与接口成员路径同形（同一实体两条路径不得分叉）"	"断言：expect(returnTypeOf(member)).toBe(returnTypeOf(top));；expect(paramTypesOf(member)).toBe(paramTypesOf(top));"	没测该层	keep	keep	—
-"单个签名（无重载）不受影响"	"断言：expect(returnTypeOf(m)).toBe(\"string\");；expect(paramTypesOf(m)).toBe(\"number\");"	没测该层	keep	keep	—
-"重载成员仍可调用（relation 面完整：参数位 + 返回位都在）"	"回归（harvester 收割面）：接口成员的**重载集**只保留第一个 overload ⇒ 第二个 overload 的返回类型被**整体抹除**（假红 + 假绿，与 TS 完全倒置）。 改前（tmp/probe/fix-r27/h2/before-after.ts，BEFORE 行）： member m = (number) => string 改后： member m = (number | string) => string | number oracle（`tsc --strict`，tmp/probe/fix-r27/h2/oracle/）： - `o805-use.ts`：`iov.m(\"hello\")` 赋给 `n"	没测该层	keep	keep	—
-"递归别名 = 按名 brand（不是内联展开的对象）"	"改前（tmp/probe/fix-r27/h2/probe-h2.ts）： tree = { v: number, kids: { v: number, kids: { … 8 层 … unknown[] }[] }[] } blow6: harvest 673ms, env module 54083943 bytes 改后： tree = brand(Tree) { v: number, kids: brand(Tree){unknown}[] } ← 惰性/引用式 blow6: harvest 0ms, env module 983 bytes（≈ 55000× 更小） oracle（`tsc --strict`，tmp/pro"	没测该层	keep	keep	—
-"自引用点 = 按名 brand 引用（内层「形状待定」，不再展开一层）"	"改前（tmp/probe/fix-r27/h2/probe-h2.ts）： tree = { v: number, kids: { v: number, kids: { … 8 层 … unknown[] }[] }[] } blow6: harvest 673ms, env module 54083943 bytes 改后： tree = brand(Tree) { v: number, kids: brand(Tree){unknown}[] } ← 惰性/引用式 blow6: harvest 0ms, env module 983 bytes（≈ 55000× 更小） oracle（`tsc --strict`，tmp/pro"	没测该层	keep	keep	—
-"规模有界：自引用成员数增加时 env 模块不指数增长"	"改前（tmp/probe/fix-r27/h2/probe-h2.ts）： tree = { v: number, kids: { v: number, kids: { … 8 层 … unknown[] }[] }[] } blow6: harvest 673ms, env module 54083943 bytes 改后： tree = brand(Tree) { v: number, kids: brand(Tree){unknown}[] } ← 惰性/引用式 blow6: harvest 0ms, env module 983 bytes（≈ 55000× 更小） oracle（`tsc --strict`，tmp/pro"	没测该层	keep	keep	—
-"互引别名（type A = { b: B }; type B = { a: A }）也被识别为递归"	"回归（harvester 收割面）：映射类型 / 模板字面量类型 / 索引访问类型 （以及 `keyof` / `typeof`）落 `unknown` 后，**`declare const` 整条绑定被丢弃** ⇒ 用户代码引用它时被判「**确定抛 ReferenceError**」（L2 假红）。 ` 等在 .d.ts 里是 **运行时存在的全局**（TS 编译通过，exit 0）⇒ 引擎不得判 ReferenceError。 断言：expect(a.shape.k).toBe(\"brand\");；expect(a.shape.name).toBe(\"A\");"	夹具漏形态	keep	keep	—
-"brand 成员与**模块级**提升成员的形态完全一致（BUG-253：提升只对模块作用域成立）"	"回归（harvester 收割面）：同一个接口方法被收割成**两个不同类型** （brand 成员 vs 模块级提升全局）。 此前两条路径用了**两套不同的重载合并策略** ⇒ 同一方法、同一份 .d.ts，两个类型。 断言：expect(promoted).toBeDefined();；expect(JSON.stringify(promoted.shape)).toBe(JSON.stringify(member.shape));"	没测该层	keep	keep	—
-"重载集保留全部返回类型（不是只剩第一个 overload）"	"回归（harvester 收割面）：同一个接口方法被收割成**两个不同类型** （brand 成员 vs 模块级提升全局）。 此前两条路径用了**两套不同的重载合并策略** ⇒ 同一方法、同一份 .d.ts，两个类型。 断言：expect(member.shape.k).toBe(\"fn\");；expect(ret).toContain(\"string\");"	没测该层	keep	keep	—
-"对照：单签名方法两条路径同样一致"	"回归（harvester 收割面）：`matchExtendsInfer` **不认括号节点** ⇒ `(infer E)[]` 里的 `infer E` 外面套了一层 `ParenthesizedTypeNode` ⇒ 模式匹配落到兜底分支 ⇒ **E 不绑定** ⇒ 真支退化成 α 变量 ⇒ `number[] extends (infer E)[] ? E : never` 收割成 `any`（TS：`number`）。 改前（tmp/probe/fix-r27/h1a/probe.ts，BEFORE 行）： parenArr() => any （TS：number） parenObj() => any （TS：number）"	没测该层	keep	keep	—
-"泛型接口：brand 面用类型实参（string），提升面不产出未绑定 α"	"回归（harvester 收割面）：同一个接口方法被收割成**两个不同类型** （brand 成员 vs 模块级提升全局）。 此前两条路径用了**两套不同的重载合并策略** ⇒ 同一方法、同一份 .d.ts，两个类型。 断言：expect(member.shape.k).toBe(\"fn\");；expect(formatShape(member.shape.returnType!)).toBe(\"string\");"	没测该层	keep	keep	—
-"Derived 的实例面含基接口的成员 b"	"回归（harvester 收割面）：接口 `extends` 的**继承成员在实例模型里整体消失** ⇒ `derived.b` 折 `undefined`、`.length` **定抛 TypeError**（L2 假红）。 根因：收接口成员时只搬接口**自身**声明的成员，**不解析 `extends` 子句** ⇒ 继承来的成员在实例模型里根本不存在 → 成员读落到「无此槽」→ 折 exact `undefined` → 后续 `.length` 被判「确定抛 TypeError」。 断言：expect(Object.keys(s).sort()).toEqual([\"b\", \"d\"]);；expect(formatShape"	没测该层	keep	keep	—
-"继承来的成员不是「读不到」（不是 exact undefined）"	"回归（harvester 收割面）：接口 `extends` 的**继承成员在实例模型里整体消失** ⇒ `derived.b` 折 `undefined`、`.length` **定抛 TypeError**（L2 假红）。 根因：收接口成员时只搬接口**自身**声明的成员，**不解析 `extends` 子句** ⇒ 继承来的成员在实例模型里根本不存在 → 成员读落到「无此槽」→ 折 exact `undefined` → 后续 `.length` 被判「确定抛 TypeError」。 断言：expect(formatShape(s.b!)).not.toBe(\"undefined\");；expect(s.b!.term?.op"	没测该层	keep	keep	—
-"对照：基接口自身只有自己的成员（不被子接口的成员污染）"	"回归（harvester 收割面）：`matchExtendsInfer` **不认括号节点** ⇒ `(infer E)[]` 里的 `infer E` 外面套了一层 `ParenthesizedTypeNode` ⇒ 模式匹配落到兜底分支 ⇒ **E 不绑定** ⇒ 真支退化成 α 变量 ⇒ `number[] extends (infer E)[] ? E : never` 收割成 `any`（TS：`number`）。 改前（tmp/probe/fix-r27/h1a/probe.ts，BEFORE 行）： parenArr() => any （TS：number） parenObj() => any （TS：number）"	没测该层	keep	keep	—
-"对照：多级继承链（extends 递归）"	"回归（harvester 收割面）：接口 `extends` 的**继承成员在实例模型里整体消失** ⇒ `derived.b` 折 `undefined`、`.length` **定抛 TypeError**（L2 假红）。 根因：收接口成员时只搬接口**自身**声明的成员，**不解析 `extends` 子句** ⇒ 继承来的成员在实例模型里根本不存在 → 成员读落到「无此槽」→ 折 exact `undefined` → 后续 `.length` 被判「确定抛 TypeError」。 断言：expect(Object.keys(slots(env.globals.a3!)).sort()).toEqual([\"a\", \"b\","	没测该层	keep	keep	—
-"对照：无 extends 时成员表不变（既有口径不被破坏）"	"回归（harvester 收割面）：接口 `extends` 的**继承成员在实例模型里整体消失** ⇒ `derived.b` 折 `undefined`、`.length` **定抛 TypeError**（L2 假红）。 根因：收接口成员时只搬接口**自身**声明的成员，**不解析 `extends` 子句** ⇒ 继承来的成员在实例模型里根本不存在 → 成员读落到「无此槽」→ 折 exact `undefined` → 后续 `.length` 被判「确定抛 TypeError」。 断言：expect(Object.keys(slots(env.globals.plain!))).toEqual([\"x\"]);"	没测该层	keep	keep	—
-"接口的 α 照常代入（sh.v 是实参类型）"	"改前（tmp/probe/fix-r27/h1b/before.ts，before-h1 快照 = git HEAD）： sh.v: string sh.m: (string) => string ← 方法被接口的实参去泛型化 改后（tmp/probe/fix-r27/h1b/probe.ts）： sh.v: string sh.m: (T@1fu64lg34) => T@1fu64lg34 ← 方法的 α 活着 根因：`ctx.typeParams` 是一个**扁平集合**（接口的 `T` 与方法自己的 `T` 混在一起）⇒ `substAbs` 代入接口实参时把方法内部的 α 一并替换。 同名若还被外层声明过（= 遮蔽），内层用"	夹具漏形态	keep	keep	—
-"方法自己的 α **不被**接口实参替换（方法仍是泛型的）"	"改前（tmp/probe/fix-r27/h1b/before.ts，before-h1 快照 = git HEAD）： sh.v: string sh.m: (string) => string ← 方法被接口的实参去泛型化 改后（tmp/probe/fix-r27/h1b/probe.ts）： sh.v: string sh.m: (T@1fu64lg34) => T@1fu64lg34 ← 方法的 α 活着 根因：`ctx.typeParams` 是一个**扁平集合**（接口的 `T` 与方法自己的 `T` 混在一起）⇒ `substAbs` 代入接口实参时把方法内部的 α 一并替换。 同名若还被外层声明过（= 遮蔽），内层用"	夹具漏形态	keep	keep	—
-"遮蔽的 α 与外层 α 是**不同**的身份"	"回归（harvester 收割面）：同一个接口方法被收割成**两个不同类型** （brand 成员 vs 模块级提升全局）。 此前两条路径用了**两套不同的重载合并策略** ⇒ 同一方法、同一份 .d.ts，两个类型。 断言：expect(new Set(ids).size).toBe(1);；expect(ids[0]).toMatch(/^T@/);"	没测该层	keep	keep	—
-"无同名遮蔽时，方法的 α 仍可被接口实参代入（不误伤）"	"改前（tmp/probe/fix-r27/h1b/before.ts，before-h1 快照 = git HEAD）： sh.v: string sh.m: (string) => string ← 方法被接口的实参去泛型化 改后（tmp/probe/fix-r27/h1b/probe.ts）： sh.v: string sh.m: (T@1fu64lg34) => T@1fu64lg34 ← 方法的 α 活着 根因：`ctx.typeParams` 是一个**扁平集合**（接口的 `T` 与方法自己的 `T` 混在一起）⇒ `substAbs` 代入接口实参时把方法内部的 α 一并替换。 同名若还被外层声明过（= 遮蔽），内层用"	夹具漏形态	keep	keep	—
-"自引用点是 brand 且内层「形状待定」"	"回归（harvester 收割面）：递归 interface 的自引用被铸成**空 brand** （`absBrand(name, {})` ⇒ 闭合空对象）⇒ 成员读走「槽位缺失 ⇒ exact undefined」 ⇒ 合法代码被判「定抛 TypeError」（L2 门禁假红）； 改前（tmp/probe/fix-r27/h2/before-after.ts，BEFORE 行）： next.inner = { } （闭合空对象） $get(next).value = undefined conf=exact ← 假红的成因 改后： next.inner = unknown （形状待定） $get(next).value = u"	夹具漏形态	keep	keep	—
-"非递归成员仍然精确（value: number 不受影响）"	"回归（harvester 收割面）：递归 interface 的自引用被铸成**空 brand** （`absBrand(name, {})` ⇒ 闭合空对象）⇒ 成员读走「槽位缺失 ⇒ exact undefined」 ⇒ 合法代码被判「定抛 TypeError」（L2 门禁假红）； 改前（tmp/probe/fix-r27/h2/before-after.ts，BEFORE 行）： next.inner = { } （闭合空对象） $get(next).value = undefined conf=exact ← 假红的成因 改后： next.inner = unknown （形状待定） $get(next).value = u"	夹具漏形态	keep	keep	—
-"成员读不折成 exact undefined（L2 假红的成因消失）"	"回归（harvester 收割面）：递归 interface 的自引用被铸成**空 brand** （`absBrand(name, {})` ⇒ 闭合空对象）⇒ 成员读走「槽位缺失 ⇒ exact undefined」 ⇒ 合法代码被判「定抛 TypeError」（L2 门禁假红）； 改前（tmp/probe/fix-r27/h2/before-after.ts，BEFORE 行）： next.inner = { } （闭合空对象） $get(next).value = undefined conf=exact ← 假红的成因 改后： next.inner = unknown （形状待定） $get(next).value = u"	夹具漏形态	keep	keep	—
-"三条收割路径给出同一个类型（收割面 / 磁盘往返面 / 落盘发射面）"	"回归（harvester 收割面）：递归 interface 的自引用被铸成**空 brand** （`absBrand(name, {})` ⇒ 闭合空对象）⇒ 成员读走「槽位缺失 ⇒ exact undefined」 ⇒ 合法代码被判「定抛 TypeError」（L2 门禁假红）； 改前（tmp/probe/fix-r27/h2/before-after.ts，BEFORE 行）： next.inner = { } （闭合空对象） $get(next).value = undefined conf=exact ← 假红的成因 改后： next.inner = unknown （形状待定） $get(next).value = u"	夹具漏形态	keep	keep	—
-"无实参引用取默认值（改前是 any = 未绑定 α）"	"回归（harvester 收割面）：泛型**类型形参默认值**被丢弃 ⇒ 无参引用 留下**未绑定 α**（T）⇒ 引擎侧「未绑定 α」= 无约束值 ⇒ 其上的任意方法调用 被建模为定抛 TypeError（L2 门禁假红）。 改前（tmp/probe/fix-r27/h2/before-after.ts，BEFORE 行）： Box(no args).v = any 改后： Box(no args).v = string （默认值生效） oracle（`tsc --strict`，tmp/probe/fix-r27/h2/oracle/）： - `o813-use.ts`（`box.v.toUpperCase()` 赋给 `str"	没测该层	keep	keep	—
-"`Box` ≡ `Box<string>`（默认路径与显式实参路径同形）"	"回归（harvester 收割面）：泛型**类型形参默认值**被丢弃 ⇒ 无参引用 留下**未绑定 α**（T）⇒ 引擎侧「未绑定 α」= 无约束值 ⇒ 其上的任意方法调用 被建模为定抛 TypeError（L2 门禁假红）。 改前（tmp/probe/fix-r27/h2/before-after.ts，BEFORE 行）： Box(no args).v = any 改后： Box(no args).v = string （默认值生效） oracle（`tsc --strict`，tmp/probe/fix-r27/h2/oracle/）： - `o813-use.ts`（`box.v.toUpperCase()` 赋给 `str"	没测该层	keep	keep	—
-"显式实参仍然优先于默认值"	"断言：expect(formatShape(slots(env.globals.box!).v!)).toBe('\"lit\"');"	没测该层	keep	keep	—
-"无默认值时取约束面（不留完全无约束的 α）"	"断言：expect(formatShape(v)).toBe(\"string\");；expect(v.term?.op).not.toBe(\"var\");"	没测该层	keep	keep	—
-"既无默认值也无约束 ⇒ 推断 unknown（不是未绑定 α）"	"回归（harvester 收割面）：泛型**类型形参默认值**被丢弃 ⇒ 无参引用 留下**未绑定 α**（T）⇒ 引擎侧「未绑定 α」= 无约束值 ⇒ 其上的任意方法调用 被建模为定抛 TypeError（L2 门禁假红）。 改前（tmp/probe/fix-r27/h2/before-after.ts，BEFORE 行）： Box(no args).v = any 改后： Box(no args).v = string （默认值生效） oracle（`tsc --strict`，tmp/probe/fix-r27/h2/oracle/）： - `o813-use.ts`（`box.v.toUpperCase()` 赋给 `str"	没测该层	keep	keep	—
-"多形参：部分显式 + 其余取默认值"	"断言：expect(formatShape(s.a!)).toBe(\"boolean\");；expect(formatShape(s.b!)).toBe(\"number\");"	没测该层	keep	keep	—
-"结构相同的两个 interface ⇒ 判真（改前按名字判假）"	"回归（harvester 收割面）：条件类型的 `extends` 判定在 **brand-vs-brand** 上**只比名字** ⇒ 结构相同、名字不同的两个 interface 被判「不 extends」⇒ 条件类型**确定地**走错分支（**硬错值**：与 TS 相反的确切字面量）。 改前（tmp/probe/fix-r27/h1a/probe.ts，BEFORE 行）： same() => \"no\" （TS：\"yes\" —— A/B 结构相同） diff() => \"no\" （TS：\"no\" —— A/C 成员类型不同，碰巧对） self() => \"yes\" （TS：\"yes\" —— 靠**同名**蒙对） 改后：same"	旧断言钉错	keep	keep	—
-"结构不同的两个 interface ⇒ 判假（不能因为放宽而一律判真）"	"回归（harvester 收割面）：条件类型的 `extends` 判定在 **brand-vs-brand** 上**只比名字** ⇒ 结构相同、名字不同的两个 interface 被判「不 extends」⇒ 条件类型**确定地**走错分支（**硬错值**：与 TS 相反的确切字面量）。 改前（tmp/probe/fix-r27/h1a/probe.ts，BEFORE 行）： same() => \"no\" （TS：\"yes\" —— A/B 结构相同） diff() => \"no\" （TS：\"no\" —— A/C 成员类型不同，碰巧对） self() => \"yes\" （TS：\"yes\" —— 靠**同名**蒙对） 改后：same"	旧断言钉错	keep	keep	—
-"同名 interface ⇒ 判真（不得被结构口径改坏）"	"回归（harvester 收割面）：条件类型的 `extends` 判定在 **brand-vs-brand** 上**只比名字** ⇒ 结构相同、名字不同的两个 interface 被判「不 extends」⇒ 条件类型**确定地**走错分支（**硬错值**：与 TS 相反的确切字面量）。 改前（tmp/probe/fix-r27/h1a/probe.ts，BEFORE 行）： same() => \"no\" （TS：\"yes\" —— A/B 结构相同） diff() => \"no\" （TS：\"no\" —— A/C 成员类型不同，碰巧对） self() => \"yes\" （TS：\"yes\" —— 靠**同名**蒙对） 改后：same"	旧断言钉错	keep	keep	—
-"多成员结构相同 ⇒ 判真；源上**缺成员** ⇒ 判假"	"回归（harvester 收割面）：条件类型的 `extends` 判定在 **brand-vs-brand** 上**只比名字** ⇒ 结构相同、名字不同的两个 interface 被判「不 extends」⇒ 条件类型**确定地**走错分支（**硬错值**：与 TS 相反的确切字面量）。 改前（tmp/probe/fix-r27/h1a/probe.ts，BEFORE 行）： same() => \"no\" （TS：\"yes\" —— A/B 结构相同） diff() => \"no\" （TS：\"no\" —— A/C 成员类型不同，碰巧对） self() => \"yes\" （TS：\"yes\" —— 靠**同名**蒙对） 改后：same"	旧断言钉错	keep	keep	—
-"内联字面量与 interface 两条路径的成员集合**一致**"	"回归（harvester 收割面）：**内联类型字面量**丢 `get` / `set` 访问器 ⇒ 成员从**闭合对象**上读出 **exact `undefined`**（真值是 number）。 改前（tmp/probe/fix-r27/h1b/before.ts，before-h1 快照 = git HEAD）： inline slots: [ 'plain' ] ← 访问器 `value` 整条被丢掉 iface slots: [ 'value', 'plain' ] ← interface 路径是好的（instanceFor） 改后（tmp/probe/fix-r27/h1b/probe.ts）： inline slot"	夹具漏形态	keep	keep	—
-"访问器的读面是 getter 的返回类型（不是 exact undefined）"	"回归（harvester 收割面）：**内联类型字面量**丢 `get` / `set` 访问器 ⇒ 成员从**闭合对象**上读出 **exact `undefined`**（真值是 number）。 改前（tmp/probe/fix-r27/h1b/before.ts，before-h1 快照 = git HEAD）： inline slots: [ 'plain' ] ← 访问器 `value` 整条被丢掉 iface slots: [ 'value', 'plain' ] ← interface 路径是好的（instanceFor） 改后（tmp/probe/fix-r27/h1b/probe.ts）： inline slot"	夹具漏形态	keep	keep	—
-"get / set 对的读面**与声明顺序无关**（set 在前也取 getter）"	"回归（harvester 收割面）：**内联类型字面量**丢 `get` / `set` 访问器 ⇒ 成员从**闭合对象**上读出 **exact `undefined`**（真值是 number）。 改前（tmp/probe/fix-r27/h1b/before.ts，before-h1 快照 = git HEAD）： inline slots: [ 'plain' ] ← 访问器 `value` 整条被丢掉 iface slots: [ 'value', 'plain' ] ← interface 路径是好的（instanceFor） 改后（tmp/probe/fix-r27/h1b/probe.ts）： inline slot"	夹具漏形态	keep	keep	—
-"只有 setter 时读面不折 exact undefined（写面单独建模）"	"回归（harvester 收割面）：**内联类型字面量**丢 `get` / `set` 访问器 ⇒ 成员从**闭合对象**上读出 **exact `undefined`**（真值是 number）。 改前（tmp/probe/fix-r27/h1b/before.ts，before-h1 快照 = git HEAD）： inline slots: [ 'plain' ] ← 访问器 `value` 整条被丢掉 iface slots: [ 'value', 'plain' ] ← interface 路径是好的（instanceFor） 改后（tmp/probe/fix-r27/h1b/probe.ts）： inline slot"	夹具漏形态	keep	keep	—
-"无访问器的普通字面量不受影响"	"断言：expect(memberSlots(env.globals[\"plain\"]!)).toEqual({ a: \"number\", b: \"string\" });"	没测该层	keep	keep	—
-"逐字相同的两条声明 ⇒ 调用点返回类型完全一致"	"断言：expect(callOf(env, \"one\", arg)).toBe(\"string\");；expect(callOf(env, \"two\", arg)).toBe(\"string\");"	没测该层	keep	keep	—
-"属性位的条件元数据不被下一条签名捡走（inferFrom 必须为空）"	"回归（harvester 收割面）：条件类型的 `infer` 元数据经**上下文级单槽** （`ctx.pendingCond`）泄漏进**下一条**签名 ⇒ **逐字相同**的两条声明得到 **不同**类型 ⇒ 门禁**冷缓存假红 / 热缓存绿**（结论随缓存状态翻转）。 泄漏链（改前）：接口**属性位**的条件类型把元数据写进上下文级单槽 ⇒ 没人 消费（属性不是签名）⇒ **下一条**函数签名无条件捡走 ⇒ 该签名的返回被换成 `condFallback`（假支）⇒ 调用点折出 `0` 而不是 `string`。 断言：expect(relOf(env, \"one\")?.inferFrom).toBeUndefined();"	没测该层	keep	keep	—
-"冷 / 热缓存两种状态同口径（重复收割结果不变）"	"回归（harvester 收割面）：条件类型的 `infer` 元数据经**上下文级单槽** （`ctx.pendingCond`）泄漏进**下一条**签名 ⇒ **逐字相同**的两条声明得到 **不同**类型 ⇒ 门禁**冷缓存假红 / 热缓存绿**（结论随缓存状态翻转）。 泄漏链（改前）：接口**属性位**的条件类型把元数据写进上下文级单槽 ⇒ 没人 消费（属性不是签名）⇒ **下一条**函数签名无条件捡走 ⇒ 该签名的返回被换成 `condFallback`（假支）⇒ 调用点折出 `0` 而不是 `string`。 断言：expect(callOf(cold, \"one\", arg1)).toBe(callOf(hot, \"o"	没测该层	keep	keep	—
-"遍历顺序不影响结论（接口单独一个文件 / 换文件顺序）"	"断言：expect(callOf(a, \"one\", a.globals.Box!)).toBe(\"string\");；expect(callOf(a, \"two\", a.globals.Box!)).toBe(\"string\");"	没测该层	keep	keep	—
-"真支就是 infer 变量时，元数据仍挂在**自己那条**签名上"	"回归（harvester 收割面）：条件类型的 `infer` 元数据经**上下文级单槽** （`ctx.pendingCond`）泄漏进**下一条**签名 ⇒ **逐字相同**的两条声明得到 **不同**类型 ⇒ 门禁**冷缓存假红 / 热缓存绿**（结论随缓存状态翻转）。 泄漏链（改前）：接口**属性位**的条件类型把元数据写进上下文级单槽 ⇒ 没人 消费（属性不是签名）⇒ **下一条**函数签名无条件捡走 ⇒ 该签名的返回被换成 `condFallback`（假支）⇒ 调用点折出 `0` 而不是 `string`。 断言：expect(relOf(env, \"unpack\")?.inferFrom?.via).toBe(\"pr"	没测该层	keep	keep	—
-"keyof 可算 ⇒ 照常判定（\"z\" 不在 {a,b} ⇒ 假）"	"回归（harvester 收割面）：`keyof` / `typeof` / 未解析类型在条件类型的 **`extends` 位**被当成 `unknown`（退化哨兵）⇒ 判定**恒为真** ⇒ 条件类型 **取错支**（与 TS 相反的确切字面量）。 改前（tmp/probe/fix-r27/h1a/probe.ts，BEFORE 行）： ko() => \"yes\" （TS：\"no\" —— \"z\" 不是 {a,b} 的键） ko2() => \"yes\" （TS：\"yes\" —— 碰巧对） tq() => \"yes\" （typeof 判不出 ⇒ 不该取支） un() => \"yes\" （未解析类型 ⇒ 不该取支） 改后：ko()"	夹具漏形态	keep	keep	—
-"keyof 可算 ⇒ 在键集合里 ⇒ 真（不能一律判不出）"	"回归（harvester 收割面）：`keyof` / `typeof` / 未解析类型在条件类型的 **`extends` 位**被当成 `unknown`（退化哨兵）⇒ 判定**恒为真** ⇒ 条件类型 **取错支**（与 TS 相反的确切字面量）。 改前（tmp/probe/fix-r27/h1a/probe.ts，BEFORE 行）： ko() => \"yes\" （TS：\"no\" —— \"z\" 不是 {a,b} 的键） ko2() => \"yes\" （TS：\"yes\" —— 碰巧对） tq() => \"yes\" （typeof 判不出 ⇒ 不该取支） un() => \"yes\" （未解析类型 ⇒ 不该取支） 改后：ko()"	夹具漏形态	keep	keep	—
-"typeof 判不出 ⇒ 不取支（两支并集，不是恒真）"	"回归（harvester 收割面）：`keyof` / `typeof` / 未解析类型在条件类型的 **`extends` 位**被当成 `unknown`（退化哨兵）⇒ 判定**恒为真** ⇒ 条件类型 **取错支**（与 TS 相反的确切字面量）。 改前（tmp/probe/fix-r27/h1a/probe.ts，BEFORE 行）： ko() => \"yes\" （TS：\"no\" —— \"z\" 不是 {a,b} 的键） ko2() => \"yes\" （TS：\"yes\" —— 碰巧对） tq() => \"yes\" （typeof 判不出 ⇒ 不该取支） un() => \"yes\" （未解析类型 ⇒ 不该取支） 改后：ko()"	夹具漏形态	keep	keep	—
-"未解析的类型引用判不出 ⇒ 不取支（两支并集）"	"回归（harvester 收割面）：`keyof` / `typeof` / 未解析类型在条件类型的 **`extends` 位**被当成 `unknown`（退化哨兵）⇒ 判定**恒为真** ⇒ 条件类型 **取错支**（与 TS 相反的确切字面量）。 改前（tmp/probe/fix-r27/h1a/probe.ts，BEFORE 行）： ko() => \"yes\" （TS：\"no\" —— \"z\" 不是 {a,b} 的键） ko2() => \"yes\" （TS：\"yes\" —— 碰巧对） tq() => \"yes\" （typeof 判不出 ⇒ 不该取支） un() => \"yes\" （未解析类型 ⇒ 不该取支） 改后：ko()"	夹具漏形态	keep	keep	—
-"keyof 的判定方向不随「判不出」放宽（对拍 TS 的两条断言）"	"回归（harvester 收割面）：`keyof` / `typeof` / 未解析类型在条件类型的 **`extends` 位**被当成 `unknown`（退化哨兵）⇒ 判定**恒为真** ⇒ 条件类型 **取错支**（与 TS 相反的确切字面量）。 改前（tmp/probe/fix-r27/h1a/probe.ts，BEFORE 行）： ko() => \"yes\" （TS：\"no\" —— \"z\" 不是 {a,b} 的键） ko2() => \"yes\" （TS：\"yes\" —— 碰巧对） tq() => \"yes\" （typeof 判不出 ⇒ 不该取支） un() => \"yes\" （未解析类型 ⇒ 不该取支） 改后：ko()"	夹具漏形态	keep	keep	—
-"嵌套条件类型的真支被递归求值（真支取值出现在结果里）"	"断言：expect(s).toContain('\"s\"');；expect(s).toContain('\"n\"');"	没测该层	keep	keep	—
-"不再返回 infer 变量顶替出来的错误确切值"	"回归（harvester 收割面）：外层条件类型的**真支本身是嵌套条件类型**时， 真支被 `infer` 变量**顶替** ⇒ 返回**错误确切字面量**（与 TS 相反）。 改前（tmp/probe/fix-r27/h1a/probe.ts，BEFORE 行）： nst() => any ← 真支（嵌套条件类型）被 infer 变量 E 顶替 nst2() => any 改后： nst() => \"s\" | \"n\" | \"x\" ← 真支**递归求值**（\"s\"/\"n\"）+ 假支 \"x\" nst2() => any ← 真支**就是** infer 变量（合法的 α 捷径） oracle（`tsc --strict`，tmp/p"	夹具漏形态	keep	keep	—
-"真支就是 infer 变量时仍走 α 捷径（inferFrom 在位）"	"回归（harvester 收割面）：外层条件类型的**真支本身是嵌套条件类型**时， 真支被 `infer` 变量**顶替** ⇒ 返回**错误确切字面量**（与 TS 相反）。 改前（tmp/probe/fix-r27/h1a/probe.ts，BEFORE 行）： nst() => any ← 真支（嵌套条件类型）被 infer 变量 E 顶替 nst2() => any 改后： nst() => \"s\" | \"n\" | \"x\" ← 真支**递归求值**（\"s\"/\"n\"）+ 假支 \"x\" nst2() => any ← 真支**就是** infer 变量（合法的 α 捷径） oracle（`tsc --strict`，tmp/p"	夹具漏形态	keep	keep	—
-"嵌套真支不被当成 infer 变量 ⇒ 不挂 inferFrom"	"回归（harvester 收割面）：外层条件类型的**真支本身是嵌套条件类型**时， 真支被 `infer` 变量**顶替** ⇒ 返回**错误确切字面量**（与 TS 相反）。 改前（tmp/probe/fix-r27/h1a/probe.ts，BEFORE 行）： nst() => any ← 真支（嵌套条件类型）被 infer 变量 E 顶替 nst2() => any 改后： nst() => \"s\" | \"n\" | \"x\" ← 真支**递归求值**（\"s\"/\"n\"）+ 假支 \"x\" nst2() => any ← 真支**就是** infer 变量（合法的 α 捷径） oracle（`tsc --strict`，tmp/p"	夹具漏形态	keep	keep	—
-"重载集保留**全部** overload 的返回类型（不被塌成第一个）"	"`nudo contract --from-dts` 把**重载集静默塌成第一个 overload** ⇒ 草稿**少声明**签名，且被丢掉的 overload **不计入 `skipped`** ⇒ 汇总行**看不出任何丢失**。 反向闸：改前（塌成第一个 overload、`skipped` 不计数）⇒ 本文件全部失败。 断言：expect(draft.draftSource).toContain(\"union(string(), number())\");；expect(draft.draftSource).not.toContain(\"export const over = fn({ x: string() }, string"	没测该层	keep	keep	—
-"每条 overload 的签名都看得见（note 里逐条列出）"	"`nudo contract --from-dts` 把**重载集静默塌成第一个 overload** ⇒ 草稿**少声明**签名，且被丢掉的 overload **不计入 `skipped`** ⇒ 汇总行**看不出任何丢失**。 反向闸：改前（塌成第一个 overload、`skipped` 不计数）⇒ 本文件全部失败。 断言：expect(draft.draftSource).toContain(\"2 overloads merged\");；expect(draft.draftSource).toContain(\"fn({ x: string() }, string())\");"	没测该层	keep	keep	—
-"被合并掉的 overload **计入 skipped**（汇总行说真话）"	"`nudo contract --from-dts` 把**重载集静默塌成第一个 overload** ⇒ 草稿**少声明**签名，且被丢掉的 overload **不计入 `skipped`** ⇒ 汇总行**看不出任何丢失**。 反向闸：改前（塌成第一个 overload、`skipped` 不计数）⇒ 本文件全部失败。 断言：expect(draft.stats.exports).toBe(1);；expect(draft.stats.skipped).toBe(1);"	没测该层	keep	keep	—
-"N 条 overload ⇒ N−1 条丢失被逐条计数"	"`nudo contract --from-dts` 把**重载集静默塌成第一个 overload** ⇒ 草稿**少声明**签名，且被丢掉的 overload **不计入 `skipped`** ⇒ 汇总行**看不出任何丢失**。 反向闸：改前（塌成第一个 overload、`skipped` 不计数）⇒ 本文件全部失败。 断言：expect(draft.stats.exports).toBe(1);；expect(draft.stats.skipped).toBe(2);"	没测该层	keep	keep	—
-"单条声明（无重载）不算丢失"	"断言：expect(draft.stats.exports).toBe(1);；expect(draft.stats.skipped).toBe(0);"	没测该层	keep	keep	—
-"类值带 `ctor: true` facet（改前缺省 = 可构造性未知）"	"回归（harvester 收割面）：收割的 **`declare class` 类值没有 `ctor` facet** ⇒ `new X()` 被判「**可能抛 TypeError**（可构造性未知）」⇒ **L2 假红** （`tsc --strict` 对同一份代码 exit 0）。 收割侧契约： 1. 类值（构造函数）带 **`ctor: true` facet** —— core 的 `new` 路径按 callee 的 `ctor` facet 判可构造性（`Shape k:\"fn\".ctor`）：缺省 = 「可构造性未知」 ⇒ 记 may TypeError； 断言：expect(ctorFacet(env.global"	夹具漏形态	keep	keep	—
-"mock 化时透传 ctor facet（否则又变回「可构造性未知」）"	"回归（harvester 收割面）：收割的 **`declare class` 类值没有 `ctor` facet** ⇒ `new X()` 被判「**可能抛 TypeError**（可构造性未知）」⇒ **L2 假红** （`tsc --strict` 对同一份代码 exit 0）。 收割侧契约： 1. 类值（构造函数）带 **`ctor: true` facet** —— core 的 `new` 路径按 callee 的 `ctor` facet 判可构造性（`Shape k:\"fn\".ctor`）：缺省 = 「可构造性未知」 ⇒ 记 may TypeError； 断言：expect(ctorFacet(mock)).toB"	夹具漏形态	keep	keep	—
-"`new Gadget()` 不记 may TypeError（改前记「可构造性未知」）"	"回归（harvester 收割面）：收割的 **`declare class` 类值没有 `ctor` facet** ⇒ `new X()` 被判「**可能抛 TypeError**（可构造性未知）」⇒ **L2 假红** （`tsc --strict` 对同一份代码 exit 0）。 收割侧契约： 1. 类值（构造函数）带 **`ctor: true` facet** —— core 的 `new` 路径按 callee 的 `ctor` facet 判可构造性（`Shape k:\"fn\".ctor`）：缺省 = 「可构造性未知」 ⇒ 记 may TypeError； 断言：expect(r.kinds).not.toConta"	夹具漏形态	keep	keep	—
-"`new Gadget()` 产出实例面（Point/Gadget 品牌，不是 unknown）"	"回归（harvester 收割面）：收割的 **`declare class` 类值没有 `ctor` facet** ⇒ `new X()` 被判「**可能抛 TypeError**（可构造性未知）」⇒ **L2 假红** （`tsc --strict` 对同一份代码 exit 0）。 收割侧契约： 1. 类值（构造函数）带 **`ctor: true` facet** —— core 的 `new` 路径按 callee 的 `ctor` facet 判可构造性（`Shape k:\"fn\".ctor`）：缺省 = 「可构造性未知」 ⇒ 记 may TypeError； 断言：expect(r.value).toBe(\"Gadge"	夹具漏形态	keep	keep	—
-"反向：去掉 ctor facet ⇒ 同一个 new 记 may TypeError（证明判据就是这个 facet）"	"回归（harvester 收割面）：收割的 **`declare class` 类值没有 `ctor` facet** ⇒ `new X()` 被判「**可能抛 TypeError**（可构造性未知）」⇒ **L2 假红** （`tsc --strict` 对同一份代码 exit 0）。 收割侧契约： 1. 类值（构造函数）带 **`ctor: true` facet** —— core 的 `new` 路径按 callee 的 `ctor` facet 判可构造性（`Shape k:\"fn\".ctor`）：缺省 = 「可构造性未知」 ⇒ 记 may TypeError； 断言：expect(r.kinds).toContain(\""	夹具漏形态	keep	keep	—
-"普通函数（不是类）不带 ctor facet（可构造性保持未知，不误报可构造）"	"回归（harvester 收割面）：收割的 **`declare class` 类值没有 `ctor` facet** ⇒ `new X()` 被判「**可能抛 TypeError**（可构造性未知）」⇒ **L2 假红** （`tsc --strict` 对同一份代码 exit 0）。 收割侧契约： 1. 类值（构造函数）带 **`ctor: true` facet** —— core 的 `new` 路径按 callee 的 `ctor` facet 判可构造性（`Shape k:\"fn\".ctor`）：缺省 = 「可构造性未知」 ⇒ 记 may TypeError； 断言：expect(ctorFacet(env.global"	夹具漏形态	keep	keep	—
-"参数位保留每个 overload 的参数类型（不再只取 sigs[0]）"	"回归（harvester 收割面）：顶层函数的**重载集塌成 union 返回** （参数只取第一个 overload）⇒ union 面上调用 ⇒ **L5 假红**（`tsc --strict` exit 0）。 收割侧契约（本次交付的部分）： 1. 重载集**不塌成单个签名**：参数位保留**每个** overload 的参数类型（逐位 union）， 返回位是各 overload 返回类型的 union —— 不再只取 `sigs[0]` 的参数。 断言：expect(params).toContain(\"string\");；expect(params).toContain(\"number\");"	没测该层	keep	keep	—
-"单个声明的函数不受影响（参数位不被改写）"	"断言：expect(formatShape(env.globals[\"only\"]!)).toBe(\"(string) => number\");"	没测该层	keep	keep	—
-"参数个数不同的 overload 不改参数位（arity 不能被改）"	"回归（harvester 收割面）：顶层函数的**重载集塌成 union 返回** （参数只取第一个 overload）⇒ union 面上调用 ⇒ **L5 假红**（`tsc --strict` exit 0）。 收割侧契约（本次交付的部分）： 1. 重载集**不塌成单个签名**：参数位保留**每个** overload 的参数类型（逐位 union）， 返回位是各 overload 返回类型的 union —— 不再只取 `sigs[0]` 的参数。 断言：expect(formatShape(env.globals[\"f\"]!)).toBe(\"(string) => string | number\");"	没测该层	keep	keep	—
-"带泛型 α 的 overload 不改参数位（α 是逐参数绑定的）"	"回归（harvester 收割面）：顶层函数的**重载集塌成 union 返回** （参数只取第一个 overload）⇒ union 面上调用 ⇒ **L5 假红**（`tsc --strict` exit 0）。 收割侧契约（本次交付的部分）： 1. 重载集**不塌成单个签名**：参数位保留**每个** overload 的参数类型（逐位 union）， 返回位是各 overload 返回类型的 union —— 不再只取 `sigs[0]` 的参数。 断言：expect(formatShape(env.globals[\"g\"]!)).toContain(\"T\");"	没测该层	keep	keep	—
-"A6：overloads 随磁盘签名投影往返（缓存命中不丢派发面）"	"断言：expect(shape?.overloads).toHaveLength(2);；expect(formatShape(instantiateReturn(back, [numLit(1)]))).toBe(\"number\");"	没测该层	keep	keep	—
-"A6：重载集进入 fn shape 的 overloads 承载位（声明序逐 arm）"	"回归（harvester 收割面）：顶层函数的**重载集塌成 union 返回** （参数只取第一个 overload）⇒ union 面上调用 ⇒ **L5 假红**（`tsc --strict` exit 0）。 收割侧契约（本次交付的部分）： 1. 重载集**不塌成单个签名**：参数位保留**每个** overload 的参数类型（逐位 union）， 返回位是各 overload 返回类型的 union —— 不再只取 `sigs[0]` 的参数。 断言：expect(Array.isArray(arms)).toBe(true);；expect(arms).toHaveLength(2);"	没测该层	keep	keep	—
-"构造签名产出 fn 形状且带 ctor: true facet"	"回归（harvester 收割面）：类型字面量的**构造签名** （`{ new (x: number): T }`）被投影成**普通可调用 fn** ⇒ `new C(1)` **假红**（may-throw）+ `C(1)` **假绿**（TS 明确 TS2348 不可调用）。 `WidgetCtor(1)` **不合法**（TS2348: 不带 `new` 的调用）⇒ 夹具里用 `@ts-expect-error` 钉住（tsc 消费掉了它 ⇒ TS 确实报错）。 断言：expect(shape.k).toBe(\"fn\");；expect(shape.ctor).toBe(true);"	夹具漏形态	keep	keep	—
-"构造形参与实例面保留（new C(1) 的实例类型是声明的返回类型）"	"回归（harvester 收割面）：类型字面量的**构造签名** （`{ new (x: number): T }`）被投影成**普通可调用 fn** ⇒ `new C(1)` **假红**（may-throw）+ `C(1)` **假绿**（TS 明确 TS2348 不可调用）。 `WidgetCtor(1)` **不合法**（TS2348: 不带 `new` 的调用）⇒ 夹具里用 `@ts-expect-error` 钉住（tsc 消费掉了它 ⇒ TS 确实报错）。 断言：expect((shape.paramTypes ?? []).map((t) => formatShape(t as never))).toEqual([\""	夹具漏形态	keep	keep	—
-"构造形参是可选时带上 undefined（与普通形参同口径）"	"回归（harvester 收割面）：类型字面量的**构造签名** （`{ new (x: number): T }`）被投影成**普通可调用 fn** ⇒ `new C(1)` **假红**（may-throw）+ `C(1)` **假绿**（TS 明确 TS2348 不可调用）。 `WidgetCtor(1)` **不合法**（TS2348: 不带 `new` 的调用）⇒ 夹具里用 `@ts-expect-error` 钉住（tsc 消费掉了它 ⇒ TS 确实报错）。 断言：expect(shape.ctor).toBe(true);；expect(formatShape((shape.paramTypes ?? [])[0] a"	夹具漏形态	keep	keep	—
-"与构造签名共存的具名成员不丢（静态槽）"	"断言：expect(Object.keys(shape.slots ?? {})).toEqual([\"version\"]);"	没测该层	keep	keep	—
-"无构造签名的普通字面量不带 ctor facet"	"回归（harvester 收割面）：类型字面量的**构造签名** （`{ new (x: number): T }`）被投影成**普通可调用 fn** ⇒ `new C(1)` **假红**（may-throw）+ `C(1)` **假绿**（TS 明确 TS2348 不可调用）。 `WidgetCtor(1)` **不合法**（TS2348: 不带 `new` 的调用）⇒ 夹具里用 `@ts-expect-error` 钉住（tsc 消费掉了它 ⇒ TS 确实报错）。 断言：expect(shape.k).toBe(\"obj\");；expect(shape.ctor).toBeUndefined();"	夹具漏形态	keep	keep	—
-"调用签名产出 fn 形状（不是空 obj）"	"回归（harvester 收割面）：类型字面量的**调用签名** （`{ (a: number): string }`）**整条跳过** ⇒ 该值被折成**空对象** ⇒ 调用即 `TypeError` ⇒ **L2 假红**（`tsc --strict` exit 0 的合法代码被判 「确定抛」）。 改前（tmp/probe/fix-r27/h1b/before.ts，before-h1 快照 = git HEAD）： f: { } k: obj ← 零槽位的空对象 ⇒ 引擎按「不是函数」判 ⇒ 调用即 TypeError 改后（tmp/probe/fix-r27/h1b/probe.ts）： f: (number) => str"	夹具漏形态	keep	keep	—
-"形参与返回面保留（形参位是 number、返回位是 string）"	"回归（harvester 收割面）：类型字面量的**调用签名** （`{ (a: number): string }`）**整条跳过** ⇒ 该值被折成**空对象** ⇒ 调用即 `TypeError` ⇒ **L2 假红**（`tsc --strict` exit 0 的合法代码被判 「确定抛」）。 改前（tmp/probe/fix-r27/h1b/before.ts，before-h1 快照 = git HEAD）： f: { } k: obj ← 零槽位的空对象 ⇒ 引擎按「不是函数」判 ⇒ 调用即 TypeError 改后（tmp/probe/fix-r27/h1b/probe.ts）： f: (number) => str"	夹具漏形态	keep	keep	—
-"多形参 / 可选形参按普通签名同口径"	"断言：expect((shape.paramTypes ?? []).map((t) => formatShape(t as never))).toEqual([；expect(formatShape(shape.returnType as never)).toBe(\"boolean\");"	没测该层	keep	keep	—
-"与调用签名共存的具名成员不丢（静态槽）"	"断言：expect(Object.keys(shape.slots ?? {})).toEqual([\"version\"]);"	没测该层	keep	keep	—
-"无调用签名的普通字面量仍是 obj（不误投影成 fn）"	"回归（harvester 收割面）：类型字面量的**调用签名** （`{ (a: number): string }`）**整条跳过** ⇒ 该值被折成**空对象** ⇒ 调用即 `TypeError` ⇒ **L2 假红**（`tsc --strict` exit 0 的合法代码被判 「确定抛」）。 改前（tmp/probe/fix-r27/h1b/before.ts，before-h1 快照 = git HEAD）： f: { } k: obj ← 零槽位的空对象 ⇒ 引擎按「不是函数」判 ⇒ 调用即 TypeError 改后（tmp/probe/fix-r27/h1b/probe.ts）： f: (number) => str"	夹具漏形态	keep	keep	—
-"迭代协议成员进入实例模型（@@iterator 槽存在且可调用）"	"回归（harvester 收割面）：接口的**计算成员名**（`[Symbol.iterator]()`） **整条丢弃** ⇒ 接口的**迭代协议整体丢失** ⇒ `for…of` 被判「对不可迭代值迭代」 ⇒ L2 假红（而 `tsc --strict` 对同一份代码 exit 0）。 根因：成员收集只处理**具名**成员（`memberName` 对计算属性名返回 undefined ⇒ `continue`），且没有任何诊断说「这条成员被丢了」。 断言：expect(Object.keys(s)).toContain(\"@@iterator\");；expect(s[\"@@iterator\"]!.shape.k).toBe(\""	没测该层	keep	keep	—
-"具名成员不受影响（对照组：只有计算成员名被丢）"	"回归（harvester 收割面）：`matchExtendsInfer` **不认括号节点** ⇒ `(infer E)[]` 里的 `infer E` 外面套了一层 `ParenthesizedTypeNode` ⇒ 模式匹配落到兜底分支 ⇒ **E 不绑定** ⇒ 真支退化成 α 变量 ⇒ `number[] extends (infer E)[] ? E : never` 收割成 `any`（TS：`number`）。 改前（tmp/probe/fix-r27/h1a/probe.ts，BEFORE 行）： parenArr() => any （TS：number） parenObj() => any （TS：number）"	没测该层	keep	keep	—
-"异步迭代协议同样保留（@@asyncIterator）"	"断言：expect(Object.keys(slots(env.globals.arange!))).toContain(\"@@asyncIterator\");"	没测该层	keep	keep	—
-"不可静态判定的计算成员名被跳过（不产出错误成员名，也不崩）"	"断言：expect(names).toContain(\"size\");；expect(names).not.toContain(\"key\");"	没测该层	keep	keep	—
-"计算成员名不影响具名成员的类型（不被覆盖成 unknown）"	"回归（harvester 收割面）：收割的 **`declare class` 类值没有 `ctor` facet** ⇒ `new X()` 被判「**可能抛 TypeError**（可构造性未知）」⇒ **L2 假红** （`tsc --strict` 对同一份代码 exit 0）。 收割侧契约： 1. 类值（构造函数）带 **`ctor: true` facet** —— core 的 `new` 路径按 callee 的 `ctor` facet 判可构造性（`Shape k:\"fn\".ctor`）：缺省 = 「可构造性未知」 ⇒ 记 may TypeError； 断言：expect(s.size!.shape.k).toB"	夹具漏形态	keep	keep	—
-"带引号 / 连字符的键产出**合法**的 DSL（引号串形态）"	"`node --check`：草稿必须是**合法 JavaScript** 断言：expect(draft.draftSource).toContain('\"content-type\": string()');；expect(draft.draftSource).toContain('\"x-foo\": number()');"	没测该层	keep	keep	—
-"草稿产物真能过 `node --check`（改前：Unexpected token）"	"`node --check`：草稿必须是**合法 JavaScript** 断言：expect(check.ok, check.stderr).toBe(true);"	没测该层	keep	keep	—
-"`__proto__` 键走计算属性名（对象字面量的 __proto__ 会改原型）"	"改前（真实产品面取证）： ''' export const withHeaders = fn({ x: shape({ content-type: string(), … }) }, any()); 修法（草稿面）：属性键走**合法转义**（`formatObjectKey`：JS 标识符 / 字符串字面量两种合法形态）； 断言：expect(draft.draftSource).toContain('[\"__proto__\"]: string()');；expect(draft.draftSource).not.toContain('\"__proto__\": string()');"	夹具漏形态	keep	keep	—
-"**抄进侧车后 `nudo check` 仍然绿**（改前：sidecar 加载失败 ⇒ exit 1）"	"`node --check`：草稿必须是**合法 JavaScript** 断言：expect(res.status, `${res.stdout}\\n${res.stderr}`).toBe(0);；expect(res.stdout).not.toContain(\"nudo:contract-load\");"	没测该层	keep	keep	—
-"反向闸：语法非法的侧车**必定**加载失败（证明上一条不是永真断言）"	"改前（真实产品面取证）： ''' export const withHeaders = fn({ x: shape({ content-type: string(), … }) }, any()); 修法（草稿面）：属性键走**合法转义**（`formatObjectKey`：JS 标识符 / 字符串字面量两种合法形态）； 断言：expect(res.status).not.toBe(0);；expect(res.stdout).toContain(\"nudo:contract-load\");"	夹具漏形态	keep	keep	—
-"导出名撞 builder import ⇒ 走别名形态（草稿仍是合法 JS）"	"断言：expect(src).not.toMatch(/^export const number = /m);；expect(src).toContain(\"export { _nudo_1 as number };\");"	没测该层	keep	keep	—
-"草稿的返回位**不是** resolve 后的类型（外壳不被剥掉）"	"回归（harvester **草稿面**）：`Promise<T>` 特判**剥掉**了 Promise 外壳 ⇒ 契约要求的是 **resolve 之后**的值 ⇒ 契约**先天不可满足** ⇒ **假红**（tsc 绿，`nudo check` 红）； oracle（`tsc --strict`，tmp/probe/fix-r27/h8a/e2e/b916.ts ⇒ 无错）： `function fetchUser(id: number): Promise<{id: number; 断言：expect(draft.draftSource).toContain(\"export const fetchUser\");；expect(d"	没测该层	keep	keep	—
-"该位的丢失**如实标注**（note + skipped 计数），不静默放宽"	"回归（harvester **草稿面**）：`Promise<T>` 特判**剥掉**了 Promise 外壳 ⇒ 契约要求的是 **resolve 之后**的值 ⇒ 契约**先天不可满足** ⇒ **假红**（tsc 绿，`nudo check` 红）； oracle（`tsc --strict`，tmp/probe/fix-r27/h8a/e2e/b916.ts ⇒ 无错）： `function fetchUser(id: number): Promise<{id: number; 断言：expect(draft.draftSource).toContain(\"Promise shell is kept\");；expect(dr"	没测该层	keep	keep	—
-"产品面：草稿抄进侧车后 `nudo check` **绿**（与 tsc 同向，不再假红）"	"回归（harvester **草稿面**）：`Promise<T>` 特判**剥掉**了 Promise 外壳 ⇒ 契约要求的是 **resolve 之后**的值 ⇒ 契约**先天不可满足** ⇒ **假红**（tsc 绿，`nudo check` 红）； oracle（`tsc --strict`，tmp/probe/fix-r27/h8a/e2e/b916.ts ⇒ 无错）： `function fetchUser(id: number): Promise<{id: number; 断言：expect(res.status).toBe(0);；expect(res.stdout).not.toContain(\"constrain"	没测该层	keep	keep	—
-"收割面同口径：Promise 外壳**保留**（promise<…>）"	"回归（harvester **草稿面**）：`Promise<T>` 特判**剥掉**了 Promise 外壳 ⇒ 契约要求的是 **resolve 之后**的值 ⇒ 契约**先天不可满足** ⇒ **假红**（tsc 绿，`nudo check` 红）； oracle（`tsc --strict`，tmp/probe/fix-r27/h8a/e2e/b916.ts ⇒ 无错）： `function fetchUser(id: number): Promise<{id: number; 断言：expect(formatShape(env.globals.fetchUser!)).toBe("	没测该层	keep	keep	—
-"方法成员进契约：`port: fn({}, number())`"	"回归（harvester **草稿面**）：类型字面量里的**方法签名**成员被丢 ⇒ 契约被**悄悄放宽** ⇒ **假绿**（tsc 报 TS2345，`nudo check` 却绿）。 oracle（`tsc --strict`，tmp/probe/fix-r27/h8a/e2e/b945.ts ⇒ TS2345）： `takeCfg({ host: \"h\" })` —— 缺 `port` ⇒ TS2345（红）。 断言：expect(draft.draftSource).toContain(\"port: fn({}, number())\");；expect(draft.draftSource).not.toContain(\""	夹具漏形态	keep	keep	—
-"数字键成员也不被丢"	"断言：expect(draft.draftSource).toContain(\"0: string()\");；expect(draft.draftSource).toContain(\"1: number()\");"	没测该层	keep	keep	—
-"产品面：草稿抄进侧车后 `nudo check` **红**（与 tsc 的 TS2345 同向）"	"回归（harvester **草稿面**）：类型字面量里的**方法签名**成员被丢 ⇒ 契约被**悄悄放宽** ⇒ **假绿**（tsc 报 TS2345，`nudo check` 却绿）。 oracle（`tsc --strict`，tmp/probe/fix-r27/h8a/e2e/b945.ts ⇒ TS2345）： `takeCfg({ host: \"h\" })` —— 缺 `port` ⇒ TS2345（红）。 断言：expect(res.status).not.toBe(0);；expect(res.stdout).toContain(\"port\");"	夹具漏形态	keep	keep	—
-"收割面同口径：方法成员在收割面也在（port: () => number）"	"回归（harvester **草稿面**）：类型字面量里的**方法签名**成员被丢 ⇒ 契约被**悄悄放宽** ⇒ **假绿**（tsc 报 TS2345，`nudo check` 却绿）。 oracle（`tsc --strict`，tmp/probe/fix-r27/h8a/e2e/b945.ts ⇒ TS2345）： `takeCfg({ host: \"h\" })` —— 缺 `port` ⇒ TS2345（红）。 断言：expect(formatShape(env.globals.takeCfg!)).toBe("	夹具漏形态	keep	keep	—
-"可选方法的槽位含 undefined（可能不存在，不是必定存在）"	"回归（harvester 收割面）：可选**方法**成员的 `?` 丢失（同函数里的可选 **属性**却保住了）⇒ 成员被断言成「**必定存在**」⇒ `nudo check` 放行， `tsc --strict` 报 **TS2722**（**假绿**）。 根因：`.d.ts` 的可选性标记挂在**成员节点**上（`member.questionToken`），属性与 方法都是如此； 断言：expect(s.m).toBeDefined();；expect(hasUndefined(s.m!)).toBe(true);"	没测该层	keep	keep	—
-"可选方法与可选属性的可省性口径一致（两者都含 undefined）"	"回归（harvester 收割面）：可选**方法**成员的 `?` 丢失（同函数里的可选 **属性**却保住了）⇒ 成员被断言成「**必定存在**」⇒ `nudo check` 放行， `tsc --strict` 报 **TS2722**（**假绿**）。 根因：`.d.ts` 的可选性标记挂在**成员节点**上（`member.questionToken`），属性与 方法都是如此； 断言：expect(hasUndefined(s.m!)).toBe(hasUndefined(s.p!));；expect(formatShape(s.p!)).toBe(\"number | undefined\");"	没测该层	keep	keep	—
-"必选方法不被加上 undefined"	"回归（harvester 收割面）：可选**方法**成员的 `?` 丢失（同函数里的可选 **属性**却保住了）⇒ 成员被断言成「**必定存在**」⇒ `nudo check` 放行， `tsc --strict` 报 **TS2722**（**假绿**）。 根因：`.d.ts` 的可选性标记挂在**成员节点**上（`member.questionToken`），属性与 方法都是如此； 断言：expect(hasUndefined(s.q!)).toBe(false);；expect(s.q!.shape.k).toBe(\"fn\");"	没测该层	keep	keep	—
-"提升面同口径（可选方法提升出的模块成员也含 undefined）"	"回归（harvester 收割面）：可选**方法**成员的 `?` 丢失（同函数里的可选 **属性**却保住了）⇒ 成员被断言成「**必定存在**」⇒ `nudo check` 放行， `tsc --strict` 报 **TS2722**（**假绿**）。 根因：`.d.ts` 的可选性标记挂在**成员节点**上（`member.questionToken`），属性与 方法都是如此； 断言：expect(promoted).toBeDefined();；expect(hasUndefined(promoted)).toBe(true);"	没测该层	keep	keep	—
-"对照：内联类型字面量的可选方法同口径（第二条成员收集路径）"	"回归（harvester 收割面）：`matchExtendsInfer` **不认括号节点** ⇒ `(infer E)[]` 里的 `infer E` 外面套了一层 `ParenthesizedTypeNode` ⇒ 模式匹配落到兜底分支 ⇒ **E 不绑定** ⇒ 真支退化成 α 变量 ⇒ `number[] extends (infer E)[] ? E : never` 收割成 `any`（TS：`number`）。 改前（tmp/probe/fix-r27/h1a/probe.ts，BEFORE 行）： parenArr() => any （TS：number） parenObj() => any （TS：number）"	没测该层	keep	keep	—
-"可选形参记进 optionalParams，必选元数 = TS minArgumentCount（1）"	"回归：可选 / rest 形参的「可省略」语义丢失 ⇒ 收割出的 fn 最少实参数 偏大（`g(a: string, b?: number)` 被数成 2 个必填，而 TS `minArgumentCount` = 1） ⇒ 收割结果**不满足它自己声明的类型**。 断言：expect(s.params).toHaveLength(2);；expect(s.optionalParams).toEqual([false, true]);"	没测该层	keep	keep	—
-"rest 形参不是必选位（元数 0）"	"回归：可选 / rest 形参的「可省略」语义丢失 ⇒ 收割出的 fn 最少实参数 偏大（`g(a: string, b?: number)` 被数成 2 个必填，而 TS `minArgumentCount` = 1） ⇒ 收割结果**不满足它自己声明的类型**。 断言：expect(s.optionalParams).toEqual([true]);；expect(minArity(s)).toBe(0);"	没测该层	keep	keep	—
-"对照：全必选签名不受影响（元数 2）"	"回归：可选 / rest 形参的「可省略」语义丢失 ⇒ 收割出的 fn 最少实参数 偏大（`g(a: string, b?: number)` 被数成 2 个必填，而 TS `minArgumentCount` = 1） ⇒ 收割结果**不满足它自己声明的类型**。 断言：expect(s.optionalParams).toBeUndefined();；expect(minArity(s)).toBe(2);"	没测该层	keep	keep	—
-"磁盘投影往返保留 optionalParams（冷 / 热同元数）"	"回归：可选 / rest 形参的「可省略」语义丢失 ⇒ 收割出的 fn 最少实参数 偏大（`g(a: string, b?: number)` 被数成 2 个必填，而 TS `minArgumentCount` = 1） ⇒ 收割结果**不满足它自己声明的类型**。 断言：expect(fnShape(back).optionalParams).toEqual([false, true]);；expect(minArity(fnShape(back))).toBe(1);"	没测该层	keep	keep	—
-"第二份声明的成员不丢（extra 在）"	"断言：expect(names).toEqual(expect.arrayContaining([\"bar\", \"baz\", \"Inner\", \"extra\"]));；expect(env.stats.skipped).toBe(0);"	没测该层	keep	keep	—
-"声明顺序不影响成员集合"	"断言：expect(a).toEqual(b);"	没测该层	keep	keep	—
-"具体 overload 在前：返回位保留具体类型（不是悬空 T / any）"	"α 只有在**参数表能绑定**时才保留（不得悬空）。 断言：expect(formatShape(h)).toBe(\"(string) => string\");；expect([...termVarIds(shape.returnType!)]).toEqual([]);"	没测该层	keep	keep	—
-"泛型 overload 在前：保留 α（可被实参绑定）"	"α 只有在**参数表能绑定**时才保留（不得悬空）。 断言：expect(formatShape(h)).toBe(\"(T) => T\");"	没测该层	keep	keep	—
-"两种声明顺序不被抹成静默 any（旧行为：(string) => T ⇒ any）"	"α 只有在**参数表能绑定**时才保留（不得悬空）。 断言：expect(formatShape(a)).not.toContain(\"any\");"	没测该层	keep	keep	—
-"数字 / 字符串 / const enum 都有成员面（不再是 unknown）"	"回归：收割面的 `case \"enum\"` 把 enum 整体抹成 `unknown`（成员 / 字面值 全丢）却报 `skipped: 0`，而同一 harvester 的契约草稿面完整建模成 `shape({ Red: 1, Green: 2 })` ⇒ **两面矛盾**。 断言：expect(env.globals[name]!.shape.k).toBe(\"obj\");；expect(slotLits(env.globals.Color)).toEqual({ Red: 1, Green: 2 });"	没测该层	keep	keep	—
-"无初始化器的成员按 TS 语义从 0 自增"	"回归：收割面的 `case \"enum\"` 把 enum 整体抹成 `unknown`（成员 / 字面值 全丢）却报 `skipped: 0`，而同一 harvester 的契约草稿面完整建模成 `shape({ Red: 1, Green: 2 })` ⇒ **两面矛盾**。 断言：expect(slotLits(env.globals.Auto)).toEqual({ First: 0, Second: 1 });"	没测该层	keep	keep	—
-"与契约草稿面同口径（两面不再矛盾）"	"断言：expect(draftColor).toBeDefined();；expect(draftColor!.dsl).toContain(\"Red: 1\");"	没测该层	keep	keep	—
-"必选形态完成（基线）"	"断言：expect(memberOfHolder(env.globals.f!, \"m\").shape.k).toBe(\"brand\");；expect(Date.now() - t0).toBeLessThan(10_000);"	没测该层	keep	keep	—
-"可选形态同样完成，且成员是 `L26 | undefined`"	"契约：可选成员**有界**完成（不抛错、不指数爆炸），且仍是 `T | undefined`。 断言：expect(Date.now() - t0).toBeLessThan(10_000);；expect(memberOfHolder(env.globals.f!, \"m\").shape.k).toBe(\"sum\");"	没测该层	keep	keep	—
-"导出名撞 builder import ⇒ 走别名形态（改前：export const number）"	"症状（旧口径）： '''js import { fn, any, number, union } from \"@nudojs/core\"; 勘误（族 27 收口）：本夹具原用 `lit` 作导出名，但草稿面的 builder 名单 **不含** `lit`（公共 API 的 `lit` 是 Term 构造器，不是约束构建器）⇒ `lit` 不再产生 import ⇒ 原断言的「撞名」前提不成立。 断言：expect(src).not.toMatch(/^export const number = /m);；expect(src).toContain(\"export { _nudo_1 as number };\");"	夹具漏形态	keep	keep	—
-"草稿产物真能过 node --check（改前：Identifier 'number' has already been declared）"	"症状（旧口径）： '''js import { fn, any, number, union } from \"@nudojs/core\"; 勘误（族 27 收口）：本夹具原用 `lit` 作导出名，但草稿面的 builder 名单 **不含** `lit`（公共 API 的 `lit` 是 Term 构造器，不是约束构建器）⇒ `lit` 不再产生 import ⇒ 原断言的「撞名」前提不成立。 断言：expect(check.ok, check.stderr).toBe(true);"	夹具漏形态	keep	keep	—
-"负控制：普通导出名仍是 export const <name>（不误改别名形态）"	"症状（旧口径）： '''js import { fn, any, number, union } from \"@nudojs/core\"; 勘误（族 27 收口）：本夹具原用 `lit` 作导出名，但草稿面的 builder 名单 **不含** `lit`（公共 API 的 `lit` 是 Term 构造器，不是约束构建器）⇒ `lit` 不再产生 import ⇒ 原断言的「撞名」前提不成立。 断言：expect(src).toContain(\"export const lineTotal = fn({ price: number() }, number());\");；expect(src).not.toContain(\"_nud"	夹具漏形态	keep	keep	—
+别名 `type Id = string` ⇒ string()，不是 any()；契约**真的**要求 string（域隶属判定 = 零义务已消除）；产品面：草稿抄进侧车后 `nudo check` **红**（与 tsc 的 TS2322 同向）；收割面同答案：(string) => string；类型别名指向对象时展开成 shape；interface 也展开；interface 的**继承成员**也在契约里（只展开自身成员 ⇒ 悄悄放宽）	harvest-dts 聚合矩阵	没测该层	keep	keep	—
+草稿是 partial(shape({…}))，不是原样透传的 shape({…})；契约里两个字段都**可选**（isOptional）；产品面：草稿抄进侧车后 `nudo check` **绿**（与 tsc 同向，不再假红）；收割面同答案：该位无义务（unknown）⇒ 两侧都接受 {}	harvest-dts 聚合矩阵	没测该层	keep	keep	—
+键是字面量集合时，**值域落到实现**（shape 的字段就是值域）；键不是字面量时**如实降级**：不宣称值域 + note 明说未建模 + 计入 skipped；产品面：值域落地的 Record **红**（与 tsc 的 TS2322 同向，不再放绿）；收割面同口径：Record 是**开放对象且带索引值域**（值域没丢）	harvest-dts 聚合矩阵	没测该层	keep	keep	—
+`x is T` 的返回面是 boolean（不是 unknown，也不是被谓词的 T）；`asserts x is T` 的返回面与 `: void` 同口径（不是 unknown）；`asserts x`（无 `is T`）也是 void 口径；`this is T` / `asserts this is T` 同口径；谓词里的联合被谓词类型不影响返回面（仍是 boolean）；接口方法签名上的谓词同口径；函数类型（type literal）上的谓词同口径；负控：普通返回	harvest-dts 聚合矩阵	没测该层	keep	keep	—
+不同类型实参 ⇒ 不同实例（改前 Box<number> 被折成 Box<string>）；同一类型实参 ⇒ 命中缓存（同一个实例对象）；实参个数相同、类型不同 ⇒ 不共缓存（个数相同也必须分开）；嵌套实参也按身份区分（Box<Box<string>> ≠ Box<Box<number>>）	harvest-dts 聚合矩阵	没测该层	keep	keep	—
+A.Opts 只有 A 的成员（不含 B.Opts 的 b）；B.Opts 只有 B 的成员（不含 A.Opts 的 a）；对照：单命名空间时成员照常可见（不是「全都丢了」）；对照：非限定引用仍解析得到接口成员（既有口径不被破坏）；对照：lodash 形态的模块增强仍与命名空间限定名合并	harvest-dts 聚合矩阵	没测该层	keep	keep	—
+顶层函数的 `this` 形参被跳过（元数 = 真实实参数）；`this` 形参的类型不进入参数位；多个真实实参时元数只算真实实参；接口方法签名上的 `this` 形参同口径（不进实例面的参数位）	harvest-dts 聚合矩阵	没测该层	keep	keep	—
+`const p: Point` 绑定保留在 globals 里（改前整个消失）；`p` 的类型是 Point 的实例面（不是 unknown）；实例成员进实例面（x / y / label / move / origin）；以类名做参数类型时参数面是 Point（改前退化成 unknown）；静态成员不进实例面	harvest-dts 聚合矩阵	没测该层	keep	keep	—
+类型 vs 字面量 ⇒ 假（number extends 1 / string extends "a"）；字面量 vs 字面量 ⇒ 按值比（"a" vs "b" 假；1 vs 1 真；1 vs 2 假）；字面量 vs 类型 ⇒ 真（1 extends number / "a" extends string）；判定不是「一律判假」：同值字面量仍然成立	harvest-dts 聚合矩阵	没测该层	keep	keep	—
+带括号的数组 infer 绑定元素类型（改前 any）；带括号的类型字面量 infer 绑定成员类型（改前 any）；无括号的 Promise infer 仍然绑定（不被括号口径改坏）；同一语义（带括号 / 不带括号）得到同一个值	harvest-dts 聚合矩阵	没测该层	keep	keep	—
+Point & Size 的成员是并集（x/y/w/h 四个）；交叉类型与单侧**可区分**（改前两者完全同形）；成员的值域保留（不是 unknown / never）；同名冲突成员取 never（TS 的 A & B 属性冲突语义）；纯字面量交叉（无对象面）不崩，兜底取第一侧	harvest-dts 聚合矩阵	没测该层	keep	keep	—
+Box<number> / Box<string> 的成员值域分别是 number / string；两个实例**可区分**（改前完全同形）；别名路径与接口路径**同口径**（两者都会代入实参）；别名体内是数组时也代入实参（Box<T> = T[]）；非泛型别名不受影响（不凭空多出实参）	harvest-dts 聚合矩阵	没测该层	keep	keep	—
+`number | null` 的草稿是 union(number(), null)，不是 any()；契约**真的**拒绝字符串（域隶属判定 = 假绿已消除）；产品面：草稿抄进侧车后 `nudo check` **红**（与 tsc 的 TS2322 同向）；收割面同口径：`null` 是真 null 面（渲染成 number | null）；约束位上的裸字面量是**真约束**（顶层 null 导出不是 `export const x = null`）	harvest-dts 聚合矩阵	没测该层	keep	keep	—
+[number, string] 的槽位分别是 number / string；槽位 ≥1 的元素域是**各自**的类型（不再与首元素相同）；元组不再是数组（不再折成 number[]）；rest 槽位保留自己的元素类型（[number, ...string[]]）；具名元组成员保留自己的类型	harvest-dts 聚合矩阵	没测该层	keep	keep	—
+Record<string, number> 是开放对象且带索引值域 number；两个不同的 Record **可区分**（改前都是闭空对象、完全同形）；类型字面量的索引签名也建成开放对象；索引签名 + 具名成员共存时两者都在（具名成员不被索引吞掉）；没有索引签名的类型字面量仍是**闭**对象（开放性不被乱加）	harvest-dts 聚合矩阵	没测该层	keep	keep	—
+映射类型 / 模板字面量 / 索引访问 / keyof / typeof 的绑定全部保留；值域未知时退成 unknown（降级，不是符号不存在）；可判定的类型不受影响（对照组：仍是确切类型）；没有类型标注的 `declare const` 也保留绑定	harvest-dts 聚合矩阵	没测该层	keep	keep	—
+同名 overload 的返回类型不再被抹除（并集）；参数位逐位并集（与顶层函数路径同口径）；顶层函数路径与接口成员路径同形（同一实体两条路径不得分叉）；单个签名（无重载）不受影响；重载成员仍可调用（relation 面完整：参数位 + 返回位都在）	harvest-dts 聚合矩阵	没测该层	keep	keep	—
+递归别名 = 按名 brand（不是内联展开的对象）；自引用点 = 按名 brand 引用（内层「形状待定」，不再展开一层）；规模有界：自引用成员数增加时 env 模块不指数增长；互引别名（type A = { b: B }; type B = { a: A }）也被识别为递归	harvest-dts 聚合矩阵	没测该层	keep	keep	—
+brand 成员与**模块级**提升成员的形态完全一致（BUG-253：提升只对模块作用域成立）；重载集保留全部返回类型（不是只剩第一个 overload）；对照：单签名方法两条路径同样一致；泛型接口：brand 面用类型实参（string），提升面不产出未绑定 α	harvest-dts 聚合矩阵	没测该层	keep	keep	—
+Derived 的实例面含基接口的成员 b；继承来的成员不是「读不到」（不是 exact undefined）；对照：基接口自身只有自己的成员（不被子接口的成员污染）；对照：多级继承链（extends 递归）；对照：无 extends 时成员表不变（既有口径不被破坏）	harvest-dts 聚合矩阵	没测该层	keep	keep	—
+接口的 α 照常代入（sh.v 是实参类型）；方法自己的 α **不被**接口实参替换（方法仍是泛型的）；遮蔽的 α 与外层 α 是**不同**的身份；无同名遮蔽时，方法的 α 仍可被接口实参代入（不误伤）	harvest-dts 聚合矩阵	没测该层	keep	keep	—
+自引用点是 brand 且内层「形状待定」；非递归成员仍然精确（value: number 不受影响）；成员读不折成 exact undefined（L2 假红的成因消失）；三条收割路径给出同一个类型（收割面 / 磁盘往返面 / 落盘发射面）	harvest-dts 聚合矩阵	没测该层	keep	keep	—
+无实参引用取默认值（改前是 any = 未绑定 α）；`Box` ≡ `Box<string>`（默认路径与显式实参路径同形）；显式实参仍然优先于默认值；无默认值时取约束面（不留完全无约束的 α）；既无默认值也无约束 ⇒ 推断 unknown（不是未绑定 α）；多形参：部分显式 + 其余取默认值	harvest-dts 聚合矩阵	没测该层	keep	keep	—
+结构相同的两个 interface ⇒ 判真（改前按名字判假）；结构不同的两个 interface ⇒ 判假（不能因为放宽而一律判真）；同名 interface ⇒ 判真（不得被结构口径改坏）；多成员结构相同 ⇒ 判真；源上**缺成员** ⇒ 判假	harvest-dts 聚合矩阵	没测该层	keep	keep	—
+内联字面量与 interface 两条路径的成员集合**一致**；访问器的读面是 getter 的返回类型（不是 exact undefined）；get / set 对的读面**与声明顺序无关**（set 在前也取 getter）；只有 setter 时读面不折 exact undefined（写面单独建模）；无访问器的普通字面量不受影响	harvest-dts 聚合矩阵	没测该层	keep	keep	—
+逐字相同的两条声明 ⇒ 调用点返回类型完全一致；属性位的条件元数据不被下一条签名捡走（inferFrom 必须为空）；冷 / 热缓存两种状态同口径（重复收割结果不变）；遍历顺序不影响结论（接口单独一个文件 / 换文件顺序）；真支就是 infer 变量时，元数据仍挂在**自己那条**签名上	harvest-dts 聚合矩阵	没测该层	keep	keep	—
+keyof 可算 ⇒ 照常判定（"z" 不在 {a,b} ⇒ 假）；keyof 可算 ⇒ 在键集合里 ⇒ 真（不能一律判不出）；typeof 判不出 ⇒ 不取支（两支并集，不是恒真）；未解析的类型引用判不出 ⇒ 不取支（两支并集）；keyof 的判定方向不随「判不出」放宽（对拍 TS 的两条断言）	harvest-dts 聚合矩阵	没测该层	keep	keep	—
+嵌套条件类型的真支被递归求值（真支取值出现在结果里）；不再返回 infer 变量顶替出来的错误确切值；真支就是 infer 变量时仍走 α 捷径（inferFrom 在位）；嵌套真支不被当成 infer 变量 ⇒ 不挂 inferFrom	harvest-dts 聚合矩阵	没测该层	keep	keep	—
+重载集保留**全部** overload 的返回类型（不被塌成第一个）；每条 overload 的签名都看得见（note 里逐条列出）；被合并掉的 overload **计入 skipped**（汇总行说真话）；N 条 overload ⇒ N−1 条丢失被逐条计数；单条声明（无重载）不算丢失	harvest-dts 聚合矩阵	没测该层	keep	keep	—
+类值带 `ctor: true` facet（改前缺省 = 可构造性未知）；mock 化时透传 ctor facet（否则又变回「可构造性未知」）；`new Gadget()` 不记 may TypeError（改前记「可构造性未知」）；`new Gadget()` 产出实例面（Point/Gadget 品牌，不是 unknown）；反向：去掉 ctor facet ⇒ 同一个 new 记 may TypeError（证明判据就是这个 facet）；普通函数（不是类）不带 c	harvest-dts 聚合矩阵	没测该层	keep	keep	—
+参数位保留每个 overload 的参数类型（不再只取 sigs[0]）；单个声明的函数不受影响（参数位不被改写）；参数个数不同的 overload 不改参数位（arity 不能被改）；带泛型 α 的 overload 不改参数位（α 是逐参数绑定的）；A6：overloads 随磁盘签名投影往返（缓存命中不丢派发面）；A6：重载集进入 fn shape 的 overloads 承载位（声明序逐 arm）	harvest-dts 聚合矩阵	没测该层	keep	keep	—
+构造签名产出 fn 形状且带 ctor: true facet；构造形参与实例面保留（new C(1) 的实例类型是声明的返回类型）；构造形参是可选时带上 undefined（与普通形参同口径）；与构造签名共存的具名成员不丢（静态槽）；无构造签名的普通字面量不带 ctor facet	harvest-dts 聚合矩阵	没测该层	keep	keep	—
+调用签名产出 fn 形状（不是空 obj）；形参与返回面保留（形参位是 number、返回位是 string）；多形参 / 可选形参按普通签名同口径；与调用签名共存的具名成员不丢（静态槽）；无调用签名的普通字面量仍是 obj（不误投影成 fn）	harvest-dts 聚合矩阵	没测该层	keep	keep	—
+迭代协议成员进入实例模型（@@iterator 槽存在且可调用）；具名成员不受影响（对照组：只有计算成员名被丢）；异步迭代协议同样保留（@@asyncIterator）；不可静态判定的计算成员名被跳过（不产出错误成员名，也不崩）；计算成员名不影响具名成员的类型（不被覆盖成 unknown）	harvest-dts 聚合矩阵	没测该层	keep	keep	—
+带引号 / 连字符的键产出**合法**的 DSL（引号串形态）；草稿产物真能过 `node --check`（改前：Unexpected token）；`__proto__` 键走计算属性名（对象字面量的 __proto__ 会改原型）；**抄进侧车后 `nudo check` 仍然绿**（改前：sidecar 加载失败 ⇒ exit 1）；反向闸：语法非法的侧车**必定**加载失败（证明上一条不是永真断言）；导出名撞 builder import ⇒ 走别名形态（草稿仍是合	harvest-dts 聚合矩阵	没测该层	keep	keep	—
+草稿的返回位**不是** resolve 后的类型（外壳不被剥掉）；该位的丢失**如实标注**（note + skipped 计数），不静默放宽；产品面：草稿抄进侧车后 `nudo check` **绿**（与 tsc 同向，不再假红）；收割面同口径：Promise 外壳**保留**（promise<…>）	harvest-dts 聚合矩阵	没测该层	keep	keep	—
+方法成员进契约：`port: fn({}, number())`；数字键成员也不被丢；产品面：草稿抄进侧车后 `nudo check` **红**（与 tsc 的 TS2345 同向）；收割面同口径：方法成员在收割面也在（port: () => number）	harvest-dts 聚合矩阵	没测该层	keep	keep	—
+可选方法的槽位含 undefined（可能不存在，不是必定存在）；可选方法与可选属性的可省性口径一致（两者都含 undefined）；必选方法不被加上 undefined；提升面同口径（可选方法提升出的模块成员也含 undefined）；对照：内联类型字面量的可选方法同口径（第二条成员收集路径）	harvest-dts 聚合矩阵	没测该层	keep	keep	—
+可选形参记进 optionalParams，必选元数 = TS minArgumentCount（1）；rest 形参不是必选位（元数 0）；对照：全必选签名不受影响（元数 2）；磁盘投影往返保留 optionalParams（冷 / 热同元数）	harvest-dts 聚合矩阵	没测该层	keep	keep	—
+第二份声明的成员不丢（extra 在）；声明顺序不影响成员集合	harvest-dts 聚合矩阵	没测该层	keep	keep	—
+具体 overload 在前：返回位保留具体类型（不是悬空 T / any）；泛型 overload 在前：保留 α（可被实参绑定）；两种声明顺序不被抹成静默 any（旧行为：(string) => T ⇒ any）	harvest-dts 聚合矩阵	没测该层	keep	keep	—
+数字 / 字符串 / const enum 都有成员面（不再是 unknown）；无初始化器的成员按 TS 语义从 0 自增；与契约草稿面同口径（两面不再矛盾）	harvest-dts 聚合矩阵	没测该层	keep	keep	—
+必选形态完成（基线）；可选形态同样完成，且成员是 `L26 | undefined`	harvest-dts 聚合矩阵	没测该层	keep	keep	—
+导出名撞 builder import ⇒ 走别名形态（改前：export const number）；草稿产物真能过 node --check（改前：Identifier 'number' has already been declared）；负控制：普通导出名仍是 export const <name>（不误改别名形态）	harvest-dts 聚合矩阵	没测该层	keep	keep	—
+```
+
+```audit-deleted
+title	reason	evidence
+别名 `type Id = string` ⇒ string()，不是 any()	dup:harvest-dts 聚合矩阵	commit:13806366
+契约**真的**要求 string（域隶属判定 = 零义务已消除）	dup:harvest-dts 聚合矩阵	commit:13806366
+产品面：草稿抄进侧车后 `nudo check` **红**（与 tsc 的 TS2322 同向）	dup:harvest-dts 聚合矩阵	commit:13806366
+收割面同答案：(string) => string	dup:harvest-dts 聚合矩阵	commit:13806366
+类型别名指向对象时展开成 shape；interface 也展开	dup:harvest-dts 聚合矩阵	commit:13806366
+interface 的**继承成员**也在契约里（只展开自身成员 ⇒ 悄悄放宽）	dup:harvest-dts 聚合矩阵	commit:13806366
+草稿是 partial(shape({…}))，不是原样透传的 shape({…})	dup:harvest-dts 聚合矩阵	commit:13806366
+契约里两个字段都**可选**（isOptional）	dup:harvest-dts 聚合矩阵	commit:13806366
+产品面：草稿抄进侧车后 `nudo check` **绿**（与 tsc 同向，不再假红）	dup:harvest-dts 聚合矩阵	commit:13806366
+收割面同答案：该位无义务（unknown）⇒ 两侧都接受 {}	dup:harvest-dts 聚合矩阵	commit:13806366
+键是字面量集合时，**值域落到实现**（shape 的字段就是值域）	dup:harvest-dts 聚合矩阵	commit:13806366
+键不是字面量时**如实降级**：不宣称值域 + note 明说未建模 + 计入 skipped	dup:harvest-dts 聚合矩阵	commit:13806366
+产品面：值域落地的 Record **红**（与 tsc 的 TS2322 同向，不再放绿）	dup:harvest-dts 聚合矩阵	commit:13806366
+收割面同口径：Record 是**开放对象且带索引值域**（值域没丢）	dup:harvest-dts 聚合矩阵	commit:13806366
+`x is T` 的返回面是 boolean（不是 unknown，也不是被谓词的 T）	dup:harvest-dts 聚合矩阵	commit:13806366
+`asserts x is T` 的返回面与 `: void` 同口径（不是 unknown）	dup:harvest-dts 聚合矩阵	commit:13806366
+`asserts x`（无 `is T`）也是 void 口径	dup:harvest-dts 聚合矩阵	commit:13806366
+`this is T` / `asserts this is T` 同口径	dup:harvest-dts 聚合矩阵	commit:13806366
+谓词里的联合被谓词类型不影响返回面（仍是 boolean）	dup:harvest-dts 聚合矩阵	commit:13806366
+接口方法签名上的谓词同口径	dup:harvest-dts 聚合矩阵	commit:13806366
+函数类型（type literal）上的谓词同口径	dup:harvest-dts 聚合矩阵	commit:13806366
+负控：普通返回类型的收割结果不变	dup:harvest-dts 聚合矩阵	commit:13806366
+不同类型实参 ⇒ 不同实例（改前 Box<number> 被折成 Box<string>）	dup:harvest-dts 聚合矩阵	commit:13806366
+同一类型实参 ⇒ 命中缓存（同一个实例对象）	dup:harvest-dts 聚合矩阵	commit:13806366
+实参个数相同、类型不同 ⇒ 不共缓存（个数相同也必须分开）	dup:harvest-dts 聚合矩阵	commit:13806366
+嵌套实参也按身份区分（Box<Box<string>> ≠ Box<Box<number>>）	dup:harvest-dts 聚合矩阵	commit:13806366
+A.Opts 只有 A 的成员（不含 B.Opts 的 b）	dup:harvest-dts 聚合矩阵	commit:13806366
+B.Opts 只有 B 的成员（不含 A.Opts 的 a）	dup:harvest-dts 聚合矩阵	commit:13806366
+对照：单命名空间时成员照常可见（不是「全都丢了」）	dup:harvest-dts 聚合矩阵	commit:13806366
+对照：非限定引用仍解析得到接口成员（既有口径不被破坏）	dup:harvest-dts 聚合矩阵	commit:13806366
+对照：lodash 形态的模块增强仍与命名空间限定名合并	dup:harvest-dts 聚合矩阵	commit:13806366
+顶层函数的 `this` 形参被跳过（元数 = 真实实参数）	dup:harvest-dts 聚合矩阵	commit:13806366
+`this` 形参的类型不进入参数位	dup:harvest-dts 聚合矩阵	commit:13806366
+多个真实实参时元数只算真实实参	dup:harvest-dts 聚合矩阵	commit:13806366
+接口方法签名上的 `this` 形参同口径（不进实例面的参数位）	dup:harvest-dts 聚合矩阵	commit:13806366
+`const p: Point` 绑定保留在 globals 里（改前整个消失）	dup:harvest-dts 聚合矩阵	commit:13806366
+`p` 的类型是 Point 的实例面（不是 unknown）	dup:harvest-dts 聚合矩阵	commit:13806366
+实例成员进实例面（x / y / label / move / origin）	dup:harvest-dts 聚合矩阵	commit:13806366
+以类名做参数类型时参数面是 Point（改前退化成 unknown）	dup:harvest-dts 聚合矩阵	commit:13806366
+静态成员不进实例面	dup:harvest-dts 聚合矩阵	commit:13806366
+类型 vs 字面量 ⇒ 假（number extends 1 / string extends "a"）	dup:harvest-dts 聚合矩阵	commit:13806366
+字面量 vs 字面量 ⇒ 按值比（"a" vs "b" 假；1 vs 1 真；1 vs 2 假）	dup:harvest-dts 聚合矩阵	commit:13806366
+字面量 vs 类型 ⇒ 真（1 extends number / "a" extends string）	dup:harvest-dts 聚合矩阵	commit:13806366
+判定不是「一律判假」：同值字面量仍然成立	dup:harvest-dts 聚合矩阵	commit:13806366
+带括号的数组 infer 绑定元素类型（改前 any）	dup:harvest-dts 聚合矩阵	commit:13806366
+带括号的类型字面量 infer 绑定成员类型（改前 any）	dup:harvest-dts 聚合矩阵	commit:13806366
+无括号的 Promise infer 仍然绑定（不被括号口径改坏）	dup:harvest-dts 聚合矩阵	commit:13806366
+同一语义（带括号 / 不带括号）得到同一个值	dup:harvest-dts 聚合矩阵	commit:13806366
+Point & Size 的成员是并集（x/y/w/h 四个）	dup:harvest-dts 聚合矩阵	commit:13806366
+交叉类型与单侧**可区分**（改前两者完全同形）	dup:harvest-dts 聚合矩阵	commit:13806366
+成员的值域保留（不是 unknown / never）	dup:harvest-dts 聚合矩阵	commit:13806366
+同名冲突成员取 never（TS 的 A & B 属性冲突语义）	dup:harvest-dts 聚合矩阵	commit:13806366
+纯字面量交叉（无对象面）不崩，兜底取第一侧	dup:harvest-dts 聚合矩阵	commit:13806366
+Box<number> / Box<string> 的成员值域分别是 number / string	dup:harvest-dts 聚合矩阵	commit:13806366
+两个实例**可区分**（改前完全同形）	dup:harvest-dts 聚合矩阵	commit:13806366
+别名路径与接口路径**同口径**（两者都会代入实参）	dup:harvest-dts 聚合矩阵	commit:13806366
+别名体内是数组时也代入实参（Box<T> = T[]）	dup:harvest-dts 聚合矩阵	commit:13806366
+非泛型别名不受影响（不凭空多出实参）	dup:harvest-dts 聚合矩阵	commit:13806366
+`number | null` 的草稿是 union(number(), null)，不是 any()	dup:harvest-dts 聚合矩阵	commit:13806366
+契约**真的**拒绝字符串（域隶属判定 = 假绿已消除）	dup:harvest-dts 聚合矩阵	commit:13806366
+收割面同口径：`null` 是真 null 面（渲染成 number | null）	dup:harvest-dts 聚合矩阵	commit:13806366
+约束位上的裸字面量是**真约束**（顶层 null 导出不是 `export const x = null`）	dup:harvest-dts 聚合矩阵	commit:13806366
+[number, string] 的槽位分别是 number / string	dup:harvest-dts 聚合矩阵	commit:13806366
+槽位 ≥1 的元素域是**各自**的类型（不再与首元素相同）	dup:harvest-dts 聚合矩阵	commit:13806366
+元组不再是数组（不再折成 number[]）	dup:harvest-dts 聚合矩阵	commit:13806366
+rest 槽位保留自己的元素类型（[number, ...string[]]）	dup:harvest-dts 聚合矩阵	commit:13806366
+具名元组成员保留自己的类型	dup:harvest-dts 聚合矩阵	commit:13806366
+Record<string, number> 是开放对象且带索引值域 number	dup:harvest-dts 聚合矩阵	commit:13806366
+两个不同的 Record **可区分**（改前都是闭空对象、完全同形）	dup:harvest-dts 聚合矩阵	commit:13806366
+类型字面量的索引签名也建成开放对象	dup:harvest-dts 聚合矩阵	commit:13806366
+索引签名 + 具名成员共存时两者都在（具名成员不被索引吞掉）	dup:harvest-dts 聚合矩阵	commit:13806366
+没有索引签名的类型字面量仍是**闭**对象（开放性不被乱加）	dup:harvest-dts 聚合矩阵	commit:13806366
+映射类型 / 模板字面量 / 索引访问 / keyof / typeof 的绑定全部保留	dup:harvest-dts 聚合矩阵	commit:13806366
+值域未知时退成 unknown（降级，不是符号不存在）	dup:harvest-dts 聚合矩阵	commit:13806366
+可判定的类型不受影响（对照组：仍是确切类型）	dup:harvest-dts 聚合矩阵	commit:13806366
+没有类型标注的 `declare const` 也保留绑定	dup:harvest-dts 聚合矩阵	commit:13806366
+同名 overload 的返回类型不再被抹除（并集）	dup:harvest-dts 聚合矩阵	commit:13806366
+参数位逐位并集（与顶层函数路径同口径）	dup:harvest-dts 聚合矩阵	commit:13806366
+顶层函数路径与接口成员路径同形（同一实体两条路径不得分叉）	dup:harvest-dts 聚合矩阵	commit:13806366
+单个签名（无重载）不受影响	dup:harvest-dts 聚合矩阵	commit:13806366
+重载成员仍可调用（relation 面完整：参数位 + 返回位都在）	dup:harvest-dts 聚合矩阵	commit:13806366
+递归别名 = 按名 brand（不是内联展开的对象）	dup:harvest-dts 聚合矩阵	commit:13806366
+自引用点 = 按名 brand 引用（内层「形状待定」，不再展开一层）	dup:harvest-dts 聚合矩阵	commit:13806366
+规模有界：自引用成员数增加时 env 模块不指数增长	dup:harvest-dts 聚合矩阵	commit:13806366
+互引别名（type A = { b: B }; type B = { a: A }）也被识别为递归	dup:harvest-dts 聚合矩阵	commit:13806366
+brand 成员与**模块级**提升成员的形态完全一致（BUG-253：提升只对模块作用域成立）	dup:harvest-dts 聚合矩阵	commit:13806366
+重载集保留全部返回类型（不是只剩第一个 overload）	dup:harvest-dts 聚合矩阵	commit:13806366
+对照：单签名方法两条路径同样一致	dup:harvest-dts 聚合矩阵	commit:13806366
+泛型接口：brand 面用类型实参（string），提升面不产出未绑定 α	dup:harvest-dts 聚合矩阵	commit:13806366
+Derived 的实例面含基接口的成员 b	dup:harvest-dts 聚合矩阵	commit:13806366
+继承来的成员不是「读不到」（不是 exact undefined）	dup:harvest-dts 聚合矩阵	commit:13806366
+对照：基接口自身只有自己的成员（不被子接口的成员污染）	dup:harvest-dts 聚合矩阵	commit:13806366
+对照：多级继承链（extends 递归）	dup:harvest-dts 聚合矩阵	commit:13806366
+对照：无 extends 时成员表不变（既有口径不被破坏）	dup:harvest-dts 聚合矩阵	commit:13806366
+接口的 α 照常代入（sh.v 是实参类型）	dup:harvest-dts 聚合矩阵	commit:13806366
+方法自己的 α **不被**接口实参替换（方法仍是泛型的）	dup:harvest-dts 聚合矩阵	commit:13806366
+遮蔽的 α 与外层 α 是**不同**的身份	dup:harvest-dts 聚合矩阵	commit:13806366
+无同名遮蔽时，方法的 α 仍可被接口实参代入（不误伤）	dup:harvest-dts 聚合矩阵	commit:13806366
+自引用点是 brand 且内层「形状待定」	dup:harvest-dts 聚合矩阵	commit:13806366
+非递归成员仍然精确（value: number 不受影响）	dup:harvest-dts 聚合矩阵	commit:13806366
+成员读不折成 exact undefined（L2 假红的成因消失）	dup:harvest-dts 聚合矩阵	commit:13806366
+三条收割路径给出同一个类型（收割面 / 磁盘往返面 / 落盘发射面）	dup:harvest-dts 聚合矩阵	commit:13806366
+无实参引用取默认值（改前是 any = 未绑定 α）	dup:harvest-dts 聚合矩阵	commit:13806366
+`Box` ≡ `Box<string>`（默认路径与显式实参路径同形）	dup:harvest-dts 聚合矩阵	commit:13806366
+显式实参仍然优先于默认值	dup:harvest-dts 聚合矩阵	commit:13806366
+无默认值时取约束面（不留完全无约束的 α）	dup:harvest-dts 聚合矩阵	commit:13806366
+既无默认值也无约束 ⇒ 推断 unknown（不是未绑定 α）	dup:harvest-dts 聚合矩阵	commit:13806366
+多形参：部分显式 + 其余取默认值	dup:harvest-dts 聚合矩阵	commit:13806366
+结构相同的两个 interface ⇒ 判真（改前按名字判假）	dup:harvest-dts 聚合矩阵	commit:13806366
+结构不同的两个 interface ⇒ 判假（不能因为放宽而一律判真）	dup:harvest-dts 聚合矩阵	commit:13806366
+同名 interface ⇒ 判真（不得被结构口径改坏）	dup:harvest-dts 聚合矩阵	commit:13806366
+多成员结构相同 ⇒ 判真；源上**缺成员** ⇒ 判假	dup:harvest-dts 聚合矩阵	commit:13806366
+内联字面量与 interface 两条路径的成员集合**一致**	dup:harvest-dts 聚合矩阵	commit:13806366
+访问器的读面是 getter 的返回类型（不是 exact undefined）	dup:harvest-dts 聚合矩阵	commit:13806366
+get / set 对的读面**与声明顺序无关**（set 在前也取 getter）	dup:harvest-dts 聚合矩阵	commit:13806366
+只有 setter 时读面不折 exact undefined（写面单独建模）	dup:harvest-dts 聚合矩阵	commit:13806366
+无访问器的普通字面量不受影响	dup:harvest-dts 聚合矩阵	commit:13806366
+逐字相同的两条声明 ⇒ 调用点返回类型完全一致	dup:harvest-dts 聚合矩阵	commit:13806366
+属性位的条件元数据不被下一条签名捡走（inferFrom 必须为空）	dup:harvest-dts 聚合矩阵	commit:13806366
+冷 / 热缓存两种状态同口径（重复收割结果不变）	dup:harvest-dts 聚合矩阵	commit:13806366
+遍历顺序不影响结论（接口单独一个文件 / 换文件顺序）	dup:harvest-dts 聚合矩阵	commit:13806366
+真支就是 infer 变量时，元数据仍挂在**自己那条**签名上	dup:harvest-dts 聚合矩阵	commit:13806366
+keyof 可算 ⇒ 照常判定（"z" 不在 {a,b} ⇒ 假）	dup:harvest-dts 聚合矩阵	commit:13806366
+keyof 可算 ⇒ 在键集合里 ⇒ 真（不能一律判不出）	dup:harvest-dts 聚合矩阵	commit:13806366
+typeof 判不出 ⇒ 不取支（两支并集，不是恒真）	dup:harvest-dts 聚合矩阵	commit:13806366
+未解析的类型引用判不出 ⇒ 不取支（两支并集）	dup:harvest-dts 聚合矩阵	commit:13806366
+keyof 的判定方向不随「判不出」放宽（对拍 TS 的两条断言）	dup:harvest-dts 聚合矩阵	commit:13806366
+嵌套条件类型的真支被递归求值（真支取值出现在结果里）	dup:harvest-dts 聚合矩阵	commit:13806366
+不再返回 infer 变量顶替出来的错误确切值	dup:harvest-dts 聚合矩阵	commit:13806366
+真支就是 infer 变量时仍走 α 捷径（inferFrom 在位）	dup:harvest-dts 聚合矩阵	commit:13806366
+嵌套真支不被当成 infer 变量 ⇒ 不挂 inferFrom	dup:harvest-dts 聚合矩阵	commit:13806366
+重载集保留**全部** overload 的返回类型（不被塌成第一个）	dup:harvest-dts 聚合矩阵	commit:13806366
+每条 overload 的签名都看得见（note 里逐条列出）	dup:harvest-dts 聚合矩阵	commit:13806366
+被合并掉的 overload **计入 skipped**（汇总行说真话）	dup:harvest-dts 聚合矩阵	commit:13806366
+N 条 overload ⇒ N−1 条丢失被逐条计数	dup:harvest-dts 聚合矩阵	commit:13806366
+单条声明（无重载）不算丢失	dup:harvest-dts 聚合矩阵	commit:13806366
+类值带 `ctor: true` facet（改前缺省 = 可构造性未知）	dup:harvest-dts 聚合矩阵	commit:13806366
+mock 化时透传 ctor facet（否则又变回「可构造性未知」）	dup:harvest-dts 聚合矩阵	commit:13806366
+`new Gadget()` 不记 may TypeError（改前记「可构造性未知」）	dup:harvest-dts 聚合矩阵	commit:13806366
+`new Gadget()` 产出实例面（Point/Gadget 品牌，不是 unknown）	dup:harvest-dts 聚合矩阵	commit:13806366
+反向：去掉 ctor facet ⇒ 同一个 new 记 may TypeError（证明判据就是这个 facet）	dup:harvest-dts 聚合矩阵	commit:13806366
+普通函数（不是类）不带 ctor facet（可构造性保持未知，不误报可构造）	dup:harvest-dts 聚合矩阵	commit:13806366
+参数位保留每个 overload 的参数类型（不再只取 sigs[0]）	dup:harvest-dts 聚合矩阵	commit:13806366
+单个声明的函数不受影响（参数位不被改写）	dup:harvest-dts 聚合矩阵	commit:13806366
+参数个数不同的 overload 不改参数位（arity 不能被改）	dup:harvest-dts 聚合矩阵	commit:13806366
+带泛型 α 的 overload 不改参数位（α 是逐参数绑定的）	dup:harvest-dts 聚合矩阵	commit:13806366
+A6：overloads 随磁盘签名投影往返（缓存命中不丢派发面）	dup:harvest-dts 聚合矩阵	commit:13806366
+A6：重载集进入 fn shape 的 overloads 承载位（声明序逐 arm）	dup:harvest-dts 聚合矩阵	commit:13806366
+构造签名产出 fn 形状且带 ctor: true facet	dup:harvest-dts 聚合矩阵	commit:13806366
+构造形参与实例面保留（new C(1) 的实例类型是声明的返回类型）	dup:harvest-dts 聚合矩阵	commit:13806366
+构造形参是可选时带上 undefined（与普通形参同口径）	dup:harvest-dts 聚合矩阵	commit:13806366
+与构造签名共存的具名成员不丢（静态槽）	dup:harvest-dts 聚合矩阵	commit:13806366
+无构造签名的普通字面量不带 ctor facet	dup:harvest-dts 聚合矩阵	commit:13806366
+调用签名产出 fn 形状（不是空 obj）	dup:harvest-dts 聚合矩阵	commit:13806366
+形参与返回面保留（形参位是 number、返回位是 string）	dup:harvest-dts 聚合矩阵	commit:13806366
+多形参 / 可选形参按普通签名同口径	dup:harvest-dts 聚合矩阵	commit:13806366
+与调用签名共存的具名成员不丢（静态槽）	dup:harvest-dts 聚合矩阵	commit:13806366
+无调用签名的普通字面量仍是 obj（不误投影成 fn）	dup:harvest-dts 聚合矩阵	commit:13806366
+迭代协议成员进入实例模型（@@iterator 槽存在且可调用）	dup:harvest-dts 聚合矩阵	commit:13806366
+具名成员不受影响（对照组：只有计算成员名被丢）	dup:harvest-dts 聚合矩阵	commit:13806366
+异步迭代协议同样保留（@@asyncIterator）	dup:harvest-dts 聚合矩阵	commit:13806366
+不可静态判定的计算成员名被跳过（不产出错误成员名，也不崩）	dup:harvest-dts 聚合矩阵	commit:13806366
+计算成员名不影响具名成员的类型（不被覆盖成 unknown）	dup:harvest-dts 聚合矩阵	commit:13806366
+带引号 / 连字符的键产出**合法**的 DSL（引号串形态）	dup:harvest-dts 聚合矩阵	commit:13806366
+草稿产物真能过 `node --check`（改前：Unexpected token）	dup:harvest-dts 聚合矩阵	commit:13806366
+`__proto__` 键走计算属性名（对象字面量的 __proto__ 会改原型）	dup:harvest-dts 聚合矩阵	commit:13806366
+**抄进侧车后 `nudo check` 仍然绿**（改前：sidecar 加载失败 ⇒ exit 1）	dup:harvest-dts 聚合矩阵	commit:13806366
+反向闸：语法非法的侧车**必定**加载失败（证明上一条不是永真断言）	dup:harvest-dts 聚合矩阵	commit:13806366
+导出名撞 builder import ⇒ 走别名形态（草稿仍是合法 JS）	dup:harvest-dts 聚合矩阵	commit:13806366
+草稿的返回位**不是** resolve 后的类型（外壳不被剥掉）	dup:harvest-dts 聚合矩阵	commit:13806366
+该位的丢失**如实标注**（note + skipped 计数），不静默放宽	dup:harvest-dts 聚合矩阵	commit:13806366
+收割面同口径：Promise 外壳**保留**（promise<…>）	dup:harvest-dts 聚合矩阵	commit:13806366
+方法成员进契约：`port: fn({}, number())`	dup:harvest-dts 聚合矩阵	commit:13806366
+数字键成员也不被丢	dup:harvest-dts 聚合矩阵	commit:13806366
+产品面：草稿抄进侧车后 `nudo check` **红**（与 tsc 的 TS2345 同向）	dup:harvest-dts 聚合矩阵	commit:13806366
+收割面同口径：方法成员在收割面也在（port: () => number）	dup:harvest-dts 聚合矩阵	commit:13806366
+可选方法的槽位含 undefined（可能不存在，不是必定存在）	dup:harvest-dts 聚合矩阵	commit:13806366
+可选方法与可选属性的可省性口径一致（两者都含 undefined）	dup:harvest-dts 聚合矩阵	commit:13806366
+必选方法不被加上 undefined	dup:harvest-dts 聚合矩阵	commit:13806366
+提升面同口径（可选方法提升出的模块成员也含 undefined）	dup:harvest-dts 聚合矩阵	commit:13806366
+对照：内联类型字面量的可选方法同口径（第二条成员收集路径）	dup:harvest-dts 聚合矩阵	commit:13806366
+可选形参记进 optionalParams，必选元数 = TS minArgumentCount（1）	dup:harvest-dts 聚合矩阵	commit:13806366
+rest 形参不是必选位（元数 0）	dup:harvest-dts 聚合矩阵	commit:13806366
+对照：全必选签名不受影响（元数 2）	dup:harvest-dts 聚合矩阵	commit:13806366
+磁盘投影往返保留 optionalParams（冷 / 热同元数）	dup:harvest-dts 聚合矩阵	commit:13806366
+第二份声明的成员不丢（extra 在）	dup:harvest-dts 聚合矩阵	commit:13806366
+声明顺序不影响成员集合	dup:harvest-dts 聚合矩阵	commit:13806366
+具体 overload 在前：返回位保留具体类型（不是悬空 T / any）	dup:harvest-dts 聚合矩阵	commit:13806366
+泛型 overload 在前：保留 α（可被实参绑定）	dup:harvest-dts 聚合矩阵	commit:13806366
+两种声明顺序不被抹成静默 any（旧行为：(string) => T ⇒ any）	dup:harvest-dts 聚合矩阵	commit:13806366
+数字 / 字符串 / const enum 都有成员面（不再是 unknown）	dup:harvest-dts 聚合矩阵	commit:13806366
+无初始化器的成员按 TS 语义从 0 自增	dup:harvest-dts 聚合矩阵	commit:13806366
+与契约草稿面同口径（两面不再矛盾）	dup:harvest-dts 聚合矩阵	commit:13806366
+必选形态完成（基线）	dup:harvest-dts 聚合矩阵	commit:13806366
+可选形态同样完成，且成员是 `L26 | undefined`	dup:harvest-dts 聚合矩阵	commit:13806366
+导出名撞 builder import ⇒ 走别名形态（改前：export const number）	dup:harvest-dts 聚合矩阵	commit:13806366
+草稿产物真能过 node --check（改前：Identifier 'number' has already been declared）	dup:harvest-dts 聚合矩阵	commit:13806366
+负控制：普通导出名仍是 export const <name>（不误改别名形态）	dup:harvest-dts 聚合矩阵	commit:13806366
 ```
