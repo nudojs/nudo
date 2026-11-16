@@ -90,52 +90,7 @@ describe("`arguments`（非数组 exotic）不得以 Array.isArray 为前提", (
 // ---------------------------------------------------------------------------
 // guard 的数组检查不跳过稀疏洞
 // ---------------------------------------------------------------------------
-describe("guard 的数组检查不跳过稀疏洞", () => {
-/**
- * guard 面的数组检查用 `Array.prototype.every` ⇒ 规范规定它**跳过
- * 不存在的下标（洞）** ⇒ 稀疏数组的洞位从不被检查 ⇒ guard 放行 `[1,,3]`，
- * 而 zod / standard 按位读到 `undefined` ⇒ 拒绝 ⇒ 三面接受集相反。
- *
- * 根因：`denote.ts` 的 `case "arr"` 用 `${v}.every(...)`（同文件 tuple 分支
- * 已用 `i in v` 正确处理洞，arr 分支漏了）。
- *
- * 本钉：洞位必须被当作 `undefined` 检查（与 standard 面同口径）。
- */
-
-
-
-
-const positiveNum = (): Abs =>
-  abs(
-    { k: "prim", type: "number" },
-    v("item"),
-    gt(v("item"), lit(0)),
-    "path",
-  );
-
-const arrOf = (element: Abs): Abs => abs({ k: "arr", element }, undefined, undefined, "exact");
-
-const runner = (g: string): ((data: unknown) => boolean) =>
-  new Function("data", `return ${g};`) as (data: unknown) => boolean;
-
-describe("guard 的数组检查不跳过稀疏洞", () => {
-  it("运行时：接受 `[1,2,3]`，拒绝稀疏 `[1,,3]` 与 `[1,undefined,3]`", () => {
-    const check = runner(denoteGuard(arrOf(positiveNum()), "data"));
-    expect(check([1, 2, 3])).toBe(true);
-    // 洞位按 `undefined` 检查（与 zod / standard 同口径）
-    expect(check([1, , 3])).toBe(false);
-    expect(check([1, undefined, 3])).toBe(false);
-    expect(check([1, 0, 3])).toBe(false);
-  });
-
-  it("守卫仍要求数组本身（负控制）", () => {
-    const g = denoteGuard(arrOf(positiveNum()), "data");
-    const check = runner(g);
-    expect(g).toContain("Array.isArray(data)");
-    expect(check({ 0: 1, 1: 2, length: 2 })).toBe(false);
-  });
-});
-});
+;
 
 // ---------------------------------------------------------------------------
 // brand 身份必须被投影进守卫（instanceof 判定）
@@ -588,22 +543,9 @@ describe("必填槽存在性是独立子句 + 对象判定排除数组", () => {
     expect(g).toContain('"id" in data');
   });
 
-  it("对象判定排除数组", () => {
-    const g = denoteGuard(objOfSlots({ id: { value: unknown } }), "data");
-    expect(g).toContain("!Array.isArray(data)");
-  });
+  ;
 
-  it("运行时：缺键 / 数组被拒，键在场被放行", () => {
-    const check = runner(denoteGuard(objOfSlots({ id: { value: unknown } }), "data"));
-    expect(check({ id: 1 })).toBe(true);
-    expect(check({ id: undefined })).toBe(true);
-    expect(check({})).toBe(false);
-    expect(check([])).toBe(false);
-    expect(check([1])).toBe(false);
-    expect(check(new Date(0))).toBe(false);
-    expect(check(null)).toBe(false);
-    expect(check("x")).toBe(false);
-  });
+  ;
 
   it("负控制：可选槽不产存在性子句（可选槽本就允许缺键）", () => {
     const g = denoteGuard(
@@ -745,9 +687,7 @@ describe("guard 投影必须保真结构义务", () => {
     expect(denoteGuard(foreign, "data")).not.toContain("data.length");
   });
 
-  it("负控制：unknown 形状仍恒真（结构义务只对有形状的 Abs 生效）", () => {
-    expect(denoteGuard(unknown, "data")).toBe("true");
-  });
+  ;
 });
 });
 
@@ -763,6 +703,8 @@ type GuardCase = {
   accept: unknown[];
   reject: unknown[];
   canBeTautology?: boolean;
+  guardContains?: string;
+  guardEquals?: string;
 };
 
 const A = (v: unknown): Abs => abs(v as never, undefined, undefined, "exact");
@@ -773,7 +715,7 @@ const tupleOf = (elements: Abs[]): Abs => A({ k: "tuple", elements });
 
 const CASES: GuardCase[] = [
   { name: "never 拒绝一切", abs: never, accept: [], reject: [0, "", null, undefined, {}, []] },
-  { name: "unknown 接受一切", abs: unknown, accept: [0, "", null, undefined, {}, []], reject: [], canBeTautology: true },
+  { name: "unknown 接受一切", abs: unknown, accept: [0, "", null, undefined, {}, []], reject: [], canBeTautology: true, guardEquals: "true" },
   { name: "number 基类型", abs: num(), accept: [1, -0, Number.NaN, Infinity], reject: ["1", true, null, undefined, {}, []] },
   { name: "string 基类型", abs: str(), accept: ["", "a"], reject: [1, true, null, undefined, {}, []] },
   { name: "boolean 基类型", abs: bool(), accept: [true, false], reject: [0, 1, "true", null] },
@@ -781,9 +723,10 @@ const CASES: GuardCase[] = [
   { name: "NaN 字面量", abs: numLit(Number.NaN), accept: [Number.NaN], reject: [1, "NaN", null] },
   { name: "string 字面量", abs: strLit("a"), accept: ["a"], reject: ["b", "", 1, null] },
   { name: "boolean 字面量", abs: boolLit(true), accept: [true], reject: [false, 1, "true"] },
-  { name: "number 数组", abs: arrOf(num()), accept: [[], [1, 2]], reject: [[1, "x"], "[]", {}, null] },
+  { name: "number 数组", abs: arrOf(num()), accept: [[], [1, 2]], reject: [[1, "x"], [1, , 3], [1, undefined, 3], "[]", {}, null], guardContains: "Array.isArray" },
   { name: "定长 tuple", abs: tupleOf([numLit(1), strLit("a")]), accept: [[1, "a"]], reject: [[1], [1, "a", 2], ["1", "a"], []] },
-  { name: "必选字段 obj", abs: objOf({ a: { value: num() } }), accept: [{ a: 1 }], reject: [{}, { a: "1" }, [], null] },
+  { name: "必选字段 obj", abs: objOf({ a: { value: num() } }), accept: [{ a: 1 }], reject: [{}, { a: "1" }, [], null], guardContains: "!Array.isArray" },
+  { name: "必选槽（unknown 域）存在性", abs: objOf({ id: { value: unknown } }), accept: [{ id: 1 }, { id: undefined }], reject: [{}, [], [1], new Date(0), "x", null], guardContains: 'Object.hasOwn(data, "id")' },
   {
     name: "可选字段 obj（缺省 / undefined 接受，错型拒绝）",
     abs: objOf({ a: { value: num() }, b: { value: str(), optional: true } }),
@@ -801,12 +744,14 @@ const CASES: GuardCase[] = [
 
 const compile = (g: string): ((v: unknown) => boolean) => new Function("data", `return (${g});`) as (v: unknown) => boolean;
 
-it.each(CASES)("$name", ({ abs: a, accept, reject, canBeTautology }) => {
+it.each(CASES)("$name", ({ abs: a, accept, reject, canBeTautology, guardContains, guardEquals }) => {
   const guard = denoteGuard(a, "data");
   expect(guard.trim().length).toBeGreaterThan(0);
   const check = compile(guard);
   for (const value of accept) expect(check(value), `accept ${String(value)}`).toBe(true);
   for (const value of reject) expect(check(value), `reject ${String(value)}`).toBe(false);
   if (!canBeTautology) expect(guard.trim()).not.toBe("true");
+  if (guardContains) expect(guard).toContain(guardContains);
+  if (guardEquals) expect(guard).toBe(guardEquals);
 });
 });
