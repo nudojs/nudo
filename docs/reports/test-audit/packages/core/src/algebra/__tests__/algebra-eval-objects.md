@@ -191,42 +191,10 @@ HOF 传递（数组 map 回调）→ 方法体正常执行（this=undefined 不�
 借用不记 may-throw（throws 域干净）	计算键/static 表	没测该层	keep	keep	—
 负控制：对象字面量方法的借用不受影响（原本就正确）	计算键/static 表	没测该层	keep	keep	—
 负控制：方法体真读 undefined 接收者的 this 时定抛 TypeError	计算键/static 表	没测该层	keep	keep	—
-原型上 writable:false → Reflect.set 返 false（此前返 true）	计算键/static 表	没测该层	keep	keep	—
-原型上 getter-only → Reflect.set 返 false（此前返 true）	计算键/static 表	没测该层	keep	keep	—
-派生类实例同样过门（原型链经类注册表上溯）	计算键/static 表	没测该层	keep	keep	—
-负控制：原型上 writable:true → Reflect.set 返 true	计算键/static 表	没测该层	keep	keep	—
-负控制：原型上 writable:true → Reflect.set 返 true	计算键/static 表	没测该层	keep	keep	—
-负控制：原型上没有该键 → Reflect.set 返 true（建自有属性）	计算键/static 表	没测该层	keep	keep	—
-负控制：原型上没有该键 → Reflect.set 返 true（建自有属性）	计算键/static 表	没测该层	keep	keep	—
-负控制：实例自有可写字段 → Reflect.set 返 true 且值生效	计算键/static 表	没测该层	keep	keep	—
-原型上 writable:false → a.x = 2 抛 TypeError（此前静默写穿）	计算键/static 表	没测该层	keep	keep	—
-原型上 getter-only → a.y = 2 抛 TypeError（此前静默写穿）	计算键/static 表	没测该层	keep	keep	—
-负控制：原型上 writable:true → a.x = 2 不抛	计算键/static 表	没测该层	keep	keep	—
-负控制：实例字段赋值不抛	计算键/static 表	没测该层	keep	keep	—
-原型链 getter-only → Reflect.set 返 false（此前抛 TypeError）	计算键/static 表	没测该层	keep	keep	—
-原型链 writable:false 数据属性 → Reflect.set 返 false	计算键/static 表	没测该层	keep	keep	—
-原型链带 setter → Reflect.set 返 true 且 setter 被派发	计算键/static 表	没测该层	keep	keep	—
-负控制：自有可写属性 → true 且值生效	计算键/static 表	没测该层	keep	keep	—
-负控制：自有不可写（frozen）→ false	计算键/static 表	没测该层	keep	keep	—
-负控制：新键 → true（建自有属性）	计算键/static 表	没测该层	keep	keep	—
-负控制：strict 赋值仍抛 TypeError（core 侧写门不变）	计算键/static 表	没测该层	keep	keep	—
-X.prototype.hasOwnProperty(k) → true（此前折 false：装到无人持有的新 brand）	计算键/static 表	没测该层	keep	keep	—
-X.prototype.k → 1（原型面读得到）	计算键/static 表	没测该层	keep	keep	—
-实例读继承该原型数据属性 → 1（原型链可见）	计算键/static 表	没测该层	keep	keep	—
-实例面 Reflect.set(new A(), 'x', 2) → false（proto-set.ts 经 protoOfRecv 解析类实例原型链）	计算键/static 表	没测该层	keep	keep	—
-实例面 strict 赋值 a.x = 2 → TypeError（同一写门，strict 语义）	计算键/static 表	没测该层	keep	keep	—
-原型链 getter-only（Object.create）→ strict TypeError	计算键/static 表	没测该层	keep	keep	—
-原型链 writable:false 数据属性 → strict TypeError	计算键/static 表	没测该层	keep	keep	—
-原型链 frozen → strict TypeError	计算键/static 表	没测该层	keep	keep	—
-两级原型链 getter → strict TypeError	计算键/static 表	没测该层	keep	keep	—
-原型链带 setter 的访问器 → 派发 setter（不是静默建自有属性）	计算键/static 表	没测该层	keep	keep	—
-fn 上 defineProperty writable:false → strict TypeError	计算键/static 表	没测该层	keep	keep	—
-数组下标 defineProperty writable:false → strict TypeError	计算键/static 表	没测该层	keep	keep	—
-负控制：自有可写属性写 → 成功（值生效）	计算键/static 表	没测该层	keep	keep	—
-负控制：原型链普通可写属性 → receiver 建自有属性（值生效）	计算键/static 表	没测该层	keep	keep	—
-负控制：类字面量访问器（继承面）→ TypeError（既有正确）	计算键/static 表	没测该层	keep	keep	—
-负控制：Object.assign 到继承 non-writable → TypeError（既有正确）	计算键/static 表	没测该层	keep	keep	—
-负控制：函数 expando 写（未 defineProperty）→ 仍成功	计算键/static 表	没测该层	keep	keep	—
+类实例 Reflect.set：原型 writable:false/getter-only/派生类返 false；可写与新键负控	类实例 [[Set]] 写门表	没测该层	keep	keep	—
+类实例 strict：原型 writable:false/getter-only 抛；可写与自有字段不抛	类实例 [[Set]] 写门表	没测该层	keep	keep	—
+Reflect.set 镜像返 false 不抛；原型槽落地可见；strict 赋值仍抛	类实例 [[Set]] 写门表	没测该层	keep	keep	—
+[[Set]] 原型链写门：getter/writable:false/frozen/两级链/fn/数组下标抛；负控成功	类实例 [[Set]] 写门表	没测该层	keep	keep	—
 Object.assign(A.prototype, {b:1}) → for-in 看得到 b（此前静默丢弃）	计算键/static 表	没测该层	keep	keep	—
 Object.defineProperty(A.prototype,'c',{value:2,enumerable:true}) → for-in 看得到 c	计算键/static 表	没测该层	keep	keep	—
 assign 写的键：实例读得到（原型链继承）	计算键/static 表	没测该层	keep	keep	—
@@ -670,4 +638,38 @@ bind 产物 RHS（原生 false）不得折 exact false / true	dup:instanceof 表
 setPrototypeOf(f, {}) 之后 instanceof F → 抽象 boolean（不得 exact true）	dup:instanceof 表	commit:a28dada3
 F.prototype={} 之后新实例 instanceof Object → 抽象 boolean（原生 true）	dup:instanceof 表	commit:a28dada3
 F.prototype = 5 之后 f instanceof F → TypeError	dup:instanceof 表	commit:a28dada3
+原型上 writable:false → Reflect.set 返 false（此前返 true）	dup:写门表	commit:90b33e51
+原型上 getter-only → Reflect.set 返 false（此前返 true）	dup:写门表	commit:90b33e51
+派生类实例同样过门（原型链经类注册表上溯）	dup:写门表	commit:90b33e51
+负控制：原型上 writable:true → Reflect.set 返 true	dup:写门表	commit:90b33e51
+负控制：原型上没有该键 → Reflect.set 返 true（建自有属性）	dup:写门表	commit:90b33e51
+负控制：实例自有可写字段 → Reflect.set 返 true 且值生效	dup:写门表	commit:90b33e51
+原型上 writable:false → a.x = 2 抛 TypeError（此前静默写穿）	dup:写门表	commit:90b33e51
+原型上 getter-only → a.y = 2 抛 TypeError（此前静默写穿）	dup:写门表	commit:90b33e51
+负控制：原型上 writable:true → a.x = 2 不抛	dup:写门表	commit:90b33e51
+负控制：实例字段赋值不抛	dup:写门表	commit:90b33e51
+原型链 getter-only → Reflect.set 返 false（此前抛 TypeError）	dup:写门表	commit:90b33e51
+原型链 writable:false 数据属性 → Reflect.set 返 false	dup:写门表	commit:90b33e51
+原型链带 setter → Reflect.set 返 true 且 setter 被派发	dup:写门表	commit:90b33e51
+负控制：自有可写属性 → true 且值生效	dup:写门表	commit:90b33e51
+负控制：自有不可写（frozen）→ false	dup:写门表	commit:90b33e51
+负控制：新键 → true（建自有属性）	dup:写门表	commit:90b33e51
+负控制：strict 赋值仍抛 TypeError（core 侧写门不变）	dup:写门表	commit:90b33e51
+X.prototype.hasOwnProperty(k) → true（此前折 false：装到无人持有的新 brand）	dup:写门表	commit:90b33e51
+X.prototype.k → 1（原型面读得到）	dup:写门表	commit:90b33e51
+实例读继承该原型数据属性 → 1（原型链可见）	dup:写门表	commit:90b33e51
+实例面 Reflect.set(new A(), 'x', 2) → false（proto-set.ts 经 protoOfRecv 解析类实例原型链）	dup:写门表	commit:90b33e51
+实例面 strict 赋值 a.x = 2 → TypeError（同一写门，strict 语义）	dup:写门表	commit:90b33e51
+原型链 getter-only（Object.create）→ strict TypeError	dup:写门表	commit:90b33e51
+原型链 writable:false 数据属性 → strict TypeError	dup:写门表	commit:90b33e51
+原型链 frozen → strict TypeError	dup:写门表	commit:90b33e51
+两级原型链 getter → strict TypeError	dup:写门表	commit:90b33e51
+原型链带 setter 的访问器 → 派发 setter（不是静默建自有属性）	dup:写门表	commit:90b33e51
+fn 上 defineProperty writable:false → strict TypeError	dup:写门表	commit:90b33e51
+数组下标 defineProperty writable:false → strict TypeError	dup:写门表	commit:90b33e51
+负控制：自有可写属性写 → 成功（值生效）	dup:写门表	commit:90b33e51
+负控制：原型链普通可写属性 → receiver 建自有属性（值生效）	dup:写门表	commit:90b33e51
+负控制：类字面量访问器（继承面）→ TypeError（既有正确）	dup:写门表	commit:90b33e51
+负控制：Object.assign 到继承 non-writable → TypeError（既有正确）	dup:写门表	commit:90b33e51
+负控制：函数 expando 写（未 defineProperty）→ 仍成功	dup:写门表	commit:90b33e51
 ```
