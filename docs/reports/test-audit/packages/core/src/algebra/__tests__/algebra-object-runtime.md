@@ -6,234 +6,278 @@
 
 ```audit
 title	rootCause	gap	action	status	evidence
-"isHiddenInternalSlot 剔除 symbolKey 槽（与 service 副本同款）"	"回归（core 面）：`isHiddenInternalSlot` 缺 `symbolKey` 规则 ⇒ check / test 签名面把符号键槽发布成运行时不存在的字符串字段 （`\"@@iterator\"` / `\"@@sym#1\"`），guard 面还写出恒假的 Object.hasOwn 子句。 断言：expect(isHiddenInternalSlot(\"@@iterator\", { symbolKey: true })).toBe(true);；expect(isHiddenInternalSlot(\"@@sym#1\", { symbolKey: true })).toBe(true);"	夹具漏形态	keep	keep	—
-"internal 规则与规范数组下标例外保持不变"	"回归（core 面）：`isHiddenInternalSlot` 缺 `symbolKey` 规则 ⇒ check / test 签名面把符号键槽发布成运行时不存在的字符串字段 （`\"@@iterator\"` / `\"@@sym#1\"`），guard 面还写出恒假的 Object.hasOwn 子句。 断言：expect(isHiddenInternalSlot(\"next\", { internal: true })).toBe(true);；expect(isHiddenInternalSlot(\"0\", { internal: true })).toBe(false);"	夹具漏形态	keep	keep	—
-"formatShape（check / test 签名面）不发布符号键槽"	"回归（core 面）：`isHiddenInternalSlot` 缺 `symbolKey` 规则 ⇒ check / test 签名面把符号键槽发布成运行时不存在的字符串字段 （`\"@@iterator\"` / `\"@@sym#1\"`），guard 面还写出恒假的 Object.hasOwn 子句。 断言：expect(s).toContain(\"a\");；expect(s).not.toContain(\"@@iterator\");"	夹具漏形态	keep	keep	—
-"denoteGuard（guard 面）不写恒假的 Object.hasOwn(@@iterator) 子句"	"回归（core 面）：`isHiddenInternalSlot` 缺 `symbolKey` 规则 ⇒ check / test 签名面把符号键槽发布成运行时不存在的字符串字段 （`\"@@iterator\"` / `\"@@sym#1\"`），guard 面还写出恒假的 Object.hasOwn 子句。 断言：expect(g).not.toContain(\"@@iterator\");；expect(g).toContain(\"data.a\");"	夹具漏形态	keep	keep	—
-"字符串键 \"@@iterator\" 在 tuple 上确定缺席（改前折成函数）"	"回归：`ARRAY_PROTO_METHOD_NAMES` 把 \"@@iterator\" 当**普通字符串键** ⇒ `[1,2][\"@@iterator\"]` 折成函数、`\"@@iterator\" in [1,2]` 折成 true （原生 undefined / false），而 `Symbol.iterator in [1,2]` 必须仍为 true。 字符串键 \"@@iterator\" 与符号键 Symbol.iterator 是两个 不同的 PropertyKey，不得合并成同一个事实。 断言：expect(v(`export function f() { return [1,2][\"@@iterator\"]; }`))."	夹具漏形态	keep	keep	—
-"\"@@iterator\" in [1,2] → false（改前是自信的 true）"	"回归：`ARRAY_PROTO_METHOD_NAMES` 把 \"@@iterator\" 当**普通字符串键** ⇒ `[1,2][\"@@iterator\"]` 折成函数、`\"@@iterator\" in [1,2]` 折成 true （原生 undefined / false），而 `Symbol.iterator in [1,2]` 必须仍为 true。 字符串键 \"@@iterator\" 与符号键 Symbol.iterator 是两个 不同的 PropertyKey，不得合并成同一个事实。 断言：expect(v(`export function f() { return \"@@iterator\" in [1,2]; }`)"	夹具漏形态	keep	keep	—
-"Symbol.iterator in [1,2] → true（符号键保持命中，既有钉不回归）"	"回归：`ARRAY_PROTO_METHOD_NAMES` 把 \"@@iterator\" 当**普通字符串键** ⇒ `[1,2][\"@@iterator\"]` 折成函数、`\"@@iterator\" in [1,2]` 折成 true （原生 undefined / false），而 `Symbol.iterator in [1,2]` 必须仍为 true。 字符串键 \"@@iterator\" 与符号键 Symbol.iterator 是两个 不同的 PropertyKey，不得合并成同一个事实。 断言：expect(v(`export function f() { return Symbol.iterator in [1,2];"	夹具漏形态	keep	keep	—
-"普通对象面本就正确，不回归"	"断言：expect(v(`export function f() { const o = { k: 1 }; return o[\"@@iterator\"]; }`)).toEqual({；expect(v(`export function f() { return \"@@iterator\" in { k: 1 }; }`)).toEqual({"	没测该层	keep	keep	—
-"Array.prototype 普通字符串键方法不受影响"	"断言：expect(v(`export function f() { return typeof [1,2].map; }`)).toEqual({；expect(v(`export function f() { return \"map\" in [1,2]; }`)).toEqual({"	没测该层	keep	keep	—
-"调用面同样分态：字符串键 \"@@iterator\"() 不产迭代器、Symbol.iterator() 产迭代器"	"回归：`ARRAY_PROTO_METHOD_NAMES` 把 \"@@iterator\" 当**普通字符串键** ⇒ `[1,2][\"@@iterator\"]` 折成函数、`\"@@iterator\" in [1,2]` 折成 true （原生 undefined / false），而 `Symbol.iterator in [1,2]` 必须仍为 true。 字符串键 \"@@iterator\" 与符号键 Symbol.iterator 是两个 不同的 PropertyKey，不得合并成同一个事实。 断言：expect(v(`export function f() { return [1,2][\"@@iterator\"]().next"	夹具漏形态	keep	keep	—
-"brand 面同样分态：m[\"@@iterator\"] 定缺、m[Symbol.iterator] 折函数"	"回归：`ARRAY_PROTO_METHOD_NAMES` 把 \"@@iterator\" 当**普通字符串键** ⇒ `[1,2][\"@@iterator\"]` 折成函数、`\"@@iterator\" in [1,2]` 折成 true （原生 undefined / false），而 `Symbol.iterator in [1,2]` 必须仍为 true。 字符串键 \"@@iterator\" 与符号键 Symbol.iterator 是两个 不同的 PropertyKey，不得合并成同一个事实。 断言：expect(v(`export function f() { return new Map()[\"@@iterator\"]; }"	夹具漏形态	keep	keep	—
-"arrayProtoMemberForKey：只在真符号键下命中迭代器投影名"	"断言：expect(arrayProtoMemberForKey(ARRAY_ITERATOR_SLOT_KEY, false)).toBe(false);；expect(arrayProtoMemberForKey(ARRAY_ITERATOR_SLOT_KEY, true)).toBe(true);"	没测该层	keep	keep	—
-"(5).toString.call(5) ⇒ \"5\"（不是 \"[object Number]\"）"	"回归：`number` / `boolean` 原型方法不得落 `Object.prototype` 泛型版。 根因（`packages/core/src/algebra/exec/runtime/containers/member.ts` `getProtoMethodMember` 的 prim 通道例外清单）：`toString` / `toLocaleString` / `valueOf` 三者都在 `OBJECT_PROTO_METHOD_NAMES` 里，prim 通道必须**显式** 例外才能进； 断言：expect(lit(wrap(\"return (5).toString.call(5);\"))).toBe(\"5\""	没测该层	keep	keep	—
-"true.toString.call(true) ⇒ \"true\"（不是 \"[object Boolean]\"）"	"回归：`number` / `boolean` 原型方法不得落 `Object.prototype` 泛型版。 根因（`packages/core/src/algebra/exec/runtime/containers/member.ts` `getProtoMethodMember` 的 prim 通道例外清单）：`toString` / `toLocaleString` / `valueOf` 三者都在 `OBJECT_PROTO_METHOD_NAMES` 里，prim 通道必须**显式** 例外才能进； 断言：expect(lit(wrap(\"return true.toString.call(true);\"))).toBe"	没测该层	keep	keep	—
-"(5).toString.call(\"x\") ⇒ 定抛 TypeError（brand check）"	"回归：`number` / `boolean` 原型方法不得落 `Object.prototype` 泛型版。 根因（`packages/core/src/algebra/exec/runtime/containers/member.ts` `getProtoMethodMember` 的 prim 通道例外清单）：`toString` / `toLocaleString` / `valueOf` 三者都在 `OBJECT_PROTO_METHOD_NAMES` 里，prim 通道必须**显式** 例外才能进； 断言：expect(throwsError(rec.throws, \"TypeError\")).toBe(true);"	没测该层	keep	keep	—
-"(5).toString.call(5n) ⇒ 定抛 TypeError（brand check）"	"回归：`number` / `boolean` 原型方法不得落 `Object.prototype` 泛型版。 根因（`packages/core/src/algebra/exec/runtime/containers/member.ts` `getProtoMethodMember` 的 prim 通道例外清单）：`toString` / `toLocaleString` / `valueOf` 三者都在 `OBJECT_PROTO_METHOD_NAMES` 里，prim 通道必须**显式** 例外才能进； 断言：expect(throwsError(rec.throws, \"TypeError\")).toBe(true);"	没测该层	keep	keep	—
-"(5).toString.call(true) ⇒ 定抛 TypeError（brand check）"	"回归：`number` / `boolean` 原型方法不得落 `Object.prototype` 泛型版。 根因（`packages/core/src/algebra/exec/runtime/containers/member.ts` `getProtoMethodMember` 的 prim 通道例外清单）：`toString` / `toLocaleString` / `valueOf` 三者都在 `OBJECT_PROTO_METHOD_NAMES` 里，prim 通道必须**显式** 例外才能进； 断言：expect(throwsError(rec.throws, \"TypeError\")).toBe(true);"	没测该层	keep	keep	—
-"true.toString.call(0) ⇒ 定抛 TypeError（brand check）"	"回归：`number` / `boolean` 原型方法不得落 `Object.prototype` 泛型版。 根因（`packages/core/src/algebra/exec/runtime/containers/member.ts` `getProtoMethodMember` 的 prim 通道例外清单）：`toString` / `toLocaleString` / `valueOf` 三者都在 `OBJECT_PROTO_METHOD_NAMES` 里，prim 通道必须**显式** 例外才能进； 断言：expect(throwsError(rec.throws, \"TypeError\")).toBe(true);"	没测该层	keep	keep	—
-"(5).valueOf.call(5) ⇒ 5（自身）"	"回归：`number` / `boolean` 原型方法不得落 `Object.prototype` 泛型版。 根因（`packages/core/src/algebra/exec/runtime/containers/member.ts` `getProtoMethodMember` 的 prim 通道例外清单）：`toString` / `toLocaleString` / `valueOf` 三者都在 `OBJECT_PROTO_METHOD_NAMES` 里，prim 通道必须**显式** 例外才能进； 断言：expect(lit(wrap(\"return (5).valueOf.call(5);\"))).toBe(5);"	没测该层	keep	keep	—
-"true.valueOf.call(true) ⇒ true（自身）"	"回归：`number` / `boolean` 原型方法不得落 `Object.prototype` 泛型版。 根因（`packages/core/src/algebra/exec/runtime/containers/member.ts` `getProtoMethodMember` 的 prim 通道例外清单）：`toString` / `toLocaleString` / `valueOf` 三者都在 `OBJECT_PROTO_METHOD_NAMES` 里，prim 通道必须**显式** 例外才能进； 断言：expect(lit(wrap(\"return true.valueOf.call(true);\"))).toBe("	没测该层	keep	keep	—
-"对照：string / bigint / symbol 三条 prim 通道仍与原生一致"	"回归：`number` / `boolean` 原型方法不得落 `Object.prototype` 泛型版。 根因（`packages/core/src/algebra/exec/runtime/containers/member.ts` `getProtoMethodMember` 的 prim 通道例外清单）：`toString` / `toLocaleString` / `valueOf` 三者都在 `OBJECT_PROTO_METHOD_NAMES` 里，prim 通道必须**显式** 例外才能进； 断言：expect(lit(wrap(\"return \\\"a\\\".toString.call(\\\"a\\\");\"))).to"	没测该层	keep	keep	—
-"gOPD(function f(){}, \"length\").value ⇒ 0（原生精确值）"	"回归：`Object/Reflect.getOwnPropertyDescriptor(fn, key)` 不得被建模成 「必定抛」。 根因：`packages/core/src/algebra/builtins/object/methods.ts` 的 `case \"getOwnPropertyDescriptor\"` 有 obj / tuple / string / prim / brand 接收者 臂，但**没有 `fn` 形态接收者臂** ⇒ 函数接收者一路落兜底 `maybeDesc()` （descriptor | undefined 并集）⇒ 再读 `.value` / `.writable` 就成**定抛 TypeE"	夹具漏形态	keep	keep	—
-"gOPD(function f(){}, \"name\").writable ⇒ false（原生 false）"	"回归：`Object/Reflect.getOwnPropertyDescriptor(fn, key)` 不得被建模成 「必定抛」。 根因：`packages/core/src/algebra/builtins/object/methods.ts` 的 `case \"getOwnPropertyDescriptor\"` 有 obj / tuple / string / prim / brand 接收者 臂，但**没有 `fn` 形态接收者臂** ⇒ 函数接收者一路落兜底 `maybeDesc()` （descriptor | undefined 并集）⇒ 再读 `.value` / `.writable` 就成**定抛 TypeE"	夹具漏形态	keep	keep	—
-"gOPD(function f(){}, \"name\").value ⇒ 字符串（不抛、不折 never）"	"回归：`Object/Reflect.getOwnPropertyDescriptor(fn, key)` 不得被建模成 「必定抛」。 根因：`packages/core/src/algebra/builtins/object/methods.ts` 的 `case \"getOwnPropertyDescriptor\"` 有 obj / tuple / string / prim / brand 接收者 臂，但**没有 `fn` 形态接收者臂** ⇒ 函数接收者一路落兜底 `maybeDesc()` （descriptor | undefined 并集）⇒ 再读 `.value` / `.writable` 就成**定抛 TypeE"	夹具漏形态	keep	keep	—
-"gOPD(class A {}, \"name\").value ⇒ \"A\"（原生精确值）"	"回归：`Object/Reflect.getOwnPropertyDescriptor(fn, key)` 不得被建模成 「必定抛」。 根因：`packages/core/src/algebra/builtins/object/methods.ts` 的 `case \"getOwnPropertyDescriptor\"` 有 obj / tuple / string / prim / brand 接收者 臂，但**没有 `fn` 形态接收者臂** ⇒ 函数接收者一路落兜底 `maybeDesc()` （descriptor | undefined 并集）⇒ 再读 `.value` / `.writable` 就成**定抛 TypeE"	夹具漏形态	keep	keep	—
-"gOPD(function f(){}, \"prototype\").writable ⇒ true（普通函数可写）"	"回归：`Object/Reflect.getOwnPropertyDescriptor(fn, key)` 不得被建模成 「必定抛」。 根因：`packages/core/src/algebra/builtins/object/methods.ts` 的 `case \"getOwnPropertyDescriptor\"` 有 obj / tuple / string / prim / brand 接收者 臂，但**没有 `fn` 形态接收者臂** ⇒ 函数接收者一路落兜底 `maybeDesc()` （descriptor | undefined 并集）⇒ 再读 `.value` / `.writable` 就成**定抛 TypeE"	夹具漏形态	keep	keep	—
-"gOPD(class A {}, \"prototype\").writable ⇒ false（类值不可写）"	"回归：`Object/Reflect.getOwnPropertyDescriptor(fn, key)` 不得被建模成 「必定抛」。 根因：`packages/core/src/algebra/builtins/object/methods.ts` 的 `case \"getOwnPropertyDescriptor\"` 有 obj / tuple / string / prim / brand 接收者 臂，但**没有 `fn` 形态接收者臂** ⇒ 函数接收者一路落兜底 `maybeDesc()` （descriptor | undefined 并集）⇒ 再读 `.value` / `.writable` 就成**定抛 TypeE"	夹具漏形态	keep	keep	—
-"Reflect.getOwnPropertyDescriptor(fn, \"name\").value ⇒ 不抛"	"回归：`Object/Reflect.getOwnPropertyDescriptor(fn, key)` 不得被建模成 「必定抛」。 根因：`packages/core/src/algebra/builtins/object/methods.ts` 的 `case \"getOwnPropertyDescriptor\"` 有 obj / tuple / string / prim / brand 接收者 臂，但**没有 `fn` 形态接收者臂** ⇒ 函数接收者一路落兜底 `maybeDesc()` （descriptor | undefined 并集）⇒ 再读 `.value` / `.writable` 就成**定抛 TypeE"	夹具漏形态	keep	keep	—
-"对照组：普通对象的描述符面仍正确（回归控制）"	"断言：expect(lit(wrap('return Object.getOwnPropertyDescriptor({a:1},\"a\").value;'))).toBe(1);"	没测该层	keep	keep	—
-"shape({ ['__proto__']: number() }) 的字段表含 __proto__ 自有键"	"约束 DSL 的**写侧**把 `__proto__` 字段静默吞掉： 普通对象字面量 `{}` 装配字段表 ⇒ `mapped[\"__proto__\"] = {…}` 触发 `Object.prototype.__proto__` 的 **setter** ⇒ 字段被写成**原型**而非 **自有键** ⇒ 下游 `Object.entries` 读不到 ⇒ 契约被悄悄削弱成空 shape （域放宽到「任意对象」）⇒ 门禁对违约实参**判绿**（假绿）。 并加「自有键数」断言（键数不符 ⇒ 报错， 不静默降级）。 断言：expect(Object.keys(s.fields ?? {})).toEqual([\"__proto__\""	夹具漏形态	keep	keep	—
-"partial / omit / pick 转一道后字段仍在（不二次吞键）"	"约束 DSL 的**写侧**把 `__proto__` 字段静默吞掉： 普通对象字面量 `{}` 装配字段表 ⇒ `mapped[\"__proto__\"] = {…}` 触发 `Object.prototype.__proto__` 的 **setter** ⇒ 字段被写成**原型**而非 **自有键** ⇒ 下游 `Object.entries` 读不到 ⇒ 契约被悄悄削弱成空 shape （域放宽到「任意对象」）⇒ 门禁对违约实参**判绿**（假绿）。 并加「自有键数」断言（键数不符 ⇒ 报错， 不静默降级）。 断言：expect(Object.keys(partial(base).fields ?? {})).toEqual("	夹具漏形态	keep	keep	—
-"对照组：普通字段名行为不变（不被误伤）"	"断言：expect(Object.keys(s.fields ?? {})).toEqual([\"p\"]);；expect(Object.keys(partial(s).fields ?? {})).toEqual([\"p\"]);"	没测该层	keep	keep	—
-"契约面：shape({ __proto__: number() }) 的字段不得消失"	"约束 DSL 的**写侧**把 `__proto__` 字段静默吞掉： 普通对象字面量 `{}` 装配字段表 ⇒ `mapped[\"__proto__\"] = {…}` 触发 `Object.prototype.__proto__` 的 **setter** ⇒ 字段被写成**原型**而非 **自有键** ⇒ 下游 `Object.entries` 读不到 ⇒ 契约被悄悄削弱成空 shape （域放宽到「任意对象」）⇒ 门禁对违约实参**判绿**（假绿）。 并加「自有键数」断言（键数不符 ⇒ 报错， 不静默降级）。 断言：expect(shown).toContain(\"__proto__\");；expect(shown).not."	夹具漏形态	keep	keep	—
-"门禁面：f({}) 违反「含 __proto__: number」⇒ 报 missing field（改前判绿）"	"约束 DSL 的**写侧**把 `__proto__` 字段静默吞掉： 普通对象字面量 `{}` 装配字段表 ⇒ `mapped[\"__proto__\"] = {…}` 触发 `Object.prototype.__proto__` 的 **setter** ⇒ 字段被写成**原型**而非 **自有键** ⇒ 下游 `Object.entries` 读不到 ⇒ 契约被悄悄削弱成空 shape （域放宽到「任意对象」）⇒ 门禁对违约实参**判绿**（假绿）。 并加「自有键数」断言（键数不符 ⇒ 报错， 不静默降级）。 断言：expect(violated.length).toBeGreaterThan(0);；expect(viola"	夹具漏形态	keep	keep	—
-"门禁面：对照组（字段名 p）与 __proto__ 的判定强度一致（都不放行）"	"约束 DSL 的**写侧**把 `__proto__` 字段静默吞掉： 普通对象字面量 `{}` 装配字段表 ⇒ `mapped[\"__proto__\"] = {…}` 触发 `Object.prototype.__proto__` 的 **setter** ⇒ 字段被写成**原型**而非 **自有键** ⇒ 下游 `Object.entries` 读不到 ⇒ 契约被悄悄削弱成空 shape （域放宽到「任意对象」）⇒ 门禁对违约实参**判绿**（假绿）。 并加「自有键数」断言（键数不符 ⇒ 报错， 不静默降级）。 断言：expect(violated.length).toBeGreaterThan(0);；expect(viola"	夹具漏形态	keep	keep	—
-"Object.getOwnPropertyDescriptor(p, \"a\").value ⇒ 抛 TypeError（native：同款）"	"靶上 \"a\" 是不可配置 + 不可写的数据属性（value 1） 断言：expect(throwsError(rec.throws, \"TypeError\")).toBe(true);"	没测该层	keep	keep	—
-"Reflect.getOwnPropertyDescriptor(p, \"a\").value ⇒ 抛 TypeError（native：同款）"	"靶上 \"a\" 是不可配置 + 不可写的数据属性（value 1） 断言：expect(throwsError(rec.throws, \"TypeError\")).toBe(true);"	没测该层	keep	keep	—
-"用户 try/catch 捕到（native：\"threw\"）"	"约束 DSL 的**写侧**把 `__proto__` 字段静默吞掉： 普通对象字面量 `{}` 装配字段表 ⇒ `mapped[\"__proto__\"] = {…}` 触发 `Object.prototype.__proto__` 的 **setter** ⇒ 字段被写成**原型**而非 **自有键** ⇒ 下游 `Object.entries` 读不到 ⇒ 契约被悄悄削弱成空 shape （域放宽到「任意对象」）⇒ 门禁对违约实参**判绿**（假绿）。 并加「自有键数」断言（键数不符 ⇒ 报错， 不静默降级）。 断言：expect("	夹具漏形态	keep	keep	—
-"靶属性**可写**（普通 {a:1}）⇒ 陷阱值原样给出（native：2）"	"靶上 \"a\" 是不可配置 + 不可写的数据属性（value 1） 断言：expect("	没测该层	keep	keep	—
-"陷阱报**同一个值** ⇒ 不抛（native：值一致不违 12.f）"	"回归：Proxy **[[GetOwnProperty]]** 的靶一致性不变量 （ES2024 10.5.5 step 12.f）——违者原生定抛 TypeError，引擎此前 **照抄陷阱的值**（自信的错值 / 假绿）。 修前（探针实测）： - `Object.getOwnPropertyDescriptor(p, \"a\").value` ⇒ **exact 2** （原生抛 TypeError：靶上 \"a\" 是不可配置 + 不可写的数据属性，陷阱 报了不同的 value ⇒ 违反 [[GetOwnProperty]] 不变量）； 断言：expect("	旧断言钉错	keep	keep	—
-"靶**无**该自有键 + 陷阱报**可配置** ⇒ 不变量不适用（native：不抛，2）"	"靶上 \"a\" 是不可配置 + 不可写的数据属性（value 1） 断言：expect("	没测该层	keep	keep	—
-"非 Proxy 路径不受影响：{a:1} 的描述符 value 1"	"靶上 \"a\" 是不可配置 + 不可写的数据属性（value 1） 断言：expect(val(wrap(`return Object.getOwnPropertyDescriptor({ a: 1 }, \"a\").value;`))).toEqual({"	没测该层	keep	keep	—
-"靶 {} + 陷阱报 configurable:false ⇒ 抛 TypeError（native：抛）"	"回归：Proxy **[[GetOwnProperty]]** 的靶一致性不变量 （ES2024 10.5.5 step 12.f）——违者原生定抛 TypeError，引擎此前 **照抄陷阱的值**（自信的错值 / 假绿）。 修前（探针实测）： - `Object.getOwnPropertyDescriptor(p, \"a\").value` ⇒ **exact 2** （原生抛 TypeError：靶上 \"a\" 是不可配置 + 不可写的数据属性，陷阱 报了不同的 value ⇒ 违反 [[GetOwnProperty]] 不变量）； 断言：expect(throwsError(rec.throws, \"TypeError\"))."	旧断言钉错	keep	keep	—
-"靶 {} + 陷阱报 configurable:true ⇒ 不抛（native：2）"	"回归：Proxy **[[GetOwnProperty]]** 的靶一致性不变量 （ES2024 10.5.5 step 12.f）——违者原生定抛 TypeError，引擎此前 **照抄陷阱的值**（自信的错值 / 假绿）。 修前（探针实测）： - `Object.getOwnPropertyDescriptor(p, \"a\").value` ⇒ **exact 2** （原生抛 TypeError：靶上 \"a\" 是不可配置 + 不可写的数据属性，陷阱 报了不同的 value ⇒ 违反 [[GetOwnProperty]] 不变量）； 断言：expect("	旧断言钉错	keep	keep	—
-"靶可配置 + 陷阱报 configurable:false ⇒ 抛 TypeError（native：抛）"	"回归：Proxy **[[GetOwnProperty]]** 的靶一致性不变量 （ES2024 10.5.5 step 12.f）——违者原生定抛 TypeError，引擎此前 **照抄陷阱的值**（自信的错值 / 假绿）。 修前（探针实测）： - `Object.getOwnPropertyDescriptor(p, \"a\").value` ⇒ **exact 2** （原生抛 TypeError：靶上 \"a\" 是不可配置 + 不可写的数据属性，陷阱 报了不同的 value ⇒ 违反 [[GetOwnProperty]] 不变量）； 断言：expect(throwsError(rec.throws, \"TypeError\"))."	旧断言钉错	keep	keep	—
-"靶不可配置 + 陷阱报 configurable:true ⇒ 抛 TypeError（native：抛）"	"回归：Proxy **[[GetOwnProperty]]** 的靶一致性不变量 （ES2024 10.5.5 step 12.f）——违者原生定抛 TypeError，引擎此前 **照抄陷阱的值**（自信的错值 / 假绿）。 修前（探针实测）： - `Object.getOwnPropertyDescriptor(p, \"a\").value` ⇒ **exact 2** （原生抛 TypeError：靶上 \"a\" 是不可配置 + 不可写的数据属性，陷阱 报了不同的 value ⇒ 违反 [[GetOwnProperty]] 不变量）； 断言：expect(throwsError(rec.throws, \"TypeError\"))."	旧断言钉错	keep	keep	—
-"靶不可配置+可写 + 陷阱报 writable:false ⇒ 抛 TypeError（native：抛）"	"靶上 \"a\" 是不可配置 + 不可写的数据属性（value 1） 断言：expect(throwsError(rec.throws, \"TypeError\")).toBe(true);"	没测该层	keep	keep	—
-"靶不可配置+可写 + 陷阱报 enumerable 不同 ⇒ 抛 TypeError（native：抛）"	"靶上 \"a\" 是不可配置 + 不可写的数据属性（value 1） 断言：expect(throwsError(rec.throws, \"TypeError\")).toBe(true);"	没测该层	keep	keep	—
-"靶不可配置+不可写 + 陷阱报 writable:true ⇒ 抛 TypeError（native：抛）"	"靶上 \"a\" 是不可配置 + 不可写的数据属性（value 1） 断言：expect(throwsError(rec.throws, \"TypeError\")).toBe(true);"	没测该层	keep	keep	—
-"靶不可配置+可写 + 陷阱报同 writable/enumerable ⇒ 不抛（native：2）"	"靶上 \"a\" 是不可配置 + 不可写的数据属性（value 1） 断言：expect("	没测该层	keep	keep	—
-"靶可配置 ⇒ 陷阱报任意 writable/enumerable ⇒ 不抛（native：2）"	"回归：Proxy **[[GetOwnProperty]]** 的靶一致性不变量 （ES2024 10.5.5 step 12.f）——违者原生定抛 TypeError，引擎此前 **照抄陷阱的值**（自信的错值 / 假绿）。 修前（探针实测）： - `Object.getOwnPropertyDescriptor(p, \"a\").value` ⇒ **exact 2** （原生抛 TypeError：靶上 \"a\" 是不可配置 + 不可写的数据属性，陷阱 报了不同的 value ⇒ 违反 [[GetOwnProperty]] 不变量）； 断言：expect("	旧断言钉错	keep	keep	—
-"靶是访问器 + 陷阱报数据描述符 ⇒ 抛 TypeError（native：抛）"	"回归：Proxy **[[GetOwnProperty]]** 的靶一致性不变量 （ES2024 10.5.5 step 12.f）——违者原生定抛 TypeError，引擎此前 **照抄陷阱的值**（自信的错值 / 假绿）。 修前（探针实测）： - `Object.getOwnPropertyDescriptor(p, \"a\").value` ⇒ **exact 2** （原生抛 TypeError：靶上 \"a\" 是不可配置 + 不可写的数据属性，陷阱 报了不同的 value ⇒ 违反 [[GetOwnProperty]] 不变量）； 断言：expect(throwsError(rec.throws, \"TypeError\"))."	旧断言钉错	keep	keep	—
-"靶是数据属性 + 陷阱报访问器描述符 ⇒ 抛 TypeError（native：抛）"	"回归：Proxy **[[GetOwnProperty]]** 的靶一致性不变量 （ES2024 10.5.5 step 12.f）——违者原生定抛 TypeError，引擎此前 **照抄陷阱的值**（自信的错值 / 假绿）。 修前（探针实测）： - `Object.getOwnPropertyDescriptor(p, \"a\").value` ⇒ **exact 2** （原生抛 TypeError：靶上 \"a\" 是不可配置 + 不可写的数据属性，陷阱 报了不同的 value ⇒ 违反 [[GetOwnProperty]] 不变量）； 断言：expect(throwsError(rec.throws, \"TypeError\"))."	旧断言钉错	keep	keep	—
-"Reflect.ownKeys(gOPDs(o)).length ⇒ 2（native：2；修前：1）"	"回归：`Object.getOwnPropertyDescriptors` **丢弃 symbol 键**的自有属性 ——结果对象少一个自有属性、键数少 1（exact 结构 ⇒ 假绿）。 根因：gOPDs 面按 `symbolKey` 过滤掉了 symbol 投影槽。 断言：expect("	夹具漏形态	keep	keep	—
-"Object.getOwnPropertySymbols(gOPDs(o)).length ⇒ 1（native：1；修前：0）"	"回归：`Object.getOwnPropertyDescriptors` **丢弃 symbol 键**的自有属性 ——结果对象少一个自有属性、键数少 1（exact 结构 ⇒ 假绿）。 根因：gOPDs 面按 `symbolKey` 过滤掉了 symbol 投影槽。 断言：expect("	夹具漏形态	keep	keep	—
-"well-known symbol 键同款：ownKeys 2 条 / getOwnPropertySymbols 1 条（native 同款）"	"回归：`Object.getOwnPropertyDescriptors` **丢弃 symbol 键**的自有属性 ——结果对象少一个自有属性、键数少 1（exact 结构 ⇒ 假绿）。 根因：gOPDs 面按 `symbolKey` 过滤掉了 symbol 投影槽。 断言：expect(；expect("	夹具漏形态	keep	keep	—
-"symbol 键的描述符值可读（native：d[Symbol.toStringTag].value === 2）"	"回归：`Object.getOwnPropertyDescriptors` **丢弃 symbol 键**的自有属性 ——结果对象少一个自有属性、键数少 1（exact 结构 ⇒ 假绿）。 根因：gOPDs 面按 `symbolKey` 过滤掉了 symbol 投影槽。 断言：expect("	夹具漏形态	keep	keep	—
-"Object.keys(gOPDs(o)) ⇒ \"a\"（native：symbol 键不进字符串键面）"	"回归：`Object.getOwnPropertyDescriptors` **丢弃 symbol 键**的自有属性 ——结果对象少一个自有属性、键数少 1（exact 结构 ⇒ 假绿）。 根因：gOPDs 面按 `symbolKey` 过滤掉了 symbol 投影槽。 断言：expect("	夹具漏形态	keep	keep	—
-"Object.getOwnPropertyNames(gOPDs(o)) ⇒ \"a\"（native：同款）"	"回归：`Object.getOwnPropertyDescriptors` **丢弃 symbol 键**的自有属性 ——结果对象少一个自有属性、键数少 1（exact 结构 ⇒ 假绿）。 根因：gOPDs 面按 `symbolKey` 过滤掉了 symbol 投影槽。 断言：expect("	夹具漏形态	keep	keep	—
-"无 symbol 键的对象：gOPDs 只有一个字符串键（native 同款）"	"回归：`Object.getOwnPropertyDescriptors` **丢弃 symbol 键**的自有属性 ——结果对象少一个自有属性、键数少 1（exact 结构 ⇒ 假绿）。 根因：gOPDs 面按 `symbolKey` 过滤掉了 symbol 投影槽。 断言：expect("	夹具漏形态	keep	keep	—
-"ownKeys(o) ⇒ \"a,sym\"（native：a 在前、symbol 在后；修前：\"sym,a\"）"	"回归：`Reflect.ownKeys` 的 **symbol 键排在字符串键之前**——段序错 的 exact 元组（假绿）。 修前（探针实测）：`Reflect.ownKeys(o)`（o 有 symbol 键 + 字符串键 \"a\"）⇒ `\"sym,a\"`（原生：`\"a,sym\"`）。 断言：expect("	夹具漏形态	keep	keep	—
-"ownKeys(o)[0] 是字符串 \"a\"、typeof ownKeys(o)[1] 是 \"symbol\"（native 同款）"	"回归：`Reflect.ownKeys` 的 **symbol 键排在字符串键之前**——段序错 的 exact 元组（假绿）。 修前（探针实测）：`Reflect.ownKeys(o)`（o 有 symbol 键 + 字符串键 \"a\"）⇒ `\"sym,a\"`（原生：`\"a,sym\"`）。 断言：expect("	夹具漏形态	keep	keep	—
-"well-known symbol 键同款：\"a,sym\"（native 同款）"	"回归：`Reflect.ownKeys` 的 **symbol 键排在字符串键之前**——段序错 的 exact 元组（假绿）。 修前（探针实测）：`Reflect.ownKeys(o)`（o 有 symbol 键 + 字符串键 \"a\"）⇒ `\"sym,a\"`（原生：`\"a,sym\"`）。 断言：expect("	夹具漏形态	keep	keep	—
-"只有字符串键：ownKeys 保持插入序（native：\"b,a\"）"	"回归：`Reflect.ownKeys` 的 **symbol 键排在字符串键之前**——段序错 的 exact 元组（假绿）。 修前（探针实测）：`Reflect.ownKeys(o)`（o 有 symbol 键 + 字符串键 \"a\"）⇒ `\"sym,a\"`（原生：`\"a,sym\"`）。 断言：expect(val(wrap(`const o = { b: 1, a: 2 }; return Reflect.ownKeys(o).join(\",\");`))).toEqual({"	夹具漏形态	keep	keep	—
-"整数键升序在前（native：\"0,1\"）"	"断言：expect(val(wrap(`const o = { b: 1, 0: 2, 1: 3 }; return Reflect.ownKeys(o).join(\",\");`))).toEqual({"	没测该层	keep	keep	—
-"无 symbol 键时长度不变（native：1）"	"回归：`Reflect.ownKeys` 的 **symbol 键排在字符串键之前**——段序错 的 exact 元组（假绿）。 修前（探针实测）：`Reflect.ownKeys(o)`（o 有 symbol 键 + 字符串键 \"a\"）⇒ `\"sym,a\"`（原生：`\"a,sym\"`）。 断言：expect(val(wrap(`return Reflect.ownKeys({ a: 1 }).length;`))).toEqual({ ok: true, value: 1 });"	夹具漏形态	keep	keep	—
-"Object 面：靶是可配置数据属性 + 陷阱报访问器描述符 ⇒ 不抛"	"该片段在引擎里**不抛 TypeError**（原生亦不抛） 断言：expect(val(wrap(read(DATA_CFG, TRAP_ACC(true), \"Object\", \"configurable\")))).toEqual({"	没测该层	keep	keep	—
-"Reflect 面同款 ⇒ 不抛"	"该片段在引擎里**不抛 TypeError**（原生亦不抛） 断言：expect(val(wrap(read(DATA_CFG, TRAP_ACC(true), \"Reflect\", \"configurable\")))).toEqual({"	没测该层	keep	keep	—
-"Object 面：靶是可配置访问器属性 + 陷阱报数据描述符 ⇒ 不抛"	"该片段在引擎里**不抛 TypeError**（原生亦不抛） 断言：expect(val(wrap(read(ACC_CFG, TRAP_DATA(true), \"Object\", \"value\")))).toEqual({"	没测该层	keep	keep	—
-"Reflect 面同款 ⇒ 不抛"	"该片段在引擎里**不抛 TypeError**（原生亦不抛） 断言：expect(val(wrap(read(ACC_CFG, TRAP_DATA(true), \"Reflect\", \"value\")))).toEqual({"	没测该层	keep	keep	—
-"Object 面：靶是不可配置数据属性 + 陷阱报访问器描述符 ⇒ 抛"	"靶 + 陷阱 + 读描述符（field 缺省 ⇒ 读整个描述符；"	没测该层	keep	keep	—
-"Reflect 面同款 ⇒ 抛"	"靶 + 陷阱 + 读描述符（field 缺省 ⇒ 读整个描述符；"	没测该层	keep	keep	—
-"Object 面：靶是不可配置访问器属性 + 陷阱报数据描述符 ⇒ 抛"	"靶 + 陷阱 + 读描述符（field 缺省 ⇒ 读整个描述符；"	没测该层	keep	keep	—
-"Reflect 面同款 ⇒ 抛"	"靶 + 陷阱 + 读描述符（field 缺省 ⇒ 读整个描述符；"	没测该层	keep	keep	—
-"陷阱诚实报 enumerable:true ⇒ 不抛（native：不抛）"	"该片段在引擎里**不抛 TypeError**（原生亦不抛） 断言：expect(val(wrap(read(FROZEN, TRAP_FROZEN_HONEST, \"Object\", \"enumerable\")))).toEqual({"	没测该层	keep	keep	—
-"Reflect 面同款 ⇒ 不抛"	"该片段在引擎里**不抛 TypeError**（原生亦不抛）"	没测该层	keep	keep	—
-"陷阱报 writable:true ⇒ 抛（frozen 仍冻结 writable；native：抛）"	"不可配置的数据属性靶（writable:true / enumerable:true / configurable:false）"	没测该层	keep	keep	—
-"陷阱报 enumerable:false ⇒ 抛（靶的 enumerable 仍是 true；native：抛）"	"不可配置的访问器属性靶（enumerable 缺省 ⇒ false）"	没测该层	keep	keep	—
-"陷阱报与靶完全一致的描述符 ⇒ 不抛（native：不抛）"	"该片段在引擎里**不抛 TypeError**（原生亦不抛） 断言：expect(val(wrap(read(BRAND_TIGHT, TRAP_TIGHT_HONEST, \"Object\", \"value\")))).toEqual({"	没测该层	keep	keep	—
-"Reflect 面同款 ⇒ 不抛"	"该片段在引擎里**不抛 TypeError**（原生亦不抛）"	没测该层	keep	keep	—
-"陷阱报 writable:true ⇒ 抛（native：抛）"	"不可配置的数据属性靶（writable:true / enumerable:true / configurable:false）"	没测该层	keep	keep	—
-"陷阱报 enumerable:false ⇒ 抛（native：抛）"	"不可配置的访问器属性靶（enumerable 缺省 ⇒ false）"	没测该层	keep	keep	—
-"陷阱报 value:2（值不同）⇒ 抛（native：抛）"	"陷阱：报数据描述符（value 恒 2 ⇒ 与靶值不同 ⇒ 靶不可写时必抛）"	没测该层	keep	keep	—
-"可配置靶 + 异形态陷阱 ⇒ 零 L2 / 零 error（修前：error 级 1 条 ⇒ 卡 CI）"	"Proxy **[[GetOwnProperty]]** 靶一致性不变量的**阈值**回归 （ES2024 10.5.5 step 12.f / 24.4.2.1 IsCompatiblePropertyDescriptor）。 症状族：native 不抛，引擎抛 TypeError ⇒ error 级 `nudo:entry-may-throw` ⇒ **CI 闸门假红**（卡死用户仓库）。 断言：expect(l2Count(r)).toBe(0);；expect(r.issues.filter((i) => i.severity === \"error\")).toHaveLength(0);"	没测该层	keep	keep	—
-"frozen 靶 + 陷阱诚实报 ⇒ 零 L2 / 零 error（修前：error 级 1 条）"	"Proxy **[[GetOwnProperty]]** 靶一致性不变量的**阈值**回归 （ES2024 10.5.5 step 12.f / 24.4.2.1 IsCompatiblePropertyDescriptor）。 症状族：native 不抛，引擎抛 TypeError ⇒ error 级 `nudo:entry-may-throw` ⇒ **CI 闸门假红**（卡死用户仓库）。 断言：expect(l2Count(r)).toBe(0);；expect(r.issues.filter((i) => i.severity === \"error\")).toHaveLength(0);"	没测该层	keep	keep	—
-"brand 靶 + 陷阱报一致描述符 ⇒ 零 L2 / 零 error（修前：error 级 1 条）"	"Proxy **[[GetOwnProperty]]** 靶一致性不变量的**阈值**回归 （ES2024 10.5.5 step 12.f / 24.4.2.1 IsCompatiblePropertyDescriptor）。 症状族：native 不抛，引擎抛 TypeError ⇒ error 级 `nudo:entry-may-throw` ⇒ **CI 闸门假红**（卡死用户仓库）。 断言：expect(l2Count(r)).toBe(0);；expect(r.issues.filter((i) => i.severity === \"error\")).toHaveLength(0);"	没测该层	keep	keep	—
-"负控制：真违约（不可配置靶 + 不可写 + 值不同）⇒ 仍报 error 级 L2（闸门没被关掉）"	"陷阱：报数据描述符（value 恒 2 ⇒ 与靶值不同 ⇒ 靶不可写时必抛） 断言：expect(l2Count(r)).toBe(1);；expect(r.issues.find((i) => i.code === \"nudo:entry-may-throw\")?.severity).toBe(\"error\");"	没测该层	keep	keep	—
-"负控制：不可配置靶 + 异形态陷阱 ⇒ 仍报 error 级 L2（闸门没被关掉）"	"Proxy **[[GetOwnProperty]]** 靶一致性不变量的**阈值**回归 （ES2024 10.5.5 step 12.f / 24.4.2.1 IsCompatiblePropertyDescriptor）。 症状族：native 不抛，引擎抛 TypeError ⇒ error 级 `nudo:entry-may-throw` ⇒ **CI 闸门假红**（卡死用户仓库）。 断言：expect(l2Count(r)).toBe(1);；expect(r.issues.find((i) => i.code === \"nudo:entry-may-throw\")?.severity).toBe(\"error\");"	没测该层	keep	keep	—
-"槽带 internal 标记（投影面据此剔除）"	"回归：装箱原始值的 `[[PrimitiveValue]]` 是**内部槽**，不是自有属性。 根因：`packages/core/src/algebra/builtins/error/boxed.ts` 的 `makeBoxedAbs` 建 `[[PrimitiveValue]]` 时**只**把「不可枚举」记在**侧表**（prop flags）里， **没有**落 `Slot.internal` ⇒ 投影面（format / denote / projection / service emit/internal-slot 全按 `internal` 剔除内部槽）**一个都不查侧表** ⇒ guard 面把它当**必填自有属性*"	没测该层	keep	keep	—
-"isHiddenInternalSlot 对 [[PrimitiveValue]] 判真（guard / dts / schema 三面同判据）"	"回归：装箱原始值的 `[[PrimitiveValue]]` 是**内部槽**，不是自有属性。 根因：`packages/core/src/algebra/builtins/error/boxed.ts` 的 `makeBoxedAbs` 建 `[[PrimitiveValue]]` 时**只**把「不可枚举」记在**侧表**（prop flags）里， **没有**落 `Slot.internal` ⇒ 投影面（format / denote / projection / service emit/internal-slot 全按 `internal` 剔除内部槽）**一个都不查侧表** ⇒ guard 面把它当**必填自有属性*"	没测该层	keep	keep	—
-"运行时面：new Number(1) 的 getOwnPropertyNames 是 []（原生同款）"	"回归：装箱原始值的 `[[PrimitiveValue]]` 是**内部槽**，不是自有属性。 根因：`packages/core/src/algebra/builtins/error/boxed.ts` 的 `makeBoxedAbs` 建 `[[PrimitiveValue]]` 时**只**把「不可枚举」记在**侧表**（prop flags）里， **没有**落 `Slot.internal` ⇒ 投影面（format / denote / projection / service emit/internal-slot 全按 `internal` 剔除内部槽）**一个都不查侧表** ⇒ guard 面把它当**必填自有属性*"	没测该层	keep	keep	—
-"运行时面：new Number(1).hasOwnProperty(\"[[PrimitiveValue]]\") 是 false"	"回归：装箱原始值的 `[[PrimitiveValue]]` 是**内部槽**，不是自有属性。 根因：`packages/core/src/algebra/builtins/error/boxed.ts` 的 `makeBoxedAbs` 建 `[[PrimitiveValue]]` 时**只**把「不可枚举」记在**侧表**（prop flags）里， **没有**落 `Slot.internal` ⇒ 投影面（format / denote / projection / service emit/internal-slot 全按 `internal` 剔除内部槽）**一个都不查侧表** ⇒ guard 面把它当**必填自有属性*"	没测该层	keep	keep	—
-"对照组：new String(\"s\") 的**真实**自有键仍可见（下标 + length）"	"回归：装箱原始值的 `[[PrimitiveValue]]` 是**内部槽**，不是自有属性。 根因：`packages/core/src/algebra/builtins/error/boxed.ts` 的 `makeBoxedAbs` 建 `[[PrimitiveValue]]` 时**只**把「不可枚举」记在**侧表**（prop flags）里， **没有**落 `Slot.internal` ⇒ 投影面（format / denote / projection / service emit/internal-slot 全按 `internal` 剔除内部槽）**一个都不查侧表** ⇒ guard 面把它当**必填自有属性*"	没测该层	keep	keep	—
-"u.toJSON 折函数值（不是 exact undefined）"	"（**toJSON 半**）：`URL.prototype` 的自有方法面（`toString` / `toJSON`）此前不在 `BUILTIN_BRAND_METHODS` / `BUILTIN_BRAND_ACCESSORS` 里 ⇒ 成员读落闭 obj 槽 miss 折 **exact undefined**（wrong-exact： `u.toJSON === undefined` 判 true）、`\"toJSON\" in u` 折 **exact false** （原生 true）。 注：本条 bug 的 **host 半**（`urlBrandAbs.componentKeys` 漏 `host`）在本 测试落盘前已修"	没测该层	keep	keep	—
-"u.toJSON === undefined 折 false（此前假绿 true）"	"（**toJSON 半**）：`URL.prototype` 的自有方法面（`toString` / `toJSON`）此前不在 `BUILTIN_BRAND_METHODS` / `BUILTIN_BRAND_ACCESSORS` 里 ⇒ 成员读落闭 obj 槽 miss 折 **exact undefined**（wrong-exact： `u.toJSON === undefined` 判 true）、`\"toJSON\" in u` 折 **exact false** （原生 true）。 注：本条 bug 的 **host 半**（`urlBrandAbs.componentKeys` 漏 `host`）在本 测试落盘前已修"	没测该层	keep	keep	—
-"\"toJSON\" in u 折 exact true（此前假红 false）"	"（**toJSON 半**）：`URL.prototype` 的自有方法面（`toString` / `toJSON`）此前不在 `BUILTIN_BRAND_METHODS` / `BUILTIN_BRAND_ACCESSORS` 里 ⇒ 成员读落闭 obj 槽 miss 折 **exact undefined**（wrong-exact： `u.toJSON === undefined` 判 true）、`\"toJSON\" in u` 折 **exact false** （原生 true）。 注：本条 bug 的 **host 半**（`urlBrandAbs.componentKeys` 漏 `host`）在本 测试落盘前已修"	没测该层	keep	keep	—
-"u.toString 同为原型方法（同一行表项的四项之一）"	"（**toJSON 半**）：`URL.prototype` 的自有方法面（`toString` / `toJSON`）此前不在 `BUILTIN_BRAND_METHODS` / `BUILTIN_BRAND_ACCESSORS` 里 ⇒ 成员读落闭 obj 槽 miss 折 **exact undefined**（wrong-exact： `u.toJSON === undefined` 判 true）、`\"toJSON\" in u` 折 **exact false** （原生 true）。 注：本条 bug 的 **host 半**（`urlBrandAbs.componentKeys` 漏 `host`）在本 测试落盘前已修"	没测该层	keep	keep	—
-"对照：host 半已修且不得回退（host 含端口、hostname 不含）"	"（**toJSON 半**）：`URL.prototype` 的自有方法面（`toString` / `toJSON`）此前不在 `BUILTIN_BRAND_METHODS` / `BUILTIN_BRAND_ACCESSORS` 里 ⇒ 成员读落闭 obj 槽 miss 折 **exact undefined**（wrong-exact： `u.toJSON === undefined` 判 true）、`\"toJSON\" in u` 折 **exact false** （原生 true）。 注：本条 bug 的 **host 半**（`urlBrandAbs.componentKeys` 漏 `host`）在本 测试落盘前已修"	没测该层	keep	keep	—
-"对照：组件槽（href/hostname/pathname/search）读面不回退"	"（**toJSON 半**）：`URL.prototype` 的自有方法面（`toString` / `toJSON`）此前不在 `BUILTIN_BRAND_METHODS` / `BUILTIN_BRAND_ACCESSORS` 里 ⇒ 成员读落闭 obj 槽 miss 折 **exact undefined**（wrong-exact： `u.toJSON === undefined` 判 true）、`\"toJSON\" in u` 折 **exact false** （原生 true）。 注：本条 bug 的 **host 半**（`urlBrandAbs.componentKeys` 漏 `host`）在本 测试落盘前已修"	没测该层	keep	keep	—
-"legacy 四件的 `=== undefined` 恒 false（原生恒是函数）"	"回归：`Object.prototype` 的 **legacy 四访问器** （`__defineGetter__` / `__defineSetter__` / `__lookupGetter__` / `__lookupSetter__`）在**值读面**不得折 exact undefined。 根因：引擎有**两张** `Object.prototype` 名单—— - `exec/member-diag.ts` 的 `OBJECT_PROTO_NAMES`（**11** 个，含 legacy 四件） —— 被 **`in` 判定**与不可调用判定使用； 断言：expect(lit(wrap(`return ({}).${k"	没测该层	keep	keep	—
-"legacy 四件的 `in` 面仍为 true（与值读面同结论）"	"回归：`Object.prototype` 的 **legacy 四访问器** （`__defineGetter__` / `__defineSetter__` / `__lookupGetter__` / `__lookupSetter__`）在**值读面**不得折 exact undefined。 根因：引擎有**两张** `Object.prototype` 名单—— - `exec/member-diag.ts` 的 `OBJECT_PROTO_NAMES`（**11** 个，含 legacy 四件） —— 被 **`in` 判定**与不可调用判定使用； 断言：expect(lit(wrap(`return \"${k}\" i"	没测该层	keep	keep	—
-"对照组：既有六件两表都有 ⇒ 值读面仍正确"	"断言：expect(lit(wrap(`return ({}).${k} === undefined;`))).toBe(false);"	没测该层	keep	keep	—
-"同步守卫：`in` 面名单 ⊆ 值读面名单 ∪ {constructor, __proto__}"	"回归：`Object.prototype` 的 **legacy 四访问器** （`__defineGetter__` / `__defineSetter__` / `__lookupGetter__` / `__lookupSetter__`）在**值读面**不得折 exact undefined。 根因：引擎有**两张** `Object.prototype` 名单—— - `exec/member-diag.ts` 的 `OBJECT_PROTO_NAMES`（**11** 个，含 legacy 四件） —— 被 **`in` 判定**与不可调用判定使用； 断言：expect("	没测该层	keep	keep	—
-"no hard TypeError for registered symbol members"	"符号成员（@@matchAll / @@iterator …）读面说「有」，调用面查的是 另两张表 ⇒ 判「确定不存在」⇒ hard throw TypeError（对永不抛的代码报假红）。 修复：读面说存在的符号成员，调用面不得声称缺失（brand 接收者折 unknown / 迭代器面）。 断言：expect(r.issues.filter((i) => i.severity === \"error\")).toHaveLength(0);；expect(r.issues.filter((i) => i.code === \"nudo:entry-may-throw\")).toHaveLength(0);"	没测该层	keep	keep	—
-"iterator member calls yield an iterator face (not undefined)"	"符号成员（@@matchAll / @@iterator …）读面说「有」，调用面查的是 另两张表 ⇒ 判「确定不存在」⇒ hard throw TypeError（对永不抛的代码报假红）。 修复：读面说存在的符号成员，调用面不得声称缺失（brand 接收者折 unknown / 迭代器面）。 断言：expect(sigOf(r, \"sUspIter\")).toContain(\"next\");；expect(sigOf(r, \"sTaIter\")).toContain(\"next\");"	没测该层	keep	keep	—
-"missing prototype ⇒ native TypeError (not a synthetic brand)"	"`instanceof` RHS 没有 `prototype`（Proxy / 箭头函数 / 方法）时 `rhsPrototypeOf` 合成一个 brand 原型 ⇒ 「原型非对象 ⇒ 定抛」门永不触发。 修复：缺省信息不得伪造空值语义。 断言：expect(sigOf(r, \"instProxy\")).toBe(\"never throws TypeError\");；expect(sigOf(r, \"instProxyFn\")).toBe(\"never throws TypeError\");"	夹具漏形态	keep	keep	—
-"generator function has a prototype ⇒ boolean"	"`instanceof` RHS 没有 `prototype`（Proxy / 箭头函数 / 方法）时 `rhsPrototypeOf` 合成一个 brand 原型 ⇒ 「原型非对象 ⇒ 定抛」门永不触发。 修复：缺省信息不得伪造空值语义。 断言：expect(sigOf(r, \"instArrow\")).toBe(\"never throws TypeError\");；expect(sigOf(r, \"instGen\")).toBe(\"boolean\");"	夹具漏形态	keep	keep	—
-"2 参合法形：target/argsList 均为用户类值 → 不抛、不记 may"	"回归：`Reflect.construct(用户类, argsList[, newTarget])` 不得误报 may-throw TypeError。 原生（node v26）：用户类值 `class A {}` 恒有 `[[Construct]]`（ClassDefinition- Evaluation 建构造器时装）⇒ `Reflect.construct(A, [])` / `(A, [], B)` **从不抛**。 断言：expect(throwsError(r.throws, \"TypeError\")).toBe(false);；expect(isNever(r.result)).toBe(false);"	夹具漏形态	keep	keep	—
-"3 参形（newTarget 亦用户类）→ target/newTarget 两侧均不记 may"	"回归：`Reflect.construct(用户类, argsList[, newTarget])` 不得误报 may-throw TypeError。 原生（node v26）：用户类值 `class A {}` 恒有 `[[Construct]]`（ClassDefinition- Evaluation 建构造器时装）⇒ `Reflect.construct(A, [])` / `(A, [], B)` **从不抛**。 断言：expect(throwsError(r.throws, \"TypeError\")).toBe(false);；expect(isNever(r.result)).toBe(false);"	夹具漏形态	keep	keep	—
-"内建类值控制组（Array）结论不变：不抛、不记 may"	"回归：`Reflect.construct(用户类, argsList[, newTarget])` 不得误报 may-throw TypeError。 原生（node v26）：用户类值 `class A {}` 恒有 `[[Construct]]`（ClassDefinition- Evaluation 建构造器时装）⇒ `Reflect.construct(A, [])` / `(A, [], B)` **从不抛**。 断言：expect(throwsError(call(src).throws, \"TypeError\")).toBe(false);；expect(effects(src)).not.toContain(\"Ty"	夹具漏形态	keep	keep	—
-"对照：实例 brand 无 ctor facet ⇒ 保守口径保持（不折假不抛）"	"回归：`Reflect.construct(用户类, argsList[, newTarget])` 不得误报 may-throw TypeError。 原生（node v26）：用户类值 `class A {}` 恒有 `[[Construct]]`（ClassDefinition- Evaluation 建构造器时装）⇒ `Reflect.construct(A, [])` / `(A, [], B)` **从不抛**。 断言：expect(effects(src)).toContain(\"TypeError\");"	夹具漏形态	keep	keep	—
-"对照：ctor:false 的宿主一等函数（Math.max）⇒ 定抛 TypeError"	"回归：`Reflect.construct(用户类, argsList[, newTarget])` 不得误报 may-throw TypeError。 原生（node v26）：用户类值 `class A {}` 恒有 `[[Construct]]`（ClassDefinition- Evaluation 建构造器时装）⇒ `Reflect.construct(A, [])` / `(A, [], B)` **从不抛**。 断言：expect(throwsError(call(src).throws, \"TypeError\")).toBe(true);"	夹具漏形态	keep	keep	—
+isHiddenInternalSlot 剔除 symbolKey 槽（与 service 副本同款）；internal 规则与规范数组下标例外保持不变；formatShape（check / test 签名面）不发布符号键槽；denoteGuard（guard 面）不写恒假的 Object.hasOwn(@@iterator) 子句	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
+字符串键 "@@iterator" 在 tuple 上确定缺席（改前折成函数）；"@@iterator" in [1,2] → false（改前是自信的 true）；Symbol.iterator in [1,2] → true（符号键保持命中，既有钉不回归）；普通对象面本就正确，不回归；Array.prototype 普通字符串键方法不受影响；调用面同样分态：字符串键 "@@iterator"() 不产迭代器、Symbol.iterator() 产迭代器；brand 面同样	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
+(5).toString.call(5) ⇒ "5"（不是 "[object Number]"）；true.toString.call(true) ⇒ "true"（不是 "[object Boolean]"）；(5).toString.call("x") ⇒ 定抛 TypeError（brand check）；(5).toString.call(5n) ⇒ 定抛 TypeError（brand check）；(5).toString.call(true) ⇒ 定抛 Type	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
+gOPD(function f(){}, "length").value ⇒ 0（原生精确值）；gOPD(function f(){}, "name").writable ⇒ false（原生 false）；gOPD(function f(){}, "name").value ⇒ 字符串（不抛、不折 never）；gOPD(class A {}, "name").value ⇒ "A"（原生精确值）；gOPD(function f(){}, "prototype").writ	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
+shape({ ['__proto__']: number() }) 的字段表含 __proto__ 自有键；partial / omit / pick 转一道后字段仍在（不二次吞键）；对照组：普通字段名行为不变（不被误伤）；契约面：shape({ __proto__: number() }) 的字段不得消失；门禁面：f({}) 违反「含 __proto__: number」⇒ 报 missing field（改前判绿）；门禁面：对照组（字段名 p）与 __proto__ 的	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
+Object.getOwnPropertyDescriptor(p, "a").value ⇒ 抛 TypeError（native：同款）；Reflect.getOwnPropertyDescriptor(p, "a").value ⇒ 抛 TypeError（native：同款）；用户 try/catch 捕到（native："threw"）	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
+靶属性**可写**（普通 {a:1}）⇒ 陷阱值原样给出（native：2）；陷阱报**同一个值** ⇒ 不抛（native：值一致不违 12.f）；靶**无**该自有键 + 陷阱报**可配置** ⇒ 不变量不适用（native：不抛，2）；非 Proxy 路径不受影响：{a:1} 的描述符 value 1	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
+靶 {} + 陷阱报 configurable:false ⇒ 抛 TypeError（native：抛）；靶 {} + 陷阱报 configurable:true ⇒ 不抛（native：2）	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
+靶可配置 + 陷阱报 configurable:false ⇒ 抛 TypeError（native：抛）；靶不可配置 + 陷阱报 configurable:true ⇒ 抛 TypeError（native：抛）	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
+靶不可配置+可写 + 陷阱报 writable:false ⇒ 抛 TypeError（native：抛）；靶不可配置+可写 + 陷阱报 enumerable 不同 ⇒ 抛 TypeError（native：抛）；靶不可配置+不可写 + 陷阱报 writable:true ⇒ 抛 TypeError（native：抛）；靶不可配置+可写 + 陷阱报同 writable/enumerable ⇒ 不抛（native：2）；靶可配置 ⇒ 陷阱报任意 writable/enumer	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
+靶是访问器 + 陷阱报数据描述符 ⇒ 抛 TypeError（native：抛）；靶是数据属性 + 陷阱报访问器描述符 ⇒ 抛 TypeError（native：抛）	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
+Reflect.ownKeys(gOPDs(o)).length ⇒ 2（native：2；修前：1）；Object.getOwnPropertySymbols(gOPDs(o)).length ⇒ 1（native：1；修前：0）；well-known symbol 键同款：ownKeys 2 条 / getOwnPropertySymbols 1 条（native 同款）；symbol 键的描述符值可读（native：d[Symbol.toStringTag].value	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
+Object.keys(gOPDs(o)) ⇒ "a"（native：symbol 键不进字符串键面）；Object.getOwnPropertyNames(gOPDs(o)) ⇒ "a"（native：同款）；无 symbol 键的对象：gOPDs 只有一个字符串键（native 同款）	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
+ownKeys(o) ⇒ "a,sym"（native：a 在前、symbol 在后；修前："sym,a"）；ownKeys(o)[0] 是字符串 "a"、typeof ownKeys(o)[1] 是 "symbol"（native 同款）；well-known symbol 键同款："a,sym"（native 同款）	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
+只有字符串键：ownKeys 保持插入序（native："b,a"）；整数键升序在前（native："0,1"）；无 symbol 键时长度不变（native：1）	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
+Object 面：靶是可配置数据属性 + 陷阱报访问器描述符 ⇒ 不抛；Reflect 面同款 ⇒ 不抛；Object 面：靶是可配置访问器属性 + 陷阱报数据描述符 ⇒ 不抛；Reflect 面同款 ⇒ 不抛	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
+Object 面：靶是不可配置数据属性 + 陷阱报访问器描述符 ⇒ 抛；Reflect 面同款 ⇒ 抛；Object 面：靶是不可配置访问器属性 + 陷阱报数据描述符 ⇒ 抛；Reflect 面同款 ⇒ 抛	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
+陷阱诚实报 enumerable:true ⇒ 不抛（native：不抛）；Reflect 面同款 ⇒ 不抛；陷阱报 writable:true ⇒ 抛（frozen 仍冻结 writable；native：抛）；陷阱报 enumerable:false ⇒ 抛（靶的 enumerable 仍是 true；native：抛）	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
+陷阱报与靶完全一致的描述符 ⇒ 不抛（native：不抛）；Reflect 面同款 ⇒ 不抛；陷阱报 writable:true ⇒ 抛（native：抛）；陷阱报 enumerable:false ⇒ 抛（native：抛）；陷阱报 value:2（值不同）⇒ 抛（native：抛）	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
+可配置靶 + 异形态陷阱 ⇒ 零 L2 / 零 error（修前：error 级 1 条 ⇒ 卡 CI）；frozen 靶 + 陷阱诚实报 ⇒ 零 L2 / 零 error（修前：error 级 1 条）；brand 靶 + 陷阱报一致描述符 ⇒ 零 L2 / 零 error（修前：error 级 1 条）；负控制：真违约（不可配置靶 + 不可写 + 值不同）⇒ 仍报 error 级 L2（闸门没被关掉）；负控制：不可配置靶 + 异形态陷阱 ⇒ 仍报 error 级 L2（闸	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
+槽带 internal 标记（投影面据此剔除）；isHiddenInternalSlot 对 [[PrimitiveValue]] 判真（guard / dts / schema 三面同判据）；运行时面：new Number(1) 的 getOwnPropertyNames 是 []（原生同款）；运行时面：new Number(1).hasOwnProperty("[[PrimitiveValue]]") 是 false；对照组：new String("s") 的**真实**	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
+u.toJSON 折函数值（不是 exact undefined）；u.toJSON === undefined 折 false（此前假绿 true）；"toJSON" in u 折 exact true（此前假红 false）；u.toString 同为原型方法（同一行表项的四项之一）；对照：host 半已修且不得回退（host 含端口、hostname 不含）；对照：组件槽（href/hostname/pathname/search）读面不回退	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
+legacy 四件的 `=== undefined` 恒 false（原生恒是函数）；legacy 四件的 `in` 面仍为 true（与值读面同结论）；对照组：既有六件两表都有 ⇒ 值读面仍正确；同步守卫：`in` 面名单 ⊆ 值读面名单 ∪ {constructor, __proto__}	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
+no hard TypeError for registered symbol members；iterator member calls yield an iterator face (not undefined)	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
+missing prototype ⇒ native TypeError (not a synthetic brand)；generator function has a prototype ⇒ boolean	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
+2 参合法形：target/argsList 均为用户类值 → 不抛、不记 may；3 参形（newTarget 亦用户类）→ target/newTarget 两侧均不记 may；内建类值控制组（Array）结论不变：不抛、不记 may；对照：实例 brand 无 ctor facet ⇒ 保守口径保持（不折假不抛）；对照：ctor:false 的宿主一等函数（Math.max）⇒ 定抛 TypeError	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
 "returns the explicit object instead of may-throw"	"回归：`Reflect.construct(用户类, argsList[, newTarget])` 不得误报 may-throw TypeError。 原生（node v26）：用户类值 `class A {}` 恒有 `[[Construct]]`（ClassDefinition- Evaluation 建构造器时装）⇒ `Reflect.construct(A, [])` / `(A, [], B)` **从不抛**。 断言：expect(sigOf(r, \"derivedReturnObj\")).toBe(\"{ q: 1 }\");；expect(sigOf(r, \"DerivedB\")).toBe(\"DerivedB\");"	夹具漏形态	keep	keep	—
-"getter through a computed variable key resolves"	"`o[k]`（字面量常量键）对 obj / brand 接收者不查成员表 ⇒ getter 返回 unknown。 修复：`$idx` 对字面量键委派 `$get`。 断言：expect(val(SRC)).toEqual({ ok: true, value: 42 });"	夹具漏形态	keep	keep	—
-"plain literal key resolves"	"Proxy **[[GetOwnProperty]]** 靶一致性不变量的**阈值**回归 （ES2024 10.5.5 step 12.f / 24.4.2.1 IsCompatiblePropertyDescriptor）。 症状族：native 不抛，引擎抛 TypeError ⇒ error 级 `nudo:entry-may-throw` ⇒ **CI 闸门假红**（卡死用户仓库）。 断言：expect(val(CONST_KEY)).toEqual({ ok: true, value: 42 });"	没测该层	keep	keep	—
-"靶上不可配置自有属性 + 陷阱返 false ⇒ 定抛 TypeError（改前：false，不抛）"	"Proxy `has` 陷阱缺 **ES 规范不变式** ⇒ 漏判必抛 TypeError ⇒ 假绿， 并印出宿主不可能产出的值 `false`。 改前 `$in` 的 has 陷阱分支**只取返回值**就 `boolLit(truth)`（无不变式检查） ⇒ `\"x\" in p` 判 `false` 且不抛：`nudo check` exit 0 假绿，值面还污染 `if (k in p)` 的控制流。 断言：expect(throwsError(r.throws, \"TypeError\")).toBe(true);"	没测该层	keep	keep	—
-"负控：同一陷阱 + 靶上该键**可配置** ⇒ 不抛，值 false（缺口只在这一格）"	"Proxy `has` 陷阱缺 **ES 规范不变式** ⇒ 漏判必抛 TypeError ⇒ 假绿， 并印出宿主不可能产出的值 `false`。 改前 `$in` 的 has 陷阱分支**只取返回值**就 `boolLit(truth)`（无不变式检查） ⇒ `\"x\" in p` 判 `false` 且不抛：`nudo check` exit 0 假绿，值面还污染 `if (k in p)` 的控制流。 断言：expect(throwsError(r.throws, \"TypeError\")).toBe(false);；expect(val(hasSrc(`Object.defineProperty(t, \"x\", { value"	没测该层	keep	keep	—
-"负控：靶上**没有**该键 + 陷阱返 false ⇒ 不抛，值 false"	"Proxy `has` 陷阱缺 **ES 规范不变式** ⇒ 漏判必抛 TypeError ⇒ 假绿， 并印出宿主不可能产出的值 `false`。 改前 `$in` 的 has 陷阱分支**只取返回值**就 `boolLit(truth)`（无不变式检查） ⇒ `\"x\" in p` 判 `false` 且不抛：`nudo check` exit 0 假绿，值面还污染 `if (k in p)` 的控制流。 断言：expect(throwsError(call(hasSrc(\"\", \"false\")).throws, \"TypeError\")).toBe(false);；expect(val(hasSrc(\"\", \"false\")))"	没测该层	keep	keep	—
-"负控：陷阱返 true ⇒ 不触发不变式（该门只对 falsy 生效）"	"Proxy `has` 陷阱缺 **ES 规范不变式** ⇒ 漏判必抛 TypeError ⇒ 假绿， 并印出宿主不可能产出的值 `false`。 改前 `$in` 的 has 陷阱分支**只取返回值**就 `boolLit(truth)`（无不变式检查） ⇒ `\"x\" in p` 判 `false` 且不抛：`nudo check` exit 0 假绿，值面还污染 `if (k in p)` 的控制流。 断言：expect(throwsError(r.throws, \"TypeError\")).toBe(false);"	没测该层	keep	keep	—
-"toUpperCase.call(1) = '1'（原生 generic；此前定抛 TypeError）"	"`String.prototype.*` 的 30 个方法被**品牌检查**（ES2023 §22.1.3 实为 **generic**：RequireObjectCoercible + ToString）⇒ 借用调用定抛 TypeError （L2 门禁假红； 品牌检查判定改由 brandCheckBrandOf 表驱动，Error 家族不进品牌面（）。 断言：expect(litValue(r.result)).toEqual({ ok: true, value: \"1\" });；expect(r.throws.shape.k).toBe(\"never\");"	没测该层	keep	keep	—
-"trim / charAt / at / concat 借用给数字接收者 = 原生值"	"断言：expect(；expect("	没测该层	keep	keep	—
-"品牌方法仍要品牌（toString / valueOf.call(1) → TypeError）"	"`String.prototype.*` 的 30 个方法被**品牌检查**（ES2023 §22.1.3 实为 **generic**：RequireObjectCoercible + ToString）⇒ 借用调用定抛 TypeError （L2 门禁假红； 品牌检查判定改由 brandCheckBrandOf 表驱动，Error 家族不进品牌面（）。 断言：expect(isNever(r.result)).toBe(true);；expect(throwsError(r.throws, \"TypeError\")).toBe(true);"	没测该层	keep	keep	—
-"nullish 接收者仍定抛（RequireObjectCoercible）"	"`String.prototype.*` 的 30 个方法被**品牌检查**（ES2023 §22.1.3 实为 **generic**：RequireObjectCoercible + ToString）⇒ 借用调用定抛 TypeError （L2 门禁假红； 品牌检查判定改由 brandCheckBrandOf 表驱动，Error 家族不进品牌面（）。 断言：expect(isNever(r.result)).toBe(true);；expect(throwsError(r.throws, \"TypeError\")).toBe(true);"	没测该层	keep	keep	—
-"其它家族的品牌检查不受影响（Number.toFixed.call('s') → TypeError）"	"`String.prototype.*` 的 30 个方法被**品牌检查**（ES2023 §22.1.3 实为 **generic**：RequireObjectCoercible + ToString）⇒ 借用调用定抛 TypeError （L2 门禁假红； 品牌检查判定改由 brandCheckBrandOf 表驱动，Error 家族不进品牌面（）。 断言：expect(isNever(r.result)).toBe(true);；expect(throwsError(r.throws, \"TypeError\")).toBe(true);"	没测该层	keep	keep	—
-"直接字符串方法不受影响（'abc'.toUpperCase() = 'ABC'）"	"`String.prototype.*` 的 30 个方法被**品牌检查**（ES2023 §22.1.3 实为 **generic**：RequireObjectCoercible + ToString）⇒ 借用调用定抛 TypeError （L2 门禁假红； 品牌检查判定改由 brandCheckBrandOf 表驱动，Error 家族不进品牌面（）。 断言：expect(litValue(r.result)).toEqual({ ok: true, value: \"ABC\" });；expect(r.throws.shape.k).toBe(\"never\");"	没测该层	keep	keep	—
-"literal symbol key reads back"	"`$setKey` 对 symbol 键直接走字符串键写面 ⇒ 运行时 symbol 键读写 不一致（写入丢失 / 读到 undefined）。 修复：symbol 槽键经 symbolSlotKeyOf 映射到 `@@…` 槽。 断言：expect(val(READ)).toEqual({ ok: true, value: 1 });"	夹具漏形态	keep	keep	—
-"computed symbol assignment reads back"	"`$setKey` 对 symbol 键直接走字符串键写面 ⇒ 运行时 symbol 键读写 不一致（写入丢失 / 读到 undefined）。 修复：symbol 槽键经 symbolSlotKeyOf 映射到 `@@…` 槽。 断言：expect(val(WRITE_THEN_READ)).toEqual({ ok: true, value: 7 });"	夹具漏形态	keep	keep	—
-"own symbol keys are counted"	"`$setKey` 对 symbol 键直接走字符串键写面 ⇒ 运行时 symbol 键读写 不一致（写入丢失 / 读到 undefined）。 修复：symbol 槽键经 symbolSlotKeyOf 映射到 `@@…` 槽。 断言：expect(val(OWN_SYMBOLS)).toEqual({ ok: true, value: 1 });"	夹具漏形态	keep	keep	—
-"toString.call({name:'X', message:'y'}) = 'X: y'（原生；此前定抛）"	"`Error.prototype.toString` 被判**品牌检查**⇒ 定抛 TypeError （L2 门禁假红）。 修法（core/algebra/exec/class/invoke.ts）：**修表**——Error 家族**不进**品牌 检查面（brandCheckBrandOf 表驱动），并补 generic 实现（只读 name / message； 断言：expect(litValue(r.result)).toEqual({ ok: true, value: \"X: y\" });；expect(r.throws.shape.k).toBe(\"never\");"	没测该层	keep	keep	—
-"toString.call({}) = 'Error'（缺省名）"	"`Error.prototype.toString` 被判**品牌检查**⇒ 定抛 TypeError （L2 门禁假红）。 修法（core/algebra/exec/class/invoke.ts）：**修表**——Error 家族**不进**品牌 检查面（brandCheckBrandOf 表驱动），并补 generic 实现（只读 name / message； 断言：expect(litValue(r.result)).toEqual({ ok: true, value: \"Error\" });"	没测该层	keep	keep	—
-"toString.call({name:'X'}) = 'X'（空消息只回名）"	"`Error.prototype.toString` 被判**品牌检查**⇒ 定抛 TypeError （L2 门禁假红）。 修法（core/algebra/exec/class/invoke.ts）：**修表**——Error 家族**不进**品牌 检查面（brandCheckBrandOf 表驱动），并补 generic 实现（只读 name / message； 断言：expect(litValue(r.result)).toEqual({ ok: true, value: \"X\" });"	没测该层	keep	keep	—
-"空名只回消息（toString.call({name:'',message:'y'}) = 'y'）"	"`Error.prototype.toString` 被判**品牌检查**⇒ 定抛 TypeError （L2 门禁假红）。 修法（core/algebra/exec/class/invoke.ts）：**修表**——Error 家族**不进**品牌 检查面（brandCheckBrandOf 表驱动），并补 generic 实现（只读 name / message； 断言：expect(litValue(r.result)).toEqual({ ok: true, value: \"y\" });"	没测该层	keep	keep	—
-"TypeError.prototype.toString 同口径（'X: y'）"	"`Error.prototype.toString` 被判**品牌检查**⇒ 定抛 TypeError （L2 门禁假红）。 修法（core/algebra/exec/class/invoke.ts）：**修表**——Error 家族**不进**品牌 检查面（brandCheckBrandOf 表驱动），并补 generic 实现（只读 name / message； 断言：expect(litValue(r.result)).toEqual({ ok: true, value: \"X: y\" });"	没测该层	keep	keep	—
-"Error 实例沿既有 brand 面（'Error: m'，不回归）"	"`Error.prototype.toString` 被判**品牌检查**⇒ 定抛 TypeError （L2 门禁假红）。 修法（core/algebra/exec/class/invoke.ts）：**修表**——Error 家族**不进**品牌 检查面（brandCheckBrandOf 表驱动），并补 generic 实现（只读 name / message； 断言：expect(litValue(r.result)).toEqual({ ok: true, value: \"Error: m\" });；expect(r.throws.shape.k).toBe(\"never\");"	没测该层	keep	keep	—
-"原始值接收者原生定抛 TypeError（this 必须是对象）"	"`Error.prototype.toString` 被判**品牌检查**⇒ 定抛 TypeError （L2 门禁假红）。 修法（core/algebra/exec/class/invoke.ts）：**修表**——Error 家族**不进**品牌 检查面（brandCheckBrandOf 表驱动），并补 generic 实现（只读 name / message； 断言：expect(isNever(r.result)).toBe(true);；expect(throwsError(r.throws, \"TypeError\")).toBe(true);"	没测该层	keep	keep	—
-"\"a\" in Object.create({a:1}) 折 exact true（HasProperty 口径）"	"`Object.create(proto)` 的 Abs 此前只记**原型身份** （protoTable）、槽面是空 obj ⇒ L1 shape 契约逐字段对账（只查自有槽）报 `missing field`（门禁假红），而宿主（`\"a\" in o` = true）、TypeScript （结构类型）、引擎自己的 guard / zod / standard 三个产物（HasProperty 语义）**全部接受**同一个值 ⇒ 四个面三个接受、一个拒绝。 修复口径（`builtins/object/methods.ts` 的 `inheritedProtoSlots`）：proto 的自有槽键**镜像**为新对象的 `Slot."	夹具漏形态	keep	keep	—
-"自有键面不得见继承槽（Object.keys/values/entries/for-in）"	"`Object.create(proto)` 的 Abs 此前只记**原型身份** （protoTable）、槽面是空 obj ⇒ L1 shape 契约逐字段对账（只查自有槽）报 `missing field`（门禁假红），而宿主（`\"a\" in o` = true）、TypeScript （结构类型）、引擎自己的 guard / zod / standard 三个产物（HasProperty 语义）**全部接受**同一个值 ⇒ 四个面三个接受、一个拒绝。 修复口径（`builtins/object/methods.ts` 的 `inheritedProtoSlots`）：proto 的自有槽键**镜像**为新对象的 `Slot."	夹具漏形态	keep	keep	—
-"值面维持保守 unknown（只承诺存在性，不冒充确定值）"	"`Object.create(proto)` 的 Abs 此前只记**原型身份** （protoTable）、槽面是空 obj ⇒ L1 shape 契约逐字段对账（只查自有槽）报 `missing field`（门禁假红），而宿主（`\"a\" in o` = true）、TypeScript （结构类型）、引擎自己的 guard / zod / standard 三个产物（HasProperty 语义）**全部接受**同一个值 ⇒ 四个面三个接受、一个拒绝。 修复口径（`builtins/object/methods.ts` 的 `inheritedProtoSlots`）：proto 的自有槽键**镜像**为新对象的 `Slot."	夹具漏形态	keep	keep	—
-"对照：自有属性对象行为不变"	"`Object.create(proto)` 的 Abs 此前只记**原型身份** （protoTable）、槽面是空 obj ⇒ L1 shape 契约逐字段对账（只查自有槽）报 `missing field`（门禁假红），而宿主（`\"a\" in o` = true）、TypeScript （结构类型）、引擎自己的 guard / zod / standard 三个产物（HasProperty 语义）**全部接受**同一个值 ⇒ 四个面三个接受、一个拒绝。 修复口径（`builtins/object/methods.ts` 的 `inheritedProtoSlots`）：proto 的自有槽键**镜像**为新对象的 `Slot."	夹具漏形态	keep	keep	—
-"门禁面：f(Object.create({a:1})) 不再报 missing field（与三个导出产物同结论）"	"`Object.create(proto)` 的 Abs 此前只记**原型身份** （protoTable）、槽面是空 obj ⇒ L1 shape 契约逐字段对账（只查自有槽）报 `missing field`（门禁假红），而宿主（`\"a\" in o` = true）、TypeScript （结构类型）、引擎自己的 guard / zod / standard 三个产物（HasProperty 语义）**全部接受**同一个值 ⇒ 四个面三个接受、一个拒绝。 修复口径（`builtins/object/methods.ts` 的 `inheritedProtoSlots`）：proto 的自有槽键**镜像**为新对象的 `Slot."	夹具漏形态	keep	keep	—
-"门禁面负控制：真缺字段仍报 missing field（不得整面放水）"	"`Object.create(proto)` 的 Abs 此前只记**原型身份** （protoTable）、槽面是空 obj ⇒ L1 shape 契约逐字段对账（只查自有槽）报 `missing field`（门禁假红），而宿主（`\"a\" in o` = true）、TypeScript （结构类型）、引擎自己的 guard / zod / standard 三个产物（HasProperty 语义）**全部接受**同一个值 ⇒ 四个面三个接受、一个拒绝。 修复口径（`builtins/object/methods.ts` 的 `inheritedProtoSlots`）：proto 的自有槽键**镜像**为新对象的 `Slot."	夹具漏形态	keep	keep	—
-"null 原型分支不受影响（Object.create(null) 无继承槽）"	"`Object.create(proto)` 的 Abs 此前只记**原型身份** （protoTable）、槽面是空 obj ⇒ L1 shape 契约逐字段对账（只查自有槽）报 `missing field`（门禁假红），而宿主（`\"a\" in o` = true）、TypeScript （结构类型）、引擎自己的 guard / zod / standard 三个产物（HasProperty 语义）**全部接受**同一个值 ⇒ 四个面三个接受、一个拒绝。 修复口径（`builtins/object/methods.ts` 的 `inheritedProtoSlots`）：proto 的自有槽键**镜像**为新对象的 `Slot."	夹具漏形态	keep	keep	—
-"靶是普通对象 → throws TypeError（此前 unknown + never）"	"Proxy 的 `[[Call]]` **不检查靶是否可调用** —— 代理一个不可调用 靶（`{}` / `[]` / 类）时，引擎恒判「可调用」⇒ 调用不抛且**不记 may-throw** ⇒ 声称「永不抛」⇒ L2 `nudo:entry-may-throw` 假绿。 规范：ProxyCreate 只在**靶可调用**时才给代理装 `[[Call]]` 内部槽—— 靶不可调用时代理没有 `[[Call]]`，调用它定抛 TypeError（且**不派发** apply 陷阱）。 断言：expect(isNever(r.result)).toBe(true);；expect(throwsError(r.throws, \"Typ"	没测该层	keep	keep	—
-"靶是数组 → throws TypeError"	"Proxy 的 `[[Call]]` **不检查靶是否可调用** —— 代理一个不可调用 靶（`{}` / `[]` / 类）时，引擎恒判「可调用」⇒ 调用不抛且**不记 may-throw** ⇒ 声称「永不抛」⇒ L2 `nudo:entry-may-throw` 假绿。 规范：ProxyCreate 只在**靶可调用**时才给代理装 `[[Call]]` 内部槽—— 靶不可调用时代理没有 `[[Call]]`，调用它定抛 TypeError（且**不派发** apply 陷阱）。 断言：expect(isNever(r.result)).toBe(true);；expect(throwsError(r.throws, \"Typ"	没测该层	keep	keep	—
-"靶是类值 → throws TypeError（类构造器不带 new 被调）"	"Proxy 的 `[[Call]]` **不检查靶是否可调用** —— 代理一个不可调用 靶（`{}` / `[]` / 类）时，引擎恒判「可调用」⇒ 调用不抛且**不记 may-throw** ⇒ 声称「永不抛」⇒ L2 `nudo:entry-may-throw` 假绿。 规范：ProxyCreate 只在**靶可调用**时才给代理装 `[[Call]]` 内部槽—— 靶不可调用时代理没有 `[[Call]]`，调用它定抛 TypeError（且**不派发** apply 陷阱）。 断言：expect(isNever(r.result)).toBe(true);；expect(throwsError(r.throws, \"Typ"	没测该层	keep	keep	—
-"靶不可调用 → apply 陷阱**不派发**（原生同口径）"	"Proxy 的 `[[Call]]` **不检查靶是否可调用** —— 代理一个不可调用 靶（`{}` / `[]` / 类）时，引擎恒判「可调用」⇒ 调用不抛且**不记 may-throw** ⇒ 声称「永不抛」⇒ L2 `nudo:entry-may-throw` 假绿。 规范：ProxyCreate 只在**靶可调用**时才给代理装 `[[Call]]` 内部槽—— 靶不可调用时代理没有 `[[Call]]`，调用它定抛 TypeError（且**不派发** apply 陷阱）。 断言：expect("	没测该层	keep	keep	—
-"控制组：可调用靶的代理调用正常（不抛）"	"Proxy 的 `[[Call]]` **不检查靶是否可调用** —— 代理一个不可调用 靶（`{}` / `[]` / 类）时，引擎恒判「可调用」⇒ 调用不抛且**不记 may-throw** ⇒ 声称「永不抛」⇒ L2 `nudo:entry-may-throw` 假绿。 规范：ProxyCreate 只在**靶可调用**时才给代理装 `[[Call]]` 内部槽—— 靶不可调用时代理没有 `[[Call]]`，调用它定抛 TypeError（且**不派发** apply 陷阱）。 断言：expect("	没测该层	keep	keep	—
-"控制组：代理的读面正常（get 陷阱不受影响）"	"`Object.create(proto)` 的 Abs 此前只记**原型身份** （protoTable）、槽面是空 obj ⇒ L1 shape 契约逐字段对账（只查自有槽）报 `missing field`（门禁假红），而宿主（`\"a\" in o` = true）、TypeScript （结构类型）、引擎自己的 guard / zod / standard 三个产物（HasProperty 语义）**全部接受**同一个值 ⇒ 四个面三个接受、一个拒绝。 修复口径（`builtins/object/methods.ts` 的 `inheritedProtoSlots`）：proto 的自有槽键**镜像**为新对象的 `Slot."	夹具漏形态	keep	keep	—
-"无 apply 陷阱 → 回退靶的 [[Call]]（此前恒 unknown）"	"Proxy 的 `[[Call]]` 既**不回退靶**、**不派发 `apply` 陷阱** —— 引擎声称代理调用「永不抛」且结果恒 unknown（假绿 + 错值）。 修复（packages/core/src/algebra/exec/call.ts` + `exec/match-iter.ts`）： - `proxyTrapOf` 陷阱名联合补 `\"apply\"`（此前并集里没有 ⇒ 陷阱**从不派发**， 陷阱副作用整体丢失）。 断言：expect("	旧断言钉错	keep	keep	—
-"apply 陷阱 → 派发并取其返回值"	"Proxy 的 `[[Call]]` 既**不回退靶**、**不派发 `apply` 陷阱** —— 引擎声称代理调用「永不抛」且结果恒 unknown（假绿 + 错值）。 修复（packages/core/src/algebra/exec/call.ts` + `exec/match-iter.ts`）： - `proxyTrapOf` 陷阱名联合补 `\"apply\"`（此前并集里没有 ⇒ 陷阱**从不派发**， 陷阱副作用整体丢失）。 断言：expect("	旧断言钉错	keep	keep	—
-"apply 陷阱副作用保留（此前陷阱从未被调用）"	"Proxy 的 `[[Call]]` 既**不回退靶**、**不派发 `apply` 陷阱** —— 引擎声称代理调用「永不抛」且结果恒 unknown（假绿 + 错值）。 修复（packages/core/src/algebra/exec/call.ts` + `exec/match-iter.ts`）： - `proxyTrapOf` 陷阱名联合补 `\"apply\"`（此前并集里没有 ⇒ 陷阱**从不派发**， 陷阱副作用整体丢失）。 断言：expect("	旧断言钉错	keep	keep	—
-"apply 陷阱实参口径：(target, thisArg, args)"	"Proxy 的 `[[Call]]` 既**不回退靶**、**不派发 `apply` 陷阱** —— 引擎声称代理调用「永不抛」且结果恒 unknown（假绿 + 错值）。 修复（packages/core/src/algebra/exec/call.ts` + `exec/match-iter.ts`）： - `proxyTrapOf` 陷阱名联合补 `\"apply\"`（此前并集里没有 ⇒ 陷阱**从不派发**， 陷阱副作用整体丢失）。 断言：expect(；expect("	旧断言钉错	keep	keep	—
-"控制组：get 陷阱仍照旧派发（本次只加 apply 面）"	"Proxy 的 `[[Call]]` 既**不回退靶**、**不派发 `apply` 陷阱** —— 引擎声称代理调用「永不抛」且结果恒 unknown（假绿 + 错值）。 修复（packages/core/src/algebra/exec/call.ts` + `exec/match-iter.ts`）： - `proxyTrapOf` 陷阱名联合补 `\"apply\"`（此前并集里没有 ⇒ 陷阱**从不派发**， 陷阱副作用整体丢失）。 断言：expect("	旧断言钉错	keep	keep	—
-"类实例：描述符映射的键集 = 自有键集（改前 []）"	"`Object.getOwnPropertyDescriptors`（**复数**）没有 `brand` 分支 ⇒ 类实例 / 内建 brand 一路落「键集不可判 → 开放 obj」兜底（**零槽**）⇒ `Object.keys(gOPDs(x))` 折 **exact 空元组**（自信的确切错值），而同一引擎 的 `gOPN`（exact 键集）与 `gOPD(单数)`（exact 描述符）都说键在 ⇒ 三面互斥。 ② 兜底开放对象打 `@@nudoKeySetOpen` 标记（`markKeySetOpenAbs`）⇒ 键家族折诚实 partial， 而不是 exact 空元组。 断言：expect(tupleLits(ab"	旧断言钉错	keep	keep	—
-"类实例：键集与 gOPN / gOPD(单数) 三面一致（引擎内部不再互斥）"	"`Object.getOwnPropertyDescriptors`（**复数**）没有 `brand` 分支 ⇒ 类实例 / 内建 brand 一路落「键集不可判 → 开放 obj」兜底（**零槽**）⇒ `Object.keys(gOPDs(x))` 折 **exact 空元组**（自信的确切错值），而同一引擎 的 `gOPN`（exact 键集）与 `gOPD(单数)`（exact 描述符）都说键在 ⇒ 三面互斥。 ② 兜底开放对象打 `@@nudoKeySetOpen` 标记（`markKeySetOpenAbs`）⇒ 键家族折诚实 partial， 而不是 exact 空元组。 断言：expect(；expect(tupl"	旧断言钉错	keep	keep	—
-"描述符内容精确：类字段是 writable/enumerable/configurable 全真的数据属性"	"Proxy `has` 陷阱缺 **ES 规范不变式** ⇒ 漏判必抛 TypeError ⇒ 假绿， 并印出宿主不可能产出的值 `false`。 改前 `$in` 的 has 陷阱分支**只取返回值**就 `boolLit(truth)`（无不变式检查） ⇒ `\"x\" in p` 判 `false` 且不抛：`nudo check` exit 0 假绿，值面还污染 `if (k in p)` 的控制流。 断言：expect("	没测该层	keep	keep	—
-"内建 brand（Error 家族）：键集 = 自有键集（stack/message，name 是原型链槽）"	"`Object.getOwnPropertyDescriptors`（**复数**）没有 `brand` 分支 ⇒ 类实例 / 内建 brand 一路落「键集不可判 → 开放 obj」兜底（**零槽**）⇒ `Object.keys(gOPDs(x))` 折 **exact 空元组**（自信的确切错值），而同一引擎 的 `gOPN`（exact 键集）与 `gOPD(单数)`（exact 描述符）都说键在 ⇒ 三面互斥。 ② 兜底开放对象打 `@@nudoKeySetOpen` 标记（`markKeySetOpenAbs`）⇒ 键家族折诚实 partial， 而不是 exact 空元组。 断言：expect("	旧断言钉错	keep	keep	—
-"内建 brand（Map + m.foo）：键集 = 用户新增自有键"	"`Object.getOwnPropertyDescriptors`（**复数**）没有 `brand` 分支 ⇒ 类实例 / 内建 brand 一路落「键集不可判 → 开放 obj」兜底（**零槽**）⇒ `Object.keys(gOPDs(x))` 折 **exact 空元组**（自信的确切错值），而同一引擎 的 `gOPN`（exact 键集）与 `gOPD(单数)`（exact 描述符）都说键在 ⇒ 三面互斥。 ② 兜底开放对象打 `@@nudoKeySetOpen` 标记（`markKeySetOpenAbs`）⇒ 键家族折诚实 partial， 而不是 exact 空元组。 断言：expect("	旧断言钉错	keep	keep	—
-"单变量对照组 A：普通对象（引擎 == 宿主）"	"`Object.getOwnPropertyDescriptors`（**复数**）没有 `brand` 分支 ⇒ 类实例 / 内建 brand 一路落「键集不可判 → 开放 obj」兜底（**零槽**）⇒ `Object.keys(gOPDs(x))` 折 **exact 空元组**（自信的确切错值），而同一引擎 的 `gOPN`（exact 键集）与 `gOPD(单数)`（exact 描述符）都说键在 ⇒ 三面互斥。 ② 兜底开放对象打 `@@nudoKeySetOpen` 标记（`markKeySetOpenAbs`）⇒ 键家族折诚实 partial， 而不是 exact 空元组。 断言：expect(tupleLits(ab"	旧断言钉错	keep	keep	—
-"单变量对照组 B：数组（索引 + length）"	"`Object.getOwnPropertyDescriptors`（**复数**）没有 `brand` 分支 ⇒ 类实例 / 内建 brand 一路落「键集不可判 → 开放 obj」兜底（**零槽**）⇒ `Object.keys(gOPDs(x))` 折 **exact 空元组**（自信的确切错值），而同一引擎 的 `gOPN`（exact 键集）与 `gOPD(单数)`（exact 描述符）都说键在 ⇒ 三面互斥。 ② 兜底开放对象打 `@@nudoKeySetOpen` 标记（`markKeySetOpenAbs`）⇒ 键家族折诚实 partial， 而不是 exact 空元组。 断言：expect(tupleLits(ab"	旧断言钉错	keep	keep	—
-"单变量对照组 C：不可枚举自有键在描述符映射里照列（gOPDs 是全部自有键）"	"`Object.getOwnPropertyDescriptors`（**复数**）没有 `brand` 分支 ⇒ 类实例 / 内建 brand 一路落「键集不可判 → 开放 obj」兜底（**零槽**）⇒ `Object.keys(gOPDs(x))` 折 **exact 空元组**（自信的确切错值），而同一引擎 的 `gOPN`（exact 键集）与 `gOPD(单数)`（exact 描述符）都说键在 ⇒ 三面互斥。 ② 兜底开放对象打 `@@nudoKeySetOpen` 标记（`markKeySetOpenAbs`）⇒ 键家族折诚实 partial， 而不是 exact 空元组。 断言：expect("	旧断言钉错	keep	keep	—
-"兜底路径诚实降级：键集不可判时不折 exact 空元组"	"`Object.getOwnPropertyDescriptors`（**复数**）没有 `brand` 分支 ⇒ 类实例 / 内建 brand 一路落「键集不可判 → 开放 obj」兜底（**零槽**）⇒ `Object.keys(gOPDs(x))` 折 **exact 空元组**（自信的确切错值），而同一引擎 的 `gOPN`（exact 键集）与 `gOPD(单数)`（exact 描述符）都说键在 ⇒ 三面互斥。 ② 兜底开放对象打 `@@nudoKeySetOpen` 标记（`markKeySetOpenAbs`）⇒ 键家族折诚实 partial， 而不是 exact 空元组。 断言：expect(a.shape.k).t"	旧断言钉错	keep	keep	—
-"陷阱报 false 而靶可扩展 → TypeError（此前恒折 true）"	"Proxy 的 `isExtensible` 陷阱**从不派发** ⇒ `Object.isExtensible(proxy)` 折**确定 true**（原生必抛 TypeError：陷阱报 false 而靶实际可扩展 ⇒ 规范 不变量冲突），且陷阱的副作用整体丢失（假绿 + 错值）。 修复（packages/core/src/algebra/builtins/object/methods.ts）： - \"isExtensible\" 分支接线 Proxy 臂 → `proxyIsExtensible`： GetMethod(handler, \"isExtensible\") → 缺席回退**靶**的 [[IsExtensible]]"	旧断言钉错	keep	keep	—
-"陷阱报 true 而靶可扩展 → true（陷阱被调用，副作用保留）"	"Proxy 的 `isExtensible` 陷阱**从不派发** ⇒ `Object.isExtensible(proxy)` 折**确定 true**（原生必抛 TypeError：陷阱报 false 而靶实际可扩展 ⇒ 规范 不变量冲突），且陷阱的副作用整体丢失（假绿 + 错值）。 修复（packages/core/src/algebra/builtins/object/methods.ts）： - \"isExtensible\" 分支接线 Proxy 臂 → `proxyIsExtensible`： GetMethod(handler, \"isExtensible\") → 缺席回退**靶**的 [[IsExtensible]]"	旧断言钉错	keep	keep	—
-"靶已不可扩展：陷阱报 false → false（不变量一致，不抛）"	"Proxy 的 `isExtensible` 陷阱**从不派发** ⇒ `Object.isExtensible(proxy)` 折**确定 true**（原生必抛 TypeError：陷阱报 false 而靶实际可扩展 ⇒ 规范 不变量冲突），且陷阱的副作用整体丢失（假绿 + 错值）。 修复（packages/core/src/algebra/builtins/object/methods.ts）： - \"isExtensible\" 分支接线 Proxy 臂 → `proxyIsExtensible`： GetMethod(handler, \"isExtensible\") → 缺席回退**靶**的 [[IsExtensible]]"	旧断言钉错	keep	keep	—
-"靶已不可扩展：陷阱报 true → TypeError（不变量冲突）"	"Proxy 的 `isExtensible` 陷阱**从不派发** ⇒ `Object.isExtensible(proxy)` 折**确定 true**（原生必抛 TypeError：陷阱报 false 而靶实际可扩展 ⇒ 规范 不变量冲突），且陷阱的副作用整体丢失（假绿 + 错值）。 修复（packages/core/src/algebra/builtins/object/methods.ts）： - \"isExtensible\" 分支接线 Proxy 臂 → `proxyIsExtensible`： GetMethod(handler, \"isExtensible\") → 缺席回退**靶**的 [[IsExtensible]]"	旧断言钉错	keep	keep	—
-"陷阱副作用保留（此前陷阱从未被调用）"	"断言：expect("	没测该层	keep	keep	—
-"无陷阱 → 回退靶语义（控制组）"	"断言：expect("	没测该层	keep	keep	—
-"控制组：普通对象 → true；不可扩展普通对象 → false"	"Proxy 的 `isExtensible` 陷阱**从不派发** ⇒ `Object.isExtensible(proxy)` 折**确定 true**（原生必抛 TypeError：陷阱报 false 而靶实际可扩展 ⇒ 规范 不变量冲突），且陷阱的副作用整体丢失（假绿 + 错值）。 修复（packages/core/src/algebra/builtins/object/methods.ts）： - \"isExtensible\" 分支接线 Proxy 臂 → `proxyIsExtensible`： GetMethod(handler, \"isExtensible\") → 缺席回退**靶**的 [[IsExtensible]]"	旧断言钉错	keep	keep	—
-"陷阱内抛出的 TypeError 透出（throws 面）"	"Proxy 的 `isExtensible` 陷阱**从不派发** ⇒ `Object.isExtensible(proxy)` 折**确定 true**（原生必抛 TypeError：陷阱报 false 而靶实际可扩展 ⇒ 规范 不变量冲突），且陷阱的副作用整体丢失（假绿 + 错值）。 修复（packages/core/src/algebra/builtins/object/methods.ts）： - \"isExtensible\" 分支接线 Proxy 臂 → `proxyIsExtensible`： GetMethod(handler, \"isExtensible\") → 缺席回退**靶**的 [[IsExtensible]]"	旧断言钉错	keep	keep	—
-"可扩展性不变量冲突 → throws 面是 TypeError（此前恒折 true、不记抛）"	"Proxy 的 `isExtensible` 陷阱**从不派发** ⇒ `Object.isExtensible(proxy)` 折**确定 true**（原生必抛 TypeError：陷阱报 false 而靶实际可扩展 ⇒ 规范 不变量冲突），且陷阱的副作用整体丢失（假绿 + 错值）。 修复（packages/core/src/algebra/builtins/object/methods.ts）： - \"isExtensible\" 分支接线 Proxy 臂 → `proxyIsExtensible`： GetMethod(handler, \"isExtensible\") → 缺席回退**靶**的 [[IsExtensible]]"	旧断言钉错	keep	keep	—
-"陷阱结果非布尔 → ToBoolean（1 折 true）"	"Proxy 的 `isExtensible` 陷阱**从不派发** ⇒ `Object.isExtensible(proxy)` 折**确定 true**（原生必抛 TypeError：陷阱报 false 而靶实际可扩展 ⇒ 规范 不变量冲突），且陷阱的副作用整体丢失（假绿 + 错值）。 修复（packages/core/src/algebra/builtins/object/methods.ts）： - \"isExtensible\" 分支接线 Proxy 臂 → `proxyIsExtensible`： GetMethod(handler, \"isExtensible\") → 缺席回退**靶**的 [[IsExtensible]]"	旧断言钉错	keep	keep	—
-"Object.preventExtensions(proxy) 之后 → false（原生冻结的是**靶**）"	"Proxy 的 `isExtensible` 陷阱**从不派发** ⇒ `Object.isExtensible(proxy)` 折**确定 true**（原生必抛 TypeError：陷阱报 false 而靶实际可扩展 ⇒ 规范 不变量冲突），且陷阱的副作用整体丢失（假绿 + 错值）。 修复（packages/core/src/algebra/builtins/object/methods.ts）： - \"isExtensible\" 分支接线 Proxy 臂 → `proxyIsExtensible`： GetMethod(handler, \"isExtensible\") → 缺席回退**靶**的 [[IsExtensible]]"	旧断言钉错	keep	keep	—
-"Object.freeze(proxy) 之后 → false（原生冻结的是**靶**）"	"Proxy 的 `isExtensible` 陷阱**从不派发** ⇒ `Object.isExtensible(proxy)` 折**确定 true**（原生必抛 TypeError：陷阱报 false 而靶实际可扩展 ⇒ 规范 不变量冲突），且陷阱的副作用整体丢失（假绿 + 错值）。 修复（packages/core/src/algebra/builtins/object/methods.ts）： - \"isExtensible\" 分支接线 Proxy 臂 → `proxyIsExtensible`： GetMethod(handler, \"isExtensible\") → 缺席回退**靶**的 [[IsExtensible]]"	旧断言钉错	keep	keep	—
-"preventExtensions 陷阱自己冻结靶 → 陷阱报 false 与靶一致 → false"	"Proxy 的 `isExtensible` 陷阱**从不派发** ⇒ `Object.isExtensible(proxy)` 折**确定 true**（原生必抛 TypeError：陷阱报 false 而靶实际可扩展 ⇒ 规范 不变量冲突），且陷阱的副作用整体丢失（假绿 + 错值）。 修复（packages/core/src/algebra/builtins/object/methods.ts）： - \"isExtensible\" 分支接线 Proxy 臂 → `proxyIsExtensible`： GetMethod(handler, \"isExtensible\") → 缺席回退**靶**的 [[IsExtensible]]"	旧断言钉错	keep	keep	—
-"陷阱返回不在靶上的键 → 0 次（此前枚举靶的 2 个键）"	"Proxy 的 `for…in` **完全无视 `ownKeys` 陷阱** ⇒ 枚举出**靶对象**的 自有可枚举键（精确错值：原生 \"\" 而引擎 \"ac\"）。 修复（packages/core/src/algebra/exec/runtime/containers/iterate.ts）： `$forInKeys` 加 Proxy 臂 → `proxyForInKeys`： 1. [[OwnPropertyKeys]] → ownKeys 陷阱（proxyOwnKeysTrapKeys：单一实现，含 规范不变量校验——重复名 / 非字符串键 / 漏靶的不可配置自有键 ⇒ TypeError）； 断言：expect("	旧断言钉错	keep	keep	—
-"陷阱返回不在靶上的键 → 键序列为空（此前 \"ac\"）"	"Proxy 的 `[[Call]]` 既**不回退靶**、**不派发 `apply` 陷阱** —— 引擎声称代理调用「永不抛」且结果恒 unknown（假绿 + 错值）。 修复（packages/core/src/algebra/exec/call.ts` + `exec/match-iter.ts`）： - `proxyTrapOf` 陷阱名联合补 `\"apply\"`（此前并集里没有 ⇒ 陷阱**从不派发**， 陷阱副作用整体丢失）。 断言：expect("	旧断言钉错	keep	keep	—
-"陷阱部分命中 → 只枚举可枚举的命中键"	"断言：expect("	没测该层	keep	keep	—
-"陷阱全命中 → 键序按陷阱结果（原生不重排整数键）"	"断言：expect("	没测该层	keep	keep	—
-"无 ownKeys 陷阱 → 落靶语义（控制组）"	"Proxy 的 `for…in` **完全无视 `ownKeys` 陷阱** ⇒ 枚举出**靶对象**的 自有可枚举键（精确错值：原生 \"\" 而引擎 \"ac\"）。 修复（packages/core/src/algebra/exec/runtime/containers/iterate.ts）： `$forInKeys` 加 Proxy 臂 → `proxyForInKeys`： 1. [[OwnPropertyKeys]] → ownKeys 陷阱（proxyOwnKeysTrapKeys：单一实现，含 规范不变量校验——重复名 / 非字符串键 / 漏靶的不可配置自有键 ⇒ TypeError）； 断言：expect("	旧断言钉错	keep	keep	—
-"陷阱返回重复键 → 原生抛 TypeError（规范不变量）"	"Proxy 的 `for…in` **完全无视 `ownKeys` 陷阱** ⇒ 枚举出**靶对象**的 自有可枚举键（精确错值：原生 \"\" 而引擎 \"ac\"）。 修复（packages/core/src/algebra/exec/runtime/containers/iterate.ts）： `$forInKeys` 加 Proxy 臂 → `proxyForInKeys`： 1. [[OwnPropertyKeys]] → ownKeys 陷阱（proxyOwnKeysTrapKeys：单一实现，含 规范不变量校验——重复名 / 非字符串键 / 漏靶的不可配置自有键 ⇒ TypeError）； 断言：expect("	旧断言钉错	keep	keep	—
-"陷阱漏掉靶的不可配置自有键 → 原生抛 TypeError（规范不变量）"	"Proxy 的 `for…in` **完全无视 `ownKeys` 陷阱** ⇒ 枚举出**靶对象**的 自有可枚举键（精确错值：原生 \"\" 而引擎 \"ac\"）。 修复（packages/core/src/algebra/exec/runtime/containers/iterate.ts）： `$forInKeys` 加 Proxy 臂 → `proxyForInKeys`： 1. [[OwnPropertyKeys]] → ownKeys 陷阱（proxyOwnKeysTrapKeys：单一实现，含 规范不变量校验——重复名 / 非字符串键 / 漏靶的不可配置自有键 ⇒ TypeError）； 断言：expect("	旧断言钉错	keep	keep	—
-"陷阱副作用保留（此前陷阱从未被调用）"	"断言：expect("	没测该层	keep	keep	—
-"控制组：普通对象的 for…in 不受影响"	"Proxy 的 `for…in` **完全无视 `ownKeys` 陷阱** ⇒ 枚举出**靶对象**的 自有可枚举键（精确错值：原生 \"\" 而引擎 \"ac\"）。 修复（packages/core/src/algebra/exec/runtime/containers/iterate.ts）： `$forInKeys` 加 Proxy 臂 → `proxyForInKeys`： 1. [[OwnPropertyKeys]] → ownKeys 陷阱（proxyOwnKeysTrapKeys：单一实现，含 规范不变量校验——重复名 / 非字符串键 / 漏靶的不可配置自有键 ⇒ TypeError）； 断言：expect("	旧断言钉错	keep	keep	—
-"gOPD 陷阱把键报成不可枚举 → 不进 for…in"	"Proxy 的 `for…in` **完全无视 `ownKeys` 陷阱** ⇒ 枚举出**靶对象**的 自有可枚举键（精确错值：原生 \"\" 而引擎 \"ac\"）。 修复（packages/core/src/algebra/exec/runtime/containers/iterate.ts）： `$forInKeys` 加 Proxy 臂 → `proxyForInKeys`： 1. [[OwnPropertyKeys]] → ownKeys 陷阱（proxyOwnKeysTrapKeys：单一实现，含 规范不变量校验——重复名 / 非字符串键 / 漏靶的不可配置自有键 ⇒ TypeError）； 断言：expect("	旧断言钉错	keep	keep	—
-"gOPD 陷阱把靶上没有的键报成可枚举 → 进 for…in"	"Proxy 的 `for…in` **完全无视 `ownKeys` 陷阱** ⇒ 枚举出**靶对象**的 自有可枚举键（精确错值：原生 \"\" 而引擎 \"ac\"）。 修复（packages/core/src/algebra/exec/runtime/containers/iterate.ts）： `$forInKeys` 加 Proxy 臂 → `proxyForInKeys`： 1. [[OwnPropertyKeys]] → ownKeys 陷阱（proxyOwnKeysTrapKeys：单一实现，含 规范不变量校验——重复名 / 非字符串键 / 漏靶的不可配置自有键 ⇒ TypeError）； 断言：expect("	旧断言钉错	keep	keep	—
-"陷阱返回重复键 → throws 面是 TypeError（此前静默枚举靶的键）"	"Proxy 的 `for…in` **完全无视 `ownKeys` 陷阱** ⇒ 枚举出**靶对象**的 自有可枚举键（精确错值：原生 \"\" 而引擎 \"ac\"）。 修复（packages/core/src/algebra/exec/runtime/containers/iterate.ts）： `$forInKeys` 加 Proxy 臂 → `proxyForInKeys`： 1. [[OwnPropertyKeys]] → ownKeys 陷阱（proxyOwnKeysTrapKeys：单一实现，含 规范不变量校验——重复名 / 非字符串键 / 漏靶的不可配置自有键 ⇒ TypeError）； 断言：expect(throwsE"	旧断言钉错	keep	keep	—
-"原生 oracle：可克隆形态不抛 / 不可克隆形态抛 DataCloneError"	"不可克隆形态：native 抛 DataCloneError ⇒ 引擎须记 DataCloneError 断言：expect(structuredClone({ a: 1 })).toEqual({ a: 1 });；expect(structuredClone(new Date(0))).toBeInstanceOf(Date);"	夹具漏形态	keep	keep	—
-"L2 门禁：可克隆形态零 L2（原口径：一条 may throw TypeError 假红）"	"可克隆形态：native 不抛 ⇒ 引擎不得记抛（原口径是假红） 断言：expect(l2Count(r, \"f\"), `可克隆形态不应报 may-throw：${body}`).toBe(0);；expect(r.summary.errors).toBe(0);"	夹具漏形态	keep	keep	—
-"L2 门禁：不可克隆形态一条 L2（kind = DataCloneError）"	"不可克隆形态：native 抛 DataCloneError ⇒ 引擎须记 DataCloneError 断言：expect(l2Count(r, \"f\"), `不可克隆形态应报 may-throw：${body}`).toBe(1);；expect(issue?.message).toContain(\"DataCloneError\");"	夹具漏形态	keep	keep	—
-"契约面：`@nudo:throws DataCloneError` 能申报（原先写不出正确的 kind）"	"不可克隆形态：native 抛 DataCloneError ⇒ 引擎须记 DataCloneError 断言：expect(l2Count(r, \"f\")).toBe(0);；expect(r.summary.errors).toBe(0);"	夹具漏形态	keep	keep	—
-"无约束实参（any）：仍诚实记 may-throw，但 kind 是 DataCloneError"	"不可克隆形态：native 抛 DataCloneError ⇒ 引擎须记 DataCloneError 断言：expect(effects(`export function f(x) { return structuredClone(x); }`, \"f\")).toEqual(["	夹具漏形态	keep	keep	—
-"try-catch 消化：native 返回 \"caught\"，引擎同口径（不再假绿）"	"不可克隆形态：native 抛 DataCloneError ⇒ 引擎须记 DataCloneError 断言：expect(lv && lv.op === \"lit\" ? lv.value : undefined).toBe(\"caught\");；expect(throwsName(rec.throws)).toBe(\"never\");"	夹具漏形态	keep	keep	—
-"对照组：非 structuredClone 的宿主全局仍走原保守口径（parseInt(Symbol) 定抛 TypeError）"	"宿主全局 `structuredClone` 的**抽象实参**一律记 may `TypeError` ⇒ ① 可克隆形态（普通对象 / 数组 / Date / Map / Set / RegExp）**假红** （L1/L2 门禁红，而 native 不抛）； ② 不可克隆形态（Symbol / 函数 / WeakMap / Promise）**抛错类型错**（native 抛 `DOMException` `DataCloneError`，引擎记 `TypeError`）⇒ 契约面写不出 `@nudo:throws DataCloneError`。 断言：expect(throwsName(rec.throws)).toBe(\""	夹具漏形态	keep	keep	—
-"原型链 key 不进字段表（constructor / toString / valueOf …）"	"`pick(shape({…}), keys)` 用 `d.fields[k]` 取字段，**沿原型链读**： `\"constructor\"` / `\"toString\"` / `\"valueOf\"` 会命中 `Object.prototype` 成员， 判真后被当成字段塞进新字段表 ⇒ 消费端读 `f.constraint` 拿到 `undefined` ⇒ `nudo contract` / `nudo export` 面裸崩（内部 TypeError 外泄）， `nudo check` 面整条契约静默作废（假绿）。 修法（core/algebra/constraint.ts `pick`）：取字段用**自有属性**判定 （`O"	没测该层	keep	keep	—
-"字段表里的每个条目都是真字段（带 constraint）"	"`pick(shape({…}), keys)` 用 `d.fields[k]` 取字段，**沿原型链读**： `\"constructor\"` / `\"toString\"` / `\"valueOf\"` 会命中 `Object.prototype` 成员， 判真后被当成字段塞进新字段表 ⇒ 消费端读 `f.constraint` 拿到 `undefined` ⇒ `nudo contract` / `nudo export` 面裸崩（内部 TypeError 外泄）， `nudo check` 面整条契约静默作废（假绿）。 修法（core/algebra/constraint.ts `pick`）：取字段用**自有属性**判定 （`O"	没测该层	keep	keep	—
-"原型链 key 不得让契约崩溃（entry Abs / 实例化面）"	"`pick(shape({…}), keys)` 用 `d.fields[k]` 取字段，**沿原型链读**： `\"constructor\"` / `\"toString\"` / `\"valueOf\"` 会命中 `Object.prototype` 成员， 判真后被当成字段塞进新字段表 ⇒ 消费端读 `f.constraint` 拿到 `undefined` ⇒ `nudo contract` / `nudo export` 面裸崩（内部 TypeError 外泄）， `nudo check` 面整条契约静默作废（假绿）。 修法（core/algebra/constraint.ts `pick`）：取字段用**自有属性**判定 （`O"	没测该层	keep	keep	—
-"合法 key 仍然取到字段"	"`pick(shape({…}), keys)` 用 `d.fields[k]` 取字段，**沿原型链读**： `\"constructor\"` / `\"toString\"` / `\"valueOf\"` 会命中 `Object.prototype` 成员， 判真后被当成字段塞进新字段表 ⇒ 消费端读 `f.constraint` 拿到 `undefined` ⇒ `nudo contract` / `nudo export` 面裸崩（内部 TypeError 外泄）， `nudo check` 面整条契约静默作废（假绿）。 修法（core/algebra/constraint.ts `pick`）：取字段用**自有属性**判定 （`O"	没测该层	keep	keep	—
-"shape(42) 抛 Nudo 原生诊断（点名构造器 + 实际类型）"	"`shape(42)` 这类**非对象实参**：`Object.entries(42)` ⇒ `[]` ⇒ 整条参数契约退化成「空 shape」⇒ 域放宽到「任意对象」⇒ 门禁**假绿** （合法实参与违约实参同样放行），且全程零诊断。 断言：expect(() => shape(42 as never)).toThrow(/nudo shape\\(\\)/);；expect(() => shape(42 as never)).toThrow(/got number/);"	夹具漏形态	keep	keep	—
-"shape(null) / shape([]) / shape(\"x\") 同样被拒"	"`shape(42)` 这类**非对象实参**：`Object.entries(42)` ⇒ `[]` ⇒ 整条参数契约退化成「空 shape」⇒ 域放宽到「任意对象」⇒ 门禁**假绿** （合法实参与违约实参同样放行），且全程零诊断。 断言：expect(() => shape(null as never)).toThrow(/nudo shape\\(\\)/);；expect(() => shape([] as never)).toThrow(/nudo shape\\(\\)/);"	夹具漏形态	keep	keep	—
-"正常实参不受影响"	"断言：expect(Object.keys(s.fields ?? {})).toEqual([\"a\"]);"	没测该层	keep	keep	—
-"产品面：shape(42) 的侧车契约不再静默退化成空 shape"	"`shape(42)` 这类**非对象实参**：`Object.entries(42)` ⇒ `[]` ⇒ 整条参数契约退化成「空 shape」⇒ 域放宽到「任意对象」⇒ 门禁**假绿** （合法实参与违约实参同样放行），且全程零诊断。 断言：expect(load).toBeDefined();；expect(load!.message).toContain(\"nudo shape()\");"	夹具漏形态	keep	keep	—
-"`o[{}] = 1` 的键为 \"[object Object]\" ⇒ 写落地（native：1）"	"计算成员访问的**对象键**不做 ToPropertyKey：写被静默丢弃、 键强制转换副作用全丢。 修前（HEAD）：`propertyKeyOf` 只认**字面量** term ⇒ 对象键落「抽象键」臂 ⇒ - 写被**静默丢弃**（`o[{}] = 1` 之后 `Object.keys(o).length` = 0； 断言：expect(val(`export function f() { const o = {}; o[{}] = 1; return Object.keys(o).length; }`)).toEqual({"	夹具漏形态	keep	keep	—
-"`o[k] = 1`（k 有 toString）⇒ 键为 toString 的结果（native：1）"	"计算成员访问的**对象键**不做 ToPropertyKey：写被静默丢弃、 键强制转换副作用全丢。 修前（HEAD）：`propertyKeyOf` 只认**字面量** term ⇒ 对象键落「抽象键」臂 ⇒ - 写被**静默丢弃**（`o[{}] = 1` 之后 `Object.keys(o).length` = 0； 断言：expect("	夹具漏形态	keep	keep	—
-"类实例接收者同样落地（native：\"number\"）"	"计算成员访问的**对象键**不做 ToPropertyKey：写被静默丢弃、 键强制转换副作用全丢。 修前（HEAD）：`propertyKeyOf` 只认**字面量** term ⇒ 对象键落「抽象键」臂 ⇒ - 写被**静默丢弃**（`o[{}] = 1` 之后 `Object.keys(o).length` = 0； 断言：expect("	夹具漏形态	keep	keep	—
-"读面：对象键读到对应的槽值（native：1）"	"计算成员访问的**对象键**不做 ToPropertyKey：写被静默丢弃、 键强制转换副作用全丢。 修前（HEAD）：`propertyKeyOf` 只认**字面量** term ⇒ 对象键落「抽象键」臂 ⇒ - 写被**静默丢弃**（`o[{}] = 1` 之后 `Object.keys(o).length` = 0； 断言：expect("	夹具漏形态	keep	keep	—
-"写面：键的 toString 被调一次（native：1）"	"计算成员访问的**对象键**不做 ToPropertyKey：写被静默丢弃、 键强制转换副作用全丢。 修前（HEAD）：`propertyKeyOf` 只认**字面量** term ⇒ 对象键落「抽象键」臂 ⇒ - 写被**静默丢弃**（`o[{}] = 1` 之后 `Object.keys(o).length` = 0； 断言：expect("	夹具漏形态	keep	keep	—
-"读面：键的 toString 被调一次（native：1）"	"计算成员访问的**对象键**不做 ToPropertyKey：写被静默丢弃、 键强制转换副作用全丢。 修前（HEAD）：`propertyKeyOf` 只认**字面量** term ⇒ 对象键落「抽象键」臂 ⇒ - 写被**静默丢弃**（`o[{}] = 1` 之后 `Object.keys(o).length` = 0； 断言：expect("	夹具漏形态	keep	keep	—
-"函数键的 ToString 不可判 ⇒ 键集折 partial（native：1，引擎不得折 exact 0）"	"计算成员访问的**对象键**不做 ToPropertyKey：写被静默丢弃、 键强制转换副作用全丢。 修前（HEAD）：`propertyKeyOf` 只认**字面量** term ⇒ 对象键落「抽象键」臂 ⇒ - 写被**静默丢弃**（`o[{}] = 1` 之后 `Object.keys(o).length` = 0； 断言：expect(r.ok).toBe(false);"	夹具漏形态	keep	keep	—
-"字符串键 / 数字键照旧落地（native：1）"	"计算成员访问的**对象键**不做 ToPropertyKey：写被静默丢弃、 键强制转换副作用全丢。 修前（HEAD）：`propertyKeyOf` 只认**字面量** term ⇒ 对象键落「抽象键」臂 ⇒ - 写被**静默丢弃**（`o[{}] = 1` 之后 `Object.keys(o).length` = 0； 断言：expect(val(`export function f() { const o = {}; o[\"x\"] = 1; return Object.keys(o).length; }`)).toEqual({；expect(val(`export function f() { const o = {}; o"	夹具漏形态	keep	keep	—
-"`Object.setPrototypeOf(Object.prototype, {})` ⇒ 抛 TypeError（native：同款）"	"`Object.setPrototypeOf(Object.prototype, …)` **不查不可变原型**： 引擎**静默改写** `Object.prototype` 的原型并声称「不会抛」（假绿）。 修前（HEAD）：`protoChangeAllowed` 只查 extensibility + SameValue ⇒ `Object.setPrototypeOf(Object.prototype, {})` **不抛**（native：TypeError: Immutable prototype object 'Object.prototype' cannot have their prototype set）。 断言："	没测该层	keep	keep	—
-"用户 try/catch 捕到（native：\"threw\"）"	"`Object.setPrototypeOf(Object.prototype, …)` **不查不可变原型**： 引擎**静默改写** `Object.prototype` 的原型并声称「不会抛」（假绿）。 修前（HEAD）：`protoChangeAllowed` 只查 extensibility + SameValue ⇒ `Object.setPrototypeOf(Object.prototype, {})` **不抛**（native：TypeError: Immutable prototype object 'Object.prototype' cannot have their prototype set）。 断言："	没测该层	keep	keep	—
-"设为自身原型同样拒绝（native：同款）"	"`Object.setPrototypeOf(Object.prototype, …)` **不查不可变原型**： 引擎**静默改写** `Object.prototype` 的原型并声称「不会抛」（假绿）。 修前（HEAD）：`protoChangeAllowed` 只查 extensibility + SameValue ⇒ `Object.setPrototypeOf(Object.prototype, {})` **不抛**（native：TypeError: Immutable prototype object 'Object.prototype' cannot have their prototype set）。 断言："	没测该层	keep	keep	—
-"`Reflect.setPrototypeOf(Object.prototype, {})` ⇒ false（native：false）"	"`Object.setPrototypeOf(Object.prototype, …)` **不查不可变原型**： 引擎**静默改写** `Object.prototype` 的原型并声称「不会抛」（假绿）。 修前（HEAD）：`protoChangeAllowed` 只查 extensibility + SameValue ⇒ `Object.setPrototypeOf(Object.prototype, {})` **不抛**（native：TypeError: Immutable prototype object 'Object.prototype' cannot have their prototype set）。 断言："	没测该层	keep	keep	—
-"`Object.setPrototypeOf(Array.prototype, {})` 不抛（native：可改）"	"`Object.setPrototypeOf(Object.prototype, …)` **不查不可变原型**： 引擎**静默改写** `Object.prototype` 的原型并声称「不会抛」（假绿）。 修前（HEAD）：`protoChangeAllowed` 只查 extensibility + SameValue ⇒ `Object.setPrototypeOf(Object.prototype, {})` **不抛**（native：TypeError: Immutable prototype object 'Object.prototype' cannot have their prototype set）。 断言："	没测该层	keep	keep	—
-"`Reflect.setPrototypeOf(Array.prototype, {})` 返 true（native：true）"	"`Object.setPrototypeOf(Object.prototype, …)` **不查不可变原型**： 引擎**静默改写** `Object.prototype` 的原型并声称「不会抛」（假绿）。 修前（HEAD）：`protoChangeAllowed` 只查 extensibility + SameValue ⇒ `Object.setPrototypeOf(Object.prototype, {})` **不抛**（native：TypeError: Immutable prototype object 'Object.prototype' cannot have their prototype set）。 断言："	没测该层	keep	keep	—
-"渲染层第二道防线：formatObjectKey 把 `__proto__` 写成计算键（不是裸键）"	"⚠ 槽表**必须**用 `Object.create(null)`：对象字面量里的 `\"__proto__\"` 键是**原型 setter** （不是自有属性）⇒ 用字面量会把槽表原型改成 `num()` 的包装对象，键直接丢失。 断言：expect(formatObjectKey(\"__proto__\")).toBe('[\"__proto__\"]');；expect(formatObjectKey(\"proto\")).toBe(\"proto\");"	夹具漏形态	keep	keep	—
-"core 投影层：字段表原型为 null（原型 setter 不会吞掉赋值）"	"⚠ 槽表**必须**用 `Object.create(null)`：对象字面量里的 `\"__proto__\"` 键是**原型 setter** （不是自有属性）⇒ 用字面量会把槽表原型改成 `num()` 的包装对象，键直接丢失。 断言：expect(c).toBeDefined();；expect(fields).toBeDefined();"	夹具漏形态	keep	keep	—
-"core 投影层：`__proto__` 是自有键（`Object.hasOwn` 为真，键没被吞）"	"⚠ 槽表**必须**用 `Object.create(null)`：对象字面量里的 `\"__proto__\"` 键是**原型 setter** （不是自有属性）⇒ 用字面量会把槽表原型改成 `num()` 的包装对象，键直接丢失。 断言：expect(c).toBeDefined();；expect(Object.hasOwn(fields, \"__proto__\")).toBe(true);"	夹具漏形态	keep	keep	—
-"对照：普通键同样投影成自有键（口径一致）"	"`Object.setPrototypeOf(Object.prototype, …)` **不查不可变原型**： 引擎**静默改写** `Object.prototype` 的原型并声称「不会抛」（假绿）。 修前（HEAD）：`protoChangeAllowed` 只查 extensibility + SameValue ⇒ `Object.setPrototypeOf(Object.prototype, {})` **不抛**（native：TypeError: Immutable prototype object 'Object.prototype' cannot have their prototype set）。 断言："	没测该层	keep	keep	—
-"display / detail / abs 三字段都不含内部 id"	"三条症状： ① 机器面载荷含**内部符号**（`len#N` 不是一个用户能理解的名字）； ② 编号随**同一次调用内的文件顺序**漂移（`len#0` / `len#2` / `len#4`） ⇒ **单个文件的 JSON 载荷是它在参数列表中位置的函数**，不是文件内容的 函数（机器消费方拿到的不是可比对的内容）； 断言：expect(sig).toBeDefined();；expect(field).not.toContain(\"len#\");"	没测该层	keep	keep	—
-"人类面 --verbose 同样不得含内部 id"	"三条症状： ① 机器面载荷含**内部符号**（`len#N` 不是一个用户能理解的名字）； ② 编号随**同一次调用内的文件顺序**漂移（`len#0` / `len#2` / `len#4`） ⇒ **单个文件的 JSON 载荷是它在参数列表中位置的函数**，不是文件内容的 函数（机器消费方拿到的不是可比对的内容）； 断言：expect(text).not.toContain(\"len#\");；expect(text).not.toMatch(INTERNAL_ID_RE);"	没测该层	keep	keep	—
-"机器面 display 与人类面签名行同源（口径一致）"	"三条症状： ① 机器面载荷含**内部符号**（`len#N` 不是一个用户能理解的名字）； ② 编号随**同一次调用内的文件顺序**漂移（`len#0` / `len#2` / `len#4`） ⇒ **单个文件的 JSON 载荷是它在参数列表中位置的函数**，不是文件内容的 函数（机器消费方拿到的不是可比对的内容）； 断言：expect(line).toBe(` f() => ${sig.display}`);"	没测该层	keep	keep	—
-"detail 首行仍是函数名（Bug 377 的「不得串号」契约不回归）"	"三条症状： ① 机器面载荷含**内部符号**（`len#N` 不是一个用户能理解的名字）； ② 编号随**同一次调用内的文件顺序**漂移（`len#0` / `len#2` / `len#4`） ⇒ **单个文件的 JSON 载荷是它在参数列表中位置的函数**，不是文件内容的 函数（机器消费方拿到的不是可比对的内容）； 断言：expect(sig.detail.split(\"\\n\")[0]).toBe(\"f\");"	没测该层	keep	keep	—
-"同内容不同路径 ⇒ 载荷逐字相同（不再随参数列表位置漂移）"	"三条症状： ① 机器面载荷含**内部符号**（`len#N` 不是一个用户能理解的名字）； ② 编号随**同一次调用内的文件顺序**漂移（`len#0` / `len#2` / `len#4`） ⇒ **单个文件的 JSON 载荷是它在参数列表中位置的函数**，不是文件内容的 函数（机器消费方拿到的不是可比对的内容）； 断言：expect(b.signatures).toEqual(a.signatures);；expect(c.signatures).toEqual(a.signatures);"	没测该层	keep	keep	—
-"非内部 id 的 term 段仍在（verbose 明细不丢信息 —— D2 契约）"	"三条症状： ① 机器面载荷含**内部符号**（`len#N` 不是一个用户能理解的名字）； ② 编号随**同一次调用内的文件顺序**漂移（`len#0` / `len#2` / `len#4`） ⇒ **单个文件的 JSON 载荷是它在参数列表中位置的函数**，不是文件内容的 函数（机器消费方拿到的不是可比对的内容）； 断言：expect(formatCheckReport(r, { verbose: true })).toContain(\"term:\");"	没测该层	keep	keep	—
-"不带内部 id 的签名：term / pred 证据仍在（契约面不被无谓收紧）"	"三条症状： ① 机器面载荷含**内部符号**（`len#N` 不是一个用户能理解的名字）； ② 编号随**同一次调用内的文件顺序**漂移（`len#0` / `len#2` / `len#4`） ⇒ **单个文件的 JSON 载荷是它在参数列表中位置的函数**，不是文件内容的 函数（机器消费方拿到的不是可比对的内容）； 断言：expect(sig.display).toContain(\"number | string\");；expect(sig.display).not.toContain(\"= (A1 + A2)\");"	没测该层	keep	keep	—
-"内部计数器 id 换成稳定名（谓词证据不丢）"	"三条症状： ① 机器面载荷含**内部符号**（`len#N` 不是一个用户能理解的名字）； ② 编号随**同一次调用内的文件顺序**漂移（`len#0` / `len#2` / `len#4`） ⇒ **单个文件的 JSON 载荷是它在参数列表中位置的函数**，不是文件内容的 函数（机器消费方拿到的不是可比对的内容）； 断言：expect(sig.detail).toContain(\"term: len\");；expect(sig.detail).toContain(\"pred: len ≥ 0\");"	没测该层	keep	keep	—
+getter through a computed variable key resolves；plain literal key resolves	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
+靶上不可配置自有属性 + 陷阱返 false ⇒ 定抛 TypeError（改前：false，不抛）；负控：同一陷阱 + 靶上该键**可配置** ⇒ 不抛，值 false（缺口只在这一格）；负控：靶上**没有**该键 + 陷阱返 false ⇒ 不抛，值 false；负控：陷阱返 true ⇒ 不触发不变式（该门只对 falsy 生效）	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
+toUpperCase.call(1) = '1'（原生 generic；此前定抛 TypeError）；trim / charAt / at / concat 借用给数字接收者 = 原生值；品牌方法仍要品牌（toString / valueOf.call(1) → TypeError）；nullish 接收者仍定抛（RequireObjectCoercible）；其它家族的品牌检查不受影响（Number.toFixed.call('s') → TypeError）；直接字符	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
+literal symbol key reads back；computed symbol assignment reads back；own symbol keys are counted	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
+toString.call({name:'X', message:'y'}) = 'X: y'（原生；此前定抛）；toString.call({}) = 'Error'（缺省名）；toString.call({name:'X'}) = 'X'（空消息只回名）；空名只回消息（toString.call({name:'',message:'y'}) = 'y'）；TypeError.prototype.toString 同口径（'X: y'）；Error 实例沿既有 brand	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
+"a" in Object.create({a:1}) 折 exact true（HasProperty 口径）；自有键面不得见继承槽（Object.keys/values/entries/for-in）；值面维持保守 unknown（只承诺存在性，不冒充确定值）；对照：自有属性对象行为不变；门禁面：f(Object.create({a:1})) 不再报 missing field（与三个导出产物同结论）；门禁面负控制：真缺字段仍报 missing field（不得整面放水）	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
+靶是普通对象 → throws TypeError（此前 unknown + never）；靶是数组 → throws TypeError；靶是类值 → throws TypeError（类构造器不带 new 被调）；靶不可调用 → apply 陷阱**不派发**（原生同口径）；控制组：可调用靶的代理调用正常（不抛）；控制组：代理的读面正常（get 陷阱不受影响）	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
+无 apply 陷阱 → 回退靶的 [[Call]]（此前恒 unknown）；apply 陷阱 → 派发并取其返回值；apply 陷阱副作用保留（此前陷阱从未被调用）；apply 陷阱实参口径：(target, thisArg, args)；控制组：get 陷阱仍照旧派发（本次只加 apply 面）	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
+类实例：描述符映射的键集 = 自有键集（改前 []）；类实例：键集与 gOPN / gOPD(单数) 三面一致（引擎内部不再互斥）；描述符内容精确：类字段是 writable/enumerable/configurable 全真的数据属性；内建 brand（Error 家族）：键集 = 自有键集（stack/message，name 是原型链槽）；内建 brand（Map + m.foo）：键集 = 用户新增自有键；单变量对照组 A：普通对象（引擎 == 宿主）；单变量对照组	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
+陷阱报 false 而靶可扩展 → TypeError（此前恒折 true）；陷阱报 true 而靶可扩展 → true（陷阱被调用，副作用保留）；靶已不可扩展：陷阱报 false → false（不变量一致，不抛）；靶已不可扩展：陷阱报 true → TypeError（不变量冲突）；陷阱副作用保留（此前陷阱从未被调用）；无陷阱 → 回退靶语义（控制组）；控制组：普通对象 → true；不可扩展普通对象 → false；陷阱内抛出的 TypeError 透出（throws	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
+陷阱返回不在靶上的键 → 0 次（此前枚举靶的 2 个键）；陷阱返回不在靶上的键 → 键序列为空（此前 "ac"）；陷阱部分命中 → 只枚举可枚举的命中键；陷阱全命中 → 键序按陷阱结果（原生不重排整数键）；无 ownKeys 陷阱 → 落靶语义（控制组）；陷阱返回重复键 → 原生抛 TypeError（规范不变量）；陷阱漏掉靶的不可配置自有键 → 原生抛 TypeError（规范不变量）；陷阱副作用保留（此前陷阱从未被调用）；控制组：普通对象的 for…in 不受影响；gO	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
+原生 oracle：可克隆形态不抛 / 不可克隆形态抛 DataCloneError；L2 门禁：可克隆形态零 L2（原口径：一条 may throw TypeError 假红）；L2 门禁：不可克隆形态一条 L2（kind = DataCloneError）；契约面：`@nudo:throws DataCloneError` 能申报（原先写不出正确的 kind）；无约束实参（any）：仍诚实记 may-throw，但 kind 是 DataCloneError；try-ca	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
 "可克隆形态（%s）：零 throws 面（native 不抛 ⇒ 原口径是假红）"	表驱动用例：可克隆形态（%s）：零 throws 面（native 不抛 ⇒ 原口径是假红）；枚举同一不变量下的输入/期望组合，属既有表行补齐。	夹具漏形态	keep	keep	—
 "不可克隆形态（%s）：throws 面 = DataCloneError（不是 TypeError）"	表驱动用例：不可克隆形态（%s）：throws 面 = DataCloneError（不是 TypeError）；枚举同一不变量下的输入/期望组合，属既有表行补齐。	夹具漏形态	keep	keep	—
+原型链 key 不进字段表（constructor / toString / valueOf …）；字段表里的每个条目都是真字段（带 constraint）；原型链 key 不得让契约崩溃（entry Abs / 实例化面）；合法 key 仍然取到字段	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
+shape(42) 抛 Nudo 原生诊断（点名构造器 + 实际类型）；shape(null) / shape([]) / shape("x") 同样被拒；正常实参不受影响；产品面：shape(42) 的侧车契约不再静默退化成空 shape	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
+`o[{}] = 1` 的键为 "[object Object]" ⇒ 写落地（native：1）；`o[k] = 1`（k 有 toString）⇒ 键为 toString 的结果（native：1）；类实例接收者同样落地（native："number"）；读面：对象键读到对应的槽值（native：1）	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
+写面：键的 toString 被调一次（native：1）；读面：键的 toString 被调一次（native：1）	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
+"函数键的 ToString 不可判 ⇒ 键集折 partial（native：1，引擎不得折 exact 0）"	"计算成员访问的**对象键**不做 ToPropertyKey：写被静默丢弃、 键强制转换副作用全丢。 修前（HEAD）：`propertyKeyOf` 只认**字面量** term ⇒ 对象键落「抽象键」臂 ⇒ - 写被**静默丢弃**（`o[{}] = 1` 之后 `Object.keys(o).length` = 0； 断言：expect(r.ok).toBe(false);"	夹具漏形态	keep	keep	—
+"字符串键 / 数字键照旧落地（native：1）"	"计算成员访问的**对象键**不做 ToPropertyKey：写被静默丢弃、 键强制转换副作用全丢。 修前（HEAD）：`propertyKeyOf` 只认**字面量** term ⇒ 对象键落「抽象键」臂 ⇒ - 写被**静默丢弃**（`o[{}] = 1` 之后 `Object.keys(o).length` = 0； 断言：expect(val(`export function f() { const o = {}; o[\"x\"] = 1; return Object.keys(o).length; }`)).toEqual({；expect(val(`export function f() { const o = {}; o"	夹具漏形态	keep	keep	—
+`Object.setPrototypeOf(Object.prototype, {})` ⇒ 抛 TypeError（native：同款）；用户 try/catch 捕到（native："threw"）；设为自身原型同样拒绝（native：同款）	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
+"`Reflect.setPrototypeOf(Object.prototype, {})` ⇒ false（native：false）"	"`Object.setPrototypeOf(Object.prototype, …)` **不查不可变原型**： 引擎**静默改写** `Object.prototype` 的原型并声称「不会抛」（假绿）。 修前（HEAD）：`protoChangeAllowed` 只查 extensibility + SameValue ⇒ `Object.setPrototypeOf(Object.prototype, {})` **不抛**（native：TypeError: Immutable prototype object 'Object.prototype' cannot have their prototype set）。 断言："	没测该层	keep	keep	—
+`Object.setPrototypeOf(Array.prototype, {})` 不抛（native：可改）；`Reflect.setPrototypeOf(Array.prototype, {})` 返 true（native：true）	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
+渲染层第二道防线：formatObjectKey 把 `__proto__` 写成计算键（不是裸键）；core 投影层：字段表原型为 null（原型 setter 不会吞掉赋值）；core 投影层：`__proto__` 是自有键（`Object.hasOwn` 为真，键没被吞）；对照：普通键同样投影成自有键（口径一致）	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
+display / detail / abs 三字段都不含内部 id；人类面 --verbose 同样不得含内部 id；机器面 display 与人类面签名行同源（口径一致）；detail 首行仍是函数名（Bug 377 的「不得串号」契约不回归）；同内容不同路径 ⇒ 载荷逐字相同（不再随参数列表位置漂移）；非内部 id 的 term 段仍在（verbose 明细不丢信息 —— D2 契约）；不带内部 id 的签名：term / pred 证据仍在（契约面不被无谓收紧）；内部	algebra-object-runtime 聚合矩阵	没测该层	keep	keep	—
+```
+
+```audit-deleted
+title	reason	evidence
+isHiddenInternalSlot 剔除 symbolKey 槽（与 service 副本同款）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+internal 规则与规范数组下标例外保持不变	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+formatShape（check / test 签名面）不发布符号键槽	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+denoteGuard（guard 面）不写恒假的 Object.hasOwn(@@iterator) 子句	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+字符串键 "@@iterator" 在 tuple 上确定缺席（改前折成函数）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+"@@iterator" in [1,2] → false（改前是自信的 true）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+Symbol.iterator in [1,2] → true（符号键保持命中，既有钉不回归）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+普通对象面本就正确，不回归	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+Array.prototype 普通字符串键方法不受影响	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+调用面同样分态：字符串键 "@@iterator"() 不产迭代器、Symbol.iterator() 产迭代器	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+brand 面同样分态：m["@@iterator"] 定缺、m[Symbol.iterator] 折函数	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+arrayProtoMemberForKey：只在真符号键下命中迭代器投影名	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+(5).toString.call(5) ⇒ "5"（不是 "[object Number]"）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+true.toString.call(true) ⇒ "true"（不是 "[object Boolean]"）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+(5).toString.call("x") ⇒ 定抛 TypeError（brand check）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+(5).toString.call(5n) ⇒ 定抛 TypeError（brand check）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+(5).toString.call(true) ⇒ 定抛 TypeError（brand check）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+true.toString.call(0) ⇒ 定抛 TypeError（brand check）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+(5).valueOf.call(5) ⇒ 5（自身）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+true.valueOf.call(true) ⇒ true（自身）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+对照：string / bigint / symbol 三条 prim 通道仍与原生一致	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+gOPD(function f(){}, "length").value ⇒ 0（原生精确值）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+gOPD(function f(){}, "name").writable ⇒ false（原生 false）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+gOPD(function f(){}, "name").value ⇒ 字符串（不抛、不折 never）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+gOPD(class A {}, "name").value ⇒ "A"（原生精确值）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+gOPD(function f(){}, "prototype").writable ⇒ true（普通函数可写）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+gOPD(class A {}, "prototype").writable ⇒ false（类值不可写）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+Reflect.getOwnPropertyDescriptor(fn, "name").value ⇒ 不抛	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+对照组：普通对象的描述符面仍正确（回归控制）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+shape({ ['__proto__']: number() }) 的字段表含 __proto__ 自有键	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+partial / omit / pick 转一道后字段仍在（不二次吞键）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+对照组：普通字段名行为不变（不被误伤）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+契约面：shape({ __proto__: number() }) 的字段不得消失	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+门禁面：f({}) 违反「含 __proto__: number」⇒ 报 missing field（改前判绿）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+门禁面：对照组（字段名 p）与 __proto__ 的判定强度一致（都不放行）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+Object.getOwnPropertyDescriptor(p, "a").value ⇒ 抛 TypeError（native：同款）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+Reflect.getOwnPropertyDescriptor(p, "a").value ⇒ 抛 TypeError（native：同款）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+用户 try/catch 捕到（native："threw"）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+靶属性**可写**（普通 {a:1}）⇒ 陷阱值原样给出（native：2）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+陷阱报**同一个值** ⇒ 不抛（native：值一致不违 12.f）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+靶**无**该自有键 + 陷阱报**可配置** ⇒ 不变量不适用（native：不抛，2）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+非 Proxy 路径不受影响：{a:1} 的描述符 value 1	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+靶 {} + 陷阱报 configurable:false ⇒ 抛 TypeError（native：抛）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+靶 {} + 陷阱报 configurable:true ⇒ 不抛（native：2）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+靶可配置 + 陷阱报 configurable:false ⇒ 抛 TypeError（native：抛）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+靶不可配置 + 陷阱报 configurable:true ⇒ 抛 TypeError（native：抛）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+靶不可配置+可写 + 陷阱报 writable:false ⇒ 抛 TypeError（native：抛）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+靶不可配置+可写 + 陷阱报 enumerable 不同 ⇒ 抛 TypeError（native：抛）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+靶不可配置+不可写 + 陷阱报 writable:true ⇒ 抛 TypeError（native：抛）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+靶不可配置+可写 + 陷阱报同 writable/enumerable ⇒ 不抛（native：2）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+靶可配置 ⇒ 陷阱报任意 writable/enumerable ⇒ 不抛（native：2）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+靶是访问器 + 陷阱报数据描述符 ⇒ 抛 TypeError（native：抛）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+靶是数据属性 + 陷阱报访问器描述符 ⇒ 抛 TypeError（native：抛）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+Reflect.ownKeys(gOPDs(o)).length ⇒ 2（native：2；修前：1）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+Object.getOwnPropertySymbols(gOPDs(o)).length ⇒ 1（native：1；修前：0）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+well-known symbol 键同款：ownKeys 2 条 / getOwnPropertySymbols 1 条（native 同款）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+symbol 键的描述符值可读（native：d[Symbol.toStringTag].value === 2）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+Object.keys(gOPDs(o)) ⇒ "a"（native：symbol 键不进字符串键面）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+Object.getOwnPropertyNames(gOPDs(o)) ⇒ "a"（native：同款）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+无 symbol 键的对象：gOPDs 只有一个字符串键（native 同款）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+ownKeys(o) ⇒ "a,sym"（native：a 在前、symbol 在后；修前："sym,a"）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+ownKeys(o)[0] 是字符串 "a"、typeof ownKeys(o)[1] 是 "symbol"（native 同款）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+well-known symbol 键同款："a,sym"（native 同款）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+只有字符串键：ownKeys 保持插入序（native："b,a"）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+整数键升序在前（native："0,1"）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+无 symbol 键时长度不变（native：1）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+Object 面：靶是可配置数据属性 + 陷阱报访问器描述符 ⇒ 不抛	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+Reflect 面同款 ⇒ 不抛	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+Object 面：靶是可配置访问器属性 + 陷阱报数据描述符 ⇒ 不抛	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+Object 面：靶是不可配置数据属性 + 陷阱报访问器描述符 ⇒ 抛	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+Reflect 面同款 ⇒ 抛	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+Object 面：靶是不可配置访问器属性 + 陷阱报数据描述符 ⇒ 抛	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+陷阱诚实报 enumerable:true ⇒ 不抛（native：不抛）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+陷阱报 writable:true ⇒ 抛（frozen 仍冻结 writable；native：抛）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+陷阱报 enumerable:false ⇒ 抛（靶的 enumerable 仍是 true；native：抛）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+陷阱报与靶完全一致的描述符 ⇒ 不抛（native：不抛）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+陷阱报 writable:true ⇒ 抛（native：抛）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+陷阱报 enumerable:false ⇒ 抛（native：抛）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+陷阱报 value:2（值不同）⇒ 抛（native：抛）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+可配置靶 + 异形态陷阱 ⇒ 零 L2 / 零 error（修前：error 级 1 条 ⇒ 卡 CI）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+frozen 靶 + 陷阱诚实报 ⇒ 零 L2 / 零 error（修前：error 级 1 条）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+brand 靶 + 陷阱报一致描述符 ⇒ 零 L2 / 零 error（修前：error 级 1 条）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+负控制：真违约（不可配置靶 + 不可写 + 值不同）⇒ 仍报 error 级 L2（闸门没被关掉）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+负控制：不可配置靶 + 异形态陷阱 ⇒ 仍报 error 级 L2（闸门没被关掉）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+槽带 internal 标记（投影面据此剔除）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+isHiddenInternalSlot 对 [[PrimitiveValue]] 判真（guard / dts / schema 三面同判据）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+运行时面：new Number(1) 的 getOwnPropertyNames 是 []（原生同款）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+运行时面：new Number(1).hasOwnProperty("[[PrimitiveValue]]") 是 false	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+对照组：new String("s") 的**真实**自有键仍可见（下标 + length）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+u.toJSON 折函数值（不是 exact undefined）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+u.toJSON === undefined 折 false（此前假绿 true）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+"toJSON" in u 折 exact true（此前假红 false）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+u.toString 同为原型方法（同一行表项的四项之一）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+对照：host 半已修且不得回退（host 含端口、hostname 不含）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+对照：组件槽（href/hostname/pathname/search）读面不回退	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+legacy 四件的 `=== undefined` 恒 false（原生恒是函数）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+legacy 四件的 `in` 面仍为 true（与值读面同结论）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+对照组：既有六件两表都有 ⇒ 值读面仍正确	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+同步守卫：`in` 面名单 ⊆ 值读面名单 ∪ {constructor, __proto__}	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+no hard TypeError for registered symbol members	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+iterator member calls yield an iterator face (not undefined)	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+missing prototype ⇒ native TypeError (not a synthetic brand)	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+generator function has a prototype ⇒ boolean	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+2 参合法形：target/argsList 均为用户类值 → 不抛、不记 may	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+3 参形（newTarget 亦用户类）→ target/newTarget 两侧均不记 may	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+内建类值控制组（Array）结论不变：不抛、不记 may	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+对照：实例 brand 无 ctor facet ⇒ 保守口径保持（不折假不抛）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+对照：ctor:false 的宿主一等函数（Math.max）⇒ 定抛 TypeError	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+getter through a computed variable key resolves	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+plain literal key resolves	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+靶上不可配置自有属性 + 陷阱返 false ⇒ 定抛 TypeError（改前：false，不抛）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+负控：同一陷阱 + 靶上该键**可配置** ⇒ 不抛，值 false（缺口只在这一格）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+负控：靶上**没有**该键 + 陷阱返 false ⇒ 不抛，值 false	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+负控：陷阱返 true ⇒ 不触发不变式（该门只对 falsy 生效）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+toUpperCase.call(1) = '1'（原生 generic；此前定抛 TypeError）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+trim / charAt / at / concat 借用给数字接收者 = 原生值	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+品牌方法仍要品牌（toString / valueOf.call(1) → TypeError）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+nullish 接收者仍定抛（RequireObjectCoercible）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+其它家族的品牌检查不受影响（Number.toFixed.call('s') → TypeError）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+直接字符串方法不受影响（'abc'.toUpperCase() = 'ABC'）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+literal symbol key reads back	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+computed symbol assignment reads back	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+own symbol keys are counted	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+toString.call({name:'X', message:'y'}) = 'X: y'（原生；此前定抛）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+toString.call({}) = 'Error'（缺省名）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+toString.call({name:'X'}) = 'X'（空消息只回名）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+空名只回消息（toString.call({name:'',message:'y'}) = 'y'）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+TypeError.prototype.toString 同口径（'X: y'）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+Error 实例沿既有 brand 面（'Error: m'，不回归）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+原始值接收者原生定抛 TypeError（this 必须是对象）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+"a" in Object.create({a:1}) 折 exact true（HasProperty 口径）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+自有键面不得见继承槽（Object.keys/values/entries/for-in）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+值面维持保守 unknown（只承诺存在性，不冒充确定值）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+对照：自有属性对象行为不变	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+门禁面：f(Object.create({a:1})) 不再报 missing field（与三个导出产物同结论）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+门禁面负控制：真缺字段仍报 missing field（不得整面放水）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+null 原型分支不受影响（Object.create(null) 无继承槽）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+靶是普通对象 → throws TypeError（此前 unknown + never）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+靶是数组 → throws TypeError	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+靶是类值 → throws TypeError（类构造器不带 new 被调）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+靶不可调用 → apply 陷阱**不派发**（原生同口径）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+控制组：可调用靶的代理调用正常（不抛）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+控制组：代理的读面正常（get 陷阱不受影响）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+无 apply 陷阱 → 回退靶的 [[Call]]（此前恒 unknown）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+apply 陷阱 → 派发并取其返回值	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+apply 陷阱副作用保留（此前陷阱从未被调用）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+apply 陷阱实参口径：(target, thisArg, args)	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+控制组：get 陷阱仍照旧派发（本次只加 apply 面）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+类实例：描述符映射的键集 = 自有键集（改前 []）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+类实例：键集与 gOPN / gOPD(单数) 三面一致（引擎内部不再互斥）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+描述符内容精确：类字段是 writable/enumerable/configurable 全真的数据属性	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+内建 brand（Error 家族）：键集 = 自有键集（stack/message，name 是原型链槽）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+内建 brand（Map + m.foo）：键集 = 用户新增自有键	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+单变量对照组 A：普通对象（引擎 == 宿主）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+单变量对照组 B：数组（索引 + length）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+单变量对照组 C：不可枚举自有键在描述符映射里照列（gOPDs 是全部自有键）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+兜底路径诚实降级：键集不可判时不折 exact 空元组	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+陷阱报 false 而靶可扩展 → TypeError（此前恒折 true）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+陷阱报 true 而靶可扩展 → true（陷阱被调用，副作用保留）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+靶已不可扩展：陷阱报 false → false（不变量一致，不抛）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+靶已不可扩展：陷阱报 true → TypeError（不变量冲突）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+陷阱副作用保留（此前陷阱从未被调用）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+无陷阱 → 回退靶语义（控制组）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+控制组：普通对象 → true；不可扩展普通对象 → false	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+陷阱内抛出的 TypeError 透出（throws 面）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+可扩展性不变量冲突 → throws 面是 TypeError（此前恒折 true、不记抛）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+陷阱结果非布尔 → ToBoolean（1 折 true）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+Object.preventExtensions(proxy) 之后 → false（原生冻结的是**靶**）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+Object.freeze(proxy) 之后 → false（原生冻结的是**靶**）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+preventExtensions 陷阱自己冻结靶 → 陷阱报 false 与靶一致 → false	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+陷阱返回不在靶上的键 → 0 次（此前枚举靶的 2 个键）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+陷阱返回不在靶上的键 → 键序列为空（此前 "ac"）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+陷阱部分命中 → 只枚举可枚举的命中键	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+陷阱全命中 → 键序按陷阱结果（原生不重排整数键）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+无 ownKeys 陷阱 → 落靶语义（控制组）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+陷阱返回重复键 → 原生抛 TypeError（规范不变量）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+陷阱漏掉靶的不可配置自有键 → 原生抛 TypeError（规范不变量）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+控制组：普通对象的 for…in 不受影响	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+gOPD 陷阱把键报成不可枚举 → 不进 for…in	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+gOPD 陷阱把靶上没有的键报成可枚举 → 进 for…in	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+陷阱返回重复键 → throws 面是 TypeError（此前静默枚举靶的键）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+原生 oracle：可克隆形态不抛 / 不可克隆形态抛 DataCloneError	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+L2 门禁：可克隆形态零 L2（原口径：一条 may throw TypeError 假红）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+L2 门禁：不可克隆形态一条 L2（kind = DataCloneError）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+契约面：`@nudo:throws DataCloneError` 能申报（原先写不出正确的 kind）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+无约束实参（any）：仍诚实记 may-throw，但 kind 是 DataCloneError	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+try-catch 消化：native 返回 "caught"，引擎同口径（不再假绿）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+对照组：非 structuredClone 的宿主全局仍走原保守口径（parseInt(Symbol) 定抛 TypeError）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+原型链 key 不进字段表（constructor / toString / valueOf …）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+字段表里的每个条目都是真字段（带 constraint）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+原型链 key 不得让契约崩溃（entry Abs / 实例化面）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+合法 key 仍然取到字段	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+shape(42) 抛 Nudo 原生诊断（点名构造器 + 实际类型）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+shape(null) / shape([]) / shape("x") 同样被拒	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+正常实参不受影响	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+产品面：shape(42) 的侧车契约不再静默退化成空 shape	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+`o[{}] = 1` 的键为 "[object Object]" ⇒ 写落地（native：1）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+`o[k] = 1`（k 有 toString）⇒ 键为 toString 的结果（native：1）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+类实例接收者同样落地（native："number"）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+读面：对象键读到对应的槽值（native：1）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+写面：键的 toString 被调一次（native：1）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+读面：键的 toString 被调一次（native：1）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+`Object.setPrototypeOf(Object.prototype, {})` ⇒ 抛 TypeError（native：同款）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+设为自身原型同样拒绝（native：同款）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+`Object.setPrototypeOf(Array.prototype, {})` 不抛（native：可改）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+`Reflect.setPrototypeOf(Array.prototype, {})` 返 true（native：true）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+渲染层第二道防线：formatObjectKey 把 `__proto__` 写成计算键（不是裸键）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+core 投影层：字段表原型为 null（原型 setter 不会吞掉赋值）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+core 投影层：`__proto__` 是自有键（`Object.hasOwn` 为真，键没被吞）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+对照：普通键同样投影成自有键（口径一致）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+display / detail / abs 三字段都不含内部 id	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+人类面 --verbose 同样不得含内部 id	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+机器面 display 与人类面签名行同源（口径一致）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+detail 首行仍是函数名（Bug 377 的「不得串号」契约不回归）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+同内容不同路径 ⇒ 载荷逐字相同（不再随参数列表位置漂移）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+非内部 id 的 term 段仍在（verbose 明细不丢信息 —— D2 契约）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+不带内部 id 的签名：term / pred 证据仍在（契约面不被无谓收紧）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
+内部计数器 id 换成稳定名（谓词证据不丢）	dup:algebra-object-runtime 聚合矩阵	commit:6e96354b
 ```
