@@ -508,9 +508,11 @@ function uint8Abs(): Abs {
 }
 
 describe("内建 brand 的 guard 产物必须过 tsc --strict", () => {
-  it("产物真跑 tsc --noEmit --strict（改前 TS7053 ×2）", () => {
+  const dirs: string[] = [];
+  afterAll(() => { for (const d of dirs) rmSync(d, { recursive: true, force: true }); });
+  const uint8Abs = (): Abs => abs({ k: "brand", name: "Uint8Array", shape: obj({ "0": { value: numLit(1) }, "1": { value: numLit(2) }, length: { value: numLit(2) } }) }, undefined, undefined, "exact");
+  it("guard 产物过 tsc --strict 且运行时语义不变", () => {
     const source = generateGuardFunctionFromAbs("isbytesOutput", uint8Abs());
-    // 身份子句会收窄 `data` ⇒ 声明必须是 `: any`（否则索引读报 TS7053）
     expect(source).toContain("const data: any = value as Record<string, any>;");
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug250-"));
     dirs.push(dir);
@@ -518,26 +520,17 @@ describe("内建 brand 的 guard 产物必须过 tsc --strict", () => {
     writeFileSync(p, source + "\n", "utf-8");
     let failure = "";
     try {
-      execFileSync(
-        "pnpm",
-        ["exec", "tsc", "--noEmit", "--strict", "--skipLibCheck", "--ignoreConfig", p],
-        { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] },
-      );
+      execFileSync("pnpm", ["exec", "tsc", "--noEmit", "--strict", "--skipLibCheck", "--ignoreConfig", p], { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
     } catch (e) {
       const err = e as { stderr?: string; stdout?: string; message?: string };
       failure = `${err.stderr ?? ""}${err.stdout ?? err.message ?? ""}`;
     }
     expect(failure).toBe("");
-  });
-
-  it("运行时语义不变：接受合法 Uint8Array，拒绝普通对象", () => {
-    const check = new Function("data", `return ${denoteGuard(uint8Abs(), "data")};`) as (
-      v: unknown,
-    ) => boolean;
+    const check = new Function("data", `return ${denoteGuard(uint8Abs(), "data")};`) as (v: unknown) => boolean;
     expect(check(new Uint8Array([1, 2]))).toBe(true);
     expect(check({ 0: 1, 1: 2, length: 2 })).toBe(false);
   });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -580,37 +573,32 @@ export function f(x) {
 `;
 
 describe("core import 不得豁免 builder 声明头", () => {
-  it("侧车已有 `import { lit }` ⇒ 仍补 litC 声明（别名，不撞名）", async () => {
+  let dir: string;
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "nudo-bug-271-")); });
+  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+  const SRC = `/**\n * @nudo:case "c" (1) => 2\n */\nexport function f(x) {\n  return x + 1;\n}\n`;
+  it("已有 import { lit } 仍补 litC 声明（别名）；无该 import 时直接声明 lit", async () => {
     const file = join(dir, "lit.ts");
     writeFileSync(file, SRC);
-    writeFileSync(join(dir, "lit.nudo.ts"), `import { fn, lit } from "@nudojs/core";\n`);
-
+    writeFileSync(join(dir, "lit.nudo.ts"), 'import { fn, lit } from "@nudojs/core";\n');
     const r = await emitContract(file, { mode: "update", all: true });
     expect(r.written).toContain("f");
-
     const after = readFileSync(join(dir, "lit.nudo.ts"), "utf-8");
-    // 已有的 `import { lit }` 绑定的是 Term 构造器 ⇒ 声明头不得被它抑制
-    expect(after).toContain(`typeof import("@nudojs/core").litC;`);
-    // 撞名 ⇒ 起别名，且 DSL 的 lit( 调用改写到别名上
-    const alias = /declare const (_nudo_lit\w*): typeof import\("@nudojs\/core"\)\.litC;/.exec(
-      after,
-    )?.[1];
+    expect(after).toContain('typeof import("@nudojs/core").litC;');
+    const alias = /declare const (_nudo_lit\w*): typeof import\("@nudojs\/core"\)\.litC;/.exec(after)?.[1];
     expect(alias).toBeDefined();
     expect(after).toContain(`${alias}(1)`);
     expect(after).not.toMatch(/(?<![A-Za-z0-9_$])lit\(1\)/);
-  });
 
-  it("对照组：侧车不含 `import { lit }` ⇒ 直接声明 `lit`（无需别名）", async () => {
-    const file = join(dir, "lit2.ts");
-    writeFileSync(file, SRC);
-    writeFileSync(join(dir, "lit2.nudo.ts"), `// empty sidecar\n`);
-
-    await emitContract(file, { mode: "update", all: true });
-    const after = readFileSync(join(dir, "lit2.nudo.ts"), "utf-8");
-    expect(after).toContain(`declare const lit: typeof import("@nudojs/core").litC;`);
-    expect(after).toContain("lit(1)");
+    const file2 = join(dir, "lit2.ts");
+    writeFileSync(file2, SRC);
+    writeFileSync(join(dir, "lit2.nudo.ts"), "// empty sidecar\n");
+    await emitContract(file2, { mode: "update", all: true });
+    const after2 = readFileSync(join(dir, "lit2.nudo.ts"), "utf-8");
+    expect(after2).toContain('declare const lit: typeof import("@nudojs/core").litC;');
+    expect(after2).toContain("lit(1)");
   });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -647,36 +635,25 @@ function importLine(src: string): string {
 }
 
 describe("草稿 builder import ⊆ 真正被调用的 builder", () => {
-  it("字段名叫 `lit` 不得把 `lit` 拖进 import（DSL 从未调用 lit(）", async () => {
-    const file = join(dir, "lit.ts");
-    writeFileSync(
-      file,
-      `export function f(o) {\n  return o.lit;\n}\nf({ lit: 1 });\n`,
-    );
-    const r = await draftContract(file);
-    const line = importLine(r.draftSource);
-    expect(line).toContain("fn");
-    expect(line).toContain("shape");
-    expect(line).toContain("number");
-    expect(line).not.toMatch(/(?<![\w$])lit(?![A-Za-z0-9_$])/);
-    // 草稿的 DSL 行里确实没有 lit( 调用（注释里的 /* observed: … */ 是见证，不算）
-    const dsl = r.draftSource
-      .split("\n")
-      .filter((l) => /^export const f = /.test(l))
-      .join("\n");
-    expect(dsl).not.toMatch(/(?<![\w$])lit\s*\(/);
+  let dir: string;
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "nudo-bug-272-")); });
+  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+  const importLine = (src: string) => /^import \{[^}]*\} from "@nudojs\/core";$/m.exec(src)?.[0] ?? "";
+  it("字段名 lit/lam 都不会把 lit 拖进 import", async () => {
+    for (const [name, field] of [["lit.ts", "lit"], ["lam.ts", "lam"]] as const) {
+      const file = join(dir, name);
+      writeFileSync(file, `export function f(o) {\n  return o.${field};\n}\nf({ ${field}: 1 });\n`);
+      const r = await draftContract(file);
+      const line = importLine(r.draftSource);
+      expect(line, field).toContain("fn");
+      expect(line, field).toContain("shape");
+      expect(line, field).toContain("number");
+      expect(line, field).not.toMatch(/(?<![\w$])lit(?![A-Za-z0-9_$])/);
+      const dsl = r.draftSource.split("\n").filter((l) => /^export const f = /.test(l)).join("\n");
+      expect(dsl, field).not.toMatch(/(?<![\w$])lit\s*\(/);
+    }
   });
-
-  it("对照组：字段名改成 `lam` ⇒ 同一个 import 列表（唯一变量是字段名）", async () => {
-    const file = join(dir, "lam.ts");
-    writeFileSync(
-      file,
-      `export function f(o) {\n  return o.lam;\n}\nf({ lam: 1 });\n`,
-    );
-    const r = await draftContract(file);
-    expect(importLine(r.draftSource)).not.toMatch(/(?<![\w$])lit(?![A-Za-z0-9_$])/);
-  });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -738,32 +715,28 @@ f7({ a: 1, b: 2 });
 `;
 
 describe("（service 侧）— dts 面：数组解构的输入面是元组，不是对象", () => {
-  it("部分覆盖（契约只写 a）⇒ 形参类型是元组（改前是 { a: number }）", () => {
-    const decl = declOf(ARRAY_PATTERN, [{ name: "a", abs: num }]);
-    expect(decl).toContain("[number, unknown]");
-    expect(decl).not.toContain("{ a: number }");
+  beforeEach(() => { resetAllAnalysisCaches(); });
+  const num = abs({ k: "prim", type: "number" }, undefined, undefined, "exact");
+  const str = abs({ k: "prim", type: "string" }, undefined, undefined, "exact");
+  const declOf = (source: string, contractParams?: { name: string; abs: unknown }[]): string => {
+    const result = analyzeFile("/test/bug394.ts", source);
+    const fn = result.functions.find((f) => f.name === "f7")!;
+    const proj = projectFunctionDts(fn, contractParams ? { params: contractParams as never } : undefined);
+    return proj.lines.find((l) => l.startsWith("export declare function")) ?? "";
+  };
+  const ARRAY_PATTERN = "export function f7([a, b]) { return a; }\nf7([1, 2]);\n";
+  const OBJECT_PATTERN = "export function f7({ a, b }) { return a; }\nf7({ a: 1, b: 2 });\n";
+  it("数组解构契约聚合成元组；对象解构仍是对象；无契约仍是观测面", () => {
+    const partial = declOf(ARRAY_PATTERN, [{ name: "a", abs: num }]);
+    expect(partial).toContain("[number, unknown]");
+    expect(partial).not.toContain("{ a: number }");
+    const full = declOf(ARRAY_PATTERN, [{ name: "a", abs: num }, { name: "b", abs: str }]);
+    expect(full).toContain("[number, string]");
+    expect(full).toContain("[ a, b ]");
+    expect(declOf(OBJECT_PATTERN, [{ name: "a", abs: num }])).toContain("{ a: number }");
+    expect(declOf(ARRAY_PATTERN)).toContain("number[]");
   });
-
-  it("全覆盖（契约写 a 与 b）⇒ 形参类型是元组、声明名是数组形态", () => {
-    const decl = declOf(ARRAY_PATTERN, [
-      { name: "a", abs: num },
-      { name: "b", abs: str },
-    ]);
-    expect(decl).toContain("[number, string]");
-    expect(decl).toContain("[ a, b ]");
-    expect(decl).not.toContain("{ a: number }");
-  });
-
-  it("负控制：对象解构的字段级契约仍聚合成对象（既有口径不变）", () => {
-    const decl = declOf(OBJECT_PATTERN, [{ name: "a", abs: num }]);
-    expect(decl).toContain("{ a: number }");
-  });
-
-  it("负控制：无契约时仍是观测面（number[]），不被本次改动波及", () => {
-    const decl = declOf(ARRAY_PATTERN);
-    expect(decl).toContain("number[]");
-  });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -818,35 +791,29 @@ const WITH_THIS = `export function withThis(this: { x: number }, a: number): num
 `;
 
 describe("（产物半）— 形参表过滤 `this` 接收者标注", () => {
-  it("extractFormals 不返回 `this` 形参", () => {
+  beforeEach(() => { resetAllAnalysisCaches(); });
+  const firstFnNode = (source: string) => {
+    const file = parseSource(source);
+    for (const stmt of file.program.body) {
+      const node = stmt as { type: string; declaration?: { type: string } };
+      if (node.type === "ExportNamedDeclaration" && node.declaration?.type === "FunctionDeclaration") return node.declaration as never;
+    }
+    throw new Error("no function declaration found");
+  };
+  const WITH_THIS = "export function withThis(this: { x: number }, a: number): number {\n  return a;\n}\n";
+  it("extractFormals/ParamNames 不含 this 且 index 重排；dts 无 this；普通表原样", () => {
     const formals = extractFormals(firstFnNode(WITH_THIS));
     expect(formals.map((f) => (f.kind === "id" ? f.name : f.kind))).toEqual(["a"]);
-  });
-
-  it("过滤后 index 重排（`this` 不占实参位 ⇒ 后续形参前移）", () => {
-    const formals = extractFormals(firstFnNode(WITH_THIS));
     expect(formals.map((f) => f.index)).toEqual([0]);
-    expect(formals[0]!.kind === "id" && formals[0]!.name).toBe("a");
-  });
-
-  it("extractParamNames（产物面的槽名来源）不含 `this`", () => {
     expect(extractParamNames(firstFnNode(WITH_THIS))).toEqual(["a"]);
-  });
-
-  it("dts 产物面没有 `this` 形参（消费方不该吃 TS2554 假红）", () => {
-    const dts = generateDts(analyzeFile_____analyzer_ts_1("/test/bug397-dts.ts", WITH_THIS));
+    const dts = generateDts(analyzeFile("/test/bug397-dts.ts", WITH_THIS));
     expect(dts).not.toContain("this:");
     expect(dts).toContain("export declare function withThis(a:");
+    const plain = extractFormals(firstFnNode("export function plain(a: number, b: string): string {\n  return b;\n}\n"));
+    expect(plain.map((f) => f.index)).toEqual([0, 1]);
+    expect(plain.map((f) => (f.kind === "id" ? f.name : f.kind))).toEqual(["a", "b"]);
   });
-
-  it("负控制：没有 `this` 标注时形参表原样（index 连续、名字不变）", () => {
-    const formals = extractFormals(
-      firstFnNode(`export function plain(a: number, b: string): string {\n  return b;\n}\n`),
-    );
-    expect(formals.map((f) => f.index)).toEqual([0, 1]);
-    expect(formals.map((f) => (f.kind === "id" ? f.name : f.kind))).toEqual(["a", "b"]);
-  });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -916,123 +883,64 @@ const JS_UPPER = `export function upper(a) {
 `;
 
 describe("（service 侧）— 推断面：entry@ 实参按 TS 声明类型", () => {
-  it("`.ts` 的 string 形参：entry@ 实参是 string（改前是 any）", () => {
-    const result = analyzeFile_____analyzer_ts_2("/test/bug479-entry.ts", TS_UPPER);
-    const fn = result.functions.find((f) => f.name === "upper")!;
-    expect(formatShape(entryCase(fn).argAbs[0]!)).toBe("string");
+  beforeEach(() => { resetAllAnalysisCaches(); });
+  const entryCase = (fn: FunctionAnalysis) => { const c = fn.cases.find((x) => x.name.startsWith("entry@")); expect(c).toBeDefined(); return c!; };
+  const declOf = (source: string, file = "/test/bug479-service.ts"): string => generateDts(analyzeFile(file, source)).split("\n").find((l) => l.startsWith("export declare function")) ?? "";
+  const TS_UPPER = "export function upper(a: string): string {\n  return a.toUpperCase();\n}\n";
+  const JS_UPPER = "export function upper(a) {\n  return a.toUpperCase();\n}\n";
+  it("TS 注解映射 entry@ 实参；不可映射回落 any", () => {
+    const upper = analyzeFile("/test/bug479-entry.ts", TS_UPPER).functions.find((f) => f.name === "upper")!;
+    expect(formatShape(entryCase(upper).argAbs[0]!)).toBe("string");
+    const add = analyzeFile("/test/bug479-entry2.ts", "export function add(x: number, y: number): number {\n  return x + y;\n}\n").functions.find((f) => f.name === "add")!;
+    expect(entryCase(add).argAbs.map((a) => formatShape(a))).toEqual(["number", "number"]);
+    const flag = analyzeFile("/test/bug479-entry3.ts", "export function flag(b: boolean): boolean {\n  return !b;\n}\n").functions.find((f) => f.name === "flag")!;
+    expect(formatShape(entryCase(flag).argAbs[0]!)).toBe("boolean");
+    expect(formatShape(entryCase(upper).throwsAbs)).toBe("never");
+    expect(formatShape(entryCase(upper).abs)).toBe("string");
+    const len = analyzeFile("/test/bug479-entry5.ts", "export function len(a: string[]): number {\n  return a.length;\n}\n").functions.find((f) => f.name === "len")!;
+    expect(formatShape(entryCase(len).argAbs[0]!)).toBe("any");
   });
-
-  it("`.ts` 的多个形参：各自按声明类型（number / number）", () => {
-    const result = analyzeFile_____analyzer_ts_2(
-      "/test/bug479-entry2.ts",
-      `export function add(x: number, y: number): number {\n  return x + y;\n}\n`,
-    );
-    const fn = result.functions.find((f) => f.name === "add")!;
-    expect(entryCase(fn).argAbs.map((a) => formatShape(a))).toEqual(["number", "number"]);
-  });
-
-  it("`.ts` 的 boolean 形参：entry@ 实参是 boolean", () => {
-    const result = analyzeFile_____analyzer_ts_2(
-      "/test/bug479-entry3.ts",
-      `export function flag(b: boolean): boolean {\n  return !b;\n}\n`,
-    );
-    const fn = result.functions.find((f) => f.name === "flag")!;
-    expect(formatShape(entryCase(fn).argAbs[0]!)).toBe("boolean");
-  });
-
-  it("合法 TypeScript 不再因「参数无约束」在 entry@ 抛 TypeError（改前抛）", () => {
-    const result = analyzeFile_____analyzer_ts_2("/test/bug479-entry4.ts", TS_UPPER);
-    const fn = result.functions.find((f) => f.name === "upper")!;
-    expect(formatShape(entryCase(fn).throwsAbs)).toBe("never");
-    // 推出来的返回值也跟着收窄（a 是 string ⇒ a.toUpperCase() 是 string）
-    expect(formatShape(entryCase(fn).abs)).toBe("string");
-  });
-
-  it("不可映射的声明类型（string[]）：实参仍回落 any（不猜）", () => {
-    const result = analyzeFile_____analyzer_ts_2(
-      "/test/bug479-entry5.ts",
-      `export function len(a: string[]): number {\n  return a.length;\n}\n`,
-    );
-    const fn = result.functions.find((f) => f.name === "len")!;
-    expect(formatShape(entryCase(fn).argAbs[0]!)).toBe("any");
-  });
-});
+});;
 
 describe("（service 侧）— 产物面：dts 形参保留 TS 注解", () => {
-  it("dts 形参保留 string 注解（改前是 unknown）", () => {
+  beforeEach(() => { resetAllAnalysisCaches(); });
+  const entryCase = (fn: FunctionAnalysis) => { const c = fn.cases.find((x) => x.name.startsWith("entry@")); expect(c).toBeDefined(); return c!; };
+  const declOf = (source: string, file = "/test/bug479-service.ts"): string => generateDts(analyzeFile(file, source)).split("\n").find((l) => l.startsWith("export declare function")) ?? "";
+  const TS_UPPER = "export function upper(a: string): string {\n  return a.toUpperCase();\n}\n";
+  const JS_UPPER = "export function upper(a) {\n  return a.toUpperCase();\n}\n";
+  it("string / string[] / 多形参 / rest / JSDoc 注解保留", () => {
     expect(declOf(TS_UPPER)).toContain("export declare function upper(a: string)");
     expect(declOf(TS_UPPER)).not.toContain("a: unknown");
-  });
-
-  it("dts 形参保留不可映射的 string[] 注解（产物不得比源更弱）", () => {
-    const decl = declOf(
-      `export function len(a: string[]): number {\n  return a.length;\n}\n`,
-    );
-    expect(decl).toContain("export declare function len(a: string[])");
-  });
-
-  it("dts 多个形参各自保留注解", () => {
-    const decl = declOf(
-      `export function add(x: number, y: number): number {\n  return x + y;\n}\n`,
-    );
-    expect(decl).toContain("export declare function add(x: number, y: number)");
-  });
-
-  it("dts rest 形参保留数组注解（...rest: string[]）", () => {
-    const decl = declOf(
-      `export function sum(...rest: number[]): number {\n  return rest.length;\n}\n`,
-    );
-    expect(decl).toContain("...rest: number[]");
-  });
-
-  it("dts 的 JSDoc @param 与声明位一致（string，不是 unknown）", () => {
-    const dts = generateDts(analyzeFile_____analyzer_ts_2("/test/bug479-jsdoc.ts", TS_UPPER));
+    expect(declOf("export function len(a: string[]): number {\n  return a.length;\n}\n")).toContain("export declare function len(a: string[])");
+    expect(declOf("export function add(x: number, y: number): number {\n  return x + y;\n}\n")).toContain("export declare function add(x: number, y: number)");
+    expect(declOf("export function sum(...rest: number[]): number {\n  return rest.length;\n}\n")).toContain("...rest: number[]");
+    const dts = generateDts(analyzeFile("/test/bug479-jsdoc.ts", TS_UPPER));
     expect(dts).toContain("@param a - string");
     expect(dts).not.toContain("@param a - unknown");
   });
-});
+});;
 
 describe("（service 侧）— 负控制：既有行为不得被波及", () => {
-  it("同形 `.js` 源（无注解）：entry@ 实参仍是 any、仍抛 TypeError", () => {
-    const result = analyzeFile_____analyzer_ts_2("/test/bug479-ctrl.js", JS_UPPER);
-    const fn = result.functions.find((f) => f.name === "upper")!;
-    expect(formatShape(entryCase(fn).argAbs[0]!)).toBe("any");
-    expect(formatShape(entryCase(fn).throwsAbs)).toContain("TypeError");
+  beforeEach(() => { resetAllAnalysisCaches(); });
+  const entryCase = (fn: FunctionAnalysis) => { const c = fn.cases.find((x) => x.name.startsWith("entry@")); expect(c).toBeDefined(); return c!; };
+  const declOf = (source: string, file = "/test/bug479-service.ts"): string => generateDts(analyzeFile(file, source)).split("\n").find((l) => l.startsWith("export declare function")) ?? "";
+  const TS_UPPER = "export function upper(a: string): string {\n  return a.toUpperCase();\n}\n";
+  const JS_UPPER = "export function upper(a) {\n  return a.toUpperCase();\n}\n";
+  it("js 无注解仍 any；dts unknown；ts 未标注仍 any；契约优先于注解；无契约注解生效", () => {
+    const js = analyzeFile("/test/bug479-ctrl.js", JS_UPPER).functions.find((f) => f.name === "upper")!;
+    expect(formatShape(entryCase(js).argAbs[0]!)).toBe("any");
+    expect(formatShape(entryCase(js).throwsAbs)).toContain("TypeError");
+    expect(declOf(JS_UPPER, "/test/bug479-ctrl.js")).toContain("export declare function upper(a: unknown)");
+    const plain = analyzeFile("/test/bug479-ctrl2.ts", "export function plain(a): any {\n  return a;\n}\n").functions.find((f) => f.name === "plain")!;
+    expect(formatShape(entryCase(plain).argAbs[0]!)).toBe("any");
+    const fn = analyzeFile("/test/bug479-contract.ts", TS_UPPER).functions.find((f) => f.name === "upper")!;
+    const withContract = projectFunctionDts(fn, { params: [{ name: "a", abs: numLit(1) }] }).lines.find((l) => l.startsWith("export declare function"))!;
+    expect(withContract).toContain("a: number");
+    expect(withContract).not.toContain("a: string");
+    const noContract = projectFunctionDts(fn).lines.find((l) => l.startsWith("export declare function"))!;
+    expect(noContract).toContain("a: string");
   });
-
-  it("同形 `.js` 源（无注解）：dts 形参是 unknown（TS 投影面归一）", () => {
-    // Abs any（未约束）→ TS unknown（nudo any ≈ TS unknown；abs.md 只管展示面）
-    expect(declOf(JS_UPPER, "/test/bug479-ctrl.js")).toContain(
-      "export declare function upper(a: unknown)",
-    );
-  });
-
-  it("`.ts` 源里未标注的形参：仍是 any（无注解 = 无约束）", () => {
-    const result = analyzeFile_____analyzer_ts_2(
-      "/test/bug479-ctrl2.ts",
-      `export function plain(a): any {\n  return a;\n}\n`,
-    );
-    const fn = result.functions.find((f) => f.name === "plain")!;
-    expect(formatShape(entryCase(fn).argAbs[0]!)).toBe("any");
-  });
-
-  it("手写契约仍优先于 TS 注解（既有口径「声明位取侧车契约」）", () => {
-    const result = analyzeFile_____analyzer_ts_2("/test/bug479-contract.ts", TS_UPPER);
-    const fn = result.functions.find((f) => f.name === "upper")!;
-    const proj = projectFunctionDts(fn, { params: [{ name: "a", abs: numLit(1) }] });
-    const decl = proj.lines.find((l) => l.startsWith("export declare function"))!;
-    expect(decl).toContain("a: number");
-    expect(decl).not.toContain("a: string");
-  });
-
-  it("无契约时 TS 注解生效（同一函数，去掉契约面后是 string）", () => {
-    const result = analyzeFile_____analyzer_ts_2("/test/bug479-contract2.ts", TS_UPPER);
-    const fn = result.functions.find((f) => f.name === "upper")!;
-    const proj = projectFunctionDts(fn);
-    const decl = proj.lines.find((l) => l.startsWith("export declare function"))!;
-    expect(decl).toContain("a: string");
-  });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
