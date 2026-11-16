@@ -222,31 +222,27 @@ afterEach(() => {
 });
 
 describe("点观测不得成为契约域", () => {
-  it("调用点字面量实参 ⇒ 投影成基类型（不是 lit(N)）", async () => {
+  let dir: string;
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "nudo-b021-")); });
+  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+  it("调用点字面量投影基类型；带断言 case 保留字面量", async () => {
     const file = join(dir, "lib.js");
-    writeFileSync(
-      file,
-      `export function add(a, b) {\n  return a + b;\n}\nexport function caller() {\n  return add(1, 2);\n}\n`,
-    );
+    writeFileSync(file, "export function add(a, b) {\n  return a + b;\n}\nexport function caller() {\n  return add(1, 2);\n}\n");
     const r = await emitContract(file, { mode: "update", all: true });
     expect(r.written).toContain("add");
     const sidecar = readFileSync(join(dir, "lib.nudo.js"), "utf-8");
     expect(sidecar).toContain("export const add = fn({ a: number(), b: number() }, number());");
     expect(sidecar).not.toContain("lit(1)");
     expect(sidecar).not.toContain("lit(3)");
-  });
 
-  it("对照组：带断言的 @nudo:case 是域声明 ⇒ 字面量保留", async () => {
-    const file = join(dir, "sub.js");
-    writeFileSync(
-      file,
-      `/**\n * @nudo:case "c" (1, 2) => 3\n */\nexport function sub(a, b) {\n  return a - b;\n}\n`,
-    );
-    await emitContract(file, { mode: "update", all: true });
-    const sidecar = readFileSync(join(dir, "sub.nudo.js"), "utf-8");
-    expect(sidecar).toContain("export const sub = fn({ a: lit(1), b: lit(2) }, lit(-1));");
+    const subFile = join(dir, "sub.js");
+    writeFileSync(subFile, '/**\n * @nudo:case "c" (1, 2) => 3\n */\nexport function sub(a, b) {\n  return a - b;\n}\n');
+    await emitContract(subFile, { mode: "update", all: true });
+    const subSidecar = readFileSync(join(dir, "sub.nudo.js"), "utf-8");
+    expect(subSidecar).toContain("export const sub = fn({ a: lit(1), b: lit(2) }, lit(-1));");
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -347,41 +343,46 @@ function callsiteDomain(
 }
 
 describe("调用点域与声明顺序无关", () => {
-  it("被调方先定义：三个调用点全部留证（不再只剩第一条）", async () => {
-    const r = await analyze(CALLEE_FIRST);
-    const { args, rets } = callsiteDomain(r, "callee");
+  const CALLEE_FIRST = "export function callee(a) {\n  return a + 1;\n}\nexport function caller1() {\n  return callee(1);\n}\nexport function caller2() {\n  return callee(2);\n}\nexport function caller3() {\n  return callee(3);\n}\n";
+  const CALLEE_LAST = "export function caller1() {\n  return callee(1);\n}\nexport function caller2() {\n  return callee(2);\n}\nexport function caller3() {\n  return callee(3);\n}\nexport function callee(a) {\n  return a + 1;\n}\n";
+  beforeEach(() => {
+    resetCheckSourceMemo();
+    resetGeneralizeMemo();
+    resetNudoModuleExecCache();
+    resetParseSourceCache();
+    resetAbsCallBudget();
+    clearEvalCache();
+    clearAbsModuleCache();
+  });
+  const analyze = async (source: string) => {
+    const dir = tmpProject("nudo-b022-");
+    const file = join(dir, "m.js");
+    writeFileSync(file, source, "utf-8");
+    return analyzeFileAsync(file, source, undefined, undefined, undefined, "all");
+  };
+  const callsiteDomain = (result: Awaited<ReturnType<typeof analyze>>, fnName: string) => {
+    const fn = result.functions.find((f) => f.name === fnName)!;
+    expect(fn).toBeDefined();
+    const calls = fn.cases.filter((c) => c.source === "callsite");
+    return { args: calls.map((c) => c.argAbs.map((a) => formatShape(a)).join(",")).sort(), rets: calls.map((c) => formatShape(c.abs)).sort() };
+  };
+  it("先定义不截断；顺序无关 combined 一致；有调用点不再误报 entry-only", async () => {
+    const first = await analyze(CALLEE_FIRST);
+    const { args, rets } = callsiteDomain(first, "callee");
     expect(args).toEqual(["1", "2", "3"]);
     expect(rets).toEqual(["2", "3", "4"]);
-  });
 
-  it("两种声明顺序的调用点域与 combinedAbs 完全一致", async () => {
-    const first = await analyze(CALLEE_FIRST);
     const last = await analyze(CALLEE_LAST);
-
     expect(callsiteDomain(first, "callee")).toEqual(callsiteDomain(last, "callee"));
-
-    const combined = (r: Awaited<ReturnType<typeof analyze>>) => {
-      const fn = r.functions.find((f) => f.name === "callee")!;
-      expect(fn.combinedAbs).toBeDefined();
-      return formatShape(fn.combinedAbs!);
-    };
+    const combined = (r: Awaited<ReturnType<typeof analyze>>) => formatShape(r.functions.find((f) => f.name === "callee")!.combinedAbs!);
     expect(combined(first)).toBe(combined(last));
     expect(combined(first)).toBe("2 | 3 | 4");
-  });
 
-  it("有调用点域的被调方不再误报 nudo:contract-entry-only", async () => {
-    const r = await analyze(CALLEE_FIRST);
-    const calleeEntryOnly = r.diagnostics.filter(
-      (d) => d.code === "nudo:contract-entry-only" && d.message.includes("'callee'"),
-    );
-    expect(calleeEntryOnly).toEqual([]);
-    // 负控制：真的没有调用点的导出函数仍如实报 entry-only（不静默）
-    const caller1EntryOnly = r.diagnostics.filter(
-      (d) => d.code === "nudo:contract-entry-only" && d.message.includes("'caller1'"),
-    );
-    expect(caller1EntryOnly).toHaveLength(1);
+    expect(first.diagnostics.filter((d) => d.code === "nudo:contract-entry-only" && d.message.includes("'callee'"))).toEqual([]);
+    expect(first.diagnostics.filter((d) => d.code === "nudo:contract-entry-only" && d.message.includes("'caller1'"))).toHaveLength(1);
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -412,26 +413,27 @@ function rec(line: number, column: number, arg: number): CallRecord {
 }
 
 describe("同行多调用点的见证名唯一", () => {
-  it("同一行两个调用点 ⇒ 名字不同（加列维度），且各自可核对到列", () => {
+  const FILE = "/proj/usage.js";
+  const rec = (line: number, column: number, arg: number): CallRecord => ({
+    fnName: "add",
+    argAbs: [numLit(arg)],
+    resultAbs: numLit(arg + 1),
+    throwsAbs: neverAbs,
+    callLoc: { line, column },
+  });
+  it("同行两调用点加列维度；唯一调用点格式不变；列缺失退回序号", () => {
     const names = disambiguateCallsiteNames([rec(6, 0, 1), rec(6, 9, 3)], FILE, 1);
     expect(new Set(names).size).toBe(2);
-    // 撞名的两条**都**带列维度（同一行 ⇒ 谁的「裸名」都不该独占）
     expect(names[0]).toBe("call@L6C0");
     expect(names[1]).toBe("call@L6C9");
-  });
-
-  it("对照组：唯一调用点的名字格式不变（既有固化见证不漂移）", () => {
     expect(disambiguateCallsiteNames([rec(6, 0, 1)], FILE, 1)).toEqual(["call@L6"]);
     expect(callsiteCaseName(rec(6, 0, 1), FILE, 1)).toBe("call@L6");
-  });
-
-  it("三个及以上同行调用点：列缺失时退回序号（仍唯一）", () => {
     const r1 = { ...rec(6, 0, 1), callLoc: undefined } as CallRecord;
     const r2 = { ...rec(6, 0, 2), callLoc: undefined } as CallRecord;
-    const names = disambiguateCallsiteNames([r1, r2], FILE, 6);
-    expect(new Set(names).size).toBe(2);
+    expect(new Set(disambiguateCallsiteNames([r1, r2], FILE, 6)).size).toBe(2);
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -468,25 +470,34 @@ function project(collide: boolean): { dir: string; usage: string } {
 }
 
 describe("调用现场文件按 AST 核对，不用行数猜", () => {
-  it("依赖模块里的调用不得带现场文件（行号落在注释行）", () => {
-    const { dir, usage } = project(false);
-    const records = collectCallRecords_____analyzer_orchestrate_calls_ts(join(dir, "usage.js"), usage);
+  const project = (collide: boolean) => {
+    const dep = 'import { greet } from "./lib.js";\nexport const r = greet("from-dep");\n';
+    const usage = collide
+      ? 'import { greet } from "./lib.js";\nconst a = greet("from-usage");\nimport { r } from "./dep.js";\nexport const o = a;\nexport const p = r;\n'
+      : 'import { greet } from "./lib.js";\n// line 2 is a COMMENT, definitely not a call\nimport { r } from "./dep.js";\nconst a = greet("from-usage");\nexport const o = a;\nexport const p = r;\n';
+    const dir = tmpProject(collide ? "nudo-089-collide-" : "nudo-089-", {
+      "lib.js": 'export function greet(name) { return "hi " + name; }\n',
+      "dep.js": dep,
+      "usage.js": usage,
+    });
+    return { dir, usage };
+  };
+  it("依赖调用不贴现场文件；同号不同列保留现场调用", () => {
+    const plain = project(false);
+    const records = collectCallRecords_____analyzer_orchestrate_calls_ts(join(plain.dir, "usage.js"), plain.usage);
     const depRecord = records.find((r) => r.argAbs.length > 0 && r.callLoc?.line === 2);
     expect(depRecord).toBeDefined();
     expect(depRecord!.callSiteFile).toBeUndefined();
-  });
 
-  it("同号不同列（collide）⇒ 现场调用保留现场文件，依赖调用不贴", () => {
-    const { dir, usage } = project(true);
-    const records = collectCallRecords_____analyzer_orchestrate_calls_ts(join(dir, "usage.js"), usage);
-    const local = records.filter((r) => r.callSiteFile !== undefined);
+    const collide = project(true);
+    const collision = collectCallRecords_____analyzer_orchestrate_calls_ts(join(collide.dir, "usage.js"), collide.usage);
+    const local = collision.filter((r) => r.callSiteFile !== undefined);
     expect(local).toHaveLength(1);
     expect(local[0]!.callLoc!.line).toBe(2);
-    // 依赖里那次调用（同 line 2，不同列）不得被贴成现场文件
-    const depRecords = records.filter((r) => r.callSiteFile === undefined);
-    expect(depRecords.length).toBeGreaterThanOrEqual(1);
+    expect(collision.filter((r) => r.callSiteFile === undefined).length).toBeGreaterThanOrEqual(1);
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
