@@ -2437,95 +2437,59 @@ afterEach(() => {
 });
 
 describe("effectiveMaxForks —— env 优先的 fork 预算生效值", () => {
-  it("env NUDO_MAX_FORKS 优先于 package.json#nudo.analysis.maxForks", () => {
+  const ENV_KEY = "NUDO_MAX_FORKS";
+  let saved: string | undefined;
+  beforeEach(() => { saved = process.env[ENV_KEY]; });
+  afterEach(() => { if (saved === undefined) delete process.env[ENV_KEY]; else process.env[ENV_KEY] = saved; });
+  it("env 优先；无 env 看配置/默认；非法回默认；小数取整；空串当未设；显式 env 参数优先", () => {
     process.env[ENV_KEY] = "7";
     expect(effectiveMaxForks({ analysis: { maxForks: 100 } })).toBe(7);
-  });
-
-  it("无 env 时回落 package.json 值；两者都无则回落默认 5000", () => {
     delete process.env[ENV_KEY];
     expect(effectiveMaxForks({ analysis: { maxForks: 100 } })).toBe(100);
     expect(effectiveMaxForks(undefined)).toBe(5000);
     expect(effectiveMaxForks({})).toBe(5000);
-  });
-
-  it("env 非法（非整数 / <1）⇒ 回落默认 5000（不回配置键）", () => {
     for (const bad of ["abc", "0", "-3"]) {
       process.env[ENV_KEY] = bad;
       expect(effectiveMaxForks({ analysis: { maxForks: 100 } })).toBe(5000);
     }
-  });
-
-  it("env 是小数 ⇒ 向下取整（与 applyBForkBudgetFromConfig 同口径）", () => {
     process.env[ENV_KEY] = "1.5";
     expect(effectiveMaxForks({ analysis: { maxForks: 100 } })).toBe(1);
-  });
-
-  it("空串 env 按「未设」处理（回落到 package.json 值）", () => {
     process.env[ENV_KEY] = "";
     expect(effectiveMaxForks({ analysis: { maxForks: 100 } })).toBe(100);
-  });
-
-  it("显式 env 参数优先于 process.env（纯函数、可测）", () => {
     process.env[ENV_KEY] = "7";
     expect(effectiveMaxForks({ analysis: { maxForks: 100 } }, {})).toBe(100);
     expect(effectiveMaxForks({ analysis: { maxForks: 100 } }, { NUDO_MAX_FORKS: "9" })).toBe(9);
   });
 });
+;
 
 describe("analysisConfig().maxForks 是 env 生效值（缓存键的输入）", () => {
-  it("env 改 fork 预算 ⇒ analysisConfig().maxForks 随之变", () => {
+  const ENV_KEY = "NUDO_MAX_FORKS";
+  let saved: string | undefined;
+  beforeEach(() => { saved = process.env[ENV_KEY]; });
+  afterEach(() => { if (saved === undefined) delete process.env[ENV_KEY]; else process.env[ENV_KEY] = saved; });
+  it("env 改预算配置随之变；缓存键随 env 翻转（含调用方陈旧 maxForks）", () => {
     delete process.env[ENV_KEY];
     expect(analysisConfig({ analysis: { maxForks: 100 } }).maxForks).toBe(100);
     process.env[ENV_KEY] = "3";
     expect(analysisConfig({ analysis: { maxForks: 100 } }).maxForks).toBe(3);
-  });
 
-  it("缓存键随 env 生效的 fork 预算翻转（命中轮不得返回陈旧 budget）", () => {
     const cfg = { analysis: { maxForks: 100 } };
     const src = "export function pick(a, b, c) { return a + b + c; }\n";
-    const keyOf = (): string =>
-      checkCacheKey("/tmp/nudo-bug-636/lib.js", src, {
-        autoBind: true,
-        analysisCfg: {
-          mode: "exports",
-          evalMissingSlot: "off",
-          callSiteBudget: 3,
-          entryThrows: "error",
-          ignoreThrows: "",
-          // 与 CLI 喂键口径一致：`aCfg.maxForks`（= analysisConfig().maxForks）
-          maxForks: analysisConfig(cfg).maxForks,
-        },
-      });
+    const keyOf = () => checkCacheKey("/tmp/nudo-b636/lib.js", src, { autoBind: true, analysisCfg: { mode: "exports", evalMissingSlot: "off", callSiteBudget: 3, entryThrows: "error", ignoreThrows: "", maxForks: analysisConfig(cfg).maxForks } });
     delete process.env[ENV_KEY];
-    const keyNoEnv = keyOf();
+    const noEnv = keyOf();
     process.env[ENV_KEY] = "1";
-    const keyEnv = keyOf();
-    expect(keyEnv).not.toBe(keyNoEnv);
-  });
+    expect(keyOf()).not.toBe(noEnv);
 
-  it("缓存键**自身**兜底：调用方喂陈旧的 maxForks，键仍随 env 生效值变", () => {
-    const src = "export function pick(a, b, c) { return a + b + c; }\n";
-    const keyWith = (maxForks: number): string =>
-      checkCacheKey("/tmp/nudo-bug-636/lib.js", src, {
-        autoBind: true,
-        analysisCfg: {
-          mode: "exports",
-          evalMissingSlot: "off",
-          callSiteBudget: 3,
-          entryThrows: "error",
-          ignoreThrows: "",
-          maxForks,
-        },
-      });
+    const keyWith = (maxForks: number) => checkCacheKey("/tmp/nudo-b636/lib.js", src, { autoBind: true, analysisCfg: { mode: "exports", evalMissingSlot: "off", callSiteBudget: 3, entryThrows: "error", ignoreThrows: "", maxForks } });
     delete process.env[ENV_KEY];
-    const keyNoEnv = keyWith(5000);
+    const staleNoEnv = keyWith(5000);
     process.env[ENV_KEY] = "1";
-    // 调用方喂的是**陈旧**值（5000）⇒ 键仍必须变（否则命中轮返回陈旧 budget）
-    const keyEnv = keyWith(5000);
-    expect(keyEnv).not.toBe(keyNoEnv);
+    expect(keyWith(5000)).not.toBe(staleNoEnv);
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -2570,81 +2534,70 @@ function captureStderr(fn: () => void): string {
 const BAD_ELEMENTS: unknown[] = [42, null, {}, []];
 
 describe("env 项元素级校验（非字符串元素不得裸崩）", () => {
-  it("loadEnvs：四种非法元素都不崩、无全局注入、产出可见告警", () => {
-    const dir = tmpProject("nudo-bug-935-load-");
+  beforeEach(() => { clearPathEnvCaches(); });
+  const captureStderr = (fn: () => void): string => {
+    const writes: string[] = [];
+    const orig = process.stderr.write;
+    process.stderr.write = ((chunk: string | Uint8Array) => { writes.push(String(chunk)); return true; }) as typeof process.stderr.write;
+    try { fn(); } finally { process.stderr.write = orig; }
+    return writes.join("");
+  };
+  const BAD = [42, null, {}, []];
+  it("四种非法元素不崩且有告警；preload 不冒泡；合法元素/字符串 path 负控", async () => {
+    const dir = tmpProject("nudo-b935-load-");
     const env = createEnvironment();
-    for (const el of BAD_ELEMENTS) {
-      const loaded = loadEnvs([el] as unknown as string[], env, dir);
-      expect(Object.keys(loaded.globals)).toHaveLength(0);
-    }
+    for (const el of BAD) expect(Object.keys(loadEnvs([el] as unknown as string[], env, dir).globals)).toHaveLength(0);
     const errs = getPathEnvLoadErrors(dir);
-    expect(errs).toHaveLength(BAD_ELEMENTS.length);
+    expect(errs).toHaveLength(BAD.length);
     for (const e of errs) expect(e.error).toContain("invalid env entry");
-  });
 
-  it("preloadPathEnvs：非法元素不得裸崩（不得冒泡到进程顶层）", async () => {
-    const dir = tmpProject("nudo-bug-935-preload-");
-    await expect(
-      preloadPathEnvs([42] as unknown as string[], dir),
-    ).resolves.toBeUndefined();
-    const errs = getPathEnvLoadErrors(dir);
-    expect(errs.length).toBeGreaterThanOrEqual(1);
-    expect(errs[0]!.error).toContain("invalid env entry");
-    expect(errs[0]!.error).toContain("expected a string");
-  });
+    const pre = tmpProject("nudo-b935-preload-");
+    await expect(preloadPathEnvs([42] as unknown as string[], pre)).resolves.toBeUndefined();
+    const preErrs = getPathEnvLoadErrors(pre);
+    expect(preErrs.length).toBeGreaterThanOrEqual(1);
+    expect(preErrs[0]!.error).toContain("invalid env entry");
+    expect(preErrs[0]!.error).toContain("expected a string");
 
-  it("负控制：合法元素（node）照常生效且零告警", () => {
-    const dir = tmpProject("nudo-bug-935-ok-");
-    const loaded = loadEnvs(["node"], createEnvironment(), dir);
-    expect(Object.keys(loaded.globals).length).toBeGreaterThan(0);
-    expect(getPathEnvLoadErrors(dir)).toHaveLength(0);
-  });
-
-  it("负控制：字符串 path env 形态不受元素级校验波及", async () => {
-    const dir = tmpProject("nudo-bug-935-path-");
-    await preloadPathEnvs(["node"], dir);
-    expect(getPathEnvLoadErrors(dir)).toHaveLength(0);
+    const ok = tmpProject("nudo-b935-ok-");
+    expect(Object.keys(loadEnvs(["node"], createEnvironment(), ok).globals).length).toBeGreaterThan(0);
+    expect(getPathEnvLoadErrors(ok)).toHaveLength(0);
+    const pathOk = tmpProject("nudo-b935-path-");
+    await preloadPathEnvs(["node"], pathOk);
+    expect(getPathEnvLoadErrors(pathOk)).toHaveLength(0);
   });
 });
+;
 
 describe("项目级 package.json#nudo.env 的元素级校验", () => {
-  it("非字符串元素：丢弃 + 可见诊断（不裸崩、不静默）", () => {
-    const dir = tmpProject("nudo-bug-935-proj-", {
-      "package.json": JSON.stringify({ name: "p935", nudo: { env: ["node", 42, null] } }),
-    });
+  const captureStderr = (fn: () => void): string => {
+    const writes: string[] = [];
+    const orig = process.stderr.write;
+    process.stderr.write = ((chunk: string | Uint8Array) => { writes.push(String(chunk)); return true; }) as typeof process.stderr.write;
+    try { fn(); } finally { process.stderr.write = orig; }
+    return writes.join("");
+  };
+  it("非字符串元素丢弃 + 诊断；env 非数组整项丢弃 + 诊断；合法列表零诊断", () => {
+    const mixed = tmpProject("nudo-b935-proj-", { "package.json": JSON.stringify({ name: "p935", nudo: { env: ["node", 42, null] } }) });
     let found: ReturnType<typeof findProjectConfig> = null as ReturnType<typeof findProjectConfig>;
-    const err = captureStderr(() => {
-      found = findProjectConfig(dir);
-    });
+    const err = captureStderr(() => { found = findProjectConfig(mixed); });
     expect(found?.config.env).toEqual(["node"]);
     expect(err).toContain("nudo.env");
     expect(err).toContain("non-string");
-  });
 
-  it("env 不是数组：整项丢弃 + 可见诊断", () => {
-    const dir = tmpProject("nudo-bug-935-proj-shape-", {
-      "package.json": JSON.stringify({ name: "p935b", nudo: { env: "node" } }),
-    });
-    let found: ReturnType<typeof findProjectConfig> = null as ReturnType<typeof findProjectConfig>;
-    const err = captureStderr(() => {
-      found = findProjectConfig(dir);
-    });
-    expect(found?.config.env).toEqual([]);
-    expect(err).toContain("nudo.env");
-  });
+    const shape = tmpProject("nudo-b935-proj-shape-", { "package.json": JSON.stringify({ name: "p935b", nudo: { env: "node" } }) });
+    let shapeFound: ReturnType<typeof findProjectConfig> = null as ReturnType<typeof findProjectConfig>;
+    const shapeErr = captureStderr(() => { shapeFound = findProjectConfig(shape); });
+    expect(shapeFound?.config.env).toEqual([]);
+    expect(shapeErr).toContain("nudo.env");
 
-  it("负控制：合法 env 列表不受影响（零诊断）", () => {
-    const dir = tmpProject("nudo-bug-935-proj-ok-", {
-      "package.json": JSON.stringify({ name: "p935c", nudo: { env: ["node", "es"] } }),
-    });
-    let found: ReturnType<typeof findProjectConfig> = null as ReturnType<typeof findProjectConfig>;
-    const err = captureStderr(() => {
-      found = findProjectConfig(dir);
-    });
-    expect(found?.config.env).toEqual(["node", "es"]);
-    expect(err).toBe("");
+    const ok = tmpProject("nudo-b935-proj-ok-", { "package.json": JSON.stringify({ name: "p935c", nudo: { env: ["node", "es"] } }) });
+    let okFound: ReturnType<typeof findProjectConfig> = null as ReturnType<typeof findProjectConfig>;
+    const okErr = captureStderr(() => { okFound = findProjectConfig(ok); });
+    expect(okFound?.config.env).toEqual(["node", "es"]);
+    expect(okErr).toBe("");
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -2707,78 +2660,65 @@ function subPackage(root: string, nudo: unknown): string {
 }
 
 describe("假值 nudo 键遮断祖先配置（存在性 ≠ 真值性）", () => {
-  beforeEach(() => {
-    evictProjectConfigMemo();
-  });
-
-  it("假值 nudo 键（false / null / 0 / \"\"）：不继承祖先配置 + stderr 提示", () => {
+  const captureStderr = (fn: () => void): string => {
+    const writes: string[] = [];
+    const orig = process.stderr.write;
+    process.stderr.write = ((chunk: string | Uint8Array) => { writes.push(String(chunk)); return true; }) as typeof process.stderr.write;
+    try { fn(); } finally { process.stderr.write = orig; }
+    return writes.join("");
+  };
+  const rootWithConfig = () => tmpProject("nudo-b936-root-", { "package.json": JSON.stringify({ name: "root", type: "module", nudo: { check: { ignoreThrows: ["SyntaxError"] }, env: ["node"] } }) });
+  const subPackage = (root: string, nudo: unknown) => {
+    const sub = join(root, "sub");
+    mkdirSync(sub, { recursive: true });
+    writeFileSync(join(sub, "package.json"), JSON.stringify({ name: "sub", type: "module", ...(nudo === undefined ? {} : { nudo }) }));
+    return sub;
+  };
+  beforeEach(() => { evictProjectConfigMemo(); });
+  it("假值键遮断 + 提示；ignoreThrows/env 不继承；空对象/无键/无 package 负控", () => {
     for (const raw of [false, null, 0, ""]) {
       evictProjectConfigMemo();
       const root = rootWithConfig();
       const sub = subPackage(root, raw);
-
       let found: ReturnType<typeof findProjectConfig> = null as ReturnType<typeof findProjectConfig>;
-      const out = captureStderr(() => {
-        found = findProjectConfig(sub);
-      });
-
-      // 旧实现：if (nudo) 假值 → 不 return → 继续向上 → 用根包配置
+      const out = captureStderr(() => { found = findProjectConfig(sub); });
       expect(found, JSON.stringify(raw)).toBeNull();
       expect(out, JSON.stringify(raw)).toContain('falsy "nudo" key');
       expect(out, JSON.stringify(raw)).toContain("ancestor configs are not inherited");
     }
-  });
-
-  it("假值 nudo 键：根包的 check.ignoreThrows 不得吞掉子包的 L2", () => {
-    const root = rootWithConfig();
-    const sub = subPackage(root, false);
-    let found: ReturnType<typeof findProjectConfig> = null as ReturnType<typeof findProjectConfig>;
-    captureStderr(() => {
-      found = findProjectConfig(sub);
-    });
-    // 继承 ⇒ ignoreThrows=["SyntaxError"]（L2 error 被吞 ⇒ 门禁假绿）
-    expect(checkConfig(found?.config).ignoreThrows).toEqual([]);
-    expect(checkConfig(found?.config).entryThrows).toBe("error");
-  });
-
-  it("假值 nudo 键：根包的 nudo.env 不得渗进子包", () => {
-    const root = rootWithConfig();
-    const sub = subPackage(root, false);
-    let found: ReturnType<typeof findProjectConfig> = null as ReturnType<typeof findProjectConfig>;
-    captureStderr(() => {
-      found = findProjectConfig(sub);
-    });
-    expect(found?.config.env).toBeUndefined();
-  });
-
-  // ── 负控制：三种「有 nudo 键」之外的形态不得被波及 ───────────────
-  it("\"nudo\": {}（空对象）：遮断祖先搜索，配置为空", () => {
-    const root = rootWithConfig();
-    const sub = subPackage(root, {});
-    let found: ReturnType<typeof findProjectConfig> = null as ReturnType<typeof findProjectConfig>;
-    const out = captureStderr(() => {
-      found = findProjectConfig(sub);
-    });
-    expect(found?.projectDir).toBe(sub);
-    expect(found?.config).toEqual({});
-    expect(out).toBe("");
-  });
-
-  it("无 nudo 键：照旧继承根配置（文档承诺的 monorepo 行为）", () => {
-    const root = rootWithConfig();
-    const sub = subPackage(root, undefined);
-    const found = findProjectConfig(sub);
-    expect(found?.projectDir).toBe(root);
-    expect(found?.config.check?.ignoreThrows).toEqual(["SyntaxError"]);
-    expect(found?.config.env).toEqual(["node"]);
-  });
-
-  it("子包无 package.json：照旧继承根配置", () => {
-    const root = rootWithConfig();
-    const sub = join(root, "no-pkg");
-    mkdirSync(sub, { recursive: true });
-    const found = findProjectConfig(sub);
-    expect(found?.projectDir).toBe(root);
+    {
+      const root = rootWithConfig();
+      const sub = subPackage(root, false);
+      let found: ReturnType<typeof findProjectConfig> = null as ReturnType<typeof findProjectConfig>;
+      captureStderr(() => { found = findProjectConfig(sub); });
+      expect(checkConfig(found?.config).ignoreThrows).toEqual([]);
+      expect(checkConfig(found?.config).entryThrows).toBe("error");
+      expect(found?.config.env).toBeUndefined();
+    }
+    {
+      const root = rootWithConfig();
+      const sub = subPackage(root, {});
+      let found: ReturnType<typeof findProjectConfig> = null as ReturnType<typeof findProjectConfig>;
+      const out = captureStderr(() => { found = findProjectConfig(sub); });
+      expect(found?.projectDir).toBe(sub);
+      expect(found?.config).toEqual({});
+      expect(out).toBe("");
+    }
+    {
+      const root = rootWithConfig();
+      const sub = subPackage(root, undefined);
+      const found = findProjectConfig(sub);
+      expect(found?.projectDir).toBe(root);
+      expect(found?.config.check?.ignoreThrows).toEqual(["SyntaxError"]);
+      expect(found?.config.env).toEqual(["node"]);
+    }
+    {
+      const root = rootWithConfig();
+      const sub = join(root, "no-pkg");
+      mkdirSync(sub, { recursive: true });
+      expect(findProjectConfig(sub)?.projectDir).toBe(root);
+    }
   });
 });
+;
 });
