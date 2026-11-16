@@ -524,70 +524,26 @@ function throwName(src: string): string {
 const wrap = (body: string) => `export function f() { ${body} }`;
 
 describe("实例字段计算键：定义期求值一次", () => {
-  it("键表达式在类定义期求值 1 次（此前 0 次）", () => {
-    expect(
-      v(wrap(`let n = 0; function k(){ n++; return "x"; } class A { [k()] = 1; } return n;`)),
-    ).toEqual({ ok: true, value: 1 });
-  });
-
-  it("多次构造不再重复求值键（此前每构造 1 次）", () => {
-    expect(
-      v(
-        wrap(
-          `let n = 0; function k(){ n++; return "x"; } class A { [k()] = 1; } new A(); new A(); new A(); return n;`,
-        ),
-      ),
-    ).toEqual({ ok: true, value: 1 });
-  });
-
-  it("键不再随实例漂移（两次构造同键）", () => {
-    expect(
-      v(
-        wrap(
-          `let n = 0; function k(){ n++; return "f"+n; } class A { [k()] = n; } const a = new A(), b = new A(); return Object.keys(a).join(",")+"|"+Object.keys(b).join(",");`,
-        ),
-      ),
-    ).toEqual({ ok: true, value: "f1|f1" });
-  });
-
-  it("键表达式的抛错在定义期表面（构造期不再抛）", () => {
-    expect(
-      v(
-        wrap(
-          `let hits = 0; function k(){ if (hits++ > 0) throw new Error("second"); return "m"; } class A { [k()] = 1; } new A(); try { new A(); return "no-throw"; } catch (e) { return "threw:" + e.constructor.name; }`,
-        ),
-      ),
-    ).toEqual({ ok: true, value: "no-throw" });
-  });
-
-  it("同名类在两处定义：每次定义各求值 1 次", () => {
-    expect(
-      v(
-        wrap(
-          `let n = 0; function k(){ n++; return "x"; } function make(){ class A { [k()] = 1; } return A; } make(); make(); return n;`,
-        ),
-      ),
-    ).toEqual({ ok: true, value: 2 });
-  });
-
-  it("负控制：静态字段/方法的计算键仍各求值 1 次", () => {
-    expect(
-      v(wrap(`let n = 0; function k(){ n++; return "x"; } class A { static [k()] = 1; } return n;`)),
-    ).toEqual({ ok: true, value: 1 });
-    expect(
-      v(wrap(`let n = 0; function k(){ n++; return "x"; } class A { [k()](){ return 1; } } return n;`)),
-    ).toEqual({ ok: true, value: 1 });
-  });
-
-  it("负控制：公有实例字段的键与值不变", () => {
+  const v = (src: string) => litValue___nudojs_core(call(src, "f").result);
+  const throwName = (src: string): string => {
+    const t = call(src, "f").throws as { shape?: { k?: string; name?: string } } | undefined;
+    if (!t?.shape || t.shape.k === "never") return "";
+    return t.shape.k === "brand" ? (t.shape.name ?? "") : (t.shape.k as string);
+  };
+  const wrap = (body: string) => `export function f() { ${body} }`;
+  it("定义期一次/构造不重复/键不漂移/抛错在定义期/两处定义各一次；静态键与公有字段不变；抽象键不挂名", () => {
+    expect(v(wrap(`let n = 0; function k(){ n++; return "x"; } class A { [k()] = 1; } return n;`))).toEqual({ ok: true, value: 1 });
+    expect(v(wrap(`let n = 0; function k(){ n++; return "x"; } class A { [k()] = 1; } new A(); new A(); new A(); return n;`))).toEqual({ ok: true, value: 1 });
+    expect(v(wrap(`let n = 0; function k(){ n++; return "f"+n; } class A { [k()] = n; } const a = new A(), b = new A(); return Object.keys(a).join(",")+"|"+Object.keys(b).join(",");`))).toEqual({ ok: true, value: "f1|f1" });
+    expect(v(wrap(`let hits = 0; function k(){ if (hits++ > 0) throw new Error("second"); return "m"; } class A { [k()] = 1; } new A(); try { new A(); return "no-throw"; } catch (e) { return "threw:" + e.constructor.name; }`))).toEqual({ ok: true, value: "no-throw" });
+    expect(v(wrap(`let n = 0; function k(){ n++; return "x"; } function make(){ class A { [k()] = 1; } return A; } make(); make(); return n;`))).toEqual({ ok: true, value: 2 });
+    expect(v(wrap(`let n = 0; function k(){ n++; return "x"; } class A { static [k()] = 1; } return n;`))).toEqual({ ok: true, value: 1 });
+    expect(v(wrap(`let n = 0; function k(){ n++; return "x"; } class A { [k()](){ return 1; } } return n;`))).toEqual({ ok: true, value: 1 });
     expect(v(wrap(`class A { pub = 7; } return new A().pub;`))).toEqual({ ok: true, value: 7 });
-  });
-
-  it("负控制：抽象计算键不假精确挂名（不抛）", () => {
-    // 键是未知的入参（抽象键）——不可静态命名 → 字段不挂名（不假精确）
     expect(throwName(`export function f(x) { class A { [x] = 1; } return 1; }`)).toBe("");
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -617,50 +573,18 @@ function v(src: string) {
 const wrap = (body: string) => `export function f() { ${body} }`;
 
 describe("static 块与静态字段按源码顺序执行", () => {
-  it("static 块在前的静态字段读到块内写入（原生 2）", () => {
-    expect(
-      v(wrap(`class A { static { A.q = 1; } static r = A.q + 1; } return A.r;`)),
-    ).toEqual({ ok: true, value: 2 });
-  });
-
-  it("字段-块-字段三段交错（原生 3）", () => {
-    expect(
-      v(
-        wrap(
-          `class A { static r = 1; static { A.s = 2; } static t = A.r + A.s; } return A.t;`,
-        ),
-      ),
-    ).toEqual({ ok: true, value: 3 });
-  });
-
-  it("副作用轨迹按源码序（原生 1b2）", () => {
-    expect(
-      v(
-        wrap(
-          `let log = ""; class A { static a = log += "1"; static { log += "b"; } static c = log += "2"; } return log;`,
-        ),
-      ),
-    ).toEqual({ ok: true, value: "1b2" });
-  });
-
-  it("负控制：字段在前的 static 块读前序字段（原生 2）", () => {
-    expect(
-      v(wrap(`class A { static n = 1; static { A.m = A.n + 1; } } return A.m;`)),
-    ).toEqual({ ok: true, value: 2 });
-  });
-
-  it("负控制：static 块写外层变量仍在定义期落地", () => {
-    expect(
-      v(wrap(`let y = 0; class C { static { y = 5; } } return y;`)),
-    ).toEqual({ ok: true, value: 5 });
-  });
-
-  it("负控制：static 块内 this 是类值（写入落槽）", () => {
-    expect(
-      v(wrap(`class S { static t = 0; static { this.t = 5; } } return S.t;`)),
-    ).toEqual({ ok: true, value: 5 });
+  const v = (src: string) => litValue___nudojs_core_1(call(src, "f").result);
+  const wrap = (body: string) => `export function f() { ${body} }`;
+  it("块在前/三段交错/副作用序；字段在前/外层变量/块内 this 负控", () => {
+    expect(v(wrap(`class A { static { A.q = 1; } static r = A.q + 1; } return A.r;`))).toEqual({ ok: true, value: 2 });
+    expect(v(wrap(`class A { static r = 1; static { A.s = 2; } static t = A.r + A.s; } return A.t;`))).toEqual({ ok: true, value: 3 });
+    expect(v(wrap(`let log = ""; class A { static a = log += "1"; static { log += "b"; } static c = log += "2"; } return log;`))).toEqual({ ok: true, value: "1b2" });
+    expect(v(wrap(`class A { static n = 1; static { A.m = A.n + 1; } } return A.m;`))).toEqual({ ok: true, value: 2 });
+    expect(v(wrap(`let y = 0; class C { static { y = 5; } } return y;`))).toEqual({ ok: true, value: 5 });
+    expect(v(wrap(`class S { static t = 0; static { this.t = 5; } } return S.t;`))).toEqual({ ok: true, value: 5 });
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
