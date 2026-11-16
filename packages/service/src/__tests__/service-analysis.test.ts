@@ -844,143 +844,93 @@ function dupDiags(diags: Diagnostic[]): Diagnostic[] {
 
 // ── 1. 码归因（分析器面 = `nudo test` / `health` 面的诊断源）───────────────────
 
-describe("码归因 — 重复声明的诊断码是 nudo:mock-invalid（不是 nudo:module-missing）", () => {
-  it("② 重复声明 ⇒ 分析器诊断的码是 nudo:mock-invalid", async () => {
+describe("码归因 — 重复声明/文件缺失/导出缺失的码与级别", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = tmpProject("nudo-b1062-attr-");
+    writeTmpFile(dir, "mock-fs.js", 'export const readFile = (p) => "mock1:" + p;\n');
+    writeTmpFile(dir, "mock-fs3.js", 'export const writeFile = (p, d) => "w:" + p;\n');
+  });
+  const DUP_SRC = '/// @nudo:mock-module "fs" from "./mock-fs.js"\n/// @nudo:mock-module "fs" from "./mock-fs3.js"\nimport { readFile } from "fs";\nexport function f() { return readFile("/x"); }\n';
+  const SINGLE_SRC = '/// @nudo:mock-module "fs" from "./mock-fs.js"\nimport { readFile } from "fs";\nexport function f() { return readFile("/x"); }\n';
+  const MISSING_FILE_SRC = '/// @nudo:mock-module "fs" from "./no-such-mock.js"\nimport { readFile } from "fs";\nexport function f() { return readFile("/x"); }\n';
+  const MISSING_EXPORT_SRC = '/// @nudo:mock-module "fs" { readFile, writeFile } from "./mock-fs.js"\nimport { readFile } from "fs";\nexport function f() { return readFile("/x"); }\n';
+  const dupDiags = (diags: Diagnostic[]) => diags.filter((d) => d.message.includes("Duplicate @nudo:mock-module"));
+  it("重复声明 mock-invalid warning 且不冒充 module-missing；单条零误报", async () => {
     const file = join(dir, "app.js");
     writeTmpFile(dir, "app.js", DUP_SRC);
     const r = await analyzeFileAsync_____analyzer_ts(file, DUP_SRC);
     const dups = dupDiags(r.diagnostics);
     expect(dups).toHaveLength(1);
     expect(dups[0]!.code).toBe("nudo:mock-invalid");
-    // 文案自明：点名是重复声明 + 两条来源
+    expect(dups[0]!.severity).toBe("warning");
     expect(dups[0]!.message).toContain("./mock-fs.js");
     expect(dups[0]!.message).toContain("./mock-fs3.js");
     expect(dups[0]!.message).toContain('"fs"');
-  });
+    expect(r.diagnostics.filter((d) => d.code === "nudo:module-missing" && d.message.includes("Duplicate @nudo:mock-module"))).toEqual([]);
 
-  it("② 重复声明 ⇒ 该诊断**不得**再被说成 nudo:module-missing", async () => {
-    const file = join(dir, "app.js");
-    writeTmpFile(dir, "app.js", DUP_SRC);
-    const r = await analyzeFileAsync_____analyzer_ts(file, DUP_SRC);
-    // 改前：这条诊断的码恒为 nudo:module-missing（归因错误）
-    const misattributed = r.diagnostics.filter(
-      (d) => d.code === "nudo:module-missing" && d.message.includes("Duplicate @nudo:mock-module"),
-    );
-    expect(misattributed).toEqual([]);
-  });
-
-  it("② 重复声明 ⇒ warning 级（同码同级：mock-invalid = 指令写法有歧义）", async () => {
-    const file = join(dir, "app.js");
-    writeTmpFile(dir, "app.js", DUP_SRC);
-    const r = await analyzeFileAsync_____analyzer_ts(file, DUP_SRC);
-    const dups = dupDiags(r.diagnostics);
-    expect(dups[0]!.severity).toBe("warning");
-  });
-
-  it("① 单条声明 ⇒ 零该诊断（不许误报）", async () => {
-    const file = join(dir, "app.js");
     writeTmpFile(dir, "app.js", SINGLE_SRC);
-    const r = await analyzeFileAsync_____analyzer_ts(file, SINGLE_SRC);
-    expect(dupDiags(r.diagnostics)).toEqual([]);
+    const single = await analyzeFileAsync_____analyzer_ts(file, SINGLE_SRC);
+    expect(dupDiags(single.diagnostics)).toEqual([]);
   });
-});
-
-// ── 2. 既有码不被误改 ────────────────────────────────────────────────────────
-
-describe("既有码不被误改 — mock 文件缺失仍然是 nudo:module-missing", () => {
-  it("③ mock 文件缺失 ⇒ nudo:module-missing + error", async () => {
+  it("文件缺失 module-missing error（分析与门禁面同口径）且不被改成 mock-invalid", async () => {
     const file = join(dir, "app.js");
     writeTmpFile(dir, "app.js", MISSING_FILE_SRC);
     const r = await analyzeFileAsync_____analyzer_ts(file, MISSING_FILE_SRC);
     const missing = r.diagnostics.filter((d) => d.code === "nudo:module-missing");
     expect(missing.length).toBeGreaterThan(0);
     expect(missing[0]!.severity).toBe("error");
-    // 该族**不得**被改成 mock-invalid
     expect(r.diagnostics.filter((d) => d.code === "nudo:mock-invalid")).toEqual([]);
-  });
 
-  it("③ 门禁面（check 补充通道）同口径：nudo:module-missing + error", () => {
-    const file = join(dir, "app.js");
-    writeTmpFile(dir, "app.js", MISSING_FILE_SRC);
     const issues = collectCheckSupplementIssues(file, MISSING_FILE_SRC);
-    const missing = issues.filter((i) => i.code === "nudo:module-missing");
-    expect(missing.length).toBeGreaterThan(0);
-    expect(missing[0]!.severity).toBe("error");
+    const gate = issues.filter((i) => i.code === "nudo:module-missing");
+    expect(gate.length).toBeGreaterThan(0);
+    expect(gate[0]!.severity).toBe("error");
+  });
+  it("suggestion 按种类：重复/导出缺失/文件缺失", () => {
+    const file = join(dir, "app.js");
+    writeTmpFile(dir, "app.js", DUP_SRC);
+    const dup = collectCheckSupplementIssues(file, DUP_SRC).filter((i) => i.code === "nudo:mock-invalid");
+    expect(dup).toHaveLength(1);
+    const s = dup[0]!.suggestion ?? "";
+    expect(s.toLowerCase()).toContain("duplicate");
+    expect(s.toLowerCase()).toContain("keep only one");
+    expect(s).not.toContain("@nudo:mock expression");
+
+    writeTmpFile(dir, "app.js", MISSING_EXPORT_SRC);
+    const exp = collectCheckSupplementIssues(file, MISSING_EXPORT_SRC).filter((i) => i.code === "nudo:module-missing");
+    expect(exp).toHaveLength(1);
+    expect(exp[0]!.message).toContain('does not export "writeFile"');
+    expect(exp[0]!.suggestion ?? "").toContain("writeFile");
+    expect(exp[0]!.suggestion ?? "").not.toContain("Create the mock file");
+
+    writeTmpFile(dir, "app.js", MISSING_FILE_SRC);
+    const miss = collectCheckSupplementIssues(file, MISSING_FILE_SRC).filter((i) => i.code === "nudo:module-missing");
+    expect(miss.length).toBeGreaterThan(0);
+    expect(miss[0]!.suggestion).toContain("Create the mock file or fix the path");
   });
 });
+;
+
+// ── 2. 既有码不被误改 ────────────────────────────────────────────────────────
+
+;
 
 // ── 3. suggestion 文案（按错误种类分族）──────────────────────────────────────
 
-describe("suggestion 文案 — 按错误的**具体种类**给贴切提示", () => {
-  it("重复声明 ⇒ 提示「只保留一条声明」（不是通用表达式句）", () => {
-    const file = join(dir, "app.js");
-    writeTmpFile(dir, "app.js", DUP_SRC);
-    const issues = collectCheckSupplementIssues(file, DUP_SRC);
-    const dups = issues.filter((i) => i.code === "nudo:mock-invalid");
-    expect(dups).toHaveLength(1);
-    const s = dups[0]!.suggestion ?? "";
-    expect(s.toLowerCase()).toContain("duplicate");
-    expect(s.toLowerCase()).toContain("keep only one");
-    // 旧通用句（对重复声明不贴切）不得再出现
-    expect(s).not.toContain("@nudo:mock expression");
-  });
-
-  it("导出名缺失 ⇒ 提示点名那个缺失的导出", () => {
-    const file = join(dir, "app.js");
-    writeTmpFile(dir, "app.js", MISSING_EXPORT_SRC);
-    const issues = collectCheckSupplementIssues(file, MISSING_EXPORT_SRC);
-    const missing = issues.filter((i) => i.code === "nudo:module-missing");
-    expect(missing).toHaveLength(1);
-    expect(missing[0]!.message).toContain('does not export "writeFile"');
-    const s = missing[0]!.suggestion ?? "";
-    expect(s).toContain("writeFile");
-    // 旧通用句（说「建 mock 文件」⇒ 与事实不符：文件在，只是没导出它）
-    expect(s).not.toContain("Create the mock file");
-  });
-
-  it("mock 文件缺失 ⇒ 仍是「建 mock 文件 / 改路径」那句（既有文案逐字保留）", () => {
-    const file = join(dir, "app.js");
-    writeTmpFile(dir, "app.js", MISSING_FILE_SRC);
-    const issues = collectCheckSupplementIssues(file, MISSING_FILE_SRC);
-    const missing = issues.filter((i) => i.code === "nudo:module-missing");
-    expect(missing.length).toBeGreaterThan(0);
-    expect(missing[0]!.suggestion).toContain("Create the mock file or fix the path");
-  });
-});
+;
 
 // ── 4. body-read：trimLeft / trimRight 与 trimStart 同口径 ───────────────────
 
 describe("body-read — trimLeft / trimRight 是 string 证据（与 trimStart 同口径）", () => {
-  it("param.trimLeft() ⇒ param: string()", () => {
-    const map = collectParamBodyReadTypes(`
-export function f(o) {
-  return o.label.trimLeft();
-}
-`);
-    const fields = map.get("f")?.get("o");
-    expect(fields?.find((f) => f.field === "label")?.type).toBe("string()");
-  });
-
-  it("param.trimRight() ⇒ param: string()", () => {
-    const map = collectParamBodyReadTypes(`
-export function g(o) {
-  return o.label.trimRight();
-}
-`);
-    const fields = map.get("g")?.get("o");
-    expect(fields?.find((f) => f.field === "label")?.type).toBe("string()");
-  });
-
-  it("负控：param.includes(...) 仍推不出 string()（该表刻意排除 Array 同名方法）", () => {
-    const map = collectParamBodyReadTypes(`
-export function h(o) {
-  return o.label.includes("x");
-}
-`);
-    const fields = map.get("h")?.get("o");
-    expect(fields?.find((f) => f.field === "label")?.type).not.toBe("string()");
+  const fieldType = (src: string, fn: string) => collectParamBodyReadTypes(src).get(fn)?.get("o")?.find((f) => f.field === "label")?.type;
+  it("trimLeft/trimRight ⇒ label: string()；includes 推不出（负控）", () => {
+    expect(fieldType("\nexport function f(o) {\n  return o.label.trimLeft();\n}\n", "f")).toBe("string()");
+    expect(fieldType("\nexport function g(o) {\n  return o.label.trimRight();\n}\n", "g")).toBe("string()");
+    expect(fieldType("\nexport function h(o) {\n  return o.label.includes(\"x\");\n}\n", "h")).not.toBe("string()");
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
