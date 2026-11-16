@@ -6,25 +6,8 @@
 
 ```audit
 title	rootCause	gap	action	status	evidence
-brand 接收者 · 闭合 obj · 表外成员（then）⇒ 记 may-throw（never throws TypeError）	计算键/static 表	没测该层	keep	keep	—
-brand 接收者 · 闭合 obj · 表内成员（json / text）⇒ 不记抛	计算键/static 表	没测该层	keep	keep	—
-负控：宿主确实存在的成员（status / ok —— 数据成员）⇒ 不误报成「确定抛」	计算键/static 表	没测该层	keep	keep	—
-soundness 护栏：内层 **unknown** 的 brand ⇒ 不记抛（域不封闭 ⇒ 缺席不可证）	计算键/static 表	没测该层	keep	keep	—
-soundness 护栏：内层 **open** obj 的 brand ⇒ 不记抛	计算键/static 表	没测该层	keep	keep	—
-平 obj 接收者的既有行为逐字不变（表外成员仍定抛 / 表内成员不抛）	计算键/static 表	没测该层	keep	keep	—
-负控：引擎已为原型面建模的内建 brand ⇒ 不判（表外名不可证缺席）	计算键/static 表	没测该层	keep	keep	—
-L2 门禁面：brand 表外成员的调用 ⇒ 记 nudo:entry-may-throw（假绿收口）	计算键/static 表	没测该层	keep	keep	—
-L2 门禁面：brand 表内成员的调用 ⇒ 不记 entry-may-throw	计算键/static 表	没测该层	keep	keep	—
-同步守卫：内建 brand 原型表键集 ⊆ 排除名单（含 .prototype / Intl. 模式）	计算键/static 表	没测该层	keep	keep	—
-负控：原型对象 brand / Intl.* 子构造器 ⇒ 不判（模式排除生效）	计算键/static 表	没测该层	keep	keep	—
-fn⊕fn：两臂都有的静态成员 ⇒ 值域是两臂返回域之并（不是 unknown）	计算键/static 表	没测该层	keep	keep	—
-fn⊕fn：只有一臂有的静态成员 ⇒ 该臂派发 + 另一臂按原生记 may-throw	计算键/static 表	没测该层	keep	keep	—
-fn⊕fn：反向（只有 B 有）⇒ 同样只派发有的一臂	计算键/static 表	没测该层	keep	keep	—
-负控：fn 静态面模型为**空**（确实没有该静态成员）⇒ 仍判「确定没有」	计算键/static 表	没测该层	keep	keep	—
-负控：fn **没有**静态面模型（判据不足）⇒ 保守放行（不记 may-throw）	计算键/static 表	没测该层	keep	keep	—
-负控：Function.prototype 名（toString）沿函数对象恒可得 ⇒ 不判缺席	计算键/static 表	没测该层	keep	keep	—
-负控：prim / brand / obj / arr / tuple / eff 的既有 sum 派发行为逐字不变	计算键/static 表	没测该层	keep	keep	—
-端到端：env 全局是 fn⊕fn sum ⇒ Response.json(x) 的签名不是 unknown	计算键/static 表	没测该层	keep	keep	—
+表外记抛/表内不抛/数据成员不误报/非封闭不判/平 obj 不变/内建原型不判/L2 同口径/同步守卫/模式排除	brand/fn-sum 表	没测该层	keep	keep	—
+fn 两臂/单臂/空静态面/无面/原型名；prim/brand/obj/tuple/eff 既有派发；端到端响应	brand/fn-sum 表	没测该层	keep	keep	—
 定义期一次/构造不重复/键不漂移/抛错在定义期/两处定义各一次；静态键与公有字段不变；抽象键不挂名	计算键/static 表	没测该层	keep	keep	—
 块在前/三段交错/副作用序；字段在前/外层变量/块内 this 负控	计算键/static 表	没测该层	keep	keep	—
 { get x(){}, x: 2 } → 读得数据属性 2	计算键/static 表	没测该层	keep	keep	—
@@ -668,4 +651,23 @@ static 块在前的静态字段读到块内写入（原生 2）	dup:计算键/st
 负控制：字段在前的 static 块读前序字段（原生 2）	dup:计算键/static 表	commit:f4aa4bc4
 负控制：static 块写外层变量仍在定义期落地	dup:计算键/static 表	commit:f4aa4bc4
 负控制：static 块内 this 是类值（写入落槽）	dup:计算键/static 表	commit:f4aa4bc4
+brand 接收者 · 闭合 obj · 表外成员（then）⇒ 记 may-throw（never throws TypeError）	dup:brand/fn-sum 表	commit:7a646432
+brand 接收者 · 闭合 obj · 表内成员（json / text）⇒ 不记抛	dup:brand/fn-sum 表	commit:7a646432
+负控：宿主确实存在的成员（status / ok —— 数据成员）⇒ 不误报成「确定抛」	dup:brand/fn-sum 表	commit:7a646432
+soundness 护栏：内层 **unknown** 的 brand ⇒ 不记抛（域不封闭 ⇒ 缺席不可证）	dup:brand/fn-sum 表	commit:7a646432
+soundness 护栏：内层 **open** obj 的 brand ⇒ 不记抛	dup:brand/fn-sum 表	commit:7a646432
+平 obj 接收者的既有行为逐字不变（表外成员仍定抛 / 表内成员不抛）	dup:brand/fn-sum 表	commit:7a646432
+负控：引擎已为原型面建模的内建 brand ⇒ 不判（表外名不可证缺席）	dup:brand/fn-sum 表	commit:7a646432
+L2 门禁面：brand 表外成员的调用 ⇒ 记 nudo:entry-may-throw（假绿收口）	dup:brand/fn-sum 表	commit:7a646432
+L2 门禁面：brand 表内成员的调用 ⇒ 不记 entry-may-throw	dup:brand/fn-sum 表	commit:7a646432
+同步守卫：内建 brand 原型表键集 ⊆ 排除名单（含 .prototype / Intl. 模式）	dup:brand/fn-sum 表	commit:7a646432
+负控：原型对象 brand / Intl.* 子构造器 ⇒ 不判（模式排除生效）	dup:brand/fn-sum 表	commit:7a646432
+fn⊕fn：两臂都有的静态成员 ⇒ 值域是两臂返回域之并（不是 unknown）	dup:brand/fn-sum 表	commit:7a646432
+fn⊕fn：只有一臂有的静态成员 ⇒ 该臂派发 + 另一臂按原生记 may-throw	dup:brand/fn-sum 表	commit:7a646432
+fn⊕fn：反向（只有 B 有）⇒ 同样只派发有的一臂	dup:brand/fn-sum 表	commit:7a646432
+负控：fn 静态面模型为**空**（确实没有该静态成员）⇒ 仍判「确定没有」	dup:brand/fn-sum 表	commit:7a646432
+负控：fn **没有**静态面模型（判据不足）⇒ 保守放行（不记 may-throw）	dup:brand/fn-sum 表	commit:7a646432
+负控：Function.prototype 名（toString）沿函数对象恒可得 ⇒ 不判缺席	dup:brand/fn-sum 表	commit:7a646432
+负控：prim / brand / obj / arr / tuple / eff 的既有 sum 派发行为逐字不变	dup:brand/fn-sum 表	commit:7a646432
+端到端：env 全局是 fn⊕fn sum ⇒ Response.json(x) 的签名不是 unknown	dup:brand/fn-sum 表	commit:7a646432
 ```
