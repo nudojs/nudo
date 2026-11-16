@@ -1,5 +1,9 @@
 ```audit
 title	rootCause	gap	action	status	evidence
+具名/别名导入归因类模块并合成 call@；命名空间形态按成员名；他模块调用不挂本文件	去重/槽/类导入表	没测该层	keep	keep	—
+槽字面量不符不满足；相符满足；类型槽满足	去重/槽/类导入表	没测该层	keep	keep	—
+对象/嵌套/字符串槽不符报；类型槽、顶层字面量、数组元素口径不变	去重/槽/类导入表	没测该层	keep	keep	—
+不同调用点两条见证（顺序无关，同行不同列也算）；同点重复采集去重为一条	去重/槽/类导入表	没测该层	keep	keep	—
 trimLeft/trimRight ⇒ label: string()；includes 推不出（负控）	码归因/建议/body-read 表	没测该层	keep	keep	—
 suggestion 按种类：重复/导出缺失/文件缺失	码归因/建议/body-read 表	没测该层	keep	keep	—
 文件缺失 module-missing error（分析与门禁面同口径）且不被改成 mock-invalid	码归因/建议/body-read 表	没测该层	keep	keep	—
@@ -23,21 +27,6 @@ strict/无 profile 非法值文案 error；合法值与 profile 预设不告警	
 调用点字面量投影基类型；带断言 case 保留字面量	观测/顺序/见证表	没测该层	keep	keep	—
 全部超限整组跳过；正常记录照常合成	归因/超限表	没测该层	keep	keep	—
 ESM/CJS 命名空间带接收者限定并可归因；具名/对象方法无前缀；产品面 error	归因/超限表	没测该层	keep	keep	—
-"同形态但不同调用点 ⇒ 两条独立见证（顺序无关）"	"回归：被调方的**调用点域**不得被「首次 settle」截断。 症状（修前）：同一组函数，只改**声明顺序**就得到不同的调用点域 —— 被调方先定义时只留下第一个调用方的调用点（`callee(2)` / `callee(3)` 被 静默丢弃），于是 `nudo test` 少报见证、`nudo contract --emit` 写出偏窄的 契约（合法调用被判违约），`nudo contract --draft` 沿「官方推荐路径」直接 产出假红。 断言：expect(dedupeCallRecords([rec(2, 0), rec(5, 0)])).toHaveLength(2);；expect(dedupeCallReco"	没测该层	keep	keep	—
-"对照组：同一调用点被重复采集 ⇒ 仍去重成一条"	"断言：expect(dedupeCallRecords([rec(2, 0), rec(2, 0)])).toHaveLength(1);"	没测该层	keep	keep	—
-"对象槽字面量不符（期望 { a: 2 }，实际 { a: 1 }）→ 报 nudo:case-expected"	"找出 nudo:case-expected 诊断（期望不满足）。 断言：expect(caseExpectedCount(src)).toBe(1);"	没测该层	keep	keep	—
-"对象槽字面量类型不同（期望 { a: \"y\" }，实际 { a: \"x\" }）→ 报"	"找出 nudo:case-expected 诊断（期望不满足）。 断言：expect(caseExpectedCount(src)).toBe(1);"	没测该层	keep	keep	—
-"嵌套对象槽字面量不符（期望 { a: { b: 2 } }，实际 { a: { b: 1 } }）→ 报"	"找出 nudo:case-expected 诊断（期望不满足）。 断言：expect(caseExpectedCount(src)).toBe(1);"	没测该层	keep	keep	—
-"负控制：期望槽是**类型**（number()）→ 口径不变（不报）"	"`@nudo:case` 期望里的**对象槽字面量**永不被执法 ⇒ 假绿。 根因（core `packages/core/src/algebra/leq.ts:223-234`）：`leqAbs` 的 「同 prim 字面量视为可赋」捷径在**对象槽**位上连字面量相等性都不比 —— `shape({ a: lit(2) })` 与实际 `{ a: 1 }` 判「满足」⇒ case 期望恒 `[ok]`、 `nudo:case-expected` 零诊断。 断言：expect(caseExpectedCount(src)).toBe(0);"	夹具漏形态	keep	keep	—
-"负控制：顶层字面量不符（期望 2，实际 1）→ 口径不变（报）"	"找出 nudo:case-expected 诊断（期望不满足）。 断言：expect(caseExpectedCount(src)).toBe(1);"	没测该层	keep	keep	—
-"负控制：数组元素字面量不符（期望 [\"y\"]，实际 [\"x\"]）→ 口径不变（报）"	"找出 nudo:case-expected 诊断（期望不满足）。 断言：expect(caseExpectedCount(src)).toBe(1);"	没测该层	keep	keep	—
-"对象槽字面量不符 → 不满足"	"找出 nudo:case-expected 诊断（期望不满足）。 断言：expect(caseExpectedSatisfied(objA1, parseCaseArgExpr(\"shape({ a: lit(2) })\", 0))).toBe(false);；expect(caseExpectedSatisfied(objX, parseCaseArgExpr(\"shape({ a: lit('y') })\", 0))).toBe(false);"	没测该层	keep	keep	—
-"对象槽字面量相符 → 满足"	"找出 nudo:case-expected 诊断（期望不满足）。 断言：expect(caseExpectedSatisfied(objA1, parseCaseArgExpr(\"shape({ a: lit(1) })\", 0))).toBe(true);"	没测该层	keep	keep	—
-"负控制：期望槽是类型（number()）→ 满足（口径不变）"	"找出 nudo:case-expected 诊断（期望不满足）。 断言：expect(caseExpectedSatisfied(objA1, parseCaseArgExpr(\"shape({ a: number() })\", 0))).toBe(true);"	没测该层	keep	keep	—
-"import { Svc }：调用点归因到类所在模块并合成 call@ case"	"`nudo test --from` 静默丢弃类方法调用点（`import { C }` 形态）。 根因（analyzer-abs-eval.ts 的调用记录归因）：点号被调名（`Svc.run`）只认 **命名空间导入**（`exportName === \"*\"`）； 断言：expect(rec).toBeDefined();；expect(rec!.targetModule).toBe(t9);"	夹具漏形态	keep	keep	—
-"import { Svc as S }（本地名 ≠ 类名）：同样归因到类所在模块"	"`nudo test --from` 静默丢弃类方法调用点（`import { C }` 形态）。 根因（analyzer-abs-eval.ts 的调用记录归因）：点号被调名（`Svc.run`）只认 **命名空间导入**（`exportName === \"*\"`）； 断言：expect(rec).toBeDefined();；expect(rec!.targetModule).toBe(t9);"	夹具漏形态	keep	keep	—
-"负控制：命名空间导入形态仍按成员名归因（exportName = 成员名）"	"`nudo test --from` 静默丢弃类方法调用点（`import { C }` 形态）。 根因（analyzer-abs-eval.ts 的调用记录归因）：点号被调名（`Svc.run`）只认 **命名空间导入**（`exportName === \"*\"`）； 断言：expect(rec).toBeDefined();；expect(rec!.targetModule).toBe(t9);"	夹具漏形态	keep	keep	—
-"负控制：别的模块的调用点不得挂到本文件的函数域"	"`nudo test --from` 静默丢弃类方法调用点（`import { C }` 形态）。 根因（analyzer-abs-eval.ts 的调用记录归因）：点号被调名（`Svc.run`）只认 **命名空间导入**（`exportName === \"*\"`）； 断言：expect(helperRec).toBeDefined();；expect(helperRec!.targetModule).toBe(other);"	夹具漏形态	keep	keep	—
 "两个现场文件同行的调用 → 见证名不同（改前都是 call@L2）"	"固化下来的 case 名 `call@L<行号>` 取的是**使用现场文件**的行号 ⇒ 同名碰撞 + 指向无关行 + 二次 freeze 静默丢弃新见证。 根因： - 合成 case 名直接取记录里的行号（使用现场文件的行）⇒ 两个现场文件在 同一行调用同一函数 → 同名 `call@L2`； 断言：expect(names.length).toBe(2);；expect(new Set(names).size).toBe(2);"	夹具漏形态	keep	keep	—
 "负控制：本地调用点的见证名保持 call@L<n>（与既有已固化名字兼容）"	"固化下来的 case 名 `call@L<行号>` 取的是**使用现场文件**的行号 ⇒ 同名碰撞 + 指向无关行 + 二次 freeze 静默丢弃新见证。 根因： - 合成 case 名直接取记录里的行号（使用现场文件的行）⇒ 两个现场文件在 同一行调用同一函数 → 同名 `call@L2`； 断言：expect(names).toEqual([\"call@L2\"]);"	夹具漏形态	keep	keep	—
 "emitter：已有同名见证不重复写；新见证照写（不再整函数丢弃）"	"固化下来的 case 名 `call@L<行号>` 取的是**使用现场文件**的行号 ⇒ 同名碰撞 + 指向无关行 + 二次 freeze 静默丢弃新见证。 根因： - 合成 case 名直接取记录里的行号（使用现场文件的行）⇒ 两个现场文件在 同一行调用同一函数 → 同名 `call@L2`； 断言：expect(base).toBeDefined();；expect(withFrozen.source).toContain('\"call@b.js:L2\"');"	夹具漏形态	keep	keep	—
@@ -163,4 +152,19 @@ mock 文件缺失 ⇒ 仍是「建 mock 文件 / 改路径」那句（既有文�
 param.trimLeft() ⇒ param: string()	dup:码归因/建议/body-read 表	commit:9549ec7b
 param.trimRight() ⇒ param: string()	dup:码归因/建议/body-read 表	commit:9549ec7b
 负控：param.includes(...) 仍推不出 string()（该表刻意排除 Array 同名方法）	dup:码归因/建议/body-read 表	commit:9549ec7b
+同形态但不同调用点 ⇒ 两条独立见证（顺序无关）	dup:去重/槽/类导入表	commit:8c95a46e
+对照组：同一调用点被重复采集 ⇒ 仍去重成一条	dup:去重/槽/类导入表	commit:8c95a46e
+对象槽字面量不符（期望 { a: 2 }，实际 { a: 1 }）→ 报 nudo:case-expected	dup:去重/槽/类导入表	commit:8c95a46e
+对象槽字面量类型不同（期望 { a: "y" }，实际 { a: "x" }）→ 报	dup:去重/槽/类导入表	commit:8c95a46e
+嵌套对象槽字面量不符（期望 { a: { b: 2 } }，实际 { a: { b: 1 } }）→ 报	dup:去重/槽/类导入表	commit:8c95a46e
+负控制：期望槽是**类型**（number()）→ 口径不变（不报）	dup:去重/槽/类导入表	commit:8c95a46e
+负控制：顶层字面量不符（期望 2，实际 1）→ 口径不变（报）	dup:去重/槽/类导入表	commit:8c95a46e
+负控制：数组元素字面量不符（期望 ["y"]，实际 ["x"]）→ 口径不变（报）	dup:去重/槽/类导入表	commit:8c95a46e
+对象槽字面量不符 → 不满足	dup:去重/槽/类导入表	commit:8c95a46e
+对象槽字面量相符 → 满足	dup:去重/槽/类导入表	commit:8c95a46e
+负控制：期望槽是类型（number()）→ 满足（口径不变）	dup:去重/槽/类导入表	commit:8c95a46e
+import { Svc }：调用点归因到类所在模块并合成 call@ case	dup:去重/槽/类导入表	commit:8c95a46e
+import { Svc as S }（本地名 ≠ 类名）：同样归因到类所在模块	dup:去重/槽/类导入表	commit:8c95a46e
+负控制：命名空间导入形态仍按成员名归因（exportName = 成员名）	dup:去重/槽/类导入表	commit:8c95a46e
+负控制：别的模块的调用点不得挂到本文件的函数域	dup:去重/槽/类导入表	commit:8c95a46e
 ```
