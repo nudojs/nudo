@@ -68,9 +68,9 @@ $name	装载器缺少「场景 × 诊断码 × 归属」模块矩阵：missing/l
 
 ```audit-deleted
 title	reason	evidence
-真 miss（无侧车文件）→ 静默零诊断（反向回归钉）	dup:模块矩阵：sidecar 装载面	commit:PENDING
-no sidecar file (undefined) → 保持静默，无 contract-load	dup:模块矩阵：sidecar 装载面	commit:PENDING
-侧车导出名与源码函数名不匹配 ⇒ 报孤儿导出（点名侧车导出名）	dup:模块矩阵：sidecar 装载面	commit:PENDING
-非 fn() 形态的孤儿导出（模板）不报（模板是 @nudo:import 的料）	dup:模块矩阵：sidecar 装载面	commit:PENDING
-名字对得上 ⇒ 无孤儿诊断（不误报）	dup:模块矩阵：sidecar 装载面	commit:PENDING
+真 miss（无侧车文件）→ 静默零诊断（反向回归钉）	dup:模块矩阵：sidecar 装载面	commit:27b8a25b
+no sidecar file (undefined) → 保持静默，无 contract-load	dup:模块矩阵：sidecar 装载面	commit:27b8a25b
+侧车导出名与源码函数名不匹配 ⇒ 报孤儿导出（点名侧车导出名）	dup:模块矩阵：sidecar 装载面	commit:27b8a25b
+非 fn() 形态的孤儿导出（模板）不报（模板是 @nudo:import 的料）	dup:模块矩阵：sidecar 装载面	commit:27b8a25b
+名字对得上 ⇒ 无孤儿诊断（不误报）	dup:模块矩阵：sidecar 装载面	commit:27b8a25b
 ```
