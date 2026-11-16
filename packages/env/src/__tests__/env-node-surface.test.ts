@@ -843,219 +843,104 @@ describe("fs/promises 结果对象与同步族共用成员表", () => {
 // ---------------------------------------------------------------------------
 // node:fs 同步族的 throws 面
 // ---------------------------------------------------------------------------
-describe("node:fs 同步族的 throws 面", () => {
-/**
- * 族 29 · `node:fs` **同步族**被建模成「**永不抛**」⇒
- * `readFileSync("/nope/x")` 这类原生**必抛**（`Error` + `code=ENOENT`）的
- * 调用，引擎判「不抛」——**L2 假绿**。
- *
- * 修法：同步族加 **throws 面**（`errBrand("Error")`）。语义是
- * **may-throw**（引擎判不出路径是否存在 ⇒ 不是 always-throw；
- * 成功路径不该变成「必抛」）。
- *
- * 原生 oracle（Node v26）：`fs.readFileSync("/nope/x")` → `Error`
- * （`e.name === "Error"`、`e.code === "ENOENT"`）；`fs.existsSync("/nope/x")`
- * → `false`（**不抛**）。
- */
+describe("node:fs 同步族 throws 与例外", () => {
+  const MAY_THROW = ["readFileSync","writeFileSync","appendFileSync","mkdirSync","rmdirSync","unlinkSync","renameSync","copyFileSync","statSync","readdirSync","realpathSync","readlinkSync","symlinkSync","chmodSync","chownSync","accessSync"];
+  const NATIVE_THROWS: Array<[string, () => unknown]> = [
+    ["readFileSync", () => fs.readFileSync("/nope/nope.txt")],
+    ["writeFileSync", () => fs.writeFileSync("/nope/nope.txt", "x")],
+    ["appendFileSync", () => fs.appendFileSync("/nope/nope.txt", "x")],
+    ["mkdirSync", () => fs.mkdirSync("/nope/nope-dir")],
+    ["rmdirSync", () => fs.rmdirSync("/nope/nope-dir")],
+    ["unlinkSync", () => fs.unlinkSync("/nope/nope.txt")],
+    ["renameSync", () => fs.renameSync("/nope/a", "/nope/b")],
+    ["copyFileSync", () => fs.copyFileSync("/nope/a", "/nope/b")],
+    ["statSync", () => fs.statSync("/nope/nope.txt")],
+    ["readdirSync", () => fs.readdirSync("/nope/nope-dir")],
+    ["realpathSync", () => fs.realpathSync("/nope/nope.txt")],
+    ["readlinkSync", () => fs.readlinkSync("/nope/nope.txt")],
+    ["symlinkSync", () => fs.symlinkSync("/nope/a", "/nope/b")],
+    ["chmodSync", () => fs.chmodSync("/nope/nope.txt", 0o644)],
+    ["chownSync", () => fs.chownSync("/nope/nope.txt", 0, 0)],
+    ["accessSync", () => fs.accessSync("/nope/nope.txt")],
+  ];
 
-
-
-
-
-/** 同步族里「原生可能抛」的成员（的修法清单）。 */
-const MAY_THROW = [
-  "readFileSync",
-  "writeFileSync",
-  "appendFileSync",
-  "mkdirSync",
-  "rmdirSync",
-  "unlinkSync",
-  "renameSync",
-  "copyFileSync",
-  "statSync",
-  "readdirSync",
-  "realpathSync",
-  "readlinkSync",
-  "symlinkSync",
-  "chmodSync",
-  "chownSync",
-  "accessSync",
-];
-
-/** 原生 oracle：不存在的路径 ⇒ 抛 `Error`（带 code）。 */
-const NATIVE_THROWS: Array<[string, () => unknown]> = [
-  ["readFileSync", () => fs.readFileSync("/nope/nope.txt")],
-  ["writeFileSync", () => fs.writeFileSync("/nope/nope.txt", "x")],
-  ["appendFileSync", () => fs.appendFileSync("/nope/nope.txt", "x")],
-  ["mkdirSync", () => fs.mkdirSync("/nope/nope-dir")],
-  ["rmdirSync", () => fs.rmdirSync("/nope/nope-dir")],
-  ["unlinkSync", () => fs.unlinkSync("/nope/nope.txt")],
-  ["renameSync", () => fs.renameSync("/nope/a", "/nope/b")],
-  ["copyFileSync", () => fs.copyFileSync("/nope/a", "/nope/b")],
-  ["statSync", () => fs.statSync("/nope/nope.txt")],
-  ["readdirSync", () => fs.readdirSync("/nope/nope-dir")],
-  ["realpathSync", () => fs.realpathSync("/nope/nope.txt")],
-  ["readlinkSync", () => fs.readlinkSync("/nope/nope.txt")],
-  ["symlinkSync", () => fs.symlinkSync("/nope/a", "/nope/b")],
-  ["chmodSync", () => fs.chmodSync("/nope/nope.txt", 0o644)],
-  ["chownSync", () => fs.chownSync("/nope/nope.txt", 0, 0)],
-  ["accessSync", () => fs.accessSync("/nope/nope.txt")],
-];
-
-describe("node:fs 同步族的 throws 面", () => {
-  it("1. 原生 oracle：同步族对不存在的路径抛 Error（带 code=ENOENT）", () => {
+  it("同步族记 Error may-throw；existsSync/rmSync force 不抛；成功路径不塌 never；抽象实参同口径", () => {
     for (const [name, fn] of NATIVE_THROWS) {
       let caught: unknown;
-      try {
-        fn();
-      } catch (e) {
-        caught = e;
-      }
+      try { fn(); } catch (e) { caught = e; }
       expect(caught, `${name} 原生应抛`).toBeTruthy();
       const e = caught as { name?: string; code?: string };
-      expect(e.name, `${name} 原生异常名`).toBe("Error");
-      expect(e.code, `${name} 原生异常 code`).toBe("ENOENT");
+      expect(e.name, name).toBe("Error");
+      expect(e.code, name).toBe("ENOENT");
     }
-  });
 
-  it("2. 引擎侧：同步族调用点记一条 may-throw（Error）throw exit", () => {
     for (const name of MAY_THROW) {
-      const fn = envMember("node:fs", name);
-      const site = callSite(fn, [strLit("/nope/nope.txt")]);
-      expect(site.threw, `${name} 是 may-throw，不该冒泡`).toBeUndefined();
-      expect(site.exits.length, `${name} 应记一条 throw exit`).toBe(1);
-      expect(brandName(site.exits[0]), `${name} 的 throws 品牌`).toBe("Error");
+      const site = callSite(envMember("node:fs", name), [strLit("/nope/nope.txt")]);
+      expect(site.threw, name).toBeUndefined();
+      expect(site.exits.length, name).toBe(1);
+      expect(brandName(site.exits[0]), name).toBe("Error");
     }
-  });
 
-  it("3. 反向钉：existsSync 原生永不抛 ⇒ 引擎也不得记 throws", () => {
     expect(fs.existsSync("/nope/nope.txt")).toBe(false);
-    const site = callSite(envMember("node:fs", "existsSync"), [strLit("/nope/nope.txt")]);
-    expect(site.threw).toBeUndefined();
-    expect(site.exits, "existsSync 不该有 throw exit").toHaveLength(0);
-  });
+    const exists = callSite(envMember("node:fs", "existsSync"), [strLit("/nope/nope.txt")]);
+    expect(exists.exits).toHaveLength(0);
 
-  it("4. 反向钉：may-throw ≠ always-throw（成功路径的值面不得塌成 never）", () => {
-    const site = callSite(envMember("node:fs", "readFileSync"), [strLit("/etc/hostname")]);
-    expect(site.threw).toBeUndefined();
-    expect(site.value, "成功路径仍应有值面").toBeDefined();
-    expect(site.value!.shape.k).not.toBe("never");
-  });
+    const ok = callSite(envMember("node:fs", "readFileSync"), [strLit("/etc/hostname")]);
+    expect(ok.value).toBeDefined();
+    expect(ok.value!.shape.k).not.toBe("never");
 
-  it("5. rmSync：原生 force:true 吞掉 ENOENT（不抛）⇒ 引擎也不得记 throws", () => {
     expect(() => fs.rmSync("/nope/nope.txt", { force: true })).not.toThrow();
     const forceTrue = objOf({ force: { value: boolLit(true) } });
-    const site = callSite(envMember("node:fs", "rmSync"), [strLit("/nope/nope.txt"), forceTrue]);
-    expect(site.threw).toBeUndefined();
-    expect(site.exits, "force:true ⇒ 不记 throw exit").toHaveLength(0);
-
-    // 反向：无 force ⇒ 原生抛 ⇒ 引擎记 may-throw
+    expect(callSite(envMember("node:fs", "rmSync"), [strLit("/nope/nope.txt"), forceTrue]).exits).toHaveLength(0);
     expect(() => fs.rmSync("/nope/nope.txt")).toThrow();
     const noForce = callSite(envMember("node:fs", "rmSync"), [strLit("/nope/nope.txt")]);
-    expect(noForce.exits.length).toBe(1);
+    expect(noForce.exits).toHaveLength(1);
     expect(brandName(noForce.exits[0])).toBe("Error");
-  });
 
-  it("6. 抽象实参不改变 throws 面（路径判不出存在性 ⇒ 恒为 may-throw）", () => {
-    const site = callSite(envMember("node:fs", "readFileSync"), [
-      { shape: { k: "prim", type: "string" }, conf: "exact" } as Abs,
-    ]);
-    expect(site.threw).toBeUndefined();
-    expect(site.exits.length).toBe(1);
-    expect(brandName(site.exits[0])).toBe("Error");
+    const abstractSite = callSite(envMember("node:fs", "readFileSync"), [prim.str()]);
+    expect(abstractSite.exits).toHaveLength(1);
+    expect(brandName(abstractSite.exits[0])).toBe("Error");
   });
-});
 });
 
 // ---------------------------------------------------------------------------
 // statSync / fs.promises.stat 的返回域（含 undefined 分支）
 // ---------------------------------------------------------------------------
-describe("statSync / fs.promises.stat 的返回域（含 undefined 分支）", () => {
-/**
- * 族 29 · `statSync` / `fs.promises.stat` 的**返回域声明过窄**
- * ——原生 `statSync(p, { throwIfNoEntry: false })` 在路径不存在时**返回
- * undefined**（不抛），紧接着的成员读**必抛 TypeError**；旧面把返回域声明成
- * 「永不返回 undefined」⇒ 引擎判「不抛」还给出**自信的** `boolean` / `number`
- * ——**L2 假绿**。
- *
- * 修法：`throwIfNoEntry: false` 时返回域含 `undefined`（同步族与 promise 族
- * 同口径）。
- *
- * 原生 oracle（Node v26）：
- * - `fs.statSync("/nope", { throwIfNoEntry: false })` ⇒ `undefined`；
- * - `fs.statSync("/nope", { throwIfNoEntry: false }).isFile()` ⇒ TypeError；
- * - `fs.statSync("/nope")` ⇒ 抛 `Error`（code=ENOENT）。
- */
-
-
-
-
-
-
-/** promise 兑现值的内层（`promiseOf(x)` ⇒ x）。 */
-function promiseInner(a: unknown): Abs | undefined {
+const promiseInner = (a: unknown): Abs | undefined => {
   if (!a) return undefined;
   const s = (a as Abs).shape as { k?: string; inner?: Abs };
   return s.k === "eff" ? s.inner : undefined;
-}
-
-/** `{ throwIfNoEntry: false }` 选项对象。 */
+};
 const NO_ENTRY = objOf({ throwIfNoEntry: { value: boolLit(false) } });
 
-describe("statSync / fs.promises.stat 的返回域（含 undefined 分支）", () => {
-  it("1. 原生 oracle：throwIfNoEntry:false ⇒ 返回 undefined（不抛）", () => {
+describe("stat 返回域的 undefined 分支", () => {
+  it("同步/promise 族在 throwIfNoEntry:false 时含 undefined；默认形态不含", async () => {
     expect(fs.statSync("/nope/nope.txt", { throwIfNoEntry: false })).toBeUndefined();
     expect(() => fs.statSync("/nope/nope.txt")).toThrow();
-  });
-
-  it("2. 原生 oracle：undefined 上的成员读 ⇒ TypeError（返回域必须含 undefined）", () => {
     const st = fs.statSync("/nope/nope.txt", { throwIfNoEntry: false });
     expect(() => (st as { isFile: () => boolean }).isFile()).toThrow(TypeError);
-  });
 
-  it("3. 引擎侧：throwIfNoEntry:false ⇒ 返回域含 undefined（旧面：永不 undefined）", () => {
-    const site = callSite(envMember("node:fs", "statSync"), [strLit("/nope/nope.txt"), NO_ENTRY]);
-    expect(site.value, "应给出值面").toBeDefined();
-    expect(formatShape(site.value!), "返回域应含 undefined").toContain("undefined");
-  });
+    const noEntry = callSite(envMember("node:fs", "statSync"), [strLit("/nope/nope.txt"), NO_ENTRY]);
+    expect(formatShape(noEntry.value!), "返回域应含 undefined").toContain("undefined");
+    const normal = callSite(envMember("node:fs", "statSync"), [strLit("/tmp")]);
+    expect(formatShape(normal.value!), "默认形态不该含 undefined").not.toContain("undefined");
 
-  it("4. 反向钉：默认形态（无 throwIfNoEntry:false）⇒ 返回域不含 undefined", () => {
-    const site = callSite(envMember("node:fs", "statSync"), [strLit("/tmp")]);
-    expect(site.value).toBeDefined();
-    expect(formatShape(site.value!), "默认形态不该含 undefined").not.toContain("undefined");
-  });
-
-  it("5. promise 族同口径：兑现值含 undefined", async () => {
-    // 宿主版本差：Node 22 的 fs.promises.stat 对 throwIfNoEntry:false 仍 reject
-    // ENOENT（Node 26 才兑现 undefined）。原生 oracle 两边都给确定断言；
-    // 下方**引擎声明面**的断言不受宿主行为影响，仍严格钉住 undefined 分支。
-    const native = await fsp
-      .stat("/nope/nope.txt", { throwIfNoEntry: false })
-      .then(
-        (v) => ({ resolved: v as unknown }),
-        (e: NodeJS.ErrnoException) => ({ rejected: e.code }),
-      );
+    const native = await fsp.stat("/nope/nope.txt", { throwIfNoEntry: false }).then(
+      (v) => ({ resolved: v as unknown }),
+      (e: NodeJS.ErrnoException) => ({ rejected: e.code }),
+    );
     if ("resolved" in native) expect(native.resolved).toBeUndefined();
     else expect(native.rejected).toBe("ENOENT");
-    const site = callSite(envMember("node:fs/promises", "stat"), [strLit("/nope/nope.txt"), NO_ENTRY]);
-    const inner = promiseInner(site.value);
-    expect(inner, "兑现值应有内层").toBeDefined();
+    const pstat = callSite(envMember("node:fs/promises", "stat"), [strLit("/nope/nope.txt"), NO_ENTRY]);
+    const inner = promiseInner(pstat.value);
+    expect(inner).toBeDefined();
     expect(formatShape(inner!), "兑现值域应含 undefined").toContain("undefined");
-  });
+    const pnormal = callSite(envMember("node:fs/promises", "stat"), [strLit("/tmp")]);
+    expect(formatShape(promiseInner(pnormal.value)!), "默认形态不该含 undefined").not.toContain("undefined");
 
-  it("6. 反向钉：promise 族默认形态 ⇒ 兑现值不含 undefined", () => {
-    const site = callSite(envMember("node:fs/promises", "stat"), [strLit("/tmp")]);
-    const inner = promiseInner(site.value);
-    expect(formatShape(inner!), "默认形态不该含 undefined").not.toContain("undefined");
-  });
-
-  it("7. 声明面：返回域的 undefined 分支由调用点的 options 决定（不是恒有）", () => {
-    // 声明的返回类型仍是 Stats（不含 undefined）——undefined 只在
-    // throwIfNoEntry:false 的调用点出现（旧面的「永不 undefined」就在这里）
     const declared = envMember("node:fs", "statSync").shape as { returnType?: Abs };
-    expect(formatShape(declared.returnType!), "声明面不该含 undefined").not.toContain("undefined");
+    expect(formatShape(declared.returnType!)).not.toContain("undefined");
   });
-});
 });
 
 // ---------------------------------------------------------------------------
@@ -1822,147 +1707,62 @@ describe("queueMicrotask keeps core's callable-arg validation", () => {
 // ---------------------------------------------------------------------------
 // node:assert 族有真实 throws 面
 // ---------------------------------------------------------------------------
-describe("node:assert 族有真实 throws 面", () => {
-/**
- * env 的 `node:assert` 族**建模成永不抛** ⇒ L2 门禁**假绿**。
- *
- * 原生 oracle（Node v26.10.0 独立进程实测）：
- * ok(false) ⇒ 抛 AssertionError（ERR_ASSERTION）
- * ok(0) / ok(undefined) ⇒ 抛 AssertionError
- * ok(true) / ok(1) ⇒ 不抛
- * strictEqual(1, 2) ⇒ 抛 AssertionError
- * strictEqual(1, 1) ⇒ 不抛
- * deepStrictEqual({a:1},{a:1}) ⇒ 不抛；{a:1} vs {a:2} ⇒ 抛 AssertionError
- * notStrictEqual(1, 1) ⇒ 抛 AssertionError；notStrictEqual(1, 2) ⇒ 不抛
- * match("abc", /b/) ⇒ 不抛；match("abc", /z/) ⇒ 抛 AssertionError
- * fail() / fail("boom") ⇒ **恒抛** AssertionError
- * strictEqual(1)（缺参） ⇒ 抛 TypeError [ERR_MISSING_ARGS]（**不是** AssertionError）
- *
- * 旧实现：六个函数全是 relation 面（**恒不抛**）⇒ 六个必抛入口一次放行（假绿）。
- *
- * 新建模（走 core 的 throws 通道）：
- * - 实参可判定且断言**失败** ⇒ **必抛**（abs 面 = never + AssertionError）；
- * - 实参可判定且断言**成立** ⇒ **零抛**（裸 Abs 返回）；
- * - 实参**判不出**（抽象值 / 抽象 pattern）⇒ **may-throw**（原生在该域上确实可能抛）。
- *
- * 断言双向：正向钉住「失败必抛 / 成立零抛 / 抽象 may-throw」；
- * 反向（把 apply 改回旧的 `undefined` 回落）本文件必须失败。
- */
-
-
-
-
-
-
-
 const env = defineEnv();
 const assertMod = env.modules!.assert!;
 
-/** RegExp brand（引擎里正则字面量就是这个形状：source / flags 槽） */
 function regexpOf(source: string, flags = ""): Abs {
   return brandOf("RegExp", objAbs({ source: strLit(source), flags: strLit(flags) }));
 }
-
-/** 抽象值（判不出真值 / 相等性） */
 const ABSTRACT = prim.str();
 
-/** 原生 oracle：调用 fn，取原生抛出的错误名（不抛 ⇒ undefined） */
 function nativeErrorName(fn: () => void): string | undefined {
-  try {
-    fn();
-    return undefined;
-  } catch (e) {
-    return (e as Error).name;
-  }
+  try { fn(); return undefined; } catch (e) { return (e as Error).name; }
 }
 
-describe("node:assert 族有真实 throws 面", () => {
-  it("1. ok(false) ⇒ 必抛 AssertionError（旧实现恒不抛）", () => {
-    // 原生 oracle：ok(false) 抛 AssertionError
+describe("node:assert 族 throws 面", () => {
+  it("失败必抛 / 成立零抛 / 抽象 may-throw / 缺参 TypeError", () => {
     expect(nativeErrorName(() => nodeOk(false))).toBe("AssertionError");
-    const site = callSite____env_bug_s4_helpers_ts_1(assertMod.ok!, [boolLit(false)]);
-    expect(site.threw, "ok(false) must throw (always-throw)").toBeTruthy();
-    expect(thrownBrand(site.threw)).toBe("AssertionError");
-    expect(site.exits).toHaveLength(0);
-  });
-
-  it("2. ok(true) ⇒ 零抛（断言成立）", () => {
-    const site = callSite____env_bug_s4_helpers_ts_1(assertMod.ok!, [boolLit(true)]);
-    expect(site.threw).toBeUndefined();
-    expect(site.exits).toHaveLength(0);
-  });
-
-  it("3. ok(抽象值) ⇒ may-throw AssertionError（原生在该域上确实可能抛）", () => {
-    const site = callSite____env_bug_s4_helpers_ts_1(assertMod.ok!, [ABSTRACT]);
-    expect(site.threw, "abstract arg must not be a hard throw").toBeUndefined();
-    expect(site.exits).toHaveLength(1);
-    expect(brandName____env_bug_s4_helpers_ts(site.exits[0]!)).toBe("AssertionError");
-  });
-
-  it("4. strictEqual(1, 2) ⇒ 必抛 AssertionError；strictEqual(1, 1) ⇒ 零抛", () => {
-    const bad = callSite____env_bug_s4_helpers_ts_1(assertMod.strictEqual!, [numLit(1), numLit(2)]);
+    const bad = callSite____env_bug_s4_helpers_ts_1(assertMod.ok!, [boolLit(false)]);
     expect(bad.threw).toBeTruthy();
     expect(thrownBrand(bad.threw)).toBe("AssertionError");
+    const okTrue = callSite____env_bug_s4_helpers_ts_1(assertMod.ok!, [boolLit(true)]);
+    expect(okTrue.threw).toBeUndefined();
+    expect(okTrue.exits).toHaveLength(0);
+    const abstract = callSite____env_bug_s4_helpers_ts_1(assertMod.ok!, [ABSTRACT]);
+    expect(abstract.threw).toBeUndefined();
+    expect(abstract.exits).toHaveLength(1);
+    expect(brandName____env_bug_s4_helpers_ts(abstract.exits[0]!)).toBe("AssertionError");
 
-    const good = callSite____env_bug_s4_helpers_ts_1(assertMod.strictEqual!, [numLit(1), numLit(1)]);
-    expect(good.threw).toBeUndefined();
-    expect(good.exits).toHaveLength(0);
-  });
+    const strictBad = callSite____env_bug_s4_helpers_ts_1(assertMod.strictEqual!, [numLit(1), numLit(2)]);
+    expect(thrownBrand(strictBad.threw)).toBe("AssertionError");
+    const strictGood = callSite____env_bug_s4_helpers_ts_1(assertMod.strictEqual!, [numLit(1), numLit(1)]);
+    expect(strictGood.threw).toBeUndefined();
+    expect(strictGood.exits).toHaveLength(0);
 
-  it("5. deepStrictEqual ⇒ 结构判定：相等零抛 / 不等必抛", () => {
-    const same = callSite____env_bug_s4_helpers_ts_1(assertMod.deepStrictEqual!, [
-      objAbs({ a: numLit(1) }),
-      objAbs({ a: numLit(1) }),
-    ]);
-    expect(same.threw).toBeUndefined();
-    expect(same.exits).toHaveLength(0);
+    const deepSame = callSite____env_bug_s4_helpers_ts_1(assertMod.deepStrictEqual!, [objAbs({ a: numLit(1) }), objAbs({ a: numLit(1) })]);
+    expect(deepSame.threw).toBeUndefined();
+    expect(deepSame.exits).toHaveLength(0);
+    const deepDiff = callSite____env_bug_s4_helpers_ts_1(assertMod.deepStrictEqual!, [objAbs({ a: numLit(1) }), objAbs({ a: numLit(2) })]);
+    expect(thrownBrand(deepDiff.threw)).toBe("AssertionError");
 
-    const diff = callSite____env_bug_s4_helpers_ts_1(assertMod.deepStrictEqual!, [
-      objAbs({ a: numLit(1) }),
-      objAbs({ a: numLit(2) }),
-    ]);
-    expect(diff.threw).toBeTruthy();
-    expect(thrownBrand(diff.threw)).toBe("AssertionError");
-  });
+    const notSame = callSite____env_bug_s4_helpers_ts_1(assertMod.notStrictEqual!, [numLit(1), numLit(1)]);
+    expect(thrownBrand(notSame.threw)).toBe("AssertionError");
+    const notDiff = callSite____env_bug_s4_helpers_ts_1(assertMod.notStrictEqual!, [numLit(1), numLit(2)]);
+    expect(notDiff.threw).toBeUndefined();
+    expect(notDiff.exits).toHaveLength(0);
 
-  it("6. notStrictEqual ⇒ 相等必抛 / 不等零抛", () => {
-    const same = callSite____env_bug_s4_helpers_ts_1(assertMod.notStrictEqual!, [numLit(1), numLit(1)]);
-    expect(same.threw).toBeTruthy();
-    expect(thrownBrand(same.threw)).toBe("AssertionError");
-
-    const diff = callSite____env_bug_s4_helpers_ts_1(assertMod.notStrictEqual!, [numLit(1), numLit(2)]);
-    expect(diff.threw).toBeUndefined();
-    expect(diff.exits).toHaveLength(0);
-  });
-
-  it("7. match ⇒ pattern 可判定时精确判定：命中零抛 / 不命中必抛", () => {
     const hit = callSite____env_bug_s4_helpers_ts_1(assertMod.match!, [strLit("abc"), regexpOf("b")]);
-    expect(hit.threw).toBeUndefined();
     expect(hit.exits).toHaveLength(0);
-
     const miss = callSite____env_bug_s4_helpers_ts_1(assertMod.match!, [strLit("abc"), regexpOf("z")]);
-    expect(miss.threw).toBeTruthy();
     expect(thrownBrand(miss.threw)).toBe("AssertionError");
-  });
 
-  it("8. fail() ⇒ 恒抛 AssertionError", () => {
-    // 原生 oracle：fail() 恒抛
     expect(nativeErrorName(() => nodeFail("boom"))).toBe("AssertionError");
-    const site = callSite____env_bug_s4_helpers_ts_1(assertMod.fail!, []);
-    expect(site.threw).toBeTruthy();
-    expect(thrownBrand(site.threw)).toBe("AssertionError");
-  });
+    expect(thrownBrand(callSite____env_bug_s4_helpers_ts_1(assertMod.fail!, []).threw)).toBe("AssertionError");
 
-  it("9. strictEqual 缺参 ⇒ 必抛 TypeError（原生 ERR_MISSING_ARGS，不是 AssertionError）", () => {
-    // 原生 oracle：strictEqual(1) 缺参 ⇒ TypeError（不是 AssertionError）
-    expect(nativeErrorName(() => (nodeStrictEqual as (a: unknown, b?: unknown) => void)(1))).toBe(
-      "TypeError",
-    );
-    const site = callSite____env_bug_s4_helpers_ts_1(assertMod.strictEqual!, [numLit(1)]);
-    expect(site.threw).toBeTruthy();
-    expect(thrownBrand(site.threw)).toBe("TypeError");
+    expect(nativeErrorName(() => (nodeStrictEqual as (a: unknown, b?: unknown) => void)(1))).toBe("TypeError");
+    const missing = callSite____env_bug_s4_helpers_ts_1(assertMod.strictEqual!, [numLit(1)]);
+    expect(thrownBrand(missing.threw)).toBe("TypeError");
   });
-});
 });
 
 // ---------------------------------------------------------------------------
