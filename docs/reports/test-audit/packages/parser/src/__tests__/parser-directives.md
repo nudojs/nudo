@@ -6,37 +6,21 @@
 
 ```audit
 title	rootCause	gap	action	status	evidence
-"malformed mock-module payload → nudo:directive-syntax warning"	"- 415：`@nudo:mock-module` 标签命中但**载荷解析失败** ⇒ 不再静默丢弃 （此前无 else 分支 ⇒ 指令静默蒸发：mock 不生效、门禁照常绿）。 - 417：`@nudo:env` **裸标签**（没写 env 名）⇒ 告警（此前整行不匹配 ⇒ 零诊断地丢弃 ⇒ env 未解析 ⇒ 全局 unknown）。 断言：expect(diags).toHaveLength(1);；expect(diags[0]!.code).toBe(\"nudo:directive-syntax\");"	没测该层	keep	keep	—
-"single-quoted mock-module payload is accepted and silent"	"- 415：`@nudo:mock-module` 标签命中但**载荷解析失败** ⇒ 不再静默丢弃 （此前无 else 分支 ⇒ 指令静默蒸发：mock 不生效、门禁照常绿）。 - 417：`@nudo:env` **裸标签**（没写 env 名）⇒ 告警（此前整行不匹配 ⇒ 零诊断地丢弃 ⇒ env 未解析 ⇒ 全局 unknown）。 断言：expect(fileDiags(src)).toEqual([]);；expect(extractFileDirectives(parse(src), { diags: [] })).toEqual(["	没测该层	keep	keep	—
-"block comment form → nudo:directive-syntax warning"	"- 415：`@nudo:mock-module` 标签命中但**载荷解析失败** ⇒ 不再静默丢弃 （此前无 else 分支 ⇒ 指令静默蒸发：mock 不生效、门禁照常绿）。 - 417：`@nudo:env` **裸标签**（没写 env 名）⇒ 告警（此前整行不匹配 ⇒ 零诊断地丢弃 ⇒ env 未解析 ⇒ 全局 unknown）。 断言：expect(diags).toHaveLength(1);；expect(diags[0]!.code).toBe(\"nudo:directive-syntax\");"	没测该层	keep	keep	—
-"JSDoc block form → warning too"	"断言：expect(diags).toHaveLength(1);；expect(diags[0]!.code).toBe(\"nudo:directive-syntax\");"	没测该层	keep	keep	—
-"line comment form stays silent (control)"	"断言：expect(fileDiags(`/// @nudo:import { a } from \"./x.nudo.js\"\\nexport function f(){}\\n`)).toEqual([]);"	没测该层	keep	keep	—
-"bare tag → nudo:directive-syntax warning"	"- 415：`@nudo:mock-module` 标签命中但**载荷解析失败** ⇒ 不再静默丢弃 （此前无 else 分支 ⇒ 指令静默蒸发：mock 不生效、门禁照常绿）。 - 417：`@nudo:env` **裸标签**（没写 env 名）⇒ 告警（此前整行不匹配 ⇒ 零诊断地丢弃 ⇒ env 未解析 ⇒ 全局 unknown）。 断言：expect(diags).toHaveLength(1);；expect(diags[0]!.code).toBe(\"nudo:directive-syntax\");"	没测该层	keep	keep	—
-"bare tag with trailing blank → warning too"	"断言：expect(fileDiags(`/// @nudo:env \\nexport function f(){}\\n`)).toHaveLength(1);"	没测该层	keep	keep	—
-"space-separated env list is accepted and silent"	"- 415：`@nudo:mock-module` 标签命中但**载荷解析失败** ⇒ 不再静默丢弃 （此前无 else 分支 ⇒ 指令静默蒸发：mock 不生效、门禁照常绿）。 - 417：`@nudo:env` **裸标签**（没写 env 名）⇒ 告警（此前整行不匹配 ⇒ 零诊断地丢弃 ⇒ env 未解析 ⇒ 全局 unknown）。 断言：expect(fileDiags(src)).toEqual([]);；expect(extractFileDirectives(parse(src), { diags: [] })).toEqual(["	没测该层	keep	keep	—
-"unreadable env list → warning (no silent drop)"	"- 415：`@nudo:mock-module` 标签命中但**载荷解析失败** ⇒ 不再静默丢弃 （此前无 else 分支 ⇒ 指令静默蒸发：mock 不生效、门禁照常绿）。 - 417：`@nudo:env` **裸标签**（没写 env 名）⇒ 告警（此前整行不匹配 ⇒ 零诊断地丢弃 ⇒ env 未解析 ⇒ 全局 unknown）。 断言：expect(diags).toHaveLength(1);；expect(diags[0]!.code).toBe(\"nudo:directive-syntax\");"	没测该层	keep	keep	—
-"`@nudo:as(string())` (no space) yields a type — not an evaporated directive"	"`@nudo:as` 的**值格**与**类型格**之间**没有空格**（`@nudo:as(string())`） ⇒ 整条指令被**静默丢弃**（零诊断）⇒ 类型覆盖**不生效**（假绿）。 根因（inline-directives.ts）：`AS_LINE_REGEX`（值格要求**至少一个空白**）与 `AS_BARE_RE`（无载荷形态**只认光秃秃**的 `@nudo:as`）**分工不闭合** ⇒ 括号 紧贴形态两条正则**都不匹配** ⇒ 整条 `@nudo:as` 蒸发、零诊断。 断言：expect(dirs).toHaveLength(1);；expect(dirs[0]!.kind).toBe(\"as\");"	夹具漏形态	keep	keep	—
-"`@nudo:as number()` (spaced form) still yields the same type"	"`@nudo:as` 的**值格**与**类型格**之间**没有空格**（`@nudo:as(string())`） ⇒ 整条指令被**静默丢弃**（零诊断）⇒ 类型覆盖**不生效**（假绿）。 根因（inline-directives.ts）：`AS_LINE_REGEX`（值格要求**至少一个空白**）与 `AS_BARE_RE`（无载荷形态**只认光秃秃**的 `@nudo:as`）**分工不闭合** ⇒ 括号 紧贴形态两条正则**都不匹配** ⇒ 整条 `@nudo:as` 蒸发、零诊断。 断言：expect(dirs).toHaveLength(1);；expect(dirs[0]!.typeAbs.shape.k).to"	夹具漏形态	keep	keep	—
-"`@nudo:as(shape({ port: number() }))` (nested parens) yields an object type"	"`@nudo:as` 的**值格**与**类型格**之间**没有空格**（`@nudo:as(string())`） ⇒ 整条指令被**静默丢弃**（零诊断）⇒ 类型覆盖**不生效**（假绿）。 根因（inline-directives.ts）：`AS_LINE_REGEX`（值格要求**至少一个空白**）与 `AS_BARE_RE`（无载荷形态**只认光秃秃**的 `@nudo:as`）**分工不闭合** ⇒ 括号 紧贴形态两条正则**都不匹配** ⇒ 整条 `@nudo:as` 蒸发、零诊断。 断言：expect(dirs).toHaveLength(1);；expect(dirs[0]!.typeAbs.shape.k).to"	夹具漏形态	keep	keep	—
-"bare `@nudo:as` is diagnosed explicitly (never silently ignored)"	"`@nudo:as` 的**值格**与**类型格**之间**没有空格**（`@nudo:as(string())`） ⇒ 整条指令被**静默丢弃**（零诊断）⇒ 类型覆盖**不生效**（假绿）。 根因（inline-directives.ts）：`AS_LINE_REGEX`（值格要求**至少一个空白**）与 `AS_BARE_RE`（无载荷形态**只认光秃秃**的 `@nudo:as`）**分工不闭合** ⇒ 括号 紧贴形态两条正则**都不匹配** ⇒ 整条 `@nudo:as` 蒸发、零诊断。 断言：expect(dirs).toHaveLength(0);；expect(diags).toHaveLength(1);"	夹具漏形态	keep	keep	—
-"unrecognised payload is diagnosed instead of evaporating"	"断言：expect(dirs).toHaveLength(1); // 指令被认出来了（不是被丢弃）；expect(diags).toHaveLength(1);"	没测该层	keep	keep	—
-"tag boundary: `@nudo:asXYZ` / `@nudo:assume` are not `@nudo:as` directives"	"`@nudo:as` 的**值格**与**类型格**之间**没有空格**（`@nudo:as(string())`） ⇒ 整条指令被**静默丢弃**（零诊断）⇒ 类型覆盖**不生效**（假绿）。 根因（inline-directives.ts）：`AS_LINE_REGEX`（值格要求**至少一个空白**）与 `AS_BARE_RE`（无载荷形态**只认光秃秃**的 `@nudo:as`）**分工不闭合** ⇒ 括号 紧贴形态两条正则**都不匹配** ⇒ 整条 `@nudo:as` 蒸发、零诊断。 断言：expect(dirs, tag).toHaveLength(0);；expect(diags, tag).toEqual([])"	夹具漏形态	keep	keep	—
-"`string()// why` (no space) keeps the type (no unknown downgrade)"	"`@nudo:as` 的类型表达式里**尾注释前没有空格**（`string()// why`）⇒ 注释被并进表达式 ⇒ **合法类型被判「unsafe」并降级为 unknown**（合法类型覆盖 静默失效）。 根因（inline-directives.ts `findTrailingCommentStart`）：尾注释切分以 「**前导空白**」为**唯一信号** ⇒ `string()// why` 不被切走 ⇒ 整串进 AST 白名单 ⇒ 判 unsafe ⇒ 降级 unknown（并附两条误导性诊断）。 断言：expect(dirs).toHaveLength(1);；expect(dirs[0]!.typeAbs.shap"	没测该层	keep	keep	—
-"`string() // why` (spaced form) still behaves the same"	"`@nudo:as` 的类型表达式里**尾注释前没有空格**（`string()// why`）⇒ 注释被并进表达式 ⇒ **合法类型被判「unsafe」并降级为 unknown**（合法类型覆盖 静默失效）。 根因（inline-directives.ts `findTrailingCommentStart`）：尾注释切分以 「**前导空白**」为**唯一信号** ⇒ `string()// why` 不被切走 ⇒ 整串进 AST 白名单 ⇒ 判 unsafe ⇒ 降级 unknown（并附两条误导性诊断）。 断言：expect(dirs).toHaveLength(1);；expect(dirs[0]!.typeAbs.shap"	没测该层	keep	keep	—
-"comment markers inside a string literal are not a trailing comment"	"`@nudo:as` 的类型表达式里**尾注释前没有空格**（`string()// why`）⇒ 注释被并进表达式 ⇒ **合法类型被判「unsafe」并降级为 unknown**（合法类型覆盖 静默失效）。 根因（inline-directives.ts `findTrailingCommentStart`）：尾注释切分以 「**前导空白**」为**唯一信号** ⇒ `string()// why` 不被切走 ⇒ 整串进 AST 白名单 ⇒ 判 unsafe ⇒ 降级 unknown（并附两条误导性诊断）。 断言：expect(dirs).toHaveLength(1);；expect(dirs[0]!.typeAbs.shap"	没测该层	keep	keep	—
-"`//` right after `)` is a comment (not swallowed into the expression)"	"断言：expect(dirs).toHaveLength(1);；expect(dirs[0]!.typeAbs.shape.k).toBe(\"prim\");"	没测该层	keep	keep	—
-"the inner @nudo:mock does not become a real mock directive"	"**畸形**的 `@nudo:case` 不登记**参数区间掩码** ⇒ case 参数里的 `@nudo:mock` / `@nudo:skip` **泄漏**成真指令 ⇒ 假红 / d.ts 丢方法。 根因（core `directive-scan.ts` 的 `scanCaseArgSpans`）：只登记**合法** case 形态 （双引号名 + 同行实参括号）的区间； 断言：expect(kinds(MALFORMED_CASE)).not.toContain(\"mock\");"	夹具漏形态	keep	keep	—
-"the malformed case name is still diagnosed"	"**畸形**的 `@nudo:case` 不登记**参数区间掩码** ⇒ case 参数里的 `@nudo:mock` / `@nudo:skip` **泄漏**成真指令 ⇒ 假红 / d.ts 丢方法。 根因（core `directive-scan.ts` 的 `scanCaseArgSpans`）：只登记**合法** case 形态 （双引号名 + 同行实参括号）的区间； 断言：expect(diags.some((d) => d.message.includes(\"single-quoted name\"))).toBe(true);"	夹具漏形态	keep	keep	—
-"a well-formed case keeps its arguments (no over-masking)"	"**畸形**的 `@nudo:case` 不登记**参数区间掩码** ⇒ case 参数里的 `@nudo:mock` / `@nudo:skip` **泄漏**成真指令 ⇒ 假红 / d.ts 丢方法。 根因（core `directive-scan.ts` 的 `scanCaseArgSpans`）：只登记**合法** case 形态 （双引号名 + 同行实参括号）的区间； 断言：expect(kinds(ok)).toEqual([\"case\"]);；expect(fnDiags(ok)).toEqual([]);"	夹具漏形态	keep	keep	—
-"the expected type is parsed (not degraded to unknown)"	"`@nudo:case` 的**期望值**里带**尾注释**（`=> string() // 注释`） ⇒ 期望值解析失败 ⇒ 回退成**显式 unknown** ⇒ **断言被静默作废**（报「1 passed」、 exit 0 的**假绿**）。 根因：`=> expected` 表达式没有尾注释归一化——注释被并进表达式 ⇒ `parseAbsExprDiag` 解析失败。 断言：expect(caseExpected(WITH_COMMENT)).toBe(\"string\");"	没测该层	keep	keep	—
-"the commented form equals the plain form"	"断言：expect(caseExpected(WITH_COMMENT)).toBe(caseExpected(WITHOUT_COMMENT));"	没测该层	keep	keep	—
-"no nudo:directive-syntax warning is emitted"	"`@nudo:case` 的**期望值**里带**尾注释**（`=> string() // 注释`） ⇒ 期望值解析失败 ⇒ 回退成**显式 unknown** ⇒ **断言被静默作废**（报「1 passed」、 exit 0 的**假绿**）。 根因：`=> expected` 表达式没有尾注释归一化——注释被并进表达式 ⇒ `parseAbsExprDiag` 解析失败。 断言：expect(fnDiags(WITH_COMMENT)).toEqual([]);"	没测该层	keep	keep	—
-"a `//` inside a string literal stays part of the expression"	"`@nudo:case` 的**期望值**里带**尾注释**（`=> string() // 注释`） ⇒ 期望值解析失败 ⇒ 回退成**显式 unknown** ⇒ **断言被静默作废**（报「1 passed」、 exit 0 的**假绿**）。 根因：`=> expected` 表达式没有尾注释归一化——注释被并进表达式 ⇒ `parseAbsExprDiag` 解析失败。 断言：expect(fnDiags(src)).toEqual([]);；expect(caseExpected(src)).toContain(\"url\");"	没测该层	keep	keep	—
-"`@nudo:skip => number() // 注释` keeps the declared return type"	"`@nudo:case` 的**期望值**里带**尾注释**（`=> string() // 注释`） ⇒ 期望值解析失败 ⇒ 回退成**显式 unknown** ⇒ **断言被静默作废**（报「1 passed」、 exit 0 的**假绿**）。 根因：`=> expected` 表达式没有尾注释归一化——注释被并进表达式 ⇒ `parseAbsExprDiag` 解析失败。 断言：expect(skipReturns(src)).toBe(\"number\");"	没测该层	keep	keep	—
-"the commented form equals the plain form"	"断言：expect(skipReturns(plain)).toBe(\"number\");"	没测该层	keep	keep	—
-"no nudo:directive-syntax warning is emitted"	"`@nudo:case` 的**期望值**里带**尾注释**（`=> string() // 注释`） ⇒ 期望值解析失败 ⇒ 回退成**显式 unknown** ⇒ **断言被静默作废**（报「1 passed」、 exit 0 的**假绿**）。 根因：`=> expected` 表达式没有尾注释归一化——注释被并进表达式 ⇒ `parseAbsExprDiag` 解析失败。 断言：expect(fnDiags(src)).toEqual([]);"	没测该层	keep	keep	—
+env extraction matches on: %s	文件级指令两通道一致	没测该层	keep	keep	—
+mock-module extraction matches on: %s	文件级指令两通道一致	没测该层	keep	keep	—
+粘连形态诊断且不产 case；空格形态正常且静默	指令解析面整表化	没测该层	keep	keep	—
+skip 返回类型带尾注释仍解析，且与无注释形态一致、零诊断	指令解析面整表化	没测该层	keep	keep	—
+case 期望值带尾注释仍解析，且与无注释形态一致、零诊断	指令解析面整表化	没测该层	keep	keep	—
+内部 mock 不成为真指令；畸形名有诊断；合法 case 保持参数	指令解析面整表化	没测该层	keep	keep	—
+字符串内的注释符不是尾注释	指令解析面整表化	没测该层	keep	keep	—
+无空格 / 有空格 / `)` 后注释：类型保留且只报尾注释一条	指令解析面整表化	没测该层	keep	keep	—
+裸标签 / 无法识别载荷有诊断；标签边界不吞 assume/ascii/asXYZ	指令解析面整表化	没测该层	keep	keep	—
+无空格 / 有空格 / 嵌套括号都产出类型且零诊断	指令解析面整表化	没测该层	keep	keep	—
+空格分隔的 env 列表合法并产出	指令解析面整表化	没测该层	keep	keep	—
+裸 / 尾随空白 / 不可读 env 列表都告警	指令解析面整表化	没测该层	keep	keep	—
+块注释 / JSDoc 的 import 告警；行注释静默	指令解析面整表化	没测该层	keep	keep	—
+畸形 mock-module 告警；单引号合法载荷静默并产出	指令解析面整表化	没测该层	keep	keep	—
 "emits nudo:directive-syntax naming the missing space"	"`@nudo:case\"c1\" (1, 2)`（标签与名字之间**无空白**）⇒ 抽取侧（严格 `[ \\t]+`）**不匹配** + 诊断侧（宽松 `[ \\t]*`）**判合法** ⇒ 整条 case **静默 蒸发** ⇒ `nudo test` 一个 case 都不跑、**零诊断**（假绿）。 断言：expect(diags).toHaveLength(1);；expect(diags[0]!.code).toBe(\"nudo:directive-syntax\");"	没测该层	keep	keep	—
-"the glued tag does not become a case directive"	"`@nudo:case\"c1\" (1, 2)`（标签与名字之间**无空白**）⇒ 抽取侧（严格 `[ \\t]+`）**不匹配** + 诊断侧（宽松 `[ \\t]*`）**判合法** ⇒ 整条 case **静默 蒸发** ⇒ `nudo test` 一个 case 都不跑、**零诊断**（假绿）。 断言：expect(caseDirectives(GLUED)).toEqual([]);"	没测该层	keep	keep	—
 "the spaced form still works and stays silent"	"断言：expect(fnDiags(spaced)).toEqual([]);；expect(caseDirectives(spaced)).toHaveLength(1);"	没测该层	keep	keep	—
 "same code+message at two positions → two diagnostics"	"指令诊断的**去重身份 = 文案**（无位置）⇒ 同文件两处**逐字相同**的 畸形指令**塌缩成一条** ⇒ 第二处**完全不可见**（用户修好第一处后以为已经修完）。 根因（diag.ts `emitDirectiveDiag`）：去重键 = `code \\0 message`——`DirectiveDiag` 此前**没有位置字段** ⇒ 无法区分两处不同的出错点。 断言：expect(diags).toHaveLength(2);；expect(diags[0]!.at).toEqual({ line: 2, column: 3 });"	没测该层	keep	keep	—
 "same code+message at the same position → one diagnostic (same defect)"	"指令诊断的**去重身份 = 文案**（无位置）⇒ 同文件两处**逐字相同**的 畸形指令**塌缩成一条** ⇒ 第二处**完全不可见**（用户修好第一处后以为已经修完）。 根因（diag.ts `emitDirectiveDiag`）：去重键 = `code \\0 message`——`DirectiveDiag` 此前**没有位置字段** ⇒ 无法区分两处不同的出错点。 断言：expect(diags).toHaveLength(1);"	没测该层	keep	keep	—
@@ -105,9 +89,7 @@ title	rootCause	gap	action	status	evidence
 "`@nudo:mock g from` → nudo:directive-syntax (missing path)"	"`@nudo:mock` 的**载荷为空**（`@nudo:mock fetch =` / `@nudo:mock g from`） ⇒ 指令**静默蒸发**、零诊断 ⇒ mock 丢失 ⇒ 分析退化成 unknown / 假红。 根因：宽松标签正则（`@nudo:mock\\b[ \\t]*([^\\n]*)`）看得到标签，但两条严格文法 （inline `= <expr>` / from `from \"<path>\"`）都不命中 ⇒ 既不建 mock 也不告警。 断言：expect(diags).toHaveLength(1);；expect(diags[0]!.code).toBe(\"nudo:directive-syntax\");"	没测该层	keep	keep	—
 "no mock directive is produced for the empty payload"	"`@nudo:mock` 的**载荷为空**（`@nudo:mock fetch =` / `@nudo:mock g from`） ⇒ 指令**静默蒸发**、零诊断 ⇒ mock 丢失 ⇒ 分析退化成 unknown / 假红。 根因：宽松标签正则（`@nudo:mock\\b[ \\t]*([^\\n]*)`）看得到标签，但两条严格文法 （inline `= <expr>` / from `from \"<path>\"`）都不命中 ⇒ 既不建 mock 也不告警。 断言：expect(mockDirectives(EMPTY_INLINE)).toEqual([]);；expect(mockDirectives(EMPTY_FROM))"	没测该层	keep	keep	—
 "valid payload forms stay silent"	"（parser 面）：行内指令的**粘连**形态此前对扫描器**完全不可见** ⇒ **零诊断**地蒸发。 - `@nudo:replaceFoo <target> <typeExpr>` ⇒ 既不匹配严格正则、也不匹配宽松 正则 ⇒ 整条行内指令消失（连同它本该替换的类型）。 断言：expect(fnDiags(inline)).toEqual([]);；expect(fnDiags(from)).toEqual([]);"	夹具漏形态	keep	keep	—
-"emits nudo:directive-syntax naming the missing space"	"`@nudo:mock<name> = …`（标签与名字之间**无空白**）⇒ **连宽松标签正则 都不匹配** ⇒ 整条 mock **对扫描器完全不可见** ⇒ **零诊断** ⇒ **分析跑在真身上** （`promise<unknown>` 而非 `promise<{ id: 1 }>`）⇒ **假绿**。 根因：三条 mock 正则都以 `\\b` 收尾——`@nudo:mock` 后紧跟词字符时词边界不成立， 宽松形态（用于诊断非法名形态）也看不见这条指令。 断言：expect(diags).toHaveLength(1);；expect(diags[0]!.code).toBe(\"nudo:directive-synta"	夹具漏形态	keep	keep	—
 "the glued tag does not become a mock directive"	"`@nudo:mock<name> = …`（标签与名字之间**无空白**）⇒ **连宽松标签正则 都不匹配** ⇒ 整条 mock **对扫描器完全不可见** ⇒ **零诊断** ⇒ **分析跑在真身上** （`promise<unknown>` 而非 `promise<{ id: 1 }>`）⇒ **假绿**。 根因：三条 mock 正则都以 `\\b` 收尾——`@nudo:mock` 后紧跟词字符时词边界不成立， 宽松形态（用于诊断非法名形态）也看不见这条指令。 断言：expect(mockDirectives(GLUED)).toEqual([]);"	夹具漏形态	keep	keep	—
-"the spaced form still works and stays silent"	"`@nudo:mock f = async (x) => x + 1` 的 **async 语义被静默丢弃** ⇒ mock 被建模成**同步**函数 ⇒ 调用点 `f(1).then(…)` 报「method 'then' missing on number receiver」⇒ **error 级** `nudo:entry-may-throw` **假红** （native 不抛：native 返回 Promise）。 根因（expr-scan.ts `parseArrowFunctionExpr`）：解析层只取箭头的**参数与体**， `init.async` **根本没有被读出来** ⇒ service 据此把 mock"	没测该层	keep	keep	—
 "produces no nudo:directive-syntax warning"	"文件级 `/// @nudo:mock-module` 被**函数级** `@nudo:mock` 标签正则 误捕：正确写法产生**伪造的** nudo:directive-syntax 警告（\"Malformed @nudo:mock: cannot parse name … — got: -module …\"）。 根因：mock 标签正则用 `\\b` 收尾，`@nudo:mock` 后的 `-` 仍满足词边界 ⇒ 文件级 `@nudo:mock-module` 落进函数级 mock 扫描器。 断言：expect(fnDiags(FILE_LEVEL_MOCK_MODULE)).toEqual([]);；expect(fileDi"	没测该层	keep	keep	—
 "leaks no function-level mock directive"	"文件级 `/// @nudo:mock-module` 被**函数级** `@nudo:mock` 标签正则 误捕：正确写法产生**伪造的** nudo:directive-syntax 警告（\"Malformed @nudo:mock: cannot parse name … — got: -module …\"）。 根因：mock 标签正则用 `\\b` 收尾，`@nudo:mock` 后的 `-` 仍满足词边界 ⇒ 文件级 `@nudo:mock-module` 落进函数级 mock 扫描器。 断言：expect(fns.flatMap((f) => f.directives)).toEqual([]);"	没测该层	keep	keep	—
 "still extracts the file-level mock-module directive"	"文件级 `/// @nudo:mock-module` 被**函数级** `@nudo:mock` 标签正则 误捕：正确写法产生**伪造的** nudo:directive-syntax 警告（\"Malformed @nudo:mock: cannot parse name … — got: -module …\"）。 根因：mock 标签正则用 `\\b` 收尾，`@nudo:mock` 后的 `-` 仍满足词边界 ⇒ 文件级 `@nudo:mock-module` 落进函数级 mock 扫描器。 断言：expect(extractFileDirectives(parse(FILE_LEVEL_MOCK_MODULE), { diag"	没测该层	keep	keep	—
@@ -131,6 +113,71 @@ title	rootCause	gap	action	status	evidence
 "witness argument of a concatenation is unknown, not a wrong string"	"旧实现的字符串分支 只查首尾引号 ⇒ `(\"a\" + \"b\")` 折成 `a\" + \"b`（自信的错值）⇒ 见证 ⊭ 契约 ⇒ 契约门禁**假红**（用户写的见证恰好就是契约要求的值）。 修法：与 同源（字符串分支的词法边界判定）⇒ 非单个字面量落 unknown（诊断给出），不再折出错值。 断言：expect(args).toHaveLength(1);；expect([\"unknown\", \"never\"]).toContain(args[0]!.shape.k);"	旧断言钉错	keep	keep	—
 "the wrong value \"a\\\" + \\\"b\" is never produced"	"`@nudo:mock g = ({ a, b }) => a + b` 的**形参根本没被绑定** ⇒ mock 体读到未声明全局 ⇒ `ReferenceError` ⇒ **error 级**假红 + dts 产物写出 `caller(): never`（**错误类型声明**）。 根因（expr-scan.ts `parseArrowFunctionExpr` 的形参循环）：形参被降级成 「名字 / 占位名」而**无绑定语义**——解构形参退化成占位名 `__destructured_0`、 `AssignmentPattern`（默认值）**整条丢弃**（连同 `params` / `paramPatterns` 的 下标对"	没测该层	keep	keep	—
 "a literal witness is unaffected"	"`@nudo:skip => \"a\" + \"b\"` 的声明返回类型、`@nudo:mock` 载荷里的字符串值 都走同一套字符串分支 ⇒ 旧实现把 `a\" + \"b` 折成**声明的类型 / mock 值** ⇒ 签名与 dts 给出**错误的类型声明**（谁也没写过的字符串）。 修法：与 同源——字符串分支的词法边界判定单源在 `directives/string-literal.ts`； 断言：expect(litValue(args[0]!)).toEqual({ ok: true, value: \"ab\" });"	夹具漏形态	keep	keep	—
-"env extraction matches on: %s"	表驱动用例：env extraction matches on: %s；枚举同一不变量下的输入/期望组合，属既有表行补齐。	夹具漏形态	keep	keep	—
-"mock-module extraction matches on: %s"	表驱动用例：mock-module extraction matches on: %s；枚举同一不变量下的输入/期望组合，属既有表行补齐。	夹具漏形态	keep	keep	—
+```
+
+```audit-deleted
+title	reason	evidence
+malformed mock-module payload → nudo:directive-syntax warning	dup:指令解析面整表化	commit:4b8e51ee
+single-quoted mock-module payload is accepted and silent	dup:指令解析面整表化	commit:4b8e51ee
+block comment form → nudo:directive-syntax warning	dup:指令解析面整表化	commit:4b8e51ee
+JSDoc block form → warning too	dup:指令解析面整表化	commit:4b8e51ee
+line comment form stays silent (control)	dup:指令解析面整表化	commit:4b8e51ee
+bare tag → nudo:directive-syntax warning	dup:指令解析面整表化	commit:4b8e51ee
+bare tag with trailing blank → warning too	dup:指令解析面整表化	commit:4b8e51ee
+space-separated env list is accepted and silent	dup:指令解析面整表化	commit:4b8e51ee
+unreadable env list → warning (no silent drop)	dup:指令解析面整表化	commit:4b8e51ee
+`@nudo:as(string())` (no space) yields a type — not an evaporated directive	dup:指令解析面整表化	commit:4b8e51ee
+`@nudo:as number()` (spaced form) still yields the same type	dup:指令解析面整表化	commit:4b8e51ee
+`@nudo:as(shape({ port: number() }))` (nested parens) yields an object type	dup:指令解析面整表化	commit:4b8e51ee
+bare `@nudo:as` is diagnosed explicitly (never silently ignored)	dup:指令解析面整表化	commit:4b8e51ee
+unrecognised payload is diagnosed instead of evaporating	dup:指令解析面整表化	commit:4b8e51ee
+tag boundary: `@nudo:asXYZ` / `@nudo:assume` are not `@nudo:as` directives	dup:指令解析面整表化	commit:4b8e51ee
+`string()// why` (no space) keeps the type (no unknown downgrade)	dup:指令解析面整表化	commit:4b8e51ee
+`string() // why` (spaced form) still behaves the same	dup:指令解析面整表化	commit:4b8e51ee
+comment markers inside a string literal are not a trailing comment	dup:指令解析面整表化	commit:4b8e51ee
+`//` right after `)` is a comment (not swallowed into the expression)	dup:指令解析面整表化	commit:4b8e51ee
+the inner @nudo:mock does not become a real mock directive	dup:指令解析面整表化	commit:4b8e51ee
+the malformed case name is still diagnosed	dup:指令解析面整表化	commit:4b8e51ee
+a well-formed case keeps its arguments (no over-masking)	dup:指令解析面整表化	commit:4b8e51ee
+the expected type is parsed (not degraded to unknown)	dup:指令解析面整表化	commit:4b8e51ee
+the commented form equals the plain form	dup:指令解析面整表化	commit:4b8e51ee
+no nudo:directive-syntax warning is emitted	dup:指令解析面整表化	commit:4b8e51ee
+a `//` inside a string literal stays part of the expression	dup:指令解析面整表化	commit:4b8e51ee
+`@nudo:skip => number() // 注释` keeps the declared return type	dup:指令解析面整表化	commit:4b8e51ee
+the commented form equals the plain form	dup:指令解析面整表化	commit:4b8e51ee
+no nudo:directive-syntax warning is emitted	dup:指令解析面整表化	commit:4b8e51ee
+the glued tag does not become a case directive	dup:指令解析面整表化	commit:4b8e51ee
+emits nudo:directive-syntax naming the missing space	dup:指令解析面整表化	commit:4b8e51ee
+the spaced form still works and stays silent	dup:指令解析面整表化	commit:4b8e51ee
+title	dup:指令解析面整表化	commit:4b8e51ee
+malformed mock-module payload → nudo:directive-syntax warning	dup:指令解析面整表化	commit:4b8e51ee
+single-quoted mock-module payload is accepted and silent	dup:指令解析面整表化	commit:4b8e51ee
+block comment form → nudo:directive-syntax warning	dup:指令解析面整表化	commit:4b8e51ee
+JSDoc block form → warning too	dup:指令解析面整表化	commit:4b8e51ee
+line comment form stays silent (control)	dup:指令解析面整表化	commit:4b8e51ee
+bare tag → nudo:directive-syntax warning	dup:指令解析面整表化	commit:4b8e51ee
+bare tag with trailing blank → warning too	dup:指令解析面整表化	commit:4b8e51ee
+space-separated env list is accepted and silent	dup:指令解析面整表化	commit:4b8e51ee
+unreadable env list → warning (no silent drop)	dup:指令解析面整表化	commit:4b8e51ee
+`@nudo:as(string())` (no space) yields a type — not an evaporated directive	dup:指令解析面整表化	commit:4b8e51ee
+`@nudo:as number()` (spaced form) still yields the same type	dup:指令解析面整表化	commit:4b8e51ee
+`@nudo:as(shape({ port: number() }))` (nested parens) yields an object type	dup:指令解析面整表化	commit:4b8e51ee
+bare `@nudo:as` is diagnosed explicitly (never silently ignored)	dup:指令解析面整表化	commit:4b8e51ee
+unrecognised payload is diagnosed instead of evaporating	dup:指令解析面整表化	commit:4b8e51ee
+tag boundary: `@nudo:asXYZ` / `@nudo:assume` are not `@nudo:as` directives	dup:指令解析面整表化	commit:4b8e51ee
+`string()// why` (no space) keeps the type (no unknown downgrade)	dup:指令解析面整表化	commit:4b8e51ee
+`string() // why` (spaced form) still behaves the same	dup:指令解析面整表化	commit:4b8e51ee
+comment markers inside a string literal are not a trailing comment	dup:指令解析面整表化	commit:4b8e51ee
+`//` right after `)` is a comment (not swallowed into the expression)	dup:指令解析面整表化	commit:4b8e51ee
+the inner @nudo:mock does not become a real mock directive	dup:指令解析面整表化	commit:4b8e51ee
+the malformed case name is still diagnosed	dup:指令解析面整表化	commit:4b8e51ee
+a well-formed case keeps its arguments (no over-masking)	dup:指令解析面整表化	commit:4b8e51ee
+the expected type is parsed (not degraded to unknown)	dup:指令解析面整表化	commit:4b8e51ee
+the commented form equals the plain form	dup:指令解析面整表化	commit:4b8e51ee
+no nudo:directive-syntax warning is emitted	dup:指令解析面整表化	commit:4b8e51ee
+a `//` inside a string literal stays part of the expression	dup:指令解析面整表化	commit:4b8e51ee
+`@nudo:skip => number() // 注释` keeps the declared return type	dup:指令解析面整表化	commit:4b8e51ee
+the commented form equals the plain form	dup:指令解析面整表化	commit:4b8e51ee
+no nudo:directive-syntax warning is emitted	dup:指令解析面整表化	commit:4b8e51ee
+the glued tag does not become a case directive	dup:指令解析面整表化	commit:4b8e51ee
 ```
