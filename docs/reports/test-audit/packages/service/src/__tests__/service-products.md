@@ -1,5 +1,13 @@
 ```audit
 title	rootCause	gap	action	status	evidence
+js 无注解仍 any；dts unknown；ts 未标注仍 any；契约优先于注解；无契约注解生效	产品面中段表	没测该层	keep	keep	—
+string / string[] / 多形参 / rest / JSDoc 注解保留	产品面中段表	没测该层	keep	keep	—
+TS 注解映射 entry@ 实参；不可映射回落 any	产品面中段表	没测该层	keep	keep	—
+extractFormals/ParamNames 不含 this 且 index 重排；dts 无 this；普通表原样	产品面中段表	没测该层	keep	keep	—
+数组解构契约聚合成元组；对象解构仍是对象；无契约仍是观测面	产品面中段表	没测该层	keep	keep	—
+字段名 lit/lam 都不会把 lit 拖进 import	产品面中段表	没测该层	keep	keep	—
+已有 import { lit } 仍补 litC 声明（别名）；无该 import 时直接声明 lit	产品面中段表	没测该层	keep	keep	—
+guard 产物过 tsc --strict 且运行时语义不变	产品面中段表	没测该层	keep	keep	—
 纯调用点观测剥到基类型；无调用点入口泛化保留嵌套精度	产品面契约表	没测该层	keep	keep	—
 strMin/strMax 用 refine；无界仍 z.string()	产品面契约表	没测该层	keep	keep	—
 不支持形态诊断且不登记；变量/return/export/解构照常生效	产品面契约表	没测该层	keep	keep	—
@@ -9,36 +17,6 @@ zod 方言保 z.bigint 并记 dropped；schema 节点 prim bigint	产品面契�
 生成器 brand 不引用 GeneratorFunction；模块可求值；非全局降级 unknown；全局仍 instanceof；standard 不受影响	产品面契约表	没测该层	keep	keep	—
 数据属性 / 显式 undefined / setter-only / 空对象	产品面契约表	没测该层	keep	keep	—
 getter 读域：数字/字符串/this/嵌套/抛 unknown；不出现 exact undefined	产品面契约表	没测该层	keep	keep	—
-"产物真跑 tsc --noEmit --strict（改前 TS7053 ×2）"	"guard 产物因 brand 的 `instanceof` **类型收窄**过不了 `tsc --noEmit --strict`（TS7053：`data[\"0\"]` 在 `Uint8Array | Record<string, any>` 上不可索引）⇒ `nudo export` **exit 0、 零警告**地发布不可编译的产物。 根因：`denote.ts` 的 brand 身份子句把 `data` 放进 `instanceof` 左操作数 ⇒ TS 收窄 `data`； 断言：expect(source).toContain(\"const data: any = value as Record<string, any>"	没测该层	keep	keep	—
-"运行时语义不变：接受合法 Uint8Array，拒绝普通对象"	"guard 产物因 brand 的 `instanceof` **类型收窄**过不了 `tsc --noEmit --strict`（TS7053：`data[\"0\"]` 在 `Uint8Array | Record<string, any>` 上不可索引）⇒ `nudo export` **exit 0、 零警告**地发布不可编译的产物。 根因：`denote.ts` 的 brand 身份子句把 `data` 放进 `instanceof` 左操作数 ⇒ TS 收窄 `data`； 断言：expect(check(new Uint8Array([1, 2]))).toBe(true);；expect(check({ 0: 1, 1"	没测该层	keep	keep	—
-"侧车已有 `import { lit }` ⇒ 仍补 litC 声明（别名，不撞名）"	"` 声明头 ⇒ 产物里的 `lit(1)` 绑定到 core 的 **Term 构造器**（约束构建器叫 `litC`） ⇒ `tsc --strict` 报 TS2322 / TS2345，而 `nudo check` 对该侧车判 OK （缺陷对 nudo 完全隐形）。 `import { lit }` 不豁免 ⇒ 走别名 + 声明头。 断言：expect(r.written).toContain(\"f\");；expect(after).toContain(`typeof import(\"@nudojs/core\").litC;`);"	夹具漏形态	keep	keep	—
-"对照组：侧车不含 `import { lit }` ⇒ 直接声明 `lit`（无需别名）"	"` 声明头 ⇒ 产物里的 `lit(1)` 绑定到 core 的 **Term 构造器**（约束构建器叫 `litC`） ⇒ `tsc --strict` 报 TS2322 / TS2345，而 `nudo check` 对该侧车判 OK （缺陷对 nudo 完全隐形）。 `import { lit }` 不豁免 ⇒ 走别名 + 声明头。 断言：expect(after).toContain(`declare const lit: typeof import(\"@nudojs/core\").litC;`);；expect(after).toContain(\"lit(1)\");"	夹具漏形态	keep	keep	—
-"字段名叫 `lit` 不得把 `lit` 拖进 import（DSL 从未调用 lit(）"	"` 声明头 ⇒ 产物里的 `lit(1)` 绑定到 core 的 **Term 构造器**（约束构建器叫 `litC`） ⇒ `tsc --strict` 报 TS2322 / TS2345，而 `nudo check` 对该侧车判 OK （缺陷对 nudo 完全隐形）。 `import { lit }` 不豁免 ⇒ 走别名 + 声明头。 断言：expect(line).toContain(\"fn\");；expect(line).toContain(\"shape\");"	夹具漏形态	keep	keep	—
-"对照组：字段名改成 `lam` ⇒ 同一个 import 列表（唯一变量是字段名）"	"` 声明头 ⇒ 产物里的 `lit(1)` 绑定到 core 的 **Term 构造器**（约束构建器叫 `litC`） ⇒ `tsc --strict` 报 TS2322 / TS2345，而 `nudo check` 对该侧车判 OK （缺陷对 nudo 完全隐形）。 `import { lit }` 不豁免 ⇒ 走别名 + 声明头。 断言：expect(importLine(r.draftSource)).not.toMatch(/(?<![\\w$])lit(?![A-Za-z0-9_$])/);"	夹具漏形态	keep	keep	—
-"部分覆盖（契约只写 a）⇒ 形参类型是元组（改前是 { a: number }）"	"症状（改前）：`export function f7([a, b])` + 侧车契约 `fn({ a: number() })` ⇒ dts 给出 `export declare function f7(_p0: { a: number }): number; ` —— 声明面说「参数是个**对象** `{ a }`」，而真实形参是个**数组** ⇒ 消费方按 `{ a: number }` 写调用 ⇒ 与真实调用对不上。 断言：expect(decl).toContain(\"[number, unknown]\");；expect(decl).not.toContain(\"{ a: number }\");"	夹具漏形态	keep	keep	—
-"全覆盖（契约写 a 与 b）⇒ 形参类型是元组、声明名是数组形态"	"症状（改前）：`export function f7([a, b])` + 侧车契约 `fn({ a: number() })` ⇒ dts 给出 `export declare function f7(_p0: { a: number }): number; ` —— 声明面说「参数是个**对象** `{ a }`」，而真实形参是个**数组** ⇒ 消费方按 `{ a: number }` 写调用 ⇒ 与真实调用对不上。 断言：expect(decl).toContain(\"[number, string]\");；expect(decl).toContain(\"[ a, b ]\");"	夹具漏形态	keep	keep	—
-"负控制：对象解构的字段级契约仍聚合成对象（既有口径不变）"	"症状（改前）：`export function f7([a, b])` + 侧车契约 `fn({ a: number() })` ⇒ dts 给出 `export declare function f7(_p0: { a: number }): number; ` —— 声明面说「参数是个**对象** `{ a }`」，而真实形参是个**数组** ⇒ 消费方按 `{ a: number }` 写调用 ⇒ 与真实调用对不上。 断言：expect(decl).toContain(\"{ a: number }\");"	夹具漏形态	keep	keep	—
-"负控制：无契约时仍是观测面（number[]），不被本次改动波及"	"症状（改前）：`export function f7([a, b])` + 侧车契约 `fn({ a: number() })` ⇒ dts 给出 `export declare function f7(_p0: { a: number }): number; ` —— 声明面说「参数是个**对象** `{ a }`」，而真实形参是个**数组** ⇒ 消费方按 `{ a: number }` 写调用 ⇒ 与真实调用对不上。 断言：expect(decl).toContain(\"number[]\");"	夹具漏形态	keep	keep	—
-"extractFormals 不返回 `this` 形参"	"（**产物半**，service 侧）：TS 的 `this: T` 是**接收者标注**，不是 运行时形参 —— 形参表多一槽 ⇒ **四个产物面同时失真**： dts 多一个形参（消费方吃 TS2554 假红）、zod 多一个字面量槽 `\"this\"` （对每一个真实调用值报假红）、standard 多一个幽灵导出 `<fn>_this`。 根因分层： - **模型层**（core `formalParamsFromNodes` 的 Identifier 分支）：已排除名字 为 `this` 的形参； 断言：expect(formals.map((f) => (f.kind === \"id\" ? f.name : f.kind)"	夹具漏形态	keep	keep	—
-"过滤后 index 重排（`this` 不占实参位 ⇒ 后续形参前移）"	"（**产物半**，service 侧）：TS 的 `this: T` 是**接收者标注**，不是 运行时形参 —— 形参表多一槽 ⇒ **四个产物面同时失真**： dts 多一个形参（消费方吃 TS2554 假红）、zod 多一个字面量槽 `\"this\"` （对每一个真实调用值报假红）、standard 多一个幽灵导出 `<fn>_this`。 根因分层： - **模型层**（core `formalParamsFromNodes` 的 Identifier 分支）：已排除名字 为 `this` 的形参； 断言：expect(formals.map((f) => f.index)).toEqual([0]);；expect(form"	夹具漏形态	keep	keep	—
-"extractParamNames（产物面的槽名来源）不含 `this`"	"（**产物半**，service 侧）：TS 的 `this: T` 是**接收者标注**，不是 运行时形参 —— 形参表多一槽 ⇒ **四个产物面同时失真**： dts 多一个形参（消费方吃 TS2554 假红）、zod 多一个字面量槽 `\"this\"` （对每一个真实调用值报假红）、standard 多一个幽灵导出 `<fn>_this`。 根因分层： - **模型层**（core `formalParamsFromNodes` 的 Identifier 分支）：已排除名字 为 `this` 的形参； 断言：expect(extractParamNames(firstFnNode(WITH_THIS))).toEqual([\"a"	夹具漏形态	keep	keep	—
-"dts 产物面没有 `this` 形参（消费方不该吃 TS2554 假红）"	"（**产物半**，service 侧）：TS 的 `this: T` 是**接收者标注**，不是 运行时形参 —— 形参表多一槽 ⇒ **四个产物面同时失真**： dts 多一个形参（消费方吃 TS2554 假红）、zod 多一个字面量槽 `\"this\"` （对每一个真实调用值报假红）、standard 多一个幽灵导出 `<fn>_this`。 根因分层： - **模型层**（core `formalParamsFromNodes` 的 Identifier 分支）：已排除名字 为 `this` 的形参； 断言：expect(dts).not.toContain(\"this:\");；expect(dts).toContain(\"ex"	夹具漏形态	keep	keep	—
-"负控制：没有 `this` 标注时形参表原样（index 连续、名字不变）"	"（**产物半**，service 侧）：TS 的 `this: T` 是**接收者标注**，不是 运行时形参 —— 形参表多一槽 ⇒ **四个产物面同时失真**： dts 多一个形参（消费方吃 TS2554 假红）、zod 多一个字面量槽 `\"this\"` （对每一个真实调用值报假红）、standard 多一个幽灵导出 `<fn>_this`。 根因分层： - **模型层**（core `formalParamsFromNodes` 的 Identifier 分支）：已排除名字 为 `this` 的形参； 断言：expect(formals.map((f) => f.index)).toEqual([0, 1]);；expect(f"	夹具漏形态	keep	keep	—
-"`.ts` 的 string 形参：entry@ 实参是 string（改前是 any）"	"（**service 侧**）回归钉：`.ts` 源的**形参类型注解**必须进 推断面（entry@ 实参）与产物面（dts 形参类型）。 背景（`tmp/bugs/14-service-eval.md` ）：`.ts` 源里写好的 `a: string` 从未进入推断 —— 解析层把注解删了（core 侧已修：注解文本以 旁路 `nudoTypeText` 留在 AST 上，经 `FormalParam.tsType` 带出），但 **service 侧还有两处没接线**（本文件钉的就是这两处）： 1. `analyzer-orchestrate-uncached-cases.ts` 的 entry@ 兜底评估：入口实参 写死"	没测该层	keep	keep	—
-"`.ts` 的多个形参：各自按声明类型（number / number）"	"（**service 侧**）回归钉：`.ts` 源的**形参类型注解**必须进 推断面（entry@ 实参）与产物面（dts 形参类型）。 背景（`tmp/bugs/14-service-eval.md` ）：`.ts` 源里写好的 `a: string` 从未进入推断 —— 解析层把注解删了（core 侧已修：注解文本以 旁路 `nudoTypeText` 留在 AST 上，经 `FormalParam.tsType` 带出），但 **service 侧还有两处没接线**（本文件钉的就是这两处）： 1. `analyzer-orchestrate-uncached-cases.ts` 的 entry@ 兜底评估：入口实参 写死"	没测该层	keep	keep	—
-"`.ts` 的 boolean 形参：entry@ 实参是 boolean"	"（**service 侧**）回归钉：`.ts` 源的**形参类型注解**必须进 推断面（entry@ 实参）与产物面（dts 形参类型）。 背景（`tmp/bugs/14-service-eval.md` ）：`.ts` 源里写好的 `a: string` 从未进入推断 —— 解析层把注解删了（core 侧已修：注解文本以 旁路 `nudoTypeText` 留在 AST 上，经 `FormalParam.tsType` 带出），但 **service 侧还有两处没接线**（本文件钉的就是这两处）： 1. `analyzer-orchestrate-uncached-cases.ts` 的 entry@ 兜底评估：入口实参 写死"	没测该层	keep	keep	—
-"合法 TypeScript 不再因「参数无约束」在 entry@ 抛 TypeError（改前抛）"	"（**service 侧**）回归钉：`.ts` 源的**形参类型注解**必须进 推断面（entry@ 实参）与产物面（dts 形参类型）。 背景（`tmp/bugs/14-service-eval.md` ）：`.ts` 源里写好的 `a: string` 从未进入推断 —— 解析层把注解删了（core 侧已修：注解文本以 旁路 `nudoTypeText` 留在 AST 上，经 `FormalParam.tsType` 带出），但 **service 侧还有两处没接线**（本文件钉的就是这两处）： 1. `analyzer-orchestrate-uncached-cases.ts` 的 entry@ 兜底评估：入口实参 写死"	没测该层	keep	keep	—
-"不可映射的声明类型（string[]）：实参仍回落 any（不猜）"	"（**service 侧**）回归钉：`.ts` 源的**形参类型注解**必须进 推断面（entry@ 实参）与产物面（dts 形参类型）。 背景（`tmp/bugs/14-service-eval.md` ）：`.ts` 源里写好的 `a: string` 从未进入推断 —— 解析层把注解删了（core 侧已修：注解文本以 旁路 `nudoTypeText` 留在 AST 上，经 `FormalParam.tsType` 带出），但 **service 侧还有两处没接线**（本文件钉的就是这两处）： 1. `analyzer-orchestrate-uncached-cases.ts` 的 entry@ 兜底评估：入口实参 写死"	没测该层	keep	keep	—
-"dts 形参保留 string 注解（改前是 unknown）"	"（**service 侧**）回归钉：`.ts` 源的**形参类型注解**必须进 推断面（entry@ 实参）与产物面（dts 形参类型）。 背景（`tmp/bugs/14-service-eval.md` ）：`.ts` 源里写好的 `a: string` 从未进入推断 —— 解析层把注解删了（core 侧已修：注解文本以 旁路 `nudoTypeText` 留在 AST 上，经 `FormalParam.tsType` 带出），但 **service 侧还有两处没接线**（本文件钉的就是这两处）： 1. `analyzer-orchestrate-uncached-cases.ts` 的 entry@ 兜底评估：入口实参 写死"	没测该层	keep	keep	—
-"dts 形参保留不可映射的 string[] 注解（产物不得比源更弱）"	"（**service 侧**）回归钉：`.ts` 源的**形参类型注解**必须进 推断面（entry@ 实参）与产物面（dts 形参类型）。 背景（`tmp/bugs/14-service-eval.md` ）：`.ts` 源里写好的 `a: string` 从未进入推断 —— 解析层把注解删了（core 侧已修：注解文本以 旁路 `nudoTypeText` 留在 AST 上，经 `FormalParam.tsType` 带出），但 **service 侧还有两处没接线**（本文件钉的就是这两处）： 1. `analyzer-orchestrate-uncached-cases.ts` 的 entry@ 兜底评估：入口实参 写死"	没测该层	keep	keep	—
-"dts 多个形参各自保留注解"	"（**service 侧**）回归钉：`.ts` 源的**形参类型注解**必须进 推断面（entry@ 实参）与产物面（dts 形参类型）。 背景（`tmp/bugs/14-service-eval.md` ）：`.ts` 源里写好的 `a: string` 从未进入推断 —— 解析层把注解删了（core 侧已修：注解文本以 旁路 `nudoTypeText` 留在 AST 上，经 `FormalParam.tsType` 带出），但 **service 侧还有两处没接线**（本文件钉的就是这两处）： 1. `analyzer-orchestrate-uncached-cases.ts` 的 entry@ 兜底评估：入口实参 写死"	没测该层	keep	keep	—
-"dts rest 形参保留数组注解（...rest: string[]）"	"（**service 侧**）回归钉：`.ts` 源的**形参类型注解**必须进 推断面（entry@ 实参）与产物面（dts 形参类型）。 背景（`tmp/bugs/14-service-eval.md` ）：`.ts` 源里写好的 `a: string` 从未进入推断 —— 解析层把注解删了（core 侧已修：注解文本以 旁路 `nudoTypeText` 留在 AST 上，经 `FormalParam.tsType` 带出），但 **service 侧还有两处没接线**（本文件钉的就是这两处）： 1. `analyzer-orchestrate-uncached-cases.ts` 的 entry@ 兜底评估：入口实参 写死"	没测该层	keep	keep	—
-"dts 的 JSDoc @param 与声明位一致（string，不是 unknown）"	"（**service 侧**）回归钉：`.ts` 源的**形参类型注解**必须进 推断面（entry@ 实参）与产物面（dts 形参类型）。 背景（`tmp/bugs/14-service-eval.md` ）：`.ts` 源里写好的 `a: string` 从未进入推断 —— 解析层把注解删了（core 侧已修：注解文本以 旁路 `nudoTypeText` 留在 AST 上，经 `FormalParam.tsType` 带出），但 **service 侧还有两处没接线**（本文件钉的就是这两处）： 1. `analyzer-orchestrate-uncached-cases.ts` 的 entry@ 兜底评估：入口实参 写死"	没测该层	keep	keep	—
-"同形 `.js` 源（无注解）：entry@ 实参仍是 any、仍抛 TypeError"	"（**service 侧**）回归钉：`.ts` 源的**形参类型注解**必须进 推断面（entry@ 实参）与产物面（dts 形参类型）。 背景（`tmp/bugs/14-service-eval.md` ）：`.ts` 源里写好的 `a: string` 从未进入推断 —— 解析层把注解删了（core 侧已修：注解文本以 旁路 `nudoTypeText` 留在 AST 上，经 `FormalParam.tsType` 带出），但 **service 侧还有两处没接线**（本文件钉的就是这两处）： 1. `analyzer-orchestrate-uncached-cases.ts` 的 entry@ 兜底评估：入口实参 写死"	没测该层	keep	keep	—
-"同形 `.js` 源（无注解）：dts 形参是 unknown（TS 投影面归一）"	"（**service 侧**）回归钉：`.ts` 源的**形参类型注解**必须进 推断面（entry@ 实参）与产物面（dts 形参类型）。 背景（`tmp/bugs/14-service-eval.md` ）：`.ts` 源里写好的 `a: string` 从未进入推断 —— 解析层把注解删了（core 侧已修：注解文本以 旁路 `nudoTypeText` 留在 AST 上，经 `FormalParam.tsType` 带出），但 **service 侧还有两处没接线**（本文件钉的就是这两处）： 1. `analyzer-orchestrate-uncached-cases.ts` 的 entry@ 兜底评估：入口实参 写死"	没测该层	keep	keep	—
-"`.ts` 源里未标注的形参：仍是 any（无注解 = 无约束）"	"（**service 侧**）回归钉：`.ts` 源的**形参类型注解**必须进 推断面（entry@ 实参）与产物面（dts 形参类型）。 背景（`tmp/bugs/14-service-eval.md` ）：`.ts` 源里写好的 `a: string` 从未进入推断 —— 解析层把注解删了（core 侧已修：注解文本以 旁路 `nudoTypeText` 留在 AST 上，经 `FormalParam.tsType` 带出），但 **service 侧还有两处没接线**（本文件钉的就是这两处）： 1. `analyzer-orchestrate-uncached-cases.ts` 的 entry@ 兜底评估：入口实参 写死"	没测该层	keep	keep	—
-"手写契约仍优先于 TS 注解（既有口径「声明位取侧车契约」）"	"（**service 侧**）回归钉：`.ts` 源的**形参类型注解**必须进 推断面（entry@ 实参）与产物面（dts 形参类型）。 背景（`tmp/bugs/14-service-eval.md` ）：`.ts` 源里写好的 `a: string` 从未进入推断 —— 解析层把注解删了（core 侧已修：注解文本以 旁路 `nudoTypeText` 留在 AST 上，经 `FormalParam.tsType` 带出），但 **service 侧还有两处没接线**（本文件钉的就是这两处）： 1. `analyzer-orchestrate-uncached-cases.ts` 的 entry@ 兜底评估：入口实参 写死"	没测该层	keep	keep	—
-"无契约时 TS 注解生效（同一函数，去掉契约面后是 string）"	"（**service 侧**）回归钉：`.ts` 源的**形参类型注解**必须进 推断面（entry@ 实参）与产物面（dts 形参类型）。 背景（`tmp/bugs/14-service-eval.md` ）：`.ts` 源里写好的 `a: string` 从未进入推断 —— 解析层把注解删了（core 侧已修：注解文本以 旁路 `nudoTypeText` 留在 AST 上，经 `FormalParam.tsType` 带出），但 **service 侧还有两处没接线**（本文件钉的就是这两处）： 1. `analyzer-orchestrate-uncached-cases.ts` 的 entry@ 兜底评估：入口实参 写死"	没测该层	keep	keep	—
 "directive path inherits the noDeclaration classification"	"dts 投影不得产出非法 TS 标识符。 带 @nudo: 指令的类方法此前走**指令路径**，丢掉了顶层函数普查的 noDeclaration 分类 ⇒ dts 投影把作用域名 \"C.m\" 直接当函数名，产出 `export declare function C.m(x: number): unknown; 断言：expect(fn).toBeDefined();；expect(fn!.noDeclaration).toBe(true);"	没测该层	keep	keep	—
 "dts projection never emits a dotted function name"	"dts 投影不得产出非法 TS 标识符。 带 @nudo: 指令的类方法此前走**指令路径**，丢掉了顶层函数普查的 noDeclaration 分类 ⇒ dts 投影把作用域名 \"C.m\" 直接当函数名，产出 `export declare function C.m(x: number): unknown; 断言：expect(proj.lines.length).toBeGreaterThan(0);；expect(decl).toBeDefined();"	没测该层	keep	keep	—
 "defensive gate: an illegal name is cleaned even without the noDeclaration flag"	"dts 投影不得产出非法 TS 标识符。 带 @nudo: 指令的类方法此前走**指令路径**，丢掉了顶层函数普查的 noDeclaration 分类 ⇒ dts 投影把作用域名 \"C.m\" 直接当函数名，产出 `export declare function C.m(x: number): unknown; 断言：expect(proj.lines.length).toBeGreaterThan(0);；expect(decl).toBeDefined();"	没测该层	keep	keep	—
@@ -103,4 +81,34 @@ strMin / strMax 用 refine 写 .length（不是 .min()/.max()）	dup:产品面�
 对照：无长度界时仍是纯 z.string()	dup:产品面契约表	commit:52dbd878
 纯调用点观测：返回位对象槽字面量 → 基类型	dup:产品面契约表	commit:52dbd878
 无调用点的入口泛化仍保留嵌套精度（对照组，Bug 565 口径）	dup:产品面契约表	commit:52dbd878
+产物真跑 tsc --noEmit --strict（改前 TS7053 ×2）	dup:产品面中段表	commit:c64c7632
+运行时语义不变：接受合法 Uint8Array，拒绝普通对象	dup:产品面中段表	commit:c64c7632
+侧车已有 `import { lit }` ⇒ 仍补 litC 声明（别名，不撞名）	dup:产品面中段表	commit:c64c7632
+对照组：侧车不含 `import { lit }` ⇒ 直接声明 `lit`（无需别名）	dup:产品面中段表	commit:c64c7632
+字段名叫 `lit` 不得把 `lit` 拖进 import（DSL 从未调用 lit(）	dup:产品面中段表	commit:c64c7632
+对照组：字段名改成 `lam` ⇒ 同一个 import 列表（唯一变量是字段名）	dup:产品面中段表	commit:c64c7632
+部分覆盖（契约只写 a）⇒ 形参类型是元组（改前是 { a: number }）	dup:产品面中段表	commit:c64c7632
+全覆盖（契约写 a 与 b）⇒ 形参类型是元组、声明名是数组形态	dup:产品面中段表	commit:c64c7632
+负控制：对象解构的字段级契约仍聚合成对象（既有口径不变）	dup:产品面中段表	commit:c64c7632
+负控制：无契约时仍是观测面（number[]），不被本次改动波及	dup:产品面中段表	commit:c64c7632
+extractFormals 不返回 `this` 形参	dup:产品面中段表	commit:c64c7632
+过滤后 index 重排（`this` 不占实参位 ⇒ 后续形参前移）	dup:产品面中段表	commit:c64c7632
+extractParamNames（产物面的槽名来源）不含 `this`	dup:产品面中段表	commit:c64c7632
+dts 产物面没有 `this` 形参（消费方不该吃 TS2554 假红）	dup:产品面中段表	commit:c64c7632
+负控制：没有 `this` 标注时形参表原样（index 连续、名字不变）	dup:产品面中段表	commit:c64c7632
+`.ts` 的 string 形参：entry@ 实参是 string（改前是 any）	dup:产品面中段表	commit:c64c7632
+`.ts` 的多个形参：各自按声明类型（number / number）	dup:产品面中段表	commit:c64c7632
+`.ts` 的 boolean 形参：entry@ 实参是 boolean	dup:产品面中段表	commit:c64c7632
+合法 TypeScript 不再因「参数无约束」在 entry@ 抛 TypeError（改前抛）	dup:产品面中段表	commit:c64c7632
+不可映射的声明类型（string[]）：实参仍回落 any（不猜）	dup:产品面中段表	commit:c64c7632
+dts 形参保留 string 注解（改前是 unknown）	dup:产品面中段表	commit:c64c7632
+dts 形参保留不可映射的 string[] 注解（产物不得比源更弱）	dup:产品面中段表	commit:c64c7632
+dts 多个形参各自保留注解	dup:产品面中段表	commit:c64c7632
+dts rest 形参保留数组注解（...rest: string[]）	dup:产品面中段表	commit:c64c7632
+dts 的 JSDoc @param 与声明位一致（string，不是 unknown）	dup:产品面中段表	commit:c64c7632
+同形 `.js` 源（无注解）：entry@ 实参仍是 any、仍抛 TypeError	dup:产品面中段表	commit:c64c7632
+同形 `.js` 源（无注解）：dts 形参是 unknown（TS 投影面归一）	dup:产品面中段表	commit:c64c7632
+`.ts` 源里未标注的形参：仍是 any（无注解 = 无约束）	dup:产品面中段表	commit:c64c7632
+手写契约仍优先于 TS 注解（既有口径「声明位取侧车契约」）	dup:产品面中段表	commit:c64c7632
+无契约时 TS 注解生效（同一函数，去掉契约面后是 string）	dup:产品面中段表	commit:c64c7632
 ```
