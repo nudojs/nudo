@@ -32,7 +32,7 @@ describe("handler-return-thenable", () => {
 
 
 
-describe("handler-return-thenable", () => {
+{
 /**
  * 邻面回归钉：**then / catch / finally 回调返回值**的 thenable 采纳。
  *
@@ -93,8 +93,7 @@ function promiseParts(r: Abs): { inner: Abs; rejected?: Abs; unsettled: boolean 
 
 describe("邻面：then 回调返回值的 thenable 采纳", () => {
   it("thenable 的兑现值进 promise 的值域（原生 5，引擎改前 { then: (r) => ? }）；非 thenable 对照：回调返回普通值 ⇒ 逐字不变（promise<7>）；非 thenable 对照：回调返回普通对象 ⇒ 逐字不变（promise<{ a: 1 }>）；负控：then 不是函数 ⇒ 按普通值兑现（原生同款，promise<{ then: 1 }>）；负控：then 调过但没 settle ⇒ 永挂（unsettled，不猜）；负控：th", () => {
-(() => {
-
+  {
     const src = `
 export function f() {
   return Promise.resolve(1).then(() => ({ then: (r) => r(5) }));
@@ -106,9 +105,8 @@ export function f() {
     expect(formatShape(p.inner)).toBe("5");
     expect(p.rejected).toBeUndefined();
     expect(p.unsettled).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export function f() {
   return Promise.resolve(1).then(() => 7);
@@ -120,9 +118,8 @@ export function f() {
     expect(formatShape(p.inner)).toBe("7");
     expect(p.rejected).toBeUndefined();
     expect(p.unsettled).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export function f() {
   return Promise.resolve(1).then(() => ({ a: 1 }));
@@ -131,9 +128,8 @@ export function f() {
     const r = call(src, "f");
     expect(formatShape(r.result)).toBe("promise<{ a: 1 }>");
     expect(promiseParts(r.result).unsettled).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export function f() {
   return Promise.resolve(1).then(() => ({ then: 1 }));
@@ -144,9 +140,8 @@ export function f() {
     const p = promiseParts(r.result);
     expect(p.unsettled).toBe(false);
     expect(objSlots(p.inner)).toEqual({ then: 1 });
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export function f() {
   return Promise.resolve(1).then(() => ({ then: () => {} }));
@@ -156,9 +151,8 @@ export function f() {
     const p = promiseParts(r.result);
     expect(p.unsettled).toBe(true);
     expect(formatShape(p.inner)).toBe("unknown");
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export function f() {
   return Promise.resolve(1).then(() => ({ then: (res, rej) => rej("boom") }));
@@ -170,9 +164,8 @@ export function f() {
     expect(p.inner.shape.k).toBe("never");
     expect(p.rejected).toBeDefined();
     expect(litValue(p.rejected!)).toEqual({ ok: true, value: "boom" });
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export function f() {
   return Promise.resolve(1).then(() => ({ then: () => { throw new Error("nope"); } }));
@@ -182,9 +175,8 @@ export function f() {
     const p = promiseParts(r.result);
     expect(p.inner.shape.k).toBe("never");
     expect(p.rejected).toBeDefined();
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export function f() {
   return Promise.resolve(1).then(() => ({ then: (res, rej) => { res(5); rej("boom"); } }));
@@ -193,9 +185,8 @@ export function f() {
     const r = call(src, "f");
     expect(formatShape(r.result)).toBe("promise<5>");
     expect(promiseParts(r.result).rejected).toBeUndefined();
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export function f() {
   return Promise.resolve(1).then(() => ({ then: (r) => r({ then: (r2) => r2(7) }) }));
@@ -203,9 +194,8 @@ export function f() {
 `;
     const r = call(src, "f");
     expect(formatShape(r.result)).toBe("promise<7>");
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export function f() {
   return Promise.resolve(1).then(() => Promise.resolve(5));
@@ -213,32 +203,22 @@ export function f() {
 `;
     const r = call(src, "f");
     expect(formatShape(r.result)).toBe("promise<5>");
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 
 describe("邻面：catch 回调返回值的 thenable 采纳", () => {
   it("catch 臂的回调返回值是 thenable ⇒ 同款采纳（原生 5）；非 thenable 对照：catch 回调返回普通值 ⇒ 逐字不变（promise<7>）；负控：catch 回调返回的 thenable 没 settle ⇒ 永挂（unsettled）；负控：catch 回调返回的 thenable 调 reject ⇒ rejected 通道记录该 reason", () => {
-(() => {
-
+  {
     const src = `
 export function f() {
   return Promise.reject("x").catch(() => ({ then: (r) => r(5) }));
@@ -250,9 +230,8 @@ export function f() {
     expect(formatShape(p.inner)).toBe("5");
     expect(p.rejected).toBeUndefined();
     expect(p.unsettled).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export function f() {
   return Promise.reject("x").catch(() => 7);
@@ -261,9 +240,8 @@ export function f() {
     const r = call(src, "f");
     expect(formatShape(r.result)).toBe("promise<7>");
     expect(promiseParts(r.result).unsettled).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export function f() {
   return Promise.reject("x").catch(() => ({ then: () => {} }));
@@ -273,9 +251,8 @@ export function f() {
     const p = promiseParts(r.result);
     expect(p.unsettled).toBe(true);
     expect(formatShape(p.inner)).toBe("unknown");
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export function f() {
   return Promise.reject("x").catch(() => ({ then: (res, rej) => rej("boom") }));
@@ -285,20 +262,16 @@ export function f() {
     const p = promiseParts(r.result);
     expect(p.inner.shape.k).toBe("never");
     expect(litValue(p.rejected!)).toEqual({ ok: true, value: "boom" });
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 });
 
 describe("邻面：finally 回调返回值的 thenable 采纳", () => {
   it("finally 臂的回调返回值是 thenable ⇒ 同款采纳（原生：兑现值丢弃，保留原值 1）；非 thenable 对照：finally 回调返回普通值 ⇒ 逐字不变（promise<1>）；负控：finally 回调返回的 thenable 没 settle ⇒ 永挂（unsettled）；负控：finally 回调返回的 thenable 调 reject ⇒ 结果被拒（reason 替换原 reason）；finally 臂的拒绝通道透传 + thenable 调", () => {
-(() => {
-
+  {
     const src = `
 export function f() {
   return Promise.resolve(1).finally(() => ({ then: (r) => r(5) }));
@@ -310,9 +283,8 @@ export function f() {
     const p = promiseParts(r.result);
     expect(p.rejected).toBeUndefined();
     expect(p.unsettled).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export function f() {
   return Promise.resolve(1).finally(() => 7);
@@ -321,9 +293,8 @@ export function f() {
     const r = call(src, "f");
     expect(formatShape(r.result)).toBe("promise<1>");
     expect(promiseParts(r.result).unsettled).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export function f() {
   return Promise.resolve(1).finally(() => ({ then: () => {} }));
@@ -333,9 +304,8 @@ export function f() {
     const p = promiseParts(r.result);
     expect(p.unsettled).toBe(true);
     expect(formatShape(p.inner)).toBe("1");
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export function f() {
   return Promise.resolve(1).finally(() => ({ then: (res, rej) => rej("boom") }));
@@ -345,9 +315,8 @@ export function f() {
     const p = promiseParts(r.result);
     expect(p.inner.shape.k).toBe("never");
     expect(litValue(p.rejected!)).toEqual({ ok: true, value: "boom" });
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export function f() {
   return Promise.reject("orig").finally(() => ({ then: (res, rej) => rej("new") }));
@@ -357,22 +326,17 @@ export function f() {
     const p = promiseParts(r.result);
     expect(p.inner.shape.k).toBe("never");
     expect(litValue(p.rejected!)).toEqual({ ok: true, value: "new" });
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 
 describe("邻面：await 面与 promise 面同款（不回归）", () => {
   it("await then 臂的 thenable 兑现值（原生 6）；await catch 臂的 thenable 兑现值（原生 6）；await finally 臂的 thenable ⇒ 原生保留原值（2）；await 拒绝通道：then 臂的 thenable 调 reject ⇒ await 抛该 reason；await 非 thenable 不受影响（原生 8）", () => {
-(() => {
-
+  {
     const src = `
 export async function f() {
   const v = await Promise.resolve(1).then(() => ({ then: (r) => r(5) }));
@@ -381,9 +345,8 @@ export async function f() {
 `;
     const r = call(src, "f");
     expect(litValue($await(r.result))).toEqual({ ok: true, value: 6 });
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export async function f() {
   const v = await Promise.reject("x").catch(() => ({ then: (r) => r(5) }));
@@ -392,9 +355,8 @@ export async function f() {
 `;
     const r = call(src, "f");
     expect(litValue($await(r.result))).toEqual({ ok: true, value: 6 });
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export async function f() {
   const v = await Promise.resolve(1).finally(() => ({ then: (r) => r(5) }));
@@ -403,9 +365,8 @@ export async function f() {
 `;
     const r = call(src, "f");
     expect(litValue($await(r.result))).toEqual({ ok: true, value: 2 });
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export async function f() {
   try {
@@ -418,9 +379,8 @@ export async function f() {
 `;
     const r = call(src, "f");
     expect(litValue($await(r.result))).toEqual({ ok: true, value: "caught:boom" });
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export async function f() {
   const v = await Promise.resolve(1).then(() => 7);
@@ -429,18 +389,14 @@ export async function f() {
 `;
     const r = call(src, "f");
     expect(litValue($await(r.result))).toEqual({ ok: true, value: 8 });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
+}
 
 describe("thenable-adoption", () => {
 /**
@@ -493,8 +449,7 @@ function promiseParts(r: Abs): { inner: Abs; rejected?: Abs; unsettled: boolean 
 
 describe("Promise.resolve 的 thenable 采纳", () => {
   it("thenable 的兑现值进 promise 的值域（原生 1，引擎改前 { then: (r) => ? }）；负控制：非 thenable 的值不被采纳（Promise.resolve(1) → promise<1>）；负控制：非 thenable 的对象照旧（Promise.resolve({a:1}) → promise<{ a: 1 }>）；负控制：promise 实参仍走 promise 通道（Promise.resolve(Promise.resolve(1))", () => {
-(() => {
-
+  {
     const src = `
 export function f() {
   return Promise.resolve({ then: (r) => r(1) });
@@ -506,9 +461,8 @@ export function f() {
     expect(formatShape(p.inner)).toBe("1");
     expect(p.rejected).toBeUndefined();
     expect(p.unsettled).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export function f() {
   return Promise.resolve(1);
@@ -517,9 +471,8 @@ export function f() {
     const r = call(src, "f");
     expect(formatShape(r.result)).toBe("promise<1>");
     expect(promiseParts(r.result).unsettled).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export function f() {
   return Promise.resolve({ a: 1 });
@@ -528,9 +481,8 @@ export function f() {
     const r = call(src, "f");
     expect(formatShape(r.result)).toBe("promise<{ a: 1 }>");
     expect(promiseParts(r.result).unsettled).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export function f() {
   return Promise.resolve(Promise.resolve(1));
@@ -538,9 +490,8 @@ export function f() {
 `;
     const r = call(src, "f");
     expect(formatShape(r.result)).toBe("promise<1>");
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export function f() {
   return Promise.resolve({ then: 1 });
@@ -552,9 +503,8 @@ export function f() {
     const p = promiseParts(r.result);
     expect(p.unsettled).toBe(false);
     expect(objSlots(p.inner)).toEqual({ then: 1 });
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export function f() {
   return Promise.resolve({ then: (res, rej) => rej("boom") });
@@ -566,9 +516,8 @@ export function f() {
     expect(p.inner.shape.k).toBe("never");
     expect(p.rejected).toBeDefined();
     expect(litValue(p.rejected!)).toEqual({ ok: true, value: "boom" });
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export async function f() {
   try {
@@ -581,9 +530,8 @@ export async function f() {
 `;
     const r = call(src, "f");
     expect(litValue($await(r.result))).toEqual({ ok: true, value: "caught:boom" });
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export function f() {
   return Promise.resolve({ then: () => { throw new Error("nope"); } });
@@ -593,9 +541,8 @@ export function f() {
     const p = promiseParts(r.result);
     expect(p.inner.shape.k).toBe("never");
     expect(p.rejected).toBeDefined();
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export function f() {
   return Promise.resolve({ then: (r) => r({ then: (r2) => r2(7) }) });
@@ -603,9 +550,8 @@ export function f() {
 `;
     const r = call(src, "f");
     expect(formatShape(r.result)).toBe("promise<7>");
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export function f() {
   return Promise.resolve({ then: () => {} });
@@ -615,9 +561,8 @@ export function f() {
     const p = promiseParts(r.result);
     expect(p.unsettled).toBe(true);
     expect(formatShape(p.inner)).toBe("unknown");
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export function f() {
   return Promise.resolve({ then: (res, rej) => { res(1); rej("boom"); } });
@@ -625,9 +570,8 @@ export function f() {
 `;
     const r = call(src, "f");
     expect(formatShape(r.result)).toBe("promise<1>");
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export function f() {
   return Promise.resolve({ then: (res, rej) => { rej("boom"); res(1); } });
@@ -637,9 +581,8 @@ export function f() {
     const p = promiseParts(r.result);
     expect(p.inner.shape.k).toBe("never");
     expect(litValue(p.rejected!)).toEqual({ ok: true, value: "boom" });
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export function f() {
   return Promise.resolve({ then: (res) => { res(1); throw new Error("late"); } });
@@ -647,38 +590,25 @@ export function f() {
 `;
     const r = call(src, "f");
     expect(formatShape(r.result)).toBe("promise<1>");
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 
 describe("new Promise(resolve => resolve(thenable)) 的采纳", () => {
   it("执行器 resolve 采到 thenable ⇒ 兑现值进 promise 的值域（原生 1）；执行器 resolve 采到非 thenable ⇒ 照旧（promise<{ a: 1 }>）；执行器 resolve 采到 thenable 且 then 调 reject ⇒ 拒绝通道带 reason", () => {
-(() => {
-
+  {
     const src = `
 export function f() {
   return new Promise((resolve) => resolve({ then: (r) => r(1) }));
@@ -689,9 +619,8 @@ export function f() {
     const p = promiseParts(r.result);
     expect(formatShape(p.inner)).toBe("1");
     expect(p.unsettled).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export function f() {
   return new Promise((resolve) => resolve({ a: 1 }));
@@ -699,9 +628,8 @@ export function f() {
 `;
     const r = call(src, "f");
     expect(formatShape(r.result)).toBe("promise<{ a: 1 }>");
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export function f() {
   return new Promise((resolve) => resolve({ then: (res, rej) => rej("boom") }));
@@ -711,18 +639,15 @@ export function f() {
     const p = promiseParts(r.result);
     expect(p.inner.shape.k).toBe("never");
     expect(litValue(p.rejected!)).toEqual({ ok: true, value: "boom" });
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 });
 
 describe("await 面与 promise 面共用同一套采纳机制（不回归）", () => {
   it("await thenable 仍交付 settle 值（原生 6，机制同款）；await promise 面采纳后的兑现值（await Promise.resolve(thenable) → 1）；await 非 thenable 不受影响（await 5 → 5）", () => {
-(() => {
-
+  {
     const src = `
 export async function f() {
   const v = await { then: (r) => r(5) };
@@ -731,9 +656,8 @@ export async function f() {
 `;
     const r = call(src, "f");
     expect(litValue($await(r.result))).toEqual({ ok: true, value: 6 });
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export async function f() {
   const v = await Promise.resolve({ then: (r) => r(1) });
@@ -742,9 +666,8 @@ export async function f() {
 `;
     const r = call(src, "f");
     expect(litValue($await(r.result))).toEqual({ ok: true, value: 2 });
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export async function f() {
   const v = await 5;
@@ -753,12 +676,10 @@ export async function f() {
 `;
     const r = call(src, "f");
     expect(litValue($await(r.result))).toEqual({ ok: true, value: 6 });
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 });
 });
 });
@@ -774,7 +695,7 @@ describe("async-generator", () => {
 
 
 
-describe("async-generator", () => {
+{
 /**
  * 回归：async generator 的 **async 面**。
  *
@@ -805,26 +726,22 @@ const wrap = (body: string) => `export function f() { ${body} }`;
 describe("async generator：async 面（promise 迭代协议）", () => {
   describe("函数表达式面", () => {
     it("next() 返回 promise（typeof next().then === function）；next() 的结果是 Promise 实例；装 @@asyncIterator 自返方法；Object.prototype.toString 折 [object AsyncGenerator]；同步迭代面缺席（原生无 @@iterator）", () => {
-(() => {
-
+    {
       expect(
         v(wrap(`const g = async function*(){ yield 1; }; return typeof g().next().then;`)),
       ).toEqual({ ok: true, value: "function" });
-    })();
-(() => {
-
+    }
+    {
       expect(
         v(wrap(`const g = async function*(){ yield 1; }; return g().next() instanceof Promise;`)),
       ).toEqual({ ok: true, value: true });
-    })();
-(() => {
-
+    }
+    {
       expect(
         v(wrap(`const g = async function*(){ yield 1; }; return typeof g()[Symbol.asyncIterator];`)),
       ).toEqual({ ok: true, value: "function" });
-    })();
-(() => {
-
+    }
+    {
       expect(
         v(
           wrap(
@@ -832,34 +749,27 @@ describe("async generator：async 面（promise 迭代协议）", () => {
           ),
         ),
       ).toEqual({ ok: true, value: "[object AsyncGenerator]" });
-    })();
-(() => {
-
+    }
+    {
       expect(
         v(wrap(`const g = async function*(){ yield 1; }; return typeof g()[Symbol.iterator];`)),
       ).toEqual({ ok: true, value: "undefined" });
-    })();
-});;
+    }
+});
 
-    ;
 
-    ;
 
-    ;
 
-    ;
   });
 
   describe("class 方法面", () => {
     it("async *m(){}：next() 返回 promise；async *m(){}：装 @@asyncIterator；async *m(){}：tag 折 [object AsyncGenerator]", () => {
-(() => {
-
+    {
       expect(
         v(wrap(`class A { async *m(){ yield 1; } } return typeof new A().m().next().then;`)),
       ).toEqual({ ok: true, value: "function" });
-    })();
-(() => {
-
+    }
+    {
       expect(
         v(
           wrap(
@@ -867,9 +777,8 @@ describe("async generator：async 面（promise 迭代协议）", () => {
           ),
         ),
       ).toEqual({ ok: true, value: "function" });
-    })();
-(() => {
-
+    }
+    {
       expect(
         v(
           wrap(
@@ -877,44 +786,37 @@ describe("async generator：async 面（promise 迭代协议）", () => {
           ),
         ),
       ).toEqual({ ok: true, value: "[object AsyncGenerator]" });
-    })();
-});;
+    }
+});
 
-    ;
 
-    ;
   });
 
   describe("负控制：同步 generator 不得回归", () => {
     it("next() 仍是裸函数（非 promise）；同步 generator 仍有 @@iterator；同步 generator 的 next() 不是 promise", () => {
-(() => {
-
+    {
       expect(v(wrap(`function* g(){ yield 1; } return typeof g().next;`))).toEqual({
         ok: true,
         value: "function",
       });
-    })();
-(() => {
-
+    }
+    {
       expect(v(wrap(`function* g(){ yield 1; } return typeof g()[Symbol.iterator];`))).toEqual({
         ok: true,
         value: "function",
       });
-    })();
-(() => {
-
+    }
+    {
       expect(
         v(wrap(`function* g(){ yield 1; } return g().next() instanceof Promise;`)),
       ).toEqual({ ok: true, value: false });
-    })();
-});;
+    }
+});
 
-    ;
 
-    ;
   });
 });
-});
+}
 
 describe("async-iter-elems", () => {
 /**
@@ -956,8 +858,7 @@ const wrap = (body: string) => `export async function f() { ${body} }`;
 
 describe("async generator 的 for-await 元素域（走元素侧表）", () => {
   it("async generator（函数表达式面）：for-await 累加精确 3（原生 1+2=3）；async generator：三个 yield 累加精确 6（原生 1+2+3=6）；async generator：单个 yield 精确 7；async generator：字符串元素逐项拼接精确 \"ab\"（原生 \"ab\"）；async generator：空生成器 → 0 次迭代，精确 0（原生 0）；class async *m(){}：for-await 累加精确", () => {
-(() => {
-
+  {
     expect(
       v(
         wrap(
@@ -965,9 +866,8 @@ describe("async generator 的 for-await 元素域（走元素侧表）", () => {
         ),
       ),
     ).toEqual({ ok: true, value: 3 });
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(
         wrap(
@@ -975,9 +875,8 @@ describe("async generator 的 for-await 元素域（走元素侧表）", () => {
         ),
       ),
     ).toEqual({ ok: true, value: 6 });
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(
         wrap(
@@ -985,9 +884,8 @@ describe("async generator 的 for-await 元素域（走元素侧表）", () => {
         ),
       ),
     ).toEqual({ ok: true, value: 7 });
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(
         wrap(
@@ -995,9 +893,8 @@ describe("async generator 的 for-await 元素域（走元素侧表）", () => {
         ),
       ),
     ).toEqual({ ok: true, value: "ab" });
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(
         wrap(
@@ -1005,9 +902,8 @@ describe("async generator 的 for-await 元素域（走元素侧表）", () => {
         ),
       ),
     ).toEqual({ ok: true, value: 0 });
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(
         wrap(
@@ -1015,9 +911,8 @@ describe("async generator 的 for-await 元素域（走元素侧表）", () => {
         ),
       ),
     ).toEqual({ ok: true, value: 3 });
-  })();
-(() => {
-
+  }
+  {
     const r = call(
       wrap(
         `const g = async function*(){ yield 1; yield 2; }; let t = 0; for await (const v of g()) t += v; return t;`,
@@ -1026,26 +921,19 @@ describe("async generator 的 for-await 元素域（走元素侧表）", () => {
     );
     // 内层是精确 3（不是含 unknown 的并集）
     expect(litValue(unwrapPromise(r.result))).toEqual({ ok: true, value: 3 });
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 
 describe("负控制：不得被本修复波及的邻近形态", () => {
   it("同步 generator 的 for-await（同步迭代器回退）仍是精确 3；数组的 for-await（同步回退）仍是精确 3；同步 generator 的 for-of（同步迭代面）仍是精确 3；普通 async 函数（非 generator）不受影响；非生成器的仅异步可迭代对象：元素域仍折 unknown（不得臆造元素）；async generator 的 next() 仍返 promise（Bug 141 主修复面不回归）；同步 generator 的 next()", () => {
-(() => {
-
+  {
     expect(
       v(
         wrap(
@@ -1053,28 +941,24 @@ describe("负控制：不得被本修复波及的邻近形态", () => {
         ),
       ),
     ).toEqual({ ok: true, value: 3 });
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(wrap(`let t = 0; for await (const v of [1, 2]) t += v; return t;`)),
     ).toEqual({ ok: true, value: 3 });
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(wrap(`function* g(){ yield 1; yield 2; } let t = 0; for (const v of g()) t += v; return t;`)),
     ).toEqual({ ok: true, value: 3 });
-  })();
-(() => {
-
+  }
+  {
     expect(v(wrap(`const h = async () => 5; return await h();`))).toEqual({
       ok: true,
       value: 5,
     });
-  })();
-(() => {
-
+  }
+  {
     const r = call(
       wrap(
         `const ai = {}; ai[Symbol.asyncIterator] = function () {}; let s = 0; for await (const v of ai) { s += v; } return s;`,
@@ -1085,32 +969,24 @@ describe("负控制：不得被本修复波及的邻近形态", () => {
     // 元素域不可静态刻画 ⇒ 累加器退 unknown（不是精确 0）
     expect(litValue(inner).ok).toBe(false);
     expect(inner.shape.k).not.toBe("prim");
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(wrap(`const g = async function*(){ yield 1; }; return typeof g().next().then;`)),
     ).toEqual({ ok: true, value: "function" });
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(wrap(`function* g(){ yield 1; }; return g().next() instanceof Promise;`)),
     ).toEqual({ ok: true, value: false });
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 });
 
@@ -1147,26 +1023,22 @@ const wrap = (body: string) => `export function f() { ${body} }`;
 
 describe("async generator 声明面：async 面（promise 迭代协议）", () => {
   it("嵌套声明：next() 返回 promise（typeof next().then === function）；嵌套声明：next() 的结果是 Promise 实例；嵌套声明：装 @@asyncIterator 自返方法；嵌套声明：Object.prototype.toString 折 [object AsyncGenerator]；嵌套声明：同步迭代面缺席（原生无 @@iterator）；模块级声明：next() 返回 promise；模块级声明：装 @@asyncIte", () => {
-(() => {
-
+  {
     expect(
       v(wrap(`async function* g(){ yield 1; } return typeof g().next().then;`)),
     ).toEqual({ ok: true, value: "function" });
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(wrap(`async function* g(){ yield 1; } return g().next() instanceof Promise;`)),
     ).toEqual({ ok: true, value: true });
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(wrap(`async function* g(){ yield 1; } return typeof g()[Symbol.asyncIterator];`)),
     ).toEqual({ ok: true, value: "function" });
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(
         wrap(
@@ -1174,75 +1046,59 @@ describe("async generator 声明面：async 面（promise 迭代协议）", () =
         ),
       ),
     ).toEqual({ ok: true, value: "[object AsyncGenerator]" });
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(wrap(`async function* g(){ yield 1; } return typeof g()[Symbol.iterator];`)),
     ).toEqual({ ok: true, value: "undefined" });
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(`async function* g(){ yield 1; }
          export function f() { return typeof g().next().then; }`),
     ).toEqual({ ok: true, value: "function" });
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(`async function* g(){ yield 1; }
          export function f() { return Object.prototype.toString.call(g()); }`),
     ).toEqual({ ok: true, value: "[object AsyncGenerator]" });
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 
 describe("负控制：同步 generator / async 函数声明不得回归", () => {
   it("同步 generator 声明：next() 不是 promise；同步 generator 声明：仍有 @@iterator；同步 generator 声明：next() 仍是裸函数（无 then）；async 函数（非 generator）声明：仍返回 promise", () => {
-(() => {
-
+  {
     expect(
       v(wrap(`function* g(){ yield 1; } return g().next() instanceof Promise;`)),
     ).toEqual({ ok: true, value: false });
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(wrap(`function* g(){ yield 1; } return typeof g()[Symbol.iterator];`)),
     ).toEqual({ ok: true, value: "function" });
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(wrap(`function* g(){ yield 1; } return typeof g().next().then;`)),
     ).toEqual({ ok: true, value: "undefined" });
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(wrap(`async function g(){ return 1; } return typeof g().then;`)),
     ).toEqual({ ok: true, value: "function" });
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 });
 });
 });
@@ -1278,23 +1134,20 @@ function throwName(src: string): string {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("static async 方法进 $async 包装", () => {
-  it("static async 方法返回 promise（typeof → object）；static async 方法的返回是 Promise 实例；体内 throw 不同步抛到调用点（此前同步抛）；负控制：实例 async 方法仍返回 promise；负控制：静态同步方法仍返回原始值；负控制：静态同步方法的 throw 仍同步抛", () => {
-(() => {
 
+  it("static async 方法返回 promise（typeof → object）；static async 方法的返回是 Promise 实例；体内 throw 不同步抛到调用点（此前同步抛）；负控制：实例 async 方法仍返回 promise；负控制：静态同步方法仍返回原始值；负控制：静态同步方法的 throw 仍同步抛", () => {
+  {
     expect(v(wrap(`class A { static async m(){ return 1; } } return typeof A.m();`))).toEqual({
       ok: true,
       value: "object",
     });
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(wrap(`class A { static async m(){ return 1; } } return A.m() instanceof Promise;`)),
     ).toEqual({ ok: true, value: true });
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(
         wrap(
@@ -1302,39 +1155,31 @@ describe("static async 方法进 $async 包装", () => {
         ),
       ),
     ).toEqual({ ok: true, value: "nothrow" });
-  })();
-(() => {
-
+  }
+  {
     expect(v(wrap(`class A { async m(){ return 1; } } return typeof new A().m();`))).toEqual({
       ok: true,
       value: "object",
     });
-  })();
-(() => {
-
+  }
+  {
     expect(v(wrap(`class A { static m(){ return 1; } } return typeof A.m();`))).toEqual({
       ok: true,
       value: "number",
     });
-  })();
-(() => {
-
+  }
+  {
     expect(
       throwName(wrap(`class A { static m(){ throw new Error("x"); } } A.m(); return 1;`)),
     ).toBe("Error");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1377,34 +1222,30 @@ function syncVal(src: string): unknown {
   return lv.ok ? lv.value : lv;
 }
 
-describe("await 挂起点（await 之后的副作用不进调用方的同步窗口）", () => {
-  it("原生：f() 返回后 await 之前的写可见、之后的写不可见（n = 0）；原生：await 之后的副作用不进调用方的同步窗口（log = \"a\"）；原生：for-await 体的 await 之后的效果同样延后；原生：async 函数返回 pending promise（Promise { 0 } ⇒ promise<0>）", () => {
-(() => {
 
+  it("原生：f() 返回后 await 之前的写可见、之后的写不可见（n = 0）；原生：await 之后的副作用不进调用方的同步窗口（log = \"a\"）；原生：for-await 体的 await 之后的效果同样延后；原生：async 函数返回 pending promise（Promise { 0 } ⇒ promise<0>）", () => {
+  {
     expect(
       syncVal(`let n = 0;
         async function g() { await 0; n = 5; }
         export function f() { g(); return n; }`),
     ).toBe(0);
-  })();
-(() => {
-
+  }
+  {
     expect(
       syncVal(`const log = [];
         async function g() { log.push("a"); await 1; log.push("b"); await 2; log.push("c"); }
         export function f() { g(); return log.join(","); }`),
     ).toBe("a");
-  })();
-(() => {
-
+  }
+  {
     expect(
       syncVal(`const log = [];
         async function g() { for await (const x of [1, 2]) log.push(x); }
         export function f() { g(); log.push("s"); return log.join(","); }`),
     ).toBe("s");
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export async function f() {
   let n = 0;
@@ -1416,52 +1257,44 @@ export async function f() {
     const r = call(src, "f");
     // 同步段返回 n=0（await 之后的 n=5 尚未发生）⇒ promise<0>
     expect(litValue($await(r.result as never))).toEqual({ ok: true, value: 0 });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 
 describe("await 之后的写对调用点完全不可见（含顺序与 typeof）", () => {
   it("await 之前的写保留（原生 1，引擎改前 11）；调用点自身的同步语句不被 async 续体插队（原生 \"1,3,4\"）；await 之后的写对 typeof 观察不可见（原生 \"undefined\"）；箭头 async 体同样挂起（原生 \"a,c\"，引擎改前 \"a,b,c\"）；pending promise 不被穿行（原生 \"a\"，引擎改前 \"a,b\"）", () => {
-(() => {
-
+  {
     expect(
       syncVal(`let n = 0;
         async function g() { n = 1; await 0; n += 10; }
         export function f() { g(); return n; }`),
     ).toBe(1);
-  })();
-(() => {
-
+  }
+  {
     expect(
       syncVal(`const log = [];
         async function g() { log.push(1); await 0; log.push(2); }
         export function f() { g(); log.push(3); log.push(4); return log.join(","); }`),
     ).toBe("1,3,4");
-  })();
-(() => {
-
+  }
+  {
     expect(
       syncVal(`let seen;
         async function g() { await 0; seen = "after"; }
         export function f() { g(); return typeof seen; }`),
     ).toBe("undefined");
-  })();
-(() => {
-
+  }
+  {
     expect(
       syncVal(`const log = [];
         const g = async () => { log.push("a"); await 0; log.push("b"); };
         export function f() { g(); log.push("c"); return log.join(","); }`),
     ).toBe("a,c");
-  })();
-(() => {
-
+  }
+  {
     expect(
       syncVal(`let resolve;
         const p = new Promise((r) => { resolve = r; });
@@ -1469,39 +1302,32 @@ describe("await 之后的写对调用点完全不可见（含顺序与 typeof）
         async function g() { log.push("a"); await p; log.push("b"); }
         export function f() { g(); resolve(); return log.join(","); }`),
     ).toBe("a");
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 
 describe("await 在**表达式位置**同样挂起", () => {
   it("const x = await f()：同步段拿不到被等待值；return await g()：调用点先返回；h(await x)：实参位置同样挂起；x + await y：二元表达式位置同样挂起；const {a} = await f()：解构位置同样挂起；await 前的表达式照常求值（原生 3）", () => {
-(() => {
-
+  {
     expect(
       syncVal(`async function g() { return 7; }
         let out = "";
         async function h() { const x = await g(); out = String(x); }
         export function f() { h(); return out; }`),
     ).toBe("");
-  })();
-(() => {
-
+  }
+  {
     expect(
       syncVal(`async function g() { return 7; }
         async function h() { return await g(); }
         export function f() { const p = h(); return "made"; }`),
     ).toBe("made");
-  })();
-(() => {
-
+  }
+  {
     expect(
       syncVal(`async function g() { return 7; }
         let out = "";
@@ -1509,50 +1335,41 @@ describe("await 在**表达式位置**同样挂起", () => {
         async function h() { out = String(k(await g())); }
         export function f() { h(); return out; }`),
     ).toBe("");
-  })();
-(() => {
-
+  }
+  {
     expect(
       syncVal(`async function g() { return 7; }
         let out = "";
         async function h() { const a = 1; out = String(a + (await g())); }
         export function f() { h(); return out; }`),
     ).toBe("");
-  })();
-(() => {
-
+  }
+  {
     expect(
       syncVal(`async function g() { return { a: 1 }; }
         let out = "";
         async function h() { const { a } = await g(); out = String(a); }
         export function f() { h(); return out; }`),
     ).toBe("");
-  })();
-(() => {
-
+  }
+  {
     expect(
       syncVal(`let out = "";
         async function g() { out = String(1 + 2); await 0; out = out + "!"; }
         export function f() { g(); return out; }`),
     ).toBe("3");
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 
 describe("值域由**续体终值**给出（promise<inner> 不退化）", () => {
   it("await 后的返回值进 promise 的 inner；await 链的值域逐跳传递；负控制：已 settle 的 promise 的 await 取值仍精确（await Promise.resolve(1) → 1）；负控制：async 函数仍返回 promise 形态（值域不被截断成 unknown）", () => {
-(() => {
-
+  {
     const src = `
 async function g() { return 7; }
 export async function f() {
@@ -1562,9 +1379,8 @@ export async function f() {
 `;
     const r = call(src, "f");
     expect(litValue($await(r.result as never))).toEqual({ ok: true, value: 8 });
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export async function f() {
   return await Promise.resolve(21).then((x) => x * 2);
@@ -1572,9 +1388,8 @@ export async function f() {
 `;
     const r = call(src, "f");
     expect(litValue($await(r.result as never))).toEqual({ ok: true, value: 42 });
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export async function f() {
   const v = await Promise.resolve(1);
@@ -1583,9 +1398,8 @@ export async function f() {
 `;
     const r = call(src, "f");
     expect(litValue($await(r.result as never))).toEqual({ ok: true, value: 2 });
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export async function f() {
   return 42;
@@ -1593,14 +1407,11 @@ export async function f() {
 `;
     const r = call(src, "f");
     expect(litValue($await(r.result as never))).toEqual({ ok: true, value: 42 });
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 });
 });
 
@@ -1656,10 +1467,9 @@ describe("生成器体构造期副作用——步骤 1 join 隔离（wrong-exact
 
 
 
-describe("生成器体构造期副作用——步骤 1 join 隔离（wrong-exact 消灭）", () => {
-  it("c1 构造点：n = 0（步骤 3：体在消费点跑，构造点 native 0 精确）；c2 构造点：log = \"\" | \"ab\"（native \"\" ∈ join；改前 wrong-exact \"ab\"）；c3 it.next() 后：n = 1（步骤 4 挂起点回放；native 1，步骤 3 为 0 | 5）；c4 it.next() 后：log = \"a\"（步骤 4 挂起点回放；native \"a\"，步骤 3 为 \"\" | \"ab\"）；步骤 4 · 连续两次 next(", () => {
-(() => {
 
+  it("c1 构造点：n = 0（步骤 3：体在消费点跑，构造点 native 0 精确）；c2 构造点：log = \"\" | \"ab\"（native \"\" ∈ join；改前 wrong-exact \"ab\"）；c3 it.next() 后：n = 1（步骤 4 挂起点回放；native 1，步骤 3 为 0 | 5）；c4 it.next() 后：log = \"a\"（步骤 4 挂起点回放；native \"a\"，步骤 3 为 \"\" | \"ab\"）；步骤 4 · 连续两次 next(", () => {
+  {
     const r = call(`export function f() {
       let n = 0;
       function* g() { n++; yield 1; }
@@ -1667,9 +1477,8 @@ describe("生成器体构造期副作用——步骤 1 join 隔离（wrong-exact
       return n;
     }`);
     expect(formatAbs(r.result)).toEqual('0  #exact');
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() {
       let log = "";
       function* g() { log += "a"; yield 1; log += "b"; yield 2; }
@@ -1677,9 +1486,8 @@ describe("生成器体构造期副作用——步骤 1 join 隔离（wrong-exact
       return log;
     }`);
     expect(formatAbs(r.result)).toEqual('""  #exact');
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() {
       function* g() { n = 1; yield 1; n = 5; yield 2; }
       let n = 0;
@@ -1688,9 +1496,8 @@ describe("生成器体构造期副作用——步骤 1 join 隔离（wrong-exact
       return n;
     }`);
     expect(formatAbs(r.result)).toEqual('1  #exact');
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() {
       let log = "";
       function* g() { log += "a"; yield 1; log += "b"; yield 2; }
@@ -1699,9 +1506,8 @@ describe("生成器体构造期副作用——步骤 1 join 隔离（wrong-exact
       return log;
     }`);
     expect(formatAbs(r.result)).toEqual('"a"  #exact');
-  })();
-(() => {
-
+  }
+  {
     const n = call(`export function f() {
       let n = 0;
       function* g() { n = 1; yield 1; n = 5; yield 2; }
@@ -1718,9 +1524,8 @@ describe("生成器体构造期副作用——步骤 1 join 隔离（wrong-exact
       return log;
     }`);
     expect(formatAbs(log.result)).toEqual('"ab"  #exact');
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() {
       let n = 0;
       function* g() { n = 1; yield 1; n = 5; yield 2; }
@@ -1732,9 +1537,8 @@ describe("生成器体构造期副作用——步骤 1 join 隔离（wrong-exact
       return "" + a + ":" + x + ":" + b + ":" + y;
     }`);
     expect(formatAbs(r.result)).toEqual('"1:1:2:5"  #exact');
-  })();
-(() => {
-
+  }
+  {
     const expr = call(`export function f() {
       let n = 0;
       const g = function* () { n++; yield 1; };
@@ -1766,9 +1570,8 @@ describe("生成器体构造期副作用——步骤 1 join 隔离（wrong-exact
       return n;
     }`);
     expect(formatAbs(asyncGen.result)).toEqual('0  #exact');
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() {
       let n = 0;
       function* gen(x) { n = x; yield 1; yield n; }
@@ -1777,9 +1580,8 @@ describe("生成器体构造期副作用——步骤 1 join 隔离（wrong-exact
     // 元素槽 = 构造期 yield 收集（1 与 5 均 #exact）；外层 n 的 join 折回
     // 发生在收集**之后**（finally）⇒ 不污染元素面。
     expect(formatAbs(r.result)).toEqual('{ "0": 1, "1": 5 }  #exact');
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() {
       const arr = [];
       function* g() { arr.push(1); yield 1; }
@@ -1789,9 +1591,8 @@ describe("生成器体构造期副作用——步骤 1 join 隔离（wrong-exact
     // R1-c 口径：容器是深拷贝快照 + join ⇒ 长度面从 exact 1 退成 sound 的
     // 步骤 3：构造期不跑体 ⇒ mutator 未落地 ⇒ 构造点 native 0 精确（不再是长度域过近似）。
     expect(formatAbs(r.result)).toBe("0  #exact");
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() {
       const a = { v: 0 };
       const b = a;
@@ -1800,9 +1601,8 @@ describe("生成器体构造期副作用——步骤 1 join 隔离（wrong-exact
       return b.v;
     }`);
     expect(formatAbs(r.result)).toEqual("0  #exact");
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(`export function f() {
         function* g() { yield 1; yield 2; }
@@ -1810,9 +1610,8 @@ describe("生成器体构造期副作用——步骤 1 join 隔离（wrong-exact
         return gi.next().value + ":" + gi.next().value;
       }`),
     ).toEqual({ ok: true, value: "1:2" });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(`export function f() {
         function* g() { yield 1; yield 2; }
@@ -1821,53 +1620,38 @@ describe("生成器体构造期副作用——步骤 1 join 隔离（wrong-exact
         return a;
       }`),
     ).toEqual({ ok: true, value: 1 });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(`export function f() {
         function* cnt(n) { while (n > 0) { yield n; n--; } }
         return [...cnt(3)].join(",");
       }`),
     ).toEqual({ ok: true, value: "3,2,1" });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(`export function f() {
         function* g() { var acc = 0; acc += 5; yield acc; acc = 1; yield acc; }
         return [...g()].join(",");
       }`),
     ).toEqual({ ok: true, value: "5,1" });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1897,10 +1681,9 @@ describe("await 双臂 promise —— 拒绝臂不再被丢弃", () => {
 
 
 
-describe("await 双臂 promise —— 拒绝臂不再被丢弃", () => {
-  it("双臂 promise：try 臂与 catch 臂都可达（并集）；负控制：确定拒绝的 promise —— catch 臂取值不变（\"c:k\"）；负控制：确定 fulfilled 的 promise —— 只有 fulfilled 臂", () => {
-(() => {
 
+  it("双臂 promise：try 臂与 catch 臂都可达（并集）；负控制：确定拒绝的 promise —— catch 臂取值不变（\"c:k\"）；负控制：确定 fulfilled 的 promise —— 只有 fulfilled 臂", () => {
+  {
     const src = `
 export async function f(c) {
   const p = new Promise((res, rej) => { if (c) res(1); else rej(new Error("k")); });
@@ -1912,9 +1695,8 @@ export async function f(c) {
     // 改前：只有 "v:1"（catch 臂死代码）；改后：两臂并集
     expect(awaited).toContain('"v:1"');
     expect(awaited).toContain('"c:k"');
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export async function f() {
   const p = Promise.reject(new Error("k"));
@@ -1923,9 +1705,8 @@ export async function f() {
 `;
     const r = call(src, "f");
     expect(litValue($await(r.result))).toEqual({ ok: true, value: "c:k" });
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export async function f() {
   const p = Promise.resolve(1);
@@ -1934,13 +1715,11 @@ export async function f() {
 `;
     const r = call(src, "f");
     expect(litValue($await(r.result))).toEqual({ ok: true, value: "v:1" });
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1967,10 +1746,9 @@ describe("await thenable 走采纳", () => {
 
 
 
-describe("await thenable 走采纳", () => {
-  it("thenable 的 res 值被交付（原生 number，引擎改前 object）；thenable 的 res 值可以是字符串；负控制：非 thenable 的普通值不被采纳（await 5 → 5）；负控制：promise 仍走 promise 通道（await Promise.resolve(1) → 1）", () => {
-(() => {
 
+  it("thenable 的 res 值被交付（原生 number，引擎改前 object）；thenable 的 res 值可以是字符串；负控制：非 thenable 的普通值不被采纳（await 5 → 5）；负控制：promise 仍走 promise 通道（await Promise.resolve(1) → 1）", () => {
+  {
     const src = `
 export async function f() {
   const t = { then(res) { res(7); } };
@@ -1980,9 +1758,8 @@ export async function f() {
 `;
     const r = call(src, "f");
     expect(litValue($await(r.result))).toEqual({ ok: true, value: "number:7" });
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export async function f() {
   const t = { then(res, rej) { res("s"); } };
@@ -1992,9 +1769,8 @@ export async function f() {
 `;
     const r = call(src, "f");
     expect(litValue($await(r.result))).toEqual({ ok: true, value: "s" });
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export async function f() {
   const v = await 5;
@@ -2003,9 +1779,8 @@ export async function f() {
 `;
     const r = call(src, "f");
     expect(litValue($await(r.result))).toEqual({ ok: true, value: 6 });
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export async function f() {
   const v = await Promise.resolve(1);
@@ -2014,15 +1789,12 @@ export async function f() {
 `;
     const r = call(src, "f");
     expect(litValue($await(r.result))).toEqual({ ok: true, value: 2 });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2062,10 +1834,9 @@ const DELEGATE = `
   };
 `;
 
-describe("yield* 委托的 .return(v) 转发", () => {
-  it(".return(v) 转发给委托迭代器（委托的清理副作用不再丢失）；负控制：非委托挂起点的 .return(v) 不转发（无委托 → 无副作用）；负控制：普通生成器的 .return(v) 语义不变（{value: v, done: true}）", () => {
-(() => {
 
+  it(".return(v) 转发给委托迭代器（委托的清理副作用不再丢失）；负控制：非委托挂起点的 .return(v) 不转发（无委托 → 无副作用）；负控制：普通生成器的 .return(v) 语义不变（{value: v, done: true}）", () => {
+  {
     expect(
       val(`export function f() { ${DELEGATE}
         function* g() { yield* it; }
@@ -2075,9 +1846,8 @@ describe("yield* 委托的 .return(v) 转发", () => {
         return log.join(",");
       }`),
     ).toEqual({ ok: true, value: "ret:5" });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(`export function f() { ${DELEGATE}
         function* g() { yield 1; }
@@ -2087,9 +1857,8 @@ describe("yield* 委托的 .return(v) 转发", () => {
         return log.join(",");
       }`),
     ).toEqual({ ok: true, value: "" });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(`export function f() {
         function* g() { yield 1; }
@@ -2099,13 +1868,11 @@ describe("yield* 委托的 .return(v) 转发", () => {
         return r.value + ":" + r.done;
       }`),
     ).toEqual({ ok: true, value: "7:true" });
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2122,7 +1889,7 @@ describe("generator-own-properties", () => {
 
 
 
-describe("generator-own-properties", () => {
+{
 /**
  * 回归钉：生成器对象是**内部槽对象**——原生**没有任何自有可枚举
  * 属性**（`Object.keys` / `Object.getOwnPropertyNames` / `for-in` 恒空；
@@ -2163,64 +1930,51 @@ const GEN = `
 
 describe("生成器对象的自有可枚举面为空", () => {
   it("Object.keys(g) → \"\"（改前：\"0,next,return,throw,constructor,@@iterator\"）；Object.getOwnPropertyNames(g) → \"\"；for-in 累积 → \"\"；hasOwnProperty(\"next\") → false（协议方法在原型上，不在自有面）；负控制：协议面仍可用（typeof gi.next → \"function\"，gi.next().value → 1）；负控制：\"next\" in ", () => {
-(() => {
-
+  {
     expect(val(`export function f() { ${GEN} return Object.keys(gi).join(","); }`)).toEqual({
       ok: true,
       value: "",
     });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(`export function f() { ${GEN} return Object.getOwnPropertyNames(gi).join(","); }`),
     ).toEqual({ ok: true, value: "" });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(`export function f() { ${GEN} let s = ""; for (const k in gi) s += k; return s; }`),
     ).toEqual({ ok: true, value: "" });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(`export function f() { ${GEN} return Object.prototype.hasOwnProperty.call(gi, "next"); }`),
     ).toEqual({ ok: true, value: false });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(`export function f() { ${GEN} return typeof gi.next + ":" + gi.next().value; }`),
     ).toEqual({ ok: true, value: "function:1" });
-  })();
-(() => {
-
+  }
+  {
     expect(val(`export function f() { ${GEN} return "next" in gi; }`)).toEqual({
       ok: true,
       value: true,
     });
-  })();
-(() => {
-
+  }
+  {
     expect(val(`export function f() { ${GEN} const [a] = gi; return a; }`)).toEqual({
       ok: true,
       value: 1,
     });
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
   it.todo("原生 g[0] 恒 undefined —— 需解除族 01「数字下标读（历史口径）」结论");
   it.todo("原生 \"0\" in g 恒 false —— 同上（数字下标槽仍在自有面）");
@@ -2228,8 +1982,7 @@ describe("生成器对象的自有可枚举面为空", () => {
 
 describe("（S18）：投影面不发布 internal 槽", () => {
   it("签名面不发布协议方法槽（无 next/return/throw/constructor/@@iterator）；签名面保留数字下标元素域（yield* s → \"0\": string）——族 01 口径不被破；@@iterator 槽按符号键投影建模（\"@@iterator\" 槽带 symbolKey 标记）；负控制：协议面在运行面仍可用（typeof gi.next → \"function\"）", () => {
-(() => {
-
+  {
     const sig = formatAbs_____format_format_ts_1(
       call(`export function* g() { yield 1; yield "s"; }`, "g").result as never,
     );
@@ -2242,18 +1995,16 @@ describe("（S18）：投影面不发布 internal 槽", () => {
     // 负控制：元素域（数字下标槽）仍发布
     expect(sig).toContain('"0": 1');
     expect(sig).toContain('"1": "s"');
-  })();
-(() => {
-
+  }
+  {
     const strAbs = abs({ k: "prim", type: "string" }, undefined, undefined, "path");
     const sig = formatAbs_____format_format_ts_1(
       call(`export function* g(s) { yield* s; }`, "g", [strAbs]).result as never,
     );
     expect(sig).toContain('"0": string');
     expect(sig).not.toContain("unknown");
-  })();
-(() => {
-
+  }
+  {
     const shape = call(`export function* g() { yield 1; }`, "g").result.shape as unknown as {
       k: string;
       slots: Record<string, { internal?: boolean; symbolKey?: boolean }>;
@@ -2262,24 +2013,20 @@ describe("（S18）：投影面不发布 internal 槽", () => {
     // 与用户写的 `[Symbol.X]` 静态字段同机制（族 01 ）
     expect(shape.slots["@@iterator"]?.symbolKey).toBe(true);
     expect(shape.slots["@@iterator"]?.internal).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(
         `export function f() { const gi = (function* () { yield 1; })(); return typeof gi.next; }`,
       ),
     ).toEqual({ ok: true, value: "function" });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
+}
 
 describe("guard-internal-slots", () => {
 /**
@@ -2413,22 +2160,19 @@ function nativeGen(): unknown {
 
 describe("（S21）：guard 面不发布 internal 槽", () => {
   it("恒假条款 `typeof data[\"@@iterator\"] === \"function\"` 消失；协议槽条款全消失（next / return / throw / constructor）；guard 产物逐条等于期望串（改前多出 6 条协议槽条款）；guard 访问的成员键里没有 internal 协议槽键；数字下标槽（元素域）仍被发布——族 01 约定不被破；负控制：普通对象的非 internal 成员仍出现在 guard 里（guard 面没被改空）；负控制：非 i", () => {
-(() => {
-
+  {
     const guard = guardOf(GEN_SRC, "g");
     expect(guard).not.toContain('@@iterator');
     expect(guard).not.toContain('typeof data["@@iterator"] === "function"');
-  })();
-(() => {
-
+  }
+  {
     const guard = guardOf(GEN_SRC, "g");
     for (const k of PROTOCOL_SLOT_KEYS) {
       expect(guard).not.toContain(`data.${k}`);
       expect(guard).not.toContain(`data["${k}"]`);
     }
-  })();
-(() => {
-
+  }
+  {
     // 改前：typeof data === "object" && data !== null && data["0"] === 1 &&
     // data["1"] === "s" && typeof data.next === "function" &&
     // typeof data.return === "function" && typeof data.throw === "function" &&
@@ -2444,58 +2188,46 @@ describe("（S21）：guard 面不发布 internal 槽", () => {
     expect(guardOf(GEN_SRC, "g")).toBe(
       'Object.prototype.toString.call(data) === "[object Generator]" && typeof data === "object" && data !== null && !Array.isArray(data) && (Object.hasOwn(data, "0") || ("0" in data && !Object.hasOwn(Object.prototype, "0"))) && data["0"] === 1 && (Object.hasOwn(data, "1") || ("1" in data && !Object.hasOwn(Object.prototype, "1"))) && data["1"] === "s"',
     );
-  })();
-(() => {
-
+  }
+  {
     const keys = accessedKeys(guardOf(GEN_SRC, "g"));
     for (const k of PROTOCOL_SLOT_KEYS) expect(keys).not.toContain(k);
-  })();
-(() => {
-
+  }
+  {
     const guard = guardOf(GEN_SRC, "g");
     expect(guard).toContain('data["0"] === 1');
     expect(guard).toContain('data["1"] === "s"');
     expect(accessedKeys(guard)).toEqual(expect.arrayContaining(["0", "1"]));
-  })();
-(() => {
-
+  }
+  {
     const guard = guardOf(PLAIN_SRC);
     expect(guard).toContain("data.a === 1");
     expect(guard).toContain('data.b === "x"');
     expect(guard).toBe(
       'typeof data === "object" && data !== null && !Array.isArray(data) && (Object.hasOwn(data, "a") || ("a" in data && !Object.hasOwn(Object.prototype, "a"))) && data.a === 1 && (Object.hasOwn(data, "b") || ("b" in data && !Object.hasOwn(Object.prototype, "b"))) && data.b === "x"',
     );
-  })();
-(() => {
-
+  }
+  {
     const keys = accessedKeys(guardOf(PLAIN_SRC));
     expect(keys).toEqual(expect.arrayContaining(["a", "b"]));
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 
 describe("（S21）：原生 oracle 对拍（guard 条款逐条对照）", () => {
   it("改前的恒假条款在原生生成器上恒 false（问题确实存在）；改后 guard 的逐条原生求值：仅元素域条款为 false（族 01 已知残留）；负控制：普通对象的 guard 每条在原生对象上都是 true", () => {
-(() => {
-
+  {
     const g = nativeGen();
     expect(evalClause('typeof data["@@iterator"] === "function"', g)).toBe(false);
     expect(evalClause('data["@@iterator"]', g)).toBeUndefined();
-  })();
-(() => {
-
+  }
+  {
     const clauses = splitClauses(guardOf(GEN_SRC, "g"));
     const g = nativeGen();
     const falseOnes = clauses.filter((c) => evalClause(c, g) === false);
@@ -2510,47 +2242,39 @@ describe("（S21）：原生 oracle 对拍（guard 条款逐条对照）", () =>
       '(Object.hasOwn(data, "1") || ("1" in data && !Object.hasOwn(Object.prototype, "1")))',
       'data["1"] === "s"',
     ]);
-  })();
-(() => {
-
+  }
+  {
     const clauses = splitClauses(guardOf(PLAIN_SRC));
     const native = { a: 1, b: "x" };
     expect(clauses.length).toBeGreaterThan(2);
     for (const c of clauses) expect(evalClause(c, native)).toBe(true);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 });
 
 describe("（S21）：约束面同口径（absToConstraint 不发布 internal 槽）", () => {
   it("协议槽不进约束产物；数字下标槽（元素域）仍被发布（族 01 约定）；负控制：普通对象的公有字段仍在约束产物里", () => {
-(() => {
-
+  {
     const c = constraintOf(GEN_SRC, "g");
     expect(c).toBeDefined();
     const fields = c?.fields ?? {};
     for (const k of PROTOCOL_SLOT_KEYS) {
       expect(Object.prototype.hasOwnProperty.call(fields, k)).toBe(false);
     }
-  })();
-(() => {
-
+  }
+  {
     const c = constraintOf(GEN_SRC, "g");
     expect(Object.keys(c?.fields ?? {})).toEqual(["0", "1"]);
-  })();
-(() => {
-
+  }
+  {
     const c = constraintOf(PLAIN_SRC);
     expect(Object.keys(c?.fields ?? {}).sort()).toEqual(["a", "b"]);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 });
 
 describe("（S21）：私有字段槽（internal）同样不进 guard 面", () => {
@@ -2559,8 +2283,7 @@ describe("（S21）：私有字段槽（internal）同样不进 guard 面", () =
 export function f() { return new C(); }`;
 
   it("私有字段槽不进 guard（改前恒假条款 `data[\"#C::x\"] === 1` 消失）；原生 oracle：私有字段不是自有属性（恒假条款的依据）", () => {
-(() => {
-
+  {
     const guard = guardOf(PRIV_SRC);
     expect(guard).not.toContain("#C::x");
     // 口径更新（族 09 / + 409 + 410）：`new C()` 的 Abs 是 **brand**
@@ -2570,51 +2293,44 @@ export function f() { return new C(); }`;
     expect(guard).toBe(
       '((typeof Reflect.get(globalThis, "C") !== "function" || data instanceof Reflect.get(globalThis, "C"))) && (typeof data === "object" && data !== null && !Array.isArray(data))',
     );
-  })();
-(() => {
-
+  }
+  {
     const native = new (class {
       #x = 1;
     })();
     expect(evalClause('data["#C::x"] === 1', native)).toBe(false);
     expect(Object.keys(native)).toEqual([]);
-  })();
-});;
+  }
+});
 
-  ;
 });
 
 describe("（S21）：与 S18 签名面 / 访问器读域同口径", () => {
-  it("签名面（S18）仍不发布 internal 槽——本分片不回退；Bug 191：访问器键的 guard 仍按 getter 读域判定（不被本分片改坏）；Bug 191：访问器键的约束投影仍取 getter 读域", () => {
-(() => {
-
+  it("签名面（S18）仍不发布 internal 槽——本分片不回退；访问器键的 guard 仍按 getter 读域判定（不被本分片改坏）；访问器键的约束投影仍取 getter 读域", () => {
+  {
     const sig = formatAbs_____format_format_ts_1(call(GEN_SRC, "g").result as Abs);
     expect(sig).not.toContain("@@iterator");
     expect(sig).not.toContain("next");
     expect(sig).toContain('"0": 1');
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f() { return { get ab() { return 1; } }; }`;
     // 口径更新（族 09 / + 410）：guard 面现在还带 ① 数组排除
     // ② 必填槽的**独立存在性子句** —— 读域判定（`data.ab === 1`）不变。
     expect(denoteGuard(call(src, "f").result, "data")).toBe(
       'typeof data === "object" && data !== null && !Array.isArray(data) && (Object.hasOwn(data, "ab") || ("ab" in data && !Object.hasOwn(Object.prototype, "ab"))) && data.ab === 1',
     );
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f() { return { get ab() { return 1; } }; }`;
     const c = absToConstraint(call(src, "f").result);
     const eq = c?.fields?.["ab"]?.constraint?.preds.find((p) => p.op === "eq");
     expect(eq?.op).toBe("eq");
     expect(eq?.op === "eq" && eq.b.op === "lit" ? eq.b.value : undefined).toBe(1);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 });
 });
 });
@@ -2658,55 +2374,49 @@ function fmt(src: string): string {
   return formatAbs(call(src, "f").result as Abs___nudojs_core)?.replace(/\s+#[a-z0-9]+$/, "") ?? "";
 }
 
-describe("Promise 组合子 settle 域", () => {
-  it("all：元素 rejected → 组合子带 reason（await 抛 → catch 臂可达）；race：元素 rejected → 组合子带 reason（await 抛 → catch 臂可达）；any：全拒 → AggregateError（原生 errors 数组 + 固定 message）；race：结算值按 PromiseResolve unwrap（元素 promise → 其值，非 promise 本身）；race：混合元素 → 兑现域非 object（", () => {
-(() => {
 
+  it("all：元素 rejected → 组合子带 reason（await 抛 → catch 臂可达）；race：元素 rejected → 组合子带 reason（await 抛 → catch 臂可达）；any：全拒 → AggregateError（原生 errors 数组 + 固定 message）；race：结算值按 PromiseResolve unwrap（元素 promise → 其值，非 promise 本身）；race：混合元素 → 兑现域非 object（", () => {
+  {
     expect(
       v(`export async function f() {
         try { await Promise.all([Promise.reject(new Error("k"))]); return "no"; }
         catch (e) { return "c:" + e.message; }
       }`),
     ).toEqual({ ok: true, value: "c:k" });
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(`export async function f() {
         try { await Promise.race([Promise.reject(new Error("k"))]); return "no"; }
         catch (e) { return "c:" + e.message; }
       }`),
     ).toEqual({ ok: true, value: "c:k" });
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(`export async function f() {
         try { await Promise.any([Promise.reject(new Error("k"))]); return "no"; }
         catch (e) { return "c:" + e.name; }
       }`),
     ).toEqual({ ok: true, value: "c:AggregateError" });
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(`export async function f() {
         const x = await Promise.race([Promise.resolve(1)]);
         return typeof x;
       }`),
     ).toEqual({ ok: true, value: "number" });
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(`export async function f() {
         const x = await Promise.race([Promise.resolve(1), 2]);
         return typeof x === "object";
       }`),
     ).toEqual({ ok: true, value: false });
-  })();
-(() => {
-
+  }
+  {
     expect(fmt(`export function f() { return Promise.all([Promise.resolve(1), 2]); }`)).toContain(
       "promise<[1, 2]>",
     );
@@ -2717,18 +2427,16 @@ describe("Promise 组合子 settle 域", () => {
       'promise<1 | "a">',
     );
     expect(fmt(`export function f() { return Promise.any([1]); }`)).toContain("promise<1>");
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(`export async function f() {
         try { await Promise.reject(new Error("k")); return "no"; }
         catch (e) { return "c:" + e.message; }
       }`),
     ).toEqual({ ok: true, value: "c:k" });
-  })();
-(() => {
-
+  }
+  {
     // promise.ts 的 aggregateErrorAbs 是 errorBrandAbs 的**本地**构造
     // （error-family.ts 反向引 promise.ts，直引成环）——共享口径
     // （name 走原型链槽 / stack/message/errors 不可枚举 / 同槽键集）
@@ -2752,23 +2460,16 @@ describe("Promise 组合子 settle 域", () => {
     // name 都是原型链槽
     expect((localSlots.name as { inherited?: boolean }).inherited).toBe(true);
     expect((canonicalSlots.name as { inherited?: boolean }).inherited).toBe(true);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2808,53 +2509,44 @@ function shape(src: string): EffShape["shape"] {
   return sh;
 }
 
-describe("new Promise 执行器抛错", () => {
-  it("执行器抛错 → promise 以抛出值拒绝（catch 臂可达）；执行器抛错 → fulfilled 域 never + rejected 通道带 reason；先 settle 获胜：执行器先 resolve 后抛错 → 仍兑现（原生 first-wins）；负控制：空执行器（永不 settle）仍是 promise<unknown>（不假装 settle）；负控制：只 reject 的执行器仍是确定拒绝（Bug 36 通道）", () => {
-(() => {
 
+  it("执行器抛错 → promise 以抛出值拒绝（catch 臂可达）；执行器抛错 → fulfilled 域 never + rejected 通道带 reason；先 settle 获胜：执行器先 resolve 后抛错 → 仍兑现（原生 first-wins）；负控制：空执行器（永不 settle）仍是 promise<unknown>（不假装 settle）；负控制：只 reject 的执行器仍是确定拒绝（Bug 36 通道）", () => {
+  {
     expect(
       v(`export async function f() {
         try { await new Promise(() => { throw new Error("x"); }); return "no"; }
         catch (e) { return "c:" + e.message; }
       }`),
     ).toEqual({ ok: true, value: "c:x" });
-  })();
-(() => {
-
+  }
+  {
     const sh = shape(`export function f() { return new Promise(() => { throw new Error("boom"); }); }`);
     expect(sh?.inner?.shape?.k).toBe("never");
     expect(sh?.rejected?.shape?.k).toBe("brand");
     expect(formatAbs(sh!.rejected as Abs___nudojs_core_1)).toContain("Error");
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(`export function f() { return new Promise((r) => { r(1); throw new Error("x"); }); }`),
     ).toEqual({ ok: true, value: 1 });
-  })();
-(() => {
-
+  }
+  {
     const sh = shape(`export function f() { return new Promise(() => {}); }`);
     expect(sh?.inner?.shape?.k).toBe("unknown");
     expect(sh?.rejected).toBeUndefined();
     expect(sh?.unsettled).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const sh = shape(`export function f() { return new Promise((r, j) => { j(new Error("x")); }); }`);
     expect(sh?.inner?.shape?.k).toBe("never");
     expect(sh?.rejected).toBeDefined();
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2870,7 +2562,7 @@ describe("promise-static-this-wiring", () => {
 
 
 
-describe("promise-static-this-wiring", () => {
+{
 /**
  * 回归（**主 agent 接线面**）：Promise 静态方法的 `this` 绑定转发。
  *
@@ -2924,52 +2616,44 @@ function run(body: string) {
 
 describe("Promise 静态的 this 绑定转发（接线面）", () => {
   it("Promise.resolve(1)：直接命名空间调用不抛，值域是 promise<1>；Promise.resolve.call(null, 1)：this 为 nullish ⇒ TypeError；Promise.resolve.call({}, 1)：this 非构造器 ⇒ TypeError；Promise.resolve.call(Promise, 1)：this 是构造器 ⇒ 合法，值域是 promise<1>；const r = Promise.resolve", () => {
-(() => {
-
+  {
     const { inner, throws } = promiseFace(
       `export function f() { return Promise.resolve(1); }`,
     );
     expect(isNever(throws), "原生合法路径不得抛").toBe(true);
     expect(inner).toEqual({ ok: true, value: 1 });
-  })();
-(() => {
-
+  }
+  {
     const r = run(`return Promise.resolve.call(null, 1);`);
     expect(throwsError(r.throws, "TypeError")).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const r = run(`return Promise.resolve.call({}, 1);`);
     expect(throwsError(r.throws, "TypeError")).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const { inner, throws } = promiseFace(
       `export function f() { return Promise.resolve.call(Promise, 1); }`,
     );
     expect(isNever(throws), "构造器接收者是原生合法路径").toBe(true);
     expect(inner).toEqual({ ok: true, value: 1 });
-  })();
-(() => {
-
+  }
+  {
     // 接线面关键：成员读出的静态方法被**单独读出再调用**时，this 转发必须
     // 带上「this 是 undefined」（原生同款 ⇒ TypeError）。
     const r = run(`const r = Promise.resolve; return r(1);`);
     expect(throwsError(r.throws, "TypeError")).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const r = run(`return Promise.resolve.call(undefined, 1);`);
     expect(throwsError(r.throws, "TypeError")).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const r = run(`return Math.max.call(null, 1, 2);`);
     expect(isNever(r.throws)).toBe(true);
     expect(litValue(r.result)).toEqual({ ok: true, value: 2 });
-  })();
-(() => {
-
+  }
+  {
     // 原生（node v26 实测）：7 个静态在 this = null / {} 时**全部**抛
     // TypeError，this = Promise 时**全部**合法。
     const statics = [
@@ -2996,24 +2680,17 @@ describe("Promise 静态的 this 绑定转发（接线面）", () => {
         }
       }
     }
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
 });
+}
 
 describe("promise-static-this", () => {
 /**
@@ -3055,8 +2732,7 @@ function throwsTypeError(fn: () => unknown): boolean {
 
 describe("Promise 静态的 this 绑定", () => {
   it("机制面：命名空间派发带 this → 非构造器接收者抛 TypeError；机制面：直接命名空间调用（this 缺席）合法 → 不抛；机制面：构造器接收者合法（Promise 的 Abs 面 = fn + ctor:true）；机制面：不可判接收者（any）→ 记 may-throw，不硬抛（不制造假抛）；机制面：this 为 undefined（undefAbs 形态）→ TypeError（原生 PromiseResolve 非对象）；端到端：Promise.resolv", () => {
-(() => {
-
+  {
     expect(
       throwsTypeError(() => evalNamespaceCall("Promise", "resolve", [numLit(1)], absLit(null))),
     ).toBe(true);
@@ -3065,14 +2741,12 @@ describe("Promise 静态的 this 绑定", () => {
         evalNamespaceCall("Promise", "all", [], abs___nudojs_core({ k: "obj", slots: {} }, undefined, undefined, "exact")),
       ),
     ).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     expect(throwsTypeError(() => evalNamespaceCall("Promise", "resolve", [numLit(1)]))).toBe(false);
     expect(throwsTypeError(() => evalNamespaceCall("Promise", "reject", [numLit(1)]))).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const ctor = abs___nudojs_core(
       { k: "fn", params: ["arg0"], name: "Promise", ctor: true },
       undefined,
@@ -3082,16 +2756,14 @@ describe("Promise 静态的 this 绑定", () => {
     expect(throwsTypeError(() => evalNamespaceCall("Promise", "resolve", [numLit(1)], ctor))).toBe(
       false,
     );
-  })();
-(() => {
-
+  }
+  {
     const anyv = abs___nudojs_core({ k: "any" }, undefined, undefined, "path");
     expect(throwsTypeError(() => evalNamespaceCall("Promise", "resolve", [numLit(1)], anyv))).toBe(
       false,
     );
-  })();
-(() => {
-
+  }
+  {
     // 该形态要求 member.ts 的转发写成 `thisVal ?? undefAbs()`（this 为
     // undefined 时与「无 this 信息」区分）——见报告的越界诉求。
     expect(
@@ -3099,9 +2771,8 @@ describe("Promise 静态的 this 绑定", () => {
         evalNamespaceCall("Promise", "resolve", [numLit(1)], absLit(undefined)),
       ),
     ).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() { return Promise.resolve.call(null, 1); }`);
     const thrown = r.throws?.shape?.k === "brand" && (r.throws.shape as { name?: string }).name === "TypeError";
     if (thrown) {
@@ -3111,34 +2782,25 @@ describe("Promise 静态的 this 绑定", () => {
       // 合并前：静态派发无接收者 → 返回 promise<1> 且不记抛（L2 假绿）
       expect(r.throws?.shape?.k).toBe("never");
     }
-  })();
-(() => {
-
+  }
+  {
     const direct = call(`export function f() { return Promise.resolve(1); }`);
     expect(direct.throws?.shape?.k).toBe("never");
     const viaCtor = call(`export function f() { return Promise.resolve.call(Promise, 1); }`);
     expect(viaCtor.throws?.shape?.k).toBe("never");
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() { return Math.max.call(null, 1, 2); }`);
     expect(r.throws?.shape?.k).toBe("never");
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 });
 });
@@ -3178,57 +2840,48 @@ function fmt(src: string): string {
   return formatAbs(call(src, "f").result as Abs___nudojs_core_3)?.replace(/\s+#[a-z0-9]+$/, "") ?? "";
 }
 
-describe("allSettled 元素投影", () => {
-  it("rejected 元素 → reason 槽装真 reason（读 .reason.message 不抛）；fulfilled 元素 → value 槽装解包后的值（非 promise 本身）；fulfilled 元素 → status 恒 \"fulfilled\"（判别联合，不与 rejected 并集）；混合元素 → 逐元素投影（长度与原生一致）；负控制：非 promise 元素的既有口径不变（status 两态并集 + value/reason 双槽）", () => {
-(() => {
 
+  it("rejected 元素 → reason 槽装真 reason（读 .reason.message 不抛）；fulfilled 元素 → value 槽装解包后的值（非 promise 本身）；fulfilled 元素 → status 恒 \"fulfilled\"（判别联合，不与 rejected 并集）；混合元素 → 逐元素投影（长度与原生一致）；负控制：非 promise 元素的既有口径不变（status 两态并集 + value/reason 双槽）", () => {
+  {
     expect(
       v(`export async function f() {
         return Promise.allSettled([Promise.reject(new Error("k"))]).then((r) => r[0].reason.message);
       }`),
     ).toEqual({ ok: true, value: "k" });
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(`export async function f() {
         return Promise.allSettled([Promise.resolve(1)]).then((r) => r[0].value);
       }`),
     ).toEqual({ ok: true, value: 1 });
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(`export async function f() {
         return Promise.allSettled([Promise.resolve(1)]).then((r) => r[0].status);
       }`),
     ).toEqual({ ok: true, value: "fulfilled" });
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(`export async function f() {
         return Promise.allSettled([Promise.resolve(1), Promise.reject(new Error("k"))]).then((r) => r.length);
       }`),
     ).toEqual({ ok: true, value: 2 });
-  })();
-(() => {
-
+  }
+  {
     const s = fmt(`export function f() { return Promise.allSettled([1]); }`);
     expect(s).toContain('"fulfilled" | "rejected"');
     expect(s).toContain("value");
     expect(s).toContain("reason");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -3266,74 +2919,61 @@ function fmt(src: string): string {
   return formatAbs(call(src, "f").result as Abs___nudojs_core_4)?.replace(/\s+#[a-z0-9]+$/, "") ?? "";
 }
 
-describe("非可调用 handler ≡ identity", () => {
-  it("then({}) → 透传原值（非调用 → ≡ undefined）；then([1, 2]) → 透传原值；then(null) → 透传原值（既有 nullish 口径不变）；catch({}) → 拒绝透传（非调用 handler ≡ undefined，不吞拒绝）；负控制：可调用 handler 仍真执行（映射 / 捕获）；负控制：非函数 prim handler 仍是 identity（既有口径不变）；签名面：非可调用 handler 的结果 promise 是 p", () => {
-(() => {
 
+  it("then({}) → 透传原值（非调用 → ≡ undefined）；then([1, 2]) → 透传原值；then(null) → 透传原值（既有 nullish 口径不变）；catch({}) → 拒绝透传（非调用 handler ≡ undefined，不吞拒绝）；负控制：可调用 handler 仍真执行（映射 / 捕获）；负控制：非函数 prim handler 仍是 identity（既有口径不变）；签名面：非可调用 handler 的结果 promise 是 p", () => {
+  {
     expect(
       v(`export async function f() { return Promise.resolve(1).then({}); }`),
     ).toEqual({ ok: true, value: 1 });
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(`export async function f() { return Promise.resolve(1).then([1, 2]); }`),
     ).toEqual({ ok: true, value: 1 });
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(`export async function f() { return Promise.resolve(1).then(null); }`),
     ).toEqual({ ok: true, value: 1 });
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export async function f() { return Promise.reject(new Error("k")).catch({}); }`);
     const sh = r.result.shape as EffShape["shape"];
     expect(sh?.inner?.shape?.k, "fulfilled arm must be impossible").toBe("never");
     expect(sh?.rejected).toBeDefined();
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(`export async function f() { return Promise.resolve(1).then((x) => x + 1); }`),
     ).toEqual({ ok: true, value: 2 });
     expect(
       v(`export async function f() { return Promise.reject(new Error("k")).catch((e) => "c:" + e.message); }`),
     ).toEqual({ ok: true, value: "c:k" });
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(`export async function f() { return Promise.resolve(1).then(5); }`),
     ).toEqual({ ok: true, value: 1 });
-  })();
-(() => {
-
+  }
+  {
     expect(fmt(`export function f() { return Promise.resolve(1).then({}); }`)).toContain(
       "promise<1>",
     );
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
 // 族 58 · 第 1 条 · writable:true 的重定义覆盖旧的 [[Writable]]
 // ---------------------------------------------------------------------------
-describe("族 58 · 第 1 条 · writable:true 的重定义覆盖旧的 [[Writable]]", () => {
+describe("writable:true 的重定义覆盖旧的 [[Writable]]", () => {
 /**
  * 族 58 · W8 · core runtime **描述符与生成器协议面** —— 5 条精度债的回归钉。
  *
@@ -3393,10 +3033,9 @@ function throwName(src: string): string {
 // ---------------------------------------------------------------------------
 // 1. 描述符 exists 分支 · writable:true 的重定义
 // ---------------------------------------------------------------------------
-describe("族 58 · 第 1 条 · writable:true 的重定义覆盖旧的 [[Writable]]", () => {
-  it("宿主实测：writable:true 的重定义把 [[Writable]] 翻回 true（node 原生）；引擎：普通对象 —— 重定义后描述符读出**新的** writable（原生 true）；引擎：原型对象 —— 重定义后描述符读出**新的** writable（原生 true）；引擎：重定义后写门放开（原生 o.x = 2 成功）；负控：writable:true → false 的收紧仍生效（原生 false）；负控：不可配置 + writable:false 的", () => {
-(() => {
 
+  it("宿主实测：writable:true 的重定义把 [[Writable]] 翻回 true（node 原生）；引擎：普通对象 —— 重定义后描述符读出**新的** writable（原生 true）；引擎：原型对象 —— 重定义后描述符读出**新的** writable（原生 true）；引擎：重定义后写门放开（原生 o.x = 2 成功）；负控：writable:true → false 的收紧仍生效（原生 false）；负控：不可配置 + writable:false 的", () => {
+  {
     const o = {};
     Object.defineProperty(o, "x", { value: 1, writable: false, configurable: true, enumerable: true });
     Object.defineProperty(o, "x", { writable: true });
@@ -3406,71 +3045,58 @@ describe("族 58 · 第 1 条 · writable:true 的重定义覆盖旧的 [[Writab
     Object.defineProperty(p, "x", { value: 1, writable: true, configurable: true, enumerable: true });
     Object.defineProperty(p, "x", { writable: false });
     expect(Object.getOwnPropertyDescriptor(p, "x")?.writable).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const src = wrap(
       `const o = {}; Object.defineProperty(o, "x", { value: 1, writable: false, configurable: true, enumerable: true }); Object.defineProperty(o, "x", { writable: true }); return Object.getOwnPropertyDescriptor(o, "x").writable;`,
     );
     expect(v(src)).toEqual({ ok: true, value: true });
-  })();
-(() => {
-
+  }
+  {
     const src = wrap(
       `class Bug58ProtoA {} Object.defineProperty(Bug58ProtoA.prototype, "m", { value: 1, writable: false, configurable: true }); Object.defineProperty(Bug58ProtoA.prototype, "m", { writable: true }); return Object.getOwnPropertyDescriptor(Bug58ProtoA.prototype, "m").writable;`,
     );
     expect(v(src)).toEqual({ ok: true, value: true });
-  })();
-(() => {
-
+  }
+  {
     const src = wrap(
       `const o = {}; Object.defineProperty(o, "x", { value: 1, writable: false, configurable: true, enumerable: true }); Object.defineProperty(o, "x", { writable: true }); o.x = 2; return o.x;`,
     );
     expect(v(src)).toEqual({ ok: true, value: 2 });
-  })();
-(() => {
-
+  }
+  {
     const src = wrap(
       `const o = {}; Object.defineProperty(o, "x", { value: 1, writable: true, configurable: true, enumerable: true }); Object.defineProperty(o, "x", { writable: false }); return Object.getOwnPropertyDescriptor(o, "x").writable;`,
     );
     expect(v(src)).toEqual({ ok: true, value: false });
-  })();
-(() => {
-
+  }
+  {
     const src = wrap(
       `const o = {}; Object.defineProperty(o, "x", { value: 1, writable: false, configurable: false }); Object.defineProperty(o, "x", { writable: true }); return o.x;`,
     );
     expect(throwName(src)).toBe("TypeError");
-  })();
-(() => {
-
+  }
+  {
     const src = wrap(
       `const o = {}; Object.defineProperty(o, "x", { value: 1, writable: false, configurable: false }); Object.defineProperty(o, "x", { value: 1 }); return o.x;`,
     );
     expect(v(src)).toEqual({ ok: true, value: 1 });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
 
 // ---------------------------------------------------------------------------
 // 2. 原型 brand 描述符面（Error 家族）
 // ---------------------------------------------------------------------------
-describe("族 58 · 第 2 条 · 原型 brand 描述符面（Error 家族）", () => {
+describe("原型 brand 描述符面（Error 家族）", () => {
   it("宿主实测：Error.prototype 的自有键与 hasOwn 判定（node 原生）；引擎：gOPN(Error.prototype) 精确列出自有键（原生同款）；引擎：gOPN(TypeError.prototype) 精确（toString 是**继承**的，不入自有键）；引擎：Object.hasOwn(Error.prototype, ...) 折确定 boolean（原生 true/false）；引擎：TypeError.prototype 的 toStrin", () => {
-(() => {
-
+  {
     expect(Object.getOwnPropertyNames(Error.prototype)).toEqual([
       "constructor",
       "name",
@@ -3487,19 +3113,16 @@ describe("族 58 · 第 2 条 · 原型 brand 描述符面（Error 家族）", (
     expect(Object.hasOwn(Error.prototype, "toString")).toBe(true);
     expect(Object.hasOwn(Error.prototype, "zzz")).toBe(false);
     expect(Object.keys(Error.prototype)).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const r = call(wrap(`return Object.getOwnPropertyNames(Error.prototype);`), "f").result;
     expect(tupleEls(r)).toEqual(["constructor", "name", "message", "toString"]);
-  })();
-(() => {
-
+  }
+  {
     const r = call(wrap(`return Object.getOwnPropertyNames(TypeError.prototype);`), "f").result;
     expect(tupleEls(r)).toEqual(["constructor", "name", "message"]);
-  })();
-(() => {
-
+  }
+  {
     expect(v(wrap(`return Object.hasOwn(Error.prototype, "name");`))).toEqual({
       ok: true,
       value: true,
@@ -3516,53 +3139,41 @@ describe("族 58 · 第 2 条 · 原型 brand 描述符面（Error 家族）", (
       ok: true,
       value: false,
     });
-  })();
-(() => {
-
+  }
+  {
     expect(v(wrap(`return Object.hasOwn(TypeError.prototype, "toString");`))).toEqual({
       ok: true,
       value: false,
     });
-  })();
-(() => {
-
+  }
+  {
     const r = call(wrap(`return Object.keys(Error.prototype);`), "f").result;
     expect(tupleEls(r)).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const r = call(wrap(`return Object.getOwnPropertyNames(Array.prototype);`), "f").result;
     expect(tupleEls(r)).toEqual(Object.getOwnPropertyNames(Array.prototype));
-  })();
-(() => {
-
+  }
+  {
     const r = call(wrap(`return Object.hasOwn(Object.prototype, "toString");`), "f").result;
     expect(litValue_____index_ts(r)).toEqual({ ok: true, value: true });
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 
 // ---------------------------------------------------------------------------
 // 3. 类原型 brand 的 gOPN / keys 面
 // ---------------------------------------------------------------------------
-describe("族 58 · 第 3 条 · 类原型 brand 的 gOPN / keys 面", () => {
+describe("类原型 brand 的 gOPN / keys 面", () => {
   it("宿主实测：类原型的自有键 / 可枚举键 / hasOwn（node 原生）；引擎：gOPN(类原型) 精确列出 constructor + 自有方法（原生同款）；引擎：gOPN(只有访问器的类原型) 精确列出 constructor + 访问器（原生同款）；引擎：gOPN(类原型) 按**定义序**列出 constructor + 自有方法（原生同款）；引擎：gOPN(子类原型) 不列**继承**的祖先成员（原生同款）；引擎：Object.keys(类原型) 折精确空元组（原", () => {
-(() => {
-
+  {
     class HostClassA {
       m() {}
     }
@@ -3576,17 +3187,15 @@ describe("族 58 · 第 3 条 · 类原型 brand 的 gOPN / keys 面", () => {
       }
     }
     expect(Object.getOwnPropertyNames(HostClassB.prototype)).toEqual(["constructor", "g"]);
-  })();
-(() => {
-
+  }
+  {
     const r = call(
       wrap(`class Bug58ClassA { m() {} } return Object.getOwnPropertyNames(Bug58ClassA.prototype);`),
       "f",
     ).result;
     expect(tupleEls(r)).toEqual(["constructor", "m"]);
-  })();
-(() => {
-
+  }
+  {
     const r = call(
       wrap(
         `class Bug58ClassB { get g() { return 1; } } return Object.getOwnPropertyNames(Bug58ClassB.prototype);`,
@@ -3594,17 +3203,15 @@ describe("族 58 · 第 3 条 · 类原型 brand 的 gOPN / keys 面", () => {
       "f",
     ).result;
     expect(tupleEls(r)).toEqual(["constructor", "g"]);
-  })();
-(() => {
-
+  }
+  {
     const r = call(
       wrap(`class Bug58ClassH { m() {} n() {} } return Object.getOwnPropertyNames(Bug58ClassH.prototype);`),
       "f",
     ).result;
     expect(tupleEls(r)).toEqual(["constructor", "m", "n"]);
-  })();
-(() => {
-
+  }
+  {
     const r = call(
       wrap(
         `class Bug58ClassIBase { base() {} } class Bug58ClassI extends Bug58ClassIBase { own() {} } return Object.getOwnPropertyNames(Bug58ClassI.prototype);`,
@@ -3612,17 +3219,15 @@ describe("族 58 · 第 3 条 · 类原型 brand 的 gOPN / keys 面", () => {
       "f",
     ).result;
     expect(tupleEls(r)).toEqual(["constructor", "own"]);
-  })();
-(() => {
-
+  }
+  {
     const r = call(
       wrap(`class Bug58ClassC { m() {} } return Object.keys(Bug58ClassC.prototype);`),
       "f",
     ).result;
     expect(tupleEls(r)).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(wrap(`class Bug58ClassD { m() {} } return Object.hasOwn(Bug58ClassD.prototype, "m");`)),
     ).toEqual({ ok: true, value: true });
@@ -3636,9 +3241,8 @@ describe("族 58 · 第 3 条 · 类原型 brand 的 gOPN / keys 面", () => {
     expect(
       v(wrap(`class Bug58ClassF { m() {} } return Object.hasOwn(Bug58ClassF.prototype, "zzz");`)),
     ).toEqual({ ok: true, value: false });
-  })();
-(() => {
-
+  }
+  {
     class HostClassG {
       m() {}
       get g() {
@@ -3653,9 +3257,8 @@ describe("族 58 · 第 3 条 · 类原型 brand 的 gOPN / keys 面", () => {
       "f",
     ).result;
     expect(tupleEls(r)).toEqual(["constructor", "m", "g"]);
-  })();
-(() => {
-
+  }
+  {
     class HostClassGRev {
       get g() {
         return 1;
@@ -3670,9 +3273,8 @@ describe("族 58 · 第 3 条 · 类原型 brand 的 gOPN / keys 面", () => {
       "f",
     ).result;
     expect(tupleEls(r)).toEqual(["constructor", "g", "m"]);
-  })();
-(() => {
-
+  }
+  {
     class HostClassMix {
       m() {}
       get g() {
@@ -3695,9 +3297,8 @@ describe("族 58 · 第 3 条 · 类原型 brand 的 gOPN / keys 面", () => {
       "f",
     ).result;
     expect(tupleEls(r)).toEqual(["constructor", "m", "g", "n"]);
-  })();
-(() => {
-
+  }
+  {
     class HostClassCk {
       ["a"]() {}
       get g() {
@@ -3718,37 +3319,26 @@ describe("族 58 · 第 3 条 · 类原型 brand 的 gOPN / keys 面", () => {
       "f",
     ).result;
     expect(tupleEls(r)).toEqual(["constructor", "a", "g", "b"]);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 
 // ---------------------------------------------------------------------------
 // 4. 生成器 prototype 的协议面（next / return / throw）
 // ---------------------------------------------------------------------------
-describe("族 58 · 第 4 条 · 生成器 prototype 的协议面", () => {
+describe("生成器 prototype 的协议面", () => {
   it("宿主实测：%GeneratorPrototype% 的协议面**真实存在**（node 原生）；引擎：g.prototype.next 可读（typeof \"function\"，原生同款）；引擎：g.prototype.return / throw 可读（原生同款）；引擎：借用调用 g.prototype.next.call(it) 推进生成器（原生 {value:1,done:false}）；引擎：无接收者调用 g.prototype.next() 原生定抛 TypeErr", () => {
-(() => {
-
+  {
     function* hostGen() {
       yield 1;
     }
@@ -3761,24 +3351,21 @@ describe("族 58 · 第 4 条 · 生成器 prototype 的协议面", () => {
     const it = hostGen();
     expect(hostGen.prototype.next.call(it)).toEqual({ value: 1, done: false });
     expect(hostGen.prototype.next.call(it)).toEqual({ value: undefined, done: true });
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(wrap(`function* g() { yield 1; } return typeof g.prototype.next;`)),
     ).toEqual({ ok: true, value: "function" });
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(wrap(`function* g() { yield 1; } return typeof g.prototype.return;`)),
     ).toEqual({ ok: true, value: "function" });
     expect(
       v(wrap(`function* g() { yield 1; } return typeof g.prototype.throw;`)),
     ).toEqual({ ok: true, value: "function" });
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(
         wrap(
@@ -3786,54 +3373,43 @@ describe("族 58 · 第 4 条 · 生成器 prototype 的协议面", () => {
         ),
       ),
     ).toEqual({ ok: true, value: "1,false,true" });
-  })();
-(() => {
-
+  }
+  {
     const src = wrap(`function* g() { yield 1; } return g.prototype.next();`);
     expect(throwName(src)).toBe("TypeError");
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(wrap(`function* g() { yield 1; } const it = g(); return typeof it.next;`)),
     ).toEqual({ ok: true, value: "function" });
-  })();
-(() => {
-
+  }
+  {
     const r = call(
       wrap(`function* g() { yield 1; } return Object.getOwnPropertyNames(g.prototype);`),
       "f",
     ).result;
     expect(formatShape_____index_ts(r)).toBe("[]");
     expect(tupleEls(r)).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(wrap(`function* g() { yield 1; } return Object.hasOwn(g.prototype, "next");`)),
     ).toEqual({ ok: true, value: false });
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 
 // ---------------------------------------------------------------------------
 // 5. 任意 brand 的 "length" 槽
 // ---------------------------------------------------------------------------
-describe("族 58 · 第 5 条 · 任意 brand 的 \"length\" 槽可读", () => {
+describe("任意 brand 的 \"length\" 槽可读", () => {
   /** env 声明面同形的 brand（Buffer：内层 obj 带 "length" 槽） */
   function lengthBrand(name: string, slots: Record<string, { value: ReturnType<typeof abs> }>) {
     return abs({ k: "brand", name, shape: objOf(slots) }, undefined, undefined, "exact");
@@ -3843,45 +3419,36 @@ describe("族 58 · 第 5 条 · 任意 brand 的 \"length\" 槽可读", () => {
     abs({ k: "prim", type: "number" }, undefined, undefined, "exact");
 
   it("宿主实测：Buffer 实例的 length 真实存在（node 原生 3）；引擎：任意 brand 的 \"length\" 槽可读（Buffer 同形 brand → number）；引擎：brand 的 \"length\" 槽与成员读面同口径（$get 同槽）；负控：无 length 槽的 brand 仍折 unknown（逐字不变）；负控：对象字面量 / 字符串 / 数组的 length 逐字不变（原生 7 / 3 / 3）", () => {
-(() => {
-
+  {
     expect(Buffer.from("abc").length).toBe(3);
     expect(Object.prototype.hasOwnProperty.call(Buffer.from("abc"), "length")).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const brand = lengthBrand("Buffer", { length: { value: numAbs() } });
     expect(formatShape_____index_ts($len(brand))).toBe("number");
-  })();
-(() => {
-
+  }
+  {
     const brand = lengthBrand("Buffer58", { length: { value: numAbs() } });
     // $len 与 $get 读同一槽 ⇒ 同一个值域（number）
     expect(formatShape_____index_ts($len(brand))).toBe("number");
-  })();
-(() => {
-
+  }
+  {
     const brand = lengthBrand("Bug58NoLength", {});
     expect(formatShape_____index_ts($len(brand))).toBe("unknown");
-  })();
-(() => {
-
+  }
+  {
     expect(v(wrap(`const o = { length: 7 }; return o.length;`))).toEqual({
       ok: true,
       value: 7,
     });
     expect(v(wrap(`return "abc".length;`))).toEqual({ ok: true, value: 3 });
     expect(v(wrap(`return [1, 2, 3].length;`))).toEqual({ ok: true, value: 3 });
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 });
 
@@ -3949,7 +3516,7 @@ function fmt(src: string, fnName = "f"): string {
 /** 2 个 await 的 inner（原生：`Promise.all([inner(), inner()])` → [2, 2]） */
 const INNER_TWO_AWAIT = `async function inner() { await null; await null; return 2; }`;
 
-describe("Promise.all 等元素 settle 后才兑现（不取调用期快照）", () => {
+{
   beforeEach(() => {
     resetEngineCaches();
     takeRefineDiags();
@@ -3957,44 +3524,44 @@ describe("Promise.all 等元素 settle 后才兑现（不取调用期快照）",
   });
 
   it("await Promise.all([inner(), inner()])（inner 2 个 await）= 4（原生 4）；check 面签名：promise<4>（原生 4；修前是 promise<number | string>）；组合子自身：返回值即 [2, 2]（原生 [2, 2]；修前是占位符 unknown）；兑现序：组合子在**两个元素都 settle 之后**才兑现（原生 \"a,a,b,b,all\"）；混合元素（pending + 已 settle）= 7", () => {
-(() => {
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(
       awaitedVal(`${INNER_TWO_AWAIT}
         export async function f() { const r = await Promise.all([inner(), inner()]); return r[0] + r[1]; }`),
     ).toBe(4);
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     const src = `${INNER_TWO_AWAIT}
       export async function f() { const r = await Promise.all([inner(), inner()]); return r[0] + r[1]; }`;
     const r = checkSource("/t/src.js", src, pTrue, {});
     expect(sigOf(r, "f")).toBe("promise<4>");
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(
       fmt(`${INNER_TWO_AWAIT}
         export function f() { return Promise.all([inner(), inner()]); }`),
     ).toContain("promise<[2, 2]>");
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     // 组合子若在调用期快照 ⇒ "all" 会排在元素体完成之前（提前兑现）
     expect(
@@ -4006,23 +3573,23 @@ describe("Promise.all 等元素 settle 后才兑现（不取调用期快照）",
           return log.join(",") + "|" + r[0];
         }`),
     ).toBe("a,a,b,b,all|2");
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(
       awaitedVal(`${INNER_TWO_AWAIT}
         export async function f() { const r = await Promise.all([inner(), Promise.resolve(5)]); return r[0] + r[1]; }`),
     ).toBe(7);
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(
       awaitedVal(`async function inner() { await null; await null; throw new Error("boom"); }
@@ -4031,12 +3598,12 @@ describe("Promise.all 等元素 settle 后才兑现（不取调用期快照）",
           catch (e) { return "caught:" + e.message; }
         }`),
     ).toBe("caught:boom");
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     const r = call(
       `async function inner() { await null; await null; throw new Error("boom"); }
@@ -4047,12 +3614,12 @@ describe("Promise.all 等元素 settle 后才兑现（不取调用期快照）",
     expect(sh.k).toBe("eff");
     expect(sh.inner?.shape.k).toBe("never");
     expect(sh.rejected).toBeDefined();
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(
       awaitedVal(`async function bad() { await null; await null; throw new Error("boom"); }
@@ -4062,34 +3629,34 @@ describe("Promise.all 等元素 settle 后才兑现（不取调用期快照）",
           catch (e) { return "caught:" + e.message; }
         }`),
     ).toBe("caught:boom");
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(
       awaitedVal(`async function inner() { return 2; }
         export async function f() { const r = await Promise.all([inner(), inner()]); return r[0] + r[1]; }`),
     ).toBe(4);
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(
       awaitedVal(`async function inner() { await null; return 2; }
         export async function f() { const r = await Promise.all([inner(), inner()]); return r[0] + r[1]; }`),
     ).toBe(4);
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(fmt(`export function f() { return Promise.all([Promise.resolve(1), 2]); }`)).toContain(
       "promise<[1, 2]>",
@@ -4097,39 +3664,28 @@ describe("Promise.all 等元素 settle 后才兑现（不取调用期快照）",
     expect(fmt(`export function f() { return Promise.all([Promise.resolve(1)]); }`)).toContain(
       "promise<[1]>",
     );
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(fmt(`export function f() { return Promise.all(1); }`)).toContain("promise<unknown>");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
+
+
+
+
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -4209,7 +3765,7 @@ const INNER_TWO_AWAIT = `async function inner() { await null; await null; return
 /** 2 个 await 后抛错的 inner（原生：拒绝 reason = Error("boom")） */
 const INNER_REJECT = `async function innerRej() { await null; await null; throw new Error("boom"); }`;
 
-describe("promise 反应面（.then/.catch）与组合子（race/any/allSettled）不抢跑", () => {
+{
   beforeEach(() => {
     resetEngineCaches();
     takeRefineDiags();
@@ -4219,33 +3775,33 @@ describe("promise 反应面（.then/.catch）与组合子（race/any/allSettled�
   // ---------- 1150-a：反应面在 pending 接收者上抢跑 ----------
 
   it("then 在 pending 接收者上：回调读到终值（原生 3；修前 promise<number | string>）；then 在 pending 接收者上：await 面读到终值（原生 3）；check 面签名：promise<3>（原生 3；修前 promise<number | string>）；then 在 pending 接收者上：拒绝 ⇒ onRejected 臂可达（原生 \"rej:boom\"）；catch 在 pending 接收者上：catch 臂可达（", () => {
-(() => {
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(
       fmt(`${INNER_TWO_AWAIT}
         export function f() { return inner().then((v) => v + 1); }`),
     ).toContain("promise<3>");
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(
       awaitedVal(`${INNER_TWO_AWAIT}
         export async function f() { return await inner().then((v) => v + 1); }`),
     ).toBe(3);
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     const r = checkSource(
       "/t/src.js",
@@ -4255,56 +3811,56 @@ describe("promise 反应面（.then/.catch）与组合子（race/any/allSettled�
       {},
     );
     expect(sigOf(r, "f")).toBe("promise<3>");
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(
       awaitedVal(`${INNER_REJECT}
         export async function f() { return await innerRej().then((v) => "no", (e) => "rej:" + e.message); }`),
     ).toBe("rej:boom");
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(
       awaitedVal(`${INNER_REJECT}
         export async function f() { return await innerRej().catch((e) => "caught:" + e.message); }`),
     ).toBe("caught:boom");
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(
       fmt(`${INNER_TWO_AWAIT}
         export function f() { return Promise.all([inner(), inner()]).then((r) => r[0] + r[1]); }`),
     ).toContain("promise<4>");
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(
       awaitedVal(`${INNER_TWO_AWAIT}
         export async function f() { return await Promise.all([inner(), inner()]).then((r) => r[0] + r[1]); }`),
     ).toBe(4);
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(
       awaitedVal(`const log = [];
@@ -4315,12 +3871,12 @@ describe("promise 反应面（.then/.catch）与组合子（race/any/allSettled�
           return log.join(",") + "|" + v;
         }`),
     ).toBe("a,a,b,b,then:2,after|2");
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(fmt(`export function f() { return Promise.resolve(1).then((x) => x + 1); }`)).toContain(
       "promise<2>",
@@ -4328,34 +3884,34 @@ describe("promise 反应面（.then/.catch）与组合子（race/any/allSettled�
     expect(
       fmt(`export function f() { return Promise.resolve(21).then((x) => x * 2).then((y) => y + 1); }`),
     ).toContain("promise<43>");
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(
       fmt(`${INNER_TWO_AWAIT}
         export function f() { return Promise.race([inner(), Promise.resolve(9)]); }`),
     ).toContain("promise<9>");
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(
       awaitedVal(`${INNER_TWO_AWAIT}
         export async function f() { return await Promise.race([inner(), Promise.resolve(9)]); }`),
     ).toBe(9);
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(
       awaitedVal(`${INNER_REJECT}
@@ -4363,34 +3919,34 @@ describe("promise 反应面（.then/.catch）与组合子（race/any/allSettled�
           return await Promise.race([innerRej(), Promise.resolve(9)]).then((v) => "f:" + v, (e) => "r:" + e.message);
         }`),
     ).toBe("f:9");
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(
       fmt(`${INNER_TWO_AWAIT}
         export function f() { return Promise.any([inner(), Promise.resolve(9)]); }`),
     ).toContain("promise<9>");
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(
       awaitedVal(`${INNER_TWO_AWAIT}
         export async function f() { return await Promise.any([inner(), Promise.resolve(9)]); }`),
     ).toBe(9);
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(
       awaitedVal(`${INNER_REJECT}
@@ -4399,23 +3955,23 @@ describe("promise 反应面（.then/.catch）与组合子（race/any/allSettled�
           catch (e) { return e.name + ":" + e.message; }
         }`),
     ).toBe("AggregateError:All promises were rejected");
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(
       awaitedVal(`${INNER_TWO_AWAIT}
         export async function f() { return await Promise.any([Promise.reject(new Error("k")), inner()]); }`),
     ).toBe(2);
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(
       awaitedVal(`${INNER_TWO_AWAIT}
@@ -4423,12 +3979,12 @@ describe("promise 反应面（.then/.catch）与组合子（race/any/allSettled�
           return await Promise.allSettled([inner(), Promise.resolve(9)]).then((r) => r[0].status + ":" + r[0].value + "," + r[1].status + ":" + r[1].value);
         }`),
     ).toBe("fulfilled:2,fulfilled:9");
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(
       awaitedVal(`${INNER_REJECT}
@@ -4436,24 +3992,24 @@ describe("promise 反应面（.then/.catch）与组合子（race/any/allSettled�
           return await Promise.allSettled([innerRej(), Promise.resolve(9)]).then((r) => r[0].status + ":" + r[0].reason.message + "," + r[1].status + ":" + r[1].value);
         }`),
     ).toBe("rejected:boom,fulfilled:9");
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(fmt(`export function f() { return Promise.race([1, "a"]); }`)).toContain('promise<1 | "a">');
     expect(fmt(`export function f() { return Promise.any([1]); }`)).toContain("promise<1>");
     expect(fmt(`export function f() { return Promise.allSettled([1]); }`)).toContain(
       'status: "fulfilled" | "rejected"',
     );
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(
       awaitedVal(`${INNER_REJECT}
@@ -4461,12 +4017,12 @@ describe("promise 反应面（.then/.catch）与组合子（race/any/allSettled�
           return await Promise.all([innerRej(), innerRej()]).then((v) => "f:" + v, (e) => "rej:" + e.message);
         }`),
     ).toBe("rej:boom");
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(
       awaitedVal(`${INNER_REJECT}
@@ -4474,12 +4030,12 @@ describe("promise 反应面（.then/.catch）与组合子（race/any/allSettled�
           return await Promise.all([innerRej(), innerRej()]).catch((e) => "caught:" + e.message);
         }`),
     ).toBe("caught:boom");
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(
       awaitedVal(`${INNER_REJECT}
@@ -4487,12 +4043,12 @@ describe("promise 反应面（.then/.catch）与组合子（race/any/allSettled�
           return await Promise.race([innerRej(), Promise.reject("r")]).then((v) => "f:" + v, (e) => "rej:" + e);
         }`),
     ).toBe("rej:r");
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(
       awaitedVal(`${INNER_REJECT}
@@ -4500,55 +4056,33 @@ describe("promise 反应面（.then/.catch）与组合子（race/any/allSettled�
           return await Promise.any([Promise.reject("a"), Promise.reject("b")]).then((v) => "f:" + v, (e) => e.name + ":" + e.message);
         }`),
     ).toBe("AggregateError:All promises were rejected");
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
   // ---------- 1150-b：race / any / allSettled 取调用期快照 ----------
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
   // ---------- 组合子与反应面的交叉面（拒绝臂不丢） ----------
 
-  ;
 
-  ;
 
-  ;
 
-  ;
-});
+}
 });

@@ -90,7 +90,7 @@ function staticSlotNames(fn: Abs | undefined): string[] {
   return Object.keys((fn.shape as { slots?: Record<string, unknown> }).slots ?? {});
 }
 
-describe("node env 的静态 `Response.json` 返回域是 `Response`（不是 promise）", () => {
+
   it("静态工厂返回 Response 品牌；实例 json 仍是 promise", () => {
     for (const name of ["error","json","redirect"] as const) {
       const slot = staticSlotOf("Response", name);
@@ -116,7 +116,7 @@ describe("node env 的静态 `Response.json` 返回域是 `Response`（不是 pr
     expect(jsonRt.shape.k).toBe("eff");
     expect((jsonRt.shape as { eff?: string }).eff).toBe("promise");
   });
-});;
+
 
 describe("node env 的 `performance` 补齐 6 个宿主真实成员", () => {
   const SIX = ["toJSON","clearResourceTimings","eventLoopUtilization","timerify","setResourceTimingBufferSize","nodeTiming"] as const;
@@ -138,7 +138,7 @@ describe("node env 的 `performance` 补齐 6 个宿主真实成员", () => {
     const existing = checkNode(`export function f(){ performance.now(); performance.mark("m"); performance.measure("m"); performance.getEntries(); performance.getEntriesByName("m"); performance.getEntriesByType("m"); return 1; }`);
     expect(existing.errorCodes).toEqual([]);
   });
-});;
+});
 
 describe("node env 的 `navigator` 补 `locks`（Web Locks API）", () => {
   it("locks/request/query 声明；实例面同源；既有成员不变", () => {
@@ -159,7 +159,7 @@ describe("node env 的 `navigator` 补 `locks`（Web Locks API）", () => {
     expect(hw.errorCodes).toEqual([]);
     expect(displayOf(hw)).toMatch(/^number/);
   });
-});;
+});
 
 describe("web env 的 `crypto.subtle` 补 4 个标准 WebCrypto API", () => {
   const FOUR = ["deriveKey","deriveBits","wrapKey","unwrapKey"] as const;
@@ -174,7 +174,7 @@ describe("web env 的 `crypto.subtle` 补 4 个标准 WebCrypto API", () => {
     expect(displayOf(digest)).toMatch(/^promise/);
     expect(memberNames(nodeSlotOf("crypto", "subtle")).sort()).toEqual(memberNames(slotOf("crypto", "subtle")).sort());
   });
-});;
+});
 
 describe("负控 —— 宿主没有的成员仍被判「确定缺失」（表没被改成全放行）", () => {
   it("performance/navigator/web subtle/node subtle 的未知成员仍确定缺失", () => {
@@ -187,7 +187,7 @@ describe("负控 —— 宿主没有的成员仍被判「确定缺失」（表�
     expect(web.errorCodes).toContain("nudo:entry-may-throw");
     expect(displayOf(checkNode("export function f(){ return crypto.subtle.notAMember; }"))).toMatch(/^undefined/);
   });
-});;
+});
 
 describe("宿主护栏 —— 宿主实测成员名 ⊆ env 表成员名", () => {
   it("performance/navigator/crypto.subtle/Response static 的宿主成员均被覆盖", () => {
@@ -200,7 +200,7 @@ describe("宿主护栏 —— 宿主实测成员名 ⊆ env 表成员名", () =>
     expectHostCovered(responseHost, staticSlotNames(nodeSlotOf("Response")), [], "Response static (node)");
     expectHostCovered(responseHost, staticSlotNames(slotOf("Response")), [], "Response static (web)");
   });
-});;
+});
 });
 
 // ---------------------------------------------------------------------------
@@ -226,7 +226,7 @@ describe("atob / btoa keep the host's InvalidCharacterError throws面", () => {
  *
  * 反向钉：把 atob / btoa 加回 env 全局表 ⇒ 本文件必挂。
  */
-describe("atob / btoa keep the host's InvalidCharacterError throws面", () => {
+
   it("web env 不声明；非法输入记 InvalidCharacterError；合法 base64 精确折叠；env/host 同口径", () => {
     expect(webEnvGlobals()["atob"]).toBeUndefined();
     expect(webEnvGlobals()["btoa"]).toBeUndefined();
@@ -240,7 +240,7 @@ describe("atob / btoa keep the host's InvalidCharacterError throws面", () => {
     expect(withEnv.throwBrands).toEqual(hostOnly.throwBrands);
     expect(withEnv.throwBrands).toContain("InvalidCharacterError");
   });
-});;
+
 });
 
 // ---------------------------------------------------------------------------
@@ -270,7 +270,7 @@ function check(src: string) {
   });
 }
 
-describe("Buffer 是构造器（new Buffer(...) 不再定抛 TypeError）", () => {
+
   it("宿主 new Buffer 正常；env ctor:true + Buffer 实例面；引擎零假红", () => {
     expect(new Buffer(1).length).toBe(1);
     expect(new Buffer("ab").length).toBe(2);
@@ -290,7 +290,7 @@ export function g() { return new Buffer("ab"); }`, pTrue, { inject: { envGlobals
       expect(s.display).toMatch(/^Buffer\b/);
     }
   });
-});;
+
 });
 
 // ---------------------------------------------------------------------------
@@ -344,7 +344,7 @@ function check(src: string) {
   });
 }
 
-describe("Buffer 实例面补 byteLength / buffer / byteOffset", () => {
+
   it("宿主真值；env 实例槽 number/ArrayBuffer/number；引擎读出精确类型", () => {
     const b = Buffer.alloc(4);
     expect(b.byteLength).toBe(4);
@@ -375,7 +375,7 @@ export function b3() { return Buffer.alloc(4).byteOffset; }`, pTrue, { inject: {
     expect(byName.get("b2")).toMatch(/^ArrayBuffer\b/);
     expect(byName.get("b3")).toMatch(/^number\b/);
   });
-});;
+
 });
 
 // ---------------------------------------------------------------------------
@@ -398,7 +398,7 @@ function host(script: string): string {
   return execFileSync(process.execPath, ["-e", script], { encoding: "utf-8" }).trim();
 }
 
-describe("Buffer has no isUtf8/transcode/constants statics", () => {
+{
   const host = (script: string) => execFileSync(process.execPath, ["-e", script], { encoding: "utf-8" }).trim();
   it("四个名字不是 Buffer 静态；env 不声明；读面 unknown；模块面在 node:buffer", () => {
     const out = host(`const b = require("node:buffer"); console.log(JSON.stringify({ bufferStatics: ["compareBuffers","isUtf8","transcode","constants"].map((k) => typeof Buffer[k]), moduleExports: ["isUtf8","transcode","constants"].map((k) => typeof b[k]) }));`);
@@ -413,7 +413,7 @@ describe("Buffer has no isUtf8/transcode/constants statics", () => {
     expect(good.throwBrands).toEqual([]);
     expect(good.signatures[0]!.display).toBe("number");
   });
-});;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -455,7 +455,7 @@ function check(src: string) {
   });
 }
 
-describe("Buffer 静态面补 of（不再定抛 TypeError）", () => {
+
   it("宿主 Buffer.of 返回 Buffer；env 静态 of 是变长 fn；调用零 throws", () => {
     expect(typeof Buffer.of).toBe("function");
     const b = Buffer.of(1, 2);
@@ -473,7 +473,7 @@ describe("Buffer 静态面补 of（不再定抛 TypeError）", () => {
     for (const s of r.signatures) expect(s.throws, s.name).toBeUndefined();
     expect(r.signatures[0]?.display).toMatch(/^Buffer\b/);
   });
-});;
+
 });
 
 // ---------------------------------------------------------------------------
@@ -526,7 +526,7 @@ function nativeErrorName(fn: () => unknown): string | undefined {
   }
 }
 
-describe("node:crypto 族有实参域 throws 面", () => {
+{
   const env = defineEnv();
   const cryptoMod = env.modules!.crypto!;
   const nativeErrorName = (fn: () => unknown): string | undefined => { try { fn(); return undefined; } catch (e) { return (e as Error).name; } };
@@ -563,7 +563,7 @@ describe("node:crypto 族有实参域 throws 面", () => {
     expect(abstract.exits).toHaveLength(1);
     expect(brandName(abstract.exits[0]!)).toBe("Error");
   });
-});;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -587,7 +587,7 @@ function host(script: string): string {
   return execFileSync(process.execPath, ["-e", script], { encoding: "utf-8" }).trim();
 }
 
-describe("crypto.getRandomValues takes a TypedArray, returns it", () => {
+{
   const host = (script: string) => execFileSync(process.execPath, ["-e", script], { encoding: "utf-8" }).trim();
   it("数组/浮点 TypedArray 拒绝；整数 TypedArray 保持同一性；参数域非 Array", () => {
     const out = host(`const a = new Uint8Array(4); const r = crypto.getRandomValues(a); let threw = null; try { crypto.getRandomValues([1, 2, 3]); } catch (e) { threw = e.constructor.name; } console.log(JSON.stringify({ same: r === a, threw }));`);
@@ -610,7 +610,7 @@ describe("crypto.getRandomValues takes a TypedArray, returns it", () => {
     expect(names).toContain("Uint8Array");
     expect(names.every((n) => n.endsWith("Array"))).toBe(true);
   });
-});;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -634,7 +634,7 @@ function host(script: string): string {
   return execFileSync(process.execPath, ["-e", script], { encoding: "utf-8" }).trim();
 }
 
-describe("Headers/FormData iterators are not arrays (both envs)", () => {
+{
   const host = (script: string) => execFileSync(process.execPath, ["-e", script], { encoding: "utf-8" }).trim();
   it("迭代器非数组、无 length/index、带 @@iterator；web 展开合法；FormData 同径", () => {
     const out = host(`const h = new Headers({ a: "b" }); const k = h.keys(); console.log(JSON.stringify({ isArray: Array.isArray(k), length: typeof k.length, ctor: k.constructor.name, first: [...k][0] }));`);
@@ -655,7 +655,7 @@ describe("Headers/FormData iterators are not arrays (both envs)", () => {
     expect(webForm.throwBrands).toEqual([]);
     expect(slotOfAbs(instanceFaceOf("FormData"), "entries")).toBeTruthy();
   });
-});;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -754,7 +754,7 @@ function sigOf(
 /** try/catch 模板：catch 臂的返回值 "boom" 是「catch 臂活」的探针 */
 const TRY_CATCH_BODY = (expr: string) => `try { ${expr} return "ok"; } catch (e) { return "boom"; }`;
 
-describe("env promise 必须带 rejected 通道（catch 臂是活代码）", () => {
+{
   const nodeEnv = defineNodeEnv();
   const webEnv = defineWebEnv();
   const modulesOf = (def: { modules?: Record<string, Record<string, Abs>> }) => {
@@ -784,7 +784,7 @@ export async function use() { ${body('const r = await fetch("https://example.com
 export async function use() { ${body('const d = await crypto.subtle.digest("SHA-256", new Uint8Array([1]));')} }`;
     expect(sigOf(cryptoSrc, nodeEnv)).toContain('"boom"');
   });
-});;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -824,7 +824,7 @@ function check(src: string) {
   });
 }
 
-describe("node env 不再声明 structuredClone（宿主 throws 面不再被遮蔽）", () => {
+
   it("宿主可克隆成功/不可克隆抛；env 不声明；引擎 throws 面回归且 env 不改变结论", () => {
     expect(structuredClone({ a: 1 })).toEqual({ a: 1 });
     expect(() => structuredClone(Symbol("x"))).toThrow();
@@ -840,7 +840,7 @@ describe("node env 不再声明 structuredClone（宿主 throws 面不再被遮�
     expect(cloneable.signatures[0]?.throws).toBeUndefined();
     expect(cloneable.issues.some((i) => i.code === "nudo:entry-may-throw")).toBe(false);
   });
-});;
+
 });
 
 // ---------------------------------------------------------------------------
@@ -864,7 +864,7 @@ describe("TextDecoder keeps core's precise RangeError", () => {
  *
  * 反向钉：把 `TextDecoder` 加回 env 全局表 ⇒ 本文件必挂。
  */
-describe("TextDecoder keeps core's precise RangeError", () => {
+
   it("web env 不声明；非法 label 记 RangeError；默认干净；env/host 同口径；合法 label 精确", () => {
     expect(webEnvGlobals()["TextDecoder"]).toBeUndefined();
     const bad = checkWeb('export function f(){ return new TextDecoder("bad-$$"); }');
@@ -881,7 +881,7 @@ describe("TextDecoder keeps core's precise RangeError", () => {
     expect(known.errorCodes).toEqual([]);
     expect(displayOf(known)).toMatch(/^"utf-8"/);
   });
-});;
+
 });
 
 // ---------------------------------------------------------------------------
@@ -909,7 +909,7 @@ describe("TextEncoder / TextDecoder are classes, not plain functions", () => {
  *
  * 反向钉：把 TextEncoder / TextDecoder 加回 env 全局表 ⇒ 本文件必挂。
  */
-describe("TextEncoder / TextDecoder are classes, not plain functions", () => {
+
   it("web env 不声明；裸调 TypeError；new 干净；env/host 同口径", () => {
     expect(webEnvGlobals()["TextEncoder"]).toBeUndefined();
     expect(webEnvGlobals()["TextDecoder"]).toBeUndefined();
@@ -923,7 +923,7 @@ describe("TextEncoder / TextDecoder are classes, not plain functions", () => {
     expect(withEnv.throwBrands).toEqual(hostOnly.throwBrands);
     expect(withEnv.throwBrands).toContain("TypeError");
   });
-});;
+
 });
 
 // ---------------------------------------------------------------------------
@@ -970,7 +970,7 @@ function mayThrowMessages(r: CheckResult): string[] {
   return r.issues.filter((i) => i.code === "nudo:entry-may-throw").map((i) => i.message);
 }
 
-describe("URI 族不再吞掉 URIError（es env）", () => {
+{
   const esEnv = defineEnv_____es_ts();
   const checkEs = (src: string) => {
     resetGeneralizeMemo();
@@ -1005,5 +1005,5 @@ describe("URI 族不再吞掉 URIError（es env）", () => {
       expect(shape.returnType?.shape.k, name).toBe("prim");
     }
   });
-});;
+}
 });

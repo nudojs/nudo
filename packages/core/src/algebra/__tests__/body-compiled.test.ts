@@ -5,7 +5,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { $call } from "../exec/call.ts";
-import { absFunction, getFnImpl } from "../abs-fn.ts";
+import { absFunction,  } from "../abs-fn.ts";
 import { litValue, numLit } from "@nudojs/core";
 import { parseSource } from "../parse-source.ts";
 import { emptyEnv } from "../ast-env.ts";

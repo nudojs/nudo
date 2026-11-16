@@ -76,9 +76,9 @@ const PROSE_SIDECAR = `import { fn, number } from "@nudojs/core";
 export const scale = fn({ x: number().gt(0) });
 `;
 
-describe("散文提及 @generated ⇒ 手写契约不得被 emit 覆盖", () => {
+
   it("--emit --all 跳过手写绑定（name-clash），侧车内容原样保留；core 与 service 对「谁是生成段」的判定一致（跨包一致性）；合法生成段仍被识别（emit 走段替换，不报 name-clash）；段内夹无关 const ⇒ 手写段不是生成段（Bug 432 的段边界，同批落地）", async () => {
-await (async () => {
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-443-"));
 
 
@@ -91,8 +91,8 @@ await (async () => {
     const after = readFileSync(join(dir, "lib.nudo.js"), "utf-8");
     expect(after).toContain("export const scale = fn({ x: number().gt(0) });");
     expect(after).not.toContain("lit(");
-  })();
-await (async () => {
+  }
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-443-"));
 
 
@@ -106,8 +106,8 @@ await (async () => {
 export const scale = fn({ x: number().gt(0) });
 `;
     expect([...generatedExportNames(generated)]).toEqual(["scale"]);
-  })();
-await (async () => {
+  }
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-443-"));
 
 
@@ -123,8 +123,8 @@ export const scale = fn({ x: number().gt(0) });
     const r = await emitContract(file, { mode: "update", all: true });
     expect(r.skipped.map((s) => s.fn)).not.toContain("scale");
     expect(r.issues.some((i) => i.code === "nudo:contract-name-clash")).toBe(false);
-  })();
-await (async () => {
+  }
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-443-"));
 
 
@@ -152,15 +152,12 @@ export const scale = fn({ x: number().gt(0) });
     expect(r.skipped.map((s) => s.fn)).toContain("scale");
     const after = readFileSync(join(dir, "lib3.nudo.js"), "utf-8");
     expect(after).toContain("export const scale = fn({ x: number().gt(0) });");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -253,9 +250,9 @@ function rec(file: string, arg: number) {
   };
 }
 
-describe("证据范围（`// evidence:`）—— 宽域段也能判定刷新", () => {
+
   it("本地调用点来源的宽域段带 `local` 标记；调用点消失 ⇒ 段被删（残差收口）；`--from` 外部记录来源的段带 `external` 标记；证据缺失 ⇒ 留存（不误删）；旧侧车（无 `// evidence:` 行）的宽域段仍然留存 —— 迁移期零回归；旧侧车的单点字面量见证段仍按旧启发式删除（既有语义不变）；`derived-from` 段即使带 `local` 标记也留存（root 可能在别的文件）；标记是确定性的：连续两次发射逐字节相同，第二次无改动；存在边界", async () => {
-await (async () => {
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-emit-035-scope-"));
 
 
@@ -281,8 +278,8 @@ await (async () => {
         (i) => i.severity === "info" && i.message.includes("evidence disappeared"),
       ),
     ).toBe(true);
-  })();
-await (async () => {
+  }
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-emit-035-scope-"));
 
 
@@ -305,8 +302,8 @@ await (async () => {
     expect(second.removed).toBeUndefined();
     expect(second.changed).toBe(false);
     expect(readFileSync(sidecarPath, "utf-8")).toBe(bytes);
-  })();
-await (async () => {
+  }
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-emit-035-scope-"));
 
 
@@ -315,8 +312,8 @@ await (async () => {
     expect(r.removed).toBeUndefined();
     expect(r.changed).toBe(false);
     expect(readFileSync(sidecarPath, "utf-8")).toBe(LEGACY_WIDE);
-  })();
-await (async () => {
+  }
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-emit-035-scope-"));
 
 
@@ -324,8 +321,8 @@ await (async () => {
     const r = await emitContract(file, { mode: "update" });
     expect(r.removed).toEqual(["f"]);
     expect(readFileSync(sidecarPath, "utf-8")).toBe("");
-  })();
-await (async () => {
+  }
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-emit-035-scope-"));
 
 
@@ -339,8 +336,8 @@ export const f = fn({ x: number() }, number());
     expect(r.removed).toBeUndefined();
     expect(r.changed).toBe(false);
     expect(readFileSync(sidecarPath, "utf-8")).toBe(derived);
-  })();
-await (async () => {
+  }
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-emit-035-scope-"));
 
 
@@ -354,8 +351,8 @@ await (async () => {
     expect(second.changed).toBe(false);
     expect(second.written).toEqual([]);
     expect(readFileSync(sidecarPath, "utf-8")).toBe(bytes);
-  })();
-await (async () => {
+  }
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-emit-035-scope-"));
 
 
@@ -368,21 +365,15 @@ await (async () => {
     });
     expect(r.written).toEqual(["f"]);
     expect(readFileSync(join(dir, "lib.nudo.js"), "utf-8")).toContain("// evidence: external");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -463,26 +454,23 @@ function nullishFix(over: Partial<MaterializeInput> = {}): ReturnType<typeof mat
   });
 }
 
-describe("TS 侧车的 nullish 回填必须自带 builder import", () => {
-  it("注入 `nullable(…)` 的同一次改写里补上 import（TS2304 的根因）；不变式：侧车用到的每个 builder 都被 import 覆盖（tsc --noEmit --strict 可编译）；已有 `nullable` import ⇒ 不重复追加；`nullable` 被改名导入（`nullable as nb`）⇒ 新包装按本地名写；负控制：`.nudo.js` 侧车不加 import 行（引擎运行时注入 builder）；负控制：return 位已经", () => {
-(() => {
 
+  it("注入 `nullable(…)` 的同一次改写里补上 import（TS2304 的根因）；不变式：侧车用到的每个 builder 都被 import 覆盖（tsc --noEmit --strict 可编译）；已有 `nullable` import ⇒ 不重复追加；`nullable` 被改名导入（`nullable as nb`）⇒ 新包装按本地名写；负控制：`.nudo.js` 侧车不加 import 行（引擎运行时注入 builder）；负控制：return 位已经", () => {
+  {
     const plan = nullishFix();
     const next = plan?.sidecar?.newText;
     expect(next).toBeDefined();
     expect(next).toContain("nullable(number())");
     expect(next).toContain('import { fn, number, nullable } from "@nudojs/core";');
-  })();
-(() => {
-
+  }
+  {
     const next = nullishFix()!.sidecar!.newText;
     const imported = importedLocals(next);
     for (const b of usedBuilders(next)) {
       expect(imported.has(b), `missing import for ${b} in:\n${next}`).toBe(true);
     }
-  })();
-(() => {
-
+  }
+  {
     const plan = nullishFix({
       sidecarText: `import { fn, number, nullable } from "@nudojs/core";
 export const f = fn({ x: number() }, number());
@@ -491,9 +479,8 @@ export const f = fn({ x: number() }, number());
     const next = plan!.sidecar!.newText;
     expect(next.match(/nullable/g)?.length).toBe(2); // import 一次 + 调用一次
     expect(next).toContain('import { fn, number, nullable } from "@nudojs/core";');
-  })();
-(() => {
-
+  }
+  {
     const plan = nullishFix({
       sidecarText: `import { fn, number, nullable as nb } from "@nudojs/core";
 export const f = fn({ x: number() }, number());
@@ -503,9 +490,8 @@ export const f = fn({ x: number() }, number());
     expect(next).toContain("nb(number())");
     expect(next).not.toContain("nullable(number())");
     expect(importedLocals(next).has("nb")).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const plan = nullishFix({
       sidecarPath: "/t/q2.nudo.js",
       file: "/t/q2.js",
@@ -516,30 +502,24 @@ export const f = fn({ x: number() }, number());
     expect(next).toBeDefined();
     expect(next).toContain("nullable(number())");
     expect(next).not.toContain("@nudojs/core");
-  })();
-(() => {
-
+  }
+  {
     const plan = nullishFix({
       sidecarText: `import { fn, number, nullable } from "@nudojs/core";
 export const f = fn({ x: number() }, nullable(number()));
 `,
     });
     expect(plan).toBeUndefined();
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
   // ── 负控制：JS 侧车维持「裸注入」纪律（不得凭空长 import）────────
-  ;
 
   // ── 负控制：已包过 nullable ⇒ 不改写（幂等）────────────────────
-  ;
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -572,41 +552,36 @@ describe("zod 的 number prim 必须覆盖 Abs 的全部 JS number 域", () => {
 
 const numWith = (pred: Pred): Abs => abs({ k: "prim", type: "number" }, { op: "var", id: "x" }, pred, "exact");
 
-describe("zod 的 number prim 必须覆盖 Abs 的全部 JS number 域", () => {
-  it("原生域前提：NaN / ±Infinity 都是 number（Abs 域含之）；无 refinement 的 number prim 渲染成放宽形态（不再收窄）；带 numBound 的 number prim 只放宽满足该界的那一端（BUG-093 收口）；共享节点形态不变（standard 面不受影响——S4 的决定）；lit NaN 的兜底投影覆盖 NaN 域（不再假红）；负控制：lit 精度的 number 仍投影成字面量（不牵连邻近形态）", () => {
-(() => {
 
+  it("原生域前提：NaN / ±Infinity 都是 number（Abs 域含之）；无 refinement 的 number prim 渲染成放宽形态（不再收窄）；带 numBound 的 number prim 只放宽满足该界的那一端（BUG-093 收口）；共享节点形态不变（standard 面不受影响——S4 的决定）；lit NaN 的兜底投影覆盖 NaN 域（不再假红）；负控制：lit 精度的 number 仍投影成字面量（不牵连邻近形态）", () => {
+  {
     expect(typeof NaN).toBe("number");
     expect(typeof Infinity).toBe("number");
     expect(typeof -Infinity).toBe("number");
     // zod 的 z.number() 只收有限数 ⇒ 收窄
     expect(Number.isFinite(NaN)).toBe(false);
     expect(Number.isFinite(Infinity)).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const source = absToSchemaSource(num());
     expect(source).not.toBe("z.number()");
     expect(source).toContain("z.number()");
     expect(source).toContain("z.nan()");
     expect(source).toContain("z.literal(Infinity)");
     expect(source).toContain("z.literal(-Infinity)");
-  })();
-(() => {
-
+  }
+  {
     // `x > 5` 对 Infinity 为真、对 -Infinity 为假 ⇒ 只放宽 +Infinity
     // （`z.number()` 只收有限数 ⇒ 不放宽即**收窄**，见 ）。
     expect(absToSchemaSource(numWith(gt(v("x"), lit(5))))).toBe(
       "z.number().gt(5).or(z.literal(Infinity))",
     );
-  })();
-(() => {
-
+  }
+  {
     const { node } = absToSchemaNode(num());
     expect(node).toEqual({ k: "prim", type: "number", refinements: [] });
-  })();
-(() => {
-
+  }
+  {
     // lit NaN 不可表达 ⇒ dropped + 兜底；兜底必须覆盖 NaN 的域
     const nanLit = abs({ k: "prim", type: "number" }, { op: "lit", value: NaN }, undefined, "exact");
     const { node, dropped } = absToSchemaNode(nanLit);
@@ -614,24 +589,18 @@ describe("zod 的 number prim 必须覆盖 Abs 的全部 JS number 域", () => {
     expect(node).toEqual({ k: "prim", type: "number", refinements: [] });
     const source = absToSchemaSource(nanLit);
     expect(source).toContain("z.nan()");
-  })();
-(() => {
-
+  }
+  {
     const lit42 = abs({ k: "prim", type: "number" }, { op: "lit", value: 42 }, undefined, "exact");
     expect(absToSchemaSource(lit42)).toBe("z.literal(42)");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -666,55 +635,44 @@ describe("不确信观测里的字面量不得被钉成出口域", () => {
 const observedLit = (conf: Abs["conf"]): Abs =>
   abs({ k: "prim", type: "number" }, { op: "lit", value: 1 }, undefined, conf);
 
-describe("不确信观测里的字面量不得被钉成出口域", () => {
-  it("不确信置信度 ⇒ zod 放宽（不再 z.literal(1)）；不确信置信度 ⇒ standard 节点放宽（prim 而非 lit）；不确信置信度 ⇒ guard 放宽（不再 data === 1）；放宽记进 dropped 台账（损失可观测）；负控制：确信置信度（exact）⇒ 字面量精度保留；负控制：契约面（pred 通道）⇒ 字面量精度保留", () => {
-(() => {
 
+  it("不确信置信度 ⇒ zod 放宽（不再 z.literal(1)）；不确信置信度 ⇒ standard 节点放宽（prim 而非 lit）；不确信置信度 ⇒ guard 放宽（不再 data === 1）；放宽记进 dropped 台账（损失可观测）；负控制：确信置信度（exact）⇒ 字面量精度保留；负控制：契约面（pred 通道）⇒ 字面量精度保留", () => {
+  {
     for (const conf of ["widened", "mock", "partial", "opaque"] as const) {
       const source = absToSchemaSource(observedLit(conf));
       expect(source, conf).not.toBe("z.literal(1)");
       expect(source, conf).toContain("z.number()");
     }
-  })();
-(() => {
-
+  }
+  {
     const { node } = absToSchemaNode(observedLit("partial"));
     expect(node).toEqual({ k: "prim", type: "number", refinements: [] });
-  })();
-(() => {
-
+  }
+  {
     const g = generateGuardFunctionFromAbs("isWithRestOutput", observedLit("opaque"));
     expect(g).not.toContain("data === 1");
     expect(g).toContain('typeof data === "number"');
-  })();
-(() => {
-
+  }
+  {
     const { dropped } = absToSchemaNode(observedLit("partial"));
     expect(dropped.some((d) => d.includes("widened"))).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     expect(absToSchemaSource(observedLit("exact"))).toBe("z.literal(1)");
     expect(generateGuardFunctionFromAbs("isX", observedLit("exact"))).toContain("data === 1");
-  })();
-(() => {
-
+  }
+  {
     const contract = abs({ k: "prim", type: "number" }, { op: "var", id: "r" }, eq(v("r"), lit(42)), "exact");
     expect(absToSchemaSource(contract)).toBe("z.literal(42)");
     expect(generateGuardFunctionFromAbs("isY", contract)).toContain("data === 42");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -753,19 +711,17 @@ const result = (issues: EmitContractResult["issues"]): EmitContractResult => ({
   sidecarPath: "/tmp/lib.nudo.js",
 });
 
-describe("emit 诊断只渲染一次", () => {
-  it("renders a duplicated issue exactly once；keeps distinct issues (dedupe must not swallow real diagnostics)；consumes the issues after rendering (a second renderer cannot duplicate them)", () => {
-(() => {
 
+  it("renders a duplicated issue exactly once；keeps distinct issues (dedupe must not swallow real diagnostics)；consumes the issues after rendering (a second renderer cannot duplicate them)", () => {
+  {
     const r = result([
       issue("nudo:contract-name-clash", "sidecar already has a handwritten contract 'area'"),
       issue("nudo:contract-name-clash", "sidecar already has a handwritten contract 'area'"),
     ]);
     const lines = formatEmitSummary("lib.js", "lib.nudo.js", r);
     expect(lines.filter((l) => l.includes("nudo:contract-name-clash"))).toHaveLength(1);
-  })();
-(() => {
-
+  }
+  {
     const r = result([
       issue("nudo:contract-name-clash", "clash on 'area'"),
       issue("nudo:contract-multi-declarator", "multi-declarator section kept verbatim", "warning"),
@@ -773,20 +729,17 @@ describe("emit 诊断只渲染一次", () => {
     const lines = formatEmitSummary("lib.js", "lib.nudo.js", r);
     expect(lines.filter((l) => l.includes("nudo:contract-name-clash"))).toHaveLength(1);
     expect(lines.filter((l) => l.includes("nudo:contract-multi-declarator"))).toHaveLength(1);
-  })();
-(() => {
-
+  }
+  {
     const r = result([issue("nudo:contract-name-clash", "clash on 'area'")]);
     formatEmitSummary("lib.js", "lib.nudo.js", r);
     // 摘要是唯一渲染点：渲染后 issues 已被消费 ⇒ 调用方再遍历也不会重复打印
     expect(r.issues).toEqual([]);
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -849,16 +802,14 @@ function tscStrict(source: string): { ok: boolean; stderr: string } {
   }
 }
 
-describe("守卫产物必须过 tsc --noEmit --strict", () => {
-  it("守卫签名带类型标注（入参 unknown / 返回 boolean）；各类形态的守卫产物写进同一模块也能过 strict 编译；负控制：守卫的运行时语义不变（谓词文本原样）；负控制：守卫产物不引用用户类名（不会 TS2304）", () => {
-(() => {
 
+  it("守卫签名带类型标注（入参 unknown / 返回 boolean）；各类形态的守卫产物写进同一模块也能过 strict 编译；负控制：守卫的运行时语义不变（谓词文本原样）；负控制：守卫产物不引用用户类名（不会 TS2304）", () => {
+  {
     const g = generateGuardFunctionFromAbs("isStr", str());
     expect(g).toContain("export function isStr(value: unknown): boolean {");
     expect(g).not.toMatch(/export function isStr\(value\)/);
-  })();
-(() => {
-
+  }
+  {
       const shapes: Array<[string, Abs]> = [
         ["primString", str()],
         ["primNumber", num()],
@@ -872,17 +823,15 @@ describe("守卫产物必须过 tsc --noEmit --strict", () => {
       const src = shapes.map(([label, a]) => generateGuardFunctionFromAbs(`is${label}`, a)).join("\n\n");
       const check = tscStrict(src);
       expect(check.ok, check.stderr).toBe(true);
-    })();
-(() => {
-
+  }
+  {
     expect(generateGuardFunctionFromAbs("isString", str())).toContain('typeof data === "string"');
     expect(generateGuardFunctionFromAbs("isNum", num())).toContain('typeof data === "number"');
     expect(generateGuardFunctionFromAbs("isUser", obj({ name: { value: str() } }))).toContain("data.name");
     expect(generateGuardFunctionFromAbs("isArr", arrOf(str()))).toContain("Array.isArray(data)");
     expect(generateGuardFunctionFromAbs("is42", numLit(42))).toContain("data === 42");
-  })();
-(() => {
-
+  }
+  {
     const g = generateGuardFunctionFromAbs("isUser", brandOf("Counter"));
     // 口径更新（族 09 / 「brand 身份必须被投影」）：brand 的身份
     // 判定落进产物 ⇒ 品牌名以**字符串字面量**出现（`Reflect.get(globalThis,
@@ -893,15 +842,12 @@ describe("守卫产物必须过 tsc --noEmit --strict", () => {
     const withoutStringLiterals = g.replace(/"(?:[^"\\]|\\.)*"/g, '""');
     expect(withoutStringLiterals).not.toContain("Counter");
     expect(g).toContain("as Record<string, any>");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -937,39 +883,34 @@ const tupleWithRest = () =>
     "exact",
   );
 
-describe("standard 面定长元组必须校验长度", () => {
-  it("库函数版：超长 / 欠长元组被拒，等长放行；生成产物版：超长元组被拒（与库函数版同口径）；负控制：带 rest 的元组仍放行超长元素（rest 语义不回归）", async () => {
-await (async () => {
 
+  it("库函数版：超长 / 欠长元组被拒，等长放行；生成产物版：超长元组被拒（与库函数版同口径）；负控制：带 rest 的元组仍放行超长元素（rest 语义不回归）", async () => {
+  {
     const { node } = absToSchemaNode(fixedTuple());
     expect(validateSchemaNode(node, [1, "two"])).toEqual({ value: [1, "two"] });
     const over = validateSchemaNode(node, [1, "two", 3]);
     expect(over.issues?.[0]?.message).toContain("expected tuple of length 2");
     const under = validateSchemaNode(node, [1]);
     expect(under.issues?.[0]?.message).toContain("expected tuple of length 2");
-  })();
-await (async () => {
-
+  }
+  {
     const { source } = absToStandardSchema(fixedTuple(), { name: "pair" });
     const mod = await loadGeneratedModule(source);
     expect(mod.pair!["~standard"].validate([1, "two"])).toEqual({ value: [1, "two"] });
     const over = mod.pair!["~standard"].validate([1, "two", 3]);
     expect(over.issues?.[0]?.message).toContain("expected tuple of length 2");
-  })();
-await (async () => {
-
+  }
+  {
     const { node } = absToSchemaNode(tupleWithRest());
     expect(validateSchemaNode(node, [1, 2, 2])).toEqual({ value: [1, 2, 2] });
     const { source } = absToStandardSchema(tupleWithRest(), { name: "t" });
     const mod = await loadGeneratedModule(source);
     expect(mod.t!["~standard"].validate([1, 2, 2])).toEqual({ value: [1, 2, 2] });
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1051,9 +992,9 @@ function duplicateExports(src: string): string[] {
   return [...dup];
 }
 
-describe("多个 root 命中同一下游导出：只写一段（侧车必须是合法 ESM）", () => {
+
   it("derives ONE row for the same downstream export hit by two roots；writes ONE section — the sidecar has no duplicate export；refuses to write a sidecar that would carry a duplicate export", () => {
-(() => {
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-s13-"));
 
 
@@ -1089,8 +1030,8 @@ export const add6 = fn({ x: positive }, positive);
     // 两个 root 都记在标签里（排序 → 顺序无关）
     expect(add2.derivedFrom).toContain("add4");
     expect(add2.derivedFrom).toContain("add6");
-  })();
-(() => {
+  }
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-s13-"));
 
 
@@ -1128,8 +1069,8 @@ export const add6 = fn({ x: positive }, positive);
     expect(e2.sidecars[0]!.changed).toBe(false);
     expect(e2.sidecars[0]!.skipped).toBe("no-change");
     expect(readFileSync(join(dir, "add.nudo.js"), "utf-8")).toBe(sc);
-  })();
-(() => {
+  }
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-s13-"));
 
 
@@ -1184,13 +1125,11 @@ export { _nudo_1 as add2 };
     ).toBe(true);
     // 盘上内容未被改动
     expect(readFileSync(join(dir, "add.nudo.js"), "utf-8")).toContain("export const add2");
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 
 describe("跨 root 写同一下游导出：快照顺序无关", () => {
   /** lib.js → add2(x+1)；lib2.js → add2(x+5) */
@@ -1226,7 +1165,7 @@ export const add5 = fn({ x: positive }, positive);
   }
 
   it("merges the two roots' domains — order-independent snapshot；is idempotent after the merge (second emit: no change)", () => {
-(() => {
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-s13-"));
 
 
@@ -1252,8 +1191,8 @@ export const add5 = fn({ x: positive }, positive);
     expect(snapA).toContain("add4");
     expect(snapA).toContain("add5");
     expect(duplicateExports(snapA)).toEqual([]);
-  })();
-(() => {
+  }
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-s13-"));
 
 
@@ -1266,10 +1205,9 @@ export const add5 = fn({ x: positive }, positive);
     expect(e.sidecars[0]!.changed).toBe(false);
     expect(e.sidecars[0]!.skipped).toBe("no-change");
     expect(readFileSync(join(dir, "add.nudo.js"), "utf-8")).toBe(snap);
-  })();
-});;
+  }
+});
 
-  ;
 });
 
 describe("源里已不存在的导出：其生成段必须被删掉", () => {
@@ -1376,10 +1314,9 @@ const sparse = (): number[] => {
   return a;
 };
 
-describe("两份实现对稀疏数组必须同口径", () => {
-  it("库函数版与生成产物版对稀疏洞给出逐字相同的结果；负控制：稠密数组两份实现都放行（不得把稠密数组误判成稀疏）", async () => {
-await (async () => {
 
+  it("库函数版与生成产物版对稀疏洞给出逐字相同的结果；负控制：稠密数组两份实现都放行（不得把稠密数组误判成稀疏）", async () => {
+  {
     const { node } = absToSchemaNode(arrOfNumber());
     const { source } = absToStandardSchema(arrOfNumber(), { name: "xs" });
     const mod = await loadGeneratedModule(source);
@@ -1391,19 +1328,17 @@ await (async () => {
     expect(prod.issues).toBeDefined();
     expect(prod.issues?.[0]?.path).toEqual([1]);
     expect(prod.issues?.[0]?.message).toContain("expected number");
-  })();
-await (async () => {
-
+  }
+  {
     const { node } = absToSchemaNode(arrOfNumber());
     const { source } = absToStandardSchema(arrOfNumber(), { name: "xs" });
     const mod = await loadGeneratedModule(source);
     expect(validateSchemaNode(node, [1, 2, 3])).toEqual({ value: [1, 2, 3] });
     expect(mod.xs!["~standard"].validate([1, 2, 3])).toEqual({ value: [1, 2, 3] });
-  })();
-});;
-
-  ;
+  }
 });
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1506,10 +1441,9 @@ async function runWithCache(
   }
 }
 
-describe("lazy() 递归约束的磁盘缓存往返", () => {
-  it("冷跑与缓存命中跑逐字相同（递归展开不被 any().optional() 取代）；负控制：非 lazy 契约的往返显示不变、缓存无节点表；旧缓存表（无版本号）整层 miss：不得当命中读出退化约束", async () => {
-await (async () => {
 
+  it("冷跑与缓存命中跑逐字相同（递归展开不被 any().optional() 取代）；负控制：非 lazy 契约的往返显示不变、缓存无节点表；旧缓存表（无版本号）整层 miss：不得当命中读出退化约束", async () => {
+  {
     const root = makeFixture({ "lib.js": LIB_JS, "lib.nudo.js": LAZY_NUDO_JS });
     const file = join(root, "lib.js");
     const cacheDir = join(root, ".cache");
@@ -1531,9 +1465,8 @@ await (async () => {
     const raw = hot.cacheFiles.map((p) => readFileSync(p, "utf8")).join("\n");
     expect(raw).toContain('"lazy":');
     expect(raw).toContain('"nodes":');
-  })();
-await (async () => {
-
+  }
+  {
     const root = makeFixture({ "lib.js": LIB_JS, "lib.nudo.js": PLAIN_NUDO_JS });
     const file = join(root, "lib.js");
     const cacheDir = join(root, ".cache");
@@ -1546,9 +1479,8 @@ await (async () => {
     const raw = hot.cacheFiles.map((p) => readFileSync(p, "utf8")).join("\n");
     expect(raw).not.toContain('"lazy":');
     expect(raw).not.toContain('"nodes":');
-  })();
-await (async () => {
-
+  }
+  {
     const root = makeFixture({ "lib.js": LIB_JS, "lib.nudo.js": LAZY_NUDO_JS });
     const file = join(root, "lib.js");
     const cacheDir = join(root, ".cache");
@@ -1564,13 +1496,11 @@ await (async () => {
     // 旧表被忽略 ⇒ 重算 ⇒ 输出仍与冷跑一致（不退化成 any().optional()）
     expect(hot.lines).toEqual(cold.lines);
     expect(hot.lines[0]).not.toContain("any().optional()");
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1599,19 +1529,17 @@ describe("standard 面 fn 节点必须是函数判据", () => {
 const fnAbs = (): Abs =>
   abs({ k: "fn", params: [] }, undefined, undefined, "exact");
 
-describe("standard 面 fn 节点必须是函数判据", () => {
-  it("库函数版：非函数被拒，函数放行；生成产物版：与 zod 面 z.function() 同判；promise 节点自 BUG-025 起拒绝裸 thenable（不再放行一切）", async () => {
-await (async () => {
 
+  it("库函数版：非函数被拒，函数放行；生成产物版：与 zod 面 z.function() 同判；promise 节点自 BUG-025 起拒绝裸 thenable（不再放行一切）", async () => {
+  {
     const { node } = absToSchemaNode(fnAbs());
     expect(validateSchemaNode(node, () => 1).issues).toBeUndefined();
     for (const bad of [42, null, "str", {}]) {
       const r = validateSchemaNode(node, bad);
       expect(r.issues?.[0]?.message).toContain("expected function");
     }
-  })();
-await (async () => {
-
+  }
+  {
     const { source } = absToStandardSchema(fnAbs(), { name: "makeAdderOutput" });
     const mod = await loadGeneratedModule(source);
     expect(mod.makeAdderOutput!["~standard"].validate((x: number) => x).issues).toBeUndefined();
@@ -1619,22 +1547,19 @@ await (async () => {
       const r = mod.makeAdderOutput!["~standard"].validate(bad);
       expect(r.issues?.[0]?.message).toContain("expected function");
     }
-  })();
-await (async () => {
-
+  }
+  {
     const { node } = absToSchemaNode(abs({ k: "eff", eff: "promise", inner: num() }, undefined, undefined, "exact"));
     const thenable = { then() {} };
     const bad = validateSchemaNode(node, thenable);
     expect(bad.issues?.[0]?.message).toContain("expected promise");
     const ok = validateSchemaNode(node, Promise.resolve(1));
     expect(ok.issues).toBeUndefined();
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1675,9 +1600,9 @@ const SRC = `/**
 export function f(x) { return x + 1; }
 `;
 
-describe("emit-denied 消息点名源文件路径", () => {
+
   it("names the source file path and states the path semantics；negative control: an allowlist matching the source file is not denied", async () => {
-await (async () => {
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-emit-537-"));
 
 
@@ -1703,8 +1628,8 @@ await (async () => {
     // 由此知道该配哪种路径形态
     expect(denied!.message).toContain("source file path");
     expect(denied!.message).not.toMatch(/^emit target '[^']*\.nudo\.js'/);
-  })();
-await (async () => {
+  }
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-emit-537-"));
 
 
@@ -1723,11 +1648,10 @@ await (async () => {
     const r = await emitContract(file, { mode: "update", all: true });
     expect(r.issues.find((i) => i.code === "nudo:contract-emit-denied")).toBeUndefined();
     expect(r.skipped.some((s) => s.reason === "emit-denied")).toBe(false);
-  })();
-});;
-
-  ;
+  }
 });
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1783,9 +1707,9 @@ const JS_SRC = `/**
 export function sub(a, b) { return a - b; }
 `;
 
-describe(".ts 侧车带 builder 类型声明（产物可过 tsc）", () => {
+
   it("declares the builders used by the generated section in a .nudo.ts sidecar；the .nudo.ts sidecar is idempotent (second emit reports no change)；negative control: a .js sidecar gets no builder declaration (bare injection suffices)", async () => {
-await (async () => {
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-emit-541-"));
 
 
@@ -1801,8 +1725,8 @@ await (async () => {
     // core 的 `lit` 导出是 Term 构造器 ⇒ 约束构建器是 litC
     expect(after).toContain("declare const lit: typeof import(\"@nudojs/core\").litC;");
     expect(after).toContain("export const sub = fn({ a: lit(1), b: lit(2) }, lit(-1));");
-  })();
-await (async () => {
+  }
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-emit-541-"));
 
 
@@ -1814,8 +1738,8 @@ await (async () => {
     const second = await emitContract(file, { mode: "update", all: true });
     expect(second.changed).toBe(false);
     expect(readFileSync(sidecar, "utf-8")).toBe(after);
-  })();
-await (async () => {
+  }
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-emit-541-"));
 
 
@@ -1830,13 +1754,11 @@ await (async () => {
     // 裸注入下侧车仍可装载（契约生效）
     const exports = execNudoModule(after);
     expect(Object.keys(exports)).toContain("sub");
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1871,30 +1793,26 @@ describe("Abs 域区分保留、TS 投影面归一为 unknown", () => {
 const unknownAbs = (): Abs =>
   ({ shape: { k: "unknown" }, term: undefined, pred: undefined, conf: "partial" }) as Abs;
 
-describe("Abs 域区分保留、TS 投影面归一为 unknown", () => {
-  it("TS 投影面：Abs any 与 Abs unknown 都渲染成 TS unknown；nudo 展示面仍区分 any / unknown（abs.md display 规则作用域不变）；未受约束的入口形参在 .d.ts 里渲染成 unknown（与三面校验器同口径）；Case 见证行按观测值渲染，且产物不出现 TS any；产物真的能过 tsc --noEmit --strict（unknown 经收窄后可用）；未收窄的 unknown 返回值被 TS2571 拦下（正确", () => {
-(() => {
 
+  it("TS 投影面：Abs any 与 Abs unknown 都渲染成 TS unknown；nudo 展示面仍区分 any / unknown（abs.md display 规则作用域不变）；未受约束的入口形参在 .d.ts 里渲染成 unknown（与三面校验器同口径）；Case 见证行按观测值渲染，且产物不出现 TS any；产物真的能过 tsc --noEmit --strict（unknown 经收窄后可用）；未收窄的 unknown 返回值被 TS2571 拦下（正确", () => {
+  {
     expect(absToTSType(anyAbs)).toBe("unknown");
     expect(absToTSType(unknownAbs())).toBe("unknown");
-  })();
-(() => {
-
+  }
+  {
     expect(formatAbs(anyAbs)).toContain("any");
     expect(formatAbs(anyAbs)).not.toContain("unknown");
     expect(formatAbs(unknownAbs())).toContain("unknown");
     expect(formatAbs(unknownAbs())).not.toContain("any");
-  })();
-(() => {
-
+  }
+  {
     const dts = generateDts(
       analyzeFile("/test/bug544.js", `export function id(x) {\n  return x;\n}\n`),
     );
     expect(dts).toContain("export declare function id(x: unknown): unknown;");
     expect(dts).not.toContain(": any");
-  })();
-(() => {
-
+  }
+  {
     const dts = generateDts(
       analyzeFile("/test/bug544b.js", `export function id(x) {\n  return x;\n}\nid(1);\n`),
     );
@@ -1902,9 +1820,8 @@ describe("Abs 域区分保留、TS 投影面归一为 unknown", () => {
     expect(dts).toContain("(1)");
     expect(dts).not.toContain(": any");
     expect(dts).not.toContain("(any)");
-  })();
-(() => {
-
+  }
+  {
     const dts = `
 export declare function id(x: unknown): unknown;
 `;
@@ -1916,9 +1833,8 @@ export const s = v;
 `;
     const check = tscNoEmit({ "lib.d.ts": dts, "use.ts": consumer });
     expect(check.ok, check.stderr).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const dts = `
 export declare function id(x: unknown): unknown;
 `;
@@ -1929,19 +1845,14 @@ export const r = id(1).toFixed();
     const check = tscNoEmit({ "lib.d.ts": dts, "use.ts": consumer });
     expect(check.ok).toBe(false);
     expect(check.stderr).toContain("TS2571");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2024,10 +1935,9 @@ function tscNoEmit(fileName: string, text: string): { ok: boolean; out: string }
   }
 }
 
-describe("TS 侧车必须自带 builder import（产物过 tsc）", () => {
-  it("`.nudo.ts` 侧车带 builder import，TS 关键字构建器改名导入；产物真的过 `tsc --noEmit --strict`（改前 3× TS 错误）；改前形态（无 import 的裸 DSL）确实过不了 tsc —— 回归有效性自证；负控制：`.nudo.js` 侧车维持「裸注入」纪律（不加 import）；负控制：已有侧车自带 import 时不重复 import（沿用既有本地名）", () => {
-(() => {
 
+  it("`.nudo.ts` 侧车带 builder import，TS 关键字构建器改名导入；产物真的过 `tsc --noEmit --strict`（改前 3× TS 错误）；改前形态（无 import 的裸 DSL）确实过不了 tsc —— 回归有效性自证；负控制：`.nudo.js` 侧车维持「裸注入」纪律（不加 import）；负控制：已有侧车自带 import 时不重复 import（沿用既有本地名）", () => {
+  {
     const text = draftSidecar("/t/risky.nudo.ts");
     expect(text).toContain('import {');
     expect(text).toContain('from "@nudojs/core";');
@@ -2039,15 +1949,13 @@ describe("TS 侧车必须自带 builder import（产物过 tsc）", () => {
     expect(text).not.toMatch(/(?<![\w$])number\s*\(/);
     expect(text).not.toMatch(/(?<![\w$])string\s*\(/);
     expect(text).not.toMatch(/(?<![\w$])boolean\s*\(/);
-  })();
-(() => {
-
+  }
+  {
     const text = draftSidecar("/t/risky.nudo.ts");
     const r = tscNoEmit("risky.nudo.ts", text);
     expect(r.ok, `tsc 失败：\n${r.out}`).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const bare = `// Generated by quickfix — review before accepting
 export const risky = fn({ x: shape({ toFixed: any() }) });
 `;
@@ -2055,16 +1963,14 @@ export const risky = fn({ x: shape({ toFixed: any() }) });
     expect(r.ok).toBe(false);
     expect(r.out).toContain("TS2304"); // Cannot find name 'fn' / 'shape'
     expect(r.out).toContain("TS2693"); // 'any' only refers to a type
-  })();
-(() => {
-
+  }
+  {
     const text = draftSidecar("/t/risky.nudo.js");
     expect(text).not.toContain("import {");
     expect(text).toContain("fn(");
     expect(text).toContain("any()");
-  })();
-(() => {
-
+  }
+  {
     const existing = `import { fn, number } from "@nudojs/core";
 export const other = fn({ x: number() });
 `;
@@ -2087,17 +1993,13 @@ export const other = fn({ x: number() });
     // 追加 import 后的产物仍能编译
     const r = tscNoEmit("risky.nudo.ts", text);
     expect(r.ok, `tsc 失败：\n${r.out}`).toBe(true);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2156,9 +2058,9 @@ const loadModule = (spec: string, from: string): string | undefined => {
   }
 };
 
-describe("生成段不与 import 局部绑定重名", () => {
+
   it("uses an alias binding when an import local shadows the target name；the whole file's contracts survive (handwritten binding still binds)；is idempotent (second emit reports no change)；negative control: no import local shadow ⇒ the direct bind", async () => {
-await (async () => {
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-emit-548-"));
 
 
@@ -2188,8 +2090,8 @@ export const other = fn({ n: number().gt(0) }, boolean());
     expect(after).toContain("export { _nudo_1 as positive };");
     // 整份侧车必须仍可装载（修前：Identifier 'positive' has already been declared）
     expect(() => execNudoModule(after)).not.toThrow();
-  })();
-await (async () => {
+  }
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-emit-548-"));
 
 
@@ -2213,8 +2115,8 @@ export const other = fn({ n: number().gt(0) }, boolean());
     const eff = effectiveContract(SRC, "other", { loadModule, fromFile: file });
     expect(eff).toBeDefined();
     expect(eff!.params.map((p) => p.param)).toEqual(["n"]);
-  })();
-await (async () => {
+  }
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-emit-548-"));
 
 
@@ -2238,8 +2140,8 @@ export const other = fn({ n: number().gt(0) }, boolean());
     const second = await emitContract(file, { fnNames: ["positive"], mode: "update" });
     expect(second.changed).toBe(false);
     expect(readFileSync(sidecar, "utf-8")).toBe(after);
-  })();
-await (async () => {
+  }
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-emit-548-"));
 
 
@@ -2258,15 +2160,12 @@ export const other = fn({ n: number().gt(0) }, boolean());
     const after = readFileSync(sidecar, "utf-8");
     expect(after).toContain("export const positive = fn(");
     expect(after).not.toContain("_nudo_1");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2309,19 +2208,17 @@ const throwingGetter = (): Record<string, unknown> => ({
   },
 });
 
-describe("standard 面 validate 永不抛", () => {
-  it("库函数版：bigint / 循环对象 / 抛错 getter 都返回 Result 而非抛异常；生成产物版：validate(bigint) / validate(循环对象) 不抛；负控制：合法值仍放行（兜底不得误拒）；负控制：numLit(42) 的消息仍是可读的类型错（不因兜底变成无信息）", async () => {
-await (async () => {
 
+  it("库函数版：bigint / 循环对象 / 抛错 getter 都返回 Result 而非抛异常；生成产物版：validate(bigint) / validate(循环对象) 不抛；负控制：合法值仍放行（兜底不得误拒）；负控制：numLit(42) 的消息仍是可读的类型错（不因兜底变成无信息）", async () => {
+  {
     const { node } = absToSchemaNode(litOne());
     for (const v of [1n, circular(), throwingGetter()]) {
       const r = validateSchemaNode(node, v);
       expect(r.issues).toBeDefined();
       expect(r.issues!.length).toBeGreaterThan(0);
     }
-  })();
-await (async () => {
-
+  }
+  {
     const { source } = absToStandardSchema(litOne(), { name: "fOutput" });
     const mod = await loadGeneratedModule(source);
     let bigintResult: { issues?: ReadonlyArray<{ message: string }> } | undefined;
@@ -2334,29 +2231,24 @@ await (async () => {
       circResult = mod.fOutput!["~standard"].validate(circular());
     }).not.toThrow();
     expect(circResult?.issues?.length).toBeGreaterThan(0);
-  })();
-await (async () => {
-
+  }
+  {
     const { node } = absToSchemaNode(litOne());
     expect(validateSchemaNode(node, 1)).toEqual({ value: 1 });
     const { source } = absToStandardSchema(litOne(), { name: "fOutput" });
     const mod = await loadGeneratedModule(source);
     expect(mod.fOutput!["~standard"].validate(1)).toEqual({ value: 1 });
-  })();
-await (async () => {
-
+  }
+  {
     const { node } = absToSchemaNode(numLit(42));
     const r = validateSchemaNode(node, "x");
     expect(r.issues?.[0]?.message).toContain("expected 42");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2391,43 +2283,36 @@ function fnOf(name: string): FunctionAnalysis {
   } as FunctionAnalysis;
 }
 
-describe("导出绑定名清洗（保留字）", () => {
-  it("保留字作绑定名 ⇒ `_` 前缀（不是直出）；多个保留字都清洗（default / let / eval / await）；负控制：合法绑定名原样保留（不误伤）；负控制：点号名仍按既有口径清洗成 C_m（#494 不回退）", () => {
-(() => {
 
+  it("保留字作绑定名 ⇒ `_` 前缀（不是直出）；多个保留字都清洗（default / let / eval / await）；负控制：合法绑定名原样保留（不误伤）；负控制：点号名仍按既有口径清洗成 C_m（#494 不回退）", () => {
+  {
     const p = projectFunctionDts(fnOf("class"));
     const text = p.lines.join("\n");
     expect(text).toContain("export declare function _class(");
     expect(text).not.toContain("function class(");
-  })();
-(() => {
-
+  }
+  {
     for (const name of ["default", "let", "eval", "await", "static", "yield"]) {
       const p = projectFunctionDts(fnOf(name));
       const text = p.lines.join("\n");
       expect(text, name).not.toMatch(new RegExp(`function ${name}\\(`));
     }
-  })();
-(() => {
-
+  }
+  {
     const p = projectFunctionDts(fnOf("calculate"));
     expect(p.lines.join("\n")).toContain("export declare function calculate(");
-  })();
-(() => {
-
+  }
+  {
     const p = projectFunctionDts(fnOf("C.m"));
     const text = p.lines.join("\n");
     expect(text).not.toContain("C.m(");
     expect(text).toContain("C_m(");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2458,10 +2343,9 @@ describe("非有限数值不得被折成 null", () => {
 const litAbs = (value: number): Abs =>
   abs({ k: "unknown" }, { op: "lit", value }, undefined, "exact");
 
-describe("非有限数值不得被折成 null", () => {
-  it("库函数版：Infinity 放行、null / 0 拒绝，消息保真；生成产物版：Infinity 不再被折成 null；负控制：-Infinity 同样保真；普通字面量消息格式不变", async () => {
-await (async () => {
 
+  it("库函数版：Infinity 放行、null / 0 拒绝，消息保真；生成产物版：Infinity 不再被折成 null；负控制：-Infinity 同样保真；普通字面量消息格式不变", async () => {
+  {
     const { node } = absToSchemaNode(litAbs(Infinity));
     expect(validateSchemaNode(node, Infinity).issues).toBeUndefined();
     const nul = validateSchemaNode(node, null);
@@ -2469,9 +2353,8 @@ await (async () => {
     expect(nul.issues?.[0]?.message).not.toContain("expected null");
     const zero = validateSchemaNode(node, 0);
     expect(zero.issues?.[0]?.message).toContain("got 0");
-  })();
-await (async () => {
-
+  }
+  {
     const { source } = absToStandardSchema(litAbs(Infinity), { name: "retInfOutput" });
     // 节点文本必须保住 Infinity（不是 JSON 的 null）
     expect(source).toContain('"value":Infinity');
@@ -2481,9 +2364,8 @@ await (async () => {
     const nul = mod.retInfOutput!["~standard"].validate(null);
     expect(nul.issues?.[0]?.message).toContain("expected Infinity");
     expect(nul.issues?.[0]?.message).not.toContain("expected null");
-  })();
-await (async () => {
-
+  }
+  {
     const { node } = absToSchemaNode(litAbs(-Infinity));
     expect(validateSchemaNode(node, -Infinity).issues).toBeUndefined();
     const { source } = absToStandardSchema(litAbs(-Infinity), { name: "retNegInfOutput" });
@@ -2494,13 +2376,11 @@ await (async () => {
     const one = absToSchemaNode(numLit(1)).node;
     const r = validateSchemaNode(one, 0);
     expect(r.issues?.[0]?.message).toBe("expected 1, got 0");
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2534,19 +2414,17 @@ export function alpha(x) {
 }
 `;
 
-describe("quickfix 定位按作用域（最近的同名声明）", () => {
-  it("同名局部绑定不再命中：定位到顶层声明；注解落进顶层 alpha 的 JSDoc（不是 beta 的函数体）；改前形态：旧实现把注解写进 beta 的函数体（回归有效性自证）；负控制：顶层 const 箭头函数仍可定位（既有行为不变）；负控制：函数体里的同名局部 const 不是目标函数 → 不定位", () => {
-(() => {
 
+  it("同名局部绑定不再命中：定位到顶层声明；注解落进顶层 alpha 的 JSDoc（不是 beta 的函数体）；改前形态：旧实现把注解写进 beta 的函数体（回归有效性自证）；负控制：顶层 const 箭头函数仍可定位（既有行为不变）；负控制：函数体里的同名局部 const 不是目标函数 → 不定位", () => {
+  {
     const lines = SRC.split("\n");
     // 契约：返回**附着的 JSDoc 起点**（alpha 的 JSDoc 在第 5 行，声明在第 8 行）
     expect(findFnDeclStart(lines, "alpha")).toBe(5);
     expect(findFnDeclStart(lines, "beta")).toBe(0);
     // 改前形态：旧的行级正则首匹配会命中 ` const alpha = 1;`（第 1 行）
     expect(lines[1]).toContain("const alpha = 1;");
-  })();
-(() => {
-
+  }
+  {
     const r = addThrowsAnnotation(SRC, "alpha", "TypeError");
     expect(r).toBeDefined();
     const next = applyTextEdits(SRC, r!.edits);
@@ -2556,16 +2434,14 @@ describe("quickfix 定位按作用域（最近的同名声明）", () => {
     const tag = next.indexOf("@nudo:throws TypeError");
     expect(tag).toBeGreaterThan(betaEnd);
     expect(next).toContain(" * alpha docs\n * @nudo:throws TypeError\n */");
-  })();
-(() => {
-
+  }
+  {
     // 旧实现（行级正则首匹配）会命中 ` const alpha = 1;` 那一行
     const legacyLine = SRC.split("\n").findIndex((l) => l.includes("const alpha = 1;"));
     expect(legacyLine).toBeGreaterThan(-1);
     expect(legacyLine).toBeLessThan(findFnDeclStart(SRC.split("\n"), "alpha"));
-  })();
-(() => {
-
+  }
+  {
     const src = `export const gamma = (y) => y + 1;
 `;
     expect(findFnDeclStart(src.split("\n"), "gamma")).toBe(0);
@@ -2574,9 +2450,8 @@ describe("quickfix 定位按作用域（最近的同名声明）", () => {
     const next = applyTextEdits(src, r!.edits);
     expect(() => parse(next)).not.toThrow();
     expect(next).toContain("@nudo:throws TypeError");
-  })();
-(() => {
-
+  }
+  {
     const src = `export function outer() {
   const inner = 1;
   return inner;
@@ -2584,24 +2459,20 @@ describe("quickfix 定位按作用域（最近的同名声明）", () => {
 `;
     expect(findFnDeclStart(src.split("\n"), "inner")).toBe(-1);
     expect(addThrowsAnnotation(src, "inner", "TypeError")).toBeUndefined();
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
 // 固化写回不改源文件的行尾约定
 // ---------------------------------------------------------------------------
 describe("固化写回不改源文件的行尾约定", () => {
-// emit--crlf-fidelity.part.ts — 
+// emit--crlf-fidelity.part.ts —
 //
 // `nudo test --freeze` 的源码写回把 **CRLF 文件改成混合行尾**（新插入的行用
 // LF、原行保留 CRLF）⇒ `file(1)` 的判定从「with CRLF line terminators」变成
@@ -2640,10 +2511,9 @@ function keepsOriginalLines(original: string, output: string): boolean {
   return i === src.length;
 }
 
-describe("固化写回不改源文件的行尾约定", () => {
-  it("CRLF 源文件写回后仍是纯 CRLF（新插入的行不带裸 LF）；负控制：LF 源文件写回后仍是纯 LF（不得被改成 CRLF）；CRLF + 末行无终止符：行尾仍是纯 CRLF，末尾仍无换行；负控制：文件末尾有无换行不变（LF + 有末尾换行）", () => {
-(() => {
 
+  it("CRLF 源文件写回后仍是纯 CRLF（新插入的行不带裸 LF）；负控制：LF 源文件写回后仍是纯 LF（不得被改成 CRLF）；CRLF + 末行无终止符：行尾仍是纯 CRLF，末尾仍无换行；负控制：文件末尾有无换行不变（LF + 有末尾换行）", () => {
+  {
     const analysis = analyzeFile("/test/crlf.js", CRLF_SRC);
     const out = insertGeneratedCaseDirectives(CRLF_SRC, analysis);
 
@@ -2651,18 +2521,16 @@ describe("固化写回不改源文件的行尾约定", () => {
     expect(bareLfCount(out.source)).toBe(0);
     // 原有的行逐字节不动
     expect(keepsOriginalLines(CRLF_SRC, out.source)).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const analysis = analyzeFile("/test/lf.js", LF_SRC);
     const out = insertGeneratedCaseDirectives(LF_SRC, analysis);
 
     expect(out.changed).toBe(true);
     expect(out.source.includes("\r\n")).toBe(false);
     expect(keepsOriginalLines(LF_SRC, out.source)).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const src = "export function add(a, b) {\r\n  return a + b;\r\n}\r\nconst x = add(1, 2);";
     const analysis = analyzeFile("/test/crlf-eof.js", src);
     const out = insertGeneratedCaseDirectives(src, analysis);
@@ -2671,23 +2539,19 @@ describe("固化写回不改源文件的行尾约定", () => {
     expect(bareLfCount(out.source)).toBe(0);
     expect(out.source.endsWith("const x = add(1, 2);")).toBe(true);
     expect(out.source.endsWith("\n")).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const analysis = analyzeFile("/test/lf-eol.js", LF_SRC);
     const out = insertGeneratedCaseDirectives(LF_SRC, analysis);
 
     expect(out.source.endsWith("\n")).toBe(true);
     expect(out.source.endsWith("\n\n")).toBe(false);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2711,18 +2575,15 @@ describe("零成员对象不是 TS 的 {}", () => {
 
 
 
-describe("零成员对象不是 TS 的 {}", () => {
+
   it("空 obj → Record<string, never>（不是 {}）；负控制：有成员的对象仍是结构体（不误伤）；端到端：空对象返回值的属性读不再吃 TS2339；联合类型里契约义务不被吸收（{ a: number } | Record<string, never>）；非对象实参被拒（与 zod 面「必须是对象」同裁决）；改前形态确实红（{} ⇒ TS2339，且联合里吸收契约义务）；负控制：字面量成员对象不受影响（结构体照旧，嵌套精度保留）", () => {
-(() => {
-
+  {
     expect(absToTSType(objOf({}))).toBe("Record<string, never>");
-  })();
-(() => {
-
+  }
+  {
     expect(absToTSType(objOf({ a: { value: num() } }))).toBe("{ a: number }");
-  })();
-(() => {
-
+  }
+  {
     const dts = generateDts(
       analyzeFile("/test/bug565.js", `export function empty() {\n  return {};\n}\n`),
     );
@@ -2736,9 +2597,8 @@ export { p };
 `;
     const check = tscNoEmit({ "lib.d.ts": dts, "use.ts": consumer });
     expect(check.ok, check.stderr).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const dts = `
 export declare function read(u: { a: number } | Record<string, never>): Record<string, never>;
 `;
@@ -2749,9 +2609,8 @@ export const bad1 = read({ a: "wrong-type" });
     const check = tscNoEmit({ "lib.d.ts": dts, "use.ts": bad });
     expect(check.ok).toBe(false);
     expect(check.stderr).toContain("TS2322");
-  })();
-(() => {
-
+  }
+  {
     const dts = `
 export declare function read(u: { a: number } | Record<string, never>): Record<string, never>;
 `;
@@ -2762,9 +2621,8 @@ export const bad2 = read(42);
     const check = tscNoEmit({ "lib.d.ts": dts, "use.ts": bad });
     expect(check.ok).toBe(false);
     expect(check.stderr).toContain("TS2345");
-  })();
-(() => {
-
+  }
+  {
     const before = `
 export declare function empty(): {};
 `;
@@ -2777,28 +2635,21 @@ export { p };
     const check = tscNoEmit({ "lib.d.ts": before, "use.ts": consumer });
     expect(check.ok).toBe(false);
     expect(check.stderr).toContain("TS2339");
-  })();
-(() => {
-
+  }
+  {
     const dts = generateDts(
       analyzeFile("/test/bug565b.js", `export function one() {\n  return { a: 1 };\n}\n`),
     );
     expect(dts).toContain("{ a: 1 }");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2859,9 +2710,9 @@ export function root(x) { return helper(${call}); }
   writeFileSync(join(dir, "lib.nudo.js"), LIB_NUDO);
 }
 
-describe("同 root 的多个形参：返回位必须锚到**实现真正返回**的那个", () => {
+
   it("helper(x+5, x+1)：返回位是 b（gt(1)），不是 a（gt(5)）；helper(x+1, x+5)：参数顺序反向时返回位仍是 b（gt(5)）；落盘侧车的返回位是 b（改前写的是 a）；负控制：不同 root 的两个形参 —— 既有锚定不变（仍取实现返回的那个）；负控制：返回位不是形参本身 —— 保持相对 shift 形态（a.shift(1)）", () => {
-(() => {
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-s14-984-"));
 
 
@@ -2883,8 +2734,8 @@ describe("同 root 的多个形参：返回位必须锚到**实现真正返回**
     expect(formatConstraint(helper!.returns!.constraint)).not.toBe(
       formatConstraint(helper!.params[0]!.constraint),
     );
-  })();
-(() => {
+  }
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-s14-984-"));
 
 
@@ -2895,8 +2746,8 @@ describe("同 root 的多个形参：返回位必须锚到**实现真正返回**
     expect(formatConstraint(helper.returns!.constraint)).toBe(
       formatConstraint(helper.params[1]!.constraint),
     );
-  })();
-(() => {
+  }
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-s14-984-"));
 
 
@@ -2909,8 +2760,8 @@ describe("同 root 的多个形参：返回位必须锚到**实现真正返回**
     expect(sc).toContain("const b = positive.shift(1);");
     expect(sc).toContain("export const helper = fn({ a, b }, b);");
     expect(sc).not.toContain("fn({ a, b }, a)");
-  })();
-(() => {
+  }
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-s14-984-"));
 
 
@@ -2932,8 +2783,8 @@ export const use = fn({ x: positive, y: positive }, positive);
     const r = deriveFromRoot(join(dir, "lib.js"), { fnNames: ["pick"] });
     const pick = r.derived.find((d) => d.fn === "pick")!;
     expect(pick.returns!.dsl).toBe("a");
-  })();
-(() => {
+  }
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-s14-984-"));
 
 
@@ -2949,17 +2800,13 @@ export function root(x) { return bump(x + 1); }
     const r = deriveFromRoot(join(dir, "lib.js"), { fnNames: ["bump"] });
     const bump = r.derived.find((d) => d.fn === "bump")!;
     expect(bump.returns!.dsl).toBe("a.shift(1)");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -3017,10 +2864,9 @@ function stdOk(a: Abs, value: unknown): boolean {
   return validateSchemaNode(absToSchemaNode(a).node, value).issues === undefined;
 }
 
-describe("键存在性三面同口径（HasProperty − Object.prototype 自身成员）", () => {
-  it("guard / standard / standard 产物 逐值同裁决（含用户原型上的同名键）；用户原型上的**非**污染键三面都算在场（不误伤 HasProperty 语义）；zod 产物：必填污染键槽带上同一条存在性子句（修前完全没有）", async () => {
-await (async () => {
 
+  it("guard / standard / standard 产物 逐值同裁决（含用户原型上的同名键）；用户原型上的**非**污染键三面都算在场（不误伤 HasProperty 语义）；zod 产物：必填污染键槽带上同一条存在性子句（修前完全没有）", async () => {
+  {
     const shape = slotShape("toString", "s");
     const guard = guardOf(shape);
     const { source } = absToStandardSchema(shape, { name: "proto_s" });
@@ -3052,9 +2898,8 @@ await (async () => {
         product: expected,
       });
     }
-  })();
-await (async () => {
-
+  }
+  {
     const shape = slotShape("c", 1);
     const guard = guardOf(shape);
     const inherited = Object.create({ c: 1 }) as object;
@@ -3063,9 +2908,8 @@ await (async () => {
     // 缺键仍 required
     expect(guard({})).toBe(false);
     expect(stdOk(shape, {})).toBe(false);
-  })();
-await (async () => {
-
+  }
+  {
     const polluted = absToSchemaSource(slotShape("toString", "s"));
     expect(polluted).toContain(
       `Object.hasOwn(value, "toString") || ("toString" in value && !Object.hasOwn(Object.prototype, "toString"))`,
@@ -3074,13 +2918,11 @@ await (async () => {
     // 负控制：非污染键无需 refinement（zod 原生 `in` 判据已与另两面等价）
     const plain = absToSchemaSource(slotShape("c", 1));
     expect(plain).not.toContain("superRefine");
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -3144,16 +2986,14 @@ const lookalikeObject = (): unknown => ({
   groups: undefined,
 });
 
-describe("产物面：数组视图投影成数组（四面同判据）", () => {
-  it("形状前提：combinedAbs 是 obj 形状 + view: \"array\"；dts 面：元组 + 其余自有槽的交集（不再摊平成对象字面量类型）；guard 面：真实数组放行、同形普通对象拒绝（头部判据是 Array.isArray）；standard 面（库函数 + 产物）：接受真实数组、拒绝同形对象 / 缺槽数组；zod 面：`z.tuple([...])`（`z.object` 会把真实数组判成违规）；多见证 join：两条数组视图见证 ⇒ facet 仍在；混入", async () => {
-await (async () => {
 
+  it("形状前提：combinedAbs 是 obj 形状 + view: \"array\"；dts 面：元组 + 其余自有槽的交集（不再摊平成对象字面量类型）；guard 面：真实数组放行、同形普通对象拒绝（头部判据是 Array.isArray）；standard 面（库函数 + 产物）：接受真实数组、拒绝同形对象 / 缺槽数组；zod 面：`z.tuple([...])`（`z.object` 会把真实数组判成违规）；多见证 join：两条数组视图见证 ⇒ facet 仍在；混入", async () => {
+  {
     const a = viewAbs();
     expect(a.shape.k).toBe("obj");
     expect(a.shape.k === "obj" ? a.shape.view : undefined).toBe("array");
-  })();
-await (async () => {
-
+  }
+  {
     const fn = analyzeFile("/test/array-view.ts", SRC).functions.find((x) => x.name === "m")!;
     const lines = projectFunctionDts(fn, undefined, dtsModuleSurface(SRC)).lines.join("\n");
     // 元素槽 → 元组
@@ -3162,9 +3002,8 @@ await (async () => {
     expect(lines).toMatch(/& \{ index: 0; input: "abc"; groups: undefined \}/);
     // 修前形态（对象字面量类型）不得再出现
     expect(lines).not.toMatch(/\{ 0: "abc"; 1: "b"; length: 2/);
-  })();
-await (async () => {
-
+  }
+  {
     const expr = denoteGuard(viewAbs(), "value");
     expect(expr).toContain("Array.isArray(value)");
     expect(expr).not.toContain("!Array.isArray(value)");
@@ -3175,9 +3014,8 @@ await (async () => {
     expect(guard(["abc", "z"])).toBe(false);
     // 缺 index / input 等自有槽 ⇒ 拒绝（存在性子句仍在）
     expect(guard(["abc", "b"])).toBe(false);
-  })();
-await (async () => {
-
+  }
+  {
     const a = viewAbs();
     const ok = (v: unknown): boolean => validateSchemaNode(absToSchemaNode(a).node, v).issues === undefined;
     expect(ok(nativeValue())).toBe(true);
@@ -3192,17 +3030,15 @@ await (async () => {
       mod.m_out!["~standard"].validate(v).issues === undefined;
     expect(product(nativeValue())).toBe(true);
     expect(product(lookalikeObject())).toBe(false);
-  })();
-await (async () => {
-
+  }
+  {
     const { source, dropped } = absToZodSchemaModule({ mOutput: viewAbs() });
     expect(source).toContain('z.tuple([z.literal("abc"), z.literal("b")])');
     expect(source).not.toContain("z.object(");
     // 非下标槽不静默丢：进台账（z.tuple 不校验它们）
     expect(dropped.join("\n")).toContain("non-index slots not validated by z.tuple");
-  })();
-await (async () => {
-
+  }
+  {
     const multi = `/**
  * @nudo:case "one" ("abc")
  * @nudo:case "two" ("aXc")
@@ -3227,17 +3063,12 @@ export function m3(s) { return s === "" ? { a: 1 } : /a(.)c/.exec(s); }
     // 数组视图 + 普通对象 ⇒ join 后不再是数组视图（facet 保守丢弃）
     const mixedJoin = joinObjects(witness(fn3, "arr"), witness(fn3, "obj"));
     expect(mixedJoin.shape.k === "obj" ? mixedJoin.shape.view : undefined).not.toBe("array");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 });

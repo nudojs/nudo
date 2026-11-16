@@ -3,7 +3,7 @@ import {
   rmSync,
   readFileSync,
   readdirSync,
-  existsSync,
+
   mkdirSync,
   writeFileSync,
 } from "node:fs";
@@ -89,7 +89,7 @@ describe("B3 disk cache store", () => {
     expect(ANALYSIS_ABI).toMatch(/^nudo-check-cache-v\d+\+\d/);
     expect(relativizePath("/root/src/a.js", "/root")).toBe("src/a.js");
   });
-});;
+});
 
 describe("B3 disk cache atomic write", () => {
   afterEach(() => { fsControl.writeFileSync = null; fsControl.renameSync = null; });
@@ -123,7 +123,7 @@ describe("B3 disk cache atomic write", () => {
       expect(readdirSync(dirname(target))).toEqual([`${key}.json`]);
     });
   });
-});;
+});
 
 describe("B3 Phase B contract table cache", () => {
   it("contract key 源/sidecar/autoBind 敏感；无 sidecar 与 autoBind=false 同段；表 roundtrip", () => {
@@ -145,7 +145,7 @@ describe("B3 Phase B contract table cache", () => {
       expect(disk.get(key)).toEqual(table);
     });
   });
-});;
+});
 
 describe("B3/B4 config", () => {
   it("diskCacheRoot / callSiteBudget / import specs / dep content key", () => {
@@ -166,7 +166,7 @@ describe("B3/B4 config", () => {
     const b = checkCacheKey("/p/a.js", src, { autoBind: true, projectDir: "/p", depContents: [{ path: "/p/std.nudo.js", content: "export const positive = 2;\n" }] });
     expect(a).not.toBe(b);
   });
-});;
+});
 
 describe("B3 path key portability (F-6 / FIX-D3)", () => {
   const makeCheckout = (layout: "node_modules" | "monorepo" | "pnpm") => {
@@ -229,4 +229,4 @@ describe("B3 path key portability (F-6 / FIX-D3)", () => {
     expect(ka).toBe(kb);
     expect(checkCacheKey("/p/a.js", "export const x = 1;\n", { autoBind: true, projectDir: "/p", depContents: [{ path: "/Users/alice/store/orphan.js", content: content + "//x\n" }] })).not.toBe(ka);
   });
-});;
+});

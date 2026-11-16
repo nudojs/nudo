@@ -6,7 +6,7 @@
  * - 默认面（无 --quiet）signatures 照打（对照断言）。
  */
 import { describe, it, expect } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync,  } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { basename } from "node:path";

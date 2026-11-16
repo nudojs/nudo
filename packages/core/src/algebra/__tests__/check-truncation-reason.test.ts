@@ -34,7 +34,7 @@ afterEach(() => {
   setAbsTruncationCollector(null);
 });
 
-describe("#158 A enterCall 归因：cycle 先于 depth/calls", () => {
+describe("A enterCall 归因：cycle 先于 depth/calls", () => {
   it("同 key 二次进入报 cycle；超深度报 depth；超总量报 calls", () => {
     const seen: Array<{ label: string; reason?: string }> = [];
     setAbsTruncationCollector((label, reason) => seen.push({ label, reason }));
@@ -70,7 +70,7 @@ describe("#158 A enterCall 归因：cycle 先于 depth/calls", () => {
   });
 });
 
-describe("#158 B evalEnterCall 归因", () => {
+describe("B evalEnterCall 归因", () => {
   it("同抽象实参自递归 → cycle（collector 带原因，stats 不再自相矛盾）", () => {
     const seen: Array<{ label: string; reason?: string }> = [];
     setAbsTruncationCollector((label, reason) => seen.push({ label, reason }));
@@ -111,7 +111,7 @@ describe("#158 B evalEnterCall 归因", () => {
   });
 });
 
-describe("#158 check 面：归因文案 + budget 块自洽", () => {
+describe("check 面：归因文案 + budget 块自洽", () => {
   const CYC_SRC = `export function sameArgs(x) { sameArgs(x); return x; }\n`;
 
   it("sameArgs 报 call cycle（不再是 depth/size budget），budget.truncated=true", () => {
@@ -176,7 +176,7 @@ describe("#158 check 面：归因文案 + budget 块自洽", () => {
   });
 });
 
-describe("#158 后续：循环迭代截断 ≠ 递归/调用预算", () => {
+describe("后续：循环迭代截断 ≠ 递归/调用预算", () => {
   const LOOP_SRC = `export function infiniteDec(n) {\n  let i = 0;\n  while (i < n) { i = i - 1; }\n  return i;\n}\ninfiniteDec(5);\n`;
 
   it("infinite concrete loop 报 nudo:loop-truncated（不再冒充递归/预算）", () => {

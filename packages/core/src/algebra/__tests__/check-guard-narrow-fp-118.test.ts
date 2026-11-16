@@ -52,7 +52,7 @@ function check(src: string) {
   return checkSource("/t/guard-narrow-fp-118.js", IMP + src, pTrue, opts);
 }
 
-describe("#118 三守卫形态不再误报 entry-may-throw", () => {
+describe("三守卫形态不再误报 entry-may-throw", () => {
   it("成员真值守卫：optional 槽真值臂内的嵌套读零 L2", () => {
     const r = check(`
 /**
@@ -95,7 +95,7 @@ export function iterFiles(files) { if (!files?.length) return []; const out = []
   });
 });
 
-describe("#118 守卫形态变体（其余接线点）", () => {
+describe("守卫形态变体（其余接线点）", () => {
   it.each([
     [
       "notMemberEarlyReturn",
@@ -143,7 +143,7 @@ export function looseMixed(doc) { if (doc == null || typeof doc !== 'object') re
   });
 });
 
-describe("#118 控制组：守卫剪枝不越界（仍报 entry-may-throw）", () => {
+describe("控制组：守卫剪枝不越界（仍报 entry-may-throw）", () => {
   it("无守卫的 optional 槽嵌套读仍报", () => {
     const r = check(`
 /**

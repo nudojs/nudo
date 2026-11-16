@@ -9,7 +9,7 @@
  * 抽象边界循环（条件非具体）仍走 $for 的 pack/unpack 保守 join，不假装精确。
  */
 import { describe, it, expect } from "vitest";
-import { litValue, formatShape } from "@nudojs/core";
+import { litValue,  } from "@nudojs/core";
 import { call } from "./eval-helpers.ts";
 
 describe("evaluator per-iteration let closures", () => {

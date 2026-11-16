@@ -47,7 +47,7 @@ function project(ignoreThrows?: unknown): string {
   return dir;
 }
 
-describe("verify 与 check 必须共用 ignoreThrows 解析器", () => {
+
   it("裸字符串 \"TypeError\" ⇒ verify 判绿（与 check 同结论）", async () => {
     const dir = project("TypeError");
     const rows = await migrateVerify([join(dir, "boom.js")], { json: true });
@@ -66,7 +66,7 @@ describe("verify 与 check 必须共用 ignoreThrows 解析器", () => {
     const rows = await migrateVerify([join(dir, "boom.js")], { json: true });
     expect(rows[0]!.nudoOk).toBe(false);
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -110,7 +110,7 @@ function dirWith(source: string): string {
   return dir;
 }
 
-describe("verify 必须对模块级求值失败 fail-closed（与 check 同结论）", () => {
+
   it("模块顶层抛（undefined is not a function）⇒ nudoOk: false", async () => {
     const dir = dirWith(`export const boom = undefined();\n\nexport function add(a, b) {\n  return a + b;\n}\n`);
     const rows = await migrateVerify([join(dir, "boom.js")], { json: true });
@@ -130,7 +130,7 @@ describe("verify 必须对模块级求值失败 fail-closed（与 check 同结�
     const rows = await migrateVerify([join(dir, "ok.js")], { json: true });
     expect(rows[0]!.nudoOk).toBe(true);
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -187,7 +187,7 @@ function project(): { root: string; file: string } {
   return { root, file };
 }
 
-describe("项目级 path env 必须按项目根解析（与 nudo check 同口径）", () => {
+
   it("子目录文件拿得到项目级 env 全局 ⇒ verify 判绿", async () => {
     const { file } = project();
     const rows = await migrateVerify([file], { json: true });
@@ -214,7 +214,7 @@ describe("项目级 path env 必须按项目根解析（与 nudo check 同口径
     const rows = await migrateVerify([file], { json: true });
     expect(rows[0]!.nudoOk).toBe(true);
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -263,7 +263,7 @@ function project(files: Record<string, string>): string {
   return dir;
 }
 
-describe(".js 里的 TS-only 语法必须与 nudo check 同结论（判红）", () => {
+
   it("`.js` 里的类型标注 ⇒ code: syntax-error + nudoOk: false", async () => {
     const dir = project({ "ts-in-js.js": "export function f(a: number): number {\n  return a;\n}\n" });
     const rows = await migrateVerify([join(dir, "ts-in-js.js")], { json: true });
@@ -292,7 +292,7 @@ describe(".js 里的 TS-only 语法必须与 nudo check 同结论（判红）", 
     const rows = await migrateVerify([join(dir, "ok.ts")], { json: true });
     expect(rows[0]!.nudoOk).toBe(true);
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -378,7 +378,7 @@ function summaryOf(stdout: string): string | undefined {
   return m ? `${m[1]} error · ${m[2]} warning · ${m[3]} fn` : undefined;
 }
 
-describe("verify 的 env/harvest 合并必须走 B8（harvest 填空位）", () => {
+
   it("nudo check 的签名是精确类型（反向闸：前提成立）", () => {
     const root = project();
     const check = runCliTsx(["check", join(root, "src", "app.js")]);
@@ -397,7 +397,7 @@ describe("verify 的 env/harvest 合并必须走 B8（harvest 填空位）", () 
     expect(rows[0]!.nudoOk).toBe(true);
     expect(rows[0]!.nudoSummary).toBe(summaryOf(check.stdout));
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -437,7 +437,7 @@ writeFileSync(
   "utf-8",
 );
 
-describe("migrate verify — 文件发现与 nudo check 同口径（）", () => {
+
   it("目录扫描不把 sidecar / .d.ts 当源码：verify 与 check 同绿", { timeout: 120_000 }, () => {
     const check = runCliTsx(["check", dir]);
     expect(check.status).toBe(0);
@@ -459,7 +459,7 @@ describe("migrate verify — 文件发现与 nudo check 同口径（）", () => 
     expect(verify.status).toBe(1);
     expect(verify.stdout + verify.stderr).toContain("Not an analysis target");
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -495,7 +495,7 @@ writeFileSync(RED, "export function getName(user) {\n  return user.name;\n}\n", 
 const GREEN = join(dir, "green.js");
 writeFileSync(GREEN, "export function id(x) {\n  return x;\n}\n", "utf-8");
 
-describe("migrate verify --json — stdout 是纯 JSON（）", () => {
+
   it("判红文件：stdout 可 JSON.parse；人工报告在 stderr", { timeout: 120_000 }, () => {
     const r = runCliTsx(["migrate", "verify", RED, "--json"]);
     expect(r.status).toBe(1);
@@ -527,7 +527,7 @@ describe("migrate verify --json — stdout 是纯 JSON（）", () => {
     expect(r.stdout).toContain("FAILED");
     expect(r.stdout).toContain("FAIL");
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -562,7 +562,7 @@ writeFileSync(join(dir, "syn.js"), "export function broken( {\n  return 1;\n}\n"
 /** 第二个合法文件（证明「不是只报第一个」） */
 writeFileSync(join(dir, "good2.js"), "export function good2(x) {\n  return x;\n}\n", "utf-8");
 
-describe("migrate verify — 批量目标的 per-file 隔离（）", () => {
+
   it("文本面：合法文件仍被逐行报告，语法错文件带文件名", { timeout: 120_000 }, () => {
     const r = runCliTsx(["migrate", "verify", dir]);
     expect(r.status).toBe(1);
@@ -592,7 +592,7 @@ describe("migrate verify — 批量目标的 per-file 隔离（）", () => {
     expect(bad!.nudoOk).toBe(false);
     expect(bad!.error).toContain("syn.js");
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -657,7 +657,7 @@ function fixture(): string {
   return dir;
 }
 
-describe("版本钉住的 tsc 逃过退役（检测口径 ≠ 改写口径）", () => {
+
   it("rewriteTscCommand 认得版本钉住形态 npx tsc@5.4.5", () => {
     expect(rewriteTscCommand("npx tsc@5.4.5 --noEmit").cmd).toBe("npx nudojs check .");
     expect(rewriteTscCommand("npx tsc@5.4.5 --noEmit").changed).toBe(true);
@@ -693,7 +693,7 @@ describe("版本钉住的 tsc 逃过退役（检测口径 ≠ 改写口径）", 
     expect(wf).not.toContain("tsc -p");
     expect(wf.match(/npx nudojs check \./g)?.length).toBe(4);
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -729,7 +729,7 @@ function pkg(name: string, scripts: Record<string, string>, withTs: boolean) {
   return dir;
 }
 
-describe("tsc 脚本阻塞不依赖 tsFiles > 0", () => {
+
   it("0 个 .ts + tsc 脚本 ⇒ 必须报「tsc still in scripts」", () => {
     const dir = pkg("r16-lc-m2", { typecheck: "tsc --noEmit", build: "tsc -p ." }, false);
     const rows = migrateStatus(dir);
@@ -753,7 +753,7 @@ describe("tsc 脚本阻塞不依赖 tsFiles > 0", () => {
     const dir = pkg("no-tsc", { build: "node build.js" }, true);
     expect(migrateStatus(dir)[0]!.blockers).not.toContain("tsc still in scripts");
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -817,7 +817,7 @@ type Row = {
   tsc?: { ok: boolean; output: string };
 };
 
-describe("migrate verify --with-tsc — tsc 基线带信号（）", () => {
+
   it("基线加载 tsconfig：干净文件与有错文件的诊断不同", { timeout: 300_000 }, () => {
     const r = runCliTsx(["migrate", "verify", "--with-tsc", dir, "--json"]);
     const rows = JSON.parse(r.stdout) as Row[];
@@ -848,7 +848,7 @@ describe("migrate verify --with-tsc — tsc 基线带信号（）", () => {
     expect(r.stdout).toContain("tsc: ok");
     expect(r.stdout).toContain("TS18048");
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -879,7 +879,7 @@ afterAll(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
-describe("migrate verify — 空目录不是绿灯通行证（）", () => {
+
   it("文本面：空目录判红并给出引导（与 check 同口径）", { timeout: 120_000 }, () => {
     const check = runCliTsx(["check", dir]);
     expect(check.status).toBe(1);
@@ -904,7 +904,7 @@ describe("migrate verify — 空目录不是绿灯通行证（）", () => {
     expect(parsed[0]!.nudoOk).toBe(false);
     expect(parsed[0]!.code).toBe("no-files");
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -998,7 +998,7 @@ function verdict(args: string[]): { status: number; out: string } {
   return { status: r.status, out: r.stdout + r.stderr };
 }
 
-describe("migrate verify — 分析注入与 nudo check 同源（）", () => {
+
   it("跨模块：verify 不再假绿（与 check 同判红）", { timeout: 120_000 }, () => {
     const file = join(cross, "main.js");
     const check = verdict(["check", file]);
@@ -1036,7 +1036,7 @@ describe("migrate verify — 分析注入与 nudo check 同源（）", () => {
     expect(check.status).toBe(1);
     expect(verify.status).toBe(1);
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1070,7 +1070,7 @@ afterAll(() => {
   for (const d of dirs) rmSync(d, { recursive: true, force: true });
 });
 
-describe("migrate strip 的 .cts 扩展名映射与告警口径", () => {
+
   it(".cts ⇒ 产物是 .cjs（Bug 26 / tsc 同口径），且 notes 如实说明模块系统未转换", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-bug-917-"));
     dirs.push(dir);
@@ -1103,7 +1103,7 @@ describe("migrate strip 的 .cts 扩展名映射与告警口径", () => {
     expect(existsSync(join(dir, "a.mjs"))).toBe(true);
     expect(existsSync(join(dir, "a.js"))).toBe(false);
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1167,7 +1167,7 @@ function fixture(): string {
   return dir;
 }
 
-describe("路径限定型 tsc 被计入却不被改写", () => {
+
   it("rewriteTscCommand 认得路径限定型 tsc", () => {
     expect(rewriteTscCommand("./node_modules/.bin/tsc -p .").cmd).toBe("npx nudojs check .");
     expect(rewriteTscCommand("node_modules/.bin/tsc --noEmit").cmd).toBe(
@@ -1196,5 +1196,5 @@ describe("路径限定型 tsc 被计入却不被改写", () => {
     // 退役后 status 不再报「tsc still in scripts」
     expect(migrateStatus(dir)[0]!.tscScripts).toEqual([]);
   });
-});
+
 });

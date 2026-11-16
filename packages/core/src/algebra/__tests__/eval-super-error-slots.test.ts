@@ -25,7 +25,7 @@ export class ApiError extends Error {
 }
 `;
 
-describe("#110 class extends Error: super(message) slots land", () => {
+describe("class extends Error: super(message) slots land", () => {
   it("super(lit) → e.message 保精确字面量（修复前 undefined #exact）", () => {
     const r = call(`${API} export function f() { return new ApiError(500, "boom").message; }`, "f");
     expect(litValue(r.result)).toEqual({ ok: true, value: "boom" });

@@ -120,77 +120,59 @@ const SRC_ARGS = `export function f() {
 }
 export function g() { return 7; }`;
 
-describe("try 内 return 载体 __nudoRet 不遮蔽用户同名绑定", () => {
+
   it("引擎结果 = 原生 15（修前：TDZ ReferenceError 被用户 catch 吞掉 ⇒ 0）；签名面写 15（不是 => 0）；参数版签名面与无碰撞对照逐字一致（修前：=> 0）；无假 nudo:opaque-result（修前：模块 fail-closed ⇒ unknown + 假 opaque）", () => {
-(() => {
-
+  {
     expect(v(SRC_RET, 5)).toEqual({ ok: true, value: 15 });
-  })();
-(() => {
-
+  }
+  {
     expect(sigOf(SRC_RET_LIT)).toBe("15");
-  })();
-(() => {
-
+  }
+  {
     expect(sigOf(SRC_RET)).toBe("number | string");
     expect(sigOf(SRC_RET)).toBe(sigOf(SRC_RET_CTRL));
-  })();
-(() => {
-
+  }
+  {
     expect(issueCodes(SRC_RET)).not.toContain("nudo:opaque-result");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 
 describe("内部临时名（__nudoTm_ / __nudoE_ / __nudoArgs）与用户标识符避让", () => {
   it("用户写 __nudoTm_0：模块不退化 unknown（结果 = 原生 8）；用户写 __nudoE_0：catch 载体不遮蔽用户绑定（结果 = 原生 8）；用户写 __nudoArgs：arguments 槽不重复声明（结果 = 原生 0）；整模块不再 fail-closed：无关导出 g 仍拿到签名（与无碰撞对照逐字一致）；无假 nudo:opaque-result（修前：整模块 unknown + 2 条假 opaque）；不退化 unknown（修前：f/g 全 ", () => {
-(() => {
-
+  {
     expect(v(SRC_TM, 1)).toEqual({ ok: true, value: 8 });
-  })();
-(() => {
-
+  }
+  {
     expect(v(SRC_E, 1)).toEqual({ ok: true, value: 8 });
-  })();
-(() => {
-
+  }
+  {
     expect(v(SRC_ARGS)).toEqual({ ok: true, value: 0 });
-  })();
-(() => {
-
+  }
+  {
     expect(sigOf(SRC_TM, "g")).toBe(sigOf(SRC_TM_CTRL, "g"));
     expect(sigOf(SRC_E, "g")).toBe(sigOf(SRC_E_CTRL, "g"));
     expect(sigOf(SRC_ARGS, "g")).toBe("7");
-  })();
-(() => {
-
+  }
+  {
     expect(issueCodes(SRC_TM)).not.toContain("nudo:opaque-result");
     expect(issueCodes(SRC_E)).not.toContain("nudo:opaque-result");
     expect(issueCodes(SRC_ARGS)).not.toContain("nudo:opaque-result");
-  })();
-(() => {
-
+  }
+  {
     expect(sigOf(SRC_TM, "f")).not.toBe("unknown");
     expect(sigOf(SRC_E, "f")).not.toBe("unknown");
     expect(sigOf(SRC_ARGS, "f")).not.toBe("unknown");
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 
 describe("负控 / 确定性 — 用户标识符不撞名时行为逐字不变", () => {
@@ -201,33 +183,28 @@ describe("负控 / 确定性 — 用户标识符不撞名时行为逐字不变",
 export function g() { return arguments.length; }`;
 
   it("内部临时名逐字保持原形（__nudoTm_0 / __nudoRet / __nudoArgs，无后缀改名）；同一源码转译两次 ⇒ 产物逐字相同（确定性：缓存键 / 差分语料依赖它）；撞名时改名后仍确定（同源两次转译逐字相同）", () => {
-(() => {
-
+  {
     const js = transpileSource(CTRL, { source: CTRL });
     expect(js).toContain("const __nudoTm_0 = $tryMark();");
     expect(js).toContain("const __nudoRet = $add(a, x);");
     expect(js).toContain("let __nudoArgs = $arguments(arguments);");
     // 无避让后缀（撞名时才改名）
     expect(js).not.toMatch(/__nudo[A-Za-z0-9_]*_1\b/);
-  })();
-(() => {
-
+  }
+  {
     const a = transpileSource(CTRL, { source: CTRL });
     const b = transpileSource(CTRL, { source: CTRL });
     expect(a).toBe(b);
-  })();
-(() => {
-
+  }
+  {
     const a = transpileSource(SRC_RET, { source: SRC_RET });
     const b = transpileSource(SRC_RET, { source: SRC_RET });
     expect(a).toBe(b);
     expect(a).toContain("const __nudoRet_1 = $add(__nudoRet, x);");
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 });
 });
 
@@ -262,51 +239,44 @@ describe("数组解构对用户 iterable 按迭代序（不按索引）", () => 
 /** 用户 iterable：对象带自有 @@iterator 方法（原生按迭代序产 1,2,3…） */
 const USER_ITER = `const it = { [Symbol.iterator]() { let i = 0; return { next: () => (i < 3 ? { value: ++i, done: false } : { done: true }) }; } };`;
 
-describe("数组解构对用户 iterable 按迭代序（不按索引）", () => {
-  it("单元素解构：值面 = 迭代序第 1 个值（原生 1，此前折确定 undefined）；多元素解构：第 1 位 = 迭代序第 1 个值；多元素解构：第 2 位 = 迭代序第 2 个值（原生 2，此前折确定 undefined）；赋值形态（[p, q] = it）同样按迭代序；形参位解构（function h([a, b]) {…} h(userIter)）同样按迭代序；用户**迭代器**对象（自带 next + @@iterator）按迭代序取值；副产物：引擎原生迭代器不被误判", () => {
-(() => {
 
+  it("单元素解构：值面 = 迭代序第 1 个值（原生 1，此前折确定 undefined）；多元素解构：第 1 位 = 迭代序第 1 个值；多元素解构：第 2 位 = 迭代序第 2 个值（原生 2，此前折确定 undefined）；赋值形态（[p, q] = it）同样按迭代序；形参位解构（function h([a, b]) {…} h(userIter)）同样按迭代序；用户**迭代器**对象（自带 next + @@iterator）按迭代序取值；副产物：引擎原生迭代器不被误判", () => {
+  {
     expect(val(`export function f() { ${USER_ITER} const [a] = it; return a; }`)).toEqual({
       ok: true,
       value: 1,
     });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(`export function f() { ${USER_ITER} const [a, b] = it; return a; }`),
     ).toEqual({ ok: true, value: 1 });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(`export function f() { ${USER_ITER} const [a, b] = it; return b; }`),
     ).toEqual({ ok: true, value: 2 });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(`export function f() { ${USER_ITER} let p, q; [p, q] = it; return q; }`),
     ).toEqual({ ok: true, value: 2 });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(
         `export function f() { const g = { [Symbol.iterator]: function() { return [1, 2][Symbol.iterator](); } }; function h([a, b]) { return b; } return h(g); }`,
       ),
     ).toEqual({ ok: true, value: 2 });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(
         `export function f() { const it = { i: 0, next() { return this.i < 2 ? { value: "n" + (++this.i), done: false } : { done: true }; }, [Symbol.iterator]() { return this; } }; const [a, b] = it; return a + b; }`,
       ),
     ).toEqual({ ok: true, value: "n1n2" });
-  })();
-(() => {
-
+  }
+  {
     // 原生：[...Array.from('ab').keys()] → [0,1]（不抛）
     const r = call(`export function f() { return [...Array.from('ab').keys()]; }`);
     expect(isNever(r.result)).toBe(false);
@@ -317,9 +287,8 @@ describe("数组解构对用户 iterable 按迭代序（不按索引）", () => 
     );
     expect(isNever(r2.result)).toBe(false);
     expect(throwsError(r2.throws, "TypeError")).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     expect(val(`export function f() { const [a, b] = [1, 2]; return a + b; }`)).toEqual({
       ok: true,
       value: 3,
@@ -335,48 +304,35 @@ describe("数组解构对用户 iterable 按迭代序（不按索引）", () => 
     expect(
       val(`export function f() { const [a] = new Map([["k", 1]]); return a[1]; }`),
     ).toEqual({ ok: true, value: 1 });
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f(x) { const [y] = x; return y; }`, "f", [anyAbs]);
     expect(formatAbs(r.result)).toContain("any");
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() { const [x] = 1; return x; }`);
     expect(formatAbs(r.throws as never)).toContain("TypeError");
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(`export function f() { function* g() { yield 4; yield 5; } const [a, b] = g(); return a + b; }`),
     ).toEqual({ ok: true, value: 9 });
     expect(
       val(`export function f() { const [a, b] = [1, 2].entries(); return a[0] + b[1]; }`),
     ).toEqual({ ok: true, value: 2 });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -418,89 +374,70 @@ function engine(body: string): unknown {
   return lv.ok ? lv.value : `not-lit:${r.result}`;
 }
 
-describe("switch 臂内（含 if 臂内）的 break 退出 switch", () => {
-  it("if 臂里的 break 退出 switch（原生 \"\"）；if 臂里的 break 退出 switch（块形态）；if/else 形态：else 分支的 break 也退出 switch；命中第二个 case 时，if 臂里的 break 不影响 default 臂；条件 break：假分支继续贯穿（原生 \"bb\"）；条件 break：真分支退出 switch（原生 \"\"）；负控制：臂内循环的 break 退出循环（不是 switch）；负控制：臂内循环的 continue", () => {
-(() => {
 
+  it("if 臂里的 break 退出 switch（原生 \"\"）；if 臂里的 break 退出 switch（块形态）；if/else 形态：else 分支的 break 也退出 switch；命中第二个 case 时，if 臂里的 break 不影响 default 臂；条件 break：假分支继续贯穿（原生 \"bb\"）；条件 break：真分支退出 switch（原生 \"\"）；负控制：臂内循环的 break 退出循环（不是 switch）；负控制：臂内循环的 continue", () => {
+  {
     const body = `let r = ""; switch (1) { case 1: if (true) break; r += "x"; } return r;`;
     expect(native(body)).toBe("");
     expect(engine(body)).toBe("");
-  })();
-(() => {
-
+  }
+  {
     const body = `let r = ""; switch (1) { case 1: if (true) { break; } r += "x"; } return r;`;
     expect(native(body)).toBe("");
     expect(engine(body)).toBe("");
-  })();
-(() => {
-
+  }
+  {
     const body = `let r = ""; switch (1) { case 1: if (false) { r += "n"; } else { break; } r += "y"; } return r;`;
     expect(native(body)).toBe("");
     expect(engine(body)).toBe("");
-  })();
-(() => {
-
+  }
+  {
     const body = `let r = ""; switch (2) { case 1: r += "1"; break; case 2: if (true) break; r += "2"; default: r += "d"; } return r;`;
     expect(native(body)).toBe("");
     expect(engine(body)).toBe("");
-  })();
-(() => {
-
+  }
+  {
     const body = `function f(c) { let r = ""; switch (1) { case 1: if (c) break; r += "b"; case 2: r += "b"; break; } return r; } return f(false);`;
     expect(native(body)).toBe("bb");
     expect(engine(body)).toBe("bb");
-  })();
-(() => {
-
+  }
+  {
     const body = `function f(c) { let r = ""; switch (1) { case 1: if (c) break; r += "b"; case 2: r += "b"; break; } return r; } return f(true);`;
     expect(native(body)).toBe("");
     expect(engine(body)).toBe("");
-  })();
-(() => {
-
+  }
+  {
     const body = `let r = ""; switch (1) { case 1: for (let i = 0; i < 3; i++) { if (i === 1) break; r += "f"; } r += "g"; } return r;`;
     expect(native(body)).toBe("fg");
     expect(engine(body)).toBe("fg");
-  })();
-(() => {
-
+  }
+  {
     const body = `let r = ""; switch (1) { case 1: for (let i = 0; i < 3; i++) { if (i === 1) continue; r += "f"; } r += "g"; } return r;`;
     expect(native(body)).toBe("ffg");
     expect(engine(body)).toBe("ffg");
-  })();
-(() => {
-
+  }
+  {
     const body = `let r = ""; outer: { switch (1) { case 1: break outer; } r += "x"; } return r;`;
     expect(native(body)).toBe("");
     expect(engine(body)).toBe("");
-  })();
-(() => {
-
+  }
+  {
     const body = `let r = ""; switch (1) { case 1: r += "a"; break; } r += "b"; return r;`;
     expect(native(body)).toBe("ab");
     expect(engine(body)).toBe("ab");
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
   // --- 负控制 ---------------------------------------------------------
-  ;
 
-  ;
 
-  ;
 
-  ;
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -541,97 +478,76 @@ function native(body: string): unknown {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("for (var x of …) 头绑定是函数级共享绑定", () => {
-  it("循环后 var 头仍可见（typeof x === number）；循环后 var 头持有末轮值；for (var k in …) 头同样是函数级绑定；for (var k in …) 头持有末轮键；var 头共享同一绑定（闭包全部看到末轮值）；for (var k in …) 头共享同一绑定（闭包看到末轮键）；var 头在循环体内可见（逐轮读到当轮项）；var 头可再赋（var 是可写绑定）；var 头解构：子名同样是函数级绑定（末轮值）；var 头解构：子名在循环后仍可见", () => {
-(() => {
 
+  it("循环后 var 头仍可见（typeof x === number）；循环后 var 头持有末轮值；for (var k in …) 头同样是函数级绑定；for (var k in …) 头持有末轮键；var 头共享同一绑定（闭包全部看到末轮值）；for (var k in …) 头共享同一绑定（闭包看到末轮键）；var 头在循环体内可见（逐轮读到当轮项）；var 头可再赋（var 是可写绑定）；var 头解构：子名同样是函数级绑定（末轮值）；var 头解构：子名在循环后仍可见", () => {
+  {
     const src = wrap(`for (var x of [1,2]) {} return typeof x;`);
     expect(v(src)).toEqual({ ok: true, value: "number" });
     expect(native(`for (var x of [1,2]) {} return typeof x;`)).toBe("number");
-  })();
-(() => {
-
+  }
+  {
     const src = wrap(`for (var x of [1,2]) {} return x;`);
     expect(v(src)).toEqual({ ok: true, value: 2 });
     expect(native(`for (var x of [1,2]) {} return x;`)).toBe(2);
-  })();
-(() => {
-
+  }
+  {
     const src = wrap(`for (var k in {a:1}) {} return typeof k;`);
     expect(v(src)).toEqual({ ok: true, value: "string" });
     expect(native(`for (var k in {a:1}) {} return typeof k;`)).toBe("string");
-  })();
-(() => {
-
+  }
+  {
     const src = wrap(`for (var k in {a:1,b:2}) {} return k;`);
     expect(v(src)).toEqual({ ok: true, value: "b" });
     expect(native(`for (var k in {a:1,b:2}) {} return k;`)).toBe("b");
-  })();
-(() => {
-
+  }
+  {
     const src = wrap(`const fs=[]; for (var x of [1,2]) fs.push(()=>x); return fs.map(f=>f()).join(",");`);
     expect(v(src)).toEqual({ ok: true, value: "2,2" });
     expect(native(`const fs=[]; for (var x of [1,2]) fs.push(()=>x); return fs.map(f=>f()).join(",");`)).toBe(
       "2,2",
     );
-  })();
-(() => {
-
+  }
+  {
     const src = wrap(`const fs=[]; for (var k in {a:1}) fs.push(()=>k); return fs.map(f=>f()).join(",");`);
     expect(v(src)).toEqual({ ok: true, value: "a" });
-  })();
-(() => {
-
+  }
+  {
     const src = wrap(`let seen=[]; for (var x of [1,2]) { seen.push(x); } return seen.join(",")+"|"+x;`);
     expect(v(src)).toEqual({ ok: true, value: "1,2|2" });
     expect(native(`let seen=[]; for (var x of [1,2]) { seen.push(x); } return seen.join(",")+"|"+x;`)).toBe(
       "1,2|2",
     );
-  })();
-(() => {
-
+  }
+  {
     const src = wrap(`for (var x of [1,2]) { x = x + 10; } return x;`);
     expect(v(src)).toEqual({ ok: true, value: 12 });
-  })();
-(() => {
-
+  }
+  {
     const src = wrap(`for (var {a} of [{a:1},{a:2}]) {} return a;`);
     expect(v(src)).toEqual({ ok: true, value: 2 });
     expect(native(`for (var {a} of [{a:1},{a:2}]) {} return a;`)).toBe(2);
-  })();
-(() => {
-
+  }
+  {
     const src = wrap(`for (var {a} of [{a:1}]) {} return typeof a;`);
     expect(v(src)).toEqual({ ok: true, value: "number" });
-  })();
-(() => {
-
+  }
+  {
     const src = wrap(`{ for (var y of [1,2]) {} } return typeof y;`);
     expect(v(src)).toEqual({ ok: true, value: "number" });
     expect(native(`{ for (var y of [1,2]) {} } return typeof y;`)).toBe("number");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
+
+
+
+
 
 describe("产品面：nudo check 签名不再折出 undefined", () => {
   const NUDO_SRC = `
@@ -665,51 +581,40 @@ export function f(items) {
 
 describe("负控制：let / const 头的 per-iteration 语义不变", () => {
   it("for (let x of …) 循环后不可见；for (const x of …) 循环后不可见；for (let x of …) 闭包各捕获各轮（per-iteration）；for (const x of …) 闭包各捕获各轮；for (let k in …) 循环后不可见；普通 var（非头）提升语义不变", () => {
-(() => {
-
+  {
     const src = wrap(`for (let x of [1,2]) {} return typeof x;`);
     expect(v(src)).toEqual({ ok: true, value: "undefined" });
     expect(native(`for (let x of [1,2]) {} return typeof x;`)).toBe("undefined");
-  })();
-(() => {
-
+  }
+  {
     const src = wrap(`for (const x of [1,2]) {} return typeof x;`);
     expect(v(src)).toEqual({ ok: true, value: "undefined" });
-  })();
-(() => {
-
+  }
+  {
     const src = wrap(`const fs=[]; for (let x of [1,2]) fs.push(()=>x); return fs.map(f=>f()).join(",");`);
     expect(v(src)).toEqual({ ok: true, value: "1,2" });
     expect(native(`const fs=[]; for (let x of [1,2]) fs.push(()=>x); return fs.map(f=>f()).join(",");`)).toBe(
       "1,2",
     );
-  })();
-(() => {
-
+  }
+  {
     const src = wrap(`const fs=[]; for (const x of [1,2]) fs.push(()=>x); return fs.map(f=>f()).join(",");`);
     expect(v(src)).toEqual({ ok: true, value: "1,2" });
-  })();
-(() => {
-
+  }
+  {
     const src = wrap(`for (let k in {a:1}) {} return typeof k;`);
     expect(v(src)).toEqual({ ok: true, value: "undefined" });
-  })();
-(() => {
-
+  }
+  {
     const src = wrap(`var y = 5; return y + 1;`);
     expect(v(src)).toEqual({ ok: true, value: 6 });
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 });
 
@@ -754,10 +659,9 @@ function identRangeOf(src: string, needle: string): { start: number; end: number
   return { start, end: start + 1 };
 }
 
-describe("指令作用范围按 AST 节点身份（字符区间）", () => {
-  it("@nudo:as 只覆盖被登记的那条语句（同行下一条不受影响）；@nudo:as 仍覆盖被登记的那条语句（负控制）；@nudo:replace 只命中被登记的那个节点（同行同文本的兄弟节点不受影响）；@nudo:replace 仍替换被登记的那个节点（负控制：兄弟节点不被波及）", () => {
-(() => {
 
+  it("@nudo:as 只覆盖被登记的那条语句（同行下一条不受影响）；@nudo:as 仍覆盖被登记的那条语句（负控制）；@nudo:replace 只命中被登记的那个节点（同行同文本的兄弟节点不受影响）；@nudo:replace 仍替换被登记的那个节点（负控制：兄弟节点不被波及）", () => {
+  {
     const src = `export function f(a) {
   const x = a; const y = a;
   return y;
@@ -772,9 +676,8 @@ describe("指令作用范围按 AST 节点身份（字符区间）", () => {
     const rec = callTranspiledExportFull(exports, "f", [$lit(5) as Abs]);
     // 被登记的是第一条语句 → 第二条（const y = a）**未**被覆盖 → 返回 a 的值 5
     expect(lit(rec.result)).toBe(5);
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f(a) {
   const x = a; const y = a;
   return y;
@@ -788,9 +691,8 @@ describe("指令作用范围按 AST 节点身份（字符区间）", () => {
     });
     const rec = callTranspiledExportFull(exports, "f", [$lit(5) as Abs]);
     expect(lit(rec.result)).toBe("s");
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f(a) {
   const x = a; const y = a;
   return x * 10 + y;
@@ -807,9 +709,8 @@ describe("指令作用范围按 AST 节点身份（字符区间）", () => {
     const rec = callTranspiledExportFull(exports, "f", [$lit(5) as Abs]);
     // 只有第一条语句的 a 被替换 → 100 * 10 + 5
     expect(lit(rec.result)).toBe(1005);
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f(a) {
   const x = a; const y = a;
   return x * 10 + y;
@@ -826,15 +727,12 @@ describe("指令作用范围按 AST 节点身份（字符区间）", () => {
     const rec = callTranspiledExportFull(exports, "f", [$lit(5) as Abs]);
     // 只有第二条语句的 a 被替换 → 5 * 10 + 100
     expect(lit(rec.result)).toBe(150);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -877,73 +775,58 @@ function engine(body: string, args: unknown[] = []): unknown {
   return lv.ok ? lv.value : `not-lit:${r.result}`;
 }
 
-describe("switch 的 case 测试命中即停", () => {
-  it("命中第一个 case：后续 case 测试不求值（原生 1）；命中第二个 case：第一个 case 测试仍求值（原生 2）；全不命中：所有 case 测试都求值（原生 2）；命中即停：命中后的 case 测试的副作用不发生（原生 \"t1,one\"）；命中即停：命中后的 case 体的副作用也不发生（原生 101）；负控制：每个 case 测试只求值一次（原生 1）；负控制：抽象判别式下 case 测试全部求值（副作用不丢）；负控制：相邻形态（if/else 判别）不受影响", () => {
-(() => {
 
+  it("命中第一个 case：后续 case 测试不求值（原生 1）；命中第二个 case：第一个 case 测试仍求值（原生 2）；全不命中：所有 case 测试都求值（原生 2）；命中即停：命中后的 case 测试的副作用不发生（原生 \"t1,one\"）；命中即停：命中后的 case 体的副作用也不发生（原生 101）；负控制：每个 case 测试只求值一次（原生 1）；负控制：抽象判别式下 case 测试全部求值（副作用不丢）；负控制：相邻形态（if/else 判别）不受影响", () => {
+  {
     const body = `let n = 0; function t(v){n=n+1;return v;} switch (1){case t(1):break; case t(2):break;} return n;`;
     expect(native(body)).toBe(1);
     expect(engine(body)).toBe(1);
-  })();
-(() => {
-
+  }
+  {
     const body = `let n = 0; function t(v){n=n+1;return v;} switch (2){case t(1):break; case t(2):break;} return n;`;
     expect(native(body)).toBe(2);
     expect(engine(body)).toBe(2);
-  })();
-(() => {
-
+  }
+  {
     const body = `let n = 0; function t(v){n=n+1;return v;} switch (9){case t(1):break; case t(2):break;} return n;`;
     expect(native(body)).toBe(2);
     expect(engine(body)).toBe(2);
-  })();
-(() => {
-
+  }
+  {
     const body = `const log=[]; function t(v){log.push("t"+v);return v;} switch (1){case t(1):log.push("one");break; case t(2):log.push("two");break;} return log.join(",");`;
     expect(native(body)).toBe("t1,one");
     expect(engine(body)).toBe("t1,one");
-  })();
-(() => {
-
+  }
+  {
     const body = `let n=0; function t(v){n=n+1;return v;} switch (1){case t(1): n+=100; break; case t(2): n+=200; break;} return n;`;
     expect(native(body)).toBe(101);
     expect(engine(body)).toBe(101);
-  })();
-(() => {
-
+  }
+  {
     const body = `let n = 0; function t(v){n=n+1;return v;} switch (1){case t(1):break;} return n;`;
     expect(native(body)).toBe(1);
     expect(engine(body)).toBe(1);
-  })();
-(() => {
-
+  }
+  {
     // 判别式为抽象值 ⇒ 判不出命中 ⇒ 全部 case 测试求值 = 原生上界
     const body = `let n = 0; function t(v){n=n+1;return v;} switch (x){case t(1):break; case t(2):break;} return n;`;
     expect(engine(body)).toBe(2);
-  })();
-(() => {
-
+  }
+  {
     const body = `let n=0; function t(v){n=n+1;return v;} if (1===1) { n+=t(1); } return n;`;
     expect(native(body)).toBe(1);
     expect(engine(body)).toBe(1);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
   // --- 负控制 ---------------------------------------------------------
-  ;
 
-  ;
 
-  ;
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -981,65 +864,52 @@ function engine(body: string, withArg = false): unknown {
   return lv.ok ? lv.value : `not-lit:${r.result}`;
 }
 
-describe("switch 的 case 测试副作用不被臂入口快照抹掉", () => {
-  it("case 测试的写保留（原生 11）；case 测试的副作用日志保留（原生 \"t1,one\"）；未命中时前面 case 测试的副作用保留（原生 \"t1,t2,two\"）；抽象判别式下 case 测试的副作用同样保留（上界）；负控制：case 测试只求值一次（不重复计数，原生 1）；负控制：无 case 测试的 switch 不受影响（原生 5）；负控制：臂体的写仍以基线为起点（臂间隔离不破）", () => {
-(() => {
 
+  it("case 测试的写保留（原生 11）；case 测试的副作用日志保留（原生 \"t1,one\"）；未命中时前面 case 测试的副作用保留（原生 \"t1,t2,two\"）；抽象判别式下 case 测试的副作用同样保留（上界）；负控制：case 测试只求值一次（不重复计数，原生 1）；负控制：无 case 测试的 switch 不受影响（原生 5）；负控制：臂体的写仍以基线为起点（臂间隔离不破）", () => {
+  {
     const body = `let n = 0; const t = (v) => { n = n + 1; return v; }; switch (1){case t(1): n = n + 10; break;} return n;`;
     expect(native(body)).toBe(11);
     expect(engine(body)).toBe(11);
-  })();
-(() => {
-
+  }
+  {
     const body = `const log=[]; function t(v){log.push("t"+v);return v;} switch (1){case t(1): log.push("one"); break;} return log.join(",");`;
     expect(native(body)).toBe("t1,one");
     expect(engine(body)).toBe("t1,one");
-  })();
-(() => {
-
+  }
+  {
     const body = `const log=[]; function t(v){log.push("t"+v);return v;} switch (2){case t(1): log.push("one"); break; case t(2): log.push("two"); break;} return log.join(",");`;
     expect(native(body)).toBe("t1,t2,two");
     expect(engine(body)).toBe("t1,t2,two");
-  })();
-(() => {
-
+  }
+  {
     const body = `let n = 0; const t = (v) => { n = n + 1; return v; }; switch (x){case t(1): break; case t(2): break;} return n;`;
     expect(engine(body, true)).toBe(2);
-  })();
-(() => {
-
+  }
+  {
     const body = `let n = 0; const t = (v) => { n = n + 1; return v; }; switch (1){case t(1): break;} return n;`;
     expect(native(body)).toBe(1);
     expect(engine(body)).toBe(1);
-  })();
-(() => {
-
+  }
+  {
     const body = `let n = 0; switch (1){default: n = 5;} return n;`;
     expect(native(body)).toBe(5);
     expect(engine(body)).toBe(5);
-  })();
-(() => {
-
+  }
+  {
     // 命中 case 1 时：t(1) 的写（n=1）在基线里 ⇒ 臂体 n = 1 + 10 = 11
     const body = `let n = 0; const t = (v) => { n = n + 1; return v; }; switch (1){case t(1): n = n + 10; break; case t(2): n = n + 20; break;} return n;`;
     expect(native(body)).toBe(11);
     expect(engine(body)).toBe(11);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
   // --- 负控制 ---------------------------------------------------------
-  ;
 
-  ;
 
-  ;
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1072,10 +942,9 @@ function valOf(src: string): unknown {
   return r.ok ? r.value : "not-lit";
 }
 
-describe("do-while 体的 break / continue 不逃出函数", () => {
-  it("体里的 break 跳出循环（不是跳出函数）；体里的 continue 转到条件求值（首轮后不再执行体）；条件里的 break（事实臂）同样只跳出循环；负控制：无 break/continue 的 do-while 轮数与返回值不变；负控制：嵌套 do-while 的 break 只跳出内层循环；负控制：while / for 的 break 语义不受影响", () => {
-(() => {
 
+  it("体里的 break 跳出循环（不是跳出函数）；体里的 continue 转到条件求值（首轮后不再执行体）；条件里的 break（事实臂）同样只跳出循环；负控制：无 break/continue 的 do-while 轮数与返回值不变；负控制：嵌套 do-while 的 break 只跳出内层循环；负控制：while / for 的 break 语义不受影响", () => {
+  {
     const rec = call(
       `export function f() {
   let c = 0;
@@ -1090,9 +959,8 @@ describe("do-while 体的 break / continue 不逃出函数", () => {
   do { c = c + 1; break; } while (true);
   return c;
 }`)).toBe(1);
-  })();
-(() => {
-
+  }
+  {
     const rec = call(
       `export function f() {
   let c = 0;
@@ -1106,9 +974,8 @@ describe("do-while 体的 break / continue 不逃出函数", () => {
   do { c = c + 1; continue; } while (false);
   return c;
 }`)).toBe(1);
-  })();
-(() => {
-
+  }
+  {
     const rec = call(
       `export function f() {
   let c = 0;
@@ -1122,9 +989,8 @@ describe("do-while 体的 break / continue 不逃出函数", () => {
   do { if (c === 0) { c = c + 1; break; } c = c + 1; } while (true);
   return c;
 }`)).toBe(1);
-  })();
-(() => {
-
+  }
+  {
     expect(valOf(`export function f() {
   let c = 0;
   do { c = c + 1; } while (c < 3);
@@ -1137,17 +1003,15 @@ describe("do-while 体的 break / continue 不逃出函数", () => {
   do { o.n++; c++; } while (o.n < 3);
   return [o.n, c].join(",");
 }`)).toBe("3,3");
-  })();
-(() => {
-
+  }
+  {
     expect(valOf(`export function f() {
   let c = 0;
   do { let d = 0; do { d = d + 1; break; } while (true); c = c + d; break; } while (true);
   return c;
 }`)).toBe(1);
-  })();
-(() => {
-
+  }
+  {
     expect(valOf(`export function f() {
   let c = 0;
   while (true) { c = c + 1; break; }
@@ -1158,19 +1022,14 @@ describe("do-while 体的 break / continue 不逃出函数", () => {
   for (let i = 0; i < 3; i++) { c = c + 1; break; }
   return c;
 }`)).toBe(1);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1185,7 +1044,7 @@ describe("destructure-tmp-names", () => {
 
 
 
-describe("destructure-tmp-names", () => {
+{
 /**
  * 回归：转译器的**解构临时名**（`_d0` / `_n1` / `_p0` / `_rest0`）
  * 必须与**用户标识符**避让。
@@ -1208,58 +1067,47 @@ const v = (src: string, ...args: unknown[]): { ok: boolean; value?: unknown } =>
 
 describe("解构临时名与用户标识符避让", () => {
   it("用户声明 _d0：模块仍可求值（不再重复声明 SyntaxError）；用户声明 _n1（嵌套解构临时名）：模块仍可求值；用户声明 _p0（形参占位名）：模块仍可求值；用户声明 _rest0（rest 形参占位名）：模块仍可求值；用户声明 _pd0（默认参解构临时名）：模块仍可求值；负控制：无撞名时解构行为不变（精确值）", () => {
-(() => {
-
+  {
     expect(
       val(`export function f() { let _d0 = 5; const { a } = { a: 1 }; return a + _d0; }`),
     ).toEqual({ ok: true, value: 6 });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(`export function f() { let _n1 = 5; const { a: { b } } = { a: { b: 1 } }; return b + _n1; }`),
     ).toEqual({ ok: true, value: 6 });
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(`export function f({ a }) { let _p0 = 5; return a + _p0; }`, { a: 1 }),
     ).toEqual({ ok: true, value: 6 });
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(`export function f([...xs]) { let _rest0 = 5; return xs.length + _rest0; }`, [1, 2]),
     ).toEqual({ ok: true, value: 7 });
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(`export function f({ a } = { a: 1 }) { let _pd0 = 5; return a + _pd0; }`, undefined),
     ).toEqual({ ok: true, value: 6 });
-  })();
-(() => {
-
+  }
+  {
     expect(val(`export function f() { const { a } = { a: 1 }; return a; }`))
       .toEqual({ ok: true, value: 1 });
     expect(val(`export function f() { const [a, b] = [1, 2]; return a + b; }`))
       .toEqual({ ok: true, value: 3 });
     expect(v(`export function f({ a }) { return a; }`, { a: 1 }))
       .toEqual({ ok: true, value: 1 });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
+}
 
 describe("tmp-name-first-alloc", () => {
 /**
@@ -1296,32 +1144,28 @@ const callName = (
 
 describe("收尾：解构临时名首次分配的避让", () => {
   it("模块首条语句即解构声明 + 用户模块级 _d0：模块可求值且值正确；后续语句解构 + 用户模块级 _d0：模块可求值且值正确；模块首条语句即嵌套解构 + 用户模块级 _n1：模块可求值且值正确；模块级 fail-closed 面解除：无关函数不再被拖成 unknown；两处解构 + 用户模块级 _d0：模块可求值且值正确；产物不与用户同名绑定重复声明（临时名让开）；负控制：无撞名时临时名与行为不变；负控制：用户 _d0 在函数体内（跨作用域）不受影响；负控制：形参占位名族（_", () => {
-(() => {
-
+  {
     expect(
       val(`const { a } = { a: 1 };
 const _d0 = 5;
 export function f() { return a + _d0; }`),
     ).toEqual({ ok: true, value: 6 });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(`const _d0 = 5;
 const { a } = { a: 1 };
 export function f() { return a + _d0; }`),
     ).toEqual({ ok: true, value: 6 });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(`const { a: { b } } = { a: { b: 1 } };
 const _n1 = 5;
 export function f() { return b + _n1; }`),
     ).toEqual({ ok: true, value: 6 });
-  })();
-(() => {
-
+  }
+  {
     const src = `const { a } = { a: 1 };
 const _d0 = 5;
 export function g() { return 42; }
@@ -1329,18 +1173,16 @@ export function f() { return a + _d0; }`;
     // 撞名时整模块求值失败 ⇒ g 也退化；修后 g 可正常调用
     expect(callName(src, "g")).toEqual({ ok: true, value: 42 });
     expect(callName(src, "f")).toEqual({ ok: true, value: 6 });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(`const { a } = { a: 1 };
 const { c } = { c: 2 };
 const _d0 = 5;
 export function f() { return a + c + _d0; }`),
     ).toEqual({ ok: true, value: 8 });
-  })();
-(() => {
-
+  }
+  {
     const js = transpileSource_____exec_transpile_ts(`const { a } = { a: 1 };
 const _d0 = 5;
 export function f() { return a + _d0; }`);
@@ -1348,9 +1190,8 @@ export function f() { return a + _d0; }`);
     expect(js).not.toMatch(/const _d0\b/);
     // 用户自己的声明仍在（转译器把 const 降为 let）
     expect(js).toMatch(/let _d0 =/);
-  })();
-(() => {
-
+  }
+  {
     expect(val(`const { a } = { a: 1 }; export function f() { return a; }`)).toEqual({
       ok: true,
       value: 1,
@@ -1360,16 +1201,14 @@ export function f() { return a + _d0; }`);
     );
     const names = [...js.matchAll(/const (_d\d+) =/g)].map((m) => m[1]);
     expect(names).toEqual(["_d0", "_d1"]);
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(`const { a } = { a: 1 };
 export function f() { let _d0 = 5; return a + _d0; }`),
     ).toEqual({ ok: true, value: 6 });
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(`const { a } = { a: 1 };
 export function f({ b }) { let _p0 = 5; return a + b + _p0; }`, { b: 2 }),
@@ -1378,24 +1217,16 @@ export function f({ b }) { let _p0 = 5; return a + b + _p0; }`, { b: 2 }),
       v(`const { a } = { a: 1 };
 export function f([...xs]) { let _rest0 = 5; return a + xs.length + _rest0; }`, [1, 2]),
     ).toEqual({ ok: true, value: 8 });
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 });
 });
@@ -1405,7 +1236,7 @@ export function f([...xs]) { let _rest0 = 5; return a + xs.length + _rest0; }`, 
 // ---------------------------------------------------------------------------
 describe(": 早返回形态的后续路径不断言否定界（与三元写法同口径）", () => {
 /**
- * 回归（core 转译层 + 契约执法面）——**判据已被 
+ * 回归（core 转译层 + 契约执法面）——**判据已被
  * 修正**：早返回形态的**后续路径**上**不断言否定关系界**。
  *
  * 的做法（已撤销）：事实臂以 return/throw 结束 ⇒ else 臂（尾句全终止
@@ -1454,8 +1285,7 @@ function violations(r: { issues: { code: string; severity: string }[] }): number
 
 describe("早返回形态的后续路径不断言否定界（与三元写法同口径）", () => {
   it("早返回形态：后续路径不排除 NaN ⇒ return number().gt(0) 不成立（error）；语义等价的事实臂写法仍证得（结论一致）；尾句非全终止的早退形态（早退提升路径）同口径（error）；负控制：返回字面量的早退形态仍判违约（0 不满足 positive）；负控制：事实臂不终止的普通 if/else 同样不断言否定界（判违约的依据不是否定界）；负控制：四种关系算子的后续路径**同口径**（四种形态都在 NaN 上违约）", () => {
-(() => {
-
+  {
     const r = check(`export function f(x) {
   if (x <= 0) { return 1; }
   return x;
@@ -1463,33 +1293,29 @@ describe("早返回形态的后续路径不断言否定界（与三元写法同�
     // 原生：x=NaN ⇒ `NaN <= 0` 为假 ⇒ `return x` ⇒ 返回 NaN ⇒ 违反 positive
     // ⇒ 真违规 ⇒ error。修前（否定界窄化）判 0 error = **假绿**。
     expect(violations(r)).toBe(1);
-  })();
-(() => {
-
+  }
+  {
     const r = check(`export function f(x) {
   if (x > 0) { return x; } else { return 1; }
 }`);
     expect(violations(r)).toBe(0);
-  })();
-(() => {
-
+  }
+  {
     const r = check(`export function f(x) {
   if (x <= 0) { return 1; }
   console.log(x);
   return x;
 }`);
     expect(violations(r)).toBe(1);
-  })();
-(() => {
-
+  }
+  {
     const r = check(`export function f(x) {
   if (x > 0) { return x; }
   return 0;
 }`);
     expect(violations(r)).toBe(1);
-  })();
-(() => {
-
+  }
+  {
     // 事实臂不终止 ⇒ else 臂**不**建立否定界（x ≤ 0 / NaN）⇒ 该臂的返回项
     // 值域 = 任意 number（**不是**「x ≤ 0」）⇒ 声明域参数的值域
     // 已知 ⇒ `positive` 不蕴含 ⇒ 契约不成立（x=0 即违约）⇒ error。
@@ -1502,9 +1328,8 @@ describe("早返回形态的后续路径不断言否定界（与三元写法同�
     expect(
       r.issues.filter((i) => i.code === "nudo:unproven-return").length,
     ).toBe(0);
-  })();
-(() => {
-
+  }
+  {
     // 之后：后续路径**不再**断言否定界 ⇒ 四种形态同口径。
     // 四者都在 NaN 上违约（`NaN` 与任何比较皆假 ⇒ 走 `return x` ⇒ 返回 NaN
     // ⇒ 违反 positive）⇒ 四个都是 error。
@@ -1518,18 +1343,13 @@ describe("早返回形态的后续路径不断言否定界（与三元写法同�
         ),
       ).toBe(1);
     }
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 });
 
@@ -1576,10 +1396,9 @@ function check(src: string) {
   return checkSource___nudojs_core_1("/t/b183.js", IMP + src, pTrue___nudojs_core_1, opts);
 }
 
-describe("for 循环体接 nullish 守卫（零 L2 / 不报 may-throw）", () => {
-  it("for (; v !== null; ) { return v.length; } 零 L2（native 永不抛）；与 while 写法结论一致（同守卫同机制）；for 体内的 nullish 守卫对成员读生效（v.length 不撞 null 臂）", () => {
-(() => {
 
+  it("for (; v !== null; ) { return v.length; } 零 L2（native 永不抛）；与 while 写法结论一致（同守卫同机制）；for 体内的 nullish 守卫对成员读生效（v.length 不撞 null 臂）", () => {
+  {
     const r = check(`
 /**
  * @nudo:contract v strOrNull
@@ -1594,9 +1413,8 @@ export function f(v) {
     expect(l2Count(r, "f")).toBe(0);
     expect(r.summary.errors).toBe(0);
     expect(sigOf(r, "f")).not.toMatch(/throws/);
-  })();
-(() => {
-
+  }
+  {
     const r = check(`
 /**
  * @nudo:contract v strOrNull
@@ -1610,9 +1428,8 @@ export function f(v) {
 `);
     expect(l2Count(r, "f")).toBe(0);
     expect(sigOf(r, "f")).not.toMatch(/throws/);
-  })();
-(() => {
-
+  }
+  {
     const r = check(`
 /**
  * @nudo:contract v strOrNull
@@ -1626,18 +1443,15 @@ export function f(v) {
 }
 `);
     expect(l2Count(r, "f")).toBe(0);
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 
 describe("for 循环体接关系守卫（L1 契约成立）", () => {
   it("for (; x > 0; ) { return x; } 满足 return number().gt(0)；与 if 写法结论一致（同守卫同机制）", () => {
-(() => {
-
+  {
     const r = check(`
 /**
  * @nudo:contract x num
@@ -1652,9 +1466,8 @@ export function f(x) {
 `);
     expect(r.summary.errors).toBe(0);
     expect(r.issues.filter((i) => i.code === "nudo:constraint-violated").length).toBe(0);
-  })();
-(() => {
-
+  }
+  {
     const r = check(`
 /**
  * @nudo:contract x num
@@ -1668,40 +1481,33 @@ export function f(x) {
 }
 `);
     expect(r.summary.errors).toBe(0);
-  })();
-});;
+  }
+});
 
-  ;
 });
 
 describe("引擎求值：for 头的测试语义不变", () => {
   it("for (; v !== null; ) 在 v 为 null 时不进体（返回 0）；for (; v !== null; ) 在 v 为字符串时进体（返回长度）；for 主路径的循环变量不被影子参数顶掉（i 逐轮递增）", () => {
-(() => {
-
+  {
     const src = `export function f(v) { for (; v !== null; ) { return v.length; } return 0; }`;
     expect(v(src, null)).toEqual({ ok: true, value: 0 });
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f(v) { for (; v !== null; ) { return v.length; } return 0; }`;
     expect(v(src, "ab")).toEqual({ ok: true, value: 2 });
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f() { let s = 0; for (let i = 0; i < 3; i++) { s = s + i; } return s; }`;
     expect(v(src)).toEqual({ ok: true, value: 3 });
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 });
 
 describe("负控制：无守卫 / 体侧写守卫名 ⇒ 仍报 L2", () => {
   it("无守卫的 for 体内读 null 臂成员仍报 L2；体侧写守卫名（影子会吞写）⇒ 跳过收窄仍报 L2", () => {
-(() => {
-
+  {
     const r = check(`
 /**
  * @nudo:contract v strOrNull
@@ -1714,9 +1520,8 @@ export function f(v) {
 }
 `);
     expect(l2Count(r, "f")).toBeGreaterThan(0);
-  })();
-(() => {
-
+  }
+  {
     const r = check(`
 /**
  * @nudo:contract v strOrNull
@@ -1730,10 +1535,9 @@ export function f(v) {
 }
 `);
     expect(l2Count(r, "f")).toBeGreaterThan(0);
-  })();
-});;
+  }
+});
 
-  ;
 });
 });
 
@@ -1810,57 +1614,49 @@ function checkDisc(src: string) {
   );
 }
 
-describe("switch 的 case 标签产生窄化事实", () => {
-  it("命中事实：`case 1:` 臂内判别值 = 字面量 1（返回域 1 | 2）；排除事实：`default:` 臂排除 `case null` ⇒ v.length 不判 may-throw；排除事实：`case null:` 之外的臂（`case 1:`）同样排除 null；多个 case 标签：命中事实取并集（1 | 2 | 3）；负控制：臂内写判别绑定 ⇒ 跳过窄化（影子参数会吞掉臂内写）；负控制：非字面量 case 标签不产事实（臂内判别值不被改写）；负控制：相邻形态", () => {
-(() => {
 
+  it("命中事实：`case 1:` 臂内判别值 = 字面量 1（返回域 1 | 2）；排除事实：`default:` 臂排除 `case null` ⇒ v.length 不判 may-throw；排除事实：`case null:` 之外的臂（`case 1:`）同样排除 null；多个 case 标签：命中事实取并集（1 | 2 | 3）；负控制：臂内写判别绑定 ⇒ 跳过窄化（影子参数会吞掉臂内写）；负控制：非字面量 case 标签不产事实（臂内判别值不被改写）；负控制：相邻形态", () => {
+  {
     const src = `export function f(x) { switch (x) { case 1: return x; default: return 2; } }`;
     const r = engine(src, NUMBER_ABS);
     expect(r.result).toContain("1");
     expect(r.result).toContain("2");
     expect(r.throws).toContain("never");
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f(v) { switch (v) { case null: return 0; default: return v.length; } }`;
     const r = call(src, "f", [STR_OR_NULL]);
     expect(throwsError((r as { throws?: unknown }).throws, "TypeError")).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f(v) { switch (v) { case 1: return v.length; default: return 0; } }`;
     const r = call(src, "f", [STR_OR_NULL]);
     expect(throwsError((r as { throws?: unknown }).throws, "TypeError")).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f(x) { switch (x) { case 1: return x; case 2: return x; default: return 3; } }`;
     const r = engine(src, NUMBER_ABS);
     expect(r.result).toContain("1");
     expect(r.result).toContain("2");
     expect(r.result).toContain("3");
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f(x) { switch (x) { case 1: x = 5; return x; default: return 2; } }`;
     const r = engine(src, NUMBER_ABS);
     expect(r.result).toContain("5");
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f(x) { switch (x) { case x + 1: return x; default: return 2; } }`;
     const r = engine(src, NUMBER_ABS);
     // 未窄化：返回域含未窄化的 number（不是字面量 1）
     expect(r.result).not.toContain("1 |");
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f(x) { if (x === 1) { return x; } return 2; }`;
     const r = engine(src, NUMBER_ABS);
     expect(r.throws).toContain("never");
-  })();
-(() => {
-
+  }
+  {
     const r = checkDisc(`/**
  * @nudo:contract node nodeParam
  */
@@ -1872,9 +1668,8 @@ export function switchForm(node) {
   }
 }`);
     expect(l2Count(r, "switchForm")).toBe(0);
-  })();
-(() => {
-
+  }
+  {
     const r = checkDisc(`/**
  * @nudo:contract node nodeParam
  */
@@ -1886,27 +1681,19 @@ export function switchFormNonLit(node) {
   }
 }`);
     expect(l2Count(r, "switchFormNonLit")).toBe(1);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
   // --- 负控制 ---------------------------------------------------------
-  ;
 
-  ;
 
-  ;
 
   // --- 成员判别式（switch (o.kind)）--------------------------------------
-  ;
 
-  ;
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1922,7 +1709,7 @@ describe("dowhile-rel-guard", () => {
 
 
 
-describe("dowhile-rel-guard", () => {
+{
 /**
  * 同构缺口回归：`do-while` 分支的**关系守卫**接线。
  *
@@ -1981,8 +1768,7 @@ function l1Return(r: ReturnType<typeof check>): number {
 
 describe("同构缺口 — do-while 体侧接关系守卫（L1 契约成立）", () => {
   it("第 2 轮起体内成立 x > 0 事实 ⇒ return x 满足契约；与 while 写法结论一致（同守卫换结构结论相同）", () => {
-(() => {
-
+  {
     const r = check(`
 /**
  * @nudo:contract x num
@@ -1999,9 +1785,8 @@ export function f(x) {
 `);
     expect(r.summary.errors).toBe(0);
     expect(l1(r)).toBe(0);
-  })();
-(() => {
-
+  }
+  {
     const r = check(`
 /**
  * @nudo:contract x num
@@ -2016,16 +1801,14 @@ export function f(x) {
 `);
     expect(r.summary.errors).toBe(0);
     expect(l1(r)).toBe(0);
-  })();
-});;
+  }
+});
 
-  ;
 });
 
 describe("同构缺口 — 负控制：收窄不越界 / 接线不回归", () => {
   it("首轮拷贝保持未收窄（先于测试求值 ⇒ 无 > 0 事实，仍报 L1）；体侧写守卫名（影子会吞写）⇒ 跳过收窄仍报 L1；循环体外的读不携带关系事实（仍报 L1）；do-while (v !== null) 体内成员读仍零 L2（nullish 接线不回归）", () => {
-(() => {
-
+  {
     const r = check(`
 /**
  * @nudo:contract x num
@@ -2039,9 +1822,8 @@ export function f(x) {
 `);
     // 无界证据（无 > 0 事实）⇒ 判「证不出」（warning）而非「确定违约」
     expect(l1Return(r)).toBeGreaterThan(0);
-  })();
-(() => {
-
+  }
+  {
     const r = check(`
 /**
  * @nudo:contract x num
@@ -2055,9 +1837,8 @@ export function f(x) {
 }
 `);
     expect(l1(r)).toBeGreaterThan(0);
-  })();
-(() => {
-
+  }
+  {
     const r = check(`
 /**
  * @nudo:contract x num
@@ -2073,9 +1854,8 @@ export function f(x) {
 `);
     // 循环体外的读不携带关系事实 ⇒ 无界证据 ⇒ 判「证不出」（warning）
     expect(l1Return(r)).toBeGreaterThan(0);
-  })();
-(() => {
-
+  }
+  {
     const r = check(`
 /**
  * @nudo:contract v strOrNull
@@ -2091,26 +1871,21 @@ export function f(v) {
 `);
     expect(l2Count(r, "f")).toBe(0);
     expect(sigOf(r, "f")).not.toMatch(/throws/);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 });
 
 describe("同构缺口 — 引擎求值：do-while 语义不变", () => {
   it("do-while 体至少执行一次（先于测试）；第 2 轮的 return 取到 x（运行时取值不变）", () => {
-(() => {
-
+  {
     const src = `export function f(x) { let n = 0; do { n = n + 1; if (n === 3) return n; } while (x > 0); return n; }`;
     expect(v(src, -1)).toEqual({ ok: true, value: 1 });
     expect(v(src, 5)).toEqual({ ok: true, value: 3 });
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f(x) {
       let n = 0;
       do {
@@ -2121,12 +1896,11 @@ describe("同构缺口 — 引擎求值：do-while 语义不变", () => {
     }`;
     expect(v(src, 5)).toEqual({ ok: true, value: 5 });
     expect(v(src, -1)).toEqual({ ok: true, value: 0 });
-  })();
-});;
+  }
+});
 
-  ;
 });
-});
+}
 
 describe("while-rel-guard", () => {
 /**
@@ -2169,8 +1943,7 @@ function check(src: string) {
 
 describe("while 循环体接关系守卫（L1 契约成立）", () => {
   it("while (x > 0) { return x; } 满足 return number().gt(0)；与 if 写法结论一致（同守卫换结构结论相同）；while (x >= 0) 的关系事实同样接进体内", () => {
-(() => {
-
+  {
     const r = check(`
 /**
  * @nudo:contract x num
@@ -2185,9 +1958,8 @@ export function f(x) {
 `);
     expect(r.summary.errors).toBe(0);
     expect(r.issues.filter((i) => i.code === "nudo:constraint-violated").length).toBe(0);
-  })();
-(() => {
-
+  }
+  {
     const r = check(`
 /**
  * @nudo:contract x num
@@ -2201,9 +1973,8 @@ export function f(x) {
 }
 `);
     expect(r.summary.errors).toBe(0);
-  })();
-(() => {
-
+  }
+  {
     const r = check(`
 /**
  * @nudo:contract x num
@@ -2217,18 +1988,15 @@ export function f(x) {
 }
 `);
     expect(r.summary.errors).toBe(0);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 });
 
 describe("负控制：nullish 守卫接线不回归 / 收窄不越界", () => {
   it("while (v !== null) 体内成员读仍零 L2（nullish 接线不回归）；体侧写守卫名（影子会吞写）⇒ 跳过收窄仍报 L1；循环体外的读不携带关系事实（仍报 L1）", () => {
-(() => {
-
+  {
     const r = check(`
 /**
  * @nudo:contract v strOrNull
@@ -2242,9 +2010,8 @@ export function f(v) {
 `);
     expect(l2Count(r, "f")).toBe(0);
     expect(sigOf(r, "f")).not.toMatch(/throws/);
-  })();
-(() => {
-
+  }
+  {
     const r = check(`
 /**
  * @nudo:contract x num
@@ -2259,9 +2026,8 @@ export function f(x) {
 }
 `);
     expect(r.issues.filter((i) => i.code === "nudo:constraint-violated").length).toBeGreaterThan(0);
-  })();
-(() => {
-
+  }
+  {
     const r = check(`
 /**
  * @nudo:contract x num
@@ -2282,37 +2048,30 @@ export function f(x) {
         (i) => i.code === "nudo:constraint-violated" || i.code === "nudo:unproven-return",
       ).length,
     ).toBeGreaterThan(0);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 });
 
 describe("引擎求值：while 语义不变", () => {
   it("while (x > 0) 在 x 为正时进体（返回 x）；while (x > 0) 在 x 为负时进不了体（返回 1）；while (v !== null) 的 nullish 收窄不改变取值", () => {
-(() => {
-
+  {
     const src = `export function f(x) { while (x > 0) { return x; } return 1; }`;
     expect(v(src, 5)).toEqual({ ok: true, value: 5 });
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f(x) { while (x > 0) { return x; } return 1; }`;
     expect(v(src, -5)).toEqual({ ok: true, value: 1 });
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f(v) { while (v !== null) { return v.length; } return 0; }`;
     expect(v(src, "ab")).toEqual({ ok: true, value: 2 });
     expect(v(src, null)).toEqual({ ok: true, value: 0 });
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 });
 });
 });
@@ -2358,10 +2117,9 @@ function check(src: string) {
   return checkSource___nudojs_core_3("/t/b186.js", IMP + src, pTrue___nudojs_core_3, opts);
 }
 
-describe("裸块 / try / catch / finally 内的早退补集窄化生效", () => {
-  it("裸块：{ if (v === null) { return 0; } } return v.length; 零 L2；try 块：同段代码零 L2；catch 块：同段代码零 L2；finally 块：同段代码零 L2；对照组：函数体顶层同段代码零 L2（既有口径不回归）；四种嵌套形态与顶层形态签名一致", () => {
-(() => {
 
+  it("裸块：{ if (v === null) { return 0; } } return v.length; 零 L2；try 块：同段代码零 L2；catch 块：同段代码零 L2；finally 块：同段代码零 L2；对照组：函数体顶层同段代码零 L2（既有口径不回归）；四种嵌套形态与顶层形态签名一致", () => {
+  {
     const r = check(`
 /**
  * @nudo:contract v strOrNull
@@ -2376,9 +2134,8 @@ export function f(v) {
     expect(l2Count(r, "f")).toBe(0);
     expect(r.summary.errors).toBe(0);
     expect(sigOf(r, "f")).not.toMatch(/throws/);
-  })();
-(() => {
-
+  }
+  {
     const r = check(`
 /**
  * @nudo:contract v strOrNull
@@ -2394,9 +2151,8 @@ export function f(v) {
 `);
     expect(l2Count(r, "f")).toBe(0);
     expect(sigOf(r, "f")).not.toMatch(/throws/);
-  })();
-(() => {
-
+  }
+  {
     const r = check(`
 /**
  * @nudo:contract v strOrNull
@@ -2412,9 +2168,8 @@ export function f(v) {
 `);
     expect(l2Count(r, "f")).toBe(0);
     expect(sigOf(r, "f")).not.toMatch(/throws/);
-  })();
-(() => {
-
+  }
+  {
     const r = check(`
 /**
  * @nudo:contract v strOrNull
@@ -2430,9 +2185,8 @@ export function f(v) {
 `);
     expect(l2Count(r, "f")).toBe(0);
     expect(sigOf(r, "f")).not.toMatch(/throws/);
-  })();
-(() => {
-
+  }
+  {
     const r = check(`
 /**
  * @nudo:contract v strOrNull
@@ -2444,9 +2198,8 @@ export function f(v) {
 `);
     expect(l2Count(r, "f")).toBe(0);
     expect(sigOf(r, "f")).not.toMatch(/throws/);
-  })();
-(() => {
-
+  }
+  {
     const sigs = [
       `if (v === null) { return 0; } return v.length;`,
       `{ if (v === null) { return 0; } } return v.length;`,
@@ -2468,59 +2221,46 @@ export function f(v) {
     );
     for (const s of sigs) expect(s).toBe(sigs[0]);
     expect(sigs[0]).not.toMatch(/throws/);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 
 describe("引擎求值：嵌套形态的返回值与原生一致", () => {
   it("裸块：v 为 null → 0；v 为字符串 → 长度；try 块：v 为 null → 0；v 为字符串 → 长度；catch 块：v 为 null → 0；v 为字符串 → 长度；finally 块：v 为 null → 0；v 为字符串 → 长度", () => {
-(() => {
-
+  {
     const src = `export function f(v) { { if (v === null) { return 0; } } return v.length; }`;
     expect(v(src, null)).toEqual({ ok: true, value: 0 });
     expect(v(src, "ab")).toEqual({ ok: true, value: 2 });
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f(v) { try { if (v === null) { return 0; } return v.length; } catch (e) { return 0; } }`;
     expect(v(src, null)).toEqual({ ok: true, value: 0 });
     expect(v(src, "ab")).toEqual({ ok: true, value: 2 });
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f(v) { try { throw 1; } catch (e) { if (v === null) { return 0; } return v.length; } }`;
     expect(v(src, null)).toEqual({ ok: true, value: 0 });
     expect(v(src, "ab")).toEqual({ ok: true, value: 2 });
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f(v) { try { return 9; } finally { if (v === null) { return 0; } return v.length; } }`;
     expect(v(src, null)).toEqual({ ok: true, value: 0 });
     expect(v(src, "ab")).toEqual({ ok: true, value: 2 });
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 });
 
 describe("负控制：无早退守卫 / 非 nullish 守卫 ⇒ 仍报 L2", () => {
   it("嵌套块内无早退守卫 → 仍报 L2；非 nullish 早退守卫（v === 1）不产生补集窄化 → 仍报 L2；块内有词法声明时不摊平（名字不外泄到函数作用域）", () => {
-(() => {
-
+  {
     const r = check(`
 /**
  * @nudo:contract v strOrNull
@@ -2533,9 +2273,8 @@ export function f(v) {
 }
 `);
     expect(l2Count(r, "f")).toBeGreaterThan(0);
-  })();
-(() => {
-
+  }
+  {
     const r = check(`
 /**
  * @nudo:contract v strOrNull
@@ -2548,18 +2287,15 @@ export function f(v) {
 }
 `);
     expect(l2Count(r, "f")).toBeGreaterThan(0);
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f(v) { { const w = 1; if (v === null) { return 0; } } return typeof w; }`;
     // 原生：块内 const 不在函数作用域 ⇒ typeof w === "undefined"
     expect(v(src, "ab")).toEqual({ ok: true, value: "undefined" });
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 });
 });
 
@@ -2606,166 +2342,116 @@ function expectChainUndefined(src: string) {
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("可选调用命中 nullish 时整链短路（剩余成员读不再求值）", () => {
+
   it("o.b?.().c on {b:null} → undefined（不抛）；o.b?.().c on {b:undefined} → undefined；o.b?.().c on {}（b 缺失） → undefined；o.b?.()['c'] on {b:null} → undefined（计算成员读同口径）；o.b?.().c.d on {b:null} → undefined（多级尾随读）；o.b?.().c?.d on {b:null} → undefined（尾随", () => {
-(() => {
-
+  {
     expectChainUndefined(wrap(`const o = { b: null }; return o.b?.().c;`));
-  })();
-(() => {
-
+  }
+  {
     expectChainUndefined(wrap(`const o = { b: undefined }; return o.b?.().c;`));
-  })();
-(() => {
-
+  }
+  {
     expectChainUndefined(wrap(`const o = {}; return o.b?.().c;`));
-  })();
-(() => {
-
+  }
+  {
     expectChainUndefined(wrap(`const o = { b: null }; return o.b?.()["c"];`));
-  })();
-(() => {
-
+  }
+  {
     expectChainUndefined(wrap(`const o = { b: null }; return o.b?.().c.d;`));
-  })();
-(() => {
-
+  }
+  {
     expectChainUndefined(wrap(`const o = { b: null }; return o.b?.().c?.d;`));
-  })();
-(() => {
-
+  }
+  {
     expectChainUndefined(wrap(`const o = {}; return o?.m?.().c;`));
-  })();
-(() => {
-
+  }
+  {
     expectChainUndefined(wrap(`const o = { b: null }; const k = "b"; return o[k]?.().c;`));
-  })();
-(() => {
-
+  }
+  {
     expectChainUndefined(wrap(`const o = {}; const k = "b"; return o?.[k]?.().c;`));
-  })();
-(() => {
-
+  }
+  {
     expectChainUndefined(wrap(`const o = { b: null }; return o.b?.()();`));
-  })();
-(() => {
-
+  }
+  {
     expectChainUndefined(wrap(`const o = { b: null }; return o.b?.().c();`));
-  })();
-(() => {
-
+  }
+  {
     expectChainUndefined(wrap(`const o = { b: null }; return o.b?.()[0];`));
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
+
+
+
+
+
 
 describe("负控制：非 nullish 链仍正常求值 / 既有 hop 语义不回归", () => {
   it("o.b?.().c on 函数 b → 读到 c；o.b?.().c 方法体 this 仍绑 o；o.b?.().c on 函数 b 返回 {c:{d:8}} → 多级读通；o?.m?.().c on {m:()=>({c:4})} → 读到 c；o[k]?.().c on {b:()=>({c:5})} → 读到 c；调用跳无尾随成员：o.b?.() on {b:null} → undefined；调用跳无尾随成员：o.b?.() 仍调用方法；成员跳既有语义：o?.b.c ", () => {
-(() => {
-
+  {
     expect(v(wrap(`const o = { b: () => ({ c: 9 }) }; return o.b?.().c;`))).toEqual({ ok: true, value: 9 });
-  })();
-(() => {
-
+  }
+  {
     expect(v(wrap(`const o = { v: 3, b() { return { c: this.v }; } }; return o.b?.().c;`))).toEqual({ ok: true, value: 3 });
-  })();
-(() => {
-
+  }
+  {
     expect(v(wrap(`const o = { b: () => ({ c: { d: 8 } }) }; return o.b?.().c.d;`))).toEqual({ ok: true, value: 8 });
-  })();
-(() => {
-
+  }
+  {
     expect(v(wrap(`const o = { m: () => ({ c: 4 }) }; return o?.m?.().c;`))).toEqual({ ok: true, value: 4 });
-  })();
-(() => {
-
+  }
+  {
     expect(v(wrap(`const o = { b: () => ({ c: 5 }) }; const k = "b"; return o[k]?.().c;`))).toEqual({ ok: true, value: 5 });
-  })();
-(() => {
-
+  }
+  {
     expectChainUndefined(wrap(`const o = { b: null }; return o.b?.();`));
-  })();
-(() => {
-
+  }
+  {
     expect(v(wrap(`const o = { b: () => 1 }; return o.b?.();`))).toEqual({ ok: true, value: 1 });
-  })();
-(() => {
-
+  }
+  {
     expectChainUndefined(wrap(`const o = null; return o?.b.c;`));
-  })();
-(() => {
-
+  }
+  {
     expect(v(wrap(`const o = { b: { c: 1 } }; return o?.b.c;`))).toEqual({ ok: true, value: 1 });
-  })();
-(() => {
-
+  }
+  {
     expectChainUndefined(wrap(`const o = null; return o?.m();`));
-  })();
-(() => {
-
+  }
+  {
     expect(v(wrap(`const o = { v: 5, m() { return this.v; } }; return o?.m();`))).toEqual({ ok: true, value: 5 });
-  })();
-(() => {
-
+  }
+  {
     expect(throwName(wrap(`const o = { b: () => null }; return o.b?.().c;`))).toBe("TypeError");
-  })();
-(() => {
-
+  }
+  {
     expect(v(wrap(`const o = { b: () => ({ c: null }) }; return o.b?.().c;`))).toEqual({ ok: true, value: null });
-  })();
-(() => {
-
+  }
+  {
     expect(throwName(wrap(`const o = { b: null }; return o?.b().c;`))).toBe("TypeError");
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 });
 
@@ -2799,10 +2485,9 @@ function v(src: string, ...args: unknown[]) {
   return litValue___nudojs_core_5(callLit(src, "f", ...args).result);
 }
 
-describe("表达式体的写回排在表达式取值之后", () => {
-  it("`() => o.n++` 返回写前值 0（原生同），写回仍发生（o.n = 1）；可选链 delete 的写回已下沉到表达式内（无语句级二次发射）；async 表达式体的删除/写回同在 $async thunk 内（写回不逸出 thunk）", () => {
-(() => {
 
+  it("`() => o.n++` 返回写前值 0（原生同），写回仍发生（o.n = 1）；可选链 delete 的写回已下沉到表达式内（无语句级二次发射）；async 表达式体的删除/写回同在 $async thunk 内（写回不逸出 thunk）", () => {
+  {
     const src = `export function f() {
       const o = { n: 0 };
       const g = () => o.n++;
@@ -2810,9 +2495,8 @@ describe("表达式体的写回排在表达式取值之后", () => {
       return r * 100 + o.n;
     }`;
     expect(v(src)).toEqual({ ok: true, value: 1 });
-  })();
-(() => {
-
+  }
+  {
     const js = transpileSource___nudojs_core(`export function f() {
       const o = { a: 1 };
       const g = () => delete o?.a;
@@ -2825,9 +2509,8 @@ describe("表达式体的写回排在表达式取值之后", () => {
     const write = js.indexOf("o = __nudoDelN");
     expect(del).toBeGreaterThan(-1);
     expect(write).toBeGreaterThan(del);
-  })();
-(() => {
-
+  }
+  {
     const js = transpileSource___nudojs_core(`export function f() {
       const o = { a: 1 };
       const g = async () => delete o?.a;
@@ -2839,18 +2522,15 @@ describe("表达式体的写回排在表达式取值之后", () => {
     expect(thunk).toBeGreaterThan(-1);
     expect(del).toBeGreaterThan(thunk);
     expect(write).toBeGreaterThan(del);
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 
 describe("负控制：写回 / 取值语义不被改写", () => {
   it("块体箭头的写回照旧发生；只读箭头取值不变；函数表达式的块体体不受影响（返回写前值）；捕获临时名避让用户标识符（用户自己有 __mutRet 不得 TDZ）", () => {
-(() => {
-
+  {
     const src = `export function f() {
       const o = { n: 0 };
       const g = () => { o.n++; };
@@ -2858,18 +2538,16 @@ describe("负控制：写回 / 取值语义不被改写", () => {
       return o.n;
     }`;
     expect(v(src)).toEqual({ ok: true, value: 1 });
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f() {
       const o = { n: 7 };
       const g = () => o.n;
       return g();
     }`;
     expect(v(src)).toEqual({ ok: true, value: 7 });
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f() {
       const o = { n: 0 };
       const g = function () { return o.n++; };
@@ -2877,9 +2555,8 @@ describe("负控制：写回 / 取值语义不被改写", () => {
       return r * 100 + o.n;
     }`;
     expect(v(src)).toEqual({ ok: true, value: 1 });
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f() {
       const __mutRet = 5;
       const o = { a: 1 };
@@ -2888,14 +2565,11 @@ describe("负控制：写回 / 取值语义不被改写", () => {
       return r + ":" + __mutRet;
     }`;
     expect(v(src)).toEqual({ ok: true, value: "true:5" });
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 });
 });
 
@@ -2934,66 +2608,53 @@ function throwName(src: string): string {
   return t.shape.k === "brand" ? (t.shape.name ?? "") : (t.shape.k as string);
 }
 
-describe("摘下方法引用后调用不得假抛（FALSE-THROW）", () => {
-  it("实例方法摘下后调用 → 正常返回（原生 this=undefined，方法体不碰 this）；静态方法摘下后调用 → 正常返回；从原型对象上摘下后调用 → 正常返回；摘下后仍是函数值（typeof → function）；摘下后调用不记 may-throw（throws 域干净——L2 门禁不再假报）；方法体真读 this 时仍定抛 TypeError（原生 this=undefined ⇒ this.x 抛）；负控制：直接调用（a.m()）不受影响", () => {
-(() => {
 
+  it("实例方法摘下后调用 → 正常返回（原生 this=undefined，方法体不碰 this）；静态方法摘下后调用 → 正常返回；从原型对象上摘下后调用 → 正常返回；摘下后仍是函数值（typeof → function）；摘下后调用不记 may-throw（throws 域干净——L2 门禁不再假报）；方法体真读 this 时仍定抛 TypeError（原生 this=undefined ⇒ this.x 抛）；负控制：直接调用（a.m()）不受影响", () => {
+  {
     expect(
       v(wrap(`class A { m(){ return 1; } } const m = new A().m; return m();`)),
     ).toEqual({ ok: true, value: 1 });
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(wrap(`class A { static sm(){ return 1; } } const { sm } = A; return sm();`)),
     ).toEqual({ ok: true, value: 1 });
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(wrap(`class A { m(){ return 1; } } const { m } = A.prototype; return m();`)),
     ).toEqual({ ok: true, value: 1 });
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(wrap(`class A { m(){ return 1; } } const m = new A().m; return typeof m;`)),
     ).toEqual({ ok: true, value: "function" });
-  })();
-(() => {
-
+  }
+  {
     const rec = call(
       wrap(`class A { m(){ return 1; } } const m = new A().m; return m();`),
       "f",
     );
     expect(throwsError(rec.throws, "TypeError")).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     expect(
       throwName(wrap(`class A { m(){ return this.x; } } const m = new A().m; return m();`)),
     ).toBe("TypeError");
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(wrap(`class A { m(){ return 1; } } return new A().m();`)),
     ).toEqual({ ok: true, value: 1 });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -3028,48 +2689,41 @@ const IT = `const log = [];
     [Symbol.iterator]() { return this; },
   };`;
 
-describe("非正常出口触发 IteratorClose", () => {
-  it("for-of 里 break ⇒ 调 return()；for-of 里条件 break ⇒ 调 return()；for-of 循环体抛错 ⇒ 调 return()（抛错被捕获后副作用可见）；label break ⇒ 调 return()；循环体里 return ⇒ 调 return()（函数返回值先算，close 副作用后置可见）；解构模式填满而迭代器未耗尽 ⇒ 调 return()；return() 的返回值不是对象 ⇒ 原生定抛 TypeError；return 槽", () => {
-(() => {
 
+  it("for-of 里 break ⇒ 调 return()；for-of 里条件 break ⇒ 调 return()；for-of 循环体抛错 ⇒ 调 return()（抛错被捕获后副作用可见）；label break ⇒ 调 return()；循环体里 return ⇒ 调 return()（函数返回值先算，close 副作用后置可见）；解构模式填满而迭代器未耗尽 ⇒ 调 return()；return() 的返回值不是对象 ⇒ 原生定抛 TypeError；return 槽", () => {
+  {
     expect(val(`export function f() { ${IT} for (const v of it) { break; } return log.join(","); }`)).toEqual({
       ok: true,
       value: "ret",
     });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(`export function f() { ${IT} for (const v of it) { if (v === 2) break; } return log.join(","); }`),
     ).toEqual({ ok: true, value: "ret" });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(`export function f() { ${IT} try { for (const v of it) { throw new Error("x"); } } catch (e) { log.push("caught"); } return log.join(","); }`),
     ).toEqual({ ok: true, value: "ret,caught" });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(`export function f() { ${IT} outer: for (const v of it) { for (let j = 0; j < 2; j++) { break outer; } } return log.join(","); }`),
     ).toEqual({ ok: true, value: "ret" });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(`export function f() { ${IT} function g() { for (const v of it) { return "r" + v; } } const r = g(); return r + "|" + log.join(","); }`),
     ).toEqual({ ok: true, value: "r1|ret" });
-  })();
-(() => {
-
+  }
+  {
     expect(val(`export function f() { ${IT} const [a, b] = it; return a + "," + b + "|" + log.join(","); }`)).toEqual({
       ok: true,
       value: "1,2|ret",
     });
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f() {
       const log = [];
       const it = { i: 0, next() { return { value: ++this.i, done: this.i > 3 }; }, return() { log.push("ret"); }, [Symbol.iterator]() { return this; } };
@@ -3078,9 +2732,8 @@ describe("非正常出口触发 IteratorClose", () => {
     }`;
     const rec = call(src, "f");
     expect(throwsError(rec.throws, "TypeError")).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f() {
       const log = [];
       const it = { i: 0, next() { return { value: ++this.i, done: this.i > 3 }; }, return: 5, [Symbol.iterator]() { return this; } };
@@ -3089,9 +2742,8 @@ describe("非正常出口触发 IteratorClose", () => {
     }`;
     const rec = call(src, "f");
     expect(throwsError(rec.throws, "TypeError")).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(`export function f() {
         const log = [];
@@ -3100,22 +2752,19 @@ describe("非正常出口触发 IteratorClose", () => {
         return log.join(",");
       }`),
     ).toEqual({ ok: true, value: "ret,caught" });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(`export function f() { ${IT} for (const v of it) { if (v === 2) continue; } return log.join(","); }`),
     ).toEqual({ ok: true, value: "" });
-  })();
-(() => {
-
+  }
+  {
     expect(val(`export function f() { ${IT} for (const v of it) { } return log.join(","); }`)).toEqual({
       ok: true,
       value: "",
     });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(`export function f() {
         const log = [];
@@ -3124,40 +2773,27 @@ describe("非正常出口触发 IteratorClose", () => {
         return log.join(",");
       }`),
     ).toEqual({ ok: true, value: "" });
-  })();
-(() => {
-
+  }
+  {
     expect(val(`export function f() { ${IT} const [a, ...rest] = it; return a + "|" + rest.length + "|" + log.join(","); }`)).toEqual({
       ok: true,
       value: "1|2|",
     });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -3197,45 +2833,39 @@ const USER_ITER = `let n = 0;
     },
   };`;
 
-describe("用户自定义 @@iterator 被驱动（回归钉，根因由族 01 关闭）", () => {
-  it("for-of 调用 @@iterator 与 next（原生 1 + 3 = 4 次）；spread 调用 @@iterator 与 next；rest 参数展开调用 @@iterator 与 next；混合 spread（数组 + 用户 iterable）调用 @@iterator 与 next；解构只取第 1 个元素 ⇒ 只驱动到第 1 次 next；for-of 取到的是迭代序的值（不是索引序）；负控制：内建可迭代体的 next 计数不变", () => {
-(() => {
 
+  it("for-of 调用 @@iterator 与 next（原生 1 + 3 = 4 次）；spread 调用 @@iterator 与 next；rest 参数展开调用 @@iterator 与 next；混合 spread（数组 + 用户 iterable）调用 @@iterator 与 next；解构只取第 1 个元素 ⇒ 只驱动到第 1 次 next；for-of 取到的是迭代序的值（不是索引序）；负控制：内建可迭代体的 next 计数不变", () => {
+  {
     expect(val(`export function f() { ${USER_ITER} for (const v of o) {} return n; }`)).toEqual({
       ok: true,
       value: 4,
     });
-  })();
-(() => {
-
+  }
+  {
     expect(val(`export function f() { ${USER_ITER} const a = [...o]; return n; }`)).toEqual({
       ok: true,
       value: 4,
     });
-  })();
-(() => {
-
+  }
+  {
     expect(val(`export function f() { ${USER_ITER} function g(...a) {} g(...o); return n; }`)).toEqual({
       ok: true,
       value: 4,
     });
-  })();
-(() => {
-
+  }
+  {
     expect(val(`export function f() { ${USER_ITER} const a = [0, ...o]; return n; }`)).toEqual({
       ok: true,
       value: 4,
     });
-  })();
-(() => {
-
+  }
+  {
     expect(val(`export function f() { ${USER_ITER} const [x] = o; return n; }`)).toEqual({
       ok: true,
       value: 2,
     });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(`export function f() {
         const o = { [Symbol.iterator]() { return ["x", "y"][Symbol.iterator](); } };
@@ -3244,9 +2874,8 @@ describe("用户自定义 @@iterator 被驱动（回归钉，根因由族 01 关
         return out.join(",");
       }`),
     ).toEqual({ ok: true, value: "x,y" });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(`export function f() {
         const a = [1, 2];
@@ -3256,21 +2885,15 @@ describe("用户自定义 @@iterator 被驱动（回归钉，根因由族 01 关
         return n;
       }`),
     ).toEqual({ ok: true, value: 2 });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
 
 /**
  * `Array.from(userIterable)` **必须驱动用户迭代器**（GetIterator +
@@ -3282,48 +2905,42 @@ describe("用户自定义 @@iterator 被驱动（回归钉，根因由族 01 关
  */
 describe("Array.from 驱动用户 @@iterator", () => {
   it("Array.from(o) 调用 @@iterator 与 next（原生 1 + 3 = 4 次）；Array.from(o) 取到的是迭代序的元素；Array.from(o, mapFn) 逐位应用 mapper（下标自 0 起）；Array.from(o).length = 迭代出的元素数；负控制：array-like 接收者（无 @@iterator）仍走索引读路径；负控制：内建可迭代体不受影响（Array / Set / 字符串路径不驱动用户迭代器）", () => {
-(() => {
-
+  {
     expect(val(`export function f() { ${USER_ITER} const a = Array.from(o); return n; }`)).toEqual({
       ok: true,
       value: 4,
     });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(`export function f() {
         const o = { [Symbol.iterator]() { return ["x", "y"][Symbol.iterator](); } };
         return Array.from(o).join(",");
       }`),
     ).toEqual({ ok: true, value: "x,y" });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(`export function f() {
         const o = { [Symbol.iterator]() { return [7, 8][Symbol.iterator](); } };
         return Array.from(o, (v, i) => v + i).join(",");
       }`),
     ).toEqual({ ok: true, value: "7,9" });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(`export function f() {
         const o = { [Symbol.iterator]() { return [7, 8][Symbol.iterator](); } };
         return Array.from(o).length;
       }`),
     ).toEqual({ ok: true, value: 2 });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(`export function f() { return Array.from({length: 2, 0: "a", 1: "b"}).join(","); }`),
     ).toEqual({ ok: true, value: "a,b" });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(`export function f() { ${USER_ITER} Array.from([1,2]); Array.from("ab"); Array.from(new Set([1,2])); return n; }`),
     ).toEqual({ ok: true, value: 0 });
@@ -3331,18 +2948,13 @@ describe("Array.from 驱动用户 @@iterator", () => {
       ok: true,
       value: true,
     });
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 });
 
@@ -3384,81 +2996,64 @@ function engine(body: string): unknown {
   return lv.ok ? lv.value : `not-lit:${r.result}`;
 }
 
-describe("try 块里的 break / continue 不被 catch 体吞掉", () => {
-  it("try 里的 break：catch 体不跑、循环退出；try 里的 break：循环计数停在 break 点；try 里的 continue：catch 体不跑、迭代继续；嵌套循环：try 里的 break 退出**内层**循环（外层继续）；负控制：真异常仍被 catch 吞掉（catch 体照跑）；负控制：无 try 的 break 仍退出循环；负控制：try/finally 路径不变（finally 照跑、break 生效）；负控制：try 块正常路径不受影响；负控制：", () => {
-(() => {
 
+  it("try 里的 break：catch 体不跑、循环退出；try 里的 break：循环计数停在 break 点；try 里的 continue：catch 体不跑、迭代继续；嵌套循环：try 里的 break 退出**内层**循环（外层继续）；负控制：真异常仍被 catch 吞掉（catch 体照跑）；负控制：无 try 的 break 仍退出循环；负控制：try/finally 路径不变（finally 照跑、break 生效）；负控制：try 块正常路径不受影响；负控制：", () => {
+  {
     const body = `let s=""; for(let i=0;i<4;i++){ try{ if(i===1) break; s+=i; }catch(e){ s+="c"; } } return s;`;
     expect(native(body)).toBe("0");
     expect(engine(body)).toBe("0");
-  })();
-(() => {
-
+  }
+  {
     const body = `let c=0; for(let i=0;i<100;i++){ try{ if(i===3) break; c++; }catch(e){ } } return c;`;
     expect(native(body)).toBe(3);
     expect(engine(body)).toBe(3);
-  })();
-(() => {
-
+  }
+  {
     const body = `let s=""; for(let i=0;i<4;i++){ try{ if(i===1) continue; s+=i; }catch(e){ s+="c"; } } return s;`;
     expect(native(body)).toBe("023");
     expect(engine(body)).toBe("023");
-  })();
-(() => {
-
+  }
+  {
     const body = `let s=""; for(let i=0;i<3;i++){ for(let j=0;j<3;j++){ try{ if(j===1) break; s+="x"; }catch(e){ s+="c"; } } s+="|"; } return s;`;
     expect(native(body)).toBe("x|x|x|");
     expect(engine(body)).toBe("x|x|x|");
-  })();
-(() => {
-
+  }
+  {
     const body = `let s=""; for(let i=0;i<4;i++){ try{ throw 1; }catch(e){ s+="c"; } } return s;`;
     expect(native(body)).toBe("cccc");
     expect(engine(body)).toBe("cccc");
-  })();
-(() => {
-
+  }
+  {
     const body = `let s=""; for(let i=0;i<4;i++){ if(i===1) break; s+=i; } return s;`;
     expect(native(body)).toBe("0");
     expect(engine(body)).toBe("0");
-  })();
-(() => {
-
+  }
+  {
     const body = `let s=""; for(let i=0;i<4;i++){ try{ if(i===1) break; s+=i; }finally{ s+="f"; } } return s;`;
     expect(native(body)).toBe("0ff");
     expect(engine(body)).toBe("0ff");
-  })();
-(() => {
-
+  }
+  {
     const body = `let s=""; for(let i=0;i<4;i++){ try{ s+=i; }catch(e){ s+="c"; } } return s;`;
     expect(native(body)).toBe("0123");
     expect(engine(body)).toBe("0123");
-  })();
-(() => {
-
+  }
+  {
     const body = `let s=""; for(let i=0;i<4;i++){ try{ throw 1; }catch(e){ if(i===1) break; s+=i; } } return s;`;
     expect(native(body)).toBe("0");
     expect(engine(body)).toBe("0");
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
   // --- 负控制 ---------------------------------------------------------
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -3544,7 +3139,7 @@ ${directive ? `/**\n * ${directive}\n */` : ""}
 export function f(n) {${body}}
 `;
 
-describe("@nudo:invariant 在四种循环形态同口径生效", () => {
+{
   it.each(FORMS.map((f) => [f.id, f.body] as const))(
     "%s：公理 last >= 0 → 返回契约 ge(0) 证得（无 error）+ invariant-relied 审计",
     (_id, body) => {
@@ -3580,8 +3175,7 @@ describe("@nudo:invariant 在四种循环形态同口径生效", () => {
   );
 
   it("弱公理不得证明强契约（方向性诚实）：@nudo:invariant last >= 0 vs 契约 ge(1)；抽象预算耗尽路径（不可判定条件）不受影响：公理照常实施", () => {
-(() => {
-
+  {
     const r = checkOf(
       srcOf(FORMS[1]!.body, "@nudo:invariant last >= 0"),
       sidecarOpts(`export const f = fn({ n: number() }, number().ge(1));`),
@@ -3589,9 +3183,8 @@ describe("@nudo:invariant 在四种循环形态同口径生效", () => {
     // 公理被实施（n ≥ 0）但不足以蕴含 ge(1) → 仍报违约（不得假绿）
     expect(r.issues.some((i) => i.code === "nudo:constraint-violated")).toBe(true);
     expect(r.issues.some((i) => i.code === "nudo:invariant-relied")).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const body = `
   let last = 0;
   let j = 0;
@@ -3600,11 +3193,10 @@ describe("@nudo:invariant 在四种循环形态同口径生效", () => {
     const r = checkOf(srcOf(body, "@nudo:invariant last >= 0"), sidecarOpts(SIDECAR));
     expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
     expect(r.issues.some((i) => i.code === "nudo:invariant-relied")).toBe(true);
-  })();
-});;
-
-  ;
+  }
 });
+
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -3662,59 +3254,51 @@ export function f(n) {${BODY}}
 
 const SIDECAR_CONFLICT = `export const f = fn({ n: number().le(-5) }, number().ge(0).le(1));`;
 
-describe("矛盾公理不得烘进 Abs（ex falso 假绿）", () => {
-  it("矛盾公理（last >= 0 vs 参数契约 n ≤ -5）：门禁红（constraint-violated），不得判绿；签名面：矛盾合取不得出现在返回值的 pred 上（n ≤ -5 ∧ n ≥ 0 是 ex falso 指纹）；对照（无公理）：同样的红（公理被拒后行为与「没写公理」同口径）；非矛盾公理照常实施（负控制：不得把公理一律丢掉）", () => {
-(() => {
 
+  it("矛盾公理（last >= 0 vs 参数契约 n ≤ -5）：门禁红（constraint-violated），不得判绿；签名面：矛盾合取不得出现在返回值的 pred 上（n ≤ -5 ∧ n ≥ 0 是 ex falso 指纹）；对照（无公理）：同样的红（公理被拒后行为与「没写公理」同口径）；非矛盾公理照常实施（负控制：不得把公理一律丢掉）", () => {
+  {
     const r = checkOf(srcOf("@nudo:invariant last >= 0"), sidecarOpts(SIDECAR_CONFLICT));
     // 假绿回归钉：改前此处只有 nudo:invariant-relied info、门禁 exit=0
     expect(r.issues.some((i) => i.code === "nudo:invariant-relied")).toBe(false);
     expect(r.issues.filter((i) => i.severity === "error")).toHaveLength(1);
     const err = r.issues.find((i) => i.severity === "error");
     expect(err!.code).toBe("nudo:constraint-violated");
-  })();
-(() => {
-
+  }
+  {
     const r = checkOf(srcOf("@nudo:invariant last >= 0"), sidecarOpts(SIDECAR_CONFLICT));
     const sig = r.signatures.find((s) => s.name === "f");
     expect(sig).toBeDefined();
     expect(sig!.detail).toContain("n ≤ -5");
     expect(sig!.detail).not.toContain("n ≥ 0");
-  })();
-(() => {
-
+  }
+  {
     const r = checkOf(srcOf(null), sidecarOpts(SIDECAR_CONFLICT));
     expect(r.issues.filter((i) => i.severity === "error")).toHaveLength(1);
     expect(r.issues.find((i) => i.severity === "error")!.code).toBe(
       "nudo:constraint-violated",
     );
     expect(r.issues.some((i) => i.code.startsWith("nudo:invariant"))).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const r = checkOf(
       srcOf("@nudo:invariant last >= 0"),
       sidecarOpts(`export const f = fn({ n: number() }, number().ge(0));`),
     );
     expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
     expect(r.issues.some((i) => i.code === "nudo:invariant-relied")).toBe(true);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 
 describe("单元：strengthenLeaf 的相容性检查", () => {
   const packOf = (leaf: Abs_____abs_ts): Abs_____abs_ts =>
     abs({ k: "obj", slots: { last: { value: leaf } } }, undefined, undefined, "path");
 
   it("矛盾叶子（le(n,-5) + 公理 ge 0）：pred 保持原样，不得并入 ≥ 0；相容叶子（ge(n,1) + 公理 le 10）：两个界都在（不得误拒）；反向矛盾（ge(n,0) + 公理 le -5）：同样被拒；字面量叶子不改写（既有守卫仍在）：具体值自带真值", () => {
-(() => {
-
+  {
     const leaf = abs(num().shape, v("n"), le(v("n"), lit(-5)), "path");
     const r = withInvariantSpecs(
       [{ name: "last", path: [], rel: "ge", value: 0 }],
@@ -3723,9 +3307,8 @@ describe("单元：strengthenLeaf 的相容性检查", () => {
     const out = (r.shape as { slots: Record<string, { value: Abs_____abs_ts }> }).slots.last!.value;
     expect(out.pred).toBe(leaf.pred);
     expect(predToString(out.pred!)).not.toContain("≥ 0");
-  })();
-(() => {
-
+  }
+  {
     const leaf = abs(num().shape, v("n"), ge(v("n"), lit(1)), "path");
     const r = withInvariantSpecs(
       [{ name: "last", path: [], rel: "le", value: 10 }],
@@ -3735,9 +3318,8 @@ describe("单元：strengthenLeaf 的相容性检查", () => {
     const s = predToString(out.pred!);
     expect(s).toContain("≥ 1");
     expect(s).toContain("≤ 10");
-  })();
-(() => {
-
+  }
+  {
     const leaf = abs(num().shape, v("n"), ge(v("n"), lit(0)), "path");
     const r = withInvariantSpecs(
       [{ name: "last", path: [], rel: "le", value: -5 }],
@@ -3746,9 +3328,8 @@ describe("单元：strengthenLeaf 的相容性检查", () => {
     const out = (r.shape as { slots: Record<string, { value: Abs_____abs_ts }> }).slots.last!.value;
     expect(out.pred).toBe(leaf.pred);
     expect(predToString(out.pred!)).not.toContain("≤ -5");
-  })();
-(() => {
-
+  }
+  {
     const leaf = abs(num().shape, lit(-1), undefined, "exact");
     const r = withInvariantSpecs(
       [{ name: "last", path: [], rel: "ge", value: 0 }],
@@ -3757,14 +3338,11 @@ describe("单元：strengthenLeaf 的相容性检查", () => {
     const out = (r.shape as { slots: Record<string, { value: Abs_____abs_ts }> }).slots.last!.value;
     expect(out).toBe(leaf);
     expect(out.pred).toBeUndefined();
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 });
 });
 
@@ -3784,7 +3362,7 @@ describe("switch-literal-disc-abs-test", () => {
 
 
 
-describe("switch-literal-disc-abs-test", () => {
+{
 /**
  * 回归（core 运行时）：`$switch` 在「**字面量判别式 + 非字面量 case
  * 测试**」下不得把该臂整条丢弃。
@@ -3841,29 +3419,25 @@ function checkSwitch(src: string, file: string) {
 
 describe("字面量判别式 + 非字面量 case 测试 ⇒ 该臂不得被丢弃", () => {
   it("返回域含被丢掉的分支（0 | 1）；返回域含被丢掉的分支（无 default ⇒ 隐式 no-match 臂）；返回域含多个非字面量 case 臂；L1 门禁：契约真实违约被报出（不再假绿）；负控制：全字面量 case 的 switch 仍精确匹配（返回域不含未命中臂）；负控制：同语义的 if 写法结论不变（同样报违约）；负控制：字面量判别式 + 字面量 case ⇒ 仍是精确命中（单一分支）；负控制：非字面量 case 测试仍按序惰性求值（命中即停，Bug 168 口径）", () => {
-(() => {
-
+  {
     const src = `export function f(x) { switch (true) { case x > 0: return 0; default: return 1; } }`;
     const d = domain(src, NUMBER_ABS);
     expect(d).toContain("0");
     expect(d).toContain("1");
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f(x) { switch (true) { case x > 0: return 0; } }`;
     const d = domain(src, NUMBER_ABS);
     expect(d).toContain("0");
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f(x) { switch (true) { case x > 0: return 0; case x < 0: return 2; default: return 1; } }`;
     const d = domain(src, NUMBER_ABS);
     expect(d).toContain("0");
     expect(d).toContain("1");
     expect(d).toContain("2");
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f(x) {
   switch (true) {
     case x > 0:
@@ -3875,17 +3449,15 @@ describe("字面量判别式 + 非字面量 case 测试 ⇒ 该臂不得被丢�
     const r = checkSwitch(src, "/t/s241-switch.js");
     const violated = r.issues.filter((i) => i.code === "nudo:constraint-violated");
     expect(violated.length).toBeGreaterThan(0);
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f(x) { switch (x) { case 1: return "one"; case 2: return "two"; default: return "other"; } }`;
     const r = call(src, "f", [NUMBER_ABS]);
     const lv = litValue(r.result);
     // 抽象判别式 ⇒ 抽象路径（全部臂参与）——行为与修复前一致
     expect(lv.ok).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f(x) {
   if (x > 0) {
     return 0;
@@ -3895,41 +3467,32 @@ describe("字面量判别式 + 非字面量 case 测试 ⇒ 该臂不得被丢�
     const r = checkSwitch(src, "/t/s241-if.js");
     const violated = r.issues.filter((i) => i.code === "nudo:constraint-violated");
     expect(violated.length).toBeGreaterThan(0);
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f(x) { switch (true) { case true: return "t"; default: return "f"; } }`;
     const r = call(src, "f", [NUMBER_ABS]);
     const lv = litValue(r.result);
     expect(lv.ok).toBe(true);
     expect(lv.ok ? lv.value : undefined).toBe("t");
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f(x) { let n = 0; switch (true) { case (n++, true): return n; default: return 0; } }`;
     const r = call(src, "f", [NUMBER_ABS]);
     const lv = litValue(r.result);
     expect(lv.ok).toBe(true);
     expect(lv.ok ? lv.value : undefined).toBe(1);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
   // --- 负控制 ---------------------------------------------------------
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
-});
+}
 
 describe("switch-miss-path-narrowing", () => {
 /**
@@ -3967,8 +3530,7 @@ function mayThrow(src: string, args: Abs_____abs_ts_1[]): boolean {
 
 describe("$switch 的 miss 路径按 case 测试收窄（非字面量 case 测试）", () => {
   it("`case v === null:` 的 miss 路径 → default 臂的 v.length 不报 may-throw；`case v == null:`（松散）的 miss 路径 → 收窄到非 nullish；两个 nullish 比较臂：default 路径排除 null 与 undefined；`case v === undefined:` 的 miss 路径只排除 undefined（null 仍在 ⇒ 仍可抛）；负向比较 `case v !== null:`", () => {
-(() => {
-
+  {
     const src = `export function f(v) {
       switch (true) {
         case v === null:
@@ -3978,9 +3540,8 @@ describe("$switch 的 miss 路径按 case 测试收窄（非字面量 case 测�
       }
     }`;
     expect(mayThrow(src, [strOrNull])).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f(v) {
       switch (true) {
         case v == null:
@@ -3990,9 +3551,8 @@ describe("$switch 的 miss 路径按 case 测试收窄（非字面量 case 测�
       }
     }`;
     expect(mayThrow(src, [strOrNull])).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f(v) {
       switch (true) {
         case v === null:
@@ -4004,9 +3564,8 @@ describe("$switch 的 miss 路径按 case 测试收窄（非字面量 case 测�
       }
     }`;
     expect(mayThrow(src, [strOrNull])).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f(v) {
       switch (true) {
         case v === undefined:
@@ -4017,9 +3576,8 @@ describe("$switch 的 miss 路径按 case 测试收窄（非字面量 case 测�
     }`;
     // v 可能是 null ⇒ 原生该路径会抛 ⇒ may-throw 是**正确**的（不得过度收窄）
     expect(mayThrow(src, [strOrNull])).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f(v) {
       switch (true) {
         case v !== null:
@@ -4029,9 +3587,8 @@ describe("$switch 的 miss 路径按 case 测试收窄（非字面量 case 测�
       }
     }`;
     expect(mayThrow(src, [strOrNull])).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f(v) {
       switch (v) {
         case v === null:
@@ -4042,9 +3599,8 @@ describe("$switch 的 miss 路径按 case 测试收窄（非字面量 case 测�
     }`;
     // 原生：v === null 时判别值 null ≠ true ⇒ 走 default ⇒ v.length 抛
     expect(mayThrow(src, [strOrNull])).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f(v) {
       switch (true) {
         case v === null:
@@ -4054,20 +3610,14 @@ describe("$switch 的 miss 路径按 case 测试收窄（非字面量 case 测�
       }
     }`;
     expect(mayThrow(src, [strOrNull])).toBe(false);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 });
 });
@@ -4100,67 +3650,58 @@ function v(src: string) {
   return litValue___nudojs_core_7(call(src, "f").result);
 }
 
-describe("match/exec 结果的可迭代面（原生数组 exotic）", () => {
-  it("spread 展开下标序列（node: \"abc,b\"）；for-of 逐元素累加（node: \"abcb\"）；数组解构取捕获组（node: \"123123\"）；spread 保持未参与捕获组的 undefined 槽（node: [\"az\",null] 的展开面）；非全局 match 的结果同样可迭代（node: \"a\"）；matchAll 的每个匹配项可迭代（node: \"ab\"）；indices 镜像（/d 标志）原生同为 Array ⇒ 同样可迭代（node: 2）；", () => {
-(() => {
 
+  it("spread 展开下标序列（node: \"abc,b\"）；for-of 逐元素累加（node: \"abcb\"）；数组解构取捕获组（node: \"123123\"）；spread 保持未参与捕获组的 undefined 槽（node: [\"az\",null] 的展开面）；非全局 match 的结果同样可迭代（node: \"a\"）；matchAll 的每个匹配项可迭代（node: \"ab\"）；indices 镜像（/d 标志）原生同为 Array ⇒ 同样可迭代（node: 2）", () => {
+  {
     expect(v(`export function f() { const m = /a(b)c/.exec("abc"); return [...m].join(","); }`)).toEqual({
       ok: true,
       value: "abc,b",
     });
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(`export function f() { const m = /a(b)c/.exec("abc"); let s = ""; for (const x of m) s += x; return s; }`),
     ).toEqual({ ok: true, value: "abcb" });
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(
         `export function f() { const m = /(\\d+)/.exec("abc123"); if (!m) return "no"; const [whole, g1] = m; return whole + g1; }`,
       ),
     ).toEqual({ ok: true, value: "123123" });
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(`export function f() { const m = /a(x)?z/.exec("az"); return [...m].length; }`),
     ).toEqual({ ok: true, value: 2 });
-  })();
-(() => {
-
+  }
+  {
     expect(v(`export function f() { return [...("a b".match(/\\w+/))].join(","); }`)).toEqual({
       ok: true,
       value: "a",
     });
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(
         `export function f() { const it = "a b".matchAll(/\\w+/g); let s = ""; for (const m of it) s += [...m][0]; return s; }`,
       ),
     ).toEqual({ ok: true, value: "ab" });
-  })();
-(() => {
-
+  }
+  {
     expect(
       v(`export function f() { const m = /(?<y>\\d{4})/d.exec("2024"); return [...m.indices].length; }`),
     ).toEqual({ ok: true, value: 2 });
     expect(
       v(`export function f() { const m = /(?<y>\\d{4})/d.exec("2024"); return JSON.stringify(m.indices); }`),
     ).toEqual({ ok: true, value: "[[0,4],[0,4]]" });
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() { const o = { a: 1 }; return [...o]; }`, "f");
     expect(isNever(r.result)).toBe(true);
     expect(throwsError(r.throws, "TypeError")).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     expect(v(`export function f() { const m = /a(b)c/.exec("abc"); return m[0]; }`)).toEqual({
       ok: true,
       value: "abc",
@@ -4177,16 +3718,14 @@ describe("match/exec 结果的可迭代面（原生数组 exotic）", () => {
       ok: true,
       value: "abc",
     });
-  })();
-(() => {
-
+  }
+  {
     expect(v(`export function f() { const m = /a(b)c/.exec("abc"); return JSON.stringify(m); }`)).toEqual({
       ok: true,
       value: '["abc","b"]',
     });
-  })();
-(() => {
-
+  }
+  {
     const r = call(
       `export function f() { const m = /a(b)c/.exec("abc"); return Object.keys(m).join(","); }`,
       "f",
@@ -4194,9 +3733,8 @@ describe("match/exec 结果的可迭代面（原生数组 exotic）", () => {
     const lv = litValue___nudojs_core_7(r.result);
     expect(lv.ok).toBe(true);
     expect(String(lv.ok ? lv.value : undefined)).toBe("0,1,index,input,groups");
-  })();
-(() => {
-
+  }
+  {
     expect(v(`export function f() { return "a b".match(/\\w+/g).join("-"); }`)).toEqual({
       ok: true,
       value: "a-b",
@@ -4205,9 +3743,8 @@ describe("match/exec 结果的可迭代面（原生数组 exotic）", () => {
       ok: true,
       value: true,
     });
-  })();
-(() => {
-
+  }
+  {
     expect(v(`export function f() { const m = /a(b)c/.exec("abc"); return m.join(","); }`)).toEqual({
       ok: true,
       value: "abc,b",
@@ -4224,31 +3761,19 @@ describe("match/exec 结果的可迭代面（原生数组 exotic）", () => {
       ok: true,
       value: true,
     });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
+
+
+
+
+
+
 });

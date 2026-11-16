@@ -176,10 +176,9 @@ async function renameEdits(
   }
 }
 
-describe("方法改名以「归属」为界", () => {
-  it("纯函数面：无关对象的同名成员访问不进改名集合；纯函数面：对象字面量的方法键是定义位，且同源成员访问进集合；纯函数面：同名但不同类不合并（显式归属时）；协议面（真 server）：归属歧义 ⇒ **拒绝改名**（不产出任何编辑，代码不被改坏）；纯函数面：归属歧义可被检出（歧义 ⇒ 拒绝；无歧义 ⇒ 可改）；协议面（真 server）：改对象字面量的方法 ⇒ key 与同源成员访问一起改；协议面（真 server）：对象字面量的函数值属性 `{ m: fn }` 的 key 也是", async () => {
-await (async () => {
 
+  it("纯函数面：无关对象的同名成员访问不进改名集合；纯函数面：对象字面量的方法键是定义位，且同源成员访问进集合；纯函数面：同名但不同类不合并（显式归属时）；协议面（真 server）：归属歧义 ⇒ **拒绝改名**（不产出任何编辑，代码不被改坏）；纯函数面：归属歧义可被检出（歧义 ⇒ 拒绝；无歧义 ⇒ 可改）；协议面（真 server）：改对象字面量的方法 ⇒ key 与同源成员访问一起改；协议面（真 server）：对象字面量的函数值属性 `{ m: fn }` 的 key 也是", async () => {
+  {
     const ast = parse(R21);
     const hits = collectMethodReferences(ast, "m", { owner: { kind: "class", name: "K" } });
     const at = (h: (typeof hits)[number]): string =>
@@ -190,27 +189,24 @@ await (async () => {
     // 无关对象 other 的数据属性 m 与 o.m(2) 同样不进集合
     expect(hits.some((h) => at(h) === "8:2")).toBe(false); // other 的 key
     expect(hits.some((h) => at(h) === "13:4")).toBe(false); // o.m(2)
-  })();
-await (async () => {
-
+  }
+  {
     const hits = collectMethodReferences(parse(OBJ_METHOD), "m", {
       owner: { kind: "object", name: "helper" },
     });
     const at = (h: (typeof hits)[number]): string => `${h.loc.start.line}:${h.loc.start.column}`;
     expect(hits.some((h) => h.kind === "key" && at(h) === "2:2")).toBe(true);
     expect(hits.some((h) => h.kind === "member")).toBe(true);
-  })();
-await (async () => {
-
+  }
+  {
     const hits = collectMethodReferences(parse(TWO_CLASSES), "run", {
       owner: { kind: "class", name: "Alpha" },
     });
     const at = (h: (typeof hits)[number]): string => `${h.loc.start.line}:${h.loc.start.column}`;
     expect(hits.some((h) => at(h) === "2:2")).toBe(true); // Alpha.run 键
     expect(hits.some((h) => at(h) === "6:2")).toBe(false); // Beta.run 键
-  })();
-await (async () => {
-
+  }
+  {
     const edits = await renameEdits(
       { "ren-meth.js": R21 },
       { file: "ren-meth.js", position: posOf(R21, "m(p)") },
@@ -224,18 +220,16 @@ await (async () => {
     // 歧义下只有两种自洽结果：全改（改到无关对象）或全不改（定义改了、
     // 调用点没改 ⇒ 同样坏）——两者都坏 ⇒ 拒绝改名，**一条编辑都不产出**。
     expect(list).toEqual([]);
-  })();
-await (async () => {
-
+  }
+  {
     // R21：形参接收者 + 同名不同归属成员 ⇒ 歧义
     expect(hasAmbiguousMethodReceiver(parse(R21), "m", { owner: { kind: "class", name: "K" } })).toBe(true);
     // OBJ_METHOD：接收者归属可解析（helper ⇒ 对象字面量）⇒ 无歧义
     expect(hasAmbiguousMethodReceiver(parse(OBJ_METHOD), "m", { owner: { kind: "object", name: "helper" } })).toBe(false);
     // TWO_CLASSES：a / b 都能解析出归属 ⇒ 无歧义
     expect(hasAmbiguousMethodReceiver(parse(TWO_CLASSES), "run", { owner: { kind: "class", name: "Alpha" } })).toBe(false);
-  })();
-await (async () => {
-
+  }
+  {
     const edits = await renameEdits(
       { "obj-meth.js": OBJ_METHOD },
       { file: "obj-meth.js", position: posOf(OBJ_METHOD, "m()") },
@@ -250,9 +244,8 @@ await (async () => {
     const useCol = use.character + "helper.".length;
     expect(list.some((e) => e.at === `${use.line}:${useCol}-${use.line}:${useCol + 1}`)).toBe(true);
     expect(list.every((e) => e.newText === "renamed")).toBe(true);
-  })();
-await (async () => {
-
+  }
+  {
     const edits = await renameEdits(
       { "obj-prop.js": OBJ_PROPERTY },
       { file: "obj-prop.js", position: posOf(OBJ_PROPERTY, "m: impl") },
@@ -265,9 +258,8 @@ await (async () => {
     const use = posOf(OBJ_PROPERTY, "helper.m");
     const useCol = use.character + "helper.".length;
     expect(list.some((e) => e.at === `${use.line}:${useCol}-${use.line}:${useCol + 1}`)).toBe(true);
-  })();
-await (async () => {
-
+  }
+  {
     const edits = await renameEdits(
       { "two.js": TWO_CLASSES },
       { file: "two.js", position: posOf(TWO_CLASSES, "run()") },
@@ -282,9 +274,8 @@ await (async () => {
     expect(list.some((e) => e.at.startsWith(`${betaKey.line}:`))).toBe(false); // Beta.run 键
     expect(list.some((e) => e.at.startsWith(`${bUse.line}:`))).toBe(false); // b.run()
     expect(list.some((e) => e.at.startsWith(`${aUse.line}:`))).toBe(true); // a.run()
-  })();
-await (async () => {
-
+  }
+  {
     const a = `export class Alpha {
   run() {
     return 1;
@@ -305,33 +296,23 @@ await (async () => {
     // 改前：b.js 的 Beta.run 也被改（跨文件 name-based 扫描）
     expect(edits["b.js"] ?? []).toEqual([]);
     expect((edits["a.js"] ?? []).some((e) => e.at === "1:2-1:5")).toBe(true);
-  })();
-await (async () => {
-
+  }
+  {
     expect(renameTargetAt(R21, 2, 2)).toMatchObject({ kind: "method", name: "m" });
     // other 的数据属性 m：不可改名
     expect(renameTargetAt(R21, 8, 2)).toMatchObject({ error: expect.any(String) });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -468,10 +449,9 @@ async function importOk(dir: string, file: string, tag: string): Promise<number>
   return typeof mod.use === "function" ? (mod.use() as number) : (mod.use2() as number);
 }
 
-describe("别名导出 export { a as b } 的 rename 改导出名（不改本地名）", () => {
-  it("rename @ importer 用点位 ⇒ 改导出名 + importer 的 imported 侧，**不动** hidden 的声明；rename @ 导出名位 ⇒ 同样改导出名 + importer 的 imported 侧（改前是 null）；rename @ 本地名位 ⇒ 改本地名（声明 + 导出说明符本地侧），**不连坐** importer；导出名位不再死位：definition / references / prepareRename 都有身份", async () => {
-await (async () => {
 
+  it("rename @ importer 用点位 ⇒ 改导出名 + importer 的 imported 侧，**不动** hidden 的声明；rename @ 导出名位 ⇒ 同样改导出名 + importer 的 imported 侧（改前是 null）；rename @ 本地名位 ⇒ 改本地名（声明 + 导出说明符本地侧），**不连坐** importer；导出名位不再死位：definition / references / prepareRename 都有身份", async () => {
+  {
     const where: string[] = [];
     let filesAfter: Record<string, string> = {};
     await withLspServer(FILES, async (ctx) => {
@@ -516,9 +496,8 @@ await (async () => {
     expect(filesAfter.def).toContain("export { hidden as visible2 };");
     expect(filesAfter.def).toContain("const hidden = 1;");
     expect(filesAfter.use).toContain('import { visible2 } from "./aexp-def.js";');
-  })();
-await (async () => {
-
+  }
+  {
     const where: string[] = [];
     await withLspServer(FILES, async (ctx) => {
       makeEsm(ctx.dir);
@@ -539,9 +518,8 @@ await (async () => {
     expect(where.some((w) => w.startsWith("aexp-use.js:0:"))).toBe(true);
     expect(where.some((w) => w.startsWith("aexp-use2.js:0:"))).toBe(true);
     expect(where).not.toContain(`aexp-def.js:${LOCAL_POS.line}:${LOCAL_POS.character}`);
-  })();
-await (async () => {
-
+  }
+  {
     const where: string[] = [];
     await withLspServer(FILES, async (ctx) => {
       makeEsm(ctx.dir);
@@ -565,9 +543,8 @@ await (async () => {
     // ⚠ importer 的 imported 侧是**导出名**的身份 ⇒ 不得连坐
     expect(where.some((w) => w.startsWith("aexp-use.js:"))).toBe(false);
     expect(where.some((w) => w.startsWith("aexp-use2.js:"))).toBe(false);
-  })();
-await (async () => {
-
+  }
+  {
     let defs: Loc[] = [];
     let refs: Loc[] = [];
     let prep: { range: Loc["range"]; placeholder: string } | null = null;
@@ -599,15 +576,12 @@ await (async () => {
     // prepareRename ⇒ 非 null，placeholder = 导出名
     expect(prep).toBeTruthy();
     expect(prep!.placeholder).toBe("visible");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -689,10 +663,9 @@ function editsOf(result: unknown): Edit[] {
   );
 }
 
-describe("改本地别名不得连坐导出符号与其它 importer", () => {
-  it("在别名用法处改名：只改 importer 的本地侧 + 用法处；在 import 说明符的 local 侧改名：同样零连坐（导出方与其它 importer 不动）；反向：从导出方改导出名 ⇒ 改导出方 + 各 importer 的 imported 侧，别名不动", async () => {
-await (async () => {
 
+  it("在别名用法处改名：只改 importer 的本地侧 + 用法处；在 import 说明符的 local 侧改名：同样零连坐（导出方与其它 importer 不动）；反向：从导出方改导出名 ⇒ 改导出方 + 各 importer 的 imported 侧，别名不动", async () => {
+  {
     await withLspServer(
       { "xf-def.js": DEF, "xf-use.js": USE, "xf-use2.js": USE2 },
       async ({ req, uri }) => {
@@ -723,9 +696,8 @@ await (async () => {
         ]);
       },
     );
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer(
       { "xf-def.js": DEF, "xf-use.js": USE, "xf-use2.js": USE2 },
       async ({ req, uri }) => {
@@ -761,9 +733,8 @@ await (async () => {
         ]);
       },
     );
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer(
       { "xf-def.js": DEF, "xf-use.js": USE, "xf-use2.js": USE2 },
       async ({ req, uri }) => {
@@ -815,13 +786,11 @@ await (async () => {
         ).toEqual([]);
       },
     );
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -931,10 +900,9 @@ const TOP_LEVEL: Loc = {
   endCharacter: 7,
 };
 
-describe("形参与同名遮蔽的顶层变量：两个方向都不连坐", () => {
-  it("重命名形参声明位：编辑集只有形参声明 + 形参引用，顶层零编辑；重命名形参体内的引用位：同样不连坐顶层变量；反向：重命名顶层变量：只改顶层那处，形参零编辑（两个方向对称）；definition / references 走作用域：形参只认形参那一处绑定", async () => {
-await (async () => {
 
+  it("重命名形参声明位：编辑集只有形参声明 + 形参引用，顶层零编辑；重命名形参体内的引用位：同样不连坐顶层变量；反向：重命名顶层变量：只改顶层那处，形参零编辑（两个方向对称）；definition / references 走作用域：形参只认形参那一处绑定", async () => {
+  {
     await withLspServer({ "renfx.js": SHADOW }, async ({ req, uri }) => {
       const edits = editsOf(
         await req("textDocument/rename")({
@@ -952,9 +920,8 @@ await (async () => {
         "重命名形参不得连坐顶层同名变量",
       ).toEqual([]);
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "renfx.js": SHADOW }, async ({ req, uri }) => {
       const edits = editsOf(
         await req("textDocument/rename")({
@@ -972,9 +939,8 @@ await (async () => {
         "重命名形参不得连坐顶层同名变量",
       ).toEqual([]);
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "renfx.js": SHADOW }, async ({ req, uri }) => {
       const edits = editsOf(
         await req("textDocument/rename")({
@@ -985,9 +951,8 @@ await (async () => {
       );
       expect(edits).toEqual([{ ...TOP_LEVEL, newText: "y" }]);
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "renfx.js": SHADOW }, async ({ req, uri }) => {
       const defs = locsOf(
         await req("textDocument/definition")({
@@ -1006,15 +971,12 @@ await (async () => {
       );
       expect(refs).toEqual([PARAM_DECL, PARAM_USE]);
     });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1067,10 +1029,9 @@ const fileOf = (uri: string): string => basename(decodeURIComponent(uri));
 const keyOf = (l: Loc): string =>
   `${fileOf(l.uri)}:${l.range.start.line}:${l.range.start.character}`;
 
-describe("侧车契约绑定参与 references / rename", () => {
-  it("definition / references / rename 对同一符号同口径（含侧车契约绑定）；落盘后契约仍在生效（L1 违约诊断不因改名静默消失）；负控制：没有侧车时 references / rename 只碰源码文件", async () => {
-await (async () => {
 
+  it("definition / references / rename 对同一符号同口径（含侧车契约绑定）；落盘后契约仍在生效（L1 违约诊断不因改名静默消失）；负控制：没有侧车时 references / rename 只碰源码文件", async () => {
+  {
     await withLspServer(
       { "lib.js": LIB_JS, "lib.nudo.js": LIB_SC },
       async ({ req, uri }) => {
@@ -1126,9 +1087,8 @@ await (async () => {
       },
       "nudo-lsp-105-",
     );
-  })();
-await (async () => {
-
+  }
+  {
     withTempDir("nudo-lsp-105-recheck-", (dir) => {
       const jsPath = join(dir, "lib.js");
       const scPath = join(dir, "lib.nudo.js");
@@ -1151,9 +1111,8 @@ await (async () => {
       const synced = checkToLspDiagnostics(jsPath, renamedJs, defaultLoadModule);
       expect(synced.some((d) => d.code === "nudo:constraint-violated")).toBe(true);
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer(
       { "lib.js": LIB_JS },
       async ({ req, uri }) => {
@@ -1170,13 +1129,11 @@ await (async () => {
       },
       "nudo-lsp-105-neg-",
     );
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1211,10 +1168,9 @@ export function use() {
 }
 `;
 
-describe("re-export 边的引用面与改名", () => {
-  it("从 re-export 位置发起 references 覆盖目标模块的定义与内部引用；从目标模块的定义处发起 references 覆盖 re-export 位点；从 re-export 位置发起 rename 同步改目标模块", async () => {
-await (async () => {
 
+  it("从 re-export 位置发起 references 覆盖目标模块的定义与内部引用；从目标模块的定义处发起 references 覆盖 re-export 位点；从 re-export 位置发起 rename 同步改目标模块", async () => {
+  {
     h = await startLspWithFiles({ "m.js": M, "main.js": MAIN });
     const refs = locationsOf(
       h.req("textDocument/references", {
@@ -1239,9 +1195,8 @@ await (async () => {
       endLine: 2,
       endCharacter: 10,
     });
-  })();
-await (async () => {
-
+  }
+  {
     h = await startLspWithFiles({ "m.js": M, "main.js": MAIN });
     const refs = locationsOf(
       h.req("textDocument/references", {
@@ -1257,9 +1212,8 @@ await (async () => {
       endLine: 0,
       endCharacter: 10,
     });
-  })();
-await (async () => {
-
+  }
+  {
     h = await startLspWithFiles({ "m.js": M, "main.js": MAIN });
     const edits = editsOf(
       h.req("textDocument/rename", {
@@ -1294,13 +1248,11 @@ await (async () => {
       endCharacter: 10,
       newText: "b",
     });
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1342,10 +1294,9 @@ export function use2() {
 }
 `;
 
-describe("别名 import 的跨文件改名口径", () => {
-  it("改导出名时：imported 侧被改、别名不被改；改本地别名时：只改本地，不得连坐改目标模块的导出", async () => {
-await (async () => {
 
+  it("改导出名时：imported 侧被改、别名不被改；改本地别名时：只改本地，不得连坐改目标模块的导出", async () => {
+  {
     h = await startLspWithFiles({ "xf-def.js": DEF, "xf-use.js": USE, "xf-use2.js": USE2 });
     const edits = editsOf(
       h.req("textDocument/rename", {
@@ -1388,9 +1339,8 @@ await (async () => {
       endCharacter: 16,
       newText: "newName",
     });
-  })();
-await (async () => {
-
+  }
+  {
     h = await startLspWithFiles({ "xf-def.js": DEF, "xf-use.js": USE, "xf-use2.js": USE2 });
     const edits = editsOf(
       h.req("textDocument/rename", {
@@ -1418,11 +1368,10 @@ await (async () => {
       endCharacter: 14,
       newText: "newAlias",
     });
-  })();
-});;
-
-  ;
+  }
 });
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1457,10 +1406,9 @@ const ALPHA_POS = { line: 0, character: 13 };
 
 type RenameResult = { changes: Record<string, Array<{ range: unknown; newText: string }>> } | null;
 
-describe("rename 校验新名字（语法层）", () => {
-  it("非法标识符 ⇒ 不产出任何编辑；空名 ⇒ 不产出任何编辑；保留字 ⇒ 不产出任何编辑；合法新名 ⇒ 仍然正常改名（不得误伤）；合法但非常规的标识符（$ / _ / Unicode）⇒ 仍然放行", async () => {
-await (async () => {
 
+  it("非法标识符 ⇒ 不产出任何编辑；空名 ⇒ 不产出任何编辑；保留字 ⇒ 不产出任何编辑；合法新名 ⇒ 仍然正常改名（不得误伤）；合法但非常规的标识符（$ / _ / Unicode）⇒ 仍然放行", async () => {
+  {
     await withLspServer({ "a.js": SRC }, async ({ req, uri }) => {
       const res = req("textDocument/rename")({
         textDocument: { uri: uri("a.js") },
@@ -1469,9 +1417,8 @@ await (async () => {
       }) as RenameResult;
       expect(res, "非法标识符 '1bad' 仍产出了编辑").toBeNull();
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "a.js": SRC }, async ({ req, uri }) => {
       const res = req("textDocument/rename")({
         textDocument: { uri: uri("a.js") },
@@ -1480,9 +1427,8 @@ await (async () => {
       }) as RenameResult;
       expect(res, "空名仍产出了编辑").toBeNull();
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "a.js": SRC }, async ({ req, uri }) => {
       for (const word of ["class", "const", "function", "return", "await", "yield"]) {
         const res = req("textDocument/rename")({
@@ -1493,9 +1439,8 @@ await (async () => {
         expect(res, `保留字 '${word}' 仍产出了编辑`).toBeNull();
       }
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "a.js": SRC }, async ({ req, uri }) => {
       const res = req("textDocument/rename")({
         textDocument: { uri: uri("a.js") },
@@ -1510,9 +1455,8 @@ await (async () => {
       expect(edits.length, "合法改名没有编辑").toBeGreaterThan(0);
       expect(edits.every((e) => e.includes("alphaRenamed"))).toBe(true);
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "a.js": SRC }, async ({ req, uri }) => {
       for (const name of ["$alpha", "_alpha", "αlpha"]) {
         const res = req("textDocument/rename")({
@@ -1523,17 +1467,13 @@ await (async () => {
         expect(res, `合法标识符 '${name}' 被误拒`).toBeTruthy();
       }
     });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1568,10 +1508,9 @@ describe("rename 导出绑定不得毁掉声明（编辑范围 / 重叠）", () 
 
 const DEF_SRC = `export const total = 42;\n`;
 
-describe("rename 导出绑定不得毁掉声明（编辑范围 / 重叠）", () => {
-  it("collectBindingReferences：导出绑定的 referencePaths 只收标识符（语句节点不进）；buildRenameEdits：宽于单个标识符的编辑被挡掉（语句级目标）；buildRenameEdits：重叠的编辑只留窄的一条（协议合法性兜底）；协议面：rename 导出绑定只产出标识符编辑，且无重叠", async () => {
-await (async () => {
 
+  it("collectBindingReferences：导出绑定的 referencePaths 只收标识符（语句节点不进）；buildRenameEdits：宽于单个标识符的编辑被挡掉（语句级目标）；buildRenameEdits：重叠的编辑只留窄的一条（协议合法性兜底）；协议面：rename 导出绑定只产出标识符编辑，且无重叠", async () => {
+  {
     const ast = parse(DEF_SRC);
     const refs = collectBindingReferences(ast, "total", { line: 1, column: 14 }, "file:///t/d.js");
     // 声明位保留；语句级节点（ExportNamedDeclaration）不得出现
@@ -1579,9 +1518,8 @@ await (async () => {
     expect(refs[0]!.loc.start.line).toBe(1);
     expect(refs[0]!.loc.start.column).toBe(13);
     expect(refs[0]!.loc.end.column).toBe(18);
-  })();
-await (async () => {
-
+  }
+  {
     const edits = buildRenameEdits("renamed", [
       // 标识符（合法）
       { uri: "file:///t/d.js", loc: { start: { line: 1, column: 13 }, end: { line: 1, column: 18 } } },
@@ -1594,18 +1532,16 @@ await (async () => {
       start: { line: 0, character: 13 },
       end: { line: 0, character: 18 },
     });
-  })();
-await (async () => {
-
+  }
+  {
     const edits = buildRenameEdits("renamed", [
       { uri: "file:///t/d.js", loc: { start: { line: 1, column: 0 }, end: { line: 1, column: 24 } } },
       { uri: "file:///t/d.js", loc: { start: { line: 1, column: 13 }, end: { line: 1, column: 18 } } },
     ]);
     expect(edits["file:///t/d.js"]!.length).toBe(1);
     expect(edits["file:///t/d.js"]![0]!.range.start.character).toBe(13);
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer(
       { "def.js": DEF_SRC, "use.js": `import { total } from "./def.js";\n\nexport function read() {\n  return total;\n}\n` },
       async ({ req, uri }) => {
@@ -1634,15 +1570,12 @@ await (async () => {
       },
       "nudo-lsp-699-",
     );
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1678,18 +1611,16 @@ const SHORT_SRC = `export function mk() {
 }
 `;
 
-describe("简写属性改名必须保留 key（`{ x }` → `{ x: y }`）", () => {
-  it("collectBindingReferences：简写属性的引用位带上 key 元数据；buildRenameEdits：简写属性的编辑文本是 `x: <新名>`；解构模式的简写属性同样保留 key（`function f({ x })` → `{ x: y }`）；协议面：rename 简写属性产出 `x: y`，key 不被改掉", async () => {
-await (async () => {
 
+  it("collectBindingReferences：简写属性的引用位带上 key 元数据；buildRenameEdits：简写属性的编辑文本是 `x: <新名>`；解构模式的简写属性同样保留 key（`function f({ x })` → `{ x: y }`）；协议面：rename 简写属性产出 `x: y`，key 不被改掉", async () => {
+  {
     const ast = parse(SHORT_SRC);
     const refs = collectBindingReferences(ast, "x", { line: 2, column: 9 }, "file:///t/s.js");
     const shorthand = refs.find((r) => r.loc.start.line === 3);
     expect(shorthand, "简写属性的引用位必须在").toBeDefined();
     expect((shorthand!.loc as any).shorthandKey).toBe("x");
-  })();
-await (async () => {
-
+  }
+  {
     const ast = parse(SHORT_SRC);
     const refs = collectBindingReferences(ast, "x", { line: 2, column: 9 }, "file:///t/s.js");
     const edits = buildRenameEdits("y", refs.map((r) => ({ uri: "file:///t/s.js", loc: r.loc })));
@@ -1703,9 +1634,8 @@ await (async () => {
       start: { line: 2, character: 11 },
       end: { line: 2, character: 12 },
     });
-  })();
-await (async () => {
-
+  }
+  {
     const ast = parse(`export function f({ x }) {\n  return x;\n}\n`);
     const refs = collectBindingReferences(ast, "x", { line: 1, column: 20 }, "file:///t/p.js");
     const decl = refs.find((r) => r.loc.start.line === 1);
@@ -1713,9 +1643,8 @@ await (async () => {
     expect((decl!.loc as any).shorthandKey).toBe("x");
     const edits = buildRenameEdits("y", refs.map((r) => ({ uri: "file:///t/p.js", loc: r.loc })));
     expect(edits["file:///t/p.js"]![0]!.newText).toBe("x: y");
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "short.js": SHORT_SRC }, async ({ req, uri }) => {
       const res = req("textDocument/rename")({
         textDocument: { uri: uri("short.js") },
@@ -1737,15 +1666,12 @@ await (async () => {
         end: { line: 2, character: 12 },
       });
     });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1782,10 +1708,9 @@ export function go() {
 }
 `;
 
-describe("命名空间 import 的引用面", () => {
-  it("未被命名空间引用的导出，其 references 不含命名空间导入方；命名空间成员访问 `ns.beta` 是 beta 的引用位点", async () => {
-await (async () => {
 
+  it("未被命名空间引用的导出，其 references 不含命名空间导入方；命名空间成员访问 `ns.beta` 是 beta 的引用位点", async () => {
+  {
     h = await startLspWithFiles({ "ns-def.js": DEF, "ns-user.js": USER });
     const refs = locationsOf(
       h.req("textDocument/references", {
@@ -1795,9 +1720,8 @@ await (async () => {
       }),
     );
     expect(refs.filter((r) => r.file === "ns-user.js")).toEqual([]);
-  })();
-await (async () => {
-
+  }
+  {
     h = await startLspWithFiles({ "ns-def.js": DEF, "ns-user.js": USER });
     const refs = locationsOf(
       h.req("textDocument/references", {
@@ -1822,11 +1746,10 @@ await (async () => {
       endLine: 0,
       endCharacter: 14,
     });
-  })();
-});;
-
-  ;
+  }
 });
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1911,18 +1834,16 @@ const KEY_POS = posOf(SRC, "m(p)");
 // `k.m(1)` 里的 `m`（不是 `k`）
 const USE_POS = { line: posOf(SRC, "k.m").line, character: posOf(SRC, "k.m").character + 2 };
 
-describe("类方法的 references / definition 不再返回空", () => {
-  it("纯函数面：方法面能收齐类方法键 + 同源成员访问；协议面（真 server）：references @ 类方法键 ⇒ 至少 1 条引用（k.m(1)）；协议面（真 server）：definition @ k.m(1) ⇒ 跳到类里的方法键；协议面（真 server）：references 的 includeDeclaration=false 只剩使用位；负控制：普通变量的 references 通道不受影响", async () => {
-await (async () => {
 
+  it("纯函数面：方法面能收齐类方法键 + 同源成员访问；协议面（真 server）：references @ 类方法键 ⇒ 至少 1 条引用（k.m(1)）；协议面（真 server）：definition @ k.m(1) ⇒ 跳到类里的方法键；协议面（真 server）：references 的 includeDeclaration=false 只剩使用位；负控制：普通变量的 references 通道不受影响", async () => {
+  {
     const hits = collectMethodReferences(parse(SRC), "m");
     expect(hits.some((h) => h.kind === "key")).toBe(true);
     expect(hits.some((h) => h.kind === "member")).toBe(true);
     // 归属：类 K
     expect(hits.every((h) => h.owner?.name === "K")).toBe(true);
-  })();
-await (async () => {
-
+  }
+  {
     const refs = await withServer(SRC, async (mock, uri) => {
       const handler = mock.requests.get("textDocument/references");
       expect(handler, "references handler not registered").toBeTruthy();
@@ -1942,9 +1863,8 @@ await (async () => {
     const use = refs.find((r) => r.range.start.line === USE_POS.line)!;
     expect(use.range.start.character).toBe(USE_POS.character);
     expect(use.range.end.character).toBe(USE_POS.character + 1);
-  })();
-await (async () => {
-
+  }
+  {
     const defs = await withServer(SRC, async (mock, uri) => {
       const handler = mock.requests.get("textDocument/definition");
       expect(handler, "definition handler not registered").toBeTruthy();
@@ -1957,9 +1877,8 @@ await (async () => {
     expect(def.range.start.line).toBe(KEY_POS.line);
     expect(def.range.start.character).toBe(KEY_POS.character);
     expect(def.range.end.character).toBe(KEY_POS.character + 1);
-  })();
-await (async () => {
-
+  }
+  {
     const refs = await withServer(SRC, async (mock, uri) => {
       const handler = mock.requests.get("textDocument/references")!;
       const res = handler!({
@@ -1972,9 +1891,8 @@ await (async () => {
     expect(refs.length).toBeGreaterThanOrEqual(1);
     expect(refs.map((r) => r.range.start.line)).toContain(USE_POS.line);
     expect(refs.map((r) => r.range.start.line)).not.toContain(KEY_POS.line);
-  })();
-await (async () => {
-
+  }
+  {
     const src = `export const v = 1;
 export function use() { return v; }
 `;
@@ -1988,17 +1906,13 @@ export function use() { return v; }
       return (res ?? []) as Loc[];
     });
     expect(refs.length).toBeGreaterThanOrEqual(2);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2109,37 +2023,33 @@ async function referencesAt(pos: { line: number; character: number }): Promise<L
   return out;
 }
 
-describe("definition 对方法形参 / catch 形参不再返回 null", () => {
-  it("类方法形参：definition ⇒ 形参声明位（改前是 null）；对象方法形参：definition ⇒ 形参声明位（改前是 null）；catch 形参：definition ⇒ 形参声明位（改前是 null）；同一坐标：definition 与 references 的声明位**一致**（不再自相矛盾）；负控制：普通函数形参的 definition 不受影响", async () => {
-await (async () => {
 
+  it("类方法形参：definition ⇒ 形参声明位（改前是 null）；对象方法形参：definition ⇒ 形参声明位（改前是 null）；catch 形参：definition ⇒ 形参声明位（改前是 null）；同一坐标：definition 与 references 的声明位**一致**（不再自相矛盾）；负控制：普通函数形参的 definition 不受影响", async () => {
+  {
     const defs = await definitionAt(CLASS_PARAM);
     expect(defs.length).toBeGreaterThanOrEqual(1);
     const def = defs[0]!;
     expect(def.range.start.line).toBe(CLASS_PARAM.line);
     expect(def.range.start.character).toBe(CLASS_PARAM.character);
     expect(def.range.end.character).toBe(CLASS_PARAM.character + "cp".length);
-  })();
-await (async () => {
-
+  }
+  {
     const defs = await definitionAt(OBJECT_PARAM);
     expect(defs.length).toBeGreaterThanOrEqual(1);
     const def = defs[0]!;
     expect(def.range.start.line).toBe(OBJECT_PARAM.line);
     expect(def.range.start.character).toBe(OBJECT_PARAM.character);
     expect(def.range.end.character).toBe(OBJECT_PARAM.character + "op".length);
-  })();
-await (async () => {
-
+  }
+  {
     const defs = await definitionAt(CATCH_PARAM);
     expect(defs.length).toBeGreaterThanOrEqual(1);
     const def = defs[0]!;
     expect(def.range.start.line).toBe(CATCH_PARAM.line);
     expect(def.range.start.character).toBe(CATCH_PARAM.character);
     expect(def.range.end.character).toBe(CATCH_PARAM.character + "ep".length);
-  })();
-await (async () => {
-
+  }
+  {
     for (const pos of [CLASS_PARAM, OBJECT_PARAM, CATCH_PARAM, PLAIN_PARAM]) {
       const defs = await definitionAt(pos);
       const refs = await referencesAt(pos);
@@ -2148,24 +2058,19 @@ await (async () => {
       expect(decl, `references @${pos.line}:${pos.character} 缺声明位`).toBeTruthy();
       expect(defs[0]!.range).toEqual(decl.range);
     }
-  })();
-await (async () => {
-
+  }
+  {
     const defs = await definitionAt(PLAIN_PARAM);
     expect(defs.length).toBeGreaterThanOrEqual(1);
     expect(defs[0]!.range.start.line).toBe(PLAIN_PARAM.line);
     expect(defs[0]!.range.start.character).toBe(PLAIN_PARAM.character);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2178,7 +2083,7 @@ describe("navigation-gate-consistency", () => {
 
 
 
-describe("navigation-gate-consistency", () => {
+{
 /**
  * 侧车契约文件（`*.nudo.js`）在导航面上的**门禁各写各的**：
  * `definition` 单独挂了 `isSidecarPath` **逃生口**（放行侧车），
@@ -2222,8 +2127,7 @@ const isEmptyResult = (v: unknown): boolean =>
 
 describe("导航面门禁一致：侧车在六个请求上不可见", () => {
   it("同一坐标（侧车里的 getName）⇒ 六个导航请求结论一致（都不可见）；负控制：源码侧仍可见（门禁不得过度拦截）", async () => {
-await (async () => {
-
+  {
     await withLspServer(
       { "lib.js": LIB, "lib.nudo.js": LIB_SIDECAR },
       async ({ req, uri }) => {
@@ -2256,9 +2160,8 @@ await (async () => {
         expect(sidecarEntries, "workspace/symbol 仍放行侧车条目（无门禁）").toEqual([]);
       },
     );
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer(
       { "lib.js": LIB, "lib.nudo.js": LIB_SIDECAR },
       async ({ req, uri }) => {
@@ -2278,12 +2181,11 @@ await (async () => {
         ).toBe(true);
       },
     );
-  })();
-});;
+  }
+});
 
-  ;
 });
-});
+}
 
 describe("sidecar-gate-family", () => {
 /**
@@ -2319,8 +2221,7 @@ const SIDECAR_POS = { line: 2, character: 13 };
 
 describe("（族级不变量）— 侧车在全部导航请求上不可见", () => {
   it("definition 不得放行侧车（逃生口已去掉）；workspace/symbol 不得放行侧车条目（门禁已补）", async () => {
-await (async () => {
-
+  {
     await withLspServer(
       { "lib.js": LIB, "lib.nudo.js": LIB_SIDECAR },
       async ({ req, uri }) => {
@@ -2336,9 +2237,8 @@ await (async () => {
         expect(empty, "definition 仍放行侧车（`|| isSidecarPath(...)` 逃生口未去掉）").toBe(true);
       },
     );
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer(
       { "lib.js": LIB, "lib.nudo.js": LIB_SIDECAR },
       async ({ req, uri }) => {
@@ -2357,10 +2257,9 @@ await (async () => {
         ).toBe(true);
       },
     );
-  })();
-});;
+  }
+});
 
-  ;
 });
 });
 
@@ -2407,8 +2306,7 @@ const SRC_POS = { line: 0, character: 16 };
 
 describe("统一门禁谓词：侧车在 IDE 面与统一门禁的导航请求上不可见", () => {
   it("侧车上的六个 IDE 请求结论一致（侧车不可见）；侧车上的四个统一门禁导航请求结论一致（侧车不可见）；负控制：源码侧的符号仍可见（门禁不得过度拦截）", async () => {
-await (async () => {
-
+  {
     await withLspServer(
       { "lib.js": LIB, "lib.nudo.js": LIB_SIDECAR },
       async ({ req, uri }) => {
@@ -2425,9 +2323,8 @@ await (async () => {
         });
       },
     );
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer(
       { "lib.js": LIB, "lib.nudo.js": LIB_SIDECAR },
       async ({ req, uri }) => {
@@ -2443,9 +2340,8 @@ await (async () => {
         expect(req("textDocument/documentSymbol")({ textDocument: { uri: sidecar } })).toEqual([]);
       },
     );
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer(
       { "lib.js": LIB, "lib.nudo.js": LIB_SIDECAR },
       async ({ req, uri }) => {
@@ -2462,12 +2358,10 @@ await (async () => {
         expect(syms.map((s) => s.name)).toContain("getName");
       },
     );
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 });
 });
 });
@@ -2588,10 +2482,9 @@ const PRIVATE_SRC = `export class C {
 }
 `;
 
-describe("rename 作用域冲突 ⇒ 拒绝改名（拒绝优于改坏）", () => {
-  it("同作用域重复声明：`const a` + 改 f→a ⇒ 拒绝（无 WorkspaceEdit）；回归：同文件改 f→bb ⇒ 正常产出编辑；嵌套作用域·同层已有 b：改 x→b ⇒ 拒绝；嵌套作用域·纯遮蔽（不同层级）：改 x→b ⇒ 允许（合法且无语义变化的 JS）；外层捕获：外层 b 在目标作用域内被引用 ⇒ 改 x→b 拒绝；内层捕获：目标 x 的引用落在声明了 y 的内层作用域 ⇒ 改 x→y 拒绝；方法臂：同归属已有同名成员 run→stop ⇒ 拒绝；run→w", async () => {
-await (async () => {
 
+  it("同作用域重复声明：`const a` + 改 f→a ⇒ 拒绝（无 WorkspaceEdit）；回归：同文件改 f→bb ⇒ 正常产出编辑；嵌套作用域·同层已有 b：改 x→b ⇒ 拒绝；嵌套作用域·纯遮蔽（不同层级）：改 x→b ⇒ 允许（合法且无语义变化的 JS）；外层捕获：外层 b 在目标作用域内被引用 ⇒ 改 x→b 拒绝；内层捕获：目标 x 的引用落在声明了 y 的内层作用域 ⇒ 改 x→y 拒绝；方法臂：同归属已有同名成员 run→stop ⇒ 拒绝；run→w", async () => {
+  {
     await withLspServer({ "dup.js": DUP_SRC }, async ({ req, uri }) => {
       const res = req("textDocument/rename")({
         textDocument: { uri: uri("dup.js") },
@@ -2600,9 +2493,8 @@ await (async () => {
       });
       expect(res, "改 f→a 会制造 `const a` + `function a` 重复声明，必须拒绝").toBeNull();
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "dup.js": DUP_SRC }, async ({ req, uri }) => {
       const res = req("textDocument/rename")({
         textDocument: { uri: uri("dup.js") },
@@ -2613,9 +2505,8 @@ await (async () => {
       expect(edits, "合法新名被误拒").toHaveLength(1);
       expect(edits[0]!.newText).toBe("bb");
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "sh-same.js": SHADOW_SAME_SRC }, async ({ req, uri }) => {
       const res = req("textDocument/rename")({
         textDocument: { uri: uri("sh-same.js") },
@@ -2624,9 +2515,8 @@ await (async () => {
       });
       expect(res, "函数体同层已有 `const b`，改 x→b 是重复声明，必须拒绝").toBeNull();
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "sh-ok.js": SHADOW_OK_SRC }, async ({ req, uri }) => {
       const res = req("textDocument/rename")({
         textDocument: { uri: uri("sh-ok.js") },
@@ -2637,9 +2527,8 @@ await (async () => {
       expect(edits, "纯遮蔽（目标作用域内零 b 引用）被误拒").toHaveLength(2);
       expect(edits.every((e) => e.newText === "b")).toBe(true);
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "cap.js": CAPTURE_SRC }, async ({ req, uri }) => {
       const res = req("textDocument/rename")({
         textDocument: { uri: uri("cap.js") },
@@ -2651,9 +2540,8 @@ await (async () => {
         "改后 `x + b` 变 `b + b`，第二项从外层 b 被截胡成本地 x ⇒ 语义静默改变，必须拒绝",
       ).toBeNull();
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "inner.js": INNER_CAPTURE_SRC }, async ({ req, uri }) => {
       const res = req("textDocument/rename")({
         textDocument: { uri: uri("inner.js") },
@@ -2665,9 +2553,8 @@ await (async () => {
         "改后 g 体内的 x 变 y、解析到 g 自己的 y（遮蔽捕获）⇒ 语义静默改变，必须拒绝",
       ).toBeNull();
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "m.js": METHOD_SRC }, async ({ req, uri }) => {
       const conflict = req("textDocument/rename")({
         textDocument: { uri: uri("m.js") },
@@ -2686,9 +2573,8 @@ await (async () => {
       expect(edits, "合法方法名被误拒").toHaveLength(2);
       expect(edits.every((e) => e.newText === "walk")).toBe(true);
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "x-def.js": XDEF_SRC, "x-use.js": XUSE_SRC }, async ({ req, uri }) => {
       const conflict = req("textDocument/rename")({
         textDocument: { uri: uri("x-use.js") },
@@ -2706,9 +2592,8 @@ await (async () => {
       // def 文件声明 + 本文件 imported 侧 + 用点
       expect(edits, "合法跨文件新名被误拒").toHaveLength(3);
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "p.js": PRIVATE_SRC }, async ({ req, uri }) => {
       const res = req("textDocument/rename")({
         textDocument: { uri: uri("p.js") },
@@ -2717,9 +2602,8 @@ await (async () => {
       });
       expect(res, "类 C 已有 #other，改完 = 重复私有名（SyntaxError），必须拒绝").toBeNull();
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "dup.js": DUP_SRC }, async ({ req, uri }) => {
       const res = req("textDocument/prepareRename")({
         textDocument: { uri: uri("dup.js") },
@@ -2732,25 +2616,16 @@ await (async () => {
       });
       expect(res!.placeholder).toBe("f");
     });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
+
+
+
 });

@@ -79,7 +79,7 @@ function zodLiteralAccepts(source: string, value: unknown): boolean {
   return value === BigInt(m[1]!);
 }
 
-describe("契约申报的 bigint 字面量在 zod 面不得被静默放宽", () => {
+
   it("返回面：zod 源码是 z.literal(10n)（不是 z.unknown()）", () => {
     const source = absToSchemaSource(contractBigInt());
     expect(source).toBe("z.literal(10n)");
@@ -181,7 +181,7 @@ describe("契约申报的 bigint 字面量在 zod 面不得被静默放宽", () 
     expect(r.source).toBe("z.unknown()");
     expect(r.dropped.some((d) => d.includes("lit not projected"))).toBe(true);
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -215,7 +215,7 @@ describe("zod 产物面必须保真写 -0（不许静默放宽成 0）", () => {
 const litNeg0: Abs = abs({ k: "prim", type: "number" }, { op: "lit", value: -0 }, undefined, "exact");
 const lit42: Abs = abs({ k: "prim", type: "number" }, { op: "lit", value: 42 }, undefined, "exact");
 
-describe("zod 产物面必须保真写 -0（不许静默放宽成 0）", () => {
+
   it("lit(-0) 渲染成 z.literal(-0)，不是 z.literal(0)", () => {
     const source = absToSchemaSource(litNeg0);
     expect(source).toContain("z.literal(-0)");
@@ -242,7 +242,7 @@ describe("zod 产物面必须保真写 -0（不许静默放宽成 0）", () => {
   it("负控制：普通数字字面量不受牵连（逐字 z.literal(42)，无多余注释）", () => {
     expect(absToSchemaSource(lit42)).toBe("z.literal(42)");
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -271,7 +271,7 @@ const numWith = (pred: Parameters<typeof abs>[2]) =>
 /** Abs 的 number prim 域 = 全部 JS number（含 NaN / ±Infinity）⇒ zod 侧放宽 */
 const WIDE_NUMBER = "z.number().or(z.nan()).or(z.literal(Infinity)).or(z.literal(-Infinity))";
 
-describe("schema length/bound anchoring", () => {
+
   it("length(other) is not a string min", () => {
     const a = strWith(ge(app("length", [v("other")]), lit(1)));
     expect(absToSchemaSource(a)).toBe("z.string()");
@@ -342,7 +342,7 @@ describe("schema length/bound anchoring", () => {
     expect(absToSchemaSource(strWith(eq(v(SELF), lit("ada"))))).toBe('z.literal("ada")');
     expect(absToSchemaSource(numWith(eq(v(SELF), lit(42))))).toBe("z.literal(42)");
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -370,7 +370,7 @@ describe("生成产物内联副本必须与库函数版同口径处理 -0", () =
 
 
 
-describe("生成产物内联副本必须与库函数版同口径处理 -0", () => {
+
   it("库函数版与生成产物版对 -0 给出逐字相同的消息", async () => {
     const { node } = absToSchemaNode(numLit(1));
     const { source } = absToStandardSchema(numLit(1), { name: "one" });
@@ -395,5 +395,5 @@ describe("生成产物内联副本必须与库函数版同口径处理 -0", () =
     expect(JSON.stringify(prod)).toBe(JSON.stringify(lib));
     expect(prod.issues).toBeUndefined();
   });
-});
+
 });

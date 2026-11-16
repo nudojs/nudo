@@ -21,7 +21,7 @@ import {
 import { formatAbs } from "../format/format.ts";
 import { typeofAbs } from "../surface.ts";
 import { $len, $set, $idx } from "../exec/runtime/containers.ts";
-import { numLit, strLit, unknown, abs } from "../abs.ts";
+import { numLit,  } from "../abs.ts";
 
 function runBody(body: string): { result: string; fallbacks: EvalFallback[] } {
   const fallbacks: EvalFallback[] = [];

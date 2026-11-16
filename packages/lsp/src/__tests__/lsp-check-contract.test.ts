@@ -5,7 +5,7 @@ import { describe, it, expect, beforeEach, afterAll, afterEach } from "vitest";
 import { withLspServer, withTempDir, createMockConnection } from "./helpers.ts";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { analyzeFileAsync, clearPathEnvCaches, defaultLoadModule } from "@nudojs/service";
 import { checkToLspDiagnostics, clearValidationState, validateText, type LspDiagnostic, type ValidateTextDeps } from "../validation.ts";
 import { applyEdits, codeActionParams, mountCodeActions, sidecarEdits, type CodeActionEntry, missingFieldDiag, docEdits } from "./lsp-harness-code-actions.ts";
@@ -114,10 +114,9 @@ const ZZZ_DECL: Loc = {
   endCharacter: 22,
 };
 
-describe("别名 import 的 imported 侧：definition 落到正确模块、references 不为空", () => {
-  it("definition@imported 侧：落到真正被导入的模块，不得落到同名导出的无关文件；references@imported 侧：不是空数组，且与无别名形态完全一致；definition@local 侧：仍然落到真正被导入的模块", async () => {
-await (async () => {
 
+  it("definition@imported 侧：落到真正被导入的模块，不得落到同名导出的无关文件；references@imported 侧：不是空数组，且与无别名形态完全一致；definition@local 侧：仍然落到真正被导入的模块", async () => {
+  {
     await withLspServer(
       { "aaa.js": AAA, "zzz.js": ZZZ, "plain.js": PLAIN, "aliased.js": ALIASED },
       async ({ req, uri }) => {
@@ -134,9 +133,8 @@ await (async () => {
         ).toEqual([]);
       },
     );
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer(
       { "aaa.js": AAA, "zzz.js": ZZZ, "plain.js": PLAIN, "aliased.js": ALIASED },
       async ({ req, uri }) => {
@@ -167,9 +165,8 @@ await (async () => {
         expect(aliasedRefs).toEqual(plainRefs);
       },
     );
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer(
       { "aaa.js": AAA, "zzz.js": ZZZ, "plain.js": PLAIN, "aliased.js": ALIASED },
       async ({ req, uri }) => {
@@ -183,13 +180,11 @@ await (async () => {
         expect(defs.filter((d) => d.file === "aaa.js")).toEqual([]);
       },
     );
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -278,17 +273,17 @@ function codes(diags: LspDiagnostic[]): string[] {
   return diags.map((d) => String(d.code));
 }
 
-describe("LSP check 通道必须看得见项目级 path env（IDE 红 / CLI 绿 ⇒ 假红）", () => {
+{
   beforeEach(() => {
     clearValidationState();
     clearPathEnvCaches();
   });
 
   it("正控制：项目根 env + 子目录文件 ⇒ 不报 L2 entry-may-throw（IDE push 面）；正控制：check 通道本身（checkToLspDiagnostics）不报 L2 entry-may-throw；负控制：真违约（入口真的 throw）⇒ 仍必须报 L2 entry-may-throw；负控制（check 通道本身）：真违约 ⇒ 仍报 L2 entry-may-throw", async () => {
-await (async () => {
+  {
     clearValidationState();
     clearPathEnvCaches();
-  
+
 
     const { file } = makeProject("envproj-ok", OK_SRC);
     const { sent, deps } = collector();
@@ -298,11 +293,11 @@ await (async () => {
     expect(c).not.toContain("nudo:entry-may-throw");
     // env 全局可见 ⇒ 也不该报「内建 API 未覆盖」
     expect(c).not.toContain("nudo:builtin-unknown");
-  })();
-await (async () => {
+  }
+  {
     clearValidationState();
     clearPathEnvCaches();
-  
+
 
     const { file } = makeProject("envproj-ok2", OK_SRC);
     // 预载态：IDE 的分析通道（analyzeFileAsync）先跑 ⇒ path env 已登记
@@ -310,11 +305,11 @@ await (async () => {
 
     const diags = checkToLspDiagnostics(file, OK_SRC);
     expect(codes(diags)).not.toContain("nudo:entry-may-throw");
-  })();
-await (async () => {
+  }
+  {
     clearValidationState();
     clearPathEnvCaches();
-  
+
 
     const { file } = makeProject("envproj-throw", THROW_SRC);
     const { sent, deps } = collector();
@@ -322,26 +317,23 @@ await (async () => {
 
     // 闸门没被整体关掉：真违约照报
     expect(codes(sent)).toContain("nudo:entry-may-throw");
-  })();
-await (async () => {
+  }
+  {
     clearValidationState();
     clearPathEnvCaches();
-  
+
 
     const { file } = makeProject("envproj-throw2", THROW_SRC);
     await analyzeFileAsync(file, THROW_SRC);
 
     const diags = checkToLspDiagnostics(file, THROW_SRC);
     expect(codes(diags)).toContain("nudo:entry-may-throw");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -431,10 +423,9 @@ function actionsFor(
   });
 }
 
-describe("放宽侧车契约必须打在被违反的参数槽", () => {
-  it("参数违例：动作标题带 greet.u，编辑只剥形参谓词（返回槽 .gt(40) 不动）；落盘后目标参数诊断消失（编辑真的可执行，不是假修复）；参数槽改不动（shape 参数）⇒ 不下发放宽动作，不得退化成改返回槽；证据面：只剥返回槽数值谓词对参数诊断一字无效（所以不下发）", () => {
-(() => {
 
+  it("参数违例：动作标题带 greet.u，编辑只剥形参谓词（返回槽 .gt(40) 不动）；落盘后目标参数诊断消失（编辑真的可执行，不是假修复）；参数槽改不动（shape 参数）⇒ 不下发放宽动作，不得退化成改返回槽；证据面：只剥返回槽数值谓词对参数诊断一字无效（所以不下发）", () => {
+  {
     const { actions, scText, uri } = actionsFor("nudo-lsp-133a-", GREET_JS_NUM, SC_NUM_RET, isParamDiag);
     const relax = actions.filter(isRelax);
     expect(relax).toHaveLength(1);
@@ -453,9 +444,8 @@ export const greet = fn({ u: number() }, number().gt(40));
     const landed = applyEdits(scText, edits);
     expect(landed).toContain("fn({ u: number() }");
     expect(landed).toContain("number().gt(40)");
-  })();
-(() => {
-
+  }
+  {
     const { actions, scText, uri } = actionsFor("nudo-lsp-133b-", GREET_JS_NUM, SC_NUM, isParamDiag);
     const relax = actions.filter(isRelax);
     expect(relax).toHaveLength(1);
@@ -473,9 +463,8 @@ export const greet = fn({ u: number() }, number());
       expect(after.filter((d) => isParamDiag(msgText(d.message)))).toHaveLength(0);
       expect(after).toHaveLength(0);
     });
-  })();
-(() => {
-
+  }
+  {
     const { actions, messages } = actionsFor("nudo-lsp-133c-", GREET_JS, SC_SHAPE, isParamDiag);
     // 目标确实是参数违例（expected: missing field u.name）
     expect(messages.join("\n")).toMatch(/missing field u\.name/);
@@ -488,9 +477,8 @@ export const greet = fn({ u: number() }, number());
     expect(allSidecarText).not.toContain("fn({ u: shape({ name: string() }) }, number())");
     // 参数违例本身仍引导用户改**调用点**
     expect(actions.map((a) => a.title)).toContain("Add missing field 'name' to call");
-  })();
-(() => {
-
+  }
+  {
     withTempDir("nudo-lsp-133d-", (dir) => {
       const jsPath = join(dir, "greet.js");
       writeFileSync(jsPath, GREET_JS, "utf-8");
@@ -502,15 +490,12 @@ export const greet = fn({ u: number() }, number());
       expect(after.filter((d) => isParamDiag(msgText(d.message)))).toHaveLength(1);
       expect(after.map((d) => msgText(d.message)).join("\n")).toMatch(/missing field u\.name/);
     });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -595,10 +580,9 @@ function actionsFor(
   });
 }
 
-describe("放宽侧车契约不得下发消不掉诊断的假修复", () => {
-  it("返回基类型冲突（string ⊭ number）⇒ 不下发放宽动作、不产生侧车编辑；证据面：旧动作的落盘结果（返回槽 → number()）诊断原样保留；返回槽没有可放宽的数值精化（number()）⇒ 不下发（无 edit 空转）；正控制：返回槽**数值**冲突可解时动作仍在，落盘后目标诊断消失", () => {
-(() => {
 
+  it("返回基类型冲突（string ⊭ number）⇒ 不下发放宽动作、不产生侧车编辑；证据面：旧动作的落盘结果（返回槽 → number()）诊断原样保留；返回槽没有可放宽的数值精化（number()）⇒ 不下发（无 edit 空转）；正控制：返回槽**数值**冲突可解时动作仍在，落盘后目标诊断消失", () => {
+  {
     const { actions, messages, uri } = actionsFor(
       "nudo-lsp-134a-",
       GREET_JS,
@@ -609,9 +593,8 @@ describe("放宽侧车契约不得下发消不掉诊断的假修复", () => {
     // 旧实现下发「Relax sidecar contract for greet」⇒ 只剥 .gt(40) ⇒ 诊断还在
     expect(actions.filter(isRelax)).toHaveLength(0);
     expect(sidecarEdits(actions, uri)).toHaveLength(0);
-  })();
-(() => {
-
+  }
+  {
     withTempDir("nudo-lsp-134b-", (dir) => {
       const jsPath = join(dir, "greet.js");
       writeFileSync(jsPath, GREET_JS, "utf-8");
@@ -623,9 +606,8 @@ describe("放宽侧车契约不得下发消不掉诊断的假修复", () => {
         /typeof return = "string" ⊭ "number"/,
       );
     });
-  })();
-(() => {
-
+  }
+  {
     const { actions, messages, uri } = actionsFor(
       "nudo-lsp-134c-",
       GREET_JS,
@@ -635,9 +617,8 @@ describe("放宽侧车契约不得下发消不掉诊断的假修复", () => {
     expect(messages.join("\n")).toMatch(/return slot \(number\(\)\)/);
     expect(actions.filter(isRelax)).toHaveLength(0);
     expect(sidecarEdits(actions, uri)).toHaveLength(0);
-  })();
-(() => {
-
+  }
+  {
     const { actions, scText, uri } = actionsFor(
       "nudo-lsp-134d-",
       GREET_JS_RET,
@@ -664,15 +645,12 @@ export const greet = fn({ u: number() }, number());
       expect(after.filter((d) => isReturnBaseDiag(msgText(d.message)))).toHaveLength(0);
       expect(after).toHaveLength(0);
     });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -716,7 +694,7 @@ const HALF_SRC = `export function f(x) {
 f(undefined);
 `;
 
-describe("codeLens 标题与 CLI nudo test 见证行逐字符同形", () => {
+
   it("每条 lens 标题在 CLI 报告里是 `  <title>`；throws 分支为 3 空格", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug136-"));
     try {
@@ -767,7 +745,7 @@ describe("codeLens 标题与 CLI nudo test 见证行逐字符同形", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   }, 30_000);
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -815,30 +793,27 @@ function codes(diags: { code?: string | number }[]): string[] {
   return diags.map((d) => String(d.code ?? ""));
 }
 
-describe("LSP check 面施加 inject 通道（@nudo:mock 生效）", () => {
-  it("@nudo:mock 覆盖的依赖不得再报 nudo:entry-may-throw（与 CLI 同口径：绿）；负控制：没有 mock 的入口仍报 nudo:entry-may-throw（门禁未被关掉）", () => {
-(() => {
 
+  it("@nudo:mock 覆盖的依赖不得再报 nudo:entry-may-throw（与 CLI 同口径：绿）；负控制：没有 mock 的入口仍报 nudo:entry-may-throw（门禁未被关掉）", () => {
+  {
     withTempDir("nudo-lsp-bug-634-", (dir) => {
       const file = join(dir, "lib.js");
       writeFileSync(file, MOCKED_SRC, "utf-8");
       const diags = checkToLspDiagnostics(file, MOCKED_SRC);
       expect(codes(diags)).not.toContain("nudo:entry-may-throw");
     });
-  })();
-(() => {
-
+  }
+  {
     withTempDir("nudo-lsp-bug-634b-", (dir) => {
       const file = join(dir, "g.js");
       writeFileSync(file, UNMOCKED_SRC, "utf-8");
       const diags = checkToLspDiagnostics(file, UNMOCKED_SRC);
       expect(codes(diags)).toContain("nudo:entry-may-throw");
     });
-  })();
-});;
-
-  ;
+  }
 });
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -874,10 +849,9 @@ const C_SRC = `export function score(row) {
 }
 `;
 
-describe("references 不得重复声明位 / 混入语句级伪引用", () => {
-  it("collectBindingReferences：导出绑定不产生语句级伪引用；协议面：references 的每个位置只出现一次", async () => {
-await (async () => {
 
+  it("collectBindingReferences：导出绑定不产生语句级伪引用；协议面：references 的每个位置只出现一次", async () => {
+  {
     const ast = parse(C_SRC);
     const refs = collectBindingReferences(ast, "score", { line: 1, column: 17 }, "file:///t/c.js");
     expect(refs.length).toBe(1);
@@ -888,9 +862,8 @@ await (async () => {
     for (const r of refs) {
       expect(r.loc.end.line).toBe(r.loc.start.line);
     }
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer(
       {
         "c.js": C_SRC,
@@ -923,11 +896,10 @@ await (async () => {
       },
       "nudo-lsp-702-",
     );
-  })();
-});;
-
-  ;
+  }
 });
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -961,10 +933,9 @@ export function use() {
 }
 `;
 
-describe("export default 的跨文件 references", () => {
-  it("default 导出的定义处能查到 default 导入方的 import 说明符与调用点；default 导入方一侧发起 references 也能覆盖定义文件", async () => {
-await (async () => {
 
+  it("default 导出的定义处能查到 default 导入方的 import 说明符与调用点；default 导入方一侧发起 references 也能覆盖定义文件", async () => {
+  {
     h = await startLspWithFiles({ "a.js": A, "b.js": B });
     const refs = locationsOf(
       h.req("textDocument/references", {
@@ -989,9 +960,8 @@ await (async () => {
       endLine: 3,
       endCharacter: 14,
     });
-  })();
-await (async () => {
-
+  }
+  {
     h = await startLspWithFiles({ "a.js": A, "b.js": B });
     const refs = locationsOf(
       h.req("textDocument/references", {
@@ -1007,11 +977,10 @@ await (async () => {
       endLine: 0,
       endCharacter: 29,
     });
-  })();
-});;
-
-  ;
+  }
 });
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1042,10 +1011,9 @@ const USER = `export function go(o) {
 }
 `;
 
-describe("成员属性不触发同名导出兜底", () => {
-  it("成员属性 helper 的 definition 不得跳到无关文件的同名导出；裸标识符仍能命中同名导出兜底（兜底本身没坏）", async () => {
-await (async () => {
 
+  it("成员属性 helper 的 definition 不得跳到无关文件的同名导出；裸标识符仍能命中同名导出兜底（兜底本身没坏）", async () => {
+  {
     h = await startLspWithFiles({ "other.js": OTHER, "user.js": USER });
     const defs = locationsOf(
       h.req("textDocument/definition", {
@@ -1054,9 +1022,8 @@ await (async () => {
       }),
     );
     expect(defs.filter((d) => d.file === "other.js")).toEqual([]);
-  })();
-await (async () => {
-
+  }
+  {
     const other = `export function helper() {
   return 1;
 }
@@ -1079,11 +1046,10 @@ await (async () => {
       endLine: 0,
       endCharacter: 22,
     });
-  })();
-});;
-
-  ;
+  }
 });
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1118,10 +1084,9 @@ const SHADOW_SRC = `export function a() {
 }
 `;
 
-describe("references 的 includeDeclaration:false 必须剔除声明位", () => {
-  it("collectBindingReferences：includeDeclaration=false 不含声明位；collectBindingReferences：默认仍含声明位（既有语义不变，负控制）；协议面：includeDeclaration=false 只返回用点", async () => {
-await (async () => {
 
+  it("collectBindingReferences：includeDeclaration=false 不含声明位；collectBindingReferences：默认仍含声明位（既有语义不变，负控制）；协议面：includeDeclaration=false 只返回用点", async () => {
+  {
     const ast = parse(SHADOW_SRC);
     const withDecl = collectBindingReferences(ast, "v", { line: 3, column: 10 }, "file:///t/s.js");
     expect(withDecl.length).toBe(2);
@@ -1132,15 +1097,13 @@ await (async () => {
     });
     expect(withoutDecl.length).toBe(1);
     expect(withoutDecl[0]!.loc.start.line).toBe(3);
-  })();
-await (async () => {
-
+  }
+  {
     const ast = parse(SHADOW_SRC);
     const refs = collectBindingReferences(ast, "v", { line: 3, column: 10 }, "file:///t/s.js");
     expect(refs.some((r) => r.loc.start.line === 2)).toBe(true);
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "shadow.js": SHADOW_SRC }, async ({ req, uri }) => {
       const without = req("textDocument/references")({
         textDocument: { uri: uri("shadow.js") },
@@ -1161,13 +1124,11 @@ await (async () => {
       expect(with_.length).toBe(2);
       expect(with_.some((l) => l.range.start.line === 1)).toBe(true);
     });
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1206,10 +1167,9 @@ export function oldName(n) {
 }
 `;
 
-describe("跨文件导航必须用打开文档的 buffer", () => {
-  it("definition 落在 buffer 坐标（磁盘坐标会跳错行）；references 落在 buffer 坐标；rename 的编辑落在 buffer 坐标", async () => {
-await (async () => {
 
+  it("definition 落在 buffer 坐标（磁盘坐标会跳错行）；references 落在 buffer 坐标；rename 的编辑落在 buffer 坐标", async () => {
+  {
     h = await startLspWithFiles({ "def.js": DEF, "use.js": USE });
     h.changeBuffer("def.js", DEF_BUFFER);
     await new Promise((r) => setTimeout(r, 100));
@@ -1226,9 +1186,8 @@ await (async () => {
       endLine: 1,
       endCharacter: 23,
     });
-  })();
-await (async () => {
-
+  }
+  {
     h = await startLspWithFiles({ "def.js": DEF, "use.js": USE });
     h.changeBuffer("def.js", DEF_BUFFER);
     await new Promise((r) => setTimeout(r, 100));
@@ -1246,9 +1205,8 @@ await (async () => {
       endLine: 1,
       endCharacter: 23,
     });
-  })();
-await (async () => {
-
+  }
+  {
     h = await startLspWithFiles({ "def.js": DEF, "use.js": USE });
     h.changeBuffer("def.js", DEF_BUFFER);
     await new Promise((r) => setTimeout(r, 100));
@@ -1267,13 +1225,11 @@ await (async () => {
       endCharacter: 23,
       newText: "brandNew",
     });
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1317,10 +1273,9 @@ const GREET_JS = `export function greet(u) {
 greet({ id: 2 });
 `;
 
-describe("侧车补字段的插入点契约", () => {
-  it("插入点落进目标形参的 shape({ … }) 内部（不是形参表顶层）；字段已在契约里 ⇒ 不给插入点（不写重复键）；目标形参的契约类型不是内联 shape ⇒ 不给插入点；LSP 面：契约缺字段时，补字段动作落在 shape 内部；LSP 面：契约已声明该字段 ⇒ 不下发写坏契约的动作", () => {
-(() => {
 
+  it("插入点落进目标形参的 shape({ … }) 内部（不是形参表顶层）；字段已在契约里 ⇒ 不给插入点（不写重复键）；目标形参的契约类型不是内联 shape ⇒ 不给插入点；LSP 面：契约缺字段时，补字段动作落在 shape 内部；LSP 面：契约已声明该字段 ⇒ 不下发写坏契约的动作", () => {
+  {
     const lines = SC_NO_NAME.split("\n");
     const pos = findFnContractInsertPos(lines, "greet", { param: "u", path: ["name"] });
     expect(pos).not.toBeNull();
@@ -1334,18 +1289,16 @@ describe("侧车补字段的插入点契约", () => {
     ]);
     expect(applied).toContain("u: shape({ name: undefined,  id: number() })");
     expect(applied).not.toContain("fn({ name:");
-  })();
-(() => {
-
+  }
+  {
     expect(
       findFnContractInsertPos(SC_WITH_NAME.split("\n"), "greet", {
         param: "u",
         path: ["name"],
       }),
     ).toBeNull();
-  })();
-(() => {
-
+  }
+  {
     const shared = `export const a = fn(sharedShape, number());\nexport const b = fn({ y: number() }, number());\n`;
     // 共享 shape 标识符
     expect(
@@ -1366,9 +1319,8 @@ describe("侧车补字段的插入点契约", () => {
     expect(
       findFnContractInsertPos(SC_NO_NAME.split("\n"), "other", { param: "u", path: ["name"] }),
     ).toBeNull();
-  })();
-(() => {
-
+  }
+  {
     withTempDir("nudo-lsp-731-", (dir) => {
       writeFileSync(join(dir, "greet.js"), GREET_JS, "utf-8");
       writeFileSync(join(dir, "greet.nudo.js"), SC_NO_NAME, "utf-8");
@@ -1382,9 +1334,8 @@ describe("侧车补字段的插入点契约", () => {
       // 形参表没被动过（不多出形参）
       expect(landed).not.toContain("fn({ name:");
     });
-  })();
-(() => {
-
+  }
+  {
     withTempDir("nudo-lsp-731b-", (dir) => {
       writeFileSync(join(dir, "greet.js"), GREET_JS, "utf-8");
       writeFileSync(join(dir, "greet.nudo.js"), SC_WITH_NAME, "utf-8");
@@ -1396,17 +1347,13 @@ describe("侧车补字段的插入点契约", () => {
         "Add 'name' to greet contract shape",
       );
     });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1440,10 +1387,9 @@ const GREET_SC = `import { fn, shape, string } from "@nudojs/core";
 export const greet = fn({ u: shape({ name: string() }) }, string());
 `;
 
-describe("调用点插入点必须是对象字面量实参（不是字符串里的 `{`）", () => {
-  it("插入点落进对象字面量，字符串字面量原样保留；同一行既有字符串 `{` 又有对象字面量时也落进对象字面量", () => {
-(() => {
 
+  it("插入点落进对象字面量，字符串字面量原样保留；同一行既有字符串 `{` 又有对象字面量时也落进对象字面量", () => {
+  {
     withTempDir("nudo-lsp-737-", (dir) => {
       writeFileSync(join(dir, "greet.js"), GREET_JS_737, "utf-8");
       writeFileSync(join(dir, "greet.nudo.js"), GREET_SC, "utf-8");
@@ -1462,9 +1408,8 @@ describe("调用点插入点必须是对象字面量实参（不是字符串里�
       // 字段落进对象字面量
       expect(applied).toContain("{ name: null,  id: 1 });");
     });
-  })();
-(() => {
-
+  }
+  {
     const src = `export function greet(u) {
   return u.name + "!";
 }
@@ -1482,11 +1427,10 @@ greet("{", { id: 1 });
       const applied = applyEdits(src, edits);
       expect(applied).toContain('greet("{", { name: null,  id: 1 });');
     });
-  })();
-});;
-
-  ;
+  }
 });
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1517,10 +1461,9 @@ export function add(a) {
 }
 `;
 
-describe("agent nudo/check 并入 mock 装载失败通道", () => {
-  it("slash 形式：mock 文件缺失 ⇒ error 级 nudo:module-missing（门禁红）；dot 形式：同一条通道同样可见（协议别名不降级）；文本面：error 级通道上屏（不再是「0 error」判绿）", async () => {
-await (async () => {
 
+  it("slash 形式：mock 文件缺失 ⇒ error 级 nudo:module-missing（门禁红）；dot 形式：同一条通道同样可见（协议别名不降级）；文本面：error 级通道上屏（不再是「0 error」判绿）", async () => {
+  {
     await withLspServer({ "mockonly.js": MOCKONLY }, async ({ req, dir }) => {
       const r = await req("nudo/check")({ file: `${dir}/mockonly.js`, format: "json" });
       const json = JSON.parse(r.content[0].text);
@@ -1533,31 +1476,27 @@ await (async () => {
       expect(json.ok).toBe(false);
       expect(json.summary.errors).toBeGreaterThanOrEqual(1);
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "mockonly.js": MOCKONLY }, async ({ req, dir }) => {
       const r = await req("nudo.check")({ file: `${dir}/mockonly.js`, format: "json" });
       const json = JSON.parse(r.content[0].text);
       const codes = json.issues.map((i: { code: string }) => i.code);
       expect(codes).toContain("nudo:module-missing");
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "mockonly.js": MOCKONLY }, async ({ req, dir }) => {
       const r = await req("nudo/check")({ file: `${dir}/mockonly.js` });
       const text = r.content[0].text;
       expect(text).toContain("nudo:module-missing");
       expect(text).toContain("FAILED");
     });
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1609,10 +1548,9 @@ const FIXTURE = {
   "lib.nudo.js": LIB_NUDO,
 };
 
-describe("contract.emit 走 root 驱动下行推导", () => {
-  it("工具面：下游侧车 add.nudo.js 被写出来，且文本点名 derived-from；工具面：dry-run 只预览、不写下游侧车；协议面：nudo.contract.emit 同样产出下游侧车", async () => {
-await (async () => {
 
+  it("工具面：下游侧车 add.nudo.js 被写出来，且文本点名 derived-from；工具面：dry-run 只预览、不写下游侧车；协议面：nudo.contract.emit 同样产出下游侧车", async () => {
+  {
     await withLspServer(FIXTURE, async ({ dir }) => {
       const libJs = join(dir, "lib.js");
       const r = await contractEmitTool(
@@ -1632,9 +1570,8 @@ await (async () => {
       // 本地侧车（手写 name-clash）的诊断**仍在**（没被推导步吞掉）
       expect(text).toContain("name-clash");
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer(FIXTURE, async ({ dir }) => {
       const libJs = join(dir, "lib.js");
       const r = await contractEmitTool(
@@ -1644,9 +1581,8 @@ await (async () => {
       expect(r.content[0].text).toContain("dry-run");
       expect(existsSync(join(dir, "add.nudo.js"))).toBe(false);
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer(FIXTURE, async ({ dir }) => {
       const mock = createMockConnection();
       const { createNudoServer } = await import("../server.ts");
@@ -1665,13 +1601,11 @@ await (async () => {
       expect(res.content[0].text).toContain("derived-from add4");
       expect(existsSync(join(dir, "add.nudo.js"))).toBe(true);
     });
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1700,10 +1634,9 @@ const SRC = `export function f() {
 }
 `;
 
-describe("emit 写盘边界按路径分量判定", () => {
-  it("root 内以 `..` 开头的合法路径名 ⇒ 允许写侧车；root 外的文件 ⇒ 仍然拒绝；指向 root 外的符号链接 ⇒ 仍然拒绝（realpath 防逃逸）", async () => {
-await (async () => {
 
+  it("root 内以 `..` 开头的合法路径名 ⇒ 允许写侧车；root 外的文件 ⇒ 仍然拒绝；指向 root 外的符号链接 ⇒ 仍然拒绝（realpath 防逃逸）", async () => {
+  {
     await withLspServer(
       {
         "..dotted.js": SRC,
@@ -1728,9 +1661,8 @@ await (async () => {
         expect(existsSync(join(dir, "..cfg", "x.nudo.js"))).toBe(true);
       },
     );
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "in.js": SRC }, async ({ dir }) => {
       const root = join(dir, "root");
       mkdirSync(root, { recursive: true });
@@ -1746,9 +1678,8 @@ await (async () => {
       expect(r.content[0].text).toContain("outside allowed roots");
       expect(existsSync(join(dir, "outside", "secret.nudo.js"))).toBe(false);
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "in.js": SRC }, async ({ dir }) => {
       const root = join(dir, "root");
       const outsideDir = join(dir, "outside");
@@ -1766,13 +1697,11 @@ await (async () => {
       expect(r.content[0].text).toContain("outside allowed roots");
       expect(existsSync(join(outsideDir, "secret.nudo.js"))).toBe(false);
     });
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1797,10 +1726,9 @@ const SIDECAR = `import { fn, shape, string } from "@nudojs/core";
 export const getName = fn({ u: shape({ name: string() }) }, string());
 `;
 
-describe("agent nudo/check + nudo/test 的分析目标闸门", () => {
-  it("nudo/check：侧车 ⇒ 明确错误（不再是 0 fn 判绿）；nudo/test：侧车 ⇒ 明确错误，契约 DSL 构造器不再被报成 case；普通 .js 目标不受闸门影响（仍能分析）；dot 形式同样过闸门", async () => {
-await (async () => {
 
+  it("nudo/check：侧车 ⇒ 明确错误（不再是 0 fn 判绿）；nudo/test：侧车 ⇒ 明确错误，契约 DSL 构造器不再被报成 case；普通 .js 目标不受闸门影响（仍能分析）；dot 形式同样过闸门", async () => {
+  {
     await withLspServer({ "lib.nudo.js": SIDECAR }, async ({ req, dir }) => {
       const r = await req("nudo/check")({
         file: `${dir}/lib.nudo.js`,
@@ -1812,9 +1740,8 @@ await (async () => {
       expect(json.pathErrors[0].code).toBe("nudo:path-not-target");
       expect(json.pathErrors[0].message).toContain("Not an analysis target");
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "lib.nudo.js": SIDECAR }, async ({ req, dir }) => {
       const r = await req("nudo/test")({
         file: `${dir}/lib.nudo.js`,
@@ -1828,9 +1755,8 @@ await (async () => {
       expect(json.functions).toEqual([]);
       expect(json.externalFunctions ?? []).toEqual([]);
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer(
       { "lib.nudo.js": SIDECAR, "lib.js": "export function getName(u) { return u.name; }\n" },
       async ({ req, dir }) => {
@@ -1841,9 +1767,8 @@ await (async () => {
         expect(json.signatures.length).toBe(1);
       },
     );
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "lib.nudo.js": SIDECAR }, async ({ req, dir }) => {
       const r = await req("nudo.check")({
         file: `${dir}/lib.nudo.js`,
@@ -1851,15 +1776,12 @@ await (async () => {
       });
       expect(r.isError).toBe(true);
     });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1909,10 +1831,9 @@ function hoverText(value: string | undefined): string {
   return value ?? "";
 }
 
-describe("早退守卫的 else 分支不得被当成「其后非空」", () => {
-  it("带 else 的早退守卫：其后形参保持 nullish（改前被窄化成非空）；对照组：不带 else 的早退守卫仍剥离 nullish（既有行为不回归）", async () => {
-await (async () => {
 
+  it("带 else 的早退守卫：其后形参保持 nullish（改前被窄化成非空）；对照组：不带 else 的早退守卫仍剥离 nullish（既有行为不回归）", async () => {
+  {
     await withLspServer(
       { "hover773.js": SRC, "hover773.nudo.js": SIDECAR },
       async ({ req, uri }) => {
@@ -1928,9 +1849,8 @@ await (async () => {
         expect(text).not.toMatch(/p: number\(\)/);
       },
     );
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer(
       { "hover773.js": SRC, "hover773.nudo.js": SIDECAR },
       async ({ req, uri }) => {
@@ -1944,11 +1864,10 @@ await (async () => {
         expect(text).toContain("p: number()");
       },
     );
-  })();
-});;
-
-  ;
+  }
 });
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1992,10 +1911,9 @@ const UNION_SIDECAR = `import { fn, number, nullable } from "@nudojs/core";
 export const addn = fn({ p: nullable(number()) }, number());
 `;
 
-describe("契约形参的 hover 文本与 `nudo check` 同口径", () => {
-  it("签名块：prim 契约参数用推断 shape（改前是侧车 DSL 原文）；形参位：prim 契约参数用推断 shape（改前是侧车 DSL 原文）；union 契约参数保留声明形态（判别联合折叠不回归）", async () => {
-await (async () => {
 
+  it("签名块：prim 契约参数用推断 shape（改前是侧车 DSL 原文）；形参位：prim 契约参数用推断 shape（改前是侧车 DSL 原文）；union 契约参数保留声明形态（判别联合折叠不回归）", async () => {
+  {
     await withLspServer(
       { "hover775.js": SRC, "hover775.nudo.js": SIDECAR },
       async ({ req, uri }) => {
@@ -2010,9 +1928,8 @@ await (async () => {
         expect(text).not.toContain("number().gt(0)");
       },
     );
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer(
       { "hover775.js": SRC, "hover775.nudo.js": SIDECAR },
       async ({ req, uri }) => {
@@ -2027,9 +1944,8 @@ await (async () => {
         expect(text).not.toContain("number().gt(0)");
       },
     );
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer(
       { "hover775u.js": UNION_SRC, "hover775u.nudo.js": UNION_SIDECAR },
       async ({ req, uri }) => {
@@ -2042,13 +1958,11 @@ await (async () => {
         expect(res?.contents?.value ?? "").toContain("p: nullable(number())");
       },
     );
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2129,10 +2043,9 @@ const VERBOSE_PKG = {
 
 const DEFAULT_PKG = { name: "bug779-default", private: true, type: "module" };
 
-describe("check 通道的 info 级诊断在 verbose 档必须上屏", () => {
-  it("push 通道：verbose 档下 nudo:assume-relied 上屏（severity=Information）；pull 通道：verbose 档下 nudo:assume-relied 上屏（同 push 口径）；默认档：info 不上屏（档位取舍仍归 filterCheckLspByLevel）", async () => {
-await (async () => {
 
+  it("push 通道：verbose 档下 nudo:assume-relied 上屏（severity=Information）；pull 通道：verbose 档下 nudo:assume-relied 上屏（同 push 口径）；默认档：info 不上屏（档位取舍仍归 filterCheckLspByLevel）", async () => {
+  {
     const { mock, uri, cleanup } = openSession(VERBOSE_PKG);
     try {
       await new Promise((r) => setTimeout(r, 900));
@@ -2145,9 +2058,8 @@ await (async () => {
     } finally {
       cleanup();
     }
-  })();
-await (async () => {
-
+  }
+  {
     const { mock, uri, cleanup } = openSession(VERBOSE_PKG);
     try {
       await new Promise((r) => setTimeout(r, 900));
@@ -2160,9 +2072,8 @@ await (async () => {
     } finally {
       cleanup();
     }
-  })();
-await (async () => {
-
+  }
+  {
     const { mock, uri, cleanup } = openSession(DEFAULT_PKG);
     try {
       await new Promise((r) => setTimeout(r, 900));
@@ -2174,13 +2085,11 @@ await (async () => {
     } finally {
       cleanup();
     }
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2218,10 +2127,9 @@ export function add(a) {
 }
 `;
 
-describe("agent nudo/check 接上补充诊断通道", () => {
-  it("指令文法诊断（nudo:directive-syntax）并入 issues + summary；path env 未解析（nudo:env-unresolved）并入 issues + summary；dot 形式同样接上（协议别名不降级）", async () => {
-await (async () => {
 
+  it("指令文法诊断（nudo:directive-syntax）并入 issues + summary；path env 未解析（nudo:env-unresolved）并入 issues + summary；dot 形式同样接上（协议别名不降级）", async () => {
+  {
     await withLspServer({ "d1_syntax.js": D1_SYNTAX }, async ({ req, dir }) => {
       const r = await req("nudo/check")({ file: `${dir}/d1_syntax.js`, format: "json" });
       const json = JSON.parse(r.content[0].text);
@@ -2232,9 +2140,8 @@ await (async () => {
       expect(issue.severity).toBe("warning");
       expect(json.summary.warnings).toBeGreaterThanOrEqual(1);
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "d2_env.js": D2_ENV }, async ({ req, dir }) => {
       const r = await req("nudo/check")({ file: `${dir}/d2_env.js`, format: "json" });
       const json = JSON.parse(r.content[0].text);
@@ -2246,22 +2153,19 @@ await (async () => {
       expect(issue.message).toContain("nope.mjs");
       expect(json.summary.warnings).toBeGreaterThanOrEqual(1);
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "d1_syntax.js": D1_SYNTAX }, async ({ req, dir }) => {
       const r = await req("nudo.check")({ file: `${dir}/d1_syntax.js`, format: "json" });
       const json = JSON.parse(r.content[0].text);
       const codes = json.issues.map((i: { code: string }) => i.code);
       expect(codes).toContain("nudo:directive-syntax");
     });
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2297,10 +2201,9 @@ const MAIN = `import { addOne } from "./lib.js";
 addOne(2);
 `;
 
-describe("三个 contract 工具的 --from 等价通道", () => {
-  it("协议面 nudo/contract：带 from ⇒ 使用点证据参与求解；协议面 nudo/contract.draft：带 from ⇒ 草稿含调用点证据（不再是空契约 fn({})）；工具面 nudo/contract.emit：带 from ⇒ 写得出契约（改前直接拒写 not-projectable）；from 指向不存在的路径 ⇒ 显式报错（不静默给假面）", async () => {
-await (async () => {
 
+  it("协议面 nudo/contract：带 from ⇒ 使用点证据参与求解；协议面 nudo/contract.draft：带 from ⇒ 草稿含调用点证据（不再是空契约 fn({})）；工具面 nudo/contract.emit：带 from ⇒ 写得出契约（改前直接拒写 not-projectable）；from 指向不存在的路径 ⇒ 显式报错（不静默给假面）", async () => {
+  {
     await withLspServer(
       { "lib.js": LIB, "main.js": MAIN },
       async ({ req, uri }) => {
@@ -2314,9 +2217,8 @@ await (async () => {
         expect(without.content[0].text).toContain("(x: any) → number | string");
       },
     );
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer(
       { "lib.js": LIB, "main.js": MAIN },
       async ({ req, uri }) => {
@@ -2330,9 +2232,8 @@ await (async () => {
         expect(without.content[0].text).toContain("export const addOne = fn({});");
       },
     );
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer(
       { "lib.js": LIB, "main.js": MAIN },
       async ({ dir }) => {
@@ -2349,9 +2250,8 @@ await (async () => {
         );
       },
     );
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "lib.js": LIB }, async ({ req, uri, dir }) => {
       const r = await req("nudo/contract")({
         file: uri("lib.js"),
@@ -2360,15 +2260,12 @@ await (async () => {
       expect(r.isError).toBe(true);
       expect(r.content[0].text).toContain("no call-site records collected");
     });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2421,10 +2318,9 @@ type Lens = {
   command?: { title: string; command: string; arguments?: unknown[] };
 };
 
-describe("CJS 成员导出的符号 / 观察面", () => {
-  it("documentSymbol 出 CJS 成员导出（函数档，detail 带 export）；workspace/symbol 查得到 CJS 成员导出；semanticTokens 给 CJS 导出键 function 档 + contract 档 modifier；inlayHint 出 CJS 导出的返回 inlay + contract 档投影；codeLens 出 CJS 导出的 contract 档（契约身份 = 导出名）；hover 面解析出 CJS 导出名（族", async () => {
-await (async () => {
 
+  it("documentSymbol 出 CJS 成员导出（函数档，detail 带 export）；workspace/symbol 查得到 CJS 成员导出；semanticTokens 给 CJS 导出键 function 档 + contract 档 modifier；inlayHint 出 CJS 导出的返回 inlay + contract 档投影；codeLens 出 CJS 导出的 contract 档（契约身份 = 导出名）；hover 面解析出 CJS 导出名（族", async () => {
+  {
     await withLspServer({ "a.js": CJS_SRC }, async ({ req, uri }) => {
       const syms = req("textDocument/documentSymbol")({
         textDocument: { uri: uri("a.js") },
@@ -2433,17 +2329,15 @@ await (async () => {
       expect(syms[0]!.detail).toBe("(x) export");
       expect(syms[0]!.kind).toBe(12); // SymbolKind.Function
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "a.js": CJS_SRC }, async ({ req, uri }) => {
       void uri;
       const syms = req("workspace/symbol")({ query: "alpha" }) as Array<{ name: string }>;
       expect(syms.map((s) => s.name)).toContain("alpha");
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "a.js": CJS_SRC }, async ({ req, uri }) => {
       const res = req("textDocument/semanticTokens/full")({
         textDocument: { uri: uri("a.js") },
@@ -2466,9 +2360,8 @@ await (async () => {
         modifiers: 65,
       });
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "a.js": CJS_SRC }, async ({ req, uri }) => {
       const hints = req("textDocument/inlayHint")({
         textDocument: { uri: uri("a.js") },
@@ -2482,9 +2375,8 @@ await (async () => {
       expect(labels.some((l) => l.includes(": y * 2"))).toBe(true);
       expect(labels.filter((l) => l === "  ● contract / imp").length).toBe(2);
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "a.js": CJS_SRC }, async ({ req, uri }) => {
       const lenses = req("textDocument/codeLens")({
         textDocument: { uri: uri("a.js") },
@@ -2504,9 +2396,8 @@ await (async () => {
       expect(beta).toBeDefined();
       expect(beta!.range.start.line).toBe(3);
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "a.js": CJS_SRC }, async ({ req, uri }) => {
       const hover = req("textDocument/hover")({
         textDocument: { uri: uri("a.js") },
@@ -2518,28 +2409,21 @@ await (async () => {
       expect(text).toContain("alpha");
       expect(text).not.toContain("(x) => ?");
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "a.js": ESM_SRC }, async ({ req, uri }) => {
       const syms = req("textDocument/documentSymbol")({
         textDocument: { uri: uri("a.js") },
       }) as Array<{ name: string }>;
       expect(syms.map((s) => s.name)).toEqual(["alpha", "beta"]);
     });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
 });

@@ -7,7 +7,7 @@
  * `lk !== undefined` 当成非字面量 → 重复 add 不去重、size 假精确。
  */
 import { describe, it, expect } from "vitest";
-import { litValue, formatShape, anyAbs } from "../index.ts";
+import { litValue, anyAbs } from "../index.ts";
 import { call } from "./eval-helpers.ts";
 
 describe("litValue sentinel: abstract pos arg / undefined Set key", () => {

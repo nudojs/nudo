@@ -9,7 +9,7 @@ import {
   knownFiles,
   nudoDepParents,
   registerNudoImportDeps,
-  uriToFilePath,
+
   validateText,
 } from "../validation.ts";
 import { makeValidateDeps } from "./helpers.ts";

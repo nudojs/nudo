@@ -59,7 +59,7 @@ function fingerprintOf(dir: string): string {
   return projectConfigFingerprint(file);
 }
 
-describe("LSP：配置指纹用归一后的 autoBind", () => {
+
   it("非法非布尔 autoBind ⇒ 指纹与「不写」相同（行为相同 ⇒ 不得 miss 缓存）", () => {
     const noAutoBind = project({ contract: { autoBind: true } });
     const bogusAutoBind = project({ contract: { autoBind: "false" } });
@@ -95,7 +95,7 @@ describe("LSP：配置指纹用归一后的 autoBind", () => {
       clearValidationState();
     }
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -144,7 +144,7 @@ const LIB_SC_WITHOUT_ALPHA = `import { fn, any, number, string, shape } from "@n
 export const beta = fn({ y: string() }, number());
 `;
 
-describe("侧车 quickfix 不得把侧车写成重复 export", () => {
+
   it("侧车已有该 fn 的契约 ⇒ 不下发会写坏侧车的计划", () => {
     withTempDir("nudo-lsp-743-", (dir) => {
       writeFileSync(join(dir, "lib.js"), LIB_JS, "utf-8");
@@ -189,7 +189,7 @@ describe("侧车 quickfix 不得把侧车写成重复 export", () => {
       expect(report.issues.map((i) => i.code)).not.toContain("nudo:contract-load");
     });
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -230,7 +230,7 @@ const LIB2_SIDECAR_FN = `import { fn, number } from "@nudojs/core";
 export const good = fn({ x: number().gt(0) }, number());
 `;
 
-describe("侧车契约定义只认引擎真正消费的绑定", () => {
+
   it("值模板绑定不得被当成契约定义", async () => {
     h = await startLspWithFiles({
       "lib.js": LIB,
@@ -266,7 +266,7 @@ describe("侧车契约定义只认引擎真正消费的绑定", () => {
       endCharacter: 17,
     });
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -306,7 +306,7 @@ export function add(x, y, z) {
 }
 `;
 
-describe("emit 不得拿未保存的 buffer 覆盖磁盘", () => {
+
   it("源文件 buffer 与磁盘不一致 ⇒ 拒写盘并给出可诊断的错误", async () => {
     await withLspServer({ "lib.js": DISK }, async ({ dir }) => {
       const file = join(dir, "lib.js");
@@ -356,7 +356,7 @@ describe("emit 不得拿未保存的 buffer 覆盖磁盘", () => {
       expect(existsSync(join(dir, "new.nudo.js"))).toBe(false);
     });
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -372,7 +372,7 @@ describe("findFnContractInsertPos", () => {
  */
 const X_Z = { param: "x", path: ["z"] };
 
-describe("findFnContractInsertPos", () => {
+
   it("inserts into same-line fn({ … }) after the target param's shape brace", () => {
     const line = `export const foo = fn({ x: shape({ y: number() }) }, number());`;
     const pos = findFnContractInsertPos([line], "foo", X_Z)!;
@@ -471,14 +471,14 @@ describe("findFnContractInsertPos", () => {
     ];
     expect(findFnContractInsertPos(lines, "foo", X_Z)).toBeNull();
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
 // A4 sidecar unsaved buffer
 // ---------------------------------------------------------------------------
 describe("A4 sidecar unsaved buffer", () => {
-describe("A4 sidecar unsaved buffer", () => {
+
   it("prefers open buffer text over disk for relative sidecar", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-a4-"));
     try {
@@ -509,7 +509,7 @@ describe("A4 sidecar unsaved buffer", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
-});
+
 
 describe("A5 go-to sidecar contract", () => {
   it("includes sidecar export among definition locations", () => {

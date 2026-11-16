@@ -13,7 +13,7 @@
  * （Derived constructors may only return object or undefined）。
  */
 import { describe, it, expect } from "vitest";
-import { type Abs, litValue, formatAbs } from "@nudojs/core";
+import { litValue,  } from "@nudojs/core";
 import { call } from "./eval-helpers.ts";
 
 function throwsName(r: { throws: { shape: { k: string; name?: string } } }): string | undefined {

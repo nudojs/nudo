@@ -26,7 +26,7 @@ describe("agent 工具的路径错误通道", () => {
 
 const SRC = "export function add(a) {\n  return a + 1;\n}\n";
 
-describe("agent 工具的路径错误通道", () => {
+
   it("nudo/test：JSON 面是结构化 pathErrors（不是裸 errno 文本）", async () => {
     await withLspServer({ "a.js": SRC }, async ({ req, dir }) => {
       const r = await req("nudo/test")({ file: `${dir}/nope.js`, format: "json" });
@@ -70,7 +70,7 @@ describe("agent 工具的路径错误通道", () => {
       expect(json.pathErrors[0].code).toBe("nudo:path-not-found");
     });
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -107,7 +107,7 @@ const GREET_SC = `import { fn, shape, string } from "@nudojs/core";
 export const greet = fn({ u: shape({ name: string() }) }, string());
 `;
 
-describe("codeAction 面不得因 agentToolDeps 未回填而全瘫", () => {
+
   it("agentToolDeps = undefined（真 server 挂载后状态）时不抛且给出 action", () => {
     withTempDir("nudo-lsp-735-", (dir) => {
       writeFileSync(join(dir, "greet.js"), GREET_JS, "utf-8");
@@ -154,7 +154,7 @@ describe("codeAction 面不得因 agentToolDeps 未回填而全瘫", () => {
       expect(titles.some((t) => t === "Add 'name' to greet contract shape")).toBe(true);
     });
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -224,7 +224,7 @@ afterEach(() => {
   dir = "";
 });
 
-describe("agent 工具走异步入口 ⇒ path 型 env 必被预载", () => {
+
   it("文件未打开时 nudo/trace 也能看到 env 的全局（99，而非 unknown）", async () => {
     const mock = createMockConnection();
     const { createNudoServer } = await import("../server.ts");
@@ -268,7 +268,7 @@ describe("agent 工具走异步入口 ⇒ path 型 env 必被预载", () => {
     const traced = await mock.requests.get("nudo/trace")!({ file, functionName: "getMagic" });
     expect(traced.content[0].text).toContain("99");
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -296,7 +296,7 @@ const SRC = [
   "",
 ].join("\n");
 
-describe("agent 工具失败路径带 isError:true（协议面）", () => {
+
   it("trace / suggestCase 的「函数不存在」是失败（isError），成功面不带", async () => {
     await withLspServer({ "a4-767.js": SRC }, async ({ req, uri }) => {
       const file = uri("a4-767.js");
@@ -315,7 +315,7 @@ describe("agent 工具失败路径带 isError:true（协议面）", () => {
       expect(ok.content[0].text).toContain("Output:");
     });
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -328,7 +328,7 @@ describe("agent-tool-file-validation", () => {
 
 
 
-describe("agent-tool-file-validation", () => {
+{
 /**
  * `file` 入参零校验（**A4 的共用入口闸**：`normalizeFilePath`）。
  *
@@ -377,7 +377,7 @@ describe("（共用入口）：agent 工具的 file 入参非法 ⇒ 结构化�
     });
   });
 });
-});
+}
 
 describe("file-param-validation", () => {
 /**

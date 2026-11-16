@@ -6,7 +6,7 @@
  * 判是否是字面量。本文件覆盖 lit(undefined) / lit(NaN) / bigint 全路径。
  */
 import { describe, it, expect } from "vitest";
-import { abs, bigintLit, litValue, numLit, unknown, type Abs, type LiteralValue, type LitValueResult } from "../index.ts";
+import { abs, bigintLit, litValue, numLit, unknown, type LiteralValue, type LitValueResult } from "../index.ts";
 import { lit } from "../term.ts";
 import { call } from "./eval-helpers.ts";
 

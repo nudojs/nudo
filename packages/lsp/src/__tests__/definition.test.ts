@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { parse } from "@nudojs/parser";
-import { buildSymbolTable, findDefinition, findReferences } from "../symbols.ts";
+import { buildSymbolTable, findDefinition,  } from "../symbols.ts";
 
 describe("symbol table", () => {
   it("finds function definition", () => {

@@ -5,7 +5,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { readFileSync, mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
 import { analyzeFile, collectCallRecords, analyzeFileAsync as analyzeFileAsync_____analyzer_ts } from "../analyzer.ts";
 import { litValue, numLit, type Abs, formatShape, resetCheckSourceMemo, resetGeneralizeMemo, resetNudoModuleExecCache, resetParseSourceCache, abs, strLit } from "@nudojs/core";
-import { withTmpProject, writeTmpFile, tmpProject, writeTmpFiles, tmpProject as makeTmpProject } from "./tmp-project.ts";
+import { withTmpProject, writeTmpFile, tmpProject, tmpProject as makeTmpProject } from "./tmp-project.ts";
 import { synthesizeExternalFunctions, dedupeCallRecords } from "../analyzer-diagnose.ts";
 import { MAX_RECORD_TYPE_NODES, neverAbs, type CallRecord } from "../evaluator/call-record.ts";
 import { tmpdir } from "node:os";
@@ -73,7 +73,7 @@ const DEP = `export const g = (x) => x;
 const DEP_SIDE = `export const g = fn({ x: number().gt(0) }, number());
 `;
 
-describe("命名空间成员调用的调用点可归因（domain-exceeds 不再静默）", () => {
+{
   const DOMAIN = "nudo:contract-domain-exceeds";
   const DEP = "export const g = (x) => x;\n";
   const DEP_SIDE = "export const g = fn({ x: number().gt(0) }, number());\n";
@@ -124,8 +124,7 @@ describe("命名空间成员调用的调用点可归因（domain-exceeds 不再�
       });
     }
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -164,7 +163,7 @@ function record(over: Partial<CallRecord>): CallRecord {
   };
 }
 
-describe("超限调用记录不得让分析器崩溃", () => {
+{
   const oversizedObjAbs = (): Abs => {
     const slots: Record<string, { value: Abs }> = {};
     for (let i = 0; i < MAX_RECORD_TYPE_NODES + 500; i++) slots[`k${i}`] = { value: numLit(i) };
@@ -188,8 +187,7 @@ describe("超限调用记录不得让分析器崩溃", () => {
     expect(out[0]!.loc.start.line).toBe(3);
     expect(out[0]!.combinedAbs).toBeDefined();
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -221,7 +219,7 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("点观测不得成为契约域", () => {
+{
   let dir: string;
   beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "nudo-b021-")); });
   afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
@@ -241,8 +239,7 @@ describe("点观测不得成为契约域", () => {
     const subSidecar = readFileSync(join(dir, "sub.nudo.js"), "utf-8");
     expect(subSidecar).toContain("export const sub = fn({ a: lit(1), b: lit(2) }, lit(-1));");
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -342,7 +339,7 @@ function callsiteDomain(
   };
 }
 
-describe("调用点域与声明顺序无关", () => {
+{
   const CALLEE_FIRST = "export function callee(a) {\n  return a + 1;\n}\nexport function caller1() {\n  return callee(1);\n}\nexport function caller2() {\n  return callee(2);\n}\nexport function caller3() {\n  return callee(3);\n}\n";
   const CALLEE_LAST = "export function caller1() {\n  return callee(1);\n}\nexport function caller2() {\n  return callee(2);\n}\nexport function caller3() {\n  return callee(3);\n}\nexport function callee(a) {\n  return a + 1;\n}\n";
   beforeEach(() => {
@@ -381,8 +378,7 @@ describe("调用点域与声明顺序无关", () => {
     expect(first.diagnostics.filter((d) => d.code === "nudo:contract-entry-only" && d.message.includes("'callee'"))).toEqual([]);
     expect(first.diagnostics.filter((d) => d.code === "nudo:contract-entry-only" && d.message.includes("'caller1'"))).toHaveLength(1);
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -412,7 +408,7 @@ function rec(line: number, column: number, arg: number): CallRecord {
   };
 }
 
-describe("同行多调用点的见证名唯一", () => {
+{
   const FILE = "/proj/usage.js";
   const rec = (line: number, column: number, arg: number): CallRecord => ({
     fnName: "add",
@@ -432,8 +428,7 @@ describe("同行多调用点的见证名唯一", () => {
     const r2 = { ...rec(6, 0, 2), callLoc: undefined } as CallRecord;
     expect(new Set(disambiguateCallsiteNames([r1, r2], FILE, 6)).size).toBe(2);
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -469,7 +464,7 @@ function project(collide: boolean): { dir: string; usage: string } {
   return { dir, usage };
 }
 
-describe("调用现场文件按 AST 核对，不用行数猜", () => {
+{
   const project = (collide: boolean) => {
     const dep = 'import { greet } from "./lib.js";\nexport const r = greet("from-dep");\n';
     const usage = collide
@@ -496,8 +491,7 @@ describe("调用现场文件按 AST 核对，不用行数猜", () => {
     expect(local[0]!.callLoc!.line).toBe(2);
     expect(collision.filter((r) => r.callSiteFile === undefined).length).toBeGreaterThanOrEqual(1);
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -558,7 +552,7 @@ beforeEach(() => {
   clearAbsModuleCache();
 });
 
-describe("循环迭代截断 → analysis 诊断（test 面）", () => {
+{
   const INFINITE_LOOP = `export function infiniteDec(n) {
   let i = 0;
   while (i < n) { i = i - 1; }
@@ -594,8 +588,7 @@ infiniteDec(5);
     expect(clean.diagnostics.map((x) => x.code)).not.toContain("nudo:loop-truncated");
     expect(clean.diagnostics.map((x) => x.code)).not.toContain("nudo:recursion-truncated");
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -660,7 +653,7 @@ beforeEach(() => {
   clearAbsModuleCache();
 });
 
-describe("截断观测 → analysis 诊断（test 面）", () => {
+{
   const SELF_RECURSION = "export function loop(n) {\n  if (n <= 0) return 0;\n  return loop(n - 1) + 1;\n}\n";
   const PLAIN = "export function add(a, b) {\n  return a + b;\n}\n";
   beforeEach(() => {
@@ -689,8 +682,7 @@ describe("截断观测 → analysis 诊断（test 面）", () => {
     expect(clean.diagnostics.map((x) => x.code)).not.toContain("nudo:recursion-truncated");
     expect(clean.diagnostics.map((x) => x.code)).not.toContain("nudo:fork-truncated");
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -723,7 +715,7 @@ function asLineIndex(source: string): number {
   return idx;
 }
 
-describe("声明锚点不被行尾注释劫持", () => {
+{
   const asLineIndex = (source: string): number => {
     const idx = source.split("\n").findIndex((l) => l.includes("@nudo:as"));
     if (idx < 0) throw new Error("no @nudo:as injected");
@@ -747,8 +739,7 @@ describe("声明锚点不被行尾注释劫持", () => {
     expect(none.applied).toEqual([]);
     expect(none.unapplied).toEqual(["nope"]);
   });
-});
-;
+}
 
 describe("同一行多条声明——各落各的（行号口径会撞车）", () => {
   const SAME_LINE = "const delta = 10; const epsilon = 20;\nexport const ve = epsilon;\n";
@@ -767,7 +758,6 @@ describe("同一行多条声明——各落各的（行号口径会撞车）", (
     expect(both.applied).toEqual(["delta: number", "epsilon: string"]);
   });
 });
-;
 });
 
 // ---------------------------------------------------------------------------
@@ -910,15 +900,12 @@ describe("码归因 — 重复声明/文件缺失/导出缺失的码与级别", 
     expect(miss[0]!.suggestion).toContain("Create the mock file or fix the path");
   });
 });
-;
 
 // ── 2. 既有码不被误改 ────────────────────────────────────────────────────────
 
-;
 
 // ── 3. suggestion 文案（按错误种类分族）──────────────────────────────────────
 
-;
 
 // ── 4. body-read：trimLeft / trimRight 与 trimStart 同口径 ───────────────────
 
@@ -930,7 +917,6 @@ describe("body-read — trimLeft / trimRight 是 string 证据（与 trimStart �
     expect(fieldType("\nexport function h(o) {\n  return o.label.includes(\"x\");\n}\n", "h")).not.toBe("string()");
   });
 });
-;
 });
 
 // ---------------------------------------------------------------------------
@@ -957,7 +943,7 @@ function rec(line: number, column: number): CallRecord {
   };
 }
 
-describe("去重键含调用点身份", () => {
+{
   const rec = (line: number, column: number): CallRecord => ({
     fnName: "id",
     argAbs: [numLit(1)],
@@ -971,8 +957,7 @@ describe("去重键含调用点身份", () => {
     expect(dedupeCallRecords([rec(2, 0), rec(2, 8)])).toHaveLength(2);
     expect(dedupeCallRecords([rec(2, 0), rec(2, 0)])).toHaveLength(1);
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -1020,7 +1005,7 @@ function caseExpectedCount(src: string): number {
   });
 }
 
-describe("期望里的对象槽字面量按值执法（不再恒 [ok]）", () => {
+{
   const caseExpectedIssues = (result: { diagnostics: readonly { code?: string }[] }): number => result.diagnostics.filter((d) => d.code === "nudo:case-expected").length;
   const caseExpectedCount = (src: string): number => withTmpProject("nudo-b396-", (dir) => {
     const file = writeTmpFile(dir, "f.js", src);
@@ -1034,8 +1019,7 @@ describe("期望里的对象槽字面量按值执法（不再恒 [ok]）", () =>
     expect(caseExpectedCount('/**\n * @nudo:case "t" (1) => 2\n */\nexport function f(x) { return x; }\n')).toBe(1);
     expect(caseExpectedCount('/**\n * @nudo:case "t" (["x"]) => array(lit("y"))\n */\nexport function f(x) { return x; }\n')).toBe(1);
   });
-});
-;
+}
 
 describe("caseExpectedSatisfied 的严格变体（消费侧单测）", () => {
   const objA1 = abs({ k: "obj", slots: { a: { value: numLit(1) } } }, undefined, undefined, "exact");
@@ -1049,7 +1033,6 @@ describe("caseExpectedSatisfied 的严格变体（消费侧单测）", () => {
     expect(caseExpectedSatisfied(objA1, parseCaseArgExpr("shape({ a: number() })", 0))).toBe(true);
   });
 });
-;
 });
 
 // ---------------------------------------------------------------------------
@@ -1087,7 +1070,7 @@ function litOf(a: Abs): unknown {
   return lv.ok ? lv.value : undefined;
 }
 
-describe("具名类导入的调用点归因（--from 不再丢弃）", () => {
+{
   const litOf = (a: Abs): unknown => {
     const lv = litValue(a);
     return lv.ok ? lv.value : undefined;
@@ -1133,8 +1116,7 @@ describe("具名类导入的调用点归因（--from 不再丢弃）", () => {
       expect(litOf(fn.cases[0]!.abs)).toBe(2);
     });
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -1183,7 +1165,7 @@ function callNames(result: ReturnType<typeof analyzeFile>, name: string): string
   return (fn?.cases ?? []).map((c) => c.name);
 }
 
-describe("call@ 见证名带来源限定；二次 freeze 不丢新见证", () => {
+{
   const LIB = "export function add(a, b) { return a + b; }\n";
   const SITE_A = 'import { add } from "./lib.js";\nconst x = add(1, 2);\n';
   const SITE_B = 'import { add } from "./lib.js";\nconst y = add(3, 4);\n';
@@ -1223,8 +1205,7 @@ describe("call@ 见证名带来源限定；二次 freeze 不丢新见证", () =>
       expect(callNames(analyzeFile(lib, readFileSync(lib, "utf-8"), undefined, external), "add")).toContain("call@b.js:L2");
     });
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -1267,7 +1248,7 @@ function captureStderr(fn: () => void): string {
   return writes.join("");
 }
 
-describe("非法 entryThrows 的告警文案必须与生效档位一致", () => {
+{
   const captureStderr = (fn: () => void): string => {
     const writes: string[] = [];
     const orig = process.stderr.write;
@@ -1295,8 +1276,7 @@ describe("非法 entryThrows 的告警文案必须与生效档位一致", () => 
     noOut += captureStderr(() => { expect(checkConfig({ check: { profile: "strict" } }).entryThrows).toBe("error"); });
     expect(noOut).toBe("");
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -1328,7 +1308,7 @@ function caseExpectedIssues(result: { diagnostics: readonly { code?: string }[] 
   return result.diagnostics.filter((d) => d.code === "nudo:case-expected").length;
 }
 
-describe("带谓词的期望（number().gt(0)）按值判定，不再恒假红", () => {
+{
   const caseExpectedIssues = (result: { diagnostics: readonly { code?: string }[] }): number => result.diagnostics.filter((d) => d.code === "nudo:case-expected").length;
   const analyzeSrc = (dir: string, src: string) => {
     const file = writeTmpFile(dir, "f.js", src);
@@ -1351,8 +1331,7 @@ describe("带谓词的期望（number().gt(0)）按值判定，不再恒假红",
       expect(caseExpectedIssues(analyzeSrc(dir, '/**\n * @nudo:case "t" (1) => string()\n */\nexport function f(x) { return x + 1; }\n'))).toBe(1);
     });
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -1385,7 +1364,7 @@ function caseShapes(source: string): Record<string, string> {
   return out;
 }
 
-describe("合成入口用例的模块实例隔离", () => {
+{
   const caseShapes = (source: string): Record<string, string> => {
     const result = analyzeFile("/test/b472.js", source);
     const out: Record<string, string> = {};
@@ -1409,11 +1388,9 @@ describe("合成入口用例的模块实例隔离", () => {
     expect(caseShapes('export function g() { return "ok"; }\n').g).toBe('"ok"');
     expect(caseShapes("let n = 7;\nexport function read() { return n; }\n").read).toBe("7");
   });
-});
-;
+}
 
 /** 负控制：不该被这条修复波及的邻近形态 */
-;
 });
 
 // ---------------------------------------------------------------------------
@@ -1459,7 +1436,7 @@ function fileIn(dir: string, rel: string): string {
 
 const SRC = "export function f(x) {\n  return x;\n}\n";
 
-describe("nudo.analysis.include 的字面量要能命中（路径形态，非子串）", () => {
+{
   const project = (include: string[] | undefined, exclude?: string[]): string => {
     const analysis: Record<string, unknown> = { mode: "all" };
     if (include) analysis.include = include;
@@ -1496,8 +1473,7 @@ describe("nudo.analysis.include 的字面量要能命中（路径形态，非子
     hit(undefined, "src/vendored/lib.js", false, ["src/vendored"]);
     hit(undefined, "src/lib.js", true, ["src/vendored"]);
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -1528,7 +1504,7 @@ function project(prefix: string, nudo: unknown): string {
   return root;
 }
 
-describe("项目级预算/上限必须随每次解析重写（顺序无关）", () => {
+{
   const project = (prefix: string, nudo: unknown): string => tmpProject(prefix, { "package.json": JSON.stringify({ name: "p", nudo }) });
   beforeEach(() => {
     evictProjectConfigMemo();
@@ -1583,8 +1559,7 @@ describe("项目级预算/上限必须随每次解析重写（顺序无关）", 
       else process.env.NUDO_MAX_FORKS = saved;
     }
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -1611,7 +1586,7 @@ describe("类方法上的 @nudo:case 见证被求值（不再恒 unknown）", ()
 
 
 
-describe("类方法上的 @nudo:case 见证被求值（不再恒 unknown）", () => {
+{
   const litVal = (absVal: Abs) => { const t = absVal.term; return t?.op === "lit" ? t.value : undefined; };
   const caseOf = (dir: string, file: string, src: string, fnName: string) => {
     const f = writeTmpFile(dir, file, src);
@@ -1631,8 +1606,7 @@ describe("类方法上的 @nudo:case 见证被求值（不再恒 unknown）", ()
       expect(caseOf(dir, "d.js", 'export class C {\n  /**\n   * @nudo:case "k" (1) => 1\n   */\n  m(x) { return globalThis.__nudo_missing__.x; }\n}\n', "C.m").abs.shape.k).toBe("unknown");
     });
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -1659,7 +1633,7 @@ describe("call@ 见证值 = 调用现场观测值（不被目标语境重求值�
 
 
 
-describe("call@ 见证值 = 调用现场观测值（不被目标语境重求值覆盖）", () => {
+{
   const litVal = (absVal: Abs) => { const t = absVal.term; return t?.op === "lit" ? t.value : undefined; };
   it("模块状态不同见证值 = 现场 5/6；无状态差异值不变 3", () => {
     withTmpProject("nudo-b486-", (dir) => {
@@ -1678,8 +1652,7 @@ describe("call@ 见证值 = 调用现场观测值（不被目标语境重求值�
       expect(litVal(call.abs)).toBe(3);
     });
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -1723,7 +1696,7 @@ const SIDECAR = `import { fn, number } from "@nudojs/core";
 export const area = fn({ x: number().gt(0) });
 `;
 
-describe("再导出链归因（barrel 不再吞掉跨文件调用点证据）", () => {
+{
   const litOf = (a: Abs): unknown => { const lv = litValue(a); return lv.ok ? lv.value : undefined; };
   const DOMAIN = "nudo:contract-domain-exceeds";
   const LIB = "export function area(x) {\n  return x;\n}\n";
@@ -1785,8 +1758,7 @@ describe("再导出链归因（barrel 不再吞掉跨文件调用点证据）", 
       expect(rec.targetExport).toBe("area");
     });
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -1826,7 +1798,7 @@ const DUAL = {
 };
 const SRC = `export function id(x) { return x; }\n`;
 
-describe("dual-entry issue anchor is a legal, real position", () => {
+{
   const DUAL = { name: "dual-anchor", exports: { ".": { browser: "./browser.js", node: "./node.js", default: "./node.js" } } };
   const SRC = "export function id(x) { return x; }\n";
   const mk = (pkg: unknown, files: Record<string, string>) => tmpProject("nudo-b492-", { "package.json": JSON.stringify(pkg), ...files });
@@ -1852,10 +1824,8 @@ describe("dual-entry issue anchor is a legal, real position", () => {
     expect(d.range.start.line).toBe(1);
     expect(d.range.start.column).toBeGreaterThanOrEqual(0);
   });
-});
-;
+}
 
-;
 });
 
 // ---------------------------------------------------------------------------
@@ -1893,7 +1863,7 @@ const SAME = `function inner2() { return 7; }
 export function run2() { return inner2(); }
 `;
 
-describe("intension.display 与求值面同源（跨模块不再退化成 unknown）", () => {
+{
   const LIB = "export function inner() { return 7; }\n";
   const USE = 'import { inner } from "./lib.js";\n\nexport function run() { return inner(); }\n';
   const SAME = "function inner2() { return 7; }\nexport function run2() { return inner2(); }\n";
@@ -1930,8 +1900,7 @@ describe("intension.display 与求值面同源（跨模块不再退化成 unknow
       }
     });
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -1962,7 +1931,7 @@ describe("what-if type expression fidelity", () => {
 
 const SRC = `const x = 1;\nconst y = x + 1;\n`;
 
-describe("what-if type expression fidelity", () => {
+{
   const SRC = "const x = 1;\nconst y = x + 1;\n";
   it("未知名/T.* 降 unknown；降级回显实际注入；联合整条降级；可表达不变；显式 unknown/any；未声明 unapplied", () => {
     expect(typeExprToDirective("Date")).toBe("unknown");
@@ -2004,8 +1973,7 @@ describe("what-if type expression fidelity", () => {
     expect(missing.applied).toEqual([]);
     expect(missing.unapplied).toEqual(["nope"]);
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -2037,7 +2005,7 @@ function casesOf(result: ReturnType<typeof analyzeFile>, name: string): string[]
   return (fn?.cases ?? []).map((c) => c.name);
 }
 
-describe("导出函数体内的调用点 → 合成 call@ 见证", () => {
+{
   const casesOf = (result: ReturnType<typeof analyzeFile>, name: string): string[] => (result.functions.find((f) => f.name === name)?.cases ?? []).map((c) => c.name);
   it("函数体内调用合成 call@ 且撤 entry@；顶层照旧；非导出保留 entry@", () => {
     withTmpProject("nudo-b503-", (dir) => {
@@ -2059,8 +2027,7 @@ describe("导出函数体内的调用点 → 合成 call@ 见证", () => {
       expect(casesOf(analyzeFile(file, readFileSync(file, "utf-8")), "inner2").some((n) => n.startsWith("entry@"))).toBe(true);
     });
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -2112,7 +2079,7 @@ function illegalEntryThrows(value: string): "error" | "warning" | "off" {
   return value as "error" | "warning" | "off";
 }
 
-describe("entryThrows 非法值告警进程内去重", () => {
+{
   const captureStderr = (fn: () => void): string[] => {
     const writes: string[] = [];
     const original = process.stderr.write;
@@ -2147,8 +2114,7 @@ describe("entryThrows 非法值告警进程内去重", () => {
     expect(legal.length).toBe(0);
     expect(["error", "warning", "off"]).toContain(checkConfig({ check: { entryThrows: illegal("bogus-639-fallback") } }).entryThrows);
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -2229,7 +2195,7 @@ const SIDECAR = `import { fn, number } from "@nudojs/core";
 export const f = fn({ x: number() }, number(), { throws: "TypeError" });
 `;
 
-describe("case 级 nudo:may-throw 认「已声明的有意抛」（与 check 面同口径）", () => {
+{
   type Diag = { code?: string; message?: string };
   const analyzeDiags = (files: Record<string, string>): readonly Diag[] => withTmpProject("nudo-b921-", (dir) => {
     const file = writeTmpFile(dir, "f.js", files["f.js"]!);
@@ -2251,8 +2217,7 @@ describe("case 级 nudo:may-throw 认「已声明的有意抛」（与 check 面
     const bad = analyzeDiags({ "f.js": THROWING_CASE, "f.nudo.js": 'import { fn, number } from "@nudojs/core";\nexport const f = fn({ x: number(\n' });
     expect(bad.filter((d) => d.code === "nudo:contract-load").length).toBeGreaterThan(0);
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -2314,7 +2279,7 @@ function diagsOf(src: string): Diag[] {
   });
 }
 
-describe("分析面：推导失败 ⇒ nudo:opaque-result（INFO），不发 nudo:case-expected", () => {
+{
   const OPAQUE_BODY = "export function f(o) {\n  const x = { a: 1 };\n  (x.get)().a ||= 2;\n  return x.a;\n}\n";
   const INFERRED_BODY = "export function g(x) { return x + 1; }\n";
   type Diag = { code: string; severity: string; message: string };
@@ -2343,8 +2308,7 @@ describe("分析面：推导失败 ⇒ nudo:opaque-result（INFO），不发 nud
     expect(ok.filter((d) => d.code === "nudo:case-expected")).toHaveLength(0);
     expect(ok.filter((d) => d.code === "nudo:opaque-result")).toHaveLength(0);
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -2400,7 +2364,7 @@ function reportOf(src: string): Report {
   });
 }
 
-describe("service 报告面（agent testTool）的第三态：推导失败 ⇒ unchecked", () => {
+{
   const OPAQUE_BODY = "export function f(o) {\n  const x = { a: 1 };\n  (x.get)().a ||= 2;\n  return x.a;\n}\n";
   const reportOf = (src: string) => withTmpProject("nudo-b950-", (dir) => {
     const file = writeTmpFile(dir, "f.js", src);
@@ -2429,6 +2393,5 @@ describe("service 报告面（agent testTool）的第三态：推导失败 ⇒ u
     expect(thrown.failed).toBe(1);
     expect(thrown.unchecked).toBe(0);
   });
-});
-;
+}
 });

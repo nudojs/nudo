@@ -4,10 +4,10 @@ import {
   runTranspiled,
   callTranspiledExportFull,
   numLit,
-  strLit,
-  numVar,
-  gtNum,
-  v,
+
+
+
+
   litValue,
   termToString,
   formatShape,

@@ -15,7 +15,7 @@
  * 本文件不改任何生产语义，只验证接线。
  */
 import { describe, it, expect } from "vitest";
-import { abs, numLit, type Abs } from "../../abs.ts";
+import { numLit, type Abs } from "../../abs.ts";
 import { formatAbs } from "../../format/format.ts";
 import { call, val } from "../../__tests__/eval-helpers.ts";
 import {

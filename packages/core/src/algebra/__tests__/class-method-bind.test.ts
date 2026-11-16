@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { listTopFunctions } from "../scan/scan.ts";
 import { localNamedExports, effectiveContract, formatConstraint } from "../contract/contract.ts";
 import { generalizeFromAst } from "../generalize.ts";
-import { number, fn } from "../constraint.ts";
+import "../constraint.ts";
 import { makeFiles } from "./nudo-constraints.ts";
 
 const STORE = `

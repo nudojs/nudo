@@ -29,7 +29,7 @@ import { sub } from "../arithmetic.ts";
 
 // —— 单元：isDeterministicTerm（soundness 门） ————————————
 
-describe("#175 isDeterministicTerm", () => {
+describe("isDeterministicTerm", () => {
   it("lit 与 len#N var 接受（len 按 Abs 身份唯一铸造）", () => {
     expect(isDeterministicTerm(lit(0))).toBe(true);
     expect(isDeterministicTerm(v("len#0"))).toBe(true);
@@ -66,7 +66,7 @@ describe("#175 isDeterministicTerm", () => {
 
 // —— 单元：sub 自反折叠 ——————————————————————————————
 
-describe("#175 sub 自反折叠（单元）", () => {
+describe("sub 自反折叠（单元）", () => {
   it("结构相等确定性项 ∧ isNonNaN（ge pred）⇒ 字面量 0", () => {
     const t = app("Math.max", [v("len#0"), v("len#1")]);
     const m1 = abs(num().shape, t, ge(t, lit(0)), "path");
@@ -105,7 +105,7 @@ describe("#175 sub 自反折叠（单元）", () => {
 
 // —— 单元：subAssumeBounds（assume 引理减法界） ————————————
 
-describe("#175 subAssumeBounds（单元）", () => {
+describe("subAssumeBounds（单元）", () => {
   const aT = v("max");
   const bT = v("d");
   const A = abs(num().shape, aT, undefined, "path");
@@ -146,7 +146,7 @@ export function sim(a, b) {
   return max - d;
 }`;
 
-describe("#175 端到端（自反折叠）", () => {
+describe("端到端（自反折叠）", () => {
   it("原样复现（无 assume）：自反折叠 ⇒ 无 unproven-return", () => {
     const r = checkSource("/t/sub175.js", repro(""), pTrue, opts);
     expect(r.issues.some((i) => i.code === "nudo:unproven-return" && i.fn === "sim")).toBe(false);
@@ -192,7 +192,7 @@ describe("#175 端到端（自反折叠）", () => {
 
 // —— 端到端：adoption 同名碰撞不折（soundness） ———————————
 
-describe("#175 adoption 碰撞不折（soundness）", () => {
+describe("adoption 碰撞不折（soundness）", () => {
   // grab 带参数契约 + f 实参 any（info-free）⇒ #123 contract-face adoption
   // 把 p/q 重锚为 grab 形参面 var("o")：x/y 的 get(var("o"), "v") 项结构
   // 完全相同但值无关联（y-x 可为任意数）——自反折叠必须被 isDeterministicTerm

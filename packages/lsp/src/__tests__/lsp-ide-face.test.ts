@@ -121,7 +121,7 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", ".."
 
 /* ───────────────────────── 1 · 语义 token 降级 ───────────────────────── */
 
-describe("族 53 · 第 1 条：语义 token 面在语法非法 buffer 上降级而非清零", () => {
+describe("语义 token 面在语法非法 buffer 上降级而非清零", () => {
   it("1-1 合法源码：声明位照常上色（降级路径不得影响正常路径）", () => {
     const src = "export function f(a) {\n  const x = 1;\n  return x;\n}\n";
     const tokens = decodeTokens(buildSemanticTokens("/t/ok.js", src));
@@ -167,7 +167,7 @@ describe("族 53 · 第 1 条：语义 token 面在语法非法 buffer 上降级
 
 /* ───────────────────────── 2 · 指令补全前缀过滤 ───────────────────────── */
 
-describe("族 53 · 第 2 条：指令补全的前缀过滤（前缀匹配语义）", () => {
+describe("指令补全的前缀过滤（前缀匹配语义）", () => {
   it("2-1 纯函数面：typed 必须是 label 的前缀（子串不算命中）", () => {
     expect(matchesDirectivePrefix("@nudo:case", "")).toBe(true);
     expect(matchesDirectivePrefix("@nudo:case", "@nudo:ca")).toBe(true);
@@ -207,7 +207,7 @@ describe("族 53 · 第 2 条：指令补全的前缀过滤（前缀匹配语义
 
 /* ───────────────────────── 3 · 方法面下沉到符号层 ───────────────────────── */
 
-describe("族 53 · 第 3 条：方法面下沉到符号层（纯函数面 ≡ 协议面）", () => {
+describe("方法面下沉到符号层（纯函数面 ≡ 协议面）", () => {
   const at = { line: 2, column: 2 };
 
   it("3-1 方法目标可判定（方法键 / 同源成员访问）", () => {
@@ -253,7 +253,7 @@ describe("族 53 · 第 3 条：方法面下沉到符号层（纯函数面 ≡ �
 
 /* ───────────────────────── 4 · 跨文件方法 references ───────────────────────── */
 
-describe("族 53 · 第 4 条：跨文件方法 references（与改名面同口径）", () => {
+describe("跨文件方法 references（与改名面同口径）", () => {
   it("4-1 跨文件：调用文件里的 `Alpha.run` 进 references 结果", () => {
     const hits = collectMethodReferencesAcrossFiles(
       "/tmp/f53/a.js",
@@ -292,7 +292,7 @@ describe("族 53 · 第 4 条：跨文件方法 references（与改名面同口�
 
 /* ───────────────────────── 5 · executeCommand 位置参数桥 ───────────────────────── */
 
-describe("族 53 · 第 5 条：executeCommand 位置参数 → 对象桥", () => {
+describe("executeCommand 位置参数 → 对象桥", () => {
   const SRC = `export function add(a, b) {
   return a + b;
 }
@@ -382,7 +382,7 @@ function l2CodesWithConfig(ignoreThrows: unknown): string[] {
   }
 }
 
-describe("族 53 · 第 6 条：ignoreThrows 配置面（IDE ≡ CLI）", () => {
+describe("ignoreThrows 配置面（IDE ≡ CLI）", () => {
   it("6-1 纯函数面：re-export 实现的逐值断言（含非法值）", () => {
     const cases: Array<[unknown, string[]]> = [
       ["Error", ["Error"]],
@@ -427,7 +427,7 @@ describe("族 53 · 第 6 条：ignoreThrows 配置面（IDE ≡ CLI）", () => 
 
 /* ───────────────────────── 7 · env 模板反向边 ───────────────────────── */
 
-describe("族 53 · 第 7 条：env 模板反向边（LSP 接 service 的 env 反向边表）", () => {
+describe("env 模板反向边（LSP 接 service 的 env 反向边表）", () => {
   it("7-1 env 模板变更 ⇒ 依赖源文件被重检（扩展名缺省形态：只有 service 的表能命中）", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-f53-env-"));
     try {
@@ -496,7 +496,7 @@ describe("族 53 · 第 7 条：env 模板反向边（LSP 接 service 的 env �
 
 /* ───────────────────────── 8 · manifest 登记 ───────────────────────── */
 
-describe("族 53 · 第 8 条：manifest 登记 nudo.selectContract", () => {
+describe("manifest 登记 nudo.selectContract", () => {
   it("8-1 vscode manifest 的 contributes.commands 里有 nudo.selectContract", () => {
     const manifest = JSON.parse(
       readFileSync(join(REPO_ROOT, "packages", "vscode", "package.json"), "utf-8"),
@@ -511,7 +511,7 @@ describe("族 53 · 第 8 条：manifest 登记 nudo.selectContract", () => {
 
 /* ───────────────────────── 负控 ───────────────────────── */
 
-describe("族 53 · 负控：非相关路径逐字不变", () => {
+describe("负控：非相关路径逐字不变", () => {
   it("负控-1 普通绑定的定义面不被方法面劫持", () => {
     const src = "export const k = 1;\n";
     const defs = resolveDefinitionLocations("/tmp/f53/k.js", src, "k", {

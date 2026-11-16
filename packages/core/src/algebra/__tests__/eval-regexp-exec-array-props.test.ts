@@ -12,7 +12,7 @@
  * （修复前 m.indices 读折 never → 假 entry-may-throw）。
  */
 import { describe, it, expect } from "vitest";
-import { type Abs, litValue } from "@nudojs/core";
+import { litValue } from "@nudojs/core";
 import { call, isNever, tupleEls } from "./eval-helpers.ts";
 
 describe("exec/match result carries index/input/groups", () => {

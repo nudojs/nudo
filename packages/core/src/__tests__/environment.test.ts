@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { createEnvironment } from "../environment.ts";
-import { numLit, litValue, formatShape, type Abs } from "../algebra/index.ts";
+import { numLit, litValue, type Abs } from "../algebra/index.ts";
 
 describe("Environment", () => {
   it("binds and looks up Abs values", () => {

@@ -21,7 +21,7 @@ import {
   lit,
   v,
   termToString,
-  predToString,
+
   litValue,
   implies,
   simplifyTerm,

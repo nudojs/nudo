@@ -34,7 +34,7 @@ function check(src: string) {
 
 const PARSE = `function parse(s) { if (s === 'x') return { major: 1 }; return null; }`;
 
-describe("#97 null 守卫后的成员读不报 entry-may-throw", () => {
+describe("null 守卫后的成员读不报 entry-may-throw", () => {
   const variants: Array<[string, string]> = [
     ["earlyReturn", `export function earlyReturn(s) { const p = parse(s); if (p === null) return -1; return p.major; }`],
     ["ternary", `export function ternary(s) { const p = parse(s); return p === null ? -1 : p.major; }`],
@@ -73,7 +73,7 @@ describe("#97 null 守卫后的成员读不报 entry-may-throw", () => {
   });
 });
 
-describe("#98 循环构建二维数组的嵌套索引读不报 entry-may-throw", () => {
+describe("循环构建二维数组的嵌套索引读不报 entry-may-throw", () => {
   const DP = `
 export function lev(a, b) {
   const d = [];
@@ -117,7 +117,7 @@ export function lev(a, b) {
   });
 });
 
-describe("#105 typeof 守卫后 RegExp exec 不报 entry-may-throw", () => {
+describe("typeof 守卫后 RegExp exec 不报 entry-may-throw", () => {
   const RE = `const VERSION_RE = /^(\\d+)\\.(\\d+)\\.(\\d+)(?:-([0-9A-Za-z.-]+))?$/;`;
 
   it("npm-safe parseVersion 形态：typeof 守卫 + !m 守卫 + 捕获组读，零 L2", () => {
@@ -160,7 +160,7 @@ export function unguarded(v) {
   });
 });
 
-describe("#98 已知召回损失：无约束下标的真实 TypeError 穿门（oobUndef 按类压制）", () => {
+describe("已知召回损失：无约束下标的真实 TypeError 穿门（oobUndef 按类压制）", () => {
   // h(i) 的 d[i] 是真实无约束下标：原生 h(5) 里 d[5] 读到 undefined，
   // 再读 [0] 必抛 TypeError——main 上此处报 nudo:entry-may-throw。
   // 本 PR 的 oobUndef 标记（shape unknown + lit undefined + conf partial）

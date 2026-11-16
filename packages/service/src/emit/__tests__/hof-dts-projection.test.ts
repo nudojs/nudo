@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
-import { abs, num, str, v, type Abs } from "@nudojs/core";
+import { abs, num, v, type Abs } from "@nudojs/core";
 import { absToTSType, generateDts } from "../dts-generator.ts";
 import { analyzeFile } from "@nudojs/service";
 import { resetAllAnalysisCaches } from "@nudojs/service";

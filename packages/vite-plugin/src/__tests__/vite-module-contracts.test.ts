@@ -47,7 +47,7 @@ import {
   type ReportContext,
 } from "../report.ts";
 
-describe("族 30 S0 —— scope.ts 的契约（只抽不改）", () => {
+describe("S0 —— scope.ts 的契约（只抽不改）", () => {
   it("normalizeModuleId 剥 query，不动无 query 的 id", () => {
     expect(normalizeModuleId("/a/b.js?t=123456")).toBe("/a/b.js");
     expect(normalizeModuleId("/a/b.js?v=deadbeef")).toBe("/a/b.js");
@@ -108,7 +108,7 @@ describe("族 30 S0 —— scope.ts 的契约（只抽不改）", () => {
   });
 });
 
-describe("族 30 S0 —— check-assembly.ts 的契约（只抽不改）", () => {
+describe("S0 —— check-assembly.ts 的契约（只抽不改）", () => {
   it("assembleCheckOutcome 产出带 code 与位置的中间态（不自己拼文本）", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-vite-s0-check-"));
     try {
@@ -146,7 +146,7 @@ const r = needsPositive(-1);
   });
 });
 
-describe("族 30 S0 —— report.ts 的契约（只抽不改）", () => {
+describe("S0 —— report.ts 的契约（只抽不改）", () => {
   const diag = (severity: "error" | "warning" | "info") => ({
     severity,
     message: `boom-${severity}`,
@@ -271,7 +271,7 @@ describe("族 30 S0 —— report.ts 的契约（只抽不改）", () => {
   });
 });
 
-describe("族 30 S0 —— index.ts 的 configResolved 惰性钩子", () => {
+describe("S0 —— index.ts 的 configResolved 惰性钩子", () => {
   it("configResolved 只记录 config.root（此时无人消费 ⇒ 行为零变化）", () => {
     const plugin = nudoPlugin();
     const hook = plugin.configResolved as (c: unknown) => void;

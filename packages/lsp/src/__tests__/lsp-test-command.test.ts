@@ -70,7 +70,7 @@ function handler(mock: ReturnType<typeof createMockConnection>, method: string):
   return h!;
 }
 
-describe("selectCase 的 caseIndex 必须落在该函数的 case 列表内", () => {
+
   it("越界 caseIndex 回结构化错误，活动档表不变", async () => {
     const mock = startServer();
     const exec = handler(mock, "workspace/executeCommand");
@@ -125,7 +125,7 @@ describe("selectCase 的 caseIndex 必须落在该函数的 case 列表内", () 
     expect(result.success).toBe(false);
     expect(result.error).toContain("integer");
   }, 30_000);
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -157,7 +157,7 @@ export function g(y) {
 }
 `;
 
-describe("selectCase 必须校验 functionName", () => {
+
   it("空串 / 不存在的函数名回结构化错误，活动档表无幽灵条目", async () => {
     await withLspServer({ "sel.js": SRC }, async ({ req, uri }) => {
       const exec = req("workspace/executeCommand");
@@ -203,7 +203,7 @@ describe("selectCase 必须校验 functionName", () => {
       expect(await req("nudo/getActiveCases")({ uri: uri("sel.js") })).toEqual({ f: 0 });
     });
   }, 30_000);
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -236,7 +236,7 @@ export function g(y) {
 }
 `;
 
-describe("selectContract 必须校验目标函数", () => {
+
   it("目标函数不存在时回结构化错误，不写幽灵条目", async () => {
     await withLspServer({ "sel.js": SRC }, async ({ req, uri }) => {
       const exec = req("workspace/executeCommand");
@@ -280,7 +280,7 @@ describe("selectContract 必须校验目标函数", () => {
       expect(await req("nudo/getActiveCases")({ uri: fileUri })).toEqual({});
     });
   }, 30_000);
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -356,7 +356,7 @@ async function suggestText(): Promise<string> {
   return r.content[0]!.text;
 }
 
-describe("suggestCase 建议的名字与期望", () => {
+
   it("建议里的 case 名不落在合成 / 冻结名字空间（改前是 call@L<n>）", async () => {
     const text = await suggestText();
     const names = suggestedNames(text);
@@ -402,7 +402,7 @@ describe("suggestCase 建议的名字与期望", () => {
     const second = suggestedNames(await suggestText());
     expect(second).toEqual(first);
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -424,7 +424,7 @@ describe("反向钉：suggestCase 区分「已声明 case」与「合成见证�
 
 
 
-describe("反向钉：suggestCase 区分「已声明 case」与「合成见证」", () => {
+
   it("只有合成见证（call@）时给建议，不报 'already has N case(s)'", async () => {
     const src = [
       "export function add(a, b) { return a + b; }",
@@ -448,7 +448,7 @@ describe("反向钉：suggestCase 区分「已声明 case」与「合成见证�
     );
     expect(r.content[0].text).toBe('Function "inc" already has 1 case(s)');
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -478,7 +478,7 @@ export function double(x) {
 }
 `;
 
-describe("agent nudo/test 并入 assertions 汇总", () => {
+
   it("JSON 面含 assertions 键（passed / failed / unchecked）", async () => {
     await withLspServer({ "cases.js": CASES }, async ({ req, dir }) => {
       const r = await req("nudo/test")({ file: `${dir}/cases.js`, format: "json" });
@@ -506,7 +506,7 @@ describe("agent nudo/test 并入 assertions 汇总", () => {
       expect(json.assertions).toBeTruthy();
     });
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -543,7 +543,7 @@ alpha(1);
 beta(2);
 `;
 
-describe("agent nudo/test 过滤后 summary.cases 与 payload 同源", () => {
+
   it("summary.cases == payload 里的实际 case 总数（含外部 case）", async () => {
     await withLspServer(
       { "lib.js": LIB, "main.js": MAIN },
@@ -605,7 +605,7 @@ describe("agent nudo/test 过滤后 summary.cases 与 payload 同源", () => {
       },
     );
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -631,7 +631,7 @@ const SRC = `function a(x) { return x; }
 function b(x) { return x + 1; }
 `;
 
-describe("agent nudo/test 的 functions 入参形态校验", () => {
+
   it("functions 传字符串 ⇒ 工具错误（不是全空报告）", async () => {
     await withLspServer({ "m.js": SRC }, async ({ req, dir }) => {
       const r = await req("nudo/test")({
@@ -699,7 +699,7 @@ describe("agent nudo/test 的 functions 入参形态校验", () => {
       expect(json.functions.length).toBe(2);
     });
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -733,7 +733,7 @@ alpha(1);
 beta(2);
 `;
 
-describe("agent nudo/test 文本面渲染 imported 段", () => {
+
   it("文本面含 (imported) 段头与外部函数", async () => {
     await withLspServer(
       { "lib.js": LIB, "main.js": MAIN },
@@ -763,5 +763,5 @@ describe("agent nudo/test 文本面渲染 imported 段", () => {
       },
     );
   });
-});
+
 });

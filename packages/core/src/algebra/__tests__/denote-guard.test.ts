@@ -62,7 +62,7 @@ const argsOf = (n: number): unknown => {
   return f();
 };
 
-describe("`arguments`（非数组 exotic）不得以 Array.isArray 为前提", () => {
+
   it("守卫体不含 `Array.isArray`，且放行函数自己的 `arguments`", () => {
     const g = denoteGuard(emptyArgsAbs(), "data");
     expect(g).not.toContain("Array.isArray");
@@ -84,13 +84,12 @@ describe("`arguments`（非数组 exotic）不得以 Array.isArray 为前提", (
     expect(g).not.toContain("Array.isArray");
     expect(obj({ a: { value: strLit("x") } }).shape.k).toBe("obj");
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
 // guard 的数组检查不跳过稀疏洞
 // ---------------------------------------------------------------------------
-;
 
 // ---------------------------------------------------------------------------
 // brand 身份必须被投影进守卫（instanceof 判定）
@@ -135,7 +134,7 @@ const brandOf = (name: string, inner?: Abs): Abs =>
 const runner = (g: string): ((v: unknown) => boolean) =>
   new Function("data", `return ${g};`) as (v: unknown) => boolean;
 
-describe("brand 身份必须被投影进守卫（instanceof 判定）", () => {
+
   it("brand 臂产出 globalThis[\"<Brand>\"] 形态的 instanceof 判定", () => {
     const g = denoteGuard(brandOf("Date"), "data");
     expect(g).toContain('Reflect.get(globalThis, "Date")');
@@ -174,7 +173,7 @@ describe("brand 身份必须被投影进守卫（instanceof 判定）", () => {
     expect(g).not.toMatch(/instanceof\s+Counter\b/);
     expect(g).not.toMatch(/instanceof\s+Date\b/);
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -233,7 +232,7 @@ function errorAbs(): Abs {
 const runner = (g: string): ((data: unknown) => boolean) =>
   new Function("data", `return ${g};`) as (data: unknown) => boolean;
 
-describe("brand 内层的观测字面量不得钉成出口域", () => {
+
   it("RegExp：同 brand 的任意实例都放行（`/abc/i`、`/xyz/g`）", () => {
     const g = denoteGuard(regexpAbs(), "data");
     expect(g).not.toContain('=== "abc"');
@@ -253,7 +252,7 @@ describe("brand 内层的观测字面量不得钉成出口域", () => {
     expect(check(new TypeError("boom"))).toBe(true);
     expect(check({ message: "boom", name: "Error" })).toBe(false);
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -300,7 +299,7 @@ function nestedBoundAbs(): Abs {
 const runner = (g: string): ((data: unknown) => boolean) =>
   new Function("data", `return ${g};`) as (data: unknown) => boolean;
 
-describe("guard 面保留比较类谓词", () => {
+
   it("`.int()` ⇒ `Number.isInteger`（不是恒真）", () => {
     const g = denoteGuard(intAbs(), "data");
     expect(g).toContain("Number.isInteger(data)");
@@ -321,7 +320,7 @@ describe("guard 面保留比较类谓词", () => {
     expect(check({ n: -5 })).toBe(false);
     expect(check({})).toBe(false);
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -361,7 +360,7 @@ const protoSlots = (): Abs =>
     hasOwnProperty: { value: abs({ k: "prim", type: "boolean" }, { op: "lit", value: true }, undefined, "exact") },
   });
 
-describe("原型成员同名的槽走方括号取值（产物可编译）", () => {
+
   it("守卫体里不出现点号访问（`data.toString`），改用 `data[\"toString\"]`", () => {
     const g = denoteGuard(protoSlots(), "data");
     expect(g).not.toContain("data.toString");
@@ -407,7 +406,7 @@ describe("原型成员同名的槽走方括号取值（产物可编译）", () =
     // bool() 只用于类型对齐，不参与断言
     expect(bool().shape.k).toBe("prim");
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -449,7 +448,7 @@ const brandOf = (name: string, inner?: Abs): Abs =>
 const runner = (g: string): ((v: unknown) => boolean) =>
   new Function("data", `return ${g};`) as (v: unknown) => boolean;
 
-describe("没有可用 prototype 的构造器 ⇒ 守卫跳过 brand 身份子句", () => {
+
   it("原生 oracle：x instanceof Proxy 抛 TypeError（Proxy 没有 prototype）", () => {
     const proxyCtor = Reflect.get(globalThis, "Proxy") as unknown as Function;
     expect((proxyCtor as unknown as { prototype?: unknown }).prototype).toBeUndefined();
@@ -501,7 +500,7 @@ describe("没有可用 prototype 的构造器 ⇒ 守卫跳过 brand 身份子�
     expect(g).not.toContain("instanceof");
     expect(() => runner(g)({})).not.toThrow();
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -536,16 +535,14 @@ const objOfSlots = (
 const runner = (g: string): ((v: unknown) => boolean) =>
   new Function("data", `return ${g};`) as (v: unknown) => boolean;
 
-describe("必填槽存在性是独立子句 + 对象判定排除数组", () => {
+
   it("内层守卫为 \"true\"（any/unknown）的必填槽仍产存在性子句", () => {
     const g = denoteGuard(objOfSlots({ id: { value: unknown } }), "data");
     expect(g).toContain('Object.hasOwn(data, "id")');
     expect(g).toContain('"id" in data');
   });
 
-  ;
 
-  ;
 
   it("负控制：可选槽不产存在性子句（可选槽本就允许缺键）", () => {
     const g = denoteGuard(
@@ -556,7 +553,7 @@ describe("必填槽存在性是独立子句 + 对象判定排除数组", () => {
     const check = runner(g);
     expect(check({})).toBe(true);
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -596,7 +593,7 @@ const objOfSlots = (
 const runner = (g: string): ((v: unknown) => boolean) =>
   new Function("data", `return ${g};`) as (v: unknown) => boolean;
 
-describe("guard 投影必须保真结构义务", () => {
+
   it("必填槽值域恰为 undefined：存在性是独立子句（不是 v.a !== undefined）", () => {
     const undefAbs = makeAbs({ k: "unknown" }, lit(undefined), undefined, "exact");
     const g = denoteGuard(
@@ -687,8 +684,7 @@ describe("guard 投影必须保真结构义务", () => {
     expect(denoteGuard(foreign, "data")).not.toContain("data.length");
   });
 
-  ;
-});
+
 });
 
 

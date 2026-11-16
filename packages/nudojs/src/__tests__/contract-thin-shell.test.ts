@@ -39,7 +39,7 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("族 20 S0 —— 薄壳的导出面（零新增公共导出）", () => {
+describe("S0 —— 薄壳的导出面（零新增公共导出）", () => {
   it("commands/contract.ts 的运行时导出有且只有 registerContractCommand", () => {
     expect(Object.keys(contractModule).sort()).toEqual(["registerContractCommand"]);
     expect(typeof contractModule.registerContractCommand).toBe("function");
@@ -51,7 +51,7 @@ describe("族 20 S0 —— 薄壳的导出面（零新增公共导出）", () =>
   });
 });
 
-describe("族 20 S0 —— 可观测行为逐字不变", () => {
+describe("S0 —— 可观测行为逐字不变", () => {
   it("print 形态：路径行 + 签名行不变", () => {
     const file = join(dir, "getName.js");
     writeFileSync(file, `export function getName(user) { return user.name; }\n`);

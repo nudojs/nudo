@@ -18,7 +18,7 @@ import {
   ge,
   lt,
   le,
-  and,
+
   formatAbs,
 } from "../index.ts";
 

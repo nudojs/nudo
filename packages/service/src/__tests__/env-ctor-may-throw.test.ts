@@ -55,7 +55,7 @@ function check() {
   return checkSource("/t/env-ctor-may-throw.js", SRC, pTrue, { inject });
 }
 
-describe("#106 env 声明构造器不报 constructibility 假 may-throw", () => {
+describe("env 声明构造器不报 constructibility 假 may-throw", () => {
   it("class extends Error + super(message) + new ApiError：零 constructibility L2（定义期与构造期都合法）", () => {
     const r = check();
     // #110 起 super(message) 落地 name/message 槽：any message 构造记录

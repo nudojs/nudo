@@ -64,7 +64,7 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("见证身份必须保留现场组件（同号不同现场 ≠ 同一调用点）", () => {
+
   it("另一现场文件的调用点被**删除** ⇒ 报 drift + exit 1（旧行为：0 drift / OK / exit 0）", () => {
     writeFileSync(p("b.js"), B_DELETED);
     const r = runCliTsx(["health", p("lib.js"), "--from", p("a.js"), p("b.js")], { cwd: dir });
@@ -82,7 +82,7 @@ describe("见证身份必须保留现场组件（同号不同现场 ≠ 同一�
     expect(r.stdout).not.toContain("drift:");
     expect(r.status).toBe(0);
   }, 60_000);
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -128,7 +128,7 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("从未冻结的文件 + --from ⇒ 0 drift（不发假红）", () => {
+
   it("文本面：0 case drift / Result: OK / exit 0（旧行为：1 case drift / FAIL / exit 1）", () => {
     const r = runCliTsx(["health", p("lib2.js"), "--from", p("tests/usage.js")], { cwd: dir });
     expect(r.stdout, r.stdout).toContain("0 case drift");
@@ -150,7 +150,7 @@ describe("从未冻结的文件 + --from ⇒ 0 drift（不发假红）", () => {
     expect(json.summary.drift).toBe(0);
     expect(json.files[0]?.drift).toBeUndefined();
   }, 60_000);
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -172,7 +172,7 @@ describe("health --json 的缺失路径必须进 pathErrors[] / targetErrors[]",
 
 
 
-describe("health --json 的缺失路径必须进 pathErrors[] / targetErrors[]", () => {
+
   it("--json 面：机器码 nudo:path-not-found + errors 只计 1", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug-038-"));
     const missing = join(dir, "nope.js");
@@ -217,7 +217,7 @@ describe("health --json 的缺失路径必须进 pathErrors[] / targetErrors[]",
       rmSync(dir, { recursive: true, force: true });
     }
   }, 60_000);
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -255,7 +255,7 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("health --json 的用法错误也必须产出 JSON 信封", () => {
+
   it("--json --from <file>（无位置路径）⇒ stdout 可解析 + ok:false + exit 1", () => {
     const r = runCliTsx(["health", "--json", "--from", p("lib.js")], { cwd: dir });
     expect(r.status).toBe(1);
@@ -272,7 +272,7 @@ describe("health --json 的用法错误也必须产出 JSON 信封", () => {
     expect(json.summary.files).toBe(1);
     expect(typeof json.ok).toBe("boolean");
   }, 60_000);
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -320,7 +320,7 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("health 与 contract --emit 的漂移结论必须一致", () => {
+
   it("段头漂移：health 报 contract drift（旧行为：0 / OK / exit 0）且与 emit 同结论", () => {
     writeFileSync(p("lib.nudo.js"), STALE_HEADER_SIDECAR);
     const health = runCliTsx(["health", p("lib.js")], { cwd: dir });
@@ -347,7 +347,7 @@ describe("health 与 contract --emit 的漂移结论必须一致", () => {
     expect(health.status).toBe(0);
     expect(emit.status, emit.stdout).toBe(0);
   }, 60_000);
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -406,7 +406,7 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("文件级 @nudo:env 按文件目录解析（与 check 同口径）", () => {
+
   it("health 与 check 同计数：陈旧的 @generated 段 ⇒ 报 contract drift（旧行为：0）", () => {
     const check = runCliTsx(["check", p("src/m.js")], { cwd: dir });
     expect(check.stdout, check.stdout).toContain("nudo:contract-drift");
@@ -416,13 +416,13 @@ describe("文件级 @nudo:env 按文件目录解析（与 check 同口径）", (
     expect(health.stdout).not.toContain("0 contract drift");
     expect(health.status).toBe(1);
   }, 90_000);
-});
+
 });
 
 // ---------------------------------------------------------------------------
 // 族 63-1: health Summary 的漂移数与明细行同量纲（见证条数）
 // ---------------------------------------------------------------------------
-describe("族 63-1: health Summary 的漂移数与明细行同量纲（见证条数）", () => {
+describe("1: health Summary 的漂移数与明细行同量纲（见证条数）", () => {
 /**
  * 族 63 · nudojs CLI 协议面（W16）—— health 文本面量纲 / `pathErrors[]` 命名 /
  * watch 多轮 JSON 形态，三条精度债。
@@ -575,7 +575,7 @@ afterAll(() => {
 // 1. health 文本面：Summary 与明细行同量纲
 // ---------------------------------------------------------------------------
 
-describe("族 63-1: health Summary 的漂移数与明细行同量纲（见证条数）", () => {
+
   it("文本面：Summary 的「N case drift」== Σ 明细行的「N witness directive(s) changed」", { timeout: 60_000 }, () => {
     const r = runCliTsx(["health", p("lib.js"), "--from", p("usage.js")]);
     expect(r.status).toBe(1);
@@ -618,13 +618,13 @@ describe("族 63-1: health Summary 的漂移数与明细行同量纲（见证条
     expect(parsed.summary.drift).toBe(cases);
     expect(parsed.summary.drift).toBe(2);
   });
-});
+
 
 // ---------------------------------------------------------------------------
 // 2. pathErrors[] 命名漂移：字段逐字保留 + 新增语义可见的 targetErrors[]
 // ---------------------------------------------------------------------------
 
-describe("族 63-2: pathErrors[] 逐字保留 + targetErrors[] 让语义可见", () => {
+describe("2: pathErrors[] 逐字保留 + targetErrors[] 让语义可见", () => {
   it("分析目标闸门错误：pathErrors[] 原样保留 + targetErrors[] 精确可见", { timeout: 60_000 }, () => {
     const r = runCliTsx(["health", "--json", p("types.d.ts")]);
     const parsed = JSON.parse(r.stdout) as {
@@ -667,7 +667,7 @@ describe("族 63-2: pathErrors[] 逐字保留 + targetErrors[] 让语义可见",
 // 3. watch 多轮 JSON：JSON Lines（每行一份完整 JSON 文档）
 // ---------------------------------------------------------------------------
 
-describe("族 63-3: watch --json ⇒ JSON Lines（多轮累积不再炸 JSON.parse）", () => {
+describe("3: watch --json ⇒ JSON Lines（多轮累积不再炸 JSON.parse）", () => {
   it("health --watch --json：两轮 ⇒ stdout 两行，每行各自 JSON.parse 得通", { timeout: 60_000 }, async () => {
     const watchDir = mkdtempSync(join(tmpdir(), "nudo-bug-63-watch-"));
     writeSrcTsconfig(watchDir);
@@ -785,7 +785,7 @@ describe("族 63-3: watch --json ⇒ JSON Lines（多轮累积不再炸 JSON.par
 // 负控：非 watch 的单轮 stdout 逐字不变
 // ---------------------------------------------------------------------------
 
-describe("族 63 负控: 非 watch 的单轮 stdout 逐字不变", () => {
+describe("负控: 非 watch 的单轮 stdout 逐字不变", () => {
   it("--json 面：仍是**一份** pretty 文档（逐字等于改前基线）", { timeout: 60_000 }, () => {
     const r = runCliTsx(["health", "--json", "clean.js"], { cwd: dir });
     expect(r.status).toBe(0);
@@ -843,7 +843,7 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("health 的分析错误必须进判定面（不得假绿）", () => {
+
   it("文本面：坏侧车 ⇒ 报分析错误 + exit 1（不得 Result: OK）", { timeout: 60_000 }, () => {
     const r = runCliTsx(["health", p("main.js")]);
     expect(r.status).toBe(1);
@@ -869,7 +869,7 @@ describe("health 的分析错误必须进判定面（不得假绿）", () => {
     const r = runCliTsx(["check", p("main.js")]);
     expect(r.stdout).toContain("nudo:contract-load");
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -915,7 +915,7 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("witness drift 计数 = 实际变更条数", () => {
+
   it("文本面：只改 1 条见证 ⇒ 报「1 witness directive(s) changed」", { timeout: 60_000 }, () => {
     const r = runCliTsx(["health", p("lib.js"), "--from", p("usage.js")]);
     expect(r.stdout).toContain("1 witness directive(s) changed");
@@ -947,7 +947,7 @@ describe("witness drift 计数 = 实际变更条数", () => {
     expect(m).not.toBeNull();
     expect(Number(m![1])).toBe(1);
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1056,7 +1056,7 @@ const waitUntil = async (pred: () => boolean, ms = 15000): Promise<void> => {
 
 const SRC = (n: number) => `export function f${n}() {\n  return ${n};\n}\n`;
 
-describe("watch 多路径且首个是文件 ⇒ 增量轮不再永不触发", () => {
+{
   const dirs: string[] = [];
   afterEach(() => {
     vi.restoreAllMocks();
@@ -1122,7 +1122,7 @@ describe("watch 多路径且首个是文件 ⇒ 增量轮不再永不触发", ()
       close();
     }
   });
-});
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -1154,7 +1154,7 @@ const waitUntil = async (pred: () => boolean, ms = 15000): Promise<void> => {
 
 const SRC = (n: number) => `export function f${n}() {\n  return ${n};\n}\n`;
 
-describe("watch 事件路径归属真实变更文件", () => {
+{
   const dirs: string[] = [];
   afterEach(() => {
     vi.restoreAllMocks();
@@ -1215,7 +1215,7 @@ describe("watch 事件路径归属真实变更文件", () => {
       close();
     }
   });
-});
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -1250,7 +1250,7 @@ const waitUntil = async (pred: () => boolean, ms = 15000): Promise<void> => {
 
 const SRC = (n: number) => `export function f${n}() {\n  return ${n};\n}\n`;
 
-describe("watch 监视根覆盖全部路径目录", () => {
+{
   const dirs: string[] = [];
   afterEach(() => {
     vi.restoreAllMocks();
@@ -1326,7 +1326,7 @@ describe("watch 监视根覆盖全部路径目录", () => {
       close();
     }
   });
-});
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -1359,7 +1359,7 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("health 文本面与 --json 面的 error 计数同源", () => {
+
   it("同一轮：文本面 Summary 的 error 数 == JSON summary.errors（路径错误计入）", { timeout: 30_000 }, () => {
     const file = join(dir, "lib.js");
     writeFileSync(file, "export function libFn(x) {\n  return x + 1;\n}\n");
@@ -1403,7 +1403,7 @@ describe("health 文本面与 --json 面的 error 计数同源", () => {
     expect(parsed.ok).toBe(true);
     expect(text.status).toBe(0);
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1453,7 +1453,7 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("health --from 多文件与 check/contract 同口径", () => {
+
   it("health <target> --from a.js b.js：接受多文件 --from，分析目标不变", { timeout: 30_000 }, () => {
     const r = runCliTsx(["health", lib, "--from", a, b]);
     expect(r.status).toBe(0);
@@ -1493,7 +1493,7 @@ describe("health --from 多文件与 check/contract 同口径", () => {
     expect(r.stderr).toContain("--from requires explicit paths");
     expect(r.stderr).not.toContain("consumed");
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1529,7 +1529,7 @@ const waitUntil = async (pred: () => boolean, ms = 15000): Promise<void> => {
 
 const SRC = (n: number) => `export function f${n}() {\n  return ${n};\n}\n`;
 
-describe("watch 扫描应用 nudo.analysis.include / exclude", () => {
+{
   const dirs: string[] = [];
   afterEach(() => {
     vi.restoreAllMocks();
@@ -1593,7 +1593,7 @@ describe("watch 扫描应用 nudo.analysis.include / exclude", () => {
     expect(targetSet).toContain(inFile);
     expect(targetSet).toContain(outFile);
   });
-});
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -1623,7 +1623,7 @@ describe("watch --json 的 stdout 必须是纯 JSON", () => {
 
 const ONE = `export function one(){ return 1; }\n`;
 
-describe("watch --json 的 stdout 必须是纯 JSON", () => {
+
   it("nudo test --watch --json → JSON.parse(stdout) 不抛", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-c4-693-"));
     try {
@@ -1658,7 +1658,7 @@ describe("watch --json 的 stdout 必须是纯 JSON", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   }, 60000);
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1700,7 +1700,7 @@ afterEach(() => {
   clearEnvPathDeps();
 });
 
-describe("env 模板变更 ⇒ 依赖它的源文件复分析", () => {
+
   it("改了 globals.env.ts → main.js 在增量轮被重新分析", async () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     vi.spyOn(console, "error").mockImplementation(() => {});
@@ -1748,7 +1748,7 @@ describe("env 模板变更 ⇒ 依赖它的源文件复分析", () => {
       clearEnvPathDeps();
     }
   }, 60000);
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1797,7 +1797,7 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("health --json 序列化 budget 截断快照", () => {
+
   it("截断文件：JSON 面带 budget.truncated=true + summary.budgetTruncated；文本面报截断", { timeout: 30_000 }, () => {
     const deep = join(dir, "deep.js");
     writeFileSync(deep, DEEP);
@@ -1836,7 +1836,7 @@ describe("health --json 序列化 budget 截断快照", () => {
     const text = runCliTsx(["health", plain]);
     expect(text.stdout).not.toContain("budget truncated");
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1873,7 +1873,7 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("health --watch 的路径错误通道可达", () => {
+
   it("health --watch <不存在路径>：路径错误上屏 + exit 1 + 进程自己退出（不装 watch）", { timeout: 40_000 }, async () => {
     const r = await runWatchCli(["health", missing], { waitFor: "exit", timeoutMs: 12_000 });
     expect(r.stdout, `stderr=${r.stderr}`).toContain("File not found");
@@ -1892,7 +1892,7 @@ describe("health --watch 的路径错误通道可达", () => {
     expect(plain.stdout).toContain("File not found");
     expect(watch.stdout).toContain(plain.stdout.split("\n")[0]!.trim());
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1946,7 +1946,7 @@ afterEach(() => {
   process.exitCode = undefined;
 });
 
-describe("watch 每轮重采 --from 调用点证据", () => {
+
   it("调用点改了之后，重新分析依赖方时用的是**当前**证据（不是启动快照）", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-cli-928-watch-"));
     const lib = join(dir, "lib.js");
@@ -1996,7 +1996,7 @@ describe("watch 每轮重采 --from 调用点证据", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   }, 60000);
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2029,7 +2029,7 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("health --watch 一轮只产出一份报告", () => {
+
   it("人类面：首轮完整报告只打印 1 份（Summary 行数 = 1，不是文件数）", { timeout: 40_000 }, async () => {
     const r = await runWatchCli(["health", dir], { timeoutMs: 25_000 });
     const summaries = r.stdout.match(/^Summary:/gm) ?? [];
@@ -2053,7 +2053,7 @@ describe("health --watch 一轮只产出一份报告", () => {
     expect(parsed.files.length).toBe(2);
     expect(parsed.summary.files).toBe(2);
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2087,7 +2087,7 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("health 必须与分析目标闸门同口径", () => {
+
   it("文本面：.d.ts 目标 ⇒ exit 1 + Not an analysis target（不得 Result: OK）", { timeout: 60_000 }, () => {
     const r = runCliTsx(["health", p("types.d.ts")]);
     expect(r.status).toBe(1);
@@ -2125,7 +2125,7 @@ describe("health 必须与分析目标闸门同口径", () => {
     expect(health.stderr).toContain("Not an analysis target");
     expect(check.stderr).toContain("Not an analysis target");
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2158,7 +2158,7 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("空目标集不得报「一切正常」", () => {
+
   it("--json 面：ok:false + files:[] + 非零 exit", { timeout: 60_000 }, () => {
     const r = runCliTsx(["health", "--json", emptyDir]);
     const parsed = JSON.parse(r.stdout) as {
@@ -2185,7 +2185,7 @@ describe("空目标集不得报「一切正常」", () => {
     expect(check.status).toBe(1);
     expect(check.stderr).toContain("No nudo files found in directory");
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2234,7 +2234,7 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("uncovered 指标不得恒为 0", () => {
+
   it("--json 面：无调用点证据的函数进 uncovered + summary.uncovered ≥ 1", { timeout: 60_000 }, () => {
     const r = runCliTsx(["health", "--json", p("no-evidence.js")]);
     const parsed = JSON.parse(r.stdout) as {
@@ -2263,7 +2263,7 @@ describe("uncovered 指标不得恒为 0", () => {
     };
     expect(parsed.files[0].uncovered).not.toContain("c");
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2300,7 +2300,7 @@ type Doc = {
   pathErrors?: Array<{ path: string; code: string; message: string }>;
 };
 
-describe("watch 面的 JSON Lines 契约（早退分支也不打 pretty 文档）", () => {
+{
   const verbs = ["check", "test"] as const;
 
   for (const verb of verbs) {
@@ -2366,7 +2366,7 @@ describe("watch 面的 JSON Lines 契约（早退分支也不打 pretty 文档�
       rmSync(dir, { recursive: true, force: true });
     }
   });
-});
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -2454,7 +2454,7 @@ function healthEntryOnly(dir: string): number {
   return m ? Number(m[1]) : 0;
 }
 
-describe("CLI：check 与 health 的 entry-only 口径一致", () => {
+
   it("无契约根的导出：check 报 entry-only info，条数 == health 的计数", () => {
     const dir = fixture(SOLO);
     try {
@@ -2501,7 +2501,7 @@ describe("CLI：check 与 health 的 entry-only 口径一致", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2632,7 +2632,7 @@ afterEach(() => {
   process.exitCode = undefined;
 });
 
-describe("watch 面单文件分析失败必须置红（不得吞掉异常保持绿）", () => {
+
   it("全量轮：坏文件分析失败 ⇒ exit 1（改前：吞掉异常 ⇒ exit 0 假绿）", async () => {
     const { rounds } = installConsole();
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug-926-"));
@@ -2731,5 +2731,5 @@ describe("watch 面单文件分析失败必须置红（不得吞掉异常保持�
       process.exitCode = undefined;
     }
   });
-});
+
 });

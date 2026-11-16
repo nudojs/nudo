@@ -39,7 +39,7 @@ function dts(file: string): string {
 }
 
 describe("D2 · 类字段/accessor 的公开类型来源", () => {
-  it("BUG-014：注解优先于初始化器（含联合 / readonly 数组）", () => {
+  it("注解优先于初始化器（含联合 / readonly 数组）", () => {
     const out = dts(
       fixture(
         "t8.ts",
@@ -56,7 +56,7 @@ describe("D2 · 类字段/accessor 的公开类型来源", () => {
     expect(out).toContain("arr: readonly number[];");
   }, 60000);
 
-  it("BUG-007：内部零实参构造不把字段钉成 undefined", () => {
+  it("内部零实参构造不把字段钉成 undefined", () => {
     const out = dts(
       fixture(
         "p1.js",
@@ -78,7 +78,7 @@ describe("D2 · 类字段/accessor 的公开类型来源", () => {
     expect(out).toMatch(/\bn: unknown;/);
   }, 60000);
 
-  it("BUG-033：无注解 getter 按返回值观测（字面量 / this.<字段>）", () => {
+  it("无注解 getter 按返回值观测（字面量 / this.<字段>）", () => {
     const out = dts(
       fixture(
         "g.js",

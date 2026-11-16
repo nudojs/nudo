@@ -6,10 +6,10 @@ import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readdirSync, readFileSyn
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { formatContractSurfaceLine, contractSurface } from "../contract-surface.ts";
-import { num, type Abs, type FormalParam, abs, constraintToEntryAbs, lit, numLit, v, type NudoConstraint, obj, str, gt, ge, lt, le, type Pred, objOf, execNudoModule, effectiveContract, checkSource, pTrue, strLit, absToConstraint, app, number, predToString, abs as makeAbs, formatShape } from "@nudojs/core";
+import { num, type Abs, type FormalParam, abs, constraintToEntryAbs, lit, numLit, v, type NudoConstraint, str, gt, ge, lt, le, type Pred, objOf, execNudoModule, effectiveContract, checkSource, pTrue, strLit, absToConstraint, app, number, predToString, abs as makeAbs, formatShape } from "@nudojs/core";
 import { absToStandardSchemaFunction, absToStandardSchema, absToStandardSchemaModule, validateSchemaNode } from "../standard-schema.ts";
 import { loadGeneratedModule } from "./fixtures.ts";
-import { absToSchemaNode, absToSchemaSource, schemaNodeToZod, absToZodSchemaModule, constraintToSchemaNode, schemaNodeToZodProjection } from "../schema-generator.ts";
+import { absToSchemaNode, absToSchemaSource, schemaNodeToZod, absToZodSchemaModule, constraintToSchemaNode,  } from "../schema-generator.ts";
 import ts from "typescript";
 import { absToTSType } from "../dts-generator.ts";
 import { tscNoEmit } from "./dts-tsc.ts";
@@ -124,10 +124,9 @@ async function runWithCache(
   }
 }
 
-describe("bigint 字面量契约不得让契约面崩溃", () => {
-  it("bigint 字面量契约正常出结果（改前：抛 Do not know how to serialize a BigInt）；往返保真：Infinity 字面量读回仍是 Infinity（改前：JSON ⇒ null ⇒ lit(null)）；负控制：普通数字字面量契约显示与往返不变", async () => {
-await (async () => {
 
+  it("bigint 字面量契约正常出结果（改前：抛 Do not know how to serialize a BigInt）；往返保真：Infinity 字面量读回仍是 Infinity（改前：JSON ⇒ null ⇒ lit(null)）；负控制：普通数字字面量契约显示与往返不变", async () => {
+  {
     const root = makeFixture({ "c.js": SRC_JS, "c.nudo.js": BIGINT_NUDO_JS });
     const file = join(root, "c.js");
     const cacheDir = join(root, ".cache");
@@ -147,9 +146,8 @@ await (async () => {
     // 落盘用带类型标签的编码：bigint 以十进制字符串留存（不被 JSON 丢弃/抛错）
     expect(hot.cacheRaw).toContain('"t":"bigint"');
     expect(hot.cacheRaw).toContain('"v":"10"');
-  })();
-await (async () => {
-
+  }
+  {
     const root = makeFixture({ "c.js": SRC_JS, "c.nudo.js": INFINITY_NUDO_JS });
     const file = join(root, "c.js");
     const cacheDir = join(root, ".cache");
@@ -159,9 +157,8 @@ await (async () => {
     const hot = await runWithCache(file, cacheDir);
     expect(hot.lines).toEqual(cold.lines);
     expect(hot.lines[0]).not.toContain("lit(null)");
-  })();
-await (async () => {
-
+  }
+  {
     const root = makeFixture({ "c.js": SRC_JS, "c.nudo.js": NUMBER_NUDO_JS });
     const file = join(root, "c.js");
     const cacheDir = join(root, ".cache");
@@ -171,13 +168,11 @@ await (async () => {
     const hot = await runWithCache(file, cacheDir);
     expect(hot.lines).toEqual(cold.lines);
     expect(hot.cacheRaw).not.toContain('"t":"bigint"');
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -221,10 +216,9 @@ const namedFormals: FormalParam[] = [
   { kind: "id", name: "b", index: 1 },
 ];
 
-describe("standard 入参面不得把解构字段平铺成整参校验器", () => {
-  it("解构形参：出 `<fn>Input` 对象校验器，且**不出**字段级顶层校验器；具名形参：`<fn>_<param>` 仍是真的整参校验器（负控制）；返回面口径：恒名 `<fn>Output`（名字不随符号来源翻转——Bug 614）；没有形参表面时，全部条目按整参处理（退化口径不变）", async () => {
-await (async () => {
 
+  it("解构形参：出 `<fn>Input` 对象校验器，且**不出**字段级顶层校验器；具名形参：`<fn>_<param>` 仍是真的整参校验器（负控制）；返回面口径：恒名 `<fn>Output`（名字不随符号来源翻转——Bug 614）；没有形参表面时，全部条目按整参处理（退化口径不变）", async () => {
+  {
     const { source } = absToStandardSchemaFunction({
       fn: "act",
       inputs: [
@@ -248,9 +242,8 @@ await (async () => {
     expect(validate(1).issues).toBeDefined();
     // 缺字段被拒绝
     expect(validate({ a: 1 }).issues).toBeDefined();
-  })();
-await (async () => {
-
+  }
+  {
     const { source } = absToStandardSchemaFunction({
       fn: "act",
       inputs: [
@@ -270,9 +263,8 @@ await (async () => {
     expect(mod.act_a!["~standard"].validate({ a: 1 }).issues).toBeDefined();
     // `<fn>Input` 校验整个入参对象
     expect(mod.actInput!["~standard"].validate({ a: 1, b: 2 }).issues).toBeUndefined();
-  })();
-await (async () => {
-
+  }
+  {
     const withReturn = absToStandardSchemaFunction({
       fn: "act",
       inputs: [{ name: "a", abs: num() }],
@@ -288,24 +280,20 @@ await (async () => {
     });
     expect(withOutput.source).toContain("export const actOutput");
     expect(withOutput.source).not.toContain("export const actReturn");
-  })();
-await (async () => {
-
+  }
+  {
     const { source } = absToStandardSchemaFunction({
       fn: "act",
       inputs: [{ name: "a", abs: num() }],
     });
     expect(source).toContain("export const act_a");
     expect(source).toContain("export const actInput");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -351,16 +339,14 @@ const bigintEntryAbs = (): Abs => {
 
 describe("standard 节点的字面量序列化必须保真", () => {
   it("Infinity 不再被写成 null（产物文本层）；Infinity：产物放行真值、拒绝 null（语义层，Bug 1000 的假红/假绿）；-Infinity 同样保真；bigint 字面量：序列化不抛（修前整条 export 崩溃、零产物）；负控制：普通字面量的产物文本与判定不变；负控制：NaN 不落成 lit(null)，而是按 zod 面同口径降级并记账", async () => {
-await (async () => {
-
+  {
     const { node } = absToSchemaNode(litAbs(Infinity));
     expect(node).toEqual({ k: "lit", value: Infinity });
     const { source } = absToStandardSchema(litAbs(Infinity), { name: "infOutput" });
     expect(source).toContain('"value":Infinity');
     expect(source).not.toContain('"value":null');
-  })();
-await (async () => {
-
+  }
+  {
     const { source } = absToStandardSchema(litAbs(Infinity), { name: "infOutput" });
     const mod = await loadGeneratedModule(source);
     const validate = mod.infOutput!["~standard"].validate;
@@ -370,18 +356,16 @@ await (async () => {
     // 报错文案不得自相矛盾（「expected null, got null」）
     expect(nul.issues?.[0]?.message).toContain("expected Infinity");
     expect(nul.issues?.[0]?.message).not.toContain("expected null");
-  })();
-await (async () => {
-
+  }
+  {
     const { source } = absToStandardSchema(litAbs(-Infinity), { name: "negInfOutput" });
     expect(source).toContain('"value":-Infinity');
     const mod = await loadGeneratedModule(source);
     const validate = mod.negInfOutput!["~standard"].validate;
     expect(validate(-Infinity).issues).toBeUndefined();
     expect(validate(Infinity).issues).toBeDefined();
-  })();
-await (async () => {
-
+  }
+  {
     const entry = bigintEntryAbs();
     const { node } = absToSchemaNode(entry);
     expect(node).toEqual({ k: "lit", value: 10n });
@@ -397,36 +381,29 @@ await (async () => {
     const bad = validate(10);
     expect(bad.issues).toBeDefined();
     expect(bad.issues?.[0]?.message).toContain("expected 10n");
-  })();
-await (async () => {
-
+  }
+  {
     const { source } = absToStandardSchema(numLit(42), { name: "okOutput" });
     expect(source).toContain('"value":42');
     const mod = await loadGeneratedModule(source);
     const validate = mod.okOutput!["~standard"].validate;
     expect(validate(42).issues).toBeUndefined();
     expect(validate(43).issues).toBeDefined();
-  })();
-await (async () => {
-
+  }
+  {
     const { node, dropped } = absToSchemaNode(litAbs(NaN));
     // 降级（不是 lit(null)）——NaN 字面量在 Abs 里可表示，但 schema 面不投影它
     expect(node).not.toEqual({ k: "lit", value: null });
     expect(dropped.join(" ")).toContain("NaN");
     const { source } = absToStandardSchema(litAbs(NaN), { name: "nanOutput" });
     expect(source).not.toContain('"value":null');
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 });
 
@@ -517,14 +494,12 @@ const richAbs = (): Abs =>
 
 describe("standard 产物必须能过 tsc --noEmit --strict", () => {
   it("生成的 standard 产物在 strict 下 0 诊断；负控制：修前形态（裸 JS helper）在同一检查器下报 TS7006；产物自带类型别名（消费方拿到 unknown 而非 any 的入参面）", () => {
-(() => {
-
+  {
     const { source } = absToStandardSchemaModule({ rich: richAbs() });
     const diags = strictDiagnostics(source);
     expect(diags.map((d) => `${d.code}: ${d.message}`)).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     // 修前的 helper 签名（无类型标注）——必须被本门禁抓住，否则门禁恒绿。
     const legacy = `function __nudoCheck(node, value, path, issues) {
   function push(msg) {
@@ -554,9 +529,8 @@ export const rich = {
     const codes = strictDiagnostics(legacy).map((d) => d.code);
     expect(codes).toContain(7006); // 隐式 any 形参
     expect(codes).toContain(7005); // 隐式 any[]
-  })();
-(() => {
-
+  }
+  {
     const { source } = absToStandardSchemaModule({ rich: richAbs() });
     expect(source).toContain("type NudoSchemaNode =");
     expect(source).toContain("type NudoIssue =");
@@ -565,12 +539,10 @@ export const rich = {
     // 不得残留隐式 any 的局部量
     expect(source).not.toMatch(/const local = \[\]/);
     expect(source).not.toMatch(/const issues = \[\]/);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 });
 });
 
@@ -597,38 +569,33 @@ describe("zod number + numBound 必须覆盖 ±Infinity 的合法端", () => {
 const numWith = (pred: Pred): Abs =>
   abs({ k: "prim", type: "number" }, { op: "var", id: "x" }, pred, "exact");
 
-describe("zod number + numBound 必须覆盖 ±Infinity 的合法端", () => {
-  it("gt(0)：放宽 +Infinity，不放宽 -Infinity（-Infinity > 0 为假）；ge(5)：同上（+Infinity 满足 ge）；lt(5)：放宽 -Infinity，不放宽 +Infinity（+Infinity < 5 为假）；le(5)：同上；int 真的排除非有限值 ⇒ 不放宽（`Number.isInteger(±Infinity)` 为假）；多界合取：两端都满足才放宽对应端（gt(0) ∧ lt(10) ⇒ 两端都不满足）；多界合取：同为下", () => {
-(() => {
 
+  it("gt(0)：放宽 +Infinity，不放宽 -Infinity（-Infinity > 0 为假）；ge(5)：同上（+Infinity 满足 ge）；lt(5)：放宽 -Infinity，不放宽 +Infinity（+Infinity < 5 为假）；le(5)：同上；int 真的排除非有限值 ⇒ 不放宽（`Number.isInteger(±Infinity)` 为假）；多界合取：两端都满足才放宽对应端（gt(0) ∧ lt(10) ⇒ 两端都不满足）；多界合取：同为下", () => {
+  {
     const source = absToSchemaSource(numWith(gt(v("x"), lit(0))));
     expect(source).toContain("z.number().gt(0)");
     expect(source).toContain(".or(z.literal(Infinity))");
     expect(source).not.toContain("z.literal(-Infinity)");
-  })();
-(() => {
-
+  }
+  {
     const source = absToSchemaSource(numWith(ge(v("x"), lit(5))));
     expect(source).toContain("z.number().gte(5)");
     expect(source).toContain(".or(z.literal(Infinity))");
     expect(source).not.toContain("z.literal(-Infinity)");
-  })();
-(() => {
-
+  }
+  {
     const source = absToSchemaSource(numWith(lt(v("x"), lit(5))));
     expect(source).toContain("z.number().lt(5)");
     expect(source).toContain(".or(z.literal(-Infinity))");
     expect(source).not.toContain("z.literal(Infinity)");
-  })();
-(() => {
-
+  }
+  {
     const source = absToSchemaSource(numWith(le(v("x"), lit(5))));
     expect(source).toContain("z.number().lte(5)");
     expect(source).toContain(".or(z.literal(-Infinity))");
     expect(source).not.toContain("z.literal(Infinity)");
-  })();
-(() => {
-
+  }
+  {
     // eq((x % 1), 0) 是引擎唯一认得的整性形态
     const intPred: Pred = {
       op: "eq",
@@ -637,9 +604,8 @@ describe("zod number + numBound 必须覆盖 ±Infinity 的合法端", () => {
     };
     const source = absToSchemaSource(numWith(intPred));
     expect(source).toBe("z.number().int()");
-  })();
-(() => {
-
+  }
+  {
     const both = {
       op: "and",
       args: [gt(v("x"), lit(0)), lt(v("x"), lit(10))],
@@ -647,9 +613,8 @@ describe("zod number + numBound 必须覆盖 ±Infinity 的合法端", () => {
     const source = absToSchemaSource(numWith(both));
     // +Infinity < 10 为假、-Infinity > 0 为假 ⇒ 不放宽任何一端（不得假绿）
     expect(source).toBe("z.number().gt(0).lt(10)");
-  })();
-(() => {
-
+  }
+  {
     const lowerBoth = {
       op: "and",
       args: [gt(v("x"), lit(0)), ge(v("x"), lit(2))],
@@ -657,16 +622,14 @@ describe("zod number + numBound 必须覆盖 ±Infinity 的合法端", () => {
     const source = absToSchemaSource(numWith(lowerBoth));
     expect(source).toContain(".or(z.literal(Infinity))");
     expect(source).not.toContain("z.literal(-Infinity)");
-  })();
-(() => {
-
+  }
+  {
     const source = absToSchemaSource(num());
     expect(source).toBe(
       "z.number().or(z.nan()).or(z.literal(Infinity)).or(z.literal(-Infinity))",
     );
-  })();
-(() => {
-
+  }
+  {
     const lit42 = abs(
       { k: "prim", type: "number" },
       { op: "lit", value: 42 },
@@ -675,25 +638,17 @@ describe("zod number + numBound 必须覆盖 ±Infinity 的合法端", () => {
     );
     expect(schemaNodeToZod({ k: "prim", type: "number", refinements: [] })).toContain("z.nan()");
     expect(absToSchemaSource(lit42)).toBe("z.literal(42)");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -724,42 +679,35 @@ describe("内建类型 brand（纯类型）不得进 z.instanceof", () => {
 const brandOf = (name: string): Abs =>
   abs({ k: "brand", name, shape: abs({ k: "obj", slots: {} }, undefined, undefined, "exact") }, undefined, undefined, "exact");
 
-describe("内建类型 brand（纯类型）不得进 z.instanceof", () => {
-  it("Record<string, string | undefined>（process.env 的 brand）不进产物；Record<string, string>（process.versions 的 brand）不进产物；降级进 dropped 台账（brand 不可表达必须可观测）；负控制：有运行时类的内建仍走 z.instanceof", () => {
-(() => {
 
+  it("Record<string, string | undefined>（process.env 的 brand）不进产物；Record<string, string>（process.versions 的 brand）不进产物；降级进 dropped 台账（brand 不可表达必须可观测）；负控制：有运行时类的内建仍走 z.instanceof", () => {
+  {
     const source = absToSchemaSource(brandOf("Record<string, string | undefined>"));
     // 「类型当值」⇒ TS2693：`Record` only refers to a type
     expect(source).not.toContain("z.instanceof(Record");
     expect(source).not.toContain("<");
     expect(source).toBe("z.unknown()");
-  })();
-(() => {
-
+  }
+  {
     const source = absToSchemaSource(brandOf("Record<string, string>"));
     expect(source).not.toContain("z.instanceof(Record");
     expect(source).toBe("z.unknown()");
-  })();
-(() => {
-
+  }
+  {
     const mod = absToZodSchemaModule({ getEnvOutput: brandOf("Record<string, string | undefined>") });
     expect(mod.dropped.some((d) => d.includes("brand not projected"))).toBe(true);
     expect(mod.source).toContain("// dropped preds (not projected into zod):");
     expect(mod.source).not.toContain("z.instanceof(Record");
-  })();
-(() => {
-
+  }
+  {
     expect(absToSchemaSource(brandOf("Date"))).toBe("z.instanceof(Date)");
     expect(absToSchemaSource(brandOf("Map"))).toBe("z.instanceof(Map)");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -789,41 +737,34 @@ describe("用户自定义类的 brand 不得原样进 z.instanceof", () => {
 const brandOf = (name: string): Abs =>
   abs({ k: "brand", name, shape: abs({ k: "obj", slots: {} }, undefined, undefined, "exact") }, undefined, undefined, "exact");
 
-describe("用户自定义类的 brand 不得原样进 z.instanceof", () => {
-  it("用户类名不进产物（模块可 import，无 TS2304）；降级必须进 dropped 台账（损失可观测，不是静默）；负控制：运行时全局构造器仍走 z.instanceof（不得过度降级）；负控制：非 brand 形态不受影响", () => {
-(() => {
 
+  it("用户类名不进产物（模块可 import，无 TS2304）；降级必须进 dropped 台账（损失可观测，不是静默）；负控制：运行时全局构造器仍走 z.instanceof（不得过度降级）；负控制：非 brand 形态不受影响", () => {
+  {
     const source = absToSchemaSource(brandOf("Counter"));
     expect(source).not.toContain("z.instanceof(Counter)");
     expect(source).not.toContain("Counter");
     // 降级为放行形态（不是 never ⇒ 不拒收合法值）
     expect(source).toBe("z.unknown()");
-  })();
-(() => {
-
+  }
+  {
     const mod = absToZodSchemaModule({ makeCounterOutput: brandOf("Counter") });
     expect(mod.dropped.some((d) => d.includes("Counter"))).toBe(true);
     expect(mod.source).toContain("brand not projected");
     expect(mod.source).not.toContain("z.instanceof(Counter)");
-  })();
-(() => {
-
+  }
+  {
     expect(absToSchemaSource(brandOf("Date"))).toBe("z.instanceof(Date)");
     expect(absToSchemaSource(brandOf("Map"))).toBe("z.instanceof(Map)");
     expect(absToSchemaSource(brandOf("RegExp"))).toBe("z.instanceof(RegExp)");
-  })();
-(() => {
-
+  }
+  {
     expect(absToSchemaSource(num())).toContain("z.number()");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -851,27 +792,23 @@ describe("内建泛型 brand 补类型实参", () => {
 const brandOf = (name: string): Abs =>
   abs({ k: "brand", name, shape: objOf({}) }, undefined, undefined, "path");
 
-describe("内建泛型 brand 补类型实参", () => {
-  it("Map / Set / WeakMap / WeakSet 渲染成带实参的泛型；负控制：非泛型 brand（RegExp / Date）与用户类 brand 原样保留；负控制：非法 brand 名仍落 unknown（不泄漏任意标识符）；产物真的能过 tsc --noEmit --strict（改前 TS2314）；改前形态确实红（裸 Map / Set / WeakMap ⇒ TS2314）", () => {
-(() => {
 
+  it("Map / Set / WeakMap / WeakSet 渲染成带实参的泛型；负控制：非泛型 brand（RegExp / Date）与用户类 brand 原样保留；负控制：非法 brand 名仍落 unknown（不泄漏任意标识符）；产物真的能过 tsc --noEmit --strict（改前 TS2314）；改前形态确实红（裸 Map / Set / WeakMap ⇒ TS2314）", () => {
+  {
     expect(absToTSType(brandOf("Map"))).toBe("Map<unknown, unknown>");
     expect(absToTSType(brandOf("Set"))).toBe("Set<unknown>");
     expect(absToTSType(brandOf("WeakMap"))).toBe("WeakMap<object, unknown>");
     expect(absToTSType(brandOf("WeakSet"))).toBe("WeakSet<object>");
-  })();
-(() => {
-
+  }
+  {
     expect(absToTSType(brandOf("RegExp"))).toBe("RegExp");
     expect(absToTSType(brandOf("Date"))).toBe("Date");
     expect(absToTSType(brandOf("User"))).toBe("User");
-  })();
-(() => {
-
+  }
+  {
     expect(absToTSType(brandOf("not-a-name"))).toBe("unknown");
-  })();
-(() => {
-
+  }
+  {
     const dts = `
 export declare function mkMap(): Map<unknown, unknown>;
 export declare function mkSet(): Set<unknown>;
@@ -881,9 +818,8 @@ export declare function mkRe(): RegExp;
 `;
     const check = tscNoEmit({ "lib.d.ts": dts });
     expect(check.ok, check.stderr).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const before = `
 export declare function mkMap(): Map;
 export declare function mkSet(): Set;
@@ -892,17 +828,13 @@ export declare function mkWeak(): WeakMap;
     const check = tscNoEmit({ "before.d.ts": before });
     expect(check.ok).toBe(false);
     expect(check.stderr).toContain("TS2314");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -932,19 +864,17 @@ describe("standard 面 brand 必须有运行时判据", () => {
 const brandOf = (name: string): Abs =>
   abs({ k: "brand", name, shape: num() }, undefined, undefined, "exact");
 
-describe("standard 面 brand 必须有运行时判据", () => {
-  it("库函数版：全局构造器 brand 只放行真实例；生成产物版：与 zod 面 z.instanceof(Date) 同判；负控制：名单外的 brand（用户类）无运行时判据 ⇒ 放行", async () => {
-await (async () => {
 
+  it("库函数版：全局构造器 brand 只放行真实例；生成产物版：与 zod 面 z.instanceof(Date) 同判；负控制：名单外的 brand（用户类）无运行时判据 ⇒ 放行", async () => {
+  {
     const { node } = absToSchemaNode(brandOf("Date"));
     expect(validateSchemaNode(node, new Date()).issues).toBeUndefined();
     for (const bad of [{}, [], "x", 0, null]) {
       const r = validateSchemaNode(node, bad);
       expect(r.issues?.[0]?.message).toContain("expected Date");
     }
-  })();
-await (async () => {
-
+  }
+  {
     const { source } = absToStandardSchema(brandOf("Date"), { name: "mkDateOutput" });
     const mod = await loadGeneratedModule(source);
     expect(mod.mkDateOutput!["~standard"].validate(new Date()).issues).toBeUndefined();
@@ -952,21 +882,18 @@ await (async () => {
       const r = mod.mkDateOutput!["~standard"].validate(bad);
       expect(r.issues?.[0]?.message).toContain("expected Date");
     }
-  })();
-await (async () => {
-
+  }
+  {
     const { node, dropped } = absToSchemaNode(brandOf("User"));
     // 投影层已把它降级为 unknown 并记 dropped（可见性由 dropped 台账承担）
     expect(node.k).toBe("unknown");
     expect(dropped.join(" ")).toContain("User");
     expect(validateSchemaNode(node, { anything: 1 }).issues).toBeUndefined();
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1030,9 +957,9 @@ const loadModule = (spec: string, from: string): string | undefined => {
   }
 };
 
-describe("值级 template 不是手写函数契约", () => {
+
   it("does not report name-clash for a value-level template and persists the contract；the persisted contract is effective (effectiveContract reads it back)；is idempotent: the second emit reports no change；negative control: a real fn(...) binding ", async () => {
-await (async () => {
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-emit-532-"));
 
 
@@ -1055,8 +982,8 @@ await (async () => {
     expect(() => execNudoModule(after)).not.toThrow();
     const exports = execNudoModule(after);
     expect(Object.keys(exports)).toContain("classify");
-  })();
-await (async () => {
+  }
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-emit-532-"));
 
 
@@ -1070,8 +997,8 @@ await (async () => {
     // 档位与命令结果一致：不再是「implicit + 手写优先」的矛盾组合
     expect(eff!.source).toBe("generated");
     expect(eff!.params.map((p) => p.param)).toEqual(["x"]);
-  })();
-await (async () => {
+  }
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-emit-532-"));
 
 
@@ -1084,8 +1011,8 @@ await (async () => {
     const second = await emitContract(file, { fnNames: ["classify"], mode: "update" });
     expect(second.changed).toBe(false);
     expect(readFileSync(sidecar, "utf-8")).toBe(after);
-  })();
-await (async () => {
+  }
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-emit-532-"));
 
 
@@ -1101,8 +1028,8 @@ await (async () => {
     expect(r.changed).toBe(false);
     // 手写契约原样保留
     expect(readFileSync(sidecar, "utf-8")).toContain("export const classify = fn({ x: number() });");
-  })();
-await (async () => {
+  }
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-emit-532-"));
 
 
@@ -1116,17 +1043,13 @@ await (async () => {
     expect(after).toContain("export const classify = fn(");
     expect(after).not.toContain("export const classify = number()");
     expect(() => execNudoModule(after)).not.toThrow();
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1171,10 +1094,9 @@ function gate(sidecarText: string): string[] {
   return r.issues.map((i) => `${i.code} fn=${i.fn}`);
 }
 
-describe("nullish quickfix 不得吞掉 fn() 的第三实参", () => {
-  it("只卷 return 位：第三实参 { throws } 原样保留；改写后门禁真的转绿（引擎复核：无残留诊断）；改前形态（第三实参被卷进 nullable）会造出新的 entry-may-throw —— 回归有效性自证；quickfix 物化：门禁转绿 ⇒ titleKind=fix（可自动落盘）；证不出时降级 review（不自动落盘）；负控制：只有两个实参时照旧只卷 return 位；负控制：已包过 nullable 的 return 位不重复包（既有行为不变）", () => {
-(() => {
 
+  it("只卷 return 位：第三实参 { throws } 原样保留；改写后门禁真的转绿（引擎复核：无残留诊断）；改前形态（第三实参被卷进 nullable）会造出新的 entry-may-throw —— 回归有效性自证；quickfix 物化：门禁转绿 ⇒ titleKind=fix（可自动落盘）；证不出时降级 review（不自动落盘）；负控制：只有两个实参时照旧只卷 return 位；负控制：已包过 nullable 的 return 位不重复包（既有行为不变）", () => {
+  {
     const next = wrapReturnNullable(SIDECAR, "sim");
     expect(next).toBeDefined();
     expect(next).toContain(
@@ -1182,23 +1104,20 @@ describe("nullish quickfix 不得吞掉 fn() 的第三实参", () => {
     );
     // 不得把第三实参卷进 nullable(...)
     expect(next).not.toContain("nullable(number(), { throws");
-  })();
-(() => {
-
+  }
+  {
     const next = wrapReturnNullable(SIDECAR, "sim")!;
     expect(gate(next)).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const broken = `import { fn, number } from "@nudojs/core";
 export const sim = fn({ v: number() }, nullable(number(), { throws: "Error" }));
 `;
     expect(gate(broken)).toEqual(["nudo:entry-may-throw fn=sim"]);
     // 改前门禁是 constraint-violated
     expect(gate(SIDECAR)).toEqual(["nudo:constraint-violated fn=sim"]);
-  })();
-(() => {
-
+  }
+  {
     const plan = materializeAction({
       code: "nudo:constraint-violated",
       fn: "sim",
@@ -1213,9 +1132,8 @@ export const sim = fn({ v: number() }, nullable(number(), { throws: "Error" }));
     expect(plan).toBeDefined();
     expect(plan!.titleKind).toBe("fix");
     expect(plan!.sidecar?.newText).toContain(`{ throws: "Error" }`);
-  })();
-(() => {
-
+  }
+  {
     // 侧车没有 throws 槽：卷 nullable 后 entry-may-throw 仍在 ⇒ 不能算修好
     const noThrows = `import { fn, number } from "@nudojs/core";
 export const sim = fn({ v: number() }, number());
@@ -1233,37 +1151,29 @@ export const sim = fn({ v: number() }, number());
     });
     expect(plan).toBeDefined();
     expect(plan!.titleKind).toBe("review");
-  })();
-(() => {
-
+  }
+  {
     const two = `import { fn, number } from "@nudojs/core";
 export const sim = fn({ v: number() }, number());
 `;
     expect(wrapReturnNullable(two, "sim")).toContain(
       `export const sim = fn({ v: number() }, nullable(number()));`,
     );
-  })();
-(() => {
-
+  }
+  {
     const already = `import { fn, number } from "@nudojs/core";
 export const sim = fn({ v: number() }, nullable(number()));
 `;
     expect(wrapReturnNullable(already, "sim")).toBeUndefined();
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1324,24 +1234,21 @@ const makeIterLike = (): Abs =>
     "exact",
   );
 
-describe("symbol 键槽不得发布成字符串字段", () => {
-  it("zod 面不出现 @@sym#1，也不要求该键；standard 面接受运行时真值（own string keys 只有 a）；guard 面接受运行时真值（改前 hasOwn '@@sym#1' 恒假）；迭代器协议槽（symbol + internal）同样不进产物；台账留痕：被摘掉的 symbol 槽进 dropped；负控制：普通字符串槽逐字不变", () => {
-(() => {
 
+  it("zod 面不出现 @@sym#1，也不要求该键；standard 面接受运行时真值（own string keys 只有 a）；guard 面接受运行时真值（改前 hasOwn '@@sym#1' 恒假）；迭代器协议槽（symbol + internal）同样不进产物；台账留痕：被摘掉的 symbol 槽进 dropped；负控制：普通字符串槽逐字不变", () => {
+  {
     const source = absToSchemaSource(withSymbolProp());
     expect(source).not.toContain("@@sym#1");
     expect(source).toBe("z.object({ a: z.literal(1) })");
-  })();
-(() => {
-
+  }
+  {
     const { node } = absToSchemaNode(withSymbolProp());
     expect(JSON.stringify(node)).not.toContain("@@sym#1");
     const real: Record<PropertyKey, unknown> = { a: 1 };
     real[Symbol("tag")] = 2;
     expect(validateSchemaNode(node, real).issues).toBeUndefined();
-  })();
-(() => {
-
+  }
+  {
     const src = generateGuardFunctionFromAbs("iswithSymbolPropOutput", withSymbolProp());
     expect(src).not.toContain("@@sym#1");
     const js = src
@@ -1354,9 +1261,8 @@ describe("symbol 键槽不得发布成字符串字段", () => {
     expect(guard(real)).toBe(true);
     // 负控制：缺 a 仍被拒（不是无条件放行）
     expect(guard({ b: 1 })).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const a = makeIterLike();
     const zodSource = absToSchemaSource(a);
     expect(zodSource).not.toContain("@@iterator");
@@ -1364,14 +1270,12 @@ describe("symbol 键槽不得发布成字符串字段", () => {
     expect(src).not.toContain("@@iterator");
     const { node } = absToSchemaNode(a);
     expect(JSON.stringify(node)).not.toContain("@@iterator");
-  })();
-(() => {
-
+  }
+  {
     const { dropped } = absToSchemaNode(withSymbolProp());
     expect(dropped.join("\n")).toContain("@@sym#1");
-  })();
-(() => {
-
+  }
+  {
     const a = abs(
       { k: "obj", slots: { a: { value: numLit(1) }, b: { value: strLit("x") } } },
       undefined,
@@ -1379,19 +1283,14 @@ describe("symbol 键槽不得发布成字符串字段", () => {
       "exact",
     );
     expect(absToSchemaSource(a)).toBe('z.object({ a: z.literal(1), b: z.literal("x") })');
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1434,48 +1333,41 @@ const arrConstraint = (n: number): NudoConstraint => ({
   element: number(),
 } as NudoConstraint);
 
-describe("数组长度界不得在 zod / standard 面消失", () => {
-  it("min(3)：zod 面渲染 `.min(3)`（不再是裸 z.array）；max(2)：zod 面渲染 `.max(2)`；strict gt/lt 归一：length > 3 ⇒ min 4；length < 3 ⇒ max 2；Abs 投影路径：节点带 minLen，standard 面拒收 [1] 放行 [1,2,3]；约束路径（c.element + 数组级 preds）：arr 节点带 minLen；约束路径 → zod 源码保留长度界；maxLen 同样可表达", () => {
-(() => {
 
+  it("min(3)：zod 面渲染 `.min(3)`（不再是裸 z.array）；max(2)：zod 面渲染 `.max(2)`；strict gt/lt 归一：length > 3 ⇒ min 4；length < 3 ⇒ max 2；Abs 投影路径：节点带 minLen，standard 面拒收 [1] 放行 [1,2,3]；约束路径（c.element + 数组级 preds）：arr 节点带 minLen；约束路径 → zod 源码保留长度界；maxLen 同样可表达", () => {
+  {
     const source = absToSchemaSource(arrWith(lenOf(3, "ge")));
     expect(source).toContain("z.array(");
     expect(source).toContain(".min(3)");
-  })();
-(() => {
-
+  }
+  {
     expect(absToSchemaSource(arrWith(lenOf(2, "le")))).toContain(".max(2)");
-  })();
-(() => {
-
+  }
+  {
     expect(absToSchemaSource(arrWith(lenOf(3, "gt")))).toContain(".min(4)");
     expect(absToSchemaSource(arrWith(lenOf(3, "lt")))).toContain(".max(2)");
-  })();
-(() => {
-
+  }
+  {
     const { node } = absToSchemaNode(arrWith(lenOf(3, "ge")));
     expect(node).toMatchObject({ k: "arr", minLen: 3 });
     expect(validateSchemaNode(node, [1, 2, 3])).toEqual({ value: [1, 2, 3] });
     expect(validateSchemaNode(node, [1]).issues?.length).toBeGreaterThan(0);
     expect(validateSchemaNode(node, []).issues?.length).toBeGreaterThan(0);
-  })();
-(() => {
-
+  }
+  {
     const node = constraintToSchemaNode(arrConstraint(3));
     expect(node).toEqual({
       k: "arr",
       element: { k: "prim", type: "number", refinements: [] },
       minLen: 3,
     });
-  })();
-(() => {
-
+  }
+  {
     expect(schemaNodeToZod(constraintToSchemaNode(arrConstraint(3)))).toBe(
       "z.array(z.number().or(z.nan()).or(z.literal(Infinity)).or(z.literal(-Infinity))).min(3)",
     );
-  })();
-(() => {
-
+  }
+  {
     const node = constraintToSchemaNode({
       __nudoConstraint: true,
       preds: [lenOf(2, "le")],
@@ -1483,9 +1375,8 @@ describe("数组长度界不得在 zod / standard 面消失", () => {
     } as NudoConstraint);
     expect(validateSchemaNode(node, [1, 2])).toEqual({ value: [1, 2] });
     expect(validateSchemaNode(node, [1, 2, 3]).issues?.length).toBeGreaterThan(0);
-  })();
-(() => {
-
+  }
+  {
     const eqPred: Pred = {
       op: "eq",
       a: { op: "var", id: "__nudo_self__" },
@@ -1494,9 +1385,8 @@ describe("数组长度界不得在 zod / standard 面消失", () => {
     // 台账在 Abs 投影路径上收集（节点层），不是渲染层
     const { dropped } = absToSchemaNode(abs({ k: "arr", element: num() }, undefined, eqPred, "exact"));
     expect(dropped.join("\n")).toContain(predToString(eqPred));
-  })();
-(() => {
-
+  }
+  {
     const eqPred: Pred = {
       op: "eq",
       a: { op: "var", id: "__nudo_self__" },
@@ -1514,9 +1404,8 @@ describe("数组长度界不得在 zod / standard 面消失", () => {
       k: "arr",
       element: { k: "prim", type: "number", refinements: [] },
     });
-  })();
-(() => {
-
+  }
+  {
     const { node } = absToSchemaNode(abs({ k: "arr", element: num() }, undefined, undefined, "exact"));
     expect(node).toEqual({
       k: "arr",
@@ -1525,43 +1414,32 @@ describe("数组长度界不得在 zod / standard 面消失", () => {
     expect(schemaNodeToZod(node)).toBe(
       "z.array(z.number().or(z.nan()).or(z.literal(Infinity)).or(z.literal(-Infinity)))",
     );
-  })();
-(() => {
-
+  }
+  {
     // 直接走 core 契约投影（它只投影元素域）+ emit 补挂的数组级 preds
     const a = arrWith(lenOf(3, "ge"));
     expect(absToConstraint(a)).toBeDefined();
     expect(absToSchemaSource(a)).toContain(".min(3)");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
 // 稀疏元组的洞不被固化成显式 undefined
 // ---------------------------------------------------------------------------
 describe("稀疏元组的洞不被固化成显式 undefined", () => {
-// emit--sparse-tuple-hole.part.ts — 
+// emit--sparse-tuple-hole.part.ts —
 // `nudo test --freeze` 把稀疏元组的**洞**固化成**显式 `undefined` 元素**
 // ⇒ 固化后同一调用点的见证从 `false` **翻成 `true`**（与事实相反）。
 //
@@ -1615,19 +1493,16 @@ function makeAnalysis(functions: FunctionAnalysis[]): AnalysisResult {
   return { functions, diagnostics: [], bindings: new Map(), nodeAbsMap: new Map(), caseHints: [] };
 }
 
-describe("稀疏元组的洞不被固化成显式 undefined", () => {
-  it("带洞的元组不可序列化（整条放弃，不静默近似）；formatShape 仍把洞渲染成空槽（观测面不受影响）；带洞的见证不被写进源码（改前会写成 [1, undefined, 3]）；真实分析器：稀疏实参的见证被放弃，源码不被改写；负控制：稠密元组照常固化（洞判据不误伤稠密元组）；负控制：显式 undefined 元素（无洞）仍可表达", () => {
-(() => {
 
+  it("带洞的元组不可序列化（整条放弃，不静默近似）；formatShape 仍把洞渲染成空槽（观测面不受影响）；带洞的见证不被写进源码（改前会写成 [1, undefined, 3]）；真实分析器：稀疏实参的见证被放弃，源码不被改写；负控制：稠密元组照常固化（洞判据不误伤稠密元组）；负控制：显式 undefined 元素（无洞）仍可表达", () => {
+  {
     expect(serializeCaseArg(sparseTuple())).toBeNull();
     expect(buildCaseDirective("call@L5", [sparseTuple()])).toBeNull();
-  })();
-(() => {
-
+  }
+  {
     expect(formatShape(sparseTuple())).toBe("[1, , 3]");
-  })();
-(() => {
-
+  }
+  {
     const source = `export function hasIdx1(a) {
   return 1 in a;
 }
@@ -1645,9 +1520,8 @@ hasIdx1(arr);
     ]);
     expect(result.source).toBe(source);
     expect(result.source.includes("undefined")).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const source = `export function hasIdx1(a) {
   return 1 in a;
 }
@@ -1658,9 +1532,8 @@ hasIdx1(arr);
     const result = insertGeneratedCaseDirectives(source, analysis);
     expect(result.changed).toBe(false);
     expect(result.source).toBe(source);
-  })();
-(() => {
-
+  }
+  {
     const dense = absExact({ k: "tuple", elements: [absLit(1), absLit(3)] });
     expect(serializeCaseArg(dense)).toBe("[1, 3]");
     const source = `export function first(a) {
@@ -1675,24 +1548,18 @@ first(arr);
     );
     expect(result.changed).toBe(true);
     expect(result.source).toContain('@nudo:case "call@L5" ([1, 3])');
-  })();
-(() => {
-
+  }
+  {
     const denseUndef = absExact({ k: "tuple", elements: [absLit(1), absLit(undefined)] });
     expect(serializeCaseArg(denseUndef)).toBe("[1, undefined]");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1768,25 +1635,22 @@ function* gen(): Generator<number> {
   yield 2;
 }
 
-describe("生成器元素域不进运行时产物面", () => {
-  it("zod 面不发布数字下标字段（运行时不存在的自有属性）；standard 面接受真正的生成器对象（改前：required path ['0'] / ['1']）；guard 面不再要求 hasOwn(data, \"0\")，且真的接受生成器；异步生成器同理（@@asyncIterator 形态）；负控制：普通对象字面量的数字键仍是真实自有属性（不被误剔）", () => {
-(() => {
 
+  it("zod 面不发布数字下标字段（运行时不存在的自有属性）；standard 面接受真正的生成器对象（改前：required path ['0'] / ['1']）；guard 面不再要求 hasOwn(data, \"0\")，且真的接受生成器；异步生成器同理（@@asyncIterator 形态）；负控制：普通对象字面量的数字键仍是真实自有属性（不被误剔）", () => {
+  {
     const source = absToSchemaSource(generatorObj([numLit(1), numLit(2)]));
     expect(source).not.toContain("0:");
     expect(source).not.toContain("1:");
     expect(source).not.toContain("z.literal(1)");
     expect(source).toBe("z.object({  })");
-  })();
-(() => {
-
+  }
+  {
     const { node } = absToSchemaNode(generatorObj([numLit(1), numLit(2)]));
     expect(JSON.stringify(node)).not.toContain('"key":"0"');
     expect(validateSchemaNode(node, gen())).toMatchObject({});
     expect(validateSchemaNode(node, gen()).issues).toBeUndefined();
-  })();
-(() => {
-
+  }
+  {
     const src = generateGuardFunctionFromAbs("isgenOutput", generatorObj([numLit(1), numLit(2)]));
     expect(src).not.toContain('hasOwn(data, "0")');
     expect(src).not.toContain('data["0"]');
@@ -1797,16 +1661,14 @@ describe("生成器元素域不进运行时产物面", () => {
       .replace("export function ", "function ");
     const guard = new Function(`${js}; return isgenOutput;`)() as (v: unknown) => boolean;
     expect(guard(gen())).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const a = generatorObj([numLit(1)], true);
     expect(absToSchemaSource(a)).toBe("z.object({  })");
     const src = generateGuardFunctionFromAbs("isagenOutput", a);
     expect(src).not.toContain('hasOwn(data, "0")');
-  })();
-(() => {
-
+  }
+  {
     const a = abs(
       { k: "obj", slots: { "0": { value: numLit(1) }, "1": { value: numLit(2) } } },
       undefined,
@@ -1818,15 +1680,11 @@ describe("生成器元素域不进运行时产物面", () => {
     expect(source).toContain('1: z.literal(2)');
     const { node } = absToSchemaNode(a);
     expect(validateSchemaNode(node, { 0: 1, 1: 2 }).issues).toBeUndefined();
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });

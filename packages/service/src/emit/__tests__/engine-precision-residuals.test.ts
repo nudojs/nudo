@@ -7,7 +7,7 @@
 import { describe, it, expect } from "vitest";
 import { deriveFromRoot } from "@nudojs/service/emit";
 import { analyzeFile, collectCallRecords } from "@nudojs/service";
-import { formatAbs, checkSource, pTrue, runTranspiled, callTranspiledExportFull, $new, $invoke, litValue, abs, pTrue as pt } from "@nudojs/core";
+import { formatAbs, pTrue, abs,  } from "@nudojs/core";
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

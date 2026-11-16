@@ -1,5 +1,5 @@
 import {describe, it, expect} from "vitest";
-import {runTranspiled, callTranspiledExportFull, $lit, litValue, absToString, transpileSource} from "@nudojs/core";
+import {runTranspiled, callTranspiledExportFull, litValue, transpileSource} from "@nudojs/core";
 
 describe("evaluator class static members", () => {
   it("reads static fields and calls static methods", () => {

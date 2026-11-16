@@ -285,7 +285,7 @@ function caller(y) { return uncalled(y); }
     expect(throwingFn.cases[0]!.abs.shape.k).toBe("never");
     expect(formatShape(throwingFn.cases[0]!.throwsAbs)).toBe("string");
   });
-});;
+});
 
 describe("buildModuleGraph / computeDirtySet / topoSortDirty", () => {
   it("imports/dependents 边、链式脏传播、环、裸包跳过、re-export/require 边、字符串注释不算边", () => {
@@ -347,7 +347,7 @@ describe("buildModuleGraph / computeDirtySet / topoSortDirty", () => {
       expect(dependents.get(base) ?? new Set()).toEqual(new Set());
     });
   });
-});;
+});
 
 // 来源：LSP 隔离控制工程化——buildModuleGraph mtime 边缓存
 describe("buildModuleGraph mtime 边缓存", () => {
@@ -402,4 +402,4 @@ describe("buildModuleGraph mtime 边缓存", () => {
       } finally { chmodSync(a, 0o644); }
     });
   });
-});;
+});

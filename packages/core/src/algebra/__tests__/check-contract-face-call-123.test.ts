@@ -134,7 +134,7 @@ function codes(r: CheckResult): string[] {
 // (a) issue 四变体：跨模块
 // ---------------------------------------------------------------------------
 
-describe("#123 (a) 跨模块四变体：契约面采用后清零", () => {
+describe("(a) 跨模块四变体：契约面采用后清零", () => {
   const specs: Record<string, string | undefined> = {
     "./distance.js": DISTANCE,
     "./distance.nudo.js": DISTANCE_SIDE,
@@ -181,7 +181,7 @@ export function probeStored(a, b) { const d = levenshtein(a, b); return d; }`);
 // (b) 同文件四变体（ambient 侧车同名绑定）
 // ---------------------------------------------------------------------------
 
-describe("#123 (b) 同文件四变体：契约面采用后清零", () => {
+describe("(b) 同文件四变体：契约面采用后清零", () => {
   const opts = {
     loadModule: (spec: string) =>
       spec === "./same123.nudo.js" ? DISTANCE_SIDE : undefined,
@@ -215,7 +215,7 @@ describe("#123 (b) 同文件四变体：契约面采用后清零", () => {
 // (d) callee 自身 check 语义不变
 // ---------------------------------------------------------------------------
 
-describe("#123 (d) callee 自身 check 不变（distance.js 单独检查）", () => {
+describe("(d) callee 自身 check 不变（distance.js 单独检查）", () => {
   it("unproven-return 警告在场 + 推断签名（#102 标记臂）保留", () => {
     const opts = {
       loadModule: (spec: string) =>
@@ -242,7 +242,7 @@ describe("#123 (d) callee 自身 check 不变（distance.js 单独检查）", ()
 // (e) 精度控制 + (f) 返回约束精度 + (g) 无契约对照（跨模块）
 // ---------------------------------------------------------------------------
 
-describe("#123 (e)/(f)/(g) 跨模块精度与对照", () => {
+describe("(e)/(f)/(g) 跨模块精度与对照", () => {
   const specs: Record<string, string | undefined> = {
     "./dep.js": LIB,
     "./dep.nudo.js": LIB_SIDE,
@@ -334,7 +334,7 @@ export function g(x) { return rawRel(x); }`);
 // (f-same) 返回约束精度：同文件形态
 // ---------------------------------------------------------------------------
 
-describe("#123 (f) 同文件：ge(0) 返回面让调用方上界可证", () => {
+describe("(f) 同文件：ge(0) 返回面让调用方上界可证", () => {
   it("callee 契约自洽（param ge(0)）时调用方 0 issues；对照无谓词面时 unproven", () => {
     const side = `
 import { number, fn } from "@nudojs/core";

@@ -55,7 +55,7 @@ function confOf(r: { signatures: { name: string; conf: string }[] }, fn: string)
   return r.signatures.find((s) => s.name === fn)?.conf ?? "(missing)";
 }
 
-describe("#136 issue 原样：守卫后 push 元素不再带 undefined 臂", () => {
+describe("issue 原样：守卫后 push 元素不再带 undefined 臂", () => {
   it("while + (m = re.exec(content)) + if (m[1].trim().length > 0)：0 error、返回 [string]", () => {
     const r = check(`
 /**
@@ -147,7 +147,7 @@ export function rgNoGuard(content) {
   });
 });
 
-describe("#136 (a) 抽象匹配结果的 per-index 槽（matchResultAbs 同构）", () => {
+describe("(a) 抽象匹配结果的 per-index 槽（matchResultAbs 同构）", () => {
   it("m[0]/m.length/m.index/m.input 可读且类型合理", () => {
     const r = check(`
 /**
@@ -210,7 +210,7 @@ export function concrete() {
   });
 });
 
-describe("#136 (c) 方法调用接收者事实的短路方向（sound 钉）", () => {
+describe("(c) 方法调用接收者事实的短路方向（sound 钉）", () => {
   it("A || m[1].trim()…：真值臂（cons）无事实——undefined 保留", () => {
     const r = check(`
 /**

@@ -48,7 +48,7 @@ function check(src: string) {
   return checkSource("/t/lazy-recursive-120.js", IMP + src, pTrue, opts);
 }
 
-describe("#120 lazy 递归模板：issue 原型 staticName", () => {
+describe("lazy 递归模板：issue 原型 staticName", () => {
   it("(a) 守卫递归：0 L2 / 0 错误 / 返回契约可证（issue #120 原型清零）", () => {
     const r = check(`
 /**
@@ -86,7 +86,7 @@ export function staticName(node) {
   });
 });
 
-describe("#120 lazy 递归模板：定深路径精度", () => {
+describe("lazy 递归模板：定深路径精度", () => {
   it("(b) 逐层单级守卫 + 局部重绑定：node.object.object.type → null | string", () => {
     const r = check(`
 /**
@@ -109,7 +109,7 @@ export function deepType(node) {
   });
 });
 
-describe("#120 lazy 递归模板：深度边界", () => {
+describe("lazy 递归模板：深度边界", () => {
   it("(c) 第 4 层 object 链不崩溃、无 constraint-violated（缺席槽守卫剪枝干净）", () => {
     const r = check(`
 /**

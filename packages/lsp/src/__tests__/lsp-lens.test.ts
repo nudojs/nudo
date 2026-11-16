@@ -55,7 +55,7 @@ type Lens = {
   command?: { title: string; command: string; arguments?: unknown[] };
 };
 
-describe("导出类实例方法的 contract 档 lens", () => {
+
   it("codeLens 出现 Counter.inc 的 contract 档（契约键 Class.method）", async () => {
     await withLspServer({ "a.js": SRC }, async ({ req, uri }) => {
       const lenses = req("textDocument/codeLens")({
@@ -141,7 +141,7 @@ describe("导出类实例方法的 contract 档 lens", () => {
       expect(contract!.range.start.line).toBe(1);
     });
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -203,7 +203,7 @@ type Lens = {
 const callLenses = (lenses: Lens[]): Lens[] =>
   lenses.filter((l) => l.command?.title.startsWith("call@"));
 
-describe("跨模块调用点的 call@ 观察 lens", () => {
+
   it("调用方文件的 codeLens 出现跨模块 call@ lens", async () => {
     await withLspServer(
       { "lib.js": LIB_SRC, "main.js": CROSS_MAIN_SRC },
@@ -248,7 +248,7 @@ describe("跨模块调用点的 call@ 观察 lens", () => {
       expect(calls[0]!.range.start.line).toBe(5);
     });
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -294,7 +294,7 @@ type Lens = {
   command?: { title: string; command: string; arguments?: unknown[] };
 };
 
-describe("export default function 的 contract 档 lens", () => {
+
   it("codeLens 出现默认导出的 contract 档（● contract / imp + 固化动作）", async () => {
     await withLspServer({ "a.js": DEFAULT_EXPORT_SRC }, async ({ req, uri }) => {
       const lenses = req("textDocument/codeLens")({
@@ -343,7 +343,7 @@ describe("export default function 的 contract 档 lens", () => {
       expect(contract.command?.arguments?.[1]).toBe("compute");
     });
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -409,7 +409,7 @@ function refreshMethods(mock: ReturnType<typeof createMockConnection>): string[]
   return mock.sentRequests.map((r: { type?: { method?: string } }) => r.type?.method ?? "?");
 }
 
-describe("选择器变更必须同时刷新 codeLens 与 inlayHint", () => {
+
   it("nudo.selectCase 之后 inlayHint refresh 与 codeLens refresh 成对出现", async () => {
     const mock = startServer();
     mock.sentRequests.length = 0;
@@ -437,7 +437,7 @@ describe("选择器变更必须同时刷新 codeLens 与 inlayHint", () => {
     expect(methods).toContain("workspace/codeLens/refresh");
     expect(methods).toContain("workspace/inlayHint/refresh");
   }, 30_000);
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -465,7 +465,7 @@ export function uncalled(x) {
 use();
 `;
 
-describe("computeObservationLenses", () => {
+
   it("pins call@ at the call-site line with (args) => result title", () => {
     const lenses = computeObservationLenses(SRC, "/t/obs.js");
     const calls = lenses.filter((l) => l.kind === "callsite");
@@ -509,5 +509,5 @@ export function id(x) {
     }
     expect(() => computeObservationLenses("export function f(){ return 1 }", "/t/ok.js")).not.toThrow();
   });
-});
+
 });

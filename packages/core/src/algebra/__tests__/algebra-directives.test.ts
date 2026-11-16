@@ -42,10 +42,9 @@ function check(src: string, file = "/t/bug-1032.js") {
   return checkSource(file, src, pTrue);
 }
 
-describe("粘连的函数级指令必须发诊断", () => {
-  it("@nudo:assumed → nudo:assume-invalid（error）；@nudo:invariantdp → nudo:invariant-invalid（warning）；@nudo:throwsTypeError → nudo:directive-syntax（warning）；合法形态零诊断（不误伤）", () => {
-(() => {
 
+  it("@nudo:assumed → nudo:assume-invalid（error）；@nudo:invariantdp → nudo:invariant-invalid（warning）；@nudo:throwsTypeError → nudo:directive-syntax（warning）；合法形态零诊断（不误伤）", () => {
+  {
     const r = check(`
 /**
  * @nudo:assumed d <= max
@@ -59,9 +58,8 @@ export function f1032(d, max) {
     expect(bad[0]!.severity).toBe("error");
     expect(bad[0]!.message).toContain("@nudo:assumed d <= max");
     expect(bad[0]!.line).toBe(3);
-  })();
-(() => {
-
+  }
+  {
     const r = check(`
 /**
  * @nudo:invariantdp >= 0
@@ -75,9 +73,8 @@ export function f1032b(dp) {
     expect(bad[0]!.severity).toBe("warning");
     expect(bad[0]!.message).toContain("@nudo:invariantdp >= 0");
     expect(bad[0]!.line).toBe(3);
-  })();
-(() => {
-
+  }
+  {
     const r = check(
       `
 /**
@@ -94,9 +91,8 @@ export function f1032c(x) {
     expect(bad[0]!.severity).toBe("warning");
     expect(bad[0]!.message).toContain("@nudo:throwsTypeError");
     expect(bad[0]!.line).toBe(3);
-  })();
-(() => {
-
+  }
+  {
     const r = check(`
 /**
  * @nudo:assume d <= max
@@ -110,15 +106,12 @@ export function ok(d, max, dp) {
     expect(r.issues.filter((i) => i.code === "nudo:assume-invalid")).toEqual([]);
     expect(r.issues.filter((i) => i.code === "nudo:invariant-invalid")).toEqual([]);
     expect(r.issues.filter((i) => i.code === "nudo:directive-syntax")).toEqual([]);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -168,58 +161,46 @@ const IMPORT_IN_CLASS = `export class A {
 }
 `;
 
-describe("文本路径 — class 体 / 对象体里的文件级指令不提升为文件级", () => {
+
   it("env inside a class body is not file-wide；env inside an object literal body is not file-wide；mock-module inside a class body is not file-wide；@nudo:import inside a class body is not file-wide", () => {
-(() => {
-
+  {
     expect(extractFileEnvNames(ENV_IN_CLASS)).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     expect(extractFileEnvNames(ENV_IN_OBJECT)).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     expect(extractMockModuleRecords(MOCK_IN_CLASS)).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     expect(extractNudoImportRecords(IMPORT_IN_CLASS)).toEqual([]);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 
 describe("负控制（顶层位置不回归）", () => {
   it("class **声明上方**的 env 仍是文件级（合法顶层位置）；文件头的 env 仍是文件级；class 体**之后**的顶层 env 仍是文件级", () => {
-(() => {
-
+  {
     expect(
       extractFileEnvNames(`/// @nudo:env node\nexport class A { m() {} }\n`),
     ).toEqual(["node"]);
-  })();
-(() => {
-
+  }
+  {
     expect(extractFileEnvNames(`/// @nudo:env node\nexport function f() { return 1; }\n`)).toEqual([
       "node",
     ]);
-  })();
-(() => {
-
+  }
+  {
     expect(
       extractFileEnvNames(`export class A { m() {} }\n/// @nudo:env node\n`),
     ).toEqual(["node"]);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 });
 });
 
@@ -286,82 +267,62 @@ const IMPORT_IN_OBJECT_PATTERN = `export const {
 } = obj;
 `;
 
-describe("文本路径 — 数组体 / 解构模式体里的文件级指令不提升为文件级", () => {
+
   it("env inside an array literal body is not file-wide；env inside a destructuring pattern body is not file-wide；env inside an array-destructuring pattern body is not file-wide；env inside a nested array body is not file-wide；mock-module inside an", () => {
-(() => {
-
+  {
     expect(extractFileEnvNames(ENV_IN_ARRAY)).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     expect(extractFileEnvNames(ENV_IN_OBJECT_PATTERN)).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     expect(extractFileEnvNames(ENV_IN_ARRAY_PATTERN)).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     expect(extractFileEnvNames(ENV_IN_NESTED_ARRAY)).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     expect(extractMockModuleRecords(MOCK_IN_ARRAY)).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     expect(extractNudoImportRecords(IMPORT_IN_OBJECT_PATTERN)).toEqual([]);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 
 describe("负控制（合法顶层位置不回归）", () => {
   it("数组**声明上方**的 env 仍是文件级；解构**声明上方**的 env 仍是文件级；数组解构**声明上方**的 env 仍是文件级；class **声明上方**的 env 仍是文件级（Bug 1088 口径不变）", () => {
-(() => {
-
+  {
     expect(extractFileEnvNames(`/// @nudo:env node\nexport const a = [1, 2];\n`)).toEqual([
       "node",
     ]);
-  })();
-(() => {
-
+  }
+  {
     expect(extractFileEnvNames(`/// @nudo:env node\nexport const { a, b } = obj;\n`)).toEqual([
       "node",
     ]);
-  })();
-(() => {
-
+  }
+  {
     expect(extractFileEnvNames(`/// @nudo:env node\nexport const [a, b] = arr;\n`)).toEqual([
       "node",
     ]);
-  })();
-(() => {
-
+  }
+  {
     expect(
       extractFileEnvNames(`/// @nudo:env node\nexport class A { m() {} }\n`),
     ).toEqual(["node"]);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 });
 
@@ -405,7 +366,7 @@ function check(src: string, file = "/t/bug1117.js") {
   return checkSource(file, withStdImport(src), pTrue, stdOpts);
 }
 
-describe("switch 分组 case 标签的 hit 收窄必须安全", () => {
+{
   beforeEach(() => {
     resetEngineCaches();
     takeRefineDiags();
@@ -413,11 +374,11 @@ describe("switch 分组 case 标签的 hit 收窄必须安全", () => {
   });
 
   it("分组标签（case null + case \"ab\" 共享体）⇒ 不得把 null 重绑成 \"ab\"；含非字面量 case 测试的分组臂 ⇒ 同样不得按 prim 标签重绑；P2：`case 0:` 不得把 -0 谎报成 +0（1 / -0 = -Infinity）；负控制：单一 prim 标签的 hit 收窄**保留**（case \"ab\" ⇒ x.length = 2）；负控制：单一 nullish 标签的臂仍不产命中事实（case null ⇒ null.length ", () => {
-(() => {
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     // 原生：`const x = null` ⇒ `case null` 命中 ⇒ `null.length` ⇒ TypeError。
     const r = check(`
@@ -434,12 +395,12 @@ export function f() {
 `);
     // 修前：hit 收窄把 x 重绑成 "ab" ⇒ 读出 2 ⇒ may-throw 消失（假绿）。
     expect(l2Count(r)).toBeGreaterThan(0);
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     // 原生：`case x` 的测试值 = null ⇒ `null === null` ⇒ 命中 ⇒ `null.length`
     // ⇒ TypeError（switch 用**严格相等**匹配 case 测试）。
@@ -468,12 +429,12 @@ export function f() {
 }
 `);
     expect(l2Count(r)).toBeGreaterThan(0);
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     const r = check(`
 export function f() {
@@ -491,12 +452,12 @@ export function f() {
     // 修前：hit 收窄把 x 重绑成 `$lit(0)` ⇒ `1 / 0` = Infinity（自信的错值）。
     expect(sig).not.toBe("Infinity");
     expect(sig).toContain("-Infinity");
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     const r = check(`
 export function f() {
@@ -511,12 +472,12 @@ export function f() {
 `);
     expect(l2Count(r)).toBe(0);
     expect(sigOf(r, "f")).toBe("2");
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     const r = check(`
 export function f() {
@@ -530,12 +491,12 @@ export function f() {
 }
 `);
     expect(l2Count(r)).toBeGreaterThan(0);
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     // `case null:` 臂存在 ⇒ default 臂上 x 不是 null ⇒ `x.length` 不抛。
     const r = check(`
@@ -551,19 +512,14 @@ export function f() {
 `);
     expect(l2Count(r)).toBe(0);
     expect(sigOf(r, "f")).toBe("2");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -630,9 +586,9 @@ const l2 = (src: string, file: string): number =>
   checkSource_____check_check_ts(file, src, pTrue_____pred_ts, {}).issues.filter((i) => i.code === "nudo:entry-may-throw")
     .length;
 
-describe("多行 `@nudo:case … !! throws` 声明不再丢失", () => {
+
   it("扫描层：多行实参的 case 后缀产出申报（修前：undefined）；消费层：extractDeclaredThrows 消费得到多行形态的申报；闸门层：已申报 ⇒ 不再假红（无声明 ⇒ 照常执法，对照组）；闸门层：多行形态 + 续行形态（`)` 行之后的下一行）都放行；护栏：单行写法行为逐字不变（`*` / kind / 续行）；护栏：位置锚不放宽（Bug 1033 口径）——散文 / case 名内部 / 期望侧都不产申报", () => {
-(() => {
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -643,16 +599,16 @@ describe("多行 `@nudo:case … !! throws` 声明不再丢失", () => {
     ).toBe("TypeError");
     // 无 kind ⇒ 任意 throw（`*`）
     expect(scanThrowsDecl(['@nudo:case "neg" (', "0", ") !! throws"])).toBe("*");
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
 
 
     expect(extractDeclaredThrows(MULTILINE_CASE, "boom")).toEqual(["TypeError"]);
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -660,8 +616,8 @@ describe("多行 `@nudo:case … !! throws` 声明不再丢失", () => {
 
     expect(l2(MULTILINE_CASE, "/t/bug-1118-declared.js")).toBe(0);
     expect(l2(NO_DECL, "/t/bug-1118-undeclared.js")).toBe(1);
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -680,8 +636,8 @@ export function boom(n) {
 `;
     expect(extractDeclaredThrows(cont, "boom")).toEqual(["TypeError"]);
     expect(l2(cont, "/t/bug-1118-cont.js")).toBe(0);
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -690,8 +646,8 @@ export function boom(n) {
     expect(scanThrowsDecl(['@nudo:case "neg" (0) !! throws'])).toBe("*");
     expect(scanThrowsDecl(['@nudo:case "neg" (0) !! throws Error'])).toBe("Error");
     expect(scanThrowsDecl(['@nudo:case "neg" (0)', "!! throws Error"])).toBe("Error");
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -708,19 +664,14 @@ export function boom(n) {
     expect(
       scanThrowsDecl(["@nudo:case \"neg\" (", "0", ")", "Note: this helper uses !! throws"]),
     ).toBeUndefined();
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -759,9 +710,9 @@ beforeEach(() => {
 /** 预算：修后线性（实测 ≈ 0ms）⇒ 给足余量仍远低于旧式的二次方耗时 */
 const BUDGET_MS = 2000;
 
-describe("case 行尾 `!! throws` 正则不再二次回溯", () => {
+
   it("后缀不在行尾（尾部有其它字符）⇒ 不剥除，且耗时线性；后缀在行尾（后接大段空白）⇒ 照常剥除，且耗时线性；语义护栏：普通形态的剥除结果与旧式一致", () => {
-(() => {
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -776,8 +727,8 @@ describe("case 行尾 `!! throws` 正则不再二次回溯", () => {
     // 语义不变：后缀不在行尾 ⇒ 期望文本原样保留
     expect(tags[0]!.expectedText).toBe(`1 !! throws T${" ".repeat(n)}!`);
     expect(elapsed).toBeLessThan(BUDGET_MS);
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -791,8 +742,8 @@ describe("case 行尾 `!! throws` 正则不再二次回溯", () => {
     expect(tags).toHaveLength(1);
     expect(tags[0]!.expectedText).toBe("1");
     expect(elapsed).toBeLessThan(BUDGET_MS);
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -804,13 +755,11 @@ describe("case 行尾 `!! throws` 正则不再二次回溯", () => {
     expect(scanCaseTags('@nudo:case "x" (0) => 1 !! throws Error RangeError')[0]!.expectedText).toBe("1");
     // 非后缀文本不动
     expect(scanCaseTags('@nudo:case "x" (0) => 1')[0]!.expectedText).toBe("1");
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -837,10 +786,9 @@ describe("同名嵌套函数的 case 见证不对外层契约负责", () => {
 const caseIssues = (src: string, path: string) =>
   issuesOf(src, path).issues.filter((i) => i.code === "nudo:case-inconsistency");
 
-describe("同名嵌套函数的 case 见证不对外层契约负责", () => {
-  it("内层同名 function f() 的见证 ⇒ 不报 case-inconsistency；对照组 1：内层函数改名 g ⇒ 同样不报（单变量对照）；对照组 2：外层函数自己的违例见证仍报 error（不因修复而假绿）；对照组 3：外层函数自己的合规见证不报", () => {
-(() => {
 
+  it("内层同名 function f() 的见证 ⇒ 不报 case-inconsistency；对照组 1：内层函数改名 g ⇒ 同样不报（单变量对照）；对照组 2：外层函数自己的违例见证仍报 error（不因修复而假绿）；对照组 3：外层函数自己的合规见证不报", () => {
+  {
     const r = caseIssues(
       `/**
  * @nudo:contract x positive
@@ -854,9 +802,8 @@ export function f(x) {
       "/t/bug-282-a.js",
     );
     expect(r).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const r = caseIssues(
       `/**
  * @nudo:contract x positive
@@ -870,9 +817,8 @@ export function f(x) {
       "/t/bug-282-b.js",
     );
     expect(r).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const r = caseIssues(
       `/**
  * @nudo:contract x positive
@@ -887,9 +833,8 @@ export function f(x) {
     expect(r.length).toBe(1);
     expect(r[0]!.severity).toBe("error");
     expect(r[0]!.message).toContain("outer-bad");
-  })();
-(() => {
-
+  }
+  {
     const r = caseIssues(
       `/**
  * @nudo:contract x positive
@@ -902,15 +847,12 @@ export function f(x) {
       "/t/bug-282-d.js",
     );
     expect(r).toEqual([]);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -934,66 +876,55 @@ describe("导出名回收覆盖 $ / 非 ASCII", () => {
 
 
 
-describe("导出名回收覆盖 $ / 非 ASCII", () => {
-  it("含 $ 的导出函数名被回收；含非 ASCII 的导出函数名被回收；含 $ / 非 ASCII 的导出 const 名被回收；导出函数**被分析**（throws 面如实，不再从不被分析）；stripStaticExportDecls 文本口径也放宽（$ / 非 ASCII）；ASCII 同形口径不变（对照组）", () => {
-(() => {
 
+  it("含 $ 的导出函数名被回收；含非 ASCII 的导出函数名被回收；含 $ / 非 ASCII 的导出 const 名被回收；导出函数**被分析**（throws 面如实，不再从不被分析）；stripStaticExportDecls 文本口径也放宽（$ / 非 ASCII）；ASCII 同形口径不变（对照组）", () => {
+  {
     const exports = runTranspiled(`export function $d(x) { return x + 1; }`, {
       mode: "exec",
     });
     expect(Object.keys(exports)).toEqual(["$d"]);
-  })();
-(() => {
-
+  }
+  {
     const exports = runTranspiled(`export function 导出(x) { return x + 1; }`, {
       mode: "exec",
     });
     expect(Object.keys(exports)).toEqual(["导出"]);
-  })();
-(() => {
-
+  }
+  {
     const exports = runTranspiled(`export const $c = 7;\nexport const 数 = 8;`, {
       mode: "exec",
     });
     expect(Object.keys(exports).sort()).toEqual(["$c", "数"]);
-  })();
-(() => {
-
+  }
+  {
     const exports = runTranspiled(`export function $d(x) { return null.x; }`, {
       mode: "exec",
     });
     const full = callTranspiledExportFull(exports, "$d", []);
     expect(full.throws?.shape?.k ?? "never").toBe("brand");
-  })();
-(() => {
-
+  }
+  {
     expect(stripStaticExportDecls(transpileSource(`export function $d(){}`)).names).toEqual([
       "$d",
     ]);
     expect(stripStaticExportDecls(transpileSource(`export function 导出(){}`)).names).toEqual([
       "导出",
     ]);
-  })();
-(() => {
-
+  }
+  {
     const exports = runTranspiled(`export function ascii(x) { return x + 1; }`, {
       mode: "exec",
     });
     expect(Object.keys(exports)).toEqual(["ascii"]);
     expect(litValue(exports["ascii"] as never)).toEqual({ ok: false });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1017,9 +948,9 @@ beforeEach(() => {
   takeRefineDiags();
 });
 
-describe("Unicode 标识符的指令文法", () => {
+
   it("@nudo:assume 中文名 → 合法（不再是 malformed）；@nudo:assume `>=` 仍翻转为 le（中文名同样成立）；@nudo:invariant 中文名 → 合法；@nudo:invariant 中文路径段 → 合法；@nudo:contract 中文形参名 → 契约生效；@nudo:contract `$x` 形参名 → 合法（旧 ASCII 正则不收 `$`）；非法的形参名仍被判 malformed（不放宽成任意串）", () => {
-(() => {
+  {
   setRefineDiagCollector(null);
   takeRefineDiags();
 
@@ -1036,8 +967,8 @@ export function 差(小数, 大数) {
     expect(segs).toHaveLength(1);
     // 段带指令位置（line/column）⇒ 用 toMatchObject（不锁死新字段）
     expect(segs[0]).toMatchObject({ kind: "ok", lhs: "小数", rhs: "大数" });
-  })();
-(() => {
+  }
+  {
   setRefineDiagCollector(null);
   takeRefineDiags();
 
@@ -1052,8 +983,8 @@ export function 差(小数, 大数) {
 `;
     const segs = extractAssumeSegs(src, "差");
     expect(segs).toMatchObject([{ kind: "ok", lhs: "小数", rhs: "大数" }]);
-  })();
-(() => {
+  }
+  {
   setRefineDiagCollector(null);
   takeRefineDiags();
 
@@ -1069,8 +1000,8 @@ export function inc(计数) {
     const segs = extractInvariantSegs(src, "inc");
     expect(segs).toHaveLength(1);
     expect(segs[0]).toMatchObject({ kind: "ok", name: "计数", rel: "ge", value: 0 });
-  })();
-(() => {
+  }
+  {
   setRefineDiagCollector(null);
   takeRefineDiags();
 
@@ -1086,8 +1017,8 @@ export function inc(记录) {
     const segs = extractInvariantSegs(src, "inc");
     expect(segs).toHaveLength(1);
     expect(segs[0]).toMatchObject({ kind: "ok", name: "记录" });
-  })();
-(() => {
+  }
+  {
   setRefineDiagCollector(null);
   takeRefineDiags();
 
@@ -1110,8 +1041,8 @@ export function inc(计数) {
     });
     expect(entries).toHaveLength(1);
     expect(entries[0]!.param).toBe("计数");
-  })();
-(() => {
+  }
+  {
   setRefineDiagCollector(null);
   takeRefineDiags();
 
@@ -1134,8 +1065,8 @@ export function inc($x) {
     });
     expect(entries).toHaveLength(1);
     expect(entries[0]!.param).toBe("$x");
-  })();
-(() => {
+  }
+  {
   setRefineDiagCollector(null);
   takeRefineDiags();
 
@@ -1162,21 +1093,15 @@ export function inc(x) {
     expect(
       diags.some((d) => d.code === "nudo:contract-syntax"),
     ).toBe(true);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1207,10 +1132,9 @@ function witnessIssues(src: string, file: string) {
   return issuesOf(src, file).issues.filter((i) => i.code === "nudo:case-inconsistency");
 }
 
-describe("case 见证与字段级 / shape 契约对账", () => {
-  it("error: 对象见证 ⊭ 标量契约（number()）——改前机制②归一成 unknown 后静默跳过；error: shape 契约的字段类型不符——改前机制①把 fields 契约整条跳过；error: shape 契约缺字段 → missing field <path>；error: 嵌套 shape 的字段违例（路径逐段下钻）；error: shape 契约的字段数值界违例；ok: 满足 shape 契约的见证不报；ok: 满足标量契约的对象见证不报（any() 通", () => {
-(() => {
 
+  it("error: 对象见证 ⊭ 标量契约（number()）——改前机制②归一成 unknown 后静默跳过；error: shape 契约的字段类型不符——改前机制①把 fields 契约整条跳过；error: shape 契约缺字段 → missing field <path>；error: 嵌套 shape 的字段违例（路径逐段下钻）；error: shape 契约的字段数值界违例；ok: 满足 shape 契约的见证不报；ok: 满足标量契约的对象见证不报（any() 通", () => {
+  {
     const errs = witnessIssues(
       `
 /**
@@ -1227,9 +1151,8 @@ function g(a) {
     expect(errs[0]!.severity).toBe("error");
     expect(errs[0]!.message).toContain("bad");
     expect(errs[0]!.expected).toContain("number");
-  })();
-(() => {
-
+  }
+  {
     const errs = witnessIssues(
       `
 /**
@@ -1245,9 +1168,8 @@ function g(a) {
     expect(errs.length).toBe(1);
     expect(errs[0]!.severity).toBe("error");
     expect(errs[0]!.expected).toBe('typeof id = "number"');
-  })();
-(() => {
-
+  }
+  {
     const errs = witnessIssues(
       `
 /**
@@ -1263,9 +1185,8 @@ function g(a) {
     expect(errs.length).toBe(1);
     expect(errs[0]!.severity).toBe("error");
     expect(errs[0]!.expected).toBe("missing field id");
-  })();
-(() => {
-
+  }
+  {
     const errs = witnessIssues(
       `
 /**
@@ -1280,9 +1201,8 @@ function g(a) {
     );
     expect(errs.length).toBe(1);
     expect(errs[0]!.expected).toBe('typeof user.id = "number"');
-  })();
-(() => {
-
+  }
+  {
     const errs = witnessIssues(
       `
 /**
@@ -1297,9 +1217,8 @@ function g(a) {
     );
     expect(errs.length).toBe(1);
     expect(errs[0]!.severity).toBe("error");
-  })();
-(() => {
-
+  }
+  {
     const errs = witnessIssues(
       `
 /**
@@ -1313,9 +1232,8 @@ function g(a) {
       "/t/case-371-ok.js",
     );
     expect(errs).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const errs = witnessIssues(
       `
 /**
@@ -1329,9 +1247,8 @@ function g(a) {
       "/t/case-371-scalar-ok.js",
     );
     expect(errs).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const errs = witnessIssues(
       `
 /**
@@ -1346,23 +1263,16 @@ function needsPositive(x) {
     );
     expect(errs.length).toBe(1);
     expect(errs[0]!.expected).toContain(">");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1400,10 +1310,9 @@ function witnessIssues(src: string, file: string) {
   return issuesOf(src, file).issues.filter((i) => i.code === "nudo:case-inconsistency");
 }
 
-describe("多行 case 实参不再被静默跳过", () => {
-  it("error: 多行实参的违例见证（改前整条见证被跳过 ⇒ 零诊断 / 假绿）；ok: 多行实参满足契约不报；负控制: 同一见证写成单行仍报同一条（改前只多行形态假绿）", () => {
-(() => {
 
+  it("error: 多行实参的违例见证（改前整条见证被跳过 ⇒ 零诊断 / 假绿）；ok: 多行实参满足契约不报；负控制: 同一见证写成单行仍报同一条（改前只多行形态假绿）", () => {
+  {
     const errs = witnessIssues(
       `
 /**
@@ -1422,9 +1331,8 @@ function needsPositive(x) {
     expect(errs[0]!.severity).toBe("error");
     expect(errs[0]!.message).toContain("neg");
     expect(errs[0]!.expected).toContain(">");
-  })();
-(() => {
-
+  }
+  {
     const errs = witnessIssues(
       `
 /**
@@ -1440,9 +1348,8 @@ function needsPositive(x) {
       "/t/case-375-multi-ok.js",
     );
     expect(errs).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const errs = witnessIssues(
       `
 /**
@@ -1457,18 +1364,15 @@ function needsPositive(x) {
     );
     expect(errs.length).toBe(1);
     expect(errs[0]!.expected).toContain(">");
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 
 describe("`\\` 不是转义：实参个数与共享单源一致", () => {
   it("error: `\"a\\\", -1` 切 2 个实参 ⇒ 第二个实参的违例见证被检出；负控制: 无转义引号的同形见证报同一条（改前两条都报 ⇒ 实参个数相同）", () => {
-(() => {
-
+  {
     const errs = witnessIssues(
       `
 /**
@@ -1485,9 +1389,8 @@ function f(x, y) {
     expect(errs[0]!.severity).toBe("error");
     expect(errs[0]!.message).toContain("c");
     expect(errs[0]!.expected).toContain(">");
-  })();
-(() => {
-
+  }
+  {
     const errs = witnessIssues(
       `
 /**
@@ -1502,16 +1405,14 @@ function f(x, y) {
     );
     expect(errs.length).toBe(1);
     expect(errs[0]!.expected).toContain(">");
-  })();
-});;
+  }
+});
 
-  ;
 });
 
 describe("R3 — 实参认不出 / 缺位 ⇒ 可见诊断，不再静默 continue", () => {
   it("warning: 契约位上的实参认不出 ⇒ nudo:directive-syntax；warning: 契约位上没有见证实参 ⇒ nudo:directive-syntax；负控制: 无契约位的认不出实参不产见证面诊断（parser 面自行诊断）；负控制: 约束构建器实参（number()）是合法形态 ⇒ 跳过但**不产诊断**", () => {
-(() => {
-
+  {
     const r = issuesOf(
       `
 /**
@@ -1528,9 +1429,8 @@ function f(x) {
     expect(d).toBeDefined();
     expect(d!.severity).toBe("warning");
     expect(d!.message).toContain("could not be parsed");
-  })();
-(() => {
-
+  }
+  {
     const r = issuesOf(
       `
 /**
@@ -1547,9 +1447,8 @@ function f(x, y) {
     expect(d).toBeDefined();
     expect(d!.severity).toBe("warning");
     expect(d!.message).toContain("no witness argument");
-  })();
-(() => {
-
+  }
+  {
     const r = issuesOf(
       `
 /**
@@ -1563,9 +1462,8 @@ function f(x) {
       "/t/case-r3-control.js",
     );
     expect(r.issues.filter((i) => i.code === "nudo:directive-syntax")).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     // 符号见证（一个域，不是具体值）⇒ 见证面无比对对象 ⇒ 跳过；
     // 它**不是**文法缺口 ⇒ 不得产 directive-syntax（否则 examples 假红）。
     const r = issuesOf(
@@ -1582,14 +1480,11 @@ function f(x) {
     );
     expect(r.issues.filter((i) => i.code === "nudo:directive-syntax")).toEqual([]);
     expect(r.issues.filter((i) => i.code === "nudo:case-inconsistency")).toEqual([]);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 });
 });
 
@@ -1612,54 +1507,41 @@ describe("@nudo:env payload grammar", () => {
 
 
 
-describe("@nudo:env payload grammar", () => {
-  it("space-separated env list is recognized (was dropped as one token)；comma-separated env list still works (control)；mixed separators are accepted；trailing line comment is stripped；path-like env names survive whitespace splitting；bare tag yield", () => {
-(() => {
 
+  it("space-separated env list is recognized (was dropped as one token)；comma-separated env list still works (control)；mixed separators are accepted；trailing line comment is stripped；path-like env names survive whitespace splitting；bare tag yield", () => {
+  {
     expect(parseEnvPayload("node web")).toEqual(["node", "web"]);
     expect(extractFileEnvNames(`/// @nudo:env node web\n`)).toEqual(["node", "web"]);
-  })();
-(() => {
-
+  }
+  {
     expect(parseEnvPayload("node, web")).toEqual(["node", "web"]);
     expect(extractFileEnvNames(`/// @nudo:env node, web\n`)).toEqual(["node", "web"]);
-  })();
-(() => {
-
+  }
+  {
     expect(parseEnvPayload("node, web es")).toEqual(["node", "web", "es"]);
-  })();
-(() => {
-
+  }
+  {
     expect(parseEnvPayload("node // only node")).toEqual(["node"]);
-  })();
-(() => {
-
+  }
+  {
     expect(parseEnvPayload("es ./other.env.ts")).toEqual(["es", "./other.env.ts"]);
-  })();
-(() => {
-
+  }
+  {
     expect(extractFileEnvNames(`/// @nudo:env\n`)).toEqual([]);
     expect(extractFileEnvNames(`/// @nudo:env \n`)).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     expect(parseEnvPayload(`node";`)).toEqual([]);
     expect(extractFileEnvNames(`// @nudo:env node";\n`)).toEqual([]);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1700,45 +1582,36 @@ function scopesOf(src: string) {
   return listFnDirectiveScopes(parseSource(src));
 }
 
-describe("箭头初始化器上的内联 JSDoc 绑到绑定名", () => {
-  it("内联形态：见证落在 f 上；内联形态：不再产生 <anonymous> 影子 scope；内联形态：按名查找拿到 f 的注释行；语句级形态（对照）：见证同样落在 f 上；函数表达式初始化器的内联形态同样绑到绑定名", () => {
-(() => {
 
+  it("内联形态：见证落在 f 上；内联形态：不再产生 <anonymous> 影子 scope；内联形态：按名查找拿到 f 的注释行；语句级形态（对照）：见证同样落在 f 上；函数表达式初始化器的内联形态同样绑到绑定名", () => {
+  {
     const f = scopesOf(INLINE).find((s) => s.name === "f");
     expect(f?.commentLines).toContain('@nudo:case "inline" (1)');
-  })();
-(() => {
-
+  }
+  {
     const names = scopesOf(INLINE).map((s) => s.name);
     expect(names).toEqual(["f"]);
     expect(names).not.toContain("<anonymous>");
-  })();
-(() => {
-
+  }
+  {
     const scope = findFnDirectiveScope(parseSource(INLINE), "f");
     expect(scope?.commentLines).toContain('@nudo:case "inline" (1)');
-  })();
-(() => {
-
+  }
+  {
     const f = scopesOf(ABOVE).find((s) => s.name === "f");
     expect(f?.commentLines).toContain('@nudo:case "inline" (1)');
     expect(scopesOf(ABOVE).map((s) => s.name)).toEqual(["f"]);
-  })();
-(() => {
-
+  }
+  {
     const f = scopesOf(INLINE_FN_EXPR).find((s) => s.name === "f");
     expect(f?.commentLines).toContain('@nudo:case "inline" (1)');
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1762,55 +1635,44 @@ describe("配平扫描器转义感知：转义引号不再吃掉整条 case", ()
 
 
 
-describe("配平扫描器转义感知：转义引号不再吃掉整条 case", () => {
-  it("extractBalancedParens: 双引号串里的 `\\\"` 不结束字符串；extractBalancedParens: 对象 / 数组字面量里的转义引号同样配平；extractBalancedParens: 单引号串里的 `\\'` 不结束字符串；scanCaseTags: 含转义引号的 case 被抽出（改前整条被丢弃）；负控制（Bug 1009 口径保留）: 串未闭合时回退宽松口径 ⇒ 实参个数不变；负控制: 无转义引号的普通实参不受影响", () => {
-(() => {
 
+  it("extractBalancedParens: 双引号串里的 `\\\"` 不结束字符串；extractBalancedParens: 对象 / 数组字面量里的转义引号同样配平；extractBalancedParens: 单引号串里的 `\\'` 不结束字符串；scanCaseTags: 含转义引号的 case 被抽出（改前整条被丢弃）；负控制（Bug 1009 口径保留）: 串未闭合时回退宽松口径 ⇒ 实参个数不变；负控制: 无转义引号的普通实参不受影响", () => {
+  {
     const text = '("a\\"b")';
     expect(extractBalancedParens(text, 0)).toBe('"a\\"b"');
-  })();
-(() => {
-
+  }
+  {
     expect(extractBalancedParens('({ a: "x\\"y" })', 0)).toBe('{ a: "x\\"y" }');
     expect(extractBalancedParens('(["x\\"y"])', 0)).toBe('["x\\"y"]');
-  })();
-(() => {
-
+  }
+  {
     expect(extractBalancedParens("('it\\'s')", 0)).toBe("'it\\'s'");
-  })();
-(() => {
-
+  }
+  {
     const tags = scanCaseTags('@nudo:case "k" ("a\\"b") => 3');
     expect(tags).toHaveLength(1);
     expect(tags[0]!.name).toBe("k");
     expect(tags[0]!.argsText).toBe('"a\\"b"');
     expect(tags[0]!.expectedText).toBe("3");
-  })();
-(() => {
-
+  }
+  {
     // `"a\", -1` 是**非法** JS 串（未闭合）⇒ 宽松口径切成 2 个实参
     expect(extractBalancedParens('("a\\", -1)', 0)).toBe('"a\\", -1');
     const tags = scanCaseTags('@nudo:case "c" ("a\\", -1)');
     expect(tags).toHaveLength(1);
     expect(tags[0]!.argsText).toBe('"a\\", -1');
-  })();
-(() => {
-
+  }
+  {
     expect(extractBalancedParens("(1, 2)", 0)).toBe("1, 2");
     expect(extractBalancedParens("(", 0)).toBeNull();
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1835,10 +1697,9 @@ function check(src: string) {
   return checkSource("/t/bug-421.js", src, pTrue);
 }
 
-describe("空载荷的 assume / invariant 必须发诊断", () => {
-  it("@nudo:assume 空载荷 → nudo:assume-invalid（error）；@nudo:invariant 空载荷 → nudo:invariant-invalid（warning）；空载荷（纯空白）与合法载荷不回归；合法 assume / invariant 零诊断（不误伤）", () => {
-(() => {
 
+  it("@nudo:assume 空载荷 → nudo:assume-invalid（error）；@nudo:invariant 空载荷 → nudo:invariant-invalid（warning）；空载荷（纯空白）与合法载荷不回归；合法 assume / invariant 零诊断（不误伤）", () => {
+  {
     const r = check(`
 /**
  * @nudo:assume
@@ -1854,9 +1715,8 @@ export function f421(x) {
     expect(bad[0]!.fn).toBe("f421");
     // 位置 = 出错指令行（不是文件首行 / 函数声明行）
     expect(bad[0]!.line).toBe(3);
-  })();
-(() => {
-
+  }
+  {
     const r = check(`
 /**
  * @nudo:invariant
@@ -1870,9 +1730,8 @@ export function f421b(dp) {
     expect(bad[0]!.severity).toBe("warning");
     expect(bad[0]!.message).toContain("malformed @nudo:invariant");
     expect(bad[0]!.line).toBe(3);
-  })();
-(() => {
-
+  }
+  {
     const r = check(`
 /**
  * @nudo:assume
@@ -1890,9 +1749,8 @@ export function ok(d, max) {
     const bad = r.issues.filter((i) => i.code === "nudo:assume-invalid");
     expect(bad).toHaveLength(1);
     expect(bad[0]!.fn).toBe("empty");
-  })();
-(() => {
-
+  }
+  {
     const r = check(`
 /**
  * @nudo:assume d <= max
@@ -1903,15 +1761,12 @@ export function ok(d, max) {
 `);
     expect(r.issues.filter((i) => i.code === "nudo:assume-invalid")).toEqual([]);
     expect(r.issues.filter((i) => i.code === "nudo:invariant-invalid")).toEqual([]);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1932,40 +1787,31 @@ describe("empty @nudo:import payload is diagnosable", () => {
 
 
 
-describe("empty @nudo:import payload is diagnosable", () => {
+
   it("bare tag is reported as a malformed import；bare tag with trailing blank is reported as a malformed import；empty payload produces no import record (only a diagnostic)；empty payload is malformed at the grammar level too；valid and other malfor", () => {
-(() => {
-
+  {
     expect(scanMalformedNudoImports(`/// @nudo:import\n`)).toEqual(["malformed"]);
-  })();
-(() => {
-
+  }
+  {
     expect(scanMalformedNudoImports(`/// @nudo:import \n`)).toEqual(["malformed"]);
-  })();
-(() => {
-
+  }
+  {
     expect(extractNudoImportRecords(`/// @nudo:import\n`)).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     expect(parseNudoImportPayload("")).toBe("malformed");
     expect(parseNudoImportPayload("   ")).toBe("malformed");
-  })();
-(() => {
-
+  }
+  {
     expect(scanMalformedNudoImports(`/// @nudo:import { a } from "./x.nudo.js"\n`)).toEqual([]);
     expect(scanMalformedNudoImports(`/// @nudo:import ./nope.js\n`)).toEqual(["malformed"]);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1985,41 +1831,34 @@ describe("CRLF 源文件里 `=> expected` 不再被吞掉", () => {
 
 
 
-describe("CRLF 源文件里 `=> expected` 不再被吞掉", () => {
-  it("CRLF: 期望被抽出（改前整条期望消失）；LF（负控制）: 期望照旧被抽出；CRLF: 块注释续行形态的期望同样被抽出；CRLF: 无期望的 case 不受影响（expectedText 仍为 undefined）", () => {
-(() => {
 
+  it("CRLF: 期望被抽出（改前整条期望消失）；LF（负控制）: 期望照旧被抽出；CRLF: 块注释续行形态的期望同样被抽出；CRLF: 无期望的 case 不受影响（expectedText 仍为 undefined）", () => {
+  {
     const tags = scanCaseTags('@nudo:case "c" (1) => 999\r\n');
     expect(tags).toHaveLength(1);
     expect(tags[0]!.expectedText).toBe("999");
-  })();
-(() => {
-
+  }
+  {
     const tags = scanCaseTags('@nudo:case "c" (1) => 999\n');
     expect(tags).toHaveLength(1);
     expect(tags[0]!.expectedText).toBe("999");
-  })();
-(() => {
-
+  }
+  {
     const text = '*\r\n * @nudo:case "c" (1) => 999\r\n ';
     const tags = scanCaseTags(text);
     expect(tags).toHaveLength(1);
     expect(tags[0]!.expectedText).toBe("999");
-  })();
-(() => {
-
+  }
+  {
     const tags = scanCaseTags('@nudo:case "c" (1)\r\n');
     expect(tags).toHaveLength(1);
     expect(tags[0]!.expectedText).toBeUndefined();
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2042,57 +1881,46 @@ describe("`!! throws [Kind]` 后缀不再吃掉期望值", () => {
 
 
 
-describe("`!! throws [Kind]` 后缀不再吃掉期望值", () => {
-  it("后缀在 `=>` 之前: 期望照旧被抽出（改前整条期望消失）；后缀在 `=>` 之后: 期望文本不被腐蚀（改前是 `1 !! throws`）；后缀带 kind: 期望文本只剩期望本身；文档化形态（只有后缀、没有 `=>`）: 没有期望（后缀是**申报**不是期望）；回归护栏: case 行本身不被改写 ⇒ `!! throws` 后缀申报仍在；回归护栏: 后缀在 `=>` 之后时**申报口径不变**（既有约定：后缀须紧跟实参括号）", () => {
-(() => {
 
+  it("后缀在 `=>` 之前: 期望照旧被抽出（改前整条期望消失）；后缀在 `=>` 之后: 期望文本不被腐蚀（改前是 `1 !! throws`）；后缀带 kind: 期望文本只剩期望本身；文档化形态（只有后缀、没有 `=>`）: 没有期望（后缀是**申报**不是期望）；回归护栏: case 行本身不被改写 ⇒ `!! throws` 后缀申报仍在；回归护栏: 后缀在 `=>` 之后时**申报口径不变**（既有约定：后缀须紧跟实参括号）", () => {
+  {
     const tags = scanCaseTags('@nudo:case "a" (0) !! throws => 1');
     expect(tags).toHaveLength(1);
     expect(tags[0]!.expectedText).toBe("1");
-  })();
-(() => {
-
+  }
+  {
     const tags = scanCaseTags('@nudo:case "b" (0) => 1 !! throws');
     expect(tags).toHaveLength(1);
     expect(tags[0]!.expectedText).toBe("1");
-  })();
-(() => {
-
+  }
+  {
     const tags = scanCaseTags('@nudo:case "c" (0) => 1 !! throws TypeError');
     expect(tags).toHaveLength(1);
     expect(tags[0]!.expectedText).toBe("1");
-  })();
-(() => {
-
+  }
+  {
     const tags = scanCaseTags('@nudo:case "neg" (0) !! throws');
     expect(tags).toHaveLength(1);
     expect(tags[0]!.expectedText).toBeUndefined();
-  })();
-(() => {
-
+  }
+  {
     // 片 4 的 case 后缀申报读的是**原文行**——426 只在期望文本的局部副本上剥后缀
     const lines = ['@nudo:case "neg" (0) !! throws'];
     expect(scanThrowsDecl(lines)).toBe("*");
-  })();
-(() => {
-
+  }
+  {
     // 收紧后的口径：后缀申报只在**实参括号闭合之后**、紧邻 `!! throws`
     // 时产出 ⇒ `=> 1 !! throws` **本来就没有**申报（改前改后一致）
     const lines = ['@nudo:case "b" (0) => 1 !! throws'];
     expect(scanThrowsDecl(lines)).toBeUndefined();
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2114,64 +1942,51 @@ describe("期望表达式的冗余括号被剥掉", () => {
 
 
 
-describe("期望表达式的冗余括号被剥掉", () => {
-  it("数字字面量: `=> (999)` ⇒ `999`；字符串字面量: `=> (\"abc\")` ⇒ `\"abc\"`；对象字面量: `=> ({ b: 1 })` ⇒ `{ b: 1 }`；元组字面量: `=> ([1, 2])` ⇒ `[1, 2]`；多层括号: 逐层剥到表达式本体；负控制: 无括号形态不受影响；负控制: 箭头函数不被误剥（`(x) => y` 的括号不是冗余层）", () => {
-(() => {
 
+  it("数字字面量: `=> (999)` ⇒ `999`；字符串字面量: `=> (\"abc\")` ⇒ `\"abc\"`；对象字面量: `=> ({ b: 1 })` ⇒ `{ b: 1 }`；元组字面量: `=> ([1, 2])` ⇒ `[1, 2]`；多层括号: 逐层剥到表达式本体；负控制: 无括号形态不受影响；负控制: 箭头函数不被误剥（`(x) => y` 的括号不是冗余层）", () => {
+  {
     const tags = scanCaseTags('@nudo:case "a" (1) => (999)');
     expect(tags).toHaveLength(1);
     expect(tags[0]!.expectedText).toBe("999");
-  })();
-(() => {
-
+  }
+  {
     const tags = scanCaseTags('@nudo:case "a" (1) => ("abc")');
     expect(tags).toHaveLength(1);
     expect(tags[0]!.expectedText).toBe('"abc"');
-  })();
-(() => {
-
+  }
+  {
     const tags = scanCaseTags('@nudo:case "a" ({ a: 1 }) => ({ b: 1 })');
     expect(tags).toHaveLength(1);
     expect(tags[0]!.expectedText).toBe("{ b: 1 }");
-  })();
-(() => {
-
+  }
+  {
     const tags = scanCaseTags('@nudo:case "a" (1) => ([1, 2])');
     expect(tags).toHaveLength(1);
     expect(tags[0]!.expectedText).toBe("[1, 2]");
-  })();
-(() => {
-
+  }
+  {
     const tags = scanCaseTags('@nudo:case "a" (1) => ((999))');
     expect(tags).toHaveLength(1);
     expect(tags[0]!.expectedText).toBe("999");
-  })();
-(() => {
-
+  }
+  {
     const tags = scanCaseTags('@nudo:case "a" (1) => 999');
     expect(tags).toHaveLength(1);
     expect(tags[0]!.expectedText).toBe("999");
-  })();
-(() => {
-
+  }
+  {
     const tags = scanCaseTags('@nudo:case "a" (1) => (x) => x + 1');
     expect(tags).toHaveLength(1);
     expect(tags[0]!.expectedText).toBe("(x) => x + 1");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2203,45 +2018,39 @@ export function f(x: number): number {
 }
 `;
 
-describe(".ts 尖括号类型断言不再整文件解析失败", () => {
-  it("无 filename 时 `<number>1` 解析成功（降级重试命中）；带 filename=x.ts 时同样解析成功；引擎端到端：`<number>1` 求值为字面量 1（剥除面已就绪）；泛型箭头 `<T>(x) => x`（无尾逗号）在硬失败路径下被重试救回；真 JSX 源不受降级影响（TS+JSX 本就解析成功 ⇒ 不触发重试）；模式分流仍在：`.ts` 收 TS 语法、`.js` 不收（缓存键含模式 ⇒ 不串味）", () => {
-(() => {
 
+  it("无 filename 时 `<number>1` 解析成功（降级重试命中）；带 filename=x.ts 时同样解析成功；引擎端到端：`<number>1` 求值为字面量 1（剥除面已就绪）；泛型箭头 `<T>(x) => x`（无尾逗号）在硬失败路径下被重试救回；真 JSX 源不受降级影响（TS+JSX 本就解析成功 ⇒ 不触发重试）；模式分流仍在：`.ts` 收 TS 语法、`.js` 不收（缓存键含模式 ⇒ 不串味）", () => {
+  {
     resetParseSourceCache();
     const ast = parseSource_____parse_source_ts(TS_ANGLE);
     expect(ast.program.body.length).toBe(2);
-  })();
-(() => {
-
+  }
+  {
     resetParseSourceCache();
     const ast = parseSource_____parse_source_ts(TS_ANGLE, { filename: "x.ts" });
     expect(ast.program.body.length).toBe(2);
-  })();
-(() => {
-
+  }
+  {
     resetParseSourceCache();
     const v = val(`const n = <number>1;
 export function f() { return n; }
 `);
     expect(v).toEqual({ ok: true, value: 1 });
-  })();
-(() => {
-
+  }
+  {
     resetParseSourceCache();
     const ast = parseSource_____parse_source_ts(`const g = <T>(x: T) => x;
 export function f(x: number) { return x; }
 `);
     expect(ast.program.body.length).toBe(2);
-  })();
-(() => {
-
+  }
+  {
     resetParseSourceCache();
     const ast = parseSource_____parse_source_ts(`export const el = <div a={1} />;
 `);
     expect(ast.program.body.length).toBe(1);
-  })();
-(() => {
-
+  }
+  {
     resetParseSourceCache();
     const tsOnly = `const x: number = 1;
 export function f() { return x; }
@@ -2249,19 +2058,14 @@ export function f() { return x; }
     expect(parseSource_____parse_source_ts(tsOnly, { filename: "x.ts" }).program.body.length).toBe(2);
     // `.js` 模式不开 typescript 插件 ⇒ TS 注解是**真语法错**（重试也救不回 ⇒ 仍抛）
     expect(() => parseSource_____parse_source_ts(tsOnly, { filename: "x.js" })).toThrow();
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2283,41 +2087,34 @@ describe("malformed @nudo:case argument regions are masked too", () => {
 
 const MALFORMED = `\n * @nudo:case 'bad' (\n *   @nudo:mock fetch = (u) => ({ ok: true }))\n`;
 
-describe("malformed @nudo:case argument regions are masked too", () => {
-  it("the argument region of a malformed case is registered as a span；the tag itself is NOT masked (the malformed-name diagnostic still fires)；a well-formed case still masks its whole tag+arguments region；a case without an argument list registers", () => {
-(() => {
 
+  it("the argument region of a malformed case is registered as a span；the tag itself is NOT masked (the malformed-name diagnostic still fires)；a well-formed case still masks its whole tag+arguments region；a case without an argument list registers", () => {
+  {
     const spans = scanCaseArgSpans(MALFORMED);
     expect(spans).toHaveLength(1);
     const mockIdx = MALFORMED.indexOf("@nudo:mock");
     expect(spans.some(([s, e]) => mockIdx >= s && mockIdx < e)).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const spans = scanCaseArgSpans(MALFORMED);
     const tagIdx = MALFORMED.indexOf("@nudo:case");
     expect(spans.some(([s, e]) => tagIdx >= s && tagIdx < e)).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const text = `\n * @nudo:case "ok" (\n *   1)\n`;
     const spans = scanCaseArgSpans(text);
     expect(spans).toHaveLength(1);
     const tagIdx = text.indexOf("@nudo:case");
     expect(spans.some(([s, e]) => tagIdx >= s && tagIdx < e)).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     expect(scanCaseArgSpans(`\n * @nudo:case "ok"\n`)).toEqual([]);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2357,22 +2154,18 @@ const IMPORT_IN_FN = `export function f(a) {
 }
 `;
 
-describe("text-level file-level extraction is position-gated", () => {
+
   it("env inside a function body is not file-wide；mock-module inside a function body is not file-wide；@nudo:import inside a function body is not file-wide；the same directives at the top of the file are honored；a top-level directive after other st", () => {
-(() => {
-
+  {
     expect(extractFileEnvNames(ENV_IN_FN)).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     expect(extractMockModuleRecords(MOCK_MODULE_IN_FN)).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     expect(extractNudoImportRecords(IMPORT_IN_FN)).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     expect(extractFileEnvNames(`/// @nudo:env node\nexport function f() { return 1; }\n`)).toEqual([
       "node",
     ]);
@@ -2386,31 +2179,24 @@ describe("text-level file-level extraction is position-gated", () => {
         `/// @nudo:import { positive } from "./std.nudo.js"\nexport function f() { return 1; }\n`,
       ),
     ).toHaveLength(1);
-  })();
-(() => {
-
+  }
+  {
     expect(
       extractFileEnvNames(`export function g() { return 1; }\n/// @nudo:env node\n`),
     ).toEqual(["node"]);
-  })();
-(() => {
-
+  }
+  {
     expect(
       extractFileEnvNames(`export /// @nudo:env node\nfunction f() { return 1; }\n`),
     ).toEqual(["node"]);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2434,62 +2220,51 @@ describe("`=> expected` 的排版不再让期望静默消失", () => {
 
 
 
-describe("`=> expected` 的排版不再让期望静默消失", () => {
-  it("形态 A: 期望值在下一行 ⇒ 期望被抽出；形态 A（无续行前缀）: 期望值在下一行 ⇒ 期望被抽出；形态 B: `=>` 后为空 ⇒ 没有期望，但**产出行首锚的语法错**（不再静默）；形态 B（续行也没有值）: 同样产出行首锚的语法错；负控制: 同行形态照旧（期望被抽出、无语法错）；负控制: 没有 `=>` 的 case（本就无期望）不产语法错", () => {
-(() => {
 
+  it("形态 A: 期望值在下一行 ⇒ 期望被抽出；形态 A（无续行前缀）: 期望值在下一行 ⇒ 期望被抽出；形态 B: `=>` 后为空 ⇒ 没有期望，但**产出行首锚的语法错**（不再静默）；形态 B（续行也没有值）: 同样产出行首锚的语法错；负控制: 同行形态照旧（期望被抽出、无语法错）；负控制: 没有 `=>` 的 case（本就无期望）不产语法错", () => {
+  {
     const text = '@nudo:case "multi" (2) =>\n *   4\n ';
     const tags = scanCaseTags(text);
     expect(tags).toHaveLength(1);
     expect(tags[0]!.expectedText).toBe("4");
-  })();
-(() => {
-
+  }
+  {
     const text = '@nudo:case "multi" (2) =>\n4\n';
     const tags = scanCaseTags(text);
     expect(tags).toHaveLength(1);
     expect(tags[0]!.expectedText).toBe("4");
-  })();
-(() => {
-
+  }
+  {
     const tags = scanCaseTags('@nudo:case "empty" (1) => ');
     expect(tags).toHaveLength(1);
     expect(tags[0]!.expectedText).toBeUndefined();
     expect(tags[0]!.expectedIssue).toBe("missing expected expression after '=>'");
-  })();
-(() => {
-
+  }
+  {
     const text = '@nudo:case "empty" (1) =>\n * @nudo:pure\n ';
     const tags = scanCaseTags(text);
     expect(tags).toHaveLength(1);
     expect(tags[0]!.expectedIssue).toBe("missing expected expression after '=>'");
-  })();
-(() => {
-
+  }
+  {
     const tags = scanCaseTags('@nudo:case "ok" (2) => 4');
     expect(tags).toHaveLength(1);
     expect(tags[0]!.expectedText).toBe("4");
     expect(tags[0]!.expectedIssue).toBeUndefined();
-  })();
-(() => {
-
+  }
+  {
     const tags = scanCaseTags('@nudo:case "plain" (1)');
     expect(tags).toHaveLength(1);
     expect(tags[0]!.expectedText).toBeUndefined();
     expect(tags[0]!.expectedIssue).toBeUndefined();
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2510,38 +2285,31 @@ describe("粘连写法 `@nudo:case\"c1\"` 不再静默蒸发", () => {
 
 
 
-describe("粘连写法 `@nudo:case\"c1\"` 不再静默蒸发", () => {
-  it("粘连写法: 不被抽成 case（抽取侧要求 `[ \\t]+`）；粘连写法: 在诊断面**看得见**（畸形剩余文本非空）；负控制: 规范形态照旧被抽成 case、且不产畸形剩余；负控制: 其它畸形形态仍被诊断面看见", () => {
-(() => {
 
+  it("粘连写法: 不被抽成 case（抽取侧要求 `[ \\t]+`）；粘连写法: 在诊断面**看得见**（畸形剩余文本非空）；负控制: 规范形态照旧被抽成 case、且不产畸形剩余；负控制: 其它畸形形态仍被诊断面看见", () => {
+  {
     const tags = scanCaseTags('@nudo:case"c1" (1, 2)');
     expect(tags).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const rests = scanMalformedCaseTagRests('@nudo:case"c1" (1, 2)');
     expect(rests).toEqual(['"c1" (1, 2)']);
-  })();
-(() => {
-
+  }
+  {
     const tags = scanCaseTags('@nudo:case "c1" (1, 2)');
     expect(tags).toHaveLength(1);
     expect(tags[0]!.name).toBe("c1");
     expect(tags[0]!.argsText).toBe("1, 2");
     expect(scanMalformedCaseTagRests('@nudo:case "c1" (1, 2)')).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     expect(scanMalformedCaseTagRests("@nudo:case 'c1' (1, 2)")).toEqual(["'c1' (1, 2)"]);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2564,10 +2332,9 @@ describe("粘连的 @nudo:contract 必须发语法诊断", () => {
 
 
 
-describe("粘连的 @nudo:contract 必须发语法诊断", () => {
-  it("@nudo:contractx → nudo:contract-syntax（warning）；@nudo:contract 空载荷 → nudo:contract-syntax（warning）；合法 @nudo:contract 零 contract-syntax（不误伤）；散文里的 @nudo:contract（行中提及）不算指令（不误伤）", () => {
-(() => {
 
+  it("@nudo:contractx → nudo:contract-syntax（warning）；@nudo:contract 空载荷 → nudo:contract-syntax（warning）；合法 @nudo:contract 零 contract-syntax（不误伤）；散文里的 @nudo:contract（行中提及）不算指令（不误伤）", () => {
+  {
     const r = checkSource(
       "/t/bug-981.js",
       `
@@ -2585,9 +2352,8 @@ export function f981(x) {
     expect(bad[0]!.severity).toBe("warning");
     expect(bad[0]!.message).toContain("@nudo:contractx positive");
     expect(bad[0]!.line).toBe(3);
-  })();
-(() => {
-
+  }
+  {
     const r = checkSource(
       "/t/bug-981b.js",
       `
@@ -2604,9 +2370,8 @@ export function f981b(x) {
     expect(bad).toHaveLength(1);
     expect(bad[0]!.severity).toBe("warning");
     expect(bad[0]!.message).toContain("Malformed @nudo:contract directive");
-  })();
-(() => {
-
+  }
+  {
     const r = issuesOf(`
 /**
  * @nudo:contract x positive
@@ -2616,9 +2381,8 @@ export function ok(x) {
 }
 `);
     expect(r.issues.filter((i) => i.code === "nudo:contract-syntax")).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const r = checkSource(
       "/t/bug-981c.js",
       `
@@ -2632,13 +2396,10 @@ export function prose(x) {
       pTrue,
     );
     expect(r.issues.filter((i) => i.code === "nudo:contract-syntax")).toEqual([]);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });

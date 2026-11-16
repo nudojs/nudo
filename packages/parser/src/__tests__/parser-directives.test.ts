@@ -56,7 +56,6 @@ describe("文件级指令诊断", () => {
     expect(extractFileDirectives(parse(envSrc), { diags: [] })).toEqual([{ kind: "env", envs: ["node", "web"] }]);
   });
 });
-;
 
 describe("@nudo:as 载荷分隔与括号", () => {
   it("括号/空格/嵌套都产出；裸标签与不可识别诊断；标签边界不吞邻近词", () => {
@@ -85,7 +84,6 @@ describe("@nudo:as 载荷分隔与括号", () => {
     }
   });
 });
-;
 
 describe("@nudo:as 尾随注释按词法边界切分", () => {
   it("尾注释只报一条且类型保留；字符串内注释符不算", () => {
@@ -106,7 +104,6 @@ describe("@nudo:as 尾随注释按词法边界切分", () => {
     expect(inString.diags).toEqual([]);
   });
 });
-;
 
 // ---------------------------------------------------------------------------
 // directives inside a malformed @nudo:case must not leak
@@ -195,7 +192,6 @@ describe("尾随注释不得作废 case 期望值 / skip 返回类型", () => {
     expect(fnDiags(SKIP_WITH_COMMENT)).toEqual([]);
   });
 });
-;
 
 describe("粘连标签 @nudo:case\"name\" 的可见性", () => {
   it("粘连形态诊断且不产 case；空格形态正常且静默", () => {
@@ -275,7 +271,6 @@ describe("诊断去重身份包含位置", () => {
     expect(malformed[0]!.at!.line).not.toBe(malformed[1]!.at!.line);
   });
 });
-;
 
 describe("缺失期望值 / 期望解析失败", () => {
   it("空 => 告警、无 => 静默、合法/续行静默、失败非 unknown、显式 unknown、严格 API", () => {
@@ -308,7 +303,6 @@ describe("缺失期望值 / 期望解析失败", () => {
     expect(parseCaseExpectedAbs("unknown", EXPECTED_CTX)).toBeDefined();
   });
 });
-;
 
 describe("解析失败与显式 unknown 可区分", () => {
   it("失败 never+诊断；as/replace/skip 保 unknown；显式 unknown/any/any() 零诊断", () => {
@@ -328,7 +322,6 @@ describe("解析失败与显式 unknown 可区分", () => {
     }
   });
 });
-;
 
 // ---------------------------------------------------------------------------
 // file-level directives in a class / object body are not file scope
@@ -399,7 +392,6 @@ describe("嵌套体里的文件级指令不提升", () => {
     expect(extractFileDirectives(parse(inFn), { diags: [] })).toEqual([]);
   });
 });
-;
 
 describe("合法顶层指令不被过度拦截", () => {
   it("文件首 / class 上方 / 对象 / 数组 / 两种解构 / 数组后置都放行且两通道一致", () => {
@@ -444,7 +436,6 @@ describe("function-level directive semantics are unchanged", () => {
     expect(m.directives.some((d) => d.kind === "case")).toBe(true);
   });
 });
-;
 
 // ---------------------------------------------------------------------------
 // 验收 7：两条通道逐例一致

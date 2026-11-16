@@ -62,7 +62,7 @@ export function f(n) {
     expect(next).toContain("fn({ range: string() }");
   });
 
-  it("#158 recursion-truncated: @nudo:budget quickfix only for budget reasons (not cycle)", () => {
+  it("recursion-truncated: @nudo:budget quickfix only for budget reasons (not cycle)", () => {
     const src = `export function sameArgs(x) { sameArgs(x); return x; }\n`;
     const base = {
       code: "nudo:recursion-truncated",

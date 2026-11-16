@@ -65,7 +65,7 @@ describe("callRecordFromAbsCall keeps throw payload", () => {
     ).toBe(true);
   });
 
-  it("BUG-028: threw omitted → throwsAbs unknown (fail-closed, not clean success)", () => {
+  it("threw omitted → throwsAbs unknown (fail-closed, not clean success)", () => {
     // producer 缺陷（threw 漏设）：无法区分成功 / 异常——
     // throws 域升 unknown，不把 payload 当干净成功
     // （旧实现 !!r.threw → 干净成功 + never+never 泄漏面）
@@ -79,7 +79,7 @@ describe("callRecordFromAbsCall keeps throw payload", () => {
     expect(isLeakedCallRecord(rec)).toBe(false);
   });
 
-  it("BUG-028: threw: false stays a clean success (throwsAbs never)", () => {
+  it("threw: false stays a clean success (throwsAbs never)", () => {
     const rec = callRecordFromAbsCall({
       fnName: "f",
       args: [numLit(1)],

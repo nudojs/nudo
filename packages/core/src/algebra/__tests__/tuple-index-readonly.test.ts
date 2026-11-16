@@ -5,7 +5,7 @@
  * 下标字符串键落到 unknown。canonicalArrayIndex 已有正确实现（$in/delete 用）。
  */
 import { describe, it, expect } from "vitest";
-import { $idx, $get, $arr, $lit, litValue, abs } from "@nudojs/core";
+import { $idx, $get, $arr, $lit, litValue,  } from "@nudojs/core";
 
 function tup() {
   return $arr([$lit(10), $lit(20), $lit(30)]);

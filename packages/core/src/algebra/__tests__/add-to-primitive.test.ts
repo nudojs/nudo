@@ -24,7 +24,7 @@ function shape(src: string) {
 }
 
 describe("array ToPrimitive in +", () => {
-  it("[] + [] is empty string join", () => {
+  it("+ [] is empty string join", () => {
     expect(val(`export function f() { return [] + []; }`)).toEqual({ ok: true, value: "" });
   });
 

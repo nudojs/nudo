@@ -47,7 +47,7 @@ async function withTmp(fn: (dir: string) => Promise<void> | void): Promise<void>
   }
 }
 
-describe("check --abs 必须与签名表同源地应用契约", () => {
+
   it("侧车契约的形参进求值（不再回落 any）", async () => {
     await withTmp(async (dir) => {
       writeFileSync(join(dir, "lib.js"), LIB_JS, "utf-8");
@@ -92,7 +92,7 @@ describe("check --abs 必须与签名表同源地应用契约", () => {
       expect(abs.stdout).not.toContain("g(any)");
     });
   }, 30000);
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -153,7 +153,7 @@ beforeAll(() => {
 
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 
-describe("只读 contract 不因 contract-conflict 改退出码", () => {
+
   it("print：stderr 报同码 error，但 exit 0（§1.3 只在用法 / IO 错误时 exit 1）", () => {
     const print = runCliTsx(["contract", p("b34.js")]);
     expect(print.status).toBe(0);
@@ -167,7 +167,7 @@ describe("只读 contract 不因 contract-conflict 改退出码", () => {
     expect(json.stderr).toContain("nudo:contract-conflict");
     expect(json.stdout).toContain('"conflict"');
   }, 120000);
-});
+
 
 describe("坏侧车三面透出 nudo:contract-load（与 check/export 同裁决）", () => {
   it("好侧车对照：exit 0 + [handwritten]，stderr 无 contract-load", () => {
@@ -305,7 +305,7 @@ export function f(x) {
   );
 }
 
-describe("export — 契约合取不可满足时报错退出（）", () => {
+
   it("stderr 上屏 nudo:contract-conflict 且 exit 1", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug625-"));
     writeConflictFixture(dir);
@@ -343,7 +343,7 @@ describe("export — 契约合取不可满足时报错退出（）", () => {
     expect(exp.status).toBe(1);
     expect(exp.stderr).toContain("nudo:contract-conflict");
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -388,7 +388,7 @@ function fixture(files: Record<string, string>): string {
 /** 侧车约束：number 的纯数据形态 */
 const NUM = `export const num = { __nudoConstraint: true, prim: "number", preds: [] };\n`;
 
-describe("export — 有参数契约无返回契约的返回面（族 17 · S1 · ）", () => {
+
   it("zod 返回面不再是「无约束入口」观测（不再是 number | string）", () => {
     const dir = fixture({
       "c612.nudo.js": NUM,
@@ -421,7 +421,7 @@ describe("export — 有参数契约无返回契约的返回面（族 17 · S1 �
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("export declare function g(x: number): number;");
   }, 30000);
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -468,7 +468,7 @@ export function f(a) {
   );
 }
 
-describe("export — 侧车装载失败时报错退出（）", () => {
+
   it("stderr 上屏 nudo:contract-load 且 exit 1", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug610-"));
     writeBrokenSidecarFixture(dir);
@@ -506,7 +506,7 @@ describe("export — 侧车装载失败时报错退出（）", () => {
     expect(exp.status).toBe(1);
     expect(exp.stderr).toContain("nudo:contract-load");
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -530,7 +530,7 @@ describe("export — 契约形参名与形参表不匹配时报错退出（）",
 
 
 
-describe("export — 契约形参名与形参表不匹配时报错退出（）", () => {
+
   it("stderr 上屏 nudo:contract-param-mismatch 且 exit 1", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug607-"));
     writeFileSync(
@@ -592,7 +592,7 @@ export function g(y) {
     expect(r.stderr).toContain("nudo:contract-param-mismatch");
     expect(existsSync(out)).toBe(false);
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -688,7 +688,7 @@ const CONTRACT_RETURN_FILES = {
   ].join("\n"),
 };
 
-describe("guard 面消费契约返回域（不再按单次 case 字面量收窄）", () => {
+
   it("guard 不再收窄成观测字面量（改前：data === 0.5）", () => {
     const dir = fixtureDir(CONTRACT_RETURN_FILES);
     const r = runCliTsx(["export", "lib.js", "--format", "guard"], { cwd: dir });
@@ -713,7 +713,7 @@ describe("guard 面消费契约返回域（不再按单次 case 字面量收窄�
     expect(guard.stdout).toContain("data >= 0");
     expect(guard.stdout).toContain("data <= 1");
   }, 30000);
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -822,7 +822,7 @@ function evalGuard(src: string): (value: unknown) => boolean {
   return new Function(`return (${js});`)() as (value: unknown) => boolean;
 }
 
-describe("guard 面与 zod 面同一出口域（同一次导出、同一裁决）", () => {
+
   it("契约允许的值（0.7）guard 接受（改前：guard 拒绝，zod 接受）", () => {
     const dir = fixtureDir(FILES);
     const r = runCliTsx(["export", "lib.js", "--format", "guard"], { cwd: dir });
@@ -856,7 +856,7 @@ describe("guard 面与 zod 面同一出口域（同一次导出、同一裁决�
     expect(r.stdout).toContain("data >= 0");
     expect(r.stdout).toContain("data <= 1");
   }, 30000);
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -943,7 +943,7 @@ const FILES = {
   ].join("\n"),
 };
 
-describe("guard 面守导出面闸门（内部函数不出守卫）", () => {
+
   it("guard 产物只有导出面函数的守卫（改前：内部函数也出守卫）", () => {
     const dir = fixtureDir(FILES);
     const r = runCliTsx(["export", "lib.js", "--format", "guard"], { cwd: dir });
@@ -961,7 +961,7 @@ describe("guard 面守导出面闸门（内部函数不出守卫）", () => {
     expect(dts.stdout).not.toContain("internalHelper");
     expect(guard.stdout).not.toContain("internalHelper");
   }, 30000);
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1007,7 +1007,7 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("contract drift 摘要数与明细行同量纲（槽数）", () => {
+
   it("文本面：Summary 的 N == 明细行「N @generated slot(s)」", () => {
     const r = runCliTsx(["health", p("lib.js")], { cwd: dir });
     expect(r.status).toBe(1);
@@ -1031,7 +1031,7 @@ describe("contract drift 摘要数与明细行同量纲（槽数）", () => {
     expect(json.files[0]?.contractDrift).toBeGreaterThan(0);
     expect(json.summary.contractDrift).toBe(json.files[0]?.contractDrift);
   }, 60_000);
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1081,7 +1081,7 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("health --from 的契约漂移判定与 check 同口径", () => {
+
   it("跨文件调用点证据在场 ⇒ 报 contract drift + exit 1（旧行为：0 drift / exit 0）", () => {
     const r = runCliTsx(["health", p("lib.js"), "--from", p("usage.js")], { cwd: dir });
     expect(r.stdout, r.stdout).toMatch(/contract drift: [1-9]\d* @generated slot\(s\)/);
@@ -1096,7 +1096,7 @@ describe("health --from 的契约漂移判定与 check 同口径", () => {
     expect(json.ok).toBe(false);
     expect(json.summary.contractDrift).toBeGreaterThan(0);
   }, 60_000);
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1143,7 +1143,7 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("health 的契约漂移判定必须走 mock 通道", () => {
+
   it("文本面：报 contract drift + exit 1（不得 0 contract drift / Result: OK）", { timeout: 60_000 }, () => {
     const r = runCliTsx(["health", p("m.js")]);
     expect(r.status).toBe(1);
@@ -1167,7 +1167,7 @@ describe("health 的契约漂移判定必须走 mock 通道", () => {
     const r = runCliTsx(["check", p("m.js")]);
     expect(r.stdout).toContain("nudo:contract-drift");
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1215,7 +1215,7 @@ export function withRet(a) {
   );
 }
 
-describe("export — 返回契约不影响参数面（回归钉）", () => {
+
   it("standard 面仍产出参数位（<fn>_<param>）", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug615-"));
     writeReturnContractFixture(dir);
@@ -1261,7 +1261,7 @@ describe("export — 返回契约不影响参数面（回归钉）", () => {
     expect(zodSlots).toHaveLength(dtsFormals.length);
     expect(stdParams).toHaveLength(dtsFormals.length);
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1315,7 +1315,7 @@ const SOURCE = [
   ``,
 ].join("\n");
 
-describe("export — 返回契约投影前复核实现（族 17 · S1 · ）", () => {
+
   it("zod 返回面：违约的契约不投影（回落实现实际返回）", () => {
     const dir = fixture({ "c626.nudo.js": TXT, "violate626.js": SOURCE });
     const r = runCliTsx(["export", join(dir, "violate626.js"), "--format", "schema"]);
@@ -1330,5 +1330,5 @@ describe("export — 返回契约投影前复核实现（族 17 · S1 · ）", (
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("export declare function f(x: number): number;");
   }, 30000);
-});
+
 });

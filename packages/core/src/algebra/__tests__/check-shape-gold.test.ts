@@ -3,7 +3,7 @@
  * 唯一 refine 形态：@nudo:contract <param> <shapeName>
  */
 import { describe, it, expect } from "vitest";
-import { checkSource, pTrue } from "../index.ts";
+import "../index.ts";
 import {
   shape,
   number,

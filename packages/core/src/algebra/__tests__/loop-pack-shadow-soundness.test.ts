@@ -123,7 +123,7 @@ describe("loop pack/unpack exclusion × shadowing", () => {
     expect(sig("doWhileShadow").conf).toBe("widened");
   });
 
-  it("#91: top-level `const re` (regex state rebind) stays excluded — no ReferenceError", () => {
+  it("top-level `const re` (regex state rebind) stays excluded — no ReferenceError", () => {
     const rep91 = checkSource("loop-pack-91.js", issue91Src);
     const f4 = rep91.signatures.find((s) => s.name === "f4");
     expect(f4).toBeTruthy();

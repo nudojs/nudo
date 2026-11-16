@@ -16,7 +16,7 @@ import { l2Count } from "./check-helpers.ts";
 import { analyzeFile as analyzeFile___nudojs_service } from "@nudojs/service";
 import { generateDts } from "../emit/dts-generator.ts";
 import { collectEvalReplacements as collectEvalReplacements_____eval_injection_ts, collectEvalReplacements as collectEvalReplacements_____eval_injection_ts_1, resolveEvalInjection } from "../eval-injection.ts";
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync,  } from "node:fs";
 import { collectSkipReturns } from "../skip-directives.ts";
 import { pureFnNamesOfAst } from "../eval-pure.ts";
 import { hasNudoDirectives, shouldAnalyzeFile } from "../analysis-scope.ts";
@@ -146,7 +146,7 @@ const NO_MOCK = `export function run() {
 }
 `;
 
-describe("（service 侧）—— 宿主内建名的 mock 不再被 env 跳过表吞掉", () => {
+{
   const mocksOf = (source: string, fromFile: string) => mockSeedsToAbsMocks(mockDirectivesToAbsSeeds(extractDirectivesQuiet(parse(source)), { fromFile })) as Record<string, never>;
   const callValue = (source: string, file: string, envNames?: string[]) => {
     const mocks = mocksOf(source, file);
@@ -179,12 +179,10 @@ describe("（service 侧）—— 宿主内建名的 mock 不再被 env 跳过�
     const binds = collectAbsBindingsFromGraph(src, file, { seedVars: mocksOf(src, file) as never });
     expect(litValue(binds.get("x")!)).toEqual({ ok: true, value: 42 });
   });
-});
-;;
+}
 
-;
 
-;
+
 });
 
 // ---------------------------------------------------------------------------
@@ -242,7 +240,7 @@ function writeMock(): void {
   writeTmpFile(dir, "mock.js", `export function depFn() { return "MOCK"; }\n`);
 }
 
-describe("mock-module 点名缺失（fail-closed，不静默回落原模块）", () => {
+{
   let dir: string;
   beforeEach(() => { dir = tmpProject("nudo-bug-963-"); });
   const origLit = (v: string): AbsModuleExports["named"][string] => ({ shape: { k: "str", v }, term: { op: "lit", value: v }, conf: "exact" } as never);
@@ -293,7 +291,7 @@ describe("mock-module 点名缺失（fail-closed，不静默回落原模块）",
     expect(full.errors).toHaveLength(0);
     expect(Object.keys(full.modules["./dep.js"]!.named)).toEqual(["depFn"]);
   });
-});;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -344,7 +342,7 @@ function witness(src: string, file = "/t/replace-scope.js"): string {
   return formatShape(r.functions[0].cases[0].abs);
 }
 
-describe("@nudo:replace 命中的子表达式仍求值", () => {
+{
   const sigOf = (r: { signatures: { name: string; display: string }[] }, fn: string) => r.signatures.find((s) => s.name === fn)?.display ?? "(missing)";
   const witness = (src: string, file = "/t/replace-scope.js") => formatShape(analyzeFile(file, src).functions[0]!.cases[0]!.abs);
   it("throws/副作用保留；覆盖仍生效；相邻子表达式不受影响", () => {
@@ -362,7 +360,7 @@ describe("@nudo:replace 命中的子表达式仍求值", () => {
     const adjacent = '/**\n * @nudo:case "c" (5, 10)\n */\nexport function f(a, b) {\n  // @nudo:replace a lit(100)\n  const x = a + b;\n  return x;\n}\n';
     expect(witness(adjacent)).toBe("110");
   });
-});;
+}
 
 describe("@nudo:as / @nudo:replace 的作用范围按 AST 节点身份", () => {
   const sigOf = (r: { signatures: { name: string; display: string }[] }, fn: string) => r.signatures.find((s) => s.name === fn)?.display ?? "(missing)";
@@ -385,7 +383,7 @@ describe("@nudo:as / @nudo:replace 的作用范围按 AST 节点身份", () => {
     expect(witness('/**\n * @nudo:case "c" (5, 10)\n */\nexport function f(a, b) {\n  // @nudo:replace a lit(100)\n  const x = a + b;\n  return x;\n}\n')).toBe("110");
     expect(witness('/**\n * @nudo:case "c" ()\n */\nexport function f() {\n  // @nudo:as string()\n  const a = 1;\n  return a;\n}\n')).toBe("string");
   });
-});;
+});
 });
 
 // ---------------------------------------------------------------------------
@@ -404,7 +402,7 @@ describe("skipped 导出不得从产物里消失", () => {
 
 
 
-describe("skipped 导出不得从产物里消失", () => {
+
   it("skip 未声明返回仍声明 unknown；普通函数不受影响", () => {
     const dts = generateDts(analyzeFile___nudojs_service("/test/bug079.js", '/**\n * @nudo:skip\n */\nexport function boom(a) {\n  return a;\n}\n'));
     expect(dts).toContain("export declare function boom(...args: unknown[]): unknown;");
@@ -412,7 +410,7 @@ describe("skipped 导出不得从产物里消失", () => {
     expect(plain).toMatch(/export declare function plain\(/);
     expect(plain).not.toContain("export declare function plain(...args: unknown[]): unknown;");
   });
-});;
+
 });
 
 // ---------------------------------------------------------------------------
@@ -482,7 +480,7 @@ function orphanDiags(src: string): DirectiveDiag[] {
   );
 }
 
-describe("孤儿行内指令的诊断不被同文件其它指令抑制", () => {
+{
   const ORPHAN_ONLY = 'export function f(x) {\n  const obj = {\n    // @nudo:as number()\n    a: JSON.parse(x),\n  };\n  return obj;\n}\n';
   const ORPHAN_PLUS_WORKING = 'export function f(x) {\n  const obj = {\n    // @nudo:as number()\n    a: JSON.parse(x),\n  };\n  // @nudo:as string()\n  const s = JSON.parse(x);\n  return [obj, s];\n}\n';
   const TWO_ORPHANS = 'export function f(x) {\n  const obj = {\n    // @nudo:as number()\n    a: JSON.parse(x),\n    // @nudo:as number()\n    b: JSON.parse(x),\n  };\n  return obj;\n}\n';
@@ -498,8 +496,7 @@ describe("孤儿行内指令的诊断不被同文件其它指令抑制", () => {
     expect(collectEvalReplacements_____eval_injection_ts(ORPHAN_PLUS_WORKING).asTargets).toHaveLength(1);
     expect(orphanDiags(TWO_ORPHANS)).toHaveLength(2);
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -579,7 +576,7 @@ function replaceMissDiags(src: string): DirectiveDiag[] {
   );
 }
 
-describe("@nudo:replace 目标文本在源码里不存在 ⇒ 显式诊断", () => {
+{
   const REPLACE_MISS = 'export function g(input) {\n  // @nudo:replace JSON.parse(inpt) shape({ name: string() })\n  const data = JSON.parse(input);\n  return data;\n}\n';
   const REPLACE_HIT = 'export function g(input) {\n  // @nudo:replace JSON.parse(input) shape({ name: string() })\n  const data = JSON.parse(input);\n  return data;\n}\n';
   const REPLACE_NONE = 'export function g(input) {\n  const data = JSON.parse(input);\n  return data;\n}\n';
@@ -602,7 +599,7 @@ describe("@nudo:replace 目标文本在源码里不存在 ⇒ 显式诊断", () 
     expect(issues[0]!.severity).toBe("warning");
     expect(issues[0]!.message).toContain("JSON.parse(inpt)");
   });
-});;
+}
 
 // ── 夹具 ───────────────────────────────────────────────────────────
 
@@ -665,7 +662,7 @@ describe("@nudo:mock-module 对同一模块重复声明 ⇒ 显式诊断", () =>
     expect(lr.errors.filter((e) => e.message.includes("Duplicate @nudo:mock-module"))).toHaveLength(1);
     expect(Object.keys(lr.modules.fs!.named).sort()).toEqual(["readFile", "writeFile"]);
   });
-});;
+});
 });
 
 // ---------------------------------------------------------------------------
@@ -699,7 +696,7 @@ export function callReal() { return useReal(); }
 `,
 };
 
-describe("dependency module's own @nudo:mock", () => {
+{
   const FILES = {
     "dep.js": 'export function readFile(p) { return { path: p, size: 10 }; }\n',
     "p.js": 'import { readFile } from "./dep.js";\n/**\n * @nudo:mock readFile = (() => "mocked")\n */\nexport function useMock() { return readFile("x"); }\nexport function useReal() { return readFile("y"); }\n',
@@ -722,7 +719,7 @@ describe("dependency module's own @nudo:mock", () => {
       expect($call(pExports.named.useReal!, []).shape.k).toBe("obj");
     });
   });
-});;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -797,7 +794,7 @@ function registeredOffsets(src: string): Array<number | undefined> {
   return collectEvalReplacements_____eval_injection_ts_1(src).targets.map((t) => t.stmtStart);
 }
 
-describe("@nudo:replace 只认值位的表达式节点", () => {
+{
   const DECL_ID = '// @nudo:replace x number()\nconst x = 5;\nexport function getDeclId() { return x; }\n';
   const OBJ_KEY = '// @nudo:replace a number()\nconst o = { a: 1 };\nexport function getObjKey() { return o.a; }\n';
   const OBJ_VAL = '// @nudo:replace 1 number()\nconst o = { a: 1 };\nexport function getObjVal() { return o.a; }\n';
@@ -832,7 +829,7 @@ describe("@nudo:replace 只认值位的表达式节点", () => {
     expect(noMatch).toHaveLength(1);
     expect(noMatch[0]!.message).toContain('@nudo:replace target "zzz"');
   });
-});;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -894,7 +891,7 @@ function signatureOf(src: string, name: string): NudoSig {
   return sig!;
 }
 
-describe("@nudo:skip 按「同名取词法最浅」绑定", () => {
+
   it("同名取最浅；E 不越界；pure 同裁决", () => {
     expect(collectSkipReturns(C).get("f")).toBeDefined();
     expect(signatureOf(C, "f").display).toBe("number");
@@ -910,13 +907,12 @@ describe("@nudo:skip 按「同名取词法最浅」绑定", () => {
     expect(pureFnNamesOfAst(parse("/** @nudo:pure */\nexport function f() { return 1; }\n"))).toEqual(["f"]);
     expect(extractDirectivesQuiet(parse(C)).map((fn) => [fn.name, fn.depth])).toEqual([["f", 0], ["f", 1]]);
   });
-});;
+
 });
 
 // ---------------------------------------------------------------------------
 // 指令收集覆盖面
 // ---------------------------------------------------------------------------
-;
 
 // ---------------------------------------------------------------------------
 // 同名 @nudo:mock 按函数作用域各生效
@@ -1002,7 +998,7 @@ function sigValue(source: string, fromFile: string, name: string): unknown {
   return lit.ok ? lit.value : sig!.display;
 }
 
-describe("同名 @nudo:mock 按函数作用域各生效", () => {
+{
   const TWO_MOCKS = `/**
  * @nudo:mock getPort = stub().returns(8080)
  */
@@ -1080,16 +1076,13 @@ export function readB() {
     expect(valueOf("readA")).toBe(8080);
     expect(valueOf("readB")).toBe("closed");
   });
-});
-;
+}
 
 // / 旧负控断言「未冲突的 mock 文件级可见」正是那两条 bug
 // 的假绿根因（同文件其它函数被 mock 掩盖真实 ReferenceError）。按
 // `docs/design/directive-scope.md`，`@nudo:mock` 是**函数级**指令 ⇒ 只在
 // 声明它的函数体内生效。
-;
 
-;
 });
 
 // ---------------------------------------------------------------------------
@@ -1133,7 +1126,7 @@ function tmpDirProject(): string {
   });
 }
 
-describe("mode=directives 的指令名单要全（assume/invariant/throws/budget）", () => {
+{
   const directivesCfg = analysisConfig({ analysis: { mode: "directives" } });
   const MISSING = ["assume", "invariant", "throws", "budget"] as const;
   const PRESENT = ["case", "mock", "pure", "skip", "sample", "contract", "import", "env", "mock-module", "as", "replace"] as const;
@@ -1160,8 +1153,7 @@ export function f(x) {
     }
     expect(shouldAnalyzeFile(join(dir, "d.js"), "/// @nudo:env node\nexport function f() { return 1; }\n", directivesCfg)).toBe(true);
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -1195,7 +1187,7 @@ const MOCK_MISSING_FILE = `// @nudo:mock fs from "./definitely-missing-mock-file
 export function useFs() { return 1; }
 `;
 
-describe("nudo:mock-invalid severity", () => {
+
   it("表达式解析失败 = warning（两通道一致）；缺 mock 文件仍是 error", () => {
     const MOCK_EXPR = '// @nudo:mock fs = foo(1)\nexport function useFs() { return 1; }\n';
     const MOCK_MISSING_FILE = '// @nudo:mock fs from "./definitely-missing-mock-file.js"\nexport function useFs() { return 1; }\n';
@@ -1209,7 +1201,7 @@ describe("nudo:mock-invalid severity", () => {
     expect(errs.length).toBeGreaterThan(0);
     expect(errs.some((d) => d.code === "nudo:module-missing")).toBe(true);
   });
-});;
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1274,7 +1266,7 @@ function sigValue(source: string, fromFile: string, name: string): unknown {
   return lit.ok ? lit.value : sig!.display;
 }
 
-describe("内联 mock 的可构造性 facet", () => {
+{
   const INLINE_ARROW = '/**\n * @nudo:mock Greeter = () => ({ msg: "mocked" })\n */\nexport function greet() {\n  try { return new Greeter().msg; } catch { return "caught"; }\n}\n';
   const INLINE_FN_EXPR = '/**\n * @nudo:mock Greeter = function () { this.msg = "mocked"; }\n */\nexport function greet() {\n  try { return new Greeter().msg; } catch { return "caught"; }\n}\n';
   const LOCAL_ARROW = 'const Greeter = () => ({ msg: "mocked" });\n\nexport function greet() {\n  try { return new Greeter().msg; } catch { return "caught"; }\n}\n';
@@ -1303,9 +1295,8 @@ describe("内联 mock 的可构造性 facet", () => {
     const lit = litValue(sig!.abs);
     expect(lit.ok ? lit.value : sig!.display).toBe("caught");
   });
-});;
+}
 
-;
 });
 
 // ---------------------------------------------------------------------------
@@ -1367,7 +1358,7 @@ function check(file: string, source: string, entry: string) {
   });
 }
 
-describe("rejects 形态建模成 reject 的 promise（不是 never）", () => {
+{
   const REJECTS = '/**\n * @nudo:mock fetch = stub().rejects(new Error("x"))\n */\nexport function f() {\n  return fetch("/x");\n}\n';
   const RESOLVES = '/**\n * @nudo:mock fetch = stub().resolves(42)\n */\nexport function f() {\n  return fetch("/x");\n}\n';
   const RETURNS = '/**\n * @nudo:mock fetch = stub().returns(42)\n */\nexport function f() {\n  return fetch("/x");\n}\n';
@@ -1401,7 +1392,6 @@ describe("rejects 形态建模成 reject 的 promise（不是 never）", () => {
     const source2 = readFileSync(entry2, "utf-8");
     expect(check(entry2, source2, entry2).issues.filter((i) => i.code === "nudo:unproven-return").length).toBeGreaterThanOrEqual(1);
   });
-});;
+}
 
-;
 });

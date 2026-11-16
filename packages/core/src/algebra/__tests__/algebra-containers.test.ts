@@ -62,29 +62,24 @@ function violations(r: { issues: Array<{ code: string; expected?: string }> }) {
   return r.issues.filter((i) => i.code === "nudo:constraint-violated");
 }
 
-describe("shape 槽位 / 数组元素的长度界执法", () => {
+{
   it("顶层形参（对照组）topLevel([1]) ⇒ 报 length(xs) ≥ 2；shape 槽位 nested({ list: [1] }) ⇒ 报 length(s.list) ≥ 2（改前零诊断）；数组元素位 [[1]]（array(array(...).min(2))）⇒ 报违例", () => {
-(() => {
-
+  {
     const v = violations(check("twoNumbers", "[1]"));
     expect(v).toHaveLength(1);
     expect(v[0]!.expected).toContain("length");
-  })();
-(() => {
-
+  }
+  {
     const v = violations(check("nestedTwo", "{ list: [1] }"));
     expect(v).toHaveLength(1);
     expect(v[0]!.expected).toContain("length");
-  })();
-(() => {
-
+  }
+  {
     expect(violations(check("nestedArr", "[[1]]"))).toHaveLength(1);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
   it.each([
     ["twoNumbers", "[1, 2]"],
@@ -93,7 +88,7 @@ describe("shape 槽位 / 数组元素的长度界执法", () => {
   ])("负控制：%s 收到满足长度界的 %s ⇒ 零违例", (contract, arg) => {
     expect(violations(check(contract, arg))).toHaveLength(0);
   });
-});
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -119,7 +114,7 @@ const CASES: Array<[string, string]> = [
   ["copyWithin", `return Array.prototype.copyWithin.call(undefined, 0, 1);`],
 ];
 
-describe("Array 借用方法 nullish 接收者记抛", () => {
+{
   for (const [name, body] of CASES) {
     it(`${name}.call(nullish) ⇒ definite TypeError`, () => {
       const r = call(wrap(body));
@@ -139,7 +134,7 @@ describe("Array 借用方法 nullish 接收者记抛", () => {
       expect(isNever(r.result), body).toBe(false);
     }
   });
-});
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -180,34 +175,29 @@ function violations(r: { issues: Array<{ code: string; expected?: string; actual
   return r.issues.filter((i) => i.code === "nudo:constraint-violated");
 }
 
-describe("数组解构契约按元素下标执法", () => {
-  it("f([5]) 合法 ⇒ 零违例（改前报 missing field x）；f([-1]) 违例 ⇒ 报 x > 0，actual 是元素值 -1（不是整只数组）；不再出现 missing field x 文案", () => {
-(() => {
 
+  it("f([5]) 合法 ⇒ 零违例（改前报 missing field x）；f([-1]) 违例 ⇒ 报 x > 0，actual 是元素值 -1（不是整只数组）；不再出现 missing field x 文案", () => {
+  {
     const r = check(`export function ok() { return f([5]); }`);
     expect(violations(r)).toHaveLength(0);
     expect(r.issues.some((i) => (i.expected ?? "").includes("missing field"))).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const r = check(`export function bad() { return f([-1]); }`);
     const v = violations(r);
     expect(v).toHaveLength(1);
     expect(v[0]!.expected).toBe("x > 0");
     expect(v[0]!.actual).toContain("-1");
-  })();
-(() => {
-
+  }
+  {
     const r = check(`export function ok() { return f([5]); }
 export function bad() { return f([-1]); }`);
     expect(r.issues.some((i) => (i.expected ?? "").includes("missing field"))).toBe(false);
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -260,43 +250,37 @@ export function f() {
 const violations = (r: ReturnType<typeof check>) =>
   r.issues.filter((i) => i.code === "nudo:constraint-violated" && i.fn === "f");
 
-describe("array 长度界在返回契约上必须执法", () => {
-  it("返回 [] ⊭ array(number()).min(1) ⇒ error（此前零诊断假绿）；返回 [1] ⊭ array(number()).min(2) ⇒ error；返回 [1, 2] ⊭ array(number()).max(1) ⇒ error；返回 [1, 2] ⊭ array(number()).length(1) ⇒ error；不制造假红：[1] 满足 min(1) / length(1)，[] 满足 max(1)；元素域仍照旧对账（长度通道不得掩盖元", () => {
-(() => {
 
+  it("返回 [] ⊭ array(number()).min(1) ⇒ error（此前零诊断假绿）；返回 [1] ⊭ array(number()).min(2) ⇒ error；返回 [1, 2] ⊭ array(number()).max(1) ⇒ error；返回 [1, 2] ⊭ array(number()).length(1) ⇒ error；不制造假红：[1] 满足 min(1) / length(1)，[] 满足 max(1)；元素域仍照旧对账（长度通道不得掩盖元", () => {
+  {
     const r = check("nonEmpty", "[]");
     const v = violations(r);
     expect(v).toHaveLength(1);
     expect(v[0]!.severity).toBe("error");
     // 违约描述必须点出长度界（formatConstraint 不渲染 array 的长度链）
     expect(v[0]!.expected).toContain("length(return) ≥ 1");
-  })();
-(() => {
-
+  }
+  {
     const v = violations(check("twoOrMore", "[1]"));
     expect(v).toHaveLength(1);
     expect(v[0]!.expected).toContain("length(return) ≥ 2");
-  })();
-(() => {
-
+  }
+  {
     const v = violations(check("atMostOne", "[1, 2]"));
     expect(v).toHaveLength(1);
     expect(v[0]!.expected).toContain("length(return) ≤ 1");
-  })();
-(() => {
-
+  }
+  {
     expect(violations(check("exactlyOne", "[1, 2]")).length).toBeGreaterThan(0);
-  })();
-(() => {
-
+  }
+  {
     expect(violations(check("nonEmpty", "[1]"))).toEqual([]);
     expect(violations(check("exactlyOne", "[1]"))).toEqual([]);
     expect(violations(check("atMostOne", "[]"))).toEqual([]);
     // 无长度界的 array 契约照旧只问元素域
     expect(violations(check("anyLen", "[]"))).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const r = checkSource(
       "/t/app.js",
       `/// @nudo:import { nonEmpty } from "./len.nudo.js"
@@ -313,9 +297,8 @@ export function f() {
     const v = violations(r);
     expect(v).toHaveLength(1);
     expect(v[0]!.expected).toContain("array element");
-  })();
-(() => {
-
+  }
+  {
     const el = abs({ k: "prim", type: "number" }, undefined, undefined, "partial");
     const arrAbs = abs({ k: "arr", element: el }, undefined, undefined, "path");
     expect(assertImplies(arrAbs, array(number()).min(1)).status).toBe("unprovable");
@@ -323,21 +306,15 @@ export function f() {
     const empty = abs({ k: "tuple", elements: [] }, undefined, undefined, "exact");
     expect(assertImplies(empty, array(number()).min(1)).status).toBe("disproved");
     expect(assertImplies(empty, array(number())).status).toBe("proved");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -374,10 +351,9 @@ describe("Object.prototype 置 null 原型：放行（native：不抛 / true）"
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Object.prototype 置 null 原型：放行（native：不抛 / true）", () => {
-  it("Object.setPrototypeOf(Object.prototype, null) ⇒ 不抛（native：no-throw；修前：threw）；Reflect.setPrototypeOf(Object.prototype, null) ⇒ true（native：true；修前：false）", () => {
-(() => {
 
+  it("Object.setPrototypeOf(Object.prototype, null) ⇒ 不抛（native：no-throw；修前：threw）；Reflect.setPrototypeOf(Object.prototype, null) ⇒ true（native：true；修前：false）", () => {
+  {
     expect(
       val(
         wrap(
@@ -385,23 +361,20 @@ describe("Object.prototype 置 null 原型：放行（native：不抛 / true）"
         ),
       ),
     ).toEqual({ ok: true, value: "no-throw" });
-  })();
-(() => {
-
+  }
+  {
     expect(val(wrap(`return Reflect.setPrototypeOf(Object.prototype, null);`))).toEqual({
       ok: true,
       value: true,
     });
-  })();
-});;
-
-  ;
+  }
 });
+
+
 
 describe("负控制（置非 null 仍拒 + 原型链面不变）", () => {
   it("Object.setPrototypeOf(Object.prototype, {}) ⇒ 仍抛 TypeError（native：同款）；Reflect.setPrototypeOf(Object.prototype, {}) ⇒ 仍返 false（native：false）；Object.prototype 的原型链面不变：typeof Object.prototype.toString === \"function\"（native 同款）；其余内建原型照旧可改：Objec", () => {
-(() => {
-
+  {
     expect(
       val(
         wrap(
@@ -409,23 +382,20 @@ describe("负控制（置非 null 仍拒 + 原型链面不变）", () => {
         ),
       ),
     ).toEqual({ ok: true, value: "threw" });
-  })();
-(() => {
-
+  }
+  {
     expect(val(wrap(`return Reflect.setPrototypeOf(Object.prototype, {});`))).toEqual({
       ok: true,
       value: false,
     });
-  })();
-(() => {
-
+  }
+  {
     expect(val(wrap(`return typeof Object.prototype.toString;`))).toEqual({
       ok: true,
       value: "function",
     });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(
         wrap(
@@ -433,14 +403,11 @@ describe("负控制（置非 null 仍拒 + 原型链面不变）", () => {
         ),
       ),
     ).toEqual({ ok: true, value: "no-throw" });
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 });
 });
 
@@ -488,57 +455,49 @@ function tupleArg(...elements: Abs[]): Abs {
   return abs_____index_ts({ k: "tuple", elements }, undefined, undefined, "exact");
 }
 
-describe("arr 形参 × tuple 实参的 α 绑定口径", () => {
-  it("异构数组字面量 [1,\"a\"] ⇒ α 不绑成 number（落 any，不窄于真实类型）；异构数组字面量 [1,\"a\"] ⇒ 返回类型不窄于真实类型 `(number|string)[]`；异构数组字面量（string 在前）⇒ 同样落 any（首元素不是 number 也不该被当成全域）；同型数组字面量 [1,2] ⇒ α 仍绑成 number（Bug 453 的 L2 修复不回退）；同型数组字面量 [1,2] ⇒ 元素域按 TS 侧字面量拓宽落 base prim（不是", () => {
-(() => {
 
+  it("异构数组字面量 [1,\"a\"] ⇒ α 不绑成 number（落 any，不窄于真实类型）；异构数组字面量 [1,\"a\"] ⇒ 返回类型不窄于真实类型 `(number|string)[]`；异构数组字面量（string 在前）⇒ 同样落 any（首元素不是 number 也不该被当成全域）；同型数组字面量 [1,2] ⇒ α 仍绑成 number（Bug 453 的 L2 修复不回退）；同型数组字面量 [1,2] ⇒ 元素域按 TS 侧字面量拓宽落 base prim（不是", () => {
+  {
     const fn = genericArrFn();
     const out = instantiateReturn(fn, [tupleArg(numLit(1), strLit("a"))]);
     // 改前：首元素 ⇒ T := number ⇒ 返回 `number[]`（比真实类型窄 ⇒ 假绿）
     expect(out.shape).not.toEqual({ k: "prim", type: "number" });
     expect(out.shape.k).toBe("any");
-  })();
-(() => {
-
+  }
+  {
     const fn = genericArrFn();
     const out = instantiateReturn(fn, [tupleArg(numLit(1), strLit("a"))]);
     // 真实元素域含 string ⇒ 推出来的类型不得断言「只有 number」
     const shape = out.shape;
     expect(shape.k).not.toBe("prim");
     expect(shape.k).not.toBe("tuple");
-  })();
-(() => {
-
+  }
+  {
     const fn = genericArrFn();
     const out = instantiateReturn(fn, [tupleArg(strLit("a"), numLit(1))]);
     expect(out.shape.k).toBe("any");
-  })();
-(() => {
-
+  }
+  {
     const fn = genericArrFn();
     const out = instantiateReturn(fn, [tupleArg(numLit(1), numLit(2))]);
     expect(out.shape).toEqual({ k: "prim", type: "number" });
-  })();
-(() => {
-
+  }
+  {
     const fn = genericArrFn();
     const out = instantiateReturn(fn, [tupleArg(numLit(1), numLit(2))]);
     expect(out.term?.op).not.toBe("lit");
-  })();
-(() => {
-
+  }
+  {
     const fn = genericArrFn();
     const out = instantiateReturn(fn, [tupleArg(strLit("a"))]);
     expect(out.shape).toEqual({ k: "prim", type: "string" });
-  })();
-(() => {
-
+  }
+  {
     const fn = genericArrFn();
     const out = instantiateReturn(fn, [tupleArg()]);
     expect(out.shape.k).toBe("any");
-  })();
-(() => {
-
+  }
+  {
     const fn = genericArrFn();
     const arrArg = abs_____index_ts(
       { k: "arr", element: abs_____index_ts({ k: "prim", type: "number" }, undefined, undefined, "exact") },
@@ -548,9 +507,8 @@ describe("arr 形参 × tuple 实参的 α 绑定口径", () => {
     );
     const out = instantiateReturn(fn, [arrArg]);
     expect(out.shape).toEqual({ k: "prim", type: "number" });
-  })();
-(() => {
-
+  }
+  {
     // 「首次绑定保留」语义：异构元素域必须**占住** α，否则后续形参（这里
     // 是第二个 `T` 形参）会绑出窄类型 ⇒ 又变回「自信的错误类型」。
     const fn = abs_____index_ts(
@@ -566,25 +524,17 @@ describe("arr 形参 × tuple 实参的 α 绑定口径", () => {
     );
     const out = instantiateReturn(fn, [tupleArg(numLit(1), strLit("a")), numLit(2)]);
     expect(out.shape.k).toBe("any");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
+
+
 
 describe("anyAbs 是异构元素域的落点", () => {
   it("异构元素域用 anyAbs（不是 unknown——unknown 是推断失败，any 是未约束）", () => {
@@ -693,71 +643,57 @@ function elementDomain(...elements: Abs[]): Abs {
   return instantiateReturn(genericArrFn(), [tupleArg(...elements)]);
 }
 
-describe("tuple 元素域的 7 个验收值", () => {
-  it("[1,2] ⇒ number（同型 base prim，字面量拓宽）；[1,null] ⇒ number | null（nullish 只贡献可空性，不判异型）；[1,undefined] ⇒ number | undefined；[null] ⇒ null（已知类型，不是 any）；[undefined] ⇒ undefined（已知类型，不是 any）；[1,\"a\"] ⇒ any（异型：既有保守口径，本轮不变）；真·未知元素（unknown 形状且无已知 lit）⇒ un", () => {
-(() => {
 
+  it("[1,2] ⇒ number（同型 base prim，字面量拓宽）；[1,null] ⇒ number | null（nullish 只贡献可空性，不判异型）；[1,undefined] ⇒ number | undefined；[null] ⇒ null（已知类型，不是 any）；[undefined] ⇒ undefined（已知类型，不是 any）；[1,\"a\"] ⇒ any（异型：既有保守口径，本轮不变）；真·未知元素（unknown 形状且无已知 lit）⇒ un", () => {
+  {
     const d = elementDomain(numLit(1), numLit(2));
     expect(d.shape).toEqual({ k: "prim", type: "number" });
     expect(formatShape(d)).toBe("number");
-  })();
-(() => {
-
+  }
+  {
     const d = elementDomain(numLit(1), nullElem());
     expect(formatShape(d)).toBe("number | null");
     expect(d.shape.k).toBe("sum");
-  })();
-(() => {
-
+  }
+  {
     const d = elementDomain(numLit(1), undefElem());
     expect(formatShape(d)).toBe("number | undefined");
     expect(d.shape.k).toBe("sum");
-  })();
-(() => {
-
+  }
+  {
     const d = elementDomain(nullElem());
     expect(formatShape(d)).toBe("null");
     expect(d.shape.k).not.toBe("any");
     expect(d.term?.op === "lit" && d.term.value === null).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const d = elementDomain(undefElem());
     expect(formatShape(d)).toBe("undefined");
     expect(d.shape.k).not.toBe("any");
     expect(d.term?.op === "lit" && d.term.value === undefined).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const d = elementDomain(numLit(1), strLit("a"));
     expect(d.shape.k).toBe("any");
     expect(formatShape(d)).toBe("any");
-  })();
-(() => {
-
+  }
+  {
     const d = elementDomain(unknown);
     expect(d.shape.k).toBe("unknown");
     expect(formatShape(d)).toBe("unknown");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
 
 describe("修前红 / 修后绿（口径锚点）", () => {
   it("修前：nullish 元素命中 `shape.k === \"unknown\"` 一刀切 ⇒ 域退 any；修后：同一输入不再退 any（null / number | null）；仓内口径：unknown = 推导失败，any = 无约束并集（二者不可互换）", () => {
-(() => {
-
+  {
     // 修前实现（保留为对照）：任何 unknown 形状元素 ⇒ anyAbs。
     const oldDomain = (elements: Abs[]): Abs => {
       for (const el of elements) {
@@ -769,60 +705,47 @@ describe("修前红 / 修后绿（口径锚点）", () => {
     };
     expect(formatShape(oldDomain([nullElem()]))).toBe("any");
     expect(formatShape(oldDomain([numLit(1), nullElem()]))).toBe("any");
-  })();
-(() => {
-
+  }
+  {
     expect(formatShape(elementDomain(nullElem()))).toBe("null");
     expect(formatShape(elementDomain(numLit(1), nullElem()))).toBe("number | null");
-  })();
-(() => {
-
+  }
+  {
     expect(unknown.shape.k).toBe("unknown");
     expect(abs_____index_ts_1({ k: "any" }, undefined, undefined, "path").shape.k).toBe("any");
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 });
 
 describe("其它 nullish 组合", () => {
   it("[null, undefined] ⇒ null | undefined（两个已知 nullish 都保留）；[1, null, null] ⇒ number | null（重复 nullish 去重）；[null, 1] ⇒ number | null（nullish 位置不影响结果）；[1, null, \"a\"] ⇒ any（异型优先：仍不窄化成联合）；[null, 真·未知] ⇒ unknown（真·推断失败优先于可空性）", () => {
-(() => {
-
+  {
     const d = elementDomain(nullElem(), undefElem());
     expect(formatShape(d)).toBe("null | undefined");
-  })();
-(() => {
-
+  }
+  {
     const d = elementDomain(numLit(1), nullElem(), nullElem());
     expect(formatShape(d)).toBe("number | null");
-  })();
-(() => {
-
+  }
+  {
     const d = elementDomain(nullElem(), numLit(1));
     expect(formatShape(d)).toBe("number | null");
-  })();
-(() => {
-
+  }
+  {
     const d = elementDomain(numLit(1), nullElem(), strLit("a"));
     expect(d.shape.k).toBe("any");
-  })();
-(() => {
-
+  }
+  {
     const d = elementDomain(nullElem(), unknown);
     expect(d.shape.k).toBe("unknown");
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 });
 
@@ -871,9 +794,9 @@ function violations(r: { issues: { code: string }[] }): number {
   return r.issues.filter((i) => i.code === "nudo:constraint-violated").length;
 }
 
-describe("默认值补齐覆盖缺失的尾部位置", () => {
+
   it("e4(1)（x = -5，契约 x > 0）⇒ 报违例（默认值违约不沉默）；e4() 仍然报（Bug 444 的零参补齐不回归）；默认值合规时不报（x = 5，契约 x > 0，e4(1) ⇒ 零诊断）；多个尾部位置都补齐（f(1) ⇒ b = -1、c = -2 都按默认值执法）", () => {
-(() => {
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -884,8 +807,8 @@ function e4(a, x = -5) { return x; }
 export function use() { return e4(1); }
 `);
     expect(violations(r)).toBe(1);
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -896,8 +819,8 @@ function e4(a, x = -5) { return x; }
 export function use() { return e4(); }
 `);
     expect(violations(r)).toBe(1);
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -908,8 +831,8 @@ function e5(a, x = 5) { return x; }
 export function use() { return e5(1); }
 `);
     expect(violations(r)).toBe(0);
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -921,15 +844,12 @@ function f(a, b = -1, c = -2) { return a; }
 export function use() { return f(1); }
 `);
     expect(violations(r)).toBe(2);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -960,44 +880,38 @@ function face(src: string): string {
   return formatShape_____format_format_ts(call(src).result);
 }
 
-describe("Reflect.set 的非对象 receiver 返 boolean 不抛", () => {
-  it("数字字面量 receiver → boolean，定抛面消失；显式 undefined receiver → boolean（此前「never throws TypeError」）；null receiver 控制组结论不变 → boolean；三种非对象 receiver 均不记 may-throw（规范返回面是 false 不是异常）；非对象 receiver ⇒ 写门失败，target 不变（原生 [[Set]] 不落写）；对象 receiver 的既有语义不受影响（写", () => {
-(() => {
 
+  it("数字字面量 receiver → boolean，定抛面消失；显式 undefined receiver → boolean（此前「never throws TypeError」）；null receiver 控制组结论不变 → boolean；三种非对象 receiver 均不记 may-throw（规范返回面是 false 不是异常）；非对象 receiver ⇒ 写门失败，target 不变（原生 [[Set]] 不落写）；对象 receiver 的既有语义不受影响（写", () => {
+  {
     const src = wrap(`const o = { k: 0 }; return Reflect.set(o, "k", 1, 1);`);
     expect(face(src)).toEqual("boolean");
     expect(throwsError(call(src).throws, "TypeError")).toBe(false);
     expect(isNever(call(src).result)).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const src = wrap(`const o = { k: 0 }; return Reflect.set(o, "k", 1, undefined);`);
     expect(face(src)).toEqual("boolean");
     expect(throwsError(call(src).throws, "TypeError")).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const src = wrap(`const o = { k: 0 }; return Reflect.set(o, "k", 1, null);`);
     expect(face(src)).toEqual("boolean");
     expect(throwsError(call(src).throws, "TypeError")).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     for (const recv of ["1", "undefined", "null", `"s"`]) {
       expect(
         effects(wrap(`const o = { k: 0 }; return Reflect.set(o, "k", 1, ${recv});`)),
       ).not.toContain("TypeError");
     }
-  })();
-(() => {
-
+  }
+  {
     expect(face(wrap(`const o = { k: 0 }; Reflect.set(o, "k", 1, 1); return String(o.k);`)))
       .toEqual('"0"');
     expect(face(wrap(`const o = { k: 0 }; Reflect.set(o, "k", 1, null); return String(o.k);`)))
       .toEqual('"0"');
-  })();
-(() => {
-
+  }
+  {
     expect(
       face(
         wrap(
@@ -1005,19 +919,14 @@ describe("Reflect.set 的非对象 receiver 返 boolean 不抛", () => {
         ),
       ),
     ).toEqual('"1:2"');
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1054,26 +963,23 @@ export function okIt() {
 }
 `;
 
-describe("non-callable iterator slot", () => {
-  it("throws TypeError instead of silently iterating nothing；valid user iterators keep working", () => {
-(() => {
 
+  it("throws TypeError instead of silently iterating nothing；valid user iterators keep working", () => {
+  {
     const r = checkSource("/t/bug-215.js", SRC, pTrue);
     expect(sigOf(r, "consume")).toBe("never throws TypeError");
     expect(sigOf(r, "consumeNull")).toBe("never throws TypeError");
     expect(l2Count(r, "consume")).toBe(1);
     expect(l2Count(r, "consumeNull")).toBe(1);
-  })();
-(() => {
-
+  }
+  {
     const r = checkSource("/t/bug-215.js", SRC, pTrue);
     expect(sigOf(r, "okIt")).toBe("3");
     expect(l2Count(r, "okIt")).toBe(0);
-  })();
-});;
-
-  ;
+  }
 });
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1118,22 +1024,19 @@ export function setHas(xs) { return new Set(xs).has("a"); }
 export function mapSize(xs) { return new Map(xs).size; }
 `;
 
-describe("抽象可迭代构造的 Set/Map 基数不得折成确定值", () => {
-  it("new Set(xs).size（xs: any）是 number(path)，不是 exact 0；new Set(xs).size（xs: number[]）不再是 exact 1——长度不可知；同一 Set 的 size 与 Array.from(...).length 同结论（都非 exact number）；new Set(xs).has(\"a\") 是 partial boolean，不是 exact false；new Map(xs).size 是 number(", () => {
-(() => {
 
+  it("new Set(xs).size（xs: any）是 number(path)，不是 exact 0；new Set(xs).size（xs: number[]）不再是 exact 1——长度不可知；同一 Set 的 size 与 Array.from(...).length 同结论（都非 exact number）；new Set(xs).has(\"a\") 是 partial boolean，不是 exact false；new Map(xs).size 是 number(", () => {
+  {
     const r = call(SRC, "setSize", [anyAbs___nudojs_core]);
     expect(r.result.shape).toMatchObject({ k: "prim", type: "number" });
     expect(r.result.conf).toBe("path");
-  })();
-(() => {
-
+  }
+  {
     const r = call(SRC, "setSize", [numArray()]);
     expect(r.result.shape).toMatchObject({ k: "prim", type: "number" });
     expect(r.result.conf).not.toBe("exact");
-  })();
-(() => {
-
+  }
+  {
     for (const arg of [anyAbs___nudojs_core, numArray()]) {
       const size = call(SRC, "setSize", [arg]);
       const len = call(SRC, "setLen", [arg]);
@@ -1142,23 +1045,20 @@ describe("抽象可迭代构造的 Set/Map 基数不得折成确定值", () => {
       expect(size.result.conf).not.toBe("exact");
       expect(len.result.conf).not.toBe("exact");
     }
-  })();
-(() => {
-
+  }
+  {
     const r = call(SRC, "setHas", [anyAbs___nudojs_core]);
     expect(r.result.shape).toMatchObject({ k: "prim", type: "boolean" });
     expect(r.result.conf).not.toBe("exact");
     // 不得折出确定的 false
     expect(litValue(r.result).ok).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const r = call(SRC, "mapSize", [anyAbs___nudojs_core]);
     expect(r.result.shape).toMatchObject({ k: "prim", type: "number" });
     expect(r.result.conf).toBe("path");
-  })();
-(() => {
-
+  }
+  {
     for (const arg of [anyAbs___nudojs_core, numArray()]) {
       expect(setSizeAbs(makeSetAbs(arg)).conf).toBe("path");
       expect(setHasEntry(makeSetAbs(arg), strLit___nudojs_core("a")).conf).toBe("partial");
@@ -1167,9 +1067,8 @@ describe("抽象可迭代构造的 Set/Map 基数不得折成确定值", () => {
     expect(mapSizeAbs(makeMapAbs(anyAbs___nudojs_core)).conf).toBe("path");
     expect(mapHasEntry(makeMapAbs(anyAbs___nudojs_core), strLit___nudojs_core("a")).conf).not.toBe("exact");
     expect(collectionExactLen(makeMapAbs(anyAbs___nudojs_core))).toBeUndefined();
-  })();
-(() => {
-
+  }
+  {
     expect(litValue(setSizeAbs(makeSetAbs(tupleOf(numLit___nudojs_core(1), numLit___nudojs_core(2), numLit___nudojs_core(2)))))).toEqual({
       ok: true,
       value: 2,
@@ -1183,21 +1082,15 @@ describe("抽象可迭代构造的 Set/Map 基数不得折成确定值", () => {
     expect(litValue(mapSizeAbs(makeMapAbs()))).toEqual({ ok: true, value: 0 });
     // 确切源仍保留确切长度（for-of 有界展开路径不变）
     expect(collectionExactLen(makeSetAbs(tupleOf(numLit___nudojs_core(1), numLit___nudojs_core(2))))).toBe(2);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1224,10 +1117,9 @@ const lit = (src: string): unknown => {
   return r.ok ? r.value : `NOT-LIT(${JSON.stringify(r)})`;
 };
 
-describe("sort/reverse on array-like receivers", () => {
-  it("sort writes the sorted order back (host: 'a')；reverse writes the reversed order back (host: 'b')；fill writes the window (host: 'x')；copyWithin copies within the receiver (host: 'b' at 0)；no may-throw is recorded for array-like receivers (na", () => {
-(() => {
 
+  it("sort writes the sorted order back (host: 'a')；reverse writes the reversed order back (host: 'b')；fill writes the window (host: 'x')；copyWithin copies within the receiver (host: 'b' at 0)；no may-throw is recorded for array-like receivers (na", () => {
+  {
     expect(
       lit(`export function f() {
         const o = { length: 2, 0: "b", 1: "a" };
@@ -1235,9 +1127,8 @@ describe("sort/reverse on array-like receivers", () => {
         return o[0];
       }`),
     ).toBe("a");
-  })();
-(() => {
-
+  }
+  {
     expect(
       lit(`export function f() {
         const o = { length: 2, 0: "a", 1: "b" };
@@ -1245,9 +1136,8 @@ describe("sort/reverse on array-like receivers", () => {
         return o[0];
       }`),
     ).toBe("b");
-  })();
-(() => {
-
+  }
+  {
     expect(
       lit(`export function f() {
         const o = { length: 3, 0: "a", 1: "b", 2: "c" };
@@ -1255,9 +1145,8 @@ describe("sort/reverse on array-like receivers", () => {
         return o[1];
       }`),
     ).toBe("x");
-  })();
-(() => {
-
+  }
+  {
     expect(
       lit(`export function f() {
         const o = { length: 3, 0: "a", 1: "b", 2: "c" };
@@ -1265,9 +1154,8 @@ describe("sort/reverse on array-like receivers", () => {
         return o[0];
       }`),
     ).toBe("b");
-  })();
-(() => {
-
+  }
+  {
     // 原生这四个方法对数组样接收者不抛 ⇒ 记 may-throw 即 L1 假红。
     expect(
       effects(`export function f() {
@@ -1279,9 +1167,8 @@ describe("sort/reverse on array-like receivers", () => {
         return o[0];
       }`),
     ).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     expect(
       lit(`export function f() {
         const o = { length: 1, 0: "a" };
@@ -1289,9 +1176,8 @@ describe("sort/reverse on array-like receivers", () => {
         return o.length;
       }`),
     ).toBe(2);
-  })();
-(() => {
-
+  }
+  {
     expect(
       lit(`export function f() {
         const o = { length: 3, 0: 3, 1: 1, 2: 2 };
@@ -1299,21 +1185,15 @@ describe("sort/reverse on array-like receivers", () => {
         return o[0];
       }`),
     ).toBe(1);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1333,24 +1213,21 @@ describe("binary recursion", () => {
 const BIN = `export function bin(n) { return n < 2 ? n : bin(n - 1) + bin(n - 2); }`;
 const LIN = `export function bin(n) { return n < 2 ? n : bin(n - 1); }`;
 
-describe("binary recursion", () => {
-  it("binary recursion terminates and reports recursion truncation；linear recursion keeps working (control)", () => {
-(() => {
 
+  it("binary recursion terminates and reports recursion truncation；linear recursion keeps working (control)", () => {
+  {
       const r = checkSource("/t/bug-248-bin.js", BIN, pTrue);
       expect(r.issues.some((i) => i.code === "nudo:recursion-truncated")).toBe(true);
       expect(sigOf(r, "bin")).toBe("unknown throws TypeError");
-    })();
-(() => {
-
+  }
+  {
       const r = checkSource("/t/bug-248-lin.js", LIN, pTrue);
       expect(r.issues.some((i) => i.code === "nudo:recursion-truncated")).toBe(true);
       expect(r.signatures.find((s) => s.name === "bin")).toBeDefined();
-    })();
-});;
-
-  ;
+  }
 });
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1388,28 +1265,24 @@ const s = (body: string): unknown => {
   return (r.result as { term?: { value?: unknown } })?.term?.value;
 };
 
-describe("HOF / for-of 读当前容器（live 元素 + live 长度）", () => {
-  it("forEach：体内改写元素值对后续迭代可见（原生 1,9,3）；forEach：体内截断长度 ⇒ 缺席位不再回调（原生只剩第 0 位）；forEach：体内 shift ⇒ 缺席位跳过（原生 1,3）；map / filter / reduce：同样读当前容器；for-of：元素值现读（原生 1,9,3）；for-of：长度现读——体内 shift 收缩（原生 1,3）；for-of：长度现读——体内截断（原生只剩 1）；对照：无体内变异时行为不变（原生 1,2,3）", () => {
-(() => {
 
+  it("forEach：体内改写元素值对后续迭代可见（原生 1,9,3）；forEach：体内截断长度 ⇒ 缺席位不再回调（原生只剩第 0 位）；forEach：体内 shift ⇒ 缺席位跳过（原生 1,3）；map / filter / reduce：同样读当前容器；for-of：元素值现读（原生 1,9,3）；for-of：长度现读——体内 shift 收缩（原生 1,3）；for-of：长度现读——体内截断（原生只剩 1）；对照：无体内变异时行为不变（原生 1,2,3）", () => {
+  {
     expect(
       s(`const a=[1,2,3]; const out=[]; a.forEach((v,i)=>{ out.push(v); a[1]=9; }); return out.join(",");`),
     ).toBe("1,9,3");
-  })();
-(() => {
-
+  }
+  {
     expect(
       s(`const a=[1,2,3]; const out=[]; a.forEach((v,i)=>{ out.push(v); a.length=1; }); return out.join(",")+"|"+a.length;`),
     ).toBe("1|1");
-  })();
-(() => {
-
+  }
+  {
     expect(
       s(`const a=[1,2,3]; const out=[]; a.forEach((v,i)=>{ out.push(v); a.shift(); }); return out.join(",");`),
     ).toBe("1,3");
-  })();
-(() => {
-
+  }
+  {
     expect(
       s(`const a=[1,2,3]; const out=[]; a.map((v,i)=>{ out.push(v); a[1]=9; return v; }); return out.join(",");`),
     ).toBe("1,9,3");
@@ -1419,50 +1292,39 @@ describe("HOF / for-of 读当前容器（live 元素 + live 长度）", () => {
     expect(
       s(`const a=[1,2,3]; const out=[]; a.reduce((acc,v)=>{ out.push(v); a[1]=9; return acc; }, 0); return out.join(",");`),
     ).toBe("1,9,3");
-  })();
-(() => {
-
+  }
+  {
     expect(
       s(`const a=[1,2,3]; const out=[]; for (const v of a) { out.push(v); a[1]=9; } return out.join(",");`),
     ).toBe("1,9,3");
-  })();
-(() => {
-
+  }
+  {
     expect(
       s(`const a=[1,2,3]; const out=[]; for (const v of a) { out.push(v); a.shift(); } return out.join(",");`),
     ).toBe("1,3");
-  })();
-(() => {
-
+  }
+  {
     expect(
       s(`const a=[1,2,3]; const out=[]; for (const v of a) { out.push(v); a.length=1; } return out.join(",");`),
     ).toBe("1");
-  })();
-(() => {
-
+  }
+  {
     expect(
       s(`const a=[1,2,3]; const out=[]; a.forEach((v,i)=>{ out.push(v); }); return out.join(",");`),
     ).toBe("1,2,3");
     expect(
       s(`const a=[1,2,3]; const out=[]; for (const v of a) { out.push(v); } return out.join(",");`),
     ).toBe("1,2,3");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1478,7 +1340,7 @@ describe("mutator-arraylike-receiver", () => {
 
 
 
-describe("mutator-arraylike-receiver", () => {
+{
 /**
  * 数组 mutator 的**泛型接收者**（数组样对象 `{length, 0: …}`）：
  * `$arrMutContainer` 对非 tuple/arr 形状**早退**（原样返回接收者）⇒ 写入被
@@ -1522,37 +1384,32 @@ function slotsOf(o: Abs_____abs_ts): Record<string, unknown> {
 
 describe("mutator 家族的泛型（数组样）接收者写面", () => {
   it("push：写 length + 索引槽，返回新长度；pop：删末位 + 收缩 length，返回被删元素；shift：前移 + 收缩 length，返回原首位；unshift：整体右移 + 插入，返回新长度；splice：删窗口 + 插入 items + 写回 length（原生语义）；splice 零实参：原生不删（长度与内容不变）", () => {
-(() => {
-
+  {
     const o = mkObj({ length: numLit_____abs_ts(0) });
     const ret = invokeArrMethod(o, "push", [numLit_____abs_ts(5)]);
     expect(slotsOf(o)).toEqual({ "0": 5, length: 1 });
     expect(ret?.term?.op).toBe("lit");
     expect((ret?.term as { value?: unknown })?.value).toBe(1);
-  })();
-(() => {
-
+  }
+  {
     const o = mkObj({ length: numLit_____abs_ts(1), "0": numLit_____abs_ts(9) });
     const ret = invokeArrMethod(o, "pop", []);
     expect(slotsOf(o)).toEqual({ length: 0 });
     expect((ret?.term as { value?: unknown })?.value).toBe(9);
-  })();
-(() => {
-
+  }
+  {
     const o = mkObj({ length: numLit_____abs_ts(2), "0": numLit_____abs_ts(9), "1": numLit_____abs_ts(8) });
     const ret = invokeArrMethod(o, "shift", []);
     expect(slotsOf(o)).toEqual({ length: 1, "0": 8 });
     expect((ret?.term as { value?: unknown })?.value).toBe(9);
-  })();
-(() => {
-
+  }
+  {
     const o = mkObj({ length: numLit_____abs_ts(1), "0": numLit_____abs_ts(9) });
     const ret = invokeArrMethod(o, "unshift", [numLit_____abs_ts(1)]);
     expect(slotsOf(o)).toEqual({ "0": 1, "1": 9, length: 2 });
     expect((ret?.term as { value?: unknown })?.value).toBe(2);
-  })();
-(() => {
-
+  }
+  {
     const o = mkObj({ length: numLit_____abs_ts(2), "0": S("a"), "1": S("b") });
     invokeArrMethod(o, "splice", [numLit_____abs_ts(0), numLit_____abs_ts(1)]);
     expect(slotsOf(o)).toEqual({ "0": "b", length: 1 });
@@ -1564,26 +1421,20 @@ describe("mutator 家族的泛型（数组样）接收者写面", () => {
     const o3 = mkObj({ length: numLit_____abs_ts(2), "0": S("a"), "1": S("b") });
     invokeArrMethod(o3, "splice", [numLit_____abs_ts(0), numLit_____abs_ts(0), S("Z")]);
     expect(slotsOf(o3)).toEqual({ "0": "Z", "1": "a", "2": "b", length: 3 });
-  })();
-(() => {
-
+  }
+  {
     const o = mkObj({ length: numLit_____abs_ts(2), "0": S("a"), "1": S("b") });
     invokeArrMethod(o, "splice", []);
     expect(slotsOf(o)).toEqual({ "0": "a", "1": "b", length: 2 });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
+}
 
 describe("mutator-arraylike-wiring", () => {
 /**
@@ -1626,8 +1477,7 @@ function litOf(v: unknown): unknown {
 
 describe("mutator 端到端就地改接收者（主 agent 接线）", () => {
   it("push.call({length:0},5)：写回原接收者的 length 与索引槽；push.call({length:0},5)：接收者的索引槽被写入；push.call({length:0},5)：返回值是新长度；pop.call({length:1,0:9})：返回被删元素；shift.call([1,2])：返回原首位；shift.call(\"ab\")：字符串接收者原生定抛 TypeError（只读 length）", () => {
-(() => {
-
+  {
     const src = `
       export function f() {
         const o = { length: 0 };
@@ -1636,9 +1486,8 @@ describe("mutator 端到端就地改接收者（主 agent 接线）", () => {
       }
     `;
     expect(litOf(call(src, "f").result)).toBe(1);
-  })();
-(() => {
-
+  }
+  {
     const src = `
       export function f() {
         const o = { length: 0 };
@@ -1647,54 +1496,45 @@ describe("mutator 端到端就地改接收者（主 agent 接线）", () => {
       }
     `;
     expect(litOf(call(src, "f").result)).toBe(5);
-  })();
-(() => {
-
+  }
+  {
     const src = `
       export function f() {
         return Array.prototype.push.call({ length: 0 }, 5);
       }
     `;
     expect(litOf(call(src, "f").result)).toBe(1);
-  })();
-(() => {
-
+  }
+  {
     const src = `
       export function f() {
         return Array.prototype.pop.call({ length: 1, 0: 9 });
       }
     `;
     expect(litOf(call(src, "f").result)).toBe(9);
-  })();
-(() => {
-
+  }
+  {
     const src = `
       export function f() {
         return Array.prototype.shift.call([1, 2]);
       }
     `;
     expect(litOf(call(src, "f").result)).toBe(1);
-  })();
-(() => {
-
+  }
+  {
     const src = `
       export function f() {
         return Array.prototype.shift.call("ab");
       }
     `;
     expect(throwsError(call(src, "f").throws, "TypeError")).toBe(true);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 });
 });
@@ -1722,33 +1562,28 @@ const val = (body: string): unknown => {
 
 const shape = (body: string): string => formatShape___nudojs_core(call(`export function f() {\n${body}\n}`).result);
 
-describe("fill() 零实参", () => {
-  it("fill() 把整条数组填成 undefined（长度不变）；fill() 的第 0 位不再是原值 0；对照：fill(value) 语义不变", () => {
-(() => {
 
+  it("fill() 把整条数组填成 undefined（长度不变）；fill() 的第 0 位不再是原值 0；对照：fill(value) 语义不变", () => {
+  {
     // 原生 [0,1,2,3].fill() → [undefined, undefined, undefined, undefined]
     // 引擎的 undefined 元素面 = lit undefined（确定 undefined，非裸 unknown）
     expect(shape(`const a=[0,1,2,3]; a.fill(); return a;`)).toBe(
       "[undefined, undefined, undefined, undefined]",
     );
     expect(val(`const a=[0,1,2,3]; a.fill(); return a.length;`)).toBe(4);
-  })();
-(() => {
-
+  }
+  {
     expect(shape(`const a=[0,1,2,3]; a.fill(); return a[0];`)).toBe("undefined");
     expect(shape(`const a=[0,1,2,3]; a.fill(); return a[3];`)).toBe("undefined");
-  })();
-(() => {
-
+  }
+  {
     expect(val(`const a=[0,1,2,3]; a.fill(7); return a.join(",");`)).toBe("7,7,7,7");
     expect(val(`const a=[0,1,2,3]; a.fill(7,1,3); return a.join(",");`)).toBe("0,7,7,3");
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1777,20 +1612,17 @@ describe("数组视图 = Shape facet（形状单一事实源）", () => {
 
 
 
-describe("数组视图 = Shape facet（形状单一事实源）", () => {
-  it("Array.isArray(/a(b)c/.exec(\"abc\")) 折 true（值面）；JSON.stringify(\"abc\".match(/b/)) → '[\"b\"]'（JSON 视图）；形状级：match 结果 Abs 带 view: \"array\"，浅拷贝携带（身份侧表会丢）；形状级：markArrayView 不可变替换 shape（原形状不被就地改写）；数组方法派发仍工作：/a(b)c/.exec(\"abc\").map((x) => x) → [\"abc\",\"", () => {
-(() => {
 
+  it("Array.isArray(/a(b)c/.exec(\"abc\")) 折 true（值面）；JSON.stringify(\"abc\".match(/b/)) → '[\"b\"]'（JSON 视图）；形状级：match 结果 Abs 带 view: \"array\"，浅拷贝携带（身份侧表会丢）；形状级：markArrayView 不可变替换 shape（原形状不被就地改写）；数组方法派发仍工作：/a(b)c/.exec(\"abc\").map((x) => x) → [\"abc\",\"", () => {
+  {
     const r = call(`export function f1() { return Array.isArray(/a(b)c/.exec("abc")); }`, "f1");
     expect(litValue_____abs_ts_2(r.result)).toEqual({ ok: true, value: true });
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f2() { return JSON.stringify("abc".match(/b/)); }`, "f2");
     expect(litValue_____abs_ts_2(r.result)).toEqual({ ok: true, value: '["b"]' });
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f3() { return /a(b)c/.exec("abc"); }`, "f3");
     const a = r.result;
     // 形状仍是 obj（不转 tuple/arr：#136 的槽读面依赖它）
@@ -1809,9 +1641,8 @@ describe("数组视图 = Shape facet（形状单一事实源）", () => {
     // 普通 obj 形状不是数组视图
     expect(isArrayView(obj({ a: { value: numLit_____abs_ts_1(1) } }))).toBe(false);
     expect(isMatchArrayView(obj({ a: { value: numLit_____abs_ts_1(1) } }))).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const plain = obj({ 0: { value: strLit_____abs_ts("x") }, length: { value: numLit_____abs_ts_1(1) } });
     const before = plain.shape;
     expect(isArrayView(plain)).toBe(false);
@@ -1824,9 +1655,8 @@ describe("数组视图 = Shape facet（形状单一事实源）", () => {
     const prim = numLit_____abs_ts_1(1);
     markArrayView(prim);
     expect(isArrayView(prim)).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f5() { return /a(b)c/.exec("abc").map((x) => x); }`, "f5");
     expect(tupleEls(r.result)).toEqual(["abc", "b"]);
     // 端到端值面同样逐字一致（原生：["abc","b"]）
@@ -1835,9 +1665,8 @@ describe("数组视图 = Shape facet（形状单一事实源）", () => {
       "f6",
     );
     expect(litValue_____abs_ts_2(j.result)).toEqual({ ok: true, value: '["abc","b"]' });
-  })();
-(() => {
-
+  }
+  {
     const slots = {
       0: { value: strLit_____abs_ts("abc") },
       length: { value: numLit_____abs_ts_1(1) },
@@ -1855,9 +1684,8 @@ describe("数组视图 = Shape facet（形状单一事实源）", () => {
     // 校验一个可能是普通对象的值）
     expect(isArrayView(joinObjects(viewA, plain))).toBe(false);
     expect(isArrayView(joinObjects(plain, viewA))).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f7() { return /a(b)c/.exec("abc"); }`, "f7");
     const expr = denoteGuard(r.result, "value");
     expect(expr).toContain("Array.isArray(value)");
@@ -1872,21 +1700,15 @@ describe("数组视图 = Shape facet（形状单一事实源）", () => {
     // 普通 obj 形状仍是原判据（排除数组）
     const plain = call(`export function f8() { return { a: 1 }; }`, "f8");
     expect(denoteGuard(plain.result, "value")).toContain("!Array.isArray(value)");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1908,22 +1730,19 @@ describe("Array.prototype mutator 只在字符串接收者上定抛", () => {
 
 
 
-describe("Array.prototype mutator 只在字符串接收者上定抛", () => {
-  it("push.call(5, 1) = 1（原生；此前定抛 TypeError）；unshift.call(5, 1) = 1（原生）；pop.call(5) / shift.call(5) 不抛（原生 pop → undefined、shift → undefined）；字符串接收者仍定抛（push.call('ab',1) / pop.call('ab') → TypeError）；数组 / 对象接收者不受影响（push.call([1],2)=2 / push.call({", () => {
-(() => {
 
+  it("push.call(5, 1) = 1（原生；此前定抛 TypeError）；unshift.call(5, 1) = 1（原生）；pop.call(5) / shift.call(5) 不抛（原生 pop → undefined、shift → undefined）；字符串接收者仍定抛（push.call('ab',1) / pop.call('ab') → TypeError）；数组 / 对象接收者不受影响（push.call([1],2)=2 / push.call({", () => {
+  {
     const r = call(`export function f() { return Array.prototype.push.call(5, 1); }`);
     expect(litValue_____abs_ts_3(r.result)).toEqual({ ok: true, value: 1 });
     expect(r.throws.shape.k).toBe("never");
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() { return Array.prototype.unshift.call(5, 1); }`);
     expect(litValue_____abs_ts_3(r.result)).toEqual({ ok: true, value: 1 });
     expect(r.throws.shape.k).toBe("never");
-  })();
-(() => {
-
+  }
+  {
     const pop = call(`export function f() { return Array.prototype.pop.call(5); }`);
     expect(litValue_____abs_ts_3(pop.result)).toEqual({ ok: true, value: undefined });
     expect(pop.throws.shape.k).toBe("never");
@@ -1931,43 +1750,35 @@ describe("Array.prototype mutator 只在字符串接收者上定抛", () => {
     // 本钉锁本 bug 的核心面：原始值接收者上 mutator **不抛**。
     const shift = call(`export function f() { return Array.prototype.shift.call(5); }`);
     expect(shift.throws.shape.k).toBe("never");
-  })();
-(() => {
-
+  }
+  {
     const push = call(`export function f() { return Array.prototype.push.call("ab", 1); }`);
     expect(isNever(push.result)).toBe(true);
     expect(throwsError(push.throws, "TypeError")).toBe(true);
     const pop = call(`export function f() { return Array.prototype.pop.call("ab"); }`);
     expect(isNever(pop.result)).toBe(true);
     expect(throwsError(pop.throws, "TypeError")).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     expect(
       litValue_____abs_ts_3(call(`export function f() { return Array.prototype.push.call([1], 2); }`).result),
     ).toEqual({ ok: true, value: 2 });
     expect(
       litValue_____abs_ts_3(call(`export function f() { return Array.prototype.push.call({}, 2); }`).result),
     ).toEqual({ ok: true, value: 1 });
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() { return Array.prototype.slice.call(5).length; }`);
     expect(litValue_____abs_ts_3(r.result)).toEqual({ ok: true, value: 0 });
     expect(r.throws.shape.k).toBe("never");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2033,29 +1844,25 @@ export function f() {
 }
 `;
 
-describe("Map 迭代按宿主插入序（字面量键与身份键混插）", () => {
-  it("keys()：身份键先插 → 迭代在前（宿主 obj,a）；values()：值顺序同样跟插入序（宿主 first,second）；entries() / for-of 解构：条目顺序同样跟插入序；table 面：字面量键与身份键混插时按写入序投影；重写既有键不换位；delete 后再写排到末尾（宿主语义）", () => {
-(() => {
 
+  it("keys()：身份键先插 → 迭代在前（宿主 obj,a）；values()：值顺序同样跟插入序（宿主 first,second）；entries() / for-of 解构：条目顺序同样跟插入序；table 面：字面量键与身份键混插时按写入序投影；重写既有键不换位；delete 后再写排到末尾（宿主语义）", () => {
+  {
     // 宿主：const m=new Map(); m.set(o,1); m.set("a",2) → [...m.keys()] = [o, "a"]
     expect(litValue(call(KEYS_SRC, "f").result)).toEqual({ ok: true, value: "obj,a" });
-  })();
-(() => {
-
+  }
+  {
     expect(litValue(call(VALUES_SRC, "f").result)).toEqual({
       ok: true,
       value: "first,second",
     });
-  })();
-(() => {
-
+  }
+  {
     expect(litValue(call(ENTRIES_SRC, "f").result)).toEqual({
       ok: true,
       value: "obj:first;a:second;",
     });
-  })();
-(() => {
-
+  }
+  {
     const m = makeMapAbs();
     const obj = objAbs();
     mapSetEntry(m, obj, numLit___nudojs_core_1(1));
@@ -2070,9 +1877,8 @@ describe("Map 迭代按宿主插入序（字面量键与身份键混插）", () 
       { ok: true, value: 1 },
       { ok: true, value: 2 },
     ]);
-  })();
-(() => {
-
+  }
+  {
     const m = makeMapAbs();
     const obj = objAbs();
     mapSetEntry(m, obj, numLit___nudojs_core_1(1));
@@ -2093,17 +1899,13 @@ describe("Map 迭代按宿主插入序（字面量键与身份键混插）", () 
       { ok: true, value: 7 },
     ]);
     expect(keyOfEntry(mapEntriesAbs(m)[1]!)).toBe(obj);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2124,15 +1926,13 @@ describe("concat 的非数组接收者整体作为单元素", () => {
 
 
 
-describe("concat 的非数组接收者整体作为单元素", () => {
-  it("concat.call('ab') = 1 个元素（原生；此前 2 个）；concat.call('ab')[0] = 'ab'（原生；此前 'a'）；concat.call(闭 obj) = 1 个元素（原生；此前 2 个）；数组接收者不受影响（concat.call([7,8]) = 2 个元素）；普通数组路径不受影响（[].concat('ab') = 1 个元素）", () => {
-(() => {
 
+  it("concat.call('ab') = 1 个元素（原生；此前 2 个）；concat.call('ab')[0] = 'ab'（原生；此前 'a'）；concat.call(闭 obj) = 1 个元素（原生；此前 2 个）；数组接收者不受影响（concat.call([7,8]) = 2 个元素）；普通数组路径不受影响（[].concat('ab') = 1 个元素）", () => {
+  {
     const r = call(`export function f() { return Array.prototype.concat.call("ab"); }`);
     expect(tupleEls(r.result)).toEqual(["ab"]);
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() { return Array.prototype.concat.call("ab")[0]; }`);
     expect(tupleEls(r.result)).toBeUndefined(); // 标量结果（非元组）
     const lit = r.result;
@@ -2140,36 +1940,29 @@ describe("concat 的非数组接收者整体作为单元素", () => {
     expect(lit.term?.op).toBe("lit");
     const t = lit.term;
     expect(t?.op === "lit" ? t.value : undefined).toBe("ab");
-  })();
-(() => {
-
+  }
+  {
     const r = call(
       `export function f() { return Array.prototype.concat.call({ length: 2, 0: "x", 1: "y" }); }`,
     );
     // 元素是接收者对象本身（非字面量）⇒ 断言元组长度
     expect(r.result.shape.k).toBe("tuple");
     expect(r.result.shape.k === "tuple" ? r.result.shape.elements.length : -1).toBe(1);
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() { return Array.prototype.concat.call([7, 8]); }`);
     expect(tupleEls(r.result)).toEqual([7, 8]);
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() { return [].concat("ab"); }`);
     expect(tupleEls(r.result)).toEqual(["ab"]);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2188,47 +1981,38 @@ describe("sort / reverse / fill / copyWithin 返回接收者", () => {
 
 
 
-describe("sort / reverse / fill / copyWithin 返回接收者", () => {
-  it("sort.call({a:1}) = 接收者对象（此前折空数组）；reverse.call({a:1}) = 接收者对象；fill.call({a:1}, 0) = 接收者对象；copyWithin.call({a:1}, 0) = 接收者对象；数组接收者不受影响（sort.call([3,1,2]) 仍折排序元组）", () => {
-(() => {
 
+  it("sort.call({a:1}) = 接收者对象（此前折空数组）；reverse.call({a:1}) = 接收者对象；fill.call({a:1}, 0) = 接收者对象；copyWithin.call({a:1}, 0) = 接收者对象；数组接收者不受影响（sort.call([3,1,2]) 仍折排序元组）", () => {
+  {
     const r = call(`export function f() { return Array.prototype.sort.call({ a: 1 }); }`);
     expect(r.result.shape.k).toBe("obj");
     expect(objSlots(r.result)).toEqual({ a: 1 });
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() { return Array.prototype.reverse.call({ a: 1 }); }`);
     expect(r.result.shape.k).toBe("obj");
     expect(objSlots(r.result)).toEqual({ a: 1 });
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() { return Array.prototype.fill.call({ a: 1 }, 0); }`);
     expect(r.result.shape.k).toBe("obj");
     expect(objSlots(r.result)).toEqual({ a: 1 });
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() { return Array.prototype.copyWithin.call({ a: 1 }, 0); }`);
     expect(r.result.shape.k).toBe("obj");
     expect(objSlots(r.result)).toEqual({ a: 1 });
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() { return Array.prototype.sort.call([3, 1, 2]); }`);
     expect(r.result.shape.k).toBe("tuple");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2248,48 +2032,39 @@ describe("Array.prototype.with 在原始值接收者上定抛 RangeError", () =>
 
 
 
-describe("Array.prototype.with 在原始值接收者上定抛 RangeError", () => {
-  it("with.call(1, 0, 2) 定抛 RangeError（原生；此前恒不抛 ⇒ 假绿）；with.call(true, 0, 'x') 同样定抛 RangeError；负下标也越界（with.call(1, -1, 2) → RangeError；RelativeIndex 钳到 0）；字符串接收者不抛（with.call('ab', 0, 'x') 走字符元组）；数组接收者不受影响（with.call([1,2], 0, 9) = [9,2]）", () => {
-(() => {
 
+  it("with.call(1, 0, 2) 定抛 RangeError（原生；此前恒不抛 ⇒ 假绿）；with.call(true, 0, 'x') 同样定抛 RangeError；负下标也越界（with.call(1, -1, 2) → RangeError；RelativeIndex 钳到 0）；字符串接收者不抛（with.call('ab', 0, 'x') 走字符元组）；数组接收者不受影响（with.call([1,2], 0, 9) = [9,2]）", () => {
+  {
     const r = call(`export function f() { return Array.prototype.with.call(1, 0, 2); }`);
     expect(isNever(r.result)).toBe(true);
     expect(throwsError(r.throws, "RangeError")).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() { return Array.prototype.with.call(true, 0, "x"); }`);
     expect(isNever(r.result)).toBe(true);
     expect(throwsError(r.throws, "RangeError")).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() { return Array.prototype.with.call(1, -1, 2); }`);
     expect(isNever(r.result)).toBe(true);
     expect(throwsError(r.throws, "RangeError")).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() { return Array.prototype.with.call("ab", 0, "x"); }`);
     expect(r.throws.shape.k).toBe("never");
     expect(r.result.shape.k).toBe("tuple");
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() { return Array.prototype.with.call([1, 2], 0, 9); }`);
     expect(r.throws.shape.k).toBe("never");
     expect(litValue_____abs_ts_4(r.result)).toEqual({ ok: false });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2319,50 +2094,37 @@ const val = (body: string): unknown => {
   return (r.result as { term?: { op?: string; value?: unknown } })?.term?.value;
 };
 
-describe("toSpliced 删除窗口（零实参 / 显式 undefined）", () => {
+
   it("toSpliced() 零实参：原样保留（原生 1,2,3）；toSpliced(0, undefined)：skipCount 在场（undefined ⇒ 0）⇒ 原样保留；对照：toSpliced(0) skipCount 缺省 ⇒ 删到尾（原生空）；对照：toSpliced(1,1) ⇒ 删一个（原生 1,3）；对照：splice() 零实参 ⇒ 原生不删（被删数组为空）；对照：splice(0, undefined) ⇒ deleteCount 在场（0）⇒ 不删（", () => {
-(() => {
-
+  {
     expect(val(`return [1,2,3].toSpliced().join(",");`)).toBe("1,2,3");
-  })();
-(() => {
-
+  }
+  {
     expect(val(`return [1,2,3].toSpliced(0, undefined).join(",");`)).toBe("1,2,3");
-  })();
-(() => {
-
+  }
+  {
     expect(val(`return [1,2,3].toSpliced(0).join(",");`)).toBe("");
-  })();
-(() => {
-
+  }
+  {
     expect(val(`return [1,2,3].toSpliced(1, 1).join(",");`)).toBe("1,3");
-  })();
-(() => {
-
+  }
+  {
     expect(val(`const a=[1,2,3]; return a.splice().join(",");`)).toBe("");
-  })();
-(() => {
-
+  }
+  {
     expect(val(`const a=[1,2,3]; return a.splice(0, undefined).join(",");`)).toBe("");
-  })();
-(() => {
-
+  }
+  {
     expect(val(`const a=[1,2,3]; return a.splice(1).join(",");`)).toBe("2,3");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2386,7 +2148,7 @@ describe("array 缺元素约束守卫", () => {
 
 
 
-describe("array 缺元素约束守卫", () => {
+{
   beforeEach(() => {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
@@ -2395,51 +2157,51 @@ describe("array 缺元素约束守卫", () => {
   });
 
   it("array() 抛 Nudo 原生诊断（点名构造器 + 给出写法）；array(undefined) 与 array() 同口径（不得静默变 lit(undefined)）；显式写法 array(lit(undefined)) 仍然合法（元素可为 undefined）；正常元素约束不受影响；产品面：合法数组实参不再被判违反（改前 3 条假红）；对照组：显式元素契约仍然执法（array(number()) 抓非数字元素）", () => {
-(() => {
+  {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     // 少传实参：零参调用与 `array(undefined)` 同口径（守卫判的是实参值，
     // 不是实参个数）⇒ 用显式 undefined 表达「缺参」。
     expect(() => array_____index_ts(undefined)).toThrow(/nudo array\(\)/);
     expect(() => array_____index_ts(undefined)).toThrow(/element constraint is required/);
-  })();
-(() => {
+  }
+  {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(() => array_____index_ts(undefined)).toThrow(/element constraint is required/);
-  })();
-(() => {
+  }
+  {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(() => array_____index_ts(litC(undefined))).not.toThrow();
-  })();
-(() => {
+  }
+  {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(() => array_____index_ts(number_____index_ts())).not.toThrow();
-  })();
-(() => {
+  }
+  {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     const { loadModule } = makeFiles({
       "/t/f.nudo.js": `import { fn, array, any } from "@nudojs/core";
@@ -2459,13 +2221,13 @@ export function g() {
     expect(load!.message).toContain("nudo array()");
     // 改前：3 条 nudo:constraint-violated（合法实参 [1,2,3] 判违规 = 假红）
     expect(r.issues.filter((i) => i.code === "nudo:constraint-violated")).toHaveLength(0);
-  })();
-(() => {
+  }
+  {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     const { loadModule } = makeFiles({
       "/t/f.nudo.js": `import { fn, array, number, any } from "@nudojs/core";
@@ -2481,19 +2243,14 @@ export function g() {
 `;
     const r = checkSource("/t/f.js", src, pTrue, { loadModule, fromFile: "/t/f.js" });
     expect(r.issues.filter((i) => i.code === "nudo:constraint-violated").length).toBeGreaterThan(0);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -2547,34 +2304,29 @@ function violated(caller: string): number {
   return checkCaller(caller).issues.filter((i) => i.code === "nudo:constraint-violated").length;
 }
 
-describe("数组元素的长度界被执法（此前静默丢弃 = 门禁假绿）", () => {
+
   it("元素超长 ⇒ 报违例（改前 0 error 假绿）；元素合规 ⇒ 不报违例（负控制）；违例文案点名元素位（length(a[0]) ≤ 1）而不是整个数组", () => {
-(() => {
-
+  {
     expect(violated(CALLER)).toBe(1);
-  })();
-(() => {
-
+  }
+  {
     const ok = `
 import { f } from "./file.js";
 export function g() { return f(["a", "b"]); }
 `;
     expect(violated(ok)).toBe(0);
-  })();
-(() => {
-
+  }
+  {
     const r = checkCaller(CALLER);
     const issue = r.issues.find((i) => i.code === "nudo:constraint-violated");
     expect(issue).toBeDefined();
     expect(issue!.expected).toContain("length(a[0])");
     expect(issue!.expected).toContain("≤ 1");
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2598,72 +2350,61 @@ describe("原型环：Object.setPrototypeOf 抛 TypeError", () => {
 
 
 
-describe("原型环：Object.setPrototypeOf 抛 TypeError", () => {
-  it("`a→b` 后 `b→a` ⇒ 抛 TypeError（native：TypeError: Cyclic __proto__ value）；用户 try/catch 捕到（native：\"threw\"）；自环 `Object.setPrototypeOf(a, a)` ⇒ 抛 TypeError（native：同款）", () => {
-(() => {
 
+  it("`a→b` 后 `b→a` ⇒ 抛 TypeError（native：TypeError: Cyclic __proto__ value）；用户 try/catch 捕到（native：\"threw\"）；自环 `Object.setPrototypeOf(a, a)` ⇒ 抛 TypeError（native：同款）", () => {
+  {
     const rec = call(
       `export function f() { const a = {}, b = {}; Object.setPrototypeOf(a, b); Object.setPrototypeOf(b, a); return 1; }`,
     );
     expect(throwsError(rec.throws, "TypeError")).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(
         `export function f() { const a = {}, b = {}; Object.setPrototypeOf(a, b); try { Object.setPrototypeOf(b, a); } catch { return "threw"; } return "no-throw"; }`,
       ),
     ).toEqual({ ok: true, value: "threw" });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(`export function f() { const a = {}; try { Object.setPrototypeOf(a, a); } catch { return "threw"; } return "no-throw"; }`),
     ).toEqual({ ok: true, value: "threw" });
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 
 describe("原型环：Reflect.setPrototypeOf 返 false（Reflect 口径不抛）", () => {
   it("`Reflect.setPrototypeOf(b, a)`（a→b 已成环）⇒ false（native：false）；自环 ⇒ false（native：false）", () => {
-(() => {
-
+  {
     expect(
       val(`export function f() { const a = {}, b = {}; Object.setPrototypeOf(a, b); return Reflect.setPrototypeOf(b, a); }`),
     ).toEqual({ ok: true, value: false });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(`export function f() { const a = {}; return Reflect.setPrototypeOf(a, a); }`),
     ).toEqual({ ok: true, value: false });
-  })();
-});;
+  }
+});
 
-  ;
 });
 
 describe("对照组（合法原型设定）不得回归", () => {
   it("`Object.setPrototypeOf(a, b)` 生效（native：getPrototypeOf(a) === b）；`Reflect.setPrototypeOf(a, b)` 返 true（native：true）", () => {
-(() => {
-
+  {
     expect(
       val(`export function f() { const a = {}, b = {}; Object.setPrototypeOf(a, b); return Object.getPrototypeOf(a) === b; }`),
     ).toEqual({ ok: true, value: true });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(`export function f() { const a = {}, b = {}; return Reflect.setPrototypeOf(a, b); }`),
     ).toEqual({ ok: true, value: true });
-  })();
-});;
+  }
+});
 
-  ;
 });
 });
 
@@ -2717,37 +2458,31 @@ const objectPatternNode = {
   ],
 };
 
-describe("array pattern signature rendering", () => {
-  it("array destructured param records pattern kind array；object destructured param records pattern kind object；array pattern renders as [ x, y ] not { x, y }；object pattern still renders as { a, b }；generalize keeps array pattern signature name；", () => {
-(() => {
 
+  it("array destructured param records pattern kind array；object destructured param records pattern kind object；array pattern renders as [ x, y ] not { x, y }；object pattern still renders as { a, b }；generalize keeps array pattern signature name", () => {
+  {
     const formals = formalParamsFromNodes([arrayPatternNode] as never);
     expect(formals).toHaveLength(1);
     expect(formals[0]).toMatchObject({ kind: "pattern", patternKind: "array" });
-  })();
-(() => {
-
+  }
+  {
     const formals = formalParamsFromNodes([objectPatternNode] as never);
     expect(formals[0]).toMatchObject({ kind: "pattern", patternKind: "object" });
-  })();
-(() => {
-
+  }
+  {
     const formals = formalParamsFromNodes([arrayPatternNode] as never);
     expect(formalParamSignatureNames(formals)).toEqual(["[ x, y ]"]);
-  })();
-(() => {
-
+  }
+  {
     const formals = formalParamsFromNodes([objectPatternNode] as never);
     expect(formalParamSignatureNames(formals)).toEqual(["{ a, b }"]);
-  })();
-(() => {
-
+  }
+  {
     const g = generalizeFromAst("f", "export function f([x, y]) { return x + y; }\n");
     expect(g?.params).toEqual(["_p0"]);
     expect(formalParamSignatureNames(g?.formals ?? [])).toEqual(["[ x, y ]"]);
-  })();
-(() => {
-
+  }
+  {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
     const r = checkSource(
@@ -2757,19 +2492,14 @@ describe("array pattern signature rendering", () => {
       {},
     );
     expect(r.signatures.map((s) => s.params)).toEqual([["[ x, y ]"]]);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2817,10 +2547,9 @@ const objectPatternNode = {
   ],
 };
 
-describe("array pattern contract addressing is by index", () => {
-  it("array pattern bound name resolves to the element index；array pattern contract hit carries no object-slot fieldPath；object pattern contract hit keeps the property-key addressing；whole-param contract name still resolves to the pattern index", () => {
-(() => {
 
+  it("array pattern bound name resolves to the element index；array pattern contract hit carries no object-slot fieldPath；object pattern contract hit keeps the property-key addressing；whole-param contract name still resolves to the pattern index", () => {
+  {
     const formals = formalParamsFromNodes([arrayPatternNode] as never);
     expect(locateContractParam(formals, "a")).toEqual({
       index: 0,
@@ -2832,37 +2561,31 @@ describe("array pattern contract addressing is by index", () => {
       field: "b",
       fieldIndex: 1,
     });
-  })();
-(() => {
-
+  }
+  {
     const formals = formalParamsFromNodes([arrayPatternNode] as never);
     const hit = locateContractParam(formals, "a");
     expect(hit).toBeDefined();
     expect(hit!.fieldPath).toBeUndefined();
-  })();
-(() => {
-
+  }
+  {
     const formals = formalParamsFromNodes([objectPatternNode] as never);
     expect(locateContractParam(formals, "a")).toEqual({
       index: 0,
       field: "a",
       fieldPath: ["a"],
     });
-  })();
-(() => {
-
+  }
+  {
     const formals = formalParamsFromNodes([arrayPatternNode] as never);
     expect(locateContractParam(formals, "_p0")).toEqual({ index: 0 });
     expect(locateContractParam(formals, "_")).toEqual({ index: 0 });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2909,10 +2632,9 @@ const objectPatternNode = {
   ],
 };
 
-describe("array pattern param shape model", () => {
-  it("array pattern exposes the element index of every top-level binding；array pattern has no property-key table (arrays have no slots)；object pattern keeps the property-key table and no index table；default + array pattern still records the array", () => {
-(() => {
 
+  it("array pattern exposes the element index of every top-level binding；array pattern has no property-key table (arrays have no slots)；object pattern keeps the property-key table and no index table；default + array pattern still records the array", () => {
+  {
     const formals = formalParamsFromNodes([arrayPatternNode] as never);
     const f = formals[0]!;
     expect(f.kind).toBe("pattern");
@@ -2920,25 +2642,22 @@ describe("array pattern param shape model", () => {
     expect(f.patternKind).toBe("array");
     expect(f.bound).toEqual(["a", "b"]);
     expect(f.boundIndex).toEqual({ a: 0, b: 1 });
-  })();
-(() => {
-
+  }
+  {
     const formals = formalParamsFromNodes([arrayPatternNode] as never);
     const f = formals[0]!;
     if (f.kind !== "pattern") throw new Error("unreachable");
     expect(f.propKey).toEqual({});
-  })();
-(() => {
-
+  }
+  {
     const formals = formalParamsFromNodes([objectPatternNode] as never);
     const f = formals[0]!;
     if (f.kind !== "pattern") throw new Error("unreachable");
     expect(f.patternKind).toBe("object");
     expect(f.propKey).toEqual({ a: "a" });
     expect(f.boundIndex).toEqual({});
-  })();
-(() => {
-
+  }
+  {
     const formals = formalParamsFromNodes([
       {
         type: "AssignmentPattern",
@@ -2952,26 +2671,21 @@ describe("array pattern param shape model", () => {
     if (f.kind !== "pattern") throw new Error("unreachable");
     expect(f.patternKind).toBe("array");
     expect(f.boundIndex).toEqual({ a: 0 });
-  })();
-(() => {
-
+  }
+  {
     const r = callLit(
       "export function f([a, b]) { return a; }\n",
       "f",
       [1, 2],
     );
     expect(litValue_____abs_ts_5(r.result)).toEqual({ ok: true, value: 1 });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -3018,33 +2732,29 @@ const ARR_ABS = abs_____index_ts_2(
   "path",
 );
 
-describe("bigint ⊗ array in + is string concat (never throws)", () => {
-  it("1n + [] folds to string \"1\" (native), not never/TypeError；[] + 1n / [1] + 1n / 1n + [1,2] fold to the native join strings；bigint ⊗ array records NO may-throw (原生从不抛 ⇒ 不得进 L2 假红)；抽象 bigint 面 ⊗ 数组 / 抽象数组 ⊗ bigint ⇒ string，不折 unknown/never", () => {
-(() => {
 
+  it("1n + [] folds to string \"1\" (native), not never/TypeError；+ 1n / [1] + 1n / 1n + [1,2] fold to the native join strings；bigint ⊗ array records NO may-throw (原生从不抛 ⇒ 不得进 L2 假红)；抽象 bigint 面 ⊗ 数组 / 抽象数组 ⊗ bigint ⇒ string，不折 unknown/never", () => {
+  {
     const r = call(`export function f() { return 1n + []; }`);
     expect(isNever(r.result)).toBe(false);
     expect(val(`export function f() { return 1n + []; }`)).toEqual({ ok: true, value: "1" });
     expect(throwsError(r.throws, "TypeError")).toBe(false);
     expect(formatShape(r.result)).toBe('"1"');
-  })();
-(() => {
-
+  }
+  {
     expect(val(`export function f() { return [] + 1n; }`)).toEqual({ ok: true, value: "1" });
     expect(val(`export function f() { return [1] + 1n; }`)).toEqual({ ok: true, value: "11" });
     expect(val(`export function f() { return 1n + [1,2]; }`)).toEqual({ ok: true, value: "11,2" });
-  })();
-(() => {
-
+  }
+  {
     expect(effects(`export function f() { return 1n + []; }`)).toEqual([]);
     expect(effects(`export function f() { return [] + 1n; }`)).toEqual([]);
     // 对照：确定混型（bigint ⊗ number）仍走硬抛面（throws 通道，非效果通道）
     const mixed = call(`export function f() { return 1n + 1; }`);
     expect(isNever(mixed.result)).toBe(true);
     expect(throwsError(mixed.throws, "TypeError")).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const bigSide = call(`export function f(x) { return x + []; }`, "f", [BIG_PRIM]);
     expect(isNever(bigSide.result)).toBe(false);
     expect(formatShape(bigSide.result)).toBe("string");
@@ -3054,37 +2764,30 @@ describe("bigint ⊗ array in + is string concat (never throws)", () => {
     expect(isNever(arrSide.result)).toBe(false);
     expect(formatShape(arrSide.result)).toBe("string");
     expect(throwsError(arrSide.throws, "TypeError")).toBe(false);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 
 describe("反向：不得改动既有口径", () => {
   it("number ⊗ 数组仍是 string 拼接（1 + [] = \"1\"，无 may-throw）；bigint ⊗ string 仍是拼接（1n + \"s\" = \"1s\"）；确定混型 bigint ⊗ number 仍硬抛 TypeError（never）；无字符串分支的算子仍抛：1n - [] / 1n * []（原生恒抛 TypeError，硬抛可被 catch 吸收）；catch 语义：1n + [] 原生不抛 ⇒ try 块正常走完（改前误进 catch）", () => {
-(() => {
-
+  {
     expect(val(`export function f() { return 1 + []; }`)).toEqual({ ok: true, value: "1" });
     expect(effects(`export function f() { return 1 + []; }`)).toEqual([]);
     expect(val(`export function f() { return [1] + 1; }`)).toEqual({ ok: true, value: "11" });
-  })();
-(() => {
-
+  }
+  {
     expect(val(`export function f() { return 1n + "s"; }`)).toEqual({ ok: true, value: "1s" });
     expect(val(`export function f() { return "s" + 1n; }`)).toEqual({ ok: true, value: "s1" });
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() { return 1n + 1; }`);
     expect(isNever(r.result)).toBe(true);
     expect(throwsError(r.throws, "TypeError")).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     for (const op of ["-", "*"]) {
       const r = call(`export function f() { return 1n ${op} []; }`);
       expect(isNever(r.result), op).toBe(true);
@@ -3095,9 +2798,8 @@ describe("反向：不得改动既有口径", () => {
         op,
       ).toEqual({ ok: true, value: "caught" });
     }
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(`export function f() { try { 1n + []; } catch (e) { return "caught"; } return "missed"; }`),
     ).toEqual({ ok: true, value: "missed" });
@@ -3105,16 +2807,12 @@ describe("反向：不得改动既有口径", () => {
     expect(
       val(`export function f() { try { 1n + 1; } catch (e) { return "caught"; } return "missed"; }`),
     ).toEqual({ ok: true, value: "caught" });
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 
 describe("成员级：sum 含 arr/tuple 成员不连坐 may-throw", () => {
@@ -3141,21 +2839,18 @@ describe("成员级：sum 含 arr/tuple 成员不连坐 may-throw", () => {
   };
 
   it("x & 1 / 1 - x（x: number|[]，无 bigint 参与）不记任何 may-throw；对照：1n + x（x: number|[]）记 may-throw 是 sound 的——number 成员混型原生恒抛（1n+1 THROW），arr 成员不抛（1n+[] = \"1\"）⇒ 并集恰为 may；对照：any/obj 成员（可 @@toPrimitive 成 Symbol/bigint）仍记 may-throw；对照：unknown 成员照记 may-t", () => {
-(() => {
-
+  {
     const xs = [sumOf(NUM, ARR_ABS)];
     expect(effectsWithArgs(`export function f(x) { return x & 1; }`, xs)).toEqual([]);
     expect(effectsWithArgs(`export function f(x) { return 1 - x; }`, xs)).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const xs = [sumOf(NUM, ARR_ABS)];
     expect(effectsWithArgs(`export function f(x) { return 1n + x; }`, xs)).toEqual([
       "TypeError",
     ]);
-  })();
-(() => {
-
+  }
+  {
     const anyAbs = abs_____index_ts_2({ k: "any" }, undefined, undefined, "path");
     const obj = abs_____index_ts_2({ k: "obj", slots: {} }, undefined, undefined, "path");
     for (const member of [anyAbs, obj]) {
@@ -3164,20 +2859,16 @@ describe("成员级：sum 含 arr/tuple 成员不连坐 may-throw", () => {
         "TypeError",
       ]);
     }
-  })();
-(() => {
-
+  }
+  {
     const unk = abs_____index_ts_2({ k: "unknown" }, undefined, undefined, "partial");
     const xs = [sumOf(unk, ARR_ABS)];
     expect(effectsWithArgs(`export function f(x) { return x & 1; }`, xs)).toEqual(["TypeError"]);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 });
 });
 
@@ -3223,40 +2914,31 @@ const PLAIN_METHOD = `module.exports = {
 };
 `;
 
-describe("CJS getter / setter 不是可调用入口", () => {
+
   it("getter 不进普查；setter 不进普查；普通方法仍进普查（对照）；getter ⇒ check 不造假的入口 may-throw（无 error）；setter ⇒ check 不造假的入口 may-throw（无 error）", () => {
-(() => {
-
+  {
     expect(listTopFunctions(GETTER)).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     expect(listTopFunctions(SETTER)).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     expect(listTopFunctions(PLAIN_METHOD)).toEqual(["f"]);
-  })();
-(() => {
-
+  }
+  {
     const r = issuesOf(GETTER, "/t/b996/getter.js");
     expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
     expect(r.signatures.filter((s) => s.name === "f")).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const r = issuesOf(SETTER, "/t/b996/setter.js");
     expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
     expect(r.signatures.filter((s) => s.name === "f")).toEqual([]);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });

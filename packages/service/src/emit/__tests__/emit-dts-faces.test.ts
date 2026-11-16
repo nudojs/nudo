@@ -69,10 +69,9 @@ function moduleDts(source: string, path = "/test/default-surface.js"): string {
   return projectModuleDts(surface, entries).lines.join("\n");
 }
 
-describe("dts 面的 default 导出名（四形态）", () => {
-  it("形态①：export default function named ⇒ 导出名是 default（不是具名导出）；形态②：export default class K ⇒ 导出名是 default（类不被降成模块级函数）；形态③：匿名 default（export default function (x)）⇒ 导出名是 default；形态④：箭头 default（export default (x) => …）⇒ 导出名是 default；形态④′：const + expo", () => {
-(() => {
 
+  it("形态①：export default function named ⇒ 导出名是 default（不是具名导出）；形态②：export default class K ⇒ 导出名是 default（类不被降成模块级函数）；形态③：匿名 default（export default function (x)）⇒ 导出名是 default；形态④：箭头 default（export default (x) => …）⇒ 导出名是 default；形态④′：const + expo", () => {
+  {
     const dts = moduleDts(`export default function named(x) {
   return x + 1;
 }
@@ -81,9 +80,8 @@ describe("dts 面的 default 导出名（四形态）", () => {
     // 不得凭空虚构运行时不存在的具名导出（改前的症状）
     expect(dts).not.toContain("export declare function named");
     expect(dts).not.toMatch(/export\s*\{[^}]*\bnamed\b/);
-  })();
-(() => {
-
+  }
+  {
     const dts = moduleDts(`export default class K {
   m(x) {
     return x + 1;
@@ -93,41 +91,36 @@ describe("dts 面的 default 导出名（四形态）", () => {
     expect(dts).toContain("export default class K {");
     expect(dts).not.toContain("export declare function K");
     expect(dts).not.toContain("K_m");
-  })();
-(() => {
-
+  }
+  {
     const dts = moduleDts(`export default function (x) {
   return x + 1;
 }
 `);
     expect(dts).toMatch(/export default function \(x: (any|unknown)\): .*;/);
     expect(dts).not.toContain("export declare function");
-  })();
-(() => {
-
+  }
+  {
     const dts = moduleDts(`export default (x) => x + 1;
 `);
     expect(dts).toMatch(/export default function \(x: (any|unknown)\): .*;/);
     expect(dts).not.toContain("export declare function");
-  })();
-(() => {
-
+  }
+  {
     const dts = moduleDts(`const arrow = (x) => x + 1;
 export default arrow;
 `);
     expect(dts).toContain("export default function arrow(");
     expect(dts).not.toContain("export declare function arrow");
-  })();
-(() => {
-
+  }
+  {
     const surface = dtsModuleSurface(`export default function named(x) {
   return x + 1;
 }
 `);
     expect(surface.exportBindings.get("default")).toBe("named");
-  })();
-(() => {
-
+  }
+  {
     expect(
       dtsModuleSurface(`export default function (x) {
   return x + 1;
@@ -138,17 +131,15 @@ export default arrow;
       dtsModuleSurface(`export default (x) => x + 1;
 `).exportBindings.get("default"),
     ).toBe("");
-  })();
-(() => {
-
+  }
+  {
     const dts = moduleDts(`export function other(y) {
   return y + 1;
 }
 `);
     expect(dts).toContain("export declare function other(");
-  })();
-(() => {
-
+  }
+  {
     const dts = moduleDts(`export default function named(x) {
   return x + 1;
 }
@@ -157,26 +148,18 @@ function helper(x) {
 }
 `);
     expect(dts).not.toContain("helper");
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
   // ── 负控制：本条修复不该波及的邻近形态 ──────────────────────────
-  ;
 
-  ;
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -241,16 +224,14 @@ const SAME_NAME = `export class C {
 }
 `;
 
-describe("dts 面：静态与实例同名 ⇒ 类体里不重复声明成员", () => {
-  it("普查面只有一条 C.m；dts 类体：实例方法一条 + 静态方法一条（无重复成员）；dts 产物里不出现模块级的 C_m 声明（类成员不是模块级导出）", () => {
-(() => {
 
+  it("普查面只有一条 C.m；dts 类体：实例方法一条 + 静态方法一条（无重复成员）；dts 产物里不出现模块级的 C_m 声明（类成员不是模块级导出）", () => {
+  {
     const result = analyzeFile("/test/b437.js", SAME_NAME);
     const names = result.functions.map((f) => f.name);
     expect(names.filter((n) => n === "C.m").length).toBe(1);
-  })();
-(() => {
-
+  }
+  {
     const dts = moduleDts(SAME_NAME);
     expect(dts).toContain("export declare class C {");
     expect(dts).toMatch(/static m\(y: (any|unknown)\): unknown;/);
@@ -258,18 +239,15 @@ describe("dts 面：静态与实例同名 ⇒ 类体里不重复声明成员", (
     // 补齐类方法入口兜底后返回类型从 unknown 变精确值，故不钉返回类型。
     const instanceMembers = dts.match(/^\s*m\(x: (?:any|unknown)\): [^;]+;$/gm) ?? [];
     expect(instanceMembers.length).toBe(1);
-  })();
-(() => {
-
+  }
+  {
     const dts = moduleDts(SAME_NAME);
     expect(dts).not.toContain("export declare function C_m");
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -318,70 +296,57 @@ const missing = (): Record<string, unknown> => ({ own: 2 });
 /** 违约形态 ②：`__proto__` 值错 */
 const wrongValue = (): Record<string, unknown> => JSON.parse('{"__proto__": {"z": 1}, "own": 2}');
 
-describe("zod 必须真的校验 __proto__ 槽", () => {
-  it("shape 里不再出现 __proto__ 键（zod v4 会跳过它 ⇒ 声明了也不校验）；用 .superRefine 校验自有数据属性（缺键 ⇒ required）；值校验走内层 schema 的 safeParse（不是整条放行）；optional 槽：缺席不报错，但值错了仍报错；台账留痕：__proto__ 的降级进 dropped（不得静默假绿）；standard 面（同一份 Abs）要求自有 __proto__：真值过、缺键/错值不过；负控制：普通对象不受影响（", () => {
-(() => {
 
+  it("shape 里不再出现 __proto__ 键（zod v4 会跳过它 ⇒ 声明了也不校验）；用 .superRefine 校验自有数据属性（缺键 ⇒ required）；值校验走内层 schema 的 safeParse（不是整条放行）；optional 槽：缺席不报错，但值错了仍报错；台账留痕：__proto__ 的降级进 dropped（不得静默假绿）；standard 面（同一份 Abs）要求自有 __proto__：真值过、缺键/错值不过；负控制：普通对象不受影响（", () => {
+  {
     const source = absToSchemaSource(protoObj());
     expect(source).not.toContain('["__proto__"]:');
     expect(source).toContain("Object.getOwnPropertyDescriptor(value, \"__proto__\")");
-  })();
-(() => {
-
+  }
+  {
     const source = absToSchemaSource(protoObj());
     expect(source).toContain(".superRefine(");
     expect(source).toContain('code: "custom"');
     expect(source).toContain('path: ["__proto__"]');
     expect(source).toContain('message: "required"');
-  })();
-(() => {
-
+  }
+  {
     const source = absToSchemaSource(protoObj());
     expect(source).toContain(".safeParse(desc.value)");
     expect(source).toContain("if (!parsed.success) ctx.addIssue(");
-  })();
-(() => {
-
+  }
+  {
     const source = absToSchemaSource(protoObj(true));
     expect(source).not.toContain('message: "required"');
     expect(source).toContain("if (!desc) return;");
     expect(source).toContain("if (!parsed.success) ctx.addIssue(");
-  })();
-(() => {
-
+  }
+  {
     // 这条损失发生在**渲染层**（节点 → zod 源码）⇒ 台账从 `projectAbsToSchema` 取
     const { dropped } = projectAbsToSchema(protoObj());
     expect(dropped.join("\n")).toContain("__proto__");
     expect(dropped.join("\n")).toContain("superRefine");
-  })();
-(() => {
-
+  }
+  {
     const { node } = absToSchemaNode(protoObj());
     expect(validateSchemaNode(node, realValue()).issues).toBeUndefined();
     expect(validateSchemaNode(node, missing()).issues?.length).toBeGreaterThan(0);
     expect(validateSchemaNode(node, wrongValue()).issues?.length).toBeGreaterThan(0);
-  })();
-(() => {
-
+  }
+  {
     const plain = abs({ k: "obj", slots: { a: { value: boolLit(true) } } }, undefined, undefined, "exact");
     const source = absToSchemaSource(plain);
     expect(source).toBe("z.object({ a: z.literal(true) })");
     expect(source).not.toContain("superRefine");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -428,10 +393,9 @@ function formalsOf(name: string): Array<[string, boolean | undefined]> {
   return (fn.formals ?? []).map((f) => [f.kind, f.optional]);
 }
 
-describe("TS 可选形参进三个产物面（可省性 ≡ 源码）", () => {
-  it("数据源：FormalParam.optional ≡ 源码（JS 默认值 ∪ TS `?`）；dts 面：可省位印 `?`（消费端 `f(1)` 不再 TS2554）；standard 面：`{ a }` 通过、缺 `a` 仍报 required；zod 面：可选槽渲染 `.optional()`（槽可选性由同一 FormalParam 驱动）；zod 面（入口角色表）：`unifiedParamFace` 把 `b?` 判为可省", async () => {
-await (async () => {
 
+  it("数据源：FormalParam.optional ≡ 源码（JS 默认值 ∪ TS `?`）；dts 面：可省位印 `?`（消费端 `f(1)` 不再 TS2554）；standard 面：`{ a }` 通过、缺 `a` 仍报 required；zod 面：可选槽渲染 `.optional()`（槽可选性由同一 FormalParam 驱动）；zod 面（入口角色表）：`unifiedParamFace` 把 `b?` 判为可省", async () => {
+  {
     expect(formalsOf("f")).toEqual([
       ["id", false],
       ["id", true],
@@ -440,17 +404,15 @@ await (async () => {
       ["id", false],
       ["default", true],
     ]);
-  })();
-await (async () => {
-
+  }
+  {
     const result = analyzeFile("/test/optional-param.ts", SRC);
     const fn = result.functions.find((x) => x.name === "f")!;
     const lines = projectFunctionDts(fn, undefined, dtsModuleSurface(SRC)).lines.join("\n");
     expect(lines).toMatch(/b\?:/);
     expect(lines).not.toMatch(/b: string/);
-  })();
-await (async () => {
-
+  }
+  {
     const result = analyzeFile("/test/optional-param.ts", SRC);
     const fn = result.functions.find((x) => x.name === "f")!;
     const { source } = absToStandardSchemaFunction({
@@ -467,9 +429,8 @@ await (async () => {
     expect(input.validate({ a: 1, b: "s" }).issues).toBeUndefined();
     const missing = input.validate({});
     expect(missing.issues?.[0]?.message).toBe("required");
-  })();
-await (async () => {
-
+  }
+  {
     const slots = {
       a: { value: anyAbs },
       b: { value: anyAbs, optional: true },
@@ -477,9 +438,8 @@ await (async () => {
     const source = absToZodSchemaModule({ fInput: obj(slots) }).source;
     expect(source).toContain("b: z.unknown().optional()");
     expect(source).not.toContain("a: z.unknown().optional()");
-  })();
-await (async () => {
-
+  }
+  {
     const fn = analyzeFile("/test/optional-param.ts", SRC).functions.find((x) => x.name === "f")!;
     // 唯一一条「一键实参」观测 ⇒ minArity = 1 ⇒ 下标 1 的可省性只能来自 TS `?`
     // （契约面缺席、FormalParam 之外没有别的信息源）。
@@ -493,17 +453,13 @@ await (async () => {
       ["a", true],
       ["b", true],
     ]);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -557,10 +513,9 @@ function moduleDts(source: string, path = "/test/namespace.ts"): string {
   return projectModuleDts(surface, entries).lines.join("\n");
 }
 
-describe("export namespace 进入导出面与 .d.ts", () => {
-  it("导出面（check 入口表 / 侧车绑定 / dts 裁剪同源）含 NS 与其运行时成员键；dts 模块面登记 NS（导出名 → 本地绑定）；`.d.ts` 发射 `export declare namespace NS { … }`（消费端 import 不再 TS2305）", () => {
-(() => {
 
+  it("导出面（check 入口表 / 侧车绑定 / dts 裁剪同源）含 NS 与其运行时成员键；dts 模块面登记 NS（导出名 → 本地绑定）；`.d.ts` 发射 `export declare namespace NS { … }`（消费端 import 不再 TS2305）", () => {
+  {
     const names = localNamedExports(SRC);
     expect(names.has("NS")).toBe(true);
     // 成员契约键与 `Class.method` 同口径；interface 是纯类型 ⇒ 运行时不占键
@@ -571,15 +526,13 @@ describe("export namespace 进入导出面与 .d.ts", () => {
     expect(names.has("NS.Shape")).toBe(false);
     // 负控制：普通导出面不受影响
     expect(names.has("unrelated")).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const surface = dtsModuleSurface(SRC);
     expect(surface.exportBindings.get("NS")).toBe("NS");
     expect(surface.namespaces?.get("NS")?.members.length).toBeGreaterThan(0);
-  })();
-(() => {
-
+  }
+  {
     const dts = moduleDts(SRC);
     expect(dts).toContain("export declare namespace NS {");
     // 成员：声明类型原样镜像（不是 any / unknown）
@@ -590,13 +543,11 @@ describe("export namespace 进入导出面与 .d.ts", () => {
     expect(dts).toContain("export namespace Inner {");
     // 负控制：普通函数仍在（namespace 分支不得吞掉其它导出声明）
     expect(dts).toMatch(/export declare function unrelated\(/);
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -688,10 +639,9 @@ function moduleDts(source: string, fn: unknown): string {
   return projectModuleDts(surface, [{ fn: typed, projection }]).lines.join("\n");
 }
 
-describe("产物面不得发布 internal 槽", () => {
-  it("dts 形参位：内部槽不进结构字段（改前：\"#priv\" / \"@@iterator\" 直出）；dts 类字段：私有字段不进 declare class 类体；schema 单值面：内部槽不进 zod 对象；schema 模块面（zod）：内部槽不进产物；standard 模块面：内部槽不进产物；schema 形状兜底路径（open 对象）：内部槽不进产物；负控制：非 internal 槽逐字不变", () => {
-(() => {
 
+  it("dts 形参位：内部槽不进结构字段（改前：\"#priv\" / \"@@iterator\" 直出）；dts 类字段：私有字段不进 declare class 类体；schema 单值面：内部槽不进 zod 对象；schema 模块面（zod）：内部槽不进产物；standard 模块面：内部槽不进产物；schema 形状兜底路径（open 对象）：内部槽不进产物；负控制：非 internal 槽逐字不变", () => {
+  {
     const dts = moduleDts(
       `export function f(x) { return x; }\n`,
       fakeFn("f", objWithInternal, num()),
@@ -700,9 +650,8 @@ describe("产物面不得发布 internal 槽", () => {
     expect(dts).not.toContain("@@iterator");
     // 普通槽照旧
     expect(dts).toContain("a: number");
-  })();
-(() => {
-
+  }
+  {
     const dts = moduleDts(
       `export class Counter {\n  constructor(v) { this.v = v; }\n}\nexport function make() { return 1; }\n`,
       fakeFn("make", num(), brandWithPrivate),
@@ -713,30 +662,26 @@ describe("产物面不得发布 internal 槽", () => {
     // 的口径：单个构造点的 brand 观测（这里的 fake brand 说 number）
     // 不得把公开字段钉成比构造器签名更窄的类型。
     expect(dts).toContain("v: unknown");
-  })();
-(() => {
-
+  }
+  {
     const source = absToSchemaSource(objWithInternal);
     expect(source).not.toContain("#priv");
     expect(source).not.toContain("@@iterator");
     expect(source).toContain("a:");
-  })();
-(() => {
-
+  }
+  {
     const { source } = absToZodSchemaModule({ f: objWithInternal });
     expect(source).not.toContain("#priv");
     expect(source).not.toContain("@@iterator");
     expect(source).toContain("a:");
-  })();
-(() => {
-
+  }
+  {
     const { source } = absToStandardSchemaModule({ f: objWithInternal });
     expect(source).not.toContain("#priv");
     expect(source).not.toContain("@@iterator");
     expect(source).toContain('"key":"a"');
-  })();
-(() => {
-
+  }
+  {
     // open 对象 ⇒ 约束投影放弃 ⇒ 走 service 的形状兜底（`absToSchemaShape`，
     // 该路径原先不剔 internal 槽）；standard 面走的就是这条路径。
     const openObj = abs(
@@ -761,33 +706,26 @@ describe("产物面不得发布 internal 槽", () => {
     expect(zod.source).not.toContain("#priv");
     expect(zod.source).not.toContain("@@iterator");
     expect(zod.source).toContain("a:");
-  })();
-(() => {
-
+  }
+  {
     expect(absToTSType(plainObj)).toBe("{ a: number }");
     expect(absToSchemaSource(plainObj)).toContain("a:");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
 // 固化的无断言见证不独占返回面
 // ---------------------------------------------------------------------------
 describe("固化的无断言见证不独占返回面", () => {
-// emit--frozen-observation-type-face.part.ts — 
+// emit--frozen-observation-type-face.part.ts —
 // `nudo test --freeze` 固化的**无断言**见证**接管了整个函数的返回面**
 // ⇒ zod / guard / dts 全变成「单次调用点字面量」，且与 `nudo check` 自相矛盾。
 //
@@ -827,10 +765,9 @@ function faceOf(source: string): string {
   return fn?.combinedAbs ? formatShape(fn.combinedAbs) : "(none)";
 }
 
-describe("固化的无断言见证不独占返回面", () => {
-  it("固化后的无断言观测见证不得独占返回面（返回面由推断域承担）；负控制：手写断言（=> 3）合法地定义返回面（修 511 不得动这一条）；负控制：无指令的函数返回面不受影响（entry@ 面）；emitter 侧：固化写出的见证是「观测」而非「断言」（指令里没有 => expected）；emitter 侧：固化产物可被 parser 读回，且不带期望值", async () => {
-await (async () => {
 
+  it("固化后的无断言观测见证不得独占返回面（返回面由推断域承担）；负控制：手写断言（=> 3）合法地定义返回面（修 511 不得动这一条）；负控制：无指令的函数返回面不受影响（entry@ 面）；emitter 侧：固化写出的见证是「观测」而非「断言」（指令里没有 => expected）；emitter 侧：固化产物可被 parser 读回，且不带期望值", async () => {
+  {
       // 固化后的源码：一条**无断言**的观测见证
       const frozen = `/**
  * @nudo:case "call@F1usage.js:L2" (1, 2)
@@ -840,33 +777,29 @@ export function add(a, b) { return a + b; }
       // 期望：观测见证只是下界证据，返回面仍由函数自身（entry@ 面）承担 ⇒
       // 与固化前、与 `nudo check` 的签名一致。
       expect(faceOf(frozen)).toBe("number | string");
-    })();
-await (async () => {
-
+  }
+  {
     const asserted = `/**
  * @nudo:case "t" (1, 2) => 3
  */
 export function add(a, b) { return a + b; }
 `;
     expect(faceOf(asserted)).toBe("3");
-  })();
-await (async () => {
-
+  }
+  {
     const plain = `export function add(a, b) { return a + b; }
 `;
     expect(faceOf(plain)).toBe("number | string");
-  })();
-await (async () => {
-
+  }
+  {
     // 观测：只有实参，没有期望值
     expect(buildCaseDirective("call@F1usage.js:L2", [])).toBe(
       ' * @nudo:case "call@F1usage.js:L2" ()',
     );
     // 断言面由手写指令承担（`=> expected`）——与观测在文本上可区分
     expect(buildCaseDirective("call@F1usage.js:L2", [])).not.toContain("=>");
-  })();
-await (async () => {
-
+  }
+  {
     const { parse, extractDirectives } = await import("@nudojs/parser");
     const source = `export function add(a, b) { return a + b; }
 `;
@@ -900,17 +833,13 @@ await (async () => {
     expect(dirs).toHaveLength(1);
     // 观测见证不带期望值 ⇒ 下游可据此把它与断言区分开
     expect(dirs[0]!.kind === "case" && dirs[0]!.expected).toBeUndefined();
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -958,10 +887,9 @@ function moduleDts(source: string, path = "/test/surface.js"): string {
   return projectModuleDts(surface, entries).lines.join("\n");
 }
 
-describe("dts 导出面（S1）", () => {
-  it("Bug 514：default（匿名 / 箭头）导出进 dts；Bug 514：CJS 绑定（exports.compute）进 dts；Bug 514：const + export list 绑定进 dts；Bug 515：default 具名导出写成 export default function；Bug 515：别名导出按导出名声明（internal 不是导出名）；Bug 517：brand 引用的类被声明（不再 TS2304）；Bug 518：类方法不是模块级导出（没", () => {
-(() => {
 
+  it("default（匿名 / 箭头）导出进 dts；CJS 绑定（exports.compute）进 dts；const + export list 绑定进 dts；default 具名导出写成 export default function；别名导出按导出名声明（internal 不是导出名）；brand 引用的类被声明（不再 TS2304）；类方法不是模块级导出（没", () => {
+  {
     const anon = moduleDts(`export default function (x) {
   return x + 1;
 }
@@ -970,43 +898,38 @@ describe("dts 导出面（S1）", () => {
     const arrow = moduleDts(`export default (x) => x + 1;
 `);
     expect(arrow).toMatch(/export default function \(x: (any|unknown)\): .*;/);
-  })();
-(() => {
-
+  }
+  {
     const dts = moduleDts(`exports.compute = (a, b) => a + b;
 `);
     expect(dts).toContain("export declare function compute(");
     expect(dts).not.toContain("No exported");
-  })();
-(() => {
-
+  }
+  {
     const dts = moduleDts(`const greet = function () {
   return "hi";
 };
 export { greet };
 `);
     expect(dts).toContain("export declare function greet(");
-  })();
-(() => {
-
+  }
+  {
     const dts = moduleDts(`export default function addOne(x) {
   return x + 1;
 }
 `);
     expect(dts).toContain("export default function addOne(");
     expect(dts).not.toContain("export declare function addOne");
-  })();
-(() => {
-
+  }
+  {
     const dts = moduleDts(`const internal = (x) => x + 1;
 export { internal as publicName };
 `);
     expect(dts).toContain("export { internal as publicName };");
     expect(dts).not.toContain("export declare function internal");
     expect(dts).not.toContain("export declare function publicName");
-  })();
-(() => {
-
+  }
+  {
     const dts = moduleDts(`export class User {
   constructor(name) {
     this.name = name;
@@ -1018,9 +941,8 @@ export function makeUser(name) {
 `);
     expect(dts).toContain("class User");
     expect(dts).toMatch(/makeUser\([^)]*\): User;/);
-  })();
-(() => {
-
+  }
+  {
     const dts = moduleDts(`export class C {
   m(x) {
     return x + 1;
@@ -1031,9 +953,8 @@ export function makeUser(name) {
     expect(dts).not.toContain("export declare function C_m");
     // 补齐类方法入口兜底后返回类型从 unknown 变精确值，只钉形参与方法存在。
     expect(dts).toMatch(/m\(x: (any|unknown)\): [^;]+;/);
-  })();
-(() => {
-
+  }
+  {
     const dts = moduleDts(`export class C {
   constructor(v) {
     this.v = v;
@@ -1053,9 +974,8 @@ export function makeUser(name) {
     // 同上：实例方法返回类型精度随分析面提升，不钉死 unknown。
     expect(dts).toMatch(/m\(x: (any|unknown)\): [^;]+;/);
     expect(dts).toMatch(/static s\(x: (any|unknown)\): unknown;/);
-  })();
-(() => {
-
+  }
+  {
     const dts = moduleDts(`export * from "./dep.js";
 export { helper } from "./dep.js";
 export function own(n) {
@@ -1065,9 +985,8 @@ export function own(n) {
     expect(dts).toContain(`export * from "./dep.js";`);
     expect(dts).toContain(`export { helper } from "./dep.js";`);
     expect(dts).toContain("export declare function own(");
-  })();
-(() => {
-
+  }
+  {
     const surface = dtsModuleSurface(`const internal = (x) => x + 1;
 export { internal as publicName };
 export default function addOne(x) {
@@ -1078,9 +997,8 @@ export function plain() {}
     expect(surface.exportBindings.get("publicName")).toBe("internal");
     expect(surface.exportBindings.get("default")).toBe("addOne");
     expect(surface.exportBindings.get("plain")).toBe("plain");
-  })();
-(() => {
-
+  }
+  {
     const surface = dtsModuleSurface(`export class C {
   constructor(v) {}
   m(x) {}
@@ -1092,9 +1010,8 @@ export function plain() {}
     expect(cls?.ctorParams).toEqual(["v"]);
     expect(cls?.instanceMethods.map((m) => m.name)).toEqual(["m"]);
     expect(cls?.staticMethods.map((m) => m.name)).toEqual(["s"]);
-  })();
-(() => {
-
+  }
+  {
     const def = moduleDts(`export default class D {
   m(x) {
     return x + 1;
@@ -1112,9 +1029,8 @@ export { A as Public };
     expect(alias).toContain("declare class A {");
     expect(alias).toContain("export { A as Public };");
     expect(alias).not.toContain("export declare function A");
-  })();
-(() => {
-
+  }
+  {
     const dts = moduleDts(`export function public1(x) {
   return x + 1;
 }
@@ -1124,9 +1040,8 @@ function helper(x) {
 `);
     expect(dts).toContain("export declare function public1(");
     expect(dts).not.toContain("helper");
-  })();
-(() => {
-
+  }
+  {
     const dts = moduleDts(`class Hidden {
   m(x) {
     return x + 1;
@@ -1138,9 +1053,8 @@ export function plain(x) {
 `);
     expect(dts).toContain("export declare function plain(");
     expect(dts).not.toContain("Hidden");
-  })();
-(() => {
-
+  }
+  {
     const source = `export class C {
   m(x) {
     return x + 1;
@@ -1153,9 +1067,8 @@ export function plain(x) {
     const proj = projectFunctionDts(fn!);
     expect(proj.lines.join("\n")).toMatch(/export declare function C_m\b/);
     expect(proj.lines.join("\n")).not.toMatch(/C\.m/);
-  })();
-(() => {
-
+  }
+  {
     const fn = {
       name: "a-b",
       loc: { start: { line: 1, column: 0 }, end: { line: 1, column: 0 } },
@@ -1171,40 +1084,25 @@ export function plain(x) {
     } as unknown as Parameters<typeof projectFunctionDts>[0];
     const proj = projectFunctionDts(fn);
     expect(proj.lines.join("\n")).toMatch(/export declare function a_b\b/);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
   // ── 负控制：本条修复不该波及的邻近形态 ──────────────────────────
-  ;
 
-  ;
 
-  ;
 
-  ;
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1256,9 +1154,8 @@ function tscNoEmit(files: Record<string, string>): { ok: boolean; stderr: string
 }
 
 describe("— dts 顶层形参可选性来自声明形参表", () => {
-  it("带默认值的形参渲染成可选（无调用证据时也是）；有调用证据时形参表不缩水（观测元数不再裁剪声明形参表）；默认值为 undefined 的形参同样可选；Bug 553：消费方按实现允许的零参调用不再吃 TS2554；负控制：无默认值的形参仍是必填（不假造可选性）", () => {
-(() => {
-
+  it("带默认值的形参渲染成可选（无调用证据时也是）；有调用证据时形参表不缩水（观测元数不再裁剪声明形参表）；默认值为 undefined 的形参同样可选；消费方按实现允许的零参调用不再吃 TS2554；负控制：无默认值的形参仍是必填（不假造可选性）", () => {
+  {
     const source = `
 export function optNoEvidence(a, b = 2) { return a + b; }
 `;
@@ -1266,26 +1163,23 @@ export function optNoEvidence(a, b = 2) { return a + b; }
     // 类型词（unknown / any）是类型渲染面的口径（不在本分片职责内）——
     // 本钉只关心**可选性**标记。
     expect(dts).toMatch(/export declare function optNoEvidence\(a: (unknown|any), b\?: (unknown|any)\)/);
-  })();
-(() => {
-
+  }
+  {
     const source = `
 export function optWithEvidence(a, b = 2) { return a + b; }
 optWithEvidence(1);
 `;
     const dts = generateDts(analyzeFile("/test/s2-opt2.js", source));
     expect(dts).toContain("export declare function optWithEvidence(a: number, b?: unknown)");
-  })();
-(() => {
-
+  }
+  {
     const source = `
 export function optUndefinedDefault(a, b = undefined) { return a; }
 `;
     const dts = generateDts(analyzeFile("/test/s2-opt3.js", source));
     expect(dts).toMatch(/export declare function optUndefinedDefault\(a: (unknown|any), b\?: (unknown|any)\)/);
-  })();
-(() => {
-
+  }
+  {
     const source = `
 export function def(x = 1) { return x; }
 `;
@@ -1296,25 +1190,20 @@ export function def(x = 1) { return x; }
       "use.ts": 'import { def } from "./mod.js";\nexport const r = def();\n',
     });
     expect(check.ok, check.stderr).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const source = `
 export function need(a, b) { return a + b; }
 `;
     const dts = generateDts(analyzeFile("/test/s2-need.js", source));
     expect(dts).toMatch(/export declare function need\(a: (unknown|any), b: (unknown|any)\)/);
     expect(dts).not.toContain("b?:");
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 });
 
@@ -1369,25 +1258,21 @@ function tscNoEmit(files: Record<string, string>): { ok: boolean; stderr: string
 
 describe("— dts 槽位可选性", () => {
   it("optional 槽渲染成 TS 可选属性 `k?: T`（不再是 `k: T | undefined`）；负控制：必填槽仍是必填（不误伤 `k: T`）；两层嵌套的 optional 槽同样带 `?`（任意深度成立）；消费方省略可选键不再吃 TS2345 / TS2741（改前：键被声明为必需）；负控制：必填键缺失仍报 TS2345（可选性投影不得放宽必填键）", () => {
-(() => {
-
+  {
     const ts = absToTSType(objOf({ a: { value: num(), optional: true }, b: { value: str() } }));
     expect(ts).toBe("{ a?: number; b: string }");
     expect(ts).not.toContain("| undefined");
-  })();
-(() => {
-
+  }
+  {
     const ts = absToTSType(objOf({ a: { value: num() } }));
     expect(ts).toBe("{ a: number }");
-  })();
-(() => {
-
+  }
+  {
     const inner = objOf({ b: { value: num(), optional: true } });
     const ts = absToTSType(objOf({ a: { value: inner } }));
     expect(ts).toBe("{ a: { b?: number } }");
-  })();
-(() => {
-
+  }
+  {
     const dts = "export declare function f(o: { id?: number }): number;\n";
     const check = tscNoEmit({
       "mod.d.ts": dts,
@@ -1395,9 +1280,8 @@ describe("— dts 槽位可选性", () => {
       "use.ts": 'import { f } from "./mod.js";\nexport const r = f({});\n',
     });
     expect(check.ok, check.stderr).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const dts = "export declare function f(o: { id: number }): number;\n";
     const check = tscNoEmit({
       "mod.d.ts": dts,
@@ -1405,16 +1289,12 @@ describe("— dts 槽位可选性", () => {
     });
     expect(check.ok).toBe(false);
     expect(check.stderr).toContain("TS2345");
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 });
 
@@ -1450,10 +1330,9 @@ const shapeAbs = (): Abs =>
     "exact",
   );
 
-describe("必填槽存在性用 HasProperty 语义", () => {
-  it("库函数版：继承来的键算在场，真缺键报 required；生成产物版：与库函数版同口径；负控制：Object.prototype 污染键算缺键；显式 undefined 仍与缺键有别", async () => {
-await (async () => {
 
+  it("库函数版：继承来的键算在场，真缺键报 required；生成产物版：与库函数版同口径；负控制：Object.prototype 污染键算缺键；显式 undefined 仍与缺键有别", async () => {
+  {
     const { node } = absToSchemaNode(shapeAbs());
     expect(validateSchemaNode(node, { c: 1 }).issues).toBeUndefined();
     // 继承来的 c（无自有 c）⇒ 在场（zod 面与 TS 结构类型都接受）
@@ -1463,17 +1342,15 @@ await (async () => {
     const missing = validateSchemaNode(node, {});
     expect(missing.issues?.[0]?.message).toBe("required");
     expect(missing.issues?.[0]?.path).toEqual(["c"]);
-  })();
-await (async () => {
-
+  }
+  {
     const { source } = absToStandardSchema(shapeAbs(), { name: "mk_x" });
     const mod = await loadGeneratedModule(source);
     expect(mod.mk_x!["~standard"].validate(Object.create({ c: 1 }) as object).issues).toBeUndefined();
     const missing = mod.mk_x!["~standard"].validate({});
     expect(missing.issues?.[0]?.message).toBe("required");
-  })();
-await (async () => {
-
+  }
+  {
     // 槽名取 "toString"：原型污染键不算在场 ⇒ 报 required（不是「在场且值合法」）
     const polluted = abs(
       {
@@ -1492,13 +1369,11 @@ await (async () => {
     // 显式 undefined 在场 ⇒ 走节点裁决（lit "x" 不匹配 ⇒ 类型错，不是 required）
     const explicit = validateSchemaNode(node, { toString: undefined });
     expect(explicit.issues?.[0]?.message).not.toBe("required");
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1555,23 +1430,19 @@ const generatorObj = (elements: Abs[], async = false): Abs =>
     "exact",
   );
 
-describe("生成器 / 迭代器形态投影", () => {
+
   it("同步生成器 → Generator<T>（元素类型取数字下标元素槽）；异步生成器 → AsyncGenerator<T>；负控制：普通数据对象仍是结构体（不误判成迭代器）；内部槽不进结构字段（core format 面同口径：internal 槽不可见）；端到端：生成器函数的 dts 返回 Generator，for…of 消费方过 tsc；改前形态确实红（结构体 ⇒ TS2488）", () => {
-(() => {
-
+  {
     expect(absToTSType(generatorObj([numLit(1)]))).toBe("Generator<number>");
-  })();
-(() => {
-
+  }
+  {
     expect(absToTSType(generatorObj([numLit(1)], true))).toBe("AsyncGenerator<number>");
-  })();
-(() => {
-
+  }
+  {
     const o = abs({ k: "obj", slots: { a: { value: numLit(1) } } }, undefined, undefined, "exact");
     expect(absToTSType(o)).toBe("{ a: 1 }");
-  })();
-(() => {
-
+  }
+  {
     const o = abs(
       { k: "obj", slots: { a: { value: numLit(1) }, "#priv": { value: numLit(2), internal: true } } },
       undefined,
@@ -1579,9 +1450,8 @@ describe("生成器 / 迭代器形态投影", () => {
       "exact",
     );
     expect(absToTSType(o)).toBe("{ a: 1 }");
-  })();
-(() => {
-
+  }
+  {
     const dts = generateDts(
       analyzeFile("/test/bug554.js", `export function* gen(x) {\n  yield x;\n}\n`),
     );
@@ -1598,9 +1468,8 @@ export function useGen() {
 `;
     const check = tscNoEmit({ "lib.d.ts": dts, "use.ts": consumer });
     expect(check.ok, check.stderr).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const before = `
 export declare function gen(x: any): { 0: number; next: () => unknown; return: () => unknown; throw: () => unknown; constructor: GeneratorFunction; "@@iterator": () => unknown };
 `;
@@ -1616,19 +1485,14 @@ export function useGen() {
     const check = tscNoEmit({ "lib.d.ts": before, "use.ts": consumer });
     expect(check.ok).toBe(false);
     expect(check.stderr).toContain("TS2488");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1691,10 +1555,9 @@ import { fn, number, string } from "@nudojs/core";
 export const scale = fn({ x: number().gt(0), y: string() }, number());
 `;
 
-describe("契约面打印以声明形参表为骨架", () => {
-  it("契约参数绑不上形参时：形参表照旧、契约参数另列并显式标注；跨 verb 一致：契约面的形参表与 nudo check 签名面同源；负控制：契约参数与形参同名时行为不变（落在形参槽位、无另列）；负控制：契约多出的参数同样另列，不顶替形参；负控制：无契约（implicit 档）行为不变", async () => {
-await (async () => {
 
+  it("契约参数绑不上形参时：形参表照旧、契约参数另列并显式标注；跨 verb 一致：契约面的形参表与 nudo check 签名面同源；负控制：契约参数与形参同名时行为不变（落在形参槽位、无另列）；负控制：契约多出的参数同样另列，不顶替形参；负控制：无契约（implicit 档）行为不变", async () => {
+  {
     const root = makeFixture({ "lib.js": LIB_JS, "lib.nudo.js": MISMATCH_NUDO_JS });
     const file = join(root, "lib.js");
     const entries = await contractSurface(file);
@@ -1713,9 +1576,8 @@ await (async () => {
     expect(line).toContain("(not a formal parameter)");
     // 旧病灶形态：契约参数名顶替形参名
     expect(line).not.toContain("(zzz:");
-  })();
-await (async () => {
-
+  }
+  {
     const root = makeFixture({ "lib.js": LIB_JS, "lib.nudo.js": MISMATCH_NUDO_JS });
     const file = join(root, "lib.js");
     const source = LIB_JS;
@@ -1734,9 +1596,8 @@ await (async () => {
     expect(
       report.issues.some((i) => i.code === "nudo:contract-param-mismatch"),
     ).toBe(true);
-  })();
-await (async () => {
-
+  }
+  {
     const root = makeFixture({ "lib.js": LIB_JS, "lib.nudo.js": MATCH_NUDO_JS });
     const file = join(root, "lib.js");
     const entries = await contractSurface(file);
@@ -1744,18 +1605,16 @@ await (async () => {
     expect(scale!.params).toEqual([{ name: "x", display: "number().gt(0)" }]);
     expect(scale!.extraParams).toBeUndefined();
     expect(formatContractSurfaceLine(scale!)).not.toContain("not a formal parameter");
-  })();
-await (async () => {
-
+  }
+  {
     const root = makeFixture({ "lib.js": LIB_JS, "lib.nudo.js": EXTRA_NUDO_JS });
     const file = join(root, "lib.js");
     const entries = await contractSurface(file);
     const scale = entries.find((e) => e.fn === "scale");
     expect(scale!.params).toEqual([{ name: "x", display: "number().gt(0)" }]);
     expect(scale!.extraParams).toEqual([{ name: "y", display: "string()" }]);
-  })();
-await (async () => {
-
+  }
+  {
     const root = makeFixture({ "lib.js": LIB_JS });
     const file = join(root, "lib.js");
     const entries = await contractSurface(file);
@@ -1763,15 +1622,11 @@ await (async () => {
     expect(scale!.source).toBe("implicit");
     expect(scale!.params[0]!.name).toBe("x");
     expect(scale!.extraParams).toBeUndefined();
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });

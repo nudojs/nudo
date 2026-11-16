@@ -46,7 +46,7 @@ exports.g = function (b) {
 const returnLabels = (inlays: AbsInlay[]): string[] =>
   inlays.filter((i) => i.kind === "type").map((i) => i.label);
 
-describe("同名导出槽不得串位渲染", () => {
+
   it("同名槽（`function f` + `exports.f`）不产返回 inlay（不渲染别的函数计算式）", () => {
     const labels = returnLabels(collectAbsInlays(CJS_SAME_NAME));
     // 文件里只有 `a + 1` 与 `"S" + b` —— `b + 1` 不存在
@@ -74,7 +74,7 @@ describe("同名导出槽不得串位渲染", () => {
     const labels = returnLabels(collectAbsInlays(src));
     expect(labels).toEqual([]);
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -98,7 +98,7 @@ describe("匿名 default 导出的返回 inlay 不得消失", () => {
 const returnInlays = (src: string) =>
   collectAbsInlays(src, { fromFile: "/test/file.js" }).filter((i) => i.kind === "type");
 
-describe("匿名 default 导出的返回 inlay 不得消失", () => {
+
   it("`export default (a) => a + 1` 有返回 inlay", () => {
     const inlays = returnInlays(`export default (a) => a + 1;\n`);
     expect(inlays.length).toBe(1);
@@ -116,7 +116,7 @@ describe("匿名 default 导出的返回 inlay 不得消失", () => {
     expect(inlays.length).toBe(1);
     expect(inlays[0]!.label).toContain("a + 1");
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -223,7 +223,7 @@ function facesOf(name: string, src: string): Faces {
   }
 }
 
-describe("inlay 返回位必须消费用户公理（与 check 面同源）", () => {
+
   it("有公理 ⇒ inlay `0 | number`；无公理 ⇒ `number`；两者不同", () => {
     const inv = facesOf("inv", INV_SRC);
     const ctrl = facesOf("ctrl", CTRL_SRC);
@@ -252,7 +252,7 @@ describe("inlay 返回位必须消费用户公理（与 check 面同源）", () 
     expect(f.inlay).toBe(f.check);
     expect(f.inlay).toContain("number");
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -286,7 +286,7 @@ const retInlay = (src: string) => {
   return ret!;
 };
 
-describe("表达式体箭头函数的返回 inlay 锚点", () => {
+
   it("表达式体：锚点在表达式结束处（改前 = 表达式起点 ⇒ 劈开源码行）", () => {
     const src = `export const arrow = (v) => v * 2;`;
     const expr = "v * 2";
@@ -332,7 +332,7 @@ describe("表达式体箭头函数的返回 inlay 锚点", () => {
     expect(ret.character).not.toBe(litStart);
     expect(ret.character).not.toBe(src.indexOf("({ v })"));
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -372,7 +372,7 @@ const retLabel = (src: string): string => {
 
 const LEN_SRC = `export function restLen(...xs) {\n  return xs.length;\n}`;
 
-describe("返回 inlay 不得上屏内部 term id", () => {
+
   it("提示文本不含 `len#N` 这类内部 id", () => {
     const label = retLabel(LEN_SRC);
     expect(label).not.toMatch(/len#/);
@@ -404,7 +404,7 @@ describe("返回 inlay 不得上屏内部 term id", () => {
     // 两份不同源码给出**逐字相同**的可读标识（不随内部计数器漂移）
     expect(second).toBe(first);
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -445,7 +445,7 @@ const displays = (src: string): string[] =>
     .filter((i) => i.kind === "type")
     .map((i) => displayOf(i.label));
 
-describe("返回 inlay 的 `-0` 保真 + union 成员不被去重丢掉", () => {
+
   it("`-0` 不被渲染成 `0`", () => {
     const d = displays(NEG_ZERO_SRC);
     expect(d.length).toBe(2);
@@ -469,5 +469,5 @@ describe("返回 inlay 的 `-0` 保真 + union 成员不被去重丢掉", () => 
     expect(onlyPos[0]).toBe("0");
     expect(onlyNeg[0]).not.toBe(onlyPos[0]);
   });
-});
+
 });

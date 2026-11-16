@@ -41,7 +41,7 @@ const NO_SKIP = `/**
 export function double(x) { return x * 2; }
 `;
 
-describe("#176 skip×case 解耦", () => {
+describe("skip×case 解耦", () => {
   it("skip => 声明面：case 照常求值，combinedAbs 恒为声明面", () => {
     const { result } = analyzeTmp(SKIP_DECLARED);
     const fn = result.functions.find((f) => f.name === "double")!;

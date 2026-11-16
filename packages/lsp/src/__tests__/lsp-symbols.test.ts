@@ -66,7 +66,7 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("documentSymbols", () => {
+
   it("lists top-level functions with kind Function", () => {
     const ast = parse(scorecardSrc);
     const syms = documentSymbols(ast);
@@ -83,7 +83,7 @@ describe("documentSymbols", () => {
     expect(lim).toBeDefined();
     expect(lim!.detail).toContain("export");
   });
-});
+
 
 describe("cross-file definition", () => {
   it("resolves import binding to target file export", () => {
@@ -239,7 +239,7 @@ type Sym = {
 
 const keysOf = (s: Sym): string[] => Object.keys(s).sort();
 
-describe("documentSymbol 按客户端能力作答（形状 + SymbolKind 取值）", () => {
+
   it("缺省（客户端没发能力段）⇒ 层级式 + 全量 SymbolKind（不得退化）", async () => {
     await withLspServer({ "a.js": SRC }, async ({ req, uri }) => {
       const syms = req("textDocument/documentSymbol")({
@@ -303,7 +303,7 @@ describe("documentSymbol 按客户端能力作答（形状 + SymbolKind 取值�
       },
     );
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -366,7 +366,7 @@ const plain = 3;
 export function f() { return plain; }
 `;
 
-describe("documentSymbol 展开解构绑定", () => {
+
   it("纯函数面：4 个解构绑定各出一个符号", () => {
     const syms = documentSymbols(parse(SRC));
     expect(syms.map((s) => s.name)).toEqual(["p", "q", "first", "second", "plain", "f"]);
@@ -405,7 +405,7 @@ export const used = [b, c, rest, x, tail];
     const syms = await protocolSymbols("const plain = 3;\nlet mut = 4;\nexport { plain, mut };\n");
     expect(syms.map((s) => s.name)).toEqual(["plain", "mut"]);
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -461,7 +461,7 @@ async function protocolSymbols(src: string): Promise<Sym[]> {
   }
 }
 
-describe("documentSymbol 的变量 detail 按声明种类（const / let / var）", () => {
+
   it("纯函数面：let / var / const / export 前缀各自正确", () => {
     const syms = documentSymbols(parse(SRC));
     const detailOf = (name: string): string | undefined =>
@@ -502,7 +502,7 @@ describe("documentSymbol 的变量 detail 按声明种类（const / let / var）
       expect(s.kind).toBe(13);
     }
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -592,7 +592,7 @@ const CASES: Array<{ label: string; src: string; name: string; kind: number }> =
   },
 ];
 
-describe("documentSymbol 收录 export default", () => {
+{
   for (const c of CASES) {
     it(`纯函数面：${c.label} ⇒ 大纲里有 ${c.name}`, () => {
       const syms = documentSymbols(parse(c.src));
@@ -613,7 +613,7 @@ describe("documentSymbol 收录 export default", () => {
     const syms = await protocolSymbols("export const f = () => {};\nexport function g() {}\n");
     expect(syms.map((s) => s.name)).toEqual(["f", "g"]);
   });
-});
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -653,7 +653,7 @@ type WsSymbol = {
   location: { uri: string; range: { start: { line: number; character: number } } };
 };
 
-describe("workspace/symbol 返回类成员（递归下钻 + 扁平化）", () => {
+
   it("类方法进搜索结果（带 containerName）", async () => {
     await withLspServer({ "kls.js": SRC }, async ({ req, uri }) => {
       const syms = req("workspace/symbol")({ query: "alphaMethod" }) as WsSymbol[];
@@ -697,5 +697,5 @@ describe("workspace/symbol 返回类成员（递归下钻 + 扁平化）", () =>
       expect((cls!.children ?? []).map((c) => c.name)).toEqual(["alphaMethod", "betaProp"]);
     });
   });
-});
+
 });

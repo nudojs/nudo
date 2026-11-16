@@ -62,7 +62,7 @@ function nudoSigLine(contents: string): string {
   return idx >= 0 ? (lines[idx + 1] ?? "") : "";
 }
 
-describe("协议面 hover 必须带注入包（@nudo:mock 覆盖表）", () => {
+
   it("真实 server 的 hover 签名行 = check 精确类型（不是 unknown）", async () => {
     await withLspServer({ "mockfx.js": SRC }, async ({ req, uri }) => {
       const res = req("textDocument/hover")({
@@ -93,7 +93,7 @@ describe("协议面 hover 必须带注入包（@nudo:mock 覆盖表）", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -134,7 +134,7 @@ function nudoSigLine(contents: string): string {
   return idx >= 0 ? (lines[idx + 1] ?? "") : "";
 }
 
-describe("类方法 hover 的 throws 尾缀与 check 同源", () => {
+
   it("纯装配面：类方法 hover 签名行 = check 签名行（含 throws 尾缀）", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug034-"));
     try {
@@ -160,7 +160,7 @@ describe("类方法 hover 的 throws 尾缀与 check 同源", () => {
       expect(sig).toContain("  throws TypeError");
     });
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -252,7 +252,7 @@ function rel(uri: string, root: string): string {
   return p.startsWith(root) ? p.slice(root.length + 1) : p;
 }
 
-describe("私有成员 #name 不再解析到无关的同名绑定", () => {
+
   it("definition @ 私有成员声明位 ⇒ 私有成员自己（改前跳到模块级 export const total）", async () => {
     let defs: Loc[] = [];
     let root = "";
@@ -366,7 +366,7 @@ describe("私有成员 #name 不再解析到无关的同名绑定", () => {
     // 模块级 total 的 importer 仍在（私有成员的修复不得牵连它）
     expect(where.some((w) => w.startsWith("use.js:"))).toBe(true);
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -414,7 +414,7 @@ const SRC = `export function scaled(x: number, label: string): number {
 const LINE = 1;
 const COLUMN = 23;
 
-describe("make optional 保留 TS 类型标注", () => {
+
   it("新文本把类型标注拼回去", () => {
     const r = makeParamOptionalAt(SRC, LINE, COLUMN);
     expect(r && "edits" in r).toBe(true);
@@ -492,7 +492,7 @@ describe("make optional 保留 TS 类型标注", () => {
     if (!r || !("edits" in r)) return;
     expect(r.edits[0]!.newText).toBe("x = undefined");
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -540,7 +540,7 @@ export function b() {
 }
 `;
 
-describe("遮蔽的同名绑定按作用域解析", () => {
+
   it("buildSymbolTable：同名绑定各存一条（不被覆盖）", () => {
     const ast = parse(SHADOW_SRC);
     const table = buildSymbolTable(ast, "file:///t/s.js");
@@ -610,7 +610,7 @@ describe("遮蔽的同名绑定按作用域解析", () => {
       expect(lines).toContain(2);
     });
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -649,7 +649,7 @@ const SRC = `export function scale(items) {
 const LINE = 2;
 const COLUMN = 24;
 
-describe("make optional 必须补括号（无括号箭头形参）", () => {
+
   it("无括号箭头形参 ⇒ 新文本带括号", () => {
     const r = makeParamOptionalAt(SRC, LINE, COLUMN);
     expect(r && "edits" in r).toBe(true);
@@ -706,7 +706,7 @@ describe("make optional 必须补括号（无括号箭头形参）", () => {
     expect(patched).toContain("items.map((v = undefined) => v * 3)");
     expect(runModule(patched, "M.scale([1,2,3])")).toBe("[3,6,9]");
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -768,7 +768,7 @@ async function labelsAt(
   return (items as { label: string }[]).map((i) => i.label);
 }
 
-describe("sum 接收者：原始值臂让交集判空", () => {
+
   it("对象臂 | 原始值臂 ⇒ 无候选（取属性在原始值臂上是 TypeError）", async () => {
     await withLspServer({ "union.js": SRC }, async ({ req, uri }) => {
       expect(await labelsAt(req, uri("union.js"), "return uPrim.x")).toEqual([]);
@@ -788,7 +788,7 @@ describe("sum 接收者：原始值臂让交集判空", () => {
       expect(labels).not.toContain("y");
     });
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -826,7 +826,7 @@ function cursorAfter(src: string, needle: string): { line: number; character: nu
   throw new Error(`needle not found: ${needle}`);
 }
 
-describe("嵌套成员访问的接收者是整条路径", () => {
+
   it("a.b. 的候选是 a.b 的成员，不是同名顶层绑定的成员", async () => {
     await withLspServer({ "nested.js": SRC }, async ({ req, uri }) => {
       const lines = SRC.split("\n");
@@ -875,7 +875,7 @@ describe("嵌套成员访问的接收者是整条路径", () => {
       expect(labels).not.toContain("wrong");
     });
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -902,7 +902,7 @@ const SRC = `export function add(x, y) {
 }
 `;
 
-describe("无契约形参的 hover 回落 design §2 的 `any`", () => {
+
   it("形参声明位：`x: any`（改前整个 hover 为空）", async () => {
     await withLspServer({ "hover774.js": SRC }, async ({ req, uri }) => {
       const hover = req("textDocument/hover");
@@ -940,7 +940,7 @@ describe("无契约形参的 hover 回落 design §2 的 `any`", () => {
       expect(res?.contents?.value ?? "").toContain("add(x: any, y: any)");
     });
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -995,7 +995,7 @@ async function labelsAt(
   return (items as { label: string }[]).map((i) => i.label);
 }
 
-describe("非 ASCII 接收者的成员补全", () => {
+
   it("CJK 接收者：给出该对象的成员（不是顶层变量表）", async () => {
     await withLspServer({ "cjk.js": SRC }, async ({ req, uri }) => {
       const labels = await labelsAt(req, uri("cjk.js"), "return 对象.alpha");
@@ -1033,7 +1033,7 @@ describe("非 ASCII 接收者的成员补全", () => {
       expect(labels.sort()).toEqual(["alpha", "beta"]);
     });
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1100,7 +1100,7 @@ async function labelsAt(
   return (items as { label: string }[]).map((i) => i.label);
 }
 
-describe("字面量 / 括号 / 字符串接收者走内建原型表", () => {
+
   it("数字字面量接收者 ⇒ Number 的成员，且不含顶层变量", async () => {
     await withLspServer({ "lit.js": SRC }, async ({ req, uri }) => {
       const labels = await labelsAt(req, uri("lit.js"), "return (42).toF");
@@ -1133,7 +1133,7 @@ describe("字面量 / 括号 / 字符串接收者走内建原型表", () => {
       expect(labels.sort()).toEqual(["alpha", "beta"]);
     });
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1195,7 +1195,7 @@ async function labelsAt(
   return (items as { label: string }[]).map((i) => i.label);
 }
 
-describe("prim 接收者按类型分派到内建原型表", () => {
+
   it("number 接收者 ⇒ Number 的成员（不再是零候选）", async () => {
     await withLspServer({ "prim.js": SRC }, async ({ req, uri }) => {
       const labels = await labelsAt(req, uri("prim.js"), "return num.toF");
@@ -1217,7 +1217,7 @@ describe("prim 接收者按类型分派到内建原型表", () => {
       expect(labels).toContain("length");
     });
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1280,7 +1280,7 @@ function lineOf(src: string, needle: string): { line: number; text: string } {
 
 const labels = (items: { label: string }[]): string[] => items.map((i) => i.label);
 
-describe("成员补全的接收者绑定表下沉函数体", () => {
+
   it("函数体内的局部量接收者 ⇒ 与模块级同款候选（string 原型表）", async () => {
     const { mock, uri } = await openLspDocument(SRC, "file:///tmp/nudo-bug-789/a.js");
     const mod = lineOf(SRC, "modStr.toUpperCase");
@@ -1329,5 +1329,5 @@ describe("成员补全的接收者绑定表下沉函数体", () => {
       },
     );
   });
-});
+
 });

@@ -1,5 +1,5 @@
 import {describe, it, expect} from "vitest";
-import {runTranspiled, callTranspiledExportFull, $lit, $obj, $arr, litValue, absToString, transpileSource} from "@nudojs/core";
+import {runTranspiled, callTranspiledExportFull, $lit, $obj, litValue, transpileSource} from "@nudojs/core";
 
 describe("evaluator optional chaining", () => {
   it("a?.b short-circuits on nullish", () => {

@@ -29,7 +29,7 @@ import {
 } from "../key/summary-fastpath.ts";
 import {
   ABS14_BASELINE_CASES,
-  ABS14_GATE_PHI,
+
   diffAgainstBodyBaseline,
   type Abs14BaselineCase,
 } from "./equivalence-baseline.ts";

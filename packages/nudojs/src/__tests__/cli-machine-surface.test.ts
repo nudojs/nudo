@@ -43,7 +43,7 @@ function directiveFixture(dir: string): string {
 }
 
 describe("类别 09 · CLI 机器面", () => {
-  it("Bug 10：check --json --gitlab 的 stdout 恰好一份 JSON 文档（注解走 stderr）", () => {
+  it("check --json --gitlab 的 stdout 恰好一份 JSON 文档（注解走 stderr）", () => {
     const dir = fixture("10");
     const bad = join(dir, "bad.js");
     writeFileSync(bad, "export function broken( {\n  return 1;\n", "utf-8");
@@ -54,7 +54,7 @@ describe("类别 09 · CLI 机器面", () => {
     expect(r.stderr.trim().length).toBeGreaterThan(0);
   });
 
-  it("Bug 40：--watch --json 的 --from 路径错误进信封并落 exit 1", () => {
+  it("watch --json 的 --from 路径错误进信封并落 exit 1", () => {
     const dir = fixture("40");
     writeFileSync(join(dir, "lib.js"), "/** @nudo:throws TypeError */\nexport function f(x) { return x + 1; }\n");
     const probe = join(dir, "probe.mts");
@@ -81,7 +81,7 @@ setTimeout(() => { console.error("FINAL_EXITCODE", process.exitCode); stop(); pr
     expect(r.stdout).toContain("pathErrors");
   }, 60_000);
 
-  it("Bug 45：contract --json 的 variadic 吞噬用法错误也出 JSON 信封", () => {
+  it("contract --json 的 variadic 吞噬用法错误也出 JSON 信封", () => {
     const dir = fixture("45");
     writeFileSync(join(dir, "lib.js"), "export function f(x) { return x; }\n");
     const usage = join(dir, "usage.js");
@@ -93,7 +93,7 @@ setTimeout(() => { console.error("FINAL_EXITCODE", process.exitCode); stop(); pr
     expect(d[0].pathErrors[0].code).toBe("nudo:usage-error");
   });
 
-  it("Bug 55：health --from 不吞掉侧车加载失败诊断", () => {
+  it("health --from 不吞掉侧车加载失败诊断", () => {
     const dir = fixture("55");
     const lib = join(dir, "lib.js");
     writeFileSync(lib, 'export function greet(name) { return "hi " + name; }\n');
@@ -110,7 +110,7 @@ setTimeout(() => { console.error("FINAL_EXITCODE", process.exitCode); stop(); pr
     expect(json(withFrom).summary.errors).toBeGreaterThan(0);
   });
 
-  it("Bug 79：位置参数目标去重（check / test / verify / health）", () => {
+  it("位置参数目标去重（check / test / verify / health）", () => {
     const dir = fixture("79");
     const src = join(dir, "src");
     mkdirSync(src);
@@ -127,7 +127,7 @@ setTimeout(() => { console.error("FINAL_EXITCODE", process.exitCode); stop(); pr
     expect(json(health).files.length).toBe(2);
   }, 90_000);
 
-  it("Bug 84：指令诊断保留 parser 给出的位置（JSON / GHA）", () => {
+  it("指令诊断保留 parser 给出的位置（JSON / GHA）", () => {
     const dir = fixture("84");
     const both = directiveFixture(dir);
     const r = runCli(["check", both, "--json"]);
@@ -138,7 +138,7 @@ setTimeout(() => { console.error("FINAL_EXITCODE", process.exitCode); stop(); pr
     expect(gha.stdout).toContain("line=2");
   });
 
-  it("Bug 85：test 面补上行内指令（@nudo:replace / @nudo:as）文法诊断", () => {
+  it("test 面补上行内指令（@nudo:replace / @nudo:as）文法诊断", () => {
     const dir = fixture("85");
     const both = directiveFixture(dir);
     const r = runCli(["test", both, "--json"]);
@@ -153,7 +153,7 @@ setTimeout(() => { console.error("FINAL_EXITCODE", process.exitCode); stop(); pr
     expect(json(r2).diagnostics.filter((i: any) => i.code === "nudo:directive-syntax").length).toBe(1);
   });
 
-  it("Bug 91：check --abs 对必抛函数打印 never / conf: exact", () => {
+  it("check --abs 对必抛函数打印 never / conf: exact", () => {
     const dir = fixture("91");
     const a = join(dir, "a.js");
     writeFileSync(
@@ -166,7 +166,7 @@ setTimeout(() => { console.error("FINAL_EXITCODE", process.exitCode); stop(); pr
     expect(r.stdout).not.toMatch(/alwaysThrows\(\)\s*\n\s*unknown/);
   });
 
-  it("Bug 100：migrate status --json 对无效的 nudo 形状报 nudoConfig:false", () => {
+  it("migrate status --json 对无效的 nudo 形状报 nudoConfig:false", () => {
     const dir = fixture("100");
     writeFileSync(join(dir, "package.json"), '{"name":"bug09","version":"1.0.0","nudo":null}\n');
     writeFileSync(join(dir, "a.ts"), "export function f(x) { return x; }\n");
@@ -174,7 +174,7 @@ setTimeout(() => { console.error("FINAL_EXITCODE", process.exitCode); stop(); pr
     expect(json(r)[0].nudoConfig).toBe(false);
   });
 
-  it("Bug 107：--abs --quiet 同时生效（代数面在、签名表被压）", () => {
+  it("abs --quiet 同时生效（代数面在、签名表被压）", () => {
     const dir = fixture("107");
     const clean = join(dir, "clean.js");
     writeFileSync(clean, "export function clean(x) { return x; }\n");
@@ -184,7 +184,7 @@ setTimeout(() => { console.error("FINAL_EXITCODE", process.exitCode); stop(); pr
     expect(r.stdout).not.toContain("signatures");
   });
 
-  it("Bug 108：test <missing> --json 的失败信封带 ok / summary.errors", () => {
+  it("test <missing> --json 的失败信封带 ok / summary.errors", () => {
     const dir = fixture("108");
     const r = runCli(["test", join(dir, "missing.js"), "--json"]);
     expect(r.status).toBe(1);

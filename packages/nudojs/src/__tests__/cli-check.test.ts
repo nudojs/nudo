@@ -32,7 +32,7 @@ describe("case-witness-not-published", () => {
 
 
 
-describe("case-witness-not-published", () => {
+{
 /**
  * `nudo export` 把 `@nudo:case` 的**调试见证**发布成类型 ⇒ 四个
  * 产物面一致地拒绝**实现允许**的调用，且与 `nudo check` 的签名相反。
@@ -80,8 +80,7 @@ function dtsParamType(stdout: string): string {
 
 describe("`@nudo:case` 调试见证不进发布面", () => {
   it("dts 面：有调试见证与无证据的投影相同（形参是 unknown，不是 number）；zod / guard 面：放宽到 unknown（不再按那一次调试调用收窄）；与 nudo check 的签名同口径（发布面 = 门禁面）", () => {
-(() => {
-
+  {
     const dir = fixture();
     const plain = runCliTsx(["export", join(dir, "plain.js"), "--format", "dts"]);
     const withCase = runCliTsx(["export", join(dir, "lib.js"), "--format", "dts"]);
@@ -91,9 +90,8 @@ describe("`@nudo:case` 调试见证不进发布面", () => {
     expect(dtsParamType(withCase.stdout)).toBe(dtsParamType(plain.stdout));
     expect(dtsParamType(withCase.stdout)).toContain("unknown");
     expect(dtsParamType(withCase.stdout)).not.toContain("number");
-  })();
-(() => {
-
+  }
+  {
     const dir = fixture();
     const plain = runCliTsx(["export", join(dir, "plain.js"), "--format", "all"]);
     const withCase = runCliTsx(["export", join(dir, "lib.js"), "--format", "all"]);
@@ -104,9 +102,8 @@ describe("`@nudo:case` 调试见证不进发布面", () => {
     // 与无证据的同形源一致
     expect(withCase.stdout).toContain("export const fInput = z.object({ x: z.unknown() })");
     expect(plain.stdout).toContain("export const fInput = z.object({ x: z.unknown() })");
-  })();
-(() => {
-
+  }
+  {
     const dir = fixture();
     const check = runCliTsx(["check", join(dir, "lib.js")]);
     const dts = runCliTsx(["export", join(dir, "lib.js"), "--format", "dts"]);
@@ -115,14 +112,12 @@ describe("`@nudo:case` 调试见证不进发布面", () => {
     expect(check.stdout).toContain("f(x: any)");
     expect(dtsParamType(dts.stdout)).toContain("unknown");
     expect(dts.stdout).toContain("number | string");
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
 });
+}
 
 describe("export-case-not-contract", () => {
 /**
@@ -175,8 +170,7 @@ function dtsSig(stdout: string): string {
 
 describe("调试见证不得进入发布/打印面", () => {
   it("dts：有 case 与无 case 逐字相同（均门禁口径 x: unknown）；schema：入参是宽松域（z.unknown），不是 case 的 z.number；guard：入参接受 string（实现允许 f(\"s\")）；`nudo contract` 打印面与 check 同口径（x: any）", () => {
-(() => {
-
+  {
     const { dir, withCase, plain } = project();
     try {
       const a = dtsSig(runCliTsx(["export", withCase, "--format", "dts"]).stdout);
@@ -186,9 +180,8 @@ describe("调试见证不得进入发布/打印面", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  })();
-(() => {
-
+  }
+  {
     const { dir, withCase } = project();
     try {
       const out = runCliTsx(["export", withCase, "--format", "schema"]).stdout;
@@ -198,9 +191,8 @@ describe("调试见证不得进入发布/打印面", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  })();
-(() => {
-
+  }
+  {
     const { dir, withCase } = project();
     try {
       const out = runCliTsx(["export", withCase, "--format", "guard"]).stdout;
@@ -208,9 +200,8 @@ describe("调试见证不得进入发布/打印面", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  })();
-(() => {
-
+  }
+  {
     const { dir, withCase, plain } = project();
     try {
       const sigOf = (out: string): string =>
@@ -223,14 +214,11 @@ describe("调试见证不得进入发布/打印面", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 });
 });
 });
@@ -306,10 +294,9 @@ function project(files: Record<string, string>): { cwd: string; cache: string } 
   return { cwd: dir, cache: join(dir, ".nudo-cache") };
 }
 
-describe("check 签名 = 一次正常求值", () => {
-  it("计数器工厂：check 与 test 都给 1；一次性抛：check 给 never（与 d.ts 一致），不是 1；手写 lit(1) 生成段 ⇒ 不报 contract-drift（脏值会与生成段打架）", () => {
-(() => {
 
+  it("计数器工厂：check 与 test 都给 1；一次性抛：check 给 never（与 d.ts 一致），不是 1；手写 lit(1) 生成段 ⇒ 不报 contract-drift（脏值会与生成段打架）", () => {
+  {
     const { cwd, cache } = project({ "lib.js": COUNTER });
     const env = { NUDO_CACHE_DIR: cache };
     const check = runCliTsx(["check", "lib.js"], { cwd, env });
@@ -318,17 +305,15 @@ describe("check 签名 = 一次正常求值", () => {
     // 跨动词一致：test 面（分析器单轮）同样是 1
     const test = runCliTsx(["test", "lib.js"], { cwd, env });
     expect(test.stdout).toMatch(/entry@L\d+\s+\(\) => 1/);
-  })();
-(() => {
-
+  }
+  {
     const { cwd, cache } = project({ "once.js": ONCE });
     const r = runCliTsx(["check", "once.js"], { cwd, env: { NUDO_CACHE_DIR: cache } });
     expect(r.stdout).toContain("once() => never");
     expect(r.stdout).toContain("throws Error");
     expect(r.stdout).not.toContain("once() => 1");
-  })();
-(() => {
-
+  }
+  {
     const { cwd, cache } = project({
       "once.js": ONCE_VALUE,
       "once.nudo.js": `import { fn, lit } from "@nudojs/core";
@@ -339,13 +324,11 @@ export const once = fn({  }, lit(1));
     expect(r.stdout).toContain("once() => 1");
     expect(r.stdout).not.toContain("nudo:contract-drift");
     expect(r.status).toBe(0);
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -389,8 +372,7 @@ function makeProject(): string {
 
 describe("-abs --quiet 必须兑现 --quiet", () => {
   it("clean 文件 ⇒ 恰好一行摘要（旧实现 3 行 OK 块 + 代数面）；失败文件 ⇒ 不打 signatures 段（与单独 --quiet 同形）", () => {
-(() => {
-
+  {
     const cwd = makeProject();
     try {
       const r = runCliTsx(["check", "ok.js", "--abs", "--quiet"], { cwd });
@@ -400,9 +382,8 @@ describe("-abs --quiet 必须兑现 --quiet", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  })();
-(() => {
-
+  }
+  {
     const cwd = makeProject();
     try {
       const absQuiet = runCliTsx(["check", "bad.js", "--abs", "--quiet"], { cwd });
@@ -415,10 +396,9 @@ describe("-abs --quiet 必须兑现 --quiet", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  })();
-});;
+  }
+});
 
-  ;
 });
 });
 
@@ -479,10 +459,9 @@ function cacheDir(): Record<string, string> {
 /** `--abs` 观察面里 pred 行的规范文本（`pred: /(d, max) ≤ 1`） */
 const PRED_LINE = "pred: /(d, max) ≤ 1";
 
-describe("@nudo:assume 前提在 --abs 观察面可见（与 --json 同源）", () => {
-  it("带 assume：--abs 与 --json 的 abs 面出现同一句 pred；对照组（无 assume 行）：两面都不出现该 pred；`nudo test --abs` 走同一观察面 ⇒ 前提同样可见", () => {
-(() => {
 
+  it("带 assume：--abs 与 --json 的 abs 面出现同一句 pred；对照组（无 assume 行）：两面都不出现该 pred；`nudo test --abs` 走同一观察面 ⇒ 前提同样可见", () => {
+  {
     const file = fixture("@nudo:assume d <= max");
 
     const abs = runCliTsx(["check", "--abs", file], { env: cacheDir() });
@@ -493,9 +472,8 @@ describe("@nudo:assume 前提在 --abs 观察面可见（与 --json 同源）", 
     expect(json.status).toBe(0);
     // 机器面同一事实（单行 `formatAbs`：`where /(d, max) ≤ 1`）
     expect(json.stdout).toContain("where /(d, max) ≤ 1");
-  })();
-(() => {
-
+  }
+  {
     const file = fixture("ratio: d / max");
 
     const abs = runCliTsx(["check", "--abs", file], { env: cacheDir() });
@@ -507,20 +485,17 @@ describe("@nudo:assume 前提在 --abs 观察面可见（与 --json 同源）", 
     const json = runCliTsx(["check", "--json", file], { env: cacheDir() });
     expect(json.status).toBe(0);
     expect(json.stdout).not.toContain("where /(d, max) ≤ 1");
-  })();
-(() => {
-
+  }
+  {
     const file = fixture("@nudo:assume d <= max");
     const r = runCliTsx(["test", "--abs", file], { env: cacheDir() });
     expect(r.status).toBe(0);
     expect(r.stdout).toContain(PRED_LINE);
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -573,10 +548,9 @@ function fixture(): string {
   return dir;
 }
 
-describe("shape-union 返回契约不塌缩", () => {
-  it("zod / standard / guard 三面都保留 union（同一 zod 文件内 Input 与 Output 同口径）；运行时：standard 面拒绝契约违约值、接受契约允许值", () => {
-(() => {
 
+  it("zod / standard / guard 三面都保留 union（同一 zod 文件内 Input 与 Output 同口径）；运行时：standard 面拒绝契约违约值、接受契约允许值", () => {
+  {
     const dir = fixture();
     const r = runCliTsx(["export", join(dir, "G.js"), "--format", "all"]);
     expect(r.status).toBe(0);
@@ -589,9 +563,8 @@ describe("shape-union 返回契约不塌缩", () => {
     expect(r.stdout).not.toMatch(/export function isGOutput\(value: unknown\): boolean \{\s*const data = value as unknown;\s*return true;/);
     // dts 面保留 union（四面同口径）
     expect(r.stdout).toContain("kind: string; n: number } | { kind: string; s: string }");
-  })();
-(() => {
-
+  }
+  {
     const dir = fixture();
     const out = join(dir, "out");
     expect(runCliTsx(["export", join(dir, "G.js"), "--format", "standard", "--out", out]).status).toBe(0);
@@ -618,11 +591,10 @@ describe("shape-union 返回契约不塌缩", () => {
     const run = spawnSync(process.execPath, ["--experimental-strip-types", probe], { encoding: "utf8" });
     expect(`${run.stdout}${run.stderr}`).toContain("bad true");
     expect(`${run.stdout}${run.stderr}`).toContain("good false");
-  })();
-});;
-
-  ;
+  }
 });
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -644,10 +616,9 @@ describe("空目录现场", () => {
 
 
 
-describe("空目录现场", () => {
-  it("空目录 ⇒ path-empty-dir 进 sink，且不返回记录；对照组：非空目录现场照常采集（无路径错误）", () => {
-(() => {
 
+  it("空目录 ⇒ path-empty-dir 进 sink，且不返回记录；对照组：非空目录现场照常采集（无路径错误）", () => {
+  {
     const dir = tmpProject("nudo-129-", { "lib.js": "export function f() { return 1; }\n" });
     const empty = join(dir, "empty");
     mkdirSync(empty);
@@ -655,9 +626,8 @@ describe("空目录现场", () => {
     const records = collectExternalRecords([empty], sink);
     expect(records).toBeUndefined();
     expect(sink.map((e) => e.code)).toContain("nudo:path-empty-dir");
-  })();
-(() => {
-
+  }
+  {
     const dir = tmpProject("nudo-129-ok-", {
       "site.js": 'import { f } from "./lib.js";\nexport const v = f(1);\n',
       "lib.js": "export function f(a) { return a + 1; }\n",
@@ -666,11 +636,10 @@ describe("空目录现场", () => {
     const records = collectExternalRecords([dir], sink);
     expect(sink).toEqual([]);
     expect(records?.length ?? 0).toBeGreaterThan(0);
-  })();
-});;
-
-  ;
+  }
 });
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -712,7 +681,7 @@ function project(): string {
   return dir;
 }
 
-describe("调用点见证不重复合成", () => {
+
   it("已固化见证 + 另一现场 ⇒ 同名 case 只出现一次，summary.cases == 不同见证数", () => {
     const dir = project();
     const out = runCliTsx([
@@ -738,7 +707,7 @@ describe("调用点见证不重复合成", () => {
       expect(json.summary.cases).toBe(names.length);
     }
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -785,10 +754,9 @@ function makeProject(): string {
 const annCount = (r: { stdout: string; stderr: string }): number =>
   `${r.stdout}${r.stderr}`.split("::error").length - 1;
 
-describe("文件级硬错误进 CI 注解通道", () => {
-  it("--gitlab 语法错文件 ⇒ stdout 是**可解析数组**且含该文件的条目；--gitlab 路径不存在 ⇒ stdout 仍是可解析数组（不是 0 字节）；--gha 语法错文件 ⇒ 至少一条 ::error 注解；批量（坏 + 绿）⇒ 一份数组里同时有语法错行与绿文件无关行（不丢坏文件）", () => {
-(() => {
 
+  it("--gitlab 语法错文件 ⇒ stdout 是**可解析数组**且含该文件的条目；--gitlab 路径不存在 ⇒ stdout 仍是可解析数组（不是 0 字节）；--gha 语法错文件 ⇒ 至少一条 ::error 注解；批量（坏 + 绿）⇒ 一份数组里同时有语法错行与绿文件无关行（不丢坏文件）", () => {
+  {
     const cwd = makeProject();
     try {
       const r = runCliTsx(["check", "--gitlab", "bad.js"], { cwd });
@@ -801,9 +769,8 @@ describe("文件级硬错误进 CI 注解通道", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  })();
-(() => {
-
+  }
+  {
     const cwd = makeProject();
     try {
       const r = runCliTsx(["check", "--gitlab", "nope.js"], { cwd });
@@ -815,9 +782,8 @@ describe("文件级硬错误进 CI 注解通道", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  })();
-(() => {
-
+  }
+  {
     const cwd = makeProject();
     try {
       const r = runCliTsx(["check", "--gha", "bad.js"], { cwd });
@@ -827,9 +793,8 @@ describe("文件级硬错误进 CI 注解通道", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  })();
-(() => {
-
+  }
+  {
     const cwd = makeProject();
     try {
       writeFileSync(join(cwd, "ok.js"), "export function ok() {\n  return 1;\n}\n", "utf-8");
@@ -840,15 +805,12 @@ describe("文件级硬错误进 CI 注解通道", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -919,10 +881,9 @@ function byFile(stdout: string): Record<string, Sig[]> {
   return out;
 }
 
-describe("`nudo check --json` 载荷不得含内部 id 且与参数位置无关", () => {
-  it("三个同内容文件的载荷逐字相同（换序也不变）；载荷三字段不含内部 id；机器面 display 与人类面 signatures 行同源；--verbose 人类面不得含内部 id", () => {
-(() => {
 
+  it("三个同内容文件的载荷逐字相同（换序也不变）；载荷三字段不含内部 id；机器面 display 与人类面 signatures 行同源；--verbose 人类面不得含内部 id", () => {
+  {
     const dir = setup();
     const r1 = runCheck(dir, ["a.js", "b.js", "c.js"], ["--json"]);
     const r2 = runCheck(dir, ["c.js", "b.js", "a.js"], ["--json"]);
@@ -934,9 +895,8 @@ describe("`nudo check --json` 载荷不得含内部 id 且与参数位置无关"
     expect(p1["a.js"]).toEqual(p2["a.js"]);
     expect(p1["b.js"]).toEqual(p2["b.js"]);
     expect(p1["c.js"]).toEqual(p2["c.js"]);
-  })();
-(() => {
-
+  }
+  {
     const dir = setup();
     const r = runCheck(dir, ["a.js"], ["--json"]);
     expect(r.stdout).not.toContain("len#");
@@ -944,29 +904,24 @@ describe("`nudo check --json` 载荷不得含内部 id 且与参数位置无关"
     expect(sig.display).not.toMatch(/#\d+/);
     expect(sig.detail).not.toMatch(/#\d+/);
     expect(sig.abs).not.toMatch(/#\d+/);
-  })();
-(() => {
-
+  }
+  {
     const dir = setup();
     const human = runCheck(dir, ["a.js"]);
     const machine = runCheck(dir, ["a.js"], ["--json"]);
     const sig = byFile(machine.stdout)["a.js"]![0]!;
     expect(human.stdout).toContain(`  f() => ${sig.display}`);
-  })();
-(() => {
-
+  }
+  {
     const dir = setup();
     const r = runCheck(dir, ["a.js"], ["--verbose"]);
     expect(r.stdout).not.toContain("len#");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1013,10 +968,9 @@ function fixture(files: Record<string, string>): string {
 /** 侧车约束：number 的纯数据形态 */
 const NUM = `export const num = { __nudoConstraint: true, prim: "number", preds: [] };\n`;
 
-describe("export — 部分契约的形参合流（族 17 · S1 · ）", () => {
-  it("zod 入参面：契约覆盖的位 + 未覆盖的形参位都在（不丢位）；dts 面与 zod 面同口径：未覆盖的形参位在 dts 里也在", () => {
-(() => {
 
+  it("zod 入参面：契约覆盖的位 + 未覆盖的形参位都在（不丢位）；dts 面与 zod 面同口径：未覆盖的形参位在 dts 里也在", () => {
+  {
     const dir = fixture({
       "c605.nudo.js": NUM,
       "partial605.js": [
@@ -1033,9 +987,8 @@ describe("export — 部分契约的形参合流（族 17 · S1 · ）", () => {
     expect(r.stdout).toContain("n: z.number()");
     // 未被契约覆盖的形参位：**不丢**（改前整个 `other` 位消失）
     expect(r.stdout).toContain("other:");
-  })();
-(() => {
-
+  }
+  {
     const dir = fixture({
       "c605b.nudo.js": NUM,
       "partial605b.js": [
@@ -1049,11 +1002,10 @@ describe("export — 部分契约的形参合流（族 17 · S1 · ）", () => {
     const r = runCliTsx(["export", join(dir, "partial605b.js"), "--format", "all"]);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("export declare function f(n: number, other: number)");
-  })();
-});;
-
-  ;
+  }
 });
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1116,10 +1068,9 @@ const SKIP_CASES = [
   ``,
 ].join("\n");
 
-describe("export — skip 函数的多条见证不进 Output 面（重钉 · 原 ）", () => {
-  it("zod 面：见证不进 Output 面，也不泄漏见证返回值；standard 面：同样没有 Output 校验器", () => {
-(() => {
 
+  it("zod 面：见证不进 Output 面，也不泄漏见证返回值；standard 面：同样没有 Output 校验器", () => {
+  {
     const dir = fixture({ "skip619.js": SKIP_CASES });
     const r = runCliTsx(["export", join(dir, "skip619.js"), "--format", "schema"]);
     expect(r.status).toBe(0);
@@ -1131,9 +1082,8 @@ describe("export — skip 函数的多条见证不进 Output 面（重钉 · 原
     // 见证返回值（4 / 6）不泄漏进产物
     expect(r.stdout).not.toContain("z.literal(4)");
     expect(r.stdout).not.toContain("z.literal(6)");
-  })();
-(() => {
-
+  }
+  {
     const dir = fixture({ "skip619b.js": SKIP_CASES });
     const r = runCliTsx(["export", join(dir, "skip619b.js"), "--format", "standard"]);
     expect(r.status).toBe(0);
@@ -1141,11 +1091,10 @@ describe("export — skip 函数的多条见证不进 Output 面（重钉 · 原
     expect(r.stdout).toContain("twiceInput");
     // 见证不进发布面 ⇒ 没有 Output 校验器
     expect(r.stdout).not.toContain("twiceOutput");
-  })();
-});;
-
-  ;
+  }
 });
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1229,29 +1178,26 @@ const SIDECAR = [
   ``,
 ].join("\n");
 
-describe("export — 点路径契约键的嵌套投影（族 17 · S1 · ）", () => {
-  it("zod 入参面：点路径 ⇒ 嵌套 obj（不是字面量点号键）；dts 面保持嵌套形状（两面的节点形状一致）", () => {
-(() => {
 
+  it("zod 入参面：点路径 ⇒ 嵌套 obj（不是字面量点号键）；dts 面保持嵌套形状（两面的节点形状一致）", () => {
+  {
     const dir = fixture({ "dotpath620.js": SOURCE, "dotpath620.nudo.js": SIDECAR });
     const r = runCliTsx(["export", join(dir, "dotpath620.js"), "--format", "schema"], { cwd: dir });
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("card: z.object({ grade: z.string() })");
     expect(r.stdout).not.toContain('"card.grade"');
-  })();
-(() => {
-
+  }
+  {
     const dir = fixture({ "dotpath620b.js": SOURCE, "dotpath620b.nudo.js": SIDECAR });
     const r = runCliTsx(["export", join(dir, "dotpath620b.js"), "--format", "dts"], { cwd: dir });
     expect(r.status).toBe(0);
     expect(r.stdout).toContain(
       "export declare function nested({ card }: { card: { grade: string } }): string;",
     );
-  })();
-});;
-
-  ;
+  }
 });
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1300,10 +1246,9 @@ async function withTmp(fn: (dir: string) => Promise<void> | void): Promise<void>
   }
 }
 
-describe("声明式 @nudo:case 不得因名字前缀被丢出断言面", () => {
-  it("call@ 前缀的声明式见证：期望不符 ⇒ 计入失败 + exit 1；entry@ 前缀的声明式见证：期望不符 ⇒ 计入失败 + exit 1；--freeze 写回形态的名字（call@<file>:<line>）：仍是声明式见证 ⇒ 计入失败 + exit 1；普通名字的声明式见证：与前缀变体同构（同样计入失败 + exit 1）；call@ 前缀的声明式见证：期望相符 ⇒ 计入通过、exit 0（不是 unchecked / synthetic）", async () => {
-await (async () => {
 
+  it("call@ 前缀的声明式见证：期望不符 ⇒ 计入失败 + exit 1；entry@ 前缀的声明式见证：期望不符 ⇒ 计入失败 + exit 1；--freeze 写回形态的名字（call@<file>:<line>）：仍是声明式见证 ⇒ 计入失败 + exit 1；普通名字的声明式见证：与前缀变体同构（同样计入失败 + exit 1）；call@ 前缀的声明式见证：期望相符 ⇒ 计入通过、exit 0（不是 unchecked / synthetic）", async () => {
+  {
     await withTmp(async (dir) => {
       const file = join(dir, "callnamed.js");
       writeFileSync(file, declaredCase("call@L42", "5"), "utf-8");
@@ -1313,9 +1258,8 @@ await (async () => {
       expect(r.stdout).toContain("[FAIL]");
       expect(r.stdout).toContain("call@L42");
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withTmp(async (dir) => {
       const file = join(dir, "entrynamed.js");
       writeFileSync(file, declaredCase("entry@L42", "5"), "utf-8");
@@ -1324,9 +1268,8 @@ await (async () => {
       expect(r.stdout).toContain("[FAIL]");
       expect(r.stdout).toContain("entry@L42");
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withTmp(async (dir) => {
       const file = join(dir, "frozen.js");
       writeFileSync(file, declaredCase("call@frozen.js:1", "5"), "utf-8");
@@ -1335,9 +1278,8 @@ await (async () => {
       expect(r.stdout).toContain("[FAIL]");
       expect(r.stdout).toContain("call@frozen.js:1");
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withTmp(async (dir) => {
       const file = join(dir, "mycase.js");
       writeFileSync(file, declaredCase("myCase", "5"), "utf-8");
@@ -1346,9 +1288,8 @@ await (async () => {
       expect(r.stdout).toContain("[FAIL]");
       expect(r.stdout).toContain("myCase");
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withTmp(async (dir) => {
       const file = join(dir, "callnamed-ok.js");
       writeFileSync(file, declaredCase("call@L42", "4"), "utf-8");
@@ -1359,17 +1300,13 @@ await (async () => {
       expect(r.stdout).toContain("[ok]");
       expect(r.stdout).toContain("call@L42");
     });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1402,10 +1339,9 @@ function makeProject(): { cwd: string; file: string } {
   return { cwd, file };
 }
 
-describe("test --abs 与非 --abs 共用同一套「无函数」结论", () => {
-  it("无函数文件：--abs 与非 --abs 同为 exit 0 + 同一句报告；无函数文件：--json 面（另一条机器面）同样 exit 0；对照：check --abs 的「无函数 ⇒ exit 1」是既有期望行为（Bug 669）不被本片改动", () => {
-(() => {
 
+  it("无函数文件：--abs 与非 --abs 同为 exit 0 + 同一句报告；无函数文件：--json 面（另一条机器面）同样 exit 0；对照：check --abs 的「无函数 ⇒ exit 1」是既有期望行为（Bug 669）不被本片改动", () => {
+  {
     const { cwd, file } = makeProject();
     try {
       const plain = runCli(["test", file], { cwd });
@@ -1422,9 +1358,8 @@ describe("test --abs 与非 --abs 共用同一套「无函数」结论", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  })();
-(() => {
-
+  }
+  {
     const { cwd, file } = makeProject();
     try {
       const r = runCli(["test", file, "--json"], { cwd });
@@ -1434,9 +1369,8 @@ describe("test --abs 与非 --abs 共用同一套「无函数」结论", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  })();
-(() => {
-
+  }
+  {
     const { cwd, file } = makeProject();
     try {
       const r = runCli(["check", file, "--abs"], { cwd });
@@ -1445,13 +1379,11 @@ describe("test --abs 与非 --abs 共用同一套「无函数」结论", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1488,10 +1420,9 @@ async function withTmp(fn: (dir: string) => Promise<void> | void): Promise<void>
   }
 }
 
-describe("check --abs --fn <不存在的名字> ⇒ 用法错误 + 非零 exit", () => {
-  it("拼错的函数名 → Function not found + exit 1（不再是 unknown/partial）；真实函数名 → 正常观察面（不误伤）；文件本身没有函数 → 既有口径不变（Function not found + exit 1）；CLI 级：拼错的函数名 → 进程 exit 1（check 报告段不把 exitCode 复位）", async () => {
-await (async () => {
 
+  it("拼错的函数名 → Function not found + exit 1（不再是 unknown/partial）；真实函数名 → 正常观察面（不误伤）；文件本身没有函数 → 既有口径不变（Function not found + exit 1）；CLI 级：拼错的函数名 → 进程 exit 1（check 报告段不把 exitCode 复位）", async () => {
+  {
     await withTmp(async (dir) => {
       const file = join(dir, "one.js");
       writeFileSync(file, ONE, "utf-8");
@@ -1504,9 +1435,8 @@ await (async () => {
       expect(r.stdout).not.toContain("nosuch(");
       expect(r.stdout).not.toContain("conf: partial");
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withTmp(async (dir) => {
       const file = join(dir, "one.js");
       writeFileSync(file, ONE, "utf-8");
@@ -1515,9 +1445,8 @@ await (async () => {
       expect(r.stdout).toContain("one()");
       expect(r.stderr).not.toContain("Function not found");
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withTmp(async (dir) => {
       const file = join(dir, "nofn.js");
       writeFileSync(file, NOFN, "utf-8");
@@ -1526,9 +1455,8 @@ await (async () => {
       expect(r.stderr).toContain("Function not found");
       expect(r.stderr).not.toContain("nosuch()");
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withTmp(async (dir) => {
       const file = join(dir, "one.js");
       writeFileSync(file, ONE, "utf-8");
@@ -1537,15 +1465,12 @@ await (async () => {
       expect(r.stderr).toContain("Function not found");
       expect(r.stdout).not.toContain("nosuch(");
     });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1579,8 +1504,7 @@ async function withTmp(fn: (dir: string) => Promise<void> | void): Promise<void>
 
 describe("-assume 坏值 ⇒ 用法错误 + 非零 exit", () => {
   it("`x=5` 这类坏值 → exit 1（旧行为 exit 0）；好值仍然生效（不误伤）；多个 --assume 里混一个坏值 → 仍然 exit 1（不得部分生效后假绿）；CLI 级：坏值 → 进程 exit 1", async () => {
-await (async () => {
-
+  {
     await withTmp(async (dir) => {
       const file = join(dir, "one.js");
       writeFileSync(file, ONE, "utf-8");
@@ -1593,9 +1517,8 @@ await (async () => {
       expect(r.stdout).not.toContain("nudo check --abs");
       expect(r.stdout).not.toContain("assume:");
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withTmp(async (dir) => {
       const file = join(dir, "one.js");
       writeFileSync(file, ONE, "utf-8");
@@ -1604,9 +1527,8 @@ await (async () => {
       expect(r.stderr).not.toContain("Cannot parse --assume");
       expect(r.stdout).toContain("assume: x > 0");
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withTmp(async (dir) => {
       const file = join(dir, "one.js");
       writeFileSync(file, ONE, "utf-8");
@@ -1615,9 +1537,8 @@ await (async () => {
       expect(r.stderr).toContain("Cannot parse --assume");
       expect(r.stdout).not.toContain("assume:");
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withTmp(async (dir) => {
       const file = join(dir, "one.js");
       writeFileSync(file, ONE, "utf-8");
@@ -1625,14 +1546,11 @@ await (async () => {
       expect(r.status).toBe(1);
       expect(r.stderr).toContain("Cannot parse --assume");
     });
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 });
 });
 
@@ -1675,10 +1593,9 @@ function makeProject(ignoreThrowsJson: string): { cwd: string; file: string } {
   return { cwd: dir, file };
 }
 
-describe("ignoreThrows 配置面与 CLI 面同口径", () => {
-  it("解析器：配置面裸字符串 / 数组元素内逗号都被切开；CLI：配置写裸字符串 \"TypeError\" ⇒ L2 被忽略（门禁绿）；CLI：配置写 [\"TypeError,RangeError\"] ⇒ 数组元素内逗号被切开（门禁绿）；CLI：配置写 [\"TypeError\"]（旧口径，未回归）⇒ 门禁绿；CLI：形状非法（42）⇒ 回落默认 + stderr 一行告警（不静默假红）；CLI：CLI 旗标形态不变（--ignore-throws TypeError,RangeErr", () => {
-(() => {
 
+  it("解析器：配置面裸字符串 / 数组元素内逗号都被切开；CLI：配置写裸字符串 \"TypeError\" ⇒ L2 被忽略（门禁绿）；CLI：配置写 [\"TypeError,RangeError\"] ⇒ 数组元素内逗号被切开（门禁绿）；CLI：配置写 [\"TypeError\"]（旧口径，未回归）⇒ 门禁绿；CLI：形状非法（42）⇒ 回落默认 + stderr 一行告警（不静默假红）；CLI：CLI 旗标形态不变（--ignore-throws TypeError,RangeErr", () => {
+  {
     expect(configIgnoreThrows({ check: { ignoreThrows: "TypeError" } })).toEqual([
       "TypeError",
     ]);
@@ -1693,9 +1610,8 @@ describe("ignoreThrows 配置面与 CLI 面同口径", () => {
     expect(configIgnoreThrows({ check: { ignoreThrows: "TypeError, RangeError" } })).toEqual(
       parseIgnoreThrows("TypeError, RangeError"),
     );
-  })();
-(() => {
-
+  }
+  {
     const { cwd, file } = makeProject('"TypeError"');
     try {
       const r = runCliTsx(["check", file], { cwd });
@@ -1704,9 +1620,8 @@ describe("ignoreThrows 配置面与 CLI 面同口径", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  })();
-(() => {
-
+  }
+  {
     const { cwd, file } = makeProject('["TypeError,RangeError"]');
     try {
       const r = runCliTsx(["check", file], { cwd });
@@ -1715,9 +1630,8 @@ describe("ignoreThrows 配置面与 CLI 面同口径", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  })();
-(() => {
-
+  }
+  {
     const { cwd, file } = makeProject('["TypeError"]');
     try {
       const r = runCliTsx(["check", file], { cwd });
@@ -1726,9 +1640,8 @@ describe("ignoreThrows 配置面与 CLI 面同口径", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  })();
-(() => {
-
+  }
+  {
     const { cwd, file } = makeProject("42");
     try {
       const r = runCliTsx(["check", file], { cwd });
@@ -1740,9 +1653,8 @@ describe("ignoreThrows 配置面与 CLI 面同口径", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  })();
-(() => {
-
+  }
+  {
     const { cwd, file } = makeProject('["EvalError"]');
     try {
       const r = runCliTsx(["check", file, "--ignore-throws", "TypeError,RangeError"], {
@@ -1753,19 +1665,14 @@ describe("ignoreThrows 配置面与 CLI 面同口径", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1809,10 +1716,9 @@ function makeProject(): { cwd: string; file: string } {
   return { cwd, file };
 }
 
-describe("test --abs 不再吞掉 diagnostics（三个面诊断条数一致）", () => {
-  it("--abs 面：诊断段上屏（旧行为：整段消失 ⇒ 屏幕上零提示）；三个面（默认 / --abs / --json）对同一文件的诊断条数一致；对照：check --abs 的既有口径不动（report ok 时不打 issues 列表）", () => {
-(() => {
 
+  it("--abs 面：诊断段上屏（旧行为：整段消失 ⇒ 屏幕上零提示）；三个面（默认 / --abs / --json）对同一文件的诊断条数一致；对照：check --abs 的既有口径不动（report ok 时不打 issues 列表）", () => {
+  {
     const { cwd, file } = makeProject();
     try {
       const r = runCli(["test", file, "--abs"], { cwd });
@@ -1822,9 +1728,8 @@ describe("test --abs 不再吞掉 diagnostics（三个面诊断条数一致）",
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  })();
-(() => {
-
+  }
+  {
     const { cwd, file } = makeProject();
     try {
       const plain = runCli(["test", file], { cwd });
@@ -1839,9 +1744,8 @@ describe("test --abs 不再吞掉 diagnostics（三个面诊断条数一致）",
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  })();
-(() => {
-
+  }
+  {
     const { cwd, file } = makeProject();
     try {
       const r = runCli(["check", file, "--abs"], { cwd });
@@ -1851,13 +1755,11 @@ describe("test --abs 不再吞掉 diagnostics（三个面诊断条数一致）",
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1891,8 +1793,7 @@ async function withTmp(fn: (dir: string) => Promise<void> | void): Promise<void>
 
 describe("-assume 的 >= 与 > 必须落到不同谓词", () => {
   it("`x>=1` ⇒ 谓词是 (x + 1) ≥ 2（不是 > 1.999…）；`x>1` ⇒ 谓词是 (x + 1) > 1.999…（与 >= 不同）", async () => {
-await (async () => {
-
+  {
     await withTmp(async (dir) => {
       const file = join(dir, "f.js");
       writeFileSync(file, F_SRC, "utf-8");
@@ -1901,9 +1802,8 @@ await (async () => {
       expect(r.stdout).toContain("(x + 1) ≥ 2");
       expect(r.stdout).not.toContain("1.9999999999999998");
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withTmp(async (dir) => {
       const file = join(dir, "f.js");
       writeFileSync(file, F_SRC, "utf-8");
@@ -1912,10 +1812,9 @@ await (async () => {
       expect(r.stdout).toContain("(x + 1) > 1.9999999999999998");
       expect(r.stdout).not.toContain("(x + 1) ≥ 2");
     });
-  })();
-});;
+  }
+});
 
-  ;
 });
 });
 
@@ -1947,10 +1846,9 @@ async function withTmp(fn: (dir: string) => Promise<void> | void): Promise<void>
   }
 }
 
-describe("多条 --assume 必须合取（不是互相覆盖）", () => {
-  it("x>100 且 y>200 ⇒ 谓词 (x + y) > 300（两条都在场）；顺序无关（y 在前也一样合取）", async () => {
-await (async () => {
 
+  it("x>100 且 y>200 ⇒ 谓词 (x + y) > 300（两条都在场）；顺序无关（y 在前也一样合取）", async () => {
+  {
     await withTmp(async (dir) => {
       const file = join(dir, "g.js");
       writeFileSync(file, G_SRC, "utf-8");
@@ -1961,20 +1859,18 @@ await (async () => {
       // 旧行为：只剩最后一条 ⇒ (x + y) > 200
       expect(r.stdout).not.toContain("(x + y) > 200");
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withTmp(async (dir) => {
       const file = join(dir, "g.js");
       writeFileSync(file, G_SRC, "utf-8");
       const r = await runAbsViewCaptured(file, { assume: ["y>200", "x>100"] });
       expect(r.stdout).toContain("(x + y) > 300");
     });
-  })();
-});;
-
-  ;
+  }
 });
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2008,8 +1904,7 @@ async function withTmp(fn: (dir: string) => Promise<void> | void): Promise<void>
 
 describe("-assume 与 --generalize 互斥 ⇒ 显式拒绝", () => {
   it("组合 → 用法错误 + exit 1（且不回显 assume）；单独 --generalize 仍然可用（不误伤）；单独 --assume 仍然可用（不误伤）；CLI 级：组合 → 进程 exit 1", async () => {
-await (async () => {
-
+  {
     await withTmp(async (dir) => {
       const file = join(dir, "g.js");
       writeFileSync(file, G_SRC, "utf-8");
@@ -2020,9 +1915,8 @@ await (async () => {
       // 旧行为：打印 assume 回显（说谎），然后 generalize 照跑
       expect(r.stdout).not.toContain("assume:");
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withTmp(async (dir) => {
       const file = join(dir, "g.js");
       writeFileSync(file, G_SRC, "utf-8");
@@ -2030,9 +1924,8 @@ await (async () => {
       expect(r.stderr).not.toContain("cannot be combined");
       expect(r.stdout).toContain("mode: generalize");
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withTmp(async (dir) => {
       const file = join(dir, "g.js");
       writeFileSync(file, G_SRC, "utf-8");
@@ -2040,9 +1933,8 @@ await (async () => {
       expect(r.stderr).not.toContain("cannot be combined");
       expect(r.stdout).toContain("assume: x > 100");
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withTmp(async (dir) => {
       const file = join(dir, "g.js");
       writeFileSync(file, G_SRC, "utf-8");
@@ -2052,14 +1944,11 @@ await (async () => {
       expect(r.status).toBe(1);
       expect(r.stderr).toContain("--assume cannot be combined with --generalize");
     });
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 });
 });
 
@@ -2115,44 +2004,37 @@ function fixture(): string {
   return join(dir, "k.js");
 }
 
-describe("（CLI 半）：--assume 的界落到形参前提（不再被写死的 x>0 顶掉）", () => {
-  it("--assume 'x>-5' ⇒ x=-1 可达 ⇒ 结果含 \"neg\"；--assume 'x>=-5' ⇒ 同上（>= 运算符分派不被破坏）；负控制：--assume 'x>0' ⇒ 仍只有 \"pos\"（用户界与写死界一致时口径不变）；负控制：同一形参多条界取**合取**（x>-5 且 x>0 ⇒ 更强的 x>0 生效）", async () => {
-await (async () => {
 
+  it("--assume 'x>-5' ⇒ x=-1 可达 ⇒ 结果含 \"neg\"；--assume 'x>=-5' ⇒ 同上（>= 运算符分派不被破坏）；负控制：--assume 'x>0' ⇒ 仍只有 \"pos\"（用户界与写死界一致时口径不变）；负控制：同一形参多条界取**合取**（x>-5 且 x>0 ⇒ 更强的 x>0 生效）", async () => {
+  {
     const r = await runAbsViewCaptured(fixture(), { assume: ["x>-5"] });
     expect(r.stdout).toContain("assume: x > -5");
     // 改前：只有 "pos"（写死的 x>0 剪掉了 x<0 分支）
     expect(r.stdout).toContain('"neg" | "pos"');
-  })();
-await (async () => {
-
+  }
+  {
     const r = await runAbsViewCaptured(fixture(), { assume: ["x>=-5"] });
     expect(r.stdout).toContain("assume: x >= -5");
     expect(r.stdout).toContain('"neg" | "pos"');
-  })();
-await (async () => {
-
+  }
+  {
     const r = await runAbsViewCaptured(fixture(), { assume: ["x>0"] });
     expect(r.stdout).toContain("assume: x > 0");
     expect(r.stdout).toContain('"pos"');
     expect(r.stdout).not.toContain('"neg"');
-  })();
-await (async () => {
-
+  }
+  {
     const r = await runAbsViewCaptured(fixture(), { assume: ["x>-5", "x>0"] });
     expect(r.stdout).toContain("assume: x > -5, x > 0");
     // 合取后是 x>0 ⇒ x<0 分支不可达（修复不得把界放宽成「取其中一条」）
     expect(r.stdout).toContain('"pos"');
     expect(r.stdout).not.toContain('"neg"');
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2229,9 +2111,9 @@ function makeProject(): { dir: string; file: string } {
   return { dir, file };
 }
 
-describe("侧车写坏 ⇒ check 门禁必须红（nudo:contract-load）", () => {
+
   it("人类面：check 报 contract-load error + exit 1（旧行为：exit 0 假绿）；--json 面：信封 ok:false + issues 含 nudo:contract-load（且只一条）", async () => {
-await (async () => {
+  {
   process.exitCode = undefined;
   logs = [];
   errs = [];
@@ -2253,8 +2135,8 @@ await (async () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  })();
-await (async () => {
+  }
+  {
   process.exitCode = undefined;
   logs = [];
   errs = [];
@@ -2282,11 +2164,10 @@ await (async () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  })();
-});;
-
-  ;
+  }
 });
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2368,9 +2249,9 @@ beforeEach(() => {
   resetEvalForkBudget();
 });
 
-describe("1145 · nudo check：模块级求值失败必须 fail-closed", () => {
+
   it("含 internal 回落的文件 ⇒ exit ≠ 0（修前是 0 = 假绿）+ 人类面明确失败行；--json 面：机器可判定（ok:false + nudo:internal error issue）+ exit ≠ 0；假红防线：正常文件（零回落）仍 exit 0（不得误报）；假红防线：unsupported:*（能力边界）回落**不**变成闸门失败；check --fix 与 plain check 同口径：同一文件不得「check 红 / --fix 绿」", () => {
-(() => {
+  {
   resetCheckSourceMemo();
   resetGeneralizeMemo();
   resetNudoModuleExecCache();
@@ -2393,8 +2274,8 @@ describe("1145 · nudo check：模块级求值失败必须 fail-closed", () => {
     // 契约不变：该文件必须红，且失败原因必须可见。
     expect(r.stdout).toContain("FAILED");
     expect(r.stdout).toContain("nudo:module-throw");
-  })();
-(() => {
+  }
+  {
   resetCheckSourceMemo();
   resetGeneralizeMemo();
   resetNudoModuleExecCache();
@@ -2423,8 +2304,8 @@ describe("1145 · nudo check：模块级求值失败必须 fail-closed", () => {
     expect(fatal.every((i) => i.severity === "error")).toBe(true);
     // 失败原因可读（模块无法装载）
     expect(fatal[0]!.message).toContain("throws");
-  })();
-(() => {
+  }
+  {
   resetCheckSourceMemo();
   resetGeneralizeMemo();
   resetNudoModuleExecCache();
@@ -2443,8 +2324,8 @@ describe("1145 · nudo check：模块级求值失败必须 fail-closed", () => {
     expect(r.status).toBe(0);
     expect(r.stdout).not.toContain("FAILED");
     expect(r.stdout).not.toContain("nudo:module-throw");
-  })();
-(() => {
+  }
+  {
   resetCheckSourceMemo();
   resetGeneralizeMemo();
   resetNudoModuleExecCache();
@@ -2467,8 +2348,8 @@ describe("1145 · nudo check：模块级求值失败必须 fail-closed", () => {
     };
     expect(json.issues.some((i) => i.code === "nudo:module-throw")).toBe(false);
     expect(r.stderr).not.toContain("analysis failed for");
-  })();
-(() => {
+  }
+  {
   resetCheckSourceMemo();
   resetGeneralizeMemo();
   resetNudoModuleExecCache();
@@ -2487,21 +2368,17 @@ describe("1145 · nudo check：模块级求值失败必须 fail-closed", () => {
     // 只断言退出码同口径（--fix 不打印诊断清单，它是「计划/写盘」面）：
     // 不得出现 `check` 红而 `--fix` 绿。
     expect(r.status).not.toBe(0);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 
 describe("1145 · nudo health：存在 internal 回落时不得报 OK", () => {
   it("模块级原生异常不再是「分析失败」⇒ health 只看漂移，报 OK（口径变更）；正常文件 ⇒ Result: OK + exit 0（不得误报）；假红防线：unsupported:*（能力边界）回落 ⇒ health 仍 OK（不得误报）", () => {
-(() => {
+  {
   resetCheckSourceMemo();
   resetGeneralizeMemo();
   resetNudoModuleExecCache();
@@ -2526,8 +2403,8 @@ describe("1145 · nudo health：存在 internal 回落时不得报 OK", () => {
     const r = runCliTsx(["health", file]);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("Result: OK");
-  })();
-(() => {
+  }
+  {
   resetCheckSourceMemo();
   resetGeneralizeMemo();
   resetNudoModuleExecCache();
@@ -2545,8 +2422,8 @@ describe("1145 · nudo health：存在 internal 回落时不得报 OK", () => {
     const r = runCliTsx(["health", file]);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("Result: OK");
-  })();
-(() => {
+  }
+  {
   resetCheckSourceMemo();
   resetGeneralizeMemo();
   resetNudoModuleExecCache();
@@ -2564,12 +2441,10 @@ describe("1145 · nudo health：存在 internal 回落时不得报 OK", () => {
     const r = runCliTsx(["health", file]);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("Result: OK");
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 });
 });
 
@@ -2647,10 +2522,9 @@ function draftPathOf(dir: string): string {
   return join(dir, "types", "index.nudo.draft.ts");
 }
 
-describe("nudo contract --help · a · `--json` 的三形态口径", () => {
-  it("`--json` 不再声称「仅 `--draft`」，且**提到** print / `--draft` / `--emit` 三形态；帮助文本不骗人：print 形态的 `--json` 顶层**恒为数组**（帮助说的三形态都成立）", () => {
-(() => {
 
+  it("`--json` 不再声称「仅 `--draft`」，且**提到** print / `--draft` / `--emit` 三形态；帮助文本不骗人：print 形态的 `--json` 顶层**恒为数组**（帮助说的三形态都成立）", () => {
+  {
     const r = runCli(["contract", "--help"]);
     expect(r.status).toBe(0);
     const help = r.stdout;
@@ -2669,9 +2543,8 @@ describe("nudo contract --help · a · `--json` 的三形态口径", () => {
     expect(desc, `help:\n${help}`).toContain("print elements");
     expect(desc, `help:\n${help}`).toContain("--draft elements");
     expect(desc, `help:\n${help}`).toContain("--emit elements");
-  })();
-(() => {
-
+  }
+  {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug-1147-json-"));
     writeFileSync(
       join(dir, "a.js"),
@@ -2687,16 +2560,15 @@ describe("nudo contract --help · a · `--json` 的三形态口径", () => {
     expect(parsed).toHaveLength(1);
     expect(parsed[0].file).toContain("a.js");
     expect(Array.isArray(parsed[0].entries)).toBe(true);
-  })();
-});; // 1 个 CLI 子进程（tsx 冷启动）
+  }
+}); // 1 个 CLI 子进程（tsx 冷启动）
 
-  ; // 1 个 CLI 子进程
-});
+   // 1 个 CLI 子进程
+
 
 describe("nudo contract --from-dts --write · b · 拒绝提示的双放行口子", () => {
   it("拒绝覆盖时提示**同时**给出 `--force` 与 `NUDO_DRAFT_FORCE`（既有草稿逐字不变）；**人工改过的草稿永不被覆盖**（`--force` 也不放行）⇒ 拒绝仍然发生、文件逐字不变；提示里的放行口子是真的：机器原稿（内容不同）+ `--force` ⇒ 覆盖成功", () => {
-(() => {
-
+  {
     const dir = makeDtsFixture();
     const draftPath = draftPathOf(dir);
     // 既有草稿（内容与新生成的不同 ⇒ 触发「存在且不同」那一关）
@@ -2715,9 +2587,8 @@ describe("nudo contract --from-dts --write · b · 拒绝提示的双放行口�
     // 既有草稿逐字不变（没有静默丢内容）+ 没有谎报成功
     expect(readFileSync(draftPath, "utf-8")).toBe(existing);
     expect(r.stdout).not.toContain("wrote ");
-  })();
-(() => {
-
+  }
+  {
     const dir = makeDtsFixture();
     const draftPath = draftPathOf(dir);
     // 先写一次机器原稿
@@ -2739,9 +2610,8 @@ describe("nudo contract --from-dts --write · b · 拒绝提示的双放行口�
     expect(second.stderr).toContain("hand-edited");
     expect(readFileSync(draftPath, "utf-8")).toBe(handEdited);
     expect(second.stdout).not.toContain("wrote ");
-  })();
-(() => {
-
+  }
+  {
     const dir = makeDtsFixture();
     const draftPath = draftPathOf(dir);
     // 先写一次机器原稿
@@ -2765,12 +2635,12 @@ describe("nudo contract --from-dts --write · b · 拒绝提示的双放行口�
     const after = readFileSync(draftPath, "utf-8");
     expect(after).not.toBe(machine);
     expect(after).toContain("export const div");
-  })();
-});; // 1 个 CLI 子进程
+  }
+}); // 1 个 CLI 子进程
 
-  ; // 2 个顺序 CLI 子进程
+   // 2 个顺序 CLI 子进程
 
-  ; // 2 个顺序 CLI 子进程
+   // 2 个顺序 CLI 子进程
 });
 });
 
@@ -2831,10 +2701,9 @@ function fixture(files: Record<string, string>): string {
   return dir;
 }
 
-describe("CLI：nudo check 面对 ESM import 环不再丢弃整张依赖图", () => {
-  it("环内文件的签名 = 原生值（改前：unknown）；求值有界：无限递归的环被截断成 nudo:recursion-truncated（不挂死）；负控制：非环的跨模块调用不受影响（21 * 2 = 42）", () => {
-(() => {
 
+  it("环内文件的签名 = 原生值（改前：unknown）；求值有界：无限递归的环被截断成 nudo:recursion-truncated（不挂死）；负控制：非环的跨模块调用不受影响（21 * 2 = 42）", () => {
+  {
     const dir = fixture({ "a.js": A, "b.js": B, "index.js": ENTRY });
     try {
       const r = runCli(["check", "index.js"], { cwd: dir });
@@ -2843,9 +2712,8 @@ describe("CLI：nudo check 面对 ESM import 环不再丢弃整张依赖图", ()
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  })();
-(() => {
-
+  }
+  {
     const dir = fixture({ "x.js": X, "y.js": Y, "index.js": `import { x } from "./x.js";\nexport function probe() { return x(0); }\n` });
     try {
       const r = runCli(["check", "index.js"], { cwd: dir });
@@ -2855,9 +2723,8 @@ describe("CLI：nudo check 面对 ESM import 环不再丢弃整张依赖图", ()
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  })();
-(() => {
-
+  }
+  {
     const dir = fixture({ "math.js": MATH, "index.js": MATH_ENTRY });
     try {
       const r = runCli(["check", "index.js"], { cwd: dir });
@@ -2865,13 +2732,11 @@ describe("CLI：nudo check 面对 ESM import 环不再丢弃整张依赖图", ()
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2917,7 +2782,7 @@ function fixture(): string {
   return dir;
 }
 
-describe("domainIssuesFromDiagnostics —— contract 家族白名单", () => {
+{
   const base = {
     severity: "info",
     message: "export 'f' has no contract root and no call-site domain (entry-only)",
@@ -2925,8 +2790,7 @@ describe("domainIssuesFromDiagnostics —— contract 家族白名单", () => {
   };
 
   it("contract-entry-only 不再被丢弃（info，不挡门禁）；负控制：contract-domain-exceeds 的既有映射不变（error → error）；负控制：白名单外的码仍被过滤（不放大诊断面）", () => {
-(() => {
-
+  {
     const issues = domainIssuesFromDiagnostics([
       { ...base, code: "nudo:contract-entry-only" },
     ]);
@@ -2935,9 +2799,8 @@ describe("domainIssuesFromDiagnostics —— contract 家族白名单", () => {
     expect(issues[0]!.code).toBe("nudo:contract-entry-only");
     expect(issues[0]!.line).toBe(1);
     expect(issues[0]!.column).toBe(7);
-  })();
-(() => {
-
+  }
+  {
     const issues = domainIssuesFromDiagnostics([
       {
         ...base,
@@ -2951,24 +2814,20 @@ describe("domainIssuesFromDiagnostics —— contract 家族白名单", () => {
     expect(issues[0]!.code).toBe("nudo:contract-domain-exceeds");
     expect(issues[0]!.actual).toBe("string");
     expect(issues[0]!.expected).toBe("number");
-  })();
-(() => {
-
+  }
+  {
     expect(
       domainIssuesFromDiagnostics([{ ...base, code: "nudo:other" }]),
     ).toEqual([]);
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+}
 
 describe("nudo check --from 产品面报出 entry-only", () => {
   it("check --from 打印 nudo:contract-entry-only（改前 infos: 0 / 静默丢弃）；check --json：summary.infos 计入 entry-only，ok 仍为 true", () => {
-(() => {
-
+  {
     const dir = fixture();
     try {
       const r = runCli(["check", "lib.js", "--from", "usage.js"], { cwd: dir });
@@ -2978,9 +2837,8 @@ describe("nudo check --from 产品面报出 entry-only", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  })();
-(() => {
-
+  }
+  {
     const dir = fixture();
     try {
       const r = runCli(["check", "--json", "lib.js", "--from", "usage.js"], { cwd: dir });
@@ -2998,10 +2856,9 @@ describe("nudo check --from 产品面报出 entry-only", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  })();
-});;
+  }
+});
 
-  ;
 });
 });
 
@@ -3055,10 +2912,9 @@ function fixture(): string {
   return dir;
 }
 
-describe("nudo test --from 现场文件读失败", () => {
-  it("解析失败 → 明确报错 + exit 1（改前：静默 0 记录 + exit 0 假绿）；--json 面：pathErrors 收录该失败 + exit 1；负控制：现场文件可读但没有调用 → 不报错、exit 0；负控制：现场文件有调用 → 记录被采集（call@ 而非 entry@）、exit 0", () => {
-(() => {
 
+  it("解析失败 → 明确报错 + exit 1（改前：静默 0 记录 + exit 0 假绿）；--json 面：pathErrors 收录该失败 + exit 1；负控制：现场文件可读但没有调用 → 不报错、exit 0；负控制：现场文件有调用 → 记录被采集（call@ 而非 entry@）、exit 0", () => {
+  {
     const dir = fixture();
     try {
       const r = runCli(["test", "target.js", "--from", "broken.js"], { cwd: dir });
@@ -3069,9 +2925,8 @@ describe("nudo test --from 现场文件读失败", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  })();
-(() => {
-
+  }
+  {
     const dir = fixture();
     try {
       const r = runCli(["test", "--json", "target.js", "--from", "broken.js"], { cwd: dir });
@@ -3085,9 +2940,8 @@ describe("nudo test --from 现场文件读失败", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  })();
-(() => {
-
+  }
+  {
     const dir = fixture();
     try {
       const r = runCli(["test", "target.js", "--from", "nocall.js"], { cwd: dir });
@@ -3096,9 +2950,8 @@ describe("nudo test --from 现场文件读失败", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  })();
-(() => {
-
+  }
+  {
     const dir = fixture();
     try {
       const r = runCli(["test", "target.js", "--from", "call.js"], { cwd: dir });
@@ -3109,15 +2962,12 @@ describe("nudo test --from 现场文件读失败", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -3150,10 +3000,9 @@ const BIGINT_NUDO_JS = `import { fn, lit } from "@nudojs/core";
 export const g = fn({ n: lit(10n) }, lit(10n));
 `;
 
-describe("nudo contract — bigint 字面量契约不得崩溃（）", () => {
-  it("contract 正常出结果（改前：裸 Do not know how to serialize a BigInt，exit 1）；同一份文件：check 面与 contract 面都不崩（跨 verb 一致）", () => {
-(() => {
 
+  it("contract 正常出结果（改前：裸 Do not know how to serialize a BigInt，exit 1）；同一份文件：check 面与 contract 面都不崩（跨 verb 一致）", () => {
+  {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug534-"));
     try {
       const file = join(dir, "c.js");
@@ -3170,9 +3019,8 @@ describe("nudo contract — bigint 字面量契约不得崩溃（）", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  })();
-(() => {
-
+  }
+  {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug534-"));
     try {
       const file = join(dir, "c.js");
@@ -3189,11 +3037,10 @@ describe("nudo contract — bigint 字面量契约不得崩溃（）", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  })();
-});;
-
-  ;
+  }
 });
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -3223,7 +3070,7 @@ const MISMATCH_NUDO_JS = `import { fn, number } from "@nudojs/core";
 export const scale = fn({ zzz: number().gt(0) }, number());
 `;
 
-describe("nudo contract — 打印面以声明形参表为骨架（）", () => {
+
   it("contract 印的形参 = 声明形参；契约里绑不上的参数另列并标注", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug559-"));
     try {
@@ -3246,7 +3093,7 @@ describe("nudo contract — 打印面以声明形参表为骨架（）", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -3295,10 +3142,9 @@ function gate(r: { status: number }): "red" | "green" {
   return r.status === 0 ? "green" : "red";
 }
 
-describe("check 与 check --fix 的分析输入集必须一致", () => {
-  it("方向 a：@nudo:mock 内联 —— 两条命令同绿（改前 check 绿 / --fix 红）；方向 b：autoBind:false —— 两条命令同红（改前 check 红 / --fix 绿）；方向 c：@nudo:mock from 缺文件 —— 两条命令的 error 条数一致；方向 d：--profile adoption —— --fix 不得为 warning 级诊断替用户写契约", () => {
-(() => {
 
+  it("方向 a：@nudo:mock 内联 —— 两条命令同绿（改前 check 绿 / --fix 红）；方向 b：autoBind:false —— 两条命令同红（改前 check 红 / --fix 绿）；方向 c：@nudo:mock from 缺文件 —— 两条命令的 error 条数一致；方向 d：--profile adoption —— --fix 不得为 warning 级诊断替用户写契约", () => {
+  {
     const dir = project({
       "lib.js": `/**
  * @nudo:mock dep = (x) => x
@@ -3314,9 +3160,8 @@ export function f() {
     expect(gate(plain), plain.stdout + plain.stderr).toBe("green");
     expect(gate(fix), fix.stdout + fix.stderr).toBe("green");
     expect(fix.stdout + fix.stderr).not.toContain("residual error");
-  })();
-(() => {
-
+  }
+  {
     const dir = mkdtempSync(join(tmpdir(), "nudo-b640-ab-"));
     writeFileSync(
       join(dir, "package.json"),
@@ -3350,9 +3195,8 @@ export const f = fn({ x: number() });
     expect(gate(plain), plain.stdout + plain.stderr).toBe("red");
     expect(gate(fix), fix.stdout + fix.stderr).toBe("red");
     expect(fix.stdout + fix.stderr).toContain("residual error");
-  })();
-(() => {
-
+  }
+  {
     const dir = project({
       "lib.js": `/**
  * @nudo:mock dep from "./missing-mock.js"
@@ -3378,9 +3222,8 @@ export function f() {
     expect(residual(fix.stdout + fix.stderr)).toBe(
       errorCount(plain.stdout + plain.stderr),
     );
-  })();
-(() => {
-
+  }
+  {
     const dir = project({
       "lib.js": `export function f(x) {
   return x.toFixed(2);
@@ -3395,15 +3238,12 @@ export function f() {
     expect(gate(fix), out).toBe("green");
     expect(out).toContain("0 edit(s) planned");
     expect(existsSync(join(dir, "lib.nudo.js"))).toBe(false);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -3517,8 +3357,7 @@ function fixture(): string {
 
 describe("-from 的现场文件路径必须到达 runCheck（CLI 闭环）", () => {
   it("① --from 现场文件（调用点在函数体内）⇒ 被调方门禁红（exit 1 + 恰一条跨文件域超限）；② --json 面同判：ok:false + summary.errors=1 + issues 恰一条；③ 违例归因到被调方的导出名（fn=f / actual=-1），不是现场文件的本地名；④ --from <目录> ⇒ 同判（现场文件集合按目录展开）；⑤ 控制组：直接 check 调用方 ⇒ 仍 1 条 nudo:constraint-violated（跨文件面不污", () => {
-(() => {
-
+  {
     const dir = fixture();
     const r = runCliTsx(["check", "lib.js", "--from", "infn.js"], { cwd: dir });
     expect(r.status).toBe(1);
@@ -3526,9 +3365,8 @@ describe("-from 的现场文件路径必须到达 runCheck（CLI 闭环）", () 
     expect(countOf(issueCodes(r.stdout).join("\n"), "nudo:contract-domain-exceeds")).toBe(1);
     // 跨文件面用跨文件面的码（同文件通道的码不得出现在被调方报告里）
     expect(r.stdout).not.toContain("nudo:constraint-violated");
-  })();
-(() => {
-
+  }
+  {
     const dir = fixture();
     const r = runCliTsx(["check", "lib.js", "--from", "infn.js", "--json"], { cwd: dir });
     expect(r.status).toBe(1);
@@ -3538,9 +3376,8 @@ describe("-from 的现场文件路径必须到达 runCheck（CLI 闭环）", () 
     expect(json.issues.length).toBe(1);
     expect(json.issues[0].code).toBe("nudo:contract-domain-exceeds");
     expect(json.issues[0].severity).toBe("error");
-  })();
-(() => {
-
+  }
+  {
     const dir = fixture();
     const r = runCliTsx(["check", "lib.js", "--from", "infn.js", "--json"], { cwd: dir });
     expect(r.status).toBe(1);
@@ -3548,17 +3385,15 @@ describe("-from 的现场文件路径必须到达 runCheck（CLI 闭环）", () 
     expect(json.issues[0].fn).toBe("f");
     expect(json.issues[0].actual).toBe("-1");
     expect(json.issues[0].message).toContain("f[x]");
-  })();
-(() => {
-
+  }
+  {
     const dir = fixture();
     const r = runCliTsx(["check", "lib.js", "--from", "."], { cwd: dir });
     expect(r.status).toBe(1);
     expect(r.stdout).toContain("nudo:contract-domain-exceeds");
     expect(countOf(issueCodes(r.stdout).join("\n"), "nudo:contract-domain-exceeds")).toBe(1);
-  })();
-(() => {
-
+  }
+  {
     const dir = fixture();
     const r = runCliTsx(["check", "infn.js", "--json"], { cwd: dir });
     expect(r.status).toBe(1);
@@ -3566,9 +3401,8 @@ describe("-from 的现场文件路径必须到达 runCheck（CLI 闭环）", () 
     const codes = json.issues.map((i) => i.code);
     expect(countOf(codes.join("\n"), "nudo:constraint-violated")).toBe(1);
     expect(countOf(codes.join("\n"), "nudo:contract-domain-exceeds")).toBe(0);
-  })();
-(() => {
-
+  }
+  {
     const dir = fixture();
     const r = runCliTsx(["check", "lib.js", "--json"], { cwd: dir });
     expect(r.status).toBe(0);
@@ -3576,9 +3410,8 @@ describe("-from 的现场文件路径必须到达 runCheck（CLI 闭环）", () 
     expect(json.ok).toBe(true);
     const codes = json.issues.map((i) => i.code);
     expect(countOf(codes.join("\n"), "nudo:contract-domain-exceeds")).toBe(0);
-  })();
-(() => {
-
+  }
+  {
     const dir = fixture();
     writeFileSync(
       join(dir, "top.js"),
@@ -3590,20 +3423,14 @@ describe("-from 的现场文件路径必须到达 runCheck（CLI 闭环）", () 
     const json = JSON.parse(r.stdout) as CheckJsonLike;
     const codes = json.issues.map((i) => i.code);
     expect(countOf(codes.join("\n"), "nudo:contract-domain-exceeds")).toBe(1);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 });
 
@@ -3700,8 +3527,7 @@ function loadRelative(specifier: string, fromFile: string): string | undefined {
 
 describe("-from 的调用点义务按静态判据复核", () => {
   it("静态扫描：函数体内的调用点被判为被调方的调用点违例；runCheck 接线：带 --from 现场文件 ⇒ 被调方报告含 error 级调用点违例；控制组：不带 --from 现场文件 ⇒ 被调方报告不含该违例（不凭空造证据）；去重：执行态通道已报过的同一处事实不被静态通道重复上报", async () => {
-await (async () => {
-
+  {
     const { lib, infn } = fixture();
     const issues = staticFromDomainIssues({
       targetPath: lib,
@@ -3713,9 +3539,8 @@ await (async () => {
     expect(issues[0].severity).toBe("error");
     // 归因到**被调方**的导出名（不是现场文件的本地名）
     expect(issues[0].fn).toBe("f");
-  })();
-await (async () => {
-
+  }
+  {
     const { lib, infn } = fixture();
     const collected: CheckJson[] = [];
     await runCheck(lib, { json: true, jsonCollect: collected, fromPaths: [infn] });
@@ -3723,16 +3548,14 @@ await (async () => {
     expect(violations.length).toBe(1);
     expect(violations[0].severity).toBe("error");
     expect(violations[0].fn).toBe("f");
-  })();
-await (async () => {
-
+  }
+  {
     const { lib } = fixture();
     const collected: CheckJson[] = [];
     await runCheck(lib, { json: true, jsonCollect: collected });
     expect(violationIssues(collected[0]).length).toBe(0);
-  })();
-await (async () => {
-
+  }
+  {
     const deduped = dedupeFromStaticIssues(
       [
         {
@@ -3751,13 +3574,10 @@ await (async () => {
       ],
     );
     expect(deduped.length).toBe(0);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 });
 });

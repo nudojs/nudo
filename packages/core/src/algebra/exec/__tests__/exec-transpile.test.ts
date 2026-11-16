@@ -48,63 +48,52 @@ function expectTypeError(src: string) {
   expect(throwsError(rec.throws, "TypeError")).toBe(true);
 }
 
-describe("类值接收者的派发先查静态面", () => {
-  it("同名 static + 实例方法并存 ⇒ A.m() 跑静态体（native \"S\"）；类值上无该静态成员 ⇒ 定抛 TypeError（native: A.m is not a function）；control：实例接收者仍跑实例体（native \"I\"）；control：只有静态方法 ⇒ A.m() 跑静态体（native \"S\"）；control：静态方法沿构造器继承链（B extends A ⇒ B.m() → \"S\"）；差分对账（native oracle）：改前", () => {
-(() => {
 
+  it("同名 static + 实例方法并存 ⇒ A.m() 跑静态体（native \"S\"）；类值上无该静态成员 ⇒ 定抛 TypeError（native: A.m is not a function）；control：实例接收者仍跑实例体（native \"I\"）；control：只有静态方法 ⇒ A.m() 跑静态体（native \"S\"）；control：静态方法沿构造器继承链（B extends A ⇒ B.m() → \"S\"）；差分对账（native oracle）：改前", () => {
+  {
     expectLit(
       `export function f() { class A1035a { m(){ return "I"; } static m(){ return "S"; } } return A1035a.m(); }`,
       "S",
     );
-  })();
-(() => {
-
+  }
+  {
     expectTypeError(
       `export function f() { class A1035d { m(){ return "I"; } } return A1035d.m(); }`,
     );
-  })();
-(() => {
-
+  }
+  {
     expectLit(
       `export function f() { class A1035b { m(){ return "I"; } } return new A1035b().m(); }`,
       "I",
     );
-  })();
-(() => {
-
+  }
+  {
     expectLit(
       `export function f() { class A1035c { static m(){ return "S"; } } return A1035c.m(); }`,
       "S",
     );
-  })();
-(() => {
-
+  }
+  {
     expectLit(
       `export function f() { class A1035f { static m(){ return "S"; } } class B1035f extends A1035f { } return B1035f.m(); }`,
       "S",
     );
-  })();
-(() => {
-
+  }
+  {
     expect(
       diffBody(
         `class A1035a { m(){ return "I"; } static m(){ return "S"; } } return A1035a.m();`,
       ),
     ).toBeNull();
     expect(diffBody(`class A1035d { m(){ return "I"; } } return A1035d.m();`)).toBeNull();
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -143,45 +132,39 @@ function expectLit(src: string, expected: unknown) {
   expect(r.value).toEqual(expected);
 }
 
-describe("摘下的一等方法值按来源侧定方法体", () => {
-  it("const g = A.m（静态侧）⇒ g() 跑静态体（native \"S\"）；const g = new A().m（实例侧）⇒ g() 跑实例体（native \"I\"）；借用调用：g.call(A) ⇒ 跑静态体（native \"S\"）；control：只有静态方法 ⇒ 摘下调用跑静态体（native \"S\"）；control：只有实例方法 ⇒ 摘下调用跑实例体（native \"I\"）；差分对账（native oracle）：改前 FALSE-THROW / 改后一致", () => {
-(() => {
 
+  it("const g = A.m（静态侧）⇒ g() 跑静态体（native \"S\"）；const g = new A().m（实例侧）⇒ g() 跑实例体（native \"I\"）；借用调用：g.call(A) ⇒ 跑静态体（native \"S\"）；control：只有静态方法 ⇒ 摘下调用跑静态体（native \"S\"）；control：只有实例方法 ⇒ 摘下调用跑实例体（native \"I\"）；差分对账（native oracle）：改前 FALSE-THROW / 改后一致", () => {
+  {
     expectLit(
       `export function f() { class A1041a { m(){ return "I"; } static m(){ return "S"; } } const g = A1041a.m; return g(); }`,
       "S",
     );
-  })();
-(() => {
-
+  }
+  {
     expectLit(
       `export function f() { class A1041b { m(){ return "I"; } static m(){ return "S"; } } const g = new A1041b().m; return g(); }`,
       "I",
     );
-  })();
-(() => {
-
+  }
+  {
     expectLit(
       `export function f() { class A1041e { m(){ return "I"; } static m(){ return "S"; } } const g = A1041e.m; return g.call(A1041e); }`,
       "S",
     );
-  })();
-(() => {
-
+  }
+  {
     expectLit(
       `export function f() { class A1041c { static m(){ return "S"; } } const g = A1041c.m; return g(); }`,
       "S",
     );
-  })();
-(() => {
-
+  }
+  {
     expectLit(
       `export function f() { class A1041d { m(){ return "I"; } } const g = new A1041d().m; return g(); }`,
       "I",
     );
-  })();
-(() => {
-
+  }
+  {
     expect(
       diffBody(
         `class A1041a { m(){ return "I"; } static m(){ return "S"; } } const g = A1041a.m; return g();`,
@@ -192,19 +175,14 @@ describe("摘下的一等方法值按来源侧定方法体", () => {
         `class A1041b { m(){ return "I"; } static m(){ return "S"; } } const g = new A1041b().m; return g();`,
       ),
     ).toBeNull();
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -228,56 +206,45 @@ describe("charAt/charCodeAt/codePointAt/at take no second argument", () => {
 
 
 
-describe("charAt/charCodeAt/codePointAt/at take no second argument", () => {
-  it("charAt(0, 1n) → \"a\"（此前判「必抛 TypeError」）；charCodeAt(0, 1n) → 97；codePointAt(0, 1n) → 97；at(0, 1n) → \"a\"；对照组：真有两实参的方法仍校验第二实参（slice / substring / substr）；对照组：单参调用仍正常折叠", () => {
-(() => {
 
+  it("charAt(0, 1n) → \"a\"（此前判「必抛 TypeError」）；charCodeAt(0, 1n) → 97；codePointAt(0, 1n) → 97；at(0, 1n) → \"a\"；对照组：真有两实参的方法仍校验第二实参（slice / substring / substr）；对照组：单参调用仍正常折叠", () => {
+  {
     const r = call(`export function f() { return "abc".charAt(0, 1n); }`);
     expect(litValue(r.result)).toEqual({ ok: true, value: "a" });
     expect(r.throws === undefined || r.throws.shape.k === "never").toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() { return "abc".charCodeAt(0, 1n); }`);
     expect(litValue(r.result)).toEqual({ ok: true, value: 97 });
     expect(r.throws === undefined || r.throws.shape.k === "never").toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() { return "abc".codePointAt(0, 1n); }`);
     expect(litValue(r.result)).toEqual({ ok: true, value: 97 });
     expect(r.throws === undefined || r.throws.shape.k === "never").toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() { return "abc".at(0, 1n); }`);
     expect(litValue(r.result)).toEqual({ ok: true, value: "a" });
     expect(r.throws === undefined || r.throws.shape.k === "never").toBe(true);
-  })();
-(() => {
-
+  }
+  {
     for (const m of ["slice", "substring", "substr"]) {
       const r = call(`export function f() { return "abc".${m}(0, 1n); }`);
       expect(throwsError(r.throws, "TypeError")).toBe(true);
     }
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() { return "abc".charAt(0); }`);
     expect(litValue(r.result)).toEqual({ ok: true, value: "a" });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -354,44 +321,35 @@ function lit(exports: Record<string, unknown>, fn: string): unknown {
   return v.value;
 }
 
-describe("跨模块同名类按值身份解析（不是裸名 last-wins）", () => {
-  it("A 模块实例的构造体与自有字段不被 B 模块的同名类顶掉；B 模块实例保持自己的字段（对照：不是把两边都改坏）；A 模块实例上不存在的成员判 undefined（不读到 B 的槽）；B 模块实例上不存在的成员判 undefined（不读到 A 的槽）；实例方法链首环用值自己的规格：mkA().kind() 恒为 A 的方法体", () => {
-(() => {
 
+  it("A 模块实例的构造体与自有字段不被 B 模块的同名类顶掉；B 模块实例保持自己的字段（对照：不是把两边都改坏）；A 模块实例上不存在的成员判 undefined（不读到 B 的槽）；B 模块实例上不存在的成员判 undefined（不读到 A 的槽）；实例方法链首环用值自己的规格：mkA().kind() 恒为 A 的方法体", () => {
+  {
     const d = runGraph();
     expect(lit(d, "readA")).toBe(1);
-  })();
-(() => {
-
+  }
+  {
     const d = runGraph();
     expect(lit(d, "readB")).toBe(2);
-  })();
-(() => {
-
+  }
+  {
     const d = runGraph();
     expect(lit(d, "absentA")).toBe(undefined);
-  })();
-(() => {
-
+  }
+  {
     const d = runGraph();
     expect(lit(d, "absentB")).toBe(undefined);
-  })();
-(() => {
-
+  }
+  {
     const d = runGraph();
     expect(lit(d, "kindA")).toBe("A");
     expect(lit(d, "kindB")).toBe("B");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -417,10 +375,9 @@ describe("无界用户迭代器的代表元不得取首个具体元素", () => {
 
 const probe = (src: string) => call(src, "probe", []);
 
-describe("无界用户迭代器的代表元不得取首个具体元素", () => {
-  it("a) 无界迭代器：break 臂可达 ⇒ IteratorClose 的 return() 计入出口（宿主同结论）；b) 有界迭代器（报 done）仍逐元素精确展开：break 关闭 ⇒ CLOSED，自然耗尽 ⇒ 不关闭 ⇒ NOT；b2) 有界迭代仍精确：0+1+2 折 3 #exact（不得因代表元抽象而宽化）；c) 循环变量 = 元素域抽象（不折首元素 0）——修前 `return x` 折 0 #exact；c2) 代表元抽象后分支两侧都探索——修前 out 折 \"", () => {
-(() => {
 
+  it("a) 无界迭代器：break 臂可达 ⇒ IteratorClose 的 return() 计入出口（宿主同结论）；b) 有界迭代器（报 done）仍逐元素精确展开：break 关闭 ⇒ CLOSED，自然耗尽 ⇒ 不关闭 ⇒ NOT；b2) 有界迭代仍精确：0+1+2 折 3 #exact（不得因代表元抽象而宽化）；c) 循环变量 = 元素域抽象（不折首元素 0）——修前 `return x` 折 0 #exact；c2) 代表元抽象后分支两侧都探索——修前 out 折 \"", () => {
+  {
     // 原始复现器（宿主 returns CLOSED；修前引擎 "NOT" #exact）
     const r = probe(`export function probe() {
   let closed = false;
@@ -439,9 +396,8 @@ describe("无界用户迭代器的代表元不得取首个具体元素", () => {
   return closed ? "CLOSED" : "NOT";
 }`);
     expect(litValue(r.result)).toEqual({ ok: true, value: "CLOSED" });
-  })();
-(() => {
-
+  }
+  {
     const withBreak = probe(`export function probe() {
   let closed = false;
   const o = {
@@ -475,9 +431,8 @@ describe("无界用户迭代器的代表元不得取首个具体元素", () => {
   return closed ? "CLOSED" : "NOT";
 }`);
     expect(litValue(exhausted.result)).toEqual({ ok: true, value: "NOT" });
-  })();
-(() => {
-
+  }
+  {
     const r = probe(`export function probe() {
   let acc = 0;
   const o = {
@@ -493,9 +448,8 @@ describe("无界用户迭代器的代表元不得取首个具体元素", () => {
 }`);
     expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
     expect(formatAbs(r.result)).toContain("#exact");
-  })();
-(() => {
-
+  }
+  {
     const r = probe(`export function probe() {
   const o = {
     [Symbol.iterator]() {
@@ -508,9 +462,8 @@ describe("无界用户迭代器的代表元不得取首个具体元素", () => {
 }`);
     expect(r.result.shape.k).toBe("unknown");
     expect(litValue(r.result)).not.toEqual({ ok: true, value: 0 });
-  })();
-(() => {
-
+  }
+  {
     const r = probe(`export function probe() {
   let out = "miss";
   const o = {
@@ -529,17 +482,13 @@ describe("无界用户迭代器的代表元不得取首个具体元素", () => {
 }`);
     // 修前：首元素 0 ⇒ 条件判假 ⇒ then 臂（out = "hit"）根本不进 ⇒ "miss" #exact
     expect(litValue(r.result)).not.toEqual({ ok: true, value: "miss" });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -582,62 +531,53 @@ function expectTypeError(src: string) {
   expect(throwsError(rec.throws, "TypeError")).toBe(true);
 }
 
-describe("原型 / 实例上的方法写参与派发（monkey-patch 生效）", () => {
-  it("A.prototype.m = fn ⇒ new A().m() 跑用户函数（native 2）；a.m = fn ⇒ a.m() 跑用户函数（native 5）；ctor 内 this.m = fn ⇒ new A().m() 跑用户函数（native 3）；A.prototype.m = 5 ⇒ 调用定抛 TypeError（native: not a function）；Object.defineProperty(A.prototype,'m',{value:fn}) ", () => {
-(() => {
 
+  it("A.prototype.m = fn ⇒ new A().m() 跑用户函数（native 2）；a.m = fn ⇒ a.m() 跑用户函数（native 5）；ctor 内 this.m = fn ⇒ new A().m() 跑用户函数（native 3）；A.prototype.m = 5 ⇒ 调用定抛 TypeError（native: not a function）；Object.defineProperty(A.prototype,'m',{value:fn}) ", () => {
+  {
     expectLit(
       `export function f() { class A244a { m(){ return 1; } } A244a.prototype.m = function(){ return 2; }; return new A244a().m(); }`,
       2,
     );
-  })();
-(() => {
-
+  }
+  {
     expectLit(
       `export function f() { class A244b { m(){ return 1; } } const a = new A244b(); a.m = function(){ return 5; }; return a.m(); }`,
       5,
     );
-  })();
-(() => {
-
+  }
+  {
     expectLit(
       `export function f() { class A244c { constructor(){ this.m = function(){ return 3; }; } m(){ return 1; } } return new A244c().m(); }`,
       3,
     );
-  })();
-(() => {
-
+  }
+  {
     expectTypeError(
       `export function f() { class A244d { m(){ return 1; } } A244d.prototype.m = 5; return new A244d().m(); }`,
     );
-  })();
-(() => {
-
+  }
+  {
     expectLit(
       `export function f() { class A244e { m(){ return 1; } } Object.defineProperty(A244e.prototype, "m", { value: function(){ return 4; } }); return new A244e().m(); }`,
       4,
     );
-  })();
-(() => {
-
+  }
+  {
     expectLit(
       `export function f() { class A244h { m(){ return 1; } } const a = new A244h(); a.m = function(){ return 6; }; A244h.prototype.m = function(){ return 2; }; return a.m(); }`,
       6,
     );
-  })();
-(() => {
-
+  }
+  {
     expectLit(`export function f() { class A244f { m(){ return 1; } } return new A244f().m(); }`, 1);
-  })();
-(() => {
-
+  }
+  {
     expectLit(
       `export function f() { class A244g { } A244g.prototype.n = function(){ return 7; }; return new A244g().n(); }`,
       7,
     );
-  })();
-(() => {
-
+  }
+  {
     expect(
       diffBody(
         `class A244d1 { m(){ return 1; } } A244d1.prototype.m = function(){ return 2; }; return new A244d1().m();`,
@@ -663,25 +603,17 @@ describe("原型 / 实例上的方法写参与派发（monkey-patch 生效）", 
         `class A244d5 { m(){ return 1; } } Object.defineProperty(A244d5.prototype, "m", { value: function(){ return 4; } }); return new A244d5().m();`,
       ),
     ).toBeNull();
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -705,10 +637,9 @@ describe("派生构造器的 super() 通道", () => {
 
 
 
-describe("派生构造器的 super() 通道", () => {
-  it("派生构造器不调 super()：new B() 定抛 ReferenceError；派生构造器重复调 super()：第二次定抛 ReferenceError；正常 super() 路径不受影响（值仍精确）；基类构造器不受影响（无 super 需求）；隐式派生构造器（无显式 ctor）不受影响；多层派生链：内层 super() 不得被误判成外层「已调」（各层各记各的）", () => {
-(() => {
 
+  it("派生构造器不调 super()：new B() 定抛 ReferenceError；派生构造器重复调 super()：第二次定抛 ReferenceError；正常 super() 路径不受影响（值仍精确）；基类构造器不受影响（无 super 需求）；隐式派生构造器（无显式 ctor）不受影响；多层派生链：内层 super() 不得被误判成外层「已调」（各层各记各的）", () => {
+  {
     const r = call(
       `class A { constructor(){ this.x = 1; } }
        class B extends A { constructor(){ this.y = 2; } }
@@ -716,9 +647,8 @@ describe("派生构造器的 super() 通道", () => {
     );
     expect(isNever(r.result)).toBe(true);
     expect(throwsError(r.throws, "ReferenceError")).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const r = call(
       `class A { constructor(){ this.x = 1; } }
        class B extends A { constructor(){ super(); super(); } }
@@ -726,9 +656,8 @@ describe("派生构造器的 super() 通道", () => {
     );
     expect(isNever(r.result)).toBe(true);
     expect(throwsError(r.throws, "ReferenceError")).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(
         `class A { constructor(){ this.x = 1; } }
@@ -736,18 +665,16 @@ describe("派生构造器的 super() 通道", () => {
          export function f(){ return new B().x; }`,
       ),
     ).toEqual({ ok: true, value: 1 });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(
         `class A { constructor(){ this.x = 1; } }
          export function f(){ return new A().x; }`,
       ),
     ).toEqual({ ok: true, value: 1 });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(
         `class A { constructor(){ this.x = 1; } }
@@ -755,9 +682,8 @@ describe("派生构造器的 super() 通道", () => {
          export function f(){ return new B().x; }`,
       ),
     ).toEqual({ ok: true, value: 1 });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(
         `class A { constructor(){ this.x = 1; } }
@@ -766,19 +692,14 @@ describe("派生构造器的 super() 通道", () => {
          export function f(){ const o = new C(); return o.x + o.b + o.c; }`,
       ),
     ).toEqual({ ok: true, value: 6 });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -802,10 +723,9 @@ describe("(false positive): Object.assign into brand targets keeps source props"
 
 
 
-describe("(false positive): Object.assign into brand targets keeps source props", () => {
-  it("类实例目标：源属性不丢；类实例目标：自有键集合含源属性；Error 实例目标：源属性不丢；Date 实例目标：源属性不丢；Map 实例目标：源属性不丢；函数构造实例目标：源属性不丢", () => {
-(() => {
 
+  it("类实例目标：源属性不丢；类实例目标：自有键集合含源属性；Error 实例目标：源属性不丢；Date 实例目标：源属性不丢；Map 实例目标：源属性不丢；函数构造实例目标：源属性不丢", () => {
+  {
     const r = call(
       `export function f() {
          class A { constructor() { this.a = 1; } }
@@ -814,9 +734,8 @@ describe("(false positive): Object.assign into brand targets keeps source props"
        }`,
     );
     expect(litValue(r.result)).toEqual({ ok: true, value: 2 });
-  })();
-(() => {
-
+  }
+  {
     const r = call(
       `export function f() {
          class A { constructor() { this.a = 1; } }
@@ -825,9 +744,8 @@ describe("(false positive): Object.assign into brand targets keeps source props"
        }`,
     );
     expect(litValue(r.result)).toEqual({ ok: true, value: "a,b" });
-  })();
-(() => {
-
+  }
+  {
     const r = call(
       `export function f() {
          const e = new Error("m");
@@ -836,9 +754,8 @@ describe("(false positive): Object.assign into brand targets keeps source props"
        }`,
     );
     expect(litValue(r.result)).toEqual({ ok: true, value: "EACCES" });
-  })();
-(() => {
-
+  }
+  {
     const r = call(
       `export function f() {
          const x = Object.assign(new Date(0), { b: 2 });
@@ -846,9 +763,8 @@ describe("(false positive): Object.assign into brand targets keeps source props"
        }`,
     );
     expect(litValue(r.result)).toEqual({ ok: true, value: 2 });
-  })();
-(() => {
-
+  }
+  {
     const r = call(
       `export function f() {
          const x = Object.assign(new Map(), { b: 2 });
@@ -856,9 +772,8 @@ describe("(false positive): Object.assign into brand targets keeps source props"
        }`,
     );
     expect(litValue(r.result)).toEqual({ ok: true, value: 2 });
-  })();
-(() => {
-
+  }
+  {
     const r = call(
       `export function f() {
          function A() { this.a = 1; }
@@ -867,19 +782,14 @@ describe("(false positive): Object.assign into brand targets keeps source props"
        }`,
     );
     expect(litValue(r.result)).toEqual({ ok: true, value: 2 });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -903,10 +813,9 @@ describe("实例字段落地 = 自有数据属性（不派发原型 setter）", 
 
 
 
-describe("实例字段落地 = 自有数据属性（不派发原型 setter）", () => {
-  it("父类 getter-only 同名访问器不拦截子类字段落地；父类 setter-only：字段落地不调父类 setter（父类侧槽保持缺席）；父类 getter+setter 同款：字段落地仍不派发父类访问器；字段是自有可枚举属性（Object.keys 可见）；无访问器干扰的普通字段路径不受影响", () => {
-(() => {
 
+  it("父类 getter-only 同名访问器不拦截子类字段落地；父类 setter-only：字段落地不调父类 setter（父类侧槽保持缺席）；父类 getter+setter 同款：字段落地仍不派发父类访问器；字段是自有可枚举属性（Object.keys 可见）；无访问器干扰的普通字段路径不受影响", () => {
+  {
     const r = call(
       `class A { get x(){ return 1; } }
        class B extends A { x = 2; }
@@ -919,9 +828,8 @@ describe("实例字段落地 = 自有数据属性（不派发原型 setter）", 
        class B extends A { x = 2; }
        export function f(){ return new B().x; }`,
     )).toEqual({ ok: true, value: 2 });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(
         `class A { set x(v){ this._v = v * 10; } }
@@ -929,9 +837,8 @@ describe("实例字段落地 = 自有数据属性（不派发原型 setter）", 
          export function f(){ const b = new B(); return b.x + "|" + b._v; }`,
       ),
     ).toEqual({ ok: true, value: "4|undefined" });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(
         `class A { get x(){ return 1; } set x(v){ this._v = v*10; } }
@@ -939,9 +846,8 @@ describe("实例字段落地 = 自有数据属性（不派发原型 setter）", 
          export function f(){ const b = new B(); return b.x + "|" + b._v; }`,
       ),
     ).toEqual({ ok: true, value: "2|undefined" });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(
         `class A { get x(){ return 1; } }
@@ -949,9 +855,8 @@ describe("实例字段落地 = 自有数据属性（不派发原型 setter）", 
          export function f(){ return Object.keys(new B()).join(","); }`,
       ),
     ).toEqual({ ok: true, value: "x" });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(
         `class A { x = 1; }
@@ -959,17 +864,13 @@ describe("实例字段落地 = 自有数据属性（不派发原型 setter）", 
          export function f(){ return new B().x; }`,
       ),
     ).toEqual({ ok: true, value: 2 });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -998,42 +899,37 @@ describe("matchAll result exposes the iterator protocol face", () => {
 
 
 
-describe("matchAll result exposes the iterator protocol face", () => {
-  it("typeof it.next → \"function\"（原生协议面；此前 \"undefined\"）；typeof it[Symbol.iterator] → \"function\"；it.next().value[0] → 首个匹配项；it.next() 逐次推进同一游标（第二次 → 第二项）；耗尽后 done → true、value → undefined；Object.prototype.toString.call(it) → \"[object RegExp String", () => {
-(() => {
 
+  it("typeof it.next → \"function\"（原生协议面；此前 \"undefined\"）；typeof it[Symbol.iterator] → \"function\"；it.next().value[0] → 首个匹配项；it.next() 逐次推进同一游标（第二次 → 第二项）；耗尽后 done → true、value → undefined；Object.prototype.toString.call(it) → \"[object RegExp String", () => {
+  {
     const r = call(`export function f() {
       const it = "a1b2".matchAll(/\\d/g);
       return typeof it.next;
     }`);
     expect(litValue(r.result)).toEqual({ ok: true, value: "function" });
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() {
       const it = "a1b2".matchAll(/\\d/g);
       return typeof it[Symbol.iterator];
     }`);
     expect(litValue(r.result)).toEqual({ ok: true, value: "function" });
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() {
       return "a1b2".matchAll(/\\d/g).next().value[0];
     }`);
     expect(litValue(r.result)).toEqual({ ok: true, value: "1" });
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() {
       const it = "a1b2".matchAll(/\\d/g);
       it.next();
       return it.next().value[0];
     }`);
     expect(litValue(r.result)).toEqual({ ok: true, value: "2" });
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() {
       const it = "a".matchAll(/a/g);
       it.next();
@@ -1046,16 +942,14 @@ describe("matchAll result exposes the iterator protocol face", () => {
       return String(it.next().value);
     }`);
     expect(litValue(r2.result)).toEqual({ ok: true, value: "undefined" });
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() {
       return Object.prototype.toString.call("a1b2".matchAll(/\\d/g));
     }`);
     expect(litValue(r.result)).toEqual({ ok: true, value: "[object RegExp String Iterator]" });
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() {
       const it = "ab".matchAll(/a/g);
       return Object.keys(it).length;
@@ -1071,9 +965,8 @@ describe("matchAll result exposes the iterator protocol face", () => {
       return "next" in it;
     }`);
     expect(litValue(r3.result)).toEqual({ ok: true, value: true });
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() {
       return [..."a1b2".matchAll(/\\d/g)].length;
     }`);
@@ -1084,23 +977,16 @@ describe("matchAll result exposes the iterator protocol face", () => {
       return n;
     }`);
     expect(litValue(r2.result)).toEqual({ ok: true, value: 2 });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1124,76 +1010,63 @@ describe("构造器返回值是对象就用它（不窄化成 brand|obj）", () 
 
 
 
-describe("构造器返回值是对象就用它（不窄化成 brand|obj）", () => {
-  it("宿主构造器返回数组：new F() 是数组；宿主构造器返回数组：内容可读（不是被换回的 this）；宿主构造器返回函数：typeof new F() === 'function'；宿主构造器返回箭头函数：typeof new F() === 'function'；宿主构造器返回原始值：忽略并返回 this（typeof 仍 'object'）；宿主构造器返回普通对象：仍用它（既有口径不退化）；类构造器返回数组：new C() 是数组（既有口径不退化）", () => {
-(() => {
 
+  it("宿主构造器返回数组：new F() 是数组；宿主构造器返回数组：内容可读（不是被换回的 this）；宿主构造器返回函数：typeof new F() === 'function'；宿主构造器返回箭头函数：typeof new F() === 'function'；宿主构造器返回原始值：忽略并返回 this（typeof 仍 'object'）；宿主构造器返回普通对象：仍用它（既有口径不退化）；类构造器返回数组：new C() 是数组（既有口径不退化）", () => {
+  {
     expect(
       val(
         `export function f(){ function F(){ this.a=1; return [1,2]; } const x = new F(); return Array.isArray(x); }`,
       ),
     ).toEqual({ ok: true, value: true });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(
         `export function f(){ function F(){ this.a=1; return [1,2]; } const x = new F(); return JSON.stringify(x); }`,
       ),
     ).toEqual({ ok: true, value: "[1,2]" });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(
         `export function f(){ function F(){ return function inner(){ return 1; }; } return typeof new F(); }`,
       ),
     ).toEqual({ ok: true, value: "function" });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(
         `export function f(){ function F(){ return ()=>1; } return typeof new F(); }`,
       ),
     ).toEqual({ ok: true, value: "function" });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(
         `export function f(){ function F(){ return 5; } return typeof new F(); }`,
       ),
     ).toEqual({ ok: true, value: "object" });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(
         `export function f(){ function F(){ return {a:1}; } return typeof new F(); }`,
       ),
     ).toEqual({ ok: true, value: "object" });
-  })();
-(() => {
-
+  }
+  {
     expect(
       val(`export function f(){ class C { constructor(){ return [1,2]; } } return Array.isArray(new C()); }`),
     ).toEqual({ ok: true, value: true });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1226,82 +1099,63 @@ describe("toLocaleString value (ICU) + locales argument validation", () => {
 
 
 
-describe("toLocaleString value (ICU) + locales argument validation", () => {
-  it("Number.prototype.toLocaleString 保留千分位（此前折成 toString）；Number.prototype.toLocaleString 保留 -0 的符号；Number.prototype.toLocaleString 保留指数形态的分组展开；BigInt.prototype.toLocaleString 保留千分位；默认 locale 也不再折成 toString 的裸数字串；locales 为 null → 确定 TypeError（nu", () => {
-(() => {
 
+  it("Number.prototype.toLocaleString 保留千分位（此前折成 toString）；Number.prototype.toLocaleString 保留 -0 的符号；Number.prototype.toLocaleString 保留指数形态的分组展开；BigInt.prototype.toLocaleString 保留千分位；默认 locale 也不再折成 toString 的裸数字串；locales 为 null → 确定 TypeError（nu", () => {
+  {
     const r = call(`export function f() { return (1234567.5).toLocaleString("en-US"); }`);
     expect(litValue(r.result)).toEqual({ ok: true, value: "1,234,567.5" });
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() { return (-0).toLocaleString("en-US"); }`);
     expect(litValue(r.result)).toEqual({ ok: true, value: "-0" });
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() { return (1e21).toLocaleString("en-US"); }`);
     expect(litValue(r.result)).toEqual({ ok: true, value: "1,000,000,000,000,000,000,000" });
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() { return (1234567n).toLocaleString("en-US"); }`);
     expect(litValue(r.result)).toEqual({ ok: true, value: "1,234,567" });
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() { return (1234567.5).toLocaleString(); }`);
     const lv = litValue(r.result);
     expect(lv.ok).toBe(true);
     expect(lv.ok ? lv.value : undefined).not.toBe("1234567.5");
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() { return (1.5).toLocaleString(null); }`);
     expect(throwsError(r.throws, "TypeError")).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() { return (1234567n).toLocaleString(null); }`);
     expect(throwsError(r.throws, "TypeError")).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() { return "ABC".toLocaleUpperCase(null); }`);
     expect(throwsError(r.throws, "TypeError")).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() { return "ABC".toLocaleUpperCase("b"); }`);
     expect(throwsError(r.throws, "RangeError")).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() { return "abc".toLocaleUpperCase(); }`);
     expect(litValue(r.result)).toEqual({ ok: true, value: "ABC" });
     const r2 = call(`export function f() { return (1).toLocaleString(Symbol()); }`);
     expect(r2.throws === undefined || r2.throws.shape.k === "never").toBe(true);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1331,60 +1185,47 @@ describe("invalid string pattern is a definite SyntaxError", () => {
 
 
 
-describe("invalid string pattern is a definite SyntaxError", () => {
-  it("search(\"(\") → SyntaxError（此前 throws 域折 never）；match(\"(\") → SyntaxError；match(\"*\") → SyntaxError（非法量词）；matchAll(\"(\") → SyntaxError；抽象接收者路径同样进 throws 面；合法模式不受影响（对照组）；try/catch 可吸收（原生同款）", () => {
-(() => {
 
+  it("search(\"(\") → SyntaxError（此前 throws 域折 never）；match(\"(\") → SyntaxError；match(\"*\") → SyntaxError（非法量词）；matchAll(\"(\") → SyntaxError；抽象接收者路径同样进 throws 面；合法模式不受影响（对照组）；try/catch 可吸收（原生同款）", () => {
+  {
     const r = call(`export function f() { return "abc".search("("); }`);
     expect(throwsError(r.throws, "SyntaxError")).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() { return "abc".match("("); }`);
     expect(throwsError(r.throws, "SyntaxError")).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() { return "abc".match("*"); }`);
     expect(throwsError(r.throws, "SyntaxError")).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() { return [..."abc".matchAll("(")].length; }`);
     expect(throwsError(r.throws, "SyntaxError")).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() { return String("abc").search("("); }`);
     expect(throwsError(r.throws, "SyntaxError")).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() { return "abc".search("b"); }`);
     expect(litValue(r.result)).toEqual({ ok: true, value: 1 });
     expect(r.throws === undefined || r.throws.shape.k === "never").toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() {
       try { return "abc".search("("); } catch (e) { return e.constructor.name; }
     }`);
     expect(litValue(r.result)).toEqual({ ok: true, value: "SyntaxError" });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1411,10 +1252,9 @@ describe("bind 产物的构造语义", () => {
 
 
 
-describe("bind 产物的构造语义", () => {
-  it("宿主函数 bind 产物：new B() 的 this = 新实例（绑定实参前置）；类值 bind 产物：new B() 造的是目标类的实例；二次 bind 产物仍可构造（绑定实参逐层前置）；普通调用面不受影响（B(9) 走绑定 thisArg——原生同口径抛 TypeError）", () => {
-(() => {
 
+  it("宿主函数 bind 产物：new B() 的 this = 新实例（绑定实参前置）；类值 bind 产物：new B() 造的是目标类的实例；二次 bind 产物仍可构造（绑定实参逐层前置）；普通调用面不受影响（B(9) 走绑定 thisArg——原生同口径抛 TypeError）", () => {
+  {
     const r = call(
       `export function f(){ function F(a){ this.a = a; } const B = F.bind(null, 7); const o = new B(); return o.a; }`,
     );
@@ -1423,35 +1263,29 @@ describe("bind 产物的构造语义", () => {
     expect(val(
       `export function f(){ function F(a){ this.a = a; } const B = F.bind(null, 7); const o = new B(); return o.a; }`,
     )).toEqual({ ok: true, value: 7 });
-  })();
-(() => {
-
+  }
+  {
     expect(val(
       `export function f(){ class A { constructor(v){ this.v = v; } } const B = A.bind(null, 3); const o = new B(); return o.v; }`,
     )).toEqual({ ok: true, value: 3 });
-  })();
-(() => {
-
+  }
+  {
     expect(val(
       `export function f(){ function F(a){ this.a = a; } const B = F.bind(null, 7); const C = B.bind(null); const o = new C(); return o.a; }`,
     )).toEqual({ ok: true, value: 7 });
-  })();
-(() => {
-
+  }
+  {
     // 原生 strict：this 为 null → `this.a = a` 抛 TypeError
     const r = call(
       `export function f(){ function F(a){ this.a = a; } const B = F.bind(null, 7); return B(9); }`,
     );
     expect(throwsError(r.throws, "TypeError")).toBe(true);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1473,44 +1307,37 @@ describe("Proxy construct 的靶可构造性判定", () => {
 
 
 
-describe("Proxy construct 的靶可构造性判定", () => {
-  it("靶不可构造（箭头函数）：定抛 TypeError；靶不可构造（普通对象）：定抛 TypeError；靶不可构造：construct 陷阱**不派发**（副作用不发生）；靶可构造（函数表达式）：construct 陷阱照常派发", () => {
-(() => {
 
+  it("靶不可构造（箭头函数）：定抛 TypeError；靶不可构造（普通对象）：定抛 TypeError；靶不可构造：construct 陷阱**不派发**（副作用不发生）；靶可构造（函数表达式）：construct 陷阱照常派发", () => {
+  {
     const r = call(
       `export function f(){ const t = () => 1; const p = new Proxy(t, { construct(){ return {a:9}; } }); return new p(); }`,
     );
     expect(isNever(r.result)).toBe(true);
     expect(throwsError(r.throws, "TypeError")).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const r = call(
       `export function f(){ const t = {}; const p = new Proxy(t, { construct(){ return {a:9}; } }); return new p(); }`,
     );
     expect(isNever(r.result)).toBe(true);
     expect(throwsError(r.throws, "TypeError")).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     expect(val(
       `export function f(){ let seen = 0; const t = () => 1; const p = new Proxy(t, { construct(){ seen = 1; return {a:9}; } }); try { new p(); } catch (e) {} return seen; }`,
     )).toEqual({ ok: true, value: 0 });
-  })();
-(() => {
-
+  }
+  {
     expect(val(
       `export function f(){ const t = function(){ this.a = 1; }; const p = new Proxy(t, { construct(){ return {a:9}; } }); return new p().a; }`,
     )).toEqual({ ok: true, value: 9 });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1543,45 +1370,39 @@ function expectLit(src: string, expected: unknown) {
   expect(r.value).toEqual(expected);
 }
 
-describe("apply 的 array-like 实参按 length 展开", () => {
-  it("apply({length:2,0:1,1:2}) ⇒ 2 个实参（native 2）；apply 的实参值参与运算（native 3）；apply({length:0}) ⇒ 0 个实参（native 0）；apply({length:1,0:9}) ⇒ 1 个实参（native 1）；control：apply 真数组 ⇒ 3 个实参（native 3）；差分对账（native oracle）：改前 MISMATCH / 改后一致", () => {
-(() => {
 
+  it("apply({length:2,0:1,1:2}) ⇒ 2 个实参（native 2）；apply 的实参值参与运算（native 3）；apply({length:0}) ⇒ 0 个实参（native 0）；apply({length:1,0:9}) ⇒ 1 个实参（native 1）；control：apply 真数组 ⇒ 3 个实参（native 3）；差分对账（native oracle）：改前 MISMATCH / 改后一致", () => {
+  {
     expectLit(
       `export function f() { function g(){ return arguments.length; } return g.apply(null, { length: 2, 0: 1, 1: 2 }); }`,
       2,
     );
-  })();
-(() => {
-
+  }
+  {
     expectLit(
       `export function f() { function g(a, b){ return a + b; } return g.apply(null, { length: 2, 0: 1, 1: 2 }); }`,
       3,
     );
-  })();
-(() => {
-
+  }
+  {
     expectLit(
       `export function f() { function g(){ return arguments.length; } return g.apply(null, { length: 0 }); }`,
       0,
     );
-  })();
-(() => {
-
+  }
+  {
     expectLit(
       `export function f() { function g(){ return arguments.length; } return g.apply(null, { length: 1, 0: 9 }); }`,
       1,
     );
-  })();
-(() => {
-
+  }
+  {
     expectLit(
       `export function f() { function g(){ return arguments.length; } return g.apply(null, [1, 2, 3]); }`,
       3,
     );
-  })();
-(() => {
-
+  }
+  {
     expect(
       diffBody(
         `function g(){ return arguments.length; } return g.apply(null, { length: 2, 0: 1, 1: 2 });`,
@@ -1590,19 +1411,14 @@ describe("apply 的 array-like 实参按 length 展开", () => {
     expect(
       diffBody(`function g(a, b){ return a + b; } return g.apply(null, { length: 2, 0: 1, 1: 2 });`),
     ).toBeNull();
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1625,10 +1441,9 @@ describe("derived static field shadows inherited static method", () => {
 
 
 
-describe("derived static field shadows inherited static method", () => {
-  it("派生类 static 字段遮蔽继承的 static 方法 → 原生 TypeError；三级链同样遮蔽（C extends B extends A）；读面不受影响：B.m 仍是 own 静态字段值 2；无自有静态字段时不回归：空派生类继承父类 static 方法；自有静态方法覆盖不回归（own static method wins）；祖先的静态字段同样遮蔽（原生 own 查找序：B.__proto__ = A）；own 静态字段值可调用 → 调用它（this = 类值）；Ty", () => {
-(() => {
 
+  it("派生类 static 字段遮蔽继承的 static 方法 → 原生 TypeError；三级链同样遮蔽（C extends B extends A）；读面不受影响：B.m 仍是 own 静态字段值 2；无自有静态字段时不回归：空派生类继承父类 static 方法；自有静态方法覆盖不回归（own static method wins）；祖先的静态字段同样遮蔽（原生 own 查找序：B.__proto__ = A）；own 静态字段值可调用 → 调用它（this = 类值）；Ty", () => {
+  {
     const r = call(
       `export function f() {
          class A { static m() { return 'base'; } }
@@ -1638,9 +1453,8 @@ describe("derived static field shadows inherited static method", () => {
     );
     expect(isNever(r.result)).toBe(true);
     expect(throwsError(r.throws, "TypeError")).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const r = call(
       `export function f() {
          class A { static m() { return 'A'; } }
@@ -1651,9 +1465,8 @@ describe("derived static field shadows inherited static method", () => {
     );
     expect(isNever(r.result)).toBe(true);
     expect(throwsError(r.throws, "TypeError")).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const r = call(
       `export function f() {
          class A { static m() { return 'base'; } }
@@ -1662,9 +1475,8 @@ describe("derived static field shadows inherited static method", () => {
        }`,
     );
     expect(litValue(r.result)).toEqual({ ok: true, value: 2 });
-  })();
-(() => {
-
+  }
+  {
     const r = call(
       `export function f() {
          class A { static m() { return 'base'; } }
@@ -1673,9 +1485,8 @@ describe("derived static field shadows inherited static method", () => {
        }`,
     );
     expect(litValue(r.result)).toEqual({ ok: true, value: "base" });
-  })();
-(() => {
-
+  }
+  {
     const r = call(
       `export function f() {
          class A { static m() { return 'base'; } }
@@ -1684,9 +1495,8 @@ describe("derived static field shadows inherited static method", () => {
        }`,
     );
     expect(litValue(r.result)).toEqual({ ok: true, value: "own" });
-  })();
-(() => {
-
+  }
+  {
     const r = call(
       `export function f() {
          class A { static m = 5; }
@@ -1696,9 +1506,8 @@ describe("derived static field shadows inherited static method", () => {
     );
     expect(isNever(r.result)).toBe(true);
     expect(throwsError(r.throws, "TypeError")).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const r = call(
       `export function f() {
          class A { static m() { return 'base'; } }
@@ -1707,9 +1516,8 @@ describe("derived static field shadows inherited static method", () => {
        }`,
     );
     expect(litValue(r.result)).toEqual({ ok: true, value: "field" });
-  })();
-(() => {
-
+  }
+  {
     const r = call(
       `export function f() {
          class A { static m() { return 'base'; } }
@@ -1718,23 +1526,16 @@ describe("derived static field shadows inherited static method", () => {
        }`,
     );
     expect(litValue(r.result)).toEqual({ ok: true, value: "throw" });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1769,10 +1570,9 @@ function callAny(src: string, fn: string) {
   return callTranspiledExportFull(exports, fn, [anyAbs]);
 }
 
-describe("union 成员按方法名判定（prim 原型方法表）", () => {
-  it("number 侧成员不再被排除：pick(y).toFixed() 的值是 number 分支结果（native \"1\"）；string 侧缺该方法 ⇒ 该分支记 TypeError may-throw（原生该分支定抛）；number 侧缺该方法（toUpperCase）⇒ 同样记 TypeError may-throw（改前无记录 = 假绿）；两侧都有该方法（toString）⇒ 不记 throws，值域是两侧的并；control：字面量 number 的 toFixed ", () => {
-(() => {
 
+  it("number 侧成员不再被排除：pick(y).toFixed() 的值是 number 分支结果（native \"1\"）；string 侧缺该方法 ⇒ 该分支记 TypeError may-throw（原生该分支定抛）；number 侧缺该方法（toUpperCase）⇒ 同样记 TypeError may-throw（改前无记录 = 假绿）；两侧都有该方法（toString）⇒ 不记 throws，值域是两侧的并；control：字面量 number 的 toFixed ", () => {
+  {
     const rec = callAny(
       `export function pick(x) { if (x) { return 1; } return "a"; }
 export function useNum(y) { return pick(y).toFixed(); }`,
@@ -1785,27 +1585,24 @@ export function useNum(y) { return pick(y).toFixed(); }`,
       );
     }
     expect(r.value).toEqual("1");
-  })();
-(() => {
-
+  }
+  {
     const eff = effects(
       `export function pick(x) { if (x) { return 1; } return "a"; }
 export function useNum(y) { return pick(y).toFixed(); }`,
       "useNum",
     );
     expect(eff).toContain("TypeError");
-  })();
-(() => {
-
+  }
+  {
     const eff = effects(
       `export function pick(x) { if (x) { return 1; } return "a"; }
 export function useUp(y) { return pick(y).toUpperCase(); }`,
       "useUp",
     );
     expect(eff).toContain("TypeError");
-  })();
-(() => {
-
+  }
+  {
     const eff = effects(
       `export function pick(x) { if (x) { return 1; } return "a"; }
 export function useStr(y) { return pick(y).toString(); }`,
@@ -1819,30 +1616,23 @@ export function useStr(y) { return pick(y).toString(); }`,
     );
     // 两侧结果 "1" | "a" ⇒ 并集形态（sum），不是 unknown
     expect(rec.result.shape.k).toEqual("sum");
-  })();
-(() => {
-
+  }
+  {
     const r = litValue(call(`export function f() { return (1).toFixed(); }`, "f").result);
     expect(r.ok).toBe(true);
     expect(r.ok ? r.value : undefined).toEqual("1");
-  })();
-(() => {
-
+  }
+  {
     const eff = effects(`export function f() { return ("a").toFixed(); }`, "f");
     expect(eff).toContain("TypeError");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1873,67 +1663,50 @@ function expectTypeError(src: string) {
   expect(throwsError(rec.throws, "TypeError")).toBe(true);
 }
 
-describe("命名空间上不存在的静态方法定抛 TypeError", () => {
+
   it("Math.clamp(1,0,2) ⇒ TypeError；JSON.foo(1) ⇒ TypeError；Object.foo(1) ⇒ TypeError；Number.foo(1) ⇒ TypeError；Reflect.foo(1) ⇒ TypeError；成员存在但不是函数（Math.PI()）⇒ TypeError；control：Math.max(1,3) ⇒ 3（原生一致）；control：JSON.parse(\"2\") ⇒ 2（原生一致）；差分对账（nati", () => {
-(() => {
-
+  {
     expectTypeError(`export function f() { return Math.clamp(1, 0, 2); }`);
-  })();
-(() => {
-
+  }
+  {
     expectTypeError(`export function f() { return JSON.foo(1); }`);
-  })();
-(() => {
-
+  }
+  {
     expectTypeError(`export function f() { return Object.foo(1); }`);
-  })();
-(() => {
-
+  }
+  {
     expectTypeError(`export function f() { return Number.foo(1); }`);
-  })();
-(() => {
-
+  }
+  {
     expectTypeError(`export function f() { return Reflect.foo(1); }`);
-  })();
-(() => {
-
+  }
+  {
     expectTypeError(`export function f() { return Math.PI(); }`);
-  })();
-(() => {
-
+  }
+  {
     const rec = call(`export function f() { return Math.max(1, 3); }`, "f");
     expect(rec.result.term?.op).toEqual("lit");
-  })();
-(() => {
-
+  }
+  {
     const rec = call(`export function f() { return JSON.parse("2"); }`, "f");
     expect(rec.result.term?.op).toEqual("lit");
-  })();
-(() => {
-
+  }
+  {
     expect(diffBody(`return Math.clamp(1, 0, 2);`)).toBeNull();
     expect(diffBody(`return JSON.foo(1);`)).toBeNull();
     expect(diffBody(`return Object.foo(1);`)).toBeNull();
     expect(diffBody(`return Number.foo(1);`)).toBeNull();
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1958,10 +1731,9 @@ describe("missing method on non-prim / non-obj receivers throws", () => {
 
 
 
-describe("missing method on non-prim / non-obj receivers throws", () => {
-  it("数组元组上调用不存在的方法 → 原生 TypeError；内建 brand 上调用不存在的方法 → 原生 TypeError；TypeError 可被 try/catch 吸收（原生同口径）；原型面内的方法不回归：数组方法照常派发；原型面内的方法不回归：内建 brand 方法照常派发；Object.prototype 名不回归（数组上的 toString / hasOwnProperty）；注册用户类实例不回归（域不同：callSiteHasNoCallableTarget ", () => {
-(() => {
 
+  it("数组元组上调用不存在的方法 → 原生 TypeError；内建 brand 上调用不存在的方法 → 原生 TypeError；TypeError 可被 try/catch 吸收（原生同口径）；原型面内的方法不回归：数组方法照常派发；原型面内的方法不回归：内建 brand 方法照常派发；Object.prototype 名不回归（数组上的 toString / hasOwnProperty）；注册用户类实例不回归（域不同：callSiteHasNoCallableTarget ", () => {
+  {
     for (const src of [
       `export function f() { return [].missing(); }`,
       `export function f() { return [1, 2].missing(); }`,
@@ -1971,9 +1743,8 @@ describe("missing method on non-prim / non-obj receivers throws", () => {
       expect(isNever(r.result), src).toBe(true);
       expect(throwsError(r.throws, "TypeError"), src).toBe(true);
     }
-  })();
-(() => {
-
+  }
+  {
     for (const src of [
       `export function f() { return new Map().missing(); }`,
       `export function f() { return new Set().missing(); }`,
@@ -1985,73 +1756,58 @@ describe("missing method on non-prim / non-obj receivers throws", () => {
       expect(isNever(r.result), src).toBe(true);
       expect(throwsError(r.throws, "TypeError"), src).toBe(true);
     }
-  })();
-(() => {
-
+  }
+  {
     const r = call(
       `export function f() { try { return [].missing(); } catch (e) { return 'throw'; } }`,
     );
     expect(litValue(r.result)).toEqual({ ok: true, value: "throw" });
-  })();
-(() => {
-
+  }
+  {
     const r = call(
       `export function f() { const a = [1, 2]; return a.map((x) => x + 1).join(","); }`,
     );
     expect(litValue(r.result)).toEqual({ ok: true, value: "2,3" });
-  })();
-(() => {
-
+  }
+  {
     const r = call(
       `export function f() { const m = new Map(); m.set("a", 1); return m.get("a"); }`,
     );
     expect(litValue(r.result)).toEqual({ ok: true, value: 1 });
-  })();
-(() => {
-
+  }
+  {
     const r = call(
       `export function f() { const a = [1]; return String(a.hasOwnProperty("length")); }`,
     );
     expect(litValue(r.result)).toEqual({ ok: true, value: "true" });
-  })();
-(() => {
-
+  }
+  {
     const r = call(
       `export class PlainBox { constructor() { this.v = 1; } present() { return this.v; } }
        export function f() { return new PlainBox().absent(); }`,
     );
     expect(isNever(r.result)).toBe(true);
     expect(throwsError(r.throws, "TypeError")).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() { return ({}).missing(); }`);
     expect(isNever(r.result)).toBe(true);
     expect(throwsError(r.throws, "TypeError")).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() { return (5).missing(); }`);
     expect(isNever(r.result)).toBe(false);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2073,38 +1829,33 @@ describe("super.constructor 取父类构造器", () => {
 
 
 
-describe("super.constructor 取父类构造器", () => {
-  it("super.constructor.name = 父类名；super.constructor === 父类（引用恒等）；无显式构造器的父类同样取到父类名", () => {
-(() => {
 
+  it("super.constructor.name = 父类名；super.constructor === 父类（引用恒等）；无显式构造器的父类同样取到父类名", () => {
+  {
     expect(val(
       `class Base { constructor(){ this.tag = "Base"; } }
        class Sub extends Base { who(){ return super.constructor.name; } }
        export function f(){ return new Sub().who(); }`,
     )).toEqual({ ok: true, value: "Base" });
-  })();
-(() => {
-
+  }
+  {
     expect(val(
       `class Base { constructor(){ this.tag = "Base"; } }
        class Sub extends Base { isBase(){ return super.constructor === Base; } }
        export function f(){ return new Sub().isBase(); }`,
     )).toEqual({ ok: true, value: true });
-  })();
-(() => {
-
+  }
+  {
     expect(val(
       `class Base { }
        class Sub extends Base { who(){ return super.constructor.name; } }
        export function f(){ return new Sub().who(); }`,
     )).toEqual({ ok: true, value: "Base" });
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2129,36 +1880,29 @@ describe("(false positive): explicit undefined pattern is the empty pattern", ()
 
 
 
-describe("(false positive): explicit undefined pattern is the empty pattern", () => {
-  it("search(undefined) → 0（空模式在 0 处匹配）；search(void 0) → 0；match(undefined)[0] → \"\"；match(undefined).length → 1", () => {
-(() => {
 
+  it("search(undefined) → 0（空模式在 0 处匹配）；search(void 0) → 0；match(undefined)[0] → \"\"；match(undefined).length → 1", () => {
+  {
     const r = call(`export function f() { return "abc".search(undefined); }`);
     expect(litValue(r.result)).toEqual({ ok: true, value: 0 });
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() { return "abc".search(void 0); }`);
     expect(litValue(r.result)).toEqual({ ok: true, value: 0 });
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() { return "abc".match(undefined)[0]; }`);
     expect(litValue(r.result)).toEqual({ ok: true, value: "" });
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f() { return "abc".match(undefined).length; }`);
     expect(litValue(r.result)).toEqual({ ok: true, value: 1 });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2177,35 +1921,31 @@ describe("(false positive): fn-expression prototype constructor is non-enumerabl
 
 
 
-describe("(false positive): fn-expression prototype constructor is non-enumerable", () => {
-  it("Object.keys(F.prototype) → ''（原生空）；constructor 描述符 enumerable → false；Object.getOwnPropertyNames(F.prototype) → 'constructor'（自有但在枚举视图外）；Object.assign 不复制 constructor（原生不复制不可枚举键）；复制出的对象上 constructor !== 原型（原生不复制）；spread 同样不复制 constructor", () => {
-(() => {
 
+  it("Object.keys(F.prototype) → ''（原生空）；constructor 描述符 enumerable → false；Object.getOwnPropertyNames(F.prototype) → 'constructor'（自有但在枚举视图外）；Object.assign 不复制 constructor（原生不复制不可枚举键）；复制出的对象上 constructor !== 原型（原生不复制）；spread 同样不复制 constructor", () => {
+  {
     const r = call(
       `export function f() { return Object.keys((function () {}).prototype).join(","); }`,
     );
     expect(litValue(r.result)).toEqual({ ok: true, value: "" });
-  })();
-(() => {
-
+  }
+  {
     const r = call(
       `export function f() {
          return Object.getOwnPropertyDescriptor((function () {}).prototype, "constructor").enumerable;
        }`,
     );
     expect(litValue(r.result)).toEqual({ ok: true, value: false });
-  })();
-(() => {
-
+  }
+  {
     const r = call(
       `export function f() {
          return Object.getOwnPropertyNames((function () {}).prototype).join(",");
        }`,
     );
     expect(litValue(r.result)).toEqual({ ok: true, value: "constructor" });
-  })();
-(() => {
-
+  }
+  {
     const r = call(
       `export function f() {
          const proto = (function () {}).prototype;
@@ -2213,18 +1953,16 @@ describe("(false positive): fn-expression prototype constructor is non-enumerabl
        }`,
     );
     expect(litValue(r.result)).toEqual({ ok: true, value: "" });
-  })();
-(() => {
-
+  }
+  {
     const r = call(
       `export function f() {
          return Object.assign({}, (function () {}).prototype).constructor === (function () {});
        }`,
     );
     expect(litValue(r.result)).toEqual({ ok: true, value: false });
-  })();
-(() => {
-
+  }
+  {
     const r = call(
       `export function f() {
          const proto = (function () {}).prototype;
@@ -2232,17 +1970,12 @@ describe("(false positive): fn-expression prototype constructor is non-enumerabl
        }`,
     );
     expect(litValue(r.result)).toEqual({ ok: true, value: "" });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 });

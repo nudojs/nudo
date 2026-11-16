@@ -18,7 +18,7 @@ const strArr = (termId: string) =>
   abs({ k: "arr", element: abs({ k: "prim", type: "string" }, undefined, undefined, "path") },
     { op: "var", id: termId }, undefined, "path");
 
-describe("#175 域共享 len 修复：元素域双读不折 0", () => {
+describe("域共享 len 修复：元素域双读不折 0", () => {
   it("xs[0].length - xs[1].length 不得折 exact 0（不同槽位不同长度）", () => {
     const run = runTranspiled(
       `export function diff(xs) { return xs[0].length - xs[1].length; }`,

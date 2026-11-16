@@ -42,7 +42,7 @@ needsPositive(-1);
 const loadModule = (spec: string) =>
   spec.includes("std.nudo") ? STD : undefined;
 
-describe("Abs check as LSP diagnostics", () => {
+
   it("maps constraint violations to nudo-check diagnostics", () => {
     const diags = checkToLspDiagnostics("/t/check.js", src, loadModule);
     expect(diags.length).toBeGreaterThan(0);
@@ -148,7 +148,7 @@ function f(x) { return x; }
     expect(diags.length).toBeGreaterThan(0);
     expect(diags.some((d) => /error/i.test(msgText(d.message)))).toBe(true);
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -212,7 +212,7 @@ function envDiags(sent: LspDiagnostic[]): LspDiagnostic[] {
   return sent.filter((d) => d.code === "nudo:env-unresolved");
 }
 
-describe("LSP nudo:env-unresolved 诊断（validation 面）", () => {
+{
   beforeEach(() => {
     clearValidationState();
     clearPathEnvCaches();
@@ -270,7 +270,7 @@ describe("LSP nudo:env-unresolved 诊断（validation 面）", () => {
     // 进程级错误表仍有旧条目——本轮 env 名单不含它，不得继续发布
     expect(envDiags(await validate(dir, 2))).toHaveLength(0);
   });
-});
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -311,7 +311,7 @@ async function publish(filePath: string, source: string): Promise<any[]> {
   return sent;
 }
 
-describe("LSP：按名字发的 env 诊断不再被过滤掉", () => {
+
   it("未知 env 名 ⇒ IDE 里出现 nudo:env-unresolved", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-lsp-470-"));
     try {
@@ -351,7 +351,7 @@ describe("LSP：按名字发的 env 诊断不再被过滤掉", () => {
       clearValidationState();
     }
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -395,7 +395,7 @@ async function publish(filePath: string, source: string): Promise<any[]> {
   return sent;
 }
 
-describe("LSP：坏侧车的 contract-load error 不被分析器取走", () => {
+
   it("分析器先跑 ⇒ IDE 里仍有 error 级 nudo:contract-load", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-lsp-495-"));
     try {
@@ -437,7 +437,7 @@ describe("LSP：坏侧车的 contract-load error 不被分析器取走", () => {
       clearValidationState();
     }
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -496,7 +496,7 @@ function openSession(src: string): {
   };
 }
 
-describe("诊断 range 必须夹在文档内（整行哨兵 column:999）", () => {
+
   it("push 通道：nudo:case-expected 的 range 不越过行尾", async () => {
     const { mock, uri, cleanup } = openSession(SRC);
     try {
@@ -577,7 +577,7 @@ describe("诊断 range 必须夹在文档内（整行哨兵 column:999）", () =
     const r2 = lspDiagnosticRange({ line: 3, column: 4 }, { line: 3, column: 5 });
     expect(r2.start).toEqual({ line: 2, character: 4 });
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -641,7 +641,7 @@ function refreshMethods(mock: ReturnType<typeof createMockConnection>): string[]
   return mock.sentRequests.map((r: { type?: { method?: string } }) => r.type?.method ?? "?");
 }
 
-describe("选择器变更必须广播 diagnostic refresh（pull 诊断面）", () => {
+
   it("nudo.selectCase 之后发出 workspace/diagnostic/refresh", async () => {
     const mock = startServer();
     mock.sentRequests.length = 0;
@@ -665,7 +665,7 @@ describe("选择器变更必须广播 diagnostic refresh（pull 诊断面）", (
 
     expect(refreshMethods(mock)).toContain("workspace/diagnostic/refresh");
   }, 30_000);
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -716,7 +716,7 @@ function msgText(m: string | { value: string }): string {
   return typeof m === "string" ? m : m.value;
 }
 
-describe("nudo:directive-syntax 只发布一次", () => {
+
   it("validateText 发布面：同一条指令文法诊断只出现 1 次（改前：2 次）", async () => {
     const published: Array<{ uri: string; diagnostics: LspDiagnostic[] }> = [];
     const deps = makeValidateDeps({ onPublish: (p) => published.push(p) });
@@ -765,7 +765,7 @@ describe("nudo:directive-syntax 只发布一次", () => {
     const last = published[published.length - 1]!;
     expect(countCode(last.diagnostics, DIAG.entryMayThrow)).toBe(1);
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -851,7 +851,7 @@ async function publishDiagnostics(
   return published[published.length - 1]!.diagnostics;
 }
 
-describe("残留 — @nudo:as 载体不支持的诊断在 IDE 编辑器面可见", () => {
+
   it("check 通道：表达式语句载体 ⇒ 一条 nudo:directive-syntax（warning，非硬错）", () => {
     const diags = checkToLspDiagnostics("/t/as-expr.js", INVALID_EXPR_STMT);
     const syntax = syntaxDiags(diags);
@@ -897,7 +897,7 @@ describe("残留 — @nudo:as 载体不支持的诊断在 IDE 编辑器面可见
     const published = await publishDiagnostics("/t/as-var-push.js", VALID_VAR_DECL);
     expect(syntaxDiags(published)).toHaveLength(0);
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -967,7 +967,7 @@ function envMsgs(diags: LspDiagnostic[]): string[] {
     .map((d) => (typeof d.message === "string" ? d.message : d.message.value));
 }
 
-describe("项目级 env 的加载失败必须在 LSP 面可见（路径按项目根）", () => {
+{
   beforeEach(() => {
     // 进程级 live 记录是全局的 ⇒ 每例前清干净（否则跨例串台）
     clearPathEnvCaches();
@@ -1036,7 +1036,7 @@ describe("项目级 env 的加载失败必须在 LSP 面可见（路径按项目
     // 注：LSP **check 通道**的项目级 env 绝对化已由 （`absolutizeEnvSpec`）
     // 修好 ⇒ 项目级 env 在该通道同样可见，不再是 IDE 红 / CLI 绿的假红来源。
   });
-});
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -1111,7 +1111,7 @@ async function published(dir: string, name: string, src: string): Promise<LspDia
   return sent;
 }
 
-describe("分析失败（门禁判红的文件）必须出现在 IDE 面", () => {
+
   it("模块求值失败 ⇒ 发布一条 error 级 nudo:module-throw（与 CLI exit ≠ 0 同结论）", async () => {
     const dir = project();
     const diags = await published(dir, "f.js", BROKEN_SRC);
@@ -1129,7 +1129,7 @@ describe("分析失败（门禁判红的文件）必须出现在 IDE 面", () =>
     const diags = await published(dir, "g.js", CLEAN_SRC);
     expect(diags.filter((d) => d.code === "nudo:module-throw")).toHaveLength(0);
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1187,7 +1187,7 @@ const PKG = JSON.stringify({
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-describe("模块环不再丢图 ⇒ 截断归因诊断上屏", () => {
+
   it("pull 通道对 a.js 报告 nudo:recursion-truncated + nudo:module-cycle", async () => {
     await withLspServer(
       { "a.js": A, "b.js": B, "package.json": PKG },
@@ -1253,7 +1253,7 @@ describe("模块环不再丢图 ⇒ 截断归因诊断上屏", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   }, 60_000);
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1286,7 +1286,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const SRC = '/// @nudo:env "./nope.mjs"\nexport function g2() {\n  return 1;\n}\n';
 
-describe("pull 诊断必须含 env 通道", () => {
+
   it("@nudo:env 指向缺失文件 ⇒ pull 里有 nudo:env-unresolved", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug781-"));
     try {
@@ -1314,7 +1314,7 @@ describe("pull 诊断必须含 env 通道", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   }, 30_000);
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1348,7 +1348,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const SRC = '/// @nudo:env "./nope.mjs"\nexport function g2() {\n  return 1;\n}\n';
 
-describe("push 与 pull 诊断面同形（env 通道 parity）", () => {
+
   it("push 与 pull 的诊断 code 集合一致", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug992-"));
     try {
@@ -1384,7 +1384,7 @@ describe("push 与 pull 诊断面同形（env 通道 parity）", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   }, 30_000);
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1396,7 +1396,7 @@ describe("LSP 面：返回契约违例画在真实行（不得是第 1 行）", 
  * 画在**第 1 行第 0 列**（`range {0,0}-{0,1}`），而函数其实在第 10 行。
  *
  * 修法（族 07 片 S4）：core 的 `checkReturnConstraint` 在 issue 构造处补上
- * **被违约函数的声明位置** ⇒ LSP 侧（`checkIssueToLspDiagnostic` → 
+ * **被违约函数的声明位置** ⇒ LSP 侧（`checkIssueToLspDiagnostic` →
  * `lspDiagnosticRange`）自然换算到真实行（1 基 → 0 基）。
  *
  * 钉：`nudo:constraint-violated` 的 LSP range 必须落在第 10 行
@@ -1428,7 +1428,7 @@ export const deep = fn({ x: number().gt(0) }, number().gt(0));
 const loadModule = (spec: string): string | undefined =>
   spec.endsWith(".nudo.js") ? SIDECAR : undefined;
 
-describe("LSP 面：返回契约违例画在真实行（不得是第 1 行）", () => {
+
   it("nudo:constraint-violated 的 range 落在函数声明行", () => {
     const diags = checkToLspDiagnostics("/t/bug369.js", SRC, loadModule);
     const d = diags.find((x) => x.code === "nudo:constraint-violated");
@@ -1438,7 +1438,7 @@ describe("LSP 面：返回契约违例画在真实行（不得是第 1 行）", 
     expect(d!.range.start.character).toBe(7);
     expect(d!.range.start.line).not.toBe(0);
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1544,7 +1544,7 @@ function unprovenAfter(dir: string, js: string, landedSidecar: string): Diag[] {
   return all.filter(isUnprovenReturn);
 }
 
-describe("unproven-return 的 relax 必须真的写到推断面", () => {
+
   it("落盘 = 推断面（any()），不是基类型（number()）；且诊断消失", () => {
     const { actions, diags, scText, uri } = actionsFor("nudo-lsp-135a-", G_JS, G_SC);
     // 诊断面先钉住：推断面是 any（不是 number）
@@ -1614,7 +1614,7 @@ describe("unproven-return 的 relax 必须真的写到推断面", () => {
     // hint = 被放宽的**原**契约（不是推断面）：用户看得到「放宽了什么」
     expect(relax.hint).toBe("number().gt(40)");
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1625,7 +1625,7 @@ describe("push diagnostics face (LSP-G6)", () => {
  * LSP-G6：老客户端只消费 push（textDocument/publishDiagnostics），
  * 不用 pull diagnosticProvider。打开/校验路径必须仍走 sendDiagnostics。
  */
-describe("push diagnostics face (LSP-G6)", () => {
+
   it("validateText always publishes via sendDiagnostics (no pull required)", async () => {
     const published: Array<{ uri: string; diagnostics: LspDiagnostic[] }> = [];
     const deps = makeValidateDeps({
@@ -1656,5 +1656,5 @@ describe("push diagnostics face (LSP-G6)", () => {
     expect(published.length).toBeGreaterThan(0);
     expect(published[published.length - 1]!.diagnostics.length).toBe(0);
   });
-});
+
 });

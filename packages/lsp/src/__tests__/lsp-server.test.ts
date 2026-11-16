@@ -50,37 +50,32 @@ function initWith(params: Record<string, unknown>): { capabilities?: Record<stri
   };
 }
 
-describe("畸形 URI 不得让 initialize 整个失败", () => {
-  it("畸形 workspaceFolders[0].uri ⇒ 跳过该 folder，initialize 照常返回；畸形 rootUri ⇒ 跳过该根，initialize 照常返回；正常 URI 不受影响（仍返回 capabilities）", () => {
-(() => {
 
+  it("畸形 workspaceFolders[0].uri ⇒ 跳过该 folder，initialize 照常返回；畸形 rootUri ⇒ 跳过该根，initialize 照常返回；正常 URI 不受影响（仍返回 capabilities）", () => {
+  {
     const res = initWith({
       rootUri: null,
       workspaceFolders: [{ uri: "file:///tmp/proj%zz", name: "x" }],
     });
     expect(res.capabilities).toBeDefined();
     expect(Object.keys(res.capabilities ?? {}).length).toBeGreaterThan(0);
-  })();
-(() => {
-
+  }
+  {
     const res = initWith({ rootUri: "file:///tmp/a%2", workspaceFolders: null });
     expect(res.capabilities).toBeDefined();
     expect(Object.keys(res.capabilities ?? {}).length).toBeGreaterThan(0);
-  })();
-(() => {
-
+  }
+  {
     const res = initWith({
       rootUri: "file:///tmp/nudo-784-ok",
       workspaceFolders: [{ uri: "file:///tmp/nudo-784-ok", name: "ok" }],
     });
     expect(res.capabilities).toBeDefined();
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -108,10 +103,9 @@ const SRC = `export function f(x) {
 }
 `;
 
-describe("未声明的命令名必须回协议层错误（MethodNotFound）", () => {
-  it("未知命令名不再回落 result:null；已声明的命令名照常执行（白名单 = advertise 面）", async () => {
-await (async () => {
 
+  it("未知命令名不再回落 result:null；已声明的命令名照常执行（白名单 = advertise 面）", async () => {
+  {
     await withLspServer({ "sel.js": SRC }, async ({ req }) => {
       const exec = req("workspace/executeCommand");
 
@@ -121,9 +115,8 @@ await (async () => {
         ).rejects.toMatchObject({ code: ErrorCodes.MethodNotFound });
       }
     });
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "sel.js": SRC }, async ({ req, dir }) => {
       const exec = req("workspace/executeCommand");
 
@@ -134,11 +127,10 @@ await (async () => {
       });
       expect(result).toEqual({});
     });
-  })();
-});;
-
-  ;
+  }
 });
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -177,7 +169,7 @@ describe("workspace/didChangeWorkspaceFolders 必须更新根集合", () => {
 
 const SRC = "export function f() {\n  return 1;\n}\n";
 
-describe("workspace/didChangeWorkspaceFolders 必须更新根集合", () => {
+
   it("声明 changeNotifications + 增删根即时生效（写盘边界跟着走）", async () => {
     const base = mkdtempSync(join(tmpdir(), "nudo-bug783-"));
     try {
@@ -225,13 +217,13 @@ describe("workspace/didChangeWorkspaceFolders 必须更新根集合", () => {
       rmSync(base, { recursive: true, force: true });
     }
   }, 30_000);
-});
+
 });
 
 // ---------------------------------------------------------------------------
 // 族 24 Z —— workspaceFolders 的 getter 抛异常不得让 server 崩
 // ---------------------------------------------------------------------------
-describe("族 24 Z —— workspaceFolders 的 getter 抛异常不得让 server 崩", () => {
+describe("Z —— workspaceFolders 的 getter 抛异常不得让 server 崩", () => {
 /**
  * 族 24 收口片 Z —— `connection.workspace.onDidChangeWorkspaceFolders`
  * 是**会抛异常的 getter** ⇒ server 不得因此崩。
@@ -311,15 +303,13 @@ function mockClientWithDelayedWorkspaceFolders(): {
   };
 }
 
-describe("族 24 Z —— workspaceFolders 的 getter 抛异常不得让 server 崩", () => {
-  it("① 客户端不声明 workspaceFolders 能力 ⇒ createNudoServer 不抛异常；② 该客户端的 onInitialize 仍正常返回（服务端能力声明一字不动）；③ 真语义（getter 在 initialize 之后才可用）⇒ 订阅仍建立且只建立一次", async () => {
-await (async () => {
 
+  it("① 客户端不声明 workspaceFolders 能力 ⇒ createNudoServer 不抛异常；② 该客户端的 onInitialize 仍正常返回（服务端能力声明一字不动）；③ 真语义（getter 在 initialize 之后才可用）⇒ 订阅仍建立且只建立一次", async () => {
+  {
     const mock = mockClientWithoutWorkspaceFolders();
     expect(() => createNudoServer(mock as unknown as never)).not.toThrow();
-  })();
-await (async () => {
-
+  }
+  {
     const mock = mockClientWithoutWorkspaceFolders();
     createNudoServer(mock as unknown as never);
     const init = mock.requests.get("initialize")!;
@@ -332,9 +322,8 @@ await (async () => {
     expect(res.capabilities?.workspace).toMatchObject({
       workspaceFolders: { supported: true, changeNotifications: true },
     });
-  })();
-await (async () => {
-
+  }
+  {
     const { mock, listeners, markInitialized } = mockClientWithDelayedWorkspaceFolders();
     // 构造期：getter 抛 ⇒ 静默跳过（不崩），不订阅
     expect(() => createNudoServer(mock as unknown as never)).not.toThrow();
@@ -357,13 +346,11 @@ await (async () => {
 
     // 订阅到的处理器可被调用（发通知不会把 server 掀翻）
     expect(() => listeners[0]({ added: [], removed: [] })).not.toThrow();
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -441,10 +428,9 @@ function withProject(
   });
 }
 
-describe("跨模块 call@ 镜的 nudo.trace 动作必须可执行", () => {
-  it("trace({file, functionName}) 回落到 externalFunctions：出跨模块见证；真 server executeCommand `nudo.trace [uri, fn]`（观察镜动作形态）不报 not found；同文件 call@ 对照：trace 仍按本地函数解析（不回归）", async () => {
-await (async () => {
 
+  it("trace({file, functionName}) 回落到 externalFunctions：出跨模块见证；真 server executeCommand `nudo.trace [uri, fn]`（观察镜动作形态）不报 not found；同文件 call@ 对照：trace 仍按本地函数解析（不回归）", async () => {
+  {
     await withProject({ "lib.js": LIB_SRC, "main.js": MAIN_SRC }, async (dir) => {
       // 前置：`add` **不在**本文件函数表里（否则这条用例测不到回落）
       const analysis = await analyzeFileAsync(
@@ -468,9 +454,8 @@ await (async () => {
       expect(text).not.toContain("not found");
       expect(text).toContain(CROSS_WITNESS);
     });
-  })();
-await (async () => {
-
+  }
+  {
     const mock = createMockConnection();
     createNudoServer(mock as unknown as never);
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug146-srv-"));
@@ -500,9 +485,8 @@ await (async () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  })();
-await (async () => {
-
+  }
+  {
     await withProject({ "same.js": SAME_FILE_SRC }, async (dir) => {
       const res = await trace({
         file: join(dir, "same.js"),
@@ -512,13 +496,11 @@ await (async () => {
       expect(res.isError, `同文件 trace 失败：${text}`).toBeFalsy();
       expect(text).toContain(CROSS_WITNESS);
     });
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -537,7 +519,7 @@ describe("trace-positional-bridge", () => {
 
 
 
-describe("trace-positional-bridge", () => {
+{
 /**
  * `nudo.trace` 的**位置参数**形态没有命令桥。
  *
@@ -577,8 +559,7 @@ export function run() {
 
 describe("nudo.trace 必须支持位置参数 [uri, functionName]", () => {
   it("位置参数 [uri, fn] 跑出 trace（不是错误）；对象形态 { uri, functionName } 仍然可用（桥不得吃掉既有形态）；非对象参数（裸字符串）⇒ 协议层 InvalidParams（不再把字符串当对象传下去）", async () => {
-await (async () => {
-
+  {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug780-"));
     try {
       const file = join(dir, "app.js");
@@ -596,9 +577,8 @@ await (async () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  })();
-await (async () => {
-
+  }
+  {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug780-"));
     try {
       const file = join(dir, "app.js");
@@ -616,9 +596,8 @@ await (async () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  })();
-await (async () => {
-
+  }
+  {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug780-"));
     try {
       const file = join(dir, "app.js");
@@ -632,14 +611,12 @@ await (async () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
 });
+}
 
 describe("trace-uri-bridge", () => {
 /**
@@ -713,8 +690,7 @@ function textOf(res: any): string {
 
 describe("nudo.trace 必须接受 uri 键并有位置参数桥", () => {
   it("nudo/trace 的 {uri} 形态：出见证（不再 TypeError）；nudo/trace 的 {file} 形态：不回归；agent 侧：trace 工具直调也接受 uri 键；位置参数桥 tracePositionalArgs：[uri, fn] ⇒ { uri, functionName }", async () => {
-await (async () => {
-
+  {
     const { mock, file, cleanup } = openSession();
     try {
       const res: any = await mock.requests.get("nudo/trace")!({
@@ -726,9 +702,8 @@ await (async () => {
     } finally {
       cleanup();
     }
-  })();
-await (async () => {
-
+  }
+  {
     const { mock, file, cleanup } = openSession();
     try {
       const res: any = await mock.requests.get("nudo/trace")!({
@@ -740,9 +715,8 @@ await (async () => {
     } finally {
       cleanup();
     }
-  })();
-await (async () => {
-
+  }
+  {
     const { file, cleanup } = openSession();
     try {
       const res = await trace({ uri: `file://${file}`, functionName: "run" });
@@ -751,9 +725,8 @@ await (async () => {
     } finally {
       cleanup();
     }
-  })();
-await (async () => {
-
+  }
+  {
     expect(tracePositionalArgs(["file:///tmp/a.js", "run"])).toEqual({
       uri: "file:///tmp/a.js",
       functionName: "run",
@@ -761,14 +734,11 @@ await (async () => {
     // 形态不合法 ⇒ undefined（由调用方报协议层参数形态错误）
     expect(tracePositionalArgs(["file:///tmp/a.js"])).toBeUndefined();
     expect(tracePositionalArgs([123, "run"])).toBeUndefined();
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 });
 });
 });
@@ -805,29 +775,25 @@ describe("URI 编解码互逆（编码侧 pathToFileURL / 解码侧 fileURLToPat
 
 
 
-describe("URI 编解码互逆（编码侧 pathToFileURL / 解码侧 fileURLToPath）", () => {
-  it("编码侧对保留字符做百分号转义（裸 % 不再出现）；普通路径的 URI 形态不变（file:/// 绝对路径）；解码侧：合法 URI 解回原路径（与编码侧互逆）；解码侧：畸形百分号转义**绝不抛**（回退到未解码原文）；解码侧：非 file: scheme 原样返回（行为不变）；Windows 盘符形态经 cacheKey 归一（file:///c:/… ⇒ c:/…）；协议面：客户端把服务端自己刚给的（裸 % 的）URI 回传给 didOpen ⇒ 不中断且该文档有诊断", async () => {
-await (async () => {
 
+  it("编码侧对保留字符做百分号转义（裸 % 不再出现）；普通路径的 URI 形态不变（file:/// 绝对路径）；解码侧：合法 URI 解回原路径（与编码侧互逆）；解码侧：畸形百分号转义**绝不抛**（回退到未解码原文）；解码侧：非 file: scheme 原样返回（行为不变）；Windows 盘符形态经 cacheKey 归一（file:///c:/… ⇒ c:/…）；协议面：客户端把服务端自己刚给的（裸 % 的）URI 回传给 didOpen ⇒ 不中断且该文档有诊断", async () => {
+  {
     expect(filePathToUri("/x/100%.js")).toBe("file:///x/100%25.js");
     expect(filePathToUri("/x/a#b.js")).toBe("file:///x/a%23b.js");
     expect(filePathToUri("/x/a?b.js")).toBe("file:///x/a%3Fb.js");
     expect(filePathToUri("/x/a b.js")).toBe("file:///x/a%20b.js");
     expect(filePathToUri("/x/中文.js")).toBe("file:///x/%E4%B8%AD%E6%96%87.js");
-  })();
-await (async () => {
-
+  }
+  {
     expect(filePathToUri("/tmp/a.js")).toBe("file:///tmp/a.js");
     expect(filePathToUri("file:///already/a.js")).toBe("file:///already/a.js");
-  })();
-await (async () => {
-
+  }
+  {
     for (const p of ["/x/100%.js", "/x/a#b.js", "/x/a?b.js", "/x/a b.js", "/x/中文.js", "/tmp/a.js"]) {
       expect(uriToFilePath(filePathToUri(p)), `round-trip 失败：${p}`).toBe(p);
     }
-  })();
-await (async () => {
-
+  }
+  {
     let out: string | undefined;
     expect(() => {
       out = uriToFilePath("file:///x/100%.js");
@@ -838,19 +804,16 @@ await (async () => {
       out2 = uriToFilePath("file:///x/%zz.js");
     }, "畸形 URI 抛了").not.toThrow();
     expect(typeof out2).toBe("string");
-  })();
-await (async () => {
-
+  }
+  {
     expect(uriToFilePath("untitled:Untitled-1")).toBe("untitled:Untitled-1");
     expect(uriToFilePath("/plain/path.js")).toBe("/plain/path.js");
-  })();
-await (async () => {
-
+  }
+  {
     expect(cacheKey("file:///c:/my%20dir/a.js")).toBe("c:/my dir/a.js");
     expect(cacheKey("file:///c:/proj/a.js")).toBe(cacheKey("c:/proj/a.js"));
-  })();
-await (async () => {
-
+  }
+  {
     const dir = mkdtempSync(join(tmpdir(), "nudo-748-"));
     try {
       // 服务端**旧实现**自产的 URI 形态：裸 `%`（非法 URI）
@@ -876,21 +839,15 @@ await (async () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -908,7 +865,7 @@ describe("didopen-dup-publish", () => {
 
 
 
-describe("didopen-dup-publish", () => {
+{
 /**
  * `didOpen` 重复发布 `publishDiagnostics`。
  *
@@ -940,8 +897,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 describe("didOpen 不得重复发布同一版本的诊断", () => {
   it("会出诊断的文件：didOpen 只发布一次（同 version 同内容）；不出诊断的文件：didOpen 也只发布一次（空数组）；编辑后仍会发布新版本的诊断（去重不得把后续诊断吞掉）", async () => {
-await (async () => {
-
+  {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug776-"));
     try {
       const src = "export function boom() {\n  throw new Error('x');\n}\n";
@@ -963,9 +919,8 @@ await (async () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  })();
-await (async () => {
-
+  }
+  {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug776-"));
     try {
       const src = "export const a = 1;\n";
@@ -984,9 +939,8 @@ await (async () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  })();
-await (async () => {
-
+  }
+  {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug776-"));
     try {
       const src = "export function boom() {\n  throw new Error('x');\n}\n";
@@ -1012,14 +966,12 @@ await (async () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
 });
+}
 
 describe("validation-self-exclusion", () => {
 /**
@@ -1050,9 +1002,9 @@ describe("（validation 半）—— 依赖文件变更的 self-排除", () => {
   });
 
   it("变更文件自己 ⇒ 不重检自己（无自激重检）；真正的 parent（@nudo:import 依赖方）仍被重检（self-排除不得误伤）", async () => {
-await (async () => {
+  {
     clearValidationState();
-  
+
 
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug776e-"));
     try {
@@ -1078,10 +1030,10 @@ await (async () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  })();
-await (async () => {
+  }
+  {
     clearValidationState();
-  
+
 
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug776f-"));
     try {
@@ -1109,10 +1061,9 @@ export function needsPositive(x) {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  })();
-});;
+  }
+});
 
-  ;
 });
 });
 });
@@ -1186,10 +1137,9 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("createNudoServer — initialize", () => {
-  it("declares the full capability inventory and command list；registers slash- and dot-form request aliases for every agent tool", async () => {
-await (async () => {
 
+  it("declares the full capability inventory and command list；registers slash- and dot-form request aliases for every agent tool", async () => {
+  {
     const mock = startServer();
     const result = await handler(mock, "initialize")({
       processId: null,
@@ -1210,9 +1160,8 @@ await (async () => {
       interFileDependencies: false,
       workspaceDiagnostics: false,
     });
-  })();
-await (async () => {
-
+  }
+  {
     const mock = startServer();
     for (const name of NUDO_AGENT_TOOL_NAMES) {
       expect(mock.requests.has(`nudo/${name}`), `missing nudo/${name}`).toBe(true);
@@ -1222,16 +1171,14 @@ await (async () => {
     expect(mock.requests.has("nudo/getActiveCases")).toBe(true);
     expect(mock.requests.has("textDocument/hover")).toBe(true);
     expect(mock.requests.has("textDocument/diagnostic")).toBe(true);
-  })();
-});;
-
-  ;
+  }
 });
+
+
 
 describe("createNudoServer — request dispatch", () => {
   it("workspace/executeCommand nudo.check analyzes a source payload；slash-form nudo/check and dot-form nudo.check share one handler；nudo.getActiveCases returns the empty case map for a fresh uri", async () => {
-await (async () => {
-
+  {
     const mock = startServer();
     const result = await handler(mock, "workspace/executeCommand")({
       command: "nudo.check",
@@ -1242,9 +1189,8 @@ await (async () => {
     expect(payload.version).toBe(1);
     expect(payload.ok).toBe(true);
     expect(payload.summary.functions).toBeGreaterThanOrEqual(1);
-  })();
-await (async () => {
-
+  }
+  {
     const mock = startServer();
     const params = { file: okFile, format: "json" };
     const viaSlash = await handler(mock, "nudo/check")(params);
@@ -1254,26 +1200,22 @@ await (async () => {
     expect(viaDot.content[0].text).toBe(viaSlash.content[0].text);
     const payload = JSON.parse(viaSlash.content[0].text);
     expect(payload.ok).toBe(true);
-  })();
-await (async () => {
-
+  }
+  {
     const mock = startServer();
     const result = await handler(mock, "nudo/getActiveCases")({
       file: join(dir, "fresh.js"),
     });
     expect(result).toEqual({});
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 });
 
 describe("createNudoServer — error paths", () => {
   it("unknown executeCommand raises a protocol-level MethodNotFound error；nudo.check on a missing file returns isError (fail-closed)；pull diagnostics for an unknown document are empty (no crash)；pull diagnostics catch 不得 items:[] — 标 Analysis err", async () => {
-await (async () => {
-
+  {
     const mock = startServer();
     // 940：未声明的命令名不再回落 result:null（协议层假成功）——必须走协议层错误。
     await expect(async () =>
@@ -1282,9 +1224,8 @@ await (async () => {
         arguments: [{ file: okFile }],
       }),
     ).rejects.toMatchObject({ code: ErrorCodes.MethodNotFound });
-  })();
-await (async () => {
-
+  }
+  {
     const mock = startServer();
     const result = await handler(mock, "workspace/executeCommand")({
       command: "nudo.check",
@@ -1292,17 +1233,15 @@ await (async () => {
     });
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toMatch(/Error:/);
-  })();
-await (async () => {
-
+  }
+  {
     const mock = startServer();
     const result = await handler(mock, "textDocument/diagnostic")({
       textDocument: { uri: "file:///definitely/not/open.js" },
     });
     expect(result).toEqual({ kind: "full", items: [] });
-  })();
-await (async () => {
-
+  }
+  {
     const mock = startServer();
     // 打开一个会让 analyzeFile 抛错的文档：带 @nudo 指令（过 isNudoFile gate）+ 语法错误
     const uri = "file:///t/syntax-err.js";
@@ -1325,9 +1264,8 @@ function (`,
     // 不得 items:[] 把瞬时失败当「文件干净」——必须留错误面
     expect(result.items.length).toBeGreaterThan(0);
     expect(result.items.some((d: { message: string }) => /Analysis error|Check error/.test(d.message))).toBe(true);
-  })();
-await (async () => {
-
+  }
+  {
     const mock = startServer();
     const uri = "file:///t/preserve-last.js";
     const openHandler = mock.notifications.get("textDocument/didOpen")!;
@@ -1368,26 +1306,20 @@ function (`,
     expect(
       errResult.items.some((d: { code?: string }) => d.code === "nudo:directive-syntax"),
     ).toBe(true);
-  })();
-await (async () => {
-
+  }
+  {
     const mock = createMockConnection();
     const handle = createNudoServer(mock as unknown as Connection);
     expect(mock.listened).toBe(false);
     handle.listen();
     expect(mock.listened).toBe(true);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 
 describe("createNudoServer — client settings (initializationOptions / didChangeConfiguration)", () => {
@@ -1450,27 +1382,23 @@ describe("createNudoServer — client settings (initializationOptions / didChang
   }
 
   it("plain non-export JS stays quiet without client settings (exports default)；initializationOptions analysis.mode=all widens the gate；invalid initializationOptions mode falls back to the product default；project package.json#nudo.analysis.mode w", async () => {
-await (async () => {
-
+  {
     const { mock } = await initServer();
     const uri = openPlainDoc(mock, "default");
     expect(await symbolsFor(mock, uri)).toEqual([]);
-  })();
-await (async () => {
-
+  }
+  {
     const { mock } = await initServer({ analysis: { mode: "all" } });
     const uri = openPlainDoc(mock, "all");
     const symbols = await symbolsFor(mock, uri);
     expect(symbols.map((s) => s.name)).toContain("plain");
-  })();
-await (async () => {
-
+  }
+  {
     const { mock } = await initServer({ analysis: { mode: "loud" } });
     const uri = openPlainDoc(mock, "invalid");
     expect(await symbolsFor(mock, uri)).toEqual([]);
-  })();
-await (async () => {
-
+  }
+  {
     const projDir = join(settingsDir, "proj-directives");
     mkdirSync(projDir, { recursive: true });
     writeFileSync(
@@ -1481,9 +1409,8 @@ await (async () => {
     const { mock } = await initServer({ analysis: { mode: "all" } });
     const uri = openPlainDoc(mock, "proj-directives");
     expect(await symbolsFor(mock, uri)).toEqual([]);
-  })();
-await (async () => {
-
+  }
+  {
     const projDir = join(settingsDir, "proj-all");
     mkdirSync(projDir, { recursive: true });
     writeFileSync(
@@ -1495,9 +1422,8 @@ await (async () => {
     const uri = openPlainDoc(mock, "proj-all");
     const symbols = await symbolsFor(mock, uri);
     expect(symbols.map((s) => s.name)).toContain("plain");
-  })();
-await (async () => {
-
+  }
+  {
     const { mock, reconfigure } = await initServer();
     const uri = openPlainDoc(mock, "live");
     expect(await symbolsFor(mock, uri)).toEqual([]);
@@ -1507,18 +1433,13 @@ await (async () => {
 
     await reconfigure(undefined);
     expect(await symbolsFor(mock, uri)).toEqual([]);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 
 describe("createNudoServer — 参数 inlay hints 开关（nudo.inlayHints.parameters，默认关）", () => {
@@ -1588,16 +1509,14 @@ export const need = fn({ x: number() }, number());
   }
 
   it("默认关：无参数 where inlay（返回 inlay 仍在）；initializationOptions inlayHints.parameters=true 开启；非法宿主值回落默认关；workspace/didChangeConfiguration 实时开关；项目 package.json#nudo.inlayHints.parameters 显式值赢过宿主默认；折叠展示：侧车表达式原文 label + 完整 pred tooltip", async () => {
-await (async () => {
-
+  {
     const { mock, uri } = await startParamSession();
     const labels = await inlayLabels(mock, uri);
     expect(labels.some((l) => l.includes("where"))).toBe(false);
     // 返回 inlay（`: x` 路径摘要）短小，不受开关影响
     expect(labels.some((l) => l.includes(": x"))).toBe(true);
-  })();
-await (async () => {
-
+  }
+  {
     const { mock, uri } = await startParamSession({
       inlayHints: { parameters: true },
     });
@@ -1611,17 +1530,15 @@ await (async () => {
     expect(
       labels.some((l) => l.includes('where typeof x = "number"')),
     ).toBe(false);
-  })();
-await (async () => {
-
+  }
+  {
     const { mock, uri } = await startParamSession({
       inlayHints: { parameters: "yes" },
     });
     const labels = await inlayLabels(mock, uri);
     expect(labels.some((l) => l.includes("where"))).toBe(false);
-  })();
-await (async () => {
-
+  }
+  {
     const { mock, uri } = await startParamSession();
     expect((await inlayLabels(mock, uri)).some((l) => l.includes("where"))).toBe(
       false,
@@ -1640,9 +1557,8 @@ await (async () => {
     expect((await inlayLabels(mock, uri)).some((l) => l.includes("where"))).toBe(
       false,
     );
-  })();
-await (async () => {
-
+  }
+  {
     // 项目关 + 宿主开 → 关
     const off = await startParamSession(
       { inlayHints: { parameters: true } },
@@ -1659,9 +1575,8 @@ await (async () => {
     expect((await inlayLabels(on.mock, on.uri)).some((l) => l.includes("where"))).toBe(
       true,
     );
-  })();
-await (async () => {
-
+  }
+  {
     const sub = `proj-${Math.random().toString(36).slice(2, 8)}`;
     const projDir = join(paramDir, sub);
     mkdirSync(projDir, { recursive: true });
@@ -1697,18 +1612,13 @@ export const need = fn({ x: number().gt(0) }, number());
     expect(typeof param!.tooltip).toBe("string");
     expect(String(param!.tooltip)).toContain("x");
     expect(String(param!.tooltip)).toContain(">");
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 
 describe("createNudoServer — 观察选择器（contract 与各 case 互斥选项）", () => {
@@ -1769,8 +1679,7 @@ const r = mul(2, 3);
   }
 
   it("默认：契约选项 ●，全部 case ○；动作与观察层照常；selectCase 后契约转 ○、选中 case 转 ●；inlay 档投影同态；selectContract 切回契约（case 全 ○），幂等；nudo/selectContract 请求别名与命令同效", async () => {
-await (async () => {
-
+  {
     const { mock, uri } = await startSelectorSession();
     const titles = await lensTitles(mock, uri);
     expect(titles).toContain("● contract / imp");
@@ -1779,9 +1688,8 @@ await (async () => {
     expect(titles).toContain("⚡ persist contract");
     expect(titles).toContain("⚡ draft contract");
     expect(titles.some((t) => t.startsWith("call@"))).toBe(true);
-  })();
-await (async () => {
-
+  }
+  {
     const { mock, uri } = await startSelectorSession();
     await exec(mock, "nudo.selectCase", [uri, "add", 0, "five"]);
     const titles = await lensTitles(mock, uri);
@@ -1794,9 +1702,8 @@ await (async () => {
     });
     const labels = ((hints ?? []) as { label?: unknown }[]).map((h) => String(h.label ?? ""));
     expect(labels.some((l) => l.includes("○ contract / imp"))).toBe(true);
-  })();
-await (async () => {
-
+  }
+  {
     const { mock, uri } = await startSelectorSession();
     await exec(mock, "nudo.selectCase", [uri, "add", 0, "five"]);
     expect((await lensTitles(mock, uri)).some((t) => t.startsWith("○ contract"))).toBe(true);
@@ -1809,22 +1716,18 @@ await (async () => {
     // 无激活 case 时再点契约：幂等保持 ●
     await exec(mock, "nudo.selectContract", [uri, "add"]);
     expect((await lensTitles(mock, uri)).some((t) => t.startsWith("● contract"))).toBe(true);
-  })();
-await (async () => {
-
+  }
+  {
     const { mock, uri } = await startSelectorSession();
     await handler(mock, "nudo/selectCase")({ uri, functionName: "add", caseIndex: 0 });
     await handler(mock, "nudo/selectContract")({ uri, functionName: "add" });
     const titles = await lensTitles(mock, uri);
     expect(titles.some((t) => t.startsWith("● contract"))).toBe(true);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 });
 });
 
@@ -1843,7 +1746,7 @@ describe("LSP session maps are LRU-capped (P-IDE6)", () => {
 
 const SRC = `export function f${"0"}(x) { return x; }\n`;
 
-describe("LSP session maps are LRU-capped (P-IDE6)", () => {
+{
   beforeEach(() => {
     clearValidationState();
   });
@@ -1854,9 +1757,9 @@ describe("LSP session maps are LRU-capped (P-IDE6)", () => {
   });
 
   it("analysisCache trims to maxFiles as distinct files stream in；knownFiles caps at maxFiles (dirty-propagation registry)；nudoDepParents caps at 4× maxFiles with LRU refresh on access；maxFiles=0 disables the analysisCache layer (recompute, never", async () => {
-await (async () => {
+  {
     clearValidationState();
-  
+
 
     setSessionCacheLimits({ maxFiles: 2, maxFns: 16, maxEvalRuns: 4 });
     for (let i = 0; i < 6; i++) {
@@ -1866,10 +1769,10 @@ await (async () => {
     // LRU：最近访问的键保留
     expect(analysisCache.has("/t/lru/f5.js")).toBe(true);
     expect(analysisCache.has("/t/lru/f0.js")).toBe(false);
-  })();
-await (async () => {
+  }
+  {
     clearValidationState();
-  
+
 
     setSessionCacheLimits({ maxFiles: 2, maxFns: 16, maxEvalRuns: 4 });
     const sent: unknown[] = [];
@@ -1879,10 +1782,10 @@ await (async () => {
       });
     }
     expect(knownFiles.size).toBeLessThanOrEqual(2);
-  })();
-await (async () => {
+  }
+  {
     clearValidationState();
-  
+
 
     setSessionCacheLimits({ maxFiles: 2, maxFns: 16, maxEvalRuns: 4 });
     for (let i = 0; i < 20; i++) {
@@ -1892,10 +1795,10 @@ await (async () => {
       );
     }
     expect(nudoDepParents.size).toBeLessThanOrEqual(8);
-  })();
-await (async () => {
+  }
+  {
     clearValidationState();
-  
+
 
     setSessionCacheLimits({ maxFiles: 0, maxFns: 16, maxEvalRuns: 4 });
     const r1 = getCachedOrAnalyze("/t/lru/off.js", SRC, 1);
@@ -1904,15 +1807,12 @@ await (async () => {
     // 再来一次：无条目 → 重算（新对象），不是陈旧命中
     const r2 = getCachedOrAnalyze("/t/lru/off.js", SRC, 1);
     expect(r2).toBeDefined();
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -1931,25 +1831,25 @@ function makeDeps(): ValidateTextDeps & { sent: Array<{ uri: string; n: number }
   };
 }
 
-describe("A8 validateGeneration cancel", () => {
+{
   beforeEach(() => {
     clearValidationState();
   });
 
   it("bumps generation per validateText call；bumpValidateGeneration (onDidClose path) discards in-flight publish；older overlapping validate does not publish after a newer one starts；stillCurrent gate: a completed older gen after newer bump does n", async () => {
-await (async () => {
+  {
     clearValidationState();
-  
+
 
     const deps = makeDeps();
     await validateText("/t/a.js", "file:///t/a.js", "function id(x){return x;}\n", 1, deps);
     expect(validateGeneration.get("/t/a.js")).toBe(1);
     await validateText("/t/a.js", "file:///t/a.js", "function id(x){return x;}\n", 2, deps);
     expect(validateGeneration.get("/t/a.js")).toBe(2);
-  })();
-await (async () => {
+  }
+  {
     clearValidationState();
-  
+
 
     const deps = makeDeps();
     const path = "/t/closed.js";
@@ -1967,10 +1867,10 @@ await (async () => {
     expect(validateGeneration.get(path)).toBe(closedGen);
     // 关闭后不得再 publish 陈旧诊断
     expect(deps.sent.length).toBe(0);
-  })();
-await (async () => {
+  }
+  {
     clearValidationState();
-  
+
 
     const deps = makeDeps();
     const src1 = `
@@ -1999,10 +1899,10 @@ function safe(x) {
     // P2：旧 generation 不得在 v2 之后再 publish
     // 最终 generation=2；sent 次数应 ≤2，且最后一次 send 发生在 gen 已到 2 之后
     expect(deps.sent.length).toBeLessThanOrEqual(2);
-  })();
-await (async () => {
+  }
+  {
     clearValidationState();
-  
+
 
     const deps = makeDeps();
     const uri = "file:///t/gate.js";
@@ -2017,26 +1917,22 @@ await (async () => {
     // 更强：所有 send 的诊断内容不得来自已被取代的 generation 专属结果——
     // 这里用 sent 次数与 gen 一致性做契约：不得出现「gen 已是 2 仍因 v1 再 push」导致 >2
     expect(deps.sent.length).toBeLessThanOrEqual(2);
-  })();
-await (async () => {
+  }
+  {
     clearValidationState();
-  
+
 
     const deps = makeDeps();
     await validateText("/t/b.js", "file:///t/b.js", "export function f(){return 1;}\n", 1, deps);
     clearValidationState();
     expect(validateGeneration.size).toBe(0);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -2067,10 +1963,9 @@ const SRC_V2 = `export function f(x) {
 }
 `;
 
-describe("validateText 文档 version 门（）", () => {
-  it("superseded 文档版本的慢分析不发布陈旧诊断；未变更文档的分析正常发布且带启动时 version；无文档跟踪的宿主回落 generation-only 口径（照常发布）", async () => {
-await (async () => {
 
+  it("superseded 文档版本的慢分析不发布陈旧诊断；未变更文档的分析正常发布且带启动时 version；无文档跟踪的宿主回落 generation-only 口径（照常发布）", async () => {
+  {
     clearValidationState();
     await withTempDir("nudo-vgate-", async (dir) => {
       const filePath = join(dir, "a.js");
@@ -2112,9 +2007,8 @@ await (async () => {
       expect(sent.length).toBe(1);
       expect(sent[0]!.version).toBe(2);
     });
-  })();
-await (async () => {
-
+  }
+  {
     clearValidationState();
     await withTempDir("nudo-vgate2-", async (dir) => {
       const filePath = join(dir, "a.js");
@@ -2130,9 +2024,8 @@ await (async () => {
       expect(sent.length).toBe(1);
       expect(sent[0]!.version).toBe(1);
     });
-  })();
-await (async () => {
-
+  }
+  {
     clearValidationState();
     await withTempDir("nudo-vgate3-", async (dir) => {
       const filePath = join(dir, "a.js");
@@ -2147,13 +2040,11 @@ await (async () => {
       expect(sent.length).toBe(1);
       expect(sent[0]!.version).toBe(1);
     });
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2202,10 +2093,9 @@ function hoverText(mock: ReturnType<typeof createMockConnection>, uri: string): 
   return res?.contents?.value ?? null;
 }
 
-describe("配置变更不得抹掉未提及的宿主设置", () => {
-  it("部分载荷 / 无关载荷 / 扁平键：analysis.mode 不被抹掉；显式 null = 重置（回落产品默认 exports）", async () => {
-await (async () => {
 
+  it("部分载荷 / 无关载荷 / 扁平键：analysis.mode 不被抹掉；显式 null = 重置（回落产品默认 exports）", async () => {
+  {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug777-"));
     try {
       const file = join(dir, "a.js");
@@ -2250,9 +2140,8 @@ await (async () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  })();
-await (async () => {
-
+  }
+  {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug777-"));
     try {
       const file = join(dir, "a.js");
@@ -2280,18 +2169,17 @@ await (async () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  })();
-});;
-
-  ;
+  }
 });
+
+
 });
 
 // ---------------------------------------------------------------------------
 // LSP project-config invalidation
 // ---------------------------------------------------------------------------
 describe("LSP project-config invalidation", () => {
-describe("LSP project-config invalidation", () => {
+
   it("package.json change clears analysisCache and notifies host", async () => {
     clearValidationState();
     let configChanged = 0;
@@ -2315,5 +2203,5 @@ describe("LSP project-config invalidation", () => {
     expect(configChanged).toBe(1);
     expect(analysisCache.has("/tmp/proj/a.js")).toBe(false);
   });
-});
+
 });

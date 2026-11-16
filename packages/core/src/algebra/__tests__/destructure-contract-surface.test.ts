@@ -5,7 +5,7 @@
  * 签名不得落回 `decide(_p0: any)`——应渲染解构形状与字段契约。
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { checkSource, pTrue, formatShape } from "../index.ts";
+import { checkSource, pTrue,  } from "../index.ts";
 import { resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
 import { resetNudoModuleExecCache } from "../refine.ts";
@@ -15,7 +15,7 @@ import { generalizeFromAst } from "../generalize.ts";
 import { formalParamSignatureNames, formalParamsFromNodes } from "../format/param-surface.ts";
 import { makeFiles } from "./nudo-constraints.ts";
 
-describe("#64 P3 destructured param contracts render in signatures", () => {
+describe("P3 destructured param contracts render in signatures", () => {
   beforeEach(() => {
     resetCheckSourceMemo();
     resetGeneralizeMemo();

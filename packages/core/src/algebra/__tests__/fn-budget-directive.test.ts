@@ -19,7 +19,7 @@ import {
   getAbsCallBudgetStats,
 } from "../call-budget.ts";
 
-describe("#64 P4 @nudo:budget", () => {
+describe("P4 @nudo:budget", () => {
   beforeEach(() => {
     resetCheckSourceMemo();
     resetGeneralizeMemo();

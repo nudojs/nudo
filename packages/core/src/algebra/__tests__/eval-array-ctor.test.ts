@@ -39,7 +39,7 @@ describe("evaluator Array constructor folding", () => {
     expect(tupleEls(r.result)).toBeUndefined();
   });
 
-  it("Bug 53: abstract number-prim length → 元素域可判定 undefined（不再 unknown[]）", () => {
+  it("abstract number-prim length → 元素域可判定 undefined（不再 unknown[]）", () => {
     // 单 number prim 实参恒走 length 路径（ToArrayLength；越界已记
     // may RangeError）→ 稀疏数组，元素全 hole → 读恒 undefined
     const exports = runTranspiled(`export function f(n) { return new Array(n); }`, { mode: "analyze" });
@@ -65,7 +65,7 @@ describe("evaluator Array constructor folding", () => {
     });
   });
 
-  it("Bug 53: any 实参保持 unknown[]（字符串 → 单元素数组，真不可判定）", () => {
+  it("any 实参保持 unknown[]（字符串 → 单元素数组，真不可判定）", () => {
     const exports = runTranspiled(`export function f(x) { return new Array(x); }`, { mode: "analyze" });
     const anyAbs = { shape: { k: "any" }, conf: "path" } as never;
     const r = callTranspiledExportFull(exports, "f", [anyAbs]) as { result: unknown };

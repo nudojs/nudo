@@ -97,7 +97,6 @@ describe("inlayHint：位置与 range 契约", () => {
     });
   });
 });
-;
 
 // ---------------------------------------------------------------------------
 // 项目侧 inlayHints.parameters 与宿主侧同口径
@@ -175,7 +174,7 @@ async function hintLabels(
 const isParamInlay = (labels: string[]): boolean =>
   labels.some((l) => l.includes("where "));
 
-describe("项目侧 inlayHints.parameters 与宿主侧同口径", () => {
+{
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
   const SRC = "export function getName(user) {\n  return user.name;\n}\n";
   const SIDECAR = 'import { fn, shape, string } from "@nudojs/core";\n\nexport const getName = fn({ user: shape({ name: string() }) }, string());\n';
@@ -212,8 +211,7 @@ describe("项目侧 inlayHints.parameters 与宿主侧同口径", () => {
     expect(isParamInlay(await hintLabels({ name: "inlay", private: true, type: "module", nudo: { inlayHints: { parameters: true } } }))).toBe(true);
     expect(isParamInlay(await hintLabels({ name: "inlay", private: true, type: "module" }, { inlayHints: { parameters: "false" } }))).toBe(false);
   }, 30_000);
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -293,7 +291,7 @@ async function paramInlaySession(
   };
 }
 
-describe("inlay 的 any/unknown 责任区分", () => {
+{
   const FETCH_SRC = 'const res = fetch("https://example.com/api");\nexport function status() {\n  return res.status;\n}\n';
   const ID_SRC = "export function id(x) {\n  return x;\n}\n";
   const paramInlaySession = async (files: Record<string, string>) => {
@@ -337,6 +335,5 @@ describe("inlay 的 any/unknown 责任区分", () => {
     expect(param!.tooltip).toContain("@nudo:contract");
     anySession.cleanup();
   });
-});
-;
+}
 });

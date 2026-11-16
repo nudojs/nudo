@@ -42,10 +42,9 @@ afterAll(() => {
 
 const SRC = "export function clean(x) {\n  return x + 1;\n}\nclean(1);\n";
 
-describe("export --out 的模块标识与绝对路径无关", () => {
-  it("同一份源码在两个目录下导出到同一 out 目录 ⇒ 只有一份产物；产物 marker 不含绝对路径（同一源码 ⇒ 同一字节）", () => {
-(() => {
 
+  it("同一份源码在两个目录下导出到同一 out 目录 ⇒ 只有一份产物；产物 marker 不含绝对路径（同一源码 ⇒ 同一字节）", () => {
+  {
     const dir = mkdtempSync(join(tmpdir(), "nudo-b016-"));
     dirs.push(dir);
     for (const sub of ["A", "B"]) {
@@ -63,9 +62,8 @@ describe("export --out 的模块标识与绝对路径无关", () => {
     const products = readdirSync(out).filter((f) => f.endsWith(".d.ts"));
     // 改前：clean.d.ts（A 的遗留副本）+ clean.<hash>.d.ts（B 的新副本）
     expect(products).toEqual(["clean.d.ts"]);
-  })();
-(() => {
-
+  }
+  {
     const dir = mkdtempSync(join(tmpdir(), "nudo-b016-marker-"));
     dirs.push(dir);
     mkdirSync(join(dir, "A"), { recursive: true });
@@ -84,11 +82,10 @@ describe("export --out 的模块标识与绝对路径无关", () => {
     expect(marker).toMatch(/^\/\/ nudo-export-module: clean\|clean$/);
     expect(marker).not.toContain(dir);
     expect(a).toBe(b);
-  })();
-});;
-
-  ;
+  }
 });
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -129,10 +126,9 @@ const SRC = [
 
 const DTS_DECL = /^export declare function .*$/gm;
 
-describe("stdout 不劫持用户导出名", () => {
-  it("用户导出名在 stdout 的 dts 段保持原名（不出现 *Dts 后缀）；stdout 的 dts 段与 --out 落盘的 .d.ts 逐字相同（两条投递路径同一公开 API）", () => {
-(() => {
 
+  it("用户导出名在 stdout 的 dts 段保持原名（不出现 *Dts 后缀）；stdout 的 dts 段与 --out 落盘的 .d.ts 逐字相同（两条投递路径同一公开 API）", () => {
+  {
     const dir = mkdtempSync(join(tmpdir(), "nudo-b028-"));
     dirs.push(dir);
     writeFileSync(join(dir, "collide.js"), SRC, "utf-8");
@@ -145,9 +141,8 @@ describe("stdout 不劫持用户导出名", () => {
     // 生成的校验器名让位（不是抢占用户导出名）
     expect(r.stdout).toContain("export const fooInputZod");
     expect(r.stdout).toContain("export const fooInputStandard");
-  })();
-(() => {
-
+  }
+  {
     const dir = mkdtempSync(join(tmpdir(), "nudo-b028-parity-"));
     dirs.push(dir);
     writeFileSync(join(dir, "collide.js"), SRC, "utf-8");
@@ -166,11 +161,10 @@ describe("stdout 不劫持用户导出名", () => {
     const fromFile = dts.match(DTS_DECL) ?? [];
     expect(fromFile).toHaveLength(3);
     expect([...fromStdout].sort()).toEqual([...fromFile].sort());
-  })();
-});;
-
-  ;
+  }
 });
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -212,38 +206,33 @@ function fixture(): string {
   return dir;
 }
 
-describe("纯 barrel 也出模块面产物", () => {
-  it("只有再导出的模块：dts 产出再导出声明（不是「无函数」早退）；负控制：本地函数 + 再导出的模块两条面都在；负控制：真的没有导出面的模块仍如实说明（不静默零产物）", () => {
-(() => {
 
+  it("只有再导出的模块：dts 产出再导出声明（不是「无函数」早退）；负控制：本地函数 + 再导出的模块两条面都在；负控制：真的没有导出面的模块仍如实说明（不静默零产物）", () => {
+  {
     const dir = fixture();
     const r = runCliTsx(["export", join(dir, "reexp.js"), "--format", "dts"]);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain('export { helper } from "./cjs.js";');
     expect(r.stdout).not.toContain("No analyzed functions found");
-  })();
-(() => {
-
+  }
+  {
     const dir = fixture();
     const r = runCliTsx(["export", join(dir, "mix.js"), "--format", "dts"]);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("export declare function own(): number;");
     expect(r.stdout).toContain('export { helper } from "./cjs.js";');
-  })();
-(() => {
-
+  }
+  {
     const dir = fixture();
     writeFileSync(join(dir, "empty.js"), "const x = 1;\nexport { };\n", "utf-8");
     const r = runCliTsx(["export", join(dir, "empty.js"), "--format", "dts"]);
     expect(r.status).toBe(0);
     expect(r.stdout + r.stderr).toContain("No ");
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -284,17 +273,15 @@ function makeFixture(): string {
 
 describe("-draft --fn 按导出名匹配（别名导出）", () => {
   it("--fn renamed ⇒ 草拟出 `export const renamed = fn(`（不再是空草稿）；不回归 BUG-042：名字写错仍是用法错误 + 不落盘", () => {
-(() => {
-
+  {
     const dir = makeFixture();
     const r = runCli(["contract", "--draft", "--fn", "renamed", "--", "lib.js"], { cwd: dir });
     expect(r.status).toBe(0);
     expect(r.stderr).not.toContain("matched no export");
     expect(r.stdout).toContain("export const renamed = fn(");
     expect(r.stdout).toContain("(sidecar key: renamed)");
-  })();
-(() => {
-
+  }
+  {
     const dir = makeFixture();
     const r = runCli(["contract", "--draft", "--write", "--fn", "totallyMissing", "--", "lib.js"], {
       cwd: dir,
@@ -302,10 +289,10 @@ describe("-draft --fn 按导出名匹配（别名导出）", () => {
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("matched no export");
     expect(existsSync(join(dir, "lib.nudo.draft.js"))).toBe(false);
-  })();
-});; // 1 个 CLI 子进程（tsx 冷启动）
+  }
+}); // 1 个 CLI 子进程（tsx 冷启动）
 
-  ; // 1 个 CLI 子进程
+   // 1 个 CLI 子进程
 });
 });
 
@@ -351,10 +338,9 @@ function makeFixture(): string {
   return dir;
 }
 
-describe("nudo contract --draft --fn 未命中 · 不许静默空草稿", () => {
-  it("名字写错 ⇒ 用法错误（exit 1）+ 列出可用导出名 + **不落盘**；--json 面：stdout 仍是**一份合法 JSON 文档**（usage-error 有条目）+ exit 1；对照组：名字正确 ⇒ exit 0 且草稿点名该导出；非导出的本地函数名 ⇒ 仍走**可见**的 not-an-export 条目（门禁不误伤）", () => {
-(() => {
 
+  it("名字写错 ⇒ 用法错误（exit 1）+ 列出可用导出名 + **不落盘**；--json 面：stdout 仍是**一份合法 JSON 文档**（usage-error 有条目）+ exit 1；对照组：名字正确 ⇒ exit 0 且草稿点名该导出；非导出的本地函数名 ⇒ 仍走**可见**的 not-an-export 条目（门禁不误伤）", () => {
+  {
     const dir = makeFixture();
 
     const r = runCli(
@@ -371,9 +357,8 @@ describe("nudo contract --draft --fn 未命中 · 不许静默空草稿", () => 
     // 没有谎报成功，也没有落下一份空草稿
     expect(r.stdout).not.toContain("// @nudo:draft");
     expect(existsSync(join(dir, "lib.nudo.draft.js"))).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const dir = makeFixture();
 
     const r = runCli(
@@ -390,9 +375,8 @@ describe("nudo contract --draft --fn 未命中 · 不许静默空草稿", () => 
     expect(doc[0]?.errors?.[0]?.code).toBe("nudo:usage-error");
     expect(doc[0]?.errors?.[0]?.message).toContain("totallyMissing");
     expect(existsSync(join(dir, "lib.nudo.draft.js"))).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const dir = makeFixture();
 
     const r = runCli(["contract", "--draft", "--fn", "handwritten", "--", "lib.js"], { cwd: dir });
@@ -401,9 +385,8 @@ describe("nudo contract --draft --fn 未命中 · 不许静默空草稿", () => 
     expect(r.stdout).toContain("export const handwritten = fn(");
     // 未点名的导出不出现在草稿里（过滤仍然生效）
     expect(r.stdout).not.toContain("export const caller = fn(");
-  })();
-(() => {
-
+  }
+  {
     const dir = makeFixture();
 
     const r = runCli(["contract", "--draft", "--fn", "helper", "--", "lib.js"], { cwd: dir });
@@ -411,15 +394,15 @@ describe("nudo contract --draft --fn 未命中 · 不许静默空草稿", () => 
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("not-an-export");
     expect(r.stderr).not.toContain("matched no export");
-  })();
-});; // 1 个 CLI 子进程（tsx 冷启动）
+  }
+}); // 1 个 CLI 子进程（tsx 冷启动）
 
-  ; // 1 个 CLI 子进程
+   // 1 个 CLI 子进程
 
-  ; // 1 个 CLI 子进程
+   // 1 个 CLI 子进程
 
-  ; // 1 个 CLI 子进程
-});
+   // 1 个 CLI 子进程
+
 });
 
 // ---------------------------------------------------------------------------
@@ -471,10 +454,9 @@ function fixture(): { obj: string; dot: string } {
   return { obj, dot };
 }
 
-describe("CJS `module.exports = { … }` 导出面与 dot 形态同口径", () => {
-  it("dts 面：返回位是真类型（不是 unknown），且与 dot 形态逐字一致；zod 面：Output 是联合（不是 `z.unknown()`），且与 dot 形态逐字一致；guard 面：校验器真的校验（不是 `return true;`），且与 dot 形态逐字一致", () => {
-(() => {
 
+  it("dts 面：返回位是真类型（不是 unknown），且与 dot 形态逐字一致；zod 面：Output 是联合（不是 `z.unknown()`），且与 dot 形态逐字一致；guard 面：校验器真的校验（不是 `return true;`），且与 dot 形态逐字一致", () => {
+  {
     const { obj, dot } = fixture();
     const o = runCliTsx(["export", "--format", "dts", obj]);
     const d = runCliTsx(["export", "--format", "dts", dot]);
@@ -482,9 +464,8 @@ describe("CJS `module.exports = { … }` 导出面与 dot 形态同口径", () =
     expect(o.stdout).toContain("export declare function h(x: unknown): number | string;");
     expect(o.stdout).not.toContain("): unknown;");
     expect(o.stdout).toBe(d.stdout);
-  })();
-(() => {
-
+  }
+  {
     const { obj, dot } = fixture();
     const o = runCliTsx(["export", "--format", "schema", obj]);
     const d = runCliTsx(["export", "--format", "schema", dot]);
@@ -492,9 +473,8 @@ describe("CJS `module.exports = { … }` 导出面与 dot 形态同口径", () =
     expect(o.stdout).not.toContain("hOutput = z.unknown()");
     expect(o.stdout).toContain("z.union([");
     expect(o.stdout).toBe(d.stdout);
-  })();
-(() => {
-
+  }
+  {
     const { obj, dot } = fixture();
     const o = runCliTsx(["export", "--format", "guard", obj]);
     const d = runCliTsx(["export", "--format", "guard", dot]);
@@ -502,13 +482,11 @@ describe("CJS `module.exports = { … }` 导出面与 dot 形态同口径", () =
     expect(o.stdout).not.toContain("return true;");
     expect(o.stdout).toContain('typeof data === "number" || typeof data === "string"');
     expect(o.stdout).toBe(d.stdout);
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -559,10 +537,9 @@ needsPositive(-1);
   return { dir, lib: join(dir, "lib.js"), usage: join(dir, "usage.js") };
 }
 
-describe("（CLI）— freeze 不得把违反被调方契约的见证写进被调方", () => {
-  it("违约见证不写入；固化后 check 仍绿（旧行为：check FAILED + exit 1）；--freeze=update 不再重记违约见证（旧行为：原样重记同一条 ⇒ 永远红）", () => {
-(() => {
 
+  it("违约见证不写入；固化后 check 仍绿（旧行为：check FAILED + exit 1）；--freeze=update 不再重记违约见证（旧行为：原样重记同一条 ⇒ 永远红）", () => {
+  {
     const { dir, lib, usage } = project();
     try {
       const before = runCliTsx(["check", lib]);
@@ -586,9 +563,8 @@ describe("（CLI）— freeze 不得把违反被调方契约的见证写进被�
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  })();
-(() => {
-
+  }
+  {
     const { dir, lib, usage } = project();
     try {
       const first = runCliTsx(["test", lib, "--from", usage, "--freeze"]);
@@ -601,11 +577,10 @@ describe("（CLI）— freeze 不得把违反被调方契约的见证写进被�
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  })();
-});;
-
-  ;
+  }
 });
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -661,10 +636,9 @@ function withProject(files: Record<string, string>, fn: (dir: string) => void): 
   }
 }
 
-describe("stdout 平铺面的 default 导出必须是 ambient 合法形态", () => {
-  it("default 函数：declare function + `export { main as default }`；default 类：declare class + `export { Box as default }`；单独 --format dts 同样合法（存成 .ts 也可编译）；具名导出保持既有 `export declare function` 形态", () => {
-(() => {
 
+  it("default 函数：declare function + `export { main as default }`；default 类：declare class + `export { Box as default }`；单独 --format dts 同样合法（存成 .ts 也可编译）；具名导出保持既有 `export declare function` 形态", () => {
+  {
     withProject({ "defexp.js": DEFAULT_FN }, (dir) => {
       const out = runCliTsx(["export", join(dir, "defexp.js"), "--format", "all"]).stdout;
       expect(out).toContain("declare function main(");
@@ -672,40 +646,34 @@ describe("stdout 平铺面的 default 导出必须是 ambient 合法形态", () 
       // `export default function` 在普通模块里没有实现 ⇒ TS2391
       expect(out).not.toMatch(/^export default function /m);
     });
-  })();
-(() => {
-
+  }
+  {
     withProject({ "defcls.js": DEFAULT_CLASS }, (dir) => {
       const out = runCliTsx(["export", join(dir, "defcls.js"), "--format", "all"]).stdout;
       expect(out).toContain("declare class Box {");
       expect(out).toContain("export { Box as default };");
       expect(out).not.toMatch(/^export default class /m);
     });
-  })();
-(() => {
-
+  }
+  {
     withProject({ "defexp.js": DEFAULT_FN }, (dir) => {
       const out = runCliTsx(["export", join(dir, "defexp.js"), "--format", "dts"]).stdout;
       expect(out).toContain("declare function main(");
       expect(out).toContain("export { main as default };");
     });
-  })();
-(() => {
-
+  }
+  {
     withProject({ "named.js": NAMED }, (dir) => {
       const out = runCliTsx(["export", join(dir, "named.js"), "--format", "all"]).stdout;
       expect(out).toContain("export declare function add(");
       expect(out).not.toContain("as default");
     });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -742,10 +710,9 @@ function makeFixture(): string {
   return dir;
 }
 
-describe("nudo contract --from-dts · 不许静默吞旗标", () => {
-  it("--from-dts + --emit/--all/--dry-run/--exit-on-diff ⇒ 用法错误（exit 1）+ 不写侧车；--from-dts + --fn ⇒ 同样用法错误（过滤不许被吞）；对照组：--from-dts 单独跑 ⇒ 仍出草稿（exit 0）；机器面控制组：--from-dts + --emit + --json ⇒ 仍是合法 JSON + exit 1（绝不假绿）", () => {
-(() => {
 
+  it("--from-dts + --emit/--all/--dry-run/--exit-on-diff ⇒ 用法错误（exit 1）+ 不写侧车；--from-dts + --fn ⇒ 同样用法错误（过滤不许被吞）；对照组：--from-dts 单独跑 ⇒ 仍出草稿（exit 0）；机器面控制组：--from-dts + --emit + --json ⇒ 仍是合法 JSON + exit 1（绝不假绿）", () => {
+  {
     const dir = makeFixture();
 
     const r = runCli(
@@ -770,18 +737,16 @@ describe("nudo contract --from-dts · 不许静默吞旗标", () => {
     // 没有侧车、也没有草稿正文
     expect(existsSync(join(dir, "types.d.nudo.js"))).toBe(false);
     expect(r.stdout).not.toContain("// @nudo:draft");
-  })();
-(() => {
-
+  }
+  {
     const dir = makeFixture();
 
     const r = runCli(["contract", "--from-dts", "--fn", "addOne", "--", "types.d.ts"], { cwd: dir });
 
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("--from-dts cannot be combined with --fn");
-  })();
-(() => {
-
+  }
+  {
     const dir = makeFixture();
 
     const r = runCli(["contract", "--from-dts", "--", "types.d.ts"], { cwd: dir });
@@ -789,9 +754,8 @@ describe("nudo contract --from-dts · 不许静默吞旗标", () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("// @nudo:draft");
     expect(r.stdout).toContain("addOne");
-  })();
-(() => {
-
+  }
+  {
     const dir = makeFixture();
 
     const r = runCli(
@@ -807,15 +771,15 @@ describe("nudo contract --from-dts · 不许静默吞旗标", () => {
     // `--json` 与 `--from-dts` 本身互斥（规则 ⑤ 先命中）⇒ 两种拒绝都是用法错误；
     // 关键是 stdout 有一份**可机器读取的理由**，且没有任何草稿/侧车正文。
     expect(doc[0]?.pathErrors?.[0]?.message).toContain("--from-dts");
-  })();
-});; // 1 个 CLI 子进程（tsx 冷启动）
+  }
+}); // 1 个 CLI 子进程（tsx 冷启动）
 
-  ; // 1 个 CLI 子进程
+   // 1 个 CLI 子进程
 
-  ; // 1 个 CLI 子进程
+   // 1 个 CLI 子进程
 
-  ; // 1 个 CLI 子进程
-});
+   // 1 个 CLI 子进程
+
 });
 
 // ---------------------------------------------------------------------------
@@ -900,10 +864,9 @@ function makeFixture(): string {
   return dir;
 }
 
-describe("nudo contract --emit · 派生分支 vs 主分支 = 净效果", () => {
-  it("首次 --emit --all：标签行真落盘（Updated 与文件一致）；第二次逐字不变（幂等）；--dry-run --exit-on-diff：预览与落盘同源 —— 收敛前 exit 1，收敛后 exit 0；对照组：真有净漂移 ⇒ dry-run 打 diff 且 --exit-on-diff exit 1（门禁没被关掉）", () => {
-(() => {
 
+  it("首次 --emit --all：标签行真落盘（Updated 与文件一致）；第二次逐字不变（幂等）；--dry-run --exit-on-diff：预览与落盘同源 —— 收敛前 exit 1，收敛后 exit 0；对照组：真有净漂移 ⇒ dry-run 打 diff 且 --exit-on-diff exit 1（门禁没被关掉）", () => {
+  {
     const dir = makeFixture();
     const sidecar = join(dir, "lib.nudo.js");
 
@@ -922,9 +885,8 @@ describe("nudo contract --emit · 派生分支 vs 主分支 = 净效果", () => 
     expect(readFileSync(sidecar, "utf-8")).toBe(SIDECAR_CONVERGED);
     expect(r2.stdout).toContain("no contract changes");
     expect(r2.stdout).not.toContain("Updated");
-  })();
-(() => {
-
+  }
+  {
     const dir = makeFixture();
     const sidecar = join(dir, "lib.nudo.js");
 
@@ -951,9 +913,8 @@ describe("nudo contract --emit · 派生分支 vs 主分支 = 净效果", () => 
     expect(r2.status).toBe(0);
     expect(r2.stdout).not.toContain("would update");
     expect(r2.stdout).toContain("no contract changes");
-  })();
-(() => {
-
+  }
+  {
     const dir = makeFixture();
     const sidecar = join(dir, "lib.nudo.js");
     const drifted = SIDECAR.replace("text: number()", "text: lit(9)");
@@ -969,13 +930,13 @@ describe("nudo contract --emit · 派生分支 vs 主分支 = 净效果", () => 
     // 手写段不被触碰
     expect(r.stdout).not.toContain("-export const tag");
     expect(readFileSync(sidecar, "utf-8")).toBe(drifted);
-  })();
-});; // 2 个 CLI 子进程（tsx 冷启动）
+  }
+}); // 2 个 CLI 子进程（tsx 冷启动）
 
-  ; // 3 个 CLI 子进程
+   // 3 个 CLI 子进程
 
-  ; // 1 个 CLI 子进程
-});
+   // 1 个 CLI 子进程
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1056,10 +1017,9 @@ function addedLines(diff: string): string[] {
     .map((l) => l.slice(1));
 }
 
-describe("nudo contract --emit · 同一侧车同一段 = 一个写者", () => {
-  it("两个分支都命中同一导出 ⇒ 直写正文优先 + `derived-from` 标签行真落盘；幂等：连跑两次 --emit --all ⇒ 第二次无 Updated 且 md5 不变；收敛后 --dry-run --exit-on-diff ⇒ exit 0，且不再打印永不落盘的 diff；预览 == 写盘（字节级）：dry-run 的新增行拼起来就是真实写盘内容", () => {
-(() => {
 
+  it("两个分支都命中同一导出 ⇒ 直写正文优先 + `derived-from` 标签行真落盘；幂等：连跑两次 --emit --all ⇒ 第二次无 Updated 且 md5 不变；收敛后 --dry-run --exit-on-diff ⇒ exit 0，且不再打印永不落盘的 diff；预览 == 写盘（字节级）：dry-run 的新增行拼起来就是真实写盘内容", () => {
+  {
     const { dir, sidecar } = makeFixture();
 
     const r = runCli(["contract", "lib.js", "--emit", "--all"], { cwd: dir });
@@ -1074,9 +1034,8 @@ describe("nudo contract --emit · 同一侧车同一段 = 一个写者", () => {
     // 台账与文件一致：内容真的变了 ⇒ 必须报 Updated
     expect(r.stdout).toContain("Updated");
     expect(r.stdout).toContain("written: foo");
-  })();
-(() => {
-
+  }
+  {
     const { dir, sidecar } = makeFixture();
 
     const first = runCli(["contract", "lib.js", "--emit", "--all"], { cwd: dir });
@@ -1091,9 +1050,8 @@ describe("nudo contract --emit · 同一侧车同一段 = 一个写者", () => {
     expect(second.stdout).not.toContain("Updated");
     expect(readFileSync(sidecar, "utf-8")).toBe(afterFirst);
     expect(md5(sidecar)).toBe(md5First);
-  })();
-(() => {
-
+  }
+  {
     const { dir, sidecar } = makeFixture();
 
     const real = runCli(["contract", "lib.js", "--emit", "--all"], { cwd: dir });
@@ -1108,9 +1066,8 @@ describe("nudo contract --emit · 同一侧车同一段 = 一个写者", () => {
     expect(dry.stdout).toContain("no contract changes");
     // dry-run 不落盘
     expect(readFileSync(sidecar, "utf-8")).toBe(converged);
-  })();
-(() => {
-
+  }
+  {
     const { dir, sidecar } = makeFixture();
     expect(existsSync(sidecar)).toBe(false);
 
@@ -1128,15 +1085,15 @@ describe("nudo contract --emit · 同一侧车同一段 = 一个写者", () => {
     // 全新侧车 ⇒ 预览的新增行按序拼起来 == 真实写盘内容（逐字节）
     const previewed = `${addedLines(dry.stdout.replace(/^\[dry-run\][^\n]*\n/, "")).join("\n")}\n`;
     expect(readFileSync(sidecar, "utf-8")).toBe(previewed);
-  })();
-});; // 1 个 CLI 子进程
+  }
+}); // 1 个 CLI 子进程
 
-  ; // 2 个 CLI 子进程
+   // 2 个 CLI 子进程
 
-  ; // 2 个 CLI 子进程
+   // 2 个 CLI 子进程
 
-  ; // 2 个 CLI 子进程
-});
+   // 2 个 CLI 子进程
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1176,14 +1133,14 @@ function makeFixture(): string {
   return dir;
 }
 
-describe("export 不得静默吞掉接口冲突诊断", () => {
+
   it("warning 级 nudo:contract-conflict ⇒ 阻断（诊断上屏 + exit 1）", () => {
     const dir = makeFixture();
     const r = runCli(["export", "lib.js", "--format", "all"], { cwd: dir });
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("contract-conflict");
   }, 60000); // 1 个 CLI 子进程（tsx 冷启动）
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1227,10 +1184,9 @@ function nodeCheck(path: string): { status: number; stderr: string } {
   return { status: r.status ?? 1, stderr: r.stderr ?? "" };
 }
 
-describe("TS-only 的模块出口语句必须被剥除（产物是合法 JS）", () => {
-  it("`export =` 被剥除 ⇒ 产物 `node --check` 过；`export as namespace` 被剥除 ⇒ 产物 `node --check` 过；兜底闸门认得这两条语句（真源漏网 ⇒ 拒绝写盘 + 点名文件 + exit 1）", () => {
-(() => {
 
+  it("`export =` 被剥除 ⇒ 产物 `node --check` 过；`export as namespace` 被剥除 ⇒ 产物 `node --check` 过；兜底闸门认得这两条语句（真源漏网 ⇒ 拒绝写盘 + 点名文件 + exit 1）", () => {
+  {
     const dir = mkdtempSync(join(tmpdir(), "nudo-cli-bug-446-"));
     dirs.push(dir);
     writeFileSync(join(dir, "a.ts"), EXPORT_ASSIGN_TS, "utf-8");
@@ -1245,9 +1201,8 @@ describe("TS-only 的模块出口语句必须被剥除（产物是合法 JS）",
     expect(code).not.toContain("export =");
     const check = nodeCheck(product);
     expect(check.status, `${product}\n${check.stderr}`).toBe(0);
-  })();
-(() => {
-
+  }
+  {
     const dir = mkdtempSync(join(tmpdir(), "nudo-cli-bug-446b-"));
     dirs.push(dir);
     writeFileSync(join(dir, "b.ts"), NAMESPACE_EXPORT_TS, "utf-8");
@@ -1262,9 +1217,8 @@ describe("TS-only 的模块出口语句必须被剥除（产物是合法 JS）",
     expect(code).not.toContain("export as namespace");
     const check = nodeCheck(product);
     expect(check.status, `${product}\n${check.stderr}`).toBe(0);
-  })();
-(() => {
-
+  }
+  {
     // 判据层断言：闸门对「剥完仍有 TS-only 出口语句」的文件必须报错。
     // 这里用**只读**的探针口径：以 `.ts` 源为输入 ⇒ 若真源漏网，命令层闸门
     // 会拦下（真源修好后不拦 ⇒ 下面的 exit 0 就是「不误伤」）。
@@ -1280,13 +1234,11 @@ describe("TS-only 的模块出口语句必须被剥除（产物是合法 JS）",
       const check = nodeCheck(join(dir, name));
       expect(check.status, `${name}\n${check.stderr}`).toBe(0);
     }
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1332,10 +1284,9 @@ export function skipped(a) {
   );
 }
 
-describe("export — @nudo:skip 的函数不被静默丢掉（）", () => {
-  it("skip 函数进导出面（zod / standard / dts / guard 四面都有）；skip 函数在 --out 落盘面同样有产物（四个文件都在）", () => {
-(() => {
 
+  it("skip 函数进导出面（zod / standard / dts / guard 四面都有）；skip 函数在 --out 落盘面同样有产物（四个文件都在）", () => {
+  {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug600-"));
     writeSkipFixture(dir);
 
@@ -1349,9 +1300,8 @@ describe("export — @nudo:skip 的函数不被静默丢掉（）", () => {
     expect(r.stdout).toContain("// === skipped Type Guards ===");
     // dts 面：skip 函数的声明在（走 contractOnlySignature 路径）
     expect(r.stdout).toMatch(/export declare function skipped\(/);
-  })();
-(() => {
-
+  }
+  {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug600-out-"));
     writeSkipFixture(dir);
 
@@ -1367,11 +1317,10 @@ describe("export — @nudo:skip 的函数不被静默丢掉（）", () => {
     const std = files.find((f) => f.includes("standard"));
     expect(std).toBeDefined();
     expect(readFileSync(join(out, std!), "utf-8")).toContain("skipped_a");
-  })();
-});;
-
-  ;
+  }
 });
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1393,10 +1342,9 @@ describe("nudo export --out · 不覆盖手写产物", () => {
 
 const HANDWRITTEN = "export declare function add(a: number, b: number): number;\n";
 
-describe("nudo export --out · 不覆盖手写产物", () => {
-  it("手写 .d.ts 在 out 目录里 ⇒ 拒绝覆盖 + exit 1 + 文件逐字不变；本工具自己生成的产物 ⇒ 允许覆盖更新（同模块重导）", () => {
-(() => {
 
+  it("手写 .d.ts 在 out 目录里 ⇒ 拒绝覆盖 + exit 1 + 文件逐字不变；本工具自己生成的产物 ⇒ 允许覆盖更新（同模块重导）", () => {
+  {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug-617-"));
     const file = join(dir, "lib.js");
     writeFileSync(file, "export function add(a, b) {\n  return a + b;\n}\n", "utf-8");
@@ -1415,9 +1363,8 @@ describe("nudo export --out · 不覆盖手写产物", () => {
     expect(r.stderr).toContain("fix:");
     // 没有谎报成功
     expect(r.stdout).not.toContain("wrote ");
-  })();
-(() => {
-
+  }
+  {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug-617b-"));
     const file = join(dir, "lib.js");
     writeFileSync(file, "export function add(a, b) {\n  return a + b;\n}\n", "utf-8");
@@ -1429,11 +1376,11 @@ describe("nudo export --out · 不覆盖手写产物", () => {
     const second = runCli(["export", file, "--format", "dts", "--out", out]);
     expect(second.status).toBe(0);
     expect(readFileSync(join(out, "lib.d.ts"), "utf-8")).toBe(body);
-  })();
-});; // 1 个 CLI 子进程（tsx 冷启动）
+  }
+}); // 1 个 CLI 子进程（tsx 冷启动）
 
-  ; // 2 个顺序 CLI 子进程
-});
+   // 2 个顺序 CLI 子进程
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1468,10 +1415,9 @@ function internal(x) {
   );
 }
 
-describe("export — 四个产物面共用导出面闸门（）", () => {
-  it("非导出函数不进 zod / standard / guard 三面（stdout 面）；非导出函数不进任何落盘产物（--out 面）；导出面函数照常进四（闸门不误伤公开面）", () => {
-(() => {
 
+  it("非导出函数不进 zod / standard / guard 三面（stdout 面）；非导出函数不进任何落盘产物（--out 面）；导出面函数照常进四（闸门不误伤公开面）", () => {
+  {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug621-"));
     writeInternalOnlyFixture(dir);
 
@@ -1484,9 +1430,8 @@ describe("export — 四个产物面共用导出面闸门（）", () => {
     expect(r.stdout).not.toContain("isinternalOutput");
     // 零产物如实说明（不是静默零产物）
     expect(r.stdout).toContain("No exported declarations found");
-  })();
-(() => {
-
+  }
+  {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug621-out-"));
     writeInternalOnlyFixture(dir);
 
@@ -1496,9 +1441,8 @@ describe("export — 四个产物面共用导出面闸门（）", () => {
     expect(r.stdout).toContain("No exported declarations found");
     // 目录里没有任何产物文件（四个面一致缺席）
     expect(existsSync(out) ? readdirSync(out) : []).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug621-keep-"));
     writeFileSync(
       join(dir, "pub.js"),
@@ -1516,13 +1460,11 @@ export function public1(x) {
     expect(r.stdout).toContain("public1_x");
     expect(r.stdout).toContain("ispublic1Output");
     expect(r.stdout).toContain("export declare function public1");
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1587,10 +1529,9 @@ function makeFixture(): string {
   return dir;
 }
 
-describe("nudo contract --emit --fn 未命中 · 过滤器不降级", () => {
-  it("全部未命中 ⇒ 用法错误（exit 1）+ 列出候选 + **侧车逐字不变**；未命中 ⇒ 连 dry-run 预览都不给（不产生放大作用域的 diff）；部分命中 ⇒ 未命中的名字走 `skipped <fn> (not-an-export)` 通道（与 LSP/agent 同构）；对照组：名字正确 ⇒ 只改那一个（beta 的段不被刷新）", () => {
-(() => {
 
+  it("全部未命中 ⇒ 用法错误（exit 1）+ 列出候选 + **侧车逐字不变**；未命中 ⇒ 连 dry-run 预览都不给（不产生放大作用域的 diff）；部分命中 ⇒ 未命中的名字走 `skipped <fn> (not-an-export)` 通道（与 LSP/agent 同构）；对照组：名字正确 ⇒ 只改那一个（beta 的段不被刷新）", () => {
+  {
     const dir = makeFixture();
     const sidecar = join(dir, "lib.nudo.js");
 
@@ -1610,9 +1551,8 @@ describe("nudo contract --emit --fn 未命中 · 过滤器不降级", () => {
     expect(r.stdout).not.toContain("Updated");
     // 侧车逐字不变（作用域没被放大成「刷新全部既有生成段」）
     expect(readFileSync(sidecar, "utf-8")).toBe(SIDECAR);
-  })();
-(() => {
-
+  }
+  {
     const dir = makeFixture();
 
     const r = runCli(
@@ -1623,9 +1563,8 @@ describe("nudo contract --emit --fn 未命中 · 过滤器不降级", () => {
     expect(r.status).toBe(1);
     expect(r.stdout).not.toContain("would update");
     expect(r.stdout).not.toContain("+export const beta");
-  })();
-(() => {
-
+  }
+  {
     const dir = makeFixture();
 
     const r = runCli(
@@ -1650,9 +1589,8 @@ describe("nudo contract --emit --fn 未命中 · 过滤器不降级", () => {
     // 命中的那个照常处理（只改 alpha）
     expect(r.stdout).toContain("would update lib.nudo.js");
     expect(r.stdout).not.toContain("-export const beta");
-  })();
-(() => {
-
+  }
+  {
     const dir = makeFixture();
 
     const r = runCli(
@@ -1668,15 +1606,15 @@ describe("nudo contract --emit --fn 未命中 · 过滤器不降级", () => {
     // beta 的生成段**不在**改动面里（只作为 diff 上下文出现）
     expect(r.stdout).not.toContain("-export const beta");
     expect(r.stdout).not.toContain("+export const beta");
-  })();
-});; // 1 个 CLI 子进程（tsx 冷启动）
+  }
+}); // 1 个 CLI 子进程（tsx 冷启动）
 
-  ; // 1 个 CLI 子进程
+   // 1 个 CLI 子进程
 
-  ; // 1 个 CLI 子进程
+   // 1 个 CLI 子进程
 
-  ; // 1 个 CLI 子进程
-});
+   // 1 个 CLI 子进程
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1722,9 +1660,9 @@ type JsonEntry = {
   diff?: string;
 };
 
-describe("contract --json 的 stdout 必须是**一份** JSON（跨文件聚合）", () => {
+
   it("目录 + --draft --json：stdout 可被 JSON.parse 解析（改前抛）；目录 + --json（print 分支）：同样是一份 JSON 数组（改前是多份拼接）；单文件 + --json：顶层仍是数组（单元素）⇒ 形态恒定；单文件 + --draft --json：顶层仍是数组（单元素）⇒ 形态恒定；非 --json 面不受影响（人类面仍是逐文件文本，不是 JSON）", () => {
-(() => {
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-cli-658-"));
   writeFileSync(join(dir, "a.js"), "export function one() { return 1; }\n", "utf-8");
   writeFileSync(join(dir, "b.js"), "export function two() { return 2; }\n", "utf-8");
@@ -1748,8 +1686,8 @@ describe("contract --json 的 stdout 必须是**一份** JSON（跨文件聚合�
       expect(typeof d.diff).toBe("string");
       expect(Array.isArray(d.entries)).toBe(true);
     }
-  })();
-(() => {
+  }
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-cli-658-"));
   writeFileSync(join(dir, "a.js"), "export function one() { return 1; }\n", "utf-8");
   writeFileSync(join(dir, "b.js"), "export function two() { return 2; }\n", "utf-8");
@@ -1763,8 +1701,8 @@ describe("contract --json 的 stdout 必须是**一份** JSON（跨文件聚合�
     expect(docs).toHaveLength(2);
     expect(docs.map((d) => d.file).sort()).toEqual(["a.js", "b.js"]);
     expect(docs.map((d) => d.entries?.map((e) => e.fn)).flat().sort()).toEqual(["one", "two"]);
-  })();
-(() => {
+  }
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-cli-658-"));
   writeFileSync(join(dir, "a.js"), "export function one() { return 1; }\n", "utf-8");
   writeFileSync(join(dir, "b.js"), "export function two() { return 2; }\n", "utf-8");
@@ -1777,8 +1715,8 @@ describe("contract --json 的 stdout 必须是**一份** JSON（跨文件聚合�
     expect(docs).toHaveLength(1);
     expect(docs[0].file).toBe("a.js");
     expect(docs[0].entries?.map((e) => e.fn)).toEqual(["one"]);
-  })();
-(() => {
+  }
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-cli-658-"));
   writeFileSync(join(dir, "a.js"), "export function one() { return 1; }\n", "utf-8");
   writeFileSync(join(dir, "b.js"), "export function two() { return 2; }\n", "utf-8");
@@ -1791,8 +1729,8 @@ describe("contract --json 的 stdout 必须是**一份** JSON（跨文件聚合�
     expect(docs).toHaveLength(1);
     expect(docs[0].file).toBe("a.js");
     expect(docs[0].draftSource).toContain("// @nudo:draft");
-  })();
-(() => {
+  }
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-cli-658-"));
   writeFileSync(join(dir, "a.js"), "export function one() { return 1; }\n", "utf-8");
   writeFileSync(join(dir, "b.js"), "export function two() { return 2; }\n", "utf-8");
@@ -1803,17 +1741,13 @@ describe("contract --json 的 stdout 必须是**一份** JSON（跨文件聚合�
     expect(r.stdout).toContain("a.js");
     expect(r.stdout).toContain("one");
     expect(() => JSON.parse(r.stdout)).toThrow();
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1855,7 +1789,7 @@ afterEach(() => {
 
 describe("-from-dts 不得绕过用法校验（先校验、后分派）", () => {
   it("--from-dts + --emit --draft：报互斥错误 + exit 1（改前：静默出 draft、exit 0）；--from-dts + --exit-on-diff：报前置条件错误 + exit 1（改前：静默忽略、exit 0）；--from-dts + --json：显式拒绝（机器面拿不到 JSON ⇒ 不是静默吞旗标）；控制组：--from-dts（无旗标）仍然照常出 draft 正文 + exit 0（不误伤）；控制组：--from-dts + --", () => {
-(() => {
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-cli-659-"));
   dts = join(dir, "types.d.ts");
   writeFileSync(dts, "export declare function mul(a: number, b: number): number;\n", "utf-8");
@@ -1866,8 +1800,8 @@ describe("-from-dts 不得绕过用法校验（先校验、后分派）", () => 
     expect(r.stderr).toContain("Usage error: --emit and --draft are mutually exclusive");
     // 不得产出 draft 正文（分派在校验之后 ⇒ 根本没跑）
     expect(r.stdout).not.toContain("// @nudo:draft");
-  })();
-(() => {
+  }
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-cli-659-"));
   dts = join(dir, "types.d.ts");
   writeFileSync(dts, "export declare function mul(a: number, b: number): number;\n", "utf-8");
@@ -1876,8 +1810,8 @@ describe("-from-dts 不得绕过用法校验（先校验、后分派）", () => 
     const r = runCli(["contract", "--from-dts", dts, "--exit-on-diff"], { cwd: dir });
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("--exit-on-diff requires --emit --dry-run");
-  })();
-(() => {
+  }
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-cli-659-"));
   dts = join(dir, "types.d.ts");
   writeFileSync(dts, "export declare function mul(a: number, b: number): number;\n", "utf-8");
@@ -1891,8 +1825,8 @@ describe("-from-dts 不得绕过用法校验（先校验、后分派）", () => 
     expect(docs).toHaveLength(1);
     expect(docs[0].pathErrors?.[0]?.code).toBe("nudo:usage-error");
     expect(docs[0].pathErrors?.[0]?.message).toContain("--json cannot be combined with --from-dts");
-  })();
-(() => {
+  }
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-cli-659-"));
   dts = join(dir, "types.d.ts");
   writeFileSync(dts, "export declare function mul(a: number, b: number): number;\n", "utf-8");
@@ -1903,8 +1837,8 @@ describe("-from-dts 不得绕过用法校验（先校验、后分派）", () => 
     expect(r.stderr).toBe("");
     expect(r.stdout).toContain("// @nudo:draft");
     expect(r.stdout).toContain("export const mul = fn({ a: number(), b: number() }, number());");
-  })();
-(() => {
+  }
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-cli-659-"));
   dts = join(dir, "types.d.ts");
   writeFileSync(dts, "export declare function mul(a: number, b: number): number;\n", "utf-8");
@@ -1924,8 +1858,8 @@ describe("-from-dts 不得绕过用法校验（先校验、后分派）", () => 
     // 用例意图不变：「--from-dts + --write」是合法组合，不被用法校验误伤。
     expect(existsSync(join(dir, "types.nudo.draft.ts"))).toBe(true);
     expect(existsSync(join(dir, "types.nudo.draft.js"))).toBe(false);
-  })();
-(() => {
+  }
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-cli-659-"));
   dts = join(dir, "types.d.ts");
   writeFileSync(dts, "export declare function mul(a: number, b: number): number;\n", "utf-8");
@@ -1936,18 +1870,13 @@ describe("-from-dts 不得绕过用法校验（先校验、后分派）", () => 
     const r = runCli(["contract", "--emit", "--draft", lib], { cwd: dir });
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("Usage error: --emit and --draft are mutually exclusive");
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 });
 
@@ -1992,9 +1921,9 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("contract --draft --write --dry-run 必须打 unified diff", () => {
+
   it("dry-run 打 unified diff（--- a/ + ++ b/ + @@ hunk）且**不写盘**；负控制：非 dry-run 的 `--draft --write` 仍然写盘，且**不打** diff；diff 头与 `--emit --dry-run` 的头**同款**（同一个 unifiedDiff 生成器）", () => {
-(() => {
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-cli-660-"));
   writeFileSync(
     join(dir, "package.json"),
@@ -2018,8 +1947,8 @@ describe("contract --draft --write --dry-run 必须打 unified diff", () => {
     expect(existsSync(join(dir, "calc.nudo.draft.js"))).toBe(false);
     // 改前：stdout 只有「[dry-run] would write → …」，**没有** diff
     expect(r.stdout).toContain("[dry-run] would write → calc.nudo.draft.js");
-  })();
-(() => {
+  }
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-cli-660-"));
   writeFileSync(
     join(dir, "package.json"),
@@ -2036,8 +1965,8 @@ describe("contract --draft --write --dry-run 必须打 unified diff", () => {
     expect(r.stdout).toContain("Draft written → calc.nudo.draft.js");
     expect(r.stdout).not.toContain("--- a/");
     expect(existsSync(join(dir, "calc.nudo.draft.js"))).toBe(true);
-  })();
-(() => {
+  }
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-cli-660-"));
   writeFileSync(
     join(dir, "package.json"),
@@ -2069,13 +1998,13 @@ describe("contract --draft --write --dry-run 必须打 unified diff", () => {
       "--- a/calc.nudo.draft.js",
       "+++ b/calc.nudo.draft.js",
     ]);
-  })();
-});; // 1 个 CLI 子进程（tsx 冷启动）
+  }
+}); // 1 个 CLI 子进程（tsx 冷启动）
 
-  ; // 1 个 CLI 子进程（tsx 冷启动）
+   // 1 个 CLI 子进程（tsx 冷启动）
 
-  ; // 2 个 CLI 子进程（tsx 冷启动）
-});
+   // 2 个 CLI 子进程（tsx 冷启动）
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2128,7 +2057,7 @@ function makeFixture(): string {
   return dir;
 }
 
-describe("nudo contract --emit --dry-run · 预览标签取侧车", () => {
+
   it("dry-run 标签点名**侧车**（与 diff 头同口径），不再点名源文件", () => {
     const dir = makeFixture();
 
@@ -2146,7 +2075,7 @@ describe("nudo contract --emit --dry-run · 预览标签取侧车", () => {
     expect(r.stdout).toContain("--- a/lib.nudo.js");
     expect(r.stdout).toContain("+++ b/lib.nudo.js");
   }, 60000); // 1 个 CLI 子进程（tsx 冷启动）
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2212,9 +2141,9 @@ function firstDoc(stdout: string): JsonEntry {
   return Array.isArray(parsed) ? (parsed[0] as JsonEntry) : parsed;
 }
 
-describe("contract --draft --json --write 必须**显式拒绝**", () => {
+
   it("--json + --write：exit 1 + 机器面给出理由 + 草稿**没有**落盘；负控制：`--draft --json`（无 --write）仍然照常出审阅载荷（不误伤）；负控制：`--draft --write`（无 --json）仍然照常写盘（不误伤）", () => {
-(() => {
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-cli-663-"));
   writeFileSync(
     join(dir, "package.json"),
@@ -2238,8 +2167,8 @@ describe("contract --draft --json --write 必须**显式拒绝**", () => {
     // 假绿 / 静默数据丢失已消：草稿**没有**被写出来
     expect(existsSync(join(dir, "lib.nudo.draft.js"))).toBe(false);
     expect(r.stdout).not.toContain("Draft written");
-  })();
-(() => {
+  }
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-cli-663-"));
   writeFileSync(
     join(dir, "package.json"),
@@ -2255,8 +2184,8 @@ describe("contract --draft --json --write 必须**显式拒绝**", () => {
     const doc = firstDoc(r.stdout);
     expect(doc.draftSource).toContain("// @nudo:draft");
     expect(doc.errors).toBeUndefined();
-  })();
-(() => {
+  }
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-cli-663-"));
   writeFileSync(
     join(dir, "package.json"),
@@ -2271,13 +2200,13 @@ describe("contract --draft --json --write 必须**显式拒绝**", () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("Draft written → lib.nudo.draft.js");
     expect(existsSync(join(dir, "lib.nudo.draft.js"))).toBe(true);
-  })();
-});; // 1 个 CLI 子进程（tsx 冷启动）
+  }
+}); // 1 个 CLI 子进程（tsx 冷启动）
 
-  ; // 1 个 CLI 子进程（tsx 冷启动）
+   // 1 个 CLI 子进程（tsx 冷启动）
 
-  ; // 1 个 CLI 子进程（tsx 冷启动）
-});
+   // 1 个 CLI 子进程（tsx 冷启动）
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2322,9 +2251,9 @@ type JsonDoc = {
   errors?: { code: string; message: string }[];
 };
 
-describe("contract --json 遇语法错文件：失败 root 必须进载荷", () => {
+
   it("单文件（语法错）+ --draft --json：stdout 非空 + 合法 JSON + errors[] + exit 1；目录（好文件 + 坏文件）+ --draft --json：坏文件**不再消失**（载荷不缺项）；print 形态（--json）+ 语法错：同样有 errors 条目（机器面统一）；人类面不变：stderr 仍点名失败文件 + exit 1", () => {
-(() => {
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-cli-664-"));
   good = join(dir, "good.js");
   broken = join(dir, "syn.js");
@@ -2342,8 +2271,8 @@ describe("contract --json 遇语法错文件：失败 root 必须进载荷", () 
     expect(docs[0].errors).toHaveLength(1);
     expect(docs[0].errors?.[0]?.code).toBe("nudo:contract-analysis-failed");
     expect(docs[0].errors?.[0]?.message.length).toBeGreaterThan(0);
-  })();
-(() => {
+  }
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-cli-664-"));
   good = join(dir, "good.js");
   broken = join(dir, "syn.js");
@@ -2361,8 +2290,8 @@ describe("contract --json 遇语法错文件：失败 root 必须进载荷", () 
     const failed = docs.find((d) => d.file === "syn.js");
     expect(failed).toBeDefined();
     expect(failed?.errors?.[0]?.code).toBe("nudo:contract-analysis-failed");
-  })();
-(() => {
+  }
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-cli-664-"));
   good = join(dir, "good.js");
   broken = join(dir, "syn.js");
@@ -2376,8 +2305,8 @@ describe("contract --json 遇语法错文件：失败 root 必须进载荷", () 
     const docs = JSON.parse(r.stdout) as JsonDoc[];
     expect(docs[0].file).toBe("syn.js");
     expect(docs[0].errors?.[0]?.code).toBe("nudo:contract-analysis-failed");
-  })();
-(() => {
+  }
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-cli-664-"));
   good = join(dir, "good.js");
   broken = join(dir, "syn.js");
@@ -2389,15 +2318,12 @@ describe("contract --json 遇语法错文件：失败 root 必须进载荷", () 
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("Error analyzing");
     expect(r.stderr).toContain("syn.js");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2457,10 +2383,9 @@ function makeFixture(): string {
   return dir;
 }
 
-describe("nudo contract --json --emit · 机器面拿得到合法载荷", () => {
-  it("--json --emit ⇒ stdout 是合法 JSON 且载荷是 emit 的机器文档；--json --emit --dry-run ⇒ 载荷里带 diff（与 draft 分支同构）", () => {
-(() => {
 
+  it("--json --emit ⇒ stdout 是合法 JSON 且载荷是 emit 的机器文档；--json --emit --dry-run ⇒ 载荷里带 diff（与 draft 分支同构）", () => {
+  {
     const dir = makeFixture();
 
     const r = runCli(
@@ -2483,9 +2408,8 @@ describe("nudo contract --json --emit · 机器面拿得到合法载荷", () => 
     expect(doc.issues).toEqual([]);
     // 不是「分支层没吐 JSON 文档」的错误条目
     expect(doc.errors).toBeUndefined();
-  })();
-(() => {
-
+  }
+  {
     const dir = makeFixture();
 
     const r = runCli(
@@ -2498,11 +2422,11 @@ describe("nudo contract --json --emit · 机器面拿得到合法载荷", () => 
     const doc = parsed[0];
     expect(typeof doc.diff).toBe("string");
     expect(doc.diff as string).toContain("--- a/lib.nudo.js");
-  })();
-});; // 1 个 CLI 子进程（tsx 冷启动）
+  }
+}); // 1 个 CLI 子进程（tsx 冷启动）
 
-  ; // 1 个 CLI 子进程
-});
+   // 1 个 CLI 子进程
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2518,7 +2442,7 @@ describe("from-dts-draft-invariants", () => {
 
 
 
-describe("from-dts-draft-invariants", () => {
+{
 /**
  * `--from-dts --write` 的**草稿落点族**不变量（族 20 · 的
  * 收口回归；与 `from-dts-write-path` /
@@ -2565,8 +2489,7 @@ function draftPathOf(dir: string): string {
 
 describe("nudo contract --from-dts --write · 草稿落点族不变量", () => {
   it("落点贴着源 `.d.ts`，且 basename **不含 `.d.`**（BUG-264）；「next」提示点名的侧车路径也**不含 `.d.`**（建议的复制落点必须可编译）；既有草稿存在且内容不同 ⇒ 拒绝覆盖（exit 1）+ 提示**同时**给出两个放行口子；内容未变 ⇒ **不**拒绝（exit 0 + 「draft unchanged」）；机器原稿（内容不同）+ `--force` ⇒ 覆盖成功；机器原稿（内容不同）+ `NUDO_DRAFT_FORCE=1` ", () => {
-(() => {
-
+  {
     const dir = makeFixture();
 
     const r = runCli(["contract", "--from-dts", "types/index.d.ts", "--write"], { cwd: dir });
@@ -2582,9 +2505,8 @@ describe("nudo contract --from-dts --write · 草稿落点族不变量", () => {
     expect(readFileSync(join(dir, "index.nudo.draft.js"), "utf-8")).toBe(
       "// @nudo:draft\n// 别的文件的草稿\n",
     );
-  })();
-(() => {
-
+  }
+  {
     const dir = makeFixture();
 
     const r = runCli(["contract", "--from-dts", "types/index.d.ts", "--write"], { cwd: dir });
@@ -2593,9 +2515,8 @@ describe("nudo contract --from-dts --write · 草稿落点族不变量", () => {
     expect(r.stdout).toContain("types/index.nudo.ts");
     // 旧名 `types/index.d.nudo.ts` 过不了 `tsc --strict`（TS1254）
     expect(r.stdout).not.toContain("types/index.d.nudo.ts");
-  })();
-(() => {
-
+  }
+  {
     const dir = makeFixture();
     const draft = draftPathOf(dir);
     const existing = "// @nudo:draft\n// 人工留存的既有草稿（与新生成的内容不同）\n";
@@ -2615,9 +2536,8 @@ describe("nudo contract --from-dts --write · 草稿落点族不变量", () => {
     // 既有草稿逐字不变 + 没有谎报成功
     expect(readFileSync(draft, "utf-8")).toBe(existing);
     expect(r.stdout).not.toContain("wrote ");
-  })();
-(() => {
-
+  }
+  {
     const dir = makeFixture();
     const first = runCli(["contract", "--from-dts", "types/index.d.ts", "--write"], { cwd: dir });
     expect(first.status).toBe(0);
@@ -2628,9 +2548,8 @@ describe("nudo contract --from-dts --write · 草稿落点族不变量", () => {
     expect(second.status).toBe(0);
     expect(second.stdout).toContain("draft unchanged");
     expect(readFileSync(draftPathOf(dir), "utf-8")).toBe(written);
-  })();
-(() => {
-
+  }
+  {
     const dir = makeFixture();
     const first = runCli(["contract", "--from-dts", "types/index.d.ts", "--write"], { cwd: dir });
     expect(first.status).toBe(0);
@@ -2652,9 +2571,8 @@ describe("nudo contract --from-dts --write · 草稿落点族不变量", () => {
     const after = readFileSync(draftPathOf(dir), "utf-8");
     expect(after).not.toBe(machine);
     expect(after).toContain("export const div");
-  })();
-(() => {
-
+  }
+  {
     const dir = makeFixture();
     const first = runCli(["contract", "--from-dts", "types/index.d.ts", "--write"], { cwd: dir });
     expect(first.status).toBe(0);
@@ -2675,9 +2593,8 @@ describe("nudo contract --from-dts --write · 草稿落点族不变量", () => {
     const after = readFileSync(draftPathOf(dir), "utf-8");
     expect(after).not.toBe(machine);
     expect(after).toContain("export const div");
-  })();
-(() => {
-
+  }
+  {
     const dir = makeFixture();
     const first = runCli(["contract", "--from-dts", "types/index.d.ts", "--write"], { cwd: dir });
     expect(first.status).toBe(0);
@@ -2697,22 +2614,22 @@ describe("nudo contract --from-dts --write · 草稿落点族不变量", () => {
     expect(second.stderr).toContain("hand-edited");
     expect(readFileSync(draft, "utf-8")).toBe(handEdited);
     expect(second.stdout).not.toContain("wrote ");
-  })();
-});; // 1 个 CLI 子进程（tsx 冷启动）
+  }
+}); // 1 个 CLI 子进程（tsx 冷启动）
 
-  ; // 1 个 CLI 子进程
+   // 1 个 CLI 子进程
 
-  ; // 1 个 CLI 子进程
+   // 1 个 CLI 子进程
 
-  ; // 2 个顺序 CLI 子进程
+   // 2 个顺序 CLI 子进程
 
-  ; // 2 个顺序 CLI 子进程
+   // 2 个顺序 CLI 子进程
 
-  ; // 2 个顺序 CLI 子进程
+   // 2 个顺序 CLI 子进程
 
-  ; // 2 个顺序 CLI 子进程
+   // 2 个顺序 CLI 子进程
 });
-});
+}
 
 describe("from-dts-dry-run-diff", () => {
 /**
@@ -2775,8 +2692,7 @@ function linesWith(stdout: string, needle: string): string[] {
 
 describe("nudo contract --from-dts --write --dry-run · （续）· unified diff 预览", () => {
   it("无既有草稿 ⇒ exit 0，打 unified diff（不再是全文 dump），且**不建**草稿文件；既有草稿不同 + 无 --force ⇒ exit 1（与真写同口径），**仍**打 diff + 报拒绝 + 文件逐字不变；人工改过的草稿 + `--force` ⇒ exit 1（force 也放行不了），diff 照打、文件逐字不变；负控制：真写（无 --dry-run）遇既有不同草稿仍 exit 1、文件逐字不变，且**不打** diff", () => {
-(() => {
-
+  {
     withFixture((dir) => {
       const r = runCli(["contract", "--from-dts", "types/index.d.ts", "--write", "--dry-run"], {
         cwd: dir,
@@ -2803,9 +2719,8 @@ describe("nudo contract --from-dts --write --dry-run · （续）· unified diff
       // dry-run **不写盘**
       expect(existsSync(join(dir, DRAFT_REL))).toBe(false);
     });
-  })();
-(() => {
-
+  }
+  {
     withFixture((dir) => {
       const draftPath = join(dir, DRAFT_REL);
       writeFileSync(draftPath, EXISTING_DRAFT, "utf-8");
@@ -2830,9 +2745,8 @@ describe("nudo contract --from-dts --write --dry-run · （续）· unified diff
       // dry-run 绝不写盘：既有草稿逐字不变
       expect(readFileSync(draftPath, "utf-8")).toBe(EXISTING_DRAFT);
     });
-  })();
-(() => {
-
+  }
+  {
     withFixture((dir) => {
       const draftPath = join(dir, DRAFT_REL);
       // 先真写一次机器原稿，再人工改动正文 ⇒ 指纹失配
@@ -2859,9 +2773,8 @@ describe("nudo contract --from-dts --write --dry-run · （续）· unified diff
       // 人工改过的草稿逐字不变
       expect(readFileSync(draftPath, "utf-8")).toBe(handEdited);
     });
-  })();
-(() => {
-
+  }
+  {
     withFixture((dir) => {
       const draftPath = join(dir, DRAFT_REL);
       writeFileSync(draftPath, EXISTING_DRAFT, "utf-8");
@@ -2880,14 +2793,14 @@ describe("nudo contract --from-dts --write --dry-run · （续）· unified diff
       expect(r.stdout).not.toContain("wrote ");
       expect(r.stdout).not.toContain("--- a/");
     });
-  })();
-});; // 1 个 CLI 子进程（tsx 冷启动）
+  }
+}); // 1 个 CLI 子进程（tsx 冷启动）
 
-  ; // 1 个 CLI 子进程
+   // 1 个 CLI 子进程
 
-  ; // 2 个顺序 CLI 子进程
+   // 2 个顺序 CLI 子进程
 
-  ; // 1 个 CLI 子进程
+   // 1 个 CLI 子进程
 });
 });
 
@@ -2949,8 +2862,7 @@ function makeFixture(dts: string = DTS): string {
 
 describe("nudo contract --from-dts --write · 落盘位置与覆盖保护", () => {
   it("草稿落在**源 .d.ts 旁边**（不再是 CWD）⇒ CWD 里的同名草稿逐字不变；「next」提示**点名目标侧车路径**；目标已存在且内容不同 ⇒ **拒绝覆盖**（exit 1）+ 提示 + 既有草稿逐字不变", () => {
-(() => {
-
+  {
     const dir = makeFixture();
 
     const r = runCli(["contract", "--from-dts", "types/index.d.ts", "--write"], { cwd: dir });
@@ -2964,18 +2876,16 @@ describe("nudo contract --from-dts --write · 落盘位置与覆盖保护", () =
     expect(existsSync(join(dir, "index.nudo.draft.ts"))).toBe(false);
     // 另一个文件（index.js）的既有草稿**逐字不变**（改前被静默覆盖）
     expect(readFileSync(join(dir, "index.nudo.draft.js"), "utf-8")).toBe(OTHER_DRAFT);
-  })();
-(() => {
-
+  }
+  {
     const dir = makeFixture();
 
     const r = runCli(["contract", "--from-dts", "types/index.d.ts", "--write"], { cwd: dir });
 
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("types/index.nudo.ts");
-  })();
-(() => {
-
+  }
+  {
     const dir = makeFixture();
     // 先写一次（产物落盘）
     const first = runCli(["contract", "--from-dts", "types/index.d.ts", "--write"], { cwd: dir });
@@ -2999,12 +2909,12 @@ describe("nudo contract --from-dts --write · 落盘位置与覆盖保护", () =
     expect(readFileSync(draft, "utf-8")).toBe(written);
     // 没有谎报成功
     expect(second.stdout).not.toContain("wrote ");
-  })();
-});; // 1 个 CLI 子进程（tsx 冷启动）
+  }
+}); // 1 个 CLI 子进程（tsx 冷启动）
 
-  ; // 1 个 CLI 子进程
+   // 1 个 CLI 子进程
 
-  ; // 2 个顺序 CLI 子进程
+   // 2 个顺序 CLI 子进程
 });
 });
 });

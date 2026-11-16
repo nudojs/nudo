@@ -1,16 +1,16 @@
 import { describe, it, expect } from "vitest";
 import {
-  anyVar,
-  formatShape,
+
+
   generalizeFromAst,
   numLit,
-  relationFn,
-  bool,
+
+
   abs,
   v,
   runTranspiled,
   callTranspiledExportFull,
-  type Abs,
+
 } from "../index.ts";
 
 describe("P2: generalize use-driven promotion", () => {

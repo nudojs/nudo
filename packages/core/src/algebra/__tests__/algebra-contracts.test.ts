@@ -63,7 +63,7 @@ function check(src: string, files: Record<string, string> = { "/t/src.nudo.js": 
   return checkSource("/t/src.js", src, pTrue, { loadModule, fromFile: "/t/src.js" });
 }
 
-describe("结构型合取不得静默丢掉另一侧的义务", () => {
+
   it("侧车的 name 义务不被丢掉（调用点可见违例）", () => {
     const r = check(`/// @nudo:import { srcShape } from "./src.nudo.js"
 /**
@@ -144,7 +144,7 @@ export function f(p) {
     const reported = r.issues.filter((i) => i.code === "nudo:contract-conflict");
     expect(reported.length).toBeGreaterThan(0);
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -178,7 +178,7 @@ beforeEach(() => {
   takeRefineDiags();
 });
 
-describe("@nudo:contract 返回段的文法判据", () => {
+
   it("return number()（builder 调用）⇒ 发 nudo:contract-syntax（不再静默丢弃）", () => {
     const src = `/**
  * @nudo:contract return number()
@@ -234,7 +234,7 @@ export function f() {
     expect(violated).toBeDefined();
     expect(violated!.severity).toBe("error");
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -278,7 +278,7 @@ export function other(d) {
 }
 `;
 
-describe("fn 形态的返回义务", () => {
+
   it("返回槽取 fn.returns（不是整个 fn 约束）", () => {
     const { loadModule } = makeFiles({
       "/t/retfn.nudo.js": RETFN_SIDECAR,
@@ -319,7 +319,7 @@ describe("fn 形态的返回义务", () => {
     const proof = assertImplies(absLit(1), fnConstraint as never);
     expect(proof.status).toBe("unprovable");
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -357,7 +357,7 @@ const opts = (file: string) => ({
   fromFile: file,
 });
 
-describe("assume-relied 归因只认真正消费过的引理", () => {
+
   it("① 引理未被消费（函数体不用它）⇒ 不得宣称 proved via @nudo:assume", () => {
     const r = checkSource(
       "/t/bug367-a.js",
@@ -419,7 +419,7 @@ export function sim(d, max, lim) {
     expect(relied!.message).toContain("d <= max");
     expect(relied!.message).not.toContain("d <= lim");
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -470,7 +470,7 @@ const opts = {
   fromFile: "/t/bug369.js",
 };
 
-describe("返回契约类诊断带 line/column", () => {
+
   it("L1 违例 issue 带函数声明位置（不得是首行 / 不得缺字段）", () => {
     const r = checkSource("/t/bug369.js", SRC, pTrue, opts);
     const violated = r.issues.find((i) => i.code === "nudo:constraint-violated");
@@ -514,7 +514,7 @@ export const sim = fn({ d: number().ge(0), max: number().ge(1) }, number().ge(0)
     expect(relied!.line).toBe(13);
     expect(relied!.column).toBe(7);
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -560,7 +560,7 @@ const opts = {
   fromFile: "/proj/src/deep.js",
 };
 
-describe("L1 违例诊断的 CI 注解面 / JSON 机器契约面落真实行", () => {
+
   it("issue 字段带 line / column（第 10 行）", () => {
     const r = checkSource("/proj/src/deep.js", SRC, pTrue, opts);
     const violated = r.issues.find((i) => i.code === "nudo:constraint-violated");
@@ -593,7 +593,7 @@ describe("L1 违例诊断的 CI 注解面 / JSON 机器契约面落真实行", (
     expect(violated!.line).toBe(10);
     expect(violated!.column).toBe(7);
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -621,7 +621,7 @@ const sidecarOnly = `import { fn, number } from "@nudojs/core";
 export const bad = fn({}, number().gt(0));
 `;
 
-describe("返回契约文案反映真实约束来源", () => {
+
   it("侧车 fn() 返回槽来源 ⇒ 消息说 sidecar，不得说源码指令", () => {
     const r = checkSource(
       "/t/bug378-sidecar.js",
@@ -667,7 +667,7 @@ export function bad() {
     expect(violated!.message).toContain("@nudo:contract return positive");
     expect(violated!.message).not.toContain("sidecar fn() return slot");
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -738,7 +738,7 @@ function checkOf(src: string): {
   };
 }
 
-describe("未契约的兄弟绑定不进形参形状", () => {
+
   it("只契约 a：形参形状含 b（unknown），不是闭对象", () => {
     const r = checkOf(PARTIAL);
     expect(r.paramTypes[0]).toContain("b");
@@ -780,7 +780,7 @@ describe("未契约的兄弟绑定不进形参形状", () => {
     expect(r.paramTypes[0]).toContain("b: number");
     expect(r.paramTypes[0]).not.toContain("unknown");
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -967,7 +967,7 @@ const SRC = `export function k(x) {
 
 const assumeIds = new Set(["x"]);
 
-describe("assume 的界落进形参 pred（core 半）", () => {
+
   it("没有声明界 ⇒ 不写界（不得替用户发明 x > 0）", () => {
     const args = buildArgsFromAssume(SRC, "k", assumeIds);
     expect(args.length).toBe(1);
@@ -995,5 +995,5 @@ describe("assume 的界落进形参 pred（core 半）", () => {
     expect(args[1]!.pred).toBeUndefined();
     expect(args[1]!.shape.k).toBe("any");
   });
-});
+
 });

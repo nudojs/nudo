@@ -29,7 +29,7 @@ function dts(dir: string, file: string): string {
 }
 
 describe("D6 · dts 模块面投影", () => {
-  it("BUG-005：本地 interface / type 注解保留（不再退 unknown，也不谎报未声明）", () => {
+  it("本地 interface / type 注解保留（不再退 unknown，也不谎报未声明）", () => {
     const dir = fixture({
       "a1.ts": [
         "export interface Point { x: number; y: number }",
@@ -46,7 +46,7 @@ describe("D6 · dts 模块面投影", () => {
     expect(out).not.toContain("not declared in this module");
   }, 60000);
 
-  it("BUG-006：镜像类型声明引用的 import 要补上（否则产物自身 TS2304）", () => {
+  it("镜像类型声明引用的 import 要补上（否则产物自身 TS2304）", () => {
     const dir = fixture({
       "foo.ts": "export interface Foo { a: number }\n",
       "bar.ts": [
@@ -61,7 +61,7 @@ describe("D6 · dts 模块面投影", () => {
     expect(out).toContain("export interface Bar { f: Foo }");
   }, 60000);
 
-  it("BUG-009：`export default {…}` / 数组按下标形状投影（不是 object / unknown[]）", () => {
+  it("`export default {…}` / 数组按下标形状投影（不是 object / unknown[]）", () => {
     const dir = fixture({
       "d4.ts": "export default { a: 1, b: \"s\" };\n",
       "d5.ts": "export default [1, 2, 3];\n",
@@ -72,7 +72,7 @@ describe("D6 · dts 模块面投影", () => {
     expect(arr).toContain("number[]");
   }, 60000);
 
-  it("BUG-012：再导出导入绑定（default / 别名）必须落到产物", () => {
+  it("再导出导入绑定（default / 别名）必须落到产物", () => {
     const dir = fixture({
       "d.js": "export default class C { getN() { return 1; } }\n",
       "c.js": [
@@ -88,7 +88,7 @@ describe("D6 · dts 模块面投影", () => {
     expect(out).toContain('export { default as E } from "./d.js";');
   }, 60000);
 
-  it("BUG-027：namespace 内函数的类型形参子句保留", () => {
+  it("namespace 内函数的类型形参子句保留", () => {
     const dir = fixture({
       "ns.ts": "export namespace NS {\n  export function id<T>(v: T): T { return v; }\n}\n",
     });
@@ -96,7 +96,7 @@ describe("D6 · dts 模块面投影", () => {
     expect(out).toContain("export function id<T>(v: T): T;");
   }, 60000);
 
-  it("BUG-031：namespace 内的 `extends` 与类型形参保留", () => {
+  it("namespace 内的 `extends` 与类型形参保留", () => {
     const dir = fixture({
       "ns2.ts": [
         "export class Base { b: string = \"s\"; }",
@@ -110,7 +110,7 @@ describe("D6 · dts 模块面投影", () => {
     expect(out).toContain("export class C extends Base {");
   }, 60000);
 
-  it("BUG-029：解构形参的点路径契约投影成形（不再 `_p0: unknown`）", () => {
+  it("解构形参的点路径契约投影成形（不再 `_p0: unknown`）", () => {
     const dir = fixture({
       "dot.js": 'export function nestedDot({ card: { grade } }) { return grade + "#"; }\n',
       "dot.nudo.js": [
@@ -125,7 +125,7 @@ describe("D6 · dts 模块面投影", () => {
     expect(out).toContain("({ card }: { card: { grade: string } })");
   }, 60000);
 
-  it("BUG-030：`<fn>Input` 的顶层键是解构字段名（不是内部占位 `_p0`）", () => {
+  it("`<fn>Input` 的顶层键是解构字段名（不是内部占位 `_p0`）", () => {
     const dir = fixture({
       "e.js": "export function nestedField({ card }) { return card.grade; }\n",
       "e.nudo.js": [

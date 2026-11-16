@@ -10,7 +10,7 @@
  * - exit 1 语义不变；不再出现 "eval injection setup failed" 黑话。
  */
 import { describe, it, expect } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync,  } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runCliTsx } from "./helpers/run-cli.ts";

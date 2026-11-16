@@ -13,7 +13,7 @@ import { absToHarvestSig, harvestSigToAbs } from "../harvest-json.ts";
 import { runWithMayThrowSession, setMayThrowCollector, type MayThrowEffect } from "@nudojs/core/internal";
 import { harvestedValueToAbs } from "../harvest-to-abs.ts";
 import { execFileSync } from "node:child_process";
-import { makeWorkDir as makeWorkDir____harvest_bug_h8b_helpers_ts, removeWorkDir as removeWorkDir____harvest_bug_h8b_helpers_ts, runNudoCheck as runNudoCheck____harvest_bug_h8b_helpers_ts, writeSidecar as writeSidecar____harvest_bug_h8b_helpers_ts } from "./harvest-helpers-product-face.ts";
+import { makeWorkDir as makeWorkDir____harvest_bug_h8b_helpers_ts, runNudoCheck as runNudoCheck____harvest_bug_h8b_helpers_ts, writeSidecar as writeSidecar____harvest_bug_h8b_helpers_ts } from "./harvest-helpers-product-face.ts";
 
 // ---------------------------------------------------------------------------
 // 草稿面：同文件的 type 别名**被解析**（不再零义务）
@@ -64,26 +64,23 @@ const DTS = `type Id = string;
 export declare function withAlias(x: Id): Id;
 `;
 
-describe("草稿面：同文件的 type 别名**被解析**（不再零义务）", () => {
-  it("别名 `type Id = string` ⇒ string()，不是 any()；契约**真的**要求 string（域隶属判定 = 零义务已消除）；产品面：草稿抄进侧车后 `nudo check` **红**（与 tsc 的 TS2322 同向）；收割面同答案：(string) => string；类型别名指向对象时展开成 shape；interface 也展开；interface 的**继承成员**也在契约里（只展开自身成员 ⇒ 悄悄放宽）", () => {
-(() => {
 
+  it("别名 `type Id = string` ⇒ string()，不是 any()；契约**真的**要求 string（域隶属判定 = 零义务已消除）；产品面：草稿抄进侧车后 `nudo check` **红**（与 tsc 的 TS2322 同向）；收割面同答案：(string) => string；类型别名指向对象时展开成 shape；interface 也展开；interface 的**继承成员**也在契约里（只展开自身成员 ⇒ 悄悄放宽）", () => {
+  {
     const p = writeDts("fx.d.ts", DTS);
     const draft = dtsToContractDraft([p], "fx");
     expect(draft.draftSource).toContain("fn({ x: string() }, string())");
     expect(draft.draftSource).not.toContain("any()");
-  })();
-(() => {
-
+  }
+  {
     const p = writeDts("fx.d.ts", DTS);
     const draft = dtsToContractDraft([p], "fx");
     const exports = loadDraftExports(draft.draftSource);
     const param = fnParam(asConstraint(exports.withAlias), "x");
     expect(literalMeetsConstraint(42, param)).toBe(false);
     expect(literalMeetsConstraint("ok", param)).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const p = writeDts("fx.d.ts", DTS);
     const draft = dtsToContractDraft([p], "fx");
     const dir = makeWorkDir("b1011");
@@ -96,15 +93,13 @@ describe("草稿面：同文件的 type 别名**被解析**（不再零义务）
     removeWorkDir(dir);
     expect(res.status).not.toBe(0);
     expect(res.stdout).toContain("constraint-violated");
-  })();
-(() => {
-
+  }
+  {
     const p = writeDts("fx.d.ts", DTS);
     const env = harvestDts([p]);
     expect(formatShape(env.globals.withAlias!)).toBe("(string) => string");
-  })();
-(() => {
-
+  }
+  {
     const p = writeDts(
       "fx.d.ts",
       `type U = { a: number };
@@ -116,9 +111,8 @@ export declare function withIface(x: Local): Local;
     const draft = dtsToContractDraft([p], "fx");
     expect(draft.draftSource).toContain("shape({ a: number() })");
     expect(draft.draftSource).toContain("shape({ b: string() })");
-  })();
-(() => {
-
+  }
+  {
     const p = writeDts(
       "fx.d.ts",
       `interface Base { base: number }
@@ -129,19 +123,14 @@ export declare function takeExt(e: Ext): void;
     const draft = dtsToContractDraft([p], "fx");
     expect(draft.draftSource).toContain("base: number()");
     expect(draft.draftSource).toContain("extra: string()");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -192,27 +181,24 @@ function writeDts(name: string, content: string): string {
 const DTS = `export declare function takePartial(p: Partial<{ a: number; b: string }>): void;
 `;
 
-describe("草稿面：Partial<T> 的字段**变可选**（不比 TS 严）", () => {
-  it("草稿是 partial(shape({…}))，不是原样透传的 shape({…})；契约里两个字段都**可选**（isOptional）；产品面：草稿抄进侧车后 `nudo check` **绿**（与 tsc 同向，不再假红）；收割面同答案：该位无义务（unknown）⇒ 两侧都接受 {}", () => {
-(() => {
 
+  it("草稿是 partial(shape({…}))，不是原样透传的 shape({…})；契约里两个字段都**可选**（isOptional）；产品面：草稿抄进侧车后 `nudo check` **绿**（与 tsc 同向，不再假红）；收割面同答案：该位无义务（unknown）⇒ 两侧都接受 {}", () => {
+  {
     const p = writeDts("fx.d.ts", DTS);
     const draft = dtsToContractDraft([p], "fx");
     expect(draft.draftSource).toContain("partial(shape({ a: number(), b: string() }))");
     // 改前的形态：字段仍必填（shape 直接透传，没有 partial 包装）
     expect(draft.draftSource).not.toContain("p: shape({ a: number(), b: string() })");
-  })();
-(() => {
-
+  }
+  {
     const p = writeDts("fx.d.ts", DTS);
     const draft = dtsToContractDraft([p], "fx");
     const exports = loadDraftExports(draft.draftSource);
     const param = fnParam(asConstraint(exports.takePartial), "p");
     expect(param.fields?.a?.constraint.isOptional).toBe(true);
     expect(param.fields?.b?.constraint.isOptional).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const p = writeDts("fx.d.ts", DTS);
     const draft = dtsToContractDraft([p], "fx");
     const dir = makeWorkDir("b1012");
@@ -227,21 +213,17 @@ export function use() { return takePartial({}); }
     removeWorkDir(dir);
     expect(res.status).toBe(0);
     expect(res.stdout).not.toContain("constraint-violated");
-  })();
-(() => {
-
+  }
+  {
     const p = writeDts("fx.d.ts", DTS);
     const env = harvestDts([p]);
     expect(formatShape(env.globals.takePartial!)).toBe("(unknown) => undefined");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -309,10 +291,9 @@ function paramObjShape(abs: unknown): {
   return p?.k === "obj" ? p : undefined;
 }
 
-describe("草稿面：Record 的值域**落到实现**（或如实降级，不放绿）", () => {
-  it("键是字面量集合时，**值域落到实现**（shape 的字段就是值域）；键不是字面量时**如实降级**：不宣称值域 + note 明说未建模 + 计入 skipped；产品面：值域落地的 Record **红**（与 tsc 的 TS2322 同向，不再放绿）；收割面同口径：Record 是**开放对象且带索引值域**（值域没丢）", () => {
-(() => {
 
+  it("键是字面量集合时，**值域落到实现**（shape 的字段就是值域）；键不是字面量时**如实降级**：不宣称值域 + note 明说未建模 + 计入 skipped；产品面：值域落地的 Record **红**（与 tsc 的 TS2322 同向，不再放绿）；收割面同口径：Record 是**开放对象且带索引值域**（值域没丢）", () => {
+  {
     const p = writeDts(
       "fx.d.ts",
       `export declare function takeRecordLit(r: Record<"a" | "b", number>): void;
@@ -320,9 +301,8 @@ describe("草稿面：Record 的值域**落到实现**（或如实降级，不�
     );
     const draft = dtsToContractDraft([p], "fx");
     expect(draft.draftSource).toContain("shape({ a: number(), b: number() })");
-  })();
-(() => {
-
+  }
+  {
     const p = writeDts(
       "fx.d.ts",
       `export declare function takeRecord(r: Record<string, number>): void;
@@ -334,9 +314,8 @@ describe("草稿面：Record 的值域**落到实现**（或如实降级，不�
     expect(draft.draftSource).not.toMatch(/r: shape\(\{[^}]*number\(\)/);
     expect(draft.draftSource).toContain("Record value domain is NOT modeled");
     expect(draft.stats.skipped).toBeGreaterThanOrEqual(1);
-  })();
-(() => {
-
+  }
+  {
     const p = writeDts(
       "fx.d.ts",
       `export declare function takeRecordLit(r: Record<"a" | "b", number>): void;
@@ -355,9 +334,8 @@ export function use() { return takeRecordLit({ a: "str", b: 1 }); }
     removeWorkDir(dir);
     expect(res.status).not.toBe(0);
     expect(res.stdout).toContain("constraint-violated");
-  })();
-(() => {
-
+  }
+  {
     const p = writeDts(
       "fx.d.ts",
       `export declare function takeRecord(r: Record<string, number>): void;
@@ -368,15 +346,12 @@ export function use() { return takeRecordLit({ a: "str", b: 1 }); }
     expect(obj.open).toBe(true);
     expect(obj.index).toBeDefined();
     expect(formatShape(obj.index!.value as never)).toBe("number");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -433,10 +408,9 @@ function returnTypeOf(a: unknown): { shape: { k?: string; type?: string }; term?
   return (shape.returnType as { shape: { k?: string; type?: string }; term?: unknown });
 }
 
-describe("TS 类型谓词的返回类型（boolean / void，不是 unknown）", () => {
-  it("`x is T` 的返回面是 boolean（不是 unknown，也不是被谓词的 T）；`asserts x is T` 的返回面与 `: void` 同口径（不是 unknown）；`asserts x`（无 `is T`）也是 void 口径；`this is T` / `asserts this is T` 同口径；谓词里的联合被谓词类型不影响返回面（仍是 boolean）；接口方法签名上的谓词同口径；函数类型（type literal）上的谓词同口径；负控：普通返回", () => {
-(() => {
 
+  it("`x is T` 的返回面是 boolean（不是 unknown，也不是被谓词的 T）；`asserts x is T` 的返回面与 `: void` 同口径（不是 unknown）；`asserts x`（无 `is T`）也是 void 口径；`this is T` / `asserts this is T` 同口径；谓词里的联合被谓词类型不影响返回面（仍是 boolean）；接口方法签名上的谓词同口径；函数类型（type literal）上的谓词同口径；负控：普通返回", () => {
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export interface Foo { a: number }
@@ -451,9 +425,8 @@ export declare function isFoo(x: unknown): x is Foo;
     expect(ret.shape.type).toBe("boolean");
     // 被谓词的 `T`（Foo ⇒ brand）**不是**返回面
     expect(ret.shape.k).not.toBe("brand");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export interface Foo { a: number }
@@ -467,9 +440,8 @@ export declare function plainVoid(x: unknown): void;
     expect(returnTypeOf(env.globals["assertFoo"]!)).toEqual(
       returnTypeOf(env.globals["plainVoid"]!),
     );
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export declare function assertPlain(x: unknown): asserts x;
@@ -481,9 +453,8 @@ export declare function plainVoid(x: unknown): void;
     expect(returnTypeOf(env.globals["assertPlain"]!)).toEqual(
       returnTypeOf(env.globals["plainVoid"]!),
     );
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export interface Foo { a: number }
@@ -494,9 +465,8 @@ export declare function assertThis(x: unknown): asserts this is Foo;
     const env = harvestDts([p]);
     expect(formatShape(env.globals["isThis"]!)).toBe("(unknown) => boolean");
     expect(formatShape(env.globals["assertThis"]!)).toBe("(unknown) => undefined");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export declare function isNumOrStr(x: unknown): x is number | string;
@@ -505,9 +475,8 @@ export declare function assertThis(x: unknown): asserts this is Foo;
     const env = harvestDts([p]);
     expect(formatShape(env.globals["isNumOrStr"]!)).toBe("(unknown) => boolean");
     expect(returnTypeOf(env.globals["isNumOrStr"]!).shape.type).toBe("boolean");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export interface Foo { a: number }
@@ -526,9 +495,8 @@ export declare const guard: Guard;
     ).shape.shape.shape.slots;
     expect(formatShape(slots["isFoo"]!.value)).toBe("(unknown) => boolean");
     expect(formatShape(slots["assertFoo"]!.value)).toBe("(unknown) => undefined");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export declare const fnType: (x: unknown) => x is string;
@@ -538,9 +506,8 @@ export declare const fnTypeAssert: (x: unknown) => asserts x is string;
     const env = harvestDts([p]);
     expect(formatShape(env.globals["fnType"]!)).toBe("(unknown) => boolean");
     expect(formatShape(env.globals["fnTypeAssert"]!)).toBe("(unknown) => undefined");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export declare function retNum(): number;
@@ -570,23 +537,16 @@ export declare function retNullable(): string | null;
     expect(formatShape(env.globals["retArr"]!)).toBe("() => string[]");
     expect(formatShape(env.globals["retLit"]!)).toBe('() => "a" | "b"');
     expect(formatShape(env.globals["retNullable"]!)).toBe("() => string | null");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -644,10 +604,9 @@ function slots(a: Abs): Record<string, Abs> {
   return {};
 }
 
-describe("泛型实例化缓存键编码实参身份（不是实参个数）", () => {
-  it("不同类型实参 ⇒ 不同实例（改前 Box<number> 被折成 Box<string>）；同一类型实参 ⇒ 命中缓存（同一个实例对象）；实参个数相同、类型不同 ⇒ 不共缓存（个数相同也必须分开）；嵌套实参也按身份区分（Box<Box<string>> ≠ Box<Box<number>>）", () => {
-(() => {
 
+  it("不同类型实参 ⇒ 不同实例（改前 Box<number> 被折成 Box<string>）；同一类型实参 ⇒ 命中缓存（同一个实例对象）；实参个数相同、类型不同 ⇒ 不共缓存（个数相同也必须分开）；嵌套实参也按身份区分（Box<Box<string>> ≠ Box<Box<number>>）", () => {
+  {
     const p = writeTemp(
       "box.d.ts",
       `export interface Box<T> { value: T }\n` +
@@ -659,9 +618,8 @@ describe("泛型实例化缓存键编码实参身份（不是实参个数）", (
     expect(formatShape(slots(env.globals.b!).value!)).toBe("number");
     // 两个实例不是同一个对象
     expect(env.globals.a).not.toBe(env.globals.b);
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "box.d.ts",
       `export interface Box<T> { value: T }\n` +
@@ -673,9 +631,8 @@ describe("泛型实例化缓存键编码实参身份（不是实参个数）", (
     expect(formatShape(slots(env.globals.c!).value!)).toBe("string");
     // 缓存仍有效：同实参 ⇒ 同一个 Abs 实例（不是两份等价副本）
     expect(env.globals.a).toBe(env.globals.c);
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "box.d.ts",
       `export interface Box<T> { value: T }\n` +
@@ -688,9 +645,8 @@ describe("泛型实例化缓存键编码实参身份（不是实参个数）", (
     expect(formatShape(slots(env.globals.b!).value!)).toBe("number");
     expect(formatShape(slots(env.globals.c!).value!)).toBe("boolean");
     expect(new Set([env.globals.a, env.globals.b, env.globals.c]).size).toBe(3);
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "box.d.ts",
       `export interface Box<T> { value: T }\n` +
@@ -703,15 +659,12 @@ describe("泛型实例化缓存键编码实参身份（不是实参个数）", (
     expect(formatShape(innerA)).toBe("string");
     expect(formatShape(innerB)).toBe("number");
     expect(env.globals.a).not.toBe(env.globals.b);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -778,26 +731,23 @@ export declare function useA(o: A.Opts): number;
 export declare function useB(o: B.Opts): string;
 `;
 
-describe("命名空间限定类型引用不得并入其它命名空间的同名接口", () => {
-  it("A.Opts 只有 A 的成员（不含 B.Opts 的 b）；B.Opts 只有 B 的成员（不含 A.Opts 的 a）；对照：单命名空间时成员照常可见（不是「全都丢了」）；对照：非限定引用仍解析得到接口成员（既有口径不被破坏）；对照：lodash 形态的模块增强仍与命名空间限定名合并", () => {
-(() => {
 
+  it("A.Opts 只有 A 的成员（不含 B.Opts 的 b）；B.Opts 只有 B 的成员（不含 A.Opts 的 a）；对照：单命名空间时成员照常可见（不是「全都丢了」）；对照：非限定引用仍解析得到接口成员（既有口径不被破坏）；对照：lodash 形态的模块增强仍与命名空间限定名合并", () => {
+  {
     const p = writeTemp("ns.d.ts", TWO_NS);
     const env = harvestDts([p]);
     const aSlots = slotNames(firstParam(env.globals.useA!));
     expect(aSlots).toContain("a");
     expect(aSlots).not.toContain("b");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp("ns.d.ts", TWO_NS);
     const env = harvestDts([p]);
     const bSlots = slotNames(firstParam(env.globals.useB!));
     expect(bSlots).toContain("b");
     expect(bSlots).not.toContain("a");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "one.d.ts",
       `declare namespace A { interface Opts { a: number } }
@@ -806,9 +756,8 @@ export declare function useA(o: A.Opts): number;
     );
     const env = harvestDts([p]);
     expect(slotNames(firstParam(env.globals.useA!))).toEqual(["a"]);
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "plain.d.ts",
       `interface Opts { a: number }
@@ -817,9 +766,8 @@ export declare const o: Opts;
     );
     const env = harvestDts([p]);
     expect(slotNames(env.globals.o!)).toEqual(["a"]);
-  })();
-(() => {
-
+  }
+  {
     const idx = writeTemp(
       "idx.d.ts",
       `export = _;
@@ -842,17 +790,13 @@ declare namespace _ {
     const env = harvestDts([idx, aug]);
     const slots = slotNames(env.globals._!);
     expect(slots).toContain("uniq");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -904,10 +848,9 @@ function arity(a: unknown): number {
   return shape.paramTypes?.length ?? -1;
 }
 
-describe("`this` 形参不算实参（元数不因它 +1）", () => {
-  it("顶层函数的 `this` 形参被跳过（元数 = 真实实参数）；`this` 形参的类型不进入参数位；多个真实实参时元数只算真实实参；接口方法签名上的 `this` 形参同口径（不进实例面的参数位）", () => {
-(() => {
 
+  it("顶层函数的 `this` 形参被跳过（元数 = 真实实参数）；`this` 形参的类型不进入参数位；多个真实实参时元数只算真实实参；接口方法签名上的 `this` 形参同口径（不进实例面的参数位）", () => {
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export interface Ctx { v: number }
@@ -922,9 +865,8 @@ export declare function plain(x: number): string;
     // 对照组不受影响
     expect(formatShape(env.globals["plain"]!)).toBe("(number) => string");
     expect(arity(env.globals["plain"]!)).toBe(1);
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export interface Ctx { v: number }
@@ -936,9 +878,8 @@ export declare function withThis(this: Ctx, x: number): string;
       .shape;
     expect(shape.paramTypes).toHaveLength(1);
     expect(shape.paramTypes[0]!.shape.type).toBe("number");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export interface Ctx { v: number }
@@ -948,9 +889,8 @@ export declare function two(this: Ctx, a: number, b: string): boolean;
     const env = harvestDts([p]);
     expect(formatShape(env.globals["two"]!)).toBe("(number, string) => boolean");
     expect(arity(env.globals["two"]!)).toBe(2);
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export interface I {
@@ -966,15 +906,12 @@ export declare const i: I;
     const m = slots["m"]!.value as { shape: { k: string; paramTypes?: unknown[] } };
     expect(m.shape.k).toBe("fn");
     expect(m.shape.paramTypes?.length ?? 0).toBe(1);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1044,36 +981,31 @@ function slotNames(a: unknown): string[] {
   return [];
 }
 
-describe("declare class 的实例成员不再整体丢失，绑定不再消失", () => {
-  it("`const p: Point` 绑定保留在 globals 里（改前整个消失）；`p` 的类型是 Point 的实例面（不是 unknown）；实例成员进实例面（x / y / label / move / origin）；以类名做参数类型时参数面是 Point（改前退化成 unknown）；静态成员不进实例面", () => {
-(() => {
 
+  it("`const p: Point` 绑定保留在 globals 里（改前整个消失）；`p` 的类型是 Point 的实例面（不是 unknown）；实例成员进实例面（x / y / label / move / origin）；以类名做参数类型时参数面是 Point（改前退化成 unknown）；静态成员不进实例面", () => {
+  {
     const p = writeTemp("fx.d.ts", CLS);
     const env = harvestDts([p]);
     expect(env.globals["p"]).toBeDefined();
     expect(Object.hasOwn(env.globals, "p")).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp("fx.d.ts", CLS);
     const env = harvestDts([p]);
     expect(formatShape(env.globals["p"]!)).toBe("Point");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp("fx.d.ts", CLS);
     const env = harvestDts([p]);
     const inst = env.globals["p"]!;
     expect(slotNames(inst)).toEqual(expect.arrayContaining(["x", "y", "label", "move", "origin"]));
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp("fx.d.ts", CLS);
     const env = harvestDts([p]);
     expect(formatShape(env.globals["dist"]!)).toBe("(Point, Point) => number");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export declare class WithStatic {
@@ -1087,17 +1019,13 @@ export declare const w: WithStatic;
     const names = slotNames(env.globals["w"]!);
     expect(names).toContain("value");
     expect(names).not.toContain("counter");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1163,10 +1091,9 @@ const decls = [
   `export declare function b797g(): "a" extends string ? "yes" : "no";`,
 ].join("\n");
 
-describe("extends 判定按字面量值比（不是只比 prim 标签）", () => {
-  it("类型 vs 字面量 ⇒ 假（number extends 1 / string extends \"a\"）；字面量 vs 字面量 ⇒ 按值比（\"a\" vs \"b\" 假；1 vs 1 真；1 vs 2 假）；字面量 vs 类型 ⇒ 真（1 extends number / \"a\" extends string）；判定不是「一律判假」：同值字面量仍然成立", () => {
-(() => {
 
+  it("类型 vs 字面量 ⇒ 假（number extends 1 / string extends \"a\"）；字面量 vs 字面量 ⇒ 按值比（\"a\" vs \"b\" 假；1 vs 1 真；1 vs 2 假）；字面量 vs 类型 ⇒ 真（1 extends number / \"a\" extends string）；判定不是「一律判假」：同值字面量仍然成立", () => {
+  {
     const p = writeTemp("a.d.ts", decls);
     const env = harvestDts([p]);
     expect(retOf(env, "b797a")).toBe('"no"');
@@ -1174,9 +1101,8 @@ describe("extends 判定按字面量值比（不是只比 prim 标签）", () =>
     // 反向：不得取真支
     expect(retOf(env, "b797a")).not.toBe('"yes"');
     expect(retOf(env, "b797c")).not.toBe('"yes"');
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp("a.d.ts", decls);
     const env = harvestDts([p]);
     expect(retOf(env, "b797b")).toBe('"no"');
@@ -1186,9 +1112,8 @@ describe("extends 判定按字面量值比（不是只比 prim 标签）", () =>
     expect(retOf(env, "b797b")).not.toBe('"yes"');
     expect(retOf(env, "b797d")).not.toBe('"yes"');
     expect(retOf(env, "b797e")).not.toBe('"no"');
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp("a.d.ts", decls);
     const env = harvestDts([p]);
     expect(retOf(env, "b797f")).toBe('"yes"');
@@ -1196,23 +1121,19 @@ describe("extends 判定按字面量值比（不是只比 prim 标签）", () =>
     // 反向：不得取假支（也不能因为「字面量一律判假」而误伤）
     expect(retOf(env, "b797f")).not.toBe('"no"');
     expect(retOf(env, "b797g")).not.toBe('"no"');
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp("a.d.ts", decls);
     const env = harvestDts([p]);
     // 1 extends 1 / 1 extends number / "a" extends string 三条都是真
     const trues = ["b797e", "b797f", "b797g"].map((n) => retOf(env, n));
     expect(trues).toEqual(['"yes"', '"yes"', '"yes"']);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1277,33 +1198,29 @@ const decls = [
   `export declare function b798c(): Promise<number> extends Promise<infer U> ? U : never;`,
 ].join("\n");
 
-describe("(infer E)[] 的括号穿透 + 绑定替换真支", () => {
-  it("带括号的数组 infer 绑定元素类型（改前 any）；带括号的类型字面量 infer 绑定成员类型（改前 any）；无括号的 Promise infer 仍然绑定（不被括号口径改坏）；同一语义（带括号 / 不带括号）得到同一个值", () => {
-(() => {
 
+  it("带括号的数组 infer 绑定元素类型（改前 any）；带括号的类型字面量 infer 绑定成员类型（改前 any）；无括号的 Promise infer 仍然绑定（不被括号口径改坏）；同一语义（带括号 / 不带括号）得到同一个值", () => {
+  {
     const p = writeTemp("a.d.ts", decls);
     const env = harvestDts([p]);
     expect(retOf(env, "b798a")).toBe("number");
     // 反向：不得退化成 α / unknown
     expect(retOf(env, "b798a")).not.toBe("any");
     expect(retOf(env, "b798a")).not.toBe("unknown");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp("a.d.ts", decls);
     const env = harvestDts([p]);
     expect(retOf(env, "b798b")).toBe("number");
     expect(retOf(env, "b798b")).not.toBe("any");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp("a.d.ts", decls);
     const env = harvestDts([p]);
     expect(retOf(env, "b798c")).toBe("number");
     expect(retOf(env, "b798c")).not.toBe("any");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "a.d.ts",
       `export declare function paren(): number[] extends (infer E)[] ? E : never;\n` +
@@ -1313,15 +1230,12 @@ describe("(infer E)[] 的括号穿透 + 绑定替换真支", () => {
     expect(retOf(env, "paren")).toBe("number");
     expect(retOf(env, "generic")).toBe("number");
     expect(retOf(env, "paren")).toBe(retOf(env, "generic"));
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1375,10 +1289,9 @@ function memberNames(a: unknown): string[] {
   return [];
 }
 
-describe("交叉类型合并两侧成员（不再只保留 A）", () => {
-  it("Point & Size 的成员是并集（x/y/w/h 四个）；交叉类型与单侧**可区分**（改前两者完全同形）；成员的值域保留（不是 unknown / never）；同名冲突成员取 never（TS 的 A & B 属性冲突语义）；纯字面量交叉（无对象面）不崩，兜底取第一侧", () => {
-(() => {
 
+  it("Point & Size 的成员是并集（x/y/w/h 四个）；交叉类型与单侧**可区分**（改前两者完全同形）；成员的值域保留（不是 unknown / never）；同名冲突成员取 never（TS 的 A & B 属性冲突语义）；纯字面量交叉（无对象面）不崩，兜底取第一侧", () => {
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export interface Point { x: number; y: number }
@@ -1391,9 +1304,8 @@ export declare const pt: Point;
     const ps = env.globals["ps"]!;
     const names = memberNames(ps).sort();
     expect(names).toEqual(["h", "w", "x", "y"]);
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export interface Point { x: number; y: number }
@@ -1406,9 +1318,8 @@ export declare const pt: Point;
     expect(formatShape(env.globals["ps"]!)).not.toBe(formatShape(env.globals["pt"]!));
     // 反向钉：交叉类型不能塌回单侧 Point
     expect(formatShape(env.globals["ps"]!)).not.toBe("Point");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export interface Point { x: number; y: number }
@@ -1421,9 +1332,8 @@ export declare const ps: Point & Size;
     expect(shape).toContain("x: number");
     expect(shape).toContain("w: number");
     expect(shape).not.toContain("unknown");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export interface A { v: number }
@@ -1433,9 +1343,8 @@ export declare const ab: A & B;
     );
     const env = harvestDts([p]);
     expect(formatShape(env.globals["ab"]!)).toContain("never");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export declare const s: string & { a: number };
@@ -1443,17 +1352,13 @@ export declare const ab: A & B;
     );
     const env = harvestDts([p]);
     expect(env.globals["s"]).toBeDefined();
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1512,10 +1417,9 @@ function memberSlots(a: unknown): Record<string, string> {
   return {};
 }
 
-describe("泛型别名按类型实参实例化（实参不再被丢弃）", () => {
-  it("Box<number> / Box<string> 的成员值域分别是 number / string；两个实例**可区分**（改前完全同形）；别名路径与接口路径**同口径**（两者都会代入实参）；别名体内是数组时也代入实参（Box<T> = T[]）；非泛型别名不受影响（不凭空多出实参）", () => {
-(() => {
 
+  it("Box<number> / Box<string> 的成员值域分别是 number / string；两个实例**可区分**（改前完全同形）；别名路径与接口路径**同口径**（两者都会代入实参）；别名体内是数组时也代入实参（Box<T> = T[]）；非泛型别名不受影响（不凭空多出实参）", () => {
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export type Box<T> = { v: T };
@@ -1526,9 +1430,8 @@ export declare const b: Box<string>;
     const env = harvestDts([p]);
     expect(formatShape(env.globals["a"]!)).toBe("{ v: number }");
     expect(formatShape(env.globals["b"]!)).toBe("{ v: string }");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export type Box<T> = { v: T };
@@ -1538,9 +1441,8 @@ export declare const b: Box<string>;
     );
     const env = harvestDts([p]);
     expect(formatShape(env.globals["a"]!)).not.toBe(formatShape(env.globals["b"]!));
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export type Box<T> = { v: T };
@@ -1554,9 +1456,8 @@ export declare const b: IBox<number>;
     // 比较**成员面**（同口径），不是显示串
     expect(memberSlots(env.globals["a"]!)).toEqual({ v: "number" });
     expect(memberSlots(env.globals["b"]!)).toEqual({ v: "number" });
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export type List<T> = T[];
@@ -1567,9 +1468,8 @@ export declare const b: List<string>;
     const env = harvestDts([p]);
     expect(formatShape(env.globals["a"]!)).toBe("number[]");
     expect(formatShape(env.globals["b"]!)).toBe("string[]");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export type Pair = { a: number; b: string };
@@ -1578,17 +1478,13 @@ export declare const p: Pair;
     );
     const env = harvestDts([p]);
     expect(formatShape(env.globals["p"]!)).toBe("{ a: number, b: string }");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1636,10 +1532,9 @@ function writeDts(name: string, content: string): string {
   return p;
 }
 
-describe("草稿面：TS 的 null 是**真 null 面**（不是 any()）", () => {
-  it("`number | null` 的草稿是 union(number(), null)，不是 any()；契约**真的**拒绝字符串（域隶属判定 = 假绿已消除）；产品面：草稿抄进侧车后 `nudo check` **红**（与 tsc 的 TS2322 同向）；收割面同口径：`null` 是真 null 面（渲染成 number | null）；约束位上的裸字面量是**真约束**（顶层 null 导出不是 `export const x = null`）", () => {
-(() => {
 
+  it("`number | null` 的草稿是 union(number(), null)，不是 any()；契约**真的**拒绝字符串（域隶属判定 = 假绿已消除）；产品面：草稿抄进侧车后 `nudo check` **红**（与 tsc 的 TS2322 同向）；收割面同口径：`null` 是真 null 面（渲染成 number | null）；约束位上的裸字面量是**真约束**（顶层 null 导出不是 `export const x = null`）", () => {
+  {
     const p = writeDts(
       "fx.d.ts",
       `export declare function choose(flag: boolean): number | null;
@@ -1650,9 +1545,8 @@ describe("草稿面：TS 的 null 是**真 null 面**（不是 any()）", () => 
     expect(draft.draftSource).not.toContain("any()");
     // 假绿根因：`any()` 会把整个返回位变成空约束
     expect(draft.draftSource).not.toMatch(/union\(number\(\), any\(\)\)/);
-  })();
-(() => {
-
+  }
+  {
     const p = writeDts(
       "fx.d.ts",
       `export declare function choose(flag: boolean): number | null;
@@ -1664,9 +1558,8 @@ describe("草稿面：TS 的 null 是**真 null 面**（不是 any()）", () => 
     expect(literalMeetsConstraint("totally wrong", ret)).toBe(false);
     expect(literalMeetsConstraint(null, ret)).toBe(true);
     expect(literalMeetsConstraint(42, ret)).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const p = writeDts(
       "fx.d.ts",
       `export declare function choose(flag: boolean): number | null;
@@ -1683,9 +1576,8 @@ describe("草稿面：TS 的 null 是**真 null 面**（不是 any()）", () => 
     removeWorkDir(dir);
     expect(res.status).not.toBe(0);
     expect(res.stdout).toContain("constraint-violated");
-  })();
-(() => {
-
+  }
+  {
     const p = writeDts(
       "fx.d.ts",
       `export declare function choose(flag: boolean): number | null;
@@ -1693,9 +1585,8 @@ describe("草稿面：TS 的 null 是**真 null 面**（不是 any()）", () => 
     );
     const env = harvestDts([p]);
     expect(formatShape(env.globals.choose!)).toBe("(boolean) => number | null");
-  })();
-(() => {
-
+  }
+  {
     const p = writeDts(
       "fx.d.ts",
       `export declare const x: null;
@@ -1710,17 +1601,13 @@ export declare const v: "1.0";
     expect(isNudoConstraint(exports.v)).toBe(true);
     expect(literalMeetsConstraint(null, asConstraint(exports.x))).toBe(true);
     expect(literalMeetsConstraint("other", asConstraint(exports.x))).toBe(false);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1770,10 +1657,9 @@ function tupleElements(a: unknown): string[] {
   return (s.elements ?? []).map((e) => formatShape(e as never));
 }
 
-describe("元组按逐槽映射（不再按首元素近似）", () => {
-  it("[number, string] 的槽位分别是 number / string；槽位 ≥1 的元素域是**各自**的类型（不再与首元素相同）；元组不再是数组（不再折成 number[]）；rest 槽位保留自己的元素类型（[number, ...string[]]）；具名元组成员保留自己的类型", () => {
-(() => {
 
+  it("[number, string] 的槽位分别是 number / string；槽位 ≥1 的元素域是**各自**的类型（不再与首元素相同）；元组不再是数组（不再折成 number[]）；rest 槽位保留自己的元素类型（[number, ...string[]]）；具名元组成员保留自己的类型", () => {
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export declare const t1: [number, string];
@@ -1781,9 +1667,8 @@ describe("元组按逐槽映射（不再按首元素近似）", () => {
     );
     const env = harvestDts([p]);
     expect(tupleElements(env.globals["t1"]!)).toEqual(["number", "string"]);
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export declare const t1: [number, string];
@@ -1795,9 +1680,8 @@ export declare const t2: [number, boolean];
     expect(tupleElements(env.globals["t2"]!)).toEqual(["number", "boolean"]);
     // 两个不同元组不再收割成完全相同的东西
     expect(formatShape(env.globals["t1"]!)).not.toBe(formatShape(env.globals["t2"]!));
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export declare const t1: [number, string];
@@ -1806,9 +1690,8 @@ export declare const t2: [number, boolean];
     const env = harvestDts([p]);
     expect(formatShape(env.globals["t1"]!)).not.toBe("number[]");
     expect(env.globals["t1"]!.shape.k).toBe("tuple");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export declare const t3: [number, ...string[]];
@@ -1819,9 +1702,8 @@ export declare const t2: [number, boolean];
     expect(shape.k).toBe("tuple");
     expect(shape.elements.map((e) => formatShape(e as never))).toEqual(["number"]);
     expect(formatShape(shape.rest as never)).toBe("string[]");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export declare const tn: [a: number, b: string];
@@ -1829,17 +1711,13 @@ export declare const t2: [number, boolean];
     );
     const env = harvestDts([p]);
     expect(tupleElements(env.globals["tn"]!)).toEqual(["number", "string"]);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1904,10 +1782,9 @@ function objShapeOf(a: unknown): ObjShape | undefined {
   return undefined;
 }
 
-describe("Record / 索引签名建成开放对象（带索引值域）", () => {
-  it("Record<string, number> 是开放对象且带索引值域 number；两个不同的 Record **可区分**（改前都是闭空对象、完全同形）；类型字面量的索引签名也建成开放对象；索引签名 + 具名成员共存时两者都在（具名成员不被索引吞掉）；没有索引签名的类型字面量仍是**闭**对象（开放性不被乱加）", () => {
-(() => {
 
+  it("Record<string, number> 是开放对象且带索引值域 number；两个不同的 Record **可区分**（改前都是闭空对象、完全同形）；类型字面量的索引签名也建成开放对象；索引签名 + 具名成员共存时两者都在（具名成员不被索引吞掉）；没有索引签名的类型字面量仍是**闭**对象（开放性不被乱加）", () => {
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export declare const rec: Record<string, number>;
@@ -1919,9 +1796,8 @@ describe("Record / 索引签名建成开放对象（带索引值域）", () => {
     expect(shape.index).toBeDefined();
     expect(formatShape(shape.index!.value as never)).toBe("number");
     expect(formatShape(shape.index!.key as never)).toBe("string");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export declare const rec: Record<string, number>;
@@ -1936,9 +1812,8 @@ export declare const recS: Record<string, string>;
     expect(formatShape(a.index!.value as never)).not.toBe(
       formatShape(b.index!.value as never),
     );
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export declare const lit: { [k: string]: number };
@@ -1948,9 +1823,8 @@ export declare const recS: Record<string, string>;
     const shape = objShapeOf(env.globals["lit"]!)!;
     expect(shape.open).toBe(true);
     expect(formatShape(shape.index!.value as never)).toBe("number");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export declare const lit: { known: string; [k: string]: number | string };
@@ -1961,9 +1835,8 @@ export declare const recS: Record<string, string>;
     expect(Object.keys(shape.slots ?? {})).toEqual(["known"]);
     expect(shape.open).toBe(true);
     expect(shape.index).toBeDefined();
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export declare const lit: { a: number };
@@ -1973,17 +1846,13 @@ export declare const recS: Record<string, string>;
     const shape = objShapeOf(env.globals["lit"]!)!;
     expect(shape.open).toBeUndefined();
     expect(shape.index).toBeUndefined();
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2035,10 +1904,9 @@ export declare const keyOfBox: keyof Box;
 export declare const typeOfIdx: typeof idxA;
 `;
 
-describe("类型判不出时 `declare const` 绑定仍保留（不判 ReferenceError）", () => {
-  it("映射类型 / 模板字面量 / 索引访问 / keyof / typeof 的绑定全部保留；值域未知时退成 unknown（降级，不是符号不存在）；可判定的类型不受影响（对照组：仍是确切类型）；没有类型标注的 `declare const` 也保留绑定", () => {
-(() => {
 
+  it("映射类型 / 模板字面量 / 索引访问 / keyof / typeof 的绑定全部保留；值域未知时退成 unknown（降级，不是符号不存在）；可判定的类型不受影响（对照组：仍是确切类型）；没有类型标注的 `declare const` 也保留绑定", () => {
+  {
     const p = writeTemp("fx.d.ts", FIXTURE);
     const env = harvestDts([p]);
     for (const name of ["mappedLit", "tplStr", "idxA", "keyOfBox", "typeOfIdx"]) {
@@ -2046,17 +1914,15 @@ describe("类型判不出时 `declare const` 绑定仍保留（不判 ReferenceE
       expect(Object.hasOwn(env.globals, name)).toBe(true);
       expect(env.globals[name]).toBeDefined();
     }
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp("fx.d.ts", FIXTURE);
     const env = harvestDts([p]);
     expect(formatShape(env.globals["mappedLit"]!)).toBe("unknown");
     expect(formatShape(env.globals["tplStr"]!)).toBe("unknown");
     expect(formatShape(env.globals["idxA"]!)).toBe("unknown");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export declare const plain: number;
@@ -2066,21 +1932,17 @@ export declare const named: string;
     const env = harvestDts([p]);
     expect(formatShape(env.globals["plain"]!)).toBe("number");
     expect(formatShape(env.globals["named"]!)).toBe("string");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp("fx.d.ts", `export declare const untyped;\n`);
     const env = harvestDts([p]);
     expect(Object.hasOwn(env.globals, "untyped")).toBe(true);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2147,10 +2009,9 @@ function paramTypesOf(a: Abs | undefined): string {
   return (a.shape.paramTypes ?? []).map((p) => formatShape(p)).join(" | ");
 }
 
-describe("接口成员的重载集全部保留", () => {
-  it("同名 overload 的返回类型不再被抹除（并集）；参数位逐位并集（与顶层函数路径同口径）；顶层函数路径与接口成员路径同形（同一实体两条路径不得分叉）；单个签名（无重载）不受影响；重载成员仍可调用（relation 面完整：参数位 + 返回位都在）", () => {
-(() => {
 
+  it("同名 overload 的返回类型不再被抹除（并集）；参数位逐位并集（与顶层函数路径同口径）；顶层函数路径与接口成员路径同形（同一实体两条路径不得分叉）；单个签名（无重载）不受影响；重载成员仍可调用（relation 面完整：参数位 + 返回位都在）", () => {
+  {
     const p = writeTemp(
       "over.d.ts",
       `export interface IOver { m(a: number): string; m(a: string): number; }\n` +
@@ -2161,9 +2022,8 @@ describe("接口成员的重载集全部保留", () => {
     // 改前只有 (number) => string；改后两个返回类型都在
     expect(returnTypeOf(m)).toBe("string | number");
     expect(returnTypeOf(m)).not.toBe("string");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "over.d.ts",
       `export interface IOver { m(a: number): string; m(a: string): number; }\n` +
@@ -2172,9 +2032,8 @@ describe("接口成员的重载集全部保留", () => {
     const env = harvestDts([p]);
     const m = slots(env.globals.iov!).m!;
     expect(paramTypesOf(m)).toBe("number | string");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "over.d.ts",
       `export declare function top(a: number): string;\n` +
@@ -2187,9 +2046,8 @@ describe("接口成员的重载集全部保留", () => {
     const member = slots(env.globals.iov!).m!;
     expect(returnTypeOf(member)).toBe(returnTypeOf(top));
     expect(paramTypesOf(member)).toBe(paramTypesOf(top));
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "over.d.ts",
       `export interface ISingle { m(a: number): string; }\n` +
@@ -2199,9 +2057,8 @@ describe("接口成员的重载集全部保留", () => {
     const m = slots(env.globals.is!).m!;
     expect(returnTypeOf(m)).toBe("string");
     expect(paramTypesOf(m)).toBe("number");
-  })();
-(() => {
-
+  }
+__scenario_1: {
     const p = writeTemp(
       "over.d.ts",
       `export interface IOver { m(a: number): string; m(a: string): number; }\n` +
@@ -2210,20 +2067,16 @@ describe("接口成员的重载集全部保留", () => {
     const env = harvestDts([p]);
     const m = slots(env.globals.iov!).m!;
     expect(m.shape.k).toBe("fn");
-    if (m.shape.k !== "fn") return;
+    if (m.shape.k !== "fn") break __scenario_1;
     expect((m.shape.paramTypes ?? []).length).toBe(1);
     expect(m.shape.returnType).toBeDefined();
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2282,10 +2135,9 @@ function slots(a: Abs): Record<string, Abs> {
   return {};
 }
 
-describe("递归类型别名惰性/引用式建模（不指数展开）", () => {
-  it("递归别名 = 按名 brand（不是内联展开的对象）；自引用点 = 按名 brand 引用（内层「形状待定」，不再展开一层）；规模有界：自引用成员数增加时 env 模块不指数增长；互引别名（type A = { b: B }; type B = { a: A }）也被识别为递归", () => {
-(() => {
 
+  it("递归别名 = 按名 brand（不是内联展开的对象）；自引用点 = 按名 brand 引用（内层「形状待定」，不再展开一层）；规模有界：自引用成员数增加时 env 模块不指数增长；互引别名（type A = { b: B }; type B = { a: A }）也被识别为递归", () => {
+__scenario_2: {
     const p = writeTemp(
       "tree.d.ts",
       `export type Tree = { v: number; kids: Tree[] };\n` +
@@ -2294,13 +2146,12 @@ describe("递归类型别名惰性/引用式建模（不指数展开）", () => 
     const env = harvestDts([p]);
     const tree = env.globals.tree!;
     expect(tree.shape.k).toBe("brand");
-    if (tree.shape.k !== "brand") return;
+    if (tree.shape.k !== "brand") break __scenario_2;
     expect(tree.shape.name).toBe("Tree");
     // 成员面照搬类型字面量（v: number 仍然可见）
     expect(formatShape(slots(tree).v!)).toBe("number");
-  })();
-(() => {
-
+  }
+__scenario_3: {
     const p = writeTemp(
       "tree.d.ts",
       `export type Tree = { v: number; kids: Tree[] };\n` +
@@ -2309,16 +2160,15 @@ describe("递归类型别名惰性/引用式建模（不指数展开）", () => 
     const env = harvestDts([p]);
     const kids = slots(env.globals.tree!).kids!;
     expect(kids.shape.k).toBe("arr");
-    if (kids.shape.k !== "arr") return;
+    if (kids.shape.k !== "arr") break __scenario_3;
     const elem = kids.shape.element;
     expect(elem.shape.k).toBe("brand");
-    if (elem.shape.k !== "brand") return;
+    if (elem.shape.k !== "brand") break __scenario_3;
     expect(elem.shape.name).toBe("Tree");
     // 自引用点的内层是「形状待定」⇒ 深度有界（改前是又一层完整展开）
     expect(elem.shape.shape.shape.k).toBe("unknown");
-  })();
-(() => {
-
+  }
+  {
     const sizes: number[] = [];
     for (const n of [2, 4, 6]) {
       const members = Array.from({ length: n }, (_, i) => `  m${i}: R;`).join("\n");
@@ -2333,9 +2183,8 @@ describe("递归类型别名惰性/引用式建模（不指数展开）", () => 
     expect(sizes[2]!).toBeLessThan(20_000);
     // 指数曲线下 n=6 / n=2 ≈ 3900×；线性（惰性引用）下应当 < 100×
     expect(sizes[2]!).toBeLessThan(sizes[0]! * 100);
-  })();
-(() => {
-
+  }
+__scenario_4: {
     const p = writeTemp(
       "mutual.d.ts",
       `export type A = { b: B };\n` +
@@ -2345,7 +2194,7 @@ describe("递归类型别名惰性/引用式建模（不指数展开）", () => 
     const env = harvestDts([p]);
     const a = env.globals.a!;
     expect(a.shape.k).toBe("brand");
-    if (a.shape.k !== "brand") return;
+    if (a.shape.k !== "brand") break __scenario_4;
     expect(a.shape.name).toBe("A");
     // 互引链（A → B → A → …）必须在有限跳内落到「形状待定」的按名引用
     let cur = a;
@@ -2360,15 +2209,12 @@ describe("递归类型别名惰性/引用式建模（不指数展开）", () => 
       cur = next[key]!;
     }
     expect(hops).toBeLessThan(4);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2437,31 +2283,28 @@ const OVERLOADS = `declare module "m" {
 }
 `;
 
-describe("同一接口方法在两条收割路径上必须是同一个类型", () => {
-  it("brand 成员与**模块级**提升成员的形态完全一致（BUG-253：提升只对模块作用域成立）；重载集保留全部返回类型（不是只剩第一个 overload）；对照：单签名方法两条路径同样一致；泛型接口：brand 面用类型实参（string），提升面不产出未绑定 α", () => {
-(() => {
 
+  it("brand 成员与**模块级**提升成员的形态完全一致（BUG-253：提升只对模块作用域成立）；重载集保留全部返回类型（不是只剩第一个 overload）；对照：单签名方法两条路径同样一致；泛型接口：brand 面用类型实参（string），提升面不产出未绑定 α", () => {
+  {
     const p = writeTemp("ifmeth.d.ts", OVERLOADS);
     const env = harvestDts([p]);
     const member = slots(env.modules.m!.m!).three!;
     const promoted = env.modules.m!.three!;
     expect(promoted).toBeDefined();
     expect(JSON.stringify(promoted.shape)).toBe(JSON.stringify(member.shape));
-  })();
-(() => {
-
+  }
+__scenario_5: {
     const p = writeTemp("ifmeth.d.ts", OVERLOADS);
     const env = harvestDts([p]);
     const member = slots(env.modules.m!.m!).three!;
     expect(member.shape.k).toBe("fn");
-    if (member.shape.k !== "fn") return;
+    if (member.shape.k !== "fn") break __scenario_5;
     const ret = formatShape(member.shape.returnType!);
     expect(ret).toContain("string");
     expect(ret).toContain("number");
     expect(ret).toContain("boolean");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "single.d.ts",
       `declare module "m" {
@@ -2476,9 +2319,8 @@ describe("同一接口方法在两条收割路径上必须是同一个类型", (
     expect(promoted).toBeDefined();
     expect(JSON.stringify(promoted.shape)).toBe(JSON.stringify(member.shape));
     expect(formatShape(member.shape.k === "fn" ? member.shape.returnType! : member)).toBe("string");
-  })();
-(() => {
-
+  }
+__scenario_6: {
     const p = writeTemp(
       "gen.d.ts",
       `declare module "m" {
@@ -2490,21 +2332,18 @@ describe("同一接口方法在两条收割路径上必须是同一个类型", (
     const env = harvestDts([p]);
     const member = slots(env.modules.m!.box!).get!;
     expect(member.shape.k).toBe("fn");
-    if (member.shape.k !== "fn") return;
+    if (member.shape.k !== "fn") break __scenario_6;
     // brand 面：T 已被实参 string 代入
     expect(formatShape(member.shape.returnType!)).toBe("string");
     // 提升路径看不到实参 ⇒ 泛型接口的成员不提升（否则两条路径分叉）
     expect(env.modules.m!.get).toBeUndefined();
     expect(env.globals.get).toBeUndefined();
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2569,33 +2408,29 @@ export declare const derived: Derived;
 export declare const base: Base;
 `;
 
-describe("接口 extends 的继承成员并入实例模型", () => {
-  it("Derived 的实例面含基接口的成员 b；继承来的成员不是「读不到」（不是 exact undefined）；对照：基接口自身只有自己的成员（不被子接口的成员污染）；对照：多级继承链（extends 递归）；对照：无 extends 时成员表不变（既有口径不被破坏）", () => {
-(() => {
 
+  it("Derived 的实例面含基接口的成员 b；继承来的成员不是「读不到」（不是 exact undefined）；对照：基接口自身只有自己的成员（不被子接口的成员污染）；对照：多级继承链（extends 递归）；对照：无 extends 时成员表不变（既有口径不被破坏）", () => {
+  {
     const p = writeTemp("ext.d.ts", EXTENDS);
     const env = harvestDts([p]);
     const s = slots(env.globals.derived!);
     expect(Object.keys(s).sort()).toEqual(["b", "d"]);
     expect(formatShape(s.b!)).toBe("string");
     expect(formatShape(s.d!)).toBe("number");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp("ext.d.ts", EXTENDS);
     const env = harvestDts([p]);
     const s = slots(env.globals.derived!);
     expect(formatShape(s.b!)).not.toBe("undefined");
     expect(s.b!.term?.op).not.toBe("lit");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp("ext.d.ts", EXTENDS);
     const env = harvestDts([p]);
     expect(Object.keys(slots(env.globals.base!)).sort()).toEqual(["b"]);
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "chain.d.ts",
       `export interface A1 { a: number; }
@@ -2606,9 +2441,8 @@ export declare const a3: A3;
     );
     const env = harvestDts([p]);
     expect(Object.keys(slots(env.globals.a3!)).sort()).toEqual(["a", "b", "c"]);
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "plain.d.ts",
       `export interface Plain { x: number; }
@@ -2617,17 +2451,13 @@ export declare const plain: Plain;
     );
     const env = harvestDts([p]);
     expect(Object.keys(slots(env.globals.plain!))).toEqual(["x"]);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2704,10 +2534,9 @@ function varIds(a: unknown): string[] {
   return out;
 }
 
-describe("方法的类型形参遮蔽外层同名形参（α 作用域隔离）", () => {
-  it("接口的 α 照常代入（sh.v 是实参类型）；方法自己的 α **不被**接口实参替换（方法仍是泛型的）；遮蔽的 α 与外层 α 是**不同**的身份；无同名遮蔽时，方法的 α 仍可被接口实参代入（不误伤）", () => {
-(() => {
 
+  it("接口的 α 照常代入（sh.v 是实参类型）；方法自己的 α **不被**接口实参替换（方法仍是泛型的）；遮蔽的 α 与外层 α 是**不同**的身份；无同名遮蔽时，方法的 α 仍可被接口实参代入（不误伤）", () => {
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export interface Shadow<T> { v: T; m<T>(x: T): T }
@@ -2717,9 +2546,8 @@ export declare const sh: Shadow<string>;
     const env = harvestDts([p]);
     const slots = memberSlots(env.globals["sh"]!);
     expect(formatShape(slots["v"] as never)).toBe("string");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export interface Shadow<T> { v: T; m<T>(x: T): T }
@@ -2736,9 +2564,8 @@ export declare const sh: Shadow<string>;
     for (const id of ids) expect(id).not.toBe("string");
     // 反向钉：方法不能被去泛型化成 (string) => string
     expect(formatShape(m as never)).not.toBe("(string) => string");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export interface Shadow<T> { v: T; m<T>(x: T): T }
@@ -2753,9 +2580,8 @@ export declare const sh: Shadow<string>;
     expect(new Set(ids).size).toBe(1);
     // 且它带作用域 tag（`T@…`），与外层裸名 `T` 不同
     expect(ids[0]).toMatch(/^T@/);
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export interface Box<T> { v: T; m<U>(x: U): U }
@@ -2769,15 +2595,12 @@ export declare const b: Box<string>;
     const ids = varIds(slots["m"]);
     expect(ids.length).toBeGreaterThan(0);
     expect(ids[0]).not.toBe("string");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2847,27 +2670,24 @@ const RECURSE_DTS =
   `export interface Node { value: number; next: Node; }\n` +
   `export declare const node: Node;\n`;
 
-describe("递归 interface 的自引用 = 形状待定（不是闭合空 brand）", () => {
-  it("自引用点是 brand 且内层「形状待定」；非递归成员仍然精确（value: number 不受影响）；成员读不折成 exact undefined（L2 假红的成因消失）；三条收割路径给出同一个类型（收割面 / 磁盘往返面 / 落盘发射面）", () => {
-(() => {
 
+  it("自引用点是 brand 且内层「形状待定」；非递归成员仍然精确（value: number 不受影响）；成员读不折成 exact undefined（L2 假红的成因消失）；三条收割路径给出同一个类型（收割面 / 磁盘往返面 / 落盘发射面）", () => {
+__scenario_7: {
     const p = writeTemp("node.d.ts", RECURSE_DTS);
     const env = harvestDts([p]);
     const next = slots(env.globals.node!).next!;
     expect(next.shape.k).toBe("brand");
-    if (next.shape.k !== "brand") return;
+    if (next.shape.k !== "brand") break __scenario_7;
     expect(next.shape.name).toBe("Node");
     // 改前：闭合空对象（=「确定没有成员」）⇒ 成员读折 exact undefined ⇒ 假红
     expect(next.shape.shape.shape.k).toBe("unknown");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp("node.d.ts", RECURSE_DTS);
     const env = harvestDts([p]);
     expect(formatShape(slots(env.globals.node!).value!)).toBe("number");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp("node.d.ts", RECURSE_DTS);
     const env = harvestDts([p]);
     const node = env.globals.node!;
@@ -2878,9 +2698,8 @@ describe("递归 interface 的自引用 = 形状待定（不是闭合空 brand�
     // 关键断言：不是「确定为 undefined」（闭合空对象会折成这个）
     expect(value.conf).not.toBe("exact");
     expect(value.term?.op === "lit" && (value.term as { value?: unknown }).value === undefined).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp("node.d.ts", RECURSE_DTS);
     const env = harvestDts([p]);
     const inMemory = slots(env.globals.node!).next!;
@@ -2896,15 +2715,12 @@ describe("递归 interface 的自引用 = 形状待定（不是闭合空 brand�
     // 落盘发射面：env 模块里递归引用同样是「形状待定」
     const emitted = emitEnvModule(env, "node");
     expect(emitted).toContain('name: "Node", shape: absUnknown');
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2963,10 +2779,9 @@ function slots(a: Abs): Record<string, Abs> {
   return {};
 }
 
-describe("泛型类型形参默认值生效（不留未绑定 α）", () => {
-  it("无实参引用取默认值（改前是 any = 未绑定 α）；`Box` ≡ `Box<string>`（默认路径与显式实参路径同形）；显式实参仍然优先于默认值；无默认值时取约束面（不留完全无约束的 α）；既无默认值也无约束 ⇒ 推断 unknown（不是未绑定 α）；多形参：部分显式 + 其余取默认值", () => {
-(() => {
 
+  it("无实参引用取默认值（改前是 any = 未绑定 α）；`Box` ≡ `Box<string>`（默认路径与显式实参路径同形）；显式实参仍然优先于默认值；无默认值时取约束面（不留完全无约束的 α）；既无默认值也无约束 ⇒ 推断 unknown（不是未绑定 α）；多形参：部分显式 + 其余取默认值", () => {
+  {
     const p = writeTemp(
       "box.d.ts",
       `export interface Box<T extends string = string> { v: T }\n` +
@@ -2979,9 +2794,8 @@ describe("泛型类型形参默认值生效（不留未绑定 α）", () => {
     expect(formatShape(v)).not.toBe("any");
     // 未绑定 α 的形状（any + var term）不得残留
     expect(v.term?.op).not.toBe("var");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "box.d.ts",
       `export interface Box<T extends string = string> { v: T }\n` +
@@ -2991,9 +2805,8 @@ describe("泛型类型形参默认值生效（不留未绑定 α）", () => {
     const env = harvestDts([p]);
     expect(formatShape(slots(env.globals.box!).v!)).toBe("string");
     expect(formatShape(slots(env.globals.explicit!).v!)).toBe("string");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "box.d.ts",
       `export interface Box<T extends string = string> { v: T }\n` +
@@ -3001,9 +2814,8 @@ describe("泛型类型形参默认值生效（不留未绑定 α）", () => {
     );
     const env = harvestDts([p]);
     expect(formatShape(slots(env.globals.box!).v!)).toBe('"lit"');
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "box.d.ts",
       `export interface Box<T extends string> { v: T }\n` +
@@ -3013,9 +2825,8 @@ describe("泛型类型形参默认值生效（不留未绑定 α）", () => {
     const v = slots(env.globals.box!).v!;
     expect(formatShape(v)).toBe("string");
     expect(v.term?.op).not.toBe("var");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "box.d.ts",
       `export interface Box<T> { v: T }\n` +
@@ -3025,9 +2836,8 @@ describe("泛型类型形参默认值生效（不留未绑定 α）", () => {
     const v = slots(env.globals.box!).v!;
     expect(formatShape(v)).toBe("unknown");
     expect(v.term?.op).not.toBe("var");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "pair.d.ts",
       `export interface Pair<A = string, B = number> { a: A; b: B }\n` +
@@ -3037,19 +2847,14 @@ describe("泛型类型形参默认值生效（不留未绑定 α）", () => {
     const s = slots(env.globals.pair!);
     expect(formatShape(s.a!)).toBe("boolean");
     expect(formatShape(s.b!)).toBe("number");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -3111,32 +2916,28 @@ const decls = [
   `export declare function b816c(): B816A extends B816A ? "yes" : "no";`,
 ].join("\n");
 
-describe("brand-vs-brand 按结构判 extends（不是只比名字）", () => {
-  it("结构相同的两个 interface ⇒ 判真（改前按名字判假）；结构不同的两个 interface ⇒ 判假（不能因为放宽而一律判真）；同名 interface ⇒ 判真（不得被结构口径改坏）；多成员结构相同 ⇒ 判真；源上**缺成员** ⇒ 判假", () => {
-(() => {
 
+  it("结构相同的两个 interface ⇒ 判真（改前按名字判假）；结构不同的两个 interface ⇒ 判假（不能因为放宽而一律判真）；同名 interface ⇒ 判真（不得被结构口径改坏）；多成员结构相同 ⇒ 判真；源上**缺成员** ⇒ 判假", () => {
+  {
     const p = writeTemp("a.d.ts", decls);
     const env = harvestDts([p]);
     expect(retOf(env, "b816a")).toBe('"yes"');
     // 反向：不得取假支
     expect(retOf(env, "b816a")).not.toBe('"no"');
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp("a.d.ts", decls);
     const env = harvestDts([p]);
     expect(retOf(env, "b816b")).toBe('"no"');
     expect(retOf(env, "b816b")).not.toBe('"yes"');
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp("a.d.ts", decls);
     const env = harvestDts([p]);
     expect(retOf(env, "b816c")).toBe('"yes"');
     expect(retOf(env, "b816c")).not.toBe('"no"');
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "a.d.ts",
       `export interface P { x: number; y: string }` +
@@ -3153,15 +2954,12 @@ describe("brand-vs-brand 按结构判 extends（不是只比名字）", () => {
     // 源上**缺**成员 ⇒ 不可赋值
     expect(retOf(env, "fewer")).toBe('"no"');
     expect(retOf(env, "fewer")).not.toBe('"yes"');
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -3226,10 +3024,9 @@ function memberSlots(a: unknown): Record<string, string> {
   return {};
 }
 
-describe("内联类型字面量的访问器成员不再被丢掉", () => {
-  it("内联字面量与 interface 两条路径的成员集合**一致**；访问器的读面是 getter 的返回类型（不是 exact undefined）；get / set 对的读面**与声明顺序无关**（set 在前也取 getter）；只有 setter 时读面不折 exact undefined（写面单独建模）；无访问器的普通字面量不受影响", () => {
-(() => {
 
+  it("内联字面量与 interface 两条路径的成员集合**一致**；访问器的读面是 getter 的返回类型（不是 exact undefined）；get / set 对的读面**与声明顺序无关**（set 在前也取 getter）；只有 setter 时读面不折 exact undefined（写面单独建模）；无访问器的普通字面量不受影响", () => {
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export declare const inline: { get value(): number; plain: string };
@@ -3242,9 +3039,8 @@ export declare const vi: I;
     const iface = memberSlots(env.globals["vi"]!);
     expect(Object.keys(inline).sort()).toEqual(["plain", "value"]);
     expect(Object.keys(inline).sort()).toEqual(Object.keys(iface).sort());
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export declare const inline: { get value(): number; plain: string };
@@ -3256,9 +3052,8 @@ export declare const vi: I;
     expect(inline["plain"]).toBe("string");
     // 反向钉：不能折成 exact undefined
     expect(inline["value"]).not.toBe("undefined");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export declare const setFirst: { set value(v: number); get value(): number };
@@ -3271,9 +3066,8 @@ export declare const getFirst: { get value(): number; set value(v: number); };
     expect(memberSlots(env.globals["setFirst"]!)).toEqual(
       memberSlots(env.globals["getFirst"]!),
     );
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export declare const onlySet: { set value(v: number); };
@@ -3283,9 +3077,8 @@ export declare const getFirst: { get value(): number; set value(v: number); };
     const v = memberSlots(env.globals["onlySet"]!)["value"]!;
     expect(v).not.toBe("undefined");
     expect(v).toContain("number");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export declare const plain: { a: number; b: string };
@@ -3293,17 +3086,13 @@ export declare const getFirst: { get value(): number; set value(v: number); };
     );
     const env = harvestDts([p]);
     expect(memberSlots(env.globals["plain"]!)).toEqual({ a: "number", b: "string" });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -3382,10 +3171,9 @@ const sameFile = [
   `export declare function two(x: Box<Promise<string>>): string;`,
 ].join("\n");
 
-describe("条件元数据按条目隔离（不跨签名泄漏）", () => {
-  it("逐字相同的两条声明 ⇒ 调用点返回类型完全一致；属性位的条件元数据不被下一条签名捡走（inferFrom 必须为空）；冷 / 热缓存两种状态同口径（重复收割结果不变）；遍历顺序不影响结论（接口单独一个文件 / 换文件顺序）；真支就是 infer 变量时，元数据仍挂在**自己那条**签名上", () => {
-(() => {
 
+  it("逐字相同的两条声明 ⇒ 调用点返回类型完全一致；属性位的条件元数据不被下一条签名捡走（inferFrom 必须为空）；冷 / 热缓存两种状态同口径（重复收割结果不变）；遍历顺序不影响结论（接口单独一个文件 / 换文件顺序）；真支就是 infer 变量时，元数据仍挂在**自己那条**签名上", () => {
+  {
     const p = writeTemp("a.d.ts", sameFile);
     const env = harvestDts([p]);
     const arg = env.globals.Box!;
@@ -3394,9 +3182,8 @@ describe("条件元数据按条目隔离（不跨签名泄漏）", () => {
     // 反向：不得出现泄漏的假支（0）
     expect(callOf(env, "one", arg)).not.toBe("0");
     expect(callOf(env, "two", arg)).not.toBe("0");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp("a.d.ts", sameFile);
     const env = harvestDts([p]);
     // 两条声明的返回位都是 `string`（不是条件类型）⇒ 谁都不该带 inferFrom
@@ -3404,9 +3191,8 @@ describe("条件元数据按条目隔离（不跨签名泄漏）", () => {
     expect(relOf(env, "two")?.inferFrom).toBeUndefined();
     // 反向：显式否掉「捡到了」
     expect(relOf(env, "one")?.inferFrom).not.toBeDefined();
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp("a.d.ts", sameFile);
     const cold = harvestDts([p]);
     const hot = harvestDts([p]);
@@ -3416,9 +3202,8 @@ describe("条件元数据按条目隔离（不跨签名泄漏）", () => {
     expect(callOf(cold, "two", arg1)).toBe(callOf(hot, "two", arg2));
     expect(callOf(cold, "one", arg1)).toBe("string");
     expect(callOf(hot, "two", arg2)).toBe("string");
-  })();
-(() => {
-
+  }
+  {
     const iface = writeTemp(
       "box.d.ts",
       `export declare interface Box<T> { payload: T extends Promise<infer U> ? U : 0; }\n`,
@@ -3436,9 +3221,8 @@ describe("条件元数据按条目隔离（不跨签名泄漏）", () => {
     expect(callOf(b, "two", b.globals.Box!)).toBe("string");
     expect(retOf(a, "one")).toBe(retOf(b, "one"));
     expect(retOf(a, "two")).toBe(retOf(b, "two"));
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "a.d.ts",
       `export declare function unpack<T>(x: T): T extends Promise<infer U> ? U : T;\n`,
@@ -3447,17 +3231,13 @@ describe("条件元数据按条目隔离（不跨签名泄漏）", () => {
     // 自己那条签名必须拿到 inferFrom（否则调用点解不出 U）
     expect(relOf(env, "unpack")?.inferFrom?.via).toBe("promise");
     expect(relOf(env, "unpack")?.inferFrom?.inferVar).toBe("U");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -3522,25 +3302,22 @@ const decls = [
   `export declare function b822d(): "z" extends UnresolvedThing ? "yes" : "no";`,
 ].join("\n");
 
-describe("extends 位判不出 ⇒ 不取支（不是恒真）", () => {
-  it("keyof 可算 ⇒ 照常判定（\"z\" 不在 {a,b} ⇒ 假）；keyof 可算 ⇒ 在键集合里 ⇒ 真（不能一律判不出）；typeof 判不出 ⇒ 不取支（两支并集，不是恒真）；未解析的类型引用判不出 ⇒ 不取支（两支并集）；keyof 的判定方向不随「判不出」放宽（对拍 TS 的两条断言）", () => {
-(() => {
 
+  it("keyof 可算 ⇒ 照常判定（\"z\" 不在 {a,b} ⇒ 假）；keyof 可算 ⇒ 在键集合里 ⇒ 真（不能一律判不出）；typeof 判不出 ⇒ 不取支（两支并集，不是恒真）；未解析的类型引用判不出 ⇒ 不取支（两支并集）；keyof 的判定方向不随「判不出」放宽（对拍 TS 的两条断言）", () => {
+  {
     const p = writeTemp("a.d.ts", decls);
     const env = harvestDts([p]);
     expect(retOf(env, "b822a")).toBe('"no"');
     // 反向：不得取真支
     expect(retOf(env, "b822a")).not.toBe('"yes"');
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp("a.d.ts", decls);
     const env = harvestDts([p]);
     expect(retOf(env, "b822b")).toBe('"yes"');
     expect(retOf(env, "b822b")).not.toBe('"no"');
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp("a.d.ts", decls);
     const env = harvestDts([p]);
     const s = retOf(env, "b822c");
@@ -3549,9 +3326,8 @@ describe("extends 位判不出 ⇒ 不取支（不是恒真）", () => {
     // 反向：不得落成任何一支
     expect(s).not.toBe('"yes"');
     expect(s).not.toBe('"no"');
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp("a.d.ts", decls);
     const env = harvestDts([p]);
     const s = retOf(env, "b822d");
@@ -3559,24 +3335,19 @@ describe("extends 位判不出 ⇒ 不取支（不是恒真）", () => {
     expect(s).toContain('"no"');
     expect(s).not.toBe('"yes"');
     expect(s).not.toBe('"no"');
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp("a.d.ts", decls);
     const env = harvestDts([p]);
     expect(retOf(env, "b822a")).toBe('"no"');
     expect(retOf(env, "b822b")).toBe('"yes"');
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -3637,10 +3408,9 @@ const decls = [
   `export declare function b823b<T>(x: T): T extends (infer E)[] ? E : "x";`,
 ].join("\n");
 
-describe("真支是嵌套条件类型 ⇒ 递归求值（不被 infer 变量顶替）", () => {
-  it("嵌套条件类型的真支被递归求值（真支取值出现在结果里）；不再返回 infer 变量顶替出来的错误确切值；真支就是 infer 变量时仍走 α 捷径（inferFrom 在位）；嵌套真支不被当成 infer 变量 ⇒ 不挂 inferFrom", () => {
-(() => {
 
+  it("嵌套条件类型的真支被递归求值（真支取值出现在结果里）；不再返回 infer 变量顶替出来的错误确切值；真支就是 infer 变量时仍走 α 捷径（inferFrom 在位）；嵌套真支不被当成 infer 变量 ⇒ 不挂 inferFrom", () => {
+  {
     const p = writeTemp("a.d.ts", decls);
     const env = harvestDts([p]);
     const s = retOf(env, "b823");
@@ -3649,9 +3419,8 @@ describe("真支是嵌套条件类型 ⇒ 递归求值（不被 infer 变量顶�
     expect(s).toContain('"n"');
     // 假支也在（外层未决 ⇒ 保守并集）
     expect(s).toContain('"x"');
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp("a.d.ts", decls);
     const env = harvestDts([p]);
     const s = retOf(env, "b823");
@@ -3659,9 +3428,8 @@ describe("真支是嵌套条件类型 ⇒ 递归求值（不被 infer 变量顶�
     expect(s).not.toBe("any");
     expect(s).not.toBe('"x"');
     expect(s).not.toBe('"a"');
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp("a.d.ts", decls);
     const env = harvestDts([p]);
     const rel = getFnImpl(env.globals.b823b!)?.relation;
@@ -3669,23 +3437,19 @@ describe("真支是嵌套条件类型 ⇒ 递归求值（不被 infer 变量顶�
     expect(rel?.inferFrom?.inferVar).toBe("E");
     // 反向：不得被当成「真支是别的东西」而丢掉元数据
     expect(rel?.inferFrom).toBeDefined();
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp("a.d.ts", decls);
     const env = harvestDts([p]);
     const rel = getFnImpl(env.globals.b823!)?.relation;
     // 真支不是 infer 变量 ⇒ 不该走 α 捷径（元数据不该被写上去）
     expect(rel?.inferFrom).toBeUndefined();
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -3726,8 +3490,7 @@ function writeDts(name: string, src: string): string {
 
 describe("-from-dts 的重载集", () => {
   it("重载集保留**全部** overload 的返回类型（不被塌成第一个）；每条 overload 的签名都看得见（note 里逐条列出）；被合并掉的 overload **计入 skipped**（汇总行说真话）；N 条 overload ⇒ N−1 条丢失被逐条计数；单条声明（无重载）不算丢失", () => {
-(() => {
-
+  {
     const file = writeDts(
       "kt14.d.ts",
       `export declare function over(x: string): string;
@@ -3739,9 +3502,8 @@ export declare function over(x: string, y: number): number;
     expect(draft.draftSource).toContain("union(string(), number())");
     // 改前：只保留第一个 overload ⇒ 这行会出现在草稿里
     expect(draft.draftSource).not.toContain("export const over = fn({ x: string() }, string());");
-  })();
-(() => {
-
+  }
+  {
     const file = writeDts(
       "kt14.d.ts",
       `export declare function over(x: string): string;
@@ -3752,9 +3514,8 @@ export declare function over(x: string, y: number): number;
     expect(draft.draftSource).toContain("2 overloads merged");
     expect(draft.draftSource).toContain("fn({ x: string() }, string())");
     expect(draft.draftSource).toContain("fn({ x: string(), y: number() }, number())");
-  })();
-(() => {
-
+  }
+  {
     const file = writeDts(
       "kt14.d.ts",
       `export declare function over(x: string): string;
@@ -3765,9 +3526,8 @@ export declare function over(x: string, y: number): number;
     expect(draft.stats.exports).toBe(1);
     // 2 条声明 → 1 条条目 ⇒ 丢失 1 条 ⇒ skipped = 1（改前报 0）
     expect(draft.stats.skipped).toBe(1);
-  })();
-(() => {
-
+  }
+  {
     const file = writeDts(
       "kt14.d.ts",
       `export declare function over(x: string): string;
@@ -3780,9 +3540,8 @@ export declare function over(x: string, y: number, z: boolean): boolean;
     expect(draft.stats.skipped).toBe(2);
     expect(draft.draftSource).toContain("3 overloads merged");
     expect(draft.draftSource).toContain("union(string(), number(), boolean())");
-  })();
-(() => {
-
+  }
+  {
     const file = writeDts(
       "single.d.ts",
       `export declare function only(x: string): string;
@@ -3793,16 +3552,12 @@ export declare function over(x: string, y: number, z: boolean): boolean;
     expect(draft.stats.skipped).toBe(0);
     expect(draft.draftSource).toContain("export const only = fn({ x: string() }, string());");
     expect(draft.draftSource).not.toContain("overloads merged");
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 });
 
@@ -3875,39 +3630,34 @@ function newEffects(callee: Abs): { kinds: string[]; value: string } {
   return { kinds: effects.map((e) => e.kind), value };
 }
 
-describe("收割的 declare class 类值带 ctor facet（new 不再 may-throw）", () => {
-  it("类值带 `ctor: true` facet（改前缺省 = 可构造性未知）；mock 化时透传 ctor facet（否则又变回「可构造性未知」）；`new Gadget()` 不记 may TypeError（改前记「可构造性未知」）；`new Gadget()` 产出实例面（Point/Gadget 品牌，不是 unknown）；反向：去掉 ctor facet ⇒ 同一个 new 记 may TypeError（证明判据就是这个 facet）；普通函数（不是类）不带 c", () => {
-(() => {
 
+  it("类值带 `ctor: true` facet（改前缺省 = 可构造性未知）；mock 化时透传 ctor facet（否则又变回「可构造性未知」）；`new Gadget()` 不记 may TypeError（改前记「可构造性未知」）；`new Gadget()` 产出实例面（Point/Gadget 品牌，不是 unknown）；反向：去掉 ctor facet ⇒ 同一个 new 记 may TypeError（证明判据就是这个 facet）；普通函数（不是类）不带 c", () => {
+  {
     const p = writeTemp("fx.d.ts", CLS);
     const env = harvestDts([p]);
     expect(ctorFacet(env.globals["Gadget"])).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp("fx.d.ts", CLS);
     const env = harvestDts([p]);
     const mock = harvestedValueToAbs(env.globals["Gadget"]!);
     expect(ctorFacet(mock)).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp("fx.d.ts", CLS);
     const env = harvestDts([p]);
     const mock = harvestedValueToAbs(env.globals["Gadget"]!);
     const r = newEffects(mock);
     expect(r.kinds).not.toContain("TypeError");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp("fx.d.ts", CLS);
     const env = harvestDts([p]);
     const mock = harvestedValueToAbs(env.globals["Gadget"]!);
     const r = newEffects(mock);
     expect(r.value).toBe("Gadget");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp("fx.d.ts", CLS);
     const env = harvestDts([p]);
     const mock = harvestedValueToAbs(env.globals["Gadget"]!);
@@ -3924,25 +3674,19 @@ describe("收割的 declare class 类值带 ctor facet（new 不再 may-throw）
     delete noCtor.facets?.callable;
     const r = newEffects(noCtor);
     expect(r.kinds).toContain("TypeError");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp("fx.d.ts", `export declare function plain(x: number): string;\n`);
     const env = harvestDts([p]);
     expect(ctorFacet(env.globals["plain"])).toBeUndefined();
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -4018,10 +3762,9 @@ function returnPrims(a: unknown): string[] {
   return primLabels(rel?.returnType);
 }
 
-describe("顶层函数的重载集不被塌成单个签名", () => {
-  it("参数位保留每个 overload 的参数类型（不再只取 sigs[0]）；单个声明的函数不受影响（参数位不被改写）；参数个数不同的 overload 不改参数位（arity 不能被改）；带泛型 α 的 overload 不改参数位（α 是逐参数绑定的）；A6：overloads 随磁盘签名投影往返（缓存命中不丢派发面）；A6：重载集进入 fn shape 的 overloads 承载位（声明序逐 arm）", () => {
-(() => {
 
+  it("参数位保留每个 overload 的参数类型（不再只取 sigs[0]）；单个声明的函数不受影响（参数位不被改写）；参数个数不同的 overload 不改参数位（arity 不能被改）；带泛型 α 的 overload 不改参数位（α 是逐参数绑定的）；A6：overloads 随磁盘签名投影往返（缓存命中不丢派发面）；A6：重载集进入 fn shape 的 overloads 承载位（声明序逐 arm）", () => {
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export declare function convert(x: string): string;
@@ -4039,15 +3782,13 @@ export declare function convert(x: number): number;
     expect(rets).toContain("string");
     expect(rets).toContain("number");
     expect(formatShape(fn)).toBe("(string | number) => string | number");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp("fx.d.ts", `export declare function only(x: string): number;\n`);
     const env = harvestDts([p]);
     expect(formatShape(env.globals["only"]!)).toBe("(string) => number");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export declare function f(x: string): string;
@@ -4057,9 +3798,8 @@ export declare function f(x: string, y: number): number;
     const env = harvestDts([p]);
     // arity 仍是第一个 overload 的 1（改成 2 会让 `f("a")` 变成「参数不够」）
     expect(formatShape(env.globals["f"]!)).toBe("(string) => string | number");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export declare function g<T>(x: T): T;
@@ -4068,9 +3808,8 @@ export declare function g(x: string): number;
     );
     const env = harvestDts([p]);
     expect(formatShape(env.globals["g"]!)).toContain("T");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export declare function convert(x: string): string;
@@ -4086,9 +3825,8 @@ export declare function convert(x: number): number;
     // 回放后派发仍精确：number 实参 ⇒ number arm
     expect(formatShape(instantiateReturn(back, [numLit(1)]))).toBe("number");
     expect(formatShape(instantiateReturn(back, [numLit(0)]))).toBe("number");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export declare function convert(x: string): string;
@@ -4112,19 +3850,14 @@ export declare function convert(x: number): number;
     expect(formatShape(env.globals["convert"]!)).toBe(
       "(string | number) => string | number",
     );
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -4184,10 +3917,9 @@ type FnShape = {
   slots?: Record<string, { value: unknown }>;
 };
 
-describe("构造签名投影成**可构造**面（ctor facet）", () => {
-  it("构造签名产出 fn 形状且带 ctor: true facet；构造形参与实例面保留（new C(1) 的实例类型是声明的返回类型）；构造形参是可选时带上 undefined（与普通形参同口径）；与构造签名共存的具名成员不丢（静态槽）；无构造签名的普通字面量不带 ctor facet", () => {
-(() => {
 
+  it("构造签名产出 fn 形状且带 ctor: true facet；构造形参与实例面保留（new C(1) 的实例类型是声明的返回类型）；构造形参是可选时带上 undefined（与普通形参同口径）；与构造签名共存的具名成员不丢（静态槽）；无构造签名的普通字面量不带 ctor facet", () => {
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export interface Widget { v: number }
@@ -4200,9 +3932,8 @@ export declare const WidgetCtor: { new (x: number): Widget };
     expect(shape.ctor).toBe(true);
     // 反向钉：不能是「可构造性未知」（undefined ⇒ core 记 may-throw ⇒ 假红）
     expect(shape.ctor).not.toBeUndefined();
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export interface Widget { v: number }
@@ -4213,9 +3944,8 @@ export declare const WidgetCtor: { new (x: number): Widget };
     const shape = env.globals["WidgetCtor"]!.shape as FnShape;
     expect((shape.paramTypes ?? []).map((t) => formatShape(t as never))).toEqual(["number"]);
     expect(formatShape(shape.returnType as never)).toBe("Widget");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export declare const C: { new (x?: number): { tag: string } };
@@ -4225,9 +3955,8 @@ export declare const WidgetCtor: { new (x: number): Widget };
     const shape = env.globals["C"]!.shape as FnShape;
     expect(shape.ctor).toBe(true);
     expect(formatShape((shape.paramTypes ?? [])[0] as never)).toContain("number");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export declare const C: { new (x: number): { tag: string }; version: number };
@@ -4236,9 +3965,8 @@ export declare const WidgetCtor: { new (x: number): Widget };
     const env = harvestDts([p]);
     const shape = env.globals["C"]!.shape as FnShape;
     expect(Object.keys(shape.slots ?? {})).toEqual(["version"]);
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export declare const plain: { a: number };
@@ -4248,17 +3976,13 @@ export declare const WidgetCtor: { new (x: number): Widget };
     const shape = env.globals["plain"]!.shape as FnShape;
     expect(shape.k).toBe("obj");
     expect(shape.ctor).toBeUndefined();
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -4311,10 +4035,9 @@ type FnShape = {
   slots?: Record<string, { value: unknown }>;
 };
 
-describe("调用签名投影成 fn（不再折成空对象）", () => {
-  it("调用签名产出 fn 形状（不是空 obj）；形参与返回面保留（形参位是 number、返回位是 string）；多形参 / 可选形参按普通签名同口径；与调用签名共存的具名成员不丢（静态槽）；无调用签名的普通字面量仍是 obj（不误投影成 fn）", () => {
-(() => {
 
+  it("调用签名产出 fn 形状（不是空 obj）；形参与返回面保留（形参位是 number、返回位是 string）；多形参 / 可选形参按普通签名同口径；与调用签名共存的具名成员不丢（静态槽）；无调用签名的普通字面量仍是 obj（不误投影成 fn）", () => {
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export declare const handler: { (a: number): string };
@@ -4325,9 +4048,8 @@ describe("调用签名投影成 fn（不再折成空对象）", () => {
     expect(shape.k).toBe("fn");
     // 反向钉：不能是零槽位的空对象
     expect(shape.k).not.toBe("obj");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export declare const handler: { (a: number): string };
@@ -4338,9 +4060,8 @@ describe("调用签名投影成 fn（不再折成空对象）", () => {
     expect((shape.paramTypes ?? []).map((t) => formatShape(t as never))).toEqual(["number"]);
     expect(formatShape(shape.returnType as never)).toBe("string");
     expect(formatShape(env.globals["handler"]!)).toBe("(number) => string");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export declare const handler: { (a: number, b?: string): boolean };
@@ -4353,9 +4074,8 @@ describe("调用签名投影成 fn（不再折成空对象）", () => {
       "string | undefined",
     ]);
     expect(formatShape(shape.returnType as never)).toBe("boolean");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export declare const handler: { (a: number): string; version: number };
@@ -4364,9 +4084,8 @@ describe("调用签名投影成 fn（不再折成空对象）", () => {
     const env = harvestDts([p]);
     const shape = env.globals["handler"]!.shape as FnShape;
     expect(Object.keys(shape.slots ?? {})).toEqual(["version"]);
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "fx.d.ts",
       `export declare const plain: { a: number };
@@ -4374,17 +4093,13 @@ describe("调用签名投影成 fn（不再折成空对象）", () => {
     );
     const env = harvestDts([p]);
     expect(env.globals["plain"]!.shape.k).toBe("obj");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -4446,24 +4161,21 @@ const ITER = `export interface Range { [Symbol.iterator](): Iterator<number>; si
 export declare const range: Range;
 `;
 
-describe("计算成员名（[Symbol.iterator]）不得整条丢弃", () => {
-  it("迭代协议成员进入实例模型（@@iterator 槽存在且可调用）；具名成员不受影响（对照组：只有计算成员名被丢）；异步迭代协议同样保留（@@asyncIterator）；不可静态判定的计算成员名被跳过（不产出错误成员名，也不崩）；计算成员名不影响具名成员的类型（不被覆盖成 unknown）", () => {
-(() => {
 
+  it("迭代协议成员进入实例模型（@@iterator 槽存在且可调用）；具名成员不受影响（对照组：只有计算成员名被丢）；异步迭代协议同样保留（@@asyncIterator）；不可静态判定的计算成员名被跳过（不产出错误成员名，也不崩）；计算成员名不影响具名成员的类型（不被覆盖成 unknown）", () => {
+  {
     const p = writeTemp("iter.d.ts", ITER);
     const env = harvestDts([p]);
     const s = slots(env.globals.range!);
     expect(Object.keys(s)).toContain("@@iterator");
     expect(s["@@iterator"]!.shape.k).toBe("fn");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp("iter.d.ts", ITER);
     const env = harvestDts([p]);
     expect(Object.keys(slots(env.globals.range!))).toContain("size");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "asynciter.d.ts",
       `export interface ARange { [Symbol.asyncIterator](): AsyncIterator<number>; size: number; }
@@ -4472,9 +4184,8 @@ export declare const arange: ARange;
     );
     const env = harvestDts([p]);
     expect(Object.keys(slots(env.globals.arange!))).toContain("@@asyncIterator");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "dyn.d.ts",
       `export interface Dyn { [key]: number; size: number; }
@@ -4485,25 +4196,20 @@ export declare const dyn: Dyn;
     const names = Object.keys(slots(env.globals.dyn!));
     expect(names).toContain("size");
     expect(names).not.toContain("key");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp("iter.d.ts", ITER);
     const env = harvestDts([p]);
     const s = slots(env.globals.range!);
     expect(s.size!.shape.k).toBe("prim");
     expect(s.size!.shape.k === "prim" ? s.size!.shape.type : "").toBe("number");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -4568,8 +4274,7 @@ function nodeCheck(file: string): { ok: boolean; stderr: string } {
 
 describe("-from-dts 的属性键转义", () => {
   it("带引号 / 连字符的键产出**合法**的 DSL（引号串形态）；草稿产物真能过 `node --check`（改前：Unexpected token）；`__proto__` 键走计算属性名（对象字面量的 __proto__ 会改原型）；**抄进侧车后 `nudo check` 仍然绿**（改前：sidecar 加载失败 ⇒ exit 1）；反向闸：语法非法的侧车**必定**加载失败（证明上一条不是永真断言）；导出名撞 builder import ⇒ 走别名形态（草稿仍是合", () => {
-(() => {
-
+  {
     const file = writeDts("keys.d.ts", KEYS_DTS);
     const draft = dtsToContractDraft([file], "keys");
     expect(draft.draftSource).toContain('"content-type": string()');
@@ -4579,9 +4284,8 @@ describe("-from-dts 的属性键转义", () => {
     expect(draft.draftSource).not.toContain("x-foo: number()");
     // 标识符键仍是裸写（合法形态）
     expect(draft.draftSource).toContain("plain: boolean()");
-  })();
-(() => {
-
+  }
+  {
     const file = writeDts("keys.d.ts", KEYS_DTS);
     const draft = dtsToContractDraft([file], "keys");
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug834-check-"));
@@ -4590,9 +4294,8 @@ describe("-from-dts 的属性键转义", () => {
     writeFileSync(out, draft.draftSource, "utf-8");
     const check = nodeCheck(out);
     expect(check.ok, check.stderr).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const file = writeDts(
       "proto.d.ts",
       `export declare function withProto(x: { "__proto__": string; ok: number }): void;
@@ -4602,9 +4305,8 @@ describe("-from-dts 的属性键转义", () => {
     expect(draft.draftSource).toContain('["__proto__"]: string()');
     // 裸 `__proto__:` 会触发 [[SetPrototypeOf]] ⇒ 成员从字面量里消失
     expect(draft.draftSource).not.toContain('"__proto__": string()');
-  })();
-(() => {
-
+  }
+  {
     const file = writeDts("keys.d.ts", KEYS_DTS);
     const draft = dtsToContractDraft([file], "keys");
     const dir = makeWorkDir____harvest_bug_h8b_helpers_ts("834");
@@ -4619,9 +4321,8 @@ describe("-from-dts 的属性键转义", () => {
     expect(res.stdout).not.toContain("nudo:contract-load");
     // 契约真的落到侧车上了（签名里带引号的键）
     expect(res.stdout).toContain('"content-type"');
-  })();
-(() => {
-
+  }
+  {
     const dir = makeWorkDir____harvest_bug_h8b_helpers_ts("834-broken");
     dirs.push(dir);
     const { target } = writeSidecar____harvest_bug_h8b_helpers_ts(
@@ -4632,9 +4333,8 @@ describe("-from-dts 的属性键转义", () => {
     const res = runNudoCheck____harvest_bug_h8b_helpers_ts(target);
     expect(res.status).not.toBe(0);
     expect(res.stdout).toContain("nudo:contract-load");
-  })();
-(() => {
-
+  }
+  {
     // 与 同一族（草稿的 import ↔ export 撞名 ⇒ SyntaxError）：
     // 这里用**当前**的 builder（`number`）钉住「撞名走别名」这条不变量。
     const src = formatDtsContractDraft("types", ["types.d.ts"], [
@@ -4648,18 +4348,13 @@ describe("-from-dts 的属性键转义", () => {
     writeFileSync(out, src, "utf-8");
     const check = nodeCheck(out);
     expect(check.ok, check.stderr).toBe(true);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 });
 
@@ -4713,26 +4408,23 @@ function writeDts(name: string, content: string): string {
 const DTS = `export declare function fetchUser(id: number): Promise<{ id: number; name: string }>;
 `;
 
-describe("草稿面：Promise 外壳**不剥**（与收割面同口径，不假红）", () => {
-  it("草稿的返回位**不是** resolve 后的类型（外壳不被剥掉）；该位的丢失**如实标注**（note + skipped 计数），不静默放宽；产品面：草稿抄进侧车后 `nudo check` **绿**（与 tsc 同向，不再假红）；收割面同口径：Promise 外壳**保留**（promise<…>）", () => {
-(() => {
 
+  it("草稿的返回位**不是** resolve 后的类型（外壳不被剥掉）；该位的丢失**如实标注**（note + skipped 计数），不静默放宽；产品面：草稿抄进侧车后 `nudo check` **绿**（与 tsc 同向，不再假红）；收割面同口径：Promise 外壳**保留**（promise<…>）", () => {
+  {
     const p = writeDts("fx.d.ts", DTS);
     const draft = dtsToContractDraft([p], "fx");
     expect(draft.draftSource).toContain("export const fetchUser");
     // 剥壳的旧形态：返回位 = resolve 后的对象
     expect(draft.draftSource).not.toMatch(/fn\(\{ id: number\(\) \}, shape\(/);
     expect(draft.draftSource).not.toContain("name: string()");
-  })();
-(() => {
-
+  }
+  {
     const p = writeDts("fx.d.ts", DTS);
     const draft = dtsToContractDraft([p], "fx");
     expect(draft.draftSource).toContain("Promise shell is kept");
     expect(draft.stats.skipped).toBeGreaterThanOrEqual(1);
-  })();
-(() => {
-
+  }
+  {
     const p = writeDts("fx.d.ts", DTS);
     const draft = dtsToContractDraft([p], "fx");
     const dir = makeWorkDir("b916");
@@ -4745,23 +4437,19 @@ describe("草稿面：Promise 外壳**不剥**（与收割面同口径，不假�
     removeWorkDir(dir);
     expect(res.status).toBe(0);
     expect(res.stdout).not.toContain("constraint-violated");
-  })();
-(() => {
-
+  }
+  {
     const p = writeDts("fx.d.ts", DTS);
     const env = harvestDts([p]);
     expect(formatShape(env.globals.fetchUser!)).toBe(
       "(number) => promise<{ id: number, name: string }>",
     );
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -4812,18 +4500,16 @@ function writeDts(name: string, content: string): string {
 const DTS = `export declare function takeCfg(c: { host: string; port(): number }): string;
 `;
 
-describe("草稿面：方法签名成员**不被丢**（不悄悄放宽）", () => {
-  it("方法成员进契约：`port: fn({}, number())`；数字键成员也不被丢；产品面：草稿抄进侧车后 `nudo check` **红**（与 tsc 的 TS2345 同向）；收割面同口径：方法成员在收割面也在（port: () => number）", () => {
-(() => {
 
+  it("方法成员进契约：`port: fn({}, number())`；数字键成员也不被丢；产品面：草稿抄进侧车后 `nudo check` **红**（与 tsc 的 TS2345 同向）；收割面同口径：方法成员在收割面也在（port: () => number）", () => {
+  {
     const p = writeDts("fx.d.ts", DTS);
     const draft = dtsToContractDraft([p], "fx");
     expect(draft.draftSource).toContain("port: fn({}, number())");
     // 改前的形态：方法成员整个消失
     expect(draft.draftSource).not.toContain("shape({ host: string() })");
-  })();
-(() => {
-
+  }
+  {
     const p = writeDts(
       "fx.d.ts",
       `export declare function takeNum(c: { 0: string; 1: number }): string;
@@ -4832,9 +4518,8 @@ describe("草稿面：方法签名成员**不被丢**（不悄悄放宽）", () 
     const draft = dtsToContractDraft([p], "fx");
     expect(draft.draftSource).toContain("0: string()");
     expect(draft.draftSource).toContain("1: number()");
-  })();
-(() => {
-
+  }
+  {
     const p = writeDts("fx.d.ts", DTS);
     const draft = dtsToContractDraft([p], "fx");
     const dir = makeWorkDir("b945");
@@ -4849,23 +4534,19 @@ export function use() { return takeCfg({ host: "h" }); }
     removeWorkDir(dir);
     expect(res.status).not.toBe(0);
     expect(res.stdout).toContain("port");
-  })();
-(() => {
-
+  }
+  {
     const p = writeDts("fx.d.ts", DTS);
     const env = harvestDts([p]);
     expect(formatShape(env.globals.takeCfg!)).toBe(
       "({ host: string, port: () => number }) => string",
     );
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -4939,42 +4620,37 @@ const HOLDER = `declare module "holder" {
 }
 `;
 
-describe("可选方法成员与可选属性同口径", () => {
-  it("可选方法的槽位含 undefined（可能不存在，不是必定存在）；可选方法与可选属性的可省性口径一致（两者都含 undefined）；必选方法不被加上 undefined；提升面同口径（可选方法提升出的模块成员也含 undefined）；对照：内联类型字面量的可选方法同口径（第二条成员收集路径）", () => {
-(() => {
 
+  it("可选方法的槽位含 undefined（可能不存在，不是必定存在）；可选方法与可选属性的可省性口径一致（两者都含 undefined）；必选方法不被加上 undefined；提升面同口径（可选方法提升出的模块成员也含 undefined）；对照：内联类型字面量的可选方法同口径（第二条成员收集路径）", () => {
+  {
     const p = writeTemp("holder.d.ts", HOLDER);
     const env = harvestDts([p]);
     const s = slots(env.modules.holder!.h!);
     expect(s.m).toBeDefined();
     expect(hasUndefined(s.m!)).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp("holder.d.ts", HOLDER);
     const env = harvestDts([p]);
     const s = slots(env.modules.holder!.h!);
     expect(hasUndefined(s.m!)).toBe(hasUndefined(s.p!));
     expect(formatShape(s.p!)).toBe("number | undefined");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp("holder.d.ts", HOLDER);
     const env = harvestDts([p]);
     const s = slots(env.modules.holder!.h!);
     expect(hasUndefined(s.q!)).toBe(false);
     expect(s.q!.shape.k).toBe("fn");
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp("holder.d.ts", HOLDER);
     const env = harvestDts([p]);
     const promoted = env.modules.holder!.m!;
     expect(promoted).toBeDefined();
     expect(hasUndefined(promoted)).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const p = writeTemp(
       "inline.d.ts",
       `export declare const inline: { m?(): void; p?: number };
@@ -4984,17 +4660,13 @@ describe("可选方法成员与可选属性同口径", () => {
     const s = slots(env.globals.inline!);
     expect(hasUndefined(s.m!)).toBe(true);
     expect(hasUndefined(s.p!)).toBe(true);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -5060,43 +4732,36 @@ export declare function req(a: string, b: number): void;
   ),
 ]);
 
-describe("可选 / rest 形参的可省略性", () => {
-  it("可选形参记进 optionalParams，必选元数 = TS minArgumentCount（1）；rest 形参不是必选位（元数 0）；对照：全必选签名不受影响（元数 2）；磁盘投影往返保留 optionalParams（冷 / 热同元数）", () => {
-(() => {
 
+  it("可选形参记进 optionalParams，必选元数 = TS minArgumentCount（1）；rest 形参不是必选位（元数 0）；对照：全必选签名不受影响（元数 2）；磁盘投影往返保留 optionalParams（冷 / 热同元数）", () => {
+  {
     const s = fnShape(env.globals.g);
     expect(s.params).toHaveLength(2);
     expect(s.optionalParams).toEqual([false, true]);
     expect(minArity(s)).toBe(1);
     // 类型面仍是 `number | undefined`（可省略 ≠ 去掉 undefined）
     expect(s.paramTypes![1]!.shape.k).toBe("sum");
-  })();
-(() => {
-
+  }
+  {
     const s = fnShape(env.globals.rest);
     expect(s.optionalParams).toEqual([true]);
     expect(minArity(s)).toBe(0);
-  })();
-(() => {
-
+  }
+  {
     const s = fnShape(env.globals.req);
     expect(s.optionalParams).toBeUndefined();
     expect(minArity(s)).toBe(2);
-  })();
-(() => {
-
+  }
+  {
     const back = harvestSigToAbs(absToHarvestSig(env.globals.g!));
     expect(fnShape(back).optionalParams).toEqual([false, true]);
     expect(minArity(fnShape(back))).toBe(1);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -5160,25 +4825,22 @@ declare namespace Foo {
 }
 `;
 
-describe("同名 namespace 的成员取并集", () => {
-  it("第二份声明的成员不丢（extra 在）；声明顺序不影响成员集合", () => {
-(() => {
 
+  it("第二份声明的成员不丢（extra 在）；声明顺序不影响成员集合", () => {
+  {
     const env = harvestDts([writeTemp(FIRST)]);
     const names = Object.keys(slotsOf(env.globals.Foo));
     expect(names).toEqual(expect.arrayContaining(["bar", "baz", "Inner", "extra"]));
     expect(env.stats.skipped).toBe(0);
-  })();
-(() => {
-
+  }
+  {
     const a = Object.keys(slotsOf(harvestDts([writeTemp(FIRST)]).globals.Foo)).sort();
     const b = Object.keys(slotsOf(harvestDts([writeTemp(SECOND)]).globals.Foo)).sort();
     expect(a).toEqual(b);
-  })();
-});;
-
-  ;
+  }
 });
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -5231,33 +4893,28 @@ const GENERIC_FIRST = `declare function h<T>(x: T): T;
 declare function h(x: string): string;
 `;
 
-describe("overload 合并不得留下悬空 α", () => {
-  it("具体 overload 在前：返回位保留具体类型（不是悬空 T / any）；泛型 overload 在前：保留 α（可被实参绑定）；两种声明顺序不被抹成静默 any（旧行为：(string) => T ⇒ any）", () => {
-(() => {
 
+  it("具体 overload 在前：返回位保留具体类型（不是悬空 T / any）；泛型 overload 在前：保留 α（可被实参绑定）；两种声明顺序不被抹成静默 any（旧行为：(string) => T ⇒ any）", () => {
+  {
     const h = harvestDts([writeTemp(CONCRETE_FIRST)]).globals.h!;
     expect(formatShape(h)).toBe("(string) => string");
     // 返回位的 α 必须能在参数表里绑定 ⇒ 这里返回位不应有 var
     const shape = h.shape;
     if (shape.k !== "fn") throw new Error(`expected fn shape, got ${shape.k}`);
     expect([...termVarIds(shape.returnType!)]).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const h = harvestDts([writeTemp(GENERIC_FIRST)]).globals.h!;
     expect(formatShape(h)).toBe("(T) => T");
-  })();
-(() => {
-
+  }
+  {
     const a = harvestDts([writeTemp(CONCRETE_FIRST)]).globals.h!;
     expect(formatShape(a)).not.toContain("any");
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -5312,36 +4969,31 @@ function slotLits(a: Abs | undefined): Record<string, unknown> {
 const file = writeTemp();
 const env = harvestDts([file]);
 
-describe("收割面保留 enum 成员与字面值", () => {
-  it("数字 / 字符串 / const enum 都有成员面（不再是 unknown）；无初始化器的成员按 TS 语义从 0 自增；与契约草稿面同口径（两面不再矛盾）", () => {
-(() => {
 
+  it("数字 / 字符串 / const enum 都有成员面（不再是 unknown）；无初始化器的成员按 TS 语义从 0 自增；与契约草稿面同口径（两面不再矛盾）", () => {
+  {
     for (const name of ["Color", "Name", "CE"]) {
       expect(env.globals[name]!.shape.k).toBe("obj");
     }
     expect(slotLits(env.globals.Color)).toEqual({ Red: 1, Green: 2 });
     expect(slotLits(env.globals.Name)).toEqual({ A: "a", B: "b" });
     expect(slotLits(env.globals.CE)).toEqual({ X: 1, Y: 2 });
-  })();
-(() => {
-
+  }
+  {
     expect(slotLits(env.globals.Auto)).toEqual({ First: 0, Second: 1 });
-  })();
-(() => {
-
+  }
+  {
     const draft = dtsToContractDraft([file]);
     const draftColor = draft.exports.find((e) => e.name === "Color");
     expect(draftColor).toBeDefined();
     // 草稿面把成员写成 shape({ Red: 1, Green: 2 })；收割面现在给同一个成员集
     expect(draftColor!.dsl).toContain("Red: 1");
     expect(draftColor!.dsl).toContain("Green: 2");
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -5402,26 +5054,23 @@ function memberOfHolder(a: Abs, key: string): Abs {
   return slot.value;
 }
 
-describe("可选成员在共享 DAG 上不得指数爆炸", () => {
-  it("必选形态完成（基线）；可选形态同样完成，且成员是 `L26 | undefined`", () => {
-(() => {
 
+  it("必选形态完成（基线）；可选形态同样完成，且成员是 `L26 | undefined`", () => {
+  {
     const t0 = Date.now();
     const env = harvestDts([reqFile]);
     expect(memberOfHolder(env.globals.f!, "m").shape.k).toBe("brand");
     expect(Date.now() - t0).toBeLessThan(10_000);
-  })();
-(() => {
-
+  }
+  {
     const t0 = Date.now();
     const env = harvestDts([optFile]);
     expect(Date.now() - t0).toBeLessThan(10_000);
     expect(memberOfHolder(env.globals.f!, "m").shape.k).toBe("sum");
-  })();
-});;
-
-  ;
+  }
 });
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -5475,16 +5124,14 @@ function nodeCheck(file: string): { ok: boolean; stderr: string } {
 
 describe("-from-dts 草稿的 import ↔ export 撞名", () => {
   it("导出名撞 builder import ⇒ 走别名形态（改前：export const number）；草稿产物真能过 node --check（改前：Identifier 'number' has already been declared）；负控制：普通导出名仍是 export const <name>（不误改别名形态）", () => {
-(() => {
-
+  {
     const src = formatDtsContractDraft("types", ["types.d.ts"], [
       { name: "number", dsl: `fn({ l: union(number(), number()) }, any())`, kind: "function" },
     ]);
     expect(src).not.toMatch(/^export const number = /m);
     expect(src).toContain("export { _nudo_1 as number };");
-  })();
-(() => {
-
+  }
+  {
     const dir = mkdtempSync(join(tmpdir(), "nudo-from-dts-545-"));
     dirs.push(dir);
     const src = formatDtsContractDraft("types", ["types.d.ts"], [
@@ -5494,19 +5141,16 @@ describe("-from-dts 草稿的 import ↔ export 撞名", () => {
     writeFileSync(file, src, "utf-8");
     const check = nodeCheck(file);
     expect(check.ok, check.stderr).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const src = formatDtsContractDraft("types", ["types.d.ts"], [
       { name: "lineTotal", dsl: "fn({ price: number() }, number())", kind: "function" },
     ]);
     expect(src).toContain("export const lineTotal = fn({ price: number() }, number());");
     expect(src).not.toContain("_nudo_1");
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 });
 });

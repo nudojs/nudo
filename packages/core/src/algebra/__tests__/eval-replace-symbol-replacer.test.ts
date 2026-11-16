@@ -9,7 +9,7 @@
  * replaceAll 非全局正则硬抛同口径）。
  */
 import { describe, it, expect } from "vitest";
-import { litValue, formatAbs } from "@nudojs/core";
+import { litValue,  } from "@nudojs/core";
 import { call } from "./eval-helpers.ts";
 
 function throwsName(r: { throws: { shape: { k: string; name?: string } } }): string | undefined {

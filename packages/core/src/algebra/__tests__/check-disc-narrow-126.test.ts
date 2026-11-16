@@ -53,7 +53,7 @@ const CONTRACT = `/**
  */
 `;
 
-describe("#126 判别等值守卫：issue 原文三形态（不相交判别联合 + nullable）", () => {
+describe("判别等值守卫：issue 原文三形态（不相交判别联合 + nullable）", () => {
   it("三元：null 守卫后 index 读 0 L2、返回域精确", () => {
     const r = check(`${CONTRACT}
 export function ternaryForm(node) {
@@ -92,7 +92,7 @@ export function ifCompoundForm(node) {
   });
 });
 
-describe("#126 判别等值守卫：对偶与字面量位置", () => {
+describe("判别等值守卫：对偶与字面量位置", () => {
   it("!== 早退：穿透臂（eq 事实臂）内 index 读 0 L2", () => {
     const r = check(`${CONTRACT}
 export function neqEarly(node) {
@@ -148,7 +148,7 @@ export function numDisc(node) {
   });
 });
 
-describe("#126 宽容尾臂边界（重叠值域的诚实残差）", () => {
+describe("宽容尾臂边界（重叠值域的诚实残差）", () => {
   it("string() 尾臂值域含判别字面量 → index 读保留恰好 1 条诚实 L2", () => {
     const r = check(`${CONTRACT}
 export function catchallIdx(node) {
@@ -170,7 +170,7 @@ export function catchallProp(node) {
   });
 });
 
-describe("#126 接线与运行时单元", () => {
+describe("接线与运行时单元", () => {
   it("三元转译发射 $narrowMemberEq 影子重绑（事实臂 keep=true）", () => {
     const out = transpileSource(
       `export function g(node) { return node.type === 'TemplateLiteral' ? node.quasis[0] : null; }`,

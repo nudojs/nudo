@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
-import { abs, num, str, bool, numLit, strLit, objOf, type Abs } from "@nudojs/core";
+import { abs, num, str, bool, objOf, type Abs } from "@nudojs/core";
 import { absToTSType, generateDts } from "../dts-generator.ts";
 import { tupleSparse, tupleDense } from "./fixtures.ts";
 import { tmpProject } from "../../__tests__/tmp-project.ts";

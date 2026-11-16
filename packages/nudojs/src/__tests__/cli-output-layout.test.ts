@@ -35,7 +35,7 @@ function readIfExists(p: string): string {
 }
 
 describe("类别 08 · 产物落盘与文件集合", () => {
-  it("Bug 24：无方法的类 / 纯 namespace 都是模块面 ⇒ 正常出 .d.ts 且 --out 落盘", () => {
+  it("无方法的类 / 纯 namespace 都是模块面 ⇒ 正常出 .d.ts 且 --out 落盘", () => {
     const dir = fixture("24");
     writeFileSync(
       join(dir, "dto.js"),
@@ -62,7 +62,7 @@ describe("类别 08 · 产物落盘与文件集合", () => {
     expect(ns.stdout).toContain("export declare namespace NS");
   });
 
-  it("Bug 31：私有函数 + export const 不得丢掉已组装的模块面", () => {
+  it("私有函数 + export const 不得丢掉已组装的模块面", () => {
     const dir = fixture("31");
     writeFileSync(
       join(dir, "m.js"),
@@ -75,7 +75,7 @@ describe("类别 08 · 产物落盘与文件集合", () => {
     expect(readIfExists(join(out, "m.d.ts"))).toContain("export declare const VERSION: number");
   });
 
-  it("Bug 32：显式扩展名源按 TS 解析口径落 .d.mts / .d.cts", () => {
+  it("显式扩展名源按 TS 解析口径落 .d.mts / .d.cts", () => {
     for (const [src, expected] of [
       ["m.mjs", "m.d.mts"],
       ["m.mts", "m.d.mts"],
@@ -93,7 +93,7 @@ describe("类别 08 · 产物落盘与文件集合", () => {
     // 5 次 CLI 子进程（tsx 冷启动各约 5–10s）⇒ 单用例放宽超时
   }, 120_000);
 
-  it("Bug 43：dts 相对说明符指向产物旁边的兄弟声明（./base.js）", () => {
+  it("dts 相对说明符指向产物旁边的兄弟声明（./base.js）", () => {
     const dir = fixture("43");
     writeFileSync(join(dir, "base.js"), 'export class Base { greet() { return "hi"; } }\n');
     writeFileSync(
@@ -108,7 +108,7 @@ describe("类别 08 · 产物落盘与文件集合", () => {
     expect(child).not.toContain('from "../base.js"');
   });
 
-  it("Bug 46：standard 重导出后回收上一轮的陈旧 <fn>.nudo.standard.ts", () => {
+  it("standard 重导出后回收上一轮的陈旧 <fn>.nudo.standard.ts", () => {
     const dir = fixture("46");
     const lib = join(dir, "lib.js");
     const out = join(dir, "out");
@@ -124,7 +124,7 @@ describe("类别 08 · 产物落盘与文件集合", () => {
     expect(readdirSync(out)).not.toContain("beta.nudo.standard.ts");
   });
 
-  it("Bug 26：.cts → .cjs（与 tsc 一致），两个模块都留在产物面", () => {
+  it(".cts → .cjs（与 tsc 一致），两个模块都留在产物面", () => {
     const dir = fixture("26");
     writeFileSync(
       join(dir, "index.ts"),
@@ -143,7 +143,7 @@ describe("类别 08 · 产物落盘与文件集合", () => {
     expect(readIfExists(join(dir, "index.js"))).toContain("a = 1");
   });
 
-  it("Bug 67：verify 的扫描集合与 nudo check . 同口径（产物压掉同 stem 源）", () => {
+  it("verify 的扫描集合与 nudo check . 同口径（产物压掉同 stem 源）", () => {
     const dir = fixture("67");
     const src = join(dir, "src");
     mkdirSync(src, { recursive: true });
@@ -160,7 +160,7 @@ describe("类别 08 · 产物落盘与文件集合", () => {
     expect(rows[0]!.nudoOk).toBe(true);
   });
 
-  it("Bug 27：越出 cwd 的目标不再产出 a//<绝对路径> 的 diff 头", () => {
+  it("越出 cwd 的目标不再产出 a//<绝对路径> 的 diff 头", () => {
     const ws = fixture("27ws");
     const proj = fixture("27proj");
     writeFileSync(join(proj, "lib.js"), "export function f(x) { return x + 1; }\n");

@@ -93,7 +93,7 @@ function promiseInner(a: Abs | undefined): Abs | undefined {
 // 第 1 条 · node:crypto 同族兄弟的实参域 throws 面
 // ─────────────────────────────────────────────────────────────────────────
 
-describe("族 61-1 · node:crypto 同族兄弟不再恒不抛（假绿收口）", () => {
+describe("1 · node:crypto 同族兄弟不再恒不抛（假绿收口）", () => {
   it("1.1 createHmac：原生 = TypeError（ERR_CRYPTO_INVALID_DIGEST）⇒ 引擎必抛 TypeError", () => {
     expect(nativeErrorName(() => nodeCreateHmac("nope", "k"))).toBe("TypeError");
     const site = callSite(cryptoMod.createHmac!, [strLit("nope"), strLit("k")]);
@@ -281,7 +281,7 @@ describe("族 61-1 · node:crypto 同族兄弟不再恒不抛（假绿收口）"
 // 第 2 条 · node:crypto 的 webcrypto 导出
 // ─────────────────────────────────────────────────────────────────────────
 
-describe("族 61-2 · node:crypto 导出 webcrypto / subtle / getRandomValues", () => {
+describe("2 · node:crypto 导出 webcrypto / subtle / getRandomValues", () => {
   it("2.1 宿主实测：node:crypto 真的有这三个自有键", () => {
     const host = nodeCryptoKeys();
     expect(host).toContain("webcrypto");
@@ -324,7 +324,7 @@ describe("族 61-2 · node:crypto 导出 webcrypto / subtle / getRandomValues", 
 // 第 3 条 · fs.openSync / fs/promises 的 lstat · statfs · opendir
 // ─────────────────────────────────────────────────────────────────────────
 
-describe("族 61-3 · fs.openSync 与 fs/promises 三个成员补齐", () => {
+describe("3 · fs.openSync 与 fs/promises 三个成员补齐", () => {
   it("3.1 宿主实测：node:fs 有 openSync；node:fs/promises 有 lstat / statfs / opendir", () => {
     expect(typeof nodeFsPromises.lstat).toBe("function");
     expect(typeof nodeFsPromises.statfs).toBe("function");
@@ -399,7 +399,7 @@ describe("族 61-3 · fs.openSync 与 fs/promises 三个成员补齐", () => {
 // 第 4 条 · brand 成员不再是 unknown（回归钉 —— 已随族 35 关闭）
 // ─────────────────────────────────────────────────────────────────────────
 
-describe("族 61-4 · 回归钉：node env 的 brand 成员不再是 unknown", () => {
+describe("4 · 回归钉：node env 的 brand 成员不再是 unknown", () => {
   it("4.1 navigator.userAgent 读出 string（不是 unknown）", () => {
     const slot = nodeSlotOf("navigator", "userAgent");
     expect(slot, "navigator.userAgent must be declared").toBeTruthy();
@@ -512,7 +512,7 @@ const DECLARED_AHEAD_OF_HOST: Record<string, string> = {
   sessionStorage: "同上（--experimental-webstorage）",
 };
 
-describe("族 61-5 · ESM 上下文全局面：宿主平台全局 vs 130（env 声明）", () => {
+describe("5 · ESM 上下文全局面：宿主平台全局 vs 130（env 声明）", () => {
   it("5.1 宿主平台全局与 env 声明逐名对账（宿主面随 Node 版本漂移 ⇒ 不钉绝对值）", () => {
     const host = hostEsmGlobals();
     const presentModules = host.filter((g) => NODE_MODULE_GLOBALS.has(g));
@@ -599,7 +599,7 @@ describe("族 61-5 · ESM 上下文全局面：宿主平台全局 vs 130（env �
 // 第 6 条 · env 覆盖基线
 // ─────────────────────────────────────────────────────────────────────────
 
-describe("族 61-6 · env 覆盖基线：新增声明是 leaf-clean，报告是脚本生成的", () => {
+describe("6 · env 覆盖基线：新增声明是 leaf-clean，报告是脚本生成的", () => {
   it("6.1 本次新增的模块成员全部 leaf-clean（format 不含 unknown / any）", () => {
     const added: Array<[string, Abs]> = [
       ["crypto.createHmac", cryptoMod.createHmac!],
@@ -683,7 +683,7 @@ describe("族 61-6 · env 覆盖基线：新增声明是 leaf-clean，报告是�
 // 负控 —— 既有 env 成员的声明逐字不变
 // ─────────────────────────────────────────────────────────────────────────
 
-describe("族 61 负控 —— 既有 env 成员的声明逐字不变", () => {
+describe("负控 —— 既有 env 成员的声明逐字不变", () => {
   it("N.1 node:crypto 既有 10 个成员的 formatShape 快照逐字不变", () => {
     const BEFORE_CRYPTO: Record<string, string> = {
       randomBytes: "(number) => Buffer",

@@ -50,7 +50,7 @@ import { fn, number } from "@nudojs/core";
 export const sim = fn({ d: number().ge(0), max: number().ge(0) }, number());
 `;
 
-describe("族 06 接线：合取读侧看不穿嵌套 and", () => {
+describe("接线：合取读侧看不穿嵌套 and", () => {
   it("implies 看得见嵌套 and 里的事实（HEAD 上证不出）", () => {
     // 嵌套 Φ：每条入口谓词本身是合取
     const nested = {

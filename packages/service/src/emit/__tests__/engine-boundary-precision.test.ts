@@ -16,13 +16,13 @@ import {
   pTrue,
   add,
   abs,
-  num,
-  str,
+
+
   unknown as unknownAbs,
   objOf,
 } from "@nudojs/core";
 import { deriveFromRoot } from "@nudojs/service/emit";
-import { analyzeFile } from "@nudojs/service";
+import "@nudojs/service";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

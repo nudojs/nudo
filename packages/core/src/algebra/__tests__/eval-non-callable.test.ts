@@ -76,7 +76,7 @@ describe("调用 obj/arr/tuple 被调者定抛 TypeError", () => {
     );
   });
 
-  it("[]() → caught（tuple 0 元）", () => {
+  it("() → caught（tuple 0 元）", () => {
     expectCaught(
       `export function f() { try { const a = []; a(); return "no-throw"; } catch (e) { return "caught"; } }`,
     );

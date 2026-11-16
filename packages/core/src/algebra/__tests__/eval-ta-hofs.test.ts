@@ -23,7 +23,7 @@ import { describe, it, expect } from "vitest";
 import { checkSource } from "../check/check.ts";
 import { type Abs, anyAbs, litValue } from "../abs.ts";
 import { formatShape } from "../format/format.ts";
-import { $lit } from "../exec/runtime/state.ts";
+import "../exec/runtime/state.ts";
 import { call, val, effects } from "./eval-helpers.ts";
 import { l2Count } from "./nudo-constraints.ts";
 

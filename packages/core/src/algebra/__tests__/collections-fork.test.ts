@@ -9,7 +9,7 @@ import {
   setAddEntry,
   setHasEntry,
   setSizeAbs,
-  $lit,
+
   $fork,
   abs,
   formatAbs,

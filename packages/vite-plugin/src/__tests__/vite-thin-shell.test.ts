@@ -90,7 +90,7 @@ function captureWarnings(): { logger: ReturnType<typeof createLogger>; warnings:
   return { logger, warnings };
 }
 
-describe("族 30 S0 —— 薄壳的公共导出面（零新增公共导出）", () => {
+describe("S0 —— 薄壳的公共导出面（零新增公共导出）", () => {
   it("index.ts 的运行时导出有且只有 default", () => {
     expect(Object.keys(pluginModule).sort()).toEqual(["default"]);
     expect(typeof pluginModule.default).toBe("function");
@@ -111,7 +111,7 @@ describe("族 30 S0 —— 薄壳的公共导出面（零新增公共导出）",
   });
 });
 
-describe("族 30 S0 —— 可观测行为逐字不变", () => {
+describe("S0 —— 可观测行为逐字不变", () => {
   it("诊断文本格式不变：[nudo] <id>:<line>:<col> <severity>: <message>", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-vite-s0-fmt-"));
     try {
@@ -250,7 +250,7 @@ export const sim = fn({ d: number().ge(0), max: number().ge(1) }, number().ge(0)
   });
 });
 
-describe("族 30 S0 —— 端到端：契约违例经 vite logger 上屏且构建成功", () => {
+describe("S0 —— 端到端：契约违例经 vite logger 上屏且构建成功", () => {
   it(
     "真 vite build：诊断走 this.warn，构建成功、产物落盘",
     { timeout: 120_000 },

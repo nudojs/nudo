@@ -8,8 +8,7 @@ import { issuesOf, errorsOf, warningsOf } from "./nudo-constraints.ts";
 
 describe("@nudo:contract return", () => {
   it("ok: 返回值满足 positive；error: 字面量返回 ⊭ positive；unknown return constraint name → no false violation, but a visible warning (BUG-016)；ok: 无 @nudo:contract return 不猜后置；error: percent 上界；error: string 长度界（shortName min/max）；ok: string 满足长度界；ok: any", () => {
-(() => {
-
+  {
     const r = issuesOf(`
 /**
  * @nudo:contract x positive
@@ -20,9 +19,8 @@ function inc(x) {
 }
 `, "/t/ret.js");
     expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const r = issuesOf(`
 /**
  * @nudo:contract return positive
@@ -35,9 +33,8 @@ function bad() {
     const err = r.issues.find((i) => i.message.includes("@nudo:contract return"));
     expect(err).toBeDefined();
     expect(err!.expected).toContain(">");
-  })();
-(() => {
-
+  }
+  {
     const r = issuesOf(`
 /**
  * @nudo:contract return notAString
@@ -54,18 +51,16 @@ function n() {
         (i) => i.code === "nudo:contract-syntax" && i.message.includes("notAString"),
       ),
     ).toHaveLength(1);
-  })();
-(() => {
-
+  }
+  {
     const r = issuesOf(`
 function free() {
   return -1;
 }
 `, "/t/ret.js");
     expect(r.issues.filter((i) => i.message.includes("@nudo:contract return"))).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const r = issuesOf(`
 /**
  * @nudo:contract return percent
@@ -76,9 +71,8 @@ function big() {
 `, "/t/ret.js");
     expect(r.ok).toBe(false);
     expect(r.issues.some((i) => i.message.includes("@nudo:contract return"))).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const r = issuesOf(`
 /**
  * @nudo:contract return shortName
@@ -89,9 +83,8 @@ function name() {
 `, "/t/ret.js");
     expect(r.ok).toBe(false);
     expect(r.issues.some((i) => i.message.includes("@nudo:contract return"))).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const r = issuesOf(`
 /**
  * @nudo:contract return shortName
@@ -101,9 +94,8 @@ function name() {
 }
 `, "/t/ret.js");
     expect(r.issues.filter((i) => i.message.includes("@nudo:contract return"))).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const r = issuesOf(`
 /**
  * @nudo:contract x positive
@@ -115,9 +107,8 @@ function keep(x) {
 `, "/t/ret.js");
     // 符号返回带 pred x>0，应满足
     expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const r = issuesOf(`
 /**
  * @nudo:contract x userShape
@@ -130,9 +121,8 @@ function maybe(x) {
 }
 `, "/t/ret.js");
     expect(r.issues.filter((i) => i.message.includes("@nudo:contract return"))).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const r = issuesOf(`
 /**
  * @nudo:contract return userShape
@@ -145,32 +135,22 @@ function pick(flag) {
     const err = r.issues.find((i) => i.message.includes("@nudo:contract return"));
     expect(err).toBeDefined();
     expect(err!.expected).toContain("missing field name");
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 
 describe("DEC-001: 非字面量返回证数值界", () => {
   it("warning: 符号返回 x-100 ⊭ positive（无 pred 证据 → unprovable 不得伪装成功）；error: 符号返回带矛盾 pred（x<0 时 x ⊭ positive）报 error；error: 符号返回 x（any 透传）warning 而非伪装成功；ok: 符号返回 x+1 在 x>0 下蕴含 positive（Pred 蕴含通道）；ok: 符号返回 x 在 x>0 下蕴含 positive（pred 蕴含）", () => {
-(() => {
-
+  {
     const r = issuesOf(`
 /**
  * @nudo:contract return positive
@@ -184,9 +164,8 @@ function f(x) {
     // 无 pred 证据 → unprovable → warning（不得静默放行）
     expect(retIssues[0]!.severity).toBe("warning");
     expect(retIssues[0]!.code).toBe("nudo:unproven-return");
-  })();
-(() => {
-
+  }
+  {
     const errs = errorsOf(`
 /**
  * @nudo:contract x nonNeg
@@ -199,9 +178,8 @@ function f(x) {
     // x ≥ 0 不蕴含 x > 0（0 不满足 positive）→ pred 存在但不蕴含 → error
     expect(errs.length).toBeGreaterThan(0);
     expect(errs[0]!.code).toBe("nudo:constraint-violated");
-  })();
-(() => {
-
+  }
+  {
     const r = issuesOf(`
 /**
  * @nudo:contract return positive
@@ -215,9 +193,8 @@ function g(x) {
     expect(retIssues.length).toBeGreaterThan(0);
     expect(retIssues[0]!.severity).toBe("warning");
     expect(retIssues[0]!.code).toBe("nudo:unproven-return");
-  })();
-(() => {
-
+  }
+  {
     const errs = errorsOf(`
 /**
  * @nudo:contract x positive
@@ -228,9 +205,8 @@ function inc(x) {
 }
 `, "/t/ret.js");
     expect(errs).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const errs = errorsOf(`
 /**
  * @nudo:contract x positive
@@ -241,22 +217,17 @@ function keep(x) {
 }
 `, "/t/ret.js");
     expect(errs).toEqual([]);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 
 describe("DEC-001: nullish 显式化", () => {
   it("error: return null 对不含 nullish 的契约报 error；error: return undefined 对不含 nullish 的契约报 error；ok: nullable(positive) 允许 return null；ok: nullable(positive) 允许 return undefined；ok: nullable(positive) 证明条件返回 null | number（scalar-over-sum）；ok: nulla", () => {
-(() => {
-
+  {
     const errs = errorsOf(`
 /**
  * @nudo:contract return positive
@@ -267,9 +238,8 @@ function f() {
 `, "/t/ret.js");
     expect(errs.length).toBeGreaterThan(0);
     expect(errs[0]!.code).toBe("nudo:constraint-violated");
-  })();
-(() => {
-
+  }
+  {
     const errs = errorsOf(`
 /**
  * @nudo:contract return positive
@@ -279,9 +249,8 @@ function f() {
 }
 `, "/t/ret.js");
     expect(errs.length).toBeGreaterThan(0);
-  })();
-(() => {
-
+  }
+  {
     const errs = errorsOf(`
 /**
  * @nudo:contract return maybePositive
@@ -291,9 +260,8 @@ function f() {
 }
 `, "/t/ret.js");
     expect(errs).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const errs = errorsOf(`
 /**
  * @nudo:contract return maybePositive
@@ -303,9 +271,8 @@ function f() {
 }
 `, "/t/ret.js");
     expect(errs).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     // #68：官方建议修法 nullable(c) 对多 return 路径必须可证
     const r = issuesOf(`
 /**
@@ -318,9 +285,8 @@ function f(flag) {
 `, "/t/ret.js");
     const retIssues = r.issues.filter((i) => i.message.includes("@nudo:contract return"));
     expect(retIssues).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const r = issuesOf(`
 /**
  * @nudo:contract return maybePositive
@@ -336,9 +302,8 @@ function f(flag, n) {
       (i) => i.severity === "error" && i.message.includes("@nudo:contract return"),
     );
     expect(errs).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const errs = errorsOf(`
 /**
  * @nudo:contract x positive
@@ -350,9 +315,8 @@ function f(flag, x) {
 }
 `, "/t/ret.js");
     expect(errs).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const errs = errorsOf(`
 /**
  * @nudo:contract return maybePositive
@@ -364,9 +328,8 @@ function f(flag) {
 `, "/t/ret.js");
     expect(errs.length).toBeGreaterThan(0);
     expect(errs[0]!.code).toBe("nudo:constraint-violated");
-  })();
-(() => {
-
+  }
+  {
     const errs = errorsOf(`
 /**
  * @nudo:contract return posOrNull
@@ -376,9 +339,8 @@ function f() {
 }
 `, "/t/ret.js");
     expect(errs).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const errs = errorsOf(`
 /**
  * @nudo:contract return posOrNull
@@ -388,9 +350,8 @@ function f() {
 }
 `, "/t/ret.js");
     expect(errs.length).toBeGreaterThan(0);
-  })();
-(() => {
-
+  }
+  {
     const errs = errorsOf(`
 /**
  * @nudo:contract return positive
@@ -402,34 +363,23 @@ function f(flag) {
 `, "/t/ret.js");
     expect(errs.length).toBeGreaterThan(0);
     expect(errs[0]!.expected).toContain("nullish");
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 
 describe("裸 prim 契约对非 prim 返回（obj/arr/fn）必须 disproved", () => {
   it("error: object return ⊭ string()；error: array return ⊭ string()；error: fn return ⊭ string()；error: object return ⊭ number()；error: array return ⊭ number()；对照：number return ⊭ nonEmpty 仍报 error（双方都有 prim）；error: shape 字段 object ⊭ string()（字段递归", () => {
-(() => {
-
+  {
     const r = issuesOf(`
 /**
  * @nudo:contract return nonEmpty
@@ -440,9 +390,8 @@ function f() { return { a: 1 }; }
     expect(retIssues.length).toBeGreaterThan(0);
     expect(retIssues[0]!.severity).toBe("error");
     expect(retIssues[0]!.code).toBe("nudo:constraint-violated");
-  })();
-(() => {
-
+  }
+  {
     const r = issuesOf(`
 /**
  * @nudo:contract return nonEmpty
@@ -453,9 +402,8 @@ function f() { return [1]; }
     expect(retIssues.length).toBeGreaterThan(0);
     expect(retIssues[0]!.severity).toBe("error");
     expect(retIssues[0]!.code).toBe("nudo:constraint-violated");
-  })();
-(() => {
-
+  }
+  {
     const r = issuesOf(`
 /**
  * @nudo:contract return nonEmpty
@@ -466,9 +414,8 @@ function f() { return () => {}; }
     expect(retIssues.length).toBeGreaterThan(0);
     expect(retIssues[0]!.severity).toBe("error");
     expect(retIssues[0]!.code).toBe("nudo:constraint-violated");
-  })();
-(() => {
-
+  }
+  {
     const r = issuesOf(`
 /**
  * @nudo:contract return positive
@@ -480,9 +427,8 @@ function f() { return { a: 1 }; }
     expect(retIssues.length).toBeGreaterThan(0);
     expect(retIssues[0]!.severity).toBe("error");
     expect(retIssues[0]!.code).toBe("nudo:constraint-violated");
-  })();
-(() => {
-
+  }
+  {
     const r = issuesOf(`
 /**
  * @nudo:contract return positive
@@ -492,9 +438,8 @@ function f() { return [1]; }
     const retIssues = r.issues.filter((i) => i.message.includes("@nudo:contract return"));
     expect(retIssues.length).toBeGreaterThan(0);
     expect(retIssues[0]!.severity).toBe("error");
-  })();
-(() => {
-
+  }
+  {
     const r = issuesOf(`
 /**
  * @nudo:contract return nonEmpty
@@ -505,9 +450,8 @@ function f() { return 1; }
     expect(retIssues.length).toBeGreaterThan(0);
     expect(retIssues[0]!.severity).toBe("error");
     expect(retIssues[0]!.expected).toContain("string");
-  })();
-(() => {
-
+  }
+  {
     const r = issuesOf(`
 /**
  * @nudo:contract return userShape
@@ -518,9 +462,8 @@ function f() { return { id: 1, name: { a: 1 } }; }
     expect(retIssues.length).toBeGreaterThan(0);
     expect(retIssues[0]!.severity).toBe("error");
     expect(retIssues[0]!.expected).toContain("name");
-  })();
-(() => {
-
+  }
+  {
     const r = issuesOf(`
 /**
  * @nudo:contract return nonEmpty
@@ -532,28 +475,20 @@ function f(x) { return x + 1; }
       (i) => i.severity === "error" && i.message.includes("@nudo:contract return"),
     );
     expect(errs).toEqual([]);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 
 describe("DEC-001: any/unknown 策略（不得伪装成功）", () => {
   it("warning: any 返回对有界契约报 warning（非 error、非静默）；warning: opaque/截断返回对有界契约报 warning 而非 error", () => {
-(() => {
-
+  {
     const r = issuesOf(`
 /**
  * @nudo:contract return positive
@@ -565,9 +500,8 @@ function f(x) {
     const retIssues = r.issues.filter((i) => i.message.includes("@nudo:contract return"));
     expect(retIssues.length).toBeGreaterThan(0);
     expect(retIssues[0]!.severity).toBe("warning");
-  })();
-(() => {
-
+  }
+  {
     const r = issuesOf(`
 /**
  * @nudo:contract return positive
@@ -588,16 +522,15 @@ const s = sumTo(10);
     );
     // 可能有 warning（unproven），但绝无 error
     expect(warns.length).toBeGreaterThanOrEqual(0);
-  })();
-});;
+  }
+});
 
-  ; // 递归契约检查在 CI 16-worker 并行（大量 nudojs 子进程测试）下实测 >5s；本地 ~1s。断言不变
+   // 递归契约检查在 CI 16-worker 并行（大量 nudojs 子进程测试）下实测 >5s；本地 ~1s。断言不变
 });
 
 describe("sum 源 × array 契约：逐成员分发（元组并 ⊑ array）", () => {
   it("ok: `[] | [1]` 满足 positives（每个成员单独都满足）；ok: `[] | [{ severity: high }]` 满足 findings；ok: 多 return 路径的元组并满足 positives；error: 非数组成员仍报（分发不放行非法成员）；control: 单一元组（非 sum）本就满足 positives；ok: fork 合并的字面量臂经 Math.min/max 保区间（sum 成员界并集）；ok: Number.isNaN 守", () => {
-(() => {
-
+  {
     const errs = errorsOf(`
 /**
  * @nudo:contract return positives
@@ -609,9 +542,8 @@ function pick(n) {
 }
 `, "/t/ret.js");
     expect(errs).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const errs = errorsOf(`
 /**
  * @nudo:contract return findings
@@ -623,9 +555,8 @@ function keep(list) {
 }
 `, "/t/ret.js");
     expect(errs).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const errs = errorsOf(`
 /**
  * @nudo:contract return positives
@@ -636,9 +567,8 @@ function pick(n) {
 }
 `, "/t/ret.js");
     expect(errs).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const errs = errorsOf(`
 /**
  * @nudo:contract return positives
@@ -650,9 +580,8 @@ function bad(n) {
 `, "/t/ret.js");
     expect(errs.length).toBeGreaterThan(0);
     expect(errs[0]!.expected).toContain("array(...)");
-  })();
-(() => {
-
+  }
+  {
     const errs = errorsOf(`
 /**
  * @nudo:contract return positives
@@ -662,9 +591,8 @@ function one() {
 }
 `, "/t/ret.js");
     expect(errs).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     // s = flag ? 20 : 55 —— B 路径 fork 合并为 sum（成员为字面量）。
     // sum 的 numericBounds 取成员界并集、isNonNaN 逐成员可证 ⇒
     // Math.min/max 不得挂 NaN 臂/无界臂（此前误报 ⊭ percent）。
@@ -678,9 +606,8 @@ function pick(flag) {
 }
 `, "/t/ret.js");
     expect(errs).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const errs = errorsOf(`
 /**
  * @nudo:contract return percent
@@ -692,9 +619,8 @@ function pick(flag) {
 }
 `, "/t/ret.js");
     expect(errs).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const errs = errorsOf(`
 /**
  * @nudo:contract return percent
@@ -709,9 +635,8 @@ function supplyChainScore(attestation) {
 }
 `, "/t/ret.js");
     expect(errs).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     // 此前 sub 遇 sum 操作数整体落 unknown → clamp 内 Math.min/max
     // 挂 NaN 臂 → 区间契约误报。
     const errs = errorsOf(`
@@ -739,9 +664,8 @@ function pickSmall(flag) {
     expect(err!.actual).toContain("45");
     expect(err!.actual).toContain("80");
     expect(err!.actual).not.toContain("unknown");
-  })();
-(() => {
-
+  }
+  {
     const errs = errorsOf(`
 /**
  * @nudo:contract return percent
@@ -769,9 +693,8 @@ function weightedSmall(flag) {
     expect(err!.actual).toContain("13");
     expect(err!.actual).toContain("44.5");
     expect(err!.actual).not.toContain("unknown");
-  })();
-(() => {
-
+  }
+  {
     // npm-safe scanner computeScorecard 的真实形态：reduce 逐成员
     // 精确（penalty 枚举），100 - reduce 经 sub 分发保持字面量臂，
     // clamp100 的 Math.min/max 凭成员界/非 NaN 性不再挂 NaN 臂。
@@ -800,9 +723,8 @@ function computeScorecard({ findings }) {
 }
 `, "/t/ret.js");
     expect(errs).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     // npm-safe scanner totalScore 形态：钳位惯用法经 Math.round 收尾。
     // roundingAbs 此前对无 term 实参（sum）丢界 → 返回纯 number →
     // 区间契约 unproven-return（warning）。
@@ -826,30 +748,19 @@ function totalScore(dims) {
 }
 `, "/t/ret.js");
     expect(r.issues.filter((i) => i.severity !== "info")).toEqual([]);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 
 describe("issue #102：OOB marker 臂不 disproved（DP 表返回契约）", () => {
@@ -884,8 +795,7 @@ export function lev(a, b) {
 }`;
 
   it("OSA levenshtein：number() 返回契约不报 error（marker → warning）；单 marker 臂（空表抽象下标读）同口径：warning 不 error；nullable 契约下多臂 marker discharged（与单臂 proved 对称）；nullable 契约下单 marker 臂 proved；真实 nullish 返回不受 marker 豁免影响（仍 error）", () => {
-(() => {
-
+  {
     const r = issuesOf(
       `/**\n * @nudo:contract a nonEmpty\n * @nudo:contract b nonEmpty\n * @nudo:contract return num\n */\n${LEV}`, "/t/ret.js");
     expect(r.ok).toBe(true);
@@ -896,9 +806,8 @@ export function lev(a, b) {
     expect(ret[0]!.code).toBe("nudo:unproven-return");
     // 签名仍诚实显示 OOB 臂（marker 只降级证明通道，不改值域显示）
     expect(r.signatures.find((s) => s.name === "lev")?.display).toMatch(/undefined/);
-  })();
-(() => {
-
+  }
+  {
     const r = issuesOf(`
 /**
  * @nudo:contract return num
@@ -911,18 +820,16 @@ function miss(i) {
     expect(r.ok).toBe(true);
     expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
     expect(r.issues.some((i) => i.code === "nudo:unproven-return")).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const r = issuesOf(
       `/**\n * @nudo:contract a nonEmpty\n * @nudo:contract b nonEmpty\n * @nudo:contract return nullableNum\n */\n${LEV}`, "/t/ret.js");
     expect(r.ok).toBe(true);
     // 0 | number | marker：真实臂证毕，marker 的 undefined 可能性被
     // nullable 域覆盖 → 整体 proved，不再残留 unproven-return warning
     expect(r.issues.filter((i) => i.message.includes("@nudo:contract return"))).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const r = issuesOf(`
 /**
  * @nudo:contract return nullableNum
@@ -934,9 +841,8 @@ function miss(i) {
 `, "/t/ret.js");
     expect(r.ok).toBe(true);
     expect(r.issues.filter((i) => i.message.includes("@nudo:contract return"))).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const r = issuesOf(`
 /**
  * @nudo:contract return num
@@ -947,16 +853,12 @@ function real() {
 `, "/t/ret.js");
     expect(r.ok).toBe(false);
     expect(r.issues.some((i) => i.code === "nudo:constraint-violated")).toBe(true);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 
 describe("issue #115：裸 prim partial 臂对无界 prim 契约域隶属可证", () => {
@@ -996,15 +898,13 @@ function compareVersions(a, b) {
 `;
 
   it("ok: 0 | -1 | 1 | number（裸 prim partial 臂）对 number() 域隶属可证；warning: 同形态对带界契约（positive）仍不可证（gold FP 口径不动）", () => {
-(() => {
-
+  {
     const r = issuesOf(CMP_SRC, "/t/ret.js");
     expect(
       r.issues.filter((i) => i.message.includes("@nudo:contract return")),
     ).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const r = issuesOf(CMP_SRC.replace("return num", "return positive"), "/t/ret.js");
     const warns = r.issues.filter(
       (i) =>
@@ -1012,16 +912,14 @@ function compareVersions(a, b) {
         i.message.includes("@nudo:contract return"),
     );
     expect(warns).toHaveLength(1);
-  })();
-});;
+  }
+});
 
-  ;
 });
 
 describe("array 契约元素级执法（[-1] ⊭ array(number().gt(0))）", () => {
   it("error: 元素 pred 违约——精确到下标（negElem/mixedElem）；error: 元素类型错配（[\"a\"] ⊰ number）；ok: 合法元素 / 空 tuple 空真——零 error（不再伪装 proved）；warning: 抽象元素（[n]）不可证 pred → unproven-return（不伪装成功）；arr（抽象元素域）prim 错配 → error；域内 → unprovable 保守", () => {
-(() => {
-
+  {
     const errs = errorsOf(`
 /**
  * @nudo:contract return positives
@@ -1043,9 +941,8 @@ function mixedElem() {
 `, "/t/ret.js");
     expect(mixed.length).toBeGreaterThan(0);
     expect(mixed[0]!.expected).toContain("array element [1]");
-  })();
-(() => {
-
+  }
+  {
     const errs = errorsOf(`
 /**
  * @nudo:contract return positives
@@ -1056,9 +953,8 @@ function strElem() {
 `, "/t/ret.js");
     expect(errs.length).toBeGreaterThan(0);
     expect(errs[0]!.expected).toContain('array element [0]');
-  })();
-(() => {
-
+  }
+  {
     const ok = errorsOf(`
 /**
  * @nudo:contract return positives
@@ -1077,9 +973,8 @@ function none() {
 }
 `, "/t/ret.js");
     expect(empty).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const warns = warningsOf(`
 /**
  * @nudo:contract return positives
@@ -1104,9 +999,8 @@ function absAny(s) {
     expect(
       anyWarns.filter((i) => i.code === "nudo:constraint-violated"),
     ).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const errs = errorsOf(`
 /**
  * @nudo:contract return positives
@@ -1116,14 +1010,10 @@ function arrBad(xs) {
 }
 `, "/t/ret.js");
     expect(errs.length).toBeGreaterThan(0);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });

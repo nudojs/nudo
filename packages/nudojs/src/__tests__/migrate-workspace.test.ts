@@ -72,10 +72,9 @@ function pkgWith(ci: string): string {
   return dir;
 }
 
-describe("workflow 改写记录条数必须等于实际改写的行数", () => {
-  it("两处相同命令 ⇒ 报告 2 条（带位置）、落盘 2 处、status 数到 0（已改写）；反向闸：单处改写仍只记 1 条（不得因加位置而重复计数）", () => {
-(() => {
 
+  it("两处相同命令 ⇒ 报告 2 条（带位置）、落盘 2 处、status 数到 0（已改写）；反向闸：单处改写仍只记 1 条（不得因加位置而重复计数）", () => {
+  {
     const dir = pkgWith(CI_TWO);
     // 改前 status 数到 2 行
     expect(
@@ -93,18 +92,16 @@ describe("workflow 改写记录条数必须等于实际改写的行数", () => {
       readFileSync(join(dir, ".nudo", "migrate-retired.json"), "utf-8"),
     ) as { rewrittenWorkflows: unknown[] };
     expect(marker.rewrittenWorkflows).toHaveLength(2);
-  })();
-(() => {
-
+  }
+  {
     const dir = pkgWith(CI_ONE);
     const result = migrateRetire(dir);
     expect(result.rewrittenWorkflows).toHaveLength(1);
     expect(result.rewrittenWorkflows[0]!.line).toBe(3);
-  })();
-});;
-
-  ;
+  }
 });
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -172,10 +169,9 @@ function fixture(): string {
   return dir;
 }
 
-describe("跨行的 shell 命令被按行拆坏", () => {
-  it("rewriteWorkflowText 把块标量当成一条命令改写；retire 后落盘的 workflow 仍是合法 YAML 形态且命令语义正确", () => {
-(() => {
 
+  it("rewriteWorkflowText 把块标量当成一条命令改写；retire 后落盘的 workflow 仍是合法 YAML 形态且命令语义正确", () => {
+  {
     const { text } = rewriteWorkflowText(WF);
     // A：续行标记与续行内容一起被改写，不得留下落单的残段
     expect(text).not.toContain("--project tsconfig.json");
@@ -187,9 +183,8 @@ describe("跨行的 shell 命令被按行拆坏", () => {
     // C：单行对照（step 的 `run:` 是 `name:` 的同级键）
     expect(text).toContain("        run: npx nudojs check .");
     expect(text.match(/npx nudojs check \./g)?.length).toBe(3);
-  })();
-(() => {
-
+  }
+  {
     const dir = fixture();
     migrateRetire(dir);
     const wf = readFileSync(join(dir, ".github", "workflows", "ci.yml"), "utf-8");
@@ -203,11 +198,10 @@ describe("跨行的 shell 命令被按行拆坏", () => {
     expect(wf.match(/npx nudojs check \./g)?.length).toBe(3);
     // 缩进保持（块标量内容仍比 key 深）
     expect(wf).toContain("\n          npx nudojs check .\n");
-  })();
-});;
-
-  ;
+  }
 });
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -272,40 +266,35 @@ function row(root: string, target: string) {
   return migrateStatus(target).find((r) => r.root === abs)!;
 }
 
-describe("status 的 workflow blocker 归属与 retire 的作用域同口径", () => {
-  it("子包：不继承仓库根共享 workflow 的 tsc 行；根包：共享 workflow 的 tsc 行算在它头上（只算一次）；子包 retire 成功后 blocker 清空（status 与 retire 不再矛盾）", () => {
-(() => {
 
+  it("子包：不继承仓库根共享 workflow 的 tsc 行；根包：共享 workflow 的 tsc 行算在它头上（只算一次）；子包 retire 成功后 blocker 清空（status 与 retire 不再矛盾）", () => {
+  {
     const root = monorepo();
     const sub = row(root, join(root, "packages", "a"));
     expect(sub.blockers.filter((b) => b.includes("tsc line(s)"))).toEqual([]);
     // 该包的**自有** blocker 照常报（反向闸：不是把 blocker 全吞了）
     expect(sub.blockers).toContain("tsc still in scripts");
     expect(sub.blockers).toContain("typescript still in dependencies");
-  })();
-(() => {
-
+  }
+  {
     const root = monorepo();
     const rows = migrateStatus(root);
     const rootRow = rows.find((r) => r.root === (relative(process.cwd(), root) || "."))!;
     expect(
       rootRow.blockers.filter((b) => b.includes("tsc line(s)")),
     ).toEqual(["1 tsc line(s) in .github/workflows"]);
-  })();
-(() => {
-
+  }
+  {
     const root = monorepo();
     migrateRetire(join(root, "packages", "a"));
     const sub = migrateStatus(join(root, "packages", "a"))[0]!;
     expect(sub.retired).toBe(true);
     expect(sub.blockers).toEqual([]);
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -325,10 +314,9 @@ describe("未知 action 在 --json 下必须出合法信封", () => {
 
 
 
-describe("未知 action 在 --json 下必须出合法信封", () => {
-  it("stdout 非空、可解析、ok:false、error 点名 action；人类面（无 --json）：错误仍进 stderr；反向闸：合法 action 的 --json 仍是合法 JSON", () => {
-(() => {
 
+  it("stdout 非空、可解析、ok:false、error 点名 action；人类面（无 --json）：错误仍进 stderr；反向闸：合法 action 的 --json 仍是合法 JSON", () => {
+  {
     const r = runCliTsx(["migrate", "--json", "frobnicate"]);
     expect(r.status).toBe(1);
     expect(r.stdout.length).toBeGreaterThan(0);
@@ -338,26 +326,22 @@ describe("未知 action 在 --json 下必须出合法信封", () => {
     expect(parsed.ok).toBe(false);
     expect(parsed.action).toBe("frobnicate");
     expect(parsed.error).toContain("Unknown migrate action");
-  })();
-(() => {
-
+  }
+  {
     const r = runCliTsx(["migrate", "strp"]);
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("Unknown migrate action");
-  })();
-(() => {
-
+  }
+  {
     const r = runCliTsx(["migrate", "strip", "--json", "packages/nudojs/src/migrate.ts"]);
     // 该目标不是 strip 源 ⇒ 走 no-files 分支，但 stdout 必须是合法 JSON
     expect(r.stdout.length).toBeGreaterThan(0);
     expect(() => JSON.parse(r.stdout)).not.toThrow();
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -414,10 +398,9 @@ function runProduct(code: string): { stdout: string; status: number } {
   }
 }
 
-describe("enum 计算成员的 strip 产物必须能在宿主里跑", () => {
-  it("数值 enum：`A = 1, B = A * 10, C` ⇒ [1,10,11]；混合 enum：`A = 1, B = 'b', C = A + 5` ⇒ [1,\"b\",6]；字符串 enum：`A = 'a', B = A + 'b'` ⇒ [\"a\",\"ab\"] 且不建反向映射；const enum：`A = 1, B = A * 3` ⇒ [1,3]；strip 的 note 仍声明语义已保住（现在与事实一致）；反向闸：无计算成员的 enum 产物不变（不引入多余改", () => {
-(() => {
 
+  it("数值 enum：`A = 1, B = A * 10, C` ⇒ [1,10,11]；混合 enum：`A = 1, B = 'b', C = A + 5` ⇒ [1,\"b\",6]；字符串 enum：`A = 'a', B = A + 'b'` ⇒ [\"a\",\"ab\"] 且不建反向映射；const enum：`A = 1, B = A * 3` ⇒ [1,3]；strip 的 note 仍声明语义已保住（现在与事实一致）；反向闸：无计算成员的 enum 产物不变（不引入多余改", () => {
+  {
     const { code } = runStrip(
       "export enum E { A = 1, B = A * 10, C }\nconsole.log(JSON.stringify([E.A, E.B, E.C]));\n",
     );
@@ -428,18 +411,16 @@ describe("enum 计算成员的 strip 产物必须能在宿主里跑", () => {
     expect(run.stdout).not.toContain("ReferenceError");
     expect(run.status).toBe(0);
     expect(run.stdout).toBe("[1,10,11]");
-  })();
-(() => {
-
+  }
+  {
     const { code } = runStrip(
       "export enum E { A = 1, B = 'b', C = A + 5 }\nconsole.log(JSON.stringify([E.A, E.B, E.C]));\n",
     );
     const run = runProduct(code);
     expect(run.status).toBe(0);
     expect(run.stdout).toBe('[1,"b",6]');
-  })();
-(() => {
-
+  }
+  {
     const { code } = runStrip(
       "export enum E { A = 'a', B = A + 'b' }\nconsole.log(JSON.stringify([E.A, E.B]));\n",
     );
@@ -448,23 +429,20 @@ describe("enum 计算成员的 strip 产物必须能在宿主里跑", () => {
     expect(run.stdout).toBe('["a","ab"]');
     // tsc 口径：字符串成员**不**建反向映射
     expect(code).not.toMatch(/E\[E\["B"\] =/);
-  })();
-(() => {
-
+  }
+  {
     const { code } = runStrip(
       "export const enum E { A = 1, B = A * 3 }\nconsole.log(JSON.stringify([E.A, E.B]));\n",
     );
     const run = runProduct(code);
     expect(run.status).toBe(0);
     expect(run.stdout).toBe("[1,3]");
-  })();
-(() => {
-
+  }
+  {
     const { notes } = runStrip("export enum E { A = 1, B = A * 10 }\n");
     expect(notes.join("\n")).toContain("TS enum semantics kept");
-  })();
-(() => {
-
+  }
+  {
     const { code } = runStrip(
       "export enum E { A = 1, B }\nconsole.log(JSON.stringify([E.A, E.B, E[1]]));\n",
     );
@@ -472,19 +450,14 @@ describe("enum 计算成员的 strip 产物必须能在宿主里跑", () => {
     expect(code).toContain('E[E["B"] = 2] = "B"');
     const run = runProduct(code);
     expect(run.stdout).toBe('[1,2,"A"]');
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -522,10 +495,9 @@ function pkg(name: string, scripts: Record<string, string>, extra: Record<string
   return dir;
 }
 
-describe("migrate status 的 nudo 门禁判定看命令文本，不看脚本名", () => {
-  it("脚本名不含 check/test、命令是 nudo check ⇒ 不得报「no nudo check/test script yet」；retire 改写后的形态 `npx nudojs check .` 同样算已有门禁（旧口径匹配不到 nudojs）；`nudo test` 也是门禁；反向闸：命令里没有 nudo 门禁 ⇒ 仍必须报该阻塞（判定不是恒假）；字符串里的 nudo check 不算门禁（shell 掩码口径不变）；文本面不再出现该假阻塞", () => {
-(() => {
 
+  it("脚本名不含 check/test、命令是 nudo check ⇒ 不得报「no nudo check/test script yet」；retire 改写后的形态 `npx nudojs check .` 同样算已有门禁（旧口径匹配不到 nudojs）；`nudo test` 也是门禁；反向闸：命令里没有 nudo 门禁 ⇒ 仍必须报该阻塞（判定不是恒假）；字符串里的 nudo check 不算门禁（shell 掩码口径不变）；文本面不再出现该假阻塞", () => {
+  {
     const dir = pkg("named2-pkg", { lint: "nudo check ." }, {
       devDependencies: { typescript: "^5.0.0" },
     });
@@ -533,49 +505,39 @@ describe("migrate status 的 nudo 门禁判定看命令文本，不看脚本名"
     expect(rows).toHaveLength(1);
     expect(rows[0]!.nudoScripts).toContain("lint");
     expect(rows[0]!.blockers).not.toContain("no nudo check/test script yet");
-  })();
-(() => {
-
+  }
+  {
     const dir = pkg("retired-shape", { typecheck2: "npx nudojs check ." });
     const rows = migrateStatus(dir);
     expect(rows[0]!.blockers).not.toContain("no nudo check/test script yet");
-  })();
-(() => {
-
+  }
+  {
     const dir = pkg("test-shape", { gate: "nudo test ." });
     const rows = migrateStatus(dir);
     expect(rows[0]!.blockers).not.toContain("no nudo check/test script yet");
-  })();
-(() => {
-
+  }
+  {
     const dir = pkg("no-gate", { build: "tsc -p ." });
     const rows = migrateStatus(dir);
     expect(rows[0]!.blockers).toContain("no nudo check/test script yet");
-  })();
-(() => {
-
+  }
+  {
     const dir = pkg("quoted", { note: 'echo "please run nudo check ."' });
     const rows = migrateStatus(dir);
     expect(rows[0]!.blockers).toContain("no nudo check/test script yet");
-  })();
-(() => {
-
+  }
+  {
     const dir = pkg("named2-pkg-text", { lint: "nudo check ." });
     const text = formatStatusTable(migrateStatus(dir));
     expect(text).not.toContain("no nudo check/test script yet");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -620,37 +582,32 @@ function pkg(name: string, deps: Record<string, unknown>) {
   return dir;
 }
 
-describe("migrate status 的依赖口径必须含 peerDependencies", () => {
-  it("peerDependencies.typescript ⇒ typescriptDep 为 true 且报出阻塞；devDependencies / dependencies 口径不回退；optionalDependencies.typescript 也算（四个来源同一口径）；反向闸：没有 typescript 依赖 ⇒ typescriptDep 为 false（判定不是恒真）；mergePackageDeps 合并四个依赖来源，且忽略非对象字段", () => {
-(() => {
 
+  it("peerDependencies.typescript ⇒ typescriptDep 为 true 且报出阻塞；devDependencies / dependencies 口径不回退；optionalDependencies.typescript 也算（四个来源同一口径）；反向闸：没有 typescript 依赖 ⇒ typescriptDep 为 false（判定不是恒真）；mergePackageDeps 合并四个依赖来源，且忽略非对象字段", () => {
+  {
     const dir = pkg("pkg-b", { peerDependencies: { typescript: "^5.0.0" } });
     const rows = migrateStatus(dir);
     expect(rows).toHaveLength(1);
     expect(rows[0]!.typescriptDep).toBe(true);
     expect(rows[0]!.blockers).toContain("typescript still in dependencies");
-  })();
-(() => {
-
+  }
+  {
     const dir = pkg("pkg-a", { devDependencies: { typescript: "^5.0.0" } });
     expect(migrateStatus(dir)[0]!.typescriptDep).toBe(true);
     const dir2 = pkg("pkg-a2", { dependencies: { typescript: "^5.0.0" } });
     expect(migrateStatus(dir2)[0]!.typescriptDep).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const dir = pkg("pkg-opt", { optionalDependencies: { typescript: "^5.0.0" } });
     expect(migrateStatus(dir)[0]!.typescriptDep).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const dir = pkg("pkg-none", { dependencies: { react: "^18.0.0" } });
     const rows = migrateStatus(dir);
     expect(rows[0]!.typescriptDep).toBe(false);
     expect(rows[0]!.blockers).not.toContain("typescript still in dependencies");
-  })();
-(() => {
-
+  }
+  {
     const merged = migrate.mergePackageDeps({
       dependencies: { a: "1" },
       devDependencies: { b: "2" },
@@ -659,17 +616,13 @@ describe("migrate status 的依赖口径必须含 peerDependencies", () => {
       scripts: { x: "y" },
     });
     expect(merged).toEqual({ a: "1", b: "2", c: "3", d: "4" });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -716,10 +669,9 @@ function workspace() {
   return dir;
 }
 
-describe("migrate status 的 tsFiles 按 workspace 包边界统计", () => {
-  it("根包自己 0 个 .ts ⇒ 根行 tsFiles 为 0（不重复计入子包）；反向闸：根包自己有 .ts 时，根行仍要数到自己的文件；子包的 .tsx 也只算在子包行", () => {
-(() => {
 
+  it("根包自己 0 个 .ts ⇒ 根行 tsFiles 为 0（不重复计入子包）；反向闸：根包自己有 .ts 时，根行仍要数到自己的文件；子包的 .tsx 也只算在子包行", () => {
+  {
     const dir = workspace();
     const rows = migrateStatus(dir);
     const base = dir.split("/").pop()!;
@@ -730,9 +682,8 @@ describe("migrate status 的 tsFiles 按 workspace 包边界统计", () => {
     const subs = rows.filter((r) => r.root !== root.root);
     expect(subs).toHaveLength(2);
     for (const s of subs) expect(s.tsFiles).toBe(1);
-  })();
-(() => {
-
+  }
+  {
     const dir = workspace();
     mkdirSync(join(dir, "src"), { recursive: true });
     writeFileSync(join(dir, "src", "root.ts"), "export const r = 1;\n", "utf-8");
@@ -740,9 +691,8 @@ describe("migrate status 的 tsFiles 按 workspace 包边界统计", () => {
     const base = dir.split("/").pop()!;
     const root = rows.find((r) => r.root.endsWith(base))!;
     expect(root.tsFiles).toBe(1);
-  })();
-(() => {
-
+  }
+  {
     const dir = workspace();
     writeFileSync(
       join(dir, "packages", "hasTsc", "src", "c.tsx"),
@@ -755,13 +705,11 @@ describe("migrate status 的 tsFiles 按 workspace 包边界统计", () => {
     expect(root.tsxFiles).toBe(0);
     const sub = rows.find((r) => r.root.includes("hasTsc"))!;
     expect(sub.tsxFiles).toBe(1);
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -800,10 +748,9 @@ function noScriptsPkg(): string {
   return dir;
 }
 
-describe("注入的 check:nudo 必须真的落盘", () => {
-  it("库面：package.json 出现 scripts.check:nudo（报告与落盘一致）；CLI 面：--json 报文里报改了，落盘也得有；反向闸：已有 scripts 键的包，注入也落进**既有** scripts 对象（不丢原有脚本）", () => {
-(() => {
 
+  it("库面：package.json 出现 scripts.check:nudo（报告与落盘一致）；CLI 面：--json 报文里报改了，落盘也得有；反向闸：已有 scripts 键的包，注入也落进**既有** scripts 对象（不丢原有脚本）", () => {
+  {
     const dir = noScriptsPkg();
     const result = migrateRetire(dir, { workflows: false });
     const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf-8")) as {
@@ -813,9 +760,8 @@ describe("注入的 check:nudo 必须真的落盘", () => {
     expect(pkg.scripts!["check:nudo"]).toBe("nudo check .");
     // 报告里说的就是落盘的
     expect(result.rewrittenScripts.some((s) => s.name === "check:nudo")).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const dir = noScriptsPkg();
     const r = runCliTsx(["migrate", "retire", dir, "--json"]);
     expect(r.status).toBe(0);
@@ -830,9 +776,8 @@ describe("注入的 check:nudo 必须真的落盘", () => {
       scripts?: Record<string, string>;
     };
     expect(pkg.scripts?.["check:nudo"]).toBe("nudo check .");
-  })();
-(() => {
-
+  }
+  {
     const dir = mkdtempSync(join(tmpdir(), "nudo-m5-578-ok-"));
     dirs.push(dir);
     writeFileSync(
@@ -850,13 +795,11 @@ describe("注入的 check:nudo 必须真的落盘", () => {
     };
     expect(pkg.scripts["check:nudo"]).toBe("nudo check .");
     expect(pkg.scripts["test"]).toBe("node -e 0");
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -917,16 +860,14 @@ function fixture(): string {
   return dir;
 }
 
-describe("workflow 里非命令位的 tsc 被当命令改写（数据损坏）", () => {
-  it("status 的 tsc 行数只数真正的命令行（1 条，不是 3 条）；retire 后 env 值 / 描述文字逐字未变，只有 run: 那条被改写；status 的 workflow blocker 计数与改写口径一致", () => {
-(() => {
 
+  it("status 的 tsc 行数只数真正的命令行（1 条，不是 3 条）；retire 后 env 值 / 描述文字逐字未变，只有 run: 那条被改写；status 的 workflow blocker 计数与改写口径一致", () => {
+  {
     const dir = fixture();
     expect(listWorkflowTscLines(dir).length).toBe(1);
     expect(listWorkflowTscLines(dir)[0]!.line).toContain("npx tsc --noEmit");
-  })();
-(() => {
-
+  }
+  {
     const dir = fixture();
     migrateRetire(dir);
     const wf = readFileSync(join(dir, ".github", "workflows", "ci.yml"), "utf-8");
@@ -939,20 +880,17 @@ describe("workflow 里非命令位的 tsc 被当命令改写（数据损坏）",
     // 非命令位不得出现门禁命令
     expect(wf).not.toContain("TSC: nudo check");
     expect(wf).not.toContain("NOTE: use nudo check");
-  })();
-(() => {
-
+  }
+  {
     const dir = fixture();
     const rows = migrateStatus(dir);
     const blocker = rows[0]!.blockers.find((b) => b.includes("tsc line(s)"));
     expect(blocker).toBe("1 tsc line(s) in .github/workflows");
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1012,39 +950,34 @@ function fixture(): string {
   return dir;
 }
 
-describe("YAML 引号包住的 run: tsc 命令被漏改（假绿）", () => {
-  it("rewriteWorkflowText 改写引号标量里的 tsc（保留原引号风格）；status 的 tsc 行数与真实条数一致（3 条，不是 1 条）；retire 后 CI 里不再残留 tsc 门禁", () => {
-(() => {
 
+  it("rewriteWorkflowText 改写引号标量里的 tsc（保留原引号风格）；status 的 tsc 行数与真实条数一致（3 条，不是 1 条）；retire 后 CI 里不再残留 tsc 门禁", () => {
+  {
     const { text, changes } = rewriteWorkflowText(WF);
     expect(changes.length).toBe(3);
     expect(text).toContain('- run: "npx nudojs check ."');
     expect(text).toContain("- run: 'npx nudojs check .'");
     expect(text).toContain("- run: npx nudojs check .");
     expect(text).not.toContain("tsc --noEmit");
-  })();
-(() => {
-
+  }
+  {
     const dir = fixture();
     expect(listWorkflowTscLines(dir).length).toBe(3);
     const blocker = migrateStatus(dir)[0]!.blockers.find((b) => b.includes("tsc line(s)"));
     expect(blocker).toBe("3 tsc line(s) in .github/workflows");
-  })();
-(() => {
-
+  }
+  {
     const dir = fixture();
     migrateRetire(dir);
     const wf = readFileSync(join(dir, ".github", "workflows", "ci.yml"), "utf-8");
     expect(wf).not.toContain("tsc --noEmit");
     expect(wf).toContain('- run: "npx nudojs check ."');
     expect(wf).toContain("- run: 'npx nudojs check .'");
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1102,10 +1035,9 @@ function objectFormFixture(): { dir: string; sub: string } {
   return { dir, sub };
 }
 
-describe("对象式 workspaces（{ packages: [...] }）不被忽略", () => {
-  it("status 能看到对象式 workspaces 的子包（改前：整行消失）；retire --all 把对象式 workspaces 的子包纳入作用域并真的退役（落盘可见）；CLI：migrate status 的 stdout 列出对象式 workspaces 的子包（exit 0）；对照组：数组式 workspaces 仍然可见（回归护栏，不被本次改动带坏）", () => {
-(() => {
 
+  it("status 能看到对象式 workspaces 的子包（改前：整行消失）；retire --all 把对象式 workspaces 的子包纳入作用域并真的退役（落盘可见）；CLI：migrate status 的 stdout 列出对象式 workspaces 的子包（exit 0）；对照组：数组式 workspaces 仍然可见（回归护栏，不被本次改动带坏）", () => {
+  {
     const { dir, sub } = objectFormFixture();
     const rows = migrateStatus(dir);
     const roots = rows.map((r) => resolve(r.root));
@@ -1116,9 +1048,8 @@ describe("对象式 workspaces（{ packages: [...] }）不被忽略", () => {
     expect(row!.tscScripts).toContain("typecheck");
     // 根行仍在（根目录自身始终是第一个根）
     expect(roots).toContain(resolve(dir));
-  })();
-(() => {
-
+  }
+  {
     const { dir, sub } = objectFormFixture();
     const results = migrateRetireAll(dir, { workflows: false });
     expect(results.map((r) => resolve(r.root))).toEqual([resolve(sub)]);
@@ -1126,17 +1057,15 @@ describe("对象式 workspaces（{ packages: [...] }）不被忽略", () => {
     expect(pkg.devDependencies.typescript).toBeUndefined();
     expect(pkg.scripts.typecheck).toContain("nudo check");
     expect(existsSync(join(sub, ".nudo", "migrate-retired.json"))).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const { dir, sub } = objectFormFixture();
     const r = runCliTsx(["migrate", "status", dir]);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain(relative(process.cwd(), sub));
     expect(r.stdout).toContain("typescript dep: yes");
-  })();
-(() => {
-
+  }
+  {
     const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-581-arr-"));
     dirs.push(dir);
     writeFileSync(
@@ -1163,15 +1092,12 @@ describe("对象式 workspaces（{ packages: [...] }）不被忽略", () => {
     );
     const rows = migrateStatus(dir);
     expect(rows.map((r) => resolve(r.root))).toContain(resolve(sub));
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1245,17 +1171,15 @@ function negativePatternFixture(): { dir: string; app: string; legacy: string } 
   return { dir, app, legacy };
 }
 
-describe("pnpm 负向模式（`!packages/legacy`）真的排除", () => {
-  it("status 不列出被 pnpm 排除的包（改前：legacy 占一行）；retire --all 只退役未被排除的包；retire --all 不改写被排除的包：package.json 逐字不变、不写 marker；CLI：retire --all --dry-run 的 stdout 不含被排除的包，stderr 显式说明跳过；CLI：retire --all 不落盘到被排除的包（package.json 不变）", () => {
-(() => {
 
+  it("status 不列出被 pnpm 排除的包（改前：legacy 占一行）；retire --all 只退役未被排除的包；retire --all 不改写被排除的包：package.json 逐字不变、不写 marker；CLI：retire --all --dry-run 的 stdout 不含被排除的包，stderr 显式说明跳过；CLI：retire --all 不落盘到被排除的包（package.json 不变）", () => {
+  {
     const { dir, app, legacy } = negativePatternFixture();
     const roots = migrateStatus(dir).map((r) => resolve(r.root));
     expect(roots).toContain(resolve(app));
     expect(roots).not.toContain(resolve(legacy));
-  })();
-(() => {
-
+  }
+  {
     const { dir, app, legacy } = negativePatternFixture();
     const results = migrateRetireAll(dir, { workflows: false });
     expect(results.map((r) => resolve(r.root))).toEqual([resolve(app)]);
@@ -1263,17 +1187,15 @@ describe("pnpm 负向模式（`!packages/legacy`）真的排除", () => {
     const appPkg = JSON.parse(readFileSync(join(app, "package.json"), "utf-8"));
     expect(appPkg.devDependencies.typescript).toBeUndefined();
     expect(existsSync(join(app, ".nudo", "migrate-retired.json"))).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const { dir, legacy } = negativePatternFixture();
     migrateRetireAll(dir, { workflows: false });
     expect(readFileSync(join(legacy, "package.json"), "utf-8")).toBe(LEGACY_PKG);
     expect(existsSync(join(legacy, ".nudo", "migrate-retired.json"))).toBe(false);
     expect(existsSync(join(legacy, ".nudo"))).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const { dir, legacy } = negativePatternFixture();
     const r = runCliTsx(["migrate", "retire", "--all", "--dry-run", dir]);
     expect(r.status).toBe(0);
@@ -1281,26 +1203,21 @@ describe("pnpm 负向模式（`!packages/legacy`）真的排除", () => {
     expect(r.stdout).toContain("packages/app");
     expect(r.stderr).toContain("skipped (pnpm excluded)");
     expect(r.stderr).toContain("packages/legacy");
-  })();
-(() => {
-
+  }
+  {
     const { dir, legacy } = negativePatternFixture();
     const r = runCliTsx(["migrate", "retire", "--all", "--no-workflows", dir]);
     expect(r.status).toBe(0);
     expect(r.stdout).not.toContain("packages/legacy");
     expect(readFileSync(join(legacy, "package.json"), "utf-8")).toBe(LEGACY_PKG);
     expect(existsSync(join(legacy, ".nudo"))).toBe(false);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1351,10 +1268,9 @@ function buildPkg(scripts: Record<string, string>): string {
   return dir;
 }
 
-describe("编译脚本不得被改写成 nudo check", () => {
-  it("build（tsc -p tsconfig.build.json）原样保留，门禁脚本照常改写；只有编译脚本的包：明确拒绝退役，脚本零改动；CLI 面：build 不被改写；反向闸：纯门禁脚本照常改写 + 摘依赖（断言非永真）", () => {
-(() => {
 
+  it("build（tsc -p tsconfig.build.json）原样保留，门禁脚本照常改写；只有编译脚本的包：明确拒绝退役，脚本零改动；CLI 面：build 不被改写；反向闸：纯门禁脚本照常改写 + 摘依赖（断言非永真）", () => {
+  {
     const dir = buildPkg({ build: "tsc -p tsconfig.build.json", typecheck: "tsc --noEmit" });
     const result = migrateRetire(dir, { workflows: false });
     const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf-8")) as {
@@ -1371,16 +1287,14 @@ describe("编译脚本不得被改写成 nudo check", () => {
     // 编译器脚本仍要 tsc ⇒ 依赖不得摘（摘了 build 当场坏掉）
     expect(pkg.devDependencies["typescript"]).toBe("^5.0.0");
     expect(result.removedDeps).not.toContain("devDependencies");
-  })();
-(() => {
-
+  }
+  {
     const dir = buildPkg({ build: "tsc -p tsconfig.build.json" });
     const before = readFileSync(join(dir, "package.json"), "utf-8");
     expect(() => migrateRetire(dir, { workflows: false })).toThrow(/nothing to retire/);
     expect(readFileSync(join(dir, "package.json"), "utf-8")).toBe(before);
-  })();
-(() => {
-
+  }
+  {
     const dir = buildPkg({ build: "tsc -p tsconfig.build.json", typecheck: "tsc --noEmit" });
     const r = runCliTsx(["migrate", "retire", dir, "--no-workflows"]);
     expect(r.status).toBe(0);
@@ -1389,9 +1303,8 @@ describe("编译脚本不得被改写成 nudo check", () => {
     };
     expect(pkg.scripts["build"]).toBe("tsc -p tsconfig.build.json");
     expect(r.stdout).not.toContain("script build:");
-  })();
-(() => {
-
+  }
+  {
     const dir = buildPkg({ typecheck: "tsc --noEmit" });
     const result = migrateRetire(dir, { workflows: false });
     const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf-8")) as {
@@ -1401,15 +1314,12 @@ describe("编译脚本不得被改写成 nudo check", () => {
     expect(pkg.scripts["typecheck"]).toBe("nudo check .");
     expect(pkg.devDependencies["typescript"]).toBeUndefined();
     expect(result.removedDeps).toContain("devDependencies");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1436,10 +1346,9 @@ afterAll(() => {
   for (const d of dirs) rmSync(d, { recursive: true, force: true });
 });
 
-describe("migrate strip 改写相对说明符", () => {
-  it("import \"./helper\" ⇒ 产物写 \"./helper.js\"；export … from 也被改写；包说明符不动（非相对说明符不在 ESM 扩展名规则的范围内）；相对说明符指向目录 ⇒ 补成目录索引（./dir → ./dir/index.js）", async () => {
-await (async () => {
 
+  it("import \"./helper\" ⇒ 产物写 \"./helper.js\"；export … from 也被改写；包说明符不动（非相对说明符不在 ESM 扩展名规则的范围内）；相对说明符指向目录 ⇒ 补成目录索引（./dir → ./dir/index.js）", async () => {
+  {
     const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-bug-587-"));
     dirs.push(dir);
     writeFileSync(join(dir, "helper.ts"), `export function helper(): number { return 1; }\n`, "utf-8");
@@ -1455,9 +1364,8 @@ await (async () => {
     expect(out).toContain('from "./helper.js"');
     // 改前：原样保留 "./helper" ⇒ Node 加载不了
     expect(out).not.toContain('from "./helper"');
-  })();
-await (async () => {
-
+  }
+  {
     const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-bug-587b-"));
     dirs.push(dir);
     writeFileSync(join(dir, "helper.ts"), `export const v = 1;\n`, "utf-8");
@@ -1465,9 +1373,8 @@ await (async () => {
 
     await migrateStrip([dir], { write: true, draft: false });
     expect(readFileSync(join(dir, "reexport.js"), "utf-8")).toContain('"./helper.js"');
-  })();
-await (async () => {
-
+  }
+  {
     const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-bug-587c-"));
     dirs.push(dir);
     writeFileSync(
@@ -1478,9 +1385,8 @@ await (async () => {
     await migrateStrip([dir], { write: true, draft: false });
     const out = readFileSync(join(dir, "use.js"), "utf-8");
     expect(out).toContain('"@nudojs/core"');
-  })();
-await (async () => {
-
+  }
+  {
     const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-bug-587d-"));
     dirs.push(dir);
     mkdirSync(join(dir, "sub"), { recursive: true });
@@ -1488,15 +1394,12 @@ await (async () => {
     writeFileSync(join(dir, "use.ts"), `import { v } from "./sub";\nexport const y = v;\n`, "utf-8");
     await migrateStrip([dir], { write: true, draft: false });
     expect(readFileSync(join(dir, "use.js"), "utf-8")).toContain('"./sub/index.js"');
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1539,10 +1442,9 @@ function malformed() {
   return dir;
 }
 
-describe("migrate status 区分「package.json 不存在」与「解析失败」", () => {
-  it("解析失败 ⇒ blockers 显式报出 + packageJsonError 字段；文本面出现解析失败行；JSON 面带 packageJsonError 且 stdout 是合法 JSON；反向闸：合法 package.json ⇒ 无 packageJsonError、无该阻塞；反向闸：package.json 不存在 ≠ 解析失败（missing 不算错误）；readPackageJsonDetailed 分类：missing / ok / invalid", () => {
-(() => {
 
+  it("解析失败 ⇒ blockers 显式报出 + packageJsonError 字段；文本面出现解析失败行；JSON 面带 packageJsonError 且 stdout 是合法 JSON；反向闸：合法 package.json ⇒ 无 packageJsonError、无该阻塞；反向闸：package.json 不存在 ≠ 解析失败（missing 不算错误）；readPackageJsonDetailed 分类：missing / ok / invalid", () => {
+  {
     const dir = malformed();
     const rows = migrateStatus(dir);
     expect(rows).toHaveLength(1);
@@ -1550,15 +1452,13 @@ describe("migrate status 区分「package.json 不存在」与「解析失败」
     expect(rows[0]!.packageJsonError).toBeDefined();
     expect(rows[0]!.packageJsonError).toContain("package.json parse failed");
     expect(rows[0]!.blockers).toContain("package.json parse failed");
-  })();
-(() => {
-
+  }
+  {
     const dir = malformed();
     const text = formatStatusTable(migrateStatus(dir));
     expect(text).toContain("package.json parse failed");
-  })();
-(() => {
-
+  }
+  {
     const dir = malformed();
     const r = runCliTsx(["migrate", "status", "--json", dir]);
     expect(r.status).toBe(0);
@@ -1566,9 +1466,8 @@ describe("migrate status 区分「package.json 不存在」与「解析失败」
     expect(parsed).toHaveLength(1);
     expect(String(parsed[0]!.packageJsonError)).toContain("package.json parse failed");
     expect(parsed[0]!.blockers).toContain("package.json parse failed");
-  })();
-(() => {
-
+  }
+  {
     const dir = mkdtempSync(join(tmpdir(), "nudo-m2-588-ok-"));
     dirs.push(dir);
     writeFileSync(
@@ -1579,18 +1478,16 @@ describe("migrate status 区分「package.json 不存在」与「解析失败」
     const rows = migrateStatus(dir);
     expect(rows[0]!.packageJsonError).toBeUndefined();
     expect(rows[0]!.blockers).not.toContain("package.json parse failed");
-  })();
-(() => {
-
+  }
+  {
     const dir = mkdtempSync(join(tmpdir(), "nudo-m2-588-missing-"));
     dirs.push(dir);
     const rows = migrateStatus(dir);
     expect(rows[0]!.packageJson).toBe(false);
     expect(rows[0]!.packageJsonError).toBeUndefined();
     expect(rows[0]!.blockers).not.toContain("package.json parse failed");
-  })();
-(() => {
-
+  }
+  {
     const dir = malformed();
     expect(migrate.readPackageJsonDetailed(join(dir, "package.json")).kind).toBe("invalid");
     expect(migrate.readPackageJsonDetailed(join(dir, "nope.json")).kind).toBe("missing");
@@ -1598,19 +1495,14 @@ describe("migrate status 区分「package.json 不存在」与「解析失败」
     dirs.push(ok);
     writeFileSync(join(ok, "package.json"), '{"name":"x"}', "utf-8");
     expect(migrate.readPackageJsonDetailed(join(ok, "package.json")).kind).toBe("ok");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1654,24 +1546,21 @@ function pkgWithWorkflowTsc() {
   return dir;
 }
 
-describe("migrate status 的 blockers 汇总不得泄漏占位符「—」", () => {
-  it("blockers 数组里没有「—」元素；文本面只有真 blocker，不带占位符；反向闸：真有 blocker 时占位符也不得混入（防御性过滤）；反向闸：只有占位符 ⇒ 文本面不出现 blockers 行", () => {
-(() => {
 
+  it("blockers 数组里没有「—」元素；文本面只有真 blocker，不带占位符；反向闸：真有 blocker 时占位符也不得混入（防御性过滤）；反向闸：只有占位符 ⇒ 文本面不出现 blockers 行", () => {
+  {
     const dir = pkgWithWorkflowTsc();
     const rows = migrateStatus(dir);
     expect(rows[0]!.blockers).not.toContain("—");
     for (const b of rows[0]!.blockers) expect(b.trim()).not.toBe("—");
-  })();
-(() => {
-
+  }
+  {
     const dir = pkgWithWorkflowTsc();
     const text = formatStatusTable(migrateStatus(dir));
     expect(text).toContain("blockers: 1 tsc line(s) in .github/workflows");
     expect(text).not.toContain("—");
-  })();
-(() => {
-
+  }
+  {
     const text = formatStatusTable([
       {
         root: "x",
@@ -1690,9 +1579,8 @@ describe("migrate status 的 blockers 汇总不得泄漏占位符「—」", () 
     ]);
     expect(text).toContain("blockers: 1 tsc line(s) in .github/workflows");
     expect(text).not.toContain("—");
-  })();
-(() => {
-
+  }
+  {
     const text = formatStatusTable([
       {
         root: "x",
@@ -1710,15 +1598,12 @@ describe("migrate status 的 blockers 汇总不得泄漏占位符「—」", () 
       },
     ]);
     expect(text).not.toContain("blockers:");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1745,10 +1630,9 @@ afterAll(() => {
   for (const d of dirs) rmSync(d, { recursive: true, force: true });
 });
 
-describe("migrate strip --backup 撞名不静默跳过", () => {
-  it("已有 keep.ts.bak ⇒ 换名留底（keep.ts.1.bak），且旧备份原样保留；备份动作在输出里有一行明确交代（源是否被改名是可观测事实）；没有撞名时备份名仍是 <file>.bak", async () => {
-await (async () => {
 
+  it("已有 keep.ts.bak ⇒ 换名留底（keep.ts.1.bak），且旧备份原样保留；备份动作在输出里有一行明确交代（源是否被改名是可观测事实）；没有撞名时备份名仍是 <file>.bak", async () => {
+  {
     const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-bug-591-"));
     dirs.push(dir);
     writeFileSync(join(dir, "keep.ts.bak"), `export const OLD = 1;\n`, "utf-8");
@@ -1763,9 +1647,8 @@ await (async () => {
     expect(readFileSync(join(dir, "keep.ts.1.bak"), "utf-8")).toContain("function keep");
     // 旧备份没被覆盖（陈旧内容仍可辨认）
     expect(readFileSync(join(dir, "keep.ts.bak"), "utf-8")).toContain("OLD");
-  })();
-await (async () => {
-
+  }
+  {
     const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-bug-591b-"));
     dirs.push(dir);
     writeFileSync(join(dir, "keep.ts.bak"), `export const OLD = 1;\n`, "utf-8");
@@ -1774,9 +1657,8 @@ await (async () => {
     const results = await migrateStrip([dir], { write: true, draft: false, backup: true });
     const notes = results.flatMap((r) => r.notes).join("\n");
     expect(notes).toMatch(/backed up .*keep\.ts\.1\.bak/);
-  })();
-await (async () => {
-
+  }
+  {
     const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-bug-591c-"));
     dirs.push(dir);
     writeFileSync(join(dir, "keep.ts"), `export function keep(): number { return 1; }\n`, "utf-8");
@@ -1784,13 +1666,11 @@ await (async () => {
     await migrateStrip([dir], { write: true, draft: false, backup: true });
     expect(existsSync(join(dir, "keep.ts.bak"))).toBe(true);
     expect(existsSync(join(dir, "keep.ts"))).toBe(false);
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1827,10 +1707,9 @@ function cleanPkg() {
   return dir;
 }
 
-describe("migrate status --json 的 blockers 无 blocker 时必须是 []", () => {
-  it("JSON 面 blockers 为空数组（不是 ['—']）；API 面同样为空数组；反向闸：真有 blocker 时数组里是那条 blocker（判定不是恒空）", () => {
-(() => {
 
+  it("JSON 面 blockers 为空数组（不是 ['—']）；API 面同样为空数组；反向闸：真有 blocker 时数组里是那条 blocker（判定不是恒空）", () => {
+  {
     const dir = cleanPkg();
     const r = runCliTsx(["migrate", "status", "--json", dir]);
     expect(r.status).toBe(0);
@@ -1838,15 +1717,13 @@ describe("migrate status --json 的 blockers 无 blocker 时必须是 []", () =>
     expect(parsed).toHaveLength(1);
     expect(parsed[0]!.blockers).toEqual([]);
     expect(parsed[0]!.blockers).not.toContain("—");
-  })();
-(() => {
-
+  }
+  {
     const dir = cleanPkg();
     const rows = migrateStatus(dir);
     expect(rows[0]!.blockers).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const dir = cleanPkg();
     writeFileSync(
       join(dir, "package.json"),
@@ -1861,13 +1738,11 @@ describe("migrate status --json 的 blockers 无 blocker 时必须是 []", () =>
     const parsed = JSON.parse(r.stdout) as Array<{ blockers: string[] }>;
     expect(parsed[0]!.blockers).toContain("typescript still in dependencies");
     expect(parsed[0]!.blockers).not.toContain("—");
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1954,10 +1829,9 @@ function multiSegmentFixture(): { dir: string; nested: string } {
   return { dir, nested };
 }
 
-describe("pnpm 嵌套 / 多段 workspace pattern 看得见", () => {
-  it("status 列出嵌套成员（一层与深层都在）；retire --all 把嵌套成员纳入作用域并真的退役（落盘可见）；多段 pattern（两层 `*`）不再被整条丢弃；CLI：migrate status 的 stdout 列出嵌套成员（改前：整行缺席）；CLI：retire --all --dry-run 不再报 nothing to retire（改前：假绿 exit 0）", () => {
-(() => {
 
+  it("status 列出嵌套成员（一层与深层都在）；retire --all 把嵌套成员纳入作用域并真的退役（落盘可见）；多段 pattern（两层 `*`）不再被整条丢弃；CLI：migrate status 的 stdout 列出嵌套成员（改前：整行缺席）；CLI：retire --all --dry-run 不再报 nothing to retire（改前：假绿 exit 0）", () => {
+  {
     const { dir, plain, nested } = nestedFixture();
     const roots = migrateStatus(dir).map((r) => resolve(r.root));
     expect(roots).toContain(resolve(plain));
@@ -1965,9 +1839,8 @@ describe("pnpm 嵌套 / 多段 workspace pattern 看得见", () => {
     const row = migrateStatus(dir).find((r) => resolve(r.root) === resolve(nested));
     expect(row!.typescriptDep).toBe(true);
     expect(row!.tscScripts).toContain("typecheck");
-  })();
-(() => {
-
+  }
+  {
     const { dir, plain, nested } = nestedFixture();
     const results = migrateRetireAll(dir, { workflows: false });
     const roots = results.map((r) => resolve(r.root));
@@ -1978,40 +1851,33 @@ describe("pnpm 嵌套 / 多段 workspace pattern 看得见", () => {
     expect(pkg.devDependencies.typescript).toBeUndefined();
     expect(pkg.scripts.typecheck).toContain("nudo check");
     expect(existsSync(join(nested, ".nudo", "migrate-retired.json"))).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const { dir, nested } = multiSegmentFixture();
     const roots = migrateStatus(dir).map((r) => resolve(r.root));
     expect(roots).toContain(resolve(nested));
     const results = migrateRetireAll(dir, { workflows: false });
     expect(results.map((r) => resolve(r.root))).toEqual([resolve(nested)]);
-  })();
-(() => {
-
+  }
+  {
     const { dir, nested } = nestedFixture();
     const r = runCliTsx(["migrate", "status", dir]);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain(relative(process.cwd(), nested));
-  })();
-(() => {
-
+  }
+  {
     const { dir, nested } = nestedFixture();
     const r = runCliTsx(["migrate", "retire", "--all", "--dry-run", dir]);
     expect(r.status).toBe(0);
     expect(r.stdout).not.toContain("nothing to retire");
     expect(r.stdout).toContain("packages/group/sub");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2052,34 +1918,30 @@ function nullScriptPkg() {
   return dir;
 }
 
-describe("scripts 的值为 null 时 migrate status 不崩", () => {
-  it("API 面不抛，null 脚本不算 tsc；CLI 面 exit 0 且不出现裸 TypeError；CLI --json 面也正常（exit 0 + 合法 JSON）；反向闸：字符串脚本照常被识别（判定不是恒空）；scriptCommandEntries 只收字符串值", () => {
-(() => {
 
+  it("API 面不抛，null 脚本不算 tsc；CLI 面 exit 0 且不出现裸 TypeError；CLI --json 面也正常（exit 0 + 合法 JSON）；反向闸：字符串脚本照常被识别（判定不是恒空）；scriptCommandEntries 只收字符串值", () => {
+  {
     const dir = nullScriptPkg();
     const rows = migrateStatus(dir);
     expect(rows).toHaveLength(1);
     expect(rows[0]!.tscScripts).toEqual([]);
     expect(rows[0]!.nudoScripts).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const dir = nullScriptPkg();
     const r = runCliTsx(["migrate", "status", dir]);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("migrate status");
     expect(`${r.stdout}${r.stderr}`).not.toContain("Cannot read properties of null");
-  })();
-(() => {
-
+  }
+  {
     const dir = nullScriptPkg();
     const r = runCliTsx(["migrate", "status", "--json", dir]);
     expect(r.status).toBe(0);
     const parsed = JSON.parse(r.stdout) as Array<{ tscScripts: string[] }>;
     expect(parsed[0]!.tscScripts).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const dir = mkdtempSync(join(tmpdir(), "nudo-m2-598-ok-"));
     dirs.push(dir);
     writeFileSync(
@@ -2088,9 +1950,8 @@ describe("scripts 的值为 null 时 migrate status 不崩", () => {
       "utf-8",
     );
     expect(migrateStatus(dir)[0]!.tscScripts).toEqual(["typecheck"]);
-  })();
-(() => {
-
+  }
+  {
     expect(
       migrate.scriptCommandEntries({ scripts: { a: "x", b: null, c: 3, d: "y" } }),
     ).toEqual([
@@ -2099,17 +1960,13 @@ describe("scripts 的值为 null 时 migrate status 不崩", () => {
     ]);
     expect(migrate.scriptCommandEntries({ scripts: null })).toEqual([]);
     expect(migrate.scriptCommandEntries(undefined)).toEqual([]);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2182,10 +2039,9 @@ function monoRepo(subOwnWorkflow: boolean): { root: string; sub: string } {
   return { root, sub: join(root, "packages", "a") };
 }
 
-describe("retire 子包的 workflow 改写作用域必须限定在该包", () => {
-  it("库面：仓库根的共享 workflow 零改动，根包 package.json 零改动；CLI 面：仓库根的共享 workflow 零改动，且不被报告；反向闸：被退役包**自有**的 workflow 照常改写", () => {
-(() => {
 
+  it("库面：仓库根的共享 workflow 零改动，根包 package.json 零改动；CLI 面：仓库根的共享 workflow 零改动，且不被报告；反向闸：被退役包**自有**的 workflow 照常改写", () => {
+  {
     const { root, sub } = monoRepo(false);
     const rootWfBefore = readFileSync(join(root, ".github", "workflows", "ci.yml"), "utf-8");
     const rootPkgBefore = readFileSync(join(root, "package.json"), "utf-8");
@@ -2196,31 +2052,27 @@ describe("retire 子包的 workflow 改写作用域必须限定在该包", () =>
     expect(readFileSync(join(root, "package.json"), "utf-8")).toBe(rootPkgBefore);
     // 被退役包没有自己的 workflow ⇒ 本次没有任何 workflow 改写
     expect(result.rewrittenWorkflows).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const { root, sub } = monoRepo(false);
     const rootWfBefore = readFileSync(join(root, ".github", "workflows", "ci.yml"), "utf-8");
     const r = runCliTsx(["migrate", "retire", sub]);
     expect(r.status).toBe(0);
     expect(readFileSync(join(root, ".github", "workflows", "ci.yml"), "utf-8")).toBe(rootWfBefore);
     expect(r.stdout).not.toContain("workflow ");
-  })();
-(() => {
-
+  }
+  {
     const { root, sub } = monoRepo(true);
     migrateRetire(sub);
     const subWf = readFileSync(join(sub, ".github", "workflows", "ci.yml"), "utf-8");
     expect(subWf).toContain("npx nudojs check .");
     // 根的共享 workflow 仍然零改动
     expect(readFileSync(join(root, ".github", "workflows", "ci.yml"), "utf-8")).toBe(CI);
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2252,10 +2104,9 @@ afterAll(() => {
 
 const SRC = `export function setDelay(ms: number): number {\n  return ms.toFixed(2);\n}\n`;
 
-describe("strip 后的门禁按模块计数（不翻倍）", () => {
-  it("strip --write 后：目录级分析只收一份（源 .ts 与产物 .js 是同一模块）；check --json 的计数：默认路径与 --backup 路径相同（都等于模块数）", async () => {
-await (async () => {
 
+  it("strip --write 后：目录级分析只收一份（源 .ts 与产物 .js 是同一模块）；check --json 的计数：默认路径与 --backup 路径相同（都等于模块数）", async () => {
+  {
     const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-bug-923-"));
     dirs.push(dir);
     const src = join(dir, "src");
@@ -2277,9 +2128,8 @@ await (async () => {
     expect(collected.filter((f) => f.endsWith("index.ts"))).toHaveLength(0);
     expect(collected.filter((f) => f.endsWith("index.js"))).toHaveLength(1);
     expect(collected).toHaveLength(1);
-  })();
-await (async () => {
-
+  }
+  {
     const dirA = mkdtempSync(join(tmpdir(), "nudo-migrate-bug-923a-"));
     const dirB = mkdtempSync(join(tmpdir(), "nudo-migrate-bug-923b-"));
     dirs.push(dirA, dirB);
@@ -2309,11 +2159,10 @@ await (async () => {
     expect(a.files).toBe(1);
     expect(b.files).toBe(1);
     expect(a.functions).toBe(b.functions);
-  })();
-});;
-
-  ;
+  }
 });
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2379,26 +2228,23 @@ function fixture(): string {
   return dir;
 }
 
-describe("CI 表达式 ${{ … }} 被截断成字面量路径", () => {
-  it("rewriteTscCommand 不把 ${{ … }} 切开；shell 变量 / glob 不被单引号封死（展开仍由 shell / CI 负责）；retire 后 CI 步骤里不再有被截断的表达式路径", () => {
-(() => {
 
+  it("rewriteTscCommand 不把 ${{ … }} 切开；shell 变量 / glob 不被单引号封死（展开仍由 shell / CI 负责）；retire 后 CI 步骤里不再有被截断的表达式路径", () => {
+  {
     const out = rewriteTscCommand("npx tsc -p packages/${{ matrix.pkg }}/tsconfig.json").cmd;
     // 表达式整体保留（不得被截成 `packages/${{`）
     expect(out).not.toContain("packages/${{'");
     expect(out).not.toContain("'${{'");
     expect(out).toContain("${{ matrix.pkg }}");
-  })();
-(() => {
-
+  }
+  {
     const v = rewriteTscCommand("tsc -p $TSCONFIG").cmd;
     expect(v).not.toContain("'$TSCONFIG'");
     const g = rewriteTscCommand("tsc -p packages/*/tsconfig.json").cmd;
     expect(g).not.toContain("'packages/*'");
     expect(g).toContain("packages/*");
-  })();
-(() => {
-
+  }
+  {
     const dir = fixture();
     migrateRetire(dir);
     const wf = readFileSync(join(dir, ".github", "workflows", "ci.yml"), "utf-8");
@@ -2412,13 +2258,11 @@ describe("CI 表达式 ${{ … }} 被截断成字面量路径", () => {
         expect(line).toMatch(/run: npx nudojs check /);
       }
     }
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2454,38 +2298,32 @@ function fixture(scripts: Record<string, string>): string {
   return dir;
 }
 
-describe("命令替换 $( … ) 被截断后粘到门禁路径上", () => {
-  it("旗标值里的命令替换被整体消费（不留尾巴）；-p 的值是命令替换时不得产出 '$'( … ) 这种坏语法；算术替换 / 进程替换同样整体消费；命令替换内部的 tsc 调用同样被退役（独立命令上下文）；tsc 之后的独立命令（&& 之后）原样保留；retire 落盘的脚本是合法命令（无悬空 $() / 反引号）", () => {
-(() => {
 
+  it("旗标值里的命令替换被整体消费（不留尾巴）；-p 的值是命令替换时不得产出 '$'( … ) 这种坏语法；算术替换 / 进程替换同样整体消费；命令替换内部的 tsc 调用同样被退役（独立命令上下文）；tsc 之后的独立命令（&& 之后）原样保留；retire 落盘的脚本是合法命令（无悬空 $() / 反引号）", () => {
+  {
     const out = rewriteTscCommand("tsc --outDir $(pwd)/dist").cmd;
     expect(out).toBe("nudo check .");
     expect(out).not.toContain("$(pwd)");
     expect(out).not.toContain(".(pwd)");
-  })();
-(() => {
-
+  }
+  {
     const out = rewriteTscCommand("tsc -p $(cat tsconfig.path)").cmd;
     expect(out).not.toContain("'$'");
     expect(out).not.toContain("$(cat");
     expect(out).toBe("nudo check .");
-  })();
-(() => {
-
+  }
+  {
     expect(rewriteTscCommand("tsc --outDir $((1+1))/dist").cmd).toBe("nudo check .");
     expect(rewriteTscCommand("tsc --outDir <(cat x)/dist").cmd).toBe("nudo check .");
-  })();
-(() => {
-
+  }
+  {
     expect(rewriteTscCommand("echo $(tsc --noEmit)").cmd).toBe("echo $(nudo check .)");
-  })();
-(() => {
-
+  }
+  {
     const out = rewriteTscCommand("tsc --noEmit && echo $(git rev-parse --short HEAD)").cmd;
     expect(out).toBe("nudo check . && echo $(git rev-parse --short HEAD)");
-  })();
-(() => {
-
+  }
+  {
     const dir = fixture({
       typecheck: "tsc --noEmit $(cat flags.txt)",
     });
@@ -2500,19 +2338,14 @@ describe("命令替换 $( … ) 被截断后粘到门禁路径上", () => {
       expect(opens).toBe(closes);
     }
     expect(pkg.scripts.typecheck).toBe("nudo check .");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2557,26 +2390,23 @@ function fixture(scripts: Record<string, string>): string {
   return dir;
 }
 
-describe("脚本面缺「命令位」预筛 ⇒ 非命令位的 tsc 被改写", () => {
-  it("非命令位置的 tsc 一律不改写；命令位置的 tsc 仍然改写（含透明包装器后的首个参数）；status 不把非命令位的 tsc 计入 tsc scripts；retire 后非命令位的 tsc 逐字未变", () => {
-(() => {
 
+  it("非命令位置的 tsc 一律不改写；命令位置的 tsc 仍然改写（含透明包装器后的首个参数）；status 不把非命令位的 tsc 计入 tsc scripts；retire 后非命令位的 tsc 逐字未变", () => {
+  {
     for (const cmd of NON_COMMAND) {
       expect(rewriteTscCommand(cmd).changed).toBe(false);
       expect(rewriteTscCommand(cmd).cmd).toBe(cmd);
     }
-  })();
-(() => {
-
+  }
+  {
     expect(rewriteTscCommand("tsc --noEmit").cmd).toBe("nudo check .");
     expect(rewriteTscCommand("npx tsc --noEmit").cmd).toBe("npx nudojs check .");
     expect(rewriteTscCommand("sudo tsc --noEmit").cmd).toBe("sudo nudo check .");
     expect(rewriteTscCommand("pnpm run lint && tsc --noEmit").cmd).toBe(
       "pnpm run lint && nudo check .",
     );
-  })();
-(() => {
-
+  }
+  {
     const dir = fixture({
       lint: "eslint --rule tsc",
       note: "echo building with tsc",
@@ -2584,9 +2414,8 @@ describe("脚本面缺「命令位」预筛 ⇒ 非命令位的 tsc 被改写", 
     });
     const rows = migrateStatus(dir);
     expect(rows[0]!.tscScripts).toEqual(["typecheck"]);
-  })();
-(() => {
-
+  }
+  {
     const dir = fixture({
       lint: "eslint --rule tsc",
       note: "echo building with tsc",
@@ -2604,13 +2433,10 @@ describe("脚本面缺「命令位」预筛 ⇒ 非命令位的 tsc 被改写", 
     expect(pkg.scripts.quoted).toBe('echo "building with tsc"');
     // 真门禁仍然退役
     expect(pkg.scripts.typecheck).toBe("nudo check .");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });

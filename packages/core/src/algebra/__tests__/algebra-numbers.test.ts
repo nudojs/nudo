@@ -6,7 +6,7 @@ import { val, call, resetEngineCaches, objSlots, throwsError, callLit } from "./
 import { litValue, checkSource as checkSource___nudojs_core, pTrue as pTrue___nudojs_core, resetCheckSourceMemo as resetCheckSourceMemo___nudojs_core, resetGeneralizeMemo as resetGeneralizeMemo___nudojs_core, checkSource as checkSource___nudojs_core_1, pTrue as pTrue___nudojs_core_1, runTranspiled, callTranspiledExportApply, absFunction, checkSource as checkSource___nudojs_core_2, pTrue as pTrue___nudojs_core_2, litC as litC___nudojs_core, nullable, number as number___nudojs_core, union as union___nudojs_core } from "@nudojs/core";
 import { checkSource, resetCheckSourceMemo } from "../check/check.ts";
 import { pTrue, implies, and, eq, ge, le, gt, lt, assumeFinite, ne } from "../pred.ts";
-import { checkSource as checkSource_____index_ts, pTrue as pTrue_____index_ts, checkSource as checkSource_____index_ts_1, pTrue as pTrue_____index_ts_1, checkSource as checkSource_____index_ts_2, pTrue as pTrue_____index_ts_2, checkSource as checkSource_____index_ts_3, pTrue as pTrue_____index_ts_3, checkSource as checkSource_____index_ts_4, pTrue as pTrue_____index_ts_4, checkSource as checkSource_____index_ts_5, pTrue as pTrue_____index_ts_5, checkSource as checkSource_____index_ts_6, generalizeFromAst, pTrue as pTrue_____index_ts_6, checkSource as checkSource_____index_ts_7, pTrue as pTrue_____index_ts_7, checkSource as checkSource_____index_ts_8, pTrue as pTrue_____index_ts_8, checkSource as checkSource_____index_ts_9, pTrue as pTrue_____index_ts_9, checkSource as checkSource_____index_ts_10, pTrue as pTrue_____index_ts_10, checkSource as checkSource_____index_ts_11, checkSource as checkSource_____index_ts_12, pTrue as pTrue_____index_ts_11, transpileSource, checkSource as checkSource_____index_ts_13, pTrue as pTrue_____index_ts_12, abs, gt as gt_____index_ts, v as v_____index_ts, checkSource as checkSource_____index_ts_14, pTrue as pTrue_____index_ts_13, array, boolean, constraintToEntryAbs, isIntFlag, lit as lit_____index_ts, number as number_____index_ts, string, literalMeetsConstraint, checkSource as checkSource_____index_ts_15, pTrue as pTrue_____index_ts_14, checkSource as checkSource_____index_ts_16, pTrue as pTrue_____index_ts_15, checkSource as checkSource_____index_ts_17, pTrue as pTrue_____index_ts_16, checkSource as checkSource_____index_ts_18, pTrue as pTrue_____index_ts_17, checkSource as checkSource_____index_ts_19, pTrue as pTrue_____index_ts_18, checkSource as checkSource_____index_ts_20, pTrue as pTrue_____index_ts_19, checkSource as checkSource_____index_ts_21, pTrue as pTrue_____index_ts_20, parseSource as parseSource_____index_ts, formatAbs, checkSource as checkSource_____index_ts_22, pTrue as pTrue_____index_ts_21, checkSource as checkSource_____index_ts_23, pTrue as pTrue_____index_ts_22, checkSource as checkSource_____index_ts_24, pTrue as pTrue_____index_ts_23, checkSource as checkSource_____index_ts_25, pTrue as pTrue_____index_ts_24, checkSource as checkSource_____index_ts_26, fn as fn_____index_ts, number as number_____index_ts_1, pTrue as pTrue_____index_ts_25, throwConstraintToKinds, union, checkArg, checkSource as checkSource_____index_ts_27, ge as ge_____index_ts, lenTerm, lit as lit_____index_ts_1, number as number_____index_ts_2, numLit, pTrue as pTrue_____index_ts_26, strLit, v as v_____index_ts_1, checkSource as checkSource_____index_ts_28, pTrue as pTrue_____index_ts_27, checkSource as checkSource_____index_ts_29, pTrue as pTrue_____index_ts_28, checkSource as checkSource_____index_ts_30, pTrue as pTrue_____index_ts_29, checkSource as checkSource_____index_ts_31, pTrue as pTrue_____index_ts_30, checkSource as checkSource_____index_ts_32, pTrue as pTrue_____index_ts_31, termToString, lit as lit_____index_ts_2, checkSource as checkSource_____index_ts_33, pTrue as pTrue_____index_ts_32, listFnDirectiveScopes, parseSource as parseSource_____index_ts_1, checkSource as checkSource_____index_ts_34, pTrue as pTrue_____index_ts_33, relationFn, instantiateReturn, type Abs as Abs_____index_ts, checkSource as checkSource_____index_ts_35, pTrue as pTrue_____index_ts_34, checkSource as checkSource_____index_ts_36, pTrue as pTrue_____index_ts_35, formatShape as formatShape_____index_ts, lit as lit_____index_ts_3, num as num_____index_ts, v as v_____index_ts_2 } from "../index.ts";
+import { checkSource as checkSource_____index_ts, pTrue as pTrue_____index_ts, checkSource as checkSource_____index_ts_1, pTrue as pTrue_____index_ts_1, checkSource as checkSource_____index_ts_2, pTrue as pTrue_____index_ts_2, checkSource as checkSource_____index_ts_3, pTrue as pTrue_____index_ts_3, checkSource as checkSource_____index_ts_4, pTrue as pTrue_____index_ts_4, checkSource as checkSource_____index_ts_5, pTrue as pTrue_____index_ts_5, checkSource as checkSource_____index_ts_6, generalizeFromAst, pTrue as pTrue_____index_ts_6, checkSource as checkSource_____index_ts_7, pTrue as pTrue_____index_ts_7, checkSource as checkSource_____index_ts_8, pTrue as pTrue_____index_ts_8, checkSource as checkSource_____index_ts_9, pTrue as pTrue_____index_ts_9, checkSource as checkSource_____index_ts_10, pTrue as pTrue_____index_ts_10, checkSource as checkSource_____index_ts_11, checkSource as checkSource_____index_ts_12, pTrue as pTrue_____index_ts_11, transpileSource, checkSource as checkSource_____index_ts_13, pTrue as pTrue_____index_ts_12, abs, gt as gt_____index_ts, v as v_____index_ts, checkSource as checkSource_____index_ts_14, pTrue as pTrue_____index_ts_13, array, boolean, constraintToEntryAbs, isIntFlag, lit as lit_____index_ts, number as number_____index_ts, string, literalMeetsConstraint, checkSource as checkSource_____index_ts_15, pTrue as pTrue_____index_ts_14, checkSource as checkSource_____index_ts_16, pTrue as pTrue_____index_ts_15, checkSource as checkSource_____index_ts_17, pTrue as pTrue_____index_ts_16, checkSource as checkSource_____index_ts_18, pTrue as pTrue_____index_ts_17, checkSource as checkSource_____index_ts_19, pTrue as pTrue_____index_ts_18, checkSource as checkSource_____index_ts_20, pTrue as pTrue_____index_ts_19, checkSource as checkSource_____index_ts_21, pTrue as pTrue_____index_ts_20, parseSource as parseSource_____index_ts, formatAbs, checkSource as checkSource_____index_ts_22, pTrue as pTrue_____index_ts_21, checkSource as checkSource_____index_ts_23, pTrue as pTrue_____index_ts_22, checkSource as checkSource_____index_ts_24, pTrue as pTrue_____index_ts_23, checkSource as checkSource_____index_ts_25, pTrue as pTrue_____index_ts_24, checkSource as checkSource_____index_ts_26, fn as fn_____index_ts, number as number_____index_ts_1, pTrue as pTrue_____index_ts_25, throwConstraintToKinds, union, checkArg, checkSource as checkSource_____index_ts_27, ge as ge_____index_ts, lenTerm, lit as lit_____index_ts_1, number as number_____index_ts_2, numLit, pTrue as pTrue_____index_ts_26, strLit, v as v_____index_ts_1, checkSource as checkSource_____index_ts_28, pTrue as pTrue_____index_ts_27, checkSource as checkSource_____index_ts_29, pTrue as pTrue_____index_ts_28, checkSource as checkSource_____index_ts_30, pTrue as pTrue_____index_ts_29, checkSource as checkSource_____index_ts_31, pTrue as pTrue_____index_ts_30, checkSource as checkSource_____index_ts_32, pTrue as pTrue_____index_ts_31, termToString, lit as lit_____index_ts_2, checkSource as checkSource_____index_ts_33, pTrue as pTrue_____index_ts_32, listFnDirectiveScopes, parseSource as parseSource_____index_ts_1, checkSource as checkSource_____index_ts_34, pTrue as pTrue_____index_ts_33, instantiateReturn, type Abs as Abs_____index_ts, checkSource as checkSource_____index_ts_35, pTrue as pTrue_____index_ts_34, checkSource as checkSource_____index_ts_36, pTrue as pTrue_____index_ts_35, formatShape as formatShape_____index_ts, lit as lit_____index_ts_3, num as num_____index_ts, v as v_____index_ts_2 } from "../index.ts";
 import { sidecarOpts, errorsOf, issuesOf, sigOf, makeFiles, stdOpts, l2Count, withStdImport } from "./nudo-constraints.ts";
 import { app, lit, v as termVar, simplifyTerm, type Term, v, lit as termLit } from "../term.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
@@ -68,32 +68,27 @@ const POISONED = `export namespace NS { export const x = 1; }
 export function bad() { return 1; }
 export const top = 7;`;
 
-describe("namespace 不污染同模块其它导出", () => {
+
   it("存在 export namespace 时无关函数仍是精确值（改前 unknown）；顶层常量导出同样不退化；check 面的问题集合与无 namespace 的同一模块一致（不再假绿）", () => {
-(() => {
-
+  {
     expect(val(POISONED.replace("bad", "f"))).toEqual({ ok: true, value: 1 });
-  })();
-(() => {
-
+  }
+  {
     const exp = call(POISONED, "bad");
     expect(litValue(exp.result)).toEqual({ ok: true, value: 1 });
-  })();
-(() => {
-
+  }
+  {
     const codes = (src: string, name: string) =>
       checkSource(`/t/bug47-${name}.ts`, src, pTrue, {})
         .issues.map((i) => i.code)
         .sort()
         .join(",");
     expect(codes(POISONED, "poisoned")).toBe(codes(PLAIN, "plain"));
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -133,37 +128,30 @@ function violations(r: { issues: Array<{ code: string }> }) {
   return r.issues.filter((i) => i.code === "nudo:constraint-violated");
 }
 
-describe("lit(null) 契约对无信息实参不发明义务", () => {
-  it("变量键查找 map[k]（any #path）⇒ 零违例（改前假红）；any 形参作实参 ⇒ 零违例（与 any #path 同口径）；null 字面量放行（434 不回归）；0 字面量仍判违例，expected 指向 x = null", () => {
-(() => {
 
+  it("变量键查找 map[k]（any #path）⇒ 零违例（改前假红）；any 形参作实参 ⇒ 零违例（与 any #path 同口径）；null 字面量放行（434 不回归）；0 字面量仍判违例，expected 指向 x = null", () => {
+  {
     const r = check(`${DECL}export function anyPath(map, k) { return f(map[k]); }`);
     expect(violations(r)).toHaveLength(0);
-  })();
-(() => {
-
+  }
+  {
     const r = check(`${DECL}export function anyParam(x) { return f(x); }`);
     expect(violations(r)).toHaveLength(0);
-  })();
-(() => {
-
+  }
+  {
     const r = check(`${DECL}export function use() { return f(null); }`);
     expect(violations(r)).toHaveLength(0);
-  })();
-(() => {
-
+  }
+  {
     const r = check(`${DECL}export function use() { return f(0); }`);
     expect(violations(r)).toHaveLength(1);
     expect(r.issues.find((i) => i.code === "nudo:constraint-violated")?.expected).toBe("x = null");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -206,7 +194,7 @@ function violations(r: { issues: Array<{ code: string }> }) {
   return r.issues.filter((i) => i.code === "nudo:constraint-violated");
 }
 
-describe("含长度界成员的 union 对确定违例必须执法", () => {
+{
   it.each(["0", "true", "{}", "null", '""'])(
     "numOrStr（number().gt(0) | string().min(1)）收到 %s ⇒ 1 条违例",
     (arg) => {
@@ -220,7 +208,7 @@ describe("含长度界成员的 union 对确定违例必须执法", () => {
       expect(violations(check("numOrStr", arg))).toHaveLength(0);
     },
   );
-});
+}
 
 describe("含结构成员的 union 对域不兼容实参必须执法", () => {
   it.each(['"z"', "true", "null", "[1]"])(
@@ -279,10 +267,9 @@ export const ab = union(lit("a"), lit("b"));
 const libOpts = () =>
   sidecarOpts("lib.nudo", LIB, "/t/bug001/app.js");
 
-describe("同 prim 字面量 union 作返回契约不得假红", () => {
-  it("返回位：x 的谓词已证明落在 union 内（status）⇒ 零 error；返回位：同 prim **字符串**字面量 union 同样不得假红；负控制：返回值确定不在 union 内 ⇒ 仍报 error（整体蕴含不放宽确定违约）；负控制：值域宽于 union（x 只是裸 number）⇒ 仍是 error", () => {
-(() => {
 
+  it("返回位：x 的谓词已证明落在 union 内（status）⇒ 零 error；返回位：同 prim **字符串**字面量 union 同样不得假红；负控制：返回值确定不在 union 内 ⇒ 仍报 error（整体蕴含不放宽确定违约）；负控制：值域宽于 union（x 只是裸 number）⇒ 仍是 error", () => {
+  {
     const r = issuesOf(
       `
 /**
@@ -297,9 +284,8 @@ function echoStatus(x) {
     );
     expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
     expect(r.ok).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const src = `/// @nudo:import { ab } from "./lib.nudo.js"
 
 /**
@@ -312,9 +298,8 @@ function echoAb(x) {
 `;
     const r = checkSource_____index_ts_2("/t/bug001/app.js", src, pTrue_____index_ts_2, libOpts());
     expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const r = issuesOf(
       `
 /**
@@ -330,9 +315,8 @@ function bad() {
       (i) => i.severity === "error" && i.message.includes("@nudo:contract return"),
     );
     expect(err).toBeDefined();
-  })();
-(() => {
-
+  }
+  {
     const r = errorsOf(
       `
 /**
@@ -346,15 +330,12 @@ function echoNum(x) {
       "/t/bug001-num.js",
     );
     expect(r.length).toBeGreaterThan(0);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -389,10 +370,9 @@ const returnIssues = (src: string, file: string) =>
     i.message.includes("@nudo:contract return"),
   );
 
-describe("number().int() 的返回义务必须真的被检查", () => {
-  it("非字面量返回值（x + 0.5）不再假绿：出 unproven-return warning、无 error；整性可从前提传导：x 声明为 int ⇒ `return x` 证得、零诊断；整数字面量返回照旧放行；小数返回照旧是 error（字面量特判不回归）；值域只是裸 number（无整性证据）⇒ 出 unproven-return warning（改前静默 proved）；负控制：整数算术（x + 1，x 为 int）**不得**变成假红（整性不可判定 ⇒ warning", () => {
-(() => {
 
+  it("非字面量返回值（x + 0.5）不再假绿：出 unproven-return warning、无 error；整性可从前提传导：x 声明为 int ⇒ `return x` 证得、零诊断；整数字面量返回照旧放行；小数返回照旧是 error（字面量特判不回归）；值域只是裸 number（无整性证据）⇒ 出 unproven-return warning（改前静默 proved）；负控制：整数算术（x + 1，x 为 int）**不得**变成假红（整性不可判定 ⇒ warning", () => {
+  {
     const ret = returnIssues(
       `
 /**
@@ -409,9 +389,8 @@ function halfOfId(x) {
     expect(ret).toHaveLength(1);
     expect(ret[0]!.severity).toBe("warning");
     expect(ret[0]!.code).toBe("nudo:unproven-return");
-  })();
-(() => {
-
+  }
+  {
     const src = `
 /**
  * @nudo:contract x intId
@@ -425,9 +404,8 @@ function idOf(x) {
     expect(issuesOf(src, "/t/bug002-id2.js").issues.filter((i) => i.severity === "error")).toEqual(
       [],
     );
-  })();
-(() => {
-
+  }
+  {
     const src = `
 /**
  * @nudo:contract return intOnly
@@ -437,9 +415,8 @@ function two() {
 }
 `;
     expect(returnIssues(src, "/t/bug002-two.js")).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const r = issuesOf(
       `
 /**
@@ -454,9 +431,8 @@ function bad() {
     const err = r.issues.find((i) => i.severity === "error");
     expect(err).toBeDefined();
     expect(err!.expected).toContain("int");
-  })();
-(() => {
-
+  }
+  {
     const src = `
 /**
  * @nudo:contract x num
@@ -473,9 +449,8 @@ function maybe(x) {
     expect(
       issuesOf(src, "/t/bug002-maybe2.js").issues.filter((i) => i.severity === "error"),
     ).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const r = issuesOf(
       `
 /**
@@ -489,19 +464,14 @@ function next(x) {
       "/t/bug002-next.js",
     );
     expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -527,29 +497,24 @@ export class D {
 }
 `;
 
-describe("class-method bridge static/instance split", () => {
-  it("static method returns its value；instance method still returns its value；class value itself stays a class signature", () => {
-(() => {
 
+  it("static method returns its value；instance method still returns its value；class value itself stays a class signature", () => {
+  {
     const r = checkSource_____index_ts_3("/t/bug-004.js", SRC, pTrue_____index_ts_3);
     expect(sigOf(r, "D.s1")).toBe("42");
-  })();
-(() => {
-
+  }
+  {
     const r = checkSource_____index_ts_3("/t/bug-004.js", SRC, pTrue_____index_ts_3);
     expect(sigOf(r, "D.instance")).toBe("7");
-  })();
-(() => {
-
+  }
+  {
     const r = checkSource_____index_ts_3("/t/bug-004.js", SRC, pTrue_____index_ts_3);
     expect(sigOf(r, "D")).toBe("D");
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -578,17 +543,15 @@ const sub = (a: Term, b: Term) => app("-", [a, b]);
 const isLit = (t: Term, value: unknown): boolean =>
   t.op === "lit" && Object.is(t.value, value);
 
-describe("x - 0 = x 只在 number 域成立", () => {
-  it("非 number 字面量不得被认成原字面量（此前 `\"abc\" - 0` ⇒ `\"abc\"`）；boolean / null / 数字字符串走 ToNumber；bigint 混型保留原项（原生 TypeError，不得折成字面量）；number 字面量仍可化简（`5 - 0` ⇒ 5）；非字面量项保持 number 路径化简（`x - 0` ⇒ x）；对照：`x * 1` 的既有域守卫不变（`\"abc\" * 1` ⇒ NaN，不得留 string）", () => {
-(() => {
 
+  it("非 number 字面量不得被认成原字面量（此前 `\"abc\" - 0` ⇒ `\"abc\"`）；boolean / null / 数字字符串走 ToNumber；bigint 混型保留原项（原生 TypeError，不得折成字面量）；number 字面量仍可化简（`5 - 0` ⇒ 5）；非字面量项保持 number 路径化简（`x - 0` ⇒ x）；对照：`x * 1` 的既有域守卫不变（`\"abc\" * 1` ⇒ NaN，不得留 string）", () => {
+  {
     const r = simplifyTerm(sub(lit("abc"), lit(0)));
     expect(isLit(r, "abc")).toBe(false);
     // ToNumber("abc") = NaN ⇒ number 域
     expect(r.op === "lit" && typeof r.value === "number" && Number.isNaN(r.value)).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     expect(isLit(simplifyTerm(sub(lit(true), lit(0))), 1)).toBe(true);
     expect(isLit(simplifyTerm(sub(lit(false), lit(0))), 0)).toBe(true);
     expect(isLit(simplifyTerm(sub(lit(null), lit(0))), 0)).toBe(true);
@@ -597,42 +560,33 @@ describe("x - 0 = x 只在 number 域成立", () => {
     expect(undef.op === "lit" && typeof undef.value === "number" && Number.isNaN(undef.value)).toBe(
       true,
     );
-  })();
-(() => {
-
+  }
+  {
     const r = simplifyTerm(sub(lit(5n), lit(0)));
     expect(r.op).toBe("app");
     expect(r.op === "app" && r.fn === "-").toBe(true);
-  })();
-(() => {
-
+  }
+  {
     expect(isLit(simplifyTerm(sub(lit(5), lit(0))), 5)).toBe(true);
     expect(isLit(simplifyTerm(sub(lit(2.5), lit(1))), 1.5)).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const x = termVar("x");
     const r = simplifyTerm(sub(x, lit(0)));
     expect(r).toEqual(x);
-  })();
-(() => {
-
+  }
+  {
     const r = simplifyTerm(app("*", [lit("abc"), lit(1)]));
     expect(r.op === "lit" && typeof r.value === "number" && Number.isNaN(r.value)).toBe(true);
     expect(isLit(simplifyTerm(app("*", [lit("abc"), lit(1)])), "abc")).toBe(false);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -685,7 +639,7 @@ function check(sidecar: string) {
   });
 }
 
-describe("有限字面量集的矛盾 ⇒ error（可判定）", () => {
+{
   beforeEach(() => {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
@@ -694,12 +648,12 @@ describe("有限字面量集的矛盾 ⇒ error（可判定）", () => {
   });
 
   it("x = 42 ∧ x ∈ {43,44} → nudo:contract-conflict error + exit≠0；平铺字面量同款矛盾 → error（两种拼写同结论）；有限集有交集（x = 42 ∧ x ∈ {42,43}）→ 不报矛盾", () => {
-(() => {
+  {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
     takeContractDiags();
     takeRefineDiags();
-  
+
 
     const r = check(
       `import { fn, lit, union } from "@nudojs/core";\nexport const f = fn({ x: union(lit(43), lit(44)) });\n`,
@@ -710,13 +664,13 @@ describe("有限字面量集的矛盾 ⇒ error（可判定）", () => {
     expect(conflicts[0]!.severity).toBe("error");
     expect(conflicts[0]!.message).toContain("unsatisfiable");
     expect(r.ok).toBe(false);
-  })();
-(() => {
+  }
+  {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
     takeContractDiags();
     takeRefineDiags();
-  
+
 
     const flat = check(`import { fn, lit } from "@nudojs/core";\nexport const f = fn({ x: lit(43) });\n`);
     const withUnion = check(
@@ -724,13 +678,13 @@ describe("有限字面量集的矛盾 ⇒ error（可判定）", () => {
     );
     expect(flat.issues.find((i) => i.code === "nudo:contract-conflict")?.severity).toBe("error");
     expect(withUnion.issues.find((i) => i.code === "nudo:contract-conflict")?.severity).toBe("error");
-  })();
-(() => {
+  }
+  {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
     takeContractDiags();
     takeRefineDiags();
-  
+
 
     const r = check(
       `import { fn, lit, union } from "@nudojs/core";\nexport const f = fn({ x: union(lit(42), lit(43)) });\n`,
@@ -741,13 +695,11 @@ describe("有限字面量集的矛盾 ⇒ error（可判定）", () => {
     expect(conflicts.filter((i) => i.severity === "error")).toEqual([]);
     expect(conflicts.some((i) => i.message.includes("unsatisfiable"))).toBe(false);
     expect(r.ok).toBe(true);
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -793,26 +745,23 @@ import { fn, number } from "@nudojs/core";
 export const pick = fn({ v: number() });
 `;
 
-describe("同 prim 字面量 union 在签名面保留字面量集", () => {
-  it("union(lit(1), lit(2), lit(3)) ⇒ `1 | 2 | 3`（不是 `number`）；负控制：裸 number 契约仍是 `number`", () => {
-(() => {
 
+  it("union(lit(1), lit(2), lit(3)) ⇒ `1 | 2 | 3`（不是 `number`）；负控制：裸 number 契约仍是 `number`", () => {
+  {
     const r = checkSource_____index_ts_5("/test/file.js", SRC, pTrue_____index_ts_5, optsWithSidecar(UNION_SIDE));
     const sig = r.signatures.find((s) => s.name === "pick");
     expect(sig).toBeDefined();
     expect(sig!.paramTypes?.[0]).toBe("1 | 2 | 3");
     expect(sig!.paramTypes?.[0]).not.toBe("number");
-  })();
-(() => {
-
+  }
+  {
     const r = checkSource_____index_ts_5("/test/file.js", SRC, pTrue_____index_ts_5, optsWithSidecar(NUM_SIDE));
     const sig = r.signatures.find((s) => s.name === "pick");
     expect(sig!.paramTypes?.[0]).toBe("number");
-  })();
-});;
-
-  ;
+  }
 });
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -845,31 +794,26 @@ function bumpSig(file: string): string {
   return sigOf(checkSource_____index_ts_6(file, SRC, pTrue_____index_ts_6), "bump");
 }
 
-describe("module-eval instance identity is round-scoped", () => {
-  it("analyzer round 之后 check 闸门仍读到 1（不接续上一轮的活状态）；字节相同的第二个文件不共用实例（各自 1，不是 2/3）；同一文件重复分析也是新一轮（每次 1）", () => {
-(() => {
 
+  it("analyzer round 之后 check 闸门仍读到 1（不接续上一轮的活状态）；字节相同的第二个文件不共用实例（各自 1，不是 2/3）；同一文件重复分析也是新一轮（每次 1）", () => {
+  {
     // analyzer 面（service 的 analyzer-abs-eval 同款调用：无 opts）
     generalizeFromAst("bump", SRC);
     expect(bumpSig("/t/bug-056-a.js")).toBe("1");
-  })();
-(() => {
-
+  }
+  {
     generalizeFromAst("bump", SRC);
     expect(bumpSig("/t/bug-056-b.js")).toBe("1");
     expect(bumpSig("/t/bug-056-c.js")).toBe("1");
-  })();
-(() => {
-
+  }
+  {
     expect(bumpSig("/t/bug-056-d.js")).toBe("1");
     expect(bumpSig("/t/bug-056-d.js")).toBe("1");
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -889,10 +833,9 @@ function moduleThrows(src: string, file: string) {
   return r.issues.filter((i) => i.code === "nudo:module-throw");
 }
 
-describe("module initializer definitely throws ⇒ nudo:module-throw", () => {
-  it("IIFE with unconditional throw；top-level call to a function that always throws；top-level member access on a nullish const；top-level JSON.parse of an invalid literal；class static block with unconditional throw；typeof missing identifier is saf", () => {
-(() => {
 
+  it("IIFE with unconditional throw；top-level call to a function that always throws；top-level member access on a nullish const；top-level JSON.parse of an invalid literal；class static block with unconditional throw；typeof missing identifier is saf", () => {
+  {
     const issues = moduleThrows(
       `export const a = 1;\n(function () { throw new Error("x"); })();\n`,
       "/t/bug-072-t2.js",
@@ -900,73 +843,61 @@ describe("module initializer definitely throws ⇒ nudo:module-throw", () => {
     expect(issues).toHaveLength(1);
     expect(issues[0]!.severity).toBe("error");
     expect(issues[0]!.message).toContain("Error");
-  })();
-(() => {
-
+  }
+  {
     const issues = moduleThrows(
       `export function boom() { throw new Error("x"); }\nboom();\n`,
       "/t/bug-072-t3.js",
     );
     expect(issues).toHaveLength(1);
     expect(issues[0]!.message).toContain("Error");
-  })();
-(() => {
-
+  }
+  {
     const issues = moduleThrows(
       `export const a = 1;\nconst x = null;\nx.foo();\n`,
       "/t/bug-072-t4.js",
     );
     expect(issues).toHaveLength(1);
     expect(issues[0]!.message).toContain("TypeError");
-  })();
-(() => {
-
+  }
+  {
     const issues = moduleThrows(
       `export const a = 1;\nJSON.parse("{");\n`,
       "/t/bug-072-t5.js",
     );
     expect(issues).toHaveLength(1);
     expect(issues[0]!.message).toContain("SyntaxError");
-  })();
-(() => {
-
+  }
+  {
     const issues = moduleThrows(
       `export function m() { return 1; }\nclass K { static { throw new Error("x"); } }\n`,
       "/t/bug-072-t7.js",
     );
     expect(issues).toHaveLength(1);
     expect(issues[0]!.message).toContain("Error");
-  })();
-(() => {
-
+  }
+  {
     const issues = moduleThrows(
       `export const v = typeof __nudoMissingNative;\nexport function f(){ return 1; }\n`,
       "/t/bug-072-neg-typeof.js",
     );
     expect(issues).toHaveLength(0);
-  })();
-(() => {
-
+  }
+  {
     const issues = moduleThrows(
       `export function m() { return 1; }\nif (globalThis.cond) throw new Error("x");\nconst x = null;\nconst y = x?.foo;\n`,
       "/t/bug-072-neg.js",
     );
     expect(issues).toHaveLength(0);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -998,87 +929,67 @@ const plus = (t: ReturnType<typeof v>, k: number) => app("+", [t, lit(k)]);
 const minus = (t: ReturnType<typeof v>, k: number) => app("-", [t, lit(k)]);
 const times = (t: ReturnType<typeof v>, k: number) => app("*", [t, lit(k)]);
 
-describe("等式反解必须给出舍入前像，而不是点", () => {
-  it("宿主 IEEE 见证：fl(MIN_VALUE + 1) === 1 但 x ≠ 0；x + 1 === 1 ⊬ x === 0（吸收型加法；反例 x = MIN_VALUE）；x + 1 === 1 ⊬ x >= 0（同一前像区间不得收成单点）；x - 1 === -1 ⊬ x === 0（减法同源；反例 x = -5e-324）；x + 1e6 === 1e6 ⊬ x === 0（量级吸收：解集 |x| ≤ ½ulp(1e6)）；3 * x === 1 ⊬ x === 1", () => {
-(() => {
 
+  it("宿主 IEEE 见证：fl(MIN_VALUE + 1) === 1 但 x ≠ 0；x + 1 === 1 ⊬ x === 0（吸收型加法；反例 x = MIN_VALUE）；x + 1 === 1 ⊬ x >= 0（同一前像区间不得收成单点）；x - 1 === -1 ⊬ x === 0（减法同源；反例 x = -5e-324）；x + 1e6 === 1e6 ⊬ x === 0（量级吸收：解集 |x| ≤ ½ulp(1e6)）；3 * x === 1 ⊬ x === 1", () => {
+  {
     expect(1 + Number.MIN_VALUE).toBe(1);
     expect(Number.MIN_VALUE).not.toBe(0);
-  })();
-(() => {
-
+  }
+  {
     expect(implies(eq(plus(x, 1), lit(1)), eq(x, lit(0)))).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     expect(implies(eq(plus(x, 1), lit(1)), ge(x, lit(0)))).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     expect(-Number.MIN_VALUE - 1).toBe(-1);
     expect(implies(eq(minus(x, 1), lit(-1)), eq(x, lit(0)))).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     expect(2.9e-11 + 1e6).toBe(1e6);
     expect(implies(eq(plus(x, 1e6), lit(1e6)), eq(x, lit(0)))).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     expect(3 * 0.33333333333333337).toBe(1);
     expect(0.33333333333333337).not.toBe(1 / 3);
     expect(implies(eq(times(x, 3), lit(1)), eq(x, lit(1 / 3)))).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     expect(-Number.MIN_VALUE + 1 >= 1).toBe(true);
     expect(implies(ge(plus(x, 1), lit(1)), ge(x, lit(0)))).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     expect(3 * 0.33333333333333337 <= 1).toBe(true);
     expect(implies(le(times(x, 3), lit(1)), le(x, lit(1 / 3)))).toBe(false);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
+
 
 describe("精确构造的反解不受影响（精度不回退）", () => {
   it("2 * x === 4 ⊨ x === 2（2 的幂缩放无舍入）；x === 5 ⊨ x === 5 / x >= 5（纯原子事实仍是点）；x + 1 === 0 仍可取到 x = -1 的下界（前像不含正区间）", () => {
-(() => {
-
+  {
     expect(implies(eq(times(x, 2), lit(4)), eq(x, lit(2)))).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     expect(implies(eq(x, lit(5)), eq(x, lit(5)))).toBe(true);
     expect(implies(eq(x, lit(5)), ge(x, lit(5)))).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     // fl(-1 + δ) = 0 只可能在 δ 被吸收到 0 之外；但 fl(x+1)=0 的解集仍以
     // -1 为中心且 |x+1| ≤ ½ulp(0) = 0 ⇒ 单点。这里钉「界仍单调收紧」。
     const ok = implies(eq(plus(x, 1), lit(0)), and(ge(x, lit(-1.0000000000000002)), le(x, lit(-0.9999999999999998))));
     expect(ok).toBe(true);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 });
 });
 
@@ -1119,10 +1030,9 @@ function frozenCheck(src: string) {
   return checkSource_____index_ts_8("/t/e.js", src, pTrue_____index_ts_8, { loadModule, fromFile: "/t/e.js" });
 }
 
-describe("被调方 L1 面：默认值与参数契约冲突不再假绿", () => {
-  it("契约 + 冲突默认值 ⇒ 报错（修复前：OK / exit 0）；签名如实反映默认值参与定义域（`number | \"abc\"`）；合法形态保持绿：默认值落在契约域内（`s = 1` + `number()`）；无契约路径行为不变（默认值不参与，零报错）；.d.ts 可省性的事实来源保留：契约路径下 formals 仍是 default/optional；`_` / rest 之外的默认形参也走同一口径（`a`, `b = 2`）；通用侧车 opts 口径（marker）与 ", () => {
-(() => {
 
+  it("契约 + 冲突默认值 ⇒ 报错（修复前：OK / exit 0）；签名如实反映默认值参与定义域（`number | \"abc\"`）；合法形态保持绿：默认值落在契约域内（`s = 1` + `number()`）；无契约路径行为不变（默认值不参与，零报错）；.d.ts 可省性的事实来源保留：契约路径下 formals 仍是 default/optional；`_` / rest 之外的默认形参也走同一口径（`a`, `b = 2`）；通用侧车 opts 口径（marker）与 ", () => {
+  {
     const r = frozenCheck(SRC);
     expect(r.ok).toBe(false);
     const errors = r.issues.filter((i) => i.severity === "error");
@@ -1130,26 +1040,22 @@ describe("被调方 L1 面：默认值与参数契约冲突不再假绿", () => 
     // 冲突经既有的返回契约对账通道落点：`pick` 自身的 L1 面
     expect(errors.some((i) => i.fn === "pick")).toBe(true);
     expect(errors.some((i) => i.code === "nudo:constraint-violated")).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     // 修复前签名是自信的单值 `pick(s: number) => number`（默认值蒸发）
     expect(sigOf(frozenCheck(SRC), "pick")).toContain('"abc"');
-  })();
-(() => {
-
+  }
+  {
     const r = frozenCheck(`export function pick(s = 1) { return s; }\n`);
     expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const src = `export function pick(s = "abc") { return s; }\n`;
     const { loadModule } = makeFiles({ "/t/e.js": src });
     const r = checkSource_____index_ts_8("/t/e.js", src, pTrue_____index_ts_8, { loadModule, fromFile: "/t/e.js" });
     expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     // dts 面的 optional 判据 = `decl.hasDefault`（形参 kind === "default"）；
     // 契约绑定不得把它抹掉（否则 `s` 被渲染成必选）
     const { loadModule } = makeFiles({ "/t/e.js": SRC, "/t/e.nudo.js": PICK_SIDECAR });
@@ -1158,9 +1064,8 @@ describe("被调方 L1 面：默认值与参数契约冲突不再假绿", () => 
     });
     expect(g?.formals?.[0]).toMatchObject({ kind: "default", optional: true });
     expect(g?.params).toEqual(["s"]);
-  })();
-(() => {
-
+  }
+  {
     const src = `export function pick(a = 0, b = 2) { return a + b; }\n`;
     const sidecar = `import { fn, number } from "@nudojs/core";
 export const pick = fn({ a: number(), b: number() }, number());
@@ -1168,27 +1073,20 @@ export const pick = fn({ a: number(), b: number() }, number());
     const { loadModule } = makeFiles({ "/t/e.js": src, "/t/e.nudo.js": sidecar });
     const r = checkSource_____index_ts_8("/t/e.js", src, pTrue_____index_ts_8, { loadModule, fromFile: "/t/e.js" });
     expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const opts = sidecarOpts("e.nudo", PICK_SIDECAR, "/t/e.js");
     const r = checkSource_____index_ts_8("/t/e.js", SRC, pTrue_____index_ts_8, opts);
     expect(r.issues.some((i) => i.severity === "error" && i.fn === "pick")).toBe(true);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1234,7 +1132,7 @@ function check(src: string, sidecar = SIDECAR_GE1) {
   });
 }
 
-describe("nudo:invariant-relied 只在真正消费时归因", () => {
+{
   beforeEach(() => {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
@@ -1243,12 +1141,12 @@ describe("nudo:invariant-relied 只在真正消费时归因", () => {
   });
 
   it("没有循环的函数上声明不变式 ⇒ 零 invariant-relied（旧口径无条件报）；循环里真正实施了不变式 ⇒ 仍有 invariant-relied；不变式指向的绑定在循环里不存在 ⇒ 不归因", () => {
-(() => {
+  {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
     takeContractDiags();
     takeRefineDiags();
-  
+
 
     const r = check(`
 /**
@@ -1263,13 +1161,13 @@ export function f(n) {
     expect(r.issues.filter((i) => i.code === "nudo:invariant-relied")).toEqual([]);
     // 返回契约仍被证明（零贡献的不变式既不该被归因，也不该影响判定）
     expect(r.issues.filter((i) => i.code === "nudo:unproven-return")).toEqual([]);
-  })();
-(() => {
+  }
+  {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
     takeContractDiags();
     takeRefineDiags();
-  
+
 
     const r = check(`
 /**
@@ -1288,13 +1186,13 @@ export function f(n) {
     const relied = r.issues.find((i) => i.code === "nudo:invariant-relied");
     expect(relied).toBeDefined();
     expect(relied!.message).toContain("dp[*] >= 0");
-  })();
-(() => {
+  }
+  {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
     takeContractDiags();
     takeRefineDiags();
-  
+
 
     const r = check(`
 /**
@@ -1310,13 +1208,11 @@ export function f(n) {
 }
 `);
     expect(r.issues.filter((i) => i.code === "nudo:invariant-relied")).toEqual([]);
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -1366,35 +1262,30 @@ import { fn, number, shape, lit } from "@nudojs/core";
 export const h = fn({ a: shape({ kind: lit("a"), n: number() }) }, number());
 `;
 
-describe("字面量约束在类型展示面渲染成类型（不是契约 DSL）", () => {
-  it("顶层形参：`lit(3)` ⇒ `3`（不是 `lit(3)`）；对象判别槽：`kind: lit(\"a\")` ⇒ `{ kind: \"a\", n: number }`；负控制：无数值界契约的渲染不变（`number` 仍是 `number`）", () => {
-(() => {
 
+  it("顶层形参：`lit(3)` ⇒ `3`（不是 `lit(3)`）；对象判别槽：`kind: lit(\"a\")` ⇒ `{ kind: \"a\", n: number }`；负控制：无数值界契约的渲染不变（`number` 仍是 `number`）", () => {
+  {
     const r = checkSource_____index_ts_10("/test/file.js", SRC, pTrue_____index_ts_10, optsWithSidecar(SIDE));
     const sig = r.signatures.find((s) => s.name === "g");
     expect(sig).toBeDefined();
     expect(sig!.paramTypes?.[0]).toBe("3");
     expect(sig!.paramTypes?.join(", ")).not.toContain("lit(");
-  })();
-(() => {
-
+  }
+  {
     const r = checkSource_____index_ts_10("/test/file.js", SLOT_SRC, pTrue_____index_ts_10, optsWithSidecar(SLOT_SIDE));
     const sig = r.signatures.find((s) => s.name === "h");
     expect(sig!.paramTypes?.[0]).toBe('{ kind: "a", n: number }');
-  })();
-(() => {
-
+  }
+  {
     const r = checkSource_____index_ts_10("/test/file.js", SRC, pTrue_____index_ts_10, optsWithSidecar(SIDE));
     const sig = r.signatures.find((s) => s.name === "g");
     expect(sig!.paramTypes?.[1]).toBe("number");
     expect(sig!.paramTypes?.[3]).toBe("string");
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1431,42 +1322,35 @@ const y = v("y");
 /** 被求和的项（`x + 1`） */
 const sum = app("+", [x, lit(1)]);
 
-describe("strict 端点的 1 ULP 离散性放松只做一次（同项格点步进）", () => {
+
   it("同项事实 `x+1 > nextDown(1)` ⇒ 义务 `x+1 >= 1`（IEEE 下恒真）；同项事实 ⇒ 更弱的义务同样成立（ge / gt nextDown(1)）；反向不成立：`x+1 > nextDown(1)` ⇏ `x+1 > 1`（严格差一格不够）；严格事实才步进一格：非严格事实 `x+1 >= nextDown(1)` ⇏ `x+1 >= 1`；保真控制：吸收型累加仍证不出 `x+y > 1`（fl(MIN + 1) === 1）；保真控制：同项格点步", () => {
-(() => {
-
+  {
     expect(implies(gt(sum, lit(0.9999999999999999)), ge(sum, lit(1)))).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     expect(implies(gt(sum, lit(0.9999999999999999)), ge(sum, lit(0.9999999999999999)))).toBe(
       true,
     );
     expect(implies(gt(sum, lit(0.9999999999999999)), gt(sum, lit(0.9999999999999999)))).toBe(
       true,
     );
-  })();
-(() => {
-
+  }
+  {
     expect(implies(gt(sum, lit(0.9999999999999999)), gt(sum, lit(1)))).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     // `x + 1 >= 0.9999999999999999` 允许 x + 1 恰好 = 0.9999999999999999 ⇒ 不蕴含 >= 1
     expect(implies(ge(sum, lit(0.9999999999999999)), ge(sum, lit(1)))).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const phi = and(gt(x, lit(0)), ge(y, lit(1)));
     expect(implies(phi, gt(app("+", [x, y]), lit(1)))).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     expect(implies(ge(x, lit(5)), gt(x, lit(5)))).toBe(false);
     expect(implies(ge(x, lit(5)), lt(x, lit(5)))).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const impl = `export function f(x) { return x + 1; }`;
     const sidecar = `
 import { fn, number } from "@nudojs/core";
@@ -1478,9 +1362,8 @@ export const f = fn({ x: number().gt(0) }, number().ge(1));
       fromFile: "/t/bug-1004.js",
     });
     expect(r.issues.filter((i) => i.code === "nudo:constraint-violated")).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const impl = `export function f(x) { return x + 1; }`;
     const sidecar = `
 import { fn, number } from "@nudojs/core";
@@ -1492,23 +1375,16 @@ export const f = fn({ x: number().ge(0) }, number().ge(2));
       fromFile: "/t/bug-1004-ctl.js",
     });
     expect(r.issues.filter((i) => i.code === "nudo:constraint-violated").length).toBe(1);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1523,7 +1399,7 @@ describe("bigint-lit-contract-tautology", () => {
 
 
 
-describe("bigint-lit-contract-tautology", () => {
+{
 /**
  * `lit(1n)`（bigint 字面量契约）在**实参位是恒真契约**：
  * 契约实例化成单条 `eq(x, 1n)` 原子，而 `scan/literal-preds.ts` 的
@@ -1586,8 +1462,7 @@ export function use() { return f(${arg}); }`;
 
 describe("lit(1n) 字面量契约不再是恒真契约（bigint 字面量端可判定）", () => {
   it("lit(1n) 契约收到 2 ⇒ 判违例（改前 0 违例 = 假绿）；lit(1n) 契约收到 1 ⇒ 判违例（1 ≠ 1n：number 与 bigint 是两个域）；union(lit(1n), lit(2n)) 收到 2 ⇒ 判违例（改前 0 违例 = 假绿）；负控制：lit(1)（number 字面量）收到 2 ⇒ 判违例（既有行为不回退）；负控制：没有契约的形参收到任何实参 ⇒ 零违例（违例来自契约，不是引擎噪声）", () => {
-(() => {
-
+  {
     const r = check(call("bigOne", "2"));
     const vs = violated(r);
     // 族 48（主 agent 追认，2026-10-23）：bigint 字面量契约**补齐了缺失的
@@ -1599,46 +1474,38 @@ describe("lit(1n) 字面量契约不再是恒真契约（bigint 字面量端可�
     expect(vs.length).toBe(2);
     expect(vs[0]?.expected).toBe('typeof x = "bigint"');
     expect(vs[0]?.actual).toContain("2");
-  })();
-(() => {
-
+  }
+  {
     const r = check(call("bigOne", "1"));
     const vs = violated(r);
     // 同上（族 48 · 主 agent 追认）：bigint 补齐 `typeof` 义务 ⇒ 条数 1 → 2。
     expect(vs.length).toBe(2);
     expect(vs[0]?.expected).toBe('typeof x = "bigint"');
-  })();
-(() => {
-
+  }
+  {
     const r = check(call("bigUnion", "2"));
     const vs = violated(r);
     expect(vs.length).toBe(1);
     expect(vs[0]?.expected).toBe("(x = 1n ∨ x = 2n)");
-  })();
-(() => {
-
+  }
+  {
     const r = check(call("numOne", "2"));
     const vs = violated(r);
     expect(vs.length).toBe(1);
     expect(vs[0]?.expected).toBe("x = 1");
-  })();
-(() => {
-
+  }
+  {
     const r = check(`export function f(x) { return x; }
 export function use() { return f(2); }`);
     expect(violated(r).length).toBe(0);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
+}
 
 describe("bigint-literal-arg-fastpath", () => {
 /**
@@ -1705,79 +1572,62 @@ export function use() { return f(${arg}); }`;
 
 describe("bigint 实参可取参（快路径补 BigIntLiteral 分支）", () => {
   it("lit(1n) 收到 2n ⇒ 判违例（改前 0 违例 = 假绿：实参取不到）；lit(2n) 收到 1n ⇒ 判违例（改前 0 违例 = 假绿）；union(lit(1n), lit(2n)) 收到 3n ⇒ 判违例（改前 0 违例 = 假绿）；负控制：lit(1n) 收到 1n ⇒ 放行（取到实参且满足契约）；负控制：union(lit(1n), lit(2n)) 收到 1n ⇒ 放行；负控制：union(lit(1n), lit(2n)) 收到 2n ⇒ 放行（2n 落", () => {
-(() => {
-
+  {
     const r = check(call("litOneN", "2n"));
     const vs = violated(r);
     expect(vs.length).toBe(1);
     expect(vs[0]?.expected).toBe("x = 1n");
     // 实参确实被取到了（actual 里能看到 bigint 值）
     expect(String(vs[0]?.actual)).toContain("2n");
-  })();
-(() => {
-
+  }
+  {
     const r = check(call("litTwoN", "1n"));
     const vs = violated(r);
     expect(vs.length).toBe(1);
     expect(vs[0]?.expected).toBe("x = 2n");
-  })();
-(() => {
-
+  }
+  {
     const r = check(call("litUnionN", "3n"));
     const vs = violated(r);
     expect(vs.length).toBe(1);
     expect(vs[0]?.expected).toBe("(x = 1n ∨ x = 2n)");
-  })();
-(() => {
-
+  }
+  {
     const r = check(call("litOneN", "1n"));
     expect(violated(r).length).toBe(0);
-  })();
-(() => {
-
+  }
+  {
     const r = check(call("litUnionN", "1n"));
     expect(violated(r).length).toBe(0);
-  })();
-(() => {
-
+  }
+  {
     const r = check(call("litUnionN", "2n"));
     expect(violated(r).length).toBe(0);
-  })();
-(() => {
-
+  }
+  {
     const r = check(call("litNegN", "-1n"));
     expect(violated(r).length).toBe(0);
-  })();
-(() => {
-
+  }
+  {
     const r = check(call("litNegN", "1n"));
     const vs = violated(r);
     expect(vs.length).toBe(1);
     expect(vs[0]?.expected).toBe("x = -1n");
-  })();
-(() => {
-
+  }
+  {
     const r = check(`export function f(x) { return x; }
 export function use() { return f(1n); }`);
     expect(violated(r).length).toBe(0);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 });
 });
@@ -1836,7 +1686,7 @@ function run(side: string) {
   });
 }
 
-describe("跨模块：契约形参名对不上 ⇒ 报 param-mismatch", () => {
+{
   const r = run(SIDE_MISMATCH);
   it("调用方看到 nudo:contract-param-mismatch（旧行为：零诊断）", () => {
     const m = r.issues.filter((i) => i.code === "nudo:contract-param-mismatch");
@@ -1846,25 +1696,22 @@ describe("跨模块：契约形参名对不上 ⇒ 报 param-mismatch", () => {
     expect(m[0]!.actual).toBe("k");
     expect(r.ok).toBe(false);
   });
-});
+}
 
 describe("跨模块对照组：契约形参名对得上 ⇒ 不报 mismatch", () => {
   const r = run(SIDE_OK);
   it("无 param-mismatch；调用点的负参违例照旧执法（跨模块 L1 扫描）", () => {
-(() => {
-
+  {
     expect(
       r.issues.some((i) => i.code === "nudo:contract-param-mismatch"),
     ).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     expect(
       r.issues.some((i) => i.code === "nudo:constraint-violated"),
     ).toBe(true);
-  })();
-});;
-  ;
+  }
+});
 });
 
 describe("跨模块负控：解构点路径契约名（card.grade）不是 mismatch", () => {
@@ -1893,20 +1740,17 @@ export const r = grade({ card: { grade: -1 } });
     modules: { "./grade.js": { named, evaluated: true } } as never,
   });
   it("不报 param-mismatch（点路径名在契约面内）；点路径实参义务照旧执法", () => {
-(() => {
-
+  {
     expect(
       r.issues.some((i) => i.code === "nudo:contract-param-mismatch"),
     ).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     expect(
       r.issues.some((i) => i.code === "nudo:constraint-violated"),
     ).toBe(true);
-  })();
-});;
-  ;
+  }
+});
 });
 });
 
@@ -1946,73 +1790,58 @@ const fold = (p: ReturnType<typeof v>, n: number) => {
   return t;
 };
 
-describe("系数表相同 ≠ 值相同（乘法 vs 折叠）", () => {
-  it("宿主 IEEE 见证：[0.1]*6 ≠ 0.1+0.1+0.1+0.1+0.1+0.1；x >= 0 ⊬ x * 6 <= x+x+x+x+x+x（抛臂可达）；x >= 0 ⊬ x * 6 >= x+x+x+x+x+x（对称方向同样不得证出）；x >= 0 ⊬ x * 6 === x+x+x+x+x+x", () => {
-(() => {
 
+  it("宿主 IEEE 见证：[0.1]*6 ≠ 0.1+0.1+0.1+0.1+0.1+0.1；x >= 0 ⊬ x * 6 <= x+x+x+x+x+x（抛臂可达）；x >= 0 ⊬ x * 6 >= x+x+x+x+x+x（对称方向同样不得证出）；x >= 0 ⊬ x * 6 === x+x+x+x+x+x", () => {
+  {
     expect(0.1 * 6).toBe(0.6000000000000001);
     expect(0.1 + 0.1 + 0.1 + 0.1 + 0.1 + 0.1).toBe(0.6);
     expect(0.1 * 6 <= 0.1 + 0.1 + 0.1 + 0.1 + 0.1 + 0.1).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     expect(implies(ge(x, lit(0)), le(mul(x, 6), fold(x, 6)))).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     expect(implies(ge(x, lit(0)), ge(mul(x, 6), fold(x, 6)))).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     expect(implies(ge(x, lit(0)), eq(mul(x, 6), fold(x, 6)))).toBe(false);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 
 describe("结合律形态（check 面 / test 面互斥的根源）", () => {
   it("宿主 IEEE 见证：(1+1)+1/3 > 1+(1+1/3)；a,b,c > 0 ⊬ (a+b)+c <= a+(b+c)；a,b,c > 0 ⊬ (a+b)+c >= a+(b+c)（反向亦然）", () => {
-(() => {
-
+  {
     expect((1 + 1) + 1 / 3).toBeGreaterThan(1 + (1 + 1 / 3));
-  })();
-(() => {
-
+  }
+  {
     const phi = and(gt(a, lit(0)), gt(b, lit(0)), gt(c, lit(0)));
     expect(implies(phi, le(add(add(a, b), c), add(a, add(b, c))))).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const phi = and(gt(a, lit(0)), gt(b, lit(0)), gt(c, lit(0)));
     expect(implies(phi, ge(add(add(a, b), c), add(a, add(b, c))))).toBe(false);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 });
 
 describe("精确构造的同形判定不回退", () => {
   it("2 * x 与 x + x 都是精确加倍 ⇒ x > 0 ⊨ 2x <= x+x；x > 1 ∧ assumeFinite(x) 下 2 * x 与 x + x 仍同形", () => {
-(() => {
-
+  {
     expect(2 * (1 + 2 ** -52)).toBe((1 + 2 ** -52) + (1 + 2 ** -52));
     expect(implies(gt(x, lit(0)), le(mul(x, 2), add(x, x)))).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const phi = and(gt(x, lit(1)), assumeFinite(x));
     expect(implies(phi, le(mul(x, 2), add(x, x)))).toBe(true);
-  })();
-});;
+  }
+});
 
-  ;
 });
 });
 
@@ -2047,61 +1876,48 @@ describe("`-0` 保真（侧车约束的组合式渲染不得抹掉负号）", ()
 
 
 
-describe("`-0` 保真（侧车约束的组合式渲染不得抹掉负号）", () => {
-  it("lit(-0) 渲染成 lit(-0)，不是 lit(0)；字段位（shape）保真：侧车回显与字段契约同源；函数契约整体保真（参数位 + 返回位）；lengthBound 的常数界渲染同款口径（.length(-0)）；负控制：正零仍是 0（不得把 0 渲成 -0）；负控制：其它字面量形态不受牵连（bigint 的 n 后缀 / 字符串 / 布尔）；原生事实：-0 与 0 确实可观察不同（Object.is / 1/x）", () => {
-(() => {
 
+  it("lit(-0) 渲染成 lit(-0)，不是 lit(0)；字段位（shape）保真：侧车回显与字段契约同源；函数契约整体保真（参数位 + 返回位）；lengthBound 的常数界渲染同款口径（.length(-0)）；负控制：正零仍是 0（不得把 0 渲成 -0）；负控制：其它字面量形态不受牵连（bigint 的 n 后缀 / 字符串 / 布尔）；原生事实：-0 与 0 确实可观察不同（Object.is / 1/x）", () => {
+  {
     expect(formatConstraint(litC(-0))).toBe("lit(-0)");
     expect(formatConstraint(litC(-0))).not.toBe("lit(0)");
-  })();
-(() => {
-
+  }
+  {
     expect(formatConstraint(shape({ v: litC(-0) }))).toBe("shape({ v: lit(-0) })");
-  })();
-(() => {
-
+  }
+  {
     expect(formatConstraint(fn({ o: shape({ v: litC(-0) }) }, litC(-0)))).toBe(
       "fn({ o: shape({ v: lit(-0) }) }, lit(-0))",
     );
-  })();
-(() => {
-
+  }
+  {
     expect(formatConstraint(str().length(-0))).toBe("string().length(-0)");
-  })();
-(() => {
-
+  }
+  {
     expect(formatConstraint(litC(0))).toBe("lit(0)");
     expect(formatConstraint(shape({ v: litC(0) }))).toBe("shape({ v: lit(0) })");
     expect(formatConstraint(str().length(0))).toBe("string().length(0)");
-  })();
-(() => {
-
+  }
+  {
     expect(formatConstraint(litC(10n))).toBe("lit(10n)");
     expect(formatConstraint(litC("x"))).toBe('lit("x")');
     expect(formatConstraint(litC(true))).toBe("lit(true)");
-  })();
-(() => {
-
+  }
+  {
     expect(Object.is(-0, 0)).toBe(false);
     expect(Object.is(-0, -0)).toBe(true);
     expect(1 / -0).toBe(-Infinity);
     // String() 抹掉符号 —— 这正是改前的漏点
     expect(String(-0)).toBe("0");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2138,17 +1954,15 @@ const acctSrc = `export class Account {
 }
 `;
 
-describe("实例方法桥不得把构造器的 throws 归因到方法", () => {
-  it("构造器做算术 ⇒ 方法入口不再报 nudo:entry-may-throw（改前：error 级 1 条）；构造器做比较 / 字符串拼接 / 成员调用 ⇒ 同上（都只算构造器的账）；构造器显式 throw ⇒ 也不归因给方法（那是 `new C()` 入口的事）；方法体**自己**会抛 ⇒ 仍要报（闸门不整体关掉）；方法体读构造器写入的字段（any）⇒ 成员调用仍报（构造器仍要跑）；静态方法口径不变（静态桥不跑构造器 ⇒ 它自己的算术照报）；单元层：实例方法的 throws ", () => {
-(() => {
 
+  it("构造器做算术 ⇒ 方法入口不再报 nudo:entry-may-throw（改前：error 级 1 条）；构造器做比较 / 字符串拼接 / 成员调用 ⇒ 同上（都只算构造器的账）；构造器显式 throw ⇒ 也不归因给方法（那是 `new C()` 入口的事）；方法体**自己**会抛 ⇒ 仍要报（闸门不整体关掉）；方法体读构造器写入的字段（any）⇒ 成员调用仍报（构造器仍要跑）；静态方法口径不变（静态桥不跑构造器 ⇒ 它自己的算术照报）；单元层：实例方法的 throws ", () => {
+  {
     const r = checkSource_____index_ts_12("acct.js", acctSrc, pTrue_____index_ts_11, stdOpts);
     expect(l2Count(r, "Account.describe")).toBe(0);
     expect(r.issues.filter((i) => i.severity === "error")).toHaveLength(0);
     expect(sigOf(r, "Account.describe")).not.toContain("throws");
-  })();
-(() => {
-
+  }
+  {
     const variants = [
       `export class A { constructor(x) { this.v = x > 0; } describe() { return "a"; } }`,
       `export class A { constructor(x) { this.v = "a" + x; } describe() { return "a"; } }`,
@@ -2158,18 +1972,16 @@ describe("实例方法桥不得把构造器的 throws 归因到方法", () => {
       const r = checkSource_____index_ts_12("acct.js", src, pTrue_____index_ts_11, stdOpts);
       expect(l2Count(r, "A.describe")).toBe(0);
     }
-  })();
-(() => {
-
+  }
+  {
     const src = `export class A {
   constructor(x) { throw new TypeError("ctor"); }
   describe() { return "a"; }
 }`;
     const r = checkSource_____index_ts_12("acct.js", src, pTrue_____index_ts_11, stdOpts);
     expect(l2Count(r, "A.describe")).toBe(0);
-  })();
-(() => {
-
+  }
+  {
     const src = `export class A {
   constructor(x) { this.v = x; }
   describe() { throw new TypeError("m"); }
@@ -2181,35 +1993,31 @@ describe("实例方法桥不得把构造器的 throws 归因到方法", () => {
     );
     expect(issue?.severity).toBe("error");
     expect(sigOf(r, "A.describe")).toContain("throws TypeError");
-  })();
-(() => {
-
+  }
+  {
     const src = `export class A {
   constructor(x) { this.v = x; }
   describe() { return this.v.toFixed(); }
 }`;
     const r = checkSource_____index_ts_12("acct.js", src, pTrue_____index_ts_11, stdOpts);
     expect(l2Count(r, "A.describe")).toBe(1);
-  })();
-(() => {
-
+  }
+  {
     const src = `export class A {
   constructor(x) { this.v = x + 1; }
   static make(y) { return y + 1; }
 }`;
     const r = checkSource_____index_ts_12("acct.js", src, pTrue_____index_ts_11, stdOpts);
     expect(l2Count(r, "A.make")).toBe(1);
-  })();
-(() => {
-
+  }
+__scenario_1: {
     const file = parseSource(acctSrc);
     const out = evalThrowsOutcome(acctSrc, "Account.describe", [], {}, pTrue_____index_ts_11, file);
     expect(out.kind).toBe("analyzed");
-    if (out.kind !== "analyzed") return;
+    if (out.kind !== "analyzed") break __scenario_1;
     expect(throwAbsToKinds(out.result.throws)).toEqual([]);
-  })();
-(() => {
-
+  }
+__scenario_2: {
     const src = `export class A {
   constructor(x) { this.v = x + 1; }
   describe() { throw new TypeError("m"); }
@@ -2217,25 +2025,18 @@ describe("实例方法桥不得把构造器的 throws 归因到方法", () => {
     const file = parseSource(src);
     const out = evalThrowsOutcome(src, "A.describe", [], {}, pTrue_____index_ts_11, file);
     expect(out.kind).toBe("analyzed");
-    if (out.kind !== "analyzed") return;
+    if (out.kind !== "analyzed") break __scenario_2;
     expect(throwAbsToKinds(out.result.throws)).toEqual(["TypeError"]);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2299,104 +2100,84 @@ function codes(src: string): string[] {
 const SRC = `export function risky(){ throw new Error("boom"); }
 export async function* f(){ await Promise.resolve(1); yield 1; }`;
 
-describe("async generator 声明体的 await 不发射裸 yield", () => {
-  it("转译产物里 async generator 体内没有裸 yield（修前：`(yield …)` ⇒ 非法 JS）；整模块不再 fail-closed：其它导出的 L2 门禁仍触发（修前：诊断消失 ⇒ 假绿）；其它导出的签名不退化 unknown（修前：risky 退成 `risky() => unknown`）；无假 nudo:opaque-result（修前：整模块 unknown ⇒ 假 opaque 诊断）；async generator 自身的产出仍正确（for-a", () => {
-(() => {
 
+  it("转译产物里 async generator 体内没有裸 yield（修前：`(yield …)` ⇒ 非法 JS）；整模块不再 fail-closed：其它导出的 L2 门禁仍触发（修前：诊断消失 ⇒ 假绿）；其它导出的签名不退化 unknown（修前：risky 退成 `risky() => unknown`）；无假 nudo:opaque-result（修前：整模块 unknown ⇒ 假 opaque 诊断）；async generator 自身的产出仍正确（for-a", () => {
+  {
     const js = transpileSource(SRC, { source: SRC });
     expect(js).not.toContain("(yield ");
     // 显式 `yield` 表达式仍走 $yield（与 await 无关）
     expect(js).toContain("$yield(");
     // await 走 $await 兜底（async generator 体不是宿主生成器）
     expect(js).toContain("$await(");
-  })();
-(() => {
-
+  }
+  {
     const r = report(SRC);
     expect(l2Count(r, "risky")).toBe(1);
     expect(r.issues.find((i) => i.code === "nudo:entry-may-throw")?.severity).toBe("error");
-  })();
-(() => {
-
+  }
+  {
     expect(sigOf(report(SRC), "risky")).not.toBe("unknown");
     expect(sigOf(report(SRC), "risky")).toBe(sigOf(report(`export function risky(){ throw new Error("boom"); }`), "risky"));
-  })();
-(() => {
-
+  }
+  {
     expect(codes(SRC)).not.toContain("nudo:opaque-result");
-  })();
-(() => {
-
+  }
+  {
     const src = `export async function* f(){ await Promise.resolve(1); yield 7; }
 export async function g(){ let t = 0; for await (const v of f()) t += v; return t; }`;
     expect(v(src, "g")).toEqual({ ok: true, value: 7 });
-  })();
-(() => {
-
+  }
+  {
     const src = `export async function* f(){ await Promise.resolve(1); yield 1; }
 export function g(){ return typeof f().next().then; }`;
     expect(v(src, "g")).toEqual({ ok: true, value: "function" });
-  })();
-(() => {
-
+  }
+  {
     const src = `export function risky(){ throw new Error("boom"); }
 export default async function* g(){ await Promise.resolve(1); yield 1; }`;
     const js = transpileSource(src, { source: src });
     expect(js).not.toContain("(yield ");
     expect(l2Count(report(src), "risky")).toBe(1);
-  })();
-(() => {
-
+  }
+  {
     const src = `export function risky(){ throw new Error("boom"); }
 export function h(){ async function* g(){ await Promise.resolve(1); yield 1; } return typeof g().next().then; }`;
     const js = transpileSource(src, { source: src });
     expect(js).not.toContain("(yield ");
     expect(l2Count(report(src), "risky")).toBe(1);
     expect(v(src, "h")).toEqual({ ok: true, value: "function" });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
+
 
 describe("负控制：兄弟路径与同步/async 声明不得回归", () => {
   it("同步 generator 声明：体里的 yield 仍走 $yield（不是 $await）；async **函数**（非 generator）声明：await 仍发射裸 yield（真挂起点）；async generator **表达式**面（兄弟路径）不受影响：await 走 $await", () => {
-(() => {
-
+  {
     const src = `export function* g(){ yield 1; }`;
     const js = transpileSource(src, { source: src });
     expect(js).toContain("$yield(");
     expect(js).not.toContain("(yield ");
-  })();
-(() => {
-
+  }
+  {
     const src = `export async function h(){ await Promise.resolve(1); return 2; }`;
     const js = transpileSource(src, { source: src });
     expect(js).toContain("(yield ");
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f(){ const g = async function*(){ await Promise.resolve(1); yield 1; }; return typeof g().next().then; }`;
     const js = transpileSource(src, { source: src });
     expect(js).not.toContain("(yield ");
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 });
 });
 
@@ -2427,56 +2208,44 @@ describe("Uint8ClampedArray 取值是「就近偶数」（不向零截断）", (
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
-describe("Uint8ClampedArray 取值是「就近偶数」（不向零截断）", () => {
+
   it("new Uint8ClampedArray([1.5])[0] ⇒ 2（native：2；修前：1）；new Uint8ClampedArray([3.5])[0] ⇒ 4（native：4；修前：3）；就近偶数（tie → 偶数）：2.5 ⇒ 2、4.5 ⇒ 4、0.5 ⇒ 0（native 同款）；非 tie 值照旧四舍五入：1.4 ⇒ 1、1.6 ⇒ 2（native 同款）", () => {
-(() => {
-
+  {
     expect(val(wrap(`return new Uint8ClampedArray([1.5])[0];`))).toEqual({ ok: true, value: 2 });
-  })();
-(() => {
-
+  }
+  {
     expect(val(wrap(`return new Uint8ClampedArray([3.5])[0];`))).toEqual({ ok: true, value: 4 });
-  })();
-(() => {
-
+  }
+  {
     expect(val(wrap(`return new Uint8ClampedArray([2.5])[0];`))).toEqual({ ok: true, value: 2 });
     expect(val(wrap(`return new Uint8ClampedArray([4.5])[0];`))).toEqual({ ok: true, value: 4 });
     expect(val(wrap(`return new Uint8ClampedArray([0.5])[0];`))).toEqual({ ok: true, value: 0 });
-  })();
-(() => {
-
+  }
+  {
     expect(val(wrap(`return new Uint8ClampedArray([1.4])[0];`))).toEqual({ ok: true, value: 1 });
     expect(val(wrap(`return new Uint8ClampedArray([1.6])[0];`))).toEqual({ ok: true, value: 2 });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 
 describe("负控制（边界与整数 TA 口径不变）", () => {
   it("边界：300 ⇒ 255、-1 ⇒ 0（native 同款）；整数 TA 仍是向零截断：new Int8Array([1.5])[0] ⇒ 1（native：1）；浮点 TA 不钳位：new Float64Array([1.5])[0] ⇒ 1.5（native：1.5）", () => {
-(() => {
-
+  {
     expect(val(wrap(`return new Uint8ClampedArray([300])[0];`))).toEqual({ ok: true, value: 255 });
     expect(val(wrap(`return new Uint8ClampedArray([-1])[0];`))).toEqual({ ok: true, value: 0 });
-  })();
-(() => {
-
+  }
+  {
     expect(val(wrap(`return new Int8Array([1.5])[0];`))).toEqual({ ok: true, value: 1 });
-  })();
-(() => {
-
+  }
+  {
     expect(val(wrap(`return new Float64Array([1.5])[0];`))).toEqual({ ok: true, value: 1.5 });
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 });
 });
 
@@ -2508,32 +2277,27 @@ const CTOR_THROWS = `export class Account {
   describe() { return "acct"; }
 }`;
 
-describe("类方法桥：构造器抛不得拖垮方法体的推断", () => {
-  it("构造器抛 + 方法体 total ⇒ 方法签名仍是 \"acct\"（不是 unknown）；构造器抛 ⇒ 不产生误导的 nudo:opaque-result；构造器**不**抛时行为不变（方法签名照常）", () => {
-(() => {
 
+  it("构造器抛 + 方法体 total ⇒ 方法签名仍是 \"acct\"（不是 unknown）；构造器抛 ⇒ 不产生误导的 nudo:opaque-result；构造器**不**抛时行为不变（方法签名照常）", () => {
+  {
     const r = issuesOf(CTOR_THROWS);
     expect(sigOf(r, "Account.describe")).toBe(String.raw`"acct"`);
-  })();
-(() => {
-
+  }
+  {
     const r = issuesOf(CTOR_THROWS);
     expect(r.issues.filter((i) => i.code === "nudo:opaque-result")).toHaveLength(0);
-  })();
-(() => {
-
+  }
+  {
     const r = issuesOf(`export class Account {
       constructor(balance) { this.balance = balance; }
       describe() { return "acct"; }
     }`);
     expect(sigOf(r, "Account.describe")).toBe(String.raw`"acct"`);
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2575,10 +2339,9 @@ const retYProved = abs(
   "exact",
 );
 
-describe("引理账本 = 消费事实源（归因取数在记账之后）", () => {
-  it("Φ 被消费 ⇒ 记账 + 归因可见（账本是活写，不依赖调用方传快照）；只靠账本消费（调用方未传快照）⇒ 仍须归因（改前此处归因丢失）；既未记账、也非 Φ 命中 ⇒ 不归因（不得把没消费过的公理报成 relied）；账本里是**别的**前提（对象身份不同）⇒ 不归因（防按位置误配）；证明不成立（unprovable / disproved）⇒ 不报 relied（归因只对已证义务）", () => {
-(() => {
 
+  it("Φ 被消费 ⇒ 记账 + 归因可见（账本是活写，不依赖调用方传快照）；只靠账本消费（调用方未传快照）⇒ 仍须归因（改前此处归因丢失）；既未记账、也非 Φ 命中 ⇒ 不归因（不得把没消费过的公理报成 relied）；账本里是**别的**前提（对象身份不同）⇒ 不归因（防按位置误配）；证明不成立（unprovable / disproved）⇒ 不报 relied（归因只对已证义务）", () => {
+  {
     resetAssumeConsumed();
     // Φ = `y > 20`（同项且蕴含 `y > 10`）⇒ 去掉 Φ 证不出 ⇒ 本次证明依赖
     // 这条公理 ⇒ 记账 + 归因。**不传** `consumedAssume`（调用方快照缺位）。
@@ -2592,9 +2355,8 @@ describe("引理账本 = 消费事实源（归因取数在记账之后）", () =
     const relied = issues.filter((i) => i.code === "nudo:assume-relied");
     expect(relied).toHaveLength(1);
     expect(relied[0]!.message).toContain("y >= 20");
-  })();
-(() => {
-
+  }
+  {
     // 模拟代数核在**引理消费点**（div/sub 折叠）记账：调用方没有把快照传进来
     // ⇒ 归因只能靠就地读账本。改前（只认调用方快照）⇒ 这里归因丢失。
     resetAssumeConsumed();
@@ -2613,9 +2375,8 @@ describe("引理账本 = 消费事实源（归因取数在记账之后）", () =
     const relied = issues.filter((i) => i.code === "nudo:assume-relied");
     expect(relied).toHaveLength(1);
     expect(relied[0]!.message).toContain("y >= 20");
-  })();
-(() => {
-
+  }
+  {
     resetAssumeConsumed();
     const premise = gt_____index_ts(v_____index_ts("y"), { op: "lit", value: 20 });
     const issues = checkReturnConstraint(
@@ -2629,9 +2390,8 @@ describe("引理账本 = 消费事实源（归因取数在记账之后）", () =
       },
     );
     expect(issues.filter((i) => i.code === "nudo:assume-relied")).toHaveLength(0);
-  })();
-(() => {
-
+  }
+  {
     resetAssumeConsumed();
     // 账本记的是 `x > 5`，而归因面要认的是 `y >= 20` ⇒ 两者不是同一条引理
     // （账本口径 = **对象身份**，不是位置）⇒ 不得归因。
@@ -2648,9 +2408,8 @@ describe("引理账本 = 消费事实源（归因取数在记账之后）", () =
       },
     );
     expect(issues.filter((i) => i.code === "nudo:assume-relied")).toHaveLength(0);
-  })();
-(() => {
-
+  }
+  {
     resetAssumeConsumed();
     const premise = gt_____index_ts(v_____index_ts("y"), { op: "lit", value: 20 });
     noteAssumeConsumed(premise);
@@ -2661,17 +2420,13 @@ describe("引理账本 = 消费事实源（归因取数在记账之后）", () =
     });
     expect(issues.filter((i) => i.code === "nudo:assume-relied")).toHaveLength(0);
     expect(issues.some((i) => i.code === "nudo:unproven-return")).toBe(true);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2718,9 +2473,9 @@ function violations(r: { issues: { code: string }[] }): number {
   return r.issues.filter((i) => i.code === "nudo:constraint-violated").length;
 }
 
-describe("显式 undefined 走默认值", () => {
+
   it("d1(undefined)（x = 5，契约 x > 0）⇒ 零诊断（默认值 5 满足契约）；默认值本身违约时仍要报（d2(undefined)，x = -5，契约 x > 0）；负控制：没有默认值的形参收 undefined ⇒ 仍按 undefined 执法（报 typeof 违例）", () => {
-(() => {
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -2732,8 +2487,8 @@ export function use() { return d1(undefined); }
 `);
     expect(violations(r)).toBe(0);
     expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -2744,8 +2499,8 @@ function d2(x = -5) { return x; }
 export function use() { return d2(undefined); }
 `);
     expect(violations(r)).toBe(1);
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -2756,13 +2511,11 @@ function d3(x) { return x; }
 export function use() { return d3(undefined); }
 `);
     expect(violations(r)).toBeGreaterThan(0);
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2821,33 +2574,33 @@ function hasIntEncoding(pred: unknown): boolean {
   return false;
 }
 
-describe(".int() 只在数值链上成立（域面 / Abs 面口径一致）", () => {
+
   it("string().int() 抛错（不再暴露到非数值 builder）；boolean().int() 抛错；lit('a') 根本不带 int 方法（非数值字面量链无法产出分裂约束）；number().int() 仍然可用（负控制）；域面 / Abs 面口径一致：非数值链上不存在 int 约束；数值链的 Abs 面仍带整性编码（Bug 342 语义不回归）；纯数据约束（非 number prim）不再产出整性 pred（两面一致）", () => {
-(() => {
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
 
 
     expect(() => (string() as unknown as { int: () => unknown }).int()).toThrow(/int\(\)/);
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
 
 
     expect(() => (boolean() as unknown as { int: () => unknown }).int()).toThrow(/int\(\)/);
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
 
 
     expect((lit_____index_ts("a") as unknown as { int?: () => unknown }).int).toBeUndefined();
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -2855,8 +2608,8 @@ describe(".int() 只在数值链上成立（域面 / Abs 面口径一致）", ()
 
     const c = number_____index_ts().int();
     expect(isIntFlag(c)).toBe(true);
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -2868,16 +2621,16 @@ describe(".int() 只在数值链上成立（域面 / Abs 面口径一致）", ()
     const c = number_____index_ts().int();
     expect(literalMeetsConstraint(3.5, c)).toBe(false);
     expect(literalMeetsConstraint(3, c)).toBe(true);
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
 
 
     expect(hasIntEncoding(constraintToEntryAbs(number_____index_ts().int(), "n").pred)).toBe(true);
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -2885,21 +2638,15 @@ describe(".int() 只在数值链上成立（域面 / Abs 面口径一致）", ()
 
     const raw = { __nudoConstraint: true, prim: "string", preds: [], int: true } as never;
     expect(hasIntEncoding(constraintToEntryAbs(raw, "s").pred)).toBe(false);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
 
 /**
  * 同一约束面（构造器实参 / 界护栏）的其余**静默无效输入**（报告 §附带项，
@@ -2921,23 +2668,23 @@ describe(".int() 只在数值链上成立（域面 / Abs 面口径一致）", ()
  */
 describe("附带 —— 约束构造器的无效输入不再被静默接受", () => {
   it("boolean().gt(1) 抛错（恒假契约 ⇒ 假红）；string().gt(1) 抛错（恒假契约 ⇒ 假红）；string().length(-3) 抛错（恒假契约 ⇒ 假红）；负控制：既有的有限界护栏口径不变（length(2.5) 仍合法，Bug 336 钉住）；array(1, 2) 抛错（多余实参不再被静默丢弃）；负控制：合法用法仍然可用（number().gt(0) / string().min(1) / array(number())）", () => {
-(() => {
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
 
 
     expect(() => (boolean() as unknown as { gt: (n: number) => unknown }).gt(1)).toThrow(/gt\(\)/);
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
 
 
     expect(() => (string() as unknown as { gt: (n: number) => unknown }).gt(1)).toThrow(/gt\(\)/);
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -2946,24 +2693,24 @@ describe("附带 —— 约束构造器的无效输入不再被静默接受", ()
     expect(() => (string() as unknown as { length: (n: number) => unknown }).length(-3)).toThrow(
       /length\(\)/,
     );
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
 
 
     expect(() => (string() as unknown as { length: (n: number) => unknown }).length(2.5)).not.toThrow();
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
 
 
     expect(() => (array as unknown as (...a: unknown[]) => unknown)(1, 2)).toThrow(/array\(\)/);
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -2973,18 +2720,13 @@ describe("附带 —— 约束构造器的无效输入不再被静默接受", ()
     expect(() => string().min(1)).not.toThrow();
     expect(() => string().max(20)).not.toThrow();
     expect(() => array(number_____index_ts())).not.toThrow();
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 });
 
@@ -3049,7 +2791,7 @@ function native(body: string, arg: unknown): string {
   return typeof v === "number" && Number.isNaN(v) ? "NaN" : String(v);
 }
 
-describe("早返回的关系补集不再默认「x 不是 NaN」（不得假绿）", () => {
+{
   beforeEach(() => {
     resetEngineCaches();
     takeRefineDiags();
@@ -3057,100 +2799,93 @@ describe("早返回的关系补集不再默认「x 不是 NaN」（不得假绿�
   });
 
   it("原生 oracle：早返回形态在 x=NaN 时返回 NaN（违反 nonNeg）；早返回形态不得静默（0 诊断 = 假绿）；早返回形态与三元写法结论一致（同一契约 ⇒ 同一诊断）；同族形态：`positive` 家族（x <= 0 ⇒ 返回 1）不得静默；同族形态：`max100` 家族（x > 100 ⇒ 返回 100）不得静默；同族形态：if/else 写法（else 臂 = 后续路径）不得静默；负控制：事实臂的关系窄化**保留**（x >= 0 ⇒ return x ", () => {
-(() => {
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     // 原生：`NaN < 0` 为假 ⇒ 走到 `return x` ⇒ 返回 NaN。
     expect(native("if (x < 0) return 0; return x;", Number.NaN)).toBe("NaN");
     // 对照：x=5 ⇒ 返回 5（满足 nonNeg）⇒ 该函数不是「恒违约」，而是
     // 「存在违约输入」⇒ 契约未被证明 ⇒ 必须被报告。
     expect(native("if (x < 0) return 0; return x;", 5)).toBe("5");
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     // 修前：后续路径断言 `x >= 0` ⇒ 契约被证成 ⇒ 0 诊断。
     expect(retDiags("  if (x < 0) return 0;\n  return x;", "nonNeg")).not.toHaveLength(0);
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     const early = retDiags("  if (x < 0) return 0;\n  return x;", "nonNeg");
     const ternary = retDiags("  return x < 0 ? 0 : x;", "nonNeg");
     expect(early).toEqual(ternary);
     expect(early).not.toHaveLength(0);
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     // 原生：x=NaN ⇒ `NaN <= 0` 为假 ⇒ 返回 NaN ⇒ 违反 positive。
     expect(native("if (x <= 0) return 1; return x;", Number.NaN)).toBe("NaN");
     expect(retDiags("  if (x <= 0) return 1;\n  return x;", "positive")).not.toHaveLength(0);
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(native("if (x > 100) return 100; return x;", Number.NaN)).toBe("NaN");
     expect(retDiags("  if (x > 100) return 100;\n  return x;", "max100")).not.toHaveLength(0);
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(
       retDiags("  if (x < 0) { return 0; } else { return x; }", "nonNeg"),
     ).not.toHaveLength(0);
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     // 事实臂（测试为真 ⇒ NaN 不可达）⇒ 断言 `x >= 0` 健全 ⇒ 契约可证。
     expect(retDiags("  if (x >= 0) return x;\n  return 0;", "nonNeg")).toHaveLength(0);
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(retDiags("  return x < 0 ? 0 : x;", "nonNeg")).not.toHaveLength(0);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -3207,7 +2942,7 @@ export function f(x) {${body}}
     .map((i) => `${i.severity}:${i.code}`);
 }
 
-describe("声明域参数 / 字面量分支的返回义务判 error（不得降级成 warning）", () => {
+{
   beforeEach(() => {
     resetEngineCaches();
     takeRefineDiags();
@@ -3215,101 +2950,94 @@ describe("声明域参数 / 字面量分支的返回义务判 error（不得降�
   });
 
   it("字面量分支（eq/or 路径事实把值钉在违规字面量上）⇒ error；声明域参数的裸返回（x: num vs positive）⇒ error；补集臂 NaN 面（三元写法，else 臂含 NaN ⊭ nonNeg）⇒ error；负控制：派生项（值域未被跟踪）⇒ 证不出（warning），不得当违约；负控制：无 term 的派生项 ⇒ 证不出（warning）；负控制：有界证据（守卫 x >= 0 vs positive）⇒ 仍是 error；负控制：字面量返回按域隶属判违", () => {
-(() => {
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     // 该分支**只会返回 -1 或 -2** ⇒ 对 `positive` 是**确定违规**。
     expect(retDiags("  if (x === -1 || x === -2) return x;\n  return 1;", "positive")).toEqual([
       "error:nudo:constraint-violated",
     ]);
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     // `x` 的声明域是 `number()`（含 NaN）⇒ 存在违约输入（x=0）⇒ 契约不成立。
     expect(retDiags("  return x;", "positive")).toEqual(["error:nudo:constraint-violated"]);
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     // `x < 0 ? 0 : x`：x=NaN ⇒ else 臂 ⇒ 返回 NaN ⇒ 违反 nonNeg。
     expect(retDiags("  return x < 0 ? 0 : x;", "nonNeg")).toEqual([
       "error:nudo:constraint-violated",
     ]);
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(retDiags("  return x + 1;", "positive")).toEqual([
       "warning:nudo:unproven-return",
     ]);
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(retDiags("  return Math.abs(x);", "positive")).toEqual([
       "warning:nudo:unproven-return",
     ]);
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(retDiags("  if (x >= 0) return x;\n  return 1;", "positive")).toEqual([
       "error:nudo:constraint-violated",
     ]);
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(retDiags("  if (x > 0) { return x; }\n  return 0;", "positive")).toEqual([
       "error:nudo:constraint-violated",
     ]);
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(retDiags("  if (x >= 0) return x;\n  return 0;", "nonNeg")).toHaveLength(0);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -3362,17 +3090,17 @@ const DEFAULT_CTOR_OK = `class D {
 export default D;
 `;
 
-describe("`export default C` 的类入口不再漏", () => {
+
   it("类入口清单含 `export default C`（修前：空清单）；导出形态覆盖齐全（回归护栏：其余三种形态不变）；端到端：构造器必抛必须报在类入口上（修前：零诊断 ⇒ 假绿）；端到端：构造器不抛 ⇒ 零 L2（不凭空造诊断）", () => {
-(() => {
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
 
 
     expect(listClassEntryNames(DEFAULT_CTOR_THROW)).toEqual(["C"]);
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -3383,8 +3111,8 @@ describe("`export default C` 的类入口不再漏", () => {
     expect(listClassEntryNames("class G { m() { return 1; } }\nexport { G };")).toEqual(["G"]);
     // 非导出类**不是**入口（`new C()` 不是该模块的公开面）
     expect(listClassEntryNames("class H { m() { return 1; } }")).toEqual([]);
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -3395,8 +3123,8 @@ describe("`export default C` 的类入口不再漏", () => {
     expect(l2).toHaveLength(1);
     expect(l2[0]!.severity).toBe("error");
     expect(l2[0]!.message).toContain("may throw Error");
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -3404,15 +3132,12 @@ describe("`export default C` 的类入口不再漏", () => {
 
     const r = checkSource("/t/bug-1119-ok.js", DEFAULT_CTOR_OK, pTrue, {});
     expect(r.issues.filter((i) => i.code === "nudo:entry-may-throw")).toEqual([]);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -3456,9 +3181,9 @@ function checkWithSidecar(sidecar: string, src: string, base = "nan") {
   return checkSource_____index_ts_17(file, src, pTrue_____index_ts_16, { loadModule, fromFile: file });
 }
 
-describe("lit(NaN) 契约不得判自相矛盾（假红）", () => {
+
   it("侧车参数位 + 返回位 lit(NaN) ⇒ 不报 nudo:contract-conflict；源码指令位 lit(NaN) ⇒ 不报 nudo:contract-conflict；真矛盾（and(lit(1), lit(2))）⇒ 仍报 nudo:contract-conflict（闸门不得变假绿）；不同字面量（lit(1) ∧ lit(2)）跨约束 ⇒ 仍报 conflict（不得放宽真矛盾）", () => {
-(() => {
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -3471,8 +3196,8 @@ describe("lit(NaN) 契约不得判自相矛盾（假红）", () => {
     expect(r.issues.filter((i) => i.code === "nudo:contract-conflict")).toEqual([]);
     expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
     expect(r.ok).toBe(true);
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -3488,8 +3213,8 @@ describe("lit(NaN) 契约不得判自相矛盾（假红）", () => {
 export function f(x) { return x; }`;
     const r = checkSource_____index_ts_17("/t/src.js", src, pTrue_____index_ts_16, { loadModule, fromFile: "/t/src.js" });
     expect(r.issues.filter((i) => i.code === "nudo:contract-conflict")).toEqual([]);
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -3502,8 +3227,8 @@ export function f(x) { return x; }`;
     const conflicts = r.issues.filter((i) => i.code === "nudo:contract-conflict");
     expect(conflicts.length).toBeGreaterThan(0);
     expect(r.ok).toBe(false);
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -3520,15 +3245,12 @@ export function f(x) { return x; }`;
 export function f(x) { return x; }`;
     const r = checkSource_____index_ts_17("/t/src2.js", src, pTrue_____index_ts_16, { loadModule, fromFile: "/t/src2.js" });
     expect(r.issues.filter((i) => i.code === "nudo:contract-conflict").length).toBeGreaterThan(0);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -3579,9 +3301,9 @@ function denyingLoader(probes: string[] = []) {
   };
 }
 
-describe("不可读的 ambient 侧车不得被报成 error（假红）", () => {
+
   it("autoBind:false + 不可读 ambient 侧车 ⇒ 零 error 诊断、门禁绿；autoBind:false ⇒ 不探测 ambient 侧车（ambient 绑定无资格 ⇒ 不读盘）；真·依赖不可读 ⇒ 仍报 nudo:module-unreadable（不得放宽真故障）；autoBind 开启且 ambient 侧车确实被绑定 ⇒ 仍报 nudo:contract-load（真故障不被吞）；autoBind 开启但 ambient 侧车**没被用到** ", () => {
-(() => {
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -3595,8 +3317,8 @@ describe("不可读的 ambient 侧车不得被报成 error（假红）", () => {
     expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
     expect(r.issues.filter((i) => i.code === "nudo:module-unreadable")).toEqual([]);
     expect(r.ok).toBe(true);
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -3609,8 +3331,8 @@ describe("不可读的 ambient 侧车不得被报成 error（假红）", () => {
       loadModule: denyingLoader(probes),
     });
     expect(probes.filter((p) => p.includes(".nudo."))).toEqual([]);
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -3630,8 +3352,8 @@ describe("不可读的 ambient 侧车不得被报成 error（假红）", () => {
     expect(unreadable.length).toBe(1);
     expect(unreadable[0]!.severity).toBe("error");
     expect(r.ok).toBe(false);
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -3646,8 +3368,8 @@ describe("不可读的 ambient 侧车不得被报成 error（假红）", () => {
     expect(loadErrs.length).toBeGreaterThan(0);
     expect(loadErrs[0]!.severity).toBe("error");
     expect(r.ok).toBe(false);
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -3662,17 +3384,13 @@ describe("不可读的 ambient 侧车不得被报成 error（假红）", () => {
     expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
     expect(r.issues.filter((i) => i.code === "nudo:module-unreadable")).toEqual([]);
     expect(r.ok).toBe(true);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -3729,7 +3447,7 @@ function awaitedVal(src: string, fnName = "f"): unknown {
   return lv.ok ? lv.value : lv;
 }
 
-describe("async 体的多 await（≥2 个挂起点）", () => {
+{
   beforeEach(() => {
     resetEngineCaches();
     takeRefineDiags();
@@ -3737,92 +3455,92 @@ describe("async 体的多 await（≥2 个挂起点）", () => {
   });
 
   it("callee 2 个 await：caller 恢复后读到 callee 的终值（原生 \"1,2,3\"）；callee 3 个 await：caller 恢复后读到 callee 的终值（原生 \"1,2,3,4\"）；callee 2 个 await 后写 flag：caller 读到 flag=1（原生 1）；return await <2-await callee>：值域是 callee 终值（原生 7）；嵌套 return await <2-await callee>：值", () => {
-(() => {
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(
       awaitedVal(`const log = [];
         async function g() { log.push(1); await null; log.push(2); await null; log.push(3); }
         export async function f() { await g(); return log.join(","); }`),
     ).toBe("1,2,3");
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(
       awaitedVal(`const log = [];
         async function g() { log.push(1); await null; log.push(2); await null; log.push(3); await null; log.push(4); }
         export async function f() { await g(); return log.join(","); }`),
     ).toBe("1,2,3,4");
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(
       awaitedVal(`let flag = 0;
         async function h() { await null; await null; flag = 1; }
         export async function f() { await h(); return flag; }`),
     ).toBe(1);
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(
       awaitedVal(`async function h() { await null; await null; return 7; }
         export async function f() { return await h(); }`),
     ).toBe(7);
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(
       awaitedVal(`async function g() { await null; await null; return 3; }
         async function h() { return await g(); }
         export async function f() { return await h(); }`),
     ).toBe(3);
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(
       awaitedVal(`async function g() { await null; await null; return 7; }
         export async function f() { await null; return g(); }`),
     ).toBe(7);
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(
       awaitedVal(`async function g() { await null; await null; throw new Error("boom"); }
         export async function f() { try { await g(); return "no"; } catch (e) { return "caught"; } }`),
     ).toBe("caught");
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     // 原生：await 一个拒绝的 promise ⇒ 调用方的 promise 拒绝（fulfilled 臂不可能）
     const r = call(
@@ -3833,59 +3551,59 @@ describe("async 体的多 await（≥2 个挂起点）", () => {
     const sh = (r.result as { shape: { inner: { shape: { k: string } }; rejected?: unknown } }).shape;
     expect(sh.inner.shape.k).toBe("never");
     expect(sh.rejected).toBeDefined();
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(
       awaitedVal(`const log = [];
         async function g() { log.push(1); await null; log.push(2); }
         export async function f() { await g(); return log.join(","); }`),
     ).toBe("1,2");
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(
       awaitedVal(`const log = [];
         async function g() { log.push(1); log.push(2); }
         export async function f() { await g(); return log.join(","); }`),
     ).toBe("1,2");
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(
       awaitedVal(`async function g() { await null; return 3; }
         export async function f() { const a = await g(); const b = await g(); return a + b; }`),
     ).toBe(6);
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(
       syncVal(`const log = [];
         async function g() { log.push(1); await null; log.push(2); await null; log.push(3); }
         export function f() { g(); return log.join(","); }`),
     ).toBe("1");
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     // 原报告 F15 的 fixture：修前求值面给 "cold"（caller 抢跑读到占位符）
     expect(
@@ -3896,33 +3614,21 @@ describe("async 体的多 await（≥2 个挂起点）", () => {
         "readCache",
       ),
     ).toBe("warm");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
+
+
+
+
+
+}
 
 describe("check 面（签名）不受多 await 影响", () => {
   beforeEach(() => {
@@ -3931,30 +3637,29 @@ describe("check 面（签名）不受多 await 影响", () => {
   });
 
   it("readCache：await 2-await callee 后的 cache 仍是 \"warm\"；callee 2 个 await 后拒绝：caller 的 promise 面是 never（与 1-await 同口径）", () => {
-(() => {
+  {
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     const src = `let cache = "cold";
       async function warm(){ await null; await null; cache = "warm" }
       export async function readCache(){ await warm(); return cache }`;
     const r = checkSource_____index_ts_19("/t/src.js", src, pTrue_____index_ts_18, {});
     expect(sigOf(r, "readCache")).toBe('promise<"warm">');
-  })();
-(() => {
+  }
+  {
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     const src = `async function g(){ await null; await null; throw new Error("boom"); }
       export async function f(){ await g(); return 1 }`;
     const r = checkSource_____index_ts_19("/t/src.js", src, pTrue_____index_ts_18, {});
     expect(sigOf(r, "f")).toBe("promise<never>");
-  })();
-});;
+  }
+});
 
-  ;
 });
 });
 
@@ -3998,7 +3703,7 @@ function fnAbs(params: string[], optionalParams?: boolean[]): Abs {
   return abs_____abs_ts(shape as Shape, undefined, undefined, "exact");
 }
 
-describe("fn arity 按「最后一个必选参数的位置」比较", () => {
+{
   beforeEach(() => {
     resetEngineCaches();
     takeRefineDiags();
@@ -4006,11 +3711,11 @@ describe("fn arity 按「最后一个必选参数的位置」比较", () => {
   });
 
   it("原生 oracle：可选参数之后的必选参数 ⇒ 少传就炸；(a = 1, b) ⊭ 单参目标（最小实参元数 = 2）；(a = 1, b) ⩽ 双参目标（目标给够两个 ⇒ 可赋值）；既有口径不变：(a, b = 1) ⩽ 单参目标（必选只有 a）；可选参数之后的必选参数算进最小元数：(a, b = 1, c) ⇒ 最小 3；rest 吸收多余实参：(a, ...rest) ⇒ 最小 1；缺省标记时回退名字后缀判据：可选位在**前**也算必选位之后 ⇒ 最小 2；端到端：把 (", () => {
-(() => {
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     const f = (a = 1, b: number): string => b.toFixed();
     // TS 侧也拒绝少传（`b` 是必选位）⇒ 用 @ts-expect-error 记下这条**类型级**事实；
@@ -4020,70 +3725,70 @@ describe("fn arity 按「最后一个必选参数的位置」比较", () => {
     expect(() => g(1)).toThrow(TypeError);
     // 传够两个就不炸
     expect(f(1, 2)).toBe("2");
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     const src = fnAbs(["a", "b"], [true, false]);
     const r = leqAbs(src, fnAbs(["x"]));
     expect(r.ok).toBe(false);
     expect(r.reason).toContain("fn arity required 2");
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     const src = fnAbs(["a", "b"], [true, false]);
     expect(leqAbs(src, fnAbs(["x", "y"])).ok).toBe(true);
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     const src = fnAbs(["a", "b"], [false, true]);
     expect(leqAbs(src, fnAbs(["x"])).ok).toBe(true);
     expect(leqAbs(src, fnAbs([])).ok).toBe(false);
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     const src = fnAbs(["a", "b", "c"], [false, true, false]);
     expect(leqAbs(src, fnAbs(["x", "y"])).ok).toBe(false);
     expect(leqAbs(src, fnAbs(["x", "y", "z"])).ok).toBe(true);
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     const src = fnAbs(["a", "...rest"], [false, true]);
     expect(leqAbs(src, fnAbs(["x"])).ok).toBe(true);
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(leqAbs(fnAbs(["a?", "b"]), fnAbs(["x"])).ok).toBe(false);
     expect(leqAbs(fnAbs(["a?", "b"]), fnAbs(["x", "y"])).ok).toBe(true);
-  })();
-(() => {
+  }
+  {
     resetEngineCaches();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     const r = checkSource(
       "/t/bug1129.js",
@@ -4097,23 +3802,16 @@ describe("fn arity 按「最后一个必选参数的位置」比较", () => {
       { fromFile: "/t/bug1129.js" },
     );
     expect(r.issues.map((i) => i.code)).toContain("nudo:assign-mismatch");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -4182,61 +3880,57 @@ function run(ret: string) {
   });
 }
 
-describe("契约面的大字面量比较：bigint 必须参与比较", () => {
+{
   beforeEach(() => {
     resetCheckSourceMemo();
   });
 
   it("域隶属口径：lit(1n) 接受 1n、拒绝 2n 与 1（bigint 与 number 不混同）；callee 违约（返回 2n）⇒ 调用方不得被声明面「证得」（假绿回归）；callee 违约（返回 2n）⇒ 调用方的返回面是真实值 2n，不是声明面；callee 守约（返回 1n）⇒ 调用方零诊断（不得新增诊断）；callee 守约（返回 1n）⇒ 调用方的返回面保留推断精度 1n", () => {
-(() => {
+  {
     resetCheckSourceMemo();
-  
+
 
     expect(literalMeetsConstraint_____domain_membership_ts(1n, litC(1n))).toBe(true);
     expect(literalMeetsConstraint_____domain_membership_ts(2n, litC(1n))).toBe(false);
     expect(literalMeetsConstraint_____domain_membership_ts(1, litC(1n))).toBe(false);
-  })();
-(() => {
+  }
+  {
     resetCheckSourceMemo();
-  
+
 
     const r = run("2n");
     const violated = r.issues.filter((i) => i.code === "nudo:constraint-violated");
     expect(violated.map((i) => i.fn)).toContain("outer");
     expect(r.ok).toBe(false);
-  })();
-(() => {
+  }
+  {
     resetCheckSourceMemo();
-  
+
 
     const r = run("2n");
     expect(sigOf(r, "outer")).toMatch(/^2n\b/);
-  })();
-(() => {
+  }
+  {
     resetCheckSourceMemo();
-  
+
 
     const r = run("1n");
     expect(r.issues.filter((i) => i.code === "nudo:constraint-violated")).toEqual([]);
     expect(r.ok).toBe(true);
-  })();
-(() => {
+  }
+  {
     resetCheckSourceMemo();
-  
+
 
     const r = run("1n");
     expect(sigOf(r, "outer")).toMatch(/^1n\b/);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -4312,9 +4006,9 @@ const reliedCount = (r: { issues: { code: string }[] }) =>
 const issueSet = (r: { issues: { code: string; fn?: string }[] }) =>
   r.issues.map((i) => `${i.code}:${i.fn ?? ""}`).sort();
 
-describe("种子（assume）求值不得命中 L0", () => {
+
   it("(a) 冷跑：引理被消费 ⇒ nudo:assume-relied = 1，返回契约证得；(b) 清 check memo（L0 仍在）后重跑 ⇒ relied 仍为 1（不得跳过账本回填）；(c) 只改无关兄弟函数（per-fn 指纹不变 ⇒ 仅 L0 可能命中）⇒ relied 仍为 1；(d) 无种子 generalize 先行（L0 里是无引理 PolyFn）⇒ 随后 check 仍 relied=1，且不误报 unproven；(e) check 之后无种子 gen", () => {
-(() => {
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -4328,8 +4022,8 @@ describe("种子（assume）求值不得命中 L0", () => {
     const relied = r.issues.find((i) => i.code === "nudo:assume-relied")!;
     expect(relied.fn).toBe("sim");
     expect(relied.message).toContain("proved via @nudo:assume d <= max");
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -4342,8 +4036,8 @@ describe("种子（assume）求值不得命中 L0", () => {
     const r = checkSource_____index_ts_21(f, srcWithLemma(1), pTrue_____index_ts_20, c);
     expect(reliedCount(r)).toBe(1);
     expect(r.issues.some((i) => i.code === "nudo:unproven-return")).toBe(false);
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -4356,8 +4050,8 @@ describe("种子（assume）求值不得命中 L0", () => {
     const r = checkSource_____index_ts_21(f, srcWithLemma(2), pTrue_____index_ts_20, c);
     expect(reliedCount(r)).toBe(1);
     expect(r.issues.some((i) => i.code === "nudo:unproven-return")).toBe(false);
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -4372,8 +4066,8 @@ describe("种子（assume）求值不得命中 L0", () => {
     expect(reliedCount(r)).toBe(1);
     expect(r.issues.some((i) => i.code === "nudo:unproven-return")).toBe(false);
     expect(r.issues.some((i) => i.code === "nudo:constraint-violated")).toBe(false);
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -4390,8 +4084,8 @@ describe("种子（assume）求值不得命中 L0", () => {
     expect(reliedCount(checkSource_____index_ts_21(f, src, pTrue_____index_ts_20, c))).toBe(1);
     const afterFmt = formatAbs(unseeded("sim", src, o2)!.symbolic);
     expect(afterFmt).toBe(coldFmt);
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -4405,19 +4099,14 @@ describe("种子（assume）求值不得命中 L0", () => {
     expect(cold.issues.some((i) => i.code === "nudo:unproven-return" && i.fn === "sim")).toBe(true);
     const again = checkSource_____index_ts_21(f, srcNoLemma(1), pTrue_____index_ts_20, c);
     expect(issueSet(again)).toEqual(issueSet(cold));
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 
 // ---------------------------------------------------------------------------
 // (g) @nudo:invariant 同型：种子 / 无种子双向都不得借道 L0
@@ -4440,7 +4129,7 @@ const invariantRelied = (r: { issues: { code: string }[] }) =>
 
 describe("种子（invariant）求值不得命中 L0", () => {
   it("(g1) 无种子 generalize 先行 ⇒ 随后 check 仍 invariant-relied=1 且未证不误报；(g2) check 之后无种子 generalize 与冷跑逐字一致（invariant 折后界不得泄漏）", () => {
-(() => {
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -4452,8 +4141,8 @@ describe("种子（invariant）求值不得命中 L0", () => {
     const r = checkSource_____index_ts_21(f, scalarSrc, pTrue_____index_ts_20, { ...o, entryThrows: "off" as const });
     expect(invariantRelied(r)).toBe(1);
     expect(r.issues.some((i) => i.code === "nudo:unproven-return")).toBe(false);
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -4467,10 +4156,9 @@ describe("种子（invariant）求值不得命中 L0", () => {
     expect(invariantRelied(checkSource_____index_ts_21(f, scalarSrc, pTrue_____index_ts_20, { ...o2, entryThrows: "off" as const }))).toBe(1);
     const afterFmt = formatAbs(unseeded("lastLoop", scalarSrc, o2)!.symbolic);
     expect(afterFmt).toBe(coldFmt);
-  })();
-});;
+  }
+});
 
-  ;
 });
 });
 
@@ -4498,10 +4186,9 @@ describe("fail-closed 归因按可达性（helper / 类 / CJS 形态）", () => 
 const CLEAN = `export function f() { return 1; }
 export function safe() { return 2; }`;
 
-describe("fail-closed 归因按可达性（helper / 类 / CJS 形态）", () => {
-  it("helper 里的不支持构造 ⇒ 调用它的入口 f 拿 L2；兄弟入口 safe 仍是 0；两级 helper 链 ⇒ 传递闭包把构造归因到入口 f；互递归 helper：闭包收敛（不挂死）且仍把环后的构造归因到入口 f；类入口 C：构造器里的不支持构造 ⇒ 整个类入口 C 拿 L2；类方法入口 C.m：构造器里的不支持构造也归因（实例桥要跑构造器）；类方法入口 C.m：**其它**方法的构造不归因（不是它的执行路径）；CJS exports.f = function …：入", () => {
-(() => {
 
+  it("helper 里的不支持构造 ⇒ 调用它的入口 f 拿 L2；兄弟入口 safe 仍是 0；两级 helper 链 ⇒ 传递闭包把构造归因到入口 f；互递归 helper：闭包收敛（不挂死）且仍把环后的构造归因到入口 f；类入口 C：构造器里的不支持构造 ⇒ 整个类入口 C 拿 L2；类方法入口 C.m：构造器里的不支持构造也归因（实例桥要跑构造器）；类方法入口 C.m：**其它**方法的构造不归因（不是它的执行路径）；CJS exports.f = function …：入", () => {
+  {
     const src = `export function f(g) { return h(g); }
 export function safe() { return 1; }
 function h(g) { return g().x++; }`;
@@ -4511,52 +4198,45 @@ function h(g) { return g().x++; }`;
     // 证据上屏（门禁过滤 ≠ 藏事实）
     expect(sigOf(r, "f")).toContain("throws");
     expect(r.ok).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f(g) { return h(g); }
 function h(g) { return k(g); }
 function k(g) { return g().x++; }`;
     const r = checkSource_____index_ts_22("b1153-2.js", src, pTrue_____index_ts_21, stdOpts);
     expect(l2Count(r, "f")).toBe(1);
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f(g) { return a(g); }
 function a(g) { return b(g); }
 function b(g) { return a(g) || k(g); }
 function k(g) { return g().x++; }`;
     const r = checkSource_____index_ts_22("b1153-3.js", src, pTrue_____index_ts_21, stdOpts);
     expect(l2Count(r, "f")).toBe(1);
-  })();
-(() => {
-
+  }
+  {
     const src = `export class C { constructor(g) { g().x++; } }`;
     const r = checkSource_____index_ts_22("b1153-4.js", src, pTrue_____index_ts_21, stdOpts);
     expect(l2Count(r, "C")).toBe(1);
     expect(r.ok).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const src = `export class C { constructor(g) { g().x++; } m() { return 1; } }`;
     const r = checkSource_____index_ts_22("b1153-5.js", src, pTrue_____index_ts_21, stdOpts);
     expect(l2Count(r, "C.m")).toBe(1);
-  })();
-(() => {
-
+  }
+  {
     const src = `export class C { m() { return 1; } n(g) { return g().x++; } }`;
     const r = checkSource_____index_ts_22("b1153-6.js", src, pTrue_____index_ts_21, stdOpts);
     expect(l2Count(r, "C.m")).toBe(0);
     expect(l2Count(r, "C.n")).toBe(1);
-  })();
-(() => {
-
+  }
+  {
     const src = `exports.f = function (g) { return g().x++; };`;
     const r = checkSource_____index_ts_22("b1153-7.js", src, pTrue_____index_ts_21, stdOpts);
     expect(l2Count(r, "f")).toBe(1);
-  })();
-(() => {
-
+  }
+  {
     const arrow = checkSource_____index_ts_22(
       "b1153-8.js",
       `module.exports.f = (g) => g().x++;`,
@@ -4571,61 +4251,46 @@ function k(g) { return g().x++; }`;
       stdOpts,
     );
     expect(l2Count(obj, "f")).toBe(1);
-  })();
-(() => {
-
+  }
+  {
     const src = `function h(g) { return g().x++; }
 export function f() { return 1; }`;
     const r = checkSource_____index_ts_22("b1153-10.js", src, pTrue_____index_ts_21, stdOpts);
     const clean = checkSource_____index_ts_22("b1153-clean.js", CLEAN, pTrue_____index_ts_21, stdOpts);
     expect(l2Count(r, "f")).toBe(0);
     expect(r.ok).toBe(clean.ok);
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f() { return 1; }
 class D { constructor(g) { g().x++; } }`;
     const r = checkSource_____index_ts_22("b1153-11.js", src, pTrue_____index_ts_21, stdOpts);
     expect(l2Count(r, "f")).toBe(0);
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f() { return h(); }
 function h() { return new K(); }
 class K { constructor(g) { g().x++; } }`;
     const r = checkSource_____index_ts_22("b1153-12.js", src, pTrue_____index_ts_21, stdOpts);
     expect(l2Count(r, "f")).toBe(1);
-  })();
-(() => {
-
+  }
+  {
     const r = checkSource_____index_ts_22("b1153-13.js", CLEAN, pTrue_____index_ts_21, stdOpts);
     expect(l2Count(r)).toBe(0);
     expect(r.ok).toBe(true);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -4782,7 +4447,7 @@ const TABLE: Array<[string, string, number, string]> = [
   ["maybePositive", "null", 0, "nullable 含 null"],
 ];
 
-describe("非标量字面量实参不再静默通过数值/字符串契约", () => {
+{
   it.each(TABLE)(
     "%s 收到 %s ⇒ %i 条违例（%s）",
     (contract, literal, want) => {
@@ -4790,11 +4455,11 @@ describe("非标量字面量实参不再静默通过数值/字符串契约", () 
       expect(violations(r)).toBe(want);
     },
   );
-});
+}
 
 describe("报告文案与 brand 拆壳（shape 通道不再误报 object shape）", () => {
   it("new Date(0) 撞 number().gt(0) ⇒ 文案是 typeof 义务；箭头字面量撞 string() ⇒ 文案是 typeof x = \"string\"；new Date(0) 撞 shape({ id }) ⇒ 报 missing field（不是 object shape 假红）；负控制：顶层调用与函数体内调用同口径（同一实参、同一契约同条数）；负控制：没有契约的形参收到非标量字面量 ⇒ 零诊断（噪声来自契约，不是引擎）", () => {
-(() => {
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -4805,8 +4470,8 @@ describe("报告文案与 brand 拆壳（shape 通道不再误报 object shape�
     expect(v).toHaveLength(1);
     expect(String(v[0]!.expected)).toBe('typeof x = "number"');
     expect(r.ok).toBe(false);
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -4816,8 +4481,8 @@ describe("报告文案与 brand 拆壳（shape 通道不再误报 object shape�
     const v = r.issues.filter((i) => i.code === "nudo:constraint-violated");
     expect(v).toHaveLength(1);
     expect(String(v[0]!.expected)).toBe('typeof x = "string"');
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -4827,8 +4492,8 @@ describe("报告文案与 brand 拆壳（shape 通道不再误报 object shape�
     const v = r.issues.filter((i) => i.code === "nudo:constraint-violated");
     expect(v).toHaveLength(1);
     expect(String(v[0]!.expected)).toBe("missing field x.id");
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -4841,8 +4506,8 @@ export const r = u(${literal});
 `);
       expect(violations(top), `${contract}(${literal}) @top`).toBe(want);
     }
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -4854,16 +4519,12 @@ export function use() { return [u(() => 1), v(new Date(0)), u(NaN), v(new Map())
 `);
     expect(r.issues).toEqual([]);
     expect(r.ok).toBe(true);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 });
 
@@ -4902,10 +4563,9 @@ function moduleThrowIssues(r: { issues: { code: string; severity: string; messag
   return r.issues.filter((i) => i.code === "nudo:module-throw");
 }
 
-describe("模块装载期必抛 ⇒ nudo:module-throw（fail-closed）", () => {
-  it("顶层无条件 throw ⇒ 1 条 error（改前：零诊断 + ok=true）；裸块 { throw } 无条件下钻 ⇒ 报（loc 指向 throw 而非块首）；多个入口 / 入口前后的 throw ⇒ **一条**模块级诊断（不按入口重复）；CJS 入口形态同样覆盖（exports.f 后顶层 throw）；负控：条件抛（未知宿主守卫）⇒ 不报，行为逐字不变；负控：try/catch 吸收的 throw ⇒ 模块可正常装载，不报；负控：函数体内的 throw 不是装载", () => {
-(() => {
 
+  it("顶层无条件 throw ⇒ 1 条 error（改前：零诊断 + ok=true）；裸块 { throw } 无条件下钻 ⇒ 报（loc 指向 throw 而非块首）；多个入口 / 入口前后的 throw ⇒ **一条**模块级诊断（不按入口重复）；CJS 入口形态同样覆盖（exports.f 后顶层 throw）；负控：条件抛（未知宿主守卫）⇒ 不报，行为逐字不变；负控：try/catch 吸收的 throw ⇒ 模块可正常装载，不报；负控：函数体内的 throw 不是装载", () => {
+  {
     const src = `throw new TypeError("boom");
 export function f(){ return 1; }`;
     const r = checkSource_____index_ts_24("b1158-1.js", src, pTrue_____index_ts_23);
@@ -4921,9 +4581,8 @@ export function f(){ return 1; }`;
     expect(r.ok).toBe(false);
     // 旧口径的退化面仍在（诊断解释它，不是把签名「修好」）
     expect(sigOf(r, "f")).toBe("unknown");
-  })();
-(() => {
-
+  }
+  {
     const r = checkSource_____index_ts_24(
       "b1158-2.js",
       `{ throw new RangeError("r"); }
@@ -4936,9 +4595,8 @@ export function f(){ return 1; }`,
     expect(hits[0]!.line).toBe(1);
     expect(hits[0]!.column).toBe(2);
     expect(r.ok).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const before = checkSource_____index_ts_24(
       "b1158-3a.js",
       `throw new Error("boom");
@@ -4959,9 +4617,8 @@ throw new Error("late");`,
     );
     expect(moduleThrowIssues(after)).toHaveLength(1);
     expect(moduleThrowIssues(after)[0]!.line).toBe(3);
-  })();
-(() => {
-
+  }
+  {
     const r = checkSource_____index_ts_24(
       "b1158-4.cjs",
       `exports.f = function(){ return 1; };
@@ -4970,18 +4627,16 @@ throw new Error("cjs boom");`,
     );
     expect(moduleThrowIssues(r)).toHaveLength(1);
     expect(r.ok).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const src = `if (typeof window === "undefined") throw new Error("no window");
 export function f(){ return 1; }`;
     const r = checkSource_____index_ts_24("b1158-5.js", src, pTrue_____index_ts_23);
     expect(moduleThrowIssues(r)).toEqual([]);
     expect(r.ok).toBe(true);
     expect(sigOf(r, "f")).toBe("1");
-  })();
-(() => {
-
+  }
+  {
     const r = checkSource_____index_ts_24(
       "b1158-6.js",
       `try { throw new Error("x"); } catch { }
@@ -4990,9 +4645,8 @@ export function f(){ return 1; }`,
     );
     expect(moduleThrowIssues(r)).toEqual([]);
     expect(r.ok).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const r = checkSource_____index_ts_24(
       "b1158-7.js",
       `export function f(){ throw new Error("x"); }`,
@@ -5000,16 +4654,14 @@ export function f(){ return 1; }`,
     );
     expect(moduleThrowIssues(r)).toEqual([]);
     expect(l2Count(r, "f")).toBe(1);
-  })();
-(() => {
-
+  }
+  {
     const r = checkSource_____index_ts_24("b1158-8.js", `export function f(){ return 1; }`, pTrue_____index_ts_23);
     expect(moduleThrowIssues(r)).toEqual([]);
     expect(r.ok).toBe(true);
     expect(sigOf(r, "f")).toBe("1");
-  })();
-(() => {
-
+  }
+  {
     // `typescript/lib/_tsserver.js` 的最小机制复现：缺失依赖经 `__toESM`
     // 变成**闭合对象** ⇒ 引擎认为 `dep.setStackTraceLimit` 一定不可调用 ⇒
     // hard throw。原生（依赖存在时）完全正常 ⇒ 不得算程序的账。
@@ -5032,9 +4684,8 @@ export function f(){ return 1; }`;
     );
     const r = checkSource_____index_ts_24("b1158-9.js", src, pTrue_____index_ts_23);
     expect(moduleThrowIssues(r)).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const json = `export const v = JSON.parse("{");
 export function f(){ return 1; }`;
     expect(tryRunTranspiledDetailed(json, { mode: "analyze" }).fallback?.reason).toBe(
@@ -5053,9 +4704,8 @@ export function f(){ return 1; }`;
     const rn = checkSource_____index_ts_24("b1158-10b.js", nullish, pTrue_____index_ts_23);
     expect(moduleThrowIssues(rn)).toHaveLength(1);
     expect(moduleThrowIssues(rn)[0]!.message).toContain("TypeError");
-  })();
-(() => {
-
+  }
+  {
     // react-dom/client.react-server.js 原文（同一语义的缩形）：无任何入口，
     // 装载即抛 ⇒ 模块不可导入。这是**程序自己的** fail-fast，不是引擎近似。
     const r = checkSource_____index_ts_24(
@@ -5072,9 +4722,8 @@ throw new Error(
     expect(hits[0]!.message).toContain("Error");
     expect(hits[0]!.line).toBe(3);
     expect(r.ok).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const src = `throw new TypeError("boom");
 export function f(){ return 1; }`;
 
@@ -5102,58 +4751,43 @@ export function f(){ return 1; }`;
       ignoreThrows: ["RangeError"],
     });
     expect(moduleThrowIssues(other)).toHaveLength(1);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
   // 口径变更（本测试原为负控）：`JSON.parse("<非法字面量>")` 与
   // 字面量 null 的成员访问是**源码层面的确定性抛**（不是引擎对宿主 API 的
   // 近似产物），与 react-dom / typescript 那类「引擎近似抛但原生可装载」
   // 不同 ⇒ 必须进 `nudo:module-throw`。引擎近似的负控见上一条。
-  ;
 
-  ;
 
-  ;
-});
+
 
 describe("判据边界：对象字面量的成员集不是 own 键集", () => {
   it("原型链上的成员（toString / hasOwnProperty）不得当「确定缺席」；对照：own 键缺席仍判（`({}).m()`）；`__proto__: null` 的字面量是封闭成员集 ⇒ 缺席仍判；行号归因：真实抛点优先于 `({}).hasOwnProperty`（此前误指第 1 行）", () => {
-(() => {
-
+  {
     expect(definiteModuleThrowOf(parseSource(`const a = ({}).toString();`))).toBeUndefined();
     expect(
       definiteModuleThrowOf(parseSource(`const a = ({}).hasOwnProperty("x");`)),
     ).toBeUndefined();
     expect(definiteModuleThrowOf(parseSource(`const a = ({}).toLocaleString();`))).toBeUndefined();
-  })();
-(() => {
-
+  }
+  {
     expect(definiteModuleThrowOf(parseSource(`const a = ({}).m();`))).not.toBeUndefined();
-  })();
-(() => {
-
+  }
+  {
     expect(
       definiteModuleThrowOf(parseSource(`const a = ({ __proto__: null }).toString();`)),
     ).not.toBeUndefined();
-  })();
-(() => {
-
+  }
+  {
     const r = checkSource_____index_ts_24(
       "b1158-proto.js",
       `const ok = ({}).hasOwnProperty("a");\nconst n = null;\nn.foo();`,
@@ -5162,14 +4796,11 @@ describe("判据边界：对象字面量的成员集不是 own 键集", () => {
     const hits = moduleThrowIssues(r);
     expect(hits).toHaveLength(1);
     expect(hits[0]!.line).toBe(3);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 });
 });
 
@@ -5211,7 +4842,7 @@ function suggestedKind(suggestion: string | undefined): string | undefined {
   return suggestion?.match(/@nudo:throws\s+([A-Za-z][A-Za-z ,]*?)(?:\s{2,}|\s*\|)/)?.[1]?.trim();
 }
 
-describe("may-throw 建议必须与门禁判定同源", () => {
+{
   beforeEach(() => {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
@@ -5220,12 +4851,12 @@ describe("may-throw 建议必须与门禁判定同源", () => {
   });
 
   it("剩余效果 kind 不唯一 ⇒ 建议给门禁要求的族（Error），不是第一条 TypeError；照建议声明 ⇒ 诊断消失（建议可执行）；单 kind 场景仍给具体 kind（不无脑折成 Error）", () => {
-(() => {
+  {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
     takeContractDiags();
     takeRefineDiags();
-  
+
 
     const r = check(BODY);
     const issue = r.issues.find((i) => i.code === "nudo:entry-may-throw");
@@ -5235,13 +4866,13 @@ describe("may-throw 建议必须与门禁判定同源", () => {
     expect(kind).toBe("Error");
     // 与 actual: 行同口径（同一个 kind 集合）
     expect(issue!.actual).toContain("throws Error");
-  })();
-(() => {
+  }
+  {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
     takeContractDiags();
     takeRefineDiags();
-  
+
 
     const r = check(`
 /**
@@ -5254,13 +4885,13 @@ export function risky(x) {
 `);
     expect(r.issues.filter((i) => i.code === "nudo:entry-may-throw")).toEqual([]);
     expect(r.ok).toBe(true);
-  })();
-(() => {
+  }
+  {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
     takeContractDiags();
     takeRefineDiags();
-  
+
 
     const r = check(`
 export function risky(x) {
@@ -5271,13 +4902,11 @@ export function risky(x) {
     const issue = r.issues.find((i) => i.code === "nudo:entry-may-throw");
     expect(issue).toBeDefined();
     expect(suggestedKind(issue!.suggestion)).toBe("TypeError");
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -5326,17 +4955,15 @@ export function f() {
   return o;
 }`;
 
-describe("对象方法 / 方法型函数表达式补齐 effectFree·closed facet", () => {
-  it("纯方法：两个 facet 都在场（此前完全缺席）；有副作用的方法：effectFree 不为 true（与函数字面量同结论）；读外层可变态的方法：closed 不为 true（与函数字面量同结论）；方法体只读 this：effectFree 仍为 true（读不是副作用）", () => {
-(() => {
 
+  it("纯方法：两个 facet 都在场（此前完全缺席）；有副作用的方法：effectFree 不为 true（与函数字面量同结论）；读外层可变态的方法：closed 不为 true（与函数字面量同结论）；方法体只读 this：effectFree 仍为 true（读不是副作用）", () => {
+  {
     const impl = getFnImpl(fnSlotAbs(`export function f() { return { m(a) { return a; } }; }`, "m"));
     expect(impl).toBeDefined();
     expect(impl?.effectFree).toBe(true);
     expect(impl?.closed).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const methodImpl = getFnImpl(
       fnSlotAbs(`export function f() { let n = 0; return { m() { n++; } }; }`, "m"),
     );
@@ -5345,47 +4972,38 @@ describe("对象方法 / 方法型函数表达式补齐 effectFree·closed facet
     );
     expect(methodImpl?.effectFree ?? false).toBe(false);
     expect(fnImpl?.effectFree ?? false).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const src = (body: string) => `export function f(x) { return { ${body} }; }`;
     const methodImpl = getFnImpl(fnSlotAbs(src(`m() { return x; }`), "m"));
     const fnImpl = getFnImpl(fnSlotAbs(src(`m: function () { return x; }`), "m"));
     expect(methodImpl?.closed ?? false).toBe(false);
     expect(fnImpl?.closed ?? false).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const impl = getFnImpl(fnSlotAbs(`export function f() { return { n: 1, m() { return this.n; } }; }`, "m"));
     expect(impl?.effectFree).toBe(true);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 
 describe("读域不可判的访问器不得被投影执行 / 冻结", () => {
   it("签名面打印 unknown（不是冻结的末次读值）；formatAbs（无损面）同口径；guard 只判 presence（不写必等式 ⇒ 不再恒假）；guard 放行自己的真实返回值（每次读都不同）；负控制：字面量访问器的读域照旧投影（Bug 191 口径不变）", () => {
-(() => {
-
+  {
     expect(formatShape(call(DEFINE_PROP_SRC, "f").result)).toBe("{ a: 1, b: unknown }");
-  })();
-(() => {
-
+  }
+  {
     expect(formatAbs_____format_format_ts(call(DEFINE_PROP_SRC, "f").result)).toContain("{ a: 1, b: unknown }");
-  })();
-(() => {
-
+  }
+  {
     const guard = denoteGuard(call(DEFINE_PROP_SRC, "f").result, "data");
     expect(guard).not.toMatch(/data\.b\s*===/);
     expect(guard).toContain('Object.hasOwn(data, "b")');
-  })();
-(() => {
-
+  }
+  {
     const guard = denoteGuard(call(DEFINE_PROP_SRC, "f").result, "data");
     // denotation 是**表达式**（与 export --format guard 的产物同源）
     const check = new Function("data", `return (${guard});`) as (d: unknown) => boolean;
@@ -5401,9 +5019,8 @@ describe("读域不可判的访问器不得被投影执行 / 冻结", () => {
     });
     expect(check(real)).toBe(true);
     expect(check(real)).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     expect(
       formatShape(call(`export function f() { return { a: 1, get b() { return 2; } }; }`, "f").result),
     ).toBe("{ a: 1, b: 2 }");
@@ -5415,16 +5032,12 @@ describe("读域不可判的访问器不得被投影执行 / 冻结", () => {
     expect(formatShape(call(`export function f() { return { set ab(v) {} }; }`, "f").result)).toBe(
       "{ ab: undefined }",
     );
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 });
 
@@ -5454,111 +5067,84 @@ const x = v("x");
 const y = v("y");
 const plus = (t: ReturnType<typeof v>, k: number) => app("+", [t, lit(k)]);
 
-describe("strict 目标侧常量抵消不得证成", () => {
-  it("宿主 IEEE 见证：x = MIN_VALUE 时 x > 0 真而 x + 1 > 1 假；x > 0 ⊬ x + 1 > 1；x > 0 ⊬ x + 2 > 2；x > 0 ⊬ x + 0.5 > 0.5；x ≥ 0 ⊬ x + 1 > 1（非 strict 下界同样不足）；x > 0 ⊨ x + 1 >= 1（IEEE 恒真，section 明确要求仍成立）；x > 0 ⊬ x + 1 > 2（既非可证也不该被常量抵消造出来）；量级吸收：x > 1e-12 ⊬ x +", () => {
-(() => {
 
+  it("宿主 IEEE 见证：x = MIN_VALUE 时 x > 0 真而 x + 1 > 1 假；x > 0 ⊬ x + 1 > 1；x > 0 ⊬ x + 2 > 2；x > 0 ⊬ x + 0.5 > 0.5；x ≥ 0 ⊬ x + 1 > 1（非 strict 下界同样不足）；x > 0 ⊨ x + 1 >= 1（IEEE 恒真，section 明确要求仍成立）；x > 0 ⊬ x + 1 > 2（既非可证也不该被常量抵消造出来）；量级吸收：x > 1e-12 ⊬ x +", () => {
+  {
     expect(Number.MIN_VALUE > 0).toBe(true);
     expect(Number.MIN_VALUE + 1 > 1).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     expect(implies(gt(x, lit(0)), gt(plus(x, 1), lit(1)))).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     expect(implies(gt(x, lit(0)), gt(plus(x, 2), lit(2)))).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     expect(implies(gt(x, lit(0)), gt(plus(x, 0.5), lit(0.5)))).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     expect(implies(ge(x, lit(0)), gt(plus(x, 1), lit(1)))).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     expect(implies(gt(x, lit(0)), ge(plus(x, 1), lit(1)))).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     expect(implies(gt(x, lit(0)), gt(plus(x, 1), lit(2)))).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     expect(1e-12 + 1e6).toBe(1e6);
     expect(implies(gt(x, lit(1e-12)), gt(plus(x, 1e6), lit(1e6)))).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     expect((1 + 2 ** -52) + 1).toBe(2);
     expect(implies(gt(x, lit(1)), gt(plus(x, 1), lit(2)))).toBe(false);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
+
+
 
 describe("同一加法换操作数顺序必须同结论", () => {
   it("x > 0 ∧ y >= 1：x + y > 1 与 y + x > 1 都不可证；x > 0 ∧ y >= 1：x + y >= 1 与 y + x >= 1 都成立（对称性双向钉）", () => {
-(() => {
-
+  {
     const phi = and(gt(x, lit(0)), ge(y, lit(1)));
     expect(implies(phi, gt(app("+", [x, y]), lit(1)))).toBe(false);
     expect(implies(phi, gt(app("+", [y, x]), lit(1)))).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const phi = and(gt(x, lit(0)), ge(y, lit(1)));
     expect(implies(phi, ge(app("+", [x, y]), lit(1)))).toBe(true);
     expect(implies(phi, ge(app("+", [y, x]), lit(1)))).toBe(true);
-  })();
-});;
+  }
+});
 
-  ;
 });
 
 describe("无常量抵消的真事实不回退", () => {
   it("x > 1 ∧ y > 1 ⊨ x + y > 2（拐点处和精确可表示）；x > 0 ∧ y > 0 ⊨ x + y > 0；x ≥ 1 ∧ y ≥ 1 ⊨ x + y ≥ 2（非严格线性判定不变）；x > 2 ⊨ 2 * x > 4（2 的幂缩放精确）", () => {
-(() => {
-
+  {
     expect((1 + 2 ** -52) + (1 + 2 ** -52)).toBeGreaterThan(2);
     expect(implies(and(gt(x, lit(1)), gt(y, lit(1))), gt(app("+", [x, y]), lit(2)))).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     expect(implies(and(gt(x, lit(0)), gt(y, lit(0))), gt(app("+", [x, y]), lit(0)))).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     expect(implies(and(ge(x, lit(1)), ge(y, lit(1))), ge(app("+", [x, y]), lit(2)))).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     expect(implies(gt(x, lit(2)), gt(app("*", [lit(2), x]), lit(4)))).toBe(true);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 });
 });
 
@@ -5592,35 +5178,30 @@ describe("侧车 fn() 的 throws 槽必须按分隔符拆分", () => {
 const kindsOf = (throws: string | ReturnType<typeof union>) =>
   throwConstraintToKinds(fn_____index_ts({ x: number_____index_ts_1() }, number_____index_ts_1(), { throws }).fn!.throws);
 
-describe("侧车 fn() 的 throws 槽必须按分隔符拆分", () => {
+
   it("逗号串 ⇒ 两个 kind 名（改前整串当**一个**名）；竖线 / 空白分隔同样拆分（与指令面同口径）；单个 kind / `*` / union 形态不受影响；与指令面 `@nudo:throws` 的切分口径一致（同一 spec 同一 kind 集）；端到端：侧车 `throws: \"TypeError, RangeError\"` 放行已申报的 TypeError（改前 L2 假红）", () => {
-(() => {
-
+  {
     expect(kindsOf("TypeError, RangeError")).toEqual(["TypeError", "RangeError"]);
-  })();
-(() => {
-
+  }
+  {
     expect(kindsOf("TypeError | RangeError")).toEqual(["TypeError", "RangeError"]);
     expect(kindsOf("TypeError RangeError")).toEqual(["TypeError", "RangeError"]);
-  })();
-(() => {
-
+  }
+  {
     expect(kindsOf("TypeError")).toEqual(["TypeError"]);
     expect(kindsOf("*")).toBe("*");
     expect(kindsOf(union("TypeError", "RangeError"))).toEqual([
       "TypeError",
       "RangeError",
     ]);
-  })();
-(() => {
-
+  }
+  {
     const spec = "TypeError, RangeError";
     const fromDirective = scanThrowsDecl([`@nudo:throws ${spec}`]);
     expect(fromDirective).toBe("TypeError,RangeError");
     expect(kindsOf(spec)).toEqual(fromDirective!.split(","));
-  })();
-(() => {
-
+  }
+  {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug208-"));
     try {
       writeFileSync(
@@ -5650,17 +5231,13 @@ export const use = fn({ x: number() }, number(), { throws: "TypeError, RangeErro
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -5723,9 +5300,9 @@ function returnViolations(r: {
   );
 }
 
-describe("长度界链的构造期 prim 门禁", () => {
+
   it("number().min(1) / .max(1) / .length(1) 构造期抛错；boolean() / 结构型链上同样抛错（与 gt/ge/lt/le 同口径）；负控制：string() / array(...) 的长度链仍然可用", () => {
-(() => {
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -5735,8 +5312,8 @@ describe("长度界链的构造期 prim 门禁", () => {
     expect(() => number_____index_ts_2().min(1)).toThrow(/prim=number/);
     expect(() => number_____index_ts_2().max(1)).toThrow(/only string \/ array length chains/);
     expect(() => number_____index_ts_2().length(1)).toThrow(/only string \/ array length chains/);
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -5745,8 +5322,8 @@ describe("长度界链的构造期 prim 门禁", () => {
     expect(() => boolean().min(1)).toThrow(/prim=boolean/);
     expect(() => boolean().max(1)).toThrow(/prim=boolean/);
     expect(() => boolean().length(1)).toThrow(/prim=boolean/);
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -5757,17 +5334,15 @@ describe("长度界链的构造期 prim 门禁", () => {
     expect(() => string().length(3)).not.toThrow();
     expect(() => array(number_____index_ts_2()).min(3)).not.toThrow();
     expect(() => array(number_____index_ts_2()).max(2)).not.toThrow();
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 
 describe("参数通道与返回通道同结论（长度语义）", () => {
   it("string().length(3)：两通道都判违例（'ab'）；string().length(3)：两通道都放行（'abc'）；array(...).min(3)：两通道都判违例（[1,2]）；array(...).min(3)：两通道都放行（[1,2,3]）", () => {
-(() => {
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -5784,8 +5359,8 @@ export function gStr() { return "ab"; }
     expect(returnViolations(ret)).toHaveLength(1);
     // 同结论（不是「一绿一红」）
     expect(paramViolations(param).length > 0).toBe(returnViolations(ret).length > 0);
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -5800,8 +5375,8 @@ export function gStr() { return "abc"; }
 `);
     expect(paramViolations(param)).toEqual([]);
     expect(returnViolations(ret)).toEqual([]);
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -5817,8 +5392,8 @@ export function gArr() { return [1, 2]; }
     expect(paramViolations(param)).toHaveLength(1);
     expect(returnViolations(ret)).toHaveLength(1);
     expect(paramViolations(param).length > 0).toBe(returnViolations(ret).length > 0);
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -5833,21 +5408,18 @@ export function gArr() { return [1, 2, 3]; }
 `);
     expect(paramViolations(param)).toEqual([]);
     expect(returnViolations(ret)).toEqual([]);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 });
 
 describe("decideLitCmp 不得把 length(...) 当普通数值比较", () => {
   const lengthAtLeast1 = ge_____index_ts(lenTerm(v_____index_ts_1("s")), lit_____index_ts_1(1));
 
   it("数字字面量 × length(s) ≥ 1 ⇒ 不可判定（不是「满足」）；数字字面量 0 × length(s) ≥ 1 同样是「不可判定」（不是「违例」）；字符串字面量 × length(s) ≥ 1 ⇒ 按长度语义裁决；纯 var 左项的数值比较语义不变", () => {
-(() => {
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -5856,8 +5428,8 @@ describe("decideLitCmp 不得把 length(...) 当普通数值比较", () => {
     const d = checkArg(numLit(3), lengthAtLeast1);
     // 修复前：decideLitCmp 按 3 >= 1 判满足 ⇒ 返回 undefined（假绿）
     expect(d?.code).toBe("nudo:constraint-unproven");
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -5867,8 +5439,8 @@ describe("decideLitCmp 不得把 length(...) 当普通数值比较", () => {
     expect(checkArg(numLit(0), lengthAtLeast1)?.code).toBe(
       "nudo:constraint-unproven",
     );
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -5878,8 +5450,8 @@ describe("decideLitCmp 不得把 length(...) 当普通数值比较", () => {
     expect(checkArg(strLit(""), lengthAtLeast1)?.code).toBe(
       "nudo:constraint-violated",
     );
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -5889,14 +5461,11 @@ describe("decideLitCmp 不得把 length(...) 当普通数值比较", () => {
     expect(checkArg(numLit(0), ge_____index_ts(v_____index_ts_1("s"), lit_____index_ts_1(1)))?.code).toBe(
       "nudo:constraint-violated",
     );
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 });
 
 /**
@@ -5917,7 +5486,7 @@ export const cNumLen = ${RAW("number")};
   }
 
   it("数字实参：3 与 0 都不落进数值比较（0 不再假红）；字符串实参：参数位按长度语义裁决（'ab' 放行 / '' 违例）；与返回位同结论（字符串长度链：'ab' 两通道放行 / '' 两通道违例）", () => {
-(() => {
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -5930,8 +5499,8 @@ fNum(${argLit});
 `);
       expect(paramViolations(r), `fNum(${argLit})`).toEqual([]);
     }
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -5948,8 +5517,8 @@ fStr("");
     expect(paramViolations(ok)).toEqual([]);
     expect(paramViolations(bad)).toHaveLength(1);
     expect(paramViolations(bad)[0]!.expected).toContain("length(s) ≥ 1");
-  })();
-(() => {
+  }
+  {
   resetEngineCaches();
   takeRefineDiags();
   takeContractDiags();
@@ -5972,12 +5541,10 @@ fStr("");
 `),
       ).length > 0,
     );
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 });
 });
 
@@ -6034,7 +5601,7 @@ function f(x) {
   );
 }
 
-describe("先放大再折半不得被放松成假红", () => {
+{
   it.each([["x"], ["x + x"], ["x * 2"], ["(x + x) / 2"], ["x * 2 / 2"], ["(x + x) * 0.5"]])(
     "契约 x>0 ⇒ return>0 对 `%s` 成立 ⇒ 不得报违约",
     (body) => {
@@ -6043,41 +5610,34 @@ describe("先放大再折半不得被放松成假红", () => {
   );
 
   it("对照（真红必须保留）：`x / 2` 在 x = 5e-324 处为 0 ⇒ 仍判违约；单元面：(x + x) / 2 的界是 > 0（不是被放松的 > -5e-324）；单元面：x * 2 / 2 与 (x + x) * 0.5 同结论（乘法路径同样补 attain）；单元面：x / 2 与 x * 0.5 保持 disproved（真界 ≥ 0，不可放松）", () => {
-(() => {
-
+  {
     const v = violations(checkReturn("x / 2"));
     expect(v).toHaveLength(1);
     expect(v[0]!.severity).toBe("error");
-  })();
-(() => {
-
+  }
+  {
     const x = positiveX();
     const halved = div(add(x, x), numLit_____abs_ts(2));
     expect(assertImplies(halved, number().gt(0)).status).toBe("proved");
     const printed = formatAbs_____format_format_ts_1(halved);
     expect(printed).toContain("> 0");
     expect(printed).not.toContain("-5e-324");
-  })();
-(() => {
-
+  }
+  {
     const x = positiveX();
     expect(assertImplies(div(mul(x, numLit_____abs_ts(2)), numLit_____abs_ts(2)), number().gt(0)).status).toBe("proved");
     expect(assertImplies(mul(add(x, x), numLit_____abs_ts(0.5)), number().gt(0)).status).toBe("proved");
-  })();
-(() => {
-
+  }
+  {
     const x = positiveX();
     expect(assertImplies(div(x, numLit_____abs_ts(2)), number().gt(0)).status).toBe("disproved");
     expect(assertImplies(mul(x, numLit_____abs_ts(0.5)), number().gt(0)).status).toBe("disproved");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -6132,7 +5692,7 @@ function f(x) {
   );
 }
 
-describe("取整内建的 strict 端点须做见证步进", () => {
+{
   it.each([["Math.ceil(x)"], ["Math.ceil(Math.ceil(x))"], ["Math.floor(x) + 1"], ["Math.trunc(x) + 1"]])(
     "契约 x>0 ⇒ return>0 对 `%s` 成立 ⇒ 不得报违约",
     (body) => {
@@ -6141,22 +5701,19 @@ describe("取整内建的 strict 端点须做见证步进", () => {
   );
 
   it("对照（真红必须保留）：`Math.floor(x)` 在 x = 5e-324 处为 0 ⇒ 仍判违约；单元面：Math.ceil(x>0) 的下界是 1（此前是 0）；单元面：整数界触发（x > 5 ⇒ Math.ceil(x) ≥ 6），不依赖 denormal 推理；单元面：upper 侧同样做见证步进（x < 0 ⇒ Math.floor(x) ≤ -1）", () => {
-(() => {
-
+  {
     const v = violations(checkReturn("Math.floor(x)"));
     expect(v).toHaveLength(1);
     expect(v[0]!.severity).toBe("error");
-  })();
-(() => {
-
+  }
+  {
     const ceilAbs = evalMathMethod("ceil", [numBound(0)])!;
     const b = numericBounds(ceilAbs);
     expect(b?.lo).toEqual({ value: 1, strict: false });
     expect(formatAbs_____format_format_ts_2(ceilAbs)).toContain("≥ 1");
     expect(assertImplies(ceilAbs, number().gt(0)).status).toBe("proved");
-  })();
-(() => {
-
+  }
+  {
     const ceilAbs = evalMathMethod("ceil", [numBound(5)])!;
     expect(numericBounds(ceilAbs)?.lo).toEqual({ value: 6, strict: false });
     expect(assertImplies(ceilAbs, number().gt(5)).status).toBe("proved");
@@ -6164,9 +5721,8 @@ describe("取整内建的 strict 端点须做见证步进", () => {
     const floorAbs = evalMathMethod("floor", [numBound(5)])!;
     expect(numericBounds(floorAbs)?.lo).toEqual({ value: 5, strict: false });
     expect(assertImplies(floorAbs, number().gt(5)).status).toBe("disproved");
-  })();
-(() => {
-
+  }
+  {
     const t = termVar("x");
     const xLt0 = abs_____abs_ts_2({ k: "prim", type: "number" }, t, { op: "lt", a: t, b: termLit(0) } as never, "path");
     const floorAbs = evalMathMethod("floor", [xLt0])!;
@@ -6175,15 +5731,12 @@ describe("取整内建的 strict 端点须做见证步进", () => {
     expect(evalMathMethod("ceil", [numLit_____abs_ts_1(0)])).toEqual(
       expect.objectContaining({ shape: { k: "prim", type: "number" } }),
     );
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -6211,20 +5764,17 @@ export function f() {
 }
 `;
 
-describe("indexOf / lastIndexOf fromIndex clamping", () => {
+
   it("indexOf past the end returns -1；lastIndexOf past the end searches from the end", () => {
-(() => {
-
+  {
     expect(val(INDEX_OF)).toEqual({ ok: true, value: -1 });
-  })();
-(() => {
-
+  }
+  {
     expect(val(LAST_INDEX_OF)).toEqual({ ok: true, value: 2 });
-  })();
-});;
-
-  ;
+  }
 });
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -6273,44 +5823,38 @@ function caseArg(c: NudoConstraint): Abs {
 
 const C = (b: unknown): NudoConstraint => derefConstraint(b as never);
 
-describe("并集源不再重复跑聚合 leqPred", () => {
-  it("union(number().gt(0), number().gt(5)) ≤ number().gt(0)；三成员并集同样按成员判定（不因成员数而回退）；单个成员的 sum 与裸成员同判；反例：并集里含类型不符成员仍判红；反例：并集里含谓词不符成员仍判红（x<0 ⊄ x>0）；聚合体确实带顶层 pred 时仍参与判定（信息不丢）；目标侧并集语义不变：单成员 ≤ 并集", () => {
-(() => {
 
+  it("union(number().gt(0), number().gt(5)) ≤ number().gt(0)；三成员并集同样按成员判定（不因成员数而回退）；单个成员的 sum 与裸成员同判；反例：并集里含类型不符成员仍判红；反例：并集里含谓词不符成员仍判红（x<0 ⊄ x>0）；聚合体确实带顶层 pred 时仍参与判定（信息不丢）；目标侧并集语义不变：单成员 ≤ 并集", () => {
+  {
     // 复现：`@nudo:case "B" (union(number().gt(0), number().gt(5))) => number().gt(0)`
     const actual = caseArg(C(union_____constraint_ts(number().gt(0), number().gt(5))));
     const expected = caseArg(C(number().gt(0)));
     expect(leqAbs(actual, expected).ok).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const actual = caseArg(
       C(union_____constraint_ts(number().gt(0), number().gt(5), number().gt(9))),
     );
     const expected = caseArg(C(number().gt(0)));
     expect(leqAbs(actual, expected).ok).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const single = caseArg(C(union_____constraint_ts(number().gt(0))));
     expect(leqAbs(single, caseArg(C(number().gt(0)))).ok).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const actual = caseArg(C(union_____constraint_ts(number().gt(0), string_____constraint_ts())));
     const r = leqAbs(actual, caseArg(C(number().gt(0))));
     expect(r.ok).toBe(false);
     expect(r.reason).toMatch(/sum member/);
-  })();
-(() => {
-
+  }
+  {
     const actual = caseArg(C(union_____constraint_ts(number().gt(0), number().lt(0))));
     const r = leqAbs(actual, caseArg(C(number().gt(0))));
     expect(r.ok).toBe(false);
     expect(r.reason).toMatch(/sum member: pred/);
-  })();
-(() => {
-
+  }
+  {
     // `narrow.ts` 的 `{ ...a, shape: sum }` 会保留 a.pred ⇒ 此时不得跳过聚合判定。
     const members = [entry(C(number().gt(0))), entry(C(number().gt(5)))];
     const withTopPred = abs_____abs_ts_3(
@@ -6325,30 +5869,23 @@ describe("并集源不再重复跑聚合 leqPred", () => {
       leqAbs(abs_____abs_ts_3({ k: "sum", members }, undefined, undefined, "path"), caseArg(C(number().gt(0))))
         .ok,
     ).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     expect(
       leqAbs(
         caseArg(C(number().gt(0))),
         caseArg(C(union_____constraint_ts(number().gt(0), number().gt(5)))),
       ).ok,
     ).toBe(true);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -6379,18 +5916,16 @@ describe("域共享元素 Abs 不得折「同值」", () => {
 const item = (): Abs =>
   abs_____abs_ts_4({ k: "obj", slots: { id: { value: numLit_____abs_ts_2(1) } } }, undefined, undefined, "exact");
 
-describe("域共享元素 Abs 不得折「同值」", () => {
-  it("同一 Abs 引用：非域共享仍折 true，域共享折 undefined；契约类型数组的 xs[0] === xs[1] 不得删掉 false 臂；字面量数组（元素各自铸造、非域共享）仍精确判 diff", () => {
-(() => {
 
+  it("同一 Abs 引用：非域共享仍折 true，域共享折 undefined；契约类型数组的 xs[0] === xs[1] 不得删掉 false 臂；字面量数组（元素各自铸造、非域共享）仍精确判 diff", () => {
+  {
     const el = item();
     // 同一绑定重复出现（真同值）——既有精度：保持 true
     expect(strictEqAbs(el, el)).toBe(true);
     // 元素域分发产物（xs[0] / xs[1] 的同一个对象）——不保证同值
     expect(strictEqAbs(markDomainShared(el), el)).toBeUndefined();
-  })();
-(() => {
-
+  }
+  {
     const xs = abs_____abs_ts_4({ k: "arr", element: item() }, undefined, undefined, "exact");
     const src = `export function f(xs) {
   if (xs[0] === xs[1]) { return "same"; }
@@ -6400,9 +5935,8 @@ describe("域共享元素 Abs 不得折「同值」", () => {
     const v = litValue_____abs_ts_2(r.result);
     // 修复前：exact "same"（宿主不可能产出的错值）⇒ 此断言必挂
     expect(v.ok ? v.value : undefined).not.toBe("same");
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f() {
   const xs = [{ id: 1 }, { id: 2 }];
   if (xs[0] === xs[1]) { return "same"; }
@@ -6410,13 +5944,11 @@ describe("域共享元素 Abs 不得折「同值」", () => {
 }`;
     const r = call(src, "f", []);
     expect(litValue_____abs_ts_2(r.result)).toEqual({ ok: true, value: "diff" });
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -6487,7 +6019,7 @@ function drifts(r: ReturnType<typeof check>) {
   return r.issues.filter((i) => i.code === "nudo:contract-drift");
 }
 
-describe("落盘 @generated 段永远受漂移监督", () => {
+{
   beforeEach(() => {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
@@ -6496,12 +6028,12 @@ describe("落盘 @generated 段永远受漂移监督", () => {
   });
 
   it("源码 @nudo:contract 在场 + 陈旧生成段 ⇒ 报 drift（旧口径零告警）；对照组（无源码契约）同样报 ⇒ 两面同结论（不再非单调）；生成段与今日域一致 ⇒ 零 drift（有源码契约时不误报）", () => {
-(() => {
+  {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
     takeContractDiags();
     takeRefineDiags();
-  
+
 
     const r = check(WITH_CONTRACT, STALE_SIDECAR);
     const d = drifts(r);
@@ -6510,34 +6042,32 @@ describe("落盘 @generated 段永远受漂移监督", () => {
     expect(d.every((i) => i.severity === "warning")).toBe(true);
     // 有效契约仍是手写的（漂移监督不改执法层级）
     expect(r.signatures.find((s) => s.name === "f")?.paramTypes).toEqual(["number"]);
-  })();
-(() => {
+  }
+  {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
     takeContractDiags();
     takeRefineDiags();
-  
+
 
     const withC = drifts(check(WITH_CONTRACT, STALE_SIDECAR));
     const withoutC = drifts(check(CONTROL_NO_CONTRACT, STALE_SIDECAR));
     expect(withoutC.length).toBeGreaterThan(0);
     expect(withC.length).toBe(withoutC.length);
-  })();
-(() => {
+  }
+  {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
     takeContractDiags();
     takeRefineDiags();
-  
+
 
     expect(drifts(check(WITH_CONTRACT, FRESH_SIDECAR))).toEqual([]);
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -6570,10 +6100,9 @@ const mockFn = (v: number | string) =>
     apply: () => (typeof v === "number" ? num(v) : str(v)),
   });
 
-describe("mock 宿主内建名不再被 env skip 表吞掉", () => {
-  it("@nudo:mock Math 生效（宿主 Math.floor 不再应答）；@nudo:mock JSON 生效（宿主 JSON.stringify 不再应答）；env 全局仍受 skip 表约束（宿主内建名不被 env 遮蔽）；非 skip 名单上的 mock 名行为不变（fetch 对照组）", () => {
-(() => {
 
+  it("@nudo:mock Math 生效（宿主 Math.floor 不再应答）；@nudo:mock JSON 生效（宿主 JSON.stringify 不再应答）；env 全局仍受 skip 表约束（宿主内建名不被 env 遮蔽）；非 skip 名单上的 mock 名行为不变（fetch 对照组）", () => {
+  {
     const src = `export function run() { return Math.floor(1.5); }`;
     const withMock = runTranspiled_____exec_run_ts(src, { mode: "exec", mocks: { Math: mockFn(42) } });
     const without = runTranspiled_____exec_run_ts(src, { mode: "exec" });
@@ -6583,9 +6112,8 @@ describe("mock 宿主内建名不再被 env skip 表吞掉", () => {
     expect(litValue_____abs_ts_3(host.result)).toEqual({ ok: true, value: 1 });
     // mock 生效 ⇒ 结果不再是宿主值
     expect(litValue_____abs_ts_3(mocked.result)).not.toEqual(litValue_____abs_ts_3(host.result));
-  })();
-(() => {
-
+  }
+  {
     const src = `export function run() { return JSON.stringify({ a: 1 }); }`;
     const withMock = runTranspiled_____exec_run_ts(src, { mode: "exec", mocks: { JSON: mockFn("MOCKED") } });
     const without = runTranspiled_____exec_run_ts(src, { mode: "exec" });
@@ -6593,30 +6121,25 @@ describe("mock 宿主内建名不再被 env skip 表吞掉", () => {
     const host = callTranspiledExportFull(without, "run", []);
     expect(litValue_____abs_ts_3(host.result)).toEqual({ ok: true, value: '{"a":1}' });
     expect(litValue_____abs_ts_3(mocked.result)).not.toEqual(litValue_____abs_ts_3(host.result));
-  })();
-(() => {
-
+  }
+  {
     const src = `export function run() { return Math.floor(1.5); }`;
     const exports = runTranspiled_____exec_run_ts(src, { mode: "exec", envGlobals: { Math: num(42) } });
     const full = callTranspiledExportFull(exports, "run", []);
     // env 的 Math 被跳过 ⇒ 仍是宿主 Math.floor(1.5) = 1
     expect(litValue_____abs_ts_3(full.result)).toEqual({ ok: true, value: 1 });
-  })();
-(() => {
-
+  }
+  {
     const src = `export function run() { return fetch("x"); }`;
     const exports = runTranspiled_____exec_run_ts(src, { mode: "exec", mocks: { fetch: mockFn("MOCKED") } });
     const full = callTranspiledExportFull(exports, "run", []);
     expect(litValue_____abs_ts_3(full.result)).toEqual({ ok: true, value: "MOCKED" });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -6655,10 +6178,9 @@ const obj = (slots: Record<string, unknown>) =>
     "exact",
   );
 
-describe("可选 require 走 cjsMain 分支（返回 module.exports 本身）", () => {
-  it("try/catch 双侧 require：拿到 module.exports 本身（非命名空间）；普通 require 与可选 require 同口径（cjsMain ⇒ default 本体）；ESM 模块经可选 require 仍是命名空间（口径不变）", () => {
-(() => {
 
+  it("try/catch 双侧 require：拿到 module.exports 本身（非命名空间）；普通 require 与可选 require 同口径（cjsMain ⇒ default 本体）；ESM 模块经可选 require 仍是命名空间（口径不变）", () => {
+  {
     const src = `export function f() {
   let d;
   try { d = require("./b.js"); } catch (e) { d = require("./c.js"); }
@@ -6671,9 +6193,8 @@ describe("可选 require 走 cjsMain 分支（返回 module.exports 本身）", 
     const full = callTranspiledExportFull(exports, "f", []);
     // module.exports 本身 ⇒ 槽面是 { v: 2 }（改前是命名空间 { default: { v: 2 } }）
     expect(objSlots(full.result)).toEqual({ v: 2 });
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f() { return require("./b.js"); }`;
     const exports = runTranspiled_____exec_run_ts_1(src, {
       mode: "exec",
@@ -6681,9 +6202,8 @@ describe("可选 require 走 cjsMain 分支（返回 module.exports 本身）", 
     });
     const full = callTranspiledExportFull(exports, "f", []);
     expect(objSlots(full.result)).toEqual({ v: 2 });
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f() {
   let d;
   try { d = require("./b.js"); } catch (e) { d = require("./c.js"); }
@@ -6695,13 +6215,11 @@ describe("可选 require 走 cjsMain 分支（返回 module.exports 本身）", 
     });
     const full = callTranspiledExportFull(exports, "f", []);
     expect(objSlots(full.result)).toEqual({ v: 2 });
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -6728,26 +6246,23 @@ describe("require 缺失模块按原生抛（catch 臂是活代码）", () => {
 
 
 
-describe("require 缺失模块按原生抛（catch 臂是活代码）", () => {
-  it("try/catch 包裹的缺失 require：进 catch 臂；未被 catch 吸收的缺失 require：throws 面如实非 never（L2 不再少报）；存在模块的 require：不抛（对照组）", () => {
-(() => {
 
+  it("try/catch 包裹的缺失 require：进 catch 臂；未被 catch 吸收的缺失 require：throws 面如实非 never（L2 不再少报）；存在模块的 require：不抛（对照组）", () => {
+  {
     const src = `export function f() {
   try { require("./nope.js"); return "no-throw"; } catch (e) { return "threw"; }
 }`;
     const exports = runTranspiled_____exec_run_ts_2(src, { mode: "exec" });
     const full = callTranspiledExportFull(exports, "f", []);
     expect(litValue_____abs_ts_4(full.result)).toEqual({ ok: true, value: "threw" });
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f() { return require("./nope.js"); }`;
     const exports = runTranspiled_____exec_run_ts_2(src, { mode: "exec" });
     const full = callTranspiledExportFull(exports, "f", []);
     expect(throwsError(full.throws, "Error")).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const src = `export function f() {
   try { require("./ok.js"); return "no-throw"; } catch (e) { return "threw"; }
 }`;
@@ -6758,13 +6273,11 @@ describe("require 缺失模块按原生抛（catch 臂是活代码）", () => {
     const full = callTranspiledExportFull(exports, "f", []);
     expect(litValue_____abs_ts_4(full.result)).toEqual({ ok: true, value: "no-throw" });
     expect(full.throws?.shape?.k ?? "never").toBe("never");
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -6811,30 +6324,26 @@ function tupleLits(a: Abs): unknown[] | undefined {
   return out.some((v) => v === undefined) ? undefined : out;
 }
 
-describe("内建 brand 上用户新增的自有属性必须进枚举视图", () => {
+
   it("Object.keys(TypeError + e.code) 折真实键集（改前 []）；Object.values / entries 同键集；JSON.stringify(TypeError + e.code) 折 {\"code\":42}（改前 \"{}\"）；Error 家族四面一致：keys / gOPN / gOPD / hasOwn 同键集同标志；Map 实例：keys 与 gOPN 都投影用户新增键（改前两面都折 []）；Date 实例：keys 与 gOPN 同样", () => {
-(() => {
-
+  {
     expect(tupleLits(absOf("return Object.keys(mkErr());"))).toEqual(["code"]);
-  })();
-(() => {
-
+  }
+  {
     expect(tupleLits(absOf("return Object.values(mkErr());"))).toEqual([42]);
     const a = absOf("return Object.entries(mkErr());");
     const els = (a.shape as { k: string; elements: Abs[] }).elements;
     expect(a.shape.k).toBe("tuple");
     expect(els.length).toBe(1);
     expect(tupleLits(els[0]!)).toEqual(["code", 42]);
-  })();
-(() => {
-
+  }
+  {
     expect(litValue_____abs_ts_5(absOf("return JSON.stringify(mkErr());"))).toEqual({
       ok: true,
       value: '{"code":42}',
     });
-  })();
-(() => {
-
+  }
+  {
     expect(tupleLits(absOf("return Object.keys(mkErr());"))).toEqual(["code"]);
     expect(tupleLits(absOf("return Object.getOwnPropertyNames(mkErr());"))).toEqual([
       "stack",
@@ -6850,28 +6359,24 @@ describe("内建 brand 上用户新增的自有属性必须进枚举视图", () 
 `),
       ),
     ).toEqual([42, true, true]);
-  })();
-(() => {
-
+  }
+  {
     expect(tupleLits(absOf("return Object.keys(mkMap());"))).toEqual(["foo"]);
     expect(tupleLits(absOf("return Object.getOwnPropertyNames(mkMap());"))).toEqual(["foo"]);
     expect(tupleLits(absOf("return Object.values(mkMap());"))).toEqual([1]);
-  })();
-(() => {
-
+  }
+  {
     expect(tupleLits(absOf("return Object.keys(mkDate());"))).toEqual(["bar"]);
     expect(tupleLits(absOf("return Object.getOwnPropertyNames(mkDate());"))).toEqual(["bar"]);
-  })();
-(() => {
-
+  }
+  {
     expect(tupleLits(absOf("return Object.keys(new Map());"))).toEqual([]);
     expect(tupleLits(absOf("return Object.getOwnPropertyNames(new Map());"))).toEqual([]);
     expect(tupleLits(absOf("return Object.keys(new Date(0));"))).toEqual([]);
     expect(tupleLits(absOf("return Object.getOwnPropertyNames(new Date(0));"))).toEqual([]);
     expect(tupleLits(absOf('return Object.keys(new TypeError("x"));'))).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     expect(tupleLits(absOf('return Object.getOwnPropertyNames(new TypeError("x"));'))).toEqual([
       "stack",
       "message",
@@ -6880,15 +6385,13 @@ describe("内建 brand 上用户新增的自有属性必须进枚举视图", () 
       ok: true,
       value: "{}",
     });
-  })();
-(() => {
-
+  }
+  {
     expect(tupleLits(absOf("return Object.keys(/x/);"))).toEqual([]);
     expect(tupleLits(absOf("return Object.getOwnPropertyNames(/x/);"))).toEqual(["lastIndex"]);
     expect(litValue_____abs_ts_5(absOf("return JSON.stringify(/x/);"))).toEqual({ ok: true, value: "{}" });
-  })();
-(() => {
-
+  }
+  {
     const a = call(
       `
 class A { constructor() { this.p = 1; } }
@@ -6902,27 +6405,18 @@ export function f() {
     expect(a.shape.k).toBe("tuple");
     expect(tupleLits(els[0]!)).toEqual(["p"]);
     expect(tupleLits(els[1]!)).toEqual(["p"]);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -6943,51 +6437,42 @@ describe("多声明符导出的第 2+ 个声明符也是导出", () => {
 
 
 
-describe("多声明符导出的第 2+ 个声明符也是导出", () => {
-  it("export const a = 1, b = 2 ⇒ a 与 b 都是导出；多声明符的值正确（b = 2）；三个声明符全收；对照：独立声明 + 独立 export 只有 a 是导出（b 不是）；export function / export class 口径不变", () => {
-(() => {
 
+  it("export const a = 1, b = 2 ⇒ a 与 b 都是导出；多声明符的值正确（b = 2）；三个声明符全收；对照：独立声明 + 独立 export 只有 a 是导出（b 不是）；export function / export class 口径不变", () => {
+  {
     const exports = runTranspiled_____exec_run_ts_3(`export const a = 1, b = 2;`, { mode: "exec" });
     expect(Object.keys(exports).sort()).toEqual(["a", "b"]);
-  })();
-(() => {
-
+  }
+  {
     const exports = runTranspiled_____exec_run_ts_3(`export const a = 1, b = 2;`, { mode: "exec" });
     expect(litValue_____abs_ts_6(exports["b"] as never)).toEqual({ ok: true, value: 2 });
-  })();
-(() => {
-
+  }
+  {
     const exports = runTranspiled_____exec_run_ts_3(`export const a = 1, b = 2, c = 3;`, {
       mode: "exec",
     });
     expect(Object.keys(exports).sort()).toEqual(["a", "b", "c"]);
-  })();
-(() => {
-
+  }
+  {
     // 与多声明符的转译产物逐字相同 ⇒ 只有源 AST 能区分二者
     const exports = runTranspiled_____exec_run_ts_3(`export const a = 1;\nconst b = 2;`, {
       mode: "exec",
     });
     expect(Object.keys(exports)).toEqual(["a"]);
-  })();
-(() => {
-
+  }
+  {
     const exports = runTranspiled_____exec_run_ts_3(
       `export function f() { return 1; }\nexport class K {}`,
       { mode: "exec" },
     );
     expect(Object.keys(exports).sort()).toEqual(["K", "f"]);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -7071,21 +6556,18 @@ function boundValue(src: string, mod: AbsModuleExports): Abs | undefined {
   return env.vars.get("fs") as Abs | undefined;
 }
 
-describe("env 模块（CJS 互操作）的 ESM 默认导入", () => {
-  it("互操作表：默认导入绑到命名空间 ⇒ 返回类型可推（不再是 unknown）；互操作表：默认导入与命名空间导入**同结论**（含 throws 面）；互操作表：AST env 绑定面（bindImports）同口径 ⇒ 绑到命名空间；负控制：普通用户模块表缺 default ⇒ 默认导入仍是 unknown；对照：普通用户模块表有 default ⇒ 默认导入绑到 default 槽；对照：互操作表即使带了物化 default 槽，也绑到 default 槽本身；物化 defa", () => {
-(() => {
 
+  it("互操作表：默认导入绑到命名空间 ⇒ 返回类型可推（不再是 unknown）；互操作表：默认导入与命名空间导入**同结论**（含 throws 面）；互操作表：AST env 绑定面（bindImports）同口径 ⇒ 绑到命名空间；负控制：普通用户模块表缺 default ⇒ 默认导入仍是 unknown；对照：普通用户模块表有 default ⇒ 默认导入绑到 default 槽；对照：互操作表即使带了物化 default 槽，也绑到 default 槽本身；物化 defa", () => {
+  {
     // 修复前：unknown / throws=never（env 表没有 default 槽 ⇒ 直接折 unknown）
     expect(callSummary(SRC_DEFAULT, INTEROP_MOD)).toBe("number / throws=Error");
-  })();
-(() => {
-
+  }
+  {
     expect(callSummary(SRC_DEFAULT, INTEROP_MOD)).toBe(
       callSummary(SRC_NAMESPACE, INTEROP_MOD),
     );
-  })();
-(() => {
-
+  }
+  {
     // 修复前：unknown
     const v = boundValue(`import fs from "./m.js";`, INTEROP_MOD);
     expect(v).toBeDefined();
@@ -7093,22 +6575,19 @@ describe("env 模块（CJS 互操作）的 ESM 默认导入", () => {
     expect(Object.keys(v!.shape.k === "obj" ? (v!.shape.slots ?? {}) : {})).toEqual([
       "readFileSync",
     ]);
-  })();
-(() => {
-
+  }
+  {
     // 修前修后一致（口径：模块表有该 mod 但没有 default ⇒ 没有 default）
     expect(callSummary(SRC_DEFAULT, USER_MOD_NO_DEFAULT)).toBe("unknown / throws=never");
     expect(boundValue(`import fs from "./m.js";`, USER_MOD_NO_DEFAULT)?.shape.k).toBe(
       "unknown",
     );
-  })();
-(() => {
-
+  }
+  {
     const src = `import x from "./m.js"; export function f() { return x; }`;
     expect(callSummary(src, USER_MOD_WITH_DEFAULT)).toBe("string / throws=never");
-  })();
-(() => {
-
+  }
+  {
     const withDefault: AbsModuleExports = {
       named: { a: num() },
       default: str_____abs_ts(),
@@ -7116,9 +6595,8 @@ describe("env 模块（CJS 互操作）的 ESM 默认导入", () => {
     };
     const src = `import x from "./m.js"; export function f() { return x; }`;
     expect(callSummary(src, withDefault)).toBe("string / throws=never");
-  })();
-(() => {
-
+  }
+  {
     const named = { a: num() };
     const materialized: AbsModuleExports = {
       named,
@@ -7128,29 +6606,21 @@ describe("env 模块（CJS 互操作）的 ESM 默认导入", () => {
     const interopOnly: AbsModuleExports = { named, interopDefault: true };
     const src = `import x from "./m.js"; export function f() { return x.a; }`;
     expect(callSummary(src, materialized)).toBe(callSummary(src, interopOnly));
-  })();
-(() => {
-
+  }
+  {
     const emptyInterop: AbsModuleExports = { named: {}, interopDefault: true };
     const src = `import x from "./m.js"; export function f() { return x; }`;
     expect(callSummary(src, emptyInterop)).toBe("unknown / throws=never");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -7172,7 +6642,7 @@ describe("length 有限数值界护栏", () => {
 
 
 
-describe("length 有限数值界护栏", () => {
+{
   beforeEach(() => {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
@@ -7181,45 +6651,45 @@ describe("length 有限数值界护栏", () => {
   });
 
   it("length(NaN) / length(±Infinity) 在构造期抛错（不再造恒假契约）；错误文案点名 length() 与实际入参（Nudo 原生，非宿主原文）；合法界仍然通过（3 / 2.5 / 0）；产品面：契约里的 length(NaN) 变成侧车装载失败，不再对合法字符串报假红", () => {
-(() => {
+  {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(() => string().length(NaN)).toThrow(/finite numeric bound expected/);
     expect(() => string().length(Infinity)).toThrow(/finite numeric bound expected/);
     expect(() => string().length(-Infinity)).toThrow(/finite numeric bound expected/);
-  })();
-(() => {
+  }
+  {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(() => string().length(NaN)).toThrow(/nudo length\(\)/);
     expect(() => string().length(NaN)).toThrow(/got NaN/);
     expect(() => string().length(Infinity)).toThrow(/got Infinity/);
-  })();
-(() => {
+  }
+  {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(() => string().length(3)).not.toThrow();
     expect(() => string().length(2.5)).not.toThrow();
     expect(() => string().length(0)).not.toThrow();
-  })();
-(() => {
+  }
+  {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     const { loadModule } = makeFiles({
       "/t/f.nudo.js": `import { fn, string } from "@nudojs/core";
@@ -7239,15 +6709,12 @@ export function g() {
     expect(load!.message).toContain("finite numeric bound expected");
     // 改前：2 条 nudo:constraint-violated（合法实参 "abc" 判违规 = 假红）
     expect(r.issues.filter((i) => i.code === "nudo:constraint-violated")).toHaveLength(0);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -7269,7 +6736,7 @@ describe("length 界的类型校验（非数值界不得静默废掉契约）", 
 
 
 
-describe("length 界的类型校验（非数值界不得静默废掉契约）", () => {
+{
   beforeEach(() => {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
@@ -7278,12 +6745,12 @@ describe("length 界的类型校验（非数值界不得静默废掉契约）", 
   });
 
   it("length(\"3\") / length(null) / length(true) 在构造期抛错；错误文案带引号地展示字符串界（got \"3\"），并点名 length()；产品面：length(\"3\") 的契约不再静默失效（改前 0 error = 假绿）；对照组：合法数值界仍然产出真正的长度约束（length(3) 仍报违例）", () => {
-(() => {
+  {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(() => string().length("3" as unknown as number)).toThrow(
       /finite numeric bound expected/,
@@ -7294,23 +6761,23 @@ describe("length 界的类型校验（非数值界不得静默废掉契约）", 
     expect(() => string().length(true as unknown as number)).toThrow(
       /finite numeric bound expected/,
     );
-  })();
-(() => {
+  }
+  {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     expect(() => string().length("3" as unknown as number)).toThrow(/nudo length\(\)/);
     expect(() => string().length("3" as unknown as number)).toThrow(/got "3"/);
-  })();
-(() => {
+  }
+  {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     const { loadModule } = makeFiles({
       "/t/f.nudo.js": `import { fn, string } from "@nudojs/core";
@@ -7330,13 +6797,13 @@ export function g() {
     expect(load!.message).toContain("finite numeric bound expected");
     // 改前：契约完全失效 ⇒ 门禁 0 error（"abcd" 长度 4 > 3 也不报）
     expect(r.issues.filter((i) => i.code === "nudo:constraint-violated")).toHaveLength(0);
-  })();
-(() => {
+  }
+  {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
     takeRefineDiags();
     takeContractDiags();
-  
+
 
     const { loadModule } = makeFiles({
       "/t/f.nudo.js": `import { fn, string } from "@nudojs/core";
@@ -7352,15 +6819,12 @@ export function g() {
 `;
     const r = checkSource_____index_ts_30("/t/f.js", src, pTrue_____index_ts_29, { loadModule, fromFile: "/t/f.js" });
     expect(r.issues.filter((i) => i.code === "nudo:constraint-violated").length).toBeGreaterThan(0);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -7411,26 +6875,23 @@ export const f = fn({ x: number() }, number());
 
 const SRC = `export function f(x) { return x; }`;
 
-describe("lit() 的字面量在签名面保形", () => {
-  it("check 签名面的参数类型保留字面量（改前拓宽成 number）；负控制：裸 number 契约不被改成 lit(...)", () => {
-(() => {
 
+  it("check 签名面的参数类型保留字面量（改前拓宽成 number）；负控制：裸 number 契约不被改成 lit(...)", () => {
+  {
     const r = checkSource_____index_ts_31("/test/file.js", SRC, pTrue_____index_ts_30, optsWithSidecar(LIT_SIDE));
     const sig = r.signatures.find((s) => s.name === "f");
     expect(sig).toBeDefined();
     expect(sig!.paramTypes?.[0]).toBe("1");
     expect(sig!.paramTypes?.[0]).not.toBe("number");
-  })();
-(() => {
-
+  }
+  {
     const r = checkSource_____index_ts_31("/test/file.js", SRC, pTrue_____index_ts_30, optsWithSidecar(NUM_SIDE));
     const sig = r.signatures.find((s) => s.name === "f");
     expect(sig!.paramTypes?.[0]).toBe("number");
-  })();
-});;
-
-  ;
+  }
 });
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -7483,9 +6944,9 @@ export function f(x) {
 }
 `;
 
-describe("多条 return 契约", () => {
+
   it("合成**单条**合取（返回槽仍是单条）；违反**第 2 条**段也被执法（旧口径只执法第一条）；满足全部段时不报错；单条 return 段语义不变（名字不变、约束不变）", () => {
-(() => {
+  {
   setRefineDiagCollector(null);
   takeRefineDiags();
 
@@ -7497,8 +6958,8 @@ describe("多条 return 契约", () => {
     });
     expect(ret).toBeDefined();
     expect(ret!.name).toBe("positive ∧ small");
-  })();
-(() => {
+  }
+  {
   setRefineDiagCollector(null);
   takeRefineDiags();
 
@@ -7511,8 +6972,8 @@ describe("多条 return 契约", () => {
     expect(ret).toBeDefined();
     const proof = assertImplies(absLit(100), ret!.constraint);
     expect(proof.status).toBe("disproved");
-  })();
-(() => {
+  }
+  {
   setRefineDiagCollector(null);
   takeRefineDiags();
 
@@ -7525,8 +6986,8 @@ describe("多条 return 契约", () => {
     expect(ret).toBeDefined();
     const proof = assertImplies(absLit(5), ret!.constraint);
     expect(proof.status).toBe("proved");
-  })();
-(() => {
+  }
+  {
   setRefineDiagCollector(null);
   takeRefineDiags();
 
@@ -7540,15 +7001,12 @@ describe("多条 return 契约", () => {
     expect(ret!.name).toBe("small");
     const proof = assertImplies(absLit(100), ret!.constraint);
     expect(proof.status).toBe("disproved");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -7572,7 +7030,7 @@ describe("bigint 字面量保 n 后缀", () => {
 
 
 
-describe("bigint 字面量保 n 后缀", () => {
+{
   beforeEach(() => {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
@@ -7581,23 +7039,23 @@ describe("bigint 字面量保 n 后缀", () => {
   });
 
   it("termToString：bigint 保 n 后缀，number 不受影响；诊断文本：lit(10n) 与 lit(10) 可区分", () => {
-(() => {
+  {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
     resetNudoModuleExecCache();
     resetSidecarLoadFailureCache();
-  
+
 
     expect(termToString(lit_____index_ts_2(10n))).toBe("10n");
     expect(termToString(lit_____index_ts_2(10))).toBe("10");
     expect(termToString(lit_____index_ts_2(0n))).toBe("0n");
-  })();
-(() => {
+  }
+  {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
     resetNudoModuleExecCache();
     resetSidecarLoadFailureCache();
-  
+
 
     const { loadModule } = makeFiles({
       "/t/big.nudo.js": `import { fn, lit } from "@nudojs/core";\nexport const g = fn({ n: lit(10n) }, lit(10n));`,
@@ -7611,11 +7069,10 @@ describe("bigint 字面量保 n 后缀", () => {
     expect(violated).toHaveLength(1);
     expect(violated[0]!.message).toContain("lit(10n)");
     expect(violated[0]!.message).not.toContain("lit(10)");
-  })();
-});;
-
-  ;
+  }
 });
+
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -7671,10 +7128,9 @@ function recordWithHostPrev(): AbsAssignRecord {
   } as AbsAssignRecord;
 }
 
-describe("赋值记录 prev 是裸宿主值 ⇒ 判定层不得抛（整轮门禁不得腰斩）", () => {
-  it("产品面：顶层 env 全局重赋值 ⇒ checkSource 不抛；产品面：其它 env 全局（构造器 / Promise）同样不抛；整轮门禁不被腰斩：排在崩溃文件之后的文件仍被检查并出诊断；判定层：prev 是裸宿主值 ⇒ 不抛、不报（fail-closed）；原生语义未变：重赋值后 g 就是 1；控制组：Abs↔Abs 的标量改型仍报 nudo:assign-mismatch（守卫未吃掉通道信号）", () => {
-(() => {
 
+  it("产品面：顶层 env 全局重赋值 ⇒ checkSource 不抛；产品面：其它 env 全局（构造器 / Promise）同样不抛；整轮门禁不被腰斩：排在崩溃文件之后的文件仍被检查并出诊断；判定层：prev 是裸宿主值 ⇒ 不抛、不报（fail-closed）；原生语义未变：重赋值后 g 就是 1；控制组：Abs↔Abs 的标量改型仍报 nudo:assign-mismatch（守卫未吃掉通道信号）", () => {
+  {
     let report: ReturnType<typeof checkSource_____index_ts_33> | undefined;
     expect(() => {
       report = checkSource_____index_ts_33("bug-368-env.js", ENV_GLOBAL_REASSIGN, pTrue_____index_ts_32, {
@@ -7686,18 +7142,16 @@ describe("赋值记录 prev 是裸宿主值 ⇒ 判定层不得抛（整轮门�
     expect(
       (report?.issues ?? []).filter((i) => i.code === "nudo:assign-mismatch"),
     ).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     for (const g of ["String", "Number", "Promise", "setTimeout", "isNaN"]) {
       const src = `let g = ${g};\ng = 1;`;
       expect(() => {
         checkSource_____index_ts_33(`bug-368-${g}.js`, src, pTrue_____index_ts_32, { entryThrows: "off" });
       }).not.toThrow();
     }
-  })();
-(() => {
-
+  }
+  {
     const seen: string[] = [];
     let aborted = false;
     for (const [name, src] of [
@@ -7718,23 +7172,20 @@ describe("赋值记录 prev 是裸宿主值 ⇒ 判定层不得抛（整轮门�
     }
     expect(seen[0]).toMatch(/^a-crash\.js:CHECKED:/);
     expect(seen[1]).toBe("b-after.js:CHECKED:nudo:assign-mismatch");
-  })();
-(() => {
-
+  }
+  {
     let out: ReturnType<typeof structuralAssignIssues> = [];
     expect(() => {
       out = structuralAssignIssues([recordWithHostPrev()]);
     }).not.toThrow();
     expect(out).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const v = val(ENV_GLOBAL_REASSIGN);
     expect(v.ok).toBe(true);
     expect(v.ok ? v.value : undefined).toBe(1);
-  })();
-(() => {
-
+  }
+  {
     const r = checkSource_____index_ts_33("bug-368-control.js", AFTER_CRASH, pTrue_____index_ts_32, {
       entryThrows: "off",
     });
@@ -7742,19 +7193,14 @@ describe("赋值记录 prev 是裸宿主值 ⇒ 判定层不得抛（整轮门�
     expect(mismatch.length).toBe(1);
     expect(mismatch[0].severity).toBe("error");
     expect(mismatch[0].message).toBe("n: assignment ⊭ existing shape");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -7802,43 +7248,36 @@ function sigValues(display: string): string[] {
     .sort();
 }
 
-describe("eq ⇒ 序关系 / 对称（implies 读侧）", () => {
-  it("eq(x,y) ⇒ le(x,y) ∧ ge(x,y)；eq(x,y) ⇒ eq(y,x)（对称）；eq(x,x) ⇒ le(x,x) ∧ ge(x,x)（重言式：x === x ⇒ x 非 NaN）；反向不成立：eq(x,y) ⇏ lt(x,y) ∧ gt(x,y)（等值不含严格序）；无关项不成立：eq(x,x) ⇏ le(x,y)；比较折叠：a === b 前提下 `a <= b` 折 true、`a < b` 折 false；产品面：a === b 分支内的 `a <=", () => {
-(() => {
 
+  it("eq(x,y) ⇒ le(x,y) ∧ ge(x,y)；eq(x,y) ⇒ eq(y,x)（对称）；eq(x,x) ⇒ le(x,x) ∧ ge(x,x)（重言式：x === x ⇒ x 非 NaN）；反向不成立：eq(x,y) ⇏ lt(x,y) ∧ gt(x,y)（等值不含严格序）；无关项不成立：eq(x,x) ⇏ le(x,y)；比较折叠：a === b 前提下 `a <= b` 折 true、`a < b` 折 false；产品面：a === b 分支内的 `a <=", () => {
+  {
     expect(implies(eq(x, y), le(x, y))).toBe(true);
     expect(implies(eq(x, y), ge(x, y))).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     expect(implies(eq(x, y), eq(y, x))).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     expect(implies(eq(x, x), le(x, x))).toBe(true);
     expect(implies(eq(x, x), ge(x, x))).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     expect(implies(eq(x, y), lt(x, y))).toBe(false);
     expect(implies(eq(x, y), gt(x, y))).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     expect(implies(eq(x, x), le(x, y))).toBe(false);
     expect(implies(eq(x, y), le(x, z))).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const a = abs_____abs_ts_8({ k: "any" }, x, undefined, "exact");
     const b = abs_____abs_ts_8({ k: "any" }, y, undefined, "exact");
     expect(formatAbs_____format_format_ts_3(cmp("le", a, b, eq(x, y)))).toMatch(/^true\b/);
     expect(formatAbs_____format_format_ts_3(cmp("ge", a, b, eq(x, y)))).toMatch(/^true\b/);
     // a === b ⇒ ¬(a < b)
     expect(formatAbs_____format_format_ts_3(cmp("lt", a, b, eq(x, y)))).toMatch(/^false\b/);
-  })();
-(() => {
-
+  }
+  {
     const r = issuesOf(
       `
 export function f(a, b) {
@@ -7852,9 +7291,8 @@ export function f(a, b) {
       "/t/bug-387.js",
     );
     expect(sigValues(sigOf(r, "f"))).toEqual(["1", "3"]);
-  })();
-(() => {
-
+  }
+  {
     const r = issuesOf(
       `
 export function control(a, b) {
@@ -7868,23 +7306,16 @@ export function control(a, b) {
       "/t/bug-387.js",
     );
     expect(sigValues(sigOf(r, "control"))).toEqual(["1", "3"]);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -7924,30 +7355,25 @@ function codesOf(src: string): string[] {
   return r.issues.map((i) => i.code);
 }
 
-describe("env 门禁不得吞掉 unknown-inference", () => {
-  it("env 名拼错（没解析出全局）⇒ 发 nudo:unknown-inference 警告；env 名拼错 ⇒ 不再发指错方向的 nudo:opaque-result 信息；对照组：没有 env 指令 ⇒ 仍然是 unknown-inference 警告（口径不变）", () => {
-(() => {
 
+  it("env 名拼错（没解析出全局）⇒ 发 nudo:unknown-inference 警告；env 名拼错 ⇒ 不再发指错方向的 nudo:opaque-result 信息；对照组：没有 env 指令 ⇒ 仍然是 unknown-inference 警告（口径不变）", () => {
+  {
     const codes = codesOf(ENV_BOGUS);
     expect(codes).toContain("nudo:unknown-inference");
-  })();
-(() => {
-
+  }
+  {
     const codes = codesOf(ENV_BOGUS);
     expect(codes).not.toContain("nudo:opaque-result");
-  })();
-(() => {
-
+  }
+  {
     const codes = codesOf(PLAIN);
     expect(codes).toContain("nudo:unknown-inference");
     expect(codes).not.toContain("nudo:opaque-result");
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -7982,37 +7408,31 @@ function numLit(value: number) {
   return abs_____abs_ts_9({ k: "prim", type: "number" }, lit(value), undefined, "exact");
 }
 
-describe("leqAbs 的字面量同一性按 SameValue（Object.is）判定", () => {
-  it("lit(-0) ⊭ lit(0)（Object.is(0, -0) === false）；lit(0) ⊭ lit(-0)（反向同样不满足）；NaN ≡ NaN（SameValue：=== 对 NaN 为 false，赋值同一性不可用 ===）；同值字面量仍可赋值（0 ≡ 0、1 ≡ 1、-1 ≡ -1）；不同字面量仍不可赋值（1 ⊭ 2）；case 期望面：实现给 +0、期望 -0 ⇒ 不是同一个值（service 层对账用的就是这个判定）", () => {
-(() => {
 
+  it("lit(-0) ⊭ lit(0)（Object.is(0, -0) === false）；lit(0) ⊭ lit(-0)（反向同样不满足）；NaN ≡ NaN（SameValue：=== 对 NaN 为 false，赋值同一性不可用 ===）；同值字面量仍可赋值（0 ≡ 0、1 ≡ 1、-1 ≡ -1）；不同字面量仍不可赋值（1 ⊭ 2）；case 期望面：实现给 +0、期望 -0 ⇒ 不是同一个值（service 层对账用的就是这个判定）", () => {
+  {
     const r = leqAbs(numLit(-0), numLit(0));
     expect(r.ok).toBe(false);
     // 失败原因里 -0 与 0 必须可区分（String(-0) 是 "0" ⇒ 用 litText 渲染）
     expect(r.reason).toContain("-0");
-  })();
-(() => {
-
+  }
+  {
     const r = leqAbs(numLit(0), numLit(-0));
     expect(r.ok).toBe(false);
     expect(r.reason).toContain("-0");
-  })();
-(() => {
-
+  }
+  {
     expect(leqAbs(numLit(NaN), numLit(NaN)).ok).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     expect(leqAbs(numLit(0), numLit(0)).ok).toBe(true);
     expect(leqAbs(numLit(1), numLit(1)).ok).toBe(true);
     expect(leqAbs(numLit(-1), numLit(-1)).ok).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     expect(leqAbs(numLit(1), numLit(2)).ok).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const r = call("export function f() { return 0; }", "f", []);
     const actual = litValue_____abs_ts_7(r.result);
     expect(actual.ok).toBe(true);
@@ -8021,19 +7441,14 @@ describe("leqAbs 的字面量同一性按 SameValue（Object.is）判定", () =>
     expect(Object.is(actualValue, 0)).toBe(true);
     // 期望（-0）对实际（+0）：SameValue 下不满足
     expect(leqAbs(numLit(actualValue as number), numLit(-0)).ok).toBe(false);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -8055,25 +7470,22 @@ describe("@nudo:mock-module payload accepts single quotes", () => {
 
 
 
-describe("@nudo:mock-module payload accepts single quotes", () => {
-  it("single-quoted full form is parsed；single-quoted named form is parsed；mixed quote kinds are parsed (source and path may differ)；double-quoted form keeps working (control)；file-level extraction keeps the single-quoted record (was silently dro", () => {
-(() => {
 
+  it("single-quoted full form is parsed；single-quoted named form is parsed；mixed quote kinds are parsed (source and path may differ)；double-quoted form keeps working (control)；file-level extraction keeps the single-quoted record (was silently dro", () => {
+  {
     expect(parseMockModulePayload("'axios' from './mocks/v-axios.js'")).toEqual({
       source: "axios",
       fromPath: "./mocks/v-axios.js",
     });
-  })();
-(() => {
-
+  }
+  {
     expect(parseMockModulePayload("'axios' { a, b } from './mocks/v-axios.js'")).toEqual({
       source: "axios",
       names: ["a", "b"],
       fromPath: "./mocks/v-axios.js",
     });
-  })();
-(() => {
-
+  }
+  {
     expect(parseMockModulePayload(`"axios" from './mocks/v-axios.js'`)).toEqual({
       source: "axios",
       fromPath: "./mocks/v-axios.js",
@@ -8082,50 +7494,40 @@ describe("@nudo:mock-module payload accepts single quotes", () => {
       source: "axios",
       fromPath: "./mocks/v-axios.js",
     });
-  })();
-(() => {
-
+  }
+  {
     expect(parseMockModulePayload(`"axios" from "./mocks/v-axios.js"`)).toEqual({
       source: "axios",
       fromPath: "./mocks/v-axios.js",
     });
-  })();
-(() => {
-
+  }
+  {
     expect(
       extractMockModuleRecords(
         `/// @nudo:mock-module 'axios' from './415-mock.js'\nimport axios from "axios";\n`,
       ),
     ).toEqual([{ source: "axios", fromPath: "./415-mock.js" }]);
-  })();
-(() => {
-
+  }
+  {
     expect(
       extractMockModuleRecords(
         `/// @nudo:mock-module 'axios' from './m.js'\n/// @nudo:mock-module "vue" from "./m.js"\n`,
       ).map((r) => r.source),
     ).toEqual(["axios", "vue"]);
-  })();
-(() => {
-
+  }
+  {
     expect(parseMockModulePayload("axios from ./m.js")).toBeUndefined();
     expect(parseMockModulePayload(`"axios"`)).toBeUndefined();
     expect(parseMockModulePayload(`"axios" from`)).toBeUndefined();
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -8166,30 +7568,26 @@ function scopeNamed(src: string, name: string) {
   return scopesOf(src).find((s) => s.name === name);
 }
 
-describe("多声明符 const：语句级 JSDoc 只绑首个 declarator", () => {
-  it("见证只落在首个 declarator 上（不再重放到 b）；每个 declarator 只建一个 scope（不再多出 <anonymous> 影子）；第二个 declarator 的内联注释仍归它自己；单声明符形态不受影响（见证仍可见）", () => {
-(() => {
 
+  it("见证只落在首个 declarator 上（不再重放到 b）；每个 declarator 只建一个 scope（不再多出 <anonymous> 影子）；第二个 declarator 的内联注释仍归它自己；单声明符形态不受影响（见证仍可见）", () => {
+  {
     const a = scopeNamed(MULTI, "a");
     const b = scopeNamed(MULTI, "b");
     expect(a?.commentLines).toContain('@nudo:case "shared" (1)');
     expect(b?.commentLines ?? []).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const names = scopesOf(MULTI).map((s) => s.name);
     expect(names).toEqual(["a", "b"]);
     expect(names.filter((n) => n === "<anonymous>")).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const b = scopeNamed(MULTI_INLINE_SECOND, "b");
     expect(b?.commentLines).toContain('@nudo:case "own" (2)');
     const a = scopeNamed(MULTI_INLINE_SECOND, "a");
     expect(a?.commentLines ?? []).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const only = `/**
  * @nudo:case "solo" (1)
  */
@@ -8197,15 +7595,12 @@ const a = () => 1;
 export { a };
 `;
     expect(scopeNamed(only, "a")?.commentLines).toContain('@nudo:case "solo" (1)');
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -8230,45 +7625,40 @@ describe("生成段归属：用户自己的 const 不并入段内链", () => {
 
 
 
-describe("生成段归属：用户自己的 const 不并入段内链", () => {
-  it("真 @generated 标记 + 中间夹无关 const ⇒ 手写 export 不是生成段；夹的 const 若**被 export 引用** ⇒ 仍属段内（判据是引用，不是位置）；无标记 ⇒ 不是生成段（对照）；合法：别名段（DESIGN-003，段内夹 const）仍认得出；合法：组合式下行段（§5.3，段内夹 prelude const）仍认得出；合法：多步 prelude（中间量只被后一步引用）仍认得出；合法：头紧贴 export 仍认得出；合法：头 + impo", () => {
-(() => {
 
+  it("真 @generated 标记 + 中间夹无关 const ⇒ 手写 export 不是生成段；夹的 const 若**被 export 引用** ⇒ 仍属段内（判据是引用，不是位置）；无标记 ⇒ 不是生成段（对照）；合法：别名段（DESIGN-003，段内夹 const）仍认得出；合法：组合式下行段（§5.3，段内夹 prelude const）仍认得出；合法：多步 prelude（中间量只被后一步引用）仍认得出；合法：头紧贴 export 仍认得出；合法：头 + impo", () => {
+  {
     const sidecar = `import { fn, number } from "@nudojs/core";
 // @generated by nudo — do not edit
 const helper = 1;
 export const area = fn({ x: number().gt(0) }, number());
 `;
     expect([...generatedExportNames(sidecar)]).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const sidecar = `import { fn, number } from "@nudojs/core";
 // @generated by nudo — do not edit
 const helper = 1;
 export const area = fn({ x: number().gt(0) }, helper);
 `;
     expect([...generatedExportNames(sidecar)]).toEqual(["area"]);
-  })();
-(() => {
-
+  }
+  {
     const sidecar = `import { fn, number } from "@nudojs/core";
 const helper = 1;
 export const area = fn({ x: number().gt(0) }, number());
 `;
     expect([...generatedExportNames(sidecar)]).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const sidecar = `// @generated by nudo — do not edit; regenerate with \`nudo contract --emit\`
 // source: lib.js:class
 const _nudo_1 = fn({ x: number() }, number());
 export { _nudo_1 as class };
 `;
     expect([...generatedExportNames(sidecar)]).toEqual(["class"]);
-  })();
-(() => {
-
+  }
+  {
     const sidecar = `// @generated by nudo — do not edit; regenerate with \`nudo contract --emit\`
 // source: add.js:add2
 import { positive } from "./std.nudo.js";
@@ -8277,9 +7667,8 @@ const x = positive.shift(1);
 export const add2 = fn({ x }, x.shift(2));
 `;
     expect([...generatedExportNames(sidecar)]).toEqual(["add2"]);
-  })();
-(() => {
-
+  }
+  {
     const sidecar = `// @generated by nudo — do not edit; regenerate with \`nudo contract --emit\`
 import { positive } from "./std.nudo.js";
 
@@ -8288,41 +7677,32 @@ const x_1 = x_0.shift(2);
 export const add2 = fn({ x: x_1 }, x_1.shift(2));
 `;
     expect([...generatedExportNames(sidecar)]).toEqual(["add2"]);
-  })();
-(() => {
-
+  }
+  {
     const sidecar = `// @generated by nudo — do not edit; regenerate with \`nudo contract --emit\`
 // source: lib.js:f
 export const f = fn({ x: number().gt(0) });
 `;
     expect([...generatedExportNames(sidecar)]).toEqual(["f"]);
-  })();
-(() => {
-
+  }
+  {
     const sidecar = `// @generated by nudo — do not edit; regenerate with \`nudo contract --emit\`
 import { fn, number } from "@nudojs/core";
 export const f = fn({ x: number().gt(0) });
 `;
     expect([...generatedExportNames(sidecar)]).toEqual(["f"]);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
   // ---- 合法生成段：一个都不许误伤 ----
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -8382,110 +7762,88 @@ export function f(x) { return 1; }
 export function use() { return f(${arg}); }`;
 }
 
-describe("裸 lit(null) / lit(undefined) 契约：唯一允许值放行、其余值判违例", () => {
-  it("lit(null) 契约收到 null ⇒ 放行（零诊断；改前是假红）；lit(undefined) 契约收到 undefined ⇒ 放行（零诊断；改前是假红）；lit(null) 契约收到 0 ⇒ 判违例，expected 指向 x = null；lit(null) 契约收到 'a' ⇒ 判违例；lit(undefined) 契约收到 0 ⇒ 判违例，expected 指向 x = undefined；null 与 undefined 是**两个域**：lit(null)", () => {
-(() => {
 
+  it("lit(null) 契约收到 null ⇒ 放行（零诊断；改前是假红）；lit(undefined) 契约收到 undefined ⇒ 放行（零诊断；改前是假红）；lit(null) 契约收到 0 ⇒ 判违例，expected 指向 x = null；lit(null) 契约收到 'a' ⇒ 判违例；lit(undefined) 契约收到 0 ⇒ 判违例，expected 指向 x = undefined；null 与 undefined 是**两个域**：lit(null)", () => {
+  {
     const r = check(call("onlyNull", "null"));
     expect(violated(r)).toBe(0);
     expect(r.issues).toEqual([]);
     expect(r.ok).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const r = check(call("onlyUndef", "undefined"));
     expect(violated(r)).toBe(0);
     expect(r.issues).toEqual([]);
     expect(r.ok).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     const r = check(call("onlyNull", "0"));
     expect(violated(r)).toBe(1);
     const issue = r.issues.find((i) => i.code === "nudo:constraint-violated");
     expect(issue?.expected).toBe("x = null");
     expect(issue?.actual).toContain("0");
-  })();
-(() => {
-
+  }
+  {
     const r = check(call("onlyNull", '"a"'));
     expect(violated(r)).toBe(1);
-  })();
-(() => {
-
+  }
+  {
     const r = check(call("onlyUndef", "0"));
     expect(violated(r)).toBe(1);
     const issue = r.issues.find((i) => i.code === "nudo:constraint-violated");
     expect(issue?.expected).toBe("x = undefined");
-  })();
-(() => {
-
+  }
+  {
     const r = check(call("onlyNull", "undefined"));
     expect(violated(r)).toBe(1);
-  })();
-(() => {
-
+  }
+  {
     const r = check(call("onlyUndef", "null"));
     expect(violated(r)).toBe(1);
-  })();
-(() => {
-
+  }
+  {
     const r = check(`export function f(x) { return 1; }
 export function use() { return f(0); }`);
     expect(violated(r)).toBe(0);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
+
 
 describe("形态分清 —— 裸字面量形态（434）vs union / nullable 形态（429）", () => {
   it("裸 lit(null)：契约**自身**是一条 eq 原子（无成员）；裸 lit(undefined)：契约**自身**是一条 eq 原子（无成员）；nullable(number())：nullish 是**成员**（members[]），不是契约自身；union(lit(null), number())：nullish 是**成员**（members[]），不是契约自身", () => {
-(() => {
-
+  {
     const c = litC___nudojs_core(null);
     expect(c.members ?? []).toHaveLength(0);
     expect(c.preds).toHaveLength(1);
     expect(c.preds[0]?.op).toBe("eq");
-  })();
-(() => {
-
+  }
+  {
     const c = litC___nudojs_core(undefined);
     expect(c.members ?? []).toHaveLength(0);
     expect(c.preds).toHaveLength(1);
     expect(c.preds[0]?.op).toBe("eq");
-  })();
-(() => {
-
+  }
+  {
     const c = nullable(number___nudojs_core());
     expect(c.preds).toHaveLength(0);
     expect(c.members ?? []).toHaveLength(3);
-  })();
-(() => {
-
+  }
+  {
     const c = union___nudojs_core(litC___nudojs_core(null), number___nudojs_core());
     expect(c.preds).toHaveLength(0);
     expect(c.members ?? []).toHaveLength(2);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 });
 });
 
@@ -8514,18 +7872,16 @@ const HANDWRITTEN = `import { fn, number } from "@nudojs/core";
 export const f = fn({ x: number().gt(0) });
 `;
 
-describe("生成标记只认 nudo 自己写的段头", () => {
-  it("行注释里**提到** @generated ⇒ 不是生成标记；块注释里**提到** @generated ⇒ 不是生成标记；注释**以** @generated 开头但不是 nudo 的段头 ⇒ 不是生成标记；代码行尾的 @generated ⇒ 不是生成标记（标记必须是独立行）；nudo 段头（完整形）⇒ 是生成标记；nudo 段头（短形 `— do not edit`）⇒ 是生成标记；nudo 段头（最短形 `by nudo`）⇒ 是生成标记；手写契约（无任何标记）⇒ 不", () => {
-(() => {
 
+  it("行注释里**提到** @generated ⇒ 不是生成标记；块注释里**提到** @generated ⇒ 不是生成标记；注释**以** @generated 开头但不是 nudo 的段头 ⇒ 不是生成标记；代码行尾的 @generated ⇒ 不是生成标记（标记必须是独立行）；nudo 段头（完整形）⇒ 是生成标记；nudo 段头（短形 `— do not edit`）⇒ 是生成标记；nudo 段头（最短形 `by nudo`）⇒ 是生成标记；手写契约（无任何标记）⇒ 不", () => {
+  {
     const sidecar = `import { fn, number } from "@nudojs/core";
 // 手写契约：这里提到了 @generated 这个词
 export const f = fn({ x: number().gt(0) });
 `;
     expect([...generatedExportNames(sidecar)]).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const sidecar = `import { fn, number } from "@nudojs/core";
 
 /**
@@ -8534,68 +7890,55 @@ export const f = fn({ x: number().gt(0) });
 export const scale = fn({ x: number().gt(0) });
 `;
     expect([...generatedExportNames(sidecar)]).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const sidecar = `import { fn, number } from "@nudojs/core";
 // @generated 这个词是 nudo 的段头标记，别抄
 export const f = fn({ x: number().gt(0) });
 `;
     expect([...generatedExportNames(sidecar)]).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const sidecar = `import { fn, number } from "@nudojs/core";
 const helper = 1; // @generated by nudo
 export const f = fn({ x: number().gt(0) });
 `;
     expect([...generatedExportNames(sidecar)]).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const sidecar = `// @generated by nudo — do not edit; regenerate with \`nudo contract --emit\`
 // source: lib.js:f
 export const f = fn({ x: number().gt(0) });
 `;
     expect([...generatedExportNames(sidecar)]).toEqual(["f"]);
-  })();
-(() => {
-
+  }
+  {
     const sidecar = `import { fn, number } from "@nudojs/core";
 // @generated by nudo — do not edit
 export const f = fn({ x: number().gt(0) });
 `;
     expect([...generatedExportNames(sidecar)]).toEqual(["f"]);
-  })();
-(() => {
-
+  }
+  {
     const sidecar = `// @generated by nudo
 export const f = fn({ x: number().gt(0) });
 `;
     expect([...generatedExportNames(sidecar)]).toEqual(["f"]);
-  })();
-(() => {
-
+  }
+  {
     expect([...generatedExportNames(HANDWRITTEN)]).toEqual([]);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
   // ---- nudo 自己写的段头：一个都不许漏 ----
 
-  ;
 
-  ;
 
-  ;
 
-  ;
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -8637,7 +7980,7 @@ const CALLER = `import calc from "./a.js";
 export function use() { return calc(-1); }
 `;
 
-describe("跨文件 default 导入的契约执法", () => {
+{
   beforeEach(() => {
     resetCheckSourceMemo();
   });
@@ -8648,35 +7991,35 @@ describe("跨文件 default 导入的契约执法", () => {
   };
 
   it("export default function calc + 具名侧车 ⇒ 调用点报违例；export { calc as default } + 具名侧车 ⇒ 调用点报违例；侧车写 export default fn(…) ⇒ 仍然执法（不回归）；具名导入（对照）⇒ 仍然执法", () => {
-(() => {
+  {
     resetCheckSourceMemo();
-  
+
 
     const r = checkCaller({ "/t/a.js": SRC_DEFAULT_FN, "/t/a.nudo.js": SIDECAR_NAMED });
     const violated = r.issues.filter((i) => i.code === "nudo:constraint-violated");
     expect(violated.length).toBe(1);
     expect(r.ok).toBe(false);
-  })();
-(() => {
+  }
+  {
     resetCheckSourceMemo();
-  
+
 
     const r = checkCaller({ "/t/a.js": SRC_EXPORT_LIST, "/t/a.nudo.js": SIDECAR_NAMED });
     const violated = r.issues.filter((i) => i.code === "nudo:constraint-violated");
     expect(violated.length).toBe(1);
     expect(r.ok).toBe(false);
-  })();
-(() => {
+  }
+  {
     resetCheckSourceMemo();
-  
+
 
     const r = checkCaller({ "/t/a.js": SRC_DEFAULT_FN, "/t/a.nudo.js": SIDECAR_DEFAULT });
     const violated = r.issues.filter((i) => i.code === "nudo:constraint-violated");
     expect(violated.length).toBe(1);
-  })();
-(() => {
+  }
+  {
     resetCheckSourceMemo();
-  
+
 
     const { loadModule } = makeFiles({
       "/t/a.js": SRC_DEFAULT_FN,
@@ -8685,15 +8028,12 @@ describe("跨文件 default 导入的契约执法", () => {
     const src = `import { calc } from "./a.js";\nexport function use() { return calc(-1); }\n`;
     const r = checkSource_____index_ts_34("/t/c.js", src, pTrue_____index_ts_33, { loadModule, fromFile: "/t/c.js" });
     expect(r.issues.filter((i) => i.code === "nudo:constraint-violated").length).toBe(1);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -8754,10 +8094,9 @@ function violations(r: {
   );
 }
 
-describe("零实参调用用默认值补齐实参位再执法", () => {
-  it("★ `f(x = -5)` + 契约 x > 0 + 零实参调用 ⇒ 报违例（改前零诊断）；★ 顶层零实参调用同样执法（作用域不再决定裁决）；负控制：默认值满足契约（`x = 5`）⇒ 不报违例；对照：显式传违约实参 ⇒ 照常报违例（既有路径没被弄坏）；负控制：**无默认值**的形参 + 零实参调用 ⇒ 不发明违例（缺参是另一条缺陷）；负控制：解构默认值（`{ port = 3000 } = {}`）⇒ 不发明违例；默认值位对齐：第二个形参有默认值 ⇒ 按形参位补齐（不串位）", () => {
-(() => {
 
+  it("★ `f(x = -5)` + 契约 x > 0 + 零实参调用 ⇒ 报违例（改前零诊断）；★ 顶层零实参调用同样执法（作用域不再决定裁决）；负控制：默认值满足契约（`x = 5`）⇒ 不报违例；对照：显式传违约实参 ⇒ 照常报违例（既有路径没被弄坏）；负控制：**无默认值**的形参 + 零实参调用 ⇒ 不发明违例（缺参是另一条缺陷）；负控制：解构默认值（`{ port = 3000 } = {}`）⇒ 不发明违例；默认值位对齐：第二个形参有默认值 ⇒ 按形参位补齐（不串位）", () => {
+  {
     const r = check(`
 export function f(x = -5) { return x; }
 export function g() { return f(); }
@@ -8766,25 +8105,22 @@ export function g() { return f(); }
     expect(vs.length).toBe(1);
     expect(vs[0].actual).toContain("-5");
     expect(vs[0].expected).toContain("x > 0");
-  })();
-(() => {
-
+  }
+  {
     const r = check(`
 export function f(x = -5) { return x; }
 f();
 `);
     expect(violations(r).length).toBe(1);
-  })();
-(() => {
-
+  }
+  {
     const r = check(`
 export function f(x = 5) { return x; }
 export function g() { return f(); }
 `);
     expect(violations(r).length).toBe(0);
-  })();
-(() => {
-
+  }
+  {
     const r = check(`
 export function f(x = 5) { return x; }
 export function g() { return f(-3); }
@@ -8792,25 +8128,22 @@ export function g() { return f(-3); }
     const vs = violations(r);
     expect(vs.length).toBe(1);
     expect(vs[0].actual).toContain("-3");
-  })();
-(() => {
-
+  }
+  {
     const r = check(`
 export function f(x) { return x; }
 export function g() { return f(); }
 `);
     expect(violations(r).length).toBe(0);
-  })();
-(() => {
-
+  }
+  {
     const r = check(`
 export function f({ port = 3000 } = {}) { return port; }
 export function g() { return f(); }
 `);
     expect(violations(r).length).toBe(0);
-  })();
-(() => {
-
+  }
+  {
     const r = check(`
 export function f(a, x = -5) { return x; }
 export function g() { return f(); }
@@ -8818,31 +8151,23 @@ export function g() { return f(); }
     const vs = violations(r);
     expect(vs.length).toBe(1);
     expect(vs[0].actual).toContain("-5");
-  })();
-(() => {
-
+  }
+  {
     // 共享脚手架 eval-helpers：零实参调用 ⇒ 运行时取默认值 -5
     const rec = callLit(`export function f(x = -5) { return x; }`, "f");
     expect(rec.result.term?.op).toBe("lit");
     const t = rec.result.term;
     expect(t?.op === "lit" ? t.value : undefined).toBe(-5);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -8887,54 +8212,45 @@ function fnSig(paramTypes: Abs_____index_ts[], returnType: Abs_____index_ts): Ab
   );
 }
 
-describe("泛型 α 跨形状 kind 绑定", () => {
-  it("arr 形参（收割的 T[]）× tuple 实参（数组字面量）⇒ α 绑定（不再落 any）；同 kind 臂仍排在前：arr 形参 × arr 实参 仍绑出元素类型（既有 deep-α 用例的护栏）；tuple 形参 × arr 实参 ⇒ 各槽绑 arr 的元素类型；空 tuple 实参不绑（无元素 ⇒ 保守留空，不臆造元素类型）；非数组 kind 仍不绑（prim 形参 × prim 实参：无 α 可绑）", () => {
-(() => {
 
+  it("arr 形参（收割的 T[]）× tuple 实参（数组字面量）⇒ α 绑定（不再落 any）；同 kind 臂仍排在前：arr 形参 × arr 实参 仍绑出元素类型（既有 deep-α 用例的护栏）；tuple 形参 × arr 实参 ⇒ 各槽绑 arr 的元素类型；空 tuple 实参不绑（无元素 ⇒ 保守留空，不臆造元素类型）；非数组 kind 仍不绑（prim 形参 × prim 实参：无 α 可绑）", () => {
+  {
     const fn = fnSig([arrParam], alpha);
     const out = instantiateReturn(fn, [tupleArg]);
     // 改前：any = T0（α 未绑定）⇒ 参与算术即 may-throw（L2 假红）
     expect(out.shape.k).not.toBe("any");
     expect(out.shape).toEqual({ k: "prim", type: "number" });
-  })();
-(() => {
-
+  }
+  {
     const fn = fnSig([arrParam], alpha);
     const out = instantiateReturn(fn, [arrArg]);
     expect(out.shape).toEqual({ k: "prim", type: "number" });
-  })();
-(() => {
-
+  }
+  {
     const t = abs({ k: "tuple", elements: [alpha] }, undefined, undefined, "exact");
     const fn = fnSig([t], alpha);
     const out = instantiateReturn(fn, [arrArg]);
     expect(out.shape).toEqual({ k: "prim", type: "number" });
-  })();
-(() => {
-
+  }
+  {
     const empty = abs({ k: "tuple", elements: [] }, undefined, undefined, "exact");
     const fn = fnSig([arrParam], alpha);
     const out = instantiateReturn(fn, [empty]);
     // α 未绑定 ⇒ 仍是 any 形状（不假精确）
     expect(out.shape.k).toBe("any");
-  })();
-(() => {
-
+  }
+  {
     const prim = abs({ k: "prim", type: "number" }, undefined, undefined, "exact");
     const fn = fnSig([prim], alpha);
     const out = instantiateReturn(fn, [numLit(1)]);
     expect(out.shape.k).toBe("any");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -8987,44 +8303,44 @@ function violations(calls: string): number {
   return r.issues.filter((i) => i.code === "nudo:constraint-violated").length;
 }
 
-describe("（延伸）：bigint 字面量契约在字段位 / 元素位与标量位同一裁决", () => {
+{
   beforeEach(() => {
     resetCheckSourceMemo();
   });
 
   it("域隶属单元层：lit(1n) 接受 1n、拒绝 2n 与 1（bigint 值域已放开）；标量位：f(2n) 报违例、f(1n) 放行（S6 已落，不得回退）；字段位：f({ v: 2n }) 报违例、f({ v: 1n }) 放行（915 延伸）；元素位：f([2n]) 报违例、f([1n]) 放行（915 延伸）；三向对照：同一份 lit(1n) 契约在三个位置的裁决条数一致；union 成员位：域外 bigint 报违例、域内 bigint 放行；既有裁决不得回退：nu", () => {
-(() => {
+  {
     resetCheckSourceMemo();
-  
+
 
     expect(literalMeetsConstraint_____domain_membership_ts_1(1n, litC(1n))).toBe(true);
     expect(literalMeetsConstraint_____domain_membership_ts_1(2n, litC(1n))).toBe(false);
     expect(literalMeetsConstraint_____domain_membership_ts_1(1, litC(1n))).toBe(false);
-  })();
-(() => {
+  }
+  {
     resetCheckSourceMemo();
-  
+
 
     expect(violations("scalarLitN(2n);")).toBe(1);
     expect(violations("scalarLitN(1n);")).toBe(0);
-  })();
-(() => {
+  }
+  {
     resetCheckSourceMemo();
-  
+
 
     expect(violations("fieldLitN({ v: 2n });")).toBe(1);
     expect(violations("fieldLitN({ v: 1n });")).toBe(0);
-  })();
-(() => {
+  }
+  {
     resetCheckSourceMemo();
-  
+
 
     expect(violations("elemLitN([2n]);")).toBe(1);
     expect(violations("elemLitN([1n]);")).toBe(0);
-  })();
-(() => {
+  }
+  {
     resetCheckSourceMemo();
-  
+
 
     const scalar = violations("scalarLitN(2n);");
     const field = violations("fieldLitN({ v: 2n });");
@@ -9034,26 +8350,26 @@ describe("（延伸）：bigint 字面量契约在字段位 / 元素位与标量
     expect(elem).toBe(scalar);
     // 合法实参：三处都零诊断
     expect(violations("scalarLitN(1n); fieldLitN({ v: 1n }); elemLitN([1n]);")).toBe(0);
-  })();
-(() => {
+  }
+  {
     resetCheckSourceMemo();
-  
+
 
     expect(violations("fieldUnionN({ v: 3n });")).toBe(1);
     expect(violations("fieldUnionN({ v: 1n });")).toBe(0);
     expect(violations("fieldUnionN({ v: 2n });")).toBe(0);
-  })();
-(() => {
+  }
+  {
     resetCheckSourceMemo();
-  
+
 
     expect(violations("fieldLitN({ v: 2 });")).toBe(1);
     expect(violations("fieldLitN({ v: \"x\" });")).toBe(1);
     expect(violations("elemLitN([2]);")).toBe(1);
-  })();
-(() => {
+  }
+  {
     resetCheckSourceMemo();
-  
+
 
     const { loadModule } = makeFiles({
       "/t/lib.nudo.js": `import { lit, shape, fn, any } from "@nudojs/core";
@@ -9065,23 +8381,16 @@ fieldLitZero({ v: -0 });
 `;
     const r = checkSource_____index_ts_35("/t/lib.js", src, pTrue_____index_ts_34, { loadModule, fromFile: "/t/lib.js" });
     expect(r.issues.filter((i) => i.code === "nudo:constraint-violated")).toEqual([]);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -9107,36 +8416,36 @@ describe("字面量同一性（域隶属面：字段位 / 数组元素位）", (
 
 
 
-describe("字面量同一性（域隶属面：字段位 / 数组元素位）", () => {
+{
   beforeEach(() => {
     resetCheckSourceMemo();
   });
 
   it("lit(0) 接受 -0、lit(-0) 接受 0（=== 口径，与标量实参位一致）；lit(0) 不接受 1 / -1（不因统一口径而漏判）；lit(NaN) 接受 NaN（NaN 特例；=== 对 NaN 为 false）；字段位 / 数组元素位的 -0 不再报违例（同一执法路径一种裁决）；字段位 / 数组元素位真正违约仍报（不放宽过头）", () => {
-(() => {
+  {
     resetCheckSourceMemo();
-  
+
 
     expect(literalMeetsConstraint_____domain_membership_ts_2(-0, litC(0))).toBe(true);
     expect(literalMeetsConstraint_____domain_membership_ts_2(0, litC(-0))).toBe(true);
-  })();
-(() => {
+  }
+  {
     resetCheckSourceMemo();
-  
+
 
     expect(literalMeetsConstraint_____domain_membership_ts_2(1, litC(0))).toBe(false);
     expect(literalMeetsConstraint_____domain_membership_ts_2(-1, litC(0))).toBe(false);
-  })();
-(() => {
+  }
+  {
     resetCheckSourceMemo();
-  
+
 
     expect(literalMeetsConstraint_____domain_membership_ts_2(NaN, litC(NaN))).toBe(true);
     expect(literalMeetsConstraint_____domain_membership_ts_2(0, litC(NaN))).toBe(false);
-  })();
-(() => {
+  }
+  {
     resetCheckSourceMemo();
-  
+
 
     const { loadModule } = makeFiles({
       "/t/lib.nudo.js": `import { lit, shape, array, fn, any } from "@nudojs/core";
@@ -9151,10 +8460,10 @@ arrLit([-0]);
 `;
     const r = checkSource_____index_ts_36("/t/lib.js", src, pTrue_____index_ts_35, { loadModule, fromFile: "/t/lib.js" });
     expect(r.issues.filter((i) => i.code === "nudo:constraint-violated")).toEqual([]);
-  })();
-(() => {
+  }
+  {
     resetCheckSourceMemo();
-  
+
 
     const { loadModule } = makeFiles({
       "/t/lib.nudo.js": `import { lit, shape, array, fn, any } from "@nudojs/core";
@@ -9170,17 +8479,13 @@ arrLit([1]);
     const r = checkSource_____index_ts_36("/t/lib.js", src, pTrue_____index_ts_35, { loadModule, fromFile: "/t/lib.js" });
     const violated = r.issues.filter((i) => i.code === "nudo:constraint-violated");
     expect(violated.length).toBe(2);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -9233,32 +8538,28 @@ function litOf(a: unknown): unknown {
   return t?.op === "lit" ? t.value : undefined;
 }
 
-describe("0 / x folding keeps the denominator sign", () => {
-  it("分母恒负 ⇒ 0 / x 折 -0（原生 0 / -5 = -0）；分母恒负 ⇒ 1 / (0 / x) 折 -Infinity（原生 -Infinity）；分母恒正 ⇒ 仍折 +0 / +Infinity（原生口径不变）；分母符号不可证（可能为 0 / 两侧都有界）⇒ 不折字面量（保守）；issue #170 既有口径不回归：x >= 0 ∧ x ≠ 0 ⇒ 折 +0 字面量；numericBounds 的符号侧：x < 0 ⇒ hi 严格 0（分母恒负可判）", () => {
-(() => {
 
+  it("分母恒负 ⇒ 0 / x 折 -0（原生 0 / -5 = -0）；分母恒负 ⇒ 1 / (0 / x) 折 -Infinity（原生 -Infinity）；分母恒正 ⇒ 仍折 +0 / +Infinity（原生口径不变）；分母符号不可证（可能为 0 / 两侧都有界）⇒ 不折字面量（保守）；issue #170 既有口径不回归：x >= 0 ∧ x ≠ 0 ⇒ 折 +0 字面量；numericBounds 的符号侧：x < 0 ⇒ hi 严格 0（分母恒负可判）", () => {
+  {
     const r = div_____arithmetic_ts(lit0(), negX, pTrue, undefined);
     expect(Object.is(litOf(r), -0)).toBe(true);
     expect(formatShape_____index_ts(r)).toBe("-0");
-  })();
-(() => {
-
+  }
+  {
     const inner = div_____arithmetic_ts(lit0(), negX, pTrue, undefined);
     const r = div_____arithmetic_ts(lit1(), inner, pTrue, undefined);
     expect(litOf(r)).toBe(-Infinity);
     expect(formatShape_____index_ts(r)).toBe("-Infinity");
-  })();
-(() => {
-
+  }
+  {
     const r = div_____arithmetic_ts(lit0(), posX, pTrue, undefined);
     expect(Object.is(litOf(r), 0)).toBe(true);
     expect(formatShape_____index_ts(r)).toBe("0");
     const inner = div_____arithmetic_ts(lit0(), posX, pTrue, undefined);
     const recip = div_____arithmetic_ts(lit1(), inner, pTrue, undefined);
     expect(litOf(recip)).toBe(Infinity);
-  })();
-(() => {
-
+  }
+  {
     // 分母 x >= 0（可能为 0）⇒ 0/0 = NaN ⇒ 不折
     const ambiguous = div_____arithmetic_ts(lit0(), nonNegX, pTrue, undefined);
     expect(litOf(ambiguous)).toBeUndefined();
@@ -9271,58 +8572,46 @@ describe("0 / x folding keeps the denominator sign", () => {
     );
     const mixed = div_____arithmetic_ts(lit0(), bothSides, pTrue, undefined);
     expect(litOf(mixed)).toBeUndefined();
-  })();
-(() => {
-
+  }
+  {
     const r = div_____arithmetic_ts(lit0(), nonNegX, and(ne(v_____index_ts_2("x"), lit_____index_ts_3(0))), undefined);
     expect(litOf(r)).toBe(0);
     expect(Object.is(litOf(r), -0)).toBe(false);
     // 无 ne 事实 ⇒ 不折
     const noNe = div_____arithmetic_ts(lit0(), nonNegX, pTrue, undefined);
     expect(litOf(noNe)).toBeUndefined();
-  })();
-(() => {
-
+  }
+  {
     const b = numericBounds(negX, pTrue);
     expect(b?.hi).toEqual({ value: 0, strict: true });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 
 describe("端到端：形参带 x < 0 约束", () => {
   it("0 / x（x < 0）⇒ 引擎折 -0（改前折 +0）；1 / (0 / x)（x < 0）⇒ 引擎折 -Infinity（改前折 +Infinity）；分母恒正 ⇒ 端到端仍是 +0 / +Infinity", () => {
-(() => {
-
+  {
     const r = call(`export function f(x) { return 0 / x; }`, "f", [negX]);
     expect(formatShape_____index_ts(r.result)).toBe("-0");
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f(x) { return 1 / (0 / x); }`, "f", [negX]);
     expect(formatShape_____index_ts(r.result)).toBe("-Infinity");
-  })();
-(() => {
-
+  }
+  {
     const r = call(`export function f(x) { return 0 / x; }`, "f", [posX]);
     expect(formatShape_____index_ts(r.result)).toBe("0");
     const recip = call(`export function f(x) { return 1 / (0 / x); }`, "f", [posX]);
     expect(formatShape_____index_ts(recip.result)).toBe("Infinity");
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 });
 });
 
@@ -9382,10 +8671,9 @@ function threeForms(src: string): [string, string, string] {
   ];
 }
 
-describe("re-export 的分支条件只看 source，不看 modules 表在不在", () => {
-  it("`export { a } from './m.js'`：来源不可达时不产生任何导出槽；`export { default } from './m.js'`：来源不可达时 default 槽必须缺席；`export { default as d } from './m.js'`：来源不可达时不产生任何导出槽；`export * as ns from './m.js'`：来源不可达时不产生任何导出槽；`export * from './m.js'`：来源不可达时不产生任何导出槽", () => {
-(() => {
 
+  it("`export { a } from './m.js'`：来源不可达时不产生任何导出槽；`export { default } from './m.js'`：来源不可达时 default 槽必须缺席；`export { default as d } from './m.js'`：来源不可达时不产生任何导出槽；`export * as ns from './m.js'`：来源不可达时不产生任何导出槽；`export * from './m.js'`：来源不可达时不产生任何导出槽", () => {
+  {
     const [noMods, modMissing, modPresent] = threeForms(`export { a } from "./m.js";`);
     // 修复前：noMods 形态凭空登记本地导出 a（named={a}）
     expect(noMods).toBe("named={} default=absent");
@@ -9393,46 +8681,40 @@ describe("re-export 的分支条件只看 source，不看 modules 表在不在",
     expect(noMods).toBe(modMissing);
     // 来源可达但缺名 ⇒ 留 unknown 槽（可达 ≠ 不可达）
     expect(modPresent).toBe("named={a} default=absent");
-  })();
-(() => {
-
+  }
+  {
     const [noMods, modMissing, modPresent] = threeForms(`export { default } from "./m.js";`);
     // 修复前：noMods 形态凭空造出 default 槽（协议层非法值）
     expect(noMods).toBe("named={} default=absent");
     expect(noMods).toBe(modMissing);
     // 来源可达 ⇒ default 槽存在
     expect(modPresent).toBe("named={} default=present");
-  })();
-(() => {
-
+  }
+  {
     const [noMods, modMissing, modPresent] = threeForms(`export { default as d } from "./m.js";`);
     // 修复前：noMods 形态凭空登记本地导出 d
     expect(noMods).toBe("named={} default=absent");
     expect(noMods).toBe(modMissing);
     expect(modPresent).toBe("named={d} default=absent");
-  })();
-(() => {
-
+  }
+  {
     const [noMods, modMissing] = threeForms(`export * as ns from "./m.js";`);
     // 修复前：noMods 形态凭空登记本地导出 ns
     expect(noMods).toBe("named={} default=absent");
     expect(noMods).toBe(modMissing);
-  })();
-(() => {
-
+  }
+  {
     const [noMods, modMissing, modPresent] = threeForms(`export * from "./m.js";`);
     expect(noMods).toBe("named={} default=absent");
     expect(noMods).toBe(modMissing);
     expect(modPresent).toBe("named={x} default=absent");
-  })();
-(() => {
-
+  }
+  {
     const file = parseSource(`const a = 1;\nexport { a };\n`);
     const r = collectAbsExports(file, emptyEnv(), OTHER_TABLE);
     expect(Object.keys(r.named)).toEqual(["a"]);
-  })();
-(() => {
-
+  }
+  {
     const bind = (src: string): string => {
       const file = parseSource(src);
       const env = emptyEnv();
@@ -9447,21 +8729,15 @@ describe("re-export 的分支条件只看 source，不看 modules 表在不在",
     expect(bind(`import d from "./m.js";`)).toBe("d=number");
     expect(bind(`import { default as d } from "./m.js";`)).toBe("d=number");
     expect(bind(`import { x } from "./m.js";`)).toBe("x=string");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------

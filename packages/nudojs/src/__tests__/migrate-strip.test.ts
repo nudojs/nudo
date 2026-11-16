@@ -56,7 +56,7 @@ const IMPORT_EQUALS = `import fs = require("node:fs");
 export const readFile = (p: string): string => fs.readFileSync(p, "utf-8");
 `;
 
-describe("strip 不得写出仍是 TS 语法的 .js", () => {
+
   it("非 declare 的 namespace ⇒ 拒绝写盘 + exit 1", () => {
     const dir = dirWith({ "ns.ts": NS });
     const r = runCliTsx(["migrate", "strip", "--write", dir]);
@@ -97,7 +97,7 @@ describe("strip 不得写出仍是 TS 语法的 .js", () => {
     expect(existsSync(join(dir, "ok.js"))).toBe(true);
     expect(readFileSync(join(dir, "ok.js"), "utf-8")).toContain("n * 2");
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -198,7 +198,7 @@ function issueCodes(stdout: string): string[] {
   return (data.issues ?? []).map((i) => i.code ?? "");
 }
 
-describe("strip 产物被 check 跳过（发布物零覆盖 ⇒ 假绿）", () => {
+
   it("① strip --write 后 check 覆盖同 stem 的产物 .js（报出产物里的问题）", { timeout: 180_000 }, () => {
     const dir = tmpPkg("nudo-migrate-bug-1053-");
     writeFileSync(join(dir, "src", "shapes.nudo.js"), SHAPES_NUDO_JS, "utf-8");
@@ -278,7 +278,7 @@ describe("strip 产物被 check 跳过（发布物零覆盖 ⇒ 假绿）", () =
     expect(files).toHaveLength(1);
     expect(files[0]).toMatch(/index\.ts$/);
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -311,7 +311,7 @@ afterAll(() => {
   for (const d of dirs) rmSync(d, { recursive: true, force: true });
 });
 
-describe("migrate strip --write 是原子的（无半写状态）", () => {
+
   it("语法错文件 ⇒ 报错点名文件 + 一个字节都不落盘", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-bug-574-"));
     dirs.push(dir);
@@ -350,7 +350,7 @@ describe("migrate strip --write 是原子的（无半写状态）", () => {
     expect(failed[0]!.error).toMatch(/bad\.ts/);
     expect(failed[0]!.error).toMatch(/\(1:\d+\)/);
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -379,7 +379,7 @@ afterAll(() => {
 const TS_SRC = `export function add(a: number, b: number): number { return a + b; }\n`;
 const HANDWRITTEN = `export function add(a, b) { return a + b; }\nexport function legacy() { return "hand-written"; }\n`;
 
-describe("migrate strip --write 不覆盖既有的同名 .js", () => {
+
   it("既有 util.js ⇒ 拒绝写入并报错（exit 非 0），手写内容原样保留", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-bug-575-"));
     dirs.push(dir);
@@ -427,7 +427,7 @@ describe("migrate strip --write 不覆盖既有的同名 .js", () => {
     ).resolves.toBeTruthy();
     expect(readFileSync(join(dir, "util.js"), "utf-8")).toBe(first);
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -457,7 +457,7 @@ afterAll(() => {
 
 const TSX_SRC = `export function Comp(props: { name: string }) {\n  return <div className="x">{props.name}</div>;\n}\n`;
 
-describe("migrate strip 不产出加载不了的 .jsx", () => {
+
   it(".tsx ⇒ 明确报错（不静默 exit 0），且不落任何产物", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-bug-583-"));
     dirs.push(dir);
@@ -493,5 +493,5 @@ describe("migrate strip 不产出加载不了的 .jsx", () => {
     expect((err as Error).message).toMatch(/Comp\.tsx/);
     expect((err as Error).message).toMatch(/no JSX transform/);
   });
-});
+
 });

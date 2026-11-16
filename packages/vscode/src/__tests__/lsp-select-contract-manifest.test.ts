@@ -26,7 +26,7 @@ const manifest = JSON.parse(
   readFileSync(join(PKG_ROOT, "package.json"), "utf-8"),
 ) as Manifest;
 
-describe("族 53 · 第 8 条：manifest 登记 nudo.selectContract", () => {
+describe("manifest 登记 nudo.selectContract", () => {
   it("contributes.commands 里有 nudo.selectContract（非空标题）", () => {
     const commands = manifest.contributes?.commands ?? [];
     const entry = commands.find((c) => c.command === "nudo.selectContract");

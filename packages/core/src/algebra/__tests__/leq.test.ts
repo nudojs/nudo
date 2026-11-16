@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { leqAbs, requiredFnArity } from "../leq.ts";
-import { abs, numLit, strLit, boolLit, num, str, unknown, never, type Abs } from "../abs.ts";
+import { abs, numLit, strLit, num, str, unknown, never, type Abs } from "../abs.ts";
 import { v, lit } from "../term.ts";
-import { gt, ge, lt, le, pTrue } from "../pred.ts";
+import { gt, ge, lt, le,  } from "../pred.ts";
 
 function numWithPred(n: number, op: "gt" | "ge" = "gt") {
   return abs(num().shape, v("x"), op === "gt" ? gt(v("x"), lit(n)) : ge(v("x"), lit(n)), "path");

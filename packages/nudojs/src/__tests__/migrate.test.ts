@@ -659,7 +659,7 @@ describe("nudo migrate", () => {
     return { dir, pkgPath, wfPath, pkgBefore, wfBefore };
   }
 
-  it("BUG-010: package.json write failure leaves tree unchanged (zero half-state)", () => {
+  it("package.json write failure leaves tree unchanged (zero half-state)", () => {
     const { dir, pkgPath, wfPath, pkgBefore, wfBefore } = setupRetireFixture("retire-fail-pkg");
     // 整包目录只读 → package.json（第一个写）即失败
     chmodSync(dir, 0o555);
@@ -674,7 +674,7 @@ describe("nudo migrate", () => {
     expect(existsSync(join(dir, ".nudo", "migrate-retiring.json"))).toBe(false);
   });
 
-  it("BUG-010: workflow write failure rolls back package.json (no nudo-pkg + tsc-CI mix)", () => {
+  it("workflow write failure rolls back package.json (no nudo-pkg + tsc-CI mix)", () => {
     const { dir, pkgPath, wfPath, pkgBefore, wfBefore } = setupRetireFixture("retire-fail-wf");
     const wfDir = join(dir, ".github", "workflows");
     // workflow 目录只读：package.json 先写成功，workflow 写失败 → 必须回滚 package.json
@@ -695,7 +695,7 @@ describe("nudo migrate", () => {
     expect(rows[0]!.retiring).toBe(false);
   });
 
-  it("BUG-010: marker write failure rolls back package.json + workflows", () => {
+  it("marker write failure rolls back package.json + workflows", () => {
     const { dir, pkgPath, wfPath, pkgBefore, wfBefore } = setupRetireFixture("retire-fail-marker");
     // marker 路径被目录占住 → rename 到目标失败（package.json + workflows 已写）
     mkdirSync(join(dir, ".nudo", "migrate-retired.json"), { recursive: true });
@@ -707,7 +707,7 @@ describe("nudo migrate", () => {
     expect(rows[0]!.retired).toBe(false);
   });
 
-  it("BUG-010: retire is recoverable after a failed attempt (re-run completes)", () => {
+  it("retire is recoverable after a failed attempt (re-run completes)", () => {
     const { dir, pkgPath, wfPath } = setupRetireFixture("retire-recover");
     mkdirSync(join(dir, ".nudo", "migrate-retired.json"), { recursive: true });
     expect(() => migrateRetire(dir)).toThrow();

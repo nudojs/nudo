@@ -17,7 +17,7 @@ import { describe, it, expect } from "vitest";
 import {
   runTranspiled,
   callTranspiledExportFull,
-  litValue,
+
   formatAbs,
   abs,
 } from "@nudojs/core";

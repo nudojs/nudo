@@ -28,7 +28,7 @@ describe("指令补全只在注释里出", () => {
 
 const isDirective = (label: string): boolean => label.startsWith("@nudo:");
 
-describe("指令补全只在注释里出", () => {
+
   it("乘号之后：不出指令项（出的是变量补全）", async () => {
     const src = "export function f(x, y) {\n  return x * y;\n}\n";
     const { mock, uri } = await openLspDocument(src, "file:///tmp/nudo-bug-708/a.js");
@@ -59,7 +59,7 @@ describe("指令补全只在注释里出", () => {
     expect(items.map((i) => i.label)).toContain("@nudo:case");
     expect(items.every((i) => isDirective(i.label))).toBe(true);
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -98,7 +98,7 @@ export function ident(x) { return x; }
 export const obj = { a: 1 };
 `;
 
-describe("completion 的函数 detail 与 hover / check 签名同形", () => {
+
   it("fn 绑定 detail = `ident(x: any) => any`（不是 `(x) => ?`），且与 hover.signature 一致", () => {
     withTempDir("nudo-bug091-", (dir) => {
       const file = join(dir, "c.js");
@@ -124,7 +124,7 @@ describe("completion 的函数 detail 与 hover / check 签名同形", () => {
       expect(hover?.signature).toBe("ident(x: any) => any");
     });
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -154,7 +154,7 @@ const SRC = [
   "",
 ].join("\n");
 
-describe("模块级函数补全 kind = Function", () => {
+
   it("顶层 fn 绑定 → Function(3)，非函数绑定 → Variable(6)", async () => {
     const { mock, uri } = await openLspDocument(SRC, "file:///tmp/nudo-bug-717/a.js");
     const items = requestCompletion(mock, uri, 4, 0);
@@ -173,7 +173,7 @@ describe("模块级函数补全 kind = Function", () => {
     const byLabel = new Map(items.map((i) => [i.label, i.kind]));
     expect(byLabel.get("m")).toBe(KIND_METHOD);
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -217,7 +217,7 @@ function lineOf(src: string, needle: string): { line: number; text: string } {
 
 const labels = (items: { label: string }[]): string[] => items.map((i) => i.label);
 
-describe("补全面判词法上下文", () => {
+
   it("字符串字面量内部 ⇒ 零候选（改前给成员表）", async () => {
     const { mock, uri } = await openLspDocument(SRC, "file:///tmp/nudo-bug-952/a.js");
     const at = lineOf(SRC, '"modObj."');
@@ -252,7 +252,7 @@ describe("补全面判词法上下文", () => {
     const items = requestCompletion(mock, uri, 0, 11);
     expect(labels(items)).toEqual(["@nudo:case"]);
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -273,7 +273,7 @@ describe("@nudo:sample 补全项如实描述", () => {
 // JSDoc 里的 ` * @nudo:` —— 光标在 `@nudo:` 之后
 const SRC = "/**\n * @nudo:\n */\nexport const k = 1;\n";
 
-describe("@nudo:sample 补全项如实描述", () => {
+
   it("detail 说明是 reserved / no-op", async () => {
     const { mock, uri } = await openLspDocument(SRC, "file:///tmp/nudo-bug-700/a.js");
     const items = requestCompletion(mock, uri, 1, 9);
@@ -300,7 +300,7 @@ describe("@nudo:sample 补全项如实描述", () => {
     expect(edit.range.start).toEqual({ line: 1, character: 3 });
     expect(edit.range.end).toEqual({ line: 1, character: 9 });
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -319,7 +319,7 @@ describe("尾随点号补全不再清零", () => {
 
 const SRC = "export const obj = { alpha: 1, beta: 2 };\nobj.\n";
 
-describe("尾随点号补全不再清零", () => {
+
   it("尾随点号：给出 obj 的成员，且不报 console 错", async () => {
     const { mock, uri } = await openLspDocument(SRC, "file:///tmp/nudo-bug-698/a.js");
     const items = requestCompletion(mock, uri, 1, 4);
@@ -344,5 +344,5 @@ describe("尾随点号补全不再清零", () => {
       requestCompletion(partial.mock, partial.uri, 1, 6),
     );
   });
-});
+
 });

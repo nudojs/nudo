@@ -1,6 +1,6 @@
 import {describe, it, expect} from "vitest";
 import {transpileSource} from "../exec/transpile.ts";
-import {$obj, $objRest, $get, $orDefault, formatAbs, runTranspiled, callTranspiledExportFull, litValue} from "@nudojs/core";
+import {$obj, $objRest, $get, formatAbs, runTranspiled, callTranspiledExportFull, litValue} from "@nudojs/core";
 import {numLit} from "@nudojs/core";
 
 describe("RestElement emit + rest runtime", () => {

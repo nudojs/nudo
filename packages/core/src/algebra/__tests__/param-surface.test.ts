@@ -6,12 +6,12 @@ import {
   locateContractParam,
 } from "../format/param-surface.ts";
 import { generalizeFromAst } from "../generalize.ts";
-import { parseSource } from "../parse-source.ts";
+import "../parse-source.ts";
 import { effectiveContract, formatConstraint } from "../contract/contract.ts";
 import { checkSource, pTrue } from "../index.ts";
 import { resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
-import { number, fn } from "../constraint.ts";
+import { fn } from "../constraint.ts";
 import { makeFiles } from "./nudo-constraints.ts";
 
 describe("C4.1 formalParamsFromNodes", () => {

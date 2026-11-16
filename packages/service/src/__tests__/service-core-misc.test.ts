@@ -92,17 +92,17 @@ function evaluateZodModule(source: string, exportNames: string[]): { ok: boolean
   }
 }
 
-describe("产物面不得出现内部伪名 brand（Intl 未建模子构造器）", () => {
+
   it("引擎侧：实例 brand 名不是内部伪名；dts 产物：不得出现内部伪名（改前：TS2304——伪名从未声明）；schema 产物：不得 z.instanceof(内部伪名)（改前：import 即 ReferenceError）；schema 产物可求值（import 即用——改前 ReferenceError）；负控制：产物里的 z.instanceof 实参都是运行时全局构造器", () => {
-(() => {
+  {
   resetAllAnalysisCaches();
 
 
     const out = newCollatorOutputAbs();
     const name = out.shape.k === "brand" ? (out.shape.name ?? "") : "";
     expect(isInternalPseudoName(name)).toBe(false);
-  })();
-(() => {
+  }
+  {
   resetAllAnalysisCaches();
 
 
@@ -110,16 +110,16 @@ describe("产物面不得出现内部伪名 brand（Intl 未建模子构造器�
     expect(dts).not.toMatch(/__nudoFnParent/);
     // 消费方 tsc 不得见到未声明的类型名
     expect(dts).not.toMatch(/:\s*__nudo/);
-  })();
-(() => {
+  }
+  {
   resetAllAnalysisCaches();
 
 
     const { source } = absToZodSchemaModule({ newCollatorOutput: newCollatorOutputAbs() });
     expect(source).not.toMatch(/__nudoFnParent/);
     expect(source).not.toMatch(/z\.instanceof\(\s*__nudo/);
-  })();
-(() => {
+  }
+  {
   resetAllAnalysisCaches();
 
 
@@ -127,8 +127,8 @@ describe("产物面不得出现内部伪名 brand（Intl 未建模子构造器�
     const r = evaluateZodModule(source, ["newCollatorOutput"]);
     expect(r.error).toBeUndefined();
     expect(r.ok).toBe(true);
-  })();
-(() => {
+  }
+  {
   resetAllAnalysisCaches();
 
 
@@ -138,17 +138,13 @@ describe("产物面不得出现内部伪名 brand（Intl 未建模子构造器�
       const v = (globalThis as Record<string, unknown>)[name];
       expect(typeof v, name).toBe("function");
     }
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -188,13 +184,13 @@ function classDts(): string {
   return mod.lines.join("\n");
 }
 
-describe("类形参归一为 TS unknown（TS 投影面）", () => {
+
   it("构造器形参 = unknown（nudo 展示面仍为 any，两个作用域不同）", () => {
     const dts = classDts();
     expect(dts).toContain("constructor(w: unknown, h: unknown);");
     expect(dts).not.toContain("constructor(w: any");
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -269,42 +265,35 @@ function signatureOf(src: string, name: string): { display: string; throws?: str
   return { display: sig!.display, throws: sig!.throws };
 }
 
-describe("@nudo:replace 挂在裸块语句上必须生效", () => {
-  it("裸块语句上的指令登记了**节点身份**区间（改前恒空）；裸块语句 与 普通语句 的签名逐字相同（替换真的生效）；裸块语句命中 ⇒ 零「未命中」诊断（不许谎报作用域内没有该表达式）；目标确实只在**嵌套**块里 ⇒ 诊断明说「被嵌套作用域挡住」而不是「没有该表达式」", () => {
-(() => {
 
+  it("裸块语句上的指令登记了**节点身份**区间（改前恒空）；裸块语句 与 普通语句 的签名逐字相同（替换真的生效）；裸块语句命中 ⇒ 零「未命中」诊断（不许谎报作用域内没有该表达式）；目标确实只在**嵌套**块里 ⇒ 诊断明说「被嵌套作用域挡住」而不是「没有该表达式」", () => {
+  {
     const reps = collectEvalReplacements(BLOCK_TARGET);
     expect(reps.targets).toHaveLength(1);
     expect(typeof reps.targets[0]!.stmtStart).toBe("number");
     expect(typeof reps.targets[0]!.stmtEnd).toBe("number");
-  })();
-(() => {
-
+  }
+  {
     expect(signatureOf(BLOCK_TARGET, "blockTarget").display).toBe("number");
     expect(signatureOf(BLOCK_TARGET, "blockTarget").display).toBe(
       signatureOf(CONST_TARGET, "plainTarget").display,
     );
-  })();
-(() => {
-
+  }
+  {
     expect(diagsOf(BLOCK_TARGET)).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const diags = diagsOf(NESTED_BLOCK_TARGET);
     expect(diags).toHaveLength(1);
     expect(diags[0]!.message).toContain("@nudo:replace target \"b\"");
     expect(diags[0]!.message).toContain("nested scope");
     expect(diags[0]!.message).not.toContain("matched no expression");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -365,9 +354,9 @@ function labels(): string[] {
   return (m?.[1] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 }
 
-describe("溯源标签与 cwd 无关", () => {
+
   it("两个不同 cwd 各跑一次 ⇒ 标签逐字相同且只有一条；历史 cwd 相对拼写 + 新拼写 ⇒ 归一成一条（不再并集）", () => {
-(() => {
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-bug-041-"));
   prevCwd = process.cwd();
 
@@ -384,8 +373,8 @@ describe("溯源标签与 cwd 无关", () => {
     const second = labels();
     expect(second).toEqual(first);
     expect(second).toHaveLength(1);
-  })();
-(() => {
+  }
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-bug-041-"));
   prevCwd = process.cwd();
 
@@ -407,11 +396,10 @@ describe("溯源标签与 cwd 无关", () => {
     process.chdir(dir);
     emitDerivedFromRoot(root, { mode: "update" });
     expect(labels()).toHaveLength(1);
-  })();
-});;
-
-  ;
+  }
 });
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -444,7 +432,7 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("侧车解析失败必须点名侧车", () => {
+
   it("错误消息含侧车文件名（不是源文件名）", async () => {
     writeFileSync(join(dir, "lib.js"), `export function f(a) {\n  return a + 1;\n}\nf(1);\n`, "utf-8");
     // 语法的确崩：`const x = ;`
@@ -454,7 +442,7 @@ describe("侧车解析失败必须点名侧车", () => {
       /lib\.nudo\.js.*not parseable/,
     );
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -474,17 +462,15 @@ describe("解构形参的默认值 ⇒ 可省", () => {
 
 
 
-describe("解构形参的默认值 ⇒ 可省", () => {
-  it("`{ x = 1, y = x + 1 } = {}` ⇒ 形参可省（不是必填）；对照组：无默认值的解构形参仍必填", () => {
-(() => {
 
+  it("`{ x = 1, y = x + 1 } = {}` ⇒ 形参可省（不是必填）；对照组：无默认值的解构形参仍必填", () => {
+  {
     const dts = generateDts(
       analyzeFile___nudojs_service_1("/test/bug107.js", `export function f({ x = 1, y = x + 1 } = {}) { return y; }\n`),
     );
     expect(dts).toMatch(/export declare function f\(_p0\?: /);
-  })();
-(() => {
-
+  }
+  {
     const dts = generateDts(
       analyzeFile___nudojs_service_1("/test/bug107b.js", `export function g({ x = 1 } = undefined) { return x; }\n`),
     );
@@ -495,11 +481,10 @@ describe("解构形参的默认值 ⇒ 可省", () => {
       analyzeFile___nudojs_service_1("/test/bug107c.js", `export function r({ x }) { return x; }\n`),
     );
     expect(required).toMatch(/export declare function r\(_p0: /);
-  })();
-});;
-
-  ;
+  }
 });
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -587,9 +572,9 @@ beforeEach(() => {
   resetEvalForkBudget();
 });
 
-describe("1145 · service 观测面：模块级求值失败按文件可见", () => {
+
   it("模块级求值失败 ⇒ 观测面看见该文件的 module-throw 回落（装载期逃逸）；假红防线：unsupported:* 回落**不**进失败信号；假红防线：module-throw（程序自身抛）**不**进失败信号；干净文件 ⇒ 零回落（不得凭空造失败）", () => {
-(() => {
+  {
   resetCheckSourceMemo();
   resetGeneralizeMemo();
   resetNudoModuleExecCache();
@@ -616,8 +601,8 @@ describe("1145 · service 观测面：模块级求值失败按文件可见", () 
     // 失败信号必须**能定位到文件**
     expect(evalFailures.every((f) => f.file === file)).toBe(true);
     expect(evalFailures[0]!.message.length).toBeGreaterThan(0);
-  })();
-(() => {
+  }
+  {
   resetCheckSourceMemo();
   resetGeneralizeMemo();
   resetNudoModuleExecCache();
@@ -633,8 +618,8 @@ describe("1145 · service 观测面：模块级求值失败按文件可见", () 
     const file = `${dir}/unsupported.ts`;
     const { evalFailures } = analyzeFileWithEvalFailures(file, UNSUPPORTED_ONLY);
     expect(evalFailures).toEqual([]);
-  })();
-(() => {
+  }
+  {
   resetCheckSourceMemo();
   resetGeneralizeMemo();
   resetNudoModuleExecCache();
@@ -650,8 +635,8 @@ describe("1145 · service 观测面：模块级求值失败按文件可见", () 
     const file = `${dir}/throw.js`;
     const { evalFailures } = analyzeFileWithEvalFailures(file, MODULE_THROWS);
     expect(evalFailures).toEqual([]);
-  })();
-(() => {
+  }
+  {
   resetCheckSourceMemo();
   resetGeneralizeMemo();
   resetNudoModuleExecCache();
@@ -668,15 +653,12 @@ describe("1145 · service 观测面：模块级求值失败按文件可见", () 
     const { analysis, evalFailures } = analyzeFileWithEvalFailures(file, CLEAN);
     expect(evalFailures).toEqual([]);
     expect(analysis.functions.map((f) => f.name)).toContain("add");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -703,7 +685,7 @@ const SRC = `export class K {
 }
 `;
 
-describe("静态字段不是方法", () => {
+
   it("静态方法进函数表，静态字段不进", () => {
     const names = withTmpProject("nudo-139-", (dir) => {
       const file = writeTmpFile(dir, "k.js", SRC);
@@ -713,7 +695,7 @@ describe("静态字段不是方法", () => {
     expect(names).toContain("K.instance");
     expect(names).not.toContain("K.s");
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -738,28 +720,25 @@ const SRC = `export default class {
 }
 `;
 
-describe("匿名 default class 可见", () => {
-  it("成员按导出槽名 `default` 登记（不再被整体丢弃）；对照组：具名 default class 仍按本地名登记（口径不变）", () => {
-(() => {
 
+  it("成员按导出槽名 `default` 登记（不再被整体丢弃）；对照组：具名 default class 仍按本地名登记（口径不变）", () => {
+  {
     const names = withTmpProject("nudo-152-", (dir) => {
       const file = writeTmpFile(dir, "anon.js", SRC);
       return collectTopLevelFunctions(parse(readFileSync(file, "utf-8"))).map((f) => f.name);
     });
     expect(names).toContain("default.run");
-  })();
-(() => {
-
+  }
+  {
     const names = withTmpProject("nudo-152-named-", (dir) => {
       const file = writeTmpFile(dir, "named.js", `export default class Foo {\n  run() { return 1; }\n}\n`);
       return collectTopLevelFunctions(parse(readFileSync(file, "utf-8"))).map((f) => f.name);
     });
     expect(names).toContain("Foo.run");
-  })();
-});;
-
-  ;
+  }
 });
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -809,35 +788,30 @@ export function g(o) {
 }
 `;
 
-describe("精确 null 字面量不判「推不出来」", () => {
-  it("`=> lit(null)` 的精确结果被判定（不是 unchecked）；判据本体的对照组：真 unknown ⇒ 仍是推导失败；inferenceFailed：lit null/undefined ⇒ false；无 term 的 unknown ⇒ true", () => {
-(() => {
 
+  it("`=> lit(null)` 的精确结果被判定（不是 unchecked）；判据本体的对照组：真 unknown ⇒ 仍是推导失败；inferenceFailed：lit null/undefined ⇒ false；无 term 的 unknown ⇒ true", () => {
+  {
     const r = reportOf(NULL_CASE);
     const o = r.outcomes.find((x) => x.caseName === "null")!;
     expect(o.unchecked).toBe(false);
     expect(o.ok).toBe(true);
     expect(o.actual).toBe("null");
-  })();
-(() => {
-
+  }
+  {
     const r = reportOf(UNKNOWN_CASE);
     const o = r.outcomes.find((x) => x.caseName === "u")!;
     expect(o.unchecked).toBe(true);
     expect(o.uncheckedReason).toBe("inference-failed");
-  })();
-(() => {
-
+  }
+  {
     expect(inferenceFailed({ shape: { k: "unknown" }, term: { op: "lit", value: null }, conf: "exact" } as never)).toBe(false);
     expect(inferenceFailed({ shape: { k: "unknown" }, term: { op: "lit", value: undefined }, conf: "exact" } as never)).toBe(false);
     expect(inferenceFailed({ shape: { k: "unknown" }, conf: "exact" } as never)).toBe(true);
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -871,37 +845,32 @@ export function boom() {
 }
 `;
 
-describe("never 期望 vs never 实测", () => {
-  it("判定层：never 配 never ⇒ 满足（Bug 649 不回归：配 number() ⇒ 不满足）；分析面：抛错函数 + `=> never` ⇒ 不再发 nudo:case-expected（报告与判定不再自相矛盾）；分析面对照组：抛错函数 + `=> number()` ⇒ 仍报 nudo:case-expected（Bug 649 不回归）", () => {
-(() => {
 
+  it("判定层：never 配 never ⇒ 满足（Bug 649 不回归：配 number() ⇒ 不满足）；分析面：抛错函数 + `=> never` ⇒ 不再发 nudo:case-expected（报告与判定不再自相矛盾）；分析面对照组：抛错函数 + `=> number()` ⇒ 仍报 nudo:case-expected（Bug 649 不回归）", () => {
+  {
     expect(caseExpectedSatisfied(neverAbs, parseCaseArgExpr("never"))).toBe(true);
     expect(caseExpectedSatisfied(neverAbs, parseCaseArgExpr("number()"))).toBe(false);
     expect(caseExpectedSatisfied(numLit(1), neverAbs)).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const diags = withTmpProject("nudo-b206-", (dir) => {
       const file = writeTmpFile(dir, "f.js", THROWING);
       return analyzeFile_____analyzer_ts_1(file, readFileSync(file, "utf-8"))!.diagnostics;
     });
     expect(diags.filter((d) => d.code === "nudo:case-expected")).toHaveLength(0);
-  })();
-(() => {
-
+  }
+  {
     const src = THROWING.replace("=> never", "=> number()");
     const diags = withTmpProject("nudo-b206-neg-", (dir) => {
       const file = writeTmpFile(dir, "f.js", src);
       return analyzeFile_____analyzer_ts_1(file, readFileSync(file, "utf-8"))!.diagnostics;
     });
     expect(diags.filter((d) => d.code === "nudo:case-expected")).toHaveLength(1);
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -922,36 +891,29 @@ describe("嵌套槽谓词执法 + 渲染", () => {
 const nestedExpected = () => parseCaseArgExpr("shape({ n: number().gt(0) })");
 const topExpected = () => parseCaseArgExpr("number().gt(0)");
 
-describe("嵌套槽谓词执法 + 渲染", () => {
-  it("槽谓词满足 ⇒ 判 ok（与顶层写法一致）；槽谓词不满足 ⇒ 判不满足（与顶层写法一致）；期望文本递归渲染槽谓词（不再是 `{ n: number }`）；无槽谓词时渲染逐字不变（不引入噪音）", () => {
-(() => {
 
+  it("槽谓词满足 ⇒ 判 ok（与顶层写法一致）；槽谓词不满足 ⇒ 判不满足（与顶层写法一致）；期望文本递归渲染槽谓词（不再是 `{ n: number }`）；无槽谓词时渲染逐字不变（不引入噪音）", () => {
+  {
     expect(caseExpectedSatisfied(parseCaseArgExpr("{ n: 3 }"), nestedExpected())).toBe(true);
     expect(caseExpectedSatisfied(parseCaseArgExpr("3"), topExpected())).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     expect(caseExpectedSatisfied(parseCaseArgExpr("{ n: -1 }"), nestedExpected())).toBe(false);
     expect(caseExpectedSatisfied(parseCaseArgExpr("-1"), topExpected())).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     const text = formatExpected(nestedExpected());
     expect(text).toContain("n: number");
     expect(text).toContain("> 0");
-  })();
-(() => {
-
+  }
+  {
     expect(formatExpected(parseCaseArgExpr("shape({ n: number() })"))).toBe("{ n: number }");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -983,9 +945,9 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("派生分支的 .nudo.ts 必须带 builder 声明头", () => {
+
   it("下游是 .ts ⇒ 派生产物补 `declare const fn: …`；对照组：.js 侧车不加 declare（裸注入已够）", () => {
-(() => {
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-bug-266-"));
 
 
@@ -1021,8 +983,8 @@ describe("派生分支的 .nudo.ts 必须带 builder 声明头", () => {
     // 产物会被 tsc 编译 ⇒ builder 标识符必须已声明（否则 TS2304）
     expect(after).toContain(`declare const fn: typeof import("@nudojs/core").fn;`);
     expect(after).toContain("export const add2 = fn(");
-  })();
-(() => {
+  }
+  {
   dir = mkdtempSync(join(tmpdir(), "nudo-bug-266-"));
 
 
@@ -1048,11 +1010,10 @@ describe("派生分支的 .nudo.ts 必须带 builder 声明头", () => {
     const after = readFileSync(join(dir, "add2.nudo.js"), "utf-8");
     expect(after).not.toContain("declare const");
     expect(after).toContain("export const add2b = fn(");
-  })();
-});;
-
-  ;
+  }
 });
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1094,9 +1055,9 @@ beforeEach(() => {
   clearAbsModuleCache();
 });
 
-describe("export * 同名冲突是歧义导出（不可用）", () => {
+
   it("两个星号导出同名 ⇒ 该名不导出（导入方报缺名），顺序无关；对照组：本地导出遮蔽星号导出 ⇒ x 存在且值取自本地（不是歧义）；定义位点解析同口径：歧义名解析不出（不得给一个确定定义模块）；定义位点对照：非歧义星号导出照常解析到定义模块", () => {
-(() => {
+  {
   clearAbsModuleCache();
 
 
@@ -1110,8 +1071,8 @@ describe("export * 同名冲突是歧义导出（不可用）", () => {
       expect(Object.hasOwn(c!.named, "x")).toBe(false);
       expect(issuesOf(graph)).toContain("./c.mjs#x");
     }
-  })();
-(() => {
+  }
+  {
   clearAbsModuleCache();
 
 
@@ -1121,29 +1082,26 @@ describe("export * 同名冲突是歧义导出（不可用）", () => {
     const c = graph.modules["./c.mjs"];
     expect(Object.hasOwn(c!.named, "x")).toBe(true);
     expect(issuesOf(graph)).not.toContain("./c.mjs#x");
-  })();
-(() => {
+  }
+  {
   clearAbsModuleCache();
 
 
     const dir = setup('export * from "./a.mjs";\nexport * from "./b.mjs";\n').dir;
     expect(resolveExportSite(join(dir, "c.mjs"), "x")).toBeUndefined();
-  })();
-(() => {
+  }
+  {
   clearAbsModuleCache();
 
 
     const dir = setup('export * from "./a.mjs";\n').dir;
     expect(resolveExportSite(join(dir, "c.mjs"), "x")?.modulePath).toBe(join(dir, "a.mjs"));
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1190,17 +1148,15 @@ function paramsOf(src: string, dir: string): Map<string, string[]> {
   return out;
 }
 
-describe("跨模块 fn 形参面（声明形参，非假名）", () => {
-  it("export function 的形参用源码真名（改前：arg0/arg1）；带默认值的形参：名字与个数都在（改前：arg0 一个 / arg1 假名）；rest 形参计入声明形参数并保留 ... 形态（改前：只剩 1 个）；负控制：箭头 const 导出的形参面不变", () => {
-(() => {
 
+  it("export function 的形参用源码真名（改前：arg0/arg1）；带默认值的形参：名字与个数都在（改前：arg0 一个 / arg1 假名）；rest 形参计入声明形参数并保留 ... 形态（改前：只剩 1 个）；负控制：箭头 const 导出的形参面不变", () => {
+  {
     const dir = makeTmpProject("nudo-b463-", { "main.js": SRC });
     const params = paramsOf(SRC, dir);
     expect(params.get("expPlain")).toEqual(["a", "b"]);
     expect(params.get("expNamed")).toEqual(["alpha", "beta"]);
-  })();
-(() => {
-
+  }
+  {
     const dir = makeTmpProject("nudo-b463-", { "main.js": SRC });
     const params = paramsOf(SRC, dir);
     expect(params.get("expDefault")).toEqual(["a", "b"]);
@@ -1208,27 +1164,22 @@ describe("跨模块 fn 形参面（声明形参，非假名）", () => {
     // 作为独立导出名出现；别名槽仍保留声明形参真名。
     expect(params.get("plainDefault")).toBeUndefined();
     expect(params.get("aliasedDefault")).toEqual(["a", "b"]);
-  })();
-(() => {
-
+  }
+  {
     const dir = makeTmpProject("nudo-b463-", { "main.js": SRC });
     const params = paramsOf(SRC, dir);
     expect(params.get("restExp")).toEqual(["a", "...more"]);
-  })();
-(() => {
-
+  }
+  {
     const dir = makeTmpProject("nudo-b463-", { "main.js": SRC });
     const params = paramsOf(SRC, dir);
     expect(params.get("arrowDefault")).toEqual(["a", "b"]);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1280,9 +1231,9 @@ const censusSlots = (source: string): string[] =>
 const analysisNames = (source: string, file = "/test/census.js"): string[] =>
   analyzeFile_____analyzer_ts_2(file, source).functions.map((f) => f.name);
 
-describe("export const/let/var f = fn 进普查", () => {
+
   it("export const 箭头 / 函数表达式都进普查（普查名 = 导出槽名）；多声明符逐个收（不只首个）；非函数初始化不进普查；分析面看得见该函数，且入口求值拿到返回值", () => {
-(() => {
+  {
   resetAllAnalysisCaches();
 
 
@@ -1290,20 +1241,20 @@ describe("export const/let/var f = fn 进普查", () => {
     expect(censusNames("export const f = function () { return 1; };")).toEqual(["f"]);
     expect(censusNames("export let f = () => 1;")).toEqual(["f"]);
     expect(censusNames("export var f = () => 1;")).toEqual(["f"]);
-  })();
-(() => {
+  }
+  {
   resetAllAnalysisCaches();
 
 
     expect(censusNames("export const a = () => 1, b = () => 2;")).toEqual(["a", "b"]);
-  })();
-(() => {
+  }
+  {
   resetAllAnalysisCaches();
 
 
     expect(censusNames("export const x = 1;")).toEqual([]);
-  })();
-(() => {
+  }
+  {
   resetAllAnalysisCaches();
 
 
@@ -1314,25 +1265,22 @@ describe("export const/let/var f = fn 进普查", () => {
     expect(entry).toBeDefined();
     // 原生：slugify("AbC") === "abc"
     expect(formatShape(entry!.abs)).toBe("string");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 
 describe("具名 default 导出按 default 槽回退求值", () => {
   it("普查名 = 局部名，导出槽 = default；入口求值回退到 default 槽 ⇒ 返回值不再是 unknown；匿名 default 导出形态不变（普查名 = default）", () => {
-(() => {
+  {
   resetAllAnalysisCaches();
 
 
     expect(censusSlots("export default function f() { return 1; }")).toEqual(["f@default"]);
-  })();
-(() => {
+  }
+  {
   resetAllAnalysisCaches();
 
 
@@ -1343,38 +1291,36 @@ describe("具名 default 导出按 default 槽回退求值", () => {
     expect(entry).toBeDefined();
     // 原生：默认导入后 f() === 1（退 unknown 即查表落空）
     expect(formatShape(entry!.abs)).toBe("1");
-  })();
-(() => {
+  }
+  {
   resetAllAnalysisCaches();
 
 
     expect(censusNames("export default function () { return 1; }")).toEqual(["default"]);
     expect(censusNames("export default () => 1;")).toEqual(["default"]);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 });
 
 describe("module.exports = { f: fn } 的成员函数进普查", () => {
   it("对象字面量的成员函数逐个收（key 名 = 导出槽名）；对象方法简写（ObjectMethod）进普查；导出槽名优先于命名函数表达式的自有 id（Bug 997，与 core listTopFunctions 同口径）；getter / setter 不是可调用入口，不进普查；非函数成员不进普查；分析面看得见该函数", () => {
-(() => {
+  {
   resetAllAnalysisCaches();
 
 
     expect(censusNames("module.exports = { greet: function () { return 1; } };")).toEqual(["greet"]);
     expect(censusNames("module.exports = { greet: () => 1 };")).toEqual(["greet"]);
     expect(censusNames("module.exports = { greet: async function () { return 1; } };")).toEqual(["greet"]);
-  })();
-(() => {
+  }
+  {
   resetAllAnalysisCaches();
 
 
     expect(censusNames("module.exports = { greet() { return 1; } };")).toEqual(["greet"]);
-  })();
-(() => {
+  }
+  {
   resetAllAnalysisCaches();
 
 
@@ -1387,39 +1333,34 @@ describe("module.exports = { f: fn } 的成员函数进普查", () => {
     expect(censusSlots("module.exports = { greet: function named() { return 1; } };")).toEqual([
       "greet@named",
     ]);
-  })();
-(() => {
+  }
+  {
   resetAllAnalysisCaches();
 
 
     expect(censusNames("module.exports = { get g() { return 1; } };")).toEqual([]);
     expect(censusNames("module.exports = { set s(v) {} };")).toEqual([]);
-  })();
-(() => {
+  }
+  {
   resetAllAnalysisCaches();
 
 
     expect(censusNames("module.exports = { x: 1 };")).toEqual([]);
-  })();
-(() => {
+  }
+  {
   resetAllAnalysisCaches();
 
 
     const source = 'module.exports = { greet: function (name) { return "hi " + name; } };';
     const result = analyzeFile_____analyzer_ts_2("/test/bug995.js", source);
     expect(result.functions.map((f) => f.name)).toEqual(["greet"]);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 
-  ;
 });
 
 describe("普查口径与 core listTopFunctions 对齐（check 面不与 service 面打架）", () => {
@@ -1452,7 +1393,7 @@ describe("普查口径与 core listTopFunctions 对齐（check 面不与 service
   }
 
   it("getter 形态：两面都不收（Bug 996 已收口）；匿名 module.exports = fn：两面都按 default 登记（Bug 6 后 core 侧不再漏）", () => {
-(() => {
+  {
   resetAllAnalysisCaches();
 
 
@@ -1460,8 +1401,8 @@ describe("普查口径与 core listTopFunctions 对齐（check 面不与 service
     // （getter/setter 不是可调用入口）⇒ 两面口径一致（无差异）。
     expect(listTopFunctions("module.exports = { get g() { return 1; } };")).toEqual([]);
     expect(censusNames("module.exports = { get g() { return 1; } };")).toEqual([]);
-  })();
-(() => {
+  }
+  {
   resetAllAnalysisCaches();
 
 
@@ -1469,10 +1410,9 @@ describe("普查口径与 core listTopFunctions 对齐（check 面不与 service
     // 假绿。修复后 core 普查面与 service 面同口径登记 `default`。
     expect(censusNames("module.exports = function () { return 1; };")).toEqual(["default"]);
     expect(listTopFunctions("module.exports = function () { return 1; };")).toEqual(["default"]);
-  })();
-});;
+  }
+});
 
-  ;
 });
 });
 
@@ -1510,31 +1450,26 @@ const cfg = JSON.parse("{}");
 export function getCfg() { return cfg; }
 `;
 
-describe("注入表解析入口", () => {
-  it("带指令的源码解析出注入包（as 目标 + 覆盖值）；无指令的源码不产生注入包；注入包与收集器同源（目标区间一致）", () => {
-(() => {
 
+  it("带指令的源码解析出注入包（as 目标 + 覆盖值）；无指令的源码不产生注入包；注入包与收集器同源（目标区间一致）", () => {
+  {
     const inj = resolveEvalInjection_____eval_run_ts(DEP_JS);
     expect(inj).toBeDefined();
     expect(inj?.asOverrideTargets?.length).toBe(1);
     expect(inj?.asOverrides).toBeDefined();
-  })();
-(() => {
-
+  }
+  {
     expect(resolveEvalInjection_____eval_run_ts("export function f() { return 1; }\n")).toBeUndefined();
-  })();
-(() => {
-
+  }
+  {
     const reps = collectEvalReplacements_____eval_run_ts(DEP_JS);
     const inj = resolveEvalInjection_____eval_run_ts(DEP_JS);
     expect(inj?.asOverrideTargets).toEqual(reps.asTargets);
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 
 describe("根侧注入不受影响", () => {
   it("作为根分析时，@nudo:as 覆盖承载语句的值", () => {
@@ -1604,10 +1539,9 @@ function entryShape(files: Record<string, string>, entry: string): string {
   return fn ? formatShape(fn.cases[0].abs) : "<no-fn>";
 }
 
-describe("跨模块活绑定（依赖内部变异对导入方可见）", () => {
-  it("依赖模块内部改写导出值后，导入方读到当前值；变异前的读取仍是精确初值（不被前一次调用的残留污染）", () => {
-(() => {
 
+  it("依赖模块内部改写导出值后，导入方读到当前值；变异前的读取仍是精确初值（不被前一次调用的残留污染）", () => {
+  {
     const shape = entryShape(
       { "m.js": M_JS, "entry.js": `import { val, setStr } from "./m.js";
 export function get() { setStr(); return val; }
@@ -1616,9 +1550,8 @@ export function get() { setStr(); return val; }
     );
     // 改前：0（合并面把活 getter 求值成了快照）
     expect(shape).toBe('"hello"');
-  })();
-(() => {
-
+  }
+  {
     const shape = entryShape(
       { "m.js": M_JS, "entry.js": `import { val } from "./m.js";
 export function get() { return val; }
@@ -1626,17 +1559,15 @@ export function get() { return val; }
       "entry.js",
     );
     expect(shape).toBe("0");
-  })();
-});;
-
-  ;
+  }
 });
+
+
 
 /** 负控制：不该被这条修复波及的邻近形态 */
 describe("负控制", () => {
   it("依赖未改写导出值时，导入方读到初值；同文件内的模块级状态读写不受影响", () => {
-(() => {
-
+  {
     const shape = entryShape(
       { "m.js": M_JS, "entry.js": `import { val, setStr } from "./m.js";
 export function get() { return val; }
@@ -1644,9 +1575,8 @@ export function get() { return val; }
       "entry.js",
     );
     expect(shape).toBe("0");
-  })();
-(() => {
-
+  }
+  {
     const dir = tmpProject("nudo-bug476-neg-");
     const source = `let n = 0;
 export function bump() { n = n + 1; return n; }
@@ -1657,10 +1587,9 @@ export function read() { return n; }
     const read = result.functions.find((f) => f.name === "read");
     expect(bump ? formatShape(bump.cases[0].abs) : "").toBe("1");
     expect(read ? formatShape(read.cases[0].abs) : "").toBe("0");
-  })();
-});;
+  }
+});
 
-  ;
 });
 });
 
@@ -1725,9 +1654,9 @@ const JS_SOURCE = `export function upper(a) {
 }
 `;
 
-describe(".ts 形参类型注解进入推断（缺口已闭合）", () => {
+
   it("原生：upper(a: string) 的 a 按 string 推断（形参注解进入推断）；原生：.ts 的合法代码不再触发 nudo:entry-may-throw 假红（a 是 string，toUpperCase 不会抛）；原生：dts 面保留源里的类型注解（export declare function upper(a: string)）；负控制：.ts 源仍被正常分析（函数可见、body 仍求值）；负控制：同形 .js 源的形参仍是无约束 any（无注解可读，行为不", () => {
-(() => {
+  {
   resetAllAnalysisCaches();
 
 
@@ -1735,22 +1664,22 @@ describe(".ts 形参类型注解进入推断（缺口已闭合）", () => {
     const entry = result.functions[0]!.cases.find((c) => c.name.startsWith("entry@"));
     expect(entry).toBeDefined();
     expect(formatShape(entry!.argAbs[0]!)).toBe("string");
-  })();
-(() => {
+  }
+  {
   resetAllAnalysisCaches();
 
 
     const report = checkSource("/test/bug479.ts", TS_SOURCE, pTrue, {});
     expect(l2Count(report, "upper")).toBe(0);
-  })();
-(() => {
+  }
+  {
   resetAllAnalysisCaches();
 
 
     const dts = generateDts(analyzeFile_____analyzer_ts_5("/test/bug479.ts", TS_SOURCE));
     expect(dts).toContain("export declare function upper(a: string)");
-  })();
-(() => {
+  }
+  {
   resetAllAnalysisCaches();
 
 
@@ -1758,8 +1687,8 @@ describe(".ts 形参类型注解进入推断（缺口已闭合）", () => {
     expect(result.functions.map((f) => f.name)).toEqual(["upper"]);
     const entry = result.functions[0]!.cases.find((c) => c.name.startsWith("entry@"));
     expect(entry).toBeDefined();
-  })();
-(() => {
+  }
+  {
   resetAllAnalysisCaches();
 
 
@@ -1769,8 +1698,8 @@ describe(".ts 形参类型注解进入推断（缺口已闭合）", () => {
     );
     expect(entry).toBeDefined();
     expect(formatShape(entry!.argAbs[0]!)).toBe("any");
-  })();
-(() => {
+  }
+  {
   resetAllAnalysisCaches();
 
 
@@ -1780,19 +1709,14 @@ describe(".ts 形参类型注解进入推断（缺口已闭合）", () => {
     );
     expect(entry).toBeDefined();
     expect(formatShape(entry!.throwsAbs)).toContain("TypeError");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1822,10 +1746,10 @@ function codes(result: { diagnostics: readonly { code?: string }[] }): (string |
   return result.diagnostics.map((d) => d.code);
 }
 
-describe("侧车加载失败 ≠ 没有契约根", () => {
+
   it("坏侧车：报 nudo:contract-load（error），不发 nudo:contract-entry-only；负控制：没有侧车 → 仍报 nudo:contract-entry-only（口径不变）；负控制：好侧车 → 两者都无", () => {
-(() => {
-return (withTmpProject("nudo-b495-", (dir) => {
+{
+withTmpProject("nudo-b495-", (dir) => {
       const src = `export function add(a, b) { return a + b; }\n`;
       const file = writeTmpFile(dir, "calc.js", src);
       writeTmpFile(
@@ -1838,17 +1762,19 @@ export const add = fn({ a: number(
       const result = analyzeFile_____analyzer_ts_6(file, readFileSync(file, "utf-8"));
       expect(codes(result)).toContain("nudo:contract-load");
       expect(codes(result)).not.toContain("nudo:contract-entry-only");
-    }));})();
-(() => {
-return (withTmpProject("nudo-b495b-", (dir) => {
+    });
+}
+{
+withTmpProject("nudo-b495b-", (dir) => {
       const src = `export function add(a, b) { return a + b; }\n`;
       const file = writeTmpFile(dir, "calc.js", src);
       const result = analyzeFile_____analyzer_ts_6(file, readFileSync(file, "utf-8"));
       expect(codes(result)).toContain("nudo:contract-entry-only");
       expect(codes(result)).not.toContain("nudo:contract-load");
-    }));})();
-(() => {
-return (withTmpProject("nudo-b495c-", (dir) => {
+    });
+}
+{
+withTmpProject("nudo-b495c-", (dir) => {
       const src = `export function add(a, b) { return a + b; }\n`;
       const file = writeTmpFile(dir, "calc.js", src);
       writeTmpFile(
@@ -1861,13 +1787,12 @@ export const add = fn({ a: number(), b: number() });
       const result = analyzeFile_____analyzer_ts_6(file, readFileSync(file, "utf-8"));
       expect(codes(result)).not.toContain("nudo:contract-entry-only");
       expect(codes(result)).not.toContain("nudo:contract-load");
-    }));})();
-});;
-
-  ;
-
-  ;
+    });
+}
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1894,17 +1819,15 @@ describe("不可读依赖：missing 与 unreadable 必须分开", () => {
 /** root 对 chmod 000 免疫，真实 EACCES 用例无法生效 */
 const isRoot = process.geteuid?.() === 0;
 
-describe("不可读依赖：missing 与 unreadable 必须分开", () => {
+{
   it("不存在的依赖 → missing（不是 unreadable）；可读依赖 → ok（路径 + 内容）；guardedLoadModule：loader 抛错 → undefined + 一次性可见告警（不穿透）；负控制：ENOENT 与正常返回不受 guarded 包装影响", () => {
-(() => {
-
+  {
     const dir = tmpProject("nudo-499-missing-");
     const from = join(dir, "main.js");
     writeFileSync(from, "", "utf-8");
     expect(loadModuleOutcome("./nope.js", from).kind).toBe("missing");
-  })();
-(() => {
-
+  }
+  {
     const dir = tmpProject("nudo-499-ok-");
     const from = join(dir, "main.js");
     writeFileSync(from, "", "utf-8");
@@ -1912,9 +1835,8 @@ describe("不可读依赖：missing 与 unreadable 必须分开", () => {
     const r = loadModuleOutcome("./dep.js", from);
     expect(r.kind).toBe("ok");
     if (r.kind === "ok") expect(r.content).toContain("export const x");
-  })();
-(() => {
-
+  }
+  {
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const dep = "/nudo-499-guarded/dep.js";
     const failures: { path: string; code: string }[] = [];
@@ -1939,9 +1861,8 @@ describe("不可读依赖：missing 与 unreadable 必须分开", () => {
     } finally {
       vi.restoreAllMocks();
     }
-  })();
-(() => {
-
+  }
+  {
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       const guardedMissing = guardedLoadModule(() => {
@@ -1957,10 +1878,9 @@ describe("不可读依赖：missing 与 unreadable 必须分开", () => {
     } finally {
       vi.restoreAllMocks();
     }
-  })();
-});;
+  }
+});
 
-  ;
 
   it.runIf(!isRoot)("存在但不可读 → unreadable（带 errno 与路径），不得报成 missing", () => {
     const dir = tmpProject("nudo-499-eacces-");
@@ -1982,9 +1902,7 @@ describe("不可读依赖：missing 与 unreadable 必须分开", () => {
     }
   });
 
-  ;
 
-  ;
 
   it.runIf(!isRoot)("模块图侧：不可读依赖报 unreadable（不得折叠成 missing）", () => {
     // abs-modules-graph 的 readFirstRel 与 loadModuleOutcome 同口径（三态）：
@@ -2007,7 +1925,7 @@ describe("不可读依赖：missing 与 unreadable 必须分开", () => {
       chmodSync(dep, 0o644);
     }
   });
-});
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -2036,10 +1954,9 @@ describe("import/export alias and label are name positions", () => {
 const names = (src: string): string[] =>
   collectEvalDiagnostics(src).builtinUnknown.map((b) => b.name);
 
-describe("import/export alias and label are name positions", () => {
-  it("does not flag an import alias source name (imported)；does not flag an export alias name (exported)；does not flag a label name (labeled / break / continue)；does not flag a namespace-import binding local name；negative control: a real free glo", () => {
-(() => {
 
+  it("does not flag an import alias source name (imported)；does not flag an export alias name (exported)；does not flag a label name (labeled / break / continue)；does not flag a namespace-import binding local name；negative control: a real free glo", () => {
+  {
     const src = `
 import { alpha as betaAlias, default as def } from "./m.js";
 export function f() {
@@ -2049,9 +1966,8 @@ export function f() {
     expect(names(src)).not.toContain("alpha");
     expect(names(src)).not.toContain("default");
     expect(names(src)).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const src = `
 import { y } from "./m.js";
 export { y as renamed };
@@ -2061,9 +1977,8 @@ export function f() {
 `;
     expect(names(src)).not.toContain("renamed");
     expect(names(src)).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export function f() {
   outer: for (let i = 0; i < 3; i++) {
@@ -2075,9 +1990,8 @@ export function f() {
 `;
     expect(names(src)).not.toContain("outer");
     expect(names(src)).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const src = `
 import * as helpers from "./m.js";
 export function f() {
@@ -2085,18 +1999,16 @@ export function f() {
 }
 `;
     expect(names(src)).toEqual([]);
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export function f() {
   return someUndeclaredGlobal;
 }
 `;
     expect(names(src)).toContain("someUndeclaredGlobal");
-  })();
-(() => {
-
+  }
+  {
     // 原生：`export * as ns from` 不创建模块作用域绑定 → 体内引用 ns 是自由全局
     const src = `
 export * as ns from "./m.js";
@@ -2108,9 +2020,8 @@ export function f() {
     expect(hits).toHaveLength(1);
     // 锚点落在真正的引用位（第 4 行 `return ns.alpha`），不是名字位（第 2 行）
     expect(hits[0]!.range.start.line).toBe(4);
-  })();
-(() => {
-
+  }
+  {
     // 原生：`renamed` 不是模块作用域绑定 → 体内引用是自由全局
     const src = `
 import { y } from "./m.js";
@@ -2122,9 +2033,8 @@ export function f() {
     const hits = collectEvalDiagnostics(src).builtinUnknown.filter((b) => b.name === "renamed");
     expect(hits).toHaveLength(1);
     expect(hits[0]!.range.start.line).toBe(5);
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export function f(o) {
   const a = {[missing]: 1};
@@ -2135,9 +2045,8 @@ export function f(o) {
     const got = names(src);
     expect(got).toContain("missing");
     expect(got).toContain("alsoMissing");
-  })();
-(() => {
-
+  }
+  {
     const src = `
 export function f(o) {
   const a = {key: 1};
@@ -2146,25 +2055,17 @@ export function f(o) {
 }
 `;
     expect(names(src)).toEqual([]);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2231,19 +2132,17 @@ function caseExpectedMessage(src: string): string {
   return d?.message ?? "";
 }
 
-describe("实测 never（抛错）的 case 带声明期望 ⇒ 不得判 ok", () => {
-  it("抛错 + 声明期望（=> 42）⇒ 报 nudo:case-expected（改前恒 0 条）；抛错 + 声明期望 ⇒ 诊断文案如实报出「实测 never」；展示层不变：抛错 + 谓词期望 ⇒ 期望展示形态仍是「number (> 0)」；负控制：不抛错 + 期望满足 ⇒ 0 条 nudo:case-expected；负控制：不抛错 + 期望不满足 ⇒ 1 条 nudo:case-expected（口径不变）；负控制：抛错 + 无期望 ⇒ 0 条 nudo:case-expe", () => {
-(() => {
 
+  it("抛错 + 声明期望（=> 42）⇒ 报 nudo:case-expected（改前恒 0 条）；抛错 + 声明期望 ⇒ 诊断文案如实报出「实测 never」；展示层不变：抛错 + 谓词期望 ⇒ 期望展示形态仍是「number (> 0)」；负控制：不抛错 + 期望满足 ⇒ 0 条 nudo:case-expected；负控制：不抛错 + 期望不满足 ⇒ 1 条 nudo:case-expected（口径不变）；负控制：抛错 + 无期望 ⇒ 0 条 nudo:case-expe", () => {
+  {
     const src = `/**
  * @nudo:case "t" (1) => 42
  */
 export function f(x) { throw new Error("boom"); }
 `;
     expect(caseExpectedCount(src)).toBe(1);
-  })();
-(() => {
-
+  }
+  {
     const src = `/**
  * @nudo:case "t" (1) => 42
  */
@@ -2252,9 +2151,8 @@ export function f(x) { throw new Error("boom"); }
     const msg = caseExpectedMessage(src);
     expect(msg).toContain("expected 42");
     expect(msg).toContain("got never");
-  })();
-(() => {
-
+  }
+  {
     const src = `/**
  * @nudo:case "t" (1) => number().gt(0)
  */
@@ -2269,67 +2167,54 @@ export function f(x) { throw new Error("boom"); }
     expect(c.abs.shape.k).toBe("never");
     expect(c.expected).toBeDefined();
     expect(formatExpected(c.expected as never)).toBe("number (> 0)");
-  })();
-(() => {
-
+  }
+  {
     const src = `/**
  * @nudo:case "t" (1) => 2
  */
 export function f(x) { return x + 1; }
 `;
     expect(caseExpectedCount(src)).toBe(0);
-  })();
-(() => {
-
+  }
+  {
     const src = `/**
  * @nudo:case "t" (1) => 42
  */
 export function f(x) { return x; }
 `;
     expect(caseExpectedCount(src)).toBe(1);
-  })();
-(() => {
-
+  }
+  {
     const src = `/**
  * @nudo:case "t" (1)
  */
 export function f(x) { throw new Error("boom"); }
 `;
     expect(caseExpectedCount(src)).toBe(0);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 
 describe("caseExpectedSatisfied 的 never 前置条件（消费侧单测）", () => {
   const one = numLit(1);
 
   it("实测 never ⇒ 不满足（底元素恒真被拦住）；负控制：实测 1、期望 1 ⇒ 满足（口径不变）；负控制：实测 1、期望 2 ⇒ 不满足（口径不变）", () => {
-(() => {
-
+  {
     expect(caseExpectedSatisfied(neverAbs, numLit(42))).toBe(false);
-  })();
-(() => {
-
+  }
+  {
     expect(caseExpectedSatisfied(one, numLit(1))).toBe(true);
-  })();
-(() => {
-
+  }
+  {
     expect(caseExpectedSatisfied(one, numLit(2))).toBe(false);
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 });
 });

@@ -44,7 +44,7 @@ function tmpFile(src: string): { dir: string; file: string } {
   return { dir, file };
 }
 
-describe("IDE 面：跨模块 fn 形参名（真名，非 argN 假名）", () => {
+
   it("补全 detail 用源码真名与真个数（改前：(arg0) => ? / (arg0, arg1) => ?）", () => {
     const { dir, file } = tmpFile(SRC);
     try {
@@ -100,7 +100,7 @@ describe("IDE 面：跨模块 fn 形参名（真名，非 argN 假名）", () =>
       rmSync(dir, { recursive: true, force: true });
     }
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -150,7 +150,7 @@ function tmpFile(src: string): { dir: string; file: string } {
   return { dir, file };
 }
 
-describe("signatureHelp：activeParameter 不越界", () => {
+
   it("纯函数面：buildSignatureHelp 把 activeParameter 夹进签名参数表内", () => {
     const fn = absFunction(["x", "y"], { apply: () => num() });
     // 越界输入（光标在末参之后 / 实参多于形参）⇒ 夹到最后一个形参
@@ -235,7 +235,7 @@ describe("signatureHelp：activeParameter 不越界", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -281,7 +281,7 @@ function tmpFile(src: string): { dir: string; file: string } {
   return { dir, file };
 }
 
-describe("signatureHelp：export default 的 callee 也有签名弹窗", () => {
+
   it("协议面（真 server）：defFn(1, 2) 给出 2 参签名（改前 null）", async () => {
     const { dir, file } = tmpFile(SRC);
     try {
@@ -373,7 +373,7 @@ describe("signatureHelp：export default 的 callee 也有签名弹窗", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -418,7 +418,7 @@ function tmpFile(src: string): { dir: string; file: string } {
   return { dir, file };
 }
 
-describe("signatureHelp：局部 callee 也有签名弹窗", () => {
+
   it("协议面（真 server）：局部函数声明 inner(1, 2) 给出 2 参签名（改前 null）", async () => {
     const { dir, file } = tmpFile(SRC);
     try {
@@ -537,7 +537,7 @@ describe("signatureHelp：局部 callee 也有签名弹窗", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -583,7 +583,7 @@ function tmpFile(src: string): { dir: string; file: string } {
   return { dir, file };
 }
 
-describe("signatureHelp：成员调用（obj.method）也有签名弹窗", () => {
+
   it("协议面（真 server）：obj.method(1, 2) 给出方法的 2 参签名", async () => {
     const { dir, file } = tmpFile(SRC);
     try {
@@ -660,7 +660,7 @@ describe("signatureHelp：成员调用（obj.method）也有签名弹窗", () =>
       rmSync(dir, { recursive: true, force: true });
     }
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -704,7 +704,7 @@ function tmpFile(src: string): { dir: string; file: string } {
   return { dir, file };
 }
 
-describe("signatureHelp：嵌套调用弹**最内层**函数的签名", () => {
+
   it("纯函数面：光标在内层实参 ⇒ findEnclosingCall 命中内层调用", () => {
     const ast = parse(SRC);
     const hit = findEnclosingCall(ast, 3, COL_INNER_ARG);
@@ -780,7 +780,7 @@ describe("signatureHelp：嵌套调用弹**最内层**函数的签名", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -828,7 +828,7 @@ const SIDECAR = `import { fn, shape, string } from "@nudojs/core";
 export const add = fn({ user: shape({ name: string() }) }, string());
 `;
 
-describe("signatureHelp 取内涵面，不返回 arity-only 声明空壳", () => {
+
   it("裸标识符 callee 的签名含侧车契约的形参类型与返回类型", async () => {
     await withLspServer({ "lib.js": LIB, "lib.nudo.js": SIDECAR }, async (ctx) => {
       // LSP 位置（0 基行 / 列）：` return add({ id: 1 });` 的 `add` 内
@@ -862,7 +862,7 @@ describe("signatureHelp 取内涵面，不返回 arity-only 声明空壳", () =>
       expect(hoverText).not.toContain("(user) => ?");
     });
   }, 60_000);
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -898,7 +898,7 @@ function at(src: string, line: number, column: number) {
   return findEnclosingCall(parse(src), line, column);
 }
 
-describe("findEnclosingCall (P-IDE7)", () => {
+
   it("multi-line args: cursor inside arg i selects param i (old visitor said i+1)", () => {
     // line 4 ` 1,`：`1` 区间 [4,5)。旧实现按「start 在 cursor 前 → +1」
     // 判成 1（跨行场景全错）；新实现按完整区间 → 0。
@@ -951,14 +951,14 @@ describe("findEnclosingCall (P-IDE7)", () => {
     // 旧实现只比行号：`call(11, 22); }` 尾部同行会误命中；新实现含列判定
     expect(at(SINGLE_LINE, 1, 44)).toBeNull();
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
 // buildSignatureHelp (LSP-G7)
 // ---------------------------------------------------------------------------
 describe("buildSignatureHelp (LSP-G7)", () => {
-describe("buildSignatureHelp (LSP-G7)", () => {
+
   it("projects paramTypes and returnType, not unknown placeholders", () => {
     const fn = relationFn([num(), str()], str(), {
       params: ["ms", "tag"],
@@ -1017,5 +1017,5 @@ describe("buildSignatureHelp (LSP-G7)", () => {
     const label = buildSignatureHelp(fn, 0)!.signatures[0]!.label;
     expect(label).toBe("(a: any, b: any) => unknown");
   });
-});
+
 });

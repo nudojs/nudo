@@ -44,7 +44,7 @@ const loader = (sidecar: string) => (spec: string) =>
 
 const ADD_SRC = `export function add(x) {\n  return x + 2;\n}\n`;
 
-describe("A7 CodeLens ↔ hover 同源", () => {
+
   it("hover.contractSource equals CodeLens contract lens source", () => {
     const lenses = computeContractLenses(ADD_SRC, "/t/lib.js", {
       loadModule: loader(HANDWRITTEN),
@@ -108,7 +108,7 @@ describe("A7 CodeLens ↔ hover 同源", () => {
     });
     expect(hover?.contractSource).toBe("implicit");
   });
-});
+
 
 describe("A7 agent hoverTool payload 同源", () => {
   let dir: string;
@@ -153,7 +153,7 @@ describe("A7 agent hoverTool payload 同源", () => {
 // nudo.hover agent tool
 // ---------------------------------------------------------------------------
 describe("nudo.hover agent tool", () => {
-describe("nudo.hover agent tool", () => {
+
   it("hover on identifier resolves via binding table (node table removed)", () => {
     const src = `const x = 1 + 2;\n`;
     // fail-closed：节点级 Abs 表已删——标识符 x（col 6）经绑定表
@@ -177,7 +177,7 @@ describe("nudo.hover agent tool", () => {
     expect(Array.isArray(payload.inlays)).toBe(true);
     expect(payload.inlays.length).toBeGreaterThan(0);
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -208,7 +208,7 @@ function hoverAbs(src: string, file: string, line: number, column: number): unkn
   return payload.abs;
 }
 
-describe("LSP hover 重放：成员写回后仍拿到求值态", () => {
+
   it("成员赋值后的成员读 → 求值态（修前回落声明形态面）", () => {
     withTempDir("nudo-lsp-wb-", (dir) => {
       const file = join(dir, "lib.js");
@@ -236,7 +236,7 @@ describe("LSP hover 重放：成员写回后仍拿到求值态", () => {
       expect(abs).not.toContain("a: number");
     });
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -253,7 +253,7 @@ describe("hover-axiom", () => {
 
 
 
-describe("hover-axiom", () => {
+{
 /**
  * LSP hover **不消费用户公理**（`@nudo:invariant`）⇒ IDE 印出
  * 「没有那条公理的程序」的类型。
@@ -362,7 +362,7 @@ describe("hover 返回位必须消费 @nudo:invariant（check-identical）", () 
     }
   }, 30_000);
 });
-});
+}
 
 describe("inlay-hover-parity", () => {
 /**
@@ -547,7 +547,7 @@ function nudoSigLine(contents: string): string {
   return idx >= 0 ? (lines[idx + 1] ?? "") : "";
 }
 
-describe("侧车契约收窄形参时 hover 不得多报 throws（check-identical）", () => {
+
   it("真实 server：hover 签名行 = check 契约域签名（无 throws）", async () => {
     await withLspServer(
       { "up.js": JS_SRC, "up.nudo.js": SIDECAR_SRC },
@@ -584,7 +584,7 @@ describe("侧车契约收窄形参时 hover 不得多报 throws（check-identica
       rmSync(dir, { recursive: true, force: true });
     }
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -601,7 +601,7 @@ describe("hover-inject", () => {
 
 
 
-describe("hover-inject", () => {
+{
 /**
  * （hover 半）—— hover 的签名面**从不传 `inject`**
  * ⇒ IDE 显示 `unknown`（Nudo 词汇里 = 「推断失败」）而 CLI 门禁显示
@@ -676,7 +676,7 @@ describe("（hover 半）—— hover 的签名面必须接收 inject 通道", (
     }
   });
 });
-});
+}
 
 describe("inject-handoff", () => {
 /**
@@ -836,7 +836,7 @@ describe("nudo/hover 位置入参校验 + column 键恒在", () => {
 
 const SRC = ["export function inner() {", "  const v = 7;", "  return v;", "}", ""].join("\n");
 
-describe("nudo/hover 位置入参校验 + column 键恒在", () => {
+
   it("非法 line / column ⇒ 工具错误；缺省 column ⇒ 载荷带 column 键", async () => {
     await withLspServer({ "a4-768.js": SRC }, async ({ req, uri }) => {
       const file = uri("a4-768.js");
@@ -864,7 +864,7 @@ describe("nudo/hover 位置入参校验 + column 键恒在", () => {
       expect(payload.line).toBe(2);
     });
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -918,7 +918,7 @@ async function hoverSignatureAt(
   return idx >= 0 ? (lines[idx + 1] ?? "") : "";
 }
 
-describe("hover 签名块：返回类型与 check 同预算（不按 maxDepth 4 截断）", () => {
+
   it("5 层嵌套：hover 签名给出完整返回类型（改前截成 `{ d: … }`）", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug951-"));
     const file = join(dir, "deep.js");
@@ -969,7 +969,7 @@ describe("hover 签名块：返回类型与 check 同预算（不按 maxDepth 4 
       rmSync(dir, { recursive: true, force: true });
     }
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1028,7 +1028,7 @@ async function hoverSignatureAt(
   return idx >= 0 ? (lines[idx + 1] ?? "") : "";
 }
 
-describe("hover 签名块：throws 通道不得丢失（check-identical）", () => {
+
   it("会抛的导出函数：hover 签名带 `throws TypeError`（改前静默省略）", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug911-"));
     const file = join(dir, "throws.js");
@@ -1094,7 +1094,7 @@ export function other() {
       rmSync(dir, { recursive: true, force: true });
     }
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1153,7 +1153,7 @@ async function open(file: string, text: string) {
   return { mock, uri, firstLine, contractLens, exec };
 }
 
-describe("hover tier 行：与 CodeLens 同源（选中 case ⇒ 契约档 ○）", () => {
+
   it("选中 case 后 hover 首行翻成 ○ contract / imp（与 CodeLens 标题逐字相同）", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug724-"));
     const file = join(dir, "tier.js");
@@ -1202,5 +1202,5 @@ describe("hover tier 行：与 CodeLens 同源（选中 case ⇒ 契约档 ○�
       rmSync(dir, { recursive: true, force: true });
     }
   });
-});
+
 });

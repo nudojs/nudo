@@ -32,7 +32,7 @@ function patternOf(formals: FormalParam[]) {
   return f;
 }
 
-describe("#137 param-surface nested path collection", () => {
+describe("param-surface nested path collection", () => {
   it("({card:{grade}}): card flat-bindable + 'card.grade' path; bare 'grade' unbindable", () => {
     const f = patternOf(formalsOf("{ card: { grade } }"));
     expect(f.bound).toContain("card");
@@ -110,7 +110,7 @@ describe("#137 param-surface nested path collection", () => {
   });
 });
 
-describe("#137 sidecar dot-path key on nested destructure (end-to-end)", () => {
+describe("sidecar dot-path key on nested destructure (end-to-end)", () => {
   it("'card.grade': string() binds nested({card:{grade}}): no mismatch, signature not _p0: any", () => {
     resetCheckSourceMemo();
     resetGeneralizeMemo();

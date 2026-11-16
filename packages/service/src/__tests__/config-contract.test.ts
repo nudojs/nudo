@@ -127,7 +127,7 @@ describe("findProjectConfig with contract key", () => {
     expect(contractConfig(found?.config)).toEqual({ autoBind: false, emit: [] });
   });
 
-  it("BUG-027: corrupted child package.json stops the walk with a diagnosis (no silent root inheritance)", () => {
+  it("corrupted child package.json stops the walk with a diagnosis (no silent root inheritance)", () => {
     const root = tmpProject("nudo-cfg-corrupt-");
     writeFileSync(
       join(root, "package.json"),
@@ -169,7 +169,7 @@ describe("findProjectConfig with contract key", () => {
     }
   });
 
-  it("BUG-027: non-object package.json (JSON null) does not crash (old: TypeError swallowed)", () => {
+  it("non-object package.json (JSON null) does not crash (old: TypeError swallowed)", () => {
     const root = tmpProject("nudo-cfg-null-");
     writeFileSync(
       join(root, "package.json"),

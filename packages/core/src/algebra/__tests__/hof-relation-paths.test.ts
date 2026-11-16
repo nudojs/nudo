@@ -1,5 +1,5 @@
 import {describe, it, expect} from "vitest";
-import {abs, anyVar, bool, instantiateReturn, isRelFn, joinAbs, num, numLit, relationFn, shapeOnlyFn, str, unknown, v, runTranspiled, callTranspiledExportFull, type Abs} from "../index.ts";
+import {abs, anyVar, bool, joinAbs, num, numLit, relationFn, shapeOnlyFn, str, v, runTranspiled, callTranspiledExportFull, type Abs} from "../index.ts";
 import {$call} from "../exec/call.ts";
 
 /** 求值引擎驱动：runTranspiled + 导出调用（取代 analyzeFn 的求值面） */

@@ -15,7 +15,7 @@ import {
 } from "../lsp-surface.ts";
 import { buildSemanticTokens, SEMANTIC_TOKEN_TYPES } from "../semantic-tokens.ts";
 import { analyzeFile } from "@nudojs/service";
-import { abs, num, str, numLit, formatShape, type Abs } from "@nudojs/core";
+import { abs, num, str, numLit,  } from "@nudojs/core";
 import { parse } from "@nudojs/parser";
 import { buildSymbolTable, findDefinition, findReferences, findIdentifierAtPosition } from "../symbols.ts";
 import {
@@ -91,7 +91,6 @@ function alwaysString(x) {
 `;
 
 describe("LSP Integration - Full Pipeline", () => {
-
   describe("analyzeFile", () => {
     it("analyzes all functions with directives", () => {
       const result = analyzeFile(filePath, testCode);

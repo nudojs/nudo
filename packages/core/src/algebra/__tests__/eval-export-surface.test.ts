@@ -10,7 +10,7 @@
  */
 import {describe, it, expect} from "vitest";
 import {runTranspiled, callTranspiledExportFull, litValue, transpileSource, numLit} from "@nudojs/core";
-import {mkdtempSync, writeFileSync, rmSync} from "node:fs";
+import {mkdtempSync, writeFileSync, } from "node:fs";
 import {tmpdir} from "node:os";
 import {join, dirname} from "node:path";
 import {fileURLToPath, pathToFileURL} from "node:url";

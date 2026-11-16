@@ -41,7 +41,7 @@ function check(src: string) {
   return checkSource("/t/guard-while-assign-118.js", IMP + src, pTrue, opts);
 }
 
-describe("#118 v3 赋值即守卫不再误报 entry-may-throw", () => {
+describe("v3 赋值即守卫不再误报 entry-may-throw", () => {
   it("issue #118 原始形态：while ((m = re.exec(content))) 体内 m[2] 读零 L2", () => {
     const r = check(`
 /**
@@ -102,7 +102,7 @@ export function whileSingleStmtBody(v) {
   });
 });
 
-describe("#120 多名复合 / 成员宽松等价守卫不再误报", () => {
+describe("多名复合 / 成员宽松等价守卫不再误报", () => {
   it("`obj == null || node.property == null` 穿透臂 node.property.name 读零 L2", () => {
     const r = check(`
 /**
@@ -152,7 +152,7 @@ export function looseMemberGuard(node) {
   });
 });
 
-describe("#118 v3 控制组：守卫剪枝不越界（仍报 entry-may-throw）", () => {
+describe("v3 控制组：守卫剪枝不越界（仍报 entry-may-throw）", () => {
   it("i. 无守卫的 exec 结果下标读仍报", () => {
     const r = check(`
 /**

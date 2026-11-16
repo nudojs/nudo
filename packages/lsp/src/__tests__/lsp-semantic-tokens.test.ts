@@ -41,7 +41,7 @@ const SRC = [
   "",
 ].join("\n");
 
-describe("类 / 解构 / 方法形参的语义 token", () => {
+
   it("真 server 返回完整 token 列表（位置 + 档位）", async () => {
     const { mock, uri } = await openLspDocument(SRC, "file:///tmp/nudo-bug-701/a.js");
     const tokens = requestSemanticTokens(mock, uri);
@@ -63,7 +63,7 @@ describe("类 / 解构 / 方法形参的语义 token", () => {
     expect(SEMANTIC_TOKEN_TYPES[10]).toBe("method");
     expect(SEMANTIC_TOKEN_TYPES[11]).toBe("class");
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -86,7 +86,7 @@ describe("转义标识符的 token 长度按源码跨度", () => {
 
 const TYPE_VARIABLE = SEMANTIC_TOKEN_TYPES.indexOf("variable");
 
-describe("转义标识符的 token 长度按源码跨度", () => {
+
   it("`\\u0061bc` 的 token 覆盖整个源码写法（8 个 UTF-16 code unit）", () => {
     const tokens = decodeSemanticTokens(
       buildSemanticTokens("/tmp/nudo-bug-723.js", "export const \\u0061bc = 1;\n"),
@@ -113,7 +113,7 @@ describe("转义标识符的 token 长度按源码跨度", () => {
     expect(x).toBeDefined();
     expect(x!.char).toBe(src.indexOf("x: 2"));
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -185,7 +185,7 @@ const STRING_LINE = 2;
 const STRING_INNER_START = 10;
 const STRING_INNER_END = 20;
 
-describe("降级路径不得在字符串字面量内部产出 token", () => {
+
   it("parse 失败的 buffer：字符串内部的文本不产生 token", () => {
     const tokens = decode(buildSemanticTokens("/t/broken.js", BROKEN));
     const inside = tokens.filter(
@@ -222,7 +222,7 @@ describe("降级路径不得在字符串字面量内部产出 token", () => {
     );
     expect(inside, JSON.stringify(tokens)).toEqual([]);
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -250,7 +250,7 @@ const TYPE_VARIABLE = SEMANTIC_TOKEN_TYPES.indexOf("variable");
 const TYPE_PROPERTY = SEMANTIC_TOKEN_TYPES.indexOf("property");
 const MOD_DECLARATION = 1 << SEMANTIC_TOKEN_MODIFIERS.indexOf("declaration");
 
-describe("解构绑定 / 简写引用的语义 token", () => {
+
   it("对象解构绑定 → variable（declaration）", async () => {
     const src = "export const { a, b } = obj;\n";
     const { mock, uri } = await openLspDocument(src, "file:///tmp/nudo-bug-721/a.js");
@@ -275,7 +275,7 @@ describe("解构绑定 / 简写引用的语义 token", () => {
     expect(prop!.typeIndex).toBe(TYPE_PROPERTY);
     expect(prop!.modifiers & MOD_DECLARATION).toBe(MOD_DECLARATION);
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -328,7 +328,7 @@ export const add = fn({ x: number() });
 const loader = (sidecar: string) => (spec: string) =>
   spec.endsWith("lib.nudo.js") ? sidecar : undefined;
 
-describe("buildSemanticTokens × contract 档 (A7)", () => {
+
   it("handwritten export function declaration gets contract modifier", () => {
     const src = `export function add(x) {\n  return x + 2;\n}\n`;
     const data = buildSemanticTokens("/t/lib.js", src, { loadModule: loader(HANDWRITTEN) });
@@ -402,5 +402,5 @@ describe("buildSemanticTokens × contract 档 (A7)", () => {
     ]);
     expect(SEMANTIC_TOKEN_MODIFIERS.slice(4)).toEqual(["contract", "generated", "derived"]);
   });
-});
+
 });

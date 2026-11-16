@@ -115,7 +115,7 @@ describe("Reflect.apply 字面量 fn + argsList 精确复放", () => {
 });
 
 describe("JSON.stringify 三由头不可能面不记 may-throw", () => {
-  it("Bug 17：闭内建 brand 接收者——精确折叠 + 零 throws 效果", () => {
+  it("闭内建 brand 接收者——精确折叠 + 零 throws 效果", () => {
     // RegExp/Map/Set/Error 家族 → "{}"；URL → href；Date(tv) → ISO 串
     const cases: Array<[string, string]> = [
       [`export function f() { return JSON.stringify(/a/g); }`, `"{}"`],
@@ -136,7 +136,7 @@ describe("JSON.stringify 三由头不可能面不记 may-throw", () => {
     expect(d0.effects).toEqual([]);
   });
 
-  it("Bug 20：闭 obj·prim 槽 / arr·non-bigint 元素——string 域不记 may-throw", () => {
+  it("闭 obj·prim 槽 / arr·non-bigint 元素——string 域不记 may-throw", () => {
     const r = evalWithArgs(
       `export function f(o) { return JSON.stringify(o); }`,
       [
@@ -255,12 +255,12 @@ describe("arr-of-union 渲染加括号", () => {
 });
 
 describe("Promise 拒绝通道 + nullish handler 恒等", () => {
-  it("Bug 36：Promise.reject(v) → 拒绝域 never + reason 通道", () => {
+  it("Promise.reject(v) → 拒绝域 never + reason 通道", () => {
     const r = call(`export function f() { return Promise.reject(1); }`);
     expect(fmt(r.result)).toBe("promise<never>");
   });
 
-  it("Bug 36：executor reject(v) → 拒绝通道；catch 回调实参 = reason", () => {
+  it("executor reject(v) → 拒绝通道；catch 回调实参 = reason", () => {
     const ctor = call(`export function f() { return new Promise((res, rej) => rej(1)); }`);
     expect(fmt(ctor.result)).toBe("promise<never>");
     const id = call(`export function f() { return Promise.reject(1).catch((e) => e); }`);
@@ -270,12 +270,12 @@ describe("Promise 拒绝通道 + nullish handler 恒等", () => {
     expect(fmt(konst.result)).toBe("promise<5>");
   });
 
-  it("Bug 36：两参 then 的 onRejected 读实参（此前从未被读取）", () => {
+  it("两参 then 的 onRejected 读实参（此前从未被读取）", () => {
     const r = call(`export function f() { return Promise.reject(1).then(null, (e) => e + 1); }`);
     expect(fmt(r.result)).toBe("promise<2>");
   });
 
-  it("Bug 37：nullish onFulfilled ≡ Identity 透传", () => {
+  it("nullish onFulfilled ≡ Identity 透传", () => {
     expect(fmt(call(`export function f() { return Promise.resolve(1).then(null); }`).result)).toBe("promise<1>");
     expect(fmt(call(`export function f() { return Promise.resolve(1).then(undefined); }`).result)).toBe("promise<1>");
     expect(fmt(call(`export function f() { return Promise.resolve(1).then(null, (e) => e); }`).result)).toBe("promise<1>");

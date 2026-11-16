@@ -18,7 +18,7 @@ import { denoteGuard, formatThrowsAbs } from "@nudojs/core/internal";
 import { generateGuardFunctionFromAbs } from "../emit/guard-generator.ts";
 import { emitContract } from "../emit/contract-emitter.ts";
 import { draftContract } from "../emit/contract-draft.ts";
-import { analyzeFile as analyzeFile_____analyzer_ts, analyzeFile as analyzeFile_____analyzer_ts_1, analyzeFile as analyzeFile_____analyzer_ts_2, analyzeFile as analyzeFile_____analyzer_ts_3, analyzeFile as analyzeFile_____analyzer_ts_4 } from "../analyzer.ts";
+import { analyzeFile as analyzeFile_____analyzer_ts, analyzeFile as analyzeFile_____analyzer_ts_2,  } from "../analyzer.ts";
 import { extractFormals, extractParamNames } from "../analyzer-ast.ts";
 import type { FunctionAnalysis } from "../analyzer-types.ts";
 import { isEnvTemplatePath } from "../env-path-deps.ts";
@@ -65,7 +65,7 @@ function declOf(source: string): string {
   return line ?? "";
 }
 
-describe("dts 面：访问器占位槽不得渲染成 exact undefined", () => {
+{
   const declOf = (source: string): string => generateDts(analyzeFile("/test/dts.js", source)).split("\n").find((l) => l.startsWith("export declare function")) ?? "";
   it("getter 读域：数字/字符串/this/嵌套/抛 unknown；不出现 exact undefined", () => {
     expect(declOf('export function g() { return { get ab() { return 1; } }; }')).toContain("{ ab: 1 }");
@@ -75,7 +75,7 @@ describe("dts 面：访问器占位槽不得渲染成 exact undefined", () => {
     expect(declOf('export function g() { return { get boom() { throw new Error("x"); } }; }')).toContain("{ boom: unknown }");
     expect(generateDts(analyzeFile("/test/dts.js", "export function g() { return { get ab() { return 1; } }; }"))).not.toContain("ab: undefined");
   });
-});;
+}
 
 describe("dts 负控制：非 getter 槽不受影响", () => {
   const declOf = (source: string): string => generateDts(analyzeFile("/test/dts.js", source)).split("\n").find((l) => l.startsWith("export declare function")) ?? "";
@@ -85,7 +85,7 @@ describe("dts 负控制：非 getter 槽不受影响", () => {
     expect(declOf("export function g() { return { set ab(v) {} }; }")).toContain("{ ab: undefined }");
     expect(declOf("export function g() { return {}; }")).toContain("Record<string, never>");
   });
-});;
+});
 });
 
 // ---------------------------------------------------------------------------
@@ -157,7 +157,7 @@ function generatorOutputAbs(): Abs {
   return out;
 }
 
-describe("zod brand 节点不得引用无运行时值的名字", () => {
+{
   beforeEach(() => { resetAllAnalysisCaches(); });
   const brandOf = (name: string): Abs => abs({ k: "brand", name, shape: objOf({}) }, undefined, undefined, "exact");
   const zodStub = (): unknown => { const stub: unknown = new Proxy(function () {} as unknown as object, { get: () => stub, apply: () => stub }); return stub; };
@@ -203,7 +203,7 @@ describe("zod brand 节点不得引用无运行时值的名字", () => {
     expect(standard.source).not.toContain("z.instanceof");
     expect(standard.source).toContain('"~standard"');
   });
-});;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -226,7 +226,7 @@ describe("standard 方言的 promise 节点不再放行一切", () => {
 
 const promiseNode: SchemaNode = { k: "promise", inner: { k: "unknown" } };
 
-describe("standard 方言的 promise 节点不再放行一切", () => {
+{
   const promiseNode: SchemaNode = { k: "promise", inner: { k: "unknown" } };
   it("非 Promise 拒绝；真 Promise 放行；unknown 仍放行一切", () => {
     for (const bad of [42, "str", {}, null, undefined]) {
@@ -237,7 +237,7 @@ describe("standard 方言的 promise 节点不再放行一切", () => {
     expect("issues" in validateSchemaNode(promiseNode, Promise.resolve(1))).toBe(false);
     expect("issues" in validateSchemaNode({ k: "unknown" }, 42)).toBe(false);
   });
-});;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -276,7 +276,7 @@ function dtsOf(c: ReturnType<typeof union>): string {
   }).lines.join("\n");
 }
 
-describe("契约的 union 字面量域必须在 dts 面保形", () => {
+{
   const dtsOf = (c: ReturnType<typeof union>): string => {
     const result = analyzeFile("/test/bug027.js", "export function pick(v) { return v; }\n");
     const fn = result.functions.find((f) => f.name === "pick")!;
@@ -291,7 +291,7 @@ describe("契约的 union 字面量域必须在 dts 面保形", () => {
     expect(dtsOf(union(number(), string()))).toContain("pick(v: number | string): number | string");
     expect(dtsOf(union(number().gt(0), litC(0)))).toContain("pick(v: number): number");
   });
-});;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -313,7 +313,7 @@ describe("bigint 字面量保基类型", () => {
 
 const bigintLit = (v: bigint) => abs({ k: "prim", type: "bigint" }, { op: "lit", value: v }, undefined, "exact");
 
-describe("bigint 字面量保基类型", () => {
+{
   const bigintLit = (v: bigint) => abs({ k: "prim", type: "bigint" }, { op: "lit", value: v }, undefined, "exact");
   it("zod 方言保 z.bigint 并记 dropped；schema 节点 prim bigint", () => {
     const p = projectAbsToSchema(bigintLit(10n), { dialect: "zod" });
@@ -322,7 +322,7 @@ describe("bigint 字面量保基类型", () => {
     const { node } = absToSchemaNode(bigintLit(10n));
     expect(node).toEqual({ k: "prim", type: "bigint", refinements: [] });
   });
-});;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -376,7 +376,7 @@ function sigOf(r: { signatures: { name: string; display: string }[] }, fn: strin
   return r.signatures.find((s) => s.name === fn)?.display ?? "(missing)";
 }
 
-describe("残留 — @nudo:as 目标形态不支持 ⇒ 显式诊断（不许静默）", () => {
+{
   const collect = (src: string) => { const diags: DirectiveDiag[] = []; const reps = collectEvalReplacements(src, { diags }); return { reps, diags }; };
   const check = (src: string) => { const { reps } = collect(src); return checkSource("/t/as-shape.js", src, pTrue, { inject: { replacements: reps.values, replacementTargets: reps.targets, asOverrides: reps.asValues, asOverrideTargets: reps.asTargets } }); };
   const sigOf = (r: { signatures: { name: string; display: string }[] }, fn: string) => r.signatures.find((s) => s.name === fn)?.display ?? "(missing)";
@@ -403,7 +403,7 @@ describe("残留 — @nudo:as 目标形态不支持 ⇒ 显式诊断（不许静
     expect(collect(destructure).diags.filter((d) => d.code === "nudo:directive-syntax")).toHaveLength(0);
     expect(sigOf(check(destructure), "f")).toContain("{ port: number, host: string }");
   });
-});;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -421,7 +421,7 @@ describe("zod 长度界按 UTF-16 码元", () => {
 
 
 
-describe("zod 长度界按 UTF-16 码元", () => {
+
   it("strMin/strMax 用 refine；无界仍 z.string()", () => {
     const min = schemaNodeToZod({ k: "prim", type: "string", refinements: [{ kind: "strMin", n: 2 }] });
     expect(min).toBe("z.string().refine((s) => s.length >= 2)");
@@ -431,7 +431,7 @@ describe("zod 长度界按 UTF-16 码元", () => {
     expect(max).not.toContain(".max(1)");
     expect(schemaNodeToZod({ k: "prim", type: "string", refinements: [] })).toBe("z.string()");
   });
-});;
+
 });
 
 // ---------------------------------------------------------------------------
@@ -450,14 +450,14 @@ describe("dts 不发布调用点观测的字面量", () => {
 
 
 
-describe("dts 不发布调用点观测的字面量", () => {
+
   it("纯调用点观测剥到基类型；无调用点入口泛化保留嵌套精度", () => {
     const dts = generateDts(analyzeFile("/test/bug214.js", 'export function mk(n) {\n  return { a: n, b: "s" };\n}\n\nmk(1);\n'));
     const decl = dts.split("\n").find((l) => l.includes("export declare function mk")) ?? "";
     expect(decl).toBe("export declare function mk(n: number): { a: number; b: string };");
     expect(generateDts(analyzeFile("/test/bug214b.js", "export function one() {\n  return { a: 1 };\n}\n"))).toContain("{ a: 1 }");
   });
-});;
+
 });
 
 // ---------------------------------------------------------------------------
@@ -507,7 +507,7 @@ function uint8Abs(): Abs {
   );
 }
 
-describe("内建 brand 的 guard 产物必须过 tsc --strict", () => {
+{
   const dirs: string[] = [];
   afterAll(() => { for (const d of dirs) rmSync(d, { recursive: true, force: true }); });
   const uint8Abs = (): Abs => abs({ k: "brand", name: "Uint8Array", shape: obj({ "0": { value: numLit(1) }, "1": { value: numLit(2) }, length: { value: numLit(2) } }) }, undefined, undefined, "exact");
@@ -530,7 +530,7 @@ describe("内建 brand 的 guard 产物必须过 tsc --strict", () => {
     expect(check(new Uint8Array([1, 2]))).toBe(true);
     expect(check({ 0: 1, 1: 2, length: 2 })).toBe(false);
   });
-});;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -572,7 +572,7 @@ export function f(x) {
 }
 `;
 
-describe("core import 不得豁免 builder 声明头", () => {
+{
   let dir: string;
   beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "nudo-bug-271-")); });
   afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
@@ -598,7 +598,7 @@ describe("core import 不得豁免 builder 声明头", () => {
     expect(after2).toContain('declare const lit: typeof import("@nudojs/core").litC;');
     expect(after2).toContain("lit(1)");
   });
-});;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -634,7 +634,7 @@ function importLine(src: string): string {
   return /^import \{[^}]*\} from "@nudojs\/core";$/m.exec(src)?.[0] ?? "";
 }
 
-describe("草稿 builder import ⊆ 真正被调用的 builder", () => {
+{
   let dir: string;
   beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "nudo-bug-272-")); });
   afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
@@ -653,7 +653,7 @@ describe("草稿 builder import ⊆ 真正被调用的 builder", () => {
       expect(dsl, field).not.toMatch(/(?<![\w$])lit\s*\(/);
     }
   });
-});;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -714,7 +714,7 @@ const OBJECT_PATTERN = `export function f7({ a, b }) { return a; }
 f7({ a: 1, b: 2 });
 `;
 
-describe("（service 侧）— dts 面：数组解构的输入面是元组，不是对象", () => {
+{
   beforeEach(() => { resetAllAnalysisCaches(); });
   const num = abs({ k: "prim", type: "number" }, undefined, undefined, "exact");
   const str = abs({ k: "prim", type: "string" }, undefined, undefined, "exact");
@@ -736,7 +736,7 @@ describe("（service 侧）— dts 面：数组解构的输入面是元组，不
     expect(declOf(OBJECT_PATTERN, [{ name: "a", abs: num }])).toContain("{ a: number }");
     expect(declOf(ARRAY_PATTERN)).toContain("number[]");
   });
-});;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -790,7 +790,7 @@ const WITH_THIS = `export function withThis(this: { x: number }, a: number): num
 }
 `;
 
-describe("（产物半）— 形参表过滤 `this` 接收者标注", () => {
+{
   beforeEach(() => { resetAllAnalysisCaches(); });
   const firstFnNode = (source: string) => {
     const file = parseSource(source);
@@ -813,7 +813,7 @@ describe("（产物半）— 形参表过滤 `this` 接收者标注", () => {
     expect(plain.map((f) => f.index)).toEqual([0, 1]);
     expect(plain.map((f) => (f.kind === "id" ? f.name : f.kind))).toEqual(["a", "b"]);
   });
-});;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -882,7 +882,7 @@ const JS_UPPER = `export function upper(a) {
 }
 `;
 
-describe("（service 侧）— 推断面：entry@ 实参按 TS 声明类型", () => {
+{
   beforeEach(() => { resetAllAnalysisCaches(); });
   const entryCase = (fn: FunctionAnalysis) => { const c = fn.cases.find((x) => x.name.startsWith("entry@")); expect(c).toBeDefined(); return c!; };
   const declOf = (source: string, file = "/test/bug479-service.ts"): string => generateDts(analyzeFile(file, source)).split("\n").find((l) => l.startsWith("export declare function")) ?? "";
@@ -900,7 +900,7 @@ describe("（service 侧）— 推断面：entry@ 实参按 TS 声明类型", ()
     const len = analyzeFile("/test/bug479-entry5.ts", "export function len(a: string[]): number {\n  return a.length;\n}\n").functions.find((f) => f.name === "len")!;
     expect(formatShape(entryCase(len).argAbs[0]!)).toBe("any");
   });
-});;
+}
 
 describe("（service 侧）— 产物面：dts 形参保留 TS 注解", () => {
   beforeEach(() => { resetAllAnalysisCaches(); });
@@ -918,7 +918,7 @@ describe("（service 侧）— 产物面：dts 形参保留 TS 注解", () => {
     expect(dts).toContain("@param a - string");
     expect(dts).not.toContain("@param a - unknown");
   });
-});;
+});
 
 describe("（service 侧）— 负控制：既有行为不得被波及", () => {
   beforeEach(() => { resetAllAnalysisCaches(); });
@@ -940,7 +940,7 @@ describe("（service 侧）— 负控制：既有行为不得被波及", () => {
     const noContract = projectFunctionDts(fn).lines.find((l) => l.startsWith("export declare function"))!;
     expect(noContract).toContain("a: string");
   });
-});;
+});
 });
 
 // ---------------------------------------------------------------------------
@@ -972,7 +972,7 @@ const CLASS_METHOD_WITH_DIRECTIVE = `export class C {
 }
 `;
 
-describe("dts identifier is always a legal TS identifier", () => {
+{
   const CLASS_METHOD_WITH_DIRECTIVE = `export class C {\n  /**\n   * @nudo:case "m1" (1) => 2\n   */\n  m(x) { return x + 1; }\n}\n`;
   it("指令路径继承 noDeclaration；dts 清洗点号；防御门同样清洗", () => {
     const r = analyzeFile("/t/b494/class-method.js", CLASS_METHOD_WITH_DIRECTIVE);
@@ -987,13 +987,13 @@ describe("dts identifier is always a legal TS identifier", () => {
     const defensive = projectFunctionDts(illegal).lines.find((l) => l.includes("export declare function"))!;
     expect(defensive).toMatch(/export declare function C_m\b/);
   });
-});;
+}
 });
 
 // ---------------------------------------------------------------------------
 // 族 54 · service 协议面
 // ---------------------------------------------------------------------------
-describe("族 54 · service 协议面", () => {
+describe("service 协议面", () => {
 /**
  * 族 54 · service **协议面**（3 条缺口）的钉。
  *
@@ -1030,7 +1030,7 @@ describe("族 54 · service 协议面", () => {
 /** env 模板族的扩展名表（三支同表）。 */
 const ENV_TEMPLATE_EXTS = ["js", "mjs", "ts", "cjs", "cts", "mts"] as const;
 
-describe("族 54 · service 协议面", () => {
+{
   const ENV_TEMPLATE_EXTS = ["js", "mjs", "ts", "cjs", "cts", "mts"] as const;
   it("env 模板族扩展名：三支同表、basename 锚定、非模板负控", () => {
     for (const ext of ENV_TEMPLATE_EXTS) {
@@ -1048,7 +1048,7 @@ describe("族 54 · service 协议面", () => {
   it("函数级 throws 证据：调用点/模块级/选中 case 都有，entry@ 负控不变", () => {
     const MAY_THROW_SRC = "export function risky(x) {\n  return x.foo;\n}\n";
     const callsiteSrc = `${MAY_THROW_SRC}export function run() {\n  return risky({});\n}\n`;
-    {
+  {
       const dir = tmpProject("nudo-bug54-callsite-", { "main.js": callsiteSrc });
       const r = analyzeFile(`${dir}/main.js`, callsiteSrc);
       const fn = r.functions.find((f) => f.name === "risky")!;
@@ -1058,8 +1058,8 @@ describe("族 54 · service 协议面", () => {
       expect(formatThrowsAbs(fn.entryThrowsAbs!)).toBe("TypeError");
       expect(fn.cases[0]!.throwsAbs.shape.k).toBe("never");
       expect(formatShape(fn.combinedAbs!)).toBe("undefined");
-    }
-    {
+  }
+  {
       const src = `${MAY_THROW_SRC}risky({});\n`;
       const dir = tmpProject("nudo-bug54-toplevel-", { "top.js": src });
       const r = analyzeFile(`${dir}/top.js`, src);
@@ -1068,8 +1068,8 @@ describe("族 54 · service 协议面", () => {
       expect(formatThrowsAbs(fn.entryThrowsAbs!)).toBe("TypeError");
       expect(fn.cases[0]!.throwsAbs.shape.k).toBe("never");
       expect(formatShape(fn.combinedAbs!)).toBe("undefined");
-    }
-    {
+  }
+  {
       const src = '/**\n * @nudo:case "c1" (1) => number()\n */\nexport function risky(x) {\n  return x.foo;\n}\n';
       const dir = tmpProject("nudo-bug54-selected-", { "sel.js": src });
       const r = analyzeFile(`${dir}/sel.js`, src, new Map([["risky", 0]]), undefined, undefined, "selected");
@@ -1077,17 +1077,17 @@ describe("族 54 · service 协议面", () => {
       expect(fn.cases.map((c) => c.name)).toEqual(["c1"]);
       expect(formatThrowsAbs(fn.entryThrowsAbs!)).toBe("TypeError");
       expect(formatShape(fn.combinedAbs!)).toBe("undefined");
-    }
-    {
+  }
+  {
       const dir = tmpProject("nudo-bug54-entry-", { "entry.js": MAY_THROW_SRC });
       const r = analyzeFile(`${dir}/entry.js`, MAY_THROW_SRC);
       const fn = r.functions.find((f) => f.name === "risky")!;
       expect(fn.cases.map((c) => c.name)).toEqual(["entry@L1"]);
       expect(formatThrowsAbs(fn.cases[0]!.throwsAbs)).toBe("TypeError");
       expect(formatShape(fn.combinedAbs!)).toBe("any");
-    }
+  }
   });
-});;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -1116,7 +1116,7 @@ function exportedGuardNames(source: string): string[] {
   return [...source.matchAll(/export function (\w+)\(/g)].map((m) => m[1]!);
 }
 
-describe("guard 导出名必须模块内去重（清洗碰撞不再产生同名导出）", () => {
+{
   const exportedGuardNames = (source: string): string[] => [...source.matchAll(/export function (\w+)\(/g)].map((m) => m[1]!);
   it("同 used 集合去重；不同名不受影响；不传 used 只清洗；字符清洗生效", () => {
     const used = new Set<string>();
@@ -1139,7 +1139,7 @@ describe("guard 导出名必须模块内去重（清洗碰撞不再产生同名�
     expect(exportedGuardNames(generateGuardFunctionFromAbs("isA_bOutput", num()))).toEqual(["isA_bOutput"]);
     expect(exportedGuardNames(generateGuardFunctionFromAbs("isA.bOutput", num(), new Set<string>()))).toEqual(["isA_bOutput"]);
   });
-});;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -1160,7 +1160,7 @@ describe("standard 返回面导出名恒为 <fn>Output（不随符号来源翻�
 
 
 
-describe("standard 返回面导出名恒为 <fn>Output（不随符号来源翻转）", () => {
+{
   const names = (src: string) => [...src.matchAll(/export const (\w+)/g)].map((m) => m[1]!);
   it("契约/观测/并存都恒为 <fn>Output；导出名集合相同；契约优先", async () => {
     const fromContract = absToStandardSchemaFunction({ fn: "alpha", inputs: [{ name: "x", abs: num() }], returns: num() });
@@ -1179,7 +1179,7 @@ describe("standard 返回面导出名恒为 <fn>Output（不随符号来源翻�
     const bothMod = await loadGeneratedModule(both.source);
     expect(bothMod.alphaOutput!["~standard"].validate(1).issues).toBeUndefined();
   });
-});;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -1211,7 +1211,7 @@ const defaultFormals: FormalParam[] = [
   { kind: "default", name: "b", index: 1 },
 ];
 
-describe("standard 顶层形参的可选性必须保真（接受 undefined）", () => {
+{
   const defaultFormals: FormalParam[] = [{ kind: "id", name: "a", index: 0 }, { kind: "default", name: "b", index: 1 }];
   it("契约/声明级可选接受 undefined；Input 槽可缺席；未申报可选拒收", async () => {
     const optional = absToStandardSchemaFunction({ fn: "act", inputs: [{ name: "x", abs: num(), optional: true }], formals: [{ kind: "id", name: "x", index: 0 }], output: num() });
@@ -1233,7 +1233,7 @@ describe("standard 顶层形参的可选性必须保真（接受 undefined）", 
     expect(rmod.act_x!["~standard"].validate(undefined).issues).toBeDefined();
     expect(rmod.actInput!["~standard"].validate({}).issues).toBeDefined();
   });
-});;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -1294,7 +1294,7 @@ const VIOLATIONS: Array<{ name: string; src: string; expect: string }> = [
   },
 ];
 
-describe("defineEnv() 契约违约必须可见", () => {
+{
   beforeEach(() => { clearPathEnvCaches(); });
   const VIOLATIONS = [
     { name: "不导出 defineEnv", src: "export const notDefine = 1;\n", expect: "must export a defineEnv() function" },
@@ -1327,22 +1327,22 @@ describe("defineEnv() 契约违约必须可见", () => {
       expect(errs[0]!.path).toBe(envFile);
       expect(errs[0]!.error).toContain("must export a defineEnv() function");
     }
-    {
+  {
       const dir = tmpProject("nudo-bug-937-ok-");
       writeFileSync(join(dir, "myenv.mjs"), 'import { numLit } from "@nudojs/core";\nexport function defineEnv() {\n  return { globals: { MAGIC: numLit(42) } };\n}\n', "utf-8");
       await preloadPathEnvs(["./myenv.mjs"], dir);
       expect(getPathEnvLoadErrors(dir)).toHaveLength(0);
       const loaded = loadEnvs(["./myenv.mjs"], createEnvironment(), dir);
       expect(formatShape(loaded.globals.MAGIC!)).toBe("42");
-    }
-    {
+  }
+  {
       const dir = tmpProject("nudo-bug-937-syntax-");
       writeFileSync(join(dir, "myenv.mjs"), "export function defineEnv( {\n", "utf-8");
       await preloadPathEnvs(["./myenv.mjs"], dir);
       const errs = getPathEnvLoadErrors(dir);
       expect(errs).toHaveLength(1);
       expect(errs[0]!.error).not.toContain("must export a defineEnv()");
-    }
+  }
   });
-});;
+}
 });

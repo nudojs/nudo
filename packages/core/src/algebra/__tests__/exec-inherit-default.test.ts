@@ -2,10 +2,10 @@ import { describe, it, expect } from "vitest";
 import {
   runTranspiled,
   callTranspiledExportFull,
-  $lit,
-  $await,
+
+
   litValue,
-  absToString,
+
 } from "@nudojs/core";
 
 describe("evaluator inheritance / super", () => {

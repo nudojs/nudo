@@ -1,5 +1,5 @@
 import {describe, it, expect} from "vitest";
-import {transpileSource, formatAbs, litValue} from "@nudojs/core";
+import {transpileSource, litValue} from "@nudojs/core";
 import {tryEvalCall} from "@nudojs/service";
 
 describe("evaluator $fork continue-path free-write join", () => {

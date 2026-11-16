@@ -59,71 +59,59 @@ const NESTED_EDITS = [
   { range: { start: { line: 0, character: 6 }, end: { line: 0, character: 6 } }, newText: "INS" },
 ];
 
-describe("applyEdits 的区间嵌套", () => {
-  it("插入点落在替换范围内部：插入文本紧贴替换文本之前（改前是垃圾源码）；合成结果与 edit 数组的顺序无关；插入点在替换范围**之后**（不相交）：位置不受影响；插入点与替换范围同起点：插入文本在替换文本之前；两个不相交的替换（既有金标口径）：逐字不变；替换范围真的重叠（部分重叠 / 交叉）：fail-closed，不产出垃圾源码", () => {
-(() => {
 
+  it("插入点落在替换范围内部：插入文本紧贴替换文本之前（改前是垃圾源码）；合成结果与 edit 数组的顺序无关；插入点在替换范围**之后**（不相交）：位置不受影响；插入点与替换范围同起点：插入文本在替换文本之前；两个不相交的替换（既有金标口径）：逐字不变；替换范围真的重叠（部分重叠 / 交叉）：fail-closed，不产出垃圾源码", () => {
+  {
     const out = applyEdits("AAAA BBBB CCCC", NESTED_EDITS);
     // 改前是 "AAAA REPLBBB CCCC"（插入文本被吞进替换文本里）
     expect(out).toBe("AAAA INSREPL CCCC");
-  })();
-(() => {
-
+  }
+  {
     const forward = applyEdits("AAAA BBBB CCCC", NESTED_EDITS);
     const backward = applyEdits("AAAA BBBB CCCC", [...NESTED_EDITS].reverse());
     expect(forward).toBe("AAAA INSREPL CCCC");
     expect(backward).toBe(forward);
-  })();
-(() => {
-
+  }
+  {
     const out = applyEdits("AAAA BBBB CCCC", [
       { range: { start: { line: 0, character: 0 }, end: { line: 0, character: 4 } }, newText: "REPL" },
       { range: { start: { line: 0, character: 10 }, end: { line: 0, character: 10 } }, newText: "INS" },
     ]);
     expect(out).toBe("REPL BBBB INSCCCC");
-  })();
-(() => {
-
+  }
+  {
     const out = applyEdits("AAAA BBBB", [
       { range: { start: { line: 0, character: 5 }, end: { line: 0, character: 9 } }, newText: "REPL" },
       { range: { start: { line: 0, character: 5 }, end: { line: 0, character: 5 } }, newText: "INS" },
     ]);
     expect(out).toBe("AAAA INSREPL");
-  })();
-(() => {
-
+  }
+  {
     const out = applyEdits("abcdef", [
       { range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } }, newText: "X" },
       { range: { start: { line: 0, character: 3 }, end: { line: 0, character: 4 } }, newText: "Y" },
     ]);
     expect(out).toBe("XbcYef");
-  })();
-(() => {
-
+  }
+  {
     expect(() =>
       applyEdits("AAAA BBBB CCCC", [
         { range: { start: { line: 0, character: 5 }, end: { line: 0, character: 9 } }, newText: "REPL" },
         { range: { start: { line: 0, character: 7 }, end: { line: 0, character: 11 } }, newText: "X" },
       ]),
     ).toThrow(RangeError);
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
+
 
 describe("产品路径（extractFunction 的两个调用点）", () => {
   it("表达式提取路径：对象字面量方法宿主 ⇒ 产物可解析、结构完整；语句序列路径：函数体内的选区 ⇒ 产物可解析、调用点接回；语句序列路径：顶层选区（插入点 == 替换起点）⇒ 产物可解析；协议面：codeAction 下发的整文件替换文本可解析", async () => {
-await (async () => {
-
+__scenario_1: {
     const source = `export const o = { m() { const y = this.v * 2; return y; }, };
 `;
     const r = extractFunction(source, {
@@ -131,7 +119,7 @@ await (async () => {
       end: { line: 0, character: 52 },
     });
     expect(r.ok).toBe(true);
-    if (!r.ok) return;
+    if (!r.ok) break __scenario_1;
     expect(() => parse(r.newText)).not.toThrow();
     expect(r.newText).toContain("function extracted()");
     expect(r.newText).toContain("export const o = extracted();");
@@ -139,9 +127,8 @@ await (async () => {
     expect(r.newText.indexOf("function extracted()")).toBeLessThan(
       r.newText.indexOf("export const o"),
     );
-  })();
-await (async () => {
-
+  }
+__scenario_2: {
     const source = `function outer(a, b) {
   const t = a + b;
   const u = t * 2;
@@ -153,13 +140,12 @@ await (async () => {
       end: { line: 3, character: 0 },
     });
     expect(r.ok).toBe(true);
-    if (!r.ok) return;
+    if (!r.ok) break __scenario_2;
     expect(() => parse(r.newText)).not.toThrow();
     expect(r.newText).toContain("function extracted(a, b)");
     expect(r.newText).toContain("const u = extracted(a, b);");
-  })();
-await (async () => {
-
+  }
+__scenario_3: {
     const source = `const t = 1;
 const u = t + 1;
 console.log(u);
@@ -169,13 +155,12 @@ console.log(u);
       end: { line: 2, character: 0 },
     });
     expect(r.ok).toBe(true);
-    if (!r.ok) return;
+    if (!r.ok) break __scenario_3;
     expect(() => parse(r.newText)).not.toThrow();
     expect(r.newText).toContain("function extracted()");
     expect(r.newText).toContain("const u = extracted();");
-  })();
-await (async () => {
-
+  }
+  {
     const source = `export const o = { m() { const y = this.v * 2; return y; }, };
 `;
     await withLspServer({ "m.mjs": source }, async ({ req, uri }) => {
@@ -194,14 +179,11 @@ await (async () => {
       expect(() => parse(newText)).not.toThrow();
       expect(newText).toContain("function extracted()");
     });
-  })();
-});;
+  }
+});
 
-  ;
 
-  ;
 
-  ;
 });
 });
 
@@ -241,27 +223,24 @@ export function f(a) {
 /** 选区 = 第 2 行（0 基）的 `const value = compute();` */
 const SEL = { start: { line: 1, character: 0 }, end: { line: 1, character: 24 } };
 
-describe("顶层选区的 Extract 跳过文件前导区（hashbang）", () => {
-  it("插入点在 hashbang 之后（不是文件第 0 字节）；产物里 hashbang 仍是第 1 行（可解析、可执行）；协议面：codeAction 下发的文本第 1 行仍是 shebang", async () => {
-await (async () => {
 
+  it("插入点在 hashbang 之后（不是文件第 0 字节）；产物里 hashbang 仍是第 1 行（可解析、可执行）；协议面：codeAction 下发的文本第 1 行仍是 shebang", async () => {
+__scenario_4: {
     const r = extractFunction(SRC, SEL);
     expect(r.ok).toBe(true);
-    if (!r.ok) return;
+    if (!r.ok) break __scenario_4;
     // 改前是 {line:0, character:0}
     expect(r.insertAt).toEqual({ line: 1, character: 0 });
-  })();
-await (async () => {
-
+  }
+__scenario_5: {
     const r = extractFunction(SRC, SEL);
     expect(r.ok).toBe(true);
-    if (!r.ok) return;
+    if (!r.ok) break __scenario_5;
     expect(r.newText.split("\n")[0]).toBe("#!/usr/bin/env node");
     // 改前：Unexpected token (5:0)
     expect(() => parse(r.newText)).not.toThrow();
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "m.mjs": SRC }, async ({ req, uri }) => {
       const actions = req("textDocument/codeAction")({
         textDocument: { uri: uri("m.mjs") },
@@ -278,13 +257,11 @@ await (async () => {
       expect(newText.split("\n")[0]).toBe("#!/usr/bin/env node");
       expect(() => parse(newText)).not.toThrow();
     });
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -326,30 +303,27 @@ const SRC = `export function f(compute) {
 /** 选区 = 第 3 行（0 基）的 `x = compute();` */
 const SEL = { start: { line: 2, character: 2 }, end: { line: 2, character: 16 } };
 
-describe("Extract 的赋值写法不引入重复 const 声明", () => {
-  it("调用点是赋值表达式，不是 const 声明；产物不再有重复声明（可解析）；协议面：codeAction 下发的文本里没有重复 const 声明；对照：原本就是声明时，调用点仍是同种声明（const）", async () => {
-await (async () => {
 
+  it("调用点是赋值表达式，不是 const 声明；产物不再有重复声明（可解析）；协议面：codeAction 下发的文本里没有重复 const 声明；对照：原本就是声明时，调用点仍是同种声明（const）", async () => {
+__scenario_6: {
     const r = extractFunction(SRC, SEL);
     expect(r.ok).toBe(true);
-    if (!r.ok) return;
+    if (!r.ok) break __scenario_6;
     // 改前是 "const x = extracted(compute);"
     expect(r.callText).toBe("x = extracted(compute);");
     expect(r.callText).not.toContain("const x");
-  })();
-await (async () => {
-
+  }
+__scenario_7: {
     const r = extractFunction(SRC, SEL);
     expect(r.ok).toBe(true);
-    if (!r.ok) return;
+    if (!r.ok) break __scenario_7;
     expect(r.newText).not.toContain("const x = extracted");
     expect(r.newText).toContain("x = extracted(compute);");
     expect(r.newText).toContain("let x = 0;");
     // 改前：Identifier 'x' has already been declared
     expect(() => parse(r.newText)).not.toThrow();
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "m.mjs": SRC }, async ({ req, uri }) => {
       const actions = req("textDocument/codeAction")({
         textDocument: { uri: uri("m.mjs") },
@@ -366,9 +340,8 @@ await (async () => {
       expect(newText).not.toContain("const x = extracted");
       expect(newText).toContain("x = extracted(compute);");
     });
-  })();
-await (async () => {
-
+  }
+__scenario_8: {
     const src = `function outer(a, b) {
   const t = a + b;
   const u = t * 2;
@@ -381,17 +354,14 @@ await (async () => {
       { name: "combine" },
     );
     expect(r.ok).toBe(true);
-    if (!r.ok) return;
+    if (!r.ok) break __scenario_8;
     expect(r.callText).toBe("const u = combine(a, b);");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -448,17 +418,15 @@ const RETURN_SRC = `export function f() {
 /** 选区 = `const a = 1;` + `return a + 1;`（整条覆盖 return） */
 const RETURN_SEL = { start: { line: 1, character: 2 }, end: { line: 2, character: 15 } };
 
-describe("Extract 不搬走控制流语句、返回值必须接回", () => {
-  it("选区含 break：拒绝抽取（不再产出非法 JS）；协议面：含 break 的选区不再给出 refactor.extract；选区末条是 return：返回值接回调用点（外层返回值不再被丢）；对照：单条 return 的抽取仍然接回返回值（既有行为不变）", async () => {
-await (async () => {
 
+  it("选区含 break：拒绝抽取（不再产出非法 JS）；协议面：含 break 的选区不再给出 refactor.extract；选区末条是 return：返回值接回调用点（外层返回值不再被丢）；对照：单条 return 的抽取仍然接回返回值（既有行为不变）", async () => {
+__scenario_9: {
     const r = extractFunction(BREAK_SRC, BREAK_SEL);
     expect(r.ok).toBe(false);
-    if (r.ok) return;
+    if (r.ok) break __scenario_9;
     expect(r.reason).toMatch(/break/);
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "m.mjs": BREAK_SRC }, async ({ req, uri }) => {
       const actions = req("textDocument/codeAction")({
         textDocument: { uri: uri("m.mjs") },
@@ -468,12 +436,11 @@ await (async () => {
       const extract = actions.find((a) => a.kind === "refactor.extract");
       expect(extract).toBeUndefined();
     });
-  })();
-await (async () => {
-
+  }
+__scenario_10: {
     const r = extractFunction(RETURN_SRC, RETURN_SEL);
     expect(r.ok).toBe(true);
-    if (!r.ok) return;
+    if (!r.ok) break __scenario_10;
     // 改前是 "extracted();"（返回值被静默丢掉）
     expect(r.callText).toBe("return extracted();");
     expect(r.returns).toBe("value");
@@ -481,9 +448,8 @@ await (async () => {
     // 外层函数仍然返回该值
     expect(r.newText).toMatch(/export function f\(\) \{[\s\S]*return extracted\(\);/);
     expect(() => parse(r.newText)).not.toThrow();
-  })();
-await (async () => {
-
+  }
+__scenario_11: {
     const src = `function f(x) {
   return x + 1;
 }
@@ -494,17 +460,14 @@ await (async () => {
       { name: "inc" },
     );
     expect(r.ok).toBe(true);
-    if (!r.ok) return;
+    if (!r.ok) break __scenario_11;
     expect(r.callText).toBe("return inc(x);");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -552,55 +515,51 @@ const CLASS_SRC = `export class A {
 }
 `;
 
-describe("Extract 的新函数只能插在语句位置", () => {
-  it("箭头初始化式：插在整条声明之前，产物可解析；对象字面量方法：插在宿主声明之前，产物可解析；class 方法：插在宿主声明之前，产物可解析；协议面：codeAction 给箭头宿主下发的文本可解析", async () => {
-await (async () => {
 
+  it("箭头初始化式：插在整条声明之前，产物可解析；对象字面量方法：插在宿主声明之前，产物可解析；class 方法：插在宿主声明之前，产物可解析；协议面：codeAction 给箭头宿主下发的文本可解析", async () => {
+__scenario_12: {
     const r = extractFunction(ARROW_SRC, {
       start: { line: 1, character: 9 },
       end: { line: 1, character: 14 },
     });
     expect(r.ok).toBe(true);
-    if (!r.ok) return;
+    if (!r.ok) break __scenario_12;
     // 改前是 {line:0, character:17}（`=` 之后的箭头起点）
     expect(r.insertAt).toEqual({ line: 0, character: 0 });
     expect(r.newText.indexOf("function extracted")).toBeLessThan(
       r.newText.indexOf("export const f"),
     );
     expect(() => parse(r.newText)).not.toThrow();
-  })();
-await (async () => {
-
+  }
+__scenario_13: {
     const r = extractFunction(OBJECT_SRC, {
       start: { line: 2, character: 11 },
       end: { line: 2, character: 21 },
     });
     expect(r.ok).toBe(true);
-    if (!r.ok) return;
+    if (!r.ok) break __scenario_13;
     // 改前是 {line:1, character:2}（对象字面量的 `{` 之后）
     expect(r.insertAt).toEqual({ line: 0, character: 0 });
     expect(r.newText.indexOf("function extracted")).toBeLessThan(
       r.newText.indexOf("export const o"),
     );
     expect(() => parse(r.newText)).not.toThrow();
-  })();
-await (async () => {
-
+  }
+__scenario_14: {
     const r = extractFunction(CLASS_SRC, {
       start: { line: 2, character: 11 },
       end: { line: 2, character: 21 },
     });
     expect(r.ok).toBe(true);
-    if (!r.ok) return;
+    if (!r.ok) break __scenario_14;
     // 改前是 {line:1, character:2}（class body 里）
     expect(r.insertAt).toEqual({ line: 0, character: 0 });
     expect(r.newText.indexOf("function extracted")).toBeLessThan(
       r.newText.indexOf("export class A"),
     );
     expect(() => parse(r.newText)).not.toThrow();
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "m.mjs": ARROW_SRC }, async ({ req, uri }) => {
       const actions = req("textDocument/codeAction")({
         textDocument: { uri: uri("m.mjs") },
@@ -619,15 +578,12 @@ await (async () => {
       );
       expect(() => parse(newText)).not.toThrow();
     });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -663,21 +619,19 @@ const SRC = `export function f(a) {
 /** 选区 = 第 2 行（0 基）的 `a + 1` */
 const SEL = { start: { line: 1, character: 12 }, end: { line: 1, character: 17 } };
 
-describe("Extract 不偷走原函数的 export 关键字", () => {
-  it("插入点是语句起点（export 的列），不是 function 关键字的列；产物里 export 仍属原函数（模块公开 API 不变）；协议面：codeAction 下发的整文件替换保留 export", async () => {
-await (async () => {
 
+  it("插入点是语句起点（export 的列），不是 function 关键字的列；产物里 export 仍属原函数（模块公开 API 不变）；协议面：codeAction 下发的整文件替换保留 export", async () => {
+__scenario_15: {
     const r = extractFunction(SRC, SEL);
     expect(r.ok).toBe(true);
-    if (!r.ok) return;
+    if (!r.ok) break __scenario_15;
     // 改前是 {line:0, character:7}（`export ` 之后）
     expect(r.insertAt).toEqual({ line: 0, character: 0 });
-  })();
-await (async () => {
-
+  }
+__scenario_16: {
     const r = extractFunction(SRC, SEL);
     expect(r.ok).toBe(true);
-    if (!r.ok) return;
+    if (!r.ok) break __scenario_16;
     expect(r.newText).toContain("export function f(a) {");
     expect(r.newText).not.toContain("export function extracted");
     // 新函数排在 export 之前
@@ -686,9 +640,8 @@ await (async () => {
     );
     // 产物仍可解析
     expect(() => parse(r.newText)).not.toThrow();
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "m.mjs": SRC }, async ({ req, uri }) => {
       const actions = req("textDocument/codeAction")({
         textDocument: { uri: uri("m.mjs") },
@@ -705,13 +658,11 @@ await (async () => {
       expect(newText).toContain("export function f(a) {");
       expect(newText).not.toContain("export function extracted");
     });
-  })();
-});;
-
-  ;
-
-  ;
+  }
 });
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -775,41 +726,37 @@ function rangeOf(src: string, needle: string): {
   return { start: { line, character }, end: { line, character: character + needle.length } };
 }
 
-describe("Extract 的新函数名做占用检查（撞名自动改名）", () => {
-  it("名字被占用时自动改名（extracted → extracted1）；产物里不再有两个同名声明（可解析）；同一文件连续抽取两次：第二次不会撞名；协议面：action 标题带改后的名字；对照：名字没被占用时仍是 `extracted`", async () => {
-await (async () => {
 
+  it("名字被占用时自动改名（extracted → extracted1）；产物里不再有两个同名声明（可解析）；同一文件连续抽取两次：第二次不会撞名；协议面：action 标题带改后的名字；对照：名字没被占用时仍是 `extracted`", async () => {
+__scenario_17: {
     const r = extractFunction(CLASH_SRC, SEL);
     expect(r.ok).toBe(true);
-    if (!r.ok) return;
+    if (!r.ok) break __scenario_17;
     expect(r.functionName).toBe("extracted1");
     expect(r.callText).toBe("extracted1(x)");
-  })();
-await (async () => {
-
+  }
+__scenario_18: {
     const r = extractFunction(CLASH_SRC, SEL);
     expect(r.ok).toBe(true);
-    if (!r.ok) return;
+    if (!r.ok) break __scenario_18;
     expect(r.newText.match(/export function extracted\(/g)?.length).toBe(1);
     expect(r.newText.match(/function extracted1\(/g)?.length).toBe(1);
     // 改前：Identifier 'extracted' has already been declared
     expect(() => parse(r.newText)).not.toThrow();
-  })();
-await (async () => {
-
+  }
+__scenario_19: {
     const first = extractFunction(FREE_SRC, rangeOf(FREE_SRC, "a + 1"));
     expect(first.ok).toBe(true);
-    if (!first.ok) return;
+    if (!first.ok) break __scenario_19;
     expect(first.functionName).toBe("extracted");
     // 把第一次的产物当作第二次抽取的输入（抽另一个表达式）
     const second = extractFunction(first.newText, rangeOf(first.newText, "a + 2"));
     expect(second.ok).toBe(true);
-    if (!second.ok) return;
+    if (!second.ok) break __scenario_19;
     expect(second.functionName).toBe("extracted1");
     expect(() => parse(second.newText)).not.toThrow();
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "m.mjs": CLASH_SRC }, async ({ req, uri }) => {
       const actions = req("textDocument/codeAction")({
         textDocument: { uri: uri("m.mjs") },
@@ -826,25 +773,20 @@ await (async () => {
       const newText = extract!.edit!.changes[uri("m.mjs")]![0]!.newText;
       expect(() => parse(newText)).not.toThrow();
     });
-  })();
-await (async () => {
-
+  }
+__scenario_20: {
     const w = extractToWorkspaceEdit(FREE_SRC, rangeOf(FREE_SRC, "a + 1"));
     expect(w.ok).toBe(true);
-    if (!w.ok) return;
+    if (!w.ok) break __scenario_20;
     expect(w.functionName).toBe("extracted");
     expect(w.title).toBe("Extract to function 'extracted'");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -941,10 +883,9 @@ async function checkJson(
   return JSON.parse(text) as CheckJsonLike;
 }
 
-describe("LSP 门禁面必须与 CLI 同源采集行内指令", () => {
-  it("@nudo:as：agent nudo/check 判绿且签名与 CLI 同款（string，非 unknown）；@nudo:replace：agent nudo/check 判绿且签名与 CLI 同款", async () => {
-await (async () => {
 
+  it("@nudo:as：agent nudo/check 判绿且签名与 CLI 同款（string，非 unknown）；@nudo:replace：agent nudo/check 判绿且签名与 CLI 同款", async () => {
+  {
     const { mock, file, cleanup } = openSession(AS_SRC, "as");
     try {
       const json = await checkJson(mock, file);
@@ -960,9 +901,8 @@ await (async () => {
     } finally {
       cleanup();
     }
-  })();
-await (async () => {
-
+  }
+  {
     const { mock, file, cleanup } = openSession(REPL_SRC, "repl");
     try {
       const json = await checkJson(mock, file);
@@ -977,11 +917,10 @@ await (async () => {
     } finally {
       cleanup();
     }
-  })();
-});;
-
-  ;
+  }
 });
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1038,18 +977,15 @@ export function use() {
 }
 `;
 
-describe("inline 不产出重叠 edit（导出绑定）", () => {
+
   it("`export const X = …` ⇒ 不提供 Inline 动作；`export { X }` ⇒ 不提供 Inline 动作；协议面：导出绑定上 codeAction 不含 refactor.inline；对照：非导出绑定仍可内联，且 edit 集合互不重叠；语义面：改前两条 edit 重叠 ⇒ 应用后源码被毁（钉住根因形态）", async () => {
-await (async () => {
-
+  {
     expect(inlineVariableAt(SRC_EXPORT_DECL, 1, 13)).toBeNull();
-  })();
-await (async () => {
-
+  }
+  {
     expect(inlineVariableAt(SRC_EXPORT_SPEC, 1, 7)).toBeNull();
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "a.js": SRC_EXPORT_DECL }, async ({ req, uri }) => {
       const actions = req("textDocument/codeAction")({
         textDocument: { uri: uri("a.js") },
@@ -1061,20 +997,18 @@ await (async () => {
       }) as Array<{ title: string; kind?: string }>;
       expect(actions.find((a) => a.kind === "refactor.inline")).toBeUndefined();
     });
-  })();
-await (async () => {
-
+  }
+__scenario_21: {
     const r = inlineVariableAt(SRC_PLAIN, 1, 7);
     expect(r && "edits" in r).toBe(true);
-    if (!r || !("edits" in r)) return;
+    if (!r || !("edits" in r)) break __scenario_21;
     expect(r.title).toContain("Inline variable 'X'");
     expect(anyOverlap(r.edits)).toBe(false);
     const patched = applyEditsHarness(SRC_PLAIN, r.edits);
     expect(nodeCheck(patched)).toBe("OK");
     expect(runModule(patched, "M.use()")).toBe("42");
-  })();
-await (async () => {
-
+  }
+  {
     // 改前的 edit 集合：声明本身被当成「一个使用点」⇒ 多一条与删除 edit 重叠的替换
     const before = [
       {
@@ -1102,17 +1036,13 @@ await (async () => {
     expect(anyOverlap(before)).toBe(true);
     const patched = applyEditsHarness(SRC_EXPORT_DECL, before);
     expect(nodeCheck(patched)).not.toBe("OK");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1153,14 +1083,12 @@ const SRC = `export function f() {
 const LINE = 3;
 const COLUMN = 8;
 
-describe("inline 不捕获会被改写的自由变量", () => {
+
   it("自由变量有写入 ⇒ 不提供 Inline 动作；协议面：codeAction 不含 refactor.inline；对照：自由变量**不可变**时仍可内联（门禁不误伤）；语义面：改前会把 f() 从 1 变成 2（钉住根因形态）", async () => {
-await (async () => {
-
+  {
     expect(inlineVariableAt(SRC, LINE, COLUMN)).toBeNull();
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "a.js": SRC }, async ({ req, uri }) => {
       const actions = req("textDocument/codeAction")({
         textDocument: { uri: uri("a.js") },
@@ -1172,9 +1100,8 @@ await (async () => {
       }) as Array<{ title: string; kind?: string }>;
       expect(actions.find((a) => a.kind === "refactor.inline")).toBeUndefined();
     });
-  })();
-await (async () => {
-
+  }
+__scenario_22: {
     const stable = `export function f() {
   const a = 1;
   const x = a;
@@ -1183,14 +1110,13 @@ await (async () => {
 `;
     const r = inlineVariableAt(stable, 3, 8);
     expect(r && "edits" in r).toBe(true);
-    if (!r || !("edits" in r)) return;
+    if (!r || !("edits" in r)) break __scenario_22;
     expect(r.title).toContain("Inline variable 'x'");
     const patched = applyEditsHarness(stable, r.edits);
     expect(patched).toContain("return a;");
     expect(runModule(patched, "M.f()")).toBe("1");
-  })();
-await (async () => {
-
+  }
+  {
     // 手工复刻「改前」的动作（无自由变量稳定性检查）：内联 x ⇒ 行为改变
     const before = `export function f() {
   let a = 1;
@@ -1202,15 +1128,12 @@ await (async () => {
     const inlined = before.replace("  const x = a;\n", "").replace("return x;", "return a;");
     expect(runModule(before, "M.f()")).toBe("1");
     expect(runModule(inlined, "M.f()")).toBe("2");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1259,10 +1182,9 @@ function inline(): { title: string; edits: Edit[] } | null {
   return r;
 }
 
-describe("inline 不删同行兄弟语句", () => {
-  it("删除范围只覆盖声明语句本身（不扩到整行）；edit 集合互不重叠（LSP WorkspaceEdit 合法性）；应用后：兄弟语句保留并被内联展开，副作用不再丢失；协议面：codeAction 提供的 Inline action 不含整行删除", async () => {
-await (async () => {
 
+  it("删除范围只覆盖声明语句本身（不扩到整行）；edit 集合互不重叠（LSP WorkspaceEdit 合法性）；应用后：兄弟语句保留并被内联展开，副作用不再丢失；协议面：codeAction 提供的 Inline action 不含整行删除", async () => {
+  {
     const r = inline();
     expect(r).not.toBeNull();
     const edits = r!.edits;
@@ -1275,14 +1197,12 @@ await (async () => {
     });
     // 不得覆盖整行（整行会把 `doSomething(a);` 一起删掉）
     expect(del!.range.start.character).not.toBe(0);
-  })();
-await (async () => {
-
+  }
+  {
     const r = inline();
     expect(anyOverlap(r!.edits)).toBe(false);
-  })();
-await (async () => {
-
+  }
+  {
     const r = inline();
     const patched = applyEditsHarness(SRC, r!.edits);
     expect(patched).toContain("doSomething(1);");
@@ -1290,9 +1210,8 @@ await (async () => {
     expect(nodeCheck(patched)).toBe("OK");
     // 改前：`calls` = 0（副作用被静默删掉）；改后：`calls` = 1
     expect(runModule(patched, "[M.f(), M.calls]")).toBe("[3,1]");
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "a.js": SRC }, async ({ req, uri }) => {
       const actions = req("textDocument/codeAction")({
         textDocument: { uri: uri("a.js") },
@@ -1313,15 +1232,12 @@ await (async () => {
       expect(del!.range.start.character).not.toBe(0);
       expect(anyOverlap(edits)).toBe(false);
     });
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1363,14 +1279,12 @@ export function sum(obj) {
 const LINE = 6;
 const COLUMN = 8;
 
-describe("inline 不内联成员读（getter / Proxy 陷阱）", () => {
+
   it("成员读 ⇒ 不提供 Inline 动作；协议面：codeAction 不含 refactor.inline；语义面：改前会把 getter 求值次数从 1 变成 2（钉住根因形态）；对照：非成员读的纯表达式仍可内联（门禁不误伤）", async () => {
-await (async () => {
-
+  {
     expect(inlineVariableAt(SRC, LINE, COLUMN)).toBeNull();
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "a.js": SRC }, async ({ req, uri }) => {
       const actions = req("textDocument/codeAction")({
         textDocument: { uri: uri("a.js") },
@@ -1382,9 +1296,8 @@ await (async () => {
       }) as Array<{ title: string; kind?: string }>;
       expect(actions.find((a) => a.kind === "refactor.inline")).toBeUndefined();
     });
-  })();
-await (async () => {
-
+  }
+  {
     const before = `export function makeObj() {
   let calls = 0;
   return { get total() { calls++; return calls; } };
@@ -1400,9 +1313,8 @@ export function sum(obj) {
     );
     expect(runModule(before, "M.sum(M.makeObj())")).toBe("2");
     expect(runModule(inlined, "M.sum(M.makeObj())")).toBe("3");
-  })();
-await (async () => {
-
+  }
+__scenario_23: {
     const plain = `export function f() {
   const g = 1;
   return g + g;
@@ -1410,20 +1322,17 @@ await (async () => {
 `;
     const r = inlineVariableAt(plain, 2, 8);
     expect(r && "edits" in r).toBe(true);
-    if (!r || !("edits" in r)) return;
+    if (!r || !("edits" in r)) break __scenario_23;
     expect(r.title).toContain("Inline variable 'g'");
     const patched = applyEditsHarness(plain, r.edits);
     expect(patched).toContain("return 1 + 1;");
     expect(runModule(patched, "M.f()")).toBe("2");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1472,34 +1381,31 @@ const SRC_SAMELINE = `export function f() {
 }
 `;
 
-describe("inline 保留兄弟 declarator", () => {
-  it("跨行声明：改写整条声明，保留兄弟；同行声明：改写整条声明，保留兄弟；应用后：兄弟声明仍在，语法合法，运行时不再 ReferenceError；协议面：codeAction 的 inline edit 不删掉兄弟声明；语义面：改前删掉整条声明 ⇒ 语法合法但运行即 ReferenceError（钉住根因形态）", async () => {
-await (async () => {
 
+  it("跨行声明：改写整条声明，保留兄弟；同行声明：改写整条声明，保留兄弟；应用后：兄弟声明仍在，语法合法，运行时不再 ReferenceError；协议面：codeAction 的 inline edit 不删掉兄弟声明；语义面：改前删掉整条声明 ⇒ 语法合法但运行即 ReferenceError（钉住根因形态）", async () => {
+__scenario_24: {
     const r = inlineVariableAt(SRC_MULTILINE, 2, 8);
     expect(r && "edits" in r).toBe(true);
-    if (!r || !("edits" in r)) return;
+    if (!r || !("edits" in r)) break __scenario_24;
     const declEdit = r.edits.find((e) => e.newText !== "1")!;
     expect(declEdit.newText).toBe("const b = 2;");
     expect(declEdit.range).toEqual({
       start: { line: 1, character: 2 },
       end: { line: 2, character: 10 },
     });
-  })();
-await (async () => {
-
+  }
+__scenario_25: {
     const r = inlineVariableAt(SRC_SAMELINE, 2, 8);
     expect(r && "edits" in r).toBe(true);
-    if (!r || !("edits" in r)) return;
+    if (!r || !("edits" in r)) break __scenario_25;
     const declEdit = r.edits.find((e) => e.newText !== "1")!;
     expect(declEdit.newText).toBe("const b = 2;");
-  })();
-await (async () => {
-
+  }
+__scenario_26: {
     for (const src of [SRC_MULTILINE, SRC_SAMELINE]) {
       const r = inlineVariableAt(src, 2, 8);
       expect(r && "edits" in r).toBe(true);
-      if (!r || !("edits" in r)) return;
+      if (!r || !("edits" in r)) break __scenario_26;
       expect(anyOverlap(r.edits)).toBe(false);
       const patched = applyEditsHarness(src, r.edits);
       expect(patched).toContain("const b = 2;");
@@ -1508,9 +1414,8 @@ await (async () => {
       expect(nodeCheck(patched)).toBe("OK");
       expect(runModule(patched, "M.f()")).toBe("3");
     }
-  })();
-await (async () => {
-
+  }
+  {
     await withLspServer({ "a.js": SRC_MULTILINE }, async ({ req, uri }) => {
       const actions = req("textDocument/codeAction")({
         textDocument: { uri: uri("a.js") },
@@ -1539,26 +1444,21 @@ await (async () => {
       expect(declEdit.newText).toBe("const b = 2;");
       expect(anyOverlap(edits)).toBe(false);
     });
-  })();
-await (async () => {
-
+  }
+  {
     const patched = `export function f() {
   return 1 + b;
 }
 `;
     expect(nodeCheck(patched)).toBe("OK");
     expect(runModule(patched, "M.f()")).toBe("Error: b is not defined");
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1594,10 +1494,9 @@ const GREET_SC = `import { fn, shape, string } from "@nudojs/core";
 export const greet = fn({ u: shape({ name: string() }) }, string());
 `;
 
-describe("补字段 quickfix 不得把 undefined 当值写进调用点", () => {
-  it("插入文本不是 undefined（占位不是值）；应用后源码可编译，且该违规仍被报出（门禁不被 quickfix 变绿）", () => {
-(() => {
 
+  it("插入文本不是 undefined（占位不是值）；应用后源码可编译，且该违规仍被报出（门禁不被 quickfix 变绿）", () => {
+  {
     withTempDir("nudo-lsp-730-", (dir) => {
       writeFileSync(join(dir, "greet.js"), GREET_JS, "utf-8");
       writeFileSync(join(dir, "greet.nudo.js"), GREET_SC, "utf-8");
@@ -1611,9 +1510,8 @@ describe("补字段 quickfix 不得把 undefined 当值写进调用点", () => {
         expect(e.newText).toContain("name:");
       }
     });
-  })();
-(() => {
-
+  }
+  {
     withTempDir("nudo-lsp-730b-", (dir) => {
       const srcPath = join(dir, "greet.js");
       writeFileSync(srcPath, GREET_JS, "utf-8");
@@ -1633,11 +1531,10 @@ describe("补字段 quickfix 不得把 undefined 当值写进调用点", () => {
       const violated = report.issues.filter((i) => i.code === "nudo:constraint-violated");
       expect(violated.length).toBeGreaterThan(0);
     });
-  })();
-});;
-
-  ;
+  }
 });
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1672,10 +1569,9 @@ export function f(x) {
 }
 `;
 
-describe("占位 range 换算后落合法位置（line ≥ 0）", () => {
-  it("toLspDiagnostic：占位 range（line 0）→ line 0（改前：-1）；toLspDiagnostic：真实 1 基行号仍按 1 基 → 0 基换算（负控制）；发布面：nudo:module-missing 落合法位置（改前：line -1）；发布面：所有诊断的 range 位置都合法（负控制：不得有 line < 0）", async () => {
-await (async () => {
 
+  it("toLspDiagnostic：占位 range（line 0）→ line 0（改前：-1）；toLspDiagnostic：真实 1 基行号仍按 1 基 → 0 基换算（负控制）；发布面：nudo:module-missing 落合法位置（改前：line -1）；发布面：所有诊断的 range 位置都合法（负控制：不得有 line < 0）", async () => {
+  {
     const d = toLspDiagnostic(
       {
         severity: "error",
@@ -1688,9 +1584,8 @@ await (async () => {
     expect(d.range.start.line).toBe(0);
     expect(d.range.start.character).toBe(0);
     expect(d.range.end.line).toBe(0);
-  })();
-await (async () => {
-
+  }
+  {
     const d = toLspDiagnostic(
       {
         severity: "error",
@@ -1702,9 +1597,8 @@ await (async () => {
     );
     expect(d.range.start.line).toBe(2);
     expect(d.range.start.character).toBe(7);
-  })();
-await (async () => {
-
+  }
+  {
     const published: Array<{ uri: string; diagnostics: LspDiagnostic[] }> = [];
     const deps = makeValidateDeps({ onPublish: (p) => published.push(p) });
     await validateText("/t/d-mock.js", "file:///t/d-mock.js", MOCK_MISSING, 1, deps, false, true);
@@ -1713,9 +1607,8 @@ await (async () => {
     expect(missing).toBeDefined();
     expect(missing!.range.start.line).toBeGreaterThanOrEqual(0);
     expect(missing!.range.start.character).toBeGreaterThanOrEqual(0);
-  })();
-await (async () => {
-
+  }
+  {
     const published: Array<{ uri: string; diagnostics: LspDiagnostic[] }> = [];
     const deps = makeValidateDeps({ onPublish: (p) => published.push(p) });
     await validateText("/t/d-mock.js", "file:///t/d-mock.js", MOCK_MISSING, 1, deps, false, true);
@@ -1726,15 +1619,12 @@ await (async () => {
       expect(d.range.end.line, String(d.code)).toBeGreaterThanOrEqual(0);
       expect(d.range.end.character, String(d.code)).toBeGreaterThanOrEqual(0);
     }
-  })();
-});;
-
-  ;
-
-  ;
-
-  ;
+  }
 });
+
+
+
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1755,7 +1645,7 @@ describe("反向钉：whatIf 注入假设后类型**确实**改变（报告为�
 
 
 
-describe("反向钉：whatIf 注入假设后类型**确实**改变（报告为假阳性）", () => {
+
   it("顶层 const 的类型随 binding 改变（注入后的 source 被真正分析）", async () => {
     const src = "const total = 1;\n";
     const deps = { readFile: () => src };
@@ -1780,7 +1670,7 @@ describe("反向钉：whatIf 注入假设后类型**确实**改变（报告为�
     // 「Bindings applied」与类型自洽
     expect(assumed.content[0].text).toContain("Bindings applied: total: string");
   });
-});
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1811,10 +1701,9 @@ describe("nudo/whatIf 入参校验（畸形请求 ⇒ 工具错误）", () => {
 
 const SRC = ["const total = 1;", ""].join("\n");
 
-describe("nudo/whatIf 入参校验（畸形请求 ⇒ 工具错误）", () => {
-  it("target 缺失 / bindings 非数组 / binding 缺 name ⇒ isError:true；service 侧 injectBindings 也做形状校验（非数组 ⇒ 可诊断错误）", async () => {
-await (async () => {
 
+  it("target 缺失 / bindings 非数组 / binding 缺 name ⇒ isError:true；service 侧 injectBindings 也做形状校验（非数组 ⇒ 可诊断错误）", async () => {
+  {
     await withLspServer({ "a4-961.js": SRC }, async ({ req, uri }) => {
       const file = uri("a4-961.js");
 
@@ -1849,9 +1738,8 @@ await (async () => {
       expect(ok.isError).toBeFalsy();
       expect(ok.content[0].text).toContain('Type of "total": 1');
     });
-  })();
-await (async () => {
-
+  }
+  {
     // 形状校验下沉到 service（CLI --what-if 与其它调用方同样受益）
     expect(() => injectBindings("const total = 1;\n", "x" as never)).toThrow(
       /bindings must be an array/,
@@ -1859,9 +1747,8 @@ await (async () => {
     // 缺 name 的项：具名提示（此前是空串 ⇒ 提示行渲染成「…: 」）
     const out = injectBindings("const total = 1;\n", [{ type: "string" } as never]);
     expect(out.unapplied).toEqual(["<missing name>"]);
-  })();
-});;
-
-  ;
+  }
 });
+
+
 });

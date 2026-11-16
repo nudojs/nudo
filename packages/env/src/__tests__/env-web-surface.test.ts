@@ -100,7 +100,7 @@ const CORE_MODELED_ES_GLOBALS = [
  */
 const WEAKREF_EXCEPTION = "WeakRef";
 
-describe("ES 规范全局的「已被覆盖」判定", () => {
+
   it("声明面 + 白名单按建模能力推导；未建模仍报；报告自洽；WeakRef/Atomics 对照", () => {
     const env = defineEnv();
     for (const name of CORE_MODELED_ES_GLOBALS) {
@@ -136,13 +136,13 @@ export function fEsc() { return escape("a b"); }`;
     expect(collectEvalDiagnostics("export function f(){ return WeakRef; }", known).builtinUnknown.map((b) => b.name)).not.toContain("WeakRef");
     expect(collectEvalDiagnostics("export function f(){ return Atomics; }").builtinUnknown.map((b) => b.name)).toContain("Atomics");
   });
-});;
+
 });
 
 // ---------------------------------------------------------------------------
 // 族 62 · 第 5 条 —— env promise 的拒绝 reason 逐声明可见
 // ---------------------------------------------------------------------------
-describe("族 62 · 第 5 条 —— env promise 的拒绝 reason 逐声明可见", () => {
+describe("— env promise 的拒绝 reason 逐声明可见", () => {
 /**
  * 族 62 · env es / web 内建构造器与 brand 精度 —— 5 条精度债的钉。
  *
@@ -233,7 +233,7 @@ function issuesOf(src: string, globals: Record<string, Abs> = esEnv.globals): st
 
 /* ── 第 5 条：env promise 的拒绝 reason（env 侧真修） ─────────────── */
 
-describe("族 62 · 第 5 条 —— env promise 的拒绝 reason 逐声明可见", () => {
+
   it("fetch / subtle / body / clipboard 品牌；多 reason 保持 unknown；Promise.reject 实参；成员集不变", () => {
     const nameOf = (src: string) => sigOf(src, "f", webEnv.globals);
     expect(nameOf(`export async function f() { try { await fetch("https://example.invalid"); return "ok"; } catch (e) { return e.name; } }`)).toContain('"TypeError"');
@@ -256,11 +256,11 @@ describe("族 62 · 第 5 条 —— env promise 的拒绝 reason 逐声明可�
       "decrypt","deriveBits","deriveKey","digest","encrypt","exportKey","generateKey","importKey","sign","unwrapKey","verify","wrapKey",
     ]);
   });
-});;
+
 
 /* ── 第 1 条：Intl 子构造器的实例方法面 ──────────────────────────── */
 
-describe("族 62 · 第 1 条 —— Intl 子构造器的实例方法面（声明面）", () => {
+describe("— Intl 子构造器的实例方法面（声明面）", () => {
   it("Collator / NumberFormat / DateTimeFormat 实例面；未建模子构造器空；Intl 成员集；运行时 typeof", () => {
     const collator = instanceSlotsOf(memberOf(esEnv.globals["Intl"], "Collator")!);
     expect(Object.keys(collator).sort()).toEqual(["compare", "resolvedOptions"]);
@@ -284,12 +284,12 @@ describe("族 62 · 第 1 条 —— Intl 子构造器的实例方法面（声�
     const r = checkSource("/t/env-bug-62-intl-runtime.js", "export function f() { return typeof new Intl.Collator().compare; }", pTrue, { inject: { envGlobals: esEnv.globals } });
     expect(formatAbs(r.signatures.find((s) => s.name === "f")!.abs)).toContain('"function"');
   });
-});;
+});
 
 /* ── 第 2 条：AggregateError 的 errors 面（按原生钉） ──────────────── */
 
-describe("族 62 · 第 2 条 —— AggregateError 的 errors 面", () => {
-  it("缺省抛 TypeError；[] ⇒ []；抽象实参 unknown", () => {
+describe("— AggregateError 的 errors 面", () => {
+  it("缺省抛 TypeError；⇒ []；抽象实参 unknown", () => {
     expect(sigOf("export function f() { return new AggregateError().errors; }")).toContain("never");
     expect(issuesOf("export function f() { return new AggregateError(); }").join(" | ")).toContain("TypeError");
     expect(sigOf("export function f() { return new AggregateError([]).errors; }")).toContain("[]");
@@ -297,11 +297,11 @@ describe("族 62 · 第 2 条 —— AggregateError 的 errors 面", () => {
     expect(abstract).not.toContain("[]");
     expect(abstract).toMatch(/any|unknown/);
   });
-});;
+});
 
 /* ── 第 3 条：Error 的 cause 槽 ───────────────────────────────────── */
 
-describe("族 62 · 第 3 条 —— Error 的 cause 槽", () => {
+describe("— Error 的 cause 槽", () => {
   it("自有 cause 读出值；无 options 为 undefined；继承 cause 为 unknown 非 undefined", () => {
     expect(sigOf('export function f() { return new Error("m", {cause: 1}).cause; }')).toContain("1");
     const none = sigOf('export function f() { return new Error("m").cause; }');
@@ -311,11 +311,11 @@ describe("族 62 · 第 3 条 —— Error 的 cause 槽", () => {
     expect(inherited).toContain("unknown");
     expect(inherited).not.toContain("undefined");
   });
-});;
+});
 
 /* ── 第 4 条：类型化数组的元素面 ─────────────────────────────────── */
 
-describe("族 62 · 第 4 条 —— 类型化数组的元素面", () => {
+describe("— 类型化数组的元素面", () => {
   it("数组元素与对象源 ToNumber 都折精确值", () => {
     const direct = sigOf("export function f() { return new Int8Array([1])[0]; }");
     expect(direct).toContain("1");
@@ -324,7 +324,7 @@ describe("族 62 · 第 4 条 —— 类型化数组的元素面", () => {
     expect(objectSource).toContain("3");
     expect(objectSource).not.toContain("undefined");
   });
-});;
+});
 });
 
 // ---------------------------------------------------------------------------
@@ -348,7 +348,7 @@ function host(script: string): string {
   return execFileSync(process.execPath, ["-e", script], { encoding: "utf-8" }).trim();
 }
 
-describe("web browser constructors keep their brand", () => {
+
   it("instanceof/constructor.name 与宿主一致；12 个构造器实例面都带 brand", () => {
     const out = host(`const e = new Event("t"); console.log(JSON.stringify({ inst: e instanceof Event, name: e.constructor.name, req: new Request("http://x/") instanceof Request, hdr: new Headers() instanceof Headers }));`);
     expect(JSON.parse(out)).toEqual({ inst: true, name: "Event", req: true, hdr: true });
@@ -366,7 +366,7 @@ describe("web browser constructors keep their brand", () => {
       expect(ret?.shape.name, name).toBe(name);
     }
   });
-});;
+
 });
 
 // ---------------------------------------------------------------------------
@@ -386,7 +386,7 @@ describe("web browser constructors are constructible", () => {
  *
  * 反向钉：把 `ctor: true` 去掉（或把 Response 改回 objAbs）⇒ 本文件必挂。
  */
-describe("web browser constructors are constructible", () => {
+
   it("全部可 new 零错误；ctor:true；Response 实例面；URL/AbortController 保持", () => {
     const out = checkWeb(`export function f() { const a = new Request("https://x.dev"); const b = new Response(); const c = new Headers(); const d = new URLSearchParams("a=1"); const e = new EventTarget(); const g = new Event("x"); const h = new CustomEvent("x"); return [a, b, c, d, e, g, h]; }`);
     expect(out.errorCodes).toEqual([]);
@@ -398,7 +398,7 @@ describe("web browser constructors are constructible", () => {
     expect(ctorFlagOf("AbortController")).toBe(true);
     expect(checkWeb('export function f() { const u = new URL("https://x.dev"); const a = new AbortController(); return [u, a]; }').errorCodes).toEqual([]);
   });
-});;
+
 });
 
 // ---------------------------------------------------------------------------
@@ -420,7 +420,7 @@ describe("web browser globals are declared", () => {
  *
  * 反向钉：从 `web.ts` 的 globals 表删掉任一个 ⇒ 本文件必挂。
  */
-describe("web browser globals are declared", () => {
+
   it("11 个全局声明；使用时零 ReferenceError；screen/构造器/indexedDB/caches 成员", () => {
     const globals = webEnvGlobals();
     for (const name of ["alert","screen","DOMParser","XMLHttpRequest","Worker","FileReader","matchMedia","IntersectionObserver","getComputedStyle","indexedDB","caches"] as const) expect(globals[name], name).toBeTruthy();
@@ -439,7 +439,7 @@ describe("web browser globals are declared", () => {
     const caches = globals["caches"]?.shape.k === "obj" ? globals["caches"].shape.slots : undefined;
     for (const name of ["open","has","delete","match","keys"] as const) expect(caches?.[name], name).toBeTruthy();
   });
-});;
+
 });
 
 // ---------------------------------------------------------------------------
@@ -459,7 +459,7 @@ describe("document / performance member tables are complete", () => {
  *
  * 反向钉：把补的槽从 `web.ts` 删掉 ⇒ 本文件必挂。
  */
-describe("document / performance member tables are complete", () => {
+
   it("collection 查询/静态集合/write/open/close/performance 成员全部声明且调用零错", () => {
     const collections = checkWeb('export function f() { const a = document.getElementsByTagName("div"); const b = document.getElementsByClassName("cls"); const c = document.getElementsByName("nm"); return [a, b, c]; }');
     expect(collections.errorCodes).toEqual([]);
@@ -475,7 +475,7 @@ describe("document / performance member tables are complete", () => {
     expect(checkWeb("export function f(){ performance.clearResourceTimings(); return performance.getEntries(); }").errorCodes).toEqual([]);
     for (const name of ["navigation","serverTiming"] as const) expect(slotOf("performance", name), name).toBeTruthy();
   });
-});;
+
 });
 
 // ---------------------------------------------------------------------------
@@ -512,7 +512,7 @@ const CASES: Array<[global: string, body: string]> = [
   ["WritableStreamDefaultWriter", `return new WritableStreamDefaultWriter(new WritableStream()).abort();`],
 ];
 
-describe("web env declares the browser globals it models", () => {
+
   it("13 个全局已声明；使用它们零 error/零 throw", () => {
     const globals = webEnvGlobals();
     for (const [name] of CASES) expect(globals[name], name).toBeTruthy();
@@ -522,7 +522,7 @@ describe("web env declares the browser globals it models", () => {
       expect(out.throwBrands, name).toEqual([]);
     }
   });
-});;
+
 });
 
 // ---------------------------------------------------------------------------
@@ -540,7 +540,7 @@ function host(script: string): string {
   return execFileSync(process.execPath, ["-e", script], { encoding: "utf-8" }).trim();
 }
 
-describe("performance.mark/measure return PerformanceEntry values", () => {
+
   it("mark 返回 PerformanceMark 品牌；.name string；measure 有 name/duration", () => {
     const out = host(`const m = performance.mark("start"); console.log(JSON.stringify({ ctor: m.constructor.name, name: m.name }));`);
     expect(JSON.parse(out)).toEqual({ ctor: "PerformanceMark", name: "start" });
@@ -561,7 +561,7 @@ describe("performance.mark/measure return PerformanceEntry values", () => {
     expect(measure.signatures[0]!.display).toContain("string");
     expect(measure.signatures[0]!.display).toContain("number");
   });
-});;
+
 });
 
 // ---------------------------------------------------------------------------
@@ -581,7 +581,7 @@ describe("navigator.hardwareConcurrency is modelled", () => {
  * 反向钉：删掉 `hardwareConcurrency` 槽 ⇒ 本文件必挂（签名回到
  * `undefined` / `false`）。
  */
-describe("navigator.hardwareConcurrency is modelled", () => {
+
   it("声明 number；读面 number；比较折 boolean 而非硬编码 false", () => {
     expect(slotOf("navigator", "hardwareConcurrency")).toBeTruthy();
     const read = checkWeb("export function f(){ return navigator.hardwareConcurrency; }");
@@ -592,7 +592,7 @@ describe("navigator.hardwareConcurrency is modelled", () => {
     expect(displayOf(cmp)).toMatch(/^boolean/);
     expect(displayOf(cmp)).not.toMatch(/^false/);
   });
-});;
+
 });
 
 // ---------------------------------------------------------------------------
@@ -613,7 +613,7 @@ describe("location.searchParams is modelled", () => {
  *
  * 反向钉：删掉 `searchParams` 槽 ⇒ 本文件必挂。
  */
-describe("location.searchParams is modelled", () => {
+
   it("searchParams 已声明；get 零抛且折 string | null；其余成员仍在", () => {
     expect(slotOf("location", "searchParams")).toBeTruthy();
     const out = checkWeb('export function f(){ return location.searchParams.get("q"); }');
@@ -622,7 +622,7 @@ describe("location.searchParams is modelled", () => {
     expect(displayOf(out)).toMatch(/^string \| null/);
     for (const name of ["href","origin","protocol","host","pathname","search","hash"] as const) expect(slotOf("location", name), name).toBeTruthy();
   });
-});;
+
 });
 
 // ---------------------------------------------------------------------------
@@ -645,7 +645,7 @@ describe("Request has its own member table", () => {
  *
  * 反向钉：把状态面塞回 Request ⇒ 本文件必挂。
  */
-describe("Request has its own member table", () => {
+
   it("无 Response 状态面；保留自身成员；bodyUsed 共有；status/ok undefined、method string", () => {
     for (const name of ["status","ok","statusText","redirected","type"] as const) expect(instanceSlotOf("Request", name), name).toBeUndefined();
     for (const name of ["method","body","mode","credentials","cache","redirect","referrer","integrity","signal"] as const) expect(instanceSlotOf("Request", name), name).toBeTruthy();
@@ -660,7 +660,7 @@ describe("Request has its own member table", () => {
     const method = checkWeb('export function f(){ const r = new Request("https://example.com"); return r.method; }');
     expect(displayOf(method)).toMatch(/^string/);
   });
-});;
+
 });
 
 // ---------------------------------------------------------------------------
@@ -678,14 +678,14 @@ describe("AbortSignal.any is declared", () => {
  *
  * 反向钉：删掉 `any` 槽 ⇒ 本文件必挂。
  */
-describe("AbortSignal.any is declared", () => {
+
   it("any/abort/timeout 均在；any([]) 零抛", () => {
     for (const name of ["any","abort","timeout"] as const) expect(slotOf("AbortSignal", name), name).toBeTruthy();
     const out = checkWeb("export function f(){ return AbortSignal.any([]); }");
     expect(out.errorCodes).toEqual([]);
     expect(out.throwBrands).not.toContain("TypeError");
   });
-});;
+
 });
 
 // ---------------------------------------------------------------------------
@@ -716,7 +716,7 @@ const TRY_CATCH = (call: string) => `export async function enc() {
   }
 }`;
 
-describe("WebCrypto rejections include TypeError at the call site", () => {
+
   it("宿主 TypeError；TypeError/OperationError 两臂可达；静态声明仍 OperationError；importKey unknown", () => {
     expect(host('crypto.subtle.encrypt("AES-GCM", 1, 2).catch((e) => console.log(e.name));')).toBe("TypeError");
     const enc = checkWeb(TRY_CATCH('crypto.subtle.encrypt("AES-GCM", 1, 2)'));
@@ -732,7 +732,7 @@ describe("WebCrypto rejections include TypeError at the call site", () => {
     expect(ret?.shape.rejected?.shape.name).toBe("OperationError");
     expect(checkWeb(TRY_CATCH('crypto.subtle.importKey("raw", new Uint8Array([1]), "AES-GCM", false, ["encrypt"])')).signatures[0]!.display).toContain("caught-typeerror");
   });
-});;
+
 });
 
 // ---------------------------------------------------------------------------
@@ -753,7 +753,7 @@ function host(script: string): string {
   return execFileSync(process.execPath, ["-e", script], { encoding: "utf-8" }).trim();
 }
 
-describe("host objects model the members the host actually has", () => {
+
   it("Response.body / Headers.getSetCookie / document.location / CustomEvent / Request.duplex", () => {
     const out = host(`const body = new Response("hi").body;
       console.log(JSON.stringify({ body: body.constructor.name, cookies: new Headers().getSetCookie(), locHasHref: typeof new URL("http://x/").href }));`);
@@ -777,5 +777,5 @@ describe("host objects model the members the host actually has", () => {
     expect(slotOfAbs(instanceFaceOf("Request"), "duplex")).toBeTruthy();
     expect(checkNode('export function f(){ return new Request("http://x/").duplex; }').throwBrands).toEqual([]);
   });
-});;
+
 });

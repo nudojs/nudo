@@ -6,7 +6,7 @@
  * dts 的 formatPropKey 已有同口径（JSON 引号），其余生成器漏网。
  */
 import { describe, it, expect } from "vitest";
-import { abs, num, str, formatShape, obj as objOf } from "@nudojs/core";
+import { abs, num, str, formatShape,  } from "@nudojs/core";
 import {
   absToSchemaSource,
   generateGuardFunctionFromAbs,

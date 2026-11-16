@@ -8,7 +8,7 @@
  * 5. 数字键：`01` 裸写非法 TS/JS
  */
 import { describe, it, expect } from "vitest";
-import { abs, num, str, numLit, strLit, objOf, type Abs } from "@nudojs/core";
+import { abs, num, str, numLit, strLit, type Abs } from "@nudojs/core";
 import { createTemplateAbs, denoteGuard } from "@nudojs/core/internal";
 import { absToTSType, generateFunctionDtsLines } from "../dts-generator.ts";
 import {

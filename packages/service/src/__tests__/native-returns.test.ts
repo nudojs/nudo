@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { runTranspiled, callTranspiledExportFull, formatShape, $lit, setEvalCallCollector } from "@nudojs/core";
+import { runTranspiled, callTranspiledExportFull, formatShape, $lit,  } from "@nudojs/core";
 import { evalAbsModuleGraph } from "../abs-modules-graph.ts";
 import { tmpProject } from "./tmp-project.ts";
 

@@ -1,5 +1,5 @@
 import {describe, it, expect} from "vitest";
-import {runTranspiled, callTranspiledExportFull, $lit, litValue, absToString, transpileSource, formatAbs, anyAbs, abs, numLit, strLit} from "@nudojs/core";
+import {runTranspiled, callTranspiledExportFull, litValue, transpileSource, formatAbs, anyAbs, abs, numLit, strLit} from "@nudojs/core";
 import {$copy} from "../exec/runtime/containers.ts";
 import {registerGenDeferred, replayGenDeferred, registerGenElements, matchIterElements, registerMatchIter} from "../exec/match-iter.ts";
 import {NudoThrow} from "../exec/nudo-throw.ts";

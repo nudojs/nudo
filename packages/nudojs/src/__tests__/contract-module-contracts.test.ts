@@ -30,7 +30,7 @@ import * as contractFromDts from "../commands/contract-from-dts.ts";
 const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
 const commandsDir = join(repoRoot, "packages/nudojs/src/commands");
 
-describe("族 20 S0 —— 三个新内部模块的导出面（各自只导出一个被搬走的函数）", () => {
+describe("S0 —— 三个新内部模块的导出面（各自只导出一个被搬走的函数）", () => {
   it("contract-draft.ts 只导出 runContractDraft", () => {
     expect(Object.keys(contractDraft).sort()).toEqual(["runContractDraft"]);
     expect(typeof contractDraft.runContractDraft).toBe("function");
@@ -47,7 +47,7 @@ describe("族 20 S0 —— 三个新内部模块的导出面（各自只导出�
   });
 });
 
-describe("族 20 S0 —— contract.ts 变薄壳", () => {
+describe("S0 —— contract.ts 变薄壳", () => {
   it("contract.ts 的唯一导出仍是 registerContractCommand", () => {
     expect(Object.keys(contractModule).sort()).toEqual(["registerContractCommand"]);
     expect(typeof contractModule.registerContractCommand).toBe("function");
@@ -73,7 +73,7 @@ describe("族 20 S0 —— contract.ts 变薄壳", () => {
   });
 });
 
-describe("族 20 S0 —— 零新增公开导出", () => {
+describe("S0 —— 零新增公开导出", () => {
   it("packages/nudojs/src/index.ts 仍然零 export", () => {
     const src = readFileSync(join(repoRoot, "packages/nudojs/src/index.ts"), "utf-8");
     expect(src).not.toMatch(/^export\s/m);

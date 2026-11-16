@@ -387,7 +387,7 @@ describe("re-export 跳转相对中间模块解析", () => {
 // （check-recall-gold any-assign-to-number-ok）同口径——此前 shape
 // 通道对 any 报 error 是假阳性：纯 JS 消费方形参天然 any，逐函数
 // 采纳契约会把所有传 any 的调用点变成 error。
-describe("#76：any 实参对 shape 契约不构成违例", () => {
+describe("any 实参对 shape 契约不构成违例", () => {
   const sidecar = `export const literalString = fn({ node: shape({ type: string(), value: string() }) });`;
 
   const loadWith = (files: Record<string, string>) => {

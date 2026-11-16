@@ -76,7 +76,7 @@ const typesNode = nodePath.resolve(
   "node_modules/@types/node",
 );
 
-describe("族 52 · 收割面 ① —— 非限定引用按引用点所在命名空间解析（792 残留）", () => {
+describe("收割面 ① —— 非限定引用按引用点所在命名空间解析（792 残留）", () => {
   const NS = `declare namespace A {
   interface Opts { a: number }
   interface Holder { o: Opts }
@@ -120,7 +120,7 @@ export declare function useB(h: B.Holder): string;
   });
 });
 
-describe("族 52 · 收割面 ② —— 基接口的类型实参按基声明分别代入", () => {
+describe("收割面 ② —— 基接口的类型实参按基声明分别代入", () => {
   it("`interface D extends Base<number>` ⇒ 基成员 `v` 是 number（不是 any）", () => {
     const env = harvestDts([
       writeTemp(
@@ -164,7 +164,7 @@ export declare function useD(x: Derived): number;
   });
 });
 
-describe("族 52 · 收割面 ③④ —— 泛型实例化顺序 + 条件类型精度", () => {
+describe("收割面 ③④ —— 泛型实例化顺序 + 条件类型精度", () => {
   it("③ 嵌套条件类型按绑定实参求值真支（`string[]` ⇒ 精确的 \"s\"）", () => {
     const env = harvestDts([
       writeTemp(
@@ -207,7 +207,7 @@ export declare function useP2(b: PBox<Promise<number>>): number;
   });
 });
 
-describe("族 52 · 收割面 ⑤ —— 模块作用域的命名空间不再摊平", () => {
+describe("收割面 ⑤ —— 模块作用域的命名空间不再摊平", () => {
   it("`declare module \"x\" { namespace Y { … } }` ⇒ `bar` 不是 \"x\" 的导出", () => {
     const env = harvestDts([
       writeTemp(
@@ -278,7 +278,7 @@ describe("族 52 · 收割面 ⑤ —— 模块作用域的命名空间不再摊
   });
 });
 
-describe("族 52 · 收割面 ⑥ —— 「类型未建模」进 stats（降级 ≠ 丢了）", () => {
+describe("收割面 ⑥ —— 「类型未建模」进 stats（降级 ≠ 丢了）", () => {
   it("未建模的类型（映射类型）⇒ `stats.degraded` 计数，绑定仍保留", () => {
     const env = harvestDts([
       writeTemp(
@@ -304,7 +304,7 @@ export declare const plain: number;
   });
 });
 
-describe("族 52 · 收割面 ⑦ —— 匿名默认导出不再被丢掉", () => {
+describe("收割面 ⑦ —— 匿名默认导出不再被丢掉", () => {
   it("`export default function (): void;` ⇒ 模块的 `default` 导出在（不是「丢了」）", () => {
     const env = harvestDts([
       writeTemp(

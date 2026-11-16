@@ -11,7 +11,7 @@
  * （assign 还走 Set，与 spread 对 __proto__ 的语义不同——本套只覆盖 enumerable）。
  */
 import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull, litValue, formatAbs } from "@nudojs/core";
+import { runTranspiled, callTranspiledExportFull, litValue,  } from "@nudojs/core";
 
 function run(src: string) {
   const exports = runTranspiled(src, { mode: "exec", maxLoopIters: 2000 });

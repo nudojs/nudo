@@ -35,7 +35,7 @@ function writeDts(name: string, content: string): string {
   return p;
 }
 
-describe("族 51 · 草稿面 8 条（收割面已修、草稿面同源）", () => {
+describe("草稿面 8 条（收割面已修、草稿面同源）", () => {
   it("① 条件类型：不再降级 any() ⇒ 两支并集（收割面同口径），且**明确可见**", () => {
     const p = writeDts(
       "cond.d.ts",

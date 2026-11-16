@@ -48,7 +48,7 @@ const EOLS = [
 /** 行可见长度 = 行终止符不属于该行 ⇒ 切行后该行的字符数。 */
 const visibleLines = (src: string): string[] => src.split(/\r\n|\r|\n/);
 
-describe("VS Code 扩展：case 装饰 endChar 必须是行可见长度", () => {
+{
   for (const { label, eol } of EOLS) {
     it(`${label} 源文件上函数档与 case-comment 档的 endChar 都等于该行可见长度`, () => {
       const src = SRC.replace(/\n/g, eol);
@@ -89,7 +89,7 @@ describe("VS Code 扩展：case 装饰 endChar 必须是行可见长度", () => 
       lf.map((s) => [s.startLine, s.endLine]),
     );
   });
-});
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -124,7 +124,7 @@ describe("VSIX 里的 LSP server 必须自包含", () => {
 
 
 
-describe("VSIX 里的 LSP server 必须自包含", () => {
+{
   const run = runBundler();
 
   it("打包脚本成功产出 server artifact", () => {
@@ -154,7 +154,7 @@ describe("VSIX 里的 LSP server 必须自包含", () => {
     expect(src).toMatch(/assertSelfContained/);
     expect(src).toMatch(/mkdtemp/);
   });
-});
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -195,7 +195,7 @@ const noDetect = process.allowedNodeEnvironmentFlags.has(
   ? ["--no-experimental-detect-module"]
   : [];
 
-describe("VSIX 里的 LSP server 必须保住 ESM 身份", () => {
+{
   const run = runBundler();
 
   it("打包脚本成功产出 server artifact", () => {
@@ -237,5 +237,5 @@ describe("VSIX 里的 LSP server 必须保住 ESM 身份", () => {
     const src = readFileSync(join(vscodeDir, "scripts/bundle-server.mjs"), "utf8");
     expect(src).toMatch(/type:\s*"module"/);
   });
-});
+}
 });

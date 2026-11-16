@@ -84,7 +84,7 @@ beforeEach(() => {
   resetGeneralizeMemo();
 });
 
-describe("env 模块的 ESM 默认导入（service 侧 env 模块表）", () => {
+{
   const cliLikeEnvOpts = (source: string) => {
     const envNames = extractFileEnvNames(source);
     const inject: RunTranspiledOptions = { envGlobals: collectEnvGlobals(envNames), modules: collectEnvModules(envNames) };
@@ -117,8 +117,7 @@ export function gateNamespace() { return fs.readFileSync("/x").length; }
     expect(rDef.issues.filter((i) => i.code === "nudo:unknown-inference")).toEqual([]);
     expect(fsMod.named.readFileSync!.shape.k).toBe("fn");
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -157,7 +156,7 @@ beforeEach(() => {
   clearFnAnalysisCache();
 });
 
-describe("函数级缓存对 env 内容敏感", () => {
+{
   const ENV_NUM = "export function defineEnv() {\n  return { globals: { v: 1 } };\n}\n";
   const ENV_STR = 'export function defineEnv() {\n  return { globals: { v: "hello" } };\n}\n';
   const returnShapeOf = async (filePath: string, source: string): Promise<string> => {
@@ -192,8 +191,7 @@ describe("函数级缓存对 env 内容敏感", () => {
     expect(await returnShapeOf(stablePath, stableSource)).toBe("1");
     expect(await returnShapeOf(stablePath, stableSource)).toBe("1");
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -210,13 +208,12 @@ describe("目录目标扩展名集合", () => {
 
 
 
-describe("目录目标扩展名集合", () => {
+
   it("覆盖 .js/.mjs/.cjs/.ts/.mts/.cts；排除声明/侧车/draft/JSX", () => {
     for (const p of ["a.js", "a.mjs", "a.cjs", "a.ts", "a.mts", "a.cts", "src/lib.MTS"]) expect(isNudoTargetPath(p), p).toBe(true);
     for (const p of ["a.d.ts", "a.d.mts", "a.d.cts", "a.nudo.js", "a.nudo.ts", "a.nudo.draft.js", "a.tsx", "a.jsx"]) expect(isNudoTargetPath(p), p).toBe(false);
   });
-});
-;
+
 });
 
 // ---------------------------------------------------------------------------
@@ -327,7 +324,7 @@ function staticSlotNames(a: Abs): Set<string> {
   return new Set();
 }
 
-describe("@nudo:env 多名合并取并集（顺序无关）", () => {
+{
   const SRC = `export function mk(x) {
   return Response.json(x);
 }
@@ -406,8 +403,7 @@ export function pf() {
       expect(absShapeKey(nodeLoaded[key]!), key).toBe(absShapeKey(value));
     }
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -447,7 +443,7 @@ const ENV_OK = `export function defineEnv() { return { globals: { MAGIC: 1 } }; 
 const ENV_NO_DEFINE = `export const notDefineEnv = 1;\n`;
 const APP_SRC = `export function f() { return 1; }\n`;
 
-describe("项目级 path env 必须按项目根解析（文件级按文件目录）", () => {
+{
   const envMessages = (filePath: string, source: string) => collectCheckSupplementIssues(filePath, source).filter((i) => i.code === DIAG.envUnresolved).map((i) => i.message);
   const ENV_OK = `export function defineEnv() { return { globals: { MAGIC: 1 } }; }
 `;
@@ -473,8 +469,7 @@ describe("项目级 path env 必须按项目根解析（文件级按文件目录
     expect(fileMsgs).toHaveLength(1);
     expect(fileMsgs[0]).toContain(join(fileDir, "src", "missing.ts"));
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -511,7 +506,7 @@ const CFG = {
 const ENV_V1 = `export function defineEnv() { return { globals: { MAGIC: 1 } }; }\n`;
 const ENV_V2 = `export function defineEnv() { return { globals: { MAGIC: 2 } }; }\n`;
 
-describe("项目级 path env 的内容指纹必须按项目根解析", () => {
+{
   const CFG = { mode: "directives", evalMissingSlot: "off", callSiteBudget: 3, diagnostics: "errors", maxForks: 5000 };
   const ENV_V1 = `export function defineEnv() { return { globals: { MAGIC: 1 } }; }
 `;
@@ -537,8 +532,7 @@ describe("项目级 path env 的内容指纹必须按项目根解析", () => {
     const s2 = analysisFileCacheKey(sameApp, src, undefined, undefined, CFG, undefined, ["./env.ts"]);
     expect(s1.auxKey).not.toBe(s2.auxKey);
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -637,7 +631,7 @@ async function cliCheckJson(file: string): Promise<{
   return JSON.parse(jsonText!);
 }
 
-describe("项目级 path env 必须对分析器通道可见（文件带 @nudo:env 时也不丢）", () => {
+{
   beforeEach(() => {
     // 进程级 live 记录是全局的 ⇒ 每例前清干净（否则跨例串台）
     clearPathEnvCaches();
@@ -686,7 +680,7 @@ describe("项目级 path env 必须对分析器通道可见（文件带 @nudo:en
     expect(serviceRet).not.toContain("never");
     expect(serviceRet).not.toContain("unknown");
   });
-});
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -728,7 +722,7 @@ function sig(src: string, env: string[], name: string): string {
   return r.signatures.find((s) => s.name === name)?.display ?? "(missing)";
 }
 
-describe("env constructor arity gate", () => {
+{
   const NODE_SRC = `
 /// @nudo:env node
 export function a() { return new Event(); }
@@ -754,8 +748,7 @@ export function d() { return document.querySelector(); }
     }
     for (const name of ["a", "b", "c", "d", "e"]) expect(sig(NODE_SRC, ["node"], name)).toBe("never throws TypeError");
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -801,7 +794,7 @@ beforeEach(() => {
   clearAbsModuleCache();
 });
 
-describe("裸包消费形态透传", () => {
+{
   const project = () => tmpProject("nudo-238-", {
     "node_modules/dualpkg/package.json": JSON.stringify({ name: "dualpkg", version: "1.0.0", exports: { ".": { import: "./esm.mjs", require: "./cjs.cjs" } } }),
     "node_modules/dualpkg/esm.mjs": 'export const kind = "esm";\n',
@@ -821,8 +814,7 @@ describe("裸包消费形态透传", () => {
     expect(kindSeenBy(dir, "consumer.cjs", 'const { kind } = require("dualpkg");\nmodule.exports = { kind };\n')).toBe('"cjs"');
     expect(kindSeenBy(dir, "consumer.mjs", 'import { kind } from "dualpkg";\nexport const k = kind;\n')).toBe('"esm"');
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -858,7 +850,7 @@ function makePkg(exportsField: unknown, files: Record<string, string>): {
   return { dir, pkgDir: join(dir, "node_modules", "dual") };
 }
 
-describe("exports 条件键按声明顺序挑选", () => {
+{
   const makePkg = (exportsField: unknown, files: Record<string, string>) => {
     const dir = tmpProject("nudo-239-");
     writeTmpFiles(dir, {
@@ -875,8 +867,7 @@ describe("exports 条件键按声明顺序挑选", () => {
     const c = makePkg({ ".": { default: "./default.js", require: "./cjs.cjs" } }, { "default.js": "module.exports = {};\n", "cjs.cjs": "module.exports = {};\n" });
     expect(resolveNpmJsEntryDetailed("dual", c.dir, "require").path).toBe(join(c.pkgDir, "default.js"));
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -915,7 +906,7 @@ function project(): { dir: string; consumer: string; pkgEntry: string } {
   };
 }
 
-describe("裸包依赖进依赖图（脏传播不缺边）", () => {
+{
   const project = () => {
     const dir = tmpProject("nudo-240-", {
       "node_modules/barepkg/package.json": JSON.stringify({ name: "barepkg", version: "1.0.0", main: "./index.js" }),
@@ -939,8 +930,7 @@ describe("裸包依赖进依赖图（脏传播不缺边）", () => {
     const miss = buildModuleGraph([join(missDir, "consumer.js")]);
     expect(miss.imports.get(join(missDir, "consumer.js"))?.size ?? 0).toBe(0);
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -959,7 +949,7 @@ describe("缓存键路径维含项目身份", () => {
 
 const SOURCE = "export function f(a) { return a + 1; }\n";
 
-describe("缓存键路径维含项目身份", () => {
+{
   const SOURCE = "export function f(a) { return a + 1; }\n";
   it("不同项目根不同键（check/contract）；同根同键；键无明文路径", () => {
     const a = checkCacheKey("/checkout1/src/a.js", SOURCE, { autoBind: false, projectDir: "/checkout1" });
@@ -972,8 +962,7 @@ describe("缓存键路径维含项目身份", () => {
     expect(a).not.toContain("checkout1");
     expect(a).toMatch(/^[a-f0-9]{64}$/);
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -1011,7 +1000,7 @@ function makePkg(exportsField: unknown, files: Record<string, string>): {
   return { dir, pkgDir: join(dir, "node_modules", "pkg") };
 }
 
-describe("exports 模式键 tie-break（PATTERN_KEY_COMPARE）", () => {
+{
   const makePkg = (exportsField: unknown, files: Record<string, string>) => {
     const dir = tmpProject("nudo-267-");
     writeTmpFiles(dir, {
@@ -1031,8 +1020,7 @@ describe("exports 模式键 tie-break（PATTERN_KEY_COMPARE）", () => {
     writeTmpFiles(dir, { "package.json": JSON.stringify({ name: "app", type: "module", imports: { "#x/*b": "./special/*.js", "#x/*": "./dist/*.js" } }), "special/a.js": "export const v = 1;", "dist/ab.js": "export const v = 2;" });
     expect(resolveNpmJsEntry("#x/ab", dir)).toBe(join(dir, "special", "a.js"));
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -1076,7 +1064,7 @@ function nested(nearExports: Record<string, string>, parentHasSub: boolean): str
   return dir;
 }
 
-describe("最近的包 exports 拒绝 ⇒ 不得上溯到同名副本", () => {
+{
   const nested = (nearExports: Record<string, string>, parentHasSub: boolean): string => {
     const dir = tmpProject("nudo-268-");
     const parentExports: Record<string, string> = { ".": "./index.js" };
@@ -1103,8 +1091,7 @@ describe("最近的包 exports 拒绝 ⇒ 不得上溯到同名副本", () => {
     const near = nested({ ".": "./index.js", "./sub": "./index.js" }, true);
     expect(resolveNpmJsEntryDetailed("nearpkg/sub", join(near, "app")).path).toBe(join(near, "app", "node_modules", "nearpkg", "index.js"));
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -1143,7 +1130,7 @@ function makePkg(exportsField: unknown, files: Record<string, string>): {
   return { dir, pkgDir: join(dir, "node_modules", "vp") };
 }
 
-describe("exports 目标数组：只有非法目标才回退", () => {
+{
   const makePkg = (exportsField: unknown, files: Record<string, string>) => {
     const dir = tmpProject("nudo-270-");
     writeTmpFiles(dir, {
@@ -1167,8 +1154,7 @@ describe("exports 目标数组：只有非法目标才回退", () => {
     const hit = makePkg({ "./sub": ["./a.js", "./b.js"] }, { "a.js": "export const v = 'A';\n", "b.js": "export const v = 'B';\n" });
     expect(resolveNpmJsEntryDetailed("vp/sub", hit.dir).path).toBe(join(hit.pkgDir, "a.js"));
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -1203,7 +1189,7 @@ function makePkg(pkgJson: Record<string, unknown>, files: Record<string, string>
   return { dir, pkgDir: join(dir, "node_modules", "vp") };
 }
 
-describe("ESM 下禁止目录导入（不补 index 候选）", () => {
+{
   const makePkg = (pkgJson: Record<string, unknown>, files: Record<string, string>) => {
     const dir = tmpProject("nudo-273-");
     writeTmpFiles(dir, {
@@ -1224,8 +1210,7 @@ describe("ESM 下禁止目录导入（不补 index 候选）", () => {
     const legacy = makePkg({ main: "./dir" }, { "dir/index.js": "export const v = 'DIRIDX';\n" });
     expect(resolveNpmJsEntryDetailed("vp", legacy.dir).path).toBe(join(legacy.pkgDir, "dir", "index.js"));
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -1267,7 +1252,7 @@ function callProbeThrice(dir: string): Abs[] {
   return [0, 1, 2].map(() => callTranspiledExportFull(run, "probe", []).result);
 }
 
-describe("ESM import 环：环内调用恒定值", () => {
+{
   const A = `import { b } from "./b.js";
 export function a(n) { return n <= 0 ? 0 : b(n - 1); }
 `;
@@ -1309,8 +1294,7 @@ export function probe() { return a(2); }
     const r2 = runTranspiled(ENTRY, { mode: "analyze", modules: g2.modules as never });
     expect(callTranspiledExportFull(r2, "probe", [numLit(2)]).result.term).toEqual({ op: "lit", value: 0 });
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -1343,7 +1327,7 @@ function callGetA(dir: string, src: string): { value: unknown; issues: string[] 
   return { value: r.result.term, issues: graph.issues.map((i) => `${i.kind}: ${i.label}`) };
 }
 
-describe("JSON 依赖装载", () => {
+{
   const DATA = `{"a": 1, "b": "x"}\n`;
   const callGetA = (dir: string, src: string) => {
     const file = join(dir, "main.js");
@@ -1370,8 +1354,7 @@ describe("JSON 依赖装载", () => {
     expect(js.value).toEqual({ op: "lit", value: 7 });
     expect(js.issues).toEqual([]);
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -1428,7 +1411,7 @@ const next = () => { k = k + 1; return k; };
 export function use() { const a = next(); const b = next(); return a + b; }
 `;
 
-describe("@nudo:pure marker lands on the call-site function value", () => {
+{
   const PURE_FN = `/**
  * @nudo:pure
  */
@@ -1485,8 +1468,7 @@ export function use() { const a = next(); const b = next(); return a + b; }
     expect(full2).toBeDefined();
     expect(formatAbs(full2!.result)).toMatch(/^3(\s|$)/);
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -1536,7 +1518,7 @@ function rootWithConfig(): string {
   return root;
 }
 
-describe("nudo 键形状非法必须可观测且不得谎报成配置", () => {
+{
   const captureStderr = (fn: () => void): string => {
     const writes: string[] = [];
     const orig = process.stderr.write;
@@ -1563,21 +1545,21 @@ describe("nudo 键形状非法必须可观测且不得谎报成配置", () => {
       expect(out, label).toContain(join(sub, "package.json"));
       expect(out, label).toContain("no nudo config");
     }
-    {
+  {
       const root = rootWithConfig();
       const sub = subWith(root, "adoption");
       let found: ReturnType<typeof findProjectConfig> = null as ReturnType<typeof findProjectConfig>;
       captureStderr(() => { found = findProjectConfig(sub); });
       expect(found).toBeNull();
       expect(found?.config).toBeUndefined();
-    }
-    {
+  }
+  {
       const root = tmpProject("nudo-b468-ok-", { "package.json": JSON.stringify({ name: "m", nudo: { contract: { autoBind: false } } }) });
       const found = findProjectConfig(root);
       expect(found?.projectDir).toBe(root);
       expect(found?.config.contract?.autoBind).toBe(false);
-    }
-    {
+  }
+  {
       const root = rootWithConfig();
       const sub = subWith(root, {});
       let found: ReturnType<typeof findProjectConfig> = null as ReturnType<typeof findProjectConfig>;
@@ -1585,17 +1567,16 @@ describe("nudo 键形状非法必须可观测且不得谎报成配置", () => {
       expect(found?.projectDir).toBe(sub);
       expect(found?.config).toEqual({});
       expect(out).toBe("");
-    }
-    {
+  }
+  {
       const root = rootWithConfig();
       const sub = subWith(root, undefined);
       const found = findProjectConfig(sub);
       expect(found?.projectDir).toBe(root);
       expect(found?.config.check?.ignoreThrows).toEqual(["SyntaxError"]);
-    }
+  }
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -1619,7 +1600,7 @@ beforeEach(() => {
   clearPathEnvCaches();
 });
 
-describe("未知名 env 不得静默忽略", () => {
+{
   beforeEach(() => { clearPathEnvCaches(); });
   it("未知名/原型键可见诊断；合法内建名与依赖展开零诊断", async () => {
     for (const name of ["bogus", "nodejs", "Node"]) {
@@ -1650,8 +1631,7 @@ describe("未知名 env 不得静默忽略", () => {
     expect(Object.keys(loadEnvs(["web"], createEnvironment(), ok).globals).length).toBeGreaterThan(0);
     expect(getPathEnvLoadErrors(ok)).toHaveLength(0);
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -1687,7 +1667,7 @@ function withEnv(value: string | undefined, fn: () => void): void {
   fn();
 }
 
-describe("显式 nudo.cache 值一律压过 NUDO_CACHE_DIR", () => {
+{
   const ENV_KEY = "NUDO_CACHE_DIR";
   let saved: string | undefined;
   afterEach(() => { if (saved === undefined) delete process.env[ENV_KEY]; else process.env[ENV_KEY] = saved; });
@@ -1711,8 +1691,7 @@ describe("显式 nudo.cache 值一律压过 NUDO_CACHE_DIR", () => {
     withEnv("0", () => { root = diskCacheRoot({}, "/proj"); });
     expect(root).toBeUndefined();
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -1746,7 +1725,7 @@ function dualPkg(prefix: string): { dir: string; pkgDir: string } {
   return { dir, pkgDir: join(dir, "node_modules", "dual") };
 }
 
-describe("exports 条件键按消费形态分表", () => {
+{
   const dualPkg = (prefix: string) => {
     const dir = tmpProject(prefix);
     writeTmpFiles(dir, {
@@ -1784,8 +1763,7 @@ describe("exports 条件键按消费形态分表", () => {
       expect(resolveNpmJsEntryDetailed("plain", plainDir, mode).path).toBe(join(plainDir, "node_modules", "plain", "index.js"));
     }
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -1815,7 +1793,7 @@ beforeEach(() => {
   clearPathEnvCaches();
 });
 
-describe("相对 path env 按发起方目录解析", () => {
+{
   const envFile = (n: number) => `import { numLit } from "@nudojs/core";
 export function defineEnv() {
   return { globals: { MAGIC: numLit(${n}) } };
@@ -1848,8 +1826,7 @@ export function defineEnv() {
     expect(formatShape(loadEnvs([abs], createEnvironment(), absDir).globals.MAGIC!)).toBe("11");
     expect(getPathEnvLoadErrors(absDir)).toHaveLength(0);
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -1905,7 +1882,7 @@ function projectWithAutoBind(autoBind: unknown): string {
   return root;
 }
 
-describe("autoBind 归一成布尔（三面同口径）", () => {
+{
   const captureStderr = (fn: () => void): string => {
     const writes: string[] = [];
     const orig = process.stderr.write;
@@ -1953,8 +1930,7 @@ describe("autoBind 归一成布尔（三面同口径）", () => {
     expect(contractConfig(proj?.config).autoBind).toBe(true);
     expect(typeof contractConfig(proj?.config).autoBind).toBe("boolean");
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -1993,7 +1969,7 @@ function captureStderr(fn: () => void): string {
 
 const CFG_200 = { analysis: { maxForks: 200 } };
 
-describe("非法 NUDO_MAX_FORKS 回默认（不是配置键）", () => {
+{
   const captureStderr = (fn: () => void): string => {
     const writes: string[] = [];
     const orig = process.stderr.write;
@@ -2024,8 +2000,7 @@ describe("非法 NUDO_MAX_FORKS 回默认（不是配置键）", () => {
     expect(applyBForkBudgetFromConfig({ analysis: { maxForks: 0 } }, {})).toBe(5000);
     expect(applyBForkBudgetFromConfig({ analysis: { maxForks: -1 } }, {})).toBe(5000);
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -2042,7 +2017,7 @@ describe("#imports（包内子路径映射）", () => {
 
 
 
-describe("#imports（包内子路径映射）", () => {
+
   it("精确/模式/条件/外部包/缺失/裸包负控", () => {
     const exact = tmpProject("nudo-498-exact-", { "package.json": JSON.stringify({ name: "app", version: "1.0.0", type: "module", imports: { "#helper": "./helper.js" } }), "helper.js": "export function h() { return 42; }\n" });
     const er = resolveNpmJsEntryDetailed("#helper", exact);
@@ -2067,8 +2042,7 @@ describe("#imports（包内子路径映射）", () => {
     const bare = tmpProject("nudo-498-bare-", { "package.json": JSON.stringify({ name: "app", version: "1.0.0", type: "module" }), "node_modules/plain/package.json": JSON.stringify({ name: "plain", version: "1.0.0", exports: { ".": "./index.js" } }), "node_modules/plain/index.js": "export const x = 1;\n" });
     expect(resolveNpmJsEntryDetailed("plain", bare).path).toBe(join(bare, "node_modules", "plain", "index.js"));
   });
-});
-;
+
 });
 
 // ---------------------------------------------------------------------------
@@ -2107,7 +2081,7 @@ function parentInstall(prefix: string): { dir: string; appDir: string; pkgDir: s
   };
 }
 
-describe("node_modules 逐级向上查找", () => {
+{
   const parentInstall = (prefix: string) => {
     const dir = tmpProject(prefix, {
       "node_modules/mypkg/package.json": JSON.stringify({ name: "mypkg", version: "1.0.0", type: "module", main: "index.js" }),
@@ -2144,8 +2118,7 @@ describe("node_modules 逐级向上查找", () => {
     expect(miss.path).toBeNull();
     expect(miss.exportsUnresolved).toBe(false);
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -2183,7 +2156,7 @@ async function magicShape(file: string, source: string): Promise<string> {
   return fn ? formatShape(fn.cases[0].abs) : "<no-fn>";
 }
 
-describe("项目级 path env 的内容进缓存键", () => {
+{
   const envFile = (fn: string, value: string) => `import { ${fn} } from "@nudojs/core";
 export function defineEnv() {
   return { globals: { MAGIC: ${value} } };
@@ -2217,11 +2190,9 @@ export function defineEnv() {
     expect(await magicShape(stableMain, src)).toBe("1");
     expect(await magicShape(stableMain, src)).toBe("1");
   });
-});
-;
+}
 
 /** 负控制：不该被这条修复波及的邻近形态 */
-;
 });
 
 // ---------------------------------------------------------------------------
@@ -2261,7 +2232,7 @@ export function useGlobal() {
 }
 `;
 
-describe("@nudo:env globals reach the service analysis", () => {
+{
   const ENV_FILE = "export function defineEnv() {\n  return { globals: { MAGIC: 1 } };\n}\n";
   const MAIN_FILE = "/// @nudo:env ./env.ts\nexport function useGlobal() {\n  return MAGIC;\n}\n";
   it("async 预载后解析 env 全局；分析环境带 env globals", async () => {
@@ -2278,8 +2249,7 @@ describe("@nudo:env globals reach the service analysis", () => {
     for (const [node] of nodeResult.nodeAbsMap) if (node.type === "Identifier") names.push(node.name);
     expect(names).toContain("process");
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -2321,7 +2291,7 @@ function esmProject(prefix: string): { dir: string; main: string } {
   return { dir, main: join(dir, "main.js") };
 }
 
-describe("CJS / ESM 两条解析算法分表", () => {
+{
   const cjsProject = (prefix: string) => {
     const dir = tmpProject(prefix, { "package.json": JSON.stringify({ name: "cjsapp", version: "1.0.0", type: "commonjs" }), "data.json": '{ "answer": 42 }\n', "main.js": "const data = require('./data');\nmodule.exports = { data };\n" });
     return { dir, main: join(dir, "main.js") };
@@ -2357,8 +2327,7 @@ describe("CJS / ESM 两条解析算法分表", () => {
     expect(resolveModuleFile("./utils", tsMain)).toBe(join(ts, "utils", "index.ts"));
     expect(moduleResolveCandidates("./utils", tsMain)).toContain(join(ts, "utils", "index.js"));
   });
-});
-;
+}
 });
 
 // ---------------------------------------------------------------------------
@@ -2396,7 +2365,7 @@ afterEach(() => {
   else process.env[ENV_KEY] = saved;
 });
 
-describe("effectiveMaxForks —— env 优先的 fork 预算生效值", () => {
+{
   const ENV_KEY = "NUDO_MAX_FORKS";
   let saved: string | undefined;
   beforeEach(() => { saved = process.env[ENV_KEY]; });
@@ -2420,8 +2389,7 @@ describe("effectiveMaxForks —— env 优先的 fork 预算生效值", () => {
     expect(effectiveMaxForks({ analysis: { maxForks: 100 } }, {})).toBe(100);
     expect(effectiveMaxForks({ analysis: { maxForks: 100 } }, { NUDO_MAX_FORKS: "9" })).toBe(9);
   });
-});
-;
+}
 
 describe("analysisConfig().maxForks 是 env 生效值（缓存键的输入）", () => {
   const ENV_KEY = "NUDO_MAX_FORKS";
@@ -2449,7 +2417,6 @@ describe("analysisConfig().maxForks 是 env 生效值（缓存键的输入）", 
     expect(keyWith(5000)).not.toBe(staleNoEnv);
   });
 });
-;
 });
 
 // ---------------------------------------------------------------------------
@@ -2493,7 +2460,7 @@ function captureStderr(fn: () => void): string {
 
 const BAD_ELEMENTS: unknown[] = [42, null, {}, []];
 
-describe("env 项元素级校验（非字符串元素不得裸崩）", () => {
+{
   beforeEach(() => { clearPathEnvCaches(); });
   const captureStderr = (fn: () => void): string => {
     const writes: string[] = [];
@@ -2525,8 +2492,7 @@ describe("env 项元素级校验（非字符串元素不得裸崩）", () => {
     await preloadPathEnvs(["node"], pathOk);
     expect(getPathEnvLoadErrors(pathOk)).toHaveLength(0);
   });
-});
-;
+}
 
 describe("项目级 package.json#nudo.env 的元素级校验", () => {
   const captureStderr = (fn: () => void): string => {
@@ -2557,7 +2523,6 @@ describe("项目级 package.json#nudo.env 的元素级校验", () => {
     expect(okErr).toBe("");
   });
 });
-;
 });
 
 // ---------------------------------------------------------------------------
@@ -2619,7 +2584,7 @@ function subPackage(root: string, nudo: unknown): string {
   return sub;
 }
 
-describe("假值 nudo 键遮断祖先配置（存在性 ≠ 真值性）", () => {
+{
   const captureStderr = (fn: () => void): string => {
     const writes: string[] = [];
     const orig = process.stderr.write;
@@ -2646,7 +2611,7 @@ describe("假值 nudo 键遮断祖先配置（存在性 ≠ 真值性）", () =>
       expect(out, JSON.stringify(raw)).toContain('falsy "nudo" key');
       expect(out, JSON.stringify(raw)).toContain("ancestor configs are not inherited");
     }
-    {
+  {
       const root = rootWithConfig();
       const sub = subPackage(root, false);
       let found: ReturnType<typeof findProjectConfig> = null as ReturnType<typeof findProjectConfig>;
@@ -2654,8 +2619,8 @@ describe("假值 nudo 键遮断祖先配置（存在性 ≠ 真值性）", () =>
       expect(checkConfig(found?.config).ignoreThrows).toEqual([]);
       expect(checkConfig(found?.config).entryThrows).toBe("error");
       expect(found?.config.env).toBeUndefined();
-    }
-    {
+  }
+  {
       const root = rootWithConfig();
       const sub = subPackage(root, {});
       let found: ReturnType<typeof findProjectConfig> = null as ReturnType<typeof findProjectConfig>;
@@ -2663,22 +2628,21 @@ describe("假值 nudo 键遮断祖先配置（存在性 ≠ 真值性）", () =>
       expect(found?.projectDir).toBe(sub);
       expect(found?.config).toEqual({});
       expect(out).toBe("");
-    }
-    {
+  }
+  {
       const root = rootWithConfig();
       const sub = subPackage(root, undefined);
       const found = findProjectConfig(sub);
       expect(found?.projectDir).toBe(root);
       expect(found?.config.check?.ignoreThrows).toEqual(["SyntaxError"]);
       expect(found?.config.env).toEqual(["node"]);
-    }
-    {
+  }
+  {
       const root = rootWithConfig();
       const sub = join(root, "no-pkg");
       mkdirSync(sub, { recursive: true });
       expect(findProjectConfig(sub)?.projectDir).toBe(root);
-    }
+  }
   });
-});
-;
+}
 });

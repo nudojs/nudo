@@ -43,7 +43,7 @@ function check(src: string) {
 
 const IMPORT = `/// @nudo:import { fView, nullableStr } from "./std.nudo.js"\n`;
 
-describe("#119 optional()/nullable() 槽模板插值不报 entry-may-throw", () => {
+describe("optional()/nullable() 槽模板插值不报 entry-may-throw", () => {
   it("plainTemplate：`${f.file}` 契约 string|undefined 零 L2，签名不 throws", () => {
     const r = check(`${IMPORT}/**
  * @nudo:contract f fView
@@ -120,7 +120,7 @@ export function bitOr(f) { return f.line | 0; }
   });
 });
 
-describe("#119 对照组：may-throw 打点不越界", () => {
+describe("对照组：may-throw 打点不越界", () => {
   it("无契约 any 参数的 `${x}` 仍报 L2（既定 policy）", () => {
     const r = check(`export function anyTpl(x) { return \`\${x}\`; }`);
     expect(l2Count(r, "anyTpl")).toBeGreaterThan(0);

@@ -78,7 +78,7 @@ function check(src: string) {
   });
 }
 
-describe("node env 全局清单补齐（未建模构造器不再铸空 brand）", () => {
+
   it("17 构造器声明与 ctor 面；全局对象面；引擎探针零假红；randomUUID 恒 string", () => {
     for (const name of ["AbortController","Blob","BroadcastChannel","CustomEvent","DOMException","Event","EventTarget","File","MessageChannel","ReadableStream","Request","Response","TransformStream","URLPattern","WritableStream"] as const) {
       const ctor = (globalThis as Record<string, unknown>)[name];
@@ -121,7 +121,7 @@ describe("node env 全局清单补齐（未建模构造器不再铸空 brand）"
     expect(byName.get("ac")).toMatch(/^"function"/);
     expect(typeof crypto.randomUUID()).toBe("string");
   });
-});;
+
 });
 
 // ---------------------------------------------------------------------------
@@ -177,7 +177,7 @@ function hostMemberTypes(): Array<string | null> {
   return JSON.parse(out) as Array<string | null>;
 }
 
-describe("node env declares host functions as functions", () => {
+
   it("宿主成员全是函数；typeof 折 \"function\"；AbortSignal.any 可调用且返回 AbortSignal", () => {
     const types = hostMemberTypes();
     expect(types).toHaveLength(MEMBERS.length);
@@ -199,7 +199,7 @@ describe("node env declares host functions as functions", () => {
     expect((any!.shape as { returnType?: { shape: { k: string; name?: string } } }).returnType?.shape.name).toBe("AbortSignal");
     expect(checkNode("export function f(){ return AbortSignal.any([]); }").throwBrands).toEqual([]);
   });
-});;
+
 });
 
 // ---------------------------------------------------------------------------
@@ -253,7 +253,7 @@ function check(src: string) {
   });
 }
 
-describe("process.hrtime 是可调用的（不再 unknown + 误导诊断）", () => {
+
   it("原生 hrtime 函数与 bigint；env 可调用 + 静态槽；引擎零假红且签名精确", () => {
     expect(typeof process.hrtime).toBe("function");
     const t = process.hrtime();
@@ -276,7 +276,7 @@ export function useHrtimeBigint() { return process.hrtime.bigint(); }`);
     expect(byName.get("useHrtime")).toMatch(/^number\[\]/);
     expect(byName.get("useHrtimeBigint")).toMatch(/^bigint\b/);
   });
-});;
+
 });
 
 // ---------------------------------------------------------------------------
@@ -324,7 +324,7 @@ function check(src: string) {
   });
 }
 
-describe("process 再补 7 个真实成员（不再定抛 TypeError）", () => {
+
   it("七个成员宿主/ env 均在；引擎零假红且签名精确", () => {
     for (const name of ["umask","getActiveResourcesInfo","resourceUsage","availableMemory","loadEnvFile","getBuiltinModule","constrainedMemory"] as const) {
       expect(typeof (process as unknown as Record<string, unknown>)[name], name).toBe("function");
@@ -348,7 +348,7 @@ describe("process 再补 7 个真实成员（不再定抛 TypeError）", () => {
     expect(byName.get("d")).toMatch(/^number\b/);
     expect(byName.get("g")).toMatch(/^number\b/);
   });
-});;
+
 });
 
 // ---------------------------------------------------------------------------
@@ -397,7 +397,7 @@ function check(src: string) {
   });
 }
 
-describe("process 补 5 个真实成员（不再定抛 TypeError）", () => {
+
   it("五个成员宿主/env 均在；引擎零假红且签名精确", () => {
     for (const name of ["emitWarning","abort","kill"] as const) expect(typeof (process as unknown as Record<string, unknown>)[name], name).toBe("function");
     expect(typeof process.release).toBe("object");
@@ -419,7 +419,7 @@ describe("process 补 5 个真实成员（不再定抛 TypeError）", () => {
     expect(byName.get("g3")).toMatch(/^string\b/);
     expect(byName.get("g4")).toMatch(/^boolean\b/);
   });
-});;
+
 });
 
 // ---------------------------------------------------------------------------
@@ -466,7 +466,7 @@ function check(src: string) {
   });
 }
 
-describe("process.stdin 成员表补全（不再定抛 TypeError）", () => {
+
   it("宿主与 env 均有 stream 成员；调用零 throws", () => {
     for (const name of ["setEncoding","pause","resume","read","on"] as const) expect(typeof (process.stdin as unknown as Record<string, unknown>)[name], name).toBe("function");
     const stdin = walk(env.globals.process, "stdin");
@@ -479,7 +479,7 @@ export function s2() { return process.stdin.on("data", (c) => { void c; }); }`);
     expect(r.issues.filter((i) => i.code === "nudo:entry-may-throw")).toEqual([]);
     for (const s of r.signatures) expect(s.throws, s.name).toBeUndefined();
   });
-});;
+
 });
 
 // ---------------------------------------------------------------------------
@@ -524,7 +524,7 @@ function check(src: string) {
   });
 }
 
-describe("process.stdout / stderr 成员表补全（不再定抛 TypeError）", () => {
+
   it("宿主与 env 均有 on/once/off/emit/write/end；调用零 throws", () => {
     for (const s of [process.stdout, process.stderr]) for (const name of ["on","once","off","emit","write"] as const) expect(typeof (s as unknown as Record<string, unknown>)[name], name).toBe("function");
     for (const name of ["stdout", "stderr"]) {
@@ -537,7 +537,7 @@ export function o3() { return process.stdout.write("x"); }`);
     expect(r.issues.filter((i) => i.code === "nudo:entry-may-throw")).toEqual([]);
     for (const s of r.signatures) expect(s.throws, s.name).toBeUndefined();
   });
-});;
+
 });
 
 // ---------------------------------------------------------------------------
@@ -553,7 +553,7 @@ describe("process.title is modelled", () => {
  *
  * 反向钉：删掉 `title` 槽 ⇒ 本文件必挂。
  */
-describe("process.title is modelled", () => {
+
   it("title 声明 string；length/ typeof 精确；version 对照", () => {
     expect(typeof process.title).toBe("string");
     expect(process.title.length).toBeGreaterThan(0);
@@ -568,7 +568,7 @@ describe("process.title is modelled", () => {
     expect(control.signatures.find((s) => s.name === "b")!.display).toBe('"string"');
     expect(control.throwBrands).toEqual([]);
   });
-});;
+
 });
 
 // ---------------------------------------------------------------------------
@@ -615,7 +615,7 @@ function sumMember(a: Abs | undefined, brandNameWanted: string): Abs | undefined
   return s.members?.find((m) => m.shape.k === "brand" && (m.shape as { name: string }).name === brandNameWanted);
 }
 
-describe("fs/promises 结果对象与同步族共用成员表", () => {
+
   it("Stats 成员表同步/promise 共用；Dirent 有 shape；withFileTypes 分叉；缺槽反钉", async () => {
     const sync = fs.statSync("/tmp");
     const promised = await fsp.stat("/tmp");
@@ -659,7 +659,7 @@ describe("fs/promises 结果对象与同步族共用成员表", () => {
     expect(typedElement.shape.k).toBe("brand");
     expect(slotsOf(innerOf(typedElement)!)["name"]).toBeDefined();
   });
-});;
+
 });
 
 // ---------------------------------------------------------------------------
@@ -928,7 +928,7 @@ describe("os.cpus() 的 times 成员表", () => {
 
 
 
-describe("os.cpus() 的 times 成员表", () => {
+
   it("元素 keys = model/speed/times；times 五个 number 成员且与原生键集一致", () => {
     const ret = envMember("node:os", "cpus");
     expect(ret.shape.k).toBe("fn");
@@ -947,7 +947,7 @@ describe("os.cpus() 的 times 成员表", () => {
     expect(slots["times"]).toBeDefined();
     expect(tslots["user"]).toBeDefined();
   });
-});;
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1000,7 +1000,7 @@ function newSite(
   return { value, mayThrows };
 }
 
-describe("env node 模块导出构造器带 ctor:true", () => {
+
   it("四个构造器 ctor:true；new 各面不记 may-throw 且实例面完整；无 ctor 的 fn 记 unknown constructibility", () => {
     const url = defineEnv().modules!.url!;
     const util = defineEnv().modules!.util!;
@@ -1036,7 +1036,7 @@ describe("env node 模块导出构造器带 ctor:true", () => {
     expect(bad.mayThrows[0]!.kind).toBe("TypeError");
     expect(bad.mayThrows[0]!.cause).toContain("unknown constructibility");
   });
-});;
+
 
 /** lit term 的字面量值（取不到 ⇒ undefined） */
 function formatLit(a: Abs): string | undefined {
@@ -1097,7 +1097,7 @@ function paramsOf(fn: Abs): string[] {
   return (fn.shape as { params: string[] }).params;
 }
 
-describe("console 成员表补全（es env）", () => {
+
   it("公有方法齐全、缺的四个成员零假红、签名按原生拆、Console 可构造", () => {
     const expected = ["log","info","debug","warn","error","trace","dir","dirxml","table","group","groupCollapsed","groupEnd","count","countReset","assert","clear","time","timeLog","timeEnd","timeStamp","profile","profileEnd","context","createTask","Console"];
     for (const name of expected) {
@@ -1128,7 +1128,7 @@ describe("console 成员表补全（es env）", () => {
     expect(ctor.issues.filter((i) => i.code === "nudo:entry-may-throw")).toEqual([]);
     expect(formatShape(ctor.signatures.find((s) => s.name === "f")!.abs)).toContain("Console");
   });
-});;
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1183,7 +1183,7 @@ function declaredFace(): Abs {
   return rt!;
 }
 
-describe("spawnSync 返回域补齐 pid / output / signal", () => {
+
   it("声明键集与原生一致（除 error）；pid number；output/signal/status 含 null", () => {
     const slots = slotsOf(declaredFace());
     for (const key of ["pid", "output", "signal", "status", "stdout", "stderr"]) expect(Object.keys(slots), key).toContain(key);
@@ -1195,7 +1195,7 @@ describe("spawnSync 返回域补齐 pid / output / signal", () => {
     expect(formatShape(slots.status!)).toContain("null");
     expect(slots.pid).toBeTruthy();
   });
-});;
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1219,7 +1219,7 @@ describe("queueMicrotask keeps core's callable-arg validation", () => {
  *
  * 反向钉：把 `queueMicrotask` 加回 env 全局表 ⇒ 本文件必挂。
  */
-describe("queueMicrotask keeps core's callable-arg validation", () => {
+
   it("web env 不声明；非可调用实参记 TypeError 且 env/host 同口径；可调用实参不报", () => {
     expect(webEnvGlobals()["queueMicrotask"]).toBeUndefined();
     const nonCallable = checkWeb("export function f(){ queueMicrotask(1); return 1; }");
@@ -1231,7 +1231,7 @@ describe("queueMicrotask keeps core's callable-arg validation", () => {
     const callable = checkWeb("export function f(){ queueMicrotask(function () {}); return 1; }");
     expect(callable.throwBrands).not.toContain("TypeError");
   });
-});;
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1385,7 +1385,7 @@ function sigOf(src: string, name: string): { display: string; throws?: string } 
 /** L2 入口 may-throw 门禁（假红就是它） */
 const MAY_THROW = "nudo:entry-may-throw";
 
-describe("node:util 品牌形参函数：具名导入调用面不得 L2 假红", () => {
+
   it("具名/成员调用零 L2 且口径一致；裸宿主实参不崩；真抛入口仍报 L2", () => {
     const NAMED = `/// @nudo:env node
 import { promisify } from "node:util";
@@ -1439,7 +1439,7 @@ export function use() { return readFileSync("/definitely/not/here.txt", "utf8");
 `;
     expect(codesOf(syncSrc)).toContain(MAY_THROW);
   });
-});;
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1482,7 +1482,7 @@ const util = env.modules!.util!;
 /** 裸宿主函数（**不是** Abs）——具名导入调用时引擎拿到的就是这种实参 */
 const HOST_FN = function Sub(): void {};
 
-describe("node:util 品牌形参不参与类型变量绑定（env 侧）", () => {
+
   it("四兄弟走 apply 面；裸宿主实参不炸；签名干净；原生不抛；零 throw exit", () => {
     const util = defineEnv().modules!.util!;
     for (const fn of [util.promisify, util.callbackify, util.inherits, util.isDeepStrictEqual]) {
@@ -1519,7 +1519,7 @@ describe("node:util 品牌形参不参与类型变量绑定（env 侧）", () =>
     expect(() => nodePromisify(readFile)).not.toThrow();
     expect(brandName____env_bug_s4_helpers_ts_1(inheritsSite.exits[0])).toBeUndefined();
   });
-});;
+
 });
 
 // ---------------------------------------------------------------------------
@@ -1536,7 +1536,7 @@ describe("util.types models every host predicate", () => {
  *
  * 反向钉：删掉任一补上的谓词 ⇒ 差分断言必挂。
  */
-describe("util.types models every host predicate", () => {
+
   it("宿主谓词齐全；每个都是 (any)=>boolean；模块面 apply 干净", () => {
     expect(hostTypes.isMap(new Map())).toBe(true);
     expect(hostTypes.isSet(new Set())).toBe(true);
@@ -1558,5 +1558,5 @@ describe("util.types models every host predicate", () => {
       expect(slot.value.shape.k, name).toBe("fn");
     }
   });
-});;
+
 });

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { collectAbsBindingsFromGraph, analyzeFile } from "@nudojs/service";
 import { getHoverAtPosition } from "../lsp-surface.ts";
-import { formatAbs, absToString } from "@nudojs/core";
+import { formatAbs,  } from "@nudojs/core";
 
 const dirs: string[] = [];
 afterAll(() => {
