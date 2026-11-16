@@ -1,0 +1,1048 @@
+{
+  "generatedAt": "2026-11-16T18:12:01.789Z",
+  "note": "Extensional env coverage baseline — resolution rate is NOT a soundness/completeness claim. See design/limitations.md §2 and website semantics mock-boundary section.",
+  "budgets": {
+    "harvestNodeTypes": {
+      "maxFiles": 12,
+      "maxMs": 2500,
+      "disableEnvVar": "NUDO_HARVEST_NODE=off"
+    }
+  },
+  "envModuleKeys": {
+    "es": 55,
+    "web": 106,
+    "nodeGlobals": 130,
+    "nodeModules": [
+      "assert",
+      "buffer",
+      "child_process",
+      "crypto",
+      "events",
+      "fs",
+      "fs/promises",
+      "node:assert",
+      "node:buffer",
+      "node:child_process",
+      "node:crypto",
+      "node:events",
+      "node:fs",
+      "node:fs/promises",
+      "node:os",
+      "node:path",
+      "node:querystring",
+      "node:stream",
+      "node:url",
+      "node:util",
+      "os",
+      "path",
+      "querystring",
+      "stream",
+      "url",
+      "util"
+    ]
+  },
+  "nodeProbes": {
+    "counts": {
+      "resolved": 75,
+      "unknown": 0,
+      "mock-required": 2
+    },
+    "leaf": {
+      "clean": 69,
+      "mentionsUnknown": 6
+    },
+    "total": 77,
+    "results": [
+      {
+        "id": "fs.readFileSync",
+        "module": "fs",
+        "path": [
+          "readFileSync"
+        ],
+        "status": "resolved",
+        "format": "(string, options?: string | { encoding?: string, flag?: string }) => string | Buffer",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "fs.writeFileSync",
+        "module": "fs",
+        "path": [
+          "writeFileSync"
+        ],
+        "status": "resolved",
+        "format": "(string, string | Buffer, options?: string | { encoding?: string, flag?: string }) => undefined",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "fs.existsSync",
+        "module": "fs",
+        "path": [
+          "existsSync"
+        ],
+        "status": "resolved",
+        "format": "(string) => boolean",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "fs.statSync",
+        "module": "fs",
+        "path": [
+          "statSync"
+        ],
+        "status": "resolved",
+        "format": "(string, options?: { bigint?: boolean, throwIfNoEntry?: boolean }) => { isFile: () => boolean, isDirectory: () => boolean, isSymbolicLink: () => boolean, isBlockDevice: () => boolean, isCharacterDevice: () => boolean, isFIFO: () => boolean, isSocket: () => boolean, size: number, mode: number, uid: number, gid: number, ino: number, dev: number, nlink: number, blksize: number, blocks: number, rdev: number, mtime: Date, ctime: Date, atime: Date, birthtime: Date, mtimeMs: number, ctimeMs: number, atimeMs: number, birthtimeMs: number }",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "fs.readdirSync",
+        "module": "fs",
+        "path": [
+          "readdirSync"
+        ],
+        "status": "resolved",
+        "format": "(string, options?: { encoding?: string, withFileTypes?: boolean, recursive?: boolean }) => Array<string | Dirent>",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "fs.mkdirSync",
+        "module": "fs",
+        "path": [
+          "mkdirSync"
+        ],
+        "status": "resolved",
+        "format": "(string, options?: { recursive?: boolean, mode?: number }) => string | undefined",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "fs.rmSync",
+        "module": "fs",
+        "path": [
+          "rmSync"
+        ],
+        "status": "resolved",
+        "format": "(string, options?: { recursive?: boolean, force?: boolean, maxRetries?: number, retryDelay?: number }) => undefined",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "fs.readFile-callback",
+        "module": "fs",
+        "path": [
+          "readFile"
+        ],
+        "status": "resolved",
+        "format": "(string, options?: string | { encoding?: string, flag?: string }, CallbackFn) => undefined",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "fs.promises.readFile",
+        "module": "fs/promises",
+        "path": [
+          "readFile"
+        ],
+        "status": "resolved",
+        "format": "(string, options?: string | { encoding?: string, flag?: string }) => promise<string | Buffer>",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "fs.promises.writeFile",
+        "module": "fs/promises",
+        "path": [
+          "writeFile"
+        ],
+        "status": "resolved",
+        "format": "(string, string | Buffer, options?: string | { encoding?: string, flag?: string }) => promise<undefined>",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "fs.promises.mkdir",
+        "module": "fs/promises",
+        "path": [
+          "mkdir"
+        ],
+        "status": "resolved",
+        "format": "(string, options?: { recursive?: boolean, mode?: number }) => promise<string | undefined>",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "node:fs/promises.readFile",
+        "module": "node:fs/promises",
+        "path": [
+          "readFile"
+        ],
+        "status": "resolved",
+        "format": "(string, options?: string | { encoding?: string, flag?: string }) => promise<string | Buffer>",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "node:fs/promises.appendFile",
+        "module": "node:fs/promises",
+        "path": [
+          "appendFile"
+        ],
+        "status": "resolved",
+        "format": "(string, string | Buffer, options?: string | { encoding?: string, flag?: string }) => promise<undefined>",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "node:fs/promises.unlink",
+        "module": "node:fs/promises",
+        "path": [
+          "unlink"
+        ],
+        "status": "resolved",
+        "format": "(string) => promise<undefined>",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "node:fs/promises.rename",
+        "module": "node:fs/promises",
+        "path": [
+          "rename"
+        ],
+        "status": "resolved",
+        "format": "(string, string) => promise<undefined>",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "node:fs/promises.copyFile",
+        "module": "node:fs/promises",
+        "path": [
+          "copyFile"
+        ],
+        "status": "resolved",
+        "format": "(string, string) => promise<undefined>",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "node:fs/promises.chmod",
+        "module": "node:fs/promises",
+        "path": [
+          "chmod"
+        ],
+        "status": "resolved",
+        "format": "(string, number) => promise<undefined>",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "path.join",
+        "module": "path",
+        "path": [
+          "join"
+        ],
+        "status": "resolved",
+        "format": "(string, ...paths: string) => string",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "path.resolve",
+        "module": "path",
+        "path": [
+          "resolve"
+        ],
+        "status": "resolved",
+        "format": "(...paths: string) => string",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "path.dirname",
+        "module": "path",
+        "path": [
+          "dirname"
+        ],
+        "status": "resolved",
+        "format": "(string) => string",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "path.basename",
+        "module": "path",
+        "path": [
+          "basename"
+        ],
+        "status": "resolved",
+        "format": "(string, ext?: string) => string",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "path.extname",
+        "module": "path",
+        "path": [
+          "extname"
+        ],
+        "status": "resolved",
+        "format": "(string) => string",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "path.relative",
+        "module": "path",
+        "path": [
+          "relative"
+        ],
+        "status": "resolved",
+        "format": "(string, string) => string",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "path.parse",
+        "module": "path",
+        "path": [
+          "parse"
+        ],
+        "status": "resolved",
+        "format": "(string) => { root: string, dir: string, base: string, ext: string, name: string }",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "path.isAbsolute",
+        "module": "path",
+        "path": [
+          "isAbsolute"
+        ],
+        "status": "resolved",
+        "format": "(string) => boolean",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "path.sep",
+        "module": "path",
+        "path": [
+          "sep"
+        ],
+        "status": "resolved",
+        "format": "string",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "path.posix",
+        "module": "path",
+        "path": [
+          "posix"
+        ],
+        "status": "resolved",
+        "format": "path.PlatformPath",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "path.win32",
+        "module": "path",
+        "path": [
+          "win32"
+        ],
+        "status": "resolved",
+        "format": "path.PlatformPath",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "url.URL",
+        "module": "url",
+        "path": [
+          "URL"
+        ],
+        "status": "resolved",
+        "format": "(string, base?: string) => { href: string, origin: string, protocol: string, username: string, password: string, host: string, hostname: string, port: string, pathname: string, search: string, hash: string, toString: () => string, toJSON: () => string }",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "url.URLSearchParams",
+        "module": "url",
+        "path": [
+          "URLSearchParams"
+        ],
+        "status": "resolved",
+        "format": "(init?: string | Record<string, string> | string[][]) => { get: (string) => string | null, getAll: (string) => string[], has: (string) => boolean, set: (string, string) => undefined, append: (string, string) => undefined, delete: (string) => undefined, toString: () => string, size: number }",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "url.fileURLToPath",
+        "module": "url",
+        "path": [
+          "fileURLToPath"
+        ],
+        "status": "resolved",
+        "format": "(string) => string",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "url.pathToFileURL",
+        "module": "url",
+        "path": [
+          "pathToFileURL"
+        ],
+        "status": "resolved",
+        "format": "(string) => { href: string, origin: string, protocol: string, username: string, password: string, host: string, hostname: string, port: string, pathname: string, search: string, hash: string, toString: () => string, toJSON: () => string }",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "events.EventEmitter",
+        "module": "events",
+        "path": [
+          "EventEmitter"
+        ],
+        "status": "resolved",
+        "format": "(options?: { captureRejections?: boolean }) => EventEmitter",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "events.once",
+        "module": "events",
+        "path": [
+          "once"
+        ],
+        "status": "resolved",
+        "format": "(EventEmitter, string) => promise<EventArgs>",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "events.on",
+        "module": "events",
+        "path": [
+          "on"
+        ],
+        "status": "resolved",
+        "format": "(EventEmitter, string) => AsyncIterator",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "node:events.EventEmitter",
+        "module": "node:events",
+        "path": [
+          "EventEmitter"
+        ],
+        "status": "resolved",
+        "format": "(options?: { captureRejections?: boolean }) => EventEmitter",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "util.promisify",
+        "module": "util",
+        "path": [
+          "promisify"
+        ],
+        "status": "resolved",
+        "format": "(CallbackFn) => PromiseFn",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "util.inspect",
+        "module": "util",
+        "path": [
+          "inspect"
+        ],
+        "status": "resolved",
+        "format": "(any, options?: { showHidden?: boolean, depth?: number, colors?: boolean, customInspect?: boolean, maxArrayLength?: number, breakLength?: number, compact?: boolean, sorted?: boolean }) => string",
+        "leaf": "mentions-unknown",
+        "reason": "present in env; signature-level — format still mentions unknown/any leaves"
+      },
+      {
+        "id": "util.format",
+        "module": "util",
+        "path": [
+          "format"
+        ],
+        "status": "resolved",
+        "format": "(...args: any) => string",
+        "leaf": "mentions-unknown",
+        "reason": "present in env; signature-level — format still mentions unknown/any leaves"
+      },
+      {
+        "id": "util.types.isDate",
+        "module": "util",
+        "path": [
+          "types",
+          "isDate"
+        ],
+        "status": "resolved",
+        "format": "(any) => boolean",
+        "leaf": "mentions-unknown",
+        "reason": "present in env; signature-level — format still mentions unknown/any leaves"
+      },
+      {
+        "id": "util.inherits",
+        "module": "util",
+        "path": [
+          "inherits"
+        ],
+        "status": "resolved",
+        "format": "(Function, Function) => undefined",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "util.callbackify",
+        "module": "util",
+        "path": [
+          "callbackify"
+        ],
+        "status": "resolved",
+        "format": "(PromiseFn) => CallbackFn",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "stream.Readable",
+        "module": "stream",
+        "path": [
+          "Readable"
+        ],
+        "status": "resolved",
+        "format": "(options?: { highWaterMark?: number, objectMode?: boolean, encoding?: string, autoDestroy?: boolean, emitClose?: boolean, transform?: (string | Buffer, string, (error?: Error | null, data?: string | Buffer) => undefined) => undefined, flush?: ((error?: Error | null) => undefined) => undefined, read?: (number) => undefined, write?: (string | Buffer, string, (error?: Error | null) => undefined) => undefined, final?: ((error?: Error | null) => undefined) => undefined, construct?: (error?: Error | null) => undefined, destroy?: (Error | null, (error?: Error | null) => undefined) => undefined }) => Readable",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "stream.Writable",
+        "module": "stream",
+        "path": [
+          "Writable"
+        ],
+        "status": "resolved",
+        "format": "(options?: { highWaterMark?: number, objectMode?: boolean, encoding?: string, autoDestroy?: boolean, emitClose?: boolean, transform?: (string | Buffer, string, (error?: Error | null, data?: string | Buffer) => undefined) => undefined, flush?: ((error?: Error | null) => undefined) => undefined, read?: (number) => undefined, write?: (string | Buffer, string, (error?: Error | null) => undefined) => undefined, final?: ((error?: Error | null) => undefined) => undefined, construct?: (error?: Error | null) => undefined, destroy?: (Error | null, (error?: Error | null) => undefined) => undefined }) => Writable",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "stream.Duplex",
+        "module": "stream",
+        "path": [
+          "Duplex"
+        ],
+        "status": "resolved",
+        "format": "(options?: { highWaterMark?: number, objectMode?: boolean, encoding?: string, autoDestroy?: boolean, emitClose?: boolean, transform?: (string | Buffer, string, (error?: Error | null, data?: string | Buffer) => undefined) => undefined, flush?: ((error?: Error | null) => undefined) => undefined, read?: (number) => undefined, write?: (string | Buffer, string, (error?: Error | null) => undefined) => undefined, final?: ((error?: Error | null) => undefined) => undefined, construct?: (error?: Error | null) => undefined, destroy?: (Error | null, (error?: Error | null) => undefined) => undefined }) => Duplex",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "stream.Transform",
+        "module": "stream",
+        "path": [
+          "Transform"
+        ],
+        "status": "resolved",
+        "format": "(options?: { highWaterMark?: number, objectMode?: boolean, encoding?: string, autoDestroy?: boolean, emitClose?: boolean, transform?: (string | Buffer, string, (error?: Error | null, data?: string | Buffer) => undefined) => undefined, flush?: ((error?: Error | null) => undefined) => undefined, read?: (number) => undefined, write?: (string | Buffer, string, (error?: Error | null) => undefined) => undefined, final?: ((error?: Error | null) => undefined) => undefined, construct?: (error?: Error | null) => undefined, destroy?: (Error | null, (error?: Error | null) => undefined) => undefined }) => Transform",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "stream.pipeline",
+        "module": "stream",
+        "path": [
+          "pipeline"
+        ],
+        "status": "resolved",
+        "format": "(...streams: Stream) => promise<undefined>",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "stream.finished",
+        "module": "stream",
+        "path": [
+          "finished"
+        ],
+        "status": "resolved",
+        "format": "(Stream, callback?: CallbackFn) => promise<undefined>",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "stream.promises.pipeline",
+        "module": "stream",
+        "path": [
+          "promises",
+          "pipeline"
+        ],
+        "status": "resolved",
+        "format": "(...streams: Stream) => promise<undefined>",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "stream.machine-callbacks",
+        "module": "stream",
+        "path": [
+          "Transform"
+        ],
+        "forceMock": true,
+        "note": "data/error events are machine-driven (limitations §2); transform/flush hooks are signature-level for refine",
+        "status": "mock-required",
+        "format": "(options?: { highWaterMark?: number, objectMode?: boolean, encoding?: string, autoDestroy?: boolean, emitClose?: boolean, transform?: (string | Buffer, string, (error?: Error | null, data?: string | Buffer) => undefined) => undefined, flush?: ((error?: Error | null) => undefined) => undefined, read?: (number) => undefined, write?: (string | Buffer, string, (error?: Error | null) => undefined) => undefined, final?: ((error?: Error | null) => undefined) => undefined, construct?: (error?: Error | null) => undefined, destroy?: (Error | null, (error?: Error | null) => undefined) => undefined }) => Transform",
+        "reason": "data/error events are machine-driven (limitations §2); transform/flush hooks are signature-level for refine"
+      },
+      {
+        "id": "querystring.parse",
+        "module": "querystring",
+        "path": [
+          "parse"
+        ],
+        "status": "resolved",
+        "format": "(string, sep?: string, eq?: string, options?: { maxKeys?: number }) => ParsedQueryString",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "querystring.stringify",
+        "module": "querystring",
+        "path": [
+          "stringify"
+        ],
+        "status": "resolved",
+        "format": "(StringifyInput, sep?: string, eq?: string, options?: { maxKeys?: number }) => string",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "crypto.randomUUID",
+        "module": "crypto",
+        "path": [
+          "randomUUID"
+        ],
+        "status": "resolved",
+        "format": "() => string",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "crypto.createHash",
+        "module": "crypto",
+        "path": [
+          "createHash"
+        ],
+        "status": "resolved",
+        "format": "(string) => Hash",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "crypto.randomBytes",
+        "module": "crypto",
+        "path": [
+          "randomBytes"
+        ],
+        "status": "resolved",
+        "format": "(number) => Buffer",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "process.env",
+        "path": [
+          "process",
+          "env"
+        ],
+        "status": "resolved",
+        "format": "Record<string, string | undefined>",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "process.cwd",
+        "path": [
+          "process",
+          "cwd"
+        ],
+        "status": "resolved",
+        "format": "() => string",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "process.argv",
+        "path": [
+          "process",
+          "argv"
+        ],
+        "status": "resolved",
+        "format": "string[]",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "process.nextTick",
+        "path": [
+          "process",
+          "nextTick"
+        ],
+        "status": "resolved",
+        "format": "(CallbackFn) => undefined",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "process.exitCode",
+        "path": [
+          "process",
+          "exitCode"
+        ],
+        "status": "resolved",
+        "format": "number | undefined",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "process.version",
+        "path": [
+          "process",
+          "version"
+        ],
+        "status": "resolved",
+        "format": "string",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "process.platform",
+        "path": [
+          "process",
+          "platform"
+        ],
+        "status": "resolved",
+        "format": "string",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "os.platform",
+        "module": "os",
+        "path": [
+          "platform"
+        ],
+        "status": "resolved",
+        "format": "() => string",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "os.homedir",
+        "module": "os",
+        "path": [
+          "homedir"
+        ],
+        "status": "resolved",
+        "format": "() => string",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "os.tmpdir",
+        "module": "os",
+        "path": [
+          "tmpdir"
+        ],
+        "status": "resolved",
+        "format": "() => string",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "os.EOL",
+        "module": "os",
+        "path": [
+          "EOL"
+        ],
+        "status": "resolved",
+        "format": "string",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "os.cpus",
+        "module": "os",
+        "path": [
+          "cpus"
+        ],
+        "status": "resolved",
+        "format": "() => { model: string, speed: number, times: { user: number, nice: number, sys: number, idle: number, irq: number } }[]",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "Buffer.from",
+        "path": [
+          "Buffer",
+          "from"
+        ],
+        "status": "resolved",
+        "format": "(string | number[] | Buffer) => Buffer",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "Buffer.alloc",
+        "path": [
+          "Buffer",
+          "alloc"
+        ],
+        "status": "resolved",
+        "format": "(number, fill?: string | number | Buffer, encoding?: string) => Buffer",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "Buffer.concat",
+        "path": [
+          "Buffer",
+          "concat"
+        ],
+        "status": "resolved",
+        "format": "(Buffer[]) => Buffer",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "assert.ok",
+        "module": "assert",
+        "path": [
+          "ok"
+        ],
+        "status": "resolved",
+        "format": "(any, message?: string | Error) => undefined",
+        "leaf": "mentions-unknown",
+        "reason": "present in env; signature-level — format still mentions unknown/any leaves"
+      },
+      {
+        "id": "assert.strictEqual",
+        "module": "assert",
+        "path": [
+          "strictEqual"
+        ],
+        "status": "resolved",
+        "format": "(any, any, message?: string | Error) => undefined",
+        "leaf": "mentions-unknown",
+        "reason": "present in env; signature-level — format still mentions unknown/any leaves"
+      },
+      {
+        "id": "assert.deepStrictEqual",
+        "module": "assert",
+        "path": [
+          "deepStrictEqual"
+        ],
+        "status": "resolved",
+        "format": "(any, any, message?: string | Error) => undefined",
+        "leaf": "mentions-unknown",
+        "reason": "present in env; signature-level — format still mentions unknown/any leaves"
+      },
+      {
+        "id": "child_process.spawn",
+        "module": "child_process",
+        "path": [
+          "spawn"
+        ],
+        "status": "resolved",
+        "format": "(string, string[], options?: { cwd?: string, env?: Record<string, string | undefined>, stdio?: string | string[], shell?: boolean | string, timeout?: number, killSignal?: string | number }) => ChildProcess",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "child_process.execFile",
+        "module": "child_process",
+        "path": [
+          "execFile"
+        ],
+        "status": "resolved",
+        "format": "(string, args?: string[], callback?: CallbackFn) => ChildProcess",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "child_process.spawnSync",
+        "module": "child_process",
+        "path": [
+          "spawnSync"
+        ],
+        "status": "resolved",
+        "format": "(string, string[], options?: { encoding?: string, timeout?: number, maxBuffer?: number, cwd?: string }) => { pid: number, output: (Buffer | null)[], status: number | null, signal: string | null, stdout: string | Buffer, stderr: string | Buffer, error: Error | undefined }",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "child_process.spawn-native",
+        "module": "child_process",
+        "path": [
+          "spawn"
+        ],
+        "forceMock": true,
+        "note": "native process spawn — no side-effect simulation; ChildProcess shape is signature-level",
+        "status": "mock-required",
+        "format": "(string, string[], options?: { cwd?: string, env?: Record<string, string | undefined>, stdio?: string | string[], shell?: boolean | string, timeout?: number, killSignal?: string | number }) => ChildProcess",
+        "reason": "native process spawn — no side-effect simulation; ChildProcess shape is signature-level"
+      }
+    ]
+  },
+  "esProbes": {
+    "counts": {
+      "resolved": 4,
+      "unknown": 0,
+      "mock-required": 0
+    },
+    "leaf": {
+      "clean": 1,
+      "mentionsUnknown": 3
+    },
+    "total": 4,
+    "results": [
+      {
+        "id": "Array.isArray",
+        "path": [
+          "Array",
+          "isArray"
+        ],
+        "status": "resolved",
+        "format": "(unknown) => boolean",
+        "leaf": "mentions-unknown",
+        "reason": "present in env; signature-level — format still mentions unknown/any leaves"
+      },
+      {
+        "id": "JSON.stringify",
+        "path": [
+          "JSON",
+          "stringify"
+        ],
+        "status": "resolved",
+        "format": "(unknown) => string | undefined",
+        "leaf": "mentions-unknown",
+        "reason": "present in env; signature-level — format still mentions unknown/any leaves"
+      },
+      {
+        "id": "Math.max",
+        "path": [
+          "Math",
+          "max"
+        ],
+        "status": "resolved",
+        "format": "(...values: number) => number",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "Promise",
+        "path": [
+          "Promise"
+        ],
+        "status": "resolved",
+        "format": "(unknown) => promise<unknown>",
+        "leaf": "mentions-unknown",
+        "reason": "present in env; signature-level — format still mentions unknown/any leaves"
+      }
+    ]
+  },
+  "webProbes": {
+    "counts": {
+      "resolved": 3,
+      "unknown": 0,
+      "mock-required": 0
+    },
+    "leaf": {
+      "clean": 3,
+      "mentionsUnknown": 0
+    },
+    "total": 3,
+    "results": [
+      {
+        "id": "fetch",
+        "path": [
+          "fetch"
+        ],
+        "status": "resolved",
+        "format": "(string | Request) => promise<Response>",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "URL",
+        "path": [
+          "URL"
+        ],
+        "status": "resolved",
+        "format": "(string, base?: string) => URL",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      },
+      {
+        "id": "AbortController",
+        "path": [
+          "AbortController"
+        ],
+        "status": "resolved",
+        "format": "() => AbortController",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
+      }
+    ]
+  },
+  "libraryProbes": [
+    {
+      "id": "commander",
+      "package": "commander",
+      "kind": "js-source",
+      "note": "JS source present — analysis via execution / checkSource, not d.ts harvest",
+      "installed": true,
+      "status": "resolved",
+      "reason": "JS source present — analysis via execution / checkSource, not d.ts harvest"
+    },
+    {
+      "id": "ms",
+      "package": "ms",
+      "kind": "js-source",
+      "note": "JS source — infer/check without handwritten mock",
+      "installed": true,
+      "status": "resolved",
+      "reason": "JS source — infer/check without handwritten mock"
+    },
+    {
+      "id": "@types/node",
+      "package": "@types/node",
+      "kind": "types",
+      "note": ".d.ts harvest via harvestNodeTypes (analysis auto-fill)",
+      "installed": true,
+      "status": "resolved",
+      "reason": ".d.ts harvest via harvestNodeTypes (analysis auto-fill)"
+    },
+    {
+      "id": "no-types-example",
+      "package": "left-pad",
+      "kind": "none",
+      "note": "if installed without types and no JS eval path → mock/hint required",
+      "installed": false,
+      "status": "absent",
+      "reason": "package not on Node resolution path in this worktree"
+    }
+  ]
+}
