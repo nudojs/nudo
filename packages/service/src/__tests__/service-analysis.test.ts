@@ -74,100 +74,58 @@ const DEP_SIDE = `export const g = fn({ x: number().gt(0) }, number());
 `;
 
 describe("命名空间成员调用的调用点可归因（domain-exceeds 不再静默）", () => {
-  it("ESM `import * as dep`：记录名带接收者限定，且归因到被调模块", () =>
+  const DOMAIN = "nudo:contract-domain-exceeds";
+  const DEP = "export const g = (x) => x;\n";
+  const DEP_SIDE = "export const g = fn({ x: number().gt(0) }, number());\n";
+  it("ESM/CJS 命名空间带接收者限定并可归因；具名/对象方法无前缀；产品面 error", () => {
     withTmpProject("nudo-b286a-", (dir) => {
       const depPath = writeTmpFile(dir, "dep.js", DEP);
-      const use = writeTmpFile(
-        dir,
-        "use.js",
-        'import * as dep from "./dep.js";\ndep.g(-1);\n',
-      );
-
-      const records = collectCallRecords(use, readFileSync(use, "utf-8"));
-      const rec = records.find((r) => r.fnName === "dep.g");
-      expect(rec, `记录名未带接收者限定：${records.map((r) => r.fnName).join(", ")}`).toBeDefined();
+      const use = writeTmpFile(dir, "use.js", 'import * as dep from "./dep.js";\ndep.g(-1);\n');
+      const rec = collectCallRecords(use, readFileSync(use, "utf-8")).find((r) => r.fnName === "dep.g");
+      expect(rec).toBeDefined();
       expect(rec!.targetModule).toBe(depPath);
       expect(rec!.targetExport).toBe("g");
-      expect(litValue(rec!.argAbs[0]!).ok).toBe(true);
-      const argLit = litValue(rec!.argAbs[0]!);
-      expect(argLit.ok ? argLit.value : undefined).toBe(-1);
-    }));
-
-  it("CJS `const dep = require(...)`：同样带接收者限定且可归因", () =>
+      expect(litValue(rec!.argAbs[0]!)).toEqual({ ok: true, value: -1 });
+    });
     withTmpProject("nudo-b286b-", (dir) => {
       const depPath = writeTmpFile(dir, "dep.js", DEP);
-      const use = writeTmpFile(
-        dir,
-        "use.js",
-        'const dep = require("./dep.js");\ndep.g(-1);\n',
-      );
-
-      const records = collectCallRecords(use, readFileSync(use, "utf-8"));
-      const rec = records.find((r) => r.fnName === "dep.g");
-      expect(rec, `记录名未带接收者限定：${records.map((r) => r.fnName).join(", ")}`).toBeDefined();
+      const use = writeTmpFile(dir, "use.js", 'const dep = require("./dep.js");\ndep.g(-1);\n');
+      const rec = collectCallRecords(use, readFileSync(use, "utf-8")).find((r) => r.fnName === "dep.g");
+      expect(rec).toBeDefined();
       expect(rec!.targetModule).toBe(depPath);
       expect(rec!.targetExport).toBe("g");
-    }));
-
-  it("负控制：具名导入的记录名保持原样（不加前缀）", () =>
+    });
     withTmpProject("nudo-b286c-", (dir) => {
       const depPath = writeTmpFile(dir, "dep.js", DEP);
       const use = writeTmpFile(dir, "use.js", 'import { g } from "./dep.js";\ng(-1);\n');
-
       const records = collectCallRecords(use, readFileSync(use, "utf-8"));
       const rec = records.find((r) => r.fnName === "g");
       expect(rec).toBeDefined();
       expect(records.some((r) => r.fnName.includes("."))).toBe(false);
       expect(rec!.targetModule).toBe(depPath);
       expect(rec!.targetExport).toBe("g");
-    }));
-
-  it("负控制：对象字面量方法调用不被误加接收者限定", () =>
+    });
     withTmpProject("nudo-b286d-", (dir) => {
-      const use = writeTmpFile(
-        dir,
-        "use.js",
-        "const o = { helper: (x) => x };\no.helper(-1);\n",
-      );
+      const use = writeTmpFile(dir, "use.js", "const o = { helper: (x) => x };\no.helper(-1);\n");
       const records = collectCallRecords(use, readFileSync(use, "utf-8"));
       expect(records.some((r) => r.fnName === "helper")).toBe(true);
       expect(records.some((r) => r.fnName.includes("."))).toBe(false);
-    }));
-
-  it("产品面：注入后 nudo:contract-domain-exceeds 必须是 error（不再是假绿）", () =>
-    withTmpProject("nudo-b286e-", (dir) => {
-      const depPath = writeTmpFile(dir, "dep.js", DEP);
-      writeTmpFile(dir, "dep.nudo.js", DEP_SIDE);
-      const use = writeTmpFile(
-        dir,
-        "use.js",
-        'import * as dep from "./dep.js";\ndep.g(-1);\n',
-      );
-
-      const records = collectCallRecords(use, readFileSync(use, "utf-8"));
-      const result = analyzeFile(depPath, readFileSync(depPath, "utf-8"), undefined, records);
-      const issues = result.diagnostics.filter((d) => d.code === DOMAIN);
-      expect(issues).toHaveLength(1);
-      expect(issues[0]!.severity).toBe("error");
-    }));
-
-  it("产品面：CJS 命名空间形态同样报 error", () =>
-    withTmpProject("nudo-b286f-", (dir) => {
-      const depPath = writeTmpFile(dir, "dep.js", DEP);
-      writeTmpFile(dir, "dep.nudo.js", DEP_SIDE);
-      const use = writeTmpFile(
-        dir,
-        "use.js",
-        'const dep = require("./dep.js");\ndep.g(-1);\n',
-      );
-
-      const records = collectCallRecords(use, readFileSync(use, "utf-8"));
-      const result = analyzeFile(depPath, readFileSync(depPath, "utf-8"), undefined, records);
-      const issues = result.diagnostics.filter((d) => d.code === DOMAIN);
-      expect(issues).toHaveLength(1);
-      expect(issues[0]!.severity).toBe("error");
-    }));
+    });
+    for (const src of ['import * as dep from "./dep.js";\ndep.g(-1);\n', 'const dep = require("./dep.js");\ndep.g(-1);\n']) {
+      withTmpProject("nudo-b286e-", (dir) => {
+        const depPath = writeTmpFile(dir, "dep.js", DEP);
+        writeTmpFile(dir, "dep.nudo.js", DEP_SIDE);
+        const use = writeTmpFile(dir, "use.js", src);
+        const records = collectCallRecords(use, readFileSync(use, "utf-8"));
+        const result = analyzeFile(depPath, readFileSync(depPath, "utf-8"), undefined, records);
+        const issues = result.diagnostics.filter((d) => d.code === DOMAIN);
+        expect(issues).toHaveLength(1);
+        expect(issues[0]!.severity).toBe("error");
+      });
+    }
+  });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -207,15 +165,23 @@ function record(over: Partial<CallRecord>): CallRecord {
 }
 
 describe("超限调用记录不得让分析器崩溃", () => {
-  it("组内记录全部超限 ⇒ 整组跳过（不抛、不产出残缺分析）", () => {
-    const out = synthesizeExternalFunctions(
-      [record({ argAbs: [oversizedObjAbs()] }), record({ argAbs: [oversizedObjAbs()] })],
-      "/proj/main.js",
-    );
-    expect(out).toEqual([]);
+  const oversizedObjAbs = (): Abs => {
+    const slots: Record<string, { value: Abs }> = {};
+    for (let i = 0; i < MAX_RECORD_TYPE_NODES + 500; i++) slots[`k${i}`] = { value: numLit(i) };
+    return { shape: { k: "obj", slots }, conf: "exact" } as Abs;
+  };
+  const record = (over: Partial<CallRecord>): CallRecord => ({
+    fnName: "pick",
+    argAbs: [numLit(1)],
+    resultAbs: numLit(1),
+    throwsAbs: neverAbs,
+    callLoc: { line: 3, column: 0 },
+    targetModule: "/proj/lib.js",
+    targetExport: "pick",
+    ...over,
   });
-
-  it("对照组：正常记录照常合成（口径不变）", () => {
+  it("全部超限整组跳过；正常记录照常合成", () => {
+    expect(synthesizeExternalFunctions([record({ argAbs: [oversizedObjAbs()] }), record({ argAbs: [oversizedObjAbs()] })], "/proj/main.js")).toEqual([]);
     const out = synthesizeExternalFunctions([record({})], "/proj/main.js");
     expect(out).toHaveLength(1);
     expect(out[0]!.name).toBe("pick");
@@ -223,6 +189,7 @@ describe("超限调用记录不得让分析器崩溃", () => {
     expect(out[0]!.combinedAbs).toBeDefined();
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
