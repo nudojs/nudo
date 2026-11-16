@@ -31,15 +31,7 @@ static 块内 super.m 参与运算（原生 3）	计算键/static 表	没测该�
 负控制：静态字段里的 super 仍读父类静态成员	计算键/static 表	没测该层	keep	keep	—
 负控制：静态方法里的 super 仍读父类静态成员	计算键/static 表	没测该层	keep	keep	—
 负控制：实例方法里的 super 仍读父类原型链（不被静态口径污染）	计算键/static 表	没测该层	keep	keep	—
-读外类私有 → TypeError（此前返回外类的值）	计算键/static 表	没测该层	keep	keep	—
-调外类私有方法 → TypeError	计算键/static 表	没测该层	keep	keep	—
-写外类私有 → TypeError	计算键/static 表	没测该层	keep	keep	—
-派生类同名私有不覆盖基类私有（基类 1 / 派生 2）	计算键/static 表	没测该层	keep	keep	—
-#x in o 只看本类私有 brand（外类实例 → false）	计算键/static 表	没测该层	keep	keep	—
-静态私有跨类读 → TypeError	计算键/static 表	没测该层	keep	keep	—
-负控制：同类私有读写正常	计算键/static 表	没测该层	keep	keep	—
-负控制：自有私有槽对属性 introspection 不可见（仍是内部槽）	计算键/static 表	没测该层	keep	keep	—
-负控制：公有字符串键 '#x' 不受私有名作用域化影响	计算键/static 表	没测该层	keep	keep	—
+跨类读写/调用/静态私有抛 TypeError；派生同名不覆盖；in 只看本类；同类与 introspection 负控	私有名/模板表	没测该层	keep	keep	—
 属性为 undefined → 取默认值并写回成员	计算键/static 表	没测该层	keep	keep	—
 属性有值 → 写回该值（默认值不生效）	计算键/static 表	没测该层	keep	keep	—
 嵌套成员目标（o.x.y = 7）同样写回	计算键/static 表	没测该层	keep	keep	—
@@ -132,21 +124,8 @@ A.prototype.propertyIsEnumerable("m") → false（类方法非枚举）	计算�
 Object.getOwnPropertyDescriptor(A.prototype,"m") → 精确描述符（此前折并 ⇒ 读 .value 定抛）	计算键/static 表	没测该层	keep	keep	—
 钩子摘条目/继承面同步/不误伤静态与别的类/幂等；端到端读面与 in 面	原型删除钩子表	没测该层	keep	keep	—
 调用面：删除/从未定义/非函数值均抛；try/catch 可吸收；读面与静态/内建负控	原型删除钩子表	没测该层	keep	keep	—
-Object.isFrozen(s) → true（原生冻结）	计算键/static 表	没测该层	keep	keep	—
-Object.isFrozen(s.raw) → true（raw 数组同样冻结）	计算键/static 表	没测该层	keep	keep	—
-Object.keys(s) 只有下标（length/raw/@@iterator 非枚举）	计算键/static 表	没测该层	keep	keep	—
-JSON.stringify(s) 走数组序列化面	计算键/static 表	没测该层	keep	keep	—
-s.propertyIsEnumerable("length") → false	计算键/static 表	没测该层	keep	keep	—
-Object.getOwnPropertyDescriptor(s, "length").enumerable → false	计算键/static 表	没测该层	keep	keep	—
-for..in 遍历模板对象只枚举下标	计算键/static 表	没测该层	keep	keep	—
-负控制：元素面不变（下标 / length / raw / 展开）	计算键/static 表	没测该层	keep	keep	—
-数组原型方法在模板对象上可派发（原生模板对象是数组 exotic）	计算键/static 表	没测该层	keep	keep	—
-负控制：普通对象不是数组视图（数组方法面不外溢）	计算键/static 表	没测该层	keep	keep	—
-负控制：普通对象仍不是冻结的（extState 标注不外溢）	计算键/static 表	没测该层	keep	keep	—
-Array.isArray(s) → true（模板对象是数组 exotic）	计算键/static 表	没测该层	keep	keep	—
-Array.isArray(s) → true（多段模板同样成立）	计算键/static 表	没测该层	keep	keep	—
-负控制：普通对象 / 非数组值 → false	计算键/static 表	没测该层	keep	keep	—
-负控制：迭代器对象仍不是数组	计算键/static 表	没测该层	keep	keep	—
+冻结/枚举/序列化/for-in/数组方法；普通对象不外溢	私有名/模板表	没测该层	keep	keep	—
+模板对象与多段均 true；普通对象/字符串/迭代器 false	私有名/模板表	没测该层	keep	keep	—
 .call(外来对象) → 方法体以该对象为 this 执行	计算键/static 表	没测该层	keep	keep	—
 .apply(外来对象) → 同口径	计算键/static 表	没测该层	keep	keep	—
 .bind(外来对象)() → 同口径	计算键/static 表	没测该层	keep	keep	—
@@ -682,4 +661,28 @@ obj 的符号键钩子 → 调 fn 并 ToBoolean	dup:hasInstance 表	commit:bfdca
 类体 static [Symbol.hasInstance] 的继承（D extends C）→ 钩子生效	dup:hasInstance 表	commit:bfdca40d
 类体 static [Symbol.hasInstance] = fn（静态字段形态）→ 钩子生效	dup:hasInstance 表	commit:bfdca40d
 普通对象 RHS（无钩子）→ TypeError（原生 RHS 非 callable）	dup:hasInstance 表	commit:bfdca40d
+读外类私有 → TypeError（此前返回外类的值）	dup:私有名/模板表	commit:92dabeaf
+调外类私有方法 → TypeError	dup:私有名/模板表	commit:92dabeaf
+写外类私有 → TypeError	dup:私有名/模板表	commit:92dabeaf
+派生类同名私有不覆盖基类私有（基类 1 / 派生 2）	dup:私有名/模板表	commit:92dabeaf
+#x in o 只看本类私有 brand（外类实例 → false）	dup:私有名/模板表	commit:92dabeaf
+静态私有跨类读 → TypeError	dup:私有名/模板表	commit:92dabeaf
+负控制：同类私有读写正常	dup:私有名/模板表	commit:92dabeaf
+负控制：自有私有槽对属性 introspection 不可见（仍是内部槽）	dup:私有名/模板表	commit:92dabeaf
+负控制：公有字符串键 '#x' 不受私有名作用域化影响	dup:私有名/模板表	commit:92dabeaf
+Object.isFrozen(s) → true（原生冻结）	dup:私有名/模板表	commit:92dabeaf
+Object.isFrozen(s.raw) → true（raw 数组同样冻结）	dup:私有名/模板表	commit:92dabeaf
+Object.keys(s) 只有下标（length/raw/@@iterator 非枚举）	dup:私有名/模板表	commit:92dabeaf
+JSON.stringify(s) 走数组序列化面	dup:私有名/模板表	commit:92dabeaf
+s.propertyIsEnumerable("length") → false	dup:私有名/模板表	commit:92dabeaf
+Object.getOwnPropertyDescriptor(s, "length").enumerable → false	dup:私有名/模板表	commit:92dabeaf
+for..in 遍历模板对象只枚举下标	dup:私有名/模板表	commit:92dabeaf
+负控制：元素面不变（下标 / length / raw / 展开）	dup:私有名/模板表	commit:92dabeaf
+数组原型方法在模板对象上可派发（原生模板对象是数组 exotic）	dup:私有名/模板表	commit:92dabeaf
+负控制：普通对象不是数组视图（数组方法面不外溢）	dup:私有名/模板表	commit:92dabeaf
+负控制：普通对象仍不是冻结的（extState 标注不外溢）	dup:私有名/模板表	commit:92dabeaf
+Array.isArray(s) → true（模板对象是数组 exotic）	dup:私有名/模板表	commit:92dabeaf
+Array.isArray(s) → true（多段模板同样成立）	dup:私有名/模板表	commit:92dabeaf
+负控制：普通对象 / 非数组值 → false	dup:私有名/模板表	commit:92dabeaf
+负控制：迭代器对象仍不是数组	dup:私有名/模板表	commit:92dabeaf
 ```
