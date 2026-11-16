@@ -85,43 +85,40 @@ beforeEach(() => {
 });
 
 describe("env 模块的 ESM 默认导入（service 侧 env 模块表）", () => {
-  it("env 模块表补 default 槽（= 命名空间）+ 互操作标记", () => {
+  const cliLikeEnvOpts = (source: string) => {
+    const envNames = extractFileEnvNames(source);
+    const inject: RunTranspiledOptions = { envGlobals: collectEnvGlobals(envNames), modules: collectEnvModules(envNames) };
+    return { modules: inject.modules, inject };
+  };
+  const DEFAULT_SRC = `/// @nudo:env node
+import fs from "node:fs";
+export function gateDefault() { return fs.readFileSync("/x").length; }
+`;
+  const NAMESPACE_SRC = `/// @nudo:env node
+import * as fs from "node:fs";
+export function gateNamespace() { return fs.readFileSync("/x").length; }
+`;
+  beforeEach(() => { resetCheckSourceMemo(); resetGeneralizeMemo(); });
+  it("default 槽 + interop 标记；默认/命名空间同签名；无假 unknown-inference；具名槽不污染", () => {
     const mods = collectEnvModules(["node"]);
-    const fsMod = mods["node:fs"];
-    expect(fsMod).toBeDefined();
-    expect(fsMod!.default).toBeDefined();
-    expect(fsMod!.interopDefault).toBe(true);
-    // default 槽 = 该模块的命名空间（全部具名导出）
-    expect(fsMod!.default!.shape.k).toBe("obj");
-    const slots = fsMod!.default!.shape.k === "obj" ? (fsMod!.default!.shape.slots ?? {}) : {};
+    const fsMod = mods["node:fs"]!;
+    expect(fsMod.default).toBeDefined();
+    expect(fsMod.interopDefault).toBe(true);
+    expect(fsMod.default!.shape.k).toBe("obj");
+    const slots = fsMod.default!.shape.k === "obj" ? (fsMod.default!.shape.slots ?? {}) : {};
     expect(Object.keys(slots)).toContain("readFileSync");
-  });
 
-  it("默认导入与命名空间导入给出同一个签名（不再是 unknown）", () => {
     const rDef = checkSource("/t/env-default.js", DEFAULT_SRC, pTrue, cliLikeEnvOpts(DEFAULT_SRC));
     const rNs = checkSource("/t/env-namespace.js", NAMESPACE_SRC, pTrue, cliLikeEnvOpts(NAMESPACE_SRC));
-    const sigDef = rDef.signatures.find((s) => s.name === "gateDefault");
-    const sigNs = rNs.signatures.find((s) => s.name === "gateNamespace");
-    expect(sigDef).toBeDefined();
-    expect(sigNs).toBeDefined();
-    // 修复前：默认导入侧签名塌 unknown（命名空间侧是 number）
-    expect(formatShape(sigDef!.abs)).toBe(formatShape(sigNs!.abs));
-    expect(formatShape(sigDef!.abs)).toBe("number");
-  });
-
-  it("默认导入侧不再产出那条假的 nudo:unknown-inference", () => {
-    const r = checkSource("/t/env-default.js", DEFAULT_SRC, pTrue, cliLikeEnvOpts(DEFAULT_SRC));
-    expect(r.issues.filter((i) => i.code === "nudo:unknown-inference")).toEqual([]);
-  });
-
-  it("负控制：env 表的具名导出槽不被 default 槽污染", () => {
-    const mods = collectEnvModules(["node"]);
-    const named = mods["node:fs"]!.named;
-    expect(named.readFileSync).toBeDefined();
-    // 具名槽仍是 env 声明的 fn Abs（不是命名空间对象）
-    expect(named.readFileSync!.shape.k).toBe("fn");
+    const sigDef = rDef.signatures.find((s) => s.name === "gateDefault")!;
+    const sigNs = rNs.signatures.find((s) => s.name === "gateNamespace")!;
+    expect(formatShape(sigDef.abs)).toBe(formatShape(sigNs.abs));
+    expect(formatShape(sigDef.abs)).toBe("number");
+    expect(rDef.issues.filter((i) => i.code === "nudo:unknown-inference")).toEqual([]);
+    expect(fsMod.named.readFileSync!.shape.k).toBe("fn");
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -161,7 +158,16 @@ beforeEach(() => {
 });
 
 describe("函数级缓存对 env 内容敏感", () => {
-  it("env 内容变、mtime 不变 ⇒ 第二次分析必须看到新类型（不得命中函数级旧条目）", async () => {
+  const ENV_NUM = "export function defineEnv() {\n  return { globals: { v: 1 } };\n}\n";
+  const ENV_STR = 'export function defineEnv() {\n  return { globals: { v: "hello" } };\n}\n';
+  const returnShapeOf = async (filePath: string, source: string): Promise<string> => {
+    const r = await analyzeFileAsync(filePath, source);
+    const fn = r.functions.find((f) => f.name === "f");
+    expect(fn?.combinedAbs).toBeDefined();
+    return formatShape(fn!.combinedAbs!);
+  };
+  beforeEach(() => { clearFnAnalysisCache(); });
+  it("env 内容变 mtime 不变 ⇒ 必须 miss；内容不变两次一致", async () => {
     const dir = tmpProject("nudo-b012-env-", {
       "package.json": JSON.stringify({ name: "p", nudo: { env: ["./env.ts"] } }),
       "env.ts": ENV_NUM,
@@ -170,31 +176,24 @@ describe("函数级缓存对 env 内容敏感", () => {
     const mainPath = join(dir, "main.js");
     const envPath = join(dir, "env.ts");
     const source = readFileSync(mainPath, "utf-8");
-
-    // 第一次：env 导出 number 1
     expect(await returnShapeOf(mainPath, source)).toBe("1");
-
-    // 改写 env 内容，**保留 mtime**（cp -p / tar -x / 同秒编辑）
     const st = statSync(envPath);
     writeFileSync(envPath, ENV_STR);
     utimesSync(envPath, st.atime, st.mtime);
-
-    // 第二次：同一路径同一源码 ⇒ 函数级缓存键必须因 env 内容变化而 miss
     expect(await returnShapeOf(mainPath, source)).toBe('"hello"');
-  });
 
-  it("对照组：env 内容不变 ⇒ 两次结论一致（缓存仍可命中，不引入抖动）", async () => {
-    const dir = tmpProject("nudo-b012-stable-", {
+    const stableDir = tmpProject("nudo-b012-stable-", {
       "package.json": JSON.stringify({ name: "p", nudo: { env: ["./env.ts"] } }),
       "env.ts": ENV_NUM,
       "main.js": "export function f() { return v; }\n",
     });
-    const mainPath = join(dir, "main.js");
-    const source = readFileSync(mainPath, "utf-8");
-    expect(await returnShapeOf(mainPath, source)).toBe("1");
-    expect(await returnShapeOf(mainPath, source)).toBe("1");
+    const stablePath = join(stableDir, "main.js");
+    const stableSource = readFileSync(stablePath, "utf-8");
+    expect(await returnShapeOf(stablePath, stableSource)).toBe("1");
+    expect(await returnShapeOf(stablePath, stableSource)).toBe("1");
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -212,27 +211,12 @@ describe("目录目标扩展名集合", () => {
 
 
 describe("目录目标扩展名集合", () => {
-  it("与 migrate verify 同口径：.js/.mjs/.cjs/.ts/.mts/.cts 都是目标", () => {
-    for (const p of ["a.js", "a.mjs", "a.cjs", "a.ts", "a.mts", "a.cts", "src/lib.MTS"]) {
-      expect(isNudoTargetPath(p), p).toBe(true);
-    }
-  });
-
-  it("仍排除：声明文件 / 侧车 / draft / JSX（能力边界）", () => {
-    for (const p of [
-      "a.d.ts",
-      "a.d.mts",
-      "a.d.cts",
-      "a.nudo.js",
-      "a.nudo.ts",
-      "a.nudo.draft.js",
-      "a.tsx",
-      "a.jsx",
-    ]) {
-      expect(isNudoTargetPath(p), p).toBe(false);
-    }
+  it("覆盖 .js/.mjs/.cjs/.ts/.mts/.cts；排除声明/侧车/draft/JSX", () => {
+    for (const p of ["a.js", "a.mjs", "a.cjs", "a.ts", "a.mts", "a.cts", "src/lib.MTS"]) expect(isNudoTargetPath(p), p).toBe(true);
+    for (const p of ["a.d.ts", "a.d.mts", "a.d.cts", "a.nudo.js", "a.nudo.ts", "a.nudo.draft.js", "a.tsx", "a.jsx"]) expect(isNudoTargetPath(p), p).toBe(false);
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
