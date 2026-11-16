@@ -999,46 +999,27 @@ function makePkg(exportsField: unknown, files: Record<string, string>): {
 }
 
 describe("exports 模式键 tie-break（PATTERN_KEY_COMPARE）", () => {
-  it("前缀长度平手 ⇒ 取整键更长者（与声明顺序无关）", () => {
-    // 两个键的 `*` 前前缀都是 "./x/"（长度 4）；"./x/*b" 更长 ⇒ 宿主取它。
-    const longFirst = makePkg(
-      { "./x/*b": "./special/*.js", "./x/*": "./dist/*.js" },
-      { "special/a.js": "export const v = 1;", "dist/ab.js": "export const v = 2;" },
-    );
-    const shortFirst = makePkg(
-      { "./x/*": "./dist/*.js", "./x/*b": "./special/*.js" },
-      { "special/a.js": "export const v = 1;", "dist/ab.js": "export const v = 2;" },
-    );
-    expect(resolveNpmJsEntry("pkg/x/ab", longFirst.dir)).toBe(
-      join(longFirst.pkgDir, "special", "a.js"),
-    );
-    expect(resolveNpmJsEntry("pkg/x/ab", shortFirst.dir)).toBe(
-      join(shortFirst.pkgDir, "special", "a.js"),
-    );
-  });
-
-  it("前缀更长者胜过整键更长者（第一判据优先）", () => {
-    const { dir, pkgDir } = makePkg(
-      { "./x/*bcd": "./short/*.js", "./x/y/*": "./deep/*.js" },
-      { "short/a.js": "export const v = 1;", "deep/abcd.js": "export const v = 2;" },
-    );
-    expect(resolveNpmJsEntry("pkg/x/y/abcd", dir)).toBe(join(pkgDir, "deep", "abcd.js"));
-  });
-
-  it("#imports 面同口径（同一 tie-break）", () => {
-    const dir = tmpProject("nudo-267-imports-");
+  const makePkg = (exportsField: unknown, files: Record<string, string>) => {
+    const dir = tmpProject("nudo-267-");
     writeTmpFiles(dir, {
-      "package.json": JSON.stringify({
-        name: "app",
-        type: "module",
-        imports: { "#x/*b": "./special/*.js", "#x/*": "./dist/*.js" },
-      }),
-      "special/a.js": "export const v = 1;",
-      "dist/ab.js": "export const v = 2;",
+      "node_modules/pkg/package.json": JSON.stringify({ name: "pkg", type: "module", exports: exportsField }),
+      ...Object.fromEntries(Object.entries(files).map(([rel, content]) => [`node_modules/pkg/${rel}`, content])),
     });
+    return { dir, pkgDir: join(dir, "node_modules", "pkg") };
+  };
+  it("前缀平手取整键更长；前缀更长优先；#imports 同口径", () => {
+    const longFirst = makePkg({ "./x/*b": "./special/*.js", "./x/*": "./dist/*.js" }, { "special/a.js": "export const v = 1;", "dist/ab.js": "export const v = 2;" });
+    const shortFirst = makePkg({ "./x/*": "./dist/*.js", "./x/*b": "./special/*.js" }, { "special/a.js": "export const v = 1;", "dist/ab.js": "export const v = 2;" });
+    expect(resolveNpmJsEntry("pkg/x/ab", longFirst.dir)).toBe(join(longFirst.pkgDir, "special", "a.js"));
+    expect(resolveNpmJsEntry("pkg/x/ab", shortFirst.dir)).toBe(join(shortFirst.pkgDir, "special", "a.js"));
+    const prefix = makePkg({ "./x/*bcd": "./short/*.js", "./x/y/*": "./deep/*.js" }, { "short/a.js": "export const v = 1;", "deep/abcd.js": "export const v = 2;" });
+    expect(resolveNpmJsEntry("pkg/x/y/abcd", prefix.dir)).toBe(join(prefix.pkgDir, "deep", "abcd.js"));
+    const dir = tmpProject("nudo-267-imports-");
+    writeTmpFiles(dir, { "package.json": JSON.stringify({ name: "app", type: "module", imports: { "#x/*b": "./special/*.js", "#x/*": "./dist/*.js" } }), "special/a.js": "export const v = 1;", "dist/ab.js": "export const v = 2;" });
     expect(resolveNpmJsEntry("#x/ab", dir)).toBe(join(dir, "special", "a.js"));
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -1083,29 +1064,34 @@ function nested(nearExports: Record<string, string>, parentHasSub: boolean): str
 }
 
 describe("最近的包 exports 拒绝 ⇒ 不得上溯到同名副本", () => {
-  it("就近层 exports 无 './sub' 而父级副本有 ⇒ 必须判不可用（不解析到父级副本）", () => {
+  const nested = (nearExports: Record<string, string>, parentHasSub: boolean): string => {
+    const dir = tmpProject("nudo-268-");
+    const parentExports: Record<string, string> = { ".": "./index.js" };
+    if (parentHasSub) parentExports["./sub"] = "./sub.js";
+    writeTmpFiles(dir, {
+      "app/node_modules/nearpkg/package.json": JSON.stringify({ name: "nearpkg", type: "module", exports: nearExports }),
+      "app/node_modules/nearpkg/index.js": "export const v = 'NEAR';\n",
+      "node_modules/nearpkg/package.json": JSON.stringify({ name: "nearpkg", type: "module", exports: parentExports }),
+      "node_modules/nearpkg/index.js": "export const v = 'PARENT';\n",
+      "node_modules/nearpkg/sub.js": "export const v = 'PARENT';\n",
+      "app/probe.mjs": "import v from 'nearpkg/sub';\nexport function use() { return v; }\n",
+    });
+    return dir;
+  };
+  it("近层拒绝不上溯；本层无包可上溯；近层命中胜出", () => {
     const dir = nested({ ".": "./index.js" }, true);
     const r = resolveNpmJsEntryDetailed("nearpkg/sub", join(dir, "app"));
     expect(r.path).toBeNull();
-    // 唯一能暴露该事实的诊断必须在场（旧实现清零 ⇒ 诊断被吞）
     expect(r.exportsUnresolved).toBe(true);
-  });
-
-  it("对照组：本层没有该包 ⇒ 继续向上并正常解析（合法提升）", () => {
-    const dir = nested({ ".": "./index.js" }, true);
-    // 删掉就近那份包后，向上找到父级副本是**正确**行为
     rmSync(join(dir, "app", "node_modules", "nearpkg"), { recursive: true, force: true });
-    const r = resolveNpmJsEntryDetailed("nearpkg/sub", join(dir, "app"));
-    expect(r.path).toBe(join(dir, "node_modules", "nearpkg", "sub.js"));
-    expect(r.exportsUnresolved).toBe(false);
-  });
-
-  it("就近层命中时绝不上溯（近层胜出）", () => {
-    const dir = nested({ ".": "./index.js", "./sub": "./index.js" }, true);
-    const r = resolveNpmJsEntryDetailed("nearpkg/sub", join(dir, "app"));
-    expect(r.path).toBe(join(dir, "app", "node_modules", "nearpkg", "index.js"));
+    const up = resolveNpmJsEntryDetailed("nearpkg/sub", join(dir, "app"));
+    expect(up.path).toBe(join(dir, "node_modules", "nearpkg", "sub.js"));
+    expect(up.exportsUnresolved).toBe(false);
+    const near = nested({ ".": "./index.js", "./sub": "./index.js" }, true);
+    expect(resolveNpmJsEntryDetailed("nearpkg/sub", join(near, "app")).path).toBe(join(near, "app", "node_modules", "nearpkg", "index.js"));
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -1145,42 +1131,31 @@ function makePkg(exportsField: unknown, files: Record<string, string>): {
 }
 
 describe("exports 目标数组：只有非法目标才回退", () => {
-  it("首个目标**合法但缺失** ⇒ 停在该目标（不可用 + 记账），不得取下一个存在的文件", () => {
-    const { dir } = makePkg({ "./sub": ["./missing.js", "./real.js"] }, {
-      "real.js": "export const v = 'ARRAY_REAL';\nexport default v;\n",
+  const makePkg = (exportsField: unknown, files: Record<string, string>) => {
+    const dir = tmpProject("nudo-270-");
+    writeTmpFiles(dir, {
+      "node_modules/vp/package.json": JSON.stringify({ name: "vp", type: "module", exports: exportsField }),
+      ...Object.fromEntries(Object.entries(files).map(([rel, content]) => [`node_modules/vp/${rel}`, content])),
+      "probe.mjs": "import v from 'vp/sub';\nexport function use() { return v; }\n",
     });
-    const r = resolveNpmJsEntryDetailed("vp/sub", dir);
+    return { dir, pkgDir: join(dir, "node_modules", "vp") };
+  };
+  it("合法但缺失即停；条件内数组同款；非法目标回退；首目标存在取首", () => {
+    const miss = makePkg({ "./sub": ["./missing.js", "./real.js"] }, { "real.js": "export const v = 'ARRAY_REAL';\nexport default v;\n" });
+    const r = resolveNpmJsEntryDetailed("vp/sub", miss.dir);
     expect(r.path).toBeNull();
     expect(r.exportsUnresolved).toBe(true);
-  });
-
-  it("嵌套在条件对象里的数组同款（{ import: [...] }）", () => {
-    const { dir } = makePkg(
-      { "./sub": { import: ["./missing.js", "./real.js"], default: "./real.js" } },
-      { "real.js": "export const v = 'REAL';\nexport default v;\n" },
-    );
-    const r = resolveNpmJsEntryDetailed("vp/sub", dir);
-    expect(r.path).toBeNull();
-    expect(r.exportsUnresolved).toBe(true);
-  });
-
-  it("对照组：首目标**非法**（逃出包目录）⇒ 回退到下一个合法目标", () => {
-    const { dir, pkgDir } = makePkg({ "./sub": ["../outside.js", "./real.js"] }, {
-      "real.js": "export const v = 'ARRAY_REAL';\nexport default v;\n",
-    });
-    const r = resolveNpmJsEntryDetailed("vp/sub", dir);
-    expect(r.path).toBe(join(pkgDir, "real.js"));
-    expect(r.exportsUnresolved).toBe(false);
-  });
-
-  it("对照组：首目标存在 ⇒ 取首目标", () => {
-    const { dir, pkgDir } = makePkg({ "./sub": ["./a.js", "./b.js"] }, {
-      "a.js": "export const v = 'A';\n",
-      "b.js": "export const v = 'B';\n",
-    });
-    expect(resolveNpmJsEntryDetailed("vp/sub", dir).path).toBe(join(pkgDir, "a.js"));
+    const nested = makePkg({ "./sub": { import: ["./missing.js", "./real.js"], default: "./real.js" } }, { "real.js": "export const v = 'REAL';\nexport default v;\n" });
+    expect(resolveNpmJsEntryDetailed("vp/sub", nested.dir).path).toBeNull();
+    const illegal = makePkg({ "./sub": ["../outside.js", "./real.js"] }, { "real.js": "export const v = 'ARRAY_REAL';\nexport default v;\n" });
+    const ir = resolveNpmJsEntryDetailed("vp/sub", illegal.dir);
+    expect(ir.path).toBe(join(illegal.pkgDir, "real.js"));
+    expect(ir.exportsUnresolved).toBe(false);
+    const hit = makePkg({ "./sub": ["./a.js", "./b.js"] }, { "a.js": "export const v = 'A';\n", "b.js": "export const v = 'B';\n" });
+    expect(resolveNpmJsEntryDetailed("vp/sub", hit.dir).path).toBe(join(hit.pkgDir, "a.js"));
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -1216,38 +1191,28 @@ function makePkg(pkgJson: Record<string, unknown>, files: Record<string, string>
 }
 
 describe("ESM 下禁止目录导入（不补 index 候选）", () => {
-  it("`exports` 目标指向目录 ⇒ 不可用（宿主 ERR_UNSUPPORTED_DIR_IMPORT）+ 诊断记账", () => {
-    const { dir } = makePkg({ exports: { ".": "./dir" } }, {
-      "dir/index.js": "export const v = 'DIRIDX';\n",
+  const makePkg = (pkgJson: Record<string, unknown>, files: Record<string, string>) => {
+    const dir = tmpProject("nudo-273-");
+    writeTmpFiles(dir, {
+      "node_modules/vp/package.json": JSON.stringify({ name: "vp", type: "module", ...pkgJson }),
+      ...Object.fromEntries(Object.entries(files).map(([rel, content]) => [`node_modules/vp/${rel}`, content])),
     });
-    const r = resolveNpmJsEntryDetailed("vp", dir);
-    expect(r.path).toBeNull();
-    expect(r.exportsUnresolved).toBe(true);
-  });
-
-  it("旧式 ESM 子路径指向目录 ⇒ 同样不可用", () => {
-    const { dir } = makePkg({ main: "./index.js" }, {
-      "index.js": "export const v = 1;\n",
-      "dir/index.js": "export const v = 'DIRIDX';\n",
-    });
-    const r = resolveNpmJsEntryDetailed("vp/dir", dir);
-    expect(r.path).toBeNull();
-  });
-
-  it("对照组：`exports` 目标显式指向文件 ⇒ 正常解析", () => {
-    const { dir, pkgDir } = makePkg({ exports: { ".": "./dir/index.js" } }, {
-      "dir/index.js": "export const v = 'DIRIDX';\n",
-    });
-    expect(resolveNpmJsEntryDetailed("vp", dir).path).toBe(join(pkgDir, "dir", "index.js"));
-  });
-
-  it("对照组：legacy `main` 指向目录 ⇒ Node 允许 index 解析", () => {
-    const { dir, pkgDir } = makePkg({ main: "./dir" }, {
-      "dir/index.js": "export const v = 'DIRIDX';\n",
-    });
-    expect(resolveNpmJsEntryDetailed("vp", dir).path).toBe(join(pkgDir, "dir", "index.js"));
+    return { dir, pkgDir: join(dir, "node_modules", "vp") };
+  };
+  it("exports/旧式子路径指向目录不可用；显式文件与 legacy main 可解析", () => {
+    const exp = makePkg({ exports: { ".": "./dir" } }, { "dir/index.js": "export const v = 'DIRIDX';\n" });
+    const er = resolveNpmJsEntryDetailed("vp", exp.dir);
+    expect(er.path).toBeNull();
+    expect(er.exportsUnresolved).toBe(true);
+    const sub = makePkg({ main: "./index.js" }, { "index.js": "export const v = 1;\n", "dir/index.js": "export const v = 'DIRIDX';\n" });
+    expect(resolveNpmJsEntryDetailed("vp/dir", sub.dir).path).toBeNull();
+    const file = makePkg({ exports: { ".": "./dir/index.js" } }, { "dir/index.js": "export const v = 'DIRIDX';\n" });
+    expect(resolveNpmJsEntryDetailed("vp", file.dir).path).toBe(join(file.pkgDir, "dir", "index.js"));
+    const legacy = makePkg({ main: "./dir" }, { "dir/index.js": "export const v = 'DIRIDX';\n" });
+    expect(resolveNpmJsEntryDetailed("vp", legacy.dir).path).toBe(join(legacy.pkgDir, "dir", "index.js"));
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
