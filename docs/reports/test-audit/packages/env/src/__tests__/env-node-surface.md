@@ -1,5 +1,14 @@
 ```audit
 title	rootCause	gap	action	status	evidence
+Stats 成员表同步/promise 共用；Dirent 有 shape；withFileTypes 分叉；缺槽反钉	全局/process/stream/fs 契约表	没测该层	keep	keep	—
+title 声明 string；length/ typeof 精确；version 对照	全局/process/stream/fs 契约表	没测该层	keep	keep	—
+宿主与 env 均有 on/once/off/emit/write/end；调用零 throws	全局/process/stream/fs 契约表	没测该层	keep	keep	—
+宿主与 env 均有 stream 成员；调用零 throws	全局/process/stream/fs 契约表	没测该层	keep	keep	—
+五个成员宿主/env 均在；引擎零假红且签名精确	全局/process/stream/fs 契约表	没测该层	keep	keep	—
+七个成员宿主/ env 均在；引擎零假红且签名精确	全局/process/stream/fs 契约表	没测该层	keep	keep	—
+原生 hrtime 函数与 bigint；env 可调用 + 静态槽；引擎零假红且签名精确	全局/process/stream/fs 契约表	没测该层	keep	keep	—
+宿主成员全是函数；typeof 折 "function"；AbortSignal.any 可调用且返回 AbortSignal	全局/process/stream/fs 契约表	没测该层	keep	keep	—
+17 构造器声明与 ctor 面；全局对象面；引擎探针零假红；randomUUID 恒 string	全局/process/stream/fs 契约表	没测该层	keep	keep	—
 宿主谓词齐全；每个都是 (any)=>boolean；模块面 apply 干净	os/ctor/console/spawn/util 契约表	没测该层	keep	keep	—
 四兄弟走 apply 面；裸宿主实参不炸；签名干净；原生不抛；零 throw exit	os/ctor/console/spawn/util 契约表	没测该层	keep	keep	—
 具名/成员调用零 L2 且口径一致；裸宿主实参不崩；真抛入口仍报 L2	os/ctor/console/spawn/util 契约表	没测该层	keep	keep	—
@@ -15,40 +24,6 @@ web env 不声明；非可调用实参记 TypeError 且 env/host 同口径；可
 失败必抛 / 成立零抛 / 抽象 may-throw / 缺参 TypeError	fs/stat/assert 契约表	没测该层	keep	keep	—
 同步/promise 族在 throwIfNoEntry:false 时含 undefined；默认形态不含	fs/stat/assert 契约表	没测该层	keep	keep	—
 同步族记 Error may-throw；existsSync/rmSync force 不抛；成功路径不塌 never；抽象实参同口径	fs/stat/assert 契约表	没测该层	keep	keep	—
-"原生 oracle：报告点名的 17 个构造器在真实 Node 上确实存在"	"未建模的宿主构造器被 core 的 `$new` 兜底铸成**空 brand**（闭 obj 无槽）⇒ 成员读 exact undefined ⇒ 再链式读一次就成「定抛 TypeError」（假红）； 未建模的**全局对象** （crypto / performance / navigator …）退化成 unknown + 误导诊断 `nudo:unknown-inference`。 断言：expect(typeof ctor, name).toBe(\"function\");；expect(() => new (ctor as new () => unknown)()).toThrow(TypeError);"	夹具漏形态	keep	keep	—
-"env：17 个构造器全部声明，且可构造的带 ctor:true + 实例面"	"未建模的宿主构造器被 core 的 `$new` 兜底铸成**空 brand**（闭 obj 无槽）⇒ 成员读 exact undefined ⇒ 再链式读一次就成「定抛 TypeError」（假红）； 未建模的**全局对象** （crypto / performance / navigator …）退化成 unknown + 误导诊断 `nudo:unknown-inference`。 断言：expect(g.shape.k, `${name} 形状`).toBe(\"fn\");；expect((g.shape as { ctor?: boolean }).ctor, `${name} ctor`).toBe(true);"	夹具漏形态	keep	keep	—
-"env：全局对象面（crypto / performance / navigator）已声明且非 unknown"	"未建模的宿主构造器被 core 的 `$new` 兜底铸成**空 brand**（闭 obj 无槽）⇒ 成员读 exact undefined ⇒ 再链式读一次就成「定抛 TypeError」（假红）； 未建模的**全局对象** （crypto / performance / navigator …）退化成 unknown + 误导诊断 `nudo:unknown-inference`。 断言：expect(shapeOf(walk(globalOf(\"crypto\"), \"randomUUID\"), \"crypto.randomUUID\")).toContain(；expect(shapeOf(walk(globalOf(\"per"	夹具漏形态	keep	keep	—
-"引擎探针：未建模构造器的成员读不再是 exact undefined（不再定抛 TypeError）"	"未建模的宿主构造器被 core 的 `$new` 兜底铸成**空 brand**（闭 obj 无槽）⇒ 成员读 exact undefined ⇒ 再链式读一次就成「定抛 TypeError」（假红）； 未建模的**全局对象** （crypto / performance / navigator …）退化成 unknown + 误导诊断 `nudo:unknown-inference`。 断言：expect(r.issues.filter((i) => i.code === \"nudo:entry-may-throw\")).toEqual([]);；expect(r.issues.filter((i) => i.code === \""	夹具漏形态	keep	keep	—
-"原生 oracle：crypto.randomUUID() 恒返回 string（从不失败）"	"未建模的宿主构造器被 core 的 `$new` 兜底铸成**空 brand**（闭 obj 无槽）⇒ 成员读 exact undefined ⇒ 再链式读一次就成「定抛 TypeError」（假红）； 未建模的**全局对象** （crypto / performance / navigator …）退化成 unknown + 误导诊断 `nudo:unknown-inference`。 断言：expect(typeof crypto.randomUUID()).toBe(\"string\");"	夹具漏形态	keep	keep	—
-"host oracle: every host-provided member is typeof function"	"宿主**没有**该成员所属的根全局时为 `null`。 宿主面随 Node 版本漂移：`Temporal` 全局是 Node 26 才进 ESM 全局面的 （Node 24 没有）⇒ `typeof Temporal.Instant` 在旧宿主上直接 `ReferenceError`。 断言：expect(types).toHaveLength(MEMBERS.length);；expect(label.startsWith(\"Temporal.\"), `宿主缺 ${label} 的根全局`).toBe(true);"	没测该层	keep	keep	—
-"typeof folds to \"function\" in the node env (was自信的 \"object\")"	"宿主**没有**该成员所属的根全局时为 `null`。 宿主面随 Node 版本漂移：`Temporal` 全局是 Node 26 才进 ESM 全局面的 （Node 24 没有）⇒ `typeof Temporal.Instant` 在旧宿主上直接 `ReferenceError`。 断言：expect(sig?.display, `${label} typeof`).toBe('\"function\"');"	没测该层	keep	keep	—
-"AbortSignal.any stays a callable static factory returning AbortSignal"	"后果：`if (typeof X.y === \"function\")` 的特性探测分支被判**恒假** ⇒ 用户会据此删掉真实有效的分支（自信的错字面量）。 断言：expect(any?.shape.k).toBe(\"fn\");；expect("	夹具漏形态	keep	keep	—
-"原生 oracle：process.hrtime 是函数，返回 [seconds, nanos]；bigint() 返回 bigint"	"node env 的 `process.hrtime` 被建模成**不可调用的对象** ⇒ `process.hrtime()` 退化成 `unknown` + **误导诊断** `nudo:unknown-inference` （把责任指向用户代码）。 断言：expect(typeof process.hrtime).toBe(\"function\");；expect(Array.isArray(t)).toBe(true);"	夹具漏形态	keep	keep	—
-"env：hrtime 是 envFn（可调用）+ 静态槽 bigint"	"node env 的 `process.hrtime` 被建模成**不可调用的对象** ⇒ `process.hrtime()` 退化成 `unknown` + **误导诊断** `nudo:unknown-inference` （把责任指向用户代码）。 断言：expect(hrtime, \"process.hrtime 缺失\").toBeTruthy();；expect(hrtime!.shape.k, \"hrtime 形状\").toBe(\"fn\");"	夹具漏形态	keep	keep	—
-"引擎探针：process.hrtime() 推出 number[]，且无 unknown-inference 误导诊断"	"node env 的 `process.hrtime` 被建模成**不可调用的对象** ⇒ `process.hrtime()` 退化成 `unknown` + **误导诊断** `nudo:unknown-inference` （把责任指向用户代码）。 断言：expect(r.issues.filter((i) => i.code === \"nudo:unknown-inference\")).toEqual([]);；expect(r.issues.filter((i) => i.code === \"nudo:entry-may-throw\")).toEqual([]);"	夹具漏形态	keep	keep	—
-"原生 oracle：七个成员在真实 Node 上都存在"	"env node 的 `process` 成员表**再缺 7 个真实成员** （`umask` / `getActiveResourcesInfo` / `resourceUsage` / `availableMemory` / `loadEnvFile` / `getBuiltinModule` / `constrainedMemory`）⇒ 正确代码拿到 7 处 `nudo:entry-may-throw` 假红。 `loadEnvFile` 只声明「不抛」的常规路径（原生对**不存在**的文件抛 ENOENT—— 那是错误路径的精度债，见交付报告； 断言：expect(typeof process.umask).toBe(\"f"	没测该层	keep	keep	—
-"env：process 面带这 7 个成员"	"env node 的 `process` 成员表**再缺 7 个真实成员** （`umask` / `getActiveResourcesInfo` / `resourceUsage` / `availableMemory` / `loadEnvFile` / `getBuiltinModule` / `constrainedMemory`）⇒ 正确代码拿到 7 处 `nudo:entry-may-throw` 假红。 `loadEnvFile` 只声明「不抛」的常规路径（原生对**不存在**的文件抛 ENOENT—— 那是错误路径的精度债，见交付报告； 断言：expect(shapeOf(walk(env.globals.proc"	没测该层	keep	keep	—
-"引擎探针：7 处 nudo:entry-may-throw 假红消失"	"env node 的 `process` 成员表**再缺 7 个真实成员** （`umask` / `getActiveResourcesInfo` / `resourceUsage` / `availableMemory` / `loadEnvFile` / `getBuiltinModule` / `constrainedMemory`）⇒ 正确代码拿到 7 处 `nudo:entry-may-throw` 假红。 `loadEnvFile` 只声明「不抛」的常规路径（原生对**不存在**的文件抛 ENOENT—— 那是错误路径的精度债，见交付报告； 断言：expect(r.issues.filter((i) => i.code"	没测该层	keep	keep	—
-"原生 oracle：五个成员在真实 Node 上都存在"	"node env 的 `process` 成员表**缺 5 个真实成员** （`emitWarning` / `abort` / `kill` / `release` / `features`）⇒ 正确代码拿到 5 处 `nudo:entry-may-throw` 假红（成员读出 exact undefined ⇒ 调用 undefined ⇒ 引擎**证明**「必抛 TypeError」）。 值域不用 unknown——否则 `process.features.icu` 退化成 unknown 并误报 nudo:unknown-inference）。 断言：expect(typeof process.emitWarning).to"	没测该层	keep	keep	—
-"env：process 面带 emitWarning / abort / kill / release / features"	"node env 的 `process` 成员表**缺 5 个真实成员** （`emitWarning` / `abort` / `kill` / `release` / `features`）⇒ 正确代码拿到 5 处 `nudo:entry-may-throw` 假红（成员读出 exact undefined ⇒ 调用 undefined ⇒ 引擎**证明**「必抛 TypeError」）。 值域不用 unknown——否则 `process.features.icu` 退化成 unknown 并误报 nudo:unknown-inference）。 断言：expect(shapeOf(walk(env.globals.proce"	没测该层	keep	keep	—
-"引擎探针：五处 nudo:entry-may-throw 假红消失"	"node env 的 `process` 成员表**缺 5 个真实成员** （`emitWarning` / `abort` / `kill` / `release` / `features`）⇒ 正确代码拿到 5 处 `nudo:entry-may-throw` 假红（成员读出 exact undefined ⇒ 调用 undefined ⇒ 引擎**证明**「必抛 TypeError」）。 值域不用 unknown——否则 `process.features.icu` 退化成 unknown 并误报 nudo:unknown-inference）。 断言：expect(r.issues.filter((i) => i.code"	没测该层	keep	keep	—
-"原生 oracle：process.stdin 真的有 setEncoding / pause / resume / read"	"env node：`process.stdin` 只建模 `{on}` ⇒ `process.stdin.setEncoding(\"utf8\")` 被判**定抛 TypeError**（假红； 原生不抛）。 断言：expect(typeof process.stdin.setEncoding).toBe(\"function\");；expect(typeof process.stdin.pause).toBe(\"function\");"	没测该层	keep	keep	—
-"env：process.stdin 面带 setEncoding / pause / resume / read 等成员"	"env node：`process.stdin` 只建模 `{on}` ⇒ `process.stdin.setEncoding(\"utf8\")` 被判**定抛 TypeError**（假红； 原生不抛）。 断言：expect(stdin, \"process.stdin 缺失\").toBeTruthy();；expect(shapeOf(walk(stdin, name), `stdin.${name}`)).toContain(\"=>\");"	没测该层	keep	keep	—
-"引擎探针：process.stdin.setEncoding(\"utf8\") 不再定抛 TypeError"	"env node：`process.stdin` 只建模 `{on}` ⇒ `process.stdin.setEncoding(\"utf8\")` 被判**定抛 TypeError**（假红； 原生不抛）。 断言：expect(r.issues.filter((i) => i.code === \"nudo:entry-may-throw\")).toEqual([]);；expect(s.throws, `${s.name} 不应有 throws 面`).toBeUndefined();"	没测该层	keep	keep	—
-"原生 oracle：stdout / stderr 真的有 on / once / off / emit / write"	"node env 的 `process.stdout` / `process.stderr` 面**只有 `write`** ⇒ `.on(...)` 必抛 TypeError ⇒ L2 门禁假红。 断言：expect(typeof s.on).toBe(\"function\");；expect(typeof s.once).toBe(\"function\");"	没测该层	keep	keep	—
-"env：stdout / stderr 面带 on / once / off / emit / write / end 等成员"	"node env 的 `process.stdout` / `process.stderr` 面**只有 `write`** ⇒ `.on(...)` 必抛 TypeError ⇒ L2 门禁假红。 断言：expect(stream, `process.${name} 缺失`).toBeTruthy();；expect(shapeOf(walk(stream, m), `${name}.${m}`)).toContain(\"=>\");"	没测该层	keep	keep	—
-"引擎探针：process.stdout.on(...) 不再定抛 TypeError"	"node env 的 `process.stdout` / `process.stderr` 面**只有 `write`** ⇒ `.on(...)` 必抛 TypeError ⇒ L2 门禁假红。 断言：expect(r.issues.filter((i) => i.code === \"nudo:entry-may-throw\")).toEqual([]);；expect(s.throws, `${s.name} 不应有 throws 面`).toBeUndefined();"	没测该层	keep	keep	—
-"host oracle: process.title is a string"	"族 15 · 全局 `process` 是**封闭对象**且槽表漏 `title` ⇒ 读 `process.title` 得到 exact `undefined` ⇒ - `process.title.length` 判「确定抛 TypeError」（L2 假红，exit 1）； - `typeof process.title` 折成 **`\"undefined\"`**（宿主 `\"string\"`） ⇒ 特性探测分支被**反向**折叠（控制流也错）。 断言：expect(typeof process.title).toBe(\"string\");；expect(process.title.length).toBeGreaterTha"	夹具漏形态	keep	keep	—
-"process.title is declared as string"	"族 15 · 全局 `process` 是**封闭对象**且槽表漏 `title` ⇒ 读 `process.title` 得到 exact `undefined` ⇒ - `process.title.length` 判「确定抛 TypeError」（L2 假红，exit 1）； - `typeof process.title` 折成 **`\"undefined\"`**（宿主 `\"string\"`） ⇒ 特性探测分支被**反向**折叠（控制流也错）。 断言：expect(nodeSlotOf(\"process\", \"title\")).toBeTruthy();"	夹具漏形态	keep	keep	—
-"process.title.length folds to number (was definite TypeError)"	"族 15 · 全局 `process` 是**封闭对象**且槽表漏 `title` ⇒ 读 `process.title` 得到 exact `undefined` ⇒ - `process.title.length` 判「确定抛 TypeError」（L2 假红，exit 1）； - `typeof process.title` 折成 **`\"undefined\"`**（宿主 `\"string\"`） ⇒ 特性探测分支被**反向**折叠（控制流也错）。 断言：expect(out.signatures[0]!.display).toBe(\"number\");；expect(out.throwBrands).toEqual([]);"	夹具漏形态	keep	keep	—
-"typeof process.title folds to \"string\" (was \"undefined\")"	"族 15 · 全局 `process` 是**封闭对象**且槽表漏 `title` ⇒ 读 `process.title` 得到 exact `undefined` ⇒ - `process.title.length` 判「确定抛 TypeError」（L2 假红，exit 1）； - `typeof process.title` 折成 **`\"undefined\"`**（宿主 `\"string\"`） ⇒ 特性探测分支被**反向**折叠（控制流也错）。 断言：expect(out.signatures[0]!.display).toBe('\"string\"');"	夹具漏形态	keep	keep	—
-"control: the same expression shape on process.version stays correct"	"族 15 · 全局 `process` 是**封闭对象**且槽表漏 `title` ⇒ 读 `process.title` 得到 exact `undefined` ⇒ - `process.title.length` 判「确定抛 TypeError」（L2 假红，exit 1）； - `typeof process.title` 折成 **`\"undefined\"`**（宿主 `\"string\"`） ⇒ 特性探测分支被**反向**折叠（控制流也错）。 断言：expect(out.signatures.find((s) => s.name === \"a\")!.display).toBe(\"number\");；expect(out.s"	夹具漏形态	keep	keep	—
-"1. 原生 oracle：同步族与 promise 族的 Stats 成员表一致"	"族 29 · `fs/promises` 的结果对象是同步族的**裁剪副本** ——`fsPromisesModule.stat` 只抄了 12 个槽（比同步族少 9 个），且 `readdir` 的 `Dirent` 是**空 shape 的 brand** ⇒ 成员读出 **exact `undefined` / `NaN` / `never`**——那是**确定的错值**，不是精度债。 断言：expect(Object.keys(promised).sort()).toEqual(Object.keys(sync).sort());；expect(typeof (sync as unknown as Record<string"	旧断言钉错	keep	keep	—
-"2. 声明面：promise 族的 stat 兑现值含完整成员表（不再是裁剪副本）"	"族 29 · `fs/promises` 的结果对象是同步族的**裁剪副本** ——`fsPromisesModule.stat` 只抄了 12 个槽（比同步族少 9 个），且 `readdir` 的 `Dirent` 是**空 shape 的 brand** ⇒ 成员读出 **exact `undefined` / `NaN` / `never`**——那是**确定的错值**，不是精度债。 断言：expect(inner, \"stat 的返回类型应是 promise\").toBeDefined();；expect(slots[k], `stat 兑现值缺 ${k}`).toBeDefined();"	旧断言钉错	keep	keep	—
-"3. 同步族与 promise 族**共用同一张表**（成员集合相等）"	"族 29 · `fs/promises` 的结果对象是同步族的**裁剪副本** ——`fsPromisesModule.stat` 只抄了 12 个槽（比同步族少 9 个），且 `readdir` 的 `Dirent` 是**空 shape 的 brand** ⇒ 成员读出 **exact `undefined` / `NaN` / `never`**——那是**确定的错值**，不是精度债。 断言：expect(promisedSlots).toEqual(syncSlots);"	旧断言钉错	keep	keep	—
-"4. Dirent：promise 族的 readdir 元素是**有 shape** 的 Dirent（旧面是空 brand）"	"族 29 · `fs/promises` 的结果对象是同步族的**裁剪副本** ——`fsPromisesModule.stat` 只抄了 12 个槽（比同步族少 9 个），且 `readdir` 的 `Dirent` 是**空 shape 的 brand** ⇒ 成员读出 **exact `undefined` / `NaN` / `never`**——那是**确定的错值**，不是精度债。 断言：expect(inner).toBeDefined();；expect(element, \"readdir 兑现值应是数组\").toBeDefined();"	旧断言钉错	keep	keep	—
-"5. 反向钉：promise 族的成员读出**不得**是 exact undefined（旧面裁剪副本）"	"族 29 · `fs/promises` 的结果对象是同步族的**裁剪副本** ——`fsPromisesModule.stat` 只抄了 12 个槽（比同步族少 9 个），且 `readdir` 的 `Dirent` 是**空 shape 的 brand** ⇒ 成员读出 **exact `undefined` / `NaN` / `never`**——那是**确定的错值**，不是精度债。 断言：expect(site.value).toBeDefined();；expect(slots[\"mtimeMs\"], \"mtimeMs 缺槽 ⇒ 读出 exact undefined\").toBeDefined();"	旧断言钉错	keep	keep	—
-"6. readdir 的 withFileTypes 分叉：true ⇒ Dirent[]（原生如此）"	"族 29 · `fs/promises` 的结果对象是同步族的**裁剪副本** ——`fsPromisesModule.stat` 只抄了 12 个槽（比同步族少 9 个），且 `readdir` 的 `Dirent` 是**空 shape 的 brand** ⇒ 成员读出 **exact `undefined` / `NaN` / `never`**——那是**确定的错值**，不是精度债。 断言：expect(native[0]?.isFile).toBeTypeOf(\"function\");；expect(element, \"withFileTypes:true ⇒ 元素应是 Dirent\").toBeDefined();"	旧断言钉错	keep	keep	—
 ```audit-deleted
 title	reason	evidence
 1. 原生 oracle：同步族对不存在的路径抛 Error（带 code=ENOENT）	dup:fs/stat/assert 契约表	commit:3571e1eb
@@ -127,4 +102,38 @@ host oracle: the predicates in question exist and return true	dup:os/ctor/consol
 the env member set covers every host util.types predicate	dup:os/ctor/console/spawn/util 契约表	commit:f9c356a1
 types.isMap applies to boolean and never throws	dup:os/ctor/console/spawn/util 契约表	commit:f9c356a1
 types.isMap(...) via the module face applies cleanly	dup:os/ctor/console/spawn/util 契约表	commit:f9c356a1
+原生 oracle：报告点名的 17 个构造器在真实 Node 上确实存在	dup:全局/process/stream/fs 契约表	commit:16bd8709
+env：17 个构造器全部声明，且可构造的带 ctor:true + 实例面	dup:全局/process/stream/fs 契约表	commit:16bd8709
+env：全局对象面（crypto / performance / navigator）已声明且非 unknown	dup:全局/process/stream/fs 契约表	commit:16bd8709
+引擎探针：未建模构造器的成员读不再是 exact undefined（不再定抛 TypeError）	dup:全局/process/stream/fs 契约表	commit:16bd8709
+原生 oracle：crypto.randomUUID() 恒返回 string（从不失败）	dup:全局/process/stream/fs 契约表	commit:16bd8709
+host oracle: every host-provided member is typeof function	dup:全局/process/stream/fs 契约表	commit:16bd8709
+typeof folds to "function" in the node env (was自信的 "object")	dup:全局/process/stream/fs 契约表	commit:16bd8709
+AbortSignal.any stays a callable static factory returning AbortSignal	dup:全局/process/stream/fs 契约表	commit:16bd8709
+原生 oracle：process.hrtime 是函数，返回 [seconds, nanos]；bigint() 返回 bigint	dup:全局/process/stream/fs 契约表	commit:16bd8709
+env：hrtime 是 envFn（可调用）+ 静态槽 bigint	dup:全局/process/stream/fs 契约表	commit:16bd8709
+引擎探针：process.hrtime() 推出 number[]，且无 unknown-inference 误导诊断	dup:全局/process/stream/fs 契约表	commit:16bd8709
+原生 oracle：七个成员在真实 Node 上都存在	dup:全局/process/stream/fs 契约表	commit:16bd8709
+env：process 面带这 7 个成员	dup:全局/process/stream/fs 契约表	commit:16bd8709
+引擎探针：7 处 nudo:entry-may-throw 假红消失	dup:全局/process/stream/fs 契约表	commit:16bd8709
+原生 oracle：五个成员在真实 Node 上都存在	dup:全局/process/stream/fs 契约表	commit:16bd8709
+env：process 面带 emitWarning / abort / kill / release / features	dup:全局/process/stream/fs 契约表	commit:16bd8709
+引擎探针：五处 nudo:entry-may-throw 假红消失	dup:全局/process/stream/fs 契约表	commit:16bd8709
+原生 oracle：process.stdin 真的有 setEncoding / pause / resume / read	dup:全局/process/stream/fs 契约表	commit:16bd8709
+env：process.stdin 面带 setEncoding / pause / resume / read 等成员	dup:全局/process/stream/fs 契约表	commit:16bd8709
+引擎探针：process.stdin.setEncoding("utf8") 不再定抛 TypeError	dup:全局/process/stream/fs 契约表	commit:16bd8709
+原生 oracle：stdout / stderr 真的有 on / once / off / emit / write	dup:全局/process/stream/fs 契约表	commit:16bd8709
+env：stdout / stderr 面带 on / once / off / emit / write / end 等成员	dup:全局/process/stream/fs 契约表	commit:16bd8709
+引擎探针：process.stdout.on(...) 不再定抛 TypeError	dup:全局/process/stream/fs 契约表	commit:16bd8709
+host oracle: process.title is a string	dup:全局/process/stream/fs 契约表	commit:16bd8709
+process.title is declared as string	dup:全局/process/stream/fs 契约表	commit:16bd8709
+process.title.length folds to number (was definite TypeError)	dup:全局/process/stream/fs 契约表	commit:16bd8709
+typeof process.title folds to "string" (was "undefined")	dup:全局/process/stream/fs 契约表	commit:16bd8709
+control: the same expression shape on process.version stays correct	dup:全局/process/stream/fs 契约表	commit:16bd8709
+1. 原生 oracle：同步族与 promise 族的 Stats 成员表一致	dup:全局/process/stream/fs 契约表	commit:16bd8709
+2. 声明面：promise 族的 stat 兑现值含完整成员表（不再是裁剪副本）	dup:全局/process/stream/fs 契约表	commit:16bd8709
+3. 同步族与 promise 族**共用同一张表**（成员集合相等）	dup:全局/process/stream/fs 契约表	commit:16bd8709
+4. Dirent：promise 族的 readdir 元素是**有 shape** 的 Dirent（旧面是空 brand）	dup:全局/process/stream/fs 契约表	commit:16bd8709
+5. 反向钉：promise 族的成员读出**不得**是 exact undefined（旧面裁剪副本）	dup:全局/process/stream/fs 契约表	commit:16bd8709
+6. readdir 的 withFileTypes 分叉：true ⇒ Dirent[]（原生如此）	dup:全局/process/stream/fs 契约表	commit:16bd8709
 ```
