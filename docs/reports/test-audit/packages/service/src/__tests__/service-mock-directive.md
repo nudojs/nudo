@@ -1,5 +1,6 @@
 ```audit
 title	rootCause	gap	action	status	evidence
+同名取最浅；E 不越界；pure 同裁决	skip 词法绑定表	没测该层	keep	keep	—
 绑定位/对象键位不算命中且诊断；属性值命中生效；未命中告警	mock 中段契约表	没测该层	keep	keep	—
 只在声明函数生效；同函数作为依赖/目标一致	mock 中段契约表	没测该层	keep	keep	—
 重复点名两条来源且合并导出；单条零诊断；门禁 warning；局部形态并集	mock 中段契约表	没测该层	keep	keep	—
@@ -19,11 +20,6 @@ throws/副作用保留；覆盖仍生效；相邻子表达式不受影响	mock �
 "孤儿 + 一条生效的 @nudo:as ⇒ 孤儿诊断**仍然在场**（改前被抑制为 0）"	"两处孤儿（同一文案、不同位置）⇒ 各报一条（位置进身份） 断言：expect(orphanDiags(ORPHAN_PLUS_WORKING)).toHaveLength(1);；expect(orphanDiags(ORPHAN_PLUS_WORKING)[0]!.message).toBe("	没测该层	keep	keep	—
 "生效的那条 @nudo:as 照旧进入收集表（抑制解除没有副作用）"	"根因：`packages/service/src/eval-injection.ts` 的 `collectInto` 只在 「收集表**全空**」（`acc.targets.length === 0 && acc.asTargets.length === 0`） 时才发那条 `nudo:directive-syntax`； 断言非永真：改前 `ORPHAN_PLUS_WORKING` 的孤儿诊断数为 **0**（`ORPHAN_ONLY` 为 1）⇒ 同一份写错的指令只因文件里多了一条有效指令就隐身。 断言：expect(collectEvalReplacements_____eval_injection_ts(ORPHAN_PL"	没测该层	keep	keep	—
 "两处孤儿各报一条（改前合并成一条）"	"断言：expect(orphanDiags(TWO_ORPHANS)).toHaveLength(2);"	没测该层	keep	keep	—
-"C：内层同名函数的 skip 不再顶掉外层（C 的签名 == D 的签名）"	"E：外层无 skip + 内层**同名** string（越界组） 断言：expect(collectSkipReturns(C).get(\"f\")).toBeDefined();；expect(signatureOf(C, \"f\").display).toBe(signatureOf(D, \"f\").display);"	夹具漏形态	keep	keep	—
-"E：外层没有 skip ⇒ 内层同名 skip 不越界（该名不进 skip 表）"	"E：外层无 skip + 内层**同名** string（越界组） 断言：expect(collectSkipReturns(E).has(\"f\")).toBe(false);；expect(collectSkipReturns(F).has(\"f\")).toBe(false);"	夹具漏形态	keep	keep	—
-"E 与 F 的签名逐字相同（导出函数的 throws 标注不再被抹掉）"	"② 外层**没有** skip 时内层的 skip **越界**作用到导出函数上（body 不再 评估 ⇒ 导出签名的 **throws 标注被抹掉**）。 根因：`packages/parser/src/directives/fn-directives.ts` 的 `collectFnDirectives` 只推 `{ node, name, directives }`——**把 core scope 自带的 `depth` 丢掉了** ⇒ 消费面 `packages/service/src/skip-directives.ts` 的 `collectSkipReturns` 只能 `Map.set(fn.name, …)` ⇒"	没测该层	keep	keep	—
-"内层函数自己的 skip 仍按最浅同名者裁决（不同名时照常绑定）"	"E：外层无 skip + 内层**同名** string（越界组） 断言：expect(collectSkipReturns(D).get(\"f\")).toBeDefined();；expect(signatureOf(D, \"f\").display).toBe(\"number\");"	夹具漏形态	keep	keep	—
-"同族 @nudo:pure 用同一裁决（内层同名 pure 不标记外层）"	"② 外层**没有** skip 时内层的 skip **越界**作用到导出函数上（body 不再 评估 ⇒ 导出签名的 **throws 标注被抹掉**）。 根因：`packages/parser/src/directives/fn-directives.ts` 的 `collectFnDirectives` 只推 `{ node, name, directives }`——**把 core scope 自带的 `depth` 丢掉了** ⇒ 消费面 `packages/service/src/skip-directives.ts` 的 `collectSkipReturns` 只能 `Map.set(fn.name, …)` ⇒"	没测该层	keep	keep	—
 "收集 for 循环体里的 @nudo:replace"	"收集器层面：每个容器位置的指令都必须进注入表 断言：expect(reps.targets.length).toBeGreaterThan(0);"	没测该层	keep	keep	—
 "无指令的语句不受同函数内其它指令影响"	"断言：expect(formatShape(result.functions[0].cases[0].abs)).toBe('\"y\"');"	没测该层	keep	keep	—
 "指令挂在非语句节点上——不产生注入（无处可施），且发显式诊断"	"根因：`packages/service/src/eval-injection.ts` 的 `collectInto` 只在 「收集表**全空**」（`acc.targets.length === 0 && acc.asTargets.length === 0`） 时才发那条 `nudo:directive-syntax`； 断言非永真：改前 `ORPHAN_PLUS_WORKING` 的孤儿诊断数为 **0**（`ORPHAN_ONLY` 为 1）⇒ 同一份写错的指令只因文件里多了一条有效指令就隐身。 断言：expect(reps.asTargets.length).toBe(0);；expect(diags.map((d) =>"	没测该层	keep	keep	—
@@ -91,4 +87,9 @@ same function keeps the same result as a direct target (entry A)	dup:mock 中段
 目标命中对象属性键位 ⇒ 不算命中 + 显式诊断	dup:mock 中段契约表	commit:9cf95a50
 对照组：目标命中属性值（表达式位）⇒ 命中有区间、零诊断、替换生效	dup:mock 中段契约表	commit:9cf95a50
 对照组：目标全文未命中 ⇒ 仍然是「matched no expression」告警	dup:mock 中段契约表	commit:9cf95a50
+C：内层同名函数的 skip 不再顶掉外层（C 的签名 == D 的签名）	dup:skip 词法绑定表	commit:0c774c7b
+E：外层没有 skip ⇒ 内层同名 skip 不越界（该名不进 skip 表）	dup:skip 词法绑定表	commit:0c774c7b
+E 与 F 的签名逐字相同（导出函数的 throws 标注不再被抹掉）	dup:skip 词法绑定表	commit:0c774c7b
+内层函数自己的 skip 仍按最浅同名者裁决（不同名时照常绑定）	dup:skip 词法绑定表	commit:0c774c7b
+同族 @nudo:pure 用同一裁决（内层同名 pure 不标记外层）	dup:skip 词法绑定表	commit:0c774c7b
 ```
