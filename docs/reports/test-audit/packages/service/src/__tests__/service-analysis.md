@@ -1,17 +1,11 @@
 ```audit
 title	rootCause	gap	action	status	evidence
+依赖调用不贴现场文件；同号不同列保留现场调用	观测/顺序/见证表	没测该层	keep	keep	—
+同行两调用点加列维度；唯一调用点格式不变；列缺失退回序号	观测/顺序/见证表	没测该层	keep	keep	—
+先定义不截断；顺序无关 combined 一致；有调用点不再误报 entry-only	观测/顺序/见证表	没测该层	keep	keep	—
+调用点字面量投影基类型；带断言 case 保留字面量	观测/顺序/见证表	没测该层	keep	keep	—
 全部超限整组跳过；正常记录照常合成	归因/超限表	没测该层	keep	keep	—
 ESM/CJS 命名空间带接收者限定并可归因；具名/对象方法无前缀；产品面 error	归因/超限表	没测该层	keep	keep	—
-"调用点字面量实参 ⇒ 投影成基类型（不是 lit(N)）"	"断言：expect(r.written).toContain(\"add\");；expect(sidecar).toContain(\"export const add = fn({ a: number(), b: number() }, number());\");"	没测该层	keep	keep	—
-"对照组：带断言的 @nudo:case 是域声明 ⇒ 字面量保留"	"回归：跨模块调用记录全部**超限被丢**时，合成路径不得解引用空数组。 改前 `synthesizeExternalFunctions` 直接读 `deduped[0].callLoc` / `deduped[0].resultAbs` ⇒ TypeError 抛出分析器（`nudo check` 吞掉异常后 静默假绿，`nudo test` / `export` 直接崩溃）。 断言：expect(sidecar).toContain(\"export const sub = fn({ a: lit(1), b: lit(2) }, lit(-1));\");"	夹具漏形态	keep	keep	—
-"被调方先定义：三个调用点全部留证（不再只剩第一条）"	"回归：被调方的**调用点域**不得被「首次 settle」截断。 症状（修前）：同一组函数，只改**声明顺序**就得到不同的调用点域 —— 被调方先定义时只留下第一个调用方的调用点（`callee(2)` / `callee(3)` 被 静默丢弃），于是 `nudo test` 少报见证、`nudo contract --emit` 写出偏窄的 契约（合法调用被判违约），`nudo contract --draft` 沿「官方推荐路径」直接 产出假红。 断言：expect(args).toEqual([\"1\", \"2\", \"3\"]);；expect(rets).toEqual([\"2\", \"3\", \"4\"]);"	没测该层	keep	keep	—
-"两种声明顺序的调用点域与 combinedAbs 完全一致"	"回归：被调方的**调用点域**不得被「首次 settle」截断。 症状（修前）：同一组函数，只改**声明顺序**就得到不同的调用点域 —— 被调方先定义时只留下第一个调用方的调用点（`callee(2)` / `callee(3)` 被 静默丢弃），于是 `nudo test` 少报见证、`nudo contract --emit` 写出偏窄的 契约（合法调用被判违约），`nudo contract --draft` 沿「官方推荐路径」直接 产出假红。 断言：expect(callsiteDomain(first, \"callee\")).toEqual(callsiteDomain(last, \"callee\"));；expect("	没测该层	keep	keep	—
-"有调用点域的被调方不再误报 nudo:contract-entry-only"	"回归：被调方的**调用点域**不得被「首次 settle」截断。 症状（修前）：同一组函数，只改**声明顺序**就得到不同的调用点域 —— 被调方先定义时只留下第一个调用方的调用点（`callee(2)` / `callee(3)` 被 静默丢弃），于是 `nudo test` 少报见证、`nudo contract --emit` 写出偏窄的 契约（合法调用被判违约），`nudo contract --draft` 沿「官方推荐路径」直接 产出假红。 断言：expect(calleeEntryOnly).toEqual([]);；expect(caller1EntryOnly).toHaveLength(1);"	没测该层	keep	keep	—
-"同一行两个调用点 ⇒ 名字不同（加列维度），且各自可核对到列"	"回归：「见证名 = 调用点身份」必须在**同一行多个调用点**时仍成立。 改前本地调用点只有行号维度 ⇒ 同一行两个调用点都叫 `call@L6` ⇒ 一个现场的 见证凭空消失（声明了其中一个后另一个的观测真值被吞）。 断言：expect(new Set(names).size).toBe(2);；expect(names[0]).toBe(\"call@L6C0\");"	没测该层	keep	keep	—
-"对照组：唯一调用点的名字格式不变（既有固化见证不漂移）"	"断言：expect(disambiguateCallsiteNames([rec(6, 0, 1)], FILE, 1)).toEqual([\"call@L6\"]);；expect(callsiteCaseName(rec(6, 0, 1), FILE, 1)).toBe(\"call@L6\");"	没测该层	keep	keep	—
-"三个及以上同行调用点：列缺失时退回序号（仍唯一）"	"断言：expect(new Set(names).size).toBe(2);"	没测该层	keep	keep	—
-"依赖模块里的调用不得带现场文件（行号落在注释行）"	"断言：expect(depRecord).toBeDefined();；expect(depRecord!.callSiteFile).toBeUndefined();"	没测该层	keep	keep	—
-"同号不同列（collide）⇒ 现场调用保留现场文件，依赖调用不贴"	"断言：expect(local).toHaveLength(1);；expect(local[0]!.callLoc!.line).toBe(2);"	没测该层	keep	keep	—
 "恒具体真的循环产出 nudo:loop-truncated（info，锚在函数声明处）"	"（loop 面）回归：循环迭代预算截断必须在 **test 面**报**专用码**。 症状（修前）：`nudo check` 对「退出条件恒具体为真」的循环报 `nudo:loop-truncated`，而 `nudo test` 只把放宽后的结果（如 `-1024`） 当正常观测打印、零诊断； 断言：expect(loops).toHaveLength(1);；expect(d!.severity).toBe(\"info\");"	没测该层	keep	keep	—
 "无截断文件零误报"	"断言：expect(codes).not.toContain(\"nudo:loop-truncated\");；expect(codes).not.toContain(\"nudo:recursion-truncated\");"	没测该层	keep	keep	—
 "自递归截断产出 nudo:recursion-truncated（info，锚在函数声明处）"	"回归：引擎「放弃求值」必须在 **test 面可观测**。 症状（修前）：同一份递归源码，`nudo check` / `nudo health` 都报「求值被 截断」，而 `nudo test`（人类面 + `--json`）**零诊断** —— 把放宽后的类型 （`0 | number | string`）当一次正常观测打印，断言段还报「0 failed」全绿。 断言：expect(trunc).toHaveLength(1);；expect(d!.severity).toBe(\"info\");"	没测该层	keep	keep	—
@@ -142,4 +136,14 @@ CJS `const dep = require(...)`：同样带接收者限定且可归因	dup:归因
 产品面：CJS 命名空间形态同样报 error	dup:归因/超限表	commit:75e79cab
 组内记录全部超限 ⇒ 整组跳过（不抛、不产出残缺分析）	dup:归因/超限表	commit:75e79cab
 对照组：正常记录照常合成（口径不变）	dup:归因/超限表	commit:75e79cab
+调用点字面量实参 ⇒ 投影成基类型（不是 lit(N)）	dup:观测/顺序/见证表	commit:342167e1
+对照组：带断言的 @nudo:case 是域声明 ⇒ 字面量保留	dup:观测/顺序/见证表	commit:342167e1
+被调方先定义：三个调用点全部留证（不再只剩第一条）	dup:观测/顺序/见证表	commit:342167e1
+两种声明顺序的调用点域与 combinedAbs 完全一致	dup:观测/顺序/见证表	commit:342167e1
+有调用点域的被调方不再误报 nudo:contract-entry-only	dup:观测/顺序/见证表	commit:342167e1
+同一行两个调用点 ⇒ 名字不同（加列维度），且各自可核对到列	dup:观测/顺序/见证表	commit:342167e1
+对照组：唯一调用点的名字格式不变（既有固化见证不漂移）	dup:观测/顺序/见证表	commit:342167e1
+三个及以上同行调用点：列缺失时退回序号（仍唯一）	dup:观测/顺序/见证表	commit:342167e1
+依赖模块里的调用不得带现场文件（行号落在注释行）	dup:观测/顺序/见证表	commit:342167e1
+同号不同列（collide）⇒ 现场调用保留现场文件，依赖调用不贴	dup:观测/顺序/见证表	commit:342167e1
 ```
