@@ -1,5 +1,9 @@
 ```audit
 title	rootCause	gap	action	status	evidence
+推导失败 number/any 都 unchecked；成功不符 failed；无期望 no-expectation；never failed	去重/may-throw/opaque/unchecked 表	没测该层	keep	keep	—
+推导失败只发 opaque info；成功不符报 case-expected；成功相符都不发	去重/may-throw/opaque/unchecked 表	没测该层	keep	keep	—
+case/函数/侧车申报豁免；未申报与 kind 不覆盖仍报；Error 族覆盖不报；坏侧车 contract-load	去重/may-throw/opaque/unchecked 表	没测该层	keep	keep	—
+同值只告警一次；不同值各一次；合法值不告警；非法值回落可用档	去重/may-throw/opaque/unchecked 表	没测该层	keep	keep	—
 模块级状态每入口独立；声明式 case / 无状态 / 未改写负控	entryThrows/谓词/隔离表	没测该层	keep	keep	—
 满足谓词无诊断；违反谓词/类型不符仍报；无谓词口径不变	entryThrows/谓词/隔离表	没测该层	keep	keep	—
 strict/无 profile 非法值文案 error；合法值与 profile 预设不告警	entryThrows/谓词/隔离表	没测该层	keep	keep	—
@@ -92,26 +96,6 @@ ESM/CJS 命名空间带接收者限定并可归因；具名/对象方法无前�
 "函数体内调用：被调方有 call@ 见证（改前只有 entry@）"	"调用点位于**导出函数体内**时，Nudo 从不合成 `call@` case ⇒ 回落 成 `entry@` ⇒ 该函数的调用点域完全丢失（误报 entry-only）。 根因（analyzer-orchestrate-uncached-cases.ts / analyzer-orchestrate-uncached.ts）： `call@` 合成只消费**外部传入**的 records； 断言：expect(names.some((n) => n.startsWith(\"call@\"))).toBe(true);；expect(names.some((n) => n.startsWith(\"entry@\"))).toBe(fal"	没测该层	keep	keep	—
 "负控制：顶层调用点口径不变（call@ 见证仍在）"	"调用点位于**导出函数体内**时，Nudo 从不合成 `call@` case ⇒ 回落 成 `entry@` ⇒ 该函数的调用点域完全丢失（误报 entry-only）。 根因（analyzer-orchestrate-uncached-cases.ts / analyzer-orchestrate-uncached.ts）： `call@` 合成只消费**外部传入**的 records； 断言：expect(names.some((n) => n.startsWith(\"call@\"))).toBe(true);；expect(names.some((n) => n.startsWith(\"entry@\"))).toBe(fal"	没测该层	keep	keep	—
 "负控制：非导出函数口径不变（保留 entry@ 见证）"	"调用点位于**导出函数体内**时，Nudo 从不合成 `call@` case ⇒ 回落 成 `entry@` ⇒ 该函数的调用点域完全丢失（误报 entry-only）。 根因（analyzer-orchestrate-uncached-cases.ts / analyzer-orchestrate-uncached.ts）： `call@` 合成只消费**外部传入**的 records； 断言：expect(names.some((n) => n.startsWith(\"entry@\"))).toBe(true);"	没测该层	keep	keep	—
-"同一非法值在多次 checkConfig 调用里只告警一次"	"`NudoConfig[\"check\"][\"entryThrows\"]` 的静态类型是 `\"error\" | \"warning\" | \"off\"`， 而运行时**必须**容错（`checkConfig` 对非法值告警并回落可用档位）⇒ 这里用一次**测试专用**的类型断言表达「我要喂一个类型之外的字面量」， **断言语义不变**：被测的仍是运行时行为，不是类型。 断言：expect(writes.length).toBe(1);；expect(writes[0]).toContain(\"nudo.check.entryThrows\");"	夹具漏形态	keep	keep	—
-"负控制：不同非法值各告警一次（去重键含值）"	"回归：`nudo.check.entryThrows` 的非法值告警必须**进程内去重** （与同族 `nudo.check.profile` 的 `warnedGateConfig` 去重口径一致）。 病灶：`checkConfig()` 此前对非法 `entryThrows` 走**裸** `process.stderr.write` ⇒ 批量检查（每个目标文件调一次 `checkConfig`）时同一 typo **每文件刷一行** （N 个文件 N 行噪声）； 断言：expect(writes.length).toBe(2);；expect(writes[0]).toContain(\"bogus-639-a\");"	没测该层	keep	keep	—
-"负控制：合法值不告警"	"回归：`nudo.check.entryThrows` 的非法值告警必须**进程内去重** （与同族 `nudo.check.profile` 的 `warnedGateConfig` 去重口径一致）。 病灶：`checkConfig()` 此前对非法 `entryThrows` 走**裸** `process.stderr.write` ⇒ 批量检查（每个目标文件调一次 `checkConfig`）时同一 typo **每文件刷一行** （N 个文件 N 行噪声）； 断言：expect(writes.length).toBe(0);"	没测该层	keep	keep	—
-"非法值仍回落可用档位（告警文案里的 using 段与生效档一致）"	"根因（config.ts checkConfig）：告警文案是常量字符串，而生效值随后被 profile 预设覆盖 ⇒ 文案与生效档位互相矛盾。 修法：先算出最终生效档位，再按**生效值**拼告警文案 （config.md「L2 entryThrows resolution order」：非法值不是合法显式值 → 落到 config profile 预设）。 断言：expect([\"error\", \"warning\", \"off\"]).toContain(cfg.entryThrows);"	夹具漏形态	keep	keep	—
-"case 上的 `!! throws TypeError` ⇒ 不发 nudo:may-throw"	"`nudo:may-throw` 诊断条数（case 级「未处理的抛」）。 断言：expect(mayThrowCount({ \"f.js\": CASE_THROWS_DECL })).toBe(0);"	没测该层	keep	keep	—
-"函数级 `@nudo:throws TypeError` ⇒ 不发 nudo:may-throw"	"`nudo:may-throw` 诊断条数（case 级「未处理的抛」）。 断言：expect(mayThrowCount({ \"f.js\": FN_THROWS_DECL })).toBe(0);"	没测该层	keep	keep	—
-"侧车 `fn(…, { throws: \"TypeError\" })` ⇒ 不发 nudo:may-throw"	"`nudo:may-throw` 诊断条数（case 级「未处理的抛」）。 断言：expect(mayThrowCount({ \"f.js\": THROWING_CASE, \"f.nudo.js\": SIDECAR })).toBe(0);"	没测该层	keep	keep	—
-"负控制：未申报 ⇒ 仍发 nudo:may-throw（口径不变）"	"`nudo:may-throw` 诊断条数（case 级「未处理的抛」）。 断言：expect(mayThrowCount({ \"f.js\": THROWING_CASE })).toBe(1);"	没测该层	keep	keep	—
-"负控制：申报的 kind 不覆盖实测 kind（RangeError vs TypeError）⇒ 仍发"	"case 级 `nudo:may-throw` **不认「已声明的有意抛」** ⇒ 两个 verb 对同一份文件给出**相反裁决**。 - `nudo test` 面：case 级 `nudo:may-throw` 只认「抛了就是问题」⇒ **照报** 未处理的抛 ⇒ 同一文件两个 verb 裁决相反。 断言：expect(mayThrowCount({ \"f.js\": src })).toBe(1);"	没测该层	keep	keep	—
-"负控制：申报 Error（族）覆盖实测 TypeError ⇒ 不发"	"case 级 `nudo:may-throw` **不认「已声明的有意抛」** ⇒ 两个 verb 对同一份文件给出**相反裁决**。 - `nudo test` 面：case 级 `nudo:may-throw` 只认「抛了就是问题」⇒ **照报** 未处理的抛 ⇒ 同一文件两个 verb 裁决相反。 断言：expect(mayThrowCount({ \"f.js\": src })).toBe(0);"	没测该层	keep	keep	—
-"负控制：坏侧车 ⇒ nudo:contract-load 仍报（memo 化不得吞掉加载失败）"	"`nudo:may-throw` 诊断条数（case 级「未处理的抛」）。 断言：expect(diags.filter((d) => d.code === \"nudo:contract-load\").length).toBeGreaterThan(0);"	没测该层	keep	keep	—
-"推导失败 + 期望 number() ⇒ 只有 nudo:opaque-result，且严重度是 info"	"分析一个带声明期望的 case 文件，返回全部诊断。 断言：expect(diags.filter((d) => d.code === \"nudo:case-expected\")).toHaveLength(0);；expect(opaque).toHaveLength(1);"	没测该层	keep	keep	—
-"推导失败 + 期望 any() ⇒ 同上（不放宽的期望不得空洞通过）"	"分析一个带声明期望的 case 文件，返回全部诊断。 断言：expect(diags.filter((d) => d.code === \"nudo:case-expected\")).toHaveLength(0);；expect(diags.filter((d) => d.code === \"nudo:opaque-result\")).toHaveLength(1);"	没测该层	keep	keep	—
-"负控制：推导成功 + 期望不符 ⇒ 仍是 nudo:case-expected（error）"	"分析一个带声明期望的 case 文件，返回全部诊断。 断言：expect(failed).toHaveLength(1);；expect(failed[0]!.severity).toBe(\"error\");"	没测该层	keep	keep	—
-"负控制：推导成功 + 期望相符 ⇒ 两者都不产出"	"推导成功（负控制）：实测是 `x + 1`，期望 `string()` ⇒ 真失败。 断言：expect(diags.filter((d) => d.code === \"nudo:case-expected\")).toHaveLength(0);；expect(diags.filter((d) => d.code === \"nudo:opaque-result\")).toHaveLength(0);"	没测该层	keep	keep	—
-"推导失败 + 期望 number() ⇒ unchecked（不是 failed）"	"跑一个带声明期望的 case 文件，返回报告面结果。 断言：expect(report.failed).toBe(0);；expect(report.passed).toBe(0);"	没测该层	keep	keep	—
-"推导失败 + 期望 any() ⇒ 同样 unchecked（不是空洞 passed）"	"跑一个带声明期望的 case 文件，返回报告面结果。 断言：expect(report.failed).toBe(0);；expect(report.passed).toBe(0);"	没测该层	keep	keep	—
-"负控制：推导成功 + 期望不符 ⇒ 仍是 failed（既有行为不变）"	"断言判定**没有「推导失败」第三态**（LSP agent `testTool` 的报告面）。 本模块（`packages/service/src/test-report.ts`）是 CLI `nudo test` 报告面的 **平行副本**（LSP agent 工具面 `packages/lsp/src/agent-tools.ts` 的 `testTool` 调它）⇒ 第三态必须**两处同改**，否则 CLI 与 agent 工具面口径分叉。 断言：expect(report.failed).toBe(1);；expect(report.passed).toBe(0);"	没测该层	keep	keep	—
-"负控制：声明了但没写期望 ⇒ no-expectation 口径不变"	"断言判定**没有「推导失败」第三态**（LSP agent `testTool` 的报告面）。 本模块（`packages/service/src/test-report.ts`）是 CLI `nudo test` 报告面的 **平行副本**（LSP agent 工具面 `packages/lsp/src/agent-tools.ts` 的 `testTool` 调它）⇒ 第三态必须**两处同改**，否则 CLI 与 agent 工具面口径分叉。 断言：expect(report.unchecked).toBe(1);；expect(report.failed).toBe(0);"	没测该层	keep	keep	—
-"负控制：抛错（实测 never）⇒ 仍是 failed（never 不是「推导失败」）"	"引擎**推不出来**的函数体（`(x.get)().a ||= 2` 不被求值器支持 ⇒ 实测 unknown）。 断言：expect(report.failed).toBe(1);；expect(report.unchecked).toBe(0);"	没测该层	keep	keep	—
 ```audit-deleted
 title	reason	evidence
 ESM `import * as dep`：记录名带接收者限定，且归因到被调模块	dup:归因/超限表	commit:75e79cab
@@ -153,4 +137,24 @@ profile 预设本身仍生效（adoption→warning / strict→error），无告�
 负控制：类型不匹配的期望（string()）→ 仍报 nudo:case-expected	dup:entryThrows/谓词/隔离表	commit:00164a1e
 非导出辅助函数改写模块级状态后，导出函数的入口用例仍从初值起算	dup:entryThrows/谓词/隔离表	commit:00164a1e
 多个导出函数的入口用例互不串味（各自独立实例）	dup:entryThrows/谓词/隔离表	commit:00164a1e
+同一非法值在多次 checkConfig 调用里只告警一次	dup:去重/may-throw/opaque/unchecked 表	commit:d9bc7de9
+负控制：不同非法值各告警一次（去重键含值）	dup:去重/may-throw/opaque/unchecked 表	commit:d9bc7de9
+负控制：合法值不告警	dup:去重/may-throw/opaque/unchecked 表	commit:d9bc7de9
+非法值仍回落可用档位（告警文案里的 using 段与生效档一致）	dup:去重/may-throw/opaque/unchecked 表	commit:d9bc7de9
+case 上的 `!! throws TypeError` ⇒ 不发 nudo:may-throw	dup:去重/may-throw/opaque/unchecked 表	commit:d9bc7de9
+函数级 `@nudo:throws TypeError` ⇒ 不发 nudo:may-throw	dup:去重/may-throw/opaque/unchecked 表	commit:d9bc7de9
+侧车 `fn(…, { throws: "TypeError" })` ⇒ 不发 nudo:may-throw	dup:去重/may-throw/opaque/unchecked 表	commit:d9bc7de9
+负控制：未申报 ⇒ 仍发 nudo:may-throw（口径不变）	dup:去重/may-throw/opaque/unchecked 表	commit:d9bc7de9
+负控制：申报的 kind 不覆盖实测 kind（RangeError vs TypeError）⇒ 仍发	dup:去重/may-throw/opaque/unchecked 表	commit:d9bc7de9
+负控制：申报 Error（族）覆盖实测 TypeError ⇒ 不发	dup:去重/may-throw/opaque/unchecked 表	commit:d9bc7de9
+负控制：坏侧车 ⇒ nudo:contract-load 仍报（memo 化不得吞掉加载失败）	dup:去重/may-throw/opaque/unchecked 表	commit:d9bc7de9
+推导失败 + 期望 number() ⇒ 只有 nudo:opaque-result，且严重度是 info	dup:去重/may-throw/opaque/unchecked 表	commit:d9bc7de9
+推导失败 + 期望 any() ⇒ 同上（不放宽的期望不得空洞通过）	dup:去重/may-throw/opaque/unchecked 表	commit:d9bc7de9
+负控制：推导成功 + 期望不符 ⇒ 仍是 nudo:case-expected（error）	dup:去重/may-throw/opaque/unchecked 表	commit:d9bc7de9
+负控制：推导成功 + 期望相符 ⇒ 两者都不产出	dup:去重/may-throw/opaque/unchecked 表	commit:d9bc7de9
+推导失败 + 期望 number() ⇒ unchecked（不是 failed）	dup:去重/may-throw/opaque/unchecked 表	commit:d9bc7de9
+推导失败 + 期望 any() ⇒ 同样 unchecked（不是空洞 passed）	dup:去重/may-throw/opaque/unchecked 表	commit:d9bc7de9
+负控制：推导成功 + 期望不符 ⇒ 仍是 failed（既有行为不变）	dup:去重/may-throw/opaque/unchecked 表	commit:d9bc7de9
+负控制：声明了但没写期望 ⇒ no-expectation 口径不变	dup:去重/may-throw/opaque/unchecked 表	commit:d9bc7de9
+负控制：抛错（实测 never）⇒ 仍是 failed（never 不是「推导失败」）	dup:去重/may-throw/opaque/unchecked 表	commit:d9bc7de9
 ```
