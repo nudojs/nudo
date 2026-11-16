@@ -2618,41 +2618,42 @@ function illegalEntryThrows(value: string): "error" | "warning" | "off" {
 }
 
 describe("entryThrows 非法值告警进程内去重", () => {
-  it("同一非法值在多次 checkConfig 调用里只告警一次", () => {
-    const writes = captureStderr(() => {
-      checkConfig({ check: { entryThrows: illegalEntryThrows("bogus-639-same") } });
-      checkConfig({ check: { entryThrows: illegalEntryThrows("bogus-639-same") } });
-      checkConfig({ check: { entryThrows: illegalEntryThrows("bogus-639-same") } });
+  const captureStderr = (fn: () => void): string[] => {
+    const writes: string[] = [];
+    const original = process.stderr.write;
+    process.stderr.write = ((chunk: unknown) => { writes.push(String(chunk)); return true; }) as typeof process.stderr.write;
+    try { fn(); } finally { process.stderr.write = original; }
+    return writes;
+  };
+  const illegal = (value: string) => value as "error" | "warning" | "off";
+  it("同值只告警一次；不同值各一次；合法值不告警；非法值回落可用档", () => {
+    const same = captureStderr(() => {
+      checkConfig({ check: { entryThrows: illegal("bogus-639-same") } });
+      checkConfig({ check: { entryThrows: illegal("bogus-639-same") } });
+      checkConfig({ check: { entryThrows: illegal("bogus-639-same") } });
     });
-    expect(writes.length).toBe(1);
-    expect(writes[0]).toContain("nudo.check.entryThrows");
-    expect(writes[0]).toContain("bogus-639-same");
-  });
+    expect(same.length).toBe(1);
+    expect(same[0]).toContain("nudo.check.entryThrows");
+    expect(same[0]).toContain("bogus-639-same");
 
-  it("负控制：不同非法值各告警一次（去重键含值）", () => {
-    const writes = captureStderr(() => {
-      checkConfig({ check: { entryThrows: illegalEntryThrows("bogus-639-a") } });
-      checkConfig({ check: { entryThrows: illegalEntryThrows("bogus-639-b") } });
+    const diff = captureStderr(() => {
+      checkConfig({ check: { entryThrows: illegal("bogus-639-a") } });
+      checkConfig({ check: { entryThrows: illegal("bogus-639-b") } });
     });
-    expect(writes.length).toBe(2);
-    expect(writes[0]).toContain("bogus-639-a");
-    expect(writes[1]).toContain("bogus-639-b");
-  });
+    expect(diff.length).toBe(2);
+    expect(diff[0]).toContain("bogus-639-a");
+    expect(diff[1]).toContain("bogus-639-b");
 
-  it("负控制：合法值不告警", () => {
-    const writes = captureStderr(() => {
+    const legal = captureStderr(() => {
       checkConfig({ check: { entryThrows: "warning" } });
       checkConfig({ check: { entryThrows: "off" } });
       checkConfig({ check: { entryThrows: "error" } });
     });
-    expect(writes.length).toBe(0);
-  });
-
-  it("非法值仍回落可用档位（告警文案里的 using 段与生效档一致）", () => {
-    const cfg = checkConfig({ check: { entryThrows: illegalEntryThrows("bogus-639-fallback") } });
-    expect(["error", "warning", "off"]).toContain(cfg.entryThrows);
+    expect(legal.length).toBe(0);
+    expect(["error", "warning", "off"]).toContain(checkConfig({ check: { entryThrows: illegal("bogus-639-fallback") } }).entryThrows);
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -2734,52 +2735,29 @@ export const f = fn({ x: number() }, number(), { throws: "TypeError" });
 `;
 
 describe("case 级 nudo:may-throw 认「已声明的有意抛」（与 check 面同口径）", () => {
-  it("case 上的 `!! throws TypeError` ⇒ 不发 nudo:may-throw", () => {
+  type Diag = { code?: string; message?: string };
+  const analyzeDiags = (files: Record<string, string>): readonly Diag[] => withTmpProject("nudo-b921-", (dir) => {
+    const file = writeTmpFile(dir, "f.js", files["f.js"]!);
+    for (const [rel, content] of Object.entries(files)) if (rel !== "f.js") writeTmpFile(dir, rel, content);
+    return analyzeFile(file, readFileSync(file, "utf-8")).diagnostics;
+  });
+  const mayThrowCount = (files: Record<string, string>) => analyzeDiags(files).filter((d) => d.code === "nudo:may-throw").length;
+  const THROWING_CASE = '/**\n * @nudo:case "t" (1)\n */\nexport function f(x) { throw new TypeError("x"); }\n';
+  const CASE_THROWS_DECL = '/**\n * @nudo:case "t" (1) !! throws TypeError\n */\nexport function f(x) { throw new TypeError("x"); }\n';
+  const FN_THROWS_DECL = '/**\n * @nudo:throws TypeError\n * @nudo:case "t" (1)\n */\nexport function f(x) { throw new TypeError("x"); }\n';
+  const SIDECAR = 'import { fn, number } from "@nudojs/core";\nexport const f = fn({ x: number() }, number(), { throws: "TypeError" });\n';
+  it("case/函数/侧车申报豁免；未申报与 kind 不覆盖仍报；Error 族覆盖不报；坏侧车 contract-load", () => {
     expect(mayThrowCount({ "f.js": CASE_THROWS_DECL })).toBe(0);
-  });
-
-  it("函数级 `@nudo:throws TypeError` ⇒ 不发 nudo:may-throw", () => {
     expect(mayThrowCount({ "f.js": FN_THROWS_DECL })).toBe(0);
-  });
-
-  it("侧车 `fn(…, { throws: \"TypeError\" })` ⇒ 不发 nudo:may-throw", () => {
     expect(mayThrowCount({ "f.js": THROWING_CASE, "f.nudo.js": SIDECAR })).toBe(0);
-  });
-
-  it("负控制：未申报 ⇒ 仍发 nudo:may-throw（口径不变）", () => {
     expect(mayThrowCount({ "f.js": THROWING_CASE })).toBe(1);
-  });
-
-  it("负控制：申报的 kind 不覆盖实测 kind（RangeError vs TypeError）⇒ 仍发", () => {
-    const src = `/**
- * @nudo:throws RangeError
- * @nudo:case "t" (1)
- */
-export function f(x) { throw new TypeError("x"); }
-`;
-    expect(mayThrowCount({ "f.js": src })).toBe(1);
-  });
-
-  it("负控制：申报 Error（族）覆盖实测 TypeError ⇒ 不发", () => {
-    const src = `/**
- * @nudo:throws Error
- * @nudo:case "t" (1)
- */
-export function f(x) { throw new TypeError("x"); }
-`;
-    expect(mayThrowCount({ "f.js": src })).toBe(0);
-  });
-
-  it("负控制：坏侧车 ⇒ nudo:contract-load 仍报（memo 化不得吞掉加载失败）", () => {
-    const diags = analyzeDiags({
-      "f.js": THROWING_CASE,
-      "f.nudo.js": `import { fn, number } from "@nudojs/core";
-export const f = fn({ x: number(
-`,
-    });
-    expect(diags.filter((d) => d.code === "nudo:contract-load").length).toBeGreaterThan(0);
+    expect(mayThrowCount({ "f.js": '/**\n * @nudo:throws RangeError\n * @nudo:case "t" (1)\n */\nexport function f(x) { throw new TypeError("x"); }\n' })).toBe(1);
+    expect(mayThrowCount({ "f.js": '/**\n * @nudo:throws Error\n * @nudo:case "t" (1)\n */\nexport function f(x) { throw new TypeError("x"); }\n' })).toBe(0);
+    const bad = analyzeDiags({ "f.js": THROWING_CASE, "f.nudo.js": 'import { fn, number } from "@nudojs/core";\nexport const f = fn({ x: number(\n' });
+    expect(bad.filter((d) => d.code === "nudo:contract-load").length).toBeGreaterThan(0);
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -2842,45 +2820,36 @@ function diagsOf(src: string): Diag[] {
 }
 
 describe("分析面：推导失败 ⇒ nudo:opaque-result（INFO），不发 nudo:case-expected", () => {
-  it("推导失败 + 期望 number() ⇒ 只有 nudo:opaque-result，且严重度是 info", () => {
-    const diags = diagsOf(
-      `/**\n * @nudo:case "w" (1) => number()\n */\n${OPAQUE_BODY}`,
-    );
-    expect(diags.filter((d) => d.code === "nudo:case-expected")).toHaveLength(0);
-    const opaque = diags.filter((d) => d.code === "nudo:opaque-result");
-    expect(opaque).toHaveLength(1);
-    expect(opaque[0]!.severity).toBe("info");
-    expect(opaque[0]!.message).toContain("could not infer the actual value");
-    expect(opaque[0]!.message).not.toContain("does not match the expected type");
+  const OPAQUE_BODY = "export function f(o) {\n  const x = { a: 1 };\n  (x.get)().a ||= 2;\n  return x.a;\n}\n";
+  const INFERRED_BODY = "export function g(x) { return x + 1; }\n";
+  type Diag = { code: string; severity: string; message: string };
+  const diagsOf = (src: string): Diag[] => withTmpProject("nudo-b950-an-", (dir) => {
+    const file = writeTmpFile(dir, "f.js", src);
+    const result = analyzeFile(file, readFileSync(file, "utf-8"));
+    return result.diagnostics.map((d) => ({ code: d.code ?? "", severity: d.severity, message: d.message }));
   });
-
-  it("推导失败 + 期望 any() ⇒ 同上（不放宽的期望不得空洞通过）", () => {
-    const diags = diagsOf(
-      `/**\n * @nudo:case "w" (1) => any()\n */\n${OPAQUE_BODY}`,
-    );
-    expect(diags.filter((d) => d.code === "nudo:case-expected")).toHaveLength(0);
-    expect(diags.filter((d) => d.code === "nudo:opaque-result")).toHaveLength(1);
-  });
-
-  it("负控制：推导成功 + 期望不符 ⇒ 仍是 nudo:case-expected（error）", () => {
-    const diags = diagsOf(
-      `/**\n * @nudo:case "w" (1) => string()\n */\n${INFERRED_BODY}`,
-    );
-    const failed = diags.filter((d) => d.code === "nudo:case-expected");
-    expect(failed).toHaveLength(1);
-    expect(failed[0]!.severity).toBe("error");
-    expect(failed[0]!.message).toContain("does not match the expected type");
-    expect(diags.filter((d) => d.code === "nudo:opaque-result")).toHaveLength(0);
-  });
-
-  it("负控制：推导成功 + 期望相符 ⇒ 两者都不产出", () => {
-    const diags = diagsOf(
-      `/**\n * @nudo:case "w" (1) => number()\n */\n${INFERRED_BODY}`,
-    );
-    expect(diags.filter((d) => d.code === "nudo:case-expected")).toHaveLength(0);
-    expect(diags.filter((d) => d.code === "nudo:opaque-result")).toHaveLength(0);
+  it("推导失败只发 opaque info；成功不符报 case-expected；成功相符都不发", () => {
+    for (const expected of ["number()", "any()"]) {
+      const diags = diagsOf(`/**\n * @nudo:case "w" (1) => ${expected}\n */\n${OPAQUE_BODY}`);
+      expect(diags.filter((d) => d.code === "nudo:case-expected"), expected).toHaveLength(0);
+      const opaque = diags.filter((d) => d.code === "nudo:opaque-result");
+      expect(opaque, expected).toHaveLength(1);
+      expect(opaque[0]!.severity, expected).toBe("info");
+      expect(opaque[0]!.message, expected).toContain("could not infer the actual value");
+      expect(opaque[0]!.message, expected).not.toContain("does not match the expected type");
+    }
+    const failed = diagsOf(`/**\n * @nudo:case "w" (1) => string()\n */\n${INFERRED_BODY}`);
+    const bad = failed.filter((d) => d.code === "nudo:case-expected");
+    expect(bad).toHaveLength(1);
+    expect(bad[0]!.severity).toBe("error");
+    expect(bad[0]!.message).toContain("does not match the expected type");
+    expect(failed.filter((d) => d.code === "nudo:opaque-result")).toHaveLength(0);
+    const ok = diagsOf(`/**\n * @nudo:case "w" (1) => number()\n */\n${INFERRED_BODY}`);
+    expect(ok.filter((d) => d.code === "nudo:case-expected")).toHaveLength(0);
+    expect(ok.filter((d) => d.code === "nudo:opaque-result")).toHaveLength(0);
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -2937,71 +2906,34 @@ function reportOf(src: string): Report {
 }
 
 describe("service 报告面（agent testTool）的第三态：推导失败 ⇒ unchecked", () => {
-  it("推导失败 + 期望 number() ⇒ unchecked（不是 failed）", () => {
-    const report = reportOf(`/**
- * @nudo:case "num" (1) => number()
- */
-${OPAQUE_BODY}`);
-    expect(report.failed).toBe(0);
-    expect(report.passed).toBe(0);
-    expect(report.unchecked).toBe(1);
-    const o = report.outcomes.find((x) => x.caseName === "num")!;
-    expect(o.unchecked).toBe(true);
-    expect(o.uncheckedReason).toBe("inference-failed");
-    expect(o.ok).toBe(false);
-    expect(o.expected).toBe("number");
-    expect(o.actual).toBe("unknown");
+  const OPAQUE_BODY = "export function f(o) {\n  const x = { a: 1 };\n  (x.get)().a ||= 2;\n  return x.a;\n}\n";
+  const reportOf = (src: string) => withTmpProject("nudo-b950-", (dir) => {
+    const file = writeTmpFile(dir, "f.js", src);
+    return buildTestReport(file, analyzeFile(file, readFileSync(file, "utf-8")));
   });
-
-  it("推导失败 + 期望 any() ⇒ 同样 unchecked（不是空洞 passed）", () => {
-    const report = reportOf(`/**
- * @nudo:case "any" (1) => any()
- */
-${OPAQUE_BODY}`);
-    expect(report.failed).toBe(0);
-    expect(report.passed).toBe(0);
-    expect(report.unchecked).toBe(1);
-    const o = report.outcomes.find((x) => x.caseName === "any")!;
-    expect(o.unchecked).toBe(true);
-    expect(o.uncheckedReason).toBe("inference-failed");
-  });
-
-  it("负控制：推导成功 + 期望不符 ⇒ 仍是 failed（既有行为不变）", () => {
-    const report = reportOf(`/**
- * @nudo:case "wrong" (1) => string()
- */
-export function g(x) { return x + 1; }
-`);
-    expect(report.failed).toBe(1);
-    expect(report.passed).toBe(0);
-    expect(report.unchecked).toBe(0);
-    const o = report.outcomes.find((x) => x.caseName === "wrong")!;
-    expect(o.unchecked).toBe(false);
-    expect(o.uncheckedReason).toBeUndefined();
-  });
-
-  it("负控制：声明了但没写期望 ⇒ no-expectation 口径不变", () => {
-    const report = reportOf(`/**
- * @nudo:case "free" (1)
- */
-export function g(x) { return x + 1; }
-`);
-    expect(report.unchecked).toBe(1);
-    expect(report.failed).toBe(0);
-    const o = report.outcomes.find((x) => x.caseName === "free")!;
-    expect(o.uncheckedReason).toBe("no-expectation");
-  });
-
-  it("负控制：抛错（实测 never）⇒ 仍是 failed（never 不是「推导失败」）", () => {
-    const report = reportOf(`/**
- * @nudo:case "t" (1) => 42
- */
-export function g(x) { throw new Error("boom"); }
-`);
-    expect(report.failed).toBe(1);
-    expect(report.unchecked).toBe(0);
-    const o = report.outcomes.find((x) => x.caseName === "t")!;
-    expect(o.uncheckedReason).toBeUndefined();
+  it("推导失败 number/any 都 unchecked；成功不符 failed；无期望 no-expectation；never failed", () => {
+    for (const expected of ["number()", "any()"]) {
+      const report = reportOf(`/**\n * @nudo:case "c" (1) => ${expected}\n */\n${OPAQUE_BODY}`);
+      expect(report.failed, expected).toBe(0);
+      expect(report.passed, expected).toBe(0);
+      expect(report.unchecked, expected).toBe(1);
+      const o = report.outcomes.find((x) => x.caseName === "c")!;
+      expect(o.unchecked, expected).toBe(true);
+      expect(o.uncheckedReason, expected).toBe("inference-failed");
+      expect(o.ok, expected).toBe(false);
+      expect(o.actual, expected).toBe("unknown");
+    }
+    const failed = reportOf('/**\n * @nudo:case "wrong" (1) => string()\n */\nexport function g(x) { return x + 1; }\n');
+    expect(failed.failed).toBe(1);
+    expect(failed.unchecked).toBe(0);
+    expect(failed.outcomes.find((x) => x.caseName === "wrong")!.unchecked).toBe(false);
+    const noExpect = reportOf('/**\n * @nudo:case "free" (1)\n */\nexport function g(x) { return x + 1; }\n');
+    expect(noExpect.unchecked).toBe(1);
+    expect(noExpect.outcomes.find((x) => x.caseName === "free")!.uncheckedReason).toBe("no-expectation");
+    const thrown = reportOf('/**\n * @nudo:case "t" (1) => 42\n */\nexport function g(x) { throw new Error("boom"); }\n');
+    expect(thrown.failed).toBe(1);
+    expect(thrown.unchecked).toBe(0);
   });
 });
+;
 });
