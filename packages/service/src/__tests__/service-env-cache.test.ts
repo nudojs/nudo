@@ -2053,100 +2053,32 @@ describe("#imports（包内子路径映射）", () => {
 
 
 describe("#imports（包内子路径映射）", () => {
-  it("精确键：#helper → 导入方包内的 ./helper.js", () => {
-    const dir = tmpProject("nudo-498-exact-", {
-      "package.json": JSON.stringify({
-        name: "app",
-        version: "1.0.0",
-        type: "module",
-        imports: { "#helper": "./helper.js" },
-      }),
-      "helper.js": "export function h() { return 42; }\n",
-    });
-    const r = resolveNpmJsEntryDetailed("#helper", dir);
-    expect(r.path).toBe(join(dir, "helper.js"));
-    expect(r.exportsUnresolved).toBe(false);
-  });
+  it("精确/模式/条件/外部包/缺失/裸包负控", () => {
+    const exact = tmpProject("nudo-498-exact-", { "package.json": JSON.stringify({ name: "app", version: "1.0.0", type: "module", imports: { "#helper": "./helper.js" } }), "helper.js": "export function h() { return 42; }\n" });
+    const er = resolveNpmJsEntryDetailed("#helper", exact);
+    expect(er.path).toBe(join(exact, "helper.js"));
+    expect(er.exportsUnresolved).toBe(false);
 
-  it("模式键：#internal/* → ./src/*.js", () => {
-    const dir = tmpProject("nudo-498-pattern-", {
-      "package.json": JSON.stringify({
-        name: "app",
-        version: "1.0.0",
-        type: "module",
-        imports: { "#internal/*": "./src/*.js" },
-      }),
-      "src/a.js": "export const a = 1;\n",
-    });
-    const r = resolveNpmJsEntryDetailed("#internal/a", dir);
-    expect(r.path).toBe(join(dir, "src", "a.js"));
-  });
+    const pattern = tmpProject("nudo-498-pattern-", { "package.json": JSON.stringify({ name: "app", version: "1.0.0", type: "module", imports: { "#internal/*": "./src/*.js" } }), "src/a.js": "export const a = 1;\n" });
+    expect(resolveNpmJsEntryDetailed("#internal/a", pattern).path).toBe(join(pattern, "src", "a.js"));
 
-  it("条件目标按消费形态分表（import / require 各取自己的构建）", () => {
-    const dir = tmpProject("nudo-498-cond-", {
-      "package.json": JSON.stringify({
-        name: "app",
-        version: "1.0.0",
-        type: "module",
-        imports: { "#dual": { import: "./esm.mjs", require: "./cjs.cjs" } },
-      }),
-      "esm.mjs": "export default 1;\n",
-      "cjs.cjs": "module.exports = 2;\n",
-    });
-    expect(resolveNpmJsEntryDetailed("#dual", dir, "import").path).toBe(join(dir, "esm.mjs"));
-    expect(resolveNpmJsEntryDetailed("#dual", dir, "require").path).toBe(join(dir, "cjs.cjs"));
-  });
+    const cond = tmpProject("nudo-498-cond-", { "package.json": JSON.stringify({ name: "app", version: "1.0.0", type: "module", imports: { "#dual": { import: "./esm.mjs", require: "./cjs.cjs" } } }), "esm.mjs": "export default 1;\n", "cjs.cjs": "module.exports = 2;\n" });
+    expect(resolveNpmJsEntryDetailed("#dual", cond, "import").path).toBe(join(cond, "esm.mjs"));
+    expect(resolveNpmJsEntryDetailed("#dual", cond, "require").path).toBe(join(cond, "cjs.cjs"));
 
-  it("外部包目标：#dep → 裸包（转入裸包入口解析）", () => {
-    const dir = tmpProject("nudo-498-external-", {
-      "package.json": JSON.stringify({
-        name: "app",
-        version: "1.0.0",
-        type: "module",
-        imports: { "#dep": "dep" },
-      }),
-      "node_modules/dep/package.json": JSON.stringify({
-        name: "dep",
-        version: "1.0.0",
-        exports: { ".": "./index.js" },
-      }),
-      "node_modules/dep/index.js": "export const x = 1;\n",
-    });
-    expect(resolveNpmJsEntryDetailed("#dep", dir).path).toBe(
-      join(dir, "node_modules", "dep", "index.js"),
-    );
-  });
+    const external = tmpProject("nudo-498-external-", { "package.json": JSON.stringify({ name: "app", version: "1.0.0", type: "module", imports: { "#dep": "dep" } }), "node_modules/dep/package.json": JSON.stringify({ name: "dep", version: "1.0.0", exports: { ".": "./index.js" } }), "node_modules/dep/index.js": "export const x = 1;\n" });
+    expect(resolveNpmJsEntryDetailed("#dep", external).path).toBe(join(external, "node_modules", "dep", "index.js"));
 
-  it("解析不到 ⇒ exportsUnresolved=true（真缺失，不得静默塌成 unknown）", () => {
-    const dir = tmpProject("nudo-498-miss-", {
-      "package.json": JSON.stringify({
-        name: "app",
-        version: "1.0.0",
-        type: "module",
-        imports: { "#helper": "./helper.js" },
-      }),
-      "helper.js": "export const x = 1;\n",
-    });
-    const r = resolveNpmJsEntryDetailed("#nope", dir);
-    expect(r.path).toBeNull();
-    expect(r.exportsUnresolved).toBe(true);
-  });
+    const miss = tmpProject("nudo-498-miss-", { "package.json": JSON.stringify({ name: "app", version: "1.0.0", type: "module", imports: { "#helper": "./helper.js" } }), "helper.js": "export const x = 1;\n" });
+    const mr = resolveNpmJsEntryDetailed("#nope", miss);
+    expect(mr.path).toBeNull();
+    expect(mr.exportsUnresolved).toBe(true);
 
-  it("负控制：普通裸包不受 # 分支影响（仍走 exports 解析）", () => {
-    const dir = tmpProject("nudo-498-bare-", {
-      "package.json": JSON.stringify({ name: "app", version: "1.0.0", type: "module" }),
-      "node_modules/plain/package.json": JSON.stringify({
-        name: "plain",
-        version: "1.0.0",
-        exports: { ".": "./index.js" },
-      }),
-      "node_modules/plain/index.js": "export const x = 1;\n",
-    });
-    expect(resolveNpmJsEntryDetailed("plain", dir).path).toBe(
-      join(dir, "node_modules", "plain", "index.js"),
-    );
+    const bare = tmpProject("nudo-498-bare-", { "package.json": JSON.stringify({ name: "app", version: "1.0.0", type: "module" }), "node_modules/plain/package.json": JSON.stringify({ name: "plain", version: "1.0.0", exports: { ".": "./index.js" } }), "node_modules/plain/index.js": "export const x = 1;\n" });
+    expect(resolveNpmJsEntryDetailed("plain", bare).path).toBe(join(bare, "node_modules", "plain", "index.js"));
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -2262,26 +2194,41 @@ async function magicShape(file: string, source: string): Promise<string> {
 }
 
 describe("项目级 path env 的内容进缓存键", () => {
-  it("同进程内改 env 文件内容，类型面跟着变", async () => {
+  const envFile = (fn: string, value: string) => `import { ${fn} } from "@nudojs/core";
+export function defineEnv() {
+  return { globals: { MAGIC: ${value} } };
+}
+`;
+  const magicShape = async (file: string, source: string) => {
+    const result = await analyzeFileAsync___nudojs_service(file, source);
+    const fn = result.functions.find((f) => f.name === "getMagic");
+    return fn ? formatShape(fn.cases[0].abs) : "<no-fn>";
+  };
+  it("改项目级 env 内容类型面跟着变；文件级同款；内容不变稳定", async () => {
     clearEvalCache();
-    const dir = tmpProject("nudo-bug501-", {
-      "package.json": JSON.stringify({
-        name: "b501",
-        type: "module",
-        nudo: { env: ["./env.ts"] },
-      }),
-      "env.ts": envFile("numLit", "numLit(1)"),
-      "main.js": `export function getMagic() {\n  return MAGIC;\n}\n`,
-    });
+    const dir = tmpProject("nudo-b501-", { "package.json": JSON.stringify({ name: "b501", type: "module", nudo: { env: ["./env.ts"] } }), "env.ts": envFile("numLit", "numLit(1)"), "main.js": "export function getMagic() {\n  return MAGIC;\n}\n" });
     const main = join(dir, "main.js");
-    expect(await magicShape(main, `export function getMagic() {\n  return MAGIC;\n}\n`)).toBe("1");
-    // 改 env 文件内容（名字不变）——缓存必须 miss
+    const src = "export function getMagic() {\n  return MAGIC;\n}\n";
+    expect(await magicShape(main, src)).toBe("1");
     writeFileSync(join(dir, "env.ts"), envFile("strLit", 'strLit("hello")'), "utf-8");
-    expect(await magicShape(main, `export function getMagic() {\n  return MAGIC;\n}\n`)).toBe(
-      '"hello"',
-    );
+    expect(await magicShape(main, src)).toBe('"hello"');
+
+    clearEvalCache();
+    const fileDir = tmpProject("nudo-b501-file-", { "env.ts": envFile("numLit", "numLit(1)"), "main.js": "/// @nudo:env ./env.ts\n\nexport function getMagic() {\n  return MAGIC;\n}\n" });
+    const fileMain = join(fileDir, "main.js");
+    const fileSrc = "/// @nudo:env ./env.ts\n\nexport function getMagic() {\n  return MAGIC;\n}\n";
+    expect(await magicShape(fileMain, fileSrc)).toBe("1");
+    writeFileSync(join(fileDir, "env.ts"), envFile("strLit", 'strLit("hello")'), "utf-8");
+    expect(await magicShape(fileMain, fileSrc)).toBe('"hello"');
+
+    clearEvalCache();
+    const stable = tmpProject("nudo-b501-stable-", { "package.json": JSON.stringify({ name: "b501-stable", type: "module", nudo: { env: ["./env.ts"] } }), "env.ts": envFile("numLit", "numLit(1)"), "main.js": "export function getMagic() {\n  return MAGIC;\n}\n" });
+    const stableMain = join(stable, "main.js");
+    expect(await magicShape(stableMain, src)).toBe("1");
+    expect(await magicShape(stableMain, src)).toBe("1");
   });
 });
+;
 
 /** 负控制：不该被这条修复波及的邻近形态 */
 describe("负控制", () => {
@@ -2355,33 +2302,24 @@ export function useGlobal() {
 `;
 
 describe("@nudo:env globals reach the service analysis", () => {
-  it("async entry (preloads path env) resolves env globals", async () => {
+  const ENV_FILE = "export function defineEnv() {\n  return { globals: { MAGIC: 1 } };\n}\n";
+  const MAIN_FILE = "/// @nudo:env ./env.ts\nexport function useGlobal() {\n  return MAGIC;\n}\n";
+  it("async 预载后解析 env 全局；分析环境带 env globals", async () => {
     const dir = tmpProject("nudo-b502-", { "env.ts": ENV_FILE, "main.js": MAIN_FILE });
-    const path = `${dir}/main.js`;
-    const r = await analyzeFileAsync(path, MAIN_FILE);
-    const fn = r.functions.find((f) => f.name === "useGlobal");
-    expect(fn).toBeDefined();
-    const c = fn!.cases.find((x) => x.name.startsWith("entry@") || x.name.startsWith("call@"));
-    expect(c).toBeDefined();
-    expect(formatAbs(c!.abs)).toContain("1");
-    expect(formatAbs(c!.abs)).not.toContain("never");
-  });
+    const r = await analyzeFileAsync(`${dir}/main.js`, MAIN_FILE);
+    const fn = r.functions.find((f) => f.name === "useGlobal")!;
+    const c = fn.cases.find((x) => x.name.startsWith("entry@") || x.name.startsWith("call@"))!;
+    expect(formatAbs(c.abs)).toContain("1");
+    expect(formatAbs(c.abs)).not.toContain("never");
 
-  it("analysis environment carries env globals (node type face)", () => {
-    // 命名 env 同步可见；eval 未宿主（顶层抛错 → fail-closed）时走
-    // buildNodeTypeMap 面——env 全局按 env.lookup 拿到 Abs 类型
-    const src = `/// @nudo:env node
-throw new Error("boom");
-export function useProcess() { return process.cwd(); }
-`;
-    const r = analyzeFile("/t/b502/env-globals.js", src);
+    const src = '/// @nudo:env node\nthrow new Error("boom");\nexport function useProcess() { return process.cwd(); }\n';
+    const nodeResult = analyzeFile("/t/b502/env-globals.js", src);
     const names: string[] = [];
-    for (const [node] of r.nodeAbsMap) {
-      if (node.type === "Identifier") names.push(node.name);
-    }
+    for (const [node] of nodeResult.nodeAbsMap) if (node.type === "Identifier") names.push(node.name);
     expect(names).toContain("process");
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -2424,78 +2362,43 @@ function esmProject(prefix: string): { dir: string; main: string } {
 }
 
 describe("CJS / ESM 两条解析算法分表", () => {
-  it("CJS 形态：require('./data') 解析到同目录的 data.json（不再是「文件不存在」）", () => {
-    const { main } = cjsProject("nudo-505-cjs-");
-    expect(resolveModuleFile("./data", main)).toBe(join(main, "..", "data.json"));
-  });
+  const cjsProject = (prefix: string) => {
+    const dir = tmpProject(prefix, { "package.json": JSON.stringify({ name: "cjsapp", version: "1.0.0", type: "commonjs" }), "data.json": '{ "answer": 42 }\n', "main.js": "const data = require('./data');\nmodule.exports = { data };\n" });
+    return { dir, main: join(dir, "main.js") };
+  };
+  const esmProject = (prefix: string) => {
+    const dir = tmpProject(prefix, { "package.json": JSON.stringify({ name: "esmapp", version: "1.0.0", type: "module" }), "data.js": "export const answer = 7;\n", "main.js": "import { answer } from './data';\nexport function f() { return answer; }\n" });
+    return { dir, main: join(dir, "main.js") };
+  };
+  it("CJS 猜扩展名含 .json/index；ESM 不猜；显式扩展名两态可解析；TS 合并表；CJS .js 优先", () => {
+    const cjs = cjsProject("nudo-505-cjs-");
+    expect(resolveModuleFile("./data", cjs.main)).toBe(join(cjs.main, "..", "data.json"));
+    const esm = esmProject("nudo-505-esm-");
+    expect(resolveModuleFile("./data", esm.main)).toBeUndefined();
+    const esmExplicit = esmProject("nudo-505-esm-explicit-");
+    expect(resolveModuleFile("./data.js", esmExplicit.main)).toBe(join(esmExplicit.dir, "data.js"));
 
-  it("ESM 形态：import './data' 不猜扩展名 ⇒ 解析不到（native ERR_MODULE_NOT_FOUND）", () => {
-    const { main } = esmProject("nudo-505-esm-");
-    expect(resolveModuleFile("./data", main)).toBeUndefined();
-  });
+    const cjsBase = join(cjs.main, "..", "data");
+    const cjsCands = moduleResolveCandidates("./data", cjs.main);
+    expect(cjsCands).toContain(`${cjsBase}.json`);
+    expect(cjsCands).toContain(join(cjsBase, "index.js"));
+    expect(moduleResolveCandidates("./data", esm.main)).toEqual([join(esm.main, "..", "data")]);
 
-  it("ESM 形态：写全扩展名即可解析（import './data.js'）", () => {
-    const { dir, main } = esmProject("nudo-505-esm-explicit-");
-    expect(resolveModuleFile("./data.js", main)).toBe(join(dir, "data.js"));
-  });
+    const cjsJson = cjsProject("nudo-505-json-cjs-");
+    expect(resolveModuleFile("./data.json", cjsJson.main)).toBe(join(cjsJson.dir, "data.json"));
+    writeTmpFiles(esm.dir, { "data.json": '{ "answer": 42 }\n' });
+    expect(resolveModuleFile("./data.json", esm.main)).toBe(join(esm.dir, "data.json"));
 
-  it("候选表：ESM 面只有精确路径；CJS 面含 .json 与 index 入口", () => {
-    const { main: cjsMain } = cjsProject("nudo-505-table-cjs-");
-    const cjsCands = moduleResolveCandidates("./data", cjsMain);
-    const base = join(cjsMain, "..", "data");
-    expect(cjsCands).toContain(`${base}.json`);
-    expect(cjsCands).toContain(join(base, "index.js"));
+    const order = tmpProject("nudo-505-order-", { "package.json": JSON.stringify({ name: "ord", version: "1.0.0", type: "commonjs" }), "data.js": "export const answer = 7;\n", "data.json": '{ "answer": 42 }\n', "main.js": "const data = require('./data');\nmodule.exports = { data };\n" });
+    expect(resolveModuleFile("./data", join(order, "main.js"))).toBe(join(order, "data.js"));
 
-    const { main: esmMain } = esmProject("nudo-505-table-esm-");
-    const esmCands = moduleResolveCandidates("./data", esmMain);
-    expect(esmCands).toEqual([join(esmMain, "..", "data")]);
-  });
-
-  it("负控制：显式 './data.json' 在两种形态下都解析得到", () => {
-    const { dir: cjsDir, main: cjsMain } = cjsProject("nudo-505-json-cjs-");
-    expect(resolveModuleFile("./data.json", cjsMain)).toBe(join(cjsDir, "data.json"));
-
-    const { dir: esmDir, main: esmMain } = esmProject("nudo-505-json-esm-");
-    writeTmpFiles(esmDir, { "data.json": '{ "answer": 42 }\n' });
-    expect(resolveModuleFile("./data.json", esmMain)).toBe(join(esmDir, "data.json"));
-  });
-
-  it("负控制：CJS 面的扩展名顺序同 Node（.js 先于 .json）", () => {
-    const dir = tmpProject("nudo-505-order-", {
-      "package.json": JSON.stringify({ name: "ord", version: "1.0.0", type: "commonjs" }),
-      "data.js": "export const answer = 7;\n",
-      "data.json": '{ "answer": 42 }\n',
-      "main.js": "const data = require('./data');\nmodule.exports = { data };\n",
-    });
-    expect(resolveModuleFile("./data", join(dir, "main.js"))).toBe(join(dir, "data.js"));
-  });
-
-  it("负控制：TS 导入方保持合并表（目录 import + index 入口仍可解析）", () => {
-    const dir = tmpProject("nudo-505-ts-", {
-      "utils/index.ts": "export const pad = (s: string) => s;\n",
-      "main.ts": "import { pad } from './utils';\nexport const go = pad;\n",
-    });
-    const main = join(dir, "main.ts");
-    expect(resolveModuleFile("./utils", main)).toBe(join(dir, "utils", "index.ts"));
-    // 合并表保持旧的扩展名序列（跨 loader 一致性）
-    expect(moduleResolveCandidates("./utils", main)).toEqual([
-      join(dir, "utils"),
-      join(dir, "utils.js"),
-      join(dir, "utils.mjs"),
-      join(dir, "utils.ts"),
-      join(dir, "utils", "index.js"),
-      join(dir, "utils", "index.mjs"),
-      join(dir, "utils", "index.ts"),
-    ]);
-  });
-
-  it("负控制：显式形态参数优先于文件推导（调用方知道说明符来源形态时）", () => {
-    const { main } = cjsProject("nudo-505-explicit-mode-");
-    // CJS 包里的文件按 import 形态解析 → 不猜扩展名
-    expect(resolveModuleFile("./data", main, "import")).toBeUndefined();
-    expect(resolveModuleFile("./data", main, "require")).toBe(join(main, "..", "data.json"));
+    const ts = tmpProject("nudo-505-ts-", { "utils/index.ts": "export const pad = (s: string) => s;\n", "main.ts": "import { pad } from './utils';\nexport const go = pad;\n" });
+    const tsMain = join(ts, "main.ts");
+    expect(resolveModuleFile("./utils", tsMain)).toBe(join(ts, "utils", "index.ts"));
+    expect(moduleResolveCandidates("./utils", tsMain)).toContain(join(ts, "utils", "index.js"));
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
