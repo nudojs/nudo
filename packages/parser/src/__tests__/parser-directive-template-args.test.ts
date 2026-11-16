@@ -1,80 +1,75 @@
 /**
- * `@nudo:case` 的**模板字面量**实参被顶层逗号切分器劈开。
- *
- * 根因：两个字符串感知扫描器（core `format/text-scan.ts` 的
- * `splitTopLevelArgs` / `walkTopLevelChars`）与 core `directive-scan.ts` 的
- * `extractBalancedParensScan` 只把 `"` / `'` 当串定界符，反引号被当普通字符
- * ⇒ `` `a,b` `` 里的逗号在 depth 0 被切、`` `a(b` `` 里的 `(` 被当实参表
- * 开括号（整条见证被丢）。姊妹函数 `fn-directives.ts` 的
- * `stripTrailingComment` 早已把反引号当引号 —— 本条补齐同口径。
+ * 反引号是串定界符：顶层逗号切分、括号深度、平衡括号扫描都不得把模板
+ * 字面量内的 `,` / `(` 当结构；@nudo:case 的模板实参必须完整保留。
  */
 import { describe, it, expect } from "vitest";
 import { litValue, extractBalancedParens } from "@nudojs/core";
 import { splitTopLevelArgs, walkTopLevelChars } from "@nudojs/core/internal";
 import { parse } from "../parse.ts";
-import { extractDirectives, type DirectiveDiag } from "../directives.ts";
-import type { CaseDirective } from "../directives.ts";
+import { extractDirectives, type DirectiveDiag, type CaseDirective } from "../directives.ts";
 
 function caseWithDiags(source: string) {
   const diags: DirectiveDiag[] = [];
-  const fns = extractDirectives(parse(source), { diags });
-  const cases = fns.flatMap((f) =>
+  const cases = extractDirectives(parse(source), { diags }).flatMap((f) =>
     f.directives.filter((d) => d.kind === "case"),
   ) as CaseDirective[];
   return { cases, diags };
 }
 
-describe("反引号是串定界符", () => {
-  it("splitTopLevelArgs：反引号内逗号 / 括号不当顶层分隔符", () => {
-    expect(splitTopLevelArgs("`a,b`, 1")).toEqual(["`a,b`", "1"]);
-    expect(splitTopLevelArgs("`a(b`")).toEqual(["`a(b`"]);
-    expect(splitTopLevelArgs("`a:b`")).toEqual(["`a:b`"]);
-    // 普通引号口径不变（负控）
-    expect(splitTopLevelArgs('"a,b", 1')).toEqual(['"a,b"', "1"]);
-  });
+const SCANNER_CASES = [
+  {
+    name: "splitTopLevelArgs 不切模板内的逗号/括号",
+    run: () => [
+      splitTopLevelArgs("`a,b`, 1"),
+      splitTopLevelArgs("`a(b`"),
+      splitTopLevelArgs("`a:b`"),
+      splitTopLevelArgs('"a,b", 1'),
+    ],
+    expected: [["`a,b`", "1"], ["`a(b`"], ["`a:b`"], ['"a,b"', "1"]],
+  },
+  {
+    name: "walkTopLevelChars 不把模板内括号计入深度",
+    run: () => {
+      let max = 0;
+      walkTopLevelChars("(`a(b`)", (_ch, _i, depth) => {
+        if (depth > max) max = depth;
+        return false;
+      });
+      return max;
+    },
+    expected: 1,
+  },
+  {
+    name: "extractBalancedParens 对含括号模板仍平衡",
+    run: () => extractBalancedParens("(`a(b`) => 1", 0),
+    expected: "`a(b`",
+  },
+];
 
-  it("walkTopLevelChars：反引号内括号不计深度", () => {
-    let maxDepth = 0;
-    walkTopLevelChars("(`a(b`)", (_ch, _i, depth) => {
-      if (depth > maxDepth) maxDepth = depth;
-      return false;
-    });
-    // 改前模板串里的 `(` 会叠加到 2；改后只外层一对括号 ⇒ 1
-    expect(maxDepth).toBe(1);
+describe("反引号作为串定界符", () => {
+  it.each(SCANNER_CASES)("$name", ({ run, expected }) => {
+    expect(run()).toEqual(expected);
   });
+});
 
-  it("extractBalancedParens：含括号的模板串仍平衡", () => {
-    expect(extractBalancedParens("(`a(b`) => 1", 0)).toBe("`a(b`");
-  });
+const CASE_CASES = [
+  { name: "含逗号模板", arg: "`a,b`", value: "a,b" },
+  { name: "含括号模板", arg: "`a(b`", value: "a(b" },
+  { name: "普通模板（负控）", arg: "`xy`", value: "xy" },
+];
 
-  it("@nudo:case 含逗号模板 ⇒ 一个实参（cooked 字符串），无 directive-syntax", () => {
-    const { cases, diags } = caseWithDiags(`/**
- * @nudo:case "csv" (\`a,b\`) => ["a","b"]
- */
-export function split(s) { return s.split(","); }`);
-    expect(cases).toHaveLength(1);
-    expect(cases[0]!.argsAbs).toHaveLength(1);
-    expect(litValue(cases[0]!.argsAbs[0]!)).toEqual({ ok: true, value: "a,b" });
-    expect(diags.filter((d) => d.code === "nudo:directive-syntax")).toEqual([]);
-  });
-
-  it("@nudo:case 含括号模板 ⇒ 见证不丢（无 unclosed argument list）", () => {
-    const { cases, diags } = caseWithDiags(`/**
- * @nudo:case "par" (\`a(b\`) => ["a(b"]
- */
-export function split(s) { return s.split(","); }`);
-    expect(cases).toHaveLength(1);
-    expect(cases[0]!.argsAbs).toHaveLength(1);
-    expect(litValue(cases[0]!.argsAbs[0]!)).toEqual({ ok: true, value: "a(b" });
-    expect(diags.some((d) => d.message.includes("unclosed argument list"))).toBe(false);
-  });
-
-  it("不含逗号 / 括号的模板字面量仍正常（负控）", () => {
-    const { cases } = caseWithDiags(`/**
- * @nudo:case "tpl" (\`xy\`)
+describe("@nudo:case 的模板实参", () => {
+  it("逗号 / 括号 / 普通模板都保留为单个 cooked 实参，且不产语法诊断", () => {
+    for (const { name, arg, value } of CASE_CASES) {
+      const { cases, diags } = caseWithDiags(`/**
+ * @nudo:case "tpl" (${arg})
  */
 export function f(s) { return s; }`);
-    expect(cases).toHaveLength(1);
-    expect(litValue(cases[0]!.argsAbs[0]!)).toEqual({ ok: true, value: "xy" });
+      expect(cases, name).toHaveLength(1);
+      expect(cases[0]!.argsAbs, name).toHaveLength(1);
+      expect(litValue(cases[0]!.argsAbs[0]!), name).toEqual({ ok: true, value });
+      expect(diags.filter((d) => d.code === "nudo:directive-syntax"), name).toEqual([]);
+      expect(diags.some((d) => d.message.includes("unclosed argument list")), name).toBe(false);
+    }
   });
 });
