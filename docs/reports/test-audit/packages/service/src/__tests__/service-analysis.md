@@ -1,5 +1,7 @@
 ```audit
 title	rootCause	gap	action	status	evidence
+A→B→A 预算与会话 LRU 回到 A；无 nudo 回落默认；重复稳定；env 压过配置	include/预算矩阵	没测该层	keep	keep	—
+目录/文件/glob/多条/空/排除的命中矩阵	include/预算矩阵	没测该层	keep	keep	—
 推导失败 number/any 都 unchecked；成功不符 failed；无期望 no-expectation；never failed	去重/may-throw/opaque/unchecked 表	没测该层	keep	keep	—
 推导失败只发 opaque info；成功不符报 case-expected；成功相符都不发	去重/may-throw/opaque/unchecked 表	没测该层	keep	keep	—
 case/函数/侧车申报豁免；未申报与 kind 不覆盖仍报；Error 族覆盖不报；坏侧车 contract-load	去重/may-throw/opaque/unchecked 表	没测该层	keep	keep	—
@@ -51,20 +53,6 @@ ESM/CJS 命名空间带接收者限定并可归因；具名/对象方法无前�
 "声明式 @nudo:case 的求值结果不变"	"找出 nudo:case-expected 诊断（期望不满足）。 断言：expect(shapes.add).toBe(\"2\");"	没测该层	keep	keep	—
 "无模块级状态的模块，入口用例结果不变"	"断言：expect(shapes.g).toBe('\"ok\"');"	没测该层	keep	keep	—
 "模块级状态未被改写时，读到的就是初值"	"断言：expect(shapes.read).toBe(\"7\");"	没测该层	keep	keep	—
-"include: [\"src\"] 命中 src 下的文件（改前：永不命中 → 白名单作废）"	"改前：include 走 matchesEmitAllowlist —— 无通配符的字面量被编译成锚定 全等正则 `^literal$`（相对项目根），`include: [\"src\"]` 对 `src/a.js` **永不命中** → 整张白名单静默作废（该文件整份不被分析，假绿）。 本次定的语义（写在 analysis-scope.includeHit 的注释里）： - 字面量 = **路径形态**（这个文件 / 这个目录），不是子串搜索： `src` 命中 `src/**`，不命中 `src-other/c.js`。 断言：expect(shouldAnalyzeFile(hit, SRC)).toBe(true);；expe"	夹具漏形态	keep	keep	—
-"include: [\"src\"] 不命中 src-other / lib（字面量不是子串搜索）"	"改前：include 走 matchesEmitAllowlist —— 无通配符的字面量被编译成锚定 全等正则 `^literal$`（相对项目根），`include: [\"src\"]` 对 `src/a.js` **永不命中** → 整张白名单静默作废（该文件整份不被分析，假绿）。 本次定的语义（写在 analysis-scope.includeHit 的注释里）： - 字面量 = **路径形态**（这个文件 / 这个目录），不是子串搜索： `src` 命中 `src/**`，不命中 `src-other/c.js`。 断言：expect(shouldAnalyzeFile(sibling, SRC)).toBe(false);"	夹具漏形态	keep	keep	—
-"include: [\"src/a.js\"] 只命中这一个文件"	"改前：include 走 matchesEmitAllowlist —— 无通配符的字面量被编译成锚定 全等正则 `^literal$`（相对项目根），`include: [\"src\"]` 对 `src/a.js` **永不命中** → 整张白名单静默作废（该文件整份不被分析，假绿）。 本次定的语义（写在 analysis-scope.includeHit 的注释里）： - 字面量 = **路径形态**（这个文件 / 这个目录），不是子串搜索： `src` 命中 `src/**`，不命中 `src-other/c.js`。 断言：expect(shouldAnalyzeFile(exact, SRC)).toBe(true);；ex"	夹具漏形态	keep	keep	—
-"include: [\"src/**\"] 命中整个子树，不命中 lib"	"改前：include 走 matchesEmitAllowlist —— 无通配符的字面量被编译成锚定 全等正则 `^literal$`（相对项目根），`include: [\"src\"]` 对 `src/a.js` **永不命中** → 整张白名单静默作废（该文件整份不被分析，假绿）。 本次定的语义（写在 analysis-scope.includeHit 的注释里）： - 字面量 = **路径形态**（这个文件 / 这个目录），不是子串搜索： `src` 命中 `src/**`，不命中 `src-other/c.js`。 断言：expect(shouldAnalyzeFile(nested, SRC)).toBe(true);；e"	夹具漏形态	keep	keep	—
-"include: [\"src/*.js\"] 不跨 /（段内通配）"	"改前：include 走 matchesEmitAllowlist —— 无通配符的字面量被编译成锚定 全等正则 `^literal$`（相对项目根），`include: [\"src\"]` 对 `src/a.js` **永不命中** → 整张白名单静默作废（该文件整份不被分析，假绿）。 本次定的语义（写在 analysis-scope.includeHit 的注释里）： - 字面量 = **路径形态**（这个文件 / 这个目录），不是子串搜索： `src` 命中 `src/**`，不命中 `src-other/c.js`。 断言：expect(shouldAnalyzeFile(top, SRC)).toBe(true);；expe"	夹具漏形态	keep	keep	—
-"include: [\"**/*.js\"] 命中任意目录的 .js"	"改前：include 走 matchesEmitAllowlist —— 无通配符的字面量被编译成锚定 全等正则 `^literal$`（相对项目根），`include: [\"src\"]` 对 `src/a.js` **永不命中** → 整张白名单静默作废（该文件整份不被分析，假绿）。 本次定的语义（写在 analysis-scope.includeHit 的注释里）： - 字面量 = **路径形态**（这个文件 / 这个目录），不是子串搜索： `src` 命中 `src/**`，不命中 `src-other/c.js`。 断言：expect(shouldAnalyzeFile(other, SRC)).toBe(true);"	夹具漏形态	keep	keep	—
-"include 多条：任一命中即纳入"	"\\\"] 命中整个子树，不命中 lib\", () => { const dir = project([\"src/**\"]); it(\"include: [\\\"src/*.js\\\"] 不跨 /（段内通配）\", () => { const dir = project([\"src/*.js\"]); 断言：expect(shouldAnalyzeFile(inLib, SRC)).toBe(true);；expect(shouldAnalyzeFile(exact, SRC)).toBe(true);"	没测该层	keep	keep	—
-"负控制：include 为空 → 不过滤（mode=all 全纳入）"	"\\\"] 命中整个子树，不命中 lib\", () => { const dir = project([\"src/**\"]); it(\"include: [\\\"src/*.js\\\"] 不跨 /（段内通配）\", () => { const dir = project([\"src/*.js\"]); 断言：expect(shouldAnalyzeFile(any, SRC)).toBe(true);"	没测该层	keep	keep	—
-"负控制：exclude 的字面量子串语义不变（src/vendored 命中子树）"	"\\\"] 命中整个子树，不命中 lib\", () => { const dir = project([\"src/**\"]); it(\"include: [\\\"src/*.js\\\"] 不跨 /（段内通配）\", () => { const dir = project([\"src/*.js\"]); 断言：expect(shouldAnalyzeFile(vendored, SRC)).toBe(false);；expect(shouldAnalyzeFile(keep, SRC)).toBe(true);"	没测该层	keep	keep	—
-"A → B → A（memo 命中）：预算回到 A 的值（不是 B 的最后写入者）"	"`nudo.analysis.maxForks`（与 `nudo.sessionCache.*`）是**进程级 单槽**，且只在 findProjectConfig 的 **memo-miss** 路径写一次 ⇒ 「哪个项目最后被**首次**查找」决定全局值 ⇒ 同一项目同一配置在不同目标 顺序下结论不同（fork 截断诊断时有时无，类型静默变宽）。 根因：按项目目录解析的配置写进进程级单例（core 的 fork 预算单例 / session-cache-limits 的 fromProject 单槽），而写入只发生在 memo-miss 路径。 断言：expect(currentBForkBudgetLimit()).toBe("	没测该层	keep	keep	—
-"A → B → A：会话 LRU 上限同样随本次解析回到 A"	"断言：expect(getSessionCacheLimits({}).maxFiles).toBe(7);；expect(getSessionCacheLimits({}).maxFiles).toBe(9);"	没测该层	keep	keep	—
-"无 nudo 键的目录：预算回落默认（不是上一个项目的值）"	"`nudo.analysis.maxForks`（与 `nudo.sessionCache.*`）是**进程级 单槽**，且只在 findProjectConfig 的 **memo-miss** 路径写一次 ⇒ 「哪个项目最后被**首次**查找」决定全局值 ⇒ 同一项目同一配置在不同目标 顺序下结论不同（fork 截断诊断时有时无，类型静默变宽）。 根因：按项目目录解析的配置写进进程级单例（core 的 fork 预算单例 / session-cache-limits 的 fromProject 单槽），而写入只发生在 memo-miss 路径。 断言：expect(currentBForkBudgetLimit()).toBe("	没测该层	keep	keep	—
-"同一项目重复解析：预算稳定"	"断言：expect(currentBForkBudgetLimit()).toBe(33);；expect(currentBForkBudgetLimit()).toBe(33);"	没测该层	keep	keep	—
-"env NUDO_MAX_FORKS 仍压过项目配置（优先级不变）"	"断言：expect(currentBForkBudgetLimit()).toBe(77);"	没测该层	keep	keep	—
 "实例方法：见证求值出确切值 1（改前恒 unknown）"	"**类方法**上的 `@nudo:case` 见证从不被求值 → 结果恒 `unknown` → 任何期望都必假红（顶层函数同款 case 却通过）。 根因（analyzer-orchestrate-uncached-cases.ts）：见证求值把 `fn.name` 当 **源码里的被调表达式**传给 `tryEvalCallFull`； 断言：expect(fn).toBeDefined();；expect(c).toBeDefined();"	没测该层	keep	keep	—
 "实例方法：见证实参参与运算（(1) => 2）"	"断言：expect(t?.op === \"lit\" ? t.value : undefined).toBe(2);"	没测该层	keep	keep	—
 "负控制：顶层函数同款 case 口径不变（结果 1）"	"**类方法**上的 `@nudo:case` 见证从不被求值 → 结果恒 `unknown` → 任何期望都必假红（顶层函数同款 case 却通过）。 根因（analyzer-orchestrate-uncached-cases.ts）：见证求值把 `fn.name` 当 **源码里的被调表达式**传给 `tryEvalCallFull`； 断言：expect(t?.op === \"lit\" ? t.value : undefined).toBe(1);"	没测该层	keep	keep	—
@@ -157,4 +145,18 @@ case 上的 `!! throws TypeError` ⇒ 不发 nudo:may-throw	dup:去重/may-throw
 负控制：推导成功 + 期望不符 ⇒ 仍是 failed（既有行为不变）	dup:去重/may-throw/opaque/unchecked 表	commit:d9bc7de9
 负控制：声明了但没写期望 ⇒ no-expectation 口径不变	dup:去重/may-throw/opaque/unchecked 表	commit:d9bc7de9
 负控制：抛错（实测 never）⇒ 仍是 failed（never 不是「推导失败」）	dup:去重/may-throw/opaque/unchecked 表	commit:d9bc7de9
+include: ["src"] 命中 src 下的文件（改前：永不命中 → 白名单作废）	dup:include/预算矩阵	commit:2e09de7f
+include: ["src"] 不命中 src-other / lib（字面量不是子串搜索）	dup:include/预算矩阵	commit:2e09de7f
+include: ["src/a.js"] 只命中这一个文件	dup:include/预算矩阵	commit:2e09de7f
+include: ["src/**"] 命中整个子树，不命中 lib	dup:include/预算矩阵	commit:2e09de7f
+include: ["src/*.js"] 不跨 /（段内通配）	dup:include/预算矩阵	commit:2e09de7f
+include: ["**/*.js"] 命中任意目录的 .js	dup:include/预算矩阵	commit:2e09de7f
+include 多条：任一命中即纳入	dup:include/预算矩阵	commit:2e09de7f
+负控制：include 为空 → 不过滤（mode=all 全纳入）	dup:include/预算矩阵	commit:2e09de7f
+负控制：exclude 的字面量子串语义不变（src/vendored 命中子树）	dup:include/预算矩阵	commit:2e09de7f
+A → B → A（memo 命中）：预算回到 A 的值（不是 B 的最后写入者）	dup:include/预算矩阵	commit:2e09de7f
+A → B → A：会话 LRU 上限同样随本次解析回到 A	dup:include/预算矩阵	commit:2e09de7f
+无 nudo 键的目录：预算回落默认（不是上一个项目的值）	dup:include/预算矩阵	commit:2e09de7f
+同一项目重复解析：预算稳定	dup:include/预算矩阵	commit:2e09de7f
+env NUDO_MAX_FORKS 仍压过项目配置（优先级不变）	dup:include/预算矩阵	commit:2e09de7f
 ```
