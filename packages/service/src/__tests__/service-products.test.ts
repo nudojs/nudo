@@ -973,45 +973,21 @@ const CLASS_METHOD_WITH_DIRECTIVE = `export class C {
 `;
 
 describe("dts identifier is always a legal TS identifier", () => {
-  it("directive path inherits the noDeclaration classification", () => {
-    const r = analyzeFile_____analyzer_ts_3("/t/b494/class-method.js", CLASS_METHOD_WITH_DIRECTIVE);
-    const fn = r.functions.find((f) => f.name === "C.m");
-    expect(fn).toBeDefined();
-    expect(fn!.noDeclaration).toBe(true);
-  });
-
-  it("dts projection never emits a dotted function name", () => {
-    const r = analyzeFile_____analyzer_ts_3("/t/b494/class-method-dts.js", CLASS_METHOD_WITH_DIRECTIVE);
+  const CLASS_METHOD_WITH_DIRECTIVE = `export class C {\n  /**\n   * @nudo:case "m1" (1) => 2\n   */\n  m(x) { return x + 1; }\n}\n`;
+  it("指令路径继承 noDeclaration；dts 清洗点号；防御门同样清洗", () => {
+    const r = analyzeFile("/t/b494/class-method.js", CLASS_METHOD_WITH_DIRECTIVE);
     const fn = r.functions.find((f) => f.name === "C.m")!;
+    expect(fn).toBeDefined();
+    expect(fn.noDeclaration).toBe(true);
     const proj = projectFunctionDts(fn);
-    expect(proj.lines.length).toBeGreaterThan(0);
-    const decl = proj.lines.find((l) => l.includes("export declare function"));
-    expect(decl).toBeDefined();
+    const decl = proj.lines.find((l) => l.includes("export declare function"))!;
     expect(decl).toMatch(/export declare function C_m\b/);
     expect(proj.lines.join("\n")).not.toMatch(/C\.m/);
+    const illegal: FunctionAnalysis = { name: "C.m", loc: { start: { line: 1, column: 0 }, end: { line: 1, column: 0 } }, paramNames: ["x"], cases: [{ name: "entry@L2", argAbs: [], abs: { shape: { k: "prim", type: "number" } } as never, throwsAbs: { shape: { k: "never" } } as never }] };
+    const defensive = projectFunctionDts(illegal).lines.find((l) => l.includes("export declare function"))!;
+    expect(defensive).toMatch(/export declare function C_m\b/);
   });
-
-  it("defensive gate: an illegal name is cleaned even without the noDeclaration flag", () => {
-    const fn: FunctionAnalysis = {
-      name: "C.m",
-      loc: { start: { line: 1, column: 0 }, end: { line: 1, column: 0 } },
-      paramNames: ["x"],
-      cases: [
-        {
-          name: "entry@L2",
-          argAbs: [],
-          abs: { shape: { k: "prim", type: "number" } } as never,
-          throwsAbs: { shape: { k: "never" } } as never,
-        },
-      ],
-    };
-    const proj = projectFunctionDts(fn);
-    expect(proj.lines.length).toBeGreaterThan(0);
-    const decl = proj.lines.find((l) => l.includes("export declare function"));
-    expect(decl).toBeDefined();
-    expect(decl).toMatch(/export declare function C_m\b/);
-  });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -1206,45 +1182,29 @@ function exportedGuardNames(source: string): string[] {
 }
 
 describe("guard 导出名必须模块内去重（清洗碰撞不再产生同名导出）", () => {
-  it("同一个 used 集合 ⇒ 清洗后同名的两个守卫拿到不同导出名", () => {
+  const exportedGuardNames = (source: string): string[] => [...source.matchAll(/export function (\w+)\(/g)].map((m) => m[1]!);
+  it("同 used 集合去重；不同名不受影响；不传 used 只清洗；字符清洗生效", () => {
     const used = new Set<string>();
-    // 类方法 `A.b` 与顶层函数 `A_b` ⇒ 清洗后都是 `isA_bOutput`
     const a = generateGuardFunctionFromAbs("isA_bOutput", num(), used);
     const b = generateGuardFunctionFromAbs("isA_bOutput", num(), used);
-
     expect(exportedGuardNames(a)).toEqual(["isA_bOutput"]);
     expect(exportedGuardNames(b)).toEqual(["isA_bOutput_2"]);
-
-    // 同一模块里两个守卫 ⇒ 导出名唯一（node / tsc 都不再报重复声明）
-    const module = [a, b].join("\n");
-    const names = exportedGuardNames(module);
-    expect(names).toEqual(["isA_bOutput", "isA_bOutput_2"]);
+    const names = exportedGuardNames([a, b].join("\n"));
     expect(new Set(names).size).toBe(names.length);
-  });
 
-  it("used 集合跨守卫共享 ⇒ 去重只影响同名者（不同名不受影响）", () => {
-    const used = new Set<string>();
-    const a = generateGuardFunctionFromAbs("isA_bOutput", num(), used);
-    const b = generateGuardFunctionFromAbs("isOtherOutput", num(), used);
-    const c = generateGuardFunctionFromAbs("isA_bOutput", num(), used);
+    const used2 = new Set<string>();
+    const c = generateGuardFunctionFromAbs("isA_bOutput", num(), used2);
+    const d = generateGuardFunctionFromAbs("isOtherOutput", num(), used2);
+    const e = generateGuardFunctionFromAbs("isA_bOutput", num(), used2);
+    expect(exportedGuardNames(c)).toEqual(["isA_bOutput"]);
+    expect(exportedGuardNames(d)).toEqual(["isOtherOutput"]);
+    expect(exportedGuardNames(e)).toEqual(["isA_bOutput_2"]);
 
-    expect(exportedGuardNames(a)).toEqual(["isA_bOutput"]);
-    expect(exportedGuardNames(b)).toEqual(["isOtherOutput"]);
-    expect(exportedGuardNames(c)).toEqual(["isA_bOutput_2"]);
+    expect(exportedGuardNames(generateGuardFunctionFromAbs("isA_bOutput", num()))).toEqual(["isA_bOutput"]);
+    expect(exportedGuardNames(generateGuardFunctionFromAbs("isA_bOutput", num()))).toEqual(["isA_bOutput"]);
+    expect(exportedGuardNames(generateGuardFunctionFromAbs("isA.bOutput", num(), new Set<string>()))).toEqual(["isA_bOutput"]);
   });
-
-  it("负控制：不传 used ⇒ 只清洗、不去重（旧调用方行为不变）", () => {
-    const a = generateGuardFunctionFromAbs("isA_bOutput", num());
-    const b = generateGuardFunctionFromAbs("isA_bOutput", num());
-    expect(exportedGuardNames(a)).toEqual(["isA_bOutput"]);
-    expect(exportedGuardNames(b)).toEqual(["isA_bOutput"]);
-  });
-
-  it("字符清洗仍然生效（A.b → isA_bOutput）", () => {
-    const src = generateGuardFunctionFromAbs("isA.bOutput", num(), new Set<string>());
-    expect(exportedGuardNames(src)).toEqual(["isA_bOutput"]);
-  });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -1266,63 +1226,25 @@ describe("standard 返回面导出名恒为 <fn>Output（不随符号来源翻�
 
 
 describe("standard 返回面导出名恒为 <fn>Output（不随符号来源翻转）", () => {
-  it("契约返回 ⇒ 恒叫 <fn>Output（不再叫 <fn>Return）", async () => {
-    const { source } = absToStandardSchemaFunction({
-      fn: "alpha",
-      inputs: [{ name: "x", abs: num() }],
-      returns: num(),
-    });
-    expect(source).toContain("export const alphaOutput");
-    expect(source).not.toContain("export const alphaReturn");
+  const names = (src: string) => [...src.matchAll(/export const (\w+)/g)].map((m) => m[1]!);
+  it("契约/观测/并存都恒为 <fn>Output；导出名集合相同；契约优先", async () => {
+    const fromContract = absToStandardSchemaFunction({ fn: "alpha", inputs: [{ name: "x", abs: num() }], returns: num() });
+    expect(fromContract.source).toContain("export const alphaOutput");
+    expect(fromContract.source).not.toContain("export const alphaReturn");
+    const contractMod = await loadGeneratedModule(fromContract.source);
+    expect(contractMod.alphaOutput).toBeDefined();
 
-    const mod = await loadGeneratedModule(source);
-    expect(mod.alphaOutput).toBeDefined();
+    const fromObservation = absToStandardSchemaFunction({ fn: "alpha", inputs: [{ name: "x", abs: num() }], output: num() });
+    expect(fromObservation.source).toContain("export const alphaOutput");
+    expect(names(fromContract.source)).toEqual(names(fromObservation.source));
+    expect(names(fromContract.source)).toEqual(["alpha_x", "alphaInput", "alphaOutput"]);
+
+    const both = absToStandardSchemaFunction({ fn: "alpha", inputs: [{ name: "x", abs: num() }], returns: num(), output: num() });
+    expect([...both.source.matchAll(/export const alphaOutput/g)].length).toBe(1);
+    const bothMod = await loadGeneratedModule(both.source);
+    expect(bothMod.alphaOutput!["~standard"].validate(1).issues).toBeUndefined();
   });
-
-  it("观测返回 ⇒ 同样叫 <fn>Output（两面同名同义）", async () => {
-    const { source } = absToStandardSchemaFunction({
-      fn: "alpha",
-      inputs: [{ name: "x", abs: num() }],
-      output: num(),
-    });
-    expect(source).toContain("export const alphaOutput");
-    expect(source).not.toContain("export const alphaReturn");
-
-    const mod = await loadGeneratedModule(source);
-    expect(mod.alphaOutput).toBeDefined();
-  });
-
-  it("同一函数的两种来源 ⇒ 导出名集合相同（名字与来源解耦）", () => {
-    const fromContract = absToStandardSchemaFunction({
-      fn: "alpha",
-      inputs: [{ name: "x", abs: num() }],
-      returns: num(),
-    }).source;
-    const fromObservation = absToStandardSchemaFunction({
-      fn: "alpha",
-      inputs: [{ name: "x", abs: num() }],
-      output: num(),
-    }).source;
-
-    const names = (src: string): string[] =>
-      [...src.matchAll(/export const (\w+)/g)].map((m) => m[1]!);
-    expect(names(fromContract)).toEqual(names(fromObservation));
-    expect(names(fromContract)).toEqual(["alpha_x", "alphaInput", "alphaOutput"]);
-  });
-
-  it("契约返回优先于观测返回（内容口径不变，只是名字恒定）", async () => {
-    const { source } = absToStandardSchemaFunction({
-      fn: "alpha",
-      inputs: [{ name: "x", abs: num() }],
-      returns: num(),
-      output: num(),
-    });
-    // 只有一个返回面导出（不因两条来源并存而多出同名声明）
-    expect([...source.matchAll(/export const alphaOutput/g)].length).toBe(1);
-    const mod = await loadGeneratedModule(source);
-    expect(mod.alphaOutput!["~standard"].validate(1).issues).toBeUndefined();
-  });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -1355,65 +1277,28 @@ const defaultFormals: FormalParam[] = [
 ];
 
 describe("standard 顶层形参的可选性必须保真（接受 undefined）", () => {
-  it("契约级可选位：整参校验器接受 undefined（契约 number().optional()）", async () => {
-    const { source } = absToStandardSchemaFunction({
-      fn: "act",
-      inputs: [{ name: "x", abs: num(), optional: true }],
-      formals: [{ kind: "id", name: "x", index: 0 }],
-      output: num(),
-    });
-    const mod = await loadGeneratedModule(source);
-    const validate = mod.act_x!["~standard"].validate;
-    // 契约允许 undefined ⇒ 接受
-    expect(validate(undefined).issues).toBeUndefined();
-    // 正常值仍接受 / 错误类型仍拒绝
-    expect(validate(1).issues).toBeUndefined();
-    expect(validate("hello").issues).toBeDefined();
-  });
+  const defaultFormals: FormalParam[] = [{ kind: "id", name: "a", index: 0 }, { kind: "default", name: "b", index: 1 }];
+  it("契约/声明级可选接受 undefined；Input 槽可缺席；未申报可选拒收", async () => {
+    const optional = absToStandardSchemaFunction({ fn: "act", inputs: [{ name: "x", abs: num(), optional: true }], formals: [{ kind: "id", name: "x", index: 0 }], output: num() });
+    const mod = await loadGeneratedModule(optional.source);
+    expect(mod.act_x!["~standard"].validate(undefined).issues).toBeUndefined();
+    expect(mod.act_x!["~standard"].validate(1).issues).toBeUndefined();
+    expect(mod.act_x!["~standard"].validate("hello").issues).toBeDefined();
+    expect(mod.actInput!["~standard"].validate({}).issues).toBeUndefined();
+    expect(mod.actInput!["~standard"].validate({ x: undefined }).issues).toBeUndefined();
+    expect(mod.actInput!["~standard"].validate({ x: "hello" }).issues).toBeDefined();
 
-  it("契约级可选位：<fn>Input 的槽位可缺席（键可缺、显式 undefined 合法）", async () => {
-    const { source } = absToStandardSchemaFunction({
-      fn: "act",
-      inputs: [{ name: "x", abs: num(), optional: true }],
-      formals: [{ kind: "id", name: "x", index: 0 }],
-      output: num(),
-    });
-    const mod = await loadGeneratedModule(source);
-    const validate = mod.actInput!["~standard"].validate;
-    expect(validate({}).issues).toBeUndefined();
-    expect(validate({ x: undefined }).issues).toBeUndefined();
-    expect(validate({ x: 1 }).issues).toBeUndefined();
-    expect(validate({ x: "hello" }).issues).toBeDefined();
-  });
+    const declared = absToStandardSchemaFunction({ fn: "f", inputs: [{ name: "a", abs: num() }, { name: "b", abs: num() }], formals: defaultFormals, output: num() });
+    const dmod = await loadGeneratedModule(declared.source);
+    expect(dmod.f_b!["~standard"].validate(undefined).issues).toBeUndefined();
+    expect(dmod.f_a!["~standard"].validate(undefined).issues).toBeDefined();
 
-  it("声明级可选位（默认形参）同样保真", async () => {
-    const { source } = absToStandardSchemaFunction({
-      fn: "f",
-      inputs: [
-        { name: "a", abs: num() },
-        { name: "b", abs: num() },
-      ],
-      formals: defaultFormals,
-      output: num(),
-    });
-    const mod = await loadGeneratedModule(source);
-    expect(mod.f_b!["~standard"].validate(undefined).issues).toBeUndefined();
-    expect(mod.f_a!["~standard"].validate(undefined).issues).toBeDefined();
+    const required = absToStandardSchemaFunction({ fn: "act", inputs: [{ name: "x", abs: num() }], formals: [{ kind: "id", name: "x", index: 0 }], output: num() });
+    const rmod = await loadGeneratedModule(required.source);
+    expect(rmod.act_x!["~standard"].validate(undefined).issues).toBeDefined();
+    expect(rmod.actInput!["~standard"].validate({}).issues).toBeDefined();
   });
-
-  it("负控制：未申报可选的位仍拒收 undefined", async () => {
-    const { source } = absToStandardSchemaFunction({
-      fn: "act",
-      inputs: [{ name: "x", abs: num() }],
-      formals: [{ kind: "id", name: "x", index: 0 }],
-      output: num(),
-    });
-    const mod = await loadGeneratedModule(source);
-    expect(mod.act_x!["~standard"].validate(undefined).issues).toBeDefined();
-    const validate = mod.actInput!["~standard"].validate;
-    expect(validate({}).issues).toBeDefined();
-  });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -1475,25 +1360,28 @@ const VIOLATIONS: Array<{ name: string; src: string; expect: string }> = [
 ];
 
 describe("defineEnv() 契约违约必须可见", () => {
-  for (const v of VIOLATIONS) {
-    it(`${v.name}：一条 nudo:env-unresolved 诊断且点名 env 文件`, async () => {
+  beforeEach(() => { clearPathEnvCaches(); });
+  const VIOLATIONS = [
+    { name: "不导出 defineEnv", src: "export const notDefine = 1;\n", expect: "must export a defineEnv() function" },
+    { name: "defineEnv 不是函数", src: "export const defineEnv = 42;\n", expect: "must export a defineEnv() function" },
+    { name: "defineEnv 抛异常", src: 'export function defineEnv() { throw new Error("boom"); }\n', expect: "defineEnv() threw: boom" },
+    { name: "返回 null", src: "export function defineEnv() { return null; }\n", expect: "must return { globals }" },
+    { name: "返回 7", src: "export function defineEnv() { return 7; }\n", expect: "must return { globals }" },
+    { name: "返回 {}（无 globals）", src: "export function defineEnv() { return {}; }\n", expect: "must return { globals }" },
+  ];
+  it("六种违约各一条诊断点名 env 文件；结构违约装载期即报；契约满足/语法错负控", async () => {
+    for (const v of VIOLATIONS) {
       const dir = tmpProject("nudo-bug-937-");
       const envFile = join(dir, "myenv.mjs");
       writeFileSync(envFile, v.src, "utf-8");
-
       await preloadPathEnvs(["./myenv.mjs"], dir);
-      // 工厂调用不得把异常冒泡出去（求值侧兜底 catch 会静默吞掉）
       const loaded = loadEnvs(["./myenv.mjs"], createEnvironment(), dir);
-      expect(Object.keys(loaded.globals)).toHaveLength(0);
-
+      expect(Object.keys(loaded.globals), v.name).toHaveLength(0);
       const errs = getPathEnvLoadErrors(dir);
-      expect(errs).toHaveLength(1);
-      expect(errs[0]!.path).toBe(envFile);
-      expect(errs[0]!.error).toContain(v.expect);
-    });
-  }
-
-  it("结构违约（不导出 / 不是函数）在**装载期**即报（不待工厂调用）", async () => {
+      expect(errs, v.name).toHaveLength(1);
+      expect(errs[0]!.path, v.name).toBe(envFile);
+      expect(errs[0]!.error, v.name).toContain(v.expect);
+    }
     for (const src of ["export const notDefine = 1;\n", "export const defineEnv = 42;\n"]) {
       const dir = tmpProject("nudo-bug-937-struct-");
       const envFile = join(dir, "myenv.mjs");
@@ -1504,32 +1392,22 @@ describe("defineEnv() 契约违约必须可见", () => {
       expect(errs[0]!.path).toBe(envFile);
       expect(errs[0]!.error).toContain("must export a defineEnv() function");
     }
+    {
+      const dir = tmpProject("nudo-bug-937-ok-");
+      writeFileSync(join(dir, "myenv.mjs"), 'import { numLit } from "@nudojs/core";\nexport function defineEnv() {\n  return { globals: { MAGIC: numLit(42) } };\n}\n', "utf-8");
+      await preloadPathEnvs(["./myenv.mjs"], dir);
+      expect(getPathEnvLoadErrors(dir)).toHaveLength(0);
+      const loaded = loadEnvs(["./myenv.mjs"], createEnvironment(), dir);
+      expect(formatShape(loaded.globals.MAGIC!)).toBe("42");
+    }
+    {
+      const dir = tmpProject("nudo-bug-937-syntax-");
+      writeFileSync(join(dir, "myenv.mjs"), "export function defineEnv( {\n", "utf-8");
+      await preloadPathEnvs(["./myenv.mjs"], dir);
+      const errs = getPathEnvLoadErrors(dir);
+      expect(errs).toHaveLength(1);
+      expect(errs[0]!.error).not.toContain("must export a defineEnv()");
+    }
   });
-
-  it("负控制：契约满足的 env 文件生效且零告警", async () => {
-    const dir = tmpProject("nudo-bug-937-ok-");
-    writeFileSync(
-      join(dir, "myenv.mjs"),
-      `import { numLit } from "@nudojs/core";
-export function defineEnv() {
-  return { globals: { MAGIC: numLit(42) } };
-}
-`,
-      "utf-8",
-    );
-    await preloadPathEnvs(["./myenv.mjs"], dir);
-    expect(getPathEnvLoadErrors(dir)).toHaveLength(0);
-    const loaded = loadEnvs(["./myenv.mjs"], createEnvironment(), dir);
-    expect(formatShape(loaded.globals.MAGIC!)).toBe("42");
-  });
-
-  it("负控制：语法错的 env 文件仍走既有措辞（不与契约诊断混口径）", async () => {
-    const dir = tmpProject("nudo-bug-937-syntax-");
-    writeFileSync(join(dir, "myenv.mjs"), "export function defineEnv( {\n", "utf-8");
-    await preloadPathEnvs(["./myenv.mjs"], dir);
-    const errs = getPathEnvLoadErrors(dir);
-    expect(errs).toHaveLength(1);
-    expect(errs[0]!.error).not.toContain("must export a defineEnv()");
-  });
-});
+});;
 });
