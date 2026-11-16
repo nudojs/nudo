@@ -79,7 +79,9 @@ function indentOf(source: string, lineText: string): number {
 }
 
 describe("freeze 写回的 JSDoc 块按声明语句列缩进", () => {
-  it("export function：块落在列 0（不是 function 关键字的列 7）", () => {
+  it("export function：块落在列 0（不是 function 关键字的列 7）；export default function：块落在列 0（不是 function 关键字的列 15）；负控制：嵌套函数仍按声明行的行首缩进（修复不把所有块拍平到列 0）；负控制：已有 JSDoc 块时指令行沿用块自身的缩进（不按函数节点列）", () => {
+(() => {
+
     const source = `export function greet(u) {
   return u.name;
 }
@@ -98,9 +100,9 @@ const r = greet({ name: "Ada" });
     // 指令行与块尾行同样在列 0
     expect(result.source.split("\n")[1]).toBe(' * @nudo:case "call@L4" ({ name: "Ada" })');
     expect(result.source.split("\n")[2]).toBe(" */");
-  });
+  })();
+(() => {
 
-  it("export default function：块落在列 0（不是 function 关键字的列 15）", () => {
     const source = `export default function greet(u) {
   return u.name;
 }
@@ -114,9 +116,9 @@ const r = greet({ name: "Ada" });
     expect(result.changed).toBe(true);
     expect(result.source.split("\n")[0]).toBe("/**");
     expect(indentOf(result.source, "/**")).toBe(0);
-  });
+  })();
+(() => {
 
-  it("负控制：嵌套函数仍按声明行的行首缩进（修复不把所有块拍平到列 0）", () => {
     const source = `function outer() {
   function inner(x) {
     return x;
@@ -138,9 +140,9 @@ const r = greet({ name: "Ada" });
   return inner(1);
 }
 `);
-  });
+  })();
+(() => {
 
-  it("负控制：已有 JSDoc 块时指令行沿用块自身的缩进（不按函数节点列）", () => {
     const source = `/**
  * Adds numbers.
  */
@@ -155,7 +157,14 @@ const r = add(1, 2);
     expect(result.source.split("\n")[1]).toMatch(/^ \* @nudo:case "call@L\d+"/);
     // 块首行仍是原样（列 0）
     expect(result.source.split("\n")[0]).toBe("/**");
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -217,7 +226,9 @@ function bareLfCount(text: string): number {
 describe("freeze 写回不污染 CRLF 源文件的行尾", () => {
   const CRLF_SOURCE = "export function f(x) {\r\n  return x + 1;\r\n}\r\n";
 
-  it("CRLF 文件：固化后仍是纯 CRLF（新块不带裸 LF）", () => {
+  it("CRLF 文件：固化后仍是纯 CRLF（新块不带裸 LF）；CRLF 文件：原行的行尾逐行保留（不被改写成 LF）；CRLF 文件：真实分析器驱动的固化同样不混排行尾；负控制：LF 文件写回后仍是 LF（不引入 CR）；负控制：二次固化幂等（CRLF 文件第二次不再写盘）", () => {
+(() => {
+
     const result = insertGeneratedCaseDirectives(
       CRLF_SOURCE,
       makeAnalysis([makeFn("f", 1, "call@L2")]),
@@ -233,9 +244,9 @@ describe("freeze 写回不污染 CRLF 源文件的行尾", () => {
         "  return x + 1;\r\n" +
         "}\r\n",
     );
-  });
+  })();
+(() => {
 
-  it("CRLF 文件：原行的行尾逐行保留（不被改写成 LF）", () => {
     const result = insertGeneratedCaseDirectives(
       CRLF_SOURCE,
       makeAnalysis([makeFn("f", 1, "call@L2")]),
@@ -244,17 +255,17 @@ describe("freeze 写回不污染 CRLF 源文件的行尾", () => {
     const emitted = result.source.split("\n");
     // 原三行（含各自的 "\r"）原样出现在写回结果里
     expect(emitted.slice(3)).toEqual(original);
-  });
+  })();
+(() => {
 
-  it("CRLF 文件：真实分析器驱动的固化同样不混排行尾", () => {
     const source = "export function f(x) {\r\n  return x + 1;\r\n}\r\nf(1);\r\n";
     const analysis = analyzeFile("/test/bug-547-crlf.js", source);
     const result = insertGeneratedCaseDirectives(source, analysis);
     expect(result.changed).toBe(true);
     expect(bareLfCount(result.source)).toBe(0);
-  });
+  })();
+(() => {
 
-  it("负控制：LF 文件写回后仍是 LF（不引入 CR）", () => {
     const source = "export function f(x) {\n  return x + 1;\n}\n";
     const result = insertGeneratedCaseDirectives(source, makeAnalysis([makeFn("f", 1, "call@L2")]));
     expect(result.changed).toBe(true);
@@ -267,9 +278,9 @@ describe("freeze 写回不污染 CRLF 源文件的行尾", () => {
         "  return x + 1;\n" +
         "}\n",
     );
-  });
+  })();
+(() => {
 
-  it("负控制：二次固化幂等（CRLF 文件第二次不再写盘）", () => {
     const first = insertGeneratedCaseDirectives(
       CRLF_SOURCE,
       makeAnalysis([makeFn("f", 1, "call@L2")]),
@@ -282,7 +293,16 @@ describe("freeze 写回不污染 CRLF 源文件的行尾", () => {
     expect(second.written).toEqual([]);
     expect(second.skipped.map((s) => s.reason)).toContain("already-generated");
     expect(second.source).toBe(first.source);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -322,7 +342,9 @@ function caseCount(source: string): number {
 }
 
 describe("二次固化必须是被行号漂移免疫的 no-op", () => {
-  it("第二次固化（重新分析改写后的源码）不再写重复指令", () => {
+  it("第二次固化（重新分析改写后的源码）不再写重复指令；第三、四次固化同样 no-op（源码不再增长）；同实参、不同名字的见证不重复写（两个调用点传同样的值）；不同实参的见证仍然各自落地（不误合并）；`serializeCaseArgs` 是载荷口径的唯一真源（buildCaseDirective 复用它）", () => {
+(() => {
+
     const first = insertGeneratedCaseDirectives(SOURCE, analyzeFile("/t/one.js", SOURCE));
     expect(first.written.length).toBe(1);
     expect(caseCount(first.source)).toBe(1);
@@ -336,9 +358,9 @@ describe("二次固化必须是被行号漂移免疫的 no-op", () => {
     expect(second.source).toBe(first.source);
     expect(caseCount(second.source)).toBe(1);
     expect(second.skipped).toContainEqual({ fn: "double", reason: "already-generated" });
-  });
+  })();
+(() => {
 
-  it("第三、四次固化同样 no-op（源码不再增长）", () => {
     let source = SOURCE;
     for (let i = 0; i < 4; i++) {
       const out = insertGeneratedCaseDirectives(source, analyzeFile("/t/one.js", source));
@@ -356,9 +378,9 @@ describe("二次固化必须是被行号漂移免疫的 no-op", () => {
  */
 ` + SOURCE,
     );
-  });
+  })();
+(() => {
 
-  it("同实参、不同名字的见证不重复写（两个调用点传同样的值）", () => {
     const src = `export function double(n) {
   return n * 2;
 }
@@ -374,9 +396,9 @@ export function caller2() {
     const out = insertGeneratedCaseDirectives(src, analyzeFile("/t/two.js", src));
     expect(out.written.length).toBe(1);
     expect(caseCount(out.source)).toBe(1);
-  });
+  })();
+(() => {
 
-  it("不同实参的见证仍然各自落地（不误合并）", () => {
     const src = `export function double(n) {
   return n * 2;
 }
@@ -394,14 +416,23 @@ export function caller2() {
     expect(caseCount(out.source)).toBe(2);
     expect(out.source).toContain("(3)");
     expect(out.source).toContain("(4)");
-  });
+  })();
+(() => {
 
-  it("`serializeCaseArgs` 是载荷口径的唯一真源（buildCaseDirective 复用它）", () => {
     const abs = analyzeFile("/t/one.js", SOURCE).functions[0]!.cases[0]!.argAbs!;
     expect(buildCaseDirective("call@L1", abs)).toBe(
       ` * @nudo:case "call@L1" (${serializeCaseArgs(abs)})`,
     );
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -477,7 +508,9 @@ function gitApplyAccepts(oldSource: string, newSource: string): boolean {
 }
 
 describe("末行无终止符的 diff 可被 git apply 接受", () => {
-  it("末行没有换行时输出 `\\ No newline at end of file` 标记（native diff 同口径）", () => {
+  it("末行没有换行时输出 `\\ No newline at end of file` 标记（native diff 同口径）；末行有换行时不输出标记（负控制）；末尾换行的有无本身是内容差异（与 native diff 同口径）；行数不多算一格：末尾有换行的文件不产生 phantom 末行", () => {
+(() => {
+
     const a = "const x = add(1, 2);\nexport function add(a, b) {\n  return a + b;\n}";
     const b = "const x = add(1, 2);\n/**\n * @nudo:case \"call@L1\" (1, 2)\n */\nexport function add(a, b) {\n  return a + b;\n}";
     const d = unifiedDiff(a, b, "t.txt");
@@ -489,25 +522,32 @@ describe("末行无终止符的 diff 可被 git apply 接受", () => {
     const lines = d.split("\n");
     expect(lines[lines.length - 3]).toBe(" }");
     expect(lines[lines.length - 2]).toBe("\\ No newline at end of file");
-  });
+  })();
+(() => {
 
-  it("末行有换行时不输出标记（负控制）", () => {
     const d = unifiedDiff("a\nb\n", "a\nB\n", "t.txt");
     expect(d).not.toContain("No newline at end of file");
-  });
+  })();
+(() => {
 
-  it("末尾换行的有无本身是内容差异（与 native diff 同口径）", () => {
     const d = unifiedDiff("a\nb\n", "a\nb", "t.txt");
     expect(d).toContain("-b");
     expect(d).toContain("+b");
     expect(d).toContain("\\ No newline at end of file");
-  });
+  })();
+(() => {
 
-  it("行数不多算一格：末尾有换行的文件不产生 phantom 末行", () => {
     // "a\nb\n" 的真实行数是 2（不是 3）⇒ 纯插入的 hunk 头是 -1,2 +1,3
     const d = unifiedDiff("a\nb\n", "new\na\nb\n", "t.txt");
     expect(d).toContain("@@ -1,2 +1,3 @@");
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 
 describe("字节保真四形态矩阵（写回只增不改 + diff 可 apply）", () => {
@@ -601,7 +641,11 @@ export const beta = fn({ x: lit(2) }, lit(4));
 `;
 
 describe("emit --fn 不重排既有生成段", () => {
-  it("keeps the section order (no reorder diff) when refreshing one target", async () => {
+  it("keeps the section order (no reorder diff) when refreshing one target；rewrites the target section in place (content change still lands)；is idempotent: a second emit reports no change and does not write", async () => {
+await (async () => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-emit-523-"));
+
+
     const file = join(dir, "e.js");
     writeFileSync(file, SRC);
     const sidecar = join(dir, "e.nudo.js");
@@ -615,9 +659,11 @@ describe("emit --fn 不重排既有生成段", () => {
     // 段序保持 alpha → beta
     const after = readFileSync(sidecar, "utf-8");
     expect(after.indexOf("alpha")).toBeLessThan(after.indexOf("beta"));
-  });
+  })();
+await (async () => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-emit-523-"));
 
-  it("rewrites the target section in place (content change still lands)", async () => {
+
     const file = join(dir, "e.js");
     writeFileSync(file, SRC);
     const sidecar = join(dir, "e.nudo.js");
@@ -640,9 +686,11 @@ export const beta = fn({ x: lit(2) }, lit(4));
     expect(after).not.toContain("lit(99)");
     // 段序仍是 alpha → beta（就地替换，不是搬到末尾）
     expect(after.indexOf("alpha")).toBeLessThan(after.indexOf("beta"));
-  });
+  })();
+await (async () => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-emit-523-"));
 
-  it("is idempotent: a second emit reports no change and does not write", async () => {
+
     const file = join(dir, "e.js");
     writeFileSync(file, SRC);
     const sidecar = join(dir, "e.nudo.js");
@@ -653,7 +701,12 @@ export const beta = fn({ x: lit(2) }, lit(4));
     const second = await emitContract(file, { fnNames: ["alpha"], mode: "update" });
     expect(second.changed).toBe(false);
     expect(readFileSync(sidecar, "utf-8")).toBe(SIDECAR);
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
 
@@ -753,7 +806,11 @@ function fixture(src: string, sidecar: string): { file: string; sidecarPath: str
 }
 
 describe("残留 —— 证据消失 ⇒ 陈旧生成段被刷新（删除）", () => {
-  it("见证契约段在证据消失后被删（+ 台账 removed + info 诊断）", async () => {
+  it("见证契约段在证据消失后被删（+ 台账 removed + info 诊断）；手写段逐字存活（生成/手写的分界 = @generated 标记行）；删段后再跑：逐字节相同（幂等，不产生二次改动）；新鲜发射（有证据）逐字节相同：同状态两次发射结果一致；宽域段（跨文件记录来源）留存：证据缺失 ≠ 证据没了（不误删用户契约）；证据还在 ⇒ 刷新（改写）而不是删除；@nudo:skip（用户显式关掉分析）⇒ 段保留：关分析不是「行为没了」；证据在但投影不出 ⇒ 段保留：投影失败 ≠ 证", async () => {
+await (async () => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-emit-035-stale-"));
+
+
     const { file, sidecarPath } = fixture(SRC_NO_EVIDENCE, STALE_WITNESS_SECTION);
     const r = await emitContract(file, { mode: "update" });
     // 段被删 ⇒ 侧车不再承诺「只接受 x = 5」
@@ -766,9 +823,11 @@ describe("残留 —— 证据消失 ⇒ 陈旧生成段被刷新（删除）", 
     expect(
       r.issues.some((i) => i.severity === "info" && i.message.includes("evidence disappeared")),
     ).toBe(true);
-  });
+  })();
+await (async () => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-emit-035-stale-"));
 
-  it("手写段逐字存活（生成/手写的分界 = @generated 标记行）", async () => {
+
     const { file, sidecarPath } = fixture(
       SRC_NO_EVIDENCE,
       `${IMPORT}\n${HANDWRITTEN}\n${STALE_WITNESS_SECTION}`,
@@ -782,9 +841,11 @@ describe("残留 —— 证据消失 ⇒ 陈旧生成段被刷新（删除）", 
     expect(after).not.toContain("@generated");
     expect(r.removed).toEqual(["f"]);
     expect(before).toContain("export const g");
-  });
+  })();
+await (async () => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-emit-035-stale-"));
 
-  it("删段后再跑：逐字节相同（幂等，不产生二次改动）", async () => {
+
     const { file, sidecarPath } = fixture(SRC_NO_EVIDENCE, STALE_WITNESS_SECTION);
     const first = await emitContract(file, { mode: "update" });
     expect(first.changed).toBe(true);
@@ -793,9 +854,11 @@ describe("残留 —— 证据消失 ⇒ 陈旧生成段被刷新（删除）", 
     expect(second.changed).toBe(false);
     expect(second.removed).toBeUndefined();
     expect(readFileSync(sidecarPath, "utf-8")).toBe(afterFirst);
-  });
+  })();
+await (async () => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-emit-035-stale-"));
 
-  it("新鲜发射（有证据）逐字节相同：同状态两次发射结果一致", async () => {
+
     const { file, sidecarPath } = fixture(SRC_WITH_CALL, "");
     const first = await emitContract(file, { fnNames: ["f"], mode: "add" });
     expect(first.written).toEqual(["f"]);
@@ -803,9 +866,11 @@ describe("残留 —— 证据消失 ⇒ 陈旧生成段被刷新（删除）", 
     const second = await emitContract(file, { fnNames: ["f"], mode: "update" });
     expect(second.changed).toBe(false);
     expect(readFileSync(sidecarPath, "utf-8")).toBe(bytes);
-  });
+  })();
+await (async () => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-emit-035-stale-"));
 
-  it("宽域段（跨文件记录来源）留存：证据缺失 ≠ 证据没了（不误删用户契约）", async () => {
+
     const { file, sidecarPath } = fixture(SRC_NO_EVIDENCE, WIDE_SECTION);
     const before = readFileSync(sidecarPath, "utf-8");
     const r = await emitContract(file, { mode: "update" });
@@ -813,9 +878,11 @@ describe("残留 —— 证据消失 ⇒ 陈旧生成段被刷新（删除）", 
     expect(r.removed).toBeUndefined();
     expect(readFileSync(sidecarPath, "utf-8")).toBe(before);
     expect(r.skipped).toContainEqual({ fn: "f", reason: "not-projectable" });
-  });
+  })();
+await (async () => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-emit-035-stale-"));
 
-  it("证据还在 ⇒ 刷新（改写）而不是删除", async () => {
+
     const { file, sidecarPath } = fixture(SRC_WITH_CALL, STALE_WITNESS_SECTION);
     const r = await emitContract(file, { mode: "update" });
     expect(r.removed).toBeUndefined();
@@ -824,9 +891,11 @@ describe("残留 —— 证据消失 ⇒ 陈旧生成段被刷新（删除）", 
     // 调用点点观测拓宽到基类型 ⇒ 段被改写成宽域
     expect(after).toContain("export const f = fn({ x: number() }, number());");
     expect(after).not.toContain("lit(5)");
-  });
+  })();
+await (async () => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-emit-035-stale-"));
 
-  it("@nudo:skip（用户显式关掉分析）⇒ 段保留：关分析不是「行为没了」", async () => {
+
     // @nudo:skip 的面是「不分析」，不是「没有证据」——删段会丢失用户契约
     const { file, sidecarPath } = fixture(
       `/**\n * @nudo:skip\n */\nexport function f(x) {\n  return x + 1;\n}\n`,
@@ -837,9 +906,11 @@ describe("残留 —— 证据消失 ⇒ 陈旧生成段被刷新（删除）", 
     expect(r.removed).toBeUndefined();
     expect(r.changed).toBe(false);
     expect(readFileSync(sidecarPath, "utf-8")).toBe(before);
-  });
+  })();
+await (async () => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-emit-035-stale-"));
 
-  it("证据在但投影不出 ⇒ 段保留：投影失败 ≠ 证据消失", async () => {
+
     // 域形状 case（约束构建器实参）是**域来源**但投影不出（not-projectable）
     // ——证据还在，只是不可表达 ⇒ 既有段必须保留
     const { file, sidecarPath } = fixture(
@@ -852,7 +923,22 @@ describe("残留 —— 证据消失 ⇒ 陈旧生成段被刷新（删除）", 
     expect(r.changed).toBe(false);
     expect(readFileSync(sidecarPath, "utf-8")).toBe(before);
     expect(r.skipped).toContainEqual({ fn: "f", reason: "not-projectable" });
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -912,24 +998,31 @@ function fnAnalysis(cases: CaseResult[]): FunctionAnalysis {
 }
 
 describe("行注释清洗器口径（模块私有）", () => {
-  it("行注释里原样保留块注释闭合序列（不转义）", () => {
+  it("行注释里原样保留块注释闭合序列（不转义）；换行 / 控制字符仍必须中和成空格（`//` 注释被顶出代码的防线）；块注释侧口径不变（core 的 sanitizeCommentText 仍转义闭合序列）", () => {
+(() => {
+
     expect(sanitizeLineCommentText("/* no evidence — tighten */")).toBe(
       "/* no evidence — tighten */",
     );
     expect(sanitizeLineCommentText("a */ b")).toBe("a */ b");
-  });
+  })();
+(() => {
 
-  it("换行 / 控制字符仍必须中和成空格（`//` 注释被顶出代码的防线）", () => {
     expect(sanitizeLineCommentText("a\nb")).toBe("a b");
     expect(sanitizeLineCommentText("a\r\nb")).toBe("a  b");
     expect(sanitizeLineCommentText("a\u2028b")).toBe("a b");
     expect(sanitizeLineCommentText("a\u2029b")).toBe("a b");
     expect(sanitizeLineCommentText("a\u0007b")).toBe("a b");
-  });
+  })();
+(() => {
 
-  it("块注释侧口径不变（core 的 sanitizeCommentText 仍转义闭合序列）", () => {
     expect(sanitizeCommentText("a */ b")).toBe("a *\\/ b");
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 
 describe("契约草案的行注释不得被转义污染", () => {
@@ -967,7 +1060,9 @@ describe("契约草案的行注释不得被转义污染", () => {
 });
 
 describe("dropped 注记的行注释不得被转义污染", () => {
-  it("zod: `//   ` 注记行保留闭合序列", () => {
+  it("zod: `// ` 注记行保留闭合序列；standard-schema: `// ` 注记行保留闭合序列", () => {
+(() => {
+
     const a = objAbs({ "a*/b": numWithUnprojectable() });
     const { source, dropped } = absToZodSchemaModule({ out: a });
     expect(dropped.length).toBeGreaterThan(0);
@@ -975,9 +1070,9 @@ describe("dropped 注记的行注释不得被转义污染", () => {
     expect(noteLines.length).toBeGreaterThan(0);
     expect(noteLines.join("\n")).toContain("a*/b: pred not projected");
     expect(noteLines.join("\n")).not.toContain("*\\/");
-  });
+  })();
+(() => {
 
-  it("standard-schema: `//   ` 注记行保留闭合序列", () => {
     const a = objAbs({ "a*/b": numWithUnprojectable() });
     const { source, dropped } = absToStandardSchemaModule({ out: a });
     expect(dropped.length).toBeGreaterThan(0);
@@ -985,7 +1080,10 @@ describe("dropped 注记的行注释不得被转义污染", () => {
     expect(noteLines.length).toBeGreaterThan(0);
     expect(noteLines.join("\n")).toContain("a*/b: pred not projected");
     expect(noteLines.join("\n")).not.toContain("*\\/");
-  });
+  })();
+});;
+
+  ;
 });
 
 describe("反向闸: 块注释（JSDoc）侧仍必须转义闭合序列", () => {
@@ -1057,7 +1155,11 @@ const countEols = (s: string): { crlf: number; lf: number } => ({
 });
 
 describe("侧车写盘的字节保真（行尾 / BOM / 末尾换行）", () => {
-  it("keeps a CRLF sidecar pure CRLF (no mixed line terminators)", async () => {
+  it("keeps a CRLF sidecar pure CRLF (no mixed line terminators)；keeps a UTF-8 BOM sidecar's BOM and reports no change on a no-op emit；handles a sidecar without a trailing newline (idempotent, still loadable)；negative control: an LF sidecar keeps", async () => {
+await (async () => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-emit-540-"));
+
+
     const file = join(dir, "h.js");
     writeFileSync(file, SRC);
     const sidecar = join(dir, "h.nudo.js");
@@ -1071,9 +1173,11 @@ describe("侧车写盘的字节保真（行尾 / BOM / 末尾换行）", () => {
     expect(eols.lf).toBe(0);
     expect(eols.crlf).toBeGreaterThan(0);
     expect(after).toContain("export const h = fn({ x: lit(1) }, lit(2));");
-  });
+  })();
+await (async () => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-emit-540-"));
 
-  it("keeps a UTF-8 BOM sidecar's BOM and reports no change on a no-op emit", async () => {
+
     const file = join(dir, "h.js");
     writeFileSync(file, SRC);
     const sidecar = join(dir, "h.nudo.js");
@@ -1090,9 +1194,11 @@ describe("侧车写盘的字节保真（行尾 / BOM / 末尾换行）", () => {
     const after = readFileSync(sidecar, "utf-8");
     expect(after.startsWith(bom)).toBe(true);
     expect(countEols(after).lf).toBeGreaterThan(0);
-  });
+  })();
+await (async () => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-emit-540-"));
 
-  it("handles a sidecar without a trailing newline (idempotent, still loadable)", async () => {
+
     const file = join(dir, "h.js");
     writeFileSync(file, SRC);
     const sidecar = join(dir, "h.nudo.js");
@@ -1106,9 +1212,11 @@ describe("侧车写盘的字节保真（行尾 / BOM / 末尾换行）", () => {
     const second = await emitContract(file, { fnNames: ["h"], mode: "update" });
     expect(second.changed).toBe(false);
     expect(readFileSync(sidecar, "utf-8")).toBe(after);
-  });
+  })();
+await (async () => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-emit-540-"));
 
-  it("negative control: an LF sidecar keeps LF (no CRLF introduced)", async () => {
+
     const file = join(dir, "h.js");
     writeFileSync(file, SRC);
     const sidecar = join(dir, "h.nudo.js");
@@ -1118,7 +1226,14 @@ describe("侧车写盘的字节保真（行尾 / BOM / 末尾换行）", () => {
     const eols = countEols(after);
     expect(eols.crlf).toBe(0);
     expect(eols.lf).toBeGreaterThan(0);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -1154,7 +1269,9 @@ const x = add(1, 2);
 `;
 
 describe("固化写回保住 UTF-8 BOM 的位置", () => {
-  it("BOM 仍在文件最前（不被挪到文件中段），全文只有一枚", () => {
+  it("BOM 仍在文件最前（不被挪到文件中段），全文只有一枚；BOM 不被当成缩进抄进新插入的 JSDoc 块（\\s 含 U+FEFF）；剥离已生成指令时 BOM 不丢（首行整块被删也不丢）；负控制：手写 case（无 call@ 命名）不动，BOM 也不动", () => {
+(() => {
+
     const src = BOM + SRC;
     const analysis = analyzeFile("/test/bom.js", src);
     const out = insertGeneratedCaseDirectives(src, analysis);
@@ -1167,9 +1284,9 @@ describe("固化写回保住 UTF-8 BOM 的位置", () => {
     expect(afterFirstLine.includes(BOM)).toBe(false);
     // 声明行回到「没有 BOM 贴着」的形态（BOM 只在文件最前）
     expect(out.source.split("\n").some((l) => l === "export function add(a, b) {")).toBe(true);
-  });
+  })();
+(() => {
 
-  it("BOM 不被当成缩进抄进新插入的 JSDoc 块（\\s 含 U+FEFF）", () => {
     const src = BOM + SRC;
     const analysis = analyzeFile("/test/bom.js", src);
     const out = insertGeneratedCaseDirectives(src, analysis);
@@ -1177,9 +1294,9 @@ describe("固化写回保住 UTF-8 BOM 的位置", () => {
     const block = out.source.split("\n").filter((l) => l.includes("@nudo:case"));
     expect(block.length).toBe(1);
     expect(block[0]!.includes(BOM)).toBe(false);
-  });
+  })();
+(() => {
 
-  it("剥离已生成指令时 BOM 不丢（首行整块被删也不丢）", () => {
     const src = `${BOM}/**
  * @nudo:case "call@L1" (1, 2)
  */
@@ -1191,9 +1308,9 @@ export function add(a, b) {
     expect(removed).toEqual(["call@L1"]);
     expect(out.startsWith(BOM)).toBe(true);
     expect(bomCount(out)).toBe(1);
-  });
+  })();
+(() => {
 
-  it("负控制：手写 case（无 call@ 命名）不动，BOM 也不动", () => {
     const src = `${BOM}/**
  * @nudo:case "manual" (1)
  */
@@ -1204,27 +1321,41 @@ export function add(a, b) {
     const { source: out, removed } = stripGeneratedCaseDirectives(src);
     expect(removed).toEqual([]);
     expect(out).toBe(src);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 
 describe("（case-emitter 侧）— diff 字节保真（BOM 留在行内容里）", () => {
-  it("两侧都带 BOM ⇒ 首行是公共行（无内容差异）", () => {
+  it("两侧都带 BOM ⇒ 首行是公共行（无内容差异）；只有一侧带 BOM ⇒ 首行如实呈现为内容差异（不谎报「无改动」）；diff 的首行保留 BOM（native git 同形：上下文行含 BOM，补丁才贴得上）", () => {
+(() => {
+
     expect(unifiedDiff(`${BOM}a\nb\n`, `${BOM}a\nb\n`, "t.txt")).toBe("");
     expect(unifiedDiff(`${BOM}a\nb\n`, `${BOM}a\nB\n`, "t.txt")).not.toContain("-a");
-  });
+  })();
+(() => {
 
-  it("只有一侧带 BOM ⇒ 首行如实呈现为内容差异（不谎报「无改动」）", () => {
     // BOM 被发射器吃掉是**真实**的字节改动 ⇒ diff 必须看得见（把 BOM 藏起来
     // 会让「文件被重写」这件事变成空 diff = 谎报无改动）。
     const d = unifiedDiff(`${BOM}a\nb\n`, "a\nb\n", "t.txt");
     expect(d).toContain(`-${BOM}a`);
     expect(d).toContain("+a");
-  });
+  })();
+(() => {
 
-  it("diff 的首行保留 BOM（native git 同形：上下文行含 BOM，补丁才贴得上）", () => {
     const d = unifiedDiff(`${BOM}a\nb\n`, `${BOM}a\nB\n`, "t.txt");
     expect(d).toContain(` ${BOM}a`);
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
 
@@ -1320,7 +1451,11 @@ function effectiveContract(sub: string): { param: string; ret: string } {
 }
 
 describe("同一被推导函数的派生契约不得随 root 调用点个数漂移", () => {
-  it("调用点 1 次 vs 2 次：派生行（参数位 + 返回位）完全一致", () => {
+  it("调用点 1 次 vs 2 次：派生行（参数位 + 返回位）完全一致；落盘侧车的契约行一致（组合式精确，不是 1 ULP 展开式）；两种形态的**接受集合相同**（生效契约：x > 1，返回 > 3）；负控制：两个调用点实参不同 ⇒ 不可投影（不得产出非法侧车）；负控制：单调用点的既有组合式形态不变", () => {
+(() => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-s14-988-"));
+
+
     writeAddFixture("add2(x + 1) + 1", "one");
     writeAddFixture("add2(x + 1) + add2(x + 1)", "two");
 
@@ -1335,9 +1470,11 @@ describe("同一被推导函数的派生契约不得随 root 调用点个数漂�
     // 返回位
     expect(two.returns!.dsl).toBe(one.returns!.dsl);
     expect(formatConstraint(two.returns!.constraint)).toBe(formatConstraint(one.returns!.constraint));
-  });
+  })();
+(() => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-s14-988-"));
 
-  it("落盘侧车的契约行一致（组合式精确，不是 1 ULP 展开式）", () => {
+
     writeAddFixture("add2(x + 1) + 1", "one");
     writeAddFixture("add2(x + 1) + add2(x + 1)", "two");
 
@@ -1348,9 +1485,11 @@ describe("同一被推导函数的派生契约不得随 root 调用点个数漂�
     // 展开式回退的 1 ULP 字面量不得出现
     expect(lineTwo).not.toContain("0.9999999999999999");
     expect(lineTwo).not.toContain("2.9999999999999996");
-  });
+  })();
+(() => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-s14-988-"));
 
-  it("两种形态的**接受集合相同**（生效契约：x > 1，返回 > 3）", () => {
+
     writeAddFixture("add2(x + 1) + 1", "one");
     writeAddFixture("add2(x + 1) + add2(x + 1)", "two");
     emitAndContractLine("one");
@@ -1362,9 +1501,11 @@ describe("同一被推导函数的派生契约不得随 root 调用点个数漂�
     expect(one.param).toBe("number().gt(1)");
     expect(one.ret).toBe("number().gt(3)");
     expect(two).toEqual(one);
-  });
+  })();
+(() => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-s14-988-"));
 
-  it("负控制：两个调用点实参不同 ⇒ 不可投影（不得产出非法侧车）", () => {
+
     const d = writeAddFixture("add2(x + 1) + add2(x + 5)", "diff");
     const r = deriveFromRoot(join(d, "lib.js"), { fnNames: ["add2"] });
     const row = r.derived[0]!;
@@ -1381,15 +1522,26 @@ describe("同一被推导函数的派生契约不得随 root 调用点个数漂�
     }
     const consts = sidecar.split("\n").filter((l) => l.startsWith("const "));
     expect(new Set(consts).size).toBe(consts.length);
-  });
+  })();
+(() => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-s14-988-"));
 
-  it("负控制：单调用点的既有组合式形态不变", () => {
+
     const d = writeAddFixture("add2(x + 1) + 1", "single");
     const r = deriveFromRoot(join(d, "lib.js"), { fnNames: ["add2"] });
     const row = r.derived[0]!;
     expect(row.compositional).toBe(true);
     expect(row.params[0]!.prelude).toEqual(["const x = positive.shift(1);"]);
     expect(row.returns!.dsl).toBe("x.shift(2)");
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 });

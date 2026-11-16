@@ -159,7 +159,16 @@ describe("#135 侧车 fs 读错误（check 核心侧）", () => {
     takeContractDiags();
   });
 
-  it("瞬态读错误自愈：首次抛 EACCES → 重试拿侧车 → 契约诊断完整且无 contract-load", () => {
+  it("瞬态读错误自愈：首次抛 EACCES → 重试拿侧车 → 契约诊断完整且无 contract-load；持久读错误响亮：恒抛 → error 级 nudo:contract-load + ok=false；持久错误轮不钉 memo：随后真 miss 轮回到干净（不陈旧命中错误报告）；miss 轮不吞错误轮：先真 miss（干净、进 memo），后恒抛必须响亮（不陈旧命中干净报告）", () => {
+(() => {
+    resetCheckSourceMemo();
+    resetGeneralizeMemo();
+    resetNudoModuleExecCache();
+    resetSidecarLoadFailureCache();
+    takeRefineDiags();
+    takeContractDiags();
+  
+
     const { loadModule, setMode, probeCount } = makeMutableLoader(true);
     const r = check(loadModule);
     // 自愈：raw 抛错不进 per-call 缓存，下一消费者（侧车闭包指纹 / 绑定）重试
@@ -180,9 +189,16 @@ describe("#135 侧车 fs 读错误（check 核心侧）", () => {
       r2.issues.filter((i) => i.code === "nudo:case-inconsistency"),
     ).toEqual([]);
     expect(r2.ok).toBe(true);
-  });
+  })();
+(() => {
+    resetCheckSourceMemo();
+    resetGeneralizeMemo();
+    resetNudoModuleExecCache();
+    resetSidecarLoadFailureCache();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-  it("持久读错误响亮：恒抛 → error 级 nudo:contract-load + ok=false", () => {
     const { loadModule, setMode } = makeMutableLoader();
     setMode("throw");
     const r = check(loadModule);
@@ -196,9 +212,16 @@ describe("#135 侧车 fs 读错误（check 核心侧）", () => {
     );
     expect(errs.length).toBeGreaterThanOrEqual(1);
     // 契约族诊断可以缺席（侧车没绑上），但失败本身必须可见、门禁红
-  });
+  })();
+(() => {
+    resetCheckSourceMemo();
+    resetGeneralizeMemo();
+    resetNudoModuleExecCache();
+    resetSidecarLoadFailureCache();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-  it("持久错误轮不钉 memo：随后真 miss 轮回到干净（不陈旧命中错误报告）", () => {
     const { loadModule, setMode } = makeMutableLoader();
     setMode("throw");
     const rErr = check(loadModule);
@@ -209,9 +232,16 @@ describe("#135 侧车 fs 读错误（check 核心侧）", () => {
     const rMiss = check(loadModule);
     expect(rMiss.issues.filter((i) => i.code === "nudo:contract-load")).toEqual([]);
     expect(rMiss.ok).toBe(true);
-  });
+  })();
+(() => {
+    resetCheckSourceMemo();
+    resetGeneralizeMemo();
+    resetNudoModuleExecCache();
+    resetSidecarLoadFailureCache();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-  it("miss 轮不吞错误轮：先真 miss（干净、进 memo），后恒抛必须响亮（不陈旧命中干净报告）", () => {
     const { loadModule, setMode } = makeMutableLoader();
     setMode("miss");
     const rMiss = check(loadModule);
@@ -226,13 +256,22 @@ describe("#135 侧车 fs 读错误（check 核心侧）", () => {
         (i) => i.code === "nudo:contract-load" && i.severity === "error",
       ),
     ).toBe(true);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 
   ;
 });
 
 describe("#135 readerr 指纹（loadModuleDepsFingerprint）", () => {
-  it("装载抛错 ≠ miss：readerr: 前缀 + readError=true，不产 sidecar 条目", () => {
+  it("装载抛错 ≠ miss：readerr: 前缀 + readError=true，不产 sidecar 条目；真 miss 无前缀、readError=false；正常内容轮含 sidecar 条目", () => {
+(() => {
+
     const throwing = () => {
       throw Object.assign(new Error("EIO: hard I/O error"), { code: "EIO" });
     };
@@ -245,9 +284,9 @@ describe("#135 readerr 指纹（loadModuleDepsFingerprint）", () => {
     // 同口径 fail-closed，不按「无侧车」形状写 iface/check 缓存键
     expect(r.paths).toContain("/t/f.nudo.js");
     expect(r.contents).toContainEqual({ path: "/t/f.nudo.js", content: null });
-  });
+  })();
+(() => {
 
-  it("真 miss 无前缀、readError=false；正常内容轮含 sidecar 条目", () => {
     const src = "function f(x) { return x; }\n";
     const rMiss = loadModuleDepsFingerprint(src, () => undefined, "/t/f.js");
     expect(rMiss.readError).toBe(false);
@@ -268,7 +307,10 @@ describe("#135 readerr 指纹（loadModuleDepsFingerprint）", () => {
       "/t/f.js",
     );
     expect(new Set([rMiss.fp, rContent.fp, rThrow.fp]).size).toBe(3);
-  });
+  })();
+});;
+
+  ;
 });
 });
 
@@ -319,7 +361,9 @@ describe("sidecarSpecsOf", () => {
 });
 
 describe("loadModuleDepsFingerprint dependency sidecars", () => {
-  it("dependency file's ambient sidecar enters fingerprint and eviction paths", () => {
+  it("dependency file's ambient sidecar enters fingerprint and eviction paths；dep sidecar with recursive .nudo closure contributes transitive entries；generalize L0 recomputes when the analyzed file's sidecar content changes", () => {
+(() => {
+
     // R08 P1：跨文件被调（checkExternalCall）按定义文件路径绑定 lib.nudo.js，
     // 其内容影响调用方报告——lib.nudo.js 必须进调用方指纹与逐出索引，
     // 否则编辑依赖侧车后 check memo 陈旧命中（错诊断）。
@@ -337,9 +381,9 @@ describe("loadModuleDepsFingerprint dependency sidecars", () => {
     const r2 = loadModuleDepsFingerprint(src, makeLoad(deps), "/t/a.js");
     expect(r2.fp).not.toBe(r.fp);
     expect(r2.paths).toContain("/t/lib.nudo.js");
-  });
+  })();
+(() => {
 
-  it("dep sidecar with recursive .nudo closure contributes transitive entries", () => {
     const deps: Record<string, string> = {
       "/t/lib.js": "module.exports = { f: (x) => x };\n",
       "/t/lib.nudo.js": `import { positive } from "./std.nudo.js";\nexport const f = fn({ x: positive });\n`,
@@ -350,9 +394,9 @@ describe("loadModuleDepsFingerprint dependency sidecars", () => {
     expect(r.paths).toContain("/t/lib.nudo.js");
     expect(r.paths).toContain("/t/std.nudo.js");
     expect(r.fp).toContain(`sidecar:/t/std.nudo.js=${hashSource(deps["/t/std.nudo.js"]!)}`);
-  });
+  })();
+(() => {
 
-  it("generalize L0 recomputes when the analyzed file's sidecar content changes", () => {
     // R08 minor：两阶段断言——不只是指纹字符串翻转，L0 结果必须重算且
     // 签名携带新约束（防「键构成回归」）。go 必须是导出（侧车同名绑定
     // 只落本地 named export）。
@@ -369,11 +413,18 @@ describe("loadModuleDepsFingerprint dependency sidecars", () => {
     expect(g2).toBeDefined();
     expect(g2).not.toBe(g1);
     expect(predToString(g2!.entryReqs?.find((r) => r.param === "x")!.pred ?? pTrue)).toContain("x > 5");
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 
 describe("loadModuleDepsFingerprint sidecar closure", () => {
-  it("no sidecar file → fingerprint identical to the pre-sidecar algorithm", () => {
+  it("no sidecar file → fingerprint identical to the pre-sidecar algorithm；no specs and no sidecar → empty fingerprint；existing sidecar contributes sidecar: entries for root and recursive .nudo deps；declared .nudo dep also being the sidecar → sin", () => {
+(() => {
+
     const deps: Record<string, string> = {
       "/t/util.js": "module.exports = { add1: (x) => x + 1 };\n",
     };
@@ -384,14 +435,14 @@ describe("loadModuleDepsFingerprint sidecar closure", () => {
     // 旧算法形态：仅声明 spec 的 `路径=hash` 排序拼接，无 sidecar: 条目
     expect(r.fp).toBe(`/t/util.js=${hashSource(deps["/t/util.js"]!)}`);
     expect(r.fp.includes("sidecar:")).toBe(false);
-  });
+  })();
+(() => {
 
-  it("no specs and no sidecar → empty fingerprint", () => {
     const r = loadModuleDepsFingerprint("function id(x) { return x; }\n", makeLoad({}), "/t/a.js");
     expect(r).toEqual({ fp: "", paths: [], contents: [], truncated: false, readError: false, gatedSidecars: [] });
-  });
+  })();
+(() => {
 
-  it("existing sidecar contributes sidecar: entries for root and recursive .nudo deps", () => {
     const deps: Record<string, string> = {
       "/t/a.nudo.js": `import { positive } from "./std.nudo.js";\nexport const pos = positive;\n`,
       "/t/std.nudo.js": "export const positive = number().gt(0);\n",
@@ -406,9 +457,9 @@ describe("loadModuleDepsFingerprint sidecar closure", () => {
         `sidecar:/t/std.nudo.js=${hashSource(deps["/t/std.nudo.js"]!)}`,
       ].sort().join(","),
     );
-  });
+  })();
+(() => {
 
-  it("declared .nudo dep also being the sidecar → single regular entry, no duplicate", () => {
     const deps: Record<string, string> = {
       "/t/a.nudo.js": "export const positive = number().gt(0);\n",
     };
@@ -416,9 +467,9 @@ describe("loadModuleDepsFingerprint sidecar closure", () => {
     const r = loadModuleDepsFingerprint(src, makeLoad(deps), "/t/a.js");
     expect(r.paths).toEqual(["/t/a.nudo.js"]);
     expect(r.fp).toBe(`/t/a.nudo.js=${hashSource(deps["/t/a.nudo.js"]!)}`);
-  });
+  })();
+(() => {
 
-  it("sidecar content change → fingerprint change", () => {
     const deps: Record<string, string> = {
       "/t/a.nudo.js": "export const positive = number().gt(0);\n",
     };
@@ -427,9 +478,9 @@ describe("loadModuleDepsFingerprint sidecar closure", () => {
     deps["/t/a.nudo.js"] = "export const positive = number().gt(1);\n";
     const fp2 = loadModuleDepsFingerprint(src, makeLoad(deps), "/t/a.js").fp;
     expect(fp2).not.toBe(fp1);
-  });
+  })();
+(() => {
 
-  it("transitive std.nudo.js content change → fingerprint change", () => {
     const deps: Record<string, string> = {
       "/t/a.nudo.js": `import { positive } from "./std.nudo.js";\nexport const pos = positive;\n`,
       "/t/std.nudo.js": "export const positive = number().gt(0);\n",
@@ -439,9 +490,9 @@ describe("loadModuleDepsFingerprint sidecar closure", () => {
     deps["/t/std.nudo.js"] = "export const positive = number().gt(2);\n";
     const fp2 = loadModuleDepsFingerprint(src, makeLoad(deps), "/t/a.js").fp;
     expect(fp2).not.toBe(fp1);
-  });
+  })();
+(() => {
 
-  it("missing transitive dep is recorded as miss (creation later flips the fingerprint)", () => {
     const deps: Record<string, string> = {
       "/t/a.nudo.js": `import { positive } from "./ghost.nudo.js";\nexport const pos = positive;\n`,
     };
@@ -453,9 +504,9 @@ describe("loadModuleDepsFingerprint sidecar closure", () => {
     const r2 = loadModuleDepsFingerprint(src, makeLoad(deps), "/t/a.js");
     expect(r2.fp).not.toBe(r.fp);
     expect(r2.fp).not.toContain("=miss");
-  });
+  })();
+(() => {
 
-  it("sidecar closure past the node cap → truncated (callers must fail-open)", () => {
     const deps: Record<string, string> = {};
     let src = "";
     for (let i = 0; i < 60; i++) {
@@ -472,7 +523,22 @@ describe("loadModuleDepsFingerprint sidecar closure", () => {
     const r = loadModuleDepsFingerprint(src, makeLoad(deps), "/t/a.js");
     expect(r.truncated).toBe(true);
     expect(r.fp.startsWith("trunc:")).toBe(true);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -503,7 +569,9 @@ function loadSibling(sideName: string) {
 }
 
 describe("projectDir ambient bind boundary", () => {
-  it("in-tree sidecar binds when projectDir set", () => {
+  it("in-tree sidecar binds when projectDir set；out-of-tree sidecar is not ambient-bound when projectDir set；node_modules sidecar stays blocked even inside projectDir；checkSource with projectDir does not load out-of-tree sidecar", () => {
+(() => {
+
     const dir = mkdtempSync(join(tmpdir(), "nudo-projroot-"));
     try {
       const srcPath = join(dir, "lib.js");
@@ -521,9 +589,9 @@ describe("projectDir ambient bind boundary", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+(() => {
 
-  it("out-of-tree sidecar is not ambient-bound when projectDir set", () => {
     const root = mkdtempSync(join(tmpdir(), "nudo-projroot-out-"));
     const outside = mkdtempSync(join(tmpdir(), "nudo-outside-"));
     try {
@@ -549,9 +617,9 @@ describe("projectDir ambient bind boundary", () => {
       rmSync(root, { recursive: true, force: true });
       rmSync(outside, { recursive: true, force: true });
     }
-  });
+  })();
+(() => {
 
-  it("node_modules sidecar stays blocked even inside projectDir", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-projroot-nm-"));
     try {
       mkdirSync(join(dir, "node_modules", "pkg"), { recursive: true });
@@ -568,9 +636,9 @@ describe("projectDir ambient bind boundary", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+(() => {
 
-  it("checkSource with projectDir does not load out-of-tree sidecar", () => {
     const root = mkdtempSync(join(tmpdir(), "nudo-projroot-chk-"));
     const outside = mkdtempSync(join(tmpdir(), "nudo-outside-chk-"));
     try {
@@ -598,7 +666,14 @@ export const add = fn({ x: number(), y: number().gt(0) }, number());
       rmSync(root, { recursive: true, force: true });
       rmSync(outside, { recursive: true, force: true });
     }
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -643,7 +718,16 @@ describe("sidecar load I/O error vs no-sidecar (R2-6 #2)", () => {
     takeContractDiags();
   });
 
-  it("sidecar read throws (EACCES) → nudo:contract-load，不静默", () => {
+  it("sidecar read throws (EACCES) → nudo:contract-load，不静默；读失败按 (路径, 原因) 去重：多导出只报一条；显式 @nudo:import 读失败 → 报诊断（不再炸穿或静默）", () => {
+(() => {
+    resetCheckSourceMemo();
+    resetGeneralizeMemo();
+    resetNudoModuleExecCache();
+    resetSidecarLoadFailureCache();
+    takeRefineDiags();
+    takeContractDiags();
+  
+
     const err = Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" });
     const src = `export function alpha(x) { return x; }\n`;
     const r = checkSource("/t/alpha.js", src, pTrue, {
@@ -654,11 +738,16 @@ describe("sidecar load I/O error vs no-sidecar (R2-6 #2)", () => {
     expect(loadErrs.length).toBeGreaterThan(0);
     expect(loadErrs[0]!.message).toContain("failed to load");
     expect(loadErrs[0]!.message).toContain("EACCES");
-  });
+  })();
+(() => {
+    resetCheckSourceMemo();
+    resetGeneralizeMemo();
+    resetNudoModuleExecCache();
+    resetSidecarLoadFailureCache();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-  ;
-
-  it("读失败按 (路径, 原因) 去重：多导出只报一条", () => {
     const err = Object.assign(new Error("EMFILE: too many open files"), { code: "EMFILE" });
     const src = `export function alpha(x) { return x; }\nexport function beta(x) { return x; }\nexport function gamma(x) { return x; }\n`;
     const r = checkSource("/t/multi-io.js", src, pTrue, {
@@ -670,9 +759,16 @@ describe("sidecar load I/O error vs no-sidecar (R2-6 #2)", () => {
     );
     expect(loadErrs).toHaveLength(1);
     expect(loadErrs[0]!.message).toContain("multi-io.nudo.js");
-  });
+  })();
+(() => {
+    resetCheckSourceMemo();
+    resetGeneralizeMemo();
+    resetNudoModuleExecCache();
+    resetSidecarLoadFailureCache();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-  it("显式 @nudo:import 读失败 → 报诊断（不再炸穿或静默）", () => {
     const err = Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" });
     const src = `/// @nudo:import { positive } from "./std.nudo.js"
 /**
@@ -690,7 +786,14 @@ export function f(x) {
     expect(loadErrs.length).toBeGreaterThan(0);
     // 显式 import 的诊断点名 std.nudo.js（auto-bind 侧车的 imp.nudo.js 另报）
     expect(loadErrs.some((i) => i.message.includes("std.nudo.js") && i.message.includes("EACCES"))).toBe(true);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -724,7 +827,16 @@ describe("#64 sidecar load failure dedup", () => {
     takeContractDiags();
   });
 
-  it("sidecar binds only alpha → load failure reported once, not per source export", () => {
+  it("sidecar binds only alpha → load failure reported once, not per source export；sidecar exports two names and fails → one message, affects 2 bindings；unrelated exports do not surface sidecar load noise", () => {
+(() => {
+    resetCheckSourceMemo();
+    resetGeneralizeMemo();
+    resetNudoModuleExecCache();
+    resetSidecarLoadFailureCache();
+    takeRefineDiags();
+    takeContractDiags();
+  
+
     const { loadModule } = makeFiles({
       // null_ 不是注入构建器：exec 时炸在 fn({ x: null_() })
       "/t/dup.nudo.js":
@@ -743,9 +855,16 @@ describe("#64 sidecar load failure dedup", () => {
     // 措辞不点名函数（避免读成「X 自身有问题」）
     expect(loadErrs[0]!.message).not.toMatch(/for '/);
     expect(loadErrs[0]!.message).toContain("dup.nudo.js");
-  });
+  })();
+(() => {
+    resetCheckSourceMemo();
+    resetGeneralizeMemo();
+    resetNudoModuleExecCache();
+    resetSidecarLoadFailureCache();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-  it("sidecar exports two names and fails → one message, affects 2 bindings", () => {
     const { loadModule } = makeFiles({
       "/t/multi.nudo.js":
         `import { fn, null_ } from '@nudojs/core';\nexport const alpha = fn({ x: null_() });\nexport const beta = fn({ x: null_() });`,
@@ -760,9 +879,16 @@ describe("#64 sidecar load failure dedup", () => {
     );
     expect(loadErrs).toHaveLength(1);
     expect(loadErrs[0]!.message).toMatch(/affects 2 bindings/);
-  });
+  })();
+(() => {
+    resetCheckSourceMemo();
+    resetGeneralizeMemo();
+    resetNudoModuleExecCache();
+    resetSidecarLoadFailureCache();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-  it("unrelated exports do not surface sidecar load noise", () => {
     const { loadModule } = makeFiles({
       "/t/only.nudo.js":
         `import { fn, number } from '@nudojs/core';\nexport const alpha = fn({ x: number().gt(0) }, number());`,
@@ -775,7 +901,12 @@ describe("#64 sidecar load failure dedup", () => {
     });
     const loadErrs = r.issues.filter((i) => i.code === "nudo:contract-load");
     expect(loadErrs).toEqual([]);
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
 
@@ -841,7 +972,9 @@ function codes(r: { issues: { code: string }[] }): string[] {
 }
 
 describe("跨文件调用：侧车按**被调方目录**解析", () => {
-  it("正例：侧车在被调方旁边 ⇒ 只有真违例，无 contract-load / contract-syntax", () => {
+  it("正例：侧车在被调方旁边 ⇒ 只有真违例，无 contract-load / contract-syntax；正例：违例诊断指向被调方的契约（expected: x > 0），不是「装载失败」；负控制：侧车只在调用方目录 ⇒ 按被调方目录解析找不到 ⇒ 报 contract-load；对照：被调方与调用方同目录 ⇒ 侧车同目录 ⇒ 正常解析（零 contract-load）", () => {
+(() => {
+
     const r = check(CALLER_SUB, {
       "/t/sub/std.nudo.js": STD,
       "/t/sub/lib.js": LIB,
@@ -849,9 +982,9 @@ describe("跨文件调用：侧车按**被调方目录**解析", () => {
     expect(codes(r).filter((c) => c === "nudo:constraint-violated")).toHaveLength(1);
     expect(codes(r).filter((c) => c === "nudo:contract-load")).toHaveLength(0);
     expect(codes(r).filter((c) => c === "nudo:contract-syntax")).toHaveLength(0);
-  });
+  })();
+(() => {
 
-  it("正例：违例诊断指向被调方的契约（expected: x > 0），不是「装载失败」", () => {
     const r = check(CALLER_SUB, {
       "/t/sub/std.nudo.js": STD,
       "/t/sub/lib.js": LIB,
@@ -859,9 +992,9 @@ describe("跨文件调用：侧车按**被调方目录**解析", () => {
     const issue = r.issues.find((i) => i.code === "nudo:constraint-violated");
     expect(issue?.expected).toBe("x > 0");
     expect(issue?.actual).toContain("-1");
-  });
+  })();
+(() => {
 
-  it("负控制：侧车只在调用方目录 ⇒ 按被调方目录解析找不到 ⇒ 报 contract-load", () => {
     const r = check(CALLER_SUB, {
       "/t/std.nudo.js": STD,
       "/t/sub/lib.js": LIB,
@@ -869,9 +1002,9 @@ describe("跨文件调用：侧车按**被调方目录**解析", () => {
     expect(codes(r).filter((c) => c === "nudo:contract-load")).toHaveLength(1);
     const issue = r.issues.find((i) => i.code === "nudo:contract-load");
     expect(issue?.message).toContain("/t/sub/lib.js");
-  });
+  })();
+(() => {
 
-  it("对照：被调方与调用方同目录 ⇒ 侧车同目录 ⇒ 正常解析（零 contract-load）", () => {
     const r = check(CALLER_SAME, {
       "/t/std.nudo.js": STD,
       "/t/lib.js": LIB,
@@ -879,7 +1012,14 @@ describe("跨文件调用：侧车按**被调方目录**解析", () => {
     expect(codes(r).filter((c) => c === "nudo:constraint-violated")).toHaveLength(1);
     expect(codes(r).filter((c) => c === "nudo:contract-load")).toHaveLength(0);
     expect(codes(r).filter((c) => c === "nudo:contract-syntax")).toHaveLength(0);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -912,7 +1052,12 @@ export const good = fn({ n: positive }, number().gt(1000));
 `;
 
 describe("依赖侧车失败的归因", () => {
-  it("诊断点名**依赖侧车路径**（旧口径只说导入方坏了）", () => {
+  it("诊断点名**依赖侧车路径**（旧口径只说导入方坏了）；依赖侧车正常时，导入方的契约**照常执法**（不再连坐作废）", () => {
+(() => {
+  setRefineDiagCollector(null);
+  takeRefineDiags();
+
+
     const { loadModule } = makeFiles({
       "/t/std.nudo.js": `export const positive = ((( broken syntax\n`,
     });
@@ -930,9 +1075,12 @@ describe("依赖侧车失败的归因", () => {
     expect(message).toContain("./std.nudo.js");
     expect(message).toContain("imported by");
     expect(message).toContain("/t/m.nudo.js");
-  });
+  })();
+(() => {
+  setRefineDiagCollector(null);
+  takeRefineDiags();
 
-  it("依赖侧车正常时，导入方的契约**照常执法**（不再连坐作废）", () => {
+
     const { loadModule } = makeFiles({
       "/t/std.nudo.js": `import { number } from "@nudojs/core";\nexport const positive = number().gt(0);\n`,
     });
@@ -943,7 +1091,10 @@ describe("依赖侧车失败的归因", () => {
     expect(Object.keys(out)).toContain("good");
     const v = out["good"] as { fn?: { returns?: unknown } } | undefined;
     expect(v?.fn).toBeDefined();
-  });
+  })();
+});;
+
+  ;
 });
 });
 
@@ -1025,7 +1176,12 @@ beforeEach(() => {
 });
 
 describe("侧车绑定名与构建器名同名", () => {
-  it("`export const pick = fn(…)`（pick 是构建器名）→ 侧车可加载，导出可见", () => {
+  it("`export const pick = fn(…)`（pick 是构建器名）→ 侧车可加载，导出可见；侧车里的 `const number = …`（number 是构建器名）→ 可加载，不抛 SyntaxError；构建器仍可用：侧车未遮蔽的名字照常解析（fn / number）", () => {
+(() => {
+  setRefineDiagCollector(null);
+  takeRefineDiags();
+
+
     const src = `
 import { fn, number } from "@nudojs/core";
 export const pick = fn({ flag: number() }, number());
@@ -1035,18 +1191,24 @@ export const pick = fn({ flag: number() }, number());
     const v = out["pick"] as { fn?: unknown } | undefined;
     expect(v).toBeDefined();
     expect(v?.fn).toBeDefined();
-  });
+  })();
+(() => {
+  setRefineDiagCollector(null);
+  takeRefineDiags();
 
-  it("侧车里的 `const number = …`（number 是构建器名）→ 可加载，不抛 SyntaxError", () => {
+
     const src = `
 import { fn } from "@nudojs/core";
 export const number = fn({ x: 1 }, 1);
 `;
     const out = execNudoModule(src, { fromFile: "/t/lib.nudo.js" });
     expect(Object.keys(out)).toContain("number");
-  });
+  })();
+(() => {
+  setRefineDiagCollector(null);
+  takeRefineDiags();
 
-  it("构建器仍可用：侧车未遮蔽的名字照常解析（fn / number）", () => {
+
     const src = `
 import { fn, number } from "@nudojs/core";
 export const keep = fn({ x: number().gt(0) }, number());
@@ -1054,7 +1216,12 @@ export const keep = fn({ x: number().gt(0) }, number());
     const out = execNudoModule(src, { fromFile: "/t/lib.nudo.js" });
     const v = out["keep"] as { fn?: { params?: unknown } } | undefined;
     expect(v?.fn).toBeDefined();
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
 
@@ -1092,7 +1259,14 @@ describe("侧车环只报一条 nudo:contract-cycle", () => {
     resetSidecarLoadFailureCache();
   });
 
-  it("ambient 通道 + @nudo:import 通道命中同一物理环 ⇒ 只报 1 条", () => {
+  it("ambient 通道 + @nudo:import 通道命中同一物理环 ⇒ 只报 1 条；环诊断文本仍点名环链（去重不丢信息）", () => {
+(() => {
+    resetCheckSourceMemo();
+    resetGeneralizeMemo();
+    resetNudoModuleExecCache();
+    resetSidecarLoadFailureCache();
+  
+
     const { loadModule } = makeFiles({
       // 环：cyc.nudo.js → other.nudo.js → cyc.nudo.js
       "/t/cyc.nudo.js": `import { positive } from "./other.nudo.js";\nexport { positive };`,
@@ -1112,9 +1286,14 @@ export function area(x) { return x; }`;
     });
     const cycles = r.issues.filter((i) => i.code === "nudo:contract-cycle");
     expect(cycles).toHaveLength(1);
-  });
+  })();
+(() => {
+    resetCheckSourceMemo();
+    resetGeneralizeMemo();
+    resetNudoModuleExecCache();
+    resetSidecarLoadFailureCache();
+  
 
-  it("环诊断文本仍点名环链（去重不丢信息）", () => {
     const { loadModule } = makeFiles({
       "/t/cyc2.nudo.js": `import { positive } from "./other2.nudo.js";\nexport { positive };`,
       "/t/other2.nudo.js": `import { positive } from "./cyc2.nudo.js";\nexport const positive = positive;`,
@@ -1132,7 +1311,10 @@ export function area(x) { return x; }`;
     expect(cycles).toHaveLength(1);
     expect(cycles[0]!.message).toContain("sidecar import cycle:");
     expect(cycles[0]!.message).toContain("cyc2.nudo.js");
-  });
+  })();
+});;
+
+  ;
 });
 });
 
@@ -1195,15 +1377,23 @@ export const positive = number().gt(0);
 `;
 
 describe("侧车装载诊断的依赖归属", () => {
-  it("依赖侧车的坏 import ⇒ 诊断归因到依赖侧车路径（不是 root）", () => {
+  it("依赖侧车的坏 import ⇒ 诊断归因到依赖侧车路径（不是 root）；root 自己的坏 import ⇒ 归因到 root（零回归）；同一消息在 root 与依赖侧车各一处 ⇒ 两条诊断都在（去重键含来源文件）", () => {
+(() => {
+  resetNudoModuleExecCache();
+  takeRefineDiags();
+
+
     const diags = execInScope(ROOT, "/t/root.nudo.js", { "/t/dep.nudo.js": BAD_DEP });
     const bad = diags.filter((d) => d.message.includes("is not an injected builder"));
     expect(bad.length).toBeGreaterThan(0);
     expect(bad[0]!.file).toBe("/t/dep.nudo.js");
     expect(bad[0]!.file).not.toBe("/t/root.nudo.js");
-  });
+  })();
+(() => {
+  resetNudoModuleExecCache();
+  takeRefineDiags();
 
-  it("root 自己的坏 import ⇒ 归因到 root（零回归）", () => {
+
     const root = `import { fn, number, totallyBogus } from "@nudojs/core";
 export const f = fn({ x: number() });
 `;
@@ -1211,9 +1401,12 @@ export const f = fn({ x: number() });
     const bad = diags.filter((d) => d.message.includes("is not an injected builder"));
     expect(bad.length).toBeGreaterThan(0);
     expect(bad[0]!.file).toBe("/t/root2.nudo.js");
-  });
+  })();
+(() => {
+  resetNudoModuleExecCache();
+  takeRefineDiags();
 
-  it("同一消息在 root 与依赖侧车各一处 ⇒ 两条诊断都在（去重键含来源文件）", () => {
+
     const root = `import { fn, number, totallyBogus } from "@nudojs/core";
 import { positive } from "./dep.nudo.js";
 export const f = fn({ x: positive }, number());
@@ -1223,7 +1416,12 @@ export const f = fn({ x: positive }, number());
     const files = new Set(bad.map((d) => d.file));
     expect(files.has("/t/root3.nudo.js")).toBe(true);
     expect(files.has("/t/dep.nudo.js")).toBe(true);
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
 
@@ -1258,7 +1456,14 @@ describe("侧车形态诊断点名侧车真名", () => {
     resetSidecarLoadFailureCache();
   });
 
-  it("别名导出：诊断点名侧车导出名 class（不是源码本地名 _c）", () => {
+  it("别名导出：诊断点名侧车导出名 class（不是源码本地名 _c）；default 导出：诊断点名侧车导出名 default（不是源码本地名 f）", () => {
+(() => {
+    resetCheckSourceMemo();
+    resetGeneralizeMemo();
+    resetNudoModuleExecCache();
+    resetSidecarLoadFailureCache();
+  
+
     const { loadModule } = makeFiles({
       "/t/lib.nudo.js": `const _nudo_1 = 42;\nexport { _nudo_1 as class };`,
     });
@@ -1273,9 +1478,14 @@ describe("侧车形态诊断点名侧车真名", () => {
     expect(diags[0]!.message).not.toContain("export '_c'");
     // 同时给出源码函数名（用户按本地名也能定位）
     expect(diags[0]!.message).toContain("'_c'");
-  });
+  })();
+(() => {
+    resetCheckSourceMemo();
+    resetGeneralizeMemo();
+    resetNudoModuleExecCache();
+    resetSidecarLoadFailureCache();
+  
 
-  it("default 导出：诊断点名侧车导出名 default（不是源码本地名 f）", () => {
     const { loadModule } = makeFiles({
       "/t/def.nudo.js": `export default 42;`,
     });
@@ -1288,7 +1498,10 @@ describe("侧车形态诊断点名侧车真名", () => {
     expect(diags).toHaveLength(1);
     expect(diags[0]!.message).toContain("'default'");
     expect(diags[0]!.message).not.toContain("export 'f'");
-  });
+  })();
+});;
+
+  ;
 });
 });
 
@@ -1340,7 +1553,13 @@ export function f(x) {
 `;
 
 describe("侧车 import 别名不得与 ambient builder 声明撞名", () => {
-  it("裸包别名（number as string）⇒ 侧车装载成功、契约生效", () => {
+  it("裸包别名（number as string）⇒ 侧车装载成功、契约生效；相对侧车别名（positive as number）⇒ 侧车装载成功、契约生效；同名导入（number）仍走 ambient 解构 ⇒ 不得被排除（零回归）", () => {
+(() => {
+  resetEngineCaches();
+  takeRefineDiags();
+  takeContractDiags();
+
+
     const { loadModule } = makeFiles({
       "/t/alias.nudo.js":
         `import { number as string, fn } from "@nudojs/core";\n` +
@@ -1351,9 +1570,13 @@ describe("侧车 import 别名不得与 ambient builder 声明撞名", () => {
     expect(r.issues.filter((i) => i.code === "nudo:contract-load")).toEqual([]);
     // 契约真的绑上了：case 违例可见
     expect(r.issues.filter((i) => i.code === "nudo:case-inconsistency").length).toBeGreaterThan(0);
-  });
+  })();
+(() => {
+  resetEngineCaches();
+  takeRefineDiags();
+  takeContractDiags();
 
-  it("相对侧车别名（positive as number）⇒ 侧车装载成功、契约生效", () => {
+
     const { loadModule } = makeFiles({
       "/t/std.nudo.js": `import { number } from "@nudojs/core";\nexport const positive = number().gt(0);`,
       "/t/alias2.nudo.js":
@@ -1364,9 +1587,13 @@ describe("侧车 import 别名不得与 ambient builder 声明撞名", () => {
     const r = checkSource("/t/alias2.js", SRC, pTrue, { loadModule, fromFile: "/t/alias2.js" });
     expect(r.issues.filter((i) => i.code === "nudo:contract-load")).toEqual([]);
     expect(r.issues.filter((i) => i.code === "nudo:case-inconsistency").length).toBeGreaterThan(0);
-  });
+  })();
+(() => {
+  resetEngineCaches();
+  takeRefineDiags();
+  takeContractDiags();
 
-  it("同名导入（number）仍走 ambient 解构 ⇒ 不得被排除（零回归）", () => {
+
     const { loadModule } = makeFiles({
       "/t/plain.nudo.js":
         `import { fn, number } from "@nudojs/core";\n` +
@@ -1375,7 +1602,12 @@ describe("侧车 import 别名不得与 ambient builder 声明撞名", () => {
     const r = checkSource("/t/plain.js", SRC, pTrue, { loadModule, fromFile: "/t/plain.js" });
     expect(r.issues.filter((i) => i.code === "nudo:contract-load")).toEqual([]);
     expect(r.issues.filter((i) => i.code === "nudo:case-inconsistency").length).toBeGreaterThan(0);
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
 
@@ -1407,16 +1639,24 @@ beforeEach(() => {
 });
 
 describe("侧车注入名撞名", () => {
-  it("构建器名撞名 → 侧车可加载（旧口径 SyntaxError）", () => {
+  it("构建器名撞名 → 侧车可加载（旧口径 SyntaxError）；`__nudoInjects` 撞名 → 侧车可加载（旧口径 SyntaxError）；`__nudoDeps` 撞名 → 侧车可加载（旧口径 SyntaxError）；相对 import 的本地名撞名 → 侧车可加载 + 报出 Nudo 原生诊断", () => {
+(() => {
+  setRefineDiagCollector(null);
+  takeRefineDiags();
+
+
     const src = `
 import { fn } from "@nudojs/core";
 export const number = fn({ x: 1 }, 1);
 `;
     const out = execNudoModule(src, { fromFile: "/t/lib.nudo.js" });
     expect(Object.keys(out)).toContain("number");
-  });
+  })();
+(() => {
+  setRefineDiagCollector(null);
+  takeRefineDiags();
 
-  it("`__nudoInjects` 撞名 → 侧车可加载（旧口径 SyntaxError）", () => {
+
     const src = `
 import { fn, number } from "@nudojs/core";
 
@@ -1425,9 +1665,12 @@ export const f = fn({ x: number() }, number());
 `;
     const out = execNudoModule(src, { fromFile: "/t/lib.nudo.js" });
     expect(Object.keys(out)).toContain("f");
-  });
+  })();
+(() => {
+  setRefineDiagCollector(null);
+  takeRefineDiags();
 
-  it("`__nudoDeps` 撞名 → 侧车可加载（旧口径 SyntaxError）", () => {
+
     const src = `
 import { fn, number } from "@nudojs/core";
 
@@ -1436,9 +1679,12 @@ export const f = fn({ x: number() }, number());
 `;
     const out = execNudoModule(src, { fromFile: "/t/lib.nudo.js" });
     expect(Object.keys(out)).toContain("f");
-  });
+  })();
+(() => {
+  setRefineDiagCollector(null);
+  takeRefineDiags();
 
-  it("相对 import 的本地名撞名 → 侧车可加载 + 报出 Nudo 原生诊断", () => {
+
     const src = `
 import { positive } from "./shapes.nudo.js";
 import { fn, number } from "@nudojs/core";
@@ -1459,7 +1705,14 @@ export const g = fn({ x: number() }, number());
     const clash = diags.find((d) => d.message.includes("declares 'positive'"));
     expect(clash).toBeDefined();
     expect(clash?.code).toBe("nudo:contract-load");
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -1521,7 +1774,9 @@ function execInScopeWithExports(fromFile: string): {
 }
 
 describe("侧车装载诊断随 exec 结果缓存（缓存命中时重发）", () => {
-  it("第二个分析作用域（exec 缓存命中）仍报 contract-load", () => {
+  it("第二个分析作用域（exec 缓存命中）仍报 contract-load；同一作用域内重复装载 ⇒ 诊断只报一次（作用域内去重，不刷屏）；resetNudoModuleExecCache ⇒ 侧车**重新求值**（导出对象身份变化），诊断仍可见", () => {
+(() => {
+
     resetNudoModuleExecCache();
     const fromFile = "/tmp/bug1064/lib.nudo.js";
 
@@ -1534,9 +1789,9 @@ describe("侧车装载诊断随 exec 结果缓存（缓存命中时重发）", (
       warm.some((m) => m.includes("is not an injected builder")),
       "缓存命中必须重发装载诊断（否则 check 面看不到侧车写坏）",
     ).toBe(true);
-  });
+  })();
+(() => {
 
-  it("同一作用域内重复装载 ⇒ 诊断只报一次（作用域内去重，不刷屏）", () => {
     resetNudoModuleExecCache();
     const fromFile = "/tmp/bug1064c/lib.nudo.js";
     const msgs = runWithCollectorScope(() => {
@@ -1547,9 +1802,9 @@ describe("侧车装载诊断随 exec 结果缓存（缓存命中时重发）", (
         .map((d) => d.message);
     });
     expect(msgs.filter((m) => m.includes("is not an injected builder"))).toHaveLength(1);
-  });
+  })();
+(() => {
 
-  it("resetNudoModuleExecCache ⇒ 侧车**重新求值**（导出对象身份变化），诊断仍可见", () => {
     resetNudoModuleExecCache();
     const fromFile = "/tmp/bug1064b/lib.nudo.js";
     const first = execInScopeWithExports(fromFile);
@@ -1566,7 +1821,12 @@ describe("侧车装载诊断随 exec 结果缓存（缓存命中时重发）", (
     const afterReset = execInScopeWithExports(fromFile);
     expect(afterReset.exports).not.toBe(first.exports);
     expect(afterReset.msgs.length).toBeGreaterThan(0);
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
 

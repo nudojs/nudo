@@ -96,7 +96,11 @@ async function emit(name: string, src: string): Promise<{
 }
 
 describe("`@nudo:case` 的调试见证不进契约产物", () => {
-  it("点观测见证（实参全是字面量、无断言）不生成任何契约", async () => {
+  it("点观测见证（实参全是字面量、无断言）不生成任何契约；带断言的 case 是域声明 ⇒ 仍可作域来源与返回义务来源；域形状实参（约束构建器）是域来源 ⇒ `not-projectable` 口径不变；有调用点证据时，指令见证不得污染返回义务；域声明与见证共存时：域声明生效，见证不污染", async () => {
+await (async () => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-emit-035-"));
+
+
     // 改前：写盘产物是 `export const f = fn({ x: lit(5) }, lit(6));`
     const r = await emit(
       "f",
@@ -115,9 +119,11 @@ export function f(x) {
     // 见证的字面量不得出现在任何产物里
     expect(r.sidecar).not.toContain("lit(5)");
     expect(r.sidecar).not.toContain("lit(6)");
-  });
+  })();
+await (async () => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-emit-035-"));
 
-  it("带断言的 case 是域声明 ⇒ 仍可作域来源与返回义务来源", async () => {
+
     const r = await emit(
       "f",
       `/**
@@ -131,9 +137,11 @@ export function f(x) {
     expect(r.written).toEqual(["f"]);
     expect(r.skipped).toEqual([]);
     expect(r.sidecar).toContain("export const f = fn({ x: lit(7) }, lit(8));");
-  });
+  })();
+await (async () => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-emit-035-"));
 
-  it("域形状实参（约束构建器）是域来源 ⇒ `not-projectable` 口径不变", async () => {
+
     const r = await emit(
       "g",
       `/**
@@ -148,9 +156,11 @@ export function g(x) {
     expect(r.written).toEqual([]);
     expect(r.skipped).toEqual([{ fn: "g", reason: "not-projectable" }]);
     expect(r.exists).toBe(false);
-  });
+  })();
+await (async () => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-emit-035-"));
 
-  it("有调用点证据时，指令见证不得污染返回义务", async () => {
+
     const r = await emit(
       "f",
       `/**
@@ -168,9 +178,11 @@ f(9);
     expect(r.sidecar).toContain("export const f = fn({ x: number() }, number());");
     expect(r.sidecar).not.toContain("lit(5)");
     expect(r.sidecar).not.toContain("lit(6)");
-  });
+  })();
+await (async () => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-emit-035-"));
 
-  it("域声明与见证共存时：域声明生效，见证不污染", async () => {
+
     const r = await emit(
       "f",
       `/**
@@ -185,7 +197,16 @@ export function f(x) {
     expect(r.written).toEqual(["f"]);
     expect(r.sidecar).toContain("export const f = fn({ x: lit(7) }, lit(8));");
     expect(r.sidecar).not.toContain("lit(5)");
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 
 describe("指令 case 的分档判据（见证 vs 域声明）", () => {
@@ -200,25 +221,42 @@ describe("指令 case 的分档判据（见证 vs 域声明）", () => {
     ...over,
   });
 
-  it("实参全是字面量且无断言 ⇒ 见证（不进契约）", () => {
+  it("实参全是字面量且无断言 ⇒ 见证（不进契约）；实参全是字面量但带断言 ⇒ 域声明；实参是约束构建器（域形状）⇒ 域声明；实参混合（字面量 + 约束构建器）⇒ 域声明", () => {
+(() => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-emit-035-"));
+
+
     const c = base({ argAbs: [numLit(5)] });
     expect(isDomainDeclarationCase(c)).toBe(false);
-  });
+  })();
+(() => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-emit-035-"));
 
-  it("实参全是字面量但带断言 ⇒ 域声明", () => {
+
     const c = base({ argAbs: [numLit(5)], expected: numLit(6) });
     expect(isDomainDeclarationCase(c)).toBe(true);
-  });
+  })();
+(() => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-emit-035-"));
 
-  it("实参是约束构建器（域形状）⇒ 域声明", () => {
+
     const c = base({ argAbs: [primNumber] });
     expect(isDomainDeclarationCase(c)).toBe(true);
-  });
+  })();
+(() => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-emit-035-"));
 
-  it("实参混合（字面量 + 约束构建器）⇒ 域声明", () => {
+
     const c = base({ argAbs: [numLit(5), primNumber] });
     expect(isDomainDeclarationCase(c)).toBe(true);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -284,20 +322,22 @@ function runCli(args: string[]): { status: number; stdout: string; stderr: strin
 }
 
 describe("契约面与门禁面对无解契约给同一结论", () => {
-  it("契约条目透出 conflict（此前被静默跳过 ⇒ 印成有效契约）", async () => {
+  it("契约条目透出 conflict（此前被静默跳过 ⇒ 印成有效契约）；人读行带 `[unsatisfiable: n]` 标记（不再印成「有效契约」）；`nudo contract` 与 check 同诊断：stderr 报同码 error + 只读命令 exit 0；`--json` 机器面：同名字段 + 只读命令 exit 0（stdout 仍是合法 JSON）；负控制：普通契约不带标记且 exit 0", async () => {
+await (async () => {
+
     const entries = await contractSurface(conflictProject());
     const entry = entries.find((e) => e.fn === "conflict");
     expect(entry).toBeDefined();
     expect(entry!.conflict?.params).toEqual(["n"]);
-  });
+  })();
+await (async () => {
 
-  it("人读行带 `[unsatisfiable: n]` 标记（不再印成「有效契约」）", async () => {
     const entries = await contractSurface(conflictProject());
     const line = formatContractSurfaceLine(entries.find((e) => e.fn === "conflict")!);
     expect(line).toContain("[unsatisfiable: n]");
-  });
+  })();
+await (async () => {
 
-  it("`nudo contract` 与 check 同诊断：stderr 报同码 error + 只读命令 exit 0", () => {
     // 只读 `contract` 的 exit 契约是「仅用法 / IO 错误时 exit 1」；
     // 契约冲突是被分析代码的状态，诊断照发但不再把进程判失败。
     const file = conflictProject();
@@ -306,9 +346,9 @@ describe("契约面与门禁面对无解契约给同一结论", () => {
     expect(text.stderr).toContain("nudo:contract-conflict");
     expect(text.stderr).toContain("conflict: handwritten contract conjunction unsatisfiable (n)");
     expect(text.stdout).toContain("[unsatisfiable: n]");
-  });
+  })();
+await (async () => {
 
-  it("`--json` 机器面：同名字段 + 只读命令 exit 0（stdout 仍是合法 JSON）", () => {
     const file = conflictProject();
     const res = runCli(["contract", "--json", file]);
     expect(res.status).toBe(0);
@@ -316,10 +356,9 @@ describe("契约面与门禁面对无解契约给同一结论", () => {
       entries: Array<{ fn: string; conflict?: { params: string[] } }>;
     }>;
     expect(payload[0]!.entries[0]!.conflict?.params).toEqual(["n"]);
-  });
+  })();
+await (async () => {
 
-  // ── 负控制：无冲突的契约照旧 exit 0、无标记 ─────────────────────
-  it("负控制：普通契约不带标记且 exit 0", async () => {
     const dir = tmpProject("nudo-bug-081-ok-");
     writeTmpFiles(dir, {
       "ok.nudo.js": `import { number } from "@nudojs/core";
@@ -342,7 +381,17 @@ export function ok(n) {
     const res = runCli(["contract", file]);
     expect(res.status).toBe(0);
     expect(res.stderr).toBe("");
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  // ── 负控制：无冲突的契约照旧 exit 0、无标记 ─────────────────────
+  ;
 });
 });
 
@@ -396,7 +445,9 @@ function mayThrowAfterSidecar(file: string, source: string, dsl: string): number
 }
 
 describe("contract --draft 必须带抛错证据", () => {
-  it("未申报但门禁判「可能抛」⇒ 草稿头给出可照抄的 throws 补救（DSL 不擅自加义务）", async () => {
+  it("未申报但门禁判「可能抛」⇒ 草稿头给出可照抄的 throws 补救（DSL 不擅自加义务）；按提示补 throws 槽后入口抛错诊断真的消失（建议可执行）；源码显式 `@nudo:throws` 原样进草稿（不再凭空消失）；多个错误种类 ⇒ `union(lit(…), lit(…))`（throws 槽要求具名错误）；负控制：不抛错的函数草稿里没有 throws 槽", async () => {
+await (async () => {
+
     const dir = tmpProject("nudo-bug-198-");
     writeTmpFiles(dir, { "lib.js": MAY_THROW });
     const res = await draftContract(join(dir, "lib.js"));
@@ -405,9 +456,9 @@ describe("contract --draft 必须带抛错证据", () => {
     // 但草稿头必须写明补救（此前完全没有）
     expect(res.draftSource).toContain('nudo:entry-may-throw add → add { throws: "TypeError" }');
     expect(res.entries[0]?.throws).toEqual({ kinds: ["TypeError"], declared: false });
-  });
+  })();
+await (async () => {
 
-  it("按提示补 throws 槽后入口抛错诊断真的消失（建议可执行）", async () => {
     const dir = tmpProject("nudo-bug-198-rt-");
     writeTmpFiles(dir, { "lib.js": MAY_THROW });
     const file = join(dir, "lib.js");
@@ -417,17 +468,17 @@ describe("contract --draft 必须带抛错证据", () => {
     const slot = `, any(), { throws: ${kinds.map((k) => `"${k}"`).join(", ")} }`;
     // 提示里给出的就是这条：`fn({} , any(), { throws: "TypeError" })`
     expect(mayThrowAfterSidecar(file, MAY_THROW, `${dsl.slice(0, -1)}${slot})`)).toBe(0);
-  });
+  })();
+await (async () => {
 
-  it("源码显式 `@nudo:throws` 原样进草稿（不再凭空消失）", async () => {
     const dir = tmpProject("nudo-bug-198-decl-");
     writeTmpFiles(dir, { "lib.js": DECLARED });
     const res = await draftContract(join(dir, "lib.js"));
     expect(res.entries[0]?.dsl).toContain('{ throws: "TypeError" }');
     expect(res.entries[0]?.throws).toEqual({ kinds: ["TypeError"], declared: true });
-  });
+  })();
+await (async () => {
 
-  it("多个错误种类 ⇒ `union(lit(…), lit(…))`（throws 槽要求具名错误）", async () => {
     const dir = tmpProject("nudo-bug-198-multi-");
     const src = `/**
  * @nudo:throws TypeError
@@ -441,10 +492,9 @@ export function f(x) {
     const res = await draftContract(join(dir, "lib.js"));
     const dsl = res.entries[0]!.dsl!;
     expect(dsl).toContain('union(lit("TypeError"), lit("RangeError"))');
-  });
+  })();
+await (async () => {
 
-  // ── 负控制：总函数不得凭空长 throws 槽 ─────────────────────────
-  it("负控制：不抛错的函数草稿里没有 throws 槽", async () => {
     const dir = tmpProject("nudo-bug-198-total-");
     writeTmpFiles(dir, { "lib.js": TOTAL });
     const res = await draftContract(join(dir, "lib.js"));
@@ -452,7 +502,17 @@ export function f(x) {
     expect(dsl).toBeDefined();
     expect(dsl).not.toContain("throws");
     expect(res.entries[0]?.throws).toBeUndefined();
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  // ── 负控制：总函数不得凭空长 throws 槽 ─────────────────────────
+  ;
 });
 });
 
@@ -498,7 +558,11 @@ afterEach(() => {
 });
 
 describe("草稿返回义务的来源", () => {
-  it("观测集是真实返回域的真子集 ⇒ 不投影返回义务（改前：number() ⇒ 假红）", async () => {
+  it("观测集是真实返回域的真子集 ⇒ 不投影返回义务（改前：number() ⇒ 假红）；负控制：观测域覆盖推断域 ⇒ 返回义务照旧投影（不误伤）；负控制：无观测 ⇒ 不发明返回义务（symbolic 只作注释）", async () => {
+await (async () => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-draft-509-"));
+
+
     const file = join(dir, "opt.js");
     writeFileSync(
       file,
@@ -512,18 +576,22 @@ describe("草稿返回义务的来源", () => {
     expect(entry!.returns?.display).toContain("is not covered");
     expect(entry!.dsl).toBe("fn({ flag: boolean() })");
     expect(r.draftSource).not.toContain("number())");
-  });
+  })();
+await (async () => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-draft-509-"));
 
-  it("负控制：观测域覆盖推断域 ⇒ 返回义务照旧投影（不误伤）", async () => {
+
     const file = join(dir, "double.js");
     writeFileSync(file, `export function double(x) {\n  return x * 2;\n}\n\ndouble(21);\n`);
     const r = await draftContract(file);
     const entry = r.entries.find((e) => e.fn === "double");
     expect(entry!.returns?.projected).toBe(true);
     expect(entry!.dsl).toBe("fn({ x: number() }, number())");
-  });
+  })();
+await (async () => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-draft-509-"));
 
-  it("负控制：无观测 ⇒ 不发明返回义务（symbolic 只作注释）", async () => {
+
     const file = join(dir, "lonely.js");
     writeFileSync(file, `export function lonely(y) {\n  return y;\n}\n`);
     const r = await draftContract(file);
@@ -531,7 +599,12 @@ describe("草稿返回义务的来源", () => {
     expect(entry!.returns?.projected).toBe(false);
     expect(entry!.dsl).toBe("fn({})");
     expect(r.draftSource).toContain("symbolic");
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
 
@@ -570,7 +643,9 @@ function parses(src: string): boolean {
 }
 
 describe("@nudo:throws 注解不得写出语法错误文件", () => {
-  it("函数体首行是普通块注释：产物仍可解析（改前失败）", () => {
+  it("函数体首行是普通块注释：产物仍可解析（改前失败）；声明行尾带普通块注释：产物仍可解析（改前失败）；多行 JSDoc 后的普通块注释：tag 落在 JSDoc 内（不落进注释外）；负控制：已有 JSDoc 的函数仍把 tag 插进 JSDoc（既有行为不变）；负控制：单行 JSDoc 仍展开成块（既有行为不变）；负控制：已有 @nudo:throws 时不重复插（既有行为不变）", () => {
+(() => {
+
     const src = `export function f(x) {
   /* note */
   return x + 1;
@@ -585,9 +660,9 @@ describe("@nudo:throws 注解不得写出语法错误文件", () => {
     const declIdx = next.indexOf("export function f");
     expect(docIdx).toBeGreaterThanOrEqual(0);
     expect(docIdx).toBeLessThan(declIdx);
-  });
+  })();
+(() => {
 
-  it("声明行尾带普通块注释：产物仍可解析（改前失败）", () => {
     const src = `export function f(x) { /* note */
   return x + 1;
 }
@@ -598,9 +673,9 @@ describe("@nudo:throws 注解不得写出语法错误文件", () => {
     expect(next.indexOf("@nudo:throws TypeError")).toBeLessThan(
       next.indexOf("export function f"),
     );
-  });
+  })();
+(() => {
 
-  it("多行 JSDoc 后的普通块注释：tag 落在 JSDoc 内（不落进注释外）", () => {
     const src = `/**
  * helper
  */
@@ -616,9 +691,9 @@ export function f(x) {
     const closeLine = lines.findIndex((l) => l.trim().endsWith("*/"));
     expect(tagLine).toBeGreaterThan(0);
     expect(tagLine).toBeLessThan(closeLine); // tag 在 JSDoc 收尾之前
-  });
+  })();
+(() => {
 
-  it("负控制：已有 JSDoc 的函数仍把 tag 插进 JSDoc（既有行为不变）", () => {
     const src = `/**
  * helper
  */
@@ -629,9 +704,9 @@ export function f(n) {
     const next = annotate(src, "f");
     expect(parses(next)).toBe(true);
     expect(next).toContain(" * helper\n * @nudo:throws TypeError\n */");
-  });
+  })();
+(() => {
 
-  it("负控制：单行 JSDoc 仍展开成块（既有行为不变）", () => {
     const src = `/** helper */
 export function f(n) {
   return n.type;
@@ -640,9 +715,9 @@ export function f(n) {
     const next = annotate(src, "f");
     expect(parses(next)).toBe(true);
     expect(next).toContain("/**\n * helper\n * @nudo:throws TypeError\n */");
-  });
+  })();
+(() => {
 
-  it("负控制：已有 @nudo:throws 时不重复插（既有行为不变）", () => {
     const src = `/**
  * @nudo:throws TypeError
  */
@@ -652,7 +727,18 @@ export function f(n) {
 `;
     const next = annotate(src, "f");
     expect(next).toBe(src);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -700,7 +786,9 @@ const entryCase = (argAbs: Abs[], result: Abs): FunctionAnalysis["cases"] => [
 ];
 
 describe("契约返回位保形（lit(n) → n）", () => {
-  it("手写契约的 lit(42) 返回渲染成 42（不是 number）", () => {
+  it("手写契约的 lit(42) 返回渲染成 42（不是 number）；字面量在 pred 里（不在 term 里）也能取到；契约返回是 number() 时仍是 number（不回归）；观测返回位（无契约）仍按调用面 widen：42 → number（负控制）", () => {
+(() => {
+
     const fn = fnOf("only42", ["a"], entryCase([anyAbs], numLit(42)));
     const p = projectFunctionDts(fn, {
       params: [{ name: "a", abs: num() }],
@@ -708,18 +796,18 @@ describe("契约返回位保形（lit(n) → n）", () => {
     });
     expect(p.lines.join("\n")).toContain("export declare function only42(a: number): 42;");
     expect(p.lines.join("\n")).not.toContain(": number;");
-  });
+  })();
+(() => {
 
-  it("字面量在 pred 里（不在 term 里）也能取到", () => {
     const a = constraintToEntryAbs(litC(42), "return");
     // 前提：契约返回 Abs 的字面量确实住在 pred 上
     expect(a.term?.op).toBe("var");
     expect(a.pred?.op).toBe("eq");
     // 负控制：裸 Abs 渲染仍是基类型（保形只作用在契约返回位）
     expect(absToTSType(a)).toBe("number");
-  });
+  })();
+(() => {
 
-  it("契约返回是 number() 时仍是 number（不回归）", () => {
     const fn = fnOf("n", ["a"], entryCase([anyAbs], anyAbs));
     const p = projectFunctionDts(fn, {
       params: [{ name: "a", abs: num() }],
@@ -729,13 +817,20 @@ describe("契约返回位保形（lit(n) → n）", () => {
       ),
     });
     expect(p.lines.join("\n")).toContain("export declare function n(a: number): number;");
-  });
+  })();
+(() => {
 
-  it("观测返回位（无契约）仍按调用面 widen：42 → number（负控制）", () => {
     const fn = fnOf("obs", ["a"], entryCase([anyAbs], numLit(42)));
     const p = projectFunctionDts(fn);
     expect(p.lines.join("\n")).toContain("export declare function obs(a: unknown): number;");
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -783,7 +878,11 @@ sum(1, 2, 3);
 `;
 
 describe("草稿的 rest 形参", () => {
-  it("rest 函数 not-projectable 跳过（改前：写出 ...rest: number()）", async () => {
+  it("rest 函数 not-projectable 跳过（改前：写出 ...rest: number()）；草稿产物真能过 node --check（改前：SyntaxError: Unexpected token ':'）；负控制：非 rest 导出照旧出绑定行（不误跳过）", async () => {
+await (async () => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-draft-527-"));
+
+
     const file = join(dir, "lib.js");
     writeFileSync(file, REST_JS);
     const r = await draftContract(file);
@@ -793,9 +892,11 @@ describe("草稿的 rest 形参", () => {
     expect(sum!.dsl).toBeUndefined();
     expect(r.draftSource).not.toContain("...rest");
     expect(r.draftSource).toContain("sum (not-projectable)");
-  });
+  })();
+await (async () => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-draft-527-"));
 
-  it("草稿产物真能过 node --check（改前：SyntaxError: Unexpected token ':'）", async () => {
+
     const file = join(dir, "lib.js");
     writeFileSync(file, REST_JS);
     const r = await draftContract(file);
@@ -803,16 +904,23 @@ describe("草稿的 rest 形参", () => {
     writeFileSync(draftPath, r.draftSource, "utf-8");
     const check = nodeCheck(draftPath);
     expect(check.ok, check.stderr).toBe(true);
-  });
+  })();
+await (async () => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-draft-527-"));
 
-  it("负控制：非 rest 导出照旧出绑定行（不误跳过）", async () => {
+
     const file = join(dir, "lib.js");
     writeFileSync(file, REST_JS);
     const r = await draftContract(file);
     const greet = r.entries.find((e) => e.fn === "greet");
     expect(greet!.skipped).toBeUndefined();
     expect(r.draftSource).toContain("export const greet = fn({});");
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
 
@@ -858,7 +966,11 @@ afterEach(() => {
 });
 
 describe("草稿的 import ↔ export 撞名", () => {
-  it("导出名撞 builder import ⇒ 走别名形态（改前：export const number）", async () => {
+  it("导出名撞 builder import ⇒ 走别名形态（改前：export const number）；草稿产物真能过 node --check（改前：Identifier 'number' has already been declared）；负控制：普通导出名仍是 export const <name>（不误改别名形态）", async () => {
+await (async () => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-draft-545-"));
+
+
     const file = join(dir, "src.js");
     writeFileSync(
       file,
@@ -871,9 +983,11 @@ describe("草稿的 import ↔ export 撞名", () => {
     expect(entry!.identity).toBe("number");
     expect(r.draftSource).not.toMatch(/^export const number = /m);
     expect(r.draftSource).toContain("export { _nudo_1 as number };");
-  });
+  })();
+await (async () => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-draft-545-"));
 
-  it("草稿产物真能过 node --check（改前：Identifier 'number' has already been declared）", async () => {
+
     const file = join(dir, "src.js");
     writeFileSync(
       file,
@@ -884,9 +998,11 @@ describe("草稿的 import ↔ export 撞名", () => {
     writeFileSync(draftPath, r.draftSource, "utf-8");
     const check = nodeCheck(draftPath);
     expect(check.ok, check.stderr).toBe(true);
-  });
+  })();
+await (async () => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-draft-545-"));
 
-  it("负控制：普通导出名仍是 export const <name>（不误改别名形态）", async () => {
+
     const file = join(dir, "lib.js");
     writeFileSync(
       file,
@@ -895,7 +1011,12 @@ describe("草稿的 import ↔ export 撞名", () => {
     const r = await draftContract(file);
     expect(r.draftSource).toContain("export const add = fn({ x: number() });");
     expect(r.draftSource).not.toContain("_nudo_1");
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
 
@@ -937,7 +1058,11 @@ afterEach(() => {
 const LIB_JS = `export function add(a, b) {\n  return a + b;\n}\n`;
 
 describe("草稿落盘不覆盖人工改过的文件", () => {
-  it("既有草稿被手改过 ⇒ 拒绝覆盖且原样保留（改前：静默覆盖）", async () => {
+  it("既有草稿被手改过 ⇒ 拒绝覆盖且原样保留（改前：静默覆盖）；负控制：机器原稿（指纹一致）仍可被覆盖（源变化后重生成）；负控制：同内容重跑 ⇒ 幂等（unchanged，不写盘）", async () => {
+await (async () => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-draft-557-"));
+
+
     const file = join(dir, "lib.js");
     writeFileSync(file, LIB_JS);
     const r = await draftContract(file);
@@ -953,9 +1078,11 @@ describe("草稿落盘不覆盖人工改过的文件", () => {
     const text = formatDraftSummary("lib.js", draftPath, r, w).join("\n");
     expect(text).toContain("hand-edited");
     expect(text).toContain("not overwritten");
-  });
+  })();
+await (async () => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-draft-557-"));
 
-  it("负控制：机器原稿（指纹一致）仍可被覆盖（源变化后重生成）", async () => {
+
     const file = join(dir, "lib.js");
     writeFileSync(file, LIB_JS);
     const r1 = await draftContract(file);
@@ -969,9 +1096,11 @@ describe("草稿落盘不覆盖人工改过的文件", () => {
     const w2 = writeContractDraft(file, r2.draftSource, { entries: r2.entries });
     expect(w2.written).toBe(true);
     expect(readFileSync(draftPath, "utf-8")).toBe(r2.draftSource);
-  });
+  })();
+await (async () => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-draft-557-"));
 
-  it("负控制：同内容重跑 ⇒ 幂等（unchanged，不写盘）", async () => {
+
     const file = join(dir, "lib.js");
     writeFileSync(file, LIB_JS);
     const r = await draftContract(file);
@@ -981,7 +1110,12 @@ describe("草稿落盘不覆盖人工改过的文件", () => {
     expect(w2.changed).toBe(false);
     expect(w2.written).toBe(false);
     expect(w2.skipped).toBeUndefined();
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
 
@@ -1028,7 +1162,12 @@ afterEach(() => {
 const DRAFT_SOURCE = `// @nudo:draft\nimport { fn } from "@nudojs/core";\n\nexport const f = fn({});\n`;
 
 describe("（service 半）—— 项目根判据按**路径分量**，不按字符串前缀", () => {
-  it("项目根下的合法目录 `..data/` 不再被误判为越出项目根 ⇒ 草稿写盘成功", () => {
+  it("项目根下的合法目录 `..data/` 不再被误判为越出项目根 ⇒ 草稿写盘成功；真正越出项目根的路径**仍被拒**（判据不许放宽成「一律放行」）；项目根下**文件名**以 `..` 开头（`..data.js`）同样不再被误判为逃逸", () => {
+(() => {
+  root = mkdtempSync(join(tmpdir(), "nudo-draft-665-"));
+  writeFileSync(join(root, "package.json"), '{ "name": "dotdir-probe", "private": true }\n', "utf-8");
+
+
     const dir = join(root, "..data");
     mkdirSync(dir, { recursive: true });
     const file = join(dir, "f.js");
@@ -1039,9 +1178,12 @@ describe("（service 半）—— 项目根判据按**路径分量**，不按字
 
     expect(w.written).toBe(true);
     expect(existsSync(sidecarDraftPath(file))).toBe(true);
-  });
+  })();
+(() => {
+  root = mkdtempSync(join(tmpdir(), "nudo-draft-665-"));
+  writeFileSync(join(root, "package.json"), '{ "name": "dotdir-probe", "private": true }\n', "utf-8");
 
-  it("真正越出项目根的路径**仍被拒**（判据不许放宽成「一律放行」）", () => {
+
     const outside = mkdtempSync(join(tmpdir(), "nudo-draft-665-out-"));
     try {
       const file = join(outside, "f.js");
@@ -1054,9 +1196,12 @@ describe("（service 半）—— 项目根判据按**路径分量**，不按字
     } finally {
       rmSync(outside, { recursive: true, force: true });
     }
-  });
+  })();
+(() => {
+  root = mkdtempSync(join(tmpdir(), "nudo-draft-665-"));
+  writeFileSync(join(root, "package.json"), '{ "name": "dotdir-probe", "private": true }\n', "utf-8");
 
-  it("项目根下**文件名**以 `..` 开头（`..data.js`）同样不再被误判为逃逸", () => {
+
     const file = join(root, "..data.js");
     writeFileSync(file, "export function f(x) { return x + 1; }\n", "utf-8");
 
@@ -1065,7 +1210,12 @@ describe("（service 半）—— 项目根判据按**路径分量**，不按字
 
     expect(w.written).toBe(true);
     expect(existsSync(sidecarDraftPath(file))).toBe(true);
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
 
@@ -1109,7 +1259,11 @@ afterEach(() => {
 const DEFAULT_JS = `/**\n * @nudo:case "ok" (1, 2)\n */\nexport default (a, b) => a + b;\n`;
 
 describe("匿名 default 导出的侧车键", () => {
-  it("侧车键 = 导出身份 default（改前：_default ⇒ 绑不上）", async () => {
+  it("侧车键 = 导出身份 default（改前：_default ⇒ 绑不上）；草稿产物真能过 node --check；照抄草稿进侧车 ⇒ 契约真的绑上（改前：键 _default ⇒ 绑不上 ⇒ 假绿）", async () => {
+await (async () => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-draft-942-"));
+
+
     const file = join(dir, "lib.js");
     writeFileSync(file, DEFAULT_JS);
     const r = await draftContract(file);
@@ -1118,9 +1272,11 @@ describe("匿名 default 导出的侧车键", () => {
     expect(entry!.identity).toBe("default");
     expect(r.draftSource).toContain("export { _nudo_1 as default };");
     expect(r.draftSource).not.toContain("_default");
-  });
+  })();
+await (async () => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-draft-942-"));
 
-  it("草稿产物真能过 node --check", async () => {
+
     const file = join(dir, "lib.js");
     writeFileSync(file, DEFAULT_JS);
     const r = await draftContract(file);
@@ -1128,9 +1284,11 @@ describe("匿名 default 导出的侧车键", () => {
     writeFileSync(draftPath, r.draftSource, "utf-8");
     const check = nodeCheck(draftPath);
     expect(check.ok, check.stderr).toBe(true);
-  });
+  })();
+await (async () => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-draft-942-"));
 
-  it("照抄草稿进侧车 ⇒ 契约真的绑上（改前：键 _default ⇒ 绑不上 ⇒ 假绿）", async () => {
+
     const file = join(dir, "lib.js");
     writeFileSync(file, DEFAULT_JS);
     const r = await draftContract(file);
@@ -1143,7 +1301,12 @@ describe("匿名 default 导出的侧车键", () => {
     });
     expect(eff).toBeDefined();
     expect(eff!.params.map((p) => p.param)).toEqual(["a", "b"]);
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
 
@@ -1227,7 +1390,13 @@ afterEach(() => {
 });
 
 describe("-freeze 不得把违反被调方契约的见证写进被调方", () => {
-  it("违约见证（-1 ⊭ x > 0）不写入；合规见证照写；skip 记 contract-violation", () => {
+  it("违约见证（-1 ⊭ x > 0）不写入；合规见证照写；skip 记 contract-violation；不可判 ⇒ 放行（非字面量实参不猜；不写 = 丢证据）；无宿主接线（不给 filePath/loadModule）⇒ 契约不可读 ⇒ 契约闸不生效（行为与改前一致）", () => {
+(() => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-bug-055-"));
+  writeFileSync(join(dir, "tmpl.nudo.js"), "export const positive = number().gt(0);\n", "utf-8");
+  writeFileSync(join(dir, "lib.js"), LIB, "utf-8");
+
+
     const out = insertGeneratedCaseDirectives(
       LIB,
       analysisOf("needsPositive", 5, ["x"], [
@@ -1243,9 +1412,13 @@ describe("-freeze 不得把违反被调方契约的见证写进被调方", () =>
     const skip = out.skipped.find((s) => s.reason === "contract-violation");
     expect(skip?.fn).toBe("needsPositive");
     expect(skip?.detail).toContain("call@usage.js:L3");
-  });
+  })();
+(() => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-bug-055-"));
+  writeFileSync(join(dir, "tmpl.nudo.js"), "export const positive = number().gt(0);\n", "utf-8");
+  writeFileSync(join(dir, "lib.js"), LIB, "utf-8");
 
-  it("不可判 ⇒ 放行（非字面量实参不猜；不写 = 丢证据）", () => {
+
     const out = insertGeneratedCaseDirectives(
       LIB,
       analysisOf("needsPositive", 5, ["x"], [
@@ -1256,15 +1429,24 @@ describe("-freeze 不得把违反被调方契约的见证写进被调方", () =>
     );
     expect(out.skipped.some((s) => s.reason === "contract-violation")).toBe(false);
     expect(out.written.length).toBe(1);
-  });
+  })();
+(() => {
+  dir = mkdtempSync(join(tmpdir(), "nudo-bug-055-"));
+  writeFileSync(join(dir, "tmpl.nudo.js"), "export const positive = number().gt(0);\n", "utf-8");
+  writeFileSync(join(dir, "lib.js"), LIB, "utf-8");
 
-  it("无宿主接线（不给 filePath/loadModule）⇒ 契约不可读 ⇒ 契约闸不生效（行为与改前一致）", () => {
+
     const out = insertGeneratedCaseDirectives(
       LIB,
       analysisOf("needsPositive", 5, ["x"], [{ name: "call@usage.js:L3", args: [absLit(-1)] }]),
     );
     expect(out.source).toContain('@nudo:case "call@usage.js:L3" (-1)');
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
 
@@ -1334,13 +1516,15 @@ function analysisOf(cases: Array<{ name: string; args: Abs[] }>): AnalysisResult
 }
 
 describe("update 链不得净删除活着的生成态见证", () => {
-  it("① strip 不剥离「含手写 case 的块」里的生成态见证（往返闭合）", () => {
+  it("① strip 不剥离「含手写 case 的块」里的生成态见证（往返闭合）；① 对照：块内**没有**手写 case ⇒ 照常剥离（update 仍能重同步）；② rebuildGenerated：手写 case 只挡同名，不挡 call@ 见证的重建；② 对照：add 模式（默认）仍是「手写 ⇒ 整函数跳过」（不动用户手写块）；② 手写 case 的载荷与新调用点相同不得顶掉该见证（载荷等价只判生成态之间）", () => {
+(() => {
+
     const { source, removed } = stripGeneratedCaseDirectives(MIXED);
     expect(source).toBe(MIXED);
     expect(removed).toEqual([]);
-  });
+  })();
+(() => {
 
-  it("① 对照：块内**没有**手写 case ⇒ 照常剥离（update 仍能重同步）", () => {
     const only = `/**
  * @nudo:case "call@site.js:L2" (5, 6)
  */
@@ -1349,9 +1533,9 @@ export function add(a, b) { return a + b; }
     const { source, removed } = stripGeneratedCaseDirectives(only);
     expect(removed).toEqual(["call@site.js:L2"]);
     expect(source).not.toContain("@nudo:case");
-  });
+  })();
+(() => {
 
-  it("② rebuildGenerated：手写 case 只挡同名，不挡 call@ 见证的重建", () => {
     const out = insertGeneratedCaseDirectives(
       HAND_WRITTEN_ONLY,
       analysisOf([{ name: "call@site.js:L2", args: [absLit(5), absLit(6)] }]),
@@ -1362,24 +1546,33 @@ export function add(a, b) { return a + b; }
     const text = out.source;
     expect(text).toContain('@nudo:case "call@site.js:L2" (5, 6)');
     expect(text).toContain('@nudo:case "mine" (3, 4) => 7');
-  });
+  })();
+(() => {
 
-  it("② 对照：add 模式（默认）仍是「手写 ⇒ 整函数跳过」（不动用户手写块）", () => {
     const out = insertGeneratedCaseDirectives(
       HAND_WRITTEN_ONLY,
       analysisOf([{ name: "call@site.js:L2", args: [absLit(5), absLit(6)] }]),
     );
     expect(out.source).toBe(HAND_WRITTEN_ONLY);
     expect(out.skipped).toEqual([{ fn: "add", reason: "hand-written" }]);
-  });
+  })();
+(() => {
 
-  it("② 手写 case 的载荷与新调用点相同不得顶掉该见证（载荷等价只判生成态之间）", () => {
     const out = insertGeneratedCaseDirectives(
       HAND_WRITTEN_ONLY,
       analysisOf([{ name: "call@site.js:L7", args: [absLit(3), absLit(4)] }]),
       { rebuildGenerated: true },
     );
     expect(out.written).toEqual([{ fn: "add", cases: ["call@site.js:L7"] }]);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 });
