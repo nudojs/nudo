@@ -38,9 +38,9 @@ $name	模块契约缺少「Abs 形态 × 运行时接受集」的系统矩阵：
 
 ```audit-deleted
 title	reason	evidence
-负控制：unknown 形状仍恒真（结构义务只对有形状的 Abs 生效）	dup:模块矩阵：denoteGuard 接受集	commit:PENDING
-对象判定排除数组	dup:模块矩阵：denoteGuard 接受集	commit:PENDING
-运行时：缺键 / 数组被拒，键在场被放行	dup:模块矩阵：denoteGuard 接受集	commit:PENDING
-运行时：接受 `[1,2,3]`，拒绝稀疏 `[1,,3]` 与 `[1,undefined,3]`	dup:模块矩阵：denoteGuard 接受集	commit:PENDING
-守卫仍要求数组本身（负控制）	dup:模块矩阵：denoteGuard 接受集	commit:PENDING
+负控制：unknown 形状仍恒真（结构义务只对有形状的 Abs 生效）	dup:模块矩阵：denoteGuard 接受集	commit:f02a996c
+对象判定排除数组	dup:模块矩阵：denoteGuard 接受集	commit:f02a996c
+运行时：缺键 / 数组被拒，键在场被放行	dup:模块矩阵：denoteGuard 接受集	commit:f02a996c
+运行时：接受 `[1,2,3]`，拒绝稀疏 `[1,,3]` 与 `[1,undefined,3]`	dup:模块矩阵：denoteGuard 接受集	commit:f02a996c
+守卫仍要求数组本身（负控制）	dup:模块矩阵：denoteGuard 接受集	commit:f02a996c
 ```
