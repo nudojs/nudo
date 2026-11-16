@@ -1255,16 +1255,23 @@ function callProbeThrice(dir: string): Abs[] {
 }
 
 describe("ESM import 环：环内调用恒定值", () => {
-  it("环内第一次调用即得正确值（改前：unknown）", () => {
-    const dir = tmpProject({ "a.js": A, "b.js": B, "index.js": ENTRY });
-    clearAbsModuleCache();
-    const results = callProbeThrice(dir);
-    // 第一次调用就必须是 0（原生 oracle），不是 unknown
-    expect(results[0]!.shape.k).not.toBe("unknown");
-    expect(results[0]!.term).toEqual({ op: "lit", value: 0 });
-  });
-
-  it("同一导出按调用次序不再漂移（改前：unknown / 0 / 0）", () => {
+  const A = `import { b } from "./b.js";
+export function a(n) { return n <= 0 ? 0 : b(n - 1); }
+`;
+  const B = `import { a } from "./a.js";
+export function b(n) { return n <= 0 ? 1 : a(n - 1); }
+`;
+  const ENTRY = `import { a } from "./a.js";
+export function probe() { return a(2); }
+`;
+  const tmpProject = (files: Record<string, string>) => makeTmpProject("nudo-b456-", files);
+  const callProbeThrice = (dir: string): Abs[] => {
+    const file = join(dir, "index.js");
+    const graph = evalAbsModuleGraph(ENTRY, file);
+    const run = runTranspiled(ENTRY, { mode: "analyze", modules: graph.modules as never });
+    return [0, 1, 2].map(() => callTranspiledExportFull(run, "probe", []).result);
+  };
+  it("首次即 0、三次不漂移、环仍报告；非环与显式实参负控", () => {
     const dir = tmpProject({ "a.js": A, "b.js": B, "index.js": ENTRY });
     clearAbsModuleCache();
     const results = callProbeThrice(dir);
@@ -1272,43 +1279,25 @@ describe("ESM import 环：环内调用恒定值", () => {
       expect(r.shape.k).not.toBe("unknown");
       expect(r.term).toEqual({ op: "lit", value: 0 });
     }
-  });
-
-  it("环仍被报为装载问题（诊断面不变）", () => {
-    const dir = tmpProject({ "a.js": A, "b.js": B, "index.js": ENTRY });
-    clearAbsModuleCache();
     const graph = evalAbsModuleGraph(ENTRY, join(dir, "index.js"));
     expect(graph.issues.some((i) => i.kind === "cycle")).toBe(true);
-  });
 
-  it("负控制：非环的跨模块调用不受影响（值与改前一致）", () => {
-    const dir = tmpProject({
-      "math.js": `export function double(x) { return x * 2; }\n`,
-      "index.js": `import { double } from "./math.js";
-export function probe() { return double(21); }
-`,
-    });
+    const plain = tmpProject({ "math.js": "export function double(x) { return x * 2; }\n", "index.js": 'import { double } from "./math.js";\nexport function probe() { return double(21); }\n' });
     clearAbsModuleCache();
-    const src = `import { double } from "./math.js";
-export function probe() { return double(21); }
-`;
-    const file = join(dir, "index.js");
-    const graph = evalAbsModuleGraph(src, file);
-    const run = runTranspiled(src, { mode: "analyze", modules: graph.modules as never });
-    const r = callTranspiledExportFull(run, "probe", []);
-    expect(r.result.term).toEqual({ op: "lit", value: 42 });
-  });
+    const plainSrc = 'import { double } from "./math.js";\nexport function probe() { return double(21); }\n';
+    const plainFile = join(plain, "index.js");
+    const plainGraph = evalAbsModuleGraph(plainSrc, plainFile);
+    const plainRun = runTranspiled(plainSrc, { mode: "analyze", modules: plainGraph.modules as never });
+    expect(callTranspiledExportFull(plainRun, "probe", []).result.term).toEqual({ op: "lit", value: 42 });
 
-  it("负控制：环内显式实参调用同样恒定（a(2) 直调）", () => {
-    const dir = tmpProject({ "a.js": A, "b.js": B, "index.js": ENTRY });
     clearAbsModuleCache();
-    const file = join(dir, "index.js");
-    const graph = evalAbsModuleGraph(ENTRY, file);
-    const run = runTranspiled(ENTRY, { mode: "analyze", modules: graph.modules as never });
-    const r = callTranspiledExportFull(run, "probe", [numLit(2)]);
-    expect(r.result.term).toEqual({ op: "lit", value: 0 });
+    const dir2 = tmpProject({ "a.js": A, "b.js": B, "index.js": ENTRY });
+    const g2 = evalAbsModuleGraph(ENTRY, join(dir2, "index.js"));
+    const r2 = runTranspiled(ENTRY, { mode: "analyze", modules: g2.modules as never });
+    expect(callTranspiledExportFull(r2, "probe", [numLit(2)]).result.term).toEqual({ op: "lit", value: 0 });
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -1342,66 +1331,34 @@ function callGetA(dir: string, src: string): { value: unknown; issues: string[] 
 }
 
 describe("JSON 依赖装载", () => {
-  it("require(\"./data.json\") 取到真实值（改前：unknown）", () => {
+  const DATA = `{"a": 1, "b": "x"}\n`;
+  const callGetA = (dir: string, src: string) => {
+    const file = join(dir, "main.js");
+    clearAbsModuleCache();
+    const graph = evalAbsModuleGraph(src, file);
+    const run = runTranspiled(src, { mode: "analyze", modules: graph.modules as never });
+    const r = callTranspiledExportFull(run, "getA", []);
+    return { value: r.result.term, issues: graph.issues.map((i) => `${i.kind}: ${i.label}`) };
+  };
+  it("require/default import 取值；具名导入缺名；非法 JSON 专用诊断；JS 依赖负控", () => {
     const dir = makeTmpProject("nudo-b457-", { "data.json": DATA });
-    const src = `const d = require("./data.json");
-export function getA() { return d.a; }
-`;
-    const { value } = callGetA(dir, src);
-    expect(value).toEqual({ op: "lit", value: 1 });
-  });
+    expect(callGetA(dir, 'const d = require("./data.json");\nexport function getA() { return d.a; }\n').value).toEqual({ op: "lit", value: 1 });
+    expect(callGetA(dir, 'import d from "./data.json";\nexport function getA() { return d.a; }\n').value).toEqual({ op: "lit", value: 1 });
+    const named = callGetA(dir, 'import { a } from "./data.json";\nexport function getA() { return a; }\n');
+    expect(named.issues.some((i) => i.startsWith("missing-export"))).toBe(true);
 
-  it("import default 取到整个文档（改前：unknown）", () => {
-    const dir = makeTmpProject("nudo-b457-", { "data.json": DATA });
-    const src = `import d from "./data.json";
-export function getA() { return d.a; }
-`;
-    const { value } = callGetA(dir, src);
-    expect(value).toEqual({ op: "lit", value: 1 });
-  });
+    const badDir = makeTmpProject("nudo-b457-bad-", { "data.json": "{ not json" });
+    const bad = callGetA(badDir, 'const d = require("./data.json");\nexport function getA() { return d.a; }\n');
+    expect(bad.issues.some((i) => i.startsWith("json-invalid"))).toBe(true);
+    expect(bad.issues.some((i) => i.startsWith("missing"))).toBe(false);
 
-  it("JSON 具名导入给出明确缺名诊断（原生同样报错；改前：静默 unknown）", () => {
-    const dir = makeTmpProject("nudo-b457-", { "data.json": DATA });
-    const src = `import { a } from "./data.json";
-export function getA() { return a; }
-`;
-    const { issues } = callGetA(dir, src);
-    expect(issues.some((i) => i.startsWith("missing-export"))).toBe(true);
-  });
-
-  it("非法 JSON 不再静默丢值（给出明确装载问题）", () => {
-    const dir = makeTmpProject("nudo-b457-", { "data.json": "{ not json" });
-    const src = `const d = require("./data.json");
-export function getA() { return d.a; }
-`;
-    const { issues } = callGetA(dir, src);
-    expect(issues.length).toBeGreaterThan(0);
-  });
-
-  it("非法 JSON 走**专用**诊断形态（json-invalid），不折叠成 missing", () => {
-    // 「JSON 语法错」与「文件不存在」是两种形态 ⇒ 专用 kind（诊断码
-    // nudo:json-invalid；core 的 DIAG 注册表待补——越界上报）。
-    const dir = makeTmpProject("nudo-b457-bad-", { "data.json": "{ not json" });
-    const src = `const d = require("./data.json");
-export function getA() { return d.a; }
-`;
-    const { issues } = callGetA(dir, src);
-    expect(issues.some((i) => i.startsWith("json-invalid"))).toBe(true);
-    expect(issues.some((i) => i.startsWith("missing"))).toBe(false);
-  });
-
-  it("负控制：普通 JS 依赖装载不受影响", () => {
-    const dir = makeTmpProject("nudo-b457-", {
-      "mod.js": `export const a = 7;\n`,
-    });
-    const src = `import { a } from "./mod.js";
-export function getA() { return a; }
-`;
-    const { value, issues } = callGetA(dir, src);
-    expect(value).toEqual({ op: "lit", value: 7 });
-    expect(issues).toEqual([]);
+    const jsDir = makeTmpProject("nudo-b457-js-", { "mod.js": "export const a = 7;\n" });
+    const js = callGetA(jsDir, 'import { a } from "./mod.js";\nexport function getA() { return a; }\n');
+    expect(js.value).toEqual({ op: "lit", value: 7 });
+    expect(js.issues).toEqual([]);
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -1459,7 +1416,28 @@ export function use() { const a = next(); const b = next(); return a + b; }
 `;
 
 describe("@nudo:pure marker lands on the call-site function value", () => {
-  it("pure function: directive does not change the result (doc promise)", () => {
+  const PURE_FN = `/**
+ * @nudo:pure
+ */
+export function double(n) { return n * 2; }
+export function useDouble() { return double(21) + double(21); }
+`;
+  const PURE_FN_NO_DIRECTIVE = PURE_FN.replace("@nudo:pure", "");
+  const DECL_FN = `let k = 0;
+/**
+ * @nudo:pure
+ */
+function next() { k = k + 1; return k; }
+export function use() { const a = next(); const b = next(); return a + b; }
+`;
+  const ARROW_FN = `let k = 0;
+/**
+ * @nudo:pure
+ */
+const next = () => { k = k + 1; return k; };
+export function use() { const a = next(); const b = next(); return a + b; }
+`;
+  it("指令不改变结果；标记落分析实例；调用面命中 memo", () => {
     const pick = (r: ReturnType<typeof analyzeFile>) => {
       const fn = r.functions.find((f) => f.name === "useDouble");
       const c = fn?.cases.find((x) => x.name.startsWith("entry@") || x.name.startsWith("call@"));
@@ -1469,44 +1447,33 @@ describe("@nudo:pure marker lands on the call-site function value", () => {
     const without = pick(analyzeFile("/t/b462/pure-without.js", PURE_FN_NO_DIRECTIVE));
     expect(withDir).toBe(without);
     expect(withDir).toContain("84");
-  });
 
-  it("marker lands on the analyzed instance (top-level function declaration)", () => {
-    const path = "/t/b462/marker-decl.js";
-    analyzeFile(path, DECL_FN);
-    // 分析实例（eval 缓存槽内的干净实例）——标记必须落在它上面的函数值上
-    const run = tryRunEval(DECL_FN, path, { envNames: [], mocks: {} });
+    const declPath = "/t/b462/marker-decl.js";
+    analyzeFile(declPath, DECL_FN);
+    const run = tryRunEval(DECL_FN, declPath, { envNames: [], mocks: {} })!;
     expect(run).toBeDefined();
-    const fnVal = run!.exports["next"];
+    const fnVal = run.exports["next"];
     expect(typeof fnVal).toBe("function");
     expect((fnVal as { _memoize?: string })._memoize).toBe("next");
-  });
 
-  it("marker lands on the analyzed instance (const arrow function → Abs fn value)", () => {
-    const path = "/t/b462/marker-arrow.js";
-    analyzeFile(path, ARROW_FN);
-    const run = tryRunEval(ARROW_FN, path, { envNames: [], mocks: {} });
-    expect(run).toBeDefined();
-    const absVal = bindingsOf(run!.exports)?.get("next");
+    const arrowPath = "/t/b462/marker-arrow.js";
+    analyzeFile(arrowPath, ARROW_FN);
+    const arrowRun = tryRunEval(ARROW_FN, arrowPath, { envNames: [], mocks: {} })!;
+    expect(arrowRun).toBeDefined();
+    const absVal = bindingsOf(arrowRun.exports)?.get("next");
     expect(absVal).toBeDefined();
     expect(pureFnNameOf(absVal)).toBe("next");
-  });
 
-  it("call surface (fresh instance) actually hits the pure memo", () => {
-    // 调用面按用例新建**独立模块实例**（fresh 开关）——标记若只落在 memo
-    // 里那份旧实例上，这里永远命中不了 memo（k 会自增到 2）。
-    const path = "/t/b462/fresh-memo.js";
-    const full = tryEvalCallFull(DECL_FN, path, "use", [], { envNames: [], mocks: {} });
+    const full = tryEvalCallFull(DECL_FN, "/t/b462/fresh-memo.js", "use", [], { envNames: [], mocks: {} });
     expect(full).toBeDefined();
-    // 命中 memo ⇒ 第二次 next() 返回首次结果（1）⇒ a + b = 1 + 1 = 2
     expect(formatAbs(full!.result)).toMatch(/^2(\s|$)/);
-    // 负控制：没有 @nudo:pure ⇒ 不 memo ⇒ 1 + 2 = 3
     const noDirective = DECL_FN.replace("@nudo:pure", "");
-    const full2 = tryEvalCallFull(noDirective, path, "use", [], { envNames: [], mocks: {} });
+    const full2 = tryEvalCallFull(noDirective, "/t/b462/fresh-memo.js", "use", [], { envNames: [], mocks: {} });
     expect(full2).toBeDefined();
     expect(formatAbs(full2!.result)).toMatch(/^3(\s|$)/);
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
