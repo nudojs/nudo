@@ -257,19 +257,8 @@ array-like 迭代物同样透传 thisArg（原生 8）	计算键/static 表	没�
 无 mapper 的 Array.from 不受影响（原生 2,4）	计算键/static 表	没测该层	keep	keep	—
 箭头回调不受 thisArg 影响（原生 2）	计算键/static 表	没测该层	keep	keep	—
 L2 门禁不再假红：带 thisArg 的 Array.from 不再被判 may-throw	计算键/static 表	没测该层	keep	keep	—
-Reflect 面：陷阱派发并返回补全后的描述符（改前定抛 TypeError）	计算键/static 表	没测该层	keep	keep	—
-Reflect 面：陷阱返回非对象 → TypeError（原生同款）	计算键/static 表	没测该层	keep	keep	—
-Reflect 面：无该陷阱 → 落回靶的 [[GetOwnProperty]]（原生同款）	计算键/static 表	没测该层	keep	keep	—
-非 Proxy 目标不受影响（负控制）	计算键/static 表	没测该层	keep	keep	—
-陷阱派发：value 42（修前读 .value 定抛 TypeError）	计算键/static 表	没测该层	keep	keep	—
-陷阱派发：描述符被**补全**（value/writable/enumerable/configurable 原生同款）	计算键/static 表	没测该层	keep	keep	—
-陷阱对任意键派发：实参 (target, key) 里的 key 透传（原生同款）	计算键/static 表	没测该层	keep	keep	—
-非 Proxy 路径不受影响：{a:1} 的自有键 value 1、缺失键 undefined	计算键/static 表	没测该层	keep	keep	—
-Reflect 面一致：同一陷阱经 Reflect 面拿到同一个 42	计算键/static 表	没测该层	keep	keep	—
-陷阱返回 undefined：不抛，且不假精确（精度缺口 TODO(族05)）	计算键/static 表	没测该层	keep	keep	—
-陷阱返回非对象 → TypeError（ToPropertyDescriptor 前置，原生同款）	计算键/static 表	没测该层	keep	keep	—
-原型链上的键不是自有属性：gOPD({}, "toString") === undefined	计算键/static 表	没测该层	keep	keep	—
-普通对象的描述符三标志不变（writable/enumerable/configurable 全 true）	计算键/static 表	没测该层	keep	keep	—
+Reflect/Object 两面：陷阱派发/补全/任意键/非对象 TypeError/无陷阱回靶/非 Proxy 负控	Proxy gOPD 表	没测该层	keep	keep	—
+陷阱返回 undefined 不抛不假精确；原型键/三标志负控	Proxy gOPD 表	没测该层	keep	keep	—
 freeze：preventExtensions 陷阱返回 false ⇒ TypeError（改前不抛）	计算键/static 表	没测该层	keep	keep	—
 seal：preventExtensions 陷阱返回 false ⇒ TypeError（改前不抛）	计算键/static 表	没测该层	keep	keep	—
 freeze：defineProperty 陷阱返回 false ⇒ TypeError（改前不抛）	计算键/static 表	没测该层	keep	keep	—
@@ -701,4 +690,17 @@ p.self === p → true（this 就是 proxy 自己）	dup:Proxy 新鲜标表	commi
 无 getter 的普通属性读穿透不变（p.x === 1）	dup:Proxy 新鲜标表	commit:9b7ac32b
 无 getter 的普通属性写穿透不变（p.x = 2 → 靶变）	dup:Proxy 新鲜标表	commit:9b7ac32b
 get 陷阱里的 receiver 仍是 proxy（this 语义不变）	dup:Proxy 新鲜标表	commit:9b7ac32b
+Reflect 面：陷阱派发并返回补全后的描述符（改前定抛 TypeError）	dup:Proxy gOPD 表	commit:3a00aa10
+Reflect 面：陷阱返回非对象 → TypeError（原生同款）	dup:Proxy gOPD 表	commit:3a00aa10
+Reflect 面：无该陷阱 → 落回靶的 [[GetOwnProperty]]（原生同款）	dup:Proxy gOPD 表	commit:3a00aa10
+非 Proxy 目标不受影响（负控制）	dup:Proxy gOPD 表	commit:3a00aa10
+陷阱派发：value 42（修前读 .value 定抛 TypeError）	dup:Proxy gOPD 表	commit:3a00aa10
+陷阱派发：描述符被**补全**（value/writable/enumerable/configurable 原生同款）	dup:Proxy gOPD 表	commit:3a00aa10
+陷阱对任意键派发：实参 (target, key) 里的 key 透传（原生同款）	dup:Proxy gOPD 表	commit:3a00aa10
+非 Proxy 路径不受影响：{a:1} 的自有键 value 1、缺失键 undefined	dup:Proxy gOPD 表	commit:3a00aa10
+Reflect 面一致：同一陷阱经 Reflect 面拿到同一个 42	dup:Proxy gOPD 表	commit:3a00aa10
+陷阱返回 undefined：不抛，且不假精确（精度缺口 TODO(族05)）	dup:Proxy gOPD 表	commit:3a00aa10
+陷阱返回非对象 → TypeError（ToPropertyDescriptor 前置，原生同款）	dup:Proxy gOPD 表	commit:3a00aa10
+原型链上的键不是自有属性：gOPD({}, "toString") === undefined	dup:Proxy gOPD 表	commit:3a00aa10
+普通对象的描述符三标志不变（writable/enumerable/configurable 全 true）	dup:Proxy gOPD 表	commit:3a00aa10
 ```
