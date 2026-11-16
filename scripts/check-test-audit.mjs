@@ -17,7 +17,7 @@ const allowPending = process.argv.includes("--allow-pending");
 
 function titlesOf(file) {
   const src = readFileSync(join(root, file), "utf8");
-  const sf = ts.createSourceFile(file, src, ts.ScriptTarget.ESNext, true, ts.ScriptKind.TSX);
+  const sf = ts.createSourceFile(file, src, ts.ScriptTarget.ESNext, true, file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
   const out = [];
   const visit = (n) => {
     if (ts.isCallExpression(n)) {

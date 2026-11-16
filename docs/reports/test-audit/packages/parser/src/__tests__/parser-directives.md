@@ -1,5 +1,14 @@
 ```audit
 title	rootCause	gap	action	status	evidence
+指令携带同一组绑定语义	去重/期望/嵌套表	没测该层	keep	keep	—
+解构 / 默认 / rest / 普通形参都保留源码形态与绑定名	去重/期望/嵌套表	没测该层	keep	keep	—
+文件头合法位置与 runWithDirectiveDiags 域内消费一致	去重/期望/嵌套表	没测该层	keep	keep	—
+文件头 / 语句之间 / export 行上的顶层指令仍放行	去重/期望/嵌套表	没测该层	keep	keep	—
+函数体 env 诊断不提升；函数/类方法上的 case 绑定不变；顶层 env 仍放行	去重/期望/嵌套表	没测该层	keep	keep	—
+class/对象/字段/数组/两种解构/嵌套数组都拦截；顶层与函数体口径对照	去重/期望/嵌套表	没测该层	keep	keep	—
+失败 never+诊断；as/replace/skip 保 unknown；显式 unknown/any/any() 零诊断	去重/期望/嵌套表	没测该层	keep	keep	—
+空 => 告警、无 => 静默、合法/续行静默、失败非 unknown、显式 unknown、严格 API	去重/期望/嵌套表	没测该层	keep	keep	—
+显式位置/同位置/无位置/块内重复/跨函数/复扫的去重矩阵	去重/期望/嵌套表	没测该层	keep	keep	—
 case 与 skip 带尾注释仍解析、与无注释一致、零诊断	文件级/as 表	没测该层	keep	keep	—
 尾注释只报一条且类型保留；字符串内注释符不算	文件级/as 表	没测该层	keep	keep	—
 括号/空格/嵌套都产出；裸标签与不可识别诊断；标签边界不吞邻近词	文件级/as 表	没测该层	keep	keep	—
@@ -15,14 +24,9 @@ mockfetch 诊断不产 mock；空格形态静默且产 mock	parser-directives �
 replaceFoo 告警不产指令；assume 不误伤；合法 as/replace 不回归	parser-directives 尾部契约表	没测该层	keep	keep	—
 env / mock-module 在函数体内都拦截并告警	parser-directives 尾部契约表	没测该层	keep	keep	—
 文件首 / class 上方 / 对象 / 数组 / 两种解构 / 数组后置都放行且两通道一致	文件级作用域嵌套体表	没测该层	keep	keep	—
-class 体 / 对象字面量体 / 字段 / mock-module 均拦截并告警	文件级作用域嵌套体表	没测该层	keep	keep	—
-失败 ⇒ never + 诊断；as/replace/skip 上下文保持 unknown	指令解析面整表化	没测该层	keep	keep	—
-空 `=>` 尾告警；无 `=>` 保持静默	指令解析面整表化	没测该层	keep	keep	—
-显式 emit：不同位置两条、同位置一条、无位置沿用旧身份	指令解析面整表化	没测该层	keep	keep	—
 粘连形态诊断且不产 case；空格形态正常且静默	指令解析面整表化	没测该层	keep	keep	—
 内部 mock 不成为真指令；畸形名有诊断；合法 case 保持参数	指令解析面整表化	没测该层	keep	keep	—
-"`@nudo:env` in a function body is still diagnosed + not promoted (Bug 847)"	"文件级指令的**位置闸门**漏掉 **ArrayExpression（数组字面量体）** 与 **ObjectPattern（解构模式体）** ⇒ 写在数组元素 / 解构键**上方**的 `/// @nudo:env` 被**静默提升**成**整文件** env（零诊断）。 根因：闸门区间只覆盖「函数体」（）+「类体 / 对象字面量体」 （）； 断言：expect(diags).toHaveLength(1);；expect(diags[0]!.code).toBe(\"nudo:directive-syntax\");"	夹具漏形态	keep	keep	—
-env extraction matches on: %s	文件级/as 表	没测该层	keep	keep	—
+env extraction matches on: %s	parser 通道对拍	没测该层	keep	keep	—
 ```audit-deleted
 title	reason	evidence
 malformed mock-module payload → nudo:directive-syntax warning	dup:指令解析面整表化	commit:4b8e51ee
@@ -190,4 +194,10 @@ case 期望值带尾注释仍解析，且与无注释形态一致、零诊断	du
 裸 / 尾随空白 / 不可读 env 列表都告警	dup:文件级/as 表	commit:23c028c2
 块注释 / JSDoc 的 import 告警；行注释静默	dup:文件级/as 表	commit:23c028c2
 畸形 mock-module 告警；单引号合法载荷静默并产出	dup:文件级/as 表	commit:23c028c2
+class 体 / 对象字面量体 / 字段 / mock-module 均拦截并告警	dup:去重/期望/嵌套表	commit:417e0364
+失败 ⇒ never + 诊断；as/replace/skip 上下文保持 unknown	dup:去重/期望/嵌套表	commit:417e0364
+空 `=>` 尾告警；无 `=>` 保持静默	dup:去重/期望/嵌套表	commit:417e0364
+显式 emit：不同位置两条、同位置一条、无位置沿用旧身份	dup:去重/期望/嵌套表	commit:417e0364
+`@nudo:env` in a function body is still diagnosed + not promoted (Bug 847)	dup:去重/期望/嵌套表	commit:417e0364
+env extraction matches on: %s	dup:去重/期望/嵌套表	commit:417e0364
 ```
