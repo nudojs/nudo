@@ -546,24 +546,8 @@ describe("static method census — parser contract + service-side precondition",
 });
 
 // ---------------------------------------------------------------------------
-// string literal escapes follow JS semantics
+// 字符串字面量转义与结构字面量整段校验
 // ---------------------------------------------------------------------------
-describe("string literal escapes follow JS semantics", () => {
-/**
- * 回归：`@nudo:case` 见证的**字符串转义不解释**。
- *
- * 旧实现按「首尾是引号」原样 slice（`s.slice(1, -1)`），转义序列保持**字面
- * 反斜杠** ⇒ 见证值 `a\tb`（4 字符）与侧车契约（真实 JS 求值 `a<TAB>b`，
- * 3 字符）落在**不同的字符串**上 ⇒ `witness ⊭ contract` 假红。
- *
- * 修法：字符串分支走**词法边界**判定 + JS 语义转义解释
- * （`directives/string-literal.ts` 单源，Babel 的 StringLiteral cooked 值）。
- */
-
-
-
-
-
 function firstCase(source: string): { name: string; argsAbs: Abs[] } {
   const fns = extractDirectives(parse(source));
   const d = fns[0]?.directives.find((x) => x.kind === "case");
@@ -571,33 +555,24 @@ function firstCase(source: string): { name: string; argsAbs: Abs[] } {
   return d as { name: string; argsAbs: Abs[] };
 }
 
-describe("string literal escapes follow JS semantics", () => {
-  it("interprets \\t as TAB", () => {
-    expect(litValue(parseCaseArgExpr('"a\\tb"'))).toEqual({ ok: true, value: "a\tb" });
+describe("字符串字面量转义", () => {
+  const ESCAPES = [
+    { expr: '"a\\tb"', value: "a\tb" },
+    { expr: '"a\\nb"', value: "a\nb" },
+    { expr: '"a\\\\b"', value: "a\\b" },
+    { expr: '"a\\"b"', value: 'a"b' },
+    { expr: '"\\u0041"', value: "A" },
+    { expr: '"ab"', value: "ab" },
+    { expr: "'ab'", value: "ab" },
+  ];
+
+  it("转义按 JS 语义解释，普通单/双引号字符串不变", () => {
+    for (const { expr, value } of ESCAPES) {
+      expect(litValue(parseCaseArgExpr(expr)), expr).toEqual({ ok: true, value });
+    }
   });
 
-  it("interprets \\n as LF", () => {
-    expect(litValue(parseCaseArgExpr('"a\\nb"'))).toEqual({ ok: true, value: "a\nb" });
-  });
-
-  it("interprets \\\\ as one backslash", () => {
-    expect(litValue(parseCaseArgExpr('"a\\\\b"'))).toEqual({ ok: true, value: "a\\b" });
-  });
-
-  it("interprets \\\" as a quote", () => {
-    expect(litValue(parseCaseArgExpr('"a\\"b"'))).toEqual({ ok: true, value: 'a"b' });
-  });
-
-  it("interprets \\uXXXX", () => {
-    expect(litValue(parseCaseArgExpr('"\\u0041"'))).toEqual({ ok: true, value: "A" });
-  });
-
-  it("keeps plain strings unchanged", () => {
-    expect(litValue(parseCaseArgExpr('"ab"'))).toEqual({ ok: true, value: "ab" });
-    expect(litValue(parseCaseArgExpr("'ab'"))).toEqual({ ok: true, value: "ab" });
-  });
-
-  it("case witness carries the cooked (escape-interpreted) value", () => {
+  it("case 见证携带 cooked 值，且值里不残留字面反斜杠", () => {
     const d = firstCase(`
 /**
  * @nudo:case "esc" ("a\\tb")
@@ -606,68 +581,22 @@ export function f(x) { return x; }
 `);
     expect(d.argsAbs).toHaveLength(1);
     expect(litValue(d.argsAbs[0]!)).toEqual({ ok: true, value: "a\tb" });
-  });
-
-  it("no literal backslash survives in the witness value", () => {
-    const abs = parseCaseArgExpr('"a\\tb"');
-    const lv = litValue(abs);
+    const lv = litValue(parseCaseArgExpr('"a\\tb"'));
     expect(lv.ok).toBe(true);
     if (!lv.ok) return;
     expect(String(lv.value)).not.toContain("\\");
     expect(String(lv.value).length).toBe(3);
   });
 });
-});
 
-// ---------------------------------------------------------------------------
-// structure literal branches validate the whole text
-// ---------------------------------------------------------------------------
-describe("structure literal branches validate the whole text", () => {
-/**
- * 回归：`@nudo:case` 实参 / 期望值的**结构字面量分支**（对象 / 数组）
- * 必须校验**整段**文本。
- *
- * 改前只看首尾两个字符 ⇒ 尾随文本被吞进槽位 / 元素 ⇒ 折出**自信的错值**
- * （`[1][0]` → `[unknown]`、`{ a: 1 } + { b: 2 }` → `{ a: unknown }`）⇒
- * 断言**假红**（期望值原生语义是数字 1）。
- *
- * 改后：整段文本不是（恰好）一个字面量 ⇒ 当「不认识」（unknown）⇒
- * 由既有诊断通道（parseAbsExprDiag / mock 载荷的 silentFallback）报
- * nudo:directive-syntax，不再硬切出错的结构。
- */
-
-
-
-
-describe("structure literal branches validate the whole text", () => {
-  it("trailing member access after an array literal is not folded into the tuple", () => {
-    // 改前：`[unknown]`（一个**错的** tuple，不是「不认识」）
-    expect(parseCaseArgExpr("[1][0]").shape.k).toBe("unknown");
+describe("结构字面量整段校验", () => {
+  it("尾随成员访问 / 加法 / 尾部文本都不折进结构（落 unknown）", () => {
+    for (const expr of ["[1][0]", "{ a: 1 } + { b: 2 }", "{ a: 1 }.b", "[1, 2].length", "{ a: 1 } tail"]) {
+      expect(parseCaseArgExpr(expr).shape.k, expr).toBe("unknown");
+    }
   });
 
-  it("two object literals joined by + is not folded into one object", () => {
-    // 改前：`{ a: unknown }`（错值）
-    expect(parseCaseArgExpr("{ a: 1 } + { b: 2 }").shape.k).toBe("unknown");
-  });
-
-  it("member access / trailing text on a literal is not folded into a structure", () => {
-    expect(parseCaseArgExpr("{ a: 1 }.b").shape.k).toBe("unknown");
-    expect(parseCaseArgExpr("[1, 2].length").shape.k).toBe("unknown");
-    expect(parseCaseArgExpr("{ a: 1 } tail").shape.k).toBe("unknown");
-  });
-
-  it("plain structure literals keep parsing (no regression)", () => {
-    const obj = parseCaseArgExpr("{ a: 1 }");
-    expect(obj.shape.k).toBe("obj");
-    const tuple = parseCaseArgExpr("[1, 2]");
-    expect(tuple.shape.k).toBe("tuple");
-    expect(parseCaseArgExpr("[]").shape.k).toBe("tuple");
-    expect(parseCaseArgExpr("{}").shape.k).toBe("obj");
-    // 嵌套结构仍按原口径递归
-    expect(parseCaseArgExpr("{ a: { b: [1, 2] } }").shape.k).toBe("obj");
-  });
-
-  it("case expected with trailing text → not a folded structure + nudo:directive-syntax", () => {
+  it("case 期望值尾随文本不折成 tuple/obj，并报 nudo:directive-syntax", () => {
     const diags: DirectiveDiag[] = [];
     const fns = extractDirectives(
       parse(`/**
@@ -678,15 +607,16 @@ function d(x) { return x; }`),
     );
     const cases = fns.flatMap((f) => f.directives.filter((d) => d.kind === "case")) as CaseDirective[];
     expect(cases).toHaveLength(1);
-    // 期望值不再是被硬切出来的错 tuple / 错 obj（改前是 `[unknown]`）
     expect(cases[0]!.expected!.shape.k).not.toBe("tuple");
     expect(cases[0]!.expected!.shape.k).not.toBe("obj");
-    // 「不认识」必须可诊断（不得静默）
-    expect(
-      diags.some(
-        (d) => d.code === "nudo:directive-syntax" && d.message.includes("[1][0]"),
-      ),
-    ).toBe(true);
+    expect(diags.some((d) => d.code === "nudo:directive-syntax" && d.message.includes("[1][0]"))).toBe(true);
   });
-});
+
+  it("纯结构字面量与嵌套结构仍正常解析", () => {
+    expect(parseCaseArgExpr("{ a: 1 }").shape.k).toBe("obj");
+    expect(parseCaseArgExpr("[1, 2]").shape.k).toBe("tuple");
+    expect(parseCaseArgExpr("[]").shape.k).toBe("tuple");
+    expect(parseCaseArgExpr("{}").shape.k).toBe("obj");
+    expect(parseCaseArgExpr("{ a: { b: [1, 2] } }").shape.k).toBe("obj");
+  });
 });
