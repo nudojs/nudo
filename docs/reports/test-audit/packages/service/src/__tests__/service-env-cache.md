@@ -1,5 +1,10 @@
 ```audit
 title	rootCause	gap	action	status	evidence
+假值键遮断 + 提示；ignoreThrows/env 不继承；空对象/无键/无 package 负控	fork/校验/假值表	没测该层	keep	keep	—
+非字符串元素丢弃 + 诊断；env 非数组整项丢弃 + 诊断；合法列表零诊断	fork/校验/假值表	没测该层	keep	keep	—
+四种非法元素不崩且有告警；preload 不冒泡；合法元素/字符串 path 负控	fork/校验/假值表	没测该层	keep	keep	—
+env 改预算配置随之变；缓存键随 env 翻转（含调用方陈旧 maxForks）	fork/校验/假值表	没测该层	keep	keep	—
+env 优先；无 env 看配置/默认；非法回默认；小数取整；空串当未设；显式 env 参数优先	fork/校验/假值表	没测该层	keep	keep	—
 CJS 猜扩展名含 .json/index；ESM 不猜；显式扩展名两态可解析；TS 合并表；CJS .js 优先	解析算法/键维表	没测该层	keep	keep	—
 async 预载后解析 env 全局；分析环境带 env globals	解析算法/键维表	没测该层	keep	keep	—
 改项目级 env 内容类型面跟着变；文件级同款；内容不变稳定	解析算法/键维表	没测该层	keep	keep	—
@@ -40,28 +45,6 @@ default 槽 + interop 标记；默认/命名空间同签名；无假 unknown-inf
 "无 nudo 键：照旧向上找到祖先配置（monorepo 继承，文档承诺）"	"根包带 nudo 配置（用于验证「非法 nudo 键不得继承祖先配置」） 断言：expect(found?.projectDir).toBe(root);；expect(found?.config.check?.ignoreThrows).toEqual([\"SyntaxError\"]);"	没测该层	keep	keep	—
 "文件级 /// @nudo:env 的同款行为保持正确（本就由 dep 指纹覆盖）"	"改前：分析缓存键（analysisFileCacheKey 的 envSeg）与 evaluator memo 键 （tryRunEval 的 envKey）只编码 env **名字** ⇒ 同一个 env 名指向的文件 内容改了，缓存照样命中 → 类型面停在旧值。 断言：expect(await magicShape(main, source)).toBe(\"1\");；expect(await magicShape(main, source)).toBe('\"hello\"');"	没测该层	keep	keep	—
 "env 内容不变时，结果稳定（不因缓存维度变化而漂移）"	"改前：分析缓存键（analysisFileCacheKey 的 envSeg）与 evaluator memo 键 （tryRunEval 的 envKey）只编码 env **名字** ⇒ 同一个 env 名指向的文件 内容改了，缓存照样命中 → 类型面停在旧值。 断言：expect(await magicShape(main, source)).toBe(\"1\");；expect(await magicShape(main, source)).toBe(\"1\");"	没测该层	keep	keep	—
-"env NUDO_MAX_FORKS 优先于 package.json#nudo.analysis.maxForks"	"回归：fork 预算的**生效值**（env `NUDO_MAX_FORKS` 优先）必须进 磁盘缓存键。 真正生效的 上限来自 env（`applyBForkBudgetFromConfig` 同口径：env > config > 5000） ⇒ 改 env 不改键 ⇒ 命中轮返回**上一轮**的陈旧 budget（反向：新预算 **根本没执行**，`nudo:fork-truncated` 缺失）。 断言：expect(effectiveMaxForks({ analysis: { maxForks: 100 } })).toBe(7);"	没测该层	keep	keep	—
-"无 env 时回落 package.json 值；两者都无则回落默认 5000"	"回归：fork 预算的**生效值**（env `NUDO_MAX_FORKS` 优先）必须进 磁盘缓存键。 真正生效的 上限来自 env（`applyBForkBudgetFromConfig` 同口径：env > config > 5000） ⇒ 改 env 不改键 ⇒ 命中轮返回**上一轮**的陈旧 budget（反向：新预算 **根本没执行**，`nudo:fork-truncated` 缺失）。 断言：expect(effectiveMaxForks({ analysis: { maxForks: 100 } })).toBe(100);；expect(effectiveMaxForks(undefined)).toBe(5"	没测该层	keep	keep	—
-"env 非法（非整数 / <1）⇒ 回落默认 5000（不回配置键）"	"回归：fork 预算的**生效值**（env `NUDO_MAX_FORKS` 优先）必须进 磁盘缓存键。 真正生效的 上限来自 env（`applyBForkBudgetFromConfig` 同口径：env > config > 5000） ⇒ 改 env 不改键 ⇒ 命中轮返回**上一轮**的陈旧 budget（反向：新预算 **根本没执行**，`nudo:fork-truncated` 缺失）。 断言：expect(effectiveMaxForks({ analysis: { maxForks: 100 } })).toBe(5000);"	没测该层	keep	keep	—
-"env 是小数 ⇒ 向下取整（与 applyBForkBudgetFromConfig 同口径）"	"回归：fork 预算的**生效值**（env `NUDO_MAX_FORKS` 优先）必须进 磁盘缓存键。 真正生效的 上限来自 env（`applyBForkBudgetFromConfig` 同口径：env > config > 5000） ⇒ 改 env 不改键 ⇒ 命中轮返回**上一轮**的陈旧 budget（反向：新预算 **根本没执行**，`nudo:fork-truncated` 缺失）。 断言：expect(effectiveMaxForks({ analysis: { maxForks: 100 } })).toBe(1);"	没测该层	keep	keep	—
-"空串 env 按「未设」处理（回落到 package.json 值）"	"回归：fork 预算的**生效值**（env `NUDO_MAX_FORKS` 优先）必须进 磁盘缓存键。 真正生效的 上限来自 env（`applyBForkBudgetFromConfig` 同口径：env > config > 5000） ⇒ 改 env 不改键 ⇒ 命中轮返回**上一轮**的陈旧 budget（反向：新预算 **根本没执行**，`nudo:fork-truncated` 缺失）。 断言：expect(effectiveMaxForks({ analysis: { maxForks: 100 } })).toBe(100);"	没测该层	keep	keep	—
-"显式 env 参数优先于 process.env（纯函数、可测）"	"回归：fork 预算的**生效值**（env `NUDO_MAX_FORKS` 优先）必须进 磁盘缓存键。 真正生效的 上限来自 env（`applyBForkBudgetFromConfig` 同口径：env > config > 5000） ⇒ 改 env 不改键 ⇒ 命中轮返回**上一轮**的陈旧 budget（反向：新预算 **根本没执行**，`nudo:fork-truncated` 缺失）。 断言：expect(effectiveMaxForks({ analysis: { maxForks: 100 } }, {})).toBe(100);；expect(effectiveMaxForks({ analysis: {"	没测该层	keep	keep	—
-"env 改 fork 预算 ⇒ analysisConfig().maxForks 随之变"	"回归：fork 预算的**生效值**（env `NUDO_MAX_FORKS` 优先）必须进 磁盘缓存键。 真正生效的 上限来自 env（`applyBForkBudgetFromConfig` 同口径：env > config > 5000） ⇒ 改 env 不改键 ⇒ 命中轮返回**上一轮**的陈旧 budget（反向：新预算 **根本没执行**，`nudo:fork-truncated` 缺失）。 断言：expect(analysisConfig({ analysis: { maxForks: 100 } }).maxForks).toBe(100);；expect(analysisConfig({ analysis: { m"	没测该层	keep	keep	—
-"缓存键随 env 生效的 fork 预算翻转（命中轮不得返回陈旧 budget）"	"回归：fork 预算的**生效值**（env `NUDO_MAX_FORKS` 优先）必须进 磁盘缓存键。 真正生效的 上限来自 env（`applyBForkBudgetFromConfig` 同口径：env > config > 5000） ⇒ 改 env 不改键 ⇒ 命中轮返回**上一轮**的陈旧 budget（反向：新预算 **根本没执行**，`nudo:fork-truncated` 缺失）。 断言：expect(keyEnv).not.toBe(keyNoEnv);"	没测该层	keep	keep	—
-"缓存键**自身**兜底：调用方喂陈旧的 maxForks，键仍随 env 生效值变"	"回归：fork 预算的**生效值**（env `NUDO_MAX_FORKS` 优先）必须进 磁盘缓存键。 真正生效的 上限来自 env（`applyBForkBudgetFromConfig` 同口径：env > config > 5000） ⇒ 改 env 不改键 ⇒ 命中轮返回**上一轮**的陈旧 budget（反向：新预算 **根本没执行**，`nudo:fork-truncated` 缺失）。 断言：expect(keyEnv).not.toBe(keyNoEnv);"	没测该层	keep	keep	—
-"loadEnvs：四种非法元素都不崩、无全局注入、产出可见告警"	"断言：expect(Object.keys(loaded.globals)).toHaveLength(0);；expect(errs).toHaveLength(BAD_ELEMENTS.length);"	没测该层	keep	keep	—
-"preloadPathEnvs：非法元素不得裸崩（不得冒泡到进程顶层）"	"断言：expect(；expect(errs.length).toBeGreaterThanOrEqual(1);"	没测该层	keep	keep	—
-"负控制：合法元素（node）照常生效且零告警"	"`package.json#nudo.env` 的**数组元素**不是字符串（[42] / [null] / [{}] / [[]]）⇒ service 层 `isPathEnvName` 裸崩（name.includes is not a function / Cannot read properties of null）⇒ 影响所有消费者。 契约：元素级校验必须存在——非法元素**丢弃 + 可见告警**，不得裸崩； 断言：expect(Object.keys(loaded.globals).length).toBeGreaterThan(0);；expect(getPathEnvLoadErrors(dir)).toHaveLe"	夹具漏形态	keep	keep	—
-"负控制：字符串 path env 形态不受元素级校验波及"	"`package.json#nudo.env` 的**数组元素**不是字符串（[42] / [null] / [{}] / [[]]）⇒ service 层 `isPathEnvName` 裸崩（name.includes is not a function / Cannot read properties of null）⇒ 影响所有消费者。 契约：元素级校验必须存在——非法元素**丢弃 + 可见告警**，不得裸崩； 断言：expect(getPathEnvLoadErrors(dir)).toHaveLength(0);"	夹具漏形态	keep	keep	—
-"非字符串元素：丢弃 + 可见诊断（不裸崩、不静默）"	"`package.json#nudo.env` 的**数组元素**不是字符串（[42] / [null] / [{}] / [[]]）⇒ service 层 `isPathEnvName` 裸崩（name.includes is not a function / Cannot read properties of null）⇒ 影响所有消费者。 契约：元素级校验必须存在——非法元素**丢弃 + 可见告警**，不得裸崩； 断言：expect(found?.config.env).toEqual([\"node\"]);；expect(err).toContain(\"nudo.env\");"	夹具漏形态	keep	keep	—
-"env 不是数组：整项丢弃 + 可见诊断"	"`package.json#nudo.env` 的**数组元素**不是字符串（[42] / [null] / [{}] / [[]]）⇒ service 层 `isPathEnvName` 裸崩（name.includes is not a function / Cannot read properties of null）⇒ 影响所有消费者。 契约：元素级校验必须存在——非法元素**丢弃 + 可见告警**，不得裸崩； 断言：expect(found?.config.env).toEqual([]);；expect(err).toContain(\"nudo.env\");"	夹具漏形态	keep	keep	—
-"负控制：合法 env 列表不受影响（零诊断）"	"`package.json#nudo.env` 的**数组元素**不是字符串（[42] / [null] / [{}] / [[]]）⇒ service 层 `isPathEnvName` 裸崩（name.includes is not a function / Cannot read properties of null）⇒ 影响所有消费者。 契约：元素级校验必须存在——非法元素**丢弃 + 可见告警**，不得裸崩； 断言：expect(found?.config.env).toEqual([\"node\", \"es\"]);；expect(err).toBe(\"\");"	夹具漏形态	keep	keep	—
-"假值 nudo 键（false / null / 0 / \"\"）：不继承祖先配置 + stderr 提示"	"子包 `package.json` 的 **`\"nudo\"` 键是假值** （`false` / `null` / `0` / `\"\"`）⇒ **不遮断**祖先包配置 ⇒ 子包**静默继承** 根包的 `check.ignoreThrows`（把 L2 error 吞掉 ⇒ 门禁假绿）与 `nudo.env` （跨包串味）——与文档「uses the **nearest** `package.json` that contains a `nudo` key」直接冲突。 根因（config.ts findProjectConfig）：`if (nudo)` 用**真值**判定代替 「**键是否存在**」⇒ 假值 nudo 键被当成「这"	没测该层	keep	keep	—
-"假值 nudo 键：根包的 check.ignoreThrows 不得吞掉子包的 L2"	"根包：ignoreThrows + env（子包若继承 ⇒ L2 被吞 + env 串味） 断言：expect(checkConfig(found?.config).ignoreThrows).toEqual([]);；expect(checkConfig(found?.config).entryThrows).toBe(\"error\");"	没测该层	keep	keep	—
-"假值 nudo 键：根包的 nudo.env 不得渗进子包"	"根包：ignoreThrows + env（子包若继承 ⇒ L2 被吞 + env 串味） 断言：expect(found?.config.env).toBeUndefined();"	没测该层	keep	keep	—
-"\"nudo\": {}（空对象）：遮断祖先搜索，配置为空"	"子包 `package.json` 的 **`\"nudo\"` 键是假值** （`false` / `null` / `0` / `\"\"`）⇒ **不遮断**祖先包配置 ⇒ 子包**静默继承** 根包的 `check.ignoreThrows`（把 L2 error 吞掉 ⇒ 门禁假绿）与 `nudo.env` （跨包串味）——与文档「uses the **nearest** `package.json` that contains a `nudo` key」直接冲突。 根因（config.ts findProjectConfig）：`if (nudo)` 用**真值**判定代替 「**键是否存在**」⇒ 假值 nudo 键被当成「这"	没测该层	keep	keep	—
-"无 nudo 键：照旧继承根配置（文档承诺的 monorepo 行为）"	"子包 `package.json` 的 **`\"nudo\"` 键是假值** （`false` / `null` / `0` / `\"\"`）⇒ **不遮断**祖先包配置 ⇒ 子包**静默继承** 根包的 `check.ignoreThrows`（把 L2 error 吞掉 ⇒ 门禁假绿）与 `nudo.env` （跨包串味）——与文档「uses the **nearest** `package.json` that contains a `nudo` key」直接冲突。 根因（config.ts findProjectConfig）：`if (nudo)` 用**真值**判定代替 「**键是否存在**」⇒ 假值 nudo 键被当成「这"	没测该层	keep	keep	—
-"子包无 package.json：照旧继承根配置"	"子包 `package.json` 的 **`\"nudo\"` 键是假值** （`false` / `null` / `0` / `\"\"`）⇒ **不遮断**祖先包配置 ⇒ 子包**静默继承** 根包的 `check.ignoreThrows`（把 L2 error 吞掉 ⇒ 门禁假绿）与 `nudo.env` （跨包串味）——与文档「uses the **nearest** `package.json` that contains a `nudo` key」直接冲突。 根因（config.ts findProjectConfig）：`if (nudo)` 用**真值**判定代替 「**键是否存在**」⇒ 假值 nudo 键被当成「这"	没测该层	keep	keep	—
 ```audit-deleted
 title	reason	evidence
 env 模块表补 default 槽（= 命名空间）+ 互操作标记	dup:env 缓存首表	commit:4e046aad
@@ -178,4 +161,26 @@ ESM 形态：写全扩展名即可解析（import './data.js'）	dup:解析算�
 负控制：CJS 面的扩展名顺序同 Node（.js 先于 .json）	dup:解析算法/键维表	commit:73b1eb5d
 负控制：TS 导入方保持合并表（目录 import + index 入口仍可解析）	dup:解析算法/键维表	commit:73b1eb5d
 负控制：显式形态参数优先于文件推导（调用方知道说明符来源形态时）	dup:解析算法/键维表	commit:73b1eb5d
+env NUDO_MAX_FORKS 优先于 package.json#nudo.analysis.maxForks	dup:fork/校验/假值表	commit:5dec708b
+无 env 时回落 package.json 值；两者都无则回落默认 5000	dup:fork/校验/假值表	commit:5dec708b
+env 非法（非整数 / <1）⇒ 回落默认 5000（不回配置键）	dup:fork/校验/假值表	commit:5dec708b
+env 是小数 ⇒ 向下取整（与 applyBForkBudgetFromConfig 同口径）	dup:fork/校验/假值表	commit:5dec708b
+空串 env 按「未设」处理（回落到 package.json 值）	dup:fork/校验/假值表	commit:5dec708b
+显式 env 参数优先于 process.env（纯函数、可测）	dup:fork/校验/假值表	commit:5dec708b
+env 改 fork 预算 ⇒ analysisConfig().maxForks 随之变	dup:fork/校验/假值表	commit:5dec708b
+缓存键随 env 生效的 fork 预算翻转（命中轮不得返回陈旧 budget）	dup:fork/校验/假值表	commit:5dec708b
+缓存键**自身**兜底：调用方喂陈旧的 maxForks，键仍随 env 生效值变	dup:fork/校验/假值表	commit:5dec708b
+loadEnvs：四种非法元素都不崩、无全局注入、产出可见告警	dup:fork/校验/假值表	commit:5dec708b
+preloadPathEnvs：非法元素不得裸崩（不得冒泡到进程顶层）	dup:fork/校验/假值表	commit:5dec708b
+负控制：合法元素（node）照常生效且零告警	dup:fork/校验/假值表	commit:5dec708b
+负控制：字符串 path env 形态不受元素级校验波及	dup:fork/校验/假值表	commit:5dec708b
+非字符串元素：丢弃 + 可见诊断（不裸崩、不静默）	dup:fork/校验/假值表	commit:5dec708b
+env 不是数组：整项丢弃 + 可见诊断	dup:fork/校验/假值表	commit:5dec708b
+负控制：合法 env 列表不受影响（零诊断）	dup:fork/校验/假值表	commit:5dec708b
+假值 nudo 键（false / null / 0 / ""）：不继承祖先配置 + stderr 提示	dup:fork/校验/假值表	commit:5dec708b
+假值 nudo 键：根包的 check.ignoreThrows 不得吞掉子包的 L2	dup:fork/校验/假值表	commit:5dec708b
+假值 nudo 键：根包的 nudo.env 不得渗进子包	dup:fork/校验/假值表	commit:5dec708b
+"nudo": {}（空对象）：遮断祖先搜索，配置为空	dup:fork/校验/假值表	commit:5dec708b
+无 nudo 键：照旧继承根配置（文档承诺的 monorepo 行为）	dup:fork/校验/假值表	commit:5dec708b
+子包无 package.json：照旧继承根配置	dup:fork/校验/假值表	commit:5dec708b
 ```
