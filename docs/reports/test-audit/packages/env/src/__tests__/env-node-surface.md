@@ -1,5 +1,9 @@
 ```audit
 title	rootCause	gap	action	status	evidence
+字面量路径含全部组件且值与原生一致；声明面完整	path/URL 契约表	没测该层	keep	keep	—
+平台成员表声明 parse/format；posix 与顶层同源；win32 平台特定；format 拒绝非对象	path/URL 契约表	没测该层	keep	keep	—
+抽象实参 may-throw TypeError；posix.join(123) 必抛	path/URL 契约表	没测该层	keep	keep	—
+坏实参必抛 TypeError/值面 never；合法实参照原生精确折叠	path/URL 契约表	没测该层	keep	keep	—
 失败必抛 / 成立零抛 / 抽象 may-throw / 缺参 TypeError	fs/stat/assert 契约表	没测该层	keep	keep	—
 同步/promise 族在 throwIfNoEntry:false 时含 undefined；默认形态不含	fs/stat/assert 契约表	没测该层	keep	keep	—
 同步族记 Error may-throw；existsSync/rmSync force 不抛；成功路径不塌 never；抽象实参同口径	fs/stat/assert 契约表	没测该层	keep	keep	—
@@ -37,21 +41,6 @@ title	rootCause	gap	action	status	evidence
 "4. Dirent：promise 族的 readdir 元素是**有 shape** 的 Dirent（旧面是空 brand）"	"族 29 · `fs/promises` 的结果对象是同步族的**裁剪副本** ——`fsPromisesModule.stat` 只抄了 12 个槽（比同步族少 9 个），且 `readdir` 的 `Dirent` 是**空 shape 的 brand** ⇒ 成员读出 **exact `undefined` / `NaN` / `never`**——那是**确定的错值**，不是精度债。 断言：expect(inner).toBeDefined();；expect(element, \"readdir 兑现值应是数组\").toBeDefined();"	旧断言钉错	keep	keep	—
 "5. 反向钉：promise 族的成员读出**不得**是 exact undefined（旧面裁剪副本）"	"族 29 · `fs/promises` 的结果对象是同步族的**裁剪副本** ——`fsPromisesModule.stat` 只抄了 12 个槽（比同步族少 9 个），且 `readdir` 的 `Dirent` 是**空 shape 的 brand** ⇒ 成员读出 **exact `undefined` / `NaN` / `never`**——那是**确定的错值**，不是精度债。 断言：expect(site.value).toBeDefined();；expect(slots[\"mtimeMs\"], \"mtimeMs 缺槽 ⇒ 读出 exact undefined\").toBeDefined();"	旧断言钉错	keep	keep	—
 "6. readdir 的 withFileTypes 分叉：true ⇒ Dirent[]（原生如此）"	"族 29 · `fs/promises` 的结果对象是同步族的**裁剪副本** ——`fsPromisesModule.stat` 只抄了 12 个槽（比同步族少 9 个），且 `readdir` 的 `Dirent` 是**空 shape 的 brand** ⇒ 成员读出 **exact `undefined` / `NaN` / `never`**——那是**确定的错值**，不是精度债。 断言：expect(native[0]?.isFile).toBeTypeOf(\"function\");；expect(element, \"withFileTypes:true ⇒ 元素应是 Dirent\").toBeDefined();"	旧断言钉错	keep	keep	—
-"1. 实参确定非字符串 ⇒ 必抛 TypeError（原生 oracle 同样必抛）"	"族 29 · `node:path` 族的**实参类型从不被执法** ⇒ `path.join(123)` / `path.isAbsolute(123)` / `path.basename(\"/x/y.txt\", 5)` 这类原生**必抛 TypeError** 的调用被判「不抛」，还给出原生产不出的 **自信精确字面量**（`basename(\"/x/y.txt\", 5)` → `\"y.txt\"`——坏实参被静默 丢弃后走「无后缀」分支）。 修法：path 族实参执法闸—— - 实参**确定**非字符串 ⇒ **必抛** TypeError（原生必抛）； 断言：expect(() => c.native(), c.name).t"	夹具漏形态	keep	keep	—
-"2. 必抛的 throws 面品牌是 TypeError、值面是 never"	"族 29 · `node:path` 族的**实参类型从不被执法** ⇒ `path.join(123)` / `path.isAbsolute(123)` / `path.basename(\"/x/y.txt\", 5)` 这类原生**必抛 TypeError** 的调用被判「不抛」，还给出原生产不出的 **自信精确字面量**（`basename(\"/x/y.txt\", 5)` → `\"y.txt\"`——坏实参被静默 丢弃后走「无后缀」分支）。 修法：path 族实参执法闸—— - 实参**确定**非字符串 ⇒ **必抛** TypeError（原生必抛）； 断言：expect(absFace(fn, c.args).shape.k"	夹具漏形态	keep	keep	—
-"3. 坏实参**不得**折出自信精确字面量（basename 旧面折 'y.txt'）"	"族 29 · `node:path` 族的**实参类型从不被执法** ⇒ `path.join(123)` / `path.isAbsolute(123)` / `path.basename(\"/x/y.txt\", 5)` 这类原生**必抛 TypeError** 的调用被判「不抛」，还给出原生产不出的 **自信精确字面量**（`basename(\"/x/y.txt\", 5)` → `\"y.txt\"`——坏实参被静默 丢弃后走「无后缀」分支）。 修法：path 族实参执法闸—— - 实参**确定**非字符串 ⇒ **必抛** TypeError（原生必抛）； 断言：expect(site.value).toBeUndefined()"	夹具漏形态	keep	keep	—
-"4. 合法实参照旧折叠（不回归）"	"断言：expect(site.threw, `${c.name} 不该抛`).toBeUndefined();；expect(site.exits, `${c.name} 不该有 throw exit`).toHaveLength(0);"	没测该层	keep	keep	—
-"5. 抽象实参 ⇒ may-throw TypeError（不是必抛）"	"族 29 · `node:path` 族的**实参类型从不被执法** ⇒ `path.join(123)` / `path.isAbsolute(123)` / `path.basename(\"/x/y.txt\", 5)` 这类原生**必抛 TypeError** 的调用被判「不抛」，还给出原生产不出的 **自信精确字面量**（`basename(\"/x/y.txt\", 5)` → `\"y.txt\"`——坏实参被静默 丢弃后走「无后缀」分支）。 修法：path 族实参执法闸—— - 实参**确定**非字符串 ⇒ **必抛** TypeError（原生必抛）； 断言：expect(out.shape.k, \"抽象实参不应变成必抛\")."	夹具漏形态	keep	keep	—
-"6. posix / win32 平台路径对象同口径（原生 posix.join(123) 也必抛）"	"族 29 · `node:path` 族的**实参类型从不被执法** ⇒ `path.join(123)` / `path.isAbsolute(123)` / `path.basename(\"/x/y.txt\", 5)` 这类原生**必抛 TypeError** 的调用被判「不抛」，还给出原生产不出的 **自信精确字面量**（`basename(\"/x/y.txt\", 5)` → `\"y.txt\"`——坏实参被静默 丢弃后走「无后缀」分支）。 修法：path 族实参执法闸—— - 实参**确定**非字符串 ⇒ **必抛** TypeError（原生必抛）； 断言：expect(() => nodePath.posix.join(1"	夹具漏形态	keep	keep	—
-"host oracle: posix.parse / win32.parse / posix.format all work"	"族 15 · `path.posix` / `path.win32` 用的是**另一份手抄成员表**， 漏了 `parse` / `format` ⇒ 读这两个成员得到 **exact `undefined`** （闭 obj 缺槽）⇒ 调用 ⇒ **确定抛 TypeError** ⇒ L2 门禁假红（exit 1）， 而宿主 `path.posix.parse(\"/a/b.txt\")` 完全正常。 断言：expect(nodePath.posix.parse(\"/a/b.txt\")).toEqual(nodePath.parse(\"/a/b.txt\"));；expect(nodePath.win32.parse(\"a\\\\b.txt"	没测该层	keep	keep	—
-"the platform member tables declare parse / format"	"族 15 · `path.posix` / `path.win32` 用的是**另一份手抄成员表**， 漏了 `parse` / `format` ⇒ 读这两个成员得到 **exact `undefined`** （闭 obj 缺槽）⇒ 调用 ⇒ **确定抛 TypeError** ⇒ L2 门禁假红（exit 1）， 而宿主 `path.posix.parse(\"/a/b.txt\")` 完全正常。 断言：expect(slotOfAbs(face, \"parse\"), `path.${platform}.parse`).toBeTruthy();；expect(slotOfAbs(face, \"format\"), `path.${"	没测该层	keep	keep	—
-"posix.parse folds exactly like the top-level path.parse (single source of truth)"	"族 15 · `path.posix` / `path.win32` 用的是**另一份手抄成员表**， 漏了 `parse` / `format` ⇒ 读这两个成员得到 **exact `undefined`** （闭 obj 缺槽）⇒ 调用 ⇒ **确定抛 TypeError** ⇒ L2 门禁假红（exit 1）， 而宿主 `path.posix.parse(\"/a/b.txt\")` 完全正常。 断言：expect(parsedOf(posixParse, \"/a/b.txt\")).toBe(expected);；expect(expected).toContain(\"/a\");"	没测该层	keep	keep	—
-"win32.parse folds platform-specifically (not a definite TypeError)"	"族 15 · `path.posix` / `path.win32` 用的是**另一份手抄成员表**， 漏了 `parse` / `format` ⇒ 读这两个成员得到 **exact `undefined`** （闭 obj 缺槽）⇒ 调用 ⇒ **确定抛 TypeError** ⇒ L2 门禁假红（exit 1）， 而宿主 `path.posix.parse(\"/a/b.txt\")` 完全正常。 断言：expect(out).toContain(\"b.txt\");；expect(out).not.toContain(\"never\");"	没测该层	keep	keep	—
-"posix.format returns a string and rejects non-objects"	"族 15 · `path.posix` / `path.win32` 用的是**另一份手抄成员表**， 漏了 `parse` / `format` ⇒ 读这两个成员得到 **exact `undefined`** （闭 obj 缺槽）⇒ 调用 ⇒ **确定抛 TypeError** ⇒ L2 门禁假红（exit 1）， 而宿主 `path.posix.parse(\"/a/b.txt\")` 完全正常。 断言：expect(formatShape(callSite(format, [roundTrip]).value!)).toBe(\"string\");；expect(bad.value).toBeUndefined();"	没测该层	keep	keep	—
-"1. 字面量路径 ⇒ 实例面含全部 11 个 URL 组件 + toString / toJSON"	"env node 的 `url.pathToFileURL` 返回域被声明成 **1 槽闭合对象 `{ href }`** ⇒ `.pathname` / `.protocol` / `.host` … 读出 **exact `undefined`**（真值是 \"/tmp/x.txt\" 等），且 `.pathname.length` 被判**定抛 TypeError**（L2 假红）。 原生 oracle（Node v26.10.0 独立进程实测，pathToFileURL(\"/tmp/x.txt\")）： href = \"file:///tmp/x.txt\" pathname = \"/tmp/x.txt\" protocol = \"f"	夹具漏形态	keep	keep	—
-"2. 成员值与原生一致（href / pathname / protocol …）"	"env node 的 `url.pathToFileURL` 返回域被声明成 **1 槽闭合对象 `{ href }`** ⇒ `.pathname` / `.protocol` / `.host` … 读出 **exact `undefined`**（真值是 \"/tmp/x.txt\" 等），且 `.pathname.length` 被判**定抛 TypeError**（L2 假红）。 原生 oracle（Node v26.10.0 独立进程实测，pathToFileURL(\"/tmp/x.txt\")）： href = \"file:///tmp/x.txt\" pathname = \"/tmp/x.txt\" protocol = \"f"	夹具漏形态	keep	keep	—
-"3. 声明面（抽象实参回落面）也是完整 URL 面（旧实现只有 href 一槽）"	"env node 的 `url.pathToFileURL` 返回域被声明成 **1 槽闭合对象 `{ href }`** ⇒ `.pathname` / `.protocol` / `.host` … 读出 **exact `undefined`**（真值是 \"/tmp/x.txt\" 等），且 `.pathname.length` 被判**定抛 TypeError**（L2 假红）。 原生 oracle（Node v26.10.0 独立进程实测，pathToFileURL(\"/tmp/x.txt\")）： href = \"file:///tmp/x.txt\" pathname = \"/tmp/x.txt\" protocol = \"f"	夹具漏形态	keep	keep	—
-"4. 反向对照：旧单槽面读 pathname 会得到 exact undefined"	"lit term 的字面量值（取不到 ⇒ undefined） 断言：expect(slots.pathname, \"pathname must not be missing (old face had only href)\").toBeTruthy();；expect(litOf(slots.pathname)).not.toBeUndefined();"	夹具漏形态	keep	keep	—
 "1. cpus() 元素含 times 槽（user/nice/sys/idle/irq 全在）"	"族 29 · `os.cpus()` 的结果对象**缺 `times` 槽** ⇒ `cpus()[0].times.user` 读出 **exact `undefined`** ⇒ 引擎判「property 'user' on undefined ⇒ 定抛 TypeError」——**假红**（原生正常返回数字）。 旧面只建模 model / speed ⇒ times 缺槽 ⇒ 读出 exact undefined（不是精度债， 是**确定的错值**）。 断言：expect(ret.shape.k).toBe(\"fn\");；expect(arr.shape).toMatchObject({ k: \"arr\" });"	旧断言钉错	keep	keep	—
 "2. 原生 oracle 对拍：声明的 times 成员名 = 原生 os.cpus()[0].times 的键"	"族 29 · `os.cpus()` 的结果对象**缺 `times` 槽** ⇒ `cpus()[0].times.user` 读出 **exact `undefined`** ⇒ 引擎判「property 'user' on undefined ⇒ 定抛 TypeError」——**假红**（原生正常返回数字）。 旧面只建模 model / speed ⇒ times 缺槽 ⇒ 读出 exact undefined（不是精度债， 是**确定的错值**）。 断言：expect(native, \"本机应至少有一个 cpu\").toBeDefined();；expect(Object.keys(slots).sort()).toEqu"	旧断言钉错	keep	keep	—
 "3. 反向钉：times 缺槽 ⇒ 成员读出 exact undefined（原生没有 undefined 成员）"	"族 29 · `os.cpus()` 的结果对象**缺 `times` 槽** ⇒ `cpus()[0].times.user` 读出 **exact `undefined`** ⇒ 引擎判「property 'user' on undefined ⇒ 定抛 TypeError」——**假红**（原生正常返回数字）。 旧面只建模 model / speed ⇒ times 缺槽 ⇒ 读出 exact undefined（不是精度债， 是**确定的错值**）。 断言：expect(slots[\"times\"]).toBeDefined();；expect(slotsOf(slots[\"times\"]!.value)[\"user\"])."	旧断言钉错	keep	keep	—
@@ -115,4 +104,19 @@ title	reason	evidence
 7. match ⇒ pattern 可判定时精确判定：命中零抛 / 不命中必抛	dup:fs/stat/assert 契约表	commit:3571e1eb
 8. fail() ⇒ 恒抛 AssertionError	dup:fs/stat/assert 契约表	commit:3571e1eb
 9. strictEqual 缺参 ⇒ 必抛 TypeError（原生 ERR_MISSING_ARGS，不是 AssertionError）	dup:fs/stat/assert 契约表	commit:3571e1eb
+1. 实参确定非字符串 ⇒ 必抛 TypeError（原生 oracle 同样必抛）	dup:path/URL 契约表	commit:5eb71d91
+2. 必抛的 throws 面品牌是 TypeError、值面是 never	dup:path/URL 契约表	commit:5eb71d91
+3. 坏实参**不得**折出自信精确字面量（basename 旧面折 'y.txt'）	dup:path/URL 契约表	commit:5eb71d91
+4. 合法实参照旧折叠（不回归）	dup:path/URL 契约表	commit:5eb71d91
+5. 抽象实参 ⇒ may-throw TypeError（不是必抛）	dup:path/URL 契约表	commit:5eb71d91
+6. posix / win32 平台路径对象同口径（原生 posix.join(123) 也必抛）	dup:path/URL 契约表	commit:5eb71d91
+host oracle: posix.parse / win32.parse / posix.format all work	dup:path/URL 契约表	commit:5eb71d91
+the platform member tables declare parse / format	dup:path/URL 契约表	commit:5eb71d91
+posix.parse folds exactly like the top-level path.parse (single source of truth)	dup:path/URL 契约表	commit:5eb71d91
+win32.parse folds platform-specifically (not a definite TypeError)	dup:path/URL 契约表	commit:5eb71d91
+posix.format returns a string and rejects non-objects	dup:path/URL 契约表	commit:5eb71d91
+1. 字面量路径 ⇒ 实例面含全部 11 个 URL 组件 + toString / toJSON	dup:path/URL 契约表	commit:5eb71d91
+2. 成员值与原生一致（href / pathname / protocol …）	dup:path/URL 契约表	commit:5eb71d91
+3. 声明面（抽象实参回落面）也是完整 URL 面（旧实现只有 href 一槽）	dup:path/URL 契约表	commit:5eb71d91
+4. 反向对照：旧单槽面读 pathname 会得到 exact undefined	dup:path/URL 契约表	commit:5eb71d91
 ```
