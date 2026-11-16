@@ -946,60 +946,8 @@ describe("stat 返回域的 undefined 分支", () => {
 // ---------------------------------------------------------------------------
 // node:path 族实参类型执法
 // ---------------------------------------------------------------------------
-describe("node:path 族实参类型执法", () => {
-/**
- * 族 29 · `node:path` 族的**实参类型从不被执法** ⇒
- * `path.join(123)` / `path.isAbsolute(123)` / `path.basename("/x/y.txt", 5)`
- * 这类原生**必抛 TypeError** 的调用被判「不抛」，还给出原生产不出的
- * **自信精确字面量**（`basename("/x/y.txt", 5)` → `"y.txt"`——坏实参被静默
- * 丢弃后走「无后缀」分支）。
- *
- * 修法：path 族实参执法闸——
- * - 实参**确定**非字符串 ⇒ **必抛** TypeError（原生必抛）；
- * - 实参**抽象**（unknown / any / 非 exact）⇒ **may-throw** TypeError；
- * - `undefined` 字面量：必填位 ⇒ 必抛；可选位（`basename(p, undefined)`）⇒
- * 视作未传（原生不抛）。
- *
- * 原生 oracle（Node v26）：见每个 case 的 `native` 回调（测试内直接对拍）。
- */
-
-
-
-
-
-
-/** `undefined` 字面量（引擎里是 unknown shape + lit(undefined)）。 */
-const UNDEF: Abs = {
-  shape: { k: "unknown" },
-  term: { op: "lit", value: undefined },
-  conf: "exact",
-};
-
-/** apply 原始返回值的 abs 面（裸 Abs 或 AbsApplyResult 的 abs）。 */
-function absFace(fn: Abs, args: Abs[]): Abs {
-  const out = applyOut(fn, args) as Abs | { abs: Abs };
-  if (out && typeof out === "object" && "abs" in (out as Record<string, unknown>)) {
-    return (out as { abs: Abs }).abs;
-  }
-  return out as Abs;
-}
-
-/** apply 原始返回值的 throws 面。 */
-function throwsFace(fn: Abs, args: Abs[]): Abs | undefined {
-  const out = applyOut(fn, args) as { throws?: Abs };
-  return out?.throws;
-}
-
-type Case = {
-  name: string;
-  member: string;
-  args: Abs[];
-  native: () => unknown;
-};
-
-// 坏实参（number）**故意**传给原生 path 族当 oracle——运行期就是原生
-// 必抛 TypeError 的那批调用；类型层用 cast 表达「故意传错型」。
-const BAD: Case[] = [
+const UNDEF = { shape: { k: "unknown" }, term: { op: "lit", value: undefined }, conf: "exact" } as Abs;
+const BAD = [
   { name: "join(123)", member: "join", args: [numLit(123)], native: () => nodePath.join(123 as unknown as string) },
   { name: "join('a', 1)", member: "join", args: [strLit("a"), numLit(1)], native: () => nodePath.join("a", 1 as unknown as string) },
   { name: "basename('/x/y.txt', 5)", member: "basename", args: [strLit("/x/y.txt"), numLit(5)], native: () => nodePath.basename("/x/y.txt", 5 as unknown as string) },
@@ -1012,8 +960,13 @@ const BAD: Case[] = [
   { name: "resolve(789)", member: "resolve", args: [numLit(789)], native: () => nodePath.resolve(789 as unknown as string) },
   { name: "format(123)", member: "format", args: [numLit(123)], native: () => nodePath.format(123 as unknown as FormatInputPathObject) },
 ];
+const absFace = (fn: Abs, args: Abs[]): Abs => {
+  const out = applyOut(fn, args) as Abs | { abs: Abs };
+  return out && typeof out === "object" && "abs" in (out as Record<string, unknown>) ? (out as { abs: Abs }).abs : (out as Abs);
+};
+const throwsFace = (fn: Abs, args: Abs[]): Abs | undefined => (applyOut(fn, args) as { throws?: Abs })?.throws;
 
-const GOOD: Case[] = [
+const GOOD = [
   { name: "join('a','b')", member: "join", args: [strLit("a"), strLit("b")], native: () => nodePath.join("a", "b") },
   { name: "basename('/x/y.txt')", member: "basename", args: [strLit("/x/y.txt")], native: () => nodePath.basename("/x/y.txt") },
   { name: "basename('/x/y.txt', undefined)", member: "basename", args: [strLit("/x/y.txt"), UNDEF], native: () => nodePath.basename("/x/y.txt", undefined) },
@@ -1025,253 +978,113 @@ const GOOD: Case[] = [
   { name: "parse('/x/y.txt')", member: "parse", args: [strLit("/x/y.txt")], native: () => nodePath.parse("/x/y.txt") },
 ];
 
-describe("node:path 族实参类型执法", () => {
-  it("1. 实参确定非字符串 ⇒ 必抛 TypeError（原生 oracle 同样必抛）", () => {
+describe("node:path 实参执法", () => {
+  it("坏实参必抛 TypeError/值面 never；合法实参照原生精确折叠", () => {
     for (const c of BAD) {
-      // 原生 oracle：必抛 TypeError
       expect(() => c.native(), c.name).toThrow(TypeError);
-
       const site = callSite(envMember("node:path", c.member), c.args);
-      // 必抛 ⇒ NudoThrow 冒泡（不是 may-throw）
-      expect(site.threw, `${c.name} 应必抛`).toBeTruthy();
-      expect(site.value, `${c.name} 不应有值面`).toBeUndefined();
-    }
-  });
-
-  it("2. 必抛的 throws 面品牌是 TypeError、值面是 never", () => {
-    for (const c of BAD) {
+      expect(site.threw, c.name).toBeTruthy();
+      expect(site.value, c.name).toBeUndefined();
       const fn = envMember("node:path", c.member);
-      expect(absFace(fn, c.args).shape.k, `${c.name} 的值面`).toBe("never");
-      expect(brandName(throwsFace(fn, c.args)), `${c.name} 的 throws 品牌`).toBe("TypeError");
+      expect(absFace(fn, c.args).shape.k, c.name).toBe("never");
+      expect(brandName(throwsFace(fn, c.args)), c.name).toBe("TypeError");
     }
-  });
+    expect(callSite(envMember("node:path", "basename"), [strLit("/x/y.txt"), numLit(5)]).value).toBeUndefined();
 
-  it("3. 坏实参**不得**折出自信精确字面量（basename 旧面折 'y.txt'）", () => {
-    const fn = envMember("node:path", "basename");
-    const site = callSite(fn, [strLit("/x/y.txt"), numLit(5)]);
-    // 旧面：值面 = "y.txt"（原生抛 TypeError，压根没有这个值）
-    expect(site.value).toBeUndefined();
-    expect(absFace(fn, [strLit("/x/y.txt"), numLit(5)]).shape.k).toBe("never");
-  });
-
-  it("4. 合法实参照旧折叠（不回归）", () => {
     for (const c of GOOD) {
       const native = c.native();
       const site = callSite(envMember("node:path", c.member), c.args);
-      expect(site.threw, `${c.name} 不该抛`).toBeUndefined();
-      expect(site.exits, `${c.name} 不该有 throw exit`).toHaveLength(0);
-      if (typeof native === "string") {
-        expect(formatShape(site.value!), `${c.name} 的值`).toBe(JSON.stringify(native));
-      } else {
-        // 对象类结果（parse）：只要有值面且不是 never
-        expect(site.value, `${c.name} 应有值面`).toBeDefined();
-        expect(site.value!.shape.k).not.toBe("never");
-      }
+      expect(site.threw, c.name).toBeUndefined();
+      expect(site.exits, c.name).toHaveLength(0);
+      if (typeof native === "string") expect(formatShape(site.value!), c.name).toBe(JSON.stringify(native));
+      else expect(site.value!.shape.k).not.toBe("never");
     }
   });
 
-  it("5. 抽象实参 ⇒ may-throw TypeError（不是必抛）", () => {
+  it("抽象实参 may-throw TypeError；posix.join(123) 必抛", () => {
     const fn = envMember("node:path", "join");
-    const out = absFace(fn, [{ shape: { k: "unknown" }, conf: "partial" } as Abs]);
-    expect(out.shape.k, "抽象实参不应变成必抛").not.toBe("never");
-    expect(brandName(throwsFace(fn, [{ shape: { k: "unknown" }, conf: "partial" } as Abs]))).toBe("TypeError");
-  });
-
-  it("6. posix / win32 平台路径对象同口径（原生 posix.join(123) 也必抛）", () => {
+    const unknown = { shape: { k: "unknown" }, conf: "partial" } as Abs;
+    expect(absFace(fn, [unknown]).shape.k).not.toBe("never");
+    expect(brandName(throwsFace(fn, [unknown]))).toBe("TypeError");
     expect(() => nodePath.posix.join(123 as unknown as string)).toThrow(TypeError);
     const posix = envMember("node:path", "posix");
-    expect(posix.shape.k).toBe("brand");
-    const inner = (posix.shape as { shape: Abs }).shape;
-    const join = (inner.shape as { slots: Record<string, { value: Abs }> }).slots["join"]!.value;
-    const site = callSite(join, [numLit(123)]);
-    expect(site.threw, "path.posix.join(123) 应必抛").toBeTruthy();
+    const join = (posix.shape as { shape: Abs }).shape;
+    const member = (join.shape as { slots: Record<string, { value: Abs }> }).slots["join"]!.value;
+    expect(callSite(member, [numLit(123)]).threw).toBeTruthy();
   });
-});
 });
 
 // ---------------------------------------------------------------------------
 // path.posix / path.win32 carry parse and format
 // ---------------------------------------------------------------------------
-describe("path.posix / path.win32 carry parse and format", () => {
-/**
- * 族 15 · `path.posix` / `path.win32` 用的是**另一份手抄成员表**，
- * 漏了 `parse` / `format` ⇒ 读这两个成员得到 **exact `undefined`**
- * （闭 obj 缺槽）⇒ 调用 ⇒ **确定抛 TypeError** ⇒ L2 门禁假红（exit 1），
- * 而宿主 `path.posix.parse("/a/b.txt")` 完全正常。
- *
- * 修法：平台对象**复用**顶层 `path` 的同一份实现（单一事实源）。
- *
- * 反向钉：把 `parse` / `format` 从 `platformPathMethods` 删掉 ⇒ 本文件必挂。
- */
-function parsedOf(pathObj: unknown, input: string): string {
-  return formatShape(
-    applyOut(pathObj as never, [strLit(input)]) as never,
-  );
-}
+const parsedOf = (pathObj: unknown, input: string): string => formatShape(applyOut(pathObj as never, [strLit(input)]) as never);
 
-describe("path.posix / path.win32 carry parse and format", () => {
-  it("host oracle: posix.parse / win32.parse / posix.format all work", () => {
+describe("path.posix / path.win32 的 parse 与 format", () => {
+  it("平台成员表声明 parse/format；posix 与顶层同源；win32 平台特定；format 拒绝非对象", () => {
     expect(nodePath.posix.parse("/a/b.txt")).toEqual(nodePath.parse("/a/b.txt"));
-    expect(nodePath.win32.parse("a\\b.txt")).toEqual({
-      root: "",
-      dir: "a",
-      base: "b.txt",
-      ext: ".txt",
-      name: "b",
-    });
+    expect(nodePath.win32.parse("a\\b.txt")).toEqual({ root: "", dir: "a", base: "b.txt", ext: ".txt", name: "b" });
     expect(nodePath.posix.format({ dir: "/a", base: "b.txt" })).toBe("/a/b.txt");
-  });
 
-  it("the platform member tables declare parse / format", () => {
     for (const platform of ["posix", "win32"] as const) {
       const face = envMember("node:path", platform);
-      expect(slotOfAbs(face, "parse"), `path.${platform}.parse`).toBeTruthy();
-      expect(slotOfAbs(face, "format"), `path.${platform}.format`).toBeTruthy();
-      // 既有成员不受影响
-      expect(slotOfAbs(face, "join")).toBeTruthy();
-      expect(slotOfAbs(face, "sep")).toBeTruthy();
+      for (const member of ["parse", "format", "join", "sep"]) expect(slotOfAbs(face, member), `path.${platform}.${member}`).toBeTruthy();
     }
-  });
 
-  it("posix.parse folds exactly like the top-level path.parse (single source of truth)", () => {
     const top = envMember("node:path", "parse");
     const posixParse = slotOfAbs(envMember("node:path", "posix"), "parse")!;
     const expected = parsedOf(top, "/a/b.txt");
     expect(parsedOf(posixParse, "/a/b.txt")).toBe(expected);
     expect(expected).toContain("/a");
-  });
 
-  it("win32.parse folds platform-specifically (not a definite TypeError)", () => {
     const win32Parse = slotOfAbs(envMember("node:path", "win32"), "parse")!;
-    const out = parsedOf(win32Parse, "a\\b.txt");
-    expect(out).toContain("b.txt");
-    expect(out).not.toContain("never");
-  });
+    const winOut = parsedOf(win32Parse, "a\\b.txt");
+    expect(winOut).toContain("b.txt");
+    expect(winOut).not.toContain("never");
 
-  it("posix.format returns a string and rejects non-objects", () => {
     const format = slotOfAbs(envMember("node:path", "posix"), "format")!;
-    // 往返：parse 的产物正是 format 的合法实参（obj 面）
-    const roundTrip = applyOut(envMember("node:path", "parse"), [
-      strLit("/a/b.txt"),
-    ]) as Abs;
+    const roundTrip = applyOut(envMember("node:path", "parse"), [strLit("/a/b.txt")]) as Abs;
     expect(formatShape(callSite(format, [roundTrip]).value!)).toBe("string");
-    // 原生 `path.format(123)` 定抛 TypeError ⇒ 没有返回值，且以抛出口结束
     const bad = callSite(format, [numLit(1)]);
     expect(bad.value).toBeUndefined();
     expect(bad.threw !== undefined || bad.exits.length > 0).toBe(true);
   });
 });
-});
 
 // ---------------------------------------------------------------------------
 // pathToFileURL 返回完整 URL 面
 // ---------------------------------------------------------------------------
-describe("pathToFileURL 返回完整 URL 面", () => {
-/**
- * env node 的 `url.pathToFileURL` 返回域被声明成 **1 槽闭合对象 `{ href }`**
- * ⇒ `.pathname` / `.protocol` / `.host` … 读出 **exact `undefined`**（真值是
- * "/tmp/x.txt" 等），且 `.pathname.length` 被判**定抛 TypeError**（L2 假红）。
- *
- * 原生 oracle（Node v26.10.0 独立进程实测，pathToFileURL("/tmp/x.txt")）：
- * href = "file:///tmp/x.txt"
- * pathname = "/tmp/x.txt"
- * protocol = "file:"
- * host = "" hostname = "" port = ""
- * search = "" hash = "" origin = "null"
- * username = "" password = ""
- * toString() = "file:///tmp/x.txt" toJSON() = "file:///tmp/x.txt"
- *
- * 旧实现：`objAbs({ href: prim.str() })` ⇒ 闭对象**只有 href 一个槽** ⇒ 其余成员
- * 读出 exact `undefined`（**错值**），再链式读一次（`.pathname.length`）⇒ 引擎
- * 记「在 undefined 上取属性」⇒ **证明**「必抛 TypeError」⇒ L2 门禁假红。
- *
- * 新建模：返回域换成**完整 URL 面**（11 组件 + toString / toJSON），且 apply 对
- * 字面量路径给出**字面量精度**的实例面。
- *
- * 断言双向：正向钉住「成员表完整 + 值与原生一致」；
- * 反向（把返回域改回 `{ href }` 单槽）本文件必须失败。
- */
-
-
-
-
-
-
-const env = defineEnv();
-const url = env.modules!.url!;
-
-/** obj 槽位（obj shape ⇒ slots） */
-function slotsOf(a: Abs): Record<string, Abs> {
+const urlEnv = defineEnv();
+const urlFace = urlEnv.modules!.url!;
+const urlSlotsOf = (a: Abs): Record<string, Abs> => {
   const shape = a.shape as { k: string; slots?: Record<string, { value: Abs }> };
   expect(shape.k).toBe("obj");
   const out: Record<string, Abs> = {};
   for (const [k, slot] of Object.entries(shape.slots ?? {})) out[k] = slot.value;
   return out;
-}
-
-/** lit term 的字面量值（取不到 ⇒ undefined） */
-function litOf(a: Abs | undefined): string | undefined {
+};
+const litOf = (a: Abs | undefined): string | undefined => {
   const t = a?.term as { op?: string; value?: unknown } | undefined;
   return t?.op === "lit" ? String(t.value) : undefined;
-}
+};
 
 describe("pathToFileURL 返回完整 URL 面", () => {
-  it("1. 字面量路径 ⇒ 实例面含全部 11 个 URL 组件 + toString / toJSON", () => {
-    const site = callSite____env_bug_s4_helpers_ts(url.pathToFileURL!, [strLit("/tmp/x.txt")]);
+  it("字面量路径含全部组件且值与原生一致；声明面完整", () => {
+    const site = callSite____env_bug_s4_helpers_ts(urlFace.pathToFileURL!, [strLit("/tmp/x.txt")]);
     expect(site.threw).toBeUndefined();
     expect(site.exits).toHaveLength(0);
-    const slots = slotsOf(site.value!);
-    for (const key of [
-      "href",
-      "origin",
-      "protocol",
-      "username",
-      "password",
-      "host",
-      "hostname",
-      "port",
-      "pathname",
-      "search",
-      "hash",
-      "toString",
-      "toJSON",
-    ]) {
-      expect(Object.keys(slots), `pathToFileURL result must expose ${key}`).toContain(key);
-    }
-  });
-
-  it("2. 成员值与原生一致（href / pathname / protocol …）", () => {
+    const slots = urlSlotsOf(site.value!);
     const native = nodePathToFileURL("/tmp/x.txt");
-    const site = callSite____env_bug_s4_helpers_ts(url.pathToFileURL!, [strLit("/tmp/x.txt")]);
-    const slots = slotsOf(site.value!);
-    expect(litOf(slots.href)).toBe(native.href);
-    expect(litOf(slots.pathname)).toBe(native.pathname);
-    expect(litOf(slots.protocol)).toBe(native.protocol);
-    expect(litOf(slots.host)).toBe(native.host);
-    expect(litOf(slots.hostname)).toBe(native.hostname);
-    expect(litOf(slots.port)).toBe(native.port);
-    expect(litOf(slots.search)).toBe(native.search);
-    expect(litOf(slots.hash)).toBe(native.hash);
-    expect(litOf(slots.origin)).toBe(native.origin);
-    expect(litOf(slots.username)).toBe(native.username);
-    expect(litOf(slots.password)).toBe(native.password);
-  });
-
-  it("3. 声明面（抽象实参回落面）也是完整 URL 面（旧实现只有 href 一槽）", () => {
-    const fmt = formatShape(url.pathToFileURL!);
-    for (const key of ["href", "pathname", "protocol", "origin", "toString", "toJSON"]) {
-      expect(fmt, `declared return face must carry ${key}`).toContain(key);
+    for (const key of ["href", "origin", "protocol", "username", "password", "host", "hostname", "port", "pathname", "search", "hash", "toString", "toJSON"]) {
+      expect(Object.keys(slots), key).toContain(key);
     }
-  });
-
-  it("4. 反向对照：旧单槽面读 pathname 会得到 exact undefined", () => {
-    // 旧建模：objAbs({ href }) ⇒ 无 pathname 槽
-    const site = callSite____env_bug_s4_helpers_ts(url.pathToFileURL!, [strLit("/tmp/x.txt")]);
-    const slots = slotsOf(site.value!);
-    expect(slots.pathname, "pathname must not be missing (old face had only href)").toBeTruthy();
+    for (const key of ["href", "pathname", "protocol", "host", "hostname", "port", "search", "hash", "origin", "username", "password"] as const) {
+      expect(litOf(slots[key]), key).toBe(native[key]);
+      expect(slots[key], key).toBeTruthy();
+    }
+    const fmt = formatShape(urlFace.pathToFileURL!);
+    for (const key of ["href", "pathname", "protocol", "origin", "toString", "toJSON"]) expect(fmt, key).toContain(key);
     expect(litOf(slots.pathname)).not.toBeUndefined();
   });
-});
 });
 
 // ---------------------------------------------------------------------------
