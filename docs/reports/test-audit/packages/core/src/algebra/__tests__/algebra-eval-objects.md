@@ -165,28 +165,8 @@ Reflect.set 镜像返 false 不抛；原型槽落地可见；strict 赋值仍抛
 [[Set]] 原型链写门：getter/writable:false/frozen/两级链/fn/数组下标抛；负控成功	类实例 [[Set]] 写门表	没测该层	keep	keep	—
 assign/defineProperty 写进原型对象：for-in/实例读/原型读/hasOwn 可见；非 obj 源与负控	brand 原型写表	没测该层	keep	keep	—
 for..in 沿 brand 原型链枚举：实例/个数/function/派生链/覆写；方法与自有键负控	brand 原型写表	没测该层	keep	keep	—
-字符串键静态方法 → 1 instanceof A 折 false（不当钩子）	计算键/static 表	没测该层	keep	keep	—
-字符串键静态字段 → 1 instanceof A 折 false（不当钩子）	计算键/static 表	没测该层	keep	keep	—
-字符串键静态 getter → 1 instanceof A 折 false（不当钩子）	计算键/static 表	没测该层	keep	keep	—
-字符串键静态方法仍是可读可调的普通静态成员	计算键/static 表	没测该层	keep	keep	—
-字符串键形态不破坏普通 instanceof 链（new A() instanceof A 仍为 true）	计算键/static 表	没测该层	keep	keep	—
-类表达式形态同样成立（const K = class {…}）	计算键/static 表	没测该层	keep	keep	—
-字符串键静态方法的实参与 arguments 口径不变	计算键/static 表	没测该层	keep	keep	—
-符号键静态方法仍是钩子（左操作数进钩子）	计算键/static 表	没测该层	keep	keep	—
-符号键静态字段仍是钩子	计算键/static 表	没测该层	keep	keep	—
-符号键静态成员的可读面（Symbol 键）仍是一等函数	计算键/static 表	没测该层	keep	keep	—
-符号键静态成员的类值槽带 symbolKey 标记（读面据此区分符号键槽）	计算键/static 表	没测该层	keep	keep	—
-字符串键静态成员的类值槽不带 symbolKey 标记（不是符号键槽）	计算键/static 表	没测该层	keep	keep	—
-obj 的字符串键钩子 → TypeError（RHS 非 callable）	计算键/static 表	没测该层	keep	keep	—
-obj 的字符串键钩子（返回 true 也一样）→ TypeError	计算键/static 表	没测该层	keep	keep	—
-obj 的字符串键槽值不可调用 → TypeError	计算键/static 表	没测该层	keep	keep	—
-类值的字符串键钩子 → false（不当钩子、不抛）	计算键/static 表	没测该层	keep	keep	—
-类值的字符串键槽值不可调用 → 不抛（原生走 OrdinaryHasInstance → false）	计算键/static 表	没测该层	keep	keep	—
-obj 的符号键钩子 → 调 fn 并 ToBoolean	计算键/static 表	没测该层	keep	keep	—
-类体 static [Symbol.hasInstance] → 钩子生效	计算键/static 表	没测该层	keep	keep	—
-类体 static [Symbol.hasInstance] 的继承（D extends C）→ 钩子生效	计算键/static 表	没测该层	keep	keep	—
-类体 static [Symbol.hasInstance] = fn（静态字段形态）→ 钩子生效	计算键/static 表	没测该层	keep	keep	—
-普通对象 RHS（无钩子）→ TypeError（原生 RHS 非 callable）	计算键/static 表	没测该层	keep	keep	—
+类体字符串键不当钩子；可读可调/继承/实参口径不变；符号键仍是钩子；槽标记区分	hasInstance 表	没测该层	keep	keep	—
+obj 字符串键 TypeError；类值字符串键 false；真 Symbol 钩子生效；普通对象 RHS TypeError	hasInstance 表	没测该层	keep	keep	—
 Symbol.toStringTag：Map / Set / Promise 原型上是字符串标签	计算键/static 表	没测该层	keep	keep	—
 Symbol.iterator：Map / Set / Array / String 原型上是函数	计算键/static 表	没测该层	keep	keep	—
 Symbol.toPrimitive：Date 原型上是函数	计算键/static 表	没测该层	keep	keep	—
@@ -680,4 +660,26 @@ super 调用：父类方法仍被派发（this 绑实例）	dup:访问器求值�
 私有名方法调用：this.#m() 仍走类注册表派发	dup:访问器求值序表	commit:87577dcc
 数组方法：map 回调仍逐元素跑	dup:访问器求值序表	commit:87577dcc
 this 绑定：对象方法体内的 this 仍是接收者	dup:访问器求值序表	commit:87577dcc
+字符串键静态方法 → 1 instanceof A 折 false（不当钩子）	dup:hasInstance 表	commit:bfdca40d
+字符串键静态字段 → 1 instanceof A 折 false（不当钩子）	dup:hasInstance 表	commit:bfdca40d
+字符串键静态 getter → 1 instanceof A 折 false（不当钩子）	dup:hasInstance 表	commit:bfdca40d
+字符串键静态方法仍是可读可调的普通静态成员	dup:hasInstance 表	commit:bfdca40d
+字符串键形态不破坏普通 instanceof 链（new A() instanceof A 仍为 true）	dup:hasInstance 表	commit:bfdca40d
+类表达式形态同样成立（const K = class {…}）	dup:hasInstance 表	commit:bfdca40d
+字符串键静态方法的实参与 arguments 口径不变	dup:hasInstance 表	commit:bfdca40d
+符号键静态方法仍是钩子（左操作数进钩子）	dup:hasInstance 表	commit:bfdca40d
+符号键静态字段仍是钩子	dup:hasInstance 表	commit:bfdca40d
+符号键静态成员的可读面（Symbol 键）仍是一等函数	dup:hasInstance 表	commit:bfdca40d
+符号键静态成员的类值槽带 symbolKey 标记（读面据此区分符号键槽）	dup:hasInstance 表	commit:bfdca40d
+字符串键静态成员的类值槽不带 symbolKey 标记（不是符号键槽）	dup:hasInstance 表	commit:bfdca40d
+obj 的字符串键钩子 → TypeError（RHS 非 callable）	dup:hasInstance 表	commit:bfdca40d
+obj 的字符串键钩子（返回 true 也一样）→ TypeError	dup:hasInstance 表	commit:bfdca40d
+obj 的字符串键槽值不可调用 → TypeError	dup:hasInstance 表	commit:bfdca40d
+类值的字符串键钩子 → false（不当钩子、不抛）	dup:hasInstance 表	commit:bfdca40d
+类值的字符串键槽值不可调用 → 不抛（原生走 OrdinaryHasInstance → false）	dup:hasInstance 表	commit:bfdca40d
+obj 的符号键钩子 → 调 fn 并 ToBoolean	dup:hasInstance 表	commit:bfdca40d
+类体 static [Symbol.hasInstance] → 钩子生效	dup:hasInstance 表	commit:bfdca40d
+类体 static [Symbol.hasInstance] 的继承（D extends C）→ 钩子生效	dup:hasInstance 表	commit:bfdca40d
+类体 static [Symbol.hasInstance] = fn（静态字段形态）→ 钩子生效	dup:hasInstance 表	commit:bfdca40d
+普通对象 RHS（无钩子）→ TypeError（原生 RHS 非 callable）	dup:hasInstance 表	commit:bfdca40d
 ```
