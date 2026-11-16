@@ -6,118 +6,149 @@
 
 ```audit
 title	rootCause	gap	action	status	evidence
-"--emit --all 跳过手写绑定（name-clash），侧车内容原样保留"	"侧车注释里**提到** `@generated` 这个词 ⇒ 手写段被判成生成段 ⇒ `nudo contract --emit --all` **直接覆盖用户手写契约**（数据丢失：手写的 `fn({ x: number().gt(0) })` 被换成观测值冻结的 `lit(-1)` / `lit(0)`）。 根因：「是不是 nudo 生成的段」由**裸子串**判定，而 nudo 自己的提示语里就含有 `@generated` 这个词 ⇒ 用户在注释里**引用**这句话（正面或反面）就会被误判 ⇒ emit 侧的「保留手写段」保护（`handwrittenNames` / `declared`）失效。 断言：expect(r.sk"	没测该层	keep	keep	—
-"core 与 service 对「谁是生成段」的判定一致（跨包一致性）"	"侧车注释里**提到** `@generated` 这个词 ⇒ 手写段被判成生成段 ⇒ `nudo contract --emit --all` **直接覆盖用户手写契约**（数据丢失：手写的 `fn({ x: number().gt(0) })` 被换成观测值冻结的 `lit(-1)` / `lit(0)`）。 根因：「是不是 nudo 生成的段」由**裸子串**判定，而 nudo 自己的提示语里就含有 `@generated` 这个词 ⇒ 用户在注释里**引用**这句话（正面或反面）就会被误判 ⇒ emit 侧的「保留手写段」保护（`handwrittenNames` / `declared`）失效。 断言：expect([..."	没测该层	keep	keep	—
-"合法生成段仍被识别（emit 走段替换，不报 name-clash）"	"侧车注释里**提到** `@generated` 这个词 ⇒ 手写段被判成生成段 ⇒ `nudo contract --emit --all` **直接覆盖用户手写契约**（数据丢失：手写的 `fn({ x: number().gt(0) })` 被换成观测值冻结的 `lit(-1)` / `lit(0)`）。 根因：「是不是 nudo 生成的段」由**裸子串**判定，而 nudo 自己的提示语里就含有 `@generated` 这个词 ⇒ 用户在注释里**引用**这句话（正面或反面）就会被误判 ⇒ emit 侧的「保留手写段」保护（`handwrittenNames` / `declared`）失效。 断言：expect(r.sk"	没测该层	keep	keep	—
-"段内夹无关 const ⇒ 手写段不是生成段（Bug 432 的段边界，同批落地）"	"侧车注释里**提到** `@generated` 这个词 ⇒ 手写段被判成生成段 ⇒ `nudo contract --emit --all` **直接覆盖用户手写契约**（数据丢失：手写的 `fn({ x: number().gt(0) })` 被换成观测值冻结的 `lit(-1)` / `lit(0)`）。 根因：「是不是 nudo 生成的段」由**裸子串**判定，而 nudo 自己的提示语里就含有 `@generated` 这个词 ⇒ 用户在注释里**引用**这句话（正面或反面）就会被误判 ⇒ emit 侧的「保留手写段」保护（`handwrittenNames` / `declared`）失效。 断言：expect([；ex"	没测该层	keep	keep	—
-"本地调用点来源的宽域段带 `local` 标记；调用点消失 ⇒ 段被删（残差收口）"	"现象（上一轮收口后仍留）：`// evidence` 之前，侧车只记 `@generated` + `source`， 不记「这段的证据来自哪里」⇒ **调用点来源的宽域段**（`fn({ x: number() }, number())`，调用点观测被 拓宽）与「`--from` 采集的使用现场记录来源 段」**逐字同形** ⇒ 调用点被删后宽域段只能保守留存（侧车继续承诺一个今天 已经不存在的域，与 `nudo check` 的签名面矛盾），而误删 `--from` 段又会丢 用户契约。 删除判据（`sectionEvidenceIsInFile`） 改为：无 `derived-from` 标签 **且**（`local` 标记"	没测该层	keep	keep	—
-"`--from` 外部记录来源的段带 `external` 标记；证据缺失 ⇒ 留存（不误删）"	"上一轮格式（**无** `// evidence:` 行）的宽域段 —— 迁移期必须继续留存 断言：expect(first.written).toEqual([\"f\"]);；expect(bytes).toContain(\"// evidence: external\");"	没测该层	keep	keep	—
-"旧侧车（无 `// evidence:` 行）的宽域段仍然留存 —— 迁移期零回归"	"上一轮格式（**无** `// evidence:` 行）的宽域段 —— 迁移期必须继续留存 断言：expect(r.removed).toBeUndefined();；expect(r.changed).toBe(false);"	没测该层	keep	keep	—
-"旧侧车的单点字面量见证段仍按旧启发式删除（既有语义不变）"	"现象（上一轮收口后仍留）：`// evidence` 之前，侧车只记 `@generated` + `source`， 不记「这段的证据来自哪里」⇒ **调用点来源的宽域段**（`fn({ x: number() }, number())`，调用点观测被 拓宽）与「`--from` 采集的使用现场记录来源 段」**逐字同形** ⇒ 调用点被删后宽域段只能保守留存（侧车继续承诺一个今天 已经不存在的域，与 `nudo check` 的签名面矛盾），而误删 `--from` 段又会丢 用户契约。 删除判据（`sectionEvidenceIsInFile`） 改为：无 `derived-from` 标签 **且**（`local` 标记"	没测该层	keep	keep	—
-"`derived-from` 段即使带 `local` 标记也留存（root 可能在别的文件）"	"现象（上一轮收口后仍留）：`// evidence` 之前，侧车只记 `@generated` + `source`， 不记「这段的证据来自哪里」⇒ **调用点来源的宽域段**（`fn({ x: number() }, number())`，调用点观测被 拓宽）与「`--from` 采集的使用现场记录来源 段」**逐字同形** ⇒ 调用点被删后宽域段只能保守留存（侧车继续承诺一个今天 已经不存在的域，与 `nudo check` 的签名面矛盾），而误删 `--from` 段又会丢 用户契约。 删除判据（`sectionEvidenceIsInFile`） 改为：无 `derived-from` 标签 **且**（`local` 标记"	没测该层	keep	keep	—
-"标记是确定性的：连续两次发射逐字节相同，第二次无改动"	"现象（上一轮收口后仍留）：`// evidence` 之前，侧车只记 `@generated` + `source`， 不记「这段的证据来自哪里」⇒ **调用点来源的宽域段**（`fn({ x: number() }, number())`，调用点观测被 拓宽）与「`--from` 采集的使用现场记录来源 段」**逐字同形** ⇒ 调用点被删后宽域段只能保守留存（侧车继续承诺一个今天 已经不存在的域，与 `nudo check` 的签名面矛盾），而误删 `--from` 段又会丢 用户契约。 删除判据（`sectionEvidenceIsInFile`） 改为：无 `derived-from` 标签 **且**（`local` 标记"	没测该层	keep	keep	—
-"存在边界：有外部记录参与但仍有本地证据 ⇒ 标记 external（保守方向 = 少删）"	"现象（上一轮收口后仍留）：`// evidence` 之前，侧车只记 `@generated` + `source`， 不记「这段的证据来自哪里」⇒ **调用点来源的宽域段**（`fn({ x: number() }, number())`，调用点观测被 拓宽）与「`--from` 采集的使用现场记录来源 段」**逐字同形** ⇒ 调用点被删后宽域段只能保守留存（侧车继续承诺一个今天 已经不存在的域，与 `nudo check` 的签名面矛盾），而误删 `--from` 段又会丢 用户契约。 删除判据（`sectionEvidenceIsInFile`） 改为：无 `derived-from` 标签 **且**（`local` 标记"	没测该层	keep	keep	—
-"注入 `nullable(…)` 的同一次改写里补上 import（TS2304 的根因）"	"`nudo check --fix` 的 nullish 回填在**TS 侧车**（`*.nudo.ts`）里注入 `nullable(…)` 却不补 builder import ⇒ 落盘的侧车过不了 `tsc --noEmit --strict` （TS2304: Cannot find name 'nullable'），而 `nudo check` 自己复检仍报 OK （引擎运行时注入 DSL ⇒ import 缺失对它不可见）。 判据（工具自己写下的纪律，`quickfix-edits.ts` 的 TS 侧车注释，）： TS 侧车必须**自带**它用到的全部 builder import； 断言：expect(next).t"	没测该层	keep	keep	—
-"不变式：侧车用到的每个 builder 都被 import 覆盖（tsc --noEmit --strict 可编译）"	"`nudo check --fix` 的 nullish 回填在**TS 侧车**（`*.nudo.ts`）里注入 `nullable(…)` 却不补 builder import ⇒ 落盘的侧车过不了 `tsc --noEmit --strict` （TS2304: Cannot find name 'nullable'），而 `nudo check` 自己复检仍报 OK （引擎运行时注入 DSL ⇒ import 缺失对它不可见）。 判据（工具自己写下的纪律，`quickfix-edits.ts` 的 TS 侧车注释，）： TS 侧车必须**自带**它用到的全部 builder import； 断言：expect(importe"	没测该层	keep	keep	—
-"已有 `nullable` import ⇒ 不重复追加"	"`nudo check --fix` 的 nullish 回填在**TS 侧车**（`*.nudo.ts`）里注入 `nullable(…)` 却不补 builder import ⇒ 落盘的侧车过不了 `tsc --noEmit --strict` （TS2304: Cannot find name 'nullable'），而 `nudo check` 自己复检仍报 OK （引擎运行时注入 DSL ⇒ import 缺失对它不可见）。 判据（工具自己写下的纪律，`quickfix-edits.ts` 的 TS 侧车注释，）： TS 侧车必须**自带**它用到的全部 builder import； 断言：expect(next.ma"	没测该层	keep	keep	—
-"`nullable` 被改名导入（`nullable as nb`）⇒ 新包装按本地名写"	"`nudo check --fix` 的 nullish 回填在**TS 侧车**（`*.nudo.ts`）里注入 `nullable(…)` 却不补 builder import ⇒ 落盘的侧车过不了 `tsc --noEmit --strict` （TS2304: Cannot find name 'nullable'），而 `nudo check` 自己复检仍报 OK （引擎运行时注入 DSL ⇒ import 缺失对它不可见）。 判据（工具自己写下的纪律，`quickfix-edits.ts` 的 TS 侧车注释，）： TS 侧车必须**自带**它用到的全部 builder import； 断言：expect(next).t"	没测该层	keep	keep	—
-"负控制：`.nudo.js` 侧车不加 import 行（引擎运行时注入 builder）"	"`nudo check --fix` 的 nullish 回填在**TS 侧车**（`*.nudo.ts`）里注入 `nullable(…)` 却不补 builder import ⇒ 落盘的侧车过不了 `tsc --noEmit --strict` （TS2304: Cannot find name 'nullable'），而 `nudo check` 自己复检仍报 OK （引擎运行时注入 DSL ⇒ import 缺失对它不可见）。 判据（工具自己写下的纪律，`quickfix-edits.ts` 的 TS 侧车注释，）： TS 侧车必须**自带**它用到的全部 builder import； 断言：expect(next).t"	没测该层	keep	keep	—
-"负控制：return 位已经是 `nullable(…)` ⇒ 无改写（不重复包装）"	"`nudo check --fix` 的 nullish 回填在**TS 侧车**（`*.nudo.ts`）里注入 `nullable(…)` 却不补 builder import ⇒ 落盘的侧车过不了 `tsc --noEmit --strict` （TS2304: Cannot find name 'nullable'），而 `nudo check` 自己复检仍报 OK （引擎运行时注入 DSL ⇒ import 缺失对它不可见）。 判据（工具自己写下的纪律，`quickfix-edits.ts` 的 TS 侧车注释，）： TS 侧车必须**自带**它用到的全部 builder import； 断言：expect(plan).t"	没测该层	keep	keep	—
-"原生域前提：NaN / ±Infinity 都是 number（Abs 域含之）"	"zod 方言把 Abs 的 `number` prim 投影成 `z.number()`，而 **zod 的 `number` 排除 NaN / ±Infinity**（Abs 的 `number` prim 域**含**它们） ⇒ 导出的 schema **拒绝被导出函数自己的返回值** ⇒ 消费方假红。 - zod v4 的 `z.number()` 的 parse 是 `typeof input === \"number\" && !Number.isNaN(input) && Number.isFinite(input)` ⇒ 只收**有限数** ⇒ `z.number()` 是**收窄**映射（不是合法超近似）。 断言：exp"	没测该层	keep	keep	—
-"无 refinement 的 number prim 渲染成放宽形态（不再收窄）"	"zod 方言把 Abs 的 `number` prim 投影成 `z.number()`，而 **zod 的 `number` 排除 NaN / ±Infinity**（Abs 的 `number` prim 域**含**它们） ⇒ 导出的 schema **拒绝被导出函数自己的返回值** ⇒ 消费方假红。 - zod v4 的 `z.number()` 的 parse 是 `typeof input === \"number\" && !Number.isNaN(input) && Number.isFinite(input)` ⇒ 只收**有限数** ⇒ `z.number()` 是**收窄**映射（不是合法超近似）。 断言：exp"	没测该层	keep	keep	—
-"带 numBound 的 number prim 只放宽满足该界的那一端（BUG-093 收口）"	"zod 方言把 Abs 的 `number` prim 投影成 `z.number()`，而 **zod 的 `number` 排除 NaN / ±Infinity**（Abs 的 `number` prim 域**含**它们） ⇒ 导出的 schema **拒绝被导出函数自己的返回值** ⇒ 消费方假红。 - zod v4 的 `z.number()` 的 parse 是 `typeof input === \"number\" && !Number.isNaN(input) && Number.isFinite(input)` ⇒ 只收**有限数** ⇒ `z.number()` 是**收窄**映射（不是合法超近似）。 断言：exp"	没测该层	keep	keep	—
-"共享节点形态不变（standard 面不受影响——S4 的决定）"	"zod 方言把 Abs 的 `number` prim 投影成 `z.number()`，而 **zod 的 `number` 排除 NaN / ±Infinity**（Abs 的 `number` prim 域**含**它们） ⇒ 导出的 schema **拒绝被导出函数自己的返回值** ⇒ 消费方假红。 - zod v4 的 `z.number()` 的 parse 是 `typeof input === \"number\" && !Number.isNaN(input) && Number.isFinite(input)` ⇒ 只收**有限数** ⇒ `z.number()` 是**收窄**映射（不是合法超近似）。 断言：exp"	没测该层	keep	keep	—
-"lit NaN 的兜底投影覆盖 NaN 域（不再假红）"	"zod 方言把 Abs 的 `number` prim 投影成 `z.number()`，而 **zod 的 `number` 排除 NaN / ±Infinity**（Abs 的 `number` prim 域**含**它们） ⇒ 导出的 schema **拒绝被导出函数自己的返回值** ⇒ 消费方假红。 - zod v4 的 `z.number()` 的 parse 是 `typeof input === \"number\" && !Number.isNaN(input) && Number.isFinite(input)` ⇒ 只收**有限数** ⇒ `z.number()` 是**收窄**映射（不是合法超近似）。 断言：exp"	没测该层	keep	keep	—
-"负控制：lit 精度的 number 仍投影成字面量（不牵连邻近形态）"	"zod 方言把 Abs 的 `number` prim 投影成 `z.number()`，而 **zod 的 `number` 排除 NaN / ±Infinity**（Abs 的 `number` prim 域**含**它们） ⇒ 导出的 schema **拒绝被导出函数自己的返回值** ⇒ 消费方假红。 - zod v4 的 `z.number()` 的 parse 是 `typeof input === \"number\" && !Number.isNaN(input) && Number.isFinite(input)` ⇒ 只收**有限数** ⇒ `z.number()` 是**收窄**映射（不是合法超近似）。 断言：exp"	没测该层	keep	keep	—
-"不确信置信度 ⇒ zod 放宽（不再 z.literal(1)）"	"根因分两层： - **观测层（越界）**：core 的 `formalParamDisplayNames` 只给 rest 形参一个 名字，不给「变长」信息； 本片（schema-generator / guard-generator）是 **只读**边界 ⇒ 根因侧已越界上报给主 agent。 断言：expect(source, conf).not.toBe(\"z.literal(1)\");；expect(source, conf).toContain(\"z.number()\");"	没测该层	keep	keep	—
-"不确信置信度 ⇒ standard 节点放宽（prim 而非 lit）"	"根因分两层： - **观测层（越界）**：core 的 `formalParamDisplayNames` 只给 rest 形参一个 名字，不给「变长」信息； 本片（schema-generator / guard-generator）是 **只读**边界 ⇒ 根因侧已越界上报给主 agent。 断言：expect(node).toEqual({ k: \"prim\", type: \"number\", refinements: [] });"	没测该层	keep	keep	—
-"不确信置信度 ⇒ guard 放宽（不再 data === 1）"	"根因分两层： - **观测层（越界）**：core 的 `formalParamDisplayNames` 只给 rest 形参一个 名字，不给「变长」信息； 本片（schema-generator / guard-generator）是 **只读**边界 ⇒ 根因侧已越界上报给主 agent。 断言：expect(g).not.toContain(\"data === 1\");；expect(g).toContain('typeof data === \"number\"');"	没测该层	keep	keep	—
-"放宽记进 dropped 台账（损失可观测）"	"断言：expect(dropped.some((d) => d.includes(\"widened\"))).toBe(true);"	没测该层	keep	keep	—
-"负控制：确信置信度（exact）⇒ 字面量精度保留"	"根因分两层： - **观测层（越界）**：core 的 `formalParamDisplayNames` 只给 rest 形参一个 名字，不给「变长」信息； 本片（schema-generator / guard-generator）是 **只读**边界 ⇒ 根因侧已越界上报给主 agent。 断言：expect(absToSchemaSource(observedLit(\"exact\"))).toBe(\"z.literal(1)\");；expect(generateGuardFunctionFromAbs(\"isX\", observedLit(\"exact\"))).toContain(\"data === 1\");"	没测该层	keep	keep	—
-"负控制：契约面（pred 通道）⇒ 字面量精度保留"	"根因分两层： - **观测层（越界）**：core 的 `formalParamDisplayNames` 只给 rest 形参一个 名字，不给「变长」信息； 本片（schema-generator / guard-generator）是 **只读**边界 ⇒ 根因侧已越界上报给主 agent。 断言：expect(absToSchemaSource(contract)).toBe(\"z.literal(42)\");；expect(generateGuardFunctionFromAbs(\"isY\", contract)).toContain(\"data === 42\");"	没测该层	keep	keep	—
-"renders a duplicated issue exactly once"	"`nudo contract --emit` 把**同一条** `nudo:contract-name-clash` 错误**打印两遍**（一次在摘要里、一次在 issues 列表里）。 根因（消费侧）：`formatEmitSummary`（emitter 侧）已经把 `result.issues` 渲染进摘要，CLI 侧又有一段独立的 issue 循环把 error 再渲染一遍 —— 两处 **消费同一份 result.issues**，没有去重。 断言：expect(lines.filter((l) => l.includes(\"nudo:contract-name-clash\"))).toHaveLength(1);"	没测该层	keep	keep	—
-"keeps distinct issues (dedupe must not swallow real diagnostics)"	"`nudo contract --emit` 把**同一条** `nudo:contract-name-clash` 错误**打印两遍**（一次在摘要里、一次在 issues 列表里）。 根因（消费侧）：`formatEmitSummary`（emitter 侧）已经把 `result.issues` 渲染进摘要，CLI 侧又有一段独立的 issue 循环把 error 再渲染一遍 —— 两处 **消费同一份 result.issues**，没有去重。 断言：expect(lines.filter((l) => l.includes(\"nudo:contract-name-clash\"))).toHaveLength(1);；exp"	没测该层	keep	keep	—
-"consumes the issues after rendering (a second renderer cannot duplicate them)"	"`nudo contract --emit` 把**同一条** `nudo:contract-name-clash` 错误**打印两遍**（一次在摘要里、一次在 issues 列表里）。 根因（消费侧）：`formatEmitSummary`（emitter 侧）已经把 `result.issues` 渲染进摘要，CLI 侧又有一段独立的 issue 循环把 error 再渲染一遍 —— 两处 **消费同一份 result.issues**，没有去重。 断言：expect(r.issues).toEqual([]);"	没测该层	keep	keep	—
-"守卫签名带类型标注（入参 unknown / 返回 boolean）"	"生成的守卫 `.ts` **过不了 `tsc --noEmit --strict`**（TS7006 隐式 any）⇒ 产物在 strict 工程里不可用。 根因：`guard-generator.ts` 的守卫签名**没有任何类型标注** （`export function isXOutput(data) { … }`），而产物后缀是 `.ts` （被工具链当 TypeScript 处理）⇒ strict 下 `data` 是隐式 any ⇒ TS7006。 断言：expect(g).toContain(\"export function isStr(value: unknown): boolean {\");；expect(g).n"	没测该层	keep	keep	—
-"各类形态的守卫产物写进同一模块也能过 strict 编译"	"真跑 tsc --noEmit --strict（产物必须过 strict 门） 断言：expect(check.ok, check.stderr).toBe(true);"	没测该层	keep	keep	—
-"负控制：守卫的运行时语义不变（谓词文本原样）"	"生成的守卫 `.ts` **过不了 `tsc --noEmit --strict`**（TS7006 隐式 any）⇒ 产物在 strict 工程里不可用。 根因：`guard-generator.ts` 的守卫签名**没有任何类型标注** （`export function isXOutput(data) { … }`），而产物后缀是 `.ts` （被工具链当 TypeScript 处理）⇒ strict 下 `data` 是隐式 any ⇒ TS7006。 断言：expect(generateGuardFunctionFromAbs(\"isString\", str())).toContain('typeof data === \""	没测该层	keep	keep	—
-"负控制：守卫产物不引用用户类名（不会 TS2304）"	"生成的守卫 `.ts` **过不了 `tsc --noEmit --strict`**（TS7006 隐式 any）⇒ 产物在 strict 工程里不可用。 根因：`guard-generator.ts` 的守卫签名**没有任何类型标注** （`export function isXOutput(data) { … }`），而产物后缀是 `.ts` （被工具链当 TypeScript 处理）⇒ strict 下 `data` 是隐式 any ⇒ TS7006。 断言：expect(withoutStringLiterals).not.toContain(\"Counter\");；expect(g).toContain(\"as Reco"	没测该层	keep	keep	—
-"库函数版：超长 / 欠长元组被拒，等长放行"	"standard-schema 方言**不校验元组的定长**（假绿）。 修前：定长元组（无 rest）的校验器只按位校验 `node.elements`，从不看 `value.length` ⇒ `[1, \"two\", 3]` 被放行，而引擎（`leqAbs` 的 tuple arity 判定）与 zod 面（`z.tuple`）都拒绝。 断言：expect(validateSchemaNode(node, [1, \"two\"])).toEqual({ value: [1, \"two\"] });；expect(over.issues?.[0]?.message).toContain(\"expected tuple of length"	没测该层	keep	keep	—
-"生成产物版：超长元组被拒（与库函数版同口径）"	"断言：expect(mod.pair![\"~standard\"].validate([1, \"two\"])).toEqual({ value: [1, \"two\"] });；expect(over.issues?.[0]?.message).toContain(\"expected tuple of length 2\");"	没测该层	keep	keep	—
-"负控制：带 rest 的元组仍放行超长元素（rest 语义不回归）"	"standard-schema 方言**不校验元组的定长**（假绿）。 修前：定长元组（无 rest）的校验器只按位校验 `node.elements`，从不看 `value.length` ⇒ `[1, \"two\", 3]` 被放行，而引擎（`leqAbs` 的 tuple arity 判定）与 zod 面（`z.tuple`）都拒绝。 断言：expect(validateSchemaNode(node, [1, 2, 2])).toEqual({ value: [1, 2, 2] });；expect(mod.t![\"~standard\"].validate([1, 2, 2])).toEqual({ value: [1, 2,"	没测该层	keep	keep	—
-"derives ONE row for the same downstream export hit by two roots"	"侧车里出现的导出名（Babel 不报 duplicate export —— 自己数一遍） 断言：expect(r.hasRoot).toBe(true);；expect(r.derived.length).toBe(1);"	没测该层	keep	keep	—
-"writes ONE section — the sidecar has no duplicate export"	"侧车里出现的导出名（Babel 不报 duplicate export —— 自己数一遍） 断言：expect(e.sidecars.length).toBe(1);；expect(e.sidecars[0]!.issues.filter((i) => i.severity === \"error\")).toEqual([]);"	没测该层	keep	keep	—
-"refuses to write a sidecar that would carry a duplicate export"	"侧车里出现的导出名（Babel 不报 duplicate export —— 自己数一遍） 断言：expect(e.sidecars.length).toBe(1);；expect(e.sidecars[0]!.changed).toBe(false);"	没测该层	keep	keep	—
-"merges the two roots' domains — order-independent snapshot"	"standard-schema 方言**不校验元组的定长**（假绿）。 修前：定长元组（无 rest）的校验器只按位校验 `node.elements`，从不看 `value.length` ⇒ `[1, \"two\", 3]` 被放行，而引擎（`leqAbs` 的 tuple arity 判定）与 zod 面（`z.tuple`）都拒绝。 断言：expect(snapA).toBe(snapB);；expect(snapA).toContain(\"const x = positive.shift(1);\");"	没测该层	keep	keep	—
-"is idempotent after the merge (second emit: no change)"	"`nudo contract --emit` 把**同一条** `nudo:contract-name-clash` 错误**打印两遍**（一次在摘要里、一次在 issues 列表里）。 根因（消费侧）：`formatEmitSummary`（emitter 侧）已经把 `result.issues` 渲染进摘要，CLI 侧又有一段独立的 issue 循环把 error 再渲染一遍 —— 两处 **消费同一份 result.issues**，没有去重。 断言：expect(e.sidecars[0]!.changed).toBe(false);；expect(e.sidecars[0]!.skipped).toBe(\"no-chan"	没测该层	keep	keep	—
+--emit --all 跳过手写绑定（name-clash），侧车内容原样保留；core 与 service 对「谁是生成段」的判定一致（跨包一致性）；合法生成段仍被识别（emit 走段替换，不报 name-clash）；段内夹无关 const ⇒ 手写段不是生成段（Bug 432 的段边界，同批落地）	emit-types 聚合矩阵	没测该层	keep	keep	—
+本地调用点来源的宽域段带 `local` 标记；调用点消失 ⇒ 段被删（残差收口）；`--from` 外部记录来源的段带 `external` 标记；证据缺失 ⇒ 留存（不误删）；旧侧车（无 `// evidence:` 行）的宽域段仍然留存 —— 迁移期零回归；旧侧车的单点字面量见证段仍按旧启发式删除（既有语义不变）；`derived-from` 段即使带 `local` 标记也留存（root 可能在别的文件）；标记是确定性的：连续两次发射逐字节相同，第二次无改动；存在边界	emit-types 聚合矩阵	没测该层	keep	keep	—
+注入 `nullable(…)` 的同一次改写里补上 import（TS2304 的根因）；不变式：侧车用到的每个 builder 都被 import 覆盖（tsc --noEmit --strict 可编译）；已有 `nullable` import ⇒ 不重复追加；`nullable` 被改名导入（`nullable as nb`）⇒ 新包装按本地名写；负控制：`.nudo.js` 侧车不加 import 行（引擎运行时注入 builder）；负控制：return 位已经	emit-types 聚合矩阵	没测该层	keep	keep	—
+原生域前提：NaN / ±Infinity 都是 number（Abs 域含之）；无 refinement 的 number prim 渲染成放宽形态（不再收窄）；带 numBound 的 number prim 只放宽满足该界的那一端（BUG-093 收口）；共享节点形态不变（standard 面不受影响——S4 的决定）；lit NaN 的兜底投影覆盖 NaN 域（不再假红）；负控制：lit 精度的 number 仍投影成字面量（不牵连邻近形态）	emit-types 聚合矩阵	没测该层	keep	keep	—
+不确信置信度 ⇒ zod 放宽（不再 z.literal(1)）；不确信置信度 ⇒ standard 节点放宽（prim 而非 lit）；不确信置信度 ⇒ guard 放宽（不再 data === 1）；放宽记进 dropped 台账（损失可观测）；负控制：确信置信度（exact）⇒ 字面量精度保留；负控制：契约面（pred 通道）⇒ 字面量精度保留	emit-types 聚合矩阵	没测该层	keep	keep	—
+renders a duplicated issue exactly once；keeps distinct issues (dedupe must not swallow real diagnostics)；consumes the issues after rendering (a second renderer cannot duplicate them)	emit-types 聚合矩阵	没测该层	keep	keep	—
+守卫签名带类型标注（入参 unknown / 返回 boolean）；各类形态的守卫产物写进同一模块也能过 strict 编译；负控制：守卫的运行时语义不变（谓词文本原样）；负控制：守卫产物不引用用户类名（不会 TS2304）	emit-types 聚合矩阵	没测该层	keep	keep	—
+库函数版：超长 / 欠长元组被拒，等长放行；生成产物版：超长元组被拒（与库函数版同口径）；负控制：带 rest 的元组仍放行超长元素（rest 语义不回归）	emit-types 聚合矩阵	没测该层	keep	keep	—
+derives ONE row for the same downstream export hit by two roots；writes ONE section — the sidecar has no duplicate export；refuses to write a sidecar that would carry a duplicate export	emit-types 聚合矩阵	没测该层	keep	keep	—
+merges the two roots' domains — order-independent snapshot；is idempotent after the merge (second emit: no change)	emit-types 聚合矩阵	没测该层	keep	keep	—
 "drops the stale section of an export the target no longer has"	"侧车里出现的导出名（Babel 不报 duplicate export —— 自己数一遍） 断言：expect(e.sidecars[0]!.written).toBe(true);；expect(first).toContain(\"export const add2\");"	没测该层	keep	keep	—
-"库函数版与生成产物版对稀疏洞给出逐字相同的结果"	"断言：expect(JSON.stringify(prod)).toBe(JSON.stringify(lib));；expect(prod.issues).toBeDefined();"	没测该层	keep	keep	—
-"负控制：稠密数组两份实现都放行（不得把稠密数组误判成稀疏）"	"standard-schema 方言**不校验元组的定长**（假绿）。 修前：定长元组（无 rest）的校验器只按位校验 `node.elements`，从不看 `value.length` ⇒ `[1, \"two\", 3]` 被放行，而引擎（`leqAbs` 的 tuple arity 判定）与 zod 面（`z.tuple`）都拒绝。 断言：expect(validateSchemaNode(node, [1, 2, 3])).toEqual({ value: [1, 2, 3] });；expect(mod.xs![\"~standard\"].validate([1, 2, 3])).toEqual({ value: [1, 2"	没测该层	keep	keep	—
-"冷跑与缓存命中跑逐字相同（递归展开不被 any().optional() 取代）"	"病灶：`constraintToJson` 用 `JSON.parse(JSON.stringify(c))` 落盘 ⇒ JSON 遇 函数值属性（`lazy` 槽的 thunk）**静默省略** ⇒ 递归约束退化成「无字段的 optional 槽」⇒ 命中缓存后印成 `any().optional()`：冷跑与热跑输出不同， 且热跑比 `nudo check` 门禁面更宽松（跨产物面自相矛盾）。 - 缓存文件里 `lazy` 槽以**节点表引用**留存（不是被 JSON 静默省略）； 断言：expect(cold.lines).toHaveLength(1);；expect(cold.lines[0]).toContain(\"ob"	没测该层	keep	keep	—
-"负控制：非 lazy 契约的往返显示不变、缓存无节点表"	"病灶：`constraintToJson` 用 `JSON.parse(JSON.stringify(c))` 落盘 ⇒ JSON 遇 函数值属性（`lazy` 槽的 thunk）**静默省略** ⇒ 递归约束退化成「无字段的 optional 槽」⇒ 命中缓存后印成 `any().optional()`：冷跑与热跑输出不同， 且热跑比 `nudo check` 门禁面更宽松（跨产物面自相矛盾）。 - 缓存文件里 `lazy` 槽以**节点表引用**留存（不是被 JSON 静默省略）； 断言：expect(cold.lines[0]).toContain(\"node: number().gt(0)\");；expect(hot.lin"	没测该层	keep	keep	—
-"旧缓存表（无版本号）整层 miss：不得当命中读出退化约束"	"断言：expect(hot.lines).toEqual(cold.lines);；expect(hot.lines[0]).not.toContain(\"any().optional()\");"	没测该层	keep	keep	—
-"库函数版：非函数被拒，函数放行"	"断言形态：**逐字相同**（两份实现的结果必须完全一致），且与 zod 同判。 断言：expect(validateSchemaNode(node, () => 1).issues).toBeUndefined();；expect(r.issues?.[0]?.message).toContain(\"expected function\");"	夹具漏形态	keep	keep	—
-"生成产物版：与 zod 面 z.function() 同判"	"standard 方言的 `fn` 节点是**恒真**校验器（假绿）。 修后：`fn` 节点要求 `typeof value === \"function\"`（不校验签名，只校验 「是函数」）——与 zod 的 `z.function()` 同口径。 断言：expect(mod.makeAdderOutput![\"~standard\"].validate((x: number) => x).issues).toBeUndefined();；expect(r.issues?.[0]?.message).toContain(\"expected function\");"	没测该层	keep	keep	—
-"promise 节点自 BUG-025 起拒绝裸 thenable（不再放行一切）"	"standard 方言的 `fn` 节点是**恒真**校验器（假绿）。 修后：`fn` 节点要求 `typeof value === \"function\"`（不校验签名，只校验 「是函数」）——与 zod 的 `z.function()` 同口径。 断言：expect(bad.issues?.[0]?.message).toContain(\"expected promise\");；expect(ok.issues).toBeUndefined();"	没测该层	keep	keep	—
-"names the source file path and states the path semantics"	"standard 方言的 `fn` 节点是**恒真**校验器（假绿）。 修后：`fn` 节点要求 `typeof value === \"function\"`（不校验签名，只校验 「是函数」）——与 zod 的 `z.function()` 同口径。 断言：expect(denied).toBeDefined();；expect(denied!.message).toContain(\"src/lib.js\");"	没测该层	keep	keep	—
-"negative control: an allowlist matching the source file is not denied"	"`nudo:contract-emit-denied` 的消息里报的是**源文件**路径，而 文档（diagnostics.md）的示例消息写的是**侧车**路径 → 照文档配的 allowlist （侧车形态 glob）**永远**被拒，且用户被指向一个不存在的判定对象。 修法（emitter 侧）：消息点名 被判定的**源文件**路径，并显式说明「匹配的是源文件路径、不是侧车路径」， 同时把侧车路径一并给出（用户改配置时不必猜）。 断言：expect(r.issues.find((i) => i.code === \"nudo:contract-emit-denied\")).toBeUndefined();；expect(r.sk"	夹具漏形态	keep	keep	—
-"declares the builders used by the generated section in a .nudo.ts sidecar"	"`nudo contract --emit` 给 **`.ts` 源**写出的 `*.nudo.ts` 段 **不带 builder 声明** → 产物**过不了 tsc**（TS2304: Cannot find name 'lit' / 'fn'），而同命令的 `--draft` 产物带 import。 根因：`sectionText` 只生成「`@generated` 头 + export 行」，假定侧车是 `.js`（builder 名由装载期**裸注入**兜住）。 断言：expect(r.written).toContain(\"sub\");；expect(after).toContain(\"declare const fn"	没测该层	keep	keep	—
-"the .nudo.ts sidecar is idempotent (second emit reports no change)"	"`nudo contract --emit` 给 **`.ts` 源**写出的 `*.nudo.ts` 段 **不带 builder 声明** → 产物**过不了 tsc**（TS2304: Cannot find name 'lit' / 'fn'），而同命令的 `--draft` 产物带 import。 根因：`sectionText` 只生成「`@generated` 头 + export 行」，假定侧车是 `.js`（builder 名由装载期**裸注入**兜住）。 断言：expect(second.changed).toBe(false);；expect(readFileSync(sidecar, \"utf-8\")).to"	没测该层	keep	keep	—
-"negative control: a .js sidecar gets no builder declaration (bare injection suffices)"	"`nudo contract --emit` 给 **`.ts` 源**写出的 `*.nudo.ts` 段 **不带 builder 声明** → 产物**过不了 tsc**（TS2304: Cannot find name 'lit' / 'fn'），而同命令的 `--draft` 产物带 import。 根因：`sectionText` 只生成「`@generated` 头 + export 行」，假定侧车是 `.js`（builder 名由装载期**裸注入**兜住）。 断言：expect(r.written).toContain(\"sub\");；expect(after).not.toContain(\"declare cons"	没测该层	keep	keep	—
-"TS 投影面：Abs any 与 Abs unknown 都渲染成 TS unknown"	"Abs 的 **`any`（未受约束）** 与 **`unknown`（推导失败）** 在 **nudo 内部**是两个不同的产品概念（`abs.md` 的 display 规则约束的是 **nudo 展示 / CLI 面**，那里不得合并）。 但 **TS 投影面**是另一回事：nudo 的 `any` 是「无约束并集 / 任意值」，语义 更接近 TS 的 `unknown`（top，消费方须先收窄），而不是 TS 的 `any`（关闭 类型检查的逃生舱）。 断言：expect(absToTSType(anyAbs)).toBe(\"unknown\");；expect(absToTSType(unknownAbs())).toBe("	没测该层	keep	keep	—
-"nudo 展示面仍区分 any / unknown（abs.md display 规则作用域不变）"	"Abs 的 **`any`（未受约束）** 与 **`unknown`（推导失败）** 在 **nudo 内部**是两个不同的产品概念（`abs.md` 的 display 规则约束的是 **nudo 展示 / CLI 面**，那里不得合并）。 但 **TS 投影面**是另一回事：nudo 的 `any` 是「无约束并集 / 任意值」，语义 更接近 TS 的 `unknown`（top，消费方须先收窄），而不是 TS 的 `any`（关闭 类型检查的逃生舱）。 断言：expect(formatAbs(anyAbs)).toContain(\"any\");；expect(formatAbs(anyAbs)).not.toContain("	没测该层	keep	keep	—
-"未受约束的入口形参在 .d.ts 里渲染成 unknown（与三面校验器同口径）"	"Abs 的 **`any`（未受约束）** 与 **`unknown`（推导失败）** 在 **nudo 内部**是两个不同的产品概念（`abs.md` 的 display 规则约束的是 **nudo 展示 / CLI 面**，那里不得合并）。 但 **TS 投影面**是另一回事：nudo 的 `any` 是「无约束并集 / 任意值」，语义 更接近 TS 的 `unknown`（top，消费方须先收窄），而不是 TS 的 `any`（关闭 类型检查的逃生舱）。 断言：expect(dts).toContain(\"export declare function id(x: unknown): unknown;\");；expect(dt"	没测该层	keep	keep	—
-"Case 见证行按观测值渲染，且产物不出现 TS any"	"Abs 的 **`any`（未受约束）** 与 **`unknown`（推导失败）** 在 **nudo 内部**是两个不同的产品概念（`abs.md` 的 display 规则约束的是 **nudo 展示 / CLI 面**，那里不得合并）。 但 **TS 投影面**是另一回事：nudo 的 `any` 是「无约束并集 / 任意值」，语义 更接近 TS 的 `unknown`（top，消费方须先收窄），而不是 TS 的 `any`（关闭 类型检查的逃生舱）。 断言：expect(dts).toContain(\"Case:\");；expect(dts).toContain(\"(1)\");"	没测该层	keep	keep	—
-"产物真的能过 tsc --noEmit --strict（unknown 经收窄后可用）"	"Abs 的 **`any`（未受约束）** 与 **`unknown`（推导失败）** 在 **nudo 内部**是两个不同的产品概念（`abs.md` 的 display 规则约束的是 **nudo 展示 / CLI 面**，那里不得合并）。 但 **TS 投影面**是另一回事：nudo 的 `any` 是「无约束并集 / 任意值」，语义 更接近 TS 的 `unknown`（top，消费方须先收窄），而不是 TS 的 `any`（关闭 类型检查的逃生舱）。 断言：expect(check.ok, check.stderr).toBe(true);"	没测该层	keep	keep	—
-"未收窄的 unknown 返回值被 TS2571 拦下（正确的类型安全提示，非假红）"	"Abs 的 **`any`（未受约束）** 与 **`unknown`（推导失败）** 在 **nudo 内部**是两个不同的产品概念（`abs.md` 的 display 规则约束的是 **nudo 展示 / CLI 面**，那里不得合并）。 但 **TS 投影面**是另一回事：nudo 的 `any` 是「无约束并集 / 任意值」，语义 更接近 TS 的 `unknown`（top，消费方须先收窄），而不是 TS 的 `any`（关闭 类型检查的逃生舱）。 断言：expect(check.ok).toBe(false);；expect(check.stderr).toContain(\"TS2571\");"	没测该层	keep	keep	—
-"`.nudo.ts` 侧车带 builder import，TS 关键字构建器改名导入"	"`nudo check --fix --write` 给 **`.ts` 源**写出的 `*.nudo.ts` 侧车 **不带 builder import** ⇒ 产物 **3× TS 错误**（TS2304 × 2 + TS2693）⇒ 过不了 `tsc --noEmit --strict`。 根因：quickfix 的侧车子句只写 DSL（`fn({ x: shape({ toFixed: any() }) })`）， 没按**侧车后缀**决定要不要补 builder import。 断言：expect(text).toContain('import {');；expect(text).toContain('from \"@nu"	没测该层	keep	keep	—
-"产物真的过 `tsc --noEmit --strict`（改前 3× TS 错误）"	"`nudo check --fix --write` 给 **`.ts` 源**写出的 `*.nudo.ts` 侧车 **不带 builder import** ⇒ 产物 **3× TS 错误**（TS2304 × 2 + TS2693）⇒ 过不了 `tsc --noEmit --strict`。 根因：quickfix 的侧车子句只写 DSL（`fn({ x: shape({ toFixed: any() }) })`）， 没按**侧车后缀**决定要不要补 builder import。 断言：expect(r.ok, `tsc 失败：\\n${r.out}`).toBe(true);"	没测该层	keep	keep	—
-"改前形态（无 import 的裸 DSL）确实过不了 tsc —— 回归有效性自证"	"`nudo check --fix --write` 给 **`.ts` 源**写出的 `*.nudo.ts` 侧车 **不带 builder import** ⇒ 产物 **3× TS 错误**（TS2304 × 2 + TS2693）⇒ 过不了 `tsc --noEmit --strict`。 根因：quickfix 的侧车子句只写 DSL（`fn({ x: shape({ toFixed: any() }) })`）， 没按**侧车后缀**决定要不要补 builder import。 断言：expect(r.ok).toBe(false);；expect(r.out).toContain(\"TS2304\"); // Canno"	没测该层	keep	keep	—
-"负控制：`.nudo.js` 侧车维持「裸注入」纪律（不加 import）"	"`nudo check --fix --write` 给 **`.ts` 源**写出的 `*.nudo.ts` 侧车 **不带 builder import** ⇒ 产物 **3× TS 错误**（TS2304 × 2 + TS2693）⇒ 过不了 `tsc --noEmit --strict`。 根因：quickfix 的侧车子句只写 DSL（`fn({ x: shape({ toFixed: any() }) })`）， 没按**侧车后缀**决定要不要补 builder import。 断言：expect(text).not.toContain(\"import {\");；expect(text).toContain(\"fn(\")"	没测该层	keep	keep	—
-"负控制：已有侧车自带 import 时不重复 import（沿用既有本地名）"	"`nudo check --fix --write` 给 **`.ts` 源**写出的 `*.nudo.ts` 侧车 **不带 builder import** ⇒ 产物 **3× TS 错误**（TS2304 × 2 + TS2693）⇒ 过不了 `tsc --noEmit --strict`。 根因：quickfix 的侧车子句只写 DSL（`fn({ x: shape({ toFixed: any() }) })`）， 没按**侧车后缀**决定要不要补 builder import。 断言：expect(importLines.length).toBe(2);；expect(importLines[1]).not.toMatc"	没测该层	keep	keep	—
-"uses an alias binding when an import local shadows the target name"	"`nudo contract --emit` 写出的侧车是**非法 JavaScript**：生成段的 `export const <name>` 与侧车里已有的 **import 局部绑定**同名 ⇒ 整份侧车装载 失败 ⇒ **该文件所有契约一起丢失**（工具却 exit 0 自称成功）。 根因：`topLevelDeclaredNames` 负责收集侧车顶层已占用的名字，但它只处理 变量/函数/类与 export 列表 —— **ImportDeclaration 落到 else 分支后三个 if 都不匹配，import 的局部名被整体漏掉** ⇒ 绑定分配以为 `positive` 可用 ⇒ 直发 `export const"	夹具漏形态	keep	keep	—
-"the whole file's contracts survive (handwritten binding still binds)"	"族 15 / 分片 S13 —— 派生契约面的三条缺陷回归钉： - 同一 root 文件的**多个手写契约**（多个 root）指向同一个下游导出 → 派生段被写进同一侧车**两次** → 侧车成非法 ESM（`SyntaxError: Duplicate export of 'add2'`）→ 契约面整体失效。 - 跨 root（不同 root 文件）写同一个下游导出 → **按名覆盖**、谁后写 谁赢 → 快照只覆盖部分调用点，且**顺序相关**。 断言：expect(eff).toBeDefined();；expect(eff!.params.map((p) => p.param)).toEqual([\"n\"]);"	没测该层	keep	keep	—
-"is idempotent (second emit reports no change)"	"`nudo contract --emit` 写出的侧车是**非法 JavaScript**：生成段的 `export const <name>` 与侧车里已有的 **import 局部绑定**同名 ⇒ 整份侧车装载 失败 ⇒ **该文件所有契约一起丢失**（工具却 exit 0 自称成功）。 根因：`topLevelDeclaredNames` 负责收集侧车顶层已占用的名字，但它只处理 变量/函数/类与 export 列表 —— **ImportDeclaration 落到 else 分支后三个 if 都不匹配，import 的局部名被整体漏掉** ⇒ 绑定分配以为 `positive` 可用 ⇒ 直发 `export const"	夹具漏形态	keep	keep	—
-"negative control: no import local shadow ⇒ the direct binding is used"	"`nudo contract --emit` 写出的侧车是**非法 JavaScript**：生成段的 `export const <name>` 与侧车里已有的 **import 局部绑定**同名 ⇒ 整份侧车装载 失败 ⇒ **该文件所有契约一起丢失**（工具却 exit 0 自称成功）。 根因：`topLevelDeclaredNames` 负责收集侧车顶层已占用的名字，但它只处理 变量/函数/类与 export 列表 —— **ImportDeclaration 落到 else 分支后三个 if 都不匹配，import 的局部名被整体漏掉** ⇒ 绑定分配以为 `positive` 可用 ⇒ 直发 `export const"	夹具漏形态	keep	keep	—
-"库函数版：bigint / 循环对象 / 抛错 getter 都返回 Result 而非抛异常"	"带抛错 getter 的对象（取值本身就会抛）。 断言：expect(r.issues).toBeDefined();；expect(r.issues!.length).toBeGreaterThan(0);"	夹具漏形态	keep	keep	—
-"生成产物版：validate(bigint) / validate(循环对象) 不抛"	"standard 产物的 `~standard.validate` 在 bigint / 循环对象上**抛 TypeError** ⇒ 违反 Standard Schema v1「`validate` 永不抛」的协议。 修前：`lit` 臂的消息构造直接 `JSON.stringify(运行期入参)` ⇒ bigint 抛 `TypeError: Do not know how to serialize a BigInt`、循环结构抛 `Converting circular structure to JSON` ⇒ 永远到不了返回 `issues` 那一步。 断言：expect(() => {；expect(bigintResul"	夹具漏形态	keep	keep	—
-"负控制：合法值仍放行（兜底不得误拒）"	"standard 产物的 `~standard.validate` 在 bigint / 循环对象上**抛 TypeError** ⇒ 违反 Standard Schema v1「`validate` 永不抛」的协议。 修前：`lit` 臂的消息构造直接 `JSON.stringify(运行期入参)` ⇒ bigint 抛 `TypeError: Do not know how to serialize a BigInt`、循环结构抛 `Converting circular structure to JSON` ⇒ 永远到不了返回 `issues` 那一步。 断言：expect(validateSchemaNode(node, 1"	夹具漏形态	keep	keep	—
-"负控制：numLit(42) 的消息仍是可读的类型错（不因兜底变成无信息）"	"standard 产物的 `~standard.validate` 在 bigint / 循环对象上**抛 TypeError** ⇒ 违反 Standard Schema v1「`validate` 永不抛」的协议。 修前：`lit` 臂的消息构造直接 `JSON.stringify(运行期入参)` ⇒ bigint 抛 `TypeError: Do not know how to serialize a BigInt`、循环结构抛 `Converting circular structure to JSON` ⇒ 永远到不了返回 `issues` 那一步。 断言：expect(r.issues?.[0]?.message).to"	夹具漏形态	keep	keep	—
-"保留字作绑定名 ⇒ `_` 前缀（不是直出）"	"改前：`export declare function default(...)` / `export declare function class(...)` ⇒ **TS1359 + TS1005**（整份 `.d.ts` 解析失败，tsc exit 2）——而同一次导出 的 zod / standard / guard 三面全部合法 ⇒ 四面不一致。 根因：dts 面的声明名只做了「字符级清洗」（`C.m` → `C_m`），**没做保留字 清洗**； 断言：expect(text).toContain(\"export declare function _class(\");；expect(text).not.toContain"	没测该层	keep	keep	—
-"多个保留字都清洗（default / let / eval / await）"	"改前：`export declare function default(...)` / `export declare function class(...)` ⇒ **TS1359 + TS1005**（整份 `.d.ts` 解析失败，tsc exit 2）——而同一次导出 的 zod / standard / guard 三面全部合法 ⇒ 四面不一致。 根因：dts 面的声明名只做了「字符级清洗」（`C.m` → `C_m`），**没做保留字 清洗**； 断言：expect(text, name).not.toMatch(new RegExp(`function ${name}\\\\(`));"	没测该层	keep	keep	—
-"负控制：合法绑定名原样保留（不误伤）"	"standard 产物的 `~standard.validate` 在 bigint / 循环对象上**抛 TypeError** ⇒ 违反 Standard Schema v1「`validate` 永不抛」的协议。 修前：`lit` 臂的消息构造直接 `JSON.stringify(运行期入参)` ⇒ bigint 抛 `TypeError: Do not know how to serialize a BigInt`、循环结构抛 `Converting circular structure to JSON` ⇒ 永远到不了返回 `issues` 那一步。 断言：expect(p.lines.join(\"\\n\")).toCont"	夹具漏形态	keep	keep	—
-"负控制：点号名仍按既有口径清洗成 C_m（#494 不回退）"	"改前：`export declare function default(...)` / `export declare function class(...)` ⇒ **TS1359 + TS1005**（整份 `.d.ts` 解析失败，tsc exit 2）——而同一次导出 的 zod / standard / guard 三面全部合法 ⇒ 四面不一致。 根因：dts 面的声明名只做了「字符级清洗」（`C.m` → `C_m`），**没做保留字 清洗**； 断言：expect(text).not.toContain(\"C.m(\");；expect(text).toContain(\"C_m(\");"	没测该层	keep	keep	—
-"库函数版：Infinity 放行、null / 0 拒绝，消息保真"	"standard 面把 `Infinity` / `-Infinity` 折成 `null`（假红 + 假绿）。 修前：节点里的 `Infinity` 被写成 `null` ⇒ 校验器**拒绝函数唯一可能返回的 值**、**放行函数永不返回的 `null`**； 断言：expect(validateSchemaNode(node, Infinity).issues).toBeUndefined();；expect(nul.issues?.[0]?.message).toContain(\"expected Infinity\");"	没测该层	keep	keep	—
-"生成产物版：Infinity 不再被折成 null"	"standard 面把 `Infinity` / `-Infinity` 折成 `null`（假红 + 假绿）。 修前：节点里的 `Infinity` 被写成 `null` ⇒ 校验器**拒绝函数唯一可能返回的 值**、**放行函数永不返回的 `null`**； 断言：expect(source).toContain('\"value\":Infinity');；expect(source).not.toContain('\"value\":null');"	没测该层	keep	keep	—
-"负控制：-Infinity 同样保真；普通字面量消息格式不变"	"standard 面把 `Infinity` / `-Infinity` 折成 `null`（假红 + 假绿）。 修前：节点里的 `Infinity` 被写成 `null` ⇒ 校验器**拒绝函数唯一可能返回的 值**、**放行函数永不返回的 `null`**； 断言：expect(validateSchemaNode(node, -Infinity).issues).toBeUndefined();；expect(source).toContain('\"value\":-Infinity');"	没测该层	keep	keep	—
-"同名局部绑定不再命中：定位到顶层声明"	"quickfix「[silence] Declare @nudo:throws X」按**名字首匹配**定位 声明 ⇒ 注解落进**别的函数体** ⇒ 门禁**完全不变**（一个「点了也没用」的 quickfix）。 根因：findFnDeclStart 用行级正则找**首个**同名命中——别的函数体里的同名 局部绑定（`const alpha = 1`）也会命中。 断言：expect(findFnDeclStart(lines, \"alpha\")).toBe(5);；expect(findFnDeclStart(lines, \"beta\")).toBe(0);"	夹具漏形态	keep	keep	—
-"注解落进顶层 alpha 的 JSDoc（不是 beta 的函数体）"	"quickfix「[silence] Declare @nudo:throws X」按**名字首匹配**定位 声明 ⇒ 注解落进**别的函数体** ⇒ 门禁**完全不变**（一个「点了也没用」的 quickfix）。 根因：findFnDeclStart 用行级正则找**首个**同名命中——别的函数体里的同名 局部绑定（`const alpha = 1`）也会命中。 断言：expect(r).toBeDefined();；expect(() => parse(next)).not.toThrow();"	夹具漏形态	keep	keep	—
-"改前形态：旧实现把注解写进 beta 的函数体（回归有效性自证）"	"quickfix「[silence] Declare @nudo:throws X」按**名字首匹配**定位 声明 ⇒ 注解落进**别的函数体** ⇒ 门禁**完全不变**（一个「点了也没用」的 quickfix）。 根因：findFnDeclStart 用行级正则找**首个**同名命中——别的函数体里的同名 局部绑定（`const alpha = 1`）也会命中。 断言：expect(legacyLine).toBeGreaterThan(-1);；expect(legacyLine).toBeLessThan(findFnDeclStart(SRC.split(\"\\n\"), \"alpha\"));"	夹具漏形态	keep	keep	—
-"负控制：顶层 const 箭头函数仍可定位（既有行为不变）"	"quickfix「[silence] Declare @nudo:throws X」按**名字首匹配**定位 声明 ⇒ 注解落进**别的函数体** ⇒ 门禁**完全不变**（一个「点了也没用」的 quickfix）。 根因：findFnDeclStart 用行级正则找**首个**同名命中——别的函数体里的同名 局部绑定（`const alpha = 1`）也会命中。 断言：expect(findFnDeclStart(src.split(\"\\n\"), \"gamma\")).toBe(0);；expect(r).toBeDefined();"	夹具漏形态	keep	keep	—
-"负控制：函数体里的同名局部 const 不是目标函数 → 不定位"	"quickfix「[silence] Declare @nudo:throws X」按**名字首匹配**定位 声明 ⇒ 注解落进**别的函数体** ⇒ 门禁**完全不变**（一个「点了也没用」的 quickfix）。 根因：findFnDeclStart 用行级正则找**首个**同名命中——别的函数体里的同名 局部绑定（`const alpha = 1`）也会命中。 断言：expect(findFnDeclStart(src.split(\"\\n\"), \"inner\")).toBe(-1);；expect(addThrowsAnnotation(src, \"inner\", \"TypeError\")).toBeUndefined();"	夹具漏形态	keep	keep	—
-"CRLF 源文件写回后仍是纯 CRLF（新插入的行不带裸 LF）"	"裸 LF（不含 CRLF）计数 断言：expect(out.changed).toBe(true);；expect(bareLfCount(out.source)).toBe(0);"	夹具漏形态	keep	keep	—
-"负控制：LF 源文件写回后仍是纯 LF（不得被改成 CRLF）"	"裸 LF（不含 CRLF）计数 断言：expect(out.changed).toBe(true);；expect(out.source.includes(\"\\r\\n\")).toBe(false);"	夹具漏形态	keep	keep	—
-"CRLF + 末行无终止符：行尾仍是纯 CRLF，末尾仍无换行"	"裸 LF（不含 CRLF）计数 断言：expect(out.changed).toBe(true);；expect(bareLfCount(out.source)).toBe(0);"	夹具漏形态	keep	keep	—
-"负控制：文件末尾有无换行不变（LF + 有末尾换行）"	"standard 面把 `Infinity` / `-Infinity` 折成 `null`（假红 + 假绿）。 修前：节点里的 `Infinity` 被写成 `null` ⇒ 校验器**拒绝函数唯一可能返回的 值**、**放行函数永不返回的 `null`**； 断言：expect(out.source.endsWith(\"\\n\")).toBe(true);；expect(out.source.endsWith(\"\\n\\n\")).toBe(false);"	没测该层	keep	keep	—
-"空 obj → Record<string, never>（不是 {}）"	"TS 语义：类型 `{}` = 「**任意非 nullish 值**」（`42` / `\"str\"` / `[]` 全部 合法）——它**不是**「没有属性的对象」。 ⇒ ① 消费方属性读吃 **TS2339 假红** （运行期返回 `undefined`，合法）； 断言：expect(absToTSType(objOf({}))).toBe(\"Record<string, never>\");"	夹具漏形态	keep	keep	—
-"负控制：有成员的对象仍是结构体（不误伤）"	"standard 面把 `Infinity` / `-Infinity` 折成 `null`（假红 + 假绿）。 修前：节点里的 `Infinity` 被写成 `null` ⇒ 校验器**拒绝函数唯一可能返回的 值**、**放行函数永不返回的 `null`**； 断言：expect(absToTSType(objOf({ a: { value: num() } }))).toBe(\"{ a: number }\");"	没测该层	keep	keep	—
-"端到端：空对象返回值的属性读不再吃 TS2339"	"TS 语义：类型 `{}` = 「**任意非 nullish 值**」（`42` / `\"str\"` / `[]` 全部 合法）——它**不是**「没有属性的对象」。 ⇒ ① 消费方属性读吃 **TS2339 假红** （运行期返回 `undefined`，合法）； 断言：expect(dts).toContain(\"Record<string, never>\");；expect(dts).not.toContain(\": {};\");"	夹具漏形态	keep	keep	—
-"联合类型里契约义务不被吸收（{ a: number } | Record<string, never>）"	"TS 语义：类型 `{}` = 「**任意非 nullish 值**」（`42` / `\"str\"` / `[]` 全部 合法）——它**不是**「没有属性的对象」。 ⇒ ① 消费方属性读吃 **TS2339 假红** （运行期返回 `undefined`，合法）； 断言：expect(check.ok).toBe(false);；expect(check.stderr).toContain(\"TS2322\");"	夹具漏形态	keep	keep	—
-"非对象实参被拒（与 zod 面「必须是对象」同裁决）"	"TS 语义：类型 `{}` = 「**任意非 nullish 值**」（`42` / `\"str\"` / `[]` 全部 合法）——它**不是**「没有属性的对象」。 ⇒ ① 消费方属性读吃 **TS2339 假红** （运行期返回 `undefined`，合法）； 断言：expect(check.ok).toBe(false);；expect(check.stderr).toContain(\"TS2345\");"	夹具漏形态	keep	keep	—
-"改前形态确实红（{} ⇒ TS2339，且联合里吸收契约义务）"	"TS 语义：类型 `{}` = 「**任意非 nullish 值**」（`42` / `\"str\"` / `[]` 全部 合法）——它**不是**「没有属性的对象」。 ⇒ ① 消费方属性读吃 **TS2339 假红** （运行期返回 `undefined`，合法）； 断言：expect(check.ok).toBe(false);；expect(check.stderr).toContain(\"TS2339\");"	夹具漏形态	keep	keep	—
-"负控制：字面量成员对象不受影响（结构体照旧，嵌套精度保留）"	"standard 面把 `Infinity` / `-Infinity` 折成 `null`（假红 + 假绿）。 修前：节点里的 `Infinity` 被写成 `null` ⇒ 校验器**拒绝函数唯一可能返回的 值**、**放行函数永不返回的 `null`**； 断言：expect(dts).toContain(\"{ a: 1 }\");"	没测该层	keep	keep	—
-"helper(x+5, x+1)：返回位是 b（gt(1)），不是 a（gt(5)）"	"组合式返回位的**相对锚定只按 root 节点 id 匹配**、从不比较 shift 的 offset ⇒ 同一个上游变量派生出的多个形参**共用同一个 root id** ⇒ 相对锚定 循环取到**第一个**候选 ⇒ 把**另一个形参的约束**写成返回约束 ⇒ 生成的契约 **unsound**（比实现能保证的更强）。 }` + `helper(x + 5, x + 1)`（x > 0） ⇒ 改前：返回位写成 `a`（gt(5)），实现真值只有 gt(1) ⇒ 改后：返回位写成 `b`（gt(1)） 负控制：不同 root 的两个形参（既有锚定不变）、返回位不是形参本身（相对 shift 形态不变）。 断言：expect(r.ha"	夹具漏形态	keep	keep	—
-"helper(x+1, x+5)：参数顺序反向时返回位仍是 b（gt(5)）"	"组合式返回位的**相对锚定只按 root 节点 id 匹配**、从不比较 shift 的 offset ⇒ 同一个上游变量派生出的多个形参**共用同一个 root id** ⇒ 相对锚定 循环取到**第一个**候选 ⇒ 把**另一个形参的约束**写成返回约束 ⇒ 生成的契约 **unsound**（比实现能保证的更强）。 }` + `helper(x + 5, x + 1)`（x > 0） ⇒ 改前：返回位写成 `a`（gt(5)），实现真值只有 gt(1) ⇒ 改后：返回位写成 `b`（gt(1)） 负控制：不同 root 的两个形参（既有锚定不变）、返回位不是形参本身（相对 shift 形态不变）。 断言：expect(help"	夹具漏形态	keep	keep	—
-"落盘侧车的返回位是 b（改前写的是 a）"	"断言：expect(e.sidecars.length).toBe(1);；expect(e.sidecars[0]!.issues.filter((i) => i.severity === \"error\")).toEqual([]);"	没测该层	keep	keep	—
-"负控制：不同 root 的两个形参 —— 既有锚定不变（仍取实现返回的那个）"	"组合式返回位的**相对锚定只按 root 节点 id 匹配**、从不比较 shift 的 offset ⇒ 同一个上游变量派生出的多个形参**共用同一个 root id** ⇒ 相对锚定 循环取到**第一个**候选 ⇒ 把**另一个形参的约束**写成返回约束 ⇒ 生成的契约 **unsound**（比实现能保证的更强）。 }` + `helper(x + 5, x + 1)`（x > 0） ⇒ 改前：返回位写成 `a`（gt(5)），实现真值只有 gt(1) ⇒ 改后：返回位写成 `b`（gt(1)） 负控制：不同 root 的两个形参（既有锚定不变）、返回位不是形参本身（相对 shift 形态不变）。 断言：expect(pick"	夹具漏形态	keep	keep	—
-"负控制：返回位不是形参本身 —— 保持相对 shift 形态（a.shift(1)）"	"组合式返回位的**相对锚定只按 root 节点 id 匹配**、从不比较 shift 的 offset ⇒ 同一个上游变量派生出的多个形参**共用同一个 root id** ⇒ 相对锚定 循环取到**第一个**候选 ⇒ 把**另一个形参的约束**写成返回约束 ⇒ 生成的契约 **unsound**（比实现能保证的更强）。 }` + `helper(x + 5, x + 1)`（x > 0） ⇒ 改前：返回位写成 `a`（gt(5)），实现真值只有 gt(1) ⇒ 改后：返回位写成 `b`（gt(1)） 负控制：不同 root 的两个形参（既有锚定不变）、返回位不是形参本身（相对 shift 形态不变）。 断言：expect(bump"	夹具漏形态	keep	keep	—
-"guard / standard / standard 产物 逐值同裁决（含用户原型上的同名键）"	"**键存在性**口径三面分裂：zod 面（`z.object` 原生用 `key in data`， 含 `Object.prototype` 成员）放行 `Object.create({ toString: \"s\" })`，而 guard / standard 面判「不在场」（减污染键）⇒ 同一个值三面结论相反。 `Object.prototype` 自身的成员（`toString` / `valueOf` / `constructor` …）不算」： - guard 面 = core `denote.ts` 的 `hasPropertyClause`（子句文本被既有测试钉住）； 断言：expect({ label, guard:"	没测该层	keep	keep	—
-"用户原型上的**非**污染键三面都算在场（不误伤 HasProperty 语义）"	"**键存在性**口径三面分裂：zod 面（`z.object` 原生用 `key in data`， 含 `Object.prototype` 成员）放行 `Object.create({ toString: \"s\" })`，而 guard / standard 面判「不在场」（减污染键）⇒ 同一个值三面结论相反。 `Object.prototype` 自身的成员（`toString` / `valueOf` / `constructor` …）不算」： - guard 面 = core `denote.ts` 的 `hasPropertyClause`（子句文本被既有测试钉住）； 断言：expect(guard(inherited"	没测该层	keep	keep	—
-"zod 产物：必填污染键槽带上同一条存在性子句（修前完全没有）"	"**键存在性**口径三面分裂：zod 面（`z.object` 原生用 `key in data`， 含 `Object.prototype` 成员）放行 `Object.create({ toString: \"s\" })`，而 guard / standard 面判「不在场」（减污染键）⇒ 同一个值三面结论相反。 `Object.prototype` 自身的成员（`toString` / `valueOf` / `constructor` …）不算」： - guard 面 = core `denote.ts` 的 `hasPropertyClause`（子句文本被既有测试钉住）； 断言：expect(polluted).toCon"	没测该层	keep	keep	—
-"形状前提：combinedAbs 是 obj 形状 + view: \"array\""	"与原生值槽面**逐字同形**的普通对象（旧 obj 判据会放行它） 断言：expect(a.shape.k).toBe(\"obj\");；expect(a.shape.k === \"obj\" ? a.shape.view : undefined).toBe(\"array\");"	夹具漏形态	keep	keep	—
-"dts 面：元组 + 其余自有槽的交集（不再摊平成对象字面量类型）"	"（产物面）—— **数组视图**（`Shape.view === \"array\"`，RegExpExecArray 等）在四个产物面必须投影成**数组**，与具名 guard / standard 判据同口径。 - guard：头部要求 `!Array.isArray(v)` ⇒ **拒绝**实现自己的返回值（假红）； 断言：expect(lines).toContain('[\"abc\", \"b\"]');；expect(lines).toMatch(/& \\{ index: 0; input: \"abc\"; groups: undefined \\}/);"	夹具漏形态	keep	keep	—
-"guard 面：真实数组放行、同形普通对象拒绝（头部判据是 Array.isArray）"	"（产物面）—— **数组视图**（`Shape.view === \"array\"`，RegExpExecArray 等）在四个产物面必须投影成**数组**，与具名 guard / standard 判据同口径。 - guard：头部要求 `!Array.isArray(v)` ⇒ **拒绝**实现自己的返回值（假红）； 断言：expect(expr).toContain(\"Array.isArray(value)\");；expect(expr).not.toContain(\"!Array.isArray(value)\");"	夹具漏形态	keep	keep	—
-"standard 面（库函数 + 产物）：接受真实数组、拒绝同形对象 / 缺槽数组"	"（产物面）—— **数组视图**（`Shape.view === \"array\"`，RegExpExecArray 等）在四个产物面必须投影成**数组**，与具名 guard / standard 判据同口径。 - guard：头部要求 `!Array.isArray(v)` ⇒ **拒绝**实现自己的返回值（假红）； 断言：expect(ok(nativeValue())).toBe(true);；expect(ok(lookalikeObject())).toBe(false);"	夹具漏形态	keep	keep	—
-"zod 面：`z.tuple([...])`（`z.object` 会把真实数组判成违规）"	"（产物面）—— **数组视图**（`Shape.view === \"array\"`，RegExpExecArray 等）在四个产物面必须投影成**数组**，与具名 guard / standard 判据同口径。 - guard：头部要求 `!Array.isArray(v)` ⇒ **拒绝**实现自己的返回值（假红）； 断言：expect(source).toContain('z.tuple([z.literal(\"abc\"), z.literal(\"b\")])');；expect(source).not.toContain(\"z.object(\");"	夹具漏形态	keep	keep	—
-"多见证 join：两条数组视图见证 ⇒ facet 仍在；混入普通对象 ⇒ facet 消失"	"（产物面）—— **数组视图**（`Shape.view === \"array\"`，RegExpExecArray 等）在四个产物面必须投影成**数组**，与具名 guard / standard 判据同口径。 - guard：头部要求 `!Array.isArray(v)` ⇒ **拒绝**实现自己的返回值（假红）； 断言：expect(joined.shape.k).toBe(\"obj\");；expect(joined.shape.k === \"obj\" ? joined.shape.view : undefined).toBe(\"array\");"	夹具漏形态	keep	keep	—
+库函数版与生成产物版对稀疏洞给出逐字相同的结果；负控制：稠密数组两份实现都放行（不得把稠密数组误判成稀疏）	emit-types 聚合矩阵	没测该层	keep	keep	—
+冷跑与缓存命中跑逐字相同（递归展开不被 any().optional() 取代）；负控制：非 lazy 契约的往返显示不变、缓存无节点表；旧缓存表（无版本号）整层 miss：不得当命中读出退化约束	emit-types 聚合矩阵	没测该层	keep	keep	—
+库函数版：非函数被拒，函数放行；生成产物版：与 zod 面 z.function() 同判；promise 节点自 BUG-025 起拒绝裸 thenable（不再放行一切）	emit-types 聚合矩阵	没测该层	keep	keep	—
+names the source file path and states the path semantics；negative control: an allowlist matching the source file is not denied	emit-types 聚合矩阵	没测该层	keep	keep	—
+declares the builders used by the generated section in a .nudo.ts sidecar；the .nudo.ts sidecar is idempotent (second emit reports no change)；negative control: a .js sidecar gets no builder declaration (bare injection suffices)	emit-types 聚合矩阵	没测该层	keep	keep	—
+TS 投影面：Abs any 与 Abs unknown 都渲染成 TS unknown；nudo 展示面仍区分 any / unknown（abs.md display 规则作用域不变）；未受约束的入口形参在 .d.ts 里渲染成 unknown（与三面校验器同口径）；Case 见证行按观测值渲染，且产物不出现 TS any；产物真的能过 tsc --noEmit --strict（unknown 经收窄后可用）；未收窄的 unknown 返回值被 TS2571 拦下（正确	emit-types 聚合矩阵	没测该层	keep	keep	—
+`.nudo.ts` 侧车带 builder import，TS 关键字构建器改名导入；产物真的过 `tsc --noEmit --strict`（改前 3× TS 错误）；改前形态（无 import 的裸 DSL）确实过不了 tsc —— 回归有效性自证；负控制：`.nudo.js` 侧车维持「裸注入」纪律（不加 import）；负控制：已有侧车自带 import 时不重复 import（沿用既有本地名）	emit-types 聚合矩阵	没测该层	keep	keep	—
+uses an alias binding when an import local shadows the target name；the whole file's contracts survive (handwritten binding still binds)；is idempotent (second emit reports no change)；negative control: no import local shadow ⇒ the direct bind	emit-types 聚合矩阵	没测该层	keep	keep	—
+库函数版：bigint / 循环对象 / 抛错 getter 都返回 Result 而非抛异常；生成产物版：validate(bigint) / validate(循环对象) 不抛；负控制：合法值仍放行（兜底不得误拒）；负控制：numLit(42) 的消息仍是可读的类型错（不因兜底变成无信息）	emit-types 聚合矩阵	没测该层	keep	keep	—
+保留字作绑定名 ⇒ `_` 前缀（不是直出）；多个保留字都清洗（default / let / eval / await）；负控制：合法绑定名原样保留（不误伤）；负控制：点号名仍按既有口径清洗成 C_m（#494 不回退）	emit-types 聚合矩阵	没测该层	keep	keep	—
+库函数版：Infinity 放行、null / 0 拒绝，消息保真；生成产物版：Infinity 不再被折成 null；负控制：-Infinity 同样保真；普通字面量消息格式不变	emit-types 聚合矩阵	没测该层	keep	keep	—
+同名局部绑定不再命中：定位到顶层声明；注解落进顶层 alpha 的 JSDoc（不是 beta 的函数体）；改前形态：旧实现把注解写进 beta 的函数体（回归有效性自证）；负控制：顶层 const 箭头函数仍可定位（既有行为不变）；负控制：函数体里的同名局部 const 不是目标函数 → 不定位	emit-types 聚合矩阵	没测该层	keep	keep	—
+CRLF 源文件写回后仍是纯 CRLF（新插入的行不带裸 LF）；负控制：LF 源文件写回后仍是纯 LF（不得被改成 CRLF）；CRLF + 末行无终止符：行尾仍是纯 CRLF，末尾仍无换行；负控制：文件末尾有无换行不变（LF + 有末尾换行）	emit-types 聚合矩阵	没测该层	keep	keep	—
+空 obj → Record<string, never>（不是 {}）；负控制：有成员的对象仍是结构体（不误伤）；端到端：空对象返回值的属性读不再吃 TS2339；联合类型里契约义务不被吸收（{ a: number } | Record<string, never>）；非对象实参被拒（与 zod 面「必须是对象」同裁决）；改前形态确实红（{} ⇒ TS2339，且联合里吸收契约义务）；负控制：字面量成员对象不受影响（结构体照旧，嵌套精度保留）	emit-types 聚合矩阵	没测该层	keep	keep	—
+helper(x+5, x+1)：返回位是 b（gt(1)），不是 a（gt(5)）；helper(x+1, x+5)：参数顺序反向时返回位仍是 b（gt(5)）；落盘侧车的返回位是 b（改前写的是 a）；负控制：不同 root 的两个形参 —— 既有锚定不变（仍取实现返回的那个）；负控制：返回位不是形参本身 —— 保持相对 shift 形态（a.shift(1)）	emit-types 聚合矩阵	没测该层	keep	keep	—
+guard / standard / standard 产物 逐值同裁决（含用户原型上的同名键）；用户原型上的**非**污染键三面都算在场（不误伤 HasProperty 语义）；zod 产物：必填污染键槽带上同一条存在性子句（修前完全没有）	emit-types 聚合矩阵	没测该层	keep	keep	—
+形状前提：combinedAbs 是 obj 形状 + view: "array"；dts 面：元组 + 其余自有槽的交集（不再摊平成对象字面量类型）；guard 面：真实数组放行、同形普通对象拒绝（头部判据是 Array.isArray）；standard 面（库函数 + 产物）：接受真实数组、拒绝同形对象 / 缺槽数组；zod 面：`z.tuple([...])`（`z.object` 会把真实数组判成违规）；多见证 join：两条数组视图见证 ⇒ facet 仍在；混入	emit-types 聚合矩阵	没测该层	keep	keep	—
+```
+
+```audit-deleted
+title	reason	evidence
+--emit --all 跳过手写绑定（name-clash），侧车内容原样保留	dup:emit-types 聚合矩阵	commit:8fa85177
+core 与 service 对「谁是生成段」的判定一致（跨包一致性）	dup:emit-types 聚合矩阵	commit:8fa85177
+合法生成段仍被识别（emit 走段替换，不报 name-clash）	dup:emit-types 聚合矩阵	commit:8fa85177
+段内夹无关 const ⇒ 手写段不是生成段（Bug 432 的段边界，同批落地）	dup:emit-types 聚合矩阵	commit:8fa85177
+本地调用点来源的宽域段带 `local` 标记；调用点消失 ⇒ 段被删（残差收口）	dup:emit-types 聚合矩阵	commit:8fa85177
+`--from` 外部记录来源的段带 `external` 标记；证据缺失 ⇒ 留存（不误删）	dup:emit-types 聚合矩阵	commit:8fa85177
+旧侧车（无 `// evidence:` 行）的宽域段仍然留存 —— 迁移期零回归	dup:emit-types 聚合矩阵	commit:8fa85177
+旧侧车的单点字面量见证段仍按旧启发式删除（既有语义不变）	dup:emit-types 聚合矩阵	commit:8fa85177
+`derived-from` 段即使带 `local` 标记也留存（root 可能在别的文件）	dup:emit-types 聚合矩阵	commit:8fa85177
+标记是确定性的：连续两次发射逐字节相同，第二次无改动	dup:emit-types 聚合矩阵	commit:8fa85177
+存在边界：有外部记录参与但仍有本地证据 ⇒ 标记 external（保守方向 = 少删）	dup:emit-types 聚合矩阵	commit:8fa85177
+注入 `nullable(…)` 的同一次改写里补上 import（TS2304 的根因）	dup:emit-types 聚合矩阵	commit:8fa85177
+不变式：侧车用到的每个 builder 都被 import 覆盖（tsc --noEmit --strict 可编译）	dup:emit-types 聚合矩阵	commit:8fa85177
+已有 `nullable` import ⇒ 不重复追加	dup:emit-types 聚合矩阵	commit:8fa85177
+`nullable` 被改名导入（`nullable as nb`）⇒ 新包装按本地名写	dup:emit-types 聚合矩阵	commit:8fa85177
+负控制：`.nudo.js` 侧车不加 import 行（引擎运行时注入 builder）	dup:emit-types 聚合矩阵	commit:8fa85177
+负控制：return 位已经是 `nullable(…)` ⇒ 无改写（不重复包装）	dup:emit-types 聚合矩阵	commit:8fa85177
+原生域前提：NaN / ±Infinity 都是 number（Abs 域含之）	dup:emit-types 聚合矩阵	commit:8fa85177
+无 refinement 的 number prim 渲染成放宽形态（不再收窄）	dup:emit-types 聚合矩阵	commit:8fa85177
+带 numBound 的 number prim 只放宽满足该界的那一端（BUG-093 收口）	dup:emit-types 聚合矩阵	commit:8fa85177
+共享节点形态不变（standard 面不受影响——S4 的决定）	dup:emit-types 聚合矩阵	commit:8fa85177
+lit NaN 的兜底投影覆盖 NaN 域（不再假红）	dup:emit-types 聚合矩阵	commit:8fa85177
+负控制：lit 精度的 number 仍投影成字面量（不牵连邻近形态）	dup:emit-types 聚合矩阵	commit:8fa85177
+不确信置信度 ⇒ zod 放宽（不再 z.literal(1)）	dup:emit-types 聚合矩阵	commit:8fa85177
+不确信置信度 ⇒ standard 节点放宽（prim 而非 lit）	dup:emit-types 聚合矩阵	commit:8fa85177
+不确信置信度 ⇒ guard 放宽（不再 data === 1）	dup:emit-types 聚合矩阵	commit:8fa85177
+放宽记进 dropped 台账（损失可观测）	dup:emit-types 聚合矩阵	commit:8fa85177
+负控制：确信置信度（exact）⇒ 字面量精度保留	dup:emit-types 聚合矩阵	commit:8fa85177
+负控制：契约面（pred 通道）⇒ 字面量精度保留	dup:emit-types 聚合矩阵	commit:8fa85177
+renders a duplicated issue exactly once	dup:emit-types 聚合矩阵	commit:8fa85177
+keeps distinct issues (dedupe must not swallow real diagnostics)	dup:emit-types 聚合矩阵	commit:8fa85177
+consumes the issues after rendering (a second renderer cannot duplicate them)	dup:emit-types 聚合矩阵	commit:8fa85177
+守卫签名带类型标注（入参 unknown / 返回 boolean）	dup:emit-types 聚合矩阵	commit:8fa85177
+各类形态的守卫产物写进同一模块也能过 strict 编译	dup:emit-types 聚合矩阵	commit:8fa85177
+负控制：守卫的运行时语义不变（谓词文本原样）	dup:emit-types 聚合矩阵	commit:8fa85177
+负控制：守卫产物不引用用户类名（不会 TS2304）	dup:emit-types 聚合矩阵	commit:8fa85177
+库函数版：超长 / 欠长元组被拒，等长放行	dup:emit-types 聚合矩阵	commit:8fa85177
+生成产物版：超长元组被拒（与库函数版同口径）	dup:emit-types 聚合矩阵	commit:8fa85177
+负控制：带 rest 的元组仍放行超长元素（rest 语义不回归）	dup:emit-types 聚合矩阵	commit:8fa85177
+derives ONE row for the same downstream export hit by two roots	dup:emit-types 聚合矩阵	commit:8fa85177
+writes ONE section — the sidecar has no duplicate export	dup:emit-types 聚合矩阵	commit:8fa85177
+refuses to write a sidecar that would carry a duplicate export	dup:emit-types 聚合矩阵	commit:8fa85177
+merges the two roots' domains — order-independent snapshot	dup:emit-types 聚合矩阵	commit:8fa85177
+is idempotent after the merge (second emit: no change)	dup:emit-types 聚合矩阵	commit:8fa85177
+库函数版与生成产物版对稀疏洞给出逐字相同的结果	dup:emit-types 聚合矩阵	commit:8fa85177
+负控制：稠密数组两份实现都放行（不得把稠密数组误判成稀疏）	dup:emit-types 聚合矩阵	commit:8fa85177
+冷跑与缓存命中跑逐字相同（递归展开不被 any().optional() 取代）	dup:emit-types 聚合矩阵	commit:8fa85177
+负控制：非 lazy 契约的往返显示不变、缓存无节点表	dup:emit-types 聚合矩阵	commit:8fa85177
+旧缓存表（无版本号）整层 miss：不得当命中读出退化约束	dup:emit-types 聚合矩阵	commit:8fa85177
+库函数版：非函数被拒，函数放行	dup:emit-types 聚合矩阵	commit:8fa85177
+生成产物版：与 zod 面 z.function() 同判	dup:emit-types 聚合矩阵	commit:8fa85177
+promise 节点自 BUG-025 起拒绝裸 thenable（不再放行一切）	dup:emit-types 聚合矩阵	commit:8fa85177
+names the source file path and states the path semantics	dup:emit-types 聚合矩阵	commit:8fa85177
+negative control: an allowlist matching the source file is not denied	dup:emit-types 聚合矩阵	commit:8fa85177
+declares the builders used by the generated section in a .nudo.ts sidecar	dup:emit-types 聚合矩阵	commit:8fa85177
+the .nudo.ts sidecar is idempotent (second emit reports no change)	dup:emit-types 聚合矩阵	commit:8fa85177
+negative control: a .js sidecar gets no builder declaration (bare injection suffices)	dup:emit-types 聚合矩阵	commit:8fa85177
+TS 投影面：Abs any 与 Abs unknown 都渲染成 TS unknown	dup:emit-types 聚合矩阵	commit:8fa85177
+nudo 展示面仍区分 any / unknown（abs.md display 规则作用域不变）	dup:emit-types 聚合矩阵	commit:8fa85177
+未受约束的入口形参在 .d.ts 里渲染成 unknown（与三面校验器同口径）	dup:emit-types 聚合矩阵	commit:8fa85177
+Case 见证行按观测值渲染，且产物不出现 TS any	dup:emit-types 聚合矩阵	commit:8fa85177
+产物真的能过 tsc --noEmit --strict（unknown 经收窄后可用）	dup:emit-types 聚合矩阵	commit:8fa85177
+未收窄的 unknown 返回值被 TS2571 拦下（正确的类型安全提示，非假红）	dup:emit-types 聚合矩阵	commit:8fa85177
+`.nudo.ts` 侧车带 builder import，TS 关键字构建器改名导入	dup:emit-types 聚合矩阵	commit:8fa85177
+产物真的过 `tsc --noEmit --strict`（改前 3× TS 错误）	dup:emit-types 聚合矩阵	commit:8fa85177
+改前形态（无 import 的裸 DSL）确实过不了 tsc —— 回归有效性自证	dup:emit-types 聚合矩阵	commit:8fa85177
+负控制：`.nudo.js` 侧车维持「裸注入」纪律（不加 import）	dup:emit-types 聚合矩阵	commit:8fa85177
+负控制：已有侧车自带 import 时不重复 import（沿用既有本地名）	dup:emit-types 聚合矩阵	commit:8fa85177
+uses an alias binding when an import local shadows the target name	dup:emit-types 聚合矩阵	commit:8fa85177
+the whole file's contracts survive (handwritten binding still binds)	dup:emit-types 聚合矩阵	commit:8fa85177
+is idempotent (second emit reports no change)	dup:emit-types 聚合矩阵	commit:8fa85177
+negative control: no import local shadow ⇒ the direct binding is used	dup:emit-types 聚合矩阵	commit:8fa85177
+库函数版：bigint / 循环对象 / 抛错 getter 都返回 Result 而非抛异常	dup:emit-types 聚合矩阵	commit:8fa85177
+生成产物版：validate(bigint) / validate(循环对象) 不抛	dup:emit-types 聚合矩阵	commit:8fa85177
+负控制：合法值仍放行（兜底不得误拒）	dup:emit-types 聚合矩阵	commit:8fa85177
+负控制：numLit(42) 的消息仍是可读的类型错（不因兜底变成无信息）	dup:emit-types 聚合矩阵	commit:8fa85177
+保留字作绑定名 ⇒ `_` 前缀（不是直出）	dup:emit-types 聚合矩阵	commit:8fa85177
+多个保留字都清洗（default / let / eval / await）	dup:emit-types 聚合矩阵	commit:8fa85177
+负控制：合法绑定名原样保留（不误伤）	dup:emit-types 聚合矩阵	commit:8fa85177
+负控制：点号名仍按既有口径清洗成 C_m（#494 不回退）	dup:emit-types 聚合矩阵	commit:8fa85177
+库函数版：Infinity 放行、null / 0 拒绝，消息保真	dup:emit-types 聚合矩阵	commit:8fa85177
+生成产物版：Infinity 不再被折成 null	dup:emit-types 聚合矩阵	commit:8fa85177
+负控制：-Infinity 同样保真；普通字面量消息格式不变	dup:emit-types 聚合矩阵	commit:8fa85177
+同名局部绑定不再命中：定位到顶层声明	dup:emit-types 聚合矩阵	commit:8fa85177
+注解落进顶层 alpha 的 JSDoc（不是 beta 的函数体）	dup:emit-types 聚合矩阵	commit:8fa85177
+改前形态：旧实现把注解写进 beta 的函数体（回归有效性自证）	dup:emit-types 聚合矩阵	commit:8fa85177
+负控制：顶层 const 箭头函数仍可定位（既有行为不变）	dup:emit-types 聚合矩阵	commit:8fa85177
+负控制：函数体里的同名局部 const 不是目标函数 → 不定位	dup:emit-types 聚合矩阵	commit:8fa85177
+CRLF 源文件写回后仍是纯 CRLF（新插入的行不带裸 LF）	dup:emit-types 聚合矩阵	commit:8fa85177
+负控制：LF 源文件写回后仍是纯 LF（不得被改成 CRLF）	dup:emit-types 聚合矩阵	commit:8fa85177
+CRLF + 末行无终止符：行尾仍是纯 CRLF，末尾仍无换行	dup:emit-types 聚合矩阵	commit:8fa85177
+负控制：文件末尾有无换行不变（LF + 有末尾换行）	dup:emit-types 聚合矩阵	commit:8fa85177
+空 obj → Record<string, never>（不是 {}）	dup:emit-types 聚合矩阵	commit:8fa85177
+负控制：有成员的对象仍是结构体（不误伤）	dup:emit-types 聚合矩阵	commit:8fa85177
+端到端：空对象返回值的属性读不再吃 TS2339	dup:emit-types 聚合矩阵	commit:8fa85177
+联合类型里契约义务不被吸收（{ a: number } | Record<string, never>）	dup:emit-types 聚合矩阵	commit:8fa85177
+非对象实参被拒（与 zod 面「必须是对象」同裁决）	dup:emit-types 聚合矩阵	commit:8fa85177
+改前形态确实红（{} ⇒ TS2339，且联合里吸收契约义务）	dup:emit-types 聚合矩阵	commit:8fa85177
+负控制：字面量成员对象不受影响（结构体照旧，嵌套精度保留）	dup:emit-types 聚合矩阵	commit:8fa85177
+helper(x+5, x+1)：返回位是 b（gt(1)），不是 a（gt(5)）	dup:emit-types 聚合矩阵	commit:8fa85177
+helper(x+1, x+5)：参数顺序反向时返回位仍是 b（gt(5)）	dup:emit-types 聚合矩阵	commit:8fa85177
+落盘侧车的返回位是 b（改前写的是 a）	dup:emit-types 聚合矩阵	commit:8fa85177
+负控制：不同 root 的两个形参 —— 既有锚定不变（仍取实现返回的那个）	dup:emit-types 聚合矩阵	commit:8fa85177
+负控制：返回位不是形参本身 —— 保持相对 shift 形态（a.shift(1)）	dup:emit-types 聚合矩阵	commit:8fa85177
+guard / standard / standard 产物 逐值同裁决（含用户原型上的同名键）	dup:emit-types 聚合矩阵	commit:8fa85177
+用户原型上的**非**污染键三面都算在场（不误伤 HasProperty 语义）	dup:emit-types 聚合矩阵	commit:8fa85177
+zod 产物：必填污染键槽带上同一条存在性子句（修前完全没有）	dup:emit-types 聚合矩阵	commit:8fa85177
+形状前提：combinedAbs 是 obj 形状 + view: "array"	dup:emit-types 聚合矩阵	commit:8fa85177
+dts 面：元组 + 其余自有槽的交集（不再摊平成对象字面量类型）	dup:emit-types 聚合矩阵	commit:8fa85177
+guard 面：真实数组放行、同形普通对象拒绝（头部判据是 Array.isArray）	dup:emit-types 聚合矩阵	commit:8fa85177
+standard 面（库函数 + 产物）：接受真实数组、拒绝同形对象 / 缺槽数组	dup:emit-types 聚合矩阵	commit:8fa85177
+zod 面：`z.tuple([...])`（`z.object` 会把真实数组判成违规）	dup:emit-types 聚合矩阵	commit:8fa85177
+多见证 join：两条数组视图见证 ⇒ facet 仍在；混入普通对象 ⇒ facet 消失	dup:emit-types 聚合矩阵	commit:8fa85177
 ```

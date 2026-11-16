@@ -6,90 +6,119 @@
 
 ```audit
 title	rootCause	gap	action	status	evidence
-"同一份源码在两个目录下导出到同一 out 目录 ⇒ 只有一份产物"	"`nudo export --out` 用**绝对源路径**当模块标识 ⇒ 产物重复 + 输出不可复现。 症状：同一份源码放在两个目录里分别导出到同一个 `--out` 目录 ⇒ 第二个模块被 当成「另一个模块」⇒ 多出一份 hash 后缀副本，旧副本遗留； 断言：expect(a.status).toBe(0);；expect(a.stdout).toContain(\"wrote\");"	没测该层	keep	keep	—
-"产物 marker 不含绝对路径（同一源码 ⇒ 同一字节）"	"`nudo export --out` 用**绝对源路径**当模块标识 ⇒ 产物重复 + 输出不可复现。 症状：同一份源码放在两个目录里分别导出到同一个 `--out` 目录 ⇒ 第二个模块被 当成「另一个模块」⇒ 多出一份 hash 后缀副本，旧副本遗留； 断言：expect(runCliTsx([\"export\", join(dir, \"A\", \"clean.js\"), \"--format\", \"dts\", \"--out\", outA]).status).toBe(0);；expect(runCliTsx([\"export\", join(dir, \"B\", \"clean.js\"), \"--format\", \"dts\", \"--o"	没测该层	keep	keep	—
-"用户导出名在 stdout 的 dts 段保持原名（不出现 *Dts 后缀）"	"`export --format all` 的 stdout 会**劫持用户自己的导出名**，且与 `--out` 产物不一致。 症状：用户模块里有 `fooInput` / `fooOutput`（极常见的命名）时，zod 段生成的 `<fn>Input` / `<fn>Output` 先占了去重表 ⇒ dts 段（承载**用户 API**）被改名成 `fooInputDts` / `fooOutputDts`，而 `--out` 落盘（各段各占一个文件）不改名 ⇒ 同一命令两条投递路径给出**两份不同的公开 API**。 断言：expect(r.status).toBe(0);；expect(r.stdout).toContai"	没测该层	keep	keep	—
-"stdout 的 dts 段与 --out 落盘的 .d.ts 逐字相同（两条投递路径同一公开 API）"	"`export --format all` 的 stdout 会**劫持用户自己的导出名**，且与 `--out` 产物不一致。 症状：用户模块里有 `fooInput` / `fooOutput`（极常见的命名）时，zod 段生成的 `<fn>Input` / `<fn>Output` 先占了去重表 ⇒ dts 段（承载**用户 API**）被改名成 `fooInputDts` / `fooOutputDts`，而 `--out` 落盘（各段各占一个文件）不改名 ⇒ 同一命令两条投递路径给出**两份不同的公开 API**。 断言：expect(stdout.status).toBe(0);；expect(written.statu"	没测该层	keep	keep	—
-"只有再导出的模块：dts 产出再导出声明（不是「无函数」早退）"	"纯 re-export 模块（barrel）`export --format dts` 不产出任何产物。 症状：`export { helper } from \"./cjs.js\"; 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain('export { helper } from \"./cjs.js\";');"	没测该层	keep	keep	—
-"负控制：本地函数 + 再导出的模块两条面都在"	"纯 re-export 模块（barrel）`export --format dts` 不产出任何产物。 症状：`export { helper } from \"./cjs.js\"; 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain(\"export declare function own(): number;\");"	没测该层	keep	keep	—
-"负控制：真的没有导出面的模块仍如实说明（不静默零产物）"	"断言：expect(r.status).toBe(0);；expect(r.stdout + r.stderr).toContain(\"No \");"	没测该层	keep	keep	—
-"--fn renamed ⇒ 草拟出 `export const renamed = fn(`（不再是空草稿）"	"契约身份恒为**导出名**（DESIGN-003），但 `--fn` 过滤把用户的导出名直接与 `analysis.functions[].name`（**本地名**）比较、且 CLI 的「一个都没命中」 门禁只比 `entry.fn`（本地名）⇒ 别名导出（`export { localFn as renamed }`） 永远匹配不上 ⇒ 草稿里一条 export 都没有。 断言：expect(r.status).toBe(0);；expect(r.stderr).not.toContain(\"matched no export\");"	没测该层	keep	keep	—
-"不回归 BUG-042：名字写错仍是用法错误 + 不落盘"	"断言：expect(r.status).toBe(1);；expect(r.stderr).toContain(\"matched no export\");"	没测该层	keep	keep	—
-"名字写错 ⇒ 用法错误（exit 1）+ 列出可用导出名 + **不落盘**"	"`nudo contract --draft --fn <写错的名字>` 是**静默 no-op**（空草稿 + exit 0）。 改前（`contract-draft.ts`）：`fnNames` 原样传进 `draftContract`， **没有「一个都没命中」的门禁** ⇒ 发射器把全部条目丢弃 ⇒ 落盘一份只有头部的 空草稿、exit 0 ⇒ 名字拼错在 CI / agent 流程里**不可见**； 断言：expect(r.status).toBe(1);；expect(r.stderr).toContain(\"matched no export\");"	没测该层	keep	keep	—
-"--json 面：stdout 仍是**一份合法 JSON 文档**（usage-error 有条目）+ exit 1"	"`nudo contract --draft --fn <写错的名字>` 是**静默 no-op**（空草稿 + exit 0）。 改前（`contract-draft.ts`）：`fnNames` 原样传进 `draftContract`， **没有「一个都没命中」的门禁** ⇒ 发射器把全部条目丢弃 ⇒ 落盘一份只有头部的 空草稿、exit 0 ⇒ 名字拼错在 CI / agent 流程里**不可见**； 断言：expect(r.status).toBe(1);；expect(Array.isArray(doc)).toBe(true);"	没测该层	keep	keep	—
-"对照组：名字正确 ⇒ exit 0 且草稿点名该导出"	"`nudo contract --draft --fn <写错的名字>` 是**静默 no-op**（空草稿 + exit 0）。 改前（`contract-draft.ts`）：`fnNames` 原样传进 `draftContract`， **没有「一个都没命中」的门禁** ⇒ 发射器把全部条目丢弃 ⇒ 落盘一份只有头部的 空草稿、exit 0 ⇒ 名字拼错在 CI / agent 流程里**不可见**； 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain(\"export const handwritten = fn(\");"	没测该层	keep	keep	—
-"非导出的本地函数名 ⇒ 仍走**可见**的 not-an-export 条目（门禁不误伤）"	"`nudo contract --draft --fn <写错的名字>` 是**静默 no-op**（空草稿 + exit 0）。 改前（`contract-draft.ts`）：`fnNames` 原样传进 `draftContract`， **没有「一个都没命中」的门禁** ⇒ 发射器把全部条目丢弃 ⇒ 落盘一份只有头部的 空草稿、exit 0 ⇒ 名字拼错在 CI / agent 流程里**不可见**； 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain(\"not-an-export\");"	没测该层	keep	keep	—
-"dts 面：返回位是真类型（不是 unknown），且与 dot 形态逐字一致"	"症状（修前）：同一份 `x + 1`，`module.exports = { h(x) { … } }` 的 - dts → `export declare function h(x: unknown): unknown; `（校验器空操作 = 假绿） 而对照写法 `module.exports.h = fn` 三方言都正常。 断言：expect(o.status).toBe(0);；expect(o.stdout).toContain(\"export declare function h(x: unknown): number | string;\");"	没测该层	keep	keep	—
-"zod 面：Output 是联合（不是 `z.unknown()`），且与 dot 形态逐字一致"	"症状（修前）：同一份 `x + 1`，`module.exports = { h(x) { … } }` 的 - dts → `export declare function h(x: unknown): unknown; `（校验器空操作 = 假绿） 而对照写法 `module.exports.h = fn` 三方言都正常。 断言：expect(o.status).toBe(0);；expect(o.stdout).not.toContain(\"hOutput = z.unknown()\");"	没测该层	keep	keep	—
-"guard 面：校验器真的校验（不是 `return true;`），且与 dot 形态逐字一致"	"症状（修前）：同一份 `x + 1`，`module.exports = { h(x) { … } }` 的 - dts → `export declare function h(x: unknown): unknown; `（校验器空操作 = 假绿） 而对照写法 `module.exports.h = fn` 三方言都正常。 断言：expect(o.status).toBe(0);；expect(o.stdout).not.toContain(\"return true;\");"	没测该层	keep	keep	—
-"违约见证不写入；固化后 check 仍绿（旧行为：check FAILED + exit 1）"	"（CLI 面）：`nudo test --freeze` 把**违反被调方契约**的见证写进被调方 ⇒ 一个本来绿色的被调方被自己的 freeze 操作冻成红色（`nudo:case-inconsistency`）， 且 `--freeze=update` 原样重记 ⇒ 没有自愈路径。 契约：违反被写方**手写契约**的候选见证**不写入**（归因留给调用现场的 `nudo:contract-domain-exceeds`）⇒ 固化后 check 仍绿； 断言：expect(before.status, before.stdout).toBe(0);；expect(freeze.stdout).toContain(\"freeze →"	没测该层	keep	keep	—
-"--freeze=update 不再重记违约见证（旧行为：原样重记同一条 ⇒ 永远红）"	"（CLI 面）：`nudo test --freeze` 把**违反被调方契约**的见证写进被调方 ⇒ 一个本来绿色的被调方被自己的 freeze 操作冻成红色（`nudo:case-inconsistency`）， 且 `--freeze=update` 原样重记 ⇒ 没有自愈路径。 契约：违反被写方**手写契约**的候选见证**不写入**（归因留给调用现场的 `nudo:contract-domain-exceeds`）⇒ 固化后 check 仍绿； 断言：expect(first.stdout).toContain(\"freeze →\");；expect(upd.stdout).toContain(\"freeze: no ch"	没测该层	keep	keep	—
-"default 函数：declare function + `export { main as default }`"	"`nudo export --format all` 的 stdout 平铺面在模块有 `default` 导出时**不是合法 TS 模块**（TS2391 / TS2390）。 `（无实现、无 `declare`）⇒ 平铺进 stdout 这个**普通 `.ts` 模块**就不可编译。 断言：expect(out).toContain(\"declare function main(\");；expect(out).toContain(\"export { main as default };\");"	没测该层	keep	keep	—
-"default 类：declare class + `export { Box as default }`"	"`nudo export --format all` 的 stdout 平铺面在模块有 `default` 导出时**不是合法 TS 模块**（TS2391 / TS2390）。 `（无实现、无 `declare`）⇒ 平铺进 stdout 这个**普通 `.ts` 模块**就不可编译。 断言：expect(out).toContain(\"declare class Box {\");；expect(out).toContain(\"export { Box as default };\");"	没测该层	keep	keep	—
-"单独 --format dts 同样合法（存成 .ts 也可编译）"	"`nudo export --format all` 的 stdout 平铺面在模块有 `default` 导出时**不是合法 TS 模块**（TS2391 / TS2390）。 `（无实现、无 `declare`）⇒ 平铺进 stdout 这个**普通 `.ts` 模块**就不可编译。 断言：expect(out).toContain(\"declare function main(\");；expect(out).toContain(\"export { main as default };\");"	没测该层	keep	keep	—
-"具名导出保持既有 `export declare function` 形态"	"`nudo export --format all` 的 stdout 平铺面在模块有 `default` 导出时**不是合法 TS 模块**（TS2391 / TS2390）。 `（无实现、无 `declare`）⇒ 平铺进 stdout 这个**普通 `.ts` 模块**就不可编译。 断言：expect(out).toContain(\"export declare function add(\");；expect(out).not.toContain(\"as default\");"	没测该层	keep	keep	—
-"--from-dts + --emit/--all/--dry-run/--exit-on-diff ⇒ 用法错误（exit 1）+ 不写侧车"	"`nudo contract --from-dts` 把 `--emit` / `--fn` / `--all` / `--dry-run` / `--exit-on-diff` **静默吞掉** ⇒ 漂移门禁恒 exit 0（假绿）。 改前（`contract.ts` 的分派）：`--from-dts` 只把 `write` / `dryRun` / `force` 交给 `runContractFromDts`，`opts.emit` / `opts.fn` / `opts.all` **既没转发 也没校验** ⇒ `--from-dts --emit --all --dry-run --exit-on-diff x.d.ts`"	没测该层	keep	keep	—
-"--from-dts + --fn ⇒ 同样用法错误（过滤不许被吞）"	"`nudo contract --from-dts` 把 `--emit` / `--fn` / `--all` / `--dry-run` / `--exit-on-diff` **静默吞掉** ⇒ 漂移门禁恒 exit 0（假绿）。 改前（`contract.ts` 的分派）：`--from-dts` 只把 `write` / `dryRun` / `force` 交给 `runContractFromDts`，`opts.emit` / `opts.fn` / `opts.all` **既没转发 也没校验** ⇒ `--from-dts --emit --all --dry-run --exit-on-diff x.d.ts`"	没测该层	keep	keep	—
-"对照组：--from-dts 单独跑 ⇒ 仍出草稿（exit 0）"	"`nudo contract --from-dts` 把 `--emit` / `--fn` / `--all` / `--dry-run` / `--exit-on-diff` **静默吞掉** ⇒ 漂移门禁恒 exit 0（假绿）。 改前（`contract.ts` 的分派）：`--from-dts` 只把 `write` / `dryRun` / `force` 交给 `runContractFromDts`，`opts.emit` / `opts.fn` / `opts.all` **既没转发 也没校验** ⇒ `--from-dts --emit --all --dry-run --exit-on-diff x.d.ts`"	没测该层	keep	keep	—
-"机器面控制组：--from-dts + --emit + --json ⇒ 仍是合法 JSON + exit 1（绝不假绿）"	"`nudo contract --from-dts` 把 `--emit` / `--fn` / `--all` / `--dry-run` / `--exit-on-diff` **静默吞掉** ⇒ 漂移门禁恒 exit 0（假绿）。 改前（`contract.ts` 的分派）：`--from-dts` 只把 `write` / `dryRun` / `force` 交给 `runContractFromDts`，`opts.emit` / `opts.fn` / `opts.all` **既没转发 也没校验** ⇒ `--from-dts --emit --all --dry-run --exit-on-diff x.d.ts`"	没测该层	keep	keep	—
-"首次 --emit --all：标签行真落盘（Updated 与文件一致）；第二次逐字不变（幂等）"	"`nudo contract --emit` 的**派生分支**与**主分支**各写一次同一侧车 且段格式不一致 ⇒ `--dry-run` 的 diff ≠ 真实写盘 ⇒ `--exit-on-diff` 永久 exit 1。 场景：侧车里既有**手写段**（`tag`），源里又有同名导出 ⇒ 派生分支 （`emitDerivedFromRoot`，段是 4 行版，含 `// derived-from:`）先写， 主分支（`emitContract`，段是 3 行版）后写并**整段替换** ⇒ 落盘**净变化 0** （md5 不变），但 ① 报告说「Updated … written: wrap,tag」（审计台账被污染）； 断"	夹具漏形态	keep	keep	—
-"--dry-run --exit-on-diff：预览与落盘同源 —— 收敛前 exit 1，收敛后 exit 0"	"`nudo contract --emit` 的**派生分支**与**主分支**各写一次同一侧车 且段格式不一致 ⇒ `--dry-run` 的 diff ≠ 真实写盘 ⇒ `--exit-on-diff` 永久 exit 1。 场景：侧车里既有**手写段**（`tag`），源里又有同名导出 ⇒ 派生分支 （`emitDerivedFromRoot`，段是 4 行版，含 `// derived-from:`）先写， 主分支（`emitContract`，段是 3 行版）后写并**整段替换** ⇒ 落盘**净变化 0** （md5 不变），但 ① 报告说「Updated … written: wrap,tag」（审计台账被污染）； 断"	夹具漏形态	keep	keep	—
-"对照组：真有净漂移 ⇒ dry-run 打 diff 且 --exit-on-diff exit 1（门禁没被关掉）"	"`nudo contract --emit` 的**派生分支**与**主分支**各写一次同一侧车 且段格式不一致 ⇒ `--dry-run` 的 diff ≠ 真实写盘 ⇒ `--exit-on-diff` 永久 exit 1。 场景：侧车里既有**手写段**（`tag`），源里又有同名导出 ⇒ 派生分支 （`emitDerivedFromRoot`，段是 4 行版，含 `// derived-from:`）先写， 主分支（`emitContract`，段是 3 行版）后写并**整段替换** ⇒ 落盘**净变化 0** （md5 不变），但 ① 报告说「Updated … written: wrap,tag」（审计台账被污染）； 断"	夹具漏形态	keep	keep	—
-"两个分支都命中同一导出 ⇒ 直写正文优先 + `derived-from` 标签行真落盘"	"`nudo contract --emit` 的**派生分支**与**直写分支**抢同一侧车的 同一段：两个写者、两种段格式 ⇒ ① 派生分支算出的 `// derived-from:` 溯源行**永不落盘**（被直写分支整段覆盖）； ② 落盘字节不变，报告却说「Updated」（台账与文件不符）； 断言：expect(r.status, r.stdout + r.stderr).toBe(0);；expect(written).toContain(EXPECTED_WRAP);"	没测该层	keep	keep	—
-"幂等：连跑两次 --emit --all ⇒ 第二次无 Updated 且 md5 不变"	"`nudo contract --emit` 的**派生分支**与**直写分支**抢同一侧车的 同一段：两个写者、两种段格式 ⇒ ① 派生分支算出的 `// derived-from:` 溯源行**永不落盘**（被直写分支整段覆盖）； ② 落盘字节不变，报告却说「Updated」（台账与文件不符）； 断言：expect(first.status, first.stdout + first.stderr).toBe(0);；expect(second.status, second.stdout + second.stderr).toBe(0);"	没测该层	keep	keep	—
-"收敛后 --dry-run --exit-on-diff ⇒ exit 0，且不再打印永不落盘的 diff"	"`nudo contract --emit` 的**派生分支**与**直写分支**抢同一侧车的 同一段：两个写者、两种段格式 ⇒ ① 派生分支算出的 `// derived-from:` 溯源行**永不落盘**（被直写分支整段覆盖）； ② 落盘字节不变，报告却说「Updated」（台账与文件不符）； 断言：expect(real.status, real.stdout + real.stderr).toBe(0);；expect(dry.stdout).not.toContain(\"would update\");"	没测该层	keep	keep	—
-"预览 == 写盘（字节级）：dry-run 的新增行拼起来就是真实写盘内容"	"`nudo contract --emit` 的**派生分支**与**直写分支**抢同一侧车的 同一段：两个写者、两种段格式 ⇒ ① 派生分支算出的 `// derived-from:` 溯源行**永不落盘**（被直写分支整段覆盖）； ② 落盘字节不变，报告却说「Updated」（台账与文件不符）； 断言：expect(existsSync(sidecar)).toBe(false);；expect(dry.status, dry.stdout + dry.stderr).toBe(0);"	没测该层	keep	keep	—
+同一份源码在两个目录下导出到同一 out 目录 ⇒ 只有一份产物；产物 marker 不含绝对路径（同一源码 ⇒ 同一字节）	cli-products 聚合矩阵	没测该层	keep	keep	—
+用户导出名在 stdout 的 dts 段保持原名（不出现 *Dts 后缀）；stdout 的 dts 段与 --out 落盘的 .d.ts 逐字相同（两条投递路径同一公开 API）	cli-products 聚合矩阵	没测该层	keep	keep	—
+只有再导出的模块：dts 产出再导出声明（不是「无函数」早退）；负控制：本地函数 + 再导出的模块两条面都在；负控制：真的没有导出面的模块仍如实说明（不静默零产物）	cli-products 聚合矩阵	没测该层	keep	keep	—
+--fn renamed ⇒ 草拟出 `export const renamed = fn(`（不再是空草稿）；不回归 BUG-042：名字写错仍是用法错误 + 不落盘	cli-products 聚合矩阵	没测该层	keep	keep	—
+名字写错 ⇒ 用法错误（exit 1）+ 列出可用导出名 + **不落盘**；--json 面：stdout 仍是**一份合法 JSON 文档**（usage-error 有条目）+ exit 1；对照组：名字正确 ⇒ exit 0 且草稿点名该导出；非导出的本地函数名 ⇒ 仍走**可见**的 not-an-export 条目（门禁不误伤）	cli-products 聚合矩阵	没测该层	keep	keep	—
+dts 面：返回位是真类型（不是 unknown），且与 dot 形态逐字一致；zod 面：Output 是联合（不是 `z.unknown()`），且与 dot 形态逐字一致；guard 面：校验器真的校验（不是 `return true;`），且与 dot 形态逐字一致	cli-products 聚合矩阵	没测该层	keep	keep	—
+违约见证不写入；固化后 check 仍绿（旧行为：check FAILED + exit 1）；--freeze=update 不再重记违约见证（旧行为：原样重记同一条 ⇒ 永远红）	cli-products 聚合矩阵	没测该层	keep	keep	—
+default 函数：declare function + `export { main as default }`；default 类：declare class + `export { Box as default }`；单独 --format dts 同样合法（存成 .ts 也可编译）；具名导出保持既有 `export declare function` 形态	cli-products 聚合矩阵	没测该层	keep	keep	—
+--from-dts + --emit/--all/--dry-run/--exit-on-diff ⇒ 用法错误（exit 1）+ 不写侧车；--from-dts + --fn ⇒ 同样用法错误（过滤不许被吞）；对照组：--from-dts 单独跑 ⇒ 仍出草稿（exit 0）；机器面控制组：--from-dts + --emit + --json ⇒ 仍是合法 JSON + exit 1（绝不假绿）	cli-products 聚合矩阵	没测该层	keep	keep	—
+首次 --emit --all：标签行真落盘（Updated 与文件一致）；第二次逐字不变（幂等）；--dry-run --exit-on-diff：预览与落盘同源 —— 收敛前 exit 1，收敛后 exit 0；对照组：真有净漂移 ⇒ dry-run 打 diff 且 --exit-on-diff exit 1（门禁没被关掉）	cli-products 聚合矩阵	没测该层	keep	keep	—
+两个分支都命中同一导出 ⇒ 直写正文优先 + `derived-from` 标签行真落盘；幂等：连跑两次 --emit --all ⇒ 第二次无 Updated 且 md5 不变；收敛后 --dry-run --exit-on-diff ⇒ exit 0，且不再打印永不落盘的 diff；预览 == 写盘（字节级）：dry-run 的新增行拼起来就是真实写盘内容	cli-products 聚合矩阵	没测该层	keep	keep	—
 "warning 级 nudo:contract-conflict ⇒ 阻断（诊断上屏 + exit 1）"	"`export.ts` 又只在 `blocking` 时才上屏 ⇒ 已收集的诊断既不打印也不阻断 ⇒ 出货「只编码了一半契约」的产物、 stderr 空、exit 0，与同文件 `nudo check` 的结论相反。 断言：expect(r.status).toBe(1);；expect(r.stderr).toContain(\"contract-conflict\");"	没测该层	keep	keep	—
-"`export =` 被剥除 ⇒ 产物 `node --check` 过"	"node --check（语法检查，不执行） 断言：expect(r.status, r.stderr).toBe(0);；expect(r.stderr).not.toContain(\"TypeScript syntax\");"	没测该层	keep	keep	—
-"`export as namespace` 被剥除 ⇒ 产物 `node --check` 过"	"node --check（语法检查，不执行） 断言：expect(r.status, r.stderr).toBe(0);；expect(r.stderr).not.toContain(\"TypeScript syntax\");"	没测该层	keep	keep	—
-"兜底闸门认得这两条语句（真源漏网 ⇒ 拒绝写盘 + 点名文件 + exit 1）"	"TS-only 的 `export =` / `export as namespace` 未剥 ⇒ 产物**根本 不是合法 JS**（`node --check` 报 SyntaxError），而 `migrate verify` 对同一 文件**报 OK / exit 0**（假绿）。 本钉是**产物面** 的回归钉：产物必须 `node --check` 过，且不得残留这两条 TS-only 语句。 断言：expect(r.status, r.stderr).toBe(0);；expect(r.stderr).not.toContain(\"TypeScript syntax\");"	门禁未跑	keep	keep	—
-"skip 函数进导出面（zod / standard / dts / guard 四面都有）"	"`@nudo:skip` 的函数被导出入口 filter **静默丢掉**。 根因：`selectExportFunctions` 只放行「有 case 见证」的函数，而 `@nudo:skip` 按设计**不合成** entry@ 见证（零 case）⇒ skip 函数永远进不了导出面 ⇒ 导出面少一块，且 dts 生成器专为 skip 建的 `contractOnlySignature` 路径永不可达。 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain(\"skippedInput\");"	没测该层	keep	keep	—
-"skip 函数在 --out 落盘面同样有产物（四个文件都在）"	"`@nudo:skip` 的函数被导出入口 filter **静默丢掉**。 根因：`selectExportFunctions` 只放行「有 case 见证」的函数，而 `@nudo:skip` 按设计**不合成** entry@ 见证（零 case）⇒ skip 函数永远进不了导出面 ⇒ 导出面少一块，且 dts 生成器专为 skip 建的 `contractOnlySignature` 路径永不可达。 断言：expect(r.status).toBe(0);；expect(files.some((f) => f.includes(\"schema\"))).toBe(true);"	没测该层	keep	keep	—
-"手写 .d.ts 在 out 目录里 ⇒ 拒绝覆盖 + exit 1 + 文件逐字不变"	"钉：目标已存在且**不是本工具生成的** ⇒ 拒绝覆盖（exit 1 + 可诊断的 `nudo:path-io` 面），手写文件逐字不变。 断言：expect(r.status).toBe(1);；expect(readFileSync(target, \"utf-8\")).toBe(HANDWRITTEN);"	没测该层	keep	keep	—
-"本工具自己生成的产物 ⇒ 允许覆盖更新（同模块重导）"	"断言：expect(first.status).toBe(0);；expect(second.status).toBe(0);"	没测该层	keep	keep	—
-"非导出函数不进 zod / standard / guard 三面（stdout 面）"	"四个产物面「哪些函数算公开」有**四套口径**：dts 面按模块导出面 裁剪，zod / standard / guard 三面**不裁剪** ⇒ 源模块**一个导出都没有**时， 三个运行时校验器产物照样产出（内部实现被当成公开契约），`.d.ts` 却静默缺席。 根因：`onExportFace` 这道**模块公开面**闸门只装在 dts 分支上。 断言：expect(r.status).toBe(0);；expect(r.stdout).not.toContain(\"internalInput\");"	没测该层	keep	keep	—
-"非导出函数不进任何落盘产物（--out 面）"	"钉：目标已存在且**不是本工具生成的** ⇒ 拒绝覆盖（exit 1 + 可诊断的 `nudo:path-io` 面），手写文件逐字不变。 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain(\"No exported declarations found\");"	没测该层	keep	keep	—
-"导出面函数照常进四（闸门不误伤公开面）"	"断言：expect(r.status).toBe(0);；expect(r.stdout).toContain(\"public1Input\");"	没测该层	keep	keep	—
-"全部未命中 ⇒ 用法错误（exit 1）+ 列出候选 + **侧车逐字不变**"	"`nudo contract --emit --fn <拼错的名字>` **静默丢弃过滤器**。 改前（`runContractEmit`）：`--fn` 名单经 `localNamedExports` 过滤后， **命中数为 0 时把过滤结果整段降级成 `undefined`** ⇒ 发射器收不到任何 `fnNames` ⇒ 作用域从「只写这一个」静默放大成「刷新全部既有 `@generated` 段」 （叠加 `--all` 时放大成「新建全部导出段」）⇒ **写盘**、exit 0、零告警。 断言：expect(r.status).toBe(1);；expect(r.stderr).toContain(\"alhpa\");"	没测该层	keep	keep	—
-"未命中 ⇒ 连 dry-run 预览都不给（不产生放大作用域的 diff）"	"`nudo contract --emit --fn <拼错的名字>` **静默丢弃过滤器**。 改前（`runContractEmit`）：`--fn` 名单经 `localNamedExports` 过滤后， **命中数为 0 时把过滤结果整段降级成 `undefined`** ⇒ 发射器收不到任何 `fnNames` ⇒ 作用域从「只写这一个」静默放大成「刷新全部既有 `@generated` 段」 （叠加 `--all` 时放大成「新建全部导出段」）⇒ **写盘**、exit 0、零告警。 断言：expect(r.status).toBe(1);；expect(r.stdout).not.toContain(\"would u"	没测该层	keep	keep	—
-"部分命中 ⇒ 未命中的名字走 `skipped <fn> (not-an-export)` 通道（与 LSP/agent 同构）"	"`nudo contract --emit --fn <拼错的名字>` **静默丢弃过滤器**。 改前（`runContractEmit`）：`--fn` 名单经 `localNamedExports` 过滤后， **命中数为 0 时把过滤结果整段降级成 `undefined`** ⇒ 发射器收不到任何 `fnNames` ⇒ 作用域从「只写这一个」静默放大成「刷新全部既有 `@generated` 段」 （叠加 `--all` 时放大成「新建全部导出段」）⇒ **写盘**、exit 0、零告警。 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain(\"skipped nop"	没测该层	keep	keep	—
-"对照组：名字正确 ⇒ 只改那一个（beta 的段不被刷新）"	"`nudo contract --emit --fn <拼错的名字>` **静默丢弃过滤器**。 改前（`runContractEmit`）：`--fn` 名单经 `localNamedExports` 过滤后， **命中数为 0 时把过滤结果整段降级成 `undefined`** ⇒ 发射器收不到任何 `fnNames` ⇒ 作用域从「只写这一个」静默放大成「刷新全部既有 `@generated` 段」 （叠加 `--all` 时放大成「新建全部导出段」）⇒ **写盘**、exit 0、零告警。 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain(\"+export con"	没测该层	keep	keep	—
-"目录 + --draft --json：stdout 可被 JSON.parse 解析（改前抛）"	"根因：JSON 出口是**单文档**（每个 root 一次 `console.log`），而命令层对每个 root 各跑一次 ⇒ **没有跨文件聚合层**。 ⚠ 本钉同时锁住 **print 分支**（`nudo contract --json <目录>`）：改前它同样 是多份 JSON 拼接（报告标题只写了 `--draft --json`，实测 print 分支也拼）。 断言：expect(r.status).toBe(0);；expect(r.stderr).toBe(\"\");"	没测该层	keep	keep	—
-"目录 + --json（print 分支）：同样是一份 JSON 数组（改前是多份拼接）"	"根因：JSON 出口是**单文档**（每个 root 一次 `console.log`），而命令层对每个 root 各跑一次 ⇒ **没有跨文件聚合层**。 ⚠ 本钉同时锁住 **print 分支**（`nudo contract --json <目录>`）：改前它同样 是多份 JSON 拼接（报告标题只写了 `--draft --json`，实测 print 分支也拼）。 断言：expect(r.status).toBe(0);；expect(r.stderr).toBe(\"\");"	没测该层	keep	keep	—
-"单文件 + --json：顶层仍是数组（单元素）⇒ 形态恒定"	"根因：JSON 出口是**单文档**（每个 root 一次 `console.log`），而命令层对每个 root 各跑一次 ⇒ **没有跨文件聚合层**。 ⚠ 本钉同时锁住 **print 分支**（`nudo contract --json <目录>`）：改前它同样 是多份 JSON 拼接（报告标题只写了 `--draft --json`，实测 print 分支也拼）。 断言：expect(r.status).toBe(0);；expect(Array.isArray(docs)).toBe(true);"	没测该层	keep	keep	—
-"单文件 + --draft --json：顶层仍是数组（单元素）⇒ 形态恒定"	"根因：JSON 出口是**单文档**（每个 root 一次 `console.log`），而命令层对每个 root 各跑一次 ⇒ **没有跨文件聚合层**。 ⚠ 本钉同时锁住 **print 分支**（`nudo contract --json <目录>`）：改前它同样 是多份 JSON 拼接（报告标题只写了 `--draft --json`，实测 print 分支也拼）。 断言：expect(r.status).toBe(0);；expect(Array.isArray(docs)).toBe(true);"	没测该层	keep	keep	—
-"非 --json 面不受影响（人类面仍是逐文件文本，不是 JSON）"	"根因：JSON 出口是**单文档**（每个 root 一次 `console.log`），而命令层对每个 root 各跑一次 ⇒ **没有跨文件聚合层**。 ⚠ 本钉同时锁住 **print 分支**（`nudo contract --json <目录>`）：改前它同样 是多份 JSON 拼接（报告标题只写了 `--draft --json`，实测 print 分支也拼）。 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain(\"a.js\");"	没测该层	keep	keep	—
-"--from-dts + --emit --draft：报互斥错误 + exit 1（改前：静默出 draft、exit 0）"	"改前：`--from-dts … --emit --draft` **不报**互斥错误、exit 0、直接出 draft 正文； `--from-dts … --json` 的 stdout 是 draft 文本、**不是** JSON、exit 0。 断言：expect(r.status).toBe(1);；expect(r.stderr).toContain(\"Usage error: --emit and --draft are mutually exclusive\");"	没测该层	keep	keep	—
-"--from-dts + --exit-on-diff：报前置条件错误 + exit 1（改前：静默忽略、exit 0）"	"改前：`--from-dts … --emit --draft` **不报**互斥错误、exit 0、直接出 draft 正文； `--from-dts … --json` 的 stdout 是 draft 文本、**不是** JSON、exit 0。 断言：expect(r.status).toBe(1);；expect(r.stderr).toContain(\"--exit-on-diff requires --emit --dry-run\");"	没测该层	keep	keep	—
-"--from-dts + --json：显式拒绝（机器面拿不到 JSON ⇒ 不是静默吞旗标）"	"改前：`--from-dts … --emit --draft` **不报**互斥错误、exit 0、直接出 draft 正文； `--from-dts … --json` 的 stdout 是 draft 文本、**不是** JSON、exit 0。 断言：expect(r.status).toBe(1);；expect(Array.isArray(docs)).toBe(true);"	没测该层	keep	keep	—
-"控制组：--from-dts（无旗标）仍然照常出 draft 正文 + exit 0（不误伤）"	"改前：`--from-dts … --emit --draft` **不报**互斥错误、exit 0、直接出 draft 正文； `--from-dts … --json` 的 stdout 是 draft 文本、**不是** JSON、exit 0。 断言：expect(r.status).toBe(0);；expect(r.stderr).toBe(\"\");"	没测该层	keep	keep	—
-"控制组：--from-dts + --write 仍然可用（合法组合，不被校验误伤）"	"改前：`--from-dts … --emit --draft` **不报**互斥错误、exit 0、直接出 draft 正文； `--from-dts … --json` 的 stdout 是 draft 文本、**不是** JSON、exit 0。 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain(\"wrote\");"	没测该层	keep	keep	—
-"控制组：非 from-dts 模式的既有校验不变（--emit/--draft 互斥仍报同一句）"	"改前：`--from-dts … --emit --draft` **不报**互斥错误、exit 0、直接出 draft 正文； `--from-dts … --json` 的 stdout 是 draft 文本、**不是** JSON、exit 0。 断言：expect(r.status).toBe(1);；expect(r.stderr).toContain(\"Usage error: --emit and --draft are mutually exclusive\");"	没测该层	keep	keep	—
-"dry-run 打 unified diff（--- a/ + ++ b/ + @@ hunk）且**不写盘**"	"`nudo contract --draft --write --dry-run` **不打 unified diff** （只打一行「[dry-run] would write → …」），而 CLI Reference 承诺 `--dry-run` = \"Print a unified diff instead of writing\" （`packages/website/docs/api/cli-reference.md` 的 contract 选项表）。 根因：unified diff 的生成器**只接在 `--emit` 分支**上 ⇒ 同一个 `--dry-run` 旗标在 `--emit` 与 `--draft` 两条"	没测该层	keep	keep	—
-"负控制：非 dry-run 的 `--draft --write` 仍然写盘，且**不打** diff"	"`nudo contract --draft --write --dry-run` **不打 unified diff** （只打一行「[dry-run] would write → …」），而 CLI Reference 承诺 `--dry-run` = \"Print a unified diff instead of writing\" （`packages/website/docs/api/cli-reference.md` 的 contract 选项表）。 根因：unified diff 的生成器**只接在 `--emit` 分支**上 ⇒ 同一个 `--dry-run` 旗标在 `--emit` 与 `--draft` 两条"	没测该层	keep	keep	—
-"diff 头与 `--emit --dry-run` 的头**同款**（同一个 unifiedDiff 生成器）"	"`nudo contract --draft --write --dry-run` **不打 unified diff** （只打一行「[dry-run] would write → …」），而 CLI Reference 承诺 `--dry-run` = \"Print a unified diff instead of writing\" （`packages/website/docs/api/cli-reference.md` 的 contract 选项表）。 根因：unified diff 的生成器**只接在 `--emit` 分支**上 ⇒ 同一个 `--dry-run` 旗标在 `--emit` 与 `--draft` 两条"	没测该层	keep	keep	—
+`export =` 被剥除 ⇒ 产物 `node --check` 过；`export as namespace` 被剥除 ⇒ 产物 `node --check` 过；兜底闸门认得这两条语句（真源漏网 ⇒ 拒绝写盘 + 点名文件 + exit 1）	cli-products 聚合矩阵	没测该层	keep	keep	—
+skip 函数进导出面（zod / standard / dts / guard 四面都有）；skip 函数在 --out 落盘面同样有产物（四个文件都在）	cli-products 聚合矩阵	没测该层	keep	keep	—
+手写 .d.ts 在 out 目录里 ⇒ 拒绝覆盖 + exit 1 + 文件逐字不变；本工具自己生成的产物 ⇒ 允许覆盖更新（同模块重导）	cli-products 聚合矩阵	没测该层	keep	keep	—
+非导出函数不进 zod / standard / guard 三面（stdout 面）；非导出函数不进任何落盘产物（--out 面）；导出面函数照常进四（闸门不误伤公开面）	cli-products 聚合矩阵	没测该层	keep	keep	—
+全部未命中 ⇒ 用法错误（exit 1）+ 列出候选 + **侧车逐字不变**；未命中 ⇒ 连 dry-run 预览都不给（不产生放大作用域的 diff）；部分命中 ⇒ 未命中的名字走 `skipped <fn> (not-an-export)` 通道（与 LSP/agent 同构）；对照组：名字正确 ⇒ 只改那一个（beta 的段不被刷新）	cli-products 聚合矩阵	没测该层	keep	keep	—
+目录 + --draft --json：stdout 可被 JSON.parse 解析（改前抛）；目录 + --json（print 分支）：同样是一份 JSON 数组（改前是多份拼接）；单文件 + --json：顶层仍是数组（单元素）⇒ 形态恒定；单文件 + --draft --json：顶层仍是数组（单元素）⇒ 形态恒定；非 --json 面不受影响（人类面仍是逐文件文本，不是 JSON）	cli-products 聚合矩阵	没测该层	keep	keep	—
+--from-dts + --emit --draft：报互斥错误 + exit 1（改前：静默出 draft、exit 0）；--from-dts + --exit-on-diff：报前置条件错误 + exit 1（改前：静默忽略、exit 0）；--from-dts + --json：显式拒绝（机器面拿不到 JSON ⇒ 不是静默吞旗标）；控制组：--from-dts（无旗标）仍然照常出 draft 正文 + exit 0（不误伤）；控制组：--from-dts + --	cli-products 聚合矩阵	没测该层	keep	keep	—
+dry-run 打 unified diff（--- a/ + ++ b/ + @@ hunk）且**不写盘**；负控制：非 dry-run 的 `--draft --write` 仍然写盘，且**不打** diff；diff 头与 `--emit --dry-run` 的头**同款**（同一个 unifiedDiff 生成器）	cli-products 聚合矩阵	没测该层	keep	keep	—
 "dry-run 标签点名**侧车**（与 diff 头同口径），不再点名源文件"	"同文件另两分支（派生分支 / 写盘分支）都取**侧车** ⇒ **单点笔误**，不是取舍。 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain(\"[dry-run] would update lib.nudo.js:\");"	没测该层	keep	keep	—
-"--json + --write：exit 1 + 机器面给出理由 + 草稿**没有**落盘"	"`nudo contract --draft --json --write`：`--write` 被**静默丢弃** ⇒ 草稿**根本没落盘**、**exit 0**、**零提示**（stdout 是合法 JSON、无 「Draft written」）⇒ agent / CI 据此认为「契约已落盘」，磁盘上**没有** 侧车草稿 ⇒ **假绿 + 静默数据丢失**。 根因：`--json` 分支以 `return` 早退 ⇒ 后面的 `--write` 分支**不可达**； 断言：expect(r.status).toBe(1);；expect(Array.isArray(docs)).toBe(true);"	没测该层	keep	keep	—
-"负控制：`--draft --json`（无 --write）仍然照常出审阅载荷（不误伤）"	"聚合层落地前的旧形态是**单文档**（顶层就是对象）⇒ 这里两种都吃， 免得负控制用例被聚合层的形态变化误伤。 断言：expect(r.status).toBe(0);；expect(doc.draftSource).toContain(\"// @nudo:draft\");"	夹具漏形态	keep	keep	—
-"负控制：`--draft --write`（无 --json）仍然照常写盘（不误伤）"	"聚合层落地前的旧形态是**单文档**（顶层就是对象）⇒ 这里两种都吃， 免得负控制用例被聚合层的形态变化误伤。 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain(\"Draft written → lib.nudo.draft.js\");"	夹具漏形态	keep	keep	—
-"单文件（语法错）+ --draft --json：stdout 非空 + 合法 JSON + errors[] + exit 1"	"`nudo contract --draft --json` 遇**语法错文件**： 单文件 ⇒ stdout **0 字节** + exit 1（违反同文件里自己写下的「绝不空 stdout + exit 1」不变量）； 修法（族 20 · 片 A）：per-root `catch` 在 `--json` 形态下**必须产 JSON body** ⇒ 失败 root 进聚合结果的 `errors[]`（聚合层见 ）⇒ stdout 永不为空、 载荷不缺项。 断言：expect(r.status).toBe(1);；expect(r.stdout.trim().length).toBeGreaterThan(0);"	夹具漏形态	keep	keep	—
-"目录（好文件 + 坏文件）+ --draft --json：坏文件**不再消失**（载荷不缺项）"	"`nudo contract --draft --json` 遇**语法错文件**： 单文件 ⇒ stdout **0 字节** + exit 1（违反同文件里自己写下的「绝不空 stdout + exit 1」不变量）； 修法（族 20 · 片 A）：per-root `catch` 在 `--json` 形态下**必须产 JSON body** ⇒ 失败 root 进聚合结果的 `errors[]`（聚合层见 ）⇒ stdout 永不为空、 载荷不缺项。 断言：expect(r.status).toBe(1);；expect(docs.length).toBeGreaterThanOrEqual(2);"	夹具漏形态	keep	keep	—
-"print 形态（--json）+ 语法错：同样有 errors 条目（机器面统一）"	"`nudo contract --draft --json` 遇**语法错文件**： 单文件 ⇒ stdout **0 字节** + exit 1（违反同文件里自己写下的「绝不空 stdout + exit 1」不变量）； 修法（族 20 · 片 A）：per-root `catch` 在 `--json` 形态下**必须产 JSON body** ⇒ 失败 root 进聚合结果的 `errors[]`（聚合层见 ）⇒ stdout 永不为空、 载荷不缺项。 断言：expect(r.status).toBe(1);；expect(r.stdout.trim().length).toBeGreaterThan(0);"	夹具漏形态	keep	keep	—
-"人类面不变：stderr 仍点名失败文件 + exit 1"	"`nudo contract --draft --json` 遇**语法错文件**： 单文件 ⇒ stdout **0 字节** + exit 1（违反同文件里自己写下的「绝不空 stdout + exit 1」不变量）； 修法（族 20 · 片 A）：per-root `catch` 在 `--json` 形态下**必须产 JSON body** ⇒ 失败 root 进聚合结果的 `errors[]`（聚合层见 ）⇒ stdout 永不为空、 载荷不缺项。 断言：expect(r.status).toBe(1);；expect(r.stderr).toContain(\"Error analyzing\");"	夹具漏形态	keep	keep	—
-"--json --emit ⇒ stdout 是合法 JSON 且载荷是 emit 的机器文档"	"改前（`runContractEmit`）：opts 类型里**没有** `json` 字段、函数体**不读**它， action 的 emit 分支也**不传** ⇒ stdout 是**人类文本**、exit 0 ⇒ 机器面拿到 **非法 JSON** 且**无失败信号**。 ⚠ 勘误（族 20 · 实测）：族 21 的 修好了 `--json`（无 `--draft`）那一支； 断言：expect(r.status).toBe(0);；expect(r.stderr).toBe(\"\");"	没测该层	keep	keep	—
-"--json --emit --dry-run ⇒ 载荷里带 diff（与 draft 分支同构）"	"改前（`runContractEmit`）：opts 类型里**没有** `json` 字段、函数体**不读**它， action 的 emit 分支也**不传** ⇒ stdout 是**人类文本**、exit 0 ⇒ 机器面拿到 **非法 JSON** 且**无失败信号**。 ⚠ 勘误（族 20 · 实测）：族 21 的 修好了 `--json`（无 `--draft`）那一支； 断言：expect(r.status).toBe(0);；expect(typeof doc.diff).toBe(\"string\");"	没测该层	keep	keep	—
-"落点贴着源 `.d.ts`，且 basename **不含 `.d.`**（BUG-264）"	"basename 不含 `.d.`） 断言：expect(r.status).toBe(0);；expect(existsSync(draft)).toBe(true);"	没测该层	keep	keep	—
-"「next」提示点名的侧车路径也**不含 `.d.`**（建议的复制落点必须可编译）"	"basename 不含 `.d.`） 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain(\"types/index.nudo.ts\");"	没测该层	keep	keep	—
-"既有草稿存在且内容不同 ⇒ 拒绝覆盖（exit 1）+ 提示**同时**给出两个放行口子"	"`--from-dts --write` 的**草稿落点族**不变量（族 20 · 的 收口回归； 钉： ① 落点**贴着源 `.d.ts`**（`sidecarDraftPath` 口径）⇒ **不以 CWD 为基准** ⇒ CWD 里的同名草稿不会被静默覆盖； 断言：expect(r.status).toBe(1);；expect(r.stderr).toContain(\"refusing to overwrite\");"	夹具漏形态	keep	keep	—
-"内容未变 ⇒ **不**拒绝（exit 0 + 「draft unchanged」）"	"`--from-dts --write` 的**草稿落点族**不变量（族 20 · 的 收口回归； 钉： ① 落点**贴着源 `.d.ts`**（`sidecarDraftPath` 口径）⇒ **不以 CWD 为基准** ⇒ CWD 里的同名草稿不会被静默覆盖； 断言：expect(first.status).toBe(0);；expect(second.status).toBe(0);"	夹具漏形态	keep	keep	—
-"机器原稿（内容不同）+ `--force` ⇒ 覆盖成功"	"`--from-dts --write` 的**草稿落点族**不变量（族 20 · 的 收口回归； 钉： ① 落点**贴着源 `.d.ts`**（`sidecarDraftPath` 口径）⇒ **不以 CWD 为基准** ⇒ CWD 里的同名草稿不会被静默覆盖； 断言：expect(first.status).toBe(0);；expect(second.status).toBe(0);"	夹具漏形态	keep	keep	—
-"机器原稿（内容不同）+ `NUDO_DRAFT_FORCE=1` ⇒ 覆盖成功（环境变量口子同样是真的）"	"`--from-dts --write` 的**草稿落点族**不变量（族 20 · 的 收口回归； 钉： ① 落点**贴着源 `.d.ts`**（`sidecarDraftPath` 口径）⇒ **不以 CWD 为基准** ⇒ CWD 里的同名草稿不会被静默覆盖； 断言：expect(first.status).toBe(0);；expect(second.status).toBe(0);"	夹具漏形态	keep	keep	—
-"人工改过的草稿 ⇒ `--force` **也不放行**（逐字不变 + exit 1）"	"`--from-dts --write` 的**草稿落点族**不变量（族 20 · 的 收口回归； 钉： ① 落点**贴着源 `.d.ts`**（`sidecarDraftPath` 口径）⇒ **不以 CWD 为基准** ⇒ CWD 里的同名草稿不会被静默覆盖； 断言：expect(first.status).toBe(0);；expect(machine).toContain(\"@nudo:draft-fingerprint\");"	夹具漏形态	keep	keep	—
-"无既有草稿 ⇒ exit 0，打 unified diff（不再是全文 dump），且**不建**草稿文件"	"stdout 里所有含 `needle` 的行（用来判「是不是全文 dump」） 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain(`[dry-run] would write ${DRAFT_REL}`);"	没测该层	keep	keep	—
-"既有草稿不同 + 无 --force ⇒ exit 1（与真写同口径），**仍**打 diff + 报拒绝 + 文件逐字不变"	"（续）—— `nudo contract --from-dts --write --dry-run` 的预览是 **整份草稿正文的 dump**，不是 unified diff； 且「既有草稿不同 ⇒ 拒绝覆盖」 那一关跑在 dry-run 分支**之前** ⇒ dry-run 遇到既有草稿**直接报错退出**， **连 diff 都看不到**。 断言：expect(r.status).toBe(1);；expect(r.stdout).toContain(`[dry-run] would write ${DRAFT_REL}`);"	没测该层	keep	keep	—
-"人工改过的草稿 + `--force` ⇒ exit 1（force 也放行不了），diff 照打、文件逐字不变"	"（续）—— `nudo contract --from-dts --write --dry-run` 的预览是 **整份草稿正文的 dump**，不是 unified diff； 且「既有草稿不同 ⇒ 拒绝覆盖」 那一关跑在 dry-run 分支**之前** ⇒ dry-run 遇到既有草稿**直接报错退出**， **连 diff 都看不到**。 断言：expect(first.status).toBe(0);；expect(machine).toContain(\"@nudo:draft-fingerprint\");"	没测该层	keep	keep	—
-"负控制：真写（无 --dry-run）遇既有不同草稿仍 exit 1、文件逐字不变，且**不打** diff"	"（续）—— `nudo contract --from-dts --write --dry-run` 的预览是 **整份草稿正文的 dump**，不是 unified diff； 且「既有草稿不同 ⇒ 拒绝覆盖」 那一关跑在 dry-run 分支**之前** ⇒ dry-run 遇到既有草稿**直接报错退出**， **连 diff 都看不到**。 断言：expect(r.status).toBe(1);；expect(r.stderr).toContain(\"refusing to overwrite\");"	没测该层	keep	keep	—
-"草稿落在**源 .d.ts 旁边**（不再是 CWD）⇒ CWD 里的同名草稿逐字不变"	"CWD 里**另一个文件**（index.js）的既有草稿 —— 不得被 `--from-dts` 覆盖 断言：expect(r.status).toBe(0);；expect(existsSync(draft)).toBe(true);"	没测该层	keep	keep	—
-"「next」提示**点名目标侧车路径**"	"`nudo contract --from-dts --write` 把草稿写进 **CWD** （不是源 `.d.ts` 旁边）且**无条件覆盖** ⇒ 静默覆盖同基名的**另一个文件**的 草稿，零告警、exit 0。 钉（族 20 · 片 C）： ① 输出路径**贴着源 `.d.ts`**（`sidecarDraftPath` 口径，与 `--draft --write` 同款）⇒ **不再**以 CWD 为基准 ⇒ CWD 里的同名草稿**逐字不变**； 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain(\"types/index.nudo.ts\");"	夹具漏形态	keep	keep	—
-"目标已存在且内容不同 ⇒ **拒绝覆盖**（exit 1）+ 提示 + 既有草稿逐字不变"	"`nudo contract --from-dts --write` 把草稿写进 **CWD** （不是源 `.d.ts` 旁边）且**无条件覆盖** ⇒ 静默覆盖同基名的**另一个文件**的 草稿，零告警、exit 0。 钉（族 20 · 片 C）： ① 输出路径**贴着源 `.d.ts`**（`sidecarDraftPath` 口径，与 `--draft --write` 同款）⇒ **不再**以 CWD 为基准 ⇒ CWD 里的同名草稿**逐字不变**； 断言：expect(first.status).toBe(0);；expect(second.status).toBe(1);"	夹具漏形态	keep	keep	—
+--json + --write：exit 1 + 机器面给出理由 + 草稿**没有**落盘；负控制：`--draft --json`（无 --write）仍然照常出审阅载荷（不误伤）；负控制：`--draft --write`（无 --json）仍然照常写盘（不误伤）	cli-products 聚合矩阵	没测该层	keep	keep	—
+单文件（语法错）+ --draft --json：stdout 非空 + 合法 JSON + errors[] + exit 1；目录（好文件 + 坏文件）+ --draft --json：坏文件**不再消失**（载荷不缺项）；print 形态（--json）+ 语法错：同样有 errors 条目（机器面统一）；人类面不变：stderr 仍点名失败文件 + exit 1	cli-products 聚合矩阵	没测该层	keep	keep	—
+--json --emit ⇒ stdout 是合法 JSON 且载荷是 emit 的机器文档；--json --emit --dry-run ⇒ 载荷里带 diff（与 draft 分支同构）	cli-products 聚合矩阵	没测该层	keep	keep	—
+落点贴着源 `.d.ts`，且 basename **不含 `.d.`**（BUG-264）；「next」提示点名的侧车路径也**不含 `.d.`**（建议的复制落点必须可编译）；既有草稿存在且内容不同 ⇒ 拒绝覆盖（exit 1）+ 提示**同时**给出两个放行口子；内容未变 ⇒ **不**拒绝（exit 0 + 「draft unchanged」）；机器原稿（内容不同）+ `--force` ⇒ 覆盖成功；机器原稿（内容不同）+ `NUDO_DRAFT_FORCE=1`	cli-products 聚合矩阵	没测该层	keep	keep	—
+无既有草稿 ⇒ exit 0，打 unified diff（不再是全文 dump），且**不建**草稿文件；既有草稿不同 + 无 --force ⇒ exit 1（与真写同口径），**仍**打 diff + 报拒绝 + 文件逐字不变；人工改过的草稿 + `--force` ⇒ exit 1（force 也放行不了），diff 照打、文件逐字不变；负控制：真写（无 --dry-run）遇既有不同草稿仍 exit 1、文件逐字不变，且**不打** diff	cli-products 聚合矩阵	没测该层	keep	keep	—
+草稿落在**源 .d.ts 旁边**（不再是 CWD）⇒ CWD 里的同名草稿逐字不变；「next」提示**点名目标侧车路径**；目标已存在且内容不同 ⇒ **拒绝覆盖**（exit 1）+ 提示 + 既有草稿逐字不变	cli-products 聚合矩阵	没测该层	keep	keep	—
+```
+
+```audit-deleted
+title	reason	evidence
+同一份源码在两个目录下导出到同一 out 目录 ⇒ 只有一份产物	dup:cli-products 聚合矩阵	commit:14f49e20
+产物 marker 不含绝对路径（同一源码 ⇒ 同一字节）	dup:cli-products 聚合矩阵	commit:14f49e20
+用户导出名在 stdout 的 dts 段保持原名（不出现 *Dts 后缀）	dup:cli-products 聚合矩阵	commit:14f49e20
+stdout 的 dts 段与 --out 落盘的 .d.ts 逐字相同（两条投递路径同一公开 API）	dup:cli-products 聚合矩阵	commit:14f49e20
+只有再导出的模块：dts 产出再导出声明（不是「无函数」早退）	dup:cli-products 聚合矩阵	commit:14f49e20
+负控制：本地函数 + 再导出的模块两条面都在	dup:cli-products 聚合矩阵	commit:14f49e20
+负控制：真的没有导出面的模块仍如实说明（不静默零产物）	dup:cli-products 聚合矩阵	commit:14f49e20
+--fn renamed ⇒ 草拟出 `export const renamed = fn(`（不再是空草稿）	dup:cli-products 聚合矩阵	commit:14f49e20
+不回归 BUG-042：名字写错仍是用法错误 + 不落盘	dup:cli-products 聚合矩阵	commit:14f49e20
+名字写错 ⇒ 用法错误（exit 1）+ 列出可用导出名 + **不落盘**	dup:cli-products 聚合矩阵	commit:14f49e20
+--json 面：stdout 仍是**一份合法 JSON 文档**（usage-error 有条目）+ exit 1	dup:cli-products 聚合矩阵	commit:14f49e20
+对照组：名字正确 ⇒ exit 0 且草稿点名该导出	dup:cli-products 聚合矩阵	commit:14f49e20
+非导出的本地函数名 ⇒ 仍走**可见**的 not-an-export 条目（门禁不误伤）	dup:cli-products 聚合矩阵	commit:14f49e20
+dts 面：返回位是真类型（不是 unknown），且与 dot 形态逐字一致	dup:cli-products 聚合矩阵	commit:14f49e20
+zod 面：Output 是联合（不是 `z.unknown()`），且与 dot 形态逐字一致	dup:cli-products 聚合矩阵	commit:14f49e20
+guard 面：校验器真的校验（不是 `return true;`），且与 dot 形态逐字一致	dup:cli-products 聚合矩阵	commit:14f49e20
+违约见证不写入；固化后 check 仍绿（旧行为：check FAILED + exit 1）	dup:cli-products 聚合矩阵	commit:14f49e20
+--freeze=update 不再重记违约见证（旧行为：原样重记同一条 ⇒ 永远红）	dup:cli-products 聚合矩阵	commit:14f49e20
+default 函数：declare function + `export { main as default }`	dup:cli-products 聚合矩阵	commit:14f49e20
+default 类：declare class + `export { Box as default }`	dup:cli-products 聚合矩阵	commit:14f49e20
+单独 --format dts 同样合法（存成 .ts 也可编译）	dup:cli-products 聚合矩阵	commit:14f49e20
+具名导出保持既有 `export declare function` 形态	dup:cli-products 聚合矩阵	commit:14f49e20
+--from-dts + --emit/--all/--dry-run/--exit-on-diff ⇒ 用法错误（exit 1）+ 不写侧车	dup:cli-products 聚合矩阵	commit:14f49e20
+--from-dts + --fn ⇒ 同样用法错误（过滤不许被吞）	dup:cli-products 聚合矩阵	commit:14f49e20
+对照组：--from-dts 单独跑 ⇒ 仍出草稿（exit 0）	dup:cli-products 聚合矩阵	commit:14f49e20
+机器面控制组：--from-dts + --emit + --json ⇒ 仍是合法 JSON + exit 1（绝不假绿）	dup:cli-products 聚合矩阵	commit:14f49e20
+首次 --emit --all：标签行真落盘（Updated 与文件一致）；第二次逐字不变（幂等）	dup:cli-products 聚合矩阵	commit:14f49e20
+--dry-run --exit-on-diff：预览与落盘同源 —— 收敛前 exit 1，收敛后 exit 0	dup:cli-products 聚合矩阵	commit:14f49e20
+对照组：真有净漂移 ⇒ dry-run 打 diff 且 --exit-on-diff exit 1（门禁没被关掉）	dup:cli-products 聚合矩阵	commit:14f49e20
+两个分支都命中同一导出 ⇒ 直写正文优先 + `derived-from` 标签行真落盘	dup:cli-products 聚合矩阵	commit:14f49e20
+幂等：连跑两次 --emit --all ⇒ 第二次无 Updated 且 md5 不变	dup:cli-products 聚合矩阵	commit:14f49e20
+收敛后 --dry-run --exit-on-diff ⇒ exit 0，且不再打印永不落盘的 diff	dup:cli-products 聚合矩阵	commit:14f49e20
+预览 == 写盘（字节级）：dry-run 的新增行拼起来就是真实写盘内容	dup:cli-products 聚合矩阵	commit:14f49e20
+`export =` 被剥除 ⇒ 产物 `node --check` 过	dup:cli-products 聚合矩阵	commit:14f49e20
+`export as namespace` 被剥除 ⇒ 产物 `node --check` 过	dup:cli-products 聚合矩阵	commit:14f49e20
+兜底闸门认得这两条语句（真源漏网 ⇒ 拒绝写盘 + 点名文件 + exit 1）	dup:cli-products 聚合矩阵	commit:14f49e20
+skip 函数进导出面（zod / standard / dts / guard 四面都有）	dup:cli-products 聚合矩阵	commit:14f49e20
+skip 函数在 --out 落盘面同样有产物（四个文件都在）	dup:cli-products 聚合矩阵	commit:14f49e20
+手写 .d.ts 在 out 目录里 ⇒ 拒绝覆盖 + exit 1 + 文件逐字不变	dup:cli-products 聚合矩阵	commit:14f49e20
+本工具自己生成的产物 ⇒ 允许覆盖更新（同模块重导）	dup:cli-products 聚合矩阵	commit:14f49e20
+非导出函数不进 zod / standard / guard 三面（stdout 面）	dup:cli-products 聚合矩阵	commit:14f49e20
+非导出函数不进任何落盘产物（--out 面）	dup:cli-products 聚合矩阵	commit:14f49e20
+导出面函数照常进四（闸门不误伤公开面）	dup:cli-products 聚合矩阵	commit:14f49e20
+全部未命中 ⇒ 用法错误（exit 1）+ 列出候选 + **侧车逐字不变**	dup:cli-products 聚合矩阵	commit:14f49e20
+未命中 ⇒ 连 dry-run 预览都不给（不产生放大作用域的 diff）	dup:cli-products 聚合矩阵	commit:14f49e20
+部分命中 ⇒ 未命中的名字走 `skipped <fn> (not-an-export)` 通道（与 LSP/agent 同构）	dup:cli-products 聚合矩阵	commit:14f49e20
+对照组：名字正确 ⇒ 只改那一个（beta 的段不被刷新）	dup:cli-products 聚合矩阵	commit:14f49e20
+目录 + --draft --json：stdout 可被 JSON.parse 解析（改前抛）	dup:cli-products 聚合矩阵	commit:14f49e20
+目录 + --json（print 分支）：同样是一份 JSON 数组（改前是多份拼接）	dup:cli-products 聚合矩阵	commit:14f49e20
+单文件 + --json：顶层仍是数组（单元素）⇒ 形态恒定	dup:cli-products 聚合矩阵	commit:14f49e20
+单文件 + --draft --json：顶层仍是数组（单元素）⇒ 形态恒定	dup:cli-products 聚合矩阵	commit:14f49e20
+非 --json 面不受影响（人类面仍是逐文件文本，不是 JSON）	dup:cli-products 聚合矩阵	commit:14f49e20
+--from-dts + --emit --draft：报互斥错误 + exit 1（改前：静默出 draft、exit 0）	dup:cli-products 聚合矩阵	commit:14f49e20
+--from-dts + --exit-on-diff：报前置条件错误 + exit 1（改前：静默忽略、exit 0）	dup:cli-products 聚合矩阵	commit:14f49e20
+--from-dts + --json：显式拒绝（机器面拿不到 JSON ⇒ 不是静默吞旗标）	dup:cli-products 聚合矩阵	commit:14f49e20
+控制组：--from-dts（无旗标）仍然照常出 draft 正文 + exit 0（不误伤）	dup:cli-products 聚合矩阵	commit:14f49e20
+控制组：--from-dts + --write 仍然可用（合法组合，不被校验误伤）	dup:cli-products 聚合矩阵	commit:14f49e20
+控制组：非 from-dts 模式的既有校验不变（--emit/--draft 互斥仍报同一句）	dup:cli-products 聚合矩阵	commit:14f49e20
+dry-run 打 unified diff（--- a/ + ++ b/ + @@ hunk）且**不写盘**	dup:cli-products 聚合矩阵	commit:14f49e20
+负控制：非 dry-run 的 `--draft --write` 仍然写盘，且**不打** diff	dup:cli-products 聚合矩阵	commit:14f49e20
+diff 头与 `--emit --dry-run` 的头**同款**（同一个 unifiedDiff 生成器）	dup:cli-products 聚合矩阵	commit:14f49e20
+--json + --write：exit 1 + 机器面给出理由 + 草稿**没有**落盘	dup:cli-products 聚合矩阵	commit:14f49e20
+负控制：`--draft --json`（无 --write）仍然照常出审阅载荷（不误伤）	dup:cli-products 聚合矩阵	commit:14f49e20
+负控制：`--draft --write`（无 --json）仍然照常写盘（不误伤）	dup:cli-products 聚合矩阵	commit:14f49e20
+单文件（语法错）+ --draft --json：stdout 非空 + 合法 JSON + errors[] + exit 1	dup:cli-products 聚合矩阵	commit:14f49e20
+目录（好文件 + 坏文件）+ --draft --json：坏文件**不再消失**（载荷不缺项）	dup:cli-products 聚合矩阵	commit:14f49e20
+print 形态（--json）+ 语法错：同样有 errors 条目（机器面统一）	dup:cli-products 聚合矩阵	commit:14f49e20
+人类面不变：stderr 仍点名失败文件 + exit 1	dup:cli-products 聚合矩阵	commit:14f49e20
+--json --emit ⇒ stdout 是合法 JSON 且载荷是 emit 的机器文档	dup:cli-products 聚合矩阵	commit:14f49e20
+--json --emit --dry-run ⇒ 载荷里带 diff（与 draft 分支同构）	dup:cli-products 聚合矩阵	commit:14f49e20
+落点贴着源 `.d.ts`，且 basename **不含 `.d.`**（BUG-264）	dup:cli-products 聚合矩阵	commit:14f49e20
+「next」提示点名的侧车路径也**不含 `.d.`**（建议的复制落点必须可编译）	dup:cli-products 聚合矩阵	commit:14f49e20
+既有草稿存在且内容不同 ⇒ 拒绝覆盖（exit 1）+ 提示**同时**给出两个放行口子	dup:cli-products 聚合矩阵	commit:14f49e20
+内容未变 ⇒ **不**拒绝（exit 0 + 「draft unchanged」）	dup:cli-products 聚合矩阵	commit:14f49e20
+机器原稿（内容不同）+ `--force` ⇒ 覆盖成功	dup:cli-products 聚合矩阵	commit:14f49e20
+机器原稿（内容不同）+ `NUDO_DRAFT_FORCE=1` ⇒ 覆盖成功（环境变量口子同样是真的）	dup:cli-products 聚合矩阵	commit:14f49e20
+人工改过的草稿 ⇒ `--force` **也不放行**（逐字不变 + exit 1）	dup:cli-products 聚合矩阵	commit:14f49e20
+无既有草稿 ⇒ exit 0，打 unified diff（不再是全文 dump），且**不建**草稿文件	dup:cli-products 聚合矩阵	commit:14f49e20
+既有草稿不同 + 无 --force ⇒ exit 1（与真写同口径），**仍**打 diff + 报拒绝 + 文件逐字不变	dup:cli-products 聚合矩阵	commit:14f49e20
+人工改过的草稿 + `--force` ⇒ exit 1（force 也放行不了），diff 照打、文件逐字不变	dup:cli-products 聚合矩阵	commit:14f49e20
+负控制：真写（无 --dry-run）遇既有不同草稿仍 exit 1、文件逐字不变，且**不打** diff	dup:cli-products 聚合矩阵	commit:14f49e20
+草稿落在**源 .d.ts 旁边**（不再是 CWD）⇒ CWD 里的同名草稿逐字不变	dup:cli-products 聚合矩阵	commit:14f49e20
+「next」提示**点名目标侧车路径**	dup:cli-products 聚合矩阵	commit:14f49e20
+目标已存在且内容不同 ⇒ **拒绝覆盖**（exit 1）+ 提示 + 既有草稿逐字不变	dup:cli-products 聚合矩阵	commit:14f49e20
 ```

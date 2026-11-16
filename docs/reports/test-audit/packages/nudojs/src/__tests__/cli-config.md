@@ -6,83 +6,110 @@
 
 ```audit
 title	rootCause	gap	action	status	evidence
-"旗标在前 + 路径在后 ⇒ 正常固化见证（旧行为：Usage error / exit 1 / 零写盘）"	"`nudo test --freeze <path>`（旗标在前、路径在后——CLI 的惯用形式） 把路径吞成 `--freeze` 的**取值** ⇒ 必然报「needs at least one path」⇒ 该功能 在文档/惯例给出的调用形式下**不可达**。 根因：`commands/test.ts` 的 `.option(\"--freeze [mode]\")` 是 commander 的 **可选取值**形式（全 CLI 唯一一处）⇒ 紧跟其后的非选项参数被当成取值。 断言：expect(r.stderr, `stderr=${r.stderr}`).not.toContain(\"needs at least one pa"	没测该层	keep	keep	—
-"白名单取值仍是模式：`--freeze update`（缺路径）仍是用法错误"	"`nudo test --freeze <path>`（旗标在前、路径在后——CLI 的惯用形式） 把路径吞成 `--freeze` 的**取值** ⇒ 必然报「needs at least one path」⇒ 该功能 在文档/惯例给出的调用形式下**不可达**。 根因：`commands/test.ts` 的 `.option(\"--freeze [mode]\")` 是 commander 的 **可选取值**形式（全 CLI 唯一一处）⇒ 紧跟其后的非选项参数被当成取值。 断言：expect(r.status).toBe(1);；expect(r.stderr).toContain(\"needs at least one pa"	没测该层	keep	keep	—
-"首轮 add 之后的 update 把见证名改成真实行号，且再跑一次幂等"	"`nudo test --freeze=update` 在**剥离后的源码坐标**上分析并写回： - ① 把正确的见证行号改错（`call@L8` → `call@L5`）：基源（剥离生成块后）的 调用点在第 5 行，但写回的文件里它在第 8 行； - ② 过期见证与新调用点撞名 ⇒ 判「已经是最新」⇒ 永不刷新； 断言：expect(runCliTsx([\"test\", file, \"--freeze\"]).status).toBe(0);；expect(claimedLine(afterAdd)).not.toBe(callLine(afterAdd));"	没测该层	keep	keep	—
-"已正确的见证不被改错（写盘污染回归）"	"断言：expect(callLine(text)).toBe(8);；expect(r.stdout).toContain(\"freeze: no changes.\");"	没测该层	keep	keep	—
-"过期见证被刷新（不再「no changes」）"	"断言：expect(callLine(readFileSync(file, \"utf-8\"))).toBe(8);；expect(r.status).toBe(0);"	没测该层	keep	keep	—
-"update 运行的展示面含已冻结的指令 case（不退回剥离坐标系的 entry@）"	"`nudo test --freeze=update` 在**剥离后的源码坐标**上分析并写回： - ① 把正确的见证行号改错（`call@L8` → `call@L5`）：基源（剥离生成块后）的 调用点在第 5 行，但写回的文件里它在第 8 行； - ② 过期见证与新调用点撞名 ⇒ 判「已经是最新」⇒ 永不刷新； 断言：expect(r.stdout).toContain(`case \"call@L8\"`);；expect(r.stdout).toContain(\"[unchecked]\");"	没测该层	keep	keep	—
-"普通 test 对同一次调用只记一条（指令见证与合成调用点不并存）"	"`nudo test --freeze=update` 在**剥离后的源码坐标**上分析并写回： - ① 把正确的见证行号改错（`call@L8` → `call@L5`）：基源（剥离生成块后）的 调用点在第 5 行，但写回的文件里它在第 8 行； - ② 过期见证与新调用点撞名 ⇒ 判「已经是最新」⇒ 永不刷新； 断言：expect(caseLines).toBe(1);"	没测该层	keep	keep	—
-"update 后仍活着的见证一条都不少（旧行为：静默删除 call@site.js:L2）"	"（CLI 面）：`nudo test --freeze=update` **静默删除**一条**仍然活着**的 见证（`call@site.js:L2`），删除汇总还谎报「0 directive(s)」，事后 health 转绿 （假绿）； 契约： - update 后**仍活着**的调用点见证一条都不少（剥离 → 重算 → 回写往返闭合）； 断言：expect(dry.status, dry.stderr).toBe(0);；expect(dry.stdout).toContain(\"freeze: no changes.\");"	没测该层	keep	keep	—
-"health 推荐的刷新动作不再是破坏动作：照做一遍见证一条不少"	"（CLI 面）：`nudo test --freeze=update` **静默删除**一条**仍然活着**的 见证（`call@site.js:L2`），删除汇总还谎报「0 directive(s)」，事后 health 转绿 （假绿）； 契约： - update 后**仍活着**的调用点见证一条都不少（剥离 → 重算 → 回写往返闭合）； 断言：expect(h.stdout).toMatch(/Result: (OK|FAIL)/);；expect(upd.stdout).toContain(\"freeze: no changes.\");"	没测该层	keep	keep	—
-"真的删除时不谎报：汇总报出条数与被删见证名（旧行为：「0 directive(s)」）"	"（CLI 面）：`nudo test --freeze=update` **静默删除**一条**仍然活着**的 见证（`call@site.js:L2`），删除汇总还谎报「0 directive(s)」，事后 health 转绿 （假绿）； 契约： - update 后**仍活着**的调用点见证一条都不少（剥离 → 重算 → 回写往返闭合）； 断言：expect(upd.status, upd.stderr).toBe(0);；expect(after).toContain(\"call@L5\");"	没测该层	keep	keep	—
-"重复成员：落盘只剩一个 nudo 成员，且加载器读到 adoption baseline"	"`nudo init` 的最小改动写盘只替换**第一个**同名 `\"nudo\"` 成员，而 加载器按 `JSON.parse`（**后者胜**）读 ⇒ init 报「已写入 adoption baseline」 并引导跑 adoption 档，但**生效的配置仍是旧的非法值**（陈述与事实相反）； 修复：改**生效成员（最后一个）**并把其余重复成员删掉 ⇒ 落盘只剩一个 `nudo` 成员，且「init 声称写入 ⇒ 加载器读到的配置 == adoption baseline」。 断言：expect(r.code, r.err.join(\"\\n\")).toBe(0);；expect(r.out.join(\"\\n\")).toCont"	夹具漏形态	keep	keep	—
-"单个非法值（对照）：同样落盘为基线且加载器可见"	"断言：expect(r.code).toBe(0);；expect(JSON.parse(readFileSync(join(d, \"package.json\"), \"utf-8\")).nudo).toEqual(BASELINE);"	没测该层	keep	keep	—
-"帮助文本承诺 update | add，且两个模式都能被实现接受"	"`nudo test --help` 宣称 `--freeze` 的模式是 `update | add`， 但 `--freeze=add` 是**用法错误** exit 1 ⇒ **帮助面承诺 vs 实现矛盾** （用户照 `--help` 写就命令失败）。 修复：解析器**接受** `--freeze=add`（帮助文本已经承诺了它 ⇒ 改实现的 成本更低、对用户更友好），并把错误文案里的合法取值集合同步成与帮助 一致。 断言：expect(help.status).toBe(0);；expect(modes).toContain(\"update\");"	没测该层	keep	keep	—
-"非法取值仍被拒（且错误文案列出的合法取值与帮助一致）"	"断言：expect(r.status).toBe(1);；expect(r.stderr).toContain(\"Invalid --freeze value\");"	没测该层	keep	keep	—
-"--freeze=add --dry-run：exit 0（旧行为：exit 1 + Invalid --freeze value）"	"修复（与 同根因、同片一次修完）：解析器接受 `--freeze=add` ⇒ 显式 `=add` 与省略取值（默认 add）**同义**。 断言：expect(r.status, r.stderr).toBe(0);；expect(r.stderr).not.toContain(\"Invalid --freeze value\");"	没测该层	keep	keep	—
-"--freeze=add 与省略取值（默认 add）产出逐字一致"	"修复（与 同根因、同片一次修完）：解析器接受 `--freeze=add` ⇒ 显式 `=add` 与省略取值（默认 add）**同义**。 断言：expect(explicit.status).toBe(0);；expect(implicit.status).toBe(0);"	没测该层	keep	keep	—
-"--freeze=update 仍是 update 模式（不回归）"	"修复（与 同根因、同片一次修完）：解析器接受 `--freeze=add` ⇒ 显式 `=add` 与省略取值（默认 add）**同义**。 断言：expect(r.status, r.stderr).toBe(0);；expect(r.stderr).not.toContain(\"Invalid --freeze value\");"	没测该层	keep	keep	—
-"非法取值仍被拒 + exit 1"	"修复（与 同根因、同片一次修完）：解析器接受 `--freeze=add` ⇒ 显式 `=add` 与省略取值（默认 add）**同义**。 断言：expect(r.status).toBe(1);；expect(r.stderr).toContain(\"Invalid --freeze value\");"	没测该层	keep	keep	—
-"nudo 值为 null（形状非法 ⇒ 加载器按「无配置」处理）⇒ init 写入基线"	"`nudo init` 的**幂等判据**必须与**配置加载器的真值判据**一致。 键存在但形状非法（null / 标量 / 数组）⇒ 该包**没有**配置（加载器按 「无配置」处理并**不继承**祖先）。 断言：expect(runInit(dir, io)).toBe(0);；expect(parsed.nudo).toEqual({ check: { profile: \"adoption\" } });"	夹具漏形态	keep	keep	—
-"nudo 值为标量（形状非法）⇒ init 写入基线"	"`nudo init` 的**幂等判据**必须与**配置加载器的真值判据**一致。 键存在但形状非法（null / 标量 / 数组）⇒ 该包**没有**配置（加载器按 「无配置」处理并**不继承**祖先）。 断言：expect(runInit(dir, io)).toBe(0);；expect(parsed.nudo).toEqual({ check: { profile: \"adoption\" } });"	夹具漏形态	keep	keep	—
-"nudo 值为有效对象 ⇒ 幂等：只打印、不写盘（与加载器「配置在场」一致）"	"`nudo init` 的**幂等判据**必须与**配置加载器的真值判据**一致。 键存在但形状非法（null / 标量 / 数组）⇒ 该包**没有**配置（加载器按 「无配置」处理并**不继承**祖先）。 断言：expect(runInit(dir, io)).toBe(0);；expect(readFileSync(join(dir, \"package.json\"), \"utf-8\")).toBe(before);"	夹具漏形态	keep	keep	—
-"nudo 值为空对象 {} ⇒ 仍是**有效配置**（加载器据此截断祖先继承）⇒ 幂等不写"	"`nudo init` 的**幂等判据**必须与**配置加载器的真值判据**一致。 键存在但形状非法（null / 标量 / 数组）⇒ 该包**没有**配置（加载器按 「无配置」处理并**不继承**祖先）。 断言：expect(runInit(dir, io)).toBe(0);；expect(readFileSync(join(dir, \"package.json\"), \"utf-8\")).toBe(before);"	夹具漏形态	keep	keep	—
-"祖先有 nudo 配置 ⇒ init 拒绝写盘（exit 1）且子包 package.json 逐字不变"	"monorepo：根有 strict nudo 配置，子包没有 nudo 键 断言：expect(code).toBe(1);；expect(readFileSync(join(sub, \"package.json\"), \"utf-8\")).toBe(before);"	没测该层	keep	keep	—
-"拒绝之后根配置仍然生效（门禁不翻绿）：nudo check 仍然 exit 1"	"monorepo：根有 strict nudo 配置，子包没有 nudo 键 断言：expect(before.status, before.stderr).toBe(1);；expect(init.status, init.stderr).toBe(1);"	没测该层	keep	keep	—
-"没有祖先配置时 init 照常写基线（不得过度拦截）"	"`nudo init` 在 monorepo 子包写 `nudo` 键 ⇒ **遮蔽**仓库根配置， 门禁由红翻绿（假绿）。 加载器的查找口径（packages/service/src/evaluator/config.ts）：取「最近的、 **含 nudo 键**的 package.json」⇒ 子包一旦有了自己的 `nudo` 键，根配置 整段不可见（文档 packages/website/docs/reference/config.md:10 承诺根配置 对「无自有 nudo 键」的子包保持可见）。 断言：expect(runInit(dir, { out: () => {}, err: () => {} })).toBe(0"	没测该层	keep	keep	—
-"未声明 workspace 的 monorepo（packages/* 形态）⇒ 不假拒绝（Bug 35 新口径）"	"目标目录没有自己的 package.json 断言：expect(code).toBe(0);；expect(errors.join(\"\\n\")).not.toContain(\"workspace / container root\");"	没测该层	keep	keep	—
-"pnpm workspace（pnpm-workspace.yaml）⇒ 同样拒绝写盘"	"`nudo init` 向上逃逸：目标目录**没有自己的 package.json** ⇒ 基线写到**仓库根**（整个 monorepo 的门禁档被改），而用户以为只初始化了 一个包。 改前：`findPackageJsonUp` 无条件沿父目录链上溯 ⇒ `nudo init packages/newpkg/src` 把 `\"nudo\"` 键写进**仓库根**的 package.json。 断言：expect(runInit(target, { out: () => {}, err: () => {} })).toBe(1);；expect(readFileSync(join(root, \"package.json\"), \"ut"	没测该层	keep	keep	—
-"package.json#workspaces ⇒ 同样拒绝写盘"	"目标目录没有自己的 package.json 断言：expect(runInit(target, { out: () => {}, err: () => {} })).toBe(1);；expect(readFileSync(join(root, \"package.json\"), \"utf-8\")).toBe(before);"	没测该层	keep	keep	—
-"单包仓库（无子包）⇒ 照常写到本包的 package.json（不得过度拦截）"	"目标目录没有自己的 package.json 断言：expect(runInit(join(root, \"src\"), { out: () => {}, err: () => {} })).toBe(0);；expect(parsed.nudo).toEqual({ check: { profile: \"adoption\" } });"	没测该层	keep	keep	—
-"package.json 不可读 ⇒ 「cannot read」（不是「不是合法 JSON」）+ exit 1"	"`nudo init` 的 IO 失败路径：**读失败被误报成「不是合法 JSON」**； **写失败抛未捕获异常**（裸 errno、无 `error:` / `fix:` 引导）。 断言：expect(code).toBe(1);；expect(errors.join(\"\\n\")).toContain(\"error: cannot read\");"	没测该层	keep	keep	—
-"package.json 只读 ⇒ 「cannot write」+ fix 引导 + exit 1（不再抛裸 errno）"	"`nudo init` 的 IO 失败路径：**读失败被误报成「不是合法 JSON」**； **写失败抛未捕获异常**（裸 errno、无 `error:` / `fix:` 引导）。 断言：expect(code).toBe(1);；expect(errors.join(\"\\n\")).toContain(\"error: cannot write\");"	没测该层	keep	keep	—
-"真·非法 JSON ⇒ 仍是「is not valid JSON」+ 解析错误位置（不被 IO 路径吞掉）"	"`nudo init` 的 IO 失败路径：**读失败被误报成「不是合法 JSON」**； **写失败抛未捕获异常**（裸 errno、无 `error:` / `fix:` 引导）。 断言：expect(runInit(dir, { out: () => {}, err: (l) => errors.push(l) })).toBe(1);；expect(errors.join(\"\\n\")).toContain(\"is not valid JSON — nothing written\");"	没测该层	keep	keep	—
-"4 空格缩进 + 无尾换行 ⇒ 缩进与尾换行状态逐字保留，只多出 nudo 成员"	"改前：`JSON.parse` → 改对象 → `JSON.stringify(pkg, null, 2)` 整份重写。 反向闸：换回 HEAD 只读副本 ⇒ 「4 空格缩进逐字保留」「整数样键顺序不变」 「尾换行状态不变」三条断言**必红**（HEAD 全部规范化成 2 空格 + 重排 + 补尾换行）。 断言：expect(runInit(dir, io)).toBe(0);；expect(written).toBe("	夹具漏形态	keep	keep	—
-"整数样键的相对顺序不变（JSON.parse 会把它们重排）"	"改前：`JSON.parse` → 改对象 → `JSON.stringify(pkg, null, 2)` 整份重写。 反向闸：换回 HEAD 只读副本 ⇒ 「4 空格缩进逐字保留」「整数样键顺序不变」 「尾换行状态不变」三条断言**必红**（HEAD 全部规范化成 2 空格 + 重排 + 补尾换行）。 断言：expect(runInit(dir, io)).toBe(0);；expect(order).toEqual([\"name\", \"2\", \"1\", \"10\", \"b\", \"nudo\"]);"	夹具漏形态	keep	keep	—
-"紧凑单行文件 ⇒ 保持紧凑（不引入换行）"	"断言：expect(runInit(dir, io)).toBe(0);；expect(written).toBe('{\"name\":\"up\",\"nudo\":{\"check\":{\"profile\":\"adoption\"}}}');"	没测该层	keep	keep	—
-"已有 nudo 键（形状非法）⇒ 只替换它的值，其余字节不动"	"改前：`JSON.parse` → 改对象 → `JSON.stringify(pkg, null, 2)` 整份重写。 反向闸：换回 HEAD 只读副本 ⇒ 「4 空格缩进逐字保留」「整数样键顺序不变」 「尾换行状态不变」三条断言**必红**（HEAD 全部规范化成 2 空格 + 重排 + 补尾换行）。 断言：expect(runInit(dir, io)).toBe(0);；expect(written).toBe("	夹具漏形态	keep	keep	—
-"单元：attachPathErrors 不把路径错误并进 summary.errors（只挂 ok:false + pathErrors）"	"多文件信封的 `summary.errors` 把 `--from` 的**路径错误**也算成 分析 error ⇒ 信封聚合数 ≠ Σ`reports[].summary.errors` ≠ 人类面计数。 路径错误不是分析 诊断（没有对应 report），只落在 `pathErrors[]`（非空 ⇒ ok:false ⇒ exit 1）。 断言：expect(out.summary.errors).toBe(3);；expect(out.ok).toBe(false);"	没测该层	keep	keep	—
-"CLI：三处一致（信封 = Σreports[] = 人类面），路径错误仍在 pathErrors[]"	"多文件信封的 `summary.errors` 把 `--from` 的**路径错误**也算成 分析 error ⇒ 信封聚合数 ≠ Σ`reports[].summary.errors` ≠ 人类面计数。 路径错误不是分析 诊断（没有对应 report），只落在 `pathErrors[]`（非空 ⇒ ok:false ⇒ exit 1）。 断言：expect(json.status).toBe(1);；expect(env.summary.errors).toBe(sumReports);"	没测该层	keep	keep	—
-"CLI：无路径错误时信封计数 = 人类面计数（未回归）"	"多文件信封的 `summary.errors` 把 `--from` 的**路径错误**也算成 分析 error ⇒ 信封聚合数 ≠ Σ`reports[].summary.errors` ≠ 人类面计数。 路径错误不是分析 诊断（没有对应 report），只落在 `pathErrors[]`（非空 ⇒ ok:false ⇒ exit 1）。 断言：expect(env.summary.errors).toBe(；expect(env.summary.errors).toBe(humanErrorCount(human.stdout));"	没测该层	keep	keep	—
-"CLI：语法错文件走 pathErrors ⇒ 信封计数仍是**分析诊断数**（= Σreports[] = 人类面）"	"多文件信封的 `summary.errors` 把 `--from` 的**路径错误**也算成 分析 error ⇒ 信封聚合数 ≠ Σ`reports[].summary.errors` ≠ 人类面计数。 路径错误不是分析 诊断（没有对应 report），只落在 `pathErrors[]`（非空 ⇒ ok:false ⇒ exit 1）。 断言：expect(json.status).toBe(1);；expect(env.pathErrors).toHaveLength(1);"	没测该层	keep	keep	—
-"语法错文件 ⇒ stdout 是合法 JSON（非 0 字节）且带文件名"	"`nudo migrate strip --json` 遇**语法错文件** ⇒ stdout 0 字节 （违反「`--json` 下 stdout 永不为空」的产品不变量）⇒ 已成功文件的结果 一并丢失； 且 stderr 不含文件名。 断言：expect(r.status).toBe(1);；expect(r.stdout.length).toBeGreaterThan(0);"	没测该层	keep	keep	—
-"一个目标失败 + 另一个目标成功 ⇒ 成功目标的 results 不丢"	"`nudo migrate strip --json` 遇**语法错文件** ⇒ stdout 0 字节 （违反「`--json` 下 stdout 永不为空」的产品不变量）⇒ 已成功文件的结果 一并丢失； 且 stderr 不含文件名。 断言：expect(r.status).toBe(1);；expect(r.stdout.length).toBeGreaterThan(0);"	没测该层	keep	keep	—
-"全成功 ⇒ stdout 仍是顶��数组（形状不变）"	"`nudo migrate strip --json` 遇**语法错文件** ⇒ stdout 0 字节 （违反「`--json` 下 stdout 永不为空」的产品不变量）⇒ 已成功文件的结果 一并丢失； 且 stderr 不含文件名。 断言：expect(r.status, r.stderr).toBe(0);；expect(Array.isArray(parsed)).toBe(true);"	没测该层	keep	keep	—
-"非 JSON 面：失败目标进 stderr（带文件名），成功目标仍进 stdout"	"`nudo migrate strip --json` 遇**语法错文件** ⇒ stdout 0 字节 （违反「`--json` 下 stdout 永不为空」的产品不变量）⇒ 已成功文件的结果 一并丢失； 且 stderr 不含文件名。 断言：expect(r.status).toBe(1);；expect(r.stdout).toContain(\"good.ts\");"	没测该层	keep	keep	—
-"人类面：exit 0（不裸崩）+ 报告面有文件名与诊断码 config-shape"	"`package.json#nudo.env` 的值**不是数组**时的处理。 旧实现：消费点 `projectEnvNames is not iterable` ⇒ check / test / health / contract / export **五个 verb 全部裸崩**（不是 Nudo 报告）。 断言：expect(r.stderr).not.toContain(\"is not iterable\");；expect(r.status).toBe(0);"	夹具漏形态	keep	keep	—
-"机器面（--json）：issues 里有 config-shape 告警（文件名 + 值）"	"`package.json#nudo.env` 的值**不是数组**时的处理。 旧实现：消费点 `projectEnvNames is not iterable` ⇒ check / test / health / contract / export **五个 verb 全部裸崩**（不是 Nudo 报告）。 断言：expect(r.status).toBe(0);；expect(shape).toBeDefined();"	夹具漏形态	keep	keep	—
-"其它形状（布尔 / 对象）同样不裸崩 + 报告面可见"	"`package.json#nudo.env` 的值**不是数组**时的处理。 旧实现：消费点 `projectEnvNames is not iterable` ⇒ check / test / health / contract / export **五个 verb 全部裸崩**（不是 Nudo 报告）。 断言：expect(r.stderr).not.toContain(\"is not iterable\");；expect(r.status).toBe(0);"	夹具漏形态	keep	keep	—
-"合法 env 数组：无 config-shape 告警（未回归）"	"`package.json#nudo.env` 的值**不是数组**时的处理。 旧实现：消费点 `projectEnvNames is not iterable` ⇒ check / test / health / contract / export **五个 verb 全部裸崩**（不是 Nudo 报告）。 断言：expect(r.status).toBe(0);；expect(r.stdout).not.toContain(\"config-shape\");"	夹具漏形态	keep	keep	—
-"check 面：harvest 的非冲突导出不再被丢弃（unknown ⇒ string）"	"`nudo check` 的 env 模块装配用**对象展开**代替 `mergeHarvestUnderEnv` ⇒ 手写 env 与 harvest **同名模块**时，harvest 的 **非冲突导出被整体丢弃** ⇒ check 面报 `unknown` + 误导诊断 （`nudo:unknown-inference`），而 test 面报**精确值** ⇒ 两个产品面互相矛盾。 oracle（改前 → 改后）： 改前 `nudo check lib.js` ⇒ `harvested(a: any) => unknown` + unknown-inference 告警 改后 `nudo check lib.js` ⇒ `h"	夹具漏形态	keep	keep	—
-"check 面与 test 面结论一致（同一文件、同一个精确签名）"	"`nudo check` 的 env 模块装配用**对象展开**代替 `mergeHarvestUnderEnv` ⇒ 手写 env 与 harvest **同名模块**时，harvest 的 **非冲突导出被整体丢弃** ⇒ check 面报 `unknown` + 误导诊断 （`nudo:unknown-inference`），而 test 面报**精确值** ⇒ 两个产品面互相矛盾。 oracle（改前 → 改后）： 改前 `nudo check lib.js` ⇒ `harvested(a: any) => unknown` + unknown-inference 告警 改后 `nudo check lib.js` ⇒ `h"	夹具漏形态	keep	keep	—
-"人面上屏 nudo:env-harvest-conflict（warning，不挡门禁）"	"夹具：手写 `@nudo:env node` + 一个自带 @types 形态 d.ts 的 node_modules 包 ⇒ harvest 与手写 env 在 `format` 槽位上冲突 ⇒ 分析器产出 `nudo:env-harvest-conflict`（warning）。 断言：expect(out).toContain(\"(nudo:env-harvest-conflict)\");；expect(r.status).toBe(0);"	夹具漏形态	keep	keep	—
-"--json 面同码同 severity（warning）"	"夹具：手写 `@nudo:env node` + 一个自带 @types 形态 d.ts 的 node_modules 包 ⇒ harvest 与手写 env 在 `format` 槽位上冲突 ⇒ 分析器产出 `nudo:env-harvest-conflict`（warning）。 断言：expect(hit).toBeDefined();；expect(hit?.severity).toBe(\"warning\");"	夹具漏形态	keep	keep	—
-"加载器口径：本包 nudo 键形状非法 ⇒ **不继承**祖先配置（fail-closed）"	"`nudo init` 的「祖先配置继承」口径必须与**配置加载器**一致， 且不得死锁。 - 键存在但形状**非法**（null / 标量 / 数组）⇒ stderr 提示后按 「无配置」处理，并**不继承**祖先配置（fail-closed）。 断言：expect(findProjectConfig(sub)).toBeNull();"	夹具漏形态	keep	keep	—
-"死锁回归：无效 nudo 值 + 祖先有有效配置 ⇒ 以基线替换并告警（不得拒绝）"	"`nudo init` 的「祖先配置继承」口径必须与**配置加载器**一致， 且不得死锁。 - 键存在但形状**非法**（null / 标量 / 数组）⇒ stderr 提示后按 「无配置」处理，并**不继承**祖先配置（fail-closed）。 断言：expect(code).toBe(0);；expect(parsed.nudo).toEqual({ check: { profile: \"adoption\" } });"	夹具漏形态	keep	keep	—
-"死锁回归：拒绝信息不得谎称「it inherits」（加载器并不继承）"	"`nudo init` 的「祖先配置继承」口径必须与**配置加载器**一致， 且不得死锁。 - 键存在但形状**非法**（null / 标量 / 数组）⇒ stderr 提示后按 「无配置」处理，并**不继承**祖先配置（fail-closed）。 断言：expect(errors.join(\"\\n\")).not.toContain(\"it inherits a nudo config from\");"	夹具漏形态	keep	keep	—
-"反向闸：本包**没有** nudo 键 + 祖先有有效配置 ⇒ 仍拒绝遮蔽（loader 口径）"	"`nudo init` 的「祖先配置继承」口径必须与**配置加载器**一致， 且不得死锁。 - 键存在但形状**非法**（null / 标量 / 数组）⇒ stderr 提示后按 「无配置」处理，并**不继承**祖先配置（fail-closed）。 断言：expect(findProjectConfig(sub)?.config?.check?.profile).toBe(\"strict\");；expect(code).toBe(1);"	夹具漏形态	keep	keep	—
-"显式 init <容器根>：写盘 + 作用域告警（不越界）"	"`nudo init` 的「祖先配置继承」口径必须与**配置加载器**一致， 且不得死锁。 - 键存在但形状**非法**（null / 标量 / 数组）⇒ stderr 提示后按 「无配置」处理，并**不继承**祖先配置（fail-closed）。 断言：expect(code).toBe(0);；expect(parsed.nudo).toEqual({ check: { profile: \"adoption\" } });"	夹具漏形态	keep	keep	—
-"从容器根的子目录 init：拒绝越界写盘（exit 1）"	"`nudo init` 的「祖先配置继承」口径必须与**配置加载器**一致， 且不得死锁。 - 键存在但形状**非法**（null / 标量 / 数组）⇒ stderr 提示后按 「无配置」处理，并**不继承**祖先配置（fail-closed）。 断言：expect(code).toBe(1);；expect(readFileSync(join(root, \"package.json\"), \"utf-8\")).toBe(before);"	夹具漏形态	keep	keep	—
-"mock 表达式解析失败 ⇒ warning（不红门禁）"	"mock 文件缺失 ⇒ 依赖不可用 ⇒ error 断言：expect(mockInvalid.length).toBeGreaterThan(0);；expect(i.severity).toBe(\"warning\");"	没测该层	keep	keep	—
-"mock 文件缺失仍是 error（不引入假绿）"	"mock 文件缺失 ⇒ 依赖不可用 ⇒ error 断言：expect(json.summary.errors).toBeGreaterThan(0);；expect(json.ok).toBe(false);"	没测该层	keep	keep	—
-"负控制：文件面只出现一条 mock-invalid（无重复报告）"	"mock 文件缺失 ⇒ 依赖不可用 ⇒ error 断言：expect(mockInvalid).toHaveLength(1);"	没测该层	keep	keep	—
-"check --json：config-shape warning 进 issues 段"	"回归（CLI 报告面）：package.json#nudo 键的**形状**问题 （值不是对象 / 是假值）必须**在报告面可见**——service 侧只给 stderr 一行， check / health 的报告面看不到 ⇒ 用户不知道自己写错了。 另锁 onboarding 条件对齐：形状写坏时**不得**打「本项目还没有 nudo 配置」 的 onboarding 块（那个前提不成立，且「nudo init」是错 advice）。 断言：expect(shape).toHaveLength(1);；expect(shape[0].severity).toBe(\"warning\");"	夹具漏形态	keep	keep	—
-"check 人类面：issues 段看得见 config-shape"	"回归（CLI 报告面）：package.json#nudo 键的**形状**问题 （值不是对象 / 是假值）必须**在报告面可见**——service 侧只给 stderr 一行， check / health 的报告面看不到 ⇒ 用户不知道自己写错了。 另锁 onboarding 条件对齐：形状写坏时**不得**打「本项目还没有 nudo 配置」 的 onboarding 块（那个前提不成立，且「nudo init」是错 advice）。 断言：expect(r.stdout).toContain(\"config-shape\");；expect(r.stdout).toContain(\"expected an object\");"	夹具漏形态	keep	keep	—
-"health 人类面：config 提示行可见"	"回归（CLI 报告面）：package.json#nudo 键的**形状**问题 （值不是对象 / 是假值）必须**在报告面可见**——service 侧只给 stderr 一行， check / health 的报告面看不到 ⇒ 用户不知道自己写错了。 另锁 onboarding 条件对齐：形状写坏时**不得**打「本项目还没有 nudo 配置」 的 onboarding 块（那个前提不成立，且「nudo init」是错 advice）。 断言：expect(r.stdout).toContain(\"config:\");；expect(r.stdout).toContain(\"expected an object\");"	夹具漏形态	keep	keep	—
-"health --json：configShape 字段可见"	"回归（CLI 报告面）：package.json#nudo 键的**形状**问题 （值不是对象 / 是假值）必须**在报告面可见**——service 侧只给 stderr 一行， check / health 的报告面看不到 ⇒ 用户不知道自己写错了。 另锁 onboarding 条件对齐：形状写坏时**不得**打「本项目还没有 nudo 配置」 的 onboarding 块（那个前提不成立，且「nudo init」是错 advice）。 断言：expect(json.files[0].configShape).toBeDefined();；expect(json.files[0].configShape?.message).to"	夹具漏形态	keep	keep	—
-"936：假值 nudo 键（false）同样可见（且措辞说 falsy）"	"468：`nudo` 键的值不是对象 断言：expect(r.stdout).toContain(\"config-shape\");；expect(r.stdout).toContain(\"falsy\");"	夹具漏形态	keep	keep	—
-"负控制：合法 nudo 对象 ⇒ 无 config-shape 诊断"	"468：`nudo` 键的值不是对象 断言：expect(json.issues.filter((i) => i.code === \"config-shape\")).toHaveLength(0);"	夹具漏形态	keep	keep	—
-"缓存命中轮：config-shape 仍恰 1 条（不重复）"	"`nudo init` 的「祖先配置继承」口径必须与**配置加载器**一致， 且不得死锁。 - 键存在但形状**非法**（null / 标量 / 数组）⇒ stderr 提示后按 「无配置」处理，并**不继承**祖先配置（fail-closed）。 断言：expect(a.issues.filter((i) => i.code === \"config-shape\")).toHaveLength(1);；expect(b.issues.filter((i) => i.code === \"config-shape\")).toHaveLength(1);"	夹具漏形态	keep	keep	—
-"键被改好后：陈旧的 config-shape 告警不得留在缓存里"	"`nudo init` 的「祖先配置继承」口径必须与**配置加载器**一致， 且不得死锁。 - 键存在但形状**非法**（null / 标量 / 数组）⇒ stderr 提示后按 「无配置」处理，并**不继承**祖先配置（fail-closed）。 断言：expect(；expect("	夹具漏形态	keep	keep	—
-"字符串 env：不裸崩 + 人类面产出 config-shape 形状告警"	"与 env 无关的代码：env 列表被忽略时**不得**制造假的 `nudo:unknown-inference` 断言：expect(r.stderr).not.toContain(\"is not iterable\");；expect(r.stderr).not.toContain(\"TypeError\");"	没测该层	keep	keep	—
-"字符串 env：机器面（--json）恰一条 config-shape 告警（warning），且零条 env-unresolved"	"与 env 无关的代码：env 列表被忽略时**不得**制造假的 `nudo:unknown-inference` 断言：expect(r.status).toBe(0);；expect(shape).toHaveLength(1);"	没测该层	keep	keep	—
-"env 名列表不是逐字符：字符串 env ⇒ 0 条 env-unresolved；字符数组 env ⇒ 恰 4 条"	"与 env 无关的代码：env 列表被忽略时**不得**制造假的 `nudo:unknown-inference` 断言：expect(count(r.stdout, \"unknown env name\")).toBe(0);；expect(count(r.stdout, \"nudo:env-unresolved\")).toBe(0);"	没测该层	keep	keep	—
-"env 列表被忽略：字符串 env ⇒ Buffer 不可用（env 侧不生效）；env:[\"node\"] ⇒ Buffer 可用"	"与 env 无关的代码：env 列表被忽略时**不得**制造假的 `nudo:unknown-inference` 断言：expect(r.stdout).toContain(\"toBuf(s: any) => unknown\");；expect(r.stdout).not.toContain(\"toBuf(s: any) => Buffer\");"	没测该层	keep	keep	—
-"env 无关型代码：被忽略的 env 不制造假的 nudo:unknown-inference"	"与 env 无关的代码：env 列表被忽略时**不得**制造假的 `nudo:unknown-inference` 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain(\"answer() => 42\");"	没测该层	keep	keep	—
-"子目录文件：拿到 env ⇒ magic() => 42、无 env 告警、exit 0"	"`package.json#nudo.env` 的**路径型**条目按**被分析文件所在目录** 解析（不是项目根）⇒ **子目录**里的文件永远拿不到 env ⇒ **假红** （`never` + `nudo:env-unresolved`）+ 误导诊断。 修法（族 18 片 4）：env 名装配**分层**（`assembleEnvs`）—— - **项目级**（package.json#nudo.env）按**项目根**解析（相对说明符先绝对化： 收集期的查表基准是「最后一次 preload 的目录」，不绝对化则子目录文件必然 查空）； 断言：expect(r.status, out).toBe(0);；expect(out"	没测该层	keep	keep	—
-"根目录文件：口径不变（magic() => 42、exit 0）"	"`package.json#nudo.env` 的**路径型**条目按**被分析文件所在目录** 解析（不是项目根）⇒ **子目录**里的文件永远拿不到 env ⇒ **假红** （`never` + `nudo:env-unresolved`）+ 误导诊断。 修法（族 18 片 4）：env 名装配**分层**（`assembleEnvs`）—— - **项目级**（package.json#nudo.env）按**项目根**解析（相对说明符先绝对化： 收集期的查表基准是「最后一次 preload 的目录」，不绝对化则子目录文件必然 查空）； 断言：expect(r.status, out).toBe(0);；expect(out"	没测该层	keep	keep	—
-"项目级 env 文件真缺时仍必须可见（nudo:env-unresolved 不许被过滤掉）"	"`package.json#nudo.env` 的**路径型**条目按**被分析文件所在目录** 解析（不是项目根）⇒ **子目录**里的文件永远拿不到 env ⇒ **假红** （`never` + `nudo:env-unresolved`）+ 误导诊断。 修法（族 18 片 4）：env 名装配**分层**（`assembleEnvs`）—— - **项目级**（package.json#nudo.env）按**项目根**解析（相对说明符先绝对化： 收集期的查表基准是「最后一次 preload 的目录」，不绝对化则子目录文件必然 查空）； 断言：expect(out).toContain(\"nudo:env-unresolve"	没测该层	keep	keep	—
-"CLI：非 --json 面仍是 stderr 文案 + exit 1（旧口径不回归）"	"`nudo check --json` 下的**用法错误** ⇒ stdout 空 + exit 1 （机器面 `JSON.parse(stdout)` 直接炸； 且违反「exit 只由打印出的 ok 决定 / 绝不出现空 stdout + 非零 exit」的机器面契约）。 断言：expect(r.status).toBe(1);；expect(r.stdout).toBe(\"\");"	没测该层	keep	keep	—
-"CLI：非 --json 面的组合拒绝仍是 stderr 文案（--fix + --watch）"	"`nudo check --json` 下的**用法错误** ⇒ stdout 空 + exit 1 （机器面 `JSON.parse(stdout)` 直接炸； 且违反「exit 只由打印出的 ok 决定 / 绝不出现空 stdout + 非零 exit」的机器面契约）。 断言：expect(r.status).toBe(1);；expect(r.stdout).toBe(\"\");"	没测该层	keep	keep	—
+旗标在前 + 路径在后 ⇒ 正常固化见证（旧行为：Usage error / exit 1 / 零写盘）；白名单取值仍是模式：`--freeze update`（缺路径）仍是用法错误	cli-config 聚合矩阵	没测该层	keep	keep	—
+首轮 add 之后的 update 把见证名改成真实行号，且再跑一次幂等；已正确的见证不被改错（写盘污染回归）；过期见证被刷新（不再「no changes」）；update 运行的展示面含已冻结的指令 case（不退回剥离坐标系的 entry@）；普通 test 对同一次调用只记一条（指令见证与合成调用点不并存）	cli-config 聚合矩阵	没测该层	keep	keep	—
+update 后仍活着的见证一条都不少（旧行为：静默删除 call@site.js:L2）；health 推荐的刷新动作不再是破坏动作：照做一遍见证一条不少；真的删除时不谎报：汇总报出条数与被删见证名（旧行为：「0 directive(s)」）	cli-config 聚合矩阵	没测该层	keep	keep	—
+重复成员：落盘只剩一个 nudo 成员，且加载器读到 adoption baseline；单个非法值（对照）：同样落盘为基线且加载器可见	cli-config 聚合矩阵	没测该层	keep	keep	—
+帮助文本承诺 update | add，且两个模式都能被实现接受；非法取值仍被拒（且错误文案列出的合法取值与帮助一致）	cli-config 聚合矩阵	没测该层	keep	keep	—
+--freeze=add --dry-run：exit 0（旧行为：exit 1 + Invalid --freeze value）；--freeze=add 与省略取值（默认 add）产出逐字一致；--freeze=update 仍是 update 模式（不回归）；非法取值仍被拒 + exit 1	cli-config 聚合矩阵	没测该层	keep	keep	—
+nudo 值为 null（形状非法 ⇒ 加载器按「无配置」处理）⇒ init 写入基线；nudo 值为标量（形状非法）⇒ init 写入基线；nudo 值为有效对象 ⇒ 幂等：只打印、不写盘（与加载器「配置在场」一致）；nudo 值为空对象 {} ⇒ 仍是**有效配置**（加载器据此截断祖先继承）⇒ 幂等不写	cli-config 聚合矩阵	没测该层	keep	keep	—
+祖先有 nudo 配置 ⇒ init 拒绝写盘（exit 1）且子包 package.json 逐字不变；拒绝之后根配置仍然生效（门禁不翻绿）：nudo check 仍然 exit 1；没有祖先配置时 init 照常写基线（不得过度拦截）	cli-config 聚合矩阵	没测该层	keep	keep	—
+未声明 workspace 的 monorepo（packages/* 形态）⇒ 不假拒绝（Bug 35 新口径）；pnpm workspace（pnpm-workspace.yaml）⇒ 同样拒绝写盘；package.json#workspaces ⇒ 同样拒绝写盘；单包仓库（无子包）⇒ 照常写到本包的 package.json（不得过度拦截）	cli-config 聚合矩阵	没测该层	keep	keep	—
+package.json 不可读 ⇒ 「cannot read」（不是「不是合法 JSON」）+ exit 1；package.json 只读 ⇒ 「cannot write」+ fix 引导 + exit 1（不再抛裸 errno）；真·非法 JSON ⇒ 仍是「is not valid JSON」+ 解析错误位置（不被 IO 路径吞掉）	cli-config 聚合矩阵	没测该层	keep	keep	—
+4 空格缩进 + 无尾换行 ⇒ 缩进与尾换行状态逐字保留，只多出 nudo 成员；整数样键的相对顺序不变（JSON.parse 会把它们重排）；紧凑单行文件 ⇒ 保持紧凑（不引入换行）；已有 nudo 键（形状非法）⇒ 只替换它的值，其余字节不动	cli-config 聚合矩阵	没测该层	keep	keep	—
+单元：attachPathErrors 不把路径错误并进 summary.errors（只挂 ok:false + pathErrors）；CLI：三处一致（信封 = Σreports[] = 人类面），路径错误仍在 pathErrors[]；CLI：无路径错误时信封计数 = 人类面计数（未回归）；CLI：语法错文件走 pathErrors ⇒ 信封计数仍是**分析诊断数**（= Σreports[] = 人类面）	cli-config 聚合矩阵	没测该层	keep	keep	—
+语法错文件 ⇒ stdout 是合法 JSON（非 0 字节）且带文件名；一个目标失败 + 另一个目标成功 ⇒ 成功目标的 results 不丢；全成功 ⇒ stdout 仍是顶��数组（形状不变）；非 JSON 面：失败目标进 stderr（带文件名），成功目标仍进 stdout	cli-config 聚合矩阵	没测该层	keep	keep	—
+人类面：exit 0（不裸崩）+ 报告面有文件名与诊断码 config-shape；机器面（--json）：issues 里有 config-shape 告警（文件名 + 值）；其它形状（布尔 / 对象）同样不裸崩 + 报告面可见；合法 env 数组：无 config-shape 告警（未回归）	cli-config 聚合矩阵	没测该层	keep	keep	—
+check 面：harvest 的非冲突导出不再被丢弃（unknown ⇒ string）；check 面与 test 面结论一致（同一文件、同一个精确签名）	cli-config 聚合矩阵	没测该层	keep	keep	—
+人面上屏 nudo:env-harvest-conflict（warning，不挡门禁）；--json 面同码同 severity（warning）	cli-config 聚合矩阵	没测该层	keep	keep	—
+加载器口径：本包 nudo 键形状非法 ⇒ **不继承**祖先配置（fail-closed）；死锁回归：无效 nudo 值 + 祖先有有效配置 ⇒ 以基线替换并告警（不得拒绝）；死锁回归：拒绝信息不得谎称「it inherits」（加载器并不继承）；反向闸：本包**没有** nudo 键 + 祖先有有效配置 ⇒ 仍拒绝遮蔽（loader 口径）；显式 init <容器根>：写盘 + 作用域告警（不越界）；从容器根的子目录 init：拒绝越界写盘（exit 1）	cli-config 聚合矩阵	没测该层	keep	keep	—
+mock 表达式解析失败 ⇒ warning（不红门禁）；mock 文件缺失仍是 error（不引入假绿）；负控制：文件面只出现一条 mock-invalid（无重复报告）	cli-config 聚合矩阵	没测该层	keep	keep	—
+check --json：config-shape warning 进 issues 段；check 人类面：issues 段看得见 config-shape；health 人类面：config 提示行可见；health --json：configShape 字段可见；936：假值 nudo 键（false）同样可见（且措辞说 falsy）；负控制：合法 nudo 对象 ⇒ 无 config-shape 诊断	cli-config 聚合矩阵	没测该层	keep	keep	—
+缓存命中轮：config-shape 仍恰 1 条（不重复）；键被改好后：陈旧的 config-shape 告警不得留在缓存里	cli-config 聚合矩阵	没测该层	keep	keep	—
+字符串 env：不裸崩 + 人类面产出 config-shape 形状告警；字符串 env：机器面（--json）恰一条 config-shape 告警（warning），且零条 env-unresolved；env 名列表不是逐字符：字符串 env ⇒ 0 条 env-unresolved；字符数组 env ⇒ 恰 4 条；env 列表被忽略：字符串 env ⇒ Buffer 不可用（env 侧不生效）；env:["node"] ⇒ Buffer 可用；env 无关型代码：	cli-config 聚合矩阵	没测该层	keep	keep	—
+子目录文件：拿到 env ⇒ magic() => 42、无 env 告警、exit 0；根目录文件：口径不变（magic() => 42、exit 0）；项目级 env 文件真缺时仍必须可见（nudo:env-unresolved 不许被过滤掉）	cli-config 聚合矩阵	没测该层	keep	keep	—
+CLI：非 --json 面仍是 stderr 文案 + exit 1（旧口径不回归）；CLI：非 --json 面的组合拒绝仍是 stderr 文案（--fix + --watch）	cli-config 聚合矩阵	没测该层	keep	keep	—
+```
+
+```audit-deleted
+title	reason	evidence
+旗标在前 + 路径在后 ⇒ 正常固化见证（旧行为：Usage error / exit 1 / 零写盘）	dup:cli-config 聚合矩阵	commit:14f49e20
+白名单取值仍是模式：`--freeze update`（缺路径）仍是用法错误	dup:cli-config 聚合矩阵	commit:14f49e20
+首轮 add 之后的 update 把见证名改成真实行号，且再跑一次幂等	dup:cli-config 聚合矩阵	commit:14f49e20
+已正确的见证不被改错（写盘污染回归）	dup:cli-config 聚合矩阵	commit:14f49e20
+过期见证被刷新（不再「no changes」）	dup:cli-config 聚合矩阵	commit:14f49e20
+update 运行的展示面含已冻结的指令 case（不退回剥离坐标系的 entry@）	dup:cli-config 聚合矩阵	commit:14f49e20
+普通 test 对同一次调用只记一条（指令见证与合成调用点不并存）	dup:cli-config 聚合矩阵	commit:14f49e20
+update 后仍活着的见证一条都不少（旧行为：静默删除 call@site.js:L2）	dup:cli-config 聚合矩阵	commit:14f49e20
+health 推荐的刷新动作不再是破坏动作：照做一遍见证一条不少	dup:cli-config 聚合矩阵	commit:14f49e20
+真的删除时不谎报：汇总报出条数与被删见证名（旧行为：「0 directive(s)」）	dup:cli-config 聚合矩阵	commit:14f49e20
+重复成员：落盘只剩一个 nudo 成员，且加载器读到 adoption baseline	dup:cli-config 聚合矩阵	commit:14f49e20
+单个非法值（对照）：同样落盘为基线且加载器可见	dup:cli-config 聚合矩阵	commit:14f49e20
+帮助文本承诺 update | add，且两个模式都能被实现接受	dup:cli-config 聚合矩阵	commit:14f49e20
+非法取值仍被拒（且错误文案列出的合法取值与帮助一致）	dup:cli-config 聚合矩阵	commit:14f49e20
+--freeze=add --dry-run：exit 0（旧行为：exit 1 + Invalid --freeze value）	dup:cli-config 聚合矩阵	commit:14f49e20
+--freeze=add 与省略取值（默认 add）产出逐字一致	dup:cli-config 聚合矩阵	commit:14f49e20
+--freeze=update 仍是 update 模式（不回归）	dup:cli-config 聚合矩阵	commit:14f49e20
+非法取值仍被拒 + exit 1	dup:cli-config 聚合矩阵	commit:14f49e20
+nudo 值为 null（形状非法 ⇒ 加载器按「无配置」处理）⇒ init 写入基线	dup:cli-config 聚合矩阵	commit:14f49e20
+nudo 值为标量（形状非法）⇒ init 写入基线	dup:cli-config 聚合矩阵	commit:14f49e20
+nudo 值为有效对象 ⇒ 幂等：只打印、不写盘（与加载器「配置在场」一致）	dup:cli-config 聚合矩阵	commit:14f49e20
+nudo 值为空对象 {} ⇒ 仍是**有效配置**（加载器据此截断祖先继承）⇒ 幂等不写	dup:cli-config 聚合矩阵	commit:14f49e20
+祖先有 nudo 配置 ⇒ init 拒绝写盘（exit 1）且子包 package.json 逐字不变	dup:cli-config 聚合矩阵	commit:14f49e20
+拒绝之后根配置仍然生效（门禁不翻绿）：nudo check 仍然 exit 1	dup:cli-config 聚合矩阵	commit:14f49e20
+没有祖先配置时 init 照常写基线（不得过度拦截）	dup:cli-config 聚合矩阵	commit:14f49e20
+未声明 workspace 的 monorepo（packages/* 形态）⇒ 不假拒绝（Bug 35 新口径）	dup:cli-config 聚合矩阵	commit:14f49e20
+pnpm workspace（pnpm-workspace.yaml）⇒ 同样拒绝写盘	dup:cli-config 聚合矩阵	commit:14f49e20
+package.json#workspaces ⇒ 同样拒绝写盘	dup:cli-config 聚合矩阵	commit:14f49e20
+单包仓库（无子包）⇒ 照常写到本包的 package.json（不得过度拦截）	dup:cli-config 聚合矩阵	commit:14f49e20
+package.json 不可读 ⇒ 「cannot read」（不是「不是合法 JSON」）+ exit 1	dup:cli-config 聚合矩阵	commit:14f49e20
+package.json 只读 ⇒ 「cannot write」+ fix 引导 + exit 1（不再抛裸 errno）	dup:cli-config 聚合矩阵	commit:14f49e20
+真·非法 JSON ⇒ 仍是「is not valid JSON」+ 解析错误位置（不被 IO 路径吞掉）	dup:cli-config 聚合矩阵	commit:14f49e20
+4 空格缩进 + 无尾换行 ⇒ 缩进与尾换行状态逐字保留，只多出 nudo 成员	dup:cli-config 聚合矩阵	commit:14f49e20
+整数样键的相对顺序不变（JSON.parse 会把它们重排）	dup:cli-config 聚合矩阵	commit:14f49e20
+紧凑单行文件 ⇒ 保持紧凑（不引入换行）	dup:cli-config 聚合矩阵	commit:14f49e20
+已有 nudo 键（形状非法）⇒ 只替换它的值，其余字节不动	dup:cli-config 聚合矩阵	commit:14f49e20
+单元：attachPathErrors 不把路径错误并进 summary.errors（只挂 ok:false + pathErrors）	dup:cli-config 聚合矩阵	commit:14f49e20
+CLI：三处一致（信封 = Σreports[] = 人类面），路径错误仍在 pathErrors[]	dup:cli-config 聚合矩阵	commit:14f49e20
+CLI：无路径错误时信封计数 = 人类面计数（未回归）	dup:cli-config 聚合矩阵	commit:14f49e20
+CLI：语法错文件走 pathErrors ⇒ 信封计数仍是**分析诊断数**（= Σreports[] = 人类面）	dup:cli-config 聚合矩阵	commit:14f49e20
+语法错文件 ⇒ stdout 是合法 JSON（非 0 字节）且带文件名	dup:cli-config 聚合矩阵	commit:14f49e20
+一个目标失败 + 另一个目标成功 ⇒ 成功目标的 results 不丢	dup:cli-config 聚合矩阵	commit:14f49e20
+全成功 ⇒ stdout 仍是顶��数组（形状不变）	dup:cli-config 聚合矩阵	commit:14f49e20
+非 JSON 面：失败目标进 stderr（带文件名），成功目标仍进 stdout	dup:cli-config 聚合矩阵	commit:14f49e20
+人类面：exit 0（不裸崩）+ 报告面有文件名与诊断码 config-shape	dup:cli-config 聚合矩阵	commit:14f49e20
+机器面（--json）：issues 里有 config-shape 告警（文件名 + 值）	dup:cli-config 聚合矩阵	commit:14f49e20
+其它形状（布尔 / 对象）同样不裸崩 + 报告面可见	dup:cli-config 聚合矩阵	commit:14f49e20
+合法 env 数组：无 config-shape 告警（未回归）	dup:cli-config 聚合矩阵	commit:14f49e20
+check 面：harvest 的非冲突导出不再被丢弃（unknown ⇒ string）	dup:cli-config 聚合矩阵	commit:14f49e20
+check 面与 test 面结论一致（同一文件、同一个精确签名）	dup:cli-config 聚合矩阵	commit:14f49e20
+人面上屏 nudo:env-harvest-conflict（warning，不挡门禁）	dup:cli-config 聚合矩阵	commit:14f49e20
+--json 面同码同 severity（warning）	dup:cli-config 聚合矩阵	commit:14f49e20
+加载器口径：本包 nudo 键形状非法 ⇒ **不继承**祖先配置（fail-closed）	dup:cli-config 聚合矩阵	commit:14f49e20
+死锁回归：无效 nudo 值 + 祖先有有效配置 ⇒ 以基线替换并告警（不得拒绝）	dup:cli-config 聚合矩阵	commit:14f49e20
+死锁回归：拒绝信息不得谎称「it inherits」（加载器并不继承）	dup:cli-config 聚合矩阵	commit:14f49e20
+反向闸：本包**没有** nudo 键 + 祖先有有效配置 ⇒ 仍拒绝遮蔽（loader 口径）	dup:cli-config 聚合矩阵	commit:14f49e20
+显式 init <容器根>：写盘 + 作用域告警（不越界）	dup:cli-config 聚合矩阵	commit:14f49e20
+从容器根的子目录 init：拒绝越界写盘（exit 1）	dup:cli-config 聚合矩阵	commit:14f49e20
+mock 表达式解析失败 ⇒ warning（不红门禁）	dup:cli-config 聚合矩阵	commit:14f49e20
+mock 文件缺失仍是 error（不引入假绿）	dup:cli-config 聚合矩阵	commit:14f49e20
+负控制：文件面只出现一条 mock-invalid（无重复报告）	dup:cli-config 聚合矩阵	commit:14f49e20
+check --json：config-shape warning 进 issues 段	dup:cli-config 聚合矩阵	commit:14f49e20
+check 人类面：issues 段看得见 config-shape	dup:cli-config 聚合矩阵	commit:14f49e20
+health 人类面：config 提示行可见	dup:cli-config 聚合矩阵	commit:14f49e20
+health --json：configShape 字段可见	dup:cli-config 聚合矩阵	commit:14f49e20
+936：假值 nudo 键（false）同样可见（且措辞说 falsy）	dup:cli-config 聚合矩阵	commit:14f49e20
+负控制：合法 nudo 对象 ⇒ 无 config-shape 诊断	dup:cli-config 聚合矩阵	commit:14f49e20
+缓存命中轮：config-shape 仍恰 1 条（不重复）	dup:cli-config 聚合矩阵	commit:14f49e20
+键被改好后：陈旧的 config-shape 告警不得留在缓存里	dup:cli-config 聚合矩阵	commit:14f49e20
+字符串 env：不裸崩 + 人类面产出 config-shape 形状告警	dup:cli-config 聚合矩阵	commit:14f49e20
+字符串 env：机器面（--json）恰一条 config-shape 告警（warning），且零条 env-unresolved	dup:cli-config 聚合矩阵	commit:14f49e20
+env 名列表不是逐字符：字符串 env ⇒ 0 条 env-unresolved；字符数组 env ⇒ 恰 4 条	dup:cli-config 聚合矩阵	commit:14f49e20
+env 列表被忽略：字符串 env ⇒ Buffer 不可用（env 侧不生效）；env:["node"] ⇒ Buffer 可用	dup:cli-config 聚合矩阵	commit:14f49e20
+env 无关型代码：被忽略的 env 不制造假的 nudo:unknown-inference	dup:cli-config 聚合矩阵	commit:14f49e20
+子目录文件：拿到 env ⇒ magic() => 42、无 env 告警、exit 0	dup:cli-config 聚合矩阵	commit:14f49e20
+根目录文件：口径不变（magic() => 42、exit 0）	dup:cli-config 聚合矩阵	commit:14f49e20
+项目级 env 文件真缺时仍必须可见（nudo:env-unresolved 不许被过滤掉）	dup:cli-config 聚合矩阵	commit:14f49e20
+CLI：非 --json 面仍是 stderr 文案 + exit 1（旧口径不回归）	dup:cli-config 聚合矩阵	commit:14f49e20
+CLI：非 --json 面的组合拒绝仍是 stderr 文案（--fix + --watch）	dup:cli-config 聚合矩阵	commit:14f49e20
 ```

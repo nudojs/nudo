@@ -6,90 +6,115 @@
 
 ```audit
 title	rootCause	gap	action	status	evidence
-"汇总行走 ctx.info（vite logger），不再走裸 console.log"	"vite-plugin 的 `buildEnd` 汇总行走 `console.log` ⇒ **绕过 Vite 的 `build.logLevel`** ⇒ 用户设了 `logLevel: \"silent\"` 仍然**只**剩下 `[nudo] Analysis complete: N error(s)` 一行，而那 N 条**诊断一条都没被打印** ⇒ 静默失效 + 汇总与日志互相矛盾。 根因：插件的输出**分了两条通道** —— 逐条诊断走 Vite 的 `this.warn` （受 logLevel 管辖），汇总行走裸 `console.log`（**不受管辖**）。 断言：expect(summary, JSON.strin"	没测该层	keep	keep	—
-"宿主没有 info 通道时降级到 ctx.warn（仍不逃逸到 console.log）"	"vite-plugin 的 `buildEnd` 汇总行走 `console.log` ⇒ **绕过 Vite 的 `build.logLevel`** ⇒ 用户设了 `logLevel: \"silent\"` 仍然**只**剩下 `[nudo] Analysis complete: N error(s)` 一行，而那 N 条**诊断一条都没被打印** ⇒ 静默失效 + 汇总与日志互相矛盾。 根因：插件的输出**分了两条通道** —— 逐条诊断走 Vite 的 `this.warn` （受 logLevel 管辖），汇总行走裸 `console.log`（**不受管辖**）。 断言：expect(warns.some((w) => w"	没测该层	keep	keep	—
-"exclude: [\"other/**\"] ⇒ other/b.js 被排除（改前仍被分析并报错）"	"vite-plugin 的 `include` / `exclude` **选项**按**绝对模块 id**匹配 ⇒ **项目相对 glob 静默失效** ⇒ `exclude: [\"other/**\"]` 不排除（仍报错 / 假红）， `include: [\"src/**\"]` 把**整份分析**静默归零（假绿）⇒ 与**同名**的项目配置 `nudo.analysis.include` / `nudo.analysis.exclude` **判定相反**。 根因：选项的匹配基准是 Vite 原始 module id（绝对路径），而共享 glob 编译器 产出的正则是**锚定**的（`packages/service/src/gl"	夹具漏形态	keep	keep	—
-"include: [\"src/**\"] ⇒ src/a.js 照常分析（改前整份分析被静默归零）"	"vite-plugin 的 `include` / `exclude` **选项**按**绝对模块 id**匹配 ⇒ **项目相对 glob 静默失效** ⇒ `exclude: [\"other/**\"]` 不排除（仍报错 / 假红）， `include: [\"src/**\"]` 把**整份分析**静默归零（假绿）⇒ 与**同名**的项目配置 `nudo.analysis.include` / `nudo.analysis.exclude` **判定相反**。 根因：选项的匹配基准是 Vite 原始 module id（绝对路径），而共享 glob 编译器 产出的正则是**锚定**的（`packages/service/src/gl"	夹具漏形态	keep	keep	—
-"include: [\"src/**\"] ⇒ other/b.js 不在白名单 ⇒ 不分析"	"vite-plugin 的 `include` / `exclude` **选项**按**绝对模块 id**匹配 ⇒ **项目相对 glob 静默失效** ⇒ `exclude: [\"other/**\"]` 不排除（仍报错 / 假红）， `include: [\"src/**\"]` 把**整份分析**静默归零（假绿）⇒ 与**同名**的项目配置 `nudo.analysis.include` / `nudo.analysis.exclude` **判定相反**。 根因：选项的匹配基准是 Vite 原始 module id（绝对路径），而共享 glob 编译器 产出的正则是**锚定**的（`packages/service/src/gl"	夹具漏形态	keep	keep	—
-"绝对路径口径仍然有效（**/other/** 照常排除）"	"vite-plugin 的 `include` / `exclude` **选项**按**绝对模块 id**匹配 ⇒ **项目相对 glob 静默失效** ⇒ `exclude: [\"other/**\"]` 不排除（仍报错 / 假红）， `include: [\"src/**\"]` 把**整份分析**静默归零（假绿）⇒ 与**同名**的项目配置 `nudo.analysis.include` / `nudo.analysis.exclude` **判定相反**。 根因：选项的匹配基准是 Vite 原始 module id（绝对路径），而共享 glob 编译器 产出的正则是**锚定**的（`packages/service/src/gl"	夹具漏形态	keep	keep	—
-"与项目配置面同口径：插件选项与 nudo.analysis.exclude 判定一致"	"\\\"] ⇒ other/b.js 被排除（改前仍被分析并报错）\", async () => { const { dir, otherId } = fixture(\"exclude\"); it(\"include: [\\\"src/**\\\"] ⇒ src/a.js 照常分析（改前整份分析被静默归零）\", async () => { const { dir, srcId } = fixture(\"include\"); 断言：expect(optDiags.length).toBe(0);；expect(cfgDiags.length).toBe(0);"	没测该层	keep	keep	—
-"软链依赖的 realpath id ⇒ 零诊断（改前报 entry-may-throw）"	"会报 `nudo:entry-may-throw` 的入口面（读取未约束成员）。 断言：expect(diags.length).toBe(0);"	没测该层	keep	keep	—
-"软链依赖的 node_modules 路径 id ⇒ 零诊断"	"同名同语法 ⇒ 两个面的判定必须一致（都排除）。 --------------------------------------------------------------------------- 软链依赖（realpath id）不得被当项目源码分析 --------------------------------------------------------------------------- describe(\"软链依赖（realpath id）不得被当项目源码分析\", () => { 默认排除的「node_modules 段」规则**匹配不到软链工作区依赖的真实路径** ⇒ Vite 构建期对**别的包源码**报错，"	夹具漏形态	keep	keep	—
-"物理目录依赖 ⇒ 零诊断（与软链形态一致）"	"同名同语法 ⇒ 两个面的判定必须一致（都排除）。 --------------------------------------------------------------------------- 软链依赖（realpath id）不得被当项目源码分析 --------------------------------------------------------------------------- describe(\"软链依赖（realpath id）不得被当项目源码分析\", () => { 默认排除的「node_modules 段」规则**匹配不到软链工作区依赖的真实路径** ⇒ Vite 构建期对**别的包源码**报错，"	夹具漏形态	keep	keep	—
-"对照组：项目源码照常分析（排除没有过宽）"	"同名同语法 ⇒ 两个面的判定必须一致（都排除）。 --------------------------------------------------------------------------- 软链依赖（realpath id）不得被当项目源码分析 --------------------------------------------------------------------------- describe(\"软链依赖（realpath id）不得被当项目源码分析\", () => { 默认排除的「node_modules 段」规则**匹配不到软链工作区依赖的真实路径** ⇒ Vite 构建期对**别的包源码**报错，"	夹具漏形态	keep	keep	—
-"软链 root + 软链形态 id ⇒ 分析（改前 skip:exclude）"	"夹具：`<base>/real` 是真实工程目录，`<base>/link → real` 是**软链**工程根 （Vite 的 `config.root` 形态：只 resolve，不解析软链）。 断言：expect(scopeDecision(linkId, RISKY)).toEqual({ skip: false, reason: \"analyze\" });"	夹具漏形态	keep	keep	—
-"软链 root + realpath 形态 id ⇒ 分析"	"夹具：`<base>/real` 是真实工程目录，`<base>/link → real` 是**软链**工程根 （Vite 的 `config.root` 形态：只 resolve，不解析软链）。 断言：expect(scopeDecision(realId, RISKY)).toEqual({ skip: false, reason: \"analyze\" });"	夹具漏形态	keep	keep	—
-"对照组：非软链 root ⇒ 分析（行为不变）"	"夹具：`<base>/real` 是真实工程目录，`<base>/link → real` 是**软链**工程根 （Vite 的 `config.root` 形态：只 resolve，不解析软链）。 断言：expect(scopeDecision(realId, RISKY)).toEqual({ skip: false, reason: \"analyze\" });"	夹具漏形态	keep	keep	—
-"工程根之外的文件仍被排除（排除规则没有被放宽）"	"工程根含**软链**时，全部源文件被判「依赖」⇒ 插件**静默空转** （零诊断、零构建失败、零提示 = 假绿）。 根因（`scope.ts` 的 `scopePath`）：`projectRootAbs()` 只做 `path.resolve` （**不解析软链**），而「在工程根之内」的判定拿的是 **realpath** （`realpathSync`）⇒ 软链 root 与文件 realpath **永不同前缀** ⇒ `outsideRoot` 恒为 true ⇒ `isDependency = true` ⇒ `scopeDecision` 直接 `skip:\"exclude\"` ⇒ **什么都不分析**。 断言：exp"	没测该层	keep	keep	—
-"插件层：软链 root 下的源文件照常出诊断（不再静默空转）"	"夹具：`<base>/real` 是真实工程目录，`<base>/link → real` 是**软链**工程根 （Vite 的 `config.root` 形态：只 resolve，不解析软链）。 断言：expect(diags.join(\"\\n\")).toContain(\"nudo:entry-may-throw\");"	夹具漏形态	keep	keep	—
-"同进程两个插件实例 ⇒ 各自的 root 互不覆盖（模块级全局状态不再串味）"	"夹具：`<base>/real` 是真实工程目录，`<base>/link → real` 是**软链**工程根 （Vite 的 `config.root` 形态：只 resolve，不解析软链）。 断言：expect(diags.join(\"\\n\")).toContain(\"nudo:entry-may-throw\");"	夹具漏形态	keep	keep	—
-"无 `line` 的 check issue ⇒ range 用占位 0（不是编造的 1）"	"依赖模块**存在但不可解析** ⇒ core 产出 `nudo:opaque-result`（**不带 `line`** 的 check issue； 断言：expect(opaque, JSON.stringify(out.diagnostics)).toBeDefined();；expect(opaque!.range.start.line).toBe(0);"	没测该层	keep	keep	—
-"插件层：无位置的 check issue 渲染为「无位置」（不含 :1:0 / :0:0）"	"依赖模块**存在但不可解析** ⇒ core 产出 `nudo:opaque-result`（**不带 `line`** 的 check issue； 断言：expect(opaqueMsg, JSON.stringify(warns)).toBeDefined();；expect(opaqueMsg).not.toContain(\":1:0\");"	没测该层	keep	keep	—
-"有真位置的 check issue 仍渲染 :line:col（不回归）"	"依赖模块**存在但不可解析** ⇒ core 产出 `nudo:opaque-result`（**不带 `line`** 的 check issue； 断言：expect(located, JSON.stringify(msgs)).toBeDefined();；expect(located).toMatch(/:\\d+:\\d+ error: /);"	没测该层	keep	keep	—
+汇总行走 ctx.info（vite logger），不再走裸 console.log；宿主没有 info 通道时降级到 ctx.warn（仍不逃逸到 console.log）	vite-plugin-faces 聚合矩阵	没测该层	keep	keep	—
+exclude: ["other/**"] ⇒ other/b.js 被排除（改前仍被分析并报错）；include: ["src/**"] ⇒ src/a.js 照常分析（改前整份分析被静默归零）；include: ["src/**"] ⇒ other/b.js 不在白名单 ⇒ 不分析；绝对路径口径仍然有效（**/other/** 照常排除）；与项目配置面同口径：插件选项与 nudo.analysis.exclude 判定一致	vite-plugin-faces 聚合矩阵	没测该层	keep	keep	—
+软链依赖的 realpath id ⇒ 零诊断（改前报 entry-may-throw）；软链依赖的 node_modules 路径 id ⇒ 零诊断；物理目录依赖 ⇒ 零诊断（与软链形态一致）；对照组：项目源码照常分析（排除没有过宽）	vite-plugin-faces 聚合矩阵	没测该层	keep	keep	—
+软链 root + 软链形态 id ⇒ 分析（改前 skip:exclude）；软链 root + realpath 形态 id ⇒ 分析；对照组：非软链 root ⇒ 分析（行为不变）；工程根之外的文件仍被排除（排除规则没有被放宽）；插件层：软链 root 下的源文件照常出诊断（不再静默空转）；同进程两个插件实例 ⇒ 各自的 root 互不覆盖（模块级全局状态不再串味）	vite-plugin-faces 聚合矩阵	没测该层	keep	keep	—
+无 `line` 的 check issue ⇒ range 用占位 0（不是编造的 1）；插件层：无位置的 check issue 渲染为「无位置」（不含 :1:0 / :0:0）；有真位置的 check issue 仍渲染 :line:col（不回归）	vite-plugin-faces 聚合矩阵	没测该层	keep	keep	—
 "负控制：忽略的是**别的** throw 类 ⇒ TypeError 仍照报（门禁未被关掉）"	"四种**文档认可**的写法（CLI / LSP 都生效）—— 插件面必须逐项相同。 断言：该 throw 类被忽略 ⇒ 无 `nudo:entry-may-throw`，且构建不中断。 断言：expect(r.all).toContain(\"nudo:entry-may-throw\");；expect(r.errors.join(\"\\n\")).toContain(\"nudo:entry-may-throw\");"	没测该层	keep	keep	—
-"harvest 专有导出可解析 ⇒ 不再误报 nudo:unknown-inference（与 CLI 同结论）"	"`@nudo:env node` ⇒ env 模块表里有 `util`（Node 内建）——同名冲突的来源。 断言：expect(r.all).not.toContain(\"nudo:unknown-inference\");"	夹具漏形态	keep	keep	—
-"负控制：env 与 harvest 都没有的导出仍报 nudo:unknown-inference"	"`@nudo:env node` ⇒ env 模块表里有 `util`（Node 内建）——同名冲突的来源。 断言：expect(r.all).toContain(\"nudo:unknown-inference\");"	夹具漏形态	keep	keep	—
-"无文件级 @nudo:env ⇒ 不报 ReferenceError（基线，一直是对的）"	"`projectEnv` 省略 ⇒ 项目**不**声明任何 env。 断言：expect(r.all).not.toContain(\"ReferenceError\");；expect(r.all).not.toContain(\"nudo:entry-may-throw\");"	没测该层	keep	keep	—
-"加一行**无关**的文件级 @nudo:env ⇒ 结论不变（不再绿翻红）"	"`projectEnv` 省略 ⇒ 项目**不**声明任何 env。 断言：expect(r.all).not.toContain(\"ReferenceError\");；expect(r.all).not.toContain(\"nudo:entry-may-throw\");"	没测该层	keep	keep	—
-"两个场景的诊断集合逐项相同（单调）"	"回归（vite-plugin 构建期）：**项目级** env（`package.json#nudo.env`） 的**相对说明符**必须按**项目根**解析，而不是被 `env-loader` 的「进程级 单槽基准」（= **最后一次** preload 的目录）带走。 service 的 preload 顺序是「项目级 → 文件级」⇒ 被检文件里只要有一行**文件级** `@nudo:env`，解析基准就落在**文件目录** ⇒ 项目级 `\"./env/web.ts\"` 被解析成 `<fileDir>/env/web.ts` ⇒ 项目级全局（`MAGIC`）丢失 ⇒ 门禁面报 `may throw ReferenceError`"	没测该层	keep	keep	—
-"负控制：项目未声明该 env ⇒ MAGIC 仍报 ReferenceError（门禁未被关掉）"	"`projectEnv` 省略 ⇒ 项目**不**声明任何 env。 断言：expect(r.all).toContain(\"ReferenceError\");；expect(r.all).toContain(\"nudo:entry-may-throw\");"	没测该层	keep	keep	—
-"项目级 env 缺失 ⇒ 构建期 warning 指名项目根下的路径"	"回归（vite-plugin 构建期）：**项目级** env （`package.json#nudo.env`）装载失败必须可见（`nudo:env-unresolved`）， 与 CLI / LSP 同口径。 病灶：`envUnresolvedDiagnostics` 只按**文件目录**取失败表 （`getPathEnvLoadErrors(dirname(id))`），而项目级 env 的失败条目被记在 **项目根**名下（`analyzer-orchestrate.ts` 的 `preloadAnalysisEnvs`： `projectEnvBaseDir = proj?.projectDir ?? fileEnvBas"	没测该层	keep	keep	—
-"同一语义的**文件级**写法同样报（两种写法结论一致）"	"回归（vite-plugin 构建期）：**项目级** env （`package.json#nudo.env`）装载失败必须可见（`nudo:env-unresolved`）， 与 CLI / LSP 同口径。 病灶：`envUnresolvedDiagnostics` 只按**文件目录**取失败表 （`getPathEnvLoadErrors(dirname(id))`），而项目级 env 的失败条目被记在 **项目根**名下（`analyzer-orchestrate.ts` 的 `preloadAnalysisEnvs`： `projectEnvBaseDir = proj?.projectDir ?? fileEnvBas"	没测该层	keep	keep	—
-"负控制：项目 env 正常 ⇒ 不报 nudo:env-unresolved"	"回归（vite-plugin 构建期）：**项目级** env （`package.json#nudo.env`）装载失败必须可见（`nudo:env-unresolved`）， 与 CLI / LSP 同口径。 病灶：`envUnresolvedDiagnostics` 只按**文件目录**取失败表 （`getPathEnvLoadErrors(dirname(id))`），而项目级 env 的失败条目被记在 **项目根**名下（`analyzer-orchestrate.ts` 的 `preloadAnalysisEnvs`： `projectEnvBaseDir = proj?.projectDir ?? fileEnvBas"	没测该层	keep	keep	—
-"未知 env 名 ⇒ 构建期 warning（nudo:env-unresolved）"	"未知 env 名（词字符形态——指令文法只收 `\\w+` 或 path 形态） 断言：expect(msgs).toContain(\"path env failed to load\");；expect(msgs).toContain(\"bogusenvname\");"	夹具漏形态	keep	keep	—
-"负控制：同目录别的文件的无 path 诊断不误吸"	"未知 env 名（词字符形态——指令文法只收 `\\w+` 或 path 形态） 断言：expect(msgs.join(\"\\n\")).not.toContain(\"otherunknownenv\");"	夹具漏形态	keep	keep	—
-"@nudo:env 指向缺失文件 → 构建期 warning（nudo:env-unresolved）"	"vite-plugin **从不读** path-env 加载失败通道 ⇒ `@nudo:env ./missing.js` 加载失败零诊断（env 静默不生效：该 env 提供的全局退化成 unknown / 宿主真身， 构建日志里没有任何一行提示）。 负控制：未声明该 env 的文件不得被同目录的失败误伤； 断言：expect(result).toBeNull(); // 插件不改产物；expect(msgs).toContain(\"path env failed to load\");"	没测该层	keep	keep	—
-"负控制：同目录未声明该 env 的文件不得被误伤"	"vite-plugin **从不读** path-env 加载失败通道 ⇒ `@nudo:env ./missing.js` 加载失败零诊断（env 静默不生效：该 env 提供的全局退化成 unknown / 宿主真身， 构建日志里没有任何一行提示）。 负控制：未声明该 env 的文件不得被同目录的失败误伤； 断言：expect(plainMsgs.join(\"\\n\")).not.toContain(\"nudo:env-unresolved\");"	没测该层	keep	keep	—
-"负控制：无 @nudo:env 的文件不产生 env 告警"	"vite-plugin **从不读** path-env 加载失败通道 ⇒ `@nudo:env ./missing.js` 加载失败零诊断（env 静默不生效：该 env 提供的全局退化成 unknown / 宿主真身， 构建日志里没有任何一行提示）。 负控制：未声明该 env 的文件不得被同目录的失败误伤； 断言：expect(msgs).not.toContain(\"nudo:env-unresolved\");"	没测该层	keep	keep	—
-"@nudo:mock 覆盖的依赖不得再报 nudo:entry-may-throw（与 CLI 同口径：绿）"	"无 mock 的对照：入口读一个不存在的全局 ⇒ 真的可能抛 断言：expect(msgs).not.toContain(\"nudo:entry-may-throw\");"	没测该层	keep	keep	—
-"负控制：没有 mock 的入口仍报 nudo:entry-may-throw（门禁未被关掉）"	"无 mock 的对照：入口读一个不存在的全局 ⇒ 真的可能抛 断言：expect(msgs).toContain(\"nudo:entry-may-throw\");"	没测该层	keep	keep	—
-"verbose 档：nudo:assume-relied 走 info 通道上屏（不混进 warn 流）"	"（vite 半）—— vite-plugin 把 **info 级 check 诊断丢在噪声档过滤 之前** ⇒ `nudo:assume-relied` / `nudo:invariant-relied` / `nudo:opaque-result` **永不上屏**，且 `nudo.analysis.diagnostics: \"verbose\"` 对 check 诊断 **完全是空操作**。 根因：`checkIssuesToDiagnostics` 在转成 vite Diagnostic **之前**就 `filter(severity === \"error\" || severity === \"warning\")` ⇒ 下游的"	没测该层	keep	keep	—
-"默认档：info 不上屏（档位取舍仍归 filterDiagnosticsByLevel）"	"（vite 半）—— vite-plugin 把 **info 级 check 诊断丢在噪声档过滤 之前** ⇒ `nudo:assume-relied` / `nudo:invariant-relied` / `nudo:opaque-result` **永不上屏**，且 `nudo.analysis.diagnostics: \"verbose\"` 对 check 诊断 **完全是空操作**。 根因：`checkIssuesToDiagnostics` 在转成 vite Diagnostic **之前**就 `filter(severity === \"error\" || severity === \"warning\")` ⇒ 下游的"	没测该层	keep	keep	—
-"直接驱动 transform：原始 TS 源码里的 @nudo:throws 可见 ⇒ 不报 CLI 不会报的 entry-may-throw"	"⚠ `scope.ts` 的项目根是**模块级状态** ⇒ 直接驱动 `transform` 而不先给根，会沿用**上一个**用例留下的根 ⇒ 文件被当成「工程根之外的依赖」 而跳过（`scope.ts` 的 1056 语义）⇒ 诊断消失。 断言：expect(result).toBeNull();；expect(msgs).not.toContain(\"entry-may-throw\");"	没测该层	keep	keep	—
-"对照组：同一份源码剥掉注释（= esbuild 产物）⇒ 报 entry-may-throw（差异来自插件排序）"	"同一份源码的「注释被剥光」形态 —— **等价于 esbuild 的 TS loader 产物** （`vite:esbuild` 在 `enforce: \"pre\"` 缺席时排在插件之前 ⇒ 插件拿到的就是它）。 用它当**对照组**：证明差异来自**插件排序**（插件看到哪份代码）， 而不是插件的分析逻辑。 断言：expect(result).toBeNull();；expect(msgs).toContain(\"entry-may-throw\");"	夹具漏形态	keep	keep	—
-"真 vite build：.ts 源里的 @nudo:throws 可见 ⇒ 构建成功、零 [nudo] 诊断（不假红）"	"收集 vite logger 的 warn / info 通道（不透传，保持测试输出干净）。 断言：expect(buildPromise).resolves.toBeTruthy();；expect(warnings.join(\"\\n\")).not.toContain(\"entry-may-throw\");"	没测该层	keep	keep	—
-"真 vite build：TS 特有语法（enum / namespace / as const / satisfies / 抽象类）⇒ 构建成功、零 [nudo] 诊断"	"收集 vite logger 的 warn / info 通道（不透传，保持测试输出干净）。 断言：expect(buildPromise).resolves.toBeTruthy();；expect(warnings.join(\"\\n\")).not.toContain(\"Failed to analyze\");"	没测该层	keep	keep	—
-"真 vite build：分析面解析不了的 TS 语法（装饰器）⇒ 降级为 warn，构建不炸（902 守卫兜底）"	"收集 vite logger 的 warn / info 通道（不透传，保持测试输出干净）。 断言：expect(buildPromise).resolves.toBeTruthy();；expect(warnings.join(\"\\n\")).toContain(\"Failed to analyze\");"	没测该层	keep	keep	—
-"\\0 前缀虚拟 id + 干净源码 + failOnError: true ⇒ 不抛、零诊断"	"干净源码（无指令、无入口面 ⇒ 控制组必须零诊断）。 断言：expect(result).toBeNull();；expect(errorFn).not.toHaveBeenCalled();"	没测该层	keep	keep	—
-"\\0 前缀虚拟 id + 干净源码 + 默认档 ⇒ 零诊断（改前是 1 条 error 级）"	"干净源码（无指令、无入口面 ⇒ 控制组必须零诊断）。 断言：expect(msgs).not.toContain(\"module-unreadable\");；expect(warnFn).not.toHaveBeenCalled();"	没测该层	keep	keep	—
-"virtual: 前缀虚拟 id（无 NUL）同样被跳过"	"`failOnError: true` 时**抛错中断构建**。 根因：`transform` 入口不判「虚拟模块」⇒ 插件把 id 原样拼成侧车路径 （`./<id>.nudo.js`）⇒ 路径含 **NUL** ⇒ 必然读不到 ⇒ 报 `nudo:module-unreadable` 级的 **error**（改前实测文案： `cannot read module '<abs>/\\0virtual:mod2.nudo.js' (ERR_INVALID_ARG_VALUE)`）。 断言：expect(warnFn).not.toHaveBeenCalled();"	没测该层	keep	keep	—
-"对照组：同源码的普通文件 id 依旧零诊断（跳过不是「全都不分析」）"	"同一份源码的「注释被剥光」形态 —— **等价于 esbuild 的 TS loader 产物** （`vite:esbuild` 在 `enforce: \"pre\"` 缺席时排在插件之前 ⇒ 插件拿到的就是它）。 用它当**对照组**：证明差异来自**插件排序**（插件看到哪份代码）， 而不是插件的分析逻辑。 断言：expect(result).toBeNull();；expect(warnFn).not.toHaveBeenCalled();"	夹具漏形态	keep	keep	—
-"entryThrows=warning ⇒ 报 warning 而不是 error（与 CLI 同口径）"	"回归（vite-plugin 构建期）：check 面必须把**项目配置**里的 L2 门禁档位（`package.json#nudo.check.entryThrows` / `ignoreThrows`） 传给 `checkSource` —— 与 CLI / LSP **同口径**。 病灶：插件调 `checkSource` 时**不传** `entryThrows` / `ignoreThrows` ⇒ `checkSource` 用默认最严档（`entryThrows:\"error\"`、`ignoreThrows:[]`） ⇒ 项目配置的 `nudo.check.*` 被无视（插件自己却读了**同源**配置的 `autoB"	没测该层	keep	keep	—
-"entryThrows=warning + failOnError=true ⇒ 构建不中断（不再抛）"	"回归（vite-plugin 构建期）：check 面必须把**项目配置**里的 L2 门禁档位（`package.json#nudo.check.entryThrows` / `ignoreThrows`） 传给 `checkSource` —— 与 CLI / LSP **同口径**。 病灶：插件调 `checkSource` 时**不传** `entryThrows` / `ignoreThrows` ⇒ `checkSource` 用默认最严档（`entryThrows:\"error\"`、`ignoreThrows:[]`） ⇒ 项目配置的 `nudo.check.*` 被无视（插件自己却读了**同源**配置的 `autoB"	没测该层	keep	keep	—
-"ignoreThrows=[TypeError] ⇒ 该 throw 类不再报 nudo:entry-may-throw"	"会真抛的入口（读未约束全局 ⇒ L2 may-throw）。 断言：expect(all).not.toContain(\"nudo:entry-may-throw\");；expect(r.errors).toHaveLength(0);"	没测该层	keep	keep	—
-"entryThrows=off ⇒ L2 门禁诊断整段缺席"	"回归（vite-plugin 构建期）：check 面必须把**项目配置**里的 L2 门禁档位（`package.json#nudo.check.entryThrows` / `ignoreThrows`） 传给 `checkSource` —— 与 CLI / LSP **同口径**。 病灶：插件调 `checkSource` 时**不传** `entryThrows` / `ignoreThrows` ⇒ `checkSource` 用默认最严档（`entryThrows:\"error\"`、`ignoreThrows:[]`） ⇒ 项目配置的 `nudo.check.*` 被无视（插件自己却读了**同源**配置的 `autoB"	没测该层	keep	keep	—
-"负控制：没有 nudo.check 配置时仍是默认最严档（error）—— 门禁未被整体关掉"	"回归（vite-plugin 构建期）：check 面必须把**项目配置**里的 L2 门禁档位（`package.json#nudo.check.entryThrows` / `ignoreThrows`） 传给 `checkSource` —— 与 CLI / LSP **同口径**。 病灶：插件调 `checkSource` 时**不传** `entryThrows` / `ignoreThrows` ⇒ `checkSource` 用默认最严档（`entryThrows:\"error\"`、`ignoreThrows:[]`） ⇒ 项目配置的 `nudo.check.*` 被无视（插件自己却读了**同源**配置的 `autoB"	没测该层	keep	keep	—
-"profile=adoption 预设 ⇒ 落到 warning 档（与 CLI / LSP 的预设解析同口径）"	"回归（vite-plugin 构建期）：check 面必须把**项目配置**里的 L2 门禁档位（`package.json#nudo.check.entryThrows` / `ignoreThrows`） 传给 `checkSource` —— 与 CLI / LSP **同口径**。 病灶：插件调 `checkSource` 时**不传** `entryThrows` / `ignoreThrows` ⇒ `checkSource` 用默认最严档（`entryThrows:\"error\"`、`ignoreThrows:[]`） ⇒ 项目配置的 `nudo.check.*` 被无视（插件自己却读了**同源**配置的 `autoB"	没测该层	keep	keep	—
-"跨模块调用可证时不得报 nudo:unproven-return / unknown #opaque（与 CLI 同口径：绿）"	"回归（vite-plugin 构建期）：check 面必须把 **Abs 模块图** （`modules`）传给 `checkSource` —— 与 CLI / LSP 同口径。 病灶（勘察基线 `7af5520c`）：插件调 `checkSource` 时**不传** `modules` ⇒ 跨模块被调函数的类型在 check 通道里缺席 ⇒ 返回值塌成 `unknown #opaque` ⇒ **可证**的返回契约被报成 `nudo:unproven-return` （**假红**：同一份文件 `nudo check` 判绿、构建期报红）。 断言：expect(all).not.toContain(\"nudo:unproven"	没测该层	keep	keep	—
-"负控制：真违约仍必须报 nudo:constraint-violated（模块图到位 ≠ 门禁被关掉）"	"回归（vite-plugin 构建期）：check 面必须把 **Abs 模块图** （`modules`）传给 `checkSource` —— 与 CLI / LSP 同口径。 病灶（勘察基线 `7af5520c`）：插件调 `checkSource` 时**不传** `modules` ⇒ 跨模块被调函数的类型在 check 通道里缺席 ⇒ 返回值塌成 `unknown #opaque` ⇒ **可证**的返回契约被报成 `nudo:unproven-return` （**假红**：同一份文件 `nudo check` 判绿、构建期报红）。 断言：expect(all).toContain(\"nudo:constraint-v"	没测该层	keep	keep	—
-"off 档 + failOnError: true ⇒ 仍然抛（构建红，不再 CI 假绿）"	"`nudo.analysis.diagnostics: \"off\"` 档把 **L1/L2 check 门禁** 一起抹掉 ⇒ `vite build` 零诊断通过（CI 假绿）。 根因：插件把 **check 门禁诊断与 evaluator 诊断合并后**再交给 `filterDiagnosticsByLevel`； 断言：expect(transformOf(plugin).call(ctx, SRC, id)).rejects.toThrow(/entry-may-throw/);；expect(errorFn).toHaveBeenCalled();"	没测该层	keep	keep	—
-"off 档 + failOnError: false ⇒ 门禁诊断仍然可见（不被抹掉）"	"`nudo.analysis.diagnostics: \"off\"` 档把 **L1/L2 check 门禁** 一起抹掉 ⇒ `vite build` 零诊断通过（CI 假绿）。 根因：插件把 **check 门禁诊断与 evaluator 诊断合并后**再交给 `filterDiagnosticsByLevel`； 断言：expect(result).toBeNull();；expect(errorFn).not.toHaveBeenCalled();"	没测该层	keep	keep	—
-"非 off 档（默认档）口径不变：门禁诊断照旧上报"	"`nudo.analysis.diagnostics: \"off\"` 档把 **L1/L2 check 门禁** 一起抹掉 ⇒ `vite build` 零诊断通过（CI 假绿）。 根因：插件把 **check 门禁诊断与 evaluator 诊断合并后**再交给 `filterDiagnosticsByLevel`； 断言：expect(msgs).toContain(\"nudo:entry-may-throw\");"	没测该层	keep	keep	—
-"插件对象带 enforce: 'pre'（排在 vite:esbuild 之前 ⇒ 看得到原始 TS 源码）"	"收集 vite logger 的 warn / info 通道（不透传，保持测试输出干净）。 断言：expect(nudoPlugin().enforce).toBe(\"pre\");"	没测该层	keep	keep	—
-"真 vite build：.ts 源里的 @nudo:contract / @nudo:case 可见 ⇒ 门禁不再静默放绿"	"收集 vite logger 的 warn / info 通道（不透传，保持测试输出干净）。 断言：expect(failed).toBe(false);；expect(msgs).toContain(\"[nudo]\");"	没测该层	keep	keep	—
-"真 vite build：failOnError: true 时 .ts 源的契约违例红构建（与 .js 源同判）"	"收集 vite logger 的 warn / info 通道（不透传，保持测试输出干净）。 断言：expect(failed).toBe(true);；expect(message).toContain(\"case-inconsistency\");"	没测该层	keep	keep	—
-"同一份契约的 .ts 源与 .js 源判同（诊断集合一致；行号随源码坐标系）"	"的**反方向面**：插件对象缺 `enforce: \"pre\"` ⇒ 排在 `vite:esbuild` **之后** ⇒ `transform` 收到 esbuild 的**转译产物** （TS loader 剥光注释）⇒ `.ts` 源里的 `@nudo:contract` / `@nudo:case` **全部不可见** ⇒ 门禁**静默放绿**（同一份契约：`.js` 源报红、`.ts` 源零诊断）。 ⚠ **诊断行号的判读口径**：行号从「转译产物坐标系」回到「**源码坐标系**」 —— 这是**预期修复**； 断言：expect(codes(ts.warnings.join(\"\\n\"))).toEqual(codes(j"	夹具漏形态	keep	keep	—
-"直接驱动 transform：.ts 源码（含类型注解）过分析面 ⇒ 报出与 CLI 同码的诊断"	"⚠ `scope.ts` 的项目根是**模块级状态** ⇒ 直接驱动 `transform` 而不先给根，会沿用**上一个**用例留下的根 ⇒ 文件被当成「工程根之外的依赖」 而跳过（`scope.ts` 的 1056 语义）⇒ 诊断消失。 断言：expect(result).toBeNull();；expect(msgs).toContain(\"case-inconsistency\");"	没测该层	keep	keep	—
-"info 级诊断走 vite 的 info 通道上屏，且不混进 warn 流"	"- 2 条 **info 级**（evaluator 面：不可达代码 / 无契约根，无调用点域）； `nudo.analysis.diagnostics: \"verbose\"` ⇒ info 级不被噪声档过滤掉 （否则它们根本进不了诊断集合，计数口径就无从对比）。 断言：expect(info.length, `info 通道无 info 级诊断：${JSON.stringify(c)}`).toBeGreaterThan(0);；expect("	没测该层	keep	keep	—
-"buildEnd 汇总行的 warning 计数只算 warning 级诊断（info 不计入）"	"- 2 条 **info 级**（evaluator 面：不可达代码 / 无契约根，无调用点域）； `nudo.analysis.diagnostics: \"verbose\"` ⇒ info 级不被噪声档过滤掉 （否则它们根本进不了诊断集合，计数口径就无从对比）。 断言：expect(info.length, `本夹具应产出 info 级诊断：${JSON.stringify(c)}`).toBeGreaterThan(0);；expect(summaryWarnings).toBe(warnings.length);"	夹具漏形态	keep	keep	—
-"汇总行与构建日志自洽：被计入的诊断都真的上屏过（info 不再凭空消失）"	"- 2 条 **info 级**（evaluator 面：不可达代码 / 无契约根，无调用点域）； `nudo.analysis.diagnostics: \"verbose\"` ⇒ info 级不被噪声档过滤掉 （否则它们根本进不了诊断集合，计数口径就无从对比）。 断言：expect(summaryErrors + summaryWarnings).toBeLessThanOrEqual(diags.length);；expect(info.length).toBeGreaterThan(0);"	没测该层	keep	keep	—
-"failOnError: true + code=null ⇒ 仍然不抛（畸形入参不得中断构建）"	"`transform()` 对 `code = null` **抛未捕获异常**（异常在 `try` 之外， 插件自己的兜底 `catch` 接不到）。 根因：`shouldAnalyzeFile` 的守卫是 `text !== undefined`（**漏掉 `null`**）⇒ `hasNudoDirectives(null)` ⇒ `stripStringsKeepComments(null)` 访问 `.length` ⇒ node 措辞 `Cannot read properties of null (reading 'length')`； 断言：expect(；expect(errorFn).not.toHaveBeen"	没测该层	keep	keep	—
-"对照组：正常源码仍然照常分析（守卫没被整体短路）"	"同一份源码的「注释被剥光」形态 —— **等价于 esbuild 的 TS loader 产物** （`vite:esbuild` 在 `enforce: \"pre\"` 缺席时排在插件之前 ⇒ 插件拿到的就是它）。 用它当**对照组**：证明差异来自**插件排序**（插件看到哪份代码）， 而不是插件的分析逻辑。 断言：expect(msgs).toContain(\"nudo:entry-may-throw\");"	夹具漏形态	keep	keep	—
-"带 ?t=<ts> 的 id 与不带 query 的 id 产出同样的诊断"	"`vite dev` 下 HMR 的 `?t=<timestamp>` module id 让插件**整份跳过** 刚编辑的文件 ⇒ **dev 期诊断消失**（假绿）。 根因：`transform` 入口拿**带 query 的原始 Vite module id** 去比锚定正则 （`packages/service/src/glob.ts` 的 `^…$`）⇒ include 失配 ⇒ `return null` ⇒ `shouldAnalyzeFile` / `analyzeFileAsync` / `checkSource` 全不跑。 断言：expect(plain.length).toBeGreaterThan(0);；e"	没测该层	keep	keep	—
-"带 ?v=<hash> 的 id 同样不被跳过"	"断言：expect(diags.length).toBeGreaterThan(0);；expect(diags.join(\"\\n\")).toContain(\"nudo:entry-may-throw\");"	没测该层	keep	keep	—
-"自定义 include 模式也按剥 query 后的路径匹配"	"`vite dev` 下 HMR 的 `?t=<timestamp>` module id 让插件**整份跳过** 刚编辑的文件 ⇒ **dev 期诊断消失**（假绿）。 根因：`transform` 入口拿**带 query 的原始 Vite module id** 去比锚定正则 （`packages/service/src/glob.ts` 的 `^…$`）⇒ include 失配 ⇒ `return null` ⇒ `shouldAnalyzeFile` / `analyzeFileAsync` / `checkSource` 全不跑。 断言：expect(diags.length).toBeGreaterThan(0);"	没测该层	keep	keep	—
-"两条 error ⇒ 首条 this.error 抛出 + 其余逐条 this.warn（不静默丢弃）"	"`failOnError: true` 只报**第一条** error，其余 error 级诊断被 **静默丢弃** ⇒ 构建摘要说「2 error(s)」而报错里只有 1 条。 根因：`fatal` 是**单个字符串**、`??` 短路只留首条 ⇒ 第二条 error 诊断在 构建日志里**一条都没出现**（用户无从定位； 断言：expect(transformOf(plugin).call(ctx, SRC, id)).rejects.toThrow(/entry-may-throw/);；expect(errorFn).toHaveBeenCalledTimes(1);"	夹具漏形态	keep	keep	—
-"摘要计数与实际上报条数一致（2 error(s) ⇒ 1 抛 + 1 warn）"	"`failOnError: true` 只报**第一条** error，其余 error 级诊断被 **静默丢弃** ⇒ 构建摘要说「2 error(s)」而报错里只有 1 条。 根因：`fatal` 是**单个字符串**、`??` 短路只留首条 ⇒ 第二条 error 诊断在 构建日志里**一条都没出现**（用户无从定位； 断言：expect(summary, JSON.stringify({ warns, errors, infos })).toBeDefined();；expect(summary).toContain(\"2 error(s)\");"	夹具漏形态	keep	keep	—
-"failOnError: false（默认档）口径不变：每条 error 降 warn"	"`failOnError: true` 只报**第一条** error，其余 error 级诊断被 **静默丢弃** ⇒ 构建摘要说「2 error(s)」而报错里只有 1 条。 根因：`fatal` 是**单个字符串**、`??` 短路只留首条 ⇒ 第二条 error 诊断在 构建日志里**一条都没出现**（用户无从定位； 断言：expect(warned.filter((w) => w.includes(\" error: \")).length).toBe(2);"	夹具漏形态	keep	keep	—
-"占位 range（line 0）⇒ 省略 :line:col，且不出现越界行号"	"mock 目标文件不存在 ⇒ evaluator 面产出 `nudo:module-missing`， 其 range 是上游的**占位** `{line: 0, column: 0}` ⇒ 插件此前渲染成 `:0:0`。 断言：expect(msgs.length, JSON.stringify(msgs)).toBeGreaterThan(0);；expect(msgs.some((m) => m.includes(\":0:0\"))).toBe(false);"	没测该层	keep	keep	—
-"真位置仍照旧渲染 :line:col（不回归）"	"mock 目标文件不存在 ⇒ evaluator 面产出 `nudo:module-missing`， 其 range 是上游的**占位** `{line: 0, column: 0}` ⇒ 插件此前渲染成 `:0:0`。 断言：expect(located, JSON.stringify(msgs)).toBeDefined();；expect(located).toMatch(/:\\d+:\\d+ error: /);"	没测该层	keep	keep	—
-"真违例必须是 nudo:constraint-violated 且为 error 级（不是 warning 级 unproven-return）"	"回归（vite-plugin 构建期）：**同 898 的反方向面** —— 跨模块 返回契约**真违例**时，插件必须给出 **error** 级的 `nudo:constraint-violated`，而不是被降级成 **warning** 级的 `nudo:unproven-return`。 危害（假绿）：「证不出来」时插件只能给弱断言（warning）⇒ `failOnError: true` 也放行 ⇒ **门禁失效**（CI 假绿）。 断言：expect(all).toContain(\"nudo:constraint-violated\");；expect(all).not.toContain(\"nudo:unproven"	没测该层	keep	keep	—
-"failOnError=true ⇒ 真违例必须中断构建（this.error 被调用并抛出）"	"回归（vite-plugin 构建期）：**同 898 的反方向面** —— 跨模块 返回契约**真违例**时，插件必须给出 **error** 级的 `nudo:constraint-violated`，而不是被降级成 **warning** 级的 `nudo:unproven-return`。 危害（假绿）：「证不出来」时插件只能给弱断言（warning）⇒ `failOnError: true` 也放行 ⇒ **门禁失效**（CI 假绿）。 断言：expect(r.errors.join(\"\\n\")).toContain(\"nudo:constraint-violated\");；expect(r.thrown).toBeDef"	没测该层	keep	keep	—
-"evaluator 面诊断也带 (nudo:code)（此前恒丢）"	"mock 目标文件不存在 ⇒ evaluator 面产出 `nudo:module-missing`（码在 `diag.code` 字段里，此前插件**从不读** ⇒ 码恒丢）； 断言：expect(mockMsg, JSON.stringify(msgs)).toBeDefined();；expect(mockMsg).toContain(\"(nudo:module-missing)\");"	没测该层	keep	keep	—
-"同一次构建里两类诊断同款结尾（ · (code) 分隔符归一）且码不重复"	"mock 目标文件不存在 ⇒ evaluator 面产出 `nudo:module-missing`（码在 `diag.code` 字段里，此前插件**从不读** ⇒ 码恒丢）； 断言：expect(coded.length, JSON.stringify(msgs)).toBe(msgs.length);；expect(codes.length, m).toBe(1);"	没测该层	keep	keep	—
+harvest 专有导出可解析 ⇒ 不再误报 nudo:unknown-inference（与 CLI 同结论）；负控制：env 与 harvest 都没有的导出仍报 nudo:unknown-inference	vite-plugin-faces 聚合矩阵	没测该层	keep	keep	—
+无文件级 @nudo:env ⇒ 不报 ReferenceError（基线，一直是对的）；加一行**无关**的文件级 @nudo:env ⇒ 结论不变（不再绿翻红）；两个场景的诊断集合逐项相同（单调）；负控制：项目未声明该 env ⇒ MAGIC 仍报 ReferenceError（门禁未被关掉）	vite-plugin-faces 聚合矩阵	没测该层	keep	keep	—
+项目级 env 缺失 ⇒ 构建期 warning 指名项目根下的路径；同一语义的**文件级**写法同样报（两种写法结论一致）；负控制：项目 env 正常 ⇒ 不报 nudo:env-unresolved	vite-plugin-faces 聚合矩阵	没测该层	keep	keep	—
+未知 env 名 ⇒ 构建期 warning（nudo:env-unresolved）；负控制：同目录别的文件的无 path 诊断不误吸	vite-plugin-faces 聚合矩阵	没测该层	keep	keep	—
+@nudo:env 指向缺失文件 → 构建期 warning（nudo:env-unresolved）；负控制：同目录未声明该 env 的文件不得被误伤；负控制：无 @nudo:env 的文件不产生 env 告警	vite-plugin-faces 聚合矩阵	没测该层	keep	keep	—
+@nudo:mock 覆盖的依赖不得再报 nudo:entry-may-throw（与 CLI 同口径：绿）；负控制：没有 mock 的入口仍报 nudo:entry-may-throw（门禁未被关掉）	vite-plugin-faces 聚合矩阵	没测该层	keep	keep	—
+verbose 档：nudo:assume-relied 走 info 通道上屏（不混进 warn 流）；默认档：info 不上屏（档位取舍仍归 filterDiagnosticsByLevel）	vite-plugin-faces 聚合矩阵	没测该层	keep	keep	—
+插件对象带 enforce: 'pre'（排在 vite:esbuild 之前 ⇒ 看得到原始 TS 源码）；直接驱动 transform：原始 TS 源码里的 @nudo:throws 可见 ⇒ 不报 CLI 不会报的 entry-may-throw；对照组：同一份源码剥掉注释（= esbuild 产物）⇒ 报 entry-may-throw（差异来自插件排序）；真 vite build：.ts 源里的 @nudo:throws 可见 ⇒ 构建成功、零 [nudo] 诊断（	vite-plugin-faces 聚合矩阵	没测该层	keep	keep	—
+\0 前缀虚拟 id + 干净源码 + failOnError: true ⇒ 不抛、零诊断；\0 前缀虚拟 id + 干净源码 + 默认档 ⇒ 零诊断（改前是 1 条 error 级）；virtual: 前缀虚拟 id（无 NUL）同样被跳过；对照组：同源码的普通文件 id 依旧零诊断（跳过不是「全都不分析」）	vite-plugin-faces 聚合矩阵	没测该层	keep	keep	—
+entryThrows=warning ⇒ 报 warning 而不是 error（与 CLI 同口径）；entryThrows=warning + failOnError=true ⇒ 构建不中断（不再抛）；ignoreThrows=[TypeError] ⇒ 该 throw 类不再报 nudo:entry-may-throw；entryThrows=off ⇒ L2 门禁诊断整段缺席；负控制：没有 nudo.check 配置时仍是默认最严档（error）—— 门禁未被整体	vite-plugin-faces 聚合矩阵	没测该层	keep	keep	—
+跨模块调用可证时不得报 nudo:unproven-return / unknown #opaque（与 CLI 同口径：绿）；负控制：真违约仍必须报 nudo:constraint-violated（模块图到位 ≠ 门禁被关掉）	vite-plugin-faces 聚合矩阵	没测该层	keep	keep	—
+off 档 + failOnError: true ⇒ 仍然抛（构建红，不再 CI 假绿）；off 档 + failOnError: false ⇒ 门禁诊断仍然可见（不被抹掉）；非 off 档（默认档）口径不变：门禁诊断照旧上报	vite-plugin-faces 聚合矩阵	没测该层	keep	keep	—
+真 vite build：.ts 源里的 @nudo:contract / @nudo:case 可见 ⇒ 门禁不再静默放绿；真 vite build：failOnError: true 时 .ts 源的契约违例红构建（与 .js 源同判）；同一份契约的 .ts 源与 .js 源判同（诊断集合一致；行号随源码坐标系）；直接驱动 transform：.ts 源码（含类型注解）过分析面 ⇒ 报出与 CLI 同码的诊断	vite-plugin-faces 聚合矩阵	没测该层	keep	keep	—
+info 级诊断走 vite 的 info 通道上屏，且不混进 warn 流；buildEnd 汇总行的 warning 计数只算 warning 级诊断（info 不计入）；汇总行与构建日志自洽：被计入的诊断都真的上屏过（info 不再凭空消失）	vite-plugin-faces 聚合矩阵	没测该层	keep	keep	—
+failOnError: true + code=null ⇒ 仍然不抛（畸形入参不得中断构建）；对照组：正常源码仍然照常分析（守卫没被整体短路）	vite-plugin-faces 聚合矩阵	没测该层	keep	keep	—
+带 ?t=<ts> 的 id 与不带 query 的 id 产出同样的诊断；带 ?v=<hash> 的 id 同样不被跳过；自定义 include 模式也按剥 query 后的路径匹配	vite-plugin-faces 聚合矩阵	没测该层	keep	keep	—
+两条 error ⇒ 首条 this.error 抛出 + 其余逐条 this.warn（不静默丢弃）；摘要计数与实际上报条数一致（2 error(s) ⇒ 1 抛 + 1 warn）；failOnError: false（默认档）口径不变：每条 error 降 warn	vite-plugin-faces 聚合矩阵	没测该层	keep	keep	—
+占位 range（line 0）⇒ 省略 :line:col，且不出现越界行号；真位置仍照旧渲染 :line:col（不回归）	vite-plugin-faces 聚合矩阵	没测该层	keep	keep	—
+真违例必须是 nudo:constraint-violated 且为 error 级（不是 warning 级 unproven-return）；failOnError=true ⇒ 真违例必须中断构建（this.error 被调用并抛出）	vite-plugin-faces 聚合矩阵	没测该层	keep	keep	—
+evaluator 面诊断也带 (nudo:code)（此前恒丢）；同一次构建里两类诊断同款结尾（ · (code) 分隔符归一）且码不重复	vite-plugin-faces 聚合矩阵	没测该层	keep	keep	—
 ```
 
 ```audit-deleted
 title	reason	evidence
 插件对象带 enforce: 'pre'（排在 vite:esbuild 之前 ⇒ 看得到原始 TS 源码）	dup:插件对象带 enforce: 'pre'（排在 vite:esbuild 之前 ⇒ 看得到原始 TS 源码）（同文件两处逐字同体，保留首份）	commit:e73bbdb8
+汇总行走 ctx.info（vite logger），不再走裸 console.log	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+宿主没有 info 通道时降级到 ctx.warn（仍不逃逸到 console.log）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+exclude: ["other/**"] ⇒ other/b.js 被排除（改前仍被分析并报错）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+include: ["src/**"] ⇒ src/a.js 照常分析（改前整份分析被静默归零）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+include: ["src/**"] ⇒ other/b.js 不在白名单 ⇒ 不分析	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+绝对路径口径仍然有效（**/other/** 照常排除）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+与项目配置面同口径：插件选项与 nudo.analysis.exclude 判定一致	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+软链依赖的 realpath id ⇒ 零诊断（改前报 entry-may-throw）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+软链依赖的 node_modules 路径 id ⇒ 零诊断	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+物理目录依赖 ⇒ 零诊断（与软链形态一致）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+对照组：项目源码照常分析（排除没有过宽）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+软链 root + 软链形态 id ⇒ 分析（改前 skip:exclude）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+软链 root + realpath 形态 id ⇒ 分析	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+对照组：非软链 root ⇒ 分析（行为不变）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+工程根之外的文件仍被排除（排除规则没有被放宽）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+插件层：软链 root 下的源文件照常出诊断（不再静默空转）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+同进程两个插件实例 ⇒ 各自的 root 互不覆盖（模块级全局状态不再串味）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+无 `line` 的 check issue ⇒ range 用占位 0（不是编造的 1）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+插件层：无位置的 check issue 渲染为「无位置」（不含 :1:0 / :0:0）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+有真位置的 check issue 仍渲染 :line:col（不回归）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+harvest 专有导出可解析 ⇒ 不再误报 nudo:unknown-inference（与 CLI 同结论）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+负控制：env 与 harvest 都没有的导出仍报 nudo:unknown-inference	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+无文件级 @nudo:env ⇒ 不报 ReferenceError（基线，一直是对的）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+加一行**无关**的文件级 @nudo:env ⇒ 结论不变（不再绿翻红）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+两个场景的诊断集合逐项相同（单调）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+负控制：项目未声明该 env ⇒ MAGIC 仍报 ReferenceError（门禁未被关掉）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+项目级 env 缺失 ⇒ 构建期 warning 指名项目根下的路径	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+同一语义的**文件级**写法同样报（两种写法结论一致）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+负控制：项目 env 正常 ⇒ 不报 nudo:env-unresolved	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+未知 env 名 ⇒ 构建期 warning（nudo:env-unresolved）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+负控制：同目录别的文件的无 path 诊断不误吸	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+@nudo:env 指向缺失文件 → 构建期 warning（nudo:env-unresolved）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+负控制：同目录未声明该 env 的文件不得被误伤	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+负控制：无 @nudo:env 的文件不产生 env 告警	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+@nudo:mock 覆盖的依赖不得再报 nudo:entry-may-throw（与 CLI 同口径：绿）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+负控制：没有 mock 的入口仍报 nudo:entry-may-throw（门禁未被关掉）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+verbose 档：nudo:assume-relied 走 info 通道上屏（不混进 warn 流）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+默认档：info 不上屏（档位取舍仍归 filterDiagnosticsByLevel）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+直接驱动 transform：原始 TS 源码里的 @nudo:throws 可见 ⇒ 不报 CLI 不会报的 entry-may-throw	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+对照组：同一份源码剥掉注释（= esbuild 产物）⇒ 报 entry-may-throw（差异来自插件排序）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+真 vite build：.ts 源里的 @nudo:throws 可见 ⇒ 构建成功、零 [nudo] 诊断（不假红）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+真 vite build：TS 特有语法（enum / namespace / as const / satisfies / 抽象类）⇒ 构建成功、零 [nudo] 诊断	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+真 vite build：分析面解析不了的 TS 语法（装饰器）⇒ 降级为 warn，构建不炸（902 守卫兜底）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+\0 前缀虚拟 id + 干净源码 + failOnError: true ⇒ 不抛、零诊断	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+\0 前缀虚拟 id + 干净源码 + 默认档 ⇒ 零诊断（改前是 1 条 error 级）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+virtual: 前缀虚拟 id（无 NUL）同样被跳过	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+对照组：同源码的普通文件 id 依旧零诊断（跳过不是「全都不分析」）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+entryThrows=warning ⇒ 报 warning 而不是 error（与 CLI 同口径）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+entryThrows=warning + failOnError=true ⇒ 构建不中断（不再抛）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+ignoreThrows=[TypeError] ⇒ 该 throw 类不再报 nudo:entry-may-throw	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+entryThrows=off ⇒ L2 门禁诊断整段缺席	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+负控制：没有 nudo.check 配置时仍是默认最严档（error）—— 门禁未被整体关掉	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+profile=adoption 预设 ⇒ 落到 warning 档（与 CLI / LSP 的预设解析同口径）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+跨模块调用可证时不得报 nudo:unproven-return / unknown #opaque（与 CLI 同口径：绿）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+负控制：真违约仍必须报 nudo:constraint-violated（模块图到位 ≠ 门禁被关掉）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+off 档 + failOnError: true ⇒ 仍然抛（构建红，不再 CI 假绿）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+off 档 + failOnError: false ⇒ 门禁诊断仍然可见（不被抹掉）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+非 off 档（默认档）口径不变：门禁诊断照旧上报	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+插件对象带 enforce: 'pre'（排在 vite:esbuild 之前 ⇒ 看得到原始 TS 源码）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+真 vite build：.ts 源里的 @nudo:contract / @nudo:case 可见 ⇒ 门禁不再静默放绿	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+真 vite build：failOnError: true 时 .ts 源的契约违例红构建（与 .js 源同判）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+同一份契约的 .ts 源与 .js 源判同（诊断集合一致；行号随源码坐标系）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+直接驱动 transform：.ts 源码（含类型注解）过分析面 ⇒ 报出与 CLI 同码的诊断	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+info 级诊断走 vite 的 info 通道上屏，且不混进 warn 流	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+buildEnd 汇总行的 warning 计数只算 warning 级诊断（info 不计入）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+汇总行与构建日志自洽：被计入的诊断都真的上屏过（info 不再凭空消失）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+failOnError: true + code=null ⇒ 仍然不抛（畸形入参不得中断构建）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+对照组：正常源码仍然照常分析（守卫没被整体短路）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+带 ?t=<ts> 的 id 与不带 query 的 id 产出同样的诊断	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+带 ?v=<hash> 的 id 同样不被跳过	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+自定义 include 模式也按剥 query 后的路径匹配	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+两条 error ⇒ 首条 this.error 抛出 + 其余逐条 this.warn（不静默丢弃）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+摘要计数与实际上报条数一致（2 error(s) ⇒ 1 抛 + 1 warn）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+failOnError: false（默认档）口径不变：每条 error 降 warn	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+占位 range（line 0）⇒ 省略 :line:col，且不出现越界行号	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+真位置仍照旧渲染 :line:col（不回归）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+真违例必须是 nudo:constraint-violated 且为 error 级（不是 warning 级 unproven-return）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+failOnError=true ⇒ 真违例必须中断构建（this.error 被调用并抛出）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+evaluator 面诊断也带 (nudo:code)（此前恒丢）	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
+同一次构建里两类诊断同款结尾（ · (code) 分隔符归一）且码不重复	dup:vite-plugin-faces 聚合矩阵	commit:8fa85177
 ```

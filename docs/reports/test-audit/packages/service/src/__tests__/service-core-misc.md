@@ -6,101 +6,130 @@
 
 ```audit
 title	rootCause	gap	action	status	evidence
-"引擎侧：实例 brand 名不是内部伪名"	"产物面回归：`new Intl.Collator('en')` 等**未建模子构造器**返回内部 伪名 brand（`__nudoFnParentN`），该伪名泄漏进产品面产物 ⇒ - dts 产物：`export declare function f(): __nudoFnParent1; ` —— 伪名是**合法 JS 标识符**却从未声明 ⇒ 消费方 tsc 报 **TS2304**； 断言：expect(isInternalPseudoName(name)).toBe(false);"	夹具漏形态	keep	keep	—
-"dts 产物：不得出现内部伪名（改前：TS2304——伪名从未声明）"	"内部伪名（实现细节，不得出现在任何产物面上） 断言：expect(dts).not.toMatch(/__nudoFnParent/);；expect(dts).not.toMatch(/:\\s*__nudo/);"	没测该层	keep	keep	—
-"schema 产物：不得 z.instanceof(内部伪名)（改前：import 即 ReferenceError）"	"内部伪名（实现细节，不得出现在任何产物面上） 断言：expect(source).not.toMatch(/__nudoFnParent/);；expect(source).not.toMatch(/z\\.instanceof\\(\\s*__nudo/);"	没测该层	keep	keep	—
-"schema 产物可求值（import 即用——改前 ReferenceError）"	"产物面回归：`new Intl.Collator('en')` 等**未建模子构造器**返回内部 伪名 brand（`__nudoFnParentN`），该伪名泄漏进产品面产物 ⇒ - dts 产物：`export declare function f(): __nudoFnParent1; ` —— 伪名是**合法 JS 标识符**却从未声明 ⇒ 消费方 tsc 报 **TS2304**； 断言：expect(r.error).toBeUndefined();；expect(r.ok).toBe(true);"	夹具漏形态	keep	keep	—
-"负控制：产物里的 z.instanceof 实参都是运行时全局构造器"	"产物面回归：`new Intl.Collator('en')` 等**未建模子构造器**返回内部 伪名 brand（`__nudoFnParentN`），该伪名泄漏进产品面产物 ⇒ - dts 产物：`export declare function f(): __nudoFnParent1; ` —— 伪名是**合法 JS 标识符**却从未声明 ⇒ 消费方 tsc 报 **TS2304**； 断言：expect(typeof v, name).toBe(\"function\");"	夹具漏形态	keep	keep	—
+引擎侧：实例 brand 名不是内部伪名；dts 产物：不得出现内部伪名（改前：TS2304——伪名从未声明）；schema 产物：不得 z.instanceof(内部伪名)（改前：import 即 ReferenceError）；schema 产物可求值（import 即用——改前 ReferenceError）；负控制：产物里的 z.instanceof 实参都是运行时全局构造器	service-core-misc 聚合矩阵	没测该层	keep	keep	—
 "构造器形参 = unknown（nudo 展示面仍为 any，两个作用域不同）"	"三个丢信息点（`dtsClassDeclaration`）：① 构造器 / 静态方法形参无类型 证据； **TS 投影面**把无约束 any 映成 TS `unknown`（top）⇒ ① 回到 `unknown`， 但理由不是「推断失败」，而是「TS 侧的 top」。 断言：expect(dts).toContain(\"constructor(w: unknown, h: unknown);\");；expect(dts).not.toContain(\"constructor(w: any\");"	夹具漏形态	keep	keep	—
-"裸块语句上的指令登记了**节点身份**区间（改前恒空）"	"`@nudo:replace` 的「紧随语句」是**裸块语句** `{ … }` 时，收集面 的**作用域边界**守卫把 walk 的**根节点**也挡住了 ⇒ 候选区间恒空 ⇒ 替换**永不生效**，而诊断还谎称「该指令所标注语句的作用域内没有匹配表达式」 ——匹配目标就在它所标注的那个块里。 根因：`packages/service/src/eval-injection.ts` 的 `replaceCandidateRanges` 对 walk 的根也判 `SCOPE_BOUNDARY_TYPES`（含 `BlockStatement`）⇒ 第一步即 返回。 断言：expect(reps.targets).toHaveLengt"	没测该层	keep	keep	—
-"裸块语句 与 普通语句 的签名逐字相同（替换真的生效）"	"对照组：指令挂在普通语句（`const`）上——改前改后都生效 断言：expect(signatureOf(BLOCK_TARGET, \"blockTarget\").display).toBe(\"number\");；expect(signatureOf(BLOCK_TARGET, \"blockTarget\").display).toBe("	没测该层	keep	keep	—
-"裸块语句命中 ⇒ 零「未命中」诊断（不许谎报作用域内没有该表达式）"	"`@nudo:replace` 的「紧随语句」是**裸块语句** `{ … }` 时，收集面 的**作用域边界**守卫把 walk 的**根节点**也挡住了 ⇒ 候选区间恒空 ⇒ 替换**永不生效**，而诊断还谎称「该指令所标注语句的作用域内没有匹配表达式」 ——匹配目标就在它所标注的那个块里。 根因：`packages/service/src/eval-injection.ts` 的 `replaceCandidateRanges` 对 walk 的根也判 `SCOPE_BOUNDARY_TYPES`（含 `BlockStatement`）⇒ 第一步即 返回。 断言：expect(diagsOf(BLOCK_TARGET)).to"	没测该层	keep	keep	—
-"目标确实只在**嵌套**块里 ⇒ 诊断明说「被嵌套作用域挡住」而不是「没有该表达式」"	"`@nudo:replace` 的「紧随语句」是**裸块语句** `{ … }` 时，收集面 的**作用域边界**守卫把 walk 的**根节点**也挡住了 ⇒ 候选区间恒空 ⇒ 替换**永不生效**，而诊断还谎称「该指令所标注语句的作用域内没有匹配表达式」 ——匹配目标就在它所标注的那个块里。 根因：`packages/service/src/eval-injection.ts` 的 `replaceCandidateRanges` 对 walk 的根也判 `SCOPE_BOUNDARY_TYPES`（含 `BlockStatement`）⇒ 第一步即 返回。 断言：expect(diags).toHaveLength(1);；e"	没测该层	keep	keep	—
-"两个不同 cwd 各跑一次 ⇒ 标签逐字相同且只有一条"	"派生段的溯源标签 `// derived-from: <root>:<fn>` 用 **cwd 相对** 路径 ⇒ 同一个 root 在不同 cwd 下重算得到两种拼写； 合并逻辑又取**并集** ⇒ 同一个 root 在一行里出现两次，且**永久留存**（再跑也不清理）。 断言：expect(first).toHaveLength(1);；expect(second).toEqual(first);"	没测该层	keep	keep	—
-"历史 cwd 相对拼写 + 新拼写 ⇒ 归一成一条（不再并集）"	"派生段的溯源标签 `// derived-from: <root>:<fn>` 用 **cwd 相对** 路径 ⇒ 同一个 root 在不同 cwd 下重算得到两种拼写； 合并逻辑又取**并集** ⇒ 同一个 root 在一行里出现两次，且**永久留存**（再跑也不清理）。 断言：expect(labels()).toHaveLength(1);"	没测该层	keep	keep	—
+裸块语句上的指令登记了**节点身份**区间（改前恒空）；裸块语句 与 普通语句 的签名逐字相同（替换真的生效）；裸块语句命中 ⇒ 零「未命中」诊断（不许谎报作用域内没有该表达式）；目标确实只在**嵌套**块里 ⇒ 诊断明说「被嵌套作用域挡住」而不是「没有该表达式」	service-core-misc 聚合矩阵	没测该层	keep	keep	—
+两个不同 cwd 各跑一次 ⇒ 标签逐字相同且只有一条；历史 cwd 相对拼写 + 新拼写 ⇒ 归一成一条（不再并集）	service-core-misc 聚合矩阵	没测该层	keep	keep	—
 "错误消息含侧车文件名（不是源文件名）"	"断言：expect(emitContract(join(dir, \"lib.js\"), { mode: \"update\", all: true })).rejects.toThrow("	没测该层	keep	keep	—
-"`{ x = 1, y = x + 1 } = {}` ⇒ 形参可省（不是必填）"	"断言：expect(dts).toMatch(/export declare function f\\(_p0\\?: /);"	没测该层	keep	keep	—
-"对照组：无默认值的解构形参仍必填"	"对照组：指令挂在普通语句（`const`）上——改前改后都生效 断言：expect(dts).toMatch(/export declare function g\\(_p0\\?: /);；expect(required).toMatch(/export declare function r\\(_p0: /);"	没测该层	keep	keep	—
-"模块级求值失败 ⇒ 观测面看见该文件的 module-throw 回落（装载期逃逸）"	"程序自身抛（`module-throw`）：catch 可吸收 ⇒ 既有口径**不是**闸门失败。 断言：expect(evalFailures.length).toBeGreaterThan(0);；expect(evalFailures.every((f) => f.reason === \"module-throw\")).toBe(true);"	没测该层	keep	keep	—
-"假红防线：unsupported:* 回落**不**进失败信号"	"能力边界回落（`unsupported:*`）：TS namespace 不 lowering ⇒ 回落但**不是**引擎缺陷。 断言：expect(evalFailures).toEqual([]);"	没测该层	keep	keep	—
-"假红防线：module-throw（程序自身抛）**不**进失败信号"	"程序自身抛（`module-throw`）：catch 可吸收 ⇒ 既有口径**不是**闸门失败。 断言：expect(evalFailures).toEqual([]);"	没测该层	keep	keep	—
-"干净文件 ⇒ 零回落（不得凭空造失败）"	"回归：**模块级求值失败**（闸门无法裁决该文件的回落）必须被**按文件** 观测到——否则闸门看不到任何入口 ⇒ 零诊断 + exit 0（**假绿**：合法代码与 违约代码都判绿）。 病灶：core 的回落计数是**进程级**的（`getEvalFallbackStats()`）⇒ 无法定位 到文件 ⇒ 分析编排层没有「本文件求值失败」的信号 ⇒ 门禁无从 fail-closed。 断言：expect(evalFailures).toEqual([]);；expect(analysis.functions.map((f) => f.name)).toContain(\"add\");"	没测该层	keep	keep	—
+`{ x = 1, y = x + 1 } = {}` ⇒ 形参可省（不是必填）；对照组：无默认值的解构形参仍必填	service-core-misc 聚合矩阵	没测该层	keep	keep	—
+模块级求值失败 ⇒ 观测面看见该文件的 module-throw 回落（装载期逃逸）；假红防线：unsupported:* 回落**不**进失败信号；假红防线：module-throw（程序自身抛）**不**进失败信号；干净文件 ⇒ 零回落（不得凭空造失败）	service-core-misc 聚合矩阵	没测该层	keep	keep	—
 "静态方法进函数表，静态字段不进"	"断言：expect(names).toContain(\"K.m\");；expect(names).toContain(\"K.instance\");"	没测该层	keep	keep	—
-"成员按导出槽名 `default` 登记（不再被整体丢弃）"	"回归：**匿名** `export default class { … }` 必须进导出表。 改前两个分支都落空（无 id ⇒ 不是 `ClassDeclaration && defaultClassName`； 断言：expect(names).toContain(\"default.run\");"	夹具漏形态	keep	keep	—
-"对照组：具名 default class 仍按本地名登记（口径不变）"	"回归：**匿名** `export default class { … }` 必须进导出表。 改前两个分支都落空（无 id ⇒ 不是 `ClassDeclaration && defaultClassName`； 断言：expect(names).toContain(\"Foo.run\");"	夹具漏形态	keep	keep	—
-"`=> lit(null)` 的精确结果被判定（不是 unchecked）"	"回归：精确推出的 `null` / `undefined` 字面量**不是**「引擎推不出」。 改前第三态判据只看 `shape.k === \"unknown\"`，而 `null` / `undefined` 字面量的 Abs 正是 `shape.k === \"unknown\"` + `term = lit(null|undefined)` + `conf === \"exact\"` ⇒ 精确值被误判成推导失败，与 `--json` 面（`conf=exact`） 和 check 签名面（`=> null`）三面互斥。 断言：expect(o.unchecked).toBe(false);；expect(o.ok).toBe(true"	夹具漏形态	keep	keep	—
-"判据本体的对照组：真 unknown ⇒ 仍是推导失败"	"求值器不支持的表达式 ⇒ 实测 Abs 是真 unknown（对照组）。 断言：expect(o.unchecked).toBe(true);；expect(o.uncheckedReason).toBe(\"inference-failed\");"	没测该层	keep	keep	—
-"inferenceFailed：lit null/undefined ⇒ false；无 term 的 unknown ⇒ true"	"求值器不支持的表达式 ⇒ 实测 Abs 是真 unknown（对照组）。 断言：expect(inferenceFailed({ shape: { k: \"unknown\" }, term: { op: \"lit\", value: null }, conf: \"exact\" } as never)).toBe(false);；expect(inferenceFailed({ shape: { k: \"unknown\" }, term: { op: \"lit\", value: undefined }, conf: \"exact\" } as never)).toBe(false);"	没测该层	keep	keep	—
-"判定层：never 配 never ⇒ 满足（Bug 649 不回归：配 number() ⇒ 不满足）"	"回归：实测 `never` 配期望 `never` 时 `never ⊑ never` 成立 ⇒ 断言必须可判 **ok**。 改前守卫无条件拒绝（`if (actual.shape.k === \"never\") return false; 断言：expect(caseExpectedSatisfied(neverAbs, parseCaseArgExpr(\"never\"))).toBe(true);；expect(caseExpectedSatisfied(neverAbs, parseCaseArgExpr(\"number()\"))).toBe(false);"	没测该层	keep	keep	—
-"分析面：抛错函数 + `=> never` ⇒ 不再发 nudo:case-expected（报告与判定不再自相矛盾）"	"回归：实测 `never` 配期望 `never` 时 `never ⊑ never` 成立 ⇒ 断言必须可判 **ok**。 改前守卫无条件拒绝（`if (actual.shape.k === \"never\") return false; 断言：expect(diags.filter((d) => d.code === \"nudo:case-expected\")).toHaveLength(0);"	没测该层	keep	keep	—
-"分析面对照组：抛错函数 + `=> number()` ⇒ 仍报 nudo:case-expected（Bug 649 不回归）"	"回归：实测 `never` 配期望 `never` 时 `never ⊑ never` 成立 ⇒ 断言必须可判 **ok**。 改前守卫无条件拒绝（`if (actual.shape.k === \"never\") return false; 断言：expect(diags.filter((d) => d.code === \"nudo:case-expected\")).toHaveLength(1);"	没测该层	keep	keep	—
-"槽谓词满足 ⇒ 判 ok（与顶层写法一致）"	"断言：expect(caseExpectedSatisfied(parseCaseArgExpr(\"{ n: 3 }\"), nestedExpected())).toBe(true);；expect(caseExpectedSatisfied(parseCaseArgExpr(\"3\"), topExpected())).toBe(true);"	没测该层	keep	keep	—
-"槽谓词不满足 ⇒ 判不满足（与顶层写法一致）"	"断言：expect(caseExpectedSatisfied(parseCaseArgExpr(\"{ n: -1 }\"), nestedExpected())).toBe(false);；expect(caseExpectedSatisfied(parseCaseArgExpr(\"-1\"), topExpected())).toBe(false);"	没测该层	keep	keep	—
-"期望文本递归渲染槽谓词（不再是 `{ n: number }`）"	"回归：**嵌套**值级谓词（`shape({ n: number().gt(0) })`）必须与 顶层写法（`number().gt(0)`）**同结论、同可读性**。 改前：顶层谓词才走值级判定与渲染 ⇒ 同一谓词放槽里既不执法（`[FAIL]`） 也不显示（报告只印 `{ n: number }`），报告看上去 expected/actual 一致却判红。 断言：expect(text).toContain(\"n: number\");；expect(text).toContain(\"> 0\");"	没测该层	keep	keep	—
-"无槽谓词时渲染逐字不变（不引入噪音）"	"断言：expect(formatExpected(parseCaseArgExpr(\"shape({ n: number() })\"))).toBe(\"{ n: number }\");"	没测该层	keep	keep	—
-"下游是 .ts ⇒ 派生产物补 `declare const fn: …`"	"`nudo contract --emit` 的**派生分支**写 `.nudo.ts` 侧车时 **不补 builder 类型声明** ⇒ 产物里 `fn` 是未声明标识符 ⇒ `tsc` **TS2304**； `.js` 侧车不加（裸注入已够）。 断言：expect(r.hasRoot).toBe(true);；expect(after).toContain(`declare const fn: typeof import(\"@nudojs/core\").fn;`);"	没测该层	keep	keep	—
-"对照组：.js 侧车不加 declare（裸注入已够）"	"`nudo contract --emit` 的**派生分支**写 `.nudo.ts` 侧车时 **不补 builder 类型声明** ⇒ 产物里 `fn` 是未声明标识符 ⇒ `tsc` **TS2304**； `.js` 侧车不加（裸注入已够）。 断言：expect(r.hasRoot).toBe(true);；expect(after).not.toContain(\"declare const\");"	没测该层	keep	keep	—
-"两个星号导出同名 ⇒ 该名不导出（导入方报缺名），顺序无关"	"断言：expect(c).toBeDefined();；expect(Object.hasOwn(c!.named, \"x\")).toBe(false);"	没测该层	keep	keep	—
-"对照组：本地导出遮蔽星号导出 ⇒ x 存在且值取自本地（不是歧义）"	"求值器不支持的表达式 ⇒ 实测 Abs 是真 unknown（对照组）。 断言：expect(Object.hasOwn(c!.named, \"x\")).toBe(true);；expect(issuesOf(graph)).not.toContain(\"./c.mjs#x\");"	没测该层	keep	keep	—
-"定义位点解析同口径：歧义名解析不出（不得给一个确定定义模块）"	"断言：expect(resolveExportSite(join(dir, \"c.mjs\"), \"x\")).toBeUndefined();"	没测该层	keep	keep	—
-"定义位点对照：非歧义星号导出照常解析到定义模块"	"断言：expect(resolveExportSite(join(dir, \"c.mjs\"), \"x\")?.modulePath).toBe(join(dir, \"a.mjs\"));"	没测该层	keep	keep	—
-"export function 的形参用源码真名（改前：arg0/arg1）"	"：跨模块导出的 fn 形参面—— - 463：`export function` 的形参名显示成合成假名 `arg0/arg1`（源码里没有的名字）； - 484：带默认值的形参名整个丢失（`b = 2` 的真名 b 不认 → 显示 arg1）。 断言：expect(params.get(\"expPlain\")).toEqual([\"a\", \"b\"]);；expect(params.get(\"expNamed\")).toEqual([\"alpha\", \"beta\"]);"	没测该层	keep	keep	—
-"带默认值的形参：名字与个数都在（改前：arg0 一个 / arg1 假名）"	"：跨模块导出的 fn 形参面—— - 463：`export function` 的形参名显示成合成假名 `arg0/arg1`（源码里没有的名字）； - 484：带默认值的形参名整个丢失（`b = 2` 的真名 b 不认 → 显示 arg1）。 断言：expect(params.get(\"expDefault\")).toEqual([\"a\", \"b\"]);；expect(params.get(\"plainDefault\")).toBeUndefined();"	没测该层	keep	keep	—
-"rest 形参计入声明形参数并保留 ... 形态（改前：只剩 1 个）"	"：跨模块导出的 fn 形参面—— - 463：`export function` 的形参名显示成合成假名 `arg0/arg1`（源码里没有的名字）； - 484：带默认值的形参名整个丢失（`b = 2` 的真名 b 不认 → 显示 arg1）。 断言：expect(params.get(\"restExp\")).toEqual([\"a\", \"...more\"]);"	没测该层	keep	keep	—
-"负控制：箭头 const 导出的形参面不变"	"`nudo contract --emit` 的**派生分支**写 `.nudo.ts` 侧车时 **不补 builder 类型声明** ⇒ 产物里 `fn` 是未声明标识符 ⇒ `tsc` **TS2304**； `.js` 侧车不加（裸注入已够）。 断言：expect(params.get(\"arrowDefault\")).toEqual([\"a\", \"b\"]);"	没测该层	keep	keep	—
-"export const 箭头 / 函数表达式都进普查（普查名 = 导出槽名）"	"无则空串） 断言：expect(censusNames(\"export const f = () => 1;\")).toEqual([\"f\"]);；expect(censusNames(\"export const f = function () { return 1; };\")).toEqual([\"f\"]);"	没测该层	keep	keep	—
-"多声明符逐个收（不只首个）"	"断言：expect(censusNames(\"export const a = () => 1, b = () => 2;\")).toEqual([\"a\", \"b\"]);"	没测该层	keep	keep	—
-"非函数初始化不进普查"	"断言：expect(censusNames(\"export const x = 1;\")).toEqual([]);"	没测该层	keep	keep	—
-"分析面看得见该函数，且入口求值拿到返回值"	"断言：expect(result.functions.map((f) => f.name)).toEqual([\"slugify\"]);；expect(entry).toBeDefined();"	没测该层	keep	keep	—
-"普查名 = 局部名，导出槽 = default"	"无则空串） 断言：expect(censusSlots(\"export default function f() { return 1; }\")).toEqual([\"f@default\"]);"	没测该层	keep	keep	—
-"入口求值回退到 default 槽 ⇒ 返回值不再是 unknown"	"三条同源：service 面的普查比 core 面（`listTopFunctions`）窄 ⇒ `nudo check` 看得见的函数，`nudo test` / `export` / `contract` / `health` 看不见（或看不见返回值）——两个面互相矛盾。 469：`export const f = fn` —— ExportNamedDeclaration 分支只收 FunctionDeclaration，不收 VariableDeclaration 的声明符 ⇒ 普查 0 项。 断言：expect(result.functions.map((f) => f.name)).toEqual([\"f\"]);；exp"	没测该层	keep	keep	—
-"匿名 default 导出形态不变（普查名 = default）"	"无则空串） 断言：expect(censusNames(\"export default function () { return 1; }\")).toEqual([\"default\"]);；expect(censusNames(\"export default () => 1;\")).toEqual([\"default\"]);"	没测该层	keep	keep	—
-"对象字面量的成员函数逐个收（key 名 = 导出槽名）"	"断言：expect(censusNames(\"module.exports = { greet: function () { return 1; } };\")).toEqual([\"greet\"]);；expect(censusNames(\"module.exports = { greet: () => 1 };\")).toEqual([\"greet\"]);"	没测该层	keep	keep	—
-"对象方法简写（ObjectMethod）进普查"	"断言：expect(censusNames(\"module.exports = { greet() { return 1; } };\")).toEqual([\"greet\"]);"	没测该层	keep	keep	—
-"导出槽名优先于命名函数表达式的自有 id（Bug 997，与 core listTopFunctions 同口径）"	"三条同源：service 面的普查比 core 面（`listTopFunctions`）窄 ⇒ `nudo check` 看得见的函数，`nudo test` / `export` / `contract` / `health` 看不见（或看不见返回值）——两个面互相矛盾。 469：`export const f = fn` —— ExportNamedDeclaration 分支只收 FunctionDeclaration，不收 VariableDeclaration 的声明符 ⇒ 普查 0 项。 断言：expect(censusNames(\"module.exports = { greet: function named()"	没测该层	keep	keep	—
-"getter / setter 不是可调用入口，不进普查"	"断言：expect(censusNames(\"module.exports = { get g() { return 1; } };\")).toEqual([]);；expect(censusNames(\"module.exports = { set s(v) {} };\")).toEqual([]);"	没测该层	keep	keep	—
-"非函数成员不进普查"	"断言：expect(censusNames(\"module.exports = { x: 1 };\")).toEqual([]);"	没测该层	keep	keep	—
-"分析面看得见该函数"	"断言：expect(result.functions.map((f) => f.name)).toEqual([\"greet\"]);"	没测该层	keep	keep	—
-"getter 形态：两面都不收（Bug 996 已收口）"	"三条同源：service 面的普查比 core 面（`listTopFunctions`）窄 ⇒ `nudo check` 看得见的函数，`nudo test` / `export` / `contract` / `health` 看不见（或看不见返回值）——两个面互相矛盾。 469：`export const f = fn` —— ExportNamedDeclaration 分支只收 FunctionDeclaration，不收 VariableDeclaration 的声明符 ⇒ 普查 0 项。 断言：expect(listTopFunctions(\"module.exports = { get g() { return 1;"	没测该层	keep	keep	—
-"匿名 module.exports = fn：两面都按 default 登记（Bug 6 后 core 侧不再漏）"	"三条同源：service 面的普查比 core 面（`listTopFunctions`）窄 ⇒ `nudo check` 看得见的函数，`nudo test` / `export` / `contract` / `health` 看不见（或看不见返回值）——两个面互相矛盾。 469：`export const f = fn` —— ExportNamedDeclaration 分支只收 FunctionDeclaration，不收 VariableDeclaration 的声明符 ⇒ 普查 0 项。 断言：expect(censusNames(\"module.exports = function () { return 1; };"	没测该层	keep	keep	—
-"带指令的源码解析出注入包（as 目标 + 覆盖值）"	"`@nudo:replace` 的「紧随语句」是**裸块语句** `{ … }` 时，收集面 的**作用域边界**守卫把 walk 的**根节点**也挡住了 ⇒ 候选区间恒空 ⇒ 替换**永不生效**，而诊断还谎称「该指令所标注语句的作用域内没有匹配表达式」 ——匹配目标就在它所标注的那个块里。 根因：`packages/service/src/eval-injection.ts` 的 `replaceCandidateRanges` 对 walk 的根也判 `SCOPE_BOUNDARY_TYPES`（含 `BlockStatement`）⇒ 第一步即 返回。 断言：expect(inj).toBeDefined();；expec"	没测该层	keep	keep	—
-"无指令的源码不产生注入包"	"断言：expect(resolveEvalInjection_____eval_run_ts(\"export function f() { return 1; }\\n\")).toBeUndefined();"	没测该层	keep	keep	—
-"注入包与收集器同源（目标区间一致）"	"断言：expect(inj?.asOverrideTargets).toEqual(reps.asTargets);"	没测该层	keep	keep	—
+成员按导出槽名 `default` 登记（不再被整体丢弃）；对照组：具名 default class 仍按本地名登记（口径不变）	service-core-misc 聚合矩阵	没测该层	keep	keep	—
+`=> lit(null)` 的精确结果被判定（不是 unchecked）；判据本体的对照组：真 unknown ⇒ 仍是推导失败；inferenceFailed：lit null/undefined ⇒ false；无 term 的 unknown ⇒ true	service-core-misc 聚合矩阵	没测该层	keep	keep	—
+判定层：never 配 never ⇒ 满足（Bug 649 不回归：配 number() ⇒ 不满足）；分析面：抛错函数 + `=> never` ⇒ 不再发 nudo:case-expected（报告与判定不再自相矛盾）；分析面对照组：抛错函数 + `=> number()` ⇒ 仍报 nudo:case-expected（Bug 649 不回归）	service-core-misc 聚合矩阵	没测该层	keep	keep	—
+槽谓词满足 ⇒ 判 ok（与顶层写法一致）；槽谓词不满足 ⇒ 判不满足（与顶层写法一致）；期望文本递归渲染槽谓词（不再是 `{ n: number }`）；无槽谓词时渲染逐字不变（不引入噪音）	service-core-misc 聚合矩阵	没测该层	keep	keep	—
+下游是 .ts ⇒ 派生产物补 `declare const fn: …`；对照组：.js 侧车不加 declare（裸注入已够）	service-core-misc 聚合矩阵	没测该层	keep	keep	—
+两个星号导出同名 ⇒ 该名不导出（导入方报缺名），顺序无关；对照组：本地导出遮蔽星号导出 ⇒ x 存在且值取自本地（不是歧义）；定义位点解析同口径：歧义名解析不出（不得给一个确定定义模块）；定义位点对照：非歧义星号导出照常解析到定义模块	service-core-misc 聚合矩阵	没测该层	keep	keep	—
+export function 的形参用源码真名（改前：arg0/arg1）；带默认值的形参：名字与个数都在（改前：arg0 一个 / arg1 假名）；rest 形参计入声明形参数并保留 ... 形态（改前：只剩 1 个）；负控制：箭头 const 导出的形参面不变	service-core-misc 聚合矩阵	没测该层	keep	keep	—
+export const 箭头 / 函数表达式都进普查（普查名 = 导出槽名）；多声明符逐个收（不只首个）；非函数初始化不进普查；分析面看得见该函数，且入口求值拿到返回值	service-core-misc 聚合矩阵	没测该层	keep	keep	—
+普查名 = 局部名，导出槽 = default；入口求值回退到 default 槽 ⇒ 返回值不再是 unknown；匿名 default 导出形态不变（普查名 = default）	service-core-misc 聚合矩阵	没测该层	keep	keep	—
+对象字面量的成员函数逐个收（key 名 = 导出槽名）；对象方法简写（ObjectMethod）进普查；导出槽名优先于命名函数表达式的自有 id（Bug 997，与 core listTopFunctions 同口径）；getter / setter 不是可调用入口，不进普查；非函数成员不进普查；分析面看得见该函数	service-core-misc 聚合矩阵	没测该层	keep	keep	—
+getter 形态：两面都不收（Bug 996 已收口）；匿名 module.exports = fn：两面都按 default 登记（Bug 6 后 core 侧不再漏）	service-core-misc 聚合矩阵	没测该层	keep	keep	—
+带指令的源码解析出注入包（as 目标 + 覆盖值）；无指令的源码不产生注入包；注入包与收集器同源（目标区间一致）	service-core-misc 聚合矩阵	没测该层	keep	keep	—
 "作为根分析时，@nudo:as 覆盖承载语句的值"	"注入表此前**只对 root source** 采集（tryRunEval 的 `collectEvalReplacements(source)`）； 依赖模块走 abs-modules-graph 的另一条 转译入口（`tryRunTranspiled`），**完全不传**注入表 ⇒ 同一个文件「作为根」 与「作为依赖」给出**不同类型**。 断言：expect(formatShape(result.functions[0].cases[0].abs)).toBe(\"number\");"	没测该层	keep	keep	—
 "依赖模块里的 @nudo:as 生效（依赖侧接线后转绿）"	"注入表此前**只对 root source** 采集（tryRunEval 的 `collectEvalReplacements(source)`）； 依赖模块走 abs-modules-graph 的另一条 转译入口（`tryRunTranspiled`），**完全不传**注入表 ⇒ 同一个文件「作为根」 与「作为依赖」给出**不同类型**。 断言：expect(formatShape(fn?.cases[0].abs as never)).toBe(\"{ port: number }\");"	没测该层	keep	keep	—
-"依赖模块内部改写导出值后，导入方读到当前值"	"断言：expect(shape).toBe('\"hello\"');"	没测该层	keep	keep	—
-"变异前的读取仍是精确初值（不被前一次调用的残留污染）"	"断言：expect(shape).toBe(\"0\");"	没测该层	keep	keep	—
-"依赖未改写导出值时，导入方读到初值"	"断言：expect(shape).toBe(\"0\");"	没测该层	keep	keep	—
-"同文件内的模块级状态读写不受影响"	"断言：expect(bump ? formatShape(bump.cases[0].abs) : \"\").toBe(\"1\");；expect(read ? formatShape(read.cases[0].abs) : \"\").toBe(\"0\");"	没测该层	keep	keep	—
-"原生：upper(a: string) 的 a 按 string 推断（形参注解进入推断）"	"`.ts` 源的**形参类型注解**从未进入推断（回归钉 + 缺口论证）。 报告定位（`tmp/bugs/14-service-eval.md` ）：「`analyzer-ast.ts:45-64` 的 `extractParamNames` **只取形参名**，**完全丢弃 TypeScript 类型注解**」。 断言：expect(entry).toBeDefined();；expect(formatShape(entry!.argAbs[0]!)).toBe(\"string\");"	没测该层	keep	keep	—
-"原生：.ts 的合法代码不再触发 nudo:entry-may-throw 假红（a 是 string，toUpperCase 不会抛）"	"`.ts` 源的**形参类型注解**从未进入推断（回归钉 + 缺口论证）。 报告定位（`tmp/bugs/14-service-eval.md` ）：「`analyzer-ast.ts:45-64` 的 `extractParamNames` **只取形参名**，**完全丢弃 TypeScript 类型注解**」。 断言：expect(l2Count(report, \"upper\")).toBe(0);"	没测该层	keep	keep	—
-"原生：dts 面保留源里的类型注解（export declare function upper(a: string)）"	"`.ts` 源的**形参类型注解**从未进入推断（回归钉 + 缺口论证）。 报告定位（`tmp/bugs/14-service-eval.md` ）：「`analyzer-ast.ts:45-64` 的 `extractParamNames` **只取形参名**，**完全丢弃 TypeScript 类型注解**」。 断言：expect(dts).toContain(\"export declare function upper(a: string)\");"	没测该层	keep	keep	—
-"负控制：.ts 源仍被正常分析（函数可见、body 仍求值）"	"`.ts` 源的**形参类型注解**从未进入推断（回归钉 + 缺口论证）。 报告定位（`tmp/bugs/14-service-eval.md` ）：「`analyzer-ast.ts:45-64` 的 `extractParamNames` **只取形参名**，**完全丢弃 TypeScript 类型注解**」。 断言：expect(result.functions.map((f) => f.name)).toEqual([\"upper\"]);；expect(entry).toBeDefined();"	没测该层	keep	keep	—
-"负控制：同形 .js 源的形参仍是无约束 any（无注解可读，行为不变）"	"`.ts` 源的**形参类型注解**从未进入推断（回归钉 + 缺口论证）。 报告定位（`tmp/bugs/14-service-eval.md` ）：「`analyzer-ast.ts:45-64` 的 `extractParamNames` **只取形参名**，**完全丢弃 TypeScript 类型注解**」。 断言：expect(entry).toBeDefined();；expect(formatShape(entry!.argAbs[0]!)).toBe(\"any\");"	没测该层	keep	keep	—
-"负控制：.js 源的 any 接收者成员访问仍报 may-throw（假红只对 .ts 成立）"	"`.ts` 源的**形参类型注解**从未进入推断（回归钉 + 缺口论证）。 报告定位（`tmp/bugs/14-service-eval.md` ）：「`analyzer-ast.ts:45-64` 的 `extractParamNames` **只取形参名**，**完全丢弃 TypeScript 类型注解**」。 断言：expect(entry).toBeDefined();；expect(formatShape(entry!.throwsAbs)).toContain(\"TypeError\");"	没测该层	keep	keep	—
-"坏侧车：报 nudo:contract-load（error），不发 nudo:contract-entry-only"	"侧车（`*.nudo.js`）**加载失败**被误报成「没有契约根」 （`nudo:contract-entry-only`）⇒ 事实陈述错误 + 修复建议误导。 根因（analyzer-orchestrate-uncached-cases.ts）：用 `effectiveContract(...)` 的返回值是否存在来判定「有没有契约根」——它对「根本没有侧车」与「侧车存在 但加载失败」返回**同一个 undefined**，两者不可区分 ⇒ 必然发「没有契约根」。 断言：expect(codes(result)).toContain(\"nudo:contract-load\");；expect(codes(result)).not"	没测该层	keep	keep	—
-"负控制：没有侧车 → 仍报 nudo:contract-entry-only（口径不变）"	"侧车（`*.nudo.js`）**加载失败**被误报成「没有契约根」 （`nudo:contract-entry-only`）⇒ 事实陈述错误 + 修复建议误导。 根因（analyzer-orchestrate-uncached-cases.ts）：用 `effectiveContract(...)` 的返回值是否存在来判定「有没有契约根」——它对「根本没有侧车」与「侧车存在 但加载失败」返回**同一个 undefined**，两者不可区分 ⇒ 必然发「没有契约根」。 断言：expect(codes(result)).toContain(\"nudo:contract-entry-only\");；expect(codes(result"	没测该层	keep	keep	—
-"负控制：好侧车 → 两者都无"	"侧车（`*.nudo.js`）**加载失败**被误报成「没有契约根」 （`nudo:contract-entry-only`）⇒ 事实陈述错误 + 修复建议误导。 根因（analyzer-orchestrate-uncached-cases.ts）：用 `effectiveContract(...)` 的返回值是否存在来判定「有没有契约根」——它对「根本没有侧车」与「侧车存在 但加载失败」返回**同一个 undefined**，两者不可区分 ⇒ 必然发「没有契约根」。 断言：expect(codes(result)).not.toContain(\"nudo:contract-entry-only\");；expect(codes(re"	没测该层	keep	keep	—
-"不存在的依赖 → missing（不是 unreadable）"	"回归：**依赖模块不可读（EACCES）**不得被折叠成「文件不存在」。 本分片在 service 侧提供两件东西（根因行的其余消费点在 core / nudojs 侧， 见交付报告的「越界」段）： - `loadModuleOutcome`：三态结果（ok / missing / unreadable）——模块图侧 据此把「不可读」报成不可读，而不是「Module file not found」。 断言：expect(loadModuleOutcome(\"./nope.js\", from).kind).toBe(\"missing\");"	没测该层	keep	keep	—
-"可读依赖 → ok（路径 + 内容）"	"`.ts` 源的**形参类型注解**从未进入推断（回归钉 + 缺口论证）。 报告定位（`tmp/bugs/14-service-eval.md` ）：「`analyzer-ast.ts:45-64` 的 `extractParamNames` **只取形参名**，**完全丢弃 TypeScript 类型注解**」。 断言：expect(r.kind).toBe(\"ok\");；expect(r.content).toContain(\"export const x\");"	没测该层	keep	keep	—
-"guardedLoadModule：loader 抛错 → undefined + 一次性可见告警（不穿透）"	"回归：**依赖模块不可读（EACCES）**不得被折叠成「文件不存在」。 本分片在 service 侧提供两件东西（根因行的其余消费点在 core / nudojs 侧， 见交付报告的「越界」段）： - `loadModuleOutcome`：三态结果（ok / missing / unreadable）——模块图侧 据此把「不可读」报成不可读，而不是「Module file not found」。 断言：expect(guarded(\"./dep.js\", \"/nudo-499-guarded/main.js\")).toBeUndefined();；expect(guarded(\"./dep.js\", \"/nudo-499-gua"	没测该层	keep	keep	—
-"负控制：ENOENT 与正常返回不受 guarded 包装影响"	"回归：**依赖模块不可读（EACCES）**不得被折叠成「文件不存在」。 本分片在 service 侧提供两件东西（根因行的其余消费点在 core / nudojs 侧， 见交付报告的「越界」段）： - `loadModuleOutcome`：三态结果（ok / missing / unreadable）——模块图侧 据此把「不可读」报成不可读，而不是「Module file not found」。 断言：expect(guardedMissing(\"./gone.js\", \"/t/main.js\")).toBeUndefined();；expect(guardedOk(\"./dep.js\", \"/t/main.js\")).toBe"	没测该层	keep	keep	—
-"does not flag an import alias source name (imported)"	"nudo:builtin-unknown 把「导入/导出的别名」与「标签名」当成 「未被覆盖的内建 API」误报。 原生 oracle（tmp/probe/fix-r24-m/native504.mjs / native504b.mjs）： - `import { alpha as betaAlias }` → 正常执行，无 ReferenceError - `export { y as renamed }` → 正常执行（导出名不是模块作用域绑定，但也不 是自由全局引用） - `outer:` / `break outer` → 正常执行（标签是独立命名空间） 修法（service 侧 eval-diagnostics）：这些位置"	没测该层	keep	keep	—
-"does not flag an export alias name (exported)"	"nudo:builtin-unknown 把「导入/导出的别名」与「标签名」当成 「未被覆盖的内建 API」误报。 原生 oracle（tmp/probe/fix-r24-m/native504.mjs / native504b.mjs）： - `import { alpha as betaAlias }` → 正常执行，无 ReferenceError - `export { y as renamed }` → 正常执行（导出名不是模块作用域绑定，但也不 是自由全局引用） - `outer:` / `break outer` → 正常执行（标签是独立命名空间） 修法（service 侧 eval-diagnostics）：这些位置"	没测该层	keep	keep	—
-"does not flag a label name (labeled / break / continue)"	"nudo:builtin-unknown 把「导入/导出的别名」与「标签名」当成 「未被覆盖的内建 API」误报。 原生 oracle（tmp/probe/fix-r24-m/native504.mjs / native504b.mjs）： - `import { alpha as betaAlias }` → 正常执行，无 ReferenceError - `export { y as renamed }` → 正常执行（导出名不是模块作用域绑定，但也不 是自由全局引用） - `outer:` / `break outer` → 正常执行（标签是独立命名空间） 修法（service 侧 eval-diagnostics）：这些位置"	没测该层	keep	keep	—
-"does not flag a namespace-import binding local name"	"nudo:builtin-unknown 把「导入/导出的别名」与「标签名」当成 「未被覆盖的内建 API」误报。 原生 oracle（tmp/probe/fix-r24-m/native504.mjs / native504b.mjs）： - `import { alpha as betaAlias }` → 正常执行，无 ReferenceError - `export { y as renamed }` → 正常执行（导出名不是模块作用域绑定，但也不 是自由全局引用） - `outer:` / `break outer` → 正常执行（标签是独立命名空间） 修法（service 侧 eval-diagnostics）：这些位置"	没测该层	keep	keep	—
-"negative control: a real free global is still reported"	"断言：expect(names(src)).toContain(\"someUndeclaredGlobal\");"	没测该层	keep	keep	—
-"negative control: export * as ns body reference is still reported, anchored at the reference"	"nudo:builtin-unknown 把「导入/导出的别名」与「标签名」当成 「未被覆盖的内建 API」误报。 原生 oracle（tmp/probe/fix-r24-m/native504.mjs / native504b.mjs）： - `import { alpha as betaAlias }` → 正常执行，无 ReferenceError - `export { y as renamed }` → 正常执行（导出名不是模块作用域绑定，但也不 是自由全局引用） - `outer:` / `break outer` → 正常执行（标签是独立命名空间） 修法（service 侧 eval-diagnostics）：这些位置"	没测该层	keep	keep	—
-"negative control: export { y as renamed } body reference is still reported"	"nudo:builtin-unknown 把「导入/导出的别名」与「标签名」当成 「未被覆盖的内建 API」误报。 原生 oracle（tmp/probe/fix-r24-m/native504.mjs / native504b.mjs）： - `import { alpha as betaAlias }` → 正常执行，无 ReferenceError - `export { y as renamed }` → 正常执行（导出名不是模块作用域绑定，但也不 是自由全局引用） - `outer:` / `break outer` → 正常执行（标签是独立命名空间） 修法（service 侧 eval-diagnostics）：这些位置"	没测该层	keep	keep	—
-"negative control: computed keys / members stay live references"	"断言：expect(got).toContain(\"missing\");；expect(got).toContain(\"alsoMissing\");"	没测该层	keep	keep	—
-"negative control: non-computed property names stay name positions"	"nudo:builtin-unknown 把「导入/导出的别名」与「标签名」当成 「未被覆盖的内建 API」误报。 原生 oracle（tmp/probe/fix-r24-m/native504.mjs / native504b.mjs）： - `import { alpha as betaAlias }` → 正常执行，无 ReferenceError - `export { y as renamed }` → 正常执行（导出名不是模块作用域绑定，但也不 是自由全局引用） - `outer:` / `break outer` → 正常执行（标签是独立命名空间） 修法（service 侧 eval-diagnostics）：这些位置"	没测该层	keep	keep	—
-"抛错 + 声明期望（=> 42）⇒ 报 nudo:case-expected（改前恒 0 条）"	"`nudo:case-expected` 诊断条数（期望不满足）。 断言：expect(caseExpectedCount(src)).toBe(1);"	没测该层	keep	keep	—
-"抛错 + 声明期望 ⇒ 诊断文案如实报出「实测 never」"	"抛错函数的 `@nudo:case` **声明期望恒通过**（假绿）。 根因（`packages/service/src/analyzer-orchestrate-uncached-cases.ts` 的 `caseExpectedSatisfied`）：实测 Abs 是 `never`（函数抛了 ⇒ 没有返回值）， 而 `never` 是类型格的**底元素**（`never ⊑ 任何类型` 恒真）⇒ 结构面判定 （`leqAbs`）必然通过 ⇒ 带 `=> expected` 的 case **恒判 ok** ⇒ `nudo test` 报「✓ 1 passed」，`nudo:case-expected` 零诊断。 断言：expe"	没测该层	keep	keep	—
-"展示层不变：抛错 + 谓词期望 ⇒ 期望展示形态仍是「number (> 0)」"	"抛错函数的 `@nudo:case` **声明期望恒通过**（假绿）。 根因（`packages/service/src/analyzer-orchestrate-uncached-cases.ts` 的 `caseExpectedSatisfied`）：实测 Abs 是 `never`（函数抛了 ⇒ 没有返回值）， 而 `never` 是类型格的**底元素**（`never ⊑ 任何类型` 恒真）⇒ 结构面判定 （`leqAbs`）必然通过 ⇒ 带 `=> expected` 的 case **恒判 ok** ⇒ `nudo test` 报「✓ 1 passed」，`nudo:case-expected` 零诊断。 断言：expe"	没测该层	keep	keep	—
-"负控制：不抛错 + 期望满足 ⇒ 0 条 nudo:case-expected"	"`nudo:case-expected` 诊断条数（期望不满足）。 断言：expect(caseExpectedCount(src)).toBe(0);"	没测该层	keep	keep	—
-"负控制：不抛错 + 期望不满足 ⇒ 1 条 nudo:case-expected（口径不变）"	"`nudo:case-expected` 诊断条数（期望不满足）。 断言：expect(caseExpectedCount(src)).toBe(1);"	没测该层	keep	keep	—
-"负控制：抛错 + 无期望 ⇒ 0 条 nudo:case-expected（unchecked 口径不变）"	"`nudo:case-expected` 诊断条数（期望不满足）。 断言：expect(caseExpectedCount(src)).toBe(0);"	没测该层	keep	keep	—
-"实测 never ⇒ 不满足（底元素恒真被拦住）"	"`nudo:case-expected` 诊断条数（期望不满足）。 断言：expect(caseExpectedSatisfied(neverAbs, numLit(42))).toBe(false);"	没测该层	keep	keep	—
-"负控制：实测 1、期望 1 ⇒ 满足（口径不变）"	"`nudo:case-expected` 诊断条数（期望不满足）。 断言：expect(caseExpectedSatisfied(one, numLit(1))).toBe(true);"	没测该层	keep	keep	—
-"负控制：实测 1、期望 2 ⇒ 不满足（口径不变）"	"`nudo:case-expected` 诊断条数（期望不满足）。 断言：expect(caseExpectedSatisfied(one, numLit(2))).toBe(false);"	没测该层	keep	keep	—
+依赖模块内部改写导出值后，导入方读到当前值；变异前的读取仍是精确初值（不被前一次调用的残留污染）	service-core-misc 聚合矩阵	没测该层	keep	keep	—
+依赖未改写导出值时，导入方读到初值；同文件内的模块级状态读写不受影响	service-core-misc 聚合矩阵	没测该层	keep	keep	—
+原生：upper(a: string) 的 a 按 string 推断（形参注解进入推断）；原生：.ts 的合法代码不再触发 nudo:entry-may-throw 假红（a 是 string，toUpperCase 不会抛）；原生：dts 面保留源里的类型注解（export declare function upper(a: string)）；负控制：.ts 源仍被正常分析（函数可见、body 仍求值）；负控制：同形 .js 源的形参仍是无约束 any（无注解可读，行为不	service-core-misc 聚合矩阵	没测该层	keep	keep	—
+坏侧车：报 nudo:contract-load（error），不发 nudo:contract-entry-only；负控制：没有侧车 → 仍报 nudo:contract-entry-only（口径不变）；负控制：好侧车 → 两者都无	service-core-misc 聚合矩阵	没测该层	keep	keep	—
+不存在的依赖 → missing（不是 unreadable）；可读依赖 → ok（路径 + 内容）；guardedLoadModule：loader 抛错 → undefined + 一次性可见告警（不穿透）；负控制：ENOENT 与正常返回不受 guarded 包装影响	service-core-misc 聚合矩阵	没测该层	keep	keep	—
+does not flag an import alias source name (imported)；does not flag an export alias name (exported)；does not flag a label name (labeled / break / continue)；does not flag a namespace-import binding local name；negative control: a real free glo	service-core-misc 聚合矩阵	没测该层	keep	keep	—
+抛错 + 声明期望（=> 42）⇒ 报 nudo:case-expected（改前恒 0 条）；抛错 + 声明期望 ⇒ 诊断文案如实报出「实测 never」；展示层不变：抛错 + 谓词期望 ⇒ 期望展示形态仍是「number (> 0)」；负控制：不抛错 + 期望满足 ⇒ 0 条 nudo:case-expected；负控制：不抛错 + 期望不满足 ⇒ 1 条 nudo:case-expected（口径不变）；负控制：抛错 + 无期望 ⇒ 0 条 nudo:case-expe	service-core-misc 聚合矩阵	没测该层	keep	keep	—
+实测 never ⇒ 不满足（底元素恒真被拦住）；负控制：实测 1、期望 1 ⇒ 满足（口径不变）；负控制：实测 1、期望 2 ⇒ 不满足（口径不变）	service-core-misc 聚合矩阵	没测该层	keep	keep	—
+```
+
+```audit-deleted
+title	reason	evidence
+引擎侧：实例 brand 名不是内部伪名	dup:service-core-misc 聚合矩阵	commit:8fa85177
+dts 产物：不得出现内部伪名（改前：TS2304——伪名从未声明）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+schema 产物：不得 z.instanceof(内部伪名)（改前：import 即 ReferenceError）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+schema 产物可求值（import 即用——改前 ReferenceError）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+负控制：产物里的 z.instanceof 实参都是运行时全局构造器	dup:service-core-misc 聚合矩阵	commit:8fa85177
+裸块语句上的指令登记了**节点身份**区间（改前恒空）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+裸块语句 与 普通语句 的签名逐字相同（替换真的生效）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+裸块语句命中 ⇒ 零「未命中」诊断（不许谎报作用域内没有该表达式）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+目标确实只在**嵌套**块里 ⇒ 诊断明说「被嵌套作用域挡住」而不是「没有该表达式」	dup:service-core-misc 聚合矩阵	commit:8fa85177
+两个不同 cwd 各跑一次 ⇒ 标签逐字相同且只有一条	dup:service-core-misc 聚合矩阵	commit:8fa85177
+历史 cwd 相对拼写 + 新拼写 ⇒ 归一成一条（不再并集）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+`{ x = 1, y = x + 1 } = {}` ⇒ 形参可省（不是必填）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+对照组：无默认值的解构形参仍必填	dup:service-core-misc 聚合矩阵	commit:8fa85177
+模块级求值失败 ⇒ 观测面看见该文件的 module-throw 回落（装载期逃逸）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+假红防线：unsupported:* 回落**不**进失败信号	dup:service-core-misc 聚合矩阵	commit:8fa85177
+假红防线：module-throw（程序自身抛）**不**进失败信号	dup:service-core-misc 聚合矩阵	commit:8fa85177
+干净文件 ⇒ 零回落（不得凭空造失败）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+成员按导出槽名 `default` 登记（不再被整体丢弃）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+对照组：具名 default class 仍按本地名登记（口径不变）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+`=> lit(null)` 的精确结果被判定（不是 unchecked）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+判据本体的对照组：真 unknown ⇒ 仍是推导失败	dup:service-core-misc 聚合矩阵	commit:8fa85177
+inferenceFailed：lit null/undefined ⇒ false；无 term 的 unknown ⇒ true	dup:service-core-misc 聚合矩阵	commit:8fa85177
+判定层：never 配 never ⇒ 满足（Bug 649 不回归：配 number() ⇒ 不满足）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+分析面：抛错函数 + `=> never` ⇒ 不再发 nudo:case-expected（报告与判定不再自相矛盾）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+分析面对照组：抛错函数 + `=> number()` ⇒ 仍报 nudo:case-expected（Bug 649 不回归）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+槽谓词满足 ⇒ 判 ok（与顶层写法一致）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+槽谓词不满足 ⇒ 判不满足（与顶层写法一致）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+期望文本递归渲染槽谓词（不再是 `{ n: number }`）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+无槽谓词时渲染逐字不变（不引入噪音）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+下游是 .ts ⇒ 派生产物补 `declare const fn: …`	dup:service-core-misc 聚合矩阵	commit:8fa85177
+对照组：.js 侧车不加 declare（裸注入已够）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+两个星号导出同名 ⇒ 该名不导出（导入方报缺名），顺序无关	dup:service-core-misc 聚合矩阵	commit:8fa85177
+对照组：本地导出遮蔽星号导出 ⇒ x 存在且值取自本地（不是歧义）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+定义位点解析同口径：歧义名解析不出（不得给一个确定定义模块）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+定义位点对照：非歧义星号导出照常解析到定义模块	dup:service-core-misc 聚合矩阵	commit:8fa85177
+export function 的形参用源码真名（改前：arg0/arg1）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+带默认值的形参：名字与个数都在（改前：arg0 一个 / arg1 假名）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+rest 形参计入声明形参数并保留 ... 形态（改前：只剩 1 个）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+负控制：箭头 const 导出的形参面不变	dup:service-core-misc 聚合矩阵	commit:8fa85177
+export const 箭头 / 函数表达式都进普查（普查名 = 导出槽名）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+多声明符逐个收（不只首个）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+非函数初始化不进普查	dup:service-core-misc 聚合矩阵	commit:8fa85177
+分析面看得见该函数，且入口求值拿到返回值	dup:service-core-misc 聚合矩阵	commit:8fa85177
+普查名 = 局部名，导出槽 = default	dup:service-core-misc 聚合矩阵	commit:8fa85177
+入口求值回退到 default 槽 ⇒ 返回值不再是 unknown	dup:service-core-misc 聚合矩阵	commit:8fa85177
+匿名 default 导出形态不变（普查名 = default）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+对象字面量的成员函数逐个收（key 名 = 导出槽名）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+对象方法简写（ObjectMethod）进普查	dup:service-core-misc 聚合矩阵	commit:8fa85177
+导出槽名优先于命名函数表达式的自有 id（Bug 997，与 core listTopFunctions 同口径）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+getter / setter 不是可调用入口，不进普查	dup:service-core-misc 聚合矩阵	commit:8fa85177
+非函数成员不进普查	dup:service-core-misc 聚合矩阵	commit:8fa85177
+分析面看得见该函数	dup:service-core-misc 聚合矩阵	commit:8fa85177
+getter 形态：两面都不收（Bug 996 已收口）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+匿名 module.exports = fn：两面都按 default 登记（Bug 6 后 core 侧不再漏）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+带指令的源码解析出注入包（as 目标 + 覆盖值）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+无指令的源码不产生注入包	dup:service-core-misc 聚合矩阵	commit:8fa85177
+注入包与收集器同源（目标区间一致）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+依赖模块内部改写导出值后，导入方读到当前值	dup:service-core-misc 聚合矩阵	commit:8fa85177
+变异前的读取仍是精确初值（不被前一次调用的残留污染）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+依赖未改写导出值时，导入方读到初值	dup:service-core-misc 聚合矩阵	commit:8fa85177
+同文件内的模块级状态读写不受影响	dup:service-core-misc 聚合矩阵	commit:8fa85177
+原生：upper(a: string) 的 a 按 string 推断（形参注解进入推断）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+原生：.ts 的合法代码不再触发 nudo:entry-may-throw 假红（a 是 string，toUpperCase 不会抛）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+原生：dts 面保留源里的类型注解（export declare function upper(a: string)）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+负控制：.ts 源仍被正常分析（函数可见、body 仍求值）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+负控制：同形 .js 源的形参仍是无约束 any（无注解可读，行为不变）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+负控制：.js 源的 any 接收者成员访问仍报 may-throw（假红只对 .ts 成立）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+坏侧车：报 nudo:contract-load（error），不发 nudo:contract-entry-only	dup:service-core-misc 聚合矩阵	commit:8fa85177
+负控制：没有侧车 → 仍报 nudo:contract-entry-only（口径不变）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+负控制：好侧车 → 两者都无	dup:service-core-misc 聚合矩阵	commit:8fa85177
+不存在的依赖 → missing（不是 unreadable）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+可读依赖 → ok（路径 + 内容）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+guardedLoadModule：loader 抛错 → undefined + 一次性可见告警（不穿透）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+负控制：ENOENT 与正常返回不受 guarded 包装影响	dup:service-core-misc 聚合矩阵	commit:8fa85177
+does not flag an import alias source name (imported)	dup:service-core-misc 聚合矩阵	commit:8fa85177
+does not flag an export alias name (exported)	dup:service-core-misc 聚合矩阵	commit:8fa85177
+does not flag a label name (labeled / break / continue)	dup:service-core-misc 聚合矩阵	commit:8fa85177
+does not flag a namespace-import binding local name	dup:service-core-misc 聚合矩阵	commit:8fa85177
+negative control: a real free global is still reported	dup:service-core-misc 聚合矩阵	commit:8fa85177
+negative control: export * as ns body reference is still reported, anchored at the reference	dup:service-core-misc 聚合矩阵	commit:8fa85177
+negative control: export { y as renamed } body reference is still reported	dup:service-core-misc 聚合矩阵	commit:8fa85177
+negative control: computed keys / members stay live references	dup:service-core-misc 聚合矩阵	commit:8fa85177
+negative control: non-computed property names stay name positions	dup:service-core-misc 聚合矩阵	commit:8fa85177
+抛错 + 声明期望（=> 42）⇒ 报 nudo:case-expected（改前恒 0 条）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+抛错 + 声明期望 ⇒ 诊断文案如实报出「实测 never」	dup:service-core-misc 聚合矩阵	commit:8fa85177
+展示层不变：抛错 + 谓词期望 ⇒ 期望展示形态仍是「number (> 0)」	dup:service-core-misc 聚合矩阵	commit:8fa85177
+负控制：不抛错 + 期望满足 ⇒ 0 条 nudo:case-expected	dup:service-core-misc 聚合矩阵	commit:8fa85177
+负控制：不抛错 + 期望不满足 ⇒ 1 条 nudo:case-expected（口径不变）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+负控制：抛错 + 无期望 ⇒ 0 条 nudo:case-expected（unchecked 口径不变）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+实测 never ⇒ 不满足（底元素恒真被拦住）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+负控制：实测 1、期望 1 ⇒ 满足（口径不变）	dup:service-core-misc 聚合矩阵	commit:8fa85177
+负控制：实测 1、期望 2 ⇒ 不满足（口径不变）	dup:service-core-misc 聚合矩阵	commit:8fa85177
 ```

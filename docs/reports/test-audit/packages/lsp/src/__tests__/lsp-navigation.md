@@ -6,75 +6,96 @@
 
 ```audit
 title	rootCause	gap	action	status	evidence
-"纯函数面：无关对象的同名成员访问不进改名集合"	"断言：expect(hits.some((h) => h.kind === \"key\" && at(h) === \"2:2\")).toBe(true);；expect(hits.some((h) => at(h) === \"8:2\")).toBe(false); // other 的 key"	没测该层	keep	keep	—
-"纯函数面：对象字面量的方法键是定义位，且同源成员访问进集合"	"断言：expect(hits.some((h) => h.kind === \"key\" && at(h) === \"2:2\")).toBe(true);；expect(hits.some((h) => h.kind === \"member\")).toBe(true);"	没测该层	keep	keep	—
-"纯函数面：同名但不同类不合并（显式归属时）"	"断言：expect(hits.some((h) => at(h) === \"2:2\")).toBe(true); // Alpha.run 键；expect(hits.some((h) => at(h) === \"6:2\")).toBe(false); // Beta.run 键"	没测该层	keep	keep	—
-"协议面（真 server）：归属歧义 ⇒ **拒绝改名**（不产出任何编辑，代码不被改坏）"	"LSP 类方法改名**越过无关对象**的成员访问、且**漏掉对象字面量的同名 key** → 改出坏代码（运行时读到 `undefined`）。 改前：`collectMethodReferences` 只按**名字**匹配成员访问（`property.name === name`）， 完全不看接收者 ⇒ 改 `a.m` 把 `b.m` 一起改掉； 断言：expect(list).toEqual([]);"	夹具漏形态	keep	keep	—
-"纯函数面：归属歧义可被检出（歧义 ⇒ 拒绝；无歧义 ⇒ 可改）"	"断言：expect(hasAmbiguousMethodReceiver(parse(R21), \"m\", { owner: { kind: \"class\", name: \"K\" } })).toBe(true);；expect(hasAmbiguousMethodReceiver(parse(OBJ_METHOD), \"m\", { owner: { kind: \"object\", name: \"helper\" } })).toBe(false);"	没测该层	keep	keep	—
-"协议面（真 server）：改对象字面量的方法 ⇒ key 与同源成员访问一起改"	"对象字面量的方法：定义位（key）与使用位（成员访问）必须一起改 断言：expect(list.some((e) => e.at === `${key.line}:${key.character}-${key.line}:${key.character + 1}`)).toBe(true);；expect(list.some((e) => e.at === `${use.line}:${useCol}-${use.line}:${useCol + 1}`)).toBe(true);"	夹具漏形态	keep	keep	—
-"协议面（真 server）：对象字面量的函数值属性 `{ m: fn }` 的 key 也是定义位"	"对象字面量的方法：定义位（key）与使用位（成员访问）必须一起改 断言：expect(list.some((e) => e.at === `${key.line}:${key.character}-${key.line}:${key.character + 1}`)).toBe(true);；expect(list.some((e) => e.at === `${use.line}:${useCol}-${use.line}:${useCol + 1}`)).toBe(true);"	夹具漏形态	keep	keep	—
-"协议面（真 server）：同名但不同类不合并（Alpha.run 不碰 Beta.run）"	"同名但不同类：Alpha.run 与 Beta.run 不许合并 断言：expect(list.some((e) => e.at === `${alphaKey.line}:${alphaKey.character}-${alphaKey.line}:${alphaKey.character + 3}`)).toBe(true); // Alpha.；expect(list.some((e) => e.at.startsWith(`${betaKey.line}:`))).toBe(false); // Beta.run 键"	夹具漏形态	keep	keep	—
-"协议面（真 server）：跨文件的无关类不被改（Alpha.run ≠ Beta.run）"	"同名但不同类：Alpha.run 与 Beta.run 不许合并 断言：expect(edits[\"b.js\"] ?? []).toEqual([]);；expect((edits[\"a.js\"] ?? []).some((e) => e.at === \"1:2-1:5\")).toBe(true);"	夹具漏形态	keep	keep	—
-"prepareRename 面：类方法键 / 同源成员访问可改名，无关数据属性不可改名"	"断言：expect(renameTargetAt(R21, 2, 2)).toMatchObject({ kind: \"method\", name: \"m\" });；expect(renameTargetAt(R21, 8, 2)).toMatchObject({ error: expect.any(String) });"	没测该层	keep	keep	—
-"rename @ importer 用点位 ⇒ 改导出名 + importer 的 imported 侧，**不动** hidden 的声明"	"LSP 的**别名导出**（`export { a as b }`）形态：跨文件 references 丢掉 部分 importer + **rename 改的是本地名** ⇒ 改完**模块图断裂** （真 node `SyntaxError`，而两个文件语法都合法）。 根因：`export { hidden as visible }` 把**两个身份**压进了同一个说明符 —— 本地名 `hidden`（本地绑定）与导出名 `visible`（本模块对外的名字）。 断言：expect(await importOk(ctx.dir, \"aexp-use.js\", \"1\")).toBe(1);；expect(await importO"	夹具漏形态	keep	keep	—
-"rename @ 导出名位 ⇒ 同样改导出名 + importer 的 imported 侧（改前是 null）"	"LSP 的**别名导出**（`export { a as b }`）形态：跨文件 references 丢掉 部分 importer + **rename 改的是本地名** ⇒ 改完**模块图断裂** （真 node `SyntaxError`，而两个文件语法都合法）。 根因：`export { hidden as visible }` 把**两个身份**压进了同一个说明符 —— 本地名 `hidden`（本地绑定）与导出名 `visible`（本模块对外的名字）。 断言：expect(await importOk(ctx.dir, \"aexp-use.js\", \"2\")).toBe(1);；expect(where).toCont"	夹具漏形态	keep	keep	—
-"rename @ 本地名位 ⇒ 改本地名（声明 + 导出说明符本地侧），**不连坐** importer"	"LSP 的**别名导出**（`export { a as b }`）形态：跨文件 references 丢掉 部分 importer + **rename 改的是本地名** ⇒ 改完**模块图断裂** （真 node `SyntaxError`，而两个文件语法都合法）。 根因：`export { hidden as visible }` 把**两个身份**压进了同一个说明符 —— 本地名 `hidden`（本地绑定）与导出名 `visible`（本模块对外的名字）。 断言：expect(await importOk(ctx.dir, \"aexp-use.js\", \"3\")).toBe(1);；expect(where).toCont"	夹具漏形态	keep	keep	—
-"导出名位不再死位：definition / references / prepareRename 都有身份"	"LSP 的**别名导出**（`export { a as b }`）形态：跨文件 references 丢掉 部分 importer + **rename 改的是本地名** ⇒ 改完**模块图断裂** （真 node `SyntaxError`，而两个文件语法都合法）。 根因：`export { hidden as visible }` 把**两个身份**压进了同一个说明符 —— 本地名 `hidden`（本地绑定）与导出名 `visible`（本模块对外的名字）。 断言：expect(defs.length).toBeGreaterThanOrEqual(1);；expect(defs[0]!.range.start.line)."	夹具漏形态	keep	keep	—
-"在别名用法处改名：只改 importer 的本地侧 + 用法处"	"报告说的症状（**假阳性 —— 不复现**）： 在 `xf-use.js`（导入方）把**本地别名** `alias` 改名 ⇒ 报告实测： `xf-def.js` 的导出符号 + `xf-use2.js` 的 import 与用法**被一起改掉**。 反向（从**定义方**改导出名）⇒ 正确改 `xf-def.js` 的导出名 + 各 importer 的 **imported** 侧，**别名 `alias` 不动**。 断言：expect(edits).toEqual(["	没测该层	keep	keep	—
-"在 import 说明符的 local 侧改名：同样零连坐（导出方与其它 importer 不动）"	"报告说的症状（**假阳性 —— 不复现**）： 在 `xf-use.js`（导入方）把**本地别名** `alias` 改名 ⇒ 报告实测： `xf-def.js` 的导出符号 + `xf-use2.js` 的 import 与用法**被一起改掉**。 反向（从**定义方**改导出名）⇒ 正确改 `xf-def.js` 的导出名 + 各 importer 的 **imported** 侧，**别名 `alias` 不动**。 断言：expect(；expect(edits).toEqual(["	没测该层	keep	keep	—
-"反向：从导出方改导出名 ⇒ 改导出方 + 各 importer 的 imported 侧，别名不动"	"报告说的症状（**假阳性 —— 不复现**）： 在 `xf-use.js`（导入方）把**本地别名** `alias` 改名 ⇒ 报告实测： `xf-def.js` 的导出符号 + `xf-use2.js` 的 import 与用法**被一起改掉**。 反向（从**定义方**改导出名）⇒ 正确改 `xf-def.js` 的导出名 + 各 importer 的 **imported** 侧，**别名 `alias` 不动**。 断言：expect(edits).toEqual([；expect("	没测该层	keep	keep	—
-"重命名形参声明位：编辑集只有形参声明 + 形参引用，顶层零编辑"	"夹具：顶层 `x`（0:6-0:7）与形参 `x`（1:18-1:19）+ 形参引用（1:30-1:31） —— 形参**遮蔽**顶层变量，两者同名但**不同的绑定**。 断言：expect(edits).toEqual([；expect("	夹具漏形态	keep	keep	—
-"重命名形参体内的引用位：同样不连坐顶层变量"	"断言：expect(edits).toEqual([；expect("	没测该层	keep	keep	—
-"反向：重命名顶层变量：只改顶层那处，形参零编辑（两个方向对称）"	"报告说的症状（**假阳性 —— 不复现**）： 夹具 `const x = 1; 报告还指出两个方向**不对称**（形参方向多改、顶层方向正确）。 断言：expect(edits).toEqual([{ ...TOP_LEVEL, newText: \"y\" }]);"	夹具漏形态	keep	keep	—
-"definition / references 走作用域：形参只认形参那一处绑定"	"报告说的症状（**假阳性 —— 不复现**）： 夹具 `const x = 1; 报告还指出两个方向**不对称**（形参方向多改、顶层方向正确）。 断言：expect(defs).toEqual([PARAM_DECL]);；expect(refs).toEqual([PARAM_DECL, PARAM_USE]);"	夹具漏形态	keep	keep	—
-"definition / references / rename 对同一符号同口径（含侧车契约绑定）"	"`textDocument/rename` / `textDocument/references` 漏掉**侧车契约绑定** （而 `textDocument/definition` 把它报成定义位） 现象：对带侧车契约的导出函数改名 ⇒ 只改源码、侧车契约成孤儿 （仍绑定旧名）⇒ 契约档 `hw`→`imp`，**已报的 L1 `nudo:constraint-violated` 诊断静默消失**（门禁结论被 LSP 自己的编辑改掉）。 钉（协议面，同一符号三面必须同口径）： 1. `definition` 报出两个定义位（源码声明 + 侧车契约绑定）； 断言：expect(defKeys).toContain(\"lib.nudo"	没测该层	keep	keep	—
-"落盘后契约仍在生效（L1 违约诊断不因改名静默消失）"	"断言：expect(before.some((d) => d.code === \"nudo:constraint-violated\")).toBe(true);；expect(orphan.some((d) => d.code === \"nudo:constraint-violated\")).toBe(false);"	没测该层	keep	keep	—
-"负控制：没有侧车时 references / rename 只碰源码文件"	"`textDocument/rename` / `textDocument/references` 漏掉**侧车契约绑定** （而 `textDocument/definition` 把它报成定义位） 现象：对带侧车契约的导出函数改名 ⇒ 只改源码、侧车契约成孤儿 （仍绑定旧名）⇒ 契约档 `hw`→`imp`，**已报的 L1 `nudo:constraint-violated` 诊断静默消失**（门禁结论被 LSP 自己的编辑改掉）。 钉（协议面，同一符号三面必须同口径）： 1. `definition` 报出两个定义位（源码声明 + 侧车契约绑定）； 断言：expect(refs.map(keyOf).sort()).toEq"	没测该层	keep	keep	—
-"从 re-export 位置发起 references 覆盖目标模块的定义与内部引用"	"re-export 边在 references / rename 面不可见。 症状：`export { a } from \"./m.js\"` 这条边在符号表里根本没被建立 ⇒ 引用面看不到 m.js ⇒ 改名只改本地 ⇒ 目标模块没同步 ⇒ 模块图断裂 （m.js 改了名、main.js 的 re-export 原样不动 ⇒ SyntaxError）。 断言：expect(refs).toContainEqual({；expect(refs).toContainEqual({"	没测该层	keep	keep	—
-"从目标模块的定义处发起 references 覆盖 re-export 位点"	"re-export 边在 references / rename 面不可见。 症状：`export { a } from \"./m.js\"` 这条边在符号表里根本没被建立 ⇒ 引用面看不到 m.js ⇒ 改名只改本地 ⇒ 目标模块没同步 ⇒ 模块图断裂 （m.js 改了名、main.js 的 re-export 原样不动 ⇒ SyntaxError）。 断言：expect(refs).toContainEqual({"	没测该层	keep	keep	—
-"从 re-export 位置发起 rename 同步改目标模块"	"re-export 边在 references / rename 面不可见。 症状：`export { a } from \"./m.js\"` 这条边在符号表里根本没被建立 ⇒ 引用面看不到 m.js ⇒ 改名只改本地 ⇒ 目标模块没同步 ⇒ 模块图断裂 （m.js 改了名、main.js 的 re-export 原样不动 ⇒ SyntaxError）。 断言：expect(edits).toContainEqual({；expect(edits).toContainEqual({"	没测该层	keep	keep	—
-"改导出名时：imported 侧被改、别名不被改"	"症状：`import { oldName as alias } from \"./xf-def.js\"` + 在 xf-def.js 改名 ⇒ 改出来是 `import { oldName as newName }`（imported 侧没动 ⇒ import 断链， 模块加载即 SyntaxError），而**不该改的别名**被改了。 期望：imported 侧（`oldName`）被改成新名，别名 `alias` 保持不变。 断言：expect(edits).toContainEqual({；expect("	没测该层	keep	keep	—
-"改本地别名时：只改本地，不得连坐改目标模块的导出"	"re-export 边在 references / rename 面不可见。 症状：`export { a } from \"./m.js\"` 这条边在符号表里根本没被建立 ⇒ 引用面看不到 m.js ⇒ 改名只改本地 ⇒ 目标模块没同步 ⇒ 模块图断裂 （m.js 改了名、main.js 的 re-export 原样不动 ⇒ SyntaxError）。 断言：expect(；expect(edits).toContainEqual({"	没测该层	keep	keep	—
-"非法标识符 ⇒ 不产出任何编辑"	"`textDocument/rename` **从不校验新名字** ⇒ 一次改名就能把源码 改成**非法 JavaScript**（重复声明 / 非法标识符 / 空名 / 保留字）， `node --check` 直接 `SyntaxError`。 根因：`onRenameRequest`（`server-navigation.ts`）拿到 `params.newName` 后 **直接**当替换文本用，全程无标识符合法性 / 保留字校验。 断言：expect(res, \"非法标识符 '1bad' 仍产出了编辑\").toBeNull();"	没测该层	keep	keep	—
-"空名 ⇒ 不产出任何编辑"	"`textDocument/rename` **从不校验新名字** ⇒ 一次改名就能把源码 改成**非法 JavaScript**（重复声明 / 非法标识符 / 空名 / 保留字）， `node --check` 直接 `SyntaxError`。 根因：`onRenameRequest`（`server-navigation.ts`）拿到 `params.newName` 后 **直接**当替换文本用，全程无标识符合法性 / 保留字校验。 断言：expect(res, \"空名仍产出了编辑\").toBeNull();"	没测该层	keep	keep	—
-"保留字 ⇒ 不产出任何编辑"	"`textDocument/rename` **从不校验新名字** ⇒ 一次改名就能把源码 改成**非法 JavaScript**（重复声明 / 非法标识符 / 空名 / 保留字）， `node --check` 直接 `SyntaxError`。 根因：`onRenameRequest`（`server-navigation.ts`）拿到 `params.newName` 后 **直接**当替换文本用，全程无标识符合法性 / 保留字校验。 断言：expect(res, `保留字 '${word}' 仍产出了编辑`).toBeNull();"	没测该层	keep	keep	—
-"合法新名 ⇒ 仍然正常改名（不得误伤）"	"断言：expect(res, \"合法新名被误拒\").toBeTruthy();；expect(edits.length, \"合法改名没有编辑\").toBeGreaterThan(0);"	没测该层	keep	keep	—
-"合法但非常规的标识符（$ / _ / Unicode）⇒ 仍然放行"	"断言：expect(res, `合法标识符 '${name}' 被误拒`).toBeTruthy();"	没测该层	keep	keep	—
-"collectBindingReferences：导出绑定的 referencePaths 只收标识符（语句节点不进）"	"回归钉：LSP `textDocument/rename` 改一个**导出绑定**时，不得把 声明本身毁掉。 改前（协议面实测，见 tmp/probe/fix-r30/d1-before.txt）： rename `total` → `renamed`，返回两条编辑 [0:13-0:18] -> \"renamed\" （标识符） [0:0-0:24] -> \"renamed\" （**整条 `export const total = 42; 断言：expect(refs.length).toBe(1);；expect(refs[0]!.loc.start.line).toBe(1);"	没测该层	keep	keep	—
-"buildRenameEdits：宽于单个标识符的编辑被挡掉（语句级目标）"	"回归钉：LSP `textDocument/rename` 改一个**导出绑定**时，不得把 声明本身毁掉。 改前（协议面实测，见 tmp/probe/fix-r30/d1-before.txt）： rename `total` → `renamed`，返回两条编辑 [0:13-0:18] -> \"renamed\" （标识符） [0:0-0:24] -> \"renamed\" （**整条 `export const total = 42; 断言：expect(edits[\"file:///t/d.js\"]!.length).toBe(1);；expect(edits[\"file:///t/d.js\"]![0]!.newText).to"	没测该层	keep	keep	—
-"buildRenameEdits：重叠的编辑只留窄的一条（协议合法性兜底）"	"回归钉：LSP `textDocument/rename` 改一个**导出绑定**时，不得把 声明本身毁掉。 改前（协议面实测，见 tmp/probe/fix-r30/d1-before.txt）： rename `total` → `renamed`，返回两条编辑 [0:13-0:18] -> \"renamed\" （标识符） [0:0-0:24] -> \"renamed\" （**整条 `export const total = 42; 断言：expect(edits[\"file:///t/d.js\"]!.length).toBe(1);；expect(edits[\"file:///t/d.js\"]![0]!.range.start"	没测该层	keep	keep	—
-"协议面：rename 导出绑定只产出标识符编辑，且无重叠"	"回归钉：LSP `textDocument/rename` 改一个**导出绑定**时，不得把 声明本身毁掉。 改前（协议面实测，见 tmp/probe/fix-r30/d1-before.txt）： rename `total` → `renamed`，返回两条编辑 [0:13-0:18] -> \"renamed\" （标识符） [0:0-0:24] -> \"renamed\" （**整条 `export const total = 42; 断言：expect(edits, \"rename 必须有编辑\").toBeDefined();；expect(edits!.length).toBe(1);"	没测该层	keep	keep	—
-"collectBindingReferences：简写属性的引用位带上 key 元数据"	"回归钉：rename 遇到**对象字面量简写属性**（`{ x }`）时，编辑文本 必须是 `x: <新名>`（**保留 key、只换 value**），不得把整段替换成新名字 —— 否则对象的**形状被静默改掉**（`{ x }` → `{ y }`）。 改前（协议面实测，见 tmp/probe/fix-r30/d1-before.txt）： rename `x` → `y`，返回 [1:8-1:9] -> \"y\" （声明） [2:11-2:12] -> \"y\" （**简写属性** ⇒ 变成 `{ y }`，key 被改掉 ❌） 根因：babel 8 里简写属性的 key 与 value 是**两个节点、同一段源码** （实测 `"	夹具漏形态	keep	keep	—
-"buildRenameEdits：简写属性的编辑文本是 `x: <新名>`"	"回归钉：rename 遇到**对象字面量简写属性**（`{ x }`）时，编辑文本 必须是 `x: <新名>`（**保留 key、只换 value**），不得把整段替换成新名字 —— 否则对象的**形状被静默改掉**（`{ x }` → `{ y }`）。 改前（协议面实测，见 tmp/probe/fix-r30/d1-before.txt）： rename `x` → `y`，返回 [1:8-1:9] -> \"y\" （声明） [2:11-2:12] -> \"y\" （**简写属性** ⇒ 变成 `{ y }`，key 被改掉 ❌） 根因：babel 8 里简写属性的 key 与 value 是**两个节点、同一段源码** （实测 `"	夹具漏形态	keep	keep	—
-"解构模式的简写属性同样保留 key（`function f({ x })` → `{ x: y }`）"	"回归钉：rename 遇到**对象字面量简写属性**（`{ x }`）时，编辑文本 必须是 `x: <新名>`（**保留 key、只换 value**），不得把整段替换成新名字 —— 否则对象的**形状被静默改掉**（`{ x }` → `{ y }`）。 改前（协议面实测，见 tmp/probe/fix-r30/d1-before.txt）： rename `x` → `y`，返回 [1:8-1:9] -> \"y\" （声明） [2:11-2:12] -> \"y\" （**简写属性** ⇒ 变成 `{ y }`，key 被改掉 ❌） 根因：babel 8 里简写属性的 key 与 value 是**两个节点、同一段源码** （实测 `"	夹具漏形态	keep	keep	—
-"协议面：rename 简写属性产出 `x: y`，key 不被改掉"	"回归钉：rename 遇到**对象字面量简写属性**（`{ x }`）时，编辑文本 必须是 `x: <新名>`（**保留 key、只换 value**），不得把整段替换成新名字 —— 否则对象的**形状被静默改掉**（`{ x }` → `{ y }`）。 改前（协议面实测，见 tmp/probe/fix-r30/d1-before.txt）： rename `x` → `y`，返回 [1:8-1:9] -> \"y\" （声明） [2:11-2:12] -> \"y\" （**简写属性** ⇒ 变成 `{ y }`，key 被改掉 ❌） 根因：babel 8 里简写属性的 key 与 value 是**两个节点、同一段源码** （实测 `"	夹具漏形态	keep	keep	—
-"未被命名空间引用的导出，其 references 不含命名空间导入方"	"症状：`import * as ns from \"./def.js\"` 之后，def.js 里**从未被提及**的 导出 alpha 的 references 里出现了 ns-user.js 的 `ns` 出现处（假引用）； 真正用到的 `ns.beta` 反而不是 beta 的引用。 断言：expect(refs.filter((r) => r.file === \"ns-user.js\")).toEqual([]);"	没测该层	keep	keep	—
-"命名空间成员访问 `ns.beta` 是 beta 的引用位点"	"症状：`import * as ns from \"./def.js\"` 之后，def.js 里**从未被提及**的 导出 alpha 的 references 里出现了 ns-user.js 的 `ns` 出现处（假引用）； 真正用到的 `ns.beta` 反而不是 beta 的引用。 断言：expect(refs).toContainEqual({；expect(refs).not.toContainEqual({"	没测该层	keep	keep	—
-"纯函数面：方法面能收齐类方法键 + 同源成员访问"	"改前：类方法键不是绑定标识符（`isBindingIdentifier` 对 ClassMethod 键返回 false） ⇒ 绑定面（`collectBindingReferences`）找不到绑定目标直接返回空； 已经写好的方法面（`collectMethodReferences`）**没有**被 references / definition 通道接入 ⇒ 两个请求都答「没有」。 断言：expect(hits.some((h) => h.kind === \"key\")).toBe(true);；expect(hits.some((h) => h.kind === \"member\")).toBe(true);"	没测该层	keep	keep	—
-"协议面（真 server）：references @ 类方法键 ⇒ 至少 1 条引用（k.m(1)）"	"改前：类方法键不是绑定标识符（`isBindingIdentifier` 对 ClassMethod 键返回 false） ⇒ 绑定面（`collectBindingReferences`）找不到绑定目标直接返回空； 已经写好的方法面（`collectMethodReferences`）**没有**被 references / definition 通道接入 ⇒ 两个请求都答「没有」。 断言：expect(handler, \"references handler not registered\").toBeTruthy();；expect(refs.length).toBeGreaterThanOrEqual(2);"	没测该层	keep	keep	—
-"协议面（真 server）：definition @ k.m(1) ⇒ 跳到类里的方法键"	"改前：类方法键不是绑定标识符（`isBindingIdentifier` 对 ClassMethod 键返回 false） ⇒ 绑定面（`collectBindingReferences`）找不到绑定目标直接返回空； 已经写好的方法面（`collectMethodReferences`）**没有**被 references / definition 通道接入 ⇒ 两个请求都答「没有」。 断言：expect(handler, \"definition handler not registered\").toBeTruthy();；expect(defs.length).toBeGreaterThanOrEqual(1);"	没测该层	keep	keep	—
-"协议面（真 server）：references 的 includeDeclaration=false 只剩使用位"	"改前：类方法键不是绑定标识符（`isBindingIdentifier` 对 ClassMethod 键返回 false） ⇒ 绑定面（`collectBindingReferences`）找不到绑定目标直接返回空； 已经写好的方法面（`collectMethodReferences`）**没有**被 references / definition 通道接入 ⇒ 两个请求都答「没有」。 断言：expect(refs.length).toBeGreaterThanOrEqual(1);；expect(refs.map((r) => r.range.start.line)).toContain(USE_POS.line);"	没测该层	keep	keep	—
-"负控制：普通变量的 references 通道不受影响"	"改前：类方法键不是绑定标识符（`isBindingIdentifier` 对 ClassMethod 键返回 false） ⇒ 绑定面（`collectBindingReferences`）找不到绑定目标直接返回空； 已经写好的方法面（`collectMethodReferences`）**没有**被 references / definition 通道接入 ⇒ 两个请求都答「没有」。 断言：expect(refs.length).toBeGreaterThanOrEqual(2);"	没测该层	keep	keep	—
-"类方法形参：definition ⇒ 形参声明位（改前是 null）"	"根因：`buildSymbolTable` 的访问器清单只覆盖 `FunctionDeclaration` / `FunctionExpression` / `ArrowFunctionExpression` 三种函数的 `params` ⇒ 类方法 / 对象方法 / `catch` 的形参**不进 `definitions`** ⇒ `findDefinition` 落空 ⇒ definition 返回 `null`； 而 `references` 走 babel binding 面（`collectBindingReferences`） ⇒ 不受符号表影响 ⇒ 照常返回声明位 ⇒ **两个面自相矛盾**。 断言：expect(d"	夹具漏形态	keep	keep	—
-"对象方法形参：definition ⇒ 形参声明位（改前是 null）"	"根因：`buildSymbolTable` 的访问器清单只覆盖 `FunctionDeclaration` / `FunctionExpression` / `ArrowFunctionExpression` 三种函数的 `params` ⇒ 类方法 / 对象方法 / `catch` 的形参**不进 `definitions`** ⇒ `findDefinition` 落空 ⇒ definition 返回 `null`； 而 `references` 走 babel binding 面（`collectBindingReferences`） ⇒ 不受符号表影响 ⇒ 照常返回声明位 ⇒ **两个面自相矛盾**。 断言：expect(d"	夹具漏形态	keep	keep	—
-"catch 形参：definition ⇒ 形参声明位（改前是 null）"	"普通函数形参（对照组：改前就是好的） 断言：expect(defs.length).toBeGreaterThanOrEqual(1);；expect(def.range.start.line).toBe(CATCH_PARAM.line);"	没测该层	keep	keep	—
-"同一坐标：definition 与 references 的声明位**一致**（不再自相矛盾）"	"根因：`buildSymbolTable` 的访问器清单只覆盖 `FunctionDeclaration` / `FunctionExpression` / `ArrowFunctionExpression` 三种函数的 `params` ⇒ 类方法 / 对象方法 / `catch` 的形参**不进 `definitions`** ⇒ `findDefinition` 落空 ⇒ definition 返回 `null`； 而 `references` 走 babel binding 面（`collectBindingReferences`） ⇒ 不受符号表影响 ⇒ 照常返回声明位 ⇒ **两个面自相矛盾**。 断言：expect(d"	夹具漏形态	keep	keep	—
-"负控制：普通函数形参的 definition 不受影响"	"根因：`buildSymbolTable` 的访问器清单只覆盖 `FunctionDeclaration` / `FunctionExpression` / `ArrowFunctionExpression` 三种函数的 `params` ⇒ 类方法 / 对象方法 / `catch` 的形参**不进 `definitions`** ⇒ `findDefinition` 落空 ⇒ definition 返回 `null`； 而 `references` 走 babel binding 面（`collectBindingReferences`） ⇒ 不受符号表影响 ⇒ 照常返回声明位 ⇒ **两个面自相矛盾**。 断言：expect(d"	夹具漏形态	keep	keep	—
-"同一坐标（侧车里的 getName）⇒ 六个导航请求结论一致（都不可见）"	"侧车契约文件（`*.nudo.js`）在导航面上的**门禁各写各的**： `definition` 单独挂了 `isSidecarPath` **逃生口**（放行侧车）， `workspace/symbol` 干脆**没有门禁**（反而放行侧车），其余四个请求一律 `isNudoFile` 一刀切 ⇒ **同一坐标六种请求三种结论**：definition 说 「这个符号存在」，documentSymbol 说「这个文件里没有任何符号」 ⇒ **LSP 内部自相矛盾**。 ⚠ **代价（已裁决：接受）**：丢掉「源码 → 侧车」的 definition 可导航能力。 断言：expect(；expect("	没测该层	keep	keep	—
-"负控制：源码侧仍可见（门禁不得过度拦截）"	"`textDocument/rename` / `textDocument/references` 漏掉**侧车契约绑定** （而 `textDocument/definition` 把它报成定义位） 现象：对带侧车契约的导出函数改名 ⇒ 只改源码、侧车契约成孤儿 （仍绑定旧名）⇒ 契约档 `hw`→`imp`，**已报的 L1 `nudo:constraint-violated` 诊断静默消失**（门禁结论被 LSP 自己的编辑改掉）。 钉（协议面，同一符号三面必须同口径）： 1. `definition` 报出两个定义位（源码声明 + 侧车契约绑定）； 断言：expect(syms.map((s) => s.name)).toC"	没测该层	keep	keep	—
-"definition 不得放行侧车（逃生口已去掉）"	"（**共担钉**）—— 族级不变量：侧车契约文件（`*.nudo.js`）在**全部** 导航请求上不可见。 ⇒ 本钉在 HEAD（未修）上**红**（反向闸证据）， 片 B 落地后**转绿**。 断言：expect(empty, \"definition 仍放行侧车（`|| isSidecarPath(...)` 逃生口未去掉）\").toBe(true);"	没测该层	keep	keep	—
-"workspace/symbol 不得放行侧车条目（门禁已补）"	"（**共担钉**）—— 族级不变量：侧车契约文件（`*.nudo.js`）在**全部** 导航请求上不可见。 ⇒ 本钉在 HEAD（未修）上**红**（反向闸证据）， 片 B 落地后**转绿**。 断言：expect(sidecarEntries, \"workspace/symbol 仍放行侧车条目（无门禁）\").toEqual([]);；expect("	没测该层	keep	keep	—
-"侧车上的六个 IDE 请求结论一致（侧车不可见）"	"侧车契约文件（`*.nudo.js`）在导航请求族里的**门禁各写各的**： `definition` 单独挂了 `isSidecarPath` 逃生口（放行侧车），`workspace/symbol` 干脆**没有门禁**（反而放行侧车），其余四个导航请求与 6 个 IDE 请求一律 `isNudoFile` 一刀切 ⇒ **同一坐标六种请求三种结论**：definition 说「这个符号 存在」，documentSymbol 说「这个文件里没有任何符号」。 根因：门禁谓词**没有单一事实源**——`server-navigation.ts` 的 5 个请求各写 一份、`server-ide.ts` 的 6 个请求各写一份、`wo"	没测该层	keep	keep	—
-"侧车上的四个统一门禁导航请求结论一致（侧车不可见）"	"断言：expect(；expect(req(\"textDocument/rename\")({ ...at, newName: \"renamed\" })).toBeNull();"	没测该层	keep	keep	—
-"负控制：源码侧的符号仍可见（门禁不得过度拦截）"	"`textDocument/rename` / `textDocument/references` 漏掉**侧车契约绑定** （而 `textDocument/definition` 把它报成定义位） 现象：对带侧车契约的导出函数改名 ⇒ 只改源码、侧车契约成孤儿 （仍绑定旧名）⇒ 契约档 `hw`→`imp`，**已报的 L1 `nudo:constraint-violated` 诊断静默消失**（门禁结论被 LSP 自己的编辑改掉）。 钉（协议面，同一符号三面必须同口径）： 1. `definition` 报出两个定义位（源码声明 + 侧车契约绑定）； 断言：expect(defs.length, \"源码侧 definition"	没测该层	keep	keep	—
-"同作用域重复声明：`const a` + 改 f→a ⇒ 拒绝（无 WorkspaceEdit）"	"rename 作用域冲突检测（自认的「独立后续项」，此处落地）。 修法（哲学与 「歧义接收者拒绝改名」同源：**拒绝优于改坏**）： `renameNameConflicts`（symbols.ts）按目标身份判冲突： - binding：babel 作用域链上三类冲突（重复声明 / 内层遮蔽捕获 / 外层捕获）； 断言：expect(res, \"改 f→a 会制造 `const a` + `function a` 重复声明，必须拒绝\").toBeNull();"	没测该层	keep	keep	—
-"回归：同文件改 f→bb ⇒ 正常产出编辑"	"回归钉：rename 遇到**对象字面量简写属性**（`{ x }`）时，编辑文本 必须是 `x: <新名>`（**保留 key、只换 value**），不得把整段替换成新名字 —— 否则对象的**形状被静默改掉**（`{ x }` → `{ y }`）。 改前（协议面实测，见 tmp/probe/fix-r30/d1-before.txt）： rename `x` → `y`，返回 [1:8-1:9] -> \"y\" （声明） [2:11-2:12] -> \"y\" （**简写属性** ⇒ 变成 `{ y }`，key 被改掉 ❌） 根因：babel 8 里简写属性的 key 与 value 是**两个节点、同一段源码** （实测 `"	夹具漏形态	keep	keep	—
-"嵌套作用域·同层已有 b：改 x→b ⇒ 拒绝"	"嵌套作用域（纯遮蔽，不同层级）：目标作用域内零 `b` 引用 ⇒ 允许 断言：expect(res, \"函数体同层已有 `const b`，改 x→b 是重复声明，必须拒绝\").toBeNull();"	没测该层	keep	keep	—
-"嵌套作用域·纯遮蔽（不同层级）：改 x→b ⇒ 允许（合法且无语义变化的 JS）"	"嵌套作用域（纯遮蔽，不同层级）：目标作用域内零 `b` 引用 ⇒ 允许 断言：expect(edits, \"纯遮蔽（目标作用域内零 b 引用）被误拒\").toHaveLength(2);；expect(edits.every((e) => e.newText === \"b\")).toBe(true);"	没测该层	keep	keep	—
-"外层捕获：外层 b 在目标作用域内被引用 ⇒ 改 x→b 拒绝"	"rename 作用域冲突检测（自认的「独立后续项」，此处落地）。 修法（哲学与 「歧义接收者拒绝改名」同源：**拒绝优于改坏**）： `renameNameConflicts`（symbols.ts）按目标身份判冲突： - binding：babel 作用域链上三类冲突（重复声明 / 内层遮蔽捕获 / 外层捕获）； 断言：expect("	没测该层	keep	keep	—
-"内层捕获：目标 x 的引用落在声明了 y 的内层作用域 ⇒ 改 x→y 拒绝"	"嵌套作用域（纯遮蔽，不同层级）：目标作用域内零 `b` 引用 ⇒ 允许 断言：expect("	没测该层	keep	keep	—
-"方法臂：同归属已有同名成员 run→stop ⇒ 拒绝；run→walk ⇒ 正常改名"	"rename 作用域冲突检测（自认的「独立后续项」，此处落地）。 修法（哲学与 「歧义接收者拒绝改名」同源：**拒绝优于改坏**）： `renameNameConflicts`（symbols.ts）按目标身份判冲突： - binding：babel 作用域链上三类冲突（重复声明 / 内层遮蔽捕获 / 外层捕获）； 断言：expect(conflict, \"类 K 已有 stop 成员，改完 = 重复成员键，必须拒绝\").toBeNull();；expect(edits, \"合法方法名被误拒\").toHaveLength(2);"	没测该层	keep	keep	—
-"跨文件：def 文件模块作用域已有 fresh ⇒ 从 importer 发起 old→fresh 拒绝"	"rename 作用域冲突检测（自认的「独立后续项」，此处落地）。 修法（哲学与 「歧义接收者拒绝改名」同源：**拒绝优于改坏**）： `renameNameConflicts`（symbols.ts）按目标身份判冲突： - binding：babel 作用域链上三类冲突（重复声明 / 内层遮蔽捕获 / 外层捕获）； 断言：expect(conflict, \"x-def.js 已有 `export const fresh`，改完 = 重复导出，必须拒绝\").toBeNull();；expect(edits, \"合法跨文件新名被误拒\").toHaveLength(3);"	没测该层	keep	keep	—
-"私有成员臂：同类已有 #other ⇒ 改 #total→other 拒绝"	"rename 作用域冲突检测（自认的「独立后续项」，此处落地）。 修法（哲学与 「歧义接收者拒绝改名」同源：**拒绝优于改坏**）： `renameNameConflicts`（symbols.ts）按目标身份判冲突： - binding：babel 作用域链上三类冲突（重复声明 / 内层遮蔽捕获 / 外层捕获）； 断言：expect(res, \"类 C 已有 #other，改完 = 重复私有名（SyntaxError），必须拒绝\").toBeNull();"	没测该层	keep	keep	—
-"prepareRename：handler 已注册且返回标识符 range + placeholder"	"（**共担钉**）—— 族级不变量：侧车契约文件（`*.nudo.js`）在**全部** 导航请求上不可见。 ⇒ 本钉在 HEAD（未修）上**红**（反向闸证据）， 片 B 落地后**转绿**。 断言：expect(res, \"prepareRename 必须可答（capabilities 声明了 prepareProvider:true）\").not.toBeNull();；expect(res!.range).toEqual({"	没测该层	keep	keep	—
+纯函数面：无关对象的同名成员访问不进改名集合；纯函数面：对象字面量的方法键是定义位，且同源成员访问进集合；纯函数面：同名但不同类不合并（显式归属时）；协议面（真 server）：归属歧义 ⇒ **拒绝改名**（不产出任何编辑，代码不被改坏）；纯函数面：归属歧义可被检出（歧义 ⇒ 拒绝；无歧义 ⇒ 可改）；协议面（真 server）：改对象字面量的方法 ⇒ key 与同源成员访问一起改；协议面（真 server）：对象字面量的函数值属性 `{ m: fn }` 的 key 也是	lsp-navigation 聚合矩阵	没测该层	keep	keep	—
+rename @ importer 用点位 ⇒ 改导出名 + importer 的 imported 侧，**不动** hidden 的声明；rename @ 导出名位 ⇒ 同样改导出名 + importer 的 imported 侧（改前是 null）；rename @ 本地名位 ⇒ 改本地名（声明 + 导出说明符本地侧），**不连坐** importer；导出名位不再死位：definition / references / prepareRename 都有身份	lsp-navigation 聚合矩阵	没测该层	keep	keep	—
+在别名用法处改名：只改 importer 的本地侧 + 用法处；在 import 说明符的 local 侧改名：同样零连坐（导出方与其它 importer 不动）；反向：从导出方改导出名 ⇒ 改导出方 + 各 importer 的 imported 侧，别名不动	lsp-navigation 聚合矩阵	没测该层	keep	keep	—
+重命名形参声明位：编辑集只有形参声明 + 形参引用，顶层零编辑；重命名形参体内的引用位：同样不连坐顶层变量；反向：重命名顶层变量：只改顶层那处，形参零编辑（两个方向对称）；definition / references 走作用域：形参只认形参那一处绑定	lsp-navigation 聚合矩阵	没测该层	keep	keep	—
+definition / references / rename 对同一符号同口径（含侧车契约绑定）；落盘后契约仍在生效（L1 违约诊断不因改名静默消失）；负控制：没有侧车时 references / rename 只碰源码文件	lsp-navigation 聚合矩阵	没测该层	keep	keep	—
+从 re-export 位置发起 references 覆盖目标模块的定义与内部引用；从目标模块的定义处发起 references 覆盖 re-export 位点；从 re-export 位置发起 rename 同步改目标模块	lsp-navigation 聚合矩阵	没测该层	keep	keep	—
+改导出名时：imported 侧被改、别名不被改；改本地别名时：只改本地，不得连坐改目标模块的导出	lsp-navigation 聚合矩阵	没测该层	keep	keep	—
+非法标识符 ⇒ 不产出任何编辑；空名 ⇒ 不产出任何编辑；保留字 ⇒ 不产出任何编辑；合法新名 ⇒ 仍然正常改名（不得误伤）；合法但非常规的标识符（$ / _ / Unicode）⇒ 仍然放行	lsp-navigation 聚合矩阵	没测该层	keep	keep	—
+collectBindingReferences：导出绑定的 referencePaths 只收标识符（语句节点不进）；buildRenameEdits：宽于单个标识符的编辑被挡掉（语句级目标）；buildRenameEdits：重叠的编辑只留窄的一条（协议合法性兜底）；协议面：rename 导出绑定只产出标识符编辑，且无重叠	lsp-navigation 聚合矩阵	没测该层	keep	keep	—
+collectBindingReferences：简写属性的引用位带上 key 元数据；buildRenameEdits：简写属性的编辑文本是 `x: <新名>`；解构模式的简写属性同样保留 key（`function f({ x })` → `{ x: y }`）；协议面：rename 简写属性产出 `x: y`，key 不被改掉	lsp-navigation 聚合矩阵	没测该层	keep	keep	—
+未被命名空间引用的导出，其 references 不含命名空间导入方；命名空间成员访问 `ns.beta` 是 beta 的引用位点	lsp-navigation 聚合矩阵	没测该层	keep	keep	—
+纯函数面：方法面能收齐类方法键 + 同源成员访问；协议面（真 server）：references @ 类方法键 ⇒ 至少 1 条引用（k.m(1)）；协议面（真 server）：definition @ k.m(1) ⇒ 跳到类里的方法键；协议面（真 server）：references 的 includeDeclaration=false 只剩使用位；负控制：普通变量的 references 通道不受影响	lsp-navigation 聚合矩阵	没测该层	keep	keep	—
+类方法形参：definition ⇒ 形参声明位（改前是 null）；对象方法形参：definition ⇒ 形参声明位（改前是 null）；catch 形参：definition ⇒ 形参声明位（改前是 null）；同一坐标：definition 与 references 的声明位**一致**（不再自相矛盾）；负控制：普通函数形参的 definition 不受影响	lsp-navigation 聚合矩阵	没测该层	keep	keep	—
+同一坐标（侧车里的 getName）⇒ 六个导航请求结论一致（都不可见）；负控制：源码侧仍可见（门禁不得过度拦截）	lsp-navigation 聚合矩阵	没测该层	keep	keep	—
+definition 不得放行侧车（逃生口已去掉）；workspace/symbol 不得放行侧车条目（门禁已补）	lsp-navigation 聚合矩阵	没测该层	keep	keep	—
+侧车上的六个 IDE 请求结论一致（侧车不可见）；侧车上的四个统一门禁导航请求结论一致（侧车不可见）；负控制：源码侧的符号仍可见（门禁不得过度拦截）	lsp-navigation 聚合矩阵	没测该层	keep	keep	—
+同作用域重复声明：`const a` + 改 f→a ⇒ 拒绝（无 WorkspaceEdit）；回归：同文件改 f→bb ⇒ 正常产出编辑；嵌套作用域·同层已有 b：改 x→b ⇒ 拒绝；嵌套作用域·纯遮蔽（不同层级）：改 x→b ⇒ 允许（合法且无语义变化的 JS）；外层捕获：外层 b 在目标作用域内被引用 ⇒ 改 x→b 拒绝；内层捕获：目标 x 的引用落在声明了 y 的内层作用域 ⇒ 改 x→y 拒绝；方法臂：同归属已有同名成员 run→stop ⇒ 拒绝；run→w	lsp-navigation 聚合矩阵	没测该层	keep	keep	—
+```
+
+```audit-deleted
+title	reason	evidence
+纯函数面：无关对象的同名成员访问不进改名集合	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+纯函数面：对象字面量的方法键是定义位，且同源成员访问进集合	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+纯函数面：同名但不同类不合并（显式归属时）	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+协议面（真 server）：归属歧义 ⇒ **拒绝改名**（不产出任何编辑，代码不被改坏）	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+纯函数面：归属歧义可被检出（歧义 ⇒ 拒绝；无歧义 ⇒ 可改）	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+协议面（真 server）：改对象字面量的方法 ⇒ key 与同源成员访问一起改	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+协议面（真 server）：对象字面量的函数值属性 `{ m: fn }` 的 key 也是定义位	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+协议面（真 server）：同名但不同类不合并（Alpha.run 不碰 Beta.run）	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+协议面（真 server）：跨文件的无关类不被改（Alpha.run ≠ Beta.run）	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+prepareRename 面：类方法键 / 同源成员访问可改名，无关数据属性不可改名	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+rename @ importer 用点位 ⇒ 改导出名 + importer 的 imported 侧，**不动** hidden 的声明	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+rename @ 导出名位 ⇒ 同样改导出名 + importer 的 imported 侧（改前是 null）	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+rename @ 本地名位 ⇒ 改本地名（声明 + 导出说明符本地侧），**不连坐** importer	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+导出名位不再死位：definition / references / prepareRename 都有身份	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+在别名用法处改名：只改 importer 的本地侧 + 用法处	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+在 import 说明符的 local 侧改名：同样零连坐（导出方与其它 importer 不动）	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+反向：从导出方改导出名 ⇒ 改导出方 + 各 importer 的 imported 侧，别名不动	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+重命名形参声明位：编辑集只有形参声明 + 形参引用，顶层零编辑	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+重命名形参体内的引用位：同样不连坐顶层变量	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+反向：重命名顶层变量：只改顶层那处，形参零编辑（两个方向对称）	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+definition / references 走作用域：形参只认形参那一处绑定	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+definition / references / rename 对同一符号同口径（含侧车契约绑定）	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+落盘后契约仍在生效（L1 违约诊断不因改名静默消失）	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+负控制：没有侧车时 references / rename 只碰源码文件	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+从 re-export 位置发起 references 覆盖目标模块的定义与内部引用	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+从目标模块的定义处发起 references 覆盖 re-export 位点	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+从 re-export 位置发起 rename 同步改目标模块	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+改导出名时：imported 侧被改、别名不被改	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+改本地别名时：只改本地，不得连坐改目标模块的导出	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+非法标识符 ⇒ 不产出任何编辑	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+空名 ⇒ 不产出任何编辑	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+保留字 ⇒ 不产出任何编辑	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+合法新名 ⇒ 仍然正常改名（不得误伤）	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+合法但非常规的标识符（$ / _ / Unicode）⇒ 仍然放行	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+collectBindingReferences：导出绑定的 referencePaths 只收标识符（语句节点不进）	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+buildRenameEdits：宽于单个标识符的编辑被挡掉（语句级目标）	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+buildRenameEdits：重叠的编辑只留窄的一条（协议合法性兜底）	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+协议面：rename 导出绑定只产出标识符编辑，且无重叠	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+collectBindingReferences：简写属性的引用位带上 key 元数据	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+buildRenameEdits：简写属性的编辑文本是 `x: <新名>`	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+解构模式的简写属性同样保留 key（`function f({ x })` → `{ x: y }`）	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+协议面：rename 简写属性产出 `x: y`，key 不被改掉	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+未被命名空间引用的导出，其 references 不含命名空间导入方	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+命名空间成员访问 `ns.beta` 是 beta 的引用位点	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+纯函数面：方法面能收齐类方法键 + 同源成员访问	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+协议面（真 server）：references @ 类方法键 ⇒ 至少 1 条引用（k.m(1)）	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+协议面（真 server）：definition @ k.m(1) ⇒ 跳到类里的方法键	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+协议面（真 server）：references 的 includeDeclaration=false 只剩使用位	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+负控制：普通变量的 references 通道不受影响	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+类方法形参：definition ⇒ 形参声明位（改前是 null）	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+对象方法形参：definition ⇒ 形参声明位（改前是 null）	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+catch 形参：definition ⇒ 形参声明位（改前是 null）	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+同一坐标：definition 与 references 的声明位**一致**（不再自相矛盾）	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+负控制：普通函数形参的 definition 不受影响	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+同一坐标（侧车里的 getName）⇒ 六个导航请求结论一致（都不可见）	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+负控制：源码侧仍可见（门禁不得过度拦截）	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+definition 不得放行侧车（逃生口已去掉）	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+workspace/symbol 不得放行侧车条目（门禁已补）	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+侧车上的六个 IDE 请求结论一致（侧车不可见）	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+侧车上的四个统一门禁导航请求结论一致（侧车不可见）	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+负控制：源码侧的符号仍可见（门禁不得过度拦截）	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+同作用域重复声明：`const a` + 改 f→a ⇒ 拒绝（无 WorkspaceEdit）	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+回归：同文件改 f→bb ⇒ 正常产出编辑	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+嵌套作用域·同层已有 b：改 x→b ⇒ 拒绝	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+嵌套作用域·纯遮蔽（不同层级）：改 x→b ⇒ 允许（合法且无语义变化的 JS）	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+外层捕获：外层 b 在目标作用域内被引用 ⇒ 改 x→b 拒绝	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+内层捕获：目标 x 的引用落在声明了 y 的内层作用域 ⇒ 改 x→y 拒绝	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+方法臂：同归属已有同名成员 run→stop ⇒ 拒绝；run→walk ⇒ 正常改名	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+跨文件：def 文件模块作用域已有 fresh ⇒ 从 importer 发起 old→fresh 拒绝	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+私有成员臂：同类已有 #other ⇒ 改 #total→other 拒绝	dup:lsp-navigation 聚合矩阵	commit:8fa85177
+prepareRename：handler 已注册且返回标识符 range + placeholder	dup:lsp-navigation 聚合矩阵	commit:8fa85177
 ```

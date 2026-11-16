@@ -6,83 +6,100 @@
 
 ```audit
 title	rootCause	gap	action	status	evidence
-"形态①：export default function named ⇒ 导出名是 default（不是具名导出）"	"`nudo export --format dts` 把**具名 default 导出**投影成**具名导出** ⇒ 产物声明了**运行时不存在的导出**（编译通过、运行时 `undefined`）+ 默认导入 直接 **TS2349**。 现状：**假阳性** —— 症状已被族 15（，commit `dde4b037`）修掉： `service/src/emit/dts-generator.ts` 的 `projectFunctionDts` 显式按**模块面** 取**导出名**（`export default function f(...)` 的导出名是 `default`，**不是** `export declare fu"	没测该层	keep	keep	—
-"形态②：export default class K ⇒ 导出名是 default（类不被降成模块级函数）"	"`nudo export --format dts` 把**具名 default 导出**投影成**具名导出** ⇒ 产物声明了**运行时不存在的导出**（编译通过、运行时 `undefined`）+ 默认导入 直接 **TS2349**。 现状：**假阳性** —— 症状已被族 15（，commit `dde4b037`）修掉： `service/src/emit/dts-generator.ts` 的 `projectFunctionDts` 显式按**模块面** 取**导出名**（`export default function f(...)` 的导出名是 `default`，**不是** `export declare fu"	没测该层	keep	keep	—
-"形态③：匿名 default（export default function (x)）⇒ 导出名是 default"	"`nudo export --format dts` 把**具名 default 导出**投影成**具名导出** ⇒ 产物声明了**运行时不存在的导出**（编译通过、运行时 `undefined`）+ 默认导入 直接 **TS2349**。 现状：**假阳性** —— 症状已被族 15（，commit `dde4b037`）修掉： `service/src/emit/dts-generator.ts` 的 `projectFunctionDts` 显式按**模块面** 取**导出名**（`export default function f(...)` 的导出名是 `default`，**不是** `export declare fu"	没测该层	keep	keep	—
-"形态④：箭头 default（export default (x) => …）⇒ 导出名是 default"	"`nudo export --format dts` 把**具名 default 导出**投影成**具名导出** ⇒ 产物声明了**运行时不存在的导出**（编译通过、运行时 `undefined`）+ 默认导入 直接 **TS2349**。 现状：**假阳性** —— 症状已被族 15（，commit `dde4b037`）修掉： `service/src/emit/dts-generator.ts` 的 `projectFunctionDts` 显式按**模块面** 取**导出名**（`export default function f(...)` 的导出名是 `default`，**不是** `export declare fu"	没测该层	keep	keep	—
-"形态④′：const + export default arrow ⇒ 导出名是 default（本地名不作导出名）"	"`nudo export --format dts` 把**具名 default 导出**投影成**具名导出** ⇒ 产物声明了**运行时不存在的导出**（编译通过、运行时 `undefined`）+ 默认导入 直接 **TS2349**。 现状：**假阳性** —— 症状已被族 15（，commit `dde4b037`）修掉： `service/src/emit/dts-generator.ts` 的 `projectFunctionDts` 显式按**模块面** 取**导出名**（`export default function f(...)` 的导出名是 `default`，**不是** `export declare fu"	没测该层	keep	keep	—
-"模块面：default 的导出绑定（导出名 → 本地绑定名）"	"`nudo export --format dts` 把**具名 default 导出**投影成**具名导出** ⇒ 产物声明了**运行时不存在的导出**（编译通过、运行时 `undefined`）+ 默认导入 直接 **TS2349**。 现状：**假阳性** —— 症状已被族 15（，commit `dde4b037`）修掉： `service/src/emit/dts-generator.ts` 的 `projectFunctionDts` 显式按**模块面** 取**导出名**（`export default function f(...)` 的导出名是 `default`，**不是** `export declare fu"	没测该层	keep	keep	—
-"模块面：匿名 / 箭头 default 没有本地绑定名"	"`nudo export --format dts` 把**具名 default 导出**投影成**具名导出** ⇒ 产物声明了**运行时不存在的导出**（编译通过、运行时 `undefined`）+ 默认导入 直接 **TS2349**。 现状：**假阳性** —— 症状已被族 15（，commit `dde4b037`）修掉： `service/src/emit/dts-generator.ts` 的 `projectFunctionDts` 显式按**模块面** 取**导出名**（`export default function f(...)` 的导出名是 `default`，**不是** `export declare fu"	没测该层	keep	keep	—
-"负控制：非 default 的具名导出仍是 export declare function（导出面过滤不变）"	"`nudo export --format dts` 把**具名 default 导出**投影成**具名导出** ⇒ 产物声明了**运行时不存在的导出**（编译通过、运行时 `undefined`）+ 默认导入 直接 **TS2349**。 现状：**假阳性** —— 症状已被族 15（，commit `dde4b037`）修掉： `service/src/emit/dts-generator.ts` 的 `projectFunctionDts` 显式按**模块面** 取**导出名**（`export default function f(...)` 的导出名是 `default`，**不是** `export declare fu"	没测该层	keep	keep	—
-"负控制：未导出的本地函数不进 dts"	"`nudo export --format dts` 把**具名 default 导出**投影成**具名导出** ⇒ 产物声明了**运行时不存在的导出**（编译通过、运行时 `undefined`）+ 默认导入 直接 **TS2349**。 现状：**假阳性** —— 症状已被族 15（，commit `dde4b037`）修掉： `service/src/emit/dts-generator.ts` 的 `projectFunctionDts` 显式按**模块面** 取**导出名**（`export default function f(...)` 的导出名是 `default`，**不是** `export declare fu"	没测该层	keep	keep	—
-"普查面只有一条 C.m"	"断言：expect(names.filter((n) => n === \"C.m\").length).toBe(1);"	没测该层	keep	keep	—
-"dts 类体：实例方法一条 + 静态方法一条（无重复成员）"	"core 侧的类方法普查名不再让**静态方法与实例方法同名**时共用一个名字 （`scan-top-functions.ts` 的 `collectClassMethods`； service 侧 `analyzer-ast.ts` 同口径）⇒ `analysis.functions` 里不再有两条 `C.m` ⇒ dts 类体里也不该再出现**重复的实例成员声明**。 断言：expect(dts).toContain(\"export declare class C {\");；expect(dts).toMatch(/static m\\(y: (any|unknown)\\): unknown;/);"	夹具漏形态	keep	keep	—
-"dts 产物里不出现模块级的 C_m 声明（类成员不是模块级导出）"	"core 侧的类方法普查名不再让**静态方法与实例方法同名**时共用一个名字 （`scan-top-functions.ts` 的 `collectClassMethods`； service 侧 `analyzer-ast.ts` 同口径）⇒ `analysis.functions` 里不再有两条 `C.m` ⇒ dts 类体里也不该再出现**重复的实例成员声明**。 断言：expect(dts).not.toContain(\"export declare function C_m\");"	夹具漏形态	keep	keep	—
-"shape 里不再出现 __proto__ 键（zod v4 会跳过它 ⇒ 声明了也不校验）"	"违约形态 ②：`__proto__` 值错 断言：expect(source).not.toContain('[\"__proto__\"]:');；expect(source).toContain(\"Object.getOwnPropertyDescriptor(value, \\\"__proto__\\\")\");"	夹具漏形态	keep	keep	—
-"用 .superRefine 校验自有数据属性（缺键 ⇒ required）"	"`）⇒ 声明的字段**从不被 校验** ⇒ 违约值被静默放行（假绿）+ 与 dts / guard / standard 四面矛盾 + 零 dropped 台账。 修法：把 `__proto__` 槽剔出 `z.object` 的 shape，改用 `.superRefine()` 显式校验 **自有数据属性**（`Object.getOwnPropertyDescriptor`）——原型链上的同名 accessor 不算在场（`JSON.parse('{\"__proto__\": …}')` 建的是自有数据属性）。 断言：expect(source).toContain(\".superRefine(\");；expect(source"	夹具漏形态	keep	keep	—
-"值校验走内层 schema 的 safeParse（不是整条放行）"	"断言：expect(source).toContain(\".safeParse(desc.value)\");；expect(source).toContain(\"if (!parsed.success) ctx.addIssue(\");"	没测该层	keep	keep	—
-"optional 槽：缺席不报错，但值错了仍报错"	"断言：expect(source).not.toContain('message: \"required\"');；expect(source).toContain(\"if (!desc) return;\");"	没测该层	keep	keep	—
-"台账留痕：__proto__ 的降级进 dropped（不得静默假绿）"	"违约形态 ②：`__proto__` 值错 断言：expect(dropped.join(\"\\n\")).toContain(\"__proto__\");；expect(dropped.join(\"\\n\")).toContain(\"superRefine\");"	夹具漏形态	keep	keep	—
-"standard 面（同一份 Abs）要求自有 __proto__：真值过、缺键/错值不过"	"违约形态 ②：`__proto__` 值错 断言：expect(validateSchemaNode(node, realValue()).issues).toBeUndefined();；expect(validateSchemaNode(node, missing()).issues?.length).toBeGreaterThan(0);"	夹具漏形态	keep	keep	—
-"负控制：普通对象不受影响（不生成 superRefine）"	"`）⇒ 声明的字段**从不被 校验** ⇒ 违约值被静默放行（假绿）+ 与 dts / guard / standard 四面矛盾 + 零 dropped 台账。 修法：把 `__proto__` 槽剔出 `z.object` 的 shape，改用 `.superRefine()` 显式校验 **自有数据属性**（`Object.getOwnPropertyDescriptor`）——原型链上的同名 accessor 不算在场（`JSON.parse('{\"__proto__\": …}')` 建的是自有数据属性）。 断言：expect(source).toBe(\"z.object({ a: z.literal(true) })\");"	夹具漏形态	keep	keep	—
-"数据源：FormalParam.optional ≡ 源码（JS 默认值 ∪ TS `?`）"	"TS **可选形参** `b?: T` 的 `?` 标记在 dts / zod / standard 三面 全部丢失：`.d.ts` 把 `b` 印成必填（消费端 **TS2554**），运行时校验器对源码 合法的 `f({ a: 1 })` 报 `required: b`（**假红**）。 根因：`?` 在 strip-types 阶段就被删（不进 JS 产物），而 `FormalParam` 的 `kind:\"id\"` 位硬写 `optional: false`； 断言：expect(formalsOf(\"f\")).toEqual([；expect(formalsOf(\"g\")).toEqual(["	没测该层	keep	keep	—
-"dts 面：可省位印 `?`（消费端 `f(1)` 不再 TS2554）"	"TS **可选形参** `b?: T` 的 `?` 标记在 dts / zod / standard 三面 全部丢失：`.d.ts` 把 `b` 印成必填（消费端 **TS2554**），运行时校验器对源码 合法的 `f({ a: 1 })` 报 `required: b`（**假红**）。 根因：`?` 在 strip-types 阶段就被删（不进 JS 产物），而 `FormalParam` 的 `kind:\"id\"` 位硬写 `optional: false`； 断言：expect(lines).toMatch(/b\\?:/);；expect(lines).not.toMatch(/b: string/);"	没测该层	keep	keep	—
-"standard 面：`{ a }` 通过、缺 `a` 仍报 required"	"TS **可选形参** `b?: T` 的 `?` 标记在 dts / zod / standard 三面 全部丢失：`.d.ts` 把 `b` 印成必填（消费端 **TS2554**），运行时校验器对源码 合法的 `f({ a: 1 })` 报 `required: b`（**假红**）。 根因：`?` 在 strip-types 阶段就被删（不进 JS 产物），而 `FormalParam` 的 `kind:\"id\"` 位硬写 `optional: false`； 断言：expect(input.validate({ a: 1 }).issues).toBeUndefined();；expect(input.validate({"	没测该层	keep	keep	—
-"zod 面：可选槽渲染 `.optional()`（槽可选性由同一 FormalParam 驱动）"	"TS **可选形参** `b?: T` 的 `?` 标记在 dts / zod / standard 三面 全部丢失：`.d.ts` 把 `b` 印成必填（消费端 **TS2554**），运行时校验器对源码 合法的 `f({ a: 1 })` 报 `required: b`（**假红**）。 根因：`?` 在 strip-types 阶段就被删（不进 JS 产物），而 `FormalParam` 的 `kind:\"id\"` 位硬写 `optional: false`； 断言：expect(source).toContain(\"b: z.unknown().optional()\");；expect(source).not.toCont"	没测该层	keep	keep	—
-"zod 面（入口角色表）：`unifiedParamFace` 把 `b?` 判为可省"	"TS **可选形参** `b?: T` 的 `?` 标记在 dts / zod / standard 三面 全部丢失：`.d.ts` 把 `b` 印成必填（消费端 **TS2554**），运行时校验器对源码 合法的 `f({ a: 1 })` 报 `required: b`（**假红**）。 根因：`?` 在 strip-types 阶段就被删（不进 JS 产物），而 `FormalParam` 的 `kind:\"id\"` 位硬写 `optional: false`； 断言：expect(unifiedParamFace(fn, undefined, [witness]).map((f) => [f.name, f.optional"	没测该层	keep	keep	—
-"导出面（check 入口表 / 侧车绑定 / dts 裁剪同源）含 NS 与其运行时成员键"	"`export namespace NS { … }` 在导出面 / dts 产物**完全不可见**， 而 nudo 自己的求值器把 namespace 物化成了运行时对象 ⇒ 引擎内部两套导出面 互相矛盾 ⇒ 消费端 `import { NS }` 报 **TS2305**。 根因（两处平行缺口）： - `packages/core/src/algebra/scan-named-exports.ts` 的 `ExportNamedDeclaration` 声明分支只认 Function / Class / Variable ⇒ `TSModuleDeclaration` 落到 `continue` 被静默丢弃； 断言：expect"	夹具漏形态	keep	keep	—
-"dts 模块面登记 NS（导出名 → 本地绑定）"	"`export namespace NS { … }` 在导出面 / dts 产物**完全不可见**， 而 nudo 自己的求值器把 namespace 物化成了运行时对象 ⇒ 引擎内部两套导出面 互相矛盾 ⇒ 消费端 `import { NS }` 报 **TS2305**。 根因（两处平行缺口）： - `packages/core/src/algebra/scan-named-exports.ts` 的 `ExportNamedDeclaration` 声明分支只认 Function / Class / Variable ⇒ `TSModuleDeclaration` 落到 `continue` 被静默丢弃； 断言：expect"	夹具漏形态	keep	keep	—
-"`.d.ts` 发射 `export declare namespace NS { … }`（消费端 import 不再 TS2305）"	"`export namespace NS { … }` 在导出面 / dts 产物**完全不可见**， 而 nudo 自己的求值器把 namespace 物化成了运行时对象 ⇒ 引擎内部两套导出面 互相矛盾 ⇒ 消费端 `import { NS }` 报 **TS2305**。 根因（两处平行缺口）： - `packages/core/src/algebra/scan-named-exports.ts` 的 `ExportNamedDeclaration` 声明分支只认 Function / Class / Variable ⇒ `TSModuleDeclaration` 落到 `continue` 被静默丢弃； 断言：expect"	夹具漏形态	keep	keep	—
-"dts 形参位：内部槽不进结构字段（改前：\"#priv\" / \"@@iterator\" 直出）"	"service **产物面**不得发布 internal 槽（私有字段 / 生成器协议槽）。 改前： export declare function f(x: { a: number; 断言：expect(dts).not.toContain(\"#priv\");；expect(dts).not.toContain(\"@@iterator\");"	没测该层	keep	keep	—
-"dts 类字段：私有字段不进 declare class 类体"	"service **产物面**不得发布 internal 槽（私有字段 / 生成器协议槽）。 改前： export declare function f(x: { a: number; 断言：expect(dts).toContain(\"declare class Counter\");；expect(dts).not.toContain(\"#priv\");"	没测该层	keep	keep	—
-"schema 单值面：内部槽不进 zod 对象"	"service **产物面**不得发布 internal 槽（私有字段 / 生成器协议槽）。 改前： export declare function f(x: { a: number; 断言：expect(source).not.toContain(\"#priv\");；expect(source).not.toContain(\"@@iterator\");"	没测该层	keep	keep	—
-"schema 模块面（zod）：内部槽不进产物"	"service **产物面**不得发布 internal 槽（私有字段 / 生成器协议槽）。 改前： export declare function f(x: { a: number; 断言：expect(source).not.toContain(\"#priv\");；expect(source).not.toContain(\"@@iterator\");"	没测该层	keep	keep	—
-"standard 模块面：内部槽不进产物"	"service **产物面**不得发布 internal 槽（私有字段 / 生成器协议槽）。 改前： export declare function f(x: { a: number; 断言：expect(source).not.toContain(\"#priv\");；expect(source).not.toContain(\"@@iterator\");"	没测该层	keep	keep	—
-"schema 形状兜底路径（open 对象）：内部槽不进产物"	"service **产物面**不得发布 internal 槽（私有字段 / 生成器协议槽）。 改前： export declare function f(x: { a: number; 断言：expect(standard.source).not.toContain(\"#priv\");；expect(standard.source).not.toContain(\"@@iterator\");"	没测该层	keep	keep	—
-"负控制：非 internal 槽逐字不变"	"service **产物面**不得发布 internal 槽（私有字段 / 生成器协议槽）。 改前： export declare function f(x: { a: number; 断言：expect(absToTSType(plainObj)).toBe(\"{ a: number }\");；expect(absToSchemaSource(plainObj)).toContain(\"a:\");"	没测该层	keep	keep	—
-"固化后的无断言观测见证不得独占返回面（返回面由推断域承担）"	"断言：expect(faceOf(frozen)).toBe(\"number | string\");"	没测该层	keep	keep	—
-"负控制：手写断言（=> 3）合法地定义返回面（修 511 不得动这一条）"	"断言：expect(faceOf(asserted)).toBe(\"3\");"	没测该层	keep	keep	—
-"负控制：无指令的函数返回面不受影响（entry@ 面）"	"断言：expect(faceOf(plain)).toBe(\"number | string\");"	没测该层	keep	keep	—
-"emitter 侧：固化写出的见证是「观测」而非「断言」（指令里没有 => expected）"	"`）⇒ 声明的字段**从不被 校验** ⇒ 违约值被静默放行（假绿）+ 与 dts / guard / standard 四面矛盾 + 零 dropped 台账。 修法：把 `__proto__` 槽剔出 `z.object` 的 shape，改用 `.superRefine()` 显式校验 **自有数据属性**（`Object.getOwnPropertyDescriptor`）——原型链上的同名 accessor 不算在场（`JSON.parse('{\"__proto__\": …}')` 建的是自有数据属性）。 断言：expect(buildCaseDirective(\"call@F1usage.js:L2\", [])).toB"	夹具漏形态	keep	keep	—
-"emitter 侧：固化产物可被 parser 读回，且不带期望值"	"断言：expect(frozen.changed).toBe(true);；expect(dirs).toHaveLength(1);"	没测该层	keep	keep	—
-"Bug 514：default（匿名 / 箭头）导出进 dts"	"覆盖 （default / CJS 绑定被整类丢弃）、515（导出名 ≠ 局部绑定名）、 517（brand 引用的类从未声明 ⇒ TS2304）、518（类方法被投影成模块级 `C_m` 导出 ⇒ 凭空造导出）、550（类本身 / 构造器 / 静态方法不进 dts）、 939（再导出面 `export * from` / `export {x} from` 整类丢弃）。 断言：expect(anon).toMatch(/export default function \\(x: (any|unknown)\\): .*;/);；expect(arrow).toMatch(/export default function \\(x: (a"	夹具漏形态	keep	keep	—
-"Bug 514：CJS 绑定（exports.compute）进 dts"	"覆盖 （default / CJS 绑定被整类丢弃）、515（导出名 ≠ 局部绑定名）、 517（brand 引用的类从未声明 ⇒ TS2304）、518（类方法被投影成模块级 `C_m` 导出 ⇒ 凭空造导出）、550（类本身 / 构造器 / 静态方法不进 dts）、 939（再导出面 `export * from` / `export {x} from` 整类丢弃）。 断言：expect(dts).toContain(\"export declare function compute(\");；expect(dts).not.toContain(\"No exported\");"	夹具漏形态	keep	keep	—
-"Bug 514：const + export list 绑定进 dts"	"覆盖 （default / CJS 绑定被整类丢弃）、515（导出名 ≠ 局部绑定名）、 517（brand 引用的类从未声明 ⇒ TS2304）、518（类方法被投影成模块级 `C_m` 导出 ⇒ 凭空造导出）、550（类本身 / 构造器 / 静态方法不进 dts）、 939（再导出面 `export * from` / `export {x} from` 整类丢弃）。 断言：expect(dts).toContain(\"export declare function greet(\");"	夹具漏形态	keep	keep	—
-"Bug 515：default 具名导出写成 export default function"	"覆盖 （default / CJS 绑定被整类丢弃）、515（导出名 ≠ 局部绑定名）、 517（brand 引用的类从未声明 ⇒ TS2304）、518（类方法被投影成模块级 `C_m` 导出 ⇒ 凭空造导出）、550（类本身 / 构造器 / 静态方法不进 dts）、 939（再导出面 `export * from` / `export {x} from` 整类丢弃）。 断言：expect(dts).toContain(\"export default function addOne(\");；expect(dts).not.toContain(\"export declare function addOne\");"	夹具漏形态	keep	keep	—
-"Bug 515：别名导出按导出名声明（internal 不是导出名）"	"service **产物面**不得发布 internal 槽（私有字段 / 生成器协议槽）。 改前： export declare function f(x: { a: number; 断言：expect(dts).toContain(\"export { internal as publicName };\");；expect(dts).not.toContain(\"export declare function internal\");"	没测该层	keep	keep	—
-"Bug 517：brand 引用的类被声明（不再 TS2304）"	"覆盖 （default / CJS 绑定被整类丢弃）、515（导出名 ≠ 局部绑定名）、 517（brand 引用的类从未声明 ⇒ TS2304）、518（类方法被投影成模块级 `C_m` 导出 ⇒ 凭空造导出）、550（类本身 / 构造器 / 静态方法不进 dts）、 939（再导出面 `export * from` / `export {x} from` 整类丢弃）。 断言：expect(dts).toContain(\"class User\");；expect(dts).toMatch(/makeUser\\([^)]*\\): User;/);"	夹具漏形态	keep	keep	—
-"Bug 518：类方法不是模块级导出（没有 C_m 顶层导出）"	"覆盖 （default / CJS 绑定被整类丢弃）、515（导出名 ≠ 局部绑定名）、 517（brand 引用的类从未声明 ⇒ TS2304）、518（类方法被投影成模块级 `C_m` 导出 ⇒ 凭空造导出）、550（类本身 / 构造器 / 静态方法不进 dts）、 939（再导出面 `export * from` / `export {x} from` 整类丢弃）。 断言：expect(dts).not.toContain(\"C_m\");；expect(dts).not.toContain(\"export declare function C_m\");"	夹具漏形态	keep	keep	—
-"Bug 550：类本身 + 构造器 + 静态方法进 dts"	"覆盖 （default / CJS 绑定被整类丢弃）、515（导出名 ≠ 局部绑定名）、 517（brand 引用的类从未声明 ⇒ TS2304）、518（类方法被投影成模块级 `C_m` 导出 ⇒ 凭空造导出）、550（类本身 / 构造器 / 静态方法不进 dts）、 939（再导出面 `export * from` / `export {x} from` 整类丢弃）。 断言：expect(dts).toContain(\"export declare class C {\");；expect(dts).toContain(\"constructor(v: unknown);\");"	夹具漏形态	keep	keep	—
-"Bug 939：再导出面（export * from / export {x} from）进 dts"	"覆盖 （default / CJS 绑定被整类丢弃）、515（导出名 ≠ 局部绑定名）、 517（brand 引用的类从未声明 ⇒ TS2304）、518（类方法被投影成模块级 `C_m` 导出 ⇒ 凭空造导出）、550（类本身 / 构造器 / 静态方法不进 dts）、 939（再导出面 `export * from` / `export {x} from` 整类丢弃）。 断言：expect(dts).toContain(`export * from \"./dep.js\";`);；expect(dts).toContain(`export { helper } from \"./dep.js\";`);"	夹具漏形态	keep	keep	—
-"模块面：导出名表（导出名 → 本地绑定）"	"覆盖 （default / CJS 绑定被整类丢弃）、515（导出名 ≠ 局部绑定名）、 517（brand 引用的类从未声明 ⇒ TS2304）、518（类方法被投影成模块级 `C_m` 导出 ⇒ 凭空造导出）、550（类本身 / 构造器 / 静态方法不进 dts）、 939（再导出面 `export * from` / `export {x} from` 整类丢弃）。 断言：expect(surface.exportBindings.get(\"publicName\")).toBe(\"internal\");；expect(surface.exportBindings.get(\"default\")).toBe(\"addOne\");"	夹具漏形态	keep	keep	—
-"模块面：类面（导出名 + 成员 + 构造器形参）"	"覆盖 （default / CJS 绑定被整类丢弃）、515（导出名 ≠ 局部绑定名）、 517（brand 引用的类从未声明 ⇒ TS2304）、518（类方法被投影成模块级 `C_m` 导出 ⇒ 凭空造导出）、550（类本身 / 构造器 / 静态方法不进 dts）、 939（再导出面 `export * from` / `export {x} from` 整类丢弃）。 断言：expect(cls?.exportName).toBe(\"C\");；expect(cls?.ctorParams).toEqual([\"v\"]);"	夹具漏形态	keep	keep	—
-"Bug 550：default 类与别名类按导出名声明"	"覆盖 （default / CJS 绑定被整类丢弃）、515（导出名 ≠ 局部绑定名）、 517（brand 引用的类从未声明 ⇒ TS2304）、518（类方法被投影成模块级 `C_m` 导出 ⇒ 凭空造导出）、550（类本身 / 构造器 / 静态方法不进 dts）、 939（再导出面 `export * from` / `export {x} from` 整类丢弃）。 断言：expect(def).toContain(\"export default class D {\");；expect(alias).toContain(\"declare class A {\");"	夹具漏形态	keep	keep	—
-"负控制：非导出的顶层函数不进 dts（导出面过滤不变）"	"覆盖 （default / CJS 绑定被整类丢弃）、515（导出名 ≠ 局部绑定名）、 517（brand 引用的类从未声明 ⇒ TS2304）、518（类方法被投影成模块级 `C_m` 导出 ⇒ 凭空造导出）、550（类本身 / 构造器 / 静态方法不进 dts）、 939（再导出面 `export * from` / `export {x} from` 整类丢弃）。 断言：expect(dts).toContain(\"export declare function public1(\");；expect(dts).not.toContain(\"helper\");"	夹具漏形态	keep	keep	—
-"负控制：未导出的类不进 dts（只有导出面进类声明）"	"覆盖 （default / CJS 绑定被整类丢弃）、515（导出名 ≠ 局部绑定名）、 517（brand 引用的类从未声明 ⇒ TS2304）、518（类方法被投影成模块级 `C_m` 导出 ⇒ 凭空造导出）、550（类本身 / 构造器 / 静态方法不进 dts）、 939（再导出面 `export * from` / `export {x} from` 整类丢弃）。 断言：expect(dts).toContain(\"export declare function plain(\");；expect(dts).not.toContain(\"Hidden\");"	夹具漏形态	keep	keep	—
-"负控制：无模块面时类方法沿用历史 Class_method 投影（#494 口径）"	"覆盖 （default / CJS 绑定被整类丢弃）、515（导出名 ≠ 局部绑定名）、 517（brand 引用的类从未声明 ⇒ TS2304）、518（类方法被投影成模块级 `C_m` 导出 ⇒ 凭空造导出）、550（类本身 / 构造器 / 静态方法不进 dts）、 939（再导出面 `export * from` / `export {x} from` 整类丢弃）。 断言：expect(fn).toBeDefined();；expect(proj.lines.join(\"\\n\")).toMatch(/export declare function C_m\\b/);"	夹具漏形态	keep	keep	—
-"负控制：非法标识符名仍被清洗（#494 双保险不变）"	"断言：expect(proj.lines.join(\"\\n\")).toMatch(/export declare function a_b\\b/);"	没测该层	keep	keep	—
-"带默认值的形参渲染成可选（无调用证据时也是）"	"断言：expect(dts).toMatch(/export declare function optNoEvidence\\(a: (unknown|any), b\\?: (unknown|any)\\)/);"	没测该层	keep	keep	—
-"有调用证据时形参表不缩水（观测元数不再裁剪声明形参表）"	"断言：expect(dts).toContain(\"export declare function optWithEvidence(a: number, b?: unknown)\");"	没测该层	keep	keep	—
-"默认值为 undefined 的形参同样可选"	"`nudo export --format dts` 把**具名 default 导出**投影成**具名导出** ⇒ 产物声明了**运行时不存在的导出**（编译通过、运行时 `undefined`）+ 默认导入 直接 **TS2349**。 现状：**假阳性** —— 症状已被族 15（，commit `dde4b037`）修掉： `service/src/emit/dts-generator.ts` 的 `projectFunctionDts` 显式按**模块面** 取**导出名**（`export default function f(...)` 的导出名是 `default`，**不是** `export declare fu"	没测该层	keep	keep	—
-"Bug 553：消费方按实现允许的零参调用不再吃 TS2554"	"553：同一根因的另一形态——实现签名里的默认参数被当成必填 ⇒ `export declare function def(x: unknown): unknown; 断言：expect(dts).toMatch(/export declare function def\\(x\\?: (unknown|any)\\): (unknown|any);/);；expect(check.ok, check.stderr).toBe(true);"	夹具漏形态	keep	keep	—
-"负控制：无默认值的形参仍是必填（不假造可选性）"	"断言：expect(dts).toMatch(/export declare function need\\(a: (unknown|any), b: (unknown|any)\\)/);；expect(dts).not.toContain(\"b?:\");"	没测该层	keep	keep	—
-"optional 槽渲染成 TS 可选属性 `k?: T`（不再是 `k: T | undefined`）"	"症状（旧口径 `k: T | undefined`）： - TS 里 `{ id: number | undefined }` 是「**键必需**、值可为 undefined」； 「键可省略」只有 `k?: T` 能表达 ⇒ 投影比契约 / zod / standard / check 四个面都**严**（one-way 投影不得更严 ⇒ 方向反了）。 断言：expect(ts).toBe(\"{ a?: number; b: string }\");；expect(ts).not.toContain(\"| undefined\");"	没测该层	keep	keep	—
-"负控制：必填槽仍是必填（不误伤 `k: T`）"	"断言：expect(ts).toBe(\"{ a: number }\");"	没测该层	keep	keep	—
-"两层嵌套的 optional 槽同样带 `?`（任意深度成立）"	"症状（旧口径 `k: T | undefined`）： - TS 里 `{ id: number | undefined }` 是「**键必需**、值可为 undefined」； 「键可省略」只有 `k?: T` 能表达 ⇒ 投影比契约 / zod / standard / check 四个面都**严**（one-way 投影不得更严 ⇒ 方向反了）。 断言：expect(ts).toBe(\"{ a: { b?: number } }\");"	没测该层	keep	keep	—
-"消费方省略可选键不再吃 TS2345 / TS2741（改前：键被声明为必需）"	"症状（旧口径 `k: T | undefined`）： - TS 里 `{ id: number | undefined }` 是「**键必需**、值可为 undefined」； 「键可省略」只有 `k?: T` 能表达 ⇒ 投影比契约 / zod / standard / check 四个面都**严**（one-way 投影不得更严 ⇒ 方向反了）。 断言：expect(check.ok, check.stderr).toBe(true);"	没测该层	keep	keep	—
-"负控制：必填键缺失仍报 TS2345（可选性投影不得放宽必填键）"	"症状（旧口径 `k: T | undefined`）： - TS 里 `{ id: number | undefined }` 是「**键必需**、值可为 undefined」； 「键可省略」只有 `k?: T` 能表达 ⇒ 投影比契约 / zod / standard / check 四个面都**严**（one-way 投影不得更严 ⇒ 方向反了）。 断言：expect(check.ok).toBe(false);；expect(check.stderr).toContain(\"TS2345\");"	没测该层	keep	keep	—
-"库函数版：继承来的键算在场，真缺键报 required"	"TS **可选形参** `b?: T` 的 `?` 标记在 dts / zod / standard 三面 全部丢失：`.d.ts` 把 `b` 印成必填（消费端 **TS2554**），运行时校验器对源码 合法的 `f({ a: 1 })` 报 `required: b`（**假红**）。 根因：`?` 在 strip-types 阶段就被删（不进 JS 产物），而 `FormalParam` 的 `kind:\"id\"` 位硬写 `optional: false`； 断言：expect(validateSchemaNode(node, { c: 1 }).issues).toBeUndefined();；expect(inheri"	没测该层	keep	keep	—
-"生成产物版：与库函数版同口径"	"断言：expect(mod.mk_x![\"~standard\"].validate(Object.create({ c: 1 }) as object).issues).toBeUndefined();；expect(missing.issues?.[0]?.message).toBe(\"required\");"	没测该层	keep	keep	—
-"负控制：Object.prototype 污染键算缺键；显式 undefined 仍与缺键有别"	"standard 面「必填槽存在性」用**自有属性**判定（假红）。 修前：`Object.hasOwn(rec, key)` ⇒ 继承来的键被当成**缺键** ⇒ 运行时校验器 比 zod 面与 dts 面（TS 结构类型）**都严** ⇒ 对类型系统接受的值报红。 断言：expect(r.issues?.[0]?.message).toBe(\"required\");；expect(explicit.issues?.[0]?.message).not.toBe(\"required\");"	没测该层	keep	keep	—
-"同步生成器 → Generator<T>（元素类型取数字下标元素槽）"	"改前： export declare function gen(x: unknown): { 0: unknown; ⇒ 返回类型里**没有** `[Symbol.iterator]()` ⇒ 消费方 `for (const v of gen(1))` 报 **TS2488**（生成的 `.d.ts` 拒绝实现本身允许的用法）。 断言：expect(absToTSType(generatorObj([numLit(1)]))).toBe(\"Generator<number>\");"	没测该层	keep	keep	—
-"异步生成器 → AsyncGenerator<T>"	"改前： export declare function gen(x: unknown): { 0: unknown; ⇒ 返回类型里**没有** `[Symbol.iterator]()` ⇒ 消费方 `for (const v of gen(1))` 报 **TS2488**（生成的 `.d.ts` 拒绝实现本身允许的用法）。 断言：expect(absToTSType(generatorObj([numLit(1)], true))).toBe(\"AsyncGenerator<number>\");"	没测该层	keep	keep	—
-"负控制：普通数据对象仍是结构体（不误判成迭代器）"	"standard 面「必填槽存在性」用**自有属性**判定（假红）。 修前：`Object.hasOwn(rec, key)` ⇒ 继承来的键被当成**缺键** ⇒ 运行时校验器 比 zod 面与 dts 面（TS 结构类型）**都严** ⇒ 对类型系统接受的值报红。 断言：expect(absToTSType(o)).toBe(\"{ a: 1 }\");"	没测该层	keep	keep	—
-"内部槽不进结构字段（core format 面同口径：internal 槽不可见）"	"改前： export declare function gen(x: unknown): { 0: unknown; ⇒ 返回类型里**没有** `[Symbol.iterator]()` ⇒ 消费方 `for (const v of gen(1))` 报 **TS2488**（生成的 `.d.ts` 拒绝实现本身允许的用法）。 断言：expect(absToTSType(o)).toBe(\"{ a: 1 }\");"	没测该层	keep	keep	—
-"端到端：生成器函数的 dts 返回 Generator，for…of 消费方过 tsc"	"改前： export declare function gen(x: unknown): { 0: unknown; ⇒ 返回类型里**没有** `[Symbol.iterator]()` ⇒ 消费方 `for (const v of gen(1))` 报 **TS2488**（生成的 `.d.ts` 拒绝实现本身允许的用法）。 断言：expect(dts).toContain(\"Generator<\");；expect(dts).not.toContain(\"@@iterator\");"	没测该层	keep	keep	—
-"改前形态确实红（结构体 ⇒ TS2488）"	"改前： export declare function gen(x: unknown): { 0: unknown; ⇒ 返回类型里**没有** `[Symbol.iterator]()` ⇒ 消费方 `for (const v of gen(1))` 报 **TS2488**（生成的 `.d.ts` 拒绝实现本身允许的用法）。 断言：expect(check.ok).toBe(false);；expect(check.stderr).toContain(\"TS2488\");"	没测该层	keep	keep	—
-"契约参数绑不上形参时：形参表照旧、契约参数另列并显式标注"	"断言：expect(scale).toBeDefined();；expect(scale!.source).toBe(\"handwritten\");"	没测该层	keep	keep	—
-"跨 verb 一致：契约面的形参表与 nudo check 签名面同源"	"- 契约里绑不上的参数**另列一栏**并显式标注（不顶替形参名）； - 负控制：契约参数与形参同名时行为不变（仍落在形参槽位上）。 断言：expect(sig).toBeDefined();；expect(scale!.params.map((p) => p.name)).toEqual(sig!.params);"	夹具漏形态	keep	keep	—
-"负控制：契约参数与形参同名时行为不变（落在形参槽位、无另列）"	"- 契约里绑不上的参数**另列一栏**并显式标注（不顶替形参名）； - 负控制：契约参数与形参同名时行为不变（仍落在形参槽位上）。 断言：expect(scale!.params).toEqual([{ name: \"x\", display: \"number().gt(0)\" }]);；expect(scale!.extraParams).toBeUndefined();"	夹具漏形态	keep	keep	—
-"负控制：契约多出的参数同样另列，不顶替形参"	"- 契约里绑不上的参数**另列一栏**并显式标注（不顶替形参名）； - 负控制：契约参数与形参同名时行为不变（仍落在形参槽位上）。 断言：expect(scale!.params).toEqual([{ name: \"x\", display: \"number().gt(0)\" }]);；expect(scale!.extraParams).toEqual([{ name: \"y\", display: \"string()\" }]);"	夹具漏形态	keep	keep	—
-"负控制：无契约（implicit 档）行为不变"	"- 契约里绑不上的参数**另列一栏**并显式标注（不顶替形参名）； - 负控制：契约参数与形参同名时行为不变（仍落在形参槽位上）。 断言：expect(scale!.source).toBe(\"implicit\");；expect(scale!.params[0]!.name).toBe(\"x\");"	夹具漏形态	keep	keep	—
+形态①：export default function named ⇒ 导出名是 default（不是具名导出）；形态②：export default class K ⇒ 导出名是 default（类不被降成模块级函数）；形态③：匿名 default（export default function (x)）⇒ 导出名是 default；形态④：箭头 default（export default (x) => …）⇒ 导出名是 default；形态④′：const + expo	emit-dts-faces 聚合矩阵	没测该层	keep	keep	—
+普查面只有一条 C.m；dts 类体：实例方法一条 + 静态方法一条（无重复成员）；dts 产物里不出现模块级的 C_m 声明（类成员不是模块级导出）	emit-dts-faces 聚合矩阵	没测该层	keep	keep	—
+shape 里不再出现 __proto__ 键（zod v4 会跳过它 ⇒ 声明了也不校验）；用 .superRefine 校验自有数据属性（缺键 ⇒ required）；值校验走内层 schema 的 safeParse（不是整条放行）；optional 槽：缺席不报错，但值错了仍报错；台账留痕：__proto__ 的降级进 dropped（不得静默假绿）；standard 面（同一份 Abs）要求自有 __proto__：真值过、缺键/错值不过；负控制：普通对象不受影响（	emit-dts-faces 聚合矩阵	没测该层	keep	keep	—
+数据源：FormalParam.optional ≡ 源码（JS 默认值 ∪ TS `?`）；dts 面：可省位印 `?`（消费端 `f(1)` 不再 TS2554）；standard 面：`{ a }` 通过、缺 `a` 仍报 required；zod 面：可选槽渲染 `.optional()`（槽可选性由同一 FormalParam 驱动）；zod 面（入口角色表）：`unifiedParamFace` 把 `b?` 判为可省	emit-dts-faces 聚合矩阵	没测该层	keep	keep	—
+导出面（check 入口表 / 侧车绑定 / dts 裁剪同源）含 NS 与其运行时成员键；dts 模块面登记 NS（导出名 → 本地绑定）；`.d.ts` 发射 `export declare namespace NS { … }`（消费端 import 不再 TS2305）	emit-dts-faces 聚合矩阵	没测该层	keep	keep	—
+dts 形参位：内部槽不进结构字段（改前："#priv" / "@@iterator" 直出）；dts 类字段：私有字段不进 declare class 类体；schema 单值面：内部槽不进 zod 对象；schema 模块面（zod）：内部槽不进产物；standard 模块面：内部槽不进产物；schema 形状兜底路径（open 对象）：内部槽不进产物；负控制：非 internal 槽逐字不变	emit-dts-faces 聚合矩阵	没测该层	keep	keep	—
+固化后的无断言观测见证不得独占返回面（返回面由推断域承担）；负控制：手写断言（=> 3）合法地定义返回面（修 511 不得动这一条）；负控制：无指令的函数返回面不受影响（entry@ 面）；emitter 侧：固化写出的见证是「观测」而非「断言」（指令里没有 => expected）；emitter 侧：固化产物可被 parser 读回，且不带期望值	emit-dts-faces 聚合矩阵	没测该层	keep	keep	—
+Bug 514：default（匿名 / 箭头）导出进 dts；Bug 514：CJS 绑定（exports.compute）进 dts；Bug 514：const + export list 绑定进 dts；Bug 515：default 具名导出写成 export default function；Bug 515：别名导出按导出名声明（internal 不是导出名）；Bug 517：brand 引用的类被声明（不再 TS2304）；Bug 518：类方法不是模块级导出（没	emit-dts-faces 聚合矩阵	没测该层	keep	keep	—
+带默认值的形参渲染成可选（无调用证据时也是）；有调用证据时形参表不缩水（观测元数不再裁剪声明形参表）；默认值为 undefined 的形参同样可选；Bug 553：消费方按实现允许的零参调用不再吃 TS2554；负控制：无默认值的形参仍是必填（不假造可选性）	emit-dts-faces 聚合矩阵	没测该层	keep	keep	—
+optional 槽渲染成 TS 可选属性 `k?: T`（不再是 `k: T | undefined`）；负控制：必填槽仍是必填（不误伤 `k: T`）；两层嵌套的 optional 槽同样带 `?`（任意深度成立）；消费方省略可选键不再吃 TS2345 / TS2741（改前：键被声明为必需）；负控制：必填键缺失仍报 TS2345（可选性投影不得放宽必填键）	emit-dts-faces 聚合矩阵	没测该层	keep	keep	—
+库函数版：继承来的键算在场，真缺键报 required；生成产物版：与库函数版同口径；负控制：Object.prototype 污染键算缺键；显式 undefined 仍与缺键有别	emit-dts-faces 聚合矩阵	没测该层	keep	keep	—
+同步生成器 → Generator<T>（元素类型取数字下标元素槽）；异步生成器 → AsyncGenerator<T>；负控制：普通数据对象仍是结构体（不误判成迭代器）；内部槽不进结构字段（core format 面同口径：internal 槽不可见）；端到端：生成器函数的 dts 返回 Generator，for…of 消费方过 tsc；改前形态确实红（结构体 ⇒ TS2488）	emit-dts-faces 聚合矩阵	没测该层	keep	keep	—
+契约参数绑不上形参时：形参表照旧、契约参数另列并显式标注；跨 verb 一致：契约面的形参表与 nudo check 签名面同源；负控制：契约参数与形参同名时行为不变（落在形参槽位、无另列）；负控制：契约多出的参数同样另列，不顶替形参；负控制：无契约（implicit 档）行为不变	emit-dts-faces 聚合矩阵	没测该层	keep	keep	—
+```
+
+```audit-deleted
+title	reason	evidence
+形态①：export default function named ⇒ 导出名是 default（不是具名导出）	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+形态②：export default class K ⇒ 导出名是 default（类不被降成模块级函数）	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+形态③：匿名 default（export default function (x)）⇒ 导出名是 default	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+形态④：箭头 default（export default (x) => …）⇒ 导出名是 default	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+形态④′：const + export default arrow ⇒ 导出名是 default（本地名不作导出名）	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+模块面：default 的导出绑定（导出名 → 本地绑定名）	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+模块面：匿名 / 箭头 default 没有本地绑定名	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+负控制：非 default 的具名导出仍是 export declare function（导出面过滤不变）	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+负控制：未导出的本地函数不进 dts	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+普查面只有一条 C.m	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+dts 类体：实例方法一条 + 静态方法一条（无重复成员）	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+dts 产物里不出现模块级的 C_m 声明（类成员不是模块级导出）	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+shape 里不再出现 __proto__ 键（zod v4 会跳过它 ⇒ 声明了也不校验）	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+用 .superRefine 校验自有数据属性（缺键 ⇒ required）	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+值校验走内层 schema 的 safeParse（不是整条放行）	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+optional 槽：缺席不报错，但值错了仍报错	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+台账留痕：__proto__ 的降级进 dropped（不得静默假绿）	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+standard 面（同一份 Abs）要求自有 __proto__：真值过、缺键/错值不过	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+负控制：普通对象不受影响（不生成 superRefine）	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+数据源：FormalParam.optional ≡ 源码（JS 默认值 ∪ TS `?`）	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+dts 面：可省位印 `?`（消费端 `f(1)` 不再 TS2554）	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+standard 面：`{ a }` 通过、缺 `a` 仍报 required	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+zod 面：可选槽渲染 `.optional()`（槽可选性由同一 FormalParam 驱动）	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+zod 面（入口角色表）：`unifiedParamFace` 把 `b?` 判为可省	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+导出面（check 入口表 / 侧车绑定 / dts 裁剪同源）含 NS 与其运行时成员键	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+dts 模块面登记 NS（导出名 → 本地绑定）	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+`.d.ts` 发射 `export declare namespace NS { … }`（消费端 import 不再 TS2305）	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+dts 形参位：内部槽不进结构字段（改前："#priv" / "@@iterator" 直出）	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+dts 类字段：私有字段不进 declare class 类体	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+schema 单值面：内部槽不进 zod 对象	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+schema 模块面（zod）：内部槽不进产物	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+standard 模块面：内部槽不进产物	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+schema 形状兜底路径（open 对象）：内部槽不进产物	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+负控制：非 internal 槽逐字不变	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+固化后的无断言观测见证不得独占返回面（返回面由推断域承担）	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+负控制：手写断言（=> 3）合法地定义返回面（修 511 不得动这一条）	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+负控制：无指令的函数返回面不受影响（entry@ 面）	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+emitter 侧：固化写出的见证是「观测」而非「断言」（指令里没有 => expected）	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+emitter 侧：固化产物可被 parser 读回，且不带期望值	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+Bug 514：default（匿名 / 箭头）导出进 dts	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+Bug 514：CJS 绑定（exports.compute）进 dts	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+Bug 514：const + export list 绑定进 dts	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+Bug 515：default 具名导出写成 export default function	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+Bug 515：别名导出按导出名声明（internal 不是导出名）	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+Bug 517：brand 引用的类被声明（不再 TS2304）	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+Bug 518：类方法不是模块级导出（没有 C_m 顶层导出）	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+Bug 550：类本身 + 构造器 + 静态方法进 dts	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+Bug 939：再导出面（export * from / export {x} from）进 dts	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+模块面：导出名表（导出名 → 本地绑定）	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+模块面：类面（导出名 + 成员 + 构造器形参）	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+Bug 550：default 类与别名类按导出名声明	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+负控制：非导出的顶层函数不进 dts（导出面过滤不变）	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+负控制：未导出的类不进 dts（只有导出面进类声明）	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+负控制：无模块面时类方法沿用历史 Class_method 投影（#494 口径）	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+负控制：非法标识符名仍被清洗（#494 双保险不变）	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+带默认值的形参渲染成可选（无调用证据时也是）	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+有调用证据时形参表不缩水（观测元数不再裁剪声明形参表）	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+默认值为 undefined 的形参同样可选	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+Bug 553：消费方按实现允许的零参调用不再吃 TS2554	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+负控制：无默认值的形参仍是必填（不假造可选性）	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+optional 槽渲染成 TS 可选属性 `k?: T`（不再是 `k: T | undefined`）	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+负控制：必填槽仍是必填（不误伤 `k: T`）	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+两层嵌套的 optional 槽同样带 `?`（任意深度成立）	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+消费方省略可选键不再吃 TS2345 / TS2741（改前：键被声明为必需）	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+负控制：必填键缺失仍报 TS2345（可选性投影不得放宽必填键）	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+库函数版：继承来的键算在场，真缺键报 required	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+生成产物版：与库函数版同口径	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+负控制：Object.prototype 污染键算缺键；显式 undefined 仍与缺键有别	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+同步生成器 → Generator<T>（元素类型取数字下标元素槽）	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+异步生成器 → AsyncGenerator<T>	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+负控制：普通数据对象仍是结构体（不误判成迭代器）	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+内部槽不进结构字段（core format 面同口径：internal 槽不可见）	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+端到端：生成器函数的 dts 返回 Generator，for…of 消费方过 tsc	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+改前形态确实红（结构体 ⇒ TS2488）	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+契约参数绑不上形参时：形参表照旧、契约参数另列并显式标注	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+跨 verb 一致：契约面的形参表与 nudo check 签名面同源	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+负控制：契约参数与形参同名时行为不变（落在形参槽位、无另列）	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+负控制：契约多出的参数同样另列，不顶替形参	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
+负控制：无契约（implicit 档）行为不变	dup:emit-dts-faces 聚合矩阵	commit:8fa85177
 ```

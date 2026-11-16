@@ -6,120 +6,159 @@
 
 ```audit
 title	rootCause	gap	action	status	evidence
-"dts 面：有调试见证与无证据的投影相同（形参是 unknown，不是 number）"	"症状：`/** @nudo:case \"dom\" (number()) *\\/ export function f(x) { return x + 1; 而 `nudo check` 的签名是 `f(x: any) => number | string` （门禁面以 caseMode \"none\" 调分析器，**永不**产出指令见证）。 断言：expect(plain.status).toBe(0);；expect(withCase.status).toBe(0);"	没测该层	keep	keep	—
-"zod / guard 面：放宽到 unknown（不再按那一次调试调用收窄）"	"症状：`/** @nudo:case \"dom\" (number()) *\\/ export function f(x) { return x + 1; 而 `nudo check` 的签名是 `f(x: any) => number | string` （门禁面以 caseMode \"none\" 调分析器，**永不**产出指令见证）。 断言：expect(withCase.status).toBe(0);；expect(withCase.stdout).toContain(\"export const fInput = z.object({ x: z.unknown() })\");"	没测该层	keep	keep	—
-"与 nudo check 的签名同口径（发布面 = 门禁面）"	"症状：`/** @nudo:case \"dom\" (number()) *\\/ export function f(x) { return x + 1; 而 `nudo check` 的签名是 `f(x: any) => number | string` （门禁面以 caseMode \"none\" 调分析器，**永不**产出指令见证）。 断言：expect(dts.status).toBe(0);；expect(check.stdout).toContain(\"f(x: any)\");"	没测该层	keep	keep	—
-"dts：有 case 与无 case 逐字相同（均门禁口径 x: unknown）"	"有 `@nudo:case` 的模块：`number()` 是**见证实参**，不是入参契约。 断言：expect(a).toBe(\"export declare function f(x: unknown): number | string;\");；expect(a).toBe(b);"	没测该层	keep	keep	—
-"schema：入参是宽松域（z.unknown），不是 case 的 z.number"	"有 `@nudo:case` 的模块：`number()` 是**见证实参**，不是入参契约。 断言：expect(inputLine).toContain(\"z.unknown()\");；expect(inputLine).not.toContain(\"z.number()\");"	没测该层	keep	keep	—
-"guard：入参接受 string（实现允许 f(\"s\")）"	"`nudo export` / `nudo contract` 把 `@nudo:case` 的**域形状实参** 发布成类型 ⇒ 发布的 d.ts / schema / guard / 打印面是错的。 `@nudo:case` 是**调试见证**（docs/concepts/directives.md:44），不是契约； 断言：expect(out).toContain(`typeof data === \"string\"`);"	夹具漏形态	keep	keep	—
-"`nudo contract` 打印面与 check 同口径（x: any）"	"有 `@nudo:case` 的模块：`number()` 是**见证实参**，不是入参契约。 断言：expect(a).toContain(\"(x: any)\");；expect(a).not.toContain(\"(x: number)\");"	没测该层	keep	keep	—
-"计数器工厂：check 与 test 都给 1"	"回归：`nudo check` 的签名必须是**一次正常求值**的结果。 症状（报告时的形态）：check 通道先跑分析器再跑 core 闸门，两轮共享同一份 模块实例 ⇒ 模块级可变状态被双写，闸门打印的签名取自脏状态： - `let c = 0; 断言：expect(check.stdout).toContain(\"bump() => 1\");；expect(check.stdout).not.toContain(\"bump() => 2\");"	夹具漏形态	keep	keep	—
-"一次性抛：check 给 never（与 d.ts 一致），不是 1"	"回归：`nudo check` 的签名必须是**一次正常求值**的结果。 症状（报告时的形态）：check 通道先跑分析器再跑 core 闸门，两轮共享同一份 模块实例 ⇒ 模块级可变状态被双写，闸门打印的签名取自脏状态： - `let c = 0; 断言：expect(r.stdout).toContain(\"once() => never\");；expect(r.stdout).toContain(\"throws Error\");"	夹具漏形态	keep	keep	—
-"手写 lit(1) 生成段 ⇒ 不报 contract-drift（脏值会与生成段打架）"	"回归：`nudo check` 的签名必须是**一次正常求值**的结果。 症状（报告时的形态）：check 通道先跑分析器再跑 core 闸门，两轮共享同一份 模块实例 ⇒ 模块级可变状态被双写，闸门打印的签名取自脏状态： - `let c = 0; 断言：expect(r.stdout).toContain(\"once() => 1\");；expect(r.stdout).not.toContain(\"nudo:contract-drift\");"	夹具漏形态	keep	keep	—
-"clean 文件 ⇒ 恰好一行摘要（旧实现 3 行 OK 块 + 代数面）"	"根因：渲染分支里 `opts.abs` 排在 `opts.quiet` **之前**，且 abs 分支自己打 完整 report + 3 行 OK 块、完全不 consult quiet。 现在 `--quiet` 优先 （压 signatures / 代数面，只留摘要），`--abs --verbose` 也不再被吞。 断言：expect(lines).toHaveLength(1);；expect(lines[0]).toContain(\"OK\");"	没测该层	keep	keep	—
-"失败文件 ⇒ 不打 signatures 段（与单独 --quiet 同形）"	"根因：渲染分支里 `opts.abs` 排在 `opts.quiet` **之前**，且 abs 分支自己打 完整 report + 3 行 OK 块、完全不 consult quiet。 现在 `--quiet` 优先 （压 signatures / 代数面，只留摘要），`--abs --verbose` 也不再被吞。 断言：expect(absQuiet.status).toBe(1);；expect(absQuiet.stdout).not.toContain(\"signatures\");"	没测该层	keep	keep	—
-"带 assume：--abs 与 --json 的 abs 面出现同一句 pred"	"回归：`check --abs` 必须与 `check --json` 的 `abs` **同源** —— 源码级 `@nudo:assume d <= max` 的用户引理不得在观察面丢掉。 症状（修前）：同一份源码，`check --json` 的 `abs` 是 `number = /(d, max) where /(d, max) ≤ 1 #path`（有 pred），而 `check --abs` 打印 `number / term: /(d, max) / conf: path`（**无 pred**）； 断言：expect(abs.status).toBe(0);；expect(abs.stdout).toContai"	没测该层	keep	keep	—
-"对照组（无 assume 行）：两面都不出现该 pred"	"回归：`check --abs` 必须与 `check --json` 的 `abs` **同源** —— 源码级 `@nudo:assume d <= max` 的用户引理不得在观察面丢掉。 症状（修前）：同一份源码，`check --json` 的 `abs` 是 `number = /(d, max) where /(d, max) ≤ 1 #path`（有 pred），而 `check --abs` 打印 `number / term: /(d, max) / conf: path`（**无 pred**）； 断言：expect(abs.status).toBe(0);；expect(abs.stdout).toContai"	没测该层	keep	keep	—
-"`nudo test --abs` 走同一观察面 ⇒ 前提同样可见"	"每次调用独立的缓存目录：`nudo check` 有落盘缓存，串用会掩盖回归 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain(PRED_LINE);"	没测该层	keep	keep	—
-"zod / standard / guard 三面都保留 union（同一 zod 文件内 Input 与 Output 同口径）"	"返回契约若是「**shape 的 union**」，zod / standard / guard **三个 运行时面全部塌缩**为「接受一切」⇒ 契约违约值被放行（假绿），而 dts / check 仍保留 union ⇒ 四面互斥。 根因：`constraintDisproved` 的 `constraint.fields` 分支缺 `sum` 判定（与 `constraint.prim` 分支的处理**不对称**）⇒ identity 函数把 union 原样返回时 逐个 shape 成员一律被判「已证否」⇒ 契约返回 Abs 被丢弃 ⇒ 回落 any。 断言：expect(r.status).toBe(0);；expect(r"	没测该层	keep	keep	—
-"运行时：standard 面拒绝契约违约值、接受契约允许值"	"返回契约若是「**shape 的 union**」，zod / standard / guard **三个 运行时面全部塌缩**为「接受一切」⇒ 契约违约值被放行（假绿），而 dts / check 仍保留 union ⇒ 四面互斥。 根因：`constraintDisproved` 的 `constraint.fields` 分支缺 `sum` 判定（与 `constraint.prim` 分支的处理**不对称**）⇒ identity 函数把 union 原样返回时 逐个 shape 成员一律被判「已证否」⇒ 契约返回 Abs 被丢弃 ⇒ 回落 any。 断言：expect(runCliTsx([\"export\", join(d"	没测该层	keep	keep	—
-"空目录 ⇒ path-empty-dir 进 sink，且不返回记录"	"回归：`--from <空目录>` 必须报路径错误（`nudo:path-empty-dir`）， 不能静默通过。 改前空目录展开成 `[]` ⇒ 循环体一次都不执行 ⇒ 既不产生 PathError 也不产生 调用记录 ⇒ 上层回落 `entry@` + exit 0（假绿）。 断言：expect(records).toBeUndefined();；expect(sink.map((e) => e.code)).toContain(\"nudo:path-empty-dir\");"	没测该层	keep	keep	—
-"对照组：非空目录现场照常采集（无路径错误）"	"回归：`check --abs` 必须与 `check --json` 的 `abs` **同源** —— 源码级 `@nudo:assume d <= max` 的用户引理不得在观察面丢掉。 症状（修前）：同一份源码，`check --json` 的 `abs` 是 `number = /(d, max) where /(d, max) ≤ 1 #path`（有 pred），而 `check --abs` 打印 `number / term: /(d, max) / conf: path`（**无 pred**）； 断言：expect(sink).toEqual([]);；expect(records?.length ?? 0)."	没测该层	keep	keep	—
+dts 面：有调试见证与无证据的投影相同（形参是 unknown，不是 number）；zod / guard 面：放宽到 unknown（不再按那一次调试调用收窄）；与 nudo check 的签名同口径（发布面 = 门禁面）	cli-check 聚合矩阵	没测该层	keep	keep	—
+dts：有 case 与无 case 逐字相同（均门禁口径 x: unknown）；schema：入参是宽松域（z.unknown），不是 case 的 z.number；guard：入参接受 string（实现允许 f("s")）；`nudo contract` 打印面与 check 同口径（x: any）	cli-check 聚合矩阵	没测该层	keep	keep	—
+计数器工厂：check 与 test 都给 1；一次性抛：check 给 never（与 d.ts 一致），不是 1；手写 lit(1) 生成段 ⇒ 不报 contract-drift（脏值会与生成段打架）	cli-check 聚合矩阵	没测该层	keep	keep	—
+clean 文件 ⇒ 恰好一行摘要（旧实现 3 行 OK 块 + 代数面）；失败文件 ⇒ 不打 signatures 段（与单独 --quiet 同形）	cli-check 聚合矩阵	没测该层	keep	keep	—
+带 assume：--abs 与 --json 的 abs 面出现同一句 pred；对照组（无 assume 行）：两面都不出现该 pred；`nudo test --abs` 走同一观察面 ⇒ 前提同样可见	cli-check 聚合矩阵	没测该层	keep	keep	—
+zod / standard / guard 三面都保留 union（同一 zod 文件内 Input 与 Output 同口径）；运行时：standard 面拒绝契约违约值、接受契约允许值	cli-check 聚合矩阵	没测该层	keep	keep	—
+空目录 ⇒ path-empty-dir 进 sink，且不返回记录；对照组：非空目录现场照常采集（无路径错误）	cli-check 聚合矩阵	没测该层	keep	keep	—
 "已固化见证 + 另一现场 ⇒ 同名 case 只出现一次，summary.cases == 不同见证数"	"回归：`--from` 的调用点见证不得被**两条合成路径各合成一次**。 改前「已固化 directive 见证 + 主候选循环的 callsite 见证」会产出同名两条 ⇒ 台账里 `call@` 出现两次、人类面打印两遍、`summary.cases` 重复计数。 断言：expect(names.length).toBeGreaterThan(0);；expect(new Set(names).size).toBe(names.length);"	夹具漏形态	keep	keep	—
-"--gitlab 语法错文件 ⇒ stdout 是**可解析数组**且含该文件的条目"	"文件级**硬错误**（语法错 / 路径不存在）在两个 **CI 注解通道**上 完全静默：`--gitlab` 的 stdout 塌成 0 字节（消费方 `JSON.parse` 直接抛）、 `--gha` 产出 0 条 `::error`； 现在硬错误也进注解通道：`--gitlab` 的 stdout **恰好一份**可解析数组 （含该文件的条目），`--gha` 至少一条 `::error`。 断言：expect(r.status).toBe(1);；expect(r.stdout.trimStart().startsWith(\"[\")).toBe(true);"	夹具漏形态	keep	keep	—
-"--gitlab 路径不存在 ⇒ stdout 仍是可解析数组（不是 0 字节）"	"文件级**硬错误**（语法错 / 路径不存在）在两个 **CI 注解通道**上 完全静默：`--gitlab` 的 stdout 塌成 0 字节（消费方 `JSON.parse` 直接抛）、 `--gha` 产出 0 条 `::error`； 现在硬错误也进注解通道：`--gitlab` 的 stdout **恰好一份**可解析数组 （含该文件的条目），`--gha` 至少一条 `::error`。 断言：expect(r.status).toBe(1);；expect(r.stdout.trimStart().startsWith(\"[\")).toBe(true);"	夹具漏形态	keep	keep	—
-"--gha 语法错文件 ⇒ 至少一条 ::error 注解"	"文件级**硬错误**（语法错 / 路径不存在）在两个 **CI 注解通道**上 完全静默：`--gitlab` 的 stdout 塌成 0 字节（消费方 `JSON.parse` 直接抛）、 `--gha` 产出 0 条 `::error`； 现在硬错误也进注解通道：`--gitlab` 的 stdout **恰好一份**可解析数组 （含该文件的条目），`--gha` 至少一条 `::error`。 断言：expect(r.status).toBe(1);；expect(annCount(r)).toBeGreaterThanOrEqual(1);"	夹具漏形态	keep	keep	—
-"批量（坏 + 绿）⇒ 一份数组里同时有语法错行与绿文件无关行（不丢坏文件）"	"断言：expect(r.status).toBe(1);；expect(rows.some((x) => x.check_name === \"syntax-error\")).toBe(true);"	没测该层	keep	keep	—
-"三个同内容文件的载荷逐字相同（换序也不变）"	"`nudo check --json` 把**引擎内部 term id**（`len#N` 一族）渲进 机器可读的签名字段 ⇒ 且编号随**同一次调用内的文件顺序**漂移 ⇒ **单个文件的 JSON 载荷是它在参数列表中位置的函数**，不是文件内容的函数 （机器消费方拿到的不是可比对的内容）； **同一条命令的人类面**还给出另一个 字符串（`f() => number` vs `number = len#0 where len#0 ≥ 0 #path`）。 断言：expect(r1.status).toBe(0);；expect(r2.status).toBe(0);"	夹具漏形态	keep	keep	—
-"载荷三字段不含内部 id"	"断言：expect(r.stdout).not.toContain(\"len#\");；expect(sig.display).not.toMatch(/#\\d+/);"	没测该层	keep	keep	—
-"机器面 display 与人类面 signatures 行同源"	"`nudo check --json` 把**引擎内部 term id**（`len#N` 一族）渲进 机器可读的签名字段 ⇒ 且编号随**同一次调用内的文件顺序**漂移 ⇒ **单个文件的 JSON 载荷是它在参数列表中位置的函数**，不是文件内容的函数 （机器消费方拿到的不是可比对的内容）； **同一条命令的人类面**还给出另一个 字符串（`f() => number` vs `number = len#0 where len#0 ≥ 0 #path`）。 断言：expect(human.stdout).toContain(` f() => ${sig.display}`);"	夹具漏形态	keep	keep	—
-"--verbose 人类面不得含内部 id"	"根因：渲染分支里 `opts.abs` 排在 `opts.quiet` **之前**，且 abs 分支自己打 完整 report + 3 行 OK 块、完全不 consult quiet。 现在 `--quiet` 优先 （压 signatures / 代数面，只留摘要），`--abs --verbose` 也不再被吞。 断言：expect(r.stdout).not.toContain(\"len#\");"	没测该层	keep	keep	—
-"zod 入参面：契约覆盖的位 + 未覆盖的形参位都在（不丢位）"	"**部分契约**（契约只覆盖部分形参）时，未被契约覆盖的形参位在 产物面里被**静默丢掉**：契约面与观测面二选一，不是合流。 症状（改前）：`@nudo:contract n pos` 只声明了 `n`，函数签名是 `f(n, other)` ⇒ zod 面产出 `z.object({ n: z.number().gt(0) })` —— `other` 位**消失**； 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain(\"n: z.number()\");"	没测该层	keep	keep	—
-"dts 面与 zod 面同口径：未覆盖的形参位在 dts 里也在"	"**部分契约**（契约只覆盖部分形参）时，未被契约覆盖的形参位在 产物面里被**静默丢掉**：契约面与观测面二选一，不是合流。 症状（改前）：`@nudo:contract n pos` 只声明了 `n`，函数签名是 `f(n, other)` ⇒ zod 面产出 `z.object({ n: z.number().gt(0) })` —— `other` 位**消失**； 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain(\"export declare function f(n: number, other: number)\");"	没测该层	keep	keep	—
-"zod 面：见证不进 Output 面，也不泄漏见证返回值"	"`@nudo:skip` + 多条 case 见证时，**Output 面（返回面）不产出**： 兜底只取「第 0 条断言见证」，而无断言的 case 是见证不是断言 ⇒ 兜底落空。 症状（改前）：两条 `@nudo:case` 见证（返回 4 / 6）的 skip 函数，zod 面只有 `<fn>Input`、**没有** `<fn>Output`； 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain(\"twiceInput\");"	没测该层	keep	keep	—
-"standard 面：同样没有 Output 校验器"	"`@nudo:skip` + 多条 case 见证时，**Output 面（返回面）不产出**： 兜底只取「第 0 条断言见证」，而无断言的 case 是见证不是断言 ⇒ 兜底落空。 症状（改前）：两条 `@nudo:case` 见证（返回 4 / 6）的 skip 函数，zod 面只有 `<fn>Input`、**没有** `<fn>Output`； 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain(\"twiceInput\");"	没测该层	keep	keep	—
-"zod 入参面：点路径 ⇒ 嵌套 obj（不是字面量点号键）"	"症状（改前）：侧车 `fn({ \"card.grade\": string() }, string())` 声明了解构形参 `{ card: { grade } }` 的内层字段约束 ⇒ zod 面产出 `z.object({ \"card.grade\": z.string() })` —— 点号键成了对象属性名（调用面里根本没有这个属性），而 dts 面是 `nested({ card }: { card: { grade: string } })` ⇒ 两个产物面自相矛盾。 根因（族 17 · S1）：`export/contract-face.ts` 的统一参数面直接拿契约参数名 （`card.grade`）当槽位键、拿约束 Ab"	夹具漏形态	keep	keep	—
-"dts 面保持嵌套形状（两面的节点形状一致）"	"症状（改前）：侧车 `fn({ \"card.grade\": string() }, string())` 声明了解构形参 `{ card: { grade } }` 的内层字段约束 ⇒ zod 面产出 `z.object({ \"card.grade\": z.string() })` —— 点号键成了对象属性名（调用面里根本没有这个属性），而 dts 面是 `nested({ card }: { card: { grade: string } })` ⇒ 两个产物面自相矛盾。 根因（族 17 · S1）：`export/contract-face.ts` 的统一参数面直接拿契约参数名 （`card.grade`）当槽位键、拿约束 Ab"	夹具漏形态	keep	keep	—
-"call@ 前缀的声明式见证：期望不符 ⇒ 计入失败 + exit 1"	"声明式见证：名字落在合成 case 名字空间（`call@` / `entry@`），但它是 **写在源码里**的 `@nudo:case` 指令 ⇒ 已声明 ⇒ 必须进断言面。 断言：expect(r.status).toBe(1);；expect(r.stdout).toContain(\"[FAIL]\");"	没测该层	keep	keep	—
-"entry@ 前缀的声明式见证：期望不符 ⇒ 计入失败 + exit 1"	"声明式见证：名字落在合成 case 名字空间（`call@` / `entry@`），但它是 **写在源码里**的 `@nudo:case` 指令 ⇒ 已声明 ⇒ 必须进断言面。 断言：expect(r.status).toBe(1);；expect(r.stdout).toContain(\"[FAIL]\");"	没测该层	keep	keep	—
-"--freeze 写回形态的名字（call@<file>:<line>）：仍是声明式见证 ⇒ 计入失败 + exit 1"	"声明式见证：名字落在合成 case 名字空间（`call@` / `entry@`），但它是 **写在源码里**的 `@nudo:case` 指令 ⇒ 已声明 ⇒ 必须进断言面。 断言：expect(r.status).toBe(1);；expect(r.stdout).toContain(\"[FAIL]\");"	没测该层	keep	keep	—
-"普通名字的声明式见证：与前缀变体同构（同样计入失败 + exit 1）"	"`nudo test` 的 synthetic 判据必须按 **case 来源**（`c.source`）， 不得按 **名字前缀**（`call@` / `entry@`）。 报告原文（`tmp/bugs/19-nudojs-test.md` §）：synthetic 判定用 `name.startsWith(\"call@\") || name.startsWith(\"entry@\")` ⇒ 用户**手写**的 声明式见证 `@nudo:case \"call@L42\" (2) => 5`（实得 4）被降级成合成 case ⇒ 失败的声明断言被**整条丢出断言面** ⇒ 报告面「0 failed」、**exit 0**，而 诊断面同时"	没测该层	keep	keep	—
-"call@ 前缀的声明式见证：期望相符 ⇒ 计入通过、exit 0（不是 unchecked / synthetic）"	"声明式见证：名字落在合成 case 名字空间（`call@` / `entry@`），但它是 **写在源码里**的 `@nudo:case` 指令 ⇒ 已声明 ⇒ 必须进断言面。 断言：expect(r.status).toBe(0);；expect(r.stdout).not.toContain(\"[FAIL]\");"	没测该层	keep	keep	—
-"无函数文件：--abs 与非 --abs 同为 exit 0 + 同一句报告"	"`nudo test --abs` 在**一个函数都没有**的文件上 exit 1 + 打 「Function not found」； 同一命令**不带** `--abs` 却 exit 0 ⇒ 同一输入、 同一份报告，仅因多一个旗标就换了退出码，且两条文案互相打架。 断言：expect(plain.status).toBe(0);；expect(abs.status).toBe(0);"	没测该层	keep	keep	—
-"无函数文件：--json 面（另一条机器面）同样 exit 0"	"`nudo test --abs` 在**一个函数都没有**的文件上 exit 1 + 打 「Function not found」； 同一命令**不带** `--abs` 却 exit 0 ⇒ 同一输入、 同一份报告，仅因多一个旗标就换了退出码，且两条文案互相打架。 断言：expect(r.status).toBe(0);；expect(doc.summary.functions).toBe(0);"	没测该层	keep	keep	—
-"对照：check --abs 的「无函数 ⇒ exit 1」是既有期望行为（Bug 669）不被本片改动"	"`nudo test --abs` 在**一个函数都没有**的文件上 exit 1 + 打 「Function not found」； 同一命令**不带** `--abs` 却 exit 0 ⇒ 同一输入、 同一份报告，仅因多一个旗标就换了退出码，且两条文案互相打架。 断言：expect(r.status).toBe(1);；expect(r.stderr).toContain(\"Function not found\");"	没测该层	keep	keep	—
-"拼错的函数名 → Function not found + exit 1（不再是 unknown/partial）"	"`nudo check --abs --fn <不存在的名字>` 被当成「引擎推导失败」 （unknown / conf: partial）而不是**用法错误**。 旧行为：`--fn nosuch` ⇒ stdout 打印 `nosuch() / unknown / conf: partial`， 门禁 exit 0（文件本身没函数时反而是 `Function not found` + exit 1 ⇒ 同一类错误两个口径）。 断言：expect(r.exitCode).toBe(1);；expect(r.stderr).toContain(\"Function not found\");"	没测该层	keep	keep	—
-"真实函数名 → 正常观察面（不误伤）"	"断言：expect(r.exitCode).toBe(0);；expect(r.stdout).toContain(\"one()\");"	没测该层	keep	keep	—
-"文件本身没有函数 → 既有口径不变（Function not found + exit 1）"	"`nudo check --abs --fn <不存在的名字>` 被当成「引擎推导失败」 （unknown / conf: partial）而不是**用法错误**。 旧行为：`--fn nosuch` ⇒ stdout 打印 `nosuch() / unknown / conf: partial`， 门禁 exit 0（文件本身没函数时反而是 `Function not found` + exit 1 ⇒ 同一类错误两个口径）。 断言：expect(r.exitCode).toBe(1);；expect(r.stderr).toContain(\"Function not found\");"	没测该层	keep	keep	—
-"CLI 级：拼错的函数名 → 进程 exit 1（check 报告段不把 exitCode 复位）"	"`nudo check --abs --fn <不存在的名字>` 被当成「引擎推导失败」 （unknown / conf: partial）而不是**用法错误**。 旧行为：`--fn nosuch` ⇒ stdout 打印 `nosuch() / unknown / conf: partial`， 门禁 exit 0（文件本身没函数时反而是 `Function not found` + exit 1 ⇒ 同一类错误两个口径）。 断言：expect(r.status).toBe(1);；expect(r.stderr).toContain(\"Function not found\");"	没测该层	keep	keep	—
-"`x=5` 这类坏值 → exit 1（旧行为 exit 0）"	"旧行为：stderr 有 `Cannot parse --assume: x=5`，但 exit code = 0。 修复：坏值 = **用法错误**（stderr + fix: 提示）+ 非零 exit，且不进入观察面。 断言：expect(r.exitCode).toBe(1);；expect(r.stderr).toContain(\"Cannot parse --assume\");"	没测该层	keep	keep	—
-"好值仍然生效（不误伤）"	"断言：expect(r.exitCode).toBe(0);；expect(r.stderr).not.toContain(\"Cannot parse --assume\");"	没测该层	keep	keep	—
-"多个 --assume 里混一个坏值 → 仍然 exit 1（不得部分生效后假绿）"	"旧行为：stderr 有 `Cannot parse --assume: x=5`，但 exit code = 0。 修复：坏值 = **用法错误**（stderr + fix: 提示）+ 非零 exit，且不进入观察面。 断言：expect(r.exitCode).toBe(1);；expect(r.stderr).toContain(\"Cannot parse --assume\");"	没测该层	keep	keep	—
-"CLI 级：坏值 → 进程 exit 1"	"旧行为：stderr 有 `Cannot parse --assume: x=5`，但 exit code = 0。 修复：坏值 = **用法错误**（stderr + fix: 提示）+ 非零 exit，且不进入观察面。 断言：expect(r.status).toBe(1);；expect(r.stderr).toContain(\"Cannot parse --assume\");"	没测该层	keep	keep	—
-"解析器：配置面裸字符串 / 数组元素内逗号都被切开"	"`package.json#nudo.check.ignoreThrows` 与 CLI `--ignore-throws` **两套解析器** ⇒ 同一语义键两种写法行为不同。 症状：配置面只认严格 `string[]`（service checkConfig 的 `Array.isArray` 过滤） ⇒ 配置写 `\"TypeError\"`（裸字符串）或 `[\"TypeError,RangeError\"]`（数组元素内 带逗号）都被静默丢成空表 ⇒ 门禁**假红**（用户以为忽略了 TypeError，实际 没忽略）。 断言：expect(configIgnoreThrows({ check: { ignoreThrows: \""	夹具漏形态	keep	keep	—
-"CLI：配置写裸字符串 \"TypeError\" ⇒ L2 被忽略（门禁绿）"	"未约束的 entry ⇒ L2 entry-may-throw TypeError（被忽略则门禁绿） 断言：expect(r.stdout).not.toContain(\"nudo:entry-may-throw\");；expect(r.status).toBe(0);"	没测该层	keep	keep	—
-"CLI：配置写 [\"TypeError,RangeError\"] ⇒ 数组元素内逗号被切开（门禁绿）"	"未约束的 entry ⇒ L2 entry-may-throw TypeError（被忽略则门禁绿） 断言：expect(r.stdout).not.toContain(\"nudo:entry-may-throw\");；expect(r.status).toBe(0);"	没测该层	keep	keep	—
-"CLI：配置写 [\"TypeError\"]（旧口径，未回归）⇒ 门禁绿"	"未约束的 entry ⇒ L2 entry-may-throw TypeError（被忽略则门禁绿） 断言：expect(r.stdout).not.toContain(\"nudo:entry-may-throw\");；expect(r.status).toBe(0);"	没测该层	keep	keep	—
-"CLI：形状非法（42）⇒ 回落默认 + stderr 一行告警（不静默假红）"	"`package.json#nudo.check.ignoreThrows` 与 CLI `--ignore-throws` **两套解析器** ⇒ 同一语义键两种写法行为不同。 症状：配置面只认严格 `string[]`（service checkConfig 的 `Array.isArray` 过滤） ⇒ 配置写 `\"TypeError\"`（裸字符串）或 `[\"TypeError,RangeError\"]`（数组元素内 带逗号）都被静默丢成空表 ⇒ 门禁**假红**（用户以为忽略了 TypeError，实际 没忽略）。 断言：expect(r.stderr).toContain(\"warning: package.json nu"	夹具漏形态	keep	keep	—
-"CLI：CLI 旗标形态不变（--ignore-throws TypeError,RangeError 仍绿）"	"未约束的 entry ⇒ L2 entry-may-throw TypeError（被忽略则门禁绿） 断言：expect(r.stdout).not.toContain(\"nudo:entry-may-throw\");；expect(r.status).toBe(0);"	没测该层	keep	keep	—
-"--abs 面：诊断段上屏（旧行为：整段消失 ⇒ 屏幕上零提示）"	"`nudo test --abs` 把整段 **diagnostics** 吞掉 ⇒ 期望写错 （`=> 42x` 这类）在观察面上是「屏幕上零提示」的**假绿**。 根因：「诊断上屏」的判据把 `--abs` 写成第三个被排除的面 （`!opts.json && diagnostics.length > 0 && !opts.abs`）——而 `--abs` 并非「诊断不适用」的面（`--json` 面顶层键含 `diagnostics`）。 断言：expect(r.stdout).toContain(\"diagnostics\");；expect(r.stdout).toContain(\"nudo:directive-syntax"	没测该层	keep	keep	—
-"三个面（默认 / --abs / --json）对同一文件的诊断条数一致"	"`nudo test --abs` 把整段 **diagnostics** 吞掉 ⇒ 期望写错 （`=> 42x` 这类）在观察面上是「屏幕上零提示」的**假绿**。 根因：「诊断上屏」的判据把 `--abs` 写成第三个被排除的面 （`!opts.json && diagnostics.length > 0 && !opts.abs`）——而 `--abs` 并非「诊断不适用」的面（`--json` 面顶层键含 `diagnostics`）。 断言：expect(plainCount).toBeGreaterThan(0);；expect(humanDiagnosticCount(abs.stdout)).toBe(plainCo"	没测该层	keep	keep	—
-"对照：check --abs 的既有口径不动（report ok 时不打 issues 列表）"	"`nudo test --abs` 把整段 **diagnostics** 吞掉 ⇒ 期望写错 （`=> 42x` 这类）在观察面上是「屏幕上零提示」的**假绿**。 根因：「诊断上屏」的判据把 `--abs` 写成第三个被排除的面 （`!opts.json && diagnostics.length > 0 && !opts.abs`）——而 `--abs` 并非「诊断不适用」的面（`--json` 面顶层键含 `diagnostics`）。 断言：expect(typeof r.stdout).toBe(\"string\");"	没测该层	keep	keep	—
-"`x>=1` ⇒ 谓词是 (x + 1) ≥ 2（不是 > 1.999…）"	"`--assume` 的运算符被**一律按 `>` 构造** ⇒ 用户写 `x>=1` 实际得到 `x>1` ⇒ 引擎里的谓词与用户写的不一致 （`x+1 > 1.9999999999999998` 而不是 `x+1 ≥ 2`）。 修复：谓词构造按运算符分派（core 既有导出 `geNum` / `gtNum`）， 回显行打印**实际构造出来的谓词**。 断言：expect(r.stdout).toContain(\"assume: x >= 1\");；expect(r.stdout).toContain(\"(x + 1) ≥ 2\");"	夹具漏形态	keep	keep	—
-"`x>1` ⇒ 谓词是 (x + 1) > 1.999…（与 >= 不同）"	"`package.json#nudo.check.ignoreThrows` 与 CLI `--ignore-throws` **两套解析器** ⇒ 同一语义键两种写法行为不同。 症状：配置面只认严格 `string[]`（service checkConfig 的 `Array.isArray` 过滤） ⇒ 配置写 `\"TypeError\"`（裸字符串）或 `[\"TypeError,RangeError\"]`（数组元素内 带逗号）都被静默丢成空表 ⇒ 门禁**假红**（用户以为忽略了 TypeError，实际 没忽略）。 断言：expect(r.stdout).toContain(\"assume: x > 1\");；expect("	夹具漏形态	keep	keep	—
-"x>100 且 y>200 ⇒ 谓词 (x + y) > 300（两条都在场）"	"旧行为：`--assume x>100 --assume y>200` ⇒ φ = `y>200` ⇒ 结果谓词 `(x + y) > 200`（x 的界丢失）。 修复：多条假设**合取**（core 既有导出 `algebra.and`）⇒ `(x + y) > 300`。 断言：expect(r.stdout).toContain(\"assume: x > 100, y > 200\");；expect(r.stdout).toContain(\"(x + y) > 300\");"	没测该层	keep	keep	—
-"顺序无关（y 在前也一样合取）"	"断言：expect(r.stdout).toContain(\"(x + y) > 300\");"	没测该层	keep	keep	—
-"组合 → 用法错误 + exit 1（且不回显 assume）"	"`--abs --generalize` 与 `--assume` 组合被**接受并打印 assume 回显**， 但 generalize 分支**根本不吃 assume**（`generalizeFromAst` 没有 Φ 入口） ⇒ 静默说谎：用户以为假设参与了符号推导。 修复：这个组合**显式拒绝**（用法错误 + 非零 exit），不回显假设。 断言：expect(r.exitCode).toBe(1);；expect(r.stderr).toContain(\"--assume cannot be combined with --generalize\");"	没测该层	keep	keep	—
-"单独 --generalize 仍然可用（不误伤）"	"`--abs --generalize` 与 `--assume` 组合被**接受并打印 assume 回显**， 但 generalize 分支**根本不吃 assume**（`generalizeFromAst` 没有 Φ 入口） ⇒ 静默说谎：用户以为假设参与了符号推导。 修复：这个组合**显式拒绝**（用法错误 + 非零 exit），不回显假设。 断言：expect(r.stderr).not.toContain(\"cannot be combined\");；expect(r.stdout).toContain(\"mode: generalize\");"	没测该层	keep	keep	—
-"单独 --assume 仍然可用（不误伤）"	"`--abs --generalize` 与 `--assume` 组合被**接受并打印 assume 回显**， 但 generalize 分支**根本不吃 assume**（`generalizeFromAst` 没有 Φ 入口） ⇒ 静默说谎：用户以为假设参与了符号推导。 修复：这个组合**显式拒绝**（用法错误 + 非零 exit），不回显假设。 断言：expect(r.stderr).not.toContain(\"cannot be combined\");；expect(r.stdout).toContain(\"assume: x > 100\");"	没测该层	keep	keep	—
-"CLI 级：组合 → 进程 exit 1"	"`--abs --generalize` 与 `--assume` 组合被**接受并打印 assume 回显**， 但 generalize 分支**根本不吃 assume**（`generalizeFromAst` 没有 Φ 入口） ⇒ 静默说谎：用户以为假设参与了符号推导。 修复：这个组合**显式拒绝**（用法错误 + 非零 exit），不回显假设。 断言：expect(r.status).toBe(1);；expect(r.stderr).toContain(\"--assume cannot be combined with --generalize\");"	没测该层	keep	keep	—
-"--assume 'x>-5' ⇒ x=-1 可达 ⇒ 结果含 \"neg\""	"根因：core 的 `buildArgsFromAssume` 只拿到**被假设形参的 id 集合** ⇒ 把 形参自己的前提（pred）**写死**成 `x > 0`。 用户写 `--assume 'x>-5'` 时， 写死的 `x>0` 反而**更强**（`x>-5 ∧ x>0` ⇒ `x>0`）⇒ 引擎按 `x>0` 剪枝， `x = -1` 的分支被当成不可达 ⇒ 观察面只给出 `\"pos\"`。 断言：expect(r.stdout).toContain(\"assume: x > -5\");；expect(r.stdout).toContain('\"neg\" | \"pos\"');"	没测该层	keep	keep	—
-"--assume 'x>=-5' ⇒ 同上（>= 运算符分派不被破坏）"	"根因：core 的 `buildArgsFromAssume` 只拿到**被假设形参的 id 集合** ⇒ 把 形参自己的前提（pred）**写死**成 `x > 0`。 用户写 `--assume 'x>-5'` 时， 写死的 `x>0` 反而**更强**（`x>-5 ∧ x>0` ⇒ `x>0`）⇒ 引擎按 `x>0` 剪枝， `x = -1` 的分支被当成不可达 ⇒ 观察面只给出 `\"pos\"`。 断言：expect(r.stdout).toContain(\"assume: x >= -5\");；expect(r.stdout).toContain('\"neg\" | \"pos\"');"	没测该层	keep	keep	—
-"负控制：--assume 'x>0' ⇒ 仍只有 \"pos\"（用户界与写死界一致时口径不变）"	"根因：core 的 `buildArgsFromAssume` 只拿到**被假设形参的 id 集合** ⇒ 把 形参自己的前提（pred）**写死**成 `x > 0`。 用户写 `--assume 'x>-5'` 时， 写死的 `x>0` 反而**更强**（`x>-5 ∧ x>0` ⇒ `x>0`）⇒ 引擎按 `x>0` 剪枝， `x = -1` 的分支被当成不可达 ⇒ 观察面只给出 `\"pos\"`。 断言：expect(r.stdout).toContain(\"assume: x > 0\");；expect(r.stdout).toContain('\"pos\"');"	没测该层	keep	keep	—
-"负控制：同一形参多条界取**合取**（x>-5 且 x>0 ⇒ 更强的 x>0 生效）"	"根因：core 的 `buildArgsFromAssume` 只拿到**被假设形参的 id 集合** ⇒ 把 形参自己的前提（pred）**写死**成 `x > 0`。 用户写 `--assume 'x>-5'` 时， 写死的 `x>0` 反而**更强**（`x>-5 ∧ x>0` ⇒ `x>0`）⇒ 引擎按 `x>0` 剪枝， `x = -1` 的分支被当成不可达 ⇒ 观察面只给出 `\"pos\"`。 断言：expect(r.stdout).toContain(\"assume: x > -5, x > 0\");；expect(r.stdout).toContain('\"pos\"');"	没测该层	keep	keep	—
-"人类面：check 报 contract-load error + exit 1（旧行为：exit 0 假绿）"	"侧车写坏（import 了非构建器名）时，`nudo check` **门禁绿灯、 exit 0**（假绿），而 `nudo test` / `nudo health` 都报 error。 根因在 core（`packages/core/src/algebra/refine.ts`）：侧车装载诊断在 `execSidecar` 内部产生 ⇒ exec 结果进缓存后，缓存命中不再跑 exec ⇒ 诊断 在后续分析里消失。 断言：expect(out).toContain(\"nudo:contract-load\");；expect(out).toContain(\"is not an injected builder\");"	没测该层	keep	keep	—
-"--json 面：信封 ok:false + issues 含 nudo:contract-load（且只一条）"	"侧车写坏（import 了非构建器名）时，`nudo check` **门禁绿灯、 exit 0**（假绿），而 `nudo test` / `nudo health` 都报 error。 根因在 core（`packages/core/src/algebra/refine.ts`）：侧车装载诊断在 `execSidecar` 内部产生 ⇒ exec 结果进缓存后，缓存命中不再跑 exec ⇒ 诊断 在后续分析里消失。 断言：expect(env.ok).toBe(false);；expect(issues.filter((i) => i.code === \"nudo:contract-load\")).toHaveLength(1)"	没测该层	keep	keep	—
-"含 internal 回落的文件 ⇒ exit ≠ 0（修前是 0 = 假绿）+ 人类面明确失败行"	"模块级求值**必然失败**的源：模块顶层调用未定义的值 ⇒ 宿主运行时抛原生 TypeError ⇒ core 记一条 `internal` 回落 ⇒ 该模块全部导出丢失。 断言：expect(r.status).not.toBe(0);；expect(r.stdout).toContain(\"FAILED\");"	没测该层	keep	keep	—
-"--json 面：机器可判定（ok:false + nudo:internal error issue）+ exit ≠ 0"	"模块级求值**必然失败**的源：模块顶层调用未定义的值 ⇒ 宿主运行时抛原生 TypeError ⇒ core 记一条 `internal` 回落 ⇒ 该模块全部导出丢失。 断言：expect(r.status).not.toBe(0);；expect(json.ok).toBe(false);"	没测该层	keep	keep	—
-"假红防线：正常文件（零回落）仍 exit 0（不得误报）"	"正常文件：零回落 ⇒ 闸禁照常判定（不得误报）。 断言：expect(r.status).toBe(0);；expect(r.stdout).not.toContain(\"FAILED\");"	没测该层	keep	keep	—
-"假红防线：unsupported:*（能力边界）回落**不**变成闸门失败"	"正常文件：零回落 ⇒ 闸禁照常判定（不得误报）。 断言：expect(json.issues.some((i) => i.code === \"nudo:module-throw\")).toBe(false);；expect(r.stderr).not.toContain(\"analysis failed for\");"	没测该层	keep	keep	—
-"check --fix 与 plain check 同口径：同一文件不得「check 红 / --fix 绿」"	"回归：`nudo check` 遇**模块级求值失败**（引擎内部回落 `internal`） 必须**红**——不得「零诊断 + exit 0」（**闸门假绿**：合法代码与违约代码都判绿）。 病灶：core 在「生成模块编译失败（`new Function` SyntaxError）」或「模块求值抛 内部错误」时记一条 `internal` 回落 ⇒ 该模块**全部导出丢失** ⇒ 闸门看不到任何 入口 ⇒ 零诊断 + exit 0。 断言：expect(r.status).not.toBe(0);"	没测该层	keep	keep	—
-"模块级原生异常不再是「分析失败」⇒ health 只看漂移，报 OK（口径变更）"	"回归：`nudo check` 遇**模块级求值失败**（引擎内部回落 `internal`） 必须**红**——不得「零诊断 + exit 0」（**闸门假绿**：合法代码与违约代码都判绿）。 病灶：core 在「生成模块编译失败（`new Function` SyntaxError）」或「模块求值抛 内部错误」时记一条 `internal` 回落 ⇒ 该模块**全部导出丢失** ⇒ 闸门看不到任何 入口 ⇒ 零诊断 + exit 0。 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain(\"Result: OK\");"	没测该层	keep	keep	—
-"正常文件 ⇒ Result: OK + exit 0（不得误报）"	"正常文件：零回落 ⇒ 闸禁照常判定（不得误报）。 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain(\"Result: OK\");"	没测该层	keep	keep	—
-"假红防线：unsupported:*（能力边界）回落 ⇒ health 仍 OK（不得误报）"	"正常文件：零回落 ⇒ 闸禁照常判定（不得误报）。 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain(\"Result: OK\");"	没测该层	keep	keep	—
-"`--json` 不再声称「仅 `--draft`」，且**提到** print / `--draft` / `--emit` 三形态"	"⚠ 落点名**不含 `.d.` 段**（`tmp/bug-report/sections/.md` + `.changeset/fix-bug-cat-09-cli-check.md`）—— basename 含 `.d.` ⇒ TypeScript 判成声明文件 ⇒ 草稿与它建议的复制落点都过不了 `tsc --strict` ⇒ `types/index.d.ts` ⇒ `types/index.nudo.draft.ts`。 断言：expect(r.status).toBe(0);；expect(desc, `help:\\n${help}`).not.toBe(\"\");"	没测该层	keep	keep	—
-"帮助文本不骗人：print 形态的 `--json` 顶层**恒为数组**（帮助说的三形态都成立）"	"`nudo contract` 的两处**文案与实现口径分裂**（只改文案， **不改行为**）。 实现里 print / `--draft` / `--emit` **三形态**都吐机器面载荷，且**顶层恒为 JSON 数组**（元素形状按形态不同） ⇒ 帮助文本与实现口径分裂。 断言：expect(r.status).toBe(0);；expect(Array.isArray(parsed)).toBe(true);"	夹具漏形态	keep	keep	—
-"拒绝覆盖时提示**同时**给出 `--force` 与 `NUDO_DRAFT_FORCE`（既有草稿逐字不变）"	"`nudo contract` 的两处**文案与实现口径分裂**（只改文案， **不改行为**）。 实现里 print / `--draft` / `--emit` **三形态**都吐机器面载荷，且**顶层恒为 JSON 数组**（元素形状按形态不同） ⇒ 帮助文本与实现口径分裂。 断言：expect(r.status).toBe(1);；expect(r.stderr).toContain(\"refusing to overwrite\");"	夹具漏形态	keep	keep	—
-"**人工改过的草稿永不被覆盖**（`--force` 也不放行）⇒ 拒绝仍然发生、文件逐字不变"	"`nudo contract` 的两处**文案与实现口径分裂**（只改文案， **不改行为**）。 实现里 print / `--draft` / `--emit` **三形态**都吐机器面载荷，且**顶层恒为 JSON 数组**（元素形状按形态不同） ⇒ 帮助文本与实现口径分裂。 断言：expect(first.status).toBe(0);；expect(machine).toContain(\"@nudo:draft-fingerprint\");"	夹具漏形态	keep	keep	—
-"提示里的放行口子是真的：机器原稿（内容不同）+ `--force` ⇒ 覆盖成功"	"`nudo contract` 的两处**文案与实现口径分裂**（只改文案， **不改行为**）。 实现里 print / `--draft` / `--emit` **三形态**都吐机器面载荷，且**顶层恒为 JSON 数组**（元素形状按形态不同） ⇒ 帮助文本与实现口径分裂。 断言：expect(first.status).toBe(0);；expect(second.status).toBe(0);"	夹具漏形态	keep	keep	—
-"环内文件的签名 = 原生值（改前：unknown）"	"回归（CLI 面）：`nudo check` 检出 ESM import 环就**丢弃整张依赖图** ⇒ 环内文件的 import 全部落空 ⇒ 环内函数在 check 面恒为 `unknown` （原生是确定值）。 改前：`probe() => unknown`； 断言：expect(r.stdout).toContain(\"probe() => 0\");；expect(r.stdout).not.toContain(\"probe() => unknown\");"	没测该层	keep	keep	—
-"求值有界：无限递归的环被截断成 nudo:recursion-truncated（不挂死）"	"回归（CLI 面）：`nudo check` 检出 ESM import 环就**丢弃整张依赖图** ⇒ 环内文件的 import 全部落空 ⇒ 环内函数在 check 面恒为 `unknown` （原生是确定值）。 改前：`probe() => unknown`； 断言：expect(r.status).toBe(0); // info 不挡门禁；expect(r.stdout).toContain(\"nudo:recursion-truncated\");"	没测该层	keep	keep	—
-"负控制：非环的跨模块调用不受影响（21 * 2 = 42）"	"回归（CLI 面）：`nudo check` 检出 ESM import 环就**丢弃整张依赖图** ⇒ 环内文件的 import 全部落空 ⇒ 环内函数在 check 面恒为 `unknown` （原生是确定值）。 改前：`probe() => unknown`； 断言：expect(r.stdout).toContain(\"probe() => 42\");"	没测该层	keep	keep	—
-"contract-entry-only 不再被丢弃（info，不挡门禁）"	"`nudo:contract-entry-only` 在 `nudo check` 面被**丢弃**（白名单只留 contract-domain-exceeds 一条）⇒ 分析器产出的 entry-only info 在 check 面不可达， 而 `nudo health` 走另一条统计路径仍报「N entry-only」⇒ 同一事实两 verb 口径分裂。 本文件锁两件事： 1. 单元面：contract 家族白名单纳入 `nudo:contract-entry-only`（severity=info， 不挡门禁），且既有 domain-exceeds 映射与其余码的过滤行为**不变**（负控制）。 断言：expect(issu"	没测该层	keep	keep	—
-"负控制：contract-domain-exceeds 的既有映射不变（error → error）"	"`nudo:contract-entry-only` 在 `nudo check` 面被**丢弃**（白名单只留 contract-domain-exceeds 一条）⇒ 分析器产出的 entry-only info 在 check 面不可达， 而 `nudo health` 走另一条统计路径仍报「N entry-only」⇒ 同一事实两 verb 口径分裂。 本文件锁两件事： 1. 单元面：contract 家族白名单纳入 `nudo:contract-entry-only`（severity=info， 不挡门禁），且既有 domain-exceeds 映射与其余码的过滤行为**不变**（负控制）。 断言：expect(issu"	没测该层	keep	keep	—
-"负控制：白名单外的码仍被过滤（不放大诊断面）"	"`nudo:contract-entry-only` 在 `nudo check` 面被**丢弃**（白名单只留 contract-domain-exceeds 一条）⇒ 分析器产出的 entry-only info 在 check 面不可达， 而 `nudo health` 走另一条统计路径仍报「N entry-only」⇒ 同一事实两 verb 口径分裂。 本文件锁两件事： 1. 单元面：contract 家族白名单纳入 `nudo:contract-entry-only`（severity=info， 不挡门禁），且既有 domain-exceeds 映射与其余码的过滤行为**不变**（负控制）。 断言：expect("	没测该层	keep	keep	—
-"check --from 打印 nudo:contract-entry-only（改前 infos: 0 / 静默丢弃）"	"现场文件：产生调用记录（⇒ check 的分析器链真的跑了），但不打 call f 断言：expect(r.status).toBe(0); // info 不挡门禁；expect(r.stdout).toContain(\"nudo:contract-entry-only\");"	没测该层	keep	keep	—
-"check --json：summary.infos 计入 entry-only，ok 仍为 true"	"现场文件：产生调用记录（⇒ check 的分析器链真的跑了），但不打 call f 断言：expect(r.status).toBe(0);；expect(json.summary.infos).toBe(1);"	没测该层	keep	keep	—
-"解析失败 → 明确报错 + exit 1（改前：静默 0 记录 + exit 0 假绿）"	"坏现场文件：缺右括号 → 解析失败 断言：expect(r.status).toBe(1);；expect(r.stderr).toContain(\"Callsite file failed to load\");"	没测该层	keep	keep	—
-"--json 面：pathErrors 收录该失败 + exit 1"	"`nudo test --from` 指向**解析/求值失败**的现场文件时静默零记录、exit 0 （假绿）——`collectCallRecords`（service）把求值异常 blanket 吞成「0 条记录」， 于是「现场文件读失败」与「现场文件里确实没有调用」在下游同形。 修法（CLI 面，packages/nudojs/src/commands/shared.ts）：该现场文件产出 0 条 记录时复跑一次求值（同参数 ⇒ 命中 eval memo）：解析失败 / 求值失败都判为 「现场文件读失败」，与「文件不存在」同口径报错并非零退出。 断言：expect(r.status).toBe(1);；expect(json."	没测该层	keep	keep	—
-"负控制：现场文件可读但没有调用 → 不报错、exit 0"	"`nudo test --from` 指向**解析/求值失败**的现场文件时静默零记录、exit 0 （假绿）——`collectCallRecords`（service）把求值异常 blanket 吞成「0 条记录」， 于是「现场文件读失败」与「现场文件里确实没有调用」在下游同形。 修法（CLI 面，packages/nudojs/src/commands/shared.ts）：该现场文件产出 0 条 记录时复跑一次求值（同参数 ⇒ 命中 eval memo）：解析失败 / 求值失败都判为 「现场文件读失败」，与「文件不存在」同口径报错并非零退出。 断言：expect(r.status).toBe(0);；expect(r.std"	没测该层	keep	keep	—
-"负控制：现场文件有调用 → 记录被采集（call@ 而非 entry@）、exit 0"	"`nudo test --from` 指向**解析/求值失败**的现场文件时静默零记录、exit 0 （假绿）——`collectCallRecords`（service）把求值异常 blanket 吞成「0 条记录」， 于是「现场文件读失败」与「现场文件里确实没有调用」在下游同形。 修法（CLI 面，packages/nudojs/src/commands/shared.ts）：该现场文件产出 0 条 记录时复跑一次求值（同参数 ⇒ 命中 eval memo）：解析失败 / 求值失败都判为 「现场文件读失败」，与「文件不存在」同口径报错并非零退出。 断言：expect(r.status).toBe(0);；expect(r.std"	没测该层	keep	keep	—
-"contract 正常出结果（改前：裸 Do not know how to serialize a BigInt，exit 1）"	"`nudo contract` 遇 **bigint 字面量契约** 不得整条命令崩溃。 本测试钉住产品面：同一份文件，`nudo contract` 与 `nudo check` 都必须 正常出结果（不再裸异常崩溃）。 断言：expect(r.status).toBe(0);；expect(r.stderr).not.toContain(\"Do not know how to serialize a BigInt\");"	夹具漏形态	keep	keep	—
-"同一份文件：check 面与 contract 面都不崩（跨 verb 一致）"	"`nudo contract` 遇 **bigint 字面量契约** 不得整条命令崩溃。 本测试钉住产品面：同一份文件，`nudo contract` 与 `nudo check` 都必须 正常出结果（不再裸异常崩溃）。 断言：expect(check.status).toBe(0);；expect(check.stderr).not.toContain(\"BigInt\");"	夹具漏形态	keep	keep	—
+--gitlab 语法错文件 ⇒ stdout 是**可解析数组**且含该文件的条目；--gitlab 路径不存在 ⇒ stdout 仍是可解析数组（不是 0 字节）；--gha 语法错文件 ⇒ 至少一条 ::error 注解；批量（坏 + 绿）⇒ 一份数组里同时有语法错行与绿文件无关行（不丢坏文件）	cli-check 聚合矩阵	没测该层	keep	keep	—
+三个同内容文件的载荷逐字相同（换序也不变）；载荷三字段不含内部 id；机器面 display 与人类面 signatures 行同源；--verbose 人类面不得含内部 id	cli-check 聚合矩阵	没测该层	keep	keep	—
+zod 入参面：契约覆盖的位 + 未覆盖的形参位都在（不丢位）；dts 面与 zod 面同口径：未覆盖的形参位在 dts 里也在	cli-check 聚合矩阵	没测该层	keep	keep	—
+zod 面：见证不进 Output 面，也不泄漏见证返回值；standard 面：同样没有 Output 校验器	cli-check 聚合矩阵	没测该层	keep	keep	—
+zod 入参面：点路径 ⇒ 嵌套 obj（不是字面量点号键）；dts 面保持嵌套形状（两面的节点形状一致）	cli-check 聚合矩阵	没测该层	keep	keep	—
+call@ 前缀的声明式见证：期望不符 ⇒ 计入失败 + exit 1；entry@ 前缀的声明式见证：期望不符 ⇒ 计入失败 + exit 1；--freeze 写回形态的名字（call@<file>:<line>）：仍是声明式见证 ⇒ 计入失败 + exit 1；普通名字的声明式见证：与前缀变体同构（同样计入失败 + exit 1）；call@ 前缀的声明式见证：期望相符 ⇒ 计入通过、exit 0（不是 unchecked / synthetic）	cli-check 聚合矩阵	没测该层	keep	keep	—
+无函数文件：--abs 与非 --abs 同为 exit 0 + 同一句报告；无函数文件：--json 面（另一条机器面）同样 exit 0；对照：check --abs 的「无函数 ⇒ exit 1」是既有期望行为（Bug 669）不被本片改动	cli-check 聚合矩阵	没测该层	keep	keep	—
+拼错的函数名 → Function not found + exit 1（不再是 unknown/partial）；真实函数名 → 正常观察面（不误伤）；文件本身没有函数 → 既有口径不变（Function not found + exit 1）；CLI 级：拼错的函数名 → 进程 exit 1（check 报告段不把 exitCode 复位）	cli-check 聚合矩阵	没测该层	keep	keep	—
+`x=5` 这类坏值 → exit 1（旧行为 exit 0）；好值仍然生效（不误伤）；多个 --assume 里混一个坏值 → 仍然 exit 1（不得部分生效后假绿）；CLI 级：坏值 → 进程 exit 1	cli-check 聚合矩阵	没测该层	keep	keep	—
+解析器：配置面裸字符串 / 数组元素内逗号都被切开；CLI：配置写裸字符串 "TypeError" ⇒ L2 被忽略（门禁绿）；CLI：配置写 ["TypeError,RangeError"] ⇒ 数组元素内逗号被切开（门禁绿）；CLI：配置写 ["TypeError"]（旧口径，未回归）⇒ 门禁绿；CLI：形状非法（42）⇒ 回落默认 + stderr 一行告警（不静默假红）；CLI：CLI 旗标形态不变（--ignore-throws TypeError,RangeErr	cli-check 聚合矩阵	没测该层	keep	keep	—
+--abs 面：诊断段上屏（旧行为：整段消失 ⇒ 屏幕上零提示）；三个面（默认 / --abs / --json）对同一文件的诊断条数一致；对照：check --abs 的既有口径不动（report ok 时不打 issues 列表）	cli-check 聚合矩阵	没测该层	keep	keep	—
+`x>=1` ⇒ 谓词是 (x + 1) ≥ 2（不是 > 1.999…）；`x>1` ⇒ 谓词是 (x + 1) > 1.999…（与 >= 不同）	cli-check 聚合矩阵	没测该层	keep	keep	—
+x>100 且 y>200 ⇒ 谓词 (x + y) > 300（两条都在场）；顺序无关（y 在前也一样合取）	cli-check 聚合矩阵	没测该层	keep	keep	—
+组合 → 用法错误 + exit 1（且不回显 assume）；单独 --generalize 仍然可用（不误伤）；单独 --assume 仍然可用（不误伤）；CLI 级：组合 → 进程 exit 1	cli-check 聚合矩阵	没测该层	keep	keep	—
+--assume 'x>-5' ⇒ x=-1 可达 ⇒ 结果含 "neg"；--assume 'x>=-5' ⇒ 同上（>= 运算符分派不被破坏）；负控制：--assume 'x>0' ⇒ 仍只有 "pos"（用户界与写死界一致时口径不变）；负控制：同一形参多条界取**合取**（x>-5 且 x>0 ⇒ 更强的 x>0 生效）	cli-check 聚合矩阵	没测该层	keep	keep	—
+人类面：check 报 contract-load error + exit 1（旧行为：exit 0 假绿）；--json 面：信封 ok:false + issues 含 nudo:contract-load（且只一条）	cli-check 聚合矩阵	没测该层	keep	keep	—
+含 internal 回落的文件 ⇒ exit ≠ 0（修前是 0 = 假绿）+ 人类面明确失败行；--json 面：机器可判定（ok:false + nudo:internal error issue）+ exit ≠ 0；假红防线：正常文件（零回落）仍 exit 0（不得误报）；假红防线：unsupported:*（能力边界）回落**不**变成闸门失败；check --fix 与 plain check 同口径：同一文件不得「check 红 / --fix 绿」	cli-check 聚合矩阵	没测该层	keep	keep	—
+模块级原生异常不再是「分析失败」⇒ health 只看漂移，报 OK（口径变更）；正常文件 ⇒ Result: OK + exit 0（不得误报）；假红防线：unsupported:*（能力边界）回落 ⇒ health 仍 OK（不得误报）	cli-check 聚合矩阵	没测该层	keep	keep	—
+`--json` 不再声称「仅 `--draft`」，且**提到** print / `--draft` / `--emit` 三形态；帮助文本不骗人：print 形态的 `--json` 顶层**恒为数组**（帮助说的三形态都成立）	cli-check 聚合矩阵	没测该层	keep	keep	—
+拒绝覆盖时提示**同时**给出 `--force` 与 `NUDO_DRAFT_FORCE`（既有草稿逐字不变）；**人工改过的草稿永不被覆盖**（`--force` 也不放行）⇒ 拒绝仍然发生、文件逐字不变；提示里的放行口子是真的：机器原稿（内容不同）+ `--force` ⇒ 覆盖成功	cli-check 聚合矩阵	没测该层	keep	keep	—
+环内文件的签名 = 原生值（改前：unknown）；求值有界：无限递归的环被截断成 nudo:recursion-truncated（不挂死）；负控制：非环的跨模块调用不受影响（21 * 2 = 42）	cli-check 聚合矩阵	没测该层	keep	keep	—
+contract-entry-only 不再被丢弃（info，不挡门禁）；负控制：contract-domain-exceeds 的既有映射不变（error → error）；负控制：白名单外的码仍被过滤（不放大诊断面）	cli-check 聚合矩阵	没测该层	keep	keep	—
+check --from 打印 nudo:contract-entry-only（改前 infos: 0 / 静默丢弃）；check --json：summary.infos 计入 entry-only，ok 仍为 true	cli-check 聚合矩阵	没测该层	keep	keep	—
+解析失败 → 明确报错 + exit 1（改前：静默 0 记录 + exit 0 假绿）；--json 面：pathErrors 收录该失败 + exit 1；负控制：现场文件可读但没有调用 → 不报错、exit 0；负控制：现场文件有调用 → 记录被采集（call@ 而非 entry@）、exit 0	cli-check 聚合矩阵	没测该层	keep	keep	—
+contract 正常出结果（改前：裸 Do not know how to serialize a BigInt，exit 1）；同一份文件：check 面与 contract 面都不崩（跨 verb 一致）	cli-check 聚合矩阵	没测该层	keep	keep	—
 "contract 印的形参 = 声明形参；契约里绑不上的参数另列并标注"	"本测试钉住产品面：同一份文件，`nudo contract` 印的形参表必须与 `nudo check` 的签名面一致（同一来源 = 声明形参表）； 契约里绑不上的参数 另列一栏并显式标注（不顶替形参名）。 断言：expect(contract.status).toBe(0);；expect(contract.stdout).toContain(\"(x: any)\");"	没测该层	keep	keep	—
-"方向 a：@nudo:mock 内联 —— 两条命令同绿（改前 check 绿 / --fix 红）"	"--fix 面与 plain check 必须一致） 断言：expect(gate(plain), plain.stdout + plain.stderr).toBe(\"green\");；expect(gate(fix), fix.stdout + fix.stderr).toBe(\"green\");"	没测该层	keep	keep	—
-"方向 b：autoBind:false —— 两条命令同红（改前 check 红 / --fix 绿）"	"--fix 面与 plain check 必须一致） 断言：expect(gate(plain), plain.stdout + plain.stderr).toBe(\"red\");；expect(gate(fix), fix.stdout + fix.stderr).toBe(\"red\");"	没测该层	keep	keep	—
-"方向 c：@nudo:mock from 缺文件 —— 两条命令的 error 条数一致"	"`nudo check` 与 `nudo check --fix` 喂给分析器的**输入集不同** ⇒ 同一文件两条命令给出**相反**的门禁结论（一个绿一个红 / 一个红一个绿）。 四个方向（每个方向都锁「两条命令结论一致」）： a) `@nudo:mock`（内联）——改前 check 绿 / --fix 红（假红） b) `nudo.contract.autoBind: false`——改前 check 红 / --fix 绿（假绿 / CI 假通过） c) `@nudo:mock x from \"缺文件\"`——改前两条命令的**诊断集**不同 d) `--profile adoption`（L2 降级 warning）——改"	没测该层	keep	keep	—
-"方向 d：--profile adoption —— --fix 不得为 warning 级诊断替用户写契约"	"--fix 面与 plain check 必须一致） 断言：expect(gate(plain), plain.stdout + plain.stderr).toBe(\"green\");；expect(gate(fix), out).toBe(\"green\");"	没测该层	keep	keep	—
-"① --from 现场文件（调用点在函数体内）⇒ 被调方门禁红（exit 1 + 恰一条跨文件域超限）"	"- `infn.js`：现场文件，调用点**被包在函数体内** ⇒ 执行态采集拿不到记录 ⇒ 只有静态通道能看见它。 断言：expect(r.status).toBe(1);；expect(r.stdout).toContain(\"nudo:contract-domain-exceeds\");"	没测该层	keep	keep	—
-"② --json 面同判：ok:false + summary.errors=1 + issues 恰一条"	"人类面里同一个码会出现**两次**：issue 行（`[ERROR ...] ... (nudo:xxx)`） 与 docs 深链行（`nudo:xxx → https://...`）⇒ 计「条数」必须排除深链行。 断言：expect(r.status).toBe(1);；expect(json.ok).toBe(false);"	没测该层	keep	keep	—
-"③ 违例归因到被调方的导出名（fn=f / actual=-1），不是现场文件的本地名"	"**CLI 闭环**：`nudo check <被调方> --from <调用方>` 的现场文件 **路径**从未到达 `runCheck` ⇒ 静态调用点复核整条失明 ⇒ 门禁**假绿**。 根因链（库级接线已由族 18 · 片 3 落盘，CLI 侧漏了最后一根线）： - `commands/check-command.ts` 的 action 把 `--from` 路径交给 `commands/shared.ts` 的 `collectExternalRecords`，它**塌缩成执行态 `CallRecord[]``**； 断言：expect(r.status).toBe(1);；expect(json.issues[0].f"	没测该层	keep	keep	—
-"④ --from <目录> ⇒ 同判（现场文件集合按目录展开）"	"**CLI 闭环**：`nudo check <被调方> --from <调用方>` 的现场文件 **路径**从未到达 `runCheck` ⇒ 静态调用点复核整条失明 ⇒ 门禁**假绿**。 根因链（库级接线已由族 18 · 片 3 落盘，CLI 侧漏了最后一根线）： - `commands/check-command.ts` 的 action 把 `--from` 路径交给 `commands/shared.ts` 的 `collectExternalRecords`，它**塌缩成执行态 `CallRecord[]``**； 断言：expect(r.status).toBe(1);；expect(r.stdout).toCont"	没测该层	keep	keep	—
-"⑤ 控制组：直接 check 调用方 ⇒ 仍 1 条 nudo:constraint-violated（跨文件面不污染同文件面）"	"- `infn.js`：现场文件，调用点**被包在函数体内** ⇒ 执行态采集拿不到记录 ⇒ 只有静态通道能看见它。 断言：expect(r.status).toBe(1);；expect(countOf(codes.join(\"\\n\"), \"nudo:constraint-violated\")).toBe(1);"	没测该层	keep	keep	—
-"⑥ 控制组：不带 --from ⇒ 被调方绿（不凭空造证据）"	"**CLI 闭环**：`nudo check <被调方> --from <调用方>` 的现场文件 **路径**从未到达 `runCheck` ⇒ 静态调用点复核整条失明 ⇒ 门禁**假绿**。 根因链（库级接线已由族 18 · 片 3 落盘，CLI 侧漏了最后一根线）： - `commands/check-command.ts` 的 action 把 `--from` 路径交给 `commands/shared.ts` 的 `collectExternalRecords`，它**塌缩成执行态 `CallRecord[]``**； 断言：expect(r.status).toBe(0);；expect(json.ok).toBe(tr"	没测该层	keep	keep	—
-"⑦ 不重复报告：顶层调用点（执行态 + 静态两通道同时命中）⇒ 恰一条"	"- `infn.js`：现场文件，调用点**被包在函数体内** ⇒ 执行态采集拿不到记录 ⇒ 只有静态通道能看见它。 断言：expect(r.status).toBe(1);；expect(countOf(codes.join(\"\\n\"), \"nudo:contract-domain-exceeds\")).toBe(1);"	没测该层	keep	keep	—
-"静态扫描：函数体内的调用点被判为被调方的调用点违例"	"`nudo check --from` / `nudo test --from` 的**调用点义务**只覆盖 **执行态**调用点 ⇒ 被包在**函数 / 箭头 / 方法**里的违例**静默漏过** （exit 0 绿），而**同一调用点所在文件单独 check 是红的**。 根因：调用点义务有两条通道、判据本应一致—— - **同文件**：core 的 `scanLiteralCalls` 做**静态全树扫描** ⇒ 无论调用点 是否被执行过都执法； 断言：expect(issues.length).toBe(1);；expect(issues[0].severity).toBe(\"error\");"	没测该层	keep	keep	—
-"runCheck 接线：带 --from 现场文件 ⇒ 被调方报告含 error 级调用点违例"	"`nudo check --from` / `nudo test --from` 的**调用点义务**只覆盖 **执行态**调用点 ⇒ 被包在**函数 / 箭头 / 方法**里的违例**静默漏过** （exit 0 绿），而**同一调用点所在文件单独 check 是红的**。 根因：调用点义务有两条通道、判据本应一致—— - **同文件**：core 的 `scanLiteralCalls` 做**静态全树扫描** ⇒ 无论调用点 是否被执行过都执法； 断言：expect(violations.length).toBe(1);；expect(violations[0].severity).toBe(\"error\");"	没测该层	keep	keep	—
-"控制组：不带 --from 现场文件 ⇒ 被调方报告不含该违例（不凭空造证据）"	"`nudo check --from` / `nudo test --from` 的**调用点义务**只覆盖 **执行态**调用点 ⇒ 被包在**函数 / 箭头 / 方法**里的违例**静默漏过** （exit 0 绿），而**同一调用点所在文件单独 check 是红的**。 根因：调用点义务有两条通道、判据本应一致—— - **同文件**：core 的 `scanLiteralCalls` 做**静态全树扫描** ⇒ 无论调用点 是否被执行过都执法； 断言：expect(violationIssues(collected[0]).length).toBe(0);"	没测该层	keep	keep	—
-"去重：执行态通道已报过的同一处事实不被静态通道重复上报"	"断言：expect(deduped.length).toBe(0);"	没测该层	keep	keep	—
+方向 a：@nudo:mock 内联 —— 两条命令同绿（改前 check 绿 / --fix 红）；方向 b：autoBind:false —— 两条命令同红（改前 check 红 / --fix 绿）；方向 c：@nudo:mock from 缺文件 —— 两条命令的 error 条数一致；方向 d：--profile adoption —— --fix 不得为 warning 级诊断替用户写契约	cli-check 聚合矩阵	没测该层	keep	keep	—
+① --from 现场文件（调用点在函数体内）⇒ 被调方门禁红（exit 1 + 恰一条跨文件域超限）；② --json 面同判：ok:false + summary.errors=1 + issues 恰一条；③ 违例归因到被调方的导出名（fn=f / actual=-1），不是现场文件的本地名；④ --from <目录> ⇒ 同判（现场文件集合按目录展开）；⑤ 控制组：直接 check 调用方 ⇒ 仍 1 条 nudo:constraint-violated（跨文件面不污	cli-check 聚合矩阵	没测该层	keep	keep	—
+静态扫描：函数体内的调用点被判为被调方的调用点违例；runCheck 接线：带 --from 现场文件 ⇒ 被调方报告含 error 级调用点违例；控制组：不带 --from 现场文件 ⇒ 被调方报告不含该违例（不凭空造证据）；去重：执行态通道已报过的同一处事实不被静态通道重复上报	cli-check 聚合矩阵	没测该层	keep	keep	—
+```
+
+```audit-deleted
+title	reason	evidence
+dts 面：有调试见证与无证据的投影相同（形参是 unknown，不是 number）	dup:cli-check 聚合矩阵	commit:14f49e20
+zod / guard 面：放宽到 unknown（不再按那一次调试调用收窄）	dup:cli-check 聚合矩阵	commit:14f49e20
+与 nudo check 的签名同口径（发布面 = 门禁面）	dup:cli-check 聚合矩阵	commit:14f49e20
+dts：有 case 与无 case 逐字相同（均门禁口径 x: unknown）	dup:cli-check 聚合矩阵	commit:14f49e20
+schema：入参是宽松域（z.unknown），不是 case 的 z.number	dup:cli-check 聚合矩阵	commit:14f49e20
+guard：入参接受 string（实现允许 f("s")）	dup:cli-check 聚合矩阵	commit:14f49e20
+`nudo contract` 打印面与 check 同口径（x: any）	dup:cli-check 聚合矩阵	commit:14f49e20
+计数器工厂：check 与 test 都给 1	dup:cli-check 聚合矩阵	commit:14f49e20
+一次性抛：check 给 never（与 d.ts 一致），不是 1	dup:cli-check 聚合矩阵	commit:14f49e20
+手写 lit(1) 生成段 ⇒ 不报 contract-drift（脏值会与生成段打架）	dup:cli-check 聚合矩阵	commit:14f49e20
+clean 文件 ⇒ 恰好一行摘要（旧实现 3 行 OK 块 + 代数面）	dup:cli-check 聚合矩阵	commit:14f49e20
+失败文件 ⇒ 不打 signatures 段（与单独 --quiet 同形）	dup:cli-check 聚合矩阵	commit:14f49e20
+带 assume：--abs 与 --json 的 abs 面出现同一句 pred	dup:cli-check 聚合矩阵	commit:14f49e20
+对照组（无 assume 行）：两面都不出现该 pred	dup:cli-check 聚合矩阵	commit:14f49e20
+`nudo test --abs` 走同一观察面 ⇒ 前提同样可见	dup:cli-check 聚合矩阵	commit:14f49e20
+zod / standard / guard 三面都保留 union（同一 zod 文件内 Input 与 Output 同口径）	dup:cli-check 聚合矩阵	commit:14f49e20
+运行时：standard 面拒绝契约违约值、接受契约允许值	dup:cli-check 聚合矩阵	commit:14f49e20
+空目录 ⇒ path-empty-dir 进 sink，且不返回记录	dup:cli-check 聚合矩阵	commit:14f49e20
+对照组：非空目录现场照常采集（无路径错误）	dup:cli-check 聚合矩阵	commit:14f49e20
+--gitlab 语法错文件 ⇒ stdout 是**可解析数组**且含该文件的条目	dup:cli-check 聚合矩阵	commit:14f49e20
+--gitlab 路径不存在 ⇒ stdout 仍是可解析数组（不是 0 字节）	dup:cli-check 聚合矩阵	commit:14f49e20
+--gha 语法错文件 ⇒ 至少一条 ::error 注解	dup:cli-check 聚合矩阵	commit:14f49e20
+批量（坏 + 绿）⇒ 一份数组里同时有语法错行与绿文件无关行（不丢坏文件）	dup:cli-check 聚合矩阵	commit:14f49e20
+三个同内容文件的载荷逐字相同（换序也不变）	dup:cli-check 聚合矩阵	commit:14f49e20
+载荷三字段不含内部 id	dup:cli-check 聚合矩阵	commit:14f49e20
+机器面 display 与人类面 signatures 行同源	dup:cli-check 聚合矩阵	commit:14f49e20
+--verbose 人类面不得含内部 id	dup:cli-check 聚合矩阵	commit:14f49e20
+zod 入参面：契约覆盖的位 + 未覆盖的形参位都在（不丢位）	dup:cli-check 聚合矩阵	commit:14f49e20
+dts 面与 zod 面同口径：未覆盖的形参位在 dts 里也在	dup:cli-check 聚合矩阵	commit:14f49e20
+zod 面：见证不进 Output 面，也不泄漏见证返回值	dup:cli-check 聚合矩阵	commit:14f49e20
+standard 面：同样没有 Output 校验器	dup:cli-check 聚合矩阵	commit:14f49e20
+zod 入参面：点路径 ⇒ 嵌套 obj（不是字面量点号键）	dup:cli-check 聚合矩阵	commit:14f49e20
+dts 面保持嵌套形状（两面的节点形状一致）	dup:cli-check 聚合矩阵	commit:14f49e20
+call@ 前缀的声明式见证：期望不符 ⇒ 计入失败 + exit 1	dup:cli-check 聚合矩阵	commit:14f49e20
+entry@ 前缀的声明式见证：期望不符 ⇒ 计入失败 + exit 1	dup:cli-check 聚合矩阵	commit:14f49e20
+--freeze 写回形态的名字（call@<file>:<line>）：仍是声明式见证 ⇒ 计入失败 + exit 1	dup:cli-check 聚合矩阵	commit:14f49e20
+普通名字的声明式见证：与前缀变体同构（同样计入失败 + exit 1）	dup:cli-check 聚合矩阵	commit:14f49e20
+call@ 前缀的声明式见证：期望相符 ⇒ 计入通过、exit 0（不是 unchecked / synthetic）	dup:cli-check 聚合矩阵	commit:14f49e20
+无函数文件：--abs 与非 --abs 同为 exit 0 + 同一句报告	dup:cli-check 聚合矩阵	commit:14f49e20
+无函数文件：--json 面（另一条机器面）同样 exit 0	dup:cli-check 聚合矩阵	commit:14f49e20
+对照：check --abs 的「无函数 ⇒ exit 1」是既有期望行为（Bug 669）不被本片改动	dup:cli-check 聚合矩阵	commit:14f49e20
+拼错的函数名 → Function not found + exit 1（不再是 unknown/partial）	dup:cli-check 聚合矩阵	commit:14f49e20
+真实函数名 → 正常观察面（不误伤）	dup:cli-check 聚合矩阵	commit:14f49e20
+文件本身没有函数 → 既有口径不变（Function not found + exit 1）	dup:cli-check 聚合矩阵	commit:14f49e20
+CLI 级：拼错的函数名 → 进程 exit 1（check 报告段不把 exitCode 复位）	dup:cli-check 聚合矩阵	commit:14f49e20
+`x=5` 这类坏值 → exit 1（旧行为 exit 0）	dup:cli-check 聚合矩阵	commit:14f49e20
+好值仍然生效（不误伤）	dup:cli-check 聚合矩阵	commit:14f49e20
+多个 --assume 里混一个坏值 → 仍然 exit 1（不得部分生效后假绿）	dup:cli-check 聚合矩阵	commit:14f49e20
+CLI 级：坏值 → 进程 exit 1	dup:cli-check 聚合矩阵	commit:14f49e20
+解析器：配置面裸字符串 / 数组元素内逗号都被切开	dup:cli-check 聚合矩阵	commit:14f49e20
+CLI：配置写裸字符串 "TypeError" ⇒ L2 被忽略（门禁绿）	dup:cli-check 聚合矩阵	commit:14f49e20
+CLI：配置写 ["TypeError,RangeError"] ⇒ 数组元素内逗号被切开（门禁绿）	dup:cli-check 聚合矩阵	commit:14f49e20
+CLI：配置写 ["TypeError"]（旧口径，未回归）⇒ 门禁绿	dup:cli-check 聚合矩阵	commit:14f49e20
+CLI：形状非法（42）⇒ 回落默认 + stderr 一行告警（不静默假红）	dup:cli-check 聚合矩阵	commit:14f49e20
+CLI：CLI 旗标形态不变（--ignore-throws TypeError,RangeError 仍绿）	dup:cli-check 聚合矩阵	commit:14f49e20
+--abs 面：诊断段上屏（旧行为：整段消失 ⇒ 屏幕上零提示）	dup:cli-check 聚合矩阵	commit:14f49e20
+三个面（默认 / --abs / --json）对同一文件的诊断条数一致	dup:cli-check 聚合矩阵	commit:14f49e20
+对照：check --abs 的既有口径不动（report ok 时不打 issues 列表）	dup:cli-check 聚合矩阵	commit:14f49e20
+`x>=1` ⇒ 谓词是 (x + 1) ≥ 2（不是 > 1.999…）	dup:cli-check 聚合矩阵	commit:14f49e20
+`x>1` ⇒ 谓词是 (x + 1) > 1.999…（与 >= 不同）	dup:cli-check 聚合矩阵	commit:14f49e20
+x>100 且 y>200 ⇒ 谓词 (x + y) > 300（两条都在场）	dup:cli-check 聚合矩阵	commit:14f49e20
+顺序无关（y 在前也一样合取）	dup:cli-check 聚合矩阵	commit:14f49e20
+组合 → 用法错误 + exit 1（且不回显 assume）	dup:cli-check 聚合矩阵	commit:14f49e20
+单独 --generalize 仍然可用（不误伤）	dup:cli-check 聚合矩阵	commit:14f49e20
+单独 --assume 仍然可用（不误伤）	dup:cli-check 聚合矩阵	commit:14f49e20
+CLI 级：组合 → 进程 exit 1	dup:cli-check 聚合矩阵	commit:14f49e20
+--assume 'x>-5' ⇒ x=-1 可达 ⇒ 结果含 "neg"	dup:cli-check 聚合矩阵	commit:14f49e20
+--assume 'x>=-5' ⇒ 同上（>= 运算符分派不被破坏）	dup:cli-check 聚合矩阵	commit:14f49e20
+负控制：--assume 'x>0' ⇒ 仍只有 "pos"（用户界与写死界一致时口径不变）	dup:cli-check 聚合矩阵	commit:14f49e20
+负控制：同一形参多条界取**合取**（x>-5 且 x>0 ⇒ 更强的 x>0 生效）	dup:cli-check 聚合矩阵	commit:14f49e20
+人类面：check 报 contract-load error + exit 1（旧行为：exit 0 假绿）	dup:cli-check 聚合矩阵	commit:14f49e20
+--json 面：信封 ok:false + issues 含 nudo:contract-load（且只一条）	dup:cli-check 聚合矩阵	commit:14f49e20
+含 internal 回落的文件 ⇒ exit ≠ 0（修前是 0 = 假绿）+ 人类面明确失败行	dup:cli-check 聚合矩阵	commit:14f49e20
+--json 面：机器可判定（ok:false + nudo:internal error issue）+ exit ≠ 0	dup:cli-check 聚合矩阵	commit:14f49e20
+假红防线：正常文件（零回落）仍 exit 0（不得误报）	dup:cli-check 聚合矩阵	commit:14f49e20
+假红防线：unsupported:*（能力边界）回落**不**变成闸门失败	dup:cli-check 聚合矩阵	commit:14f49e20
+check --fix 与 plain check 同口径：同一文件不得「check 红 / --fix 绿」	dup:cli-check 聚合矩阵	commit:14f49e20
+模块级原生异常不再是「分析失败」⇒ health 只看漂移，报 OK（口径变更）	dup:cli-check 聚合矩阵	commit:14f49e20
+正常文件 ⇒ Result: OK + exit 0（不得误报）	dup:cli-check 聚合矩阵	commit:14f49e20
+假红防线：unsupported:*（能力边界）回落 ⇒ health 仍 OK（不得误报）	dup:cli-check 聚合矩阵	commit:14f49e20
+`--json` 不再声称「仅 `--draft`」，且**提到** print / `--draft` / `--emit` 三形态	dup:cli-check 聚合矩阵	commit:14f49e20
+帮助文本不骗人：print 形态的 `--json` 顶层**恒为数组**（帮助说的三形态都成立）	dup:cli-check 聚合矩阵	commit:14f49e20
+拒绝覆盖时提示**同时**给出 `--force` 与 `NUDO_DRAFT_FORCE`（既有草稿逐字不变）	dup:cli-check 聚合矩阵	commit:14f49e20
+**人工改过的草稿永不被覆盖**（`--force` 也不放行）⇒ 拒绝仍然发生、文件逐字不变	dup:cli-check 聚合矩阵	commit:14f49e20
+提示里的放行口子是真的：机器原稿（内容不同）+ `--force` ⇒ 覆盖成功	dup:cli-check 聚合矩阵	commit:14f49e20
+环内文件的签名 = 原生值（改前：unknown）	dup:cli-check 聚合矩阵	commit:14f49e20
+求值有界：无限递归的环被截断成 nudo:recursion-truncated（不挂死）	dup:cli-check 聚合矩阵	commit:14f49e20
+负控制：非环的跨模块调用不受影响（21 * 2 = 42）	dup:cli-check 聚合矩阵	commit:14f49e20
+contract-entry-only 不再被丢弃（info，不挡门禁）	dup:cli-check 聚合矩阵	commit:14f49e20
+负控制：contract-domain-exceeds 的既有映射不变（error → error）	dup:cli-check 聚合矩阵	commit:14f49e20
+负控制：白名单外的码仍被过滤（不放大诊断面）	dup:cli-check 聚合矩阵	commit:14f49e20
+check --from 打印 nudo:contract-entry-only（改前 infos: 0 / 静默丢弃）	dup:cli-check 聚合矩阵	commit:14f49e20
+check --json：summary.infos 计入 entry-only，ok 仍为 true	dup:cli-check 聚合矩阵	commit:14f49e20
+解析失败 → 明确报错 + exit 1（改前：静默 0 记录 + exit 0 假绿）	dup:cli-check 聚合矩阵	commit:14f49e20
+--json 面：pathErrors 收录该失败 + exit 1	dup:cli-check 聚合矩阵	commit:14f49e20
+负控制：现场文件可读但没有调用 → 不报错、exit 0	dup:cli-check 聚合矩阵	commit:14f49e20
+负控制：现场文件有调用 → 记录被采集（call@ 而非 entry@）、exit 0	dup:cli-check 聚合矩阵	commit:14f49e20
+contract 正常出结果（改前：裸 Do not know how to serialize a BigInt，exit 1）	dup:cli-check 聚合矩阵	commit:14f49e20
+同一份文件：check 面与 contract 面都不崩（跨 verb 一致）	dup:cli-check 聚合矩阵	commit:14f49e20
+方向 a：@nudo:mock 内联 —— 两条命令同绿（改前 check 绿 / --fix 红）	dup:cli-check 聚合矩阵	commit:14f49e20
+方向 b：autoBind:false —— 两条命令同红（改前 check 红 / --fix 绿）	dup:cli-check 聚合矩阵	commit:14f49e20
+方向 c：@nudo:mock from 缺文件 —— 两条命令的 error 条数一致	dup:cli-check 聚合矩阵	commit:14f49e20
+方向 d：--profile adoption —— --fix 不得为 warning 级诊断替用户写契约	dup:cli-check 聚合矩阵	commit:14f49e20
+① --from 现场文件（调用点在函数体内）⇒ 被调方门禁红（exit 1 + 恰一条跨文件域超限）	dup:cli-check 聚合矩阵	commit:14f49e20
+② --json 面同判：ok:false + summary.errors=1 + issues 恰一条	dup:cli-check 聚合矩阵	commit:14f49e20
+③ 违例归因到被调方的导出名（fn=f / actual=-1），不是现场文件的本地名	dup:cli-check 聚合矩阵	commit:14f49e20
+④ --from <目录> ⇒ 同判（现场文件集合按目录展开）	dup:cli-check 聚合矩阵	commit:14f49e20
+⑤ 控制组：直接 check 调用方 ⇒ 仍 1 条 nudo:constraint-violated（跨文件面不污染同文件面）	dup:cli-check 聚合矩阵	commit:14f49e20
+⑥ 控制组：不带 --from ⇒ 被调方绿（不凭空造证据）	dup:cli-check 聚合矩阵	commit:14f49e20
+⑦ 不重复报告：顶层调用点（执行态 + 静态两通道同时命中）⇒ 恰一条	dup:cli-check 聚合矩阵	commit:14f49e20
+静态扫描：函数体内的调用点被判为被调方的调用点违例	dup:cli-check 聚合矩阵	commit:14f49e20
+runCheck 接线：带 --from 现场文件 ⇒ 被调方报告含 error 级调用点违例	dup:cli-check 聚合矩阵	commit:14f49e20
+控制组：不带 --from 现场文件 ⇒ 被调方报告不含该违例（不凭空造证据）	dup:cli-check 聚合矩阵	commit:14f49e20
+去重：执行态通道已报过的同一处事实不被静态通道重复上报	dup:cli-check 聚合矩阵	commit:14f49e20
 ```

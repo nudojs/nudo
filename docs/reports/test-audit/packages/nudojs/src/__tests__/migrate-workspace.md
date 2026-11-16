@@ -6,104 +6,134 @@ migrate workspace 面（pnpm/npm/yaml/GHA/workflow/脚本定位）。
 
 ```audit
 title	rootCause	gap	action	status	evidence
-"两处相同命令 ⇒ 报告 2 条（带位置）、落盘 2 处、status 数到 0（已改写）"	"`nudo migrate retire` 的 workflow 改写**少报**（去重键 `file+from+to` 不含位置）⇒ 同一 workflow 里**两处**相同的 tsc 命令只记 1 条记录， 而落盘改了 2 处、`migrate status` 数到 2 行 ⇒ 报告 / 审计 / 落盘三面不一致。 修复：改写记录带 `line`（该 `run:` 的行号），去重键 = 文件 + 位置 + 命令。 断言：expect(；expect(result.rewrittenWorkflows).toHaveLength(2);"	没测该层	keep	keep	—
-"反向闸：单处改写仍只记 1 条（不得因加位置而重复计数）"	"`nudo migrate retire` 的 workflow 改写**少报**（去重键 `file+from+to` 不含位置）⇒ 同一 workflow 里**两处**相同的 tsc 命令只记 1 条记录， 而落盘改了 2 处、`migrate status` 数到 2 行 ⇒ 报告 / 审计 / 落盘三面不一致。 修复：改写记录带 `line`（该 `run:` 的行号），去重键 = 文件 + 位置 + 命令。 断言：expect(result.rewrittenWorkflows).toHaveLength(1);；expect(result.rewrittenWorkflows[0]!.line).toBe(3);"	没测该层	keep	keep	—
-"rewriteWorkflowText 把块标量当成一条命令改写"	"断言：expect(text).not.toContain(\"--project tsconfig.json\");；expect(text).toContain(\"run: |\");"	没测该层	keep	keep	—
-"retire 后落盘的 workflow 仍是合法 YAML 形态且命令语义正确"	"契约：块标量（`run: |` / `run: >`）在 YAML 层面是**一条标量**—— 改写器必须整体取出、在命令层面改写、再按原形态写回。 断言：expect(wf).not.toContain(\"--project tsconfig.json\");；expect(wf).not.toContain(\"npx nudojs check . --noEmit\");"	夹具漏形态	keep	keep	—
-"子包：不继承仓库根共享 workflow 的 tsc 行"	"`nudo migrate status` 把**仓库根**共享 workflow 的 tsc 行算作 **每个子包**的 blocker ⇒ 子包 `retire` 成功后 blocker 永不消失 （status 与 retire 结论矛盾）。 根因：status 用 `listWorkflowTscLines` → `findWorkflowDir`（**向上找 6 层**）， 而 `retire` 的作用域是**包自有**的 `.github/workflows`（不向上找）⇒ status 报的 blocker `retire` 修不掉。 断言：expect(sub.blockers.filter((b) => b.inc"	没测该层	keep	keep	—
-"根包：共享 workflow 的 tsc 行算在它头上（只算一次）"	"`nudo migrate status` 把**仓库根**共享 workflow 的 tsc 行算作 **每个子包**的 blocker ⇒ 子包 `retire` 成功后 blocker 永不消失 （status 与 retire 结论矛盾）。 根因：status 用 `listWorkflowTscLines` → `findWorkflowDir`（**向上找 6 层**）， 而 `retire` 的作用域是**包自有**的 `.github/workflows`（不向上找）⇒ status 报的 blocker `retire` 修不掉。 断言：expect("	没测该层	keep	keep	—
-"子包 retire 成功后 blocker 清空（status 与 retire 不再矛盾）"	"`nudo migrate status` 把**仓库根**共享 workflow 的 tsc 行算作 **每个子包**的 blocker ⇒ 子包 `retire` 成功后 blocker 永不消失 （status 与 retire 结论矛盾）。 根因：status 用 `listWorkflowTscLines` → `findWorkflowDir`（**向上找 6 层**）， 而 `retire` 的作用域是**包自有**的 `.github/workflows`（不向上找）⇒ status 报的 blocker `retire` 修不掉。 断言：expect(sub.retired).toBe(true);；expect("	没测该层	keep	keep	—
-"stdout 非空、可解析、ok:false、error 点名 action"	"`nudo migrate --json <未知 action>` ⇒ **stdout 空**（0 字节） ⇒ 机器消费方 `JSON.parse(\"\")` 抛「Unexpected end of JSON input」。 违反设计文档的明文契约（`docs/design/cli-semantics.md`）： 「**`--json` 下 stdout 永不为空** —— 即使全部路径失败也输出信封」 「绝不出现空 stdout + 非零 exit」。 断言：expect(r.status).toBe(1);；expect(r.stdout.length).toBeGreaterThan(0);"	没测该层	keep	keep	—
-"人类面（无 --json）：错误仍进 stderr"	"`nudo migrate --json <未知 action>` ⇒ **stdout 空**（0 字节） ⇒ 机器消费方 `JSON.parse(\"\")` 抛「Unexpected end of JSON input」。 违反设计文档的明文契约（`docs/design/cli-semantics.md`）： 「**`--json` 下 stdout 永不为空** —— 即使全部路径失败也输出信封」 「绝不出现空 stdout + 非零 exit」。 断言：expect(r.status).toBe(1);；expect(r.stderr).toContain(\"Unknown migrate action\");"	没测该层	keep	keep	—
-"反向闸：合法 action 的 --json 仍是合法 JSON"	"`nudo migrate --json <未知 action>` ⇒ **stdout 空**（0 字节） ⇒ 机器消费方 `JSON.parse(\"\")` 抛「Unexpected end of JSON input」。 违反设计文档的明文契约（`docs/design/cli-semantics.md`）： 「**`--json` 下 stdout 永不为空** —— 即使全部路径失败也输出信封」 「绝不出现空 stdout + 非零 exit」。 断言：expect(r.stdout.length).toBeGreaterThan(0);；expect(() => JSON.parse(r.stdout)).not.toTh"	没测该层	keep	keep	—
-"数值 enum：`A = 1, B = A * 10, C` ⇒ [1,10,11]"	"（协议面）—— `nudo migrate strip` 对 **enum 的计算成员**原样保留初始化 表达式 ⇒ 产物引用**未绑定全局** ⇒ 运行时 ReferenceError； 本文件是**运行期**回归钉（`cli-` 只钉「产物可解析」，没钉「跑得起来」）： 四种 enum 形态（数值 / 混合 / 字符串 / const）的 strip 产物都必须在宿主里 跑出与 tsc 一致的结果。 断言：expect(code).not.toMatch(/E\\[E\\[\"B\"\\] = A \\*/);；expect(code).toMatch(/E\\[E\\[\"B\"\\] = E\\[\"A\"\\] \\*/);"	夹具漏形态	keep	keep	—
-"混合 enum：`A = 1, B = 'b', C = A + 5` ⇒ [1,\"b\",6]"	"（协议面）—— `nudo migrate strip` 对 **enum 的计算成员**原样保留初始化 表达式 ⇒ 产物引用**未绑定全局** ⇒ 运行时 ReferenceError； 本文件是**运行期**回归钉（`cli-` 只钉「产物可解析」，没钉「跑得起来」）： 四种 enum 形态（数值 / 混合 / 字符串 / const）的 strip 产物都必须在宿主里 跑出与 tsc 一致的结果。 断言：expect(run.status).toBe(0);；expect(run.stdout).toBe('[1,\"b\",6]');"	夹具漏形态	keep	keep	—
-"字符串 enum：`A = 'a', B = A + 'b'` ⇒ [\"a\",\"ab\"] 且不建反向映射"	"（协议面）—— `nudo migrate strip` 对 **enum 的计算成员**原样保留初始化 表达式 ⇒ 产物引用**未绑定全局** ⇒ 运行时 ReferenceError； 本文件是**运行期**回归钉（`cli-` 只钉「产物可解析」，没钉「跑得起来」）： 四种 enum 形态（数值 / 混合 / 字符串 / const）的 strip 产物都必须在宿主里 跑出与 tsc 一致的结果。 断言：expect(run.status).toBe(0);；expect(run.stdout).toBe('[\"a\",\"ab\"]');"	夹具漏形态	keep	keep	—
-"const enum：`A = 1, B = A * 3` ⇒ [1,3]"	"（协议面）—— `nudo migrate strip` 对 **enum 的计算成员**原样保留初始化 表达式 ⇒ 产物引用**未绑定全局** ⇒ 运行时 ReferenceError； 本文件是**运行期**回归钉（`cli-` 只钉「产物可解析」，没钉「跑得起来」）： 四种 enum 形态（数值 / 混合 / 字符串 / const）的 strip 产物都必须在宿主里 跑出与 tsc 一致的结果。 断言：expect(run.status).toBe(0);；expect(run.stdout).toBe(\"[1,3]\");"	夹具漏形态	keep	keep	—
-"strip 的 note 仍声明语义已保住（现在与事实一致）"	"（协议面）—— `nudo migrate strip` 对 **enum 的计算成员**原样保留初始化 表达式 ⇒ 产物引用**未绑定全局** ⇒ 运行时 ReferenceError； 本文件是**运行期**回归钉（`cli-` 只钉「产物可解析」，没钉「跑得起来」）： 四种 enum 形态（数值 / 混合 / 字符串 / const）的 strip 产物都必须在宿主里 跑出与 tsc 一致的结果。 断言：expect(notes.join(\"\\n\")).toContain(\"TS enum semantics kept\");"	夹具漏形态	keep	keep	—
-"反向闸：无计算成员的 enum 产物不变（不引入多余改写）"	"（协议面）—— `nudo migrate strip` 对 **enum 的计算成员**原样保留初始化 表达式 ⇒ 产物引用**未绑定全局** ⇒ 运行时 ReferenceError； 本文件是**运行期**回归钉（`cli-` 只钉「产物可解析」，没钉「跑得起来」）： 四种 enum 形态（数值 / 混合 / 字符串 / const）的 strip 产物都必须在宿主里 跑出与 tsc 一致的结果。 断言：expect(code).toContain('E[E[\"A\"] = 1] = \"A\"');；expect(code).toContain('E[E[\"B\"] = 2] = \"B\"');"	夹具漏形态	keep	keep	—
-"脚本名不含 check/test、命令是 nudo check ⇒ 不得报「no nudo check/test script yet」"	"⇒ 命令已经是 `nudo check .` / `npx nudojs check .`、但脚本名叫 `lint` / `typecheck2` 的包被报成「还没有 nudo 门禁」； retire 改写后（`npx nudojs check .`）该阻塞**永不消失**。 断言：expect(rows).toHaveLength(1);；expect(rows[0]!.nudoScripts).toContain(\"lint\");"	没测该层	keep	keep	—
-"retire 改写后的形态 `npx nudojs check .` 同样算已有门禁（旧口径匹配不到 nudojs）"	"⇒ 命令已经是 `nudo check .` / `npx nudojs check .`、但脚本名叫 `lint` / `typecheck2` 的包被报成「还没有 nudo 门禁」； retire 改写后（`npx nudojs check .`）该阻塞**永不消失**。 断言：expect(rows[0]!.blockers).not.toContain(\"no nudo check/test script yet\");"	没测该层	keep	keep	—
-"`nudo test` 也是门禁"	"⇒ 命令已经是 `nudo check .` / `npx nudojs check .`、但脚本名叫 `lint` / `typecheck2` 的包被报成「还没有 nudo 门禁」； retire 改写后（`npx nudojs check .`）该阻塞**永不消失**。 断言：expect(rows[0]!.blockers).not.toContain(\"no nudo check/test script yet\");"	没测该层	keep	keep	—
-"反向闸：命令里没有 nudo 门禁 ⇒ 仍必须报该阻塞（判定不是恒假）"	"⇒ 命令已经是 `nudo check .` / `npx nudojs check .`、但脚本名叫 `lint` / `typecheck2` 的包被报成「还没有 nudo 门禁」； retire 改写后（`npx nudojs check .`）该阻塞**永不消失**。 断言：expect(rows[0]!.blockers).toContain(\"no nudo check/test script yet\");"	没测该层	keep	keep	—
-"字符串里的 nudo check 不算门禁（shell 掩码口径不变）"	"⇒ 命令已经是 `nudo check .` / `npx nudojs check .`、但脚本名叫 `lint` / `typecheck2` 的包被报成「还没有 nudo 门禁」； retire 改写后（`npx nudojs check .`）该阻塞**永不消失**。 断言：expect(rows[0]!.blockers).toContain(\"no nudo check/test script yet\");"	没测该层	keep	keep	—
-"文本面不再出现该假阻塞"	"断言：expect(text).not.toContain(\"no nudo check/test script yet\");"	没测该层	keep	keep	—
-"peerDependencies.typescript ⇒ typescriptDep 为 true 且报出阻塞"	"`peerDependencies.typescript` 不在 `status` 的作用域里： status 的依赖集合只合并 `dependencies` + `devDependencies` ⇒ 只把 typescript 放在 peerDependencies 的包被报成「typescript dep: no」（假绿）， 且没有「typescript still in dependencies」阻塞（三个动词对同一事实三种答案）。 期望：依赖合并口径 = dependencies + devDependencies + peerDependencies + optionalDependencies。 断言：expect(r"	没测该层	keep	keep	—
-"devDependencies / dependencies 口径不回退"	"`peerDependencies.typescript` 不在 `status` 的作用域里： status 的依赖集合只合并 `dependencies` + `devDependencies` ⇒ 只把 typescript 放在 peerDependencies 的包被报成「typescript dep: no」（假绿）， 且没有「typescript still in dependencies」阻塞（三个动词对同一事实三种答案）。 期望：依赖合并口径 = dependencies + devDependencies + peerDependencies + optionalDependencies。 断言：expect(m"	没测该层	keep	keep	—
-"optionalDependencies.typescript 也算（四个来源同一口径）"	"`peerDependencies.typescript` 不在 `status` 的作用域里： status 的依赖集合只合并 `dependencies` + `devDependencies` ⇒ 只把 typescript 放在 peerDependencies 的包被报成「typescript dep: no」（假绿）， 且没有「typescript still in dependencies」阻塞（三个动词对同一事实三种答案）。 期望：依赖合并口径 = dependencies + devDependencies + peerDependencies + optionalDependencies。 断言：expect(m"	没测该层	keep	keep	—
-"反向闸：没有 typescript 依赖 ⇒ typescriptDep 为 false（判定不是恒真）"	"`peerDependencies.typescript` 不在 `status` 的作用域里： status 的依赖集合只合并 `dependencies` + `devDependencies` ⇒ 只把 typescript 放在 peerDependencies 的包被报成「typescript dep: no」（假绿）， 且没有「typescript still in dependencies」阻塞（三个动词对同一事实三种答案）。 期望：依赖合并口径 = dependencies + devDependencies + peerDependencies + optionalDependencies。 断言：expect(r"	没测该层	keep	keep	—
-"mergePackageDeps 合并四个依赖来源，且忽略非对象字段"	"断言：expect(merged).toEqual({ a: \"1\", b: \"2\", c: \"3\", d: \"4\" });"	没测该层	keep	keep	—
-"根包自己 0 个 .ts ⇒ 根行 tsFiles 为 0（不重复计入子包）"	"`migrate status` 根行的 `tsFiles` 把**所有嵌套 workspace 包**的 .ts 重复计入（listFiles 是目录递归，不按包边界裁剪）⇒ 根行 = 全仓库面， 且与各包行重复计数（审计面「表面积」数字错）。 期望：status 按包分行 ⇒ 每行只统计**该包自己**的 .ts/.tsx。 断言：expect(root).toBeDefined();；expect(root.tsFiles).toBe(0);"	没测该层	keep	keep	—
-"反向闸：根包自己有 .ts 时，根行仍要数到自己的文件"	"（协议面）—— `nudo migrate strip` 对 **enum 的计算成员**原样保留初始化 表达式 ⇒ 产物引用**未绑定全局** ⇒ 运行时 ReferenceError； 本文件是**运行期**回归钉（`cli-` 只钉「产物可解析」，没钉「跑得起来」）： 四种 enum 形态（数值 / 混合 / 字符串 / const）的 strip 产物都必须在宿主里 跑出与 tsc 一致的结果。 断言：expect(root.tsFiles).toBe(1);"	夹具漏形态	keep	keep	—
-"子包的 .tsx 也只算在子包行"	"`migrate status` 根行的 `tsFiles` 把**所有嵌套 workspace 包**的 .ts 重复计入（listFiles 是目录递归，不按包边界裁剪）⇒ 根行 = 全仓库面， 且与各包行重复计数（审计面「表面积」数字错）。 期望：status 按包分行 ⇒ 每行只统计**该包自己**的 .ts/.tsx。 断言：expect(root.tsxFiles).toBe(0);；expect(sub.tsxFiles).toBe(1);"	没测该层	keep	keep	—
-"库面：package.json 出现 scripts.check:nudo（报告与落盘一致）"	"`nudo migrate retire` 注入的 `check:nudo` **从未落盘**， 但 CLI 输出与审计记录**都谎报「已改写」**。 根因：`pkg.scripts ?? {}` 产生**局部新对象**，注入写进局部副本，`pkg.scripts` 从未被赋值。 断言：expect(pkg.scripts).toBeDefined();；expect(pkg.scripts![\"check:nudo\"]).toBe(\"nudo check .\");"	夹具漏形态	keep	keep	—
-"CLI 面：--json 报文里报改了，落盘也得有"	"`nudo migrate retire` 注入的 `check:nudo` **从未落盘**， 但 CLI 输出与审计记录**都谎报「已改写」**。 根因：`pkg.scripts ?? {}` 产生**局部新对象**，注入写进局部副本，`pkg.scripts` 从未被赋值。 断言：expect(r.status).toBe(0);；expect(Array.isArray(reported)).toBe(true);"	夹具漏形态	keep	keep	—
-"反向闸：已有 scripts 键的包，注入也落进**既有** scripts 对象（不丢原有脚本）"	"`nudo migrate retire` 注入的 `check:nudo` **从未落盘**， 但 CLI 输出与审计记录**都谎报「已改写」**。 根因：`pkg.scripts ?? {}` 产生**局部新对象**，注入写进局部副本，`pkg.scripts` 从未被赋值。 断言：expect(pkg.scripts[\"check:nudo\"]).toBe(\"nudo check .\");；expect(pkg.scripts[\"test\"]).toBe(\"node -e 0\");"	夹具漏形态	keep	keep	—
-"status 的 tsc 行数只数真正的命令行（1 条，不是 3 条）"	"env 值 / 描述文字 / 注释必须逐字保留。 断言：expect(listWorkflowTscLines(dir).length).toBe(1);；expect(listWorkflowTscLines(dir)[0]!.line).toContain(\"npx tsc --noEmit\");"	没测该层	keep	keep	—
-"retire 后 env 值 / 描述文字逐字未变，只有 run: 那条被改写"	"env 值 / 描述文字 / 注释必须逐字保留。 断言：expect(wf).toContain(\" TSC: tsc\\n\");；expect(wf).toContain(\" NOTE: use tsc for typecheck\\n\");"	没测该层	keep	keep	—
-"status 的 workflow blocker 计数与改写口径一致"	"env 值 / 描述文字 / 注释必须逐字保留。 断言：expect(blocker).toBe(\"1 tsc line(s) in .github/workflows\");"	没测该层	keep	keep	—
-"rewriteWorkflowText 改写引号标量里的 tsc（保留原引号风格）"	"`nudo migrate retire` **漏改** YAML 引号包住的 `run:` tsc 命令 ⇒ 报「已退役」但 CI 的 tsc 门禁原样保留（假绿）。 契约：YAML 的标量引号 ≠ shell 的引号——处理 `run:` 时按 **YAML 语义**取标量 （剥掉 YAML 自己的引号），不得用 shell 词法掩码把引号内容当字符串遮掉。 断言：expect(changes.length).toBe(3);；expect(text).toContain('- run: \"npx nudojs check .\"');"	夹具漏形态	keep	keep	—
-"status 的 tsc 行数与真实条数一致（3 条，不是 1 条）"	"`nudo migrate retire` **漏改** YAML 引号包住的 `run:` tsc 命令 ⇒ 报「已退役」但 CI 的 tsc 门禁原样保留（假绿）。 契约：YAML 的标量引号 ≠ shell 的引号——处理 `run:` 时按 **YAML 语义**取标量 （剥掉 YAML 自己的引号），不得用 shell 词法掩码把引号内容当字符串遮掉。 断言：expect(listWorkflowTscLines(dir).length).toBe(3);；expect(blocker).toBe(\"3 tsc line(s) in .github/workflows\");"	夹具漏形态	keep	keep	—
-"retire 后 CI 里不再残留 tsc 门禁"	"`nudo migrate retire` **漏改** YAML 引号包住的 `run:` tsc 命令 ⇒ 报「已退役」但 CI 的 tsc 门禁原样保留（假绿）。 契约：YAML 的标量引号 ≠ shell 的引号——处理 `run:` 时按 **YAML 语义**取标量 （剥掉 YAML 自己的引号），不得用 shell 词法掩码把引号内容当字符串遮掉。 断言：expect(wf).not.toContain(\"tsc --noEmit\");；expect(wf).toContain('- run: \"npx nudojs check .\"');"	夹具漏形态	keep	keep	—
-"status 能看到对象式 workspaces 的子包（改前：整行消失）"	"`nudo migrate status` / `retire --all` **整个忽略对象式 workspaces** （`{ \"packages\": [...] }`，npm / yarn berry 经典写法）⇒ 子包不可见、 其 tsc 门禁留着却报「已退役」（假绿）。 根因：`packageRoots` 用 `Array.isArray(workspaces)` 判形态，对象形态被**静默丢弃**。 断言：expect(roots).toContain(resolve(sub));；expect(row).toBeDefined();"	夹具漏形态	keep	keep	—
-"retire --all 把对象式 workspaces 的子包纳入作用域并真的退役（落盘可见）"	"`nudo migrate status` / `retire --all` **整个忽略对象式 workspaces** （`{ \"packages\": [...] }`，npm / yarn berry 经典写法）⇒ 子包不可见、 其 tsc 门禁留着却报「已退役」（假绿）。 根因：`packageRoots` 用 `Array.isArray(workspaces)` 判形态，对象形态被**静默丢弃**。 断言：expect(results.map((r) => resolve(r.root))).toEqual([resolve(sub)]);；expect(pkg.devDependencies.typescript).t"	夹具漏形态	keep	keep	—
-"CLI：migrate status 的 stdout 列出对象式 workspaces 的子包（exit 0）"	"`nudo migrate status` / `retire --all` **整个忽略对象式 workspaces** （`{ \"packages\": [...] }`，npm / yarn berry 经典写法）⇒ 子包不可见、 其 tsc 门禁留着却报「已退役」（假绿）。 根因：`packageRoots` 用 `Array.isArray(workspaces)` 判形态，对象形态被**静默丢弃**。 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain(relative(process.cwd(), sub));"	夹具漏形态	keep	keep	—
-"对照组：数组式 workspaces 仍然可见（回归护栏，不被本次改动带坏）"	"`nudo migrate status` / `retire --all` **整个忽略对象式 workspaces** （`{ \"packages\": [...] }`，npm / yarn berry 经典写法）⇒ 子包不可见、 其 tsc 门禁留着却报「已退役」（假绿）。 根因：`packageRoots` 用 `Array.isArray(workspaces)` 判形态，对象形态被**静默丢弃**。 断言：expect(rows.map((r) => resolve(r.root))).toContain(resolve(sub));"	夹具漏形态	keep	keep	—
-"status 不列出被 pnpm 排除的包（改前：legacy 占一行）"	"根因：`packageRoots` 把 `!…` 当成「不新增根的 pattern」直接 `continue`， 排除**语义从未实现** ⇒ `packages/*` 把 `packages/legacy` 一并收进作用域。 本钉锁住：被排除的包**不进 status**、**不被 retire --all 改写**（落盘逐字不变）、 **不写 marker**； 断言：expect(roots).toContain(resolve(app));；expect(roots).not.toContain(resolve(legacy));"	没测该层	keep	keep	—
-"retire --all 只退役未被排除的包"	"根因：`packageRoots` 把 `!…` 当成「不新增根的 pattern」直接 `continue`， 排除**语义从未实现** ⇒ `packages/*` 把 `packages/legacy` 一并收进作用域。 本钉锁住：被排除的包**不进 status**、**不被 retire --all 改写**（落盘逐字不变）、 **不写 marker**； 断言：expect(results.map((r) => resolve(r.root))).toEqual([resolve(app)]);；expect(appPkg.devDependencies.typescript).toBeUndefined();"	没测该层	keep	keep	—
-"retire --all 不改写被排除的包：package.json 逐字不变、不写 marker"	"根因：`packageRoots` 把 `!…` 当成「不新增根的 pattern」直接 `continue`， 排除**语义从未实现** ⇒ `packages/*` 把 `packages/legacy` 一并收进作用域。 本钉锁住：被排除的包**不进 status**、**不被 retire --all 改写**（落盘逐字不变）、 **不写 marker**； 断言：expect(readFileSync(join(legacy, \"package.json\"), \"utf-8\")).toBe(LEGACY_PKG);；expect(existsSync(join(legacy, \".nudo\", \"migrate-retir"	没测该层	keep	keep	—
-"CLI：retire --all --dry-run 的 stdout 不含被排除的包，stderr 显式说明跳过"	"根因：`packageRoots` 把 `!…` 当成「不新增根的 pattern」直接 `continue`， 排除**语义从未实现** ⇒ `packages/*` 把 `packages/legacy` 一并收进作用域。 本钉锁住：被排除的包**不进 status**、**不被 retire --all 改写**（落盘逐字不变）、 **不写 marker**； 断言：expect(r.status).toBe(0);；expect(r.stdout).not.toContain(\"packages/legacy\");"	没测该层	keep	keep	—
-"CLI：retire --all 不落盘到被排除的包（package.json 不变）"	"根因：`packageRoots` 把 `!…` 当成「不新增根的 pattern」直接 `continue`， 排除**语义从未实现** ⇒ `packages/*` 把 `packages/legacy` 一并收进作用域。 本钉锁住：被排除的包**不进 status**、**不被 retire --all 改写**（落盘逐字不变）、 **不写 marker**； 断言：expect(r.status).toBe(0);；expect(r.stdout).not.toContain(\"packages/legacy\");"	没测该层	keep	keep	—
-"build（tsc -p tsconfig.build.json）原样保留，门禁脚本照常改写"	"`nudo migrate retire` 把**编译脚本**（`build`）改写成 `nudo check .` —— 构建不再产出任何产物，却绿灯通过并写下「已退役」标记。 期望：只改写**门禁角色**的脚本（`--noEmit` / 裸 tsc）； 断言：expect(pkg.scripts[\"build\"]).toBe(\"tsc -p tsconfig.build.json\");；expect(pkg.scripts[\"build\"]).not.toContain(\"nudo check\");"	没测该层	keep	keep	—
-"只有编译脚本的包：明确拒绝退役，脚本零改动"	"断言：expect(() => migrateRetire(dir, { workflows: false })).toThrow(/nothing to retire/);；expect(readFileSync(join(dir, \"package.json\"), \"utf-8\")).toBe(before);"	没测该层	keep	keep	—
-"CLI 面：build 不被改写"	"`nudo migrate retire` 把**编译脚本**（`build`）改写成 `nudo check .` —— 构建不再产出任何产物，却绿灯通过并写下「已退役」标记。 期望：只改写**门禁角色**的脚本（`--noEmit` / 裸 tsc）； 断言：expect(r.status).toBe(0);；expect(pkg.scripts[\"build\"]).toBe(\"tsc -p tsconfig.build.json\");"	没测该层	keep	keep	—
-"反向闸：纯门禁脚本照常改写 + 摘依赖（断言非永真）"	"`nudo migrate retire` 把**编译脚本**（`build`）改写成 `nudo check .` —— 构建不再产出任何产物，却绿灯通过并写下「已退役」标记。 期望：只改写**门禁角色**的脚本（`--noEmit` / 裸 tsc）； 断言：expect(pkg.scripts[\"typecheck\"]).toBe(\"nudo check .\");；expect(pkg.devDependencies[\"typescript\"]).toBeUndefined();"	没测该层	keep	keep	—
-"import \"./helper\" ⇒ 产物写 \"./helper.js\""	"`migrate strip` 不改写相对模块说明符 ⇒ 产物里留着 `from \"./helper\"`。 根因：strip 只做 AST 级 TS 剥除，不碰 `import.source`； 断言：expect(out).toContain('from \"./helper.js\"');；expect(out).not.toContain('from \"./helper\"');"	没测该层	keep	keep	—
-"export … from 也被改写"	"`migrate strip` 不改写相对模块说明符 ⇒ 产物里留着 `from \"./helper\"`。 根因：strip 只做 AST 级 TS 剥除，不碰 `import.source`； 断言：expect(readFileSync(join(dir, \"reexport.js\"), \"utf-8\")).toContain('\"./helper.js\"');"	没测该层	keep	keep	—
-"包说明符不动（非相对说明符不在 ESM 扩展名规则的范围内）"	"`migrate strip` 不改写相对模块说明符 ⇒ 产物里留着 `from \"./helper\"`。 根因：strip 只做 AST 级 TS 剥除，不碰 `import.source`； 断言：expect(out).toContain('\"@nudojs/core\"');"	没测该层	keep	keep	—
-"相对说明符指向目录 ⇒ 补成目录索引（./dir → ./dir/index.js）"	"断言：expect(readFileSync(join(dir, \"use.js\"), \"utf-8\")).toContain('\"./sub/index.js\"');"	没测该层	keep	keep	—
-"解析失败 ⇒ blockers 显式报出 + packageJsonError 字段"	"`migrate status` **吞掉畸形的 package.json**（readJson 解析失败 ⇒ undefined， 与「文件不存在」不可区分）⇒ 报「typescript dep: no」＋「tscScripts: []」（假绿）。 期望：status 必须区分「不存在」/「解析失败」—— 解析失败 ⇒ 显式报出（blockers + JSON 字段 packageJsonError），不得当成「没有」。 断言：expect(rows).toHaveLength(1);；expect(rows[0]!.packageJson).toBe(true);"	没测该层	keep	keep	—
-"文本面出现解析失败行"	"断言：expect(text).toContain(\"package.json parse failed\");"	没测该层	keep	keep	—
-"JSON 面带 packageJsonError 且 stdout 是合法 JSON"	"`migrate status` **吞掉畸形的 package.json**（readJson 解析失败 ⇒ undefined， 与「文件不存在」不可区分）⇒ 报「typescript dep: no」＋「tscScripts: []」（假绿）。 期望：status 必须区分「不存在」/「解析失败」—— 解析失败 ⇒ 显式报出（blockers + JSON 字段 packageJsonError），不得当成「没有」。 断言：expect(r.status).toBe(0);；expect(parsed).toHaveLength(1);"	没测该层	keep	keep	—
-"反向闸：合法 package.json ⇒ 无 packageJsonError、无该阻塞"	"`migrate status` **吞掉畸形的 package.json**（readJson 解析失败 ⇒ undefined， 与「文件不存在」不可区分）⇒ 报「typescript dep: no」＋「tscScripts: []」（假绿）。 期望：status 必须区分「不存在」/「解析失败」—— 解析失败 ⇒ 显式报出（blockers + JSON 字段 packageJsonError），不得当成「没有」。 断言：expect(rows[0]!.packageJsonError).toBeUndefined();；expect(rows[0]!.blockers).not.toContain(\"package.jso"	没测该层	keep	keep	—
-"反向闸：package.json 不存在 ≠ 解析失败（missing 不算错误）"	"`migrate status` **吞掉畸形的 package.json**（readJson 解析失败 ⇒ undefined， 与「文件不存在」不可区分）⇒ 报「typescript dep: no」＋「tscScripts: []」（假绿）。 期望：status 必须区分「不存在」/「解析失败」—— 解析失败 ⇒ 显式报出（blockers + JSON 字段 packageJsonError），不得当成「没有」。 断言：expect(rows[0]!.packageJson).toBe(false);；expect(rows[0]!.packageJsonError).toBeUndefined();"	没测该层	keep	keep	—
-"readPackageJsonDetailed 分类：missing / ok / invalid"	"断言：expect(migrate.readPackageJsonDetailed(join(dir, \"package.json\")).kind).toBe(\"invalid\");；expect(migrate.readPackageJsonDetailed(join(dir, \"nope.json\")).kind).toBe(\"missing\");"	没测该层	keep	keep	—
-"blockers 数组里没有「—」元素"	"`nudo migrate status` 的 `blockers` 串里**泄漏占位符「—」**： blockers 用「—」表示「本项无」，汇总成逗号串时没过滤占位符 ⇒ 用户 / 脚本看到 `1 tsc line(s) in .github/workflows; 期望：占位符不得出现在 blockers 汇总里（无阻塞项 ⇒ 空）。 断言：expect(rows[0]!.blockers).not.toContain(\"—\");；expect(b.trim()).not.toBe(\"—\");"	没测该层	keep	keep	—
-"文本面只有真 blocker，不带占位符"	"`nudo migrate status` 的 `blockers` 串里**泄漏占位符「—」**： blockers 用「—」表示「本项无」，汇总成逗号串时没过滤占位符 ⇒ 用户 / 脚本看到 `1 tsc line(s) in .github/workflows; 期望：占位符不得出现在 blockers 汇总里（无阻塞项 ⇒ 空）。 断言：expect(text).toContain(\"blockers: 1 tsc line(s) in .github/workflows\");；expect(text).not.toContain(\"—\");"	没测该层	keep	keep	—
-"反向闸：真有 blocker 时占位符也不得混入（防御性过滤）"	"`nudo migrate status` 的 `blockers` 串里**泄漏占位符「—」**： blockers 用「—」表示「本项无」，汇总成逗号串时没过滤占位符 ⇒ 用户 / 脚本看到 `1 tsc line(s) in .github/workflows; 期望：占位符不得出现在 blockers 汇总里（无阻塞项 ⇒ 空）。 断言：expect(text).toContain(\"blockers: 1 tsc line(s) in .github/workflows\");；expect(text).not.toContain(\"—\");"	没测该层	keep	keep	—
-"反向闸：只有占位符 ⇒ 文本面不出现 blockers 行"	"`nudo migrate status` 的 `blockers` 串里**泄漏占位符「—」**： blockers 用「—」表示「本项无」，汇总成逗号串时没过滤占位符 ⇒ 用户 / 脚本看到 `1 tsc line(s) in .github/workflows; 期望：占位符不得出现在 blockers 汇总里（无阻塞项 ⇒ 空）。 断言：expect(text).not.toContain(\"blockers:\");"	没测该层	keep	keep	—
-"已有 keep.ts.bak ⇒ 换名留底（keep.ts.1.bak），且旧备份原样保留"	"根因：备份分支的条件是 `!existsSync(`${file}.bak`)` ⇒ 撞名就什么都不做， exit 0、输出里也没有一行说明 ⇒ 用户以为备份了，其实在写一份「看起来像备份、 内容却是旧的」的文件，后续按 `.bak` 恢复会拿到陈旧源码。 期望：备份成功与否必须在输出里有一行明确交代； 断言：expect(existsSync(join(dir, \"keep.ts\"))).toBe(false);；expect(existsSync(join(dir, \"keep.ts.1.bak\"))).toBe(true);"	没测该层	keep	keep	—
-"备份动作在输出里有一行明确交代（源是否被改名是可观测事实）"	"断言：expect(notes).toMatch(/backed up .*keep\\.ts\\.1\\.bak/);"	没测该层	keep	keep	—
-"没有撞名时备份名仍是 <file>.bak"	"根因：备份分支的条件是 `!existsSync(`${file}.bak`)` ⇒ 撞名就什么都不做， exit 0、输出里也没有一行说明 ⇒ 用户以为备份了，其实在写一份「看起来像备份、 内容却是旧的」的文件，后续按 `.bak` 恢复会拿到陈旧源码。 期望：备份成功与否必须在输出里有一行明确交代； 断言：expect(existsSync(join(dir, \"keep.ts.bak\"))).toBe(true);；expect(existsSync(join(dir, \"keep.ts\"))).toBe(false);"	没测该层	keep	keep	—
-"JSON 面 blockers 为空数组（不是 ['—']）"	"`nudo migrate status --json` 的 `blockers` **数组元素**是占位符 `\"—\"`： 机器面把「无 blocker」当成**一条 blocker**（文本面会过滤掉它）⇒ 消费方按 `blockers.length` 判「能否退役」永远 ≥ 1 ⇒ 自动化误判。 期望：JSON 面无 blocker ⇒ `blockers: []`； 断言：expect(r.status).toBe(0);；expect(parsed).toHaveLength(1);"	夹具漏形态	keep	keep	—
-"API 面同样为空数组"	"断言：expect(rows[0]!.blockers).toEqual([]);"	没测该层	keep	keep	—
-"反向闸：真有 blocker 时数组里是那条 blocker（判定不是恒空）"	"`nudo migrate status --json` 的 `blockers` **数组元素**是占位符 `\"—\"`： 机器面把「无 blocker」当成**一条 blocker**（文本面会过滤掉它）⇒ 消费方按 `blockers.length` 判「能否退役」永远 ≥ 1 ⇒ 自动化误判。 期望：JSON 面无 blocker ⇒ `blockers: []`； 断言：expect(parsed[0]!.blockers).toContain(\"typescript still in dependencies\");；expect(parsed[0]!.blockers).not.toContain(\"—\");"	夹具漏形态	keep	keep	—
-"status 列出嵌套成员（一层与深层都在）"	"`migrate status` / `retire --all` **看不见 pnpm 嵌套 workspace 包** （`packages/**` 只展开一层、多段 pattern 整条静默丢弃）⇒ 仍带 `typescript` + `tsc` 的成员包**完全不存在**于审计与退役范围里 ⇒ `retire --all` 报「nothing to retire」 并 exit 0（**退役假绿**）。 根因：`packageRoots` 用「一层 `readdirSync`」近似 glob。 断言：expect(roots).toContain(resolve(plain));；expect(roots).toContai"	没测该层	keep	keep	—
-"retire --all 把嵌套成员纳入作用域并真的退役（落盘可见）"	"`migrate status` / `retire --all` **看不见 pnpm 嵌套 workspace 包** （`packages/**` 只展开一层、多段 pattern 整条静默丢弃）⇒ 仍带 `typescript` + `tsc` 的成员包**完全不存在**于审计与退役范围里 ⇒ `retire --all` 报「nothing to retire」 并 exit 0（**退役假绿**）。 根因：`packageRoots` 用「一层 `readdirSync`」近似 glob。 断言：expect(roots).toContain(resolve(nested));；expect(roots).toConta"	没测该层	keep	keep	—
-"多段 pattern（两层 `*`）不再被整条丢弃"	"} 多段 pattern（`packages` 目录下两层 `*`）—— 改前整条被静默丢弃 断言：expect(roots).toContain(resolve(nested));；expect(results.map((r) => resolve(r.root))).toEqual([resolve(nested)]);"	没测该层	keep	keep	—
-"CLI：migrate status 的 stdout 列出嵌套成员（改前：整行缺席）"	"} 多段 pattern（`packages` 目录下两层 `*`）—— 改前整条被静默丢弃 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain(relative(process.cwd(), nested));"	没测该层	keep	keep	—
-"CLI：retire --all --dry-run 不再报 nothing to retire（改前：假绿 exit 0）"	"} 多段 pattern（`packages` 目录下两层 `*`）—— 改前整条被静默丢弃 断言：expect(r.status).toBe(0);；expect(r.stdout).not.toContain(\"nothing to retire\");"	没测该层	keep	keep	—
-"API 面不抛，null 脚本不算 tsc"	"`package.json` 的 `scripts` 值是 `null` 时 `migrate status` / `retire` 抛 裸 TypeError（`Cannot read properties of null (reading 'split')`）—— 没有包名、没有文件路径、没有 `error:` / `fix:` 引导。 根因：`as Record<string, string>` 只是编译期断言； 断言：expect(rows).toHaveLength(1);；expect(rows[0]!.tscScripts).toEqual([]);"	没测该层	keep	keep	—
-"CLI 面 exit 0 且不出现裸 TypeError"	"`package.json` 的 `scripts` 值是 `null` 时 `migrate status` / `retire` 抛 裸 TypeError（`Cannot read properties of null (reading 'split')`）—— 没有包名、没有文件路径、没有 `error:` / `fix:` 引导。 根因：`as Record<string, string>` 只是编译期断言； 断言：expect(r.status).toBe(0);；expect(r.stdout).toContain(\"migrate status\");"	没测该层	keep	keep	—
-"CLI --json 面也正常（exit 0 + 合法 JSON）"	"`package.json` 的 `scripts` 值是 `null` 时 `migrate status` / `retire` 抛 裸 TypeError（`Cannot read properties of null (reading 'split')`）—— 没有包名、没有文件路径、没有 `error:` / `fix:` 引导。 根因：`as Record<string, string>` 只是编译期断言； 断言：expect(r.status).toBe(0);；expect(parsed[0]!.tscScripts).toEqual([]);"	没测该层	keep	keep	—
-"反向闸：字符串脚本照常被识别（判定不是恒空）"	"`nudo migrate retire` 把**编译脚本**（`build`）改写成 `nudo check .` —— 构建不再产出任何产物，却绿灯通过并写下「已退役」标记。 期望：只改写**门禁角色**的脚本（`--noEmit` / 裸 tsc）； 断言：expect(migrateStatus(dir)[0]!.tscScripts).toEqual([\"typecheck\"]);"	没测该层	keep	keep	—
-"scriptCommandEntries 只收字符串值"	"断言：expect(；expect(migrate.scriptCommandEntries({ scripts: null })).toEqual([]);"	没测该层	keep	keep	—
-"库面：仓库根的共享 workflow 零改动，根包 package.json 零改动"	"`nudo migrate retire <子包>` 的 **workflow 改写作用域是「仓库根的整个 `.github/workflows` 目录」**，与被退役包的边界无关 ⇒ 未退役的根包 / 其它包的 CI 类型门禁被静默替换成 `npx nudojs check .`。 期望：退役子包时只改写**该包自有**的 `.github/workflows`； 断言：expect(readFileSync(join(root, \".github\", \"workflows\", \"ci.yml\"), \"utf-8\")).toBe(rootWfBefore);；expect(readFileSync(join(root, \"pack"	没测该层	keep	keep	—
-"CLI 面：仓库根的共享 workflow 零改动，且不被报告"	"`nudo migrate retire <子包>` 的 **workflow 改写作用域是「仓库根的整个 `.github/workflows` 目录」**，与被退役包的边界无关 ⇒ 未退役的根包 / 其它包的 CI 类型门禁被静默替换成 `npx nudojs check .`。 期望：退役子包时只改写**该包自有**的 `.github/workflows`； 断言：expect(r.status).toBe(0);；expect(readFileSync(join(root, \".github\", \"workflows\", \"ci.yml\"), \"utf-8\")).toBe(rootWfBefore);"	没测该层	keep	keep	—
-"反向闸：被退役包**自有**的 workflow 照常改写"	"`nudo migrate retire <子包>` 的 **workflow 改写作用域是「仓库根的整个 `.github/workflows` 目录」**，与被退役包的边界无关 ⇒ 未退役的根包 / 其它包的 CI 类型门禁被静默替换成 `npx nudojs check .`。 期望：退役子包时只改写**该包自有**的 `.github/workflows`； 断言：expect(subWf).toContain(\"npx nudojs check .\");；expect(readFileSync(join(root, \".github\", \"workflows\", \"ci.yml\"), \"utf-8\")).toBe(CI);"	没测该层	keep	keep	—
-"strip --write 后：目录级分析只收一份（源 .ts 与产物 .js 是同一模块）"	"根因：`strip` 默认（不加 `--backup`）把源 `.ts` 留在原地，产物 `.js` 落在旁边 ⇒ 目录级分析把同一个模块收了两份 ⇒ 机器面 `summary.errors` / `functions` / `files` 恰好翻倍，`--fix` 的逐 issue 编辑也翻倍（改一份、另一份不变）。 期望：门禁按**模块**计数（同一模块只分析一遍）； 断言：expect(collected.filter((f) => f.endsWith(\"index.ts\"))).toHaveLength(0);；expect(collected.filter((f) => f.endsWith(\"index.js\")))."	没测该层	keep	keep	—
-"check --json 的计数：默认路径与 --backup 路径相同（都等于模块数）"	"根因：`strip` 默认（不加 `--backup`）把源 `.ts` 留在原地，产物 `.js` 落在旁边 ⇒ 目录级分析把同一个模块收了两份 ⇒ 机器面 `summary.errors` / `functions` / `files` 恰好翻倍，`--fix` 的逐 issue 编辑也翻倍（改一份、另一份不变）。 期望：门禁按**模块**计数（同一模块只分析一遍）； 断言：expect(r.status).toBeGreaterThanOrEqual(0);；expect(a.files).toBe(1);"	没测该层	keep	keep	—
-"rewriteTscCommand 不把 ${{ … }} 切开"	"断言：expect(out).not.toContain(\"packages/${{'\");；expect(out).not.toContain(\"'${{'\");"	没测该层	keep	keep	—
-"shell 变量 / glob 不被单引号封死（展开仍由 shell / CI 负责）"	"契约：`${{ … }}`（以及 shell 变量 / glob）是**不可分割的 token**； 改写后要么仍指向存在的路径，要么被明确拒绝——不得产出「指向不存在目录的字面量」。 断言：expect(v).not.toContain(\"'$TSCONFIG'\");；expect(g).not.toContain(\"'packages/*'\");"	夹具漏形态	keep	keep	—
-"retire 后 CI 步骤里不再有被截断的表达式路径"	"契约：`${{ … }}`（以及 shell 变量 / glob）是**不可分割的 token**； 改写后要么仍指向存在的路径，要么被明确拒绝——不得产出「指向不存在目录的字面量」。 断言：expect(wf).not.toContain(\"packages/${{'\");；expect(wf).not.toContain(\"'${{'\");"	夹具漏形态	keep	keep	—
-"旗标值里的命令替换被整体消费（不留尾巴）"	"断言：expect(out).toBe(\"nudo check .\");；expect(out).not.toContain(\"$(pwd)\");"	没测该层	keep	keep	—
-"-p 的值是命令替换时不得产出 '$'( … ) 这种坏语法"	"断言：expect(out).not.toContain(\"'$'\");；expect(out).not.toContain(\"$(cat\");"	没测该层	keep	keep	—
-"算术替换 / 进程替换同样整体消费"	"`nudo migrate retire` 改写 tsc 命令时把 shell 的 `$( … )` 命令替换 留在改写结果里、并直接粘到门禁路径上 ⇒ 落盘命令要么是 bash 语法错误、要么指向不存在的路径。 契约：命令替换 / 算术替换 / 进程替换是**一个整体**——改写器必须整体消费， 不得在左括号处截断（`nudo check .(pwd)/dist` / `nudo check '$'(cat …)`）。 断言：expect(rewriteTscCommand(\"tsc --outDir $((1+1))/dist\").cmd).toBe(\"nudo check .\");；expect(rewriteTscComma"	没测该层	keep	keep	—
-"命令替换内部的 tsc 调用同样被退役（独立命令上下文）"	"`nudo migrate retire` 改写 tsc 命令时把 shell 的 `$( … )` 命令替换 留在改写结果里、并直接粘到门禁路径上 ⇒ 落盘命令要么是 bash 语法错误、要么指向不存在的路径。 契约：命令替换 / 算术替换 / 进程替换是**一个整体**——改写器必须整体消费， 不得在左括号处截断（`nudo check .(pwd)/dist` / `nudo check '$'(cat …)`）。 断言：expect(rewriteTscCommand(\"echo $(tsc --noEmit)\").cmd).toBe(\"echo $(nudo check .)\");"	没测该层	keep	keep	—
-"tsc 之后的独立命令（&& 之后）原样保留"	"`nudo migrate retire` 改写 tsc 命令时把 shell 的 `$( … )` 命令替换 留在改写结果里、并直接粘到门禁路径上 ⇒ 落盘命令要么是 bash 语法错误、要么指向不存在的路径。 契约：命令替换 / 算术替换 / 进程替换是**一个整体**——改写器必须整体消费， 不得在左括号处截断（`nudo check .(pwd)/dist` / `nudo check '$'(cat …)`）。 断言：expect(out).toBe(\"nudo check . && echo $(git rev-parse --short HEAD)\");"	没测该层	keep	keep	—
-"retire 落盘的脚本是合法命令（无悬空 $() / 反引号）"	"`nudo migrate retire` 改写 tsc 命令时把 shell 的 `$( … )` 命令替换 留在改写结果里、并直接粘到门禁路径上 ⇒ 落盘命令要么是 bash 语法错误、要么指向不存在的路径。 契约：命令替换 / 算术替换 / 进程替换是**一个整体**——改写器必须整体消费， 不得在左括号处截断（`nudo check .(pwd)/dist` / `nudo check '$'(cat …)`）。 断言：expect(value).not.toContain(\"'$'\");；expect(value).not.toContain(\".(pwd)\");"	没测该层	keep	keep	—
-"非命令位置的 tsc 一律不改写"	"`nudo migrate retire` 的 package.json 脚本面**没有「命令位」预筛** ⇒ 非命令位置的 tsc（描述文字 / 旗标值）被当 tsc 调用改写 ⇒ 脚本语义被改坏（`eslint --rule tsc` → `eslint --rule nudo check .`）。 断言：expect(rewriteTscCommand(cmd).changed).toBe(false);；expect(rewriteTscCommand(cmd).cmd).toBe(cmd);"	没测该层	keep	keep	—
-"命令位置的 tsc 仍然改写（含透明包装器后的首个参数）"	"`nudo migrate retire` 的 package.json 脚本面**没有「命令位」预筛** ⇒ 非命令位置的 tsc（描述文字 / 旗标值）被当 tsc 调用改写 ⇒ 脚本语义被改坏（`eslint --rule tsc` → `eslint --rule nudo check .`）。 断言：expect(rewriteTscCommand(\"tsc --noEmit\").cmd).toBe(\"nudo check .\");；expect(rewriteTscCommand(\"npx tsc --noEmit\").cmd).toBe(\"npx nudojs check .\");"	没测该层	keep	keep	—
-"status 不把非命令位的 tsc 计入 tsc scripts"	"`nudo migrate retire` 的 package.json 脚本面**没有「命令位」预筛** ⇒ 非命令位置的 tsc（描述文字 / 旗标值）被当 tsc 调用改写 ⇒ 脚本语义被改坏（`eslint --rule tsc` → `eslint --rule nudo check .`）。 断言：expect(rows[0]!.tscScripts).toEqual([\"typecheck\"]);"	没测该层	keep	keep	—
-"retire 后非命令位的 tsc 逐字未变"	"`nudo migrate retire` 的 package.json 脚本面**没有「命令位」预筛** ⇒ 非命令位置的 tsc（描述文字 / 旗标值）被当 tsc 调用改写 ⇒ 脚本语义被改坏（`eslint --rule tsc` → `eslint --rule nudo check .`）。 断言：expect(pkg.scripts.lint).toBe(\"eslint --rule tsc\");；expect(pkg.scripts.note).toBe(\"echo building with tsc\");"	没测该层	keep	keep	—
+两处相同命令 ⇒ 报告 2 条（带位置）、落盘 2 处、status 数到 0（已改写）；反向闸：单处改写仍只记 1 条（不得因加位置而重复计数）	migrate-workspace 聚合矩阵	没测该层	keep	keep	—
+rewriteWorkflowText 把块标量当成一条命令改写；retire 后落盘的 workflow 仍是合法 YAML 形态且命令语义正确	migrate-workspace 聚合矩阵	没测该层	keep	keep	—
+子包：不继承仓库根共享 workflow 的 tsc 行；根包：共享 workflow 的 tsc 行算在它头上（只算一次）；子包 retire 成功后 blocker 清空（status 与 retire 不再矛盾）	migrate-workspace 聚合矩阵	没测该层	keep	keep	—
+stdout 非空、可解析、ok:false、error 点名 action；人类面（无 --json）：错误仍进 stderr；反向闸：合法 action 的 --json 仍是合法 JSON	migrate-workspace 聚合矩阵	没测该层	keep	keep	—
+数值 enum：`A = 1, B = A * 10, C` ⇒ [1,10,11]；混合 enum：`A = 1, B = 'b', C = A + 5` ⇒ [1,"b",6]；字符串 enum：`A = 'a', B = A + 'b'` ⇒ ["a","ab"] 且不建反向映射；const enum：`A = 1, B = A * 3` ⇒ [1,3]；strip 的 note 仍声明语义已保住（现在与事实一致）；反向闸：无计算成员的 enum 产物不变（不引入多余改	migrate-workspace 聚合矩阵	没测该层	keep	keep	—
+脚本名不含 check/test、命令是 nudo check ⇒ 不得报「no nudo check/test script yet」；retire 改写后的形态 `npx nudojs check .` 同样算已有门禁（旧口径匹配不到 nudojs）；`nudo test` 也是门禁；反向闸：命令里没有 nudo 门禁 ⇒ 仍必须报该阻塞（判定不是恒假）；字符串里的 nudo check 不算门禁（shell 掩码口径不变）；文本面不再出现该假阻塞	migrate-workspace 聚合矩阵	没测该层	keep	keep	—
+peerDependencies.typescript ⇒ typescriptDep 为 true 且报出阻塞；devDependencies / dependencies 口径不回退；optionalDependencies.typescript 也算（四个来源同一口径）；反向闸：没有 typescript 依赖 ⇒ typescriptDep 为 false（判定不是恒真）；mergePackageDeps 合并四个依赖来源，且忽略非对象字段	migrate-workspace 聚合矩阵	没测该层	keep	keep	—
+根包自己 0 个 .ts ⇒ 根行 tsFiles 为 0（不重复计入子包）；反向闸：根包自己有 .ts 时，根行仍要数到自己的文件；子包的 .tsx 也只算在子包行	migrate-workspace 聚合矩阵	没测该层	keep	keep	—
+库面：package.json 出现 scripts.check:nudo（报告与落盘一致）；CLI 面：--json 报文里报改了，落盘也得有；反向闸：已有 scripts 键的包，注入也落进**既有** scripts 对象（不丢原有脚本）	migrate-workspace 聚合矩阵	没测该层	keep	keep	—
+status 的 tsc 行数只数真正的命令行（1 条，不是 3 条）；retire 后 env 值 / 描述文字逐字未变，只有 run: 那条被改写；status 的 workflow blocker 计数与改写口径一致	migrate-workspace 聚合矩阵	没测该层	keep	keep	—
+rewriteWorkflowText 改写引号标量里的 tsc（保留原引号风格）；status 的 tsc 行数与真实条数一致（3 条，不是 1 条）；retire 后 CI 里不再残留 tsc 门禁	migrate-workspace 聚合矩阵	没测该层	keep	keep	—
+status 能看到对象式 workspaces 的子包（改前：整行消失）；retire --all 把对象式 workspaces 的子包纳入作用域并真的退役（落盘可见）；CLI：migrate status 的 stdout 列出对象式 workspaces 的子包（exit 0）；对照组：数组式 workspaces 仍然可见（回归护栏，不被本次改动带坏）	migrate-workspace 聚合矩阵	没测该层	keep	keep	—
+status 不列出被 pnpm 排除的包（改前：legacy 占一行）；retire --all 只退役未被排除的包；retire --all 不改写被排除的包：package.json 逐字不变、不写 marker；CLI：retire --all --dry-run 的 stdout 不含被排除的包，stderr 显式说明跳过；CLI：retire --all 不落盘到被排除的包（package.json 不变）	migrate-workspace 聚合矩阵	没测该层	keep	keep	—
+build（tsc -p tsconfig.build.json）原样保留，门禁脚本照常改写；只有编译脚本的包：明确拒绝退役，脚本零改动；CLI 面：build 不被改写；反向闸：纯门禁脚本照常改写 + 摘依赖（断言非永真）	migrate-workspace 聚合矩阵	没测该层	keep	keep	—
+import "./helper" ⇒ 产物写 "./helper.js"；export … from 也被改写；包说明符不动（非相对说明符不在 ESM 扩展名规则的范围内）；相对说明符指向目录 ⇒ 补成目录索引（./dir → ./dir/index.js）	migrate-workspace 聚合矩阵	没测该层	keep	keep	—
+解析失败 ⇒ blockers 显式报出 + packageJsonError 字段；文本面出现解析失败行；JSON 面带 packageJsonError 且 stdout 是合法 JSON；反向闸：合法 package.json ⇒ 无 packageJsonError、无该阻塞；反向闸：package.json 不存在 ≠ 解析失败（missing 不算错误）；readPackageJsonDetailed 分类：missing / ok / invalid	migrate-workspace 聚合矩阵	没测该层	keep	keep	—
+blockers 数组里没有「—」元素；文本面只有真 blocker，不带占位符；反向闸：真有 blocker 时占位符也不得混入（防御性过滤）；反向闸：只有占位符 ⇒ 文本面不出现 blockers 行	migrate-workspace 聚合矩阵	没测该层	keep	keep	—
+已有 keep.ts.bak ⇒ 换名留底（keep.ts.1.bak），且旧备份原样保留；备份动作在输出里有一行明确交代（源是否被改名是可观测事实）；没有撞名时备份名仍是 <file>.bak	migrate-workspace 聚合矩阵	没测该层	keep	keep	—
+JSON 面 blockers 为空数组（不是 ['—']）；API 面同样为空数组；反向闸：真有 blocker 时数组里是那条 blocker（判定不是恒空）	migrate-workspace 聚合矩阵	没测该层	keep	keep	—
+status 列出嵌套成员（一层与深层都在）；retire --all 把嵌套成员纳入作用域并真的退役（落盘可见）；多段 pattern（两层 `*`）不再被整条丢弃；CLI：migrate status 的 stdout 列出嵌套成员（改前：整行缺席）；CLI：retire --all --dry-run 不再报 nothing to retire（改前：假绿 exit 0）	migrate-workspace 聚合矩阵	没测该层	keep	keep	—
+API 面不抛，null 脚本不算 tsc；CLI 面 exit 0 且不出现裸 TypeError；CLI --json 面也正常（exit 0 + 合法 JSON）；反向闸：字符串脚本照常被识别（判定不是恒空）；scriptCommandEntries 只收字符串值	migrate-workspace 聚合矩阵	没测该层	keep	keep	—
+库面：仓库根的共享 workflow 零改动，根包 package.json 零改动；CLI 面：仓库根的共享 workflow 零改动，且不被报告；反向闸：被退役包**自有**的 workflow 照常改写	migrate-workspace 聚合矩阵	没测该层	keep	keep	—
+strip --write 后：目录级分析只收一份（源 .ts 与产物 .js 是同一模块）；check --json 的计数：默认路径与 --backup 路径相同（都等于模块数）	migrate-workspace 聚合矩阵	没测该层	keep	keep	—
+rewriteTscCommand 不把 ${{ … }} 切开；shell 变量 / glob 不被单引号封死（展开仍由 shell / CI 负责）；retire 后 CI 步骤里不再有被截断的表达式路径	migrate-workspace 聚合矩阵	没测该层	keep	keep	—
+旗标值里的命令替换被整体消费（不留尾巴）；-p 的值是命令替换时不得产出 '$'( … ) 这种坏语法；算术替换 / 进程替换同样整体消费；命令替换内部的 tsc 调用同样被退役（独立命令上下文）；tsc 之后的独立命令（&& 之后）原样保留；retire 落盘的脚本是合法命令（无悬空 $() / 反引号）	migrate-workspace 聚合矩阵	没测该层	keep	keep	—
+非命令位置的 tsc 一律不改写；命令位置的 tsc 仍然改写（含透明包装器后的首个参数）；status 不把非命令位的 tsc 计入 tsc scripts；retire 后非命令位的 tsc 逐字未变	migrate-workspace 聚合矩阵	没测该层	keep	keep	—
+```
+
+```audit-deleted
+title	reason	evidence
+两处相同命令 ⇒ 报告 2 条（带位置）、落盘 2 处、status 数到 0（已改写）	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+反向闸：单处改写仍只记 1 条（不得因加位置而重复计数）	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+rewriteWorkflowText 把块标量当成一条命令改写	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+retire 后落盘的 workflow 仍是合法 YAML 形态且命令语义正确	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+子包：不继承仓库根共享 workflow 的 tsc 行	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+根包：共享 workflow 的 tsc 行算在它头上（只算一次）	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+子包 retire 成功后 blocker 清空（status 与 retire 不再矛盾）	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+stdout 非空、可解析、ok:false、error 点名 action	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+人类面（无 --json）：错误仍进 stderr	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+反向闸：合法 action 的 --json 仍是合法 JSON	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+数值 enum：`A = 1, B = A * 10, C` ⇒ [1,10,11]	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+混合 enum：`A = 1, B = 'b', C = A + 5` ⇒ [1,"b",6]	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+字符串 enum：`A = 'a', B = A + 'b'` ⇒ ["a","ab"] 且不建反向映射	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+const enum：`A = 1, B = A * 3` ⇒ [1,3]	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+strip 的 note 仍声明语义已保住（现在与事实一致）	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+反向闸：无计算成员的 enum 产物不变（不引入多余改写）	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+脚本名不含 check/test、命令是 nudo check ⇒ 不得报「no nudo check/test script yet」	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+retire 改写后的形态 `npx nudojs check .` 同样算已有门禁（旧口径匹配不到 nudojs）	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+`nudo test` 也是门禁	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+反向闸：命令里没有 nudo 门禁 ⇒ 仍必须报该阻塞（判定不是恒假）	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+字符串里的 nudo check 不算门禁（shell 掩码口径不变）	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+文本面不再出现该假阻塞	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+peerDependencies.typescript ⇒ typescriptDep 为 true 且报出阻塞	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+devDependencies / dependencies 口径不回退	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+optionalDependencies.typescript 也算（四个来源同一口径）	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+反向闸：没有 typescript 依赖 ⇒ typescriptDep 为 false（判定不是恒真）	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+mergePackageDeps 合并四个依赖来源，且忽略非对象字段	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+根包自己 0 个 .ts ⇒ 根行 tsFiles 为 0（不重复计入子包）	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+反向闸：根包自己有 .ts 时，根行仍要数到自己的文件	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+子包的 .tsx 也只算在子包行	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+库面：package.json 出现 scripts.check:nudo（报告与落盘一致）	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+CLI 面：--json 报文里报改了，落盘也得有	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+反向闸：已有 scripts 键的包，注入也落进**既有** scripts 对象（不丢原有脚本）	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+status 的 tsc 行数只数真正的命令行（1 条，不是 3 条）	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+retire 后 env 值 / 描述文字逐字未变，只有 run: 那条被改写	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+status 的 workflow blocker 计数与改写口径一致	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+rewriteWorkflowText 改写引号标量里的 tsc（保留原引号风格）	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+status 的 tsc 行数与真实条数一致（3 条，不是 1 条）	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+retire 后 CI 里不再残留 tsc 门禁	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+status 能看到对象式 workspaces 的子包（改前：整行消失）	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+retire --all 把对象式 workspaces 的子包纳入作用域并真的退役（落盘可见）	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+CLI：migrate status 的 stdout 列出对象式 workspaces 的子包（exit 0）	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+对照组：数组式 workspaces 仍然可见（回归护栏，不被本次改动带坏）	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+status 不列出被 pnpm 排除的包（改前：legacy 占一行）	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+retire --all 只退役未被排除的包	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+retire --all 不改写被排除的包：package.json 逐字不变、不写 marker	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+CLI：retire --all --dry-run 的 stdout 不含被排除的包，stderr 显式说明跳过	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+CLI：retire --all 不落盘到被排除的包（package.json 不变）	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+build（tsc -p tsconfig.build.json）原样保留，门禁脚本照常改写	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+只有编译脚本的包：明确拒绝退役，脚本零改动	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+CLI 面：build 不被改写	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+反向闸：纯门禁脚本照常改写 + 摘依赖（断言非永真）	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+import "./helper" ⇒ 产物写 "./helper.js"	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+export … from 也被改写	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+包说明符不动（非相对说明符不在 ESM 扩展名规则的范围内）	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+相对说明符指向目录 ⇒ 补成目录索引（./dir → ./dir/index.js）	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+解析失败 ⇒ blockers 显式报出 + packageJsonError 字段	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+文本面出现解析失败行	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+JSON 面带 packageJsonError 且 stdout 是合法 JSON	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+反向闸：合法 package.json ⇒ 无 packageJsonError、无该阻塞	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+反向闸：package.json 不存在 ≠ 解析失败（missing 不算错误）	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+readPackageJsonDetailed 分类：missing / ok / invalid	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+blockers 数组里没有「—」元素	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+文本面只有真 blocker，不带占位符	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+反向闸：真有 blocker 时占位符也不得混入（防御性过滤）	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+反向闸：只有占位符 ⇒ 文本面不出现 blockers 行	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+已有 keep.ts.bak ⇒ 换名留底（keep.ts.1.bak），且旧备份原样保留	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+备份动作在输出里有一行明确交代（源是否被改名是可观测事实）	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+没有撞名时备份名仍是 <file>.bak	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+JSON 面 blockers 为空数组（不是 ['—']）	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+API 面同样为空数组	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+反向闸：真有 blocker 时数组里是那条 blocker（判定不是恒空）	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+status 列出嵌套成员（一层与深层都在）	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+retire --all 把嵌套成员纳入作用域并真的退役（落盘可见）	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+多段 pattern（两层 `*`）不再被整条丢弃	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+CLI：migrate status 的 stdout 列出嵌套成员（改前：整行缺席）	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+CLI：retire --all --dry-run 不再报 nothing to retire（改前：假绿 exit 0）	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+API 面不抛，null 脚本不算 tsc	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+CLI 面 exit 0 且不出现裸 TypeError	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+CLI --json 面也正常（exit 0 + 合法 JSON）	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+反向闸：字符串脚本照常被识别（判定不是恒空）	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+scriptCommandEntries 只收字符串值	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+库面：仓库根的共享 workflow 零改动，根包 package.json 零改动	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+CLI 面：仓库根的共享 workflow 零改动，且不被报告	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+反向闸：被退役包**自有**的 workflow 照常改写	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+strip --write 后：目录级分析只收一份（源 .ts 与产物 .js 是同一模块）	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+check --json 的计数：默认路径与 --backup 路径相同（都等于模块数）	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+rewriteTscCommand 不把 ${{ … }} 切开	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+shell 变量 / glob 不被单引号封死（展开仍由 shell / CI 负责）	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+retire 后 CI 步骤里不再有被截断的表达式路径	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+旗标值里的命令替换被整体消费（不留尾巴）	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+-p 的值是命令替换时不得产出 '$'( … ) 这种坏语法	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+算术替换 / 进程替换同样整体消费	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+命令替换内部的 tsc 调用同样被退役（独立命令上下文）	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+tsc 之后的独立命令（&& 之后）原样保留	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+retire 落盘的脚本是合法命令（无悬空 $() / 反引号）	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+非命令位置的 tsc 一律不改写	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+命令位置的 tsc 仍然改写（含透明包装器后的首个参数）	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+status 不把非命令位的 tsc 计入 tsc scripts	dup:migrate-workspace 聚合矩阵	commit:14f49e20
+retire 后非命令位的 tsc 逐字未变	dup:migrate-workspace 聚合矩阵	commit:14f49e20
 ```

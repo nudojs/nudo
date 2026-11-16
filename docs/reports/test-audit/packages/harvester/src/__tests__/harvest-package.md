@@ -6,91 +6,120 @@
 
 ```audit
 title	rootCause	gap	action	status	evidence
-"resolvePackageRoot finds workspace packages"	"断言：expect(existsSync(r)).toBe(true);；expect(r).toBeUndefined();"	没测该层	keep	keep	—
-"harvestPackage on typescript if available"	"断言：expect(true).toBe(true);；expect(h.error).toBeTruthy();"	没测该层	keep	keep	—
-"dtsFileScan: ENOENT 空扫描无标记；读错误（EISDIR）标 unreadable 且不进缓存"	"断言：expect(gone.exported.size).toBe(0);；expect(gone.unreadable).toBeUndefined();"	没测该层	keep	keep	—
-"packageExportSurface: 入口读不了 ⇒ unresolved（公开面不可知，不折空）"	"断言：expect(packageExportSurface(h).unresolved).toBe(true);"	没测该层	keep	keep	—
-"collectDtsFiles: readdir 非 ENOENT 故障（ENOTDIR）计数上浮；ENOENT 静默"	"断言：expect(collectDtsFiles(f, 8, fails)).toEqual([]);；expect(fails.count).toBe(1);"	没测该层	keep	keep	—
-"harvestPackage: package.json JSON 解析故障计数进 env.stats.skipped"	"断言：expect(h.env.stats.skipped).toBeGreaterThanOrEqual(1);"	没测该层	keep	keep	—
-"草稿键是 `default`（不是本地名 `helper`）"	"`nudo contract --from-dts` 把**具名 default 导出**写成本地名键 ⇒ 草稿键 `helper` ≠ 模块导出名 `default` ⇒ 用户照抄进侧车后**该导出永远 零义务**（**假绿**），而汇总行报「**0 skipped**」让用户以为「没有需要 人工处理的东西」。 修法（草稿面）：default 导出的**草稿键恒为 `default`**（不是本地名）⇒ 抄进侧车后绑定的是模块的 `default` 导出； 断言：expect(draft.exports.map((e) => e.name)).toEqual([\"default\"]);；expect(draft.draftSour"	没测该层	keep	keep	—
-"没有丢失 ⇒ 汇总行不虚增 skipped"	"`nudo contract --from-dts` 把**具名 default 导出**写成本地名键 ⇒ 草稿键 `helper` ≠ 模块导出名 `default` ⇒ 用户照抄进侧车后**该导出永远 零义务**（**假绿**），而汇总行报「**0 skipped**」让用户以为「没有需要 人工处理的东西」。 修法（草稿面）：default 导出的**草稿键恒为 `default`**（不是本地名）⇒ 抄进侧车后绑定的是模块的 `default` 导出； 断言：expect(draft.stats.exports).toBe(1);；expect(draft.stats.skipped).toBe(0);"	没测该层	keep	keep	—
-"**抄进侧车后 `default` 导出真的带上契约**（改前：零义务）"	"`nudo contract --from-dts` 把**具名 default 导出**写成本地名键 ⇒ 草稿键 `helper` ≠ 模块导出名 `default` ⇒ 用户照抄进侧车后**该导出永远 零义务**（**假绿**），而汇总行报「**0 skipped**」让用户以为「没有需要 人工处理的东西」。 修法（草稿面）：default 导出的**草稿键恒为 `default`**（不是本地名）⇒ 抄进侧车后绑定的是模块的 `default` 导出； 断言：expect(res.status, `${res.stdout}\\n${res.stderr}`).toBe(0);；expect(res.stdout).toCont"	没测该层	keep	keep	—
-"`declare global` 的内容不进包名键（真实的导出仍在）"	"harvester 的**桥接层把整个 globals 袋提升成包名键的具名导出** ⇒ `declare global { … }` / **script 模式 `.d.ts`** 的 **ambient 声明变成「可导入的导出」** ⇒ `import { <ambient> } from \"pkg\"` 解析成功 ⇒ **TS2305 / TS2306 零诊断**（**假绿**）。 修法：ambient 声明（`declare global { … }` / script 模式 `.d.ts` 的顶层声明） **不得**进包名键； 断言：expect(\"error\" in h).toBe(false);；expect(Objec"	没测该层	keep	keep	—
-"script 模式 `.d.ts` 的顶层声明不进包名键"	"harvester 的**桥接层把整个 globals 袋提升成包名键的具名导出** ⇒ `declare global { … }` / **script 模式 `.d.ts`** 的 **ambient 声明变成「可导入的导出」** ⇒ `import { <ambient> } from \"pkg\"` 解析成功 ⇒ **TS2305 / TS2306 零诊断**（**假绿**）。 修法：ambient 声明（`declare global { … }` / script 模式 `.d.ts` 的顶层声明） **不得**进包名键； 断言：expect(\"error\" in h).toBe(false);；expect(Objec"	没测该层	keep	keep	—
-"目录里的 `.d.ts` **全部**被投影（改前：只投影前 16 个）"	"`nudo contract --from-dts <目录>` **静默只投影前 16 个 `.d.ts`** ⇒ 第 17+ 个文件的导出**整条不存在**于草稿，而汇总行报「**16 d.ts · 0 skipped**」⇒ 丢失**零信号** ⇒ 照抄进侧车后这些导出**零义务**（假绿）。 修法（草稿面）：目录模式**投影全部** `.d.ts`（不再有条数上限）⇒ 第 17+ 个文件的导出出现在草稿里； 断言：expect(draft.files.length).toBe(20);；expect(draft.stats.files).toBe(20);"	没测该层	keep	keep	—
-"第 17+ 个文件的导出**出现在草稿里**"	"`nudo contract --from-dts <目录>` **静默只投影前 16 个 `.d.ts`** ⇒ 第 17+ 个文件的导出**整条不存在**于草稿，而汇总行报「**16 d.ts · 0 skipped**」⇒ 丢失**零信号** ⇒ 照抄进侧车后这些导出**零义务**（假绿）。 修法（草稿面）：目录模式**投影全部** `.d.ts`（不再有条数上限）⇒ 第 17+ 个文件的导出出现在草稿里； 断言：expect(draft.draftSource, `缺少 ${n}`).toContain(`export const ${n} =`);；expect(draft.draftSource).toContain(\""	没测该层	keep	keep	—
-"没有截断 ⇒ 汇总行不虚增 skipped"	"`nudo contract --from-dts <目录>` **静默只投影前 16 个 `.d.ts`** ⇒ 第 17+ 个文件的导出**整条不存在**于草稿，而汇总行报「**16 d.ts · 0 skipped**」⇒ 丢失**零信号** ⇒ 照抄进侧车后这些导出**零义务**（假绿）。 修法（草稿面）：目录模式**投影全部** `.d.ts`（不再有条数上限）⇒ 第 17+ 个文件的导出出现在草稿里； 断言：expect(draft.stats.skipped).toBe(0);；expect(draft.stats.droppedFiles ?? 0).toBe(0);"	没测该层	keep	keep	—
-"单文件入口不受影响"	"断言：expect(draft.files.length).toBe(1);；expect(draft.stats.exports).toBe(1);"	没测该层	keep	keep	—
-"命名空间成员不落进 globals（不再凭空造出全局 `bar`）"	"- 裸 `bar` **不是**全局（运行时只有 `Foo.bar`）⇒ 引用它是 ReferenceError。 收割侧契约： 1. 命名空间的运行时成员**留在命名空间的名字空间里**（`Foo.bar`）， **不摊平**进 globals ⇒ `env.globals` 里**没有** `bar`； 断言：expect(Object.hasOwn(env.globals, \"bar\")).toBe(false);；expect(env.globals[\"bar\"]).toBeUndefined();"	没测该层	keep	keep	—
-"命名空间对象 `Foo` 存在，成员挂在它下面（`Foo.bar`）"	"- 裸 `bar` **不是**全局（运行时只有 `Foo.bar`）⇒ 引用它是 ReferenceError。 收割侧契约： 1. 命名空间的运行时成员**留在命名空间的名字空间里**（`Foo.bar`）， **不摊平**进 globals ⇒ `env.globals` 里**没有** `bar`； 断言：expect(env.globals[\"Foo\"]).toBeDefined();；expect(slotNames(env.globals[\"Foo\"])).toEqual([\"bar\"]);"	没测该层	keep	keep	—
-"命名空间成员仍可调用（`Foo.bar()` 的返回类型是 number）"	"- 裸 `bar` **不是**全局（运行时只有 `Foo.bar`）⇒ 引用它是 ReferenceError。 收割侧契约： 1. 命名空间的运行时成员**留在命名空间的名字空间里**（`Foo.bar`）， **不摊平**进 globals ⇒ `env.globals` 里**没有** `bar`； 断言：expect(bar.shape.k).toBe(\"fn\");；expect(bar.shape.returnType?.shape.type).toBe(\"number\");"	没测该层	keep	keep	—
-"只有类型的命名空间不产生运行时对象（不凭空多出全局 `_`）"	"断言：expect(Object.hasOwn(env.globals, \"_\")).toBe(false);"	没测该层	keep	keep	—
-"嵌套命名空间：成员留在最深层的命名空间里"	"断言：expect(Object.hasOwn(env.globals, \"f\")).toBe(false);；expect(Object.hasOwn(env.globals, \"B\")).toBe(false);"	没测该层	keep	keep	—
-"两个命名空间的同名成员互不串（不当作 overload 合并）"	"断言：expect(formatShape(a)).toBe(\"() => number\");；expect(formatShape(b)).toBe(\"() => string\");"	没测该层	keep	keep	—
-"obj：索引签名 + 开放对象标志往返后仍在"	"收割面（内存 Abs）在本族新增了几个 facet： - obj：`index`（索引签名 / `Record<K,V>` 的值域）+ `open`（开放对象标志） - tuple：`rest`（变长尾槽） - fn：`ctor`（可构造性）+ `slots`（dual-facet 静态成员） 磁盘投影 `HarvestSig` 原本**不带**这些 facet ⇒ L2 磁盘缓存命中时服务的是 **有损 env** ⇒ 803（`Record` 变闭合空对象 ⇒ 成员读 undefined ⇒ 定抛）、 802（元组丢 rest）、829（构造器被抹成普通 fn ⇒ `new` 落「可构造性未知」⇒ 假红） 的修复在缓存往返后**"	夹具漏形态	keep	keep	—
-"obj：闭合对象**不**被投影成开放对象（不得过度放宽）"	"收割面（内存 Abs）在本族新增了几个 facet： - obj：`index`（索引签名 / `Record<K,V>` 的值域）+ `open`（开放对象标志） - tuple：`rest`（变长尾槽） - fn：`ctor`（可构造性）+ `slots`（dual-facet 静态成员） 磁盘投影 `HarvestSig` 原本**不带**这些 facet ⇒ L2 磁盘缓存命中时服务的是 **有损 env** ⇒ 803（`Record` 变闭合空对象 ⇒ 成员读 undefined ⇒ 定抛）、 802（元组丢 rest）、829（构造器被抹成普通 fn ⇒ `new` 落「可构造性未知」⇒ 假红） 的修复在缓存往返后**"	夹具漏形态	keep	keep	—
-"tuple：rest 槽往返后仍在"	"收割面（内存 Abs）在本族新增了几个 facet： - obj：`index`（索引签名 / `Record<K,V>` 的值域）+ `open`（开放对象标志） - tuple：`rest`（变长尾槽） - fn：`ctor`（可构造性）+ `slots`（dual-facet 静态成员） 磁盘投影 `HarvestSig` 原本**不带**这些 facet ⇒ L2 磁盘缓存命中时服务的是 **有损 env** ⇒ 803（`Record` 变闭合空对象 ⇒ 成员读 undefined ⇒ 定抛）、 802（元组丢 rest）、829（构造器被抹成普通 fn ⇒ `new` 落「可构造性未知」⇒ 假红） 的修复在缓存往返后**"	夹具漏形态	keep	keep	—
-"fn：ctor facet 往返后仍在（否则 new 落「可构造性未知」⇒ 假红）"	"收割面（内存 Abs）在本族新增了几个 facet： - obj：`index`（索引签名 / `Record<K,V>` 的值域）+ `open`（开放对象标志） - tuple：`rest`（变长尾槽） - fn：`ctor`（可构造性）+ `slots`（dual-facet 静态成员） 磁盘投影 `HarvestSig` 原本**不带**这些 facet ⇒ L2 磁盘缓存命中时服务的是 **有损 env** ⇒ 803（`Record` 变闭合空对象 ⇒ 成员读 undefined ⇒ 定抛）、 802（元组丢 rest）、829（构造器被抹成普通 fn ⇒ `new` 落「可构造性未知」⇒ 假红） 的修复在缓存往返后**"	夹具漏形态	keep	keep	—
-"fn：dual-facet 静态槽往返后仍在"	"收割面（内存 Abs）在本族新增了几个 facet： - obj：`index`（索引签名 / `Record<K,V>` 的值域）+ `open`（开放对象标志） - tuple：`rest`（变长尾槽） - fn：`ctor`（可构造性）+ `slots`（dual-facet 静态成员） 磁盘投影 `HarvestSig` 原本**不带**这些 facet ⇒ L2 磁盘缓存命中时服务的是 **有损 env** ⇒ 803（`Record` 变闭合空对象 ⇒ 成员读 undefined ⇒ 定抛）、 802（元组丢 rest）、829（构造器被抹成普通 fn ⇒ `new` 落「可构造性未知」⇒ 假红） 的修复在缓存往返后**"	夹具漏形态	keep	keep	—
-"ABI 已抬到 v15（A2 残余 callable 进 HarvestSig ⇒ 旧磁盘缓存必须 miss）"	"收割面（内存 Abs）在本族新增了几个 facet： - obj：`index`（索引签名 / `Record<K,V>` 的值域）+ `open`（开放对象标志） - tuple：`rest`（变长尾槽） - fn：`ctor`（可构造性）+ `slots`（dual-facet 静态成员） 磁盘投影 `HarvestSig` 原本**不带**这些 facet ⇒ L2 磁盘缓存命中时服务的是 **有损 env** ⇒ 803（`Record` 变闭合空对象 ⇒ 成员读 undefined ⇒ 定抛）、 802（元组丢 rest）、829（构造器被抹成普通 fn ⇒ `new` 落「可构造性未知」⇒ 假红） 的修复在缓存往返后**"	夹具漏形态	keep	keep	—
-"反向闸：投影里带 facet 的 HarvestSig 能还原出同样的显示面"	"收割面（内存 Abs）在本族新增了几个 facet： - obj：`index`（索引签名 / `Record<K,V>` 的值域）+ `open`（开放对象标志） - tuple：`rest`（变长尾槽） - fn：`ctor`（可构造性）+ `slots`（dual-facet 静态成员） 磁盘投影 `HarvestSig` 原本**不带**这些 facet ⇒ L2 磁盘缓存命中时服务的是 **有损 env** ⇒ 803（`Record` 变闭合空对象 ⇒ 成员读 undefined ⇒ 定抛）、 802（元组丢 rest）、829（构造器被抹成普通 fn ⇒ `new` 落「可构造性未知」⇒ 假红） 的修复在缓存往返后**"	夹具漏形态	keep	keep	—
-"提升出的可选属性是 `number | undefined`（不是 `number`）"	"回归（harvester 收割面）：接口成员被**提升**成模块级全局时丢掉 `?` 可选标记（brand 面 `number | undefined` vs 提升面 `number`）。 根因：提升路径把成员**降级成一条 `var` 声明**（`{t:\"var\", typeNode: member.type}`）， 只保留了 `type`，**丢掉了 `questionToken`** ⇒ 同一个成员在两条收割路径上两个类型。 断言：expect(promoted).toBeDefined();；expect(formatShape(promoted)).toBe(\"number | undefined\");"	没测该层	keep	keep	—
-"brand 面与提升面同口径（同一成员两个类型 ⇒ 不得出现）"	"回归（harvester 收割面）：接口成员被**提升**成模块级全局时丢掉 `?` 可选标记（brand 面 `number | undefined` vs 提升面 `number`）。 根因：提升路径把成员**降级成一条 `var` 声明**（`{t:\"var\", typeNode: member.type}`）， 只保留了 `type`，**丢掉了 `questionToken`** ⇒ 同一个成员在两条收割路径上两个类型。 断言：expect(formatShape(member)).toBe(formatShape(env.modules.m!.a!));"	没测该层	keep	keep	—
-"对照：必选属性不被加上 undefined"	"回归（harvester 收割面）：接口成员被**提升**成模块级全局时丢掉 `?` 可选标记（brand 面 `number | undefined` vs 提升面 `number`）。 根因：提升路径把成员**降级成一条 `var` 声明**（`{t:\"var\", typeNode: member.type}`）， 只保留了 `type`，**丢掉了 `questionToken`** ⇒ 同一个成员在两条收割路径上两个类型。 断言：expect(formatShape(env.modules.m!.b!)).toBe(\"number\");"	没测该层	keep	keep	—
-"对照：brand 面本来就保留 `?`（既有口径不被破坏）"	"回归（harvester 收割面）：接口成员被**提升**成模块级全局时丢掉 `?` 可选标记（brand 面 `number | undefined` vs 提升面 `number`）。 根因：提升路径把成员**降级成一条 `var` 声明**（`{t:\"var\", typeNode: member.type}`）， 只保留了 `type`，**丢掉了 `questionToken`** ⇒ 同一个成员在两条收割路径上两个类型。 断言：expect(formatShape(slots(env.modules.m!.opt!).a!)).toBe(\"number | undefined\");"	没测该层	keep	keep	—
-"`export default function makeThing()` ⇒ 导出表有 default，没有 makeThing"	"回归（harvester 收割面）：`export default` **不在模块导出表里** ⇒ 默认导入落 `unknown`（假警告）； 同时**默认导出的局部名被当成具名导出**（假绿）。 断言：expect(env.globals[\"default\"]).toBeDefined();；expect(formatShape(env.globals[\"default\"]!)).toBe(\"() => number\");"	夹具漏形态	keep	keep	—
-"`export default class Widget {}` ⇒ 导出表有 default，没有 Widget"	"回归（harvester 收割面）：`export default` **不在模块导出表里** ⇒ 默认导入落 `unknown`（假警告）； 同时**默认导出的局部名被当成具名导出**（假绿）。 断言：expect(env.globals[\"default\"]).toBeDefined();；expect(env.globals[\"Widget\"]).toBeUndefined();"	夹具漏形态	keep	keep	—
-"`export default <局部名>` ⇒ default 取局部绑定的值"	"回归（harvester 收割面）：`export default` **不在模块导出表里** ⇒ 默认导入落 `unknown`（假警告）； 同时**默认导出的局部名被当成具名导出**（假绿）。 断言：expect(formatShape(env.globals[\"default\"]!)).toBe(\"() => string\");"	夹具漏形态	keep	keep	—
-"桥接层把 globals 的 default 提升成模块的 default 导出（默认导入不再是 unknown）"	"回归（harvester 收割面）：`export default` **不在模块导出表里** ⇒ 默认导入落 `unknown`（假警告）； 同时**默认导出的局部名被当成具名导出**（假绿）。 断言：expect(mods[\"fx\"]?.default).toBeDefined();；expect(formatShape(mock)).toContain(\"()\");"	夹具漏形态	keep	keep	—
-"函数改名再导出 ⇒ 导出表里有 `bar`，值是局部绑定的签名"	"回归（harvester 收割面）：`export { X as Y }`（本地改名再导出）被**整条丢弃** ⇒ 改名后的导出根本不存在（假警告）。 ` ⇒ 模块导出面是 `[\"bar\"]` （`bar` 是**运行时值**，`foo` 只是局部名 ⇒ 不在导出面里）。 断言：expect(env.globals[\"bar\"]).toBeDefined();；expect(formatShape(env.globals[\"bar\"]!)).toBe(\"() => number\");"	没测该层	keep	keep	—
-"`export { X as default }` ⇒ default 拿得到局部绑定"	"回归（harvester 收割面）：`export { X as Y }`（本地改名再导出）被**整条丢弃** ⇒ 改名后的导出根本不存在（假警告）。 ` ⇒ 模块导出面是 `[\"bar\"]` （`bar` 是**运行时值**，`foo` 只是局部名 ⇒ 不在导出面里）。 断言：expect(formatShape(env.globals[\"default\"]!)).toBe(\"() => number\");"	没测该层	keep	keep	—
-"const 改名再导出 ⇒ 导出表里是局部常量的类型"	"回归（harvester 收割面）：`export { X as Y }`（本地改名再导出）被**整条丢弃** ⇒ 改名后的导出根本不存在（假警告）。 ` ⇒ 模块导出面是 `[\"bar\"]` （`bar` 是**运行时值**，`foo` 只是局部名 ⇒ 不在导出面里）。 断言：expect(env.globals[\"width\"]).toBeDefined();；expect(formatShape(env.globals[\"width\"]!)).toBe(\"number\");"	没测该层	keep	keep	—
-"`export type { X }`（类型位导出）不是运行时值 ⇒ 不进导出表，且计入 skipped"	"回归（harvester 收割面）：`export { X as Y }`（本地改名再导出）被**整条丢弃** ⇒ 改名后的导出根本不存在（假警告）。 ` ⇒ 模块导出面是 `[\"bar\"]` （`bar` 是**运行时值**，`foo` 只是局部名 ⇒ 不在导出面里）。 断言：expect(env.globals[\"Renamed\"]).toBeUndefined();；expect(env.stats.skipped).toBeGreaterThan(0);"	没测该层	keep	keep	—
-"有自有声明的模块不再丢掉星号再导出的名字"	"断言：expect(fs[\"readFileSync\"]).toBeDefined();；expect(fs[\"statSync\"]).toBeDefined();"	没测该层	keep	keep	—
-"纯别名（没有自有声明）仍然与目标共用同一条记录"	"断言：expect(env.modules[\"fs\"]![\"readFileSync\"]).toBeDefined();；expect(env.modules[\"fs\"]).toBe(env.modules[\"node:fs\"]);"	没测该层	keep	keep	—
-"多目标星号再导出 ⇒ 名字全都进来"	"断言：expect(env.modules[\"c\"]![\"fromA\"]).toBeDefined();；expect(env.modules[\"c\"]![\"fromB\"]).toBeDefined();"	没测该层	keep	keep	—
-"模块记录生成，default = 被导出实体的值，且不产生具名导出"	"回归（harvester 收割面）：`export = <本地类/常量>`（@types/node 的 CJS 形态） ⇒ **整个模块记录不生成**（`ctx.skipped++` 静默丢弃）。 `import { Buffer } from \"./cls.js\"` 是 **TS2595**（`'Buffer' can only be imported by using a default import`）⇒ 导出表**不得**提供具名导出 `Buffer`（否则假绿）。 断言：expect(rec).toBeDefined();；expect(rec![\"default\"]).toBeDefined();"	夹具漏形态	keep	keep	—
-"`export = <本地常量>` ⇒ default 是那个常量的值"	"回归（harvester 收割面）：`export = <本地类/常量>`（@types/node 的 CJS 形态） ⇒ **整个模块记录不生成**（`ctx.skipped++` 静默丢弃）。 `import { Buffer } from \"./cls.js\"` 是 **TS2595**（`'Buffer' can only be imported by using a default import`）⇒ 导出表**不得**提供具名导出 `Buffer`（否则假绿）。 断言：expect(formatShape(rec[\"default\"]!)).toBe(\"string\");；expect(env.stats.skipped"	夹具漏形态	keep	keep	—
-"解析不出来的 `export = <未知名字>` ⇒ 计入 skipped（汇总行有信号）"	"回归（harvester 收割面）：`export = <本地类/常量>`（@types/node 的 CJS 形态） ⇒ **整个模块记录不生成**（`ctx.skipped++` 静默丢弃）。 `import { Buffer } from \"./cls.js\"` 是 **TS2595**（`'Buffer' can only be imported by using a default import`）⇒ 导出表**不得**提供具名导出 `Buffer`（否则假绿）。 断言：expect(env.stats.skipped).toBeGreaterThan(0);"	夹具漏形态	keep	keep	—
-"再导出在前 / 声明在后 ⇒ 两种顺序逐项相同"	"断言：expect(orderA).toEqual(orderB);；expect(Object.keys(orderA[\"pkg-a\"] ?? {})).toEqual([\"Widget\"]);"	没测该层	keep	keep	—
-"函数再导出：声明在另一个文件里 ⇒ 两种顺序逐项相同"	"断言：expect(orderA).toEqual(orderB);；expect(formatShape(harvestDts([reexport, decl]).modules[\"pkg-b\"]![\"renamed\"]!)).toBe("	没测该层	keep	keep	—
-"class 再导出：两种顺序逐项相同，且拿到的是构造签名"	"回归（harvester 收割面）：`export = <本地类/常量>`（@types/node 的 CJS 形态） ⇒ **整个模块记录不生成**（`ctx.skipped++` 静默丢弃）。 `import { Buffer } from \"./cls.js\"` 是 **TS2595**（`'Buffer' can only be imported by using a default import`）⇒ 导出表**不得**提供具名导出 `Buffer`（否则假绿）。 断言：expect(snapshot([reexport, decl])).toEqual(snapshot([decl, reexport]));"	夹具漏形态	keep	keep	—
-"顶层 `export = _` ⇒ 收割面有 default（值 = _ 的类型）"	"回归（harvester 收割面）：模块级 `.d.ts` **顶层的 CJS `export = X`** 整个被丢弃 ⇒ 该包**没有 `default` 导出** ⇒ ESM 默认导入（`import _ from \"pkg\"`）落 `unknown` + 假警告。 2. 桥接层把它提升成包的 `default` 导出（默认导入不再是 unknown）； 断言：expect(env.globals[\"default\"]).toBeDefined();；expect(formatShape(env.globals[\"default\"]!)).toBe(\"LoDashStatic\");"	没测该层	keep	keep	—
-"桥接层把顶层 `export =` 提升成包的 default 导出（默认导入不再是 unknown）"	"回归（harvester 收割面）：模块级 `.d.ts` **顶层的 CJS `export = X`** 整个被丢弃 ⇒ 该包**没有 `default` 导出** ⇒ ESM 默认导入（`import _ from \"pkg\"`）落 `unknown` + 假警告。 2. 桥接层把它提升成包的 `default` 导出（默认导入不再是 unknown）； 断言：expect(mods[\"fx\"]?.default).toBeDefined();；expect(formatShape(mods[\"fx\"]!.default!)).toBe(\"LoDashStatic\");"	没测该层	keep	keep	—
-"顶层 `export = <本地类>` ⇒ default 是构造签名"	"回归（harvester 收割面）：模块级 `.d.ts` **顶层的 CJS `export = X`** 整个被丢弃 ⇒ 该包**没有 `default` 导出** ⇒ ESM 默认导入（`import _ from \"pkg\"`）落 `unknown` + 假警告。 2. 桥接层把它提升成包的 `default` 导出（默认导入不再是 unknown）； 断言：expect(env.globals[\"default\"]).toBeDefined();；expect(env.stats.skipped).toBe(0);"	没测该层	keep	keep	—
-"同名真实导出存活（不被接口成员顶掉）"	"断言：expect(x).toBeDefined();；expect(x.shape.k).toBe(\"fn\");"	没测该层	keep	keep	—
-"声明顺序不影响结果（realFirst / realLast 同形）"	"回归（harvester 收割面）：「**接口成员提升**」把**非导出实体**写进模块导出表 ⇒ **真实导出整条被丢弃**（先到先得）⇒ L2 假红； 且提升出的「幽灵导出」让 **不存在的导入**被当成真实导出。 断言：expect(formatShape(a.globals.x!)).toBe(formatShape(b.globals.x!));；expect(a.globals.x!.shape.k).toBe(\"fn\");"	没测该层	keep	keep	—
-"包的导出表里没有「幽灵导出」（接口成员不是模块导出）"	"回归（harvester 收割面）：「**接口成员提升**」把**非导出实体**写进模块导出表 ⇒ **真实导出整条被丢弃**（先到先得）⇒ L2 假红； 且提升出的「幽灵导出」让 **不存在的导入**被当成真实导出。 断言：expect(Object.hasOwn(named, \"origin\")).toBe(true);；expect(Object.hasOwn(named, \"size\")).toBe(false);"	没测该层	keep	keep	—
-"包的导出表里真实导出不被挤掉（同名接口成员 + 同名函数导出）"	"断言：expect(Object.hasOwn(named, \"x\")).toBe(true);；expect(x?.shape.k).toBe(\"fn\");"	没测该层	keep	keep	—
-"对照：没有同名冲突时，真实导出照常在导出表里"	"断言：expect(Object.hasOwn(named, \"other\")).toBe(true);；expect(Object.hasOwn(named, \"origin\")).toBe(true);"	没测该层	keep	keep	—
-"resolvePackageRoot 命中包本体（不是同名 @types）"	"harvester 的**包根解析无条件优先 `@types/<pkg>`** ⇒ 收割到陈旧的 @types 声明（另一个版本的 API）⇒ 签名错（string 折成 number）且**零诊断**。 断言：expect(resolvePackageRoot(\"mypkg\", dir)).toBe(pkgRoot);"	没测该层	keep	keep	—
-"收割到的是包自带那份声明（string，而不是 @types 的 number）"	"harvester 的**包根解析无条件优先 `@types/<pkg>`** ⇒ 收割到陈旧的 @types 声明（另一个版本的 API）⇒ 签名错（string 折成 number）且**零诊断**。 断言：expect(\"error\" in h).toBe(false);；expect(h.root).toBe(pkgRoot);"	没测该层	keep	keep	—
-"包本体没有声明时才回落 @types（lodash 形态不回归）"	"harvester 的**包根解析无条件优先 `@types/<pkg>`** ⇒ 收割到陈旧的 @types 声明（另一个版本的 API）⇒ 签名错（string 折成 number）且**零诊断**。 断言：expect(resolvePackageRoot(\"onlytypes\", only)).toBe(t);"	没测该层	keep	keep	—
-"包名键 = 包自身的顶层导出（不是 declare module 记录的同名导出）"	"子路径说明符又**回落**到包名键 ⇒ 两个方向都拿到**错的确切类型**，且**零诊断**。 子路径说明符**不得**回落到包名键（宁可落 unknown，也不给错的确切类型）。 断言：expect(\"error\" in h).toBe(false);；expect(returnTypeOf(table[\"shadowpkg\"]?.named[\"helper\"])).toBe(\"string\");"	没测该层	keep	keep	—
-"子路径说明符拿到子路径自己的导出（不是根包的）"	"断言：expect(spec).toBeDefined();；expect(returnTypeOf(spec?.named[\"get\"])).toBe(\"number\");"	没测该层	keep	keep	—
-"子路径说明符**不回落到包名键**（没有对应文件 ⇒ 落 unknown，不给根包的错值）"	"子路径说明符又**回落**到包名键 ⇒ 两个方向都拿到**错的确切类型**，且**零诊断**。 子路径说明符**不得**回落到包名键（宁可落 unknown，也不给错的确切类型）。 断言：expect(spec).toBeUndefined();；expect(returnTypeOf(root?.named[\"get\"])).toBe(\"string\");"	没测该层	keep	keep	—
-"`enum` 是运行时导出 ⇒ 进草稿（收割面看得见 `Color`）"	"`nudo contract --from-dts` 的**草稿面**把 5 类**运行时导出** 整条丢弃（`export {x} from` / `export * from` / `enum` / `namespace` / 匿名 `export default function`），且**汇总行报「0 skipped」** ⇒ 丢失**零信号**； 反向闸：改前（5 类里 3 类整条消失 + 汇总行报「0 skipped」）⇒ 本文件失败。 断言：expect(draft.draftSource).toContain(\"export const Color = shape({\");；expect(draft.draftSou"	夹具漏形态	keep	keep	—
-"`namespace` 是运行时导出 ⇒ 进草稿"	"`nudo contract --from-dts` 的**草稿面**把 5 类**运行时导出** 整条丢弃（`export {x} from` / `export * from` / `enum` / `namespace` / 匿名 `export default function`），且**汇总行报「0 skipped」** ⇒ 丢失**零信号**； 反向闸：改前（5 类里 3 类整条消失 + 汇总行报「0 skipped」）⇒ 本文件失败。 断言：expect(draft.draftSource).toContain(\"export const Space = shape({\");；expect(draft.draftSou"	夹具漏形态	keep	keep	—
-"匿名 `export default function` 进草稿（键 = `default`）"	"`nudo contract --from-dts` 的**草稿面**把 5 类**运行时导出** 整条丢弃（`export {x} from` / `export * from` / `enum` / `namespace` / 匿名 `export default function`），且**汇总行报「0 skipped」** ⇒ 丢失**零信号**； 反向闸：改前（5 类里 3 类整条消失 + 汇总行报「0 skipped」）⇒ 本文件失败。 断言：expect(draft.draftSource).toContain(\"as default };\");；expect(draft.exports.some((e) => e.n"	夹具漏形态	keep	keep	—
-"`export {x} from` / `export * from` **看得见**（逐个 push + note）"	"`nudo contract --from-dts` 的**草稿面**把 5 类**运行时导出** 整条丢弃（`export {x} from` / `export * from` / `enum` / `namespace` / 匿名 `export default function`），且**汇总行报「0 skipped」** ⇒ 丢失**零信号**； 反向闸：改前（5 类里 3 类整条消失 + 汇总行报「0 skipped」）⇒ 本文件失败。 断言：expect(draft.draftSource).toContain(\"beta\");；expect(draft.draftSource).toContain(\"export *"	夹具漏形态	keep	keep	—
-"投影不了的运行时导出**计入 skipped**（汇总行不再报「0 skipped」）"	"`nudo contract --from-dts` 的**草稿面**把 5 类**运行时导出** 整条丢弃（`export {x} from` / `export * from` / `enum` / `namespace` / 匿名 `export default function`），且**汇总行报「0 skipped」** ⇒ 丢失**零信号**； 反向闸：改前（5 类里 3 类整条消失 + 汇总行报「0 skipped」）⇒ 本文件失败。 断言：expect(draft.stats.exports).toBe(4);；expect(draft.stats.skipped).toBe(2);"	夹具漏形态	keep	keep	—
-"`export * as ns from` 也是运行时导出面 ⇒ 看得见"	"`nudo contract --from-dts` 的**草稿面**把 5 类**运行时导出** 整条丢弃（`export {x} from` / `export * from` / `enum` / `namespace` / 匿名 `export default function`），且**汇总行报「0 skipped」** ⇒ 丢失**零信号**； 反向闸：改前（5 类里 3 类整条消失 + 汇总行报「0 skipped」）⇒ 本文件失败。 断言：expect(draft.exports.some((e) => e.name === \"helpers\")).toBe(true);；expect(draft.stats.ski"	夹具漏形态	keep	keep	—
-"`export import x = require(\"m\")` 不再静默丢弃"	"`nudo contract --from-dts` 的**草稿面**把 5 类**运行时导出** 整条丢弃（`export {x} from` / `export * from` / `enum` / `namespace` / 匿名 `export default function`），且**汇总行报「0 skipped」** ⇒ 丢失**零信号**； 反向闸：改前（5 类里 3 类整条消失 + 汇总行报「0 skipped」）⇒ 本文件失败。 断言：expect(draft.exports.some((e) => e.name === \"legacy\")).toBe(true);；expect(draft.stats.skip"	夹具漏形态	keep	keep	—
-"declare module 记录的导出表只含真实声明（o / real）"	"}` —— 接口成员 `x` / `y` 是**接口成员提升**出来的，不是模块导出 （TS：`import { x }` ⇒ TS2305）⇒ 模块记录 / 包导出表都不得登记它们。 改前：`import { x } from \"mpkg\"` 在 nudo 下拿到**自信的 `number`**（假绿）； 断言：expect([...promotedNamesOf(h.env.modules[\"ghostpkg\"]!)]).toEqual([\"x\", \"y\"]);；expect(Object.keys(named)).toContain(\"o\");"	没测该层	keep	keep	—
-"磁盘缓存往返保留提升 provenance（冷 / 热两面同结论）"	"断言：expect([...promotedNamesOf(back.modules[\"ghostpkg\"]!)]).toEqual([\"x\", \"y\"]);；expect(Object.keys(named)).toContain(\"o\");"	没测该层	keep	keep	—
-"导出面扫描登记 Space（不只是 plain）"	"回归：`export declare namespace Space { … }` 被导出面扫描器一起跳过 （`NamespaceDeclaration` 与 ambient module 共用 `ModuleDeclaration` 节点） ⇒ 整块 API 漏导出（裸包 import 拿到 unknown、零信号），而契约草稿面却登记了它。 断言：expect([...scan.exported].sort()).toEqual([\"Space\", \"plain\"]);；expect(scan.private.size).toBe(0);"	没测该层	keep	keep	—
-"包导出表含 Space，且成员 inner 有具体类型"	"回归：`export declare namespace Space { … }` 被导出面扫描器一起跳过 （`NamespaceDeclaration` 与 ambient module 共用 `ModuleDeclaration` 节点） ⇒ 整块 API 漏导出（裸包 import 拿到 unknown、零信号），而契约草稿面却登记了它。 断言：expect(Object.keys(named).sort()).toEqual([\"Space\", \"plain\"]);；expect(slots.k).toBe(\"obj\");"	没测该层	keep	keep	—
-"ns-first：helper 是可调用函数（不是命名空间对象）"	"`nudo contract --from-dts` 把**具名 default 导出**写成本地名键 ⇒ 草稿键 `helper` ≠ 模块导出名 `default` ⇒ 用户照抄进侧车后**该导出永远 零义务**（**假绿**），而汇总行报「**0 skipped**」让用户以为「没有需要 人工处理的东西」。 修法（草稿面）：default 导出的**草稿键恒为 `default`**（不是本地名）⇒ 抄进侧车后绑定的是模块的 `default` 导出； 断言：expect(h.shape.k).toBe(\"fn\");；expect(formatShape(h)).toContain(\"=> number\");"	没测该层	keep	keep	—
-"两种声明顺序给出同一个形态"	"断言：expect(a.shape.k).toBe(b.shape.k);；expect(formatShape(a)).toBe(formatShape(b));"	没测该层	keep	keep	—
-"控制组：单独声明 interface 不产生任何全局（基线）"	"}` —— 接口成员 `x` / `y` 是**接口成员提升**出来的，不是模块导出 （TS：`import { x }` ⇒ TS2305）⇒ 模块记录 / 包导出表都不得登记它们。 改前：`import { x } from \"mpkg\"` 在 nudo 下拿到**自信的 `number`**（假绿）； 断言：expect(env.globals.x).toBeUndefined();；expect(env.globals.y).toBeUndefined();"	没测该层	keep	keep	—
-"顶层 `export declare const o: Opts;` ⇒ 成员不进全局面（修前：x / y 都是全局）"	"回归（harvester 全局面）：顶层「值位置接口声明」的接口成员 **不得**提升成全局符号。 ` 里的成员在 TypeScript 中只在 `Opts` 内部 可见（模块外 / 全局作用域根本没有这些名字）。 断言：expect(env.globals.o).toBeDefined();；expect(env.globals.x).toBeUndefined();"	没测该层	keep	keep	—
-"模块作用域的同一形态仍然提升（提升路径本身不被削弱）"	"断言：expect(m).toBeDefined();；expect(m.x).toBeDefined();"	没测该层	keep	keep	—
-"收割面不产生提升成员（x / y 只在接口内部可见）"	"断言：expect([...promotedNamesOf(env.globals)]).toEqual([]);；expect(env.globals.x).toBeUndefined();"	没测该层	keep	keep	—
-"emitEnvModule 的 globals 只落真实声明（o），不落提升成员"	"回归：顶层「值位置接口声明」的**接口成员**被提升成 envoy 模块的 **全局** ⇒ 引用该 env 的工程里裸写 `x` 被判 `number | undefined`，而 tsc 报 TS2304 ⇒ 假绿。 `）的 `p.scope` 是全局作用域 ⇒ 那里**不提升** ⇒ 收割面的 `env.globals` 本身就不含 `x` / `y`（早先只在出口 `emitEnvModule` 过滤，收割面仍留着幽灵名字； 断言：expect(/^\\s*o:/m.test(code)).toBe(true);；expect(/^\\s*x:/m.test(code)).toBe(false);"	没测该层	keep	keep	—
-"存在未解析的 export *：helper（模块私有）不得出现在包导出集"	"回归：包里只要有一条解析不了的 `export * from \"<外部包>\"`， 「公开面不可知」回落就退成整个 globals 袋（只扣 ambient）⇒ **模块私有** 顶层声明被提升成包导出 ⇒ nudo 接受 TS 拒绝的 import（TS2459）并给出自信值。 契约：回落必须扣掉**模块私有**（module 模式里从未 `export` 的顶层声明）。 断言：expect(namedOf(UNRESOLVED_STAR)).toEqual([\"real\"]);"	没测该层	keep	keep	—
-"对照组：没有 export * 时同样只导出 real（口径一致）"	"回归：包里只要有一条解析不了的 `export * from \"<外部包>\"`， 「公开面不可知」回落就退成整个 globals 袋（只扣 ambient）⇒ **模块私有** 顶层声明被提升成包导出 ⇒ nudo 接受 TS 拒绝的 import（TS2459）并给出自信值。 契约：回落必须扣掉**模块私有**（module 模式里从未 `export` 的顶层声明）。 断言：expect(namedOf(NO_STAR)).toEqual([\"real\"]);"	没测该层	keep	keep	—
-"对照：helper 真的导出时照常在导出集里"	"`nudo contract --from-dts` 把**具名 default 导出**写成本地名键 ⇒ 草稿键 `helper` ≠ 模块导出名 `default` ⇒ 用户照抄进侧车后**该导出永远 零义务**（**假绿**），而汇总行报「**0 skipped**」让用户以为「没有需要 人工处理的东西」。 修法（草稿面）：default 导出的**草稿键恒为 `default`**（不是本地名）⇒ 抄进侧车后绑定的是模块的 `default` 导出； 断言：expect(namedOf(HELPER_EXPORTED)).toEqual([\"helper\", \"real\"]);"	没测该层	keep	keep	—
-"单个声明字面量往返后 conf = exact（不是 mock）"	"回归：磁盘投影丢 `conf` ⇒ 回读把**每个** Abs 标成 `mock` ⇒ 声明的 字面量被 `widenUncertainLiteral` 放宽成基类型 ⇒ 同一份 `.d.ts`，缓存冷 / 热 两次运行发布**不同**的 zod / standard 产物（热产物接受集更宽 ⇒ 消费端假绿）。 契约：磁盘投影里的 `lit` **只**来自声明 ⇒ 回读必须恢复 `exact` 精度。 断言：expect(back.conf).toBe(\"exact\");；expect(back.term?.op).toBe(\"lit\");"	夹具漏形态	keep	keep	—
-"字面量并集（\"\\\\\" | \"/\"）往返后每个成员仍是字面量"	"断言：expect(back.shape.k).toBe(\"sum\");；expect(members.map(litValue)).toEqual([\"\\\\\", \"/\"]);"	没测该层	keep	keep	—
-"整包序列化 → 回读：字面量不退化（冷 / 热两面同产物）"	"回归：磁盘投影丢 `conf` ⇒ 回读把**每个** Abs 标成 `mock` ⇒ 声明的 字面量被 `widenUncertainLiteral` 放宽成基类型 ⇒ 同一份 `.d.ts`，缓存冷 / 热 两次运行发布**不同**的 zod / standard 产物（热产物接受集更宽 ⇒ 消费端假绿）。 契约：磁盘投影里的 `lit` **只**来自声明 ⇒ 回读必须恢复 `exact` 精度。 断言：expect(sep.shape.k).toBe(\"sum\");；expect(members.map(litValue)).toEqual([\"\\\\\", \"/\"]);"	夹具漏形态	keep	keep	—
+resolvePackageRoot finds workspace packages；harvestPackage on typescript if available	harvest-package 聚合矩阵	没测该层	keep	keep	—
+dtsFileScan: ENOENT 空扫描无标记；读错误（EISDIR）标 unreadable 且不进缓存；packageExportSurface: 入口读不了 ⇒ unresolved（公开面不可知，不折空）；collectDtsFiles: readdir 非 ENOENT 故障（ENOTDIR）计数上浮；ENOENT 静默；harvestPackage: package.json JSON 解析故障计数进 env.stats.skipped	harvest-package 聚合矩阵	没测该层	keep	keep	—
+草稿键是 `default`（不是本地名 `helper`）；没有丢失 ⇒ 汇总行不虚增 skipped；**抄进侧车后 `default` 导出真的带上契约**（改前：零义务）	harvest-package 聚合矩阵	没测该层	keep	keep	—
+`declare global` 的内容不进包名键（真实的导出仍在）；script 模式 `.d.ts` 的顶层声明不进包名键	harvest-package 聚合矩阵	没测该层	keep	keep	—
+目录里的 `.d.ts` **全部**被投影（改前：只投影前 16 个）；第 17+ 个文件的导出**出现在草稿里**；没有截断 ⇒ 汇总行不虚增 skipped；单文件入口不受影响	harvest-package 聚合矩阵	没测该层	keep	keep	—
+命名空间成员不落进 globals（不再凭空造出全局 `bar`）；命名空间对象 `Foo` 存在，成员挂在它下面（`Foo.bar`）；命名空间成员仍可调用（`Foo.bar()` 的返回类型是 number）；只有类型的命名空间不产生运行时对象（不凭空多出全局 `_`）；嵌套命名空间：成员留在最深层的命名空间里；两个命名空间的同名成员互不串（不当作 overload 合并）	harvest-package 聚合矩阵	没测该层	keep	keep	—
+obj：索引签名 + 开放对象标志往返后仍在；obj：闭合对象**不**被投影成开放对象（不得过度放宽）；tuple：rest 槽往返后仍在；fn：ctor facet 往返后仍在（否则 new 落「可构造性未知」⇒ 假红）；fn：dual-facet 静态槽往返后仍在；ABI 已抬到 v15（A2 残余 callable 进 HarvestSig ⇒ 旧磁盘缓存必须 miss）；反向闸：投影里带 facet 的 HarvestSig 能还原出同样的显示面	harvest-package 聚合矩阵	没测该层	keep	keep	—
+提升出的可选属性是 `number | undefined`（不是 `number`）；brand 面与提升面同口径（同一成员两个类型 ⇒ 不得出现）；对照：必选属性不被加上 undefined；对照：brand 面本来就保留 `?`（既有口径不被破坏）	harvest-package 聚合矩阵	没测该层	keep	keep	—
+`export default function makeThing()` ⇒ 导出表有 default，没有 makeThing；`export default class Widget {}` ⇒ 导出表有 default，没有 Widget；`export default <局部名>` ⇒ default 取局部绑定的值；桥接层把 globals 的 default 提升成模块的 default 导出（默认导入不再是 unknown）	harvest-package 聚合矩阵	没测该层	keep	keep	—
+函数改名再导出 ⇒ 导出表里有 `bar`，值是局部绑定的签名；`export { X as default }` ⇒ default 拿得到局部绑定；const 改名再导出 ⇒ 导出表里是局部常量的类型；`export type { X }`（类型位导出）不是运行时值 ⇒ 不进导出表，且计入 skipped	harvest-package 聚合矩阵	没测该层	keep	keep	—
+有自有声明的模块不再丢掉星号再导出的名字；纯别名（没有自有声明）仍然与目标共用同一条记录；多目标星号再导出 ⇒ 名字全都进来	harvest-package 聚合矩阵	没测该层	keep	keep	—
+模块记录生成，default = 被导出实体的值，且不产生具名导出；`export = <本地常量>` ⇒ default 是那个常量的值；解析不出来的 `export = <未知名字>` ⇒ 计入 skipped（汇总行有信号）	harvest-package 聚合矩阵	没测该层	keep	keep	—
+再导出在前 / 声明在后 ⇒ 两种顺序逐项相同；函数再导出：声明在另一个文件里 ⇒ 两种顺序逐项相同；class 再导出：两种顺序逐项相同，且拿到的是构造签名	harvest-package 聚合矩阵	没测该层	keep	keep	—
+顶层 `export = _` ⇒ 收割面有 default（值 = _ 的类型）；桥接层把顶层 `export =` 提升成包的 default 导出（默认导入不再是 unknown）；顶层 `export = <本地类>` ⇒ default 是构造签名	harvest-package 聚合矩阵	没测该层	keep	keep	—
+同名真实导出存活（不被接口成员顶掉）；声明顺序不影响结果（realFirst / realLast 同形）；包的导出表里没有「幽灵导出」（接口成员不是模块导出）；包的导出表里真实导出不被挤掉（同名接口成员 + 同名函数导出）；对照：没有同名冲突时，真实导出照常在导出表里	harvest-package 聚合矩阵	没测该层	keep	keep	—
+resolvePackageRoot 命中包本体（不是同名 @types）；收割到的是包自带那份声明（string，而不是 @types 的 number）；包本体没有声明时才回落 @types（lodash 形态不回归）	harvest-package 聚合矩阵	没测该层	keep	keep	—
+包名键 = 包自身的顶层导出（不是 declare module 记录的同名导出）；子路径说明符拿到子路径自己的导出（不是根包的）；子路径说明符**不回落到包名键**（没有对应文件 ⇒ 落 unknown，不给根包的错值）	harvest-package 聚合矩阵	没测该层	keep	keep	—
+`enum` 是运行时导出 ⇒ 进草稿（收割面看得见 `Color`）；`namespace` 是运行时导出 ⇒ 进草稿；匿名 `export default function` 进草稿（键 = `default`）；`export {x} from` / `export * from` **看得见**（逐个 push + note）；投影不了的运行时导出**计入 skipped**（汇总行不再报「0 skipped」）；`export * as ns from` 也是运行时	harvest-package 聚合矩阵	没测该层	keep	keep	—
+declare module 记录的导出表只含真实声明（o / real）；磁盘缓存往返保留提升 provenance（冷 / 热两面同结论）	harvest-package 聚合矩阵	没测该层	keep	keep	—
+导出面扫描登记 Space（不只是 plain）；包导出表含 Space，且成员 inner 有具体类型	harvest-package 聚合矩阵	没测该层	keep	keep	—
+ns-first：helper 是可调用函数（不是命名空间对象）；两种声明顺序给出同一个形态	harvest-package 聚合矩阵	没测该层	keep	keep	—
+控制组：单独声明 interface 不产生任何全局（基线）；顶层 `export declare const o: Opts;` ⇒ 成员不进全局面（修前：x / y 都是全局）；模块作用域的同一形态仍然提升（提升路径本身不被削弱）	harvest-package 聚合矩阵	没测该层	keep	keep	—
+收割面不产生提升成员（x / y 只在接口内部可见）；emitEnvModule 的 globals 只落真实声明（o），不落提升成员	harvest-package 聚合矩阵	没测该层	keep	keep	—
+存在未解析的 export *：helper（模块私有）不得出现在包导出集；对照组：没有 export * 时同样只导出 real（口径一致）；对照：helper 真的导出时照常在导出集里	harvest-package 聚合矩阵	没测该层	keep	keep	—
+单个声明字面量往返后 conf = exact（不是 mock）；字面量并集（"\\" | "/"）往返后每个成员仍是字面量；整包序列化 → 回读：字面量不退化（冷 / 热两面同产物）	harvest-package 聚合矩阵	没测该层	keep	keep	—
+```
+
+```audit-deleted
+title	reason	evidence
+resolvePackageRoot finds workspace packages	dup:harvest-package 聚合矩阵	commit:8fa85177
+harvestPackage on typescript if available	dup:harvest-package 聚合矩阵	commit:8fa85177
+dtsFileScan: ENOENT 空扫描无标记；读错误（EISDIR）标 unreadable 且不进缓存	dup:harvest-package 聚合矩阵	commit:8fa85177
+packageExportSurface: 入口读不了 ⇒ unresolved（公开面不可知，不折空）	dup:harvest-package 聚合矩阵	commit:8fa85177
+collectDtsFiles: readdir 非 ENOENT 故障（ENOTDIR）计数上浮；ENOENT 静默	dup:harvest-package 聚合矩阵	commit:8fa85177
+harvestPackage: package.json JSON 解析故障计数进 env.stats.skipped	dup:harvest-package 聚合矩阵	commit:8fa85177
+草稿键是 `default`（不是本地名 `helper`）	dup:harvest-package 聚合矩阵	commit:8fa85177
+没有丢失 ⇒ 汇总行不虚增 skipped	dup:harvest-package 聚合矩阵	commit:8fa85177
+**抄进侧车后 `default` 导出真的带上契约**（改前：零义务）	dup:harvest-package 聚合矩阵	commit:8fa85177
+`declare global` 的内容不进包名键（真实的导出仍在）	dup:harvest-package 聚合矩阵	commit:8fa85177
+script 模式 `.d.ts` 的顶层声明不进包名键	dup:harvest-package 聚合矩阵	commit:8fa85177
+目录里的 `.d.ts` **全部**被投影（改前：只投影前 16 个）	dup:harvest-package 聚合矩阵	commit:8fa85177
+第 17+ 个文件的导出**出现在草稿里**	dup:harvest-package 聚合矩阵	commit:8fa85177
+没有截断 ⇒ 汇总行不虚增 skipped	dup:harvest-package 聚合矩阵	commit:8fa85177
+单文件入口不受影响	dup:harvest-package 聚合矩阵	commit:8fa85177
+命名空间成员不落进 globals（不再凭空造出全局 `bar`）	dup:harvest-package 聚合矩阵	commit:8fa85177
+命名空间对象 `Foo` 存在，成员挂在它下面（`Foo.bar`）	dup:harvest-package 聚合矩阵	commit:8fa85177
+命名空间成员仍可调用（`Foo.bar()` 的返回类型是 number）	dup:harvest-package 聚合矩阵	commit:8fa85177
+只有类型的命名空间不产生运行时对象（不凭空多出全局 `_`）	dup:harvest-package 聚合矩阵	commit:8fa85177
+嵌套命名空间：成员留在最深层的命名空间里	dup:harvest-package 聚合矩阵	commit:8fa85177
+两个命名空间的同名成员互不串（不当作 overload 合并）	dup:harvest-package 聚合矩阵	commit:8fa85177
+obj：索引签名 + 开放对象标志往返后仍在	dup:harvest-package 聚合矩阵	commit:8fa85177
+obj：闭合对象**不**被投影成开放对象（不得过度放宽）	dup:harvest-package 聚合矩阵	commit:8fa85177
+tuple：rest 槽往返后仍在	dup:harvest-package 聚合矩阵	commit:8fa85177
+fn：ctor facet 往返后仍在（否则 new 落「可构造性未知」⇒ 假红）	dup:harvest-package 聚合矩阵	commit:8fa85177
+fn：dual-facet 静态槽往返后仍在	dup:harvest-package 聚合矩阵	commit:8fa85177
+ABI 已抬到 v15（A2 残余 callable 进 HarvestSig ⇒ 旧磁盘缓存必须 miss）	dup:harvest-package 聚合矩阵	commit:8fa85177
+反向闸：投影里带 facet 的 HarvestSig 能还原出同样的显示面	dup:harvest-package 聚合矩阵	commit:8fa85177
+提升出的可选属性是 `number | undefined`（不是 `number`）	dup:harvest-package 聚合矩阵	commit:8fa85177
+brand 面与提升面同口径（同一成员两个类型 ⇒ 不得出现）	dup:harvest-package 聚合矩阵	commit:8fa85177
+对照：必选属性不被加上 undefined	dup:harvest-package 聚合矩阵	commit:8fa85177
+对照：brand 面本来就保留 `?`（既有口径不被破坏）	dup:harvest-package 聚合矩阵	commit:8fa85177
+`export default function makeThing()` ⇒ 导出表有 default，没有 makeThing	dup:harvest-package 聚合矩阵	commit:8fa85177
+`export default class Widget {}` ⇒ 导出表有 default，没有 Widget	dup:harvest-package 聚合矩阵	commit:8fa85177
+`export default <局部名>` ⇒ default 取局部绑定的值	dup:harvest-package 聚合矩阵	commit:8fa85177
+桥接层把 globals 的 default 提升成模块的 default 导出（默认导入不再是 unknown）	dup:harvest-package 聚合矩阵	commit:8fa85177
+函数改名再导出 ⇒ 导出表里有 `bar`，值是局部绑定的签名	dup:harvest-package 聚合矩阵	commit:8fa85177
+`export { X as default }` ⇒ default 拿得到局部绑定	dup:harvest-package 聚合矩阵	commit:8fa85177
+const 改名再导出 ⇒ 导出表里是局部常量的类型	dup:harvest-package 聚合矩阵	commit:8fa85177
+`export type { X }`（类型位导出）不是运行时值 ⇒ 不进导出表，且计入 skipped	dup:harvest-package 聚合矩阵	commit:8fa85177
+有自有声明的模块不再丢掉星号再导出的名字	dup:harvest-package 聚合矩阵	commit:8fa85177
+纯别名（没有自有声明）仍然与目标共用同一条记录	dup:harvest-package 聚合矩阵	commit:8fa85177
+多目标星号再导出 ⇒ 名字全都进来	dup:harvest-package 聚合矩阵	commit:8fa85177
+模块记录生成，default = 被导出实体的值，且不产生具名导出	dup:harvest-package 聚合矩阵	commit:8fa85177
+`export = <本地常量>` ⇒ default 是那个常量的值	dup:harvest-package 聚合矩阵	commit:8fa85177
+解析不出来的 `export = <未知名字>` ⇒ 计入 skipped（汇总行有信号）	dup:harvest-package 聚合矩阵	commit:8fa85177
+再导出在前 / 声明在后 ⇒ 两种顺序逐项相同	dup:harvest-package 聚合矩阵	commit:8fa85177
+函数再导出：声明在另一个文件里 ⇒ 两种顺序逐项相同	dup:harvest-package 聚合矩阵	commit:8fa85177
+class 再导出：两种顺序逐项相同，且拿到的是构造签名	dup:harvest-package 聚合矩阵	commit:8fa85177
+顶层 `export = _` ⇒ 收割面有 default（值 = _ 的类型）	dup:harvest-package 聚合矩阵	commit:8fa85177
+桥接层把顶层 `export =` 提升成包的 default 导出（默认导入不再是 unknown）	dup:harvest-package 聚合矩阵	commit:8fa85177
+顶层 `export = <本地类>` ⇒ default 是构造签名	dup:harvest-package 聚合矩阵	commit:8fa85177
+同名真实导出存活（不被接口成员顶掉）	dup:harvest-package 聚合矩阵	commit:8fa85177
+声明顺序不影响结果（realFirst / realLast 同形）	dup:harvest-package 聚合矩阵	commit:8fa85177
+包的导出表里没有「幽灵导出」（接口成员不是模块导出）	dup:harvest-package 聚合矩阵	commit:8fa85177
+包的导出表里真实导出不被挤掉（同名接口成员 + 同名函数导出）	dup:harvest-package 聚合矩阵	commit:8fa85177
+对照：没有同名冲突时，真实导出照常在导出表里	dup:harvest-package 聚合矩阵	commit:8fa85177
+resolvePackageRoot 命中包本体（不是同名 @types）	dup:harvest-package 聚合矩阵	commit:8fa85177
+收割到的是包自带那份声明（string，而不是 @types 的 number）	dup:harvest-package 聚合矩阵	commit:8fa85177
+包本体没有声明时才回落 @types（lodash 形态不回归）	dup:harvest-package 聚合矩阵	commit:8fa85177
+包名键 = 包自身的顶层导出（不是 declare module 记录的同名导出）	dup:harvest-package 聚合矩阵	commit:8fa85177
+子路径说明符拿到子路径自己的导出（不是根包的）	dup:harvest-package 聚合矩阵	commit:8fa85177
+子路径说明符**不回落到包名键**（没有对应文件 ⇒ 落 unknown，不给根包的错值）	dup:harvest-package 聚合矩阵	commit:8fa85177
+`enum` 是运行时导出 ⇒ 进草稿（收割面看得见 `Color`）	dup:harvest-package 聚合矩阵	commit:8fa85177
+`namespace` 是运行时导出 ⇒ 进草稿	dup:harvest-package 聚合矩阵	commit:8fa85177
+匿名 `export default function` 进草稿（键 = `default`）	dup:harvest-package 聚合矩阵	commit:8fa85177
+`export {x} from` / `export * from` **看得见**（逐个 push + note）	dup:harvest-package 聚合矩阵	commit:8fa85177
+投影不了的运行时导出**计入 skipped**（汇总行不再报「0 skipped」）	dup:harvest-package 聚合矩阵	commit:8fa85177
+`export * as ns from` 也是运行时导出面 ⇒ 看得见	dup:harvest-package 聚合矩阵	commit:8fa85177
+`export import x = require("m")` 不再静默丢弃	dup:harvest-package 聚合矩阵	commit:8fa85177
+declare module 记录的导出表只含真实声明（o / real）	dup:harvest-package 聚合矩阵	commit:8fa85177
+磁盘缓存往返保留提升 provenance（冷 / 热两面同结论）	dup:harvest-package 聚合矩阵	commit:8fa85177
+导出面扫描登记 Space（不只是 plain）	dup:harvest-package 聚合矩阵	commit:8fa85177
+包导出表含 Space，且成员 inner 有具体类型	dup:harvest-package 聚合矩阵	commit:8fa85177
+ns-first：helper 是可调用函数（不是命名空间对象）	dup:harvest-package 聚合矩阵	commit:8fa85177
+两种声明顺序给出同一个形态	dup:harvest-package 聚合矩阵	commit:8fa85177
+控制组：单独声明 interface 不产生任何全局（基线）	dup:harvest-package 聚合矩阵	commit:8fa85177
+顶层 `export declare const o: Opts;` ⇒ 成员不进全局面（修前：x / y 都是全局）	dup:harvest-package 聚合矩阵	commit:8fa85177
+模块作用域的同一形态仍然提升（提升路径本身不被削弱）	dup:harvest-package 聚合矩阵	commit:8fa85177
+收割面不产生提升成员（x / y 只在接口内部可见）	dup:harvest-package 聚合矩阵	commit:8fa85177
+emitEnvModule 的 globals 只落真实声明（o），不落提升成员	dup:harvest-package 聚合矩阵	commit:8fa85177
+存在未解析的 export *：helper（模块私有）不得出现在包导出集	dup:harvest-package 聚合矩阵	commit:8fa85177
+对照组：没有 export * 时同样只导出 real（口径一致）	dup:harvest-package 聚合矩阵	commit:8fa85177
+对照：helper 真的导出时照常在导出集里	dup:harvest-package 聚合矩阵	commit:8fa85177
+单个声明字面量往返后 conf = exact（不是 mock）	dup:harvest-package 聚合矩阵	commit:8fa85177
+字面量并集（"\\" | "/"）往返后每个成员仍是字面量	dup:harvest-package 聚合矩阵	commit:8fa85177
+整包序列化 → 回读：字面量不退化（冷 / 热两面同产物）	dup:harvest-package 聚合矩阵	commit:8fa85177
 ```

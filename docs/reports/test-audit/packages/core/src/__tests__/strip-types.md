@@ -6,55 +6,67 @@
 
 ```audit
 title	rootCause	gap	action	status	evidence
-"派生类：赋值在 super(...) 之后（改前：super 在后 ⇒ ReferenceError）"	"遇到未知形态**直接抛** ⇒ 不会把「印不出来」静默当成「印对了」。 断言：expect(params).toEqual([\"x\"]);；expect(stmts.map(shape)).toEqual([\"super\", \"assign:this.x\"]);"	夹具漏形态	keep	keep	—
-"派生类：`new Point(1)` 不抛 ReferenceError 且字段已赋值"	"} } ''' 改前产物：`constructor(x) {this.x = x; 非派生类仍在构造器体 开头（行为不变）。 断言：expect(inst.x).toBe(1);"	夹具漏形态	keep	keep	—
-"派生类：super(...) 之后的其它语句仍在赋值之后（tsc emit 口径）"	"遇到未知形态**直接抛** ⇒ 不会把「印不出来」静默当成「印对了」。 断言：expect(stmts.map(shape)).toEqual([\"super\", \"assign:this.x\", \"assign:this.extra\"]);"	夹具漏形态	keep	keep	—
-"非派生类：行为不变（赋值仍在构造器体开头）"	"} } ''' 改前产物：`constructor(x) {this.x = x; 非派生类仍在构造器体 开头（行为不变）。 断言：expect(params).toEqual([\"z\"]);；expect(stmts.map(shape)).toEqual([\"assign:this.z\", \"assign:this.z\"]);"	夹具漏形态	keep	keep	—
-"派生类构造器体顶层没有 super(...) ⇒ 保守不改相对顺序 + 回报事实"	"遇到未知形态**直接抛** ⇒ 不会把「印不出来」静默当成「印对了」。 断言：expect(ctor?.body.body.map(shape)).toEqual([\"assign:this.x\"]);；expect(report.ctorParamPropsSuperMissing).toBe(true);"	夹具漏形态	keep	keep	—
-"数值 enum：`B = A * 10` 的 A 变成 E[\"A\"]（不再是未绑定全局）"	"TS enum 的**计算成员**原样保留初始化表达式（不把成员引用改写成 `E[\"A\"]`）⇒ strip 产物引用**未绑定全局** ⇒ 运行时 ReferenceError。 根因：`strip-types.ts` 的 `synthesizeEnum` 对计算成员只做 `transformValue(init)` 就抄进 IIFE ⇒ `B = A * 10` 里的 `A` 保持裸标识符。 断言：expect(b.type).toBe(\"BinaryExpression\");；expect(left.type).toBe(\"MemberExpression\");"	没测该层	keep	keep	—
-"同一 enum 的自动递增成员仍用 E[\"B\"] + 1（两种口径一致）"	"TS enum 的**计算成员**原样保留初始化表达式（不把成员引用改写成 `E[\"A\"]`）⇒ strip 产物引用**未绑定全局** ⇒ 运行时 ReferenceError。 根因：`strip-types.ts` 的 `synthesizeEnum` 对计算成员只做 `transformValue(init)` 就抄进 IIFE ⇒ `B = A * 10` 里的 `A` 保持裸标识符。 断言：expect(c.type).toBe(\"BinaryExpression\");；expect((c.operator as string)).toBe(\"+\");"	没测该层	keep	keep	—
-"混合 enum：`C = A + 5` 的 A 也改写成 E[\"A\"]"	"TS enum 的**计算成员**原样保留初始化表达式（不把成员引用改写成 `E[\"A\"]`）⇒ strip 产物引用**未绑定全局** ⇒ 运行时 ReferenceError。 根因：`strip-types.ts` 的 `synthesizeEnum` 对计算成员只做 `transformValue(init)` 就抄进 IIFE ⇒ `B = A * 10` 里的 `A` 保持裸标识符。 断言：expect(left.type).toBe(\"MemberExpression\");；expect((left.property as { value?: string }).value).toBe(\"A\");"	没测该层	keep	keep	—
-"字符串 enum：`B = A + 'b'` 的 A 改写成 E[\"A\"]，且**不**建反向映射"	"字符串成员取右侧 断言：expect(left.type).toBe(\"MemberExpression\");；expect(prop.type).toBe(\"StringLiteral\");"	夹具漏形态	keep	keep	—
-"const enum：`B = A * 3` 同样改写成 E[\"A\"]"	"TS enum 的**计算成员**原样保留初始化表达式（不把成员引用改写成 `E[\"A\"]`）⇒ strip 产物引用**未绑定全局** ⇒ 运行时 ReferenceError。 根因：`strip-types.ts` 的 `synthesizeEnum` 对计算成员只做 `transformValue(init)` 就抄进 IIFE ⇒ `B = A * 10` 里的 `A` 保持裸标识符。 断言：expect(left.type).toBe(\"MemberExpression\");；expect((left.property as { value?: string }).value).toBe(\"A\");"	没测该层	keep	keep	—
-"剥除事实回报：enumComputedMemberRewritten 只在有计算成员时为真"	"断言：expect(plain.enumComputedMemberRewritten).toBeUndefined();；expect(computed.enumComputedMemberRewritten).toBe(true);"	没测该层	keep	keep	—
-"绑定只在类型位置被用到 ⇒ 整条 import 消失（产物可加载）"	"值位置的「类型专用导入」未消除 ⇒ 产物 Node 加载不了。 根因：strip-types.ts 的 import 判定只看**语法标记**（importKind === \"type\"）， 不看「绑定是否只在类型位置被使用」。 断言：expect("	没测该层	keep	keep	—
-"绑定在值位置被用到 ⇒ import 保留"	"值位置的「类型专用导入」未消除 ⇒ 产物 Node 加载不了。 根因：strip-types.ts 的 import 判定只看**语法标记**（importKind === \"type\"）， 不看「绑定是否只在类型位置被使用」。 断言：expect(kept).toHaveLength(1);；expect(kept[0].specifiers.map((s) => s.local.name)).toEqual([\"val\"]);"	没测该层	keep	keep	—
-"混用：type specifier 被剔除、值 specifier 保留"	"值位置的「类型专用导入」未消除 ⇒ 产物 Node 加载不了。 根因：strip-types.ts 的 import 判定只看**语法标记**（importKind === \"type\"）， 不看「绑定是否只在类型位置被使用」。 断言：expect(kept).toHaveLength(1);；expect(kept[0].specifiers.map((s) => s.local.name)).toEqual([\"b\"]);"	没测该层	keep	keep	—
-"显式 import type 整条删除（既有行为）"	"值位置的「类型专用导入」未消除 ⇒ 产物 Node 加载不了。 根因：strip-types.ts 的 import 判定只看**语法标记**（importKind === \"type\"）， 不看「绑定是否只在类型位置被使用」。 断言：expect(imports(`import type { A } from \"m\";\\nexport const x = 1;`)).toHaveLength(0);"	没测该层	keep	keep	—
-"裸 import（副作用）保留"	"值位置的「类型专用导入」未消除 ⇒ 产物 Node 加载不了。 根因：strip-types.ts 的 import 判定只看**语法标记**（importKind === \"type\"）， 不看「绑定是否只在类型位置被使用」。 断言：expect(imports(`import \"./side.js\";\\nexport const x = 1;`)).toHaveLength(1);"	没测该层	keep	keep	—
-"typeof 类型查询是类型位置 ⇒ import 同样被消掉（tsc 同口径）"	"值位置的「类型专用导入」未消除 ⇒ 产物 Node 加载不了。 根因：strip-types.ts 的 import 判定只看**语法标记**（importKind === \"type\"）， 不看「绑定是否只在类型位置被使用」。 断言：expect(imports(`import { val } from \"./m.js\";\\nexport type T = typeof val;`)).toHaveLength(0);"	没测该层	keep	keep	—
-"本地再导出（export { X }）判不准 ⇒ 保守保留 import"	"值位置的「类型专用导入」未消除 ⇒ 产物 Node 加载不了。 根因：strip-types.ts 的 import 判定只看**语法标记**（importKind === \"type\"）， 不看「绑定是否只在类型位置被使用」。 断言：expect(imports(`import { Foo } from \"./m.js\";\\nexport { Foo };`)).toHaveLength(1);"	没测该层	keep	keep	—
-"export { X } from \"m\" 的 X 是源模块的绑定 ⇒ 本地 import 判为「没被引用」⇒ 保守保留"	"值位置的「类型专用导入」未消除 ⇒ 产物 Node 加载不了。 根因：strip-types.ts 的 import 判定只看**语法标记**（importKind === \"type\"）， 不看「绑定是否只在类型位置被使用」。 断言：expect(imports(`import { Foo } from \"./m.js\";\\nexport { Foo } from \"./other.js\";`)).toHaveLength(1);"	没测该层	keep	keep	—
-"包说明符的 import 一律保留（nudo 不剥除包 ⇒ 不动）"	"值位置的「类型专用导入」未消除 ⇒ 产物 Node 加载不了。 根因：strip-types.ts 的 import 判定只看**语法标记**（importKind === \"type\"）， 不看「绑定是否只在类型位置被使用」。 断言：expect(imports(`import { Foo } from \"some-pkg\";\\nexport function use(f: Foo) { return f; }`)).toHaveLength(1);"	没测该层	keep	keep	—
-"类 heritage 的基类是值引用 ⇒ import 保留"	"值位置的「类型专用导入」未消除 ⇒ 产物 Node 加载不了。 根因：strip-types.ts 的 import 判定只看**语法标记**（importKind === \"type\"）， 不看「绑定是否只在类型位置被使用」。 断言：expect("	没测该层	keep	keep	—
-"接口的 extends 是类型位置 ⇒ import 被消掉（tsc 同口径）"	"值位置的「类型专用导入」未消除 ⇒ 产物 Node 加载不了。 根因：strip-types.ts 的 import 判定只看**语法标记**（importKind === \"type\"）， 不看「绑定是否只在类型位置被使用」。 断言：expect(imports(`import { Base } from \"./m.js\";\\nexport interface I extends Base {}`)).toHaveLength("	没测该层	keep	keep	—
-"export = X（TSExportAssignment）整条删除"	"TS-only 的 `export =` / `export as namespace` 未剥 ⇒ 产物不是合法 JS。 根因：strip-types.ts 的 `isTypeOnlyStatement` 语句级 switch 缺 `TSExportAssignment` / `TSNamespaceExportDeclaration` 两个 case ⇒ 这两条 TS-only 语句被原样打印进 `.js` ⇒ `node --check` ⇒ SyntaxError。 断言：expect(b.map((n) => n.type)).not.toContain(\"TSExportAssignment\");；expect(b.som"	没测该层	keep	keep	—
-"export as namespace X（TSNamespaceExportDeclaration）整条删除"	"TS-only 的 `export =` / `export as namespace` 未剥 ⇒ 产物不是合法 JS。 根因：strip-types.ts 的 `isTypeOnlyStatement` 语句级 switch 缺 `TSExportAssignment` / `TSNamespaceExportDeclaration` 两个 case ⇒ 这两条 TS-only 语句被原样打印进 `.js` ⇒ `node --check` ⇒ SyntaxError。 断言：expect(b.some((n) => n.type === \"TSNamespaceExportDeclaration\")).toBe(false);"	没测该层	keep	keep	—
-"export = 的右值（值引用）不产生残留语句"	"TS-only 的 `export =` / `export as namespace` 未剥 ⇒ 产物不是合法 JS。 根因：strip-types.ts 的 `isTypeOnlyStatement` 语句级 switch 缺 `TSExportAssignment` / `TSNamespaceExportDeclaration` 两个 case ⇒ 这两条 TS-only 语句被原样打印进 `.js` ⇒ `node --check` ⇒ SyntaxError。 断言：expect(b.map((n) => n.type)).toEqual([\"VariableDeclaration\"]);"	没测该层	keep	keep	—
-"纯 JS 源码不受影响（结构性 no-op）"	"断言：expect(b.map((n) => n.type)).toEqual([\"ExportNamedDeclaration\", \"ExportDefaultDeclaration\"]);"	没测该层	keep	keep	—
-"x!: number 的 definite 被删"	"类成员的 `x!`（确定赋值断言）/ `y?`（可选属性）/ `m?()`（可选方法） 未剥 ⇒ 产物不是合法 JS（`node --check` ⇒ SyntaxError: Unexpected token '!' / '?'）。 根因：strip-types.ts 的 `deleteTypeSyntaxFields` 里 - `definite`（Babel 的 ClassProperty.definite）**根本没有**删除逻辑； 断言：expect(members).toHaveLength(1);；expect(members[0].definite).toBeUndefined();"	没测该层	keep	keep	—
-"y?: string 的 optional 被删"	"类成员的 `x!`（确定赋值断言）/ `y?`（可选属性）/ `m?()`（可选方法） 未剥 ⇒ 产物不是合法 JS（`node --check` ⇒ SyntaxError: Unexpected token '!' / '?'）。 根因：strip-types.ts 的 `deleteTypeSyntaxFields` 里 - `definite`（Babel 的 ClassProperty.definite）**根本没有**删除逻辑； 断言：expect(members[0].optional).toBeUndefined();；expect(\"optional\" in members[0]).toBe(false);"	没测该层	keep	keep	—
-"m?(): void {} 的 optional 被删（ClassMethod 同块）"	"类成员的 `x!`（确定赋值断言）/ `y?`（可选属性）/ `m?()`（可选方法） 未剥 ⇒ 产物不是合法 JS（`node --check` ⇒ SyntaxError: Unexpected token '!' / '?'）。 根因：strip-types.ts 的 `deleteTypeSyntaxFields` 里 - `definite`（Babel 的 ClassProperty.definite）**根本没有**删除逻辑； 断言：expect(members[0].type).toBe(\"ClassMethod\");；expect(members[0].optional).toBeUndefined();"	没测该层	keep	keep	—
-"私有成员同理（#x! / #y?）"	"断言：expect(m.definite).toBeUndefined();；expect(m.optional).toBeUndefined();"	没测该层	keep	keep	—
-"表达式节点的 optional（a?.b）不受影响"	"类成员的 `x!`（确定赋值断言）/ `y?`（可选属性）/ `m?()`（可选方法） 未剥 ⇒ 产物不是合法 JS（`node --check` ⇒ SyntaxError: Unexpected token '!' / '?'）。 根因：strip-types.ts 的 `deleteTypeSyntaxFields` 里 - `definite`（Babel 的 ClassProperty.definite）**根本没有**删除逻辑； 断言：expect(init?.type).toBe(\"OptionalMemberExpression\");；expect(init?.optional).toBe(true);"	没测该层	keep	keep	—
-"形参的 optional（a?: T）仍被删（既有行为）"	"类成员的 `x!`（确定赋值断言）/ `y?`（可选属性）/ `m?()`（可选方法） 未剥 ⇒ 产物不是合法 JS（`node --check` ⇒ SyntaxError: Unexpected token '!' / '?'）。 根因：strip-types.ts 的 `deleteTypeSyntaxFields` 里 - `definite`（Babel 的 ClassProperty.definite）**根本没有**删除逻辑； 断言：expect(decl?.declaration?.params?.[0].optional).toBeUndefined();"	没测该层	keep	keep	—
-"function f(this: T, a) ⇒ 只剩 a"	"TS 的 `this` 形参未剥 ⇒ 产物 `function f(this, a)` Node 加载不了。 根因：Babel 把 TS 的 `this` 形参表示成**一个名叫 `this` 的 `Identifier`**， 而 strip-types.ts 的 `deleteTypeSyntaxFields` 只删它的 `typeAnnotation` ⇒ 打印出来是 `function f(this, a)`； 断言：expect(fn.params?.map((p) => p.name)).toEqual([\"a\"]);"	没测该层	keep	keep	—
-"this 是唯一的形参 ⇒ 形参表为空"	"TS 的 `this` 形参未剥 ⇒ 产物 `function f(this, a)` Node 加载不了。 根因：Babel 把 TS 的 `this` 形参表示成**一个名叫 `this` 的 `Identifier`**， 而 strip-types.ts 的 `deleteTypeSyntaxFields` 只删它的 `typeAnnotation` ⇒ 打印出来是 `function f(this, a)`； 断言：expect(fn.params).toEqual([]);"	没测该层	keep	keep	—
-"函数表达式同理"	"断言：expect(fn.params?.map((p) => p.name)).toEqual([\"a\"]);"	没测该层	keep	keep	—
-"普通形参不受影响（this 之外的名字保留）"	"TS 的 `this` 形参未剥 ⇒ 产物 `function f(this, a)` Node 加载不了。 根因：Babel 把 TS 的 `this` 形参表示成**一个名叫 `this` 的 `Identifier`**， 而 strip-types.ts 的 `deleteTypeSyntaxFields` 只删它的 `typeAnnotation` ⇒ 打印出来是 `function f(this, a)`； 断言：expect(fn.params?.map((p) => p.name)).toEqual([\"a\", \"b\"]);"	没测该层	keep	keep	—
-"函数体里的 this 表达式保留（只有形参位删）"	"TS 的 `this` 形参未剥 ⇒ 产物 `function f(this, a)` Node 加载不了。 根因：Babel 把 TS 的 `this` 形参表示成**一个名叫 `this` 的 `Identifier`**， 而 strip-types.ts 的 `deleteTypeSyntaxFields` 只删它的 `typeAnnotation` ⇒ 打印出来是 `function f(this, a)`； 断言：expect(stmt?.type).toBe(\"ReturnStatement\");；expect(stmt?.argument?.type).toBe(\"MemberExpression\");"	没测该层	keep	keep	—
-"enum 声明不再被删除 ⇒ 变成一个 var 声明"	"TS 的 `enum` 被整段删除 ⇒ 成员引用退化成未绑定全局读取 ⇒ 门禁 error 级 `nudo:entry-may-throw`（假红）+ dts / zod / standard / guard 四个产物面把返回类型落成 `never`。 根因：strip-types.ts 的 `isTypeOnlyStatement` 把 `TSEnumDeclaration` 整条 删除 ⇒ 模块里不再有 `E` 这个绑定。 断言：expect(b.map((n) => n.type)).not.toContain(\"TSEnumDeclaration\");；expect(decl.type).toBe(\"ExportNamedD"	没测该层	keep	keep	—
-"成员引用可求值 ⇒ f() => 1（不再是 never / ReferenceError）"	"TS 的 `enum` 被整段删除 ⇒ 成员引用退化成未绑定全局读取 ⇒ 门禁 error 级 `nudo:entry-may-throw`（假红）+ dts / zod / standard / guard 四个产物面把返回类型落成 `never`。 根因：strip-types.ts 的 `isTypeOnlyStatement` 把 `TSEnumDeclaration` 整条 删除 ⇒ 模块里不再有 `E` 这个绑定。 断言：expect(litValue(rec.result)).toEqual({ ok: true, value: 1 });"	没测该层	keep	keep	—
-"反向映射可求值（E[1] === \"A\"）"	"断言：expect(litValue(rec.result)).toEqual({ ok: true, value: \"A\" });"	没测该层	keep	keep	—
-"自动递增（A=1 ⇒ B=2 ⇒ C=3）"	"TS 的 `enum` 被整段删除 ⇒ 成员引用退化成未绑定全局读取 ⇒ 门禁 error 级 `nudo:entry-may-throw`（假红）+ dts / zod / standard / guard 四个产物面把返回类型落成 `never`。 根因：strip-types.ts 的 `isTypeOnlyStatement` 把 `TSEnumDeclaration` 整条 删除 ⇒ 模块里不再有 `E` 这个绑定。 断言：expect(litValue(rec.result)).toEqual({ ok: true, value: 3 });"	没测该层	keep	keep	—
-"字符串枚举：值正确、无反向映射（E[\"a\"] 不存在）"	"TS 的 `enum` 被整段删除 ⇒ 成员引用退化成未绑定全局读取 ⇒ 门禁 error 级 `nudo:entry-may-throw`（假红）+ dts / zod / standard / guard 四个产物面把返回类型落成 `never`。 根因：strip-types.ts 的 `isTypeOnlyStatement` 把 `TSEnumDeclaration` 整条 删除 ⇒ 模块里不再有 `E` 这个绑定。 断言：expect(litValue(rec.result)).toEqual({ ok: true, value: \"a\" });；expect(litValue(rev.result)).not.toEq"	没测该层	keep	keep	—
-"混合枚举：数值成员有反向映射、字符串成员没有"	"断言：expect(litValue(num.result)).toEqual({ ok: true, value: \"A\" });；expect(litValue(str.result)).not.toEqual({ ok: true, value: \"B\" });"	没测该层	keep	keep	—
-"declare enum（环境声明）仍然整条删除"	"TS 的 `enum` 被整段删除 ⇒ 成员引用退化成未绑定全局读取 ⇒ 门禁 error 级 `nudo:entry-may-throw`（假红）+ dts / zod / standard / guard 四个产物面把返回类型落成 `never`。 根因：strip-types.ts 的 `isTypeOnlyStatement` 把 `TSEnumDeclaration` 整条 删除 ⇒ 模块里不再有 `E` 这个绑定。 断言：expect(b.map((n) => n.type)).not.toContain(\"TSEnumDeclaration\");；expect(b).toHaveLength(1);"	没测该层	keep	keep	—
-"enum 声明上的文件级指令随合成节点一起活下来（Bug 968 联动）"	"TS 的 `enum` 被整段删除 ⇒ 成员引用退化成未绑定全局读取 ⇒ 门禁 error 级 `nudo:entry-may-throw`（假红）+ dts / zod / standard / guard 四个产物面把返回类型落成 `never`。 根因：strip-types.ts 的 `isTypeOnlyStatement` 把 `TSEnumDeclaration` 整条 删除 ⇒ 模块里不再有 `E` 这个绑定。 断言：expect(decl.leadingComments?.[0]?.value).toContain(\"@nudo:import\");"	没测该层	keep	keep	—
-"指令挂在被删的 import type 上 ⇒ 转挂给下一个幸存语句"	"TS 的 `enum` 被整段删除 ⇒ 成员引用退化成未绑定全局读取 ⇒ 门禁 error 级 `nudo:entry-may-throw`（假红）+ dts / zod / standard / guard 四个产物面把返回类型落成 `never`。 根因：strip-types.ts 的 `isTypeOnlyStatement` 把 `TSEnumDeclaration` 整条 删除 ⇒ 模块里不再有 `E` 这个绑定。 断言：expect(b).toHaveLength(1);；expect(leadingTexts(b[0]).join(\"\\n\")).toContain(\"@nudo:import\");"	没测该层	keep	keep	—
-"指令在幸存语句上（对照）⇒ 位置不变"	"} } ''' 改前产物：`constructor(x) {this.x = x; 非派生类仍在构造器体 开头（行为不变）。 断言：expect(leadingTexts(b[0]).join(\"\\n\")).toContain(\"@nudo:import\");"	夹具漏形态	keep	keep	—
-"剥除前后指令条数一致（兜底自检：directivesBefore === directivesAfter）"	"挂在「将被删除的语句」上的文件级指令被静默丢掉 ⇒ 门禁红 → 绿 （假绿）。 根因：Babel 把文件级 `///` 指令挂成**下一条语句**的 `leadingComments`； 断言：expect(report.directivesBefore).toBe(1);；expect(report.directivesAfter).toBe(1);"	没测该层	keep	keep	—
-"全部文件级指令形态都走同一条转挂路径（@nudo:env / @nudo:mock-module）"	"TS 的 `enum` 被整段删除 ⇒ 成员引用退化成未绑定全局读取 ⇒ 门禁 error 级 `nudo:entry-may-throw`（假红）+ dts / zod / standard / guard 四个产物面把返回类型落成 `never`。 根因：strip-types.ts 的 `isTypeOnlyStatement` 把 `TSEnumDeclaration` 整条 删除 ⇒ 模块里不再有 `E` 这个绑定。 断言：expect(leadingTexts(ast.program.body[0]).join(\"\\n\")).toContain(directive);；expect(report.directivesBe"	没测该层	keep	keep	—
-"被删语句在末尾 ⇒ 指令挂到最后一个幸存节点的尾部（不丢）"	"断言：expect(b).toHaveLength(1);；expect((rec.trailingComments ?? []).map((c) => c.value ?? \"\").join(\"\\n\")).toContain("	没测该层	keep	keep	—
-"无指令的源码 ⇒ 前后条数都是 0"	"断言：expect(report.directivesBefore).toBe(0);；expect(report.directivesAfter).toBe(0);"	没测该层	keep	keep	—
+派生类：赋值在 super(...) 之后（改前：super 在后 ⇒ ReferenceError）；派生类：`new Point(1)` 不抛 ReferenceError 且字段已赋值；派生类：super(...) 之后的其它语句仍在赋值之后（tsc emit 口径）；非派生类：行为不变（赋值仍在构造器体开头）；派生类构造器体顶层没有 super(...) ⇒ 保守不改相对顺序 + 回报事实	strip-types 聚合矩阵	没测该层	keep	keep	—
+数值 enum：`B = A * 10` 的 A 变成 E["A"]（不再是未绑定全局）；同一 enum 的自动递增成员仍用 E["B"] + 1（两种口径一致）；混合 enum：`C = A + 5` 的 A 也改写成 E["A"]；字符串 enum：`B = A + 'b'` 的 A 改写成 E["A"]，且**不**建反向映射；const enum：`B = A * 3` 同样改写成 E["A"]；剥除事实回报：enumComputedMemberRewritten 只	strip-types 聚合矩阵	没测该层	keep	keep	—
+绑定只在类型位置被用到 ⇒ 整条 import 消失（产物可加载）；绑定在值位置被用到 ⇒ import 保留；混用：type specifier 被剔除、值 specifier 保留；显式 import type 整条删除（既有行为）；裸 import（副作用）保留；typeof 类型查询是类型位置 ⇒ import 同样被消掉（tsc 同口径）；本地再导出（export { X }）判不准 ⇒ 保守保留 import；export { X } from "m" 的 X 是	strip-types 聚合矩阵	没测该层	keep	keep	—
+export = X（TSExportAssignment）整条删除；export as namespace X（TSNamespaceExportDeclaration）整条删除；export = 的右值（值引用）不产生残留语句；纯 JS 源码不受影响（结构性 no-op）	strip-types 聚合矩阵	没测该层	keep	keep	—
+x!: number 的 definite 被删；y?: string 的 optional 被删；m?(): void {} 的 optional 被删（ClassMethod 同块）；私有成员同理（#x! / #y?）；表达式节点的 optional（a?.b）不受影响；形参的 optional（a?: T）仍被删（既有行为）	strip-types 聚合矩阵	没测该层	keep	keep	—
+function f(this: T, a) ⇒ 只剩 a；this 是唯一的形参 ⇒ 形参表为空；函数表达式同理；普通形参不受影响（this 之外的名字保留）；函数体里的 this 表达式保留（只有形参位删）	strip-types 聚合矩阵	没测该层	keep	keep	—
+enum 声明不再被删除 ⇒ 变成一个 var 声明；成员引用可求值 ⇒ f() => 1（不再是 never / ReferenceError）；反向映射可求值（E[1] === "A"）；自动递增（A=1 ⇒ B=2 ⇒ C=3）；字符串枚举：值正确、无反向映射（E["a"] 不存在）；混合枚举：数值成员有反向映射、字符串成员没有；declare enum（环境声明）仍然整条删除；enum 声明上的文件级指令随合成节点一起活下来（Bug 968 联动）	strip-types 聚合矩阵	没测该层	keep	keep	—
+指令挂在被删的 import type 上 ⇒ 转挂给下一个幸存语句；指令在幸存语句上（对照）⇒ 位置不变；剥除前后指令条数一致（兜底自检：directivesBefore === directivesAfter）；全部文件级指令形态都走同一条转挂路径（@nudo:env / @nudo:mock-module）；被删语句在末尾 ⇒ 指令挂到最后一个幸存节点的尾部（不丢）；无指令的源码 ⇒ 前后条数都是 0	strip-types 聚合矩阵	没测该层	keep	keep	—
+```
+
+```audit-deleted
+title	reason	evidence
+派生类：赋值在 super(...) 之后（改前：super 在后 ⇒ ReferenceError）	dup:strip-types 聚合矩阵	commit:a0b08363
+派生类：`new Point(1)` 不抛 ReferenceError 且字段已赋值	dup:strip-types 聚合矩阵	commit:a0b08363
+派生类：super(...) 之后的其它语句仍在赋值之后（tsc emit 口径）	dup:strip-types 聚合矩阵	commit:a0b08363
+非派生类：行为不变（赋值仍在构造器体开头）	dup:strip-types 聚合矩阵	commit:a0b08363
+派生类构造器体顶层没有 super(...) ⇒ 保守不改相对顺序 + 回报事实	dup:strip-types 聚合矩阵	commit:a0b08363
+数值 enum：`B = A * 10` 的 A 变成 E["A"]（不再是未绑定全局）	dup:strip-types 聚合矩阵	commit:a0b08363
+同一 enum 的自动递增成员仍用 E["B"] + 1（两种口径一致）	dup:strip-types 聚合矩阵	commit:a0b08363
+混合 enum：`C = A + 5` 的 A 也改写成 E["A"]	dup:strip-types 聚合矩阵	commit:a0b08363
+字符串 enum：`B = A + 'b'` 的 A 改写成 E["A"]，且**不**建反向映射	dup:strip-types 聚合矩阵	commit:a0b08363
+const enum：`B = A * 3` 同样改写成 E["A"]	dup:strip-types 聚合矩阵	commit:a0b08363
+剥除事实回报：enumComputedMemberRewritten 只在有计算成员时为真	dup:strip-types 聚合矩阵	commit:a0b08363
+绑定只在类型位置被用到 ⇒ 整条 import 消失（产物可加载）	dup:strip-types 聚合矩阵	commit:a0b08363
+绑定在值位置被用到 ⇒ import 保留	dup:strip-types 聚合矩阵	commit:a0b08363
+混用：type specifier 被剔除、值 specifier 保留	dup:strip-types 聚合矩阵	commit:a0b08363
+显式 import type 整条删除（既有行为）	dup:strip-types 聚合矩阵	commit:a0b08363
+裸 import（副作用）保留	dup:strip-types 聚合矩阵	commit:a0b08363
+typeof 类型查询是类型位置 ⇒ import 同样被消掉（tsc 同口径）	dup:strip-types 聚合矩阵	commit:a0b08363
+本地再导出（export { X }）判不准 ⇒ 保守保留 import	dup:strip-types 聚合矩阵	commit:a0b08363
+export { X } from "m" 的 X 是源模块的绑定 ⇒ 本地 import 判为「没被引用」⇒ 保守保留	dup:strip-types 聚合矩阵	commit:a0b08363
+包说明符的 import 一律保留（nudo 不剥除包 ⇒ 不动）	dup:strip-types 聚合矩阵	commit:a0b08363
+类 heritage 的基类是值引用 ⇒ import 保留	dup:strip-types 聚合矩阵	commit:a0b08363
+接口的 extends 是类型位置 ⇒ import 被消掉（tsc 同口径）	dup:strip-types 聚合矩阵	commit:a0b08363
+export = X（TSExportAssignment）整条删除	dup:strip-types 聚合矩阵	commit:a0b08363
+export as namespace X（TSNamespaceExportDeclaration）整条删除	dup:strip-types 聚合矩阵	commit:a0b08363
+export = 的右值（值引用）不产生残留语句	dup:strip-types 聚合矩阵	commit:a0b08363
+纯 JS 源码不受影响（结构性 no-op）	dup:strip-types 聚合矩阵	commit:a0b08363
+x!: number 的 definite 被删	dup:strip-types 聚合矩阵	commit:a0b08363
+y?: string 的 optional 被删	dup:strip-types 聚合矩阵	commit:a0b08363
+m?(): void {} 的 optional 被删（ClassMethod 同块）	dup:strip-types 聚合矩阵	commit:a0b08363
+私有成员同理（#x! / #y?）	dup:strip-types 聚合矩阵	commit:a0b08363
+表达式节点的 optional（a?.b）不受影响	dup:strip-types 聚合矩阵	commit:a0b08363
+形参的 optional（a?: T）仍被删（既有行为）	dup:strip-types 聚合矩阵	commit:a0b08363
+function f(this: T, a) ⇒ 只剩 a	dup:strip-types 聚合矩阵	commit:a0b08363
+this 是唯一的形参 ⇒ 形参表为空	dup:strip-types 聚合矩阵	commit:a0b08363
+函数表达式同理	dup:strip-types 聚合矩阵	commit:a0b08363
+普通形参不受影响（this 之外的名字保留）	dup:strip-types 聚合矩阵	commit:a0b08363
+函数体里的 this 表达式保留（只有形参位删）	dup:strip-types 聚合矩阵	commit:a0b08363
+enum 声明不再被删除 ⇒ 变成一个 var 声明	dup:strip-types 聚合矩阵	commit:a0b08363
+成员引用可求值 ⇒ f() => 1（不再是 never / ReferenceError）	dup:strip-types 聚合矩阵	commit:a0b08363
+反向映射可求值（E[1] === "A"）	dup:strip-types 聚合矩阵	commit:a0b08363
+自动递增（A=1 ⇒ B=2 ⇒ C=3）	dup:strip-types 聚合矩阵	commit:a0b08363
+字符串枚举：值正确、无反向映射（E["a"] 不存在）	dup:strip-types 聚合矩阵	commit:a0b08363
+混合枚举：数值成员有反向映射、字符串成员没有	dup:strip-types 聚合矩阵	commit:a0b08363
+declare enum（环境声明）仍然整条删除	dup:strip-types 聚合矩阵	commit:a0b08363
+enum 声明上的文件级指令随合成节点一起活下来（Bug 968 联动）	dup:strip-types 聚合矩阵	commit:a0b08363
+指令挂在被删的 import type 上 ⇒ 转挂给下一个幸存语句	dup:strip-types 聚合矩阵	commit:a0b08363
+指令在幸存语句上（对照）⇒ 位置不变	dup:strip-types 聚合矩阵	commit:a0b08363
+剥除前后指令条数一致（兜底自检：directivesBefore === directivesAfter）	dup:strip-types 聚合矩阵	commit:a0b08363
+全部文件级指令形态都走同一条转挂路径（@nudo:env / @nudo:mock-module）	dup:strip-types 聚合矩阵	commit:a0b08363
+被删语句在末尾 ⇒ 指令挂到最后一个幸存节点的尾部（不丢）	dup:strip-types 聚合矩阵	commit:a0b08363
+无指令的源码 ⇒ 前后条数都是 0	dup:strip-types 聚合矩阵	commit:a0b08363
 ```
