@@ -1191,134 +1191,28 @@ describe("访问器占位槽不得投影成 exact undefined", () => {
 // X.prototype 上的 owner 实例方法：值读 / in
 // ---------------------------------------------------------------------------
 describe("X.prototype 上的 owner 实例方法：值读 / in", () => {
-/**
- * 回归：`X.prototype.<ownMethod>` 的**值读**与 `in` 判定必须认 owner 类。
- *
- * ES 语义：类体的实例方法就挂在 `X.prototype` 上——`typeof A.prototype.m` 是
- * "function"、`"m" in A.prototype` 是 true、`A.prototype.hasOwnProperty("m")`
- * 是 true（自有属性）。
- *
- * 修复前：`evalClassChain("A.prototype")` 的链**不含 owner**（owner 只 push
- * 父类）→ 成员读落 exact undefined、`in` 落 exact false（wrong-exact）——
- * 同一方法在 `new A().m` 上却是对的（两条面不一致）。
- *
- * 本文件覆盖**值读**与 **in** 两个面；`hasOwnProperty` / `propertyIsEnumerable`
- * 面由 builtins/object-proto.ts 的 hasOwnDecision 接线 members.ts 的
- * protoBrandOwnMember 补齐（S1 交接，见报告）；gOPD 面由
- * builtins/object/methods.ts 的 class-own-member 描述符臂补齐。
- */
-
-
-
-
-const wrap = (body: string) => `export function f() { ${body} }`;
-
-/** 结果字面量值（litValue） */
-function v(src: string) {
-  return litValue___nudojs_core_9(call(src, "f").result);
-}
-
-describe("X.prototype 上的 owner 实例方法：值读 / in", () => {
-  it("typeof A.prototype.m → \"function\"（owner 自有方法）", () => {
-    expect(v(wrap(`class A { m(){ return 1; } } return typeof A.prototype.m;`))).toEqual({
-      ok: true,
-      value: "function",
-    });
-  });
-
-  it("\"m\" in A.prototype → true", () => {
-    expect(v(wrap(`class A { m(){} } return "m" in A.prototype;`))).toEqual({
-      ok: true,
-      value: true,
-    });
-  });
-
-  it("派生类自有方法：B.prototype.own → \"function\" / in → true", () => {
-    expect(v(wrap(`class A {} class B extends A { own(){} } return typeof B.prototype.own;`))).toEqual({
-      ok: true,
-      value: "function",
-    });
-    expect(v(wrap(`class A {} class B extends A { own(){} } return "own" in B.prototype;`))).toEqual({
-      ok: true,
-      value: true,
-    });
-  });
-
-  it("祖先类方法（原型链继承）：B.prototype.base → \"function\"", () => {
-    expect(v(wrap(`class A { base(){} } class B extends A {} return typeof B.prototype.base;`))).toEqual({
-      ok: true,
-      value: "function",
-    });
-  });
-
-  it("方法恒等：A.prototype.m === new A().m（同一函数对象）", () => {
-    expect(v(wrap(`class A { m(){ return 1; } } return A.prototype.m === new A().m;`))).toEqual({
-      ok: true,
-      value: true,
-    });
-  });
-
-  it("负控制：缺席方法仍是 undefined / in → false", () => {
-    expect(v(wrap(`class A { m(){} } return typeof A.prototype.nope;`))).toEqual({
-      ok: true,
-      value: "undefined",
-    });
-    expect(v(wrap(`class A { m(){} } return "nope" in A.prototype;`))).toEqual({
-      ok: true,
-      value: false,
-    });
-  });
-
-  it("负控制：A.prototype instanceof A → false（owner 不在自己的原型链上）", () => {
+  const wrap = (body: string) => `export function f() { ${body} }`;
+  const v = (src: string) => litValue(call(src, "f").result);
+  it("值读/in/派生继承/恒等/hasOwn/枚举/描述符；缺席与祖先自有负控", () => {
+    expect(v(wrap(`class A { m(){ return 1; } } return typeof A.prototype.m;`))).toEqual({ ok: true, value: "function" });
+    expect(v(wrap(`class A { m(){} } return "m" in A.prototype;`))).toEqual({ ok: true, value: true });
+    expect(v(wrap(`class A {} class B extends A { own(){} } return typeof B.prototype.own;`))).toEqual({ ok: true, value: "function" });
+    expect(v(wrap(`class A {} class B extends A { own(){} } return "own" in B.prototype;`))).toEqual({ ok: true, value: true });
+    expect(v(wrap(`class A { base(){} } class B extends A {} return typeof B.prototype.base;`))).toEqual({ ok: true, value: "function" });
+    expect(v(wrap(`class A { m(){ return 1; } } return A.prototype.m === new A().m;`))).toEqual({ ok: true, value: true });
+    expect(v(wrap(`class A { m(){} } return typeof A.prototype.nope;`))).toEqual({ ok: true, value: "undefined" });
+    expect(v(wrap(`class A { m(){} } return "nope" in A.prototype;`))).toEqual({ ok: true, value: false });
     expect(v(wrap(`class A {} return A.prototype instanceof A;`))).toEqual({ ok: true, value: false });
-  });
-
-  it("负控制：B.prototype instanceof A → true（原型链继承）", () => {
-    expect(v(wrap(`class A {} class B extends A {} return B.prototype instanceof A;`))).toEqual({
-      ok: true,
-      value: true,
-    });
-  });
-
-  it("A.prototype.hasOwnProperty(\"m\") → true（owner 自有方法）", () => {
-    expect(v(wrap(`class A { m(){} } return String(A.prototype.hasOwnProperty("m"));`))).toEqual({
-      ok: true,
-      value: "true",
-    });
-  });
-
-  it("负控制：祖先类方法不在 B.prototype 自有面 → false", () => {
-    expect(
-      v(wrap(`class A { m(){} } class B extends A {} return String(B.prototype.hasOwnProperty("m"));`)),
-    ).toEqual({ ok: true, value: "false" });
-  });
-
-  it("负控制：缺席键 → false", () => {
-    expect(
-      v(wrap(`class A { m(){} } return String(A.prototype.hasOwnProperty("nope"));`)),
-    ).toEqual({ ok: true, value: "false" });
-  });
-
-  it("A.prototype.propertyIsEnumerable(\"m\") → false（类方法非枚举）", () => {
-    expect(
-      v(wrap(`class A { m(){} } return String(A.prototype.propertyIsEnumerable("m"));`)),
-    ).toEqual({ ok: true, value: "false" });
-  });
-
-  it("Object.getOwnPropertyDescriptor(A.prototype,\"m\") → 精确描述符（此前折并 ⇒ 读 .value 定抛）", () => {
-    expect(
-      v(wrap(`class A { m(){} } return typeof Object.getOwnPropertyDescriptor(A.prototype,"m").value;`)),
-    ).toEqual({ ok: true, value: "function" });
-    expect(
-      v(
-        wrap(
-          `class A { m(){} } const d = Object.getOwnPropertyDescriptor(A.prototype,"m"); return String(d.enumerable) + "/" + String(d.writable) + "/" + String(d.configurable);`,
-        ),
-      ),
-    ).toEqual({ ok: true, value: "false/true/true" });
+    expect(v(wrap(`class A {} class B extends A {} return B.prototype instanceof A;`))).toEqual({ ok: true, value: true });
+    expect(v(wrap(`class A { m(){} } return String(A.prototype.hasOwnProperty("m"));`))).toEqual({ ok: true, value: "true" });
+    expect(v(wrap(`class A { m(){} } class B extends A {} return String(B.prototype.hasOwnProperty("m"));`))).toEqual({ ok: true, value: "false" });
+    expect(v(wrap(`class A { m(){} } return String(A.prototype.hasOwnProperty("nope"));`))).toEqual({ ok: true, value: "false" });
+    expect(v(wrap(`class A { m(){} } return String(A.prototype.propertyIsEnumerable("m"));`))).toEqual({ ok: true, value: "false" });
+    expect(v(wrap(`class A { m(){} } return typeof Object.getOwnPropertyDescriptor(A.prototype,"m").value;`))).toEqual({ ok: true, value: "function" });
+    expect(v(wrap(`class A { m(){} } const d = Object.getOwnPropertyDescriptor(A.prototype,"m"); return String(d.enumerable) + "/" + String(d.writable) + "/" + String(d.configurable);`))).toEqual({ ok: true, value: "false/true/true" });
   });
 });
-});
+;
 
 // ---------------------------------------------------------------------------
 // 原型方法删除钩子（deleteProtoMethod）
@@ -1503,115 +1397,30 @@ describe("Array.isArray(标签模板对象) → true", () => {
 // 借用类方法按方法体执行（this = 接收者），不按接收者成员表反查
 // ---------------------------------------------------------------------------
 describe("借用类方法按方法体执行（this = 接收者），不按接收者成员表反查", () => {
-/**
- * 回归：**借用类方法**（`.call` / `.apply` / `.bind` / HOF 传递）按
- * **接收者成员表**反查被调用者 ⇒ 非本类实例的接收者一律假抛 TypeError。
- *
- * 修复前：`class A { m(){ return this.x; } } const m = new A().m;
- * m.call({ x: 1 })` → 折 never + throws=TypeError；原生 → 1（方法体是那个
- * 函数，`this` = 调用位给的接收者）。
- *
- * 修法（packages/core/src/algebra/exec/class/invoke.ts 的 protoMethodDispatch
- * 注册回调）：用户类方法值按**方法体 + this = 接收者**执行——借用调用不再
- * 反查接收者的成员表；接收者 brand 校验只在**私有名**（#m）时保留。
- */
-
-
-
-
-const wrap = (body: string) => `export function f() { ${body} }`;
-
-/** 结果字面量值（litValue） */
-function v(src: string) {
-  return litValue___nudojs_core_11(call(src, "f").result);
-}
-
-/** 抛错名（无抛错 → ""） */
-function throwName(src: string): string {
-  const t = call(src, "f").throws as { shape?: { k?: string; name?: string } } | undefined;
-  if (!t?.shape || t.shape.k === "never") return "";
-  return t.shape.k === "brand" ? (t.shape.name ?? "") : (t.shape.k as string);
-}
-
-describe("借用类方法按方法体执行（this = 接收者），不按接收者成员表反查", () => {
-  it(".call(外来对象) → 方法体以该对象为 this 执行", () => {
-    expect(
-      v(wrap(`class A { m(){ return this.x; } } const a = new A(); const m = a.m; return m.call({ x: 1 });`)),
-    ).toEqual({ ok: true, value: 1 });
-  });
-
-  it(".apply(外来对象) → 同口径", () => {
-    expect(
-      v(wrap(`class A { m(){ return this.x; } } const a = new A(); const m = a.m; return m.apply({ x: 2 });`)),
-    ).toEqual({ ok: true, value: 2 });
-  });
-
-  it(".bind(外来对象)() → 同口径", () => {
-    expect(
-      v(wrap(`class A { m(){ return this.x; } } const a = new A(); const f = a.m.bind({ x: 3 }); return f();`)),
-    ).toEqual({ ok: true, value: 3 });
-  });
-
-  it(".call(undefined) → this=undefined，方法体不碰 this 时不抛", () => {
-    expect(
-      v(wrap(`class A { m(){ return 1; } } const a = new A(); const m = a.m; return m.call(undefined);`)),
-    ).toEqual({ ok: true, value: 1 });
-  });
-
-  it("静态方法借用（.call）→ 静态方法体 + 该接收者", () => {
-    expect(
-      v(wrap(`class A { static sm(){ return 1; } } return A.sm.call({});`)),
-    ).toEqual({ ok: true, value: 1 });
-    expect(
-      v(wrap(`class A { static sm(){ return this.x; } } return A.sm.call({ x: 7 });`)),
-    ).toEqual({ ok: true, value: 7 });
-  });
-
-  it("静态方法摘下后借用 → 静态方法体", () => {
-    expect(
-      v(wrap(`class A { static sm(){ return 1; } } const { sm } = A; return sm.call({});`)),
-    ).toEqual({ ok: true, value: 1 });
-  });
-
-  it("HOF 传递（数组 map 回调）→ 方法体正常执行（this=undefined 不抛）", () => {
-    expect(
-      v(wrap(`class A { m(){ return 1; } } const a = new A(); const { m } = a; return [1].map(m).length;`)),
-    ).toEqual({ ok: true, value: 1 });
-  });
-
-  it("派生类实例的方法借用 → 沿派生类方法体执行", () => {
-    expect(
-      v(wrap(`class B extends Object { m(){ return this.x; } } const b = new B(); const m = b.m; return m.call({ x: 9 });`)),
-    ).toEqual({ ok: true, value: 9 });
-  });
-
-  it("借用给本类实例 → this = 该实例（this.x 为 undefined）", () => {
-    expect(
-      v(wrap(`class A { m(){ return this.x; } } const a = new A(); const m = a.m; return m.call(a);`)),
-    ).toEqual({ ok: true, value: undefined });
-  });
-
-  it("借用不记 may-throw（throws 域干净）", () => {
-    const rec = call(
-      wrap(`class A { m(){ return this.x; } } const a = new A(); const m = a.m; return m.call({ x: 1 });`),
-      "f",
-    );
-    expect(throwsError(rec.throws, "TypeError")).toBe(false);
-  });
-
-  it("负控制：对象字面量方法的借用不受影响（原本就正确）", () => {
-    expect(
-      v(wrap(`const o = { m(){ return this.x; } }; const m = o.m; return m.call({ x: 5 });`)),
-    ).toEqual({ ok: true, value: 5 });
-  });
-
-  it("负控制：方法体真读 undefined 接收者的 this 时定抛 TypeError", () => {
-    expect(
-      throwName(wrap(`class A { m(){ return this.x; } } const a = new A(); const m = a.m; return m.call(undefined);`)),
-    ).toBe("TypeError");
+  const wrap = (body: string) => `export function f() { ${body} }`;
+  const v = (src: string) => litValue(call(src, "f").result);
+  const throwName = (src: string): string => {
+    const t = call(src, "f").throws as { shape?: { k?: string; name?: string } } | undefined;
+    if (!t?.shape || t.shape.k === "never") return "";
+    return t.shape.k === "brand" ? (t.shape.name ?? "") : (t.shape.k as string);
+  };
+  it("call/apply/bind/undefined/静态/HOF/派生/同类借用；不记抛；负控", () => {
+    expect(v(wrap(`class A { m(){ return this.x; } } const a = new A(); const m = a.m; return m.call({ x: 1 });`))).toEqual({ ok: true, value: 1 });
+    expect(v(wrap(`class A { m(){ return this.x; } } const a = new A(); const m = a.m; return m.apply({ x: 2 });`))).toEqual({ ok: true, value: 2 });
+    expect(v(wrap(`class A { m(){ return this.x; } } const a = new A(); const f = a.m.bind({ x: 3 }); return f();`))).toEqual({ ok: true, value: 3 });
+    expect(v(wrap(`class A { m(){ return 1; } } const a = new A(); const m = a.m; return m.call(undefined);`))).toEqual({ ok: true, value: 1 });
+    expect(v(wrap(`class A { static sm(){ return 1; } } return A.sm.call({});`))).toEqual({ ok: true, value: 1 });
+    expect(v(wrap(`class A { static sm(){ return this.x; } } return A.sm.call({ x: 7 });`))).toEqual({ ok: true, value: 7 });
+    expect(v(wrap(`class A { static sm(){ return 1; } } const { sm } = A; return sm.call({});`))).toEqual({ ok: true, value: 1 });
+    expect(v(wrap(`class A { m(){ return 1; } } const a = new A(); const { m } = a; return [1].map(m).length;`))).toEqual({ ok: true, value: 1 });
+    expect(v(wrap(`class B extends Object { m(){ return this.x; } } const b = new B(); const m = b.m; return m.call({ x: 9 });`))).toEqual({ ok: true, value: 9 });
+    expect(v(wrap(`class A { m(){ return this.x; } } const a = new A(); const m = a.m; return m.call(a);`))).toEqual({ ok: true, value: undefined });
+    expect(throwsError(call(wrap(`class A { m(){ return this.x; } } const a = new A(); const m = a.m; return m.call({ x: 1 });`), "f").throws, "TypeError")).toBe(false);
+    expect(v(wrap(`const o = { m(){ return this.x; } }; const m = o.m; return m.call({ x: 5 });`))).toEqual({ ok: true, value: 5 });
+    expect(throwName(wrap(`class A { m(){ return this.x; } } const a = new A(); const m = a.m; return m.call(undefined);`))).toBe("TypeError");
   });
 });
-});
+;
 
 // ---------------------------------------------------------------------------
 // [merged] class-instance-set-gate
