@@ -18,26 +18,10 @@ throws/副作用保留；覆盖仍生效；相邻子表达式不受影响	mock �
 点名缺失 fail-closed；提供者 overlay；未点名回落；多缺失/ default；check 面；全替换不受影响	mock/点名缺失契约表	没测该层	keep	keep	—
 第二合并点：collectAbsBindingsFromGraph 也尊重宿主内建 mock	mock/点名缺失契约表	没测该层	keep	keep	—
 宿主内建 mock 生效；产品面同值；负控制普通名/优先级/跳过表/无 mock	mock/点名缺失契约表	没测该层	keep	keep	—
-"普通名 mock 仍生效（改前就生效，不得回退）"	"负控制：没有 mock ⇒ 宿主应答 断言：expect(got.value).toBe(\"MOCKED\");"	没测该层	keep	keep	—
-"mock 覆盖 env 的优先级不变（同名时 mock 赢）"	"负控制：没有 mock ⇒ 宿主应答 断言：expect(got.value).toBe(\"MOCKED\");"	没测该层	keep	keep	—
-"env 全局仍受跳过表约束（env 的 Math 不遮蔽宿主 Math）"	"负控制：env（node）与 mock **同名** ⇒ mock 必须赢（既有优先级语义） 断言：expect(got.value).toBe(7);"	夹具漏形态	keep	keep	—
-"没有 mock 时宿主应答不变"	"负控制：没有 mock ⇒ 宿主应答 断言：expect(got.value).toBe(7);"	没测该层	keep	keep	—
-"collectAbsBindingsFromGraph：宿主内建名的 mock 生效（顶层 const 求值面）"	"负控制：没有 mock ⇒ 宿主应答 断言：expect(binds.has(\"x\")).toBe(true);；expect(lit.ok).toBe(true);"	没测该层	keep	keep	—
 "只有孤儿指令 ⇒ 有一条「无处可施」诊断（既有口径）"	"根因：`packages/service/src/eval-injection.ts` 的 `collectInto` 只在 「收集表**全空**」（`acc.targets.length === 0 && acc.asTargets.length === 0`） 时才发那条 `nudo:directive-syntax`； 断言非永真：改前 `ORPHAN_PLUS_WORKING` 的孤儿诊断数为 **0**（`ORPHAN_ONLY` 为 1）⇒ 同一份写错的指令只因文件里多了一条有效指令就隐身。 断言：expect(orphanDiags(ORPHAN_ONLY)).toHaveLength(1);"	没测该层	keep	keep	—
 "孤儿 + 一条生效的 @nudo:as ⇒ 孤儿诊断**仍然在场**（改前被抑制为 0）"	"两处孤儿（同一文案、不同位置）⇒ 各报一条（位置进身份） 断言：expect(orphanDiags(ORPHAN_PLUS_WORKING)).toHaveLength(1);；expect(orphanDiags(ORPHAN_PLUS_WORKING)[0]!.message).toBe("	没测该层	keep	keep	—
 "生效的那条 @nudo:as 照旧进入收集表（抑制解除没有副作用）"	"根因：`packages/service/src/eval-injection.ts` 的 `collectInto` 只在 「收集表**全空**」（`acc.targets.length === 0 && acc.asTargets.length === 0`） 时才发那条 `nudo:directive-syntax`； 断言非永真：改前 `ORPHAN_PLUS_WORKING` 的孤儿诊断数为 **0**（`ORPHAN_ONLY` 为 1）⇒ 同一份写错的指令只因文件里多了一条有效指令就隐身。 断言：expect(collectEvalReplacements_____eval_injection_ts(ORPHAN_PL"	没测该层	keep	keep	—
 "两处孤儿各报一条（改前合并成一条）"	"断言：expect(orphanDiags(TWO_ORPHANS)).toHaveLength(2);"	没测该层	keep	keep	—
-"无指令的语句不受同函数内其它指令影响"	"断言：expect(formatShape(result.functions[0].cases[0].abs)).toBe('\"y\"');"	没测该层	keep	keep	—
-"指令挂在非语句节点上——不产生注入（无处可施），且发显式诊断"	"根因：`packages/service/src/eval-injection.ts` 的 `collectInto` 只在 「收集表**全空**」（`acc.targets.length === 0 && acc.asTargets.length === 0`） 时才发那条 `nudo:directive-syntax`； 断言非永真：改前 `ORPHAN_PLUS_WORKING` 的孤儿诊断数为 **0**（`ORPHAN_ONLY` 为 1）⇒ 同一份写错的指令只因文件里多了一条有效指令就隐身。 断言：expect(reps.asTargets.length).toBe(0);；expect(diags.map((d) =>"	没测该层	keep	keep	—
-"无任何行内指令的源码不产生诊断"	"断言：expect(reps.asTargets.length).toBe(0);；expect(reps.targets.length).toBe(0);"	没测该层	keep	keep	—
-"声明函数取值一致；未声明函数看不到该 mock"	"负控制：只有一个 mock 名（无冲突）⇒ 只在声明函数内可见 断言：expect(sigValue(ONE_MOCK, \"/tmp/bug455-f.js\", \"readA\")).toBe(8080);；expect(sigValue(ONE_MOCK, \"/tmp/bug455-g.js\", \"readB\")).toBe("	没测该层	keep	keep	—
-"无冲突时不产生作用域覆盖表（不留冗余状态）"	"断言：expect(mockScopeOverridesOf(mocks)).toBeUndefined();"	没测该层	keep	keep	—
-"readA / readB 各自取各自的 mock（接线前：先声明的也被后声明的改写）"	"负控制：只有一个 mock 名（无冲突）⇒ 只在声明函数内可见 断言：expect(fn, `function ${name} missing`).toBeDefined();；expect(valueOf(\"readA\")).toBe(8080);"	没测该层	keep	keep	—
-"from 形态（mock 文件导出箭头）仍是 caught"	"负控制：同一段代码不加 mock（本地 const 箭头） 断言：expect(lit.ok ? lit.value : sig!.display).toBe(\"caught\");"	没测该层	keep	keep	—
-"本地 const 箭头（不加 mock）仍是 caught"	"负控制：同一段代码不加 mock（本地 const 箭头） 断言：expect(sigValue(LOCAL_ARROW, \"/tmp/bug482-e.js\", \"greet\")).toBe(\"caught\");"	没测该层	keep	keep	—
-"resolves 形态仍是 promise<42>"	"`@nudo:mock` 的 **`rejects`** 形态被建模成「返回 never」 ⇒ 返回契约**空洞成立**（`never ⊑ string()` ⇒ 假绿，零诊断） + 签名/dts 写出 `never`（错误类型声明）。 修法（族 14 · 分片 I）：`rejects` 建模成「必定 reject 的 promise」 （与 `resolves` 分支同形：eff/promise），内层 never = 永不 fulfill。 断言：expect(sig!.abs.shape.k).toBe(\"eff\");；expect(formatShape(sig!.abs)).toContain(\"42\");"	夹具漏形态	keep	keep	—
-"returns 形态仍是同步值 42"	"负控制：普通 returns 形态（同步返回值，不受本条影响） 断言：expect(sig!.abs.shape.k).toBe(\"prim\");；expect(formatShape(sig!.abs)).toContain(\"42\");"	夹具漏形态	keep	keep	—
-"resolves 形态在同契约下同样报 unproven-return（口径一致）"	"负控制：普通 returns 形态（同步返回值，不受本条影响） 断言：expect(report.issues.filter((i) => i.code === \"nudo:unproven-return\").length).toBeGreaterThanOrEqual(1);"	夹具漏形态	keep	keep	—
 ```audit-deleted
 title	reason	evidence
 @nudo:mock Number 生效（宿主 Number 不再应答）	dup:mock/点名缺失契约表	commit:439e7ca5
@@ -99,4 +83,20 @@ shouldAnalyzeFile 纳入只含这四个指令的文件（改前：整份文件�
 负控制：无指令 / 指令只在字符串里 → 仍不纳入	dup:覆盖/模式契约表	commit:692ab090
 负控制：已在名单里的指令名不得回退	dup:覆盖/模式契约表	commit:692ab090
 文件级指令形态（/// @nudo:env）也纳入	dup:覆盖/模式契约表	commit:692ab090
+普通名 mock 仍生效（改前就生效，不得回退）	dup:已被矩阵吸收	commit:2f78285c
+mock 覆盖 env 的优先级不变（同名时 mock 赢）	dup:已被矩阵吸收	commit:2f78285c
+env 全局仍受跳过表约束（env 的 Math 不遮蔽宿主 Math）	dup:已被矩阵吸收	commit:2f78285c
+没有 mock 时宿主应答不变	dup:已被矩阵吸收	commit:2f78285c
+collectAbsBindingsFromGraph：宿主内建名的 mock 生效（顶层 const 求值面）	dup:已被矩阵吸收	commit:2f78285c
+无指令的语句不受同函数内其它指令影响	dup:已被矩阵吸收	commit:2f78285c
+指令挂在非语句节点上——不产生注入（无处可施），且发显式诊断	dup:已被矩阵吸收	commit:2f78285c
+无任何行内指令的源码不产生诊断	dup:已被矩阵吸收	commit:2f78285c
+声明函数取值一致；未声明函数看不到该 mock	dup:已被矩阵吸收	commit:2f78285c
+无冲突时不产生作用域覆盖表（不留冗余状态）	dup:已被矩阵吸收	commit:2f78285c
+readA / readB 各自取各自的 mock（接线前：先声明的也被后声明的改写）	dup:已被矩阵吸收	commit:2f78285c
+from 形态（mock 文件导出箭头）仍是 caught	dup:已被矩阵吸收	commit:2f78285c
+本地 const 箭头（不加 mock）仍是 caught	dup:已被矩阵吸收	commit:2f78285c
+resolves 形态仍是 promise<42>	dup:已被矩阵吸收	commit:2f78285c
+returns 形态仍是同步值 42	dup:已被矩阵吸收	commit:2f78285c
+resolves 形态在同契约下同样报 unproven-return（口径一致）	dup:已被矩阵吸收	commit:2f78285c
 ```
