@@ -1826,50 +1826,40 @@ beforeEach(() => {
 });
 
 describe("相对 path env 按发起方目录解析", () => {
-  it("两个目录各有 ./env.js：先预载者不得赢下所有同名拼写", async () => {
-    const dirX = tmpProject("nudo-bug-478-x-", { "env.js": envFile(11) });
-    const dirY = tmpProject("nudo-bug-478-y-", { "env.js": envFile(22) });
+  const envFile = (n: number) => `import { numLit } from "@nudojs/core";
+export function defineEnv() {
+  return { globals: { MAGIC: numLit(${n}) } };
+}
+`;
+  beforeEach(() => { clearPathEnvCaches(); });
+  it("两目录各取各的（预载顺序无关）；同目录稳定；绝对路径照旧", async () => {
+    const x = tmpProject("nudo-b478-x-", { "env.js": envFile(11) });
+    const y = tmpProject("nudo-b478-y-", { "env.js": envFile(22) });
+    await preloadPathEnvs(["./env.js"], x);
+    await preloadPathEnvs(["./env.js"], y);
+    expect(formatShape(loadEnvs(["./env.js"], createEnvironment(), x).globals.MAGIC!)).toBe("11");
+    expect(formatShape(loadEnvs(["./env.js"], createEnvironment(), y).globals.MAGIC!)).toBe("22");
 
-    await preloadPathEnvs(["./env.js"], dirX);
-    await preloadPathEnvs(["./env.js"], dirY);
+    const x2 = tmpProject("nudo-b478-x2-", { "env.js": envFile(11) });
+    const y2 = tmpProject("nudo-b478-y2-", { "env.js": envFile(22) });
+    await preloadPathEnvs(["./env.js"], y2);
+    await preloadPathEnvs(["./env.js"], x2);
+    expect(formatShape(loadEnvs(["./env.js"], createEnvironment(), x2).globals.MAGIC!)).toBe("11");
+    expect(formatShape(loadEnvs(["./env.js"], createEnvironment(), y2).globals.MAGIC!)).toBe("22");
 
-    const lx = loadEnvs(["./env.js"], createEnvironment(), dirX);
-    const ly = loadEnvs(["./env.js"], createEnvironment(), dirY);
-    expect(formatShape(lx.globals.MAGIC!)).toBe("11");
-    expect(formatShape(ly.globals.MAGIC!)).toBe("22");
-  });
+    const same = tmpProject("nudo-b478-same-", { "env.js": envFile(11) });
+    await preloadPathEnvs(["./env.js"], same);
+    expect(formatShape(loadEnvs(["./env.js"], createEnvironment(), same).globals.MAGIC!)).toBe("11");
+    expect(formatShape(loadEnvs(["./env.js"], createEnvironment(), same).globals.MAGIC!)).toBe("11");
 
-  it("反向预载顺序同样各取各的（不得依赖预载次序）", async () => {
-    const dirX = tmpProject("nudo-bug-478-x2-", { "env.js": envFile(11) });
-    const dirY = tmpProject("nudo-bug-478-y2-", { "env.js": envFile(22) });
-
-    await preloadPathEnvs(["./env.js"], dirY);
-    await preloadPathEnvs(["./env.js"], dirX);
-
-    const lx = loadEnvs(["./env.js"], createEnvironment(), dirX);
-    const ly = loadEnvs(["./env.js"], createEnvironment(), dirY);
-    expect(formatShape(lx.globals.MAGIC!)).toBe("11");
-    expect(formatShape(ly.globals.MAGIC!)).toBe("22");
-  });
-
-  it("负控制：同一目录重复装载结果一致（不因缓存漂移）", async () => {
-    const dirX = tmpProject("nudo-bug-478-same-", { "env.js": envFile(11) });
-    await preloadPathEnvs(["./env.js"], dirX);
-    const a = loadEnvs(["./env.js"], createEnvironment(), dirX);
-    const b = loadEnvs(["./env.js"], createEnvironment(), dirX);
-    expect(formatShape(a.globals.MAGIC!)).toBe("11");
-    expect(formatShape(b.globals.MAGIC!)).toBe("11");
-  });
-
-  it("负控制：绝对路径说明符照旧按绝对路径解析", async () => {
-    const dirX = tmpProject("nudo-bug-478-abs-", { "env.js": envFile(11) });
-    const abs = `${dirX}/env.js`;
-    await preloadPathEnvs([abs], dirX);
-    const loaded = loadEnvs([abs], createEnvironment(), dirX);
-    expect(formatShape(loaded.globals.MAGIC!)).toBe("11");
-    expect(getPathEnvLoadErrors(dirX)).toHaveLength(0);
+    const absDir = tmpProject("nudo-b478-abs-", { "env.js": envFile(11) });
+    const abs = `${absDir}/env.js`;
+    await preloadPathEnvs([abs], absDir);
+    expect(formatShape(loadEnvs([abs], createEnvironment(), absDir).globals.MAGIC!)).toBe("11");
+    expect(getPathEnvLoadErrors(absDir)).toHaveLength(0);
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -2014,53 +2004,38 @@ function captureStderr(fn: () => void): string {
 const CFG_200 = { analysis: { maxForks: 200 } };
 
 describe("非法 NUDO_MAX_FORKS 回默认（不是配置键）", () => {
-  beforeEach(() => {
-    evictProjectConfigMemo();
-  });
-
-  it("非法 env + 合法配置键 → 回默认 5000 + stderr 提示", () => {
+  const captureStderr = (fn: () => void): string => {
+    const writes: string[] = [];
+    const orig = process.stderr.write;
+    process.stderr.write = ((chunk: string | Uint8Array) => { writes.push(String(chunk)); return true; }) as typeof process.stderr.write;
+    try { fn(); } finally { process.stderr.write = orig; }
+    return writes.join("");
+  };
+  const CFG_200 = { analysis: { maxForks: 200 } };
+  beforeEach(() => { evictProjectConfigMemo(); });
+  it("非法 env 回默认并提示；合法 env 压配置；未设看配置；空串当未设；配置非法回默认", () => {
     let eff: number | undefined;
-    const out = captureStderr(() => {
-      eff = applyBForkBudgetFromConfig(CFG_200, { NUDO_MAX_FORKS: "abc" });
-    });
-    // 旧实现：非法 env 被折成 undefined → ?? 链落到配置键 → 200
+    const out = captureStderr(() => { eff = applyBForkBudgetFromConfig(CFG_200, { NUDO_MAX_FORKS: "abc" }); });
     expect(eff).toBe(5000);
     expect(currentBForkBudgetLimit()).toBe(5000);
     expect(out).toContain("NUDO_MAX_FORKS: invalid value");
     expect(out).toContain("using 5000");
-  });
-
-  it("非法 env（0 / 负数 / 非数字）+ 配置键 → 一律回默认", () => {
     for (const raw of ["0", "-5", "abc", "1e"]) {
       evictProjectConfigMemo();
-      let eff: number | undefined;
-      captureStderr(() => {
-        eff = applyBForkBudgetFromConfig(CFG_200, { NUDO_MAX_FORKS: raw });
-      });
-      expect(eff, raw).toBe(5000);
+      let v: number | undefined;
+      captureStderr(() => { v = applyBForkBudgetFromConfig(CFG_200, { NUDO_MAX_FORKS: raw }); });
+      expect(v, raw).toBe(5000);
     }
-  });
-
-  // ── 负控制：合法 env / env 未设的优先级不得被波及 ────────────────
-  it("合法 env 压过配置键", () => {
     expect(applyBForkBudgetFromConfig(CFG_200, { NUDO_MAX_FORKS: "999" })).toBe(999);
     expect(applyBForkBudgetFromConfig(CFG_200, { NUDO_MAX_FORKS: "1" })).toBe(1);
-  });
-
-  it("env 未设 → 看配置键；配置键也没有 → 默认", () => {
     expect(applyBForkBudgetFromConfig(CFG_200, {})).toBe(200);
     expect(applyBForkBudgetFromConfig(undefined, {})).toBe(5000);
-  });
-
-  it("env 为空串 → 按「未设」处理（看配置键）", () => {
     expect(applyBForkBudgetFromConfig(CFG_200, { NUDO_MAX_FORKS: "" })).toBe(200);
-  });
-
-  it("配置键本身非法 → 回默认（既有语义不变）", () => {
     expect(applyBForkBudgetFromConfig({ analysis: { maxForks: 0 } }, {})).toBe(5000);
     expect(applyBForkBudgetFromConfig({ analysis: { maxForks: -1 } }, {})).toBe(5000);
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -2211,53 +2186,44 @@ function parentInstall(prefix: string): { dir: string; appDir: string; pkgDir: s
 }
 
 describe("node_modules 逐级向上查找", () => {
-  it("包只装在父级 node_modules ⇒ JS 入口照样解析（不再回落 @types）", () => {
-    const { appDir, pkgDir } = parentInstall("nudo-500-parent-");
-    const r = resolveNpmJsEntryDetailed("mypkg", appDir);
-    expect(r.path).toBe(join(pkgDir, "index.js"));
+  const parentInstall = (prefix: string) => {
+    const dir = tmpProject(prefix, {
+      "node_modules/mypkg/package.json": JSON.stringify({ name: "mypkg", version: "1.0.0", type: "module", main: "index.js" }),
+      "node_modules/mypkg/index.js": "export function hello() { throw new Error('boom'); }\n",
+      "app/node_modules/.keep": "",
+      "app/main.js": "import { hello } from 'mypkg';\nexport function go() { return hello(); }\n",
+    });
+    return { dir, appDir: join(dir, "app"), pkgDir: join(dir, "node_modules", "mypkg") };
+  };
+  it("父级安装可解析；就近优先；侧车同口径；未安装 miss 不报 unresolved", () => {
+    const parent = parentInstall("nudo-500-parent-");
+    const r = resolveNpmJsEntryDetailed("mypkg", parent.appDir);
+    expect(r.path).toBe(join(parent.pkgDir, "index.js"));
     expect(r.exportsUnresolved).toBe(false);
-  });
 
-  it("就近安装优先于父级安装（最近的一层胜出）", () => {
-    const { dir, appDir } = parentInstall("nudo-500-nearest-");
-    writeTmpFiles(dir, {
-      "app/node_modules/mypkg/package.json": JSON.stringify({
-        name: "mypkg",
-        version: "1.0.0",
-        type: "module",
-        main: "index.js",
-      }),
+    const near = parentInstall("nudo-500-nearest-");
+    writeTmpFiles(near.dir, {
+      "app/node_modules/mypkg/package.json": JSON.stringify({ name: "mypkg", version: "1.0.0", type: "module", main: "index.js" }),
       "app/node_modules/mypkg/index.js": "export function hello() { return 42; }\n",
     });
-    expect(resolveNpmJsEntryDetailed("mypkg", appDir).path).toBe(
-      join(appDir, "node_modules", "mypkg", "index.js"),
-    );
-  });
+    expect(resolveNpmJsEntryDetailed("mypkg", near.appDir).path).toBe(join(near.appDir, "node_modules", "mypkg", "index.js"));
 
-  it("侧车解析同口径（resolveNpmNudo 也逐级向上）", () => {
-    const dir = tmpProject("nudo-500-nudo-");
-    writeTmpFiles(dir, {
-      "node_modules/side/package.json": JSON.stringify({
-        name: "side",
-        version: "1.0.0",
-        exports: { ".": { nudo: "./index.nudo.js" } },
-      }),
+    const side = tmpProject("nudo-500-nudo-");
+    writeTmpFiles(side, {
+      "node_modules/side/package.json": JSON.stringify({ name: "side", version: "1.0.0", exports: { ".": { nudo: "./index.nudo.js" } } }),
       "node_modules/side/index.nudo.js": "export const x = 1;\n",
       "app/node_modules/.keep": "",
     });
-    expect(resolveNpmNudo("side", join(dir, "app"))).toBe(
-      join(dir, "node_modules", "side", "index.nudo.js"),
-    );
-  });
+    expect(resolveNpmNudo("side", join(side, "app"))).toBe(join(side, "node_modules", "side", "index.nudo.js"));
 
-  it("负控制：包根本没装 ⇒ miss（不报 exportsUnresolved）", () => {
-    const dir = tmpProject("nudo-500-absent-");
-    writeTmpFiles(dir, { "app/main.js": "export const x = 1;\n" });
-    const r = resolveNpmJsEntryDetailed("nosuchpkg", join(dir, "app"));
-    expect(r.path).toBeNull();
-    expect(r.exportsUnresolved).toBe(false);
+    const absent = tmpProject("nudo-500-absent-");
+    writeTmpFiles(absent, { "app/main.js": "export const x = 1;\n" });
+    const miss = resolveNpmJsEntryDetailed("nosuchpkg", join(absent, "app"));
+    expect(miss.path).toBeNull();
+    expect(miss.exportsUnresolved).toBe(false);
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
