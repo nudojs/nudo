@@ -10,20 +10,7 @@ title	rootCause	gap	action	status	evidence
 fn 两臂/单臂/空静态面/无面/原型名；prim/brand/obj/tuple/eff 既有派发；端到端响应	brand/fn-sum 表	没测该层	keep	keep	—
 定义期一次/构造不重复/键不漂移/抛错在定义期/两处定义各一次；静态键与公有字段不变；抽象键不挂名	计算键/static 表	没测该层	keep	keep	—
 块在前/三段交错/副作用序；字段在前/外层变量/块内 this 负控	计算键/static 表	没测该层	keep	keep	—
-单访问器：{ get x(){ return 7 } } → 7	计算键/static 表	没测该层	keep	keep	—
-数据在前、访问器在后 → 访问器胜出（读走 getter）	计算键/static 表	没测该层	keep	keep	—
-数据在前、访问器在后 → 写仍是 getter-only 的 TypeError	计算键/static 表	没测该层	keep	keep	—
-访问器对：{ get x(){}, set x(v){} } → 读得 getter 值 1	计算键/static 表	没测该层	keep	keep	—
-setter 仍被调用（写回 receiver 字段）	计算键/static 表	没测该层	keep	keep	—
-访问器-访问器：{ get x(){1}, get x(){2} } → 后者 2	计算键/static 表	没测该层	keep	keep	—
-数据-数据：{ x: 1, x: 2 } → 2	计算键/static 表	没测该层	keep	keep	—
-访问器-数据-访问器：最终是访问器 → 读最后一个 getter	计算键/static 表	没测该层	keep	keep	—
-symbol 键：{ [Symbol.iterator]: 2, get [Symbol.iterator](){} } → 访问器胜出	计算键/static 表	没测该层	keep	keep	—
-动态计算键：{ [k]: 2, get [k](){} } → 访问器胜出（后写）	计算键/static 表	没测该层	keep	keep	—
-动态计算键：不同键互不牵连（getter 键 + 数据键）	计算键/static 表	没测该层	keep	keep	—
-方法简写在后：{ x(){}, get x(){} } → 访问器胜出（读 undefined）	计算键/static 表	没测该层	keep	keep	—
-其它键不受重复键仲裁牵连	计算键/static 表	没测该层	keep	keep	—
-无重复键的字面量不受影响（普通数据属性）	计算键/static 表	没测该层	keep	keep	—
+数据属性胜出/最后一个定义/展开与拷贝/副作用与枚举/symbol 与动态键；负控单访问器/对/数据-数据/其它键	重复键仲裁表	没测该层	keep	keep	—
 getter 先于实参：对象/类/静态/嵌套/计算键/抛错/非函数/只读一次	访问器求值序表	没测该层	keep	keep	—
 负控：数据槽/super/私有名/数组方法/this 绑定不变	访问器求值序表	没测该层	keep	keep	—
 static { this.x = super.m } → 父类静态成员值（原生 1）	计算键/static 表	没测该层	keep	keep	—
@@ -690,4 +677,18 @@ mk().x += 2 折 3（原生 3）	dup:const 成员写族表	commit:bc9988af
 负控：缺席键仍折 undefined（原生：undefined）	dup:const 成员写族表	commit:bc9988af
 负控：用户同名方法优先（原生：'own'）	dup:const 成员写族表	commit:bc9988af
 负控：普通 Map 逐字不变（原生：1）	dup:const 成员写族表	commit:bc9988af
+单访问器：{ get x(){ return 7 } } → 7	dup:重复键仲裁表	commit:7134e5af
+数据在前、访问器在后 → 访问器胜出（读走 getter）	dup:重复键仲裁表	commit:7134e5af
+数据在前、访问器在后 → 写仍是 getter-only 的 TypeError	dup:重复键仲裁表	commit:7134e5af
+访问器对：{ get x(){}, set x(v){} } → 读得 getter 值 1	dup:重复键仲裁表	commit:7134e5af
+setter 仍被调用（写回 receiver 字段）	dup:重复键仲裁表	commit:7134e5af
+访问器-访问器：{ get x(){1}, get x(){2} } → 后者 2	dup:重复键仲裁表	commit:7134e5af
+数据-数据：{ x: 1, x: 2 } → 2	dup:重复键仲裁表	commit:7134e5af
+访问器-数据-访问器：最终是访问器 → 读最后一个 getter	dup:重复键仲裁表	commit:7134e5af
+symbol 键：{ [Symbol.iterator]: 2, get [Symbol.iterator](){} } → 访问器胜出	dup:重复键仲裁表	commit:7134e5af
+动态计算键：{ [k]: 2, get [k](){} } → 访问器胜出（后写）	dup:重复键仲裁表	commit:7134e5af
+动态计算键：不同键互不牵连（getter 键 + 数据键）	dup:重复键仲裁表	commit:7134e5af
+方法简写在后：{ x(){}, get x(){} } → 访问器胜出（读 undefined）	dup:重复键仲裁表	commit:7134e5af
+其它键不受重复键仲裁牵连	dup:重复键仲裁表	commit:7134e5af
+无重复键的字面量不受影响（普通数据属性）	dup:重复键仲裁表	commit:7134e5af
 ```
