@@ -1,5 +1,8 @@
 ```audit
 title	rootCause	gap	action	status	evidence
+指令不改变结果；标记落分析实例；调用面命中 memo	环/JSON/pure 表	没测该层	keep	keep	—
+require/default import 取值；具名导入缺名；非法 JSON 专用诊断；JS 依赖负控	环/JSON/pure 表	没测该层	keep	keep	—
+首次即 0、三次不漂移、环仍报告；非环与显式实参负控	环/JSON/pure 表	没测该层	keep	keep	—
 exports/旧式子路径指向目录不可用；显式文件与 legacy main 可解析	exports 解析表	没测该层	keep	keep	—
 合法但缺失即停；条件内数组同款；非法目标回退；首目标存在取首	exports 解析表	没测该层	keep	keep	—
 近层拒绝不上溯；本层无包可上溯；近层命中胜出	exports 解析表	没测该层	keep	keep	—
@@ -19,21 +22,6 @@ default 槽 + interop 标记；默认/命名空间同签名；无假 unknown-inf
 "③ 分析器通道与 CLI `nudo check` 结论一致（都 f() => 42）"	"被分析文件**不带** `@nudo:env`（基线：项目级 env 恰好可见）。 断言：expect(sig).toBeDefined();；expect(sig!.display).toContain(\"42\");"	没测该层	keep	keep	—
 "web env: real constructors keep their brands"	"`instantiateReturn` 无视关系元数 / 构造性 ⇒ 无参 `new Event()` 之类被误判。 修复：关系 arity 门 + `shape.ctor === true` + 声明可选性。 断言：expect(sig(WEB_SRC, env, \"a\")).toBe(\"Event\");；expect(sig(WEB_SRC, env, \"b\")).toBe(\"CustomEvent\");"	夹具漏形态	keep	keep	—
 "node env: illegal no-arg constructions are honest may-throw TypeError"	"`instantiateReturn` 无视关系元数 / 构造性 ⇒ 无参 `new Event()` 之类被误判。 修复：关系 arity 门 + `shape.ctor === true` + 声明可选性。 断言：expect(sig(NODE_SRC, env, name)).toBe(\"never throws TypeError\");"	夹具漏形态	keep	keep	—
-"环内第一次调用即得正确值（改前：unknown）"	"ESM import 环（a ⇄ b）——环内第一次调用恒定值、同一导出按调用次序不再漂移。 改前：环内先求值的一侧（b）绑定到 unknown（a 尚未求值）⇒ 第一次调用得 unknown， 第二次起才正确（同一导出按调用次序给出不同结果）。 断言：expect(results[0]!.shape.k).not.toBe(\"unknown\");；expect(results[0]!.term).toEqual({ op: \"lit\", value: 0 });"	没测该层	keep	keep	—
-"同一导出按调用次序不再漂移（改前：unknown / 0 / 0）"	"ESM import 环（a ⇄ b）——环内第一次调用恒定值、同一导出按调用次序不再漂移。 改前：环内先求值的一侧（b）绑定到 unknown（a 尚未求值）⇒ 第一次调用得 unknown， 第二次起才正确（同一导出按调用次序给出不同结果）。 断言：expect(r.shape.k).not.toBe(\"unknown\");；expect(r.term).toEqual({ op: \"lit\", value: 0 });"	没测该层	keep	keep	—
-"环仍被报为装载问题（诊断面不变）"	"断言：expect(graph.issues.some((i) => i.kind === \"cycle\")).toBe(true);"	没测该层	keep	keep	—
-"负控制：非环的跨模块调用不受影响（值与改前一致）"	"env 模块的 ESM **默认导入**（`import fs from \"node:fs\"`） 此前全量降级 `unknown` + **假** `nudo:unknown-inference` + 门禁**假绿** （与同一模块的命名空间导入门禁结论相反）。 根因（service 侧）：`collectEnvModules` 构造 env 模块表时**只装 named、 不装 default 槽** ⇒ core 的 `bindImport` 在 `name === \"default\"` 分支取不到 值 ⇒ 折 `unknown`。 断言：expect(r.result.term).toEqual({ op: \"lit\", va"	夹具漏形态	keep	keep	—
-"负控制：环内显式实参调用同样恒定（a(2) 直调）"	"env 模块的 ESM **默认导入**（`import fs from \"node:fs\"`） 此前全量降级 `unknown` + **假** `nudo:unknown-inference` + 门禁**假绿** （与同一模块的命名空间导入门禁结论相反）。 根因（service 侧）：`collectEnvModules` 构造 env 模块表时**只装 named、 不装 default 槽** ⇒ core 的 `bindImport` 在 `name === \"default\"` 分支取不到 值 ⇒ 折 `unknown`。 断言：expect(r.result.term).toEqual({ op: \"lit\", va"	夹具漏形态	keep	keep	—
-"require(\"./data.json\") 取到真实值（改前：unknown）"	"JSON 依赖（`.json`）——此前一律当 JS 转译（`{\"a\": 1}` 不是合法 JS 表达式语句）→ fail-closed 空导出表且**零诊断** ⇒ 值被静默丢弃。 - `import { a } from \"./data.json\"` → 原生报错（JSON 模块没有具名导出）。 断言：expect(value).toEqual({ op: \"lit\", value: 1 });"	没测该层	keep	keep	—
-"import default 取到整个文档（改前：unknown）"	"JSON 依赖（`.json`）——此前一律当 JS 转译（`{\"a\": 1}` 不是合法 JS 表达式语句）→ fail-closed 空导出表且**零诊断** ⇒ 值被静默丢弃。 - `import { a } from \"./data.json\"` → 原生报错（JSON 模块没有具名导出）。 断言：expect(value).toEqual({ op: \"lit\", value: 1 });"	没测该层	keep	keep	—
-"JSON 具名导入给出明确缺名诊断（原生同样报错；改前：静默 unknown）"	"JSON 依赖（`.json`）——此前一律当 JS 转译（`{\"a\": 1}` 不是合法 JS 表达式语句）→ fail-closed 空导出表且**零诊断** ⇒ 值被静默丢弃。 - `import { a } from \"./data.json\"` → 原生报错（JSON 模块没有具名导出）。 断言：expect(issues.some((i) => i.startsWith(\"missing-export\"))).toBe(true);"	没测该层	keep	keep	—
-"非法 JSON 不再静默丢值（给出明确装载问题）"	"JSON 依赖（`.json`）——此前一律当 JS 转译（`{\"a\": 1}` 不是合法 JS 表达式语句）→ fail-closed 空导出表且**零诊断** ⇒ 值被静默丢弃。 - `import { a } from \"./data.json\"` → 原生报错（JSON 模块没有具名导出）。 断言：expect(issues.length).toBeGreaterThan(0);"	没测该层	keep	keep	—
-"非法 JSON 走**专用**诊断形态（json-invalid），不折叠成 missing"	"JSON 依赖（`.json`）——此前一律当 JS 转译（`{\"a\": 1}` 不是合法 JS 表达式语句）→ fail-closed 空导出表且**零诊断** ⇒ 值被静默丢弃。 - `import { a } from \"./data.json\"` → 原生报错（JSON 模块没有具名导出）。 断言：expect(issues.some((i) => i.startsWith(\"json-invalid\"))).toBe(true);；expect(issues.some((i) => i.startsWith(\"missing\"))).toBe(false);"	没测该层	keep	keep	—
-"负控制：普通 JS 依赖装载不受影响"	"env 模块的 ESM **默认导入**（`import fs from \"node:fs\"`） 此前全量降级 `unknown` + **假** `nudo:unknown-inference` + 门禁**假绿** （与同一模块的命名空间导入门禁结论相反）。 根因（service 侧）：`collectEnvModules` 构造 env 模块表时**只装 named、 不装 default 槽** ⇒ core 的 `bindImport` 在 `name === \"default\"` 分支取不到 值 ⇒ 折 `unknown`。 断言：expect(value).toEqual({ op: \"lit\", value: 7 }"	夹具漏形态	keep	keep	—
-"pure function: directive does not change the result (doc promise)"	"memo 以**对象身份**为键（pureCallMemo / pureMemo：WeakMap<fnObj, argsKey, …>）， 标记到\"等价但不同一\"的对象上不命中。 修复前 service 从 globalEnv 取标记对象， 而 globalEnv 从未绑定任何函数（collectBindings 只写 bindings 表）⇒ 标记从未 落下，@nudo:pure 恒为空转（纯函数指令无任何求值语义）。 断言：expect(withDir).toBe(without);；expect(withDir).toContain(\"84\");"	夹具漏形态	keep	keep	—
-"marker lands on the analyzed instance (top-level function declaration)"	"memo 以**对象身份**为键（pureCallMemo / pureMemo：WeakMap<fnObj, argsKey, …>）， 标记到\"等价但不同一\"的对象上不命中。 修复前 service 从 globalEnv 取标记对象， 而 globalEnv 从未绑定任何函数（collectBindings 只写 bindings 表）⇒ 标记从未 落下，@nudo:pure 恒为空转（纯函数指令无任何求值语义）。 断言：expect(run).toBeDefined();；expect(typeof fnVal).toBe(\"function\");"	夹具漏形态	keep	keep	—
-"marker lands on the analyzed instance (const arrow function → Abs fn value)"	"memo 以**对象身份**为键（pureCallMemo / pureMemo：WeakMap<fnObj, argsKey, …>）， 标记到\"等价但不同一\"的对象上不命中。 修复前 service 从 globalEnv 取标记对象， 而 globalEnv 从未绑定任何函数（collectBindings 只写 bindings 表）⇒ 标记从未 落下，@nudo:pure 恒为空转（纯函数指令无任何求值语义）。 断言：expect(run).toBeDefined();；expect(absVal).toBeDefined();"	夹具漏形态	keep	keep	—
-"call surface (fresh instance) actually hits the pure memo"	"memo 以**对象身份**为键（pureCallMemo / pureMemo：WeakMap<fnObj, argsKey, …>）， 标记到\"等价但不同一\"的对象上不命中。 修复前 service 从 globalEnv 取标记对象， 而 globalEnv 从未绑定任何函数（collectBindings 只写 bindings 表）⇒ 标记从未 落下，@nudo:pure 恒为空转（纯函数指令无任何求值语义）。 断言：expect(full).toBeDefined();；expect(formatAbs(full!.result)).toMatch(/^2(\\s|$)/);"	夹具漏形态	keep	keep	—
 "真值非对象（字符串 / 布尔 / 数组）：诊断 + 按「无配置」处理"	"`package.json#nudo` 键**值不是对象**时被静默忽略： 零诊断（用户零线索），且真值型非对象还**抑制 onboarding 提示** （下游 check.ts 的 filesWithConfig++ 以「找到了真值 nudo 键」为判据）。 根因（config.ts findProjectConfig）：配置层对 `nudo` 键**零形状校验**， 非对象值被谎报成 NudoConfig。 断言：expect(found, label).toBeNull();；expect(out, label).toContain('invalid \"nudo\" key');"	夹具漏形态	keep	keep	—
 "非法 nudo 键不得继承祖先包配置（ignoreThrows / env 都不生效）"	"根包带 nudo 配置（用于验证「非法 nudo 键不得继承祖先配置」） 断言：expect(found).toBeNull();；expect(found?.config).toBeUndefined();"	没测该层	keep	keep	—
 "合法 nudo 键（对象）：照旧返回配置"	"根包带 nudo 配置（用于验证「非法 nudo 键不得继承祖先配置」） 断言：expect(found?.projectDir).toBe(root);；expect(found?.config.contract?.autoBind).toBe(false);"	没测该层	keep	keep	—
@@ -164,4 +152,19 @@ require 面同理：`default` 先声明 ⇒ 取 default（不按表序重排）	
 旧式 ESM 子路径指向目录 ⇒ 同样不可用	dup:exports 解析表	commit:d4d0b693
 对照组：`exports` 目标显式指向文件 ⇒ 正常解析	dup:exports 解析表	commit:d4d0b693
 对照组：legacy `main` 指向目录 ⇒ Node 允许 index 解析	dup:exports 解析表	commit:d4d0b693
+环内第一次调用即得正确值（改前：unknown）	dup:环/JSON/pure 表	commit:0d39a8e2
+同一导出按调用次序不再漂移（改前：unknown / 0 / 0）	dup:环/JSON/pure 表	commit:0d39a8e2
+环仍被报为装载问题（诊断面不变）	dup:环/JSON/pure 表	commit:0d39a8e2
+负控制：非环的跨模块调用不受影响（值与改前一致）	dup:环/JSON/pure 表	commit:0d39a8e2
+负控制：环内显式实参调用同样恒定（a(2) 直调）	dup:环/JSON/pure 表	commit:0d39a8e2
+require("./data.json") 取到真实值（改前：unknown）	dup:环/JSON/pure 表	commit:0d39a8e2
+import default 取到整个文档（改前：unknown）	dup:环/JSON/pure 表	commit:0d39a8e2
+JSON 具名导入给出明确缺名诊断（原生同样报错；改前：静默 unknown）	dup:环/JSON/pure 表	commit:0d39a8e2
+非法 JSON 不再静默丢值（给出明确装载问题）	dup:环/JSON/pure 表	commit:0d39a8e2
+非法 JSON 走**专用**诊断形态（json-invalid），不折叠成 missing	dup:环/JSON/pure 表	commit:0d39a8e2
+负控制：普通 JS 依赖装载不受影响	dup:环/JSON/pure 表	commit:0d39a8e2
+pure function: directive does not change the result (doc promise)	dup:环/JSON/pure 表	commit:0d39a8e2
+marker lands on the analyzed instance (top-level function declaration)	dup:环/JSON/pure 表	commit:0d39a8e2
+marker lands on the analyzed instance (const arrow function → Abs fn value)	dup:环/JSON/pure 表	commit:0d39a8e2
+call surface (fresh instance) actually hits the pure memo	dup:环/JSON/pure 表	commit:0d39a8e2
 ```
