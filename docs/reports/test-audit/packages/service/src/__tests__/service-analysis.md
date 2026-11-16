@@ -1,5 +1,8 @@
 ```audit
 title	rootCause	gap	action	status	evidence
+模块级状态每入口独立；声明式 case / 无状态 / 未改写负控	entryThrows/谓词/隔离表	没测该层	keep	keep	—
+满足谓词无诊断；违反谓词/类型不符仍报；无谓词口径不变	entryThrows/谓词/隔离表	没测该层	keep	keep	—
+strict/无 profile 非法值文案 error；合法值与 profile 预设不告警	entryThrows/谓词/隔离表	没测该层	keep	keep	—
 点名声明落在自己前面；两条都 applied	截断/锚点表	没测该层	keep	keep	—
 假设落在被点名声明自己的行；行尾注释不消费；未声明进 unapplied	截断/锚点表	没测该层	keep	keep	—
 自递归一条 info 锚函数声明；cycle 措辞；无截断零误报	截断/锚点表	没测该层	keep	keep	—
@@ -41,18 +44,6 @@ ESM/CJS 命名空间带接收者限定并可归因；具名/对象方法无前�
 "负控制：本地调用点的见证名保持 call@L<n>（与既有已固化名字兼容）"	"固化下来的 case 名 `call@L<行号>` 取的是**使用现场文件**的行号 ⇒ 同名碰撞 + 指向无关行 + 二次 freeze 静默丢弃新见证。 根因： - 合成 case 名直接取记录里的行号（使用现场文件的行）⇒ 两个现场文件在 同一行调用同一函数 → 同名 `call@L2`； 断言：expect(names).toEqual([\"call@L2\"]);"	夹具漏形态	keep	keep	—
 "emitter：已有同名见证不重复写；新见证照写（不再整函数丢弃）"	"固化下来的 case 名 `call@L<行号>` 取的是**使用现场文件**的行号 ⇒ 同名碰撞 + 指向无关行 + 二次 freeze 静默丢弃新见证。 根因： - 合成 case 名直接取记录里的行号（使用现场文件的行）⇒ 两个现场文件在 同一行调用同一函数 → 同名 `call@L2`； 断言：expect(base).toBeDefined();；expect(withFrozen.source).toContain('\"call@b.js:L2\"');"	夹具漏形态	keep	keep	—
 "接线：已固化函数的**新增外部调用点**也合成 call@ 见证"	"固化下来的 case 名 `call@L<行号>` 取的是**使用现场文件**的行号 ⇒ 同名碰撞 + 指向无关行 + 二次 freeze 静默丢弃新见证。 根因： - 合成 case 名直接取记录里的行号（使用现场文件的行）⇒ 两个现场文件在 同一行调用同一函数 → 同名 `call@L2`； 断言：expect(names).toContain(\"call@b.js:L2\");"	夹具漏形态	keep	keep	—
-"非法 entryThrows + adoption profile：文案说 warning（生效值也是 warning）"	"根因（config.ts checkConfig）：告警文案是常量字符串，而生效值随后被 profile 预设覆盖 ⇒ 文案与生效档位互相矛盾。 修法：先算出最终生效档位，再按**生效值**拼告警文案 （config.md「L2 entryThrows resolution order」：非法值不是合法显式值 → 落到 config profile 预设）。 断言：expect(eff).toBe(\"warning\");；expect(out).toContain(\"nudo.check.entryThrows: invalid value\");"	夹具漏形态	keep	keep	—
-"非法 entryThrows + strict profile：文案说 error（生效值也是 error）"	"根因（config.ts checkConfig）：告警文案是常量字符串，而生效值随后被 profile 预设覆盖 ⇒ 文案与生效档位互相矛盾。 修法：先算出最终生效档位，再按**生效值**拼告警文案 （config.md「L2 entryThrows resolution order」：非法值不是合法显式值 → 落到 config profile 预设）。 断言：expect(eff).toBe(\"error\");；expect(out).toContain(\"using error\");"	夹具漏形态	keep	keep	—
-"非法 entryThrows + 无 profile：回默认 error，文案说 error"	"根因（config.ts checkConfig）：告警文案是常量字符串，而生效值随后被 profile 预设覆盖 ⇒ 文案与生效档位互相矛盾。 修法：先算出最终生效档位，再按**生效值**拼告警文案 （config.md「L2 entryThrows resolution order」：非法值不是合法显式值 → 落到 config profile 预设）。 断言：expect(eff).toBe(\"error\");；expect(out).toContain(\"using error\");"	夹具漏形态	keep	keep	—
-"合法 entryThrows：不告警，且显式值压过 profile"	"根因（config.ts checkConfig）：告警文案是常量字符串，而生效值随后被 profile 预设覆盖 ⇒ 文案与生效档位互相矛盾。 修法：先算出最终生效档位，再按**生效值**拼告警文案 （config.md「L2 entryThrows resolution order」：非法值不是合法显式值 → 落到 config profile 预设）。 断言：expect(eff).toBe(\"warning\");；expect(out).toBe(\"\");"	夹具漏形态	keep	keep	—
-"无 check 段 / 无 entryThrows：不告警，默认 error"	"根因（config.ts checkConfig）：告警文案是常量字符串，而生效值随后被 profile 预设覆盖 ⇒ 文案与生效档位互相矛盾。 修法：先算出最终生效档位，再按**生效值**拼告警文案 （config.md「L2 entryThrows resolution order」：非法值不是合法显式值 → 落到 config profile 预设）。 断言：expect(eff).toBe(\"error\");；expect(out).toBe(\"\");"	夹具漏形态	keep	keep	—
-"profile 预设本身仍生效（adoption→warning / strict→error），无告警"	"根因（config.ts checkConfig）：告警文案是常量字符串，而生效值随后被 profile 预设覆盖 ⇒ 文案与生效档位互相矛盾。 修法：先算出最终生效档位，再按**生效值**拼告警文案 （config.md「L2 entryThrows resolution order」：非法值不是合法显式值 → 落到 config profile 预设）。 断言：expect(checkConfig({ check: { profile: \"adoption\" } }).entryThrows).toBe(\"warning\");；expect(checkConfig({ check: { profile: \"strict\" } }"	夹具漏形态	keep	keep	—
-"满足谓词：期望 number().gt(0)，实际 2 → 无 nudo:case-expected"	"找出 nudo:case-expected 诊断（期望不满足）。 断言：expect(c).toBeDefined();；expect(c!.abs.shape.k).toBe(\"prim\");"	没测该层	keep	keep	—
-"负控制：违反谓词（期望 number().gt(5)，实际 2）→ 仍报 nudo:case-expected"	"找出 nudo:case-expected 诊断（期望不满足）。 断言：expect(caseExpectedIssues(result)).toBe(1);"	没测该层	keep	keep	—
-"负控制：无谓词的期望（number()）口径不变 → 无诊断"	"`@nudo:case \"t\" (…) => number().gt(0)` 这类**带谓词**的期望 恒判失败（假红）。 根因（analyzer-orchestrate-uncached-cases.ts）：期望侧用 `leqAbs` 判定， 而 `leqAbs` 只做结构/蕴含判定（源无 pred ⇒ 目标有 pred ⇒ 不蕴含）， 不做**值级**判定 ⇒ `number().gt(0)` 与任何实数都不蕴含。 断言：expect(caseExpectedIssues(result)).toBe(0);"	没测该层	keep	keep	—
-"负控制：类型不匹配的期望（string()）→ 仍报 nudo:case-expected"	"找出 nudo:case-expected 诊断（期望不满足）。 断言：expect(caseExpectedIssues(result)).toBe(1);"	没测该层	keep	keep	—
-"非导出辅助函数改写模块级状态后，导出函数的入口用例仍从初值起算"	"断言：expect(shapes.inc).toBe(\"1\");；expect(shapes.f).toBe(\"0\");"	没测该层	keep	keep	—
-"多个导出函数的入口用例互不串味（各自独立实例）"	"断言：expect(shapes.a).toBe(\"1\");；expect(shapes.b).toBe(\"1\");"	没测该层	keep	keep	—
 "声明式 @nudo:case 的求值结果不变"	"找出 nudo:case-expected 诊断（期望不满足）。 断言：expect(shapes.add).toBe(\"2\");"	没测该层	keep	keep	—
 "无模块级状态的模块，入口用例结果不变"	"断言：expect(shapes.g).toBe('\"ok\"');"	没测该层	keep	keep	—
 "模块级状态未被改写时，读到的就是初值"	"断言：expect(shapes.read).toBe(\"7\");"	没测该层	keep	keep	—
@@ -150,4 +141,16 @@ CJS `const dep = require(...)`：同样带接收者限定且可归因	dup:归因
 负控制：不是顶层声明的名字仍进 unapplied	dup:截断/锚点表	commit:72990e36
 点名的声明落在**自己**的前面（不被同行的前一条声明吃掉）	dup:截断/锚点表	commit:72990e36
 同行两条声明各自被点名 ⇒ 两条都 applied（不再有「丢弃 + 编造理由」）	dup:截断/锚点表	commit:72990e36
+非法 entryThrows + adoption profile：文案说 warning（生效值也是 warning）	dup:entryThrows/谓词/隔离表	commit:00164a1e
+非法 entryThrows + strict profile：文案说 error（生效值也是 error）	dup:entryThrows/谓词/隔离表	commit:00164a1e
+非法 entryThrows + 无 profile：回默认 error，文案说 error	dup:entryThrows/谓词/隔离表	commit:00164a1e
+合法 entryThrows：不告警，且显式值压过 profile	dup:entryThrows/谓词/隔离表	commit:00164a1e
+无 check 段 / 无 entryThrows：不告警，默认 error	dup:entryThrows/谓词/隔离表	commit:00164a1e
+profile 预设本身仍生效（adoption→warning / strict→error），无告警	dup:entryThrows/谓词/隔离表	commit:00164a1e
+满足谓词：期望 number().gt(0)，实际 2 → 无 nudo:case-expected	dup:entryThrows/谓词/隔离表	commit:00164a1e
+负控制：违反谓词（期望 number().gt(5)，实际 2）→ 仍报 nudo:case-expected	dup:entryThrows/谓词/隔离表	commit:00164a1e
+负控制：无谓词的期望（number()）口径不变 → 无诊断	dup:entryThrows/谓词/隔离表	commit:00164a1e
+负控制：类型不匹配的期望（string()）→ 仍报 nudo:case-expected	dup:entryThrows/谓词/隔离表	commit:00164a1e
+非导出辅助函数改写模块级状态后，导出函数的入口用例仍从初值起算	dup:entryThrows/谓词/隔离表	commit:00164a1e
+多个导出函数的入口用例互不串味（各自独立实例）	dup:entryThrows/谓词/隔离表	commit:00164a1e
 ```
