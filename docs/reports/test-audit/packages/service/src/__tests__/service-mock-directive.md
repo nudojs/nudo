@@ -1,5 +1,12 @@
 ```audit
 title	rootCause	gap	action	status	evidence
+绑定位/对象键位不算命中且诊断；属性值命中生效；未命中告警	mock 中段契约表	没测该层	keep	keep	—
+只在声明函数生效；同函数作为依赖/目标一致	mock 中段契约表	没测该层	keep	keep	—
+重复点名两条来源且合并导出；单条零诊断；门禁 warning；局部形态并集	mock 中段契约表	没测该层	keep	keep	—
+写错目标点名诊断；写对零诊断且命中区间；无指令零诊断；门禁 warning	mock 中段契约表	没测该层	keep	keep	—
+skip 未声明返回仍声明 unknown；普通函数不受影响	mock 中段契约表	没测该层	keep	keep	—
+as/replace 不泄漏进 if 块/嵌套函数/同行下一条；正例仍生效	mock 中段契约表	没测该层	keep	keep	—
+throws/副作用保留；覆盖仍生效；相邻子表达式不受影响	mock 中段契约表	没测该层	keep	keep	—
 点名缺失 fail-closed；提供者 overlay；未点名回落；多缺失/ default；check 面；全替换不受影响	mock/点名缺失契约表	没测该层	keep	keep	—
 第二合并点：collectAbsBindingsFromGraph 也尊重宿主内建 mock	mock/点名缺失契约表	没测该层	keep	keep	—
 宿主内建 mock 生效；产品面同值；负控制普通名/优先级/跳过表/无 mock	mock/点名缺失契约表	没测该层	keep	keep	—
@@ -8,36 +15,10 @@ title	rootCause	gap	action	status	evidence
 "env 全局仍受跳过表约束（env 的 Math 不遮蔽宿主 Math）"	"负控制：env（node）与 mock **同名** ⇒ mock 必须赢（既有优先级语义） 断言：expect(got.value).toBe(7);"	夹具漏形态	keep	keep	—
 "没有 mock 时宿主应答不变"	"负控制：没有 mock ⇒ 宿主应答 断言：expect(got.value).toBe(7);"	没测该层	keep	keep	—
 "collectAbsBindingsFromGraph：宿主内建名的 mock 生效（顶层 const 求值面）"	"负控制：没有 mock ⇒ 宿主应答 断言：expect(binds.has(\"x\")).toBe(true);；expect(lit.ok).toBe(true);"	没测该层	keep	keep	—
-"被替换调用的 throws 域保留（L2 门禁不再假绿）"	"修复前：命中节点整段替换 → 原表达式从不求值 → 副作用归零、抛错域消失 （`JSON.parse(input)` 的 TypeError 被吞 → L2 假绿）。 指令作用范围按 **AST 节点身份**（源文本字符区间）判定，不是 「同一行号窗口」——不再泄漏进嵌套语句 / 嵌套函数体 / 同行下一条语句 （文档承诺「only affects the immediately following statement」）。 断言：expect(l2Count(check(withDirective), \"f\")).toBe(1);；expect(l2Count(check(control), \"f\")).toBe(1);"	没测该层	keep	keep	—
-"被替换调用的副作用保留（求值发生，结果取注入值）"	"断言：expect(witness(withDirective)).toBe(\"1\");；expect(witness(control)).toBe(\"1\");"	没测该层	keep	keep	—
-"负控制：未被标注的相邻子表达式照常求值"	"修复前：命中节点整段替换 → 原表达式从不求值 → 副作用归零、抛错域消失 （`JSON.parse(input)` 的 TypeError 被吞 → L2 假绿）。 指令作用范围按 **AST 节点身份**（源文本字符区间）判定，不是 「同一行号窗口」——不再泄漏进嵌套语句 / 嵌套函数体 / 同行下一条语句 （文档承诺「only affects the immediately following statement」）。 断言：expect(witness(src)).toBe(\"110\");"	没测该层	keep	keep	—
-"@nudo:as 挂在 if 上不泄漏进块内的 return"	"修复前：命中节点整段替换 → 原表达式从不求值 → 副作用归零、抛错域消失 （`JSON.parse(input)` 的 TypeError 被吞 → L2 假绿）。 指令作用范围按 **AST 节点身份**（源文本字符区间）判定，不是 「同一行号窗口」——不再泄漏进嵌套语句 / 嵌套函数体 / 同行下一条语句 （文档承诺「only affects the immediately following statement」）。 断言：expect(sigOf(check(withDirective), \"f\")).toBe(sigOf(check(control), \"f\"));；expect(sigOf(check(withDire"	没测该层	keep	keep	—
-"@nudo:replace 不泄漏进嵌套函数体"	"修复前：命中节点整段替换 → 原表达式从不求值 → 副作用归零、抛错域消失 （`JSON.parse(input)` 的 TypeError 被吞 → L2 假绿）。 指令作用范围按 **AST 节点身份**（源文本字符区间）判定，不是 「同一行号窗口」——不再泄漏进嵌套语句 / 嵌套函数体 / 同行下一条语句 （文档承诺「only affects the immediately following statement」）。 断言：expect(sigOf(check(withDirective), \"f\")).toBe(sigOf(check(control), \"f\"));"	没测该层	keep	keep	—
-"@nudo:replace 只作用于被标注的那条语句（同行下一条不受影响）"	"修复前：命中节点整段替换 → 原表达式从不求值 → 副作用归零、抛错域消失 （`JSON.parse(input)` 的 TypeError 被吞 → L2 假绿）。 指令作用范围按 **AST 节点身份**（源文本字符区间）判定，不是 「同一行号窗口」——不再泄漏进嵌套语句 / 嵌套函数体 / 同行下一条语句 （文档承诺「only affects the immediately following statement」）。 断言：expect(sig).toContain(\"[number, any]\");；expect(sig).not.toContain(\"[number, number]\");"	没测该层	keep	keep	—
-"负控制：指令仍作用于它标注的那条语句"	"修复前：命中节点整段替换 → 原表达式从不求值 → 副作用归零、抛错域消失 （`JSON.parse(input)` 的 TypeError 被吞 → L2 假绿）。 指令作用范围按 **AST 节点身份**（源文本字符区间）判定，不是 「同一行号窗口」——不再泄漏进嵌套语句 / 嵌套函数体 / 同行下一条语句 （文档承诺「only affects the immediately following statement」）。 断言：expect(witness(src)).toBe(\"110\");"	没测该层	keep	keep	—
-"负控制：@nudo:as 仍覆盖紧随语句的 init"	"修复前：命中节点整段替换 → 原表达式从不求值 → 副作用归零、抛错域消失 （`JSON.parse(input)` 的 TypeError 被吞 → L2 假绿）。 指令作用范围按 **AST 节点身份**（源文本字符区间）判定，不是 「同一行号窗口」——不再泄漏进嵌套语句 / 嵌套函数体 / 同行下一条语句 （文档承诺「only affects the immediately following statement」）。 断言：expect(witness(src)).toBe(\"string\");"	没测该层	keep	keep	—
-"skip 且未声明返回 ⇒ 仍然声明成 unknown（与 check 同源、TS 投影面归一）"	"`@nudo:skip`（未声明返回类型）让 export 面把**整条导出静默丢掉** （`.d.ts` 里该函数不存在，exit 0 零警告），而 `nudo check`（core）为同一 函数合成 `any` ⇒ 两面相反 + 消费端 `import` TS2305。 修法：`combinedAbs == null` 分支不再返回空行，投影成 `(...args: unknown[]): unknown` （2026-11-06 TS 投影面归一； 断言：expect(dts).toContain(\"export declare function boom(...args: unknown[]): unknown;\");"	没测该层	keep	keep	—
-"对照组：未 skip 的普通函数仍然走推断面（不受本修法影响）"	"`@nudo:skip`（未声明返回类型）让 export 面把**整条导出静默丢掉** （`.d.ts` 里该函数不存在，exit 0 零警告），而 `nudo check`（core）为同一 函数合成 `any` ⇒ 两面相反 + 消费端 `import` TS2305。 修法：`combinedAbs == null` 分支不再返回空行，投影成 `(...args: unknown[]): unknown` （2026-11-06 TS 投影面归一； 断言：expect(dts).toMatch(/export declare function plain\\(/);；expect(dts).not.toContain(\"exp"	没测该层	keep	keep	—
 "只有孤儿指令 ⇒ 有一条「无处可施」诊断（既有口径）"	"根因：`packages/service/src/eval-injection.ts` 的 `collectInto` 只在 「收集表**全空**」（`acc.targets.length === 0 && acc.asTargets.length === 0`） 时才发那条 `nudo:directive-syntax`； 断言非永真：改前 `ORPHAN_PLUS_WORKING` 的孤儿诊断数为 **0**（`ORPHAN_ONLY` 为 1）⇒ 同一份写错的指令只因文件里多了一条有效指令就隐身。 断言：expect(orphanDiags(ORPHAN_ONLY)).toHaveLength(1);"	没测该层	keep	keep	—
 "孤儿 + 一条生效的 @nudo:as ⇒ 孤儿诊断**仍然在场**（改前被抑制为 0）"	"两处孤儿（同一文案、不同位置）⇒ 各报一条（位置进身份） 断言：expect(orphanDiags(ORPHAN_PLUS_WORKING)).toHaveLength(1);；expect(orphanDiags(ORPHAN_PLUS_WORKING)[0]!.message).toBe("	没测该层	keep	keep	—
 "生效的那条 @nudo:as 照旧进入收集表（抑制解除没有副作用）"	"根因：`packages/service/src/eval-injection.ts` 的 `collectInto` 只在 「收集表**全空**」（`acc.targets.length === 0 && acc.asTargets.length === 0`） 时才发那条 `nudo:directive-syntax`； 断言非永真：改前 `ORPHAN_PLUS_WORKING` 的孤儿诊断数为 **0**（`ORPHAN_ONLY` 为 1）⇒ 同一份写错的指令只因文件里多了一条有效指令就隐身。 断言：expect(collectEvalReplacements_____eval_injection_ts(ORPHAN_PL"	没测该层	keep	keep	—
 "两处孤儿各报一条（改前合并成一条）"	"断言：expect(orphanDiags(TWO_ORPHANS)).toHaveLength(2);"	没测该层	keep	keep	—
-"② 目标写错 ⇒ 有一条点名目标文本的诊断"	"② 目标写错一个字母（源码里是 `JSON.parse(input)`）。 断言：expect(diags).toHaveLength(1);；expect(diags[0]!.code).toBe(\"nudo:directive-syntax\");"	没测该层	keep	keep	—
-"① 目标写对 ⇒ 零该诊断（且指令确实命中了节点）"	"断言：expect(replaceMissDiags(REPLACE_HIT)).toEqual([]);；expect(reps.targets).toHaveLength(1);"	没测该层	keep	keep	—
-"③ 根本没有该指令 ⇒ 零该诊断（不许误报）"	"断言：expect(replaceMissDiags(REPLACE_NONE)).toEqual([]);；expect(diagsOf(REPLACE_NONE)).toEqual([]);"	没测该层	keep	keep	—
-"② 与 ③ 可区分（改前两者的诊断集逐字相同）"	"/ 指令的**语义前提被违反**时，引擎**静默失效、零诊断** ⇒ 唯一的信号是**归因错误**的 `nudo:unknown-inference`（把「你的指令没生效」 说成「推断精度不够」）⇒ 假红 / 假绿。 ── （`@nudo:replace` 的目标文本在源码里不存在）──────────────────── 病灶：`packages/service/src/eval-injection.ts` 的**收集面**把「目标文本在 本语句作用域内无对应节点」降级成一条**无作用域**登记项（`stmtStart/stmtEnd` 缺省）⇒ 转译面（core 的 `matchReplacement`）恒跳过 ⇒ 声明的类型覆"	没测该层	keep	keep	—
-"门禁面可见：warning 级（不挡 exit），且文案点名目标"	"/ 指令的**语义前提被违反**时，引擎**静默失效、零诊断** ⇒ 唯一的信号是**归因错误**的 `nudo:unknown-inference`（把「你的指令没生效」 说成「推断精度不够」）⇒ 假红 / 假绿。 ── （`@nudo:replace` 的目标文本在源码里不存在）──────────────────── 病灶：`packages/service/src/eval-injection.ts` 的**收集面**把「目标文本在 本语句作用域内无对应节点」降级成一条**无作用域**登记项（`stmtStart/stmtEnd` 缺省）⇒ 转译面（core 的 `matchReplacement`）恒跳过 ⇒ 声明的类型覆"	没测该层	keep	keep	—
-"② 重复声明 ⇒ 有一条点名两条来源的诊断"	"/ 指令的**语义前提被违反**时，引擎**静默失效、零诊断** ⇒ 唯一的信号是**归因错误**的 `nudo:unknown-inference`（把「你的指令没生效」 说成「推断精度不够」）⇒ 假红 / 假绿。 ── （`@nudo:replace` 的目标文本在源码里不存在）──────────────────── 病灶：`packages/service/src/eval-injection.ts` 的**收集面**把「目标文本在 本语句作用域内无对应节点」降级成一条**无作用域**登记项（`stmtStart/stmtEnd` 缺省）⇒ 转译面（core 的 `matchReplacement`）恒跳过 ⇒ 声明的类型覆"	没测该层	keep	keep	—
-"① 单条声明 ⇒ 零该诊断（不许误报）"	"断言：expect(r.errors).toEqual([]);；expect(r.applied).toBe(true);"	没测该层	keep	keep	—
-"② 重复后先声明者的导出名不得静默消失（不退化成 unknown）"	"/ 指令的**语义前提被违反**时，引擎**静默失效、零诊断** ⇒ 唯一的信号是**归因错误**的 `nudo:unknown-inference`（把「你的指令没生效」 说成「推断精度不够」）⇒ 假红 / 假绿。 ── （`@nudo:replace` 的目标文本在源码里不存在）──────────────────── 病灶：`packages/service/src/eval-injection.ts` 的**收集面**把「目标文本在 本语句作用域内无对应节点」降级成一条**无作用域**登记项（`stmtStart/stmtEnd` 缺省）⇒ 转译面（core 的 `matchReplacement`）恒跳过 ⇒ 声明的类型覆"	没测该层	keep	keep	—
-"门禁面可见：warning 级（不挡 exit）"	"/ 指令的**语义前提被违反**时，引擎**静默失效、零诊断** ⇒ 唯一的信号是**归因错误**的 `nudo:unknown-inference`（把「你的指令没生效」 说成「推断精度不够」）⇒ 假红 / 假绿。 ── （`@nudo:replace` 的目标文本在源码里不存在）──────────────────── 病灶：`packages/service/src/eval-injection.ts` 的**收集面**把「目标文本在 本语句作用域内无对应节点」降级成一条**无作用域**登记项（`stmtStart/stmtEnd` 缺省）⇒ 转译面（core 的 `matchReplacement`）恒跳过 ⇒ 声明的类型覆"	没测该层	keep	keep	—
-"重复声明不影响单条声明的既有口径（局部形态：未点名的名字回落原模块）"	"断言：expect(r.errors.filter((e) => e.message.includes(\"Duplicate @nudo:mock-module\"))).toHaveLength(1);；expect(Object.keys(r.modules.fs!.named).sort()).toEqual([\"readFile\", \"writeFile\"]);"	没测该层	keep	keep	—
-"applies in the declaring function only (entry B)"	"修复前：命中节点整段替换 → 原表达式从不求值 → 副作用归零、抛错域消失 （`JSON.parse(input)` 的 TypeError 被吞 → L2 假绿）。 指令作用范围按 **AST 节点身份**（源文本字符区间）判定，不是 「同一行号窗口」——不再泄漏进嵌套语句 / 嵌套函数体 / 同行下一条语句 （文档承诺「only affects the immediately following statement」）。 断言：expect(litValue(callMock.result)).toEqual({ ok: true, value: \"mocked\" });；expect(callReal.result.shape"	没测该层	keep	keep	—
-"same function keeps the same result as a direct target (entry A)"	"/ 指令的**语义前提被违反**时，引擎**静默失效、零诊断** ⇒ 唯一的信号是**归因错误**的 `nudo:unknown-inference`（把「你的指令没生效」 说成「推断精度不够」）⇒ 假红 / 假绿。 ── （`@nudo:replace` 的目标文本在源码里不存在）──────────────────── 病灶：`packages/service/src/eval-injection.ts` 的**收集面**把「目标文本在 本语句作用域内无对应节点」降级成一条**无作用域**登记项（`stmtStart/stmtEnd` 缺省）⇒ 转译面（core 的 `matchReplacement`）恒跳过 ⇒ 声明的类型覆"	没测该层	keep	keep	—
-"目标命中声明符 id（绑定位）⇒ 不算命中 + 显式诊断"	"`@nudo:replace` 的目标文本命中**绑定位 / 对象属性键位**（非表达式位） ⇒ 收集面算「命中」，转译面却只在**表达式发射入口**调用 `matchReplacement` ⇒ 指令**静默失效且零诊断**（引擎自己的「matched no expression」告警被绕过）。 根因：`packages/service/src/eval-injection.ts` 的 `replaceCandidateRanges` 遍历整棵子树，把任何归一化文本等于 target 的节点都收成候选——不区分节点 所在的**槽位**（`VariableDeclarator.id` / `ObjectProperty.key` /"	夹具漏形态	keep	keep	—
-"目标命中对象属性键位 ⇒ 不算命中 + 显式诊断"	"断言：expect(registeredOffsets(OBJ_KEY)).toEqual([undefined]);；expect(diags).toHaveLength(1);"	没测该层	keep	keep	—
-"对照组：目标命中属性值（表达式位）⇒ 命中有区间、零诊断、替换生效"	"对照组：目标全文没有 ⇒ 必须告警 断言：expect(typeof registeredOffsets(OBJ_VAL)[0]).toBe(\"number\");；expect(directiveDiagsOf(OBJ_VAL)).toEqual([]);"	没测该层	keep	keep	—
-"对照组：目标全文未命中 ⇒ 仍然是「matched no expression」告警"	"对照组：目标全文没有 ⇒ 必须告警 断言：expect(diags).toHaveLength(1);；expect(diags[0]!.message).toContain('@nudo:replace target \"zzz\"');"	没测该层	keep	keep	—
 "C：内层同名函数的 skip 不再顶掉外层（C 的签名 == D 的签名）"	"E：外层无 skip + 内层**同名** string（越界组） 断言：expect(collectSkipReturns(C).get(\"f\")).toBeDefined();；expect(signatureOf(C, \"f\").display).toBe(signatureOf(D, \"f\").display);"	夹具漏形态	keep	keep	—
 "E：外层没有 skip ⇒ 内层同名 skip 不越界（该名不进 skip 表）"	"E：外层无 skip + 内层**同名** string（越界组） 断言：expect(collectSkipReturns(E).has(\"f\")).toBe(false);；expect(collectSkipReturns(F).has(\"f\")).toBe(false);"	夹具漏形态	keep	keep	—
 "E 与 F 的签名逐字相同（导出函数的 throws 标注不再被抹掉）"	"② 外层**没有** skip 时内层的 skip **越界**作用到导出函数上（body 不再 评估 ⇒ 导出签名的 **throws 标注被抹掉**）。 根因：`packages/parser/src/directives/fn-directives.ts` 的 `collectFnDirectives` 只推 `{ node, name, directives }`——**把 core scope 自带的 `depth` 丢掉了** ⇒ 消费面 `packages/service/src/skip-directives.ts` 的 `collectSkipReturns` 只能 `Map.set(fn.name, …)` ⇒"	没测该层	keep	keep	—
@@ -84,4 +65,30 @@ reports every missing named export	dup:mock/点名缺失契约表	commit:439e7ca
 a missing `default` named export is reported the same way	dup:mock/点名缺失契约表	commit:439e7ca5
 surfaces on the check face as nudo:module-missing (error)	dup:mock/点名缺失契约表	commit:439e7ca5
 full replacement (no names list) is unaffected	dup:mock/点名缺失契约表	commit:439e7ca5
+被替换调用的 throws 域保留（L2 门禁不再假绿）	dup:mock 中段契约表	commit:9cf95a50
+被替换调用的副作用保留（求值发生，结果取注入值）	dup:mock 中段契约表	commit:9cf95a50
+负控制：未被标注的相邻子表达式照常求值	dup:mock 中段契约表	commit:9cf95a50
+@nudo:as 挂在 if 上不泄漏进块内的 return	dup:mock 中段契约表	commit:9cf95a50
+@nudo:replace 不泄漏进嵌套函数体	dup:mock 中段契约表	commit:9cf95a50
+@nudo:replace 只作用于被标注的那条语句（同行下一条不受影响）	dup:mock 中段契约表	commit:9cf95a50
+负控制：指令仍作用于它标注的那条语句	dup:mock 中段契约表	commit:9cf95a50
+负控制：@nudo:as 仍覆盖紧随语句的 init	dup:mock 中段契约表	commit:9cf95a50
+skip 且未声明返回 ⇒ 仍然声明成 unknown（与 check 同源、TS 投影面归一）	dup:mock 中段契约表	commit:9cf95a50
+对照组：未 skip 的普通函数仍然走推断面（不受本修法影响）	dup:mock 中段契约表	commit:9cf95a50
+② 目标写错 ⇒ 有一条点名目标文本的诊断	dup:mock 中段契约表	commit:9cf95a50
+① 目标写对 ⇒ 零该诊断（且指令确实命中了节点）	dup:mock 中段契约表	commit:9cf95a50
+③ 根本没有该指令 ⇒ 零该诊断（不许误报）	dup:mock 中段契约表	commit:9cf95a50
+② 与 ③ 可区分（改前两者的诊断集逐字相同）	dup:mock 中段契约表	commit:9cf95a50
+门禁面可见：warning 级（不挡 exit），且文案点名目标	dup:mock 中段契约表	commit:9cf95a50
+② 重复声明 ⇒ 有一条点名两条来源的诊断	dup:mock 中段契约表	commit:9cf95a50
+① 单条声明 ⇒ 零该诊断（不许误报）	dup:mock 中段契约表	commit:9cf95a50
+② 重复后先声明者的导出名不得静默消失（不退化成 unknown）	dup:mock 中段契约表	commit:9cf95a50
+门禁面可见：warning 级（不挡 exit）	dup:mock 中段契约表	commit:9cf95a50
+重复声明不影响单条声明的既有口径（局部形态：未点名的名字回落原模块）	dup:mock 中段契约表	commit:9cf95a50
+applies in the declaring function only (entry B)	dup:mock 中段契约表	commit:9cf95a50
+same function keeps the same result as a direct target (entry A)	dup:mock 中段契约表	commit:9cf95a50
+目标命中声明符 id（绑定位）⇒ 不算命中 + 显式诊断	dup:mock 中段契约表	commit:9cf95a50
+目标命中对象属性键位 ⇒ 不算命中 + 显式诊断	dup:mock 中段契约表	commit:9cf95a50
+对照组：目标命中属性值（表达式位）⇒ 命中有区间、零诊断、替换生效	dup:mock 中段契约表	commit:9cf95a50
+对照组：目标全文未命中 ⇒ 仍然是「matched no expression」告警	dup:mock 中段契约表	commit:9cf95a50
 ```
