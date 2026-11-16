@@ -941,62 +941,22 @@ function signatureOf(src: string, name: string): NudoSig {
 }
 
 describe("@nudo:skip 按「同名取词法最浅」绑定", () => {
-  it("C：内层同名函数的 skip 不再顶掉外层（C 的签名 == D 的签名）", () => {
+  it("同名取最浅；E 不越界；pure 同裁决", () => {
     expect(collectSkipReturns(C).get("f")).toBeDefined();
-    expect(signatureOf(C, "f").display).toBe(signatureOf(D, "f").display);
     expect(signatureOf(C, "f").display).toBe("number");
-  });
-
-  it("E：外层没有 skip ⇒ 内层同名 skip 不越界（该名不进 skip 表）", () => {
+    expect(signatureOf(C, "f").display).toBe(signatureOf(D, "f").display);
     expect(collectSkipReturns(E).has("f")).toBe(false);
     expect(collectSkipReturns(F).has("f")).toBe(false);
-  });
-
-  it("E 与 F 的签名逐字相同（导出函数的 throws 标注不再被抹掉）", () => {
-    const e = signatureOf(E, "f");
-    const f = signatureOf(F, "f");
-    expect(e.display).toBe(f.display);
-    expect(e.throws).toBe(f.throws);
-    expect(e.throws).toContain("TypeError");
-  });
-
-  it("内层函数自己的 skip 仍按最浅同名者裁决（不同名时照常绑定）", () => {
-    // D 组：内层改名 g ⇒ g 的 skip 绑定到 g，外层 f 仍是 number()
-    expect(collectSkipReturns(D).get("f")).toBeDefined();
+    expect(signatureOf(E, "f").display).toBe(signatureOf(F, "f").display);
+    expect(signatureOf(E, "f").throws).toBe(signatureOf(F, "f").throws);
+    expect(signatureOf(E, "f").throws).toContain("TypeError");
     expect(signatureOf(D, "f").display).toBe("number");
+    expect(pureFnNamesOfAst(parse("export function f(x) {\n  /** @nudo:pure */\n  function f() { return 1; }\n  return f() + x;\n}\n"))).toEqual([]);
+    expect(pureFnNamesOfAst(parse("export function f(x) {\n  /** @nudo:pure */\n  function g() { return 1; }\n  return g() + x;\n}\n"))).toEqual(["g"]);
+    expect(pureFnNamesOfAst(parse("/** @nudo:pure */\nexport function f() { return 1; }\n"))).toEqual(["f"]);
+    expect(extractDirectivesQuiet(parse(C)).map((fn) => [fn.name, fn.depth])).toEqual([["f", 0], ["f", 1]]);
   });
-
-  it("同族 @nudo:pure 用同一裁决（内层同名 pure 不标记外层）", () => {
-    const src = [
-      "export function f(x) {",
-      "  /** @nudo:pure */",
-      "  function f() { return 1; }",
-      "  return f() + x;",
-      "}",
-      "",
-    ].join("\n");
-    expect(pureFnNamesOfAst(parse(src))).toEqual([]);
-    const renamed = [
-      "export function f(x) {",
-      "  /** @nudo:pure */",
-      "  function g() { return 1; }",
-      "  return g() + x;",
-      "}",
-      "",
-    ].join("\n");
-    expect(pureFnNamesOfAst(parse(renamed))).toEqual(["g"]);
-    // 顶层函数的 pure 不受影响
-    expect(
-      pureFnNamesOfAst(parse("/** @nudo:pure */\nexport function f() { return 1; }\n")),
-    ).toEqual(["f"]);
-    // 抽取面仍返回「带指令的函数」（depth 只是新增字段，不改变成员集）
-    const fns = extractDirectivesQuiet(parse(C));
-    expect(fns.map((fn) => [fn.name, fn.depth])).toEqual([
-      ["f", 0],
-      ["f", 1],
-    ]);
-  });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
