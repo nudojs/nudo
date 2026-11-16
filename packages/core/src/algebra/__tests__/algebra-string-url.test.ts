@@ -39,34 +39,43 @@ describe("URL 组件写入可写性", () => {
 
 
 describe("URL 组件写入可写性", () => {
-  it("u.href = … 合法且读回新值（改前 never throws TypeError）", () => {
+  it("u.href = … 合法且读回新值（改前 never throws TypeError）；其它可写组件（protocol/pathname/search/hash/port）同样不抛；origin 是 getter-only ⇒ strict 下仍确定抛 TypeError；同名用户自定义 class URL 的 this.href 写入不再被表误伤", () => {
+(() => {
+
     const r = call(
       `export function f() { const u = new URL("https://a.example/p?q=1#h"); u.href = "https://b.example/y"; return u.href; }`,
     );
     expect(litValue(r.result)).toEqual({ ok: true, value: "https://b.example/y" });
     expect(isNever(r.result)).toBe(false);
-  });
+  })();
+(() => {
 
-  it("其它可写组件（protocol/pathname/search/hash/port）同样不抛", () => {
     for (const key of ["protocol", "pathname", "search", "hash", "port"]) {
       const r = call(
         `export function f() { const u = new URL("https://a.example/p?q=1#h"); u.${key} = u.${key}; return 1; }`,
       );
       expect(litValue(r.result), key).toEqual({ ok: true, value: 1 });
     }
-  });
+  })();
+(() => {
 
-  it("origin 是 getter-only ⇒ strict 下仍确定抛 TypeError", () => {
     const r = call(`export function f() { const u = new URL("https://a.example/p"); u.origin = "x"; return 1; }`);
     expect(isNever(r.result)).toBe(true);
     expect(throwsError(r.throws, "TypeError")).toBe(true);
-  });
+  })();
+(() => {
 
-  it("同名用户自定义 class URL 的 this.href 写入不再被表误伤", () => {
     const r = call(`class URL { constructor() { this.href = "x"; } }
 export function f() { return new URL().href; }`);
     expect(litValue(r.result)).toEqual({ ok: true, value: "x" });
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -84,32 +93,41 @@ describe("字符串数组解构按码点", () => {
 
 
 describe("字符串数组解构按码点", () => {
-  it("const [a] = '𠮷' ⇒ a.length === 2（改前 1）", () => {
+  it("const [a] = '𠮷' ⇒ a.length === 2（改前 1）；const [a,b] = '𠮷x' ⇒ 完整码点 + 后继字符；rest 段同样按码点；ASCII 与 spread / for-of 既有精度不变", () => {
+(() => {
+
     expect(val(`export function f() { const [a] = "\\u{20BB7}"; return a.length; }`)).toEqual({
       ok: true,
       value: 2,
     });
-  });
+  })();
+(() => {
 
-  it("const [a,b] = '𠮷x' ⇒ 完整码点 + 后继字符", () => {
     expect(val(`export function f() { const [a, b] = "\\u{20BB7}x"; return a + "|" + b; }`)).toEqual({
       ok: true,
       value: "𠮷|x",
     });
-  });
+  })();
+(() => {
 
-  it("rest 段同样按码点", () => {
     expect(val(`export function f() { const [a, ...rest] = "\\u{20BB7}xy"; return a + rest.join(""); }`)).toEqual({
       ok: true,
       value: "𠮷xy",
     });
-  });
+  })();
+(() => {
 
-  it("ASCII 与 spread / for-of 既有精度不变", () => {
     expect(val(`export function f() { const [a, b] = "xy"; return a + b; }`)).toEqual({ ok: true, value: "xy" });
     expect(val(`export function f() { return [..."𠮷"].length; }`)).toEqual({ ok: true, value: 1 });
     expect(val(`export function f() { return "𠮷".length; }`)).toEqual({ ok: true, value: 2 });
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -126,32 +144,41 @@ describe("URL.searchParams 回写父 URL", () => {
 
 
 describe("URL.searchParams 回写父 URL", () => {
-  it("set 后 u.search 是 '?b=2'（改前 '?b=1'）", () => {
+  it("set 后 u.search 是 '?b=2'（改前 '?b=1'）；delete 后 u.href 去掉查询串；append 后 u.href 增出新查询串；负控制：searchParams 自身与独立 URLSearchParams 精度不变", () => {
+(() => {
+
     expect(
       val(`export function f() { const u = new URL("https://x.com/a?b=1"); u.searchParams.set("b", "2"); return u.search; }`),
     ).toEqual({ ok: true, value: "?b=2" });
-  });
+  })();
+(() => {
 
-  it("delete 后 u.href 去掉查询串", () => {
     expect(
       val(`export function f() { const u = new URL("https://x.com/a?b=1"); u.searchParams.delete("b"); return u.href; }`),
     ).toEqual({ ok: true, value: "https://x.com/a" });
-  });
+  })();
+(() => {
 
-  it("append 后 u.href 增出新查询串", () => {
     expect(
       val(`export function f() { const u = new URL("https://x.com/a"); u.searchParams.append("q", "1"); return u.href; }`),
     ).toEqual({ ok: true, value: "https://x.com/a?q=1" });
-  });
+  })();
+(() => {
 
-  it("负控制：searchParams 自身与独立 URLSearchParams 精度不变", () => {
     expect(
       val(`export function f() { const u = new URL("https://x.com/a?b=1"); u.searchParams.set("b","2"); return u.searchParams.toString(); }`),
     ).toEqual({ ok: true, value: "b=2" });
     expect(
       val(`export function f() { const p = new URLSearchParams("b=1"); p.set("b","2"); return p.toString(); }`),
     ).toEqual({ ok: true, value: "b=2" });
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -181,16 +208,21 @@ describe("模板插值用 ToString 判据", () => {
     });
   }
 
-  it("值面仍精确（普通闭对象）", () => {
-    expect(val(wrap(`const o = {}; return \`o=\${o}\`;`))).toEqual({ ok: true, value: "o=[object Object]" });
-  });
+  it("值面仍精确（普通闭对象）；负控制：Symbol 插值的确定 TypeError 仍成立", () => {
+(() => {
 
-  it("负控制：Symbol 插值的确定 TypeError 仍成立", () => {
+    expect(val(wrap(`const o = {}; return \`o=\${o}\`;`))).toEqual({ ok: true, value: "o=[object Object]" });
+  })();
+(() => {
+
     const r = effects(wrap(`return \`\${Symbol()}\`;`));
     // 确定抛走 throws 面（不进软 may-throw 收集器）⇒ 只钉不误记软通道
     expect(r).not.toContain("TypeError");
     expect(val(wrap(`return 1;`))).toEqual({ ok: true, value: 1 });
-  });
+  })();
+});;
+
+  ;
 });
 });
 
@@ -223,27 +255,29 @@ const lit = (src: string): unknown => {
 const wrap = (body: string): string => `export function f() { ${body} }`;
 
 describe("正则字面量的 flags 按规范序", () => {
-  it("/a/gimuyds.flags ⇒ \"dgimsuy\"（源码序 ≠ 规范序）", () => {
+  it("/a/gimuyds.flags ⇒ \"dgimsuy\"（源码序 ≠ 规范序）；/a/gmsiy.flags ⇒ \"gimsy\"；/a/gimuyds.toString() ⇒ \"/a/dgimsuy\"；构造路径仍正确（回归控制）：new RegExp(\"a\",\"gimuyds\").flags ⇒ \"dgimsuy\"；已规范的 flags 不变（回归控制）：/a/gimsuy.flags ⇒ \"gimsuy\"；7 个布尔标志 getter 与顺序无关（回归控制）", () => {
+(() => {
+
     expect(lit(wrap("return /a/gimuyds.flags;"))).toBe("dgimsuy");
-  });
+  })();
+(() => {
 
-  it("/a/gmsiy.flags ⇒ \"gimsy\"", () => {
     expect(lit(wrap("return /a/gmsiy.flags;"))).toBe("gimsy");
-  });
+  })();
+(() => {
 
-  it("/a/gimuyds.toString() ⇒ \"/a/dgimsuy\"", () => {
     expect(lit(wrap("return /a/gimuyds.toString();"))).toBe("/a/dgimsuy");
-  });
+  })();
+(() => {
 
-  it("构造路径仍正确（回归控制）：new RegExp(\"a\",\"gimuyds\").flags ⇒ \"dgimsuy\"", () => {
     expect(lit(wrap("return new RegExp(\"a\",\"gimuyds\").flags;"))).toBe("dgimsuy");
-  });
+  })();
+(() => {
 
-  it("已规范的 flags 不变（回归控制）：/a/gimsuy.flags ⇒ \"gimsuy\"", () => {
     expect(lit(wrap("return /a/gimsuy.flags;"))).toBe("gimsuy");
-  });
+  })();
+(() => {
 
-  it("7 个布尔标志 getter 与顺序无关（回归控制）", () => {
     expect(lit(wrap("return /a/gimuyds.global;"))).toBe(true);
     expect(lit(wrap("return /a/gimuyds.ignoreCase;"))).toBe(true);
     expect(lit(wrap("return /a/gimuyds.hasIndices;"))).toBe(true);
@@ -251,7 +285,18 @@ describe("正则字面量的 flags 按规范序", () => {
     expect(lit(wrap("return /a/gimuyds.unicode;"))).toBe(true);
     expect(lit(wrap("return /a/gimuyds.dotAll;"))).toBe(true);
     expect(lit(wrap("return /a/gimuyds.multiline;"))).toBe(true);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -288,102 +333,122 @@ describe("`String(o)` 走 string hint（不调 valueOf）", () => {
 
 
 describe("`String(o)` 走 string hint（不调 valueOf）", () => {
-  it("`String({valueOf})`：valueOf 不调用（native：0）", () => {
+  it("`String({valueOf})`：valueOf 不调用（native：0）；`String({valueOf, toString})`：toString 先、valueOf 不调用（native：1 → 编码 1）；`String(o)` 的返回值面仍是 string（值折叠不在本条范围，副作用面已修复）；用户 toString 返回非原语 ⇒ 原生回退 valueOf（ES OrdinaryToPrimitive；native:1）；null-proto 无 coe", () => {
+(() => {
+
     expect(
       val(
         `export function f() { let c = 0; const o = { valueOf(){ c += 10; return 1; } }; String(o); return c; }`,
       ),
     ).toEqual({ ok: true, value: 0 });
-  });
+  })();
+(() => {
 
-  it("`String({valueOf, toString})`：toString 先、valueOf 不调用（native：1 → 编码 1）", () => {
     expect(
       val(
         `export function f() { let v = 0, t = 0; const o = { valueOf(){ v += 1; return 1; }, toString(){ t += 1; return "s"; } }; String(o); return v * 10 + t; }`,
       ),
     ).toEqual({ ok: true, value: 1 });
-  });
+  })();
+(() => {
 
-  it("`String(o)` 的返回值面仍是 string（值折叠不在本条范围，副作用面已修复）", () => {
     const r = val(
       `export function f() { const o = { valueOf(){ return 1; }, toString(){ return "s"; } }; return String(o); }`,
     );
     // 修前也是非字面量；此处只钉住「不是 number 1」——string hint 下绝不用 valueOf 的结果
     expect(r.ok === false || typeof r.value === "string").toBe(true);
-  });
-  it("用户 toString 返回非原语 ⇒ 原生回退 valueOf（ES OrdinaryToPrimitive；native:1）", () => {
+  })();
+(() => {
+
     expect(
       val(
         `export function f() { let v = 0; const o = { toString(){ return {}; }, valueOf(){ v += 1; return 1; } }; String(o); return v; }`,
       ),
     ).toEqual({ ok: true, value: 1 });
-  });
+  })();
+(() => {
 
-  it("null-proto 无 coercer ⇒ 仍定抛 TypeError（String(Object.create(null))）", () => {
     const r = call(
       `export function f() { return String(Object.create(null)); }`,
     );
     expect(throwsError(r.throws, "TypeError")).toBe(true);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+  ;
+
+  ;
 });
 
 describe("`+` 运算符面保持 default hint（回归）", () => {
-  it("`o + 1`：valueOf 调一次（native：1）", () => {
+  it("`o + 1`：valueOf 调一次（native：1）；`o + \"\"`：default hint 下 valueOf 先（无自有 valueOf ⇒ toString 一次，native：1）；`[Symbol.toPrimitive]` 优先于 hint（两种面各调一次）", () => {
+(() => {
+
     expect(
       val(
         `export function f() { let v = 0; const o = { valueOf(){ v += 1; return 1; } }; o + 1; return v; }`,
       ),
     ).toEqual({ ok: true, value: 1 });
-  });
+  })();
+(() => {
 
-  it("`o + \"\"`：default hint 下 valueOf 先（无自有 valueOf ⇒ toString 一次，native：1）", () => {
     expect(
       val(
         `export function f() { let t = 0; const o = { toString(){ t += 1; return "s"; } }; o + ""; return t; }`,
       ),
     ).toEqual({ ok: true, value: 1 });
-  });
+  })();
+(() => {
 
-  it("`[Symbol.toPrimitive]` 优先于 hint（两种面各调一次）", () => {
     expect(
       val(
         `export function f() { let n = 0; const o = { [Symbol.toPrimitive](){ n += 1; return "s"; } }; String(o); o + 1; return n; }`,
       ),
     ).toEqual({ ok: true, value: 2 });
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 
 describe("模板插值走 string hint（`$toStr` 降级位）", () => {
-  it("`${o}`：valueOf 不调用（native：0）", () => {
+  it("`${o}`：valueOf 不调用（native：0）；`${o}` + toString：toString 先、valueOf 不调用（native：编码 1）；两次插值 ⇒ 每次各调一次 toString（native：2）；`${Symbol()}` ⇒ 原生 TypeError（`String(sym)` 不抛，模板抛）；字面量插值仍折叠（`a${\"b\"}c` ⇒ \"abc\"；`${1}` ⇒ \"1\"）；bigint / null / undefined 字面量插值", () => {
+(() => {
+
     expect(
       val(
         "export function f() { let c = 0; const o = { valueOf(){ c += 10; return 1; } }; const s = `${o}`; return c; }",
       ),
     ).toEqual({ ok: true, value: 0 });
-  });
+  })();
+(() => {
 
-  it("`${o}` + toString：toString 先、valueOf 不调用（native：编码 1）", () => {
     expect(
       val(
         "export function f() { let v = 0, t = 0; const o = { valueOf(){ v += 1; return 1; }, toString(){ t += 1; return \"s\"; } }; `${o}`; return v * 10 + t; }",
       ),
     ).toEqual({ ok: true, value: 1 });
-  });
+  })();
+(() => {
 
-  it("两次插值 ⇒ 每次各调一次 toString（native：2）", () => {
     expect(
       val(
         "export function f() { let t = 0; const o = { toString(){ t += 1; return \"s\"; } }; const s = `${o}${o}`; return t; }",
       ),
     ).toEqual({ ok: true, value: 2 });
-  });
+  })();
+(() => {
 
-  it("`${Symbol()}` ⇒ 原生 TypeError（`String(sym)` 不抛，模板抛）", () => {
     const r = call("export function f() { return `${Symbol()}`; }");
     expect(throwsError(r.throws, "TypeError")).toBe(true);
-  });
+  })();
+(() => {
 
-  it("字面量插值仍折叠（`a${\"b\"}c` ⇒ \"abc\"；`${1}` ⇒ \"1\"）", () => {
     expect(val('export function f() { return `a${"b"}c`; }')).toEqual({
       ok: true,
       value: "abc",
@@ -392,9 +457,9 @@ describe("模板插值走 string hint（`$toStr` 降级位）", () => {
       ok: true,
       value: "1",
     });
-  });
+  })();
+(() => {
 
-  it("bigint / null / undefined 字面量插值恒 total（`${1n}` ⇒ \"1\"，不记 may-throw）", () => {
     expect(val("export function f() { return `${1n}`; }")).toEqual({
       ok: true,
       value: "1",
@@ -408,15 +473,28 @@ describe("模板插值走 string hint（`$toStr` 降级位）", () => {
       ok: true,
       value: "undefined",
     });
-  });
+  })();
+(() => {
 
-  it("`'x'.concat(o)`：String.prototype.concat 同口径（valueOf 不调用）", () => {
     expect(
       val(
         `export function f() { let c = 0; const o = { valueOf(){ c += 10; return 1; } }; "x".concat(o); return c; }`,
       ),
     ).toEqual({ ok: true, value: 0 });
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -437,28 +515,37 @@ describe("includes 的 fromIndex 校验", () => {
 
 
 describe("includes 的 fromIndex 校验", () => {
-  it("includes(x, 1n)：原生确定 TypeError（bigint 不能转 number）", () => {
+  it("includes(x, 1n)：原生确定 TypeError（bigint 不能转 number）；includes(x, Symbol())：原生确定 TypeError（symbol 不能转 number）；对照：includes(x, 1) 不抛（number 合法）；对照：indexOf(x, 1n) 早已确定 TypeError（口径一致）", () => {
+(() => {
+
     const r = call(`export function f() { return [1,2,3].includes(0, 1n); }`);
     expect(throwsError(r.throws, "TypeError")).toBe(true);
     expect(isNever(r.result)).toBe(true);
-  });
+  })();
+(() => {
 
-  it("includes(x, Symbol())：原生确定 TypeError（symbol 不能转 number）", () => {
     const r = call(`export function f() { return [1,2,3].includes(0, Symbol("x")); }`);
     expect(throwsError(r.throws, "TypeError")).toBe(true);
     expect(isNever(r.result)).toBe(true);
-  });
+  })();
+(() => {
 
-  it("对照：includes(x, 1) 不抛（number 合法）", () => {
     const r = call(`export function f() { return [1,2,3].includes(0, 1); }`);
     expect(throwsError(r.throws, "TypeError")).toBe(false);
     expect(isNever(r.result)).toBe(false);
-  });
+  })();
+(() => {
 
-  it("对照：indexOf(x, 1n) 早已确定 TypeError（口径一致）", () => {
     const r = call(`export function f() { return [1,2,3].indexOf(0, 1n); }`);
     expect(throwsError(r.throws, "TypeError")).toBe(true);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -504,41 +591,78 @@ beforeEach(() => {
 const namesOf = (src: string): string[] => stripStaticExportDecls(transpileSource(src)).names;
 
 describe("模板字面量里的伪导出不被当成导出（不变量锁定）", () => {
-  it("单行模板字面量里的 `export const z` 不是导出", () => {
+  it("单行模板字面量里的 `export const z` 不是导出；多行模板字面量里的 `export const z` 不是导出；带插值的模板字面量里的伪导出不是导出；注释里的伪导出不是导出（注释不进产物）；源 AST 口径同样不收模板 / 注释里的伪导出；真实导出照常回收（对照组：证明断言不空转）", () => {
+(() => {
+  resetEngineCaches();
+  takeRefineDiags();
+  takeContractDiags();
+
+
     const src = "const s = `export const z = 1;`;\nexport const y = 2;";
     // 产物里伪导出只以「字符串内容」形态存在（JSON 转义 ⇒ 换行不成行）
     expect(transpileSource(src)).not.toMatch(/^export const z/m);
     expect(namesOf(src)).toEqual(["y"]);
-  });
+  })();
+(() => {
+  resetEngineCaches();
+  takeRefineDiags();
+  takeContractDiags();
 
-  it("多行模板字面量里的 `export const z` 不是导出", () => {
+
     const src = "const s = `\nexport const z = 1;\n`;\nexport const y = 2;";
     expect(transpileSource(src)).not.toMatch(/^export const z/m);
     expect(namesOf(src)).toEqual(["y"]);
-  });
+  })();
+(() => {
+  resetEngineCaches();
+  takeRefineDiags();
+  takeContractDiags();
 
-  it("带插值的模板字面量里的伪导出不是导出", () => {
+
     const src = "const s = `a${1}\nexport const z = 1;`;\nexport const y = 2;";
     expect(transpileSource(src)).not.toMatch(/^export const z/m);
     expect(namesOf(src)).toEqual(["y"]);
-  });
+  })();
+(() => {
+  resetEngineCaches();
+  takeRefineDiags();
+  takeContractDiags();
 
-  it("注释里的伪导出不是导出（注释不进产物）", () => {
+
     const src = "// export const z = 1;\nexport const y = 2;";
     expect(transpileSource(src)).not.toMatch(/^export const z/m);
     expect(namesOf(src)).toEqual(["y"]);
-  });
+  })();
+(() => {
+  resetEngineCaches();
+  takeRefineDiags();
+  takeContractDiags();
 
-  it("源 AST 口径同样不收模板 / 注释里的伪导出", () => {
+
     const src = "const s = `\nexport const z = 1;\n`;\nexport const y = 2;";
     expect(sourceStaticExportNames(src)).toEqual(["y"]);
     expect(sourceStaticExportNames("// export const z = 1;\nexport const y = 2;")).toEqual(["y"]);
-  });
+  })();
+(() => {
+  resetEngineCaches();
+  takeRefineDiags();
+  takeContractDiags();
 
-  it("真实导出照常回收（对照组：证明断言不空转）", () => {
+
     expect(namesOf("export const z = 1;")).toEqual(["z"]);
     expect(namesOf("export function q(){return 1}")).toEqual(["q"]);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -577,7 +701,14 @@ describe("ReferenceError 建议的真实归因", () => {
     takeRefineDiags();
   });
 
-  it("文件里的 re-export 是 y ⇒ 建议点名 y（不再硬编码 x）", () => {
+  it("文件里的 re-export 是 y ⇒ 建议点名 y（不再硬编码 x）；没有 re-export 的文件（未定义全局）⇒ 不说 re-export；两个文件的建议不同（旧口径逐字相同）", () => {
+(() => {
+    resetCheckSourceMemo();
+    resetGeneralizeMemo();
+    takeContractDiags();
+    takeRefineDiags();
+  
+
     const s = suggestionOf(`
 export { y } from "./other.js";
 export function f() {
@@ -587,9 +718,14 @@ export function f() {
     expect(s).toContain("export { y } from");
     expect(s).toContain("import { y }");
     expect(s).not.toContain("import { x }");
-  });
+  })();
+(() => {
+    resetCheckSourceMemo();
+    resetGeneralizeMemo();
+    takeContractDiags();
+    takeRefineDiags();
+  
 
-  it("没有 re-export 的文件（未定义全局）⇒ 不说 re-export", () => {
     const s = suggestionOf(`
 export function f() {
   return totallyUndefinedGlobal(1);
@@ -600,9 +736,14 @@ export function f() {
     // 可执行半边仍在
     expect(s).toContain("@nudo:throws ReferenceError");
     expect(s).toContain("not bound");
-  });
+  })();
+(() => {
+    resetCheckSourceMemo();
+    resetGeneralizeMemo();
+    takeContractDiags();
+    takeRefineDiags();
+  
 
-  it("两个文件的建议不同（旧口径逐字相同）", () => {
     const withReexport = suggestionOf(`
 export { y } from "./other.js";
 export function f() {
@@ -615,7 +756,12 @@ export function f() {
 }
 `);
     expect(withReexport).not.toBe(undef);
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
 
@@ -651,7 +797,9 @@ const lit = (src: string): unknown => {
 const wrap = (body: string): string => `export function f() { ${body} }`;
 
 describe("URLSearchParams 的 @@entries 内部槽", () => {
-  it("@@entries 槽带 internal 标记（投影面据此剔除）", () => {
+  it("@@entries 槽带 internal 标记（投影面据此剔除）；运行时面：new URLSearchParams(\"a=1\") 的 getOwnPropertyNames 是 []；运行时面：hasOwnProperty(\"@@entries\") 是 false（原生同款）；对照组：条目表本身仍可读（内部槽不影响 $get 派发）", () => {
+(() => {
+
     const brand = makeUrlSearchParamsAbs($lit("a=1&b=2" as never));
     const inner = brand.shape.k === "brand" ? brand.shape.shape : undefined;
     expect(inner?.shape.k).toBe("obj");
@@ -661,26 +809,33 @@ describe("URLSearchParams 的 @@entries 内部槽", () => {
     expect(slot, "@@entries 槽缺席（条目表未建模）").toBeDefined();
     expect(slot!.internal, "@@entries 未打 internal ⇒ guard 产物会要求它存在").toBe(true);
     expect(isHiddenInternalSlot(URL_SEARCH_PARAMS_ENTRIES_SLOT, slot!)).toBe(true);
-  });
+  })();
+(() => {
 
-  it("运行时面：new URLSearchParams(\"a=1\") 的 getOwnPropertyNames 是 []", () => {
     expect(
       tupleEls(
         call(wrap('return Object.getOwnPropertyNames(new URLSearchParams("a=1"));')).result,
       ),
     ).toEqual([]);
-  });
+  })();
+(() => {
 
-  it("运行时面：hasOwnProperty(\"@@entries\") 是 false（原生同款）", () => {
     expect(
       lit(wrap('return new URLSearchParams("a=1").hasOwnProperty("@@entries");')),
     ).toBe(false);
-  });
+  })();
+(() => {
 
-  it("对照组：条目表本身仍可读（内部槽不影响 $get 派发）", () => {
     expect(lit(wrap('return new URLSearchParams("a=1&b=2").get("a");'))).toBe("1");
     expect(lit(wrap('return new URLSearchParams("a=1&b=2").size;'))).toBe(2);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -717,17 +872,22 @@ export function decEncoding() {
 `;
 
 describe("TextEncoder member surface", () => {
-  it("encoding / encode / encodeInto are present", () => {
+  it("encoding / encode / encodeInto are present；TextDecoder encoding still resolves", () => {
+(() => {
+
     const r = checkSource("/t/bug-160.js", SRC, pTrue);
     expect(sigOf(r, "encIsUndef")).toBe("false");
     expect(sigOf(r, "encodeIsUndef")).toBe("false");
     expect(sigOf(r, "encodeIntoIsUndef")).toBe("false");
-  });
+  })();
+(() => {
 
-  it("TextDecoder encoding still resolves", () => {
     const r = checkSource("/t/bug-160.js", SRC, pTrue);
     expect(sigOf(r, "decEncoding")).toBe('"utf-8"');
-  });
+  })();
+});;
+
+  ;
 });
 });
 
@@ -762,28 +922,39 @@ const lit = (src: string): unknown => {
 const wrap = (body: string): string => `export function f() { const u = new URL("http://example.com/a"); ${body} }`;
 
 describe("URL brand 的 host 槽", () => {
-  it("u.host ⇒ \"example.com\"（不是 undefined）", () => {
+  it("u.host ⇒ \"example.com\"（不是 undefined）；u.host === undefined ⇒ false（不假绿）；\"host\" in u ⇒ true（in 面与读面同结论）；对照组：hostname 仍正确（回归控制）；带端口的 host 含端口、hostname 不含（原生语义）", () => {
+(() => {
+
     expect(lit(wrap("return u.host;"))).toBe("example.com");
-  });
+  })();
+(() => {
 
-  it("u.host === undefined ⇒ false（不假绿）", () => {
     expect(lit(wrap("return u.host === undefined;"))).toBe(false);
-  });
+  })();
+(() => {
 
-  it("\"host\" in u ⇒ true（in 面与读面同结论）", () => {
     expect(lit(wrap('return "host" in u;'))).toBe(true);
-  });
+  })();
+(() => {
 
-  it("对照组：hostname 仍正确（回归控制）", () => {
     expect(lit(wrap("return u.hostname;"))).toBe("example.com");
-  });
+  })();
+(() => {
 
-  it("带端口的 host 含端口、hostname 不含（原生语义）", () => {
     const r = call(
       `export function f() { const u = new URL("http://example.com:8080/a"); return [u.host, u.hostname]; }`,
     );
     expect(tupleEls(r.result)).toEqual(["example.com:8080", "example.com"]);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -865,7 +1036,9 @@ function evalWithOptions(optionsAbs: (typeof anyAbs) | undefined): {
 }
 
 describe("new TextDecoder(label, options) 的 options 位", () => {
-  it("非对象字面量 options ⇒ 确定抛 TypeError（此前假绿）", () => {
+  it("非对象字面量 options ⇒ 确定抛 TypeError（此前假绿）；对象 / null / undefined / 函数 options ⇒ 不抛（构造成功）；label ToString 先于 options 字典转换（Symbol label ⇒ Symbol 的 TypeError）；抽象 prim / 全 prim union options ⇒ 确定 TypeError；any / 含对象臂的 union options ⇒ may TypeError（不判确", () => {
+(() => {
+
     for (const src of [
       `export function f() { return new TextDecoder("utf-8", "extra"); }`,
       `export function f() { return new TextDecoder("utf-8", 42); }`,
@@ -877,9 +1050,9 @@ describe("new TextDecoder(label, options) 的 options 位", () => {
       expect(isNever(r.result), src).toBe(true);
       expect(throwsError(r.throws, "TypeError"), src).toBe(true);
     }
-  });
+  })();
+(() => {
 
-  it("对象 / null / undefined / 函数 options ⇒ 不抛（构造成功）", () => {
     for (const src of [
       `export function f() { return new TextDecoder("utf-8", { fatal: true }); }`,
       `export function f() { return new TextDecoder("utf-8", {}); }`,
@@ -894,40 +1067,51 @@ describe("new TextDecoder(label, options) 的 options 位", () => {
       );
       expect(isNever(r.throws), src).toBe(true);
     }
-  });
+  })();
+(() => {
 
-  it("label ToString 先于 options 字典转换（Symbol label ⇒ Symbol 的 TypeError）", () => {
     const r = call(
       `export function f() { return new TextDecoder(Symbol("s"), 42); }`,
     );
     expect(isNever(r.result)).toBe(true);
     expect(throwsError(r.throws, "TypeError")).toBe(true);
-  });
+  })();
+(() => {
 
-  it("抽象 prim / 全 prim union options ⇒ 确定 TypeError", () => {
     for (const a of [numAbs, sumPrim]) {
       const r = evalWithOptions(a);
       expect(isNever(r.result)).toBe(true);
       expect(throwsError(r.throws, "TypeError")).toBe(true);
     }
-  });
+  })();
+(() => {
 
-  it("any / 含对象臂的 union options ⇒ may TypeError（不判确定）", () => {
     for (const a of [anyAbs, sumMixed]) {
       const r = evalWithOptions(a);
       expect(isNever(r.result)).toBe(false);
       expect(r.effects).toContain("TypeError");
     }
-  });
+  })();
+(() => {
 
-  it("对照：label 面不回退（非法字符确定 RangeError / 知名 label 成功）", () => {
     const bad = call(`export function f() { return new TextDecoder("bad-$$"); }`);
     expect(isNever(bad.result)).toBe(true);
     expect(throwsError(bad.throws, "RangeError")).toBe(true);
     const ok = call(`export function f() { return new TextDecoder("utf8"); }`);
     expect(isNever(ok.result)).toBe(false);
     expect(isNever(ok.throws)).toBe(true);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -951,33 +1135,35 @@ describe("btoa/atob 缺参 ⇒ 确定 TypeError", () => {
 
 
 describe("btoa/atob 缺参 ⇒ 确定 TypeError", () => {
-  it("btoa() 折 never + TypeError（此前假绿返回 \"dW5kZWZpbmVk\"）", () => {
+  it("btoa() 折 never + TypeError（此前假绿返回 \"dW5kZWZpbmVk\"）；atob() 折 never + TypeError（此前抛错种类错 InvalidCharacterError）；对照：btoa(undefined) 仍是 ToString(undefined)；对照：atob(undefined) 仍是 InvalidCharacterError（DOMException）；对照：同族 6 个函数缺参 ≡ ToString(undefin", () => {
+(() => {
+
     const r = call(`export function f() { return btoa(); }`);
     expect(isNever(r.result)).toBe(true);
     expect(throwsError(r.throws, "TypeError")).toBe(true);
-  });
+  })();
+(() => {
 
-  it("atob() 折 never + TypeError（此前抛错种类错 InvalidCharacterError）", () => {
     const r = call(`export function f() { return atob(); }`);
     expect(isNever(r.result)).toBe(true);
     expect(throwsError(r.throws, "TypeError")).toBe(true);
     expect(throwsError(r.throws, "InvalidCharacterError")).toBe(false);
-  });
+  })();
+(() => {
 
-  it("对照：btoa(undefined) 仍是 ToString(undefined)", () => {
     expect(val(`export function f() { return btoa(undefined); }`)).toEqual({
       ok: true,
       value: "dW5kZWZpbmVk",
     });
-  });
+  })();
+(() => {
 
-  it("对照：atob(undefined) 仍是 InvalidCharacterError（DOMException）", () => {
     const r = call(`export function f() { return atob(undefined); }`);
     expect(isNever(r.result)).toBe(true);
     expect(throwsError(r.throws, "InvalidCharacterError")).toBe(true);
-  });
+  })();
+(() => {
 
-  it("对照：同族 6 个函数缺参 ≡ ToString(undefined)（不得误伤）", () => {
     for (const name of [
       "encodeURI",
       "encodeURIComponent",
@@ -994,7 +1180,16 @@ describe("btoa/atob 缺参 ⇒ 确定 TypeError", () => {
         value: "undefined",
       });
     }
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -1026,16 +1221,18 @@ const lit = (src: string): unknown => {
 };
 
 describe("inherited→own 覆写后 gOPN 次序", () => {
-  it("e.name = \"CustomError\" ⇒ [\"stack\",\"message\",\"name\"]（宿主次序）", () => {
+  it("e.name = \"CustomError\" ⇒ [\"stack\",\"message\",\"name\"]（宿主次序）；键数不变：覆写后仍是三个键（只是次序）；对照组：不覆写 name ⇒ [\"stack\",\"message\"]（name 是 inherited，不在自有面）；覆写后 name 是自有且**可枚举**属性（原生语义不变）；覆写后的 name 值可读回", () => {
+(() => {
+
     const r = call(`export function f() {
       const e = new TypeError("boom");
       e.name = "CustomError";
       return Object.getOwnPropertyNames(e);
     }`);
     expect(tupleEls(r.result)).toEqual(["stack", "message", "name"]);
-  });
+  })();
+(() => {
 
-  it("键数不变：覆写后仍是三个键（只是次序）", () => {
     expect(
       tupleEls(
         call(`export function f() {
@@ -1045,17 +1242,17 @@ describe("inherited→own 覆写后 gOPN 次序", () => {
         }`).result,
       )?.length,
     ).toBe(3);
-  });
+  })();
+(() => {
 
-  it("对照组：不覆写 name ⇒ [\"stack\",\"message\"]（name 是 inherited，不在自有面）", () => {
     const r = call(`export function f() {
       const e = new TypeError("boom");
       return Object.getOwnPropertyNames(e);
     }`);
     expect(tupleEls(r.result)).toEqual(["stack", "message"]);
-  });
+  })();
+(() => {
 
-  it("覆写后 name 是自有且**可枚举**属性（原生语义不变）", () => {
     expect(
       lit(`export function f() {
         const e = new TypeError("boom");
@@ -1063,9 +1260,9 @@ describe("inherited→own 覆写后 gOPN 次序", () => {
         return e.hasOwnProperty("name") && Object.getOwnPropertyDescriptor(e, "name").enumerable;
       }`),
     ).toBe(true);
-  });
+  })();
+(() => {
 
-  it("覆写后的 name 值可读回", () => {
     expect(
       lit(`export function f() {
         const e = new TypeError("boom");
@@ -1073,7 +1270,16 @@ describe("inherited→own 覆写后 gOPN 次序", () => {
         return e.name;
       }`),
     ).toBe("CustomError");
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -1101,7 +1307,9 @@ const num = (v: number) =>
   abs({ k: "prim", type: "number" }, { op: "lit", value: v }, pTrue_____pred_ts, "exact");
 
 describe("export * as \"<名>\" 被转译（模块不再整体求值失败）", () => {
-  it("字符串字面量导出名：模块正常求值且带出该导出", () => {
+  it("字符串字面量导出名：模块正常求值且带出该导出；标识符导出名口径不变（对照组）；无 export * as 的普通模块不受影响（对照组）", () => {
+(() => {
+
     const src = `export * as "my-ns" from "./dep.js";
 export function f() { return 5; }`;
     const exports = runTranspiled(src, {
@@ -1113,9 +1321,9 @@ export function f() { return 5; }`;
       ok: true,
       value: 5,
     });
-  });
+  })();
+(() => {
 
-  it("标识符导出名口径不变（对照组）", () => {
     const src = `export * as ns from "./dep.js";
 export function f() { return 5; }`;
     const exports = runTranspiled(src, {
@@ -1123,14 +1331,19 @@ export function f() { return 5; }`;
       modules: { "./dep.js": { named: { five: num(5) } } },
     });
     expect(Object.keys(exports).sort()).toEqual(["f", "ns"]);
-  });
+  })();
+(() => {
 
-  it("无 export * as 的普通模块不受影响（对照组）", () => {
     const exports = runTranspiled(`export function f() { return 5; }`, {
       mode: "exec",
     });
     expect(Object.keys(exports)).toEqual(["f"]);
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
 
@@ -1173,7 +1386,9 @@ export function boom() { throw new LeafErr("x"); }
 `;
 
 describe("Error 家族覆盖用户自定义 Error 子类", () => {
-  it("@nudo:throws Error 盖住用户自定义 Error 子类", () => {
+  it("@nudo:throws Error 盖住用户自定义 Error 子类；ignoreThrows: ['Error'] 盖住用户自定义 Error 子类；多级继承（LeafErr → MidErr → BaseErr → Error）同样被盖住；非 Error 的用户类**不被** Error 盖住（不得过度覆盖）；按类名精确申报仍生效（@nudo:throws MyError）；未申报也未忽略时仍报 L2（不得漏报）", () => {
+(() => {
+
     const r = checkSource(
       "my-err.js",
       `
@@ -1186,24 +1401,24 @@ export function boom() { throw new MyError("x"); }
       pTrue,
     );
     expect(l2Count(r)).toBe(0);
-  });
+  })();
+(() => {
 
-  it("ignoreThrows: ['Error'] 盖住用户自定义 Error 子类", () => {
     const r = checkSource("my-err.js", MY_ERROR, pTrue, { ignoreThrows: ["Error"] });
     expect(l2Count(r)).toBe(0);
-  });
+  })();
+(() => {
 
-  it("多级继承（LeafErr → MidErr → BaseErr → Error）同样被盖住", () => {
     const r = checkSource("deep-err.js", DEEP_ERROR, pTrue, { ignoreThrows: ["Error"] });
     expect(l2Count(r)).toBe(0);
-  });
+  })();
+(() => {
 
-  it("非 Error 的用户类**不被** Error 盖住（不得过度覆盖）", () => {
     const r = checkSource("not-err.js", NOT_ERROR, pTrue, { ignoreThrows: ["Error"] });
     expect(l2Count(r)).toBe(1);
-  });
+  })();
+(() => {
 
-  it("按类名精确申报仍生效（@nudo:throws MyError）", () => {
     const r = checkSource(
       "own-err.js",
       `
@@ -1216,12 +1431,23 @@ export function boom() { throw new MyError("x"); }
       pTrue,
     );
     expect(l2Count(r)).toBe(0);
-  });
+  })();
+(() => {
 
-  it("未申报也未忽略时仍报 L2（不得漏报）", () => {
     const r = checkSource("my-err.js", MY_ERROR, pTrue);
     expect(l2Count(r)).toBe(1);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -1269,49 +1495,64 @@ function memberLits(a: Abs): unknown[] {
 }
 
 describe("字符串 union 拼接必须是成员级并联", () => {
-  it("concatString: (\"a\"|\"b\") + \"!\" ⇒ \"a!\" | \"b!\"（旧实现折成 \"ab!\"）", () => {
+  it("concatString: (\"a\"|\"b\") + \"!\" ⇒ \"a!\" | \"b!\"（旧实现折成 \"ab!\"）；concatString: union 在左侧同样逐成员并联（`v=` + union）；concatString: 两侧都是 union ⇒ 成员级叉乘；concatString: 非 union 侧的既有行为不变（单成员 ⇒ 直接返回该成员）；产品面：`+` 的 union 实参 ⇒ 成员级并联（不是 \"ab!\"）；产品面：模板字面量（`v=${x}`）的 u", () => {
+(() => {
+
     const r = concatString(strUnion("a", "b"), strLit("!"));
     expect(r.shape.k).toBe("sum");
     expect(memberLits(r)).toEqual(["a!", "b!"]);
     expect(formatShape(r)).toBe('"a!" | "b!"');
-  });
+  })();
+(() => {
 
-  it("concatString: union 在左侧同样逐成员并联（`v=` + union）", () => {
     const r = concatString(strLit("v="), strUnion("a", "b"));
     expect(r.shape.k).toBe("sum");
     expect(memberLits(r)).toEqual(["v=a", "v=b"]);
-  });
+  })();
+(() => {
 
-  it("concatString: 两侧都是 union ⇒ 成员级叉乘", () => {
     const r = concatString(strUnion("a", "b"), strUnion("1", "2"));
     expect(r.shape.k).toBe("sum");
     expect(memberLits(r)).toEqual(["a1", "a2", "b1", "b2"]);
-  });
+  })();
+(() => {
 
-  it("concatString: 非 union 侧的既有行为不变（单成员 ⇒ 直接返回该成员）", () => {
     const r = concatString(strLit("a"), strLit("b"));
     expect(r.shape.k).toBe("prim");
     expect(memberLits(r)).toEqual(["ab"]);
     expect(formatShape(r)).toBe('"ab"');
-  });
+  })();
+(() => {
 
-  it("产品面：`+` 的 union 实参 ⇒ 成员级并联（不是 \"ab!\"）", () => {
     const src = `export function f(x) { return x + "!"; }`;
     const rec = call(src, "f", [strUnion("a", "b")]);
     expect(formatShape(rec.result)).toBe('"a!" | "b!"');
-  });
+  })();
+(() => {
 
-  it("产品面：模板字面量（`v=${x}`）的 union 实参 ⇒ 成员级并联（不是 \"v=ab\"）", () => {
     const src = "export function f(x) { return `v=${x}`; }";
     const rec = call(src, "f", [strUnion("a", "b")]);
     expect(formatShape(rec.result)).toBe('"v=a" | "v=b"');
-  });
+  })();
+(() => {
 
-  it("产品面：union 实参的两段拼接（`x + \"-\"` 再 `+ \"!\"`）仍是成员级并联", () => {
     const src = `export function f(x) { const y = x + "-"; return y + "!"; }`;
     const rec = call(src, "f", [strUnion("a", "b")]);
     expect(formatShape(rec.result)).toBe('"a-!" | "b-!"');
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -1365,47 +1606,49 @@ function v(src: string, args: Abs___nudojs_core[] = []): unknown {
 }
 
 describe("matchAll(<非 RegExp>) → RegExpCreate(ToString(pattern), \"g\") 迭代器", () => {
-  it("字符串 pattern → 迭代器（原生 \"abc\".matchAll(\"b\") 命中 1）", () => {
+  it("字符串 pattern → 迭代器（原生 \"abc\".matchAll(\"b\") 命中 1）；迭代项是**匹配数组**（RegExpExecArray），不是字符串（原生 m[0]/index/input）；缺省实参 → 空 pattern（原生 \"abc\".matchAll() 命中 4）；显式 undefined → 空 pattern（原生命中 4）；数字 pattern → ToString(1)（原生 \"a1b\".matchAll(1) 命中 1，index=1）；", () => {
+(() => {
+
     const r = call(`export function f() { return [... "abc".matchAll("b")].length; }`);
     expect(isNever(r.result)).toBe(false);
     expect(throwsError(r.throws, "TypeError")).toBe(false);
     expect(litValue(r.result)).toEqual({ ok: true, value: 1 });
-  });
+  })();
+(() => {
 
-  it("迭代项是**匹配数组**（RegExpExecArray），不是字符串（原生 m[0]/index/input）", () => {
     // 原生："abc".matchAll("b") → [["b", 1, "abc"]]
     expect(
       v(`export function f() { const m = [... "abc".matchAll("b")][0]; return m[0] + ":" + m.index + ":" + m.input; }`),
     ).toBe("b:1:abc");
-  });
+  })();
+(() => {
 
-  it("缺省实参 → 空 pattern（原生 \"abc\".matchAll() 命中 4）", () => {
     expect(val(`export function f() { return [... "abc".matchAll()].length; }`)).toEqual({
       ok: true,
       value: 4,
     });
-  });
+  })();
+(() => {
 
-  it("显式 undefined → 空 pattern（原生命中 4）", () => {
     expect(val(`export function f() { return [... "abc".matchAll(undefined)].length; }`)).toEqual({
       ok: true,
       value: 4,
     });
-  });
+  })();
+(() => {
 
-  it("数字 pattern → ToString(1)（原生 \"a1b\".matchAll(1) 命中 1，index=1）", () => {
     expect(
       v(`export function f() { const m = [... "a1b".matchAll(1)][0]; return m[0] + ":" + m.index; }`),
     ).toBe("1:1");
-  });
+  })();
+(() => {
 
-  it("null → ToString(null)=\"null\"（原生 \"abc\".matchAll(null) 命中 0，**不抛**）", () => {
     const r = call(`export function f() { return [... "abc".matchAll(null)].length; }`);
     expect(throwsError(r.throws, "TypeError")).toBe(false);
     expect(litValue(r.result)).toEqual({ ok: true, value: 0 });
-  });
+  })();
+(() => {
 
-  it("布尔 / 小数 pattern → ToString 折叠（原生命中 0，**不抛**）", () => {
     expect(val(`export function f() { return [... "abc".matchAll(true)].length; }`)).toEqual({
       ok: true,
       value: 0,
@@ -1414,33 +1657,33 @@ describe("matchAll(<非 RegExp>) → RegExpCreate(ToString(pattern), \"g\") 迭�
       ok: true,
       value: 0,
     });
-  });
+  })();
+(() => {
 
-  it("非法 pattern → **确定 SyntaxError**（不回落「本臂不接管」哨兵）", () => {
     const r = call(`export function f() { return "abc".matchAll("("); }`);
     expect(isNever(r.result)).toBe(true);
     expect(throwsError(r.throws, "SyntaxError")).toBe(true);
-  });
+  })();
+(() => {
 
-  it("symbol pattern → 确定 TypeError（ToString(symbol) 抛，原生同款）", () => {
     const r = call(`export function f() { return "abc".matchAll(Symbol("x")); }`);
     expect(throwsError(r.throws, "TypeError")).toBe(true);
-  });
+  })();
+(() => {
 
-  it("负控制：RegExp 实参确定无 g → **仍**确定 TypeError（原生同款）", () => {
     const r = call(`export function f() { return "abc".matchAll(/b/); }`);
     expect(isNever(r.result)).toBe(true);
     expect(throwsError(r.throws, "TypeError")).toBe(true);
-  });
+  })();
+(() => {
 
-  it("负控制：RegExp 实参带 g → 迭代器，命中 1（原生同款）", () => {
     expect(val(`export function f() { return [... "abc".matchAll(/b/g)].length; }`)).toEqual({
       ok: true,
       value: 1,
     });
-  });
+  })();
+(() => {
 
-  it("协议面：typeof → object；next() → {value,done}；@@iterator 返自身", () => {
     expect(val(`export function f() { return typeof "abc".matchAll("b"); }`)).toEqual({
       ok: true,
       value: "object",
@@ -1452,36 +1695,68 @@ describe("matchAll(<非 RegExp>) → RegExpCreate(ToString(pattern), \"g\") 迭�
     expect(
       val(`export function f() { const it = "abc".matchAll("b"); return it[Symbol.iterator]() === it; }`),
     ).toEqual({ ok: true, value: true });
-  });
+  })();
+(() => {
 
-  it("协议面：next().value 是匹配数组（原生 RegExpExecArray）", () => {
     expect(val(`export function f() { return "abc".matchAll("b").next().value[0]; }`)).toEqual({
       ok: true,
       value: "b",
     });
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 
 describe("抽象接收者的 matchAll 抽象臂（methods.ts matchAllAbstractArm）", () => {
-  it("抽象 string 接收者 + 字符串 pattern → 迭代器（**不抛** TypeError）", () => {
+  it("抽象 string 接收者 + 字符串 pattern → 迭代器（**不抛** TypeError）；抽象 string 接收者 + 缺省实参 → 迭代器（**不抛** TypeError）；负控制：抽象接收者 + RegExp 无 g → **仍**确定 TypeError（既有行为不变）", () => {
+(() => {
+
     const r = call(`export function f(s) { return s.matchAll("b"); }`, "f", [strAbs]);
     expect(isNever(r.result)).toBe(false);
     expect(throwsError(r.throws, "TypeError")).toBe(false);
     const shape = (r.result as { shape?: { k?: string; name?: string } }).shape;
     expect(shape?.k).toBe("brand");
     expect(shape?.name).toBe("RegExpMatchIterator");
-  });
+  })();
+(() => {
 
-  it("抽象 string 接收者 + 缺省实参 → 迭代器（**不抛** TypeError）", () => {
     const r = call(`export function f(s) { return s.matchAll(); }`, "f", [strAbs]);
     expect(isNever(r.result)).toBe(false);
     expect(throwsError(r.throws, "TypeError")).toBe(false);
-  });
+  })();
+(() => {
 
-  it("负控制：抽象接收者 + RegExp 无 g → **仍**确定 TypeError（既有行为不变）", () => {
     const r = call(`export function f(s) { return s.matchAll(/a/); }`, "f", [strAbs]);
     expect(isNever(r.result)).toBe(true);
     expect(throwsError(r.throws, "TypeError")).toBe(true);
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 });

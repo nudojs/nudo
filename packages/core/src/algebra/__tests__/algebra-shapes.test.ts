@@ -39,16 +39,18 @@ describe("own 属性遮蔽原型方法", () => {
 const wrap = (body: string) => `export function f() { ${body} }`;
 
 describe("own 属性遮蔽原型方法", () => {
-  it("数组 a.push = 1 读回 1（改前折函数）", () => {
+  it("数组 a.push = 1 读回 1（改前折函数）；Map 实例 m.get = 1 读回 number；Date / Set / RegExp 实例同形态；非表内键保持既有 unknown 口径（不假精确）；未写时表内键仍折函数", () => {
+(() => {
+
     expect(val(wrap(`const a = []; a.push = 1; return a.push;`))).toEqual({ ok: true, value: 1 });
     expect(val(wrap(`const a = []; a.push = 1; return typeof a.push;`))).toEqual({ ok: true, value: "number" });
-  });
+  })();
+(() => {
 
-  it("Map 实例 m.get = 1 读回 number", () => {
     expect(val(wrap(`const m = new Map(); m.get = 1; return typeof m.get;`))).toEqual({ ok: true, value: "number" });
-  });
+  })();
+(() => {
 
-  it("Date / Set / RegExp 实例同形态", () => {
     for (const [init, key] of [
       [`new Date(0)`, "getTime"],
       [`new Set()`, "add"],
@@ -59,13 +61,20 @@ describe("own 属性遮蔽原型方法", () => {
         value: "number",
       });
     }
-  });
+  })();
+(() => {
 
-  it("非表内键保持既有 unknown 口径（不假精确）；未写时表内键仍折函数", () => {
     const r = call(wrap(`const a = [1,2,3]; a.zzz = 1; return a.zzz;`));
     expect(r.result.shape.k).toBe("unknown");
     expect(val(wrap(`const a = [1,2]; return typeof a.push;`))).toEqual({ ok: true, value: "function" });
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -139,20 +148,22 @@ describe("nullable(...) 对结构化返回值必须判违约（error）", () => 
     expect(unproven(r)).toBeUndefined();
   });
 
-  it("union(number(), lit(null)) 同口径：数组返回值 ⇒ error", () => {
+  it("union(number(), lit(null)) 同口径：数组返回值 ⇒ error；不制造假红：null / undefined / number 返回值仍放行；单元面：结构臂 ⊭ union ⇒ disproved（不是 unprovable）；护栏：同域值相等义务（lit(5) 对无 pred 的 number 返回值）不得升级成 error", () => {
+(() => {
+
     const v = violation(check("numOrNull", "[1]"));
     expect(v).toBeDefined();
     expect(v!.severity).toBe("error");
-  });
+  })();
+(() => {
 
-  it("不制造假红：null / undefined / number 返回值仍放行", () => {
     expect(violation(check("maybeNumber", "null"))).toBeUndefined();
     expect(violation(check("maybeNumber", "undefined"))).toBeUndefined();
     expect(violation(check("maybeNumber", "1"))).toBeUndefined();
     expect(unproven(check("maybeNumber", "null"))).toBeUndefined();
-  });
+  })();
+(() => {
 
-  it("单元面：结构臂 ⊭ union ⇒ disproved（不是 unprovable）", () => {
     const numAbs = abs({ k: "prim", type: "number" }, undefined, undefined, "partial");
     const arrAbs = abs({ k: "arr", element: numAbs }, undefined, undefined, "path");
     const tup = abs({ k: "tuple", elements: [] }, undefined, undefined, "exact");
@@ -163,9 +174,9 @@ describe("nullable(...) 对结构化返回值必须判违约（error）", () => 
     // nullish 字面量仍按域隶属放行
     const nullLit = absLit(null);
     expect(assertImplies(nullLit, nullable(number())).status).toBe("proved");
-  });
+  })();
+(() => {
 
-  it("护栏：同域值相等义务（lit(5) 对无 pred 的 number 返回值）不得升级成 error", () => {
     // 返回项形状与字面量**同域** ⇒ 不可判定 ⇒ 仍是 unprovable（warning），
     // 不得因本条修法变成 disproved（假红）。
     const numNoPred = abs({ k: "prim", type: "number" }, undefined, undefined, "partial");
@@ -177,7 +188,14 @@ describe("nullable(...) 对结构化返回值必须判违约（error）", () => 
       "path",
     );
     expect(assertImplies(derived, number().gt(0)).status).toBe("unprovable");
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -216,21 +234,26 @@ function run(sidecar: string) {
 }
 
 describe("跨槽 ref 的 binder 传递", () => {
-  it("ref(\"a\") 解析到另一槽位的 bind ⇒ 无 error，y 位是 number", () => {
+  it("ref(\"a\") 解析到另一槽位的 bind ⇒ 无 error，y 位是 number；对照：y 位写 any() 时逐字不变（无回归）", () => {
+(() => {
+
     const r = run(SIDECAR);
     expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
     const sig = r.signatures.find((s) => s.name === "t");
     expect(sig).toBeDefined();
     expect(sig!.paramTypes?.[1]).toContain("number");
     expect(sig!.paramTypes?.[1]).not.toBe("any");
-  });
+  })();
+(() => {
 
-  it("对照：y 位写 any() 时逐字不变（无回归）", () => {
     const r = run(CONTROL);
     expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
     const sig = r.signatures.find((s) => s.name === "t");
     expect(sig!.paramTypes?.[1]).toBe("(any) => any");
-  });
+  })();
+});;
+
+  ;
 });
 });
 
@@ -276,31 +299,40 @@ export function gScalar(x) { return x; }
 `;
 
 describe("顶层结构约束对 nullish 实参不再零诊断", () => {
-  it("null 实参报违例（object shape at o）", () => {
+  it("null 实参报违例（object shape at o）；undefined 实参报违例；同口径：顶层标量位对 null 也报违例（两套口径已统一）；合规实参零诊断（nullish 执法没有误伤合法调用）", () => {
+(() => {
+
     const r = check(`${DECLS}\ng(null);\n`);
     const v = violated(r, "g");
     expect(v).toHaveLength(1);
     expect(String(v[0]!.expected)).toContain("object shape at o");
-  });
+  })();
+(() => {
 
-  it("undefined 实参报违例", () => {
     const r = check(`${DECLS}\ng(undefined);\n`);
     const v = violated(r, "g");
     expect(v).toHaveLength(1);
     expect(String(v[0]!.expected)).toContain("object shape at o");
-  });
+  })();
+(() => {
 
-  it("同口径：顶层标量位对 null 也报违例（两套口径已统一）", () => {
     const r = check(`${DECLS}\ngScalar(null);\n`);
     const v = violated(r, "gScalar");
     expect(v).toHaveLength(1);
     expect(String(v[0]!.expected)).toContain('typeof x = "number"');
-  });
+  })();
+(() => {
 
-  it("合规实参零诊断（nullish 执法没有误伤合法调用）", () => {
     const r = check(`${DECLS}\ng({ a: 1 });\ngScalar(1);\n`);
     expect(violated(r)).toEqual([]);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -359,47 +391,78 @@ function violations(r: { issues: { code: string }[] }): number {
 }
 
 describe("union 的不可判定成员不再被当成失败", () => {
-  it("union(number().gt(0), lit('a')) 收到非字面量 number ⇒ 不报（域兼容 ⇒ 未决）", () => {
+  it("union(number().gt(0), lit('a')) 收到非字面量 number ⇒ 不报（域兼容 ⇒ 未决）；union(lit(1), lit('a')) 收到非字面量 number ⇒ 不报（域兼容 ⇒ 未决）；负控制：字面量不在 union 内 ⇒ 仍报违例；负控制：类型完全不符（boolean 实参 vs union(number(), string())）⇒ 仍报违例；负控制：满足其中一支（字面量 'a'）⇒ 不报", () => {
+(() => {
+  resetEngineCaches();
+  takeRefineDiags();
+  takeContractDiags();
+
+
     const r = check(`/** @nudo:contract x posOrLit */
 function u(x) { return x; }
 const n = Number(process.argv[2]);
 export function use() { return u(n); }
 `);
     expect(violations(r)).toBe(0);
-  });
+  })();
+(() => {
+  resetEngineCaches();
+  takeRefineDiags();
+  takeContractDiags();
 
-  it("union(lit(1), lit('a')) 收到非字面量 number ⇒ 不报（域兼容 ⇒ 未决）", () => {
+
     const r = check(`/** @nudo:contract x litOrLit */
 function u(x) { return x; }
 const n = Number(process.argv[2]);
 export function use() { return u(n); }
 `);
     expect(violations(r)).toBe(0);
-  });
+  })();
+(() => {
+  resetEngineCaches();
+  takeRefineDiags();
+  takeContractDiags();
 
-  it("负控制：字面量不在 union 内 ⇒ 仍报违例", () => {
+
     const r = check(`/** @nudo:contract x litOrLit */
 function u(x) { return x; }
 export function use() { return u("b"); }
 `);
     expect(violations(r)).toBe(1);
-  });
+  })();
+(() => {
+  resetEngineCaches();
+  takeRefineDiags();
+  takeContractDiags();
 
-  it("负控制：类型完全不符（boolean 实参 vs union(number(), string())）⇒ 仍报违例", () => {
+
     const r = check(`/** @nudo:contract x numOrStr */
 function u(x) { return x; }
 export function use() { return u(true); }
 `);
     expect(violations(r)).toBe(1);
-  });
+  })();
+(() => {
+  resetEngineCaches();
+  takeRefineDiags();
+  takeContractDiags();
 
-  it("负控制：满足其中一支（字面量 'a'）⇒ 不报", () => {
+
     const r = check(`/** @nudo:contract x posOrLit */
 function u(x) { return x; }
 export function use() { return u("a"); }
 `);
     expect(violations(r)).toBe(0);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 
 /**
@@ -461,7 +524,13 @@ beforeEach(() => {
 });
 
 describe("fn() 字段表实参守卫", () => {
-  it("fn() 缺参 ⇒ 点名构造器报错，不泄露宿主原文", () => {
+  it("fn() 缺参 ⇒ 点名构造器报错，不泄露宿主原文；fn(42) 非对象 ⇒ 报错（不再静默变成 fn({})）；fn(null) ⇒ 报错；fn({ id: number() }) 正常构造（负控制）", () => {
+(() => {
+  resetEngineCaches();
+  takeRefineDiags();
+  takeContractDiags();
+
+
     let err: unknown;
     try {
       (fn as unknown as () => unknown)();
@@ -472,9 +541,13 @@ describe("fn() 字段表实参守卫", () => {
     const msg = (err as Error).message;
     expect(msg).toContain("fn()");
     expect(msg).not.toContain("Cannot convert undefined or null to object");
-  });
+  })();
+(() => {
+  resetEngineCaches();
+  takeRefineDiags();
+  takeContractDiags();
 
-  it("fn(42) 非对象 ⇒ 报错（不再静默变成 fn({})）", () => {
+
     let err: unknown;
     try {
       (fn as unknown as (x: unknown) => unknown)(42);
@@ -485,15 +558,30 @@ describe("fn() 字段表实参守卫", () => {
     const msg = (err as Error).message;
     expect(msg).toContain("fn()");
     expect(msg).not.toContain("Cannot convert undefined or null to object");
-  });
+  })();
+(() => {
+  resetEngineCaches();
+  takeRefineDiags();
+  takeContractDiags();
 
-  it("fn(null) ⇒ 报错", () => {
+
     expect(() => (fn as unknown as (x: unknown) => unknown)(null)).toThrow(/fn\(\)/);
-  });
+  })();
+(() => {
+  resetEngineCaches();
+  takeRefineDiags();
+  takeContractDiags();
 
-  it("fn({ id: number() }) 正常构造（负控制）", () => {
+
     expect(() => fn({ id: number_____index_ts() })).not.toThrow();
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -558,28 +646,57 @@ describe("union 里的 unknown 同样算引擎债", () => {
     takeRefineDiags();
   });
 
-  it("unknown | null 的返回 ⇒ nudo:unknown-inference", () => {
+  it("unknown | null 的返回 ⇒ nudo:unknown-inference；裸 unknown ⇒ 仍报（对照组，行为不变）；有值证据（unknown 形状 + lit(undefined) term）不是引擎债 ⇒ 不报；具体类型不受影响 ⇒ 不报", () => {
+(() => {
+    resetCheckSourceMemo();
+    resetGeneralizeMemo();
+    takeContractDiags();
+    takeRefineDiags();
+  
+
     const r = check({ doc: UNKNOWN_OR_NULL });
     const warn = r.issues.filter((i) => i.code === "nudo:unknown-inference");
     expect(warn).toHaveLength(1);
     expect(warn[0]!.severity).toBe("warning");
     expect(warn[0]!.fn).toBe("q");
-  });
+  })();
+(() => {
+    resetCheckSourceMemo();
+    resetGeneralizeMemo();
+    takeContractDiags();
+    takeRefineDiags();
+  
 
-  it("裸 unknown ⇒ 仍报（对照组，行为不变）", () => {
     const r = check({ doc: unknown });
     expect(r.issues.filter((i) => i.code === "nudo:unknown-inference")).toHaveLength(1);
-  });
+  })();
+(() => {
+    resetCheckSourceMemo();
+    resetGeneralizeMemo();
+    takeContractDiags();
+    takeRefineDiags();
+  
 
-  it("有值证据（unknown 形状 + lit(undefined) term）不是引擎债 ⇒ 不报", () => {
     const r = check({ doc: $lit(undefined) });
     expect(r.issues.filter((i) => i.code === "nudo:unknown-inference")).toEqual([]);
-  });
+  })();
+(() => {
+    resetCheckSourceMemo();
+    resetGeneralizeMemo();
+    takeContractDiags();
+    takeRefineDiags();
+  
 
-  it("具体类型不受影响 ⇒ 不报", () => {
     const r = check({ doc: num() });
     expect(r.issues.filter((i) => i.code === "nudo:unknown-inference")).toEqual([]);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -612,7 +729,9 @@ const mockFn = (v: number) =>
   absFunction(["x"], { apply: () => num(v) });
 
 describe("mock 名与模块级绑定同名 ⇒ 不撞名（文件不再 fail-closed）", () => {
-  it("mock 名与 import 绑定同名：mock 覆盖 import，文件正常求值", () => {
+  it("mock 名与 import 绑定同名：mock 覆盖 import，文件正常求值；mock 名与用户顶层声明同名：模块级绑定胜出，文件照常求值（不抛）；env 全局名与模块级绑定同名：同样不撞名（env 注入被跳过）", () => {
+(() => {
+
     const src = `import { getPort } from "./v-port.js";
 /** @nudo:mock getPort = stub().returns(8080) */
 export function readPort() { return getPort(); }`;
@@ -624,9 +743,9 @@ export function readPort() { return getPort(); }`;
     expect(Object.keys(exports)).toContain("readPort");
     const full = callTranspiledExportFull(exports, "readPort", []);
     expect(litValue(full.result)).toEqual({ ok: true, value: 8080 });
-  });
+  })();
+(() => {
 
-  it("mock 名与用户顶层声明同名：模块级绑定胜出，文件照常求值（不抛）", () => {
     const src = `/** @nudo:mock getPort = stub().returns(8080) */
 export function getPort() { return 1234; }
 export function readPort() { return getPort(); }`;
@@ -637,9 +756,9 @@ export function readPort() { return getPort(); }`;
     expect(Object.keys(exports).sort()).toEqual(["getPort", "readPort"]);
     const full = callTranspiledExportFull(exports, "readPort", []);
     expect(litValue(full.result)).toEqual({ ok: true, value: 1234 });
-  });
+  })();
+(() => {
 
-  it("env 全局名与模块级绑定同名：同样不撞名（env 注入被跳过）", () => {
     const src = `export const helper = 1;
 export function readHelper() { return helper; }`;
     const exports = runTranspiled(src, {
@@ -649,7 +768,12 @@ export function readHelper() { return helper; }`;
     expect(Object.keys(exports).sort()).toEqual(["helper", "readHelper"]);
     const full = callTranspiledExportFull(exports, "readHelper", []);
     expect(litValue(full.result)).toEqual({ ok: true, value: 1 });
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
 
@@ -731,7 +855,12 @@ function hostUse(src: string, entry = "use"): string {
 }
 
 describe("pure memo 键值基（同一变量重绑定不得命中旧缓存）", () => {
-  it("Abs 层：同一变量重绑定为不同值 ⇒ 缓存失效（重算）", () => {
+  it("Abs 层：同一变量重绑定为不同值 ⇒ 缓存失效（重算）；Abs 层：不同变量同值 ⇒ 缓存命中（记忆化按值承诺）；Abs 层：不可比较的实参（函数值）⇒ 不缓存（不算命中）；宿主函数路径：同一变量重绑定 ⇒ use() 得 \"2,4\"（native 口径）；宿主函数路径：不同变量同值 ⇒ 命中（函数体只跑一次）；宿主函数路径：不同变量不同值 ⇒ 不得命中（\"2,4,calls=2\"）", () => {
+(() => {
+  clearPureMemo();
+  clearPureCallMemo();
+
+
     const c = { n: 0 };
     const fn = pureDouble(c);
     const r1 = $call(fn, [objArg("o", 1)]);
@@ -740,9 +869,12 @@ describe("pure memo 键值基（同一变量重绑定不得命中旧缓存）", 
     // 陈旧命中会得 2（= 旧缓存）；正确行为 = 重算得 4
     expect(litValue(r2)).toEqual({ ok: true, value: 4 });
     expect(c.n).toBe(2);
-  });
+  })();
+(() => {
+  clearPureMemo();
+  clearPureCallMemo();
 
-  it("Abs 层：不同变量同值 ⇒ 缓存命中（记忆化按值承诺）", () => {
+
     const c = { n: 0 };
     const fn = pureDouble(c);
     const a = $call(fn, [objArg("a", 1)]);
@@ -751,9 +883,12 @@ describe("pure memo 键值基（同一变量重绑定不得命中旧缓存）", 
     expect(litValue(b)).toEqual({ ok: true, value: 2 });
     // 值相同 ⇒ 命中 ⇒ 函数体只跑一次
     expect(c.n).toBe(1);
-  });
+  })();
+(() => {
+  clearPureMemo();
+  clearPureCallMemo();
 
-  it("Abs 层：不可比较的实参（函数值）⇒ 不缓存（不算命中）", () => {
+
     const c = { n: 0 };
     const fn = absFunction(["f"], {
       apply: () => {
@@ -767,9 +902,12 @@ describe("pure memo 键值基（同一变量重绑定不得命中旧缓存）", 
     $call(fn, [arg]);
     // 函数值不可比 ⇒ 不缓存 ⇒ 两次都真跑（保守：宁可不算命中）
     expect(c.n).toBe(2);
-  });
+  })();
+(() => {
+  clearPureMemo();
+  clearPureCallMemo();
 
-  it("宿主函数路径：同一变量重绑定 ⇒ use() 得 \"2,4\"（native 口径）", () => {
+
     const out = hostUse(`export function p(o) { return o.v * 2; }
 export function use() {
   let o = { v: 1 };
@@ -779,9 +917,12 @@ export function use() {
   return String(a) + "," + String(b);
 }`);
     expect(out).toBe("2,4");
-  });
+  })();
+(() => {
+  clearPureMemo();
+  clearPureCallMemo();
 
-  it("宿主函数路径：不同变量同值 ⇒ 命中（函数体只跑一次）", () => {
+
     const out = hostUse(`let calls = 0;
 export function p(o) { calls = calls + 1; return o.v * 2; }
 export function use() {
@@ -792,9 +933,12 @@ export function use() {
   return String(x) + "," + String(y) + ",calls=" + calls;
 }`);
     expect(out).toBe("2,2,calls=1");
-  });
+  })();
+(() => {
+  clearPureMemo();
+  clearPureCallMemo();
 
-  it("宿主函数路径：不同变量不同值 ⇒ 不得命中（\"2,4,calls=2\"）", () => {
+
     const out = hostUse(`let calls = 0;
 export function p(o) { calls = calls + 1; return o.v * 2; }
 export function use() {
@@ -805,7 +949,18 @@ export function use() {
   return String(x) + "," + String(y) + ",calls=" + calls;
 }`);
     expect(out).toBe("2,4,calls=2");
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -828,25 +983,27 @@ describe("prim + 界契约实例化保留 typeof 类型义务", () => {
 
 
 describe("prim + 界契约实例化保留 typeof 类型义务", () => {
-  it("number().gt(0) 实例化 = typeof 义务 ∧ 数值界", () => {
+  it("number().gt(0) 实例化 = typeof 义务 ∧ 数值界；string().max(3) 实例化 = typeof 义务 ∧ 长度界；裸 prim 契约口径不变（仍是单条 typeof）；产品面：类型错配的实参被抓住（此前零诊断静默放行）", () => {
+(() => {
+
     const p = predToString(instantiateConstraint(number().gt(0), "ms"));
     expect(p).toContain('typeof ms = "number"');
     expect(p).toContain("ms > 0");
-  });
+  })();
+(() => {
 
-  it("string().max(3) 实例化 = typeof 义务 ∧ 长度界", () => {
     const p = predToString(instantiateConstraint(string().max(3), "s"));
     expect(p).toContain('typeof s = "string"');
     expect(p).toContain("length(s) ≤ 3");
-  });
+  })();
+(() => {
 
-  it("裸 prim 契约口径不变（仍是单条 typeof）", () => {
     expect(predToString(instantiateConstraint(number(), "ms"))).toBe(
       'typeof ms = "number"',
     );
-  });
+  })();
+(() => {
 
-  it("产品面：类型错配的实参被抓住（此前零诊断静默放行）", () => {
     const opts = sidecarOpts(
       "std.nudo.js",
       `export const positive = number().gt(0);`,
@@ -868,7 +1025,14 @@ needsPos("a");
     expect(
       errs.some((i) => (i.expected ?? "").includes('typeof x = "number"')),
     ).toBe(true);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -910,7 +1074,14 @@ describe("非标量合取不再误报 nudo:contract-conflict", () => {
     resetSidecarLoadFailureCache();
   });
 
-  it("shape 约束（源码指令 × 同名侧车）⇒ 无 conflict 假红", () => {
+  it("shape 约束（源码指令 × 同名侧车）⇒ 无 conflict 假红；conflict 位不再吃掉该形参的义务 ⇒ 调用点仍报违例（假绿修复）；语义真矛盾（number() ∧ string()）仍然报 conflict", () => {
+(() => {
+    resetCheckSourceMemo();
+    resetGeneralizeMemo();
+    resetNudoModuleExecCache();
+    resetSidecarLoadFailureCache();
+  
+
     const { loadModule } = makeFiles({
       "/t/shapes.nudo.js": SHAPES,
       "/t/t.nudo.js": SIDECAR,
@@ -921,9 +1092,14 @@ describe("非标量合取不再误报 nudo:contract-conflict", () => {
       fromFile: "/t/t.js",
     });
     expect(r.issues.filter((i) => i.code === "nudo:contract-conflict")).toEqual([]);
-  });
+  })();
+(() => {
+    resetCheckSourceMemo();
+    resetGeneralizeMemo();
+    resetNudoModuleExecCache();
+    resetSidecarLoadFailureCache();
+  
 
-  it("conflict 位不再吃掉该形参的义务 ⇒ 调用点仍报违例（假绿修复）", () => {
     const { loadModule } = makeFiles({
       "/t/shapes2.nudo.js": SHAPES,
       "/t/t2.nudo.js": SIDECAR,
@@ -935,9 +1111,14 @@ describe("非标量合取不再误报 nudo:contract-conflict", () => {
     });
     const violated = r.issues.filter((i) => i.code === "nudo:constraint-violated");
     expect(violated.length).toBeGreaterThan(0);
-  });
+  })();
+(() => {
+    resetCheckSourceMemo();
+    resetGeneralizeMemo();
+    resetNudoModuleExecCache();
+    resetSidecarLoadFailureCache();
+  
 
-  it("语义真矛盾（number() ∧ string()）仍然报 conflict", () => {
     const { loadModule } = makeFiles({
       "/t/std.nudo.js": `import { number } from "@nudojs/core";\nexport const num = number();`,
       "/t/prim.nudo.js": `import { fn, string } from "@nudojs/core";\nexport const f = fn({ x: string() }, string());`,
@@ -948,7 +1129,12 @@ describe("非标量合取不再误报 nudo:contract-conflict", () => {
       fromFile: "/t/prim.js",
     });
     expect(r.issues.filter((i) => i.code === "nudo:contract-conflict").length).toBeGreaterThan(0);
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
 
@@ -985,21 +1171,28 @@ describe("check 签名面：fn 形参不出现内部占位 term", () => {
   });
   const sig = r.signatures.find((s) => s.name === "f");
 
-  it("形参类型是 (number) => number（无 x0 / ret）", () => {
+  it("形参类型是 (number) => number（无 x0 / ret）；签名面不含占位名", () => {
+(() => {
+
     expect(sig).toBeDefined();
     expect(sig!.paramTypes![0]).toBe("(number) => number");
-  });
-  it("签名面不含占位名", () => {
+  })();
+(() => {
+
     const line = r.signatures
       .map((s) => s.paramTypes!.join(" | "))
       .join(" ");
     expect(line).not.toContain("x0");
     expect(line).not.toContain("ret");
-  });
+  })();
+});;
+  ;
 });
 
 describe("formatShape：fn 内层槽位压占位 term、留 α 名", () => {
-  it("占位 term（x0 / ret）不回显", () => {
+  it("占位 term（x0 / ret）不回显；关系 fn 的 α 名（A1 / B1）照旧回显", () => {
+(() => {
+
     const slot = abs({ k: "prim", type: "number" }, termVar("x0"), undefined, "exact");
     const ret = abs({ k: "prim", type: "number" }, termVar("ret"), undefined, "exact");
     const f = abs(
@@ -1009,9 +1202,9 @@ describe("formatShape：fn 内层槽位压占位 term、留 α 名", () => {
       "exact",
     );
     expect(formatShape(f)).toBe("(number) => number");
-  });
+  })();
+(() => {
 
-  it("关系 fn 的 α 名（A1 / B1）照旧回显", () => {
     const slot = abs({ k: "any" }, termVar("A1"), undefined, "exact");
     const ret = abs({ k: "any" }, termVar("B1"), undefined, "exact");
     const f = abs(
@@ -1021,7 +1214,10 @@ describe("formatShape：fn 内层槽位压占位 term、留 α 名", () => {
       "exact",
     );
     expect(formatShape(f)).toBe("(A1) => B1");
-  });
+  })();
+});;
+
+  ;
 });
 });
 
@@ -1053,14 +1249,26 @@ describe("shape 缺参诊断（宿主原文不得冒泡）", () => {
     takeContractDiags();
   });
 
-  it("shape() 抛 Nudo 原生诊断，点名构造器并说明缺参", () => {
+  it("shape() 抛 Nudo 原生诊断，点名构造器并说明缺参；诊断不含宿主 TypeError 原文；shape(undefined) 与 shape() 同口径；产品面：侧车诊断是 Nudo 原生文案，不是宿主原文", () => {
+(() => {
+    resetCheckSourceMemo();
+    resetGeneralizeMemo();
+    takeRefineDiags();
+    takeContractDiags();
+  
+
     // 少传实参：零参调用与 `shape(undefined)` 同口径（守卫判的是实参值，
     // 不是实参个数）⇒ 用显式 undefined 表达「缺参」。
     expect(() => shape(undefined as never)).toThrow(/nudo shape\(\)/);
     expect(() => shape(undefined as never)).toThrow(/fields object is required/);
-  });
+  })();
+(() => {
+    resetCheckSourceMemo();
+    resetGeneralizeMemo();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-  it("诊断不含宿主 TypeError 原文", () => {
     let msg = "";
     try {
       shape(undefined as never);
@@ -1069,13 +1277,23 @@ describe("shape 缺参诊断（宿主原文不得冒泡）", () => {
     }
     expect(msg).not.toContain("Cannot convert undefined or null to object");
     expect(msg).not.toContain("TypeError");
-  });
+  })();
+(() => {
+    resetCheckSourceMemo();
+    resetGeneralizeMemo();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-  it("shape(undefined) 与 shape() 同口径", () => {
     expect(() => shape(undefined as never)).toThrow(/fields object is required/);
-  });
+  })();
+(() => {
+    resetCheckSourceMemo();
+    resetGeneralizeMemo();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-  it("产品面：侧车诊断是 Nudo 原生文案，不是宿主原文", () => {
     const { loadModule } = makeFiles({
       "/t/f.nudo.js": `import { fn, shape, any } from "@nudojs/core";
 export const f = fn({ o: shape() }, any());`,
@@ -1090,7 +1308,14 @@ export function f(o) {
     expect(load).toBeDefined();
     expect(load!.message).toContain("nudo shape()");
     expect(load!.message).not.toContain("Cannot convert undefined or null to object");
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -1129,18 +1354,20 @@ function fnAbs(): Abs {
 }
 
 describe("formatShape 的数组元素给函数类型加括号", () => {
-  it("arr(fn)：函数元素加括号（改前 `(1) => 1[]`）", () => {
+  it("arr(fn)：函数元素加括号（改前 `(1) => 1[]`）；arr(arr(fn))：嵌套数组同样带括号；控制：union 元素的既有分组判定保留；控制：prim 元素不加冗余括号；控制：tuple 元素里的 fn 不在本片范围（不加括号）；控制：对象槽里的 fn 不在本片范围（不加括号）；端到端：真实源码返回「函数数组」时不得渲染成「返回数组的函数」", () => {
+(() => {
+
     const a = abs({ k: "arr", element: fnAbs() }, undefined, undefined, "exact");
     expect(formatShape(a)).toBe("((1) => 1)[]");
-  });
+  })();
+(() => {
 
-  it("arr(arr(fn))：嵌套数组同样带括号", () => {
     const inner = abs({ k: "arr", element: fnAbs() }, undefined, undefined, "exact");
     const outer = abs({ k: "arr", element: inner }, undefined, undefined, "exact");
     expect(formatShape(outer)).toBe("((1) => 1)[][]");
-  });
+  })();
+(() => {
 
-  it("控制：union 元素的既有分组判定保留", () => {
     const sum = abs(
       { k: "sum", members: [numLit(1), strLit("x")] },
       undefined,
@@ -1149,19 +1376,19 @@ describe("formatShape 的数组元素给函数类型加括号", () => {
     );
     const a = abs({ k: "arr", element: sum }, undefined, undefined, "exact");
     expect(formatShape(a)).toBe('(1 | "x")[]');
-  });
+  })();
+(() => {
 
-  it("控制：prim 元素不加冗余括号", () => {
     const a = abs({ k: "arr", element: numLit(1) }, undefined, undefined, "exact");
     expect(formatShape(a)).toBe("1[]");
-  });
+  })();
+(() => {
 
-  it("控制：tuple 元素里的 fn 不在本片范围（不加括号）", () => {
     const a = abs({ k: "tuple", elements: [fnAbs()] }, undefined, undefined, "exact");
     expect(formatShape(a)).toBe("[(1) => 1]");
-  });
+  })();
+(() => {
 
-  it("控制：对象槽里的 fn 不在本片范围（不加括号）", () => {
     const a = abs(
       { k: "obj", slots: { cb: { value: fnAbs() } } },
       undefined,
@@ -1169,9 +1396,9 @@ describe("formatShape 的数组元素给函数类型加括号", () => {
       "exact",
     );
     expect(formatShape(a)).toBe("{ cb: (1) => 1 }");
-  });
+  })();
+(() => {
 
-  it("端到端：真实源码返回「函数数组」时不得渲染成「返回数组的函数」", () => {
     const r = call(
       `export function f() { return Array.from([1], (x) => () => x); }`,
       "f",
@@ -1181,7 +1408,20 @@ describe("formatShape 的数组元素给函数类型加括号", () => {
     // 改前是 `() => ?[]`（`[]` 被读成函数的返回类型）
     expect(text).not.toContain("=> ?[]");
     expect(text).toMatch(/\)\[\]$/);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -1231,7 +1471,9 @@ function fnStrAbs(): Abs {
 }
 
 describe("formatShape 的 union 成员给函数类型加括号", () => {
-  it("sum(fn, number)：函数成员加括号（改前 `(1) => 1 | 2`）", () => {
+  it("sum(fn, number)：函数成员加括号（改前 `(1) => 1 | 2`）；sum(fn, fn)：两个函数成员都加括号；sum(arr(fn), number)：数组成员靠 arr 臂自己加括号（成员本身不是 fn）；控制：非函数成员的 union 不加括号；去重：文本相同的两个 fn 成员只留一条（去重 key 用未包裹文本）；端到端：真实源码返回「函数或 number」时 `|` 不得被返回类型吃掉", () => {
+(() => {
+
     const a = abs(
       { k: "sum", members: [fnAbs(), numLit(2)] },
       undefined,
@@ -1239,9 +1481,9 @@ describe("formatShape 的 union 成员给函数类型加括号", () => {
       "exact",
     );
     expect(formatShape(a)).toBe("((1) => 1) | 2");
-  });
+  })();
+(() => {
 
-  it("sum(fn, fn)：两个函数成员都加括号", () => {
     const a = abs(
       { k: "sum", members: [fnAbs(), fnStrAbs()] },
       undefined,
@@ -1249,9 +1491,9 @@ describe("formatShape 的 union 成员给函数类型加括号", () => {
       "exact",
     );
     expect(formatShape(a)).toBe('((1) => 1) | ((1) => "s")');
-  });
+  })();
+(() => {
 
-  it("sum(arr(fn), number)：数组成员靠 arr 臂自己加括号（成员本身不是 fn）", () => {
     const arrFn = abs({ k: "arr", element: fnAbs() }, undefined, undefined, "exact");
     const a = abs(
       { k: "sum", members: [arrFn, numLit(2)] },
@@ -1260,9 +1502,9 @@ describe("formatShape 的 union 成员给函数类型加括号", () => {
       "exact",
     );
     expect(formatShape(a)).toBe("((1) => 1)[] | 2");
-  });
+  })();
+(() => {
 
-  it("控制：非函数成员的 union 不加括号", () => {
     const a = abs(
       { k: "sum", members: [numLit(1), strLit("x")] },
       undefined,
@@ -1270,9 +1512,9 @@ describe("formatShape 的 union 成员给函数类型加括号", () => {
       "exact",
     );
     expect(formatShape(a)).toBe('1 | "x"');
-  });
+  })();
+(() => {
 
-  it("去重：文本相同的两个 fn 成员只留一条（去重 key 用未包裹文本）", () => {
     const a = abs(
       { k: "sum", members: [fnAbs(), fnAbs()] },
       undefined,
@@ -1280,9 +1522,9 @@ describe("formatShape 的 union 成员给函数类型加括号", () => {
       "exact",
     );
     expect(formatShape(a)).toBe("((1) => 1)");
-  });
+  })();
+(() => {
 
-  it("端到端：真实源码返回「函数或 number」时 `|` 不得被返回类型吃掉", () => {
     // 实参取 any（未约束）⇒ 三元两臂都可达 ⇒ 返回面是 union
     const r = call(
       `export function f(flag) { return flag ? () => 1 : 2; }`,
@@ -1294,7 +1536,18 @@ describe("formatShape 的 union 成员给函数类型加括号", () => {
     // 改前是 `() => ? | 2`（`|` 绑定到函数的返回类型）
     expect(text).not.toContain("=> ? |");
     expect(text).toMatch(/^\(.+\) \| 2$/);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -1375,69 +1628,92 @@ export function use() { return f(${arg}); }`;
 }
 
 describe("union / nullable 契约的假红那一半（合法 nullish 实参不再报红）", () => {
-  it("union(number().gt(0), lit(null)) 收到 null ⇒ 放行（改前 1 违例 = 假红）", () => {
+  it("union(number().gt(0), lit(null)) 收到 null ⇒ 放行（改前 1 违例 = 假红）；nullable(number().gt(0)) 收到 null ⇒ 放行（改前 1 违例 = 假红）；nullable(number().gt(0)) 收到 undefined ⇒ 放行（改前 1 违例 = 假红）；union(number(), lit(null)) 收到 null ⇒ 放行（改前 1 违例 = 假红）；union(number(), l", () => {
+(() => {
+
     const r = check(call("posOrNull", "null"));
     expect(violated(r).length).toBe(0);
-  });
+  })();
+(() => {
 
-  it("nullable(number().gt(0)) 收到 null ⇒ 放行（改前 1 违例 = 假红）", () => {
     const r = check(call("maybePositive", "null"));
     expect(violated(r).length).toBe(0);
-  });
+  })();
+(() => {
 
-  it("nullable(number().gt(0)) 收到 undefined ⇒ 放行（改前 1 违例 = 假红）", () => {
     const r = check(call("maybePositive", "undefined"));
     expect(violated(r).length).toBe(0);
-  });
+  })();
+(() => {
 
-  it("union(number(), lit(null)) 收到 null ⇒ 放行（改前 1 违例 = 假红）", () => {
     const r = check(call("numOrNull", "null"));
     expect(violated(r).length).toBe(0);
-  });
+  })();
+(() => {
 
-  it("union(number(), lit(undefined)) 收到 undefined ⇒ 放行（改前 1 违例 = 假红）", () => {
     const r = check(call("numOrUndef", "undefined"));
     expect(violated(r).length).toBe(0);
-  });
+  })();
+(() => {
 
-  it("union(number().gt(0), lit(undefined)) 收到 undefined ⇒ 放行（改前 1 违例 = 假红）", () => {
     const r = check(call("posOrUndef", "undefined"));
     expect(violated(r).length).toBe(0);
-  });
+  })();
+(() => {
 
-  it("负控制：null 与 undefined 是两个域 —— posOrNull 收到 undefined 仍报违例", () => {
     const r = check(call("posOrNull", "undefined"));
     const vs = violated(r);
     expect(vs.length).toBe(1);
     expect(vs[0]?.expected).toBe("(x > 0 ∨ x = null)");
-  });
+  })();
+(() => {
 
-  it("负控制：posOrUndef 收到 null 仍报违例", () => {
     const r = check(call("posOrUndef", "null"));
     const vs = violated(r);
     expect(vs.length).toBe(1);
     expect(vs[0]?.expected).toBe("(x > 0 ∨ x = undefined)");
-  });
+  })();
+(() => {
 
-  it("负控制：numOrNull 收到 undefined 仍报违例", () => {
     const r = check(call("numOrNull", "undefined"));
     const vs = violated(r);
     expect(vs.length).toBe(1);
     expect(vs[0]?.expected).toBe('(typeof x = "number" ∨ x = null)');
-  });
+  })();
+(() => {
 
-  it("负控制：越界实参仍报违例（逐支求值不是「一律放行」）", () => {
     const r = check(call("posOrNull", "0"));
     const vs = violated(r);
     expect(vs.length).toBe(1);
     expect(vs[0]?.expected).toBe("(x > 0 ∨ x = null)");
-  });
+  })();
+(() => {
 
-  it("负控制：没有契约的形参收到 null ⇒ 零违例（违例来自契约，不是引擎噪声）", () => {
     const r = check(`export function f(x) { return x; }
 export function use() { return f(null); }`);
     expect(violated(r).length).toBe(0);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -1506,43 +1782,56 @@ export function use() { return f(${arg}); }`;
 }
 
 describe("union / nullable 契约的成员义务（or 析取臂不再被 unknown 抑制）", () => {
-  it("union(number().gt(0), lit(null)) 收到 0 ⇒ 判违例（改前 0 违例 = 假绿）", () => {
+  it("union(number().gt(0), lit(null)) 收到 0 ⇒ 判违例（改前 0 违例 = 假绿）；nullable(number().gt(0)) 收到 0 ⇒ 判违例（改前 0 违例 = 假绿）；union(number(), lit(null)) 收到 'x' ⇒ 判违例（改前 0 违例 = 假绿）；union(number(), lit(null)) 收到 1 ⇒ 放行（成员义务不误伤合法实参）；union(number().gt(0), lit(nu", () => {
+(() => {
+
     const r = check(call("posOrNull", "0"));
     const vs = violated(r);
     expect(vs.length).toBe(1);
     expect(vs[0]?.expected).toBe("(x > 0 ∨ x = null)");
     expect(vs[0]?.actual).toContain("0");
-  });
+  })();
+(() => {
 
-  it("nullable(number().gt(0)) 收到 0 ⇒ 判违例（改前 0 违例 = 假绿）", () => {
     const r = check(call("maybePositive", "0"));
     const vs = violated(r);
     expect(vs.length).toBe(1);
     expect(vs[0]?.expected).toBe("(x > 0 ∨ x = null ∨ x = undefined)");
-  });
+  })();
+(() => {
 
-  it("union(number(), lit(null)) 收到 'x' ⇒ 判违例（改前 0 违例 = 假绿）", () => {
     const r = check(call("numOrNull", '"x"'));
     const vs = violated(r);
     expect(vs.length).toBe(1);
     expect(vs[0]?.expected).toBe('(typeof x = "number" ∨ x = null)');
-  });
+  })();
+(() => {
 
-  it("union(number(), lit(null)) 收到 1 ⇒ 放行（成员义务不误伤合法实参）", () => {
     const r = check(call("numOrNull", "1"));
     expect(violated(r).length).toBe(0);
-  });
+  })();
+(() => {
 
-  it("union(number().gt(0), lit(null)) 收到 3 ⇒ 放行（成员义务不误伤合法实参）", () => {
     const r = check(call("posOrNull", "3"));
     expect(violated(r).length).toBe(0);
-  });
+  })();
+(() => {
 
-  it("负控制：没有契约的形参收到任何实参 ⇒ 零违例（违例来自契约，不是引擎噪声）", () => {
     const r = check(`export function f(x) { return x; }
 export function use() { return f(0); }`);
     expect(violated(r).length).toBe(0);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 });
@@ -1606,7 +1895,9 @@ function violations(r: {
 }
 
 describe("布尔字面量实参走快路径（顶层与函数体内同判）", () => {
-  it("顶层 `f(true)` ⇒ 报违例（改前也报，走的是执行态回退）", () => {
+  it("顶层 `f(true)` ⇒ 报违例（改前也报，走的是执行态回退）；★ 函数体内 `f(true)` ⇒ 报违例（改前**零诊断**——假绿）；★ 函数体内 `f(false)` ⇒ 报违例（改前零诊断）；作用域不再决定裁决：顶层与函数体内的诊断**逐字相同**；负控制：契约是 boolean() 时 `f(true)` ⇒ 不报违例；负控制：契约是 boolean() 时 `f(false)` ⇒ 不报违例；回归：`f(null)` 仍照常执法（族 06 的 NullLit", () => {
+(() => {
+
     const r = check(`
 /** @nudo:contract x numC */
 export function f(x) { return x; }
@@ -1615,9 +1906,9 @@ f(true);
     const vs = violations(r);
     expect(vs.length).toBe(1);
     expect(vs[0].actual).toContain("true");
-  });
+  })();
+(() => {
 
-  it("★ 函数体内 `f(true)` ⇒ 报违例（改前**零诊断**——假绿）", () => {
     const r = check(`
 /** @nudo:contract x numC */
 export function f(x) { return x; }
@@ -1627,9 +1918,9 @@ export function g() { f(true); return 1; }
     expect(vs.length).toBe(1);
     expect(vs[0].actual).toContain("true");
     expect(vs[0].expected).toContain("number");
-  });
+  })();
+(() => {
 
-  it("★ 函数体内 `f(false)` ⇒ 报违例（改前零诊断）", () => {
     const r = check(`
 /** @nudo:contract x numC */
 export function f(x) { return x; }
@@ -1638,9 +1929,9 @@ export function g() { f(false); return 1; }
     const vs = violations(r);
     expect(vs.length).toBe(1);
     expect(vs[0].actual).toContain("false");
-  });
+  })();
+(() => {
 
-  it("作用域不再决定裁决：顶层与函数体内的诊断**逐字相同**", () => {
     const top = check(`
 /** @nudo:contract x numC */
 export function f(x) { return x; }
@@ -1655,27 +1946,27 @@ export function g() { f(true); return 1; }
     const b = violations(body)[0];
     expect(a.actual).toBe(b.actual);
     expect(a.expected).toBe(b.expected);
-  });
+  })();
+(() => {
 
-  it("负控制：契约是 boolean() 时 `f(true)` ⇒ 不报违例", () => {
     const r = check(`
 /** @nudo:contract x boolC */
 export function f(x) { return x; }
 export function g() { f(true); return 1; }
 `);
     expect(violations(r).length).toBe(0);
-  });
+  })();
+(() => {
 
-  it("负控制：契约是 boolean() 时 `f(false)` ⇒ 不报违例", () => {
     const r = check(`
 /** @nudo:contract x boolC */
 export function f(x) { return x; }
 export function g() { f(false); return 1; }
 `);
     expect(violations(r).length).toBe(0);
-  });
+  })();
+(() => {
 
-  it("回归：`f(null)` 仍照常执法（族 06 的 NullLiteral 分支没被弄坏）", () => {
     const r = check(`
 /** @nudo:contract x numC */
 export function f(x) { return x; }
@@ -1684,9 +1975,9 @@ export function g() { f(null); return 1; }
     const vs = violations(r);
     expect(vs.length).toBe(1);
     expect(vs[0].actual).toContain("null");
-  });
+  })();
+(() => {
 
-  it("回归：数值实参仍照常执法（两种作用域都报）", () => {
     const r = check(`
 /** @nudo:contract x posC */
 export function f(x) { return x; }
@@ -1695,7 +1986,22 @@ export function g() { f(0); return 1; }
     const vs = violations(r);
     expect(vs.length).toBe(1);
     expect(vs[0].actual).toContain("0");
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -1739,33 +2045,42 @@ export function fObj({ a, b }) {
 `;
 
 describe("缺字段违例只报一次", () => {
-  it("缺字段只产出 1 条诊断（不是 2 条）", () => {
+  it("缺字段只产出 1 条诊断（不是 2 条）；诊断文本与去重前一致（missing field b）；两条**不同**的违例各报一次（缺字段 + 类型违例）；合规实参零诊断（去重没有把合法调用打成红）", () => {
+(() => {
+
     const r = check(`${DECL}\nfObj({ a: 1 });\n`);
     const v = violated(r);
     expect(v).toHaveLength(1);
     expect(String(v[0]!.expected)).toContain("missing field b");
-  });
+  })();
+(() => {
 
-  it("诊断文本与去重前一致（missing field b）", () => {
     const r = check(`${DECL}\nfObj({ a: 1 });\n`);
     const v = violated(r);
     expect(v[0]!.message).toContain("fObj");
     expect(String(v[0]!.expected)).toBe("missing field b");
-  });
+  })();
+(() => {
 
-  it("两条**不同**的违例各报一次（缺字段 + 类型违例）", () => {
     const r = check(`${DECL}\nfObj({ a: "x" });\n`);
     const texts = violated(r).map((i) => String(i.expected));
     // 缺字段：恰好一条（去重的核心断言）
     expect(texts.filter((t) => t.includes("missing field b"))).toHaveLength(1);
     // 字段类型违例：恰好一条（与缺字段是**不同**的违例，不该被合并）
     expect(texts.filter((t) => t.includes('typeof a = "number"'))).toHaveLength(1);
-  });
+  })();
+(() => {
 
-  it("合规实参零诊断（去重没有把合法调用打成红）", () => {
     const r = check(`${DECL}\nfObj({ a: 1, b: 2 });\n`);
     expect(violated(r)).toEqual([]);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -1811,33 +2126,44 @@ const DIFF_NAME = `export class C {
 `;
 
 describe("静态与实例同名：普查名不得重复", () => {
-  it("同名 ⇒ 普查名只出现一次（静态方法不另起名）", () => {
+  it("同名 ⇒ 普查名只出现一次（静态方法不另起名）；不同名 ⇒ 两个都在（静态方法仍是入口可见的）；同名 ⇒ check 签名面只有一条 C.m（不再两条互相顶替）；同名 ⇒ 实例方法的返回值不被静态方法顶替（native \"inst\"）；不同名 ⇒ 两条签名都在（对照）", () => {
+(() => {
+
     const names = listTopFunctions(SAME_NAME);
     expect(names).toEqual(["C.m"]);
     expect(new Set(names).size).toBe(names.length);
-  });
+  })();
+(() => {
 
-  it("不同名 ⇒ 两个都在（静态方法仍是入口可见的）", () => {
     expect(listTopFunctions(DIFF_NAME)).toEqual(["C.m", "C.n"]);
-  });
+  })();
+(() => {
 
-  it("同名 ⇒ check 签名面只有一条 C.m（不再两条互相顶替）", () => {
     const r = issuesOf(SAME_NAME, "/t/b437/k.js");
     const sigs = r.signatures.filter((s) => s.name === "C.m");
     expect(sigs.length).toBe(1);
-  });
+  })();
+(() => {
 
-  it("同名 ⇒ 实例方法的返回值不被静态方法顶替（native \"inst\"）", () => {
     const r = issuesOf(SAME_NAME, "/t/b437/k.js");
     const sig = r.signatures.find((s) => s.name === "C.m");
     expect(sig?.display).toContain('"inst"');
-  });
+  })();
+(() => {
 
-  it("不同名 ⇒ 两条签名都在（对照）", () => {
     const r = issuesOf(DIFF_NAME, "/t/b437/j.js");
     expect(r.signatures.filter((s) => s.name === "C.m").length).toBe(1);
     expect(r.signatures.filter((s) => s.name === "C.n").length).toBe(1);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -1885,31 +2211,40 @@ export function takeNested(x) { return x; }
 `;
 
 describe("lazy 包装的结构义务不再丢失", () => {
-  it("lazy(() => shape(...))：非对象实参报违例", () => {
+  it("lazy(() => shape(...))：非对象实参报违例；lazy(() => array(...))：元素类型不符报违例；嵌套 lazy 包装（两层）也能解包；合规实参零诊断（deref 没有把合法调用打成红）", () => {
+(() => {
+
     const r = check(`${DECLS}\ntakeShape(1);\n`);
     const v = violated(r, "takeShape");
     expect(v).toHaveLength(1);
     expect(String(v[0]!.expected)).toContain("object shape at x");
-  });
+  })();
+(() => {
 
-  it("lazy(() => array(...))：元素类型不符报违例", () => {
     const r = check(`${DECLS}\ntakeArr(["x"]);\n`);
     const v = violated(r, "takeArr");
     expect(v).toHaveLength(1);
     expect(String(v[0]!.expected)).toContain('typeof x[0] = "number"');
-  });
+  })();
+(() => {
 
-  it("嵌套 lazy 包装（两层）也能解包", () => {
     const r = check(`${DECLS}\ntakeNested(1);\n`);
     const v = violated(r, "takeNested");
     expect(v).toHaveLength(1);
     expect(String(v[0]!.expected)).toContain("object shape at x");
-  });
+  })();
+(() => {
 
-  it("合规实参零诊断（deref 没有把合法调用打成红）", () => {
     const r = check(`${DECLS}\ntakeShape({ a: 1 });\ntakeArr([1, 2]);\ntakeNested({ a: 1 });\n`);
     expect(violated(r)).toEqual([]);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -1959,45 +2294,58 @@ export function fldBounded(o) { return o; }
 `;
 
 describe("字段 / 元素位的 nullish 实参不再零诊断", () => {
-  it("顶层标量位：null 报违例（基线口径不变）", () => {
+  it("顶层标量位：null 报违例（基线口径不变）；字段位：{ v: null } 报违例；数组元素位：[null] 报违例；字段位 undefined 同样报违例；带界的字段位：null 不满足数值界；合规实参零诊断（nullish 执法没有误伤合法调用）", () => {
+(() => {
+
     const r = check(`${DECLS}\ntop(null);\n`);
     const v = violated(r, "top");
     expect(v).toHaveLength(1);
     expect(String(v[0]!.expected)).toContain('typeof x = "number"');
-  });
+  })();
+(() => {
 
-  it("字段位：{ v: null } 报违例", () => {
     const r = check(`${DECLS}\nfld({ v: null });\n`);
     const v = violated(r, "fld");
     expect(v).toHaveLength(1);
     expect(String(v[0]!.expected)).toContain('typeof o.v = "number"');
-  });
+  })();
+(() => {
 
-  it("数组元素位：[null] 报违例", () => {
     const r = check(`${DECLS}\narr([null]);\n`);
     const v = violated(r, "arr");
     expect(v).toHaveLength(1);
     expect(String(v[0]!.expected)).toContain('typeof a[0] = "number"');
-  });
+  })();
+(() => {
 
-  it("字段位 undefined 同样报违例", () => {
     const r = check(`${DECLS}\nfld({ v: undefined });\n`);
     const v = violated(r, "fld");
     expect(v).toHaveLength(1);
     expect(String(v[0]!.expected)).toContain('typeof o.v = "number"');
-  });
+  })();
+(() => {
 
-  it("带界的字段位：null 不满足数值界", () => {
     const r = check(`${DECLS}\nfldBounded({ v: null });\n`);
     const v = violated(r, "fldBounded");
     expect(v).toHaveLength(1);
     expect(v[0]!.severity).toBe("error");
-  });
+  })();
+(() => {
 
-  it("合规实参零诊断（nullish 执法没有误伤合法调用）", () => {
     const r = check(`${DECLS}\ntop(1);\nfld({ v: 1 });\narr([1, 2]);\nfldBounded({ v: 5 });\n`);
     expect(violated(r)).toEqual([]);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -2042,19 +2390,21 @@ const OBJ_LITERAL = `module.exports = {
 `;
 
 describe("CJS 普查名取导出槽名，不取内层函数 id", () => {
-  it("成员赋值 + 具名函数表达式 ⇒ 普查名是导出槽名", () => {
+  it("成员赋值 + 具名函数表达式 ⇒ 普查名是导出槽名；成员赋值 + 匿名函数表达式 ⇒ 普查名是导出槽名（对照）；对象字面量成员 + 具名函数表达式 ⇒ 普查名是导出槽名（键名）；侧车契约按导出槽名绑定 ⇒ 契约义务真的执法（不假绿）", () => {
+(() => {
+
     expect(listTopFunctions(NAMED_FN_EXPR)).toEqual(["greet"]);
-  });
+  })();
+(() => {
 
-  it("成员赋值 + 匿名函数表达式 ⇒ 普查名是导出槽名（对照）", () => {
     expect(listTopFunctions(ANON_FN_EXPR)).toEqual(["greet"]);
-  });
+  })();
+(() => {
 
-  it("对象字面量成员 + 具名函数表达式 ⇒ 普查名是导出槽名（键名）", () => {
     expect(listTopFunctions(OBJ_LITERAL)).toEqual(["greet"]);
-  });
+  })();
+(() => {
 
-  it("侧车契约按导出槽名绑定 ⇒ 契约义务真的执法（不假绿）", () => {
     // 侧车 `greet` 槽上的契约：返回 number() —— 实现返回 "hi" ⇒ 违例
     const src = `exports.greet = function inner() {
   return "hi";
@@ -2073,6 +2423,13 @@ export const greet = fn({}, number());
         (i) => i.code === "nudo:constraint-violated" && /greet/.test(i.message),
       ),
     ).toBe(true);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });

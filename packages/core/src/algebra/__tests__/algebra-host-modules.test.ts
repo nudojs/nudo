@@ -62,7 +62,9 @@ function violations(r: { issues: Array<{ code: string; actual?: string }> }) {
 }
 
 describe("导入绑定再绑定的六条调用形态", () => {
-  it("六形态（-1…-6）各报一条 nudo:constraint-violated", () => {
+  it("六形态（-1…-6）各报一条 nudo:constraint-violated；负控制：导入函数收到合法实参 ⇒ 零违例（直接 / 别名 / 对象成员）", () => {
+(() => {
+
     const r = check(`import { f } from "./lib.js";
 const alias = f;
 const o = { f };
@@ -76,7 +78,19 @@ export function viaCond(c) { return (c ? f : f)(-6); }
     const v = violations(r);
     expect(v).toHaveLength(6);
     expect(v.map((i) => i.actual).join(" | ")).toContain("-6");
-  });
+  })();
+(() => {
+
+    const r = check(`import { f } from "./lib.js";
+const alias = f;
+const o = { f };
+export function ok() { return f(1); }
+export function okAlias() { return alias(2); }
+export function okObj() { return o.f(3); }
+`);
+    expect(violations(r)).toHaveLength(0);
+  })();
+});;
 
   it.each([
     ["alias", `const alias = f; export function use() { return alias(-2); }`],
@@ -89,16 +103,7 @@ export function viaCond(c) { return (c ? f : f)(-6); }
     expect(violations(r)).toHaveLength(1);
   });
 
-  it("负控制：导入函数收到合法实参 ⇒ 零违例（直接 / 别名 / 对象成员）", () => {
-    const r = check(`import { f } from "./lib.js";
-const alias = f;
-const o = { f };
-export function ok() { return f(1); }
-export function okAlias() { return alias(2); }
-export function okObj() { return o.f(3); }
-`);
-    expect(violations(r)).toHaveLength(0);
-  });
+  ;
 });
 });
 
@@ -138,7 +143,9 @@ describe("sloppy 源的写入语义", () => {
     });
   }
 
-  it("负控制：ESM（strict）下 frozen / readonly 写仍确定抛 TypeError", () => {
+  it("负控制：ESM（strict）下 frozen / readonly 写仍确定抛 TypeError；负控制：ESM 下隐式全局赋值仍确定抛 ReferenceError", () => {
+(() => {
+
     for (const src of [
       `export function f() { const o = Object.freeze({a:1}); o.a = 2; return o.a; }`,
       `export function f() { const o = {}; Object.defineProperty(o,"x",{value:1,writable:false}); o.x=2; return o.x; }`,
@@ -147,12 +154,15 @@ describe("sloppy 源的写入语义", () => {
       expect(isNever(r.result)).toBe(true);
       expect(throwsError(r.throws, "TypeError")).toBe(true);
     }
-  });
+  })();
+(() => {
 
-  it("负控制：ESM 下隐式全局赋值仍确定抛 ReferenceError", () => {
     const r = call(`export function f() { leaked2 = 1; return 1; }`);
     expect(isNever(r.result)).toBe(true);
-  });
+  })();
+});;
+
+  ;
 });
 });
 
@@ -196,29 +206,38 @@ const TOP = -1;
 `;
 
 describe("函数内 const 实参不再静默跳过", () => {
-  it("字面量 / 模块级 const / 函数内 const 三条调用点各报一条", () => {
+  it("字面量 / 模块级 const / 函数内 const 三条调用点各报一条；函数内 const 单独出现也报（位置不决定判定）；负控制：函数内 const 是合法值 ⇒ 零违例；负控制：求不出值的局部绑定不发明义务", () => {
+(() => {
+
     const r = check(`${DECL}export function literal() { return f(-1); }
 export function topConst() { return f(TOP); }
 export function localConst() { const v = -1; return f(v); }`);
     expect(violations(r)).toHaveLength(3);
-  });
+  })();
+(() => {
 
-  it("函数内 const 单独出现也报（位置不决定判定）", () => {
     const r = check(`${DECL}export function localConst() { const v = -1; return f(v); }`);
     expect(violations(r)).toHaveLength(1);
     expect(r.issues.find((i) => i.code === "nudo:constraint-violated")?.expected).toBe("x > 0");
-  });
+  })();
+(() => {
 
-  it("负控制：函数内 const 是合法值 ⇒ 零违例", () => {
     const r = check(`${DECL}export function ok() { const v = 1; return f(v); }`);
     expect(violations(r)).toHaveLength(0);
-  });
+  })();
+(() => {
 
-  it("负控制：求不出值的局部绑定不发明义务", () => {
     const r = check(`${DECL}export function unknown() { const v = f(TOP); return f(v); }`);
     // TOP 那条仍应报；v 的值不可静态判定 ⇒ 不额外造违例
     expect(violations(r)).toHaveLength(1);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -243,14 +262,16 @@ fmt(1);
 `;
 
 describe("native user-code exception is a program throw", () => {
-  it("fallback reason is module-throw, not internal", () => {
+  it("fallback reason is module-throw, not internal；check reports nudo:module-throw ReferenceError (no nudo:internal)", () => {
+(() => {
+
     const attempt = tryRunTranspiledDetailed(SRC, { mode: "analyze" });
     expect(attempt.run).toBeUndefined();
     expect(attempt.fallback?.reason).toBe("module-throw");
     expect(attempt.fallback?.reason).not.toBe("internal");
-  });
+  })();
+(() => {
 
-  it("check reports nudo:module-throw ReferenceError (no nudo:internal)", () => {
     const r = checkSource("/t/bug-073-r1.js", SRC, pTrue);
     const codes = r.issues.map((i) => i.code);
     expect(codes).toContain("nudo:module-throw");
@@ -258,7 +279,10 @@ describe("native user-code exception is a program throw", () => {
     const issue = r.issues.find((i) => i.code === "nudo:module-throw")!;
     expect(issue.message).toContain("ReferenceError");
     expect(issue.expected?.length ?? 0).toBeGreaterThan(0);
-  });
+  })();
+});;
+
+  ;
 });
 });
 
@@ -294,20 +318,27 @@ const tupleAbs = (holes?: number[]): Abs =>
 const RENAME = new Map([["A1", "zzz"]]);
 
 describe("renameAbs preserves shape facets", () => {
-  it("keeps fn.optionalParams", () => {
+  it("keeps fn.optionalParams；keeps tuple.holes；renamed sparse tuple is still not assignable to dense tuple", () => {
+(() => {
+
     const renamed = renameAbs(fnAbs([true]), RENAME);
     expect(renamed.shape).toMatchObject({ k: "fn", optionalParams: [true] });
-  });
+  })();
+(() => {
 
-  it("keeps tuple.holes", () => {
     const renamed = renameAbs(tupleAbs([1]), RENAME);
     expect(renamed.shape).toMatchObject({ k: "tuple", holes: [1] });
-  });
+  })();
+(() => {
 
-  it("renamed sparse tuple is still not assignable to dense tuple", () => {
     expect(leqAbs(tupleAbs([1]), tupleAbs()).ok).toBe(false);
     expect(leqAbs(renameAbs(tupleAbs([1]), RENAME), tupleAbs()).ok).toBe(false);
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
 
@@ -339,53 +370,75 @@ const plus = (t: ReturnType<typeof v>, k: number) => app("+", [t, lit(k)]);
 const minus = (t: ReturnType<typeof v>, k: number) => app("-", [t, lit(k)]);
 
 describe("goal 侧 gt/lt 不得按实数环抵消常量", () => {
-  it("宿主 IEEE 见证：2^-53 + 1 被吸收成 1", () => {
+  it("宿主 IEEE 见证：2^-53 + 1 被吸收成 1；x > 0 ⊬ x + 1 > 1（反例 x = 2^-53）；x > 0 ⊨ x + 1 >= 1（同命题的 ge 变体：IEEE 恒真，直接比较路径）；x < 0 ⊬ x - 1 < -1（反例 x = -2^-53）；x < 0 ⊨ x - 1 <= -1（le 变体健全）；死臂消除级联：x > 0 时 `x + 1 <= 1` 仍可能真 ⇒ 不得证伪", () => {
+(() => {
+
     expect(2 ** -53 + 1).toBe(1);
-  });
+  })();
+(() => {
 
-  it("x > 0 ⊬ x + 1 > 1（反例 x = 2^-53）", () => {
     expect(implies(gt(x, lit(0)), gt(plus(x, 1), lit(1)))).toBe(false);
-  });
+  })();
+(() => {
 
-  it("x > 0 ⊨ x + 1 >= 1（同命题的 ge 变体：IEEE 恒真，直接比较路径）", () => {
     expect(implies(gt(x, lit(0)), ge(plus(x, 1), lit(1)))).toBe(true);
-  });
+  })();
+(() => {
 
-  it("x < 0 ⊬ x - 1 < -1（反例 x = -2^-53）", () => {
     expect(-(2 ** -53) - 1).toBe(-1);
     expect(implies(lt(x, lit(0)), lt(minus(x, 1), lit(-1)))).toBe(false);
-  });
+  })();
+(() => {
 
-  it("x < 0 ⊨ x - 1 <= -1（le 变体健全）", () => {
     expect(implies(lt(x, lit(0)), le(minus(x, 1), lit(-1)))).toBe(true);
-  });
+  })();
+(() => {
 
-  it("死臂消除级联：x > 0 时 `x + 1 <= 1` 仍可能真 ⇒ 不得证伪", () => {
     // 反例 x = 2^-53：x > 0 真、fl(x+1) = 1 ⇒ x + 1 <= 1 真
     expect(2 ** -53 > 0 && 2 ** -53 + 1 <= 1).toBe(true);
     expect(implies(gt(x, lit(0)), lt(plus(x, 1), lit(1)))).toBe(false);
     expect(implies(gt(x, lit(0)), le(plus(x, 1), lit(0)))).toBe(false);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 
 describe("不抵消常量的真事实仍可证（精度不回退）", () => {
-  it("x > 0 ⊨ x + 1 > 0（常量未被抵消，端点保留 1 ULP 余量）", () => {
+  it("x > 0 ⊨ x + 1 > 0（常量未被抵消，端点保留 1 ULP 余量）；x > 1 ⊨ x + 1 > 1；x > 1 ⊨ x * 3 > 3（乘法严格端点在拐点处仍越过真值）；x ≥ 5 ∧ y ≤ 2 ⊨ x − y ≥ 3", () => {
+(() => {
+
     expect(implies(gt(x, lit(0)), gt(plus(x, 1), lit(0)))).toBe(true);
-  });
+  })();
+(() => {
 
-  it("x > 1 ⊨ x + 1 > 1", () => {
     expect(implies(gt(x, lit(1)), gt(plus(x, 1), lit(1)))).toBe(true);
-  });
+  })();
+(() => {
 
-  it("x > 1 ⊨ x * 3 > 3（乘法严格端点在拐点处仍越过真值）", () => {
     // fl(3 * nextUp(1)) = 3.0000000000000004 > 3（与 x+1 的吸收不同）
     expect(3 * (1 + 2 ** -52)).toBeGreaterThan(3);
     expect(implies(gt(x, lit(1)), gt(app("*", [x, lit(3)]), lit(3)))).toBe(true);
-  });
+  })();
+(() => {
 
-  it("x ≥ 5 ∧ y ≤ 2 ⊨ x − y ≥ 3", () => {
     expect(implies(and(ge(x, lit(5)), le(v("y"), lit(2))), ge(app("-", [x, v("y")]), lit(3)))).toBe(true);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -415,22 +468,31 @@ const val = (body: string): unknown => {
 };
 
 describe("lastIndexOf 的 fromIndex 第三态", () => {
-  it("lastIndexOf(2, undefined)：起始下标 0 ⇒ 扫不到 ⇒ -1（原生）", () => {
+  it("lastIndexOf(2, undefined)：起始下标 0 ⇒ 扫不到 ⇒ -1（原生）；对照：lastIndexOf(2)（fromIndex 缺省）⇒ 起始 len-1 ⇒ 1（原生）；对照：lastIndexOf(2, 0) ⇒ 起始 0 ⇒ -1（原生）；对照：indexOf(2, undefined) ⇒ 起始 0（缺省与显式 undefined 同为 0）", () => {
+(() => {
+
     expect(val(`return [1,2,3].lastIndexOf(2, undefined);`)).toBe(-1);
-  });
+  })();
+(() => {
 
-  it("对照：lastIndexOf(2)（fromIndex 缺省）⇒ 起始 len-1 ⇒ 1（原生）", () => {
     expect(val(`return [1,2,3].lastIndexOf(2);`)).toBe(1);
-  });
+  })();
+(() => {
 
-  it("对照：lastIndexOf(2, 0) ⇒ 起始 0 ⇒ -1（原生）", () => {
     expect(val(`return [1,2,3].lastIndexOf(2, 0);`)).toBe(-1);
-  });
+  })();
+(() => {
 
-  it("对照：indexOf(2, undefined) ⇒ 起始 0（缺省与显式 undefined 同为 0）", () => {
     expect(val(`return [1,2,3].indexOf(2, undefined);`)).toBe(1);
     expect(val(`return [1,2,3].indexOf(2);`)).toBe(1);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -481,7 +543,13 @@ function terminalReturn(abs: Abs): string {
 }
 
 describe("@nudo:skip 的机器面必须与人类面一致", () => {
-  it("JSON display 与终端一致（无 #conf 段）", () => {
+  it("JSON display 与终端一致（无 #conf 段）；detail 走同一稳定化路径（无引擎内部 term 文本 / 计数器 id）；未声明返回类型（any）⇒ display 仍是人类面口径", () => {
+(() => {
+  resetEngineCaches();
+  takeRefineDiags();
+  takeContractDiags();
+
+
     const src = `
 /** @nudo:skip => number() */
 export function f() {
@@ -499,9 +567,13 @@ export function f() {
     expect(sig!.display).toBe("number");
     expect(sig!.display).not.toContain("#exact");
     expect(sig!.display).not.toContain("#");
-  });
+  })();
+(() => {
+  resetEngineCaches();
+  takeRefineDiags();
+  takeContractDiags();
 
-  it("detail 走同一稳定化路径（无引擎内部 term 文本 / 计数器 id）", () => {
+
     const src = `
 /** @nudo:skip => number() */
 export function f() {
@@ -520,9 +592,13 @@ export function f() {
     // 与其它路径同款：首行函数名 + 形状行 + conf 行
     expect(sig.detail.split("\n")[0]).toBe("f");
     expect(sig.detail).toContain("conf: exact");
-  });
+  })();
+(() => {
+  resetEngineCaches();
+  takeRefineDiags();
+  takeContractDiags();
 
-  it("未声明返回类型（any）⇒ display 仍是人类面口径", () => {
+
     const src = `
 /** @nudo:skip */
 export function h() {
@@ -537,7 +613,12 @@ export function h() {
     const sig = json.signatures.find((s) => s.name === "h")!;
     expect(sig.display).toBe("any");
     expect(sig.display).not.toContain("#");
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
 
@@ -577,7 +658,9 @@ const ENTRIES = `export function f(a) { return a.b; }
 export function safe() { return 1; }`;
 
 describe("装载期的转译拒绝归因给每个入口", () => {
-  it("顶层裸语句里的不支持构造 ⇒ f / safe 各 1 条 L2（改前：零 error）", () => {
+  it("顶层裸语句里的不支持构造 ⇒ f / safe 各 1 条 L2（改前：零 error）；对照：干净孪生模块 ⇒ 只有 f 自己的 TypeError，safe 为 0；顶层 const 初始化表达式（装载期求值）⇒ 每个入口各 1；**未被引用**的类的 static 块 ⇒ 每个入口各 1（类定义期就执行）；**未被引用**的类的静态字段初始化器 ⇒ 每个入口各 1；类定义期的计算键 / extends 表达式 ⇒ 每个入口各 1；负控：不可达 helper / 顶层函数", () => {
+(() => {
+
     const src = `${G}
 g().x++;
 ${ENTRIES}`;
@@ -586,18 +669,18 @@ ${ENTRIES}`;
     expect(l2Count(r, "safe")).toBe(1);
     expect(l2Count(r)).toBe(2);
     expect(r.ok).toBe(false);
-  });
+  })();
+(() => {
 
-  it("对照：干净孪生模块 ⇒ 只有 f 自己的 TypeError，safe 为 0", () => {
     const src = `${G}
 ${ENTRIES}`;
     const r = checkSource("b1155-2.js", src, pTrue, stdOpts);
     expect(l2Count(r, "f")).toBe(1);
     expect(l2Count(r, "safe")).toBe(0);
     expect(sigOf(r, "f")).toContain("TypeError");
-  });
+  })();
+(() => {
 
-  it("顶层 const 初始化表达式（装载期求值）⇒ 每个入口各 1", () => {
     const src = `${G}
 const z = g().y++;
 ${ENTRIES}`;
@@ -605,27 +688,27 @@ ${ENTRIES}`;
     expect(l2Count(r, "f")).toBe(1);
     expect(l2Count(r, "safe")).toBe(1);
     expect(r.ok).toBe(false);
-  });
+  })();
+(() => {
 
-  it("**未被引用**的类的 static 块 ⇒ 每个入口各 1（类定义期就执行）", () => {
     const src = `${G}
 class U { static { g().x++; } }
 ${ENTRIES}`;
     const r = checkSource("b1155-4.js", src, pTrue, stdOpts);
     expect(l2Count(r, "f")).toBe(1);
     expect(l2Count(r, "safe")).toBe(1);
-  });
+  })();
+(() => {
 
-  it("**未被引用**的类的静态字段初始化器 ⇒ 每个入口各 1", () => {
     const src = `${G}
 class U { static z = g().y++; }
 ${ENTRIES}`;
     const r = checkSource("b1155-5.js", src, pTrue, stdOpts);
     expect(l2Count(r, "f")).toBe(1);
     expect(l2Count(r, "safe")).toBe(1);
-  });
+  })();
+(() => {
 
-  it("类定义期的计算键 / extends 表达式 ⇒ 每个入口各 1", () => {
     const key = checkSource(
       "b1155-6.js",
       `${G}
@@ -646,9 +729,9 @@ ${ENTRIES}`,
     );
     expect(l2Count(ext, "f")).toBe(1);
     expect(l2Count(ext, "safe")).toBe(1);
-  });
+  })();
+(() => {
 
-  it("负控：不可达 helper / 顶层函数声明的**函数体**（调用时才跑）⇒ 每个入口 0", () => {
     for (const src of [
       `${G}
 function h() { return g().x++; }
@@ -662,9 +745,9 @@ ${ENTRIES}`,
       expect(l2Count(r, "safe")).toBe(0);
       expect(r.ok).toBe(true);
     }
-  });
+  })();
+(() => {
 
-  it("负控：实例字段初始化器 / 构造器 / 方法体、static 字段里的箭头体 ⇒ 每个入口 0", () => {
     for (const decl of [
       `class U { z = g().y++; }`,
       `class U { constructor() { g().y++; } m() { return g().y++; } }`,
@@ -676,9 +759,9 @@ ${ENTRIES}`, pTrue, stdOpts);
       expect(l2Count(r, "f")).toBe(0);
       expect(l2Count(r, "safe")).toBe(0);
     }
-  });
+  })();
+(() => {
 
-  it("Bug 895 回归：TS-only 声明语句（enum / namespace / 抽象类）⇒ 每个入口 0，ok 与干净同构一致", () => {
     const src = `export enum Color { Red = 1, Green = 2 }
 export namespace NS { export const v = 1; }
 export abstract class B { abstract m(): void; }
@@ -698,9 +781,9 @@ export function safe() { return 2; }`,
     expect(l2Count(r, "B")).toBe(0);
     expect(r.ok).toBe(clean.ok);
     expect(r.ok).toBe(true);
-  });
+  })();
+(() => {
 
-  it("`import x = require()`（另一 TS-only 声明语句）同样不归因", () => {
     const r = checkSource(
       "b1155-15.ts",
       `import x = require("./nope.js");
@@ -711,9 +794,9 @@ export function safe() { return 2; }`,
     );
     expect(l2Count(r)).toBe(0);
     expect(r.ok).toBe(true);
-  });
+  })();
+(() => {
 
-  it("对照：namespace 之前的**非 TS** 顶层不支持构造仍每个入口 1", () => {
     const src = `${G}
 g().x++;
 export namespace NS { export const v = 1; }
@@ -723,9 +806,9 @@ export function safe() { return 2; }`;
     expect(l2Count(r, "f")).toBe(1);
     expect(l2Count(r, "safe")).toBe(1);
     expect(r.ok).toBe(false);
-  });
+  })();
+(() => {
 
-  it("@nudo:throws Error 只放行申报的入口（safe 仍 1 条；证据上屏）", () => {
     const src = `${G}
 g().x++;
 /**
@@ -738,9 +821,9 @@ export function safe() { return 1; }`;
     expect(l2Count(r, "safe")).toBe(1);
     // 门禁过滤 ≠ 藏事实
     expect(sigOf(r, "f")).toContain("throws");
-  });
+  })();
+(() => {
 
-  it("--ignore-throws Error 放行全部入口（证据仍上屏）", () => {
     const src = `${G}
 g().x++;
 ${ENTRIES}`;
@@ -748,9 +831,9 @@ ${ENTRIES}`;
     expect(l2Count(r)).toBe(0);
     expect(sigOf(r, "f")).toContain("throws");
     expect(sigOf(r, "safe")).toContain("throws");
-  });
+  })();
+(() => {
 
-  it("干净模块对照：零 L2 / ok（归因扩面不假红）", () => {
     const r = checkSource(
       "b1155-12.js",
       `export function f() { return 1; }
@@ -760,7 +843,34 @@ export function safe() { return 2; }`,
     );
     expect(l2Count(r)).toBe(0);
     expect(r.ok).toBe(true);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -814,56 +924,74 @@ describe("hostFnCtorFacet 的 IsConstructor 判据", () => {
 const wrap = (body: string) => `export function f() { ${body} }`;
 
 describe("hostFnCtorFacet 的 IsConstructor 判据", () => {
-  it("Proxy：无 prototype 但可构造 ⇒ true（旧 prototype 启发式给 false）", () => {
-    expect(hostFnCtorFacet(Proxy)).toBe(true);
-  });
+  it("Proxy：无 prototype 但可构造 ⇒ true（旧 prototype 启发式给 false）；Symbol / BigInt：有 prototype 但 [[Construct]] 恒抛 ⇒ false；其余方向保持：箭头/内建方法不可构造，普通函数/类可构造", () => {
+(() => {
 
-  it("Symbol / BigInt：有 prototype 但 [[Construct]] 恒抛 ⇒ false", () => {
+    expect(hostFnCtorFacet(Proxy)).toBe(true);
+  })();
+(() => {
+
     expect(hostFnCtorFacet(Symbol)).toBe(false);
     expect(hostFnCtorFacet(BigInt)).toBe(false);
-  });
+  })();
+(() => {
 
-  it("其余方向保持：箭头/内建方法不可构造，普通函数/类可构造", () => {
     expect(hostFnCtorFacet(() => 1)).toBe(false);
     expect(hostFnCtorFacet(parseInt)).toBe(false);
     expect(hostFnCtorFacet(Math.max)).toBe(false);
     expect(hostFnCtorFacet(function regular() {})).toBe(true);
     expect(hostFnCtorFacet(class K {})).toBe(true);
     expect(hostFnCtorFacet(Array)).toBe(true);
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 
 describe("Reflect.construct 面的假红/假绿", () => {
-  it("construct(Proxy, [target, handler]) 不抛（此前假红 never）", () => {
+  it("construct(Proxy, [target, handler]) 不抛（此前假红 never）；Proxy 作 newTarget 不抛（此前假红 never）；construct(Symbol, []) 定抛 TypeError（此前假绿 unknown）；new 面与 Reflect.construct 面对 Symbol 结论一致（同为定抛）；new Proxy / new Symbol 既有结论不变（Proxy 可构造、Symbol 定抛）", () => {
+(() => {
+
     const src = wrap(`return Reflect.construct(Proxy, [{}, {}]);`);
     const r = call(src);
     expect(throwsError(r.throws, "TypeError")).toBe(false);
     expect(isNever(r.result)).toBe(false);
     expect(effects(src)).not.toContain("TypeError");
-  });
+  })();
+(() => {
 
-  it("Proxy 作 newTarget 不抛（此前假红 never）", () => {
     const src = wrap(`return Reflect.construct(Array, [], Proxy);`);
     expect(throwsError(call(src).throws, "TypeError")).toBe(false);
     expect(effects(src)).not.toContain("TypeError");
-  });
+  })();
+(() => {
 
-  it("construct(Symbol, []) 定抛 TypeError（此前假绿 unknown）", () => {
     const src = wrap(`return Reflect.construct(Symbol, []);`);
     expect(throwsError(call(src).throws, "TypeError")).toBe(true);
     expect(isNever(call(src).result)).toBe(true);
-  });
+  })();
+(() => {
 
-  it("new 面与 Reflect.construct 面对 Symbol 结论一致（同为定抛）", () => {
     expect(throwsError(call(wrap(`return new Symbol();`)).throws, "TypeError")).toBe(true);
     expect(throwsError(call(wrap(`return Reflect.construct(Symbol, []);`)).throws, "TypeError"))
       .toBe(true);
-  });
+  })();
+(() => {
 
-  it("new Proxy / new Symbol 既有结论不变（Proxy 可构造、Symbol 定抛）", () => {
     expect(throwsError(call(wrap(`return new Proxy({}, {});`)).throws, "TypeError")).toBe(false);
     expect(throwsError(call(wrap(`return new Symbol();`)).throws, "TypeError")).toBe(true);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -903,7 +1031,9 @@ function withFallbacks<T>(body: () => T): { out: T; fallbacks: EvalFallback[] } 
 }
 
 describe("in / delete 的宿主全局接收者不得炸引擎", () => {
-  it(`"FLAG" in globalThis ⇒ 模块正常求值（改前：裸 TypeError / internal 回落）`, () => {
+  it("\"FLAG\" in globalThis ⇒ 模块正常求值（改前：裸 TypeError / internal 回落）；delete globalThis.x ⇒ 模块正常求值，$del / $delRes 双通道都不崩；负控：普通对象的 in / delete 口径不变（精确判定不被守卫吃掉）", () => {
+(() => {
+
     const src = `export function f(){ return "FLAG" in globalThis; }`;
     const { out, fallbacks } = withFallbacks(() => runTranspiled(src, { mode: "analyze" }));
     // 改前这里直接抛 `Cannot read properties of undefined (reading 'k')`
@@ -913,9 +1043,9 @@ describe("in / delete 的宿主全局接收者不得炸引擎", () => {
     // 键集不可判 ⇒ unknown（不得谎称 boolean，更不得谎称 throws TypeError）
     expect(r.result.shape.k).toBe("unknown");
     expect(r.throws.shape.k).toBe("never");
-  });
+  })();
+(() => {
 
-  it("delete globalThis.x ⇒ 模块正常求值，$del / $delRes 双通道都不崩", () => {
     const src = `export function f(){ return delete globalThis.__nudoProbe; }`;
     const { out, fallbacks } = withFallbacks(() => runTranspiled(src, { mode: "analyze" }));
     expect(Object.keys(out)).toContain("f");
@@ -923,9 +1053,9 @@ describe("in / delete 的宿主全局接收者不得炸引擎", () => {
     const r = callTranspiledExportFull(out, "f", []);
     expect(r.result.shape.k).toBe("unknown");
     expect(r.throws.shape.k).toBe("never");
-  });
+  })();
+(() => {
 
-  it("负控：普通对象的 in / delete 口径不变（精确判定不被守卫吃掉）", () => {
     const { out } = withFallbacks(() =>
       runTranspiled(
         `export function f(){ const o = { a: 1 }; return "a" in o; }
@@ -934,7 +1064,12 @@ export function g(){ const o = { a: 1 }; return delete o.a; }`,
       ),
     );
     expect(callTranspiledExportFull(out, "f", []).result.shape).toEqual({ k: "prim", type: "boolean" });
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
 
@@ -984,23 +1119,48 @@ describe("contract 档单一读取口不为导出别名伪造派生档", () => {
     takeRefineDiags();
   });
 
-  it("导出别名（无契约）⇒ 不进 contract 档（旧口径给 implicit ⇒ derived）", () => {
+  it("导出别名（无契约）⇒ 不进 contract 档（旧口径给 implicit ⇒ derived）；变量导出（无契约）⇒ 不进 contract 档；真正的函数位（无契约）⇒ implicit 档（既有行为不变）；有契约的函数位 ⇒ handwritten（与 CodeLens 同源）", () => {
+(() => {
+    resetSidecarLoadFailureCache();
+    takeContractDiags();
+    takeRefineDiags();
+  
+
     expect(tier("alias")).toBeUndefined();
-  });
+  })();
+(() => {
+    resetSidecarLoadFailureCache();
+    takeContractDiags();
+    takeRefineDiags();
+  
 
-  it("变量导出（无契约）⇒ 不进 contract 档", () => {
     expect(tier("notAFn")).toBeUndefined();
-  });
+  })();
+(() => {
+    resetSidecarLoadFailureCache();
+    takeContractDiags();
+    takeRefineDiags();
+  
 
-  it("真正的函数位（无契约）⇒ implicit 档（既有行为不变）", () => {
     const source = `export function bare() {\n  return 1;\n}\n`;
     const t = tier("bare", source);
     expect(t?.source).toBe("implicit");
-  });
+  })();
+(() => {
+    resetSidecarLoadFailureCache();
+    takeContractDiags();
+    takeRefineDiags();
+  
 
-  it("有契约的函数位 ⇒ handwritten（与 CodeLens 同源）", () => {
     expect(tier("target")?.source).toBe("handwritten");
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -1034,32 +1194,41 @@ const NUM: Abs = abs({ k: "prim", type: "number" }, undefined, undefined, "exact
 const MODULE = `export function use() { return 1; }`;
 
 describe("env 全局名是 strict-mode 保留字时不得打挂整个模块", () => {
-  it("globals { default } ⇒ 模块仍可求值（改前：new Function SyntaxError / 整模块失败）", () => {
+  it("globals { default } ⇒ 模块仍可求值（改前：new Function SyntaxError / 整模块失败）；globals { static, implements, package } ⇒ 模块仍可求值；非标识符名（`a-b` / 空串）⇒ 跳过注入，模块仍可求值；负控：**合法** env 名照旧注入并生效（守卫不得把 env 面整体关掉）", () => {
+(() => {
+
     const out = runTranspiled(MODULE, { envGlobals: { default: NUM } });
     expect(Object.keys(out)).toContain("use");
     expect(callTranspiledExportFull(out, "use", []).result.shape.k).toBe("prim");
-  });
+  })();
+(() => {
 
-  it("globals { static, implements, package } ⇒ 模块仍可求值", () => {
     const out = runTranspiled(MODULE, {
       envGlobals: { static: NUM, implements: NUM, package: NUM },
     });
     expect(Object.keys(out)).toContain("use");
-  });
+  })();
+(() => {
 
-  it("非标识符名（`a-b` / 空串）⇒ 跳过注入，模块仍可求值", () => {
     const out = runTranspiled(MODULE, { envGlobals: { "a-b": NUM, "": NUM } });
     expect(Object.keys(out)).toContain("use");
-  });
+  })();
+(() => {
 
-  it("负控：**合法** env 名照旧注入并生效（守卫不得把 env 面整体关掉）", () => {
     const out = runTranspiled(`export function use() { return probeName; }`, {
       envGlobals: { probeName: NUM },
     });
     const r = callTranspiledExportFull(out, "use", []);
     expect(r.result.shape.k).toBe("prim");
     expect(r.throws.shape.k).toBe("never");
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -1098,7 +1267,12 @@ export function inc(x) {
 `;
 
 describe("同名 @nudo:import 绑定", () => {
-  it("报 nudo:contract-name-clash 并点名冲突的本地名与两个来源", () => {
+  it("报 nudo:contract-name-clash 并点名冲突的本地名与两个来源；拒绝绑定冲突的本地名（不静默取后者）→ 契约段拿不到约束；不冲突的 import 仍正常绑定", () => {
+(() => {
+  setRefineDiagCollector(null);
+  takeRefineDiags();
+
+
     const diags: Array<{ code: string; message: string }> = [];
     setRefineDiagCollector((d) => diags.push(d));
     const { loadModule } = makeFiles({
@@ -1111,9 +1285,12 @@ describe("同名 @nudo:import 绑定", () => {
     expect(clash?.message).toContain("'positive'");
     expect(clash?.message).toContain("./a.nudo.js");
     expect(clash?.message).toContain("./b.nudo.js");
-  });
+  })();
+(() => {
+  setRefineDiagCollector(null);
+  takeRefineDiags();
 
-  it("拒绝绑定冲突的本地名（不静默取后者）→ 契约段拿不到约束", () => {
+
     const { loadModule } = makeFiles({
       "/t/a.nudo.js": `import { number } from "@nudojs/core";\nexport const positive = number().gt(0);\n`,
       "/t/b.nudo.js": `import { number } from "@nudojs/core";\nexport const positive = number().gt(100);\n`,
@@ -1123,9 +1300,12 @@ describe("同名 @nudo:import 绑定", () => {
       fromFile: "/t/dup.js",
     });
     expect(entries).toHaveLength(0);
-  });
+  })();
+(() => {
+  setRefineDiagCollector(null);
+  takeRefineDiags();
 
-  it("不冲突的 import 仍正常绑定", () => {
+
     const diags: Array<{ code: string; message: string }> = [];
     setRefineDiagCollector((d) => diags.push(d));
     const ok = `
@@ -1149,7 +1329,12 @@ export function inc(x) {
     expect(
       diags.some((d) => d.code === "nudo:contract-name-clash"),
     ).toBe(false);
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
 
@@ -1189,41 +1374,52 @@ const report = (file: string): CheckReport => ({
 const WS = "/ws/app";
 
 describe("工作区根裁剪要过路径边界（兄弟目录不得被裁）", () => {
-  it("GHA 注解：兄弟目录 app2 不得被裁成 2/src/x.js", () => {
+  it("GHA 注解：兄弟目录 app2 不得被裁成 2/src/x.js；GHA 注解：真子路径仍按工作区相对路径裁（app/src/x.js → src/x.js）；GitLab Code Quality：location.path 不得被裁成 2/src/x.js；GitLab Code Quality：真子路径仍按工作区相对路径裁；无工作区根 ⇒ 原样保留完整路径", () => {
+(() => {
+
     const out = formatGithubAnnotations(report("/ws/app2/src/x.js"), {
       workspaceRoot: WS,
     });
     expect(out).toContain("file=/ws/app2/src/x.js");
     expect(out).not.toContain("file=2/src/x.js");
-  });
+  })();
+(() => {
 
-  it("GHA 注解：真子路径仍按工作区相对路径裁（app/src/x.js → src/x.js）", () => {
     const out = formatGithubAnnotations(report("/ws/app/src/x.js"), {
       workspaceRoot: WS,
     });
     expect(out).toContain("file=src/x.js");
-  });
+  })();
+(() => {
 
-  it("GitLab Code Quality：location.path 不得被裁成 2/src/x.js", () => {
     const out = formatGitlabCodeQuality(report("/ws/app2/src/x.js"), {
       workspaceRoot: WS,
     });
     expect(out[0]?.location.path).toBe("/ws/app2/src/x.js");
     expect(out[0]?.fingerprint.startsWith("/ws/app2/src/x.js:")).toBe(true);
-  });
+  })();
+(() => {
 
-  it("GitLab Code Quality：真子路径仍按工作区相对路径裁", () => {
     const out = formatGitlabCodeQuality(report("/ws/app/src/x.js"), {
       workspaceRoot: WS,
     });
     expect(out[0]?.location.path).toBe("src/x.js");
     expect(out[0]?.fingerprint.startsWith("src/x.js:")).toBe(true);
-  });
+  })();
+(() => {
 
-  it("无工作区根 ⇒ 原样保留完整路径", () => {
     const out = formatGitlabCodeQuality(report("/ws/app2/src/x.js"));
     expect(out[0]?.location.path).toBe("/ws/app2/src/x.js");
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -1253,16 +1449,18 @@ export function c() { throw new Error("z"); }
 `;
 
 describe("签名 detail 不得串号（共享 never Abs 的第 2/3 个函数）", () => {
-  it("三个函数的 detail 各自带自己的名字", () => {
+  it("三个函数的 detail 各自带自己的名字；detail 的首行与 name 一致（JSON 信封字段间不矛盾）", () => {
+(() => {
+
     const r = checkSource("/t/bug377.js", SRC, pTrue);
     const sigs = r.signatures.filter((s) => ["a", "b", "c"].includes(s.name));
     expect(sigs.length).toBe(3);
     for (const s of sigs) {
       expect(s.detail.split("\n")[0]).toBe(s.name);
     }
-  });
+  })();
+(() => {
 
-  it("detail 的首行与 name 一致（JSON 信封字段间不矛盾）", () => {
     const r = checkSource("/t/bug377.js", SRC, pTrue);
     const json = JSON.parse(
       JSON.stringify(r.signatures.map((s) => ({ name: s.name, detail: s.detail }))),
@@ -1270,7 +1468,10 @@ describe("签名 detail 不得串号（共享 never Abs 的第 2/3 个函数）"
     for (const s of json) {
       expect(s.detail.startsWith(`${s.name}\n`)).toBe(true);
     }
-  });
+  })();
+});;
+
+  ;
 });
 });
 
@@ -1299,73 +1500,94 @@ describe("`+` 运算符面的用户转换钩子真调用", () => {
 
 
 describe("`+` 运算符面的用户转换钩子真调用", () => {
-  it("`o + o`：valueOf 被调两次（native：每个操作数各一次）", () => {
+  it("`o + o`：valueOf 被调两次（native：每个操作数各一次）；`o + \"\"`：toString 被调一次（native：1）；`o + 1`：[Symbol.toPrimitive] 被调一次（native：1）；模板串面：`${o}` 走同一条 ToPrimitive 闸门（native：1）", () => {
+(() => {
+
     expect(
       val(`export function f() { let n = 0; const o = { valueOf(){ n++; return 1; } }; o + o; return n; }`),
     ).toEqual({ ok: true, value: 2 });
-  });
+  })();
+(() => {
 
-  it("`o + \"\"`：toString 被调一次（native：1）", () => {
     expect(
       val(`export function f() { let n = 0; const o = { toString(){ n++; return "s"; } }; o + ""; return n; }`),
     ).toEqual({ ok: true, value: 1 });
-  });
+  })();
+(() => {
 
-  it("`o + 1`：[Symbol.toPrimitive] 被调一次（native：1）", () => {
     expect(
       val(
         `export function f() { let n = 0; const o = { [Symbol.toPrimitive](){ n++; return 1; } }; o + 1; return n; }`,
       ),
     ).toEqual({ ok: true, value: 1 });
-  });
+  })();
+(() => {
 
-  it("模板串面：`${o}` 走同一条 ToPrimitive 闸门（native：1）", () => {
     expect(
       val(`export function f() { let n = 0; const o = { toString(){ n++; return "s"; } }; const s = \`\${o}\`; return n; }`),
     ).toEqual({ ok: true, value: 1 });
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 
 describe("钩子体抛错 ⇒ 抛错域不再被折成 no-throw", () => {
-  it("`o + 1` 的 valueOf 抛错 ⇒ 用户 try/catch 捕到（native：\"threw\"）", () => {
+  it("`o + 1` 的 valueOf 抛错 ⇒ 用户 try/catch 捕到（native：\"threw\"）；`o + \"\"` 的 toString 抛错 ⇒ 用户 try/catch 捕到（native：\"threw\"）；入口 throws 面记下钩子体的错误类型（钩子体必然抛错 ⇒ 入口不再折 never）", () => {
+(() => {
+
     expect(
       val(
         `export function f() { const o = { valueOf(){ throw new Error("v"); } }; try { o + 1; } catch { return "threw"; } return "no-throw"; }`,
       ),
     ).toEqual({ ok: true, value: "threw" });
-  });
+  })();
+(() => {
 
-  it("`o + \"\"` 的 toString 抛错 ⇒ 用户 try/catch 捕到（native：\"threw\"）", () => {
     expect(
       val(
         `export function f() { const o = { toString(){ throw new Error("s"); } }; try { o + ""; } catch { return "threw"; } return "no-throw"; }`,
       ),
     ).toEqual({ ok: true, value: "threw" });
-  });
+  })();
+(() => {
 
-  it("入口 throws 面记下钩子体的错误类型（钩子体必然抛错 ⇒ 入口不再折 never）", () => {
     const rec = call(
       `export function f() { const o = { valueOf(){ throw new Error("v"); } }; o + 1; return 1; }`,
     );
     // 原生：钩子体抛的 Error 直接传播 ⇒ 入口的 throws 面就是用户的 Error
     expect(throwsError(rec.throws, "Error")).toBe(true);
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 
 describe("JSON.stringify 的 toJSON 步真调用", () => {
-  it("toJSON 钩子被调一次（native：1）", () => {
+  it("toJSON 钩子被调一次（native：1）；toJSON 钩子抛错 ⇒ 用户 try/catch 捕到（native：\"threw\"）", () => {
+(() => {
+
     expect(
       val(`export function f() { let n = 0; const o = { toJSON(){ n++; return 1; } }; JSON.stringify(o); return n; }`),
     ).toEqual({ ok: true, value: 1 });
-  });
+  })();
+(() => {
 
-  it("toJSON 钩子抛错 ⇒ 用户 try/catch 捕到（native：\"threw\"）", () => {
     expect(
       val(
         `export function f() { const o = { toJSON(){ throw new Error("j"); } }; try { JSON.stringify(o); } catch { return "threw"; } return "no-throw"; }`,
       ),
     ).toEqual({ ok: true, value: "threw" });
-  });
+  })();
+});;
+
+  ;
 });
 
 describe("new Error(对象实参) 走 ToString ⇒ 钩子真调用", () => {
@@ -1378,25 +1600,32 @@ describe("new Error(对象实参) 走 ToString ⇒ 钩子真调用", () => {
 });
 
 describe("对照组（无钩子 / 直接调用）不得回归", () => {
-  it("无钩子的对象不产生任何钩子副作用", () => {
+  it("无钩子的对象不产生任何钩子副作用；直接调用 o.valueOf() 仍调一次（对照组）；`{a:1} + ''` 仍折 \"[object Object]\"（无钩子 → 缺省 toString）", () => {
+(() => {
+
     expect(val(`export function f() { let n = 0; const o = {}; o + ""; return n; }`)).toEqual({
       ok: true,
       value: 0,
     });
-  });
+  })();
+(() => {
 
-  it("直接调用 o.valueOf() 仍调一次（对照组）", () => {
     expect(
       val(`export function f() { let n = 0; const o = { valueOf(){ n++; return 1; } }; o.valueOf(); return n; }`),
     ).toEqual({ ok: true, value: 1 });
-  });
+  })();
+(() => {
 
-  it("`{a:1} + ''` 仍折 \"[object Object]\"（无钩子 → 缺省 toString）", () => {
     expect(val(`export function f() { return {a:1} + ''; }`)).toEqual({
       ok: true,
       value: "[object Object]",
     });
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
 
@@ -1424,30 +1653,41 @@ const LINE = `/// @nudo:import { positive } from "./c.nudo.js"\nexport function 
 const LINE2 = `// @nudo:import { positive } from "./c.nudo.js"\nexport function inc(x) { return x + 1; }\n`;
 
 describe("block-comment @nudo:import is not a file-level import", () => {
-  it("block comment form yields no import record (was effective)", () => {
+  it("block comment form yields no import record (was effective)；JSDoc block form yields no import record (was effective)；line comment forms still work (control)；a block comment does not shadow the line comment beside it；block comment form is not", () => {
+(() => {
+
     expect(extractNudoImportRecords(BLOCK)).toEqual([]);
-  });
+  })();
+(() => {
 
-  it("JSDoc block form yields no import record (was effective)", () => {
     expect(extractNudoImportRecords(JSDOC)).toEqual([]);
-  });
+  })();
+(() => {
 
-  it("line comment forms still work (control)", () => {
     expect(extractNudoImportRecords(LINE)).toHaveLength(1);
     expect(extractNudoImportRecords(LINE2)).toHaveLength(1);
-  });
+  })();
+(() => {
 
-  it("a block comment does not shadow the line comment beside it", () => {
     expect(
       extractNudoImportRecords(
         `/* @nudo:import { positive } from "./c.nudo.js" */\n/// @nudo:import { negative } from "./d.nudo.js"\n`,
       ).map((r) => r.names[0]),
     ).toEqual(["negative"]);
-  });
+  })();
+(() => {
 
-  it("block comment form is not reported as a malformed import either", () => {
     expect(scanMalformedNudoImports(BLOCK)).toEqual([]);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -1503,7 +1743,9 @@ function scopesOf(src: string) {
 }
 
 describe("同名遮蔽：按名查找取最浅的 scope", () => {
-  it("按名查找命中的是导出的 f（不是内层遮蔽的 f）", () => {
+  it("按名查找命中的是导出的 f（不是内层遮蔽的 f）；内层遮蔽函数自己的 throws 仍在（只是不再顶替导出函数）；导出 f 的 throws 声明为空（内层的不再顶替）；L2 门禁：导出 f 的 throw 重新被报出来（不再假绿）；对照：无遮蔽时行为不变（仍报 may-throw）；对照：导出 f 自己声明 @nudo:throws * 时不报（抑制仍生效）", () => {
+(() => {
+
     const scope = findFnDirectiveScope(parseSource(SHADOW), "f");
     expect(scope?.commentLines ?? []).not.toContain("@nudo:throws *");
     // 导出的 f 在文件末尾（行号更大），内层遮蔽的 f 在前面
@@ -1512,28 +1754,39 @@ describe("同名遮蔽：按名查找取最浅的 scope", () => {
     expect(inner[0].depth).toBe(1);
     expect(inner[1].depth).toBe(0);
     expect(scope?.startLine).toBe(inner[1].startLine);
-  });
+  })();
+(() => {
 
-  it("内层遮蔽函数自己的 throws 仍在（只是不再顶替导出函数）", () => {
     const inner = scopesOf(SHADOW).filter((s) => s.name === "f");
     expect(inner[0].commentLines).toContain("@nudo:throws *");
-  });
+  })();
+(() => {
 
-  it("导出 f 的 throws 声明为空（内层的不再顶替）", () => {
     expect(extractDeclaredThrows(SHADOW, "f")).toBeUndefined();
-  });
+  })();
+(() => {
 
-  it("L2 门禁：导出 f 的 throw 重新被报出来（不再假绿）", () => {
     expect(l2Count(issuesOf(SHADOW, "/t/b424/shadow.js"), "f")).toBe(1);
-  });
+  })();
+(() => {
 
-  it("对照：无遮蔽时行为不变（仍报 may-throw）", () => {
     expect(l2Count(issuesOf(CONTROL, "/t/b424/ctrl.js"), "f")).toBe(1);
-  });
+  })();
+(() => {
 
-  it("对照：导出 f 自己声明 @nudo:throws * 时不报（抑制仍生效）", () => {
     expect(l2Count(issuesOf(SUPPRESSED, "/t/b424/sup.js"), "f")).toBe(0);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -1576,7 +1829,9 @@ function rangeOf(src: string, needle: string): { start: number; end: number } {
 }
 
 describe("export 包装形态的 @nudo:as 覆盖命中内层声明", () => {
-  it("export const：登记区间 = export 语句 ⇒ 内层声明被覆盖", () => {
+  it("export const：登记区间 = export 语句 ⇒ 内层声明被覆盖；export let / export var：登记区间 = export 语句 ⇒ 内层声明被覆盖；负控制：非 export 形态仍按精确区间命中（行为不退化）；负控制：同尾但**非** export 前缀的区间不得误命中（fail-closed）", () => {
+(() => {
+
     const src = `export const raw = 1;\n`;
     const target = rangeOf(src, "export const raw = 1;");
     const exports = runTranspiled(src, {
@@ -1586,9 +1841,9 @@ describe("export 包装形态的 @nudo:as 覆盖命中内层声明", () => {
     });
     const rec = callTranspiledExportFull(exports, "raw", []);
     expect(lit(rec.result)).toBe("s");
-  });
+  })();
+(() => {
 
-  it("export let / export var：登记区间 = export 语句 ⇒ 内层声明被覆盖", () => {
     const src = `export let raw = 1;\n`;
     const target = rangeOf(src, "export let raw = 1;");
     const exports = runTranspiled(src, {
@@ -1598,9 +1853,9 @@ describe("export 包装形态的 @nudo:as 覆盖命中内层声明", () => {
     });
     const rec = callTranspiledExportFull(exports, "raw", []);
     expect(lit(rec.result)).toBe("s");
-  });
+  })();
+(() => {
 
-  it("负控制：非 export 形态仍按精确区间命中（行为不退化）", () => {
     const src = `const raw = 1;\nexport function useRaw() { return raw; }\n`;
     const target = rangeOf(src, "const raw = 1;");
     const exports = runTranspiled(src, {
@@ -1610,9 +1865,9 @@ describe("export 包装形态的 @nudo:as 覆盖命中内层声明", () => {
     });
     const rec = callTranspiledExportFull(exports, "useRaw", []);
     expect(lit(rec.result)).toBe("s");
-  });
+  })();
+(() => {
 
-  it("负控制：同尾但**非** export 前缀的区间不得误命中（fail-closed）", () => {
     const src = `/*x*/ const raw = 1;\nexport function useRaw() { return raw; }\n`;
     const stmt = rangeOf(src, "const raw = 1;");
     // 登记区间从头开始（与内层声明同尾，但前缀是块注释，不是 export 引导词）
@@ -1624,7 +1879,14 @@ describe("export 包装形态的 @nudo:as 覆盖命中内层声明", () => {
     const rec = callTranspiledExportFull(exports, "useRaw", []);
     // 未被覆盖 ⇒ 仍是字面量 1（而不是 "s"）
     expect(lit(rec.result)).toBe(1);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -1675,7 +1937,11 @@ describe("再导出链不被未导出的同名本地函数短路", () => {
     resetCheckSourceMemo();
   });
 
-  it("resolveExportSource：星号再导出 + 同名未导出本地函数 ⇒ 跳到 dd.js", () => {
+  it("resolveExportSource：星号再导出 + 同名未导出本地函数 ⇒ 跳到 dd.js；resolveExportSource：命名再导出 + 同名未导出本地函数 ⇒ 跳到 dd.js；端到端：跨再导出链的调用点报 nudo:constraint-violated", () => {
+(() => {
+    resetCheckSourceMemo();
+  
+
     const r = resolveExportSource(
       CC_STAR,
       "g",
@@ -1686,9 +1952,11 @@ describe("再导出链不被未导出的同名本地函数短路", () => {
     );
     expect(r.source).toBe(DD);
     expect(r.fromFile).toBe("/t/dd.js");
-  });
+  })();
+(() => {
+    resetCheckSourceMemo();
+  
 
-  it("resolveExportSource：命名再导出 + 同名未导出本地函数 ⇒ 跳到 dd.js", () => {
     const r = resolveExportSource(
       CC_NAMED,
       "g",
@@ -1699,9 +1967,11 @@ describe("再导出链不被未导出的同名本地函数短路", () => {
     );
     expect(r.source).toBe(DD);
     expect(r.fromFile).toBe("/t/dd.js");
-  });
+  })();
+(() => {
+    resetCheckSourceMemo();
+  
 
-  it("端到端：跨再导出链的调用点报 nudo:constraint-violated", () => {
     const { loadModule } = makeFiles({
       "/t/c.nudo.js": CNUDO,
       "/t/dd.js": DD,
@@ -1711,6 +1981,11 @@ describe("再导出链不被未导出的同名本地函数短路", () => {
     const violated = r.issues.filter((i) => i.code === "nudo:constraint-violated");
     expect(violated.length).toBe(1);
     expect(r.ok).toBe(false);
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
