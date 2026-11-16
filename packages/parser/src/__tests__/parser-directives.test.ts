@@ -239,120 +239,67 @@ describe("粘连标签 @nudo:case\"name\" 的可见性", () => {
 // ---------------------------------------------------------------------------
 // diagnostic dedup identity carries the position
 // ---------------------------------------------------------------------------
-describe("diagnostic dedup identity carries the position", () => {
-/**
- * 指令诊断的**去重身份 = 文案**（无位置）⇒ 同文件两处**逐字相同**的
- * 畸形指令**塌缩成一条** ⇒ 第二处**完全不可见**（用户修好第一处后以为已经修完）。
- *
- * 根因（diag.ts `emitDirectiveDiag`）：去重键 = `code \0 message`——`DirectiveDiag`
- * 此前**没有位置字段** ⇒ 无法区分两处不同的出错点。
- *
- * 修法：`DirectiveDiag` 带**位置**（`at: { line, column }`），去重身份 =
- * `code + 文案 + 位置`——**同一处同一问题**仍去重（extract + 再解析共域），
- * **不同位置**的同文案问题各报一条。
- *
- * 未升级的调用点（不传 `at`）保持旧身份（`code + 文案`）——兼容期行为，
- * 这些族的「同文案塌缩」仍存在（需各片按交付报告接线）。
- */
+function extractWithDiags(source: string) {
+  const diags: DirectiveDiag[] = [];
+  const fns = extractDirectives(parse(source), { diags });
+  return { fns, diags };
+}
 
+const EXPECTED_CTX = '@nudo:case "t" => expected';
+const withDiags = <T>(fn: () => T): { value: T; diags: DirectiveDiag[] } => {
+  const diags: DirectiveDiag[] = [];
+  const value = runWithDirectiveDiags_____directives_ts_1(diags, fn);
+  return { value, diags };
+};
 
-
-
-
-describe("diagnostic dedup identity carries the position", () => {
-  it("same code+message at two positions → two diagnostics", () => {
-    const diags: DirectiveDiag[] = [];
-    runWithDirectiveDiags(diags, () => {
-      emitDirectiveDiag({
-        code: "nudo:directive-syntax",
-        message: "Malformed @nudo:case: …",
-        at: { line: 2, column: 3 },
-      });
-      emitDirectiveDiag({
-        code: "nudo:directive-syntax",
-        message: "Malformed @nudo:case: …",
-        at: { line: 7, column: 3 },
-      });
+describe("诊断去重身份包含位置", () => {
+  it("显式 emit：不同位置两条、同位置一条、无位置沿用旧身份", () => {
+    const different: DirectiveDiag[] = [];
+    runWithDirectiveDiags(different, () => {
+      emitDirectiveDiag({ code: "nudo:directive-syntax", message: "Malformed @nudo:case: …", at: { line: 2, column: 3 } });
+      emitDirectiveDiag({ code: "nudo:directive-syntax", message: "Malformed @nudo:case: …", at: { line: 7, column: 3 } });
     });
-    expect(diags).toHaveLength(2);
-    expect(diags[0]!.at).toEqual({ line: 2, column: 3 });
-    expect(diags[1]!.at).toEqual({ line: 7, column: 3 });
-  });
+    expect(different).toHaveLength(2);
+    expect(different.map((d) => d.at)).toEqual([{ line: 2, column: 3 }, { line: 7, column: 3 }]);
 
-  it("same code+message at the same position → one diagnostic (same defect)", () => {
-    const diags: DirectiveDiag[] = [];
-    runWithDirectiveDiags(diags, () => {
-      emitDirectiveDiag({
-        code: "nudo:directive-syntax",
-        message: "Malformed @nudo:case: …",
-        at: { line: 2, column: 3 },
-      });
-      emitDirectiveDiag({
-        code: "nudo:directive-syntax",
-        message: "Malformed @nudo:case: …",
-        at: { line: 2, column: 3 },
-      });
+    const same: DirectiveDiag[] = [];
+    runWithDirectiveDiags(same, () => {
+      emitDirectiveDiag({ code: "nudo:directive-syntax", message: "Malformed @nudo:case: …", at: { line: 2, column: 3 } });
+      emitDirectiveDiag({ code: "nudo:directive-syntax", message: "Malformed @nudo:case: …", at: { line: 2, column: 3 } });
     });
-    expect(diags).toHaveLength(1);
-  });
+    expect(same).toHaveLength(1);
 
-  it("without a position the legacy identity (code+message) still dedups", () => {
-    const diags: DirectiveDiag[] = [];
-    runWithDirectiveDiags(diags, () => {
+    const legacy: DirectiveDiag[] = [];
+    runWithDirectiveDiags(legacy, () => {
       emitDirectiveDiag({ code: "nudo:directive-syntax", message: "same text" });
       emitDirectiveDiag({ code: "nudo:directive-syntax", message: "same text" });
     });
-    expect(diags).toHaveLength(1);
+    expect(legacy).toHaveLength(1);
   });
 
-  it("two identical `@nudo:as` trailing comments in one block → two diagnostics", () => {
-    // 同一注释块内的两条**逐字相同**的畸形指令（同一去重域）⇒ 改前塌缩成一条
-    const src = [
-      "/**",
-      " * @nudo:as string()// why",
-      " * @nudo:as string()// why",
-      " */",
-      "const a = 1;",
-      "",
-    ].join("\n");
-    const ast = parse(src);
-    const stmt = ast.program.body[0]!;
-    const diags: DirectiveDiag[] = [];
-    extractInlineDirectives(stmt, { diags });
-    const trailing = diags.filter((d) => d.message.includes("Trailing comment in @nudo:as"));
+  it("同一块两条相同 as 尾注释各报一条；同一语句复扫只报一条", () => {
+    const src = ["/**", " * @nudo:as string()// why", " * @nudo:as string()// why", " */", "const a = 1;", ""].join("\n");
+    const stmt = parse(src).program.body[0]!;
+    const two: DirectiveDiag[] = [];
+    extractInlineDirectives(stmt, { diags: two });
+    const trailing = two.filter((d) => d.message.includes("Trailing comment in @nudo:as"));
     expect(trailing).toHaveLength(2);
     expect(trailing[0]!.at).toBeDefined();
     expect(trailing[1]!.at).toBeDefined();
     expect(trailing[0]!.at!.line).not.toBe(trailing[1]!.at!.line);
-  });
 
-  it("the same directive scanned twice at the same position → one diagnostic", () => {
-    const src = "// @nudo:as string()// why\nconst a = 1;\n";
-    const ast = parse(src);
-    const stmt = ast.program.body[0]!;
-    const diags: DirectiveDiag[] = [];
-    // 同一去重域（extract + 再解析共域口径）⇒ 同一处同一问题只报一次
-    runWithDirectiveDiags(diags, () => {
-      extractInlineDirectives(stmt);
-      extractInlineDirectives(stmt);
+    const oneSrc = "// @nudo:as string()// why\nconst a = 1;\n";
+    const oneStmt = parse(oneSrc).program.body[0]!;
+    const once: DirectiveDiag[] = [];
+    runWithDirectiveDiags(once, () => {
+      extractInlineDirectives(oneStmt);
+      extractInlineDirectives(oneStmt);
     });
-    expect(diags.filter((d) => d.message.includes("Trailing comment in @nudo:as"))).toHaveLength(1);
+    expect(once.filter((d) => d.message.includes("Trailing comment in @nudo:as"))).toHaveLength(1);
   });
 
-  it("two identical malformed `@nudo:case` in different functions → two diagnostics", () => {
-    // 848 的**原始复现族**：函数级扫描器（fn-directives）发射的畸形 case 诊断
-    // 也必须带位置 ⇒ 两处逐字相同的问题各报一条
-    const src = [
-      "/**",
-      " * @nudo:case 't' (1)",
-      " */",
-      "function f(x) { return x; }",
-      "/**",
-      " * @nudo:case 't' (1)",
-      " */",
-      "function g(x) { return x; }",
-      "",
-    ].join("\n");
+  it("两个函数里的逐字相同畸形 case 各报一条（位置不同）", () => {
+    const src = ["/**", " * @nudo:case 't' (1)", " */", "function f(x) { return x; }", "/**", " * @nudo:case 't' (1)", " */", "function g(x) { return x; }", ""].join("\n");
     const diags: DirectiveDiag[] = [];
     extractDirectives(parse(src), { diags });
     const malformed = diags.filter((d) => d.message.includes("Malformed @nudo:case"));
@@ -362,224 +309,70 @@ describe("diagnostic dedup identity carries the position", () => {
     expect(malformed[0]!.at!.line).not.toBe(malformed[1]!.at!.line);
   });
 });
-});
 
-// ---------------------------------------------------------------------------
-// `=>` with a missing expected expression must not be silent
-// ---------------------------------------------------------------------------
-describe("`=>` with a missing expected expression must not be silent", () => {
-/**
- * `=> expected` 在「`=>` 后为空」时被**静默丢弃** ⇒ 该 case 判
- * `[unchecked]` ⇒ 断言**不执法**、`nudo test` **exit 0**、**屏幕上零诊断**
- * （完全静默的假绿）。
- *
- * 改后：期望**写了却抽不出** ⇒ 发 `nudo:directive-syntax`（不再静默吞错）；
- * 期望值在**下一行**时照旧被抽出（核心抽取层负责）。
- */
-
-
-
-
-function fnDiags(src: string): DirectiveDiag[] {
-  const diags: DirectiveDiag[] = [];
-  extractDirectives(parse(src), { diags });
-  return diags;
-}
-
-function caseDirectives(src: string): unknown[] {
-  return extractDirectives(parse(src), { diags: [] }).flatMap((f) =>
-    f.directives.filter((d) => d.kind === "case"),
-  );
-}
-
-describe("`=>` with a missing expected expression must not be silent", () => {
-  it("emits nudo:directive-syntax for the empty `=>` tail", () => {
-    const diags = fnDiags(`/** @nudo:case "empty" (1) =>  */
-export function f(x) {
-  return x;
-}
-`);
-    expect(diags).toHaveLength(1);
-    expect(diags[0]!.code).toBe("nudo:directive-syntax");
-    expect(diags[0]!.message).toContain("missing expected expression after '=>'");
+describe("缺失期望值 / 期望解析失败", () => {
+  it("空 `=>` 尾告警；无 `=>` 保持静默", () => {
+    const empty = fnDiags(`/** @nudo:case "empty" (1) =>  */\nexport function f(x) { return x; }\n`);
+    expect(empty).toHaveLength(1);
+    expect(empty[0]!.code).toBe("nudo:directive-syntax");
+    expect(empty[0]!.message).toContain("missing expected expression after '=>'");
+    expect(fnDiags(`/** @nudo:case "plain" (1) */\nexport function f(x) { return x; }\n`)).toEqual([]);
   });
 
-  it("negative control: a case without `=>` stays silent", () => {
-    expect(
-      fnDiags(`/** @nudo:case "plain" (1) */
-export function f(x) {
-  return x;
-}
-`),
-    ).toEqual([]);
+  it("合法期望值与下一行期望值都静默并保留 case", () => {
+    const sameLine = `/** @nudo:case "ok" (1) => 999 */\nexport function f(x) { return x; }\n`;
+    expect(fnDiags(sameLine)).toEqual([]);
+    expect(caseDirectives(sameLine)).toHaveLength(1);
+
+    const nextLine = `/**\n * @nudo:case "multi" (2) =>\n *   4\n */\nexport function f(x) { return x * 2; }\n`;
+    expect(fnDiags(nextLine)).toEqual([]);
+    expect(caseDirectives(nextLine)).toHaveLength(1);
   });
 
-  it("negative control: a well-formed expectation stays silent", () => {
-    expect(
-      fnDiags(`/** @nudo:case "ok" (1) => 999 */
-export function f(x) {
-  return x;
-}
-`),
-    ).toEqual([]);
-    expect(
-      caseDirectives(`/** @nudo:case "ok" (1) => 999 */
-export function f(x) {
-  return x;
-}
-`),
-    ).toHaveLength(1);
-  });
-
-  it("the expectation on the next line is picked up (no diagnostic)", () => {
-    const src = `/**
- * @nudo:case "multi" (2) =>
- *   4
- */
-export function f(x) {
-  return x * 2;
-}
-`;
-    expect(fnDiags(src)).toEqual([]);
-    expect(caseDirectives(src)).toHaveLength(1);
-  });
-});
-});
-
-// ---------------------------------------------------------------------------
-// 期望值解析失败不得空洞通过（断言层必须看到失败）
-// ---------------------------------------------------------------------------
-describe("期望值解析失败不得空洞通过（断言层必须看到失败）", () => {
-/**
- * 回归：`@nudo:case` 的**期望值**解析失败与「显式 unknown」共用同一个
- * unknown Abs ⇒ 断言面把「没读懂用户的期望」记成「断言通过」
- * （[ok] / 1 passed / exit 0 = 假绿）。
- *
- * 修法（parser 侧）：期望值的解析失败产出**失败表示**（never），与显式 unknown
- * 在 Abs 层面可区分；断言层据此判 FAIL（fail-closed）。
- * 另提供严格 API `parseCaseExpectedAbs`：失败 ⇒ undefined，供下游按
- * 「unchecked（没被检查）」口径收口。
- */
-
-
-
-
-
-
-
-function extractWithDiags(source: string) {
-  const diags: DirectiveDiag[] = [];
-  const fns = extractDirectives(parse(source), { diags });
-  return { fns, diags };
-}
-
-const EXPECTED_CTX = '@nudo:case "t" => expected';
-
-describe("期望值解析失败不得空洞通过（断言层必须看到失败）", () => {
-  it("directive.expected：解析失败 ⇒ 失败表示；显式 unknown ⇒ unknown", () => {
-    const { fns } = extractWithDiags(`/**
- * @nudo:case "malformed" (1) => bogus()
- * @nudo:case "explicit" (1) => unknown
- */
-function f(x) { return x; }`);
-    const cases = fns.flatMap(
-      (f) => f.directives.filter((d) => d.kind === "case"),
-    ) as CaseDirective[];
+  it("directive.expected：解析失败不是 unknown；显式 unknown 保留", () => {
+    const { fns, diags } = extractWithDiags(`/**\n * @nudo:case "malformed" (1) => bogus()\n * @nudo:case "explicit" (1) => unknown\n */\nfunction f(x) { return x; }`);
+    const cases = fns.flatMap((f) => f.directives.filter((d) => d.kind === "case")) as CaseDirective[];
     expect(cases).toHaveLength(2);
-    // 解析失败：不是 unknown（顶类型 ⇒ leqAbs 恒 ok ⇒ 空洞通过）
     expect(cases[0]!.expected).toBeDefined();
     expect(cases[0]!.expected!.shape.k).not.toBe("unknown");
-    // 显式 unknown：用户主动声明「不约束」，保持 unknown
     expect(cases[1]!.expected!.shape.k).toBe("unknown");
+    expect(diags.some((d) => d.code === "nudo:directive-syntax" && d.message.includes("=> expected") && d.message.includes("bogus()"))).toBe(true);
   });
 
-  it("解析失败仍发 nudo:directive-syntax 诊断（不是静默）", () => {
-    const { diags } = extractWithDiags(`/**
- * @nudo:case "malformed" (1) => bogus()
- */
-function f(x) { return x; }`);
-    expect(
-      diags.some(
-        (d) =>
-          d.code === "nudo:directive-syntax" &&
-          d.message.includes("=> expected") &&
-          d.message.includes("bogus()"),
-      ),
-    ).toBe(true);
-  });
-
-  it("严格 API parseCaseExpectedAbs：失败 ⇒ undefined（可传递的失败表示）", () => {
+  it("严格 API parseCaseExpectedAbs：失败 undefined，合法/unknown 有值", () => {
     const diags: DirectiveDiag[] = [];
-    const failed = runWithDirectiveDiags_____directives_ts(diags, () =>
-      parseCaseExpectedAbs("bogus()", EXPECTED_CTX),
-    );
+    const failed = runWithDirectiveDiags_____directives_ts(diags, () => parseCaseExpectedAbs("bogus()", EXPECTED_CTX));
     expect(failed).toBeUndefined();
     expect(diags).toHaveLength(1);
     expect(diags[0]!.code).toBe("nudo:directive-syntax");
-
-    // 合法期望值 / 显式 unknown ⇒ 仍是 Abs（不是失败）
     expect(parseCaseExpectedAbs("1e3", EXPECTED_CTX)).toBeDefined();
     expect(parseCaseExpectedAbs("unknown", EXPECTED_CTX)).toBeDefined();
   });
 });
-});
 
-// ---------------------------------------------------------------------------
-// 解析失败 ≠ 显式 unknown（失败必须传到断言层）
-// ---------------------------------------------------------------------------
-describe("解析失败 ≠ 显式 unknown（失败必须传到断言层）", () => {
-/**
- * 回归：`parseAbsExprDiag` 把**解析失败**折成**显式 unknown Abs**
- * ⇒ `leqAbs(actual, unknown)` 恒 ok（unknown 是顶类型）⇒ 断言**空洞通过**
- * （报「1 passed」、exit 0 = 假绿）。
- *
- * 修法：解析失败与「显式 unknown」在 Abs 层面**可区分** —— 失败用失败表示
- * （never，底类型：没有任何实际值满足它 ⇒ 断言判 FAIL），显式 unknown 仍是
- * 顶类型（用户主动声明，不约束）。
- */
+describe("解析失败与显式 unknown 可区分", () => {
+  it("失败 ⇒ never + 诊断；as/replace/skip 上下文保持 unknown", () => {
+    const failure = withDiags(() => parseAbsExprDiag("bogus()", EXPECTED_CTX));
+    expect(failure.value.shape.k).toBe("never");
+    expect(failure.value.shape.k).not.toBe("unknown");
+    expect(failure.diags).toHaveLength(1);
+    expect(failure.diags[0]!.code).toBe("nudo:directive-syntax");
+    expect(failure.diags[0]!.message).toContain(EXPECTED_CTX);
+    expect(failure.diags[0]!.message).toContain("bogus()");
 
-
-
-
-function withDiags<T>(fn: () => T): { value: T; diags: DirectiveDiag[] } {
-  const diags: DirectiveDiag[] = [];
-  const value = runWithDirectiveDiags_____directives_ts_1(diags, fn);
-  return { value, diags };
-}
-
-const EXPECTED_CTX = '@nudo:case "t" => expected';
-
-describe("解析失败 ≠ 显式 unknown（失败必须传到断言层）", () => {
-  it("解析失败 ⇒ 失败表示（never），不是 unknown（顶类型）", () => {
-    const { value } = withDiags(() => parseAbsExprDiag("bogus()", EXPECTED_CTX));
-    expect(value.shape.k).toBe("never");
-    expect(value.shape.k).not.toBe("unknown");
+    for (const ctx of ["@nudo:as", "@nudo:replace", "@nudo:skip =>"]) {
+      const { value } = withDiags(() => parseAbsExprDiag("bogus()", ctx));
+      expect(value.shape.k, ctx).toBe("unknown");
+    }
   });
 
-  it("显式 unknown / any / any() 仍是 unknown（用户主动声明，不约束）", () => {
+  it("显式 unknown / any / any() 仍是 unknown 且零诊断", () => {
     for (const expr of ["unknown", "any", "any()"]) {
       const { value, diags } = withDiags(() => parseAbsExprDiag(expr, EXPECTED_CTX));
       expect(value.shape.k, expr).toBe("unknown");
       expect(diags, expr).toHaveLength(0);
     }
   });
-
-  it("解析失败发 nudo:directive-syntax 诊断（文案带 tag 位置）", () => {
-    const { diags } = withDiags(() => parseAbsExprDiag("bogus()", EXPECTED_CTX));
-    expect(diags).toHaveLength(1);
-    expect(diags[0]!.code).toBe("nudo:directive-syntax");
-    expect(diags[0]!.message).toContain(EXPECTED_CTX);
-    expect(diags[0]!.message).toContain("bogus()");
-  });
-
-  it("非断言面上下文（@nudo:as / @nudo:replace / @nudo:skip）保持 unknown", () => {
-    // 这些上下文的 Abs 会进类型覆盖面 / 求值面：never 会污染那里的语义
-    for (const ctx of ["@nudo:as", "@nudo:replace", "@nudo:skip =>"]) {
-      const { value } = withDiags(() => parseAbsExprDiag("bogus()", ctx));
-      expect(value.shape.k, ctx).toBe("unknown");
-    }
-  });
-});
 });
 
 // ---------------------------------------------------------------------------
