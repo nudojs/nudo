@@ -25,51 +25,41 @@ function inlineOf(source: string): {
 }
 
 describe("文件级指令诊断", () => {
-  it("畸形 mock-module 告警；单引号合法载荷静默并产出", () => {
+  it("mock-module/import/env 的合法与畸形载荷矩阵", () => {
     const bad = fileDiags(`/// @nudo:mock-module axios from ./m.js\nimport axios from "axios";\n`);
     expect(bad).toHaveLength(1);
     expect(bad[0]!.code).toBe("nudo:directive-syntax");
     expect(bad[0]!.message).toContain("Unrecognized @nudo:mock-module form");
-
     const good = `/// @nudo:mock-module 'axios' from './m.js'\nimport axios from "axios";\n`;
     expect(fileDiags(good)).toEqual([]);
-    expect(extractFileDirectives(parse(good), { diags: [] })).toEqual([
-      { kind: "mock-module", source: "axios", fromPath: "./m.js" },
-    ]);
-  });
+    expect(extractFileDirectives(parse(good), { diags: [] })).toEqual([{ kind: "mock-module", source: "axios", fromPath: "./m.js" }]);
 
-  it("块注释 / JSDoc 的 import 告警；行注释静默", () => {
-    const invalid = [
+    for (const src of [
       `/* @nudo:import { a } from "./x.nudo.js" */\nexport function f(){}\n`,
       `/**\n * @nudo:import { a } from "./x.nudo.js"\n */\nexport function f(){}\n`,
-    ];
-    for (const src of invalid) {
+    ]) {
       const diags = fileDiags(src);
       expect(diags, src).toHaveLength(1);
       expect(diags[0]!.code, src).toBe("nudo:directive-syntax");
       expect(diags[0]!.message, src).toContain("@nudo:import is a file-level directive");
     }
     expect(fileDiags(`/// @nudo:import { a } from "./x.nudo.js"\nexport function f(){}\n`)).toEqual([]);
-  });
 
-  it("裸 / 尾随空白 / 不可读 env 列表都告警", () => {
     for (const src of ["/// @nudo:env\nexport function f(){}", "/// @nudo:env \nexport function f(){}", `/// @nudo:env node";\nexport function f(){}`]) {
       const diags = fileDiags(src);
       expect(diags, src).toHaveLength(1);
       expect(diags[0]!.code, src).toBe("nudo:directive-syntax");
     }
     expect(fileDiags(`/// @nudo:env node";\nexport function f(){}`)[0]!.message).toContain("Unrecognized @nudo:env list");
-  });
-
-  it("空格分隔的 env 列表合法并产出", () => {
-    const src = `/// @nudo:env node web\nexport function f(){}\n`;
-    expect(fileDiags(src)).toEqual([]);
-    expect(extractFileDirectives(parse(src), { diags: [] })).toEqual([{ kind: "env", envs: ["node", "web"] }]);
+    const envSrc = `/// @nudo:env node web\nexport function f(){}\n`;
+    expect(fileDiags(envSrc)).toEqual([]);
+    expect(extractFileDirectives(parse(envSrc), { diags: [] })).toEqual([{ kind: "env", envs: ["node", "web"] }]);
   });
 });
+;
 
 describe("@nudo:as 载荷分隔与括号", () => {
-  it("无空格 / 有空格 / 嵌套括号都产出类型且零诊断", () => {
+  it("括号/空格/嵌套都产出；裸标签与不可识别诊断；标签边界不吞邻近词", () => {
     const cases = [
       { src: "// @nudo:as(string())\nconst value = 1;", shape: "prim" },
       { src: "// @nudo:as number()\nconst value = 1;", shape: "prim" },
@@ -81,18 +71,13 @@ describe("@nudo:as 载荷分隔与括号", () => {
       if (dirs[0]!.kind === "as") expect(dirs[0]!.typeAbs.shape.k, src).toBe(shape);
       expect(diags, src).toEqual([]);
     }
-  });
-
-  it("裸标签 / 无法识别载荷有诊断；标签边界不吞 assume/ascii/asXYZ", () => {
     const bare = inlineOf("// @nudo:as\nconst value = 1;");
     expect(bare.dirs).toHaveLength(0);
     expect(bare.diags[0]!.code).toBe("nudo:directive-syntax");
     expect(bare.diags[0]!.message).toContain("@nudo:as requires a type expression");
-
     const bad = inlineOf("// @nudo:as(T.number)\nconst value = 1;");
     expect(bad.dirs).toHaveLength(1);
     expect(bad.diags[0]!.message).toContain("Unrecognized type expression in @nudo:as");
-
     for (const tag of ["@nudo:asXYZ", "@nudo:assume", "@nudo:ascii"]) {
       const { dirs, diags } = inlineOf(`// ${tag}\nconst value = 1;`);
       expect(dirs, tag).toHaveLength(0);
@@ -100,9 +85,10 @@ describe("@nudo:as 载荷分隔与括号", () => {
     }
   });
 });
+;
 
 describe("@nudo:as 尾随注释按词法边界切分", () => {
-  it("无空格 / 有空格 / `)` 后注释：类型保留且只报尾注释一条", () => {
+  it("尾注释只报一条且类型保留；字符串内注释符不算", () => {
     for (const src of [
       "// @nudo:as string()// why\nconst value = 1;",
       "// @nudo:as string() // why\nconst value = 1;",
@@ -114,15 +100,13 @@ describe("@nudo:as 尾随注释按词法边界切分", () => {
       expect(diags, src).toHaveLength(1);
       expect(diags[0]!.message, src).toContain("Trailing comment in @nudo:as type expression");
     }
-  });
-
-  it("字符串内的注释符不是尾注释", () => {
-    const { dirs, diags } = inlineOf('// @nudo:as lit("a//b")\nconst value = 1;');
-    expect(dirs).toHaveLength(1);
-    if (dirs[0]!.kind === "as") expect(dirs[0]!.typeAbs.shape.k).toBe("prim");
-    expect(diags).toEqual([]);
+    const inString = inlineOf('// @nudo:as lit("a//b")\nconst value = 1;');
+    expect(inString.dirs).toHaveLength(1);
+    if (inString.dirs[0]!.kind === "as") expect(inString.dirs[0]!.typeAbs.shape.k).toBe("prim");
+    expect(inString.diags).toEqual([]);
   });
 });
+;
 
 // ---------------------------------------------------------------------------
 // directives inside a malformed @nudo:case must not leak
@@ -199,22 +183,19 @@ describe("畸形 case 参数不得泄漏内部指令", () => {
 });
 
 describe("尾随注释不得作废 case 期望值 / skip 返回类型", () => {
-  it("case 期望值带尾注释仍解析，且与无注释形态一致、零诊断", () => {
+  it("case 与 skip 带尾注释仍解析、与无注释一致、零诊断", () => {
     expect(caseExpected(WITH_COMMENT)).toBe("string");
     expect(caseExpected(WITH_COMMENT)).toBe(caseExpected(WITHOUT_COMMENT));
     expect(fnDiags(WITH_COMMENT)).toEqual([]);
-
     const withString = `/**\n * @nudo:case "x" (1) => shape({ url: string() })\n */\nexport function f(a) { return a; }`;
     expect(fnDiags(withString)).toEqual([]);
     expect(caseExpected(withString)).toContain("url");
-  });
-
-  it("skip 返回类型带尾注释仍解析，且与无注释形态一致、零诊断", () => {
     expect(skipReturns(SKIP_WITH_COMMENT)).toBe("number");
     expect(skipReturns(SKIP_WITH_COMMENT)).toBe(skipReturns(SKIP_PLAIN));
     expect(fnDiags(SKIP_WITH_COMMENT)).toEqual([]);
   });
 });
+;
 
 describe("粘连标签 @nudo:case\"name\" 的可见性", () => {
   it("粘连形态诊断且不产 case；空格形态正常且静默", () => {
