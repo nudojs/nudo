@@ -1,200 +1,55 @@
 import { describe, it, expect } from "vitest";
 import { parse, extractDirectives, type MockDirective } from "../index.ts";
 
-describe("Sinon Expression Support", () => {
-  describe("sinon.stub()", () => {
-    it("parses sinon.stub()", () => {
-      const code = `
-// @nudo:mock fetch = sinon.stub()
-function getData() {
-  return fetch("/api/data");
+function mockOf(expr: string): MockDirective {
+  const fns = extractDirectives(parse(`
+// @nudo:mock fetch = ${expr}
+function getData() { return fetch("/api/data"); }
+`));
+  expect(fns).toHaveLength(1);
+  const mocks = fns[0].directives.filter((d): d is MockDirective => d.kind === "mock");
+  expect(mocks).toHaveLength(1);
+  return mocks[0];
 }
-`;
-      const ast = parse(code);
-      const directives = extractDirectives(ast);
-      expect(directives.length).toBe(1);
 
-      const mockDirectives = directives[0].directives.filter(
-        (d): d is MockDirective => d.kind === "mock"
-      );
-      expect(mockDirectives.length).toBe(1);
-      expect(mockDirectives[0].name).toBe("fetch");
-      expect(mockDirectives[0].sinonExpr).toBeDefined();
-      expect(mockDirectives[0].sinonExpr!.type).toBe("stub");
-    });
+const CONSTRUCTORS = [
+  { expr: "sinon.stub()", type: "stub" },
+  { expr: "sinon.spy()", type: "spy" },
+  { expr: "sinon.mock()", type: "mock" },
+];
 
-    it("parses sinon.stub().returns()", () => {
-      const code = `
-// @nudo:mock fetch = sinon.stub().returns({ data: "test" })
-function getData() {
-  return fetch("/api/data");
-}
-`;
-      const ast = parse(code);
-      const directives = extractDirectives(ast);
-      const mockDirectives = directives[0].directives.filter(
-        (d): d is MockDirective => d.kind === "mock"
-      );
-      expect(mockDirectives[0].sinonExpr).toBeDefined();
-      expect(mockDirectives[0].sinonExpr!.type).toBe("stub");
-      expect(mockDirectives[0].sinonExpr!.returnValue).toBeDefined();
-    });
+const TERMINALS = [
+  { expr: 'sinon.stub().returns({ data: "test" })', field: "returnValue" },
+  { expr: 'sinon.stub().resolves({ data: "test" })', field: "resolvedValue" },
+  { expr: 'sinon.stub().rejects(new Error("fail"))', field: "rejectedValue" },
+];
 
-    it("parses sinon.stub().resolves()", () => {
-      const code = `
-// @nudo:mock fetch = sinon.stub().resolves({ data: "test" })
-function getData() {
-  return fetch("/api/data");
-}
-`;
-      const ast = parse(code);
-      const directives = extractDirectives(ast);
-      const mockDirectives = directives[0].directives.filter(
-        (d): d is MockDirective => d.kind === "mock"
-      );
-      expect(mockDirectives[0].sinonExpr).toBeDefined();
-      expect(mockDirectives[0].sinonExpr!.type).toBe("stub");
-      expect(mockDirectives[0].sinonExpr!.resolvedValue).toBeDefined();
-    });
+const CHAINS = [
+  'sinon.stub().onFirstCall().returns({ data: "first" })',
+  'sinon.stub().onSecondCall().returns({ data: "second" })',
+  'sinon.stub().onCall(5).returns({ data: "fifth" })',
+  'sinon.stub().withArgs("/api/data").returns({ data: "test" })',
+  "sinon.stub().callsFake((url) => ({ data: url }))",
+];
 
-    it("parses sinon.stub().rejects()", () => {
-      const code = `
-// @nudo:mock fetch = sinon.stub().rejects(new Error("fail"))
-function getData() {
-  return fetch("/api/data");
-}
-`;
-      const ast = parse(code);
-      const directives = extractDirectives(ast);
-      const mockDirectives = directives[0].directives.filter(
-        (d): d is MockDirective => d.kind === "mock"
-      );
-      expect(mockDirectives[0].sinonExpr).toBeDefined();
-      expect(mockDirectives[0].sinonExpr!.type).toBe("stub");
-      expect(mockDirectives[0].sinonExpr!.rejectedValue).toBeDefined();
-    });
+describe("sinon 表达式载荷", () => {
+  it("stub / spy / mock 构造函数识别 type", () => {
+    for (const { expr, type } of CONSTRUCTORS) expect(mockOf(expr).sinonExpr!.type, expr).toBe(type);
   });
 
-  describe("sinon.spy()", () => {
-    it("parses sinon.spy()", () => {
-      const code = `
-// @nudo:mock handler = sinon.spy()
-function processEvent(handler) {
-  handler("event");
-}
-`;
-      const ast = parse(code);
-      const directives = extractDirectives(ast);
-      const mockDirectives = directives[0].directives.filter(
-        (d): d is MockDirective => d.kind === "mock"
-      );
-      expect(mockDirectives[0].sinonExpr).toBeDefined();
-      expect(mockDirectives[0].sinonExpr!.type).toBe("spy");
-    });
+  it("returns / resolves / rejects 保留对应终值", () => {
+    for (const { expr, field } of TERMINALS) {
+      const sinonExpr = mockOf(expr).sinonExpr as unknown as Record<string, unknown>;
+      expect(sinonExpr.type, expr).toBe("stub");
+      expect(sinonExpr[field], expr).toBeDefined();
+    }
   });
 
-  describe("sinon.mock()", () => {
-    it("parses sinon.mock()", () => {
-      const code = `
-// @nudo:mock service = sinon.mock()
-function useService(service) {
-  service.doSomething();
-}
-`;
-      const ast = parse(code);
-      const directives = extractDirectives(ast);
-      const mockDirectives = directives[0].directives.filter(
-        (d): d is MockDirective => d.kind === "mock"
-      );
-      expect(mockDirectives[0].sinonExpr).toBeDefined();
-      expect(mockDirectives[0].sinonExpr!.type).toBe("mock");
-    });
-  });
-
-  describe("Complex sinon chains", () => {
-    it("parses sinon.stub().onFirstCall().returns()", () => {
-      const code = `
-// @nudo:mock fetch = sinon.stub().onFirstCall().returns({ data: "first" })
-function getData() {
-  return fetch("/api/data");
-}
-`;
-      const ast = parse(code);
-      const directives = extractDirectives(ast);
-      const mockDirectives = directives[0].directives.filter(
-        (d): d is MockDirective => d.kind === "mock"
-      );
-      expect(mockDirectives[0].sinonExpr).toBeDefined();
-      expect(mockDirectives[0].sinonExpr!.type).toBe("stub");
-      expect(mockDirectives[0].sinonExpr!.returnValue).toBeDefined();
-    });
-
-    it("parses sinon.stub().onSecondCall().returns()", () => {
-      const code = `
-// @nudo:mock fetch = sinon.stub().onSecondCall().returns({ data: "second" })
-function getData() {
-  return fetch("/api/data");
-}
-`;
-      const ast = parse(code);
-      const directives = extractDirectives(ast);
-      const mockDirectives = directives[0].directives.filter(
-        (d): d is MockDirective => d.kind === "mock"
-      );
-      expect(mockDirectives[0].sinonExpr).toBeDefined();
-      expect(mockDirectives[0].sinonExpr!.type).toBe("stub");
-      expect(mockDirectives[0].sinonExpr!.returnValue).toBeDefined();
-    });
-
-    it("parses sinon.stub().onCall(n).returns()", () => {
-      const code = `
-// @nudo:mock fetch = sinon.stub().onCall(5).returns({ data: "fifth" })
-function getData() {
-  return fetch("/api/data");
-}
-`;
-      const ast = parse(code);
-      const directives = extractDirectives(ast);
-      const mockDirectives = directives[0].directives.filter(
-        (d): d is MockDirective => d.kind === "mock"
-      );
-      expect(mockDirectives[0].sinonExpr).toBeDefined();
-      expect(mockDirectives[0].sinonExpr!.type).toBe("stub");
-      expect(mockDirectives[0].sinonExpr!.returnValue).toBeDefined();
-    });
-
-    it("parses sinon.stub().withArgs().returns()", () => {
-      const code = `
-// @nudo:mock fetch = sinon.stub().withArgs("/api/data").returns({ data: "test" })
-function getData() {
-  return fetch("/api/data");
-}
-`;
-      const ast = parse(code);
-      const directives = extractDirectives(ast);
-      const mockDirectives = directives[0].directives.filter(
-        (d): d is MockDirective => d.kind === "mock"
-      );
-      expect(mockDirectives[0].sinonExpr).toBeDefined();
-      expect(mockDirectives[0].sinonExpr!.type).toBe("stub");
-      expect(mockDirectives[0].sinonExpr!.returnValue).toBeDefined();
-    });
-
-    it("parses sinon.stub().callsFake()", () => {
-      const code = `
-// @nudo:mock fetch = sinon.stub().callsFake((url) => ({ data: url }))
-function getData() {
-  return fetch("/api/data");
-}
-`;
-      const ast = parse(code);
-      const directives = extractDirectives(ast);
-      const mockDirectives = directives[0].directives.filter(
-        (d): d is MockDirective => d.kind === "mock"
-      );
-      expect(mockDirectives[0].sinonExpr).toBeDefined();
-      expect(mockDirectives[0].sinonExpr!.type).toBe("stub");
-      expect(mockDirectives[0].sinonExpr!.returnValue).toBeDefined();
-    });
+  it("调用调度链（onFirst/onSecond/onCall/withArgs/callsFake）保留 returnValue", () => {
+    for (const expr of CHAINS) {
+      const sinonExpr = mockOf(expr).sinonExpr!;
+      expect(sinonExpr.type, expr).toBe("stub");
+      expect(sinonExpr.returnValue, expr).toBeDefined();
+    }
   });
 });
