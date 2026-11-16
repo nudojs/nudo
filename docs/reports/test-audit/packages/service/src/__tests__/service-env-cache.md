@@ -1,5 +1,7 @@
 ```audit
 title	rootCause	gap	action	status	evidence
+非对象诊断且无配置；空对象遮断；合法对象/无键负控	nudo 键/ctor 表	没测该层	keep	keep	—
+web 构造器保留品牌；node 非法无参构造 may-throw TypeError	nudo 键/ctor 表	没测该层	keep	keep	—
 假值键遮断 + 提示；ignoreThrows/env 不继承；空对象/无键/无 package 负控	fork/校验/假值表	没测该层	keep	keep	—
 非字符串元素丢弃 + 诊断；env 非数组整项丢弃 + 诊断；合法列表零诊断	fork/校验/假值表	没测该层	keep	keep	—
 四种非法元素不崩且有告警；preload 不冒泡；合法元素/字符串 path 负控	fork/校验/假值表	没测该层	keep	keep	—
@@ -36,15 +38,6 @@ default 槽 + interop 标记；默认/命名空间同签名；无假 unknown-inf
 "① 文件带 @nudo:env node ⇒ 项目级 env 仍可见（不是 never、无 builtin-unknown 假阳）"	"被分析文件**不带** `@nudo:env`（基线：项目级 env 恰好可见）。 断言：expect(ret).toContain(\"42\");；expect(ret).not.toContain(\"never\");"	没测该层	keep	keep	—
 "② 文件不带 @nudo:env ⇒ 行为不回退（仍能解析项目级 env）"	"被分析文件**不带** `@nudo:env`（基线：项目级 env 恰好可见）。 断言：expect(ret).toContain(\"42\");；expect(ret).not.toContain(\"never\");"	没测该层	keep	keep	—
 "③ 分析器通道与 CLI `nudo check` 结论一致（都 f() => 42）"	"被分析文件**不带** `@nudo:env`（基线：项目级 env 恰好可见）。 断言：expect(sig).toBeDefined();；expect(sig!.display).toContain(\"42\");"	没测该层	keep	keep	—
-"web env: real constructors keep their brands"	"`instantiateReturn` 无视关系元数 / 构造性 ⇒ 无参 `new Event()` 之类被误判。 修复：关系 arity 门 + `shape.ctor === true` + 声明可选性。 断言：expect(sig(WEB_SRC, env, \"a\")).toBe(\"Event\");；expect(sig(WEB_SRC, env, \"b\")).toBe(\"CustomEvent\");"	夹具漏形态	keep	keep	—
-"node env: illegal no-arg constructions are honest may-throw TypeError"	"`instantiateReturn` 无视关系元数 / 构造性 ⇒ 无参 `new Event()` 之类被误判。 修复：关系 arity 门 + `shape.ctor === true` + 声明可选性。 断言：expect(sig(NODE_SRC, env, name)).toBe(\"never throws TypeError\");"	夹具漏形态	keep	keep	—
-"真值非对象（字符串 / 布尔 / 数组）：诊断 + 按「无配置」处理"	"`package.json#nudo` 键**值不是对象**时被静默忽略： 零诊断（用户零线索），且真值型非对象还**抑制 onboarding 提示** （下游 check.ts 的 filesWithConfig++ 以「找到了真值 nudo 键」为判据）。 根因（config.ts findProjectConfig）：配置层对 `nudo` 键**零形状校验**， 非对象值被谎报成 NudoConfig。 断言：expect(found, label).toBeNull();；expect(out, label).toContain('invalid \"nudo\" key');"	夹具漏形态	keep	keep	—
-"非法 nudo 键不得继承祖先包配置（ignoreThrows / env 都不生效）"	"根包带 nudo 配置（用于验证「非法 nudo 键不得继承祖先配置」） 断言：expect(found).toBeNull();；expect(found?.config).toBeUndefined();"	没测该层	keep	keep	—
-"合法 nudo 键（对象）：照旧返回配置"	"根包带 nudo 配置（用于验证「非法 nudo 键不得继承祖先配置」） 断言：expect(found?.projectDir).toBe(root);；expect(found?.config.contract?.autoBind).toBe(false);"	没测该层	keep	keep	—
-"空对象 nudo 键：照旧算「有配置」（截断祖先搜索）"	"根包带 nudo 配置（用于验证「非法 nudo 键不得继承祖先配置」） 断言：expect(found?.projectDir).toBe(sub);；expect(found?.config).toEqual({});"	没测该层	keep	keep	—
-"无 nudo 键：照旧向上找到祖先配置（monorepo 继承，文档承诺）"	"根包带 nudo 配置（用于验证「非法 nudo 键不得继承祖先配置」） 断言：expect(found?.projectDir).toBe(root);；expect(found?.config.check?.ignoreThrows).toEqual([\"SyntaxError\"]);"	没测该层	keep	keep	—
-"文件级 /// @nudo:env 的同款行为保持正确（本就由 dep 指纹覆盖）"	"改前：分析缓存键（analysisFileCacheKey 的 envSeg）与 evaluator memo 键 （tryRunEval 的 envKey）只编码 env **名字** ⇒ 同一个 env 名指向的文件 内容改了，缓存照样命中 → 类型面停在旧值。 断言：expect(await magicShape(main, source)).toBe(\"1\");；expect(await magicShape(main, source)).toBe('\"hello\"');"	没测该层	keep	keep	—
-"env 内容不变时，结果稳定（不因缓存维度变化而漂移）"	"改前：分析缓存键（analysisFileCacheKey 的 envSeg）与 evaluator memo 键 （tryRunEval 的 envKey）只编码 env **名字** ⇒ 同一个 env 名指向的文件 内容改了，缓存照样命中 → 类型面停在旧值。 断言：expect(await magicShape(main, source)).toBe(\"1\");；expect(await magicShape(main, source)).toBe(\"1\");"	没测该层	keep	keep	—
 ```audit-deleted
 title	reason	evidence
 env 模块表补 default 槽（= 命名空间）+ 互操作标记	dup:env 缓存首表	commit:4e046aad
@@ -183,4 +176,13 @@ env 不是数组：整项丢弃 + 可见诊断	dup:fork/校验/假值表	commit:
 "nudo": {}（空对象）：遮断祖先搜索，配置为空	dup:fork/校验/假值表	commit:5dec708b
 无 nudo 键：照旧继承根配置（文档承诺的 monorepo 行为）	dup:fork/校验/假值表	commit:5dec708b
 子包无 package.json：照旧继承根配置	dup:fork/校验/假值表	commit:5dec708b
+web env: real constructors keep their brands	dup:nudo 键/ctor 表	commit:52efc65a
+node env: illegal no-arg constructions are honest may-throw TypeError	dup:nudo 键/ctor 表	commit:52efc65a
+真值非对象（字符串 / 布尔 / 数组）：诊断 + 按「无配置」处理	dup:nudo 键/ctor 表	commit:52efc65a
+非法 nudo 键不得继承祖先包配置（ignoreThrows / env 都不生效）	dup:nudo 键/ctor 表	commit:52efc65a
+合法 nudo 键（对象）：照旧返回配置	dup:nudo 键/ctor 表	commit:52efc65a
+空对象 nudo 键：照旧算「有配置」（截断祖先搜索）	dup:nudo 键/ctor 表	commit:52efc65a
+无 nudo 键：照旧向上找到祖先配置（monorepo 继承，文档承诺）	dup:nudo 键/ctor 表	commit:52efc65a
+文件级 /// @nudo:env 的同款行为保持正确（本就由 dep 指纹覆盖）	dup:nudo 键/ctor 表	commit:52efc65a
+env 内容不变时，结果稳定（不因缓存维度变化而漂移）	dup:nudo 键/ctor 表	commit:52efc65a
 ```
