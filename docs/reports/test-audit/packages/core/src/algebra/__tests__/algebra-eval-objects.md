@@ -171,29 +171,9 @@ Object.prototype.toString 改写后 → 闭对象调用走用户写的实现	计
 负控制：原型对象上的普通数据槽（expand）照旧可读	计算键/static 表	没测该层	keep	keep	—
 读面：Array.prototype.push 改写后 typeof → number（原生读回用户写的值）	计算键/static 表	没测该层	keep	keep	—
 借用面：Array.prototype.join.call([1,2]) → 用户写的实现	计算键/static 表	没测该层	keep	keep	—
-Symbol.prototype.description → TypeError（brand check）	计算键/static 表	没测该层	keep	keep	—
-throws 域记 TypeError（L2 门禁不再假绿）	计算键/static 表	没测该层	keep	keep	—
-throws 域记 TypeError（L2 门禁不再假绿）	计算键/static 表	没测该层	keep	keep	—
-throws 域记 TypeError（L2 门禁不再假绿）	计算键/static 表	没测该层	keep	keep	—
-负控制：Symbol("x").description → "x"	计算键/static 表	没测该层	keep	keep	—
-负控制：typeof Symbol.prototype.valueOf → "function"（缺席面不误伤）	计算键/static 表	没测该层	keep	keep	—
-负控制：Symbol.prototype 上其它键不抛（description 之外）	计算键/static 表	没测该层	keep	keep	—
-(5).foo → undefined	计算键/static 表	没测该层	keep	keep	—
-(true).foo → undefined	计算键/static 表	没测该层	keep	keep	—
-(1n).foo → undefined	计算键/static 表	没测该层	keep	keep	—
-对象属性读出的 number 读缺失成员 → undefined	计算键/static 表	没测该层	keep	keep	—
-(5).foo.bar → TypeError	计算键/static 表	没测该层	keep	keep	—
-(true).foo.bar → TypeError	计算键/static 表	没测该层	keep	keep	—
-(1n).foo.bar → TypeError	计算键/static 表	没测该层	keep	keep	—
-o.a.b.c（o.a 是 number）→ TypeError	计算键/static 表	没测该层	keep	keep	—
-string prim 同款（既有语义，不回归）	计算键/static 表	没测该层	keep	keep	—
-(5).toFixed(2) → "5.00"（prim 自有原型方法）	计算键/static 表	没测该层	keep	keep	—
-typeof (5).toString → "function"（Object.prototype 继承名）	计算键/static 表	没测该层	keep	keep	—
-(5).valueOf() → 5（继承名仍走调用面）	计算键/static 表	没测该层	keep	keep	—
-(5).constructor.name → "Number"（constructor 不是「确定缺失」）	计算键/static 表	没测该层	keep	keep	—
-对象面缺失成员读 → undefined（既有语义）	计算键/static 表	没测该层	keep	keep	—
-对象面缺失成员的后续读仍记 TypeError（既有语义）	计算键/static 表	没测该层	keep	keep	—
-数组面不受影响（arr[0] 命中）	计算键/static 表	没测该层	keep	keep	—
+prototype 读 description 抛；L2 记抛；实例与其它键负控	prim 成员表	没测该层	keep	keep	—
+number/boolean/bigint/属性读缺失 → undefined；后续读记 TypeError；string 同款	prim 成员表	没测该层	keep	keep	—
+负控：prim 原型方法/继承名/对象面不变	prim 成员表	没测该层	keep	keep	—
 Symbol('x').toString() → "Symbol(x)"	计算键/static 表	没测该层	keep	keep	—
 Symbol('x').toLocaleString() → "Symbol(x)"（不是 "[object Symbol]"）	计算键/static 表	没测该层	keep	keep	—
 Symbol().toString.call(1) → TypeError（brand check 不再丢）	计算键/static 表	没测该层	keep	keep	—
@@ -257,6 +237,8 @@ Intl 原型上的自有方法是函数（resolvedOptions / formatToParts）	计�
 负控制：其它原型方法读仍是函数（缺席面不误伤）	计算键/static 表	没测该层	keep	keep	—
 Map.prototype.size → TypeError	计算键/static 表	没测该层	keep	keep	—
 Set.prototype.size → TypeError	计算键/static 表	没测该层	keep	keep	—
+throws 域记 TypeError（L2 门禁不再假绿）	计算键/static 表	没测该层	keep	keep	—
+throws 域记 TypeError（L2 门禁不再假绿）	计算键/static 表	没测该层	keep	keep	—
 负控制：new Map().size → 0（实例面不受影响）	计算键/static 表	没测该层	keep	keep	—
 负控制：new Set().size → 0（实例面不受影响）	计算键/static 表	没测该层	keep	keep	—
 "size" in Map.prototype → true（原型上的自有访问器在 presence 面可见）	计算键/static 表	没测该层	keep	keep	—
@@ -694,4 +676,24 @@ sealed 数组 shift() → TypeError	dup:成员路径/sealed 表	commit:cb863afe
 负控制：preventExtensions 数组 pop()/shift() → 不抛（元素仍可配置）	dup:成员路径/sealed 表	commit:cb863afe
 稀疏：sealed [1,,] 的 pop() → 不抛（末位是洞，非自有属性）	dup:成员路径/sealed 表	commit:cb863afe
 稀疏：sealed [,,3] 的 shift() → TypeError（前移要在不可扩展数组上新增自有属性）	dup:成员路径/sealed 表	commit:cb863afe
+Symbol.prototype.description → TypeError（brand check）	dup:prim 成员表	commit:c617fc1e
+负控制：Symbol("x").description → "x"	dup:prim 成员表	commit:c617fc1e
+负控制：typeof Symbol.prototype.valueOf → "function"（缺席面不误伤）	dup:prim 成员表	commit:c617fc1e
+负控制：Symbol.prototype 上其它键不抛（description 之外）	dup:prim 成员表	commit:c617fc1e
+(5).foo → undefined	dup:prim 成员表	commit:c617fc1e
+(true).foo → undefined	dup:prim 成员表	commit:c617fc1e
+(1n).foo → undefined	dup:prim 成员表	commit:c617fc1e
+对象属性读出的 number 读缺失成员 → undefined	dup:prim 成员表	commit:c617fc1e
+(5).foo.bar → TypeError	dup:prim 成员表	commit:c617fc1e
+(true).foo.bar → TypeError	dup:prim 成员表	commit:c617fc1e
+(1n).foo.bar → TypeError	dup:prim 成员表	commit:c617fc1e
+o.a.b.c（o.a 是 number）→ TypeError	dup:prim 成员表	commit:c617fc1e
+string prim 同款（既有语义，不回归）	dup:prim 成员表	commit:c617fc1e
+(5).toFixed(2) → "5.00"（prim 自有原型方法）	dup:prim 成员表	commit:c617fc1e
+typeof (5).toString → "function"（Object.prototype 继承名）	dup:prim 成员表	commit:c617fc1e
+(5).valueOf() → 5（继承名仍走调用面）	dup:prim 成员表	commit:c617fc1e
+(5).constructor.name → "Number"（constructor 不是「确定缺失」）	dup:prim 成员表	commit:c617fc1e
+对象面缺失成员读 → undefined（既有语义）	dup:prim 成员表	commit:c617fc1e
+对象面缺失成员的后续读仍记 TypeError（既有语义）	dup:prim 成员表	commit:c617fc1e
+数组面不受影响（arr[0] 命中）	dup:prim 成员表	commit:c617fc1e
 ```
