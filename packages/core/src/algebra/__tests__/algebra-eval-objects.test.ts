@@ -2999,31 +2999,22 @@ function throwName(src: string): string {
 }
 
 describe("Symbol.prototype.description 定抛 TypeError", () => {
-  it("Symbol.prototype.description → TypeError（brand check）", () => {
-    const src = wrap(`try { return String(Symbol.prototype.description); } catch(e) { return e.constructor.name; }`);
-    expect(v(src)).toEqual({ ok: true, value: "TypeError" });
-  });
-
-  it("throws 域记 TypeError（L2 门禁不再假绿）", () => {
-    const rec = call(wrap(`return Symbol.prototype.description;`), "f");
-    expect(throwsError(rec.throws, "TypeError")).toBe(true);
-  });
-
-  it("负控制：Symbol(\"x\").description → \"x\"", () => {
+  const wrap = (body: string) => `export function f() { ${body} }`;
+  const v = (src: string) => litValue(call(src, "f").result);
+  const throwName = (src: string): string => {
+    const t = call(src, "f").throws as { shape?: { k?: string; name?: string } } | undefined;
+    if (!t?.shape || t.shape.k === "never") return "";
+    return t.shape.k === "brand" ? (t.shape.name ?? "") : (t.shape.k as string);
+  };
+  it("prototype 读 description 抛；L2 记抛；实例与其它键负控", () => {
+    expect(v(wrap(`try { return String(Symbol.prototype.description); } catch(e) { return e.constructor.name; }`))).toEqual({ ok: true, value: "TypeError" });
+    expect(throwsError(call(wrap(`return Symbol.prototype.description;`), "f").throws, "TypeError")).toBe(true);
     expect(v(wrap(`return String(Symbol("x").description);`))).toEqual({ ok: true, value: "x" });
-  });
-
-  it("负控制：typeof Symbol.prototype.valueOf → \"function\"（缺席面不误伤）", () => {
-    expect(v(wrap(`return String(typeof Symbol.prototype.valueOf);`))).toEqual({
-      ok: true,
-      value: "function",
-    });
-  });
-
-  it("负控制：Symbol.prototype 上其它键不抛（description 之外）", () => {
+    expect(v(wrap(`return String(typeof Symbol.prototype.valueOf);`))).toEqual({ ok: true, value: "function" });
     expect(throwName(wrap(`return typeof Symbol.prototype.toString;`))).toBe("");
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -3069,74 +3060,36 @@ function throwName(src: string): string {
 const wrap = (body: string) => `export function f() { ${body} }`;
 
 describe("prim 读不存在的成员 → undefined（不是 unknown）", () => {
-  it("(5).foo → undefined", () => {
-    expect(v(wrap(`const n = 5; return n.foo;`))).toEqual({ ok: true, value: undefined });
+  const v = (src: string) => litValue___nudojs_core_17(call(src, "f").result);
+  const throwName = (src: string): string => {
+    const t = call(src, "f").throws as { shape?: { k?: string; name?: string } } | undefined;
+    if (!t?.shape || t.shape.k === "never") return "";
+    return t.shape.k === "brand" ? (t.shape.name ?? "") : (t.shape.k as string);
+  };
+  const wrap = (body: string) => `export function f() { ${body} }`;
+  it("number/boolean/bigint/属性读缺失 → undefined；后续读记 TypeError；string 同款", () => {
+    for (const body of [`const n = 5; return n.foo;`, `const b = true; return b.foo;`, `const g = 1n; return g.foo;`, `const o = {a:1}; return o.a.b;`]) {
+      expect(v(wrap(body)), body).toEqual({ ok: true, value: undefined });
+    }
+    for (const body of [`const n = 5; return n.foo.bar;`, `const b = true; return b.foo.bar;`, `const g = 1n; return g.foo.bar;`, `const o = {a:1}; return o.a.b.c;`, `const s = "ab"; return s.foo.bar;`]) {
+      expect(throwName(wrap(body)), body).toBe("TypeError");
+    }
   });
-
-  it("(true).foo → undefined", () => {
-    expect(v(wrap(`const b = true; return b.foo;`))).toEqual({ ok: true, value: undefined });
-  });
-
-  it("(1n).foo → undefined", () => {
-    expect(v(wrap(`const g = 1n; return g.foo;`))).toEqual({ ok: true, value: undefined });
-  });
-
-  it("对象属性读出的 number 读缺失成员 → undefined", () => {
-    expect(v(wrap(`const o = {a:1}; return o.a.b;`))).toEqual({ ok: true, value: undefined });
-  });
-});
-
-describe("后续读该值记 may-throw TypeError（L2 门禁不再假绿）", () => {
-  it("(5).foo.bar → TypeError", () => {
-    expect(throwName(wrap(`const n = 5; return n.foo.bar;`))).toBe("TypeError");
-  });
-
-  it("(true).foo.bar → TypeError", () => {
-    expect(throwName(wrap(`const b = true; return b.foo.bar;`))).toBe("TypeError");
-  });
-
-  it("(1n).foo.bar → TypeError", () => {
-    expect(throwName(wrap(`const g = 1n; return g.foo.bar;`))).toBe("TypeError");
-  });
-
-  it("o.a.b.c（o.a 是 number）→ TypeError", () => {
-    expect(throwName(wrap(`const o = {a:1}; return o.a.b.c;`))).toBe("TypeError");
-  });
-
-  it("string prim 同款（既有语义，不回归）", () => {
-    expect(throwName(wrap(`const s = "ab"; return s.foo.bar;`))).toBe("TypeError");
-  });
-});
-
-describe("负控制：prim 原型方法 / 继承名 / 对象面不回归", () => {
-  it("(5).toFixed(2) → \"5.00\"（prim 自有原型方法）", () => {
+  it("负控：prim 原型方法/继承名/对象面不变", () => {
     expect(v(wrap(`const n = 5; return n.toFixed(2);`))).toEqual({ ok: true, value: "5.00" });
-  });
-
-  it("typeof (5).toString → \"function\"（Object.prototype 继承名）", () => {
     expect(v(wrap(`const n = 5; return typeof n.toString;`))).toEqual({ ok: true, value: "function" });
-  });
-
-  it("(5).valueOf() → 5（继承名仍走调用面）", () => {
     expect(v(wrap(`const n = 5; return n.valueOf();`))).toEqual({ ok: true, value: 5 });
-  });
-
-  it("(5).constructor.name → \"Number\"（constructor 不是「确定缺失」）", () => {
     expect(v(wrap(`const n = 5; return n.constructor.name;`))).toEqual({ ok: true, value: "Number" });
-  });
-
-  it("对象面缺失成员读 → undefined（既有语义）", () => {
     expect(v(wrap(`const o = {a:1}; return o.zzz;`))).toEqual({ ok: true, value: undefined });
-  });
-
-  it("对象面缺失成员的后续读仍记 TypeError（既有语义）", () => {
     expect(throwName(wrap(`const o = {a:1}; return o.zzz.yy;`))).toBe("TypeError");
-  });
-
-  it("数组面不受影响（arr[0] 命中）", () => {
     expect(v(wrap(`const a = [1,2]; return a[0];`))).toEqual({ ok: true, value: 1 });
   });
 });
+;
+
+;
+
+;
 });
 
 // ---------------------------------------------------------------------------
