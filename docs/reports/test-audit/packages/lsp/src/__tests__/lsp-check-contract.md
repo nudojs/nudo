@@ -6,76 +6,102 @@
 
 ```audit
 title	rootCause	gap	action	status	evidence
-"definition@imported 侧：落到真正被导入的模块，不得落到同名导出的无关文件"	"import 绑定表只以「本地名」为键 ⇒ 别名 import 的 **imported 侧** 标识符在引擎眼里不是 import 绑定 ⇒ ① `references` 返回 `[]`（假绿） ② `definition` 退化到**工作区同名导出**兜底 ⇒ 跳到**无关文件**（假跳转）。 报告说的症状（**假阳性 —— 两个症状都不复现**）： 夹具：`aaa.js` 与 `zzz.js` **同名导出 `helper`**； 断言：expect(defs).toContainEqual(ZZZ_DECL);；expect("	夹具漏形态	keep	keep	—
-"references@imported 侧：不是空数组，且与无别名形态完全一致"	"import 绑定表只以「本地名」为键 ⇒ 别名 import 的 **imported 侧** 标识符在引擎眼里不是 import 绑定 ⇒ ① `references` 返回 `[]`（假绿） ② `definition` 退化到**工作区同名导出**兜底 ⇒ 跳到**无关文件**（假跳转）。 报告说的症状（**假阳性 —— 两个症状都不复现**）： 夹具：`aaa.js` 与 `zzz.js` **同名导出 `helper`**； 断言：expect(；expect(aliasedRefs).toContainEqual(ZZZ_DECL);"	夹具漏形态	keep	keep	—
-"definition@local 侧：仍然落到真正被导入的模块"	"import 绑定表只以「本地名」为键 ⇒ 别名 import 的 **imported 侧** 标识符在引擎眼里不是 import 绑定 ⇒ ① `references` 返回 `[]`（假绿） ② `definition` 退化到**工作区同名导出**兜底 ⇒ 跳到**无关文件**（假跳转）。 报告说的症状（**假阳性 —— 两个症状都不复现**）： 夹具：`aaa.js` 与 `zzz.js` **同名导出 `helper`**； 断言：expect(defs).toContainEqual(ZZZ_DECL);；expect(defs.filter((d) => d.file === \"aaa.js\")).toEqual(["	夹具漏形态	keep	keep	—
-"正控制：项目根 env + 子目录文件 ⇒ 不报 L2 entry-may-throw（IDE push 面）"	"合法入口：读 env 全局（env 可见 ⇒ 不抛 ⇒ 不得报 L2）。 断言：expect(c).not.toContain(\"nudo:entry-may-throw\");；expect(c).not.toContain(\"nudo:builtin-unknown\");"	没测该层	keep	keep	—
-"正控制：check 通道本身（checkToLspDiagnostics）不报 L2 entry-may-throw"	"LSP **check 通道**看不见**项目级** path env ⇒ IDE 假红 （`nudo:entry-may-throw`），而 CLI `nudo check` 绿（两面口径相反）。 而 `checkSource` 的 env 查表基准 = 「**最后一次**预载的目录」= **文件目录** （文件级 env 预载在后）⇒ 相对说明符的唯一候选 = `<proj>/src/env.mjs` ≠ 预载登记的 `<proj>/env.mjs` ⇒ 查表落空 ⇒ env 全局缺失 ⇒ 入口求值抛 `ReferenceError: MAGIC is not defined` ⇒ 报 L2 `nudo:entry-may-th"	没测该层	keep	keep	—
-"负控制：真违约（入口真的 throw）⇒ 仍必须报 L2 entry-may-throw"	"真违约：入口真的抛 ⇒ 必须报 L2（负控制）。 断言：expect(codes(sent)).toContain(\"nudo:entry-may-throw\");"	没测该层	keep	keep	—
-"负控制（check 通道本身）：真违约 ⇒ 仍报 L2 entry-may-throw"	"真违约：入口真的抛 ⇒ 必须报 L2（负控制）。 断言：expect(codes(diags)).toContain(\"nudo:entry-may-throw\");"	没测该层	keep	keep	—
-"参数违例：动作标题带 greet.u，编辑只剥形参谓词（返回槽 .gt(40) 不动）"	"参数槽可放宽 + 返回槽带数值谓词（旧实现会误伤的那一份） 断言：expect(relax).toHaveLength(1);；expect(relax[0]!.title).toBe(\"Relax sidecar contract for greet.u\");"	没测该层	keep	keep	—
-"落盘后目标参数诊断消失（编辑真的可执行，不是假修复）"	"根因：`loosen` 正则不匹配诊断文案 ⇒ `param === undefined` ⇒ 替换器落到 `tryReturnSlot`； 且动作**没有**「落盘后诊断是否消失」的验证门。 断言：expect(relax).toHaveLength(1);；expect(landed).toBe(`import { fn, number } from \"@nudojs/core\";"	没测该层	keep	keep	—
-"参数槽改不动（shape 参数）⇒ 不下发放宽动作，不得退化成改返回槽"	"参数槽可放宽 + 返回槽带数值谓词（旧实现会误伤的那一份） 断言：expect(messages.join(\"\\n\")).toMatch(/missing field u\\.name/);；expect(actions.filter(isRelax)).toHaveLength(0);"	没测该层	keep	keep	—
-"证据面：只剥返回槽数值谓词对参数诊断一字无效（所以不下发）"	"根因：`loosen` 正则不匹配诊断文案 ⇒ `param === undefined` ⇒ 替换器落到 `tryReturnSlot`； 且动作**没有**「落盘后诊断是否消失」的验证门。 断言：expect(after.filter((d) => isParamDiag(msgText(d.message)))).toHaveLength(1);；expect(after.map((d) => msgText(d.message)).join(\"\\n\")).toMatch(/missing field u\\.name/);"	没测该层	keep	keep	—
-"返回基类型冲突（string ⊭ number）⇒ 不下发放宽动作、不产生侧车编辑"	"本产品始终写纯字符串。 断言：expect(messages.join(\"\\n\")).toMatch(/typeof return = \"string\" ⊭ \"number\"/);；expect(actions.filter(isRelax)).toHaveLength(0);"	夹具漏形态	keep	keep	—
-"证据面：旧动作的落盘结果（返回槽 → number()）诊断原样保留"	"「放宽侧车契约」quickfix 对**基类型不匹配**（`string ⊭ number`） 永远消不掉诊断 ⇒ 建议不可执行 现象：返回值基类型就与侧车返回槽冲突时，动作只会剥数值谓词 （`number().gt(40)` → `number()`）⇒ 诊断**一字未消**（`string ⊭ number`）， 用户点完「修复」diff 出来了、诊断一条不少。 根因：`stripNumericPreds` 只剥数值谓词，没有「`number()` → `string()`」路径； 断言：expect(after.filter((d) => isReturnBaseDiag(msgText(d.message)))).toHav"	没测该层	keep	keep	—
-"返回槽没有可放宽的数值精化（number()）⇒ 不下发（无 edit 空转）"	"「放宽侧车契约」quickfix 对**基类型不匹配**（`string ⊭ number`） 永远消不掉诊断 ⇒ 建议不可执行 现象：返回值基类型就与侧车返回槽冲突时，动作只会剥数值谓词 （`number().gt(40)` → `number()`）⇒ 诊断**一字未消**（`string ⊭ number`）， 用户点完「修复」diff 出来了、诊断一条不少。 根因：`stripNumericPreds` 只剥数值谓词，没有「`number()` → `string()`」路径； 断言：expect(messages.join(\"\\n\")).toMatch(/return slot \\(number\\(\\)\\)/);；expe"	没测该层	keep	keep	—
-"正控制：返回槽**数值**冲突可解时动作仍在，落盘后目标诊断消失"	"「放宽侧车契约」quickfix 对**基类型不匹配**（`string ⊭ number`） 永远消不掉诊断 ⇒ 建议不可执行 现象：返回值基类型就与侧车返回槽冲突时，动作只会剥数值谓词 （`number().gt(40)` → `number()`）⇒ 诊断**一字未消**（`string ⊭ number`）， 用户点完「修复」diff 出来了、诊断一条不少。 根因：`stripNumericPreds` 只剥数值谓词，没有「`number()` → `string()`」路径； 断言：expect(relax).toHaveLength(1);；expect(relax[0]!.title).toBe(\"Relax side"	没测该层	keep	keep	—
+definition@imported 侧：落到真正被导入的模块，不得落到同名导出的无关文件；references@imported 侧：不是空数组，且与无别名形态完全一致；definition@local 侧：仍然落到真正被导入的模块	lsp-check-contract 聚合矩阵	没测该层	keep	keep	—
+正控制：项目根 env + 子目录文件 ⇒ 不报 L2 entry-may-throw（IDE push 面）；正控制：check 通道本身（checkToLspDiagnostics）不报 L2 entry-may-throw；负控制：真违约（入口真的 throw）⇒ 仍必须报 L2 entry-may-throw；负控制（check 通道本身）：真违约 ⇒ 仍报 L2 entry-may-throw	lsp-check-contract 聚合矩阵	没测该层	keep	keep	—
+参数违例：动作标题带 greet.u，编辑只剥形参谓词（返回槽 .gt(40) 不动）；落盘后目标参数诊断消失（编辑真的可执行，不是假修复）；参数槽改不动（shape 参数）⇒ 不下发放宽动作，不得退化成改返回槽；证据面：只剥返回槽数值谓词对参数诊断一字无效（所以不下发）	lsp-check-contract 聚合矩阵	没测该层	keep	keep	—
+返回基类型冲突（string ⊭ number）⇒ 不下发放宽动作、不产生侧车编辑；证据面：旧动作的落盘结果（返回槽 → number()）诊断原样保留；返回槽没有可放宽的数值精化（number()）⇒ 不下发（无 edit 空转）；正控制：返回槽**数值**冲突可解时动作仍在，落盘后目标诊断消失	lsp-check-contract 聚合矩阵	没测该层	keep	keep	—
 "每条 lens 标题在 CLI 报告里是 ` <title>`；throws 分支为 3 空格"	"LSP codeLens 标题与 CLI `nudo test` 见证行**不同形**。 症状（同文件、同分析，两面并排）： - CLI `nudo test` 见证行：`\" entry@L1 (any) => unknown throws TypeError\"` （2 格容器缩进 + throws 前 **3** 空格）； 断言：expect(titles.length, `lenses 为空 ⇒ 无法对拍`).toBeGreaterThan(0);；expect("	没测该层	keep	keep	—
-"@nudo:mock 覆盖的依赖不得再报 nudo:entry-may-throw（与 CLI 同口径：绿）"	"无 mock 的对照：入口读一个不存在的全局 ⇒ 真的可能抛 断言：expect(codes(diags)).not.toContain(\"nudo:entry-may-throw\");"	没测该层	keep	keep	—
-"负控制：没有 mock 的入口仍报 nudo:entry-may-throw（门禁未被关掉）"	"无 mock 的对照：入口读一个不存在的全局 ⇒ 真的可能抛 断言：expect(codes(diags)).toContain(\"nudo:entry-may-throw\");"	没测该层	keep	keep	—
-"collectBindingReferences：导出绑定不产生语句级伪引用"	"回归钉：LSP `textDocument/references` 不得把**声明位点返回两次**， 也不得混入语句级伪引用。 改前（协议面实测，见 tmp/probe/fix-r30/d1-before.txt）： references on `score`（`export function score(row) {...}` 的声明位） → [0:16-0:21]（声明）、[0:16-0:21]（**同一个声明再来一次**）、 [0:0-2:1]（**整条 export 声明**）、…（跨文件引用） ⇒ 同一个位置出现两次； 断言：expect(refs.length).toBe(1);；expect(refs[0]!.loc."	没测该层	keep	keep	—
-"协议面：references 的每个位置只出现一次"	"回归钉：LSP `textDocument/references` 不得把**声明位点返回两次**， 也不得混入语句级伪引用。 改前（协议面实测，见 tmp/probe/fix-r30/d1-before.txt）： references on `score`（`export function score(row) {...}` 的声明位） → [0:16-0:21]（声明）、[0:16-0:21]（**同一个声明再来一次**）、 [0:0-2:1]（**整条 export 声明**）、…（跨文件引用） ⇒ 同一个位置出现两次； 断言：expect(Array.isArray(locs)).toBe(true);；expect(ne"	没测该层	keep	keep	—
-"default 导出的定义处能查到 default 导入方的 import 说明符与调用点"	"症状：definition 能跳到 default 导出的定义，references 却查不到任何调用方 （自相矛盾）。 根因：跨文件引用匹配用的是**导出名**，而 default 导入的 importedName 是 \"default\"、被查符号的本地名是 \"greet\" ⇒ 永远匹配不上。 断言：expect(refs).toContainEqual({；expect(refs).toContainEqual({"	没测该层	keep	keep	—
-"default 导入方一侧发起 references 也能覆盖定义文件"	"症状：definition 能跳到 default 导出的定义，references 却查不到任何调用方 （自相矛盾）。 根因：跨文件引用匹配用的是**导出名**，而 default 导入的 importedName 是 \"default\"、被查符号的本地名是 \"greet\" ⇒ 永远匹配不上。 断言：expect(refs).toContainEqual({"	没测该层	keep	keep	—
-"成员属性 helper 的 definition 不得跳到无关文件的同名导出"	"症状：`o.helper()` 的 helper 没有来源，却命中「同名导出兜底」跳到 另一个文件里毫不相干的 `export function helper`。 断言：expect(defs.filter((d) => d.file === \"other.js\")).toEqual([]);"	夹具漏形态	keep	keep	—
-"裸标识符仍能命中同名导出兜底（兜底本身没坏）"	"断言：expect(defs).toContainEqual({"	没测该层	keep	keep	—
-"collectBindingReferences：includeDeclaration=false 不含声明位"	"改前（协议面实测，见 tmp/probe/fix-r30/d1-before.txt）： references on `v`（a 内），includeDeclaration=false → [1:8-1:9]（**a 里 v 的声明位**）、[2:9-2:10]（用点）❌ （includeDeclaration 只作用于 `resolveReferences` 的那一个 `decl` 数组， 管不到引用集合里的声明位） 根因：`collectBindingReferences` 无条件把绑定声明位（`binding.identifier`） 收进引用集合 ⇒ `includeDeclaration` 只关掉了「另一处」的声明。 修法"	夹具漏形态	keep	keep	—
-"collectBindingReferences：默认仍含声明位（既有语义不变，负控制）"	"改前（协议面实测，见 tmp/probe/fix-r30/d1-before.txt）： references on `v`（a 内），includeDeclaration=false → [1:8-1:9]（**a 里 v 的声明位**）、[2:9-2:10]（用点）❌ （includeDeclaration 只作用于 `resolveReferences` 的那一个 `decl` 数组， 管不到引用集合里的声明位） 根因：`collectBindingReferences` 无条件把绑定声明位（`binding.identifier`） 收进引用集合 ⇒ `includeDeclaration` 只关掉了「另一处」的声明。 修法"	夹具漏形态	keep	keep	—
-"协议面：includeDeclaration=false 只返回用点"	"改前（协议面实测，见 tmp/probe/fix-r30/d1-before.txt）： references on `v`（a 内），includeDeclaration=false → [1:8-1:9]（**a 里 v 的声明位**）、[2:9-2:10]（用点）❌ （includeDeclaration 只作用于 `resolveReferences` 的那一个 `decl` 数组， 管不到引用集合里的声明位） 根因：`collectBindingReferences` 无条件把绑定声明位（`binding.identifier`） 收进引用集合 ⇒ `includeDeclaration` 只关掉了「另一处」的声明。 修法"	夹具漏形态	keep	keep	—
-"definition 落在 buffer 坐标（磁盘坐标会跳错行）"	"未保存的 buffer：多一行注释 ⇒ 导出声明被顶到第 2 行（1 基） 断言：expect(defs).toContainEqual({"	没测该层	keep	keep	—
-"references 落在 buffer 坐标"	"未保存的 buffer：多一行注释 ⇒ 导出声明被顶到第 2 行（1 基） 断言：expect(refs).toContainEqual({"	没测该层	keep	keep	—
-"rename 的编辑落在 buffer 坐标"	"未保存的 buffer：多一行注释 ⇒ 导出声明被顶到第 2 行（1 基） 断言：expect(edits).toContainEqual({"	没测该层	keep	keep	—
-"插入点落进目标形参的 shape({ … }) 内部（不是形参表顶层）"	"根因：`findFnContractInsertPos`（旧实现）**不解析形参表结构**，只找 `fn(` 括号内**第一层**的 `{` ⇒「往某个 shape 里补字段」被执行成「往**形参表**里 加一个形参」⇒ 契约多出一个不存在的形参 ⇒ 契约与源码对不上。 钉（插入点契约）： 1. 插入点落在**目标形参对应的 `shape({ … })` 内部**（不是形参表顶层）； 断言：expect(pos).not.toBeNull();；expect(line[pos!.character - 1]).toBe(\"{\");"	没测该层	keep	keep	—
-"字段已在契约里 ⇒ 不给插入点（不写重复键）"	"根因：`findFnContractInsertPos`（旧实现）**不解析形参表结构**，只找 `fn(` 括号内**第一层**的 `{` ⇒「往某个 shape 里补字段」被执行成「往**形参表**里 加一个形参」⇒ 契约多出一个不存在的形参 ⇒ 契约与源码对不上。 钉（插入点契约）： 1. 插入点落在**目标形参对应的 `shape({ … })` 内部**（不是形参表顶层）； 断言：expect("	没测该层	keep	keep	—
-"目标形参的契约类型不是内联 shape ⇒ 不给插入点"	"根因：`findFnContractInsertPos`（旧实现）**不解析形参表结构**，只找 `fn(` 括号内**第一层**的 `{` ⇒「往某个 shape 里补字段」被执行成「往**形参表**里 加一个形参」⇒ 契约多出一个不存在的形参 ⇒ 契约与源码对不上。 钉（插入点契约）： 1. 插入点落在**目标形参对应的 `shape({ … })` 内部**（不是形参表顶层）； 断言：expect(；expect("	没测该层	keep	keep	—
-"LSP 面：契约缺字段时，补字段动作落在 shape 内部"	"根因：`findFnContractInsertPos`（旧实现）**不解析形参表结构**，只找 `fn(` 括号内**第一层**的 `{` ⇒「往某个 shape 里补字段」被执行成「往**形参表**里 加一个形参」⇒ 契约多出一个不存在的形参 ⇒ 契约与源码对不上。 钉（插入点契约）： 1. 插入点落在**目标形参对应的 `shape({ … })` 内部**（不是形参表顶层）； 断言：expect(edits.length).toBe(1);；expect(landed).toContain(\"u: shape({ name: undefined, id: number() })\");"	没测该层	keep	keep	—
-"LSP 面：契约已声明该字段 ⇒ 不下发写坏契约的动作"	"根因：`findFnContractInsertPos`（旧实现）**不解析形参表结构**，只找 `fn(` 括号内**第一层**的 `{` ⇒「往某个 shape 里补字段」被执行成「往**形参表**里 加一个形参」⇒ 契约多出一个不存在的形参 ⇒ 契约与源码对不上。 钉（插入点契约）： 1. 插入点落在**目标形参对应的 `shape({ … })` 内部**（不是形参表顶层）； 断言：expect(sidecarEdits(actions, uri)).toHaveLength(0);；expect(actions.map((a) => a.title)).not.toContain("	没测该层	keep	keep	—
-"插入点落进对象字面量，字符串字面量原样保留"	"断言：expect(edits.length).toBe(1);；expect(e.range.start).toEqual({ line: 5, character: 3 });"	没测该层	keep	keep	—
-"同一行既有字符串 `{` 又有对象字面量时也落进对象字面量"	"断言：expect(edits.length).toBe(1);；expect(applied).toContain('greet(\"{\", { name: null, id: 1 });');"	没测该层	keep	keep	—
-"slash 形式：mock 文件缺失 ⇒ error 级 nudo:module-missing（门禁红）"	"LSP agent 工具 `nudo/check` 丢掉 CLI 的 **mock 装载失败通道**。 症状（改前）：夹具 `@nudo:mock helper from \"./no-such-mock.js\"`（mock 文件 不存在）⇒ CLI `nudo check --json` 报 **error 级 `nudo:module-missing`** （判红），agent 工具面**整条通道消失**（判绿）——同一文件两个面两种结论。 断言：expect(issue).toBeTruthy();；expect(issue.severity).toBe(\"error\");"	夹具漏形态	keep	keep	—
-"dot 形式：同一条通道同样可见（协议别名不降级）"	"LSP agent 工具 `nudo/check` 丢掉 CLI 的 **mock 装载失败通道**。 症状（改前）：夹具 `@nudo:mock helper from \"./no-such-mock.js\"`（mock 文件 不存在）⇒ CLI `nudo check --json` 报 **error 级 `nudo:module-missing`** （判红），agent 工具面**整条通道消失**（判绿）——同一文件两个面两种结论。 断言：expect(codes).toContain(\"nudo:module-missing\");"	夹具漏形态	keep	keep	—
-"文本面：error 级通道上屏（不再是「0 error」判绿）"	"LSP agent 工具 `nudo/check` 丢掉 CLI 的 **mock 装载失败通道**。 症状（改前）：夹具 `@nudo:mock helper from \"./no-such-mock.js\"`（mock 文件 不存在）⇒ CLI `nudo check --json` 报 **error 级 `nudo:module-missing`** （判红），agent 工具面**整条通道消失**（判绿）——同一文件两个面两种结论。 断言：expect(text).toContain(\"nudo:module-missing\");；expect(text).toContain(\"FAILED\");"	夹具漏形态	keep	keep	—
-"工具面：下游侧车 add.nudo.js 被写出来，且文本点名 derived-from"	"`nudo.contract.emit` 必须走 **root 驱动下行推导** （`emitDerivedFromRoot`），与 CLI `nudo contract --emit` 同序同口径。 症状（改前）：工具**从不**调 `emitDerivedFromRoot` ⇒ - CLI 写得出的下游侧车（`add.nudo.js`）在 IDE 面**永远不产生**； 断言：expect(text).toContain(\"add.nudo.js\");；expect(text).toContain(\"derived-from add4\");"	没测该层	keep	keep	—
-"工具面：dry-run 只预览、不写下游侧车"	"LSP agent 工具 `nudo/check` 丢掉 CLI 的 **mock 装载失败通道**。 症状（改前）：夹具 `@nudo:mock helper from \"./no-such-mock.js\"`（mock 文件 不存在）⇒ CLI `nudo check --json` 报 **error 级 `nudo:module-missing`** （判红），agent 工具面**整条通道消失**（判绿）——同一文件两个面两种结论。 断言：expect(r.content[0].text).toContain(\"dry-run\");；expect(existsSync(join(dir, \"add.nudo.js\")))."	夹具漏形态	keep	keep	—
-"协议面：nudo.contract.emit 同样产出下游侧车"	"`nudo.contract.emit` 必须走 **root 驱动下行推导** （`emitDerivedFromRoot`），与 CLI `nudo contract --emit` 同序同口径。 症状（改前）：工具**从不**调 `emitDerivedFromRoot` ⇒ - CLI 写得出的下游侧车（`add.nudo.js`）在 IDE 面**永远不产生**； 断言：expect(res.content[0].text).toContain(\"add.nudo.js\");；expect(res.content[0].text).toContain(\"derived-from add4\");"	没测该层	keep	keep	—
-"root 内以 `..` 开头的合法路径名 ⇒ 允许写侧车"	"emit 写盘边界按**路径分量**判定，不按字符串前缀。 症状（改前）：`pathInsideRoot` 用 `rel.startsWith(\"..\")` 判逃逸 ⇒ `..dotted.js` / `...triple.js` / `..cfg/x.js` 这些**合法**的相对路径 （组件名以 `..` 开头）被误判成逃逸 ⇒ IDE 拒绝对**工作区内**的合法文件 写侧车，而 CLI（无 workspace root 闸门）接受。 断言：expect(r.isError, `${rel} 不该被拒：${r.content[0].text}`).toBeFalsy();；expect(existsSync(join(dir,"	夹具漏形态	keep	keep	—
-"root 外的文件 ⇒ 仍然拒绝"	"emit 写盘边界按**路径分量**判定，不按字符串前缀。 症状（改前）：`pathInsideRoot` 用 `rel.startsWith(\"..\")` 判逃逸 ⇒ `..dotted.js` / `...triple.js` / `..cfg/x.js` 这些**合法**的相对路径 （组件名以 `..` 开头）被误判成逃逸 ⇒ IDE 拒绝对**工作区内**的合法文件 写侧车，而 CLI（无 workspace root 闸门）接受。 断言：expect(r.isError).toBe(true);；expect(r.content[0].text).toContain(\"outside allowed roots\");"	夹具漏形态	keep	keep	—
-"指向 root 外的符号链接 ⇒ 仍然拒绝（realpath 防逃逸）"	"emit 写盘边界按**路径分量**判定，不按字符串前缀。 症状（改前）：`pathInsideRoot` 用 `rel.startsWith(\"..\")` 判逃逸 ⇒ `..dotted.js` / `...triple.js` / `..cfg/x.js` 这些**合法**的相对路径 （组件名以 `..` 开头）被误判成逃逸 ⇒ IDE 拒绝对**工作区内**的合法文件 写侧车，而 CLI（无 workspace root 闸门）接受。 断言：expect(r.isError).toBe(true);；expect(r.content[0].text).toContain(\"outside allowed roots\");"	夹具漏形态	keep	keep	—
-"nudo/check：侧车 ⇒ 明确错误（不再是 0 fn 判绿）"	"LSP agent 工具 `nudo/check` / `nudo/test` **没有「分析目标」 闸门** ⇒ 对**侧车契约文件**报「OK / 0 error / 0 fn」（假绿），而 CLI 对 同一文件 exit 1「Not an analysis target」； 修法：入口复用与 CLI **同一份**目标判定（`isNudoTargetPath` + 侧车 / `.d.ts` / JSX 排除）⇒ 非分析目标返回**明确的错误**（`nudo:path-not-target` 码 + 与 CLI 逐字一致的消息）。 断言：expect(r.isError).toBe(true);；expect(json.ok)."	没测该层	keep	keep	—
-"nudo/test：侧车 ⇒ 明确错误，契约 DSL 构造器不再被报成 case"	"LSP agent 工具 `nudo/check` / `nudo/test` **没有「分析目标」 闸门** ⇒ 对**侧车契约文件**报「OK / 0 error / 0 fn」（假绿），而 CLI 对 同一文件 exit 1「Not an analysis target」； 修法：入口复用与 CLI **同一份**目标判定（`isNudoTargetPath` + 侧车 / `.d.ts` / JSX 排除）⇒ 非分析目标返回**明确的错误**（`nudo:path-not-target` 码 + 与 CLI 逐字一致的消息）。 断言：expect(r.isError).toBe(true);；expect(json.path"	没测该层	keep	keep	—
-"普通 .js 目标不受闸门影响（仍能分析）"	"断言：expect(r.isError).toBeUndefined();；expect(json.pathErrors).toBeUndefined();"	没测该层	keep	keep	—
-"dot 形式同样过闸门"	"emit 写盘边界按**路径分量**判定，不按字符串前缀。 症状（改前）：`pathInsideRoot` 用 `rel.startsWith(\"..\")` 判逃逸 ⇒ `..dotted.js` / `...triple.js` / `..cfg/x.js` 这些**合法**的相对路径 （组件名以 `..` 开头）被误判成逃逸 ⇒ IDE 拒绝对**工作区内**的合法文件 写侧车，而 CLI（无 workspace root 闸门）接受。 断言：expect(r.isError).toBe(true);"	夹具漏形态	keep	keep	—
-"带 else 的早退守卫：其后形参保持 nullish（改前被窄化成非空）"	"hover 的「早退守卫去 nullish」**忽略 `else` 分支** ⇒ 窄化出**不成立**的类型（与 `nudo check` 自相矛盾）。 改前：`applyStmtFact` 只看 `if` 的 then 分支是否以 return/throw 结束 ⇒ `if (!p) { return 0; 断言：expect(text).toContain(\"p: nullable(number())\");；expect(text).not.toMatch(/p: number\\(\\)/);"	没测该层	keep	keep	—
-"对照组：不带 else 的早退守卫仍剥离 nullish（既有行为不回归）"	"hover 的「早退守卫去 nullish」**忽略 `else` 分支** ⇒ 窄化出**不成立**的类型（与 `nudo check` 自相矛盾）。 改前：`applyStmtFact` 只看 `if` 的 then 分支是否以 return/throw 结束 ⇒ `if (!p) { return 0; 断言：expect(text).toContain(\"p: number()\");"	没测该层	keep	keep	—
-"签名块：prim 契约参数用推断 shape（改前是侧车 DSL 原文）"	"改前（协议面 hover 签名块）： `addc(x: number().gt(0), y: number().gt(0)) => number` 而 `nudo check` 的签名行是： `addc(x: number, y: number) => number` 修法（hover.ts）：契约形参的展示文本改用 **check 同口径**的推断 shape （core `check-signatures.formatEntryParamShape` 同公式：showLits + nullish 字面量名）——**union（和类型）契约参数除外**：判别联合的 `formatShape` 展开可达数万字符且臂的身份只由用户自己"	夹具漏形态	keep	keep	—
-"形参位：prim 契约参数用推断 shape（改前是侧车 DSL 原文）"	"改前（协议面 hover 签名块）： `addc(x: number().gt(0), y: number().gt(0)) => number` 而 `nudo check` 的签名行是： `addc(x: number, y: number) => number` 修法（hover.ts）：契约形参的展示文本改用 **check 同口径**的推断 shape （core `check-signatures.formatEntryParamShape` 同公式：showLits + nullish 字面量名）——**union（和类型）契约参数除外**：判别联合的 `formatShape` 展开可达数万字符且臂的身份只由用户自己"	夹具漏形态	keep	keep	—
-"union 契约参数保留声明形态（判别联合折叠不回归）"	"union 契约参数 ⇒ 保留声明形态（判别联合的展开不可读） 断言：expect(res?.contents?.value ?? \"\").toContain(\"p: nullable(number())\");"	夹具漏形态	keep	keep	—
-"push 通道：verbose 档下 nudo:assume-relied 上屏（severity=Information）"	"check 通道的 **info 级**诊断被提前砍掉 ⇒ 永不���屏。 症状：`checkToLspDiagnostics` 在转换前就 `filter(severity === \"error\" || \"warning\")` ⇒ 下游的档位过滤器（`filterCheckLspByLevel`）永远看不到 info ⇒ `nudo.analysis.diagnostics: \"verbose\"` 对 check 诊断是**空操作**， `nudo:assume-relied` / `nudo:invariant-relied` / `nudo:opaque-result` 永不上屏（CLI `nudo check` 却照常打印"	没测该层	keep	keep	—
-"pull 通道：verbose 档下 nudo:assume-relied 上屏（同 push 口径）"	"check 通道的 **info 级**诊断被提前砍掉 ⇒ 永不���屏。 症状：`checkToLspDiagnostics` 在转换前就 `filter(severity === \"error\" || \"warning\")` ⇒ 下游的档位过滤器（`filterCheckLspByLevel`）永远看不到 info ⇒ `nudo.analysis.diagnostics: \"verbose\"` 对 check 诊断是**空操作**， `nudo:assume-relied` / `nudo:invariant-relied` / `nudo:opaque-result` 永不上屏（CLI `nudo check` 却照常打印"	没测该层	keep	keep	—
-"默认档：info 不上屏（档位取舍仍归 filterCheckLspByLevel）"	"check 通道的 **info 级**诊断被提前砍掉 ⇒ 永不���屏。 症状：`checkToLspDiagnostics` 在转换前就 `filter(severity === \"error\" || \"warning\")` ⇒ 下游的档位过滤器（`filterCheckLspByLevel`）永远看不到 info ⇒ `nudo.analysis.diagnostics: \"verbose\"` 对 check 诊断是**空操作**， `nudo:assume-relied` / `nudo:invariant-relied` / `nudo:opaque-result` 永不上屏（CLI `nudo check` 却照常打印"	没测该层	keep	keep	—
-"指令文法诊断（nudo:directive-syntax）并入 issues + summary"	"本钉覆盖两条旁路通道： 1. **指令文法诊断**（`nudo:directive-syntax`）——parser 的 extract 与 service 的 `collectEvalReplacements` 写进调用方自备的 `diags` 数组， 不会流进 `checkSource` 的返回值； 2. **path env 未解析**（`nudo:env-unresolved`）——service 进程级 live 状态 （`getPathEnvLoadErrors`），既不是 `checkSource` 的入参也不是返回值。 断言：expect(issue).toBeTruthy();；expect(issue.sever"	夹具漏形态	keep	keep	—
-"path env 未解析（nudo:env-unresolved）并入 issues + summary"	"本钉覆盖两条旁路通道： 1. **指令文法诊断**（`nudo:directive-syntax`）——parser 的 extract 与 service 的 `collectEvalReplacements` 写进调用方自备的 `diags` 数组， 不会流进 `checkSource` 的返回值； 2. **path env 未解析**（`nudo:env-unresolved`）——service 进程级 live 状态 （`getPathEnvLoadErrors`），既不是 `checkSource` 的入参也不是返回值。 断言：expect(issue).toBeTruthy();；expect(issue.sever"	夹具漏形态	keep	keep	—
-"dot 形式同样接上（协议别名不降级）"	"emit 写盘边界按**路径分量**判定，不按字符串前缀。 症状（改前）：`pathInsideRoot` 用 `rel.startsWith(\"..\")` 判逃逸 ⇒ `..dotted.js` / `...triple.js` / `..cfg/x.js` 这些**合法**的相对路径 （组件名以 `..` 开头）被误判成逃逸 ⇒ IDE 拒绝对**工作区内**的合法文件 写侧车，而 CLI（无 workspace root 闸门）接受。 断言：expect(codes).toContain(\"nudo:directive-syntax\");"	夹具漏形态	keep	keep	—
-"协议面 nudo/contract：带 from ⇒ 使用点证据参与求解"	"症状（改前）：`nudo/contract` / `nudo/contract.draft` / `nudo/contract.emit` 都没有 `from` 参数 ⇒ 跨文件调用点证据**系统性丢失**： ① 接口面比 CLI 宽一整级（`(x: any) → number | string` vs CLI 的 `(x: 2) → 3`）； 断言：expect(withFrom.content[0].text).toContain(\"(x: 2) → 3\");；expect(without.content[0].text).toContain(\"(x: any) → number | string\");"	没测该层	keep	keep	—
-"协议面 nudo/contract.draft：带 from ⇒ 草稿含调用点证据（不再是空契约 fn({})）"	"症状（改前）：`nudo/contract` / `nudo/contract.draft` / `nudo/contract.emit` 都没有 `from` 参数 ⇒ 跨文件调用点证据**系统性丢失**： ① 接口面比 CLI 宽一整级（`(x: any) → number | string` vs CLI 的 `(x: 2) → 3`）； 断言：expect(withFrom.content[0].text).toContain(\"fn({ x: number() })\");；expect(withFrom.content[0].text).not.toContain(\"export const addOne = fn({})"	没测该层	keep	keep	—
-"工具面 nudo/contract.emit：带 from ⇒ 写得出契约（改前直接拒写 not-projectable）"	"症状（改前）：`nudo/contract` / `nudo/contract.draft` / `nudo/contract.emit` 都没有 `from` 参数 ⇒ 跨文件调用点证据**系统性丢失**： ① 接口面比 CLI 宽一整级（`(x: any) → number | string` vs CLI 的 `(x: 2) → 3`）； 断言：expect(text).not.toContain(\"not-projectable\");；expect(existsSync(join(dir, \"lib.nudo.js\"))).toBe(true);"	没测该层	keep	keep	—
-"from 指向不存在的路径 ⇒ 显式报错（不静默给假面）"	"症状（改前）：`nudo/contract` / `nudo/contract.draft` / `nudo/contract.emit` 都没有 `from` 参数 ⇒ 跨文件调用点证据**系统性丢失**： ① 接口面比 CLI 宽一整级（`(x: any) → number | string` vs CLI 的 `(x: 2) → 3`）； 断言：expect(r.isError).toBe(true);；expect(r.content[0].text).toContain(\"no call-site records collected\");"	没测该层	keep	keep	—
-"documentSymbol 出 CJS 成员导出（函数档，detail 带 export）"	"症状（真 server 协议面，改前）： - `textDocument/documentSymbol` → `[]`（ESM 对照文件有 2 项）； - `workspace/symbol` 查 `alpha` → 查不到； 断言：expect(syms.map((s) => s.name)).toEqual([\"alpha\", \"beta\"]);；expect(syms[0]!.detail).toBe(\"(x) export\");"	没测该层	keep	keep	—
-"workspace/symbol 查得到 CJS 成员导出"	"症状（真 server 协议面，改前）： - `textDocument/documentSymbol` → `[]`（ESM 对照文件有 2 项）； - `workspace/symbol` 查 `alpha` → 查不到； 断言：expect(syms.map((s) => s.name)).toContain(\"alpha\");"	没测该层	keep	keep	—
-"semanticTokens 给 CJS 导出键 function 档 + contract 档 modifier"	"症状（真 server 协议面，改前）： - `textDocument/documentSymbol` → `[]`（ESM 对照文件有 2 项）； - `workspace/symbol` 查 `alpha` → 查不到； 断言：expect(tokens[0]).toEqual({；expect(tokens[2]).toEqual({"	没测该层	keep	keep	—
-"inlayHint 出 CJS 导出的返回 inlay + contract 档投影"	"症状（真 server 协议面，改前）： - `textDocument/documentSymbol` → `[]`（ESM 对照文件有 2 项）； - `workspace/symbol` 查 `alpha` → 查不到； 断言：expect(labels.some((l) => l.includes(\": x + 1\"))).toBe(true);；expect(labels.some((l) => l.includes(\": y * 2\"))).toBe(true);"	没测该层	keep	keep	—
-"codeLens 出 CJS 导出的 contract 档（契约身份 = 导出名）"	"症状（真 server 协议面，改前）： - `textDocument/documentSymbol` → `[]`（ESM 对照文件有 2 项）； - `workspace/symbol` 查 `alpha` → 查不到； 断言：expect(alpha).toBeDefined();；expect(alpha!.range.start.line).toBe(0);"	没测该层	keep	keep	—
-"hover 面解析出 CJS 导出名（族 25 收口接线：position.ts 补 MemberExpression property 分支）"	"症状（真 server 协议面，改前）： - `textDocument/documentSymbol` → `[]`（ESM 对照文件有 2 项）； - `workspace/symbol` 查 `alpha` → 查不到； 断言：expect(text).toContain(\"alpha\");；expect(text).not.toContain(\"(x) => ?\");"	没测该层	keep	keep	—
-"回归护栏：ESM 具名导出的符号面不受影响"	"症状（真 server 协议面，改前）： - `textDocument/documentSymbol` → `[]`（ESM 对照文件有 2 项）； - `workspace/symbol` 查 `alpha` → 查不到； 断言：expect(syms.map((s) => s.name)).toEqual([\"alpha\", \"beta\"]);"	没测该层	keep	keep	—
+@nudo:mock 覆盖的依赖不得再报 nudo:entry-may-throw（与 CLI 同口径：绿）；负控制：没有 mock 的入口仍报 nudo:entry-may-throw（门禁未被关掉）	lsp-check-contract 聚合矩阵	没测该层	keep	keep	—
+collectBindingReferences：导出绑定不产生语句级伪引用；协议面：references 的每个位置只出现一次	lsp-check-contract 聚合矩阵	没测该层	keep	keep	—
+default 导出的定义处能查到 default 导入方的 import 说明符与调用点；default 导入方一侧发起 references 也能覆盖定义文件	lsp-check-contract 聚合矩阵	没测该层	keep	keep	—
+成员属性 helper 的 definition 不得跳到无关文件的同名导出；裸标识符仍能命中同名导出兜底（兜底本身没坏）	lsp-check-contract 聚合矩阵	没测该层	keep	keep	—
+collectBindingReferences：includeDeclaration=false 不含声明位；collectBindingReferences：默认仍含声明位（既有语义不变，负控制）；协议面：includeDeclaration=false 只返回用点	lsp-check-contract 聚合矩阵	没测该层	keep	keep	—
+definition 落在 buffer 坐标（磁盘坐标会跳错行）；references 落在 buffer 坐标；rename 的编辑落在 buffer 坐标	lsp-check-contract 聚合矩阵	没测该层	keep	keep	—
+插入点落进目标形参的 shape({ … }) 内部（不是形参表顶层）；字段已在契约里 ⇒ 不给插入点（不写重复键）；目标形参的契约类型不是内联 shape ⇒ 不给插入点；LSP 面：契约缺字段时，补字段动作落在 shape 内部；LSP 面：契约已声明该字段 ⇒ 不下发写坏契约的动作	lsp-check-contract 聚合矩阵	没测该层	keep	keep	—
+插入点落进对象字面量，字符串字面量原样保留；同一行既有字符串 `{` 又有对象字面量时也落进对象字面量	lsp-check-contract 聚合矩阵	没测该层	keep	keep	—
+slash 形式：mock 文件缺失 ⇒ error 级 nudo:module-missing（门禁红）；dot 形式：同一条通道同样可见（协议别名不降级）；文本面：error 级通道上屏（不再是「0 error」判绿）	lsp-check-contract 聚合矩阵	没测该层	keep	keep	—
+工具面：下游侧车 add.nudo.js 被写出来，且文本点名 derived-from；工具面：dry-run 只预览、不写下游侧车；协议面：nudo.contract.emit 同样产出下游侧车	lsp-check-contract 聚合矩阵	没测该层	keep	keep	—
+root 内以 `..` 开头的合法路径名 ⇒ 允许写侧车；root 外的文件 ⇒ 仍然拒绝；指向 root 外的符号链接 ⇒ 仍然拒绝（realpath 防逃逸）	lsp-check-contract 聚合矩阵	没测该层	keep	keep	—
+nudo/check：侧车 ⇒ 明确错误（不再是 0 fn 判绿）；nudo/test：侧车 ⇒ 明确错误，契约 DSL 构造器不再被报成 case；普通 .js 目标不受闸门影响（仍能分析）；dot 形式同样过闸门	lsp-check-contract 聚合矩阵	没测该层	keep	keep	—
+带 else 的早退守卫：其后形参保持 nullish（改前被窄化成非空）；对照组：不带 else 的早退守卫仍剥离 nullish（既有行为不回归）	lsp-check-contract 聚合矩阵	没测该层	keep	keep	—
+签名块：prim 契约参数用推断 shape（改前是侧车 DSL 原文）；形参位：prim 契约参数用推断 shape（改前是侧车 DSL 原文）；union 契约参数保留声明形态（判别联合折叠不回归）	lsp-check-contract 聚合矩阵	没测该层	keep	keep	—
+push 通道：verbose 档下 nudo:assume-relied 上屏（severity=Information）；pull 通道：verbose 档下 nudo:assume-relied 上屏（同 push 口径）；默认档：info 不上屏（档位取舍仍归 filterCheckLspByLevel）	lsp-check-contract 聚合矩阵	没测该层	keep	keep	—
+指令文法诊断（nudo:directive-syntax）并入 issues + summary；path env 未解析（nudo:env-unresolved）并入 issues + summary；dot 形式同样接上（协议别名不降级）	lsp-check-contract 聚合矩阵	没测该层	keep	keep	—
+协议面 nudo/contract：带 from ⇒ 使用点证据参与求解；协议面 nudo/contract.draft：带 from ⇒ 草稿含调用点证据（不再是空契约 fn({})）；工具面 nudo/contract.emit：带 from ⇒ 写得出契约（改前直接拒写 not-projectable）；from 指向不存在的路径 ⇒ 显式报错（不静默给假面）	lsp-check-contract 聚合矩阵	没测该层	keep	keep	—
+documentSymbol 出 CJS 成员导出（函数档，detail 带 export）；workspace/symbol 查得到 CJS 成员导出；semanticTokens 给 CJS 导出键 function 档 + contract 档 modifier；inlayHint 出 CJS 导出的返回 inlay + contract 档投影；codeLens 出 CJS 导出的 contract 档（契约身份 = 导出名）；hover 面解析出 CJS 导出名（族	lsp-check-contract 聚合矩阵	没测该层	keep	keep	—
+```
+
+```audit-deleted
+title	reason	evidence
+definition@imported 侧：落到真正被导入的模块，不得落到同名导出的无关文件	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+references@imported 侧：不是空数组，且与无别名形态完全一致	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+definition@local 侧：仍然落到真正被导入的模块	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+正控制：项目根 env + 子目录文件 ⇒ 不报 L2 entry-may-throw（IDE push 面）	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+正控制：check 通道本身（checkToLspDiagnostics）不报 L2 entry-may-throw	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+负控制：真违约（入口真的 throw）⇒ 仍必须报 L2 entry-may-throw	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+负控制（check 通道本身）：真违约 ⇒ 仍报 L2 entry-may-throw	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+参数违例：动作标题带 greet.u，编辑只剥形参谓词（返回槽 .gt(40) 不动）	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+落盘后目标参数诊断消失（编辑真的可执行，不是假修复）	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+参数槽改不动（shape 参数）⇒ 不下发放宽动作，不得退化成改返回槽	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+证据面：只剥返回槽数值谓词对参数诊断一字无效（所以不下发）	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+返回基类型冲突（string ⊭ number）⇒ 不下发放宽动作、不产生侧车编辑	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+证据面：旧动作的落盘结果（返回槽 → number()）诊断原样保留	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+返回槽没有可放宽的数值精化（number()）⇒ 不下发（无 edit 空转）	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+正控制：返回槽**数值**冲突可解时动作仍在，落盘后目标诊断消失	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+@nudo:mock 覆盖的依赖不得再报 nudo:entry-may-throw（与 CLI 同口径：绿）	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+负控制：没有 mock 的入口仍报 nudo:entry-may-throw（门禁未被关掉）	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+collectBindingReferences：导出绑定不产生语句级伪引用	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+协议面：references 的每个位置只出现一次	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+default 导出的定义处能查到 default 导入方的 import 说明符与调用点	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+default 导入方一侧发起 references 也能覆盖定义文件	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+成员属性 helper 的 definition 不得跳到无关文件的同名导出	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+裸标识符仍能命中同名导出兜底（兜底本身没坏）	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+collectBindingReferences：includeDeclaration=false 不含声明位	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+collectBindingReferences：默认仍含声明位（既有语义不变，负控制）	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+协议面：includeDeclaration=false 只返回用点	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+definition 落在 buffer 坐标（磁盘坐标会跳错行）	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+references 落在 buffer 坐标	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+rename 的编辑落在 buffer 坐标	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+插入点落进目标形参的 shape({ … }) 内部（不是形参表顶层）	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+字段已在契约里 ⇒ 不给插入点（不写重复键）	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+目标形参的契约类型不是内联 shape ⇒ 不给插入点	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+LSP 面：契约缺字段时，补字段动作落在 shape 内部	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+LSP 面：契约已声明该字段 ⇒ 不下发写坏契约的动作	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+插入点落进对象字面量，字符串字面量原样保留	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+同一行既有字符串 `{` 又有对象字面量时也落进对象字面量	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+slash 形式：mock 文件缺失 ⇒ error 级 nudo:module-missing（门禁红）	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+dot 形式：同一条通道同样可见（协议别名不降级）	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+文本面：error 级通道上屏（不再是「0 error」判绿）	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+工具面：下游侧车 add.nudo.js 被写出来，且文本点名 derived-from	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+工具面：dry-run 只预览、不写下游侧车	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+协议面：nudo.contract.emit 同样产出下游侧车	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+root 内以 `..` 开头的合法路径名 ⇒ 允许写侧车	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+root 外的文件 ⇒ 仍然拒绝	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+指向 root 外的符号链接 ⇒ 仍然拒绝（realpath 防逃逸）	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+nudo/check：侧车 ⇒ 明确错误（不再是 0 fn 判绿）	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+nudo/test：侧车 ⇒ 明确错误，契约 DSL 构造器不再被报成 case	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+普通 .js 目标不受闸门影响（仍能分析）	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+dot 形式同样过闸门	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+带 else 的早退守卫：其后形参保持 nullish（改前被窄化成非空）	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+对照组：不带 else 的早退守卫仍剥离 nullish（既有行为不回归）	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+签名块：prim 契约参数用推断 shape（改前是侧车 DSL 原文）	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+形参位：prim 契约参数用推断 shape（改前是侧车 DSL 原文）	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+union 契约参数保留声明形态（判别联合折叠不回归）	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+push 通道：verbose 档下 nudo:assume-relied 上屏（severity=Information）	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+pull 通道：verbose 档下 nudo:assume-relied 上屏（同 push 口径）	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+默认档：info 不上屏（档位取舍仍归 filterCheckLspByLevel）	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+指令文法诊断（nudo:directive-syntax）并入 issues + summary	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+path env 未解析（nudo:env-unresolved）并入 issues + summary	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+dot 形式同样接上（协议别名不降级）	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+协议面 nudo/contract：带 from ⇒ 使用点证据参与求解	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+协议面 nudo/contract.draft：带 from ⇒ 草稿含调用点证据（不再是空契约 fn({})）	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+工具面 nudo/contract.emit：带 from ⇒ 写得出契约（改前直接拒写 not-projectable）	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+from 指向不存在的路径 ⇒ 显式报错（不静默给假面）	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+documentSymbol 出 CJS 成员导出（函数档，detail 带 export）	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+workspace/symbol 查得到 CJS 成员导出	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+semanticTokens 给 CJS 导出键 function 档 + contract 档 modifier	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+inlayHint 出 CJS 导出的返回 inlay + contract 档投影	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+codeLens 出 CJS 导出的 contract 档（契约身份 = 导出名）	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+hover 面解析出 CJS 导出名（族 25 收口接线：position.ts 补 MemberExpression property 分支）	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
+回归护栏：ESM 具名导出的符号面不受影响	dup:lsp-check-contract 聚合矩阵	commit:d25e91ca
 ```

@@ -6,77 +6,100 @@
 
 ```audit
 title	rootCause	gap	action	status	evidence
-"畸形 workspaceFolders[0].uri ⇒ 跳过该 folder，initialize 照常返回"	"症状：客户端送来一个百分号转义非法的 URI（如 `file:///tmp/proj%zz`）⇒ `uriToFilePath` 里的裸 `decodeURIComponent` 抛 `URIError` ⇒ initialize 整个失败 ⇒ 客户端拿不到 capabilities ⇒ **整个语言服务器会话起不来** （一个坏根目录毁掉全部功能）。 根因（片 D · `server.ts`）：`onInitialize` 对每个 workspace folder 的 `uriToFilePath` **没有兜底**。 断言：expect(res.capabilities).toBeDefined();；expect(Object"	没测该层	keep	keep	—
-"畸形 rootUri ⇒ 跳过该根，initialize 照常返回"	"症状：客户端送来一个百分号转义非法的 URI（如 `file:///tmp/proj%zz`）⇒ `uriToFilePath` 里的裸 `decodeURIComponent` 抛 `URIError` ⇒ initialize 整个失败 ⇒ 客户端拿不到 capabilities ⇒ **整个语言服务器会话起不来** （一个坏根目录毁掉全部功能）。 根因（片 D · `server.ts`）：`onInitialize` 对每个 workspace folder 的 `uriToFilePath` **没有兜底**。 断言：expect(res.capabilities).toBeDefined();；expect(Object"	没测该层	keep	keep	—
-"正常 URI 不受影响（仍返回 capabilities）"	"症状：客户端送来一个百分号转义非法的 URI（如 `file:///tmp/proj%zz`）⇒ `uriToFilePath` 里的裸 `decodeURIComponent` 抛 `URIError` ⇒ initialize 整个失败 ⇒ 客户端拿不到 capabilities ⇒ **整个语言服务器会话起不来** （一个坏根目录毁掉全部功能）。 根因（片 D · `server.ts`）：`onInitialize` 对每个 workspace folder 的 `uriToFilePath` **没有兜底**。 断言：expect(res.capabilities).toBeDefined();"	没测该层	keep	keep	—
-"未知命令名不再回落 result:null"	"未声明的命令名在 `workspace/executeCommand` 上回 result:null。 改前：未知命令 → JSON-RPC **成功** + null 结果——协议层假成功（与「命令 跑了但无输出」同形），客户端无法区分「无此命令」与「跑了但没结果」。 断言：expect(async () =>"	没测该层	keep	keep	—
-"已声明的命令名照常执行（白名单 = advertise 面）"	"未声明的命令名在 `workspace/executeCommand` 上回 result:null。 改前：未知命令 → JSON-RPC **成功** + null 结果——协议层假成功（与「命令 跑了但无输出」同形），客户端无法区分「无此命令」与「跑了但没结果」。 断言：expect(NUDO_EXECUTE_COMMANDS).toContain(\"nudo.getActiveCases\");；expect(result).toEqual({});"	没测该层	keep	keep	—
+畸形 workspaceFolders[0].uri ⇒ 跳过该 folder，initialize 照常返回；畸形 rootUri ⇒ 跳过该根，initialize 照常返回；正常 URI 不受影响（仍返回 capabilities）	lsp-server 聚合矩阵	没测该层	keep	keep	—
+未知命令名不再回落 result:null；已声明的命令名照常执行（白名单 = advertise 面）	lsp-server 聚合矩阵	没测该层	keep	keep	—
 "声明 changeNotifications + 增删根即时生效（写盘边界跟着走）"	"工作区文件夹增删不生效（`workspaceRoots` 永久冻结）。 症状：多根工作区里，客户端新增/移除一个工作区文件夹后，server 仍按 `initialize` 时的老根集合行事 ⇒ 新加入的目录被写盘边界误拒 （\"outside allowed roots\"），已移出的目录**仍被授权**。 断言：expect(res.capabilities?.workspace).toMatchObject({；expect(await emitText(join(b, \"y.js\"))).toContain(\"outside allowed roots\");"	没测该层	keep	keep	—
-"① 客户端不声明 workspaceFolders 能力 ⇒ createNudoServer 不抛异常"	"族 24 收口片 Z —— `connection.workspace.onDidChangeWorkspaceFolders` 是**会抛异常的 getter** ⇒ server 不得因此崩。 根因（`vscode-languageserver@10.1.2`）： `lib/common/workspaceFolder.js:38` 的 getter 在客户端**没声明** `capabilities.workspace.workspaceFolders` 时直接 `throw new Error(\"Client doesn't support sending workspace folder change events.\")`"	没测该层	keep	keep	—
-"② 该客户端的 onInitialize 仍正常返回（服务端能力声明一字不动）"	"族 24 收口片 Z —— `connection.workspace.onDidChangeWorkspaceFolders` 是**会抛异常的 getter** ⇒ server 不得因此崩。 根因（`vscode-languageserver@10.1.2`）： `lib/common/workspaceFolder.js:38` 的 getter 在客户端**没声明** `capabilities.workspace.workspaceFolders` 时直接 `throw new Error(\"Client doesn't support sending workspace folder change events.\")`"	没测该层	keep	keep	—
-"③ 真语义（getter 在 initialize 之后才可用）⇒ 订阅仍建立且只建立一次"	"族 24 收口片 Z —— `connection.workspace.onDidChangeWorkspaceFolders` 是**会抛异常的 getter** ⇒ server 不得因此崩。 根因（`vscode-languageserver@10.1.2`）： `lib/common/workspaceFolder.js:38` 的 getter 在客户端**没声明** `capabilities.workspace.workspaceFolders` 时直接 `throw new Error(\"Client doesn't support sending workspace folder change events.\")`"	没测该层	keep	keep	—
-"trace({file, functionName}) 回落到 externalFunctions：出跨模块见证"	"跨模块 `call@` 观察镜的 `nudo.trace` 动作 **100% 不可执行**。 症状（真 server 协议面）：`lib.js` 导出 `add`，`main.js` 里 `import { add } from \"./lib.js\"` 后调用 `add(x, 2)` ⇒ 调用方文件的 CodeLens 出现跨模块 `call@L3 (any, 2) => number | string`，但点它（命令 `nudo.trace [uri(main.js), \"add\"]`）回 `Function \"add\" not found` —— 镜面标题说有这个事实，动作却说没有。 断言：expect(analysis.fu"	没测该层	keep	keep	—
-"真 server executeCommand `nudo.trace [uri, fn]`（观察镜动作形态）不报 not found"	"跨模块 `call@` 观察镜的 `nudo.trace` 动作 **100% 不可执行**。 症状（真 server 协议面）：`lib.js` 导出 `add`，`main.js` 里 `import { add } from \"./lib.js\"` 后调用 `add(x, 2)` ⇒ 调用方文件的 CodeLens 出现跨模块 `call@L3 (any, 2) => number | string`，但点它（命令 `nudo.trace [uri(main.js), \"add\"]`）回 `Function \"add\" not found` —— 镜面标题说有这个事实，动作却说没有。 断言：expect(res.isError"	没测该层	keep	keep	—
-"同文件 call@ 对照：trace 仍按本地函数解析（不回归）"	"跨模块 `call@` 观察镜的 `nudo.trace` 动作 **100% 不可执行**。 症状（真 server 协议面）：`lib.js` 导出 `add`，`main.js` 里 `import { add } from \"./lib.js\"` 后调用 `add(x, 2)` ⇒ 调用方文件的 CodeLens 出现跨模块 `call@L3 (any, 2) => number | string`，但点它（命令 `nudo.trace [uri(main.js), \"add\"]`）回 `Function \"add\" not found` —— 镜面标题说有这个事实，动作却说没有。 断言：expect(res.isError"	没测该层	keep	keep	—
-"位置参数 [uri, fn] 跑出 trace（不是错误）"	"`nudo.trace` 的**位置参数**形态没有命令桥。 症状：IDE 的 `entry@` / `call@` 观察透镜用位置参数发命令 （`executeCommand \"nudo.trace\" [uri, functionName]`）⇒ 服务端兜底分支把 uri **字符串**当参数对象传下去 ⇒ `params.file` 是 `undefined` ⇒ 工具 100% 失败（每次点击观察透镜只得到一个错误）。 断言：expect(result.isError).toBeFalsy();；expect(result.content?.[0]?.text ?? \"\").toContain(\"Output:\");"	夹具漏形态	keep	keep	—
-"对象形态 { uri, functionName } 仍然可用（桥不得吃掉既有形态）"	"`nudo.trace` 的**位置参数**形态没有命令桥。 症状：IDE 的 `entry@` / `call@` 观察透镜用位置参数发命令 （`executeCommand \"nudo.trace\" [uri, functionName]`）⇒ 服务端兜底分支把 uri **字符串**当参数对象传下去 ⇒ `params.file` 是 `undefined` ⇒ 工具 100% 失败（每次点击观察透镜只得到一个错误）。 断言：expect(result.isError).toBeFalsy();；expect(result.content?.[0]?.text ?? \"\").toContain(\"Output:\");"	夹具漏形态	keep	keep	—
-"非对象参数（裸字符串）⇒ 协议层 InvalidParams（不再把字符串当对象传下去）"	"`nudo.trace` 的**位置参数**形态没有命令桥。 症状：IDE 的 `entry@` / `call@` 观察透镜用位置参数发命令 （`executeCommand \"nudo.trace\" [uri, functionName]`）⇒ 服务端兜底分支把 uri **字符串**当参数对象传下去 ⇒ `params.file` 是 `undefined` ⇒ 工具 100% 失败（每次点击观察透镜只得到一个错误）。 断言：expect(async () =>"	夹具漏形态	keep	keep	—
-"nudo/trace 的 {uri} 形态：出见证（不再 TypeError）"	"IDE 的 `entry@` / `call@` 观察透镜**必然抛 TypeError**： `nudo.trace` 既没有「位置参数 → 对象」的桥，也不接受 `uri` 键 ⇒ `params.file` 是 `undefined` ⇒ `normalizeFilePath(undefined)` 抛。 根因（两半）： - server 侧：`workspace/executeCommand` 的兜底分支把 `args[0]`（**uri 字符串**）当参数对象传下去 ⇒ `params.file === undefined` （server.ts 归片 D； 断言：expect(res?.isError, `uri 形态仍"	夹具漏形态	keep	keep	—
-"nudo/trace 的 {file} 形态：不回归"	"IDE 的 `entry@` / `call@` 观察透镜**必然抛 TypeError**： `nudo.trace` 既没有「位置参数 → 对象」的桥，也不接受 `uri` 键 ⇒ `params.file` 是 `undefined` ⇒ `normalizeFilePath(undefined)` 抛。 根因（两半）： - server 侧：`workspace/executeCommand` 的兜底分支把 `args[0]`（**uri 字符串**）当参数对象传下去 ⇒ `params.file === undefined` （server.ts 归片 D； 断言：expect(res?.isError, `file 形态"	夹具漏形态	keep	keep	—
-"agent 侧：trace 工具直调也接受 uri 键"	"IDE 的 `entry@` / `call@` 观察透镜**必然抛 TypeError**： `nudo.trace` 既没有「位置参数 → 对象」的桥，也不接受 `uri` 键 ⇒ `params.file` 是 `undefined` ⇒ `normalizeFilePath(undefined)` 抛。 根因（两半）： - server 侧：`workspace/executeCommand` 的兜底分支把 `args[0]`（**uri 字符串**）当参数对象传下去 ⇒ `params.file === undefined` （server.ts 归片 D； 断言：expect(res.isError, `trace(ur"	夹具漏形态	keep	keep	—
-"位置参数桥 tracePositionalArgs：[uri, fn] ⇒ { uri, functionName }"	"IDE 的 `entry@` / `call@` 观察透镜**必然抛 TypeError**： `nudo.trace` 既没有「位置参数 → 对象」的桥，也不接受 `uri` 键 ⇒ `params.file` 是 `undefined` ⇒ `normalizeFilePath(undefined)` 抛。 根因（两半）： - server 侧：`workspace/executeCommand` 的兜底分支把 `args[0]`（**uri 字符串**）当参数对象传下去 ⇒ `params.file === undefined` （server.ts 归片 D； 断言：expect(tracePositionalArgs([\""	夹具漏形态	keep	keep	—
-"编码侧对保留字符做百分号转义（裸 % 不再出现）"	"断言：expect(filePathToUri(\"/x/100%.js\")).toBe(\"file:///x/100%25.js\");；expect(filePathToUri(\"/x/a#b.js\")).toBe(\"file:///x/a%23b.js\");"	没测该层	keep	keep	—
-"普通路径的 URI 形态不变（file:/// 绝对路径）"	"`filePathToUri` / `uriToFilePath` **不互逆** ⇒ 服务端自产的 `location.uri` 是**非法 URI**（裸 `%`）⇒ 客户端回传后 `didOpen` / `didChange` / `didClose` 抛未捕获 `URIError` ⇒ 该文档**零诊断**（L2 假绿）。 根因：编码侧 `filePathToUri`（`server-navigation.ts`）**裸拼** `file://` + 路径 （路径里的 `%` / `#` / `?` / 空格**不转义**）； 断言：expect(filePathToUri(\"/tmp/a.js\")).toBe(\"file:"	没测该层	keep	keep	—
-"解码侧：合法 URI 解回原路径（与编码侧互逆）"	"`filePathToUri` / `uriToFilePath` **不互逆** ⇒ 服务端自产的 `location.uri` 是**非法 URI**（裸 `%`）⇒ 客户端回传后 `didOpen` / `didChange` / `didClose` 抛未捕获 `URIError` ⇒ 该文档**零诊断**（L2 假绿）。 根因：编码侧 `filePathToUri`（`server-navigation.ts`）**裸拼** `file://` + 路径 （路径里的 `%` / `#` / `?` / 空格**不转义**）； 断言：expect(uriToFilePath(filePathToUri(p)), `round"	没测该层	keep	keep	—
-"解码侧：畸形百分号转义**绝不抛**（回退到未解码原文）"	"`filePathToUri` / `uriToFilePath` **不互逆** ⇒ 服务端自产的 `location.uri` 是**非法 URI**（裸 `%`）⇒ 客户端回传后 `didOpen` / `didChange` / `didClose` 抛未捕获 `URIError` ⇒ 该文档**零诊断**（L2 假绿）。 根因：编码侧 `filePathToUri`（`server-navigation.ts`）**裸拼** `file://` + 路径 （路径里的 `%` / `#` / `?` / 空格**不转义**）； 断言：expect(() => {；expect(typeof out).toBe(\"string"	没测该层	keep	keep	—
-"解码侧：非 file: scheme 原样返回（行为不变）"	"`filePathToUri` / `uriToFilePath` **不互逆** ⇒ 服务端自产的 `location.uri` 是**非法 URI**（裸 `%`）⇒ 客户端回传后 `didOpen` / `didChange` / `didClose` 抛未捕获 `URIError` ⇒ 该文档**零诊断**（L2 假绿）。 根因：编码侧 `filePathToUri`（`server-navigation.ts`）**裸拼** `file://` + 路径 （路径里的 `%` / `#` / `?` / 空格**不转义**）； 断言：expect(uriToFilePath(\"untitled:Untitled-1\")).t"	没测该层	keep	keep	—
-"Windows 盘符形态经 cacheKey 归一（file:///c:/… ⇒ c:/…）"	"`filePathToUri` / `uriToFilePath` **不互逆** ⇒ 服务端自产的 `location.uri` 是**非法 URI**（裸 `%`）⇒ 客户端回传后 `didOpen` / `didChange` / `didClose` 抛未捕获 `URIError` ⇒ 该文档**零诊断**（L2 假绿）。 根因：编码侧 `filePathToUri`（`server-navigation.ts`）**裸拼** `file://` + 路径 （路径里的 `%` / `#` / `?` / 空格**不转义**）； 断言：expect(cacheKey(\"file:///c:/my%20dir/a.js\")).t"	没测该层	keep	keep	—
-"协议面：客户端把服务端自己刚给的（裸 % 的）URI 回传给 didOpen ⇒ 不中断且该文档有诊断"	"`filePathToUri` / `uriToFilePath` **不互逆** ⇒ 服务端自产的 `location.uri` 是**非法 URI**（裸 `%`）⇒ 客户端回传后 `didOpen` / `didChange` / `didClose` 抛未捕获 `URIError` ⇒ 该文档**零诊断**（L2 假绿）。 根因：编码侧 `filePathToUri`（`server-navigation.ts`）**裸拼** `file://` + 路径 （路径里的 `%` / `#` / `?` / 空格**不转义**）； 断言：expect(thrown, \"didOpen 抛了 ⇒ 该通知中断 ⇒ 该文档零诊断\")."	没测该层	keep	keep	—
-"会出诊断的文件：didOpen 只发布一次（同 version 同内容）"	"症状：打开一个文件后，同一版本、同一内容的诊断被**发布两次**。 根因：`vscode-languageserver` 的 `TextDocuments.listen()` 在 `didOpen` 时 **同时** fire `onDidOpen` 与 `onDidChangeContent` （`vscode-languageserver/lib/common/textDocuments.js`）⇒ server 的 「打开即验证」路径与「编辑防抖」路径对**同一内容**各跑一遍完整校验， 各 publish 一次。 断言：expect(published).toHaveLength(1);；expect(published[0"	没测该层	keep	keep	—
-"不出诊断的文件：didOpen 也只发布一次（空数组）"	"症状：打开一个文件后，同一版本、同一内容的诊断被**发布两次**。 根因：`vscode-languageserver` 的 `TextDocuments.listen()` 在 `didOpen` 时 **同时** fire `onDidOpen` 与 `onDidChangeContent` （`vscode-languageserver/lib/common/textDocuments.js`）⇒ server 的 「打开即验证」路径与「编辑防抖」路径对**同一内容**各跑一遍完整校验， 各 publish 一次。 断言：expect(published).toHaveLength(1);；expect(published[0"	没测该层	keep	keep	—
-"编辑后仍会发布新版本的诊断（去重不得把后续诊断吞掉）"	"断言：expect(versions).toContain(1);；expect(versions).toContain(2);"	没测该层	keep	keep	—
-"变更文件自己 ⇒ 不重检自己（无自激重检）"	"钉：变更文件自己 ⇒ **不**重检自己（publish 次数不增加）； 而**真正的** parent（@nudo:import 依赖方）仍被重检（不得误伤）。 断言：expect(afterInitial).toBeGreaterThan(0);；expect(published).toBe(afterInitial);"	没测该层	keep	keep	—
-"真正的 parent（@nudo:import 依赖方）仍被重检（self-排除不得误伤）"	"钉：变更文件自己 ⇒ **不**重检自己（publish 次数不增加）； 而**真正的** parent（@nudo:import 依赖方）仍被重检（不得误伤）。 断言：expect(published).toBeGreaterThan(0);"	没测该层	keep	keep	—
-"declares the full capability inventory and command list"	"钉：变更文件自己 ⇒ **不**重检自己（publish 次数不增加）； 而**真正的** parent（@nudo:import 依赖方）仍被重检（不得误伤）。 断言：expect(result.capabilities, `missing capability ${key}`).toHaveProperty(key);；expect(result.capabilities.hoverProvider).toBe(true);"	没测该层	keep	keep	—
-"registers slash- and dot-form request aliases for every agent tool"	"钉：变更文件自己 ⇒ **不**重检自己（publish 次数不增加）； 而**真正的** parent（@nudo:import 依赖方）仍被重检（不得误伤）。 断言：expect(mock.requests.has(`nudo/${name}`), `missing nudo/${name}`).toBe(true);；expect(mock.requests.has(`nudo.${name}`), `missing nudo.${name}`).toBe(true);"	没测该层	keep	keep	—
-"workspace/executeCommand nudo.check analyzes a source payload"	"钉：变更文件自己 ⇒ **不**重检自己（publish 次数不增加）； 而**真正的** parent（@nudo:import 依赖方）仍被重检（不得误伤）。 断言：expect(result.isError).toBeFalsy();；expect(payload.version).toBe(1);"	没测该层	keep	keep	—
-"slash-form nudo/check and dot-form nudo.check share one handler"	"钉：变更文件自己 ⇒ **不**重检自己（publish 次数不增加）； 而**真正的** parent（@nudo:import 依赖方）仍被重检（不得误伤）。 断言：expect(viaSlash.isError).toBeFalsy();；expect(viaDot.isError).toBeFalsy();"	没测该层	keep	keep	—
-"nudo.getActiveCases returns the empty case map for a fresh uri"	"钉：变更文件自己 ⇒ **不**重检自己（publish 次数不增加）； 而**真正的** parent（@nudo:import 依赖方）仍被重检（不得误伤）。 断言：expect(result).toEqual({});"	没测该层	keep	keep	—
-"unknown executeCommand raises a protocol-level MethodNotFound error"	"IDE 的 `entry@` / `call@` 观察透镜**必然抛 TypeError**： `nudo.trace` 既没有「位置参数 → 对象」的桥，也不接受 `uri` 键 ⇒ `params.file` 是 `undefined` ⇒ `normalizeFilePath(undefined)` 抛。 根因（两半）： - server 侧：`workspace/executeCommand` 的兜底分支把 `args[0]`（**uri 字符串**）当参数对象传下去 ⇒ `params.file === undefined` （server.ts 归片 D； 断言：expect(async () =>"	夹具漏形态	keep	keep	—
-"nudo.check on a missing file returns isError (fail-closed)"	"钉：变更文件自己 ⇒ **不**重检自己（publish 次数不增加）； 而**真正的** parent（@nudo:import 依赖方）仍被重检（不得误伤）。 断言：expect(result.isError).toBe(true);；expect(result.content[0].text).toMatch(/Error:/);"	没测该层	keep	keep	—
-"pull diagnostics for an unknown document are empty (no crash)"	"钉：变更文件自己 ⇒ **不**重检自己（publish 次数不增加）； 而**真正的** parent（@nudo:import 依赖方）仍被重检（不得误伤）。 断言：expect(result).toEqual({ kind: \"full\", items: [] });"	没测该层	keep	keep	—
-"pull diagnostics catch 不得 items:[] — 标 Analysis error（R2B-003）"	"钉：变更文件自己 ⇒ **不**重检自己（publish 次数不增加）； 而**真正的** parent（@nudo:import 依赖方）仍被重检（不得误伤）。 断言：expect(openHandler).toBeTruthy();；expect(result.items.length).toBeGreaterThan(0);"	没测该层	keep	keep	—
-"pull diagnostics catch 保留上次已发布诊断（R2B-003）"	"`filePathToUri` / `uriToFilePath` **不互逆** ⇒ 服务端自产的 `location.uri` 是**非法 URI**（裸 `%`）⇒ 客户端回传后 `didOpen` / `didChange` / `didClose` 抛未捕获 `URIError` ⇒ 该文档**零诊断**（L2 假绿）。 根因：编码侧 `filePathToUri`（`server-navigation.ts`）**裸拼** `file://` + 路径 （路径里的 `%` / `#` / `?` / 空格**不转义**）； 断言：expect(okResult.items.length).toBeGreaterThan("	没测该层	keep	keep	—
-"listen() is the only transport start — safe to call explicitly"	"症状：打开一个文件后，同一版本、同一内容的诊断被**发布两次**。 根因：`vscode-languageserver` 的 `TextDocuments.listen()` 在 `didOpen` 时 **同时** fire `onDidOpen` 与 `onDidChangeContent` （`vscode-languageserver/lib/common/textDocuments.js`）⇒ server 的 「打开即验证」路径与「编辑防抖」路径对**同一内容**各跑一遍完整校验， 各 publish 一次。 断言：expect(mock.listened).toBe(false);；expect(mock.listen"	没测该层	keep	keep	—
-"plain non-export JS stays quiet without client settings (exports default)"	"工作区文件夹增删不生效（`workspaceRoots` 永久冻结）。 症状：多根工作区里，客户端新增/移除一个工作区文件夹后，server 仍按 `initialize` 时的老根集合行事 ⇒ 新加入的目录被写盘边界误拒 （\"outside allowed roots\"），已移出的目录**仍被授权**。 断言：expect(await symbolsFor(mock, uri)).toEqual([]);"	没测该层	keep	keep	—
-"initializationOptions analysis.mode=all widens the gate"	"IDE 的 `entry@` / `call@` 观察透镜**必然抛 TypeError**： `nudo.trace` 既没有「位置参数 → 对象」的桥，也不接受 `uri` 键 ⇒ `params.file` 是 `undefined` ⇒ `normalizeFilePath(undefined)` 抛。 根因（两半）： - server 侧：`workspace/executeCommand` 的兜底分支把 `args[0]`（**uri 字符串**）当参数对象传下去 ⇒ `params.file === undefined` （server.ts 归片 D； 断言：expect(symbols.map((s) => s.n"	夹具漏形态	keep	keep	—
-"invalid initializationOptions mode falls back to the product default"	"断言：expect(await symbolsFor(mock, uri)).toEqual([]);"	没测该层	keep	keep	—
-"project package.json#nudo.analysis.mode wins over the client default (directives vs all)"	"钉：变更文件自己 ⇒ **不**重检自己（publish 次数不增加）； 而**真正的** parent（@nudo:import 依赖方）仍被重检（不得误伤）。 断言：expect(await symbolsFor(mock, uri)).toEqual([]);"	没测该层	keep	keep	—
-"project package.json#nudo.analysis.mode=all wins over client default directives"	"钉：变更文件自己 ⇒ **不**重检自己（publish 次数不增加）； 而**真正的** parent（@nudo:import 依赖方）仍被重检（不得误伤）。 断言：expect(symbols.map((s) => s.name)).toContain(\"plain\");"	没测该层	keep	keep	—
-"workspace/didChangeConfiguration re-gates an already-open document"	"症状：打开一个文件后，同一版本、同一内容的诊断被**发布两次**。 根因：`vscode-languageserver` 的 `TextDocuments.listen()` 在 `didOpen` 时 **同时** fire `onDidOpen` 与 `onDidChangeContent` （`vscode-languageserver/lib/common/textDocuments.js`）⇒ server 的 「打开即验证」路径与「编辑防抖」路径对**同一内容**各跑一遍完整校验， 各 publish 一次。 断言：expect(await symbolsFor(mock, uri)).toEqual([]);；expe"	没测该层	keep	keep	—
-"默认关：无参数 where inlay（返回 inlay 仍在）"	"钉：变更文件自己 ⇒ **不**重检自己（publish 次数不增加）； 而**真正的** parent（@nudo:import 依赖方）仍被重检（不得误伤）。 断言：expect(labels.some((l) => l.includes(\"where\"))).toBe(false);；expect(labels.some((l) => l.includes(\": x\"))).toBe(true);"	没测该层	keep	keep	—
-"initializationOptions inlayHints.parameters=true 开启"	"断言：expect(labels.some((l) => l.includes(\"where number()\"))).toBe(；expect("	没测该层	keep	keep	—
-"非法宿主值回落默认关"	"断言：expect(labels.some((l) => l.includes(\"where\"))).toBe(false);"	没测该层	keep	keep	—
-"workspace/didChangeConfiguration 实时开关"	"IDE 的 `entry@` / `call@` 观察透镜**必然抛 TypeError**： `nudo.trace` 既没有「位置参数 → 对象」的桥，也不接受 `uri` 键 ⇒ `params.file` 是 `undefined` ⇒ `normalizeFilePath(undefined)` 抛。 根因（两半）： - server 侧：`workspace/executeCommand` 的兜底分支把 `args[0]`（**uri 字符串**）当参数对象传下去 ⇒ `params.file === undefined` （server.ts 归片 D； 断言：expect((await inlayLabels(moc"	夹具漏形态	keep	keep	—
-"项目 package.json#nudo.inlayHints.parameters 显式值赢过宿主默认"	"钉：变更文件自己 ⇒ **不**重检自己（publish 次数不增加）； 而**真正的** parent（@nudo:import 依赖方）仍被重检（不得误伤）。 断言：expect((await inlayLabels(off.mock, off.uri)).some((l) => l.includes(\"where\"))).toBe(；expect((await inlayLabels(on.mock, on.uri)).some((l) => l.includes(\"where\"))).toBe("	没测该层	keep	keep	—
-"折叠展示：侧车表达式原文 label + 完整 pred tooltip"	"症状：打开一个文件后，同一版本、同一内容的诊断被**发布两次**。 根因：`vscode-languageserver` 的 `TextDocuments.listen()` 在 `didOpen` 时 **同时** fire `onDidOpen` 与 `onDidChangeContent` （`vscode-languageserver/lib/common/textDocuments.js`）⇒ server 的 「打开即验证」路径与「编辑防抖」路径对**同一内容**各跑一遍完整校验， 各 publish 一次。 断言：expect(param).toBeDefined();；expect(String(param!.lab"	没测该层	keep	keep	—
-"默认：契约选项 ●，全部 case ○；动作与观察层照常"	"未声明的命令名在 `workspace/executeCommand` 上回 result:null。 改前：未知命令 → JSON-RPC **成功** + null 结果——协议层假成功（与「命令 跑了但无输出」同形），客户端无法区分「无此命令」与「跑了但没结果」。 断言：expect(titles).toContain(\"● contract / imp\");；expect(titles).toContain('○ case \"five\"');"	没测该层	keep	keep	—
-"selectCase 后契约转 ○、选中 case 转 ●；inlay 档投影同态"	"断言：expect(titles).toContain(\"○ contract / imp\");；expect(titles).toContain('● case \"five\"');"	没测该层	keep	keep	—
-"selectContract 切回契约（case 全 ○），幂等"	"断言：expect((await lensTitles(mock, uri)).some((t) => t.startsWith(\"○ contract\"))).toBe(true);；expect(titles).toContain(\"● contract / imp\");"	没测该层	keep	keep	—
-"nudo/selectContract 请求别名与命令同效"	"钉：变更文件自己 ⇒ **不**重检自己（publish 次数不增加）； 而**真正的** parent（@nudo:import 依赖方）仍被重检（不得误伤）。 断言：expect(titles.some((t) => t.startsWith(\"● contract\"))).toBe(true);"	没测该层	keep	keep	—
-"analysisCache trims to maxFiles as distinct files stream in"	"dep 边按 4× 口径）—— 长 IDE 会话不再单调增长。 断言：expect(analysisCache.size).toBeLessThanOrEqual(2);；expect(analysisCache.has(\"/t/lru/f5.js\")).toBe(true);"	没测该层	keep	keep	—
-"knownFiles caps at maxFiles (dirty-propagation registry)"	"dep 边按 4× 口径）—— 长 IDE 会话不再单调增长。 断言：expect(knownFiles.size).toBeLessThanOrEqual(2);"	没测该层	keep	keep	—
-"nudoDepParents caps at 4× maxFiles with LRU refresh on access"	"dep 边按 4× 口径）—— 长 IDE 会话不再单调增长。 断言：expect(nudoDepParents.size).toBeLessThanOrEqual(8);"	没测该层	keep	keep	—
-"maxFiles=0 disables the analysisCache layer (recompute, never stale)"	"dep 边按 4× 口径）—— 长 IDE 会话不再单调增长。 断言：expect(r1).toBeTruthy();；expect(analysisCache.size).toBe(0);"	没测该层	keep	keep	—
-"bumps generation per validateText call"	"IDE 的 `entry@` / `call@` 观察透镜**必然抛 TypeError**： `nudo.trace` 既没有「位置参数 → 对象」的桥，也不接受 `uri` 键 ⇒ `params.file` 是 `undefined` ⇒ `normalizeFilePath(undefined)` 抛。 根因（两半）： - server 侧：`workspace/executeCommand` 的兜底分支把 `args[0]`（**uri 字符串**）当参数对象传下去 ⇒ `params.file === undefined` （server.ts 归片 D； 断言：expect(validateGeneration.get"	夹具漏形态	keep	keep	—
-"bumpValidateGeneration (onDidClose path) discards in-flight publish"	"钉：变更文件自己 ⇒ **不**重检自己（publish 次数不增加）； 而**真正的** parent（@nudo:import 依赖方）仍被重检（不得误伤）。 断言：expect(validateGeneration.get(path)).toBe(closedGen);；expect(deps.sent.length).toBe(0);"	没测该层	keep	keep	—
-"older overlapping validate does not publish after a newer one starts"	"钉：变更文件自己 ⇒ **不**重检自己（publish 次数不增加）； 而**真正的** parent（@nudo:import 依赖方）仍被重检（不得误伤）。 断言：expect(validateGeneration.get(\"/t/storm.js\")).toBe(2);；expect(deps.sent.length).toBeGreaterThan(0);"	没测该层	keep	keep	—
-"stillCurrent gate: a completed older gen after newer bump does not send"	"IDE 的 `entry@` / `call@` 观察透镜**必然抛 TypeError**： `nudo.trace` 既没有「位置参数 → 对象」的桥，也不接受 `uri` 键 ⇒ `params.file` 是 `undefined` ⇒ `normalizeFilePath(undefined)` 抛。 根因（两半）： - server 侧：`workspace/executeCommand` 的兜底分支把 `args[0]`（**uri 字符串**）当参数对象传下去 ⇒ `params.file === undefined` （server.ts 归片 D； 断言：expect(validateGeneration.get"	夹具漏形态	keep	keep	—
-"clearValidationState resets generations"	"断言：expect(validateGeneration.size).toBe(0);"	没测该层	keep	keep	—
-"superseded 文档版本的慢分析不发布陈旧诊断"	"断言：expect(sent).toEqual([]);；expect(sent.length).toBe(1);"	没测该层	keep	keep	—
-"未变更文档的分析正常发布且带启动时 version"	"回归背景：stillCurrent 只比 validateGeneration——didChange 不 bump generation，慢分析（await 期间）文档已更新时，旧结果会发布到 新 buffer（squiggle 错位 / 幽灵报错）。 修复：generation 之外 再比打开文档的当前 version； 断言：expect(sent.length).toBe(1);；expect(sent[0]!.version).toBe(1);"	没测该层	keep	keep	—
-"无文档跟踪的宿主回落 generation-only 口径（照常发布）"	"回归背景：stillCurrent 只比 validateGeneration——didChange 不 bump generation，慢分析（await 期间）文档已更新时，旧结果会发布到 新 buffer（squiggle 错位 / 幽灵报错）。 修复：generation 之外 再比打开文档的当前 version； 断言：expect(sent.length).toBe(1);；expect(sent[0]!.version).toBe(1);"	没测该层	keep	keep	—
-"部分载荷 / 无关载荷 / 扁平键：analysis.mode 不被抹掉"	"症状：初始化时 `analysis.mode = \"all\"`（宿主设置），一次**部分**或**无关** 的设置变更后，分析范围收缩回产品默认（exports）⇒ 原本能分析的文件 不再被分析 ⇒ hover 从有值变 null。 根因（片 D · `server.ts`）：server 把 `params.settings.nudo.*` 当**整棵 子树**读——载荷没提到的键直接读成 `undefined` ⇒ 覆盖掉旧值。 断言：expect(hoverText(mock, uri)).toContain(\"boom\");；expect(hoverText(mock, uri)).toContain(\"boom\");"	没测该层	keep	keep	—
-"显式 null = 重置（回落产品默认 exports）"	"症状：初始化时 `analysis.mode = \"all\"`（宿主设置），一次**部分**或**无关** 的设置变更后，分析范围收缩回产品默认（exports）⇒ 原本能分析的文件 不再被分析 ⇒ hover 从有值变 null。 根因（片 D · `server.ts`）：server 把 `params.settings.nudo.*` 当**整棵 子树**读——载荷没提到的键直接读成 `undefined` ⇒ 覆盖掉旧值。 断言：expect(hoverText(mock, uri)).toContain(\"boom\");；expect(hoverText(mock, uri)).toBeNull();"	没测该层	keep	keep	—
+① 客户端不声明 workspaceFolders 能力 ⇒ createNudoServer 不抛异常；② 该客户端的 onInitialize 仍正常返回（服务端能力声明一字不动）；③ 真语义（getter 在 initialize 之后才可用）⇒ 订阅仍建立且只建立一次	lsp-server 聚合矩阵	没测该层	keep	keep	—
+trace({file, functionName}) 回落到 externalFunctions：出跨模块见证；真 server executeCommand `nudo.trace [uri, fn]`（观察镜动作形态）不报 not found；同文件 call@ 对照：trace 仍按本地函数解析（不回归）	lsp-server 聚合矩阵	没测该层	keep	keep	—
+位置参数 [uri, fn] 跑出 trace（不是错误）；对象形态 { uri, functionName } 仍然可用（桥不得吃掉既有形态）；非对象参数（裸字符串）⇒ 协议层 InvalidParams（不再把字符串当对象传下去）	lsp-server 聚合矩阵	没测该层	keep	keep	—
+nudo/trace 的 {uri} 形态：出见证（不再 TypeError）；nudo/trace 的 {file} 形态：不回归；agent 侧：trace 工具直调也接受 uri 键；位置参数桥 tracePositionalArgs：[uri, fn] ⇒ { uri, functionName }	lsp-server 聚合矩阵	没测该层	keep	keep	—
+编码侧对保留字符做百分号转义（裸 % 不再出现）；普通路径的 URI 形态不变（file:/// 绝对路径）；解码侧：合法 URI 解回原路径（与编码侧互逆）；解码侧：畸形百分号转义**绝不抛**（回退到未解码原文）；解码侧：非 file: scheme 原样返回（行为不变）；Windows 盘符形态经 cacheKey 归一（file:///c:/… ⇒ c:/…）；协议面：客户端把服务端自己刚给的（裸 % 的）URI 回传给 didOpen ⇒ 不中断且该文档有诊断	lsp-server 聚合矩阵	没测该层	keep	keep	—
+会出诊断的文件：didOpen 只发布一次（同 version 同内容）；不出诊断的文件：didOpen 也只发布一次（空数组）；编辑后仍会发布新版本的诊断（去重不得把后续诊断吞掉）	lsp-server 聚合矩阵	没测该层	keep	keep	—
+变更文件自己 ⇒ 不重检自己（无自激重检）；真正的 parent（@nudo:import 依赖方）仍被重检（self-排除不得误伤）	lsp-server 聚合矩阵	没测该层	keep	keep	—
+declares the full capability inventory and command list；registers slash- and dot-form request aliases for every agent tool	lsp-server 聚合矩阵	没测该层	keep	keep	—
+workspace/executeCommand nudo.check analyzes a source payload；slash-form nudo/check and dot-form nudo.check share one handler；nudo.getActiveCases returns the empty case map for a fresh uri	lsp-server 聚合矩阵	没测该层	keep	keep	—
+unknown executeCommand raises a protocol-level MethodNotFound error；nudo.check on a missing file returns isError (fail-closed)；pull diagnostics for an unknown document are empty (no crash)；pull diagnostics catch 不得 items:[] — 标 Analysis err	lsp-server 聚合矩阵	没测该层	keep	keep	—
+plain non-export JS stays quiet without client settings (exports default)；initializationOptions analysis.mode=all widens the gate；invalid initializationOptions mode falls back to the product default；project package.json#nudo.analysis.mode w	lsp-server 聚合矩阵	没测该层	keep	keep	—
+默认关：无参数 where inlay（返回 inlay 仍在）；initializationOptions inlayHints.parameters=true 开启；非法宿主值回落默认关；workspace/didChangeConfiguration 实时开关；项目 package.json#nudo.inlayHints.parameters 显式值赢过宿主默认；折叠展示：侧车表达式原文 label + 完整 pred tooltip	lsp-server 聚合矩阵	没测该层	keep	keep	—
+默认：契约选项 ●，全部 case ○；动作与观察层照常；selectCase 后契约转 ○、选中 case 转 ●；inlay 档投影同态；selectContract 切回契约（case 全 ○），幂等；nudo/selectContract 请求别名与命令同效	lsp-server 聚合矩阵	没测该层	keep	keep	—
+analysisCache trims to maxFiles as distinct files stream in；knownFiles caps at maxFiles (dirty-propagation registry)；nudoDepParents caps at 4× maxFiles with LRU refresh on access；maxFiles=0 disables the analysisCache layer (recompute, never	lsp-server 聚合矩阵	没测该层	keep	keep	—
+bumps generation per validateText call；bumpValidateGeneration (onDidClose path) discards in-flight publish；older overlapping validate does not publish after a newer one starts；stillCurrent gate: a completed older gen after newer bump does n	lsp-server 聚合矩阵	没测该层	keep	keep	—
+superseded 文档版本的慢分析不发布陈旧诊断；未变更文档的分析正常发布且带启动时 version；无文档跟踪的宿主回落 generation-only 口径（照常发布）	lsp-server 聚合矩阵	没测该层	keep	keep	—
+部分载荷 / 无关载荷 / 扁平键：analysis.mode 不被抹掉；显式 null = 重置（回落产品默认 exports）	lsp-server 聚合矩阵	没测该层	keep	keep	—
 "package.json change clears analysisCache and notifies host"	"dep 边按 4× 口径）—— 长 IDE 会话不再单调增长。 断言：expect(configChanged).toBe(1);；expect(analysisCache.has(\"/tmp/proj/a.js\")).toBe(false);"	没测该层	keep	keep	—
+```
+
+```audit-deleted
+title	reason	evidence
+畸形 workspaceFolders[0].uri ⇒ 跳过该 folder，initialize 照常返回	dup:lsp-server 聚合矩阵	commit:d25e91ca
+畸形 rootUri ⇒ 跳过该根，initialize 照常返回	dup:lsp-server 聚合矩阵	commit:d25e91ca
+正常 URI 不受影响（仍返回 capabilities）	dup:lsp-server 聚合矩阵	commit:d25e91ca
+未知命令名不再回落 result:null	dup:lsp-server 聚合矩阵	commit:d25e91ca
+已声明的命令名照常执行（白名单 = advertise 面）	dup:lsp-server 聚合矩阵	commit:d25e91ca
+① 客户端不声明 workspaceFolders 能力 ⇒ createNudoServer 不抛异常	dup:lsp-server 聚合矩阵	commit:d25e91ca
+② 该客户端的 onInitialize 仍正常返回（服务端能力声明一字不动）	dup:lsp-server 聚合矩阵	commit:d25e91ca
+③ 真语义（getter 在 initialize 之后才可用）⇒ 订阅仍建立且只建立一次	dup:lsp-server 聚合矩阵	commit:d25e91ca
+trace({file, functionName}) 回落到 externalFunctions：出跨模块见证	dup:lsp-server 聚合矩阵	commit:d25e91ca
+真 server executeCommand `nudo.trace [uri, fn]`（观察镜动作形态）不报 not found	dup:lsp-server 聚合矩阵	commit:d25e91ca
+同文件 call@ 对照：trace 仍按本地函数解析（不回归）	dup:lsp-server 聚合矩阵	commit:d25e91ca
+位置参数 [uri, fn] 跑出 trace（不是错误）	dup:lsp-server 聚合矩阵	commit:d25e91ca
+对象形态 { uri, functionName } 仍然可用（桥不得吃掉既有形态）	dup:lsp-server 聚合矩阵	commit:d25e91ca
+非对象参数（裸字符串）⇒ 协议层 InvalidParams（不再把字符串当对象传下去）	dup:lsp-server 聚合矩阵	commit:d25e91ca
+nudo/trace 的 {uri} 形态：出见证（不再 TypeError）	dup:lsp-server 聚合矩阵	commit:d25e91ca
+nudo/trace 的 {file} 形态：不回归	dup:lsp-server 聚合矩阵	commit:d25e91ca
+agent 侧：trace 工具直调也接受 uri 键	dup:lsp-server 聚合矩阵	commit:d25e91ca
+位置参数桥 tracePositionalArgs：[uri, fn] ⇒ { uri, functionName }	dup:lsp-server 聚合矩阵	commit:d25e91ca
+编码侧对保留字符做百分号转义（裸 % 不再出现）	dup:lsp-server 聚合矩阵	commit:d25e91ca
+普通路径的 URI 形态不变（file:/// 绝对路径）	dup:lsp-server 聚合矩阵	commit:d25e91ca
+解码侧：合法 URI 解回原路径（与编码侧互逆）	dup:lsp-server 聚合矩阵	commit:d25e91ca
+解码侧：畸形百分号转义**绝不抛**（回退到未解码原文）	dup:lsp-server 聚合矩阵	commit:d25e91ca
+解码侧：非 file: scheme 原样返回（行为不变）	dup:lsp-server 聚合矩阵	commit:d25e91ca
+Windows 盘符形态经 cacheKey 归一（file:///c:/… ⇒ c:/…）	dup:lsp-server 聚合矩阵	commit:d25e91ca
+协议面：客户端把服务端自己刚给的（裸 % 的）URI 回传给 didOpen ⇒ 不中断且该文档有诊断	dup:lsp-server 聚合矩阵	commit:d25e91ca
+会出诊断的文件：didOpen 只发布一次（同 version 同内容）	dup:lsp-server 聚合矩阵	commit:d25e91ca
+不出诊断的文件：didOpen 也只发布一次（空数组）	dup:lsp-server 聚合矩阵	commit:d25e91ca
+编辑后仍会发布新版本的诊断（去重不得把后续诊断吞掉）	dup:lsp-server 聚合矩阵	commit:d25e91ca
+变更文件自己 ⇒ 不重检自己（无自激重检）	dup:lsp-server 聚合矩阵	commit:d25e91ca
+真正的 parent（@nudo:import 依赖方）仍被重检（self-排除不得误伤）	dup:lsp-server 聚合矩阵	commit:d25e91ca
+declares the full capability inventory and command list	dup:lsp-server 聚合矩阵	commit:d25e91ca
+registers slash- and dot-form request aliases for every agent tool	dup:lsp-server 聚合矩阵	commit:d25e91ca
+workspace/executeCommand nudo.check analyzes a source payload	dup:lsp-server 聚合矩阵	commit:d25e91ca
+slash-form nudo/check and dot-form nudo.check share one handler	dup:lsp-server 聚合矩阵	commit:d25e91ca
+nudo.getActiveCases returns the empty case map for a fresh uri	dup:lsp-server 聚合矩阵	commit:d25e91ca
+unknown executeCommand raises a protocol-level MethodNotFound error	dup:lsp-server 聚合矩阵	commit:d25e91ca
+nudo.check on a missing file returns isError (fail-closed)	dup:lsp-server 聚合矩阵	commit:d25e91ca
+pull diagnostics for an unknown document are empty (no crash)	dup:lsp-server 聚合矩阵	commit:d25e91ca
+pull diagnostics catch 不得 items:[] — 标 Analysis error（R2B-003）	dup:lsp-server 聚合矩阵	commit:d25e91ca
+pull diagnostics catch 保留上次已发布诊断（R2B-003）	dup:lsp-server 聚合矩阵	commit:d25e91ca
+listen() is the only transport start — safe to call explicitly	dup:lsp-server 聚合矩阵	commit:d25e91ca
+plain non-export JS stays quiet without client settings (exports default)	dup:lsp-server 聚合矩阵	commit:d25e91ca
+initializationOptions analysis.mode=all widens the gate	dup:lsp-server 聚合矩阵	commit:d25e91ca
+invalid initializationOptions mode falls back to the product default	dup:lsp-server 聚合矩阵	commit:d25e91ca
+project package.json#nudo.analysis.mode wins over the client default (directives vs all)	dup:lsp-server 聚合矩阵	commit:d25e91ca
+project package.json#nudo.analysis.mode=all wins over client default directives	dup:lsp-server 聚合矩阵	commit:d25e91ca
+workspace/didChangeConfiguration re-gates an already-open document	dup:lsp-server 聚合矩阵	commit:d25e91ca
+默认关：无参数 where inlay（返回 inlay 仍在）	dup:lsp-server 聚合矩阵	commit:d25e91ca
+initializationOptions inlayHints.parameters=true 开启	dup:lsp-server 聚合矩阵	commit:d25e91ca
+非法宿主值回落默认关	dup:lsp-server 聚合矩阵	commit:d25e91ca
+workspace/didChangeConfiguration 实时开关	dup:lsp-server 聚合矩阵	commit:d25e91ca
+项目 package.json#nudo.inlayHints.parameters 显式值赢过宿主默认	dup:lsp-server 聚合矩阵	commit:d25e91ca
+折叠展示：侧车表达式原文 label + 完整 pred tooltip	dup:lsp-server 聚合矩阵	commit:d25e91ca
+默认：契约选项 ●，全部 case ○；动作与观察层照常	dup:lsp-server 聚合矩阵	commit:d25e91ca
+selectCase 后契约转 ○、选中 case 转 ●；inlay 档投影同态	dup:lsp-server 聚合矩阵	commit:d25e91ca
+selectContract 切回契约（case 全 ○），幂等	dup:lsp-server 聚合矩阵	commit:d25e91ca
+nudo/selectContract 请求别名与命令同效	dup:lsp-server 聚合矩阵	commit:d25e91ca
+analysisCache trims to maxFiles as distinct files stream in	dup:lsp-server 聚合矩阵	commit:d25e91ca
+knownFiles caps at maxFiles (dirty-propagation registry)	dup:lsp-server 聚合矩阵	commit:d25e91ca
+nudoDepParents caps at 4× maxFiles with LRU refresh on access	dup:lsp-server 聚合矩阵	commit:d25e91ca
+maxFiles=0 disables the analysisCache layer (recompute, never stale)	dup:lsp-server 聚合矩阵	commit:d25e91ca
+bumps generation per validateText call	dup:lsp-server 聚合矩阵	commit:d25e91ca
+bumpValidateGeneration (onDidClose path) discards in-flight publish	dup:lsp-server 聚合矩阵	commit:d25e91ca
+older overlapping validate does not publish after a newer one starts	dup:lsp-server 聚合矩阵	commit:d25e91ca
+stillCurrent gate: a completed older gen after newer bump does not send	dup:lsp-server 聚合矩阵	commit:d25e91ca
+clearValidationState resets generations	dup:lsp-server 聚合矩阵	commit:d25e91ca
+superseded 文档版本的慢分析不发布陈旧诊断	dup:lsp-server 聚合矩阵	commit:d25e91ca
+未变更文档的分析正常发布且带启动时 version	dup:lsp-server 聚合矩阵	commit:d25e91ca
+无文档跟踪的宿主回落 generation-only 口径（照常发布）	dup:lsp-server 聚合矩阵	commit:d25e91ca
+部分载荷 / 无关载荷 / 扁平键：analysis.mode 不被抹掉	dup:lsp-server 聚合矩阵	commit:d25e91ca
+显式 null = 重置（回落产品默认 exports）	dup:lsp-server 聚合矩阵	commit:d25e91ca
 ```
