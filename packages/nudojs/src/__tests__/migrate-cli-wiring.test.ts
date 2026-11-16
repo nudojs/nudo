@@ -1,17 +1,6 @@
 /**
- * 族 16 主 agent 接线钉 —— 覆盖各分片「越界发现」里明确交给命令层的接线项：
- *
- * | Bug | 分片未做（因其不拥有命令层文件） | 本文件钉住的行为 |
- * |---|---|---|
- * | **668** | M1/M6 拥有 `commands/migrate.ts`，但 status 的多路径截断无人接线 | `migrate status <a> <b>` **两个包都审计** |
- * | **595** | M5 修好库面 `migrateRetireMany`，CLI 仍只退役 `targets[0]` | `migrate retire <a> <b>` **两个包都退役** |
- * | **675** | M5 报告「JSON 顶层形状随结果条数变化」⇒ 归命令层 | `migrate retire --json` 顶层**恒为数组**（1 个包也是数组） |
- * | **1006** | M5 报告「失败时 stdout 为空 ⇒ `--json` 契约破裂」⇒ 归命令层 | `migrate retire --json` 失败时 stdout **仍是合法 JSON** |
- * | **567** | M5 库面改成**抛错**（「nothing to retire」），CLI 口径需定 | 「无可退役」是**正常结果** ⇒ exit 0（不是错误） |
- * | **586** | M5 产出 `preservedScripts`，CLI 不打印 ⇒ 用户看不到「这个脚本为什么没改」 | CLI **打印** preserved 脚本及其原因 |
- * | **588** | M2 修好 status 面；M5 区间仍用 `readJson`（解析失败谎报「没有 package.json」） | retire 侧遇到畸形清单 **fail-closed** 报「parse failed」 |
- *
- * 反向闸（断言非永真）：每条都有「不该发生时不得触发」的对照断言。
+ * migrate 命令层接线：status 多目标、retire 多目标、--json 信封、失败时
+ * fail-closed、无可退役、保留脚本的原因。每行同时带“不该触发”的反向断言。
  */
 import { describe, it, expect, afterAll } from "vitest";
 import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync } from "node:fs";
@@ -31,48 +20,38 @@ function pkgDir(name: string, pkg: unknown): string {
   return dir;
 }
 
-/** 有门禁角色 tsc 的包（可退役） */
-function retirable(name: string): string {
-  return pkgDir(
+const retirable = (name: string): string =>
+  pkgDir(name, JSON.stringify({
     name,
-    JSON.stringify({
-      name,
-      version: "1.0.0",
-      devDependencies: { typescript: "^5.0.0" },
-      scripts: { typecheck: "tsc --noEmit" },
-    }),
-  );
-}
+    version: "1.0.0",
+    devDependencies: { typescript: "^5.0.0" },
+    scripts: { typecheck: "tsc --noEmit" },
+  }));
 
-/** 无任何 tsc/typescript 的包（无可退役） */
-function nothingToRetire(name: string): string {
-  return pkgDir(name, JSON.stringify({ name, version: "1.0.0" }));
-}
+const nothingToRetire = (name: string): string =>
+  pkgDir(name, JSON.stringify({ name, version: "1.0.0" }));
 
-/** 畸形清单 */
-function brokenPkg(name: string): string {
-  return pkgDir(name, `{"name":"${name}", broken json}`);
-}
+const brokenPkg = (name: string): string =>
+  pkgDir(name, `{"name":"${name}", broken json}`);
 
-describe("族 16 接线 —— migrate 命令层（status 多路径 / retire 多目标 / JSON 契约）", () => {
-  it("Bug 668：status 审计全部目标（不得静默只报第一个）", () => {
-    const a = retirable("wiring-a");
-    const b = retirable("wiring-b");
-    const r = runCliTsx(["migrate", "status", a, b]);
-    expect(r.status, r.stderr).toBe(0);
-    expect(r.stdout).toContain(a);
-    expect(r.stdout).toContain(b);
-    // 反向闸：只给一个目标时，那一个必须出现（不是「因为模板里有字面量」）
+describe("migrate 命令层接线", () => {
+  it("status 审计全部目标；单目标时不得出现另一目标", () => {
+    const a = retirable("status-a");
+    const b = retirable("status-b");
+    const both = runCliTsx(["migrate", "status", a, b]);
+    expect(both.status, both.stderr).toBe(0);
+    expect(both.stdout).toContain(a);
+    expect(both.stdout).toContain(b);
     const one = runCliTsx(["migrate", "status", a]);
     expect(one.stdout).toContain(a);
     expect(one.stdout).not.toContain(b);
   });
 
-  it("Bug 595：retire 退役全部目标（不得静默只退役第一个）", () => {
-    const a = retirable("wiring-ret-a");
-    const b = retirable("wiring-ret-b");
-    const r = runCliTsx(["migrate", "retire", a, b]);
-    expect(r.status, r.stderr).toBe(0);
+  it("retire 退役全部目标；--json 顶层恒为数组（1/2 个包）", () => {
+    const a = retirable("ret-a");
+    const b = retirable("ret-b");
+    const human = runCliTsx(["migrate", "retire", a, b]);
+    expect(human.status, human.stderr).toBe(0);
     for (const dir of [a, b]) {
       const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf-8")) as {
         devDependencies: Record<string, string>;
@@ -82,61 +61,57 @@ describe("族 16 接线 —— migrate 命令层（status 多路径 / retire 多
       expect(pkg.scripts["typecheck"]).toBe("nudo check .");
       expect(existsSync(join(dir, ".nudo", "migrate-retired.json"))).toBe(true);
     }
-    expect(r.stdout).toContain(a);
-    expect(r.stdout).toContain(b);
-  });
+    expect(human.stdout).toContain(a);
+    expect(human.stdout).toContain(b);
 
-  it("Bug 675：retire --json 的顶层形状恒为数组（1 个包也是数组）", () => {
-    const a = retirable("wiring-json-1");
-    const one = runCliTsx(["migrate", "retire", a, "--json"]);
+    const c = retirable("ret-c");
+    const one = runCliTsx(["migrate", "retire", c, "--json"]);
     expect(one.status, one.stderr).toBe(0);
-    const parsed = JSON.parse(one.stdout) as unknown;
-    expect(Array.isArray(parsed)).toBe(true);
-    expect(parsed).toHaveLength(1);
+    const oneEnv = JSON.parse(one.stdout) as unknown;
+    expect(Array.isArray(oneEnv)).toBe(true);
+    expect(oneEnv).toHaveLength(1);
 
-    const b = retirable("wiring-json-2");
-    const two = runCliTsx(["migrate", "retire", a, b, "--json"]);
-    const parsed2 = JSON.parse(two.stdout) as unknown;
-    expect(Array.isArray(parsed2)).toBe(true);
-    expect(parsed2).toHaveLength(2);
-  });
+    const d = retirable("ret-d");
+    const e = retirable("ret-e");
+    const two = runCliTsx(["migrate", "retire", d, e, "--json"]);
+    const twoEnv = JSON.parse(two.stdout) as unknown;
+    expect(Array.isArray(twoEnv)).toBe(true);
+    expect(twoEnv).toHaveLength(2);
+  }, 60_000);
 
-  it("Bug 1006：retire --json 失败时 stdout 仍是合法 JSON", () => {
-    const bad = brokenPkg("wiring-bad");
-    const r = runCliTsx(["migrate", "retire", bad, "--json"]);
-    expect(r.status).toBe(1);
-    // stdout 必须是合法 JSON（机器面契约：--json 下 stdout 永不为空且可解析）
-    // `--json` 顶层形状**恒为数组**（失败信封是单元素数组）
-    const envelope = JSON.parse(r.stdout) as Array<{ ok: boolean; error: string }>;
+  it("畸形清单 fail-closed：人类面与 --json 都报 parse failed，不谎报缺失", () => {
+    const bad = brokenPkg("parse-human");
+    const human = runCliTsx(["migrate", "retire", bad]);
+    expect(human.status).toBe(1);
+    expect(human.stderr).toContain("package.json parse failed");
+    expect(human.stderr).not.toContain("no package.json under");
+
+    const badJson = brokenPkg("parse-json");
+    const json = runCliTsx(["migrate", "retire", badJson, "--json"]);
+    expect(json.status).toBe(1);
+    const envelope = JSON.parse(json.stdout) as Array<{ ok: boolean; error: string }>;
     expect(Array.isArray(envelope)).toBe(true);
-    const parsed = envelope[0]!;
-    expect(parsed.ok).toBe(false);
-    expect(parsed.error).toContain("package.json parse failed");
-    // 反向闸：人类面仍有 stderr 引导
-    expect(r.stderr).toContain("package.json parse failed");
+    expect(envelope[0]?.ok).toBe(false);
+    expect(envelope[0]?.error).toContain("package.json parse failed");
+    expect(json.stderr).toContain("package.json parse failed");
   });
 
-  it("Bug 567：「无可退役」是正常结果 ⇒ exit 0（不是错误）", () => {
-    const plain = nothingToRetire("wiring-plain");
-    const r = runCliTsx(["migrate", "retire", plain]);
-    expect(r.status, r.stderr).toBe(0);
-    expect(r.stdout).toContain("nothing to retire");
-    // 反向闸：真的报错时必须非零 exit（不能把错误也吞成 0）
-    const bad = brokenPkg("wiring-plain-bad");
-    const r2 = runCliTsx(["migrate", "retire", bad]);
-    expect(r2.status).toBe(1);
+  it("无可退役是正常结果（exit 0）；真错误仍非零退出", () => {
+    const plain = nothingToRetire("plain");
+    const ok = runCliTsx(["migrate", "retire", plain]);
+    expect(ok.status, ok.stderr).toBe(0);
+    expect(ok.stdout).toContain("nothing to retire");
+    const bad = brokenPkg("plain-bad");
+    expect(runCliTsx(["migrate", "retire", bad]).status).toBe(1);
   });
 
-  it("Bug 586：编译器角色的脚本被保留时，CLI 必须说明原因", () => {
-    const dir = pkgDir(
-      "wiring-build",
-      JSON.stringify({
-        name: "wiring-build",
-        version: "1.0.0",
-        devDependencies: { typescript: "^5.0.0" },
-        scripts: { build: "tsc -p tsconfig.build.json", typecheck: "tsc --noEmit" },
-      }),
-    );
+  it("编译器角色的脚本被保留时，CLI 打印原因且不改写该脚本", () => {
+    const dir = pkgDir("build", JSON.stringify({
+      name: "wiring-build",
+      version: "1.0.0",
+      devDependencies: { typescript: "^5.0.0" },
+      scripts: { build: "tsc -p tsconfig.build.json", typecheck: "tsc --noEmit" },
+    }));
     const r = runCliTsx(["migrate", "retire", dir]);
     expect(r.status, r.stderr).toBe(0);
     expect(r.stdout).toContain("build");
@@ -145,18 +120,8 @@ describe("族 16 接线 —— migrate 命令层（status 多路径 / retire 多
       devDependencies: Record<string, string>;
       scripts: Record<string, string>;
     };
-    // build 原样保留；typescript 依赖不得摘（摘了 build 当场坏掉）
     expect(pkg.scripts["build"]).toBe("tsc -p tsconfig.build.json");
     expect(pkg.devDependencies["typescript"]).toBeDefined();
     expect(pkg.scripts["typecheck"]).toBe("nudo check .");
-  });
-
-  it("Bug 588：retire 侧遇到畸形清单要 fail-closed（不得谎报「没有 package.json」）", () => {
-    const bad = brokenPkg("wiring-parse");
-    const r = runCliTsx(["migrate", "retire", bad]);
-    expect(r.status).toBe(1);
-    expect(r.stderr).toContain("package.json parse failed");
-    // 反向闸：措辞不得是「没有 package.json」（那是「读不出来」被当成「不存在」）
-    expect(r.stderr).not.toContain("no package.json under");
   });
 });
