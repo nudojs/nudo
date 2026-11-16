@@ -559,44 +559,43 @@ beforeEach(() => {
 });
 
 describe("循环迭代截断 → analysis 诊断（test 面）", () => {
-  it("恒具体真的循环产出 nudo:loop-truncated（info，锚在函数声明处）", async () => {
-    const dir = tmpProject("nudo-bug099-loop-");
+  const INFINITE_LOOP = `export function infiniteDec(n) {
+  let i = 0;
+  while (i < n) { i = i - 1; }
+  return i;
+}
+infiniteDec(5);
+`;
+  const PLAIN = "export function add(a, b) {\n  return a + b;\n}\n";
+  beforeEach(() => {
+    resetCheckSourceMemo(); resetGeneralizeMemo(); resetNudoModuleExecCache(); resetParseSourceCache(); resetAbsCallBudget(); clearEvalCache(); clearAbsModuleCache();
+  });
+  it("恒真循环一条 info 锚文件起点；措辞 iteration budget；无截断零误报", async () => {
+    const dir = tmpProject("nudo-b099-loop-");
     const file = join(dir, "loop.js");
     writeFileSync(file, INFINITE_LOOP);
-
     const result = await analyzeFileAsync(file, INFINITE_LOOP);
     const loops = result.diagnostics.filter((d) => d.code === "nudo:loop-truncated");
-
-    // 一个循环标签 ⇒ 一条诊断（分析内多次求值不重复）
     expect(loops).toHaveLength(1);
-    const [d] = loops;
-    expect(d!.severity).toBe("info");
-    // 锚点：循环截断事件**不绑函数**（collector 只给 `#loop-iterations` 标签，
-    // check 面对同一事件也不给位置/函数归因）⇒ 观测面落在文件起点（1 基行 1、列 0），
-    // 不假装知道是哪一行循环。
-    expect(d!.range.start.line).toBe(1);
-    expect(d!.range.start.column).toBe(0);
-    // 措辞与 check 面同款；不得冒充递归截断
-    expect(d!.message).toContain("iteration budget");
-    expect(d!.message).not.toContain("Recursive evaluation");
-    // 预算归因：循环迭代上限不受 @nudo:budget 控制 ⇒ suggestion 不得指向它
-    expect(d!.suggestions?.join(" ")).not.toContain("@nudo:budget");
-    // 其余截断码不得为同一事件冒名顶替
+    const d = loops[0]!;
+    expect(d.severity).toBe("info");
+    expect(d.range.start.line).toBe(1);
+    expect(d.range.start.column).toBe(0);
+    expect(d.message).toContain("iteration budget");
+    expect(d.message).not.toContain("Recursive evaluation");
+    expect(d.suggestions?.join(" ")).not.toContain("@nudo:budget");
     expect(result.diagnostics.some((x) => x.code === "nudo:recursion-truncated")).toBe(false);
     expect(result.diagnostics.some((x) => x.code === "nudo:fork-truncated")).toBe(false);
-  });
 
-  it("无截断文件零误报", async () => {
-    const dir = tmpProject("nudo-bug099-loop-clean-");
-    const file = join(dir, "plain.js");
-    writeFileSync(file, PLAIN);
-
-    const result = await analyzeFileAsync(file, PLAIN);
-    const codes = result.diagnostics.map((d) => d.code);
-    expect(codes).not.toContain("nudo:loop-truncated");
-    expect(codes).not.toContain("nudo:recursion-truncated");
+    const cleanDir = tmpProject("nudo-b099-loop-clean-");
+    const cleanFile = join(cleanDir, "plain.js");
+    writeFileSync(cleanFile, PLAIN);
+    const clean = await analyzeFileAsync(cleanFile, PLAIN);
+    expect(clean.diagnostics.map((x) => x.code)).not.toContain("nudo:loop-truncated");
+    expect(clean.diagnostics.map((x) => x.code)).not.toContain("nudo:recursion-truncated");
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -662,40 +661,36 @@ beforeEach(() => {
 });
 
 describe("截断观测 → analysis 诊断（test 面）", () => {
-  it("自递归截断产出 nudo:recursion-truncated（info，锚在函数声明处）", async () => {
-    const dir = tmpProject("nudo-bug099-");
+  const SELF_RECURSION = "export function loop(n) {\n  if (n <= 0) return 0;\n  return loop(n - 1) + 1;\n}\n";
+  const PLAIN = "export function add(a, b) {\n  return a + b;\n}\n";
+  beforeEach(() => {
+    resetCheckSourceMemo(); resetGeneralizeMemo(); resetNudoModuleExecCache(); resetParseSourceCache(); resetAbsCallBudget(); clearEvalCache(); clearAbsModuleCache();
+  });
+  it("自递归一条 info 锚函数声明；cycle 措辞；无截断零误报", async () => {
+    const dir = tmpProject("nudo-b099-");
     const file = join(dir, "self.js");
     writeFileSync(file, SELF_RECURSION);
-
     const result = await analyzeFileAsync(file, SELF_RECURSION);
     const trunc = result.diagnostics.filter((d) => d.code === "nudo:recursion-truncated");
-
-    // 一次事件 ⇒ 一条诊断（分析内多次求值不得重复出诊断）
     expect(trunc).toHaveLength(1);
-    const [d] = trunc;
-    expect(d!.severity).toBe("info");
-    // 锚点：函数名起始（1 基行号，0 列不是合法列是另一回事；行号必须 ≥ 1）
-    expect(d!.range.start.line).toBe(1);
-    expect(d!.range.start.column).toBe(7);
-    expect(d!.message).toContain("Recursive evaluation of 'loop'");
-    // 归因措辞与 core check 面一致：cycle 不是预算，抬 @nudo:budget 无效
-    expect(d!.message).toContain("(cycle — budget cannot lift this)");
-    expect(d!.suggestions?.join(" ")).toContain("raising @nudo:budget will not change this");
-    // 不得冒充 fork 预算
+    const d = trunc[0]!;
+    expect(d.severity).toBe("info");
+    expect(d.range.start.line).toBe(1);
+    expect(d.range.start.column).toBe(7);
+    expect(d.message).toContain("Recursive evaluation of 'loop'");
+    expect(d.message).toContain("(cycle — budget cannot lift this)");
+    expect(d.suggestions?.join(" ")).toContain("raising @nudo:budget will not change this");
     expect(result.diagnostics.some((x) => x.code === "nudo:fork-truncated")).toBe(false);
-  });
 
-  it("无截断文件零误报", async () => {
-    const dir = tmpProject("nudo-bug099-clean-");
-    const file = join(dir, "plain.js");
-    writeFileSync(file, PLAIN);
-
-    const result = await analyzeFileAsync(file, PLAIN);
-    const codes = result.diagnostics.map((d) => d.code);
-    expect(codes).not.toContain("nudo:recursion-truncated");
-    expect(codes).not.toContain("nudo:fork-truncated");
+    const cleanDir = tmpProject("nudo-b099-clean-");
+    const cleanFile = join(cleanDir, "plain.js");
+    writeFileSync(cleanFile, PLAIN);
+    const clean = await analyzeFileAsync(cleanFile, PLAIN);
+    expect(clean.diagnostics.map((x) => x.code)).not.toContain("nudo:recursion-truncated");
+    expect(clean.diagnostics.map((x) => x.code)).not.toContain("nudo:fork-truncated");
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -729,73 +724,50 @@ function asLineIndex(source: string): number {
 }
 
 describe("声明锚点不被行尾注释劫持", () => {
-  const SRC = [
-    "const alpha = 1; // alpha is the first",
-    "const beta = 2;",
-    "const gamma = 3;",
-    "export const va = alpha;",
-    "export const vb = beta;",
-    "export const vg = gamma;",
-    "",
-  ].join("\n");
+  const asLineIndex = (source: string): number => {
+    const idx = source.split("\n").findIndex((l) => l.includes("@nudo:as"));
+    if (idx < 0) throw new Error("no @nudo:as injected");
+    return idx;
+  };
+  const SRC = ["const alpha = 1; // alpha is the first", "const beta = 2;", "const gamma = 3;", "export const va = alpha;", "export const vb = beta;", "export const vg = gamma;", ""].join("\n");
+  it("假设落在被点名声明自己的行；行尾注释不消费；未声明进 unapplied", () => {
+    const beta = injectBindings(SRC, [{ name: "beta", type: "string" }]);
+    expect(beta.unapplied).toEqual([]);
+    expect(beta.applied).toEqual(["beta: string"]);
+    const at = asLineIndex(beta.source);
+    expect(beta.source.split("\n")[at + 1]).toContain("const beta = 2;");
+    expect(beta.source.split("\n")[at + 1]).not.toContain("const alpha");
 
-  it("假设落在被点名的声明**自己**的那一行（不是上一行）", () => {
-    const { source, applied, unapplied } = injectBindings(SRC, [
-      { name: "beta", type: "string" },
-    ]);
-    expect(unapplied).toEqual([]);
-    expect(applied).toEqual(["beta: string"]);
-    const at = asLineIndex(source);
-    // 注入行的**下一行**必须是被点名的声明
-    expect(source.split("\n")[at + 1]).toContain("const beta = 2;");
-    // 不得落在 alpha 头上（alpha 是被劫持的落点）
-    expect(source.split("\n")[at + 1]).not.toContain("const alpha");
-  });
+    const gamma = injectBindings(SRC, [{ name: "gamma", type: "string" }]);
+    const gat = asLineIndex(gamma.source);
+    expect(gamma.source.split("\n")[gat + 1]).toContain("const gamma = 3;");
+    expect(gamma.source.split("\n")[gat]).not.toContain("const alpha");
 
-  it("负控制：行尾注释不是指令 ⇒ 不得被当成行内指令消费", () => {
-    const { source } = injectBindings(SRC, [{ name: "gamma", type: "string" }]);
-    const at = asLineIndex(source);
-    expect(source.split("\n")[at + 1]).toContain("const gamma = 3;");
-    // 注入点不得插到 alpha 那行（行尾注释所在行）
-    expect(source.split("\n")[at]).not.toContain("const alpha");
-  });
-
-  it("负控制：不是顶层声明的名字仍进 unapplied", () => {
-    const { applied, unapplied } = injectBindings(SRC, [
-      { name: "nope", type: "string" },
-    ]);
-    expect(applied).toEqual([]);
-    expect(unapplied).toEqual(["nope"]);
+    const none = injectBindings(SRC, [{ name: "nope", type: "string" }]);
+    expect(none.applied).toEqual([]);
+    expect(none.unapplied).toEqual(["nope"]);
   });
 });
+;
 
 describe("同一行多条声明——各落各的（行号口径会撞车）", () => {
-  const SAME_LINE = `const delta = 10; const epsilon = 20;\nexport const ve = epsilon;\n`;
-
-  it("点名的声明落在**自己**的前面（不被同行的前一条声明吃掉）", () => {
-    const { source, applied, unapplied } = injectBindings(SAME_LINE, [
-      { name: "epsilon", type: "string" },
-    ]);
-    expect(unapplied).toEqual([]);
-    expect(applied).toEqual(["epsilon: string"]);
-    // 注入点必须紧挨 epsilon（不是 delta）
-    const at = source.indexOf("// @nudo:as");
-    expect(source.slice(at)).toContain("const epsilon = 20;");
-    const before = source.slice(0, at);
+  const SAME_LINE = "const delta = 10; const epsilon = 20;\nexport const ve = epsilon;\n";
+  it("点名声明落在自己前面；两条都 applied", () => {
+    const one = injectBindings(SAME_LINE, [{ name: "epsilon", type: "string" }]);
+    expect(one.unapplied).toEqual([]);
+    expect(one.applied).toEqual(["epsilon: string"]);
+    const at = one.source.indexOf("// @nudo:as");
+    expect(one.source.slice(at)).toContain("const epsilon = 20;");
+    const before = one.source.slice(0, at);
     expect(before).toContain("const delta = 10;");
-    // 注入点不得在 delta 之前（那会把假设落到 delta 上）
     expect(before).not.toContain("@nudo:as");
-  });
 
-  it("同行两条声明各自被点名 ⇒ 两条都 applied（不再有「丢弃 + 编造理由」）", () => {
-    const { applied, unapplied } = injectBindings(SAME_LINE, [
-      { name: "delta", type: "number" },
-      { name: "epsilon", type: "string" },
-    ]);
-    expect(unapplied).toEqual([]);
-    expect(applied).toEqual(["delta: number", "epsilon: string"]);
+    const both = injectBindings(SAME_LINE, [{ name: "delta", type: "number" }, { name: "epsilon", type: "string" }]);
+    expect(both.unapplied).toEqual([]);
+    expect(both.applied).toEqual(["delta: number", "epsilon: string"]);
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
