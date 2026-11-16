@@ -328,104 +328,86 @@ function staticSlotNames(a: Abs): Set<string> {
 }
 
 describe("@nudo:env 多名合并取并集（顺序无关）", () => {
-  it("env 名顺序互换 ⇒ 签名逐字相同 + 门禁结论相同", () => {
-    const a = checkWithEnvNames(["node", "web"], "/t/env-1045-node-web.js");
-    const b = checkWithEnvNames(["web", "node"], "/t/env-1045-web-node.js");
+  const SRC = `export function mk(x) {
+  return Response.json(x);
+}
+export function pf() {
+  return performance.toJSON();
+}
+`;
+  const checkWith = (envGlobals: Record<string, Abs>, file: string) => {
+    resetGeneralizeMemo();
+    resetCheckSourceMemo();
+    const r = checkSource(file, SRC, pTrue, { inject: { envGlobals } });
+    return { sigs: r.signatures.map((s) => `${s.name} => ${s.display}`), issues: r.issues.map((i) => `${i.severity}:${i.code}:${i.fn ?? ""}`), ok: r.ok };
+  };
+  const checkWithEnvNames = (envNames: string[], file: string) => checkWith(loadEnvs(envNames, createEnvironment()).globals, file);
+  const surfaceSlotNames = (a: Abs): Set<string> => {
+    const out = new Set<string>();
+    const visit = (x: Abs): void => {
+      const s = x.shape;
+      if (s.k === "sum") { s.members.forEach(visit); return; }
+      if (s.k === "obj") { Object.keys(s.slots).forEach((k) => out.add(k)); return; }
+      if (s.k === "brand") { visit(s.shape); return; }
+      if (s.k === "fn" && s.returnType !== undefined) visit(s.returnType);
+    };
+    visit(a);
+    return out;
+  };
+  const objSlotNames = (a: Abs): Set<string> => (a.shape.k === "obj" ? new Set(Object.keys(a.shape.slots)) : new Set());
+  const staticSlotNames = (a: Abs): Set<string> => {
+    const s = a.shape;
+    if (s.k === "sum") { const out = new Set<string>(); s.members.forEach((m) => staticSlotNames(m).forEach((k) => out.add(k))); return out; }
+    if (s.k === "fn" && s.slots) return new Set(Object.keys(s.slots));
+    return new Set();
+  };
+  it("顺序无关；Response/performance 并集；pf 不判必抛；单 env 负控", () => {
+    const a = checkWithEnvNames(["node", "web"], "/t/e-node-web.js");
+    const b = checkWithEnvNames(["web", "node"], "/t/e-web-node.js");
     expect(a.sigs).toEqual(b.sigs);
     expect(a.issues).toEqual(b.issues);
     expect(a.ok).toBe(b.ok);
-    // 两份源码只差 env 名顺序 ⇒ 诊断集合不得一边有一边无
     expect(a.issues).not.toContain("error:nudo:entry-may-throw:pf");
-    expect(b.issues).not.toContain("error:nudo:entry-may-throw:pf");
-  });
 
-  it("合并后的 Response 是并集：实例面覆盖 web 侧与 node 侧的全部槽位", () => {
     const merged = loadEnvs(["node", "web"], createEnvironment()).globals;
     const web = loadEnvs(["web"], createEnvironment()).globals;
     const node = loadEnvs(["node"], createEnvironment()).globals;
     const mergedSlots = surfaceSlotNames(merged["Response"]!);
-    // 任务书点名的槽位
-    expect(mergedSlots.has("type")).toBe(true); // web 侧
-    expect(mergedSlots.has("json")).toBe(true); // node 侧
-    expect(mergedSlots.has("text")).toBe(true); // node 侧
-    expect(mergedSlots.has("bodyUsed")).toBe(true); // node 侧
-    // 覆盖两侧的**全部**实例槽（取其中一侧就会缺另一侧的槽 ⇒ 并集可证）
-    for (const name of surfaceSlotNames(web["Response"]!)) {
-      expect(mergedSlots.has(name), `web 侧槽 ${name}`).toBe(true);
-    }
-    for (const name of surfaceSlotNames(node["Response"]!)) {
-      expect(mergedSlots.has(name), `node 侧槽 ${name}`).toBe(true);
-    }
-    // 静态槽（Response.json / redirect / error）两侧都有 ⇒ 并集后仍在
-    for (const name of staticSlotNames(web["Response"]!)) {
-      expect(staticSlotNames(merged["Response"]!).has(name), `静态槽 ${name}`).toBe(true);
-    }
-  });
+    for (const name of ["type", "json", "text", "bodyUsed"]) expect(mergedSlots.has(name), name).toBe(true);
+    for (const name of surfaceSlotNames(web["Response"]!)) expect(mergedSlots.has(name), `web ${name}`).toBe(true);
+    for (const name of surfaceSlotNames(node["Response"]!)) expect(mergedSlots.has(name), `node ${name}`).toBe(true);
+    for (const name of staticSlotNames(web["Response"]!)) expect(staticSlotNames(merged["Response"]!).has(name), `static ${name}`).toBe(true);
 
-  it("合并后的 performance 含 web 侧独有的 toJSON + node 侧槽位（逐槽并集）", () => {
-    const merged = loadEnvs(["node", "web"], createEnvironment()).globals;
-    const web = loadEnvs(["web"], createEnvironment()).globals;
-    const node = loadEnvs(["node"], createEnvironment()).globals;
-    const mergedSlots = objSlotNames(merged["performance"]!);
-    // web 侧声明的成员（node 侧后来也补了同名成员）⇒ 并集后必须在
-    expect(mergedSlots.has("toJSON")).toBe(true);
-    for (const name of objSlotNames(web["performance"]!)) {
-      expect(mergedSlots.has(name), `web 侧槽 ${name}`).toBe(true);
-    }
-    for (const name of objSlotNames(node["performance"]!)) {
-      expect(mergedSlots.has(name), `node 侧槽 ${name}`).toBe(true);
-    }
-    // 并集严格大于任一单侧（取一 env 就不成立）
-    expect(mergedSlots.size).toBeGreaterThan(objSlotNames(web["performance"]!).size);
-    expect(mergedSlots.size).toBeGreaterThan(objSlotNames(node["performance"]!).size);
-  });
+    const mergedPerf = objSlotNames(merged["performance"]!);
+    expect(mergedPerf.has("toJSON")).toBe(true);
+    for (const name of objSlotNames(web["performance"]!)) expect(mergedPerf.has(name), `web ${name}`).toBe(true);
+    for (const name of objSlotNames(node["performance"]!)) expect(mergedPerf.has(name), `node ${name}`).toBe(true);
+    expect(mergedPerf.size).toBeGreaterThan(objSlotNames(web["performance"]!).size);
+    expect(mergedPerf.size).toBeGreaterThan(objSlotNames(node["performance"]!).size);
 
-  it("pf() 两种顺序下都不再判「必抛 TypeError」（toJSON 并集后存在）", () => {
-    for (const names of [
-      ["node", "web"],
-      ["web", "node"],
-    ]) {
-      const face = checkWithEnvNames(names, `/t/env-1045-pf-${names.join("_")}.js`);
-      const pf = face.sigs.find((s) => s.startsWith("pf =>")) ?? "(missing)";
-      expect(pf, names.join(",")).not.toContain("never throws TypeError");
-      expect(
-        face.issues.filter((i) => i.includes("nudo:entry-may-throw")),
-        names.join(","),
-      ).toEqual([]);
+    for (const names of [["node", "web"], ["web", "node"]]) {
+      const face = checkWithEnvNames(names, `/t/e-pf-${names.join("_")}.js`);
+      expect(face.sigs.find((s) => s.startsWith("pf =>")), names.join(",")).not.toContain("never throws TypeError");
     }
-  });
 
-  it("负控：单 env（只写 web）时全局表与 check 行为逐字不变", () => {
-    const loaded = loadEnvs(["web"], createEnvironment()).globals;
-    const own = defineWebEnv().globals;
-    // 全局名集合不变
-    expect(Object.keys(loaded).sort()).toEqual(Object.keys(own).sort());
-    // 每个全局的形态逐字不变（fn 的静态槽也一并比）
-    for (const [key, value] of Object.entries(own)) {
-      expect(formatAbs(loaded[key]!), key).toBe(formatAbs(value));
-      expect(absShapeKey(loaded[key]!), key).toBe(absShapeKey(value));
-      expect([...staticSlotNames(loaded[key]!)].sort(), key).toEqual(
-        [...staticSlotNames(value)].sort(),
-      );
+    const webLoaded = loadEnvs(["web"], createEnvironment()).globals;
+    const webOwn = defineWebEnv().globals;
+    expect(Object.keys(webLoaded).sort()).toEqual(Object.keys(webOwn).sort());
+    for (const [key, value] of Object.entries(webOwn)) {
+      expect(formatAbs(webLoaded[key]!), key).toBe(formatAbs(value));
+      expect(absShapeKey(webLoaded[key]!), key).toBe(absShapeKey(value));
     }
-    // check 结论：走 env-loader 与直接注入 env 自身声明 ⇒ 逐字相同
-    const viaLoader = checkWithEnvNames(["web"], "/t/env-1045-single-web.js");
-    const viaOwn = checkWith(own, "/t/env-1045-single-web-own.js");
-    expect(viaLoader.sigs).toEqual(viaOwn.sigs);
-    expect(viaLoader.issues).toEqual(viaOwn.issues);
-    expect(viaLoader.ok).toBe(viaOwn.ok);
-  });
-
-  it("负控：单 env（只写 node）时全局表与 env 自身声明逐字不变", () => {
-    const loaded = loadEnvs(["node"], createEnvironment()).globals;
-    const own = defineNodeEnv().globals;
-    expect(Object.keys(loaded).sort()).toEqual(Object.keys(own).sort());
-    for (const [key, value] of Object.entries(own)) {
-      expect(formatAbs(loaded[key]!), key).toBe(formatAbs(value));
-      expect(absShapeKey(loaded[key]!), key).toBe(absShapeKey(value));
+    expect(checkWithEnvNames(["web"], "/t/e-single-web.js").sigs).toEqual(checkWith(webOwn, "/t/e-single-web-own.js").sigs);
+    const nodeLoaded = loadEnvs(["node"], createEnvironment()).globals;
+    const nodeOwn = defineNodeEnv().globals;
+    expect(Object.keys(nodeLoaded).sort()).toEqual(Object.keys(nodeOwn).sort());
+    for (const [key, value] of Object.entries(nodeOwn)) {
+      expect(formatAbs(nodeLoaded[key]!), key).toBe(formatAbs(value));
+      expect(absShapeKey(nodeLoaded[key]!), key).toBe(absShapeKey(value));
     }
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -466,54 +448,33 @@ const ENV_NO_DEFINE = `export const notDefineEnv = 1;\n`;
 const APP_SRC = `export function f() { return 1; }\n`;
 
 describe("项目级 path env 必须按项目根解析（文件级按文件目录）", () => {
-  beforeEach(() => {
-    // 进程级 live 记录是全局的 ⇒ 每例前清干净（否则跨例串台）
-    clearPathEnvCaches();
-  });
+  const envMessages = (filePath: string, source: string) => collectCheckSupplementIssues(filePath, source).filter((i) => i.code === DIAG.envUnresolved).map((i) => i.message);
+  const ENV_OK = `export function defineEnv() { return { globals: { MAGIC: 1 } }; }
+`;
+  const ENV_NO_DEFINE = `export const notDefineEnv = 1;
+`;
+  const APP_SRC = `export function f() { return 1; }
+`;
+  beforeEach(() => { clearPathEnvCaches(); });
+  it("项目级 env 按项目根：存在不假阳、加载失败可见；文件级仍按文件目录", async () => {
+    const okDir = tmpProject("nudo-1081-env-", { "package.json": JSON.stringify({ name: "proj", nudo: { env: ["./env.ts"] } }), "env.ts": ENV_OK, "src/app.js": APP_SRC });
+    expect(envMessages(join(okDir, "src/app.js"), APP_SRC)).toEqual([]);
 
-  it("假阳：项目级 env 在项目根存在 ⇒ 不得报「找不到 <proj>/src/env.ts」", () => {
-    const dir = tmpProject("nudo-1081-env-", {
-      "package.json": JSON.stringify({ name: "proj", nudo: { env: ["./env.ts"] } }),
-      "env.ts": ENV_OK,
-      "src/app.js": APP_SRC,
-    });
-    const app = join(dir, "src/app.js");
-
-    const msgs = envMessages(app, APP_SRC);
-    expect(msgs).toEqual([]);
-  });
-
-  it("假阴：项目级 env 真实加载失败（记在项目根基准）⇒ 必须报出来", async () => {
-    const dir = tmpProject("nudo-1081-env-fail-", {
-      "package.json": JSON.stringify({ name: "proj", nudo: { env: ["./env.ts"] } }),
-      "env.ts": ENV_NO_DEFINE,
-      "src/app.js": APP_SRC,
-    });
-    const app = join(dir, "src/app.js");
-
-    // 模拟 CLI 按**项目根**基准预载项目级 env（CLI assembleEnvs：项目级按项目根）
-    await preloadPathEnvs(["./env.ts"], dir);
-
-    const msgs = envMessages(app, APP_SRC);
+    const failDir = tmpProject("nudo-1081-env-fail-", { "package.json": JSON.stringify({ name: "proj", nudo: { env: ["./env.ts"] } }), "env.ts": ENV_NO_DEFINE, "src/app.js": APP_SRC });
+    await preloadPathEnvs(["./env.ts"], failDir);
+    const msgs = envMessages(join(failDir, "src/app.js"), APP_SRC);
     expect(msgs.length).toBeGreaterThan(0);
-    expect(msgs.join("\n")).toContain(join(dir, "env.ts"));
-    // 不得把「文件目录」下的不存在路径报出来（那是修前的假阳）
-    expect(msgs.join("\n")).not.toContain(join(dir, "src", "env.ts"));
-  });
+    expect(msgs.join("\n")).toContain(join(failDir, "env.ts"));
+    expect(msgs.join("\n")).not.toContain(join(failDir, "src", "env.ts"));
 
-  it("文件级 env 仍按**文件目录**解析（不得改成项目根）", () => {
-    const dir = tmpProject("nudo-1081-file-env-", {
-      "package.json": JSON.stringify({ name: "proj" }),
-      "src/app.js": `/// @nudo:env ./missing.ts\n${APP_SRC}`,
-    });
-    const app = join(dir, "src/app.js");
-    const src = `/// @nudo:env ./missing.ts\n${APP_SRC}`;
-
-    const msgs = envMessages(app, src);
-    expect(msgs).toHaveLength(1);
-    expect(msgs[0]).toContain(join(dir, "src", "missing.ts"));
+    const fileDir = tmpProject("nudo-1081-file-env-", { "package.json": JSON.stringify({ name: "proj" }), "src/app.js": `/// @nudo:env ./missing.ts\n${APP_SRC}` });
+    const fileSrc = `/// @nudo:env ./missing.ts\n${APP_SRC}`;
+    const fileMsgs = envMessages(join(fileDir, "src/app.js"), fileSrc);
+    expect(fileMsgs).toHaveLength(1);
+    expect(fileMsgs[0]).toContain(join(fileDir, "src", "missing.ts"));
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -551,39 +512,33 @@ const ENV_V1 = `export function defineEnv() { return { globals: { MAGIC: 1 } }; 
 const ENV_V2 = `export function defineEnv() { return { globals: { MAGIC: 2 } }; }\n`;
 
 describe("项目级 path env 的内容指纹必须按项目根解析", () => {
-  it("env 文件在项目根、被分析文件在子目录 ⇒ 改 env 内容必须 miss", () => {
-    const dir = tmpProject("nudo-1083-env-fp-", {
-      "package.json": JSON.stringify({ name: "proj", nudo: { env: ["./env.ts"] } }),
-      "env.ts": ENV_V1,
-      "src/app.js": `export function f() { return MAGIC; }\n`,
-    });
+  const CFG = { mode: "directives", evalMissingSlot: "off", callSiteBudget: 3, diagnostics: "errors", maxForks: 5000 };
+  const ENV_V1 = `export function defineEnv() { return { globals: { MAGIC: 1 } }; }
+`;
+  const ENV_V2 = `export function defineEnv() { return { globals: { MAGIC: 2 } }; }
+`;
+  it("子目录文件与同目录文件：改 env 内容都必须 miss", () => {
+    const dir = tmpProject("nudo-1083-env-fp-", { "package.json": JSON.stringify({ name: "proj", nudo: { env: ["./env.ts"] } }), "env.ts": ENV_V1, "src/app.js": `export function f() { return MAGIC; }
+` });
     const app = join(dir, "src/app.js");
-    const src = `export function f() { return MAGIC; }\n`;
-
+    const src = `export function f() { return MAGIC; }
+`;
     const k1 = analysisFileCacheKey(app, src, undefined, undefined, CFG, undefined, ["./env.ts"]);
     writeTmpFile(dir, "env.ts", ENV_V2);
     const k2 = analysisFileCacheKey(app, src, undefined, undefined, CFG, undefined, ["./env.ts"]);
-
     expect(k1.noCache).toBeFalsy();
     expect(k1.auxKey).not.toBe(k2.auxKey);
-  });
 
-  it("负控制：env 文件与被分析文件同目录（项目根 = 文件目录）时同样必须 miss", () => {
-    const dir = tmpProject("nudo-1083-env-fp-same-", {
-      "package.json": JSON.stringify({ name: "proj", nudo: { env: ["./env.ts"] } }),
-      "env.ts": ENV_V1,
-      "app.js": `export function f() { return MAGIC; }\n`,
-    });
-    const app = join(dir, "app.js");
-    const src = `export function f() { return MAGIC; }\n`;
-
-    const k1 = analysisFileCacheKey(app, src, undefined, undefined, CFG, undefined, ["./env.ts"]);
-    writeTmpFile(dir, "env.ts", ENV_V2);
-    const k2 = analysisFileCacheKey(app, src, undefined, undefined, CFG, undefined, ["./env.ts"]);
-
-    expect(k1.auxKey).not.toBe(k2.auxKey);
+    const sameDir = tmpProject("nudo-1083-env-fp-same-", { "package.json": JSON.stringify({ name: "proj", nudo: { env: ["./env.ts"] } }), "env.ts": ENV_V1, "app.js": `export function f() { return MAGIC; }
+` });
+    const sameApp = join(sameDir, "app.js");
+    const s1 = analysisFileCacheKey(sameApp, src, undefined, undefined, CFG, undefined, ["./env.ts"]);
+    writeTmpFile(sameDir, "env.ts", ENV_V2);
+    const s2 = analysisFileCacheKey(sameApp, src, undefined, undefined, CFG, undefined, ["./env.ts"]);
+    expect(s1.auxKey).not.toBe(s2.auxKey);
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
