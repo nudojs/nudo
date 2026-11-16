@@ -1,5 +1,9 @@
 ```audit
 title	rootCause	gap	action	status	evidence
+不同项目根不同键（check/contract）；同根同键；键无明文路径	裸包/exports/缓存键表	没测该层	keep	keep	—
+裸包入口变更消费者进脏集；相对依赖同口径；解析不到不进边	裸包/exports/缓存键表	没测该层	keep	keep	—
+default 先声明取 default；import 先声明取 import；require 面同序	裸包/exports/缓存键表	没测该层	keep	keep	—
+require 消费取 require 构建；import 消费取 import 构建	裸包/exports/缓存键表	没测该层	keep	keep	—
 子目录文件与同目录文件：改 env 内容都必须 miss	env 并集/项目根表	没测该层	keep	keep	—
 项目级 env 按项目根：存在不假阳、加载失败可见；文件级仍按文件目录	env 并集/项目根表	没测该层	keep	keep	—
 顺序无关；Response/performance 并集；pf 不判必抛；单 env 负控	env 并集/项目根表	没测该层	keep	keep	—
@@ -11,18 +15,6 @@ default 槽 + interop 标记；默认/命名空间同签名；无假 unknown-inf
 "③ 分析器通道与 CLI `nudo check` 结论一致（都 f() => 42）"	"被分析文件**不带** `@nudo:env`（基线：项目级 env 恰好可见）。 断言：expect(sig).toBeDefined();；expect(sig!.display).toContain(\"42\");"	没测该层	keep	keep	—
 "web env: real constructors keep their brands"	"`instantiateReturn` 无视关系元数 / 构造性 ⇒ 无参 `new Event()` 之类被误判。 修复：关系 arity 门 + `shape.ctor === true` + 声明可选性。 断言：expect(sig(WEB_SRC, env, \"a\")).toBe(\"Event\");；expect(sig(WEB_SRC, env, \"b\")).toBe(\"CustomEvent\");"	夹具漏形态	keep	keep	—
 "node env: illegal no-arg constructions are honest may-throw TypeError"	"`instantiateReturn` 无视关系元数 / 构造性 ⇒ 无参 `new Event()` 之类被误判。 修复：关系 arity 门 + `shape.ctor === true` + 声明可选性。 断言：expect(sig(NODE_SRC, env, name)).toBe(\"never throws TypeError\");"	夹具漏形态	keep	keep	—
-"require 消费方 ⇒ 取 exports.require 构建"	"消费方的 modules 表里裸包入口导出的 `kind`（字符串 Abs 的显示形态）。 断言：expect(kindSeenBy(dir, \"consumer.cjs\", src)).toBe('\"cjs\"');"	夹具漏形态	keep	keep	—
-"import 消费方 ⇒ 取 exports.import 构建（对照组）"	"消费方的 modules 表里裸包入口导出的 `kind`（字符串 Abs 的显示形态）。 断言：expect(kindSeenBy(dir, \"consumer.mjs\", src)).toBe('\"esm\"');"	夹具漏形态	keep	keep	—
-"`default` 声明在 `import` 之前 ⇒ 宿主取 default（引擎同结论）"	"回归：`exports` 条件对象必须按 **package.json 的声明顺序**取首个 命中的条件（Node `PACKAGE_TARGET_RESOLVE`），而不是按固定优先级表。 改前按表序（`import` 先于 `default`）⇒ `{ default, import }` 这种声明顺序下 引擎取 `import` 构建、宿主取 `default` 构建 ⇒ 双向判反（假绿 + 假红）。 断言：expect(resolveNpmJsEntryDetailed(\"dual\", dir, \"import\").path).toBe("	夹具漏形态	keep	keep	—
-"`import` 声明在前 ⇒ 取 import 构建（反向单变量对照）"	"回归：`exports` 条件对象必须按 **package.json 的声明顺序**取首个 命中的条件（Node `PACKAGE_TARGET_RESOLVE`），而不是按固定优先级表。 改前按表序（`import` 先于 `default`）⇒ `{ default, import }` 这种声明顺序下 引擎取 `import` 构建、宿主取 `default` 构建 ⇒ 双向判反（假绿 + 假红）。 断言：expect(resolveNpmJsEntryDetailed(\"dual\", dir, \"import\").path).toBe("	夹具漏形态	keep	keep	—
-"require 面同理：`default` 先声明 ⇒ 取 default（不按表序重排）"	"回归：`exports` 条件对象必须按 **package.json 的声明顺序**取首个 命中的条件（Node `PACKAGE_TARGET_RESOLVE`），而不是按固定优先级表。 改前按表序（`import` 先于 `default`）⇒ `{ default, import }` 这种声明顺序下 引擎取 `import` 构建、宿主取 `default` 构建 ⇒ 双向判反（假绿 + 假红）。 断言：expect(resolveNpmJsEntryDetailed(\"dual\", dir, \"require\").path).toBe("	夹具漏形态	keep	keep	—
-"裸包入口变更 ⇒ 消费者进脏集"	"断言：expect(graph.dependents.get(pkgEntry)?.has(consumer)).toBe(true);；expect(computeDirtySet(graph.dependents, pkgEntry)).toContain(consumer);"	没测该层	keep	keep	—
-"相对路径消费者同口径（对照组，两路都成边）"	"断言：expect(graph.dependents.get(pkgEntry)?.has(consumer)).toBe(true);；expect(graph.dependents.get(join(dir, \"local.js\"))?.has(relConsumer)).toBe(true);"	没测该层	keep	keep	—
-"解析不到的裸包 ⇒ 不进边（不猜）"	"断言：expect(graph.imports.get(join(dir, \"consumer.js\"))?.size ?? 0).toBe(0);"	没测该层	keep	keep	—
-"同相对路径 + 同内容 + 不同项目根 ⇒ 不同键（check）"	"回归：`check` 磁盘缓存键的路径维必须带**项目身份**。 改前树内文件只取相对项目根的路径 ⇒ 共享 `NUDO_CACHE_DIR` 下两个 checkout 的 `src/a.js` 得到同一个键 ⇒ 互相污染（命中另一份 checkout 的报告， `file` 字段指向那边的文件； 断言：expect(a).not.toBe(b);"	没测该层	keep	keep	—
-"同相对路径 + 同内容 + 不同项目根 ⇒ 不同键（contract）"	"断言：expect(a).not.toBe(b);"	没测该层	keep	keep	—
-"同一项目根下重复计算 ⇒ 同键（可复用性不受影响）"	"断言：expect(a).toBe(b);"	没测该层	keep	keep	—
-"键里不出现项目根的绝对路径明文"	"断言：expect(key).not.toContain(\"checkout1\");；expect(key).toMatch(/^[a-f0-9]{64}$/);"	没测该层	keep	keep	—
 "前缀长度平手 ⇒ 取整键更长者（与声明顺序无关）"	"回归：`exports` 模式键的 tie-break 必须按 Node `PATTERN_KEY_COMPARE` ——**前缀长度平手时比整键长度**（更长者胜），且结论不得随 package.json 里的 声明顺序变化。 改前只比前缀长度且用严格大于 ⇒ 平手保留先声明者，宿主却取更长的键 ⇒ 引擎解析到另一个文件（假红 / 假绿 + 自信的错值）。 断言：expect(resolveNpmJsEntry(\"pkg/x/ab\", longFirst.dir)).toBe(；expect(resolveNpmJsEntry(\"pkg/x/ab\", shortFirst.dir)).toBe("	旧断言钉错	keep	keep	—
 "前缀更长者胜过整键更长者（第一判据优先）"	"断言：expect(resolveNpmJsEntry(\"pkg/x/y/abcd\", dir)).toBe(join(pkgDir, \"deep\", \"abcd.js\"));"	没测该层	keep	keep	—
 "#imports 面同口径（同一 tie-break）"	"回归：`exports` 模式键的 tie-break 必须按 Node `PATTERN_KEY_COMPARE` ——**前缀长度平手时比整键长度**（更长者胜），且结论不得随 package.json 里的 声明顺序变化。 改前只比前缀长度且用严格大于 ⇒ 平手保留先声明者，宿主却取更长的键 ⇒ 引擎解析到另一个文件（假红 / 假绿 + 自信的错值）。 断言：expect(resolveNpmJsEntry(\"#x/ab\", dir)).toBe(join(dir, \"special\", \"a.js\"));"	旧断言钉错	keep	keep	—
@@ -156,4 +148,16 @@ pf() 两种顺序下都不再判「必抛 TypeError」（toJSON 并集后存在�
 文件级 env 仍按**文件目录**解析（不得改成项目根）	dup:env 并集/项目根表	commit:7999ba75
 env 文件在项目根、被分析文件在子目录 ⇒ 改 env 内容必须 miss	dup:env 并集/项目根表	commit:7999ba75
 负控制：env 文件与被分析文件同目录（项目根 = 文件目录）时同样必须 miss	dup:env 并集/项目根表	commit:7999ba75
+require 消费方 ⇒ 取 exports.require 构建	dup:裸包/exports/缓存键表	commit:ffb566cc
+import 消费方 ⇒ 取 exports.import 构建（对照组）	dup:裸包/exports/缓存键表	commit:ffb566cc
+`default` 声明在 `import` 之前 ⇒ 宿主取 default（引擎同结论）	dup:裸包/exports/缓存键表	commit:ffb566cc
+`import` 声明在前 ⇒ 取 import 构建（反向单变量对照）	dup:裸包/exports/缓存键表	commit:ffb566cc
+require 面同理：`default` 先声明 ⇒ 取 default（不按表序重排）	dup:裸包/exports/缓存键表	commit:ffb566cc
+裸包入口变更 ⇒ 消费者进脏集	dup:裸包/exports/缓存键表	commit:ffb566cc
+相对路径消费者同口径（对照组，两路都成边）	dup:裸包/exports/缓存键表	commit:ffb566cc
+解析不到的裸包 ⇒ 不进边（不猜）	dup:裸包/exports/缓存键表	commit:ffb566cc
+同相对路径 + 同内容 + 不同项目根 ⇒ 不同键（check）	dup:裸包/exports/缓存键表	commit:ffb566cc
+同相对路径 + 同内容 + 不同项目根 ⇒ 不同键（contract）	dup:裸包/exports/缓存键表	commit:ffb566cc
+同一项目根下重复计算 ⇒ 同键（可复用性不受影响）	dup:裸包/exports/缓存键表	commit:ffb566cc
+键里不出现项目根的绝对路径明文	dup:裸包/exports/缓存键表	commit:ffb566cc
 ```
