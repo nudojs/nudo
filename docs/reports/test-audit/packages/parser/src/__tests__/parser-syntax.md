@@ -6,6 +6,11 @@
 
 ```audit
 title	rootCause	gap	action	status	evidence
+纯结构字面量与嵌套结构仍正常解析	字符串/结构字面量整段校验	没测该层	keep	keep	—
+case 期望值尾随文本不折成 tuple/obj，并报 nudo:directive-syntax	字符串/结构字面量整段校验	没测该层	keep	keep	—
+尾随成员访问 / 加法 / 尾部文本都不折进结构（落 unknown）	字符串/结构字面量整段校验	没测该层	keep	keep	—
+case 见证携带 cooked 值，且值里不残留字面反斜杠	字符串/结构字面量整段校验	没测该层	keep	keep	—
+转义按 JS 语义解释，普通单/双引号字符串不变	字符串/结构字面量整段校验	没测该层	keep	keep	—
 "does not fold \"a\" + \"b\" into a literal value"	"回归：`@nudo:case` **期望值**面的字符串字面量**贪婪切片**。 旧实现的守卫只做 `startsWith(quote) && endsWith(quote)` ⇒ `\"a\" + \"b\"` 的首引号在 0、末引号在末尾 ⇒ `slice(1, -1)` 把**两个独立字面量之间的 运算符文本**一起吞进值里 ⇒ 折出 `a\" + \"b`（谁也没写过的**自信错值**） ⇒ 断言假红，诊断里的 expected 是一段无意义文本。 断言：expect([\"unknown\", \"never\"]).toContain(abs.shape.k);；expect(abs.term).toBeUndefined();"	旧断言钉错	keep	keep	—
 "does not fold longer concatenations either"	"断言：expect(parseCaseArgExpr('\"x\" + \"y\" + \"z\"').shape.k).toBe(\"unknown\");；expect(parseCaseArgExpr(\"'a' + 'b'\").shape.k).toBe(\"unknown\");"	没测该层	keep	keep	—
 "expected value of a case directive is unknown, not a wrong string"	"回归：`@nudo:case` **期望值**面的字符串字面量**贪婪切片**。 旧实现的守卫只做 `startsWith(quote) && endsWith(quote)` ⇒ `\"a\" + \"b\"` 的首引号在 0、末引号在末尾 ⇒ `slice(1, -1)` 把**两个独立字面量之间的 运算符文本**一起吞进值里 ⇒ 折出 `a\" + \"b`（谁也没写过的**自信错值**） ⇒ 断言假红，诊断里的 expected 是一段无意义文本。 断言：expect(d).toBeDefined();；expect(expected).toBeDefined();"	旧断言钉错	keep	keep	—
@@ -38,17 +43,21 @@ title	rootCause	gap	action	status	evidence
 "parser contract unchanged: classInstanceMethods skips static members"	"- parser 的 `classInstanceMethods`（`ast-guards.ts`）**跳过** static ⇒ service 的 `collectClassMethods`（`analyzer-ast.ts`）构造出的 `analysis.functions` 里静态方法**不存在** ⇒ `nudo test` / `nudo health` / `nudo contract` 的函数普查与 `nudo check` 不一致。 **裁决（主 agent）**：走 service 侧，用**已导出**的 `getClassMembers` 自行收集 static ⇒ **不改** parser 已发布符号 `c"	夹具漏形态	keep	keep	—
 "service-side precondition: getClassMembers sees the static member"	"- parser 的 `classInstanceMethods`（`ast-guards.ts`）**跳过** static ⇒ service 的 `collectClassMethods`（`analyzer-ast.ts`）构造出的 `analysis.functions` 里静态方法**不存在** ⇒ `nudo test` / `nudo health` / `nudo contract` 的函数普查与 `nudo check` 不一致。 **裁决（主 agent）**：走 service 侧，用**已导出**的 `getClassMembers` 自行收集 static ⇒ **不改** parser 已发布符号 `c"	夹具漏形态	keep	keep	—
 "service-side precondition: instance member is visible too"	"- parser 的 `classInstanceMethods`（`ast-guards.ts`）**跳过** static ⇒ service 的 `collectClassMethods`（`analyzer-ast.ts`）构造出的 `analysis.functions` 里静态方法**不存在** ⇒ `nudo test` / `nudo health` / `nudo contract` 的函数普查与 `nudo check` 不一致。 **裁决（主 agent）**：走 service 侧，用**已导出**的 `getClassMembers` 自行收集 static ⇒ **不改** parser 已发布符号 `c"	夹具漏形态	keep	keep	—
-"interprets \\t as TAB"	"回归：`@nudo:case` 见证的**字符串转义不解释**。 旧实现按「首尾是引号」原样 slice（`s.slice(1, -1)`），转义序列保持**字面 反斜杠** ⇒ 见证值 `a\\tb`（4 字符）与侧车契约（真实 JS 求值 `a<TAB>b`， 3 字符）落在**不同的字符串**上 ⇒ `witness ⊭ contract` 假红。 断言：expect(litValue(parseCaseArgExpr('\"a\\\\tb\"'))).toEqual({ ok: true, value: \"a\\tb\" });"	夹具漏形态	keep	keep	—
-"interprets \\n as LF"	"断言：expect(litValue(parseCaseArgExpr('\"a\\\\nb\"'))).toEqual({ ok: true, value: \"a\\nb\" });"	没测该层	keep	keep	—
-"interprets \\\\ as one backslash"	"断言：expect(litValue(parseCaseArgExpr('\"a\\\\\\\\b\"'))).toEqual({ ok: true, value: \"a\\\\b\" });"	没测该层	keep	keep	—
-"interprets \\\" as a quote"	"回归：`@nudo:case` **期望值**面的字符串字面量**贪婪切片**。 旧实现的守卫只做 `startsWith(quote) && endsWith(quote)` ⇒ `\"a\" + \"b\"` 的首引号在 0、末引号在末尾 ⇒ `slice(1, -1)` 把**两个独立字面量之间的 运算符文本**一起吞进值里 ⇒ 折出 `a\" + \"b`（谁也没写过的**自信错值**） ⇒ 断言假红，诊断里的 expected 是一段无意义文本。 断言：expect(litValue(parseCaseArgExpr('\"a\\\\\"b\"'))).toEqual({ ok: true, value: 'a\"b' });"	旧断言钉错	keep	keep	—
-"interprets \\uXXXX"	"断言：expect(litValue(parseCaseArgExpr('\"\\\\u0041\"'))).toEqual({ ok: true, value: \"A\" });"	没测该层	keep	keep	—
-"keeps plain strings unchanged"	"断言：expect(litValue(parseCaseArgExpr('\"ab\"'))).toEqual({ ok: true, value: \"ab\" });；expect(litValue(parseCaseArgExpr(\"'ab'\"))).toEqual({ ok: true, value: \"ab\" });"	没测该层	keep	keep	—
-"case witness carries the cooked (escape-interpreted) value"	"回归：`@nudo:case` 见证的**字符串转义不解释**。 旧实现按「首尾是引号」原样 slice（`s.slice(1, -1)`），转义序列保持**字面 反斜杠** ⇒ 见证值 `a\\tb`（4 字符）与侧车契约（真实 JS 求值 `a<TAB>b`， 3 字符）落在**不同的字符串**上 ⇒ `witness ⊭ contract` 假红。 断言：expect(d.argsAbs).toHaveLength(1);；expect(litValue(d.argsAbs[0]!)).toEqual({ ok: true, value: \"a\\tb\" });"	夹具漏形态	keep	keep	—
-"no literal backslash survives in the witness value"	"回归：`@nudo:case` 见证的**字符串转义不解释**。 旧实现按「首尾是引号」原样 slice（`s.slice(1, -1)`），转义序列保持**字面 反斜杠** ⇒ 见证值 `a\\tb`（4 字符）与侧车契约（真实 JS 求值 `a<TAB>b`， 3 字符）落在**不同的字符串**上 ⇒ `witness ⊭ contract` 假红。 断言：expect(lv.ok).toBe(true);；expect(String(lv.value)).not.toContain(\"\\\\\");"	夹具漏形态	keep	keep	—
-"trailing member access after an array literal is not folded into the tuple"	"回归：`@nudo:case` 见证的**字符串转义不解释**。 旧实现按「首尾是引号」原样 slice（`s.slice(1, -1)`），转义序列保持**字面 反斜杠** ⇒ 见证值 `a\\tb`（4 字符）与侧车契约（真实 JS 求值 `a<TAB>b`， 3 字符）落在**不同的字符串**上 ⇒ `witness ⊭ contract` 假红。 断言：expect(parseCaseArgExpr(\"[1][0]\").shape.k).toBe(\"unknown\");"	夹具漏形态	keep	keep	—
-"two object literals joined by + is not folded into one object"	"断言：expect(parseCaseArgExpr(\"{ a: 1 } + { b: 2 }\").shape.k).toBe(\"unknown\");"	没测该层	keep	keep	—
-"member access / trailing text on a literal is not folded into a structure"	"回归：`@nudo:case` 见证的**字符串转义不解释**。 旧实现按「首尾是引号」原样 slice（`s.slice(1, -1)`），转义序列保持**字面 反斜杠** ⇒ 见证值 `a\\tb`（4 字符）与侧车契约（真实 JS 求值 `a<TAB>b`， 3 字符）落在**不同的字符串**上 ⇒ `witness ⊭ contract` 假红。 断言：expect(parseCaseArgExpr(\"{ a: 1 }.b\").shape.k).toBe(\"unknown\");；expect(parseCaseArgExpr(\"[1, 2].length\").shape.k).toBe(\"unknown\");"	夹具漏形态	keep	keep	—
-"plain structure literals keep parsing (no regression)"	"断言：expect(obj.shape.k).toBe(\"obj\");；expect(tuple.shape.k).toBe(\"tuple\");"	没测该层	keep	keep	—
-"case expected with trailing text → not a folded structure + nudo:directive-syntax"	"回归：`@nudo:case` 实参 / 期望值的**结构字面量分支**（对象 / 数组） 必须校验**整段**文本。 改前只看首尾两个字符 ⇒ 尾随文本被吞进槽位 / 元素 ⇒ 折出**自信的错值** （`[1][0]` → `[unknown]`、`{ a: 1 } + { b: 2 }` → `{ a: unknown }`）⇒ 断言**假红**（期望值原生语义是数字 1）。 断言：expect(cases).toHaveLength(1);；expect(cases[0]!.expected!.shape.k).not.toBe(\"tuple\");"	旧断言钉错	keep	keep	—
+```
+
+```audit-deleted
+title	reason	evidence
+interprets \t as TAB	dup:字符串/结构字面量整段校验	commit:2021c6af
+interprets \n as LF	dup:字符串/结构字面量整段校验	commit:2021c6af
+interprets \\ as one backslash	dup:字符串/结构字面量整段校验	commit:2021c6af
+interprets \" as a quote	dup:字符串/结构字面量整段校验	commit:2021c6af
+interprets \uXXXX	dup:字符串/结构字面量整段校验	commit:2021c6af
+keeps plain strings unchanged	dup:字符串/结构字面量整段校验	commit:2021c6af
+case witness carries the cooked (escape-interpreted) value	dup:字符串/结构字面量整段校验	commit:2021c6af
+no literal backslash survives in the witness value	dup:字符串/结构字面量整段校验	commit:2021c6af
+trailing member access after an array literal is not folded into the tuple	dup:字符串/结构字面量整段校验	commit:2021c6af
+two object literals joined by + is not folded into one object	dup:字符串/结构字面量整段校验	commit:2021c6af
+member access / trailing text on a literal is not folded into a structure	dup:字符串/结构字面量整段校验	commit:2021c6af
+plain structure literals keep parsing (no regression)	dup:字符串/结构字面量整段校验	commit:2021c6af
+case expected with trailing text → not a folded structure + nudo:directive-syntax	dup:字符串/结构字面量整段校验	commit:2021c6af
 ```
