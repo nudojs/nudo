@@ -1,5 +1,8 @@
 ```audit
 title	rootCause	gap	action	status	evidence
+rejects 是 promise 面不是 never；string() 契约报 unproven；resolves/returns 不变	severity/ctor/rejects 表	没测该层	keep	keep	—
+箭头不可构造；function 表达式可构造；from/本地箭头仍是 caught	severity/ctor/rejects 表	没测该层	keep	keep	—
+表达式解析失败 = warning（两通道一致）；缺 mock 文件仍是 error	severity/ctor/rejects 表	没测该层	keep	keep	—
 同名取最浅；E 不越界；pure 同裁决	skip 词法绑定表	没测该层	keep	keep	—
 绑定位/对象键位不算命中且诊断；属性值命中生效；未命中告警	mock 中段契约表	没测该层	keep	keep	—
 只在声明函数生效；同函数作为依赖/目标一致	mock 中段契约表	没测该层	keep	keep	—
@@ -35,16 +38,8 @@ throws/副作用保留；覆盖仍生效；相邻子表达式不受影响	mock �
 "负控制：无指令 / 指令只在字符串里 → 仍不纳入"	"改前已在名单里的指令名（负控制：不得回退）。 断言：expect(shouldAnalyzeFile(plain, plainSrc)).toBe(false);；expect(shouldAnalyzeFile(strOnly, strSrc)).toBe(false);"	没测该层	keep	keep	—
 "负控制：已在名单里的指令名不得回退"	"改前已在名单里的指令名（负控制：不得回退）。 断言：expect(hasNudoDirectives(sourceWith(name)), name).toBe(true);"	没测该层	keep	keep	—
 "文件级指令形态（/// @nudo:env）也纳入"	"回归钉：只含 @nudo:assume / @nudo:invariant / @nudo:throws / @nudo:budget 的文件，在 analysis.mode=directives 下必须**纳入分析面**。 改前：hasNudoDirectives 的名单漏掉这四个指令名 → 文件被判定为 「非 nudo 文件」→ LSP 静默跳过（整份文件零诊断，假绿）。 断言：expect(shouldAnalyzeFile(file, source)).toBe(true);"	没测该层	keep	keep	—
-"mock expression parse failure is a warning, not an error"	"文档口径（packages/website/docs/reference/diagnostics.md#nudo-mock-invalid、 packages/website/docs/guides/check.md「nudo:mock-invalid | engine | warning」） 是 **warning**：@nudo:mock 表达式解析失败 ⇒ 指令被忽略，mock 不生效。 修复前：service 面的 mock 种子通道（mockDirectivesToAbsSeeds 的 fromErrors） 把它报成 error，而同一文件里的静态校验通道（validateMockDirectives）报 warning"	没测该层	keep	keep	—
-"both mock-invalid channels (static validation + mock seed) agree"	"文档口径（packages/website/docs/reference/diagnostics.md#nudo-mock-invalid、 packages/website/docs/guides/check.md「nudo:mock-invalid | engine | warning」） 是 **warning**：@nudo:mock 表达式解析失败 ⇒ 指令被忽略，mock 不生效。 修复前：service 面的 mock 种子通道（mockDirectivesToAbsSeeds 的 fromErrors） 把它报成 error，而同一文件里的静态校验通道（validateMockDirectives）报 warning"	没测该层	keep	keep	—
-"missing mock file stays an error (no fake green)"	"文档口径（packages/website/docs/reference/diagnostics.md#nudo-mock-invalid、 packages/website/docs/guides/check.md「nudo:mock-invalid | engine | warning」） 是 **warning**：@nudo:mock 表达式解析失败 ⇒ 指令被忽略，mock 不生效。 修复前：service 面的 mock 种子通道（mockDirectivesToAbsSeeds 的 fromErrors） 把它报成 error，而同一文件里的静态校验通道（validateMockDirectives）报 warning"	没测该层	keep	keep	—
-"内联箭头 mock：new 定抛 ⇒ 走 catch 分支（原生 caught，修复前 mocked）"	"负控制：同一段代码不加 mock（本地 const 箭头） 断言：expect(sigValue(INLINE_ARROW, \"/tmp/bug482-a.js\", \"greet\")).toBe(\"caught\");"	没测该层	keep	keep	—
-"内联 mock 的种子带 ctor facet（箭头 ⇒ 不可构造）"	"负控制：同一段代码不加 mock（本地 const 箭头） 断言：expect(seeds.seedFns.Greeter?.ctor).toBe(false);"	没测该层	keep	keep	—
-"内联 function 表达式 mock：可构造（ctor:true），不走 catch 分支"	"负控制：同一段代码不加 mock（本地 const 箭头） 断言：expect(seeds.seedFns.Greeter?.ctor).toBe(true);；expect(value).not.toBe(\"caught\");"	没测该层	keep	keep	—
 "from 形态（mock 文件导出箭头）仍是 caught"	"负控制：同一段代码不加 mock（本地 const 箭头） 断言：expect(lit.ok ? lit.value : sig!.display).toBe(\"caught\");"	没测该层	keep	keep	—
 "本地 const 箭头（不加 mock）仍是 caught"	"负控制：同一段代码不加 mock（本地 const 箭头） 断言：expect(sigValue(LOCAL_ARROW, \"/tmp/bug482-e.js\", \"greet\")).toBe(\"caught\");"	没测该层	keep	keep	—
-"返回类型是 promise 面（eff/promise），不是 never"	"`@nudo:mock` 的 **`rejects`** 形态被建模成「返回 never」 ⇒ 返回契约**空洞成立**（`never ⊑ string()` ⇒ 假绿，零诊断） + 签名/dts 写出 `never`（错误类型声明）。 修法（族 14 · 分片 I）：`rejects` 建模成「必定 reject 的 promise」 （与 `resolves` 分支同形：eff/promise），内层 never = 永不 fulfill。 断言：expect(sig).toBeDefined();；expect(sig!.abs.shape.k).toBe(\"eff\");"	夹具漏形态	keep	keep	—
-"返回契约不再被 never 空洞满足（string() 判为不满足 ⇒ 报 unproven-return）"	"负控制：普通 returns 形态（同步返回值，不受本条影响） 断言：expect(unproven.length).toBeGreaterThanOrEqual(1);"	夹具漏形态	keep	keep	—
 "resolves 形态仍是 promise<42>"	"`@nudo:mock` 的 **`rejects`** 形态被建模成「返回 never」 ⇒ 返回契约**空洞成立**（`never ⊑ string()` ⇒ 假绿，零诊断） + 签名/dts 写出 `never`（错误类型声明）。 修法（族 14 · 分片 I）：`rejects` 建模成「必定 reject 的 promise」 （与 `resolves` 分支同形：eff/promise），内层 never = 永不 fulfill。 断言：expect(sig!.abs.shape.k).toBe(\"eff\");；expect(formatShape(sig!.abs)).toContain(\"42\");"	夹具漏形态	keep	keep	—
 "returns 形态仍是同步值 42"	"负控制：普通 returns 形态（同步返回值，不受本条影响） 断言：expect(sig!.abs.shape.k).toBe(\"prim\");；expect(formatShape(sig!.abs)).toContain(\"42\");"	夹具漏形态	keep	keep	—
 "resolves 形态在同契约下同样报 unproven-return（口径一致）"	"负控制：普通 returns 形态（同步返回值，不受本条影响） 断言：expect(report.issues.filter((i) => i.code === \"nudo:unproven-return\").length).toBeGreaterThanOrEqual(1);"	夹具漏形态	keep	keep	—
@@ -92,4 +87,12 @@ E：外层没有 skip ⇒ 内层同名 skip 不越界（该名不进 skip 表）
 E 与 F 的签名逐字相同（导出函数的 throws 标注不再被抹掉）	dup:skip 词法绑定表	commit:0c774c7b
 内层函数自己的 skip 仍按最浅同名者裁决（不同名时照常绑定）	dup:skip 词法绑定表	commit:0c774c7b
 同族 @nudo:pure 用同一裁决（内层同名 pure 不标记外层）	dup:skip 词法绑定表	commit:0c774c7b
+mock expression parse failure is a warning, not an error	dup:severity/ctor/rejects 表	commit:fa5d4c96
+both mock-invalid channels (static validation + mock seed) agree	dup:severity/ctor/rejects 表	commit:fa5d4c96
+missing mock file stays an error (no fake green)	dup:severity/ctor/rejects 表	commit:fa5d4c96
+内联箭头 mock：new 定抛 ⇒ 走 catch 分支（原生 caught，修复前 mocked）	dup:severity/ctor/rejects 表	commit:fa5d4c96
+内联 mock 的种子带 ctor facet（箭头 ⇒ 不可构造）	dup:severity/ctor/rejects 表	commit:fa5d4c96
+内联 function 表达式 mock：可构造（ctor:true），不走 catch 分支	dup:severity/ctor/rejects 表	commit:fa5d4c96
+返回类型是 promise 面（eff/promise），不是 never	dup:severity/ctor/rejects 表	commit:fa5d4c96
+返回契约不再被 never 空洞满足（string() 判为不满足 ⇒ 报 unproven-return）	dup:severity/ctor/rejects 表	commit:fa5d4c96
 ```
