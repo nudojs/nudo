@@ -1827,81 +1827,35 @@ const DUAL = {
 const SRC = `export function id(x) { return x; }\n`;
 
 describe("dual-entry issue anchor is a legal, real position", () => {
-  it("anchors the dual-entry issue on line 1 (not the line-0 placeholder)", () => {
-    const dir = tmpProject("nudo-bug492-", {
-      "package.json": JSON.stringify(DUAL),
-      "browser.js": SRC,
-      "node.js": SRC,
-    });
-    const issue = entryVariantIssueForFile(join(dir, "browser.js"));
-    expect(issue).not.toBeNull();
-    expect(issue!.line).toBe(1);
-    expect(issue!.line).toBeGreaterThanOrEqual(1);
-    expect(issue!.column).toBeGreaterThanOrEqual(0);
-    expect(issue!.code).toBe("nudo:dual-entry");
-  });
+  const DUAL = { name: "dual-anchor", exports: { ".": { browser: "./browser.js", node: "./node.js", default: "./node.js" } } };
+  const SRC = "export function id(x) { return x; }\n";
+  const mk = (pkg: unknown, files: Record<string, string>) => tmpProject("nudo-b492-", { "package.json": JSON.stringify(pkg), ...files });
+  it("browser/node/legacy 锚第 1 行；单入口/非入口零 issue；eval 面同锚", () => {
+    const dual = mk(DUAL, { "browser.js": SRC, "node.js": SRC });
+    const browser = entryVariantIssueForFile(join(dual, "browser.js"))!;
+    expect(browser.line).toBe(1);
+    expect(browser.column).toBeGreaterThanOrEqual(0);
+    expect(browser.code).toBe("nudo:dual-entry");
+    const node = entryVariantIssueForFile(join(dual, "node.js"))!;
+    expect(node.line).toBe(1);
+    expect(node.message).toContain("node");
+    expect(entryVariantIssueForFile(join(dual, "lib", "helper.js"))).toBeNull();
 
-  it("anchors the node face on line 1 too (both variants)", () => {
-    const dir = tmpProject("nudo-bug492-", {
-      "package.json": JSON.stringify(DUAL),
-      "browser.js": SRC,
-      "node.js": SRC,
-    });
-    const issue = entryVariantIssueForFile(join(dir, "node.js"));
-    expect(issue).not.toBeNull();
-    expect(issue!.line).toBe(1);
-    expect(issue!.message).toContain("node");
-  });
+    const legacy = mk({ name: "legacy-anchor", main: "./node.js", browser: "./browser.js" }, { "browser.js": SRC, "node.js": SRC });
+    expect(entryVariantIssueForFile(join(legacy, "browser.js"))!.line).toBe(1);
 
-  it("keeps the legacy browser-field package shape anchored", () => {
-    const dir = tmpProject("nudo-bug492-", {
-      "package.json": JSON.stringify({
-        name: "legacy-anchor",
-        main: "./node.js",
-        browser: "./browser.js",
-      }),
-      "browser.js": SRC,
-      "node.js": SRC,
-    });
-    const issue = entryVariantIssueForFile(join(dir, "browser.js"));
-    expect(issue).not.toBeNull();
-    expect(issue!.line).toBe(1);
-  });
+    const single = mk({ name: "single-anchor", main: "./index.js" }, { "index.js": SRC });
+    expect(entryVariantIssueForFile(join(single, "index.js"))).toBeNull();
 
-  it("negative control: single-entry package still yields no issue at all", () => {
-    const dir = tmpProject("nudo-bug492-", {
-      "package.json": JSON.stringify({ name: "single-anchor", main: "./index.js" }),
-      "index.js": SRC,
-    });
-    expect(entryVariantIssueForFile(join(dir, "index.js"))).toBeNull();
-  });
-
-  it("negative control: non-entry helper inside a dual package yields no issue", () => {
-    const dir = tmpProject("nudo-bug492-", {
-      "package.json": JSON.stringify(DUAL),
-      "browser.js": SRC,
-      "node.js": SRC,
-      "lib/helper.js": SRC,
-    });
-    expect(entryVariantIssueForFile(join(dir, "lib", "helper.js"))).toBeNull();
+    const r = analyzeFile(join(dual, "browser.js"), SRC);
+    const d = r.diagnostics.find((x) => x.code === "nudo:dual-entry")!;
+    expect(d.range.start.line).toBe(1);
+    expect(d.range.start.column).toBeGreaterThanOrEqual(0);
   });
 });
+;
 
-describe("eval 通道（analyzer 诊断面）也必须是合法行号", () => {
-  it("analyzeFile 的 dual-entry 诊断落在第 1 行（不是 line 0 占位）", () => {
-    const dir = tmpProject("nudo-bug492-eval-", {
-      "package.json": JSON.stringify(DUAL),
-      "browser.js": SRC,
-      "node.js": SRC,
-    });
-    const r = analyzeFile(join(dir, "browser.js"), SRC);
-    const d = r.diagnostics.find((x) => x.code === "nudo:dual-entry");
-    expect(d).toBeDefined();
-    expect(d!.range.start.line).toBeGreaterThanOrEqual(1);
-    expect(d!.range.start.line).toBe(1);
-    expect(d!.range.start.column).toBeGreaterThanOrEqual(0);
-  });
-});
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -1940,63 +1894,44 @@ export function run2() { return inner2(); }
 `;
 
 describe("intension.display 与求值面同源（跨模块不再退化成 unknown）", () => {
-  it("跨模块：display 由求值面合成，与 resultAbs / nudo check 签名一致", () =>
+  const LIB = "export function inner() { return 7; }\n";
+  const USE = 'import { inner } from "./lib.js";\n\nexport function run() { return inner(); }\n';
+  const SAME = "function inner2() { return 7; }\nexport function run2() { return inner2(); }\n";
+  const entryOf = (dir: string, file: string, fnName: string) => {
+    const f = writeTmpFile(dir, file, file === "use.js" ? USE : file === "same.js" ? SAME : "export function f() { return globalThis.__nudo_missing__.x; }\n");
+    return analyzeFile(f, readFileSync(f, "utf-8")).functions.find((x) => x.name === fnName)!.cases.find((c) => c.name.startsWith("entry@"))!;
+  };
+  it("跨模块 display 由求值面合成；同模块保持符号面；失败如实 unknown；全量不矛盾", () => {
     withTmpProject("nudo-b496-", (dir) => {
       writeTmpFile(dir, "lib.js", LIB);
-      const use = writeTmpFile(dir, "use.js", USE);
-
-      const result = analyzeFile(use, readFileSync(use, "utf-8"));
-      const fn = result.functions.find((f) => f.name === "run");
-      expect(fn).toBeDefined();
-      const entry = fn!.cases.find((c) => c.name.startsWith("entry@"));
-      expect(entry).toBeDefined();
-      // 求值面：确切的 7
-      expect(entry!.intension?.abs).toContain("7");
-      expect(entry!.intension?.absMultiline).toContain("7");
-      // 人读摘要：不得宣称推断失败
-      expect(entry!.intension?.display).not.toContain("unknown");
-      expect(entry!.intension?.display).toContain("7");
-      // 与 nudo check 的签名同口径（run() => 7）
-      expect(entry!.intension?.display).toBe("run: () => 7");
-    }));
-
-  it("负控制：同模块（符号面有效）display 保持符号面形态", () =>
+      const entry = entryOf(dir, "use.js", "run");
+      expect(entry.intension?.abs).toContain("7");
+      expect(entry.intension?.absMultiline).toContain("7");
+      expect(entry.intension?.display).not.toContain("unknown");
+      expect(entry.intension?.display).toBe("run: () => 7");
+    });
     withTmpProject("nudo-b496b-", (dir) => {
-      const same = writeTmpFile(dir, "same.js", SAME);
-      const result = analyzeFile(same, readFileSync(same, "utf-8"));
-      const fn = result.functions.find((f) => f.name === "inner2");
-      const entry = fn!.cases.find((c) => c.name.startsWith("entry@"));
-      expect(entry!.intension?.display).toBe("inner2: () => 7");
-    }));
-
-  it("负控制：真推断失败时 display 仍如实说 unknown（与 payload 一致）", () =>
+      expect(entryOf(dir, "same.js", "inner2").intension?.display).toBe("inner2: () => 7");
+    });
     withTmpProject("nudo-b496c-", (dir) => {
-      const src = `export function f() { return globalThis.__nudo_missing__.x; }
-`;
-      const file = writeTmpFile(dir, "fail.js", src);
-      const result = analyzeFile(file, readFileSync(file, "utf-8"));
-      const fn = result.functions.find((f) => f.name === "f");
-      const entry = fn!.cases.find((c) => c.name.startsWith("entry@"));
-      expect(entry).toBeDefined();
-      expect(entry!.intension?.abs).toContain("unknown");
-      expect(entry!.intension?.display).toContain("unknown");
-    }));
-
-  it("不变量：任何 case 的 display 不得与同一条 payload 的 abs 矛盾", () =>
+      const entry = entryOf(dir, "fail.js", "f");
+      expect(entry.intension?.abs).toContain("unknown");
+      expect(entry.intension?.display).toContain("unknown");
+    });
     withTmpProject("nudo-b496d-", (dir) => {
       writeTmpFile(dir, "lib.js", LIB);
       const use = writeTmpFile(dir, "use.js", USE);
-      const result = analyzeFile(use, readFileSync(use, "utf-8"));
-      for (const fn of result.functions) {
+      for (const fn of analyzeFile(use, readFileSync(use, "utf-8")).functions) {
         for (const c of fn.cases) {
           const abs = c.intension?.abs ?? "";
-          const display = c.intension?.display ?? "";
           if (abs.includes("unknown") || abs === "") continue;
-          expect(display, `${fn.name}/${c.name}`).not.toContain("unknown");
+          expect(c.intension?.display ?? "", `${fn.name}/${c.name}`).not.toContain("unknown");
         }
       }
-    }));
+    });
+  });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -2028,76 +1963,49 @@ describe("what-if type expression fidelity", () => {
 const SRC = `const x = 1;\nconst y = x + 1;\n`;
 
 describe("what-if type expression fidelity", () => {
-  it("does not launder an unrecognized name into any()", () => {
-    expect(typeExprToDirective("Date")).not.toBe("any()");
+  const SRC = "const x = 1;\nconst y = x + 1;\n";
+  it("未知名/T.* 降 unknown；降级回显实际注入；联合整条降级；可表达不变；显式 unknown/any；未声明 unapplied", () => {
     expect(typeExprToDirective("Date")).toBe("unknown");
     expect(typeExprToDirective("notatype")).toBe("unknown");
-  });
-
-  it("does not launder a TS type reference (T.*) into any()", () => {
-    expect(typeExprToDirective("T.object({ port: T.number })")).not.toBe("any()");
     expect(typeExprToDirective("T.object({ port: T.number })")).toBe("unknown");
-  });
 
-  it("echoes the actual injection instead of the user text when degraded", () => {
-    const { source, applied, unapplied } = injectBindings(SRC, [
-      { name: "x", type: "Date" },
-    ]);
-    // 注入的是 unknown（不是 any()，也不是用户原文 Date）
-    expect(source).toContain("// @nudo:as unknown");
-    expect(source).not.toContain("@nudo:as any()");
-    // 回显不再声称「按 Date 应用」
-    expect(applied).toHaveLength(1);
-    expect(applied[0]).toContain("unknown");
-    expect(applied[0]).toContain("Date");
-    expect(applied[0]).toContain("not expressible");
-    expect(applied[0]).not.toBe("x: Date");
-    expect(unapplied).toEqual([]);
-  });
+    const degraded = injectBindings(SRC, [{ name: "x", type: "Date" }]);
+    expect(degraded.source).toContain("// @nudo:as unknown");
+    expect(degraded.source).not.toContain("@nudo:as any()");
+    expect(degraded.applied).toHaveLength(1);
+    expect(degraded.applied[0]).toContain("unknown");
+    expect(degraded.applied[0]).toContain("Date");
+    expect(degraded.applied[0]).toContain("not expressible");
+    expect(degraded.unapplied).toEqual([]);
 
-  it("degrades a union with one unrecognized member as a whole", () => {
-    const { source, applied } = injectBindings(SRC, [
-      { name: "x", type: "number|Date" },
-    ]);
-    // union(number(), unknown) 不是合法的约束构建器实参 → 整条降级
-    expect(source).toContain("// @nudo:as unknown");
-    expect(source).not.toContain("union(");
-    expect(applied[0]).toContain("not expressible");
-  });
+    const union = injectBindings(SRC, [{ name: "x", type: "number|Date" }]);
+    expect(union.source).toContain("// @nudo:as unknown");
+    expect(union.source).not.toContain("union(");
+    expect(union.applied[0]).toContain("not expressible");
 
-  it("negative control: expressible expressions keep their mapping and echo", () => {
     expect(typeExprToDirective("number")).toBe("number()");
     expect(typeExprToDirective("string")).toBe("string()");
     expect(typeExprToDirective("number|string")).toBe("union(number(), string())");
-    expect(typeExprToDirective("shape({ port: number() })")).toBe(
-      "shape({ port: number() })",
-    );
+    expect(typeExprToDirective("shape({ port: number() })")).toBe("shape({ port: number() })");
     expect(typeExprToDirective("{ port: number() }")).toBe("{ port: number() }");
-    const { source, applied, unapplied } = injectBindings(SRC, [
-      { name: "x", type: "number" },
-    ]);
-    expect(source).toContain("// @nudo:as number()");
-    expect(applied).toEqual(["x: number"]);
-    expect(unapplied).toEqual([]);
-  });
+    const ok = injectBindings(SRC, [{ name: "x", type: "number" }]);
+    expect(ok.source).toContain("// @nudo:as number()");
+    expect(ok.applied).toEqual(["x: number"]);
+    expect(ok.unapplied).toEqual([]);
 
-  it("negative control: explicit unknown / any stay expressible (no degradation note)", () => {
-    const { source, applied } = injectBindings(SRC, [{ name: "x", type: "unknown" }]);
-    expect(source).toContain("// @nudo:as any()");
-    expect(applied).toEqual(["x: unknown"]);
+    const unk = injectBindings(SRC, [{ name: "x", type: "unknown" }]);
+    expect(unk.source).toContain("// @nudo:as any()");
+    expect(unk.applied).toEqual(["x: unknown"]);
     const anyRes = injectBindings(SRC, [{ name: "x", type: "any" }]);
     expect(anyRes.source).toContain("// @nudo:as any()");
     expect(anyRes.applied).toEqual(["x: any"]);
-  });
 
-  it("negative control: bindings with no top-level declaration stay unapplied", () => {
-    const { applied, unapplied } = injectBindings(`export function f() { return 1; }\n`, [
-      { name: "nope", type: "number" },
-    ]);
-    expect(applied).toEqual([]);
-    expect(unapplied).toEqual(["nope"]);
+    const missing = injectBindings("export function f() { return 1; }\n", [{ name: "nope", type: "number" }]);
+    expect(missing.applied).toEqual([]);
+    expect(missing.unapplied).toEqual(["nope"]);
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -2130,55 +2038,29 @@ function casesOf(result: ReturnType<typeof analyzeFile>, name: string): string[]
 }
 
 describe("导出函数体内的调用点 → 合成 call@ 见证", () => {
-  it("函数体内调用：被调方有 call@ 见证（改前只有 entry@）", () =>
+  const casesOf = (result: ReturnType<typeof analyzeFile>, name: string): string[] => (result.functions.find((f) => f.name === name)?.cases ?? []).map((c) => c.name);
+  it("函数体内调用合成 call@ 且撤 entry@；顶层照旧；非导出保留 entry@", () => {
     withTmpProject("nudo-b503-", (dir) => {
-      const src = `export function add(a, b) {
-  return a + b;
-}
-export function run() {
-  return add(1, 2);
-}
-`;
-      const file = writeTmpFile(dir, "B.js", src);
+      const file = writeTmpFile(dir, "B.js", "export function add(a, b) {\n  return a + b;\n}\nexport function run() {\n  return add(1, 2);\n}\n");
       const result = analyzeFile(file, readFileSync(file, "utf-8"));
       const names = casesOf(result, "add");
       expect(names.some((n) => n.startsWith("call@"))).toBe(true);
       expect(names.some((n) => n.startsWith("entry@"))).toBe(false);
-      // 调用点域恢复 ⇒ 被调方不再误报 entry-only（调用方 run 仍无调用点域，仍报）
-      const entryOnlyMsgs = result.diagnostics
-        .filter((d) => d.code === "nudo:contract-entry-only")
-        .map((d) => d.message);
-      expect(entryOnlyMsgs.some((m) => m.includes("export 'add'"))).toBe(false);
-    }));
-
-  it("负控制：顶层调用点口径不变（call@ 见证仍在）", () =>
+      expect(result.diagnostics.filter((d) => d.code === "nudo:contract-entry-only").map((d) => d.message).some((m) => m.includes("export 'add'"))).toBe(false);
+    });
     withTmpProject("nudo-b503b-", (dir) => {
-      const src = `export function add(a, b) {
-  return a + b;
-}
-const x = add(1, 2);
-export function get() {
-  return x;
-}
-`;
-      const file = writeTmpFile(dir, "A.js", src);
-      const result = analyzeFile(file, readFileSync(file, "utf-8"));
-      const names = casesOf(result, "add");
+      const file = writeTmpFile(dir, "A.js", "export function add(a, b) {\n  return a + b;\n}\nconst x = add(1, 2);\nexport function get() {\n  return x;\n}\n");
+      const names = casesOf(analyzeFile(file, readFileSync(file, "utf-8")), "add");
       expect(names.some((n) => n.startsWith("call@"))).toBe(true);
       expect(names.some((n) => n.startsWith("entry@"))).toBe(false);
-    }));
-
-  it("负控制：非导出函数口径不变（保留 entry@ 见证）", () =>
+    });
     withTmpProject("nudo-b503c-", (dir) => {
-      const src = `function inner2() { return 7; }
-export function run2() { return inner2(); }
-`;
-      const file = writeTmpFile(dir, "same.js", src);
-      const result = analyzeFile(file, readFileSync(file, "utf-8"));
-      const names = casesOf(result, "inner2");
-      expect(names.some((n) => n.startsWith("entry@"))).toBe(true);
-    }));
+      const file = writeTmpFile(dir, "same.js", "function inner2() { return 7; }\nexport function run2() { return inner2(); }\n");
+      expect(casesOf(analyzeFile(file, readFileSync(file, "utf-8")), "inner2").some((n) => n.startsWith("entry@"))).toBe(true);
+    });
+  });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
