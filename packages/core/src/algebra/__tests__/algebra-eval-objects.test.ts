@@ -800,74 +800,26 @@ function throwName(src: string): string {
 const wrap = (body: string) => `export function f() { ${body} }`;
 
 describe("私有名按声明类作用域化", () => {
-  it("读外类私有 → TypeError（此前返回外类的值）", () => {
-    expect(
-      throwName(
-        wrap(`class A { #x = 1; read(o){ return o.#x; } } class B { #x = 2; } return new A().read(new B());`),
-      ),
-    ).toBe("TypeError");
-  });
-
-  it("调外类私有方法 → TypeError", () => {
-    expect(
-      throwName(
-        wrap(`class A { #m(){ return 1; } read(o){ return o.#m(); } } class B { #m(){ return 2; } } return new A().read(new B());`),
-      ),
-    ).toBe("TypeError");
-  });
-
-  it("写外类私有 → TypeError", () => {
-    expect(
-      throwName(
-        wrap(`class A { #x = 1; write(o){ o.#x = 5; } } class B { #x = 2; } new A().write(new B()); return 1;`),
-      ),
-    ).toBe("TypeError");
-  });
-
-  it("派生类同名私有不覆盖基类私有（基类 1 / 派生 2）", () => {
-    expect(
-      v(
-        wrap(
-          `class A { #x = 1; readA(){ return this.#x; } } class B extends A { #x = 2; readB(){ return this.#x; } } const b = new B(); return b.readA() + "|" + b.readB();`,
-        ),
-      ),
-    ).toEqual({ ok: true, value: "1|2" });
-  });
-
-  it("#x in o 只看本类私有 brand（外类实例 → false）", () => {
-    expect(
-      v(wrap(`class A { #x = 1; static has(o){ return #x in o; } } class B { #x = 2; } return A.has(new B());`)),
-    ).toEqual({ ok: true, value: false });
-  });
-
-  it("静态私有跨类读 → TypeError", () => {
-    expect(
-      throwName(
-        wrap(`class A { static #c = 1; static read(o){ return o.#c; } } class B { static #c = 2; } return A.read(B);`),
-      ),
-    ).toBe("TypeError");
-  });
-
-  it("负控制：同类私有读写正常", () => {
-    expect(
-      v(wrap(`class A { #x = 1; read(){ return this.#x; } write(v){ this.#x = v; return this.#x; } } const a = new A(); return a.read() + "|" + a.write(9);`)),
-    ).toEqual({ ok: true, value: "1|9" });
-  });
-
-  it("负控制：自有私有槽对属性 introspection 不可见（仍是内部槽）", () => {
-    expect(
-      v(
-        wrap(
-          `class A { #x = 1; pub = 2; } return Object.getOwnPropertyDescriptor(new A(), "#x") === undefined;`,
-        ),
-      ),
-    ).toEqual({ ok: true, value: true });
-  });
-
-  it("负控制：公有字符串键 '#x' 不受私有名作用域化影响", () => {
+  const wrap = (body: string) => `export function f() { ${body} }`;
+  const v = (src: string) => litValue___nudojs_core_4(call(src, "f").result);
+  const throwName = (src: string): string => {
+    const t = call(src, "f").throws as { shape?: { k?: string; name?: string } } | undefined;
+    if (!t?.shape || t.shape.k === "never") return "";
+    return t.shape.k === "brand" ? (t.shape.name ?? "") : (t.shape.k as string);
+  };
+  it("跨类读写/调用/静态私有抛 TypeError；派生同名不覆盖；in 只看本类；同类与 introspection 负控", () => {
+    expect(throwName(wrap(`class A { #x = 1; read(o){ return o.#x; } } class B { #x = 2; } return new A().read(new B());`))).toBe("TypeError");
+    expect(throwName(wrap(`class A { #m(){ return 1; } read(o){ return o.#m(); } } class B { #m(){ return 2; } } return new A().read(new B());`))).toBe("TypeError");
+    expect(throwName(wrap(`class A { #x = 1; write(o){ o.#x = 5; } } class B { #x = 2; } new A().write(new B()); return 1;`))).toBe("TypeError");
+    expect(v(wrap(`class A { #x = 1; readA(){ return this.#x; } } class B extends A { #x = 2; readB(){ return this.#x; } } const b = new B(); return b.readA() + "|" + b.readB();`))).toEqual({ ok: true, value: "1|2" });
+    expect(v(wrap(`class A { #x = 1; static has(o){ return #x in o; } } class B { #x = 2; } return A.has(new B());`))).toEqual({ ok: true, value: false });
+    expect(throwName(wrap(`class A { static #c = 1; static read(o){ return o.#c; } } class B { static #c = 2; } return A.read(B);`))).toBe("TypeError");
+    expect(v(wrap(`class A { #x = 1; read(){ return this.#x; } write(v){ this.#x = v; return this.#x; } } const a = new A(); return a.read() + "|" + a.write(9);`))).toEqual({ ok: true, value: "1|9" });
+    expect(v(wrap(`class A { #x = 1; pub = 2; } return Object.getOwnPropertyDescriptor(new A(), "#x") === undefined;`))).toEqual({ ok: true, value: true });
     expect(v(wrap(`const o = { "#x": 7 }; return o["#x"];`))).toEqual({ ok: true, value: 7 });
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -1975,75 +1927,39 @@ const TPL = (expr: string) =>
   `export function f() { function tag(s) { return ${expr}; } return tag\`a\${1}b\`; }`;
 
 describe("标签模板对象是冻结的数组 exotic", () => {
-  it("Object.isFrozen(s) → true（原生冻结）", () => {
+  it("冻结/枚举/序列化/for-in/数组方法；普通对象不外溢", () => {
     expect(val(TPL("Object.isFrozen(s)"))).toEqual({ ok: true, value: true });
-  });
-
-  it("Object.isFrozen(s.raw) → true（raw 数组同样冻结）", () => {
     expect(val(TPL("Object.isFrozen(s.raw)"))).toEqual({ ok: true, value: true });
-  });
-
-  it("Object.keys(s) 只有下标（length/raw/@@iterator 非枚举）", () => {
     expect(val(TPL('Object.keys(s).join(",")'))).toEqual({ ok: true, value: "0,1" });
-  });
-
-  it("JSON.stringify(s) 走数组序列化面", () => {
     expect(val(TPL("JSON.stringify(s)"))).toEqual({ ok: true, value: '["a","b"]' });
-  });
-
-  it("s.propertyIsEnumerable(\"length\") → false", () => {
     expect(val(TPL('s.propertyIsEnumerable("length")'))).toEqual({ ok: true, value: false });
-  });
-
-  it("Object.getOwnPropertyDescriptor(s, \"length\").enumerable → false", () => {
-    expect(val(TPL('Object.getOwnPropertyDescriptor(s, "length").enumerable'))).toEqual({
-      ok: true,
-      value: false,
-    });
-  });
-
-  it("for..in 遍历模板对象只枚举下标", () => {
-    expect(val(TPL('(() => { let k = ""; for (const x in s) k += x; return k; })()'))).toEqual({
-      ok: true,
-      value: "01",
-    });
-  });
-
-  it("负控制：元素面不变（下标 / length / raw / 展开）", () => {
+    expect(val(TPL('Object.getOwnPropertyDescriptor(s, "length").enumerable'))).toEqual({ ok: true, value: false });
+    expect(val(TPL('(() => { let k = ""; for (const x in s) k += x; return k; })()'))).toEqual({ ok: true, value: "01" });
     expect(val(TPL("s[0]"))).toEqual({ ok: true, value: "a" });
     expect(val(TPL("s.length"))).toEqual({ ok: true, value: 2 });
     expect(val(TPL("s.raw.length"))).toEqual({ ok: true, value: 2 });
     expect(val(TPL("s.raw[1]"))).toEqual({ ok: true, value: "b" });
     expect(val(TPL("[...s].join('|')"))).toEqual({ ok: true, value: "a|b" });
-  });
-
-  it("数组原型方法在模板对象上可派发（原生模板对象是数组 exotic）", () => {
-    // 原生：标签函数的**第一个实参**是 strings 数组（Array exotic ⇒ 继承
-    // Array.prototype）——join / indexOf / concat / map / slice 全部可调。
-    // 修复前：引擎的数组方法面只认 tuple/arr 形状 ⇒ 方法读折 exact
-    // undefined ⇒ 调用**假抛 TypeError**（原生不抛）。
     expect(val(TPL('s.join(",")'))).toEqual({ ok: true, value: "a,b" });
     expect(val(TPL("String(typeof s.join)"))).toEqual({ ok: true, value: "function" });
     expect(val(TPL('s.indexOf("a")'))).toEqual({ ok: true, value: 0 });
     expect(val(TPL('s.concat(["c"]).join(",")'))).toEqual({ ok: true, value: "a,b,c" });
     expect(val(TPL("s.map((x) => x).join(\",\")"))).toEqual({ ok: true, value: "a,b" });
     expect(val(TPL('s.slice(0, 1).join(",")'))).toEqual({ ok: true, value: "a" });
-  });
-
-  it("负控制：普通对象不是数组视图（数组方法面不外溢）", () => {
-    expect(val(`export function f() { return String(typeof ({}).join); }`)).toEqual({
-      ok: true,
-      value: "undefined",
-    });
-  });
-
-  it("负控制：普通对象仍不是冻结的（extState 标注不外溢）", () => {
-    expect(val(`export function f() { return Object.isFrozen({}); }`)).toEqual({
-      ok: true,
-      value: false,
-    });
+    expect(val(`export function f() { return String(typeof ({}).join); }`)).toEqual({ ok: true, value: "undefined" });
+    expect(val(`export function f() { return Object.isFrozen({}); }`)).toEqual({ ok: true, value: false });
   });
 });
+describe("Array.isArray(标签模板对象) → true", () => {
+  it("模板对象与多段均 true；普通对象/字符串/迭代器 false", () => {
+    expect(val(TPL("Array.isArray(s)"))).toEqual({ ok: true, value: true });
+    expect(val(`export function f() { function tag(s) { return Array.isArray(s); } return tag\`a\${1}b\`; }`)).toEqual({ ok: true, value: true });
+    expect(val(`export function f() { return Array.isArray({}); }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return Array.isArray("x"); }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return Array.isArray([1,2].entries()); }`)).toEqual({ ok: true, value: false });
+  });
+});
+;
 
 /**
  * `Array.isArray(模板对象)` 必须是 **true**——原生 GetTemplateObject =
@@ -2053,30 +1969,7 @@ describe("标签模板对象是冻结的数组 exotic", () => {
  * 修复前：引擎 isArray 只认 arr/tuple 形状 ⇒ 模板对象（obj 形状）折
  * **false**（wrong-exact）。
  */
-describe("Array.isArray(标签模板对象) → true", () => {
-  it("Array.isArray(s) → true（模板对象是数组 exotic）", () => {
-    expect(val(TPL("Array.isArray(s)"))).toEqual({ ok: true, value: true });
-  });
-
-  it("Array.isArray(s) → true（多段模板同样成立）", () => {
-    expect(val(`export function f() { function tag(s) { return Array.isArray(s); } return tag\`a\${1}b\`; }`)).toEqual({
-      ok: true,
-      value: true,
-    });
-  });
-
-  it("负控制：普通对象 / 非数组值 → false", () => {
-    expect(val(`export function f() { return Array.isArray({}); }`)).toEqual({ ok: true, value: false });
-    expect(val(`export function f() { return Array.isArray("x"); }`)).toEqual({ ok: true, value: false });
-  });
-
-  it("负控制：迭代器对象仍不是数组", () => {
-    expect(val(`export function f() { return Array.isArray([1,2].entries()); }`)).toEqual({
-      ok: true,
-      value: false,
-    });
-  });
-});
+;
 });
 
 // ---------------------------------------------------------------------------
