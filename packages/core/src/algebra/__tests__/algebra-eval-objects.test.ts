@@ -2515,107 +2515,32 @@ describe("prim 读不存在的成员 → undefined（不是 unknown）", () => {
 // Symbol 实例的 toString / toLocaleString 走 Symbol.prototype
 // ---------------------------------------------------------------------------
 describe("Symbol 实例的 toString / toLocaleString 走 Symbol.prototype", () => {
-/**
- * 回归：Symbol 实例上的 `toString` / `toLocaleString` 解析到
- * **Symbol.prototype 自己的面**（带 brand check），不是 Object.prototype 泛型版。
- *
- * ES 语义：
- * - `Symbol.prototype.toString` 是 Symbol.prototype **自有**方法（thisSymbolValue
- * brand check）——借用调用非 symbol 接收者定抛 TypeError
- * （`Symbol().toString.call(1)` 抛）；返回 "Symbol(desc)"；
- * - `Symbol.prototype.valueOf` 自有（brand check）——返回符号自身；
- * - `Symbol.prototype.toLocaleString` **不存在**（继承 Object.prototype 的
- * toLocaleString → ToObject(this).toString()）——symbol 接收者得 "Symbol(desc)"。
- *
- * 修复前：这些成员值读落 Object.prototype 泛型版（**无 brand check**）→
- * 错值 "[object Number]" / "[object Symbol]"，且借用调用漏抛 TypeError。
- *
- * 不变量（负控制钉住）：
- * - Symbol.prototype 上的直呼（callAbsMethod 臂）语义不变；
- * - number / string / boolean 的 toString 调用面不变；
- * - Symbol.prototype.toString.call(1) 仍抛（原生同款，负控制钉住 brand check）；
- * - Object.prototype.toString 的泛型面不受影响。
- */
-
-
-
-
-/** 结果字面量值（litValue） */
-function v(src: string) {
-  return litValue___nudojs_core_18(call(src, "f").result);
-}
-
-/** 抛错名（无抛错 → ""） */
-function throwName(src: string): string {
-  const t = call(src, "f").throws as { shape?: { k?: string; name?: string } } | undefined;
-  if (!t?.shape || t.shape.k === "never") return "";
-  return t.shape.k === "brand" ? (t.shape.name ?? "") : (t.shape.k as string);
-}
-
-const wrap = (body: string) => `export function f() { ${body} }`;
-
-describe("Symbol 实例的 toString / toLocaleString 走 Symbol.prototype", () => {
-  it("Symbol('x').toString() → \"Symbol(x)\"", () => {
+  const wrap = (body: string) => `export function f() { ${body} }`;
+  const v = (src: string) => litValue(call(src, "f").result);
+  const throwName = (src: string): string => {
+    const t = call(src, "f").throws as { shape?: { k?: string; name?: string } } | undefined;
+    if (!t?.shape || t.shape.k === "never") return "";
+    return t.shape.k === "brand" ? (t.shape.name ?? "") : (t.shape.k as string);
+  };
+  it("实例 toString/toLocaleString 取值；brand check 抛；typeof/valueOf；其它 prim 与泛型面负控", () => {
     expect(v(wrap(`return Symbol("x").toString();`))).toEqual({ ok: true, value: "Symbol(x)" });
-  });
-
-  it("Symbol('x').toLocaleString() → \"Symbol(x)\"（不是 \"[object Symbol]\"）", () => {
     expect(v(wrap(`return Symbol("x").toLocaleString();`))).toEqual({ ok: true, value: "Symbol(x)" });
-  });
-
-  it("Symbol().toString.call(1) → TypeError（brand check 不再丢）", () => {
-    const src = wrap(`try { return Symbol().toString.call(1); } catch (e) { return "caught:" + e.constructor.name; }`);
-    expect(v(src)).toEqual({ ok: true, value: "caught:TypeError" });
-  });
-
-  it("Symbol.prototype.toString.call(1) → TypeError（负控制：原生同款）", () => {
-    const src = wrap(`try { return Symbol.prototype.toString.call(1); } catch (e) { return "caught:" + e.constructor.name; }`);
-    expect(v(src)).toEqual({ ok: true, value: "caught:TypeError" });
-  });
-
-  it("typeof Symbol().toString → \"function\"", () => {
+    for (const body of [`try { return Symbol().toString.call(1); } catch (e) { return "caught:" + e.constructor.name; }`, `try { return Symbol.prototype.toString.call(1); } catch (e) { return "caught:" + e.constructor.name; }`]) {
+      expect(v(wrap(body)), body).toEqual({ ok: true, value: "caught:TypeError" });
+    }
     expect(v(wrap(`return typeof Symbol().toString;`))).toEqual({ ok: true, value: "function" });
-  });
-
-  it("Symbol('x').valueOf() 仍是符号自身（既有语义）", () => {
-    const src = wrap(`const s = Symbol("x"); return s.valueOf() === s;`);
-    expect(throwName(src)).toBe("");
-    expect(v(src)).toEqual({ ok: true, value: true });
-  });
-});
-
-describe("负控制：其它 prim 的 toString / 泛型 Object.prototype 面不回归", () => {
-  it("(5).toString() → \"5\"", () => {
+    const valueOf = wrap(`const s = Symbol("x"); return s.valueOf() === s;`);
+    expect(throwName(valueOf)).toBe("");
+    expect(v(valueOf)).toEqual({ ok: true, value: true });
     expect(v(wrap(`return (5).toString();`))).toEqual({ ok: true, value: "5" });
-  });
-
-  it("\"ab\".toString() → \"ab\"", () => {
     expect(v(wrap(`return "ab".toString();`))).toEqual({ ok: true, value: "ab" });
-  });
-
-  it("true.toString() → \"true\"", () => {
     expect(v(wrap(`return true.toString();`))).toEqual({ ok: true, value: "true" });
-  });
-
-  it("Object.prototype.toString.call({}) → \"[object Object]\"（泛型面不受影响）", () => {
-    expect(v(wrap(`return Object.prototype.toString.call({});`))).toEqual({
-      ok: true,
-      value: "[object Object]",
-    });
-  });
-
-  it("Object.prototype.toString.call([]) → \"[object Array]\"（泛型面不受影响）", () => {
-    expect(v(wrap(`return Object.prototype.toString.call([]);`))).toEqual({
-      ok: true,
-      value: "[object Array]",
-    });
-  });
-
-  it("Symbol('x').description → \"x\"（既有语义）", () => {
+    expect(v(wrap(`return Object.prototype.toString.call({});`))).toEqual({ ok: true, value: "[object Object]" });
+    expect(v(wrap(`return Object.prototype.toString.call([]);`))).toEqual({ ok: true, value: "[object Array]" });
     expect(v(wrap(`return Symbol("x").description;`))).toEqual({ ok: true, value: "x" });
   });
 });
-});
+;
 
 // ---------------------------------------------------------------------------
 // sealed 数组 length 截断写 / mutator
@@ -3810,90 +3735,25 @@ describe("proxy-get-own-property-descriptor", () => {
 // freeze / seal 的 Proxy 陷阱派发
 // ---------------------------------------------------------------------------
 describe("freeze / seal 的 Proxy 陷阱派发", () => {
-/**
- * 回归：Object.freeze / Object.seal 对 **Proxy** 的陷阱派发。
- *
- * 原生（node v26 实测）：SetIntegrityLevel（ES2024 10.4.6）=
- * 1) [[PreventExtensions]]（→ preventExtensions 陷阱）；falsy ⇒ TypeError；
- * 2) 每个自有键 [[DefineOwnProperty]]（→ defineProperty 陷阱）；falsy ⇒
- * TypeError。
- *
- * 修复前：freeze / seal **完全无视**陷阱（直接落 extState 标签）⇒ 代理的
- * 不可扩展性与键级标志全被跳过（假冻结：陷阱返回 false 也不抛）。
- */
-
-
-
-
-function v(src: string) {
-  return litValue___nudojs_core_29(call(src, "f").result);
-}
-
-function thrown(src: string): string | undefined {
-  const t = call(src, "f").throws as
-    | { shape?: { k?: string; name?: string } }
-    | undefined;
-  return t && t.shape?.k === "brand" ? t.shape.name : undefined;
-}
-
-const wrap = (body: string) => `export function f() { ${body} }`;
-
-describe("freeze / seal 的 Proxy 陷阱派发", () => {
-  it("freeze：preventExtensions 陷阱返回 false ⇒ TypeError（改前不抛）", () => {
-    expect(
-      thrown(
-        wrap(
-          `const p = new Proxy({ a: 1 }, { preventExtensions() { return false; } }); Object.freeze(p);`,
-        ),
-      ),
-    ).toBe("TypeError");
-  });
-
-  it("seal：preventExtensions 陷阱返回 false ⇒ TypeError（改前不抛）", () => {
-    expect(
-      thrown(
-        wrap(
-          `const p = new Proxy({ a: 1 }, { preventExtensions() { return false; } }); Object.seal(p);`,
-        ),
-      ),
-    ).toBe("TypeError");
-  });
-
-  it("freeze：defineProperty 陷阱返回 false ⇒ TypeError（改前不抛）", () => {
-    expect(
-      thrown(
-        wrap(
-          `const p = new Proxy({ a: 1 }, { defineProperty() { return false; } }); Object.freeze(p);`,
-        ),
-      ),
-    ).toBe("TypeError");
-  });
-
-  it("freeze：preventExtensions + 逐键 defineProperty 陷阱都派发（改前一个都不派发）", () => {
-    expect(
-      v(
-        wrap(
-          `const calls = []; const p = new Proxy({ a: 1 }, { preventExtensions(t) { calls.push("preventExtensions"); return Reflect.preventExtensions(t); }, defineProperty(t, k, d) { calls.push("defineProperty:" + k); return Reflect.defineProperty(t, k, d); } }); Object.freeze(p); return calls.join(",");`,
-        ),
-      ),
-    ).toEqual({ ok: true, value: "preventExtensions,defineProperty:a" });
-  });
-
-  it("seal：同样派发两个陷阱（改前一个都不派发）", () => {
-    expect(
-      v(
-        wrap(
-          `const calls = []; const p = new Proxy({ a: 1 }, { preventExtensions(t) { calls.push("preventExtensions"); return Reflect.preventExtensions(t); }, defineProperty(t, k, d) { calls.push("defineProperty:" + k); return Reflect.defineProperty(t, k, d); } }); Object.seal(p); return calls.join(",");`,
-        ),
-      ),
-    ).toEqual({ ok: true, value: "preventExtensions,defineProperty:a" });
-  });
-
-  it("负控制：无陷阱的 Proxy 冻结不抛（原生同款）", () => {
+  const wrap = (body: string) => `export function f() { ${body} }`;
+  const v = (src: string) => litValue(call(src, "f").result);
+  const thrown = (src: string): string | undefined => {
+    const t = call(src, "f").throws as { shape?: { k?: string; name?: string } } | undefined;
+    return t && t.shape?.k === "brand" ? t.shape.name : undefined;
+  };
+  it("preventExtensions/defineProperty 陷阱派发与 false 抛；调用序；无陷阱负控", () => {
+    for (const body of [
+      `const p = new Proxy({ a: 1 }, { preventExtensions() { return false; } }); Object.freeze(p);`,
+      `const p = new Proxy({ a: 1 }, { preventExtensions() { return false; } }); Object.seal(p);`,
+      `const p = new Proxy({ a: 1 }, { defineProperty() { return false; } }); Object.freeze(p);`,
+    ]) expect(thrown(wrap(body)), body).toBe("TypeError");
+    for (const op of ["freeze", "seal"]) {
+      expect(v(wrap(`const calls = []; const p = new Proxy({ a: 1 }, { preventExtensions(t) { calls.push("preventExtensions"); return Reflect.preventExtensions(t); }, defineProperty(t, k, d) { calls.push("defineProperty:" + k); return Reflect.defineProperty(t, k, d); } }); Object.${op}(p); return calls.join(",");`))).toEqual({ ok: true, value: "preventExtensions,defineProperty:a" });
+    }
     expect(thrown(wrap(`const p = new Proxy({ a: 1 }, {}); Object.freeze(p);`))).toBeUndefined();
   });
 });
-});
+;
 
 // ---------------------------------------------------------------------------
 // Reflect.defineProperty 的反射口径（失败返 false 不抛）
