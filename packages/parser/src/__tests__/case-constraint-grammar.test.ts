@@ -1,7 +1,6 @@
 /**
- * case 实参约束表达式文法（design-refine-derivation：唯一文法）。
- * parseCaseArgExpr：约束构建器优先，其余为具体字面量 / 结构字面量 / 箭头函数。
- * `T.*` 文法已物理删除。
+ * case 实参约束表达式文法：构建器优先，其余为具体/结构字面量；T.* 已删除。
+ * builder 名单单源在 core 的 CONSTRAINT_BUILDERS，名单/正则/解析三方不漂移。
  */
 import { describe, it, expect } from "vitest";
 import { extractDirectives, parseCaseArgExpr } from "../directives.ts";
@@ -17,67 +16,61 @@ import {
 } from "@nudojs/core";
 import { parse } from "../parse.ts";
 
-describe("parseCaseArgExpr constraint grammar", () => {
-  it("number() → number", () => {
-    expect(parseCaseArgExpr("number()").shape).toEqual(num().shape);
-  });
+const GRAMMAR_CASES: { name: string; cases: { expr: string; shape: string; verify?: (a: Abs) => void }[] }[] = [
+  {
+    name: "primitive 构建器",
+    cases: [
+      { expr: "number()", shape: "prim", verify: (a) => expect(a.shape).toEqual(num().shape) },
+      { expr: "string()", shape: "prim", verify: (a) => expect(a.shape).toEqual(str().shape) },
+      { expr: "boolean()", shape: "prim", verify: (a) => expect(a.shape).toEqual(bool().shape) },
+    ],
+  },
+  {
+    name: "lit 与具体字面量",
+    cases: [
+      { expr: "lit(42)", shape: "prim", verify: (a) => expect(litValue(a)).toEqual({ ok: true, value: 42 }) },
+      { expr: 'lit("a")', shape: "prim", verify: (a) => expect(litValue(a)).toEqual({ ok: true, value: "a" }) },
+      { expr: "42", shape: "prim", verify: (a) => expect(litValue(a)).toEqual({ ok: true, value: 42 }) },
+      { expr: "null", shape: "unknown", verify: (a) => expect(litValue(a)).toEqual({ ok: true, value: null }) },
+      { expr: "undefined", shape: "unknown", verify: (a) => expect(litValue(a)).toEqual({ ok: true, value: undefined }) },
+      { expr: "never", shape: "never" },
+    ],
+  },
+  {
+    name: "pred 参与 Abs",
+    cases: [{ expr: "number().gt(0)", shape: "prim", verify: (a) => { expect(formatAbs(a)).toContain(">"); expect(formatAbs(a)).toContain("0"); } }],
+  },
+  {
+    name: "union 成员",
+    cases: [
+      { expr: "union(lit(1), lit(2))", shape: "sum", verify: (a) => { const s = formatAbs(a); expect(s).toContain("1"); expect(s).toContain("2"); } },
+      { expr: "union(number(), null)", shape: "sum", verify: (a) => { if (a.shape.k === "sum") expect(a.shape.members).toHaveLength(2); } },
+    ],
+  },
+  {
+    name: "结构字面量与构建器",
+    cases: [
+      { expr: "shape({ id: number() })", shape: "obj" },
+      { expr: "array(number())", shape: "arr" },
+      { expr: "{ id: number() }", shape: "obj" },
+      { expr: "[number(), string()]", shape: "tuple" },
+    ],
+  },
+  { name: "T.* 不再接受", cases: [{ expr: "T.number", shape: "unknown" }] },
+];
 
-  it("string() / boolean()", () => {
-    expect(parseCaseArgExpr("string()").shape).toEqual(str().shape);
-    expect(parseCaseArgExpr("boolean()").shape).toEqual(bool().shape);
-  });
-
-  it("lit(42) / lit(\"a\")", () => {
-    expect(litValue(parseCaseArgExpr("lit(42)"))).toEqual({ ok: true, value: 42 });
-    expect(litValue(parseCaseArgExpr('lit("a")'))).toEqual({ ok: true, value: "a" });
-  });
-
-  it("concrete literals parse without builders", () => {
-    expect(litValue(parseCaseArgExpr("42"))).toEqual({ ok: true, value: 42 });
-    expect(litValue(parseCaseArgExpr("null"))).toEqual({ ok: true, value: null });
-    expect(litValue(parseCaseArgExpr("undefined"))).toEqual({ ok: true, value: undefined });
-    expect(parseCaseArgExpr("never").shape.k).toBe("never");
-  });
-
-  it("number().gt(0) carries pred through Abs", () => {
-    const abs = parseCaseArgExpr("number().gt(0)");
-    expect(abs).toBeDefined();
-    expect(formatAbs(abs)).toContain(">");
-    expect(formatAbs(abs)).toContain("0");
-  });
-
-  it("union(lit(1), lit(2))", () => {
-    const s = formatAbs(parseCaseArgExpr("union(lit(1), lit(2))"));
-    expect(s).toContain("1");
-    expect(s).toContain("2");
-  });
-
-  it("union accepts concrete literal members", () => {
-    const abs = parseCaseArgExpr("union(number(), null)");
-    expect(abs.shape.k).toBe("sum");
-    if (abs.shape.k === "sum") {
-      expect(abs.shape.members).toHaveLength(2);
+describe("parseCaseArgExpr：约束文法", () => {
+  it.each(GRAMMAR_CASES)("$name", ({ cases }) => {
+    for (const { expr, shape, verify } of cases) {
+      const abs = parseCaseArgExpr(expr);
+      expect(abs.shape.k, expr).toBe(shape);
+      verify?.(abs);
     }
   });
+});
 
-  it("shape({ id: number() })", () => {
-    expect(parseCaseArgExpr("shape({ id: number() })").shape.k).toBe("obj");
-  });
-
-  it("array(number())", () => {
-    expect(parseCaseArgExpr("array(number())").shape.k).toBe("arr");
-  });
-
-  it("object / tuple literals", () => {
-    expect(parseCaseArgExpr("{ id: number() }").shape.k).toBe("obj");
-    expect(parseCaseArgExpr("[number(), string()]").shape.k).toBe("tuple");
-  });
-
-  it("T.* is no longer accepted", () => {
-    expect(parseCaseArgExpr("T.number").shape.k).toBe("unknown");
-  });
-
-  it("extractDirectives always fills argsAbs (constraint + literals)", () => {
+describe("extractDirectives 的 argsAbs 面", () => {
+  it("约束/字面量/结构实参都填 argsAbs，且不残留旧 args/TypeValue", () => {
     const src = `
 /**
  * @nudo:case "n" (number())
@@ -87,132 +80,73 @@ describe("parseCaseArgExpr constraint grammar", () => {
  */
 function id(x) { return x; }
 `;
-    const fns = extractDirectives(parse(src));
-    const cases = fns[0]!.directives.filter((d) => d.kind === "case") as Array<{
+    const cases = extractDirectives(parse(src))[0]!.directives.filter((d) => d.kind === "case") as Array<{
       name: string;
       argsAbs: Abs[];
+      args?: unknown;
     }>;
     expect(cases).toHaveLength(4);
     for (const c of cases) {
-      expect(c.argsAbs).toBeDefined();
-      expect(c.argsAbs).toHaveLength(1);
+      expect(c.argsAbs, c.name).toHaveLength(1);
+      expect(c.args, c.name).toBeUndefined();
     }
-  });
-
-  it("constraint expressions produce Abs without TypeValue on the directive", () => {
-    const src = `
-/**
- * @nudo:case "lit" (lit(7))
- */
-function id(x) { return x; }
-`;
-    const fns = extractDirectives(parse(src));
-    const c = fns[0]!.directives.find((d) => d.kind === "case") as {
-      argsAbs: Abs[];
-      args?: unknown;
-    };
-    expect(litValue(c.argsAbs[0]!)).toEqual({ ok: true, value: 7 });
-    expect(c.args).toBeUndefined();
-  });
-
-  it("number() cases produce prim Abs", () => {
-    const src = `
-/**
- * @nudo:case "n" (number())
- */
-function id(x) { return x; }
-`;
-    const fns = extractDirectives(parse(src));
-    const c = fns[0]!.directives.find((d) => d.kind === "case") as {
-      argsAbs: Abs[];
-    };
-    expect(c.argsAbs[0]!.shape.k).toBe("prim");
-    if (c.argsAbs[0]!.shape.k === "prim") {
-      expect(c.argsAbs[0]!.shape.type).toBe("number");
-    }
+    const lit = cases.find((c) => c.name === "lit")!;
+    expect(litValue(lit.argsAbs[0]!)).toEqual({ ok: true, value: 7 });
+    const prim = cases.find((c) => c.name === "n")!;
+    expect(prim.argsAbs[0]!.shape.k).toBe("prim");
+    if (prim.argsAbs[0]!.shape.k === "prim") expect(prim.argsAbs[0]!.shape.type).toBe("number");
   });
 });
 
-/**
- * 回归：builder 名单不得再与实现漂移。
- * 名单单源在 core 的 CONSTRAINT_BUILDERS；每个可注入 builder 必须能被
- * parseCaseArgExpr 解析成对应 Abs，而不是静默落回 unknown。
- */
-describe("constraint builder name table stays in sync", () => {
-  // 每个构建器的代表实参 → 期望的 shape.k（any 裸构建器语义即 unknown）
-  const SAMPLES: Record<string, { expr: string; shapeK: string }> = {
-    number: { expr: "number()", shapeK: "prim" },
-    string: { expr: "string()", shapeK: "prim" },
-    boolean: { expr: "boolean()", shapeK: "prim" },
-    any: { expr: "any()", shapeK: "unknown" },
-    array: { expr: "array(number())", shapeK: "arr" },
-    shape: { expr: "shape({ a: number() })", shapeK: "obj" },
-    lit: { expr: "lit(42)", shapeK: "prim" },
-    union: { expr: "union(number(), string())", shapeK: "sum" },
-    nullable: { expr: "nullable(number())", shapeK: "sum" },
-    fn: { expr: "fn({ x: number() }, number())", shapeK: "fn" },
-    // lazy（issue #120）是侧车专用构建器：指令文法不接受箭头函数
-    // （isSafeTypeExprSource 白名单），parseCaseArgExpr 保守落 unknown #partial
-    // ——安全边界由本条钉住；真实注入走 CONSTRAINT_BUILDERS（execNudoModule）。
-    lazy: { expr: "lazy(() => number())", shapeK: "unknown" },
-    and: { expr: "and(number(), number().gt(0))", shapeK: "prim" },
-    partial: { expr: "partial(shape({ a: number() }))", shapeK: "obj" },
-    pick: { expr: "pick(shape({ a: number(), b: string() }), [\"a\"])", shapeK: "obj" },
-    omit: { expr: "omit(shape({ a: number(), b: string() }), [\"a\"])", shapeK: "obj" },
-    // ABS-01：契约内 binder / ref / 关系式（case 实参面是**符号见证**：
-    // bind 保留内层域；独立 ref / rel 无同树 binder ⇒ 保守 unknown）
-    bind: { expr: 'bind("a", number())', shapeK: "prim" },
-    ref: { expr: 'ref("a")', shapeK: "unknown" },
-    rel: { expr: 'rel(">", "x")', shapeK: "unknown" },
-  };
+const SAMPLES: Record<string, { expr: string; shapeK: string }> = {
+  number: { expr: "number()", shapeK: "prim" },
+  string: { expr: "string()", shapeK: "prim" },
+  boolean: { expr: "boolean()", shapeK: "prim" },
+  any: { expr: "any()", shapeK: "unknown" },
+  array: { expr: "array(number())", shapeK: "arr" },
+  shape: { expr: "shape({ a: number() })", shapeK: "obj" },
+  lit: { expr: "lit(42)", shapeK: "prim" },
+  union: { expr: "union(number(), string())", shapeK: "sum" },
+  nullable: { expr: "nullable(number())", shapeK: "sum" },
+  fn: { expr: "fn({ x: number() }, number())", shapeK: "fn" },
+  lazy: { expr: "lazy(() => number())", shapeK: "unknown" },
+  and: { expr: "and(number(), number().gt(0))", shapeK: "prim" },
+  partial: { expr: "partial(shape({ a: number() }))", shapeK: "obj" },
+  pick: { expr: 'pick(shape({ a: number(), b: string() }), ["a"])', shapeK: "obj" },
+  omit: { expr: 'omit(shape({ a: number(), b: string() }), ["a"])', shapeK: "obj" },
+  bind: { expr: 'bind("a", number())', shapeK: "prim" },
+  ref: { expr: 'ref("a")', shapeK: "unknown" },
+  rel: { expr: 'rel(">", "x")', shapeK: "unknown" },
+};
 
-  it("sample table covers every builder in CONSTRAINT_BUILDER_NAMES", () => {
+describe("builder 名单与实现不漂移", () => {
+  it("样本覆盖全部 builder 名，正则匹配全部名字", () => {
     expect(Object.keys(SAMPLES).sort()).toEqual([...CONSTRAINT_BUILDER_NAMES].sort());
+    for (const name of CONSTRAINT_BUILDER_NAMES) expect(CONSTRAINT_EXPR_RE.test(`${name}(...)`), name).toBe(true);
   });
 
-  it("CONSTRAINT_EXPR_RE matches every builder name", () => {
-    for (const name of CONSTRAINT_BUILDER_NAMES) {
-      expect(CONSTRAINT_EXPR_RE.test(`${name}(...)`), name).toBe(true);
-    }
-  });
-
-  it("every injectable builder parses via parseCaseArgExpr", () => {
+  it("每个可注入 builder 都能解析成对应 shape", () => {
     for (const name of CONSTRAINT_BUILDER_NAMES) {
       const sample = SAMPLES[name];
       expect(sample, `missing sample for builder '${name}'`).toBeDefined();
-      const abs = parseCaseArgExpr(sample!.expr);
-      expect(abs.shape.k, `${name}: ${sample!.expr}`).toBe(sample!.shapeK);
+      expect(parseCaseArgExpr(sample!.expr).shape.k, `${name}: ${sample!.expr}`).toBe(sample!.shapeK);
     }
   });
 
-  it("phantom builder names are not in the name table", () => {
+  it("幽灵 builder 不在名单，也不被正则接受", () => {
     for (const phantom of ["record", "required", "readonly", "nonNullable"]) {
       expect(CONSTRAINT_BUILDER_NAMES).not.toContain(phantom);
       expect(CONSTRAINT_EXPR_RE.test(`${phantom}(...)`), phantom).toBe(false);
     }
   });
 
-  it("nullable() is a first-class case-arg constraint builder", () => {
+  it("nullable() 是首类 builder：解析为 sum(3)，指令里不落 unknown", () => {
     const abs = parseCaseArgExpr("nullable(number())");
-    // 不再静默退化成 unknown —— 应为 number | null | undefined 之和
-    expect(abs.shape.k).not.toBe("unknown");
     expect(abs.shape.k).toBe("sum");
-    if (abs.shape.k === "sum") {
-      expect(abs.shape.members).toHaveLength(3);
-    }
-  });
+    if (abs.shape.k === "sum") expect(abs.shape.members).toHaveLength(3);
 
-  it("nullable() in a case directive fills argsAbs (not unknown)", () => {
-    const src = `
-/**
- * @nudo:case "null-ok" (nullable(number().gt(0)))
- */
-function f(x) { return x; }
-`;
-    const fns = extractDirectives(parse(src));
-    const c = fns[0]!.directives.find((d) => d.kind === "case") as {
-      argsAbs: Abs[];
-    };
+    const src = `/**\n * @nudo:case "null-ok" (nullable(number().gt(0)))\n */\nfunction f(x) { return x; }`;
+    const c = extractDirectives(parse(src))[0]!.directives.find((d) => d.kind === "case") as { argsAbs: Abs[] };
     expect(c.argsAbs[0]!.shape.k).toBe("sum");
     expect(formatAbs(c.argsAbs[0]!)).not.toContain("unknown #");
   });
