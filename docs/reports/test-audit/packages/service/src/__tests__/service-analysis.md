@@ -1,5 +1,9 @@
 ```audit
 title	rootCause	gap	action	status	evidence
+barrel 归因定义文件并照报门禁；改名跟导出名；直接 import 照报；他处不污染；未导出回落	call@/类方法/再导出表	没测该层	keep	keep	—
+模块状态不同见证值 = 现场 5/6；无状态差异值不变 3	call@/类方法/再导出表	没测该层	keep	keep	—
+实例方法求值确切值；顶层函数口径不变；不可判如实 unknown	call@/类方法/再导出表	没测该层	keep	keep	—
+外部同名行加来源文件；本地保持 call@L<n>；emitter 逐条比对；二次 freeze 追加新见证	call@/类方法/再导出表	没测该层	keep	keep	—
 具名/别名导入归因类模块并合成 call@；命名空间形态按成员名；他模块调用不挂本文件	去重/槽/类导入表	没测该层	keep	keep	—
 槽字面量不符不满足；相符满足；类型槽满足	去重/槽/类导入表	没测该层	keep	keep	—
 对象/嵌套/字符串槽不符报；类型槽、顶层字面量、数组元素口径不变	去重/槽/类导入表	没测该层	keep	keep	—
@@ -27,24 +31,6 @@ strict/无 profile 非法值文案 error；合法值与 profile 预设不告警	
 调用点字面量投影基类型；带断言 case 保留字面量	观测/顺序/见证表	没测该层	keep	keep	—
 全部超限整组跳过；正常记录照常合成	归因/超限表	没测该层	keep	keep	—
 ESM/CJS 命名空间带接收者限定并可归因；具名/对象方法无前缀；产品面 error	归因/超限表	没测该层	keep	keep	—
-"两个现场文件同行的调用 → 见证名不同（改前都是 call@L2）"	"固化下来的 case 名 `call@L<行号>` 取的是**使用现场文件**的行号 ⇒ 同名碰撞 + 指向无关行 + 二次 freeze 静默丢弃新见证。 根因： - 合成 case 名直接取记录里的行号（使用现场文件的行）⇒ 两个现场文件在 同一行调用同一函数 → 同名 `call@L2`； 断言：expect(names.length).toBe(2);；expect(new Set(names).size).toBe(2);"	夹具漏形态	keep	keep	—
-"负控制：本地调用点的见证名保持 call@L<n>（与既有已固化名字兼容）"	"固化下来的 case 名 `call@L<行号>` 取的是**使用现场文件**的行号 ⇒ 同名碰撞 + 指向无关行 + 二次 freeze 静默丢弃新见证。 根因： - 合成 case 名直接取记录里的行号（使用现场文件的行）⇒ 两个现场文件在 同一行调用同一函数 → 同名 `call@L2`； 断言：expect(names).toEqual([\"call@L2\"]);"	夹具漏形态	keep	keep	—
-"emitter：已有同名见证不重复写；新见证照写（不再整函数丢弃）"	"固化下来的 case 名 `call@L<行号>` 取的是**使用现场文件**的行号 ⇒ 同名碰撞 + 指向无关行 + 二次 freeze 静默丢弃新见证。 根因： - 合成 case 名直接取记录里的行号（使用现场文件的行）⇒ 两个现场文件在 同一行调用同一函数 → 同名 `call@L2`； 断言：expect(base).toBeDefined();；expect(withFrozen.source).toContain('\"call@b.js:L2\"');"	夹具漏形态	keep	keep	—
-"接线：已固化函数的**新增外部调用点**也合成 call@ 见证"	"固化下来的 case 名 `call@L<行号>` 取的是**使用现场文件**的行号 ⇒ 同名碰撞 + 指向无关行 + 二次 freeze 静默丢弃新见证。 根因： - 合成 case 名直接取记录里的行号（使用现场文件的行）⇒ 两个现场文件在 同一行调用同一函数 → 同名 `call@L2`； 断言：expect(names).toContain(\"call@b.js:L2\");"	夹具漏形态	keep	keep	—
-"声明式 @nudo:case 的求值结果不变"	"找出 nudo:case-expected 诊断（期望不满足）。 断言：expect(shapes.add).toBe(\"2\");"	没测该层	keep	keep	—
-"无模块级状态的模块，入口用例结果不变"	"断言：expect(shapes.g).toBe('\"ok\"');"	没测该层	keep	keep	—
-"模块级状态未被改写时，读到的就是初值"	"断言：expect(shapes.read).toBe(\"7\");"	没测该层	keep	keep	—
-"实例方法：见证求值出确切值 1（改前恒 unknown）"	"**类方法**上的 `@nudo:case` 见证从不被求值 → 结果恒 `unknown` → 任何期望都必假红（顶层函数同款 case 却通过）。 根因（analyzer-orchestrate-uncached-cases.ts）：见证求值把 `fn.name` 当 **源码里的被调表达式**传给 `tryEvalCallFull`； 断言：expect(fn).toBeDefined();；expect(c).toBeDefined();"	没测该层	keep	keep	—
-"实例方法：见证实参参与运算（(1) => 2）"	"断言：expect(t?.op === \"lit\" ? t.value : undefined).toBe(2);"	没测该层	keep	keep	—
-"负控制：顶层函数同款 case 口径不变（结果 1）"	"**类方法**上的 `@nudo:case` 见证从不被求值 → 结果恒 `unknown` → 任何期望都必假红（顶层函数同款 case 却通过）。 根因（analyzer-orchestrate-uncached-cases.ts）：见证求值把 `fn.name` 当 **源码里的被调表达式**传给 `tryEvalCallFull`； 断言：expect(t?.op === \"lit\" ? t.value : undefined).toBe(1);"	没测该层	keep	keep	—
-"负控制：判不出来时如实回落 unknown（不编造值）"	"**类方法**上的 `@nudo:case` 见证从不被求值 → 结果恒 `unknown` → 任何期望都必假红（顶层函数同款 case 却通过）。 根因（analyzer-orchestrate-uncached-cases.ts）：见证求值把 `fn.name` 当 **源码里的被调表达式**传给 `tryEvalCallFull`； 断言：expect(c!.abs.shape.k).toBe(\"unknown\");"	没测该层	keep	keep	—
-"模块状态不同：见证值 = 现场观测值 6（改前被重算成 1）"	"合成 `call@` 见证的**返回值**被「目标语境重求值」覆盖 ⇒ 报告出 的调用点真值与实际调用结果矛盾（错误的确切值）。 根因（analyzer-orchestrate-uncached-cases.ts）：`caseAbs` 已经是闸门后的 值（重求值只在「更有信息量」时替换观测值），但随后 `attachAbsToIntension` 挂的是**重求值原值** ⇒ 无条件覆盖 ⇒ 观测值（调用现场语境下的真值） 被目标语境（被分析文件语境）的值顶掉。 断言：expect(values).toEqual([5, 6]);"	没测该层	keep	keep	—
-"负控制：无状态差异的调用点值不变（3）"	"合成 `call@` 见证的**返回值**被「目标语境重求值」覆盖 ⇒ 报告出 的调用点真值与实际调用结果矛盾（错误的确切值）。 根因（analyzer-orchestrate-uncached-cases.ts）：`caseAbs` 已经是闸门后的 值（重求值只在「更有信息量」时替换观测值），但随后 `attachAbsToIntension` 挂的是**重求值原值** ⇒ 无条件覆盖 ⇒ 观测值（调用现场语境下的真值） 被目标语境（被分析文件语境）的值顶掉。 断言：expect(ct?.op === \"lit\" ? ct.value : undefined).toBe(3);"	没测该层	keep	keep	—
-"export * barrel：记录归因到定义文件，domain-exceeds 门禁照报"	"`export *` barrel 吞掉 `--from` 采集到的跨文件调用点证据 ⇒ `nudo:contract-domain-exceeds`（error 级 L1 门禁）静默不报（假绿）。 根因（analyzer-abs-eval.ts 的调用记录归因）：targetModule 填的是**调用方 import 的那个模块**——barrel 场景下那是中间 barrel，不是定义文件； 断言：expect(rec).toBeDefined();；expect(rec!.targetModule).toBe(lib);"	没测该层	keep	keep	—
-"改名再导出 barrel（export { area as area2 }）：记录名跟到定义侧导出名"	"`export *` barrel 吞掉 `--from` 采集到的跨文件调用点证据 ⇒ `nudo:contract-domain-exceeds`（error 级 L1 门禁）静默不报（假绿）。 根因（analyzer-abs-eval.ts 的调用记录归因）：targetModule 填的是**调用方 import 的那个模块**——barrel 场景下那是中间 barrel，不是定义文件； 断言：expect(rec).toBeDefined();；expect(rec!.targetModule).toBe(lib);"	没测该层	keep	keep	—
-"负控制：直接 import（无 barrel）行为不变——门禁照报"	"`export *` barrel 吞掉 `--from` 采集到的跨文件调用点证据 ⇒ `nudo:contract-domain-exceeds`（error 级 L1 门禁）静默不报（假绿）。 根因（analyzer-abs-eval.ts 的调用记录归因）：targetModule 填的是**调用方 import 的那个模块**——barrel 场景下那是中间 barrel，不是定义文件； 断言：expect(rec!.targetModule).toBe(lib);；expect(result.diagnostics.filter((d) => d.code === DOMAIN)).toHaveLength(1);"	没测该层	keep	keep	—
-"负控制：别处的记录不得在本文件报门禁（跨文件污染守卫）"	"`export *` barrel 吞掉 `--from` 采集到的跨文件调用点证据 ⇒ `nudo:contract-domain-exceeds`（error 级 L1 门禁）静默不报（假绿）。 根因（analyzer-abs-eval.ts 的调用记录归因）：targetModule 填的是**调用方 import 的那个模块**——barrel 场景下那是中间 barrel，不是定义文件； 断言：expect(result.diagnostics.filter((d) => d.code === DOMAIN)).toHaveLength(0);"	没测该层	keep	keep	—
-"负控制：模块未导出该名 → 回落 import 目标（不猜、不崩）"	"`export *` barrel 吞掉 `--from` 采集到的跨文件调用点证据 ⇒ `nudo:contract-domain-exceeds`（error 级 L1 门禁）静默不报（假绿）。 根因（analyzer-abs-eval.ts 的调用记录归因）：targetModule 填的是**调用方 import 的那个模块**——barrel 场景下那是中间 barrel，不是定义文件； 断言：expect(rec).toBeDefined();；expect(rec!.targetModule).toBe(barrel);"	没测该层	keep	keep	—
 "anchors the dual-entry issue on line 1 (not the line-0 placeholder)"	"下游 `i.line ?? 1` 的文件级兜底同口径，不需再换算。 负控制：单入口包 / 非入口文件仍然零 issue（位置修复不得放宽触发面）。 断言：expect(issue).not.toBeNull();；expect(issue!.line).toBe(1);"	没测该层	keep	keep	—
 "anchors the node face on line 1 too (both variants)"	"下游 `i.line ?? 1` 的文件级兜底同口径，不需再换算。 负控制：单入口包 / 非入口文件仍然零 issue（位置修复不得放宽触发面）。 断言：expect(issue).not.toBeNull();；expect(issue!.line).toBe(1);"	没测该层	keep	keep	—
 "keeps the legacy browser-field package shape anchored"	"\\\"] 命中整个子树，不命中 lib\", () => { const dir = project([\"src/**\"]); it(\"include: [\\\"src/*.js\\\"] 不跨 /（段内通配）\", () => { const dir = project([\"src/*.js\"]); 断言：expect(issue).not.toBeNull();；expect(issue!.line).toBe(1);"	没测该层	keep	keep	—
@@ -167,4 +153,22 @@ import { Svc }：调用点归因到类所在模块并合成 call@ case	dup:去�
 import { Svc as S }（本地名 ≠ 类名）：同样归因到类所在模块	dup:去重/槽/类导入表	commit:8c95a46e
 负控制：命名空间导入形态仍按成员名归因（exportName = 成员名）	dup:去重/槽/类导入表	commit:8c95a46e
 负控制：别的模块的调用点不得挂到本文件的函数域	dup:去重/槽/类导入表	commit:8c95a46e
+两个现场文件同行的调用 → 见证名不同（改前都是 call@L2）	dup:call@/类方法/再导出表	commit:46b51565
+负控制：本地调用点的见证名保持 call@L<n>（与既有已固化名字兼容）	dup:call@/类方法/再导出表	commit:46b51565
+emitter：已有同名见证不重复写；新见证照写（不再整函数丢弃）	dup:call@/类方法/再导出表	commit:46b51565
+接线：已固化函数的**新增外部调用点**也合成 call@ 见证	dup:call@/类方法/再导出表	commit:46b51565
+声明式 @nudo:case 的求值结果不变	dup:call@/类方法/再导出表	commit:46b51565
+无模块级状态的模块，入口用例结果不变	dup:call@/类方法/再导出表	commit:46b51565
+模块级状态未被改写时，读到的就是初值	dup:call@/类方法/再导出表	commit:46b51565
+实例方法：见证求值出确切值 1（改前恒 unknown）	dup:call@/类方法/再导出表	commit:46b51565
+实例方法：见证实参参与运算（(1) => 2）	dup:call@/类方法/再导出表	commit:46b51565
+负控制：顶层函数同款 case 口径不变（结果 1）	dup:call@/类方法/再导出表	commit:46b51565
+负控制：判不出来时如实回落 unknown（不编造值）	dup:call@/类方法/再导出表	commit:46b51565
+模块状态不同：见证值 = 现场观测值 6（改前被重算成 1）	dup:call@/类方法/再导出表	commit:46b51565
+负控制：无状态差异的调用点值不变（3）	dup:call@/类方法/再导出表	commit:46b51565
+export * barrel：记录归因到定义文件，domain-exceeds 门禁照报	dup:call@/类方法/再导出表	commit:46b51565
+改名再导出 barrel（export { area as area2 }）：记录名跟到定义侧导出名	dup:call@/类方法/再导出表	commit:46b51565
+负控制：直接 import（无 barrel）行为不变——门禁照报	dup:call@/类方法/再导出表	commit:46b51565
+负控制：别处的记录不得在本文件报门禁（跨文件污染守卫）	dup:call@/类方法/再导出表	commit:46b51565
+负控制：模块未导出该名 → 回落 import 目标（不猜、不崩）	dup:call@/类方法/再导出表	commit:46b51565
 ```
