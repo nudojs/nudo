@@ -18,9 +18,9 @@ CRLF 与 LF 位置逐条相同，行尾字符 == 可见行长（不含 \r）	位
 
 ```audit-deleted
 title	reason	evidence
-CRLF 与 LF 给出同一组位置（改前：CRLF 的行尾 hint 越界 1 列）	dup:inlayHint：位置与 range 契约	commit:PENDING
-CRLF 下 end-of-line 的 contract 档 hint 落在可见行长上（不是 +1）	dup:inlayHint：位置与 range 契约	commit:PENDING
-区间请求只返回区间内的 hint（改前：整文件集逐字节相同）	dup:inlayHint：位置与 range 契约	commit:PENDING
-窄区间（不含任何 hint 位）返回空集，且不与整文件集相同	dup:inlayHint：位置与 range 契约	commit:PENDING
-区间缺省（不合规客户端）⇒ 整文件集（fail-open，不丢内容）	dup:inlayHint：位置与 range 契约	commit:PENDING
+CRLF 与 LF 给出同一组位置（改前：CRLF 的行尾 hint 越界 1 列）	dup:inlayHint：位置与 range 契约	commit:f0321de8
+CRLF 下 end-of-line 的 contract 档 hint 落在可见行长上（不是 +1）	dup:inlayHint：位置与 range 契约	commit:f0321de8
+区间请求只返回区间内的 hint（改前：整文件集逐字节相同）	dup:inlayHint：位置与 range 契约	commit:f0321de8
+窄区间（不含任何 hint 位）返回空集，且不与整文件集相同	dup:inlayHint：位置与 range 契约	commit:f0321de8
+区间缺省（不合规客户端）⇒ 整文件集（fail-open，不丢内容）	dup:inlayHint：位置与 range 契约	commit:f0321de8
 ```
