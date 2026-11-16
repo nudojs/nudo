@@ -1,47 +1,14 @@
-# packages/service/src/__tests__/service-products.test.ts
-
-模块套件：service dts/schema/guard/standard/zod 产品面。
-
-审计：92 个用例；根因取自测试注释，缺口按四分类判定，动作复核后为 keep。
-
 ```audit
 title	rootCause	gap	action	status	evidence
-"getter 返数字：dts 取读域 number（原生读 1）"	"回归（**dts 投影面**）：对象字面量访问器（getter）的占位槽 不得在 `.d.ts` 里被渲染成 exact `undefined`。 背景：访问器不住在 shape 槽里——transpile 只落一个 `$lit(void 0)` 占位槽 （保键存在性），真 getter 住 core 的 accessorTable 侧表。 断言：expect(declOf(`export function g() { return { get ab() { return 1; } }; }`)).toContain("	夹具漏形态	keep	keep	—
-"getter 返字符串：dts 取读域（原生读 \"s\"）"	"回归（**dts 投影面**）：对象字面量访问器（getter）的占位槽 不得在 `.d.ts` 里被渲染成 exact `undefined`。 背景：访问器不住在 shape 槽里——transpile 只落一个 `$lit(void 0)` 占位槽 （保键存在性），真 getter 住 core 的 accessorTable 侧表。 断言：expect("	夹具漏形态	keep	keep	—
-"getter 以 this 为接收者读域（原生 this.n = 41）"	"回归（**dts 投影面**）：对象字面量访问器（getter）的占位槽 不得在 `.d.ts` 里被渲染成 exact `undefined`。 背景：访问器不住在 shape 槽里——transpile 只落一个 `$lit(void 0)` 占位槽 （保键存在性），真 getter 住 core 的 accessorTable 侧表。 断言：expect("	夹具漏形态	keep	keep	—
-"嵌套对象的 getter 槽同样按读域渲染"	"回归（**dts 投影面**）：对象字面量访问器（getter）的占位槽 不得在 `.d.ts` 里被渲染成 exact `undefined`。 背景：访问器不住在 shape 槽里——transpile 只落一个 `$lit(void 0)` 占位槽 （保键存在性），真 getter 住 core 的 accessorTable 侧表。 断言：expect("	夹具漏形态	keep	keep	—
-"getter 抛（读域不可刻画）→ unknown，不得回落 definite undefined"	"回归（**dts 投影面**）：对象字面量访问器（getter）的占位槽 不得在 `.d.ts` 里被渲染成 exact `undefined`。 背景：访问器不住在 shape 槽里——transpile 只落一个 `$lit(void 0)` 占位槽 （保键存在性），真 getter 住 core 的 accessorTable 侧表。 断言：expect("	夹具漏形态	keep	keep	—
-"dts 不得出现 exact undefined 的访问器槽"	"回归（**dts 投影面**）：对象字面量访问器（getter）的占位槽 不得在 `.d.ts` 里被渲染成 exact `undefined`。 背景：访问器不住在 shape 槽里——transpile 只落一个 `$lit(void 0)` 占位槽 （保键存在性），真 getter 住 core 的 accessorTable 侧表。 断言：expect(dts).not.toContain(\"ab: undefined\");"	夹具漏形态	keep	keep	—
-"普通数据属性仍渲染成它的值类型"	"断言：expect(declOf(`export function g() { return { plain: 5 }; }`)).toContain(\"{ plain: 5 }\");"	没测该层	keep	keep	—
-"显式 undefined 数据属性仍渲染成 undefined"	"回归（**dts 投影面**）：对象字面量访问器（getter）的占位槽 不得在 `.d.ts` 里被渲染成 exact `undefined`。 背景：访问器不住在 shape 槽里——transpile 只落一个 `$lit(void 0)` 占位槽 （保键存在性），真 getter 住 core 的 accessorTable 侧表。 断言：expect(declOf(`export function g() { return { u: undefined }; }`)).toContain("	夹具漏形态	keep	keep	—
-"仅 setter 的访问器：原生读值恒 undefined，占位槽本就正确"	"回归（**dts 投影面**）：对象字面量访问器（getter）的占位槽 不得在 `.d.ts` 里被渲染成 exact `undefined`。 背景：访问器不住在 shape 槽里——transpile 只落一个 `$lit(void 0)` 占位槽 （保键存在性），真 getter 住 core 的 accessorTable 侧表。 断言：expect(declOf(`export function g() { return { set ab(v) {} }; }`)).toContain("	夹具漏形态	keep	keep	—
-"空对象渲染成 Record<string, never>（不是 TS 的 {}，Bug 565）"	"断言：expect(declOf(`export function g() { return {}; }`)).toContain("	没测该层	keep	keep	—
-"生成器的 constructor brand 不再渲染成 z.instanceof(GeneratorFunction)"	"真 zod 也会在模块顶层求值 `z.instanceof(X)` 的实参 X —— X 不存在时同样抛。 断言：expect(source).not.toMatch(/z\\.instanceof\\([^)]*GeneratorFunction/);；expect(source).not.toContain(\"constructor\");"	没测该层	keep	keep	—
-"生成的 zod 模块可以求值（改前：ReferenceError: GeneratorFunction is not defined）"	"真 zod 也会在模块顶层求值 `z.instanceof(X)` 的实参 X —— X 不存在时同样抛。 断言：expect(r.error).toBeUndefined();；expect(r.ok).toBe(true);"	没测该层	keep	keep	—
-"负控制：求值夹具确实能抓到 ReferenceError（改前形态会红）"	"`nudo export --format schema` 把**生成器的 `constructor` brand** （`GeneratorFunction`）渲染成 `z.instanceof(GeneratorFunction)`：生成的 zod 模块 **import 即崩**（`ReferenceError: GeneratorFunction is not defined`）， 整个产物作废（客户端 import 的第一行就崩，一个校验器都拿不到）。 根因（packages/service/src/emit/schema-generator.ts）：`case \"brand\"` 无条件把 brand **名字**当作用域"	没测该层	keep	keep	—
-"非全局 brand 降级 z.unknown() 并记 dropped"	"`nudo export --format schema` 把**生成器的 `constructor` brand** （`GeneratorFunction`）渲染成 `z.instanceof(GeneratorFunction)`：生成的 zod 模块 **import 即崩**（`ReferenceError: GeneratorFunction is not defined`）， 整个产物作废（客户端 import 的第一行就崩，一个校验器都拿不到）。 根因（packages/service/src/emit/schema-generator.ts）：`case \"brand\"` 无条件把 brand **名字**当作用域"	没测该层	keep	keep	—
-"负控制：运行时全局构造器仍走 z.instanceof（不得过度降级）"	"真 zod 也会在模块顶层求值 `z.instanceof(X)` 的实参 X —— X 不存在时同样抛。 断言：expect(absToSchemaSource(brandOf(\"Date\"))).toBe(\"z.instanceof(Date)\");；expect(absToSchemaSource(brandOf(\"Map\"))).toBe(\"z.instanceof(Map)\");"	没测该层	keep	keep	—
-"产物里的 z.instanceof 实参都是运行时全局构造器"	"真 zod 也会在模块顶层求值 `z.instanceof(X)` 的实参 X —— X 不存在时同样抛。 断言：expect(typeof v, name).toBe(\"function\");"	没测该层	keep	keep	—
-"standard 面不受影响（brand 走 JSON 节点，不引用类名）"	"`nudo export --format schema` 把**生成器的 `constructor` brand** （`GeneratorFunction`）渲染成 `z.instanceof(GeneratorFunction)`：生成的 zod 模块 **import 即崩**（`ReferenceError: GeneratorFunction is not defined`）， 整个产物作废（客户端 import 的第一行就崩，一个校验器都拿不到）。 根因（packages/service/src/emit/schema-generator.ts）：`case \"brand\"` 无条件把 brand **名字**当作用域"	没测该层	keep	keep	—
-"非 Promise 值被拒绝（42 / 'str' / {}）"	"根因：`standard-schema.ts` 的 `case \"promise\": return; ` 把「不展开 thenable」 误实现成「不做任何检查」（库函数版与内联进产物的拷贝各一处）。 断言：expect(\"issues\" in r).toBe(true);；expect(r.issues?.length ?? 0).toBeGreaterThan(0);"	没测该层	keep	keep	—
-"Promise 与 thenable 的判据与 zod 面同口径（真 Promise 放行）"	"根因：`standard-schema.ts` 的 `case \"promise\": return; ` 把「不展开 thenable」 误实现成「不做任何检查」（库函数版与内联进产物的拷贝各一处）。 断言：expect(\"issues\" in r).toBe(false);"	没测该层	keep	keep	—
-"负控制：unknown 节点仍放行一切（不把 promise 的收窄扩散）"	"根因：`standard-schema.ts` 的 `case \"promise\": return; ` 把「不展开 thenable」 误实现成「不做任何检查」（库函数版与内联进产物的拷贝各一处）。 断言：expect(\"issues\" in r).toBe(false);"	没测该层	keep	keep	—
-"非同 prim 字面量 union ⇒ `1 | \"x\"`（改前 `number | string`）"	"同一次运行、同一份契约三个面三种说法： check 签名 `pick(v: lit(1) | lit(\"x\")) => number | string` dts（改前） `pick(v: number | string): number | string` ← **拓宽** zod `z.union([z.literal(1), z.literal(\"x\")])` ← 保字面量 根因：`contractLiteralTSType` **只读顶层 pred**。 而**非同 prim** 的 union 落成 **sum 形状** ⇒ 字面量挂在**各成员自己的** pred 上、顶层 pred 为空 ⇒ 取不到 ⇒ 落回 `absT"	夹具漏形态	keep	keep	—
-"同 prim 字面量 union 仍保形（回归钉）"	"同一次运行、同一份契约三个面三种说法： check 签名 `pick(v: lit(1) | lit(\"x\")) => number | string` dts（改前） `pick(v: number | string): number | string` ← **拓宽** zod `z.union([z.literal(1), z.literal(\"x\")])` ← 保字面量 根因：`contractLiteralTSType` **只读顶层 pred**。 而**非同 prim** 的 union 落成 **sum 形状** ⇒ 字面量挂在**各成员自己的** pred 上、顶层 pred 为空 ⇒ 取不到 ⇒ 落回 `absT"	夹具漏形态	keep	keep	—
-"含 nullish 字面量的混合 union 也保形（字面量在 term 里也要读）"	"同一次运行、同一份契约三个面三种说法： check 签名 `pick(v: lit(1) | lit(\"x\")) => number | string` dts（改前） `pick(v: number | string): number | string` ← **拓宽** zod `z.union([z.literal(1), z.literal(\"x\")])` ← 保字面量 根因：`contractLiteralTSType` **只读顶层 pred**。 而**非同 prim** 的 union 落成 **sum 形状** ⇒ 字面量挂在**各成员自己的** pred 上、顶层 pred 为空 ⇒ 取不到 ⇒ 落回 `absT"	夹具漏形态	keep	keep	—
-"负控制：成员不是字面量域（union(number(), string())）仍按 widen 口径"	"同一次运行、同一份契约三个面三种说法： check 签名 `pick(v: lit(1) | lit(\"x\")) => number | string` dts（改前） `pick(v: number | string): number | string` ← **拓宽** zod `z.union([z.literal(1), z.literal(\"x\")])` ← 保字面量 根因：`contractLiteralTSType` **只读顶层 pred**。 而**非同 prim** 的 union 落成 **sum 形状** ⇒ 字面量挂在**各成员自己的** pred 上、顶层 pred 为空 ⇒ 取不到 ⇒ 落回 `absT"	夹具漏形态	keep	keep	—
-"负控制：带界成员（union(number().gt(0), lit(0))）不整体当字面量域"	"同一次运行、同一份契约三个面三种说法： check 签名 `pick(v: lit(1) | lit(\"x\")) => number | string` dts（改前） `pick(v: number | string): number | string` ← **拓宽** zod `z.union([z.literal(1), z.literal(\"x\")])` ← 保字面量 根因：`contractLiteralTSType` **只读顶层 pred**。 而**非同 prim** 的 union 落成 **sum 形状** ⇒ 字面量挂在**各成员自己的** pred 上、顶层 pred 为空 ⇒ 取不到 ⇒ 落回 `absT"	夹具漏形态	keep	keep	—
-"zod 方言：z.bigint()（不是 z.unknown()）"	"而 guard 面（`data === 10n`）与 dts 面（`bigint`）都保住了基类型 ⇒ 三面接受集不相交。 断言：expect(p.source).toBe(\"z.bigint()\");；expect(p.dropped.join(\"\\n\")).toContain(\"lit bigint not projected: 10\");"	没测该层	keep	keep	—
-"schema 节点：prim bigint（standard 方言据此渲染 prim 校验）"	"而 guard 面（`data === 10n`）与 dts 面（`bigint`）都保住了基类型 ⇒ 三面接受集不相交。 断言：expect(node).toEqual({ k: \"prim\", type: \"bigint\", refinements: [] });"	没测该层	keep	keep	—
-"for 头（for-of 解构）：诊断一条，覆盖不生效"	"改前：这类指令被**采集**（asTargets 非空）却**静默失效**——类型没变、 零诊断（用户毫无痕迹的假绿）。 改后：按 的修复方向（不许静默）⇒ 目标形态不支持时发一条显式 `nudo:directive-syntax`（既有码，不另造新码； 断言：expect(bad).toHaveLength(1);；expect(bad[0]!.message).toContain(\"@nudo:as\");"	夹具漏形态	keep	keep	—
-"表达式语句：诊断一条"	"改前：这类指令被**采集**（asTargets 非空）却**静默失效**——类型没变、 零诊断（用户毫无痕迹的假绿）。 改后：按 的修复方向（不许静默）⇒ 目标形态不支持时发一条显式 `nudo:directive-syntax`（既有码，不另造新码； 断言：expect(diags.filter((d) => d.code === \"nudo:directive-syntax\")).toHaveLength(1);"	夹具漏形态	keep	keep	—
-"函数声明：诊断一条"	"改前：这类指令被**采集**（asTargets 非空）却**静默失效**——类型没变、 零诊断（用户毫无痕迹的假绿）。 改后：按 的修复方向（不许静默）⇒ 目标形态不支持时发一条显式 `nudo:directive-syntax`（既有码，不另造新码； 断言：expect(diags.filter((d) => d.code === \"nudo:directive-syntax\")).toHaveLength(1);"	夹具漏形态	keep	keep	—
-"负控制：变量声明 / return / export 声明 ⇒ 零诊断，覆盖照常生效"	"改前：这类指令被**采集**（asTargets 非空）却**静默失效**——类型没变、 零诊断（用户毫无痕迹的假绿）。 改后：按 的修复方向（不许静默）⇒ 目标形态不支持时发一条显式 `nudo:directive-syntax`（既有码，不另造新码； 断言：expect(diags.filter((d) => d.code === \"nudo:directive-syntax\")).toHaveLength(0);；expect(reps.asTargets).toHaveLength(1);"	夹具漏形态	keep	keep	—
-"负控制：解构声明上的 @nudo:as 仍生效（BUG-080 主修复不退化）"	"改前：这类指令被**采集**（asTargets 非空）却**静默失效**——类型没变、 零诊断（用户毫无痕迹的假绿）。 改后：按 的修复方向（不许静默）⇒ 目标形态不支持时发一条显式 `nudo:directive-syntax`（既有码，不另造新码； 断言：expect(diags.filter((d) => d.code === \"nudo:directive-syntax\")).toHaveLength(0);；expect(reps.asTargets).toHaveLength(1);"	夹具漏形态	keep	keep	—
-"strMin / strMax 用 refine 写 .length（不是 .min()/.max()）"	"zod 面把 Abs 的长度界（**UTF-16 码元**）一对一映射成 zod v4 的 `.min()/.max()`（**Unicode 码点**）⇒ 含星平面字符时 zod 面与契约 / guard / standard 三面裁决相反（min 假红 / max 假绿）⇒ 四面互斥。 断言：expect(min).toBe(\"z.string().refine((s) => s.length >= 2)\");；expect(min).not.toContain(\".min(2)\");"	没测该层	keep	keep	—
-"对照：无长度界时仍是纯 z.string()"	"同一次运行、同一份契约三个面三种说法： check 签名 `pick(v: lit(1) | lit(\"x\")) => number | string` dts（改前） `pick(v: number | string): number | string` ← **拓宽** zod `z.union([z.literal(1), z.literal(\"x\")])` ← 保字面量 根因：`contractLiteralTSType` **只读顶层 pred**。 而**非同 prim** 的 union 落成 **sum 形状** ⇒ 字面量挂在**各成员自己的** pred 上、顶层 pred 为空 ⇒ 取不到 ⇒ 落回 `absT"	夹具漏形态	keep	keep	—
-"纯调用点观测：返回位对象槽字面量 → 基类型"	"`export --format dts` 把**一次调用点观测到的字面量**当成函数的 TS 声明发布：返回位的**对象槽字面量不拓宽** ⇒ 消费端 `tsc --strict` 对 **合法代码**报 TS2367（把 `{ a: number }` 谎报成 `{ a: 1 }`）。 修法：纯 `call@` 观测（没有 `@nudo:case` 断言 / 入口泛化）的返回位，对象槽 里的标量字面量剥到基类型。 断言：expect(decl).toBe(\"export declare function mk(n: number): { a: number; b: string };\");"	夹具漏形态	keep	keep	—
-"无调用点的入口泛化仍保留嵌套精度（对照组，Bug 565 口径）"	"zod 面把 Abs 的长度界（**UTF-16 码元**）一对一映射成 zod v4 的 `.min()/.max()`（**Unicode 码点**）⇒ 含星平面字符时 zod 面与契约 / guard / standard 三面裁决相反（min 假红 / max 假绿）⇒ 四面互斥。 断言：expect(dts).toContain(\"{ a: 1 }\");"	没测该层	keep	keep	—
+纯调用点观测剥到基类型；无调用点入口泛化保留嵌套精度	产品面契约表	没测该层	keep	keep	—
+strMin/strMax 用 refine；无界仍 z.string()	产品面契约表	没测该层	keep	keep	—
+不支持形态诊断且不登记；变量/return/export/解构照常生效	产品面契约表	没测该层	keep	keep	—
+zod 方言保 z.bigint 并记 dropped；schema 节点 prim bigint	产品面契约表	没测该层	keep	keep	—
+非同 prim 字面量 union / 同 prim / nullish 保形；非字面量与带界成员回落 widen	产品面契约表	没测该层	keep	keep	—
+非 Promise 拒绝；真 Promise 放行；unknown 仍放行一切	产品面契约表	没测该层	keep	keep	—
+生成器 brand 不引用 GeneratorFunction；模块可求值；非全局降级 unknown；全局仍 instanceof；standard 不受影响	产品面契约表	没测该层	keep	keep	—
+数据属性 / 显式 undefined / setter-only / 空对象	产品面契约表	没测该层	keep	keep	—
+getter 读域：数字/字符串/this/嵌套/抛 unknown；不出现 exact undefined	产品面契约表	没测该层	keep	keep	—
 "产物真跑 tsc --noEmit --strict（改前 TS7053 ×2）"	"guard 产物因 brand 的 `instanceof` **类型收窄**过不了 `tsc --noEmit --strict`（TS7053：`data[\"0\"]` 在 `Uint8Array | Record<string, any>` 上不可索引）⇒ `nudo export` **exit 0、 零警告**地发布不可编译的产物。 根因：`denote.ts` 的 brand 身份子句把 `data` 放进 `instanceof` 左操作数 ⇒ TS 收窄 `data`； 断言：expect(source).toContain(\"const data: any = value as Record<string, any>"	没测该层	keep	keep	—
 "运行时语义不变：接受合法 Uint8Array，拒绝普通对象"	"guard 产物因 brand 的 `instanceof` **类型收窄**过不了 `tsc --noEmit --strict`（TS7053：`data[\"0\"]` 在 `Uint8Array | Record<string, any>` 上不可索引）⇒ `nudo export` **exit 0、 零警告**地发布不可编译的产物。 根因：`denote.ts` 的 brand 身份子句把 `data` 放进 `instanceof` 左操作数 ⇒ TS 收窄 `data`； 断言：expect(check(new Uint8Array([1, 2]))).toBe(true);；expect(check({ 0: 1, 1"	没测该层	keep	keep	—
 "侧车已有 `import { lit }` ⇒ 仍补 litC 声明（别名，不撞名）"	"` 声明头 ⇒ 产物里的 `lit(1)` 绑定到 core 的 **Term 构造器**（约束构建器叫 `litC`） ⇒ `tsc --strict` 报 TS2322 / TS2345，而 `nudo check` 对该侧车判 OK （缺陷对 nudo 完全隐形）。 `import { lit }` 不豁免 ⇒ 走别名 + 声明头。 断言：expect(r.written).toContain(\"f\");；expect(after).toContain(`typeof import(\"@nudojs/core\").litC;`);"	夹具漏形态	keep	keep	—
@@ -98,4 +65,42 @@ title	rootCause	gap	action	status	evidence
 "结构违约（不导出 / 不是函数）在**装载期**即报（不待工厂调用）"	"path 型 env 文件违反 `defineEnv()` 契约（不导出 / 不是函数 / 抛异常 / 返回非 {globals}）⇒ **零 env 诊断** ⇒ env 静默失效 ⇒ 用户代码被 判「必然抛 ReferenceError」（假红），而同目录里**语法错**的 env 文件 反而有 nudo:env-unresolved 警告（口径分裂）。 契约：四种违约形态各给一条明确诊断（复用 nudo:env-unresolved 通道）， 诊断必须点名 env 文件； 断言：expect(errs).toHaveLength(1);；expect(errs[0]!.path).toBe(envFile);"	夹具漏形态	keep	keep	—
 "负控制：契约满足的 env 文件生效且零告警"	"path 型 env 文件违反 `defineEnv()` 契约（不导出 / 不是函数 / 抛异常 / 返回非 {globals}）⇒ **零 env 诊断** ⇒ env 静默失效 ⇒ 用户代码被 判「必然抛 ReferenceError」（假红），而同目录里**语法错**的 env 文件 反而有 nudo:env-unresolved 警告（口径分裂）。 契约：四种违约形态各给一条明确诊断（复用 nudo:env-unresolved 通道）， 诊断必须点名 env 文件； 断言：expect(getPathEnvLoadErrors(dir)).toHaveLength(0);；expect(formatShape(loade"	夹具漏形态	keep	keep	—
 "负控制：语法错的 env 文件仍走既有措辞（不与契约诊断混口径）"	"path 型 env 文件违反 `defineEnv()` 契约（不导出 / 不是函数 / 抛异常 / 返回非 {globals}）⇒ **零 env 诊断** ⇒ env 静默失效 ⇒ 用户代码被 判「必然抛 ReferenceError」（假红），而同目录里**语法错**的 env 文件 反而有 nudo:env-unresolved 警告（口径分裂）。 契约：四种违约形态各给一条明确诊断（复用 nudo:env-unresolved 通道）， 诊断必须点名 env 文件； 断言：expect(errs).toHaveLength(1);；expect(errs[0]!.error).not.toContain(\"must ex"	夹具漏形态	keep	keep	—
+```audit-deleted
+title	reason	evidence
+getter 返数字：dts 取读域 number（原生读 1）	dup:产品面契约表	commit:52dbd878
+getter 返字符串：dts 取读域（原生读 "s"）	dup:产品面契约表	commit:52dbd878
+getter 以 this 为接收者读域（原生 this.n = 41）	dup:产品面契约表	commit:52dbd878
+嵌套对象的 getter 槽同样按读域渲染	dup:产品面契约表	commit:52dbd878
+getter 抛（读域不可刻画）→ unknown，不得回落 definite undefined	dup:产品面契约表	commit:52dbd878
+dts 不得出现 exact undefined 的访问器槽	dup:产品面契约表	commit:52dbd878
+普通数据属性仍渲染成它的值类型	dup:产品面契约表	commit:52dbd878
+显式 undefined 数据属性仍渲染成 undefined	dup:产品面契约表	commit:52dbd878
+仅 setter 的访问器：原生读值恒 undefined，占位槽本就正确	dup:产品面契约表	commit:52dbd878
+空对象渲染成 Record<string, never>（不是 TS 的 {}，Bug 565）	dup:产品面契约表	commit:52dbd878
+生成器的 constructor brand 不再渲染成 z.instanceof(GeneratorFunction)	dup:产品面契约表	commit:52dbd878
+生成的 zod 模块可以求值（改前：ReferenceError: GeneratorFunction is not defined）	dup:产品面契约表	commit:52dbd878
+负控制：求值夹具确实能抓到 ReferenceError（改前形态会红）	dup:产品面契约表	commit:52dbd878
+非全局 brand 降级 z.unknown() 并记 dropped	dup:产品面契约表	commit:52dbd878
+负控制：运行时全局构造器仍走 z.instanceof（不得过度降级）	dup:产品面契约表	commit:52dbd878
+产物里的 z.instanceof 实参都是运行时全局构造器	dup:产品面契约表	commit:52dbd878
+standard 面不受影响（brand 走 JSON 节点，不引用类名）	dup:产品面契约表	commit:52dbd878
+非 Promise 值被拒绝（42 / 'str' / {}）	dup:产品面契约表	commit:52dbd878
+Promise 与 thenable 的判据与 zod 面同口径（真 Promise 放行）	dup:产品面契约表	commit:52dbd878
+负控制：unknown 节点仍放行一切（不把 promise 的收窄扩散）	dup:产品面契约表	commit:52dbd878
+非同 prim 字面量 union ⇒ `1 | "x"`（改前 `number | string`）	dup:产品面契约表	commit:52dbd878
+同 prim 字面量 union 仍保形（回归钉）	dup:产品面契约表	commit:52dbd878
+含 nullish 字面量的混合 union 也保形（字面量在 term 里也要读）	dup:产品面契约表	commit:52dbd878
+负控制：成员不是字面量域（union(number(), string())）仍按 widen 口径	dup:产品面契约表	commit:52dbd878
+负控制：带界成员（union(number().gt(0), lit(0))）不整体当字面量域	dup:产品面契约表	commit:52dbd878
+zod 方言：z.bigint()（不是 z.unknown()）	dup:产品面契约表	commit:52dbd878
+schema 节点：prim bigint（standard 方言据此渲染 prim 校验）	dup:产品面契约表	commit:52dbd878
+for 头（for-of 解构）：诊断一条，覆盖不生效	dup:产品面契约表	commit:52dbd878
+表达式语句：诊断一条	dup:产品面契约表	commit:52dbd878
+函数声明：诊断一条	dup:产品面契约表	commit:52dbd878
+负控制：变量声明 / return / export 声明 ⇒ 零诊断，覆盖照常生效	dup:产品面契约表	commit:52dbd878
+负控制：解构声明上的 @nudo:as 仍生效（BUG-080 主修复不退化）	dup:产品面契约表	commit:52dbd878
+strMin / strMax 用 refine 写 .length（不是 .min()/.max()）	dup:产品面契约表	commit:52dbd878
+对照：无长度界时仍是纯 z.string()	dup:产品面契约表	commit:52dbd878
+纯调用点观测：返回位对象槽字面量 → 基类型	dup:产品面契约表	commit:52dbd878
+无调用点的入口泛化仍保留嵌套精度（对照组，Bug 565 口径）	dup:产品面契约表	commit:52dbd878
 ```
