@@ -1155,131 +1155,28 @@ describe("成员目标自增的写回时刻（测试位 / 判别位 / 步进位�
 // __proto__ 值表达式在其属性位置求值（原生源码序）
 // ---------------------------------------------------------------------------
 describe("__proto__ 值表达式在其属性位置求值（原生源码序）", () => {
-/**
- * 回归：对象字面量 `__proto__: <表达式>` 的**值表达式**必须在其
- * 属性位置求值（原生按源码序），不得被推迟到字面量末尾。
- *
- * ES 语义（PropertyDefinitionEvaluation）：`{ a: A, __proto__: P, b: B }` 的
- * 求值序是 A → P → B；`__proto__` 是**原型设定**（不是自有键），值表达式
- * 与普通属性值一样按源码序求值。
- *
- * 修复前：转译层把 `__proto__` 的值从字面量里摘出来、在整段 `$obj({...})`
- * 构造完成后才 `$setProto` ⇒ 值表达式被移到**最后**（副作用顺序颠倒：
- * 原生 "a,p,b" / 引擎 "a,b,p"）。
- *
- * 不变量（负控制钉住）：无 `__proto__` 的字面量发射形态不变（不引入
- * IIFE/盒子）；`__proto__` 仍不是自有键；原型设定本身仍生效；primitive
- * 原型值仍被忽略；`__proto__` 方法名仍是自有键。
- */
-
-
-
-
-/** 结果字面量值（litValue） */
-function v(src: string) {
-  return litValue___nudojs_core_7(call(src, "f").result);
-}
-
-const wrap = (body: string) => `export function f() { ${body} }`;
-
-describe("__proto__ 值表达式在其属性位置求值（原生源码序）", () => {
-  it("{ __proto__: P, b: B } → 副作用序 P → B", () => {
-    expect(
-      v(wrap(`const log = []; const o = { __proto__: (log.push("a"), null), b: log.push("b") }; return log.join(",");`)),
-    ).toEqual({ ok: true, value: "a,b" });
+  const v = (src: string) => litValue(call(src, "f").result);
+  const wrap = (body: string) => `export function f() { ${body} }`;
+  it("副作用序按属性位置；只求值一次；原型与自有键语义", () => {
+    expect(v(wrap(`const log = []; const o = { __proto__: (log.push("a"), null), b: log.push("b") }; return log.join(",");`))).toEqual({ ok: true, value: "a,b" });
+    expect(v(wrap(`const log = []; const o = { b: log.push("b"), __proto__: (log.push("a"), null) }; return log.join(",");`))).toEqual({ ok: true, value: "b,a" });
+    expect(v(wrap(`const log = []; const o = { a: log.push("a"), __proto__: (log.push("p"), null), b: log.push("b") }; return log.join(",");`))).toEqual({ ok: true, value: "a,p,b" });
+    expect(v(wrap(`const log = []; const o = { __proto__: (log.push("a"), null) }; return log.join(",");`))).toEqual({ ok: true, value: "a" });
+    expect(v(wrap(`let n = 0; const o = { __proto__: (n++, null), b: 1 }; return n;`))).toEqual({ ok: true, value: 1 });
+    expect(v(wrap(`const p = { q: 1 }; const o = { __proto__: p, x: 1 }; return Object.getPrototypeOf(o) === p;`))).toEqual({ ok: true, value: true });
+    expect(v(wrap(`const o = { __proto__: null, x: 1 }; return Object.keys(o).join(",") + "/" + (Object.getPrototypeOf(o) === null);`))).toEqual({ ok: true, value: "x/true" });
   });
-
-  it("{ b: B, __proto__: P } → 副作用序 B → P", () => {
-    expect(
-      v(wrap(`const log = []; const o = { b: log.push("b"), __proto__: (log.push("a"), null) }; return log.join(",");`)),
-    ).toEqual({ ok: true, value: "b,a" });
-  });
-
-  it("{ a: A, __proto__: P, b: B } → 副作用序 A → P → B", () => {
-    expect(
-      v(
-        wrap(
-          `const log = []; const o = { a: log.push("a"), __proto__: (log.push("p"), null), b: log.push("b") }; return log.join(",");`,
-        ),
-      ),
-    ).toEqual({ ok: true, value: "a,p,b" });
-  });
-
-  it("只有 __proto__ 的字面量 → 值表达式仍求值一次", () => {
-    expect(
-      v(wrap(`const log = []; const o = { __proto__: (log.push("a"), null) }; return log.join(",");`)),
-    ).toEqual({ ok: true, value: "a" });
-  });
-
-  it("__proto__ 的值表达式只求值一次", () => {
-    expect(
-      v(
-        wrap(
-          `let n = 0; const o = { __proto__: (n++, null), b: 1 }; return n;`,
-        ),
-      ),
-    ).toEqual({ ok: true, value: 1 });
-  });
-
-  it("原型设定仍生效（getPrototypeOf 命中该原型）", () => {
-    expect(
-      v(wrap(`const p = { q: 1 }; const o = { __proto__: p, x: 1 }; return Object.getPrototypeOf(o) === p;`)),
-    ).toEqual({ ok: true, value: true });
-  });
-
-  it("__proto__ 仍不是自有键（Object.keys 不含它）", () => {
-    expect(
-      v(wrap(`const o = { __proto__: null, x: 1 }; return Object.keys(o).join(",") + "/" + (Object.getPrototypeOf(o) === null);`)),
-    ).toEqual({ ok: true, value: "x/true" });
+  it("负控：primitive 忽略/盒子 IIFE 只在需要时/方法名/this 绑定", () => {
+    expect(v(wrap(`const o = { __proto__: 5, x: 1 }; return Object.getPrototypeOf(o) === Object.prototype;`))).toEqual({ ok: true, value: true });
+    expect(transpileSource(`const o = { a: 1, b: 2 };`, {}).includes("__nudoProtoBox")).toBe(false);
+    expect(transpileSource(`const o = { __proto__: p, a: 1 };`, {}).includes("__nudoProtoBox")).toBe(true);
+    expect(v(wrap(`const log = []; const o = { a: log.push("a"), b: log.push("b") }; return log.join(",");`))).toEqual({ ok: true, value: "a,b" });
+    expect(v(wrap(`const o = { __proto__(){ return 1; } }; return Object.keys(o).join(",");`))).toEqual({ ok: true, value: "__proto__" });
+    expect(v(wrap(`function g(){ const t = this; const o = { t2: this === t }; return o.t2; } return g();`))).toEqual({ ok: true, value: true });
+    expect(v(wrap(`function g(){ const t = this; const o = { __proto__: null, t2: this === t }; return o.t2; } return g();`))).toEqual({ ok: true, value: true });
   });
 });
-
-describe("负控制：既有语义不回归", () => {
-  it("primitive 原型值被忽略（原型仍是 Object.prototype）", () => {
-    expect(
-      v(wrap(`const o = { __proto__: 5, x: 1 }; return Object.getPrototypeOf(o) === Object.prototype;`)),
-    ).toEqual({ ok: true, value: true });
-  });
-
-  it("普通字面量的属性求值序不变（无 __proto__ 时不插 IIFE）", () => {
-    const src = transpileSource(`const o = { a: 1, b: 2 };`, {});
-    expect(src.includes("__nudoProtoBox")).toBe(false);
-  });
-
-  it("带 __proto__ 的字面量才引入盒子 IIFE（求值序载体）", () => {
-    const src = transpileSource(`const o = { __proto__: p, a: 1 };`, {});
-    expect(src.includes("__nudoProtoBox")).toBe(true);
-  });
-
-  it("无 __proto__ 的字面量：属性值求值序不变", () => {
-    expect(
-      v(wrap(`const log = []; const o = { a: log.push("a"), b: log.push("b") }; return log.join(",");`)),
-    ).toEqual({ ok: true, value: "a,b" });
-  });
-
-  it("方法名 __proto__ 仍是自有键（不是原型设定）", () => {
-    expect(
-      v(wrap(`const o = { __proto__(){ return 1; } }; return Object.keys(o).join(",");`)),
-    ).toEqual({ ok: true, value: "__proto__" });
-  });
-
-  it("字面量里的 this 仍指向外层（IIFE 不得改 this 绑定）", () => {
-    expect(
-      v(wrap(`function g(){ const t = this; const o = { t2: this === t }; return o.t2; } return g();`)),
-    ).toEqual({ ok: true, value: true });
-  });
-
-  it("带 __proto__ 的字面量里 this 绑定同样不变（IIFE 路径）", () => {
-    expect(
-      v(
-        wrap(
-          `function g(){ const t = this; const o = { __proto__: null, t2: this === t }; return o.t2; } return g();`,
-        ),
-      ),
-    ).toEqual({ ok: true, value: true });
-  });
-});
-});
+;
 
 // ---------------------------------------------------------------------------
 // 成员路径写回不得打到根（中间层是访问器时）
@@ -1352,152 +1249,42 @@ describe("成员路径写回不得打到根（中间层是访问器时）", () =
 // 访问器占位槽不得投影成 exact undefined
 // ---------------------------------------------------------------------------
 describe("访问器占位槽不得投影成 exact undefined", () => {
-/**
- * （对象字面量访问器的**投影面**把 getter 占位槽渲染成 exact `undefined`）。
- *
- * 背景：访问器不住在 shape 槽里——transpile 只落一个 `$lit(void 0)` 占位槽
- * （保键存在性），真 getter 住 accessorTable 侧表。**读**通道（$get）先查
- * 侧表 ⇒ `o.ab` 读得对；但**投影通道**（formatShape / denoteGuard /
- * absToConstraint / 契约证明）直读占位槽 ⇒ 任何带 getter 的对象字面量，
- * 其投影一律把该属性渲染成 exact `undefined`（一个自信的错值：比真值更窄
- * 且自相矛盾——`{ab: 1}` 被声明成 `{ab: undefined}`）。
- *
- * 修法：投影侧统一经 accessorReadDomain（accessors.ts）取 getter 读域；
- * getter 抛（读域不可刻画）→ unknown（sound 超近似，不得回落 definite
- * undefined）；无 getter（数据槽 / 仅 setter）→ 用槽值。
- *
- * 本文件的断言与 Node 真实执行结果对齐（原生读值见各用例注释）。
- */
-
-
-
-
-
-
-
-
-
-/** 取对象的投影串（签名面 / dts / zod / guard 的同源渲染） */
-function shapeOf(src: string, fn = "f"): string {
-  return formatShape(call(src, fn).result);
-}
-
-/** 取对象的守卫串（`nudo export --format guard` 的同源渲染） */
-function guardOf(src: string, fn = "f"): string {
-  return denoteGuard(call(src, fn).result, "data");
-}
-
-/** 契约投影里字段的 eq-lit 值（absToConstraint → zod / standard 面的同源） */
-function fieldLit(a: Abs, field: string): unknown {
-  const c = absToConstraint(a);
-  const fc = c?.fields?.[field]?.constraint;
-  const eq = fc?.preds.find((p) => p.op === "eq");
-  if (!eq || eq.op !== "eq") return undefined;
-  return eq.b.op === "lit" ? eq.b.value : undefined;
-}
-
-describe("访问器占位槽不得投影成 exact undefined", () => {
-  it("getter 槽投影成读域值（原生读 1），不是 exact undefined", () => {
-    const src = `export function f() { return { get ab() { return 1; } }; }`;
-    expect(shapeOf(src)).toBe("{ ab: 1 }");
-  });
-
-  it("formatAbs（无损面）的 shape 段同口径", () => {
-    const src = `export function f() { return { get ab() { return 1; } }; }`;
-    const r = call(src, "f").result;
+  const shapeOf = (src: string, fn = "f"): string => formatShape(call(src, fn).result);
+  const guardOf = (src: string, fn = "f"): string => denoteGuard(call(src, fn).result, "data");
+  const fieldLit = (a: Abs, field: string): unknown => {
+    const c = absToConstraint(a);
+    const fc = (c as { fields?: Record<string, { constraint?: { preds: Array<{ op: string; b: { op: string; value?: unknown } }> } }> }).fields?.[field]?.constraint;
+    const eq = fc?.preds.find((p) => p.op === "eq");
+    if (!eq || eq.op !== "eq") return undefined;
+    return eq.b.op === "lit" ? eq.b.value : undefined;
+  };
+  it("getter 读域投影/formatAbs/this/嵌套/混排/guard/契约字段/契约门禁", () => {
+    expect(shapeOf(`export function f() { return { get ab() { return 1; } }; }`)).toBe("{ ab: 1 }");
+    const r = call(`export function f() { return { get ab() { return 1; } }; }`, "f").result;
     expect(formatAbs(r)).toContain("{ ab: 1 }");
     expect(formatAbs(r)).not.toContain("ab: undefined");
+    expect(shapeOf(`export function f() { return { get ab() { return "s"; } }; }`)).toBe('{ ab: "s" }');
+    expect(shapeOf(`export function f() { return { n: 41, get q() { return this.n; } }; }`)).toBe("{ n: 41, q: 41 }");
+    expect(shapeOf(`export function f() { return { inner: { get ab() { return 2; } } }; }`)).toBe("{ inner: { ab: 2 } }");
+    expect(shapeOf(`export function f() { return { get ab() { return true; }, plain: 7 }; }`)).toBe("{ ab: true, plain: 7 }");
+    expect(guardOf(`export function f() { return { get ab() { return 1; } }; }`)).toBe('typeof data === "object" && data !== null && !Array.isArray(data) && (Object.hasOwn(data, "ab") || ("ab" in data && !Object.hasOwn(Object.prototype, "ab"))) && data.ab === 1');
+    expect(fieldLit(call(`export function f() { return { get ab() { return 1; } }; }`, "f").result, "ab")).toBe(1);
+    const accNudo = '\nimport {number, shape} from "@nudojs/core";\nexport const numShape = shape({ ab: number() });\n';
+    const src = '\n/// @nudo:import {numShape} from "./acc.nudo.js"\n/// @nudo:contract return numShape\nexport function f() { return { get ab() { return 1; } }; }\n';
+    const checked = checkSource_____index_ts("/t/acc.js", src, pTrue_____index_ts, sidecarOpts("acc.nudo.js", accNudo));
+    expect(checked.issues.filter((i) => i.severity === "error")).toEqual([]);
   });
-
-  it("getter 槽投影成字符串读域（原生读 \"s\"）", () => {
-    const src = `export function f() { return { get ab() { return "s"; } }; }`;
-    expect(shapeOf(src)).toBe('{ ab: "s" }');
-  });
-
-  it("getter 以 this 为接收者读域（原生 this.n = 41）", () => {
-    const src = `export function f() { return { n: 41, get q() { return this.n; } }; }`;
-    expect(shapeOf(src)).toBe("{ n: 41, q: 41 }");
-  });
-
-  it("嵌套对象的 getter 槽同样按读域投影", () => {
-    const src = `export function f() { return { inner: { get ab() { return 2; } } }; }`;
-    expect(shapeOf(src)).toBe("{ inner: { ab: 2 } }");
-  });
-
-  it("getter + 数据属性同对象：各按各自读域投影", () => {
-    const src = `export function f() { return { get ab() { return true; }, plain: 7 }; }`;
-    expect(shapeOf(src)).toBe("{ ab: true, plain: 7 }");
-  });
-
-  it("守卫面按 getter 读域判定（原生读 data.ab 得 1）", () => {
-    const src = `export function f() { return { get ab() { return 1; } }; }`;
-    // 口径更新（族 09 / + 410）：guard 面现在还带
-    // ① 数组排除（`!Array.isArray(data)`）② 必填槽的**独立存在性子句**
-    // （`Object.hasOwn(data, "ab") || ("ab" in data && …)`）——
-    // 访问器键的**读域判定**（`data.ab === 1`）不变。
-    expect(guardOf(src)).toBe(
-      'typeof data === "object" && data !== null && !Array.isArray(data) && (Object.hasOwn(data, "ab") || ("ab" in data && !Object.hasOwn(Object.prototype, "ab"))) && data.ab === 1',
-    );
-  });
-
-  it("契约投影（zod / standard 面的同源）取 getter 读域", () => {
-    const src = `export function f() { return { get ab() { return 1; } }; }`;
-    expect(fieldLit(call(src, "f").result, "ab")).toBe(1);
-  });
-
-  it("契约门禁：getter 返回值满足 shape 契约（改前假红）", () => {
-    const accNudo = `
-import {number, shape} from "@nudojs/core";
-export const numShape = shape({ ab: number() });
-`;
-    const src = `
-/// @nudo:import {numShape} from "./acc.nudo.js"
-/// @nudo:contract return numShape
-export function f() { return { get ab() { return 1; } }; }
-`;
-    const r = checkSource_____index_ts(
-      "/t/acc.js",
-      src,
-      pTrue_____index_ts,
-      sidecarOpts("acc.nudo.js", accNudo),
-    );
-    expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
+  it("负控：数据属性/显式 undefined/仅 setter/getter 抛/空对象", () => {
+    expect(shapeOf(`export function f() { return { plain: 5 }; }`)).toBe("{ plain: 5 }");
+    expect(guardOf(`export function f() { return { plain: 5 }; }`)).toBe('typeof data === "object" && data !== null && !Array.isArray(data) && (Object.hasOwn(data, "plain") || ("plain" in data && !Object.hasOwn(Object.prototype, "plain"))) && data.plain === 5');
+    expect(shapeOf(`export function f() { return { u: undefined }; }`)).toBe("{ u: undefined }");
+    expect(shapeOf(`export function f() { return { set ab(v) {} }; }`)).toBe("{ ab: undefined }");
+    expect(guardOf(`export function f() { return { set ab(v) {} }; }`)).toBe('typeof data === "object" && data !== null && !Array.isArray(data) && (Object.hasOwn(data, "ab") || ("ab" in data && !Object.hasOwn(Object.prototype, "ab"))) && data.ab === undefined');
+    expect(shapeOf(`export function f() { return { get boom() { throw new Error("x"); } }; }`)).toBe("{ boom: unknown }");
+    expect(shapeOf(`export function f() { return {}; }`)).toBe("{  }");
   });
 });
-
-describe("负控制：非 getter 槽不受影响", () => {
-  it("普通数据属性仍渲染成它的值类型", () => {
-    const src = `export function f() { return { plain: 5 }; }`;
-    expect(shapeOf(src)).toBe("{ plain: 5 }");
-    expect(guardOf(src)).toBe(
-      'typeof data === "object" && data !== null && !Array.isArray(data) && (Object.hasOwn(data, "plain") || ("plain" in data && !Object.hasOwn(Object.prototype, "plain"))) && data.plain === 5',
-    );
-  });
-
-  it("显式 undefined 数据属性仍渲染成 undefined", () => {
-    const src = `export function f() { return { u: undefined }; }`;
-    expect(shapeOf(src)).toBe("{ u: undefined }");
-  });
-
-  it("仅 setter 的访问器：原生读值恒 undefined，占位槽本就正确", () => {
-    const src = `export function f() { return { set ab(v) {} }; }`;
-    expect(shapeOf(src)).toBe("{ ab: undefined }");
-    expect(guardOf(src)).toBe(
-      'typeof data === "object" && data !== null && !Array.isArray(data) && (Object.hasOwn(data, "ab") || ("ab" in data && !Object.hasOwn(Object.prototype, "ab"))) && data.ab === undefined',
-    );
-  });
-
-  it("getter 抛（读域不可刻画）→ unknown，不得回落 definite undefined", () => {
-    const src = `export function f() { return { get boom() { throw new Error("x"); } }; }`;
-    expect(shapeOf(src)).toBe("{ boom: unknown }");
-  });
-
-  it("无访问器的对象不受影响（空对象）", () => {
-    const src = `export function f() { return {}; }`;
-    expect(shapeOf(src)).toBe("{  }");
-  });
-});
-});
+;
 
 // ---------------------------------------------------------------------------
 // X.prototype 上的 owner 实例方法：值读 / in
