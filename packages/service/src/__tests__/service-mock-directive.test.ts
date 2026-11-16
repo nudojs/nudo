@@ -162,7 +162,7 @@ describe("（service 侧）—— 宿主内建名的 mock 不再被 env 跳过�
   const MOCK_PLAIN = '/**\n * @nudo:mock myFn = stub().returns("MOCKED")\n */\nexport function run() {\n  return myFn();\n}\n';
   const MOCK_OVER_ENV = '/**\n * @nudo:mock process = stub().returns("MOCKED")\n */\nexport function run() {\n  return process();\n}\n';
   const NO_MOCK = 'export function run() {\n  return Number("7");\n}\n';
-  it("宿主内建 mock 生效；产品面同值；负控制普通名/优先级/跳过表/无 mock", async () => {
+  it("内建 mock 生效/产品面同值/负控；绑定图第二合并点同口径", async () => {
     expect(callValue(MOCK_NUMBER, "/tmp/b274-n.js").value).toBe(42);
     expect(callValue(MOCK_MATH, "/tmp/b274-m.js").value).not.toBe(1);
     expect(callValue(MOCK_JSON, "/tmp/b274-j.js").value).not.toBe('{"a":1}');
@@ -173,15 +173,14 @@ describe("（service 侧）—— 宿主内建名的 mock 不再被 env 跳过�
     expect(callValue(MOCK_OVER_ENV, "/tmp/b274-prio.js", ["node"]).value).toBe("MOCKED");
     expect(callValue(NO_MOCK, "/tmp/b274-skip.js", ["node"]).value).toBe(7);
     expect(callValue(NO_MOCK, "/tmp/b274-nomock.js").value).toBe(7);
-  });
 
-  it("第二合并点：collectAbsBindingsFromGraph 也尊重宿主内建 mock", () => {
     const src = '/**\n * @nudo:mock Number = stub().returns(42)\n */\nexport function run() {\n  return Number("7");\n}\nconst x = Number("7");\n';
     const file = "/tmp/b274-bind.js";
     const binds = collectAbsBindingsFromGraph(src, file, { seedVars: mocksOf(src, file) as never });
     expect(litValue(binds.get("x")!)).toEqual({ ok: true, value: 42 });
   });
-});;
+});
+;;
 
 ;
 
@@ -484,26 +483,23 @@ function orphanDiags(src: string): DirectiveDiag[] {
 }
 
 describe("孤儿行内指令的诊断不被同文件其它指令抑制", () => {
-  it("只有孤儿指令 ⇒ 有一条「无处可施」诊断（既有口径）", () => {
+  const ORPHAN_ONLY = 'export function f(x) {\n  const obj = {\n    // @nudo:as number()\n    a: JSON.parse(x),\n  };\n  return obj;\n}\n';
+  const ORPHAN_PLUS_WORKING = 'export function f(x) {\n  const obj = {\n    // @nudo:as number()\n    a: JSON.parse(x),\n  };\n  // @nudo:as string()\n  const s = JSON.parse(x);\n  return [obj, s];\n}\n';
+  const TWO_ORPHANS = 'export function f(x) {\n  const obj = {\n    // @nudo:as number()\n    a: JSON.parse(x),\n    // @nudo:as number()\n    b: JSON.parse(x),\n  };\n  return obj;\n}\n';
+  const orphanDiags = (src: string): DirectiveDiag[] => {
+    const diags: DirectiveDiag[] = [];
+    collectEvalReplacements_____eval_injection_ts(src, { diags });
+    return diags.filter((d) => d.code === "nudo:directive-syntax" && d.message.includes("is not attached to a statement"));
+  };
+  it("单孤儿一条；孤儿+生效仍一条且文案不变；生效指令入表；两孤儿各一条", () => {
     expect(orphanDiags(ORPHAN_ONLY)).toHaveLength(1);
-  });
-
-  it("孤儿 + 一条生效的 @nudo:as ⇒ 孤儿诊断**仍然在场**（改前被抑制为 0）", () => {
     expect(orphanDiags(ORPHAN_PLUS_WORKING)).toHaveLength(1);
-    // 同一条诊断的文案保持不变（既有消费面按文案筛）
-    expect(orphanDiags(ORPHAN_PLUS_WORKING)[0]!.message).toBe(
-      "inline directive (@nudo:as / @nudo:replace) is not attached to a statement — it has no effect",
-    );
-  });
-
-  it("生效的那条 @nudo:as 照旧进入收集表（抑制解除没有副作用）", () => {
+    expect(orphanDiags(ORPHAN_PLUS_WORKING)[0]!.message).toBe("inline directive (@nudo:as / @nudo:replace) is not attached to a statement — it has no effect");
     expect(collectEvalReplacements_____eval_injection_ts(ORPHAN_PLUS_WORKING).asTargets).toHaveLength(1);
-  });
-
-  it("两处孤儿各报一条（改前合并成一条）", () => {
     expect(orphanDiags(TWO_ORPHANS)).toHaveLength(2);
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
