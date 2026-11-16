@@ -228,16 +228,7 @@ describe("#135 侧车 fs 读错误（check 核心侧）", () => {
     ).toBe(true);
   });
 
-  it("真 miss（无侧车文件）→ 静默零诊断（反向回归钉）", () => {
-    const { loadModule, setMode } = makeMutableLoader();
-    setMode("miss");
-    const r = check(loadModule);
-    expect(r.issues.filter((i) => i.code === "nudo:contract-load")).toEqual([]);
-    expect(
-      r.issues.filter((i) => i.code === "nudo:case-inconsistency"),
-    ).toEqual([]);
-    expect(r.ok).toBe(true);
-  });
+  ;
 });
 
 describe("#135 readerr 指纹（loadModuleDepsFingerprint）", () => {
@@ -665,15 +656,7 @@ describe("sidecar load I/O error vs no-sidecar (R2-6 #2)", () => {
     expect(loadErrs[0]!.message).toContain("EACCES");
   });
 
-  it("no sidecar file (undefined) → 保持静默，无 contract-load", () => {
-    const src = `export function alpha(x) { return x; }\nexport function beta(x) { return x; }\n`;
-    const r = checkSource("/t/quiet.js", src, pTrue, {
-      loadModule: missingSidecarLoadModule(),
-      fromFile: "/t/quiet.js",
-    });
-    const loadErrs = r.issues.filter((i) => i.code === "nudo:contract-load");
-    expect(loadErrs).toEqual([]);
-  });
+  ;
 
   it("读失败按 (路径, 原因) 去重：多导出只报一条", () => {
     const err = Object.assign(new Error("EMFILE: too many open files"), { code: "EMFILE" });
@@ -994,47 +977,11 @@ describe("侧车孤儿导出诊断", () => {
     resetSidecarLoadFailureCache();
   });
 
-  it("侧车导出名与源码函数名不匹配 ⇒ 报孤儿导出（点名侧车导出名）", () => {
-    const { loadModule } = makeFiles({
-      "/t/typo.nudo.js": `import { fn, number } from "@nudojs/core";\nexport const ff = fn({ x: number() }, number());`,
-    });
-    const src = `export function f(x) { return x * 2; }`;
-    const r = checkSource("/t/typo.js", src, pTrue, {
-      loadModule,
-      fromFile: "/t/typo.js",
-    });
-    const orphan = r.issues.filter(
-      (i) => i.code === "nudo:contract-load" && i.message.includes("has no matching source function"),
-    );
-    expect(orphan).toHaveLength(1);
-    // 点名侧车里真实存在的导出名（ff）+ 源码导出名（f）
-    expect(orphan[0]!.message).toContain("'ff'");
-    expect(orphan[0]!.message).toContain("source exports: f");
-  });
+  ;
 
-  it("名字对得上 ⇒ 无孤儿诊断（不误报）", () => {
-    const { loadModule } = makeFiles({
-      "/t/ok.nudo.js": `import { fn, number } from "@nudojs/core";\nexport const f = fn({ x: number() }, number());`,
-    });
-    const src = `export function f(x) { return x * 2; }`;
-    const r = checkSource("/t/ok.js", src, pTrue, {
-      loadModule,
-      fromFile: "/t/ok.js",
-    });
-    expect(r.issues.filter((i) => i.code === "nudo:contract-load")).toEqual([]);
-  });
+  ;
 
-  it("非 fn() 形态的孤儿导出（模板）不报（模板是 @nudo:import 的料）", () => {
-    const { loadModule } = makeFiles({
-      "/t/tpl.nudo.js": `import { shape, number } from "@nudojs/core";\nexport const userShape = shape({ id: number() });`,
-    });
-    const src = `export function f(x) { return x * 2; }`;
-    const r = checkSource("/t/tpl.js", src, pTrue, {
-      loadModule,
-      fromFile: "/t/tpl.js",
-    });
-    expect(r.issues.filter((i) => i.code === "nudo:contract-load")).toEqual([]);
-  });
+  ;
 
   it("已被 @nudo:import 认领的名字不算孤儿", () => {
     const { loadModule } = makeFiles({
@@ -1640,11 +1587,12 @@ type Case = {
   entry?: string;
   expectCodes?: string[];
   absentCodes?: string[];
-  message?: string;
+  messages?: string[];
+  ok?: boolean;
 };
 
 const CASES: Case[] = [
-  { name: "无侧车 ⇒ 静默（零 contract-load）", files: {}, src: "export function f(x) { return x; }", absentCodes: ["nudo:contract-load"] },
+  { name: "无侧车 ⇒ 静默（零 contract-load / case-inconsistency，ok=true）", files: {}, src: "export function f(x) { return x; }", absentCodes: ["nudo:contract-load", "nudo:case-inconsistency"], ok: true },
   {
     name: "侧车语法错 ⇒ contract-load 且点名侧车",
     files: { "/t/bad.nudo.js": `import { fn, null_ } from "@nudojs/core";\nexport const f = fn({ x: null_() });` },
@@ -1659,13 +1607,20 @@ const CASES: Case[] = [
     src: "export function f(x) { return x * 2; }",
     entry: "/t/typo.js",
     expectCodes: ["nudo:contract-load"],
-    message: "'ff'",
+    messages: ["'ff'", "source exports: f"],
   },
   {
     name: "侧车非 fn 模板导出 ⇒ 不算孤儿（零 contract-load）",
     files: { "/t/tpl.nudo.js": `import { shape, number } from "@nudojs/core";\nexport const userShape = shape({ id: number() });` },
     src: "export function f(x) { return x * 2; }",
     entry: "/t/tpl.js",
+    absentCodes: ["nudo:contract-load"],
+  },
+  {
+    name: "侧车导出名与源码一致 ⇒ 零孤儿诊断",
+    files: { "/t/ok.nudo.js": `import { fn, number } from "@nudojs/core";\nexport const f = fn({ x: number() }, number());` },
+    src: "export function f(x) { return x * 2; }",
+    entry: "/t/ok.js",
     absentCodes: ["nudo:contract-load"],
   },
   {
@@ -1687,12 +1642,14 @@ const CASES: Case[] = [
   },
 ];
 
-it.each(CASES)("$name", ({ files, src, entry = "/t/f.js", expectCodes = [], absentCodes = [], message }) => {
+it.each(CASES)("$name", ({ files, src, entry = "/t/f.js", expectCodes = [], absentCodes = [], messages = [], ok }) => {
   const { loadModule } = makeFiles(files);
   const r = checkSource(entry, src, pTrue, { loadModule, fromFile: entry });
   const codes = r.issues.map((i) => i.code);
   for (const code of expectCodes) expect(codes).toContain(code);
   for (const code of absentCodes) expect(codes).not.toContain(code);
-  if (message) expect(r.issues.map((i) => i.message).join("\n")).toContain(message);
+  const text = r.issues.map((i) => i.message).join("\n");
+  for (const m of messages) expect(text).toContain(m);
+  if (ok !== undefined) expect(r.ok).toBe(ok);
 });
 });
