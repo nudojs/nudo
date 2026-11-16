@@ -1,5 +1,5 @@
 /**
- * 模块套件：inlayHint 面（range / CRLF / 参数归一 / unknown 责任）。
+ * 模块套件：inlayHint 面（位置/range / 参数归一 / unknown 责任）。
  */
 import { describe, it, expect } from "vitest";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
@@ -8,192 +8,115 @@ import { join } from "node:path";
 import { createNudoServer } from "../server.ts";
 import { createMockConnection, withLspServer } from "./helpers.ts";
 
-// ---------------------------------------------------------------------------
-// inlayHint：CRLF 源文件的 hint 位置不得越出行可见长度
-// ---------------------------------------------------------------------------
-describe("inlayHint：CRLF 源文件的 hint 位置不得越出行可见长度", () => {
-/**
- * LSP `inlayHint` 在 **CRLF 源文件**上把 `position.character`
- * 推到**行可见长度之外 1 列**（越界位置）。
- *
- * 改前：服务端 `source.split("\n")` 切行 ⇒ 每行末尾的 `\r` 被算进行长
- * ⇒ end-of-line hint 的 character 比客户端算出的可见行长多 1。
- *
- * 原生 oracle：LSP `Position.character` 是行内 UTF-16 偏移，**行终止符
- * 不属于该行** ⇒ character 必须落在该行的可见长度内。
- */
-
-
-
-
-
-
+type Range = { start: { line: number; character: number }; end: { line: number; character: number } };
+type Hint = { position: { line: number; character: number }; label: string; tooltip?: string };
 
 const BODY = `export function alpha(x) {\n  return x + 1;\n}\n`;
+const POS_SRC = `export function alpha(x) { return x; }\n\nexport function beta(y) { return y; }\n`;
 
-type Hint = { position: { line: number; character: number }; label: string };
-
-async function hintsFor(file: string, text: string): Promise<Hint[]> {
-  const mock = createMockConnection();
-  createNudoServer(mock as unknown as never);
-  const uri = `file://${file}`;
-  mock.notifications.get("textDocument/didOpen")!({
-    textDocument: { uri, languageId: "javascript", version: 1, text },
-  });
-  await new Promise((r) => setTimeout(r, 250));
-  const inlay = mock.requests.get("textDocument/inlayHint")!;
-  return (inlay({ textDocument: { uri } }) ?? []) as Hint[];
+async function withDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
+  const dir = mkdtempSync(join(tmpdir(), "nudo-inlay-"));
+  try { return await fn(dir); } finally { rmSync(dir, { recursive: true, force: true }); }
 }
-
-describe("inlayHint：CRLF 源文件的 hint 位置不得越出行可见长度", () => {
-  it("CRLF 与 LF 给出同一组位置（改前：CRLF 的行尾 hint 越界 1 列）", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-bug722-"));
-    try {
-      const crlfFile = join(dir, "crlf.js");
-      const lfFile = join(dir, "lf.js");
-      const crlf = BODY.replace(/\n/g, "\r\n");
-      writeFileSync(crlfFile, crlf);
-      writeFileSync(lfFile, BODY);
-
-      const crlfHints = await hintsFor(crlfFile, crlf);
-      const lfHints = await hintsFor(lfFile, BODY);
-
-      // 客户端模型：行终止符不属于该行 ⇒ 可见行长
-      const visible = crlf.split(/\r\n|\r|\n/).map((l) => l.length);
-      for (const h of crlfHints) {
-        const vlen = visible[h.position.line] ?? 0;
-        expect(h.position.character).toBeLessThanOrEqual(vlen);
-      }
-      // 同一份代码、只换行尾 ⇒ 位置逐条相同（服务端与客户端同口径）
-      expect(JSON.stringify(crlfHints)).toBe(JSON.stringify(lfHints));
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
-  it("CRLF 下 end-of-line 的 contract 档 hint 落在可见行长上（不是 +1）", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-bug722b-"));
-    const file = join(dir, "crlf.js");
-    const crlf = BODY.replace(/\n/g, "\r\n");
-    writeFileSync(file, crlf);
-    try {
-      const hints = await hintsFor(file, crlf);
-      const visible = crlf.split(/\r\n|\r|\n/).map((l) => l.length);
-      const eol = hints.find((h) => h.label.includes("contract"));
-      expect(eol).toBeDefined();
-      // 行尾 hint 的 character == 该行可见行长（不是可见行长 + 1）
-      expect(eol!.position.character).toBe(visible[eol!.position.line]);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-});
-});
-
-// ---------------------------------------------------------------------------
-// inlayHint：params.range 必须被尊重
-// ---------------------------------------------------------------------------
-describe("inlayHint：params.range 必须被尊重", () => {
-/**
- * LSP `textDocument/inlayHint` **完全忽略** `params.range`。
- *
- * 改前：handler 收了 `params` 却不读 `params.range` ⇒ 两个**不相交**的
- * 区间返回**逐字节相同**的整文件 hint 集（IDE 的「只看这一段」被无视）。
- *
- * 原生 oracle：LSP 协议里 `textDocument/inlayHint` 的 `range` 是**必填**且
- * 表示「只请求该区间」⇒ 返回的 hint 必须落在请求区间内。
- */
-
-
-
-
-
-
-
-const SRC = `export function alpha(x) { return x; }\n\nexport function beta(y) { return y; }\n`;
-
-type Hint = { position: { line: number; character: number }; label: string };
 
 async function hintsFor(
   file: string,
   text: string,
-  range?: { start: { line: number; character: number }; end: { line: number; character: number } },
+  range?: Range,
+  initOptions?: unknown,
 ): Promise<Hint[]> {
   const mock = createMockConnection();
   createNudoServer(mock as unknown as never);
+  if (initOptions !== undefined) {
+    mock.requests.get("initialize")!({
+      processId: null,
+      rootUri: null,
+      workspaceFolders: [],
+      capabilities: {},
+      initializationOptions: initOptions,
+    });
+  }
   const uri = `file://${file}`;
   mock.notifications.get("textDocument/didOpen")!({
     textDocument: { uri, languageId: "javascript", version: 1, text },
   });
   await new Promise((r) => setTimeout(r, 250));
-  const inlay = mock.requests.get("textDocument/inlayHint")!;
-  return (inlay({ textDocument: { uri }, ...(range ? { range } : {}) }) ?? []) as Hint[];
+  return (mock.requests.get("textDocument/inlayHint")!({
+    textDocument: { uri },
+    ...(range ? { range } : {}),
+  }) ?? []) as Hint[];
 }
 
-describe("inlayHint：params.range 必须被尊重", () => {
-  it("区间请求只返回区间内的 hint（改前：整文件集逐字节相同）", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-bug716-"));
-    const file = join(dir, "range.js");
-    writeFileSync(file, SRC);
-    try {
-      const whole = await hintsFor(file, SRC);
+const visibleLengths = (text: string) => text.split(/\r\n|\r|\n/).map((l) => l.length);
+
+describe("inlayHint：位置与 range 契约", () => {
+  it("LF 整文件：end-of-line hint 落在可见行长内", async () => {
+    await withDir(async (dir) => {
+      const file = join(dir, "lf.js");
+      writeFileSync(file, BODY);
+      const hints = await hintsFor(file, BODY);
+      expect(hints.length).toBeGreaterThan(0);
+      const visible = visibleLengths(BODY);
+      for (const h of hints) expect(h.position.character).toBeLessThanOrEqual(visible[h.position.line] ?? 0);
+      const eol = hints.find((h) => h.label.includes("contract"));
+      expect(eol, `缺行尾 contract hint：${JSON.stringify(hints)}`).toBeDefined();
+      expect(eol!.position.character).toBe(visible[eol!.position.line]);
+    });
+  });
+
+  it("CRLF 与 LF 位置逐条相同，行尾字符 == 可见行长（不含 \\r）", async () => {
+    await withDir(async (dir) => {
+      const lfFile = join(dir, "lf.js");
+      const crlfFile = join(dir, "crlf.js");
+      const crlf = BODY.replace(/\n/g, "\r\n");
+      writeFileSync(lfFile, BODY);
+      writeFileSync(crlfFile, crlf);
+      const lfHints = await hintsFor(lfFile, BODY);
+      const crlfHints = await hintsFor(crlfFile, crlf);
+      expect(JSON.stringify(crlfHints)).toBe(JSON.stringify(lfHints));
+      const visible = visibleLengths(crlf);
+      for (const h of crlfHints) expect(h.position.character).toBeLessThanOrEqual(visible[h.position.line] ?? 0);
+      const eol = crlfHints.find((h) => h.label.includes("contract"));
+      expect(eol).toBeDefined();
+      expect(eol!.position.character).toBe(visible[eol!.position.line]);
+    });
+  });
+
+  it("区间只返回区间内 hint；LF/CRLF 同口径；窄区间为空", async () => {
+    await withDir(async (dir) => {
+      const lfFile = join(dir, "lf.js");
+      const crlfFile = join(dir, "crlf.js");
+      const crlf = POS_SRC.replace(/\n/g, "\r\n");
+      writeFileSync(lfFile, POS_SRC);
+      writeFileSync(crlfFile, crlf);
+      const whole = await hintsFor(lfFile, POS_SRC);
       expect(whole.length).toBeGreaterThan(1);
-
-      const line0 = await hintsFor(file, SRC, {
-        start: { line: 0, character: 0 },
-        end: { line: 0, character: 40 },
-      });
-      const line2 = await hintsFor(file, SRC, {
-        start: { line: 2, character: 0 },
-        end: { line: 2, character: 40 },
-      });
-
-      // 每个 hint 都必须落在请求区间内
-      expect(line0.every((h) => h.position.line === 0)).toBe(true);
-      expect(line2.every((h) => h.position.line === 2)).toBe(true);
-      // 两个不相交区间 ⇒ 不同的 hint 集（改前二者与整文件集逐字节相同）
-      expect(JSON.stringify(line0)).not.toBe(JSON.stringify(line2));
-      expect(JSON.stringify(line0)).not.toBe(JSON.stringify(whole));
-      expect(JSON.stringify(line2)).not.toBe(JSON.stringify(whole));
-      // 区间内的 hint 仍在（不是「清空」）
-      expect(line0.length).toBeGreaterThan(0);
-      expect(line2.length).toBeGreaterThan(0);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
-  it("窄区间（不含任何 hint 位）返回空集，且不与整文件集相同", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-bug716b-"));
-    const file = join(dir, "range.js");
-    writeFileSync(file, SRC);
-    try {
-      const whole = await hintsFor(file, SRC);
-      const narrow = await hintsFor(file, SRC, {
-        start: { line: 0, character: 0 },
-        end: { line: 0, character: 5 },
-      });
+      const line0 = { start: { line: 0, character: 0 }, end: { line: 0, character: 40 } };
+      const line2 = { start: { line: 2, character: 0 }, end: { line: 2, character: 40 } };
+      const lf0 = await hintsFor(lfFile, POS_SRC, line0);
+      const lf2 = await hintsFor(lfFile, POS_SRC, line2);
+      const crlf0 = await hintsFor(crlfFile, crlf, line0);
+      expect(lf0.length).toBeGreaterThan(0);
+      expect(lf2.length).toBeGreaterThan(0);
+      expect(lf0.every((h) => h.position.line === 0)).toBe(true);
+      expect(lf2.every((h) => h.position.line === 2)).toBe(true);
+      expect(JSON.stringify(lf0)).not.toBe(JSON.stringify(lf2));
+      expect(JSON.stringify(lf0)).not.toBe(JSON.stringify(whole));
+      expect(JSON.stringify(crlf0)).toBe(JSON.stringify(lf0));
+      const narrow = await hintsFor(lfFile, POS_SRC, { start: { line: 0, character: 0 }, end: { line: 0, character: 5 } });
       expect(narrow).toEqual([]);
-      expect(JSON.stringify(narrow)).not.toBe(JSON.stringify(whole));
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
+    });
   });
 
-  it("区间缺省（不合规客户端）⇒ 整文件集（fail-open，不丢内容）", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-bug716c-"));
-    const file = join(dir, "range.js");
-    writeFileSync(file, SRC);
-    try {
-      const whole = await hintsFor(file, SRC);
-      const noRange = await hintsFor(file, SRC, undefined);
-      expect(noRange.length).toBe(whole.length);
+  it("缺省 range（不合规客户端）⇒ 整文件集（fail-open）", async () => {
+    await withDir(async (dir) => {
+      const file = join(dir, "range.js");
+      writeFileSync(file, POS_SRC);
+      const whole = await hintsFor(file, POS_SRC);
+      const noRange = await hintsFor(file, POS_SRC, undefined);
       expect(JSON.stringify(noRange)).toBe(JSON.stringify(whole));
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
+    });
   });
-});
 });
 
 // ---------------------------------------------------------------------------
@@ -329,12 +252,6 @@ describe("inlay 的 any/unknown 责任区分", () => {
 
 
 
-
-type Hint = {
-  position: { line: number; character: number };
-  label: string;
-  tooltip?: string;
-};
 
 const FETCH_SRC = `const res = fetch("https://example.com/api");
 export function status() {
