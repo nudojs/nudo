@@ -1,5 +1,15 @@
 ```audit
 title	rootCause	gap	action	status	evidence
+拼接见证落 unknown/never 且无错值；字面量见证不受影响	parser-directives 尾部契约表	没测该层	keep	keep	—
+紧贴形态与空格形态同返回类型、零诊断；裸标签/ skipped 无返回	parser-directives 尾部契约表	没测该层	keep	keep	—
+skip 返回 / mock 值 / sinon 返回值都不折错字符串；字面量不受影响	parser-directives 尾部契约表	没测该层	keep	keep	—
+零诊断、零函数级泄漏，文件级指令仍被抽取；函数级 mock 正常	parser-directives 尾部契约表	没测该层	keep	keep	—
+mockfetch 诊断不产 mock；空格形态静默且产 mock	parser-directives 尾部契约表	没测该层	keep	keep	—
+空 inline / 空 from 告警且不产 mock；合法载荷静默且产 mock	parser-directives 尾部契约表	没测该层	keep	keep	—
+箭头 / async 无参 / async function / 指令 / sinon callsFake 都保留 async	parser-directives 尾部契约表	没测该层	keep	keep	—
+函数体 / 对象体 / 块注释同位置的 import 都告警且点名文件级	parser-directives 尾部契约表	没测该层	keep	keep	—
+replaceFoo 告警不产指令；assume 不误伤；合法 as/replace 不回归	parser-directives 尾部契约表	没测该层	keep	keep	—
+env / mock-module 在函数体内都拦截并告警	parser-directives 尾部契约表	没测该层	keep	keep	—
 文件首 / class 上方 / 对象 / 数组 / 两种解构 / 数组后置都放行且两通道一致	文件级作用域嵌套体表	没测该层	keep	keep	—
 class 体 / 对象字面量体 / 字段 / mock-module 均拦截并告警	文件级作用域嵌套体表	没测该层	keep	keep	—
 失败 ⇒ never + 诊断；as/replace/skip 上下文保持 unknown	指令解析面整表化	没测该层	keep	keep	—
@@ -18,21 +28,7 @@ case 期望值带尾注释仍解析，且与无注释形态一致、零诊断	�
 裸 / 尾随空白 / 不可读 env 列表都告警	指令解析面整表化	没测该层	keep	keep	—
 块注释 / JSDoc 的 import 告警；行注释静默	指令解析面整表化	没测该层	keep	keep	—
 畸形 mock-module 告警；单引号合法载荷静默并产出	指令解析面整表化	没测该层	keep	keep	—
-"emits nudo:directive-syntax naming the missing space"	"`@nudo:case\"c1\" (1, 2)`（标签与名字之间**无空白**）⇒ 抽取侧（严格 `[ \\t]+`）**不匹配** + 诊断侧（宽松 `[ \\t]*`）**判合法** ⇒ 整条 case **静默 蒸发** ⇒ `nudo test` 一个 case 都不跑、**零诊断**（假绿）。 断言：expect(diags).toHaveLength(1);；expect(diags[0]!.code).toBe(\"nudo:directive-syntax\");"	没测该层	keep	keep	—
 "`@nudo:env` in a function body is still diagnosed + not promoted (Bug 847)"	"文件级指令的**位置闸门**漏掉 **ArrayExpression（数组字面量体）** 与 **ObjectPattern（解构模式体）** ⇒ 写在数组元素 / 解构键**上方**的 `/// @nudo:env` 被**静默提升**成**整文件** env（零诊断）。 根因：闸门区间只覆盖「函数体」（）+「类体 / 对象字面量体」 （）； 断言：expect(diags).toHaveLength(1);；expect(diags[0]!.code).toBe(\"nudo:directive-syntax\");"	夹具漏形态	keep	keep	—
-"`/// @nudo:env node` in a function body is not promoted + is diagnosed"	"根因：文件级指令的**作用域 = 词法位置**这一约束只在**块注释**分支被检查； 行注释 分支**没有位置闸门**。 断言：expect(diags).toHaveLength(1);；expect(diags[0]!.code).toBe(\"nudo:directive-syntax\");"	没测该层	keep	keep	—
-"@nudo:replaceFoo（粘连）→ nudo:directive-syntax，无指令"	"（parser 面）：行内指令的**粘连**形态此前对扫描器**完全不可见** ⇒ **零诊断**地蒸发。 - `@nudo:replaceFoo <target> <typeExpr>` ⇒ 既不匹配严格正则、也不匹配宽松 正则 ⇒ 整条行内指令消失（连同它本该替换的类型）。 断言：expect(dirs.filter((d) => d.kind === \"replace\")).toHaveLength(0);；expect("	夹具漏形态	keep	keep	—
-"函数体内的 /// @nudo:import ⇒ 一条 nudo:directive-syntax（改前：零诊断）"	"`@nudo:import` 的**行注释**形态写在函数体 / 类体 / 对象体 / 数组体 / 解构模式体内 ⇒ **零诊断**地失效（core 文本路的位置闸门把它拦下， 引用它的 `@nudo:contract` 被静默丢弃 ⇒ 门禁假绿）； 根因：`packages/parser/src/directives/file-directives.ts` 的 misplaced 分支 只认 `@nudo:env` / `@nudo:mock-module`（`warnMisplacedFileTagLine` 的标签 联合类型里没有 `import`）⇒ `@nudo:import` 落在 `continue` 之前的 if 链"	夹具漏形态	keep	keep	—
-"`async (x) => x + 1` is scanned as async"	"`@nudo:mock f = async (x) => x + 1` 的 **async 语义被静默丢弃** ⇒ mock 被建模成**同步**函数 ⇒ 调用点 `f(1).then(…)` 报「method 'then' missing on number receiver」⇒ **error 级** `nudo:entry-may-throw` **假红** （native 不抛：native 返回 Promise）。 根因（expr-scan.ts `parseArrowFunctionExpr`）：解析层只取箭头的**参数与体**， `init.async` **根本没有被读出来** ⇒ service 据此把 mock"	没测该层	keep	keep	—
-"`@nudo:mock fetch =` → nudo:directive-syntax (empty payload)"	"`@nudo:mock` 的**载荷为空**（`@nudo:mock fetch =` / `@nudo:mock g from`） ⇒ 指令**静默蒸发**、零诊断 ⇒ mock 丢失 ⇒ 分析退化成 unknown / 假红。 根因：宽松标签正则（`@nudo:mock\\b[ \\t]*([^\\n]*)`）看得到标签，但两条严格文法 （inline `= <expr>` / from `from \"<path>\"`）都不命中 ⇒ 既不建 mock 也不告警。 断言：expect(diags).toHaveLength(1);；expect(diags[0]!.code).toBe(\"nudo:directive-syntax\");"	没测该层	keep	keep	—
-"produces no nudo:directive-syntax warning"	"文件级 `/// @nudo:mock-module` 被**函数级** `@nudo:mock` 标签正则 误捕：正确写法产生**伪造的** nudo:directive-syntax 警告（\"Malformed @nudo:mock: cannot parse name … — got: -module …\"）。 根因：mock 标签正则用 `\\b` 收尾，`@nudo:mock` 后的 `-` 仍满足词边界 ⇒ 文件级 `@nudo:mock-module` 落进函数级 mock 扫描器。 断言：expect(fnDiags(FILE_LEVEL_MOCK_MODULE)).toEqual([]);；expect(fileDi"	没测该层	keep	keep	—
-"object destructuring keeps the pattern and exposes the bound names"	"`@nudo:mock g = ({ a, b }) => a + b` 的**形参根本没被绑定** ⇒ mock 体读到未声明全局 ⇒ `ReferenceError` ⇒ **error 级**假红 + dts 产物写出 `caller(): never`（**错误类型声明**）。 根因（expr-scan.ts `parseArrowFunctionExpr` 的形参循环）：形参被降级成 「名字 / 占位名」而**无绑定语义**——解构形参退化成占位名 `__destructured_0`、 `AssignmentPattern`（默认值）**整条丢弃**（连同 `params` / `paramPatterns` 的 下标对"	没测该层	keep	keep	—
-"@nudo:skip return type is unknown, not a wrong string"	"`@nudo:skip => \"a\" + \"b\"` 的声明返回类型、`@nudo:mock` 载荷里的字符串值 都走同一套字符串分支 ⇒ 旧实现把 `a\" + \"b` 折成**声明的类型 / mock 值** ⇒ 签名与 dts 给出**错误的类型声明**（谁也没写过的字符串）。 修法：与 同源——字符串分支的词法边界判定单源在 `directives/string-literal.ts`； 断言：expect(d).toBeDefined();；expect(returns).toBeDefined();"	夹具漏形态	keep	keep	—
-"mock payload value is unknown, not a wrong string"	"`@nudo:skip => \"a\" + \"b\"` 的声明返回类型、`@nudo:mock` 载荷里的字符串值 都走同一套字符串分支 ⇒ 旧实现把 `a\" + \"b` 折成**声明的类型 / mock 值** ⇒ 签名与 dts 给出**错误的类型声明**（谁也没写过的字符串）。 修法：与 同源——字符串分支的词法边界判定单源在 `directives/string-literal.ts`； 断言：expect([\"unknown\", \"never\"]).toContain(abs.shape.k);；expect(litValue(abs).ok).toBe(false);"	夹具漏形态	keep	keep	—
-"sinon mock return value is unknown, not a wrong string"	"`@nudo:skip => \"a\" + \"b\"` 的声明返回类型、`@nudo:mock` 载荷里的字符串值 都走同一套字符串分支 ⇒ 旧实现把 `a\" + \"b` 折成**声明的类型 / mock 值** ⇒ 签名与 dts 给出**错误的类型声明**（谁也没写过的字符串）。 修法：与 同源——字符串分支的词法边界判定单源在 `directives/string-literal.ts`； 断言：expect(expr).not.toBeNull();；expect(lv.ok).toBe(false);"	夹具漏形态	keep	keep	—
-"a literal mock payload is unaffected"	"`@nudo:skip => \"a\" + \"b\"` 的声明返回类型、`@nudo:mock` 载荷里的字符串值 都走同一套字符串分支 ⇒ 旧实现把 `a\" + \"b` 折成**声明的类型 / mock 值** ⇒ 签名与 dts 给出**错误的类型声明**（谁也没写过的字符串）。 修法：与 同源——字符串分支的词法边界判定单源在 `directives/string-literal.ts`； 断言：expect(expr).not.toBeNull();；expect(litValue(expr.returnValue!)).toEqual({ ok: true, value: \"ab\" });"	夹具漏形态	keep	keep	—
-"tight form yields the declared return type"	"文件级 `/// @nudo:mock-module` 被**函数级** `@nudo:mock` 标签正则 误捕：正确写法产生**伪造的** nudo:directive-syntax 警告（\"Malformed @nudo:mock: cannot parse name … — got: -module …\"）。 根因：mock 标签正则用 `\\b` 收尾，`@nudo:mock` 后的 `-` 仍满足词边界 ⇒ 文件级 `@nudo:mock-module` 落进函数级 mock 扫描器。 断言：expect(skipReturns(TIGHT)).toBe(\"number\");"	没测该层	keep	keep	—
-"witness argument of a concatenation is unknown, not a wrong string"	"旧实现的字符串分支 只查首尾引号 ⇒ `(\"a\" + \"b\")` 折成 `a\" + \"b`（自信的错值）⇒ 见证 ⊭ 契约 ⇒ 契约门禁**假红**（用户写的见证恰好就是契约要求的值）。 修法：与 同源（字符串分支的词法边界判定）⇒ 非单个字面量落 unknown（诊断给出），不再折出错值。 断言：expect(args).toHaveLength(1);；expect([\"unknown\", \"never\"]).toContain(args[0]!.shape.k);"	旧断言钉错	keep	keep	—
 ```audit-deleted
 title	reason	evidence
 malformed mock-module payload → nudo:directive-syntax warning	dup:指令解析面整表化	commit:4b8e51ee
@@ -176,4 +172,18 @@ a literal witness is unaffected	dup:指令解析面整表化	commit:064f93bf
 `/// @nudo:env node` above an array element is not promoted + is diagnosed	dup:文件级作用域嵌套体表	commit:94422142
 `/// @nudo:env node` above a class method is still blocked + diagnosed	dup:文件级作用域嵌套体表	commit:94422142
 a top-of-file directive still works	dup:文件级作用域嵌套体表	commit:94422142
+emits nudo:directive-syntax naming the missing space	dup:parser-directives 尾部契约表	commit:7b50ab18
+`/// @nudo:env node` in a function body is not promoted + is diagnosed	dup:parser-directives 尾部契约表	commit:7b50ab18
+@nudo:replaceFoo（粘连）→ nudo:directive-syntax，无指令	dup:parser-directives 尾部契约表	commit:7b50ab18
+函数体内的 /// @nudo:import ⇒ 一条 nudo:directive-syntax（改前：零诊断）	dup:parser-directives 尾部契约表	commit:7b50ab18
+`async (x) => x + 1` is scanned as async	dup:parser-directives 尾部契约表	commit:7b50ab18
+`@nudo:mock fetch =` → nudo:directive-syntax (empty payload)	dup:parser-directives 尾部契约表	commit:7b50ab18
+produces no nudo:directive-syntax warning	dup:parser-directives 尾部契约表	commit:7b50ab18
+object destructuring keeps the pattern and exposes the bound names	dup:parser-directives 尾部契约表	commit:7b50ab18
+@nudo:skip return type is unknown, not a wrong string	dup:parser-directives 尾部契约表	commit:7b50ab18
+mock payload value is unknown, not a wrong string	dup:parser-directives 尾部契约表	commit:7b50ab18
+sinon mock return value is unknown, not a wrong string	dup:parser-directives 尾部契约表	commit:7b50ab18
+a literal mock payload is unaffected	dup:parser-directives 尾部契约表	commit:7b50ab18
+tight form yields the declared return type	dup:parser-directives 尾部契约表	commit:7b50ab18
+witness argument of a concatenation is unknown, not a wrong string	dup:parser-directives 尾部契约表	commit:7b50ab18
 ```
