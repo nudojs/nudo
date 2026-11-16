@@ -45,7 +45,6 @@ title	rootCause	gap	action	status	evidence
 "负控制：没有 mock 的入口仍报 nudo:entry-may-throw（门禁未被关掉）"	"无 mock 的对照：入口读一个不存在的全局 ⇒ 真的可能抛 断言：expect(msgs).toContain(\"nudo:entry-may-throw\");"	没测该层	keep	keep	—
 "verbose 档：nudo:assume-relied 走 info 通道上屏（不混进 warn 流）"	"（vite 半）—— vite-plugin 把 **info 级 check 诊断丢在噪声档过滤 之前** ⇒ `nudo:assume-relied` / `nudo:invariant-relied` / `nudo:opaque-result` **永不上屏**，且 `nudo.analysis.diagnostics: \"verbose\"` 对 check 诊断 **完全是空操作**。 根因：`checkIssuesToDiagnostics` 在转成 vite Diagnostic **之前**就 `filter(severity === \"error\" || severity === \"warning\")` ⇒ 下游的"	没测该层	keep	keep	—
 "默认档：info 不上屏（档位取舍仍归 filterDiagnosticsByLevel）"	"（vite 半）—— vite-plugin 把 **info 级 check 诊断丢在噪声档过滤 之前** ⇒ `nudo:assume-relied` / `nudo:invariant-relied` / `nudo:opaque-result` **永不上屏**，且 `nudo.analysis.diagnostics: \"verbose\"` 对 check 诊断 **完全是空操作**。 根因：`checkIssuesToDiagnostics` 在转成 vite Diagnostic **之前**就 `filter(severity === \"error\" || severity === \"warning\")` ⇒ 下游的"	没测该层	keep	keep	—
-"插件对象带 enforce: 'pre'（排在 vite:esbuild 之前 ⇒ 看得到原始 TS 源码）"	"收集 vite logger 的 warn / info 通道（不透传，保持测试输出干净）。 断言：expect(nudoPlugin().enforce).toBe(\"pre\");"	没测该层	keep	keep	—
 "直接驱动 transform：原始 TS 源码里的 @nudo:throws 可见 ⇒ 不报 CLI 不会报的 entry-may-throw"	"⚠ `scope.ts` 的项目根是**模块级状态** ⇒ 直接驱动 `transform` 而不先给根，会沿用**上一个**用例留下的根 ⇒ 文件被当成「工程根之外的依赖」 而跳过（`scope.ts` 的 1056 语义）⇒ 诊断消失。 断言：expect(result).toBeNull();；expect(msgs).not.toContain(\"entry-may-throw\");"	没测该层	keep	keep	—
 "对照组：同一份源码剥掉注释（= esbuild 产物）⇒ 报 entry-may-throw（差异来自插件排序）"	"同一份源码的「注释被剥光」形态 —— **等价于 esbuild 的 TS loader 产物** （`vite:esbuild` 在 `enforce: \"pre\"` 缺席时排在插件之前 ⇒ 插件拿到的就是它）。 用它当**对照组**：证明差异来自**插件排序**（插件看到哪份代码）， 而不是插件的分析逻辑。 断言：expect(result).toBeNull();；expect(msgs).toContain(\"entry-may-throw\");"	夹具漏形态	keep	keep	—
 "真 vite build：.ts 源里的 @nudo:throws 可见 ⇒ 构建成功、零 [nudo] 诊断（不假红）"	"收集 vite logger 的 warn / info 通道（不透传，保持测试输出干净）。 断言：expect(buildPromise).resolves.toBeTruthy();；expect(warnings.join(\"\\n\")).not.toContain(\"entry-may-throw\");"	没测该层	keep	keep	—
@@ -92,5 +91,5 @@ title	rootCause	gap	action	status	evidence
 
 ```audit-deleted
 title	reason	evidence
-插件对象带 enforce: 'pre'（排在 vite:esbuild 之前 ⇒ 看得到原始 TS 源码）	dup:插件对象带 enforce: 'pre'（排在 vite:esbuild 之前 ⇒ 看得到原始 TS 源码）（同文件两处逐字同体，保留首份）	commit:PENDING
+插件对象带 enforce: 'pre'（排在 vite:esbuild 之前 ⇒ 看得到原始 TS 源码）	dup:插件对象带 enforce: 'pre'（排在 vite:esbuild 之前 ⇒ 看得到原始 TS 源码）（同文件两处逐字同体，保留首份）	commit:e73bbdb8
 ```

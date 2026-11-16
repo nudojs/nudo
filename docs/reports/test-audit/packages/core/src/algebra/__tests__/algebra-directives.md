@@ -15,8 +15,6 @@ title	rootCause	gap	action	status	evidence
 "mock-module inside a class body is not file-wide"	"回归：core **文本路径**（`directive-scan.ts`）的文件级指令位置闸门 漏掉 **class 体 / 对象字面量体** ⇒ 方法 / 字段上方的 `/// @nudo:env web` 被**静默提升**成**整文件** env（零诊断）。 根因：`functionBodyRanges` 的区间是「函数站点」区间； 断言：expect(extractMockModuleRecords(MOCK_IN_CLASS)).toEqual([]);"	夹具漏形态	keep	keep	—
 "@nudo:import inside a class body is not file-wide"	"回归：core **文本路径**（`directive-scan.ts`）的文件级指令位置闸门 漏掉 **class 体 / 对象字面量体** ⇒ 方法 / 字段上方的 `/// @nudo:env web` 被**静默提升**成**整文件** env（零诊断）。 根因：`functionBodyRanges` 的区间是「函数站点」区间； 断言：expect(extractNudoImportRecords(IMPORT_IN_CLASS)).toEqual([]);"	夹具漏形态	keep	keep	—
 "class **声明上方**的 env 仍是文件级（合法顶层位置）"	"回归：core **文本路径**（`directive-scan.ts`）的文件级指令位置闸门 漏掉 **class 体 / 对象字面量体** ⇒ 方法 / 字段上方的 `/// @nudo:env web` 被**静默提升**成**整文件** env（零诊断）。 根因：`functionBodyRanges` 的区间是「函数站点」区间； 断言：expect("	夹具漏形态	keep	keep	—
-"文件头的 env 仍是文件级"	"回归：core **文本路径**（`directive-scan.ts`）的文件级指令位置闸门 漏掉 **class 体 / 对象字面量体** ⇒ 方法 / 字段上方的 `/// @nudo:env web` 被**静默提升**成**整文件** env（零诊断）。 根因：`functionBodyRanges` 的区间是「函数站点」区间； 断言：expect(extractFileEnvNames(`/// @nudo:env node\\nexport function f() { return 1; }\\n`)).toEqual(["	夹具漏形态	keep	keep	—
-"class 体**之后**的顶层 env 仍是文件级"	"回归：core **文本路径**（`directive-scan.ts`）的文件级指令位置闸门 漏掉 **class 体 / 对象字面量体** ⇒ 方法 / 字段上方的 `/// @nudo:env web` 被**静默提升**成**整文件** env（零诊断）。 根因：`functionBodyRanges` 的区间是「函数站点」区间； 断言：expect("	夹具漏形态	keep	keep	—
 "env inside an array literal body is not file-wide"	"回归：core **文本路径**（`directive-scan.ts`）的文件级指令位置闸门 漏掉 **array 字面量体（`ArrayExpression`）** 与 **解构模式体（`ObjectPattern`）** ⇒ 写在数组元素 / 解构键**上方**的 `/// @nudo:env web` 被**静默提升**成 **整文件** env（零诊断）。 根因：闸门区间只覆盖「函数体」（）+「类体 / 对象字面量体」 （）； 断言：expect(extractFileEnvNames(ENV_IN_ARRAY)).toEqual([]);"	夹具漏形态	keep	keep	—
 "env inside a destructuring pattern body is not file-wide"	"回归：core **文本路径**（`directive-scan.ts`）的文件级指令位置闸门 漏掉 **array 字面量体（`ArrayExpression`）** 与 **解构模式体（`ObjectPattern`）** ⇒ 写在数组元素 / 解构键**上方**的 `/// @nudo:env web` 被**静默提升**成 **整文件** env（零诊断）。 根因：闸门区间只覆盖「函数体」（）+「类体 / 对象字面量体」 （）； 断言：expect(extractFileEnvNames(ENV_IN_OBJECT_PATTERN)).toEqual([]);"	夹具漏形态	keep	keep	—
 "env inside an array-destructuring pattern body is not file-wide"	"回归：core **文本路径**（`directive-scan.ts`）的文件级指令位置闸门 漏掉 **array 字面量体（`ArrayExpression`）** 与 **解构模式体（`ObjectPattern`）** ⇒ 写在数组元素 / 解构键**上方**的 `/// @nudo:env web` 被**静默提升**成 **整文件** env（零诊断）。 根因：闸门区间只覆盖「函数体」（）+「类体 / 对象字面量体」 （）； 断言：expect(extractFileEnvNames(ENV_IN_ARRAY_PATTERN)).toEqual([]);"	夹具漏形态	keep	keep	—
@@ -156,6 +154,6 @@ title	rootCause	gap	action	status	evidence
 
 ```audit-deleted
 title	reason	evidence
-文件头的 env 仍是文件级	dup:文件头的 env 仍是文件级（同文件两处逐字同体，保留首份）	commit:PENDING
-class 体**之后**的顶层 env 仍是文件级	dup:class 体**之后**的顶层 env 仍是文件级（同文件两处逐字同体，保留首份）	commit:PENDING
+文件头的 env 仍是文件级	dup:文件头的 env 仍是文件级（同文件两处逐字同体，保留首份）	commit:e73bbdb8
+class 体**之后**的顶层 env 仍是文件级	dup:class 体**之后**的顶层 env 仍是文件级（同文件两处逐字同体，保留首份）	commit:e73bbdb8
 ```
