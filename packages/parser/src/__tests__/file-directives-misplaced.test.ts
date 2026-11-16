@@ -1,7 +1,6 @@
 /**
- * JSDoc 块内错位的文件级指令族标签（`@nudo:env` / `@nudo:mock-module`）
- * 不再静默忽略：发 nudo:directive-syntax 警告并给出三斜线正确写法。
- * 提取面契约不变：仍只认行注释（`//` / `///`）。
+ * JSDoc 块内错位的文件级标签（@nudo:env / @nudo:mock-module）必须发
+ * nudo:directive-syntax 警告并给出三斜线写法；提取面仍只认行注释。
  */
 import { describe, it, expect } from "vitest";
 import { parse } from "../parse.ts";
@@ -18,48 +17,35 @@ function fileDiags(src: string): DirectiveDiag[] {
   return diags;
 }
 
-describe("misplaced file-level directive tags in JSDoc blocks", () => {
-  it("/** @nudo:env node */ → nudo:directive-syntax warning with the /// form", () => {
-    const diags = fileDiags(`/** @nudo:env node */\nexport function f(){}`);
+describe("块注释里的文件级标签", () => {
+  const envForms = [
+    `/** @nudo:env node */\nexport function f(){}`,
+    `/**\n * @nudo:env node\n */\nexport function f(){}`,
+    `/* @nudo:env node */\nexport function f(){}`,
+  ];
+
+  it("JSDoc / 多行 JSDoc / 普通块注释的 @nudo:env 都告警且不产出指令", () => {
+    for (const src of envForms) {
+      const diags = fileDiags(src);
+      expect(diags, src).toHaveLength(1);
+      expect(diags[0]!.code).toBe("nudo:directive-syntax");
+      expect(diags[0]!.message).toContain("@nudo:env is a file-level directive");
+      expect(diags[0]!.message).toContain("/// @nudo:env node");
+      expect(extractFileDirectives(parse(src), { diags: [] })).toEqual([]);
+    }
+  });
+
+  it("JSDoc 里的 @nudo:mock-module 告警并给出 /// 写法", () => {
+    const src = `/** @nudo:mock-module "fs" { readFileSync } from "./mock-fs.js" */\nexport function f(){}`;
+    const diags = fileDiags(src);
     expect(diags).toHaveLength(1);
     expect(diags[0]!.code).toBe("nudo:directive-syntax");
-    expect(diags[0]!.message).toBe(
-      `@nudo:env is a file-level directive — use '/// @nudo:env node' at the top of the file (JSDoc block form is ignored)`,
-    );
+    expect(diags[0]!.message).toContain("@nudo:mock-module is a file-level directive");
+    expect(diags[0]!.message).toContain(`/// @nudo:mock-module "fs" from "./mock-fs.js"`);
+    expect(extractFileDirectives(parse(src), { diags: [] })).toEqual([]);
   });
 
-  it("multi-line JSDoc with ` * @nudo:env node` continuation → warning", () => {
-    const diags = fileDiags(`/**\n * @nudo:env node\n */\nexport function f(){}`);
-    expect(diags).toHaveLength(1);
-    expect(diags[0]!.message).toContain(`@nudo:env is a file-level directive`);
-  });
-
-  it("plain /* … */ block comment form → warning too (equally ignored)", () => {
-    const diags = fileDiags(`/* @nudo:env node */\nexport function f(){}`);
-    expect(diags).toHaveLength(1);
-    expect(diags[0]!.code).toBe("nudo:directive-syntax");
-  });
-
-  it("/** @nudo:mock-module … */ → nudo:directive-syntax warning with the /// form", () => {
-    const diags = fileDiags(
-      `/** @nudo:mock-module "fs" { readFileSync } from "./mock-fs.js" */\nexport function f(){}`,
-    );
-    expect(diags).toHaveLength(1);
-    expect(diags[0]!.code).toBe("nudo:directive-syntax");
-    expect(diags[0]!.message).toBe(
-      `@nudo:mock-module is a file-level directive — use '/// @nudo:mock-module "fs" from "./mock-fs.js"' at the top of the file (JSDoc block form is ignored)`,
-    );
-  });
-
-  it("extraction face unchanged: block form still yields no directive", () => {
-    const results = extractFileDirectives(
-      parse(`/** @nudo:env node */\nexport function f(){}`),
-      { diags: [] },
-    );
-    expect(results).toEqual([]);
-  });
-
-  it("both tags in one block → two warnings (deduped per message)", () => {
+  it("同一块里的两个文件级标签各告警一次", () => {
     const diags = fileDiags(
       `/**\n * @nudo:env node\n * @nudo:mock-module "fs" from "./m.js"\n */\nexport function f(){}`,
     );
@@ -67,37 +53,27 @@ describe("misplaced file-level directive tags in JSDoc blocks", () => {
     expect(new Set(diags.map((d) => d.message)).size).toBe(2);
   });
 
-  it("two blocks with the same tag → single warning (same-message dedup)", () => {
-    const diags = fileDiags(
-      `/** @nudo:env node */\n/** @nudo:env es */\nexport function f(){}`,
-    );
+  it("同一标签出现在两个块 ⇒ 同消息去重为一条", () => {
+    const diags = fileDiags(`/** @nudo:env node */\n/** @nudo:env es */\nexport function f(){}`);
     expect(diags).toHaveLength(1);
   });
 });
 
-describe("correct forms stay silent", () => {
-  it("/// @nudo:env node → no warning, directive extracted", () => {
-    const diags = fileDiags(`/// @nudo:env node\nexport function f(){}`);
-    expect(diags).toEqual([]);
-    const results = extractFileDirectives(parse(`/// @nudo:env node\nexport function f(){}`), {
-      diags: [],
-    });
-    expect(results).toEqual([{ kind: "env", envs: ["node"] }]);
+describe("正确写法保持静默并正常提取", () => {
+  const valid = [
+    { src: `/// @nudo:env node\nexport function f(){}`, expected: [{ kind: "env", envs: ["node"] }] },
+    { src: `// @nudo:env node\nexport function f(){}`, expected: [{ kind: "env", envs: ["node"] }] },
+    { src: `/// @nudo:mock-module "fs" from "./m.js"\nexport function f(){}`, expected: [{ kind: "mock-module", source: "fs", fromPath: "./m.js" }] },
+  ];
+
+  it("/// 与 // 的 env / mock-module 行注释：零警告且产出指令", () => {
+    for (const { src, expected } of valid) {
+      expect(fileDiags(src), src).toEqual([]);
+      expect(extractFileDirectives(parse(src), { diags: [] })).toEqual(expected);
+    }
   });
 
-  it("// @nudo:env node (single slash) → no warning", () => {
-    expect(fileDiags(`// @nudo:env node\nexport function f(){}`)).toEqual([]);
-  });
-
-  it("/// @nudo:mock-module … → no warning, directive extracted", () => {
-    const src = `/// @nudo:mock-module "fs" from "./m.js"\nexport function f(){}`;
-    expect(fileDiags(src)).toEqual([]);
-    expect(extractFileDirectives(parse(src), { diags: [] })).toEqual([
-      { kind: "mock-module", source: "fs", fromPath: "./m.js" },
-    ]);
-  });
-
-  it("function JSDoc with @nudo:case / @nudo:contract legal forms → no warning at all", () => {
+  it("函数 JSDoc 里的 case / contract 合法形式零告警", () => {
     const src = [
       `/**`,
       ` * @nudo:case "safe" (1) => 2`,
@@ -106,19 +82,14 @@ describe("correct forms stay silent", () => {
       `export function safe(base, rel) { return base + rel; }`,
     ].join("\n");
     const diags: DirectiveDiag[] = [];
-    const fileDirs = extractFileDirectives(parse(src), { diags });
-    const fns = extractDirectives(parse(src), { diags });
-    expect(fileDirs).toEqual([]);
-    expect(fns.map((f) => f.name)).toEqual(["safe"]);
+    expect(extractFileDirectives(parse(src), { diags })).toEqual([]);
+    expect(extractDirectives(parse(src), { diags }).map((f) => f.name)).toEqual(["safe"]);
     expect(diags.filter((d) => d.code === "nudo:directive-syntax")).toEqual([]);
   });
 
-  it("pure query form (no diags) drops the warning and does not throw", () => {
+  it("无 diags 的纯查询不抛错；runWithDirectiveDiags 域内仍收集告警", () => {
     expect(() => extractFileDirectives(parse(`/** @nudo:env node */`))).not.toThrow();
     expect(extractFileDirectives(parse(`/** @nudo:env node */`))).toEqual([]);
-  });
-
-  it("pure query inside runWithDirectiveDiags domain falls into that domain (check 链路)", () => {
     const diags: DirectiveDiag[] = [];
     runWithDirectiveDiags(diags, () => extractFileDirectives(parse(`/** @nudo:env node */`)));
     expect(diags).toHaveLength(1);
@@ -126,25 +97,13 @@ describe("correct forms stay silent", () => {
   });
 });
 
-describe("no false positives on look-alike text", () => {
-  it("longer tag @nudo:environment is not @nudo:env", () => {
-    expect(fileDiags(`/** @nudo:environment node */\nexport function f(){}`)).toEqual([]);
-  });
-
-  it("prose mention mid-line is not a directive tag", () => {
-    const src = `/**\n * Docs: enable the node env via @nudo:env node elsewhere.\n */\nexport function f(){}`;
-    expect(fileDiags(src)).toEqual([]);
-  });
-
-  it("/// line inside @example (with * continuation) is not a block-form directive", () => {
-    const src = [
-      `/**`,
-      ` * @example`,
-      ` * /// @nudo:env node`,
-      ` * import { join } from "node:path";`,
-      ` */`,
-      `export function f(){}`,
-    ].join("\n");
-    expect(fileDiags(src)).toEqual([]);
+describe("相似文本不误报", () => {
+  it("更长的标签 / 行内散文 / @example 里的 /// 都不算块内文件级指令", () => {
+    const srcs = [
+      `/** @nudo:environment node */\nexport function f(){}`,
+      `/**\n * Docs: enable the node env via @nudo:env node elsewhere.\n */\nexport function f(){}`,
+      [`/**`, ` * @example`, ` * /// @nudo:env node`, ` * import { join } from "node:path";`, ` */`, `export function f(){}`].join("\n"),
+    ];
+    for (const src of srcs) expect(fileDiags(src), src).toEqual([]);
   });
 });
