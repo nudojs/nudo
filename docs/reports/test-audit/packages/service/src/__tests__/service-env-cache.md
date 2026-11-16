@@ -1,5 +1,8 @@
 ```audit
 title	rootCause	gap	action	status	evidence
+父级安装可解析；就近优先；侧车同口径；未安装 miss 不报 unresolved	路径/预算表	没测该层	keep	keep	—
+非法 env 回默认并提示；合法 env 压配置；未设看配置；空串当未设；配置非法回默认	路径/预算表	没测该层	keep	keep	—
+两目录各取各的（预载顺序无关）；同目录稳定；绝对路径照旧	路径/预算表	没测该层	keep	keep	—
 非法值回默认 true + 提示；严格布尔；contract 面绑侧车；合法 false 不绑；合法值不告警	配置优先级表	没测该层	keep	keep	—
 import/require/auto 分表；仅 require 与无条件键负控	配置优先级表	没测该层	keep	keep	—
 显式 ""/false/true/相对路径压过 env；未设才读 env；off/0 关闭	配置优先级表	没测该层	keep	keep	—
@@ -31,26 +34,12 @@ default 槽 + interop 标记；默认/命名空间同签名；无假 unknown-inf
 "合法 nudo 键（对象）：照旧返回配置"	"根包带 nudo 配置（用于验证「非法 nudo 键不得继承祖先配置」） 断言：expect(found?.projectDir).toBe(root);；expect(found?.config.contract?.autoBind).toBe(false);"	没测该层	keep	keep	—
 "空对象 nudo 键：照旧算「有配置」（截断祖先搜索）"	"根包带 nudo 配置（用于验证「非法 nudo 键不得继承祖先配置」） 断言：expect(found?.projectDir).toBe(sub);；expect(found?.config).toEqual({});"	没测该层	keep	keep	—
 "无 nudo 键：照旧向上找到祖先配置（monorepo 继承，文档承诺）"	"根包带 nudo 配置（用于验证「非法 nudo 键不得继承祖先配置」） 断言：expect(found?.projectDir).toBe(root);；expect(found?.config.check?.ignoreThrows).toEqual([\"SyntaxError\"]);"	没测该层	keep	keep	—
-"两个目录各有 ./env.js：先预载者不得赢下所有同名拼写"	"相对路径 `@nudo:env` 按**进程级全局 baseDir 注册表**解析： 先预载的 `./env.ts` 赢下所有同名拼写 ⇒ 别的目录拿到别人的 env（错值 + 零诊断）。 同一进程内两个目录各有自己的 `./env.js` 时必须各取各的。 断言：expect(formatShape(lx.globals.MAGIC!)).toBe(\"11\");；expect(formatShape(ly.globals.MAGIC!)).toBe(\"22\");"	旧断言钉错	keep	keep	—
-"反向预载顺序同样各取各的（不得依赖预载次序）"	"断言：expect(formatShape(lx.globals.MAGIC!)).toBe(\"11\");；expect(formatShape(ly.globals.MAGIC!)).toBe(\"22\");"	没测该层	keep	keep	—
-"负控制：同一目录重复装载结果一致（不因缓存漂移）"	"`@nudo:env <未知名>`（bogus / nodejs / Node）被静默忽略： 零诊断、env 不生效、分析退化。 契约：未知名 env 必须产出一条**可见**诊断（nudo:env-unresolved 通道， CLI check/test 与 LSP 同源消费），不得静默 `continue`； 断言：expect(formatShape(a.globals.MAGIC!)).toBe(\"11\");；expect(formatShape(b.globals.MAGIC!)).toBe(\"11\");"	没测该层	keep	keep	—
-"负控制：绝对路径说明符照旧按绝对路径解析"	"`@nudo:env <未知名>`（bogus / nodejs / Node）被静默忽略： 零诊断、env 不生效、分析退化。 契约：未知名 env 必须产出一条**可见**诊断（nudo:env-unresolved 通道， CLI check/test 与 LSP 同源消费），不得静默 `continue`； 断言：expect(formatShape(loaded.globals.MAGIC!)).toBe(\"11\");；expect(getPathEnvLoadErrors(dirX)).toHaveLength(0);"	没测该层	keep	keep	—
-"非法 env + 合法配置键 → 回默认 5000 + stderr 提示"	"而文档与**源码自己的注释**都写 「非法值回**默认**（5000）」——实现与二者都不符。 根因（config.ts applyBForkBudgetFromConfig）：`parseMaxForks` 把「非法」 折成 `undefined`，与「**没设**」同值 ⇒ `??` 链无法区分「env 非法 （应回默认）」与「env 未设（应看配置）」。 断言：expect(eff).toBe(5000);；expect(currentBForkBudgetLimit()).toBe(5000);"	没测该层	keep	keep	—
-"非法 env（0 / 负数 / 非数字）+ 配置键 → 一律回默认"	"而文档与**源码自己的注释**都写 「非法值回**默认**（5000）」——实现与二者都不符。 根因（config.ts applyBForkBudgetFromConfig）：`parseMaxForks` 把「非法」 折成 `undefined`，与「**没设**」同值 ⇒ `??` 链无法区分「env 非法 （应回默认）」与「env 未设（应看配置）」。 断言：expect(eff, raw).toBe(5000);"	没测该层	keep	keep	—
-"合法 env 压过配置键"	"而文档与**源码自己的注释**都写 「非法值回**默认**（5000）」——实现与二者都不符。 根因（config.ts applyBForkBudgetFromConfig）：`parseMaxForks` 把「非法」 折成 `undefined`，与「**没设**」同值 ⇒ `??` 链无法区分「env 非法 （应回默认）」与「env 未设（应看配置）」。 断言：expect(applyBForkBudgetFromConfig(CFG_200, { NUDO_MAX_FORKS: \"999\" })).toBe(999);；expect(applyBForkBudgetFromConfig(CFG_200, { NUDO_MAX"	没测该层	keep	keep	—
-"env 未设 → 看配置键；配置键也没有 → 默认"	"而文档与**源码自己的注释**都写 「非法值回**默认**（5000）」——实现与二者都不符。 根因（config.ts applyBForkBudgetFromConfig）：`parseMaxForks` 把「非法」 折成 `undefined`，与「**没设**」同值 ⇒ `??` 链无法区分「env 非法 （应回默认）」与「env 未设（应看配置）」。 断言：expect(applyBForkBudgetFromConfig(CFG_200, {})).toBe(200);；expect(applyBForkBudgetFromConfig(undefined, {})).toBe(5000);"	没测该层	keep	keep	—
-"env 为空串 → 按「未设」处理（看配置键）"	"而文档与**源码自己的注释**都写 「非法值回**默认**（5000）」——实现与二者都不符。 根因（config.ts applyBForkBudgetFromConfig）：`parseMaxForks` 把「非法」 折成 `undefined`，与「**没设**」同值 ⇒ `??` 链无法区分「env 非法 （应回默认）」与「env 未设（应看配置）」。 断言：expect(applyBForkBudgetFromConfig(CFG_200, { NUDO_MAX_FORKS: \"\" })).toBe(200);"	没测该层	keep	keep	—
-"配置键本身非法 → 回默认（既有语义不变）"	"而文档与**源码自己的注释**都写 「非法值回**默认**（5000）」——实现与二者都不符。 根因（config.ts applyBForkBudgetFromConfig）：`parseMaxForks` 把「非法」 折成 `undefined`，与「**没设**」同值 ⇒ `??` 链无法区分「env 非法 （应回默认）」与「env 未设（应看配置）」。 断言：expect(applyBForkBudgetFromConfig({ analysis: { maxForks: 0 } }, {})).toBe(5000);；expect(applyBForkBudgetFromConfig({ analysis: { maxFo"	没测该层	keep	keep	—
 "精确键：#helper → 导入方包内的 ./helper.js"	"回归：Node 的 `#imports`（**导入方** package.json 的 imports 字段） 必须被解析——改前 `#helper` 被当成「包名」⇒ `node_modules/#helper` 必 miss ⇒ 跨模块值塌成 unknown 且零诊断。 断言：expect(r.path).toBe(join(dir, \"helper.js\"));；expect(r.exportsUnresolved).toBe(false);"	没测该层	keep	keep	—
 "模式键：#internal/* → ./src/*.js"	"回归：`exports` 模式键的 tie-break 必须按 Node `PATTERN_KEY_COMPARE` ——**前缀长度平手时比整键长度**（更长者胜），且结论不得随 package.json 里的 声明顺序变化。 改前只比前缀长度且用严格大于 ⇒ 平手保留先声明者，宿主却取更长的键 ⇒ 引擎解析到另一个文件（假红 / 假绿 + 自信的错值）。 断言：expect(r.path).toBe(join(dir, \"src\", \"a.js\"));"	旧断言钉错	keep	keep	—
 "条件目标按消费形态分表（import / require 各取自己的构建）"	"回归：Node 的 `#imports`（**导入方** package.json 的 imports 字段） 必须被解析——改前 `#helper` 被当成「包名」⇒ `node_modules/#helper` 必 miss ⇒ 跨模块值塌成 unknown 且零诊断。 断言：expect(resolveNpmJsEntryDetailed(\"#dual\", dir, \"import\").path).toBe(join(dir, \"esm.mjs\"));；expect(resolveNpmJsEntryDetailed(\"#dual\", dir, \"require\").path).toBe(join(dir, \"cjs.cjs\""	没测该层	keep	keep	—
 "外部包目标：#dep → 裸包（转入裸包入口解析）"	"回归：裸包 `exports` 的**条件键必须按消费形态选** （ESM `import` → \"import\" 条件； 改前：一张固定顺序的表把 \"require\" 排在 \"import\" 前 ⇒ ESM import 解析到 包的 CommonJS 构建（原生 5 / 引擎 {default:10,named:\"cjs\"}）。 断言：expect(resolveNpmJsEntryDetailed(\"#dep\", dir).path).toBe("	夹具漏形态	keep	keep	—
 "解析不到 ⇒ exportsUnresolved=true（真缺失，不得静默塌成 unknown）"	"回归：Node 的 `#imports`（**导入方** package.json 的 imports 字段） 必须被解析——改前 `#helper` 被当成「包名」⇒ `node_modules/#helper` 必 miss ⇒ 跨模块值塌成 unknown 且零诊断。 断言：expect(r.path).toBeNull();；expect(r.exportsUnresolved).toBe(true);"	没测该层	keep	keep	—
 "负控制：普通裸包不受 # 分支影响（仍走 exports 解析）"	"回归：Node 的 `#imports`（**导入方** package.json 的 imports 字段） 必须被解析——改前 `#helper` 被当成「包名」⇒ `node_modules/#helper` 必 miss ⇒ 跨模块值塌成 unknown 且零诊断。 断言：expect(resolveNpmJsEntryDetailed(\"plain\", dir).path).toBe("	没测该层	keep	keep	—
-"包只装在父级 node_modules ⇒ JS 入口照样解析（不再回落 @types）"	"父级安装：app/node_modules 存在但**不含**该包； 断言：expect(r.path).toBe(join(pkgDir, \"index.js\"));；expect(r.exportsUnresolved).toBe(false);"	没测该层	keep	keep	—
-"就近安装优先于父级安装（最近的一层胜出）"	"断言：expect(resolveNpmJsEntryDetailed(\"mypkg\", appDir).path).toBe("	没测该层	keep	keep	—
-"侧车解析同口径（resolveNpmNudo 也逐级向上）"	"断言：expect(resolveNpmNudo(\"side\", join(dir, \"app\"))).toBe("	没测该层	keep	keep	—
-"负控制：包根本没装 ⇒ miss（不报 exportsUnresolved）"	"回归：Node 的 `#imports`（**导入方** package.json 的 imports 字段） 必须被解析——改前 `#helper` 被当成「包名」⇒ `node_modules/#helper` 必 miss ⇒ 跨模块值塌成 unknown 且零诊断。 断言：expect(r.path).toBeNull();；expect(r.exportsUnresolved).toBe(false);"	没测该层	keep	keep	—
 "同进程内改 env 文件内容，类型面跟着变"	"改前：分析缓存键（analysisFileCacheKey 的 envSeg）与 evaluator memo 键 （tryRunEval 的 envKey）只编码 env **名字** ⇒ 同一个 env 名指向的文件 内容改了，缓存照样命中 → 类型面停在旧值。 断言：expect(await magicShape(main, `export function getMagic() {\\n return MAGIC;\\n}\\n`)).toBe(\"1\");；expect(await magicShape(main, `export function getMagic() {\\n return MAGIC;\\n}\\n`)).toBe"	没测该层	keep	keep	—
 "文件级 /// @nudo:env 的同款行为保持正确（本就由 dep 指纹覆盖）"	"改前：分析缓存键（analysisFileCacheKey 的 envSeg）与 evaluator memo 键 （tryRunEval 的 envKey）只编码 env **名字** ⇒ 同一个 env 名指向的文件 内容改了，缓存照样命中 → 类型面停在旧值。 断言：expect(await magicShape(main, source)).toBe(\"1\");；expect(await magicShape(main, source)).toBe('\"hello\"');"	没测该层	keep	keep	—
 "env 内容不变时，结果稳定（不因缓存维度变化而漂移）"	"改前：分析缓存键（analysisFileCacheKey 的 envSeg）与 evaluator memo 键 （tryRunEval 的 envKey）只编码 env **名字** ⇒ 同一个 env 名指向的文件 内容改了，缓存照样命中 → 类型面停在旧值。 断言：expect(await magicShape(main, source)).toBe(\"1\");；expect(await magicShape(main, source)).toBe(\"1\");"	没测该层	keep	keep	—
@@ -171,4 +160,18 @@ contract 面（contractSurface）：非法 autoBind 仍绑侧车（= 默认 true
 contract 面：合法 autoBind:false 仍不绑侧车（负控制）	dup:配置优先级表	commit:9eb57f3e
 合法 true / false / 缺席：语义不变且不告警	dup:配置优先级表	commit:9eb57f3e
 项目配置读到的 autoBind 也是归一后的布尔（findProjectConfig → contractConfig）	dup:配置优先级表	commit:9eb57f3e
+两个目录各有 ./env.js：先预载者不得赢下所有同名拼写	dup:路径/预算表	commit:8b32f787
+反向预载顺序同样各取各的（不得依赖预载次序）	dup:路径/预算表	commit:8b32f787
+负控制：同一目录重复装载结果一致（不因缓存漂移）	dup:路径/预算表	commit:8b32f787
+负控制：绝对路径说明符照旧按绝对路径解析	dup:路径/预算表	commit:8b32f787
+非法 env + 合法配置键 → 回默认 5000 + stderr 提示	dup:路径/预算表	commit:8b32f787
+非法 env（0 / 负数 / 非数字）+ 配置键 → 一律回默认	dup:路径/预算表	commit:8b32f787
+合法 env 压过配置键	dup:路径/预算表	commit:8b32f787
+env 未设 → 看配置键；配置键也没有 → 默认	dup:路径/预算表	commit:8b32f787
+env 为空串 → 按「未设」处理（看配置键）	dup:路径/预算表	commit:8b32f787
+配置键本身非法 → 回默认（既有语义不变）	dup:路径/预算表	commit:8b32f787
+包只装在父级 node_modules ⇒ JS 入口照样解析（不再回落 @types）	dup:路径/预算表	commit:8b32f787
+就近安装优先于父级安装（最近的一层胜出）	dup:路径/预算表	commit:8b32f787
+侧车解析同口径（resolveNpmNudo 也逐级向上）	dup:路径/预算表	commit:8b32f787
+负控制：包根本没装 ⇒ miss（不报 exportsUnresolved）	dup:路径/预算表	commit:8b32f787
 ```
