@@ -66,67 +66,26 @@ function declOf(source: string): string {
 }
 
 describe("dts 面：访问器占位槽不得渲染成 exact undefined", () => {
-  it("getter 返数字：dts 取读域 number（原生读 1）", () => {
-    expect(declOf(`export function g() { return { get ab() { return 1; } }; }`)).toContain(
-      "{ ab: 1 }",
-    );
+  const declOf = (source: string): string => generateDts(analyzeFile("/test/dts.js", source)).split("\n").find((l) => l.startsWith("export declare function")) ?? "";
+  it("getter 读域：数字/字符串/this/嵌套/抛 unknown；不出现 exact undefined", () => {
+    expect(declOf('export function g() { return { get ab() { return 1; } }; }')).toContain("{ ab: 1 }");
+    expect(declOf('export function g() { return { get ab() { return "s"; } }; }')).toContain('{ ab: "s" }');
+    expect(declOf("export function g() { return { n: 41, get q() { return this.n; } }; }")).toContain("{ n: 41; q: 41 }");
+    expect(declOf("export function g() { return { inner: { get ab() { return 2; } } }; }")).toContain("{ inner: { ab: 2 } }");
+    expect(declOf('export function g() { return { get boom() { throw new Error("x"); } }; }')).toContain("{ boom: unknown }");
+    expect(generateDts(analyzeFile("/test/dts.js", "export function g() { return { get ab() { return 1; } }; }"))).not.toContain("ab: undefined");
   });
-
-  it("getter 返字符串：dts 取读域（原生读 \"s\"）", () => {
-    expect(
-      declOf(`export function g() { return { get ab() { return "s"; } }; }`),
-    ).toContain('{ ab: "s" }');
-  });
-
-  it("getter 以 this 为接收者读域（原生 this.n = 41）", () => {
-    expect(
-      declOf(`export function g() { return { n: 41, get q() { return this.n; } }; }`),
-    ).toContain("{ n: 41; q: 41 }");
-  });
-
-  it("嵌套对象的 getter 槽同样按读域渲染", () => {
-    expect(
-      declOf(`export function g() { return { inner: { get ab() { return 2; } } }; }`),
-    ).toContain("{ inner: { ab: 2 } }");
-  });
-
-  it("getter 抛（读域不可刻画）→ unknown，不得回落 definite undefined", () => {
-    expect(
-      declOf(`export function g() { return { get boom() { throw new Error("x"); } }; }`),
-    ).toContain("{ boom: unknown }");
-  });
-
-  it("dts 不得出现 exact undefined 的访问器槽", () => {
-    const dts = dtsOf(`export function g() { return { get ab() { return 1; } }; }`);
-    expect(dts).not.toContain("ab: undefined");
-  });
-});
+});;
 
 describe("dts 负控制：非 getter 槽不受影响", () => {
-  it("普通数据属性仍渲染成它的值类型", () => {
-    expect(declOf(`export function g() { return { plain: 5 }; }`)).toContain("{ plain: 5 }");
+  const declOf = (source: string): string => generateDts(analyzeFile("/test/dts.js", source)).split("\n").find((l) => l.startsWith("export declare function")) ?? "";
+  it("数据属性 / 显式 undefined / setter-only / 空对象", () => {
+    expect(declOf("export function g() { return { plain: 5 }; }")).toContain("{ plain: 5 }");
+    expect(declOf("export function g() { return { u: undefined }; }")).toContain("{ u: undefined }");
+    expect(declOf("export function g() { return { set ab(v) {} }; }")).toContain("{ ab: undefined }");
+    expect(declOf("export function g() { return {}; }")).toContain("Record<string, never>");
   });
-
-  it("显式 undefined 数据属性仍渲染成 undefined", () => {
-    expect(declOf(`export function g() { return { u: undefined }; }`)).toContain(
-      "{ u: undefined }",
-    );
-  });
-
-  it("仅 setter 的访问器：原生读值恒 undefined，占位槽本就正确", () => {
-    expect(declOf(`export function g() { return { set ab(v) {} }; }`)).toContain(
-      "{ ab: undefined }",
-    );
-  });
-
-  it("空对象渲染成 Record<string, never>（不是 TS 的 {}，Bug 565）", () => {
-    // TS 的 `{}` = 任意非 nullish 值（不是「空对象」）⇒ 属性读吃 TS2339 假红，
-    // 且在联合类型里吸收 `{ a: number }`（契约义务被静默作废）
-    expect(declOf(`export function g() { return {}; }`)).toContain(
-      "Record<string, never>",
-    );
-  });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -199,65 +158,52 @@ function generatorOutputAbs(): Abs {
 }
 
 describe("zod brand 节点不得引用无运行时值的名字", () => {
-  it("生成器的 constructor brand 不再渲染成 z.instanceof(GeneratorFunction)", () => {
-    const { source, dropped } = absToZodSchemaModule({ genOutput: generatorOutputAbs() });
-    expect(source).not.toMatch(/z\.instanceof\([^)]*GeneratorFunction/);
-    // 族 02 / （S21）：`constructor` 是 **internal 槽**（原生挂在原型上，
-    // 不是自有属性）⇒ core 约束面（`absToConstraint`）与投影面（`format.ts`）
-    // 同口径剔除 internal 槽 ⇒ 产物里**连这个字段都没有**。
-    // 的不变量（"产物永远可 import"）由此更强地满足：没有名字需要
-    // 解析，也就没有 ReferenceError 可言（不是"降级成 z.unknown()"）。
-    expect(source).not.toContain("constructor");
-    expect(source).not.toContain("GeneratorFunction");
-    // 无可降级的 brand 名字 ⇒ 台账里也不再出现 GeneratorFunction
-    expect(dropped.some((d) => d.includes("GeneratorFunction"))).toBe(false);
-  });
+  beforeEach(() => { resetAllAnalysisCaches(); });
+  const brandOf = (name: string): Abs => abs({ k: "brand", name, shape: objOf({}) }, undefined, undefined, "exact");
+  const zodStub = (): unknown => { const stub: unknown = new Proxy(function () {} as unknown as object, { get: () => stub, apply: () => stub }); return stub; };
+  const evaluateZodModule = (source: string, exportNames: string[]): { ok: boolean; error?: string } => {
+    const body = source.replace(/^import \{ z \} from "zod";$/m, "").replace(/^export const /gm, "const ") + `\nreturn { ${exportNames.join(", ")} };`;
+    try { new Function("z", body)(zodStub()); return { ok: true }; } catch (err) { return { ok: false, error: (err as Error).message }; }
+  };
+  const generatorOutputAbs = (): Abs => {
+    const result = analyzeFile("/t/bug233-gen.js", "export function* gen() {\n  yield 1;\n}\n");
+    const fn = result.functions[0]!;
+    const out = fn.combinedAbs ?? fn.cases[0]?.abs;
+    if (!out) throw new Error("no output abs");
+    return out;
+  };
+  it("生成器 brand 不引用 GeneratorFunction；模块可求值；非全局降级 unknown；全局仍 instanceof；standard 不受影响", () => {
+    const mod = absToZodSchemaModule({ genOutput: generatorOutputAbs() });
+    expect(mod.source).not.toMatch(/z\.instanceof\([^)]*GeneratorFunction/);
+    expect(mod.source).not.toContain("constructor");
+    expect(mod.source).not.toContain("GeneratorFunction");
+    expect(mod.dropped.some((d) => d.includes("GeneratorFunction"))).toBe(false);
+    expect(evaluateZodModule(mod.source, ["genOutput"]).ok).toBe(true);
 
-  it("生成的 zod 模块可以求值（改前：ReferenceError: GeneratorFunction is not defined）", () => {
-    const { source } = absToZodSchemaModule({ genOutput: generatorOutputAbs() });
-    const r = evaluateZodModule(source, ["genOutput"]);
-    expect(r.error).toBeUndefined();
-    expect(r.ok).toBe(true);
-  });
-
-  it("负控制：求值夹具确实能抓到 ReferenceError（改前形态会红）", () => {
     const broken = 'import { z } from "zod";\nexport const genOutput = z.object({ constructor: z.instanceof(GeneratorFunction) });\n';
-    const r = evaluateZodModule(broken, ["genOutput"]);
-    expect(r.ok).toBe(false);
-    expect(r.error).toContain("GeneratorFunction is not defined");
-  });
+    const brokenEval = evaluateZodModule(broken, ["genOutput"]);
+    expect(brokenEval.ok).toBe(false);
+    expect(brokenEval.error).toContain("GeneratorFunction is not defined");
 
-  it("非全局 brand 降级 z.unknown() 并记 dropped", () => {
     for (const name of ["GeneratorFunction", "AsyncGeneratorFunction", "Widget", "Object.prototype"]) {
       const p = projectAbsToSchema(brandOf(name));
       expect(p.source, name).toBe("z.unknown()");
       expect(p.dropped.some((d) => d.includes(name)), name).toBe(true);
     }
-  });
-
-  it("负控制：运行时全局构造器仍走 z.instanceof（不得过度降级）", () => {
     expect(absToSchemaSource(brandOf("Date"))).toBe("z.instanceof(Date)");
     expect(absToSchemaSource(brandOf("Map"))).toBe("z.instanceof(Map)");
     expect(absToSchemaSource(brandOf("RegExp"))).toBe("z.instanceof(RegExp)");
-    // 非 brand 形态不受影响（number prim 的域渲染见 含 NaN / ±Infinity）
     expect(absToSchemaSource(num())).toContain("z.number()");
-  });
 
-  it("产物里的 z.instanceof 实参都是运行时全局构造器", () => {
-    const mod = absToZodSchemaModule({ genOutput: generatorOutputAbs(), d: brandOf("Date") });
-    const names = [...mod.source.matchAll(/z\.instanceof\(([^)]*)\)/g)].map((m) => m[1]!);
-    for (const name of names) {
-      const v = (globalThis as Record<string, unknown>)[name];
-      expect(typeof v, name).toBe("function");
+    const full = absToZodSchemaModule({ genOutput: generatorOutputAbs(), d: brandOf("Date") });
+    for (const m of full.source.matchAll(/z\.instanceof\(([^)]*)\)/g)) {
+      expect(typeof (globalThis as Record<string, unknown>)[m[1]!], m[1]).toBe("function");
     }
+    const standard = absToStandardSchemaModule({ out: brandOf("GeneratorFunction") });
+    expect(standard.source).not.toContain("z.instanceof");
+    expect(standard.source).toContain('"~standard"');
   });
-
-  it("standard 面不受影响（brand 走 JSON 节点，不引用类名）", () => {
-    const mod = absToStandardSchemaModule({ out: brandOf("GeneratorFunction") });
-    expect(mod.source).not.toContain("z.instanceof");
-    expect(mod.source).toContain('"~standard"');
-  });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -281,24 +227,17 @@ describe("standard 方言的 promise 节点不再放行一切", () => {
 const promiseNode: SchemaNode = { k: "promise", inner: { k: "unknown" } };
 
 describe("standard 方言的 promise 节点不再放行一切", () => {
-  it("非 Promise 值被拒绝（42 / 'str' / {}）", () => {
+  const promiseNode: SchemaNode = { k: "promise", inner: { k: "unknown" } };
+  it("非 Promise 拒绝；真 Promise 放行；unknown 仍放行一切", () => {
     for (const bad of [42, "str", {}, null, undefined]) {
       const r = validateSchemaNode(promiseNode, bad);
       expect("issues" in r).toBe(true);
       expect(r.issues?.length ?? 0).toBeGreaterThan(0);
     }
+    expect("issues" in validateSchemaNode(promiseNode, Promise.resolve(1))).toBe(false);
+    expect("issues" in validateSchemaNode({ k: "unknown" }, 42)).toBe(false);
   });
-
-  it("Promise 与 thenable 的判据与 zod 面同口径（真 Promise 放行）", () => {
-    const r = validateSchemaNode(promiseNode, Promise.resolve(1));
-    expect("issues" in r).toBe(false);
-  });
-
-  it("负控制：unknown 节点仍放行一切（不把 promise 的收窄扩散）", () => {
-    const r = validateSchemaNode({ k: "unknown" }, 42);
-    expect("issues" in r).toBe(false);
-  });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -338,34 +277,21 @@ function dtsOf(c: ReturnType<typeof union>): string {
 }
 
 describe("契约的 union 字面量域必须在 dts 面保形", () => {
-  it("非同 prim 字面量 union ⇒ `1 | \"x\"`（改前 `number | string`）", () => {
-    const text = dtsOf(union(litC(1), litC("x")));
-    expect(text).toContain(`export declare function pick(v: 1 | "x"): 1 | "x";`);
-    // 拓宽的痕迹不得出现（形参位 / 返回位都不行）
-    expect(text).not.toContain("number | string");
+  const dtsOf = (c: ReturnType<typeof union>): string => {
+    const result = analyzeFile("/test/bug027.js", "export function pick(v) { return v; }\n");
+    const fn = result.functions.find((f) => f.name === "pick")!;
+    return projectFunctionDts(fn, { params: [{ name: "v" as const, abs: constraintToEntryAbs(c, "v") }], return: constraintToEntryAbs(c, "return") }).lines.join("\n");
+  };
+  it("非同 prim 字面量 union / 同 prim / nullish 保形；非字面量与带界成员回落 widen", () => {
+    const mixed = dtsOf(union(litC(1), litC("x")));
+    expect(mixed).toContain('export declare function pick(v: 1 | "x"): 1 | "x";');
+    expect(mixed).not.toContain("number | string");
+    expect(dtsOf(union(litC("a"), litC("b")))).toContain('pick(v: "a" | "b"): "a" | "b"');
+    expect(dtsOf(union(litC(1), litC(null)))).toContain("pick(v: 1 | null)");
+    expect(dtsOf(union(number(), string()))).toContain("pick(v: number | string): number | string");
+    expect(dtsOf(union(number().gt(0), litC(0)))).toContain("pick(v: number): number");
   });
-
-  it("同 prim 字面量 union 仍保形（回归钉）", () => {
-    const text = dtsOf(union(litC("a"), litC("b")));
-    expect(text).toContain(`pick(v: "a" | "b"): "a" | "b"`);
-  });
-
-  it("含 nullish 字面量的混合 union 也保形（字面量在 term 里也要读）", () => {
-    const text = dtsOf(union(litC(1), litC(null)));
-    expect(text).toContain("pick(v: 1 | null)");
-  });
-
-  it("负控制：成员不是字面量域（union(number(), string())）仍按 widen 口径", () => {
-    const text = dtsOf(union(number(), string()));
-    expect(text).toContain("pick(v: number | string): number | string");
-  });
-
-  it("负控制：带界成员（union(number().gt(0), lit(0))）不整体当字面量域", () => {
-    const text = dtsOf(union(number().gt(0), litC(0)));
-    // 有界成员不可表达为有限字面量集 ⇒ 整条不保形（回落 widen）
-    expect(text).toContain("pick(v: number): number");
-  });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -388,18 +314,15 @@ describe("bigint 字面量保基类型", () => {
 const bigintLit = (v: bigint) => abs({ k: "prim", type: "bigint" }, { op: "lit", value: v }, undefined, "exact");
 
 describe("bigint 字面量保基类型", () => {
-  it("zod 方言：z.bigint()（不是 z.unknown()）", () => {
+  const bigintLit = (v: bigint) => abs({ k: "prim", type: "bigint" }, { op: "lit", value: v }, undefined, "exact");
+  it("zod 方言保 z.bigint 并记 dropped；schema 节点 prim bigint", () => {
     const p = projectAbsToSchema(bigintLit(10n), { dialect: "zod" });
     expect(p.source).toBe("z.bigint()");
-    // 字面量精度损失必须留痕
     expect(p.dropped.join("\n")).toContain("lit bigint not projected: 10");
-  });
-
-  it("schema 节点：prim bigint（standard 方言据此渲染 prim 校验）", () => {
     const { node } = absToSchemaNode(bigintLit(10n));
     expect(node).toEqual({ k: "prim", type: "bigint", refinements: [] });
   });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -454,80 +377,33 @@ function sigOf(r: { signatures: { name: string; display: string }[] }, fn: strin
 }
 
 describe("残留 — @nudo:as 目标形态不支持 ⇒ 显式诊断（不许静默）", () => {
-  it("for 头（for-of 解构）：诊断一条，覆盖不生效", () => {
-    const src = `export function f(xs) {
-  // @nudo:as shape({ a: number() })
-  for (const { a } of xs) { return a; }
-  return 0;
-}
-`;
-    const { reps, diags } = collect(src);
-    const bad = diags.filter((d) => d.code === "nudo:directive-syntax");
-    expect(bad).toHaveLength(1);
-    expect(bad[0]!.message).toContain("@nudo:as");
-    // 不适用 ⇒ 不登记覆盖目标（覆盖值不会被注入）
-    expect(reps.asTargets).toHaveLength(0);
-  });
-
-  it("表达式语句：诊断一条", () => {
-    const src = `export function f(x) {
-  // @nudo:as number()
-  g(x);
-  return 1;
-}
-`;
-    const { diags } = collect(src);
-    expect(diags.filter((d) => d.code === "nudo:directive-syntax")).toHaveLength(1);
-  });
-
-  it("函数声明：诊断一条", () => {
-    const src = `// @nudo:as number()
-export function f() { return 1; }
-`;
-    const { diags } = collect(src);
-    expect(diags.filter((d) => d.code === "nudo:directive-syntax")).toHaveLength(1);
-  });
-
-  it("负控制：变量声明 / return / export 声明 ⇒ 零诊断，覆盖照常生效", () => {
-    const varDecl = `export function f(content) {
-  // @nudo:as shape({ port: number(), host: string() })
-  const config = JSON.parse(content);
-  return config;
-}
-`;
-    const { reps, diags } = collect(varDecl);
-    expect(diags.filter((d) => d.code === "nudo:directive-syntax")).toHaveLength(0);
-    expect(reps.asTargets).toHaveLength(1);
+  const collect = (src: string) => { const diags: DirectiveDiag[] = []; const reps = collectEvalReplacements(src, { diags }); return { reps, diags }; };
+  const check = (src: string) => { const { reps } = collect(src); return checkSource("/t/as-shape.js", src, pTrue, { inject: { replacements: reps.values, replacementTargets: reps.targets, asOverrides: reps.asValues, asOverrideTargets: reps.asTargets } }); };
+  const sigOf = (r: { signatures: { name: string; display: string }[] }, fn: string) => r.signatures.find((s) => s.name === fn)?.display ?? "(missing)";
+  it("不支持形态诊断且不登记；变量/return/export/解构照常生效", () => {
+    const bads = [
+      `export function f(xs) {\n  // @nudo:as shape({ a: number() })\n  for (const { a } of xs) { return a; }\n  return 0;\n}\n`,
+      `export function f(x) {\n  // @nudo:as number()\n  g(x);\n  return 1;\n}\n`,
+      `// @nudo:as number()\nexport function f() { return 1; }\n`,
+    ];
+    for (const src of bads) {
+      const { reps, diags } = collect(src);
+      expect(diags.filter((d) => d.code === "nudo:directive-syntax"), src).toHaveLength(1);
+      expect(reps.asTargets, src).toHaveLength(0);
+    }
+    const varDecl = `export function f(content) {\n  // @nudo:as shape({ port: number(), host: string() })\n  const config = JSON.parse(content);\n  return config;\n}\n`;
+    expect(collect(varDecl).diags.filter((d) => d.code === "nudo:directive-syntax")).toHaveLength(0);
+    expect(collect(varDecl).reps.asTargets).toHaveLength(1);
     expect(sigOf(check(varDecl), "f")).toContain("{ port: number, host: string }");
-
-    const ret = `export function f(content) {
-  // @nudo:as shape({ port: number() })
-  return JSON.parse(content);
-}
-`;
-    expect(collect(ret).diags.filter((d) => d.code === "nudo:directive-syntax")).toHaveLength(0);
+    const ret = `export function f(content) {\n  // @nudo:as shape({ port: number() })\n  return JSON.parse(content);\n}\n`;
     expect(collect(ret).reps.asTargets).toHaveLength(1);
-
-    const exp = `// @nudo:as number()
-export const raw = 1;
-`;
-    expect(collect(exp).diags.filter((d) => d.code === "nudo:directive-syntax")).toHaveLength(0);
+    const exp = `// @nudo:as number()\nexport const raw = 1;\n`;
     expect(collect(exp).reps.asTargets).toHaveLength(1);
+    const destructure = `export function f(content) {\n  // @nudo:as shape({ port: number(), host: string() })\n  const { port, host } = JSON.parse(content);\n  return { port, host };\n}\n`;
+    expect(collect(destructure).diags.filter((d) => d.code === "nudo:directive-syntax")).toHaveLength(0);
+    expect(sigOf(check(destructure), "f")).toContain("{ port: number, host: string }");
   });
-
-  it("负控制：解构声明上的 @nudo:as 仍生效（BUG-080 主修复不退化）", () => {
-    const src = `export function f(content) {
-  // @nudo:as shape({ port: number(), host: string() })
-  const { port, host } = JSON.parse(content);
-  return { port, host };
-}
-`;
-    const { reps, diags } = collect(src);
-    expect(diags.filter((d) => d.code === "nudo:directive-syntax")).toHaveLength(0);
-    expect(reps.asTargets).toHaveLength(1);
-    expect(sigOf(check(src), "f")).toContain("{ port: number, host: string }");
-  });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -546,28 +422,16 @@ describe("zod 长度界按 UTF-16 码元", () => {
 
 
 describe("zod 长度界按 UTF-16 码元", () => {
-  it("strMin / strMax 用 refine 写 .length（不是 .min()/.max()）", () => {
-    const min = schemaNodeToZod({
-      k: "prim",
-      type: "string",
-      refinements: [{ kind: "strMin", n: 2 }],
-    });
+  it("strMin/strMax 用 refine；无界仍 z.string()", () => {
+    const min = schemaNodeToZod({ k: "prim", type: "string", refinements: [{ kind: "strMin", n: 2 }] });
     expect(min).toBe("z.string().refine((s) => s.length >= 2)");
     expect(min).not.toContain(".min(2)");
-
-    const max = schemaNodeToZod({
-      k: "prim",
-      type: "string",
-      refinements: [{ kind: "strMax", n: 1 }],
-    });
+    const max = schemaNodeToZod({ k: "prim", type: "string", refinements: [{ kind: "strMax", n: 1 }] });
     expect(max).toBe("z.string().refine((s) => s.length <= 1)");
     expect(max).not.toContain(".max(1)");
-  });
-
-  it("对照：无长度界时仍是纯 z.string()", () => {
     expect(schemaNodeToZod({ k: "prim", type: "string", refinements: [] })).toBe("z.string()");
   });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -587,25 +451,13 @@ describe("dts 不发布调用点观测的字面量", () => {
 
 
 describe("dts 不发布调用点观测的字面量", () => {
-  it("纯调用点观测：返回位对象槽字面量 → 基类型", () => {
-    const dts = generateDts(
-      analyzeFile(
-        "/test/bug214.js",
-        `export function mk(n) {\n  return { a: n, b: "s" };\n}\n\nmk(1);\n`,
-      ),
-    );
-    // 观测点字面量不得直通进发布的**声明**（Case: 行是 JSDoc 见证，允许保留）
+  it("纯调用点观测剥到基类型；无调用点入口泛化保留嵌套精度", () => {
+    const dts = generateDts(analyzeFile("/test/bug214.js", 'export function mk(n) {\n  return { a: n, b: "s" };\n}\n\nmk(1);\n'));
     const decl = dts.split("\n").find((l) => l.includes("export declare function mk")) ?? "";
     expect(decl).toBe("export declare function mk(n: number): { a: number; b: string };");
+    expect(generateDts(analyzeFile("/test/bug214b.js", "export function one() {\n  return { a: 1 };\n}\n"))).toContain("{ a: 1 }");
   });
-
-  it("无调用点的入口泛化仍保留嵌套精度（对照组，Bug 565 口径）", () => {
-    const dts = generateDts(
-      analyzeFile("/test/bug214b.js", `export function one() {\n  return { a: 1 };\n}\n`),
-    );
-    expect(dts).toContain("{ a: 1 }");
-  });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
