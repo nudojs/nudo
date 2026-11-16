@@ -789,18 +789,27 @@ beforeEach(() => {
 });
 
 describe("裸包消费形态透传", () => {
-  it("require 消费方 ⇒ 取 exports.require 构建", () => {
-    const dir = project();
-    const src = 'const { kind } = require("dualpkg");\nmodule.exports = { kind };\n';
-    expect(kindSeenBy(dir, "consumer.cjs", src)).toBe('"cjs"');
+  const project = () => tmpProject("nudo-238-", {
+    "node_modules/dualpkg/package.json": JSON.stringify({ name: "dualpkg", version: "1.0.0", exports: { ".": { import: "./esm.mjs", require: "./cjs.cjs" } } }),
+    "node_modules/dualpkg/esm.mjs": 'export const kind = "esm";\n',
+    "node_modules/dualpkg/cjs.cjs": 'exports.kind = "cjs";\n',
   });
-
-  it("import 消费方 ⇒ 取 exports.import 构建（对照组）", () => {
+  const kindSeenBy = (dir: string, file: string, source: string): string => {
+    const graph = evalAbsModuleGraph(source, join(dir, file), {});
+    const mod = graph.modules["dualpkg"]!;
+    expect(mod).toBeDefined();
+    const kind = mod.named["kind"]!;
+    expect(kind).toBeDefined();
+    return formatShape(kind);
+  };
+  beforeEach(() => { clearAbsModuleCache(); });
+  it("require 消费取 require 构建；import 消费取 import 构建", () => {
     const dir = project();
-    const src = 'import { kind } from "dualpkg";\nexport const k = kind;\n';
-    expect(kindSeenBy(dir, "consumer.mjs", src)).toBe('"esm"');
+    expect(kindSeenBy(dir, "consumer.cjs", 'const { kind } = require("dualpkg");\nmodule.exports = { kind };\n')).toBe('"cjs"');
+    expect(kindSeenBy(dir, "consumer.mjs", 'import { kind } from "dualpkg";\nexport const k = kind;\n')).toBe('"esm"');
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -837,36 +846,24 @@ function makePkg(exportsField: unknown, files: Record<string, string>): {
 }
 
 describe("exports 条件键按声明顺序挑选", () => {
-  it("`default` 声明在 `import` 之前 ⇒ 宿主取 default（引擎同结论）", () => {
-    const { dir, pkgDir } = makePkg(
-      { ".": { default: "./default.js", import: "./esm.mjs" } },
-      { "default.js": "module.exports = {};\n", "esm.mjs": "export default {};\n" },
-    );
-    expect(resolveNpmJsEntryDetailed("dual", dir, "import").path).toBe(
-      join(pkgDir, "default.js"),
-    );
-  });
-
-  it("`import` 声明在前 ⇒ 取 import 构建（反向单变量对照）", () => {
-    const { dir, pkgDir } = makePkg(
-      { ".": { import: "./esm.mjs", default: "./default.js" } },
-      { "default.js": "module.exports = {};\n", "esm.mjs": "export default {};\n" },
-    );
-    expect(resolveNpmJsEntryDetailed("dual", dir, "import").path).toBe(
-      join(pkgDir, "esm.mjs"),
-    );
-  });
-
-  it("require 面同理：`default` 先声明 ⇒ 取 default（不按表序重排）", () => {
-    const { dir, pkgDir } = makePkg(
-      { ".": { default: "./default.js", require: "./cjs.cjs" } },
-      { "default.js": "module.exports = {};\n", "cjs.cjs": "module.exports = {};\n" },
-    );
-    expect(resolveNpmJsEntryDetailed("dual", dir, "require").path).toBe(
-      join(pkgDir, "default.js"),
-    );
+  const makePkg = (exportsField: unknown, files: Record<string, string>) => {
+    const dir = tmpProject("nudo-239-");
+    writeTmpFiles(dir, {
+      "node_modules/dual/package.json": JSON.stringify({ name: "dual", exports: exportsField }),
+      ...Object.fromEntries(Object.entries(files).map(([rel, content]) => [`node_modules/dual/${rel}`, content])),
+    });
+    return { dir, pkgDir: join(dir, "node_modules", "dual") };
+  };
+  it("default 先声明取 default；import 先声明取 import；require 面同序", () => {
+    const a = makePkg({ ".": { default: "./default.js", import: "./esm.mjs" } }, { "default.js": "module.exports = {};\n", "esm.mjs": "export default {};\n" });
+    expect(resolveNpmJsEntryDetailed("dual", a.dir, "import").path).toBe(join(a.pkgDir, "default.js"));
+    const b = makePkg({ ".": { import: "./esm.mjs", default: "./default.js" } }, { "default.js": "module.exports = {};\n", "esm.mjs": "export default {};\n" });
+    expect(resolveNpmJsEntryDetailed("dual", b.dir, "import").path).toBe(join(b.pkgDir, "esm.mjs"));
+    const c = makePkg({ ".": { default: "./default.js", require: "./cjs.cjs" } }, { "default.js": "module.exports = {};\n", "cjs.cjs": "module.exports = {};\n" });
+    expect(resolveNpmJsEntryDetailed("dual", c.dir, "require").path).toBe(join(c.pkgDir, "default.js"));
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -906,29 +903,31 @@ function project(): { dir: string; consumer: string; pkgEntry: string } {
 }
 
 describe("裸包依赖进依赖图（脏传播不缺边）", () => {
-  it("裸包入口变更 ⇒ 消费者进脏集", () => {
-    const { consumer, pkgEntry } = project();
+  const project = () => {
+    const dir = tmpProject("nudo-240-", {
+      "node_modules/barepkg/package.json": JSON.stringify({ name: "barepkg", version: "1.0.0", main: "./index.js" }),
+      "node_modules/barepkg/index.js": 'exports.v = "world";\n',
+      "consumer.js": 'const { v } = require("barepkg");\nmodule.exports = { v };\n',
+      "rel-consumer.js": 'const { v } = require("./local.js");\nmodule.exports = { v };\n',
+      "local.js": 'exports.v = "world";\n',
+    });
+    return { dir, consumer: join(dir, "consumer.js"), pkgEntry: join(dir, "node_modules", "barepkg", "index.js") };
+  };
+  it("裸包入口变更消费者进脏集；相对依赖同口径；解析不到不进边", () => {
+    const { dir, consumer, pkgEntry } = project();
     const graph = buildModuleGraph([consumer]);
     expect(graph.dependents.get(pkgEntry)?.has(consumer)).toBe(true);
     expect(computeDirtySet(graph.dependents, pkgEntry)).toContain(consumer);
-  });
-
-  it("相对路径消费者同口径（对照组，两路都成边）", () => {
-    const { dir, consumer, pkgEntry } = project();
     const relConsumer = join(dir, "rel-consumer.js");
-    const graph = buildModuleGraph([consumer, relConsumer]);
-    expect(graph.dependents.get(pkgEntry)?.has(consumer)).toBe(true);
-    expect(graph.dependents.get(join(dir, "local.js"))?.has(relConsumer)).toBe(true);
-  });
-
-  it("解析不到的裸包 ⇒ 不进边（不猜）", () => {
-    const dir = tmpProject("nudo-240-miss-", {
-      "consumer.js": 'require("not-installed-anywhere");\n',
-    });
-    const graph = buildModuleGraph([join(dir, "consumer.js")]);
-    expect(graph.imports.get(join(dir, "consumer.js"))?.size ?? 0).toBe(0);
+    const both = buildModuleGraph([consumer, relConsumer]);
+    expect(both.dependents.get(pkgEntry)?.has(consumer)).toBe(true);
+    expect(both.dependents.get(join(dir, "local.js"))?.has(relConsumer)).toBe(true);
+    const missDir = tmpProject("nudo-240-miss-", { "consumer.js": 'require("not-installed-anywhere");\n' });
+    const miss = buildModuleGraph([join(missDir, "consumer.js")]);
+    expect(miss.imports.get(join(missDir, "consumer.js"))?.size ?? 0).toBe(0);
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -948,51 +947,20 @@ describe("缓存键路径维含项目身份", () => {
 const SOURCE = "export function f(a) { return a + 1; }\n";
 
 describe("缓存键路径维含项目身份", () => {
-  it("同相对路径 + 同内容 + 不同项目根 ⇒ 不同键（check）", () => {
-    const a = checkCacheKey("/checkout1/src/a.js", SOURCE, {
-      autoBind: false,
-      projectDir: "/checkout1",
-    });
-    const b = checkCacheKey("/checkout2/src/a.js", SOURCE, {
-      autoBind: false,
-      projectDir: "/checkout2",
-    });
+  const SOURCE = "export function f(a) { return a + 1; }\n";
+  it("不同项目根不同键（check/contract）；同根同键；键无明文路径", () => {
+    const a = checkCacheKey("/checkout1/src/a.js", SOURCE, { autoBind: false, projectDir: "/checkout1" });
+    const b = checkCacheKey("/checkout2/src/a.js", SOURCE, { autoBind: false, projectDir: "/checkout2" });
     expect(a).not.toBe(b);
-  });
-
-  it("同相对路径 + 同内容 + 不同项目根 ⇒ 不同键（contract）", () => {
-    const a = contractCacheKey("/checkout1/src/a.js", SOURCE, {
-      autoBind: false,
-      projectDir: "/checkout1",
-    });
-    const b = contractCacheKey("/checkout2/src/a.js", SOURCE, {
-      autoBind: false,
-      projectDir: "/checkout2",
-    });
-    expect(a).not.toBe(b);
-  });
-
-  it("同一项目根下重复计算 ⇒ 同键（可复用性不受影响）", () => {
-    const a = checkCacheKey("/checkout1/src/a.js", SOURCE, {
-      autoBind: false,
-      projectDir: "/checkout1",
-    });
-    const b = checkCacheKey("/checkout1/src/a.js", SOURCE, {
-      autoBind: false,
-      projectDir: "/checkout1",
-    });
-    expect(a).toBe(b);
-  });
-
-  it("键里不出现项目根的绝对路径明文", () => {
-    const key = checkCacheKey("/checkout1/src/a.js", SOURCE, {
-      autoBind: false,
-      projectDir: "/checkout1",
-    });
-    expect(key).not.toContain("checkout1");
-    expect(key).toMatch(/^[a-f0-9]{64}$/);
+    const ca = contractCacheKey("/checkout1/src/a.js", SOURCE, { autoBind: false, projectDir: "/checkout1" });
+    const cb = contractCacheKey("/checkout2/src/a.js", SOURCE, { autoBind: false, projectDir: "/checkout2" });
+    expect(ca).not.toBe(cb);
+    expect(checkCacheKey("/checkout1/src/a.js", SOURCE, { autoBind: false, projectDir: "/checkout1" })).toBe(a);
+    expect(a).not.toContain("checkout1");
+    expect(a).toMatch(/^[a-f0-9]{64}$/);
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
