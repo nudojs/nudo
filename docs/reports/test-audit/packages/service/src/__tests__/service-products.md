@@ -1,5 +1,7 @@
 ```audit
 title	rootCause	gap	action	status	evidence
+函数级 throws 证据：调用点/模块级/选中 case 都有，entry@ 负控不变	协议面契约表	没测该层	keep	keep	—
+env 模板族扩展名：三支同表、basename 锚定、非模板负控	协议面契约表	没测该层	keep	keep	—
 六种违约各一条诊断点名 env 文件；结构违约装载期即报；契约满足/语法错负控	产品面尾部表	没测该层	keep	keep	—
 契约/声明级可选接受 undefined；Input 槽可缺席；未申报可选拒收	产品面尾部表	没测该层	keep	keep	—
 契约/观测/并存都恒为 <fn>Output；导出名集合相同；契约优先	产品面尾部表	没测该层	keep	keep	—
@@ -22,14 +24,6 @@ zod 方言保 z.bigint 并记 dropped；schema 节点 prim bigint	产品面契�
 生成器 brand 不引用 GeneratorFunction；模块可求值；非全局降级 unknown；全局仍 instanceof；standard 不受影响	产品面契约表	没测该层	keep	keep	—
 数据属性 / 显式 undefined / setter-only / 空对象	产品面契约表	没测该层	keep	keep	—
 getter 读域：数字/字符串/this/嵌套/抛 unknown；不出现 exact undefined	产品面契约表	没测该层	keep	keep	—
-"mock-<name>.<ext> / <name>.mock.<ext> 对族内全部扩展名都判 true"	"族 54 · service **协议面**（3 条缺口）的钉。 第 1 条 —— env 模板族的扩展名表（`isEnvTemplatePath`）： env 模板族 = `.env.<ext>` / `mock-<name>.<ext>` / `<name>.mock.<ext>`， **三支同表**：`js / mjs / ts / cjs / cts / mts`（族 21 遗留 697：mock 两支 曾只认 `js|mjs|ts` ⇒ `mock-foo.cjs` / `fs.mock.cts` 这类模板改动不进 watch 门禁 ⇒ 不触发依赖源文件复分析）。 断言：expect(isEnvTemplatePath(`"	没测该层	keep	keep	—
-".env.<ext> 分支（族内另一支）判定的扩展名不变"	"族 54 · service **协议面**（3 条缺口）的钉。 第 1 条 —— env 模板族的扩展名表（`isEnvTemplatePath`）： env 模板族 = `.env.<ext>` / `mock-<name>.<ext>` / `<name>.mock.<ext>`， **三支同表**：`js / mjs / ts / cjs / cts / mts`（族 21 遗留 697：mock 两支 曾只认 `js|mjs|ts` ⇒ `mock-foo.cjs` / `fs.mock.cts` 这类模板改动不进 watch 门禁 ⇒ 不触发依赖源文件复分析）。 断言：expect(isEnvTemplatePath(`"	没测该层	keep	keep	—
-"mock 前缀支锚在 basename 起点（相对路径形态同样成立）"	"族 54 · service **协议面**（3 条缺口）的钉。 第 1 条 —— env 模板族的扩展名表（`isEnvTemplatePath`）： env 模板族 = `.env.<ext>` / `mock-<name>.<ext>` / `<name>.mock.<ext>`， **三支同表**：`js / mjs / ts / cjs / cts / mts`（族 21 遗留 697：mock 两支 曾只认 `js|mjs|ts` ⇒ `mock-foo.cjs` / `fs.mock.cts` 这类模板改动不进 watch 门禁 ⇒ 不触发依赖源文件复分析）。 断言：expect(isEnvTemplatePath(\""	没测该层	keep	keep	—
-"负控：非 env 模板路径逐字不变（仍为 false）"	"族 54 · service **协议面**（3 条缺口）的钉。 第 1 条 —— env 模板族的扩展名表（`isEnvTemplatePath`）： env 模板族 = `.env.<ext>` / `mock-<name>.<ext>` / `<name>.mock.<ext>`， **三支同表**：`js / mjs / ts / cjs / cts / mts`（族 21 遗留 697：mock 两支 曾只认 `js|mjs|ts` ⇒ `mock-foo.cjs` / `fs.mock.cts` 这类模板改动不进 watch 门禁 ⇒ 不触发依赖源文件复分析）。 断言：expect(isEnvTemplatePath(p"	没测该层	keep	keep	—
-"有调用点见证：函数级 throws 证据落在**函数级承载位**（见证数与推断域不变）"	"族 54 · service **协议面**（3 条缺口）的钉。 第 1 条 —— env 模板族的扩展名表（`isEnvTemplatePath`）： env 模板族 = `.env.<ext>` / `mock-<name>.<ext>` / `<name>.mock.<ext>`， **三支同表**：`js / mjs / ts / cjs / cts / mts`（族 21 遗留 697：mock 两支 曾只认 `js|mjs|ts` ⇒ `mock-foo.cjs` / `fs.mock.cts` 这类模板改动不进 watch 门禁 ⇒ 不触发依赖源文件复分析）。 断言：expect(fn.cases.map((c) =>"	没测该层	keep	keep	—
-"有调用点见证（模块级调用点路径）：函数级承载位带函数级 throws 证据"	"族 54 · service **协议面**（3 条缺口）的钉。 第 1 条 —— env 模板族的扩展名表（`isEnvTemplatePath`）： env 模板族 = `.env.<ext>` / `mock-<name>.<ext>` / `<name>.mock.<ext>`， **三支同表**：`js / mjs / ts / cjs / cts / mts`（族 21 遗留 697：mock 两支 曾只认 `js|mjs|ts` ⇒ `mock-foo.cjs` / `fs.mock.cts` 这类模板改动不进 watch 门禁 ⇒ 不触发依赖源文件复分析）。 断言：expect(fn.cases.map((c) =>"	没测该层	keep	keep	—
-"选中 case：被选函数不产 entry@ 见证，函数级承载位带函数级 throws 证据"	"族 54 · service **协议面**（3 条缺口）的钉。 第 1 条 —— env 模板族的扩展名表（`isEnvTemplatePath`）： env 模板族 = `.env.<ext>` / `mock-<name>.<ext>` / `<name>.mock.<ext>`， **三支同表**：`js / mjs / ts / cjs / cts / mts`（族 21 遗留 697：mock 两支 曾只认 `js|mjs|ts` ⇒ `mock-foo.cjs` / `fs.mock.cts` 这类模板改动不进 watch 门禁 ⇒ 不触发依赖源文件复分析）。 断言：expect(fn.cases.map((c) =>"	没测该层	keep	keep	—
-"负控：无调用点见证时 entry@ 见证的 throws 证据与推断域不变"	"族 54 · service **协议面**（3 条缺口）的钉。 第 1 条 —— env 模板族的扩展名表（`isEnvTemplatePath`）： env 模板族 = `.env.<ext>` / `mock-<name>.<ext>` / `<name>.mock.<ext>`， **三支同表**：`js / mjs / ts / cjs / cts / mts`（族 21 遗留 697：mock 两支 曾只认 `js|mjs|ts` ⇒ `mock-foo.cjs` / `fs.mock.cts` 这类模板改动不进 watch 门禁 ⇒ 不触发依赖源文件复分析）。 断言：expect(fn.cases.map((c) =>"	没测该层	keep	keep	—
 ```audit-deleted
 title	reason	evidence
 getter 返数字：dts 取读域 number（原生读 1）	dup:产品面契约表	commit:52dbd878
@@ -116,4 +110,12 @@ used 集合跨守卫共享 ⇒ 去重只影响同名者（不同名不受影响�
 结构违约（不导出 / 不是函数）在**装载期**即报（不待工厂调用）	dup:产品面尾部表	commit:9a85ec09
 负控制：契约满足的 env 文件生效且零告警	dup:产品面尾部表	commit:9a85ec09
 负控制：语法错的 env 文件仍走既有措辞（不与契约诊断混口径）	dup:产品面尾部表	commit:9a85ec09
+mock-<name>.<ext> / <name>.mock.<ext> 对族内全部扩展名都判 true	dup:协议面契约表	commit:15fa44fa
+.env.<ext> 分支（族内另一支）判定的扩展名不变	dup:协议面契约表	commit:15fa44fa
+mock 前缀支锚在 basename 起点（相对路径形态同样成立）	dup:协议面契约表	commit:15fa44fa
+负控：非 env 模板路径逐字不变（仍为 false）	dup:协议面契约表	commit:15fa44fa
+有调用点见证：函数级 throws 证据落在**函数级承载位**（见证数与推断域不变）	dup:协议面契约表	commit:15fa44fa
+有调用点见证（模块级调用点路径）：函数级承载位带函数级 throws 证据	dup:协议面契约表	commit:15fa44fa
+选中 case：被选函数不产 entry@ 见证，函数级承载位带函数级 throws 证据	dup:协议面契约表	commit:15fa44fa
+负控：无调用点见证时 entry@ 见证的 throws 证据与推断域不变	dup:协议面契约表	commit:15fa44fa
 ```
