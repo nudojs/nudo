@@ -177,24 +177,8 @@ HOF 传递（数组 map 回调）→ 方法体正常执行（this=undefined 不�
 类实例 strict：原型 writable:false/getter-only 抛；可写与自有字段不抛	类实例 [[Set]] 写门表	没测该层	keep	keep	—
 Reflect.set 镜像返 false 不抛；原型槽落地可见；strict 赋值仍抛	类实例 [[Set]] 写门表	没测该层	keep	keep	—
 [[Set]] 原型链写门：getter/writable:false/frozen/两级链/fn/数组下标抛；负控成功	类实例 [[Set]] 写门表	没测该层	keep	keep	—
-Object.assign(A.prototype, {b:1}) → for-in 看得到 b（此前静默丢弃）	计算键/static 表	没测该层	keep	keep	—
-Object.defineProperty(A.prototype,'c',{value:2,enumerable:true}) → for-in 看得到 c	计算键/static 表	没测该层	keep	keep	—
-assign 写的键：实例读得到（原型链继承）	计算键/static 表	没测该层	keep	keep	—
-assign 写的键：原型面 hasOwnProperty → true	计算键/static 表	没测该层	keep	keep	—
-assign 写的键：原型面直接读得到	计算键/static 表	没测该层	keep	keep	—
-非 obj 源（数组字面量）→ 下标键写进原型	计算键/static 表	没测该层	keep	keep	—
-负控制：类方法非可枚举 → for-in 仍只看到 assign 的键	计算键/static 表	没测该层	keep	keep	—
-负控制：普通对象的 assign / for-in 不变	计算键/static 表	没测该层	keep	keep	—
-class 实例：原型上的可枚举属性被枚举	计算键/static 表	没测该层	keep	keep	—
-class 实例：for..in 的枚举个数包含原型键	计算键/static 表	没测该层	keep	keep	—
-function 原型：原型上的可枚举属性被枚举	计算键/static 表	没测该层	keep	keep	—
-派生类：整条原型链的可枚举键都被枚举	计算键/static 表	没测该层	keep	keep	—
-派生类：原型上的方法（class 方法非可枚举）不出现	计算键/static 表	没测该层	keep	keep	—
-原型键被覆写后仍只枚举一次	计算键/static 表	没测该层	keep	keep	—
-负控制：class 方法非可枚举 ⇒ 不出现在 for..in	计算键/static 表	没测该层	keep	keep	—
-负控制：普通对象的 for..in 不变	计算键/static 表	没测该层	keep	keep	—
-负控制：Object.keys 仍只给自有可枚举键（原型键不混入）	计算键/static 表	没测该层	keep	keep	—
-负控制：原型上的属性读取仍正常	计算键/static 表	没测该层	keep	keep	—
+assign/defineProperty 写进原型对象：for-in/实例读/原型读/hasOwn 可见；非 obj 源与负控	brand 原型写表	没测该层	keep	keep	—
+for..in 沿 brand 原型链枚举：实例/个数/function/派生链/覆写；方法与自有键负控	brand 原型写表	没测该层	keep	keep	—
 字符串键静态方法 → 1 instanceof A 折 false（不当钩子）	计算键/static 表	没测该层	keep	keep	—
 字符串键静态字段 → 1 instanceof A 折 false（不当钩子）	计算键/static 表	没测该层	keep	keep	—
 字符串键静态 getter → 1 instanceof A 折 false（不当钩子）	计算键/static 表	没测该层	keep	keep	—
@@ -676,4 +660,22 @@ user try/catch 可吸收（原生同：抛错被 catch 捕获）	dup:原型删�
 负控制：内建 brand 实例不受影响（new Date().getTime() 不抛）	dup:原型删除钩子表	commit:8cb582bc
 负控制：ctor 自有 fn 槽调用不变（this.m = fn → 42，不抛）	dup:原型删除钩子表	commit:8cb582bc
 负控制：内建父类链保守不判（class MyMap extends Map {} → 链有内建父，原型面不完备）	dup:原型删除钩子表	commit:8cb582bc
+Object.assign(A.prototype, {b:1}) → for-in 看得到 b（此前静默丢弃）	dup:brand 原型写表	commit:d842d398
+Object.defineProperty(A.prototype,'c',{value:2,enumerable:true}) → for-in 看得到 c	dup:brand 原型写表	commit:d842d398
+assign 写的键：实例读得到（原型链继承）	dup:brand 原型写表	commit:d842d398
+assign 写的键：原型面 hasOwnProperty → true	dup:brand 原型写表	commit:d842d398
+assign 写的键：原型面直接读得到	dup:brand 原型写表	commit:d842d398
+非 obj 源（数组字面量）→ 下标键写进原型	dup:brand 原型写表	commit:d842d398
+负控制：类方法非可枚举 → for-in 仍只看到 assign 的键	dup:brand 原型写表	commit:d842d398
+负控制：普通对象的 assign / for-in 不变	dup:brand 原型写表	commit:d842d398
+class 实例：原型上的可枚举属性被枚举	dup:brand 原型写表	commit:d842d398
+class 实例：for..in 的枚举个数包含原型键	dup:brand 原型写表	commit:d842d398
+function 原型：原型上的可枚举属性被枚举	dup:brand 原型写表	commit:d842d398
+派生类：整条原型链的可枚举键都被枚举	dup:brand 原型写表	commit:d842d398
+派生类：原型上的方法（class 方法非可枚举）不出现	dup:brand 原型写表	commit:d842d398
+原型键被覆写后仍只枚举一次	dup:brand 原型写表	commit:d842d398
+负控制：class 方法非可枚举 ⇒ 不出现在 for..in	dup:brand 原型写表	commit:d842d398
+负控制：普通对象的 for..in 不变	dup:brand 原型写表	commit:d842d398
+负控制：Object.keys 仍只给自有可枚举键（原型键不混入）	dup:brand 原型写表	commit:d842d398
+负控制：原型上的属性读取仍正常	dup:brand 原型写表	commit:d842d398
 ```
