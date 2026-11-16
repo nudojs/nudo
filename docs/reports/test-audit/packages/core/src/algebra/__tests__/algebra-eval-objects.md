@@ -353,26 +353,8 @@ continue 之前的写生效（if 臂内 continue）	计算键/static 表	没测�
 负控制：不带 continue 的写仍生效（步进基于最新值）	计算键/static 表	没测该层	keep	keep	—
 负控制：break 路径不变（退出循环，计数停在 break 点）	计算键/static 表	没测该层	keep	keep	—
 负控制：同块多个 for 循环不互相污染（捕获槽唯一）	计算键/static 表	没测该层	keep	keep	—
-delete a.length → TypeError（表达式位：不可配置自有属性）	计算键/static 表	没测该层	keep	keep	—
-delete a.length → TypeError（语句位写回通道 $del）	计算键/static 表	没测该层	keep	keep	—
-delete a["length"]（计算键）→ TypeError	计算键/static 表	没测该层	keep	keep	—
-负控制：preventExtensions 数组 delete a.length → 仍 TypeError（length 恒不可配置）	计算键/static 表	没测该层	keep	keep	—
-负控制：delete a[0]（元素可配置）→ true	计算键/static 表	没测该层	keep	keep	—
-负控制：delete 普通对象自有属性 → true	计算键/static 表	没测该层	keep	keep	—
-负控制：delete 不存在的属性 → true	计算键/static 表	没测该层	keep	keep	—
-负控制：delete 普通对象的 length 属性（可配置）→ true（数组专属规则）	计算键/static 表	没测该层	keep	keep	—
-负控制：frozen 对象删自有属性 → TypeError（既有正确）	计算键/static 表	没测该层	keep	keep	—
-Reflect.deleteProperty(靶含不可配置键, 陷阱返 true) → TypeError	计算键/static 表	没测该层	keep	keep	—
-负控制：靶上该键可配置 → 返 true（不抛）	计算键/static 表	没测该层	keep	keep	—
-负控制：靶上无该键 → 返 true（不抛）	计算键/static 表	没测该层	keep	keep	—
-负控制：陷阱返 false → 返 false（不抛；原生不变量不适用）	计算键/static 表	没测该层	keep	keep	—
-delete p.x（运算符路径）→ TypeError（exec/runtime/members.ts 的 $delRes 陷阱臂过 enforceProxyDeleteInvariant）	计算键/static 表	没测该层	keep	keep	—
-负控制（运算符路径）：靶上该键可配置 → 返 true（不抛）	计算键/static 表	没测该层	keep	keep	—
-负控制（运算符路径）：靶上无该键 → 返 true（不抛）	计算键/static 表	没测该层	keep	keep	—
-负控制（运算符路径）：陷阱返 false → strict 定抛 TypeError（原生同）	计算键/static 表	没测该层	keep	keep	—
-delete 字符串字面量的 length → TypeError（此前折 unknown）	计算键/static 表	没测该层	keep	keep	—
-负控制：delete 数组的 length → TypeError（既有正确）	计算键/static 表	没测该层	keep	keep	—
-负控制：delete 字符串的其它键 → 不抛（length 之外的键不受管）	计算键/static 表	没测该层	keep	keep	—
+delete a.length 各通道抛；元素/普通属性/不存在/普通 length/frozen 负控	delete 写门表	没测该层	keep	keep	—
+Proxy [[Delete]] 不变量与字符串 length 门；负控	delete 写门表	没测该层	keep	keep	—
 Widget.constructor === Function → true	计算键/static 表	没测该层	keep	keep	—
 Widget.constructor.name → "Function"	计算键/static 表	没测该层	keep	keep	—
 子类的 constructor 同样是 Function	计算键/static 表	没测该层	keep	keep	—
@@ -672,4 +654,24 @@ fn 上 defineProperty writable:false → strict TypeError	dup:写门表	commit:9
 负控制：类字面量访问器（继承面）→ TypeError（既有正确）	dup:写门表	commit:90b33e51
 负控制：Object.assign 到继承 non-writable → TypeError（既有正确）	dup:写门表	commit:90b33e51
 负控制：函数 expando 写（未 defineProperty）→ 仍成功	dup:写门表	commit:90b33e51
+delete a.length → TypeError（表达式位：不可配置自有属性）	dup:delete 写门表	commit:476ed1e0
+delete a.length → TypeError（语句位写回通道 $del）	dup:delete 写门表	commit:476ed1e0
+delete a["length"]（计算键）→ TypeError	dup:delete 写门表	commit:476ed1e0
+负控制：preventExtensions 数组 delete a.length → 仍 TypeError（length 恒不可配置）	dup:delete 写门表	commit:476ed1e0
+负控制：delete a[0]（元素可配置）→ true	dup:delete 写门表	commit:476ed1e0
+负控制：delete 普通对象自有属性 → true	dup:delete 写门表	commit:476ed1e0
+负控制：delete 不存在的属性 → true	dup:delete 写门表	commit:476ed1e0
+负控制：delete 普通对象的 length 属性（可配置）→ true（数组专属规则）	dup:delete 写门表	commit:476ed1e0
+负控制：frozen 对象删自有属性 → TypeError（既有正确）	dup:delete 写门表	commit:476ed1e0
+Reflect.deleteProperty(靶含不可配置键, 陷阱返 true) → TypeError	dup:delete 写门表	commit:476ed1e0
+负控制：靶上该键可配置 → 返 true（不抛）	dup:delete 写门表	commit:476ed1e0
+负控制：靶上无该键 → 返 true（不抛）	dup:delete 写门表	commit:476ed1e0
+负控制：陷阱返 false → 返 false（不抛；原生不变量不适用）	dup:delete 写门表	commit:476ed1e0
+delete p.x（运算符路径）→ TypeError（exec/runtime/members.ts 的 $delRes 陷阱臂过 enforceProxyDeleteInvariant）	dup:delete 写门表	commit:476ed1e0
+负控制（运算符路径）：靶上该键可配置 → 返 true（不抛）	dup:delete 写门表	commit:476ed1e0
+负控制（运算符路径）：靶上无该键 → 返 true（不抛）	dup:delete 写门表	commit:476ed1e0
+负控制（运算符路径）：陷阱返 false → strict 定抛 TypeError（原生同）	dup:delete 写门表	commit:476ed1e0
+delete 字符串字面量的 length → TypeError（此前折 unknown）	dup:delete 写门表	commit:476ed1e0
+负控制：delete 数组的 length → TypeError（既有正确）	dup:delete 写门表	commit:476ed1e0
+负控制：delete 字符串的其它键 → 不抛（length 之外的键不受管）	dup:delete 写门表	commit:476ed1e0
 ```
