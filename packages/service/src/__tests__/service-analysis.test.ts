@@ -958,17 +958,21 @@ function rec(line: number, column: number): CallRecord {
 }
 
 describe("去重键含调用点身份", () => {
-  it("同形态但不同调用点 ⇒ 两条独立见证（顺序无关）", () => {
+  const rec = (line: number, column: number): CallRecord => ({
+    fnName: "id",
+    argAbs: [numLit(1)],
+    resultAbs: numLit(1),
+    throwsAbs: neverAbs,
+    callLoc: { line, column },
+  });
+  it("不同调用点两条见证（顺序无关，同行不同列也算）；同点重复采集去重为一条", () => {
     expect(dedupeCallRecords([rec(2, 0), rec(5, 0)])).toHaveLength(2);
     expect(dedupeCallRecords([rec(5, 0), rec(2, 0)])).toHaveLength(2);
-    // 同一行不同列同样是两个调用点
     expect(dedupeCallRecords([rec(2, 0), rec(2, 8)])).toHaveLength(2);
-  });
-
-  it("对照组：同一调用点被重复采集 ⇒ 仍去重成一条", () => {
     expect(dedupeCallRecords([rec(2, 0), rec(2, 0)])).toHaveLength(1);
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -1017,94 +1021,35 @@ function caseExpectedCount(src: string): number {
 }
 
 describe("期望里的对象槽字面量按值执法（不再恒 [ok]）", () => {
-  it("对象槽字面量不符（期望 { a: 2 }，实际 { a: 1 }）→ 报 nudo:case-expected", () => {
-    const src = `/**
- * @nudo:case "t" ({ a: 1 }) => shape({ a: lit(2) })
- */
-export function f(x) { return x; }
-`;
-    expect(caseExpectedCount(src)).toBe(1);
+  const caseExpectedIssues = (result: { diagnostics: readonly { code?: string }[] }): number => result.diagnostics.filter((d) => d.code === "nudo:case-expected").length;
+  const caseExpectedCount = (src: string): number => withTmpProject("nudo-b396-", (dir) => {
+    const file = writeTmpFile(dir, "f.js", src);
+    return caseExpectedIssues(analyzeFile(file, readFileSync(file, "utf-8")));
   });
-
-  it("对象槽字面量类型不同（期望 { a: \"y\" }，实际 { a: \"x\" }）→ 报", () => {
-    const src = `/**
- * @nudo:case "t" ({ a: "x" }) => shape({ a: lit("y") })
- */
-export function f(x) { return x; }
-`;
-    expect(caseExpectedCount(src)).toBe(1);
-  });
-
-  it("嵌套对象槽字面量不符（期望 { a: { b: 2 } }，实际 { a: { b: 1 } }）→ 报", () => {
-    const src = `/**
- * @nudo:case "t" ({ a: { b: 1 } }) => shape({ a: shape({ b: lit(2) }) })
- */
-export function f(x) { return x; }
-`;
-    expect(caseExpectedCount(src)).toBe(1);
-  });
-
-  it("负控制：期望槽是**类型**（number()）→ 口径不变（不报）", () => {
-    const src = `/**
- * @nudo:case "t" ({ a: 1 }) => shape({ a: number() })
- */
-export function f(x) { return x; }
-`;
-    expect(caseExpectedCount(src)).toBe(0);
-  });
-
-  it("负控制：顶层字面量不符（期望 2，实际 1）→ 口径不变（报）", () => {
-    const src = `/**
- * @nudo:case "t" (1) => 2
- */
-export function f(x) { return x; }
-`;
-    expect(caseExpectedCount(src)).toBe(1);
-  });
-
-  it("负控制：数组元素字面量不符（期望 [\"y\"]，实际 [\"x\"]）→ 口径不变（报）", () => {
-    const src = `/**
- * @nudo:case "t" (["x"]) => array(lit("y"))
- */
-export function f(x) { return x; }
-`;
-    expect(caseExpectedCount(src)).toBe(1);
+  it("对象/嵌套/字符串槽不符报；类型槽、顶层字面量、数组元素口径不变", () => {
+    expect(caseExpectedCount('/**\n * @nudo:case "t" ({ a: 1 }) => shape({ a: lit(2) })\n */\nexport function f(x) { return x; }\n')).toBe(1);
+    expect(caseExpectedCount('/**\n * @nudo:case "t" ({ a: "x" }) => shape({ a: lit("y") })\n */\nexport function f(x) { return x; }\n')).toBe(1);
+    expect(caseExpectedCount('/**\n * @nudo:case "t" ({ a: { b: 1 } }) => shape({ a: shape({ b: lit(2) }) })\n */\nexport function f(x) { return x; }\n')).toBe(1);
+    expect(caseExpectedCount('/**\n * @nudo:case "t" ({ a: 1 }) => shape({ a: number() })\n */\nexport function f(x) { return x; }\n')).toBe(0);
+    expect(caseExpectedCount('/**\n * @nudo:case "t" (1) => 2\n */\nexport function f(x) { return x; }\n')).toBe(1);
+    expect(caseExpectedCount('/**\n * @nudo:case "t" (["x"]) => array(lit("y"))\n */\nexport function f(x) { return x; }\n')).toBe(1);
   });
 });
+;
 
 describe("caseExpectedSatisfied 的严格变体（消费侧单测）", () => {
   const objA1 = abs({ k: "obj", slots: { a: { value: numLit(1) } } }, undefined, undefined, "exact");
   const objX = abs({ k: "obj", slots: { a: { value: strLit("x") } } }, undefined, undefined, "exact");
-  const nested = abs(
-    {
-      k: "obj",
-      slots: {
-        a: {
-          value: abs({ k: "obj", slots: { b: { value: numLit(1) } } }, undefined, undefined, "exact"),
-        },
-      },
-    },
-    undefined,
-    undefined,
-    "exact",
-  );
-
-  it("对象槽字面量不符 → 不满足", () => {
+  const nested = abs({ k: "obj", slots: { a: { value: abs({ k: "obj", slots: { b: { value: numLit(1) } } }, undefined, undefined, "exact") } } }, undefined, undefined, "exact");
+  it("槽字面量不符不满足；相符满足；类型槽满足", () => {
     expect(caseExpectedSatisfied(objA1, parseCaseArgExpr("shape({ a: lit(2) })", 0))).toBe(false);
     expect(caseExpectedSatisfied(objX, parseCaseArgExpr("shape({ a: lit('y') })", 0))).toBe(false);
-    expect(
-      caseExpectedSatisfied(nested, parseCaseArgExpr("shape({ a: shape({ b: lit(2) }) })", 0)),
-    ).toBe(false);
-  });
-
-  it("对象槽字面量相符 → 满足", () => {
+    expect(caseExpectedSatisfied(nested, parseCaseArgExpr("shape({ a: shape({ b: lit(2) }) })", 0))).toBe(false);
     expect(caseExpectedSatisfied(objA1, parseCaseArgExpr("shape({ a: lit(1) })", 0))).toBe(true);
-  });
-
-  it("负控制：期望槽是类型（number()）→ 满足（口径不变）", () => {
     expect(caseExpectedSatisfied(objA1, parseCaseArgExpr("shape({ a: number() })", 0))).toBe(true);
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -1143,99 +1088,53 @@ function litOf(a: Abs): unknown {
 }
 
 describe("具名类导入的调用点归因（--from 不再丢弃）", () => {
-  it("import { Svc }：调用点归因到类所在模块并合成 call@ case", () =>
+  const litOf = (a: Abs): unknown => {
+    const lv = litValue(a);
+    return lv.ok ? lv.value : undefined;
+  };
+  it("具名/别名导入归因类模块并合成 call@；命名空间形态按成员名；他模块调用不挂本文件", () => {
     withTmpProject("nudo-b464-", (dir) => {
-      const t9 = writeTmpFile(
-        dir,
-        "t9.js",
-        "export class Svc464a { run(x) { return x + 1; } }\n",
-      );
-      const use = writeTmpFile(
-        dir,
-        "use.js",
-        'import { Svc464a } from "./t9.js";\nconst s = new Svc464a();\nconst v = s.run(1);\n',
-      );
-
+      const t9 = writeTmpFile(dir, "t9.js", "export class Svc464a { run(x) { return x + 1; } }\n");
+      const use = writeTmpFile(dir, "use.js", 'import { Svc464a } from "./t9.js";\nconst s = new Svc464a();\nconst v = s.run(1);\n');
       const records = collectCallRecords(use, readFileSync(use, "utf-8"));
-      const rec = records.find((r) => r.fnName === "Svc464a.run");
-      expect(rec).toBeDefined();
-      // 归因到**类所在模块**（此前为 undefined → 记录被整条丢弃）
-      expect(rec!.targetModule).toBe(t9);
-      expect(litOf(rec!.argAbs[0]!)).toBe(1);
-      expect(litOf(rec!.resultAbs)).toBe(2);
-
-      // 注入后合成 call@ case（不再回落 entry@）
+      const rec = records.find((r) => r.fnName === "Svc464a.run")!;
+      expect(rec.targetModule).toBe(t9);
+      expect(litOf(rec.argAbs[0]!)).toBe(1);
+      expect(litOf(rec.resultAbs)).toBe(2);
       const result = analyzeFile(t9, readFileSync(t9, "utf-8"), undefined, records);
-      const fn = result.functions.find((f) => f.name === "Svc464a.run");
-      expect(fn).toBeDefined();
-      const call = fn!.cases.find((c) => c.source === "callsite");
-      expect(call).toBeDefined();
-      expect(litOf(call!.abs)).toBe(2);
-      expect(fn!.cases.some((c) => c.name.startsWith("entry@"))).toBe(false);
-    }));
-
-  it("import { Svc as S }（本地名 ≠ 类名）：同样归因到类所在模块", () =>
+      const fn = result.functions.find((f) => f.name === "Svc464a.run")!;
+      const call = fn.cases.find((c) => c.source === "callsite")!;
+      expect(litOf(call.abs)).toBe(2);
+      expect(fn.cases.some((c) => c.name.startsWith("entry@"))).toBe(false);
+    });
     withTmpProject("nudo-b464b-", (dir) => {
-      const t9 = writeTmpFile(
-        dir,
-        "t9.js",
-        "export class Svc464b { run(x) { return x + 1; } }\n",
-      );
-      const use = writeTmpFile(
-        dir,
-        "use.js",
-        'import { Svc464b as S } from "./t9.js";\nconst s = new S();\nconst v = s.run(2);\n',
-      );
-      const records = collectCallRecords(use, readFileSync(use, "utf-8"));
-      const rec = records.find((r) => r.fnName === "Svc464b.run");
-      expect(rec).toBeDefined();
-      expect(rec!.targetModule).toBe(t9);
-      expect(litOf(rec!.resultAbs)).toBe(3);
-    }));
-
-  it("负控制：命名空间导入形态仍按成员名归因（exportName = 成员名）", () =>
+      const t9 = writeTmpFile(dir, "t9.js", "export class Svc464b { run(x) { return x + 1; } }\n");
+      const use = writeTmpFile(dir, "use.js", 'import { Svc464b as S } from "./t9.js";\nconst s = new S();\nconst v = s.run(2);\n');
+      const rec = collectCallRecords(use, readFileSync(use, "utf-8")).find((r) => r.fnName === "Svc464b.run")!;
+      expect(rec.targetModule).toBe(t9);
+      expect(litOf(rec.resultAbs)).toBe(3);
+    });
     withTmpProject("nudo-b464c-", (dir) => {
-      const t9 = writeTmpFile(
-        dir,
-        "t9.js",
-        "export class Svc464c { run(x) { return x + 1; } }\n",
-      );
-      const use = writeTmpFile(
-        dir,
-        "use.js",
-        'import * as Svc464c from "./t9.js";\nconst s = new Svc464c.Svc464c();\nconst v = s.run(1);\n',
-      );
-      const records = collectCallRecords(use, readFileSync(use, "utf-8"));
-      const rec = records.find((r) => r.fnName === "Svc464c.run");
-      expect(rec).toBeDefined();
-      expect(rec!.targetModule).toBe(t9);
-      expect(rec!.targetExport).toBe("run");
-    }));
-
-  it("负控制：别的模块的调用点不得挂到本文件的函数域", () =>
+      const t9 = writeTmpFile(dir, "t9.js", "export class Svc464c { run(x) { return x + 1; } }\n");
+      const use = writeTmpFile(dir, "use.js", 'import * as Svc464c from "./t9.js";\nconst s = new Svc464c.Svc464c();\nconst v = s.run(1);\n');
+      const rec = collectCallRecords(use, readFileSync(use, "utf-8")).find((r) => r.fnName === "Svc464c.run")!;
+      expect(rec.targetModule).toBe(t9);
+      expect(rec.targetExport).toBe("run");
+    });
     withTmpProject("nudo-b464d-", (dir) => {
-      const t9 = writeTmpFile(
-        dir,
-        "t9.js",
-        "export class Svc464d { run(x) { return x + 1; } }\n",
-      );
-      const other = writeTmpFile(dir, "other.js", OTHER);
-      const use = writeTmpFile(
-        dir,
-        "use.js",
-        'import { Svc464d } from "./t9.js";\nimport { helper } from "./other.js";\nconst s = new Svc464d();\ns.run(1);\nhelper(4);\n',
-      );
+      const t9 = writeTmpFile(dir, "t9.js", "export class Svc464d { run(x) { return x + 1; } }\n");
+      const other = writeTmpFile(dir, "other.js", "export function helper(x) { return x * 3; }\n");
+      const use = writeTmpFile(dir, "use.js", 'import { Svc464d } from "./t9.js";\nimport { helper } from "./other.js";\nconst s = new Svc464d();\ns.run(1);\nhelper(4);\n');
       const records = collectCallRecords(use, readFileSync(use, "utf-8"));
-      const helperRec = records.find((r) => r.fnName === "helper");
-      expect(helperRec).toBeDefined();
-      expect(helperRec!.targetModule).toBe(other);
-      // 注入到 t9.js：helper 的记录不得成为 t9.js 的调用点证据
-      const result = analyzeFile(t9, readFileSync(t9, "utf-8"), undefined, records);
-      const fn = result.functions.find((f) => f.name === "Svc464d.run");
-      expect(fn!.cases.filter((c) => c.source === "callsite")).toHaveLength(1);
-      expect(litOf(fn!.cases[0]!.abs)).toBe(2);
-    }));
+      const helperRec = records.find((r) => r.fnName === "helper")!;
+      expect(helperRec.targetModule).toBe(other);
+      const fn = analyzeFile(t9, readFileSync(t9, "utf-8"), undefined, records).functions.find((f) => f.name === "Svc464d.run")!;
+      expect(fn.cases.filter((c) => c.source === "callsite")).toHaveLength(1);
+      expect(litOf(fn.cases[0]!.abs)).toBe(2);
+    });
+  });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
