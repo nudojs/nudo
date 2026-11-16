@@ -32,166 +32,86 @@ function extractInlineWithDiags(source: string) {
   return { dirs, diags };
 }
 
-describe("F-3 #1-3: malformed case names", () => {
-  it("#1 single-quoted name → diagnostic, no case", () => {
-    const { fns, diags } = extractWithDiags(`/**
- * @nudo:case 't' (1)
- */
-function f(x) { return x; }`);
-    const cases = fns.flatMap((f) => f.directives.filter((d) => d.kind === "case"));
-    expect(cases).toHaveLength(0);
-    expect(diags.some((d) => d.code === "nudo:directive-syntax" && d.message.includes("single-quoted"))).toBe(true);
-  });
+describe("malformed case names", () => {
+  const INVALID = [
+    { name: "单引号 name", line: `@nudo:case 't' (1)`, message: "single-quoted" },
+    { name: "空 name", line: `@nudo:case "" (1)` },
+    { name: "name 内转义引号", line: `@nudo:case "a\\"b" (2)`, forbidName: "a\\" },
+  ];
 
-  it("#2 empty name → diagnostic, no case", () => {
-    const { fns, diags } = extractWithDiags(`/**
- * @nudo:case "" (1)
- */
-function f(x) { return x; }`);
-    const cases = fns.flatMap((f) => f.directives.filter((d) => d.kind === "case"));
-    expect(cases).toHaveLength(0);
-    expect(diags.some((d) => d.code === "nudo:directive-syntax")).toBe(true);
-  });
-
-  it("#3 escaped quote in name → diagnostic, no clean case", () => {
-    const { fns, diags } = extractWithDiags(`/**
- * @nudo:case "a\\"b" (2)
- */
-function f(x) { return x; }`);
-    // 无论是否误提取到脏 name，必须有诊断（不得静默）
-    expect(diags.length).toBeGreaterThan(0);
-    expect(diags.some((d) => d.code === "nudo:directive-syntax")).toBe(true);
-    // 不得产出名字为 a\ 的脏 case
-    const cases = fns.flatMap((f) => f.directives.filter((d) => d.kind === "case")) as CaseDirective[];
-    for (const c of cases) {
-      expect(c.name).not.toBe("a\\");
+  it("非法 name：有诊断、无干净 case", () => {
+    for (const { name, line, message, forbidName } of INVALID) {
+      const { fns, diags } = extractWithDiags(`/**\n * ${line}\n */\nfunction f(x) { return x; }`);
+      const cases = fns.flatMap((f) => f.directives.filter((d) => d.kind === "case")) as CaseDirective[];
+      expect(diags.some((d) => d.code === "nudo:directive-syntax"), name).toBe(true);
+      if (message) expect(diags.some((d) => d.message.includes(message)), name).toBe(true);
+      if (forbidName) for (const c of cases) expect(c.name, name).not.toBe(forbidName);
+      else expect(cases, name).toHaveLength(0);
     }
   });
 
-  it("valid double-quoted name is accepted silently", () => {
-    const { fns, diags } = extractWithDiags(`/**
- * @nudo:case "ok" (1)
- */
-function f(x) { return x; }`);
-    const cases = fns.flatMap((f) => f.directives.filter((d) => d.kind === "case"));
-    expect(cases).toHaveLength(1);
+  it("合法双引号 name：静默接受", () => {
+    const { fns, diags } = extractWithDiags(`/**\n * @nudo:case "ok" (1)\n */\nfunction f(x) { return x; }`);
+    expect(fns.flatMap((f) => f.directives.filter((d) => d.kind === "case"))).toHaveLength(1);
     expect(diags).toHaveLength(0);
   });
 });
 
-describe("F-3 #4: mock names", () => {
-  it("Unicode identifiers (变量/café) are legal parses", () => {
-    const { fns, diags } = extractWithDiags(`/**
- * @nudo:mock 变量 = 1
- * @nudo:mock café = 2
- */
-function f(x) { return x; }`);
+describe("mock names", () => {
+  it("Unicode 与 ASCII 标识符都是合法解析，零诊断", () => {
+    const { fns, diags } = extractWithDiags(`/**\n * @nudo:mock 变量 = 1\n * @nudo:mock café = 2\n * @nudo:mock _ok = 3\n */\nfunction f(x) { return x; }`);
     const mocks = fns.flatMap((f) => f.directives.filter((d) => d.kind === "mock")) as MockDirective[];
-    expect(mocks.map((m) => m.name).sort()).toEqual(["café", "变量"]);
+    expect(mocks.map((m) => m.name).sort()).toEqual(["_ok", "café", "变量"]);
     expect(diags.filter((d) => d.code === "nudo:directive-syntax")).toHaveLength(0);
   });
 
-  it("non-identifier name (foo-bar) → diagnostic, no mock", () => {
-    const { fns, diags } = extractWithDiags(`/**
- * @nudo:mock foo-bar = 1
- */
-function f(x) { return x; }`);
-    const mocks = fns.flatMap((f) => f.directives.filter((d) => d.kind === "mock"));
-    expect(mocks).toHaveLength(0);
+  it("非标识符 name：诊断且不产 mock", () => {
+    const { fns, diags } = extractWithDiags(`/**\n * @nudo:mock foo-bar = 1\n */\nfunction f(x) { return x; }`);
+    expect(fns.flatMap((f) => f.directives.filter((d) => d.kind === "mock"))).toHaveLength(0);
     expect(diags.some((d) => d.code === "nudo:directive-syntax" && d.message.includes("not a valid identifier"))).toBe(true);
   });
+});
 
-  it("ASCII identifier remains valid", () => {
-    const { fns, diags } = extractWithDiags(`/**
- * @nudo:mock _ok = 3
- */
-function f(x) { return x; }`);
-    const mocks = fns.flatMap((f) => f.directives.filter((d) => d.kind === "mock"));
-    expect(mocks).toHaveLength(1);
-    expect(diags).toHaveLength(0);
+describe("skip 返回位语法", () => {
+  const CASES = [
+    { name: "散文", line: "@nudo:skip this function is flaky", returns: "undefined" },
+    { name: "裸类型是散文", line: "@nudo:skip number()", returns: "undefined" },
+    { name: "无参数", line: "@nudo:skip", returns: "undefined" },
+    { name: "箭头显式类型", line: "@nudo:skip => number()", returns: "prim" },
+    { name: "括号显式类型", line: "@nudo:skip (number())", returns: "prim" },
+    { name: "无法识别的类型", line: "@nudo:skip => T.number", returns: "diag", diag: true },
+  ];
+
+  it("只有箭头/括号形式携带类型；无法识别时告警", () => {
+    for (const { name, line, returns, diag } of CASES) {
+      const { fns, diags } = extractWithDiags(`/**\n * ${line}\n */\nfunction f(x) { return x; }`);
+      const skips = fns.flatMap((f) => f.directives.filter((d) => d.kind === "skip")) as SkipDirective[];
+      expect(skips, name).toHaveLength(1);
+      if (returns === "prim") expect(skips[0]!.returns?.shape.k, name).toBe("prim");
+      else if (returns === "undefined") expect(skips[0]!.returns, name).toBeUndefined();
+      if (diag) expect(diags.some((d) => d.code === "nudo:directive-syntax"), name).toBe(true);
+    }
   });
 });
 
-describe("F-3 #5: skip prose does not pollute returns", () => {
-  it("@nudo:skip prose → returns undefined, not unknown", () => {
-    const { fns } = extractWithDiags(`/**
- * @nudo:skip this function is flaky
- */
-function f(x) { return x; }`);
-    const skips = fns.flatMap((f) => f.directives.filter((d) => d.kind === "skip")) as SkipDirective[];
-    expect(skips).toHaveLength(1);
-    expect(skips[0]!.returns).toBeUndefined();
-  });
+describe("@nudo:as 形态", () => {
+  const CASES = [
+    { name: "尾随注释", src: `// @nudo:as number() // why\nconst x = 1;`, message: "Trailing comment", kind: "as" },
+    { name: "块注释", src: `/* @nudo:as number() */\nconst x = 1;`, kind: "as", shape: "prim" },
+    { name: "干净行注释", src: `// @nudo:as number()\nconst x = 1;`, kind: "as" },
+  ];
 
-  it("@nudo:skip bare number() is prose (not explicit type form)", () => {
-    const { fns } = extractWithDiags(`/**
- * @nudo:skip number()
- */
-function f(x) { return x; }`);
-    const skips = fns.flatMap((f) => f.directives.filter((d) => d.kind === "skip")) as SkipDirective[];
-    expect(skips[0]!.returns).toBeUndefined();
-  });
-
-  it("@nudo:skip => number() is explicit type", () => {
-    const { fns } = extractWithDiags(`/**
- * @nudo:skip => number()
- */
-function f(x) { return x; }`);
-    const skips = fns.flatMap((f) => f.directives.filter((d) => d.kind === "skip")) as SkipDirective[];
-    expect(skips[0]!.returns?.shape.k).toBe("prim");
-  });
-
-  it("@nudo:skip (number()) is explicit type", () => {
-    const { fns } = extractWithDiags(`/**
- * @nudo:skip (number())
- */
-function f(x) { return x; }`);
-    const skips = fns.flatMap((f) => f.directives.filter((d) => d.kind === "skip")) as SkipDirective[];
-    expect(skips[0]!.returns?.shape.k).toBe("prim");
-  });
-
-  it("@nudo:skip without args → returns undefined", () => {
-    const { fns } = extractWithDiags(`/**
- * @nudo:skip
- */
-function f(x) { return x; }`);
-    const skips = fns.flatMap((f) => f.directives.filter((d) => d.kind === "skip")) as SkipDirective[];
-    expect(skips[0]!.returns).toBeUndefined();
-  });
-
-  it("@nudo:skip => unrecognized → diagnostic", () => {
-    const { diags } = extractWithDiags(`/**
- * @nudo:skip => T.number
- */
-function f(x) { return x; }`);
-    expect(diags.some((d) => d.code === "nudo:directive-syntax")).toBe(true);
-  });
-});
-
-describe("F-3 #9-10: @nudo:as forms", () => {
-  it("#9 trailing comment in type → diagnostic", () => {
-    // extractInlineDirectives 走 CommentLine；直接测 parseAbsExprDiag 路径
-    const { dirs, diags } = extractInlineWithDiags(`// @nudo:as number() // why
-const x = 1;`);
-    expect(diags.some((d) => d.code === "nudo:directive-syntax" && d.message.includes("Trailing comment"))).toBe(true);
-    // 仍然产出 as directive（type 取注释前部分）
-    expect(dirs.some((d) => d.kind === "as")).toBe(true);
-  });
-
-  it("#10 block comment @nudo:as → legal parse", () => {
-    const { dirs, diags } = extractInlineWithDiags(`/* @nudo:as number() */
-const x = 1;`);
-    expect(dirs.some((d) => d.kind === "as")).toBe(true);
-    const asDir = dirs.find((d) => d.kind === "as") as AsDirective;
-    expect(asDir.typeAbs.shape.k).toBe("prim");
-    expect(diags).toHaveLength(0);
-  });
-
-  it("clean CommentLine @nudo:as → legal parse, no diag", () => {
-    const { dirs, diags } = extractInlineWithDiags(`// @nudo:as number()
-const x = 1;`);
-    expect(dirs.some((d) => d.kind === "as")).toBe(true);
-    expect(diags).toHaveLength(0);
+  it("尾随注释保留 directive 并告警；块/行注释合法静默", () => {
+    for (const { name, src, message, kind, shape } of CASES) {
+      const { dirs, diags } = extractInlineWithDiags(src);
+      expect(dirs.some((d) => d.kind === kind), name).toBe(true);
+      if (message) expect(diags.some((d) => d.code === "nudo:directive-syntax" && d.message.includes(message)), name).toBe(true);
+      else expect(diags, name).toHaveLength(0);
+      if (shape) {
+        const asDir = dirs.find((d) => d.kind === "as") as AsDirective;
+        expect(asDir.typeAbs.shape.k, name).toBe(shape);
+      }
+    }
   });
 });
 
