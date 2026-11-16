@@ -349,70 +349,24 @@ function host(script: string): string {
 }
 
 describe("web browser constructors keep their brand", () => {
-  it("host oracle: instanceof is true and constructor.name is the class name", () => {
-    const out = host(`
-      const e = new Event("t");
-      console.log(JSON.stringify({
-        inst: e instanceof Event,
-        name: e.constructor.name,
-        req: new Request("http://x/") instanceof Request,
-        hdr: new Headers() instanceof Headers,
-      }));
-    `);
+  it("instanceof/constructor.name 与宿主一致；12 个构造器实例面都带 brand", () => {
+    const out = host(`const e = new Event("t"); console.log(JSON.stringify({ inst: e instanceof Event, name: e.constructor.name, req: new Request("http://x/") instanceof Request, hdr: new Headers() instanceof Headers }));`);
     expect(JSON.parse(out)).toEqual({ inst: true, name: "Event", req: true, hdr: true });
-  });
+    expect(checkWeb('export function f(){ return new Event("t") instanceof Event; }').signatures[0]!.display).toBe("true");
+    expect(checkWeb('export function f(){ const e = new Event("t"); if (e instanceof Event) { return "is-event"; } return "not-event"; }').signatures[0]!.display).toBe('"is-event"');
+    expect(checkWeb('export function f(){ return new Event("t").constructor.name; }').signatures[0]!.display).toBe('"Event"');
+    expect(checkWeb('export function f(){ const r = new Request("http://x/"); return [r instanceof Request, new Headers() instanceof Headers, new AbortController() instanceof AbortController]; }').signatures[0]!.display).toBe("[true, true, true]");
 
-  it("web: new Event(...) instanceof Event folds to true (was false)", () => {
-    const out = checkWeb(`export function f(){ return new Event("t") instanceof Event; }`);
-    expect(out.signatures[0]!.display).toBe("true");
-  });
-
-  it("web: the real branch of instanceof is reachable (was dead code)", () => {
-    const out = checkWeb(`export function f(){
-  const e = new Event("t");
-  if (e instanceof Event) { return "is-event"; }
-  return "not-event";
-}`);
-    expect(out.signatures[0]!.display).toBe('"is-event"');
-  });
-
-  it("web: constructor.name folds to the class name (was \"Object\")", () => {
-    const out = checkWeb(`export function f(){ return new Event("t").constructor.name; }`);
-    expect(out.signatures[0]!.display).toBe('"Event"');
-  });
-
-  it("web: other constructors are branded instances", () => {
-    const out = checkWeb(`export function f(){
-  const r = new Request("http://x/");
-  return [r instanceof Request, new Headers() instanceof Headers, new AbortController() instanceof AbortController];
-}`);
-    expect(out.signatures[0]!.display).toBe("[true, true, true]");
-  });
-
-  it("every browser constructor's instance face carries a brand", () => {
     const globals = webEnvGlobals();
-    for (const name of [
-      "Event",
-      "CustomEvent",
-      "Request",
-      "Response",
-      "Headers",
-      "AbortController",
-      "EventTarget",
-      "DOMParser",
-      "XMLHttpRequest",
-      "Worker",
-      "FileReader",
-      "IntersectionObserver",
-    ]) {
+    for (const name of ["Event","CustomEvent","Request","Response","Headers","AbortController","EventTarget","DOMParser","XMLHttpRequest","Worker","FileReader","IntersectionObserver"]) {
       const g = globals[name];
-      expect(g?.shape.k, `${name} must be a ctor fn`).toBe("fn");
+      expect(g?.shape.k, name).toBe("fn");
       const ret = (g!.shape as { returnType?: { shape: { k: string; name?: string } } }).returnType;
-      expect(ret?.shape.k, `${name} instance must be a brand`).toBe("brand");
-      expect(ret?.shape.name).toBe(name);
+      expect(ret?.shape.k, name).toBe("brand");
+      expect(ret?.shape.name, name).toBe(name);
     }
   });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -433,54 +387,18 @@ describe("web browser constructors are constructible", () => {
  * 反向钉：把 `ctor: true` 去掉（或把 Response 改回 objAbs）⇒ 本文件必挂。
  */
 describe("web browser constructors are constructible", () => {
-  const CTORS = [
-    "Request",
-    "Response",
-    "Headers",
-    "URLSearchParams",
-    "EventTarget",
-    "Event",
-    "CustomEvent",
-  ] as const;
-
-  it("new <ctor>() for every browser constructor yields 0 error diagnostics", () => {
-    const out = checkWeb(`export function f() {
-  const a = new Request("https://x.dev");
-  const b = new Response();
-  const c = new Headers();
-  const d = new URLSearchParams("a=1");
-  const e = new EventTarget();
-  const g = new Event("x");
-  const h = new CustomEvent("x");
-  return [a, b, c, d, e, g, h];
-}`);
+  it("全部可 new 零错误；ctor:true；Response 实例面；URL/AbortController 保持", () => {
+    const out = checkWeb(`export function f() { const a = new Request("https://x.dev"); const b = new Response(); const c = new Headers(); const d = new URLSearchParams("a=1"); const e = new EventTarget(); const g = new Event("x"); const h = new CustomEvent("x"); return [a, b, c, d, e, g, h]; }`);
     expect(out.errorCodes).toEqual([]);
     expect(out.throwBrands).toEqual([]);
-  });
-
-  it("each browser constructor is declared as a fn carrying ctor: true", () => {
-    for (const name of CTORS) {
-      expect(ctorFlagOf(name), `${name} must be ctor: true`).toBe(true);
-    }
-  });
-
-  it("Response is a constructible fn (was objAbs ⇒ 'not a constructor' TypeError)", () => {
-    // 实例面仍挂在 returnType 上（bodySlots 对象）
+    for (const name of ["Request","Response","Headers","URLSearchParams","EventTarget","Event","CustomEvent"] as const) expect(ctorFlagOf(name), name).toBe(true);
     expect(instanceSlotOf("Response", "status")).toBeTruthy();
     expect(instanceSlotOf("Response", "ok")).toBeTruthy();
-  });
-
-  it("URL / AbortController (pre-existing correct samples) stay constructible", () => {
     expect(ctorFlagOf("URL")).toBe(true);
     expect(ctorFlagOf("AbortController")).toBe(true);
-    const out = checkWeb(`export function f() {
-  const u = new URL("https://x.dev");
-  const a = new AbortController();
-  return [u, a];
-}`);
-    expect(out.errorCodes).toEqual([]);
+    expect(checkWeb('export function f() { const u = new URL("https://x.dev"); const a = new AbortController(); return [u, a]; }').errorCodes).toEqual([]);
   });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -503,88 +421,25 @@ describe("web browser globals are declared", () => {
  * 反向钉：从 `web.ts` 的 globals 表删掉任一个 ⇒ 本文件必挂。
  */
 describe("web browser globals are declared", () => {
-  const GLOBALS = [
-    "alert",
-    "screen",
-    "DOMParser",
-    "XMLHttpRequest",
-    "Worker",
-    "FileReader",
-    // 扩围（段）：另 5 个真实存在的浏览器全局
-    "matchMedia",
-    "IntersectionObserver",
-    "getComputedStyle",
-    "indexedDB",
-    "caches",
-  ] as const;
-
-  it("every browser global is present in the env globals table", () => {
+  it("11 个全局声明；使用时零 ReferenceError；screen/构造器/indexedDB/caches 成员", () => {
     const globals = webEnvGlobals();
-    for (const name of GLOBALS) {
-      expect(globals[name], `global "${name}" missing`).toBeTruthy();
-    }
-  });
-
-  it("using them yields no ReferenceError (and no error-level diagnostic)", () => {
-    const out = checkWeb(`export function f() {
-  alert("hi");
-  const w = screen.width;
-  const p = new DOMParser();
-  const x = new XMLHttpRequest();
-  const wk = new Worker("/w.js");
-  const fr = new FileReader();
-  const mq = matchMedia("(min-width: 100px)");
-  const io = new IntersectionObserver(function () {});
-  const cs = getComputedStyle(document.body);
-  const db = indexedDB.open("db");
-  const cc = caches.open("c");
-  return [w, p, x, wk, fr, mq, io, cs, db, cc];
-}`);
+    for (const name of ["alert","screen","DOMParser","XMLHttpRequest","Worker","FileReader","matchMedia","IntersectionObserver","getComputedStyle","indexedDB","caches"] as const) expect(globals[name], name).toBeTruthy();
+    const out = checkWeb(`export function f() { alert("hi"); const w = screen.width; const p = new DOMParser(); const x = new XMLHttpRequest(); const wk = new Worker("/w.js"); const fr = new FileReader(); const mq = matchMedia("(min-width: 100px)"); const io = new IntersectionObserver(function () {}); const cs = getComputedStyle(document.body); const db = indexedDB.open("db"); const cc = caches.open("c"); return [w, p, x, wk, fr, mq, io, cs, db, cc]; }`);
     expect(out.errorCodes).toEqual([]);
     expect(out.issues.filter((i) => /ReferenceError/.test(i.message))).toEqual([]);
-  });
-
-  it("screen exposes the Screen interface members", () => {
-    for (const name of [
-      "width",
-      "height",
-      "availWidth",
-      "availHeight",
-      "colorDepth",
-      "pixelDepth",
-      "orientation",
-    ] as const) {
-      const globals = webEnvGlobals();
+    for (const name of ["width","height","availWidth","availHeight","colorDepth","pixelDepth","orientation"] as const) {
       const slots = globals["screen"]?.shape.k === "obj" ? globals["screen"].shape.slots : undefined;
-      expect(slots?.[name], `screen.${name}`).toBeTruthy();
+      expect(slots?.[name], name).toBeTruthy();
     }
-  });
-
-  it("DOMParser / XMLHttpRequest / Worker / FileReader / IntersectionObserver are constructible", () => {
-    const out = checkWeb(`export function f() {
-  const p = new DOMParser();
-  const x = new XMLHttpRequest();
-  const wk = new Worker("/w.js");
-  const fr = new FileReader();
-  const io = new IntersectionObserver(function () {});
-  return [p, x, wk, fr, io];
-}`);
-    expect(out.errorCodes).toEqual([]);
-    expect(out.throwBrands).toEqual([]);
-  });
-
-  it("indexedDB / caches expose their documented members", () => {
-    const globals = webEnvGlobals();
+    const ctorOut = checkWeb(`export function f() { const p = new DOMParser(); const x = new XMLHttpRequest(); const wk = new Worker("/w.js"); const fr = new FileReader(); const io = new IntersectionObserver(function () {}); return [p, x, wk, fr, io]; }`);
+    expect(ctorOut.errorCodes).toEqual([]);
+    expect(ctorOut.throwBrands).toEqual([]);
     const idb = globals["indexedDB"]?.shape.k === "obj" ? globals["indexedDB"].shape.slots : undefined;
-    for (const name of ["open", "deleteDatabase", "databases", "cmp"] as const) {
-      expect(idb?.[name], `indexedDB.${name}`).toBeTruthy();
-    }
+    for (const name of ["open","deleteDatabase","databases","cmp"] as const) expect(idb?.[name], name).toBeTruthy();
     const caches = globals["caches"]?.shape.k === "obj" ? globals["caches"].shape.slots : undefined;
-    for (const name of ["open", "has", "delete", "match", "keys"] as const) {
-      expect(caches?.[name], `caches.${name}`).toBeTruthy();
-    }
+    for (const name of ["open","has","delete","match","keys"] as const) expect(caches?.[name], name).toBeTruthy();
   });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -605,61 +460,22 @@ describe("document / performance member tables are complete", () => {
  * 反向钉：把补的槽从 `web.ts` 删掉 ⇒ 本文件必挂。
  */
 describe("document / performance member tables are complete", () => {
-  it("document collection lookups are callable (no definite TypeError)", () => {
-    const out = checkWeb(`export function f() {
-  const a = document.getElementsByTagName("div");
-  const b = document.getElementsByClassName("cls");
-  const c = document.getElementsByName("nm");
-  return [a, b, c];
-}`);
-    expect(out.errorCodes).toEqual([]);
-    expect(out.throwBrands).toEqual([]);
-  });
-
-  it("document.getElementsByTagName returns an array-shaped value", () => {
+  it("collection 查询/静态集合/write/open/close/performance 成员全部声明且调用零错", () => {
+    const collections = checkWeb('export function f() { const a = document.getElementsByTagName("div"); const b = document.getElementsByClassName("cls"); const c = document.getElementsByName("nm"); return [a, b, c]; }');
+    expect(collections.errorCodes).toEqual([]);
+    expect(collections.throwBrands).toEqual([]);
     expect(slotOf("document", "getElementsByTagName")).toBeTruthy();
-    const out = checkWeb(`export function f(){ return document.getElementsByTagName("div"); }`);
-    expect(out.errorCodes).toEqual([]);
+    expect(checkWeb('export function f(){ return document.getElementsByTagName("div"); }').errorCodes).toEqual([]);
+    for (const name of ["forms","links","images","scripts"] as const) expect(slotOf("document", name), name).toBeTruthy();
+    expect(checkWeb("export function f(){ return document.forms.length; }").errorCodes).toEqual([]);
+    for (const name of ["write","open","close"] as const) expect(slotOf("document", name), name).toBeTruthy();
+    const writes = checkWeb('export function f(){ document.write("x"); document.open(); document.close(); return 1; }');
+    expect(writes.errorCodes).toEqual([]);
+    for (const name of ["getEntries","clearResourceTimings","toJSON"] as const) expect(slotOf("performance", name), name).toBeTruthy();
+    expect(checkWeb("export function f(){ performance.clearResourceTimings(); return performance.getEntries(); }").errorCodes).toEqual([]);
+    for (const name of ["navigation","serverTiming"] as const) expect(slotOf("performance", name), name).toBeTruthy();
   });
-
-  it("document.forms / links / images / scripts are declared", () => {
-    for (const name of ["forms", "links", "images", "scripts"] as const) {
-      expect(slotOf("document", name), `document.${name}`).toBeTruthy();
-    }
-    const out = checkWeb(`export function f(){ return document.forms.length; }`);
-    expect(out.errorCodes).toEqual([]);
-  });
-
-  it("document.write / open / close are declared and callable", () => {
-    for (const name of ["write", "open", "close"] as const) {
-      expect(slotOf("document", name), `document.${name}`).toBeTruthy();
-    }
-    const out = checkWeb(`export function f(){
-  document.write("x");
-  document.open();
-  document.close();
-  return 1;
-}`);
-    expect(out.errorCodes).toEqual([]);
-  });
-
-  it("performance.getEntries / clearResourceTimings / toJSON are declared and callable", () => {
-    for (const name of ["getEntries", "clearResourceTimings", "toJSON"] as const) {
-      expect(slotOf("performance", name), `performance.${name}`).toBeTruthy();
-    }
-    const out = checkWeb(`export function f(){
-  performance.clearResourceTimings();
-  return performance.getEntries();
-}`);
-    expect(out.errorCodes).toEqual([]);
-  });
-
-  it("performance.navigation / serverTiming are declared", () => {
-    for (const name of ["navigation", "serverTiming"] as const) {
-      expect(slotOf("performance", name), `performance.${name}`).toBeTruthy();
-    }
-  });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
