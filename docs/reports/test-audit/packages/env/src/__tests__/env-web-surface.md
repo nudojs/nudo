@@ -1,5 +1,9 @@
 ```audit
 title	rootCause	gap	action	status	evidence
+collection 查询/静态集合/write/open/close/performance 成员全部声明且调用零错	browser 面契约表	没测该层	keep	keep	—
+11 个全局声明；使用时零 ReferenceError；screen/构造器/indexedDB/caches 成员	browser 面契约表	没测该层	keep	keep	—
+全部可 new 零错误；ctor:true；Response 实例面；URL/AbortController 保持	browser 面契约表	没测该层	keep	keep	—
+instanceof/constructor.name 与宿主一致；12 个构造器实例面都带 brand	browser 面契约表	没测该层	keep	keep	—
 Response.body / Headers.getSetCookie / document.location / CustomEvent / Request.duplex	web 面契约表	没测该层	keep	keep	—
 宿主 TypeError；TypeError/OperationError 两臂可达；静态声明仍 OperationError；importKey unknown	web 面契约表	没测该层	keep	keep	—
 any/abort/timeout 均在；any([]) 零抛	web 面契约表	没测该层	keep	keep	—
@@ -14,27 +18,6 @@ mark 返回 PerformanceMark 品牌；.name string；measure 有 name/duration	we
 Collator / NumberFormat / DateTimeFormat 实例面；未建模子构造器空；Intl 成员集；运行时 typeof	web 面契约表	没测该层	keep	keep	—
 fetch / subtle / body / clipboard 品牌；多 reason 保持 unknown；Promise.reject 实参；成员集不变	web 面契约表	没测该层	keep	keep	—
 声明面 + 白名单按建模能力推导；未建模仍报；报告自洽；WeakRef/Atomics 对照	web 面契约表	没测该层	keep	keep	—
-"host oracle: instanceof is true and constructor.name is the class name"	"族 15 · web env 的浏览器构造器返回**普通对象面**（无 brand） ⇒ `instanceof` **恒假**、`constructor.name` 恒 `\"Object\"` ⇒ 与宿主**相反** ⇒ 真实分支被消成死代码（假绿 + 自信的错值）。 ⚠️ `URLSearchParams` 例外：core 按 **brand 名**路由内建建模并**忽略** env 的槽表（实测 `.get` 折 unknown，`env-` 回归）⇒ 暂不加 brand （见 web.ts 的说明）。 断言：expect(JSON.parse(out)).toEqual({ inst: true, name: \"Event\","	旧断言钉错	keep	keep	—
-"web: new Event(...) instanceof Event folds to true (was false)"	"族 15 · web env 的浏览器构造器返回**普通对象面**（无 brand） ⇒ `instanceof` **恒假**、`constructor.name` 恒 `\"Object\"` ⇒ 与宿主**相反** ⇒ 真实分支被消成死代码（假绿 + 自信的错值）。 ⚠️ `URLSearchParams` 例外：core 按 **brand 名**路由内建建模并**忽略** env 的槽表（实测 `.get` 折 unknown，`env-` 回归）⇒ 暂不加 brand （见 web.ts 的说明）。 断言：expect(out.signatures[0]!.display).toBe(\"true\");"	旧断言钉错	keep	keep	—
-"web: the real branch of instanceof is reachable (was dead code)"	"族 15 · web env 的浏览器构造器返回**普通对象面**（无 brand） ⇒ `instanceof` **恒假**、`constructor.name` 恒 `\"Object\"` ⇒ 与宿主**相反** ⇒ 真实分支被消成死代码（假绿 + 自信的错值）。 ⚠️ `URLSearchParams` 例外：core 按 **brand 名**路由内建建模并**忽略** env 的槽表（实测 `.get` 折 unknown，`env-` 回归）⇒ 暂不加 brand （见 web.ts 的说明）。 断言：expect(out.signatures[0]!.display).toBe('\"is-event\"');"	旧断言钉错	keep	keep	—
-"web: constructor.name folds to the class name (was \"Object\")"	"族 15 · web env 的浏览器构造器返回**普通对象面**（无 brand） ⇒ `instanceof` **恒假**、`constructor.name` 恒 `\"Object\"` ⇒ 与宿主**相反** ⇒ 真实分支被消成死代码（假绿 + 自信的错值）。 ⚠️ `URLSearchParams` 例外：core 按 **brand 名**路由内建建模并**忽略** env 的槽表（实测 `.get` 折 unknown，`env-` 回归）⇒ 暂不加 brand （见 web.ts 的说明）。 断言：expect(out.signatures[0]!.display).toBe('\"Event\"');"	旧断言钉错	keep	keep	—
-"web: other constructors are branded instances"	"族 15 · web env 的浏览器构造器返回**普通对象面**（无 brand） ⇒ `instanceof` **恒假**、`constructor.name` 恒 `\"Object\"` ⇒ 与宿主**相反** ⇒ 真实分支被消成死代码（假绿 + 自信的错值）。 ⚠️ `URLSearchParams` 例外：core 按 **brand 名**路由内建建模并**忽略** env 的槽表（实测 `.get` 折 unknown，`env-` 回归）⇒ 暂不加 brand （见 web.ts 的说明）。 断言：expect(out.signatures[0]!.display).toBe(\"[true, true, true]\""	旧断言钉错	keep	keep	—
-"every browser constructor's instance face carries a brand"	"族 15 · web env 的浏览器构造器返回**普通对象面**（无 brand） ⇒ `instanceof` **恒假**、`constructor.name` 恒 `\"Object\"` ⇒ 与宿主**相反** ⇒ 真实分支被消成死代码（假绿 + 自信的错值）。 ⚠️ `URLSearchParams` 例外：core 按 **brand 名**路由内建建模并**忽略** env 的槽表（实测 `.get` 折 unknown，`env-` 回归）⇒ 暂不加 brand （见 web.ts 的说明）。 断言：expect(g?.shape.k, `${name} must be a ctor fn`).toBe(\"fn\");；"	旧断言钉错	keep	keep	—
-"new <ctor>() for every browser constructor yields 0 error diagnostics"	"族 29 web env 的浏览器构造器缺 `ctor: true`。 根因：`packages/env/src/web.ts` 把浏览器构造器建模成普通可调用 fn（`Response` 甚至是 `objAbs`）⇒ `$new` 走「obj 非构造器 ⇒ 硬 TypeError」或「fn 无 ctor ⇒ 记 unknown-constructibility 假 may-throw」分支 ⇒ L2 门禁对**合法**浏览器代码 报 error（假红）。 断言：expect(out.errorCodes).toEqual([]);；expect(out.throwBrands).toEqual([]);"	夹具漏形态	keep	keep	—
-"each browser constructor is declared as a fn carrying ctor: true"	"族 29 web env 的浏览器构造器缺 `ctor: true`。 根因：`packages/env/src/web.ts` 把浏览器构造器建模成普通可调用 fn（`Response` 甚至是 `objAbs`）⇒ `$new` 走「obj 非构造器 ⇒ 硬 TypeError」或「fn 无 ctor ⇒ 记 unknown-constructibility 假 may-throw」分支 ⇒ L2 门禁对**合法**浏览器代码 报 error（假红）。 断言：expect(ctorFlagOf(name), `${name} must be ctor: true`).toBe(true);"	夹具漏形态	keep	keep	—
-"Response is a constructible fn (was objAbs ⇒ 'not a constructor' TypeError)"	"族 29 web env 的浏览器构造器缺 `ctor: true`。 根因：`packages/env/src/web.ts` 把浏览器构造器建模成普通可调用 fn（`Response` 甚至是 `objAbs`）⇒ `$new` 走「obj 非构造器 ⇒ 硬 TypeError」或「fn 无 ctor ⇒ 记 unknown-constructibility 假 may-throw」分支 ⇒ L2 门禁对**合法**浏览器代码 报 error（假红）。 断言：expect(instanceSlotOf(\"Response\", \"status\")).toBeTruthy();；expect(instanceSlotOf(\"Resp"	夹具漏形态	keep	keep	—
-"URL / AbortController (pre-existing correct samples) stay constructible"	"族 29 web env 的浏览器构造器缺 `ctor: true`。 根因：`packages/env/src/web.ts` 把浏览器构造器建模成普通可调用 fn（`Response` 甚至是 `objAbs`）⇒ `$new` 走「obj 非构造器 ⇒ 硬 TypeError」或「fn 无 ctor ⇒ 记 unknown-constructibility 假 may-throw」分支 ⇒ L2 门禁对**合法**浏览器代码 报 error（假红）。 断言：expect(ctorFlagOf(\"URL\")).toBe(true);；expect(ctorFlagOf(\"AbortController\")).toBe(true)"	夹具漏形态	keep	keep	—
-"every browser global is present in the env globals table"	"族 29 env web 的浏览器全局清单缺项 ⇒ **定抛 ReferenceError**（假红）。 根因：env 的 `globals` 表未收录这些浏览器全局 ⇒ 未声明的名字在引擎里是 **未绑定** ⇒ 读它 = ReferenceError ⇒ L2 门禁对合法浏览器代码报 error， 且诊断文案指向完全无关的方向（「re-export `export { x } from` 不是局部绑定」）。 断言：expect(globals[name], `global \"${name}\" missing`).toBeTruthy();"	没测该层	keep	keep	—
-"using them yields no ReferenceError (and no error-level diagnostic)"	"族 29 env web 的浏览器全局清单缺项 ⇒ **定抛 ReferenceError**（假红）。 根因：env 的 `globals` 表未收录这些浏览器全局 ⇒ 未声明的名字在引擎里是 **未绑定** ⇒ 读它 = ReferenceError ⇒ L2 门禁对合法浏览器代码报 error， 且诊断文案指向完全无关的方向（「re-export `export { x } from` 不是局部绑定」）。 断言：expect(out.errorCodes).toEqual([]);；expect(out.issues.filter((i) => /ReferenceError/.test(i.message))).toEqua"	没测该层	keep	keep	—
-"screen exposes the Screen interface members"	"族 29 env web 的浏览器全局清单缺项 ⇒ **定抛 ReferenceError**（假红）。 根因：env 的 `globals` 表未收录这些浏览器全局 ⇒ 未声明的名字在引擎里是 **未绑定** ⇒ 读它 = ReferenceError ⇒ L2 门禁对合法浏览器代码报 error， 且诊断文案指向完全无关的方向（「re-export `export { x } from` 不是局部绑定」）。 断言：expect(slots?.[name], `screen.${name}`).toBeTruthy();"	没测该层	keep	keep	—
-"DOMParser / XMLHttpRequest / Worker / FileReader / IntersectionObserver are constructible"	"族 29 env web 的浏览器全局清单缺项 ⇒ **定抛 ReferenceError**（假红）。 根因：env 的 `globals` 表未收录这些浏览器全局 ⇒ 未声明的名字在引擎里是 **未绑定** ⇒ 读它 = ReferenceError ⇒ L2 门禁对合法浏览器代码报 error， 且诊断文案指向完全无关的方向（「re-export `export { x } from` 不是局部绑定」）。 断言：expect(out.errorCodes).toEqual([]);；expect(out.throwBrands).toEqual([]);"	没测该层	keep	keep	—
-"indexedDB / caches expose their documented members"	"族 29 env web 的浏览器全局清单缺项 ⇒ **定抛 ReferenceError**（假红）。 根因：env 的 `globals` 表未收录这些浏览器全局 ⇒ 未声明的名字在引擎里是 **未绑定** ⇒ 读它 = ReferenceError ⇒ L2 门禁对合法浏览器代码报 error， 且诊断文案指向完全无关的方向（「re-export `export { x } from` 不是局部绑定」）。 断言：expect(idb?.[name], `indexedDB.${name}`).toBeTruthy();；expect(caches?.[name], `caches.${name}`).toBeTruthy();"	没测该层	keep	keep	—
-"document collection lookups are callable (no definite TypeError)"	"族 29 web env 的 `document` / `performance` 成员表不完整。 根因：env 的成员表是**手写白名单**； 断言：expect(out.errorCodes).toEqual([]);；expect(out.throwBrands).toEqual([]);"	没测该层	keep	keep	—
-"document.getElementsByTagName returns an array-shaped value"	"族 29 web env 的 `document` / `performance` 成员表不完整。 根因：env 的成员表是**手写白名单**； 断言：expect(slotOf(\"document\", \"getElementsByTagName\")).toBeTruthy();；expect(out.errorCodes).toEqual([]);"	没测该层	keep	keep	—
-"document.forms / links / images / scripts are declared"	"族 29 web env 的 `document` / `performance` 成员表不完整。 根因：env 的成员表是**手写白名单**； 断言：expect(slotOf(\"document\", name), `document.${name}`).toBeTruthy();；expect(out.errorCodes).toEqual([]);"	没测该层	keep	keep	—
-"document.write / open / close are declared and callable"	"族 29 web env 的 `document` / `performance` 成员表不完整。 根因：env 的成员表是**手写白名单**； 断言：expect(slotOf(\"document\", name), `document.${name}`).toBeTruthy();；expect(out.errorCodes).toEqual([]);"	没测该层	keep	keep	—
-"performance.getEntries / clearResourceTimings / toJSON are declared and callable"	"族 29 web env 的 `document` / `performance` 成员表不完整。 根因：env 的成员表是**手写白名单**； 断言：expect(slotOf(\"performance\", name), `performance.${name}`).toBeTruthy();；expect(out.errorCodes).toEqual([]);"	没测该层	keep	keep	—
-"performance.navigation / serverTiming are declared"	"族 29 web env 的 `document` / `performance` 成员表不完整。 根因：env 的成员表是**手写白名单**； 断言：expect(slotOf(\"performance\", name), `performance.${name}`).toBeTruthy();"	没测该层	keep	keep	—
 ```audit-deleted
 title	reason	evidence
 1. es env 声明面含 core 已建模的 ES 规范全局	dup:web 面契约表	commit:5e93fbb0
@@ -97,4 +80,25 @@ web: Headers.getSetCookie() is declared as string[]	dup:web 面契约表	commit:
 web: document.location.href is declared (document is not closed around it)	dup:web 面契约表	commit:5e93fbb0
 node: CustomEvent carries the inherited Event members	dup:web 面契约表	commit:5e93fbb0
 node: Request.duplex is declared	dup:web 面契约表	commit:5e93fbb0
+host oracle: instanceof is true and constructor.name is the class name	dup:browser 面契约表	commit:80f019a6
+web: new Event(...) instanceof Event folds to true (was false)	dup:browser 面契约表	commit:80f019a6
+web: the real branch of instanceof is reachable (was dead code)	dup:browser 面契约表	commit:80f019a6
+web: constructor.name folds to the class name (was "Object")	dup:browser 面契约表	commit:80f019a6
+web: other constructors are branded instances	dup:browser 面契约表	commit:80f019a6
+every browser constructor's instance face carries a brand	dup:browser 面契约表	commit:80f019a6
+new <ctor>() for every browser constructor yields 0 error diagnostics	dup:browser 面契约表	commit:80f019a6
+each browser constructor is declared as a fn carrying ctor: true	dup:browser 面契约表	commit:80f019a6
+Response is a constructible fn (was objAbs ⇒ 'not a constructor' TypeError)	dup:browser 面契约表	commit:80f019a6
+URL / AbortController (pre-existing correct samples) stay constructible	dup:browser 面契约表	commit:80f019a6
+every browser global is present in the env globals table	dup:browser 面契约表	commit:80f019a6
+using them yields no ReferenceError (and no error-level diagnostic)	dup:browser 面契约表	commit:80f019a6
+screen exposes the Screen interface members	dup:browser 面契约表	commit:80f019a6
+DOMParser / XMLHttpRequest / Worker / FileReader / IntersectionObserver are constructible	dup:browser 面契约表	commit:80f019a6
+indexedDB / caches expose their documented members	dup:browser 面契约表	commit:80f019a6
+document collection lookups are callable (no definite TypeError)	dup:browser 面契约表	commit:80f019a6
+document.getElementsByTagName returns an array-shaped value	dup:browser 面契约表	commit:80f019a6
+document.forms / links / images / scripts are declared	dup:browser 面契约表	commit:80f019a6
+document.write / open / close are declared and callable	dup:browser 面契约表	commit:80f019a6
+performance.getEntries / clearResourceTimings / toJSON are declared and callable	dup:browser 面契约表	commit:80f019a6
+performance.navigation / serverTiming are declared	dup:browser 面契约表	commit:80f019a6
 ```
