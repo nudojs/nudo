@@ -115,80 +115,41 @@ describe("@nudo:as 形态", () => {
   });
 });
 
-describe("I2: parseCaseArgExpr silent fallback becomes visible", () => {
-  it("unrecognized expression in case arg → diagnostic", () => {
-    const { diags } = extractWithDiags(`/**
- * @nudo:case "t" (T.number)
- */
-function f(x) { return x; }`);
-    expect(diags.some((d) => d.code === "nudo:directive-syntax" && d.message.includes("Unrecognized"))).toBe(true);
+describe("case 实参/期望值的静默 fallback", () => {
+  it("无法识别的表达式 / 垃圾 expected 都报诊断", () => {
+    const invalid = [
+      { src: `/**\n * @nudo:case "t" (T.number)\n */\nfunction f(x) { return x; }`, message: "Unrecognized" },
+      { src: `/**\n * @nudo:case "t" (1) => not_a_type\n */\nfunction f(x) { return x; }` },
+    ];
+    for (const { src, message } of invalid) {
+      const { diags } = extractWithDiags(src);
+      expect(diags.some((d) => d.code === "nudo:directive-syntax" && (!message || d.message.includes(message))), src).toBe(true);
+    }
   });
 
-  it("explicit unknown/any is NOT a diagnostic", () => {
-    const { diags } = extractWithDiags(`/**
- * @nudo:case "t" (unknown)
- */
-function f(x) { return x; }`);
-    expect(diags.filter((d) => d.code === "nudo:directive-syntax")).toHaveLength(0);
-  });
-
-  it("valid constraint builder is NOT a diagnostic", () => {
-    const { diags } = extractWithDiags(`/**
- * @nudo:case "t" (number())
- */
-function f(x) { return x; }`);
-    expect(diags.filter((d) => d.code === "nudo:directive-syntax")).toHaveLength(0);
-  });
-
-  it("garbage in expected → diagnostic", () => {
-    const { diags } = extractWithDiags(`/**
- * @nudo:case "t" (1) => not_a_type
- */
-function f(x) { return x; }`);
-    expect(diags.some((d) => d.code === "nudo:directive-syntax")).toBe(true);
+  it("显式 unknown/any 与合法 builder 零诊断", () => {
+    for (const arg of ["unknown", "number()"]) {
+      const { diags } = extractWithDiags(`/**\n * @nudo:case "t" (${arg})\n */\nfunction f(x) { return x; }`);
+      expect(diags.filter((d) => d.code === "nudo:directive-syntax"), arg).toHaveLength(0);
+    }
   });
 });
 
-describe("@nudo:sample count grammar (FIX-RESIDUAL #4)", () => {
-  it("missing count → explicit diagnostic, no silent ignore", () => {
-    const { fns, diags } = extractWithDiags(`/**
- * @nudo:sample
- */
-function f(x) { return x; }`);
-    const sample = fns.flatMap((f) => f.directives).find((d) => d.kind === "sample");
-    expect(sample).toBeUndefined();
-    expect(
-      diags.some((d) => d.code === "nudo:directive-syntax" && d.message.includes("@nudo:sample")),
-    ).toBe(true);
+describe("@nudo:sample count 语法", () => {
+  it("缺失 / 非数字 count 报诊断且不产 sample", () => {
+    for (const line of ["@nudo:sample", "@nudo:sample abc"]) {
+      const { fns, diags } = extractWithDiags(`/**\n * ${line}\n */\nfunction f(x) { return x; }`);
+      expect(fns.flatMap((f) => f.directives).find((d) => d.kind === "sample"), line).toBeUndefined();
+      expect(diags.some((d) => d.code === "nudo:directive-syntax" && d.message.includes("@nudo:sample")), line).toBe(true);
+    }
   });
 
-  it("non-numeric token → explicit diagnostic", () => {
-    const { fns, diags } = extractWithDiags(`/**
- * @nudo:sample abc
- */
-function f(x) { return x; }`);
-    const sample = fns.flatMap((f) => f.directives).find((d) => d.kind === "sample");
-    expect(sample).toBeUndefined();
-    expect(
-      diags.some((d) => d.code === "nudo:directive-syntax" && d.message.includes("@nudo:sample")),
-    ).toBe(true);
-  });
-
-  it("decimal / negative / scientific notation parse without truncation", () => {
-    for (const [raw, count] of [
-      ["3.5", 3.5],
-      ["-2", -2],
-      ["1e2", 100],
-    ] as const) {
-      const { fns, diags } = extractWithDiags(`/**
- * @nudo:sample ${raw}
- */
-function f(x) { return x; }`);
+  it("小数 / 负数 / 科学计数法不截断且零诊断", () => {
+    for (const [raw, count] of [["3.5", 3.5], ["-2", -2], ["1e2", 100]] as const) {
+      const { fns, diags } = extractWithDiags(`/**\n * @nudo:sample ${raw}\n */\nfunction f(x) { return x; }`);
       const sample = fns.flatMap((f) => f.directives).find((d) => d.kind === "sample");
       expect(sample, raw).toBeDefined();
-      if (sample && sample.kind === "sample") {
-        expect(sample.count, raw).toBe(count);
-      }
+      if (sample?.kind === "sample") expect(sample.count, raw).toBe(count);
       expect(diags.filter((d) => d.code === "nudo:directive-syntax"), raw).toHaveLength(0);
     }
   });
@@ -253,243 +214,115 @@ const b = 2;`);
   });
 });
 
-describe("S4-003: unclosed argument list no longer silently dropped", () => {
-  it(`/* @nudo:case "a" (1 */ → zero cases + unclosed diagnostic`, () => {
-    const { fns, diags } = extractWithDiags(`/* @nudo:case "a" (1 */
-function f(x) { return x; }`);
-    const cases = fns.flatMap((f) => f.directives.filter((d) => d.kind === "case"));
-    expect(cases).toHaveLength(0);
-    expect(
-      diags.some((d) => d.code === "nudo:directive-syntax" && d.message.includes("unclosed argument list")),
-    ).toBe(true);
+describe("未闭合参数/括号不静默丢弃", () => {
+  const CASES = [
+    `/* @nudo:case "a" (1 */\nfunction f(x) { return x; }`,
+    `/**\n * @nudo:case "a" ((1)\n */\nfunction f(x) { return x; }`,
+    `/**\n * @nudo:case "a" (\n *   1\n */\nfunction f(x) { return x; }`,
+  ];
+
+  it("未闭合 case 参数：零 case + unclosed argument list 诊断", () => {
+    for (const src of CASES) {
+      const { fns, diags } = extractWithDiags(src);
+      expect(fns.flatMap((f) => f.directives.filter((d) => d.kind === "case")), src).toHaveLength(0);
+      expect(diags.some((d) => d.code === "nudo:directive-syntax" && d.message.includes("unclosed argument list")), src).toBe(true);
+    }
   });
 
-  it(`inner closed / outer unclosed ("a" ((1)) variant) → diagnostic`, () => {
-    const { fns, diags } = extractWithDiags(`/**
- * @nudo:case "a" ((1)
- */
-function f(x) { return x; }`);
-    const cases = fns.flatMap((f) => f.directives.filter((d) => d.kind === "case"));
-    expect(cases).toHaveLength(0);
-    expect(
-      diags.some((d) => d.code === "nudo:directive-syntax" && d.message.includes("unclosed argument list")),
-    ).toBe(true);
+  it("未闭合 skip 括号：returns undefined + 诊断；平衡形态零诊断", () => {
+    const broken = extractWithDiags(`/**\n * @nudo:skip (number()\n */\nfunction f(x) { return x; }`);
+    const brokenSkips = broken.fns.flatMap((f) => f.directives.filter((d) => d.kind === "skip")) as SkipDirective[];
+    expect(brokenSkips[0]!.returns).toBeUndefined();
+    expect(broken.diags.some((d) => d.code === "nudo:directive-syntax" && d.message.includes("unclosed parenthesis"))).toBe(true);
+
+    const ok = extractWithDiags(`/**\n * @nudo:skip (number())\n */\nfunction f(x) { return x; }`);
+    const okSkips = ok.fns.flatMap((f) => f.directives.filter((d) => d.kind === "skip")) as SkipDirective[];
+    expect(okSkips[0]!.returns?.shape.k).toBe("prim");
+    expect(ok.diags.filter((d) => d.code === "nudo:directive-syntax")).toHaveLength(0);
   });
 
-  it("multi-line unclosed argument list → diagnostic", () => {
-    const { fns, diags } = extractWithDiags(`/**
- * @nudo:case "a" (
- *   1
- */
-function f(x) { return x; }`);
-    const cases = fns.flatMap((f) => f.directives.filter((d) => d.kind === "case"));
-    expect(cases).toHaveLength(0);
-    expect(
-      diags.some((d) => d.code === "nudo:directive-syntax" && d.message.includes("unclosed argument list")),
-    ).toBe(true);
-  });
-
-  it("balanced same-line case stays silent (regression guard)", () => {
-    const { fns, diags } = extractWithDiags(`/**
- * @nudo:case "ok" (1)
- */
-function f(x) { return x; }`);
+  it("平衡的同行 case 保持静默", () => {
+    const { fns, diags } = extractWithDiags(`/**\n * @nudo:case "ok" (1)\n */\nfunction f(x) { return x; }`);
     expect(fns.flatMap((f) => f.directives.filter((d) => d.kind === "case"))).toHaveLength(1);
     expect(diags).toHaveLength(0);
   });
-
-  it("@nudo:skip (number() unclosed parenthesis → diagnostic, returns undefined", () => {
-    const { fns, diags } = extractWithDiags(`/**
- * @nudo:skip (number()
- */
-function f(x) { return x; }`);
-    const skips = fns.flatMap((f) => f.directives.filter((d) => d.kind === "skip")) as SkipDirective[];
-    expect(skips[0]!.returns).toBeUndefined();
-    expect(
-      diags.some((d) => d.code === "nudo:directive-syntax" && d.message.includes("unclosed parenthesis")),
-    ).toBe(true);
-  });
-
-  it("@nudo:skip (number()) balanced still parses without diagnostic", () => {
-    const { fns, diags } = extractWithDiags(`/**
- * @nudo:skip (number())
- */
-function f(x) { return x; }`);
-    const skips = fns.flatMap((f) => f.directives.filter((d) => d.kind === "skip")) as SkipDirective[];
-    expect(skips[0]!.returns?.shape.k).toBe("prim");
-    expect(diags.filter((d) => d.code === "nudo:directive-syntax")).toHaveLength(0);
-  });
 });
 
-describe("S4-004: tag/payload separation stays on one line", () => {
-  it("empty @nudo:case tag does not glue the next line into a case", () => {
-    const { fns, diags } = extractWithDiags(`/*
-@nudo:case
-"evil" (1)
-*/
-function f(x) { return x; }`);
-    const cases = fns.flatMap((f) => f.directives.filter((d) => d.kind === "case")) as CaseDirective[];
-    expect(cases.map((c) => c.name)).not.toContain("evil");
-    expect(cases).toHaveLength(0);
-    // 空标签可见：一条 missing-quoted-name 诊断，且不含下一行内容
-    expect(diags.some((d) => d.code === "nudo:directive-syntax" && d.message.includes("missing quoted name"))).toBe(true);
-    expect(diags.some((d) => d.message.includes("evil"))).toBe(false);
+describe("标签与载荷不跨行粘连", () => {
+  it("空 case / mock 标签不把下一行吞成载荷", () => {
+    const cases = [
+      { kind: "case", src: `/*\n@nudo:case\n"evil" (1)\n*/\nfunction f(x) { return x; }`, forbidName: "evil", message: "missing quoted name" },
+      { kind: "case", src: `/**\n * @nudo:case\n * @nudo:case "real" (1)\n */\nfunction f(x) { return x; }`, allowName: "real", message: "missing quoted name" },
+      { kind: "case", src: `/**\n * @nudo:case\n * see docs for "x" (1)\n */\nfunction f(x) { return x; }`, forbidText: "see docs", message: "missing quoted name" },
+      { kind: "mock", src: `/*\n@nudo:mock\nfoo = 1\n*/\nfunction f(x) { return x; }`, forbidName: "foo", message: "@nudo:mock" },
+    ];
+    for (const { kind, src, forbidName, allowName, forbidText, message } of cases) {
+      const { fns, diags } = extractWithDiags(src);
+      const dirs = fns.flatMap((f) => f.directives.filter((d) => d.kind === kind)) as Array<{ name: string }>;
+      if (forbidName) expect(dirs.map((d) => d.name), src).not.toContain(forbidName);
+      if (allowName) expect(dirs.map((d) => d.name), src).toEqual([allowName]);
+      if (forbidText) expect(diags.some((d) => d.message.includes(forbidText)), src).toBe(false);
+      expect(diags.some((d) => d.code === "nudo:directive-syntax" && d.message.includes(message)), src).toBe(true);
+    }
   });
 
-  it("empty tag + real tag on next line → real case + attributed diagnostic", () => {
-    const { fns, diags } = extractWithDiags(`/**
- * @nudo:case
- * @nudo:case "real" (1)
- */
-function f(x) { return x; }`);
-    const cases = fns.flatMap((f) => f.directives.filter((d) => d.kind === "case")) as CaseDirective[];
-    expect(cases.map((c) => c.name)).toEqual(["real"]);
-    expect(diags).toHaveLength(1);
-    // 诊断文案不得把下一行的真标签吞进 got
-    expect(diags[0]!.message.includes("real")).toBe(false);
-  });
-
-  it("prose line after empty tag is not reported as the tag payload", () => {
-    const { fns, diags } = extractWithDiags(`/**
- * @nudo:case
- * see docs for "x" (1)
- */
-function f(x) { return x; }`);
-    expect(fns.flatMap((f) => f.directives.filter((d) => d.kind === "case"))).toHaveLength(0);
-    expect(diags.some((d) => d.code === "nudo:directive-syntax")).toBe(true);
-    expect(diags.some((d) => d.message.includes("see docs"))).toBe(false);
-  });
-
-  it("multi-line case arguments still parse (paren closed on later line)", () => {
-    const { fns, diags } = extractWithDiags(`/**
- * @nudo:case "a" (
- *   1,
- *   2
- * )
- */
-function f(x) { return x; }`);
+  it("多行 case 参数（稍后行闭合）仍完整解析", () => {
+    const { fns, diags } = extractWithDiags(`/**\n * @nudo:case "a" (\n *   1,\n *   2\n * )\n */\nfunction f(x) { return x; }`);
     const cases = fns.flatMap((f) => f.directives.filter((d) => d.kind === "case")) as CaseDirective[];
     expect(cases.map((c) => c.name)).toEqual(["a"]);
     expect(diags).toHaveLength(0);
   });
 
-  it("empty @nudo:mock tag does not glue the next line", () => {
-    const { fns, diags } = extractWithDiags(`/*
-@nudo:mock
-foo = 1
-*/
-function f(x) { return x; }`);
-    const mocks = fns.flatMap((f) => f.directives.filter((d) => d.kind === "mock")) as MockDirective[];
-    expect(mocks.map((m) => m.name)).not.toContain("foo");
-    expect(diags.some((d) => d.code === "nudo:directive-syntax" && d.message.includes("@nudo:mock"))).toBe(true);
-    expect(diags.some((d) => d.message.includes("foo"))).toBe(false);
+  it("mock from 路径引号未闭合（双/单引号）：诊断且不产 mock", () => {
+    for (const quote of ['"src', "'src"]) {
+      const { fns, diags } = extractWithDiags(`/**\n * @nudo:mock x from ${quote}\n */\nfunction f(x) { return x; }`);
+      expect(fns.flatMap((f) => f.directives.filter((d) => d.kind === "mock")), quote).toHaveLength(0);
+      expect(diags.some((d) => d.code === "nudo:directive-syntax" && d.message.includes("unclosed quote in path")), quote).toBe(true);
+    }
   });
 
-  it("@nudo:mock from with unclosed path quote → diagnostic, no mock", () => {
-    const { fns, diags } = extractWithDiags(`/**
- * @nudo:mock x from "src
- */
-function f(x) { return x; }`);
-    const mocks = fns.flatMap((f) => f.directives.filter((d) => d.kind === "mock")) as MockDirective[];
-    expect(mocks).toHaveLength(0);
-    expect(
-      diags.some((d) => d.code === "nudo:directive-syntax" && d.message.includes("unclosed quote in path")),
-    ).toBe(true);
-  });
-
-  it("@nudo:mock from with unclosed single-quoted path → diagnostic, no mock", () => {
-    const { fns, diags } = extractWithDiags(`/**
- * @nudo:mock x from 'src
- */
-function f(x) { return x; }`);
-    const mocks = fns.flatMap((f) => f.directives.filter((d) => d.kind === "mock")) as MockDirective[];
-    expect(mocks).toHaveLength(0);
-    expect(
-      diags.some((d) => d.code === "nudo:directive-syntax" && d.message.includes("unclosed quote in path")),
-    ).toBe(true);
-  });
-
-  it("/// line-comment directive form is recognized (aligned with core prefix)", () => {
-    const { fns, diags } = extractWithDiags(`/// @nudo:case "d" (1)
-/// @nudo:mock m = 2
-function f(x) { return x; }`);
-    const cases = fns.flatMap((f) => f.directives.filter((d) => d.kind === "case")) as CaseDirective[];
-    const mocks = fns.flatMap((f) => f.directives.filter((d) => d.kind === "mock")) as MockDirective[];
-    expect(cases.map((c) => c.name)).toEqual(["d"]);
-    expect(mocks.map((m) => m.name)).toEqual(["m"]);
+  it("/// 行注释形式识别 case 与 mock", () => {
+    const { fns, diags } = extractWithDiags(`/// @nudo:case "d" (1)\n/// @nudo:mock m = 2\nfunction f(x) { return x; }`);
+    expect(fns.flatMap((f) => f.directives.filter((d) => d.kind === "case")).map((d) => d.kind === "case" && d.name)).toEqual(["d"]);
+    expect(fns.flatMap((f) => f.directives.filter((d) => d.kind === "mock")).map((d) => d.kind === "mock" && d.name)).toEqual(["m"]);
     expect(diags).toHaveLength(0);
   });
 });
 
-describe("S4-006: inline directives accept JSDoc `* ` continuation lines", () => {
-  it("/**\\n * @nudo:as number()\\n */ → one as, prim type, no diagnostics", () => {
-    const { dirs, diags } = extractInlineWithDiags(`/**
- * @nudo:as number()
- */
-const a = 1;`);
-    expect(dirs).toHaveLength(1);
-    const asDir = dirs.find((d) => d.kind === "as") as AsDirective;
-    expect(asDir.typeAbs.shape.k).toBe("prim");
-    expect(diags).toHaveLength(0);
+describe("行内指令接受 JSDoc 续行", () => {
+  it("as / replace / 多条 / /// 都合法提取且零诊断", () => {
+    const cases = [
+      { src: `/**\n * @nudo:as number()\n */\nconst a = 1;`, kind: "as", count: 1, shape: "prim" },
+      { src: `/**\n * @nudo:replace a number()\n */\nconst a = 1;`, kind: "replace", count: 1, target: "a" },
+      { src: `/**\n * @nudo:replace a number()\n * @nudo:replace b string()\n */\nconst a = (b) => b;`, kind: "replace", count: 2 },
+      { src: `/// @nudo:as number()\nconst a = 1;`, kind: "as", count: 1 },
+    ];
+    for (const { src, kind, count, shape, target } of cases) {
+      const { dirs, diags } = extractInlineWithDiags(src);
+      const matched = dirs.filter((d) => d.kind === kind);
+      expect(matched, src).toHaveLength(count);
+      if (shape) expect((matched[0] as AsDirective).typeAbs.shape.k, src).toBe(shape);
+      if (target) expect((matched[0] as ReplaceDirective).targetSource, src).toBe(target);
+      expect(diags, src).toHaveLength(0);
+    }
   });
 
-  it("/**\\n * @nudo:replace a number()\\n */ → one replace targeting a", () => {
-    const { dirs, diags } = extractInlineWithDiags(`/**
- * @nudo:replace a number()
- */
-const a = 1;`);
-    expect(dirs).toHaveLength(1);
-    const rep = dirs.find((d) => d.kind === "replace") as ReplaceDirective;
-    expect(rep.targetSource).toBe("a");
-    expect(rep.typeAbs.shape.k).toBe("prim");
-    expect(diags).toHaveLength(0);
-  });
-
-  it("multiple inline directives in one block are each extracted", () => {
-    const { dirs, diags } = extractInlineWithDiags(`/**
- * @nudo:replace a number()
- * @nudo:replace b string()
- */
-const a = (b) => b;`);
-    const reps = dirs.filter((d) => d.kind === "replace") as ReplaceDirective[];
-    expect(reps.map((r) => r.targetSource).sort()).toEqual(["a", "b"]);
-    expect(diags).toHaveLength(0);
-  });
-
-  it("/// line-comment form is recognized", () => {
-    const { dirs, diags } = extractInlineWithDiags(`/// @nudo:as number()
-const a = 1;`);
-    expect(dirs.filter((d) => d.kind === "as")).toHaveLength(1);
-    expect(diags).toHaveLength(0);
-  });
-
-  it("bare @nudo:as / @nudo:replace lines → explicit diagnostics, no directive", () => {
-    const { dirs, diags } = extractInlineWithDiags(`/**
- * @nudo:as
- * @nudo:replace
- */
-const a = 1;`);
+  it("裸 as / replace 标签：显式诊断且不产指令", () => {
+    const { dirs, diags } = extractInlineWithDiags(`/**\n * @nudo:as\n * @nudo:replace\n */\nconst a = 1;`);
     expect(dirs).toHaveLength(0);
     expect(diags.some((d) => d.code === "nudo:directive-syntax" && d.message.includes("@nudo:as requires"))).toBe(true);
     expect(diags.some((d) => d.code === "nudo:directive-syntax" && d.message.includes("@nudo:replace requires"))).toBe(true);
   });
 
-  it("string contents are not mistaken for trailing comments", () => {
+  it("字符串里的注释符不算尾随注释；真实尾随注释仍告警", () => {
     for (const expr of [`lit("http://x")`, `lit("see // docs")`, `shape({ note: lit("a /* b") })`]) {
-      const { dirs, diags } = extractInlineWithDiags(`// @nudo:as ${expr}
-const a = 1;`);
+      const { dirs, diags } = extractInlineWithDiags(`// @nudo:as ${expr}\nconst a = 1;`);
       expect(dirs.filter((d) => d.kind === "as"), expr).toHaveLength(1);
       expect(diags.some((d) => d.message.includes("Trailing comment")), expr).toBe(false);
     }
-  });
-
-  it("real trailing comment after the expression still diagnosed", () => {
-    const { dirs, diags } = extractInlineWithDiags(`/**
- * @nudo:as number() // why
- */
-const x = 1;`);
-    expect(dirs.filter((d) => d.kind === "as")).toHaveLength(1);
-    expect(diags.some((d) => d.code === "nudo:directive-syntax" && d.message.includes("Trailing comment"))).toBe(true);
+    const trailing = extractInlineWithDiags(`/**\n * @nudo:as number() // why\n */\nconst x = 1;`);
+    expect(trailing.dirs.filter((d) => d.kind === "as")).toHaveLength(1);
+    expect(trailing.diags.some((d) => d.code === "nudo:directive-syntax" && d.message.includes("Trailing comment"))).toBe(true);
   });
 });
 
