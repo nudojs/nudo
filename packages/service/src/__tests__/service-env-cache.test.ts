@@ -1630,55 +1630,38 @@ beforeEach(() => {
 });
 
 describe("未知名 env 不得静默忽略", () => {
-  it("loadEnvs：未知名产出可见诊断且不注入任何全局", () => {
+  beforeEach(() => { clearPathEnvCaches(); });
+  it("未知名/原型键可见诊断；合法内建名与依赖展开零诊断", async () => {
     for (const name of ["bogus", "nodejs", "Node"]) {
-      const dir = tmpProject("nudo-bug-470-");
+      const dir = tmpProject("nudo-b470-");
       const loaded = loadEnvs([name], createEnvironment(), dir);
       expect(Object.keys(loaded.globals)).toHaveLength(0);
       const errs = getPathEnvLoadErrors(dir);
       expect(errs).toHaveLength(1);
       expect(errs[0]!.error).toContain(`unknown env name "${name}"`);
-      // 诊断必须列出合法名（用户据此自查拼写）
       expect(errs[0]!.error).toContain("es, web, node");
     }
-  });
+    const pre = tmpProject("nudo-b470-preload-");
+    await preloadPathEnvs(["bogus"], pre);
+    const preErrs = getPathEnvLoadErrors(pre);
+    expect(preErrs).toHaveLength(1);
+    expect(preErrs[0]!.error).toContain('unknown env name "bogus"');
+    expect(preErrs[0]!.baseDir).toBe(pre);
+    const proto = tmpProject("nudo-b470-proto-");
+    const protoLoaded = loadEnvs(["constructor"], createEnvironment(), proto);
+    expect(Object.keys(protoLoaded.globals)).toHaveLength(0);
+    expect(getPathEnvLoadErrors(proto)[0]!.error).toContain('unknown env name "constructor"');
 
-  it("preload 通道同样可见（CLI check 的诊断来源）", async () => {
-    const dir = tmpProject("nudo-bug-470-preload-");
-    await preloadPathEnvs(["bogus"], dir);
-    const errs = getPathEnvLoadErrors(dir);
-    expect(errs).toHaveLength(1);
-    expect(errs[0]!.error).toContain('unknown env name "bogus"');
-    expect(errs[0]!.baseDir).toBe(dir);
-  });
-
-  it("原型键（constructor）不得取到 Object 构造器并炸掉", () => {
-    const dir = tmpProject("nudo-bug-470-proto-");
-    const loaded = loadEnvs(["constructor"], createEnvironment(), dir);
-    expect(Object.keys(loaded.globals)).toHaveLength(0);
-    const errs = getPathEnvLoadErrors(dir);
-    expect(errs).toHaveLength(1);
-    expect(errs[0]!.error).toContain('unknown env name "constructor"');
-  });
-
-  it("负控制：合法内建名（node / es）照常生效且零诊断", () => {
-    const dir = tmpProject("nudo-bug-470-ok-");
-    const node = loadEnvs(["node"], createEnvironment(), dir);
-    expect(Object.keys(node.globals).length).toBeGreaterThan(0);
-    expect(getPathEnvLoadErrors(dir)).toHaveLength(0);
-
-    const es = loadEnvs(["es"], createEnvironment(), dir);
-    expect(Object.keys(es.globals).length).toBeGreaterThan(0);
-    expect(getPathEnvLoadErrors(dir)).toHaveLength(0);
-  });
-
-  it("负控制：内建名的依赖展开（web ⇒ es）不被误判为未知名", () => {
-    const dir = tmpProject("nudo-bug-470-deps-");
-    const loaded = loadEnvs(["web"], createEnvironment(), dir);
-    expect(Object.keys(loaded.globals).length).toBeGreaterThan(0);
-    expect(getPathEnvLoadErrors(dir)).toHaveLength(0);
+    const ok = tmpProject("nudo-b470-ok-");
+    expect(Object.keys(loadEnvs(["node"], createEnvironment(), ok).globals).length).toBeGreaterThan(0);
+    expect(getPathEnvLoadErrors(ok)).toHaveLength(0);
+    expect(Object.keys(loadEnvs(["es"], createEnvironment(), ok).globals).length).toBeGreaterThan(0);
+    expect(getPathEnvLoadErrors(ok)).toHaveLength(0);
+    expect(Object.keys(loadEnvs(["web"], createEnvironment(), ok).globals).length).toBeGreaterThan(0);
+    expect(getPathEnvLoadErrors(ok)).toHaveLength(0);
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -1715,68 +1698,31 @@ function withEnv(value: string | undefined, fn: () => void): void {
 }
 
 describe("显式 nudo.cache 值一律压过 NUDO_CACHE_DIR", () => {
-  it("显式空串（\"\"）压过 env：缓存关闭（不返回 env 目录）", () => {
+  const ENV_KEY = "NUDO_CACHE_DIR";
+  let saved: string | undefined;
+  afterEach(() => { if (saved === undefined) delete process.env[ENV_KEY]; else process.env[ENV_KEY] = saved; });
+  const withEnv = (value: string | undefined, fn: () => void) => { saved = process.env[ENV_KEY]; if (value === undefined) delete process.env[ENV_KEY]; else process.env[ENV_KEY] = value; fn(); };
+  it("显式 \"\"/false/true/相对路径压过 env；未设才读 env；off/0 关闭", () => {
     let root: string | undefined;
-    withEnv("/tmp/nudo-cache-env", () => {
-      root = diskCacheRoot({ cache: "" }, "/proj");
-    });
-    // 旧实现：空串落到 env 分支 → 返回 "/tmp/nudo-cache-env"
+    withEnv("/tmp/nudo-cache-env", () => { root = diskCacheRoot({ cache: "" }, "/proj"); });
     expect(root).toBeUndefined();
-  });
-
-  it("显式 false 压过 env（既有行为不得回退）", () => {
-    let root: string | undefined;
-    withEnv("/tmp/nudo-cache-env", () => {
-      root = diskCacheRoot({ cache: false }, "/proj");
-    });
+    withEnv("/tmp/nudo-cache-env", () => { root = diskCacheRoot({ cache: false }, "/proj"); });
     expect(root).toBeUndefined();
-  });
-
-  // ── 负控制：其余取值语义不得被波及 ──────────────────────────────
-  it("true → <projectDir>/.nudo/cache（压过 env）", () => {
-    let root: string | undefined;
-    withEnv("/tmp/nudo-cache-env", () => {
-      root = diskCacheRoot({ cache: true }, "/proj");
-    });
+    withEnv("/tmp/nudo-cache-env", () => { root = diskCacheRoot({ cache: true }, "/proj"); });
     expect(root).toBe("/proj/.nudo/cache");
-  });
-
-  it("非空字符串 → 相对 projectDir 解析（压过 env）", () => {
-    let root: string | undefined;
-    withEnv("/tmp/nudo-cache-env", () => {
-      root = diskCacheRoot({ cache: "custom/dir" }, "/proj");
-    });
+    withEnv("/tmp/nudo-cache-env", () => { root = diskCacheRoot({ cache: "custom/dir" }, "/proj"); });
     expect(root).toBe("/proj/custom/dir");
-  });
-
-  it("键未设置（undefined）→ 才读 env", () => {
-    let root: string | undefined;
-    withEnv("/tmp/nudo-cache-env", () => {
-      root = diskCacheRoot({}, "/proj");
-    });
+    withEnv("/tmp/nudo-cache-env", () => { root = diskCacheRoot({}, "/proj"); });
     expect(root).toBe("/tmp/nudo-cache-env");
-  });
-
-  it("键未设置 + 无 env → 关闭（默认）", () => {
-    let root: string | undefined;
-    withEnv(undefined, () => {
-      root = diskCacheRoot(undefined, "/proj");
-    });
+    withEnv(undefined, () => { root = diskCacheRoot(undefined, "/proj"); });
     expect(root).toBeUndefined();
-  });
-
-  it("env 为 off / 0 → 关闭（键未设置时）", () => {
-    let root: string | undefined;
-    withEnv("off", () => {
-      root = diskCacheRoot({}, "/proj");
-    });
+    withEnv("off", () => { root = diskCacheRoot({}, "/proj"); });
     expect(root).toBeUndefined();
-    withEnv("0", () => {
-      root = diskCacheRoot({}, "/proj");
-    });
+    withEnv("0", () => { root = diskCacheRoot({}, "/proj"); });
     expect(root).toBeUndefined();
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -1811,62 +1757,45 @@ function dualPkg(prefix: string): { dir: string; pkgDir: string } {
 }
 
 describe("exports 条件键按消费形态分表", () => {
-  it("import 形态命中 import 条件（ESM 构建），不是 require 分支", () => {
-    const { dir, pkgDir } = dualPkg("nudo-477-import-");
-    const r = resolveNpmJsEntryDetailed("dual", dir, "import");
-    expect(r.path).toBe(join(pkgDir, "esm.mjs"));
-    expect(r.exportsUnresolved).toBe(false);
-  });
-
-  it("require 形态命中 require 条件（CJS 构建）", () => {
-    const { dir, pkgDir } = dualPkg("nudo-477-require-");
-    const r = resolveNpmJsEntryDetailed("dual", dir, "require");
-    expect(r.path).toBe(join(pkgDir, "cjs.cjs"));
-    expect(r.exportsUnresolved).toBe(false);
-  });
-
-  it("形态未给出时按 import → require 顺序尝试（ESM 构建优先）", () => {
-    const { dir, pkgDir } = dualPkg("nudo-477-auto-");
-    expect(resolveNpmJsEntryDetailed("dual", dir).path).toBe(join(pkgDir, "esm.mjs"));
-  });
-
-  it("负控制：只有 require 条件的包不被误判 miss（auto 兜底到 require 面）", () => {
-    const dir = tmpProject("nudo-477-requireonly-");
+  const dualPkg = (prefix: string) => {
+    const dir = tmpProject(prefix);
     writeTmpFiles(dir, {
-      "node_modules/onlyreq/package.json": JSON.stringify({
-        name: "onlyreq",
-        version: "1.0.0",
-        exports: { ".": { require: "./index.cjs" } },
-      }),
+      "node_modules/dual/package.json": JSON.stringify({ name: "dual", version: "1.0.0", exports: { ".": { import: "./esm.mjs", require: "./cjs.cjs", default: "./esm.mjs" } } }),
+      "node_modules/dual/esm.mjs": "export default 5; export const named = 'esm';\n",
+      "node_modules/dual/cjs.cjs": "module.exports = { default: 10, named: 'cjs' };\n",
+    });
+    return { dir, pkgDir: join(dir, "node_modules", "dual") };
+  };
+  it("import/require/auto 分表；仅 require 与无条件键负控", () => {
+    const imp = dualPkg("nudo-477-import-");
+    expect(resolveNpmJsEntryDetailed("dual", imp.dir, "import").path).toBe(join(imp.pkgDir, "esm.mjs"));
+    expect(resolveNpmJsEntryDetailed("dual", imp.dir, "import").exportsUnresolved).toBe(false);
+    const req = dualPkg("nudo-477-require-");
+    expect(resolveNpmJsEntryDetailed("dual", req.dir, "require").path).toBe(join(req.pkgDir, "cjs.cjs"));
+    const auto = dualPkg("nudo-477-auto-");
+    expect(resolveNpmJsEntryDetailed("dual", auto.dir).path).toBe(join(auto.pkgDir, "esm.mjs"));
+
+    const onlyDir = tmpProject("nudo-477-requireonly-");
+    writeTmpFiles(onlyDir, {
+      "node_modules/onlyreq/package.json": JSON.stringify({ name: "onlyreq", version: "1.0.0", exports: { ".": { require: "./index.cjs" } } }),
       "node_modules/onlyreq/index.cjs": "module.exports = 1;\n",
     });
-    // import 面 miss（无 import/default 条件）→ auto 兜底 require 面命中
-    expect(resolveNpmJsEntryDetailed("onlyreq", dir).path).toBe(
-      join(dir, "node_modules", "onlyreq", "index.cjs"),
-    );
-    // 显式 import 形态则确实 miss（Node 同样 ERR_PACKAGE_PATH_NOT_EXPORTED）
-    const strict = resolveNpmJsEntryDetailed("onlyreq", dir, "import");
+    expect(resolveNpmJsEntryDetailed("onlyreq", onlyDir).path).toBe(join(onlyDir, "node_modules", "onlyreq", "index.cjs"));
+    const strict = resolveNpmJsEntryDetailed("onlyreq", onlyDir, "import");
     expect(strict.path).toBeNull();
     expect(strict.exportsUnresolved).toBe(true);
-  });
 
-  it("负控制：无条件键的包仍走 default（不因分表而 miss）", () => {
-    const dir = tmpProject("nudo-477-default-");
-    writeTmpFiles(dir, {
-      "node_modules/plain/package.json": JSON.stringify({
-        name: "plain",
-        version: "1.0.0",
-        exports: { ".": "./index.js" },
-      }),
+    const plainDir = tmpProject("nudo-477-default-");
+    writeTmpFiles(plainDir, {
+      "node_modules/plain/package.json": JSON.stringify({ name: "plain", version: "1.0.0", exports: { ".": "./index.js" } }),
       "node_modules/plain/index.js": "export const x = 1;\n",
     });
     for (const mode of ["import", "require"] as const) {
-      expect(resolveNpmJsEntryDetailed("plain", dir, mode).path).toBe(
-        join(dir, "node_modules", "plain", "index.js"),
-      );
+      expect(resolveNpmJsEntryDetailed("plain", plainDir, mode).path).toBe(join(plainDir, "node_modules", "plain", "index.js"));
     }
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -1997,78 +1926,55 @@ function projectWithAutoBind(autoBind: unknown): string {
 }
 
 describe("autoBind 归一成布尔（三面同口径）", () => {
-  beforeEach(() => {
-    evictProjectConfigMemo();
+  const captureStderr = (fn: () => void): string => {
+    const writes: string[] = [];
+    const orig = process.stderr.write;
+    process.stderr.write = ((chunk: string | Uint8Array) => { writes.push(String(chunk)); return true; }) as typeof process.stderr.write;
+    try { fn(); } finally { process.stderr.write = orig; }
+    return writes.join("");
+  };
+  const LIB_JS = "export function needsPositive(x) { return x > 0 ? x : 0; }\n";
+  const LIB_NUDO_JS = 'import { fn, number } from "@nudojs/core";\nexport const needsPositive = fn({ x: number().gt(0) }, number());\n';
+  const projectWithAutoBind = (autoBind: unknown) => tmpProject("nudo-b487-", {
+    "package.json": JSON.stringify({ name: "t", type: "module", nudo: { contract: { autoBind } } }),
+    "lib.js": LIB_JS,
+    "lib.nudo.js": LIB_NUDO_JS,
   });
-
-  it("非布尔 autoBind（\"false\" / 0 / 对象）→ 回落默认 true + stderr 提示", () => {
+  beforeEach(() => { evictProjectConfigMemo(); });
+  it("非法值回默认 true + 提示；严格布尔；contract 面绑侧车；合法 false 不绑；合法值不告警", async () => {
     for (const raw of ["false", 0, { a: 1 }]) {
       evictProjectConfigMemo();
       let out = "";
       let value: boolean | undefined;
-      out += captureStderr(() => {
-        value = contractConfig({ contract: { autoBind: raw } as never }).autoBind;
-      });
-      // 旧实现：原样透传（"false" ⇒ 非 false ⇒ check 读「开」，
-      // core 读「关」⇒ 三面分裂）
+      out += captureStderr(() => { value = contractConfig({ contract: { autoBind: raw } as never }).autoBind; });
       expect(value, String(raw)).toBe(true);
       expect(out, String(raw)).toContain("nudo.contract.autoBind: invalid value");
       expect(out, String(raw)).toContain("using true");
     }
-  });
-
-  it("归一后是**严格布尔**：check 面（=== false）与 core 面（!== true）同口径", () => {
     const cfg = contractConfig({ contract: { autoBind: "false" } as never });
     expect(typeof cfg.autoBind).toBe("boolean");
-    // check / health / test 面的判据：=== false ⇒ 「关」
     expect(cfg.autoBind === false).toBe(false);
-    // contract / export 面（core sidecarAutoBindAllowed）：非 true/非函数 ⇒ 「关」
     expect(cfg.autoBind !== true).toBe(false);
-  });
 
-  it("contract 面（contractSurface）：非法 autoBind 仍绑侧车（= 默认 true）", async () => {
     const root = projectWithAutoBind("false");
     const entries = await contractSurface(join(root, "lib.js"));
-    const fn = entries.find((e) => e.fn === "needsPositive");
-    expect(fn).toBeDefined();
-    // 归一后 = true ⇒ 侧车绑定 ⇒ handwritten（改前是 implicit）
-    expect(fn!.source).toBe("handwritten");
-  });
+    expect(entries.find((e) => e.fn === "needsPositive")!.source).toBe("handwritten");
+    const rootFalse = projectWithAutoBind(false);
+    const falseEntries = await contractSurface(join(rootFalse, "lib.js"));
+    expect(falseEntries.find((e) => e.fn === "needsPositive")!.source).toBe("implicit");
 
-  it("contract 面：合法 autoBind:false 仍不绑侧车（负控制）", async () => {
-    const root = projectWithAutoBind(false);
-    const entries = await contractSurface(join(root, "lib.js"));
-    const fn = entries.find((e) => e.fn === "needsPositive");
-    expect(fn).toBeDefined();
-    expect(fn!.source).toBe("implicit");
-  });
-
-  // ── 负控制：合法布尔值不得被本修复波及 ──────────────────────────
-  it("合法 true / false / 缺席：语义不变且不告警", () => {
     let out = "";
-    out += captureStderr(() => {
-      expect(contractConfig({ contract: { autoBind: true } }).autoBind).toBe(true);
-    });
-    out += captureStderr(() => {
-      expect(contractConfig({ contract: { autoBind: false } }).autoBind).toBe(false);
-    });
-    out += captureStderr(() => {
-      expect(contractConfig({ contract: {} }).autoBind).toBe(true);
-    });
-    out += captureStderr(() => {
-      expect(contractConfig(undefined).autoBind).toBe(true);
-    });
+    out += captureStderr(() => { expect(contractConfig({ contract: { autoBind: true } }).autoBind).toBe(true); });
+    out += captureStderr(() => { expect(contractConfig({ contract: { autoBind: false } }).autoBind).toBe(false); });
+    out += captureStderr(() => { expect(contractConfig({ contract: {} }).autoBind).toBe(true); });
+    out += captureStderr(() => { expect(contractConfig(undefined).autoBind).toBe(true); });
     expect(out).toBe("");
-  });
-
-  it("项目配置读到的 autoBind 也是归一后的布尔（findProjectConfig → contractConfig）", () => {
-    const root = projectWithAutoBind("false");
     const proj = findProjectConfig(root);
-    const cfg = contractConfig(proj?.config);
-    expect(cfg.autoBind).toBe(true);
-    expect(typeof cfg.autoBind).toBe("boolean");
+    expect(contractConfig(proj?.config).autoBind).toBe(true);
+    expect(typeof contractConfig(proj?.config).autoBind).toBe("boolean");
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
