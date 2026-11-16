@@ -91,61 +91,37 @@ function staticSlotNames(fn: Abs | undefined): string[] {
 }
 
 describe("node env 的静态 `Response.json` 返回域是 `Response`（不是 promise）", () => {
-  it("静态 `Response.json` 的返回域是 brand `Response`，且不是 promise", () => {
-    const rt = returnTypeOf(staticSlotOf("Response", "json"));
-    expect(rt, "Response.json 必须声明返回域").toBeTruthy();
-    expect(rt!.shape.k).toBe("brand");
-    expect((rt!.shape as { name: string }).name).toBe("Response");
-    // 不是 promise（旧的错声明就是 promise<unknown>）
-    expect(rt!.shape.k === "eff" && (rt!.shape as { eff?: string }).eff === "promise").toBe(false);
-  });
-
-  it("静态 `Response.json(x)` 的引擎签名是 `Response`（不是 promise）", () => {
-    const out = checkNode(`export function f(x){ return Response.json(x); }`);
+  it("静态工厂返回 Response 品牌；实例 json 仍是 promise", () => {
+    for (const name of ["error","json","redirect"] as const) {
+      const slot = staticSlotOf("Response", name);
+      expect(slot, name).toBeTruthy();
+      const rt = returnTypeOf(slot)!;
+      expect(rt.shape.k, name).toBe("brand");
+      expect((rt.shape as { name: string }).name, name).toBe("Response");
+    }
+    const json = returnTypeOf(staticSlotOf("Response", "json"))!;
+    expect(json.shape.k).toBe("brand");
+    expect((json.shape as { name: string }).name).toBe("Response");
+    expect(json.shape.k === "eff" && (json.shape as { eff?: string }).eff === "promise").toBe(false);
+    const out = checkNode("export function f(x){ return Response.json(x); }");
     expect(out.errorCodes).toEqual([]);
     expect(displayOf(out)).toMatch(/^Response\b/);
     expect(displayOf(out)).not.toMatch(/promise/);
-  });
 
-  it("实例 `response.json()` 仍是 promise（不得被改成同步）", () => {
-    const face = instanceFaceOf("Response");
-    expect(face, "Response 实例面").toBeTruthy();
-    const inner = (face!.shape as { shape?: Abs }).shape;
+    const face = instanceFaceOf("Response")!;
+    const inner = (face.shape as { shape?: Abs }).shape;
     const jsonSlot = (inner?.shape as { slots?: Record<string, { value: Abs }> }).slots?.json?.value;
-    expect(jsonSlot, "实例面必须保留 json 槽").toBeTruthy();
-    const jsonRt = returnTypeOf(jsonSlot);
-    expect(jsonRt!.shape.k).toBe("eff");
-    expect((jsonRt!.shape as { eff?: string }).eff).toBe("promise");
+    expect(jsonSlot).toBeTruthy();
+    const jsonRt = returnTypeOf(jsonSlot)!;
+    expect(jsonRt.shape.k).toBe("eff");
+    expect((jsonRt.shape as { eff?: string }).eff).toBe("promise");
   });
-
-  it("静态面三个工厂（error / json / redirect）都仍在，且都返回 `Response` 品牌", () => {
-    for (const name of ["error", "json", "redirect"] as const) {
-      const slot = staticSlotOf("Response", name);
-      expect(slot, `Response.${name}`).toBeTruthy();
-      const rt = returnTypeOf(slot);
-      expect(rt!.shape.k, `Response.${name} 返回域`).toBe("brand");
-      expect((rt!.shape as { name: string }).name).toBe("Response");
-    }
-  });
-});
+});;
 
 describe("node env 的 `performance` 补齐 6 个宿主真实成员", () => {
-  const SIX = [
-    "toJSON",
-    "clearResourceTimings",
-    "eventLoopUtilization",
-    "timerify",
-    "setResourceTimingBufferSize",
-    "nodeTiming",
-  ] as const;
-
-  it("6 个宿主真实成员都被声明（不再缺槽）", () => {
-    for (const name of SIX) {
-      expect(nodeSlotOf("performance", name), `performance.${name}`).toBeTruthy();
-    }
-  });
-
-  it("6 个成员都可调用（不落进「确定缺失」）", () => {
+  const SIX = ["toJSON","clearResourceTimings","eventLoopUtilization","timerify","setResourceTimingBufferSize","nodeTiming"] as const;
+  it("六成员声明/可调用；nodeTiming obj；timerify 返回 fn；已有成员不变", () => {
+    for (const name of SIX) expect(nodeSlotOf("performance", name), name).toBeTruthy();
     const out = checkNode(`export function f(){
   performance.toJSON();
   performance.clearResourceTimings();
@@ -157,183 +133,74 @@ describe("node env 的 `performance` 补齐 6 个宿主真实成员", () => {
     expect(out.errorCodes).toEqual([]);
     expect(out.issues.filter((i) => i.code === "nudo:entry-may-throw")).toEqual([]);
     expect(displayOf(out)).not.toMatch(/never\s+throws/);
+    expect(nodeSlotOf("performance", "nodeTiming")!.shape.k).toBe("obj");
+    expect(returnTypeOf(nodeSlotOf("performance", "timerify"))!.shape.k).toBe("fn");
+    const existing = checkNode(`export function f(){ performance.now(); performance.mark("m"); performance.measure("m"); performance.getEntries(); performance.getEntriesByName("m"); performance.getEntriesByType("m"); return 1; }`);
+    expect(existing.errorCodes).toEqual([]);
   });
-
-  it("`performance.nodeTiming` 是对象（宿主上不是函数）", () => {
-    const slot = nodeSlotOf("performance", "nodeTiming");
-    expect(slot!.shape.k).toBe("obj");
-  });
-
-  it("`performance.timerify(fn)` 的返回域是可调用的（宿主返回包装函数，不是 undefined）", () => {
-    const rt = returnTypeOf(nodeSlotOf("performance", "timerify"));
-    expect(rt).toBeTruthy();
-    expect(rt!.shape.k).toBe("fn");
-  });
-
-  it("已声明的成员行为不变：`now` / `mark` / `measure` / `getEntries*` 仍可调用", () => {
-    const out = checkNode(`export function f(){
-  performance.now();
-  performance.mark("m");
-  performance.measure("m");
-  performance.getEntries();
-  performance.getEntriesByName("m");
-  performance.getEntriesByType("m");
-  return 1;
-}`);
-    expect(out.errorCodes).toEqual([]);
-  });
-});
+});;
 
 describe("node env 的 `navigator` 补 `locks`（Web Locks API）", () => {
-  it("`navigator.locks` 被声明（不再是 exact undefined）", () => {
-    const slot = nodeSlotOf("navigator", "locks");
-    expect(slot, "navigator.locks").toBeTruthy();
-    const out = checkNode(`export function f(){ return navigator.locks; }`);
-    expect(out.errorCodes).toEqual([]);
-    expect(displayOf(out)).not.toMatch(/^undefined/);
-  });
-
-  it("`navigator.locks.request(...)` 不被判「确定缺失」", () => {
-    const out = checkNode(`export function f(){ return navigator.locks.request("k", () => 1); }`);
-    expect(out.errorCodes).toEqual([]);
-    expect(out.issues.filter((i) => i.code === "nudo:entry-may-throw")).toEqual([]);
-    expect(displayOf(out)).toMatch(/^promise/);
-  });
-
-  it("`navigator.locks.query()` 也被声明", () => {
-    expect(nodeSlotOf("navigator", "locks", "query"), "navigator.locks.query").toBeTruthy();
-  });
-
-  it("`Navigator` 实例面与 `navigator` 全局面同源（同一份槽表）", () => {
-    const face = instanceFaceOf("Navigator");
-    expect(face, "Navigator 实例面").toBeTruthy();
+  it("locks/request/query 声明；实例面同源；既有成员不变", () => {
+    expect(nodeSlotOf("navigator", "locks")).toBeTruthy();
+    const read = checkNode("export function f(){ return navigator.locks; }");
+    expect(read.errorCodes).toEqual([]);
+    expect(displayOf(read)).not.toMatch(/^undefined/);
+    const request = checkNode('export function f(){ return navigator.locks.request("k", () => 1); }');
+    expect(request.errorCodes).toEqual([]);
+    expect(request.issues.filter((i) => i.code === "nudo:entry-may-throw")).toEqual([]);
+    expect(displayOf(request)).toMatch(/^promise/);
+    expect(nodeSlotOf("navigator", "locks", "query")).toBeTruthy();
+    const face = instanceFaceOf("Navigator")!;
     expect(memberNames(face)).toContain("locks");
-    expect(memberNames(face).sort()).toEqual(
-      memberNames(nodeSlotOf("navigator")).sort(),
-    );
+    expect(memberNames(face).sort()).toEqual(memberNames(nodeSlotOf("navigator")).sort());
+    for (const name of ["hardwareConcurrency","language","languages","userAgent","platform"] as const) expect(nodeSlotOf("navigator", name), name).toBeTruthy();
+    const hw = checkNode("export function f(){ return navigator.hardwareConcurrency; }");
+    expect(hw.errorCodes).toEqual([]);
+    expect(displayOf(hw)).toMatch(/^number/);
   });
-
-  it("已声明的成员行为不变：hardwareConcurrency / language / languages / userAgent / platform", () => {
-    for (const name of [
-      "hardwareConcurrency",
-      "language",
-      "languages",
-      "userAgent",
-      "platform",
-    ] as const) {
-      expect(nodeSlotOf("navigator", name), `navigator.${name}`).toBeTruthy();
-    }
-    const out = checkNode(`export function f(){ return navigator.hardwareConcurrency; }`);
-    expect(out.errorCodes).toEqual([]);
-    expect(displayOf(out)).toMatch(/^number/);
-  });
-});
+});;
 
 describe("web env 的 `crypto.subtle` 补 4 个标准 WebCrypto API", () => {
-  const FOUR = ["deriveKey", "deriveBits", "wrapKey", "unwrapKey"] as const;
-
-  it("deriveKey / deriveBits / wrapKey / unwrapKey 被声明", () => {
-    for (const name of FOUR) {
-      expect(slotOf("crypto", "subtle", name), `crypto.subtle.${name}`).toBeTruthy();
-    }
-  });
-
-  it("调用不再被判「确定缺失」（合法浏览器代码不再被 L2 门禁挡住）", () => {
-    const out = checkWeb(`export function f(){
-  crypto.subtle.deriveKey("bits", "raw", "raw", {}, "HKDF", false, ["deriveKey"]);
-  crypto.subtle.deriveBits("bits", "raw", 256);
-  crypto.subtle.wrapKey("raw", "raw", {}, {}, {});
-  crypto.subtle.unwrapKey("raw", "raw", {}, {}, {});
-  return 1;
-}`);
+  const FOUR = ["deriveKey","deriveBits","wrapKey","unwrapKey"] as const;
+  it("四 API 声明/可调用；既有成员不变；node/web 成员集同源", () => {
+    for (const name of FOUR) expect(slotOf("crypto", "subtle", name), name).toBeTruthy();
+    const out = checkWeb(`export function f(){ crypto.subtle.deriveKey("bits", "raw", "raw", {}, "HKDF", false, ["deriveKey"]); crypto.subtle.deriveBits("bits", "raw", 256); crypto.subtle.wrapKey("raw", "raw", {}, {}, {}); crypto.subtle.unwrapKey("raw", "raw", {}, {}, {}); return 1; }`);
     expect(out.errorCodes).toEqual([]);
     expect(out.issues.filter((i) => i.code === "nudo:entry-may-throw")).toEqual([]);
+    for (const name of ["digest","encrypt","decrypt","sign","verify","generateKey","importKey","exportKey"] as const) expect(slotOf("crypto", "subtle", name), name).toBeTruthy();
+    const digest = checkWeb('export function f(){ return crypto.subtle.digest("SHA-256", new Uint8Array()); }');
+    expect(digest.errorCodes).toEqual([]);
+    expect(displayOf(digest)).toMatch(/^promise/);
+    expect(memberNames(nodeSlotOf("crypto", "subtle")).sort()).toEqual(memberNames(slotOf("crypto", "subtle")).sort());
   });
-
-  it("已声明的成员行为不变：digest / encrypt / decrypt / sign / verify / generateKey / importKey / exportKey", () => {
-    for (const name of [
-      "digest",
-      "encrypt",
-      "decrypt",
-      "sign",
-      "verify",
-      "generateKey",
-      "importKey",
-      "exportKey",
-    ] as const) {
-      expect(slotOf("crypto", "subtle", name), `crypto.subtle.${name}`).toBeTruthy();
-    }
-    const out = checkWeb(`export function f(){ return crypto.subtle.digest("SHA-256", new Uint8Array()); }`);
-    expect(out.errorCodes).toEqual([]);
-    expect(displayOf(out)).toMatch(/^promise/);
-  });
-
-  it("node env 与 web env 的 `crypto.subtle` 成员集合同源（两 env 不再自相矛盾）", () => {
-    const nodeMembers = memberNames(nodeSlotOf("crypto", "subtle")).sort();
-    const webMembers = memberNames(slotOf("crypto", "subtle")).sort();
-    expect(nodeMembers).toEqual(webMembers);
-  });
-});
+});;
 
 describe("负控 —— 宿主没有的成员仍被判「确定缺失」（表没被改成全放行）", () => {
-  it("`performance.notARealMember()` 仍判「确定抛 TypeError」", () => {
-    const out = checkNode(`export function f(){ return performance.notARealMember(); }`);
-    expect(displayOf(out)).toMatch(/never\s+throws\s+TypeError/);
-    expect(out.errorCodes).toContain("nudo:entry-may-throw");
+  it("performance/navigator/web subtle/node subtle 的未知成员仍确定缺失", () => {
+    const perf = checkNode("export function f(){ return performance.notARealMember(); }");
+    expect(displayOf(perf)).toMatch(/never\s+throws\s+TypeError/);
+    expect(perf.errorCodes).toContain("nudo:entry-may-throw");
+    expect(displayOf(checkNode("export function f(){ return navigator.notARealMember; }"))).toMatch(/^undefined/);
+    const web = checkWeb("export function f(){ return crypto.subtle.notAMember(); }");
+    expect(displayOf(web)).toMatch(/never\s+throws\s+TypeError/);
+    expect(web.errorCodes).toContain("nudo:entry-may-throw");
+    expect(displayOf(checkNode("export function f(){ return crypto.subtle.notAMember; }"))).toMatch(/^undefined/);
   });
-
-  it("`navigator.notARealMember` 仍读出 undefined（不是全放行）", () => {
-    const out = checkNode(`export function f(){ return navigator.notARealMember; }`);
-    expect(displayOf(out)).toMatch(/^undefined/);
-  });
-
-  it("web env `crypto.subtle.notAMember()` 仍判「确定抛 TypeError」", () => {
-    const out = checkWeb(`export function f(){ return crypto.subtle.notAMember(); }`);
-    expect(displayOf(out)).toMatch(/never\s+throws\s+TypeError/);
-    expect(out.errorCodes).toContain("nudo:entry-may-throw");
-  });
-
-  it("node env `crypto.subtle.notAMember()` 仍读出 undefined（不是全放行）", () => {
-    const out = checkNode(`export function f(){ return crypto.subtle.notAMember; }`);
-    expect(displayOf(out)).toMatch(/^undefined/);
-  });
-});
+});;
 
 describe("宿主护栏 —— 宿主实测成员名 ⊆ env 表成员名", () => {
-  it("performance（node env）", () => {
-    const host = hostProtoMembers("performance");
-    const env = memberNames(nodeSlotOf("performance"));
-    expectHostCovered(host, env, PERFORMANCE_EXCLUDED, "performance");
+  it("performance/navigator/crypto.subtle/Response static 的宿主成员均被覆盖", () => {
+    expectHostCovered(hostProtoMembers("performance"), memberNames(nodeSlotOf("performance")), PERFORMANCE_EXCLUDED, "performance");
+    expectHostCovered(hostProtoMembers("navigator"), memberNames(nodeSlotOf("navigator")), [], "navigator");
+    const subtleHost = hostProtoMembers("crypto.subtle");
+    expectHostCovered(subtleHost, memberNames(nodeSlotOf("crypto", "subtle")), SUBTLE_EXCLUDED, "crypto.subtle (node)");
+    expectHostCovered(subtleHost, memberNames(slotOf("crypto", "subtle")), SUBTLE_EXCLUDED, "crypto.subtle (web)");
+    const responseHost = hostOwnMembers("Response").filter((m) => !CTOR_META.includes(m));
+    expectHostCovered(responseHost, staticSlotNames(nodeSlotOf("Response")), [], "Response static (node)");
+    expectHostCovered(responseHost, staticSlotNames(slotOf("Response")), [], "Response static (web)");
   });
-
-  it("navigator（node env）", () => {
-    const host = hostProtoMembers("navigator");
-    const env = memberNames(nodeSlotOf("navigator"));
-    expectHostCovered(host, env, [], "navigator");
-  });
-
-  it("crypto.subtle（node env 与 web env）", () => {
-    const host = hostProtoMembers("crypto.subtle");
-    expectHostCovered(
-      host,
-      memberNames(nodeSlotOf("crypto", "subtle")),
-      SUBTLE_EXCLUDED,
-      "crypto.subtle (node)",
-    );
-    expectHostCovered(
-      host,
-      memberNames(slotOf("crypto", "subtle")),
-      SUBTLE_EXCLUDED,
-      "crypto.subtle (web)",
-    );
-  });
-
-  it("Response 静态面（node env 与 web env）", () => {
-    const host = hostOwnMembers("Response").filter((m) => !CTOR_META.includes(m));
-    expectHostCovered(host, staticSlotNames(nodeSlotOf("Response")), [], "Response static (node)");
-    expectHostCovered(host, staticSlotNames(slotOf("Response")), [], "Response static (web)");
-  });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -360,34 +227,20 @@ describe("atob / btoa keep the host's InvalidCharacterError throws面", () => {
  * 反向钉：把 atob / btoa 加回 env 全局表 ⇒ 本文件必挂。
  */
 describe("atob / btoa keep the host's InvalidCharacterError throws面", () => {
-  it("atob / btoa are NOT declared in the web env (host fallback)", () => {
+  it("web env 不声明；非法输入记 InvalidCharacterError；合法 base64 精确折叠；env/host 同口径", () => {
     expect(webEnvGlobals()["atob"]).toBeUndefined();
     expect(webEnvGlobals()["btoa"]).toBeUndefined();
-  });
-
-  it("atob('!!!') records InvalidCharacterError", () => {
-    const out = checkWeb(`export function f(){ return atob("!!!"); }`);
-    expect(out.throwBrands).toContain("InvalidCharacterError");
-  });
-
-  it("btoa('✓') records InvalidCharacterError", () => {
-    const out = checkWeb(`export function f(){ return btoa("✓"); }`);
-    expect(out.throwBrands).toContain("InvalidCharacterError");
-  });
-
-  it("valid base64 still folds to the exact string (no precision loss)", () => {
-    const out = checkWeb(`export function f(){ return atob("YWJj"); }`);
-    expect(out.errorCodes).toEqual([]);
-    expect(displayOf(out)).toMatch(/^"abc"/);
-  });
-
-  it("the host-fallback path and the env path agree (same source, same verdict)", () => {
-    const withEnv = checkWeb(`export function f(){ return atob("!!!"); }`, true);
-    const hostOnly = checkWeb(`export function f(){ return atob("!!!"); }`, false);
+    expect(checkWeb('export function f(){ return atob("!!!"); }').throwBrands).toContain("InvalidCharacterError");
+    expect(checkWeb('export function f(){ return btoa("✓"); }').throwBrands).toContain("InvalidCharacterError");
+    const valid = checkWeb('export function f(){ return atob("YWJj"); }');
+    expect(valid.errorCodes).toEqual([]);
+    expect(displayOf(valid)).toMatch(/^"abc"/);
+    const withEnv = checkWeb('export function f(){ return atob("!!!"); }', true);
+    const hostOnly = checkWeb('export function f(){ return atob("!!!"); }', false);
     expect(withEnv.throwBrands).toEqual(hostOnly.throwBrands);
     expect(withEnv.throwBrands).toContain("InvalidCharacterError");
   });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
