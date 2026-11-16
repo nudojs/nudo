@@ -1,19 +1,7 @@
-# packages/service/src/__tests__/service-analysis.test.ts
-
-模块套件：service analysis/callsite/entry/diagnostics 面。
-
-审计：138 个用例；根因取自测试注释，缺口按四分类判定，动作复核后为 keep。
-
 ```audit
 title	rootCause	gap	action	status	evidence
-"ESM `import * as dep`：记录名带接收者限定，且归因到被调模块"	"`--from` 注入的调用点记录在**命名空间成员调用**上无法归因 ⇒ `nudo:contract-domain-exceeds`（**error 级** L1 门禁）静默不报 ⇒ 假绿。 根因（analyzer-abs-eval.ts 的调用记录归因）： - eval 侧对命名空间成员调用（`ns.helper(...)`）只记**成员名**（`helper`）， 不带接收者 ⇒ 归因侧的点号拆分**永远走不到** ⇒ `targetModule` / `targetExport` 为空 ⇒ 匹配侧（`matchingExternal` 要求可归因到本文件） 整条丢弃 ⇒ 越界调用点证据消失 ⇒ 门禁绿灯。 断言：expec"	没测该层	keep	keep	—
-"CJS `const dep = require(...)`：同样带接收者限定且可归因"	"`--from` 注入的调用点记录在**命名空间成员调用**上无法归因 ⇒ `nudo:contract-domain-exceeds`（**error 级** L1 门禁）静默不报 ⇒ 假绿。 根因（analyzer-abs-eval.ts 的调用记录归因）： - eval 侧对命名空间成员调用（`ns.helper(...)`）只记**成员名**（`helper`）， 不带接收者 ⇒ 归因侧的点号拆分**永远走不到** ⇒ `targetModule` / `targetExport` 为空 ⇒ 匹配侧（`matchingExternal` 要求可归因到本文件） 整条丢弃 ⇒ 越界调用点证据消失 ⇒ 门禁绿灯。 断言：expec"	没测该层	keep	keep	—
-"负控制：具名导入的记录名保持原样（不加前缀）"	"`--from` 注入的调用点记录在**命名空间成员调用**上无法归因 ⇒ `nudo:contract-domain-exceeds`（**error 级** L1 门禁）静默不报 ⇒ 假绿。 根因（analyzer-abs-eval.ts 的调用记录归因）： - eval 侧对命名空间成员调用（`ns.helper(...)`）只记**成员名**（`helper`）， 不带接收者 ⇒ 归因侧的点号拆分**永远走不到** ⇒ `targetModule` / `targetExport` 为空 ⇒ 匹配侧（`matchingExternal` 要求可归因到本文件） 整条丢弃 ⇒ 越界调用点证据消失 ⇒ 门禁绿灯。 断言：expec"	没测该层	keep	keep	—
-"负控制：对象字面量方法调用不被误加接收者限定"	"`--from` 注入的调用点记录在**命名空间成员调用**上无法归因 ⇒ `nudo:contract-domain-exceeds`（**error 级** L1 门禁）静默不报 ⇒ 假绿。 根因（analyzer-abs-eval.ts 的调用记录归因）： - eval 侧对命名空间成员调用（`ns.helper(...)`）只记**成员名**（`helper`）， 不带接收者 ⇒ 归因侧的点号拆分**永远走不到** ⇒ `targetModule` / `targetExport` 为空 ⇒ 匹配侧（`matchingExternal` 要求可归因到本文件） 整条丢弃 ⇒ 越界调用点证据消失 ⇒ 门禁绿灯。 断言：expec"	没测该层	keep	keep	—
-"产品面：注入后 nudo:contract-domain-exceeds 必须是 error（不再是假绿）"	"`--from` 注入的调用点记录在**命名空间成员调用**上无法归因 ⇒ `nudo:contract-domain-exceeds`（**error 级** L1 门禁）静默不报 ⇒ 假绿。 根因（analyzer-abs-eval.ts 的调用记录归因）： - eval 侧对命名空间成员调用（`ns.helper(...)`）只记**成员名**（`helper`）， 不带接收者 ⇒ 归因侧的点号拆分**永远走不到** ⇒ `targetModule` / `targetExport` 为空 ⇒ 匹配侧（`matchingExternal` 要求可归因到本文件） 整条丢弃 ⇒ 越界调用点证据消失 ⇒ 门禁绿灯。 断言：expec"	没测该层	keep	keep	—
-"产品面：CJS 命名空间形态同样报 error"	"`--from` 注入的调用点记录在**命名空间成员调用**上无法归因 ⇒ `nudo:contract-domain-exceeds`（**error 级** L1 门禁）静默不报 ⇒ 假绿。 根因（analyzer-abs-eval.ts 的调用记录归因）： - eval 侧对命名空间成员调用（`ns.helper(...)`）只记**成员名**（`helper`）， 不带接收者 ⇒ 归因侧的点号拆分**永远走不到** ⇒ `targetModule` / `targetExport` 为空 ⇒ 匹配侧（`matchingExternal` 要求可归因到本文件） 整条丢弃 ⇒ 越界调用点证据消失 ⇒ 门禁绿灯。 断言：expec"	没测该层	keep	keep	—
-"组内记录全部超限 ⇒ 整组跳过（不抛、不产出残缺分析）"	"断言：expect(out).toEqual([]);"	没测该层	keep	keep	—
-"对照组：正常记录照常合成（口径不变）"	"断言：expect(out).toHaveLength(1);；expect(out[0]!.name).toBe(\"pick\");"	没测该层	keep	keep	—
+全部超限整组跳过；正常记录照常合成	归因/超限表	没测该层	keep	keep	—
+ESM/CJS 命名空间带接收者限定并可归因；具名/对象方法无前缀；产品面 error	归因/超限表	没测该层	keep	keep	—
 "调用点字面量实参 ⇒ 投影成基类型（不是 lit(N)）"	"断言：expect(r.written).toContain(\"add\");；expect(sidecar).toContain(\"export const add = fn({ a: number(), b: number() }, number());\");"	没测该层	keep	keep	—
 "对照组：带断言的 @nudo:case 是域声明 ⇒ 字面量保留"	"回归：跨模块调用记录全部**超限被丢**时，合成路径不得解引用空数组。 改前 `synthesizeExternalFunctions` 直接读 `deduped[0].callLoc` / `deduped[0].resultAbs` ⇒ TypeError 抛出分析器（`nudo check` 吞掉异常后 静默假绿，`nudo test` / `export` 直接崩溃）。 断言：expect(sidecar).toContain(\"export const sub = fn({ a: lit(1), b: lit(2) }, lit(-1));\");"	夹具漏形态	keep	keep	—
 "被调方先定义：三个调用点全部留证（不再只剩第一条）"	"回归：被调方的**调用点域**不得被「首次 settle」截断。 症状（修前）：同一组函数，只改**声明顺序**就得到不同的调用点域 —— 被调方先定义时只留下第一个调用方的调用点（`callee(2)` / `callee(3)` 被 静默丢弃），于是 `nudo test` 少报见证、`nudo contract --emit` 写出偏窄的 契约（合法调用被判违约），`nudo contract --draft` 沿「官方推荐路径」直接 产出假红。 断言：expect(args).toEqual([\"1\", \"2\", \"3\"]);；expect(rets).toEqual([\"2\", \"3\", \"4\"]);"	没测该层	keep	keep	—
@@ -144,4 +132,14 @@ title	rootCause	gap	action	status	evidence
 "负控制：推导成功 + 期望不符 ⇒ 仍是 failed（既有行为不变）"	"断言判定**没有「推导失败」第三态**（LSP agent `testTool` 的报告面）。 本模块（`packages/service/src/test-report.ts`）是 CLI `nudo test` 报告面的 **平行副本**（LSP agent 工具面 `packages/lsp/src/agent-tools.ts` 的 `testTool` 调它）⇒ 第三态必须**两处同改**，否则 CLI 与 agent 工具面口径分叉。 断言：expect(report.failed).toBe(1);；expect(report.passed).toBe(0);"	没测该层	keep	keep	—
 "负控制：声明了但没写期望 ⇒ no-expectation 口径不变"	"断言判定**没有「推导失败」第三态**（LSP agent `testTool` 的报告面）。 本模块（`packages/service/src/test-report.ts`）是 CLI `nudo test` 报告面的 **平行副本**（LSP agent 工具面 `packages/lsp/src/agent-tools.ts` 的 `testTool` 调它）⇒ 第三态必须**两处同改**，否则 CLI 与 agent 工具面口径分叉。 断言：expect(report.unchecked).toBe(1);；expect(report.failed).toBe(0);"	没测该层	keep	keep	—
 "负控制：抛错（实测 never）⇒ 仍是 failed（never 不是「推导失败」）"	"引擎**推不出来**的函数体（`(x.get)().a ||= 2` 不被求值器支持 ⇒ 实测 unknown）。 断言：expect(report.failed).toBe(1);；expect(report.unchecked).toBe(0);"	没测该层	keep	keep	—
+```audit-deleted
+title	reason	evidence
+ESM `import * as dep`：记录名带接收者限定，且归因到被调模块	dup:归因/超限表	commit:75e79cab
+CJS `const dep = require(...)`：同样带接收者限定且可归因	dup:归因/超限表	commit:75e79cab
+负控制：具名导入的记录名保持原样（不加前缀）	dup:归因/超限表	commit:75e79cab
+负控制：对象字面量方法调用不被误加接收者限定	dup:归因/超限表	commit:75e79cab
+产品面：注入后 nudo:contract-domain-exceeds 必须是 error（不再是假绿）	dup:归因/超限表	commit:75e79cab
+产品面：CJS 命名空间形态同样报 error	dup:归因/超限表	commit:75e79cab
+组内记录全部超限 ⇒ 整组跳过（不抛、不产出残缺分析）	dup:归因/超限表	commit:75e79cab
+对照组：正常记录照常合成（口径不变）	dup:归因/超限表	commit:75e79cab
 ```
