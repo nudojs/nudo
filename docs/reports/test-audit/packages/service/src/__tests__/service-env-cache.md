@@ -1,5 +1,9 @@
 ```audit
 title	rootCause	gap	action	status	evidence
+CJS 猜扩展名含 .json/index；ESM 不猜；显式扩展名两态可解析；TS 合并表；CJS .js 优先	解析算法/键维表	没测该层	keep	keep	—
+async 预载后解析 env 全局；分析环境带 env globals	解析算法/键维表	没测该层	keep	keep	—
+改项目级 env 内容类型面跟着变；文件级同款；内容不变稳定	解析算法/键维表	没测该层	keep	keep	—
+精确/模式/条件/外部包/缺失/裸包负控	解析算法/键维表	没测该层	keep	keep	—
 父级安装可解析；就近优先；侧车同口径；未安装 miss 不报 unresolved	路径/预算表	没测该层	keep	keep	—
 非法 env 回默认并提示；合法 env 压配置；未设看配置；空串当未设；配置非法回默认	路径/预算表	没测该层	keep	keep	—
 两目录各取各的（预载顺序无关）；同目录稳定；绝对路径照旧	路径/预算表	没测该层	keep	keep	—
@@ -34,25 +38,8 @@ default 槽 + interop 标记；默认/命名空间同签名；无假 unknown-inf
 "合法 nudo 键（对象）：照旧返回配置"	"根包带 nudo 配置（用于验证「非法 nudo 键不得继承祖先配置」） 断言：expect(found?.projectDir).toBe(root);；expect(found?.config.contract?.autoBind).toBe(false);"	没测该层	keep	keep	—
 "空对象 nudo 键：照旧算「有配置」（截断祖先搜索）"	"根包带 nudo 配置（用于验证「非法 nudo 键不得继承祖先配置」） 断言：expect(found?.projectDir).toBe(sub);；expect(found?.config).toEqual({});"	没测该层	keep	keep	—
 "无 nudo 键：照旧向上找到祖先配置（monorepo 继承，文档承诺）"	"根包带 nudo 配置（用于验证「非法 nudo 键不得继承祖先配置」） 断言：expect(found?.projectDir).toBe(root);；expect(found?.config.check?.ignoreThrows).toEqual([\"SyntaxError\"]);"	没测该层	keep	keep	—
-"精确键：#helper → 导入方包内的 ./helper.js"	"回归：Node 的 `#imports`（**导入方** package.json 的 imports 字段） 必须被解析——改前 `#helper` 被当成「包名」⇒ `node_modules/#helper` 必 miss ⇒ 跨模块值塌成 unknown 且零诊断。 断言：expect(r.path).toBe(join(dir, \"helper.js\"));；expect(r.exportsUnresolved).toBe(false);"	没测该层	keep	keep	—
-"模式键：#internal/* → ./src/*.js"	"回归：`exports` 模式键的 tie-break 必须按 Node `PATTERN_KEY_COMPARE` ——**前缀长度平手时比整键长度**（更长者胜），且结论不得随 package.json 里的 声明顺序变化。 改前只比前缀长度且用严格大于 ⇒ 平手保留先声明者，宿主却取更长的键 ⇒ 引擎解析到另一个文件（假红 / 假绿 + 自信的错值）。 断言：expect(r.path).toBe(join(dir, \"src\", \"a.js\"));"	旧断言钉错	keep	keep	—
-"条件目标按消费形态分表（import / require 各取自己的构建）"	"回归：Node 的 `#imports`（**导入方** package.json 的 imports 字段） 必须被解析——改前 `#helper` 被当成「包名」⇒ `node_modules/#helper` 必 miss ⇒ 跨模块值塌成 unknown 且零诊断。 断言：expect(resolveNpmJsEntryDetailed(\"#dual\", dir, \"import\").path).toBe(join(dir, \"esm.mjs\"));；expect(resolveNpmJsEntryDetailed(\"#dual\", dir, \"require\").path).toBe(join(dir, \"cjs.cjs\""	没测该层	keep	keep	—
-"外部包目标：#dep → 裸包（转入裸包入口解析）"	"回归：裸包 `exports` 的**条件键必须按消费形态选** （ESM `import` → \"import\" 条件； 改前：一张固定顺序的表把 \"require\" 排在 \"import\" 前 ⇒ ESM import 解析到 包的 CommonJS 构建（原生 5 / 引擎 {default:10,named:\"cjs\"}）。 断言：expect(resolveNpmJsEntryDetailed(\"#dep\", dir).path).toBe("	夹具漏形态	keep	keep	—
-"解析不到 ⇒ exportsUnresolved=true（真缺失，不得静默塌成 unknown）"	"回归：Node 的 `#imports`（**导入方** package.json 的 imports 字段） 必须被解析——改前 `#helper` 被当成「包名」⇒ `node_modules/#helper` 必 miss ⇒ 跨模块值塌成 unknown 且零诊断。 断言：expect(r.path).toBeNull();；expect(r.exportsUnresolved).toBe(true);"	没测该层	keep	keep	—
-"负控制：普通裸包不受 # 分支影响（仍走 exports 解析）"	"回归：Node 的 `#imports`（**导入方** package.json 的 imports 字段） 必须被解析——改前 `#helper` 被当成「包名」⇒ `node_modules/#helper` 必 miss ⇒ 跨模块值塌成 unknown 且零诊断。 断言：expect(resolveNpmJsEntryDetailed(\"plain\", dir).path).toBe("	没测该层	keep	keep	—
-"同进程内改 env 文件内容，类型面跟着变"	"改前：分析缓存键（analysisFileCacheKey 的 envSeg）与 evaluator memo 键 （tryRunEval 的 envKey）只编码 env **名字** ⇒ 同一个 env 名指向的文件 内容改了，缓存照样命中 → 类型面停在旧值。 断言：expect(await magicShape(main, `export function getMagic() {\\n return MAGIC;\\n}\\n`)).toBe(\"1\");；expect(await magicShape(main, `export function getMagic() {\\n return MAGIC;\\n}\\n`)).toBe"	没测该层	keep	keep	—
 "文件级 /// @nudo:env 的同款行为保持正确（本就由 dep 指纹覆盖）"	"改前：分析缓存键（analysisFileCacheKey 的 envSeg）与 evaluator memo 键 （tryRunEval 的 envKey）只编码 env **名字** ⇒ 同一个 env 名指向的文件 内容改了，缓存照样命中 → 类型面停在旧值。 断言：expect(await magicShape(main, source)).toBe(\"1\");；expect(await magicShape(main, source)).toBe('\"hello\"');"	没测该层	keep	keep	—
 "env 内容不变时，结果稳定（不因缓存维度变化而漂移）"	"改前：分析缓存键（analysisFileCacheKey 的 envSeg）与 evaluator memo 键 （tryRunEval 的 envKey）只编码 env **名字** ⇒ 同一个 env 名指向的文件 内容改了，缓存照样命中 → 类型面停在旧值。 断言：expect(await magicShape(main, source)).toBe(\"1\");；expect(await magicShape(main, source)).toBe(\"1\");"	没测该层	keep	keep	—
-"async entry (preloads path env) resolves env globals"	"口径：env globals 由 collectEnvGlobals(envNames) 统一物化—— - 命名 env（node / es / web）：同步可见 - path 型 env（`/// @nudo:env ./env.ts`）：需先 preload（analyzeFileAsync 预载后同步面才可见）——同步面看不到时保持\"无信息\"（fail-closed）， 不假装有类型。 本测试锁住： ① 分析环境（globalEnv → buildNodeTypeMap 的节点类型面）带上 env globals ② 异步入口（唯一预载 path 型 env 的入口）解析出 env 全局值 注：IDE 诊断面的假红（`nud"	没测该层	keep	keep	—
-"analysis environment carries env globals (node type face)"	"口径：env globals 由 collectEnvGlobals(envNames) 统一物化—— - 命名 env（node / es / web）：同步可见 - path 型 env（`/// @nudo:env ./env.ts`）：需先 preload（analyzeFileAsync 预载后同步面才可见）——同步面看不到时保持\"无信息\"（fail-closed）， 不假装有类型。 本测试锁住： ① 分析环境（globalEnv → buildNodeTypeMap 的节点类型面）带上 env globals ② 异步入口（唯一预载 path 型 env 的入口）解析出 env 全局值 注：IDE 诊断面的假红（`nud"	没测该层	keep	keep	—
-"CJS 形态：require('./data') 解析到同目录的 data.json（不再是「文件不存在」）"	"同目录**只有** data.json（Node 的 LOAD_AS_FILE 会试 .json——改前的候选表没有 .json ⇒ 假红「文件不存在」）。 断言：expect(resolveModuleFile(\"./data\", main)).toBe(join(main, \"..\", \"data.json\"));"	没测该层	keep	keep	—
-"ESM 形态：import './data' 不猜扩展名 ⇒ 解析不到（native ERR_MODULE_NOT_FOUND）"	"同目录**只有** data.json（Node 的 LOAD_AS_FILE 会试 .json——改前的候选表没有 .json ⇒ 假红「文件不存在」）。 断言：expect(resolveModuleFile(\"./data\", main)).toBeUndefined();"	没测该层	keep	keep	—
-"ESM 形态：写全扩展名即可解析（import './data.js'）"	"同目录**只有** data.json（Node 的 LOAD_AS_FILE 会试 .json——改前的候选表没有 .json ⇒ 假红「文件不存在」）。 断言：expect(resolveModuleFile(\"./data.js\", main)).toBe(join(dir, \"data.js\"));"	没测该层	keep	keep	—
-"候选表：ESM 面只有精确路径；CJS 面含 .json 与 index 入口"	"同目录**只有** data.json（Node 的 LOAD_AS_FILE 会试 .json——改前的候选表没有 .json ⇒ 假红「文件不存在」）。 断言：expect(cjsCands).toContain(`${base}.json`);；expect(cjsCands).toContain(join(base, \"index.js\"));"	没测该层	keep	keep	—
-"负控制：显式 './data.json' 在两种形态下都解析得到"	"同目录**只有** data.json（Node 的 LOAD_AS_FILE 会试 .json——改前的候选表没有 .json ⇒ 假红「文件不存在」）。 断言：expect(resolveModuleFile(\"./data.json\", cjsMain)).toBe(join(cjsDir, \"data.json\"));；expect(resolveModuleFile(\"./data.json\", esmMain)).toBe(join(esmDir, \"data.json\"));"	没测该层	keep	keep	—
-"负控制：CJS 面的扩展名顺序同 Node（.js 先于 .json）"	"同目录**只有** data.json（Node 的 LOAD_AS_FILE 会试 .json——改前的候选表没有 .json ⇒ 假红「文件不存在」）。 断言：expect(resolveModuleFile(\"./data\", join(dir, \"main.js\"))).toBe(join(dir, \"data.js\"));"	没测该层	keep	keep	—
-"负控制：TS 导入方保持合并表（目录 import + index 入口仍可解析）"	"同目录**只有** data.json（Node 的 LOAD_AS_FILE 会试 .json——改前的候选表没有 .json ⇒ 假红「文件不存在」）。 断言：expect(resolveModuleFile(\"./utils\", main)).toBe(join(dir, \"utils\", \"index.ts\"));；expect(moduleResolveCandidates(\"./utils\", main)).toEqual(["	没测该层	keep	keep	—
-"负控制：显式形态参数优先于文件推导（调用方知道说明符来源形态时）"	"负控制：不该被这条修复波及的邻近形态 断言：expect(resolveModuleFile(\"./data\", main, \"import\")).toBeUndefined();；expect(resolveModuleFile(\"./data\", main, \"require\")).toBe(join(main, \"..\", \"data.json\"));"	夹具漏形态	keep	keep	—
 "env NUDO_MAX_FORKS 优先于 package.json#nudo.analysis.maxForks"	"回归：fork 预算的**生效值**（env `NUDO_MAX_FORKS` 优先）必须进 磁盘缓存键。 真正生效的 上限来自 env（`applyBForkBudgetFromConfig` 同口径：env > config > 5000） ⇒ 改 env 不改键 ⇒ 命中轮返回**上一轮**的陈旧 budget（反向：新预算 **根本没执行**，`nudo:fork-truncated` 缺失）。 断言：expect(effectiveMaxForks({ analysis: { maxForks: 100 } })).toBe(7);"	没测该层	keep	keep	—
 "无 env 时回落 package.json 值；两者都无则回落默认 5000"	"回归：fork 预算的**生效值**（env `NUDO_MAX_FORKS` 优先）必须进 磁盘缓存键。 真正生效的 上限来自 env（`applyBForkBudgetFromConfig` 同口径：env > config > 5000） ⇒ 改 env 不改键 ⇒ 命中轮返回**上一轮**的陈旧 budget（反向：新预算 **根本没执行**，`nudo:fork-truncated` 缺失）。 断言：expect(effectiveMaxForks({ analysis: { maxForks: 100 } })).toBe(100);；expect(effectiveMaxForks(undefined)).toBe(5"	没测该层	keep	keep	—
 "env 非法（非整数 / <1）⇒ 回落默认 5000（不回配置键）"	"回归：fork 预算的**生效值**（env `NUDO_MAX_FORKS` 优先）必须进 磁盘缓存键。 真正生效的 上限来自 env（`applyBForkBudgetFromConfig` 同口径：env > config > 5000） ⇒ 改 env 不改键 ⇒ 命中轮返回**上一轮**的陈旧 budget（反向：新预算 **根本没执行**，`nudo:fork-truncated` 缺失）。 断言：expect(effectiveMaxForks({ analysis: { maxForks: 100 } })).toBe(5000);"	没测该层	keep	keep	—
@@ -174,4 +161,21 @@ env 为空串 → 按「未设」处理（看配置键）	dup:路径/预算表	c
 就近安装优先于父级安装（最近的一层胜出）	dup:路径/预算表	commit:8b32f787
 侧车解析同口径（resolveNpmNudo 也逐级向上）	dup:路径/预算表	commit:8b32f787
 负控制：包根本没装 ⇒ miss（不报 exportsUnresolved）	dup:路径/预算表	commit:8b32f787
+精确键：#helper → 导入方包内的 ./helper.js	dup:解析算法/键维表	commit:73b1eb5d
+模式键：#internal/* → ./src/*.js	dup:解析算法/键维表	commit:73b1eb5d
+条件目标按消费形态分表（import / require 各取自己的构建）	dup:解析算法/键维表	commit:73b1eb5d
+外部包目标：#dep → 裸包（转入裸包入口解析）	dup:解析算法/键维表	commit:73b1eb5d
+解析不到 ⇒ exportsUnresolved=true（真缺失，不得静默塌成 unknown）	dup:解析算法/键维表	commit:73b1eb5d
+负控制：普通裸包不受 # 分支影响（仍走 exports 解析）	dup:解析算法/键维表	commit:73b1eb5d
+同进程内改 env 文件内容，类型面跟着变	dup:解析算法/键维表	commit:73b1eb5d
+async entry (preloads path env) resolves env globals	dup:解析算法/键维表	commit:73b1eb5d
+analysis environment carries env globals (node type face)	dup:解析算法/键维表	commit:73b1eb5d
+CJS 形态：require('./data') 解析到同目录的 data.json（不再是「文件不存在」）	dup:解析算法/键维表	commit:73b1eb5d
+ESM 形态：import './data' 不猜扩展名 ⇒ 解析不到（native ERR_MODULE_NOT_FOUND）	dup:解析算法/键维表	commit:73b1eb5d
+ESM 形态：写全扩展名即可解析（import './data.js'）	dup:解析算法/键维表	commit:73b1eb5d
+候选表：ESM 面只有精确路径；CJS 面含 .json 与 index 入口	dup:解析算法/键维表	commit:73b1eb5d
+负控制：显式 './data.json' 在两种形态下都解析得到	dup:解析算法/键维表	commit:73b1eb5d
+负控制：CJS 面的扩展名顺序同 Node（.js 先于 .json）	dup:解析算法/键维表	commit:73b1eb5d
+负控制：TS 导入方保持合并表（目录 import + index 入口仍可解析）	dup:解析算法/键维表	commit:73b1eb5d
+负控制：显式形态参数优先于文件推导（调用方知道说明符来源形态时）	dup:解析算法/键维表	commit:73b1eb5d
 ```
