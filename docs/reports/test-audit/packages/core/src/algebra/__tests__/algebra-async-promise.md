@@ -6,276 +6,322 @@
 
 ```audit
 title	rootCause	gap	action	status	evidence
-"thenable 的兑现值进 promise 的值域（原生 5，引擎改前 { then: (r) => ? }）"	"原生（ES2023 `PerformPromiseThen` + `PromiseResolve`）： 回调的**返回值**走 `PromiseResolve` ⇒ 返回值是对象且 `Get(then)` 可调用 ⇒ 走 `PromiseResolveThenableJob` ⇒ 结果 promise 的兑现值 = `then(res, rej)` 给出的 settle 值（**不是** thenable 对象本身）。 - `await Promise.resolve(1).then(() => ({then:(r)=>r(5)}))` ⇒ `5`（原生实测） - `Promise.resolve(1).then(() => ({t"	夹具漏形态	keep	keep	—
-"非 thenable 对照：回调返回普通值 ⇒ 逐字不变（promise<7>）"	"原生（ES2023 `PerformPromiseThen` + `PromiseResolve`）： 回调的**返回值**走 `PromiseResolve` ⇒ 返回值是对象且 `Get(then)` 可调用 ⇒ 走 `PromiseResolveThenableJob` ⇒ 结果 promise 的兑现值 = `then(res, rej)` 给出的 settle 值（**不是** thenable 对象本身）。 - `await Promise.resolve(1).then(() => ({then:(r)=>r(5)}))` ⇒ `5`（原生实测） - `Promise.resolve(1).then(() => ({t"	夹具漏形态	keep	keep	—
-"非 thenable 对照：回调返回普通对象 ⇒ 逐字不变（promise<{ a: 1 }>）"	"原生（ES2023 `PerformPromiseThen` + `PromiseResolve`）： 回调的**返回值**走 `PromiseResolve` ⇒ 返回值是对象且 `Get(then)` 可调用 ⇒ 走 `PromiseResolveThenableJob` ⇒ 结果 promise 的兑现值 = `then(res, rej)` 给出的 settle 值（**不是** thenable 对象本身）。 - `await Promise.resolve(1).then(() => ({then:(r)=>r(5)}))` ⇒ `5`（原生实测） - `Promise.resolve(1).then(() => ({t"	夹具漏形态	keep	keep	—
-"负控：then 不是函数 ⇒ 按普通值兑现（原生同款，promise<{ then: 1 }>）"	"原生（ES2023 `PerformPromiseThen` + `PromiseResolve`）： 回调的**返回值**走 `PromiseResolve` ⇒ 返回值是对象且 `Get(then)` 可调用 ⇒ 走 `PromiseResolveThenableJob` ⇒ 结果 promise 的兑现值 = `then(res, rej)` 给出的 settle 值（**不是** thenable 对象本身）。 - `await Promise.resolve(1).then(() => ({then:(r)=>r(5)}))` ⇒ `5`（原生实测） - `Promise.resolve(1).then(() => ({t"	夹具漏形态	keep	keep	—
-"负控：then 调过但没 settle ⇒ 永挂（unsettled，不猜）"	"原生（ES2023 `PerformPromiseThen` + `PromiseResolve`）： 回调的**返回值**走 `PromiseResolve` ⇒ 返回值是对象且 `Get(then)` 可调用 ⇒ 走 `PromiseResolveThenableJob` ⇒ 结果 promise 的兑现值 = `then(res, rej)` 给出的 settle 值（**不是** thenable 对象本身）。 - `await Promise.resolve(1).then(() => ({then:(r)=>r(5)}))` ⇒ `5`（原生实测） - `Promise.resolve(1).then(() => ({t"	夹具漏形态	keep	keep	—
-"负控：then 调 reject ⇒ rejected 通道记录该 reason"	"原生（ES2023 `PerformPromiseThen` + `PromiseResolve`）： 回调的**返回值**走 `PromiseResolve` ⇒ 返回值是对象且 `Get(then)` 可调用 ⇒ 走 `PromiseResolveThenableJob` ⇒ 结果 promise 的兑现值 = `then(res, rej)` 给出的 settle 值（**不是** thenable 对象本身）。 - `await Promise.resolve(1).then(() => ({then:(r)=>r(5)}))` ⇒ `5`（原生实测） - `Promise.resolve(1).then(() => ({t"	夹具漏形态	keep	keep	—
-"then 体抛错 ⇒ 结果被拒（reason = 抛出的值）"	"原生（ES2023 `PerformPromiseThen` + `PromiseResolve`）： 回调的**返回值**走 `PromiseResolve` ⇒ 返回值是对象且 `Get(then)` 可调用 ⇒ 走 `PromiseResolveThenableJob` ⇒ 结果 promise 的兑现值 = `then(res, rej)` 给出的 settle 值（**不是** thenable 对象本身）。 - `await Promise.resolve(1).then(() => ({then:(r)=>r(5)}))` ⇒ `5`（原生实测） - `Promise.resolve(1).then(() => ({t"	夹具漏形态	keep	keep	—
-"first-wins：then 先 res 后 rej ⇒ 只认第一次 settle（原生兑现 5）"	"原生（ES2023 `PerformPromiseThen` + `PromiseResolve`）： 回调的**返回值**走 `PromiseResolve` ⇒ 返回值是对象且 `Get(then)` 可调用 ⇒ 走 `PromiseResolveThenableJob` ⇒ 结果 promise 的兑现值 = `then(res, rej)` 给出的 settle 值（**不是** thenable 对象本身）。 - `await Promise.resolve(1).then(() => ({then:(r)=>r(5)}))` ⇒ `5`（原生实测） - `Promise.resolve(1).then(() => ({t"	夹具漏形态	keep	keep	—
-"递归采纳：兑现值仍是 thenable ⇒ 再采纳一层（原生 7）"	"原生（ES2023 `PerformPromiseThen` + `PromiseResolve`）： 回调的**返回值**走 `PromiseResolve` ⇒ 返回值是对象且 `Get(then)` 可调用 ⇒ 走 `PromiseResolveThenableJob` ⇒ 结果 promise 的兑现值 = `then(res, rej)` 给出的 settle 值（**不是** thenable 对象本身）。 - `await Promise.resolve(1).then(() => ({then:(r)=>r(5)}))` ⇒ `5`（原生实测） - `Promise.resolve(1).then(() => ({t"	夹具漏形态	keep	keep	—
-"回调返回 promise ⇒ 既有口径不变（promise<5>）"	"原生（ES2023 `PerformPromiseThen` + `PromiseResolve`）： 回调的**返回值**走 `PromiseResolve` ⇒ 返回值是对象且 `Get(then)` 可调用 ⇒ 走 `PromiseResolveThenableJob` ⇒ 结果 promise 的兑现值 = `then(res, rej)` 给出的 settle 值（**不是** thenable 对象本身）。 - `await Promise.resolve(1).then(() => ({then:(r)=>r(5)}))` ⇒ `5`（原生实测） - `Promise.resolve(1).then(() => ({t"	夹具漏形态	keep	keep	—
-"catch 臂的回调返回值是 thenable ⇒ 同款采纳（原生 5）"	"原生（ES2023 `PerformPromiseThen` + `PromiseResolve`）： 回调的**返回值**走 `PromiseResolve` ⇒ 返回值是对象且 `Get(then)` 可调用 ⇒ 走 `PromiseResolveThenableJob` ⇒ 结果 promise 的兑现值 = `then(res, rej)` 给出的 settle 值（**不是** thenable 对象本身）。 - `await Promise.resolve(1).then(() => ({then:(r)=>r(5)}))` ⇒ `5`（原生实测） - `Promise.resolve(1).then(() => ({t"	夹具漏形态	keep	keep	—
-"非 thenable 对照：catch 回调返回普通值 ⇒ 逐字不变（promise<7>）"	"原生（ES2023 `PerformPromiseThen` + `PromiseResolve`）： 回调的**返回值**走 `PromiseResolve` ⇒ 返回值是对象且 `Get(then)` 可调用 ⇒ 走 `PromiseResolveThenableJob` ⇒ 结果 promise 的兑现值 = `then(res, rej)` 给出的 settle 值（**不是** thenable 对象本身）。 - `await Promise.resolve(1).then(() => ({then:(r)=>r(5)}))` ⇒ `5`（原生实测） - `Promise.resolve(1).then(() => ({t"	夹具漏形态	keep	keep	—
-"负控：catch 回调返回的 thenable 没 settle ⇒ 永挂（unsettled）"	"原生（ES2023 `PerformPromiseThen` + `PromiseResolve`）： 回调的**返回值**走 `PromiseResolve` ⇒ 返回值是对象且 `Get(then)` 可调用 ⇒ 走 `PromiseResolveThenableJob` ⇒ 结果 promise 的兑现值 = `then(res, rej)` 给出的 settle 值（**不是** thenable 对象本身）。 - `await Promise.resolve(1).then(() => ({then:(r)=>r(5)}))` ⇒ `5`（原生实测） - `Promise.resolve(1).then(() => ({t"	夹具漏形态	keep	keep	—
-"负控：catch 回调返回的 thenable 调 reject ⇒ rejected 通道记录该 reason"	"原生（ES2023 `PerformPromiseThen` + `PromiseResolve`）： 回调的**返回值**走 `PromiseResolve` ⇒ 返回值是对象且 `Get(then)` 可调用 ⇒ 走 `PromiseResolveThenableJob` ⇒ 结果 promise 的兑现值 = `then(res, rej)` 给出的 settle 值（**不是** thenable 对象本身）。 - `await Promise.resolve(1).then(() => ({then:(r)=>r(5)}))` ⇒ `5`（原生实测） - `Promise.resolve(1).then(() => ({t"	夹具漏形态	keep	keep	—
-"finally 臂的回调返回值是 thenable ⇒ 同款采纳（原生：兑现值丢弃，保留原值 1）"	"原生（ES2023 `PerformPromiseThen` + `PromiseResolve`）： 回调的**返回值**走 `PromiseResolve` ⇒ 返回值是对象且 `Get(then)` 可调用 ⇒ 走 `PromiseResolveThenableJob` ⇒ 结果 promise 的兑现值 = `then(res, rej)` 给出的 settle 值（**不是** thenable 对象本身）。 - `await Promise.resolve(1).then(() => ({then:(r)=>r(5)}))` ⇒ `5`（原生实测） - `Promise.resolve(1).then(() => ({t"	夹具漏形态	keep	keep	—
-"非 thenable 对照：finally 回调返回普通值 ⇒ 逐字不变（promise<1>）"	"原生（ES2023 `PerformPromiseThen` + `PromiseResolve`）： 回调的**返回值**走 `PromiseResolve` ⇒ 返回值是对象且 `Get(then)` 可调用 ⇒ 走 `PromiseResolveThenableJob` ⇒ 结果 promise 的兑现值 = `then(res, rej)` 给出的 settle 值（**不是** thenable 对象本身）。 - `await Promise.resolve(1).then(() => ({then:(r)=>r(5)}))` ⇒ `5`（原生实测） - `Promise.resolve(1).then(() => ({t"	夹具漏形态	keep	keep	—
-"负控：finally 回调返回的 thenable 没 settle ⇒ 永挂（unsettled）"	"原生（ES2023 `PerformPromiseThen` + `PromiseResolve`）： 回调的**返回值**走 `PromiseResolve` ⇒ 返回值是对象且 `Get(then)` 可调用 ⇒ 走 `PromiseResolveThenableJob` ⇒ 结果 promise 的兑现值 = `then(res, rej)` 给出的 settle 值（**不是** thenable 对象本身）。 - `await Promise.resolve(1).then(() => ({then:(r)=>r(5)}))` ⇒ `5`（原生实测） - `Promise.resolve(1).then(() => ({t"	夹具漏形态	keep	keep	—
-"负控：finally 回调返回的 thenable 调 reject ⇒ 结果被拒（reason 替换原 reason）"	"原生（ES2023 `PerformPromiseThen` + `PromiseResolve`）： 回调的**返回值**走 `PromiseResolve` ⇒ 返回值是对象且 `Get(then)` 可调用 ⇒ 走 `PromiseResolveThenableJob` ⇒ 结果 promise 的兑现值 = `then(res, rej)` 给出的 settle 值（**不是** thenable 对象本身）。 - `await Promise.resolve(1).then(() => ({then:(r)=>r(5)}))` ⇒ `5`（原生实测） - `Promise.resolve(1).then(() => ({t"	夹具漏形态	keep	keep	—
-"finally 臂的拒绝通道透传 + thenable 调 reject ⇒ reason 替换（原生同款）"	"原生（ES2023 `PerformPromiseThen` + `PromiseResolve`）： 回调的**返回值**走 `PromiseResolve` ⇒ 返回值是对象且 `Get(then)` 可调用 ⇒ 走 `PromiseResolveThenableJob` ⇒ 结果 promise 的兑现值 = `then(res, rej)` 给出的 settle 值（**不是** thenable 对象本身）。 - `await Promise.resolve(1).then(() => ({then:(r)=>r(5)}))` ⇒ `5`（原生实测） - `Promise.resolve(1).then(() => ({t"	夹具漏形态	keep	keep	—
-"await then 臂的 thenable 兑现值（原生 6）"	"原生（ES2023 `PerformPromiseThen` + `PromiseResolve`）： 回调的**返回值**走 `PromiseResolve` ⇒ 返回值是对象且 `Get(then)` 可调用 ⇒ 走 `PromiseResolveThenableJob` ⇒ 结果 promise 的兑现值 = `then(res, rej)` 给出的 settle 值（**不是** thenable 对象本身）。 - `await Promise.resolve(1).then(() => ({then:(r)=>r(5)}))` ⇒ `5`（原生实测） - `Promise.resolve(1).then(() => ({t"	夹具漏形态	keep	keep	—
-"await catch 臂的 thenable 兑现值（原生 6）"	"原生（ES2023 `PerformPromiseThen` + `PromiseResolve`）： 回调的**返回值**走 `PromiseResolve` ⇒ 返回值是对象且 `Get(then)` 可调用 ⇒ 走 `PromiseResolveThenableJob` ⇒ 结果 promise 的兑现值 = `then(res, rej)` 给出的 settle 值（**不是** thenable 对象本身）。 - `await Promise.resolve(1).then(() => ({then:(r)=>r(5)}))` ⇒ `5`（原生实测） - `Promise.resolve(1).then(() => ({t"	夹具漏形态	keep	keep	—
-"await finally 臂的 thenable ⇒ 原生保留原值（2）"	"原生（ES2023 `PerformPromiseThen` + `PromiseResolve`）： 回调的**返回值**走 `PromiseResolve` ⇒ 返回值是对象且 `Get(then)` 可调用 ⇒ 走 `PromiseResolveThenableJob` ⇒ 结果 promise 的兑现值 = `then(res, rej)` 给出的 settle 值（**不是** thenable 对象本身）。 - `await Promise.resolve(1).then(() => ({then:(r)=>r(5)}))` ⇒ `5`（原生实测） - `Promise.resolve(1).then(() => ({t"	夹具漏形态	keep	keep	—
-"await 拒绝通道：then 臂的 thenable 调 reject ⇒ await 抛该 reason"	"原生（ES2023 `PerformPromiseThen` + `PromiseResolve`）： 回调的**返回值**走 `PromiseResolve` ⇒ 返回值是对象且 `Get(then)` 可调用 ⇒ 走 `PromiseResolveThenableJob` ⇒ 结果 promise 的兑现值 = `then(res, rej)` 给出的 settle 值（**不是** thenable 对象本身）。 - `await Promise.resolve(1).then(() => ({then:(r)=>r(5)}))` ⇒ `5`（原生实测） - `Promise.resolve(1).then(() => ({t"	夹具漏形态	keep	keep	—
-"await 非 thenable 不受影响（原生 8）"	"原生（ES2023 `PerformPromiseThen` + `PromiseResolve`）： 回调的**返回值**走 `PromiseResolve` ⇒ 返回值是对象且 `Get(then)` 可调用 ⇒ 走 `PromiseResolveThenableJob` ⇒ 结果 promise 的兑现值 = `then(res, rej)` 给出的 settle 值（**不是** thenable 对象本身）。 - `await Promise.resolve(1).then(() => ({then:(r)=>r(5)}))` ⇒ `5`（原生实测） - `Promise.resolve(1).then(() => ({t"	夹具漏形态	keep	keep	—
-"thenable 的兑现值进 promise 的值域（原生 1，引擎改前 { then: (r) => ? }）"	"引擎此前把 thenable **对象本身**当成待决值（只标 unsettled，从不调 `then`） ⇒ 声明出与原生**互斥**的具体类型（原生 `number` vs 引擎 `object`）⇒ 该值域 会一路进 dts / zod / guard / standard 产物面。 修法（`builtins/promise.ts`）： - 新增 thenable 采纳机制 `thenableAdoption` / `adoptThenableChain` （**判定与调用**与 await 面（`exec/runtime/async.ts` 的 `adoptThenable`， ）**同一套**——不另造）； 断言：expe"	夹具漏形态	keep	keep	—
-"负控制：非 thenable 的值不被采纳（Promise.resolve(1) → promise<1>）"	"引擎此前把 thenable **对象本身**当成待决值（只标 unsettled，从不调 `then`） ⇒ 声明出与原生**互斥**的具体类型（原生 `number` vs 引擎 `object`）⇒ 该值域 会一路进 dts / zod / guard / standard 产物面。 修法（`builtins/promise.ts`）： - 新增 thenable 采纳机制 `thenableAdoption` / `adoptThenableChain` （**判定与调用**与 await 面（`exec/runtime/async.ts` 的 `adoptThenable`， ）**同一套**——不另造）； 断言：expe"	夹具漏形态	keep	keep	—
-"负控制：非 thenable 的对象照旧（Promise.resolve({a:1}) → promise<{ a: 1 }>）"	"引擎此前把 thenable **对象本身**当成待决值（只标 unsettled，从不调 `then`） ⇒ 声明出与原生**互斥**的具体类型（原生 `number` vs 引擎 `object`）⇒ 该值域 会一路进 dts / zod / guard / standard 产物面。 修法（`builtins/promise.ts`）： - 新增 thenable 采纳机制 `thenableAdoption` / `adoptThenableChain` （**判定与调用**与 await 面（`exec/runtime/async.ts` 的 `adoptThenable`， ）**同一套**——不另造）； 断言：expe"	夹具漏形态	keep	keep	—
-"负控制：promise 实参仍走 promise 通道（Promise.resolve(Promise.resolve(1)) → promise<1>）"	"引擎此前把 thenable **对象本身**当成待决值（只标 unsettled，从不调 `then`） ⇒ 声明出与原生**互斥**的具体类型（原生 `number` vs 引擎 `object`）⇒ 该值域 会一路进 dts / zod / guard / standard 产物面。 修法（`builtins/promise.ts`）： - 新增 thenable 采纳机制 `thenableAdoption` / `adoptThenableChain` （**判定与调用**与 await 面（`exec/runtime/async.ts` 的 `adoptThenable`， ）**同一套**——不另造）； 断言：expe"	夹具漏形态	keep	keep	—
-"负控制：then **不是函数** ⇒ 不当作 thenable（按普通值兑现）"	"引擎此前把 thenable **对象本身**当成待决值（只标 unsettled，从不调 `then`） ⇒ 声明出与原生**互斥**的具体类型（原生 `number` vs 引擎 `object`）⇒ 该值域 会一路进 dts / zod / guard / standard 产物面。 修法（`builtins/promise.ts`）： - 新增 thenable 采纳机制 `thenableAdoption` / `adoptThenableChain` （**判定与调用**与 await 面（`exec/runtime/async.ts` 的 `adoptThenable`， ）**同一套**——不另造）； 断言：expe"	夹具漏形态	keep	keep	—
-"reject 通道：thenable 的 then 调 reject ⇒ 拒绝 reason 落 rejected 通道"	"引擎此前把 thenable **对象本身**当成待决值（只标 unsettled，从不调 `then`） ⇒ 声明出与原生**互斥**的具体类型（原生 `number` vs 引擎 `object`）⇒ 该值域 会一路进 dts / zod / guard / standard 产物面。 修法（`builtins/promise.ts`）： - 新增 thenable 采纳机制 `thenableAdoption` / `adoptThenableChain` （**判定与调用**与 await 面（`exec/runtime/async.ts` 的 `adoptThenable`， ）**同一套**——不另造）； 断言：expe"	夹具漏形态	keep	keep	—
-"reject 通道：await 该 promise ⇒ 抛 reason（catch 臂可达）"	"引擎此前把 thenable **对象本身**当成待决值（只标 unsettled，从不调 `then`） ⇒ 声明出与原生**互斥**的具体类型（原生 `number` vs 引擎 `object`）⇒ 该值域 会一路进 dts / zod / guard / standard 产物面。 修法（`builtins/promise.ts`）： - 新增 thenable 采纳机制 `thenableAdoption` / `adoptThenableChain` （**判定与调用**与 await 面（`exec/runtime/async.ts` 的 `adoptThenable`， ）**同一套**——不另造）； 断言：expe"	夹具漏形态	keep	keep	—
-"then 体抛错 ⇒ promise 被拒绝（reason = 抛出的值）"	"引擎此前把 thenable **对象本身**当成待决值（只标 unsettled，从不调 `then`） ⇒ 声明出与原生**互斥**的具体类型（原生 `number` vs 引擎 `object`）⇒ 该值域 会一路进 dts / zod / guard / standard 产物面。 修法（`builtins/promise.ts`）： - 新增 thenable 采纳机制 `thenableAdoption` / `adoptThenableChain` （**判定与调用**与 await 面（`exec/runtime/async.ts` 的 `adoptThenable`， ）**同一套**——不另造）； 断言：expe"	夹具漏形态	keep	keep	—
-"递归采纳：兑现值仍是 thenable ⇒ 再采纳一层（原生 7）"	"引擎此前把 thenable **对象本身**当成待决值（只标 unsettled，从不调 `then`） ⇒ 声明出与原生**互斥**的具体类型（原生 `number` vs 引擎 `object`）⇒ 该值域 会一路进 dts / zod / guard / standard 产物面。 修法（`builtins/promise.ts`）： - 新增 thenable 采纳机制 `thenableAdoption` / `adoptThenableChain` （**判定与调用**与 await 面（`exec/runtime/async.ts` 的 `adoptThenable`， ）**同一套**——不另造）； 断言：expe"	夹具漏形态	keep	keep	—
-"then 不 settle ⇒ promise 永挂（值域 unknown，unsettled）"	"引擎此前把 thenable **对象本身**当成待决值（只标 unsettled，从不调 `then`） ⇒ 声明出与原生**互斥**的具体类型（原生 `number` vs 引擎 `object`）⇒ 该值域 会一路进 dts / zod / guard / standard 产物面。 修法（`builtins/promise.ts`）： - 新增 thenable 采纳机制 `thenableAdoption` / `adoptThenableChain` （**判定与调用**与 await 面（`exec/runtime/async.ts` 的 `adoptThenable`， ）**同一套**——不另造）； 断言：expe"	夹具漏形态	keep	keep	—
-"first-wins：then 先 res 后 rej ⇒ 只认第一次 settle（原生兑现 1）"	"引擎此前把 thenable **对象本身**当成待决值（只标 unsettled，从不调 `then`） ⇒ 声明出与原生**互斥**的具体类型（原生 `number` vs 引擎 `object`）⇒ 该值域 会一路进 dts / zod / guard / standard 产物面。 修法（`builtins/promise.ts`）： - 新增 thenable 采纳机制 `thenableAdoption` / `adoptThenableChain` （**判定与调用**与 await 面（`exec/runtime/async.ts` 的 `adoptThenable`， ）**同一套**——不另造）； 断言：expe"	夹具漏形态	keep	keep	—
-"first-wins：then 先 rej 后 res ⇒ 拒绝（原生 reason = boom）"	"引擎此前把 thenable **对象本身**当成待决值（只标 unsettled，从不调 `then`） ⇒ 声明出与原生**互斥**的具体类型（原生 `number` vs 引擎 `object`）⇒ 该值域 会一路进 dts / zod / guard / standard 产物面。 修法（`builtins/promise.ts`）： - 新增 thenable 采纳机制 `thenableAdoption` / `adoptThenableChain` （**判定与调用**与 await 面（`exec/runtime/async.ts` 的 `adoptThenable`， ）**同一套**——不另造）； 断言：expe"	夹具漏形态	keep	keep	—
-"settle 之后的抛错被忽略（原生：thenable job 的抛错不改已定的兑现）"	"引擎此前把 thenable **对象本身**当成待决值（只标 unsettled，从不调 `then`） ⇒ 声明出与原生**互斥**的具体类型（原生 `number` vs 引擎 `object`）⇒ 该值域 会一路进 dts / zod / guard / standard 产物面。 修法（`builtins/promise.ts`）： - 新增 thenable 采纳机制 `thenableAdoption` / `adoptThenableChain` （**判定与调用**与 await 面（`exec/runtime/async.ts` 的 `adoptThenable`， ）**同一套**——不另造）； 断言：expe"	夹具漏形态	keep	keep	—
-"执行器 resolve 采到 thenable ⇒ 兑现值进 promise 的值域（原生 1）"	"引擎此前把 thenable **对象本身**当成待决值（只标 unsettled，从不调 `then`） ⇒ 声明出与原生**互斥**的具体类型（原生 `number` vs 引擎 `object`）⇒ 该值域 会一路进 dts / zod / guard / standard 产物面。 修法（`builtins/promise.ts`）： - 新增 thenable 采纳机制 `thenableAdoption` / `adoptThenableChain` （**判定与调用**与 await 面（`exec/runtime/async.ts` 的 `adoptThenable`， ）**同一套**——不另造）； 断言：expe"	夹具漏形态	keep	keep	—
-"执行器 resolve 采到非 thenable ⇒ 照旧（promise<{ a: 1 }>）"	"引擎此前把 thenable **对象本身**当成待决值（只标 unsettled，从不调 `then`） ⇒ 声明出与原生**互斥**的具体类型（原生 `number` vs 引擎 `object`）⇒ 该值域 会一路进 dts / zod / guard / standard 产物面。 修法（`builtins/promise.ts`）： - 新增 thenable 采纳机制 `thenableAdoption` / `adoptThenableChain` （**判定与调用**与 await 面（`exec/runtime/async.ts` 的 `adoptThenable`， ）**同一套**——不另造）； 断言：expe"	夹具漏形态	keep	keep	—
-"执行器 resolve 采到 thenable 且 then 调 reject ⇒ 拒绝通道带 reason"	"引擎此前把 thenable **对象本身**当成待决值（只标 unsettled，从不调 `then`） ⇒ 声明出与原生**互斥**的具体类型（原生 `number` vs 引擎 `object`）⇒ 该值域 会一路进 dts / zod / guard / standard 产物面。 修法（`builtins/promise.ts`）： - 新增 thenable 采纳机制 `thenableAdoption` / `adoptThenableChain` （**判定与调用**与 await 面（`exec/runtime/async.ts` 的 `adoptThenable`， ）**同一套**——不另造）； 断言：expe"	夹具漏形态	keep	keep	—
-"await thenable 仍交付 settle 值（原生 6，机制同款）"	"引擎此前把 thenable **对象本身**当成待决值（只标 unsettled，从不调 `then`） ⇒ 声明出与原生**互斥**的具体类型（原生 `number` vs 引擎 `object`）⇒ 该值域 会一路进 dts / zod / guard / standard 产物面。 修法（`builtins/promise.ts`）： - 新增 thenable 采纳机制 `thenableAdoption` / `adoptThenableChain` （**判定与调用**与 await 面（`exec/runtime/async.ts` 的 `adoptThenable`， ）**同一套**——不另造）； 断言：expe"	夹具漏形态	keep	keep	—
-"await promise 面采纳后的兑现值（await Promise.resolve(thenable) → 1）"	"引擎此前把 thenable **对象本身**当成待决值（只标 unsettled，从不调 `then`） ⇒ 声明出与原生**互斥**的具体类型（原生 `number` vs 引擎 `object`）⇒ 该值域 会一路进 dts / zod / guard / standard 产物面。 修法（`builtins/promise.ts`）： - 新增 thenable 采纳机制 `thenableAdoption` / `adoptThenableChain` （**判定与调用**与 await 面（`exec/runtime/async.ts` 的 `adoptThenable`， ）**同一套**——不另造）； 断言：expe"	夹具漏形态	keep	keep	—
-"await 非 thenable 不受影响（await 5 → 5）"	"引擎此前把 thenable **对象本身**当成待决值（只标 unsettled，从不调 `then`） ⇒ 声明出与原生**互斥**的具体类型（原生 `number` vs 引擎 `object`）⇒ 该值域 会一路进 dts / zod / guard / standard 产物面。 修法（`builtins/promise.ts`）： - 新增 thenable 采纳机制 `thenableAdoption` / `adoptThenableChain` （**判定与调用**与 await 面（`exec/runtime/async.ts` 的 `adoptThenable`， ）**同一套**——不另造）； 断言：expe"	夹具漏形态	keep	keep	—
-"next() 返回 promise（typeof next().then === function）"	"ES 语义：`async function*`（及 `async *` 方法）返回 AsyncGenerator—— next()/return()/throw() 返回 **promise**（promise<iterResult>）、装 `@@asyncIterator` 自返方法、`Object.prototype.toString` 折 \"[object AsyncGenerator]\"，且**不**有 `@@iterator`（同步迭代面缺席）。 修复前：async generator 与同步 generator 同编（$gen 同步协议对象）—— next() 返回裸 iterResult（无 then）、无 @@asy"	夹具漏形态	keep	keep	—
-"next() 的结果是 Promise 实例"	"ES 语义：`async function*`（及 `async *` 方法）返回 AsyncGenerator—— next()/return()/throw() 返回 **promise**（promise<iterResult>）、装 `@@asyncIterator` 自返方法、`Object.prototype.toString` 折 \"[object AsyncGenerator]\"，且**不**有 `@@iterator`（同步迭代面缺席）。 修复前：async generator 与同步 generator 同编（$gen 同步协议对象）—— next() 返回裸 iterResult（无 then）、无 @@asy"	夹具漏形态	keep	keep	—
-"装 @@asyncIterator 自返方法"	"ES 语义：`async function*`（及 `async *` 方法）返回 AsyncGenerator—— next()/return()/throw() 返回 **promise**（promise<iterResult>）、装 `@@asyncIterator` 自返方法、`Object.prototype.toString` 折 \"[object AsyncGenerator]\"，且**不**有 `@@iterator`（同步迭代面缺席）。 修复前：async generator 与同步 generator 同编（$gen 同步协议对象）—— next() 返回裸 iterResult（无 then）、无 @@asy"	夹具漏形态	keep	keep	—
-"Object.prototype.toString 折 [object AsyncGenerator]"	"ES 语义：`async function*`（及 `async *` 方法）返回 AsyncGenerator—— next()/return()/throw() 返回 **promise**（promise<iterResult>）、装 `@@asyncIterator` 自返方法、`Object.prototype.toString` 折 \"[object AsyncGenerator]\"，且**不**有 `@@iterator`（同步迭代面缺席）。 修复前：async generator 与同步 generator 同编（$gen 同步协议对象）—— next() 返回裸 iterResult（无 then）、无 @@asy"	夹具漏形态	keep	keep	—
-"同步迭代面缺席（原生无 @@iterator）"	"ES 语义：`async function*`（及 `async *` 方法）返回 AsyncGenerator—— next()/return()/throw() 返回 **promise**（promise<iterResult>）、装 `@@asyncIterator` 自返方法、`Object.prototype.toString` 折 \"[object AsyncGenerator]\"，且**不**有 `@@iterator`（同步迭代面缺席）。 修复前：async generator 与同步 generator 同编（$gen 同步协议对象）—— next() 返回裸 iterResult（无 then）、无 @@asy"	夹具漏形态	keep	keep	—
-"async *m(){}：next() 返回 promise"	"ES 语义：`async function*`（及 `async *` 方法）返回 AsyncGenerator—— next()/return()/throw() 返回 **promise**（promise<iterResult>）、装 `@@asyncIterator` 自返方法、`Object.prototype.toString` 折 \"[object AsyncGenerator]\"，且**不**有 `@@iterator`（同步迭代面缺席）。 修复前：async generator 与同步 generator 同编（$gen 同步协议对象）—— next() 返回裸 iterResult（无 then）、无 @@asy"	夹具漏形态	keep	keep	—
-"async *m(){}：装 @@asyncIterator"	"ES 语义：`async function*`（及 `async *` 方法）返回 AsyncGenerator—— next()/return()/throw() 返回 **promise**（promise<iterResult>）、装 `@@asyncIterator` 自返方法、`Object.prototype.toString` 折 \"[object AsyncGenerator]\"，且**不**有 `@@iterator`（同步迭代面缺席）。 修复前：async generator 与同步 generator 同编（$gen 同步协议对象）—— next() 返回裸 iterResult（无 then）、无 @@asy"	夹具漏形态	keep	keep	—
-"async *m(){}：tag 折 [object AsyncGenerator]"	"ES 语义：`async function*`（及 `async *` 方法）返回 AsyncGenerator—— next()/return()/throw() 返回 **promise**（promise<iterResult>）、装 `@@asyncIterator` 自返方法、`Object.prototype.toString` 折 \"[object AsyncGenerator]\"，且**不**有 `@@iterator`（同步迭代面缺席）。 修复前：async generator 与同步 generator 同编（$gen 同步协议对象）—— next() 返回裸 iterResult（无 then）、无 @@asy"	夹具漏形态	keep	keep	—
-"next() 仍是裸函数（非 promise）"	"ES 语义：`async function*`（及 `async *` 方法）返回 AsyncGenerator—— next()/return()/throw() 返回 **promise**（promise<iterResult>）、装 `@@asyncIterator` 自返方法、`Object.prototype.toString` 折 \"[object AsyncGenerator]\"，且**不**有 `@@iterator`（同步迭代面缺席）。 修复前：async generator 与同步 generator 同编（$gen 同步协议对象）—— next() 返回裸 iterResult（无 then）、无 @@asy"	夹具漏形态	keep	keep	—
-"同步 generator 仍有 @@iterator"	"ES 语义：`async function*`（及 `async *` 方法）返回 AsyncGenerator—— next()/return()/throw() 返回 **promise**（promise<iterResult>）、装 `@@asyncIterator` 自返方法、`Object.prototype.toString` 折 \"[object AsyncGenerator]\"，且**不**有 `@@iterator`（同步迭代面缺席）。 修复前：async generator 与同步 generator 同编（$gen 同步协议对象）—— next() 返回裸 iterResult（无 then）、无 @@asy"	夹具漏形态	keep	keep	—
-"同步 generator 的 next() 不是 promise"	"ES 语义：`async function*`（及 `async *` 方法）返回 AsyncGenerator—— next()/return()/throw() 返回 **promise**（promise<iterResult>）、装 `@@asyncIterator` 自返方法、`Object.prototype.toString` 折 \"[object AsyncGenerator]\"，且**不**有 `@@iterator`（同步迭代面缺席）。 修复前：async generator 与同步 generator 同编（$gen 同步协议对象）—— next() 返回裸 iterResult（无 then）、无 @@asy"	夹具漏形态	keep	keep	—
-"async generator（函数表达式面）：for-await 累加精确 3（原生 1+2=3）"	"回归（**for-await 元素域**面）：async generator 的元素域必须走 **元素侧表**（与同步 generator 同口径），不得落 asyncOnly 的 unknown 快路径。 此前该分支的元素域恒折 unknown ⇒ 循环变量退 unknown ⇒ 累加值退 `number | unknown`（原生是精确 3）。 断言：expect("	没测该层	keep	keep	—
-"async generator：三个 yield 累加精确 6（原生 1+2+3=6）"	"回归（**for-await 元素域**面）：async generator 的元素域必须走 **元素侧表**（与同步 generator 同口径），不得落 asyncOnly 的 unknown 快路径。 此前该分支的元素域恒折 unknown ⇒ 循环变量退 unknown ⇒ 累加值退 `number | unknown`（原生是精确 3）。 断言：expect("	没测该层	keep	keep	—
-"async generator：单个 yield 精确 7"	"回归（**for-await 元素域**面）：async generator 的元素域必须走 **元素侧表**（与同步 generator 同口径），不得落 asyncOnly 的 unknown 快路径。 此前该分支的元素域恒折 unknown ⇒ 循环变量退 unknown ⇒ 累加值退 `number | unknown`（原生是精确 3）。 断言：expect("	没测该层	keep	keep	—
-"async generator：字符串元素逐项拼接精确 \"ab\"（原生 \"ab\"）"	"回归（**for-await 元素域**面）：async generator 的元素域必须走 **元素侧表**（与同步 generator 同口径），不得落 asyncOnly 的 unknown 快路径。 此前该分支的元素域恒折 unknown ⇒ 循环变量退 unknown ⇒ 累加值退 `number | unknown`（原生是精确 3）。 断言：expect("	没测该层	keep	keep	—
-"async generator：空生成器 → 0 次迭代，精确 0（原生 0）"	"回归（**for-await 元素域**面）：async generator 的元素域必须走 **元素侧表**（与同步 generator 同口径），不得落 asyncOnly 的 unknown 快路径。 此前该分支的元素域恒折 unknown ⇒ 循环变量退 unknown ⇒ 累加值退 `number | unknown`（原生是精确 3）。 断言：expect("	没测该层	keep	keep	—
-"class async *m(){}：for-await 累加精确 3（原生 1+2=3）"	"回归（**for-await 元素域**面）：async generator 的元素域必须走 **元素侧表**（与同步 generator 同口径），不得落 asyncOnly 的 unknown 快路径。 此前该分支的元素域恒折 unknown ⇒ 循环变量退 unknown ⇒ 累加值退 `number | unknown`（原生是精确 3）。 断言：expect("	没测该层	keep	keep	—
-"元素域不是 unknown（不得退成 number | unknown）"	"回归（**for-await 元素域**面）：async generator 的元素域必须走 **元素侧表**（与同步 generator 同口径），不得落 asyncOnly 的 unknown 快路径。 此前该分支的元素域恒折 unknown ⇒ 循环变量退 unknown ⇒ 累加值退 `number | unknown`（原生是精确 3）。 断言：expect(litValue(unwrapPromise(r.result))).toEqual({ ok: true, value: 3 });"	没测该层	keep	keep	—
-"同步 generator 的 for-await（同步迭代器回退）仍是精确 3"	"回归（**for-await 元素域**面）：async generator 的元素域必须走 **元素侧表**（与同步 generator 同口径），不得落 asyncOnly 的 unknown 快路径。 此前该分支的元素域恒折 unknown ⇒ 循环变量退 unknown ⇒ 累加值退 `number | unknown`（原生是精确 3）。 断言：expect("	没测该层	keep	keep	—
-"数组的 for-await（同步回退）仍是精确 3"	"回归（**for-await 元素域**面）：async generator 的元素域必须走 **元素侧表**（与同步 generator 同口径），不得落 asyncOnly 的 unknown 快路径。 此前该分支的元素域恒折 unknown ⇒ 循环变量退 unknown ⇒ 累加值退 `number | unknown`（原生是精确 3）。 断言：expect("	没测该层	keep	keep	—
-"同步 generator 的 for-of（同步迭代面）仍是精确 3"	"回归（**for-await 元素域**面）：async generator 的元素域必须走 **元素侧表**（与同步 generator 同口径），不得落 asyncOnly 的 unknown 快路径。 此前该分支的元素域恒折 unknown ⇒ 循环变量退 unknown ⇒ 累加值退 `number | unknown`（原生是精确 3）。 断言：expect("	没测该层	keep	keep	—
-"普通 async 函数（非 generator）不受影响"	"回归（**for-await 元素域**面）：async generator 的元素域必须走 **元素侧表**（与同步 generator 同口径），不得落 asyncOnly 的 unknown 快路径。 此前该分支的元素域恒折 unknown ⇒ 循环变量退 unknown ⇒ 累加值退 `number | unknown`（原生是精确 3）。 断言：expect(v(wrap(`const h = async () => 5; return await h();`))).toEqual({"	没测该层	keep	keep	—
-"非生成器的仅异步可迭代对象：元素域仍折 unknown（不得臆造元素）"	"回归（**for-await 元素域**面）：async generator 的元素域必须走 **元素侧表**（与同步 generator 同口径），不得落 asyncOnly 的 unknown 快路径。 此前该分支的元素域恒折 unknown ⇒ 循环变量退 unknown ⇒ 累加值退 `number | unknown`（原生是精确 3）。 断言：expect(litValue(inner).ok).toBe(false);；expect(inner.shape.k).not.toBe(\"prim\");"	没测该层	keep	keep	—
-"async generator 的 next() 仍返 promise（Bug 141 主修复面不回归）"	"回归（**for-await 元素域**面）：async generator 的元素域必须走 **元素侧表**（与同步 generator 同口径），不得落 asyncOnly 的 unknown 快路径。 此前该分支的元素域恒折 unknown ⇒ 循环变量退 unknown ⇒ 累加值退 `number | unknown`（原生是精确 3）。 断言：expect("	没测该层	keep	keep	—
-"同步 generator 的 next() 仍返裸 iterResult（非 promise）"	"回归（**for-await 元素域**面）：async generator 的元素域必须走 **元素侧表**（与同步 generator 同口径），不得落 asyncOnly 的 unknown 快路径。 此前该分支的元素域恒折 unknown ⇒ 循环变量退 unknown ⇒ 累加值退 `number | unknown`（原生是精确 3）。 断言：expect("	没测该层	keep	keep	—
-"嵌套声明：next() 返回 promise（typeof next().then === function）"	"ES 语义：`async function*` 返回 AsyncGenerator——next()/return()/throw() 返回 **promise**、装 `@@asyncIterator` 自返方法、`Object.prototype.toString` 折 \"[object AsyncGenerator]\"，且**不**有 `@@iterator`（同步迭代面缺席）。 修复前：声明面仍被编成**同步** generator（`$gen(() => {…})` 未透 async 位） ⇒ next() 返回裸 iterResult（无 then）、无 @@asyncIterator、tag 折 \"[object Obj"	没测该层	keep	keep	—
-"嵌套声明：next() 的结果是 Promise 实例"	"ES 语义：`async function*` 返回 AsyncGenerator——next()/return()/throw() 返回 **promise**、装 `@@asyncIterator` 自返方法、`Object.prototype.toString` 折 \"[object AsyncGenerator]\"，且**不**有 `@@iterator`（同步迭代面缺席）。 修复前：声明面仍被编成**同步** generator（`$gen(() => {…})` 未透 async 位） ⇒ next() 返回裸 iterResult（无 then）、无 @@asyncIterator、tag 折 \"[object Obj"	没测该层	keep	keep	—
-"嵌套声明：装 @@asyncIterator 自返方法"	"ES 语义：`async function*` 返回 AsyncGenerator——next()/return()/throw() 返回 **promise**、装 `@@asyncIterator` 自返方法、`Object.prototype.toString` 折 \"[object AsyncGenerator]\"，且**不**有 `@@iterator`（同步迭代面缺席）。 修复前：声明面仍被编成**同步** generator（`$gen(() => {…})` 未透 async 位） ⇒ next() 返回裸 iterResult（无 then）、无 @@asyncIterator、tag 折 \"[object Obj"	没测该层	keep	keep	—
-"嵌套声明：Object.prototype.toString 折 [object AsyncGenerator]"	"ES 语义：`async function*` 返回 AsyncGenerator——next()/return()/throw() 返回 **promise**、装 `@@asyncIterator` 自返方法、`Object.prototype.toString` 折 \"[object AsyncGenerator]\"，且**不**有 `@@iterator`（同步迭代面缺席）。 修复前：声明面仍被编成**同步** generator（`$gen(() => {…})` 未透 async 位） ⇒ next() 返回裸 iterResult（无 then）、无 @@asyncIterator、tag 折 \"[object Obj"	没测该层	keep	keep	—
-"嵌套声明：同步迭代面缺席（原生无 @@iterator）"	"ES 语义：`async function*` 返回 AsyncGenerator——next()/return()/throw() 返回 **promise**、装 `@@asyncIterator` 自返方法、`Object.prototype.toString` 折 \"[object AsyncGenerator]\"，且**不**有 `@@iterator`（同步迭代面缺席）。 修复前：声明面仍被编成**同步** generator（`$gen(() => {…})` 未透 async 位） ⇒ next() 返回裸 iterResult（无 then）、无 @@asyncIterator、tag 折 \"[object Obj"	没测该层	keep	keep	—
-"模块级声明：next() 返回 promise"	"ES 语义：`async function*` 返回 AsyncGenerator——next()/return()/throw() 返回 **promise**、装 `@@asyncIterator` 自返方法、`Object.prototype.toString` 折 \"[object AsyncGenerator]\"，且**不**有 `@@iterator`（同步迭代面缺席）。 修复前：声明面仍被编成**同步** generator（`$gen(() => {…})` 未透 async 位） ⇒ next() 返回裸 iterResult（无 then）、无 @@asyncIterator、tag 折 \"[object Obj"	没测该层	keep	keep	—
-"模块级声明：装 @@asyncIterator + tag 折 [object AsyncGenerator]"	"ES 语义：`async function*` 返回 AsyncGenerator——next()/return()/throw() 返回 **promise**、装 `@@asyncIterator` 自返方法、`Object.prototype.toString` 折 \"[object AsyncGenerator]\"，且**不**有 `@@iterator`（同步迭代面缺席）。 修复前：声明面仍被编成**同步** generator（`$gen(() => {…})` 未透 async 位） ⇒ next() 返回裸 iterResult（无 then）、无 @@asyncIterator、tag 折 \"[object Obj"	没测该层	keep	keep	—
-"同步 generator 声明：next() 不是 promise"	"ES 语义：`async function*` 返回 AsyncGenerator——next()/return()/throw() 返回 **promise**、装 `@@asyncIterator` 自返方法、`Object.prototype.toString` 折 \"[object AsyncGenerator]\"，且**不**有 `@@iterator`（同步迭代面缺席）。 修复前：声明面仍被编成**同步** generator（`$gen(() => {…})` 未透 async 位） ⇒ next() 返回裸 iterResult（无 then）、无 @@asyncIterator、tag 折 \"[object Obj"	没测该层	keep	keep	—
-"同步 generator 声明：仍有 @@iterator"	"ES 语义：`async function*` 返回 AsyncGenerator——next()/return()/throw() 返回 **promise**、装 `@@asyncIterator` 自返方法、`Object.prototype.toString` 折 \"[object AsyncGenerator]\"，且**不**有 `@@iterator`（同步迭代面缺席）。 修复前：声明面仍被编成**同步** generator（`$gen(() => {…})` 未透 async 位） ⇒ next() 返回裸 iterResult（无 then）、无 @@asyncIterator、tag 折 \"[object Obj"	没测该层	keep	keep	—
-"同步 generator 声明：next() 仍是裸函数（无 then）"	"ES 语义：`async function*` 返回 AsyncGenerator——next()/return()/throw() 返回 **promise**、装 `@@asyncIterator` 自返方法、`Object.prototype.toString` 折 \"[object AsyncGenerator]\"，且**不**有 `@@iterator`（同步迭代面缺席）。 修复前：声明面仍被编成**同步** generator（`$gen(() => {…})` 未透 async 位） ⇒ next() 返回裸 iterResult（无 then）、无 @@asyncIterator、tag 折 \"[object Obj"	没测该层	keep	keep	—
-"async 函数（非 generator）声明：仍返回 promise"	"ES 语义：`async function*` 返回 AsyncGenerator——next()/return()/throw() 返回 **promise**、装 `@@asyncIterator` 自返方法、`Object.prototype.toString` 折 \"[object AsyncGenerator]\"，且**不**有 `@@iterator`（同步迭代面缺席）。 修复前：声明面仍被编成**同步** generator（`$gen(() => {…})` 未透 async 位） ⇒ next() 返回裸 iterResult（无 then）、无 @@asyncIterator、tag 折 \"[object Obj"	没测该层	keep	keep	—
-"static async 方法返回 promise（typeof → object）"	"回归：class 的 **static async 方法**未进 $async 包装。 函数体 throw 不同步抛到调用点（确定拒绝 promise）。 断言：expect(v(wrap(`class A { static async m(){ return 1; } } return typeof A.m();`))).toEqual({"	没测该层	keep	keep	—
-"static async 方法的返回是 Promise 实例"	"回归：class 的 **static async 方法**未进 $async 包装。 函数体 throw 不同步抛到调用点（确定拒绝 promise）。 断言：expect("	没测该层	keep	keep	—
-"体内 throw 不同步抛到调用点（此前同步抛）"	"回归：class 的 **static async 方法**未进 $async 包装。 函数体 throw 不同步抛到调用点（确定拒绝 promise）。 断言：expect("	没测该层	keep	keep	—
-"负控制：实例 async 方法仍返回 promise"	"回归：class 的 **static async 方法**未进 $async 包装。 函数体 throw 不同步抛到调用点（确定拒绝 promise）。 断言：expect(v(wrap(`class A { async m(){ return 1; } } return typeof new A().m();`))).toEqual({"	没测该层	keep	keep	—
-"负控制：静态同步方法仍返回原始值"	"ES 语义：`async function*` 返回 AsyncGenerator——next()/return()/throw() 返回 **promise**、装 `@@asyncIterator` 自返方法、`Object.prototype.toString` 折 \"[object AsyncGenerator]\"，且**不**有 `@@iterator`（同步迭代面缺席）。 修复前：声明面仍被编成**同步** generator（`$gen(() => {…})` 未透 async 位） ⇒ next() 返回裸 iterResult（无 then）、无 @@asyncIterator、tag 折 \"[object Obj"	没测该层	keep	keep	—
-"负控制：静态同步方法的 throw 仍同步抛"	"回归：class 的 **static async 方法**未进 $async 包装。 函数体 throw 不同步抛到调用点（确定拒绝 promise）。 断言：expect("	没测该层	keep	keep	—
-"原生：f() 返回后 await 之前的写可见、之后的写不可见（n = 0）"	"回归钉：`await` **真挂起**——async 体在 await 处挂起， await 之后的语句**不在调用点内联跑完**（原生：恢复点是微任务）。 原生：`await` 挂起当前 async 体——`await` 之后的语句在**微任务**里 才跑 ⇒ 调用方在同步窗口看不到 await 之后的副作用。 断言：expect("	没测该层	keep	keep	—
-"原生：await 之后的副作用不进调用方的同步窗口（log = \"a\"）"	"回归钉：`await` **真挂起**——async 体在 await 处挂起， await 之后的语句**不在调用点内联跑完**（原生：恢复点是微任务）。 原生：`await` 挂起当前 async 体——`await` 之后的语句在**微任务**里 才跑 ⇒ 调用方在同步窗口看不到 await 之后的副作用。 断言：expect("	没测该层	keep	keep	—
-"原生：for-await 体的 await 之后的效果同样延后"	"回归钉：`await` **真挂起**——async 体在 await 处挂起， await 之后的语句**不在调用点内联跑完**（原生：恢复点是微任务）。 原生：`await` 挂起当前 async 体——`await` 之后的语句在**微任务**里 才跑 ⇒ 调用方在同步窗口看不到 await 之后的副作用。 断言：expect("	没测该层	keep	keep	—
-"原生：async 函数返回 pending promise（Promise { 0 } ⇒ promise<0>）"	"回归钉：`await` **真挂起**——async 体在 await 处挂起， await 之后的语句**不在调用点内联跑完**（原生：恢复点是微任务）。 原生：`await` 挂起当前 async 体——`await` 之后的语句在**微任务**里 才跑 ⇒ 调用方在同步窗口看不到 await 之后的副作用。 断言：expect(litValue($await(r.result as never))).toEqual({ ok: true, value: 0 });"	没测该层	keep	keep	—
-"await 之前的写保留（原生 1，引擎改前 11）"	"回归钉：`await` **真挂起**——async 体在 await 处挂起， await 之后的语句**不在调用点内联跑完**（原生：恢复点是微任务）。 原生：`await` 挂起当前 async 体——`await` 之后的语句在**微任务**里 才跑 ⇒ 调用方在同步窗口看不到 await 之后的副作用。 断言：expect("	没测该层	keep	keep	—
-"调用点自身的同步语句不被 async 续体插队（原生 \"1,3,4\"）"	"回归钉：`await` **真挂起**——async 体在 await 处挂起， await 之后的语句**不在调用点内联跑完**（原生：恢复点是微任务）。 原生：`await` 挂起当前 async 体——`await` 之后的语句在**微任务**里 才跑 ⇒ 调用方在同步窗口看不到 await 之后的副作用。 断言：expect("	没测该层	keep	keep	—
-"await 之后的写对 typeof 观察不可见（原生 \"undefined\"）"	"回归钉：`await` **真挂起**——async 体在 await 处挂起， await 之后的语句**不在调用点内联跑完**（原生：恢复点是微任务）。 原生：`await` 挂起当前 async 体——`await` 之后的语句在**微任务**里 才跑 ⇒ 调用方在同步窗口看不到 await 之后的副作用。 断言：expect("	没测该层	keep	keep	—
-"箭头 async 体同样挂起（原生 \"a,c\"，引擎改前 \"a,b,c\"）"	"回归钉：`await` **真挂起**——async 体在 await 处挂起， await 之后的语句**不在调用点内联跑完**（原生：恢复点是微任务）。 原生：`await` 挂起当前 async 体——`await` 之后的语句在**微任务**里 才跑 ⇒ 调用方在同步窗口看不到 await 之后的副作用。 断言：expect("	没测该层	keep	keep	—
-"pending promise 不被穿行（原生 \"a\"，引擎改前 \"a,b\"）"	"回归钉：`await` **真挂起**——async 体在 await 处挂起， await 之后的语句**不在调用点内联跑完**（原生：恢复点是微任务）。 原生：`await` 挂起当前 async 体——`await` 之后的语句在**微任务**里 才跑 ⇒ 调用方在同步窗口看不到 await 之后的副作用。 断言：expect("	没测该层	keep	keep	—
-"const x = await f()：同步段拿不到被等待值"	"回归钉：`await` **真挂起**——async 体在 await 处挂起， await 之后的语句**不在调用点内联跑完**（原生：恢复点是微任务）。 原生：`await` 挂起当前 async 体——`await` 之后的语句在**微任务**里 才跑 ⇒ 调用方在同步窗口看不到 await 之后的副作用。 断言：expect("	没测该层	keep	keep	—
-"return await g()：调用点先返回"	"回归钉：`await` **真挂起**——async 体在 await 处挂起， await 之后的语句**不在调用点内联跑完**（原生：恢复点是微任务）。 原生：`await` 挂起当前 async 体——`await` 之后的语句在**微任务**里 才跑 ⇒ 调用方在同步窗口看不到 await 之后的副作用。 断言：expect("	没测该层	keep	keep	—
-"h(await x)：实参位置同样挂起"	"回归钉：`await` **真挂起**——async 体在 await 处挂起， await 之后的语句**不在调用点内联跑完**（原生：恢复点是微任务）。 原生：`await` 挂起当前 async 体——`await` 之后的语句在**微任务**里 才跑 ⇒ 调用方在同步窗口看不到 await 之后的副作用。 断言：expect("	没测该层	keep	keep	—
-"x + await y：二元表达式位置同样挂起"	"回归钉：`await` **真挂起**——async 体在 await 处挂起， await 之后的语句**不在调用点内联跑完**（原生：恢复点是微任务）。 原生：`await` 挂起当前 async 体——`await` 之后的语句在**微任务**里 才跑 ⇒ 调用方在同步窗口看不到 await 之后的副作用。 断言：expect("	没测该层	keep	keep	—
-"const {a} = await f()：解构位置同样挂起"	"回归钉：`await` **真挂起**——async 体在 await 处挂起， await 之后的语句**不在调用点内联跑完**（原生：恢复点是微任务）。 原生：`await` 挂起当前 async 体——`await` 之后的语句在**微任务**里 才跑 ⇒ 调用方在同步窗口看不到 await 之后的副作用。 断言：expect("	没测该层	keep	keep	—
-"await 前的表达式照常求值（原生 3）"	"回归钉：`await` **真挂起**——async 体在 await 处挂起， await 之后的语句**不在调用点内联跑完**（原生：恢复点是微任务）。 原生：`await` 挂起当前 async 体——`await` 之后的语句在**微任务**里 才跑 ⇒ 调用方在同步窗口看不到 await 之后的副作用。 断言：expect("	没测该层	keep	keep	—
-"await 后的返回值进 promise 的 inner"	"回归钉：`await` **真挂起**——async 体在 await 处挂起， await 之后的语句**不在调用点内联跑完**（原生：恢复点是微任务）。 原生：`await` 挂起当前 async 体——`await` 之后的语句在**微任务**里 才跑 ⇒ 调用方在同步窗口看不到 await 之后的副作用。 断言：expect(litValue($await(r.result as never))).toEqual({ ok: true, value: 8 });"	没测该层	keep	keep	—
-"await 链的值域逐跳传递"	"回归钉：`await` **真挂起**——async 体在 await 处挂起， await 之后的语句**不在调用点内联跑完**（原生：恢复点是微任务）。 原生：`await` 挂起当前 async 体——`await` 之后的语句在**微任务**里 才跑 ⇒ 调用方在同步窗口看不到 await 之后的副作用。 断言：expect(litValue($await(r.result as never))).toEqual({ ok: true, value: 42 });"	没测该层	keep	keep	—
-"负控制：已 settle 的 promise 的 await 取值仍精确（await Promise.resolve(1) → 1）"	"回归钉：`await` **真挂起**——async 体在 await 处挂起， await 之后的语句**不在调用点内联跑完**（原生：恢复点是微任务）。 原生：`await` 挂起当前 async 体——`await` 之后的语句在**微任务**里 才跑 ⇒ 调用方在同步窗口看不到 await 之后的副作用。 断言：expect(litValue($await(r.result as never))).toEqual({ ok: true, value: 2 });"	没测该层	keep	keep	—
-"负控制：async 函数仍返回 promise 形态（值域不被截断成 unknown）"	"回归钉：`await` **真挂起**——async 体在 await 处挂起， await 之后的语句**不在调用点内联跑完**（原生：恢复点是微任务）。 原生：`await` 挂起当前 async 体——`await` 之后的语句在**微任务**里 才跑 ⇒ 调用方在同步窗口看不到 await 之后的副作用。 断言：expect(litValue($await(r.result as never))).toEqual({ ok: true, value: 42 });"	没测该层	keep	keep	—
-"c1 构造点：n = 0（步骤 3：体在消费点跑，构造点 native 0 精确）"	"原生：生成器函数被调用时**不执行体**——体只在首个 `next()` 时跑到 第一个 `yield`。 ` 之后外层绑定仍是旧值； 断言：expect(formatAbs(r.result)).toEqual('0 #exact');"	没测该层	keep	keep	—
-"c2 构造点：log = \"\" | \"ab\"（native \"\" ∈ join；改前 wrong-exact \"ab\"）"	"原生：生成器函数被调用时**不执行体**——体只在首个 `next()` 时跑到 第一个 `yield`。 ` 之后外层绑定仍是旧值； 断言：expect(formatAbs(r.result)).toEqual('\"\" #exact');"	没测该层	keep	keep	—
-"c3 it.next() 后：n = 1（步骤 4 挂起点回放；native 1，步骤 3 为 0 | 5）"	"原生：生成器函数被调用时**不执行体**——体只在首个 `next()` 时跑到 第一个 `yield`。 ` 之后外层绑定仍是旧值； 断言：expect(formatAbs(r.result)).toEqual('1 #exact');"	没测该层	keep	keep	—
-"c4 it.next() 后：log = \"a\"（步骤 4 挂起点回放；native \"a\"，步骤 3 为 \"\" | \"ab\"）"	"原生：生成器函数被调用时**不执行体**——体只在首个 `next()` 时跑到 第一个 `yield`。 ` 之后外层绑定仍是旧值； 断言：expect(formatAbs(r.result)).toEqual('\"a\" #exact');"	没测该层	keep	keep	—
-"步骤 4 · 连续两次 next() 单调推进到第二个挂起点（native 5 / \"ab\"）"	"原生：生成器函数被调用时**不执行体**——体只在首个 `next()` 时跑到 第一个 `yield`。 ` 之后外层绑定仍是旧值； 断言：expect(formatAbs(n.result)).toEqual('5 #exact');；expect(formatAbs(log.result)).toEqual('\"ab\" #exact');"	没测该层	keep	keep	—
-"步骤 4 · 分段读取：两个挂起点各自的绑定值分别精确（native 1:5）"	"原生：生成器函数被调用时**不执行体**——体只在首个 `next()` 时跑到 第一个 `yield`。 ` 之后外层绑定仍是旧值； 断言：expect(formatAbs(r.result)).toEqual('\"1:1:2:5\" #exact');"	没测该层	keep	keep	—
-"四种 $gen 发射点同编：函数表达式 / 对象方法 / 类方法 / async 生成器（各 n = 0）"	"原生：生成器函数被调用时**不执行体**——体只在首个 `next()` 时跑到 第一个 `yield`。 ` 之后外层绑定仍是旧值； 断言：expect(formatAbs(expr.result)).toEqual('0 #exact');；expect(formatAbs(obj.result)).toEqual('0 #exact');"	没测该层	keep	keep	—
-"eager 值域承重不回归：体写外层绑定的生成器，元素面仍 exact（元素域来自 yield 收集，与外层 join 无关）"	"原生：生成器函数被调用时**不执行体**——体只在首个 `next()` 时跑到 第一个 `yield`。 ` 之后外层绑定仍是旧值； 断言：expect(formatAbs(r.result)).toEqual('{ \"0\": 1, \"1\": 5 } #exact');"	没测该层	keep	keep	—
-"容器 mutator 接收者同样入快照集：arr.length 折成长度域（native 构造点 0 ∈ 域；改前 wrong-exact 1）"	"原生：生成器函数被调用时**不执行体**——体只在首个 `next()` 时跑到 第一个 `yield`。 ` 之后外层绑定仍是旧值； 断言：expect(formatAbs(r.result)).toBe(\"0 #exact\");"	没测该层	keep	keep	—
-"const 别名组一起快照：const a = {...}; const b = a; 经 a 写后 b.v = 0（步骤 3 构造点精确）"	"原生：生成器函数被调用时**不执行体**——体只在首个 `next()` 时跑到 第一个 `yield`。 ` 之后外层绑定仍是旧值； 断言：expect(formatAbs(r.result)).toEqual(\"0 #exact\");"	没测该层	keep	keep	—
-"负控制：协议面与 yield 序列（族 01 eager 收集口径）不变"	"原生：生成器函数被调用时**不执行体**——体只在首个 `next()` 时跑到 第一个 `yield`。 ` 之后外层绑定仍是旧值； 断言：expect("	没测该层	keep	keep	—
-"负控制：解构 lowering 取到元素（const [a] = g() → 1）"	"原生：生成器函数被调用时**不执行体**——体只在首个 `next()` 时跑到 第一个 `yield`。 ` 之后外层绑定仍是旧值； 断言：expect("	没测该层	keep	keep	—
-"负控制：不写外层绑定的生成器体产物逐字不变（值面 1:2 精确）"	"原生：生成器函数被调用时**不执行体**——体只在首个 `next()` 时跑到 第一个 `yield`。 ` 之后外层绑定仍是旧值； 断言：expect("	没测该层	keep	keep	—
-"负控制：体内 var / 形参写是生成器局部，不入快照集（值面不折 join）"	"原生：生成器函数被调用时**不执行体**——体只在首个 `next()` 时跑到 第一个 `yield`。 ` 之后外层绑定仍是旧值； 断言：expect("	没测该层	keep	keep	—
-"双臂 promise：try 臂与 catch 臂都可达（并集）"	"回归钉：`$await` **不得丢掉双臂 promise 的 rejected 通道**。 引擎此前只取 fulfilled 臂（`sh.inner`），拒绝臂被静默 丢弃 ⇒ `catch` 臂成死代码（引擎给出**确定错值** `promise<\"v:1\">`）。 断言：expect(awaited).toContain('\"v:1\"');；expect(awaited).toContain('\"c:k\"');"	旧断言钉错	keep	keep	—
-"负控制：确定拒绝的 promise —— catch 臂取值不变（\"c:k\"）"	"回归钉：`$await` **不得丢掉双臂 promise 的 rejected 通道**。 引擎此前只取 fulfilled 臂（`sh.inner`），拒绝臂被静默 丢弃 ⇒ `catch` 臂成死代码（引擎给出**确定错值** `promise<\"v:1\">`）。 断言：expect(litValue($await(r.result))).toEqual({ ok: true, value: \"c:k\" });"	旧断言钉错	keep	keep	—
-"负控制：确定 fulfilled 的 promise —— 只有 fulfilled 臂"	"回归钉：`$await` **不得丢掉双臂 promise 的 rejected 通道**。 引擎此前只取 fulfilled 臂（`sh.inner`），拒绝臂被静默 丢弃 ⇒ `catch` 臂成死代码（引擎给出**确定错值** `promise<\"v:1\">`）。 断言：expect(litValue($await(r.result))).toEqual({ ok: true, value: \"v:1\" });"	旧断言钉错	keep	keep	—
-"thenable 的 res 值被交付（原生 number，引擎改前 object）"	"回归钉：`await` 一个 **thenable** 必须做**采纳**。 原生：`await t`（t 是带 `then` 方法的对象）走 PromiseResolve 式的采纳 ——取 `t.then(res, rej)` 的 settle 值（不是 t 本身）。 断言：expect(litValue($await(r.result))).toEqual({ ok: true, value: \"number:7\" });"	夹具漏形态	keep	keep	—
-"thenable 的 res 值可以是字符串"	"回归钉：`await` 一个 **thenable** 必须做**采纳**。 原生：`await t`（t 是带 `then` 方法的对象）走 PromiseResolve 式的采纳 ——取 `t.then(res, rej)` 的 settle 值（不是 t 本身）。 断言：expect(litValue($await(r.result))).toEqual({ ok: true, value: \"s\" });"	夹具漏形态	keep	keep	—
-"负控制：非 thenable 的普通值不被采纳（await 5 → 5）"	"回归钉：`await` 一个 **thenable** 必须做**采纳**。 原生：`await t`（t 是带 `then` 方法的对象）走 PromiseResolve 式的采纳 ——取 `t.then(res, rej)` 的 settle 值（不是 t 本身）。 断言：expect(litValue($await(r.result))).toEqual({ ok: true, value: 6 });"	夹具漏形态	keep	keep	—
-"负控制：promise 仍走 promise 通道（await Promise.resolve(1) → 1）"	"回归钉：`await` 一个 **thenable** 必须做**采纳**。 原生：`await t`（t 是带 `then` 方法的对象）走 PromiseResolve 式的采纳 ——取 `t.then(res, rej)` 的 settle 值（不是 t 本身）。 断言：expect(litValue($await(r.result))).toEqual({ ok: true, value: 2 });"	夹具漏形态	keep	keep	—
-".return(v) 转发给委托迭代器（委托的清理副作用不再丢失）"	"回归钉：`yield*` 委托的生成器 `.return(v)` **必须转发**给 委托迭代器。 引擎此前**不转发** ⇒ 委托的清理 副作用整体丢失（`log` 恒空）。 断言：expect("	没测该层	keep	keep	—
-"负控制：非委托挂起点的 .return(v) 不转发（无委托 → 无副作用）"	"回归钉：`yield*` 委托的生成器 `.return(v)` **必须转发**给 委托迭代器。 引擎此前**不转发** ⇒ 委托的清理 副作用整体丢失（`log` 恒空）。 断言：expect("	没测该层	keep	keep	—
-"负控制：普通生成器的 .return(v) 语义不变（{value: v, done: true}）"	"回归钉：`yield*` 委托的生成器 `.return(v)` **必须转发**给 委托迭代器。 引擎此前**不转发** ⇒ 委托的清理 副作用整体丢失（`log` 恒空）。 断言：expect("	没测该层	keep	keep	—
-"Object.keys(g) → \"\"（改前：\"0,next,return,throw,constructor,@@iterator\"）"	"回归钉：生成器对象是**内部槽对象**——原生**没有任何自有可枚举 属性**（`Object.keys` / `Object.getOwnPropertyNames` / `for-in` 恒空； 引擎此前把协议方法与 yield 元素 塞进**自有可枚举槽** ⇒ 枚举面印出 `\"0,next,return,throw,constructor,@@iterator\"`（原生 `\"\"`）。 断言：expect(val(`export function f() { ${GEN} return Object.keys(gi).join(\",\"); }`)).toEqual({"	夹具漏形态	keep	keep	—
-"Object.getOwnPropertyNames(g) → \"\""	"回归钉：生成器对象是**内部槽对象**——原生**没有任何自有可枚举 属性**（`Object.keys` / `Object.getOwnPropertyNames` / `for-in` 恒空； 引擎此前把协议方法与 yield 元素 塞进**自有可枚举槽** ⇒ 枚举面印出 `\"0,next,return,throw,constructor,@@iterator\"`（原生 `\"\"`）。 断言：expect("	夹具漏形态	keep	keep	—
-"for-in 累积 → \"\""	"回归钉：生成器对象是**内部槽对象**——原生**没有任何自有可枚举 属性**（`Object.keys` / `Object.getOwnPropertyNames` / `for-in` 恒空； 引擎此前把协议方法与 yield 元素 塞进**自有可枚举槽** ⇒ 枚举面印出 `\"0,next,return,throw,constructor,@@iterator\"`（原生 `\"\"`）。 断言：expect("	夹具漏形态	keep	keep	—
-"hasOwnProperty(\"next\") → false（协议方法在原型上，不在自有面）"	"回归钉：生成器对象是**内部槽对象**——原生**没有任何自有可枚举 属性**（`Object.keys` / `Object.getOwnPropertyNames` / `for-in` 恒空； 引擎此前把协议方法与 yield 元素 塞进**自有可枚举槽** ⇒ 枚举面印出 `\"0,next,return,throw,constructor,@@iterator\"`（原生 `\"\"`）。 断言：expect("	夹具漏形态	keep	keep	—
-"负控制：协议面仍可用（typeof gi.next → \"function\"，gi.next().value → 1）"	"回归钉：生成器对象是**内部槽对象**——原生**没有任何自有可枚举 属性**（`Object.keys` / `Object.getOwnPropertyNames` / `for-in` 恒空； 引擎此前把协议方法与 yield 元素 塞进**自有可枚举槽** ⇒ 枚举面印出 `\"0,next,return,throw,constructor,@@iterator\"`（原生 `\"\"`）。 断言：expect("	夹具漏形态	keep	keep	—
-"负控制：\"next\" in gi → true（原型链命中，与原生一致）"	"回归钉：生成器对象是**内部槽对象**——原生**没有任何自有可枚举 属性**（`Object.keys` / `Object.getOwnPropertyNames` / `for-in` 恒空； 引擎此前把协议方法与 yield 元素 塞进**自有可枚举槽** ⇒ 枚举面印出 `\"0,next,return,throw,constructor,@@iterator\"`（原生 `\"\"`）。 断言：expect(val(`export function f() { ${GEN} return \"next\" in gi; }`)).toEqual({"	夹具漏形态	keep	keep	—
-"负控制：解构 lowering 仍按序取到元素（const [a] = gi → 1）"	"回归钉：生成器对象是**内部槽对象**——原生**没有任何自有可枚举 属性**（`Object.keys` / `Object.getOwnPropertyNames` / `for-in` 恒空； 引擎此前把协议方法与 yield 元素 塞进**自有可枚举槽** ⇒ 枚举面印出 `\"0,next,return,throw,constructor,@@iterator\"`（原生 `\"\"`）。 断言：expect(val(`export function f() { ${GEN} const [a] = gi; return a; }`)).toEqual({"	夹具漏形态	keep	keep	—
-"签名面不发布协议方法槽（无 next/return/throw/constructor/@@iterator）"	"回归钉：生成器对象是**内部槽对象**——原生**没有任何自有可枚举 属性**（`Object.keys` / `Object.getOwnPropertyNames` / `for-in` 恒空； 引擎此前把协议方法与 yield 元素 塞进**自有可枚举槽** ⇒ 枚举面印出 `\"0,next,return,throw,constructor,@@iterator\"`（原生 `\"\"`）。 断言：expect(sig).not.toContain(\"next\");；expect(sig).not.toContain(\"return\");"	夹具漏形态	keep	keep	—
-"签名面保留数字下标元素域（yield* s → \"0\": string）——族 01 口径不被破"	"回归钉：生成器对象是**内部槽对象**——原生**没有任何自有可枚举 属性**（`Object.keys` / `Object.getOwnPropertyNames` / `for-in` 恒空； 引擎此前把协议方法与 yield 元素 塞进**自有可枚举槽** ⇒ 枚举面印出 `\"0,next,return,throw,constructor,@@iterator\"`（原生 `\"\"`）。 断言：expect(sig).toContain('\"0\": string');；expect(sig).not.toContain(\"unknown\");"	夹具漏形态	keep	keep	—
-"@@iterator 槽按符号键投影建模（\"@@iterator\" 槽带 symbolKey 标记）"	"回归钉：生成器对象是**内部槽对象**——原生**没有任何自有可枚举 属性**（`Object.keys` / `Object.getOwnPropertyNames` / `for-in` 恒空； 引擎此前把协议方法与 yield 元素 塞进**自有可枚举槽** ⇒ 枚举面印出 `\"0,next,return,throw,constructor,@@iterator\"`（原生 `\"\"`）。 断言：expect(shape.k).toBe(\"obj\");；expect(shape.slots[\"@@iterator\"]?.symbolKey).toBe(true);"	夹具漏形态	keep	keep	—
-"负控制：协议面在运行面仍可用（typeof gi.next → \"function\"）"	"回归钉：生成器对象是**内部槽对象**——原生**没有任何自有可枚举 属性**（`Object.keys` / `Object.getOwnPropertyNames` / `for-in` 恒空； 引擎此前把协议方法与 yield 元素 塞进**自有可枚举槽** ⇒ 枚举面印出 `\"0,next,return,throw,constructor,@@iterator\"`（原生 `\"\"`）。 断言：expect("	夹具漏形态	keep	keep	—
-"恒假条款 `typeof data[\"@@iterator\"] === \"function\"` 消失"	"从 guard 串里抽出被访问的成员键（`data.x` / `data[\"x\"]` 两种写法） 断言：expect(guard).not.toContain('@@iterator');；expect(guard).not.toContain('typeof data[\"@@iterator\"] === \"function\"');"	没测该层	keep	keep	—
-"协议槽条款全消失（next / return / throw / constructor）"	"（S21 分片）：**guard / 约束面**不发布 internal 槽。 但**guard 面**（`algebra/denote.ts` 的 `denoteGuard`）与**约束面** （`algebra/projection.ts` 的 `absToConstraint`）没跟上 ⇒ 不过滤 internal 槽： - 生成器对象的协议槽（`next` / `return` / `throw` / `constructor` / `@@iterator`）是 internal 槽（原生挂在**原型**上，不是自有属性）； 断言：expect(guard).not.toContain(`data.${k}`);；expec"	夹具漏形态	keep	keep	—
-"guard 产物逐条等于期望串（改前多出 6 条协议槽条款）"	"按顶层 `&&` 拆 guard 条款（core 生成的守卫串顶层连接符固定为 \" && \"）。 口径更新（族 09 / + 410）：必填槽的**存在性子句**自带一层括号 （`(Object.hasOwn(v, \"a\") || (\"a\" in v && !Object.hasOwn(Object.prototype, \"a\")))`） ⇒ 顶层拆分必须**跳过括号内**的 \" && \"（本函数的注释一直声明「按**顶层** 拆」，此前实现没做到——只有顶层连接符恰好不在括号里的旧产物才看不出差别）。 断言：expect(guardOf(GEN_SRC, \"g\")).toBe("	没测该层	keep	keep	—
-"guard 访问的成员键里没有 internal 协议槽键"	"按顶层 `&&` 拆 guard 条款（core 生成的守卫串顶层连接符固定为 \" && \"）。 口径更新（族 09 / + 410）：必填槽的**存在性子句**自带一层括号 （`(Object.hasOwn(v, \"a\") || (\"a\" in v && !Object.hasOwn(Object.prototype, \"a\")))`） ⇒ 顶层拆分必须**跳过括号内**的 \" && \"（本函数的注释一直声明「按**顶层** 拆」，此前实现没做到——只有顶层连接符恰好不在括号里的旧产物才看不出差别）。 断言：expect(keys).not.toContain(k);"	没测该层	keep	keep	—
-"数字下标槽（元素域）仍被发布——族 01 约定不被破"	"（S21 分片）：**guard / 约束面**不发布 internal 槽。 但**guard 面**（`algebra/denote.ts` 的 `denoteGuard`）与**约束面** （`algebra/projection.ts` 的 `absToConstraint`）没跟上 ⇒ 不过滤 internal 槽： - 生成器对象的协议槽（`next` / `return` / `throw` / `constructor` / `@@iterator`）是 internal 槽（原生挂在**原型**上，不是自有属性）； 断言：expect(guard).toContain('data[\"0\"] === 1');；exp"	夹具漏形态	keep	keep	—
-"负控制：普通对象的非 internal 成员仍出现在 guard 里（guard 面没被改空）"	"按顶层 `&&` 拆 guard 条款（core 生成的守卫串顶层连接符固定为 \" && \"）。 口径更新（族 09 / + 410）：必填槽的**存在性子句**自带一层括号 （`(Object.hasOwn(v, \"a\") || (\"a\" in v && !Object.hasOwn(Object.prototype, \"a\")))`） ⇒ 顶层拆分必须**跳过括号内**的 \" && \"（本函数的注释一直声明「按**顶层** 拆」，此前实现没做到——只有顶层连接符恰好不在括号里的旧产物才看不出差别）。 断言：expect(guard).toContain(\"data.a === 1\");；expect(guard).toConta"	没测该层	keep	keep	—
-"负控制：非 internal 成员仍被 guard 访问（不是被剔除成空）"	"按顶层 `&&` 拆 guard 条款（core 生成的守卫串顶层连接符固定为 \" && \"）。 口径更新（族 09 / + 410）：必填槽的**存在性子句**自带一层括号 （`(Object.hasOwn(v, \"a\") || (\"a\" in v && !Object.hasOwn(Object.prototype, \"a\")))`） ⇒ 顶层拆分必须**跳过括号内**的 \" && \"（本函数的注释一直声明「按**顶层** 拆」，此前实现没做到——只有顶层连接符恰好不在括号里的旧产物才看不出差别）。 断言：expect(keys).toEqual(expect.arrayContaining([\"a\", \"b\"]));"	没测该层	keep	keep	—
-"改前的恒假条款在原生生成器上恒 false（问题确实存在）"	"回归钉：生成器对象是**内部槽对象**——原生**没有任何自有可枚举 属性**（`Object.keys` / `Object.getOwnPropertyNames` / `for-in` 恒空； 引擎此前把协议方法与 yield 元素 塞进**自有可枚举槽** ⇒ 枚举面印出 `\"0,next,return,throw,constructor,@@iterator\"`（原生 `\"\"`）。 断言：expect(evalClause('typeof data[\"@@iterator\"] === \"function\"', g)).toBe(false);；expect(evalClause('data[\"@@iterator\"]',"	夹具漏形态	keep	keep	—
-"改后 guard 的逐条原生求值：仅元素域条款为 false（族 01 已知残留）"	"按顶层 `&&` 拆 guard 条款（core 生成的守卫串顶层连接符固定为 \" && \"）。 口径更新（族 09 / + 410）：必填槽的**存在性子句**自带一层括号 （`(Object.hasOwn(v, \"a\") || (\"a\" in v && !Object.hasOwn(Object.prototype, \"a\")))`） ⇒ 顶层拆分必须**跳过括号内**的 \" && \"（本函数的注释一直声明「按**顶层** 拆」，此前实现没做到——只有顶层连接符恰好不在括号里的旧产物才看不出差别）。 断言：expect(falseOnes).toEqual(["	没测该层	keep	keep	—
-"负控制：普通对象的 guard 每条在原生对象上都是 true"	"按顶层 `&&` 拆 guard 条款（core 生成的守卫串顶层连接符固定为 \" && \"）。 口径更新（族 09 / + 410）：必填槽的**存在性子句**自带一层括号 （`(Object.hasOwn(v, \"a\") || (\"a\" in v && !Object.hasOwn(Object.prototype, \"a\")))`） ⇒ 顶层拆分必须**跳过括号内**的 \" && \"（本函数的注释一直声明「按**顶层** 拆」，此前实现没做到——只有顶层连接符恰好不在括号里的旧产物才看不出差别）。 断言：expect(clauses.length).toBeGreaterThan(2);；expect(evalClause(c"	没测该层	keep	keep	—
-"协议槽不进约束产物"	"断言：expect(c).toBeDefined();；expect(Object.prototype.hasOwnProperty.call(fields, k)).toBe(false);"	没测该层	keep	keep	—
-"数字下标槽（元素域）仍被发布（族 01 约定）"	"（S21 分片）：**guard / 约束面**不发布 internal 槽。 但**guard 面**（`algebra/denote.ts` 的 `denoteGuard`）与**约束面** （`algebra/projection.ts` 的 `absToConstraint`）没跟上 ⇒ 不过滤 internal 槽： - 生成器对象的协议槽（`next` / `return` / `throw` / `constructor` / `@@iterator`）是 internal 槽（原生挂在**原型**上，不是自有属性）； 断言：expect(Object.keys(c?.fields ?? {})).toEqual([\""	夹具漏形态	keep	keep	—
-"负控制：普通对象的公有字段仍在约束产物里"	"（S21 分片）：**guard / 约束面**不发布 internal 槽。 但**guard 面**（`algebra/denote.ts` 的 `denoteGuard`）与**约束面** （`algebra/projection.ts` 的 `absToConstraint`）没跟上 ⇒ 不过滤 internal 槽： - 生成器对象的协议槽（`next` / `return` / `throw` / `constructor` / `@@iterator`）是 internal 槽（原生挂在**原型**上，不是自有属性）； 断言：expect(Object.keys(c?.fields ?? {}).sort()).toE"	夹具漏形态	keep	keep	—
-"私有字段槽不进 guard（改前恒假条款 `data[\"#C::x\"] === 1` 消失）"	"按顶层 `&&` 拆 guard 条款（core 生成的守卫串顶层连接符固定为 \" && \"）。 口径更新（族 09 / + 410）：必填槽的**存在性子句**自带一层括号 （`(Object.hasOwn(v, \"a\") || (\"a\" in v && !Object.hasOwn(Object.prototype, \"a\")))`） ⇒ 顶层拆分必须**跳过括号内**的 \" && \"（本函数的注释一直声明「按**顶层** 拆」，此前实现没做到——只有顶层连接符恰好不在括号里的旧产物才看不出差别）。 断言：expect(guard).not.toContain(\"#C::x\");；expect(guard).toBe("	没测该层	keep	keep	—
-"原生 oracle：私有字段不是自有属性（恒假条款的依据）"	"私有字段 `#x` 是 internal 槽（原生私有字段对属性 introspection 不可见） 断言：expect(evalClause('data[\"#C::x\"] === 1', native)).toBe(false);；expect(Object.keys(native)).toEqual([]);"	没测该层	keep	keep	—
-"签名面（S18）仍不发布 internal 槽——本分片不回退"	"私有字段 `#x` 是 internal 槽（原生私有字段对属性 introspection 不可见） 断言：expect(sig).not.toContain(\"@@iterator\");；expect(sig).not.toContain(\"next\");"	没测该层	keep	keep	—
-"Bug 191：访问器键的 guard 仍按 getter 读域判定（不被本分片改坏）"	"按顶层 `&&` 拆 guard 条款（core 生成的守卫串顶层连接符固定为 \" && \"）。 口径更新（族 09 / + 410）：必填槽的**存在性子句**自带一层括号 （`(Object.hasOwn(v, \"a\") || (\"a\" in v && !Object.hasOwn(Object.prototype, \"a\")))`） ⇒ 顶层拆分必须**跳过括号内**的 \" && \"（本函数的注释一直声明「按**顶层** 拆」，此前实现没做到——只有顶层连接符恰好不在括号里的旧产物才看不出差别）。 断言：expect(denoteGuard(call(src, \"f\").result, \"data\")).toBe("	没测该层	keep	keep	—
-"Bug 191：访问器键的约束投影仍取 getter 读域"	"断言：expect(eq?.op).toBe(\"eq\");；expect(eq?.op === \"eq\" && eq.b.op === \"lit\" ? eq.b.value : undefined).toBe(1);"	没测该层	keep	keep	—
-"all：元素 rejected → 组合子带 reason（await 抛 → catch 臂可达）"	"原生（node v26）： - `await Promise.all([Promise.reject(e)])` / `race` → 抛 e（catch 臂可达） - `await Promise.any([Promise.reject(e)])` → 抛 AggregateError - `await Promise.race([Promise.resolve(1)])` → 1（**元素 promise 的值**， 不是 promise 本身——原生 race/any 先按 PromiseResolve unwrap） - `Promise.race([Promise.resolve(1), 2])` → 2（非 promis"	没测该层	keep	keep	—
-"race：元素 rejected → 组合子带 reason（await 抛 → catch 臂可达）"	"原生（node v26）： - `await Promise.all([Promise.reject(e)])` / `race` → 抛 e（catch 臂可达） - `await Promise.any([Promise.reject(e)])` → 抛 AggregateError - `await Promise.race([Promise.resolve(1)])` → 1（**元素 promise 的值**， 不是 promise 本身——原生 race/any 先按 PromiseResolve unwrap） - `Promise.race([Promise.resolve(1), 2])` → 2（非 promis"	没测该层	keep	keep	—
-"any：全拒 → AggregateError（原生 errors 数组 + 固定 message）"	"原生（node v26）： - `await Promise.all([Promise.reject(e)])` / `race` → 抛 e（catch 臂可达） - `await Promise.any([Promise.reject(e)])` → 抛 AggregateError - `await Promise.race([Promise.resolve(1)])` → 1（**元素 promise 的值**， 不是 promise 本身——原生 race/any 先按 PromiseResolve unwrap） - `Promise.race([Promise.resolve(1), 2])` → 2（非 promis"	没测该层	keep	keep	—
-"race：结算值按 PromiseResolve unwrap（元素 promise → 其值，非 promise 本身）"	"原生（node v26）： - `await Promise.all([Promise.reject(e)])` / `race` → 抛 e（catch 臂可达） - `await Promise.any([Promise.reject(e)])` → 抛 AggregateError - `await Promise.race([Promise.resolve(1)])` → 1（**元素 promise 的值**， 不是 promise 本身——原生 race/any 先按 PromiseResolve unwrap） - `Promise.race([Promise.resolve(1), 2])` → 2（非 promis"	没测该层	keep	keep	—
-"race：混合元素 → 兑现域非 object（原生恒 number）"	"原生（node v26）： - `await Promise.all([Promise.reject(e)])` / `race` → 抛 e（catch 臂可达） - `await Promise.any([Promise.reject(e)])` → 抛 AggregateError - `await Promise.race([Promise.resolve(1)])` → 1（**元素 promise 的值**， 不是 promise 本身——原生 race/any 先按 PromiseResolve unwrap） - `Promise.race([Promise.resolve(1), 2])` → 2（非 promis"	没测该层	keep	keep	—
-"负控制：无拒绝组合的投影不变（all 元素数组 / race·any 元素联合）"	"原生（node v26）： - `await Promise.all([Promise.reject(e)])` / `race` → 抛 e（catch 臂可达） - `await Promise.any([Promise.reject(e)])` → 抛 AggregateError - `await Promise.race([Promise.resolve(1)])` → 1（**元素 promise 的值**， 不是 promise 本身——原生 race/any 先按 PromiseResolve unwrap） - `Promise.race([Promise.resolve(1), 2])` → 2（非 promis"	没测该层	keep	keep	—
-"负控制：单 promise 的 await 拒绝面不变（Bug 36 通道）"	"原生（node v26）： - `await Promise.all([Promise.reject(e)])` / `race` → 抛 e（catch 臂可达） - `await Promise.any([Promise.reject(e)])` → 抛 AggregateError - `await Promise.race([Promise.resolve(1)])` → 1（**元素 promise 的值**， 不是 promise 本身——原生 race/any 先按 PromiseResolve unwrap） - `Promise.race([Promise.resolve(1), 2])` → 2（非 promis"	没测该层	keep	keep	—
-"漂移门：aggregateErrorAbs 槽位口径与 errorBrandAbs 同款（Bug 293 本地构造）"	"引擎此前把 thenable **对象本身**当成待决值（只标 unsettled，从不调 `then`） ⇒ 声明出与原生**互斥**的具体类型（原生 `number` vs 引擎 `object`）⇒ 该值域 会一路进 dts / zod / guard / standard 产物面。 修法（`builtins/promise.ts`）： - 新增 thenable 采纳机制 `thenableAdoption` / `adoptThenableChain` （**判定与调用**与 await 面（`exec/runtime/async.ts` 的 `adoptThenable`， ）**同一套**——不另造）； 断言：expe"	夹具漏形态	keep	keep	—
-"执行器抛错 → promise 以抛出值拒绝（catch 臂可达）"	"`new Promise` 的执行器抛错被吞掉。 修前：执行器抛出只翻「executed」标志 → 短路 `promiseUnknown()`（inner=unknown、 **无 rejected 通道**、unsettled=true）→ `$await` 永不抛 → catch 臂成死代码， try 臂的字面量成了确定返回值（自信错值）。 断言：expect("	旧断言钉错	keep	keep	—
-"执行器抛错 → fulfilled 域 never + rejected 通道带 reason"	"`new Promise` 的执行器抛错被吞掉。 修前：执行器抛出只翻「executed」标志 → 短路 `promiseUnknown()`（inner=unknown、 **无 rejected 通道**、unsettled=true）→ `$await` 永不抛 → catch 臂成死代码， try 臂的字面量成了确定返回值（自信错值）。 断言：expect(sh?.inner?.shape?.k).toBe(\"never\");；expect(sh?.rejected?.shape?.k).toBe(\"brand\");"	旧断言钉错	keep	keep	—
-"先 settle 获胜：执行器先 resolve 后抛错 → 仍兑现（原生 first-wins）"	"`new Promise` 的执行器抛错被吞掉。 修前：执行器抛出只翻「executed」标志 → 短路 `promiseUnknown()`（inner=unknown、 **无 rejected 通道**、unsettled=true）→ `$await` 永不抛 → catch 臂成死代码， try 臂的字面量成了确定返回值（自信错值）。 断言：expect("	旧断言钉错	keep	keep	—
-"负控制：空执行器（永不 settle）仍是 promise<unknown>（不假装 settle）"	"`new Promise` 的执行器抛错被吞掉。 修前：执行器抛出只翻「executed」标志 → 短路 `promiseUnknown()`（inner=unknown、 **无 rejected 通道**、unsettled=true）→ `$await` 永不抛 → catch 臂成死代码， try 臂的字面量成了确定返回值（自信错值）。 断言：expect(sh?.inner?.shape?.k).toBe(\"unknown\");；expect(sh?.rejected).toBeUndefined();"	旧断言钉错	keep	keep	—
-"负控制：只 reject 的执行器仍是确定拒绝（Bug 36 通道）"	"`new Promise` 的执行器抛错被吞掉。 修前：执行器抛出只翻「executed」标志 → 短路 `promiseUnknown()`（inner=unknown、 **无 rejected 通道**、unsettled=true）→ `$await` 永不抛 → catch 臂成死代码， try 臂的字面量成了确定返回值（自信错值）。 断言：expect(sh?.inner?.shape?.k).toBe(\"never\");；expect(sh?.rejected).toBeDefined();"	旧断言钉错	keep	keep	—
-"Promise.resolve(1)：直接命名空间调用不抛，值域是 promise<1>"	"接线（主 agent 已落地，本文件只钉行为，不改源码）： - `exec/runtime/containers/member.ts`：命名空间成员读出的静态方法值， `apply: (args) => evalNamespaceCall(ns, key, args)` → `apply: (args, thisVal) => evalNamespaceCall(ns, key, args, thisVal ?? undef())` （this 缺席 = 「this 是 undefined」，与「无 this 信息」区分）； 断言：expect(isNever(throws), \"原生合法路径不得抛\").toBe(true);；ex"	没测该层	keep	keep	—
-"Promise.resolve.call(null, 1)：this 为 nullish ⇒ TypeError"	"接线（主 agent 已落地，本文件只钉行为，不改源码）： - `exec/runtime/containers/member.ts`：命名空间成员读出的静态方法值， `apply: (args) => evalNamespaceCall(ns, key, args)` → `apply: (args, thisVal) => evalNamespaceCall(ns, key, args, thisVal ?? undef())` （this 缺席 = 「this 是 undefined」，与「无 this 信息」区分）； 断言：expect(throwsError(r.throws, \"TypeError\")).toBe(tru"	没测该层	keep	keep	—
-"Promise.resolve.call({}, 1)：this 非构造器 ⇒ TypeError"	"接线（主 agent 已落地，本文件只钉行为，不改源码）： - `exec/runtime/containers/member.ts`：命名空间成员读出的静态方法值， `apply: (args) => evalNamespaceCall(ns, key, args)` → `apply: (args, thisVal) => evalNamespaceCall(ns, key, args, thisVal ?? undef())` （this 缺席 = 「this 是 undefined」，与「无 this 信息」区分）； 断言：expect(throwsError(r.throws, \"TypeError\")).toBe(tru"	没测该层	keep	keep	—
-"Promise.resolve.call(Promise, 1)：this 是构造器 ⇒ 合法，值域是 promise<1>"	"接线（主 agent 已落地，本文件只钉行为，不改源码）： - `exec/runtime/containers/member.ts`：命名空间成员读出的静态方法值， `apply: (args) => evalNamespaceCall(ns, key, args)` → `apply: (args, thisVal) => evalNamespaceCall(ns, key, args, thisVal ?? undef())` （this 缺席 = 「this 是 undefined」，与「无 this 信息」区分）； 断言：expect(isNever(throws), \"构造器接收者是原生合法路径\").toBe(true)"	夹具漏形态	keep	keep	—
-"const r = Promise.resolve; r(1)：this 缺席（undefined）⇒ TypeError"	"接线（主 agent 已落地，本文件只钉行为，不改源码）： - `exec/runtime/containers/member.ts`：命名空间成员读出的静态方法值， `apply: (args) => evalNamespaceCall(ns, key, args)` → `apply: (args, thisVal) => evalNamespaceCall(ns, key, args, thisVal ?? undef())` （this 缺席 = 「this 是 undefined」，与「无 this 信息」区分）； 断言：expect(throwsError(r.throws, \"TypeError\")).toBe(tru"	没测该层	keep	keep	—
-"Promise.resolve.call(undefined, 1)：this 显式 undefined ⇒ TypeError"	"接线（主 agent 已落地，本文件只钉行为，不改源码）： - `exec/runtime/containers/member.ts`：命名空间成员读出的静态方法值， `apply: (args) => evalNamespaceCall(ns, key, args)` → `apply: (args, thisVal) => evalNamespaceCall(ns, key, args, thisVal ?? undef())` （this 缺席 = 「this 是 undefined」，与「无 this 信息」区分）； 断言：expect(throwsError(r.throws, \"TypeError\")).toBe(tru"	没测该层	keep	keep	—
-"负控制：Math.max.call(null, 1, 2) 不抛且返回 2（this 判定只对 Promise 生效）"	"接线（主 agent 已落地，本文件只钉行为，不改源码）： - `exec/runtime/containers/member.ts`：命名空间成员读出的静态方法值， `apply: (args) => evalNamespaceCall(ns, key, args)` → `apply: (args, thisVal) => evalNamespaceCall(ns, key, args, thisVal ?? undef())` （this 缺席 = 「this 是 undefined」，与「无 this 信息」区分）； 断言：expect(isNever(r.throws)).toBe(true);；expect(litVal"	没测该层	keep	keep	—
-"全族：7 个 Promise 静态 × {null, {}, Promise} 接收者与原生逐格一致"	"接线（主 agent 已落地，本文件只钉行为，不改源码）： - `exec/runtime/containers/member.ts`：命名空间成员读出的静态方法值， `apply: (args) => evalNamespaceCall(ns, key, args)` → `apply: (args, thisVal) => evalNamespaceCall(ns, key, args, thisVal ?? undef())` （this 缺席 = 「this 是 undefined」，与「无 this 信息」区分）； 断言：expect(throwsError(r.throws, \"TypeError\"), `${m}.ca"	没测该层	keep	keep	—
-"机制面：命名空间派发带 this → 非构造器接收者抛 TypeError"	"2) 越界一行（**exec/runtime/containers/member.ts:847**，分片 A 的地盘）： 成员读出的静态方法值须把 this 转发进命名空间派发—— apply: (args) => evalNamespaceCall(ns, key, args) ?? unknown → apply: (args, thisVal) => evalNamespaceCall(ns, key, args, thisVal) ?? unknown 合并前端到端仍是「静态派发无接收者」（返回 promise<1>、L2 假绿）。 断言：expect(；expect("	没测该层	keep	keep	—
-"机制面：直接命名空间调用（this 缺席）合法 → 不抛"	"2) 越界一行（**exec/runtime/containers/member.ts:847**，分片 A 的地盘）： 成员读出的静态方法值须把 this 转发进命名空间派发—— apply: (args) => evalNamespaceCall(ns, key, args) ?? unknown → apply: (args, thisVal) => evalNamespaceCall(ns, key, args, thisVal) ?? unknown 合并前端到端仍是「静态派发无接收者」（返回 promise<1>、L2 假绿）。 断言：expect(throwsTypeError(() => evalNamespaceC"	没测该层	keep	keep	—
-"机制面：构造器接收者合法（Promise 的 Abs 面 = fn + ctor:true）"	"2) 越界一行（**exec/runtime/containers/member.ts:847**，分片 A 的地盘）： 成员读出的静态方法值须把 this 转发进命名空间派发—— apply: (args) => evalNamespaceCall(ns, key, args) ?? unknown → apply: (args, thisVal) => evalNamespaceCall(ns, key, args, thisVal) ?? unknown 合并前端到端仍是「静态派发无接收者」（返回 promise<1>、L2 假绿）。 断言：expect(throwsTypeError(() => evalNamespaceC"	没测该层	keep	keep	—
-"机制面：不可判接收者（any）→ 记 may-throw，不硬抛（不制造假抛）"	"2) 越界一行（**exec/runtime/containers/member.ts:847**，分片 A 的地盘）： 成员读出的静态方法值须把 this 转发进命名空间派发—— apply: (args) => evalNamespaceCall(ns, key, args) ?? unknown → apply: (args, thisVal) => evalNamespaceCall(ns, key, args, thisVal) ?? unknown 合并前端到端仍是「静态派发无接收者」（返回 promise<1>、L2 假绿）。 断言：expect(throwsTypeError(() => evalNamespaceC"	没测该层	keep	keep	—
-"机制面：this 为 undefined（undefAbs 形态）→ TypeError（原生 PromiseResolve 非对象）"	"2) 越界一行（**exec/runtime/containers/member.ts:847**，分片 A 的地盘）： 成员读出的静态方法值须把 this 转发进命名空间派发—— apply: (args) => evalNamespaceCall(ns, key, args) ?? unknown → apply: (args, thisVal) => evalNamespaceCall(ns, key, args, thisVal) ?? unknown 合并前端到端仍是「静态派发无接收者」（返回 promise<1>、L2 假绿）。 断言：expect("	没测该层	keep	keep	—
-"端到端：Promise.resolve.call(null, 1)（待 member.ts 转发 this 的越界一行）"	"2) 越界一行（**exec/runtime/containers/member.ts:847**，分片 A 的地盘）： 成员读出的静态方法值须把 this 转发进命名空间派发—— apply: (args) => evalNamespaceCall(ns, key, args) ?? unknown → apply: (args, thisVal) => evalNamespaceCall(ns, key, args, thisVal) ?? unknown 合并前端到端仍是「静态派发无接收者」（返回 promise<1>、L2 假绿）。 断言：expect(r.throws).toBeDefined();；expect(r.th"	没测该层	keep	keep	—
-"负控制：直接调用与构造器接收者不抛（原生合法路径）"	"接线（主 agent 已落地，本文件只钉行为，不改源码）： - `exec/runtime/containers/member.ts`：命名空间成员读出的静态方法值， `apply: (args) => evalNamespaceCall(ns, key, args)` → `apply: (args, thisVal) => evalNamespaceCall(ns, key, args, thisVal ?? undef())` （this 缺席 = 「this 是 undefined」，与「无 this 信息」区分）； 断言：expect(direct.throws?.shape?.k).toBe(\"never\");；expe"	没测该层	keep	keep	—
-"负控制：其它命名空间静态不因 this 通道受影响（Math.max.call(null, …) 合法）"	"2) 越界一行（**exec/runtime/containers/member.ts:847**，分片 A 的地盘）： 成员读出的静态方法值须把 this 转发进命名空间派发—— apply: (args) => evalNamespaceCall(ns, key, args) ?? unknown → apply: (args, thisVal) => evalNamespaceCall(ns, key, args, thisVal) ?? unknown 合并前端到端仍是「静态派发无接收者」（返回 promise<1>、L2 假绿）。 断言：expect(r.throws?.shape?.k).toBe(\"never\");"	没测该层	keep	keep	—
-"rejected 元素 → reason 槽装真 reason（读 .reason.message 不抛）"	"原生（node v26）：`Promise.allSettled([p])` 的元素是**判别联合**—— `{status:\"fulfilled\", value:<值>}` 或 `{status:\"rejected\", reason:<reason>}`， status 恒定（不取决于别的臂）。 读 `r[0].reason.message` 不抛。 断言：expect("	没测该层	keep	keep	—
-"fulfilled 元素 → value 槽装解包后的值（非 promise 本身）"	"原生（node v26）：`Promise.allSettled([p])` 的元素是**判别联合**—— `{status:\"fulfilled\", value:<值>}` 或 `{status:\"rejected\", reason:<reason>}`， status 恒定（不取决于别的臂）。 读 `r[0].reason.message` 不抛。 断言：expect("	没测该层	keep	keep	—
-"fulfilled 元素 → status 恒 \"fulfilled\"（判别联合，不与 rejected 并集）"	"原生（node v26）：`Promise.allSettled([p])` 的元素是**判别联合**—— `{status:\"fulfilled\", value:<值>}` 或 `{status:\"rejected\", reason:<reason>}`， status 恒定（不取决于别的臂）。 读 `r[0].reason.message` 不抛。 断言：expect("	没测该层	keep	keep	—
-"混合元素 → 逐元素投影（长度与原生一致）"	"断言：expect("	没测该层	keep	keep	—
-"负控制：非 promise 元素的既有口径不变（status 两态并集 + value/reason 双槽）"	"原生（node v26）：`Promise.allSettled([p])` 的元素是**判别联合**—— `{status:\"fulfilled\", value:<值>}` 或 `{status:\"rejected\", reason:<reason>}`， status 恒定（不取决于别的臂）。 读 `r[0].reason.message` 不抛。 断言：expect(s).toContain('\"fulfilled\" | \"rejected\"');；expect(s).toContain(\"value\");"	没测该层	keep	keep	—
-"then({}) → 透传原值（非调用 → ≡ undefined）"	"`Promise.resolve(1).then({})` / `.then([1,2])` → 兑现 1（不抛）。 修前：`isIdentity` 只把 prim（与 nullish）判为「确定不可调用」——闭合的 obj / arr / tuple（形状已知、无可调用成员）落进「可能可调用」→ 微任务臂 真去调 → TypeError → 结果 promise 折成 `promise<never>`（自信错值）。 断言：expect("	旧断言钉错	keep	keep	—
-"then([1, 2]) → 透传原值"	"`Promise.resolve(1).then({})` / `.then([1,2])` → 兑现 1（不抛）。 修前：`isIdentity` 只把 prim（与 nullish）判为「确定不可调用」——闭合的 obj / arr / tuple（形状已知、无可调用成员）落进「可能可调用」→ 微任务臂 真去调 → TypeError → 结果 promise 折成 `promise<never>`（自信错值）。 断言：expect("	旧断言钉错	keep	keep	—
-"then(null) → 透传原值（既有 nullish 口径不变）"	"`Promise.resolve(1).then({})` / `.then([1,2])` → 兑现 1（不抛）。 修前：`isIdentity` 只把 prim（与 nullish）判为「确定不可调用」——闭合的 obj / arr / tuple（形状已知、无可调用成员）落进「可能可调用」→ 微任务臂 真去调 → TypeError → 结果 promise 折成 `promise<never>`（自信错值）。 断言：expect("	旧断言钉错	keep	keep	—
-"catch({}) → 拒绝透传（非调用 handler ≡ undefined，不吞拒绝）"	"`Promise.resolve(1).then({})` / `.then([1,2])` → 兑现 1（不抛）。 修前：`isIdentity` 只把 prim（与 nullish）判为「确定不可调用」——闭合的 obj / arr / tuple（形状已知、无可调用成员）落进「可能可调用」→ 微任务臂 真去调 → TypeError → 结果 promise 折成 `promise<never>`（自信错值）。 断言：expect(sh?.inner?.shape?.k, \"fulfilled arm must be impossible\").toBe(\"never\");；expect(sh?.rejected).toBeDe"	旧断言钉错	keep	keep	—
-"负控制：可调用 handler 仍真执行（映射 / 捕获）"	"`Promise.resolve(1).then({})` / `.then([1,2])` → 兑现 1（不抛）。 修前：`isIdentity` 只把 prim（与 nullish）判为「确定不可调用」——闭合的 obj / arr / tuple（形状已知、无可调用成员）落进「可能可调用」→ 微任务臂 真去调 → TypeError → 结果 promise 折成 `promise<never>`（自信错值）。 断言：expect(；expect("	旧断言钉错	keep	keep	—
-"负控制：非函数 prim handler 仍是 identity（既有口径不变）"	"`Promise.resolve(1).then({})` / `.then([1,2])` → 兑现 1（不抛）。 修前：`isIdentity` 只把 prim（与 nullish）判为「确定不可调用」——闭合的 obj / arr / tuple（形状已知、无可调用成员）落进「可能可调用」→ 微任务臂 真去调 → TypeError → 结果 promise 折成 `promise<never>`（自信错值）。 断言：expect("	旧断言钉错	keep	keep	—
-"签名面：非可调用 handler 的结果 promise 是 promise<1>（非 promise<never>）"	"结果的展示串（签名面） 断言：expect(fmt(`export function f() { return Promise.resolve(1).then({}); }`)).toContain("	没测该层	keep	keep	—
-"宿主实测：writable:true 的重定义把 [[Writable]] 翻回 true（node 原生）"	"每条用例都带**负控**（表外成员 / 未建模面仍按既有口径判定，逐字不变）。 逐条对应（族 58 台账 · W8 分片）： 1. 描述符 exists 分支：`writable:true` 的**重定义**不覆盖旧的 `[[Writable]]` ⇒ 引擎读描述符/写门须见**新的** writable。 断言：expect(Object.getOwnPropertyDescriptor(o, \"x\")?.writable).toBe(true);；expect(Object.getOwnPropertyDescriptor(p, \"x\")?.writable).toBe(false);"	没测该层	keep	keep	—
-"引擎：普通对象 —— 重定义后描述符读出**新的** writable（原生 true）"	"每条用例都带**负控**（表外成员 / 未建模面仍按既有口径判定，逐字不变）。 逐条对应（族 58 台账 · W8 分片）： 1. 描述符 exists 分支：`writable:true` 的**重定义**不覆盖旧的 `[[Writable]]` ⇒ 引擎读描述符/写门须见**新的** writable。 断言：expect(v(src)).toEqual({ ok: true, value: true });"	没测该层	keep	keep	—
-"引擎：原型对象 —— 重定义后描述符读出**新的** writable（原生 true）"	"每条用例都带**负控**（表外成员 / 未建模面仍按既有口径判定，逐字不变）。 逐条对应（族 58 台账 · W8 分片）： 1. 描述符 exists 分支：`writable:true` 的**重定义**不覆盖旧的 `[[Writable]]` ⇒ 引擎读描述符/写门须见**新的** writable。 断言：expect(v(src)).toEqual({ ok: true, value: true });"	没测该层	keep	keep	—
-"引擎：重定义后写门放开（原生 o.x = 2 成功）"	"每条用例都带**负控**（表外成员 / 未建模面仍按既有口径判定，逐字不变）。 逐条对应（族 58 台账 · W8 分片）： 1. 描述符 exists 分支：`writable:true` 的**重定义**不覆盖旧的 `[[Writable]]` ⇒ 引擎读描述符/写门须见**新的** writable。 断言：expect(v(src)).toEqual({ ok: true, value: 2 });"	没测该层	keep	keep	—
-"负控：writable:true → false 的收紧仍生效（原生 false）"	"每条用例都带**负控**（表外成员 / 未建模面仍按既有口径判定，逐字不变）。 逐条对应（族 58 台账 · W8 分片）： 1. 描述符 exists 分支：`writable:true` 的**重定义**不覆盖旧的 `[[Writable]]` ⇒ 引擎读描述符/写门须见**新的** writable。 断言：expect(v(src)).toEqual({ ok: true, value: false });"	没测该层	keep	keep	—
-"负控：不可配置 + writable:false 的属性改 writable:true 原生定抛 TypeError（引擎同抛）"	"每条用例都带**负控**（表外成员 / 未建模面仍按既有口径判定，逐字不变）。 逐条对应（族 58 台账 · W8 分片）： 1. 描述符 exists 分支：`writable:true` 的**重定义**不覆盖旧的 `[[Writable]]` ⇒ 引擎读描述符/写门须见**新的** writable。 断言：expect(throwName(src)).toBe(\"TypeError\");"	没测该层	keep	keep	—
-"负控：不可配置属性上的同值重定义仍合法（原生 1）"	"每条用例都带**负控**（表外成员 / 未建模面仍按既有口径判定，逐字不变）。 逐条对应（族 58 台账 · W8 分片）： 1. 描述符 exists 分支：`writable:true` 的**重定义**不覆盖旧的 `[[Writable]]` ⇒ 引擎读描述符/写门须见**新的** writable。 断言：expect(v(src)).toEqual({ ok: true, value: 1 });"	没测该层	keep	keep	—
-"宿主实测：Error.prototype 的自有键与 hasOwn 判定（node 原生）"	"每条用例都带**负控**（表外成员 / 未建模面仍按既有口径判定，逐字不变）。 逐条对应（族 58 台账 · W8 分片）： 1. 描述符 exists 分支：`writable:true` 的**重定义**不覆盖旧的 `[[Writable]]` ⇒ 引擎读描述符/写门须见**新的** writable。 断言：expect(Object.getOwnPropertyNames(Error.prototype)).toEqual([；expect(Object.getOwnPropertyNames(TypeError.prototype)).toEqual(["	没测该层	keep	keep	—
-"引擎：gOPN(Error.prototype) 精确列出自有键（原生同款）"	"每条用例都带**负控**（表外成员 / 未建模面仍按既有口径判定，逐字不变）。 逐条对应（族 58 台账 · W8 分片）： 1. 描述符 exists 分支：`writable:true` 的**重定义**不覆盖旧的 `[[Writable]]` ⇒ 引擎读描述符/写门须见**新的** writable。 断言：expect(tupleEls(r)).toEqual([\"constructor\", \"name\", \"message\", \"toString\"]);"	没测该层	keep	keep	—
-"引擎：gOPN(TypeError.prototype) 精确（toString 是**继承**的，不入自有键）"	"每条用例都带**负控**（表外成员 / 未建模面仍按既有口径判定，逐字不变）。 逐条对应（族 58 台账 · W8 分片）： 1. 描述符 exists 分支：`writable:true` 的**重定义**不覆盖旧的 `[[Writable]]` ⇒ 引擎读描述符/写门须见**新的** writable。 断言：expect(tupleEls(r)).toEqual([\"constructor\", \"name\", \"message\"]);"	没测该层	keep	keep	—
-"引擎：Object.hasOwn(Error.prototype, ...) 折确定 boolean（原生 true/false）"	"每条用例都带**负控**（表外成员 / 未建模面仍按既有口径判定，逐字不变）。 逐条对应（族 58 台账 · W8 分片）： 1. 描述符 exists 分支：`writable:true` 的**重定义**不覆盖旧的 `[[Writable]]` ⇒ 引擎读描述符/写门须见**新的** writable。 断言：expect(v(wrap(`return Object.hasOwn(Error.prototype, \"name\");`))).toEqual({；expect(v(wrap(`return Object.hasOwn(Error.prototype, \"message\");`))).toEqual({"	没测该层	keep	keep	—
-"引擎：TypeError.prototype 的 toString 是继承的 ⇒ hasOwn 折 false（原生 false）"	"每条用例都带**负控**（表外成员 / 未建模面仍按既有口径判定，逐字不变）。 逐条对应（族 58 台账 · W8 分片）： 1. 描述符 exists 分支：`writable:true` 的**重定义**不覆盖旧的 `[[Writable]]` ⇒ 引擎读描述符/写门须见**新的** writable。 断言：expect(v(wrap(`return Object.hasOwn(TypeError.prototype, \"toString\");`))).toEqual({"	没测该层	keep	keep	—
-"引擎：Object.keys(Error.prototype) 折精确空元组（原生 []——自有成员全不可枚举）"	"每条用例都带**负控**（表外成员 / 未建模面仍按既有口径判定，逐字不变）。 逐条对应（族 58 台账 · W8 分片）： 1. 描述符 exists 分支：`writable:true` 的**重定义**不覆盖旧的 `[[Writable]]` ⇒ 引擎读描述符/写门须见**新的** writable。 断言：expect(tupleEls(r)).toEqual([]);"	没测该层	keep	keep	—
-"A10 残余已收口：内建原型的 gOPN 与宿主对拍（不再保守 string[]）"	"每条用例都带**负控**（表外成员 / 未建模面仍按既有口径判定，逐字不变）。 逐条对应（族 58 台账 · W8 分片）： 1. 描述符 exists 分支：`writable:true` 的**重定义**不覆盖旧的 `[[Writable]]` ⇒ 引擎读描述符/写门须见**新的** writable。 断言：expect(tupleEls(r)).toEqual(Object.getOwnPropertyNames(Array.prototype));"	没测该层	keep	keep	—
-"A10 残余已收口：Object.prototype 的 hasOwn 折确定值（不再保守 boolean）"	"每条用例都带**负控**（表外成员 / 未建模面仍按既有口径判定，逐字不变）。 逐条对应（族 58 台账 · W8 分片）： 1. 描述符 exists 分支：`writable:true` 的**重定义**不覆盖旧的 `[[Writable]]` ⇒ 引擎读描述符/写门须见**新的** writable。 断言：expect(litValue_____index_ts(r)).toEqual({ ok: true, value: true });"	没测该层	keep	keep	—
-"宿主实测：类原型的自有键 / 可枚举键 / hasOwn（node 原生）"	"每条用例都带**负控**（表外成员 / 未建模面仍按既有口径判定，逐字不变）。 逐条对应（族 58 台账 · W8 分片）： 1. 描述符 exists 分支：`writable:true` 的**重定义**不覆盖旧的 `[[Writable]]` ⇒ 引擎读描述符/写门须见**新的** writable。 断言：expect(Object.getOwnPropertyNames(HostClassA.prototype)).toEqual([\"constructor\", \"m\"]);；expect(Object.keys(HostClassA.prototype)).toEqual([]);"	没测该层	keep	keep	—
-"引擎：gOPN(类原型) 精确列出 constructor + 自有方法（原生同款）"	"每条用例都带**负控**（表外成员 / 未建模面仍按既有口径判定，逐字不变）。 逐条对应（族 58 台账 · W8 分片）： 1. 描述符 exists 分支：`writable:true` 的**重定义**不覆盖旧的 `[[Writable]]` ⇒ 引擎读描述符/写门须见**新的** writable。 断言：expect(tupleEls(r)).toEqual([\"constructor\", \"m\"]);"	没测该层	keep	keep	—
-"引擎：gOPN(只有访问器的类原型) 精确列出 constructor + 访问器（原生同款）"	"每条用例都带**负控**（表外成员 / 未建模面仍按既有口径判定，逐字不变）。 逐条对应（族 58 台账 · W8 分片）： 1. 描述符 exists 分支：`writable:true` 的**重定义**不覆盖旧的 `[[Writable]]` ⇒ 引擎读描述符/写门须见**新的** writable。 断言：expect(tupleEls(r)).toEqual([\"constructor\", \"g\"]);"	没测该层	keep	keep	—
-"引擎：gOPN(类原型) 按**定义序**列出 constructor + 自有方法（原生同款）"	"每条用例都带**负控**（表外成员 / 未建模面仍按既有口径判定，逐字不变）。 逐条对应（族 58 台账 · W8 分片）： 1. 描述符 exists 分支：`writable:true` 的**重定义**不覆盖旧的 `[[Writable]]` ⇒ 引擎读描述符/写门须见**新的** writable。 断言：expect(tupleEls(r)).toEqual([\"constructor\", \"m\", \"n\"]);"	没测该层	keep	keep	—
-"引擎：gOPN(子类原型) 不列**继承**的祖先成员（原生同款）"	"每条用例都带**负控**（表外成员 / 未建模面仍按既有口径判定，逐字不变）。 逐条对应（族 58 台账 · W8 分片）： 1. 描述符 exists 分支：`writable:true` 的**重定义**不覆盖旧的 `[[Writable]]` ⇒ 引擎读描述符/写门须见**新的** writable。 断言：expect(tupleEls(r)).toEqual([\"constructor\", \"own\"]);"	没测该层	keep	keep	—
-"引擎：Object.keys(类原型) 折精确空元组（原生 []——类成员全不可枚举）"	"每条用例都带**负控**（表外成员 / 未建模面仍按既有口径判定，逐字不变）。 逐条对应（族 58 台账 · W8 分片）： 1. 描述符 exists 分支：`writable:true` 的**重定义**不覆盖旧的 `[[Writable]]` ⇒ 引擎读描述符/写门须见**新的** writable。 断言：expect(tupleEls(r)).toEqual([]);"	没测该层	keep	keep	—
-"引擎：Object.hasOwn(类原型, ...) 折确定 boolean（原生 true/false）"	"每条用例都带**负控**（表外成员 / 未建模面仍按既有口径判定，逐字不变）。 逐条对应（族 58 台账 · W8 分片）： 1. 描述符 exists 分支：`writable:true` 的**重定义**不覆盖旧的 `[[Writable]]` ⇒ 引擎读描述符/写门须见**新的** writable。 断言：expect(；expect("	没测该层	keep	keep	—
-"A10 残余：方法与访问器交错定义序已复原（宿主对拍，不再是保守域）"	"每条用例都带**负控**（表外成员 / 未建模面仍按既有口径判定，逐字不变）。 逐条对应（族 58 台账 · W8 分片）： 1. 描述符 exists 分支：`writable:true` 的**重定义**不覆盖旧的 `[[Writable]]` ⇒ 引擎读描述符/写门须见**新的** writable。 断言：expect(Object.getOwnPropertyNames(HostClassG.prototype)).toEqual([\"constructor\", \"m\", \"g\"]);；expect(tupleEls(r)).toEqual([\"constructor\", \"m\", \"g\"]);"	没测该层	keep	keep	—
-"A10 残余：定义序反转（访问器在前）仍按源码序，不是「先方法后访问器」"	"每条用例都带**负控**（表外成员 / 未建模面仍按既有口径判定，逐字不变）。 逐条对应（族 58 台账 · W8 分片）： 1. 描述符 exists 分支：`writable:true` 的**重定义**不覆盖旧的 `[[Writable]]` ⇒ 引擎读描述符/写门须见**新的** writable。 断言：expect(Object.getOwnPropertyNames(HostClassGRev.prototype)).toEqual([\"constructor\", \"g\", \"m\"]);；expect(tupleEls(r)).toEqual([\"constructor\", \"g\", \"m\"]);"	没测该层	keep	keep	—
-"A10 残余：多成员交错；静态 / 私有方法不进原型自有键"	"每条用例都带**负控**（表外成员 / 未建模面仍按既有口径判定，逐字不变）。 逐条对应（族 58 台账 · W8 分片）： 1. 描述符 exists 分支：`writable:true` 的**重定义**不覆盖旧的 `[[Writable]]` ⇒ 引擎读描述符/写门须见**新的** writable。 断言：expect(Object.getOwnPropertyNames(HostClassMix.prototype)).toEqual([；expect(tupleEls(r)).toEqual([\"constructor\", \"m\", \"g\", \"n\"]);"	没测该层	keep	keep	—
-"A10 残余：字符串计算键经 rekey 换真名且保持源码序"	"每条用例都带**负控**（表外成员 / 未建模面仍按既有口径判定，逐字不变）。 逐条对应（族 58 台账 · W8 分片）： 1. 描述符 exists 分支：`writable:true` 的**重定义**不覆盖旧的 `[[Writable]]` ⇒ 引擎读描述符/写门须见**新的** writable。 断言：expect(Object.getOwnPropertyNames(HostClassCk.prototype)).toEqual([；expect(tupleEls(r)).toEqual([\"constructor\", \"a\", \"g\", \"b\"]);"	没测该层	keep	keep	—
-"宿主实测：%GeneratorPrototype% 的协议面**真实存在**（node 原生）"	"每条用例都带**负控**（表外成员 / 未建模面仍按既有口径判定，逐字不变）。 逐条对应（族 58 台账 · W8 分片）： 1. 描述符 exists 分支：`writable:true` 的**重定义**不覆盖旧的 `[[Writable]]` ⇒ 引擎读描述符/写门须见**新的** writable。 断言：expect(typeof hostGen.prototype.next).toBe(\"function\");；expect(typeof hostGen.prototype.return).toBe(\"function\");"	没测该层	keep	keep	—
-"引擎：g.prototype.next 可读（typeof \"function\"，原生同款）"	"每条用例都带**负控**（表外成员 / 未建模面仍按既有口径判定，逐字不变）。 逐条对应（族 58 台账 · W8 分片）： 1. 描述符 exists 分支：`writable:true` 的**重定义**不覆盖旧的 `[[Writable]]` ⇒ 引擎读描述符/写门须见**新的** writable。 断言：expect("	没测该层	keep	keep	—
-"引擎：g.prototype.return / throw 可读（原生同款）"	"结果的 throws 面名（无抛错 → \"\"） 断言：expect(；expect("	没测该层	keep	keep	—
-"引擎：借用调用 g.prototype.next.call(it) 推进生成器（原生 {value:1,done:false}）"	"每条用例都带**负控**（表外成员 / 未建模面仍按既有口径判定，逐字不变）。 逐条对应（族 58 台账 · W8 分片）： 1. 描述符 exists 分支：`writable:true` 的**重定义**不覆盖旧的 `[[Writable]]` ⇒ 引擎读描述符/写门须见**新的** writable。 断言：expect("	没测该层	keep	keep	—
-"引擎：无接收者调用 g.prototype.next() 原生定抛 TypeError（引擎同抛）"	"每条用例都带**负控**（表外成员 / 未建模面仍按既有口径判定，逐字不变）。 逐条对应（族 58 台账 · W8 分片）： 1. 描述符 exists 分支：`writable:true` 的**重定义**不覆盖旧的 `[[Writable]]` ⇒ 引擎读描述符/写门须见**新的** writable。 断言：expect(throwName(src)).toBe(\"TypeError\");"	没测该层	keep	keep	—
-"负控：生成器实例自身的 next 面逐字不变（typeof \"function\"）"	"每条用例都带**负控**（表外成员 / 未建模面仍按既有口径判定，逐字不变）。 逐条对应（族 58 台账 · W8 分片）： 1. 描述符 exists 分支：`writable:true` 的**重定义**不覆盖旧的 `[[Writable]]` ⇒ 引擎读描述符/写门须见**新的** writable。 断言：expect("	没测该层	keep	keep	—
-"负控：协议方法不是原型对象的自有键 —— gOPN(g.prototype) 精确空元组（原生 []）"	"每条用例都带**负控**（表外成员 / 未建模面仍按既有口径判定，逐字不变）。 逐条对应（族 58 台账 · W8 分片）： 1. 描述符 exists 分支：`writable:true` 的**重定义**不覆盖旧的 `[[Writable]]` ⇒ 引擎读描述符/写门须见**新的** writable。 断言：expect(formatShape_____index_ts(r)).toBe(\"[]\");；expect(tupleEls(r)).toEqual([]);"	没测该层	keep	keep	—
-"负控：协议槽是 internal ⇒ 原型对象上 hasOwn(\"next\") 折 false（原生 false）"	"每条用例都带**负控**（表外成员 / 未建模面仍按既有口径判定，逐字不变）。 逐条对应（族 58 台账 · W8 分片）： 1. 描述符 exists 分支：`writable:true` 的**重定义**不覆盖旧的 `[[Writable]]` ⇒ 引擎读描述符/写门须见**新的** writable。 断言：expect("	没测该层	keep	keep	—
-"宿主实测：Buffer 实例的 length 真实存在（node 原生 3）"	"每条用例都带**负控**（表外成员 / 未建模面仍按既有口径判定，逐字不变）。 逐条对应（族 58 台账 · W8 分片）： 1. 描述符 exists 分支：`writable:true` 的**重定义**不覆盖旧的 `[[Writable]]` ⇒ 引擎读描述符/写门须见**新的** writable。 断言：expect(Buffer.from(\"abc\").length).toBe(3);；expect(Object.prototype.hasOwnProperty.call(Buffer.from(\"abc\"), \"length\")).toBe(false);"	没测该层	keep	keep	—
-"引擎：任意 brand 的 \"length\" 槽可读（Buffer 同形 brand → number）"	"每条用例都带**负控**（表外成员 / 未建模面仍按既有口径判定，逐字不变）。 逐条对应（族 58 台账 · W8 分片）： 1. 描述符 exists 分支：`writable:true` 的**重定义**不覆盖旧的 `[[Writable]]` ⇒ 引擎读描述符/写门须见**新的** writable。 断言：expect(formatShape_____index_ts($len(brand))).toBe(\"number\");"	没测该层	keep	keep	—
-"引擎：brand 的 \"length\" 槽与成员读面同口径（$get 同槽）"	"每条用例都带**负控**（表外成员 / 未建模面仍按既有口径判定，逐字不变）。 逐条对应（族 58 台账 · W8 分片）： 1. 描述符 exists 分支：`writable:true` 的**重定义**不覆盖旧的 `[[Writable]]` ⇒ 引擎读描述符/写门须见**新的** writable。 断言：expect(formatShape_____index_ts($len(brand))).toBe(\"number\");"	没测该层	keep	keep	—
-"负控：无 length 槽的 brand 仍折 unknown（逐字不变）"	"每条用例都带**负控**（表外成员 / 未建模面仍按既有口径判定，逐字不变）。 逐条对应（族 58 台账 · W8 分片）： 1. 描述符 exists 分支：`writable:true` 的**重定义**不覆盖旧的 `[[Writable]]` ⇒ 引擎读描述符/写门须见**新的** writable。 断言：expect(formatShape_____index_ts($len(brand))).toBe(\"unknown\");"	没测该层	keep	keep	—
-"负控：对象字面量 / 字符串 / 数组的 length 逐字不变（原生 7 / 3 / 3）"	"每条用例都带**负控**（表外成员 / 未建模面仍按既有口径判定，逐字不变）。 逐条对应（族 58 台账 · W8 分片）： 1. 描述符 exists 分支：`writable:true` 的**重定义**不覆盖旧的 `[[Writable]]` ⇒ 引擎读描述符/写门须见**新的** writable。 断言：expect(v(wrap(`const o = { length: 7 }; return o.length;`))).toEqual({；expect(v(wrap(`return \"abc\".length;`))).toEqual({ ok: true, value: 3 });"	没测该层	keep	keep	—
-"await Promise.all([inner(), inner()])（inner 2 个 await）= 4（原生 4）"	"回归钉：`Promise.all` 不得取**调用期快照**（组合子的兑现值 = **全部元素 settle 之后**的聚合）。 原生（node v26.10.0 实测）： - `await Promise.all([inner(), inner()])`（`inner` 含 2 个 await）→ **4** - `await Promise.all([inner(), inner()])`（`inner` 含 1 个 await）→ **4** - `await Promise.all([inner(), inner()])`（`inner` 无 await）→ **4** - 元素拒绝 → 组合子**拒绝**（`catch`"	没测该层	keep	keep	—
-"check 面签名：promise<4>（原生 4；修前是 promise<number | string>）"	"回归钉：`Promise.all` 不得取**调用期快照**（组合子的兑现值 = **全部元素 settle 之后**的聚合）。 原生（node v26.10.0 实测）： - `await Promise.all([inner(), inner()])`（`inner` 含 2 个 await）→ **4** - `await Promise.all([inner(), inner()])`（`inner` 含 1 个 await）→ **4** - `await Promise.all([inner(), inner()])`（`inner` 无 await）→ **4** - 元素拒绝 → 组合子**拒绝**（`catch`"	没测该层	keep	keep	—
-"组合子自身：返回值即 [2, 2]（原生 [2, 2]；修前是占位符 unknown）"	"回归钉：`Promise.all` 不得取**调用期快照**（组合子的兑现值 = **全部元素 settle 之后**的聚合）。 原生（node v26.10.0 实测）： - `await Promise.all([inner(), inner()])`（`inner` 含 2 个 await）→ **4** - `await Promise.all([inner(), inner()])`（`inner` 含 1 个 await）→ **4** - `await Promise.all([inner(), inner()])`（`inner` 无 await）→ **4** - 元素拒绝 → 组合子**拒绝**（`catch`"	没测该层	keep	keep	—
-"兑现序：组合子在**两个元素都 settle 之后**才兑现（原生 \"a,a,b,b,all\"）"	"回归钉：`Promise.all` 不得取**调用期快照**（组合子的兑现值 = **全部元素 settle 之后**的聚合）。 原生（node v26.10.0 实测）： - `await Promise.all([inner(), inner()])`（`inner` 含 2 个 await）→ **4** - `await Promise.all([inner(), inner()])`（`inner` 含 1 个 await）→ **4** - `await Promise.all([inner(), inner()])`（`inner` 无 await）→ **4** - 元素拒绝 → 组合子**拒绝**（`catch`"	没测该层	keep	keep	—
-"混合元素（pending + 已 settle）= 7（原生 7）"	"回归钉：`Promise.all` 不得取**调用期快照**（组合子的兑现值 = **全部元素 settle 之后**的聚合）。 原生（node v26.10.0 实测）： - `await Promise.all([inner(), inner()])`（`inner` 含 2 个 await）→ **4** - `await Promise.all([inner(), inner()])`（`inner` 含 1 个 await）→ **4** - `await Promise.all([inner(), inner()])`（`inner` 无 await）→ **4** - 元素拒绝 → 组合子**拒绝**（`catch`"	没测该层	keep	keep	—
-"元素拒绝 ⇒ 组合子拒绝（catch 臂可达：原生 \"caught:boom\"）"	"回归钉：`Promise.all` 不得取**调用期快照**（组合子的兑现值 = **全部元素 settle 之后**的聚合）。 原生（node v26.10.0 实测）： - `await Promise.all([inner(), inner()])`（`inner` 含 2 个 await）→ **4** - `await Promise.all([inner(), inner()])`（`inner` 含 1 个 await）→ **4** - `await Promise.all([inner(), inner()])`（`inner` 无 await）→ **4** - 元素拒绝 → 组合子**拒绝**（`catch`"	没测该层	keep	keep	—
-"元素拒绝 ⇒ 组合子的 promise 面确定拒绝（fulfilled 域 never + reason 通道）"	"回归钉：`Promise.all` 不得取**调用期快照**（组合子的兑现值 = **全部元素 settle 之后**的聚合）。 原生（node v26.10.0 实测）： - `await Promise.all([inner(), inner()])`（`inner` 含 2 个 await）→ **4** - `await Promise.all([inner(), inner()])`（`inner` 含 1 个 await）→ **4** - `await Promise.all([inner(), inner()])`（`inner` 无 await）→ **4** - 元素拒绝 → 组合子**拒绝**（`catch`"	没测该层	keep	keep	—
-"一个元素拒绝 ⇒ 组合子拒绝（原生 \"caught:boom\"）"	"回归钉：`Promise.all` 不得取**调用期快照**（组合子的兑现值 = **全部元素 settle 之后**的聚合）。 原生（node v26.10.0 实测）： - `await Promise.all([inner(), inner()])`（`inner` 含 2 个 await）→ **4** - `await Promise.all([inner(), inner()])`（`inner` 含 1 个 await）→ **4** - `await Promise.all([inner(), inner()])`（`inner` 无 await）→ **4** - 元素拒绝 → 组合子**拒绝**（`catch`"	没测该层	keep	keep	—
-"负控制：inner 无 await 时行为不变（原生 4）"	"回归钉：`Promise.all` 不得取**调用期快照**（组合子的兑现值 = **全部元素 settle 之后**的聚合）。 原生（node v26.10.0 实测）： - `await Promise.all([inner(), inner()])`（`inner` 含 2 个 await）→ **4** - `await Promise.all([inner(), inner()])`（`inner` 含 1 个 await）→ **4** - `await Promise.all([inner(), inner()])`（`inner` 无 await）→ **4** - 元素拒绝 → 组合子**拒绝**（`catch`"	没测该层	keep	keep	—
-"负控制：inner 1 个 await 时行为不变（原生 4）"	"回归钉：`Promise.all` 不得取**调用期快照**（组合子的兑现值 = **全部元素 settle 之后**的聚合）。 原生（node v26.10.0 实测）： - `await Promise.all([inner(), inner()])`（`inner` 含 2 个 await）→ **4** - `await Promise.all([inner(), inner()])`（`inner` 含 1 个 await）→ **4** - `await Promise.all([inner(), inner()])`（`inner` 无 await）→ **4** - 元素拒绝 → 组合子**拒绝**（`catch`"	没测该层	keep	keep	—
-"负控制：元素全部已 settle 时走快路径（金标零漂移：promise<[1, 2]>）"	"回归钉：`Promise.all` 不得取**调用期快照**（组合子的兑现值 = **全部元素 settle 之后**的聚合）。 原生（node v26.10.0 实测）： - `await Promise.all([inner(), inner()])`（`inner` 含 2 个 await）→ **4** - `await Promise.all([inner(), inner()])`（`inner` 含 1 个 await）→ **4** - `await Promise.all([inner(), inner()])`（`inner` 无 await）→ **4** - 元素拒绝 → 组合子**拒绝**（`catch`"	没测该层	keep	keep	—
-"负控制：非可迭代输入不同步抛（原生折 rejection：promise<unknown>）"	"回归钉：`Promise.all` 不得取**调用期快照**（组合子的兑现值 = **全部元素 settle 之后**的聚合）。 原生（node v26.10.0 实测）： - `await Promise.all([inner(), inner()])`（`inner` 含 2 个 await）→ **4** - `await Promise.all([inner(), inner()])`（`inner` 含 1 个 await）→ **4** - `await Promise.all([inner(), inner()])`（`inner` 无 await）→ **4** - 元素拒绝 → 组合子**拒绝**（`catch`"	没测该层	keep	keep	—
-"then 在 pending 接收者上：回调读到终值（原生 3；修前 promise<number | string>）"	"2 个 await 后抛错的 inner（原生：拒绝 reason = Error(\"boom\")） 断言：expect("	没测该层	keep	keep	—
-"then 在 pending 接收者上：await 面读到终值（原生 3）"	"2 个 await 后抛错的 inner（原生：拒绝 reason = Error(\"boom\")） 断言：expect("	没测该层	keep	keep	—
-"check 面签名：promise<3>（原生 3；修前 promise<number | string>）"	"2 个 await 后抛错的 inner（原生：拒绝 reason = Error(\"boom\")） 断言：expect(sigOf(r, \"f\")).toBe(\"promise<3>\");"	没测该层	keep	keep	—
-"then 在 pending 接收者上：拒绝 ⇒ onRejected 臂可达（原生 \"rej:boom\"）"	"2 个 await 后抛错的 inner（原生：拒绝 reason = Error(\"boom\")） 断言：expect("	没测该层	keep	keep	—
-"catch 在 pending 接收者上：catch 臂可达（原生 \"caught:boom\"）"	"2 个 await 后抛错的 inner（原生：拒绝 reason = Error(\"boom\")） 断言：expect("	没测该层	keep	keep	—
-"Promise.all(...).then(cb)：回调读到聚合终值（原生 4；修前 promise<number | string>）"	"2 个 await 后抛错的 inner（原生：拒绝 reason = Error(\"boom\")） 断言：expect("	没测该层	keep	keep	—
-"Promise.all(...).then(cb)：await 面读到终值（原生 4）"	"2 个 await 后抛错的 inner（原生：拒绝 reason = Error(\"boom\")） 断言：expect("	没测该层	keep	keep	—
-"兑现序：then 回调在 all 兑现之后（原生 \"a,a,b,b,then:2,after\"）"	"2 个 await 后抛错的 inner（原生：拒绝 reason = Error(\"boom\")） 断言：expect("	没测该层	keep	keep	—
-"负控制：已 settle 接收者的反应面产物逐字不变（promise<2> / promise<43>）"	"回归钉：**promise 反应面**（.then/.catch）与**其它组合子** （race / any / allSettled）不得抢跑、不得取调用期快照。 原生（node v26.10.0 实测，见交付报告的原生基线表）： - `await inner().then((v) => v + 1)`（inner 含 2 个 await）→ **3** - `await Promise.all([inner(), inner()]).then((r) => r[0] + r[1])` → **4** - `await Promise.race([inner(), Promise.resolve(9)])` → **9**（已"	没测该层	keep	keep	—
-"race：已 settle 的元素先赢（原生 9；修前 promise<unknown | 9>）"	"2 个 await 后抛错的 inner（原生：拒绝 reason = Error(\"boom\")） 断言：expect("	没测该层	keep	keep	—
-"race：await 面读到赢家终值（原生 9）"	"2 个 await 后抛错的 inner（原生：拒绝 reason = Error(\"boom\")） 断言：expect("	没测该层	keep	keep	—
-"race：pending 元素后 settle 不改写赢家（原生 9）"	"2 个 await 后抛错的 inner（原生：拒绝 reason = Error(\"boom\")） 断言：expect("	没测该层	keep	keep	—
-"any：首个 fulfilled 赢（原生 9；修前 promise<unknown | 9>）"	"2 个 await 后抛错的 inner（原生：拒绝 reason = Error(\"boom\")） 断言：expect("	没测该层	keep	keep	—
-"any：await 面读到赢家终值（原生 9）"	"2 个 await 后抛错的 inner（原生：拒绝 reason = Error(\"boom\")） 断言：expect("	没测该层	keep	keep	—
-"any：全拒 ⇒ AggregateError（原生 AggregateError:All promises were rejected）"	"2 个 await 后抛错的 inner（原生：拒绝 reason = Error(\"boom\")） 断言：expect("	没测该层	keep	keep	—
-"any：pending 元素 fulfill 赢（原生 2）"	"2 个 await 后抛错的 inner（原生：拒绝 reason = Error(\"boom\")） 断言：expect("	没测该层	keep	keep	—
-"allSettled：等全部 settle，逐项记 fulfilled（原生 \"fulfilled:2,fulfilled:9\"）"	"2 个 await 后抛错的 inner（原生：拒绝 reason = Error(\"boom\")） 断言：expect("	没测该层	keep	keep	—
-"allSettled：逐项记 rejected（原生 \"rejected:boom,fulfilled:9\"）"	"2 个 await 后抛错的 inner（原生：拒绝 reason = Error(\"boom\")） 断言：expect("	没测该层	keep	keep	—
-"负控制：race/any/allSettled 快路径产物逐字不变"	"回归钉：**promise 反应面**（.then/.catch）与**其它组合子** （race / any / allSettled）不得抢跑、不得取调用期快照。 原生（node v26.10.0 实测，见交付报告的原生基线表）： - `await inner().then((v) => v + 1)`（inner 含 2 个 await）→ **3** - `await Promise.all([inner(), inner()]).then((r) => r[0] + r[1])` → **4** - `await Promise.race([inner(), Promise.resolve(9)])` → **9**（已"	没测该层	keep	keep	—
-"组合子拒绝 ⇒ then 的 onRejected 臂可达（原生 \"rej:boom\"）"	"2 个 await 后抛错的 inner（原生：拒绝 reason = Error(\"boom\")） 断言：expect("	没测该层	keep	keep	—
-"组合子拒绝 ⇒ catch 臂可达（原生 \"caught:boom\"）"	"2 个 await 后抛错的 inner（原生：拒绝 reason = Error(\"boom\")） 断言：expect("	没测该层	keep	keep	—
-"race 拒绝 ⇒ then 的 onRejected 臂可达（原生 \"rej:r\"）"	"2 个 await 后抛错的 inner（原生：拒绝 reason = Error(\"boom\")） 断言：expect("	没测该层	keep	keep	—
-"any 全拒 ⇒ then 的 onRejected 臂拿到 AggregateError（原生同名）"	"回归钉：**promise 反应面**（.then/.catch）与**其它组合子** （race / any / allSettled）不得抢跑、不得取调用期快照。 原生（node v26.10.0 实测，见交付报告的原生基线表）： - `await inner().then((v) => v + 1)`（inner 含 2 个 await）→ **3** - `await Promise.all([inner(), inner()]).then((r) => r[0] + r[1])` → **4** - `await Promise.race([inner(), Promise.resolve(9)])` → **9**（已"	没测该层	keep	keep	—
+thenable 的兑现值进 promise 的值域（原生 5，引擎改前 { then: (r) => ? }）；非 thenable 对照：回调返回普通值 ⇒ 逐字不变（promise<7>）；非 thenable 对照：回调返回普通对象 ⇒ 逐字不变（promise<{ a: 1 }>）；负控：then 不是函数 ⇒ 按普通值兑现（原生同款，promise<{ then: 1 }>）；负控：then 调过但没 settle ⇒ 永挂（unsettled，不猜）；负控：th	algebra-async-promise 聚合矩阵	没测该层	keep	keep	—
+catch 臂的回调返回值是 thenable ⇒ 同款采纳（原生 5）；非 thenable 对照：catch 回调返回普通值 ⇒ 逐字不变（promise<7>）；负控：catch 回调返回的 thenable 没 settle ⇒ 永挂（unsettled）；负控：catch 回调返回的 thenable 调 reject ⇒ rejected 通道记录该 reason	algebra-async-promise 聚合矩阵	没测该层	keep	keep	—
+finally 臂的回调返回值是 thenable ⇒ 同款采纳（原生：兑现值丢弃，保留原值 1）；非 thenable 对照：finally 回调返回普通值 ⇒ 逐字不变（promise<1>）；负控：finally 回调返回的 thenable 没 settle ⇒ 永挂（unsettled）；负控：finally 回调返回的 thenable 调 reject ⇒ 结果被拒（reason 替换原 reason）；finally 臂的拒绝通道透传 + thenable 调	algebra-async-promise 聚合矩阵	没测该层	keep	keep	—
+await then 臂的 thenable 兑现值（原生 6）；await catch 臂的 thenable 兑现值（原生 6）；await finally 臂的 thenable ⇒ 原生保留原值（2）；await 拒绝通道：then 臂的 thenable 调 reject ⇒ await 抛该 reason；await 非 thenable 不受影响（原生 8）	algebra-async-promise 聚合矩阵	没测该层	keep	keep	—
+thenable 的兑现值进 promise 的值域（原生 1，引擎改前 { then: (r) => ? }）；负控制：非 thenable 的值不被采纳（Promise.resolve(1) → promise<1>）；负控制：非 thenable 的对象照旧（Promise.resolve({a:1}) → promise<{ a: 1 }>）；负控制：promise 实参仍走 promise 通道（Promise.resolve(Promise.resolve(1))	algebra-async-promise 聚合矩阵	没测该层	keep	keep	—
+执行器 resolve 采到 thenable ⇒ 兑现值进 promise 的值域（原生 1）；执行器 resolve 采到非 thenable ⇒ 照旧（promise<{ a: 1 }>）；执行器 resolve 采到 thenable 且 then 调 reject ⇒ 拒绝通道带 reason	algebra-async-promise 聚合矩阵	没测该层	keep	keep	—
+await thenable 仍交付 settle 值（原生 6，机制同款）；await promise 面采纳后的兑现值（await Promise.resolve(thenable) → 1）；await 非 thenable 不受影响（await 5 → 5）	algebra-async-promise 聚合矩阵	没测该层	keep	keep	—
+next() 返回 promise（typeof next().then === function）；next() 的结果是 Promise 实例；装 @@asyncIterator 自返方法；Object.prototype.toString 折 [object AsyncGenerator]；同步迭代面缺席（原生无 @@iterator）	algebra-async-promise 聚合矩阵	没测该层	keep	keep	—
+async *m(){}：next() 返回 promise；async *m(){}：装 @@asyncIterator；async *m(){}：tag 折 [object AsyncGenerator]	algebra-async-promise 聚合矩阵	没测该层	keep	keep	—
+next() 仍是裸函数（非 promise）；同步 generator 仍有 @@iterator；同步 generator 的 next() 不是 promise	algebra-async-promise 聚合矩阵	没测该层	keep	keep	—
+async generator（函数表达式面）：for-await 累加精确 3（原生 1+2=3）；async generator：三个 yield 累加精确 6（原生 1+2+3=6）；async generator：单个 yield 精确 7；async generator：字符串元素逐项拼接精确 "ab"（原生 "ab"）；async generator：空生成器 → 0 次迭代，精确 0（原生 0）；class async *m(){}：for-await 累加精确	algebra-async-promise 聚合矩阵	没测该层	keep	keep	—
+同步 generator 的 for-await（同步迭代器回退）仍是精确 3；数组的 for-await（同步回退）仍是精确 3；同步 generator 的 for-of（同步迭代面）仍是精确 3；普通 async 函数（非 generator）不受影响；非生成器的仅异步可迭代对象：元素域仍折 unknown（不得臆造元素）；async generator 的 next() 仍返 promise（Bug 141 主修复面不回归）；同步 generator 的 next()	algebra-async-promise 聚合矩阵	没测该层	keep	keep	—
+嵌套声明：next() 返回 promise（typeof next().then === function）；嵌套声明：next() 的结果是 Promise 实例；嵌套声明：装 @@asyncIterator 自返方法；嵌套声明：Object.prototype.toString 折 [object AsyncGenerator]；嵌套声明：同步迭代面缺席（原生无 @@iterator）；模块级声明：next() 返回 promise；模块级声明：装 @@asyncIte	algebra-async-promise 聚合矩阵	没测该层	keep	keep	—
+同步 generator 声明：next() 不是 promise；同步 generator 声明：仍有 @@iterator；同步 generator 声明：next() 仍是裸函数（无 then）；async 函数（非 generator）声明：仍返回 promise	algebra-async-promise 聚合矩阵	没测该层	keep	keep	—
+static async 方法返回 promise（typeof → object）；static async 方法的返回是 Promise 实例；体内 throw 不同步抛到调用点（此前同步抛）；负控制：实例 async 方法仍返回 promise；负控制：静态同步方法仍返回原始值；负控制：静态同步方法的 throw 仍同步抛	algebra-async-promise 聚合矩阵	没测该层	keep	keep	—
+原生：f() 返回后 await 之前的写可见、之后的写不可见（n = 0）；原生：await 之后的副作用不进调用方的同步窗口（log = "a"）；原生：for-await 体的 await 之后的效果同样延后；原生：async 函数返回 pending promise（Promise { 0 } ⇒ promise<0>）	algebra-async-promise 聚合矩阵	没测该层	keep	keep	—
+await 之前的写保留（原生 1，引擎改前 11）；调用点自身的同步语句不被 async 续体插队（原生 "1,3,4"）；await 之后的写对 typeof 观察不可见（原生 "undefined"）；箭头 async 体同样挂起（原生 "a,c"，引擎改前 "a,b,c"）；pending promise 不被穿行（原生 "a"，引擎改前 "a,b"）	algebra-async-promise 聚合矩阵	没测该层	keep	keep	—
+const x = await f()：同步段拿不到被等待值；return await g()：调用点先返回；h(await x)：实参位置同样挂起；x + await y：二元表达式位置同样挂起；const {a} = await f()：解构位置同样挂起；await 前的表达式照常求值（原生 3）	algebra-async-promise 聚合矩阵	没测该层	keep	keep	—
+await 后的返回值进 promise 的 inner；await 链的值域逐跳传递；负控制：已 settle 的 promise 的 await 取值仍精确（await Promise.resolve(1) → 1）；负控制：async 函数仍返回 promise 形态（值域不被截断成 unknown）	algebra-async-promise 聚合矩阵	没测该层	keep	keep	—
+c1 构造点：n = 0（步骤 3：体在消费点跑，构造点 native 0 精确）；c2 构造点：log = "" | "ab"（native "" ∈ join；改前 wrong-exact "ab"）；c3 it.next() 后：n = 1（步骤 4 挂起点回放；native 1，步骤 3 为 0 | 5）；c4 it.next() 后：log = "a"（步骤 4 挂起点回放；native "a"，步骤 3 为 "" | "ab"）；步骤 4 · 连续两次 next(	algebra-async-promise 聚合矩阵	没测该层	keep	keep	—
+双臂 promise：try 臂与 catch 臂都可达（并集）；负控制：确定拒绝的 promise —— catch 臂取值不变（"c:k"）；负控制：确定 fulfilled 的 promise —— 只有 fulfilled 臂	algebra-async-promise 聚合矩阵	没测该层	keep	keep	—
+thenable 的 res 值被交付（原生 number，引擎改前 object）；thenable 的 res 值可以是字符串；负控制：非 thenable 的普通值不被采纳（await 5 → 5）；负控制：promise 仍走 promise 通道（await Promise.resolve(1) → 1）	algebra-async-promise 聚合矩阵	没测该层	keep	keep	—
+.return(v) 转发给委托迭代器（委托的清理副作用不再丢失）；负控制：非委托挂起点的 .return(v) 不转发（无委托 → 无副作用）；负控制：普通生成器的 .return(v) 语义不变（{value: v, done: true}）	algebra-async-promise 聚合矩阵	没测该层	keep	keep	—
+Object.keys(g) → ""（改前："0,next,return,throw,constructor,@@iterator"）；Object.getOwnPropertyNames(g) → ""；for-in 累积 → ""；hasOwnProperty("next") → false（协议方法在原型上，不在自有面）；负控制：协议面仍可用（typeof gi.next → "function"，gi.next().value → 1）；负控制："next" in	algebra-async-promise 聚合矩阵	没测该层	keep	keep	—
+签名面不发布协议方法槽（无 next/return/throw/constructor/@@iterator）；签名面保留数字下标元素域（yield* s → "0": string）——族 01 口径不被破；@@iterator 槽按符号键投影建模（"@@iterator" 槽带 symbolKey 标记）；负控制：协议面在运行面仍可用（typeof gi.next → "function"）	algebra-async-promise 聚合矩阵	没测该层	keep	keep	—
+恒假条款 `typeof data["@@iterator"] === "function"` 消失；协议槽条款全消失（next / return / throw / constructor）；guard 产物逐条等于期望串（改前多出 6 条协议槽条款）；guard 访问的成员键里没有 internal 协议槽键；数字下标槽（元素域）仍被发布——族 01 约定不被破；负控制：普通对象的非 internal 成员仍出现在 guard 里（guard 面没被改空）；负控制：非 i	algebra-async-promise 聚合矩阵	没测该层	keep	keep	—
+改前的恒假条款在原生生成器上恒 false（问题确实存在）；改后 guard 的逐条原生求值：仅元素域条款为 false（族 01 已知残留）；负控制：普通对象的 guard 每条在原生对象上都是 true	algebra-async-promise 聚合矩阵	没测该层	keep	keep	—
+协议槽不进约束产物；数字下标槽（元素域）仍被发布（族 01 约定）；负控制：普通对象的公有字段仍在约束产物里	algebra-async-promise 聚合矩阵	没测该层	keep	keep	—
+私有字段槽不进 guard（改前恒假条款 `data["#C::x"] === 1` 消失）；原生 oracle：私有字段不是自有属性（恒假条款的依据）	algebra-async-promise 聚合矩阵	没测该层	keep	keep	—
+签名面（S18）仍不发布 internal 槽——本分片不回退；Bug 191：访问器键的 guard 仍按 getter 读域判定（不被本分片改坏）；Bug 191：访问器键的约束投影仍取 getter 读域	algebra-async-promise 聚合矩阵	没测该层	keep	keep	—
+all：元素 rejected → 组合子带 reason（await 抛 → catch 臂可达）；race：元素 rejected → 组合子带 reason（await 抛 → catch 臂可达）；any：全拒 → AggregateError（原生 errors 数组 + 固定 message）；race：结算值按 PromiseResolve unwrap（元素 promise → 其值，非 promise 本身）；race：混合元素 → 兑现域非 object（	algebra-async-promise 聚合矩阵	没测该层	keep	keep	—
+执行器抛错 → promise 以抛出值拒绝（catch 臂可达）；执行器抛错 → fulfilled 域 never + rejected 通道带 reason；先 settle 获胜：执行器先 resolve 后抛错 → 仍兑现（原生 first-wins）；负控制：空执行器（永不 settle）仍是 promise<unknown>（不假装 settle）；负控制：只 reject 的执行器仍是确定拒绝（Bug 36 通道）	algebra-async-promise 聚合矩阵	没测该层	keep	keep	—
+Promise.resolve(1)：直接命名空间调用不抛，值域是 promise<1>；Promise.resolve.call(null, 1)：this 为 nullish ⇒ TypeError；Promise.resolve.call({}, 1)：this 非构造器 ⇒ TypeError；Promise.resolve.call(Promise, 1)：this 是构造器 ⇒ 合法，值域是 promise<1>；const r = Promise.resolve	algebra-async-promise 聚合矩阵	没测该层	keep	keep	—
+机制面：命名空间派发带 this → 非构造器接收者抛 TypeError；机制面：直接命名空间调用（this 缺席）合法 → 不抛；机制面：构造器接收者合法（Promise 的 Abs 面 = fn + ctor:true）；机制面：不可判接收者（any）→ 记 may-throw，不硬抛（不制造假抛）；机制面：this 为 undefined（undefAbs 形态）→ TypeError（原生 PromiseResolve 非对象）；端到端：Promise.resolv	algebra-async-promise 聚合矩阵	没测该层	keep	keep	—
+rejected 元素 → reason 槽装真 reason（读 .reason.message 不抛）；fulfilled 元素 → value 槽装解包后的值（非 promise 本身）；fulfilled 元素 → status 恒 "fulfilled"（判别联合，不与 rejected 并集）；混合元素 → 逐元素投影（长度与原生一致）；负控制：非 promise 元素的既有口径不变（status 两态并集 + value/reason 双槽）	algebra-async-promise 聚合矩阵	没测该层	keep	keep	—
+then({}) → 透传原值（非调用 → ≡ undefined）；then([1, 2]) → 透传原值；then(null) → 透传原值（既有 nullish 口径不变）；catch({}) → 拒绝透传（非调用 handler ≡ undefined，不吞拒绝）；负控制：可调用 handler 仍真执行（映射 / 捕获）；负控制：非函数 prim handler 仍是 identity（既有口径不变）；签名面：非可调用 handler 的结果 promise 是 p	algebra-async-promise 聚合矩阵	没测该层	keep	keep	—
+宿主实测：writable:true 的重定义把 [[Writable]] 翻回 true（node 原生）；引擎：普通对象 —— 重定义后描述符读出**新的** writable（原生 true）；引擎：原型对象 —— 重定义后描述符读出**新的** writable（原生 true）；引擎：重定义后写门放开（原生 o.x = 2 成功）；负控：writable:true → false 的收紧仍生效（原生 false）；负控：不可配置 + writable:false 的	algebra-async-promise 聚合矩阵	没测该层	keep	keep	—
+宿主实测：Error.prototype 的自有键与 hasOwn 判定（node 原生）；引擎：gOPN(Error.prototype) 精确列出自有键（原生同款）；引擎：gOPN(TypeError.prototype) 精确（toString 是**继承**的，不入自有键）；引擎：Object.hasOwn(Error.prototype, ...) 折确定 boolean（原生 true/false）；引擎：TypeError.prototype 的 toStrin	algebra-async-promise 聚合矩阵	没测该层	keep	keep	—
+宿主实测：类原型的自有键 / 可枚举键 / hasOwn（node 原生）；引擎：gOPN(类原型) 精确列出 constructor + 自有方法（原生同款）；引擎：gOPN(只有访问器的类原型) 精确列出 constructor + 访问器（原生同款）；引擎：gOPN(类原型) 按**定义序**列出 constructor + 自有方法（原生同款）；引擎：gOPN(子类原型) 不列**继承**的祖先成员（原生同款）；引擎：Object.keys(类原型) 折精确空元组（原	algebra-async-promise 聚合矩阵	没测该层	keep	keep	—
+宿主实测：%GeneratorPrototype% 的协议面**真实存在**（node 原生）；引擎：g.prototype.next 可读（typeof "function"，原生同款）；引擎：g.prototype.return / throw 可读（原生同款）；引擎：借用调用 g.prototype.next.call(it) 推进生成器（原生 {value:1,done:false}）；引擎：无接收者调用 g.prototype.next() 原生定抛 TypeErr	algebra-async-promise 聚合矩阵	没测该层	keep	keep	—
+宿主实测：Buffer 实例的 length 真实存在（node 原生 3）；引擎：任意 brand 的 "length" 槽可读（Buffer 同形 brand → number）；引擎：brand 的 "length" 槽与成员读面同口径（$get 同槽）；负控：无 length 槽的 brand 仍折 unknown（逐字不变）；负控：对象字面量 / 字符串 / 数组的 length 逐字不变（原生 7 / 3 / 3）	algebra-async-promise 聚合矩阵	没测该层	keep	keep	—
+await Promise.all([inner(), inner()])（inner 2 个 await）= 4（原生 4）；check 面签名：promise<4>（原生 4；修前是 promise<number | string>）；组合子自身：返回值即 [2, 2]（原生 [2, 2]；修前是占位符 unknown）；兑现序：组合子在**两个元素都 settle 之后**才兑现（原生 "a,a,b,b,all"）；混合元素（pending + 已 settle）= 7	algebra-async-promise 聚合矩阵	没测该层	keep	keep	—
+then 在 pending 接收者上：回调读到终值（原生 3；修前 promise<number | string>）；then 在 pending 接收者上：await 面读到终值（原生 3）；check 面签名：promise<3>（原生 3；修前 promise<number | string>）；then 在 pending 接收者上：拒绝 ⇒ onRejected 臂可达（原生 "rej:boom"）；catch 在 pending 接收者上：catch 臂可达（	algebra-async-promise 聚合矩阵	没测该层	keep	keep	—
+```
+
+```audit-deleted
+title	reason	evidence
+thenable 的兑现值进 promise 的值域（原生 5，引擎改前 { then: (r) => ? }）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+非 thenable 对照：回调返回普通值 ⇒ 逐字不变（promise<7>）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+非 thenable 对照：回调返回普通对象 ⇒ 逐字不变（promise<{ a: 1 }>）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控：then 不是函数 ⇒ 按普通值兑现（原生同款，promise<{ then: 1 }>）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控：then 调过但没 settle ⇒ 永挂（unsettled，不猜）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控：then 调 reject ⇒ rejected 通道记录该 reason	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+then 体抛错 ⇒ 结果被拒（reason = 抛出的值）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+first-wins：then 先 res 后 rej ⇒ 只认第一次 settle（原生兑现 5）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+递归采纳：兑现值仍是 thenable ⇒ 再采纳一层（原生 7）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+回调返回 promise ⇒ 既有口径不变（promise<5>）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+catch 臂的回调返回值是 thenable ⇒ 同款采纳（原生 5）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+非 thenable 对照：catch 回调返回普通值 ⇒ 逐字不变（promise<7>）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控：catch 回调返回的 thenable 没 settle ⇒ 永挂（unsettled）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控：catch 回调返回的 thenable 调 reject ⇒ rejected 通道记录该 reason	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+finally 臂的回调返回值是 thenable ⇒ 同款采纳（原生：兑现值丢弃，保留原值 1）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+非 thenable 对照：finally 回调返回普通值 ⇒ 逐字不变（promise<1>）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控：finally 回调返回的 thenable 没 settle ⇒ 永挂（unsettled）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控：finally 回调返回的 thenable 调 reject ⇒ 结果被拒（reason 替换原 reason）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+finally 臂的拒绝通道透传 + thenable 调 reject ⇒ reason 替换（原生同款）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+await then 臂的 thenable 兑现值（原生 6）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+await catch 臂的 thenable 兑现值（原生 6）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+await finally 臂的 thenable ⇒ 原生保留原值（2）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+await 拒绝通道：then 臂的 thenable 调 reject ⇒ await 抛该 reason	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+await 非 thenable 不受影响（原生 8）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+thenable 的兑现值进 promise 的值域（原生 1，引擎改前 { then: (r) => ? }）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控制：非 thenable 的值不被采纳（Promise.resolve(1) → promise<1>）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控制：非 thenable 的对象照旧（Promise.resolve({a:1}) → promise<{ a: 1 }>）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控制：promise 实参仍走 promise 通道（Promise.resolve(Promise.resolve(1)) → promise<1>）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控制：then **不是函数** ⇒ 不当作 thenable（按普通值兑现）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+reject 通道：thenable 的 then 调 reject ⇒ 拒绝 reason 落 rejected 通道	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+reject 通道：await 该 promise ⇒ 抛 reason（catch 臂可达）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+then 体抛错 ⇒ promise 被拒绝（reason = 抛出的值）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+then 不 settle ⇒ promise 永挂（值域 unknown，unsettled）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+first-wins：then 先 res 后 rej ⇒ 只认第一次 settle（原生兑现 1）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+first-wins：then 先 rej 后 res ⇒ 拒绝（原生 reason = boom）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+settle 之后的抛错被忽略（原生：thenable job 的抛错不改已定的兑现）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+执行器 resolve 采到 thenable ⇒ 兑现值进 promise 的值域（原生 1）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+执行器 resolve 采到非 thenable ⇒ 照旧（promise<{ a: 1 }>）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+执行器 resolve 采到 thenable 且 then 调 reject ⇒ 拒绝通道带 reason	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+await thenable 仍交付 settle 值（原生 6，机制同款）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+await promise 面采纳后的兑现值（await Promise.resolve(thenable) → 1）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+await 非 thenable 不受影响（await 5 → 5）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+next() 返回 promise（typeof next().then === function）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+next() 的结果是 Promise 实例	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+装 @@asyncIterator 自返方法	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+Object.prototype.toString 折 [object AsyncGenerator]	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+同步迭代面缺席（原生无 @@iterator）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+async *m(){}：next() 返回 promise	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+async *m(){}：装 @@asyncIterator	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+async *m(){}：tag 折 [object AsyncGenerator]	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+next() 仍是裸函数（非 promise）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+同步 generator 仍有 @@iterator	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+同步 generator 的 next() 不是 promise	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+async generator（函数表达式面）：for-await 累加精确 3（原生 1+2=3）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+async generator：三个 yield 累加精确 6（原生 1+2+3=6）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+async generator：单个 yield 精确 7	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+async generator：字符串元素逐项拼接精确 "ab"（原生 "ab"）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+async generator：空生成器 → 0 次迭代，精确 0（原生 0）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+class async *m(){}：for-await 累加精确 3（原生 1+2=3）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+元素域不是 unknown（不得退成 number | unknown）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+同步 generator 的 for-await（同步迭代器回退）仍是精确 3	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+数组的 for-await（同步回退）仍是精确 3	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+同步 generator 的 for-of（同步迭代面）仍是精确 3	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+普通 async 函数（非 generator）不受影响	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+非生成器的仅异步可迭代对象：元素域仍折 unknown（不得臆造元素）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+async generator 的 next() 仍返 promise（Bug 141 主修复面不回归）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+同步 generator 的 next() 仍返裸 iterResult（非 promise）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+嵌套声明：next() 返回 promise（typeof next().then === function）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+嵌套声明：next() 的结果是 Promise 实例	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+嵌套声明：装 @@asyncIterator 自返方法	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+嵌套声明：Object.prototype.toString 折 [object AsyncGenerator]	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+嵌套声明：同步迭代面缺席（原生无 @@iterator）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+模块级声明：next() 返回 promise	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+模块级声明：装 @@asyncIterator + tag 折 [object AsyncGenerator]	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+同步 generator 声明：next() 不是 promise	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+同步 generator 声明：仍有 @@iterator	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+同步 generator 声明：next() 仍是裸函数（无 then）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+async 函数（非 generator）声明：仍返回 promise	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+static async 方法返回 promise（typeof → object）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+static async 方法的返回是 Promise 实例	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+体内 throw 不同步抛到调用点（此前同步抛）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控制：实例 async 方法仍返回 promise	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控制：静态同步方法仍返回原始值	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控制：静态同步方法的 throw 仍同步抛	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+原生：f() 返回后 await 之前的写可见、之后的写不可见（n = 0）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+原生：await 之后的副作用不进调用方的同步窗口（log = "a"）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+原生：for-await 体的 await 之后的效果同样延后	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+原生：async 函数返回 pending promise（Promise { 0 } ⇒ promise<0>）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+await 之前的写保留（原生 1，引擎改前 11）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+调用点自身的同步语句不被 async 续体插队（原生 "1,3,4"）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+await 之后的写对 typeof 观察不可见（原生 "undefined"）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+箭头 async 体同样挂起（原生 "a,c"，引擎改前 "a,b,c"）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+pending promise 不被穿行（原生 "a"，引擎改前 "a,b"）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+const x = await f()：同步段拿不到被等待值	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+return await g()：调用点先返回	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+h(await x)：实参位置同样挂起	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+x + await y：二元表达式位置同样挂起	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+const {a} = await f()：解构位置同样挂起	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+await 前的表达式照常求值（原生 3）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+await 后的返回值进 promise 的 inner	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+await 链的值域逐跳传递	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控制：已 settle 的 promise 的 await 取值仍精确（await Promise.resolve(1) → 1）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控制：async 函数仍返回 promise 形态（值域不被截断成 unknown）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+c1 构造点：n = 0（步骤 3：体在消费点跑，构造点 native 0 精确）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+c2 构造点：log = "" | "ab"（native "" ∈ join；改前 wrong-exact "ab"）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+c3 it.next() 后：n = 1（步骤 4 挂起点回放；native 1，步骤 3 为 0 | 5）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+c4 it.next() 后：log = "a"（步骤 4 挂起点回放；native "a"，步骤 3 为 "" | "ab"）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+步骤 4 · 连续两次 next() 单调推进到第二个挂起点（native 5 / "ab"）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+步骤 4 · 分段读取：两个挂起点各自的绑定值分别精确（native 1:5）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+四种 $gen 发射点同编：函数表达式 / 对象方法 / 类方法 / async 生成器（各 n = 0）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+eager 值域承重不回归：体写外层绑定的生成器，元素面仍 exact（元素域来自 yield 收集，与外层 join 无关）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+容器 mutator 接收者同样入快照集：arr.length 折成长度域（native 构造点 0 ∈ 域；改前 wrong-exact 1）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+const 别名组一起快照：const a = {...}; const b = a; 经 a 写后 b.v = 0（步骤 3 构造点精确）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控制：协议面与 yield 序列（族 01 eager 收集口径）不变	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控制：解构 lowering 取到元素（const [a] = g() → 1）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控制：不写外层绑定的生成器体产物逐字不变（值面 1:2 精确）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控制：体内 var / 形参写是生成器局部，不入快照集（值面不折 join）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+双臂 promise：try 臂与 catch 臂都可达（并集）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控制：确定拒绝的 promise —— catch 臂取值不变（"c:k"）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控制：确定 fulfilled 的 promise —— 只有 fulfilled 臂	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+thenable 的 res 值被交付（原生 number，引擎改前 object）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+thenable 的 res 值可以是字符串	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控制：非 thenable 的普通值不被采纳（await 5 → 5）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控制：promise 仍走 promise 通道（await Promise.resolve(1) → 1）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+.return(v) 转发给委托迭代器（委托的清理副作用不再丢失）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控制：非委托挂起点的 .return(v) 不转发（无委托 → 无副作用）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控制：普通生成器的 .return(v) 语义不变（{value: v, done: true}）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+Object.keys(g) → ""（改前："0,next,return,throw,constructor,@@iterator"）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+Object.getOwnPropertyNames(g) → ""	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+for-in 累积 → ""	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+hasOwnProperty("next") → false（协议方法在原型上，不在自有面）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控制：协议面仍可用（typeof gi.next → "function"，gi.next().value → 1）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控制："next" in gi → true（原型链命中，与原生一致）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控制：解构 lowering 仍按序取到元素（const [a] = gi → 1）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+签名面不发布协议方法槽（无 next/return/throw/constructor/@@iterator）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+签名面保留数字下标元素域（yield* s → "0": string）——族 01 口径不被破	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+@@iterator 槽按符号键投影建模（"@@iterator" 槽带 symbolKey 标记）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控制：协议面在运行面仍可用（typeof gi.next → "function"）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+恒假条款 `typeof data["@@iterator"] === "function"` 消失	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+协议槽条款全消失（next / return / throw / constructor）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+guard 产物逐条等于期望串（改前多出 6 条协议槽条款）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+guard 访问的成员键里没有 internal 协议槽键	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+数字下标槽（元素域）仍被发布——族 01 约定不被破	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控制：普通对象的非 internal 成员仍出现在 guard 里（guard 面没被改空）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控制：非 internal 成员仍被 guard 访问（不是被剔除成空）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+改前的恒假条款在原生生成器上恒 false（问题确实存在）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+改后 guard 的逐条原生求值：仅元素域条款为 false（族 01 已知残留）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控制：普通对象的 guard 每条在原生对象上都是 true	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+协议槽不进约束产物	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+数字下标槽（元素域）仍被发布（族 01 约定）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控制：普通对象的公有字段仍在约束产物里	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+私有字段槽不进 guard（改前恒假条款 `data["#C::x"] === 1` 消失）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+原生 oracle：私有字段不是自有属性（恒假条款的依据）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+签名面（S18）仍不发布 internal 槽——本分片不回退	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+Bug 191：访问器键的 guard 仍按 getter 读域判定（不被本分片改坏）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+Bug 191：访问器键的约束投影仍取 getter 读域	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+all：元素 rejected → 组合子带 reason（await 抛 → catch 臂可达）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+race：元素 rejected → 组合子带 reason（await 抛 → catch 臂可达）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+any：全拒 → AggregateError（原生 errors 数组 + 固定 message）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+race：结算值按 PromiseResolve unwrap（元素 promise → 其值，非 promise 本身）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+race：混合元素 → 兑现域非 object（原生恒 number）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控制：无拒绝组合的投影不变（all 元素数组 / race·any 元素联合）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控制：单 promise 的 await 拒绝面不变（Bug 36 通道）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+漂移门：aggregateErrorAbs 槽位口径与 errorBrandAbs 同款（Bug 293 本地构造）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+执行器抛错 → promise 以抛出值拒绝（catch 臂可达）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+执行器抛错 → fulfilled 域 never + rejected 通道带 reason	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+先 settle 获胜：执行器先 resolve 后抛错 → 仍兑现（原生 first-wins）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控制：空执行器（永不 settle）仍是 promise<unknown>（不假装 settle）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控制：只 reject 的执行器仍是确定拒绝（Bug 36 通道）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+Promise.resolve(1)：直接命名空间调用不抛，值域是 promise<1>	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+Promise.resolve.call(null, 1)：this 为 nullish ⇒ TypeError	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+Promise.resolve.call({}, 1)：this 非构造器 ⇒ TypeError	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+Promise.resolve.call(Promise, 1)：this 是构造器 ⇒ 合法，值域是 promise<1>	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+const r = Promise.resolve; r(1)：this 缺席（undefined）⇒ TypeError	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+Promise.resolve.call(undefined, 1)：this 显式 undefined ⇒ TypeError	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控制：Math.max.call(null, 1, 2) 不抛且返回 2（this 判定只对 Promise 生效）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+全族：7 个 Promise 静态 × {null, {}, Promise} 接收者与原生逐格一致	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+机制面：命名空间派发带 this → 非构造器接收者抛 TypeError	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+机制面：直接命名空间调用（this 缺席）合法 → 不抛	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+机制面：构造器接收者合法（Promise 的 Abs 面 = fn + ctor:true）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+机制面：不可判接收者（any）→ 记 may-throw，不硬抛（不制造假抛）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+机制面：this 为 undefined（undefAbs 形态）→ TypeError（原生 PromiseResolve 非对象）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+端到端：Promise.resolve.call(null, 1)（待 member.ts 转发 this 的越界一行）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控制：直接调用与构造器接收者不抛（原生合法路径）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控制：其它命名空间静态不因 this 通道受影响（Math.max.call(null, …) 合法）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+rejected 元素 → reason 槽装真 reason（读 .reason.message 不抛）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+fulfilled 元素 → value 槽装解包后的值（非 promise 本身）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+fulfilled 元素 → status 恒 "fulfilled"（判别联合，不与 rejected 并集）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+混合元素 → 逐元素投影（长度与原生一致）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控制：非 promise 元素的既有口径不变（status 两态并集 + value/reason 双槽）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+then({}) → 透传原值（非调用 → ≡ undefined）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+then([1, 2]) → 透传原值	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+then(null) → 透传原值（既有 nullish 口径不变）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+catch({}) → 拒绝透传（非调用 handler ≡ undefined，不吞拒绝）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控制：可调用 handler 仍真执行（映射 / 捕获）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控制：非函数 prim handler 仍是 identity（既有口径不变）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+签名面：非可调用 handler 的结果 promise 是 promise<1>（非 promise<never>）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+宿主实测：writable:true 的重定义把 [[Writable]] 翻回 true（node 原生）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+引擎：普通对象 —— 重定义后描述符读出**新的** writable（原生 true）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+引擎：原型对象 —— 重定义后描述符读出**新的** writable（原生 true）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+引擎：重定义后写门放开（原生 o.x = 2 成功）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控：writable:true → false 的收紧仍生效（原生 false）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控：不可配置 + writable:false 的属性改 writable:true 原生定抛 TypeError（引擎同抛）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控：不可配置属性上的同值重定义仍合法（原生 1）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+宿主实测：Error.prototype 的自有键与 hasOwn 判定（node 原生）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+引擎：gOPN(Error.prototype) 精确列出自有键（原生同款）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+引擎：gOPN(TypeError.prototype) 精确（toString 是**继承**的，不入自有键）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+引擎：Object.hasOwn(Error.prototype, ...) 折确定 boolean（原生 true/false）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+引擎：TypeError.prototype 的 toString 是继承的 ⇒ hasOwn 折 false（原生 false）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+引擎：Object.keys(Error.prototype) 折精确空元组（原生 []——自有成员全不可枚举）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+A10 残余已收口：内建原型的 gOPN 与宿主对拍（不再保守 string[]）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+A10 残余已收口：Object.prototype 的 hasOwn 折确定值（不再保守 boolean）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+宿主实测：类原型的自有键 / 可枚举键 / hasOwn（node 原生）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+引擎：gOPN(类原型) 精确列出 constructor + 自有方法（原生同款）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+引擎：gOPN(只有访问器的类原型) 精确列出 constructor + 访问器（原生同款）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+引擎：gOPN(类原型) 按**定义序**列出 constructor + 自有方法（原生同款）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+引擎：gOPN(子类原型) 不列**继承**的祖先成员（原生同款）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+引擎：Object.keys(类原型) 折精确空元组（原生 []——类成员全不可枚举）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+引擎：Object.hasOwn(类原型, ...) 折确定 boolean（原生 true/false）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+A10 残余：方法与访问器交错定义序已复原（宿主对拍，不再是保守域）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+A10 残余：定义序反转（访问器在前）仍按源码序，不是「先方法后访问器」	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+A10 残余：多成员交错；静态 / 私有方法不进原型自有键	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+A10 残余：字符串计算键经 rekey 换真名且保持源码序	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+宿主实测：%GeneratorPrototype% 的协议面**真实存在**（node 原生）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+引擎：g.prototype.next 可读（typeof "function"，原生同款）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+引擎：g.prototype.return / throw 可读（原生同款）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+引擎：借用调用 g.prototype.next.call(it) 推进生成器（原生 {value:1,done:false}）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+引擎：无接收者调用 g.prototype.next() 原生定抛 TypeError（引擎同抛）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控：生成器实例自身的 next 面逐字不变（typeof "function"）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控：协议方法不是原型对象的自有键 —— gOPN(g.prototype) 精确空元组（原生 []）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控：协议槽是 internal ⇒ 原型对象上 hasOwn("next") 折 false（原生 false）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+宿主实测：Buffer 实例的 length 真实存在（node 原生 3）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+引擎：任意 brand 的 "length" 槽可读（Buffer 同形 brand → number）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+引擎：brand 的 "length" 槽与成员读面同口径（$get 同槽）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控：无 length 槽的 brand 仍折 unknown（逐字不变）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控：对象字面量 / 字符串 / 数组的 length 逐字不变（原生 7 / 3 / 3）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+await Promise.all([inner(), inner()])（inner 2 个 await）= 4（原生 4）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+check 面签名：promise<4>（原生 4；修前是 promise<number | string>）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+组合子自身：返回值即 [2, 2]（原生 [2, 2]；修前是占位符 unknown）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+兑现序：组合子在**两个元素都 settle 之后**才兑现（原生 "a,a,b,b,all"）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+混合元素（pending + 已 settle）= 7（原生 7）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+元素拒绝 ⇒ 组合子拒绝（catch 臂可达：原生 "caught:boom"）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+元素拒绝 ⇒ 组合子的 promise 面确定拒绝（fulfilled 域 never + reason 通道）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+一个元素拒绝 ⇒ 组合子拒绝（原生 "caught:boom"）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控制：inner 无 await 时行为不变（原生 4）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控制：inner 1 个 await 时行为不变（原生 4）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控制：元素全部已 settle 时走快路径（金标零漂移：promise<[1, 2]>）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控制：非可迭代输入不同步抛（原生折 rejection：promise<unknown>）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+then 在 pending 接收者上：回调读到终值（原生 3；修前 promise<number | string>）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+then 在 pending 接收者上：await 面读到终值（原生 3）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+check 面签名：promise<3>（原生 3；修前 promise<number | string>）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+then 在 pending 接收者上：拒绝 ⇒ onRejected 臂可达（原生 "rej:boom"）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+catch 在 pending 接收者上：catch 臂可达（原生 "caught:boom"）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+Promise.all(...).then(cb)：回调读到聚合终值（原生 4；修前 promise<number | string>）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+Promise.all(...).then(cb)：await 面读到终值（原生 4）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+兑现序：then 回调在 all 兑现之后（原生 "a,a,b,b,then:2,after"）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控制：已 settle 接收者的反应面产物逐字不变（promise<2> / promise<43>）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+race：已 settle 的元素先赢（原生 9；修前 promise<unknown | 9>）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+race：await 面读到赢家终值（原生 9）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+race：pending 元素后 settle 不改写赢家（原生 9）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+any：首个 fulfilled 赢（原生 9；修前 promise<unknown | 9>）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+any：await 面读到赢家终值（原生 9）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+any：全拒 ⇒ AggregateError（原生 AggregateError:All promises were rejected）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+any：pending 元素 fulfill 赢（原生 2）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+allSettled：等全部 settle，逐项记 fulfilled（原生 "fulfilled:2,fulfilled:9"）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+allSettled：逐项记 rejected（原生 "rejected:boom,fulfilled:9"）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+负控制：race/any/allSettled 快路径产物逐字不变	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+组合子拒绝 ⇒ then 的 onRejected 臂可达（原生 "rej:boom"）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+组合子拒绝 ⇒ catch 臂可达（原生 "caught:boom"）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+race 拒绝 ⇒ then 的 onRejected 臂可达（原生 "rej:r"）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
+any 全拒 ⇒ then 的 onRejected 臂拿到 AggregateError（原生同名）	dup:algebra-async-promise 聚合矩阵	commit:e7d05f2e
 ```
