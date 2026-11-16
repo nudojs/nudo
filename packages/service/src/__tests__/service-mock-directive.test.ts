@@ -388,152 +388,47 @@ function witness(src: string, file = "/t/replace-scope.js"): string {
 }
 
 describe("@nudo:replace 命中的子表达式仍求值", () => {
-  it("被替换调用的 throws 域保留（L2 门禁不再假绿）", () => {
-    const withDirective = `export function f(input) {
-  // @nudo:replace JSON.parse(input) number()
-  const v = JSON.parse(input);
-  return v;
-}
-`;
-    const control = `export function f(input) {
-  const v = JSON.parse(input);
-  return v;
-}
-`;
-    // 修复前：带指令 → 0（假绿，JSON.parse 的 TypeError 被吞）
+  const sigOf = (r: { signatures: { name: string; display: string }[] }, fn: string) => r.signatures.find((s) => s.name === fn)?.display ?? "(missing)";
+  const witness = (src: string, file = "/t/replace-scope.js") => formatShape(analyzeFile(file, src).functions[0]!.cases[0]!.abs);
+  it("throws/副作用保留；覆盖仍生效；相邻子表达式不受影响", () => {
+    const withDirective = 'export function f(input) {\n  // @nudo:replace JSON.parse(input) number()\n  const v = JSON.parse(input);\n  return v;\n}\n';
+    const control = 'export function f(input) {\n  const v = JSON.parse(input);\n  return v;\n}\n';
     expect(l2Count(check(withDirective), "f")).toBe(1);
-    // 对照：JSON.parse 本来就会抛 → 门禁红
     expect(l2Count(check(control), "f")).toBe(1);
-    // 类型覆盖仍在（结果类型 = 断言类型）
     expect(sigOf(check(withDirective), "f")).toContain("number");
-  });
 
-  it("被替换调用的副作用保留（求值发生，结果取注入值）", () => {
-    const withDirective = `let counter = 0;
-function bump() { counter = counter + 1; return counter; }
-/** @nudo:case "c" () */
-export function f() {
-  // @nudo:replace bump() number()
-  const x = bump();
-  return counter;
-}
-`;
-    const control = `let counter = 0;
-function bump() { counter = counter + 1; return counter; }
-/** @nudo:case "c" () */
-export function f() {
-  const x = bump();
-  return counter;
-}
-`;
-    // 修复前：bump() 整段被替换 → 从不调用 → counter 停在 0
-    expect(witness(withDirective)).toBe("1");
-    expect(witness(control)).toBe("1");
-  });
+    const side = 'let counter = 0;\nfunction bump() { counter = counter + 1; return counter; }\n/** @nudo:case "c" () */\nexport function f() {\n  // @nudo:replace bump() number()\n  const x = bump();\n  return counter;\n}\n';
+    const sideControl = 'let counter = 0;\nfunction bump() { counter = counter + 1; return counter; }\n/** @nudo:case "c" () */\nexport function f() {\n  const x = bump();\n  return counter;\n}\n';
+    expect(witness(side)).toBe("1");
+    expect(witness(sideControl)).toBe("1");
 
-  it("负控制：未被标注的相邻子表达式照常求值", () => {
-    const src = `/**
- * @nudo:case "c" (5, 10)
- */
-export function f(a, b) {
-  // @nudo:replace a lit(100)
-  const x = a + b;
-  return x;
-}
-`;
-    // 只有 a 被替换（→ 100），b 照常求值（→ 10）
-    expect(witness(src)).toBe("110");
+    const adjacent = '/**\n * @nudo:case "c" (5, 10)\n */\nexport function f(a, b) {\n  // @nudo:replace a lit(100)\n  const x = a + b;\n  return x;\n}\n';
+    expect(witness(adjacent)).toBe("110");
   });
-});
+});;
 
 describe("@nudo:as / @nudo:replace 的作用范围按 AST 节点身份", () => {
-  it("@nudo:as 挂在 if 上不泄漏进块内的 return", () => {
-    const withDirective = `export function f(cond) {
-  // @nudo:as number()
-  if (cond) {
-    const x = "str";
-    return x;
-  }
-  return 0;
-}
-`;
-    const control = `export function f(cond) {
-  if (cond) {
-    const x = "str";
-    return x;
-  }
-  return 0;
-}
-`;
-    // 修复前：块内的 return x 被替换 → 签名 number
-    expect(sigOf(check(withDirective), "f")).toBe(sigOf(check(control), "f"));
-    expect(sigOf(check(withDirective), "f")).toContain('"str"');
-  });
+  const sigOf = (r: { signatures: { name: string; display: string }[] }, fn: string) => r.signatures.find((s) => s.name === fn)?.display ?? "(missing)";
+  const witness = (src: string) => formatShape(analyzeFile("/t/replace-scope.js", src).functions[0]!.cases[0]!.abs);
+  it("as/replace 不泄漏进 if 块/嵌套函数/同行下一条；正例仍生效", () => {
+    const withIf = 'export function f(cond) {\n  // @nudo:as number()\n  if (cond) {\n    const x = "str";\n    return x;\n  }\n  return 0;\n}\n';
+    const controlIf = 'export function f(cond) {\n  if (cond) {\n    const x = "str";\n    return x;\n  }\n  return 0;\n}\n';
+    expect(sigOf(check(withIf), "f")).toBe(sigOf(check(controlIf), "f"));
+    expect(sigOf(check(withIf), "f")).toContain('"str"');
 
-  it("@nudo:replace 不泄漏进嵌套函数体", () => {
-    const withDirective = `export function f(x) {
-  // @nudo:replace x number()
-  const g = function () {
-    return x;
-  };
-  return g();
-}
-`;
-    const control = `export function f(x) {
-  const g = function () {
-    return x;
-  };
-  return g();
-}
-`;
-    // 修复前：嵌套函数体内的 return x 被替换 → 签名 number
-    expect(sigOf(check(withDirective), "f")).toBe(sigOf(check(control), "f"));
-  });
+    const withNested = 'export function f(x) {\n  // @nudo:replace x number()\n  const g = function () {\n    return x;\n  };\n  return g();\n}\n';
+    const controlNested = 'export function f(x) {\n  const g = function () {\n    return x;\n  };\n  return g();\n}\n';
+    expect(sigOf(check(withNested), "f")).toBe(sigOf(check(controlNested), "f"));
 
-  it("@nudo:replace 只作用于被标注的那条语句（同行下一条不受影响）", () => {
-    const withDirective = `export function f(a) {
-  // @nudo:replace a number()
-  const x = a; const y = a;
-  return [x, y];
-}
-`;
-    const control = `export function f(a) {
-  const x = a; const y = a;
-  return [x, y];
-}
-`;
-    const sig = sigOf(check(withDirective), "f");
-    // 修复前：[number, number]（两条语句都被改）
-    expect(sig).toContain("[number, any]");
-    expect(sig).not.toContain("[number, number]");
-  });
+    const sameLine = 'export function f(a) {\n  // @nudo:replace a number()\n  const x = a; const y = a;\n  return [x, y];\n}\n';
+    const sameSig = sigOf(check(sameLine), "f");
+    expect(sameSig).toContain("[number, any]");
+    expect(sameSig).not.toContain("[number, number]");
 
-  it("负控制：指令仍作用于它标注的那条语句", () => {
-    const src = `/**
- * @nudo:case "c" (5, 10)
- */
-export function f(a, b) {
-  // @nudo:replace a lit(100)
-  const x = a + b;
-  return x;
-}
-`;
-    expect(witness(src)).toBe("110");
+    expect(witness('/**\n * @nudo:case "c" (5, 10)\n */\nexport function f(a, b) {\n  // @nudo:replace a lit(100)\n  const x = a + b;\n  return x;\n}\n')).toBe("110");
+    expect(witness('/**\n * @nudo:case "c" ()\n */\nexport function f() {\n  // @nudo:as string()\n  const a = 1;\n  return a;\n}\n')).toBe("string");
   });
-
-  it("负控制：@nudo:as 仍覆盖紧随语句的 init", () => {
-    const src = `/**
- * @nudo:case "c" ()
- */
-export function f() {
-  // @nudo:as string()
-  const a = 1;
-  return a;
-}
-`;
-    expect(witness(src)).toBe("string");
-  });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -553,24 +448,14 @@ describe("skipped 导出不得从产物里消失", () => {
 
 
 describe("skipped 导出不得从产物里消失", () => {
-  it("skip 且未声明返回 ⇒ 仍然声明成 unknown（与 check 同源、TS 投影面归一）", () => {
-    const dts = generateDts(
-      analyzeFile___nudojs_service(
-        "/test/bug079.js",
-        `/**\n * @nudo:skip\n */\nexport function boom(a) {\n  return a;\n}\n`,
-      ),
-    );
+  it("skip 未声明返回仍声明 unknown；普通函数不受影响", () => {
+    const dts = generateDts(analyzeFile___nudojs_service("/test/bug079.js", '/**\n * @nudo:skip\n */\nexport function boom(a) {\n  return a;\n}\n'));
     expect(dts).toContain("export declare function boom(...args: unknown[]): unknown;");
+    const plain = generateDts(analyzeFile___nudojs_service("/test/bug079b.js", "export function plain(a) {\n  return a + 1;\n}\nplain(1);\n"));
+    expect(plain).toMatch(/export declare function plain\(/);
+    expect(plain).not.toContain("export declare function plain(...args: unknown[]): unknown;");
   });
-
-  it("对照组：未 skip 的普通函数仍然走推断面（不受本修法影响）", () => {
-    const dts = generateDts(
-      analyzeFile___nudojs_service("/test/bug079b.js", `export function plain(a) {\n  return a + 1;\n}\nplain(1);\n`),
-    );
-    expect(dts).toMatch(/export declare function plain\(/);
-    expect(dts).not.toContain("export declare function plain(...args: unknown[]): unknown;");
-  });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -741,44 +626,29 @@ function replaceMissDiags(src: string): DirectiveDiag[] {
 }
 
 describe("@nudo:replace 目标文本在源码里不存在 ⇒ 显式诊断", () => {
-  it("② 目标写错 ⇒ 有一条点名目标文本的诊断", () => {
-    const diags = replaceMissDiags(REPLACE_MISS);
-    expect(diags).toHaveLength(1);
-    expect(diags[0]!.code).toBe("nudo:directive-syntax");
-    // 诊断必须**点名目标文本** ⇒ 用户能看出是哪个字写错了
-    expect(diags[0]!.message).toContain("JSON.parse(inpt)");
-    expect(diags[0]!.message).toContain("no effect");
-  });
-
-  it("① 目标写对 ⇒ 零该诊断（且指令确实命中了节点）", () => {
+  const REPLACE_MISS = 'export function g(input) {\n  // @nudo:replace JSON.parse(inpt) shape({ name: string() })\n  const data = JSON.parse(input);\n  return data;\n}\n';
+  const REPLACE_HIT = 'export function g(input) {\n  // @nudo:replace JSON.parse(input) shape({ name: string() })\n  const data = JSON.parse(input);\n  return data;\n}\n';
+  const REPLACE_NONE = 'export function g(input) {\n  const data = JSON.parse(input);\n  return data;\n}\n';
+  const diagsOf = (src: string) => { const diags: DirectiveDiag[] = []; collectEvalReplacements(src, { diags }); return diags; };
+  const replaceMissDiags = (src: string) => diagsOf(src).filter((d) => d.code === "nudo:directive-syntax" && d.message.includes("@nudo:replace"));
+  it("写错目标点名诊断；写对零诊断且命中区间；无指令零诊断；门禁 warning", () => {
+    const miss = replaceMissDiags(REPLACE_MISS);
+    expect(miss).toHaveLength(1);
+    expect(miss[0]!.message).toContain("JSON.parse(inpt)");
+    expect(miss[0]!.message).toContain("no effect");
     expect(replaceMissDiags(REPLACE_HIT)).toEqual([]);
     const reps = collectEvalReplacements(REPLACE_HIT);
     expect(reps.targets).toHaveLength(1);
-    // 命中 ⇒ 登记了**节点身份**（字符区间）；未命中才会缺这两个字段
     expect(typeof reps.targets[0]!.stmtStart).toBe("number");
     expect(typeof reps.targets[0]!.stmtEnd).toBe("number");
-  });
-
-  it("③ 根本没有该指令 ⇒ 零该诊断（不许误报）", () => {
     expect(replaceMissDiags(REPLACE_NONE)).toEqual([]);
     expect(diagsOf(REPLACE_NONE)).toEqual([]);
+    const issues = directiveDiagIssues(diagsOf(REPLACE_MISS)).filter((i) => i.code === "nudo:directive-syntax");
+    expect(issues).toHaveLength(1);
+    expect(issues[0]!.severity).toBe("warning");
+    expect(issues[0]!.message).toContain("JSON.parse(inpt)");
   });
-
-  it("② 与 ③ 可区分（改前两者的诊断集逐字相同）", () => {
-    const miss = replaceMissDiags(REPLACE_MISS);
-    const none = replaceMissDiags(REPLACE_NONE);
-    expect(miss.length).toBeGreaterThan(none.length);
-    expect(none).toHaveLength(0);
-  });
-
-  it("门禁面可见：warning 级（不挡 exit），且文案点名目标", () => {
-    const issues = directiveDiagIssues(diagsOf(REPLACE_MISS));
-    const hit = issues.filter((i) => i.code === "nudo:directive-syntax");
-    expect(hit).toHaveLength(1);
-    expect(hit[0]!.severity).toBe("warning");
-    expect(hit[0]!.message).toContain("JSON.parse(inpt)");
-  });
-});
+});;
 
 // ── 夹具 ───────────────────────────────────────────────────────────
 
@@ -804,65 +674,44 @@ export function f() { return readFile("/x"); }
 `;
 
 describe("@nudo:mock-module 对同一模块重复声明 ⇒ 显式诊断", () => {
-  it("② 重复声明 ⇒ 有一条点名两条来源的诊断", () => {
-    const r = applyMockModuleDirectivesFromSource(DUP_SRC, {}, {
-      fromFile: join(dir, "app.js"),
-    });
+  let dir: string;
+  beforeEach(() => {
+    dir = tmpProject("nudo-bug-1063-");
+    writeTmpFile(dir, "mock-fs.js", 'export const readFile = (p) => "mock1:" + p;\n');
+    writeTmpFile(dir, "mock-fs3.js", 'export const writeFile = (p, d) => "w:" + p;\n');
+  });
+  const DUP_SRC = '/// @nudo:mock-module "fs" from "./mock-fs.js"\n/// @nudo:mock-module "fs" from "./mock-fs3.js"\nimport { readFile } from "fs";\nexport function f() { return readFile("/x"); }\n';
+  const SINGLE_SRC = '/// @nudo:mock-module "fs" from "./mock-fs.js"\nimport { readFile } from "fs";\nexport function f() { return readFile("/x"); }\n';
+  it("重复点名两条来源且合并导出；单条零诊断；门禁 warning；局部形态并集", () => {
+    const r = applyMockModuleDirectivesFromSource(DUP_SRC, {}, { fromFile: join(dir, "app.js") });
     const dups = r.errors.filter((e) => e.message.includes("Duplicate @nudo:mock-module"));
     expect(dups).toHaveLength(1);
-    // 诊断必须点名**两条**指令的来源
     expect(dups[0]!.message).toContain("./mock-fs.js");
     expect(dups[0]!.message).toContain("./mock-fs3.js");
     expect(dups[0]!.message).toContain('"fs"');
     expect(dups[0]!.code).toBe("nudo:mock-invalid");
-  });
-
-  it("① 单条声明 ⇒ 零该诊断（不许误报）", () => {
-    const r = applyMockModuleDirectivesFromSource(SINGLE_SRC, {}, {
-      fromFile: join(dir, "app.js"),
-    });
-    expect(r.errors).toEqual([]);
-    expect(r.applied).toBe(true);
-  });
-
-  it("② 重复后先声明者的导出名不得静默消失（不退化成 unknown）", () => {
-    const r = applyMockModuleDirectivesFromSource(DUP_SRC, {}, {
-      fromFile: join(dir, "app.js"),
-    });
     const named = r.modules.fs!.named;
-    // 改前：整块覆写 ⇒ readFile 从导出表里**消失**（调用点退化成 unknown）
     expect(Object.keys(named).sort()).toEqual(["readFile", "writeFile"]);
-    // 且先声明者的导出**仍是精确值**（不是 unknown）
-    const readFile = named.readFile!;
-    expect(formatAbs($call(readFile, [$lit("/x")]))).toContain("mock1:/x");
-  });
+    expect(formatAbs($call(named.readFile!, [$lit("/x")]))).toContain("mock1:/x");
 
-  it("门禁面可见：warning 级（不挡 exit）", () => {
+    const single = applyMockModuleDirectivesFromSource(SINGLE_SRC, {}, { fromFile: join(dir, "app.js") });
+    expect(single.errors).toEqual([]);
+    expect(single.applied).toBe(true);
+
     const file = join(dir, "app.js");
     writeTmpFile(dir, "app.js", DUP_SRC);
-    const issues = collectCheckSupplementIssues(file, DUP_SRC);
-    const dups = issues.filter((i) => i.code === "nudo:mock-invalid");
-    expect(dups).toHaveLength(1);
-    expect(dups[0]!.severity).toBe("warning");
-    expect(dups[0]!.message).toContain("./mock-fs.js");
-    expect(dups[0]!.message).toContain("./mock-fs3.js");
-  });
+    const issues = collectCheckSupplementIssues(file, DUP_SRC).filter((i) => i.code === "nudo:mock-invalid");
+    expect(issues).toHaveLength(1);
+    expect(issues[0]!.severity).toBe("warning");
+    expect(issues[0]!.message).toContain("./mock-fs.js");
+    expect(issues[0]!.message).toContain("./mock-fs3.js");
 
-  it("重复声明不影响单条声明的既有口径（局部形态：未点名的名字回落原模块）", () => {
-    const src = `/// @nudo:mock-module "fs" { readFile } from "./mock-fs.js"
-/// @nudo:mock-module "fs" { writeFile } from "./mock-fs3.js"
-import { readFile } from "fs";
-export function f() { return readFile("/x"); }
-`;
-    const r = applyMockModuleDirectivesFromSource(src, {}, {
-      fromFile: join(dir, "app.js"),
-    });
-    // 重复声明被点名（同一 specifier 两条指令）
-    expect(r.errors.filter((e) => e.message.includes("Duplicate @nudo:mock-module"))).toHaveLength(1);
-    // 两条指令点名的名字**都在**（并集）⇒ 导出名不消失
-    expect(Object.keys(r.modules.fs!.named).sort()).toEqual(["readFile", "writeFile"]);
+    const local = '/// @nudo:mock-module "fs" { readFile } from "./mock-fs.js"\n/// @nudo:mock-module "fs" { writeFile } from "./mock-fs3.js"\nimport { readFile } from "fs";\nexport function f() { return readFile("/x"); }\n';
+    const lr = applyMockModuleDirectivesFromSource(local, {}, { fromFile: join(dir, "app.js") });
+    expect(lr.errors.filter((e) => e.message.includes("Duplicate @nudo:mock-module"))).toHaveLength(1);
+    expect(Object.keys(lr.modules.fs!.named).sort()).toEqual(["readFile", "writeFile"]);
   });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -897,44 +746,29 @@ export function callReal() { return useReal(); }
 };
 
 describe("dependency module's own @nudo:mock", () => {
-  it("applies in the declaring function only (entry B)", () => {
+  const FILES = {
+    "dep.js": 'export function readFile(p) { return { path: p, size: 10 }; }\n',
+    "p.js": 'import { readFile } from "./dep.js";\n/**\n * @nudo:mock readFile = (() => "mocked")\n */\nexport function useMock() { return readFile("x"); }\nexport function useReal() { return readFile("y"); }\n',
+    "q.js": 'import { useMock, useReal } from "./p.js";\nexport function callMock() { return useMock(); }\nexport function callReal() { return useReal(); }\n',
+  };
+  it("只在声明函数生效；同函数作为依赖/目标一致", () => {
     withTmpProject("nudo-bug-180-", FILES, (dir) => {
       const qPath = join(dir, "q.js");
       const qSource = readFileSync(qPath, "utf-8");
       const graph = evalAbsModuleGraph(qSource, qPath);
       const run = runTranspiled(qSource, { mode: "analyze", modules: graph.modules });
+      expect(litValue(callTranspiledExportFull(run, "callMock", []).result)).toEqual({ ok: true, value: "mocked" });
+      const real = callTranspiledExportFull(run, "callReal", []).result;
+      expect(real.shape.k).toBe("obj");
+      expect(litValue(real).ok).toBe(false);
 
-      const callMock = callTranspiledExportFull(run, "callMock", []);
-      expect(litValue(callMock.result)).toEqual({ ok: true, value: "mocked" });
-
-      const callReal = callTranspiledExportFull(run, "callReal", []);
-      expect(callReal.result.shape.k).toBe("obj");
-      expect(litValue(callReal.result).ok).toBe(false);
-    });
-  });
-
-  it("same function keeps the same result as a direct target (entry A)", () => {
-    withTmpProject("nudo-bug-180-mod-", FILES, (dir) => {
-      const pPath = join(dir, "p.js");
-      const pSource = readFileSync(pPath, "utf-8");
-      const graph = evalAbsModuleGraph(pSource, pPath);
-      const useMock = graph.modules["./dep.js"]; // dep resolved; p is the entry
-      void useMock;
-      // p 作为入口时 service 侧直接注入其 mock；此处用模块图依赖面验证
-      // useMock/useReal 的导出值（依赖 p.js 由 q 触发，已覆盖在上一用例）。
-      const qPath = join(dir, "q.js");
-      const qSource = readFileSync(qPath, "utf-8");
       const qGraph = evalAbsModuleGraph(qSource, qPath);
-      const pExports = qGraph.modules["./p.js"];
-      expect(pExports).toBeDefined();
-      expect(litValue($call(pExports!.named.useMock!, []))).toEqual({
-        ok: true,
-        value: "mocked",
-      });
-      expect($call(pExports!.named.useReal!, []).shape.k).toBe("obj");
+      const pExports = qGraph.modules["./p.js"]!;
+      expect(litValue($call(pExports.named.useMock!, []))).toEqual({ ok: true, value: "mocked" });
+      expect($call(pExports.named.useReal!, []).shape.k).toBe("obj");
     });
   });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -1010,35 +844,41 @@ function registeredOffsets(src: string): Array<number | undefined> {
 }
 
 describe("@nudo:replace 只认值位的表达式节点", () => {
-  it("目标命中声明符 id（绑定位）⇒ 不算命中 + 显式诊断", () => {
+  const DECL_ID = '// @nudo:replace x number()\nconst x = 5;\nexport function getDeclId() { return x; }\n';
+  const OBJ_KEY = '// @nudo:replace a number()\nconst o = { a: 1 };\nexport function getObjKey() { return o.a; }\n';
+  const OBJ_VAL = '// @nudo:replace 1 number()\nconst o = { a: 1 };\nexport function getObjVal() { return o.a; }\n';
+  const NO_MATCH = '// @nudo:replace zzz number()\nconst x = 5;\nexport function getNoMatch() { return x; }\n';
+  const directiveDiagsOf = (src: string) => { const diags: DirectiveDiag[] = []; collectEvalReplacements_____eval_injection_ts_1(src, { diags }); return diags.filter((d) => d.code === "nudo:directive-syntax"); };
+  const signatureOf = (src: string, name: string): string => {
+    const inject = resolveEvalInjection(src);
+    const report = checkSource("/tmp/bug-184.js", src, undefined, { fromFile: "/tmp/bug-184.js", ...(inject ? { inject } : {}) });
+    const sig = report.signatures.find((s) => s.name === name);
+    expect(sig, name).toBeDefined();
+    return sig!.display;
+  };
+  const registeredOffsets = (src: string) => collectEvalReplacements_____eval_injection_ts_1(src).targets.map((t) => t.stmtStart);
+  it("绑定位/对象键位不算命中且诊断；属性值命中生效；未命中告警", () => {
     expect(registeredOffsets(DECL_ID)).toEqual([undefined]);
-    const diags = directiveDiagsOf(DECL_ID);
-    expect(diags).toHaveLength(1);
-    expect(diags[0]!.message).toContain('@nudo:replace target "x"');
-    expect(diags[0]!.message).toContain("matched no expression");
-    // 绑定位没有被替换（值仍是 5），且这条「没生效」是**可见**的
+    const declDiags = directiveDiagsOf(DECL_ID);
+    expect(declDiags).toHaveLength(1);
+    expect(declDiags[0]!.message).toContain('@nudo:replace target "x"');
+    expect(declDiags[0]!.message).toContain("matched no expression");
     expect(signatureOf(DECL_ID, "getDeclId")).toBe("5");
-  });
 
-  it("目标命中对象属性键位 ⇒ 不算命中 + 显式诊断", () => {
     expect(registeredOffsets(OBJ_KEY)).toEqual([undefined]);
-    const diags = directiveDiagsOf(OBJ_KEY);
-    expect(diags).toHaveLength(1);
-    expect(diags[0]!.message).toContain('@nudo:replace target "a"');
-  });
+    const keyDiags = directiveDiagsOf(OBJ_KEY);
+    expect(keyDiags).toHaveLength(1);
+    expect(keyDiags[0]!.message).toContain('@nudo:replace target "a"');
 
-  it("对照组：目标命中属性值（表达式位）⇒ 命中有区间、零诊断、替换生效", () => {
     expect(typeof registeredOffsets(OBJ_VAL)[0]).toBe("number");
     expect(directiveDiagsOf(OBJ_VAL)).toEqual([]);
     expect(signatureOf(OBJ_VAL, "getObjVal")).toBe("number");
-  });
 
-  it("对照组：目标全文未命中 ⇒ 仍然是「matched no expression」告警", () => {
-    const diags = directiveDiagsOf(NO_MATCH);
-    expect(diags).toHaveLength(1);
-    expect(diags[0]!.message).toContain('@nudo:replace target "zzz"');
+    const noMatch = directiveDiagsOf(NO_MATCH);
+    expect(noMatch).toHaveLength(1);
+    expect(noMatch[0]!.message).toContain('@nudo:replace target "zzz"');
   });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
