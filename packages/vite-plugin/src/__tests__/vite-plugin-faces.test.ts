@@ -69,7 +69,9 @@ async function fixture(): Promise<{ dir: string; id: string }> {
 }
 
 describe("buildEnd 汇总行走 Vite logger（受 build.logLevel 管辖）", () => {
-  it("汇总行走 ctx.info（vite logger），不再走裸 console.log", async () => {
+  it("汇总行走 ctx.info（vite logger），不再走裸 console.log；宿主没有 info 通道时降级到 ctx.warn（仍不逃逸到 console.log）", async () => {
+await (async () => {
+
     const { dir, id } = await fixture();
     try {
       const plugin = nudoPlugin();
@@ -102,9 +104,9 @@ describe("buildEnd 汇总行走 Vite logger（受 build.logLevel 管辖）", () 
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  }, 30_000);
+  })();
+await (async () => {
 
-  it("宿主没有 info 通道时降级到 ctx.warn（仍不逃逸到 console.log）", async () => {
     const { dir, id } = await fixture();
     try {
       const plugin = nudoPlugin();
@@ -131,7 +133,10 @@ describe("buildEnd 汇总行走 Vite logger（受 build.logLevel 管辖）", () 
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  }, 30_000);
+  })();
+});;
+
+  ;
 });
 });
 
@@ -220,7 +225,9 @@ async function diagnosticsOf(plugin: Plugin, code: string, id: string): Promise<
 }
 
 describe("include / exclude 按「绝对路径 + 项目相对路径」双口径匹配", () => {
-  it("exclude: [\"other/**\"] ⇒ other/b.js 被排除（改前仍被分析并报错）", async () => {
+  it("exclude: [\"other/**\"] ⇒ other/b.js 被排除（改前仍被分析并报错）；include: [\"src/**\"] ⇒ src/a.js 照常分析（改前整份分析被静默归零）；include: [\"src/**\"] ⇒ other/b.js 不在白名单 ⇒ 不分析；绝对路径口径仍然有效（**/other/** 照常排除）；与项目配置面同口径：插件选项与 nudo.analysis.exclude 判定一致", async () => {
+await (async () => {
+
     const { dir, otherId } = fixture("exclude");
     try {
       const plugin = nudoPlugin({ exclude: ["other/**"] });
@@ -230,9 +237,9 @@ describe("include / exclude 按「绝对路径 + 项目相对路径」双口径�
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  }, 30_000);
+  })();
+await (async () => {
 
-  it("include: [\"src/**\"] ⇒ src/a.js 照常分析（改前整份分析被静默归零）", async () => {
     const { dir, srcId } = fixture("include");
     try {
       const plugin = nudoPlugin({ include: ["src/**"] });
@@ -243,9 +250,9 @@ describe("include / exclude 按「绝对路径 + 项目相对路径」双口径�
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  }, 30_000);
+  })();
+await (async () => {
 
-  it("include: [\"src/**\"] ⇒ other/b.js 不在白名单 ⇒ 不分析", async () => {
     const { dir, otherId } = fixture("include2");
     try {
       const plugin = nudoPlugin({ include: ["src/**"] });
@@ -255,9 +262,9 @@ describe("include / exclude 按「绝对路径 + 项目相对路径」双口径�
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  }, 30_000);
+  })();
+await (async () => {
 
-  it("绝对路径口径仍然有效（**/other/** 照常排除）", async () => {
     const { dir, otherId } = fixture("abs");
     try {
       const plugin = nudoPlugin({ exclude: ["**/other/**"] });
@@ -267,9 +274,9 @@ describe("include / exclude 按「绝对路径 + 项目相对路径」双口径�
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  }, 30_000);
+  })();
+await (async () => {
 
-  it("与项目配置面同口径：插件选项与 nudo.analysis.exclude 判定一致", async () => {
     const byOption = fixture("cmp-option");
     const byConfig = fixture("cmp-config", { analysis: { mode: "all", exclude: ["other/**"] } });
     try {
@@ -288,7 +295,16 @@ describe("include / exclude 按「绝对路径 + 项目相对路径」双口径�
       rmSync(byOption.dir, { recursive: true, force: true });
       rmSync(byConfig.dir, { recursive: true, force: true });
     }
-  }, 30_000);
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -395,7 +411,9 @@ function physicalFixture(): { dir: string; depId: string; srcId: string } {
 }
 
 describe("软链依赖（realpath id）不得被当项目源码分析", () => {
-  it("软链依赖的 realpath id ⇒ 零诊断（改前报 entry-may-throw）", async () => {
+  it("软链依赖的 realpath id ⇒ 零诊断（改前报 entry-may-throw）；软链依赖的 node_modules 路径 id ⇒ 零诊断；物理目录依赖 ⇒ 零诊断（与软链形态一致）；对照组：项目源码照常分析（排除没有过宽）", async () => {
+await (async () => {
+
     const { dir, realId } = symlinkFixture();
     try {
       const plugin = nudoPlugin();
@@ -405,9 +423,9 @@ describe("软链依赖（realpath id）不得被当项目源码分析", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  }, 30_000);
+  })();
+await (async () => {
 
-  it("软链依赖的 node_modules 路径 id ⇒ 零诊断", async () => {
     const { dir, linkId } = symlinkFixture();
     try {
       const plugin = nudoPlugin();
@@ -417,9 +435,9 @@ describe("软链依赖（realpath id）不得被当项目源码分析", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  }, 30_000);
+  })();
+await (async () => {
 
-  it("物理目录依赖 ⇒ 零诊断（与软链形态一致）", async () => {
     const { dir, depId } = physicalFixture();
     try {
       const plugin = nudoPlugin();
@@ -429,9 +447,9 @@ describe("软链依赖（realpath id）不得被当项目源码分析", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  }, 30_000);
+  })();
+await (async () => {
 
-  it("对照组：项目源码照常分析（排除没有过宽）", async () => {
     const { dir, srcId } = symlinkFixture();
     try {
       const plugin = nudoPlugin();
@@ -442,7 +460,14 @@ describe("软链依赖（realpath id）不得被当项目源码分析", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  }, 30_000);
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -550,7 +575,9 @@ afterEach(() => {
 });
 
 describe("软链工程根下的源文件不得被判「依赖」", () => {
-  it("软链 root + 软链形态 id ⇒ 分析（改前 skip:exclude）", () => {
+  it("软链 root + 软链形态 id ⇒ 分析（改前 skip:exclude）；软链 root + realpath 形态 id ⇒ 分析；对照组：非软链 root ⇒ 分析（行为不变）；工程根之外的文件仍被排除（排除规则没有被放宽）；插件层：软链 root 下的源文件照常出诊断（不再静默空转）；同进程两个插件实例 ⇒ 各自的 root 互不覆盖（模块级全局状态不再串味）", async () => {
+await (async () => {
+
     const { base, linkRoot, linkId } = symlinkRootFixture();
     try {
       setProjectRoot(linkRoot);
@@ -558,9 +585,9 @@ describe("软链工程根下的源文件不得被判「依赖」", () => {
     } finally {
       rmSync(base, { recursive: true, force: true });
     }
-  });
+  })();
+await (async () => {
 
-  it("软链 root + realpath 形态 id ⇒ 分析", () => {
     const { base, linkRoot, realId } = symlinkRootFixture();
     try {
       setProjectRoot(linkRoot);
@@ -568,9 +595,9 @@ describe("软链工程根下的源文件不得被判「依赖」", () => {
     } finally {
       rmSync(base, { recursive: true, force: true });
     }
-  });
+  })();
+await (async () => {
 
-  it("对照组：非软链 root ⇒ 分析（行为不变）", () => {
     const { base, realRoot, realId } = symlinkRootFixture();
     try {
       setProjectRoot(realRoot);
@@ -578,9 +605,9 @@ describe("软链工程根下的源文件不得被判「依赖」", () => {
     } finally {
       rmSync(base, { recursive: true, force: true });
     }
-  });
+  })();
+await (async () => {
 
-  it("工程根之外的文件仍被排除（排除规则没有被放宽）", () => {
     const { base, linkRoot, outsideId } = symlinkRootFixture();
     try {
       setProjectRoot(linkRoot);
@@ -588,9 +615,9 @@ describe("软链工程根下的源文件不得被判「依赖」", () => {
     } finally {
       rmSync(base, { recursive: true, force: true });
     }
-  });
+  })();
+await (async () => {
 
-  it("插件层：软链 root 下的源文件照常出诊断（不再静默空转）", async () => {
     const { base, linkRoot, linkId } = symlinkRootFixture();
     try {
       const plugin = nudoPlugin();
@@ -607,9 +634,9 @@ describe("软链工程根下的源文件不得被判「依赖」", () => {
     } finally {
       rmSync(base, { recursive: true, force: true });
     }
-  }, 30_000);
+  })();
+await (async () => {
 
-  it("同进程两个插件实例 ⇒ 各自的 root 互不覆盖（模块级全局状态不再串味）", async () => {
     const { base, linkRoot, linkId } = symlinkRootFixture();
     const otherBase = mkdtempSync(join(tmpdir(), "nudo-vite-1088-other-"));
     try {
@@ -632,7 +659,18 @@ describe("软链工程根下的源文件不得被判「依赖」", () => {
       rmSync(base, { recursive: true, force: true });
       rmSync(otherBase, { recursive: true, force: true });
     }
-  }, 30_000);
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -710,7 +748,9 @@ function projectWithVerboseDiagnostics(dir: string): void {
 }
 
 describe("check 通道的无位置 issue 不再被伪造成 :1:0", () => {
-  it("无 `line` 的 check issue ⇒ range 用占位 0（不是编造的 1）", () => {
+  it("无 `line` 的 check issue ⇒ range 用占位 0（不是编造的 1）；插件层：无位置的 check issue 渲染为「无位置」（不含 :1:0 / :0:0）；有真位置的 check issue 仍渲染 :line:col（不回归）", async () => {
+await (async () => {
+
     const dir = mkdtempSync(join(tmpdir(), "nudo-vite-1089-"));
     try {
       const id = join(dir, "entry.js");
@@ -723,9 +763,9 @@ describe("check 通道的无位置 issue 不再被伪造成 :1:0", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  }, 30_000);
+  })();
+await (async () => {
 
-  it("插件层：无位置的 check issue 渲染为「无位置」（不含 :1:0 / :0:0）", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-vite-1089-render-"));
     try {
       projectWithVerboseDiagnostics(dir);
@@ -750,9 +790,9 @@ describe("check 通道的无位置 issue 不再被伪造成 :1:0", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  }, 30_000);
+  })();
+await (async () => {
 
-  it("有真位置的 check issue 仍渲染 :line:col（不回归）", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-vite-1089-real-"));
     try {
       projectWithVerboseDiagnostics(dir);
@@ -774,7 +814,12 @@ describe("check 通道的无位置 issue 不再被伪造成 :1:0", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  }, 30_000);
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
 
@@ -999,7 +1044,9 @@ async function run(dir: string, code: string): Promise<Run> {
 }
 
 describe("同名模块下 env ∪ harvest 必须合并（不得丢弃 harvest 专有导出）", () => {
-  it("harvest 专有导出可解析 ⇒ 不再误报 nudo:unknown-inference（与 CLI 同结论）", async () => {
+  it("harvest 专有导出可解析 ⇒ 不再误报 nudo:unknown-inference（与 CLI 同结论）；负控制：env 与 harvest 都没有的导出仍报 nudo:unknown-inference", async () => {
+await (async () => {
+
     const dir = project();
     try {
       const r = await run(dir, src("harvestOnly"));
@@ -1007,9 +1054,9 @@ describe("同名模块下 env ∪ harvest 必须合并（不得丢弃 harvest �
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+await (async () => {
 
-  it("负控制：env 与 harvest 都没有的导出仍报 nudo:unknown-inference", async () => {
     const dir = project();
     try {
       const r = await run(dir, src("notExportedAnywhere"));
@@ -1017,7 +1064,10 @@ describe("同名模块下 env ∪ harvest 必须合并（不得丢弃 harvest �
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+});;
+
+  ;
 });
 });
 
@@ -1121,7 +1171,9 @@ async function run(dir: string, file: string, code: string): Promise<Run> {
 }
 
 describe("项目级 env 按项目根解析（插件两个面同结论、非单调性消失）", () => {
-  it("无文件级 @nudo:env ⇒ 不报 ReferenceError（基线，一直是对的）", async () => {
+  it("无文件级 @nudo:env ⇒ 不报 ReferenceError（基线，一直是对的）；加一行**无关**的文件级 @nudo:env ⇒ 结论不变（不再绿翻红）；两个场景的诊断集合逐项相同（单调）；负控制：项目未声明该 env ⇒ MAGIC 仍报 ReferenceError（门禁未被关掉）", async () => {
+await (async () => {
+
     const { dir, file } = project("", ["./env/web.ts"]);
     try {
       const r = await run(dir, file, APP_SRC);
@@ -1130,9 +1182,9 @@ describe("项目级 env 按项目根解析（插件两个面同结论、非单�
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+await (async () => {
 
-  it("加一行**无关**的文件级 @nudo:env ⇒ 结论不变（不再绿翻红）", async () => {
     const { dir, file } = project(FILE_ENV_LINE, ["./env/web.ts"]);
     try {
       const r = await run(dir, file, FILE_ENV_LINE + APP_SRC);
@@ -1141,9 +1193,9 @@ describe("项目级 env 按项目根解析（插件两个面同结论、非单�
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+await (async () => {
 
-  it("两个场景的诊断集合逐项相同（单调）", async () => {
     const a = project("", ["./env/web.ts"]);
     const b = project(FILE_ENV_LINE, ["./env/web.ts"]);
     try {
@@ -1156,9 +1208,9 @@ describe("项目级 env 按项目根解析（插件两个面同结论、非单�
       rmSync(a.dir, { recursive: true, force: true });
       rmSync(b.dir, { recursive: true, force: true });
     }
-  });
+  })();
+await (async () => {
 
-  it("负控制：项目未声明该 env ⇒ MAGIC 仍报 ReferenceError（门禁未被关掉）", async () => {
     const { dir, file } = project("", undefined);
     try {
       const r = await run(dir, file, APP_SRC);
@@ -1167,7 +1219,14 @@ describe("项目级 env 按项目根解析（插件两个面同结论、非单�
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -1263,7 +1322,9 @@ async function run(dir: string, file: string, code: string): Promise<string> {
 }
 
 describe("项目级 env 装载失败必须上屏（nudo:env-unresolved）", () => {
-  it("项目级 env 缺失 ⇒ 构建期 warning 指名项目根下的路径", async () => {
+  it("项目级 env 缺失 ⇒ 构建期 warning 指名项目根下的路径；同一语义的**文件级**写法同样报（两种写法结论一致）；负控制：项目 env 正常 ⇒ 不报 nudo:env-unresolved", async () => {
+await (async () => {
+
     const { dir, file } = project(["./missing-env.ts"]);
     try {
       const all = await run(dir, file, APP_SRC);
@@ -1274,9 +1335,9 @@ describe("项目级 env 装载失败必须上屏（nudo:env-unresolved）", () =
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+await (async () => {
 
-  it("同一语义的**文件级**写法同样报（两种写法结论一致）", async () => {
     const { dir, file } = project([]);
     try {
       const code = `/// @nudo:env ./missing-env.ts\n${APP_SRC}`;
@@ -1286,9 +1347,9 @@ describe("项目级 env 装载失败必须上屏（nudo:env-unresolved）", () =
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+await (async () => {
 
-  it("负控制：项目 env 正常 ⇒ 不报 nudo:env-unresolved", async () => {
     const { dir, file } = project(["./ok-env.ts"], { "ok-env.ts": OK_ENV_SRC });
     try {
       const all = await run(dir, file, APP_SRC);
@@ -1296,7 +1357,12 @@ describe("项目级 env 装载失败必须上屏（nudo:env-unresolved）", () =
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
 
@@ -1345,7 +1411,9 @@ export function g() {
 `;
 
 describe("vite-plugin：按名字发的 env 诊断不再被过滤掉", () => {
-  it("未知 env 名 ⇒ 构建期 warning（nudo:env-unresolved）", async () => {
+  it("未知 env 名 ⇒ 构建期 warning（nudo:env-unresolved）；负控制：同目录别的文件的无 path 诊断不误吸", async () => {
+await (async () => {
+
     const dir = mkdtempSync(join(tmpdir(), "nudo-vite-bug-470-"));
     try {
       writeFileSync(join(dir, "probe.js"), UNKNOWN_ENV_SRC, "utf-8");
@@ -1361,9 +1429,9 @@ describe("vite-plugin：按名字发的 env 诊断不再被过滤掉", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+await (async () => {
 
-  it("负控制：同目录别的文件的无 path 诊断不误吸", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-vite-bug-470b-"));
     try {
       writeFileSync(join(dir, "other.js"), OTHER_ENV_SRC, "utf-8");
@@ -1380,7 +1448,10 @@ describe("vite-plugin：按名字发的 env 诊断不再被过滤掉", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+});;
+
+  ;
 });
 });
 
@@ -1438,7 +1509,9 @@ function fixture(): string {
 }
 
 describe("vite-plugin 报出 path-env 加载失败", () => {
-  it("@nudo:env 指向缺失文件 → 构建期 warning（nudo:env-unresolved）", async () => {
+  it("@nudo:env 指向缺失文件 → 构建期 warning（nudo:env-unresolved）；负控制：同目录未声明该 env 的文件不得被误伤；负控制：无 @nudo:env 的文件不产生 env 告警", async () => {
+await (async () => {
+
     const dir = fixture();
     try {
       const plugin = nudoPlugin();
@@ -1454,9 +1527,9 @@ describe("vite-plugin 报出 path-env 加载失败", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+await (async () => {
 
-  it("负控制：同目录未声明该 env 的文件不得被误伤", async () => {
     const dir = fixture();
     try {
       const plugin = nudoPlugin();
@@ -1471,9 +1544,9 @@ describe("vite-plugin 报出 path-env 加载失败", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+await (async () => {
 
-  it("负控制：无 @nudo:env 的文件不产生 env 告警", async () => {
     const dir = fixture();
     try {
       const plugin = nudoPlugin();
@@ -1485,7 +1558,12 @@ describe("vite-plugin 报出 path-env 加载失败", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
 
@@ -1545,7 +1623,9 @@ const UNMOCKED_SRC = `export function g() {
 `;
 
 describe("vite-plugin check 面施加 inject 通道（@nudo:mock 生效）", () => {
-  it("@nudo:mock 覆盖的依赖不得再报 nudo:entry-may-throw（与 CLI 同口径：绿）", async () => {
+  it("@nudo:mock 覆盖的依赖不得再报 nudo:entry-may-throw（与 CLI 同口径：绿）；负控制：没有 mock 的入口仍报 nudo:entry-may-throw（门禁未被关掉）", async () => {
+await (async () => {
+
     const dir = mkdtempSync(join(tmpdir(), "nudo-vite-bug-634-"));
     try {
       const file = join(dir, "lib.js");
@@ -1559,9 +1639,9 @@ describe("vite-plugin check 面施加 inject 通道（@nudo:mock 生效）", () 
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+await (async () => {
 
-  it("负控制：没有 mock 的入口仍报 nudo:entry-may-throw（门禁未被关掉）", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-vite-bug-634b-"));
     try {
       const file = join(dir, "g.js");
@@ -1575,7 +1655,10 @@ describe("vite-plugin check 面施加 inject 通道（@nudo:mock 生效）", () 
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+});;
+
+  ;
 });
 });
 
@@ -1675,7 +1758,9 @@ const VERBOSE_PKG = {
 const DEFAULT_PKG = { name: "bug779-vite-default", private: true, type: "module" };
 
 describe("（vite 半）— info 级 check 诊断在 verbose 档必须上屏", () => {
-  it("verbose 档：nudo:assume-relied 走 info 通道上屏（不混进 warn 流）", async () => {
+  it("verbose 档：nudo:assume-relied 走 info 通道上屏（不混进 warn 流）；默认档：info 不上屏（档位取舍仍归 filterDiagnosticsByLevel）", async () => {
+await (async () => {
+
     const { warn, info } = await runVite(VERBOSE_PKG);
     const hit = info.filter((m) => m.includes(ASSUME_CODE));
     expect(hit.length, `info 通道无 info 诊断：${JSON.stringify({ warn, info })}`).toBeGreaterThan(0);
@@ -1683,13 +1768,16 @@ describe("（vite 半）— info 级 check 诊断在 verbose 档必须上屏", (
       warn.filter((m) => m.includes(ASSUME_CODE)).length,
       "info 诊断混进了 warn 流",
     ).toBe(0);
-  }, 30_000);
+  })();
+await (async () => {
 
-  it("默认档：info 不上屏（档位取舍仍归 filterDiagnosticsByLevel）", async () => {
     const { warn, info } = await runVite(DEFAULT_PKG);
     expect(info.filter((m) => m.includes(ASSUME_CODE)).length, "默认档不应上屏 info").toBe(0);
     expect(warn.filter((m) => m.includes(ASSUME_CODE)).length, "默认档不应上屏 info").toBe(0);
-  }, 30_000);
+  })();
+});;
+
+  ;
 });
 });
 
@@ -1799,11 +1887,13 @@ describe("vite-plugin-nudo enforce: 'pre'（TS 源码里的 @nudo: 指令必须�
     return { logger, warnings, infos };
   }
 
-  it("插件对象带 enforce: 'pre'（排在 vite:esbuild 之前 ⇒ 看得到原始 TS 源码）", () => {
-    expect(nudoPlugin().enforce).toBe("pre");
-  });
+  it("插件对象带 enforce: 'pre'（排在 vite:esbuild 之前 ⇒ 看得到原始 TS 源码）；直接驱动 transform：原始 TS 源码里的 @nudo:throws 可见 ⇒ 不报 CLI 不会报的 entry-may-throw；对照组：同一份源码剥掉注释（= esbuild 产物）⇒ 报 entry-may-throw（差异来自插件排序）；真 vite build：.ts 源里的 @nudo:throws 可见 ⇒ 构建成功、零 [nudo] 诊断（", async () => {
+await (async () => {
 
-  it("直接驱动 transform：原始 TS 源码里的 @nudo:throws 可见 ⇒ 不报 CLI 不会报的 entry-may-throw", async () => {
+    expect(nudoPlugin().enforce).toBe("pre");
+  })();
+await (async () => {
+
     const dir = fixture("nudo-vite-895-raw-", {
       "package.json": JSON.stringify({ name: "fx895raw", private: true, version: "0.0.0" }),
     });
@@ -1818,9 +1908,9 @@ describe("vite-plugin-nudo enforce: 'pre'（TS 源码里的 @nudo: 指令必须�
     const msgs = warnFn.mock.calls.map((c) => String(c[0])).join("\n");
     // 指令可见 ⇒ 抛错已声明 ⇒ 无 entry-may-throw（与 `nudo check` 判同：OK）
     expect(msgs).not.toContain("entry-may-throw");
-  });
+  })();
+await (async () => {
 
-  it("对照组：同一份源码剥掉注释（= esbuild 产物）⇒ 报 entry-may-throw（差异来自插件排序）", async () => {
     const dir = fixture("nudo-vite-895-ctl-", {
       "package.json": JSON.stringify({ name: "fx895ctl", private: true, version: "0.0.0" }),
     });
@@ -1835,12 +1925,9 @@ describe("vite-plugin-nudo enforce: 'pre'（TS 源码里的 @nudo: 指令必须�
     const msgs = warnFn.mock.calls.map((c) => String(c[0])).join("\n");
     // 指令不可见 ⇒ 声明缺失 ⇒ 门禁报 error（这正是 895 的**假红**面）
     expect(msgs).toContain("entry-may-throw");
-  });
+  })();
+await (async () => {
 
-  it(
-    "真 vite build：.ts 源里的 @nudo:throws 可见 ⇒ 构建成功、零 [nudo] 诊断（不假红）",
-    { timeout: 120_000 },
-    async () => {
       const dir = fixture("nudo-vite-895-build-", {
         "package.json": JSON.stringify({ name: "fx895build", private: true, version: "0.0.0" }),
         "src/main.ts": TS_WITH_THROWS,
@@ -1866,13 +1953,9 @@ describe("vite-plugin-nudo enforce: 'pre'（TS 源码里的 @nudo: 指令必须�
       // 构建**不得**失败（`nudo check` 对同一份文件判 OK）
       await expect(buildPromise).resolves.toBeTruthy();
       expect(warnings.join("\n")).not.toContain("entry-may-throw");
-    },
-  );
+    })();
+await (async () => {
 
-  it(
-    "真 vite build：TS 特有语法（enum / namespace / as const / satisfies / 抽象类）⇒ 构建成功、零 [nudo] 诊断",
-    { timeout: 120_000 },
-    async () => {
       const dir = fixture("nudo-vite-895-ts-", {
         "package.json": JSON.stringify({ name: "fx895ts", private: true, version: "0.0.0" }),
         // 同一份文件 `nudo check` 判 **OK**（0 error）⇒ 插件也必须判 OK
@@ -1911,13 +1994,9 @@ export const n = NS.v;
       await expect(buildPromise).resolves.toBeTruthy();
       expect(warnings.join("\n")).not.toContain("Failed to analyze");
       expect(warnings.join("\n")).not.toContain("[nudo]");
-    },
-  );
+    })();
+await (async () => {
 
-  it(
-    "真 vite build：分析面解析不了的 TS 语法（装饰器）⇒ 降级为 warn，构建不炸（902 守卫兜底）",
-    { timeout: 120_000 },
-    async () => {
       const dir = fixture("nudo-vite-895-deco-", {
         "package.json": JSON.stringify({ name: "fx895deco", private: true, version: "0.0.0" }),
         "src/main.ts": `function dec(t: unknown) { return t; }
@@ -1945,8 +2024,18 @@ export class A { x = 1; }
       // 解析失败 ⇒ 插件兜底 catch ⇒ 一条 warn；**绝不**红构建
       await expect(buildPromise).resolves.toBeTruthy();
       expect(warnings.join("\n")).toContain("Failed to analyze");
-    },
-  );
+    })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -1988,7 +2077,9 @@ const CLEAN = `export const a = 1;
 `;
 
 describe("虚拟模块 id 必须被跳过（不再触发侧车加载失败）", () => {
-  it("\\0 前缀虚拟 id + 干净源码 + failOnError: true ⇒ 不抛、零诊断", async () => {
+  it("\\0 前缀虚拟 id + 干净源码 + failOnError: true ⇒ 不抛、零诊断；\\0 前缀虚拟 id + 干净源码 + 默认档 ⇒ 零诊断（改前是 1 条 error 级）；virtual: 前缀虚拟 id（无 NUL）同样被跳过；对照组：同源码的普通文件 id 依旧零诊断（跳过不是「全都不分析」）", async () => {
+await (async () => {
+
     const plugin = nudoPlugin({ failOnError: true });
     const warnFn = vi.fn();
     const errorFn = vi.fn((m: string) => {
@@ -2001,9 +2092,9 @@ describe("虚拟模块 id 必须被跳过（不再触发侧车加载失败）", 
     expect(result).toBeNull();
     expect(errorFn).not.toHaveBeenCalled();
     expect(warnFn).not.toHaveBeenCalled();
-  }, 30_000);
+  })();
+await (async () => {
 
-  it("\\0 前缀虚拟 id + 干净源码 + 默认档 ⇒ 零诊断（改前是 1 条 error 级）", async () => {
     const plugin = nudoPlugin();
     const warnFn = vi.fn();
     const errorFn = vi.fn();
@@ -2015,9 +2106,9 @@ describe("虚拟模块 id 必须被跳过（不再触发侧车加载失败）", 
     expect(msgs).not.toContain("module-unreadable");
     expect(warnFn).not.toHaveBeenCalled();
     expect(errorFn).not.toHaveBeenCalled();
-  }, 30_000);
+  })();
+await (async () => {
 
-  it("virtual: 前缀虚拟 id（无 NUL）同样被跳过", async () => {
     const plugin = nudoPlugin();
     const warnFn = vi.fn();
     const ctx = { warn: warnFn, error: vi.fn(), info: vi.fn() };
@@ -2025,9 +2116,9 @@ describe("虚拟模块 id 必须被跳过（不再触发侧车加载失败）", 
     await transformOf(plugin).call(ctx, CLEAN, "virtual:mod2.js");
 
     expect(warnFn).not.toHaveBeenCalled();
-  }, 30_000);
+  })();
+await (async () => {
 
-  it("对照组：同源码的普通文件 id 依旧零诊断（跳过不是「全都不分析」）", async () => {
     const plugin = nudoPlugin();
     const warnFn = vi.fn();
     const ctx = { warn: warnFn, error: vi.fn(), info: vi.fn() };
@@ -2036,7 +2127,14 @@ describe("虚拟模块 id 必须被跳过（不再触发侧车加载失败）", 
 
     expect(result).toBeNull();
     expect(warnFn).not.toHaveBeenCalled();
-  }, 30_000);
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -2128,7 +2226,9 @@ function project(dir: string, nudo?: Record<string, unknown>): void {
 }
 
 describe("vite-plugin 读项目配置的 L2 门禁档位（entryThrows / ignoreThrows）", () => {
-  it("entryThrows=warning ⇒ 报 warning 而不是 error（与 CLI 同口径）", async () => {
+  it("entryThrows=warning ⇒ 报 warning 而不是 error（与 CLI 同口径）；entryThrows=warning + failOnError=true ⇒ 构建不中断（不再抛）；ignoreThrows=[TypeError] ⇒ 该 throw 类不再报 nudo:entry-may-throw；entryThrows=off ⇒ L2 门禁诊断整段缺席；负控制：没有 nudo.check 配置时仍是默认最严档（error）—— 门禁未被整体", async () => {
+await (async () => {
+
     const dir = mkdtempSync(join(tmpdir(), "nudo-vite-bug-897-"));
     try {
       project(dir, { check: { entryThrows: "warning" } });
@@ -2142,9 +2242,9 @@ describe("vite-plugin 读项目配置的 L2 门禁档位（entryThrows / ignoreT
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+await (async () => {
 
-  it("entryThrows=warning + failOnError=true ⇒ 构建不中断（不再抛）", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-vite-bug-897b-"));
     try {
       project(dir, { check: { entryThrows: "warning" } });
@@ -2154,9 +2254,9 @@ describe("vite-plugin 读项目配置的 L2 门禁档位（entryThrows / ignoreT
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+await (async () => {
 
-  it("ignoreThrows=[TypeError] ⇒ 该 throw 类不再报 nudo:entry-may-throw", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-vite-bug-897c-"));
     try {
       project(dir, { check: { ignoreThrows: ["TypeError"] } });
@@ -2168,9 +2268,9 @@ describe("vite-plugin 读项目配置的 L2 门禁档位（entryThrows / ignoreT
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+await (async () => {
 
-  it("entryThrows=off ⇒ L2 门禁诊断整段缺席", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-vite-bug-897d-"));
     try {
       project(dir, { check: { entryThrows: "off" } });
@@ -2181,9 +2281,9 @@ describe("vite-plugin 读项目配置的 L2 门禁档位（entryThrows / ignoreT
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+await (async () => {
 
-  it("负控制：没有 nudo.check 配置时仍是默认最严档（error）—— 门禁未被整体关掉", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-vite-bug-897e-"));
     try {
       project(dir);
@@ -2193,9 +2293,9 @@ describe("vite-plugin 读项目配置的 L2 门禁档位（entryThrows / ignoreT
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+await (async () => {
 
-  it("profile=adoption 预设 ⇒ 落到 warning 档（与 CLI / LSP 的预设解析同口径）", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-vite-bug-897f-"));
     try {
       project(dir, { check: { profile: "adoption" } });
@@ -2207,7 +2307,18 @@ describe("vite-plugin 读项目配置的 L2 门禁档位（entryThrows / ignoreT
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -2307,7 +2418,9 @@ function project(dir: string): void {
 }
 
 describe("vite-plugin check 面传 Abs 模块图（跨模块返回契约可证 ⇒ 不报 unproven-return）", () => {
-  it("跨模块调用可证时不得报 nudo:unproven-return / unknown #opaque（与 CLI 同口径：绿）", async () => {
+  it("跨模块调用可证时不得报 nudo:unproven-return / unknown #opaque（与 CLI 同口径：绿）；负控制：真违约仍必须报 nudo:constraint-violated（模块图到位 ≠ 门禁被关掉）", async () => {
+await (async () => {
+
     const dir = mkdtempSync(join(tmpdir(), "nudo-vite-bug-898-"));
     try {
       project(dir);
@@ -2320,9 +2433,9 @@ describe("vite-plugin check 面传 Abs 模块图（跨模块返回契约可证 �
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+await (async () => {
 
-  it("负控制：真违约仍必须报 nudo:constraint-violated（模块图到位 ≠ 门禁被关掉）", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-vite-bug-898b-"));
     try {
       project(dir);
@@ -2339,7 +2452,10 @@ describe("vite-plugin check 面传 Abs 模块图（跨模块返回契约可证 �
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+});;
+
+  ;
 });
 });
 
@@ -2405,7 +2521,9 @@ function offFixture(): { dir: string; id: string } {
 }
 
 describe("off 档不得抹掉 check 门禁通道", () => {
-  it("off 档 + failOnError: true ⇒ 仍然抛（构建红，不再 CI 假绿）", async () => {
+  it("off 档 + failOnError: true ⇒ 仍然抛（构建红，不再 CI 假绿）；off 档 + failOnError: false ⇒ 门禁诊断仍然可见（不被抹掉）；非 off 档（默认档）口径不变：门禁诊断照旧上报", async () => {
+await (async () => {
+
     const { dir, id } = offFixture();
     try {
       const plugin = nudoPlugin({ failOnError: true });
@@ -2422,9 +2540,9 @@ describe("off 档不得抹掉 check 门禁通道", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  }, 30_000);
+  })();
+await (async () => {
 
-  it("off 档 + failOnError: false ⇒ 门禁诊断仍然可见（不被抹掉）", async () => {
     const { dir, id } = offFixture();
     try {
       const plugin = nudoPlugin();
@@ -2440,9 +2558,9 @@ describe("off 档不得抹掉 check 门禁通道", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  }, 30_000);
+  })();
+await (async () => {
 
-  it("非 off 档（默认档）口径不变：门禁诊断照旧上报", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-vite-899-default-"));
     try {
       writeFileSync(
@@ -2462,7 +2580,12 @@ describe("off 档不得抹掉 check 门禁通道", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  }, 30_000);
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
 
@@ -2600,10 +2723,9 @@ describe("vite-plugin-nudo enforce: 'pre'（.ts 源的契约不得被静默放�
 
   ;
 
-  it(
-    "真 vite build：.ts 源里的 @nudo:contract / @nudo:case 可见 ⇒ 门禁不再静默放绿",
-    { timeout: 120_000 },
-    async () => {
+  it("真 vite build：.ts 源里的 @nudo:contract / @nudo:case 可见 ⇒ 门禁不再静默放绿；真 vite build：failOnError: true 时 .ts 源的契约违例红构建（与 .js 源同判）；同一份契约的 .ts 源与 .js 源判同（诊断集合一致；行号随源码坐标系）；直接驱动 transform：.ts 源码（含类型注解）过分析面 ⇒ 报出与 CLI 同码的诊断", async () => {
+await (async () => {
+
       const dir = fixture("nudo-vite-900-ts-", {
         "package.json": JSON.stringify({ name: "fx900ts", private: true, version: "0.0.0" }),
         "src/std.nudo.js": SIDECAR,
@@ -2616,13 +2738,9 @@ describe("vite-plugin-nudo enforce: 'pre'（.ts 源的契约不得被静默放�
       expect(failed).toBe(false);
       expect(msgs).toContain("[nudo]");
       expect(msgs).toContain("case-inconsistency");
-    },
-  );
+    })();
+await (async () => {
 
-  it(
-    "真 vite build：failOnError: true 时 .ts 源的契约违例红构建（与 .js 源同判）",
-    { timeout: 120_000 },
-    async () => {
       const dir = fixture("nudo-vite-900-gate-", {
         "package.json": JSON.stringify({ name: "fx900gate", private: true, version: "0.0.0" }),
         "src/std.nudo.js": SIDECAR,
@@ -2632,13 +2750,9 @@ describe("vite-plugin-nudo enforce: 'pre'（.ts 源的契约不得被静默放�
       const { failed, message } = await buildFixture(dir, "src/main.ts", true);
       expect(failed).toBe(true);
       expect(message).toContain("case-inconsistency");
-    },
-  );
+    })();
+await (async () => {
 
-  it(
-    "同一份契约的 .ts 源与 .js 源判同（诊断集合一致；行号随源码坐标系）",
-    { timeout: 120_000 },
-    async () => {
       const tsDir = fixture("nudo-vite-900-parity-ts-", {
         "package.json": JSON.stringify({ name: "fx900parityts", private: true, version: "0.0.0" }),
         "src/std.nudo.js": SIDECAR,
@@ -2658,12 +2772,9 @@ describe("vite-plugin-nudo enforce: 'pre'（.ts 源的契约不得被静默放�
         [...msgs.matchAll(/\(nudo:[a-z-]+\)/g)].map((m) => m[0]).sort();
       expect(codes(ts.warnings.join("\n"))).toEqual(codes(js.warnings.join("\n")));
       expect(codes(ts.warnings.join("\n"))).toContain("(nudo:case-inconsistency)");
-    },
-  );
+    })();
+await (async () => {
 
-  it(
-    "直接驱动 transform：.ts 源码（含类型注解）过分析面 ⇒ 报出与 CLI 同码的诊断",
-    async () => {
       const dir = fixture("nudo-vite-900-hook-", {
         "package.json": JSON.stringify({ name: "fx900hook", private: true, version: "0.0.0" }),
         "src/std.nudo.js": SIDECAR,
@@ -2678,8 +2789,14 @@ describe("vite-plugin-nudo enforce: 'pre'（.ts 源的契约不得被静默放�
       expect(result).toBeNull();
       const msgs = warnFn.mock.calls.map((c) => String(c[0])).join("\n");
       expect(msgs).toContain("case-inconsistency");
-    },
-  );
+    })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -2832,7 +2949,9 @@ function classify(c: Captured) {
 }
 
 describe("info 不计入 warning 计数 + info 走 this.info 上屏", () => {
-  it("info 级诊断走 vite 的 info 通道上屏，且不混进 warn 流", async () => {
+  it("info 级诊断走 vite 的 info 通道上屏，且不混进 warn 流；buildEnd 汇总行的 warning 计数只算 warning 级诊断（info 不计入）；汇总行与构建日志自洽：被计入的诊断都真的上屏过（info 不再凭空消失）", async () => {
+await (async () => {
+
     const c = await runFixture();
     const { info } = classify(c);
     expect(info.length, `info 通道无 info 级诊断：${JSON.stringify(c)}`).toBeGreaterThan(0);
@@ -2846,9 +2965,9 @@ describe("info 不计入 warning 计数 + info 走 this.info 上屏", () => {
       c.errors.filter((m) => DIAG_RE.test(m) && severityOf(m) === "info"),
       `info 级诊断混进了 error 流：${JSON.stringify(c.errors)}`,
     ).toEqual([]);
-  }, 30_000);
+  })();
+await (async () => {
 
-  it("buildEnd 汇总行的 warning 计数只算 warning 级诊断（info 不计入）", async () => {
     const c = await runFixture();
     const { diags, errors, warnings, info } = classify(c);
     const m = SUMMARY_RE.exec(findSummary(c))!;
@@ -2865,9 +2984,9 @@ describe("info 不计入 warning 计数 + info 走 this.info 上屏", () => {
     expect(summaryWarnings).toBeLessThan(diags.length);
     // 汇总的 error 计数 == 实际 error 级诊断条数。
     expect(summaryErrors).toBe(errors.length);
-  }, 30_000);
+  })();
+await (async () => {
 
-  it("汇总行与构建日志自洽：被计入的诊断都真的上屏过（info 不再凭空消失）", async () => {
     const c = await runFixture();
     const { diags, info } = classify(c);
     const m = SUMMARY_RE.exec(findSummary(c))!;
@@ -2879,7 +2998,12 @@ describe("info 不计入 warning 计数 + info 走 this.info 上屏", () => {
     // info 级诊断确实上屏了（报告原断言的另一半：info「从头到尾没被打印过」）。
     expect(info.length).toBeGreaterThan(0);
     expect(c.infos.length).toBeGreaterThan(0);
-  }, 30_000);
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
 
@@ -2982,7 +3106,9 @@ describe("畸形入参不得抛未捕获异常", () => {
     }, 30_000);
   }
 
-  it("failOnError: true + code=null ⇒ 仍然不抛（畸形入参不得中断构建）", async () => {
+  it("failOnError: true + code=null ⇒ 仍然不抛（畸形入参不得中断构建）；对照组：正常源码仍然照常分析（守卫没被整体短路）", async () => {
+await (async () => {
+
     const { dir, id } = fixture("exports");
     try {
       const plugin = nudoPlugin({ failOnError: true });
@@ -2998,9 +3124,9 @@ describe("畸形入参不得抛未捕获异常", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  }, 30_000);
+  })();
+await (async () => {
 
-  it("对照组：正常源码仍然照常分析（守卫没被整体短路）", async () => {
     const { dir, id } = fixture("exports");
     try {
       const plugin = nudoPlugin();
@@ -3014,7 +3140,10 @@ describe("畸形入参不得抛未捕获异常", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  }, 30_000);
+  })();
+});;
+
+  ;
 });
 });
 
@@ -3085,7 +3214,9 @@ async function diagnosticsOf(plugin: Plugin, code: string, id: string): Promise<
 }
 
 describe("HMR 的 ?t= query id 不得让整份文件被跳过", () => {
-  it("带 ?t=<ts> 的 id 与不带 query 的 id 产出同样的诊断", async () => {
+  it("带 ?t=<ts> 的 id 与不带 query 的 id 产出同样的诊断；带 ?v=<hash> 的 id 同样不被跳过；自定义 include 模式也按剥 query 后的路径匹配", async () => {
+await (async () => {
+
     const { dir, id } = fixture();
     try {
       const plain = await diagnosticsOf(nudoPlugin(), SRC, id);
@@ -3099,9 +3230,9 @@ describe("HMR 的 ?t= query id 不得让整份文件被跳过", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  }, 30_000);
+  })();
+await (async () => {
 
-  it("带 ?v=<hash> 的 id 同样不被跳过", async () => {
     const { dir, id } = fixture();
     try {
       const diags = await diagnosticsOf(nudoPlugin(), SRC, `${id}?v=deadbeef`);
@@ -3110,9 +3241,9 @@ describe("HMR 的 ?t= query id 不得让整份文件被跳过", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  }, 30_000);
+  })();
+await (async () => {
 
-  it("自定义 include 模式也按剥 query 后的路径匹配", async () => {
     const { dir, id } = fixture();
     try {
       const diags = await diagnosticsOf(
@@ -3124,7 +3255,12 @@ describe("HMR 的 ?t= query id 不得让整份文件被跳过", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  }, 30_000);
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
 
@@ -3176,7 +3312,9 @@ export function b(u) {
 `;
 
 describe("failOnError 档下每条 error 诊断都要上报", () => {
-  it("两条 error ⇒ 首条 this.error 抛出 + 其余逐条 this.warn（不静默丢弃）", async () => {
+  it("两条 error ⇒ 首条 this.error 抛出 + 其余逐条 this.warn（不静默丢弃）；摘要计数与实际上报条数一致（2 error(s) ⇒ 1 抛 + 1 warn）；failOnError: false（默认档）口径不变：每条 error 降 warn", async () => {
+await (async () => {
+
     const dir = mkdtempSync(join(tmpdir(), "nudo-vite-904-"));
     try {
       const id = join(dir, "entry.js");
@@ -3205,9 +3343,9 @@ describe("failOnError 档下每条 error 诊断都要上报", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  }, 30_000);
+  })();
+await (async () => {
 
-  it("摘要计数与实际上报条数一致（2 error(s) ⇒ 1 抛 + 1 warn）", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-vite-904-count-"));
     try {
       const id = join(dir, "entry.js");
@@ -3240,9 +3378,9 @@ describe("failOnError 档下每条 error 诊断都要上报", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  }, 30_000);
+  })();
+await (async () => {
 
-  it("failOnError: false（默认档）口径不变：每条 error 降 warn", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-vite-904-default-"));
     try {
       const id = join(dir, "entry.js");
@@ -3257,7 +3395,12 @@ describe("failOnError 档下每条 error 诊断都要上报", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  }, 30_000);
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
 
@@ -3325,7 +3468,9 @@ async function reported(id: string): Promise<string[]> {
 }
 
 describe("无源位置的诊断不渲染位置（不写 :0:0）", () => {
-  it("占位 range（line 0）⇒ 省略 :line:col，且不出现越界行号", async () => {
+  it("占位 range（line 0）⇒ 省略 :line:col，且不出现越界行号；真位置仍照旧渲染 :line:col（不回归）", async () => {
+await (async () => {
+
     const dir = mkdtempSync(join(tmpdir(), "nudo-vite-982-"));
     try {
       const id = join(dir, "entry.js");
@@ -3348,9 +3493,9 @@ describe("无源位置的诊断不渲染位置（不写 :0:0）", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  }, 30_000);
+  })();
+await (async () => {
 
-  it("真位置仍照旧渲染 :line:col（不回归）", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-vite-982-real-"));
     try {
       const id = join(dir, "entry.js");
@@ -3363,7 +3508,10 @@ describe("无源位置的诊断不渲染位置（不写 :0:0）", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  }, 30_000);
+  })();
+});;
+
+  ;
 });
 });
 
@@ -3465,7 +3613,9 @@ function project(dir: string): void {
 }
 
 describe("跨模块返回契约真违例 ⇒ error 级 constraint-violated（failOnError 拦得住）", () => {
-  it("真违例必须是 nudo:constraint-violated 且为 error 级（不是 warning 级 unproven-return）", async () => {
+  it("真违例必须是 nudo:constraint-violated 且为 error 级（不是 warning 级 unproven-return）；failOnError=true ⇒ 真违例必须中断构建（this.error 被调用并抛出）", async () => {
+await (async () => {
+
     const dir = mkdtempSync(join(tmpdir(), "nudo-vite-bug-983-"));
     try {
       project(dir);
@@ -3479,9 +3629,9 @@ describe("跨模块返回契约真违例 ⇒ error 级 constraint-violated（fai
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+await (async () => {
 
-  it("failOnError=true ⇒ 真违例必须中断构建（this.error 被调用并抛出）", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-vite-bug-983b-"));
     try {
       project(dir);
@@ -3491,7 +3641,10 @@ describe("跨模块返回契约真违例 ⇒ error 级 constraint-violated（fai
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  })();
+});;
+
+  ;
 });
 });
 
@@ -3559,7 +3712,9 @@ async function reported(id: string): Promise<string[]> {
 }
 
 describe("两个诊断来源的文本格式归一（都带 (nudo:code)）", () => {
-  it("evaluator 面诊断也带 (nudo:code)（此前恒丢）", async () => {
+  it("evaluator 面诊断也带 (nudo:code)（此前恒丢）；同一次构建里两类诊断同款结尾（ · (code) 分隔符归一）且码不重复", async () => {
+await (async () => {
+
     const dir = mkdtempSync(join(tmpdir(), "nudo-vite-987-"));
     try {
       const id = join(dir, "entry.js");
@@ -3572,9 +3727,9 @@ describe("两个诊断来源的文本格式归一（都带 (nudo:code)）", () =
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  }, 30_000);
+  })();
+await (async () => {
 
-  it("同一次构建里两类诊断同款结尾（ ·  (code) 分隔符归一）且码不重复", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-vite-987-uniform-"));
     try {
       const id = join(dir, "entry.js");
@@ -3592,6 +3747,9 @@ describe("两个诊断来源的文本格式归一（都带 (nudo:code)）", () =
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  }, 30_000);
+  })();
+});;
+
+  ;
 });
 });

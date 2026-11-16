@@ -74,7 +74,9 @@ function moduleDts(source: string, fn: unknown): string {
 }
 
 describe("dts 面不得产出未声明的类型名", () => {
-  it("未声明的类 brand：降级为 unknown + 降级台账（改前：TS2304）", () => {
+  it("未声明的类 brand：降级为 unknown + 降级台账（改前：TS2304）；import 进来的类：类名保留 + 补 import type（不被误杀）；import 进来的类：产物可编译（消费方能按该类使用）；改前形态确实红（未声明的类型名 ⇒ TS2304）；负控制：本地声明的类不变（Bug 517 口径：声明 + 类名保留）；负控制：TS 全局类型名 brand 逐字不变（与 zod 白名单同名单）；负控制：纯投影面（无模块面）保持既有口径（类名原样）", () => {
+(() => {
+
     const dts = moduleDts(
       `export function make() { return 1; }\n`,
       fakeFn("make", brandOf("Counter")),
@@ -85,9 +87,9 @@ describe("dts 面不得产出未声明的类型名", () => {
     // 可诊断：台账点名被降级的类名
     expect(dts).toContain("nudo:unresolved-class");
     expect(dts).toContain("Counter");
-  });
+  })();
+(() => {
 
-  it("import 进来的类：类名保留 + 补 import type（不被误杀）", () => {
     const dts = moduleDts(
       `import { Counter } from "./counter.js";\nexport function make() { return 1; }\n`,
       fakeFn("make", brandOf("Counter")),
@@ -95,9 +97,9 @@ describe("dts 面不得产出未声明的类型名", () => {
     expect(dts).toContain('import type { Counter } from "./counter.js";');
     expect(dts).toMatch(/export declare function make\([^)]*\): Counter;/);
     expect(dts).not.toContain("nudo:unresolved-class");
-  });
+  })();
+(() => {
 
-  it("import 进来的类：产物可编译（消费方能按该类使用）", () => {
     const dts = moduleDts(
       `import { Counter } from "./counter.js";\nexport function make() { return 1; }\n`,
       fakeFn("make", brandOf("Counter")),
@@ -108,9 +110,9 @@ describe("dts 面不得产出未声明的类型名", () => {
       "use.ts": `import { make } from "./lib.js";\nimport { Counter } from "./counter.js";\nexport const c: Counter = make(1);\n`,
     });
     expect(check.ok, check.stderr).toBe(true);
-  });
+  })();
+(() => {
 
-  it("改前形态确实红（未声明的类型名 ⇒ TS2304）", () => {
     const before = `export declare function make(x: number): Counter;\n`;
     const check = tscNoEmit({
       "lib.d.ts": before,
@@ -118,9 +120,9 @@ describe("dts 面不得产出未声明的类型名", () => {
     });
     expect(check.ok).toBe(false);
     expect(check.stderr).toContain("TS2304");
-  });
+  })();
+(() => {
 
-  it("负控制：本地声明的类不变（Bug 517 口径：声明 + 类名保留）", () => {
     const dts = moduleDts(
       `export class Counter {\n  constructor(v) { this.v = v; }\n}\nexport function make() { return 1; }\n`,
       fakeFn("make", brandOf("Counter")),
@@ -128,20 +130,33 @@ describe("dts 面不得产出未声明的类型名", () => {
     expect(dts).toContain("declare class Counter");
     expect(dts).toMatch(/export declare function make\([^)]*\): Counter;/);
     expect(dts).not.toContain("nudo:unresolved-class");
-  });
+  })();
+(() => {
 
-  it("负控制：TS 全局类型名 brand 逐字不变（与 zod 白名单同名单）", () => {
     const dts = moduleDts(
       `export function make() { return 1; }\n`,
       fakeFn("make", brandOf("Date")),
     );
     expect(dts).toMatch(/export declare function make\([^)]*\): Date;/);
     expect(dts).not.toContain("nudo:unresolved-class");
-  });
+  })();
+(() => {
 
-  it("负控制：纯投影面（无模块面）保持既有口径（类名原样）", () => {
     expect(absToTSType(brandOf("User"))).toBe("User");
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -175,7 +190,9 @@ function moduleDts(source: string, path = "/test/bug151.ts"): string {
 }
 
 describe("dts 类面保留 extends 与实例字段", () => {
-  it("`class B extends A` 在产物里带超类；本类字段声明、继承字段不重复", () => {
+  it("`class B extends A` 在产物里带超类；本类字段声明、继承字段不重复；消费方：子类可赋给父类类型；继承方法与字段可访问；类属性初始化器（`count = 3` / `label = \"p\"`）也进实例字段面；负控制：`extends` 一个未声明的名字 ⇒ 不发射 extends（消费方零 TS2304）；负控制：TS 全局构造器名（`extends Error`）照旧放行", () => {
+(() => {
+
     const dts = moduleDts(`export class A {
   constructor() {
     this.x = 1;
@@ -203,9 +220,9 @@ export class B extends A {
     expect(bBody).toMatch(/y: number;/);
     expect(dts).toMatch(/am\(/);
     expect(dts).toMatch(/bm\(/);
-  });
+  })();
+(() => {
 
-  it("消费方：子类可赋给父类类型；继承方法与字段可访问", () => {
     const dts = moduleDts(`export class A {
   constructor() {
     this.x = 1;
@@ -234,9 +251,9 @@ export class B extends A {
         "export { n, s, r, asA };\n",
     });
     expect(check.ok, check.stderr).toBe(true);
-  });
+  })();
+(() => {
 
-  it("类属性初始化器（`count = 3` / `label = \"p\"`）也进实例字段面", () => {
     const dts = moduleDts(`export class P {
   count = 3;
   label = "p";
@@ -248,10 +265,9 @@ export class B extends A {
     expect(dts).toMatch(/label: string;/);
     expect(dts).toMatch(/tags: unknown\[\];/);
     expect(dts).toMatch(/state: null;/);
-  });
+  })();
+(() => {
 
-  // ── 负控制：不可解析的超类名不进产物（否则 TS2304）──────────────
-  it("负控制：`extends` 一个未声明的名字 ⇒ 不发射 extends（消费方零 TS2304）", () => {
     const dts = moduleDts(`export class C extends NotDeclaredHere {
   m() {
     return 1;
@@ -262,9 +278,9 @@ export class B extends A {
     expect(dts).not.toContain("extends");
     const check = tscNoEmit({ "mod.d.ts": dts });
     expect(check.ok, check.stderr).toBe(true);
-  });
+  })();
+(() => {
 
-  it("负控制：TS 全局构造器名（`extends Error`）照旧放行", () => {
     const dts = moduleDts(`export class MyError extends Error {
   constructor(message) {
     super(message);
@@ -275,7 +291,17 @@ export class B extends A {
     expect(dts).toContain("export declare class MyError extends Error {");
     const check = tscNoEmit({ "mod.d.ts": dts });
     expect(check.ok, check.stderr).toBe(true);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  // ── 负控制：不可解析的超类名不进产物（否则 TS2304）──────────────
+  ;
+
+  ;
 });
 });
 
@@ -327,13 +353,15 @@ describe("static-only 方法不再多发幻影实例声明", () => {
 }
 `;
 
-  it("只声明 static only（没有同名实例方法）", () => {
+  it("只声明 static only（没有同名实例方法）；同名 static + instance 同时存在时两者都保留（既有口径不回退）", () => {
+(() => {
+
     const dts = moduleDts(SRC);
     expect(dts).toContain("static only(");
     expect(dts).not.toMatch(/^  only\(/m);
-  });
+  })();
+(() => {
 
-  it("同名 static + instance 同时存在时两者都保留（既有口径不回退）", () => {
     const dts = moduleDts(`export class C {
   m() { return 1; }
   static m(y) { return 2; }
@@ -345,7 +373,10 @@ describe("static-only 方法不再多发幻影实例声明", () => {
     // 本断言的目标是「同名 static / instance 两条声明都在」，类型精度
     // 跟随分析面（与 dts 单元面对齐），不再钉死 unknown。
     expect((dts.match(/^  m\(.*\): (number|unknown);/gm) ?? []).length).toBe(1);
-  });
+  })();
+});;
+
+  ;
 });
 
 describe("static 字段与 getter/setter 进产物", () => {
@@ -359,22 +390,27 @@ describe("static 字段与 getter/setter 进产物", () => {
 }
 `;
 
-  it("static 字段 / 访问器 / 实例字段都在", () => {
+  it("static 字段 / 访问器 / 实例字段都在；消费端读这些成员通过 tsc（改前 TS2339 ×2）", () => {
+(() => {
+
     const dts = moduleDts(SRC);
     expect(dts).toContain("static count: number;");
     expect(dts).toMatch(/get double\(\):/);
     expect(dts).toMatch(/set double\(v:/);
     expect(dts).toContain("value: number;");
-  });
+  })();
+(() => {
 
-  it("消费端读这些成员通过 tsc（改前 TS2339 ×2）", () => {
     const check = tscNoEmit({
       "mod.d.ts": moduleDts(SRC),
       "use.ts":
         'import { A } from "./mod.js";\nexport const a = A.count;\nexport const b = new A().double;\nexport const c = new A().value;\n',
     });
     expect(check.ok, check.stderr).toBe(true);
-  });
+  })();
+});;
+
+  ;
 });
 
 describe("abstract 修饰符与 abstract 成员", () => {
@@ -385,30 +421,37 @@ describe("abstract 修饰符与 abstract 成员", () => {
 }
 `;
 
-  it("类头带 abstract、抽象成员带源码返回注解", () => {
+  it("类头带 abstract、抽象成员带源码返回注解；消费端可用继承来的抽象成员（改前 TS2339）；消费端 new Shape() 被拦下（改前可实例化抽象类）", () => {
+(() => {
+
     const dts = moduleDts(SRC);
     expect(dts).toContain("export declare abstract class Shape {");
     expect(dts).toContain("abstract area(): number;");
     expect(dts).toContain("abstract label(): string;");
-  });
+  })();
+(() => {
 
-  it("消费端可用继承来的抽象成员（改前 TS2339）", () => {
     const check = tscNoEmit({
       "mod.d.ts": moduleDts(SRC),
       "use.ts":
         'import { Shape } from "./mod.js";\ndeclare const s: Shape;\nexport const a: number = s.area();\nexport const l: string = s.label();\n',
     });
     expect(check.ok, check.stderr).toBe(true);
-  });
+  })();
+(() => {
 
-  it("消费端 new Shape() 被拦下（改前可实例化抽象类）", () => {
     const check = tscNoEmit({
       "mod.d.ts": moduleDts(SRC),
       "use.ts": 'import { Shape } from "./mod.js";\nexport const inst = new Shape();\n',
     });
     expect(check.ok).toBe(false);
     expect(check.stderr).toContain("TS2511");
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 
 describe("只有类型注解的实例字段不塌成 unknown", () => {
@@ -424,22 +467,27 @@ describe("只有类型注解的实例字段不塌成 unknown", () => {
 export class Counter { count: number = 0; label: string = "c"; }
 `;
 
-  it("注解字段用源码声明类型（同类初始化器字段不受影响）", () => {
+  it("注解字段用源码声明类型（同类初始化器字段不受影响）；消费端字段读取通过 tsc（改前 TS2322 ×3）", () => {
+(() => {
+
     const dts = moduleDts(SRC);
     expect(dts).toContain("id: number;");
     expect(dts).toContain("name: string;");
     expect(dts).toContain("active: boolean;");
     expect(dts).toContain("count: number;");
-  });
+  })();
+(() => {
 
-  it("消费端字段读取通过 tsc（改前 TS2322 ×3）", () => {
     const check = tscNoEmit({
       "mod.d.ts": moduleDts(SRC),
       "use.ts":
         'import { Account } from "./mod.js";\ndeclare const a: Account;\nexport const id: number = a.id;\nexport const name: string = a.name;\nexport const act: boolean = a.active;\n',
     });
     expect(check.ok, check.stderr).toBe(true);
-  });
+  })();
+});;
+
+  ;
 });
 
 describe("TS 构造器参数属性登记成实例字段", () => {
@@ -449,22 +497,27 @@ describe("TS 构造器参数属性登记成实例字段", () => {
 }
 `;
 
-  it("字段带源码类型 / 访问修饰符 / readonly，构造器形参类型也保真", () => {
+  it("字段带源码类型 / 访问修饰符 / readonly，构造器形参类型也保真；消费端 `new Account(...).id` 通过 tsc（改前 TS2339）", () => {
+(() => {
+
     const dts = moduleDts(SRC);
     expect(dts).toContain("constructor(id: number, name: string, active?: boolean);");
     expect(dts).toContain("id: number;");
     expect(dts).toContain("protected name: string;");
     expect(dts).toContain("readonly active: boolean;");
-  });
+  })();
+(() => {
 
-  it("消费端 `new Account(...).id` 通过 tsc（改前 TS2339）", () => {
     const check = tscNoEmit({
       "mod.d.ts": moduleDts(SRC),
       "use.ts":
         'import { Account } from "./mod.js";\nconst a = new Account(1, "n", true);\nexport const id: number = a.id;\nexport const active: boolean = a.active;\n',
     });
     expect(check.ok, check.stderr).toBe(true);
-  });
+  })();
+});;
+
+  ;
 });
 
 describe("private / protected 成员不再翻成 public", () => {
@@ -477,16 +530,18 @@ describe("private / protected 成员不再翻成 public", () => {
 }
 `;
 
-  it("字段与方法都带访问修饰符", () => {
+  it("字段与方法都带访问修饰符；消费端读私有面被 tsc 拦下（改前假绿）", () => {
+(() => {
+
     const dts = moduleDts(SRC);
     expect(dts).toContain("private secret: number;");
     expect(dts).toContain("protected guarded: number;");
     // 同上：修好后私有/保护方法也拿到精确返回类型（number）。
     expect(dts).toMatch(/private hidden\(\): (number|unknown);/);
     expect(dts).toMatch(/protected shield\(\): (number|unknown);/);
-  });
+  })();
+(() => {
 
-  it("消费端读私有面被 tsc 拦下（改前假绿）", () => {
     const check = tscNoEmit({
       "mod.d.ts": moduleDts(SRC),
       "use.ts":
@@ -494,7 +549,10 @@ describe("private / protected 成员不再翻成 public", () => {
     });
     expect(check.ok).toBe(false);
     expect(check.stderr).toContain("TS2341");
-  });
+  })();
+});;
+
+  ;
 });
 
 describe("`#private;` 名义标记", () => {
@@ -502,20 +560,25 @@ describe("`#private;` 名义标记", () => {
 export class B { #y = 2; m() { return this.#y; } }
 `;
 
-  it("两个含 # 私有字段的类都带 #private;", () => {
+  it("两个含 # 私有字段的类都带 #private;；A / B 不可结构互赋（改前 exit 0，源码侧 TS2741）", () => {
+(() => {
+
     const dts = moduleDts(SRC);
     expect((dts.match(/#private;/g) ?? []).length).toBe(2);
     expect(dts).not.toContain("#x");
-  });
+  })();
+(() => {
 
-  it("A / B 不可结构互赋（改前 exit 0，源码侧 TS2741）", () => {
     const check = tscNoEmit({
       "mod.d.ts": moduleDts(SRC),
       "use.ts":
         'import { A, B } from "./mod.js";\nconst a: A = new B();\nexport const n = a.m();\n',
     });
     expect(check.ok).toBe(false);
-  });
+  })();
+});;
+
+  ;
 });
 
 describe("类 index signature 进产物", () => {
@@ -526,18 +589,23 @@ describe("类 index signature 进产物", () => {
 }
 `;
 
-  it("发射 `[key: string]: …;`", () => {
-    expect(moduleDts(SRC)).toContain("[key: string]: number | Function;");
-  });
+  it("发射 `[key: string]: …;`；消费端索引访问通过 tsc（改前 TS7052 / TS2339）", () => {
+(() => {
 
-  it("消费端索引访问通过 tsc（改前 TS7052 / TS2339）", () => {
+    expect(moduleDts(SRC)).toContain("[key: string]: number | Function;");
+  })();
+(() => {
+
     const check = tscNoEmit({
       "mod.d.ts": moduleDts(SRC),
       "use.ts":
         'import { Dict3 } from "./mod.js";\nconst d = new Dict3();\nexport const x: number | Function = d["zzz"];\nexport const y: number | Function = d.whatever;\n',
     });
     expect(check.ok, check.stderr).toBe(true);
-  });
+  })();
+});;
+
+  ;
 });
 });
 
@@ -598,7 +666,9 @@ function tscNoEmit(files: Record<string, string>): { ok: boolean; stderr: string
 }
 
 describe("dts 顶层形参吃契约级可选性", () => {
-  it("契约声明 optional 的**尾部**形参渲染成 `x?: T`", () => {
+  it("契约声明 optional 的**尾部**形参渲染成 `x?: T`；契约声明 optional 的**中间**形参渲染成 `T | undefined`（TS1016：`?` 不能跟在必填位后）；消费方按契约允许的调用（传 undefined / 省略）不再吃 TS2345；负控制：契约未申报可选的形参仍是必填；负控制：契约覆盖 ⇒ 观测元数不再把契约位标成可选（不裁剪契约义务）", () => {
+(() => {
+
     const source = `export function act(x, s) { return s; }\n`;
     const result = analyzeFile("/test/s2-copt.js", source);
     const fn = result.functions.find((f) => f.name === "act")!;
@@ -611,9 +681,9 @@ describe("dts 顶层形参吃契约级可选性", () => {
     expect(p.lines.join("\n")).toContain(
       "export declare function act(x: number, s?: string)",
     );
-  });
+  })();
+(() => {
 
-  it("契约声明 optional 的**中间**形参渲染成 `T | undefined`（TS1016：`?` 不能跟在必填位后）", () => {
     const source = `export function act(x, s) { return s; }\n`;
     const result = analyzeFile("/test/s2-copt-mid.js", source);
     const fn = result.functions.find((f) => f.name === "act")!;
@@ -627,9 +697,9 @@ describe("dts 顶层形参吃契约级可选性", () => {
       "export declare function act(x: number | undefined, s: string)",
     );
     expect(p.lines.join("\n")).not.toContain("x?: number, s: string");
-  });
+  })();
+(() => {
 
-  it("消费方按契约允许的调用（传 undefined / 省略）不再吃 TS2345", () => {
     const source = `export function act(x, s) { return s; }\n`;
     const result = analyzeFile("/test/s2-copt2.js", source);
     const fn = result.functions.find((f) => f.name === "act")!;
@@ -645,9 +715,9 @@ describe("dts 顶层形参吃契约级可选性", () => {
         'import { act } from "./mod.js";\nexport const r1 = act(undefined, "hello");\n',
     });
     expect(check.ok, check.stderr).toBe(true);
-  });
+  })();
+(() => {
 
-  it("负控制：契约未申报可选的形参仍是必填", () => {
     const source = `export function act(x, s) { return s; }\n`;
     const result = analyzeFile("/test/s2-copt3.js", source);
     const fn = result.functions.find((f) => f.name === "act")!;
@@ -666,9 +736,9 @@ describe("dts 顶层形参吃契约级可选性", () => {
     });
     expect(check.ok).toBe(false);
     expect(check.stderr).toContain("TS2345");
-  });
+  })();
+(() => {
 
-  it("负控制：契约覆盖 ⇒ 观测元数不再把契约位标成可选（不裁剪契约义务）", () => {
     const fn = {
       name: "addAll",
       loc: { start: { line: 1, column: 0 }, end: { line: 1, column: 0 } },
@@ -686,7 +756,16 @@ describe("dts 顶层形参吃契约级可选性", () => {
     expect(p.lines.join("\n")).toContain(
       "export declare function addAll(a: number, b: number)",
     );
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -744,7 +823,9 @@ function tscNoEmit(files: Record<string, string>): { ok: boolean; stderr: string
 }
 
 describe("dts 解构形参吃契约", () => {
-  it("契约的字段级条目聚合成该形参的形状（不再是 unknown）", () => {
+  it("契约的字段级条目聚合成该形参的形状（不再是 unknown）；消费方错误调用不再静默放行（改前 exit 0）；负控制：契约缺该绑定时回落求值占位（不产出不可编译的模式形态）；负控制：具名形参的契约投影不受影响", () => {
+(() => {
+
     const source = `export function act({ a, b }) { return a + b; }\n`;
     const result = analyzeFile("/test/s2-destr.js", source);
     const fn = result.functions.find((f) => f.name === "act")!;
@@ -758,9 +839,9 @@ describe("dts 解构形参吃契约", () => {
       "export declare function act({ a, b }: { a: number; b: number })",
     );
     expect(p.lines.join("\n")).not.toContain("_p0");
-  });
+  })();
+(() => {
 
-  it("消费方错误调用不再静默放行（改前 exit 0）", () => {
     const source = `export function act({ a, b }) { return a + b; }\n`;
     const result = analyzeFile("/test/s2-destr2.js", source);
     const fn = result.functions.find((f) => f.name === "act")!;
@@ -777,9 +858,9 @@ describe("dts 解构形参吃契约", () => {
     expect(check.ok).toBe(false);
     // 对象字面量内的类型不匹配 ⇒ TS2322（整体不匹配 ⇒ TS2345）
     expect(check.stderr).toMatch(/TS2322|TS2345/);
-  });
+  })();
+(() => {
 
-  it("负控制：契约缺该绑定时回落求值占位（不产出不可编译的模式形态）", () => {
     const source = `export function act({ a, b }) { return a + b; }\n`;
     const result = analyzeFile("/test/s2-destr3.js", source);
     const fn = result.functions.find((f) => f.name === "act")!;
@@ -790,9 +871,9 @@ describe("dts 解构形参吃契约", () => {
     expect(p.lines.join("\n")).toContain("act(_p0:");
     const check = tscNoEmit({ "mod.d.ts": p.lines.join("\n") + "\n" });
     expect(check.ok, check.stderr).toBe(true);
-  });
+  })();
+(() => {
 
-  it("负控制：具名形参的契约投影不受影响", () => {
     const source = `export function act(a, b) { return a + b; }\n`;
     const result = analyzeFile("/test/s2-named.js", source);
     const fn = result.functions.find((f) => f.name === "act")!;
@@ -805,7 +886,14 @@ describe("dts 解构形参吃契约", () => {
     expect(p.lines.join("\n")).toContain(
       "export declare function act(a: number, b: number)",
     );
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -857,39 +945,49 @@ describe("Unicode 导出名原样保留", () => {
 export const 日本 = 1;
 `;
 
-  it("dts 不再把合法 Unicode 绑定名洗成 ASCII", () => {
+  it("dts 不再把合法 Unicode 绑定名洗成 ASCII；消费端 `import { café }` 通过 tsc（改前 TS2305）", () => {
+(() => {
+
     const dts = moduleDts(SRC);
     expect(dts).toContain("export declare function café(");
     expect(dts).not.toContain("caf_");
     expect(dts).toContain("export declare const 日本: number;");
-  });
+  })();
+(() => {
 
-  it("消费端 `import { café }` 通过 tsc（改前 TS2305）", () => {
     const check = tscNoEmit({
       "mod.d.ts": moduleDts(SRC),
       "use.ts": 'import { café, 日本 } from "./mod.js";\nexport const y = café(1);\nexport const z: number = 日本;\n',
     });
     expect(check.ok, check.stderr).toBe(true);
-  });
+  })();
+});;
+
+  ;
 });
 
 describe("匿名默认类产出合法 ambient 声明", () => {
   const SRC = `export default class { m() { return 1; } }
 `;
 
-  it("不是 `declare class default`（保留字当类名）", () => {
+  it("不是 `declare class default`（保留字当类名）；产物过 tsc --noEmit --strict（改前 TS1005）", () => {
+(() => {
+
     const dts = moduleDts(SRC);
     expect(dts).toContain("export default class _default {");
     expect(dts).not.toContain("class default");
     // 补齐类方法入口兜底后返回类型从 unknown 变精确值（此处为
     // number）；本例钉的是匿名默认类的**类名合法性**，不钉返回类型。
     expect(dts).toMatch(/m\(\): [^;]+;/);
-  });
+  })();
+(() => {
 
-  it("产物过 tsc --noEmit --strict（改前 TS1005）", () => {
     const check = tscNoEmit({ "mod.d.ts": moduleDts(SRC) });
     expect(check.ok, check.stderr).toBe(true);
-  });
+  })();
+});;
+
+  ;
 });
 
 describe("`export * as ns from` 发射合法语法", () => {
@@ -897,20 +995,25 @@ describe("`export * as ns from` 发射合法语法", () => {
 export function anchor(x) { return x; }
 `;
 
-  it("用 `export * as ns from`，不是 `export { * as ns } from`", () => {
+  it("用 `export * as ns from`，不是 `export { * as ns } from`；产物过 tsc（改前 TS1003/1005/1128/1434）", () => {
+(() => {
+
     const dts = moduleDts(SRC);
     expect(dts).toContain('export * as ns from "./a.js";');
     expect(dts).not.toContain("export { * as ns }");
     expect(dts).not.toContain("{ * as");
-  });
+  })();
+(() => {
 
-  it("产物过 tsc（改前 TS1003/1005/1128/1434）", () => {
     const check = tscNoEmit({
       "mod.d.ts": moduleDts(SRC),
       "a.d.ts": "export declare function f(): number;\n",
     });
     expect(check.ok, check.stderr).toBe(true);
-  });
+  })();
+});;
+
+  ;
 });
 
 describe("非函数 / 非标识符 default 表达式不消失", () => {
@@ -918,19 +1021,24 @@ describe("非函数 / 非标识符 default 表达式不消失", () => {
 export function f() { return 1; }
 `;
 
-  it("发射 default 值绑定（改前整条消失）", () => {
+  it("发射 default 值绑定（改前整条消失）；消费端 `import v from` 通过 tsc（改前 TS1192）", () => {
+(() => {
+
     const dts = moduleDts(SRC);
     expect(dts).toContain("declare const _default: number;");
     expect(dts).toContain("export { _default as default };");
-  });
+  })();
+(() => {
 
-  it("消费端 `import v from` 通过 tsc（改前 TS1192）", () => {
     const check = tscNoEmit({
       "mod.d.ts": moduleDts(SRC),
       "use.ts": 'import v from "./mod.js";\nexport const x: number = v;\n',
     });
     expect(check.ok, check.stderr).toBe(true);
-  });
+  })();
+});;
+
+  ;
 });
 
 describe("顶层 export interface / export type 进产物", () => {
@@ -940,39 +1048,49 @@ export namespace NS { export interface Inner { a: number } }
 export function useTop(t: Top): Alias { return t.b; }
 `;
 
-  it("顶层类型声明原文镜像（namespace 内同名声明照旧保留）", () => {
+  it("顶层类型声明原文镜像（namespace 内同名声明照旧保留）；消费端 type import 通过 tsc（改前 TS2305）", () => {
+(() => {
+
     const dts = moduleDts(SRC);
     expect(dts).toContain("export interface Top { b: number }");
     expect(dts).toContain("export type Alias = number;");
     expect(dts).toContain("export interface Inner { a: number }");
-  });
+  })();
+(() => {
 
-  it("消费端 type import 通过 tsc（改前 TS2305）", () => {
     const check = tscNoEmit({
       "mod.d.ts": moduleDts(SRC),
       "use.ts": 'import type { Top, Alias } from "./mod.js";\nexport const a: Top = { b: 1 };\nexport const b: Alias = 2;\n',
     });
     expect(check.ok, check.stderr).toBe(true);
-  });
+  })();
+});;
+
+  ;
 });
 
 describe("`export const enum` 保留 const 限定", () => {
   const SRC = `export const enum Mode { A = "a", B = "b" }
 `;
 
-  it("发射 `export declare const enum`（改前丢 const ⇒ 运行时 import 报错）", () => {
+  it("发射 `export declare const enum`（改前丢 const ⇒ 运行时 import 报错）；消费端 tsc 通过且 const enum 成员可内联使用", () => {
+(() => {
+
     const dts = moduleDts(SRC);
     expect(dts).toContain("export declare const enum Mode {");
     expect(dts).toContain('A = "a",');
-  });
+  })();
+(() => {
 
-  it("消费端 tsc 通过且 const enum 成员可内联使用", () => {
     const check = tscNoEmit({
       "mod.d.ts": moduleDts(SRC),
       "use.ts": 'import { Mode } from "./mod.js";\nexport const a = Mode.A;\n',
     });
     expect(check.ok, check.stderr).toBe(true);
-  });
+  })();
+});;
+
+  ;
 });
 
 describe("再导出字符串导出名走 exportNameRepr", () => {
@@ -980,20 +1098,25 @@ describe("再导出字符串导出名走 exportNameRepr", () => {
 export function anchor(x) { return x; }
 `;
 
-  it(`\`as "a-b"\` 不丢引号`, () => {
+  it("`as \"a-b\"` 不丢引号；产物过 tsc（改前 TS1005×3）", () => {
+(() => {
+
     const dts = moduleDts(SRC);
     expect(dts).toContain('export { f as "a-b" } from "./a.js";');
     expect(dts).not.toContain("f as a-b");
-  });
+  })();
+(() => {
 
-  it("产物过 tsc（改前 TS1005×3）", () => {
     const check = tscNoEmit({
       "mod.d.ts": moduleDts(SRC),
       "a.d.ts": "export declare function f(x: unknown): unknown;\n",
       "use.ts": 'import { "a-b" as ab } from "./mod.js";\nexport const z = ab(1);\n',
     });
     expect(check.ok, check.stderr).toBe(true);
-  });
+  })();
+});;
+
+  ;
 });
 });
 
@@ -1051,16 +1174,18 @@ export function anchor(x) { return x; }
 export default class DBase { d(): unknown; }
 `;
 
-  it("保留 extends NS.Base 并补 import * as NS", () => {
+  it("保留 extends NS.Base 并补 import * as NS；消费端能访问继承来的 b()（改前 TS2339）", () => {
+(() => {
+
     const dts = moduleDts(SRC);
     expect(dts).toContain("export declare class NSub extends NS.Base {");
     expect(dts).toContain('import * as NS from "./base.js";');
     // 同模块的 Identifier / default import 基类照旧保留
     expect(dts).toContain("export declare class Sub extends Base {");
     expect(dts).toContain("export declare class DSub extends DBase {");
-  });
+  })();
+(() => {
 
-  it("消费端能访问继承来的 b()（改前 TS2339）", () => {
     const check = tscNoEmit({
       "mod.d.ts": moduleDts(SRC),
       "base.d.ts": BASE_DTS,
@@ -1068,7 +1193,10 @@ export default class DBase { d(): unknown; }
         'import { NSub } from "./mod.js";\ndeclare const n: NSub;\nexport const b = n.b();\n',
     });
     expect(check.ok, check.stderr).toBe(true);
-  });
+  })();
+});;
+
+  ;
 });
 
 describe("函数 / 方法级类型形参槽", () => {
@@ -1079,27 +1207,34 @@ export function gen<T>(x: T): T { return x; }
 export function pair<A, B>(a: A, b: B): [A, B] { return [a, b]; }
 `;
 
-  it("函数声明带 <T> / <A, B>，类级 <T> 保留", () => {
+  it("函数声明带 <T> / <A, B>，类级 <T> 保留；消费端显式类型实参通过 tsc（改前 TS2558 ×2）；类方法自己的 <U> 也保留", () => {
+(() => {
+
     const dts = moduleDts(SRC);
     expect(dts).toContain("export declare function gen<T>(");
     expect(dts).toContain("export declare function pair<A, B>(");
     expect(dts).toContain("export declare class Box<T> {");
-  });
+  })();
+(() => {
 
-  it("消费端显式类型实参通过 tsc（改前 TS2558 ×2）", () => {
     const check = tscNoEmit({
       "mod.d.ts": moduleDts(SRC),
       "use.ts":
         'import { Box, gen, pair } from "./mod.js";\nexport const boxed = new Box<number>(1);\nexport const g = gen<string>("x");\nexport const p = pair<number, string>(1, "s");\n',
     });
     expect(check.ok, check.stderr).toBe(true);
-  });
+  })();
+(() => {
 
-  it("类方法自己的 <U> 也保留", () => {
     const dts = moduleDts(`export class C { m<U>(x: U): U { return x; } }
 `);
     expect(dts).toMatch(/\bm<U>\(/);
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 
 describe("后随 rest 的默认形参仍可省", () => {
@@ -1107,21 +1242,26 @@ describe("后随 rest 的默认形参仍可省", () => {
 export class C { m(a = 1, ...rest) { return [a, rest]; } }
 `;
 
-  it("默认形参渲染成 `a?:`，不是 `a: … | undefined`", () => {
+  it("默认形参渲染成 `a?:`，不是 `a: … | undefined`；消费端 f() / c.m() 通过 tsc（改前 TS2555）", () => {
+(() => {
+
     const dts = moduleDts(SRC);
     expect(dts).toContain("f(a?: unknown, ...rest: unknown[])");
     expect(dts).toContain("m(a?: unknown, ...rest: unknown[])");
     expect(dts).not.toContain("a: unknown | undefined");
-  });
+  })();
+(() => {
 
-  it("消费端 f() / c.m() 通过 tsc（改前 TS2555）", () => {
     const check = tscNoEmit({
       "mod.d.ts": moduleDts(SRC),
       "use.ts":
         'import { f, C } from "./mod.js";\nexport const a = f();\nexport const b = f(1);\nexport const c = new C().m();\n',
     });
     expect(check.ok, check.stderr).toBe(true);
-  });
+  })();
+});;
+
+  ;
 });
 
 describe("构造器 / static 方法默认值不丢", () => {
@@ -1132,21 +1272,26 @@ describe("构造器 / static 方法默认值不丢", () => {
 }
 `;
 
-  it("构造器 / static 形参带 `?`（与实例位一致）", () => {
+  it("构造器 / static 形参带 `?`（与实例位一致）；消费端 new C() / C.make() 通过 tsc（改前 TS2554）", () => {
+(() => {
+
     const dts = moduleDts(SRC);
     expect(dts).toContain("constructor(a?: unknown);");
     expect(dts).toContain("static make(x?: unknown): unknown;");
     expect(dts).toContain("inst(y?: unknown)");
-  });
+  })();
+(() => {
 
-  it("消费端 new C() / C.make() 通过 tsc（改前 TS2554）", () => {
     const check = tscNoEmit({
       "mod.d.ts": moduleDts(SRC),
       "use.ts":
         'import { C } from "./mod.js";\nexport const c = new C();\nexport const d = C.make();\nexport const e = new C().inst();\n',
     });
     expect(check.ok, check.stderr).toBe(true);
-  });
+  })();
+});;
+
+  ;
 });
 
 describe("导入的泛型基类保留类型实参", () => {
@@ -1154,19 +1299,24 @@ describe("导入的泛型基类保留类型实参", () => {
 export class Derived extends Base<string> { y: number = 1; z(): number { return this.y; } }
 `;
 
-  it("`extends Base<string>` 不是 `extends Base`", () => {
+  it("`extends Base<string>` 不是 `extends Base`；产物自身过 tsc（改前 TS2314）", () => {
+(() => {
+
     const dts = moduleDts(SRC);
     expect(dts).toContain("export declare class Derived extends Base<string> {");
     expect(dts).not.toMatch(/extends Base \{/);
-  });
+  })();
+(() => {
 
-  it("产物自身过 tsc（改前 TS2314）", () => {
     const check = tscNoEmit({
       "mod.d.ts": moduleDts(SRC),
       "base.d.ts": "export declare class Base<T> { t: T; get(): T; }\n",
     });
     expect(check.ok, check.stderr).toBe(true);
-  });
+  })();
+});;
+
+  ;
 });
 
 describe("类类型形参默认值", () => {
@@ -1177,14 +1327,19 @@ describe("类类型形参默认值", () => {
 export function mk(): Box { return new Box(); }
 `;
 
-  it("`class Box<T = string>` 不是 `class Box<T>`", () => {
-    expect(moduleDts(SRC)).toContain("export declare class Box<T = string> {");
-  });
+  it("`class Box<T = string>` 不是 `class Box<T>`；裸泛型引用 `mk(): Box` 不再让产物 TS2314", () => {
+(() => {
 
-  it("裸泛型引用 `mk(): Box` 不再让产物 TS2314", () => {
+    expect(moduleDts(SRC)).toContain("export declare class Box<T = string> {");
+  })();
+(() => {
+
     const check = tscNoEmit({ "mod.d.ts": moduleDts(SRC) });
     expect(check.ok, check.stderr).toBe(true);
-  });
+  })();
+});;
+
+  ;
 });
 });
 
@@ -1225,7 +1380,9 @@ function moduleDts(source: string, path = "/test/bug189.ts"): string {
 }
 
 describe("一个绑定多个导出名，全部进 .d.ts", () => {
-  it("`export { foo as default, foo }` ⇒ 具名声明 + default 别名", () => {
+  it("`export { foo as default, foo }` ⇒ 具名声明 + default 别名；`export default foo;`（具名函数 + 表达式式 default）⇒ default 可调用；类：具名 + default 双导出 ⇒ 两条导出都在（`new` 不报 TS2351）；负控制：只有 default 一个导出名时保持 `export default function`；负控制：别名导出仍按导出名声明（不额外发射内部名）", () => {
+(() => {
+
     const dts = moduleDts(`function foo(x) {
   return x + 1;
 }
@@ -1238,9 +1395,9 @@ export { foo as default, foo };
       "use.ts": 'import def, { foo } from "./mod.js";\nconst a = def(1);\nconst b = foo(2);\nexport { a, b };\n',
     });
     expect(check.ok, check.stderr).toBe(true);
-  });
+  })();
+(() => {
 
-  it("`export default foo;`（具名函数 + 表达式式 default）⇒ default 可调用", () => {
     const dts = moduleDts(`function foo(x) {
   return x + 1;
 }
@@ -1252,9 +1409,9 @@ export default foo;
       "use.ts": 'import def from "./mod.js";\nconst a = def(1);\nexport { a };\n',
     });
     expect(check.ok, check.stderr).toBe(true);
-  });
+  })();
+(() => {
 
-  it("类：具名 + default 双导出 ⇒ 两条导出都在（`new` 不报 TS2351）", () => {
     const dts = moduleDts(`class C {
   m() {
     return 1;
@@ -1269,25 +1426,34 @@ export { C as default, C };
       "use.ts": 'import DefC, { C } from "./mod.js";\nconst a = new DefC().m();\nconst b = new C().m();\nexport { a, b };\n',
     });
     expect(check.ok, check.stderr).toBe(true);
-  });
+  })();
+(() => {
 
-  // ── 负控制：单导出的形态不该被改写 ──────────────────────────────
-  it("负控制：只有 default 一个导出名时保持 `export default function`", () => {
     const dts = moduleDts(`export default function addOne(x) {
   return x + 1;
 }
 `);
     expect(dts).toContain("export default function addOne(");
     expect(dts).not.toContain("export { addOne as default };");
-  });
+  })();
+(() => {
 
-  it("负控制：别名导出仍按导出名声明（不额外发射内部名）", () => {
     const dts = moduleDts(`const internal = (x) => x + 1;
 export { internal as publicName };
 `);
     expect(dts).toContain("export { internal as publicName };");
     expect(dts).not.toContain("export declare function internal");
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  // ── 负控制：单导出的形态不该被改写 ──────────────────────────────
+  ;
+
+  ;
 });
 });
 
@@ -1333,7 +1499,9 @@ function fnOf(
 }
 
 describe("dts 参数表来自声明形参表", () => {
-  it("契约声明 2 个形参、只有 1 个 case 实参 ⇒ 形参不被丢弃", () => {
+  it("契约声明 2 个形参、只有 1 个 case 实参 ⇒ 形参不被丢弃；声明形参比观测元数多 ⇒ 尾部形参保留（无契约时落观测 widen）；真分析面：声明 2 参 + 1 参 case ⇒ 两个形参都在产物里；负控制：契约里多出、形参表对不上的参数名仍不投影（不撒 arity 谎言）", () => {
+(() => {
+
     const fn = fnOf("addAll", ["a", "b"], [
       { name: "c", argAbs: [num()], abs: neverAbs(), throwsAbs: neverAbs() },
     ]);
@@ -1347,9 +1515,9 @@ describe("dts 参数表来自声明形参表", () => {
       "export declare function addAll(a: number, b: number)",
     );
     expect(p.params.map((x) => x.name)).toEqual(["a", "b"]);
-  });
+  })();
+(() => {
 
-  it("声明形参比观测元数多 ⇒ 尾部形参保留（无契约时落观测 widen）", () => {
     const fn = fnOf("addAll", ["a", "b"], [
       { name: "c", argAbs: [num()], abs: neverAbs(), throwsAbs: neverAbs() },
     ]);
@@ -1360,9 +1528,9 @@ describe("dts 参数表来自声明形参表", () => {
     expect(p.lines.join("\n")).toMatch(
       /export declare function addAll\(a: \w+( \| \w+)?, b\?: (unknown|any)\)/,
     );
-  });
+  })();
+(() => {
 
-  it("真分析面：声明 2 参 + 1 参 case ⇒ 两个形参都在产物里", () => {
     const source = `
 /**
  * @nudo:case "c" (1)
@@ -1379,9 +1547,9 @@ export function addAll(a, b) { return a + b; }
     expect(p.lines.join("\n")).toMatch(
       /export declare function addAll\(a: \w+( \| \w+)?, b\?: (unknown|any)\)/,
     );
-  });
+  })();
+(() => {
 
-  it("负控制：契约里多出、形参表对不上的参数名仍不投影（不撒 arity 谎言）", () => {
     const fn = fnOf("one", ["a"], [
       { name: "c", argAbs: [num()], abs: neverAbs(), throwsAbs: neverAbs() },
     ]);
@@ -1393,7 +1561,14 @@ export function addAll(a, b) { return a + b; }
     });
     expect(p.lines.join("\n")).toContain("one(a: number)");
     expect(p.lines.join("\n")).not.toContain("ghost");
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -1458,7 +1633,9 @@ const NONREST_OPTIONAL_RE =
   /export declare function add\(a: \w+( \| \w+)?, b\?: (unknown|any)\): \w+( \| \w+)?;/;
 
 describe("dts 剩余参数", () => {
-  it("rest 形参类型提升为数组（TS2370）", () => {
+  it("rest 形参类型提升为数组（TS2370）；rest 吞掉全部尾部实参：参数表不再追加 argN（TS1014）；产物真能过 tsc --noEmit --strict（改前：TS2370 / TS1014）；负控制：非 rest 形参仍是普通参数（不误提升为数组）", () => {
+(() => {
+
     const source = `
 /**
  * @nudo:case "c" (1)
@@ -1471,9 +1648,9 @@ export function sum(...xs) { return xs.length; }
     // 推断域（）⇒ 元素落到 any。
     expect(dts).toMatch(REST_ARRAY_RE("sum"));
     expect(dts).not.toContain("...xs: number;");
-  });
+  })();
+(() => {
 
-  it("rest 吞掉全部尾部实参：参数表不再追加 argN（TS1014）", () => {
     const source = `
 /**
  * @nudo:case "c" (1, 2, 3)
@@ -1485,9 +1662,9 @@ export function sum3(...xs) { return xs.length; }
     expect(dts).toMatch(REST_ARRAY_RE("sum3"));
     expect(dts).not.toContain("arg1");
     expect(dts).not.toContain("arg2");
-  });
+  })();
+(() => {
 
-  it("产物真能过 tsc --noEmit --strict（改前：TS2370 / TS1014）", () => {
     const source = `
 /**
  * @nudo:case "c" (1, 2, 3)
@@ -1497,9 +1674,9 @@ export function sum3(...xs) { return xs.length; }
     const dts = generateDts(analyzeFile("/test/s2-rest-tsc.js", source));
     const check = tscNoEmit({ "mod.d.ts": dts });
     expect(check.ok, check.stderr).toBe(true);
-  });
+  })();
+(() => {
 
-  it("负控制：非 rest 形参仍是普通参数（不误提升为数组）", () => {
     const source = `
 /**
  * @nudo:case "c" (1)
@@ -1511,7 +1688,14 @@ export function add(a, b) { return a + b; }
     // 本钉只关心**可选性**标记与「没被误提升成数组」。
     expect(dts).toMatch(NONREST_OPTIONAL_RE);
     expect(dts).not.toContain("number[]");
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -1562,7 +1746,9 @@ function moduleDts(source: string, path = "/test/bug168-annotation.ts"): string 
 }
 
 describe("注解原文的类型名必须在产物里可解析", () => {
-  it("泛型函数的类型形参不放行：`id<T>(x: T)` ⇒ `id(x: unknown)` + 台账", () => {
+  it("泛型函数的类型形参不放行：`id<T>(x: T)` ⇒ `id(x: unknown)` + 台账；多类型形参：`pair<A, B>` ⇒ 两个形参都回落观测口径（TS 投影面为 unknown）；本地 interface 放行（原文镜像进产物）⇒ 注解保留、零台账；TS 全局类型名照旧放行（Date / Record / Promise 不产生台账）；本地类（未导出）被注解引用 ⇒ 补 `declare class`（产物必须能解析该名）；别的模块的 import ⇒ ", () => {
+(() => {
+
     const dts = moduleDts(`export function id<T>(x: T): T {
   return x;
 }
@@ -1570,9 +1756,9 @@ describe("注解原文的类型名必须在产物里可解析", () => {
     expect(dts).toContain("export declare function id(x: unknown): unknown;");
     expect(dts).not.toContain("id(x: T)");
     expect(dts).toContain("nudo:dropped-type-annotation id.x: T");
-  });
+  })();
+(() => {
 
-  it("多类型形参：`pair<A, B>` ⇒ 两个形参都回落观测口径（TS 投影面为 unknown）", () => {
     const dts = moduleDts(`export function pair<A, B>(a: A, b: B): [A, B] {
   return [a, b];
 }
@@ -1580,12 +1766,9 @@ describe("注解原文的类型名必须在产物里可解析", () => {
     expect(dts).toContain("export declare function pair(a: unknown, b: unknown): [unknown, unknown];");
     expect(dts).not.toContain("pair(a: A");
     expect(dts).not.toContain("b: B)");
-  });
+  })();
+(() => {
 
-  // 之后口径变更：模块级 `interface` / `type` 会被**原文镜像**进同一份
-  // 产物（见 dtsModuleSurface 的 typeDeclarations）⇒ 引用它是可解析的，不再回落。
-  // 真正的「不可解析」只剩类型形参与未声明 / 未导入的名字（上面两条已覆盖）。
-  it("本地 interface 放行（原文镜像进产物）⇒ 注解保留、零台账", () => {
     const dts = moduleDts(`interface Point { x: number; y: number }
 export function dist(p: Point): number {
   return p.x + p.y;
@@ -1594,9 +1777,9 @@ export function dist(p: Point): number {
     expect(dts).toContain("dist(p: Point)");
     expect(dts).toContain("interface Point { x: number; y: number }");
     expect(dts).not.toContain("nudo:dropped-type-annotation dist.p: Point");
-  });
+  })();
+(() => {
 
-  it("TS 全局类型名照旧放行（Date / Record / Promise 不产生台账）", () => {
     const dts = moduleDts(`export function when(d: Date, o: Record<string, number>): Promise<number> {
   return Promise.resolve(d.getTime() + o.n);
 }
@@ -1604,9 +1787,9 @@ export function dist(p: Point): number {
     expect(dts).toContain("d: Date");
     expect(dts).toContain("o: Record<string, number>");
     expect(dts).not.toContain("nudo:dropped-type-annotation");
-  });
+  })();
+(() => {
 
-  it("本地类（未导出）被注解引用 ⇒ 补 `declare class`（产物必须能解析该名）", () => {
     const dts = moduleDts(`class Helper {
   constructor() {
     this.n = 1;
@@ -1619,9 +1802,9 @@ export function useHelper(h: Helper): number {
     expect(dts).toContain("declare class Helper {");
     expect(dts).toContain("export declare function useHelper(h: Helper)");
     expect(dts).not.toContain("nudo:dropped-type-annotation");
-  });
+  })();
+(() => {
 
-  it("别的模块的 import ⇒ 补 `import type`（否则消费方 TS2304）", () => {
     const dts = moduleDts(`import type { User } from "./types";
 export function name(u: User): string {
   return String(u);
@@ -1635,9 +1818,9 @@ export function name(u: User): string {
       "use.ts": 'import { name } from "./mod.js";\nexport const s: string = name({ id: 1 });\n',
     });
     expect(check.ok, check.stderr).toBe(true);
-  });
+  })();
+(() => {
 
-  it("泛型类保留类型形参槽（消费端 `new Box<string>` 不再 TS2558）", () => {
     const dts = moduleDts(`export class Box<T> {
   constructor(v) {
     this.v = v;
@@ -1650,9 +1833,9 @@ export function name(u: User): string {
       "use.ts": 'import { Box } from "./mod.js";\nexport const b: Box<string> = new Box<string>("x");\n',
     });
     expect(check.ok, check.stderr).toBe(true);
-  });
+  })();
+(() => {
 
-  it("产出的 .d.ts 真能过 tsc --noEmit --strict（BUG-168 的主症状是 TS2304）", () => {
     const dts = moduleDts(`export function id<T>(x: T): T {
   return x;
 }
@@ -1662,7 +1845,25 @@ export function pair<A, B>(a: A, b: B): [A, B] {
 `);
     const check = tscNoEmit({ "mod.d.ts": dts });
     expect(check.ok, check.stderr).toBe(true);
-  });
+  })();
+});;
+
+  ;
+
+  // 之后口径变更：模块级 `interface` / `type` 会被**原文镜像**进同一份
+  // 产物（见 dtsModuleSurface 的 typeDeclarations）⇒ 引用它是可解析的，不再回落。
+  // 真正的「不可解析」只剩类型形参与未声明 / 未导入的名字（上面两条已覆盖）。
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -1704,7 +1905,9 @@ function moduleDts(source: string, path = "/test/bug190.ts", includeValues = tru
 }
 
 describe("值导出落地到 .d.ts", () => {
-  it("`export const` / `export let` 有声明，类型来自分析面绑定", () => {
+  it("`export const` / `export let` 有声明，类型来自分析面绑定；TS `enum` 按 enum 声明（成员 + 字面量初始化器都在）；数值 enum：无初始化器成员照常落地（消费方零参 import 可用）；无分析绑定 ⇒ 声明仍是 `unknown` + 台账（不静默消失）；负控制：非导出的模块级 const 不进 .d.ts", () => {
+(() => {
+
     const dts = moduleDts(`export const VERSION = "1.2.3";
 export const LIMIT = 10;
 export let counter = 0;
@@ -1719,9 +1922,9 @@ export let counter = 0;
         "const v: string = VERSION;\nconst l: number = LIMIT;\nconst c: number = counter;\nexport { v, l, c };\n",
     });
     expect(check.ok, check.stderr).toBe(true);
-  });
+  })();
+(() => {
 
-  it("TS `enum` 按 enum 声明（成员 + 字面量初始化器都在）", () => {
     const dts = moduleDts(`export enum Mode {
   A = "a",
   B = "b",
@@ -1735,9 +1938,9 @@ export let counter = 0;
       "use.ts": 'import { Mode } from "./mod.js";\nconst m: Mode = Mode.A;\nexport { m };\n',
     });
     expect(check.ok, check.stderr).toBe(true);
-  });
+  })();
+(() => {
 
-  it("数值 enum：无初始化器成员照常落地（消费方零参 import 可用）", () => {
     const dts = moduleDts(`export enum Level {
   Low,
   High,
@@ -1751,17 +1954,16 @@ export let counter = 0;
       "use.ts": 'import { Level } from "./mod.js";\nconst l: Level = Level.High;\nexport { l };\n',
     });
     expect(check.ok, check.stderr).toBe(true);
-  });
+  })();
+(() => {
 
-  it("无分析绑定 ⇒ 声明仍是 `unknown` + 台账（不静默消失）", () => {
     const dts = moduleDts(`export const later = computeSomething();
 `, "/test/bug190-unresolved.ts", false);
     expect(dts).toContain("export declare const later: unknown;");
     expect(dts).toContain("nudo:unresolved-value later");
-  });
+  })();
+(() => {
 
-  // ── 负控制：非导出的模块值不进产物 ─────────────────────────────
-  it("负控制：非导出的模块级 const 不进 .d.ts", () => {
     const dts = moduleDts(`const secret = 42;
 export function reveal() {
   return secret;
@@ -1769,7 +1971,17 @@ export function reveal() {
 `);
     expect(dts).not.toContain("secret");
     expect(dts).toContain("export declare function reveal(");
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  // ── 负控制：非导出的模块值不进产物 ─────────────────────────────
+  ;
 });
 });
 
@@ -1823,7 +2035,9 @@ export const scalar = 42;
 export const nested = { a: { b: 1 } };
 `;
 
-  it("对象槽 / 数组元素 / 元组按基类型投影，标量绑定照旧拓宽", () => {
+  it("对象槽 / 数组元素 / 元组按基类型投影，标量绑定照旧拓宽；消费端对合法写入不再报 TS2322 / TS2345", () => {
+(() => {
+
     const dts = moduleDts(SRC);
     expect(dts).toContain("config: { retries: number; label: string }");
     expect(dts).toContain("empty: unknown[];");
@@ -1831,16 +2045,19 @@ export const nested = { a: { b: 1 } };
     expect(dts).toContain("scalar: number;");
     expect(dts).toContain("nested: { a: { b: number } };");
     expect(dts).not.toContain("retries: 3");
-  });
+  })();
+(() => {
 
-  it("消费端对合法写入不再报 TS2322 / TS2345", () => {
     const check = tscNoEmit({
       "mod.d.ts": moduleDts(SRC),
       "use.ts":
         'import { config, empty, nums, scalar } from "./mod.js";\nconfig.retries = 5;\nempty.push(1);\nnums[0] = 9;\nscalar.toFixed(1);\n',
     });
     expect(check.ok, check.stderr).toBe(true);
-  });
+  })();
+});;
+
+  ;
 });
 
 describe("namespace 成员注解引用的私有类型可解析", () => {
@@ -1855,17 +2072,22 @@ export namespace NS {
 }
 `;
 
-  it("私有 interface / type 别名补进产物（tsc --declaration 同口径）", () => {
+  it("私有 interface / type 别名补进产物（tsc --declaration 同口径）；产物自身过 tsc（改前 TS2304 ×3）", () => {
+(() => {
+
     const dts = moduleDts(SRC);
     expect(dts).toContain("interface Hidden { a: number }");
     expect(dts).toContain("type LocalAlias = string;");
     expect(dts).toContain("export function f(x: Hidden): number;");
-  });
+  })();
+(() => {
 
-  it("产物自身过 tsc（改前 TS2304 ×3）", () => {
     const check = tscNoEmit({ "mod.d.ts": moduleDts(SRC) });
     expect(check.ok, check.stderr).toBe(true);
-  });
+  })();
+});;
+
+  ;
 });
 
 describe("namespace 内 export class 不再是空类体", () => {
@@ -1878,22 +2100,27 @@ export namespace NS {
 }
 `;
 
-  it("类体带字段与方法（ambient 声明体合法）", () => {
+  it("类体带字段与方法（ambient 声明体合法）；消费端 new NS.C().v / .m() 通过 tsc（改前 TS2339 ×2）", () => {
+(() => {
+
     const dts = moduleDts(SRC);
     expect(dts).toContain("export class C {");
     expect(dts).toMatch(/v: number;/);
     expect(dts).toMatch(/m\(\): number;/);
     expect(dts).not.toMatch(/export class C \{\}/);
-  });
+  })();
+(() => {
 
-  it("消费端 new NS.C().v / .m() 通过 tsc（改前 TS2339 ×2）", () => {
     const check = tscNoEmit({
       "mod.d.ts": moduleDts(SRC),
       "use.ts":
         'import { NS } from "./mod.js";\nconst c = new NS.C();\nexport const v: number = c.v;\nexport const m: number = c.m();\n',
     });
     expect(check.ok, check.stderr).toBe(true);
-  });
+  })();
+});;
+
+  ;
 });
 
 describe("readonly 语义", () => {
@@ -1901,13 +2128,15 @@ describe("readonly 语义", () => {
 export const CFG = { host: "h" } as const;
 `;
 
-  it("readonly 字段 / as const 对象槽都带修饰符，字面量精度保留", () => {
+  it("readonly 字段 / as const 对象槽都带修饰符，字面量精度保留；消费端对只读值的写入被 tsc 拦下（改前假绿）", () => {
+(() => {
+
     const dts = moduleDts(SRC);
     expect(dts).toContain("readonly count: number;");
     expect(dts).toContain('readonly host: "h"');
-  });
+  })();
+(() => {
 
-  it("消费端对只读值的写入被 tsc 拦下（改前假绿）", () => {
     const check = tscNoEmit({
       "mod.d.ts": moduleDts(SRC),
       "use.ts":
@@ -1915,7 +2144,10 @@ export const CFG = { host: "h" } as const;
     });
     expect(check.ok).toBe(false);
     expect(check.stderr).toContain("TS2540");
-  });
+  })();
+});;
+
+  ;
 });
 });
 
@@ -1982,16 +2214,18 @@ describe("ABS-03 契约面类型形参（可达性 + 统一性）", () => {
     "processItems",
   );
 
-  it("元素域 / 回调入参共享同一变元；返回位复用回调返回变元（<a, b>）", () => {
+  it("元素域 / 回调入参共享同一变元；返回位复用回调返回变元（<a, b>）；未被签名引用的变元不发射（ghost 位不产生悬空类型参数）；契约可读注记：Contract: 行存在，且不参与类型面", () => {
+(() => {
+
     const proj = projectFunctionDts(fn, processItemsContract());
     const decl = proj.lines.join("\n");
     expect(decl).toContain("<a, b>");
     expect(decl).toContain("items: a[]");
     expect(decl).toContain("(x: a) => b");
     expect(decl).toContain(": b[]");
-  });
+  })();
+(() => {
 
-  it("未被签名引用的变元不发射（ghost 位不产生悬空类型参数）", () => {
     const contract = processItemsContract();
     contract.params.push({
       name: "ghost",
@@ -2000,16 +2234,21 @@ describe("ABS-03 契约面类型形参（可达性 + 统一性）", () => {
     const proj = projectFunctionDts(fn, contract);
     const decl = proj.lines.join("\n");
     expect(decl).not.toContain("ghost");
-  });
+  })();
+(() => {
 
-  it("契约可读注记：Contract: 行存在，且不参与类型面", () => {
     const proj = projectFunctionDts(fn, processItemsContract());
     const decl = proj.lines.join("\n");
     expect(decl).toContain('Contract: items: array(bind("a", any()))');
     expect(decl).toContain('Contract: return: array(ref("b"))');
     // 注记不改变声明行的类型面
     expect(decl).toContain("(items: a[], transform: (x: a) => b): b[]");
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 
 describe("ABS-03 重载集 → TS 调用签名对象", () => {
@@ -2037,7 +2276,9 @@ describe("ABS-03 重载集 → TS 调用签名对象", () => {
 });
 
 describe("ABS-03 schema 数值界投影", () => {
-  it("可表达的 gt/ge 下界与 le/lt 上界生成检查", () => {
+  it("可表达的 gt/ge 下界与 le/lt 上界生成检查；不可表达的关系（x > y）诚实省略界（不回退成假精确）", () => {
+(() => {
+
     const entry = makeAbs(
       { k: "prim", type: "number" },
       v("x"),
@@ -2053,9 +2294,9 @@ describe("ABS-03 schema 数值界投影", () => {
     const src = absToSchemaSource(entry);
     expect(src).toContain(".gte(0)");
     expect(src).toContain(".lt(10)");
-  });
+  })();
+(() => {
 
-  it("不可表达的关系（x > y）诚实省略界（不回退成假精确）", () => {
     const entry = makeAbs(
       { k: "prim", type: "number" },
       v("x"),
@@ -2065,6 +2306,9 @@ describe("ABS-03 schema 数值界投影", () => {
     const src = absToSchemaSource(entry);
     expect(src).not.toContain(".gt(");
     expect(src).toContain("number");
-  });
+  })();
+});;
+
+  ;
 });
 });

@@ -203,7 +203,13 @@ describe("__nudoMp* 内部临时名与用户标识符避让", () => {
   ;
 
   describe("临时名族全覆盖（member-path 层 + assignment 兜底臂）", () => {
-    it("__nudoMpObj（assignment 兜底臂的对象载体）→ 8（原生 8；修前：unknown）", () => {
+    it("__nudoMpObj（assignment 兜底臂的对象载体）→ 8（原生 8；修前：unknown）；__nudoMpOld（assignment 兜底臂的旧值载体）→ 11（原生 11；修前：2）；__nudoMpKey（assignment 兜底臂的计算键载体）→ 11（原生 11；修前：1）；__nudoMpK0（层键载体）→ 2（原生 2；修前：ReferenceError）；__nudoMpC0（中间层持有者载体）→ 6（原生 6；修前：unknown）；__n", () => {
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
+
       const src = `export function f() {
         let __nudoMpObj = 7;
         const mk = () => ({ x: 1 });
@@ -211,9 +217,13 @@ describe("__nudoMp* 内部临时名与用户标识符避让", () => {
         return v;
       }`;
       expect(v(src)).toBe(8);
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("__nudoMpOld（assignment 兜底臂的旧值载体）→ 11（原生 11；修前：2）", () => {
       const src = `export function f() {
         let __nudoMpOld = 10;
         const mk = () => ({ x: 1 });
@@ -221,9 +231,13 @@ describe("__nudoMp* 内部临时名与用户标识符避让", () => {
         return v;
       }`;
       expect(v(src)).toBe(11);
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("__nudoMpKey（assignment 兜底臂的计算键载体）→ 11（原生 11；修前：1）", () => {
       const src = `export function f() {
         let __nudoMpKey = 10;
         const i = 0;
@@ -232,9 +246,13 @@ describe("__nudoMp* 内部临时名与用户标识符避让", () => {
         return v;
       }`;
       expect(v(src)).toBe(11);
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("__nudoMpK0（层键载体）→ 2（原生 2；修前：ReferenceError）", () => {
       const src = `export function f() {
         const o = { k: 1 };
         const __nudoMpK0 = "k";
@@ -242,9 +260,13 @@ describe("__nudoMp* 内部临时名与用户标识符避让", () => {
         return o.k;
       }`;
       expect(v(src)).toBe(2);
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("__nudoMpC0（中间层持有者载体）→ 6（原生 6；修前：unknown）", () => {
       const src = `export function f() {
         const o = { a: { b: 1 } };
         const __nudoMpC0 = 5;
@@ -252,9 +274,13 @@ describe("__nudoMp* 内部临时名与用户标识符避让", () => {
         return o.a.b;
       }`;
       expect(v(src)).toBe(6);
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("__nudoMpVal（写入值载体）→ 11（原生 11；修前：unknown）", () => {
       const src = `export function f() {
         const o = { p: 1 };
         const __nudoMpVal = 10;
@@ -262,9 +288,13 @@ describe("__nudoMp* 内部临时名与用户标识符避让", () => {
         return o.p;
       }`;
       expect(v(src)).toBe(11);
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("__nudoMpNew（新值载体）→ 11（原生 11；修前：ReferenceError）", () => {
       const src = `export function f() {
         const o = { p: 1 };
         const __nudoMpNew = 10;
@@ -272,9 +302,13 @@ describe("__nudoMp* 内部临时名与用户标识符避让", () => {
         return o.p;
       }`;
       expect(v(src)).toBe(11);
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("__nudoMpDelK（delete 键载体）→ \"true|undefined\"（原生同款；修前：ReferenceError）", () => {
       const src = `export function f() {
         const o = { k: 1 };
         const __nudoMpDelK = "k";
@@ -282,9 +316,13 @@ describe("__nudoMp* 内部临时名与用户标识符避让", () => {
         return r + "|" + o.k;
       }`;
       expect(v(src)).toBe("true|undefined");
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("__nudoMpRes（写回结果载体）→ 11（原生 11；修前：unknown）", () => {
       const src = `export function f() {
         const o = { p: 1 };
         const __nudoMpRes = 10;
@@ -292,9 +330,13 @@ describe("__nudoMp* 内部临时名与用户标识符避让", () => {
         return o.p;
       }`;
       expect(v(src)).toBe(11);
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("派生路径（optional 链 delete 的前缀路径）→ \"true|{\\\"a\\\":{}}\"（原生同款）", () => {
       // 派生路径用对象字面量重建 MemberPath（丢 MemberPath 上的字段）⇒
       // 临时名须经**共享的层对象**继承，否则前缀路径仍写死名。
       const src = `export function f() {
@@ -304,9 +346,13 @@ describe("__nudoMp* 内部临时名与用户标识符避让", () => {
         return r + "|" + JSON.stringify(o);
       }`;
       expect(v(src)).toBe('true|{"a":{}}');
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("派生路径 + 层键载体 __nudoMpK0 → \"true|{\\\"a\\\":{}}\"（原生同款）", () => {
       const src = `export function f() {
         const __nudoMpK0 = "a";
         const o = { a: { b: 1 } };
@@ -314,25 +360,65 @@ describe("__nudoMp* 内部临时名与用户标识符避让", () => {
         return r + "|" + JSON.stringify(o);
       }`;
       expect(v(src)).toBe('true|{"a":{}}');
-    });
+    })();
+});;
+
+    ;
+
+    ;
+
+    ;
+
+    ;
+
+    ;
+
+    ;
+
+    ;
+
+    ;
+
+    ;
+
+    ;
   });
 
   describe("check 门禁面（不假红 / 不假绿）", () => {
-    it("撞名时签名面仍拿到精确值（修前：unknown / 错值）", () => {
+    it("撞名时签名面仍拿到精确值（修前：unknown / 错值）；撞名时无假 nudo:opaque-result（整模块 fail-closed 面）", () => {
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
+
       expect(sigOf(SRC_ROOT)).toBe("4");
       expect(sigOf(SRC_OLD)).toBe("12");
       expect(sigOf(SRC_KEY)).toBe("7");
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("撞名时无假 nudo:opaque-result（整模块 fail-closed 面）", () => {
       for (const src of [SRC_ROOT, SRC_OLD, SRC_KEY]) {
         expect(issueCodes(src)).not.toContain("nudo:opaque-result");
       }
-    });
+    })();
+});;
+
+    ;
   });
 
   describe("确定性 / 产物逐字不变", () => {
-    it("无碰撞时内部临时名逐字保持基名（无 `_k` 后缀）", () => {
+    it("无碰撞时内部临时名逐字保持基名（无 `_k` 后缀）；撞名时改名（`__nudoMpRoot` → `__nudoMpRoot_1`）且仍确定（同源两次逐字相同）；同一源码转译两次 ⇒ 产物逐字相同（确定性）", () => {
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
+
       const src = `export function f() {
         const o = { p: 1 };
         o.p += 2;
@@ -341,20 +427,33 @@ describe("__nudoMp* 内部临时名与用户标识符避让", () => {
       const js = transpileSource(src, { source: src });
       expect(js).toContain("__nudoMpRoot");
       expect(js).not.toMatch(/__nudoMp[A-Za-z0-9_]*_1\b/);
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("撞名时改名（`__nudoMpRoot` → `__nudoMpRoot_1`）且仍确定（同源两次逐字相同）", () => {
       const a = transpileSource(SRC_ROOT, { source: SRC_ROOT });
       const b = transpileSource(SRC_ROOT, { source: SRC_ROOT });
       expect(a).toBe(b);
       expect(a).toContain("__nudoMpRoot_1");
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("同一源码转译两次 ⇒ 产物逐字相同（确定性）", () => {
       const a = transpileSource(SRC_KEY, { source: SRC_KEY });
       const b = transpileSource(SRC_KEY, { source: SRC_KEY });
       expect(a).toBe(b);
-    });
+    })();
+});;
+
+    ;
+
+    ;
   });
 });
 });
@@ -493,7 +592,13 @@ describe("调用族内部临时名（__nudoDefR / __nudoReArgs / __v）与用户
   ;
 
   describe("check 门禁面（不假红 / 不假绿）", () => {
-    it("撞名时签名面拿到精确值（修前：never throws ReferenceError）", () => {
+    it("撞名时签名面拿到精确值（修前：never throws ReferenceError）；撞名时无假 nudo:entry-may-throw（原生不抛 ⇒ 修前是假红）；撞名时无假 nudo:opaque-result（整模块 fail-closed 面）", () => {
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
+
       expect(sig(SRC_VALUE)).toBe("5");
       expect(sig(SRC_TARGET)).toBe('"2|1"');
       expect(sig(SRC_NESTED)).toBe("3");
@@ -501,23 +606,42 @@ describe("调用族内部临时名（__nudoDefR / __nudoReArgs / __v）与用户
       expect(sig(SRC_RE_ARGS)).toBe("true");
       expect(sig(SRC_RE_RES)).toBe("true");
       expect(sig(SRC_RE_EXEC)).toBe('"7"');
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("撞名时无假 nudo:entry-may-throw（原生不抛 ⇒ 修前是假红）", () => {
       for (const src of ALL_SOURCES) {
         expect(issueCodes(src)).not.toContain("nudo:entry-may-throw");
       }
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("撞名时无假 nudo:opaque-result（整模块 fail-closed 面）", () => {
       for (const src of ALL_SOURCES) {
         expect(issueCodes(src)).not.toContain("nudo:opaque-result");
       }
-    });
+    })();
+});;
+
+    ;
+
+    ;
   });
 
   describe("确定性 / 产物逐字不变", () => {
-    it("无碰撞时内部临时名逐字保持基名（无 `_k` 后缀）", () => {
+    it("无碰撞时内部临时名逐字保持基名（无 `_k` 后缀）；无碰撞时正则族临时名逐字保持基名（`__nudoReArgs` / `__v`）；撞名时改名（`__nudoDefR` → `__nudoDefR_1`）且仍确定（同源两次逐字相同）；正则族撞名时改名（`__nudoReArgs` → `__nudoReArgs_1`）且仍确定", () => {
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
+
       const src = `export function f() {
         const o = {};
         Object.defineProperty(o, "x", { value: 5 });
@@ -526,9 +650,13 @@ describe("调用族内部临时名（__nudoDefR / __nudoReArgs / __v）与用户
       const js = transpileSource(src, { source: src });
       expect(js).toContain("__nudoDefR");
       expect(js).not.toMatch(/__nudoDefR[A-Za-z0-9_]*_1\b/);
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("无碰撞时正则族临时名逐字保持基名（`__nudoReArgs` / `__v`）", () => {
       const src = `export function f() {
         const r = /a/;
         return r.test("a");
@@ -537,21 +665,36 @@ describe("调用族内部临时名（__nudoDefR / __nudoReArgs / __v）与用户
       expect(js).toContain("__nudoReArgs");
       expect(js).toContain("__v");
       expect(js).not.toMatch(/__nudoReArgs[A-Za-z0-9_]*_1\b/);
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("撞名时改名（`__nudoDefR` → `__nudoDefR_1`）且仍确定（同源两次逐字相同）", () => {
       const a = transpileSource(SRC_VALUE, { source: SRC_VALUE });
       const b = transpileSource(SRC_VALUE, { source: SRC_VALUE });
       expect(a).toBe(b);
       expect(a).toContain("__nudoDefR_1");
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("正则族撞名时改名（`__nudoReArgs` → `__nudoReArgs_1`）且仍确定", () => {
       const a = transpileSource(SRC_RE_ARGS, { source: SRC_RE_ARGS });
       const b = transpileSource(SRC_RE_ARGS, { source: SRC_RE_ARGS });
       expect(a).toBe(b);
       expect(a).toContain("__nudoReArgs_1");
-    });
+    })();
+});;
+
+    ;
+
+    ;
+
+    ;
   });
 });
 });
@@ -773,7 +916,13 @@ describe("剩余族内部临时名（可选链 / 短路 / 对象）与用户标�
   ;
 
   describe("check 门禁面（不假红 / 不假绿）", () => {
-    it("撞名时签名面拿到精确值（修前：never throws ReferenceError / 错值）", () => {
+    it("撞名时签名面拿到精确值（修前：never throws ReferenceError / 错值）；撞名时无假 nudo:entry-may-throw（原生不抛 ⇒ 修前是假红）；撞名时无假 nudo:opaque-result（整模块 fail-closed 面）", () => {
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
+
       expect(sig(SRC_A1)).toBe("true");
       expect(sig(SRC_A2)).toBe("true");
       expect(sig(SRC_A3)).toBe('"7"');
@@ -787,23 +936,42 @@ describe("剩余族内部临时名（可选链 / 短路 / 对象）与用户标�
       expect(sig(SRC_D5)).toBe("1");
       expect(sig(SRC_D6)).toBe("true");
       expect(sig(SRC_D7)).toBe("5");
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("撞名时无假 nudo:entry-may-throw（原生不抛 ⇒ 修前是假红）", () => {
       for (const src of ALL_SOURCES) {
         expect(issueCodes(src)).not.toContain("nudo:entry-may-throw");
       }
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("撞名时无假 nudo:opaque-result（整模块 fail-closed 面）", () => {
       for (const src of ALL_SOURCES) {
         expect(issueCodes(src)).not.toContain("nudo:opaque-result");
       }
-    });
+    })();
+});;
+
+    ;
+
+    ;
   });
 
   describe("确定性 / 产物逐字不变", () => {
-    it("无碰撞时可选链族临时名逐字保持基名（无 `_k` 后缀）", () => {
+    it("无碰撞时可选链族临时名逐字保持基名（无 `_k` 后缀）；无碰撞时短路族临时名逐字保持基名（`__sc0` / `__test` / `__v` / `__r`）；无碰撞时对象族临时名逐字保持基名（`__v` / `__k` / `__nudoProtoBox`）；撞名时改名（`__nudoReArgs` → `__nudoReArgs_1`）且仍确定（同源两次逐字相同）；撞名时短路族改名（`__test` → `__test_1`）且仍确定；撞名时对象族改名（`__v` →", () => {
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
+
       const src = `export function f() {
         const r = /a/;
         const o = { a: 1 };
@@ -814,9 +982,13 @@ describe("剩余族内部临时名（可选链 / 短路 / 对象）与用户标�
       expect(js).toContain("$__oc");
       expect(js).not.toMatch(/__nudoReArgs[A-Za-z0-9_]*_1\b/);
       expect(js).not.toMatch(/\$__oc[A-Za-z0-9_]*_1\b/);
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("无碰撞时短路族临时名逐字保持基名（`__sc0` / `__test` / `__v` / `__r`）", () => {
       // 简单 $fork 路径（无 mutator 绑定）⇒ 左绑定名 `__sc0`
       const simple = `export function f() {
         function g() { return 1; }
@@ -837,9 +1009,13 @@ describe("剩余族内部临时名（可选链 / 短路 / 对象）与用户标�
       expect(jsMutator).toContain("__r");
       expect(jsMutator).not.toMatch(/__test[A-Za-z0-9_]*_1\b/);
       expect(jsMutator).not.toMatch(/__r[A-Za-z0-9_]*_1\b/);
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("无碰撞时对象族临时名逐字保持基名（`__v` / `__k` / `__nudoProtoBox`）", () => {
       const src = `export function f() {
         const p = { x: 1 };
         const o = { __proto__: p, y: 2 };
@@ -848,28 +1024,51 @@ describe("剩余族内部临时名（可选链 / 短路 / 对象）与用户标�
       const js = transpileSource(src, { source: src });
       expect(js).toContain("__nudoProtoBox");
       expect(js).not.toMatch(/__nudoProtoBox[A-Za-z0-9_]*_1\b/);
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("撞名时改名（`__nudoReArgs` → `__nudoReArgs_1`）且仍确定（同源两次逐字相同）", () => {
       const a = transpileSource(SRC_A1, { source: SRC_A1 });
       const b = transpileSource(SRC_A1, { source: SRC_A1 });
       expect(a).toBe(b);
       expect(a).toContain("__nudoReArgs_1");
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("撞名时短路族改名（`__test` → `__test_1`）且仍确定", () => {
       const a = transpileSource(SRC_D1, { source: SRC_D1 });
       const b = transpileSource(SRC_D1, { source: SRC_D1 });
       expect(a).toBe(b);
       expect(a).toContain("__test_1");
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("撞名时对象族改名（`__v` → `__v_1`）且仍确定", () => {
       const a = transpileSource(SRC_C1, { source: SRC_C1 });
       const b = transpileSource(SRC_C1, { source: SRC_C1 });
       expect(a).toBe(b);
       expect(a).toContain("__v_1");
-    });
+    })();
+});;
+
+    ;
+
+    ;
+
+    ;
+
+    ;
+
+    ;
   });
 });
 });
@@ -1092,28 +1291,53 @@ describe("类 setter thunk 形参载体（__v）避开用户标识符", () => {
   ;
 
   describe("1151-a：check 门禁面（不假红 / 不假绿）", () => {
-    it("撞名时签名面拿到精确值 15（修前：20）", () => {
+    it("撞名时签名面拿到精确值 15（修前：20）；撞名时无假 nudo:entry-may-throw（原生不抛 ⇒ 修前是假红）；撞名时无假 nudo:opaque-result（整模块 fail-closed 面）", () => {
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
+
       expect(sig(SRC_A1)).toBe("15");
       expect(sig(SRC_A2)).toBe("15");
       expect(sig(SRC_A3)).toBe("15");
       expect(sig(SRC_A4)).toBe("15");
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("撞名时无假 nudo:entry-may-throw（原生不抛 ⇒ 修前是假红）", () => {
       for (const src of [SRC_A1, SRC_A2, SRC_A3, SRC_A4]) {
         expect(issueCodes(src)).not.toContain("nudo:entry-may-throw");
       }
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("撞名时无假 nudo:opaque-result（整模块 fail-closed 面）", () => {
       for (const src of [SRC_A1, SRC_A2, SRC_A3, SRC_A4]) {
         expect(issueCodes(src)).not.toContain("nudo:opaque-result");
       }
-    });
+    })();
+});;
+
+    ;
+
+    ;
   });
 
   describe("1151-a：产物逐字不变 / 确定性", () => {
-    it("无碰撞时 setter thunk 形参名逐字保持基名 `__v`（无 `_k` 后缀）", () => {
+    it("无碰撞时 setter thunk 形参名逐字保持基名 `__v`（无 `_k` 后缀）；无碰撞时解构 setter thunk 形参名逐字保持基名 `__v`；撞名时改名（`__v` → `__v_1`）且仍确定（同源两次逐字相同）；撞名时改名后 thunk 形参与 args 槽引用同名（成对一致）", () => {
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
+
       const src = `export function f() {
         let out = 0;
         class C { set x(a = 3) { out = a + 1; } }
@@ -1125,9 +1349,13 @@ describe("类 setter thunk 形参载体（__v）避开用户标识符", () => {
       // 载体名（起经单元共享分配）不属于本测试的断言面——只钉
       // 1151 自己的 `__v` 基名不遭改名。
       expect(js).not.toMatch(/__v[A-Za-z0-9_]*_1\b/);
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("无碰撞时解构 setter thunk 形参名逐字保持基名 `__v`", () => {
       const src = `export function f() {
         let out = 0;
         class C { set x({ a }) { out = a + 1; } }
@@ -1139,23 +1367,38 @@ describe("类 setter thunk 形参载体（__v）避开用户标识符", () => {
       // 载体名（起经单元共享分配）不属于本测试的断言面——只钉
       // 1151 自己的 `__v` 基名不遭改名。
       expect(js).not.toMatch(/__v[A-Za-z0-9_]*_1\b/);
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("撞名时改名（`__v` → `__v_1`）且仍确定（同源两次逐字相同）", () => {
       const a = transpileSource(SRC_A1, { source: SRC_A1 });
       const b = transpileSource(SRC_A1, { source: SRC_A1 });
       expect(a).toBe(b);
       expect(a).toContain("__v_1");
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("撞名时改名后 thunk 形参与 args 槽引用同名（成对一致）", () => {
       const js = transpileSource(SRC_A1, { source: SRC_A1 });
       // thunk 形参：<载体>, __v_1（载体名不钉；只钉 `__v_1` 位与 args 槽成对）
       expect(js).toMatch(/\([A-Za-z_$][\w$]*, __v_1\) => \{/);
       // args 槽载同名：$arguments([__v_1])
       expect(js).toContain("$arguments([__v_1])");
       expect(js).not.toContain("__v_1_1");
-    });
+    })();
+});;
+
+    ;
+
+    ;
+
+    ;
   });
 
   describe("1151-b：fork 协议绑定名（已修）", () => {
@@ -1163,13 +1406,21 @@ describe("类 setter thunk 形参载体（__v）避开用户标识符", () => {
 
     ;
 
-    it("触发 B3：switch 臂标志 __cont → 42（原生 42；修前：true）", () => {
+    it("触发 B3：switch 臂标志 __cont → 42（原生 42；修前：true）；撞名时快照名改名（`__fk0_a` → `__fk0_a_1`）且声明点与引用点同名；撞名时臂标志名改名（`__cont` → `__cont_1`）且成对一致；无碰撞时 fork 协议名逐字保持基名（产物逐字不变面）", () => {
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
+
       expect(vArgs(SRC_B3, 1)).toBe(42);
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    ;
-
-    it("撞名时快照名改名（`__fk0_a` → `__fk0_a_1`）且声明点与引用点同名", () => {
       const js = transpileSource(SRC_B1, { source: SRC_B1 });
       // 声明点：const __fk0_a_1 = $copy(a, __fkCopyMemo);（一次分支快照共享身份图）
       expect(js).toContain("const __fk0_a_1 = $copy(a, __fkCopyMemo);");
@@ -1178,18 +1429,26 @@ describe("类 setter thunk 形参载体（__v）避开用户标识符", () => {
       // 用户绑定仍是 __fk0_a（未被引擎改名）
       expect(js).toContain("let __fk0_a = $lit(42);");
       expect(js).not.toContain("const __fk0_a = $copy(a);");
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("撞名时臂标志名改名（`__cont` → `__cont_1`）且成对一致", () => {
       const js = transpileSource(SRC_B2, { source: SRC_B2 });
       expect(js).toContain("let __cont_1 = true;");
       expect(js).toContain("if ($isForkExit(e)) __cont_1 = false;");
       expect(js).toContain("if (__cont_1) {");
       // 用户绑定仍是 __cont
       expect(js).toContain("let __cont = $lit(42);");
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("无碰撞时 fork 协议名逐字保持基名（产物逐字不变面）", () => {
       const src = `export function f() {
         let a = 0;
         let out = 0;
@@ -1200,7 +1459,16 @@ describe("类 setter thunk 形参载体（__v）避开用户标识符", () => {
       expect(js).toContain("const __fk0_out = $copy(out, __fkCopyMemo);");
       expect(js).toContain("let __cont = true;");
       expect(js).toContain("const __fkT = ($eq(a, $lit(0)));");
-    });
+    })();
+});;
+
+    ;
+
+    ;
+
+    ;
+
+    ;
   });
 
   describe("1151-c：赋值 IIFE 形参 __v（已修）", () => {
@@ -1210,13 +1478,23 @@ describe("类 setter thunk 形参载体（__v）避开用户标识符", () => {
 
     ;
 
-    it("撞名时 IIFE 形参改名（`__v` → `__v_1`）且写目标仍写用户绑定", () => {
+    it("撞名时 IIFE 形参改名（`__v` → `__v_1`）且写目标仍写用户绑定；无碰撞时 IIFE 形参名逐字保持基名 `__v`（产物逐字不变面）", () => {
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
+
       const js = transpileSource(SRC_C1, { source: SRC_C1 });
       expect(js).toContain("((__v_1) =>");
       expect(js).toContain("return __v = __v_1;");
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("无碰撞时 IIFE 形参名逐字保持基名 `__v`（产物逐字不变面）", () => {
       const src = `export function f() {
         let a = 1;
         a = 5;
@@ -1226,7 +1504,10 @@ describe("类 setter thunk 形参载体（__v）避开用户标识符", () => {
       expect(js).toContain("((__v) =>");
       expect(js).toContain("return a = __v;");
       expect(js).not.toMatch(/__v[A-Za-z0-9_]*_1\b/);
-    });
+    })();
+});;
+
+    ;
   });
 });
 });
@@ -1600,104 +1881,200 @@ describe("附录 A#4 残留写死名（switch 辅助族 / break 标签 / 自增 
   });
 
   describe("1159-a：switch case 测试辅助族 / 共享体名", () => {
-    it("触发 A1：__swAllDone → 42（原生 42；修前：false）", () => {
+    it("触发 A1：__swAllDone → 42（原生 42；修前：false）；触发 A2：臂体 __swTestRead → 5（原生 5；修前：ReferenceError / never）；触发 A3：__swEval → 7（原生 7；修前：引擎内部函数 Abs）；触发 A4：case 测试读 __swT → \"hit\"（原生 \"hit\"；修前：\"miss\"）；触发 A5：共享体名 __swBody0 → 11（原生 11；修前：函数 Abs）；对照 A0：无同名绑定 ", () => {
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
+
       expect(v(SRC_A1)).toBe(42);
       expect(sig(SRC_A1)).toBe("42");
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("触发 A2：臂体 __swTestRead → 5（原生 5；修前：ReferenceError / never）", () => {
       expect(v(SRC_A2)).toBe(5);
       expect(refError(SRC_A2)).toBe(false);
       expect(sig(SRC_A2)).toBe("5");
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("触发 A3：__swEval → 7（原生 7；修前：引擎内部函数 Abs）", () => {
       expect(v(SRC_A3)).toBe(7);
       expect(sig(SRC_A3)).toBe("7");
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("触发 A4：case 测试读 __swT → \"hit\"（原生 \"hit\"；修前：\"miss\"）", () => {
       expect(v(SRC_A4)).toBe("hit");
       expect(sig(SRC_A4)).toBe('"hit"');
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("触发 A5：共享体名 __swBody0 → 11（原生 11；修前：函数 Abs）", () => {
       expect(v(SRC_A5)).toBe(11);
       expect(sig(SRC_A5)).toBe("11");
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("对照 A0：无同名绑定 ⇒ 测试 / 共享臂路径同值（\"hit\"）", () => {
       expect(v(CTRL_A)).toBe("hit");
       expect(sig(CTRL_A)).toBe('"hit"');
-    });
+    })();
+});;
+
+    ;
+
+    ;
+
+    ;
+
+    ;
+
+    ;
   });
 
   describe("1159-b：switch 臂 break 标签（信号字符串）", () => {
-    it("触发 B1：用户标签块 __nudoSw0 不再吸收 switch break → 1（原生 1；修前：3）", () => {
+    it("触发 B1：用户标签块 __nudoSw0 不再吸收 switch break → 1（原生 1；修前：3）；对照 B0：标签名不撞内部标签 ⇒ 1（原生 1）", () => {
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
+
       expect(v(SRC_B1)).toBe(1);
       expect(sig(SRC_B1)).toBe("1");
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("对照 B0：标签名不撞内部标签 ⇒ 1（原生 1）", () => {
       expect(v(CTRL_B)).toBe(1);
       expect(sig(CTRL_B)).toBe("1");
-    });
+    })();
+});;
+
+    ;
   });
 
   describe("1159-c：operators.ts（delete IIFE / 标识符后缀 / 私有名自增 IIFE）", () => {
-    it("触发 C1：delete 父对象表达式读 __nudoDelP → true（原生 true；修前：ReferenceError）", () => {
+    it("触发 C1：delete 父对象表达式读 __nudoDelP → true（原生 true；修前：ReferenceError）；触发 C2：delete 计算键表达式读 __nudoDelK → true（原生 true；修前：ReferenceError）；触发 C3：标识符后缀 __old → [5, 6]（原生 [5, 6]；修前：[6, 5]）；触发 C4：私有名前缀自增（接收者形参 __v）→ 1（原生 1；修前：TypeError）；触发 C5：私有名后缀自增", () => {
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
+
       expect(v(SRC_C1)).toBe(true);
       expect(refError(SRC_C1)).toBe(false);
       expect(sig(SRC_C1)).toBe("true");
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("触发 C2：delete 计算键表达式读 __nudoDelK → true（原生 true；修前：ReferenceError）", () => {
       expect(v(SRC_C2)).toBe(true);
       expect(refError(SRC_C2)).toBe(false);
       expect(sig(SRC_C2)).toBe("true");
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("触发 C3：标识符后缀 __old → [5, 6]（原生 [5, 6]；修前：[6, 5]）", () => {
       expect(tuple(SRC_C3)).toEqual([5, 6]);
       expect(sig(SRC_C3)).toBe("[5, 6]");
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("触发 C4：私有名前缀自增（接收者形参 __v）→ 1（原生 1；修前：TypeError）", () => {
       expect(v(SRC_C4)).toBe(1);
       expect(sig(SRC_C4)).toBe("1");
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("触发 C5：私有名后缀自增（接收者形参 __old）→ [0, 1]（原生 [0, 1]；修前：TypeError）", () => {
       expect(tuple(SRC_C5)).toEqual([0, 1]);
       expect(sig(SRC_C5)).toBe("[0, 1]");
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("触发 C6：for-in 接收者 __fir{n} 撞用户声明 → 3（原生 3；修前：宿主 SyntaxError）", () => {
       expect(v(SRC_C6)).toBe(3);
       expect(sig(SRC_C6)).toBe("3");
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("触发 C7：for fallback 状态形参 __n → 0（原生 0；修前：3）", () => {
       expect(v(SRC_C7)).toBe(0);
       expect(sig(SRC_C7)).toBe("0");
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("触发 C8：do-while 首轮标记 __nudoDwFirst → 7（原生 7；修前：false）", () => {
       expect(v(SRC_C8)).toBe(7);
       expect(sig(SRC_C8)).toBe("7");
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("触发 C9：rest 形参 __rest_raw → 3（原生 3；修前：SyntaxError）", () => {
       expect(v(SRC_C9)).toBe(3);
       expect(sig(SRC_C9)).toBe("3");
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("触发 C10：解构 IIFE 形参 __d → 5（原生 5；修前：对象）", () => {
       expect(v(SRC_C10)).toBe(5);
       expect(sig(SRC_C10)).toBe("5");
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("对照 C0：无同名绑定 ⇒ delete / 后缀 / 私有名自增 / for-in 接收者同值", () => {
       expect(v(CTRL_C1)).toBe(true);
       expect(tuple(CTRL_C2)).toEqual([5, 6]);
       expect(v(CTRL_C3)).toBe(1);
@@ -1706,29 +2083,75 @@ describe("附录 A#4 残留写死名（switch 辅助族 / break 标签 / 自增 
       expect(v(CTRL_C6)).toBe(7);
       expect(v(CTRL_C7)).toBe(3);
       expect(v(CTRL_C8)).toBe(5);
-    });
+    })();
+});;
+
+    ;
+
+    ;
+
+    ;
+
+    ;
+
+    ;
+
+    ;
+
+    ;
+
+    ;
+
+    ;
+
+    ;
   });
 
   describe("1159-d：class setter thunk 别名载体（__nab{i} / __nabs）", () => {
-    it("触发 D1：别名载体 __nab0 → 100（原生 100；修前：undefined）", () => {
+    it("触发 D1：别名载体 __nab0 → 100（原生 100；修前：undefined）；触发 D2：回收载体 __nabs（多名别名）→ 100（原生 100；修前：ReferenceError）；对照 D0：无同名绑定 ⇒ setter 别名写回收同值（5）", () => {
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
+
       expect(v(SRC_D1)).toBe(100);
       expect(sig(SRC_D1)).toBe("100");
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("触发 D2：回收载体 __nabs（多名别名）→ 100（原生 100；修前：ReferenceError）", () => {
       expect(v(SRC_D2)).toBe(100);
       expect(refError(SRC_D2)).toBe(false);
       expect(sig(SRC_D2)).toBe("100");
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("对照 D0：无同名绑定 ⇒ setter 别名写回收同值（5）", () => {
       expect(v(CTRL_D)).toBe(5);
       expect(sig(CTRL_D)).toBe("5");
-    });
+    })();
+});;
+
+    ;
+
+    ;
   });
 
   describe("check 门禁面（不假绿 / 不假红）", () => {
-    it("撞名时无假 nudo:entry-may-throw（原生不抛 ⇒ 修前 TDZ 路径是假红）", () => {
+    it("撞名时无假 nudo:entry-may-throw（原生不抛 ⇒ 修前 TDZ 路径是假红）；撞名时无假 nudo:opaque-result（整模块 fail-closed 面）", () => {
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
+
       // 只对不含类的源断言该码：同一进程内多次 checkSource 会复用**同名类**
       // （`C`）的注册表条目 ⇒ 后一次可能读到前一次无私有字段的类规格 ⇒
       // 与本条无关的既有 `entry-may-throw`（TypeError）噪声。类源的证据由
@@ -1752,13 +2175,20 @@ describe("附录 A#4 残留写死名（switch 辅助族 / break 标签 / 自增 
       for (const [name, src] of Object.entries(nonClass)) {
         expect(issueCodes(src), name).not.toContain("nudo:entry-may-throw");
       }
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("撞名时无假 nudo:opaque-result（整模块 fail-closed 面）", () => {
       for (const src of ALL_SOURCES) {
         expect(issueCodes(src)).not.toContain("nudo:opaque-result");
       }
-    });
+    })();
+});;
+
+    ;
   });
 
   describe("确定性（同一源文本 ⇒ 同一产物）", () => {
@@ -2168,33 +2598,64 @@ describe("this 载体名（`__this`）避开用户标识符", () => {
   ;
 
   describe("类方法 / 构造器 / 静态方法（宿主签名 + thisParam）", () => {
-    it("方法形参同名 ⇒ [42, 7]（原生 [42, 7]；修前：重复形参 SyntaxError）", () => {
+    it("方法形参同名 ⇒ [42, 7]（原生 [42, 7]；修前：重复形参 SyntaxError）；方法非简单形参同名 ⇒ [42, 7]（原生 [42, 7]；修前：SyntaxError）；构造器形参同名 + super() ⇒ [1, 7]（原生 [1, 7]；修前：SyntaxError）；构造器块级同名 + super() 不劫持接收者重绑 ⇒ [1, 9]（原生 [1, 9]；修前：never）；静态方法形参同名 ⇒ [true, 7]（原生 [true, 7]；修", () => {
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
+
       expect(tuple(SRC_METHOD_PARAM)).toEqual([42, 7]);
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    ;
-
-    ;
-
-    ;
-
-    it("方法非简单形参同名 ⇒ [42, 7]（原生 [42, 7]；修前：SyntaxError）", () => {
       expect(tuple(SRC_METHOD_DEFAULT_SELF)).toEqual([42, 7]);
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
+
+      expect(tuple(SRC_CTOR_SUPER)).toEqual([1, 7]);
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
+
+      expect(tuple(SRC_CTOR_SUPER_BLOCK)).toEqual([1, 9]);
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
+
+      expect(tuple(SRC_STATIC_METHOD_PARAM)).toEqual([true, 7]);
+    })();
+});;
 
     ;
 
-    it("构造器形参同名 + super() ⇒ [1, 7]（原生 [1, 7]；修前：SyntaxError）", () => {
-      expect(tuple(SRC_CTOR_SUPER)).toEqual([1, 7]);
-    });
+    ;
 
-    it("构造器块级同名 + super() 不劫持接收者重绑 ⇒ [1, 9]（原生 [1, 9]；修前：never）", () => {
-      expect(tuple(SRC_CTOR_SUPER_BLOCK)).toEqual([1, 9]);
-    });
+    ;
 
-    it("静态方法形参同名 ⇒ [true, 7]（原生 [true, 7]；修前：SyntaxError）", () => {
-      expect(tuple(SRC_STATIC_METHOD_PARAM)).toEqual([true, 7]);
-    });
+    ;
+
+    ;
+
+    ;
+
+    ;
+
+    ;
 
     ;
 
@@ -2226,25 +2687,44 @@ describe("this 载体名（`__this`）避开用户标识符", () => {
   });
 
   describe("对象字面量族（方法 / 访问器 / 函数表达式值）", () => {
-    it("对象方法形参同名 ⇒ [42, 7]（原生 [42, 7]；修前：重复形参 SyntaxError）", () => {
+    it("对象方法形参同名 ⇒ [42, 7]（原生 [42, 7]；修前：重复形参 SyntaxError）；对象方法解构形参含同名 ⇒ [42, 7]（原生 [42, 7]；修前：SyntaxError）；对象属性 = 函数表达式形参同名 ⇒ [42, 7]（原生 [42, 7]；修前：SyntaxError）", () => {
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
+
       expect(tuple(SRC_OBJ_METHOD)).toEqual([42, 7]);
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("对象方法解构形参含同名 ⇒ [42, 7]（原生 [42, 7]；修前：SyntaxError）", () => {
       expect(tuple(SRC_OBJ_METHOD_DESTR)).toEqual([42, 7]);
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    ;
-
-    ;
-
-    ;
-
-    ;
-
-    it("对象属性 = 函数表达式形参同名 ⇒ [42, 7]（原生 [42, 7]；修前：SyntaxError）", () => {
       expect(tuple(SRC_OBJ_FNEXPR)).toEqual([42, 7]);
-    });
+    })();
+});;
+
+    ;
+
+    ;
+
+    ;
+
+    ;
+
+    ;
+
+    ;
   });
 
   describe("嵌套 / 箭头捕获", () => {
@@ -2258,21 +2738,46 @@ describe("this 载体名（`__this`）避开用户标识符", () => {
   });
 
   describe("对照：无同名绑定 ⇒ 行为不变", () => {
-    it("真函数 this 载体", () => {
+    it("真函数 this 载体；类方法 / 字段 / 静态块 / 访问器；对象方法 / 访问器；箭头捕获方法 this", () => {
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
+
       expect(v(CTRL_FN)).toBe(42);
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("类方法 / 字段 / 静态块 / 访问器", () => {
       expect(tuple(CTRL_CLASS)).toEqual([42, 47, 2, 1]);
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("对象方法 / 访问器", () => {
       expect(tuple(CTRL_OBJ)).toEqual([7, 7]);
-    });
+    })();
+(() => {
+    resetEngineCaches();
+    takeRefineDiags();
+    takeContractDiags();
+  
 
-    it("箭头捕获方法 this", () => {
       expect(v(CTRL_ARROW)).toBe(49);
-    });
+    })();
+});;
+
+    ;
+
+    ;
+
+    ;
   });
 
 });
@@ -2454,28 +2959,37 @@ function hardcodedInternalNames(): string[] {
 }
 
 describe("漂移门禁：分配器基名必须登记撞名覆盖", () => {
-  it("分配器基名 ⊆ COLLISION_COVERED ∪ ALLOCATOR_GATED", () => {
+  it("分配器基名 ⊆ COLLISION_COVERED ∪ ALLOCATOR_GATED；COLLISION_COVERED 不残留已删除的基名；分配器本身对每个基名都避让（撞名 ⇒ <base>_1；无撞名 ⇒ 原名）；发射点不写死内部名（字面量 ⊆ 分配器调用 / const 间接）", () => {
+(() => {
+
     const uncovered = [...allocatorBases()].filter(
       (b) => !COLLISION_COVERED.has(b) && !ALLOCATOR_GATED.has(b),
     );
     expect(uncovered).toEqual([]);
-  });
+  })();
+(() => {
 
-  it("COLLISION_COVERED 不残留已删除的基名", () => {
     const bases = allocatorBases();
     expect([...COLLISION_COVERED].filter((b) => !bases.has(b))).toEqual([]);
-  });
+  })();
+(() => {
 
-  it("分配器本身对每个基名都避让（撞名 ⇒ <base>_1；无撞名 ⇒ 原名）", () => {
     const bad: string[] = [];
     for (const base of allocatorBases()) {
       if (safeTmpName(base, userIdentInfo(`const ${base} = 1;`)) !== `${base}_1`) bad.push(base);
       if (safeTmpName(base, userIdentInfo("const unrelated = 1;")) !== base) bad.push(`${base}(无撞名)`);
     }
     expect(bad).toEqual([]);
-  });
+  })();
+(() => {
 
-  it("发射点不写死内部名（字面量 ⊆ 分配器调用 / const 间接）", () => {
     expect(hardcodedInternalNames()).toEqual([]);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });

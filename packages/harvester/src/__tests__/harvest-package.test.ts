@@ -25,7 +25,9 @@ describe("harvest npm package", () => {
   // monorepo root may vary; try a few
   const cwdHasTs = existsSync(resolve(root, "node_modules/typescript/package.json"));
 
-  it("resolvePackageRoot finds workspace packages", () => {
+  it("resolvePackageRoot finds workspace packages；harvestPackage on typescript if available", () => {
+(() => {
+
     // typescript is a root devDep of the monorepo
     const r = resolvePackageRoot("typescript", root);
     if (r) {
@@ -34,9 +36,9 @@ describe("harvest npm package", () => {
       // environment without typescript installed — skip soft
       expect(r).toBeUndefined();
     }
-  });
+  })();
+(() => {
 
-  it("harvestPackage on typescript if available", () => {
     const r = resolvePackageRoot("typescript", root);
     if (!r) {
       expect(true).toBe(true);
@@ -51,11 +53,16 @@ describe("harvest npm package", () => {
     expect(h.dtsFiles.length).toBeGreaterThan(0);
     expect(h.env.stats.symbols).toBeGreaterThan(0);
     expect(formatHarvestSummary(h)).toContain("typescript");
-  });
+  })();
+});;
+
+  ;
 });
 
 describe("读故障 fail-closed 上浮（ENOENT 静默，非 ENOENT 有信号）", () => {
-  it("dtsFileScan: ENOENT 空扫描无标记；读错误（EISDIR）标 unreadable 且不进缓存", () => {
+  it("dtsFileScan: ENOENT 空扫描无标记；读错误（EISDIR）标 unreadable 且不进缓存；packageExportSurface: 入口读不了 ⇒ unresolved（公开面不可知，不折空）；collectDtsFiles: readdir 非 ENOENT 故障（ENOTDIR）计数上浮；ENOENT 静默；harvestPackage: package.json JSON 解析故障计数进 env.stats.skipped", () => {
+(() => {
+
     const dir = mkdtempSync(join(tmpdir(), "nudo-scan-fc-"));
     tmpDirs.push(dir);
     // ENOENT = 合法缺席
@@ -75,9 +82,9 @@ describe("读故障 fail-closed 上浮（ENOENT 静默，非 ENOENT 有信号）
     const healed = dtsFileScan(eisdir);
     expect(healed.unreadable).toBeUndefined();
     expect([...healed.exported]).toEqual(["ok"]);
-  });
+  })();
+(() => {
 
-  it("packageExportSurface: 入口读不了 ⇒ unresolved（公开面不可知，不折空）", () => {
     const root = mkdtempSync(join(tmpdir(), "nudo-surface-fc-"));
     tmpDirs.push(root);
     mkdirSync(join(root, "index.d.ts")); // 入口是目录 → EISDIR
@@ -88,9 +95,9 @@ describe("读故障 fail-closed 上浮（ENOENT 静默，非 ENOENT 有信号）
       env: { globals: {}, modules: {}, stats: { files: 0, symbols: 0, skipped: 0 } },
     };
     expect(packageExportSurface(h).unresolved).toBe(true);
-  });
+  })();
+(() => {
 
-  it("collectDtsFiles: readdir 非 ENOENT 故障（ENOTDIR）计数上浮；ENOENT 静默", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-walk-fc-"));
     tmpDirs.push(dir);
     const f = join(dir, "plain-file");
@@ -101,9 +108,9 @@ describe("读故障 fail-closed 上浮（ENOENT 静默，非 ENOENT 有信号）
     expect(fails.count).toBe(1);
     // 不传 fails（旧签名）也不抛
     expect(collectDtsFiles(f, 8)).toEqual([]);
-  });
+  })();
+(() => {
 
-  it("harvestPackage: package.json JSON 解析故障计数进 env.stats.skipped", () => {
     const proj = mkdtempSync(join(tmpdir(), "nudo-pkg-fc-"));
     tmpDirs.push(proj);
     const pkgRoot = join(proj, "node_modules", "pkg-broken");
@@ -114,7 +121,14 @@ describe("读故障 fail-closed 上浮（ENOENT 静默，非 ENOENT 有信号）
     if ("error" in h) throw new Error(`unexpected error: ${h.error}`);
     // JSON.parse 抛 SyntaxError（code undefined ≠ ENOENT）→ 上浮进同通道
     expect(h.env.stats.skipped).toBeGreaterThanOrEqual(1);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 
 // ---------------------------------------------------------------------------
@@ -159,7 +173,9 @@ function writeDts(name: string, src: string): string {
 }
 
 describe("-from-dts 的具名 default 导出", () => {
-  it("草稿键是 `default`（不是本地名 `helper`）", () => {
+  it("草稿键是 `default`（不是本地名 `helper`）；没有丢失 ⇒ 汇总行不虚增 skipped；**抄进侧车后 `default` 导出真的带上契约**（改前：零义务）", () => {
+(() => {
+
     const file = writeDts("def.d.ts", NAMED_DEFAULT_DTS);
     const draft = dtsToContractDraft([file], "def");
     expect(draft.exports.map((e) => e.name)).toEqual(["default"]);
@@ -167,16 +183,16 @@ describe("-from-dts 的具名 default 导出", () => {
     // 改前：草稿键 = 本地名 `helper`
     expect(draft.draftSource).not.toContain("export const helper");
     expect(draft.draftSource).not.toContain("as helper };");
-  });
+  })();
+(() => {
 
-  it("没有丢失 ⇒ 汇总行不虚增 skipped", () => {
     const file = writeDts("def.d.ts", NAMED_DEFAULT_DTS);
     const draft = dtsToContractDraft([file], "def");
     expect(draft.stats.exports).toBe(1);
     expect(draft.stats.skipped).toBe(0);
-  });
+  })();
+(() => {
 
-  it("**抄进侧车后 `default` 导出真的带上契约**（改前：零义务）", () => {
     const file = writeDts("def.d.ts", NAMED_DEFAULT_DTS);
     const draft = dtsToContractDraft([file], "def");
     const dir = makeWorkDir("1003");
@@ -192,7 +208,12 @@ describe("-from-dts 的具名 default 导出", () => {
     expect(res.stdout).toContain("impl(x: number) => string");
     // 改前：default 导出没有契约根 ⇒ `nudo:contract-entry-only`
     expect(res.stdout).not.toContain("nudo:contract-entry-only");
-  }, 120_000);
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
 
@@ -263,7 +284,9 @@ describe("ambient 声明不得变成包名键的具名导出", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it("`declare global` 的内容不进包名键（真实的导出仍在）", () => {
+  it("`declare global` 的内容不进包名键（真实的导出仍在）；script 模式 `.d.ts` 的顶层声明不进包名键", () => {
+(() => {
+
     const h = harvestPackage("globpkg", appDir);
     expect("error" in h).toBe(false);
     if ("error" in h) return;
@@ -274,9 +297,9 @@ describe("ambient 声明不得变成包名键的具名导出", () => {
     expect(Object.keys(table["globpkg"]?.named ?? {})).toEqual(["pub"]);
     const spec = bareSpecToAbsModules("globpkg", join(appDir, "glob.js"));
     expect(spec === undefined || spec.named["ambientHelper"] === undefined).toBe(true);
-  });
+  })();
+(() => {
 
-  it("script 模式 `.d.ts` 的顶层声明不进包名键", () => {
     const h = harvestPackage("scriptpkg", appDir);
     expect("error" in h).toBe(false);
     if ("error" in h) return;
@@ -285,7 +308,10 @@ describe("ambient 声明不得变成包名键的具名导出", () => {
     expect(Object.keys(table["scriptpkg"]?.named ?? {})).toEqual([]);
     const spec = bareSpecToAbsModules("scriptpkg", join(appDir, "script.js"));
     expect(spec === undefined || spec.named["scriptAmbient"] === undefined).toBe(true);
-  });
+  })();
+});;
+
+  ;
 });
 });
 
@@ -333,15 +359,17 @@ function makePkg(count: number): string {
 }
 
 describe("-from-dts 目录模式的文件预算", () => {
-  it("目录里的 `.d.ts` **全部**被投影（改前：只投影前 16 个）", () => {
+  it("目录里的 `.d.ts` **全部**被投影（改前：只投影前 16 个）；第 17+ 个文件的导出**出现在草稿里**；没有截断 ⇒ 汇总行不虚增 skipped；单文件入口不受影响", () => {
+(() => {
+
     const pkg = makePkg(20);
     const draft = dtsPathToContractDraft(pkg, "pkg");
     expect(draft.files.length).toBe(20);
     expect(draft.stats.files).toBe(20);
     expect(draft.stats.exports).toBe(20);
-  });
+  })();
+(() => {
 
-  it("第 17+ 个文件的导出**出现在草稿里**", () => {
     const pkg = makePkg(20);
     const draft = dtsPathToContractDraft(pkg, "pkg");
     for (const n of ["m17Fn", "m18Fn", "m19Fn", "m20Fn"]) {
@@ -350,22 +378,29 @@ describe("-from-dts 目录模式的文件预算", () => {
     // 前 16 个也还在（不是「换了一批」）
     expect(draft.draftSource).toContain("export const m01Fn =");
     expect(draft.draftSource).toContain("export const m16Fn =");
-  });
+  })();
+(() => {
 
-  it("没有截断 ⇒ 汇总行不虚增 skipped", () => {
     const pkg = makePkg(20);
     const draft = dtsPathToContractDraft(pkg, "pkg");
     expect(draft.stats.skipped).toBe(0);
     expect(draft.stats.droppedFiles ?? 0).toBe(0);
-  });
+  })();
+(() => {
 
-  it("单文件入口不受影响", () => {
     const pkg = makePkg(3);
     const draft = dtsPathToContractDraft(join(pkg, "m01.d.ts"), "m01");
     expect(draft.files.length).toBe(1);
     expect(draft.stats.exports).toBe(1);
     expect(draft.draftSource).toContain("export const m01Fn =");
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -421,7 +456,9 @@ function slotNames(a: unknown): string[] {
 }
 
 describe("顶层 declare namespace 的运行时成员不摊平进 globals", () => {
-  it("命名空间成员不落进 globals（不再凭空造出全局 `bar`）", () => {
+  it("命名空间成员不落进 globals（不再凭空造出全局 `bar`）；命名空间对象 `Foo` 存在，成员挂在它下面（`Foo.bar`）；命名空间成员仍可调用（`Foo.bar()` 的返回类型是 number）；只有类型的命名空间不产生运行时对象（不凭空多出全局 `_`）；嵌套命名空间：成员留在最深层的命名空间里；两个命名空间的同名成员互不串（不当作 overload 合并）", () => {
+(() => {
+
     const p = writeTemp(
       "fx.d.ts",
       `declare namespace Foo {
@@ -433,9 +470,9 @@ describe("顶层 declare namespace 的运行时成员不摊平进 globals", () =
     // 反向断言：改前 `env.globals["bar"]` 存在（伪造全局）
     expect(Object.hasOwn(env.globals, "bar")).toBe(false);
     expect(env.globals["bar"]).toBeUndefined();
-  });
+  })();
+(() => {
 
-  it("命名空间对象 `Foo` 存在，成员挂在它下面（`Foo.bar`）", () => {
     const p = writeTemp(
       "fx.d.ts",
       `declare namespace Foo {
@@ -447,9 +484,9 @@ describe("顶层 declare namespace 的运行时成员不摊平进 globals", () =
     expect(env.globals["Foo"]).toBeDefined();
     expect(slotNames(env.globals["Foo"])).toEqual(["bar"]);
     expect(formatShape(env.globals["Foo"]!)).toBe("{ bar: () => number }");
-  });
+  })();
+(() => {
 
-  it("命名空间成员仍可调用（`Foo.bar()` 的返回类型是 number）", () => {
     const p = writeTemp(
       "fx.d.ts",
       `declare namespace Foo {
@@ -463,9 +500,9 @@ describe("顶层 declare namespace 的运行时成员不摊平进 globals", () =
     const bar = slots["bar"]!.value as { shape: { k: string; returnType?: { shape: { type?: string } } } };
     expect(bar.shape.k).toBe("fn");
     expect(bar.shape.returnType?.shape.type).toBe("number");
-  });
+  })();
+(() => {
 
-  it("只有类型的命名空间不产生运行时对象（不凭空多出全局 `_`）", () => {
     const p = writeTemp(
       "fx.d.ts",
       `declare namespace _ {
@@ -475,9 +512,9 @@ describe("顶层 declare namespace 的运行时成员不摊平进 globals", () =
     );
     const env = harvestDts([p]);
     expect(Object.hasOwn(env.globals, "_")).toBe(false);
-  });
+  })();
+(() => {
 
-  it("嵌套命名空间：成员留在最深层的命名空间里", () => {
     const p = writeTemp(
       "fx.d.ts",
       `declare namespace A {
@@ -496,9 +533,9 @@ describe("顶层 declare namespace 的运行时成员不摊平进 globals", () =
     const b = (env.globals["A"]! as { shape: { slots: Record<string, { value: unknown }> } }).shape.slots["B"]!
       .value;
     expect(slotNames(b)).toEqual(["f"]);
-  });
+  })();
+(() => {
 
-  it("两个命名空间的同名成员互不串（不当作 overload 合并）", () => {
     const p = writeTemp(
       "fx.d.ts",
       `declare namespace A {
@@ -516,7 +553,18 @@ declare namespace B {
       .value;
     expect(formatShape(a)).toBe("() => number");
     expect(formatShape(b)).toBe("() => string");
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -549,7 +597,9 @@ function roundTrip(a: Abs): Abs {
 }
 
 describe("族 27 · 磁盘投影 facet 往返（接线）", () => {
-  it("obj：索引签名 + 开放对象标志往返后仍在", () => {
+  it("obj：索引签名 + 开放对象标志往返后仍在；obj：闭合对象**不**被投影成开放对象（不得过度放宽）；tuple：rest 槽往返后仍在；fn：ctor facet 往返后仍在（否则 new 落「可构造性未知」⇒ 假红）；fn：dual-facet 静态槽往返后仍在；ABI 已抬到 v15（A2 残余 callable 进 HarvestSig ⇒ 旧磁盘缓存必须 miss）；反向闸：投影里带 facet 的 HarvestSig 能还原出同样的显示面", () => {
+(() => {
+
     const indexed = abs(
       {
         k: "obj",
@@ -570,17 +620,17 @@ describe("族 27 · 磁盘投影 facet 往返（接线）", () => {
     expect(sh.open, "open flag must survive the disk round-trip").toBe(true);
     expect(sh.index, "index signature must survive the disk round-trip").toBeTruthy();
     expect(sh.index!.value.shape).toEqual({ k: "prim", type: "number" });
-  });
+  })();
+(() => {
 
-  it("obj：闭合对象**不**被投影成开放对象（不得过度放宽）", () => {
     const closed = abs({ k: "obj", slots: {} }, undefined, undefined, "exact");
     const back = roundTrip(closed);
     const sh = back.shape as Extract<Abs["shape"], { k: "obj" }>;
     expect(sh.open).toBeUndefined();
     expect(sh.index).toBeUndefined();
-  });
+  })();
+(() => {
 
-  it("tuple：rest 槽往返后仍在", () => {
     const tup = abs(
       {
         k: "tuple",
@@ -595,9 +645,9 @@ describe("族 27 · 磁盘投影 facet 往返（接线）", () => {
     const sh = back.shape as Extract<Abs["shape"], { k: "tuple" }>;
     expect(sh.rest, "tuple rest must survive the disk round-trip").toBeTruthy();
     expect(sh.rest!.shape).toEqual({ k: "prim", type: "string" });
-  });
+  })();
+(() => {
 
-  it("fn：ctor facet 往返后仍在（否则 new 落「可构造性未知」⇒ 假红）", () => {
     const ctor = abs(
       {
         k: "fn",
@@ -613,9 +663,9 @@ describe("族 27 · 磁盘投影 facet 往返（接线）", () => {
     const back = roundTrip(ctor);
     const sh = back.shape as Extract<Abs["shape"], { k: "fn" }>;
     expect(sh.ctor, "ctor facet must survive the disk round-trip").toBe(true);
-  });
+  })();
+(() => {
 
-  it("fn：dual-facet 静态槽往返后仍在", () => {
     const withStatic = abs(
       {
         k: "fn",
@@ -632,9 +682,9 @@ describe("族 27 · 磁盘投影 facet 往返（接线）", () => {
     const sh = back.shape as Extract<Abs["shape"], { k: "fn" }>;
     expect(sh.slots?.["of"], "fn static slot must survive the disk round-trip").toBeTruthy();
     expect(sh.slots!["of"]!.value.shape).toEqual({ k: "prim", type: "number" });
-  });
+  })();
+(() => {
 
-  it("ABI 已抬到 v15（A2 残余 callable 进 HarvestSig ⇒ 旧磁盘缓存必须 miss）", () => {
     expect(HARVEST_DISK_ABI).toBe("nudo-harvest-disk-v15");
     // 旧 ABI 的载荷必须被判 miss（否则用户本地 ~/.cache/nudo/deps/ 里的
     // 旧收割产物会继续命中 ⇒ CLI 看不到本轮修复）
@@ -648,9 +698,9 @@ describe("族 27 · 磁盘投影 facet 往返（接线）", () => {
       stats: { files: 0, symbols: 0, skipped: 0 },
     };
     expect(materializeHarvestJson(stale)).toBeNull();
-  });
+  })();
+(() => {
 
-  it("反向闸：投影里带 facet 的 HarvestSig 能还原出同样的显示面", () => {
     const indexed = abs(
       {
         k: "obj",
@@ -672,7 +722,20 @@ describe("族 27 · 磁盘投影 facet 往返（接线）", () => {
     expect(sig.index).toBeTruthy();
     const restored = harvestSigToAbs(sig);
     expect(formatShape(restored)).toBe(formatShape(indexed));
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -727,7 +790,9 @@ function slots(a: Abs): Record<string, Abs> {
 }
 
 describe("提升成模块级成员时保留 `?` 可选标记", () => {
-  it("提升出的可选属性是 `number | undefined`（不是 `number`）", () => {
+  it("提升出的可选属性是 `number | undefined`（不是 `number`）；brand 面与提升面同口径（同一成员两个类型 ⇒ 不得出现）；对照：必选属性不被加上 undefined；对照：brand 面本来就保留 `?`（既有口径不被破坏）", () => {
+(() => {
+
     const p = writeTemp(
       "optmem.d.ts",
       `declare module "m" {
@@ -741,9 +806,9 @@ describe("提升成模块级成员时保留 `?` 可选标记", () => {
     expect(promoted).toBeDefined();
     expect(formatShape(promoted)).toBe("number | undefined");
     expect(formatShape(promoted)).not.toBe("number");
-  });
+  })();
+(() => {
 
-  it("brand 面与提升面同口径（同一成员两个类型 ⇒ 不得出现）", () => {
     const p = writeTemp(
       "optmem.d.ts",
       `declare module "m" {
@@ -755,9 +820,9 @@ describe("提升成模块级成员时保留 `?` 可选标记", () => {
     const env = harvestDts([p]);
     const member = slots(env.modules.m!.opt!).a!;
     expect(formatShape(member)).toBe(formatShape(env.modules.m!.a!));
-  });
+  })();
+(() => {
 
-  it("对照：必选属性不被加上 undefined", () => {
     const p = writeTemp(
       "reqmem.d.ts",
       `declare module "m" {
@@ -768,9 +833,9 @@ describe("提升成模块级成员时保留 `?` 可选标记", () => {
     );
     const env = harvestDts([p]);
     expect(formatShape(env.modules.m!.b!)).toBe("number");
-  });
+  })();
+(() => {
 
-  it("对照：brand 面本来就保留 `?`（既有口径不被破坏）", () => {
     const p = writeTemp(
       "optmem.d.ts",
       `declare module "m" {
@@ -781,7 +846,14 @@ describe("提升成模块级成员时保留 `?` 可选标记", () => {
     );
     const env = harvestDts([p]);
     expect(formatShape(slots(env.modules.m!.opt!).a!)).toBe("number | undefined");
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -836,7 +908,9 @@ function pkgOf(pkg: string, file: string): PackageHarvest {
 }
 
 describe("`export default` 进导出表，局部名不进", () => {
-  it("`export default function makeThing()` ⇒ 导出表有 default，没有 makeThing", () => {
+  it("`export default function makeThing()` ⇒ 导出表有 default，没有 makeThing；`export default class Widget {}` ⇒ 导出表有 default，没有 Widget；`export default <局部名>` ⇒ default 取局部绑定的值；桥接层把 globals 的 default 提升成模块的 default 导出（默认导入不再是 unknown）", () => {
+(() => {
+
     const p = writeTemp("fx.d.ts", `export default function makeThing(): number;\n`);
     const env = harvestDts([p]);
     expect(env.globals["default"]).toBeDefined();
@@ -844,26 +918,26 @@ describe("`export default` 进导出表，局部名不进", () => {
     // 局部名不得顺带变成具名导出（TS 侧是 TS2614）
     expect(env.globals["makeThing"]).toBeUndefined();
     expect(env.stats.skipped).toBe(0);
-  });
+  })();
+(() => {
 
-  it("`export default class Widget {}` ⇒ 导出表有 default，没有 Widget", () => {
     const p = writeTemp("fx.d.ts", `export default class Widget { render(): string; }\n`);
     const env = harvestDts([p]);
     expect(env.globals["default"]).toBeDefined();
     expect(env.globals["Widget"]).toBeUndefined();
     expect(env.stats.skipped).toBe(0);
-  });
+  })();
+(() => {
 
-  it("`export default <局部名>` ⇒ default 取局部绑定的值", () => {
     const p = writeTemp(
       "fx.d.ts",
       `declare function helper(): string;\nexport default helper;\n`,
     );
     const env = harvestDts([p]);
     expect(formatShape(env.globals["default"]!)).toBe("() => string");
-  });
+  })();
+(() => {
 
-  it("桥接层把 globals 的 default 提升成模块的 default 导出（默认导入不再是 unknown）", () => {
     const p = writeTemp("fx.d.ts", `export default function makeThing(): number;\n`);
     const mods = packageHarvestToAbsModules("fx", pkgOf("fx", p));
     expect(mods["fx"]?.default).toBeDefined();
@@ -875,7 +949,14 @@ describe("`export default` 进导出表，局部名不进", () => {
     expect(formatShape(out! as Abs)).toBe("number");
     // 局部名不得出现在具名导出面里（TS 侧 TS2614）
     expect(mods["fx"]!.named["makeThing"]).toBeUndefined();
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -915,7 +996,9 @@ function writeTemp(name: string, content: string): string {
 }
 
 describe("`export { X as Y }` 不再整条丢弃", () => {
-  it("函数改名再导出 ⇒ 导出表里有 `bar`，值是局部绑定的签名", () => {
+  it("函数改名再导出 ⇒ 导出表里有 `bar`，值是局部绑定的签名；`export { X as default }` ⇒ default 拿得到局部绑定；const 改名再导出 ⇒ 导出表里是局部常量的类型；`export type { X }`（类型位导出）不是运行时值 ⇒ 不进导出表，且计入 skipped", () => {
+(() => {
+
     const p = writeTemp(
       "fx.d.ts",
       `declare function foo(): number;\nexport { foo as bar };\n`,
@@ -926,18 +1009,18 @@ describe("`export { X as Y }` 不再整条丢弃", () => {
     // 不是 unknown：改名后的导出必须真的解析到局部绑定
     expect(formatShape(env.globals["bar"]!)).not.toBe("unknown");
     expect(env.stats.skipped).toBe(0);
-  });
+  })();
+(() => {
 
-  it("`export { X as default }` ⇒ default 拿得到局部绑定", () => {
     const p = writeTemp(
       "fx.d.ts",
       `declare function foo(): number;\nexport { foo as default };\n`,
     );
     const env = harvestDts([p]);
     expect(formatShape(env.globals["default"]!)).toBe("() => number");
-  });
+  })();
+(() => {
 
-  it("const 改名再导出 ⇒ 导出表里是局部常量的类型", () => {
     const p = writeTemp(
       "fx.d.ts",
       `declare const size: number;\nexport { size as width };\n`,
@@ -945,9 +1028,9 @@ describe("`export { X as Y }` 不再整条丢弃", () => {
     const env = harvestDts([p]);
     expect(env.globals["width"]).toBeDefined();
     expect(formatShape(env.globals["width"]!)).toBe("number");
-  });
+  })();
+(() => {
 
-  it("`export type { X }`（类型位导出）不是运行时值 ⇒ 不进导出表，且计入 skipped", () => {
     const p = writeTemp(
       "fx.d.ts",
       `export interface Shape { size: number; }\nexport type { Shape as Renamed };\n`,
@@ -955,7 +1038,14 @@ describe("`export { X as Y }` 不再整条丢弃", () => {
     const env = harvestDts([p]);
     expect(env.globals["Renamed"]).toBeUndefined();
     expect(env.stats.skipped).toBeGreaterThan(0);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -994,7 +1084,9 @@ function writeTemp(name: string, content: string): string {
 }
 
 describe("`export * from` 与模块自有声明合并", () => {
-  it("有自有声明的模块不再丢掉星号再导出的名字", () => {
+  it("有自有声明的模块不再丢掉星号再导出的名字；纯别名（没有自有声明）仍然与目标共用同一条记录；多目标星号再导出 ⇒ 名字全都进来", () => {
+(() => {
+
     const p = writeTemp(
       "fx.d.ts",
       `declare module "node:fs" {
@@ -1017,9 +1109,9 @@ declare module "fs" {
     expect(formatShape(fs["readFileSync"]!)).toBe("(string) => string");
     expect(formatShape(fs["extra"]!)).toBe("() => number");
     expect(env.stats.skipped).toBe(0);
-  });
+  })();
+(() => {
 
-  it("纯别名（没有自有声明）仍然与目标共用同一条记录", () => {
     const p = writeTemp(
       "fx.d.ts",
       `declare module "node:fs" {
@@ -1034,9 +1126,9 @@ declare module "fs" {
     expect(env.modules["fs"]!["readFileSync"]).toBeDefined();
     // 落盘面靠「同一条记录」去重 ⇒ 别名仍共用
     expect(env.modules["fs"]).toBe(env.modules["node:fs"]);
-  });
+  })();
+(() => {
 
-  it("多目标星号再导出 ⇒ 名字全都进来", () => {
     const p = writeTemp(
       "fx.d.ts",
       `declare module "a" { export function fromA(): number; }
@@ -1050,7 +1142,12 @@ declare module "c" {
     const env = harvestDts([p]);
     expect(env.modules["c"]!["fromA"]).toBeDefined();
     expect(env.modules["c"]!["fromB"]).toBeDefined();
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
 
@@ -1094,7 +1191,9 @@ function writeTemp(name: string, content: string): string {
 }
 
 describe("`declare module \"x\" { export = <本地类> }` 生成模块记录", () => {
-  it("模块记录生成，default = 被导出实体的值，且不产生具名导出", () => {
+  it("模块记录生成，default = 被导出实体的值，且不产生具名导出；`export = <本地常量>` ⇒ default 是那个常量的值；解析不出来的 `export = <未知名字>` ⇒ 计入 skipped（汇总行有信号）", () => {
+(() => {
+
     const p = writeTemp(
       "fx.d.ts",
       `declare class Buffer { static from(s: string): Buffer; length: number; }
@@ -1109,9 +1208,9 @@ declare module "buffer" { export = Buffer; }
     expect(rec!["Buffer"]).toBeUndefined();
     // 不再静默丢弃 ⇒ skipped 不因它而涨
     expect(env.stats.skipped).toBe(0);
-  });
+  })();
+(() => {
 
-  it("`export = <本地常量>` ⇒ default 是那个常量的值", () => {
     const p = writeTemp(
       "fx.d.ts",
       `declare const version: string;
@@ -1122,9 +1221,9 @@ declare module "ver" { export = version; }
     const rec = env.modules["ver"]!;
     expect(formatShape(rec["default"]!)).toBe("string");
     expect(env.stats.skipped).toBe(0);
-  });
+  })();
+(() => {
 
-  it("解析不出来的 `export = <未知名字>` ⇒ 计入 skipped（汇总行有信号）", () => {
     const p = writeTemp(
       "fx.d.ts",
       `declare module "mystery" { export = notDeclaredAnywhere; }
@@ -1132,7 +1231,12 @@ declare module "ver" { export = version; }
     );
     const env = harvestDts([p]);
     expect(env.stats.skipped).toBeGreaterThan(0);
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
 
@@ -1185,7 +1289,9 @@ function snapshot(files: string[]): Record<string, Record<string, string>> {
 }
 
 describe("导出表与 .d.ts 遍历顺序无关", () => {
-  it("再导出在前 / 声明在后 ⇒ 两种顺序逐项相同", () => {
+  it("再导出在前 / 声明在后 ⇒ 两种顺序逐项相同；函数再导出：声明在另一个文件里 ⇒ 两种顺序逐项相同；class 再导出：两种顺序逐项相同，且拿到的是构造签名", () => {
+(() => {
+
     const reexport = writeTemp(
       "a-reexport.d.ts",
       `declare module "pkg-a" {\n  export { Widget };\n}\n`,
@@ -1196,9 +1302,9 @@ describe("导出表与 .d.ts 遍历顺序无关", () => {
     expect(orderA).toEqual(orderB);
     // 两种顺序下导出都还在（改前：顺序 A 是空的）
     expect(Object.keys(orderA["pkg-a"] ?? {})).toEqual(["Widget"]);
-  });
+  })();
+(() => {
 
-  it("函数再导出：声明在另一个文件里 ⇒ 两种顺序逐项相同", () => {
     const reexport = writeTemp(
       "a-reexport.d.ts",
       `declare module "pkg-b" {\n  export { helper as renamed };\n}\n`,
@@ -1210,16 +1316,21 @@ describe("导出表与 .d.ts 遍历顺序无关", () => {
     expect(formatShape(harvestDts([reexport, decl]).modules["pkg-b"]!["renamed"]!)).toBe(
       "() => number",
     );
-  });
+  })();
+(() => {
 
-  it("class 再导出：两种顺序逐项相同，且拿到的是构造签名", () => {
     const reexport = writeTemp(
       "a-reexport.d.ts",
       `declare module "pkg-c" {\n  export { Widget };\n}\n`,
     );
     const decl = writeTemp("b-decl.d.ts", `export declare class Widget { size: number; }\n`);
     expect(snapshot([reexport, decl])).toEqual(snapshot([decl, reexport]));
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
 
@@ -1268,7 +1379,9 @@ function pkgOf(pkg: string, file: string): PackageHarvest {
 }
 
 describe("顶层 `export = X` 进 default 导出", () => {
-  it("顶层 `export = _` ⇒ 收割面有 default（值 = _ 的类型）", () => {
+  it("顶层 `export = _` ⇒ 收割面有 default（值 = _ 的类型）；桥接层把顶层 `export =` 提升成包的 default 导出（默认导入不再是 unknown）；顶层 `export = <本地类>` ⇒ default 是构造签名", () => {
+(() => {
+
     const p = writeTemp(
       "fx.d.ts",
       `export = _;
@@ -1284,9 +1397,9 @@ declare namespace _ {
     expect(env.globals["default"]).toBeDefined();
     expect(formatShape(env.globals["default"]!)).toBe("LoDashStatic");
     expect(env.stats.skipped).toBe(0);
-  });
+  })();
+(() => {
 
-  it("桥接层把顶层 `export =` 提升成包的 default 导出（默认导入不再是 unknown）", () => {
     const p = writeTemp(
       "fx.d.ts",
       `export = _;
@@ -1301,9 +1414,9 @@ declare namespace _ {
     const mods = packageHarvestToAbsModules("fx", pkgOf("fx", p));
     expect(mods["fx"]?.default).toBeDefined();
     expect(formatShape(mods["fx"]!.default!)).toBe("LoDashStatic");
-  });
+  })();
+(() => {
 
-  it("顶层 `export = <本地类>` ⇒ default 是构造签名", () => {
     const p = writeTemp(
       "fx.d.ts",
       `export = Widget;
@@ -1313,7 +1426,12 @@ declare class Widget { size: number; }
     const env = harvestDts([p]);
     expect(env.globals["default"]).toBeDefined();
     expect(env.stats.skipped).toBe(0);
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
 
@@ -1404,24 +1522,26 @@ export declare const origin: Point;
 `;
 
 describe("接口成员提升不得抢真实导出的名字", () => {
-  it("同名真实导出存活（不被接口成员顶掉）", () => {
+  it("同名真实导出存活（不被接口成员顶掉）；声明顺序不影响结果（realFirst / realLast 同形）；包的导出表里没有「幽灵导出」（接口成员不是模块导出）；包的导出表里真实导出不被挤掉（同名接口成员 + 同名函数导出）；对照：没有同名冲突时，真实导出照常在导出表里", () => {
+(() => {
+
     const p = writeTemp("last.d.ts", REAL_LAST);
     const env = harvestDts([p]);
     const x = env.globals.x!;
     expect(x).toBeDefined();
     expect(x.shape.k).toBe("fn");
     expect(formatShape(x)).toContain("string");
-  });
+  })();
+(() => {
 
-  it("声明顺序不影响结果（realFirst / realLast 同形）", () => {
     const a = harvestDts([writeTemp("a.d.ts", REAL_LAST)]);
     const b = harvestDts([writeTemp("b.d.ts", REAL_FIRST)]);
     expect(formatShape(a.globals.x!)).toBe(formatShape(b.globals.x!));
     expect(a.globals.x!.shape.k).toBe("fn");
     expect(b.globals.x!.shape.k).toBe("fn");
-  });
+  })();
+(() => {
 
-  it("包的导出表里没有「幽灵导出」（接口成员不是模块导出）", () => {
     const { pkg, dir } = writePkg(
       `export interface Point { size: number; }
 export declare const origin: Point;
@@ -1432,18 +1552,18 @@ export declare const origin: Point;
     expect(Object.hasOwn(named, "origin")).toBe(true);
     // `size` 只是接口成员 ⇒ TS 侧 import { size } 是 TS2305 ⇒ 不得出现在导出表
     expect(Object.hasOwn(named, "size")).toBe(false);
-  });
+  })();
+(() => {
 
-  it("包的导出表里真实导出不被挤掉（同名接口成员 + 同名函数导出）", () => {
     const { pkg, dir } = writePkg(REAL_LAST);
     const mods = modsOf(pkg, dir);
     const named = mods[pkg]?.named ?? {};
     expect(Object.hasOwn(named, "x")).toBe(true);
     const x = named.x as Abs | undefined;
     expect(x?.shape.k).toBe("fn");
-  });
+  })();
+(() => {
 
-  it("对照：没有同名冲突时，真实导出照常在导出表里", () => {
     const { pkg, dir } = writePkg(
       `export interface Point { x: number; }
 export declare const origin: Point;
@@ -1454,7 +1574,16 @@ export declare function other(): string;
     const named = mods[pkg]?.named ?? {};
     expect(Object.hasOwn(named, "other")).toBe(true);
     expect(Object.hasOwn(named, "origin")).toBe(true);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -1519,11 +1648,13 @@ describe("包根解析：包自带 types 优先于同名 @types", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it("resolvePackageRoot 命中包本体（不是同名 @types）", () => {
-    expect(resolvePackageRoot("mypkg", dir)).toBe(pkgRoot);
-  });
+  it("resolvePackageRoot 命中包本体（不是同名 @types）；收割到的是包自带那份声明（string，而不是 @types 的 number）；包本体没有声明时才回落 @types（lodash 形态不回归）", () => {
+(() => {
 
-  it("收割到的是包自带那份声明（string，而不是 @types 的 number）", () => {
+    expect(resolvePackageRoot("mypkg", dir)).toBe(pkgRoot);
+  })();
+(() => {
+
     const h = harvestPackage("mypkg", dir);
     expect("error" in h).toBe(false);
     if ("error" in h) return;
@@ -1531,9 +1662,9 @@ describe("包根解析：包自带 types 优先于同名 @types", () => {
     expect(h.dtsFiles.every((f) => f.startsWith(pkgRoot))).toBe(true);
     const table = packageHarvestToAbsModules("mypkg", h);
     expect(returnTypeOf(table["mypkg"]?.named["newApi"])).toBe("string");
-  });
+  })();
+(() => {
 
-  it("包本体没有声明时才回落 @types（lodash 形态不回归）", () => {
     const only = mkdtempSync(join(tmpdir(), "nudo-h7-b833-b-"));
     try {
       const t = join(only, "node_modules", "@types", "onlytypes");
@@ -1547,7 +1678,12 @@ describe("包根解析：包自带 types 优先于同名 @types", () => {
     } finally {
       rmSync(only, { recursive: true, force: true });
     }
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
 
@@ -1635,7 +1771,9 @@ describe("包名键 = 该包自己的顶层导出；子路径不回落包名键"
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it("包名键 = 包自身的顶层导出（不是 declare module 记录的同名导出）", () => {
+  it("包名键 = 包自身的顶层导出（不是 declare module 记录的同名导出）；子路径说明符拿到子路径自己的导出（不是根包的）；子路径说明符**不回落到包名键**（没有对应文件 ⇒ 落 unknown，不给根包的错值）", () => {
+(() => {
+
     const h = harvestPackage("shadowpkg", appDir);
     expect("error" in h).toBe(false);
     if ("error" in h) return;
@@ -1644,21 +1782,26 @@ describe("包名键 = 该包自己的顶层导出；子路径不回落包名键"
     expect(returnTypeOf(table["shadowpkg"]?.named["helper"])).toBe("string");
     // declare module 记录仍然登记到**它自己的**键
     expect(returnTypeOf(table["shadowpkg/sub"]?.named["helper"])).toBe("number");
-  });
+  })();
+(() => {
 
-  it("子路径说明符拿到子路径自己的导出（不是根包的）", () => {
     const spec = bareSpecToAbsModules("subpkg/fp", join(appDir, "sub.js"));
     expect(spec).toBeDefined();
     expect(returnTypeOf(spec?.named["get"])).toBe("number");
-  });
+  })();
+(() => {
 
-  it("子路径说明符**不回落到包名键**（没有对应文件 ⇒ 落 unknown，不给根包的错值）", () => {
     const spec = bareSpecToAbsModules("rootonly/fp", join(appDir, "sub.js"));
     expect(spec).toBeUndefined();
     // 反向：根包键本身仍能解析到自己的导出（不误伤）
     const root = bareSpecToAbsModules("rootonly", join(appDir, "sub.js"));
     expect(returnTypeOf(root?.named["get"])).toBe("string");
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
 
@@ -1712,47 +1855,49 @@ function writeDts(name: string, src: string): string {
 }
 
 describe("-from-dts 的运行时导出面", () => {
-  it("`enum` 是运行时导出 ⇒ 进草稿（收割面看得见 `Color`）", () => {
+  it("`enum` 是运行时导出 ⇒ 进草稿（收割面看得见 `Color`）；`namespace` 是运行时导出 ⇒ 进草稿；匿名 `export default function` 进草稿（键 = `default`）；`export {x} from` / `export * from` **看得见**（逐个 push + note）；投影不了的运行时导出**计入 skipped**（汇总行不再报「0 skipped」）；`export * as ns from` 也是运行时", () => {
+(() => {
+
     const file = writeDts("types.d.ts", RUNTIME_DTS);
     const draft = dtsToContractDraft([file], "types");
     expect(draft.draftSource).toContain("export const Color = shape({");
     expect(draft.draftSource).toContain("Red: 0");
     expect(draft.draftSource).toContain("Green: 1");
-  });
+  })();
+(() => {
 
-  it("`namespace` 是运行时导出 ⇒ 进草稿", () => {
     const file = writeDts("types.d.ts", RUNTIME_DTS);
     const draft = dtsToContractDraft([file], "types");
     expect(draft.draftSource).toContain("export const Space = shape({");
     expect(draft.draftSource).toContain("inner: 1");
-  });
+  })();
+(() => {
 
-  it("匿名 `export default function` 进草稿（键 = `default`）", () => {
     const file = writeDts("types.d.ts", RUNTIME_DTS);
     const draft = dtsToContractDraft([file], "types");
     expect(draft.draftSource).toContain("as default };");
     // 改前：匿名 default function 整条 `continue` 掉（草稿里根本没有）
     expect(draft.exports.some((e) => e.name === "default")).toBe(true);
-  });
+  })();
+(() => {
 
-  it("`export {x} from` / `export * from` **看得见**（逐个 push + note）", () => {
     const file = writeDts("types.d.ts", RUNTIME_DTS);
     const draft = dtsToContractDraft([file], "types");
     expect(draft.draftSource).toContain("beta");
     expect(draft.draftSource).toContain("export * from \"./other\"");
     expect(draft.exports.some((e) => e.name === "beta")).toBe(true);
-  });
+  })();
+(() => {
 
-  it("投影不了的运行时导出**计入 skipped**（汇总行不再报「0 skipped」）", () => {
     const file = writeDts("types.d.ts", RUNTIME_DTS);
     const draft = dtsToContractDraft([file], "types");
     // 4 条投影成功（alpha / Color / Space / default）+ 2 条看得见但投影不了
     // （beta 的再导出 + star 再导出）⇒ skipped = 2（改前报 0）
     expect(draft.stats.exports).toBe(4);
     expect(draft.stats.skipped).toBe(2);
-  });
+  })();
+(() => {
 
-  it("`export * as ns from` 也是运行时导出面 ⇒ 看得见", () => {
     const file = writeDts(
       "ns.d.ts",
       `export * as helpers from "./other";\nexport declare const alpha: number;\n`,
@@ -1760,9 +1905,9 @@ describe("-from-dts 的运行时导出面", () => {
     const draft = dtsToContractDraft([file], "ns");
     expect(draft.exports.some((e) => e.name === "helpers")).toBe(true);
     expect(draft.stats.skipped).toBe(1);
-  });
+  })();
+(() => {
 
-  it("`export import x = require(\"m\")` 不再静默丢弃", () => {
     const file = writeDts(
       "cjs.d.ts",
       `export import legacy = require("./legacy");\nexport declare const alpha: number;\n`,
@@ -1770,7 +1915,20 @@ describe("-from-dts 的运行时导出面", () => {
     const draft = dtsToContractDraft([file], "cjs");
     expect(draft.exports.some((e) => e.name === "legacy")).toBe(true);
     expect(draft.stats.skipped).toBe(1);
-  });
+  })();
+});;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
+
+  ;
 });
 });
 
@@ -1816,7 +1974,9 @@ function fixture(): PackageHarvest {
 }
 
 describe("接口成员不得注册成模块导出", () => {
-  it("declare module 记录的导出表只含真实声明（o / real）", () => {
+  it("declare module 记录的导出表只含真实声明（o / real）；磁盘缓存往返保留提升 provenance（冷 / 热两面同结论）", () => {
+(() => {
+
     const h = fixture();
     // 白盒：x / y 仍在记录里（brand 面要用），但被标记成「提升」
     expect([...promotedNamesOf(h.env.modules["ghostpkg"]!)]).toEqual(["x", "y"]);
@@ -1826,9 +1986,9 @@ describe("接口成员不得注册成模块导出", () => {
     // 幽灵导出必须缺席
     expect(Object.keys(named)).not.toContain("x");
     expect(Object.keys(named)).not.toContain("y");
-  });
+  })();
+(() => {
 
-  it("磁盘缓存往返保留提升 provenance（冷 / 热两面同结论）", () => {
     const h = fixture();
     const json = JSON.parse(
       JSON.stringify(serializeHarvestJson("ghostpkg", h.env, { dtsHash: "h", maxFiles: 1 })),
@@ -1838,7 +1998,10 @@ describe("接口成员不得注册成模块导出", () => {
     const named = packageHarvestToAbsModules("ghostpkg", { ...h, env: back })["ghostpkg"]!.named;
     expect(Object.keys(named)).toContain("o");
     expect(Object.keys(named)).not.toContain("x");
-  });
+  })();
+});;
+
+  ;
 });
 });
 
@@ -1892,14 +2055,16 @@ function writePkg(): { pkg: string; dir: string; entry: string } {
 }
 
 describe("export declare namespace 进导出面", () => {
-  it("导出面扫描登记 Space（不只是 plain）", () => {
+  it("导出面扫描登记 Space（不只是 plain）；包导出表含 Space，且成员 inner 有具体类型", () => {
+(() => {
+
     const { entry } = writePkg();
     const scan = dtsFileScan(entry);
     expect([...scan.exported].sort()).toEqual(["Space", "plain"]);
     expect(scan.private.size).toBe(0);
-  });
+  })();
+(() => {
 
-  it("包导出表含 Space，且成员 inner 有具体类型", () => {
     const { pkg, dir } = writePkg();
     const named = modsOf(pkg, dir)[pkg]!.named;
     expect(Object.keys(named).sort()).toEqual(["Space", "plain"]);
@@ -1907,7 +2072,10 @@ describe("export declare namespace 进导出面", () => {
     expect(slots.k).toBe("obj");
     if (slots.k !== "obj") return;
     expect(slots.slots.inner!.value.shape).toEqual({ k: "prim", type: "number" });
-  });
+  })();
+});;
+
+  ;
 });
 });
 
@@ -1964,21 +2132,26 @@ function staticSlots(a: Abs): Record<string, Slot> {
 }
 
 describe("namespace 先声明时函数不得被丢弃", () => {
-  it("ns-first：helper 是可调用函数（不是命名空间对象）", () => {
+  it("ns-first：helper 是可调用函数（不是命名空间对象）；两种声明顺序给出同一个形态", () => {
+(() => {
+
     const h = helperOf(NS_FIRST);
     expect(h.shape.k).toBe("fn");
     expect(formatShape(h)).toContain("=> number");
     // 命名空间成员挂成静态槽
     expect(Object.keys(staticSlots(h))).toEqual(["extra"]);
-  });
+  })();
+(() => {
 
-  it("两种声明顺序给出同一个形态", () => {
     const a = helperOf(NS_FIRST);
     const b = helperOf(FN_FIRST);
     expect(a.shape.k).toBe(b.shape.k);
     expect(formatShape(a)).toBe(formatShape(b));
     expect(Object.keys(staticSlots(a))).toEqual(Object.keys(staticSlots(b)));
-  });
+  })();
+});;
+
+  ;
 });
 });
 
@@ -2029,14 +2202,16 @@ const MODULE_SCOPE = `declare module "m" {
 `;
 
 describe("顶层值位置接口声明不得产生幽灵全局", () => {
-  it("控制组：单独声明 interface 不产生任何全局（基线）", () => {
+  it("控制组：单独声明 interface 不产生任何全局（基线）；顶层 `export declare const o: Opts;` ⇒ 成员不进全局面（修前：x / y 都是全局）；模块作用域的同一形态仍然提升（提升路径本身不被削弱）", () => {
+(() => {
+
     const p = writeTemp("ctl.d.ts", `export interface Opts { x?: number; y: string; }\n`);
     const env = harvestDts([p]);
     expect(env.globals.x).toBeUndefined();
     expect(env.globals.y).toBeUndefined();
-  });
+  })();
+(() => {
 
-  it("顶层 `export declare const o: Opts;` ⇒ 成员不进全局面（修前：x / y 都是全局）", () => {
     const p = writeTemp("top.d.ts", TOP_LEVEL);
     const env = harvestDts([p]);
     // var 本体仍在全局面（default/namespace 消费）
@@ -2044,9 +2219,9 @@ describe("顶层值位置接口声明不得产生幽灵全局", () => {
     // 成员是接口内部名字：全局作用域不存在
     expect(env.globals.x).toBeUndefined();
     expect(env.globals.y).toBeUndefined();
-  });
+  })();
+(() => {
 
-  it("模块作用域的同一形态仍然提升（提升路径本身不被削弱）", () => {
     const p = writeTemp("mod.d.ts", MODULE_SCOPE);
     const env = harvestDts([p]);
     const m = env.modules.m!;
@@ -2056,7 +2231,12 @@ describe("顶层值位置接口声明不得产生幽灵全局", () => {
     // 模块成员不得外溢到全局面
     expect(env.globals.x).toBeUndefined();
     expect(env.globals.y).toBeUndefined();
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
 
@@ -2099,7 +2279,9 @@ export declare const o: Opts;
 const WITHOUT_VALUE_DECL = "export interface Opts { x?: number; y: string; }\n";
 
 describe("接口成员不得落成 env 模块的全局", () => {
-  it("收割面不产生提升成员（x / y 只在接口内部可见）", () => {
+  it("收割面不产生提升成员（x / y 只在接口内部可见）；emitEnvModule 的 globals 只落真实声明（o），不落提升成员", () => {
+(() => {
+
     const env = harvestDts([writeTemp(WITH_VALUE_DECL)]);
     expect([...promotedNamesOf(env.globals)]).toEqual([]);
     expect(env.globals.x).toBeUndefined();
@@ -2109,14 +2291,17 @@ describe("接口成员不得落成 env 模块的全局", () => {
     // 严格单变量对照：没有值位置声明时同样没有这些名字
     const ctl = harvestDts([writeTemp(WITHOUT_VALUE_DECL)]);
     expect([...promotedNamesOf(ctl.globals)]).toEqual([]);
-  });
+  })();
+(() => {
 
-  it("emitEnvModule 的 globals 只落真实声明（o），不落提升成员", () => {
     const code = emitEnvModule(harvestDts([writeTemp(WITH_VALUE_DECL)]), "optpkg");
     expect(/^\s*o:/m.test(code)).toBe(true);
     expect(/^\s*x:/m.test(code)).toBe(false);
     expect(/^\s*y:/m.test(code)).toBe(false);
-  });
+  })();
+});;
+
+  ;
 });
 });
 
@@ -2184,17 +2369,24 @@ function namedOf(dts: string): string[] {
 }
 
 describe("「公开面不可知」回落不得把模块私有声明当导出", () => {
-  it("存在未解析的 export *：helper（模块私有）不得出现在包导出集", () => {
+  it("存在未解析的 export *：helper（模块私有）不得出现在包导出集；对照组：没有 export * 时同样只导出 real（口径一致）；对照：helper 真的导出时照常在导出集里", () => {
+(() => {
+
     expect(namedOf(UNRESOLVED_STAR)).toEqual(["real"]);
-  });
+  })();
+(() => {
 
-  it("对照组：没有 export * 时同样只导出 real（口径一致）", () => {
     expect(namedOf(NO_STAR)).toEqual(["real"]);
-  });
+  })();
+(() => {
 
-  it("对照：helper 真的导出时照常在导出集里", () => {
     expect(namedOf(HELPER_EXPORTED)).toEqual(["helper", "real"]);
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
 
@@ -2225,22 +2417,24 @@ function litValue(a: Abs): LiteralValue | undefined {
 }
 
 describe("磁盘回读保留声明字面量的精度", () => {
-  it("单个声明字面量往返后 conf = exact（不是 mock）", () => {
+  it("单个声明字面量往返后 conf = exact（不是 mock）；字面量并集（\"\\\\\" | \"/\"）往返后每个成员仍是字面量；整包序列化 → 回读：字面量不退化（冷 / 热两面同产物）", () => {
+(() => {
+
     const back = harvestSigToAbs(absToHarvestSig(strLit("/")));
     expect(back.conf).toBe("exact");
     expect(back.term?.op).toBe("lit");
-  });
+  })();
+(() => {
 
-  it("字面量并集（\"\\\\\" | \"/\"）往返后每个成员仍是字面量", () => {
     const src = sum2();
     const back = harvestSigToAbs(absToHarvestSig(src));
     expect(back.shape.k).toBe("sum");
     const members = (back.shape as { members: Abs[] }).members;
     expect(members.map(litValue)).toEqual(["\\", "/"]);
     for (const m of members) expect(m.conf).toBe("exact");
-  });
+  })();
+(() => {
 
-  it("整包序列化 → 回读：字面量不退化（冷 / 热两面同产物）", () => {
     const env = {
       globals: { sep: sum2() },
       modules: {},
@@ -2254,6 +2448,11 @@ describe("磁盘回读保留声明字面量的精度", () => {
     expect(sep.shape.k).toBe("sum");
     const members = (sep.shape as { members: Abs[] }).members;
     expect(members.map(litValue)).toEqual(["\\", "/"]);
-  });
+  })();
+});;
+
+  ;
+
+  ;
 });
 });
