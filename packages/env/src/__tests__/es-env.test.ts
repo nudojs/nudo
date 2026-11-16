@@ -1,339 +1,178 @@
+/**
+ * ES env face：load + 高频内建签名与字面量折叠。
+ */
 import { describe, it, expect } from "vitest";
 import { defineEnv } from "../es.ts";
-import {
-  formatShape,
-  litValue,
-  getFnImpl,
-  absOnly,
-  numLit,
-  strLit,
-  boolLit,
-  abs,
-} from "@nudojs/core";
+import { formatShape, litValue, getFnImpl, absOnly, numLit, strLit, boolLit, abs } from "@nudojs/core";
 import type { Abs } from "@nudojs/core";
-
-/**
- * ES env face (packages/env/src/es.ts) — load + high-frequency builtins.
- * Asserts Abs-native signatures exist (shape-level; not full ES soundness).
- * Style mirrors node-env-gaps.test.ts.
- */
 
 type Env = ReturnType<typeof defineEnv>;
 
-function shapeOf(a: Abs | undefined, label: string): string {
+const shapeOf = (a: Abs | undefined, label: string): string => {
   expect(a, `expected Abs at ${label}`).toBeTruthy();
   return formatShape(a!);
-}
+};
 
-/** clean = format 串不含 unknown/any 叶子 token */
-function expectLeafClean(fmt: string, label: string): void {
-  expect(fmt, `${label} should not mention unknown/any`).not.toMatch(
-    /(^|[^\w])(unknown|any)([^\w]|$)/,
-  );
-}
+const expectLeafClean = (fmt: string, label: string): void => {
+  expect(fmt, `${label} should not mention unknown/any`).not.toMatch(/(^|[^\w])(unknown|any)([^\w]|$)/);
+};
 
 function walk(a: Abs | undefined, ...keys: string[]): Abs | undefined {
-  let cur: Abs | undefined = a;
+  let cur = a;
   for (const k of keys) {
     if (!cur) return undefined;
-    if (cur.shape.k === "brand") {
-      cur = cur.shape.shape as Abs | undefined;
-    }
-    if (cur && cur.shape.k === "fn" && cur.shape.slots) {
+    if (cur.shape.k === "brand") cur = cur.shape.shape as Abs | undefined;
+    if (!cur) return undefined;
+    if (cur.shape.k === "fn" && cur.shape.slots) {
       cur = cur.shape.slots[k]?.value;
       continue;
     }
-    if (!cur || cur.shape.k !== "obj") return undefined;
-    const slot = cur.shape.slots[k];
-    cur = slot?.value;
+    if (cur.shape.k !== "obj") return undefined;
+    cur = cur.shape.slots[k]?.value;
   }
   return cur;
 }
 
-function globalOf(env: Env, name: string): Abs {
+const globalOf = (env: Env, name: string): Abs => {
   const g = env.globals[name];
   expect(g, `global "${name}" missing`).toBeTruthy();
   return g!;
-}
+};
 
-describe("es env load + key builtins", () => {
+const applyFold = (fn: Abs, args: Abs[]) => litValue(absOnly(getFnImpl(fn)!.apply!(args)));
+
+describe("es env", () => {
   const env = defineEnv();
 
-  it("loads without throwing and exposes a globals table", () => {
-    expect(env).toBeTruthy();
+  it("加载并暴露 globals（无 modules）", () => {
     expect(env.globals).toBeTypeOf("object");
     expect(Object.keys(env.globals).length).toBeGreaterThan(15);
     expect(env.modules).toBeUndefined();
   });
 
-  it("JSON.parse / JSON.stringify are typed functions", () => {
+  it("JSON.parse / stringify 是函数，stringify(undefined) 折叠", () => {
     const JSON_ = globalOf(env, "JSON");
     const parse = walk(JSON_, "parse");
     const stringify = walk(JSON_, "stringify");
     expect(shapeOf(parse, "JSON.parse")).toContain("=>");
     expect(shapeOf(stringify, "JSON.stringify")).toContain("=>");
-    // stringify literal folds to a string Abs
-    const impl = getFnImpl(stringify!);
-    expect(impl).toBeTruthy();
-    const folded = impl!.apply!([globalOf(env, "undefined")]);
-    // undefined → JSON.stringify(undefined) === undefined → undef leaf
-    expect(folded).toBeTruthy();
+    expect(getFnImpl(stringify!)!.apply!([globalOf(env, "undefined")])).toBeTruthy();
   });
 
-  it("Math exposes high-frequency numeric ops + constants", () => {
+  it("Math 高频运算/常量、floor 折叠、min/max/hypot 变长与 0/1 实参", () => {
     const Math_ = globalOf(env, "Math");
-    for (const name of [
-      "abs",
-      "ceil",
-      "floor",
-      "round",
-      "max",
-      "min",
-      "pow",
-      "sqrt",
-      "random",
-    ] as const) {
-      const fn = walk(Math_, name);
-      expect(shapeOf(fn, `Math.${name}`)).toContain("=>");
-      expectLeafClean(shapeOf(fn, `Math.${name}`), `Math.${name}`);
+    for (const name of ["abs", "ceil", "floor", "round", "max", "min", "pow", "sqrt", "random"]) {
+      const fmt = shapeOf(walk(Math_, name), `Math.${name}`);
+      expect(fmt).toContain("=>");
+      expectLeafClean(fmt, `Math.${name}`);
     }
-    for (const name of ["PI", "E"] as const) {
-      const c = walk(Math_, name);
-      expect(shapeOf(c, `Math.${name}`)).toContain("number");
-    }
-    // literal folding: Math.floor(3.7) → 3
-    const floor = walk(Math_, "floor")!;
-    const impl = getFnImpl(floor)!;
-    const folded = absOnly(impl.apply!([numLit(3.7)]));
-    expect(litValue(folded)).toEqual({ ok: true, value: 3 });
-  });
+    for (const name of ["PI", "E"]) expect(shapeOf(walk(Math_, name), `Math.${name}`)).toContain("number");
+    expect(applyFold(walk(Math_, "floor")!, [numLit(3.7)])).toEqual({ ok: true, value: 3 });
 
-  it("Math.min / Math.max / Math.hypot are variadic (3+ args stay number)", () => {
-    const Math_ = globalOf(env, "Math");
-    for (const [name, args, expected] of [
-      ["min", [3, 1, 2], 1],
-      ["max", [3, 1, 2], 3],
-      ["hypot", [3, 4, 12], 13],
-    ] as const) {
+    for (const [name, args, expected] of [["min", [3, 1, 2], 1], ["max", [3, 1, 2], 3], ["hypot", [3, 4, 12], 13]] as const) {
       const fn = walk(Math_, name)!;
-      // 签名：required 为空 + 一个 rest 槽（形状里出现 "..."）
       expect(shapeOf(fn, `Math.${name}`)).toContain("...");
-      const impl = getFnImpl(fn)!;
-      const folded = absOnly(impl.apply!(args.map((n) => numLit(n))));
-      expect(litValue(folded), `Math.${name}(${args.join(", ")})`).toEqual({ ok: true, value: expected });
-      // 抽象实参：结果仍是 number（不再因 arity 不匹配落 unknown）
+      expect(applyFold(fn, args.map((n) => numLit(n))), `Math.${name}`).toEqual({ ok: true, value: expected });
       const abstractNum = abs({ k: "prim", type: "number" }, undefined, undefined, "path");
-      const abstract = absOnly(impl.apply!([abstractNum, abstractNum, abstractNum]));
-      expect(shapeOf(abstract, `Math.${name} abstract`)).toContain("number");
+      expect(shapeOf(absOnly(getFnImpl(fn)!.apply!([abstractNum, abstractNum, abstractNum])), `Math.${name} abstract`)).toContain("number");
+    }
+
+    for (const [name, args, expected] of [["min", [], Infinity], ["max", [], -Infinity], ["hypot", [], 0], ["min", [3], 3], ["max", [3], 3], ["hypot", [5], 5]] as const) {
+      expect(applyFold(walk(Math_, name)!, args.map((n) => numLit(n))), `Math.${name}`).toEqual({ ok: true, value: expected });
     }
   });
 
-  it("Math.min / Math.max / Math.hypot fold at 0 and 1 args (ES empty-call edge)", () => {
-    const Math_ = globalOf(env, "Math");
-    const cases = [
-      ["min", [], Infinity],
-      ["max", [], -Infinity],
-      ["hypot", [], 0],
-      ["min", [3], 3],
-      ["max", [3], 3],
-      ["hypot", [5], 5],
-    ] as const;
-    for (const [name, args, expected] of cases) {
-      const fn = walk(Math_, name)!;
-      const impl = getFnImpl(fn)!;
-      const folded = absOnly(impl.apply!(args.map((n) => numLit(n))));
-      expect(litValue(folded), `Math.${name}(${args.join(", ")})`).toEqual({ ok: true, value: expected });
-    }
-  });
-
-  it("Number static checks and parseInt/parseFloat are present", () => {
+  it("Number 静态检查 / 常量 / NaN 与 ±Infinity 精确", () => {
     const Number_ = globalOf(env, "Number");
-    for (const name of [
-      "isFinite",
-      "isInteger",
-      "isNaN",
-      "isSafeInteger",
-      "parseFloat",
-      "parseInt",
-    ] as const) {
+    for (const name of ["isFinite", "isInteger", "isNaN", "isSafeInteger", "parseFloat", "parseInt"]) {
       expect(shapeOf(walk(Number_, name), `Number.${name}`)).toContain("=>");
     }
-    for (const name of [
-      "MAX_SAFE_INTEGER",
-      "MIN_SAFE_INTEGER",
-      "EPSILON",
-    ] as const) {
-      expect(shapeOf(walk(Number_, name), `Number.${name}`)).toContain("number");
-    }
-    // Number.NaN / ±Infinity 是确定字面量（`.finite()` 的调用点反例依赖）
+    for (const name of ["MAX_SAFE_INTEGER", "MIN_SAFE_INTEGER", "EPSILON"]) expect(shapeOf(walk(Number_, name), `Number.${name}`)).toContain("number");
     expect(shapeOf(walk(Number_, "NaN"), "Number.NaN")).toBe("NaN");
-    expect(shapeOf(walk(Number_, "POSITIVE_INFINITY"), "Number.POSITIVE_INFINITY")).toBe(
-      "Infinity",
-    );
-    expect(shapeOf(walk(Number_, "NEGATIVE_INFINITY"), "Number.NEGATIVE_INFINITY")).toBe(
-      "-Infinity",
-    );
+    expect(shapeOf(walk(Number_, "POSITIVE_INFINITY"), "Number.POSITIVE_INFINITY")).toBe("Infinity");
+    expect(shapeOf(walk(Number_, "NEGATIVE_INFINITY"), "Number.NEGATIVE_INFINITY")).toBe("-Infinity");
   });
 
-  it("Promise statics return promise-shaped results", () => {
+  it("Promise 静态方法返回 promise 形状", () => {
     const Promise_ = globalOf(env, "Promise");
-    const resolve = walk(Promise_, "resolve");
-    expect(shapeOf(resolve, "Promise.resolve")).toContain("=>");
-    expect(shapeOf(walk(Promise_, "reject"), "Promise.reject")).toContain("=>");
-    expect(shapeOf(walk(Promise_, "all"), "Promise.all")).toContain("=>");
-    expect(shapeOf(walk(Promise_, "race"), "Promise.race")).toContain("=>");
+    for (const name of ["resolve", "reject", "all", "race"]) expect(shapeOf(walk(Promise_, name), `Promise.${name}`)).toContain("=>");
   });
 
-  it("console methods are void functions", () => {
+  it("console 方法是函数；Error 族品牌干净；ctor/name facet 正确", () => {
     const console_ = globalOf(env, "console");
-    for (const name of ["log", "error", "warn", "info", "assert"] as const) {
-      const fn = walk(console_, name);
-      expect(shapeOf(fn, `console.${name}`)).toContain("=>");
-    }
-  });
+    for (const name of ["log", "error", "warn", "info", "assert"]) expect(shapeOf(walk(console_, name), `console.${name}`)).toContain("=>");
 
-  it("Error family constructors carry Error brands", () => {
-    for (const name of [
-      "Error",
-      "TypeError",
-      "RangeError",
-      "SyntaxError",
-      "ReferenceError",
-      "URIError",
-    ] as const) {
+    for (const name of ["Error", "TypeError", "RangeError", "SyntaxError", "ReferenceError", "URIError"]) {
       const s = shapeOf(globalOf(env, name), name);
       expect(s).toContain(name);
       expectLeafClean(s, name);
     }
-  });
-
-  it("issue #106：构造器声明带 name+ctor facet（new/extends 执法面）", () => {
-    // Error 族 / Date / Promise：ctor:true（可构造，$new 按名派发 evalBuiltinNew）
-    for (const name of [
-      "Error",
-      "TypeError",
-      "RangeError",
-      "SyntaxError",
-      "ReferenceError",
-      "URIError",
-      "Date",
-      "Promise",
-    ] as const) {
+    for (const name of ["Error", "TypeError", "RangeError", "SyntaxError", "ReferenceError", "URIError", "Date", "Promise"]) {
       const g = globalOf(env, name);
-      expect(g.shape.k, `${name} shape`).toBe("fn");
+      expect(g.shape.k, name).toBe("fn");
       const fs = g.shape as { ctor?: boolean; name?: string };
-      expect(fs.ctor, `${name} ctor`).toBe(true);
-      expect(fs.name, `${name} name`).toBe(name);
+      expect(fs.ctor, name).toBe(true);
+      expect(fs.name, name).toBe(name);
     }
-    // Symbol 原生非构造器（new Symbol() / extends Symbol 定义期 TypeError）
     const sym = globalOf(env, "Symbol");
     expect((sym.shape as { ctor?: boolean }).ctor).toBe(false);
     expect((sym.shape as { name?: string }).name).toBe("Symbol");
   });
 
-  it("Array.isArray + Reflect high-frequency ops resolve", () => {
-    const Array_ = globalOf(env, "Array");
-    expect(shapeOf(walk(Array_, "isArray"), "Array.isArray")).toContain("=>");
+  it("Array.isArray / Reflect 高频操作 / 全局数字 URI 助手 / NaN 与 Infinity", () => {
+    expect(shapeOf(walk(globalOf(env, "Array"), "isArray"), "Array.isArray")).toContain("=>");
     const Reflect_ = globalOf(env, "Reflect");
-    for (const name of ["get", "set", "has", "apply", "ownKeys"] as const) {
-      expect(shapeOf(walk(Reflect_, name), `Reflect.${name}`)).toContain("=>");
+    for (const name of ["get", "set", "has", "apply", "ownKeys"]) expect(shapeOf(walk(Reflect_, name), `Reflect.${name}`)).toContain("=>");
+    for (const name of ["parseInt", "parseFloat", "isNaN", "isFinite", "encodeURI", "decodeURI", "encodeURIComponent", "decodeURIComponent"]) {
+      expect(shapeOf(globalOf(env, name), name)).toContain("=>");
     }
-  });
-
-  it("global numeric/URI helpers are typed", () => {
-    for (const name of [
-      "parseInt",
-      "parseFloat",
-      "isNaN",
-      "isFinite",
-      "encodeURI",
-      "decodeURI",
-      "encodeURIComponent",
-      "decodeURIComponent",
-    ] as const) {
-      const s = shapeOf(globalOf(env, name), name);
-      expect(s).toContain("=>");
-    }
-    // NaN / Infinity 是确定字面量（不是任意 number）：`.finite()` 的调用点
-    // 反例（`f(NaN)`）依赖它们可判。
     expect(shapeOf(globalOf(env, "NaN"), "NaN")).toBe("NaN");
     expect(shapeOf(globalOf(env, "Infinity"), "Infinity")).toBe("Infinity");
   });
 
-  it("Boolean/String coercions fold on literals", () => {
-    const booleanFn = globalOf(env, "Boolean");
-    const impl = getFnImpl(booleanFn)!;
-    expect(litValue(absOnly(impl.apply!([strLit("x")])))).toEqual({ ok: true, value: true });
-    const stringFn = globalOf(env, "String");
-    const sImpl = getFnImpl(stringFn)!;
-    expect(litValue(absOnly(sImpl.apply!([boolLit(false)])))).toEqual({ ok: true, value: "false" });
+  it("Boolean / String 对字面量折叠", () => {
+    expect(applyFold(globalOf(env, "Boolean"), [strLit("x")])).toEqual({ ok: true, value: true });
+    expect(applyFold(globalOf(env, "String"), [boolLit(false)])).toEqual({ ok: true, value: "false" });
   });
 
-  it("parseInt folds ToInt32 radix / auto-detect 0", () => {
+  it("parseInt / Number.parseInt 共享 ToInt32 radix 折叠", () => {
     const parseIntFn = globalOf(env, "parseInt");
-    const impl = getFnImpl(parseIntFn)!;
-    const fold = (s: string, radix?: number) =>
-      litValue(absOnly(impl.apply!(radix !== undefined ? [strLit(s), numLit(radix)] : [strLit(s)])));
-
-    // ToInt32 截断小数
-    expect(fold("10", 2.5)).toEqual({ ok: true, value: 2 });
-    expect(fold("10", 2.9)).toEqual({ ok: true, value: 2 });
-    // 0 / NaN → 自动进制
-    expect(fold("10", 0)).toEqual({ ok: true, value: 10 });
-    expect(fold("0x10", 0)).toEqual({ ok: true, value: 16 });
-    expect(fold("10", NaN)).toEqual({ ok: true, value: 10 });
-    // ToInt32 环绕
-    expect(fold("10", 4294967298)).toEqual({ ok: true, value: 2 });
-    // 越界仍 NaN
-    expect(fold("10", 37)).toEqual({ ok: true, value: NaN });
-    expect(fold("10", 1)).toEqual({ ok: true, value: NaN });
-    // 无 radix：0x 前缀
-    expect(fold("0x10")).toEqual({ ok: true, value: 16 });
+    const numberParse = walk(globalOf(env, "Number"), "parseInt")!;
+    for (const fn of [parseIntFn, numberParse]) {
+      const fold = (s: string, radix?: number) => applyFold(fn, radix !== undefined ? [strLit(s), numLit(radix)] : [strLit(s)]);
+      expect(fold("10", 2.5)).toEqual({ ok: true, value: 2 });
+      expect(fold("10", 2.9)).toEqual({ ok: true, value: 2 });
+      expect(fold("10", 0)).toEqual({ ok: true, value: 10 });
+      expect(fold("0x10", 0)).toEqual({ ok: true, value: 16 });
+      expect(fold("10", NaN)).toEqual({ ok: true, value: 10 });
+      expect(fold("10", 4294967298)).toEqual({ ok: true, value: 2 });
+      expect(fold("10", 37)).toEqual({ ok: true, value: NaN });
+      expect(fold("10", 1)).toEqual({ ok: true, value: NaN });
+      expect(fold("0x10")).toEqual({ ok: true, value: 16 });
+    }
+    expect(shapeOf(numberParse, "Number.parseInt")).toContain("radix?");
   });
 
-  it("Number.parseInt shares ToInt32 radix fold and declares radix?", () => {
-    const Number_ = globalOf(env, "Number");
-    const parseIntFn = walk(Number_, "parseInt")!;
-    const impl = getFnImpl(parseIntFn)!;
-    const fold = (s: string, radix?: number) =>
-      litValue(absOnly(impl.apply!(radix !== undefined ? [strLit(s), numLit(radix)] : [strLit(s)])));
-    expect(fold("10", 2.5)).toEqual({ ok: true, value: 2 });
-    expect(fold("0x10", 0)).toEqual({ ok: true, value: 16 });
-    // 签名面：radix 为可选参
-    expect(shapeOf(parseIntFn, "Number.parseInt")).toContain("radix?");
-  });
-
-  // issue #58：dual-facet 全局（Number/Array）既可调用/构造，又带静态槽。
-  // 此前 objAbs 遮蔽宿主全局后 $call/$new 折 unknown。
-  it("Number/Array are dual-facet: callable + static slots", () => {
+  it("Number / Array 双面：可调用 + 静态槽；Promise / Date 可构造命名空间", () => {
     const numberFn = globalOf(env, "Number");
     expect(numberFn.shape.k).toBe("fn");
     expect(getFnImpl(numberFn)?.apply).toBeTruthy();
-    // Number("42") → 42
-    expect(litValue(absOnly(getFnImpl(numberFn)!.apply!([strLit("42")])))).toEqual({ ok: true, value: 42 });
+    expect(applyFold(numberFn, [strLit("42")])).toEqual({ ok: true, value: 42 });
     expect(shapeOf(walk(numberFn, "isFinite"), "Number.isFinite")).toContain("=>");
-    expect(shapeOf(walk(numberFn, "MAX_SAFE_INTEGER"), "Number.MAX_SAFE_INTEGER")).toContain(
-      "number",
-    );
+    expect(shapeOf(walk(numberFn, "MAX_SAFE_INTEGER"), "Number.MAX_SAFE_INTEGER")).toContain("number");
 
     const arrayFn = globalOf(env, "Array");
     expect(arrayFn.shape.k).toBe("fn");
-    const arrImpl = getFnImpl(arrayFn)!;
-    // Array(3) → 3 元空洞 tuple
-    const a3 = absOnly(arrImpl.apply!([numLit(3)]));
+    const a3 = absOnly(getFnImpl(arrayFn)!.apply!([numLit(3)]));
     expect(a3.shape.k).toBe("tuple");
     expect(shapeOf(walk(arrayFn, "isArray"), "Array.isArray")).toContain("=>");
-  });
 
-  it("Promise/Date are constructible namespaces with statics", () => {
-    const promiseFn = globalOf(env, "Promise");
-    expect(promiseFn.shape.k).toBe("fn");
-    expect(promiseFn.shape.k === "fn" && promiseFn.shape.name).toBe("Promise");
-    expect(shapeOf(walk(promiseFn, "resolve"), "Promise.resolve")).toContain("=>");
-
-    const dateFn = globalOf(env, "Date");
-    expect(dateFn.shape.k).toBe("fn");
-    expect(dateFn.shape.k === "fn" && dateFn.shape.name).toBe("Date");
-    expect(shapeOf(walk(dateFn, "now"), "Date.now")).toContain("=>");
+    for (const name of ["Promise", "Date"]) {
+      const fn = globalOf(env, name);
+      expect(fn.shape.k).toBe("fn");
+      expect(fn.shape.k === "fn" && fn.shape.name).toBe(name);
+    }
+    expect(shapeOf(walk(globalOf(env, "Promise"), "resolve"), "Promise.resolve")).toContain("=>");
+    expect(shapeOf(walk(globalOf(env, "Date"), "now"), "Date.now")).toContain("=>");
   });
 });
