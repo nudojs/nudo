@@ -53,7 +53,7 @@ for (const suite of index.suites) {
   const rows = lines.slice(1).map((l) => l.split("\t"));
   for (const [i, r] of rows.entries()) {
     if (r.length !== 6) { errors.push(`${docRel}:${i + 2} expected 6 columns, got ${r.length}`); continue; }
-    const parse = (v) => (v.startsWith('"') ? JSON.parse(v) : v);
+    const parse = (v) => { if (v.startsWith('"')) { try { return JSON.parse(v); } catch {} } return v; };
     const [title, rootCause, gap, action, status, evidence] = [parse(r[0]), parse(r[1]), r[2], r[3], r[4], r[5]];
     if (!title.trim()) errors.push(`${docRel}:${i + 2} empty title`);
     if (!rootCause.trim() || rootCause.trim().length < 6) errors.push(`${docRel}:${i + 2} weak rootCause`);
@@ -71,7 +71,8 @@ for (const suite of index.suites) {
   for (const t of titlesOf(suite)) want.set(t, (want.get(t) ?? 0) + 1);
   const got = new Map();
   for (const r of rows) {
-    const t = (r[0].startsWith('"') ? JSON.parse(r[0]) : r[0]).replace(/\s+/g, " ").trim();
+    const raw = (() => { if (r[0].startsWith('"')) { try { return JSON.parse(r[0]); } catch {} } return r[0]; })();
+    const t = raw.replace(/\s+/g, " ").trim();
     got.set(t, (got.get(t) ?? 0) + 1);
   }
   for (const [t, n] of want) {
