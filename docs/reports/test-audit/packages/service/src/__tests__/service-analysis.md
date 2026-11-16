@@ -1,5 +1,9 @@
 ```audit
 title	rootCause	gap	action	status	evidence
+trimLeft/trimRight ⇒ label: string()；includes 推不出（负控）	码归因/建议/body-read 表	没测该层	keep	keep	—
+suggestion 按种类：重复/导出缺失/文件缺失	码归因/建议/body-read 表	没测该层	keep	keep	—
+文件缺失 module-missing error（分析与门禁面同口径）且不被改成 mock-invalid	码归因/建议/body-read 表	没测该层	keep	keep	—
+重复声明 mock-invalid warning 且不冒充 module-missing；单条零误报	码归因/建议/body-read 表	没测该层	keep	keep	—
 A→B→A 预算与会话 LRU 回到 A；无 nudo 回落默认；重复稳定；env 压过配置	include/预算矩阵	没测该层	keep	keep	—
 目录/文件/glob/多条/空/排除的命中矩阵	include/预算矩阵	没测该层	keep	keep	—
 推导失败 number/any 都 unchecked；成功不符 failed；无期望 no-expectation；never failed	去重/may-throw/opaque/unchecked 表	没测该层	keep	keep	—
@@ -19,18 +23,6 @@ strict/无 profile 非法值文案 error；合法值与 profile 预设不告警	
 调用点字面量投影基类型；带断言 case 保留字面量	观测/顺序/见证表	没测该层	keep	keep	—
 全部超限整组跳过；正常记录照常合成	归因/超限表	没测该层	keep	keep	—
 ESM/CJS 命名空间带接收者限定并可归因；具名/对象方法无前缀；产品面 error	归因/超限表	没测该层	keep	keep	—
-"② 重复声明 ⇒ 分析器诊断的码是 nudo:mock-invalid"	"分析器诊断里「重复声明」那一条（按文案筛，不依赖码 ⇒ 改码不会让它消失）。 断言：expect(dups).toHaveLength(1);；expect(dups[0]!.code).toBe(\"nudo:mock-invalid\");"	没测该层	keep	keep	—
-"② 重复声明 ⇒ 该诊断**不得**再被说成 nudo:module-missing"	"分析器诊断里「重复声明」那一条（按文案筛，不依赖码 ⇒ 改码不会让它消失）。 断言：expect(misattributed).toEqual([]);"	没测该层	keep	keep	—
-"② 重复声明 ⇒ warning 级（同码同级：mock-invalid = 指令写法有歧义）"	"分析器诊断里「重复声明」那一条（按文案筛，不依赖码 ⇒ 改码不会让它消失）。 断言：expect(dups[0]!.severity).toBe(\"warning\");"	没测该层	keep	keep	—
-"① 单条声明 ⇒ 零该诊断（不许误报）"	"断言：expect(dupDiags(r.diagnostics)).toEqual([]);"	没测该层	keep	keep	—
-"③ mock 文件缺失 ⇒ nudo:module-missing + error"	"④ mock 文件在、但没导出被点名的那个名字（点名缺失族）。 断言：expect(missing.length).toBeGreaterThan(0);；expect(missing[0]!.severity).toBe(\"error\");"	没测该层	keep	keep	—
-"③ 门禁面（check 补充通道）同口径：nudo:module-missing + error"	"③ mock 文件缺失（既有码 `nudo:module-missing` 不得被误改）。 断言：expect(missing.length).toBeGreaterThan(0);；expect(missing[0]!.severity).toBe(\"error\");"	没测该层	keep	keep	—
-"重复声明 ⇒ 提示「只保留一条声明」（不是通用表达式句）"	"分析器诊断里「重复声明」那一条（按文案筛，不依赖码 ⇒ 改码不会让它消失）。 断言：expect(dups).toHaveLength(1);；expect(s.toLowerCase()).toContain(\"duplicate\");"	没测该层	keep	keep	—
-"导出名缺失 ⇒ 提示点名那个缺失的导出"	"背景：片 S6 修好了两条指令的**本体**（`@nudo:replace` 目标未命中 ⇒ 显式诊断； `@nudo:mock-module` 重复声明 ⇒ 显式诊断 + 导出名并集），但**码**在 `nudo test` / `health` 面上**丢了**：`analyzer-orchestrate-uncached-modules.ts` 把 `composed.mockErrors`（**只有 message**）映射成固定码 `nudo:module-missing` ⇒ 「重复声明」被说成「模块缺失」（归因错误：码与文案不自洽）。 断言：expect(missing).toHaveLength(1);；expect"	没测该层	keep	keep	—
-"mock 文件缺失 ⇒ 仍是「建 mock 文件 / 改路径」那句（既有文案逐字保留）"	"④ mock 文件在、但没导出被点名的那个名字（点名缺失族）。 断言：expect(missing.length).toBeGreaterThan(0);；expect(missing[0]!.suggestion).toContain(\"Create the mock file or fix the path\");"	没测该层	keep	keep	—
-"param.trimLeft() ⇒ param: string()"	"背景：片 S6 修好了两条指令的**本体**（`@nudo:replace` 目标未命中 ⇒ 显式诊断； `@nudo:mock-module` 重复声明 ⇒ 显式诊断 + 导出名并集），但**码**在 `nudo test` / `health` 面上**丢了**：`analyzer-orchestrate-uncached-modules.ts` 把 `composed.mockErrors`（**只有 message**）映射成固定码 `nudo:module-missing` ⇒ 「重复声明」被说成「模块缺失」（归因错误：码与文案不自洽）。 断言：expect(fields?.find((f) => f.field ==="	没测该层	keep	keep	—
-"param.trimRight() ⇒ param: string()"	"背景：片 S6 修好了两条指令的**本体**（`@nudo:replace` 目标未命中 ⇒ 显式诊断； `@nudo:mock-module` 重复声明 ⇒ 显式诊断 + 导出名并集），但**码**在 `nudo test` / `health` 面上**丢了**：`analyzer-orchestrate-uncached-modules.ts` 把 `composed.mockErrors`（**只有 message**）映射成固定码 `nudo:module-missing` ⇒ 「重复声明」被说成「模块缺失」（归因错误：码与文案不自洽）。 断言：expect(fields?.find((f) => f.field ==="	没测该层	keep	keep	—
-"负控：param.includes(...) 仍推不出 string()（该表刻意排除 Array 同名方法）"	"背景：片 S6 修好了两条指令的**本体**（`@nudo:replace` 目标未命中 ⇒ 显式诊断； `@nudo:mock-module` 重复声明 ⇒ 显式诊断 + 导出名并集），但**码**在 `nudo test` / `health` 面上**丢了**：`analyzer-orchestrate-uncached-modules.ts` 把 `composed.mockErrors`（**只有 message**）映射成固定码 `nudo:module-missing` ⇒ 「重复声明」被说成「模块缺失」（归因错误：码与文案不自洽）。 断言：expect(fields?.find((f) => f.field ==="	没测该层	keep	keep	—
 "同形态但不同调用点 ⇒ 两条独立见证（顺序无关）"	"回归：被调方的**调用点域**不得被「首次 settle」截断。 症状（修前）：同一组函数，只改**声明顺序**就得到不同的调用点域 —— 被调方先定义时只留下第一个调用方的调用点（`callee(2)` / `callee(3)` 被 静默丢弃），于是 `nudo test` 少报见证、`nudo contract --emit` 写出偏窄的 契约（合法调用被判违约），`nudo contract --draft` 沿「官方推荐路径」直接 产出假红。 断言：expect(dedupeCallRecords([rec(2, 0), rec(5, 0)])).toHaveLength(2);；expect(dedupeCallReco"	没测该层	keep	keep	—
 "对照组：同一调用点被重复采集 ⇒ 仍去重成一条"	"断言：expect(dedupeCallRecords([rec(2, 0), rec(2, 0)])).toHaveLength(1);"	没测该层	keep	keep	—
 "对象槽字面量不符（期望 { a: 2 }，实际 { a: 1 }）→ 报 nudo:case-expected"	"找出 nudo:case-expected 诊断（期望不满足）。 断言：expect(caseExpectedCount(src)).toBe(1);"	没测该层	keep	keep	—
@@ -159,4 +151,16 @@ A → B → A：会话 LRU 上限同样随本次解析回到 A	dup:include/预�
 无 nudo 键的目录：预算回落默认（不是上一个项目的值）	dup:include/预算矩阵	commit:2e09de7f
 同一项目重复解析：预算稳定	dup:include/预算矩阵	commit:2e09de7f
 env NUDO_MAX_FORKS 仍压过项目配置（优先级不变）	dup:include/预算矩阵	commit:2e09de7f
+② 重复声明 ⇒ 分析器诊断的码是 nudo:mock-invalid	dup:码归因/建议/body-read 表	commit:9549ec7b
+② 重复声明 ⇒ 该诊断**不得**再被说成 nudo:module-missing	dup:码归因/建议/body-read 表	commit:9549ec7b
+② 重复声明 ⇒ warning 级（同码同级：mock-invalid = 指令写法有歧义）	dup:码归因/建议/body-read 表	commit:9549ec7b
+① 单条声明 ⇒ 零该诊断（不许误报）	dup:码归因/建议/body-read 表	commit:9549ec7b
+③ mock 文件缺失 ⇒ nudo:module-missing + error	dup:码归因/建议/body-read 表	commit:9549ec7b
+③ 门禁面（check 补充通道）同口径：nudo:module-missing + error	dup:码归因/建议/body-read 表	commit:9549ec7b
+重复声明 ⇒ 提示「只保留一条声明」（不是通用表达式句）	dup:码归因/建议/body-read 表	commit:9549ec7b
+导出名缺失 ⇒ 提示点名那个缺失的导出	dup:码归因/建议/body-read 表	commit:9549ec7b
+mock 文件缺失 ⇒ 仍是「建 mock 文件 / 改路径」那句（既有文案逐字保留）	dup:码归因/建议/body-read 表	commit:9549ec7b
+param.trimLeft() ⇒ param: string()	dup:码归因/建议/body-read 表	commit:9549ec7b
+param.trimRight() ⇒ param: string()	dup:码归因/建议/body-read 表	commit:9549ec7b
+负控：param.includes(...) 仍推不出 string()（该表刻意排除 Array 同名方法）	dup:码归因/建议/body-read 表	commit:9549ec7b
 ```
