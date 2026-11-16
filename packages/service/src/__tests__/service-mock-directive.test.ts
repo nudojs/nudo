@@ -147,39 +147,41 @@ const NO_MOCK = `export function run() {
 `;
 
 describe("（service 侧）—— 宿主内建名的 mock 不再被 env 跳过表吞掉", () => {
-  it("@nudo:mock Number 生效（宿主 Number 不再应答）", () => {
-    const got = callValue(MOCK_NUMBER, "/tmp/bug274-service-number.js");
-    expect(got.isLiteral).toBe(true);
-    expect(got.value).toBe(42);
+  const mocksOf = (source: string, fromFile: string) => mockSeedsToAbsMocks(mockDirectivesToAbsSeeds(extractDirectivesQuiet(parse(source)), { fromFile })) as Record<string, never>;
+  const callValue = (source: string, file: string, envNames?: string[]) => {
+    const mocks = mocksOf(source, file);
+    const full = tryEvalCallFull(source, file, "run", [], { mocks: Object.keys(mocks).length ? (mocks as never) : undefined, envNames });
+    expect(full).toBeDefined();
+    const lit = litValue(full!.result);
+    return { value: lit.ok ? lit.value : undefined, isLiteral: lit.ok };
+  };
+  const MOCK_NUMBER = '/**\n * @nudo:mock Number = stub().returns(42)\n */\nexport function run() {\n  return Number("7");\n}\n';
+  const MOCK_MATH = '/**\n * @nudo:mock Math = stub().returns(42)\n */\nexport function run() {\n  return Math.floor(1.5);\n}\n';
+  const MOCK_JSON = '/**\n * @nudo:mock JSON = stub().returns("MOCKED")\n */\nexport function run() {\n  return JSON.stringify({ a: 1 });\n}\n';
+  const MOCK_DATE = '/**\n * @nudo:mock Date = stub().returns("MOCKED")\n */\nexport function run() {\n  return Date.now();\n}\n';
+  const MOCK_PLAIN = '/**\n * @nudo:mock myFn = stub().returns("MOCKED")\n */\nexport function run() {\n  return myFn();\n}\n';
+  const MOCK_OVER_ENV = '/**\n * @nudo:mock process = stub().returns("MOCKED")\n */\nexport function run() {\n  return process();\n}\n';
+  const NO_MOCK = 'export function run() {\n  return Number("7");\n}\n';
+  it("宿主内建 mock 生效；产品面同值；负控制普通名/优先级/跳过表/无 mock", async () => {
+    expect(callValue(MOCK_NUMBER, "/tmp/b274-n.js").value).toBe(42);
+    expect(callValue(MOCK_MATH, "/tmp/b274-m.js").value).not.toBe(1);
+    expect(callValue(MOCK_JSON, "/tmp/b274-j.js").value).not.toBe('{"a":1}');
+    expect(callValue(MOCK_DATE, "/tmp/b274-d.js").isLiteral).toBe(false);
+    const res = await analyzeFileAsync("/tmp/b274-p.js", MOCK_NUMBER);
+    expect(litValue(res.functions.find((f) => f.name === "run")!.combinedAbs!)).toEqual({ ok: true, value: 42 });
+    expect(callValue(MOCK_PLAIN, "/tmp/b274-plain.js").value).toBe("MOCKED");
+    expect(callValue(MOCK_OVER_ENV, "/tmp/b274-prio.js", ["node"]).value).toBe("MOCKED");
+    expect(callValue(NO_MOCK, "/tmp/b274-skip.js", ["node"]).value).toBe(7);
+    expect(callValue(NO_MOCK, "/tmp/b274-nomock.js").value).toBe(7);
   });
 
-  it("@nudo:mock Math 生效（宿主 Math.floor 不再应答）", () => {
-    const got = callValue(MOCK_MATH, "/tmp/bug274-service-math.js");
-    // 宿主应答 = 1（Math.floor(1.5)）⇒ mock 生效后不再是 1
-    expect(got.value).not.toBe(1);
+  it("第二合并点：collectAbsBindingsFromGraph 也尊重宿主内建 mock", () => {
+    const src = '/**\n * @nudo:mock Number = stub().returns(42)\n */\nexport function run() {\n  return Number("7");\n}\nconst x = Number("7");\n';
+    const file = "/tmp/b274-bind.js";
+    const binds = collectAbsBindingsFromGraph(src, file, { seedVars: mocksOf(src, file) as never });
+    expect(litValue(binds.get("x")!)).toEqual({ ok: true, value: 42 });
   });
-
-  it("@nudo:mock JSON 生效（宿主 JSON.stringify 不再应答）", () => {
-    const got = callValue(MOCK_JSON, "/tmp/bug274-service-json.js");
-    // 宿主应答 = '{"a":1}'
-    expect(got.value).not.toBe('{"a":1}');
-  });
-
-  it("@nudo:mock Date 生效（宿主 Date.now 不再应答）", () => {
-    const got = callValue(MOCK_DATE, "/tmp/bug274-service-date.js");
-    // 宿主应答 = number（Date.now() 的非字面量 number）
-    expect(got.isLiteral).toBe(false);
-  });
-
-  it("产品面（analyzeFileAsync / nudo test 的 case 值）同值", async () => {
-    const res = await analyzeFileAsync("/tmp/bug274-service-product.js", MOCK_NUMBER);
-    const fn = res.functions.find((f) => f.name === "run");
-    expect(fn, "function run missing").toBeDefined();
-    const lit = litValue(fn!.combinedAbs!);
-    expect(lit.ok).toBe(true);
-    expect(lit.ok ? lit.value : undefined).toBe(42);
-  });
-});
+});;
 
 describe("（service 侧）负控制 —— 既有语义逐字不变", () => {
   it("普通名 mock 仍生效（改前就生效，不得回退）", () => {
@@ -284,93 +286,57 @@ function writeMock(): void {
 }
 
 describe("mock-module 点名缺失（fail-closed，不静默回落原模块）", () => {
-  it("a named export the mock does not provide is a fail-closed error, not a silent fall-through", () => {
+  let dir: string;
+  beforeEach(() => { dir = tmpProject("nudo-bug-963-"); });
+  const origLit = (v: string): AbsModuleExports["named"][string] => ({ shape: { k: "str", v }, term: { op: "lit", value: v }, conf: "exact" } as never);
+  const baseModules = (): Record<string, AbsModuleExports> => ({ "./dep.js": { named: { depFn: origLit("ORIGINAL-depFn"), otherFn: origLit("ORIGINAL-otherFn") } } });
+  const writeMock = () => { writeTmpFile(dir, "mock.js", 'export function depFn() { return "MOCK"; }\n'); };
+  const SRC_MISSING = '/// @nudo:mock-module "./dep.js" { depFn, otherFn } from "./mock.js"\nimport { depFn, otherFn } from "./dep.js";\nexport function run() { return depFn() + "/" + otherFn(); }\n';
+  it("点名缺失 fail-closed；提供者 overlay；未点名回落；多缺失/ default；check 面；全替换不受影响", () => {
     writeMock();
-    const src = `/// @nudo:mock-module "./dep.js" { depFn, otherFn } from "./mock.js"\nimport { depFn, otherFn } from "./dep.js";\nexport function run() { return depFn() + "/" + otherFn(); }\n`;
     const base = baseModules();
-    const r = applyMockModuleDirectivesFromSource(src, base, { fromFile: join(dir, "app.js") });
-
-    // 走错误出口：nudo:module-missing（code 缺省 ⇒ check-issues 映射成该码）
+    const r = applyMockModuleDirectivesFromSource(SRC_MISSING, base, { fromFile: join(dir, "app.js") });
     expect(r.errors).toHaveLength(1);
     expect(r.errors[0]!.message).toContain('does not export "otherFn"');
     expect(r.errors[0]!.code).toBeUndefined();
     expect(r.errors[0]!.fromPath).toBe("./mock.js");
-
-    // 该条指令**不生效** ⇒ applied 不置 true
     expect(r.applied).toBe(false);
-
-    // 原模块保持原样（**不是**「一半 mock、一半原模块」的混合程序）
     expect(r.modules["./dep.js"]).toBe(base["./dep.js"]);
     expect(r.modules["./dep.js"]!.named.depFn).toBe(base["./dep.js"]!.named.depFn);
     expect(r.modules["./dep.js"]!.named.otherFn).toBe(base["./dep.js"]!.named.otherFn);
-  });
 
-  it("names the mock does provide still overlay, unnamed exports still fall through (regression guard)", () => {
-    writeMock();
-    const src = `/// @nudo:mock-module "./dep.js" { depFn } from "./mock.js"\nimport { depFn, otherFn } from "./dep.js";\nexport function run() { return depFn() + "/" + otherFn(); }\n`;
-    const base = baseModules();
-    const r = applyMockModuleDirectivesFromSource(src, base, { fromFile: join(dir, "app.js") });
+    const partial = applyMockModuleDirectivesFromSource('/// @nudo:mock-module "./dep.js" { depFn } from "./mock.js"\nimport { depFn, otherFn } from "./dep.js";\nexport function run() { return depFn() + "/" + otherFn(); }\n', base, { fromFile: join(dir, "app.js") });
+    expect(partial.applied).toBe(true);
+    expect(partial.errors).toHaveLength(0);
+    expect(partial.modules["./dep.js"]!.named.depFn).not.toBe(base["./dep.js"]!.named.depFn);
+    expect(partial.modules["./dep.js"]!.named.otherFn).toBe(base["./dep.js"]!.named.otherFn);
 
-    expect(r.applied).toBe(true);
-    expect(r.errors).toHaveLength(0);
-    // depFn 来自 mock（不是原模块的哨兵）
-    expect(r.modules["./dep.js"]!.named.depFn).not.toBe(base["./dep.js"]!.named.depFn);
-    // 未点名 ⇒ 回落原模块（文档口径：Unspecified exports fall through）
-    expect(r.modules["./dep.js"]!.named.otherFn).toBe(base["./dep.js"]!.named.otherFn);
-  });
+    const multi = applyMockModuleDirectivesFromSource('/// @nudo:mock-module "./dep.js" { depFn, otherFn, third } from "./mock.js"\nimport { depFn } from "./dep.js";\nexport function run() { return depFn(); }\n', base, { fromFile: join(dir, "app.js") });
+    expect(multi.errors).toHaveLength(2);
+    expect(multi.errors[0]!.message).toContain('does not export "otherFn"');
+    expect(multi.errors[1]!.message).toContain('does not export "third"');
+    expect(multi.applied).toBe(false);
 
-  it("reports every missing named export", () => {
-    writeMock();
-    const src = `/// @nudo:mock-module "./dep.js" { depFn, otherFn, third } from "./mock.js"\nimport { depFn, otherFn } from "./dep.js";\nexport function run() { return depFn() + "/" + otherFn(); }\n`;
-    const r = applyMockModuleDirectivesFromSource(src, baseModules(), {
-      fromFile: join(dir, "app.js"),
-    });
-    expect(r.errors).toHaveLength(2);
-    expect(r.errors[0]!.message).toContain('does not export "otherFn"');
-    expect(r.errors[1]!.message).toContain('does not export "third"');
-    expect(r.applied).toBe(false);
-  });
+    writeTmpFile(dir, "mock-empty.js", "const unused = 1;\nvoid unused;\n");
+    const def = applyMockModuleDirectivesFromSource('/// @nudo:mock-module "./dep.js" { default } from "./mock-empty.js"\nimport { depFn } from "./dep.js";\nexport function run() { return depFn(); }\n', base, { fromFile: join(dir, "app.js") });
+    expect(def.errors).toHaveLength(1);
+    expect(def.errors[0]!.message).toContain('does not export "default"');
+    expect(def.applied).toBe(false);
 
-  it("a missing `default` named export is reported the same way", () => {
-    // mock 没有任何导出 ⇒ 既无 named 也无 default
-    writeTmpFile(dir, "mock-empty.js", `const unused = 1;\nvoid unused;\n`);
-    const src = `/// @nudo:mock-module "./dep.js" { default } from "./mock-empty.js"\nimport { depFn } from "./dep.js";\nexport function run() { return depFn(); }\n`;
-    const r = applyMockModuleDirectivesFromSource(src, baseModules(), {
-      fromFile: join(dir, "app.js"),
-    });
-    expect(r.errors).toHaveLength(1);
-    expect(r.errors[0]!.message).toContain('does not export "default"');
-    expect(r.applied).toBe(false);
-  });
-
-  it("surfaces on the check face as nudo:module-missing (error)", () => {
-    writeMock();
-    writeTmpFile(
-      dir,
-      "dep.js",
-      `export function depFn() { return "REAL-dep"; }\nexport function otherFn() { return "ORIGINAL"; }\n`,
-    );
+    writeTmpFile(dir, "dep.js", 'export function depFn() { return "REAL-dep"; }\nexport function otherFn() { return "ORIGINAL"; }\n');
     const file = join(dir, "app.js");
-    const src = `/// @nudo:mock-module "./dep.js" { depFn, otherFn } from "./mock.js"\nimport { depFn, otherFn } from "./dep.js";\nexport function run() { return depFn() + "/" + otherFn(); }\n`;
-    writeTmpFile(dir, "app.js", src);
-    const issues = collectCheckSupplementIssues(file, src);
-    const missing = issues.filter((i) => i.code === "nudo:module-missing");
-    expect(missing).toHaveLength(1);
-    expect(missing[0]!.severity).toBe("error");
-    expect(missing[0]!.message).toContain('does not export "otherFn"');
-  });
+    writeTmpFile(dir, "app.js", SRC_MISSING);
+    const issues = collectCheckSupplementIssues(file, SRC_MISSING).filter((i) => i.code === "nudo:module-missing");
+    expect(issues).toHaveLength(1);
+    expect(issues[0]!.severity).toBe("error");
+    expect(issues[0]!.message).toContain('does not export "otherFn"');
 
-  it("full replacement (no names list) is unaffected", () => {
-    writeMock();
-    const src = `/// @nudo:mock-module "./dep.js" from "./mock.js"\nimport { depFn } from "./dep.js";\nexport function run() { return depFn(); }\n`;
-    const r = applyMockModuleDirectivesFromSource(src, baseModules(), {
-      fromFile: join(dir, "app.js"),
-    });
-    expect(r.applied).toBe(true);
-    expect(r.errors).toHaveLength(0);
-    expect(Object.keys(r.modules["./dep.js"]!.named)).toEqual(["depFn"]);
+    const full = applyMockModuleDirectivesFromSource('/// @nudo:mock-module "./dep.js" from "./mock.js"\nimport { depFn } from "./dep.js";\nexport function run() { return depFn(); }\n', base, { fromFile: join(dir, "app.js") });
+    expect(full.applied).toBe(true);
+    expect(full.errors).toHaveLength(0);
+    expect(Object.keys(full.modules["./dep.js"]!.named)).toEqual(["depFn"]);
   });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
