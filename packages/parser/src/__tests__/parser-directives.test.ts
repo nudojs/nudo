@@ -228,7 +228,7 @@ const withDiags = <T>(fn: () => T): { value: T; diags: DirectiveDiag[] } => {
 };
 
 describe("诊断去重身份包含位置", () => {
-  it("显式 emit：不同位置两条、同位置一条、无位置沿用旧身份", () => {
+  it("显式位置/同位置/无位置/块内重复/跨函数/复扫的去重矩阵", () => {
     const different: DirectiveDiag[] = [];
     runWithDirectiveDiags(different, () => {
       emitDirectiveDiag({ code: "nudo:directive-syntax", message: "Malformed @nudo:case: …", at: { line: 2, column: 3 } });
@@ -250,98 +250,77 @@ describe("诊断去重身份包含位置", () => {
       emitDirectiveDiag({ code: "nudo:directive-syntax", message: "same text" });
     });
     expect(legacy).toHaveLength(1);
-  });
 
-  it("同一块两条相同 as 尾注释各报一条；同一语句复扫只报一条", () => {
     const src = ["/**", " * @nudo:as string()// why", " * @nudo:as string()// why", " */", "const a = 1;", ""].join("\n");
     const stmt = parse(src).program.body[0]!;
     const two: DirectiveDiag[] = [];
     extractInlineDirectives(stmt, { diags: two });
     const trailing = two.filter((d) => d.message.includes("Trailing comment in @nudo:as"));
     expect(trailing).toHaveLength(2);
-    expect(trailing[0]!.at).toBeDefined();
-    expect(trailing[1]!.at).toBeDefined();
     expect(trailing[0]!.at!.line).not.toBe(trailing[1]!.at!.line);
 
-    const oneSrc = "// @nudo:as string()// why\nconst a = 1;\n";
-    const oneStmt = parse(oneSrc).program.body[0]!;
+    const oneStmt = parse("// @nudo:as string()// why\nconst a = 1;\n").program.body[0]!;
     const once: DirectiveDiag[] = [];
     runWithDirectiveDiags(once, () => {
       extractInlineDirectives(oneStmt);
       extractInlineDirectives(oneStmt);
     });
     expect(once.filter((d) => d.message.includes("Trailing comment in @nudo:as"))).toHaveLength(1);
-  });
 
-  it("两个函数里的逐字相同畸形 case 各报一条（位置不同）", () => {
-    const src = ["/**", " * @nudo:case 't' (1)", " */", "function f(x) { return x; }", "/**", " * @nudo:case 't' (1)", " */", "function g(x) { return x; }", ""].join("\n");
+    const fnSrc = ["/**", " * @nudo:case 't' (1)", " */", "function f(x) { return x; }", "/**", " * @nudo:case 't' (1)", " */", "function g(x) { return x; }", ""].join("\n");
     const diags: DirectiveDiag[] = [];
-    extractDirectives(parse(src), { diags });
+    extractDirectives(parse(fnSrc), { diags });
     const malformed = diags.filter((d) => d.message.includes("Malformed @nudo:case"));
     expect(malformed).toHaveLength(2);
-    expect(malformed[0]!.at).toBeDefined();
-    expect(malformed[1]!.at).toBeDefined();
     expect(malformed[0]!.at!.line).not.toBe(malformed[1]!.at!.line);
   });
 });
+;
 
 describe("缺失期望值 / 期望解析失败", () => {
-  it("空 `=>` 尾告警；无 `=>` 保持静默", () => {
+  it("空 => 告警、无 => 静默、合法/续行静默、失败非 unknown、显式 unknown、严格 API", () => {
     const empty = fnDiags(`/** @nudo:case "empty" (1) =>  */\nexport function f(x) { return x; }\n`);
     expect(empty).toHaveLength(1);
     expect(empty[0]!.code).toBe("nudo:directive-syntax");
     expect(empty[0]!.message).toContain("missing expected expression after '=>'");
     expect(fnDiags(`/** @nudo:case "plain" (1) */\nexport function f(x) { return x; }\n`)).toEqual([]);
-  });
 
-  it("合法期望值与下一行期望值都静默并保留 case", () => {
     const sameLine = `/** @nudo:case "ok" (1) => 999 */\nexport function f(x) { return x; }\n`;
     expect(fnDiags(sameLine)).toEqual([]);
     expect(caseDirectives(sameLine)).toHaveLength(1);
-
     const nextLine = `/**\n * @nudo:case "multi" (2) =>\n *   4\n */\nexport function f(x) { return x * 2; }\n`;
     expect(fnDiags(nextLine)).toEqual([]);
     expect(caseDirectives(nextLine)).toHaveLength(1);
-  });
 
-  it("directive.expected：解析失败不是 unknown；显式 unknown 保留", () => {
     const { fns, diags } = extractWithDiags(`/**\n * @nudo:case "malformed" (1) => bogus()\n * @nudo:case "explicit" (1) => unknown\n */\nfunction f(x) { return x; }`);
     const cases = fns.flatMap((f) => f.directives.filter((d) => d.kind === "case")) as CaseDirective[];
     expect(cases).toHaveLength(2);
-    expect(cases[0]!.expected).toBeDefined();
     expect(cases[0]!.expected!.shape.k).not.toBe("unknown");
     expect(cases[1]!.expected!.shape.k).toBe("unknown");
     expect(diags.some((d) => d.code === "nudo:directive-syntax" && d.message.includes("=> expected") && d.message.includes("bogus()"))).toBe(true);
-  });
 
-  it("严格 API parseCaseExpectedAbs：失败 undefined，合法/unknown 有值", () => {
-    const diags: DirectiveDiag[] = [];
-    const failed = runWithDirectiveDiags_____directives_ts(diags, () => parseCaseExpectedAbs("bogus()", EXPECTED_CTX));
+    const strict: DirectiveDiag[] = [];
+    const failed = runWithDirectiveDiags_____directives_ts(strict, () => parseCaseExpectedAbs("bogus()", EXPECTED_CTX));
     expect(failed).toBeUndefined();
-    expect(diags).toHaveLength(1);
-    expect(diags[0]!.code).toBe("nudo:directive-syntax");
+    expect(strict).toHaveLength(1);
+    expect(strict[0]!.code).toBe("nudo:directive-syntax");
     expect(parseCaseExpectedAbs("1e3", EXPECTED_CTX)).toBeDefined();
     expect(parseCaseExpectedAbs("unknown", EXPECTED_CTX)).toBeDefined();
   });
 });
+;
 
 describe("解析失败与显式 unknown 可区分", () => {
-  it("失败 ⇒ never + 诊断；as/replace/skip 上下文保持 unknown", () => {
+  it("失败 never+诊断；as/replace/skip 保 unknown；显式 unknown/any/any() 零诊断", () => {
     const failure = withDiags(() => parseAbsExprDiag("bogus()", EXPECTED_CTX));
     expect(failure.value.shape.k).toBe("never");
-    expect(failure.value.shape.k).not.toBe("unknown");
     expect(failure.diags).toHaveLength(1);
     expect(failure.diags[0]!.code).toBe("nudo:directive-syntax");
     expect(failure.diags[0]!.message).toContain(EXPECTED_CTX);
     expect(failure.diags[0]!.message).toContain("bogus()");
-
     for (const ctx of ["@nudo:as", "@nudo:replace", "@nudo:skip =>"]) {
-      const { value } = withDiags(() => parseAbsExprDiag("bogus()", ctx));
-      expect(value.shape.k, ctx).toBe("unknown");
+      expect(withDiags(() => parseAbsExprDiag("bogus()", ctx)).value.shape.k, ctx).toBe("unknown");
     }
-  });
-
-  it("显式 unknown / any / any() 仍是 unknown 且零诊断", () => {
     for (const expr of ["unknown", "any", "any()"]) {
       const { value, diags } = withDiags(() => parseAbsExprDiag(expr, EXPECTED_CTX));
       expect(value.shape.k, expr).toBe("unknown");
@@ -349,6 +328,7 @@ describe("解析失败与显式 unknown 可区分", () => {
     }
   });
 });
+;
 
 // ---------------------------------------------------------------------------
 // file-level directives in a class / object body are not file scope
@@ -384,26 +364,12 @@ const mockInObjectPattern = `export const {\n  /// @nudo:mock-module "fs" from "
 const envInNestedArray = `export const a = [\n  [\n    /// @nudo:env node\n    1,\n  ],\n];\n`;
 
 describe("嵌套体里的文件级指令不提升", () => {
-  it("class 体 / 对象字面量体 / 字段 / mock-module 均拦截并告警", () => {
+  it("class/对象/字段/数组/两种解构/嵌套数组都拦截；顶层与函数体口径对照", () => {
     const blocked = [
       { name: "class method", src: envInClass, kind: "env" },
       { name: "object method", src: envInObject, kind: "env" },
       { name: "class field", src: envInClassField, kind: "env" },
       { name: "mock-module in class", src: mockInClass, kind: "mock" },
-    ];
-    for (const { name, src, kind } of blocked) {
-      const diags = fileDiags(src);
-      expect(diags, name).toHaveLength(1);
-      expect(diags[0]!.code, name).toBe("nudo:directive-syntax");
-      expect(diags[0]!.message, name).toContain("at the top of the file");
-      expect(extractFileDirectives(parse(src), { diags: [] }), name).toEqual([]);
-      if (kind === "env") expect(extractFileEnvNames(src), name).toEqual([]);
-      else expect(extractMockModuleRecords(src), name).toEqual([]);
-    }
-  });
-
-  it("数组 / 解构模式 / 嵌套数组里的 env 与 mock-module 均拦截", () => {
-    const blocked = [
       { name: "array element env", src: envInArray, kind: "env" },
       { name: "object pattern env", src: envInObjectPattern, kind: "env" },
       { name: "array pattern env", src: envInArrayPattern, kind: "env" },
@@ -415,28 +381,25 @@ describe("嵌套体里的文件级指令不提升", () => {
       const diags = fileDiags(src);
       expect(diags, name).toHaveLength(1);
       expect(diags[0]!.code, name).toBe("nudo:directive-syntax");
+      expect(diags[0]!.message, name).toContain("at the top of the file");
       expect(extractFileDirectives(parse(src), { diags: [] }), name).toEqual([]);
       if (kind === "env") expect(extractFileEnvNames(src), name).toEqual([]);
       else expect(extractMockModuleRecords(src), name).toEqual([]);
     }
-  });
-
-  it("对照：声明上方的顶层指令与函数体内指令口径", () => {
-    const legal = [
-      { name: "class 上方", src: `/// @nudo:env node\nexport class A { m() { return 1; } }\n` },
-      { name: "对象字面量上方", src: `/// @nudo:env node\nexport const o = { a: 1 };\n` },
-    ];
-    for (const { name, src } of legal) {
+    for (const { name, src } of [
+      { name: "class 上方", src: "/// @nudo:env node\nexport class A { m() { return 1; } }\n" },
+      { name: "对象字面量上方", src: "/// @nudo:env node\nexport const o = { a: 1 };\n" },
+    ]) {
       expect(fileDiags(src), name).toEqual([]);
       expect(extractFileDirectives(parse(src), { diags: [] }), name).toEqual([{ kind: "env", envs: ["node"] }]);
     }
-    const inFn = `export function f() {\n  /// @nudo:env node\n  return 1;\n}\n`;
-    const diags = fileDiags(inFn);
-    expect(diags).toHaveLength(1);
-    expect(diags[0]!.code).toBe("nudo:directive-syntax");
+    const inFn = "export function f() {\n  /// @nudo:env node\n  return 1;\n}\n";
+    expect(fileDiags(inFn)).toHaveLength(1);
+    expect(fileDiags(inFn)[0]!.code).toBe("nudo:directive-syntax");
     expect(extractFileDirectives(parse(inFn), { diags: [] })).toEqual([]);
   });
 });
+;
 
 describe("合法顶层指令不被过度拦截", () => {
   it("文件首 / class 上方 / 对象 / 数组 / 两种解构 / 数组后置都放行且两通道一致", () => {
@@ -462,34 +425,26 @@ describe("合法顶层指令不被过度拦截", () => {
 // ---------------------------------------------------------------------------
 
 describe("function-level directive semantics are unchanged", () => {
-  it("`@nudo:env` in a function body is still diagnosed + not promoted (Bug 847)", () => {
-    const src = `export function f() {\n  /// @nudo:env node\n  return 1;\n}\n`;
+  it("函数体 env 诊断不提升；函数/类方法上的 case 绑定不变；顶层 env 仍放行", () => {
+    const src = "export function f() {\n  /// @nudo:env node\n  return 1;\n}\n";
     const diags = fileDiags(src);
     expect(diags).toHaveLength(1);
     expect(diags[0]!.code).toBe("nudo:directive-syntax");
     expect(extractFileDirectives(parse(src), { diags: [] })).toEqual([]);
     expect(extractFileEnvNames(src)).toEqual([]);
-  });
 
-  it("a function-level `@nudo:case` above a function declaration is still bound to it", () => {
-    const src = `/// @nudo:env node\n/// @nudo:case "c1" (1) => 2\nexport function f(a) {\n  return a + 1;\n}\n`;
-    const fns = extractDirectives(parse(src), { diags: [] });
-    const f = fns.find((x) => x.name === "f");
-    expect(f).toBeDefined();
-    expect(f!.directives.some((d) => d.kind === "case")).toBe(true);
-    // 文件级闸门不牵连函数级指令：同一文件里的 `@nudo:env` 仍按顶层放行
-    expect(parserEnvs(src)).toEqual(["node"]);
-    expect(extractFileEnvNames(src)).toEqual(["node"]);
-  });
+    const withCase = '/// @nudo:env node\n/// @nudo:case "c1" (1) => 2\nexport function f(a) {\n  return a + 1;\n}\n';
+    const f = extractDirectives(parse(withCase), { diags: [] }).find((x) => x.name === "f")!;
+    expect(f.directives.some((d) => d.kind === "case")).toBe(true);
+    expect(parserEnvs(withCase)).toEqual(["node"]);
+    expect(extractFileEnvNames(withCase)).toEqual(["node"]);
 
-  it("a function-level `@nudo:case` above a class method is still bound to it", () => {
-    const src = `export class Calculator {\n  /// @nudo:case "c1" (1, 2) => 3\n  add(a, b) {\n    return a + b;\n  }\n}\n`;
-    const fns = extractDirectives(parse(src), { diags: [] });
-    const m = fns.find((x) => x.name === "Calculator.add");
-    expect(m).toBeDefined();
-    expect(m!.directives.some((d) => d.kind === "case")).toBe(true);
+    const cls = 'export class Calculator {\n  /// @nudo:case "c1" (1, 2) => 3\n  add(a, b) {\n    return a + b;\n  }\n}\n';
+    const m = extractDirectives(parse(cls), { diags: [] }).find((x) => x.name === "Calculator.add")!;
+    expect(m.directives.some((d) => d.kind === "case")).toBe(true);
   });
 });
+;
 
 // ---------------------------------------------------------------------------
 // 验收 7：两条通道逐例一致
