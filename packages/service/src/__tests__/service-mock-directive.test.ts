@@ -1091,17 +1091,121 @@ const CONTAINERS: Array<[string, string]> = [
 
 /** 收集器层面：每个容器位置的指令都必须进注入表 */
 describe("指令收集覆盖面", () => {
-  for (const [name, body] of CONTAINERS) {
-    it(`收集 ${name} 容器里的 @nudo:as`, () => {
+  const CONTAINERS: Array<[string, string]> = [
+    ["fn-body", `export function f() {
+  // @nudo:as number()
+  const y = "hello";
+  return y;
+}`],
+    ["for", `export function f() {
+  for (let i = 0; i < 1; i++) {
+    // @nudo:as number()
+    const y = "hello";
+    return y;
+  }
+  return 0;
+}`],
+    ["for-of", `export function f(xs) {
+  for (const x of xs) {
+    // @nudo:as number()
+    const y = "hello";
+    return y;
+  }
+  return 0;
+}`],
+    ["for-in", `export function f(o) {
+  for (const k in o) {
+    // @nudo:as number()
+    const y = "hello";
+    return y;
+  }
+  return 0;
+}`],
+    ["while", `export function f() {
+  while (true) {
+    // @nudo:as number()
+    const y = "hello";
+    return y;
+  }
+}`],
+    ["do-while", `export function f() {
+  do {
+    // @nudo:as number()
+    const y = "hello";
+    return y;
+  } while (false);
+}`],
+    ["try", `export function f() {
+  try {
+    // @nudo:as number()
+    const y = "hello";
+    return y;
+  } catch (e) {
+    return 0;
+  }
+}`],
+    ["catch", `export function f() {
+  try {
+    throw new Error("x");
+  } catch (e) {
+    // @nudo:as number()
+    const y = "hello";
+    return y;
+  }
+}`],
+    ["finally", `export function f() {
+  try {
+    return 1;
+  } finally {
+    // @nudo:as number()
+    const y = "hello";
+    return y;
+  }
+}`],
+    ["switch", `export function f(k) {
+  switch (k) {
+    case 1: {
+      // @nudo:as number()
+      const y = "hello";
+      return y;
+    }
+    default:
+      return 0;
+  }
+}`],
+    ["labeled", `export function f() {
+  lbl: {
+    // @nudo:as number()
+    const y = "hello";
+    return y;
+  }
+}`],
+    ["arrow", `export const f = () => {
+  // @nudo:as number()
+  const y = "hello";
+  return y;
+};`],
+    ["fn-expression", `export const f = function () {
+  // @nudo:as number()
+  const y = "hello";
+  return y;
+};`],
+    ["class-method", `export class K {
+  m() {
+    // @nudo:as number()
+    const y = "hello";
+    return y;
+  }
+}`],
+  ];
+  it("14 个容器都收集 @nudo:as；for 体 @nudo:replace 也收集", () => {
+    for (const [name, body] of CONTAINERS) {
       const src = `/// @nudo:env es\n\n${body}\n`;
       const reps = collectEvalReplacements(src);
-      expect(reps.asTargets.length).toBe(1);
-      expect(reps.asValues[Object.keys(reps.asValues)[0]]).toBeDefined();
-    });
-  }
-
-  it("收集 for 循环体里的 @nudo:replace", () => {
-    const src = `export function f() {
+      expect(reps.asTargets.length, name).toBe(1);
+      expect(reps.asValues[Object.keys(reps.asValues)[0]!], name).toBeDefined();
+    }
+    const replaceReps = collectEvalReplacements(`export function f() {
   for (let i = 0; i < 1; i++) {
     // @nudo:replace JSON.parse("{}") shape({ port: number() })
     const y = JSON.parse("{}");
@@ -1109,11 +1213,47 @@ describe("指令收集覆盖面", () => {
   }
   return 0;
 }
+`);
+    expect(replaceReps.targets.length).toBeGreaterThan(0);
+  });
+  it("分析面覆盖生效；无指令邻句/非语句节点/空源负控", () => {
+    for (const [name, body] of CONTAINERS.filter(([n]) => n !== "class-method")) {
+      const src = `/// @nudo:env es\n\n${body}\n`;
+      const result = analyzeFile("/test/bug454.js", src);
+      expect(result.functions.length, name).toBe(1);
+      expect(formatShape(result.functions[0]!.cases[0]!.abs), name).toBe("number");
+    }
+    const neg = analyzeFile("/test/bug454-neg.js", `/// @nudo:env es
+
+export function f() {
+  // @nudo:as number()
+  const a = "x";
+  const b = "y";
+  return b;
+}
+`);
+    expect(formatShape(neg.functions[0]!.cases[0]!.abs)).toBe('"y"');
+    const propSrc = `export const o = {
+  // @nudo:as number()
+  a: 1,
+};
 `;
-    const reps = collectEvalReplacements(src);
-    expect(reps.targets.length).toBeGreaterThan(0);
+    const propReps = collectEvalReplacements(propSrc);
+    expect(propReps.asTargets.length).toBe(0);
+    const propDiags: DirectiveDiag[] = [];
+    collectEvalReplacements(propSrc, { diags: propDiags });
+    expect(propDiags.map((d) => d.code)).toContain("nudo:directive-syntax");
+    const noneDiags: DirectiveDiag[] = [];
+    const noneReps = collectEvalReplacements(`export function f() {
+  return 1;
+}
+`, { diags: noneDiags });
+    expect(noneReps.asTargets.length).toBe(0);
+    expect(noneReps.targets.length).toBe(0);
+    expect(noneDiags).toEqual([]);
   });
 });
+;
 
 /** 产品面（分析器）层面：承载指令的那条语句被覆盖 */
 describe("分析面上的覆盖效果", () => {
@@ -1254,31 +1394,85 @@ function sigValue(source: string, fromFile: string, name: string): unknown {
 }
 
 describe("同名 @nudo:mock 按函数作用域各生效", () => {
-  it("先声明的函数不再被后声明的同名 mock 改写成错类型", () => {
-    expect(sigValue(TWO_MOCKS, "/tmp/bug455-a.js", "readA")).toBe(8080);
-    expect(sigValue(TWO_MOCKS, "/tmp/bug455-b.js", "readB")).toBe("closed");
-  });
+  const TWO_MOCKS = `/**
+ * @nudo:mock getPort = stub().returns(8080)
+ */
+export function readA() {
+  return getPort();
+}
 
-  it("声明顺序互换不改变各自的取值（不再纯源序 last-wins）", () => {
-    expect(sigValue(TWO_MOCKS_REVERSED, "/tmp/bug455-c.js", "readA")).toBe(8080);
-    expect(sigValue(TWO_MOCKS_REVERSED, "/tmp/bug455-d.js", "readB")).toBe("closed");
-  });
+/**
+ * @nudo:mock getPort = stub().returns("closed")
+ */
+export function readB() {
+  return getPort();
+}
+`;
+  const TWO_MOCKS_REVERSED = `/**
+ * @nudo:mock getPort = stub().returns("closed")
+ */
+export function readB() {
+  return getPort();
+}
 
-  it("种子表保留每个作用域各自的那一份（scoped + 覆盖表）", () => {
-    const seeds = seedsOf(TWO_MOCKS, "/tmp/bug455-e.js");
+/**
+ * @nudo:mock getPort = stub().returns(8080)
+ */
+export function readA() {
+  return getPort();
+}
+`;
+  const ONE_MOCK = `/**
+ * @nudo:mock getPort = stub().returns(8080)
+ */
+export function readA() {
+  return getPort();
+}
+
+export function readB() {
+  return getPort();
+}
+`;
+  const seedsOf = (source: string, fromFile: string) => mockDirectivesToAbsSeeds(extractDirectivesQuiet(parse(source)), { fromFile });
+  const sigValue = (source: string, fromFile: string, name: string): unknown => {
+    const seeds = seedsOf(source, fromFile);
+    const report = checkSource(fromFile, source, undefined, { inject: { mocks: mockSeedsToAbsMocks(seeds) }, fromFile });
+    const sig = report.signatures.find((s) => s.name === name);
+    expect(sig, name).toBeDefined();
+    const lit = litValue(sig!.abs);
+    return lit.ok ? lit.value : sig!.display;
+  };
+  it("各函数取各自 mock（顺序无关）；单 mock 不泄漏；产物面同值", async () => {
+    expect(sigValue(TWO_MOCKS, "/tmp/b455-a.js", "readA")).toBe(8080);
+    expect(sigValue(TWO_MOCKS, "/tmp/b455-b.js", "readB")).toBe("closed");
+    expect(sigValue(TWO_MOCKS_REVERSED, "/tmp/b455-c.js", "readA")).toBe(8080);
+    expect(sigValue(TWO_MOCKS_REVERSED, "/tmp/b455-d.js", "readB")).toBe("closed");
+    const seeds = seedsOf(TWO_MOCKS, "/tmp/b455-e.js");
     expect(seeds.scoped?.map((s) => s.scope)).toEqual(["readA", "readB"]);
     const mocks = mockSeedsToAbsMocks(seeds);
     const overrides = mockScopeOverridesOf(mocks);
     expect(overrides && Object.keys(overrides).sort()).toEqual(["readA", "readB"]);
-    // 作用域选择面：各自取各自的 mock（两个 mock 是不同的 Abs）
     const a = mockScopeSelected(mocks, "readA");
     const b = mockScopeSelected(mocks, "readB");
-    expect(a.getPort).toBeDefined();
-    expect(b.getPort).toBeDefined();
     expect(a.getPort).not.toBe(b.getPort);
     expect(a.getPort).not.toBe(mocks.getPort);
+
+    expect(sigValue(ONE_MOCK, "/tmp/b455-f.js", "readA")).toBe(8080);
+    expect(sigValue(ONE_MOCK, "/tmp/b455-g.js", "readB")).toBe("never throws ReferenceError");
+    expect(mockScopeOverridesOf(mockSeedsToAbsMocks(seedsOf(ONE_MOCK, "/tmp/b455-h.js")))).toBeUndefined();
+
+    const res = await analyzeFileAsync("/tmp/b455-product.js", TWO_MOCKS);
+    const valueOf = (name: string): unknown => {
+      const fn = res.functions.find((f) => f.name === name);
+      expect(fn, name).toBeDefined();
+      const lit = litValue(fn!.combinedAbs!);
+      return lit.ok ? lit.value : undefined;
+    };
+    expect(valueOf("readA")).toBe(8080);
+    expect(valueOf("readB")).toBe("closed");
   });
 });
+;
 
 // / 旧负控断言「未冲突的 mock 文件级可见」正是那两条 bug
 // 的假绿根因（同文件其它函数被 mock 掩盖真实 ReferenceError）。按
@@ -1358,50 +1552,34 @@ function tmpDirProject(): string {
 }
 
 describe("mode=directives 的指令名单要全（assume/invariant/throws/budget）", () => {
-  it("hasNudoDirectives 认得 assume/invariant/throws/budget", () => {
-    for (const name of MISSING) {
-      expect(hasNudoDirectives(sourceWith(name)), name).toBe(true);
-    }
-  });
-
-  it("shouldAnalyzeFile 纳入只含这四个指令的文件（改前：整份文件被跳过 → 假绿）", () => {
+  const directivesCfg = analysisConfig({ analysis: { mode: "directives" } });
+  const MISSING = ["assume", "invariant", "throws", "budget"] as const;
+  const PRESENT = ["case", "mock", "pure", "skip", "sample", "contract", "import", "env", "mock-module", "as", "replace"] as const;
+  const sourceWith = (name: string) => `/**
+ * @nudo:${name} x
+ */
+export function f(x) {
+  return x;
+}
+`;
+  const tmpDirProject = () => makeTmpProject("nudo-scope-458-", { "package.json": JSON.stringify({ name: "fx", nudo: { analysis: { mode: "directives" } } }) });
+  it("新四指令识别并纳入；既有指令不回退；无指令/字符串假命中仍排除", () => {
+    for (const name of MISSING) expect(hasNudoDirectives(sourceWith(name)), name).toBe(true);
     const dir = tmpDirProject();
     for (const name of MISSING) {
-      const file = join(dir, `only-${name}.js`);
-      const source = sourceWith(name);
-      writeFileSync(file, source);
-      expect(shouldAnalyzeFile(file, source), name).toBe(true);
+      expect(shouldAnalyzeFile(join(dir, "a.js"), sourceWith(name), directivesCfg), name).toBe(true);
     }
-  });
-
-  it("负控制：无指令 / 指令只在字符串里 → 仍不纳入", () => {
-    const dir = tmpDirProject();
-    const plain = join(dir, "plain.js");
-    const plainSrc = "export function f(x) {\n  return x;\n}\n";
-    writeFileSync(plain, plainSrc);
-    expect(shouldAnalyzeFile(plain, plainSrc)).toBe(false);
-
-    const strOnly = join(dir, "str-only.js");
-    const strSrc = 'export const s = "@nudo:assume d <= max";\n';
-    writeFileSync(strOnly, strSrc);
-    expect(shouldAnalyzeFile(strOnly, strSrc)).toBe(false);
-  });
-
-  it("负控制：已在名单里的指令名不得回退", () => {
     for (const name of PRESENT) {
       expect(hasNudoDirectives(sourceWith(name)), name).toBe(true);
+      expect(shouldAnalyzeFile(join(dir, "b.js"), sourceWith(name), directivesCfg), name).toBe(true);
     }
-  });
-
-  it("文件级指令形态（/// @nudo:env）也纳入", () => {
-    const dir = tmpDirProject();
-    const file = join(dir, "env.js");
-    const source = "/// @nudo:env node\nexport function f(x) {\n  return x;\n}\n";
-    writeFileSync(file, source);
-    mkdirSync(dir, { recursive: true });
-    expect(shouldAnalyzeFile(file, source)).toBe(true);
+    for (const src of ["export function f() { return 1; }\n", 'const s = "@nudo:assume x";\n', "const t = `@nudo:throws`;\n"]) {
+      expect(shouldAnalyzeFile(join(dir, "c.js"), src, directivesCfg), src).toBe(false);
+    }
+    expect(shouldAnalyzeFile(join(dir, "d.js"), "/// @nudo:env node\nexport function f() { return 1; }\n", directivesCfg)).toBe(true);
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
