@@ -1319,111 +1319,33 @@ function throwsName(src: string): string | null {
 }
 
 describe("成员路径写回不得打到根（中间层是访问器时）", () => {
-  it("D1 o.a.b = 2：写在 getter 返回的对象上（原生 1——getter 每次新对象）", () => {
-    expect(
-      v(`export function f() { const o = { get a() { return { b: 1 }; } }; o.a.b = 2; return o.a.b; }`),
-    ).toEqual({ ok: true, value: 1 });
+  const v = (src: string) => litValue(call(src, "f").result);
+  const throwsName = (src: string): string => {
+    const t = call(src, "f").throws as { shape?: { k?: string; name?: string } } | undefined;
+    if (!t?.shape || t.shape.k === "never") return "";
+    return t.shape.k === "brand" ? (t.shape.name ?? "") : (t.shape.k as string);
+  };
+  it("getter 中间层：新对象/同对象/不触发 setter/冻结根内层可写/复合与 delete 不抛", () => {
+    expect(v(`export function f() { const o = { get a() { return { b: 1 }; } }; o.a.b = 2; return o.a.b; }`)).toEqual({ ok: true, value: 1 });
+    expect(v(`export function f() { class Holder { constructor(){ this._inner = {c:1}; } get inner(){ return this._inner; } } const h = new Holder(); h.inner.c += 1; return h._inner.c; }`)).toEqual({ ok: true, value: 2 });
+    expect(v(`export function f() { const o = { _a:{b:1}, calls:0, get a(){ return this._a; }, set a(v){ this.calls++; } }; o.a.b = 2; return o.calls; }`)).toEqual({ ok: true, value: 0 });
+    expect(v(`export function f() { const o = Object.freeze({a:{b:1}}); o.a.b = 2; return o.a.b; }`)).toEqual({ ok: true, value: 2 });
+    expect(v(`export function f() { const o = { get a() { return { b: 1 }; } }; o.a.b += 2; return o.a.b; }`)).toEqual({ ok: true, value: 1 });
+    expect(v(`export function f() { const o = { get a() { return { b: 1 }; } }; try { o.a.b = 2; } catch (e) { return "THROW:" + e.constructor.name; } return "ok"; }`)).toEqual({ ok: true, value: "ok" });
+    expect(v(`export function f() { const o = { get a() { return { b: 1 }; } }; try { delete o.a.b; } catch (e) { return "THROW:" + e.constructor.name; } return "ok"; }`)).toEqual({ ok: true, value: "ok" });
+    expect(v(`export function f() { const o = { get a() { return { b: 1 }; } }; try { o.a.b++; } catch (e) { return "THROW:" + e.constructor.name; } return "ok"; }`)).toEqual({ ok: true, value: "ok" });
   });
-
-  it("D2 h.inner.c += 1：写在 getter 返回的对象上（原生 2——同一对象）", () => {
-    expect(
-      v(
-        `export function f() { class Holder { constructor(){ this._inner = {c:1}; } get inner(){ return this._inner; } } const h = new Holder(); h.inner.c += 1; return h._inner.c; }`,
-      ),
-    ).toEqual({ ok: true, value: 2 });
-  });
-
-  it("D3 o.a.b = 2 不得触发中间层 a 的 setter（原生 0）", () => {
-    expect(
-      v(
-        `export function f() { const o = { _a:{b:1}, calls:0, get a(){ return this._a; }, set a(v){ this.calls++; } }; o.a.b = 2; return o.calls; }`,
-      ),
-    ).toEqual({ ok: true, value: 0 });
-  });
-
-  it("D4 冻结根的内层仍可写（原生 2——原生不对中间层做 [[Set]]）", () => {
-    expect(
-      v(`export function f() { const o = Object.freeze({a:{b:1}}); o.a.b = 2; return o.a.b; }`),
-    ).toEqual({ ok: true, value: 2 });
-  });
-
-  it("D5 o.a.b += 2（a 是 getter）→ 原生 1，且不抛", () => {
-    expect(
-      v(`export function f() { const o = { get a() { return { b: 1 }; } }; o.a.b += 2; return o.a.b; }`),
-    ).toEqual({ ok: true, value: 1 });
-  });
-
-  it("D6 o.a.b = 2（a 是只读 getter）不抛 TypeError（原生 ok）", () => {
-    expect(
-      v(
-        `export function f() { const o = { get a() { return { b: 1 }; } }; try { o.a.b = 2; } catch (e) { return "THROW:" + e.constructor.name; } return "ok"; }`,
-      ),
-    ).toEqual({ ok: true, value: "ok" });
-  });
-
-  it("D7 delete o.a.b（a 是 getter）不抛（原生 ok）", () => {
-    expect(
-      v(
-        `export function f() { const o = { get a() { return { b: 1 }; } }; try { delete o.a.b; } catch (e) { return "THROW:" + e.constructor.name; } return "ok"; }`,
-      ),
-    ).toEqual({ ok: true, value: "ok" });
-  });
-
-  it("D8 o.a.b++（a 是 getter）不抛（原生 ok）", () => {
-    expect(
-      v(
-        `export function f() { const o = { get a() { return { b: 1 }; } }; try { o.a.b++; } catch (e) { return "THROW:" + e.constructor.name; } return "ok"; }`,
-      ),
-    ).toEqual({ ok: true, value: "ok" });
-  });
-
-  // —— 负控制：单层 Put 仍走原生访问器语义 ——
-  it("E1 负控制：单层写 o.a = {b:5}（数据属性）→ 5", () => {
-    expect(v(`export function f() { const o = {a:{b:1}}; o.a = {b:5}; return o.a.b; }`)).toEqual({
-      ok: true,
-      value: 5,
-    });
-  });
-
-  it("E2 负控制：单层写 o.a = 5 仍触发 setter → 5", () => {
-    expect(
-      v(`export function f() { const o = { get a(){ return 1; }, set a(v){ this._v = v; } }; o.a = 5; return o._v; }`),
-    ).toEqual({ ok: true, value: 5 });
-  });
-
-  it("E3 负控制：单层写 o.a = 5（只读访问器）仍定抛 TypeError", () => {
-    expect(
-      throwsName(`export function f() { const o = { get a(){ return 1; } }; o.a = 5; return "no-throw"; }`),
-    ).toBe("TypeError");
-  });
-
-  it("E4 负控制：数据属性链 o.a.b = 2 → 2", () => {
-    expect(v(`export function f() { const o={a:{b:1}}; o.a.b = 2; return o.a.b; }`)).toEqual({
-      ok: true,
-      value: 2,
-    });
-  });
-
-  it("E5 负控制：数据属性链 o.a.b += 2 → 3", () => {
-    expect(v(`export function f() { const o={a:{b:1}}; o.a.b += 2; return o.a.b; }`)).toEqual({
-      ok: true,
-      value: 3,
-    });
-  });
-
-  it("E6 负控制：数据属性链 o.a.b++ → 2", () => {
-    expect(v(`export function f() { const o={a:{b:1}}; o.a.b++; return o.a.b; }`)).toEqual({
-      ok: true,
-      value: 2,
-    });
-  });
-
-  it("E7 负控制：delete o.a.b（数据属性链）→ gone", () => {
-    expect(
-      v(`export function f() { const o={a:{b:1}}; delete o.a.b; return "b" in o.a ? "still" : "gone"; }`),
-    ).toEqual({ ok: true, value: "gone" });
+  it("负控：单层 Put 访问器语义与数据属性链不变", () => {
+    expect(v(`export function f() { const o = {a:{b:1}}; o.a = {b:5}; return o.a.b; }`)).toEqual({ ok: true, value: 5 });
+    expect(v(`export function f() { const o = { get a(){ return 1; }, set a(v){ this._v = v; } }; o.a = 5; return o._v; }`)).toEqual({ ok: true, value: 5 });
+    expect(throwsName(`export function f() { const o = { get a(){ return 1; } }; o.a = 5; return "no-throw"; }`)).toBe("TypeError");
+    expect(v(`export function f() { const o={a:{b:1}}; o.a.b = 2; return o.a.b; }`)).toEqual({ ok: true, value: 2 });
+    expect(v(`export function f() { const o={a:{b:1}}; o.a.b += 2; return o.a.b; }`)).toEqual({ ok: true, value: 3 });
+    expect(v(`export function f() { const o={a:{b:1}}; o.a.b++; return o.a.b; }`)).toEqual({ ok: true, value: 2 });
+    expect(v(`export function f() { const o={a:{b:1}}; delete o.a.b; return "b" in o.a ? "still" : "gone"; }`)).toEqual({ ok: true, value: "gone" });
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -3357,172 +3279,27 @@ function threw(src: string, name = "TypeError"): boolean {
 }
 
 describe("sealed 数组 length 截断写 / mutator", () => {
-  it("sealed 数组 length 截断写 → TypeError", () => {
-    expect(
-      threw(`export function f() {
-        const a = [1, 2, 3];
-        Object.seal(a);
-        a.length = 1;
-        return "nothrow";
-      }`),
-    ).toBe(true);
-  });
-
-  it("负控制：sealed 数组 length 增长 → 合法（length = 5）", () => {
-    expect(
-      v(`export function f() {
-        const a = [1, 2, 3];
-        Object.seal(a);
-        a.length = 5;
-        return a.length;
-      }`),
-    ).toEqual({ ok: true, value: 5 });
-  });
-
-  it("负控制：sealed 数组 length 同长写 → 合法（不删任何属性）", () => {
-    expect(
-      threw(`export function f() {
-        const a = [1, 2, 3];
-        Object.seal(a);
-        a.length = 3;
-        return "nothrow";
-      }`),
-    ).toBe(false);
-  });
-
-  it("负控制：未 seal 数组 length 截断 → 合法（length = 1）", () => {
-    expect(
-      v(`export function f() {
-        const a = [1, 2, 3];
-        a.length = 1;
-        return a.length;
-      }`),
-    ).toEqual({ ok: true, value: 1 });
-  });
-
-  it("负控制：preventExtensions 数组 length 截断 → 合法（元素仍可配置）", () => {
-    expect(
-      v(`export function f() {
-        const a = [1, 2, 3];
-        Object.preventExtensions(a);
-        a.length = 1;
-        return a.length;
-      }`),
-    ).toEqual({ ok: true, value: 1 });
-  });
-
-  it("负控制：frozen 数组 length 截断 → TypeError（既有正确）", () => {
-    expect(
-      threw(`export function f() {
-        const a = [1, 2, 3];
-        Object.freeze(a);
-        a.length = 1;
-        return "nothrow";
-      }`),
-    ).toBe(true);
-  });
-
-  it("负控制：未 seal 数组 pop() → 正常（length = 2）", () => {
-    expect(
-      v(`export function f() {
-        const a = [1, 2, 3];
-        a.pop();
-        return a.length;
-      }`),
-    ).toEqual({ ok: true, value: 2 });
-  });
-
-  it("负控制：sealed 数组 push() → TypeError（既有正确）", () => {
-    expect(
-      threw(`export function f() {
-        const a = [1, 2, 3];
-        Object.seal(a);
-        a.push(4);
-        return "nothrow";
-      }`),
-    ).toBe(true);
-  });
-
-  // ⚠️ pop()/shift() 的 sealed 门在 `containers/arr-methods.ts`
-  // （$arrMutContainer）——已由 r22-s14 分片补上（见下方用例）。
-  it("sealed 数组 pop() → TypeError", () => {
-    expect(
-      threw(`export function f() {
-        const a = [1, 2, 3];
-        Object.seal(a);
-        a.pop();
-        return "nothrow";
-      }`),
-    ).toBe(true);
-  });
-
-  it("sealed 数组 shift() → TypeError", () => {
-    expect(
-      threw(`export function f() {
-        const a = [1, 2, 3];
-        Object.seal(a);
-        a.shift();
-        return "nothrow";
-      }`),
-    ).toBe(true);
-  });
-
-  it("负控制：sealed 空数组 pop() → 不抛（原生不删任何属性）", () => {
-    expect(
-      v(`export function f() {
-        const a = [];
-        Object.seal(a);
-        a.pop();
-        return a.length;
-      }`),
-    ).toEqual({ ok: true, value: 0 });
-  });
-
-  it("负控制：sealed 空数组 shift() → 不抛（原生不删任何属性）", () => {
-    expect(
-      v(`export function f() {
-        const a = [];
-        Object.seal(a);
-        a.shift();
-        return a.length;
-      }`),
-    ).toEqual({ ok: true, value: 0 });
-  });
-
-  it("负控制：preventExtensions 数组 pop()/shift() → 不抛（元素仍可配置）", () => {
-    expect(
-      v(`export function f() {
-        const a = [1, 2];
-        Object.preventExtensions(a);
-        a.pop();
-        a.shift();
-        return a.length;
-      }`),
-    ).toEqual({ ok: true, value: 0 });
-  });
-
-  it("稀疏：sealed [1,,] 的 pop() → 不抛（末位是洞，非自有属性）", () => {
-    expect(
-      v(`export function f() {
-        const a = [1, ,];
-        Object.seal(a);
-        a.pop();
-        return a.length;
-      }`),
-    ).toEqual({ ok: true, value: 1 });
-  });
-
-  it("稀疏：sealed [,,3] 的 shift() → TypeError（前移要在不可扩展数组上新增自有属性）", () => {
-    expect(
-      threw(`export function f() {
-        const a = [, , 3];
-        Object.seal(a);
-        a.shift();
-        return "nothrow";
-      }`),
-    ).toBe(true);
+  it("sealed 截断/pop/shift 抛；增长/同长/未 seal/preventExtensions/frozen 口径", () => {
+    for (const body of [
+      `const a = [1, 2, 3]; Object.seal(a); a.length = 1; return "nothrow";`,
+      `const a = [1, 2, 3]; Object.freeze(a); a.length = 1; return "nothrow";`,
+      `const a = [1, 2, 3]; Object.seal(a); a.push(4); return "nothrow";`,
+      `const a = [1, 2, 3]; Object.seal(a); a.pop(); return "nothrow";`,
+      `const a = [1, 2, 3]; Object.seal(a); a.shift(); return "nothrow";`,
+      `const a = [, , 3]; Object.seal(a); a.shift(); return "nothrow";`,
+    ]) expect(threw(`export function f() { ${body} }`), body).toBe(true);
+    expect(v(`export function f() { const a = [1, 2, 3]; Object.seal(a); a.length = 5; return a.length; }`)).toEqual({ ok: true, value: 5 });
+    expect(threw(`export function f() { const a = [1, 2, 3]; Object.seal(a); a.length = 3; return "nothrow"; }`)).toBe(false);
+    expect(v(`export function f() { const a = [1, 2, 3]; a.length = 1; return a.length; }`)).toEqual({ ok: true, value: 1 });
+    expect(v(`export function f() { const a = [1, 2, 3]; Object.preventExtensions(a); a.length = 1; return a.length; }`)).toEqual({ ok: true, value: 1 });
+    expect(v(`export function f() { const a = [1, 2, 3]; a.pop(); return a.length; }`)).toEqual({ ok: true, value: 2 });
+    expect(v(`export function f() { const a = []; Object.seal(a); a.pop(); return a.length; }`)).toEqual({ ok: true, value: 0 });
+    expect(v(`export function f() { const a = []; Object.seal(a); a.shift(); return a.length; }`)).toEqual({ ok: true, value: 0 });
+    expect(v(`export function f() { const a = [1, 2]; Object.preventExtensions(a); a.pop(); a.shift(); return a.length; }`)).toEqual({ ok: true, value: 0 });
+    expect(v(`export function f() { const a = [1, ,]; Object.seal(a); a.pop(); return a.length; }`)).toEqual({ ok: true, value: 1 });
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
