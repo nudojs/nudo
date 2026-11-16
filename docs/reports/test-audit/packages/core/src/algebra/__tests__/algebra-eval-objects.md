@@ -53,36 +53,12 @@ switch 判别位：判别式取旧值（匹配 case 0）	计算键/static 表	�
 for 步进位：计数器前进（不撞迭代上限）	计算键/static 表	没测该层	keep	keep	—
 while 测试位：写回在求值点（多一次自增）	计算键/static 表	没测该层	keep	keep	—
 负控制：标识符目标 / 复合赋值 / 语句位不受影响	计算键/static 表	没测该层	keep	keep	—
-{ __proto__: P, b: B } → 副作用序 P → B	计算键/static 表	没测该层	keep	keep	—
-{ b: B, __proto__: P } → 副作用序 B → P	计算键/static 表	没测该层	keep	keep	—
-{ a: A, __proto__: P, b: B } → 副作用序 A → P → B	计算键/static 表	没测该层	keep	keep	—
-只有 __proto__ 的字面量 → 值表达式仍求值一次	计算键/static 表	没测该层	keep	keep	—
-__proto__ 的值表达式只求值一次	计算键/static 表	没测该层	keep	keep	—
-原型设定仍生效（getPrototypeOf 命中该原型）	计算键/static 表	没测该层	keep	keep	—
-__proto__ 仍不是自有键（Object.keys 不含它）	计算键/static 表	没测该层	keep	keep	—
-primitive 原型值被忽略（原型仍是 Object.prototype）	计算键/static 表	没测该层	keep	keep	—
-普通字面量的属性求值序不变（无 __proto__ 时不插 IIFE）	计算键/static 表	没测该层	keep	keep	—
-带 __proto__ 的字面量才引入盒子 IIFE（求值序载体）	计算键/static 表	没测该层	keep	keep	—
-无 __proto__ 的字面量：属性值求值序不变	计算键/static 表	没测该层	keep	keep	—
-方法名 __proto__ 仍是自有键（不是原型设定）	计算键/static 表	没测该层	keep	keep	—
-字面量里的 this 仍指向外层（IIFE 不得改 this 绑定）	计算键/static 表	没测该层	keep	keep	—
-带 __proto__ 的字面量里 this 绑定同样不变（IIFE 路径）	计算键/static 表	没测该层	keep	keep	—
+副作用序按属性位置；只求值一次；原型与自有键语义	proto/访问器投影表	没测该层	keep	keep	—
+负控：primitive 忽略/盒子 IIFE 只在需要时/方法名/this 绑定	proto/访问器投影表	没测该层	keep	keep	—
 getter 中间层：新对象/同对象/不触发 setter/冻结根内层可写/复合与 delete 不抛	成员路径/sealed 表	没测该层	keep	keep	—
 负控：单层 Put 访问器语义与数据属性链不变	成员路径/sealed 表	没测该层	keep	keep	—
-getter 槽投影成读域值（原生读 1），不是 exact undefined	计算键/static 表	没测该层	keep	keep	—
-formatAbs（无损面）的 shape 段同口径	计算键/static 表	没测该层	keep	keep	—
-getter 槽投影成字符串读域（原生读 "s"）	计算键/static 表	没测该层	keep	keep	—
-getter 以 this 为接收者读域（原生 this.n = 41）	计算键/static 表	没测该层	keep	keep	—
-嵌套对象的 getter 槽同样按读域投影	计算键/static 表	没测该层	keep	keep	—
-getter + 数据属性同对象：各按各自读域投影	计算键/static 表	没测该层	keep	keep	—
-守卫面按 getter 读域判定（原生读 data.ab 得 1）	计算键/static 表	没测该层	keep	keep	—
-契约投影（zod / standard 面的同源）取 getter 读域	计算键/static 表	没测该层	keep	keep	—
-契约门禁：getter 返回值满足 shape 契约（改前假红）	计算键/static 表	没测该层	keep	keep	—
-普通数据属性仍渲染成它的值类型	计算键/static 表	没测该层	keep	keep	—
-显式 undefined 数据属性仍渲染成 undefined	计算键/static 表	没测该层	keep	keep	—
-仅 setter 的访问器：原生读值恒 undefined，占位槽本就正确	计算键/static 表	没测该层	keep	keep	—
-getter 抛（读域不可刻画）→ unknown，不得回落 definite undefined	计算键/static 表	没测该层	keep	keep	—
-无访问器的对象不受影响（空对象）	计算键/static 表	没测该层	keep	keep	—
+getter 读域投影/formatAbs/this/嵌套/混排/guard/契约字段/契约门禁	proto/访问器投影表	没测该层	keep	keep	—
+负控：数据属性/显式 undefined/仅 setter/getter 抛/空对象	proto/访问器投影表	没测该层	keep	keep	—
 typeof A.prototype.m → "function"（owner 自有方法）	计算键/static 表	没测该层	keep	keep	—
 "m" in A.prototype → true	计算键/static 表	没测该层	keep	keep	—
 派生类自有方法：B.prototype.own → "function" / in → true	计算键/static 表	没测该层	keep	keep	—
@@ -696,4 +672,32 @@ typeof (5).toString → "function"（Object.prototype 继承名）	dup:prim 成�
 对象面缺失成员读 → undefined（既有语义）	dup:prim 成员表	commit:c617fc1e
 对象面缺失成员的后续读仍记 TypeError（既有语义）	dup:prim 成员表	commit:c617fc1e
 数组面不受影响（arr[0] 命中）	dup:prim 成员表	commit:c617fc1e
+{ __proto__: P, b: B } → 副作用序 P → B	dup:proto/访问器投影表	commit:7ece5a50
+{ b: B, __proto__: P } → 副作用序 B → P	dup:proto/访问器投影表	commit:7ece5a50
+{ a: A, __proto__: P, b: B } → 副作用序 A → P → B	dup:proto/访问器投影表	commit:7ece5a50
+只有 __proto__ 的字面量 → 值表达式仍求值一次	dup:proto/访问器投影表	commit:7ece5a50
+__proto__ 的值表达式只求值一次	dup:proto/访问器投影表	commit:7ece5a50
+原型设定仍生效（getPrototypeOf 命中该原型）	dup:proto/访问器投影表	commit:7ece5a50
+__proto__ 仍不是自有键（Object.keys 不含它）	dup:proto/访问器投影表	commit:7ece5a50
+primitive 原型值被忽略（原型仍是 Object.prototype）	dup:proto/访问器投影表	commit:7ece5a50
+普通字面量的属性求值序不变（无 __proto__ 时不插 IIFE）	dup:proto/访问器投影表	commit:7ece5a50
+带 __proto__ 的字面量才引入盒子 IIFE（求值序载体）	dup:proto/访问器投影表	commit:7ece5a50
+无 __proto__ 的字面量：属性值求值序不变	dup:proto/访问器投影表	commit:7ece5a50
+方法名 __proto__ 仍是自有键（不是原型设定）	dup:proto/访问器投影表	commit:7ece5a50
+字面量里的 this 仍指向外层（IIFE 不得改 this 绑定）	dup:proto/访问器投影表	commit:7ece5a50
+带 __proto__ 的字面量里 this 绑定同样不变（IIFE 路径）	dup:proto/访问器投影表	commit:7ece5a50
+getter 槽投影成读域值（原生读 1），不是 exact undefined	dup:proto/访问器投影表	commit:7ece5a50
+formatAbs（无损面）的 shape 段同口径	dup:proto/访问器投影表	commit:7ece5a50
+getter 槽投影成字符串读域（原生读 "s"）	dup:proto/访问器投影表	commit:7ece5a50
+getter 以 this 为接收者读域（原生 this.n = 41）	dup:proto/访问器投影表	commit:7ece5a50
+嵌套对象的 getter 槽同样按读域投影	dup:proto/访问器投影表	commit:7ece5a50
+getter + 数据属性同对象：各按各自读域投影	dup:proto/访问器投影表	commit:7ece5a50
+守卫面按 getter 读域判定（原生读 data.ab 得 1）	dup:proto/访问器投影表	commit:7ece5a50
+契约投影（zod / standard 面的同源）取 getter 读域	dup:proto/访问器投影表	commit:7ece5a50
+契约门禁：getter 返回值满足 shape 契约（改前假红）	dup:proto/访问器投影表	commit:7ece5a50
+普通数据属性仍渲染成它的值类型	dup:proto/访问器投影表	commit:7ece5a50
+显式 undefined 数据属性仍渲染成 undefined	dup:proto/访问器投影表	commit:7ece5a50
+仅 setter 的访问器：原生读值恒 undefined，占位槽本就正确	dup:proto/访问器投影表	commit:7ece5a50
+getter 抛（读域不可刻画）→ unknown，不得回落 definite undefined	dup:proto/访问器投影表	commit:7ece5a50
+无访问器的对象不受影响（空对象）	dup:proto/访问器投影表	commit:7ece5a50
 ```
