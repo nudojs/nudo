@@ -18,7 +18,7 @@ import { denoteGuard, formatThrowsAbs } from "@nudojs/core/internal";
 import { generateGuardFunctionFromAbs } from "../emit/guard-generator.ts";
 import { emitContract } from "../emit/contract-emitter.ts";
 import { draftContract } from "../emit/contract-draft.ts";
-import { analyzeFile as analyzeFile_____analyzer_ts, analyzeFile as analyzeFile_____analyzer_ts_2,  } from "../analyzer.ts";
+import { analyzeFile as analyzeFile_____analyzer_ts, } from "../analyzer.ts";
 import { extractFormals, extractParamNames } from "../analyzer-ast.ts";
 import type { FunctionAnalysis } from "../analyzer-types.ts";
 import { isEnvTemplatePath } from "../env-path-deps.ts";
@@ -866,7 +866,7 @@ function entryCase(fn: FunctionAnalysis) {
 /** dts 声明行 */
 function declOf(source: string, file = "/test/bug479-service.ts"): string {
   return (
-    generateDts(analyzeFile_____analyzer_ts_2(file, source))
+    generateDts(analyzeFile_____analyzer_ts(file, source))
       .split("\n")
       .find((l) => l.startsWith("export declare function")) ?? ""
   );

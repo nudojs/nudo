@@ -4,7 +4,7 @@
 import { describe, it, expect } from "vitest";
 import { checkSource, pTrue, resetGeneralizeMemo, formatAbs, type Abs, formatShape, getFnImpl, numLit, absOnly } from "@nudojs/core";
 import { collectEvalDiagnostics } from "@nudojs/service";
-import { defineEnv, defineEnv as defineEsEnv } from "../es.ts";
+import { defineEnv } from "../es.ts";
 import { defineEnv as defineWebEnv } from "../web.ts";
 import { execFileSync } from "node:child_process";
 import { checkWeb, webEnvGlobals, ctorFlagOf, instanceSlotOf, slotOf, displayOf } from "./env-helpers-globals.ts";
@@ -176,7 +176,7 @@ describe("— env promise 的拒绝 reason 逐声明可见", () => {
 
 
 
-const esEnv = defineEsEnv();
+const esEnv = defineEnv();
 const webEnv = defineWebEnv();
 
 /* ── 取证助手 ───────────────────────────────────────────────────────── */

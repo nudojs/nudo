@@ -4,7 +4,7 @@
  * 原 9 个 core--guard-* part 按义务类型归并；断言与 Abs 夹具逐字保留。
  */
 import { describe, it, expect, afterAll } from "vitest";
-import { abs, obj, strLit, type Abs, gt, lit, v, abs as makeAbs, numLit, eq, app, bool, boolLit, num, str, never, unknown, and, ge, le, v as termVar } from "@nudojs/core";
+import { abs, obj, strLit, type Abs, gt, lit, v, numLit, eq, app, bool, boolLit, num, str, never, unknown, and, ge, le } from "@nudojs/core";
 import { denoteGuard } from "@nudojs/core/internal";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { execFileSync } from "node:child_process";
@@ -118,12 +118,12 @@ describe("brand 身份必须被投影进守卫（instanceof 判定）", () => {
 
 /** brand 形态 Abs（内层默认是空槽对象面） */
 const brandOf = (name: string, inner?: Abs): Abs =>
-  makeAbs(
+  abs(
     {
       k: "brand",
       name,
       shape:
-        inner ?? makeAbs({ k: "obj", slots: {} }, undefined, undefined, "exact"),
+        inner ?? abs({ k: "obj", slots: {} }, undefined, undefined, "exact"),
     },
     undefined,
     undefined,
@@ -529,7 +529,7 @@ describe("必填槽存在性是独立子句 + 对象判定排除数组", () => {
 /** obj 形态 Abs */
 const objOfSlots = (
   slots: Record<string, { value: Abs; optional?: boolean }>,
-): Abs => makeAbs({ k: "obj", slots }, undefined, undefined, "exact");
+): Abs => abs({ k: "obj", slots }, undefined, undefined, "exact");
 
 /** 把守卫表达式当运行时函数跑 */
 const runner = (g: string): ((v: unknown) => boolean) =>
@@ -587,7 +587,7 @@ describe("guard 投影必须保真结构义务", () => {
 /** obj 形态 Abs */
 const objOfSlots = (
   slots: Record<string, { value: Abs; optional?: boolean }>,
-): Abs => makeAbs({ k: "obj", slots }, undefined, undefined, "exact");
+): Abs => abs({ k: "obj", slots }, undefined, undefined, "exact");
 
 /** 把守卫表达式当运行时函数跑 */
 const runner = (g: string): ((v: unknown) => boolean) =>
@@ -595,7 +595,7 @@ const runner = (g: string): ((v: unknown) => boolean) =>
 
 
   it("必填槽值域恰为 undefined：存在性是独立子句（不是 v.a !== undefined）", () => {
-    const undefAbs = makeAbs({ k: "unknown" }, lit(undefined), undefined, "exact");
+    const undefAbs = abs({ k: "unknown" }, lit(undefined), undefined, "exact");
     const g = denoteGuard(
       objOfSlots({ a: { value: undefAbs }, b: { value: numLit(1) } }),
       "data",
@@ -610,7 +610,7 @@ const runner = (g: string): ((v: unknown) => boolean) =>
   });
 
   it("必填槽值域恰为 undefined：缺键被拒、存在但为 undefined 被放行", () => {
-    const undefAbs = makeAbs({ k: "unknown" }, lit(undefined), undefined, "exact");
+    const undefAbs = abs({ k: "unknown" }, lit(undefined), undefined, "exact");
     const check = runner(
       denoteGuard(
         objOfSlots({ a: { value: undefAbs }, b: { value: numLit(1) } }),
@@ -624,8 +624,8 @@ const runner = (g: string): ((v: unknown) => boolean) =>
   });
 
   it("长度界 length(3) 被投影成 v.length 比较（不再整段蒸发）", () => {
-    const lenTerm = termVar("s");
-    const a = makeAbs(
+    const lenTerm = v("s");
+    const a = abs(
       { k: "prim", type: "string" },
       lenTerm,
       and(
@@ -645,14 +645,14 @@ const runner = (g: string): ((v: unknown) => boolean) =>
   });
 
   it("单边长度界：max(3) ⇒ <= ，min(2) ⇒ >=", () => {
-    const lenTerm = termVar("s");
-    const max = makeAbs(
+    const lenTerm = v("s");
+    const max = abs(
       { k: "prim", type: "string" },
       lenTerm,
       le(app("length", [lenTerm]), lit(3)),
       "exact",
     );
-    const min = makeAbs(
+    const min = abs(
       { k: "prim", type: "string" },
       lenTerm,
       ge(app("length", [lenTerm]), lit(2)),
@@ -667,18 +667,18 @@ const runner = (g: string): ((v: unknown) => boolean) =>
   });
 
   it("负控制：非 length 的 app 项 / 非自指锚点不得被投影成长度界", () => {
-    const lenTerm = termVar("s");
-    const other = makeAbs(
+    const lenTerm = v("s");
+    const other = abs(
       { k: "prim", type: "string" },
       lenTerm,
       ge(app("get", [lenTerm]), lit(3)),
       "exact",
     );
     expect(denoteGuard(other, "data")).not.toContain("data.length");
-    const foreign = makeAbs(
+    const foreign = abs(
       { k: "prim", type: "string" },
       lenTerm,
-      ge(app("length", [termVar("other")]), lit(3)),
+      ge(app("length", [v("other")]), lit(3)),
       "exact",
     );
     expect(denoteGuard(foreign, "data")).not.toContain("data.length");

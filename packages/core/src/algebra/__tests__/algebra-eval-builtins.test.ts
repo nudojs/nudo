@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { abs, litValue, num, type Abs } from "../abs.ts";
 import { STRING_METHODS } from "../exec/member-diag.ts";
 import { call, effects, throwsError, isNever, val, tupleEls } from "./eval-helpers.ts";
-import { litValue as litValue___nudojs_core, litValue as litValue___nudojs_core_1, litValue as litValue___nudojs_core_2, litValue as litValue___nudojs_core_3, litValue as litValue___nudojs_core_4, litValue as litValue___nudojs_core_5, litValue as litValue___nudojs_core_6, litValue as litValue___nudojs_core_7, litValue as litValue___nudojs_core_8, litValue as litValue___nudojs_core_9, formatShape as formatShape___nudojs_core, litValue as litValue___nudojs_core_10, litValue as litValue___nudojs_core_11, litValue as litValue___nudojs_core_12, litValue as litValue___nudojs_core_13, litValue as litValue___nudojs_core_14, runTranspiled, callTranspiledExportFull, abs as abs___nudojs_core, formatShape as formatShape___nudojs_core_1, litValue as litValue___nudojs_core_15, formatShape as formatShape___nudojs_core_2, litValue as litValue___nudojs_core_16, litValue as litValue___nudojs_core_17, litValue as litValue___nudojs_core_18 } from "@nudojs/core";
+import { litValue as litValue___nudojs_core, formatShape as formatShape___nudojs_core, runTranspiled, callTranspiledExportFull, abs as abs___nudojs_core, } from "@nudojs/core";
 import { formatShape, checkSource as checkSource_____index_ts, pTrue } from "../index.ts";
 import { enumOwnKeys, enumOwnStringKeys } from "../builtins/invariants.ts";
 import { objOf } from "../objects.ts";
@@ -284,7 +284,7 @@ describe("Proxy [[Get]] 不变量（不可配置+不可写属性须返回实际�
 
 /** 结果字面量值（litValue） */
 function v(src: string) {
-  return litValue___nudojs_core_1(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 /** 抛错名（无抛错 → ""） */
@@ -500,7 +500,7 @@ const wrap = (body: string) => `export function f() { ${body} }`;
 
 /** 结果字面量值（litValue） */
 function v(src: string) {
-  return litValue___nudojs_core_2(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 
@@ -581,7 +581,7 @@ describe("length 域校验走 ToNumber（具体非数值定抛 RangeError）", (
 
 
 function v(src: string) {
-  return litValue___nudojs_core_3(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 function threw(src: string, name = "RangeError"): boolean {
@@ -740,7 +740,7 @@ function isExactUndef(r: unknown): boolean {
     expect(isExactUndef(r)).toBe(true);
   }
   {
-    const r = litValue___nudojs_core_4(call(`export function f() { const a=[1,2,3]; return a[0]; }`, "f").result);
+    const r = litValue___nudojs_core(call(`export function f() { const a=[1,2,3]; return a[0]; }`, "f").result);
     expect(r).toEqual({ ok: true, value: 1 });
   }
   {
@@ -865,7 +865,7 @@ const wrap = (body: string) => `export function f() { ${body} }`;
 
 /** 结果字面量值（litValue） */
 function v(src: string) {
-  return litValue___nudojs_core_5(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 /** 结果的 brand 名（非 brand → ""） */
@@ -1595,7 +1595,7 @@ describe("Date.prototype.set* 回写 time value（精确面不再过期）", () 
 
 /** 结果字面量值（litValue） */
 function v(src: string) {
-  return litValue___nudojs_core_6(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 /** 抛错名（无抛错 → ""） */
@@ -1717,7 +1717,7 @@ describe("JSON.parse 的 callable reviver 副作用通道", () => {
 
 
 function v(src: string) {
-  return litValue___nudojs_core_7(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 
@@ -1828,7 +1828,7 @@ describe("Reflect.set 的 receiver 语义 + Proxy 反射口径", () => {
 
 /** 结果字面量值（litValue） */
 function v(src: string) {
-  return litValue___nudojs_core_8(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 /** 入口 throws 面（brand 名）——未抛则 undefined */
@@ -2325,7 +2325,7 @@ describe("RegExp 自有 lastIndex 进 gOPN / gOPD", () => {
 
 
 function v(src: string) {
-  return litValue___nudojs_core_9(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 function thrown(src: string): string | undefined {
@@ -2417,7 +2417,7 @@ const wrap = (body: string) => `export function f() { ${body} }`;
   it("new URL(u).searchParams.get(\"a\") → 精确 \"1\"（修前：确定抛 TypeError ⇒ 折 never）；new URL(u).searchParams 是 URLSearchParams 品牌（不再是 undefined）；typeof new URL(u).searchParams → \"object\"（原生同款；修前是 \"undefined\"）", () => {
   {
     const r = call(wrap(`return new URL("https://x/?a=1").searchParams.get("a");`), "f");
-    expect(litValue___nudojs_core_10(r.result)).toEqual({ ok: true, value: "1" });
+    expect(litValue___nudojs_core(r.result)).toEqual({ ok: true, value: "1" });
     expect(throwsError(r.throws, "TypeError")).toBe(false);
     expect(isNever(r.result)).toBe(false);
   }
@@ -2428,7 +2428,7 @@ const wrap = (body: string) => `export function f() { ${body} }`;
   }
   {
     const r = call(wrap(`return typeof new URL("https://x/?a=1").searchParams;`), "f");
-    expect(litValue___nudojs_core_10(r.result)).toEqual({ ok: true, value: "object" });
+    expect(litValue___nudojs_core(r.result)).toEqual({ ok: true, value: "object" });
   }
 });
 
@@ -2439,15 +2439,15 @@ describe("负控制（URL 其它组件槽不变 + 非法 URL 仍确定抛）", (
   it("new URL(u).href → \"https://x/?a=1\"；new URL(u).search → \"?a=1\"；new URL(u).origin → \"https://x\"（相邻组件槽不回归）；非法 URL 仍确定抛 TypeError（不被 searchParams 补丁放宽）", () => {
   {
     const r = call(wrap(`return new URL("https://x/?a=1").href;`), "f");
-    expect(litValue___nudojs_core_10(r.result)).toEqual({ ok: true, value: "https://x/?a=1" });
+    expect(litValue___nudojs_core(r.result)).toEqual({ ok: true, value: "https://x/?a=1" });
   }
   {
     const r = call(wrap(`return new URL("https://x/?a=1").search;`), "f");
-    expect(litValue___nudojs_core_10(r.result)).toEqual({ ok: true, value: "?a=1" });
+    expect(litValue___nudojs_core(r.result)).toEqual({ ok: true, value: "?a=1" });
   }
   {
     const r = call(wrap(`return new URL("https://x/?a=1").origin;`), "f");
-    expect(litValue___nudojs_core_10(r.result)).toEqual({ ok: true, value: "https://x" });
+    expect(litValue___nudojs_core(r.result)).toEqual({ ok: true, value: "https://x" });
   }
   {
     const r = call(wrap(`return new URL("not a url").href;`), "f");
@@ -2484,7 +2484,7 @@ describe("Object.prototype.toLocaleString 委派 this.toString()", () => {
 
 
 function v(src: string) {
-  return litValue___nudojs_core_11(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 const wrap = (body: string) => `export function f() { ${body} }`;
@@ -2771,7 +2771,7 @@ describe("Date.prototype.toJSON 对非法日期返回 null", () => {
 
 /** 结果字面量值（litValue） */
 function v(src: string) {
-  return litValue___nudojs_core_12(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 /** 抛错名（无抛错 → ""） */
@@ -2851,7 +2851,7 @@ describe("Reflect.set(arr, \"length\", v) 落 ArraySetLength", () => {
 
 /** 结果字面量值（litValue） */
 function v(src: string) {
-  return litValue___nudojs_core_13(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 /** 入口 throws 面（brand 名）——未抛则 undefined */
@@ -3283,7 +3283,7 @@ describe("开放键集对象的 keys/values/entries 折 partial", () => {
 
 
 function v(src: string) {
-  return litValue___nudojs_core_14(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 const wrap = (body: string) => `export function f() { ${body} }`;
@@ -3709,22 +3709,22 @@ const wrap = (body: string) => `export function f() { ${body} }`;
   {
     const r = call(wrap(`return String(new Date(0));`), "f");
     expect(throwsError(r.throws, "TypeError")).toBe(false);
-    expect(formatShape___nudojs_core_1(r.result)).toBe("string");
+    expect(formatShape___nudojs_core(r.result)).toBe("string");
   }
   {
     const r = call(wrap(`return String(new Map());`), "f");
     expect(throwsError(r.throws, "TypeError")).toBe(false);
-    expect(formatShape___nudojs_core_1(r.result)).toBe("string");
+    expect(formatShape___nudojs_core(r.result)).toBe("string");
   }
   {
     const r = call(wrap(`return String({});`), "f");
     expect(throwsError(r.throws, "TypeError")).toBe(false);
-    expect(formatShape___nudojs_core_1(r.result)).toBe("string");
+    expect(formatShape___nudojs_core(r.result)).toBe("string");
   }
   {
     const r = call(wrap("return `${new Date(0)}`;"), "f");
     expect(throwsError(r.throws, "TypeError")).toBe(false);
-    expect(formatShape___nudojs_core_1(r.result)).toBe("string");
+    expect(formatShape___nudojs_core(r.result)).toBe("string");
   }
 });
 
@@ -3740,24 +3740,24 @@ describe("负控制（同一载荷内部不再自相矛盾 + 相邻面不回归�
     expect(throwsError(viaString.throws, "TypeError")).toBe(false);
     expect(throwsError(viaTemplate.throws, "TypeError")).toBe(false);
     // 两侧的值域一致（都是 string 域）
-    expect(formatShape___nudojs_core_1(viaString.result)).toBe(formatShape___nudojs_core_1(viaTemplate.result));
+    expect(formatShape___nudojs_core(viaString.result)).toBe(formatShape___nudojs_core(viaTemplate.result));
   }
   {
     const r = call(wrap(`return String(123);`), "f");
-    expect(litValue___nudojs_core_15(r.result)).toEqual({ ok: true, value: "123" });
+    expect(litValue___nudojs_core(r.result)).toEqual({ ok: true, value: "123" });
     expect(throwsError(r.throws, "TypeError")).toBe(false);
   }
   {
     const r = call(wrap(`return String(new Error("x"));`), "f");
     expect(throwsError(r.throws, "TypeError")).toBe(false);
-    expect(formatShape___nudojs_core_1(r.result)).toBe("string");
+    expect(formatShape___nudojs_core(r.result)).toBe("string");
   }
   {
-    expect(litValue___nudojs_core_15(call(wrap(`return String(null);`), "f").result)).toEqual({
+    expect(litValue___nudojs_core(call(wrap(`return String(null);`), "f").result)).toEqual({
       ok: true,
       value: "null",
     });
-    expect(litValue___nudojs_core_15(call(wrap(`return String(undefined);`), "f").result)).toEqual({
+    expect(litValue___nudojs_core(call(wrap(`return String(undefined);`), "f").result)).toEqual({
       ok: true,
       value: "undefined",
     });
@@ -3823,27 +3823,27 @@ const wrap = (body: string) => `export function f() { ${body} }`;
   it("typeof new Intl.Collator() → \"object\"（原生同款）；new Intl.Collator() 是 Intl.Collator 品牌实例（不是 undefined / 伪名）；new Intl.Collator().name → undefined（**实例**没有 name 属性——报告的 \"Collator\" 是勘误）；new Intl.Collator(\"en\").name → undefined（带 locale 参数同款）；typeo", () => {
   {
     const r = call(wrap(`return typeof new Intl.Collator();`), "f");
-    expect(litValue___nudojs_core_16(r.result)).toEqual({ ok: true, value: "object" });
+    expect(litValue___nudojs_core(r.result)).toEqual({ ok: true, value: "object" });
     expect(throwsError(r.throws, "TypeError")).toBe(false);
   }
   {
     const r = call(wrap(`return new Intl.Collator();`), "f");
-    expect(formatShape___nudojs_core_2(r.result)).toBe("Intl.Collator");
+    expect(formatShape___nudojs_core(r.result)).toBe("Intl.Collator");
     expect(throwsError(r.throws, "TypeError")).toBe(false);
   }
   {
     // node v26.10.0：new Intl.Collator().name === undefined
     // （"Collator" 是**构造器函数** Intl.Collator.name，见下一组断言）
     const r = call(wrap(`return new Intl.Collator().name;`), "f");
-    expect(litValue___nudojs_core_16(r.result)).toEqual({ ok: true, value: undefined });
+    expect(litValue___nudojs_core(r.result)).toEqual({ ok: true, value: undefined });
   }
   {
     const r = call(wrap(`return new Intl.Collator("en").name;`), "f");
-    expect(litValue___nudojs_core_16(r.result)).toEqual({ ok: true, value: undefined });
+    expect(litValue___nudojs_core(r.result)).toEqual({ ok: true, value: undefined });
   }
   {
     const r = call(wrap(`return typeof Intl.Collator;`), "f");
-    expect(litValue___nudojs_core_16(r.result)).toEqual({ ok: true, value: "function" });
+    expect(litValue___nudojs_core(r.result)).toEqual({ ok: true, value: "function" });
   }
 });
 
@@ -3856,22 +3856,22 @@ describe("构造器 fn 的 name 面（原生是**子构造器名**，非限定�
   it("Intl.NumberFormat.name → \"NumberFormat\"（已建模子构造器：原生同款）；Intl.DateTimeFormat.name → \"DateTimeFormat\"（已建模子构造器：原生同款）；Intl.Collator.name → \"Collator\"（原生同款：非限定名）；Intl.Locale.name → \"Locale\"（原生同款：非限定名）", () => {
   {
     const r = call(wrap(`return Intl.NumberFormat.name;`), "f");
-    expect(litValue___nudojs_core_16(r.result)).toEqual({ ok: true, value: "NumberFormat" });
+    expect(litValue___nudojs_core(r.result)).toEqual({ ok: true, value: "NumberFormat" });
   }
   {
     const r = call(wrap(`return Intl.DateTimeFormat.name;`), "f");
-    expect(litValue___nudojs_core_16(r.result)).toEqual({ ok: true, value: "DateTimeFormat" });
+    expect(litValue___nudojs_core(r.result)).toEqual({ ok: true, value: "DateTimeFormat" });
   }
   {
     // 收口：Intl 子构造器的**内部派发键**（"Intl.Collator"）只留在
     // shape.name（原型 brand 路由要它），读面剥掉 "Intl." 前缀 ⇒ 原生
     // `fn.name` 投影（非限定名）。
     const r = call(wrap(`return Intl.Collator.name;`), "f");
-    expect(litValue___nudojs_core_16(r.result)).toEqual({ ok: true, value: "Collator" });
+    expect(litValue___nudojs_core(r.result)).toEqual({ ok: true, value: "Collator" });
   }
   {
     const r = call(wrap(`return Intl.Locale.name;`), "f");
-    expect(litValue___nudojs_core_16(r.result)).toEqual({ ok: true, value: "Locale" });
+    expect(litValue___nudojs_core(r.result)).toEqual({ ok: true, value: "Locale" });
   }
 });
 
@@ -3888,7 +3888,7 @@ describe("实例方法面（未建模子构造器）", () => {
     // （compare / resolvedOptions）⇒ 实例方法面折精确 "function"
     // （此前是 unknown 域——imprecise 但 sound）。
     const r = call(wrap(`return typeof new Intl.Collator().compare;`), "f");
-    expect(litValue___nudojs_core_16(r.result)).toEqual({ ok: true, value: "function" });
+    expect(litValue___nudojs_core(r.result)).toEqual({ ok: true, value: "function" });
   }
   {
     const r = call(wrap(`return new Intl.Collator().compare("a", "b");`), "f");
@@ -3932,13 +3932,13 @@ const wrap = (body: string) => `export function f() { ${body} }`;
 
 /** 结果字面量值（litValue） */
 function v(src: string) {
-  return litValue___nudojs_core_17(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 /** 结果是不是「非 exact 的抽象值」（已知偏差探针：引擎说「不知道」而非「说错」） */
 function isInexact(src: string): boolean {
   const r = call(src, "f").result;
-  return !litValue___nudojs_core_17(r).ok;
+  return !litValue___nudojs_core(r).ok;
 }
 
 /** 抛错名（无抛错 → ""） */
@@ -4297,7 +4297,7 @@ describe("Math.min / Math.max 区间端点合并（合取位取更松的一侧�
 
 /** 结果字面量值（litValue） */
 function v(src: string) {
-  return litValue___nudojs_core_18(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 /** 带数值界的实参（x > 0 / x < 0）——驱动 numericBounds 区间路径 */
@@ -4325,7 +4325,7 @@ function checkOf(src: string, sidecar: string) {
       "f",
       [numArg("x", "gt", 0)],
     );
-    expect(litValue___nudojs_core_18(r.result)).toEqual({ ok: true, value: "nonpos" });
+    expect(litValue___nudojs_core(r.result)).toEqual({ ok: true, value: "nonpos" });
   }
   {
     const r = call(
@@ -4333,7 +4333,7 @@ function checkOf(src: string, sidecar: string) {
       "f",
       [numArg("x", "lt", 0)],
     );
-    expect(litValue___nudojs_core_18(r.result)).toEqual({ ok: true, value: "nonneg" });
+    expect(litValue___nudojs_core(r.result)).toEqual({ ok: true, value: "nonneg" });
   }
   {
     const r = call(
@@ -4341,7 +4341,7 @@ function checkOf(src: string, sidecar: string) {
       "f",
       [numArg("x", "gt", 0)],
     );
-    expect(litValue___nudojs_core_18(r.result)).toEqual({ ok: true, value: "nonneg" });
+    expect(litValue___nudojs_core(r.result)).toEqual({ ok: true, value: "nonneg" });
   }
   {
     const r = call(
@@ -4349,7 +4349,7 @@ function checkOf(src: string, sidecar: string) {
       "f",
       [numArg("x", "lt", 0)],
     );
-    expect(litValue___nudojs_core_18(r.result)).toEqual({ ok: true, value: "nonpos" });
+    expect(litValue___nudojs_core(r.result)).toEqual({ ok: true, value: "nonpos" });
   }
   {
     const r = checkOf(
@@ -4394,8 +4394,8 @@ export const branchOne = fn({ x: number().gt(0) }, number().gt(0));`,
       [bad],
     );
     // ex falso 会把矛盾的 `> 5 ∧ < 3` 当恒真 ⇒ 折成 "big"（错的确定值）
-    expect(litValue___nudojs_core_18(r.result)).not.toEqual({ ok: true, value: "big" });
-    expect(litValue___nudojs_core_18(r.result)).toEqual({ ok: false });
+    expect(litValue___nudojs_core(r.result)).not.toEqual({ ok: true, value: "big" });
+    expect(litValue___nudojs_core(r.result)).toEqual({ ok: false });
   }
 });
 
@@ -4415,7 +4415,7 @@ describe("负控制（区间合并的邻近形态不回归）", () => {
       "f",
       [numArg("x", "gt", 0)],
     );
-    expect(litValue___nudojs_core_18(r.result)).toEqual({ ok: true, value: "pos" });
+    expect(litValue___nudojs_core(r.result)).toEqual({ ok: true, value: "pos" });
   }
   {
     const r = call(
@@ -4423,7 +4423,7 @@ describe("负控制（区间合并的邻近形态不回归）", () => {
       "f",
       [numArg("x", "gt", 0)],
     );
-    expect(litValue___nudojs_core_18(r.result)).toEqual({ ok: true, value: "pos" });
+    expect(litValue___nudojs_core(r.result)).toEqual({ ok: true, value: "pos" });
   }
   {
     const r = call(
@@ -4431,7 +4431,7 @@ describe("负控制（区间合并的邻近形态不回归）", () => {
       "f",
       [numArg("x", "lt", 0)],
     );
-    expect(litValue___nudojs_core_18(r.result)).toEqual({ ok: true, value: "nonneg" });
+    expect(litValue___nudojs_core(r.result)).toEqual({ ok: true, value: "nonneg" });
   }
   {
     expect(v(`export function f() { return Math.min(3, 5); }`)).toEqual({ ok: true, value: 3 });

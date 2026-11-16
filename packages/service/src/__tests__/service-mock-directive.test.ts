@@ -11,12 +11,12 @@ import { analyzeFileAsync, analyzeFile } from "../analyzer.ts";
 import { join } from "node:path";
 import { applyMockModuleDirectivesFromSource } from "../mock-module.ts";
 import { collectCheckSupplementIssues, directiveDiagIssues } from "../check-issues.ts";
-import { tmpProject, writeTmpFile, withTmpProject, tmpProject as makeTmpProject } from "./tmp-project.ts";
+import { tmpProject, writeTmpFile, withTmpProject } from "./tmp-project.ts";
 import { l2Count } from "./check-helpers.ts";
 import { analyzeFile as analyzeFile___nudojs_service } from "@nudojs/service";
 import { generateDts } from "../emit/dts-generator.ts";
-import { collectEvalReplacements as collectEvalReplacements_____eval_injection_ts, collectEvalReplacements as collectEvalReplacements_____eval_injection_ts_1, resolveEvalInjection } from "../eval-injection.ts";
-import { readFileSync,  } from "node:fs";
+import { collectEvalReplacements as collectEvalReplacements_____eval_injection_ts, resolveEvalInjection } from "../eval-injection.ts";
+import { readFileSync, } from "node:fs";
 import { collectSkipReturns } from "../skip-directives.ts";
 import { pureFnNamesOfAst } from "../eval-pure.ts";
 import { hasNudoDirectives, shouldAnalyzeFile } from "../analysis-scope.ts";
@@ -774,7 +774,7 @@ export function getNoMatch() { return x; }
 
 function directiveDiagsOf(src: string): DirectiveDiag[] {
   const diags: DirectiveDiag[] = [];
-  collectEvalReplacements_____eval_injection_ts_1(src, { diags });
+  collectEvalReplacements_____eval_injection_ts(src, { diags });
   return diags.filter((d) => d.code === "nudo:directive-syntax");
 }
 
@@ -791,7 +791,7 @@ function signatureOf(src: string, name: string): string {
 
 /** 未命中 ⇒ 收集面登记的是**无作用域**条目（无 stmtStart/stmtEnd） */
 function registeredOffsets(src: string): Array<number | undefined> {
-  return collectEvalReplacements_____eval_injection_ts_1(src).targets.map((t) => t.stmtStart);
+  return collectEvalReplacements_____eval_injection_ts(src).targets.map((t) => t.stmtStart);
 }
 
 {
@@ -799,7 +799,7 @@ function registeredOffsets(src: string): Array<number | undefined> {
   const OBJ_KEY = '// @nudo:replace a number()\nconst o = { a: 1 };\nexport function getObjKey() { return o.a; }\n';
   const OBJ_VAL = '// @nudo:replace 1 number()\nconst o = { a: 1 };\nexport function getObjVal() { return o.a; }\n';
   const NO_MATCH = '// @nudo:replace zzz number()\nconst x = 5;\nexport function getNoMatch() { return x; }\n';
-  const directiveDiagsOf = (src: string) => { const diags: DirectiveDiag[] = []; collectEvalReplacements_____eval_injection_ts_1(src, { diags }); return diags.filter((d) => d.code === "nudo:directive-syntax"); };
+  const directiveDiagsOf = (src: string) => { const diags: DirectiveDiag[] = []; collectEvalReplacements_____eval_injection_ts(src, { diags }); return diags.filter((d) => d.code === "nudo:directive-syntax"); };
   const signatureOf = (src: string, name: string): string => {
     const inject = resolveEvalInjection(src);
     const report = checkSource("/tmp/bug-184.js", src, undefined, { fromFile: "/tmp/bug-184.js", ...(inject ? { inject } : {}) });
@@ -807,7 +807,7 @@ function registeredOffsets(src: string): Array<number | undefined> {
     expect(sig, name).toBeDefined();
     return sig!.display;
   };
-  const registeredOffsets = (src: string) => collectEvalReplacements_____eval_injection_ts_1(src).targets.map((t) => t.stmtStart);
+  const registeredOffsets = (src: string) => collectEvalReplacements_____eval_injection_ts(src).targets.map((t) => t.stmtStart);
   it("绑定位/对象键位不算命中且诊断；属性值命中生效；未命中告警", () => {
     expect(registeredOffsets(DECL_ID)).toEqual([undefined]);
     const declDiags = directiveDiagsOf(DECL_ID);
@@ -1121,7 +1121,7 @@ function sourceWith(name: string): string {
 }
 
 function tmpDirProject(): string {
-  return makeTmpProject("nudo-scope-458-", {
+  return tmpProject("nudo-scope-458-", {
     "package.json": JSON.stringify({ name: "fx", nudo: { analysis: { mode: "directives" } } }),
   });
 }
@@ -1137,7 +1137,7 @@ export function f(x) {
   return x;
 }
 `;
-  const tmpDirProject = () => makeTmpProject("nudo-scope-458-", { "package.json": JSON.stringify({ name: "fx", nudo: { analysis: { mode: "directives" } } }) });
+  const tmpDirProject = () => tmpProject("nudo-scope-458-", { "package.json": JSON.stringify({ name: "fx", nudo: { analysis: { mode: "directives" } } }) });
   it("新四指令识别并纳入；既有指令不回退；无指令/字符串假命中仍排除", () => {
     for (const name of MISSING) expect(hasNudoDirectives(sourceWith(name)), name).toBe(true);
     const dir = tmpDirProject();
@@ -1286,7 +1286,7 @@ function sigValue(source: string, fromFile: string, name: string): unknown {
     expect(sigValue(INLINE_FN_EXPR, "/tmp/b482-d.js", "greet")).not.toBe("caught");
     expect(sigValue(LOCAL_ARROW, "/tmp/b482-e.js", "greet")).toBe("caught");
 
-    const dir = makeTmpProject("nudo-b482-", { "mocks/greeter.js": 'export const Greeter = () => ({ msg: "mocked" });\n', "app.js": '/**\n * @nudo:mock Greeter from "./mocks/greeter.js"\n */\nexport function greet() {\n  try { return new Greeter().msg; } catch { return "caught"; }\n}\n' });
+    const dir = tmpProject("nudo-b482-", { "mocks/greeter.js": 'export const Greeter = () => ({ msg: "mocked" });\n', "app.js": '/**\n * @nudo:mock Greeter from "./mocks/greeter.js"\n */\nexport function greet() {\n  try { return new Greeter().msg; } catch { return "caught"; }\n}\n' });
     const entry = join(dir, "app.js");
     const source = readFileSync(entry, "utf-8");
     const mocks = mockSeedsToAbsMocks(mockDirectivesToAbsSeeds(extractDirectivesQuiet(parse(source)), { fromFile: entry }));
@@ -1373,7 +1373,7 @@ function check(file: string, source: string, entry: string) {
     expect((rejectsSig.abs.shape as { eff?: string }).eff).toBe("promise");
     expect(formatShape(rejectsSig.abs)).not.toBe("never");
 
-    const dir = makeTmpProject("nudo-b488-", { "a.js": REJECTS, "a.nudo.js": 'import { fn, string } from "@nudojs/core";\nexport const f = fn({}, string());\n' });
+    const dir = tmpProject("nudo-b488-", { "a.js": REJECTS, "a.nudo.js": 'import { fn, string } from "@nudojs/core";\nexport const f = fn({}, string());\n' });
     const entry = join(dir, "a.js");
     const source = readFileSync(entry, "utf-8");
     expect(check(entry, source, entry).issues.filter((i) => i.code === "nudo:unproven-return").length).toBeGreaterThanOrEqual(1);
@@ -1387,7 +1387,7 @@ function check(file: string, source: string, entry: string) {
     expect(returnsSig.abs.shape.k).toBe("prim");
     expect(formatShape(returnsSig.abs)).toContain("42");
 
-    const dir2 = makeTmpProject("nudo-b488b-", { "b.js": RESOLVES, "b.nudo.js": 'import { fn, string } from "@nudojs/core";\nexport const f = fn({}, string());\n' });
+    const dir2 = tmpProject("nudo-b488b-", { "b.js": RESOLVES, "b.nudo.js": 'import { fn, string } from "@nudojs/core";\nexport const f = fn({}, string());\n' });
     const entry2 = join(dir2, "b.js");
     const source2 = readFileSync(entry2, "utf-8");
     expect(check(entry2, source2, entry2).issues.filter((i) => i.code === "nudo:unproven-return").length).toBeGreaterThanOrEqual(1);

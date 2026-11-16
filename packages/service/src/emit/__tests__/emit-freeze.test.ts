@@ -2,7 +2,7 @@
  * 模块套件：emit 产物保真面（缩进/CRLF/BOM/EOF/section 幂等/可重现）。
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { abs as makeAbs, num, abs, numLit, type Abs, execNudoModule, formatConstraint, type NudoConstraint } from "@nudojs/core";
+import { num, abs, numLit, type Abs, execNudoModule, formatConstraint, type NudoConstraint } from "@nudojs/core";
 import { analyzeFile, type AnalysisResult } from "@nudojs/service";
 import { insertGeneratedCaseDirectives, serializeCaseArgs, buildCaseDirective, unifiedDiff, stripGeneratedCaseDirectives } from "../case-emitter.ts";
 import { execFileSync } from "node:child_process";
@@ -44,14 +44,14 @@ describe("freeze 写回的 JSDoc 块按声明语句列缩进", () => {
 
 
 
-function absExact(shape: Parameters<typeof makeAbs>[0]): ReturnType<typeof makeAbs> {
-  return makeAbs(shape, undefined, undefined, "exact");
+function absExact(shape: Parameters<typeof abs>[0]): ReturnType<typeof abs> {
+  return abs(shape, undefined, undefined, "exact");
 }
 
 function makeFn(
   name: string,
   line: number,
-  cases: Array<{ name: string; args: ReturnType<typeof makeAbs>[]; source?: "callsite" }>,
+  cases: Array<{ name: string; args: ReturnType<typeof abs>[]; source?: "callsite" }>,
   flags: { column?: number } = {},
 ): FunctionAnalysis {
   return {
@@ -184,8 +184,8 @@ describe("freeze 写回不污染 CRLF 源文件的行尾", () => {
 
 
 
-function absExact(shape: Parameters<typeof makeAbs>[0]): ReturnType<typeof makeAbs> {
-  return makeAbs(shape, undefined, undefined, "exact");
+function absExact(shape: Parameters<typeof abs>[0]): ReturnType<typeof abs> {
+  return abs(shape, undefined, undefined, "exact");
 }
 
 function makeFn(name: string, line: number, caseName: string): FunctionAnalysis {

@@ -8,7 +8,7 @@ import { readFileSync, statSync, utimesSync, writeFileSync, rmSync, mkdirSync } 
 import { join } from "node:path";
 import { analyzeFileAsync, analysisFileCacheKey, analyzeFile } from "../analyzer.ts";
 import { clearFnAnalysisCache } from "../fn-analysis-cache.ts";
-import { tmpProject, writeTmpFile, writeTmpFiles, tmpProject as makeTmpProject } from "./tmp-project.ts";
+import { writeTmpFile, writeTmpFiles, tmpProject as makeTmpProject } from "./tmp-project.ts";
 import { isNudoTargetPath } from "../target-path.ts";
 import { defineEnv as defineNodeEnv } from "@nudojs/env/node";
 import { defineEnv as defineWebEnv } from "@nudojs/env/web";
@@ -167,7 +167,7 @@ beforeEach(() => {
   };
   beforeEach(() => { clearFnAnalysisCache(); });
   it("env 内容变 mtime 不变 ⇒ 必须 miss；内容不变两次一致", async () => {
-    const dir = tmpProject("nudo-b012-env-", {
+    const dir = makeTmpProject("nudo-b012-env-", {
       "package.json": JSON.stringify({ name: "p", nudo: { env: ["./env.ts"] } }),
       "env.ts": ENV_NUM,
       "main.js": "export function f() { return v; }\n",
@@ -181,7 +181,7 @@ beforeEach(() => {
     utimesSync(envPath, st.atime, st.mtime);
     expect(await returnShapeOf(mainPath, source)).toBe('"hello"');
 
-    const stableDir = tmpProject("nudo-b012-stable-", {
+    const stableDir = makeTmpProject("nudo-b012-stable-", {
       "package.json": JSON.stringify({ name: "p", nudo: { env: ["./env.ts"] } }),
       "env.ts": ENV_NUM,
       "main.js": "export function f() { return v; }\n",
@@ -453,17 +453,17 @@ const APP_SRC = `export function f() { return 1; }\n`;
 `;
   beforeEach(() => { clearPathEnvCaches(); });
   it("项目级 env 按项目根：存在不假阳、加载失败可见；文件级仍按文件目录", async () => {
-    const okDir = tmpProject("nudo-1081-env-", { "package.json": JSON.stringify({ name: "proj", nudo: { env: ["./env.ts"] } }), "env.ts": ENV_OK, "src/app.js": APP_SRC });
+    const okDir = makeTmpProject("nudo-1081-env-", { "package.json": JSON.stringify({ name: "proj", nudo: { env: ["./env.ts"] } }), "env.ts": ENV_OK, "src/app.js": APP_SRC });
     expect(envMessages(join(okDir, "src/app.js"), APP_SRC)).toEqual([]);
 
-    const failDir = tmpProject("nudo-1081-env-fail-", { "package.json": JSON.stringify({ name: "proj", nudo: { env: ["./env.ts"] } }), "env.ts": ENV_NO_DEFINE, "src/app.js": APP_SRC });
+    const failDir = makeTmpProject("nudo-1081-env-fail-", { "package.json": JSON.stringify({ name: "proj", nudo: { env: ["./env.ts"] } }), "env.ts": ENV_NO_DEFINE, "src/app.js": APP_SRC });
     await preloadPathEnvs(["./env.ts"], failDir);
     const msgs = envMessages(join(failDir, "src/app.js"), APP_SRC);
     expect(msgs.length).toBeGreaterThan(0);
     expect(msgs.join("\n")).toContain(join(failDir, "env.ts"));
     expect(msgs.join("\n")).not.toContain(join(failDir, "src", "env.ts"));
 
-    const fileDir = tmpProject("nudo-1081-file-env-", { "package.json": JSON.stringify({ name: "proj" }), "src/app.js": `/// @nudo:env ./missing.ts\n${APP_SRC}` });
+    const fileDir = makeTmpProject("nudo-1081-file-env-", { "package.json": JSON.stringify({ name: "proj" }), "src/app.js": `/// @nudo:env ./missing.ts\n${APP_SRC}` });
     const fileSrc = `/// @nudo:env ./missing.ts\n${APP_SRC}`;
     const fileMsgs = envMessages(join(fileDir, "src/app.js"), fileSrc);
     expect(fileMsgs).toHaveLength(1);
@@ -513,7 +513,7 @@ const ENV_V2 = `export function defineEnv() { return { globals: { MAGIC: 2 } }; 
   const ENV_V2 = `export function defineEnv() { return { globals: { MAGIC: 2 } }; }
 `;
   it("子目录文件与同目录文件：改 env 内容都必须 miss", () => {
-    const dir = tmpProject("nudo-1083-env-fp-", { "package.json": JSON.stringify({ name: "proj", nudo: { env: ["./env.ts"] } }), "env.ts": ENV_V1, "src/app.js": `export function f() { return MAGIC; }
+    const dir = makeTmpProject("nudo-1083-env-fp-", { "package.json": JSON.stringify({ name: "proj", nudo: { env: ["./env.ts"] } }), "env.ts": ENV_V1, "src/app.js": `export function f() { return MAGIC; }
 ` });
     const app = join(dir, "src/app.js");
     const src = `export function f() { return MAGIC; }
@@ -524,7 +524,7 @@ const ENV_V2 = `export function defineEnv() { return { globals: { MAGIC: 2 } }; 
     expect(k1.noCache).toBeFalsy();
     expect(k1.auxKey).not.toBe(k2.auxKey);
 
-    const sameDir = tmpProject("nudo-1083-env-fp-same-", { "package.json": JSON.stringify({ name: "proj", nudo: { env: ["./env.ts"] } }), "env.ts": ENV_V1, "app.js": `export function f() { return MAGIC; }
+    const sameDir = makeTmpProject("nudo-1083-env-fp-same-", { "package.json": JSON.stringify({ name: "proj", nudo: { env: ["./env.ts"] } }), "env.ts": ENV_V1, "app.js": `export function f() { return MAGIC; }
 ` });
     const sameApp = join(sameDir, "app.js");
     const s1 = analysisFileCacheKey(sameApp, src, undefined, undefined, CFG, undefined, ["./env.ts"]);
@@ -592,7 +592,7 @@ const APP_NO_FILE_ENV = `export function f() { return MAGIC; }
 
 /** 项目（项目级 env 在项目根，被分析文件在 src/ 子目录）。 */
 function project(files: Record<string, string>): string {
-  return tmpProject("nudo-1098-env-", {
+  return makeTmpProject("nudo-1098-env-", {
     "package.json": JSON.stringify({ name: "proj", nudo: { env: ["./env.mjs"] } }),
     "env.mjs": ENV_MJS,
     ...files,
@@ -769,7 +769,7 @@ describe("裸包消费形态透传", () => {
 
 
 function project(): string {
-  return tmpProject("nudo-238-", {
+  return makeTmpProject("nudo-238-", {
     "node_modules/dualpkg/package.json": JSON.stringify({
       name: "dualpkg",
       version: "1.0.0",
@@ -795,7 +795,7 @@ beforeEach(() => {
 });
 
 {
-  const project = () => tmpProject("nudo-238-", {
+  const project = () => makeTmpProject("nudo-238-", {
     "node_modules/dualpkg/package.json": JSON.stringify({ name: "dualpkg", version: "1.0.0", exports: { ".": { import: "./esm.mjs", require: "./cjs.cjs" } } }),
     "node_modules/dualpkg/esm.mjs": 'export const kind = "esm";\n',
     "node_modules/dualpkg/cjs.cjs": 'exports.kind = "cjs";\n',
@@ -837,7 +837,7 @@ function makePkg(exportsField: unknown, files: Record<string, string>): {
   dir: string;
   pkgDir: string;
 } {
-  const dir = tmpProject("nudo-239-");
+  const dir = makeTmpProject("nudo-239-");
   writeTmpFiles(dir, {
     "node_modules/dual/package.json": JSON.stringify({
       name: "dual",
@@ -852,7 +852,7 @@ function makePkg(exportsField: unknown, files: Record<string, string>): {
 
 {
   const makePkg = (exportsField: unknown, files: Record<string, string>) => {
-    const dir = tmpProject("nudo-239-");
+    const dir = makeTmpProject("nudo-239-");
     writeTmpFiles(dir, {
       "node_modules/dual/package.json": JSON.stringify({ name: "dual", exports: exportsField }),
       ...Object.fromEntries(Object.entries(files).map(([rel, content]) => [`node_modules/dual/${rel}`, content])),
@@ -888,7 +888,7 @@ describe("裸包依赖进依赖图（脏传播不缺边）", () => {
 
 
 function project(): { dir: string; consumer: string; pkgEntry: string } {
-  const dir = tmpProject("nudo-240-", {
+  const dir = makeTmpProject("nudo-240-", {
     "node_modules/barepkg/package.json": JSON.stringify({
       name: "barepkg",
       version: "1.0.0",
@@ -908,7 +908,7 @@ function project(): { dir: string; consumer: string; pkgEntry: string } {
 
 {
   const project = () => {
-    const dir = tmpProject("nudo-240-", {
+    const dir = makeTmpProject("nudo-240-", {
       "node_modules/barepkg/package.json": JSON.stringify({ name: "barepkg", version: "1.0.0", main: "./index.js" }),
       "node_modules/barepkg/index.js": 'exports.v = "world";\n',
       "consumer.js": 'const { v } = require("barepkg");\nmodule.exports = { v };\n',
@@ -926,7 +926,7 @@ function project(): { dir: string; consumer: string; pkgEntry: string } {
     const both = buildModuleGraph([consumer, relConsumer]);
     expect(both.dependents.get(pkgEntry)?.has(consumer)).toBe(true);
     expect(both.dependents.get(join(dir, "local.js"))?.has(relConsumer)).toBe(true);
-    const missDir = tmpProject("nudo-240-miss-", { "consumer.js": 'require("not-installed-anywhere");\n' });
+    const missDir = makeTmpProject("nudo-240-miss-", { "consumer.js": 'require("not-installed-anywhere");\n' });
     const miss = buildModuleGraph([join(missDir, "consumer.js")]);
     expect(miss.imports.get(join(missDir, "consumer.js"))?.size ?? 0).toBe(0);
   });
@@ -986,7 +986,7 @@ function makePkg(exportsField: unknown, files: Record<string, string>): {
   dir: string;
   pkgDir: string;
 } {
-  const dir = tmpProject("nudo-267-");
+  const dir = makeTmpProject("nudo-267-");
   writeTmpFiles(dir, {
     "node_modules/pkg/package.json": JSON.stringify({
       name: "pkg",
@@ -1002,7 +1002,7 @@ function makePkg(exportsField: unknown, files: Record<string, string>): {
 
 {
   const makePkg = (exportsField: unknown, files: Record<string, string>) => {
-    const dir = tmpProject("nudo-267-");
+    const dir = makeTmpProject("nudo-267-");
     writeTmpFiles(dir, {
       "node_modules/pkg/package.json": JSON.stringify({ name: "pkg", type: "module", exports: exportsField }),
       ...Object.fromEntries(Object.entries(files).map(([rel, content]) => [`node_modules/pkg/${rel}`, content])),
@@ -1016,7 +1016,7 @@ function makePkg(exportsField: unknown, files: Record<string, string>): {
     expect(resolveNpmJsEntry("pkg/x/ab", shortFirst.dir)).toBe(join(shortFirst.pkgDir, "special", "a.js"));
     const prefix = makePkg({ "./x/*bcd": "./short/*.js", "./x/y/*": "./deep/*.js" }, { "short/a.js": "export const v = 1;", "deep/abcd.js": "export const v = 2;" });
     expect(resolveNpmJsEntry("pkg/x/y/abcd", prefix.dir)).toBe(join(prefix.pkgDir, "deep", "abcd.js"));
-    const dir = tmpProject("nudo-267-imports-");
+    const dir = makeTmpProject("nudo-267-imports-");
     writeTmpFiles(dir, { "package.json": JSON.stringify({ name: "app", type: "module", imports: { "#x/*b": "./special/*.js", "#x/*": "./dist/*.js" } }), "special/a.js": "export const v = 1;", "dist/ab.js": "export const v = 2;" });
     expect(resolveNpmJsEntry("#x/ab", dir)).toBe(join(dir, "special", "a.js"));
   });
@@ -1042,7 +1042,7 @@ describe("最近的包 exports 拒绝 ⇒ 不得上溯到同名副本", () => {
 
 
 function nested(nearExports: Record<string, string>, parentHasSub: boolean): string {
-  const dir = tmpProject("nudo-268-");
+  const dir = makeTmpProject("nudo-268-");
   const parentExports: Record<string, string> = { ".": "./index.js" };
   if (parentHasSub) parentExports["./sub"] = "./sub.js";
   writeTmpFiles(dir, {
@@ -1066,7 +1066,7 @@ function nested(nearExports: Record<string, string>, parentHasSub: boolean): str
 
 {
   const nested = (nearExports: Record<string, string>, parentHasSub: boolean): string => {
-    const dir = tmpProject("nudo-268-");
+    const dir = makeTmpProject("nudo-268-");
     const parentExports: Record<string, string> = { ".": "./index.js" };
     if (parentHasSub) parentExports["./sub"] = "./sub.js";
     writeTmpFiles(dir, {
@@ -1115,7 +1115,7 @@ function makePkg(exportsField: unknown, files: Record<string, string>): {
   dir: string;
   pkgDir: string;
 } {
-  const dir = tmpProject("nudo-270-");
+  const dir = makeTmpProject("nudo-270-");
   writeTmpFiles(dir, {
     "node_modules/vp/package.json": JSON.stringify({
       name: "vp",
@@ -1132,7 +1132,7 @@ function makePkg(exportsField: unknown, files: Record<string, string>): {
 
 {
   const makePkg = (exportsField: unknown, files: Record<string, string>) => {
-    const dir = tmpProject("nudo-270-");
+    const dir = makeTmpProject("nudo-270-");
     writeTmpFiles(dir, {
       "node_modules/vp/package.json": JSON.stringify({ name: "vp", type: "module", exports: exportsField }),
       ...Object.fromEntries(Object.entries(files).map(([rel, content]) => [`node_modules/vp/${rel}`, content])),
@@ -1179,7 +1179,7 @@ function makePkg(pkgJson: Record<string, unknown>, files: Record<string, string>
   dir: string;
   pkgDir: string;
 } {
-  const dir = tmpProject("nudo-273-");
+  const dir = makeTmpProject("nudo-273-");
   writeTmpFiles(dir, {
     "node_modules/vp/package.json": JSON.stringify({ name: "vp", type: "module", ...pkgJson }),
     ...Object.fromEntries(
@@ -1191,7 +1191,7 @@ function makePkg(pkgJson: Record<string, unknown>, files: Record<string, string>
 
 {
   const makePkg = (pkgJson: Record<string, unknown>, files: Record<string, string>) => {
-    const dir = tmpProject("nudo-273-");
+    const dir = makeTmpProject("nudo-273-");
     writeTmpFiles(dir, {
       "node_modules/vp/package.json": JSON.stringify({ name: "vp", type: "module", ...pkgJson }),
       ...Object.fromEntries(Object.entries(files).map(([rel, content]) => [`node_modules/vp/${rel}`, content])),
@@ -1509,7 +1509,7 @@ function captureStderr(fn: () => void): string {
 
 /** 根包带 nudo 配置（用于验证「非法 nudo 键不得继承祖先配置」） */
 function rootWithConfig(): string {
-  const root = tmpProject("nudo-bug468-root-", {
+  const root = makeTmpProject("nudo-bug468-root-", {
     "package.json": JSON.stringify({
       name: "root",
       nudo: { check: { ignoreThrows: ["SyntaxError"] }, env: ["node"] },
@@ -1526,7 +1526,7 @@ function rootWithConfig(): string {
     try { fn(); } finally { process.stderr.write = orig; }
     return writes.join("");
   };
-  const rootWithConfig = () => tmpProject("nudo-b468-root-", { "package.json": JSON.stringify({ name: "root", nudo: { check: { ignoreThrows: ["SyntaxError"] }, env: ["node"] } }) });
+  const rootWithConfig = () => makeTmpProject("nudo-b468-root-", { "package.json": JSON.stringify({ name: "root", nudo: { check: { ignoreThrows: ["SyntaxError"] }, env: ["node"] } }) });
   const subWith = (root: string, nudo: unknown) => {
     const sub = join(root, "sub");
     mkdirSync(sub, { recursive: true });
@@ -1554,7 +1554,7 @@ function rootWithConfig(): string {
       expect(found?.config).toBeUndefined();
   }
   {
-      const root = tmpProject("nudo-b468-ok-", { "package.json": JSON.stringify({ name: "m", nudo: { contract: { autoBind: false } } }) });
+      const root = makeTmpProject("nudo-b468-ok-", { "package.json": JSON.stringify({ name: "m", nudo: { contract: { autoBind: false } } }) });
       const found = findProjectConfig(root);
       expect(found?.projectDir).toBe(root);
       expect(found?.config.contract?.autoBind).toBe(false);
@@ -1604,7 +1604,7 @@ beforeEach(() => {
   beforeEach(() => { clearPathEnvCaches(); });
   it("未知名/原型键可见诊断；合法内建名与依赖展开零诊断", async () => {
     for (const name of ["bogus", "nodejs", "Node"]) {
-      const dir = tmpProject("nudo-b470-");
+      const dir = makeTmpProject("nudo-b470-");
       const loaded = loadEnvs([name], createEnvironment(), dir);
       expect(Object.keys(loaded.globals)).toHaveLength(0);
       const errs = getPathEnvLoadErrors(dir);
@@ -1612,18 +1612,18 @@ beforeEach(() => {
       expect(errs[0]!.error).toContain(`unknown env name "${name}"`);
       expect(errs[0]!.error).toContain("es, web, node");
     }
-    const pre = tmpProject("nudo-b470-preload-");
+    const pre = makeTmpProject("nudo-b470-preload-");
     await preloadPathEnvs(["bogus"], pre);
     const preErrs = getPathEnvLoadErrors(pre);
     expect(preErrs).toHaveLength(1);
     expect(preErrs[0]!.error).toContain('unknown env name "bogus"');
     expect(preErrs[0]!.baseDir).toBe(pre);
-    const proto = tmpProject("nudo-b470-proto-");
+    const proto = makeTmpProject("nudo-b470-proto-");
     const protoLoaded = loadEnvs(["constructor"], createEnvironment(), proto);
     expect(Object.keys(protoLoaded.globals)).toHaveLength(0);
     expect(getPathEnvLoadErrors(proto)[0]!.error).toContain('unknown env name "constructor"');
 
-    const ok = tmpProject("nudo-b470-ok-");
+    const ok = makeTmpProject("nudo-b470-ok-");
     expect(Object.keys(loadEnvs(["node"], createEnvironment(), ok).globals).length).toBeGreaterThan(0);
     expect(getPathEnvLoadErrors(ok)).toHaveLength(0);
     expect(Object.keys(loadEnvs(["es"], createEnvironment(), ok).globals).length).toBeGreaterThan(0);
@@ -1712,7 +1712,7 @@ describe("exports 条件键按消费形态分表", () => {
 
 /** dual package：同一包发 .mjs（ESM 面）与 .cjs（CJS 面）两套构建。 */
 function dualPkg(prefix: string): { dir: string; pkgDir: string } {
-  const dir = tmpProject(prefix);
+  const dir = makeTmpProject(prefix);
   writeTmpFiles(dir, {
     "node_modules/dual/package.json": JSON.stringify({
       name: "dual",
@@ -1727,7 +1727,7 @@ function dualPkg(prefix: string): { dir: string; pkgDir: string } {
 
 {
   const dualPkg = (prefix: string) => {
-    const dir = tmpProject(prefix);
+    const dir = makeTmpProject(prefix);
     writeTmpFiles(dir, {
       "node_modules/dual/package.json": JSON.stringify({ name: "dual", version: "1.0.0", exports: { ".": { import: "./esm.mjs", require: "./cjs.cjs", default: "./esm.mjs" } } }),
       "node_modules/dual/esm.mjs": "export default 5; export const named = 'esm';\n",
@@ -1744,7 +1744,7 @@ function dualPkg(prefix: string): { dir: string; pkgDir: string } {
     const auto = dualPkg("nudo-477-auto-");
     expect(resolveNpmJsEntryDetailed("dual", auto.dir).path).toBe(join(auto.pkgDir, "esm.mjs"));
 
-    const onlyDir = tmpProject("nudo-477-requireonly-");
+    const onlyDir = makeTmpProject("nudo-477-requireonly-");
     writeTmpFiles(onlyDir, {
       "node_modules/onlyreq/package.json": JSON.stringify({ name: "onlyreq", version: "1.0.0", exports: { ".": { require: "./index.cjs" } } }),
       "node_modules/onlyreq/index.cjs": "module.exports = 1;\n",
@@ -1754,7 +1754,7 @@ function dualPkg(prefix: string): { dir: string; pkgDir: string } {
     expect(strict.path).toBeNull();
     expect(strict.exportsUnresolved).toBe(true);
 
-    const plainDir = tmpProject("nudo-477-default-");
+    const plainDir = makeTmpProject("nudo-477-default-");
     writeTmpFiles(plainDir, {
       "node_modules/plain/package.json": JSON.stringify({ name: "plain", version: "1.0.0", exports: { ".": "./index.js" } }),
       "node_modules/plain/index.js": "export const x = 1;\n",
@@ -1801,26 +1801,26 @@ export function defineEnv() {
 `;
   beforeEach(() => { clearPathEnvCaches(); });
   it("两目录各取各的（预载顺序无关）；同目录稳定；绝对路径照旧", async () => {
-    const x = tmpProject("nudo-b478-x-", { "env.js": envFile(11) });
-    const y = tmpProject("nudo-b478-y-", { "env.js": envFile(22) });
+    const x = makeTmpProject("nudo-b478-x-", { "env.js": envFile(11) });
+    const y = makeTmpProject("nudo-b478-y-", { "env.js": envFile(22) });
     await preloadPathEnvs(["./env.js"], x);
     await preloadPathEnvs(["./env.js"], y);
     expect(formatShape(loadEnvs(["./env.js"], createEnvironment(), x).globals.MAGIC!)).toBe("11");
     expect(formatShape(loadEnvs(["./env.js"], createEnvironment(), y).globals.MAGIC!)).toBe("22");
 
-    const x2 = tmpProject("nudo-b478-x2-", { "env.js": envFile(11) });
-    const y2 = tmpProject("nudo-b478-y2-", { "env.js": envFile(22) });
+    const x2 = makeTmpProject("nudo-b478-x2-", { "env.js": envFile(11) });
+    const y2 = makeTmpProject("nudo-b478-y2-", { "env.js": envFile(22) });
     await preloadPathEnvs(["./env.js"], y2);
     await preloadPathEnvs(["./env.js"], x2);
     expect(formatShape(loadEnvs(["./env.js"], createEnvironment(), x2).globals.MAGIC!)).toBe("11");
     expect(formatShape(loadEnvs(["./env.js"], createEnvironment(), y2).globals.MAGIC!)).toBe("22");
 
-    const same = tmpProject("nudo-b478-same-", { "env.js": envFile(11) });
+    const same = makeTmpProject("nudo-b478-same-", { "env.js": envFile(11) });
     await preloadPathEnvs(["./env.js"], same);
     expect(formatShape(loadEnvs(["./env.js"], createEnvironment(), same).globals.MAGIC!)).toBe("11");
     expect(formatShape(loadEnvs(["./env.js"], createEnvironment(), same).globals.MAGIC!)).toBe("11");
 
-    const absDir = tmpProject("nudo-b478-abs-", { "env.js": envFile(11) });
+    const absDir = makeTmpProject("nudo-b478-abs-", { "env.js": envFile(11) });
     const abs = `${absDir}/env.js`;
     await preloadPathEnvs([abs], absDir);
     expect(formatShape(loadEnvs([abs], createEnvironment(), absDir).globals.MAGIC!)).toBe("11");
@@ -1874,7 +1874,7 @@ export const needsPositive = fn({ x: number().gt(0) }, number());
 `;
 
 function projectWithAutoBind(autoBind: unknown): string {
-  const root = tmpProject("nudo-bug487-", {
+  const root = makeTmpProject("nudo-bug487-", {
     "package.json": JSON.stringify({ name: "t", type: "module", nudo: { contract: { autoBind } } }),
     "lib.js": LIB_JS,
     "lib.nudo.js": LIB_NUDO_JS,
@@ -1892,7 +1892,7 @@ function projectWithAutoBind(autoBind: unknown): string {
   };
   const LIB_JS = "export function needsPositive(x) { return x > 0 ? x : 0; }\n";
   const LIB_NUDO_JS = 'import { fn, number } from "@nudojs/core";\nexport const needsPositive = fn({ x: number().gt(0) }, number());\n';
-  const projectWithAutoBind = (autoBind: unknown) => tmpProject("nudo-b487-", {
+  const projectWithAutoBind = (autoBind: unknown) => makeTmpProject("nudo-b487-", {
     "package.json": JSON.stringify({ name: "t", type: "module", nudo: { contract: { autoBind } } }),
     "lib.js": LIB_JS,
     "lib.nudo.js": LIB_NUDO_JS,
@@ -2019,27 +2019,27 @@ describe("#imports（包内子路径映射）", () => {
 
 
   it("精确/模式/条件/外部包/缺失/裸包负控", () => {
-    const exact = tmpProject("nudo-498-exact-", { "package.json": JSON.stringify({ name: "app", version: "1.0.0", type: "module", imports: { "#helper": "./helper.js" } }), "helper.js": "export function h() { return 42; }\n" });
+    const exact = makeTmpProject("nudo-498-exact-", { "package.json": JSON.stringify({ name: "app", version: "1.0.0", type: "module", imports: { "#helper": "./helper.js" } }), "helper.js": "export function h() { return 42; }\n" });
     const er = resolveNpmJsEntryDetailed("#helper", exact);
     expect(er.path).toBe(join(exact, "helper.js"));
     expect(er.exportsUnresolved).toBe(false);
 
-    const pattern = tmpProject("nudo-498-pattern-", { "package.json": JSON.stringify({ name: "app", version: "1.0.0", type: "module", imports: { "#internal/*": "./src/*.js" } }), "src/a.js": "export const a = 1;\n" });
+    const pattern = makeTmpProject("nudo-498-pattern-", { "package.json": JSON.stringify({ name: "app", version: "1.0.0", type: "module", imports: { "#internal/*": "./src/*.js" } }), "src/a.js": "export const a = 1;\n" });
     expect(resolveNpmJsEntryDetailed("#internal/a", pattern).path).toBe(join(pattern, "src", "a.js"));
 
-    const cond = tmpProject("nudo-498-cond-", { "package.json": JSON.stringify({ name: "app", version: "1.0.0", type: "module", imports: { "#dual": { import: "./esm.mjs", require: "./cjs.cjs" } } }), "esm.mjs": "export default 1;\n", "cjs.cjs": "module.exports = 2;\n" });
+    const cond = makeTmpProject("nudo-498-cond-", { "package.json": JSON.stringify({ name: "app", version: "1.0.0", type: "module", imports: { "#dual": { import: "./esm.mjs", require: "./cjs.cjs" } } }), "esm.mjs": "export default 1;\n", "cjs.cjs": "module.exports = 2;\n" });
     expect(resolveNpmJsEntryDetailed("#dual", cond, "import").path).toBe(join(cond, "esm.mjs"));
     expect(resolveNpmJsEntryDetailed("#dual", cond, "require").path).toBe(join(cond, "cjs.cjs"));
 
-    const external = tmpProject("nudo-498-external-", { "package.json": JSON.stringify({ name: "app", version: "1.0.0", type: "module", imports: { "#dep": "dep" } }), "node_modules/dep/package.json": JSON.stringify({ name: "dep", version: "1.0.0", exports: { ".": "./index.js" } }), "node_modules/dep/index.js": "export const x = 1;\n" });
+    const external = makeTmpProject("nudo-498-external-", { "package.json": JSON.stringify({ name: "app", version: "1.0.0", type: "module", imports: { "#dep": "dep" } }), "node_modules/dep/package.json": JSON.stringify({ name: "dep", version: "1.0.0", exports: { ".": "./index.js" } }), "node_modules/dep/index.js": "export const x = 1;\n" });
     expect(resolveNpmJsEntryDetailed("#dep", external).path).toBe(join(external, "node_modules", "dep", "index.js"));
 
-    const miss = tmpProject("nudo-498-miss-", { "package.json": JSON.stringify({ name: "app", version: "1.0.0", type: "module", imports: { "#helper": "./helper.js" } }), "helper.js": "export const x = 1;\n" });
+    const miss = makeTmpProject("nudo-498-miss-", { "package.json": JSON.stringify({ name: "app", version: "1.0.0", type: "module", imports: { "#helper": "./helper.js" } }), "helper.js": "export const x = 1;\n" });
     const mr = resolveNpmJsEntryDetailed("#nope", miss);
     expect(mr.path).toBeNull();
     expect(mr.exportsUnresolved).toBe(true);
 
-    const bare = tmpProject("nudo-498-bare-", { "package.json": JSON.stringify({ name: "app", version: "1.0.0", type: "module" }), "node_modules/plain/package.json": JSON.stringify({ name: "plain", version: "1.0.0", exports: { ".": "./index.js" } }), "node_modules/plain/index.js": "export const x = 1;\n" });
+    const bare = makeTmpProject("nudo-498-bare-", { "package.json": JSON.stringify({ name: "app", version: "1.0.0", type: "module" }), "node_modules/plain/package.json": JSON.stringify({ name: "plain", version: "1.0.0", exports: { ".": "./index.js" } }), "node_modules/plain/index.js": "export const x = 1;\n" });
     expect(resolveNpmJsEntryDetailed("plain", bare).path).toBe(join(bare, "node_modules", "plain", "index.js"));
   });
 
@@ -2062,7 +2062,7 @@ describe("node_modules 逐级向上查找", () => {
 
 /** 父级安装：app/node_modules 存在但**不含**该包；包在上一级 node_modules。 */
 function parentInstall(prefix: string): { dir: string; appDir: string; pkgDir: string } {
-  const dir = tmpProject(prefix);
+  const dir = makeTmpProject(prefix);
   writeTmpFiles(dir, {
     "node_modules/mypkg/package.json": JSON.stringify({
       name: "mypkg",
@@ -2083,7 +2083,7 @@ function parentInstall(prefix: string): { dir: string; appDir: string; pkgDir: s
 
 {
   const parentInstall = (prefix: string) => {
-    const dir = tmpProject(prefix, {
+    const dir = makeTmpProject(prefix, {
       "node_modules/mypkg/package.json": JSON.stringify({ name: "mypkg", version: "1.0.0", type: "module", main: "index.js" }),
       "node_modules/mypkg/index.js": "export function hello() { throw new Error('boom'); }\n",
       "app/node_modules/.keep": "",
@@ -2104,7 +2104,7 @@ function parentInstall(prefix: string): { dir: string; appDir: string; pkgDir: s
     });
     expect(resolveNpmJsEntryDetailed("mypkg", near.appDir).path).toBe(join(near.appDir, "node_modules", "mypkg", "index.js"));
 
-    const side = tmpProject("nudo-500-nudo-");
+    const side = makeTmpProject("nudo-500-nudo-");
     writeTmpFiles(side, {
       "node_modules/side/package.json": JSON.stringify({ name: "side", version: "1.0.0", exports: { ".": { nudo: "./index.nudo.js" } } }),
       "node_modules/side/index.nudo.js": "export const x = 1;\n",
@@ -2112,7 +2112,7 @@ function parentInstall(prefix: string): { dir: string; appDir: string; pkgDir: s
     });
     expect(resolveNpmNudo("side", join(side, "app"))).toBe(join(side, "node_modules", "side", "index.nudo.js"));
 
-    const absent = tmpProject("nudo-500-absent-");
+    const absent = makeTmpProject("nudo-500-absent-");
     writeTmpFiles(absent, { "app/main.js": "export const x = 1;\n" });
     const miss = resolveNpmJsEntryDetailed("nosuchpkg", join(absent, "app"));
     expect(miss.path).toBeNull();
@@ -2169,7 +2169,7 @@ export function defineEnv() {
   };
   it("改项目级 env 内容类型面跟着变；文件级同款；内容不变稳定", async () => {
     clearEvalCache();
-    const dir = tmpProject("nudo-b501-", { "package.json": JSON.stringify({ name: "b501", type: "module", nudo: { env: ["./env.ts"] } }), "env.ts": envFile("numLit", "numLit(1)"), "main.js": "export function getMagic() {\n  return MAGIC;\n}\n" });
+    const dir = makeTmpProject("nudo-b501-", { "package.json": JSON.stringify({ name: "b501", type: "module", nudo: { env: ["./env.ts"] } }), "env.ts": envFile("numLit", "numLit(1)"), "main.js": "export function getMagic() {\n  return MAGIC;\n}\n" });
     const main = join(dir, "main.js");
     const src = "export function getMagic() {\n  return MAGIC;\n}\n";
     expect(await magicShape(main, src)).toBe("1");
@@ -2177,7 +2177,7 @@ export function defineEnv() {
     expect(await magicShape(main, src)).toBe('"hello"');
 
     clearEvalCache();
-    const fileDir = tmpProject("nudo-b501-file-", { "env.ts": envFile("numLit", "numLit(1)"), "main.js": "/// @nudo:env ./env.ts\n\nexport function getMagic() {\n  return MAGIC;\n}\n" });
+    const fileDir = makeTmpProject("nudo-b501-file-", { "env.ts": envFile("numLit", "numLit(1)"), "main.js": "/// @nudo:env ./env.ts\n\nexport function getMagic() {\n  return MAGIC;\n}\n" });
     const fileMain = join(fileDir, "main.js");
     const fileSrc = "/// @nudo:env ./env.ts\n\nexport function getMagic() {\n  return MAGIC;\n}\n";
     expect(await magicShape(fileMain, fileSrc)).toBe("1");
@@ -2185,7 +2185,7 @@ export function defineEnv() {
     expect(await magicShape(fileMain, fileSrc)).toBe('"hello"');
 
     clearEvalCache();
-    const stable = tmpProject("nudo-b501-stable-", { "package.json": JSON.stringify({ name: "b501-stable", type: "module", nudo: { env: ["./env.ts"] } }), "env.ts": envFile("numLit", "numLit(1)"), "main.js": "export function getMagic() {\n  return MAGIC;\n}\n" });
+    const stable = makeTmpProject("nudo-b501-stable-", { "package.json": JSON.stringify({ name: "b501-stable", type: "module", nudo: { env: ["./env.ts"] } }), "env.ts": envFile("numLit", "numLit(1)"), "main.js": "export function getMagic() {\n  return MAGIC;\n}\n" });
     const stableMain = join(stable, "main.js");
     expect(await magicShape(stableMain, src)).toBe("1");
     expect(await magicShape(stableMain, src)).toBe("1");
@@ -2236,7 +2236,7 @@ export function useGlobal() {
   const ENV_FILE = "export function defineEnv() {\n  return { globals: { MAGIC: 1 } };\n}\n";
   const MAIN_FILE = "/// @nudo:env ./env.ts\nexport function useGlobal() {\n  return MAGIC;\n}\n";
   it("async 预载后解析 env 全局；分析环境带 env globals", async () => {
-    const dir = tmpProject("nudo-b502-", { "env.ts": ENV_FILE, "main.js": MAIN_FILE });
+    const dir = makeTmpProject("nudo-b502-", { "env.ts": ENV_FILE, "main.js": MAIN_FILE });
     const r = await analyzeFileAsync(`${dir}/main.js`, MAIN_FILE);
     const fn = r.functions.find((f) => f.name === "useGlobal")!;
     const c = fn.cases.find((x) => x.name.startsWith("entry@") || x.name.startsWith("call@"))!;
@@ -2273,7 +2273,7 @@ describe("CJS / ESM 两条解析算法分表", () => {
 /** CJS 包：package.json type=commonjs；同目录**只有** data.json（Node 的
  * LOAD_AS_FILE 会试 .json——改前的候选表没有 .json ⇒ 假红「文件不存在」）。 */
 function cjsProject(prefix: string): { dir: string; main: string } {
-  const dir = tmpProject(prefix, {
+  const dir = makeTmpProject(prefix, {
     "package.json": JSON.stringify({ name: "cjsapp", version: "1.0.0", type: "commonjs" }),
     "data.json": '{ "answer": 42 }\n',
     "main.js": "const data = require('./data');\nmodule.exports = { data };\n",
@@ -2283,7 +2283,7 @@ function cjsProject(prefix: string): { dir: string; main: string } {
 
 /** ESM 包：package.json type=module。 */
 function esmProject(prefix: string): { dir: string; main: string } {
-  const dir = tmpProject(prefix, {
+  const dir = makeTmpProject(prefix, {
     "package.json": JSON.stringify({ name: "esmapp", version: "1.0.0", type: "module" }),
     "data.js": "export const answer = 7;\n",
     "main.js": "import { answer } from './data';\nexport function f() { return answer; }\n",
@@ -2293,11 +2293,11 @@ function esmProject(prefix: string): { dir: string; main: string } {
 
 {
   const cjsProject = (prefix: string) => {
-    const dir = tmpProject(prefix, { "package.json": JSON.stringify({ name: "cjsapp", version: "1.0.0", type: "commonjs" }), "data.json": '{ "answer": 42 }\n', "main.js": "const data = require('./data');\nmodule.exports = { data };\n" });
+    const dir = makeTmpProject(prefix, { "package.json": JSON.stringify({ name: "cjsapp", version: "1.0.0", type: "commonjs" }), "data.json": '{ "answer": 42 }\n', "main.js": "const data = require('./data');\nmodule.exports = { data };\n" });
     return { dir, main: join(dir, "main.js") };
   };
   const esmProject = (prefix: string) => {
-    const dir = tmpProject(prefix, { "package.json": JSON.stringify({ name: "esmapp", version: "1.0.0", type: "module" }), "data.js": "export const answer = 7;\n", "main.js": "import { answer } from './data';\nexport function f() { return answer; }\n" });
+    const dir = makeTmpProject(prefix, { "package.json": JSON.stringify({ name: "esmapp", version: "1.0.0", type: "module" }), "data.js": "export const answer = 7;\n", "main.js": "import { answer } from './data';\nexport function f() { return answer; }\n" });
     return { dir, main: join(dir, "main.js") };
   };
   it("CJS 猜扩展名含 .json/index；ESM 不猜；显式扩展名两态可解析；TS 合并表；CJS .js 优先", () => {
@@ -2319,10 +2319,10 @@ function esmProject(prefix: string): { dir: string; main: string } {
     writeTmpFiles(esm.dir, { "data.json": '{ "answer": 42 }\n' });
     expect(resolveModuleFile("./data.json", esm.main)).toBe(join(esm.dir, "data.json"));
 
-    const order = tmpProject("nudo-505-order-", { "package.json": JSON.stringify({ name: "ord", version: "1.0.0", type: "commonjs" }), "data.js": "export const answer = 7;\n", "data.json": '{ "answer": 42 }\n', "main.js": "const data = require('./data');\nmodule.exports = { data };\n" });
+    const order = makeTmpProject("nudo-505-order-", { "package.json": JSON.stringify({ name: "ord", version: "1.0.0", type: "commonjs" }), "data.js": "export const answer = 7;\n", "data.json": '{ "answer": 42 }\n', "main.js": "const data = require('./data');\nmodule.exports = { data };\n" });
     expect(resolveModuleFile("./data", join(order, "main.js"))).toBe(join(order, "data.js"));
 
-    const ts = tmpProject("nudo-505-ts-", { "utils/index.ts": "export const pad = (s: string) => s;\n", "main.ts": "import { pad } from './utils';\nexport const go = pad;\n" });
+    const ts = makeTmpProject("nudo-505-ts-", { "utils/index.ts": "export const pad = (s: string) => s;\n", "main.ts": "import { pad } from './utils';\nexport const go = pad;\n" });
     const tsMain = join(ts, "main.ts");
     expect(resolveModuleFile("./utils", tsMain)).toBe(join(ts, "utils", "index.ts"));
     expect(moduleResolveCandidates("./utils", tsMain)).toContain(join(ts, "utils", "index.js"));
@@ -2471,24 +2471,24 @@ const BAD_ELEMENTS: unknown[] = [42, null, {}, []];
   };
   const BAD = [42, null, {}, []];
   it("四种非法元素不崩且有告警；preload 不冒泡；合法元素/字符串 path 负控", async () => {
-    const dir = tmpProject("nudo-b935-load-");
+    const dir = makeTmpProject("nudo-b935-load-");
     const env = createEnvironment();
     for (const el of BAD) expect(Object.keys(loadEnvs([el] as unknown as string[], env, dir).globals)).toHaveLength(0);
     const errs = getPathEnvLoadErrors(dir);
     expect(errs).toHaveLength(BAD.length);
     for (const e of errs) expect(e.error).toContain("invalid env entry");
 
-    const pre = tmpProject("nudo-b935-preload-");
+    const pre = makeTmpProject("nudo-b935-preload-");
     await expect(preloadPathEnvs([42] as unknown as string[], pre)).resolves.toBeUndefined();
     const preErrs = getPathEnvLoadErrors(pre);
     expect(preErrs.length).toBeGreaterThanOrEqual(1);
     expect(preErrs[0]!.error).toContain("invalid env entry");
     expect(preErrs[0]!.error).toContain("expected a string");
 
-    const ok = tmpProject("nudo-b935-ok-");
+    const ok = makeTmpProject("nudo-b935-ok-");
     expect(Object.keys(loadEnvs(["node"], createEnvironment(), ok).globals).length).toBeGreaterThan(0);
     expect(getPathEnvLoadErrors(ok)).toHaveLength(0);
-    const pathOk = tmpProject("nudo-b935-path-");
+    const pathOk = makeTmpProject("nudo-b935-path-");
     await preloadPathEnvs(["node"], pathOk);
     expect(getPathEnvLoadErrors(pathOk)).toHaveLength(0);
   });
@@ -2503,20 +2503,20 @@ describe("项目级 package.json#nudo.env 的元素级校验", () => {
     return writes.join("");
   };
   it("非字符串元素丢弃 + 诊断；env 非数组整项丢弃 + 诊断；合法列表零诊断", () => {
-    const mixed = tmpProject("nudo-b935-proj-", { "package.json": JSON.stringify({ name: "p935", nudo: { env: ["node", 42, null] } }) });
+    const mixed = makeTmpProject("nudo-b935-proj-", { "package.json": JSON.stringify({ name: "p935", nudo: { env: ["node", 42, null] } }) });
     let found: ReturnType<typeof findProjectConfig> = null as ReturnType<typeof findProjectConfig>;
     const err = captureStderr(() => { found = findProjectConfig(mixed); });
     expect(found?.config.env).toEqual(["node"]);
     expect(err).toContain("nudo.env");
     expect(err).toContain("non-string");
 
-    const shape = tmpProject("nudo-b935-proj-shape-", { "package.json": JSON.stringify({ name: "p935b", nudo: { env: "node" } }) });
+    const shape = makeTmpProject("nudo-b935-proj-shape-", { "package.json": JSON.stringify({ name: "p935b", nudo: { env: "node" } }) });
     let shapeFound: ReturnType<typeof findProjectConfig> = null as ReturnType<typeof findProjectConfig>;
     const shapeErr = captureStderr(() => { shapeFound = findProjectConfig(shape); });
     expect(shapeFound?.config.env).toEqual([]);
     expect(shapeErr).toContain("nudo.env");
 
-    const ok = tmpProject("nudo-b935-proj-ok-", { "package.json": JSON.stringify({ name: "p935c", nudo: { env: ["node", "es"] } }) });
+    const ok = makeTmpProject("nudo-b935-proj-ok-", { "package.json": JSON.stringify({ name: "p935c", nudo: { env: ["node", "es"] } }) });
     let okFound: ReturnType<typeof findProjectConfig> = null as ReturnType<typeof findProjectConfig>;
     const okErr = captureStderr(() => { okFound = findProjectConfig(ok); });
     expect(okFound?.config.env).toEqual(["node", "es"]);
@@ -2565,7 +2565,7 @@ function captureStderr(fn: () => void): string {
 
 /** 根包：ignoreThrows + env（子包若继承 ⇒ L2 被吞 + env 串味） */
 function rootWithConfig(): string {
-  return tmpProject("nudo-bug936-root-", {
+  return makeTmpProject("nudo-bug936-root-", {
     "package.json": JSON.stringify({
       name: "root",
       type: "module",
@@ -2592,7 +2592,7 @@ function subPackage(root: string, nudo: unknown): string {
     try { fn(); } finally { process.stderr.write = orig; }
     return writes.join("");
   };
-  const rootWithConfig = () => tmpProject("nudo-b936-root-", { "package.json": JSON.stringify({ name: "root", type: "module", nudo: { check: { ignoreThrows: ["SyntaxError"] }, env: ["node"] } }) });
+  const rootWithConfig = () => makeTmpProject("nudo-b936-root-", { "package.json": JSON.stringify({ name: "root", type: "module", nudo: { check: { ignoreThrows: ["SyntaxError"] }, env: ["node"] } }) });
   const subPackage = (root: string, nudo: unknown) => {
     const sub = join(root, "sub");
     mkdirSync(sub, { recursive: true });

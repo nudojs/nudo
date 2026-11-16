@@ -11,7 +11,7 @@ import fsp from "node:fs/promises";
 import { callSite, envMember, innerOf, slotsOf, brandName, applyOut } from "./env-helpers-builtin-calls.ts";
 import nodePath, { type FormatInputPathObject } from "node:path";
 import { pathToFileURL as nodePathToFileURL } from "node:url";
-import { callSite as callSite____env_bug_s4_helpers_ts, brandName as brandName____env_bug_s4_helpers_ts, callSite as callSite____env_bug_s4_helpers_ts_1, thrownBrand, brandName as brandName____env_bug_s4_helpers_ts_1, callSite as callSite____env_bug_s4_helpers_ts_2 } from "./env-helpers-call-site.ts";
+import { callSite as callSite____env_bug_s4_helpers_ts, brandName as brandName____env_bug_s4_helpers_ts, thrownBrand, } from "./env-helpers-call-site.ts";
 import os from "node:os";
 import { runWithMayThrowSession, setMayThrowCollector } from "@nudojs/core/internal";
 import { defineEnv as defineEnv_____es_ts } from "../es.ts";
@@ -1252,45 +1252,45 @@ function nativeErrorName(fn: () => void): string | undefined {
 describe("node:assert 族 throws 面", () => {
   it("失败必抛 / 成立零抛 / 抽象 may-throw / 缺参 TypeError", () => {
     expect(nativeErrorName(() => nodeOk(false))).toBe("AssertionError");
-    const bad = callSite____env_bug_s4_helpers_ts_1(assertMod.ok!, [boolLit(false)]);
+    const bad = callSite____env_bug_s4_helpers_ts(assertMod.ok!, [boolLit(false)]);
     expect(bad.threw).toBeTruthy();
     expect(thrownBrand(bad.threw)).toBe("AssertionError");
-    const okTrue = callSite____env_bug_s4_helpers_ts_1(assertMod.ok!, [boolLit(true)]);
+    const okTrue = callSite____env_bug_s4_helpers_ts(assertMod.ok!, [boolLit(true)]);
     expect(okTrue.threw).toBeUndefined();
     expect(okTrue.exits).toHaveLength(0);
-    const abstract = callSite____env_bug_s4_helpers_ts_1(assertMod.ok!, [ABSTRACT]);
+    const abstract = callSite____env_bug_s4_helpers_ts(assertMod.ok!, [ABSTRACT]);
     expect(abstract.threw).toBeUndefined();
     expect(abstract.exits).toHaveLength(1);
     expect(brandName____env_bug_s4_helpers_ts(abstract.exits[0]!)).toBe("AssertionError");
 
-    const strictBad = callSite____env_bug_s4_helpers_ts_1(assertMod.strictEqual!, [numLit(1), numLit(2)]);
+    const strictBad = callSite____env_bug_s4_helpers_ts(assertMod.strictEqual!, [numLit(1), numLit(2)]);
     expect(thrownBrand(strictBad.threw)).toBe("AssertionError");
-    const strictGood = callSite____env_bug_s4_helpers_ts_1(assertMod.strictEqual!, [numLit(1), numLit(1)]);
+    const strictGood = callSite____env_bug_s4_helpers_ts(assertMod.strictEqual!, [numLit(1), numLit(1)]);
     expect(strictGood.threw).toBeUndefined();
     expect(strictGood.exits).toHaveLength(0);
 
-    const deepSame = callSite____env_bug_s4_helpers_ts_1(assertMod.deepStrictEqual!, [objAbs({ a: numLit(1) }), objAbs({ a: numLit(1) })]);
+    const deepSame = callSite____env_bug_s4_helpers_ts(assertMod.deepStrictEqual!, [objAbs({ a: numLit(1) }), objAbs({ a: numLit(1) })]);
     expect(deepSame.threw).toBeUndefined();
     expect(deepSame.exits).toHaveLength(0);
-    const deepDiff = callSite____env_bug_s4_helpers_ts_1(assertMod.deepStrictEqual!, [objAbs({ a: numLit(1) }), objAbs({ a: numLit(2) })]);
+    const deepDiff = callSite____env_bug_s4_helpers_ts(assertMod.deepStrictEqual!, [objAbs({ a: numLit(1) }), objAbs({ a: numLit(2) })]);
     expect(thrownBrand(deepDiff.threw)).toBe("AssertionError");
 
-    const notSame = callSite____env_bug_s4_helpers_ts_1(assertMod.notStrictEqual!, [numLit(1), numLit(1)]);
+    const notSame = callSite____env_bug_s4_helpers_ts(assertMod.notStrictEqual!, [numLit(1), numLit(1)]);
     expect(thrownBrand(notSame.threw)).toBe("AssertionError");
-    const notDiff = callSite____env_bug_s4_helpers_ts_1(assertMod.notStrictEqual!, [numLit(1), numLit(2)]);
+    const notDiff = callSite____env_bug_s4_helpers_ts(assertMod.notStrictEqual!, [numLit(1), numLit(2)]);
     expect(notDiff.threw).toBeUndefined();
     expect(notDiff.exits).toHaveLength(0);
 
-    const hit = callSite____env_bug_s4_helpers_ts_1(assertMod.match!, [strLit("abc"), regexpOf("b")]);
+    const hit = callSite____env_bug_s4_helpers_ts(assertMod.match!, [strLit("abc"), regexpOf("b")]);
     expect(hit.exits).toHaveLength(0);
-    const miss = callSite____env_bug_s4_helpers_ts_1(assertMod.match!, [strLit("abc"), regexpOf("z")]);
+    const miss = callSite____env_bug_s4_helpers_ts(assertMod.match!, [strLit("abc"), regexpOf("z")]);
     expect(thrownBrand(miss.threw)).toBe("AssertionError");
 
     expect(nativeErrorName(() => nodeFail("boom"))).toBe("AssertionError");
-    expect(thrownBrand(callSite____env_bug_s4_helpers_ts_1(assertMod.fail!, []).threw)).toBe("AssertionError");
+    expect(thrownBrand(callSite____env_bug_s4_helpers_ts(assertMod.fail!, []).threw)).toBe("AssertionError");
 
     expect(nativeErrorName(() => (nodeStrictEqual as (a: unknown, b?: unknown) => void)(1))).toBe("TypeError");
-    const missing = callSite____env_bug_s4_helpers_ts_1(assertMod.strictEqual!, [numLit(1)]);
+    const missing = callSite____env_bug_s4_helpers_ts(assertMod.strictEqual!, [numLit(1)]);
     expect(thrownBrand(missing.threw)).toBe("TypeError");
   });
 });
@@ -1490,20 +1490,20 @@ const HOST_FN = function Sub(): void {};
       expect(getFnImpl(fn!)?.apply).toBeTypeOf("function");
     }
     const HOST_FN = function Sub(): void {};
-    const inheritsSite = callSite____env_bug_s4_helpers_ts_2(util.inherits!, [HOST_FN as unknown as Abs, HOST_FN as unknown as Abs]);
+    const inheritsSite = callSite____env_bug_s4_helpers_ts(util.inherits!, [HOST_FN as unknown as Abs, HOST_FN as unknown as Abs]);
     expect(inheritsSite.threw).toBeUndefined();
     expect(inheritsSite.exits).toHaveLength(0);
     expect(formatShape(inheritsSite.value!)).toBe("undefined");
 
-    const promisifySite = callSite____env_bug_s4_helpers_ts_2(util.promisify!, [HOST_FN as unknown as Abs]);
+    const promisifySite = callSite____env_bug_s4_helpers_ts(util.promisify!, [HOST_FN as unknown as Abs]);
     expect(promisifySite.exits).toHaveLength(0);
     expect(formatShape(promisifySite.value!)).toBe("PromiseFn");
 
-    const callbackifySite = callSite____env_bug_s4_helpers_ts_2(util.callbackify!, [HOST_FN as unknown as Abs]);
+    const callbackifySite = callSite____env_bug_s4_helpers_ts(util.callbackify!, [HOST_FN as unknown as Abs]);
     expect(callbackifySite.exits).toHaveLength(0);
     expect(formatShape(callbackifySite.value!)).toBe("CallbackFn");
 
-    const deepSite = callSite____env_bug_s4_helpers_ts_2(util.isDeepStrictEqual!, [HOST_FN as unknown as Abs, HOST_FN as unknown as Abs]);
+    const deepSite = callSite____env_bug_s4_helpers_ts(util.isDeepStrictEqual!, [HOST_FN as unknown as Abs, HOST_FN as unknown as Abs]);
     expect(deepSite.exits).toHaveLength(0);
     expect(formatShape(deepSite.value!)).toBe("boolean");
 
@@ -1517,7 +1517,7 @@ const HOST_FN = function Sub(): void {};
 
     expect(() => nodeInherits(HOST_FN, Object)).not.toThrow();
     expect(() => nodePromisify(readFile)).not.toThrow();
-    expect(brandName____env_bug_s4_helpers_ts_1(inheritsSite.exits[0])).toBeUndefined();
+    expect(brandName____env_bug_s4_helpers_ts(inheritsSite.exits[0])).toBeUndefined();
   });
 
 });

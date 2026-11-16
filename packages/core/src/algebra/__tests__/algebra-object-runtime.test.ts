@@ -18,7 +18,7 @@ import { BOXED_PRIMITIVE_SLOT, makeBoxedAbs } from "../builtins/error/boxed.ts";
 import { $lit } from "../exec/runtime/state.ts";
 import type { Slot } from "../objects.ts";
 import { OBJECT_PROTO_METHOD_NAMES } from "../builtins/ctor.ts";
-import { litValue as litValue___nudojs_core, litValue as litValue___nudojs_core_1, litValue as litValue___nudojs_core_2, litValue as litValue___nudojs_core_3, checkSource as checkSource___nudojs_core, pTrue as pTrue___nudojs_core } from "@nudojs/core";
+import { litValue as litValue___nudojs_core, checkSource as checkSource___nudojs_core, pTrue as pTrue___nudojs_core } from "@nudojs/core";
 import { constraintToEntryAbs, instantiateConstraint, number as number_____constraint_ts, pick as pick_____constraint_ts, shape as shape_____constraint_ts } from "../constraint.ts";
 import { formatObjectKey } from "../format/codegen-escape.ts";
 
@@ -2193,7 +2193,7 @@ describe("Proxy [[Call]] 回退靶 + 派发 apply 陷阱", () => {
 
 
 function v(src: string) {
-  return litValue___nudojs_core_1(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 
@@ -2415,7 +2415,7 @@ describe("Object.isExtensible 派发 Proxy 的 isExtensible 陷阱", () => {
 
 
 function v(src: string) {
-  return litValue___nudojs_core_2(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 
@@ -2593,7 +2593,7 @@ describe("for…in 走 Proxy 的 ownKeys 陷阱", () => {
 
 
 function v(src: string) {
-  return litValue___nudojs_core_3(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 

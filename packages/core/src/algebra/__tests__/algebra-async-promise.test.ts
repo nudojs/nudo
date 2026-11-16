@@ -4,9 +4,9 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { call, objSlots, val, throwsError, isNever, tupleEls, resetEngineCaches } from "./eval-helpers.ts";
 import { $await } from "../exec/runtime/async.ts";
-import { formatShape, formatAbs as formatAbs_____format_format_ts, formatAbs as formatAbs_____format_format_ts_1 } from "../format/format.ts";
+import { formatShape, formatAbs as formatAbs_____format_format_ts } from "../format/format.ts";
 import { litValue, type Abs, anyAbs, abs, absLit } from "../abs.ts";
-import { litValue as litValue___nudojs_core, formatAbs, litValue as litValue___nudojs_core_1, type Abs as Abs___nudojs_core, litValue as litValue___nudojs_core_2, type Abs as Abs___nudojs_core_1, type Abs as Abs___nudojs_core_2, abs as abs___nudojs_core, numLit, litValue as litValue___nudojs_core_3, type Abs as Abs___nudojs_core_3, litValue as litValue___nudojs_core_4, type Abs as Abs___nudojs_core_4 } from "@nudojs/core";
+import { litValue as litValue___nudojs_core, formatAbs, type Abs as Abs___nudojs_core, abs as abs___nudojs_core, numLit, } from "@nudojs/core";
 import { denoteGuard } from "../denote.ts";
 import { absToConstraint } from "../contract/projection.ts";
 import { aggregateErrorAbs } from "../builtins/promise.ts";
@@ -1983,7 +1983,7 @@ describe("生成器对象的自有可枚举面为空", () => {
 describe("（S18）：投影面不发布 internal 槽", () => {
   it("签名面不发布协议方法槽（无 next/return/throw/constructor/@@iterator）；签名面保留数字下标元素域（yield* s → \"0\": string）——族 01 口径不被破；@@iterator 槽按符号键投影建模（\"@@iterator\" 槽带 symbolKey 标记）；负控制：协议面在运行面仍可用（typeof gi.next → \"function\"）", () => {
   {
-    const sig = formatAbs_____format_format_ts_1(
+    const sig = formatAbs_____format_format_ts(
       call(`export function* g() { yield 1; yield "s"; }`, "g").result as never,
     );
     // 协议方法槽是 internal 槽（原生挂在原型上，不是自有属性）⇒ 不进投影面
@@ -1998,7 +1998,7 @@ describe("（S18）：投影面不发布 internal 槽", () => {
   }
   {
     const strAbs = abs({ k: "prim", type: "string" }, undefined, undefined, "path");
-    const sig = formatAbs_____format_format_ts_1(
+    const sig = formatAbs_____format_format_ts(
       call(`export function* g(s) { yield* s; }`, "g", [strAbs]).result as never,
     );
     expect(sig).toContain('"0": string');
@@ -2308,7 +2308,7 @@ export function f() { return new C(); }`;
 describe("（S21）：与 S18 签名面 / 访问器读域同口径", () => {
   it("签名面（S18）仍不发布 internal 槽——本分片不回退；访问器键的 guard 仍按 getter 读域判定（不被本分片改坏）；访问器键的约束投影仍取 getter 读域", () => {
   {
-    const sig = formatAbs_____format_format_ts_1(call(GEN_SRC, "g").result as Abs);
+    const sig = formatAbs_____format_format_ts(call(GEN_SRC, "g").result as Abs);
     expect(sig).not.toContain("@@iterator");
     expect(sig).not.toContain("next");
     expect(sig).toContain('"0": 1');
@@ -2366,7 +2366,7 @@ type EffShape = {
 function v(src: string): { ok: boolean; value?: unknown } {
   const r = call(src, "f");
   const sh = r.result.shape as EffShape["shape"];
-  return litValue___nudojs_core_1((sh?.k === "eff" && sh.eff === "promise" ? sh.inner : r.result) as Abs___nudojs_core);
+  return litValue___nudojs_core((sh?.k === "eff" && sh.eff === "promise" ? sh.inner : r.result) as Abs___nudojs_core);
 }
 
 /** 结果的展示串（签名面） */
@@ -2491,14 +2491,14 @@ describe("new Promise 执行器抛错", () => {
 
 
 type EffShape = {
-  shape?: { k?: string; eff?: string; inner?: Abs___nudojs_core_1; rejected?: Abs___nudojs_core_1; unsettled?: boolean };
+  shape?: { k?: string; eff?: string; inner?: Abs___nudojs_core; rejected?: Abs___nudojs_core; unsettled?: boolean };
 };
 
 /** 结果取值：promise 取兑现域（inner），非 promise 取自身 */
 function v(src: string): { ok: boolean; value?: unknown } {
   const r = call(src, "f");
   const sh = r.result.shape as EffShape["shape"];
-  return litValue___nudojs_core_2((sh?.k === "eff" && sh.eff === "promise" ? sh.inner : r.result) as Abs___nudojs_core_1);
+  return litValue___nudojs_core((sh?.k === "eff" && sh.eff === "promise" ? sh.inner : r.result) as Abs___nudojs_core);
 }
 
 /** eff(promise) 的形状面 */
@@ -2523,7 +2523,7 @@ function shape(src: string): EffShape["shape"] {
     const sh = shape(`export function f() { return new Promise(() => { throw new Error("boom"); }); }`);
     expect(sh?.inner?.shape?.k).toBe("never");
     expect(sh?.rejected?.shape?.k).toBe("brand");
-    expect(formatAbs(sh!.rejected as Abs___nudojs_core_1)).toContain("Error");
+    expect(formatAbs(sh!.rejected as Abs___nudojs_core)).toContain("Error");
   }
   {
     expect(
@@ -2597,7 +2597,7 @@ describe("promise-static-this-wiring", () => {
 
 
 type EffShape = {
-  shape?: { k?: string; eff?: string; inner?: Abs___nudojs_core_2; rejected?: Abs___nudojs_core_2; unsettled?: boolean };
+  shape?: { k?: string; eff?: string; inner?: Abs___nudojs_core; rejected?: Abs___nudojs_core; unsettled?: boolean };
 };
 
 /** 结果的 promise 面（eff/promise）+ 兑现域字面量 */
@@ -2606,7 +2606,7 @@ function promiseFace(src: string): { inner: { ok: boolean; value?: unknown }; th
   const sh = r.result.shape as EffShape["shape"];
   expect(sh?.k, "expected eff shape (promise)").toBe("eff");
   expect(sh?.eff, "expected promise eff").toBe("promise");
-  return { inner: litValue(sh!.inner as Abs___nudojs_core_2), throws: r.throws };
+  return { inner: litValue(sh!.inner as Abs___nudojs_core), throws: r.throws };
 }
 
 /** 端到端跑一段表达式，返回调用记录 */
@@ -2724,7 +2724,7 @@ function throwsTypeError(fn: () => unknown): boolean {
     fn();
     return false;
   } catch (e) {
-    const err = e as { absValue?: Abs___nudojs_core_2; name?: string };
+    const err = e as { absValue?: Abs___nudojs_core; name?: string };
     if (err?.absValue) return (err.absValue.shape as { name?: string }).name === "TypeError";
     return err?.name === "TypeError" || err?.name === "NudoThrow";
   }
@@ -2825,19 +2825,19 @@ describe("allSettled 元素投影", () => {
 
 
 type EffShape = {
-  shape?: { k?: string; eff?: string; inner?: Abs___nudojs_core_3; rejected?: Abs___nudojs_core_3; unsettled?: boolean };
+  shape?: { k?: string; eff?: string; inner?: Abs___nudojs_core; rejected?: Abs___nudojs_core; unsettled?: boolean };
 };
 
 /** 结果取值：promise 取兑现域（inner），非 promise 取自身 */
 function v(src: string): { ok: boolean; value?: unknown } {
   const r = call(src, "f");
   const sh = r.result.shape as EffShape["shape"];
-  return litValue___nudojs_core_3((sh?.k === "eff" && sh.eff === "promise" ? sh.inner : r.result) as Abs___nudojs_core_3);
+  return litValue___nudojs_core((sh?.k === "eff" && sh.eff === "promise" ? sh.inner : r.result) as Abs___nudojs_core);
 }
 
 /** 结果的展示串（签名面） */
 function fmt(src: string): string {
-  return formatAbs(call(src, "f").result as Abs___nudojs_core_3)?.replace(/\s+#[a-z0-9]+$/, "") ?? "";
+  return formatAbs(call(src, "f").result as Abs___nudojs_core)?.replace(/\s+#[a-z0-9]+$/, "") ?? "";
 }
 
 
@@ -2904,19 +2904,19 @@ describe("非可调用 handler ≡ identity", () => {
 
 
 type EffShape = {
-  shape?: { k?: string; eff?: string; inner?: Abs___nudojs_core_4; rejected?: Abs___nudojs_core_4; unsettled?: boolean };
+  shape?: { k?: string; eff?: string; inner?: Abs___nudojs_core; rejected?: Abs___nudojs_core; unsettled?: boolean };
 };
 
 /** 结果取值：promise 取兑现域（inner），非 promise 取自身 */
 function v(src: string): { ok: boolean; value?: unknown } {
   const r = call(src, "f");
   const sh = r.result.shape as EffShape["shape"];
-  return litValue___nudojs_core_4((sh?.k === "eff" && sh.eff === "promise" ? sh.inner : r.result) as Abs___nudojs_core_4);
+  return litValue___nudojs_core((sh?.k === "eff" && sh.eff === "promise" ? sh.inner : r.result) as Abs___nudojs_core);
 }
 
 /** 结果的展示串（签名面） */
 function fmt(src: string): string {
-  return formatAbs(call(src, "f").result as Abs___nudojs_core_4)?.replace(/\s+#[a-z0-9]+$/, "") ?? "";
+  return formatAbs(call(src, "f").result as Abs___nudojs_core)?.replace(/\s+#[a-z0-9]+$/, "") ?? "";
 }
 
 

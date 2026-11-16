@@ -2,7 +2,7 @@
  * 模块套件：dts 投影面（声明形态 × 可编译性 × 负控制）。
  */
 import { describe, it, expect } from "vitest";
-import { abs, num, objOf, type Abs, localNamedExports, str, abs as makeAbs, lit, v } from "@nudojs/core";
+import { abs, num, objOf, type Abs, localNamedExports, str, lit, v } from "@nudojs/core";
 import { absToTSType, dtsModuleSurface, projectFunctionDts, projectModuleDts, generateDts, type DtsContractFace } from "../dts-generator.ts";
 import { tscNoEmit } from "./dts-tsc.ts";
 import { analyzeFile } from "@nudojs/service";
@@ -2015,14 +2015,14 @@ function fnOf(source: string, name: string) {
 }
 
 function binderVar(id: string): Abs {
-  return makeAbs({ k: "any" }, v(id), undefined, "path");
+  return abs({ k: "any" }, v(id), undefined, "path");
 }
 
 /** processItems 的契约面（与 ABS-01 目标数据形态同构） */
 function processItemsContract(): DtsContractFace {
   const elemA = binderVar("bind:a");
-  const items = makeAbs({ k: "arr", element: elemA }, v("items"), undefined, "path");
-  const transform = makeAbs(
+  const items = abs({ k: "arr", element: elemA }, v("items"), undefined, "path");
+  const transform = abs(
     {
       k: "fn",
       params: ["x"],
@@ -2033,7 +2033,7 @@ function processItemsContract(): DtsContractFace {
     undefined,
     "path",
   );
-  const returns = makeAbs({ k: "arr", element: binderVar("bind:b") }, v("return"), undefined, "path");
+  const returns = abs({ k: "arr", element: binderVar("bind:b") }, v("return"), undefined, "path");
   return {
     params: [
       { name: "items", abs: items, display: 'array(bind("a", any()))' },
@@ -2085,13 +2085,13 @@ describe("ABS-03 契约面类型形参（可达性 + 统一性）", () => {
 describe("ABS-03 重载集 → TS 调用签名对象", () => {
   it("逐 arm 发射（声明序）且保留形参↔返回相关性", () => {
     const prim = (type: "string" | "number"): Abs =>
-      makeAbs({ k: "prim", type }, undefined, undefined, "exact");
-    const overloaded: Abs = makeAbs(
+      abs({ k: "prim", type }, undefined, undefined, "exact");
+    const overloaded: Abs = abs(
       {
         k: "fn",
         params: ["a0"],
-        paramTypes: [makeAbs({ k: "unknown" }, undefined, undefined, "partial")],
-        returnType: makeAbs({ k: "unknown" }, undefined, undefined, "partial"),
+        paramTypes: [abs({ k: "unknown" }, undefined, undefined, "partial")],
+        returnType: abs({ k: "unknown" }, undefined, undefined, "partial"),
         overloads: [
           { paramTypes: [prim("string")], returnType: prim("number") },
           { paramTypes: [prim("number")], returnType: prim("string") },
@@ -2109,7 +2109,7 @@ describe("ABS-03 重载集 → TS 调用签名对象", () => {
 describe("ABS-03 schema 数值界投影", () => {
   it("可表达的 gt/ge 下界与 le/lt 上界生成检查；不可表达的关系（x > y）诚实省略界（不回退成假精确）", () => {
   {
-    const entry = makeAbs(
+    const entry = abs(
       { k: "prim", type: "number" },
       v("x"),
       {
@@ -2126,7 +2126,7 @@ describe("ABS-03 schema 数值界投影", () => {
     expect(src).toContain(".lt(10)");
   }
   {
-    const entry = makeAbs(
+    const entry = abs(
       { k: "prim", type: "number" },
       v("x"),
       { op: "gt", a: v("x"), b: v("y") },

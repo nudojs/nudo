@@ -5,7 +5,7 @@ import { describe, it, expect } from "vitest";
 import { type Abs, checkSource, pTrue, formatShape, numLit, strLit, resetGeneralizeMemo, type AbsModuleExports } from "@nudojs/core";
 import { checkWeb, displayOf, slotOf, webEnvGlobals } from "./env-helpers-globals.ts";
 import { checkNode, hostOwnMembers, hostProtoMembers, instanceFaceOf, memberNames, nodeSlotOf, returnTypeOf, staticSlotOf, slotOfAbs } from "./env-member-tables-helpers.ts";
-import { defineEnv, defineEnv as defineNodeEnv } from "../node.ts";
+import { defineEnv } from "../node.ts";
 import { execFileSync } from "node:child_process";
 import { envMember } from "./env-helpers-builtin-calls.ts";
 import { createHash as nodeCreateHash, pbkdf2Sync as nodePbkdf2Sync, randomBytes as nodeRandomBytes, randomInt as nodeRandomInt, timingSafeEqual as nodeTimingSafeEqual } from "node:crypto";
@@ -712,7 +712,7 @@ describe("env promise 必须带 rejected 通道（catch 臂是活代码）", () 
 
 
 
-const nodeEnv = defineNodeEnv();
+const nodeEnv = defineEnv();
 const webEnv = defineWebEnv();
 
 /** env 模块表 → core 的模块导出表（与 service 的 `collectEnvModules` 同口径） */
@@ -755,7 +755,7 @@ function sigOf(
 const TRY_CATCH_BODY = (expr: string) => `try { ${expr} return "ok"; } catch (e) { return "boom"; }`;
 
 {
-  const nodeEnv = defineNodeEnv();
+  const nodeEnv = defineEnv();
   const webEnv = defineWebEnv();
   const modulesOf = (def: { modules?: Record<string, Record<string, Abs>> }) => {
     const out: Record<string, AbsModuleExports> = {};

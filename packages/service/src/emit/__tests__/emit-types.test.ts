@@ -5,7 +5,7 @@ import { describe, it, expect, beforeEach, afterEach, afterAll } from "vitest";
 import { mkdtempSync, writeFileSync, readFileSync, rmSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
-import { generatedExportNames, numLit, abs as makeAbs, abs, num, v, gt, lit, type Abs, type Pred, eq, obj, str, strLit, parseSource, execNudoModule, anyAbs, formatAbs, effectiveContract, objOf, formatConstraint, joinObjects } from "@nudojs/core";
+import { generatedExportNames, numLit, abs, num, v, gt, lit, type Abs, type Pred, eq, obj, str, strLit, parseSource, execNudoModule, anyAbs, formatAbs, effectiveContract, objOf, formatConstraint, joinObjects } from "@nudojs/core";
 import { emitContract, formatEmitSummary, type EmitContractResult } from "../contract-emitter.ts";
 import { DIAG, denoteGuard } from "@nudojs/core/internal";
 import { materializeAction, type MaterializeInput, addThrowsAnnotation, applyTextEdits, findFnDeclStart } from "../quickfix-edits.ts";
@@ -245,7 +245,7 @@ function rec(file: string, arg: number) {
     targetExport: "f",
     argAbs: [numLit(arg)],
     resultAbs: numLit(arg + 1),
-    throwsAbs: makeAbs({ k: "never" }, undefined, undefined, "exact"),
+    throwsAbs: abs({ k: "never" }, undefined, undefined, "exact"),
     callLoc: { line: 4, column: 0 },
   };
 }

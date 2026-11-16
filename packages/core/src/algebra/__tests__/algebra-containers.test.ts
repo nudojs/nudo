@@ -2,16 +2,16 @@
  * 模块套件：数组/Map/Set/迭代器/HOF 运行时面。
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { checkSource, pTrue, abs as abs_____index_ts, anyAbs, instantiateReturn, numLit, strLit, type Abs, abs as abs_____index_ts_1, formatShape, lit, unknown, array as array_____index_ts, litC, number as number_____index_ts, abs as abs_____index_ts_2 } from "../index.ts";
+import { checkSource, pTrue, abs as abs_____index_ts, anyAbs, instantiateReturn, numLit, strLit, type Abs, formatShape, lit, unknown, array as array_____index_ts, litC, number as number_____index_ts } from "../index.ts";
 import { sidecarOpts, sigOf, l2Count, makeFiles, issuesOf } from "./nudo-constraints.ts";
 import { call, isNever, throwsError, val, resetEngineCaches, effects, tupleEls, objSlots, callLit } from "./eval-helpers.ts";
-import { abs, litValue as litValue_____abs_ts, numLit as numLit_____abs_ts, type Abs as Abs_____abs_ts, litValue as litValue_____abs_ts_1, litValue as litValue_____abs_ts_2, markArrayView, isArrayView, numLit as numLit_____abs_ts_1, strLit as strLit_____abs_ts, obj, type Abs as Abs_____abs_ts_1, litValue as litValue_____abs_ts_3, litValue as litValue_____abs_ts_4, litValue as litValue_____abs_ts_5, type Abs as Abs_____abs_ts_2 } from "../abs.ts";
+import { abs, litValue as litValue_____abs_ts, numLit as numLit_____abs_ts, type Abs as Abs_____abs_ts, markArrayView, isArrayView, strLit as strLit_____abs_ts, obj, } from "../abs.ts";
 import { array, number } from "../constraint.ts";
 import { assertImplies } from "../postcondition.ts";
 import { takeRefineDiags } from "../refine.ts";
 import { takeContractDiags } from "../contract/contract.ts";
 import { formatShape as formatShape_____format_format_ts } from "../format/format.ts";
-import { abs as abs___nudojs_core, anyAbs as anyAbs___nudojs_core, undefAbs, numLit as numLit___nudojs_core, strLit as strLit___nudojs_core, litValue, collectionExactLen, makeMapAbs, makeSetAbs, mapHasEntry, mapSizeAbs, setHasEntry, setSizeAbs, type Abs as Abs___nudojs_core, formatShape as formatShape___nudojs_core, abs as abs___nudojs_core_1, mapDeleteEntry, mapEntriesAbs, mapSetEntry, mapValuesAbs, numLit as numLit___nudojs_core_1, strLit as strLit___nudojs_core_1, type Abs as Abs___nudojs_core_1 } from "@nudojs/core";
+import { abs as abs___nudojs_core, anyAbs as anyAbs___nudojs_core, undefAbs, numLit as numLit___nudojs_core, strLit as strLit___nudojs_core, litValue, collectionExactLen, makeMapAbs, makeSetAbs, mapHasEntry, mapSizeAbs, setHasEntry, setSizeAbs, type Abs as Abs___nudojs_core, formatShape as formatShape___nudojs_core, mapDeleteEntry, mapEntriesAbs, mapSetEntry, mapValuesAbs, } from "@nudojs/core";
 import { objOf, joinObjects } from "../objects.ts";
 import { invokeArrMethod } from "../exec/class/invoke-arr.ts";
 import { isMatchArrayView } from "../builtins/regexp.ts";
@@ -604,13 +604,13 @@ describe("tuple 元素域的 7 个验收值", () => {
 
 
 /** α 变量（any 形状 + var term） */
-const alpha = abs_____index_ts_1({ k: "any" }, { op: "var", id: "T0" }, undefined, "exact");
+const alpha = abs_____index_ts({ k: "any" }, { op: "var", id: "T0" }, undefined, "exact");
 /** harvester 建的 `T[]` 形参：shape = arr(element = α) */
-const arrParam = abs_____index_ts_1({ k: "arr", element: alpha }, undefined, undefined, "exact");
+const arrParam = abs_____index_ts({ k: "arr", element: alpha }, undefined, undefined, "exact");
 
 /** 泛型 `<T>(xs: T[]) => T` 的外延关系（收割面：paramTypes + returnType） */
 function genericArrFn(): Abs {
-  return abs_____index_ts_1(
+  return abs_____index_ts(
     {
       k: "fn",
       params: ["xs"],
@@ -625,17 +625,17 @@ function genericArrFn(): Abs {
 
 /** 引擎的数组字面量实参：shape = tuple(elements) */
 function tupleArg(...elements: Abs[]): Abs {
-  return abs_____index_ts_1({ k: "tuple", elements }, undefined, undefined, "exact");
+  return abs_____index_ts({ k: "tuple", elements }, undefined, undefined, "exact");
 }
 
 /** 引擎的 `null` 值：unknown 形状 + lit 项（`abs.ts` 的 `absLit`） */
 function nullElem(): Abs {
-  return abs_____index_ts_1({ k: "unknown" }, lit(null), undefined, "exact");
+  return abs_____index_ts({ k: "unknown" }, lit(null), undefined, "exact");
 }
 
 /** 引擎的 `undefined` 值：unknown 形状 + lit 项 */
 function undefElem(): Abs {
-  return abs_____index_ts_1({ k: "unknown" }, lit(undefined), undefined, "exact");
+  return abs_____index_ts({ k: "unknown" }, lit(undefined), undefined, "exact");
 }
 
 /** tuple 实参的元素域（经 α 绑定后的返回类型） */
@@ -698,7 +698,7 @@ describe("修前红 / 修后绿（口径锚点）", () => {
     const oldDomain = (elements: Abs[]): Abs => {
       for (const el of elements) {
         if (el.shape.k === "any" || el.shape.k === "unknown") {
-          return abs_____index_ts_1({ k: "any" }, undefined, undefined, "path");
+          return abs_____index_ts({ k: "any" }, undefined, undefined, "path");
         }
       }
       return elements[0]!;
@@ -712,7 +712,7 @@ describe("修前红 / 修后绿（口径锚点）", () => {
   }
   {
     expect(unknown.shape.k).toBe("unknown");
-    expect(abs_____index_ts_1({ k: "any" }, undefined, undefined, "path").shape.k).toBe("any");
+    expect(abs_____index_ts({ k: "any" }, undefined, undefined, "path").shape.k).toBe("any");
   }
 });
 
@@ -1471,7 +1471,7 @@ describe("mutator-arraylike-wiring", () => {
 
 /** 返回值的字面量值（非字面量 → undefined） */
 function litOf(v: unknown): unknown {
-  const r = litValue_____abs_ts_1(v as never);
+  const r = litValue_____abs_ts(v as never);
   return r.ok ? r.value : undefined;
 }
 
@@ -1616,11 +1616,11 @@ describe("数组视图 = Shape facet（形状单一事实源）", () => {
   it("Array.isArray(/a(b)c/.exec(\"abc\")) 折 true（值面）；JSON.stringify(\"abc\".match(/b/)) → '[\"b\"]'（JSON 视图）；形状级：match 结果 Abs 带 view: \"array\"，浅拷贝携带（身份侧表会丢）；形状级：markArrayView 不可变替换 shape（原形状不被就地改写）；数组方法派发仍工作：/a(b)c/.exec(\"abc\").map((x) => x) → [\"abc\",\"", () => {
   {
     const r = call(`export function f1() { return Array.isArray(/a(b)c/.exec("abc")); }`, "f1");
-    expect(litValue_____abs_ts_2(r.result)).toEqual({ ok: true, value: true });
+    expect(litValue_____abs_ts(r.result)).toEqual({ ok: true, value: true });
   }
   {
     const r = call(`export function f2() { return JSON.stringify("abc".match(/b/)); }`, "f2");
-    expect(litValue_____abs_ts_2(r.result)).toEqual({ ok: true, value: '["b"]' });
+    expect(litValue_____abs_ts(r.result)).toEqual({ ok: true, value: '["b"]' });
   }
   {
     const r = call(`export function f3() { return /a(b)c/.exec("abc"); }`, "f3");
@@ -1631,19 +1631,19 @@ describe("数组视图 = Shape facet（形状单一事实源）", () => {
     expect(isArrayView(a)).toBe(true);
     expect(isMatchArrayView(a)).toBe(true);
     // 缺陷类断言：Abs 浅拷贝必须仍报数组视图（旧 WeakSet 侧表在此丢标记）
-    const copy: Abs_____abs_ts_1 = { ...a };
+    const copy: Abs_____abs_ts = { ...a };
     expect(copy).not.toBe(a);
     expect(isArrayView(copy)).toBe(true);
     expect(isMatchArrayView(copy)).toBe(true);
     // 形状拷贝同样携带
-    const shapeCopy: Abs_____abs_ts_1 = { ...a, shape: { ...a.shape } };
+    const shapeCopy: Abs_____abs_ts = { ...a, shape: { ...a.shape } };
     expect(isArrayView(shapeCopy)).toBe(true);
     // 普通 obj 形状不是数组视图
-    expect(isArrayView(obj({ a: { value: numLit_____abs_ts_1(1) } }))).toBe(false);
-    expect(isMatchArrayView(obj({ a: { value: numLit_____abs_ts_1(1) } }))).toBe(false);
+    expect(isArrayView(obj({ a: { value: numLit_____abs_ts(1) } }))).toBe(false);
+    expect(isMatchArrayView(obj({ a: { value: numLit_____abs_ts(1) } }))).toBe(false);
   }
   {
-    const plain = obj({ 0: { value: strLit_____abs_ts("x") }, length: { value: numLit_____abs_ts_1(1) } });
+    const plain = obj({ 0: { value: strLit_____abs_ts("x") }, length: { value: numLit_____abs_ts(1) } });
     const before = plain.shape;
     expect(isArrayView(plain)).toBe(false);
     markArrayView(plain);
@@ -1652,7 +1652,7 @@ describe("数组视图 = Shape facet（形状单一事实源）", () => {
     // 旧形状对象未被就地打标（共享形状的其它 Abs 不受污染）
     expect(isArrayView({ shape: before, conf: plain.conf })).toBe(false);
     // 非 obj 形状不标注
-    const prim = numLit_____abs_ts_1(1);
+    const prim = numLit_____abs_ts(1);
     markArrayView(prim);
     expect(isArrayView(prim)).toBe(false);
   }
@@ -1664,12 +1664,12 @@ describe("数组视图 = Shape facet（形状单一事实源）", () => {
       `export function f6() { return JSON.stringify(/a(b)c/.exec("abc").map((x) => x)); }`,
       "f6",
     );
-    expect(litValue_____abs_ts_2(j.result)).toEqual({ ok: true, value: '["abc","b"]' });
+    expect(litValue_____abs_ts(j.result)).toEqual({ ok: true, value: '["abc","b"]' });
   }
   {
     const slots = {
       0: { value: strLit_____abs_ts("abc") },
-      length: { value: numLit_____abs_ts_1(1) },
+      length: { value: numLit_____abs_ts(1) },
     };
     const viewA = obj(slots);
     const viewB = obj(slots);
@@ -1734,17 +1734,17 @@ describe("Array.prototype mutator 只在字符串接收者上定抛", () => {
   it("push.call(5, 1) = 1（原生；此前定抛 TypeError）；unshift.call(5, 1) = 1（原生）；pop.call(5) / shift.call(5) 不抛（原生 pop → undefined、shift → undefined）；字符串接收者仍定抛（push.call('ab',1) / pop.call('ab') → TypeError）；数组 / 对象接收者不受影响（push.call([1],2)=2 / push.call({", () => {
   {
     const r = call(`export function f() { return Array.prototype.push.call(5, 1); }`);
-    expect(litValue_____abs_ts_3(r.result)).toEqual({ ok: true, value: 1 });
+    expect(litValue_____abs_ts(r.result)).toEqual({ ok: true, value: 1 });
     expect(r.throws.shape.k).toBe("never");
   }
   {
     const r = call(`export function f() { return Array.prototype.unshift.call(5, 1); }`);
-    expect(litValue_____abs_ts_3(r.result)).toEqual({ ok: true, value: 1 });
+    expect(litValue_____abs_ts(r.result)).toEqual({ ok: true, value: 1 });
     expect(r.throws.shape.k).toBe("never");
   }
   {
     const pop = call(`export function f() { return Array.prototype.pop.call(5); }`);
-    expect(litValue_____abs_ts_3(pop.result)).toEqual({ ok: true, value: undefined });
+    expect(litValue_____abs_ts(pop.result)).toEqual({ ok: true, value: undefined });
     expect(pop.throws.shape.k).toBe("never");
     // shift 的**取值**由空元组 shift 面决定（invoke-arr.ts——他片所有）；
     // 本钉锁本 bug 的核心面：原始值接收者上 mutator **不抛**。
@@ -1761,15 +1761,15 @@ describe("Array.prototype mutator 只在字符串接收者上定抛", () => {
   }
   {
     expect(
-      litValue_____abs_ts_3(call(`export function f() { return Array.prototype.push.call([1], 2); }`).result),
+      litValue_____abs_ts(call(`export function f() { return Array.prototype.push.call([1], 2); }`).result),
     ).toEqual({ ok: true, value: 2 });
     expect(
-      litValue_____abs_ts_3(call(`export function f() { return Array.prototype.push.call({}, 2); }`).result),
+      litValue_____abs_ts(call(`export function f() { return Array.prototype.push.call({}, 2); }`).result),
     ).toEqual({ ok: true, value: 1 });
   }
   {
     const r = call(`export function f() { return Array.prototype.slice.call(5).length; }`);
-    expect(litValue_____abs_ts_3(r.result)).toEqual({ ok: true, value: 0 });
+    expect(litValue_____abs_ts(r.result)).toEqual({ ok: true, value: 0 });
     expect(r.throws.shape.k).toBe("never");
   }
 });
@@ -1802,10 +1802,10 @@ describe("Map 迭代按宿主插入序（字面量键与身份键混插）", () 
 
 
 
-const objAbs = (): Abs___nudojs_core_1 => abs___nudojs_core_1({ k: "obj", slots: {} }, undefined, undefined, "exact");
+const objAbs = (): Abs___nudojs_core => abs___nudojs_core({ k: "obj", slots: {} }, undefined, undefined, "exact");
 
 /** entry 元组的键 Abs（迭代序断言用） */
-const keyOfEntry = (e: Abs___nudojs_core_1): Abs___nudojs_core_1 =>
+const keyOfEntry = (e: Abs___nudojs_core): Abs___nudojs_core =>
   e.shape.k === "tuple" ? e.shape.elements[0]! : e;
 
 const KEYS_SRC = `
@@ -1865,8 +1865,8 @@ export function f() {
   {
     const m = makeMapAbs();
     const obj = objAbs();
-    mapSetEntry(m, obj, numLit___nudojs_core_1(1));
-    mapSetEntry(m, strLit___nudojs_core_1("a"), numLit___nudojs_core_1(2));
+    mapSetEntry(m, obj, numLit___nudojs_core(1));
+    mapSetEntry(m, strLit___nudojs_core("a"), numLit___nudojs_core(2));
 
     const entries = mapEntriesAbs(m);
     expect(entries).toHaveLength(2);
@@ -1881,11 +1881,11 @@ export function f() {
   {
     const m = makeMapAbs();
     const obj = objAbs();
-    mapSetEntry(m, obj, numLit___nudojs_core_1(1));
-    mapSetEntry(m, strLit___nudojs_core_1("a"), numLit___nudojs_core_1(2));
+    mapSetEntry(m, obj, numLit___nudojs_core(1));
+    mapSetEntry(m, strLit___nudojs_core("a"), numLit___nudojs_core(2));
 
     // m.set(o, v2)：值更新、位置不变
-    mapSetEntry(m, obj, numLit___nudojs_core_1(9));
+    mapSetEntry(m, obj, numLit___nudojs_core(9));
     expect(mapValuesAbs(m).map((v) => litValue(v))).toEqual([
       { ok: true, value: 9 },
       { ok: true, value: 2 },
@@ -1893,7 +1893,7 @@ export function f() {
 
     // m.delete(o); m.set(o, v3)：重新插入 → 排到末尾
     mapDeleteEntry(m, obj);
-    mapSetEntry(m, obj, numLit___nudojs_core_1(7));
+    mapSetEntry(m, obj, numLit___nudojs_core(7));
     expect(mapValuesAbs(m).map((v) => litValue(v))).toEqual([
       { ok: true, value: 2 },
       { ok: true, value: 7 },
@@ -2057,7 +2057,7 @@ describe("Array.prototype.with 在原始值接收者上定抛 RangeError", () =>
   {
     const r = call(`export function f() { return Array.prototype.with.call([1, 2], 0, 9); }`);
     expect(r.throws.shape.k).toBe("never");
-    expect(litValue_____abs_ts_4(r.result)).toEqual({ ok: false });
+    expect(litValue_____abs_ts(r.result)).toEqual({ ok: false });
   }
 });
 
@@ -2678,7 +2678,7 @@ const objectPatternNode = {
       "f",
       [1, 2],
     );
-    expect(litValue_____abs_ts_5(r.result)).toEqual({ ok: true, value: 1 });
+    expect(litValue_____abs_ts(r.result)).toEqual({ ok: true, value: 1 });
   }
 });
 
@@ -2724,9 +2724,9 @@ describe("bigint ⊗ array in + is string concat (never throws)", () => {
 
 
 
-const BIG_PRIM = abs_____index_ts_2({ k: "prim", type: "bigint" }, undefined, undefined, "path");
-const ARR_ABS = abs_____index_ts_2(
-  { k: "arr", element: abs_____index_ts_2({ k: "prim", type: "number" }, undefined, undefined, "exact") },
+const BIG_PRIM = abs_____index_ts({ k: "prim", type: "bigint" }, undefined, undefined, "path");
+const ARR_ABS = abs_____index_ts(
+  { k: "arr", element: abs_____index_ts({ k: "prim", type: "number" }, undefined, undefined, "exact") },
   undefined,
   undefined,
   "path",
@@ -2819,11 +2819,11 @@ describe("成员级：sum 含 arr/tuple 成员不连坐 may-throw", () => {
   // 单源化批次（coerce/surface 谓词收敛）曾把 arr/tuple 成员带进 may-throw
   // 通道 ⇒ `x & 1`（x: number|[]）记假 TypeError may-throw ⇒ L2 假红。
   // 原生 oracle：5 & 1 = 1、[] & 1 = 0、1 - 5 / 1 - [] 均不抛。
-  const NUM = abs_____index_ts_2({ k: "prim", type: "number" }, undefined, undefined, "path");
-  const sumOf = (...members: Abs_____abs_ts_2[]): Abs_____abs_ts_2 =>
-    abs_____index_ts_2({ k: "sum", members }, undefined, undefined, "path");
+  const NUM = abs_____index_ts({ k: "prim", type: "number" }, undefined, undefined, "path");
+  const sumOf = (...members: Abs_____abs_ts[]): Abs_____abs_ts =>
+    abs_____index_ts({ k: "sum", members }, undefined, undefined, "path");
   /** effects 助手固定以 anyAbs 调用；本段需指定实参域 ⇒ 本地变体 */
-  const effectsWithArgs = (src: string, args: Abs_____abs_ts_2[]): string[] => {
+  const effectsWithArgs = (src: string, args: Abs_____abs_ts[]): string[] => {
     const exports = runTranspiled(src, { mode: "analyze" });
     const eff: MayThrowEffect[] = [];
     runWithMayThrowSession(() => {
@@ -2851,8 +2851,8 @@ describe("成员级：sum 含 arr/tuple 成员不连坐 may-throw", () => {
     ]);
   }
   {
-    const anyAbs = abs_____index_ts_2({ k: "any" }, undefined, undefined, "path");
-    const obj = abs_____index_ts_2({ k: "obj", slots: {} }, undefined, undefined, "path");
+    const anyAbs = abs_____index_ts({ k: "any" }, undefined, undefined, "path");
+    const obj = abs_____index_ts({ k: "obj", slots: {} }, undefined, undefined, "path");
     for (const member of [anyAbs, obj]) {
       const xs = [sumOf(member, ARR_ABS)];
       expect(effectsWithArgs(`export function f(x) { return x & 1; }`, xs)).toEqual([
@@ -2861,7 +2861,7 @@ describe("成员级：sum 含 arr/tuple 成员不连坐 may-throw", () => {
     }
   }
   {
-    const unk = abs_____index_ts_2({ k: "unknown" }, undefined, undefined, "partial");
+    const unk = abs_____index_ts({ k: "unknown" }, undefined, undefined, "partial");
     const xs = [sumOf(unk, ARR_ABS)];
     expect(effectsWithArgs(`export function f(x) { return x & 1; }`, xs)).toEqual(["TypeError"]);
   }

@@ -16,7 +16,7 @@ import { resetGeneralizeMemo } from "../generalize.ts";
 import { resetCheckSourceMemo } from "../check/check-memo.ts";
 import { runWithMayThrowSession, setMayThrowCollector, throwPayloadOf, type MayThrowEffect } from "../diagnostics/may-throw.ts";
 import { $invoke } from "../exec/class/invoke.ts";
-import { litValue as litValue___nudojs_core, litValue as litValue___nudojs_core_1, litValue as litValue___nudojs_core_2, litValue as litValue___nudojs_core_3, litValue as litValue___nudojs_core_4, litValue as litValue___nudojs_core_5, checkSource as checkSource___nudojs_core, pTrue as pTrue___nudojs_core, transpileSource, litValue as litValue___nudojs_core_8, litValue as litValue___nudojs_core_10, litValue as litValue___nudojs_core_12, litValue as litValue___nudojs_core_13, litValue as litValue___nudojs_core_14, litValue as litValue___nudojs_core_15, litValue as litValue___nudojs_core_16, litValue as litValue___nudojs_core_17, litValue as litValue___nudojs_core_19, litValue as litValue___nudojs_core_20, litValue as litValue___nudojs_core_21, litValue as litValue___nudojs_core_22, litValue as litValue___nudojs_core_23, litValue as litValue___nudojs_core_24, litValue as litValue___nudojs_core_25, litValue as litValue___nudojs_core_26, litValue as litValue___nudojs_core_28, litValue as litValue___nudojs_core_30, litValue as litValue___nudojs_core_31, litValue as litValue___nudojs_core_32, litValue as litValue___nudojs_core_33, litValue as litValue___nudojs_core_34, litValue as litValue___nudojs_core_35, formatShape as formatShape___nudojs_core, litValue as litValue___nudojs_core_36, litValue as litValue___nudojs_core_37 } from "@nudojs/core";
+import { litValue as litValue___nudojs_core, checkSource as checkSource___nudojs_core, pTrue as pTrue___nudojs_core, transpileSource, formatShape as formatShape___nudojs_core, } from "@nudojs/core";
 import { formatShape, formatAbs } from "../format/format.ts";
 import { denoteGuard } from "../denote.ts";
 import { absToConstraint } from "../contract/projection.ts";
@@ -472,13 +472,13 @@ describe("static 块与静态字段按源码顺序执行", () => {
 
 /** 结果字面量值（litValue） */
 function v(src: string) {
-  return litValue___nudojs_core_1(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
 {
-  const v = (src: string) => litValue___nudojs_core_1(call(src, "f").result);
+  const v = (src: string) => litValue___nudojs_core(call(src, "f").result);
   const wrap = (body: string) => `export function f() { ${body} }`;
   it("块在前/三段交错/副作用序；字段在前/外层变量/块内 this 负控", () => {
     expect(v(wrap(`class A { static { A.q = 1; } static r = A.q + 1; } return A.r;`))).toEqual({ ok: true, value: 2 });
@@ -495,7 +495,7 @@ const wrap = (body: string) => `export function f() { ${body} }`;
 // 重复键：后写的数据属性覆盖先写的访问器
 // ---------------------------------------------------------------------------
 describe("重复键：后写的数据属性覆盖先写的访问器", () => {
-  const v = (src: string) => litValue___nudojs_core_2(call(src, "f").result);
+  const v = (src: string) => litValue___nudojs_core(call(src, "f").result);
   const throwName = (src: string): string => {
     const t = call(src, "f").throws as { shape?: { k?: string; name?: string } } | undefined;
     if (!t?.shape || t.shape.k === "never") return "";
@@ -622,7 +622,7 @@ describe("static 块内 super 读父类静态成员", () => {
 
 /** 结果字面量值（litValue） */
 function v(src: string) {
-  return litValue___nudojs_core_3(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 const wrap = (body: string) => `export function f() { ${body} }`;
@@ -701,7 +701,7 @@ describe("私有名按声明类作用域化", () => {
 
 /** 结果字面量值（litValue） */
 function v(src: string) {
-  return litValue___nudojs_core_4(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 /** 抛错名（无抛错 → ""） */
@@ -715,7 +715,7 @@ const wrap = (body: string) => `export function f() { ${body} }`;
 
 {
   const wrap = (body: string) => `export function f() { ${body} }`;
-  const v = (src: string) => litValue___nudojs_core_4(call(src, "f").result);
+  const v = (src: string) => litValue___nudojs_core(call(src, "f").result);
   const throwName = (src: string): string => {
     const t = call(src, "f").throws as { shape?: { k?: string; name?: string } } | undefined;
     if (!t?.shape || t.shape.k === "never") return "";
@@ -828,7 +828,7 @@ describe("默认参数表达式的 this 是本函数自己的 this", () => {
 
 /** 引擎求值结果字面量值 */
 function v(src: string, ...args: unknown[]) {
-  return litValue___nudojs_core_5(callLit(src, "f", ...args).result);
+  return litValue___nudojs_core(callLit(src, "f", ...args).result);
 }
 
 
@@ -1112,7 +1112,7 @@ describe("成员路径写回不得打到根（中间层是访问器时）", () =
 
 
 function v(src: string) {
-  return litValue___nudojs_core_8(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 /** 抛错面（brand 名 = 错误构造器名） */
@@ -1251,12 +1251,12 @@ const wrap = (body: string) => `export function f() { ${body} }`;
 
 /** 结果字面量值（litValue） */
 function v(src: string) {
-  return litValue___nudojs_core_10(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 {
   const wrap = (body: string) => `export function f() { ${body} }`;
-  const v = (src: string) => litValue___nudojs_core_10(call(src, "f").result);
+  const v = (src: string) => litValue___nudojs_core(call(src, "f").result);
   const throwsType = (src: string) => {
     const r = call(src, "f");
     return isNever(r.result) && throwsError(r.throws, "TypeError");
@@ -1879,7 +1879,7 @@ const wrap = (body: string) => `export function f() { ${body} }`;
 
 /** 结果字面量值（litValue） */
 function v(src: string) {
-  return litValue___nudojs_core_12(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 
@@ -2072,7 +2072,7 @@ describe("类值的 prototype 不可写：写必抛 strict TypeError", () => {
 
 /** 结果字面量值（litValue） */
 function v(src: string) {
-  return litValue___nudojs_core_13(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 /** 抛错名（无抛错 → ""） */
@@ -2180,7 +2180,7 @@ const wrap = (body: string) => `export function f() { ${body} }`;
 
 /** 结果字面量值（litValue） */
 function v(src: string) {
-  return litValue___nudojs_core_14(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 
@@ -2297,7 +2297,7 @@ const wrap = (body: string) => `export function f() { ${body} }`;
 
 /** 结果字面量值（litValue） */
 function v(src: string) {
-  return litValue___nudojs_core_15(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 /** 抛错名（无抛错 → ""） */
@@ -2421,7 +2421,7 @@ const wrap = (body: string) => `export function f() { ${body} }`;
 
 /** 结果字面量值（litValue） */
 function v(src: string) {
-  return litValue___nudojs_core_16(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 /** 抛错名（无抛错 → ""） */
@@ -2479,7 +2479,7 @@ describe("prim 读不存在的成员 → undefined（不是 unknown）", () => {
 
 /** 结果字面量值（litValue） */
 function v(src: string) {
-  return litValue___nudojs_core_17(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 /** 抛错名（无抛错 → ""） */
@@ -2492,7 +2492,7 @@ function throwName(src: string): string {
 const wrap = (body: string) => `export function f() { ${body} }`;
 
 {
-  const v = (src: string) => litValue___nudojs_core_17(call(src, "f").result);
+  const v = (src: string) => litValue___nudojs_core(call(src, "f").result);
   const throwName = (src: string): string => {
     const t = call(src, "f").throws as { shape?: { k?: string; name?: string } } | undefined;
     if (!t?.shape || t.shape.k === "never") return "";
@@ -2578,7 +2578,7 @@ describe("sealed 数组 length 截断写 / mutator", () => {
 
 
 function v(src: string) {
-  return litValue___nudojs_core_19(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 function threw(src: string, name = "TypeError"): boolean {
@@ -2637,7 +2637,7 @@ describe("getter-only 静态访问器的写定抛 strict TypeError", () => {
 
 /** 结果字面量值（litValue） */
 function v(src: string) {
-  return litValue___nudojs_core_20(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 /** 抛错名（无抛错 → ""） */
@@ -2919,7 +2919,7 @@ describe("类值的 constructor 是内建 Function", () => {
 
 /** 结果字面量值（litValue） */
 function v(src: string) {
-  return litValue___nudojs_core_21(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 const wrap = (body: string) => `export function f() { ${body} }`;
@@ -3041,7 +3041,7 @@ const wrap = (body: string) => `export function f() { ${body} }`;
 
 /** 结果字面量值（litValue） */
 function v(src: string) {
-  return litValue___nudojs_core_22(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 
@@ -3137,7 +3137,7 @@ const wrap = (body: string) => `export function f() { ${body} }`;
 
 /** 结果字面量值（litValue） */
 function v(src: string) {
-  return litValue___nudojs_core_23(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 
@@ -3199,7 +3199,7 @@ const wrap = (body: string) => `export function f() { ${body} }`;
 
 /** 结果字面量值（litValue） */
 function v(src: string) {
-  return litValue___nudojs_core_24(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 /** 抛错名（无抛错 → ""） */
@@ -3288,7 +3288,7 @@ describe("freeze / seal 键级标志 + isFrozen/isSealed 平凡真", () => {
 
 
 function v(src: string) {
-  return litValue___nudojs_core_25(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 const wrap = (body: string) => `export function f() { ${body} }`;
@@ -3414,7 +3414,7 @@ describe("defineProperty 实现 ValidateAndApplyPropertyDescriptor", () => {
 
 /** 结果字面量值（litValue） */
 function v(src: string) {
-  return litValue___nudojs_core_26(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 /** 入口 throws 面（brand 名）——未抛则 undefined */
@@ -3598,7 +3598,7 @@ describe("Array.from 的第三实参 thisArg 透传给回调", () => {
 
 /** 结果字面量值（litValue） */
 function v(src: string) {
-  return litValue___nudojs_core_28(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 /** 抛错名（无抛错 → ""） */
@@ -3814,7 +3814,7 @@ describe("Reflect.defineProperty 的反射口径（失败返 false 不抛）", (
 
 /** 结果字面量值（litValue） */
 function v(src: string) {
-  return litValue___nudojs_core_30(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 /** 入口 throws 面（brand 名）——未抛则 undefined */
@@ -3900,7 +3900,7 @@ describe("Reflect.get 查访问器侧表（getter 不再被忽略）", () => {
 
 /** 结果字面量值（litValue） */
 function v(src: string) {
-  return litValue___nudojs_core_31(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 const wrap = (body: string) => `export function f() { ${body} }`;
@@ -3994,27 +3994,27 @@ const wrap = (body: string) => `export function f() { ${body} }`;
       wrap(`return Object.getPrototypeOf(Function.prototype) === Object.prototype;`),
       "f",
     );
-    expect(litValue___nudojs_core_32(r.result)).toEqual({ ok: true, value: true });
+    expect(litValue___nudojs_core(r.result)).toEqual({ ok: true, value: true });
     expect(throwsError(r.throws, "TypeError")).toBe(false);
   }
 call("export function f() { delete Array.prototype.push; delete Array.prototype.join; delete Map.prototype.get; delete String.prototype.toUpperCase; delete Number.prototype.toFixed; delete Object.prototype.toString; return 1; }", "f");{
     const r = call(wrap(`return Object.getPrototypeOf(Object.prototype) === null;`), "f");
-    expect(litValue___nudojs_core_32(r.result)).toEqual({ ok: true, value: true });
+    expect(litValue___nudojs_core(r.result)).toEqual({ ok: true, value: true });
   }
 call("export function f() { delete Array.prototype.push; delete Array.prototype.join; delete Map.prototype.get; delete String.prototype.toUpperCase; delete Number.prototype.toFixed; delete Object.prototype.toString; return 1; }", "f");{
     const r = call(wrap(`return Object.getPrototypeOf([]) === Array.prototype;`), "f");
-    expect(litValue___nudojs_core_32(r.result)).toEqual({ ok: true, value: true });
+    expect(litValue___nudojs_core(r.result)).toEqual({ ok: true, value: true });
   }
 call("export function f() { delete Array.prototype.push; delete Array.prototype.join; delete Map.prototype.get; delete String.prototype.toUpperCase; delete Number.prototype.toFixed; delete Object.prototype.toString; return 1; }", "f");{
     const r = call(wrap(`return Object.getPrototypeOf(Array.prototype) === Object.prototype;`), "f");
-    expect(litValue___nudojs_core_32(r.result)).toEqual({ ok: true, value: true });
+    expect(litValue___nudojs_core(r.result)).toEqual({ ok: true, value: true });
   }
 call("export function f() { delete Array.prototype.push; delete Array.prototype.join; delete Map.prototype.get; delete String.prototype.toUpperCase; delete Number.prototype.toFixed; delete Object.prototype.toString; return 1; }", "f");{
     const r = call(
       wrap(`function user(){} return Object.getPrototypeOf(user) === Function.prototype;`),
       "f",
     );
-    expect(litValue___nudojs_core_32(r.result)).toEqual({ ok: true, value: true });
+    expect(litValue___nudojs_core(r.result)).toEqual({ ok: true, value: true });
   }
 });
 
@@ -4030,32 +4030,32 @@ describe("负控制（报告的 typeof 勘误 + 相邻原型面不回归）", ()
     // （Function.prototype 本身可调用——它就是「所有函数共用的那个函数」）。
     // 报告里的 "object" 无原生依据，**不得**据此写断言。
     const r = call(wrap(`return typeof Function.prototype;`), "f");
-    expect(litValue___nudojs_core_32(r.result)).toEqual({ ok: true, value: "function" });
+    expect(litValue___nudojs_core(r.result)).toEqual({ ok: true, value: "function" });
   }
 call("export function f() { delete Array.prototype.push; delete Array.prototype.join; delete Map.prototype.get; delete String.prototype.toUpperCase; delete Number.prototype.toFixed; delete Object.prototype.toString; return 1; }", "f");{
     // 原生：Object.getPrototypeOf(Function.prototype) === Object.prototype
     // ⇒ typeof 是 "object"
     const r = call(wrap(`return typeof Object.getPrototypeOf(Function.prototype);`), "f");
-    expect(litValue___nudojs_core_32(r.result)).toEqual({ ok: true, value: "object" });
+    expect(litValue___nudojs_core(r.result)).toEqual({ ok: true, value: "object" });
   }
 call("export function f() { delete Array.prototype.push; delete Array.prototype.join; delete Map.prototype.get; delete String.prototype.toUpperCase; delete Number.prototype.toFixed; delete Object.prototype.toString; return 1; }", "f");{
     const r = call(wrap(`return Object.getPrototypeOf(Function) === Function.prototype;`), "f");
-    expect(litValue___nudojs_core_32(r.result)).toEqual({ ok: true, value: true });
+    expect(litValue___nudojs_core(r.result)).toEqual({ ok: true, value: true });
   }
 call("export function f() { delete Array.prototype.push; delete Array.prototype.join; delete Map.prototype.get; delete String.prototype.toUpperCase; delete Number.prototype.toFixed; delete Object.prototype.toString; return 1; }", "f");{
     const r = call(wrap(`return Object.getPrototypeOf(Object) === Function.prototype;`), "f");
-    expect(litValue___nudojs_core_32(r.result)).toEqual({ ok: true, value: true });
+    expect(litValue___nudojs_core(r.result)).toEqual({ ok: true, value: true });
   }
 call("export function f() { delete Array.prototype.push; delete Array.prototype.join; delete Map.prototype.get; delete String.prototype.toUpperCase; delete Number.prototype.toFixed; delete Object.prototype.toString; return 1; }", "f");{
     const r = call(wrap(`return Object.getPrototypeOf(function(){}) === Function.prototype;`), "f");
-    expect(litValue___nudojs_core_32(r.result)).toEqual({ ok: true, value: true });
+    expect(litValue___nudojs_core(r.result)).toEqual({ ok: true, value: true });
   }
 call("export function f() { delete Array.prototype.push; delete Array.prototype.join; delete Map.prototype.get; delete String.prototype.toUpperCase; delete Number.prototype.toFixed; delete Object.prototype.toString; return 1; }", "f");{
     const r = call(
       wrap(`return Object.getPrototypeOf(Object.getPrototypeOf([])) === Object.prototype;`),
       "f",
     );
-    expect(litValue___nudojs_core_32(r.result)).toEqual({ ok: true, value: true });
+    expect(litValue___nudojs_core(r.result)).toEqual({ ok: true, value: true });
   }
 });
 
@@ -4109,7 +4109,7 @@ const wrap = (body: string) => `export function f() { ${body} }`;
       wrap(`const it = new Set([1,2])[Symbol.iterator](); return it[Symbol.iterator]() === it;`),
       "f",
     );
-    expect(litValue___nudojs_core_33(r.result)).toEqual({ ok: true, value: true });
+    expect(litValue___nudojs_core(r.result)).toEqual({ ok: true, value: true });
     expect(throwsError(r.throws, "TypeError")).toBe(false);
     expect(isNever(r.result)).toBe(false);
   }
@@ -4118,7 +4118,7 @@ call("export function f() { delete Array.prototype.push; delete Array.prototype.
       wrap(`const it = new Map([[1,2]])[Symbol.iterator](); return it[Symbol.iterator]() === it;`),
       "f",
     );
-    expect(litValue___nudojs_core_33(r.result)).toEqual({ ok: true, value: true });
+    expect(litValue___nudojs_core(r.result)).toEqual({ ok: true, value: true });
     expect(throwsError(r.throws, "TypeError")).toBe(false);
   }
 call("export function f() { delete Array.prototype.push; delete Array.prototype.join; delete Map.prototype.get; delete String.prototype.toUpperCase; delete Number.prototype.toFixed; delete Object.prototype.toString; return 1; }", "f");{
@@ -4126,7 +4126,7 @@ call("export function f() { delete Array.prototype.push; delete Array.prototype.
       wrap(`const it = [1,2][Symbol.iterator](); return it[Symbol.iterator]() === it;`),
       "f",
     );
-    expect(litValue___nudojs_core_33(r.result)).toEqual({ ok: true, value: true });
+    expect(litValue___nudojs_core(r.result)).toEqual({ ok: true, value: true });
     expect(throwsError(r.throws, "TypeError")).toBe(false);
   }
 call("export function f() { delete Array.prototype.push; delete Array.prototype.join; delete Map.prototype.get; delete String.prototype.toUpperCase; delete Number.prototype.toFixed; delete Object.prototype.toString; return 1; }", "f");{
@@ -4134,7 +4134,7 @@ call("export function f() { delete Array.prototype.push; delete Array.prototype.
       wrap(`const it = "ab"[Symbol.iterator](); return it[Symbol.iterator]() === it;`),
       "f",
     );
-    expect(litValue___nudojs_core_33(r.result)).toEqual({ ok: true, value: true });
+    expect(litValue___nudojs_core(r.result)).toEqual({ ok: true, value: true });
     expect(throwsError(r.throws, "TypeError")).toBe(false);
   }
 });
@@ -4152,7 +4152,7 @@ describe("负控制（自协议 ≠ 「所有迭代器都相等」）", () => {
       ),
       "f",
     );
-    expect(litValue___nudojs_core_33(r.result)).toEqual({ ok: true, value: false });
+    expect(litValue___nudojs_core(r.result)).toEqual({ ok: true, value: false });
   }
 call("export function f() { delete Array.prototype.push; delete Array.prototype.join; delete Map.prototype.get; delete String.prototype.toUpperCase; delete Number.prototype.toFixed; delete Object.prototype.toString; return 1; }", "f");{
     // 原生：`it === s` → false（迭代器与集合是不同对象）。引擎当前给**保守
@@ -4161,7 +4161,7 @@ call("export function f() { delete Array.prototype.push; delete Array.prototype.
       wrap(`const s = new Set([1,2]); const it = s[Symbol.iterator](); return it === s;`),
       "f",
     );
-    const lit = litValue___nudojs_core_33(r.result);
+    const lit = litValue___nudojs_core(r.result);
     expect(lit.ok === true ? lit.value : undefined).not.toBe(true);
   }
 });
@@ -4299,7 +4299,7 @@ describe("Object.create(o, undefined) 整步跳过", () => {
 
 
 function v(src: string) {
-  return litValue___nudojs_core_34(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 function thrown(src: string): string | undefined {
@@ -4371,7 +4371,7 @@ describe("Object.defineProperties(o, <原始值>) 走 ToObject", () => {
 
 
 function v(src: string) {
-  return litValue___nudojs_core_35(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 function thrown(src: string): string | undefined {
@@ -4470,7 +4470,7 @@ const wrap = (body: string) => `export function f() { ${body} }`;
       ),
       "f",
     );
-    expect(litValue___nudojs_core_36(r.result)).toEqual({ ok: true, value: true });
+    expect(litValue___nudojs_core(r.result)).toEqual({ ok: true, value: true });
     expect(throwsError(r.throws, "TypeError")).toBe(false);
   }
 call("export function f() { delete Array.prototype.push; delete Array.prototype.join; delete Map.prototype.get; delete String.prototype.toUpperCase; delete Number.prototype.toFixed; delete Object.prototype.toString; return 1; }", "f");{
@@ -4478,7 +4478,7 @@ call("export function f() { delete Array.prototype.push; delete Array.prototype.
       wrap(`return Object.getPrototypeOf(Array.prototype) === Object.prototype;`),
       "f",
     );
-    expect(litValue___nudojs_core_36(r.result)).toEqual({ ok: true, value: true });
+    expect(litValue___nudojs_core(r.result)).toEqual({ ok: true, value: true });
   }
 call("export function f() { delete Array.prototype.push; delete Array.prototype.join; delete Map.prototype.get; delete String.prototype.toUpperCase; delete Number.prototype.toFixed; delete Object.prototype.toString; return 1; }", "f");{
     // 原生是 false（%TypedArray%.prototype 夹在中间）。修前引擎恒 true
@@ -4488,7 +4488,7 @@ call("export function f() { delete Array.prototype.push; delete Array.prototype.
       wrap(`return Object.getPrototypeOf(Uint8Array.prototype) === Object.prototype;`),
       "f",
     );
-    const lit = litValue___nudojs_core_36(r.result);
+    const lit = litValue___nudojs_core(r.result);
     expect(lit.ok === true ? lit.value : undefined).not.toBe(true);
     // 保守域的具体形状：boolean（既非 exact true 也非 exact false）
     expect(formatShape___nudojs_core(r.result)).toBe("boolean");
@@ -4503,18 +4503,18 @@ describe("负控制（内建原型链的相邻形态不回归）", () => {
   it("getProto(Object.prototype) === null → true（链顶恒 null）；getProto(getProto(Array.prototype)) === null → true（Array.prototype 上一层即顶）；typeof Array.prototype === \"object\"（内建原型对象的 typeof 面不回归）", () => {
   {
     const r = call(wrap(`return Object.getPrototypeOf(Object.prototype) === null;`), "f");
-    expect(litValue___nudojs_core_36(r.result)).toEqual({ ok: true, value: true });
+    expect(litValue___nudojs_core(r.result)).toEqual({ ok: true, value: true });
   }
 call("export function f() { delete Array.prototype.push; delete Array.prototype.join; delete Map.prototype.get; delete String.prototype.toUpperCase; delete Number.prototype.toFixed; delete Object.prototype.toString; return 1; }", "f");{
     const r = call(
       wrap(`return Object.getPrototypeOf(Object.getPrototypeOf(Array.prototype)) === null;`),
       "f",
     );
-    expect(litValue___nudojs_core_36(r.result)).toEqual({ ok: true, value: true });
+    expect(litValue___nudojs_core(r.result)).toEqual({ ok: true, value: true });
   }
 call("export function f() { delete Array.prototype.push; delete Array.prototype.join; delete Map.prototype.get; delete String.prototype.toUpperCase; delete Number.prototype.toFixed; delete Object.prototype.toString; return 1; }", "f");{
     const r = call(wrap(`return typeof Array.prototype;`), "f");
-    expect(litValue___nudojs_core_36(r.result)).toEqual({ ok: true, value: "object" });
+    expect(litValue___nudojs_core(r.result)).toEqual({ ok: true, value: "object" });
   }
 });
 
@@ -4551,7 +4551,7 @@ describe("Array.prototype 三键的 nullish 接收者记抛", () => {
 
 /** 结果字面量值（litValue） */
 function v(src: string) {
-  return litValue___nudojs_core_37(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 /** 抛错名（无抛错 → ""） */

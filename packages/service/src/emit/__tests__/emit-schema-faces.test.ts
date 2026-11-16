@@ -6,10 +6,10 @@ import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readdirSync, readFileSyn
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { formatContractSurfaceLine, contractSurface } from "../contract-surface.ts";
-import { num, type Abs, type FormalParam, abs, constraintToEntryAbs, lit, numLit, v, type NudoConstraint, str, gt, ge, lt, le, type Pred, objOf, execNudoModule, effectiveContract, checkSource, pTrue, strLit, absToConstraint, app, number, predToString, abs as makeAbs, formatShape } from "@nudojs/core";
+import { num, type Abs, type FormalParam, abs, constraintToEntryAbs, lit, numLit, v, type NudoConstraint, str, gt, ge, lt, le, type Pred, objOf, execNudoModule, effectiveContract, checkSource, pTrue, strLit, absToConstraint, app, number, predToString, formatShape } from "@nudojs/core";
 import { absToStandardSchemaFunction, absToStandardSchema, absToStandardSchemaModule, validateSchemaNode } from "../standard-schema.ts";
 import { loadGeneratedModule } from "./fixtures.ts";
-import { absToSchemaNode, absToSchemaSource, schemaNodeToZod, absToZodSchemaModule, constraintToSchemaNode,  } from "../schema-generator.ts";
+import { absToSchemaNode, absToSchemaSource, schemaNodeToZod, absToZodSchemaModule, constraintToSchemaNode, } from "../schema-generator.ts";
 import ts from "typescript";
 import { absToTSType } from "../dts-generator.ts";
 import { tscNoEmit } from "./dts-tsc.ts";
@@ -1463,16 +1463,16 @@ describe("稀疏元组的洞不被固化成显式 undefined", () => {
 
 
 
-function absExact(shape: Parameters<typeof makeAbs>[0]): ReturnType<typeof makeAbs> {
-  return makeAbs(shape, undefined, undefined, "exact");
+function absExact(shape: Parameters<typeof abs>[0]): ReturnType<typeof abs> {
+  return abs(shape, undefined, undefined, "exact");
 }
 
 /** 稀疏元组：[1, <洞>, 3]（洞位是 undefAbs()，与显式 undefined 元素同形） */
-function sparseTuple(): ReturnType<typeof makeAbs> {
+function sparseTuple(): ReturnType<typeof abs> {
   return absExact({ k: "tuple", elements: [absLit(1), absLit(undefined), absLit(3)], holes: [1] });
 }
 
-function makeFn(name: string, line: number, args: ReturnType<typeof makeAbs>[]): FunctionAnalysis {
+function makeFn(name: string, line: number, args: ReturnType<typeof abs>[]): FunctionAnalysis {
   return {
     name,
     loc: { start: { line, column: 0 }, end: { line, column: 0 } },

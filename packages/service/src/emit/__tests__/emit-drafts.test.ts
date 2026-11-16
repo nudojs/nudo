@@ -20,7 +20,7 @@ import type { FunctionAnalysis } from "../../analyzer-types.ts";
 import { nodeCheck } from "./draft-artifact.ts";
 import { defaultLoadModule } from "../../load-module.ts";
 import { absLit } from "@nudojs/core/internal";
-import { defaultLoadModule as defaultLoadModule___nudojs_service, type AnalysisResult, type FunctionAnalysis as FunctionAnalysis___nudojs_service, type FunctionAnalysis as FunctionAnalysis___nudojs_service_1 } from "@nudojs/service";
+import { defaultLoadModule as defaultLoadModule___nudojs_service, type AnalysisResult, type FunctionAnalysis as FunctionAnalysis___nudojs_service } from "@nudojs/service";
 import { insertGeneratedCaseDirectives, stripGeneratedCaseDirectives } from "../case-emitter.ts";
 
 // ---------------------------------------------------------------------------
@@ -1437,7 +1437,7 @@ export function add(a, b) { return a + b; }
 `;
 
 function analysisOf(cases: Array<{ name: string; args: Abs[] }>): AnalysisResult {
-  const fn: FunctionAnalysis___nudojs_service_1 = {
+  const fn: FunctionAnalysis___nudojs_service = {
     name: "add",
     loc: { start: { line: 4, column: 0 }, end: { line: 4, column: 0 } },
     paramNames: ["a", "b"],

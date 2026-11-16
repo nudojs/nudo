@@ -11,7 +11,7 @@ import { checkSource, resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo, buildArgsFromAssume } from "../generalize.ts";
 import type { CheckIssue } from "../check/check-report.ts";
 import { sidecarOpts, errorsOf, issuesOf, sigOf, withStdImport, stdOpts } from "./nudo-constraints.ts";
-import { litValue, abs, pTrue as pTrue___nudojs_core, type Abs as Abs___nudojs_core, str, type Abs as Abs___nudojs_core_1, anyAbs, runTranspiled as runTranspiled___nudojs_core, callTranspiledExportFull as callTranspiledExportFull___nudojs_core, unknown, relationFn, formatShape, type Abs as Abs___nudojs_core_2 } from "@nudojs/core";
+import { litValue, abs, pTrue as pTrue___nudojs_core, type Abs as Abs___nudojs_core, str, anyAbs, runTranspiled as runTranspiled___nudojs_core, callTranspiledExportFull as callTranspiledExportFull___nudojs_core, unknown, relationFn, formatShape } from "@nudojs/core";
 import { call, throwsError, val, isNever, tupleEls } from "./eval-helpers.ts";
 import { runTranspiled, callTranspiledExportFull } from "../exec/run.ts";
 import { $lit, undef } from "../exec/runtime/state.ts";
@@ -1592,7 +1592,7 @@ describe("开放对象读臂使用声明的索引值域", () => {
 
 
 /** 开放对象：声明索引值域（key = string 键，value = 值域） */
-function openObj(value: Abs___nudojs_core_1): Abs___nudojs_core_1 {
+function openObj(value: Abs___nudojs_core): Abs___nudojs_core {
   return objOf({}, { open: true, index: { key: str(), value } });
 }
 
@@ -3398,7 +3398,7 @@ describe("具名导入的 fn 绑定保留 env 声明类型", () => {
 
 
 
-const brand = (name: string): Abs___nudojs_core_2 =>
+const brand = (name: string): Abs___nudojs_core =>
   abs({ k: "brand", name, shape: unknown }, undefined, undefined, "path");
 
 /** env 声明面（对齐 packages/env/src/node.ts 的 util.promisify 形态） */
@@ -3414,7 +3414,7 @@ const modules = {
 function sigOf(src: string, fn: string): string {
   const run = runTranspiled___nudojs_core(src, { mode: "analyze", modules: modules as never });
   const r = callTranspiledExportFull___nudojs_core(run, fn, []);
-  return formatShape(r.result as Abs___nudojs_core_2);
+  return formatShape(r.result as Abs___nudojs_core);
 }
 
 {

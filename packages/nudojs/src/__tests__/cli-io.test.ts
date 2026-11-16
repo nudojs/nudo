@@ -5,7 +5,7 @@ import { describe, it, expect, afterAll, afterEach, beforeAll, beforeEach } from
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, chmodSync, mkdirSync, existsSync, readdirSync, realpathSync, symlinkSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, resolve, relative } from "node:path";
-import { runCliTsx, repoRoot, runCliTsx as runCli, writeSrcTsconfig } from "./helpers/run-cli.ts";
+import { repoRoot, runCliTsx as runCli, writeSrcTsconfig } from "./helpers/run-cli.ts";
 import { spawnSync } from "node:child_process";
 import { shouldAnalyzeFile, type PathError } from "@nudojs/service";
 import { collectNudoFiles, collectExternalRecords } from "../commands/shared.ts";
@@ -75,7 +75,7 @@ export function b() { return a(); }
   {
     const dir = project({ "m.js": MISSING_MODULE });
     try {
-      const r = runCliTsx(["test", join(dir, "m.js")]);
+      const r = runCli(["test", join(dir, "m.js")]);
       expect(r.status).toBe(1);
       expect(r.stdout).toContain("[error]");
       expect(r.stdout).toContain("nudo:module-missing");
@@ -86,7 +86,7 @@ export function b() { return a(); }
   {
     const dir = project({ "m.js": MISSING_MODULE });
     try {
-      const r = runCliTsx(["test", join(dir, "m.js"), "--json"]);
+      const r = runCli(["test", join(dir, "m.js"), "--json"]);
       expect(r.status).toBe(1);
       const json = JSON.parse(r.stdout) as {
         ok?: boolean;
@@ -101,7 +101,7 @@ export function b() { return a(); }
   {
     const dir = project({ "ok.js": CLEAN });
     try {
-      const r = runCliTsx(["test", join(dir, "ok.js"), "--json"]);
+      const r = runCli(["test", join(dir, "ok.js"), "--json"]);
       expect(r.status).toBe(0);
       const json = JSON.parse(r.stdout) as {
         ok?: boolean;
@@ -116,7 +116,7 @@ export function b() { return a(); }
   {
     const dir = project({ "a.js": CYCLE_A, "b.js": CYCLE_B });
     try {
-      const r = runCliTsx(["test", join(dir, "a.js")]);
+      const r = runCli(["test", join(dir, "a.js")]);
       expect(r.status).toBe(0);
       expect(r.stdout).toContain("nudo:module-cycle");
     } finally {
@@ -164,7 +164,7 @@ const SRC = "export function withRest(a, ...rest) {\n  return rest.length;\n}\n"
     const dir = mkdtempSync(join(tmpdir(), "nudo-b026-"));
     dirs.push(dir);
     writeFileSync(join(dir, "rest.js"), SRC, "utf-8");
-    const r = runCliTsx(["export", join(dir, "rest.js"), "--format", "schema"]);
+    const r = runCli(["export", join(dir, "rest.js"), "--format", "schema"]);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("rest: z.array(z.unknown())");
     expect(r.stdout).not.toContain("z.array(z.array(");
@@ -173,7 +173,7 @@ const SRC = "export function withRest(a, ...rest) {\n  return rest.length;\n}\n"
     const dir = mkdtempSync(join(tmpdir(), "nudo-b026-std-"));
     dirs.push(dir);
     writeFileSync(join(dir, "rest.js"), SRC, "utf-8");
-    const all = runCliTsx(["export", join(dir, "rest.js"), "--format", "all"]);
+    const all = runCli(["export", join(dir, "rest.js"), "--format", "all"]);
     expect(all.status).toBe(0);
     // rest 槽恒可选 ⇒ standard 槽带 "optional":true（一层数组不变）
     expect(all.stdout).toContain('{"key":"rest","node":{"k":"arr","element":{"k":"unknown"}},"optional":true}');
@@ -228,11 +228,11 @@ describe("-only 部分吞掉路径 ⇒ 不得静默丢文件", () => {
       writeFileSync(join(cwd, "broken.js"), BROKEN, "utf-8");
 
       // 对照：两个路径都在 ⇒ broken.js 的门禁红（exit 1）
-      const both = runCliTsx(["check", "clean.js", "broken.js"], { cwd });
+      const both = runCli(["check", "clean.js", "broken.js"], { cwd });
       expect(both.status).toBe(1);
 
       // 缺陷形态：--only 吞掉 broken.js ⇒ 旧实现 exit 0（文件没被检查）
-      const swallow = runCliTsx(
+      const swallow = runCli(
         ["check", "clean.js", "--only", "nudo:entry-may-throw", "broken.js"],
         { cwd },
       );
@@ -253,7 +253,7 @@ describe("-only 部分吞掉路径 ⇒ 不得静默丢文件", () => {
       );
       writeFileSync(join(cwd, "clean.js"), CLEAN, "utf-8");
       writeFileSync(join(cwd, "broken.js"), BROKEN, "utf-8");
-      const r = runCliTsx(
+      const r = runCli(
         ["check", "--only", "nudo:entry-may-throw", "--", "clean.js", "broken.js"],
         { cwd },
       );
@@ -316,7 +316,7 @@ describe("-fix 的 dry-run 计划 == --write 结果", () => {
   {
     const cwd = makeProject("nudo-bug047-");
     try {
-      const r = runCliTsx(["check", "helper.js", "--fix"], { cwd });
+      const r = runCli(["check", "helper.js", "--fix"], { cwd });
       const hunks = r.stdout.split("\n").filter((l) => l.startsWith("@@ "));
       expect(hunks.length).toBeGreaterThanOrEqual(2);
       // 第一份 = 新建（空 → 2 行）；第二份必须**基于第一份**（1,2 → 1,3）
@@ -332,7 +332,7 @@ describe("-fix 的 dry-run 计划 == --write 结果", () => {
     try {
       const init = spawnSync("git", ["init", "-q", "."], { cwd, encoding: "utf8" });
       expect(init.status, `git init 失败: ${init.stderr}`).toBe(0);
-      const r = runCliTsx(["check", "helper.js", "--fix"], { cwd });
+      const r = runCli(["check", "helper.js", "--fix"], { cwd });
       const g = spawnSync("git", ["apply", "--check", "-p1"], {
         cwd,
         input: r.stdout,
@@ -347,9 +347,9 @@ describe("-fix 的 dry-run 计划 == --write 结果", () => {
     const dryCwd = makeProject("nudo-bug047-dry-");
     const writeCwd = makeProject("nudo-bug047-write-");
     try {
-      const dry = runCliTsx(["check", "helper.js", "--fix"], { cwd: dryCwd });
+      const dry = runCli(["check", "helper.js", "--fix"], { cwd: dryCwd });
       expect(dry.status).toBe(1); // 残余 error ⇒ 门禁红
-      const written = runCliTsx(["check", "helper.js", "--fix", "--write"], {
+      const written = runCli(["check", "helper.js", "--fix", "--write"], {
         cwd: writeCwd,
       });
       // 两条 fix 都落盘 ⇒ 残余 error 归零（dry-run 面才保持红）
@@ -415,7 +415,7 @@ describe("-fix --only 无命中必须可见", () => {
   {
     const cwd = makeProject();
     try {
-      const r = runCliTsx(["check", "helper.js", "--fix", "--only", "nudo:bogus-code"], {
+      const r = runCli(["check", "helper.js", "--fix", "--only", "nudo:bogus-code"], {
         cwd,
       });
       expect(r.status).toBe(1);
@@ -429,7 +429,7 @@ describe("-fix --only 无命中必须可见", () => {
   {
     const cwd = makeProject();
     try {
-      const r = runCliTsx(["check", "helper.js", "--fix", "--only", "nudo:arg-count"], {
+      const r = runCli(["check", "helper.js", "--fix", "--only", "nudo:arg-count"], {
         cwd,
       });
       expect(r.stdout).toContain("--only nudo:arg-count matched no diagnostic");
@@ -483,7 +483,7 @@ describe.skipIf(isRoot)("BUG-049 — --fix --write 的写失败不中断整次�
       writeFileSync(join(cwd, "second.js"), HELPER, "utf-8");
       chmodSync(roDir, 0o555);
 
-      const r = runCliTsx(
+      const r = runCli(
         ["check", join("ro", "helper.js"), "second.js", "--fix", "--write"],
         { cwd },
       );
@@ -549,10 +549,10 @@ describe("-fix --write 不写共享侧车路径", () => {
       writeFileSync(join(cwd, "foo.js"), FOO_JS, "utf-8");
       writeFileSync(join(cwd, "foo.mjs"), FOO_MJS, "utf-8");
 
-      const before = runCliTsx(["check", "foo.mjs"], { cwd });
+      const before = runCli(["check", "foo.mjs"], { cwd });
       expect(errorCount(before.stdout)).toBe(1);
 
-      const fix = runCliTsx(["check", ".", "--fix", "--write"], { cwd });
+      const fix = runCli(["check", ".", "--fix", "--write"], { cwd });
       // 拒绝落盘必须可见（旧实现只报「1 edit(s) written, 1 applied」）
       expect(fix.stderr).toContain("refuses to write sidecar");
       expect(fix.stderr).toContain("shared with");
@@ -560,7 +560,7 @@ describe("-fix --write 不写共享侧车路径", () => {
       // 共享侧车没有被写出来（写了就会污染兄弟模块）
       expect(existsSync(join(cwd, "foo.nudo.js"))).toBe(false);
 
-      const after = runCliTsx(["check", "foo.mjs"], { cwd });
+      const after = runCli(["check", "foo.mjs"], { cwd });
       expect(errorCount(after.stdout)).toBe(1);
       expect(after.stdout).not.toContain("nudo:contract-load");
     } finally {
@@ -622,7 +622,7 @@ const ZOD_STUB = "export declare const z: any;\n";
       "utf-8",
     );
 
-    const r = runCliTsx(["export", join(dir, "zname.js"), "--format", "all"]);
+    const r = runCli(["export", join(dir, "zname.js"), "--format", "all"]);
     expect(r.status).toBe(0);
     // 用户的导出名恒占（工具侧让位）
     expect(r.stdout).toContain("export declare function z(x: number): number;");
@@ -645,7 +645,7 @@ const ZOD_STUB = "export declare const z: any;\n";
       "export function __nudoCheck(x) {\n  return x;\n}\n__nudoCheck(1);\n",
       "utf-8",
     );
-    const r = runCliTsx(["export", join(dir, "helper.js"), "--format", "all"]);
+    const r = runCli(["export", join(dir, "helper.js"), "--format", "all"]);
     expect(r.status).toBe(0);
     // helper 在前、用户导出在后 ⇒ 用户侧让位（`Dts` 后缀），helper 只声明一次
     const helperDecls = (r.stdout.match(/^function __nudoCheck\b/gm) ?? []).length;
@@ -814,11 +814,11 @@ interface TestJson {
   {
     const file = writeFixture();
 
-    const text = runCliTsx(["test", file]);
+    const text = runCli(["test", file]);
     expect(text.stdout).toContain(`(${CODE})`);
     expect(text.stdout).toContain("Recursive evaluation of 'loop'");
 
-    const json = runCliTsx(["test", file, "--json"]);
+    const json = runCli(["test", file, "--json"]);
     const parsed = JSON.parse(json.stdout) as TestJson;
     const trunc = parsed.diagnostics.filter((d) => d.code === CODE);
     expect(trunc).toHaveLength(1);
@@ -828,7 +828,7 @@ interface TestJson {
   }
   {
     const file = writeFixture();
-    const r = runCliTsx(["check", file]);
+    const r = runCli(["check", file]);
     expect(r.stdout).toContain(`(${CODE})`);
     // 门禁仍由 L2 may-throw 决定：截断诊断是 info，不是新错误
     expect(r.stdout).toContain("nudo:entry-may-throw");
@@ -915,14 +915,14 @@ export function double(x) {
   }
   {
     const pkg = makeFixture();
-    const r = runCliTsx(["check", pkg]);
+    const r = runCli(["check", pkg]);
     expect(r.stdout).not.toContain("dist/lib.js");
     expect(r.stdout).not.toContain("coverage/cov.js");
     expect(r.stdout).toContain("src/lib.js");
   }
   {
     const pkg = makeFixture();
-    const r = runCliTsx(["test", pkg]);
+    const r = runCli(["test", pkg]);
     expect(r.status).toBe(0);
     expect(r.stdout).not.toContain("stale");
     expect(r.stdout).toContain("ok");
@@ -1064,7 +1064,7 @@ describe("-json 信封的 summary.pathErrors", () => {
   {
     const cwd = makeProject();
     try {
-      const r = runCliTsx(["check", "--json", "nope.js"], { cwd });
+      const r = runCli(["check", "--json", "nope.js"], { cwd });
       expect(r.status).toBe(1);
       const env = JSON.parse(r.stdout) as Envelope;
       expect(env.ok).toBe(false);
@@ -1080,7 +1080,7 @@ describe("-json 信封的 summary.pathErrors", () => {
   {
     const cwd = makeProject();
     try {
-      const r = runCliTsx(["check", "--json", "ok.js"], { cwd });
+      const r = runCli(["check", "--json", "ok.js"], { cwd });
       expect(r.status).toBe(0);
       const env = JSON.parse(r.stdout) as Envelope;
       expect(env.ok).toBe(true);
@@ -1175,7 +1175,7 @@ function inputNode(stdout: string, exportName: string): string {
   it("zod：解构形参按**字段名**建顶层键（不再是内部占位 `_p0`）；standard：解构形参的顶层槽是字段名（无占位名）；负控制：数组解构的字段级契约仍是元组（Bug 394 口径不变）", () => {
   {
     const dir = fixture();
-    const r = runCliTsx(["export", join(dir, "lib.js"), "--format", "schema"]);
+    const r = runCli(["export", join(dir, "lib.js"), "--format", "schema"]);
     expect(r.status).toBe(0);
     expect(r.stdout).toMatch(/export const destrInput = z\.object\(\{ a:/);
     expect(r.stdout).not.toContain("_p0");
@@ -1184,7 +1184,7 @@ function inputNode(stdout: string, exportName: string): string {
   }
   {
     const dir = fixture();
-    const r = runCliTsx(["export", join(dir, "lib.js"), "--format", "standard"]);
+    const r = runCli(["export", join(dir, "lib.js"), "--format", "standard"]);
     expect(r.status).toBe(0);
     expect(inputNode(r.stdout, "destrInput")).toContain('"key":"a"');
     expect(inputNode(r.stdout, "destrInput")).not.toContain("_p0");
@@ -1195,7 +1195,7 @@ function inputNode(stdout: string, exportName: string): string {
       "arr.js": "export function f7([a, b]) { return a; }\n",
       "arr.nudo.js": 'import { fn, number } from "@nudojs/core";\nexport const f7 = fn({ a: number() }, number());\n',
     });
-    const r = runCliTsx(["export", join(dir, "arr.js"), "--format", "schema"]);
+    const r = runCli(["export", join(dir, "arr.js"), "--format", "schema"]);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("z.tuple(");
   }
@@ -1282,7 +1282,7 @@ const SRC = "export function f1(f1Input) {\n  return f1Input;\n}\n";
     const dir = mkdtempSync(join(tmpdir(), "nudo-b204-"));
     dirs.push(dir);
     writeFileSync(join(dir, "collide.js"), SRC, "utf-8");
-    const r = runCliTsx(["export", join(dir, "collide.js"), "--format", "all"]);
+    const r = runCli(["export", join(dir, "collide.js"), "--format", "all"]);
     expect(r.status).toBe(0);
 
     // 数据（槽键）保持原形参名 ⇒ 与 zod 段 / dts 段判同一个对象
@@ -1300,7 +1300,7 @@ const SRC = "export function f1(f1Input) {\n  return f1Input;\n}\n";
     dirs.push(dir);
     writeFileSync(join(dir, "collide.js"), SRC, "utf-8");
     const out = join(dir, "out");
-    const r = runCliTsx(["export", join(dir, "collide.js"), "--format", "standard", "--out", out]);
+    const r = runCli(["export", join(dir, "collide.js"), "--format", "standard", "--out", out]);
     expect(r.status).toBe(0);
     const name = readdirSync(out).find((f) => f.endsWith(".nudo.standard.ts"));
     expect(name).toBeDefined();
@@ -1352,7 +1352,7 @@ afterAll(() => {
     writeFileSync(join(dir, "b", "lib.js"), "export function beta(x) {\n  return x + 2;\n}\nbeta(1);\n", "utf-8");
 
     const exportDts = (file: string) =>
-      runCliTsx(["export", file, "--format", "dts", "--out", out]);
+      runCli(["export", file, "--format", "dts", "--out", out]);
 
     expect(exportDts(join(dir, "a", "lib.js")).status).toBe(0);
     expect(exportDts(join(dir, "b", "lib.js")).status).toBe(0);
@@ -1381,7 +1381,7 @@ afterAll(() => {
     writeFileSync(join(dir, "a", "lib.js"), "export function alpha(x) { return x + 1; }\nalpha(1);\n", "utf-8");
     writeFileSync(join(dir, "b", "lib.js"), "export function beta(x) { return x + 2; }\nbeta(1);\n", "utf-8");
     for (const f of ["a", "b", "b", "a"]) {
-      expect(runCliTsx(["export", join(dir, f, "lib.js"), "--format", "dts", "--out", out]).status).toBe(0);
+      expect(runCli(["export", join(dir, f, "lib.js"), "--format", "dts", "--out", out]).status).toBe(0);
     }
     expect(readdirSync(out).filter((f) => f.endsWith(".d.ts"))).toHaveLength(2);
   }
@@ -1524,7 +1524,7 @@ interface CliIssue {
       OPTIONAL_SIDECAR,
       `f({ a: undefined });\nf({});\nf({ a: "x" });`,
     );
-    const r = runCliTsx(["check", file, "--json"]);
+    const r = runCli(["check", file, "--json"]);
     expect(r.status).toBe(0);
     const json = JSON.parse(r.stdout) as {
       ok: boolean;
@@ -1538,7 +1538,7 @@ interface CliIssue {
   }
   {
     const file = fixture("g", requiredSidecar("g"), `g({ a: undefined });`);
-    const r = runCliTsx(["check", file, "--json"]);
+    const r = runCli(["check", file, "--json"]);
     expect(r.status).toBe(1);
     const json = JSON.parse(r.stdout) as { ok: boolean; issues: CliIssue[] };
     expect(json.ok).toBe(false);
@@ -1548,7 +1548,7 @@ interface CliIssue {
   }
   {
     const file = fixture("g2", requiredSidecar("g2"), `g2({ a: "x" });`);
-    const r = runCliTsx(["check", file, "--json"]);
+    const r = runCli(["check", file, "--json"]);
     expect(r.status).toBe(0);
     const json = JSON.parse(r.stdout) as { issues: CliIssue[] };
     expect(json.issues.filter((i) => i.code === "nudo:constraint-violated")).toHaveLength(0);
@@ -1603,24 +1603,24 @@ function fixture(src: string): string {
   it("A 组（无调用点）：zod / standard 槽是一层数组，dts 同形；A 组 standard 校验器**接受**该函数自己的合法调用 `{args:[1,2]}`；对照组（有调用点证据）：同样是**一层**数组，接受集与 A 组一致", () => {
   {
     const dir = fixture(NO_CALLSITE);
-    const schema = runCliTsx(["export", join(dir, "lib.js"), "--format", "schema"]);
+    const schema = runCli(["export", join(dir, "lib.js"), "--format", "schema"]);
     expect(schema.status).toBe(0);
     // rest 槽恒可选（zod 面 .optional()），仍是一层数组
     expect(schema.stdout).toContain("export const restOneInput = z.object({ args: z.array(z.unknown()).optional() })");
     expect(schema.stdout).not.toContain("z.array(z.array(");
 
-    const std = runCliTsx(["export", join(dir, "lib.js"), "--format", "standard"]);
+    const std = runCli(["export", join(dir, "lib.js"), "--format", "standard"]);
     expect(std.status).toBe(0);
     expect(std.stdout).toContain('{"key":"args","node":{"k":"arr","element":{"k":"unknown"}},"optional":true}');
     expect(std.stdout).not.toContain('{"key":"args","node":{"k":"arr","element":{"k":"arr"');
 
-    const dts = runCliTsx(["export", join(dir, "lib.js"), "--format", "dts"]);
+    const dts = runCli(["export", join(dir, "lib.js"), "--format", "dts"]);
     expect(dts.stdout).toContain("...args: unknown[]");
   }
   {
     const dir = fixture(NO_CALLSITE);
     const out = join(dir, "out");
-    expect(runCliTsx(["export", join(dir, "lib.js"), "--format", "standard", "--out", out]).status).toBe(0);
+    expect(runCli(["export", join(dir, "lib.js"), "--format", "standard", "--out", out]).status).toBe(0);
     const name = readdirSync(out).find((f) => f.endsWith(".nudo.standard.ts"));
     expect(name).toBeDefined();
     // artifact 自带类型标注 ⇒ 复制成 .mts 交给 node 的 strip-types 求值
@@ -1647,7 +1647,7 @@ function fixture(src: string): string {
   }
   {
     const dir = fixture(WITH_CALLSITE);
-    const schema = runCliTsx(["export", join(dir, "lib.js"), "--format", "schema"]);
+    const schema = runCli(["export", join(dir, "lib.js"), "--format", "schema"]);
     expect(schema.status).toBe(0);
     expect(schema.stdout).not.toContain("z.array(z.array(");
     expect(schema.stdout).toMatch(/export const restOneInput = z\.object\(\{ args: z\.array\(z\.(union|unknown)/);
@@ -1706,7 +1706,7 @@ describe("-gha --gitlab 两个通道都不丢", () => {
   {
     const cwd = makeProject();
     try {
-      const r = runCliTsx(["check", "--gha", "err.js"], { cwd });
+      const r = runCli(["check", "--gha", "err.js"], { cwd });
       expect(r.status).toBe(1);
       expect(annCount(r)).toBeGreaterThanOrEqual(1);
       expect(r.stdout).toContain("::error");
@@ -1718,7 +1718,7 @@ describe("-gha --gitlab 两个通道都不丢", () => {
   {
     const cwd = makeProject();
     try {
-      const r = runCliTsx(["check", "--gha", "--gitlab", "err.js"], { cwd });
+      const r = runCli(["check", "--gha", "--gitlab", "err.js"], { cwd });
       expect(r.status).toBe(1);
       // stdout 契约：恰好一份 Code Quality 数组
       const rows = JSON.parse(r.stdout) as Array<{ check_name: string }>;
@@ -1733,8 +1733,8 @@ describe("-gha --gitlab 两个通道都不丢", () => {
   {
     const cwd = makeProject();
     try {
-      const both = runCliTsx(["check", "--gha", "--gitlab", "err.js"], { cwd });
-      const withJson = runCliTsx(
+      const both = runCli(["check", "--gha", "--gitlab", "err.js"], { cwd });
+      const withJson = runCli(
         ["check", "--json", "--gha", "--gitlab", "err.js"],
         { cwd },
       );
@@ -1847,7 +1847,7 @@ describe("-from 的跨文件调用点证据必须进入 drift 判定", () => {
   it("check --from <使用现场> -- <被检查文件> ⇒ 报 nudo:contract-drift（改前 0 条）；控制组：没有跨文件证据 ⇒ 不报 drift（无证据不判）；归因闸：别的模块的同名调用点证据不得污染本文件的判定", () => {
   {
     const dir = fixtureDir(FILES);
-    const r = runCliTsx(
+    const r = runCli(
       ["check", "--json", "--from", "usage.js", "--", "lib.js"],
       { cwd: dir },
     );
@@ -1857,7 +1857,7 @@ describe("-from 的跨文件调用点证据必须进入 drift 判定", () => {
   }
   {
     const dir = fixtureDir(FILES);
-    const r = runCliTsx(["check", "--json", "lib.js"], { cwd: dir });
+    const r = runCli(["check", "--json", "lib.js"], { cwd: dir });
     expect(r.status).toBe(0);
     expect(r.stdout).not.toContain("nudo:contract-drift");
   }
@@ -1877,7 +1877,7 @@ describe("-from 的跨文件调用点证据必须进入 drift 判定", () => {
         "",
       ].join("\n"),
     });
-    const r = runCliTsx(
+    const r = runCli(
       ["check", "--json", "--from", "usage.js", "--", "other.js"],
       { cwd: dir },
     );
@@ -1955,7 +1955,7 @@ export const f7 = fn({ a: number() }, number());
   it("zod 入参面：数组解构 + 字段级契约 ⇒ 元组槽（改前是对象槽 `a`）；standard 面：数组解构形参的槽节点是元组；负控制：对象解构 + 字段级契约仍摊成对象槽（既有口径不变）；负控制：无契约的数组解构仍是观测元组（既有口径不变）", () => {
   {
     const dir = fixture({ "m394.js": ARRAY_SRC, "m394.nudo.js": ARRAY_SIDECAR });
-    const r = runCliTsx(["export", join(dir, "m394.js"), "--format", "schema"]);
+    const r = runCli(["export", join(dir, "m394.js"), "--format", "schema"]);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("z.tuple(");
     // 改前的形态：对象槽按绑定名摊开
@@ -1963,20 +1963,20 @@ export const f7 = fn({ a: number() }, number());
   }
   {
     const dir = fixture({ "m394s.js": ARRAY_SRC, "m394s.nudo.js": ARRAY_SIDECAR });
-    const r = runCliTsx(["export", join(dir, "m394s.js"), "--format", "standard"]);
+    const r = runCli(["export", join(dir, "m394s.js"), "--format", "standard"]);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain('"k":"tuple"');
     expect(r.stdout).not.toContain('"key":"a"');
   }
   {
     const dir = fixture({ "m394o.js": OBJECT_SRC, "m394o.nudo.js": OBJECT_SIDECAR });
-    const r = runCliTsx(["export", join(dir, "m394o.js"), "--format", "schema"]);
+    const r = runCli(["export", join(dir, "m394o.js"), "--format", "schema"]);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("z.object({ a:");
   }
   {
     const dir = fixture({ "m394n.js": ARRAY_SRC });
-    const r = runCliTsx(["export", join(dir, "m394n.js"), "--format", "schema"]);
+    const r = runCli(["export", join(dir, "m394n.js"), "--format", "schema"]);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("z.tuple(");
     expect(r.stdout).not.toContain("z.object({ a:");
@@ -2045,7 +2045,7 @@ describe("-what-if --target 指向函数时不再打出 `?`", () => {
   it("--target 指向函数名：返回域取自函数面（不再是 `() => ?`）；两条面不再互相矛盾：--target 的返回域与签名表一致；控制：--target 指向非函数绑定时行为不变；控制：--target 指向不存在的名字时仍是 unknown", () => {
   {
     const dir = fixture({ "w405.js": SRC });
-    const r = runCliTsx([
+    const r = runCli([
       "check",
       join(dir, "w405.js"),
       "--what-if",
@@ -2061,7 +2061,7 @@ describe("-what-if --target 指向函数时不再打出 `?`", () => {
   }
   {
     const dir = fixture({ "w405b.js": SRC });
-    const whatIf = runCliTsx([
+    const whatIf = runCli([
       "check",
       join(dir, "w405b.js"),
       "--what-if",
@@ -2069,7 +2069,7 @@ describe("-what-if --target 指向函数时不再打出 `?`", () => {
       "--target",
       "useRaw",
     ]);
-    const table = runCliTsx(["check", join(dir, "w405b.js")]);
+    const table = runCli(["check", join(dir, "w405b.js")]);
     expect(whatIf.status).toBe(0);
     expect(table.status).toBe(0);
     // 签名表：`useRaw() => 3`（字面量视图）
@@ -2080,7 +2080,7 @@ describe("-what-if --target 指向函数时不再打出 `?`", () => {
   }
   {
     const dir = fixture({ "w405c.js": SRC });
-    const r = runCliTsx([
+    const r = runCli([
       "check",
       join(dir, "w405c.js"),
       "--what-if",
@@ -2094,7 +2094,7 @@ describe("-what-if --target 指向函数时不再打出 `?`", () => {
   }
   {
     const dir = fixture({ "w405d.js": SRC });
-    const r = runCliTsx([
+    const r = runCli([
       "check",
       join(dir, "w405d.js"),
       "--what-if",
@@ -2171,7 +2171,7 @@ function esmLoad(path: string): { status: number; stdout: string; stderr: string
     writeFileSync(join(dir, "types.ts"), TYPES_TS, "utf-8");
     writeFileSync(join(dir, "use.ts"), USE_TS, "utf-8");
 
-    const r = runCliTsx(["migrate", "strip", "--write", "--no-draft", dir]);
+    const r = runCli(["migrate", "strip", "--write", "--no-draft", dir]);
     expect(r.status, r.stderr).toBe(0);
     expect(r.stderr).not.toContain("TypeScript syntax");
 
@@ -2196,7 +2196,7 @@ function esmLoad(path: string): { status: number; stdout: string; stderr: string
     writeFileSync(join(dir, "types.ts"), TYPES_TS, "utf-8");
     writeFileSync(join(dir, "use.ts"), USE_TS, "utf-8");
 
-    const r = runCliTsx(["migrate", "strip", "--write", "--no-draft", dir]);
+    const r = runCli(["migrate", "strip", "--write", "--no-draft", dir]);
     expect(r.status, r.stderr).toBe(0);
     // 被 import 的模块剥成空模块 ⇒ 任何残留的具名 import 都会链接失败
     const types = readFileSync(join(dir, "types.js"), "utf-8");
@@ -2258,7 +2258,7 @@ function nodeCheck(path: string): { status: number; stderr: string } {
     dirs.push(dir);
     writeFileSync(join(dir, "f3.ts"), FIELDS_TS, "utf-8");
 
-    const r = runCliTsx(["migrate", "strip", "--write", "--no-draft", join(dir, "f3.ts")]);
+    const r = runCli(["migrate", "strip", "--write", "--no-draft", join(dir, "f3.ts")]);
     expect(r.status, r.stderr).toBe(0);
     expect(r.stderr).not.toContain("TypeScript syntax");
 
@@ -2277,7 +2277,7 @@ function nodeCheck(path: string): { status: number; stderr: string } {
     dirs.push(dir);
     writeFileSync(join(dir, "om.ts"), OPTIONAL_METHOD_TS, "utf-8");
 
-    const r = runCliTsx(["migrate", "strip", "--write", "--no-draft", join(dir, "om.ts")]);
+    const r = runCli(["migrate", "strip", "--write", "--no-draft", join(dir, "om.ts")]);
     expect(r.status, r.stderr).toBe(0);
     expect(r.stderr).not.toContain("TypeScript syntax");
 
@@ -2340,7 +2340,7 @@ function nodeCheck(path: string): { status: number; stderr: string } {
     dirs.push(dir);
     writeFileSync(join(dir, "thisparam.ts"), THIS_PARAM_TS, "utf-8");
 
-    const r = runCliTsx(["migrate", "strip", "--write", "--no-draft", join(dir, "thisparam.ts")]);
+    const r = runCli(["migrate", "strip", "--write", "--no-draft", join(dir, "thisparam.ts")]);
     expect(r.status, r.stderr).toBe(0);
     expect(r.stderr).not.toContain("TypeScript syntax");
 
@@ -2361,7 +2361,7 @@ function nodeCheck(path: string): { status: number; stderr: string } {
       "utf-8",
     );
 
-    const r = runCliTsx(["migrate", "strip", "--write", "--no-draft", join(dir, "body.ts")]);
+    const r = runCli(["migrate", "strip", "--write", "--no-draft", join(dir, "body.ts")]);
     expect(r.status, r.stderr).toBe(0);
     const product = join(dir, "body.js");
     const code = readFileSync(product, "utf-8");
@@ -2506,7 +2506,7 @@ function verifyFixture(): string {
   it("排除清单上 stdout（--json 面可解析；文本面 stdout 不含被排除的包）；retire --all --json 同样带排除清单（机器面统一口径）；负控：无排除的 workspace ⇒ --json 逐字不变（不出现 excluded 键）；多个目标失败 ⇒ 消息列出**全部**失败目标，且整批零写盘；CLI 面 —— 失败目标全部可见（文本面 + --json 的 failedTargets）", () => {
   {
     const { dir, legacy } = workspaceFixture();
-    const r = runCliTsx(["migrate", "status", "--json", dir]);
+    const r = runCli(["migrate", "status", "--json", dir]);
     expect(r.status, r.stderr).toBe(0);
     const parsed = JSON.parse(r.stdout) as Array<{ root: string; excluded?: string[] }>;
     expect(Array.isArray(parsed)).toBe(true);
@@ -2519,7 +2519,7 @@ function verifyFixture(): string {
     expect(parsed.map((row) => row.root).join(" ")).not.toContain("legacy");
 
     // 文本面：stdout 逐字**不含**被排除的包（人读提示仍在 stderr）
-    const text = runCliTsx(["migrate", "status", dir]);
+    const text = runCli(["migrate", "status", dir]);
     expect(text.status, text.stderr).toBe(0);
     expect(text.stdout).not.toContain("packages/legacy");
     expect(text.stderr).toContain("skipped (pnpm excluded)");
@@ -2528,7 +2528,7 @@ function verifyFixture(): string {
   }
   {
     const { dir } = workspaceFixture();
-    const r = runCliTsx(["migrate", "retire", "--all", "--dry-run", "--json", dir]);
+    const r = runCli(["migrate", "retire", "--all", "--dry-run", "--json", dir]);
     expect(r.status, r.stderr).toBe(0);
     const parsed = JSON.parse(r.stdout) as Array<{ root: string; excluded?: string[] }>;
     expect(Array.isArray(parsed)).toBe(true);
@@ -2539,7 +2539,7 @@ function verifyFixture(): string {
   }
   {
     const dir = cleanWorkspaceFixture();
-    const r = runCliTsx(["migrate", "status", "--json", dir]);
+    const r = runCli(["migrate", "status", "--json", dir]);
     expect(r.status, r.stderr).toBe(0);
     expect(r.stdout).not.toContain("excluded");
     const parsed = JSON.parse(r.stdout) as Array<Record<string, unknown>>;
@@ -2570,13 +2570,13 @@ function verifyFixture(): string {
   {
     const a = plainPkg("cli-plain-a");
     const b = plainPkg("cli-plain-b");
-    const r = runCliTsx(["migrate", "retire", a.dir, b.dir]);
+    const r = runCli(["migrate", "retire", a.dir, b.dir]);
     expect(r.status).toBe(0); // 「无可退役」是正常结果（口径不变）
     const all = `${r.stdout}${r.stderr}`;
     expect(all).toContain(a.dir);
     expect(all).toContain(b.dir);
 
-    const j = runCliTsx(["migrate", "retire", a.dir, b.dir, "--json"]);
+    const j = runCli(["migrate", "retire", a.dir, b.dir, "--json"]);
     expect(j.status).toBe(0);
     // `--json` 顶层形状**恒为数组**（成功信封也是单元素数组）
     const envelope = JSON.parse(j.stdout) as Array<{
@@ -2592,7 +2592,7 @@ function verifyFixture(): string {
   {
     const plain = plainPkg("mix-plain");
     const broken = brokenPkg("mix-broken");
-    const r = runCliTsx(["migrate", "retire", plain.dir, broken]);
+    const r = runCli(["migrate", "retire", plain.dir, broken]);
     expect(r.status).toBe(1);
     const all = `${r.stdout}${r.stderr}`;
     expect(all).toContain(plain.dir);
@@ -2616,24 +2616,24 @@ function verifyFixture(): string {
   }
   {
     const dir = verifyFixture();
-    const r = runCliTsx(["migrate", "verify", dir]);
+    const r = runCli(["migrate", "verify", dir]);
     // 改前：`.jsx` 不可见 ⇒ verify 只看到 .js 目标（本 fixture 里一个都没有 ⇒
     // 走「空集 ⇒ 判红」分支），JSX 产物从未被验过。
     expect(r.stdout).toContain("Comp.jsx");
     expect(r.stdout).not.toContain("Not an analysis target");
 
     // 显式点名的 `.jsx` 目标也不再被拒（改前：not-a-target）
-    const one = runCliTsx(["migrate", "verify", join(dir, "Comp.jsx")]);
+    const one = runCli(["migrate", "verify", join(dir, "Comp.jsx")]);
     expect(one.stdout).toContain("Comp.jsx");
     expect(one.stdout).not.toContain("Not an analysis target");
   }
   {
     const dir = verifyFixture();
-    const r = runCliTsx(["migrate", "verify", dir]);
+    const r = runCli(["migrate", "verify", dir]);
     expect(r.stdout).not.toContain("types.d.ts");
     expect(r.stdout).not.toContain("sidecar.nudo.js");
     // 显式点名的声明文件仍被拒（消息口径不变）
-    const decl = runCliTsx(["migrate", "verify", join(dir, "types.d.ts")]);
+    const decl = runCli(["migrate", "verify", join(dir, "types.d.ts")]);
     expect(decl.status).toBe(1);
     expect(`${decl.stdout}${decl.stderr}`).toContain("Not an analysis target");
   }
@@ -2759,7 +2759,7 @@ function dirWith(files: Record<string, string>): string {
   }
   {
     const dir = dirWith({ "a-good.ts": GOOD, "z-bad.ts": BAD });
-    const r = runCliTsx(["migrate", "strip", "--json", dir]);
+    const r = runCli(["migrate", "strip", "--json", dir]);
     expect(r.status).toBe(1);
     // `--json` 顶层形状恒为数组（信封是单元素数组）
     const __env = JSON.parse(r.stdout) as Array<{
@@ -3102,7 +3102,7 @@ function fixture(files: Record<string, string>): string {
         ``,
       ].join("\n"),
     });
-    const r = runCliTsx(["export", join(dir, "rest604.js"), "--format", "schema"]);
+    const r = runCli(["export", join(dir, "rest604.js"), "--format", "schema"]);
     expect(r.status).toBe(0);
     // 剩余参数位：裸名 + 数组值
     expect(r.stdout).toContain("rest: z.array(");
@@ -3119,7 +3119,7 @@ function fixture(files: Record<string, string>): string {
         ``,
       ].join("\n"),
     });
-    const r = runCliTsx(["export", join(dir, "rest604b.js"), "--format", "standard"]);
+    const r = runCli(["export", join(dir, "rest604b.js"), "--format", "standard"]);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("sumAll_rest");
     expect(r.stdout).not.toContain("sumAll____rest");
@@ -3244,7 +3244,7 @@ const numAbs = abs({ k: "prim", type: "number" }, undefined, undefined, "exact")
           ``,
         ].join("\n"),
       });
-      const r = runCliTsx(["export", "lib.js", "--format", "schema"], { cwd: dir });
+      const r = runCli(["export", "lib.js", "--format", "schema"], { cwd: dir });
       expect(r.status).toBe(0);
       expect(r.stdout).toContain("__proto__");
   }
@@ -3372,7 +3372,7 @@ function fixture(files: Record<string, string>): string {
         ``,
       ].join("\n"),
     });
-    const r = runCliTsx(["export", join(dir, "d611.js"), "--format", "schema"]);
+    const r = runCli(["export", join(dir, "d611.js"), "--format", "schema"]);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("b: z.literal(2).optional()");
   }
@@ -3385,7 +3385,7 @@ function fixture(files: Record<string, string>): string {
         ``,
       ].join("\n"),
     });
-    const r = runCliTsx(["export", join(dir, "d611b.js"), "--format", "dts"]);
+    const r = runCli(["export", join(dir, "d611b.js"), "--format", "dts"]);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("export declare function f(a: number, b?: number): number;");
   }
@@ -3491,7 +3491,7 @@ const NUM = `export const num = { __nudoConstraint: true, prim: "number", preds:
         ``,
       ].join("\n"),
     });
-    const r = runCliTsx(["export", join(dir, "async618.js"), "--format", "schema"]);
+    const r = runCli(["export", join(dir, "async618.js"), "--format", "schema"]);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("z.promise(");
   }
@@ -3506,7 +3506,7 @@ const NUM = `export const num = { __nudoConstraint: true, prim: "number", preds:
         ``,
       ].join("\n"),
     });
-    const r = runCliTsx(["export", join(dir, "async618b.js"), "--format", "dts"]);
+    const r = runCli(["export", join(dir, "async618b.js"), "--format", "dts"]);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("export declare function f(x: number): Promise<number>;");
   }
@@ -3971,7 +3971,7 @@ fix:  pass a .js/.mjs/.ts analysis file (not .nudo.js sidecars, .d.ts decls, or 
 
   it("分析目标闸门错误：pathErrors[] 逐字不变 + targetErrors[] 精确只装闸门错误；--from 路径错误**不**进 targetErrors[]（它是精确入口，不是副本）；闸门错误 + `--from` 错误并存：pathErrors[] 全集（顺序不变）+ targetErrors[] 只装闸门", () => {
   {
-    const r = runCliTsx(["check", "--json", p("types.d.ts")], { cwd: dir });
+    const r = runCli(["check", "--json", p("types.d.ts")], { cwd: dir });
     expect(r.status).toBe(1);
     const parsed = JSON.parse(r.stdout) as {
       ok: boolean;
@@ -3989,7 +3989,7 @@ fix:  pass a .js/.mjs/.ts analysis file (not .nudo.js sidecars, .d.ts decls, or 
     expect(parsed.targetErrors).toHaveLength(1);
   }
   {
-    const r = runCliTsx(
+    const r = runCli(
       ["check", "--json", p("clean.js"), "--from", p("no-such-from.js")],
       { cwd: dir },
     );
@@ -4004,7 +4004,7 @@ fix:  pass a .js/.mjs/.ts analysis file (not .nudo.js sidecars, .d.ts decls, or 
     expect(parsed.targetErrors).toBeUndefined();
   }
   {
-    const r = runCliTsx(
+    const r = runCli(
       ["check", "--json", p("types.d.ts"), "--from", p("no-such-from.js")],
       { cwd: dir },
     );
@@ -4036,7 +4036,7 @@ fix:  pass a .js/.mjs/.ts analysis file (not .nudo.js sidecars, .d.ts decls, or 
 describe("b-2: test --json", () => {
   it("分析目标闸门错误：pathErrors[] 逐字不变 + targetErrors[] 精确只装闸门错误；--from 路径错误**不**进 targetErrors[]", () => {
   {
-    const r = runCliTsx(["test", "--json", p("types.d.ts")], { cwd: dir });
+    const r = runCli(["test", "--json", p("types.d.ts")], { cwd: dir });
     expect(r.status).toBe(1);
     const parsed = JSON.parse(r.stdout) as {
       pathErrors?: PathErr[];
@@ -4047,7 +4047,7 @@ describe("b-2: test --json", () => {
     expect(parsed.targetErrors).toHaveLength(1);
   }
   {
-    const r = runCliTsx(
+    const r = runCli(
       ["test", "--json", p("clean.js"), "--from", p("no-such-from.js")],
       { cwd: dir },
     );
@@ -4070,7 +4070,7 @@ describe("b-2: test --json", () => {
 describe("b-3: contract --json", () => {
   it("分析目标闸门错误：pathErrors[] 逐字不变 + targetErrors[] 精确只装闸门错误；--from 路径错误**不**进 targetErrors[]", () => {
   {
-    const r = runCliTsx(["contract", "--json", p("types.d.ts")], { cwd: dir });
+    const r = runCli(["contract", "--json", p("types.d.ts")], { cwd: dir });
     expect(r.status).toBe(1);
     const docs = JSON.parse(r.stdout) as Array<{
       pathErrors?: PathErr[];
@@ -4083,7 +4083,7 @@ describe("b-3: contract --json", () => {
     expect(errDocs[0].targetErrors).toHaveLength(1);
   }
   {
-    const r = runCliTsx(
+    const r = runCli(
       ["contract", "--json", p("clean.js"), "--from", p("no-such-from.js")],
       { cwd: dir },
     );
@@ -4108,25 +4108,25 @@ describe("b-3: contract --json", () => {
 describe("b 负控: 无闸门错误时输出逐字不变（既有场景零影响）", () => {
   it("check --json（干净文件）：stdout 与改前基线逐字一致 + 无 targetErrors；test --json（干净文件）：stdout 与改前基线逐字一致 + 无 targetErrors；contract --json（干净文件）：stdout 与改前基线逐字一致 + 无 targetErrors；人类面（闸门错误）：stderr 文案与改前逐字一致（机器面改动不外溢）", () => {
   {
-    const r = runCliTsx(["check", "--json", p("clean.js")], { cwd: dir });
+    const r = runCli(["check", "--json", p("clean.js")], { cwd: dir });
     expect(r.status).toBe(0);
     expect(normalize(r.stdout)).toBe(CHECK_CLEAN_JSON_BEFORE);
     expect(r.stdout).not.toContain("targetErrors");
   }
   {
-    const r = runCliTsx(["test", "--json", p("clean.js")], { cwd: dir });
+    const r = runCli(["test", "--json", p("clean.js")], { cwd: dir });
     expect(r.status).toBe(0);
     expect(normalize(r.stdout)).toBe(TEST_CLEAN_JSON_BEFORE);
     expect(r.stdout).not.toContain("targetErrors");
   }
   {
-    const r = runCliTsx(["contract", "--json", p("clean.js")], { cwd: dir });
+    const r = runCli(["contract", "--json", p("clean.js")], { cwd: dir });
     expect(r.status).toBe(0);
     expect(normalize(r.stdout)).toBe(CONTRACT_CLEAN_JSON_BEFORE);
     expect(r.stdout).not.toContain("targetErrors");
   }
   {
-    const r = runCliTsx(["check", p("types.d.ts")], { cwd: dir });
+    const r = runCli(["check", p("types.d.ts")], { cwd: dir });
     expect(r.status).toBe(1);
     expect(r.stdout).toBe("");
     expect(normalize(r.stderr)).toBe(GATE_TEXT_BEFORE);
@@ -4609,7 +4609,7 @@ function pkgDir(name: string): string {
   {
     const a = pkgDir("status-a");
     const b = pkgDir("status-b");
-    const r = runCliTsx(["migrate", "status", a, b]);
+    const r = runCli(["migrate", "status", a, b]);
     expect(r.status, r.stderr).toBe(0);
     expect(r.stdout).toContain(a);
     expect(r.stdout).toContain(b);
@@ -4617,7 +4617,7 @@ function pkgDir(name: string): string {
   {
     const a = pkgDir("status-json-a");
     const b = pkgDir("status-json-b");
-    const r = runCliTsx(["migrate", "status", "--json", a, b]);
+    const r = runCli(["migrate", "status", "--json", a, b]);
     expect(r.status, r.stderr).toBe(0);
     const parsed = JSON.parse(r.stdout) as Array<{ root: string }>;
     expect(Array.isArray(parsed)).toBe(true);
@@ -4626,7 +4626,7 @@ function pkgDir(name: string): string {
   }
   {
     const a = pkgDir("status-single");
-    const r = runCliTsx(["migrate", "status", a]);
+    const r = runCli(["migrate", "status", a]);
     expect(r.status, r.stderr).toBe(0);
     expect(r.stdout).toContain(a);
   }
@@ -4711,14 +4711,14 @@ const GOOD_SRC = `export function one() {
   }
   {
     const scanDir = makeFixture();
-    const r = runCliTsx(["check", scanDir]);
+    const r = runCli(["check", scanDir]);
     expect(r.stdout).toContain("badlink.js");
     expect(r.status).toBe(1);
   }
   {
     const scanDir = makeFixture();
-    const direct = runCliTsx(["check", join(scanDir, "badlink.js")]);
-    const viaDir = runCliTsx(["check", scanDir]);
+    const direct = runCli(["check", join(scanDir, "badlink.js")]);
+    const viaDir = runCli(["check", scanDir]);
     expect(direct.status).toBe(1);
     expect(viaDir.status).toBe(direct.status);
     // 目录扫描必须**看见**同一个文件（改前：链接被静默跳过，目录面看不见它）
@@ -4788,7 +4788,7 @@ function nodeCheck(path: string): { status: number; stderr: string } {
   it("产物必须落盘且能被 `node --check` 解析（成员修饰符已剥、参数属性已降级）；命令层闸门是**兜底**：真源修好后常规路径不再触发它（不得误拦合法产物）；对照：纯类型注解的 TS 源照常 strip（闸门不得过度拦截）", () => {
   {
     const dir = dirWith("cls.ts", CLASS_TS);
-    const r = runCliTsx(["migrate", "strip", "--write", join(dir, "cls.ts")]);
+    const r = runCli(["migrate", "strip", "--write", join(dir, "cls.ts")]);
     const product = join(dir, "cls.js");
     expect(r.status, r.stderr).toBe(0);
     expect(existsSync(product)).toBe(true);
@@ -4805,7 +4805,7 @@ function nodeCheck(path: string): { status: number; stderr: string } {
   }
   {
     const dir = dirWith("cls.ts", CLASS_TS);
-    const r = runCliTsx(["migrate", "strip", "--write", join(dir, "cls.ts")]);
+    const r = runCli(["migrate", "strip", "--write", join(dir, "cls.ts")]);
     // 闸门仍在（真源漏网时拒写盘 + 点名文件 + exit 1），但真源已修 ⇒ 不该拦
     expect(r.status, r.stderr).toBe(0);
     expect(r.stderr).not.toContain("TypeScript syntax");
@@ -4813,7 +4813,7 @@ function nodeCheck(path: string): { status: number; stderr: string } {
   }
   {
     const dir = dirWith("ok.ts", "export function add(a: number, b: number): number {\n  return a + b;\n}\n");
-    const r = runCliTsx(["migrate", "strip", "--write", join(dir, "ok.ts")]);
+    const r = runCli(["migrate", "strip", "--write", join(dir, "ok.ts")]);
     expect(r.status, r.stderr).toBe(0);
     const product = join(dir, "ok.js");
     expect(existsSync(product)).toBe(true);
@@ -4880,7 +4880,7 @@ describe("-what-if 等号 / 冒号两种写法等价", () => {
   {
     const { cwd, file } = makeProject();
     try {
-      const r = runCliTsx(["check", file, "--what-if", "raw=string", "--target", "raw"], {
+      const r = runCli(["check", file, "--what-if", "raw=string", "--target", "raw"], {
         cwd,
       });
       expect(r.status).toBe(0);
@@ -4895,7 +4895,7 @@ describe("-what-if 等号 / 冒号两种写法等价", () => {
   {
     const { cwd, file } = makeProject();
     try {
-      const r = runCliTsx(["check", file, "--what-if", "raw:string", "--target", "raw"], {
+      const r = runCli(["check", file, "--what-if", "raw:string", "--target", "raw"], {
         cwd,
       });
       expect(r.status).toBe(0);
@@ -4965,7 +4965,7 @@ function workspace(pkgCount: number): string {
   it("1 个可退役包 ⇒ 顶层仍是数组（不得退化为对象）；2 个可退役包 ⇒ 顶层同样是数组（形状不随条数漂移）；两个场景的顶层形状一致（都是数组）", () => {
   {
     const root = workspace(1);
-    const r = runCliTsx(["migrate", "retire", root, "--all", "--dry-run", "--json"]);
+    const r = runCli(["migrate", "retire", root, "--all", "--dry-run", "--json"]);
     expect(r.status, r.stderr).toBe(0);
     const parsed = JSON.parse(r.stdout);
     expect(Array.isArray(parsed)).toBe(true);
@@ -4973,14 +4973,14 @@ function workspace(pkgCount: number): string {
   }
   {
     const root = workspace(2);
-    const r = runCliTsx(["migrate", "retire", root, "--all", "--dry-run", "--json"]);
+    const r = runCli(["migrate", "retire", root, "--all", "--dry-run", "--json"]);
     expect(r.status, r.stderr).toBe(0);
     const parsed = JSON.parse(r.stdout);
     expect(Array.isArray(parsed)).toBe(true);
     expect(parsed).toHaveLength(2);
   }
   {
-    const one = runCliTsx([
+    const one = runCli([
       "migrate",
       "retire",
       workspace(1),
@@ -4988,7 +4988,7 @@ function workspace(pkgCount: number): string {
       "--dry-run",
       "--json",
     ]);
-    const two = runCliTsx([
+    const two = runCli([
       "migrate",
       "retire",
       workspace(2),
@@ -5066,7 +5066,7 @@ function esmReadEnum(path: string): { status: number; stdout: string; stderr: st
     dirs.push(dir);
     writeFileSync(join(dir, "enum.ts"), ENUM_TS, "utf-8");
 
-    const r = runCliTsx(["migrate", "strip", "--write", "--no-draft", join(dir, "enum.ts")]);
+    const r = runCli(["migrate", "strip", "--write", "--no-draft", join(dir, "enum.ts")]);
     expect(r.status, r.stderr).toBe(0);
     expect(r.stderr).not.toContain("TypeScript syntax");
 
@@ -5089,11 +5089,11 @@ function esmReadEnum(path: string): { status: number; stdout: string; stderr: st
     dirs.push(dir);
     writeFileSync(join(dir, "enum.ts"), ENUM_TS, "utf-8");
 
-    const strip = runCliTsx(["migrate", "strip", "--write", "--no-draft", join(dir, "enum.ts")]);
+    const strip = runCli(["migrate", "strip", "--write", "--no-draft", join(dir, "enum.ts")]);
     expect(strip.status, strip.stderr).toBe(0);
 
     for (const name of ["enum.ts", "enum.js"]) {
-      const c = runCliTsx(["check", join(dir, name)]);
+      const c = runCli(["check", join(dir, name)]);
       expect(c.status, `${name}\n${c.stdout}\n${c.stderr}`).toBe(0);
       expect(c.stdout).toContain("f() => 1");
       expect(c.stdout).not.toContain("never");
@@ -5430,7 +5430,7 @@ function nodeCheck(path: string): { status: number; stderr: string } {
     writeFileSync(join(dir, "types.js"), TYPES_JS, "utf-8");
     writeFileSync(join(dir, "lib.ts"), LIB_TS, "utf-8");
 
-    const r = runCliTsx(["migrate", "strip", "--write", "--no-draft", join(dir, "lib.ts")]);
+    const r = runCli(["migrate", "strip", "--write", "--no-draft", join(dir, "lib.ts")]);
     expect(r.status, r.stderr).toBe(0);
     expect(r.stderr).not.toContain("TypeScript syntax");
 
@@ -5450,11 +5450,11 @@ function nodeCheck(path: string): { status: number; stderr: string } {
     writeFileSync(join(dir, "types.js"), TYPES_JS, "utf-8");
     writeFileSync(join(dir, "lib.ts"), LIB_TS, "utf-8");
 
-    const strip = runCliTsx(["migrate", "strip", "--write", "--no-draft", join(dir, "lib.ts")]);
+    const strip = runCli(["migrate", "strip", "--write", "--no-draft", join(dir, "lib.ts")]);
     expect(strip.status, strip.stderr).toBe(0);
 
     for (const name of ["lib.ts", "lib.js"]) {
-      const c = runCliTsx(["check", join(dir, name), "--entry-throws", "off"]);
+      const c = runCli(["check", join(dir, name), "--entry-throws", "off"]);
       expect(c.status, `${name}\n${c.stdout}\n${c.stderr}`).toBe(1);
       expect(c.stdout).toContain("nudo:constraint-violated");
     }
@@ -5692,7 +5692,7 @@ type StripEnvelope = {
   it("混合目录 ⇒ results 保留成功文件的逐文件结果（不再整目标丢弃）；失败条目的 path 是**失败文件**（不是目标目录）⇒ 与 TS-only 闸门同量纲；pathErrors[] 内所有 path 量纲一致（都是文件，不是目录）；--write：成功行带库面的「未写盘」注记，且原子性不变（一个字节都不落盘）；负控：全部成功 ⇒ stdout 仍是顶层数组（形状不变）", () => {
   {
     const dir = dirWith({ "a-good.ts": GOOD, "z-bad.ts": BAD });
-    const r = runCliTsx(["migrate", "strip", "--json", "."], { cwd: dir });
+    const r = runCli(["migrate", "strip", "--json", "."], { cwd: dir });
     expect(r.status).toBe(1);
     // `--json` 顶层形状恒为数组（信封是单元素数组）
     const __env = JSON.parse(r.stdout) as StripEnvelope[];
@@ -5706,7 +5706,7 @@ type StripEnvelope = {
   }
   {
     const dir = dirWith({ "a-good.ts": GOOD, "z-bad.ts": BAD });
-    const r = runCliTsx(["migrate", "strip", "--json", "."], { cwd: dir });
+    const r = runCli(["migrate", "strip", "--json", "."], { cwd: dir });
     expect(r.status).toBe(1);
     // `--json` 顶层形状恒为数组（信封是单元素数组）
     const __env = JSON.parse(r.stdout) as StripEnvelope[];
@@ -5725,7 +5725,7 @@ type StripEnvelope = {
   }
   {
     const dir = dirWith({ "a-good.ts": GOOD, "z-bad.ts": BAD });
-    const r = runCliTsx(["migrate", "strip", "--json", "."], { cwd: dir });
+    const r = runCli(["migrate", "strip", "--json", "."], { cwd: dir });
     expect(r.status).toBe(1);
     // `--json` 顶层形状恒为数组（信封是单元素数组）
     const __env = JSON.parse(r.stdout) as StripEnvelope[];
@@ -5741,7 +5741,7 @@ type StripEnvelope = {
   }
   {
     const dir = dirWith({ "a-good.ts": GOOD, "z-bad.ts": BAD });
-    const r = runCliTsx(["migrate", "strip", "--json", "--write", "."], { cwd: dir });
+    const r = runCli(["migrate", "strip", "--json", "--write", "."], { cwd: dir });
     expect(r.status).toBe(1);
     // `--json` 顶层形状恒为数组（信封是单元素数组）
     const __env = JSON.parse(r.stdout) as StripEnvelope[];
@@ -5759,7 +5759,7 @@ type StripEnvelope = {
   }
   {
     const dir = dirWith({ "a-good.ts": GOOD });
-    const r = runCliTsx(["migrate", "strip", "--json", "."], { cwd: dir });
+    const r = runCli(["migrate", "strip", "--json", "."], { cwd: dir });
     expect(r.status, r.stderr).toBe(0);
     const parsed = JSON.parse(r.stdout);
     expect(Array.isArray(parsed)).toBe(true);
@@ -5817,7 +5817,7 @@ function firstPathError(stdout: string): PathError | undefined {
     it(`CLI：${verb} --json（无路径）⇒ pathErrors[0].code === "nudo:usage-error"`, () => {
       const dir = mkdtempSync(join(tmpdir(), "nudo-cli-1087-"));
       try {
-        const r = runCliTsx([verb, "--json"], { cwd: dir });
+        const r = runCli([verb, "--json"], { cwd: dir });
         expect(r.status).toBe(1);
         // stdout 永不为空（机器面契约）
         expect(r.stdout.trim().length).toBeGreaterThan(0);
@@ -5835,7 +5835,7 @@ function firstPathError(stdout: string): PathError | undefined {
     const dir = mkdtempSync(join(tmpdir(), "nudo-cli-1087-human-"));
     try {
       for (const verb of verbs) {
-        const r = runCliTsx([verb], { cwd: dir });
+        const r = runCli([verb], { cwd: dir });
         expect(r.status, `${verb}: ${r.stderr}`).toBe(1);
         expect(r.stdout).toBe("");
         expect(r.stderr).toContain("Usage error");
@@ -5927,7 +5927,7 @@ type StripEnvelope = {
   {
     const dir = dirWith({ "good.ts": GOOD, "bad.ts": BAD });
 
-    const r = runCliTsx(["migrate", "strip", "--write", "."], { cwd: dir });
+    const r = runCli(["migrate", "strip", "--write", "."], { cwd: dir });
 
     // 人类面：该行必须显示为「未写盘」，**不得**出现 `wrote`
     expect(r.stdout).not.toMatch(/^wrote /m);
@@ -5942,7 +5942,7 @@ type StripEnvelope = {
   {
     const dir = dirWith({ "good.ts": GOOD, "bad.ts": BAD });
 
-    const r = runCliTsx(["migrate", "strip", "--json", "--write", "."], { cwd: dir });
+    const r = runCli(["migrate", "strip", "--json", "--write", "."], { cwd: dir });
 
     // `--json` 顶层形状恒为数组（信封是单元素数组）
     const __env = JSON.parse(r.stdout) as StripEnvelope[];
@@ -5964,7 +5964,7 @@ type StripEnvelope = {
   {
     const dir = dirWith({ "good.ts": GOOD });
 
-    const r = runCliTsx(["migrate", "strip", "--write", "."], { cwd: dir });
+    const r = runCli(["migrate", "strip", "--write", "."], { cwd: dir });
 
     expect(r.stdout).toMatch(/^wrote {2}good\.ts → good\.js$/m);
     expect(r.stdout).not.toContain("not written");
@@ -5972,7 +5972,7 @@ type StripEnvelope = {
     expect(existsSync(join(dir, "good.js"))).toBe(true);
 
     // 机器面：标记为「已写盘」
-    const j = runCliTsx(["migrate", "strip", "--json", "--write", "."], { cwd: dir });
+    const j = runCli(["migrate", "strip", "--json", "--write", "."], { cwd: dir });
     const parsed = JSON.parse(j.stdout) as StripRow[];
     expect(Array.isArray(parsed)).toBe(true);
     expect(parsed[0]!.writeStatus).toBe("written");
@@ -5981,21 +5981,21 @@ type StripEnvelope = {
     const bad = dirWith({ "good.ts": GOOD, "bad.ts": BAD });
     const good = dirWith({ "good.ts": GOOD });
 
-    expect(runCliTsx(["migrate", "strip", "--write", "."], { cwd: bad }).status).toBe(1);
-    expect(runCliTsx(["migrate", "strip", "--json", "--write", "."], { cwd: bad }).status).toBe(1);
-    expect(runCliTsx(["migrate", "strip", "--write", "."], { cwd: good }).status).toBe(0);
-    expect(runCliTsx(["migrate", "strip", "--json", "--write", "."], { cwd: good }).status).toBe(0);
+    expect(runCli(["migrate", "strip", "--write", "."], { cwd: bad }).status).toBe(1);
+    expect(runCli(["migrate", "strip", "--json", "--write", "."], { cwd: bad }).status).toBe(1);
+    expect(runCli(["migrate", "strip", "--write", "."], { cwd: good }).status).toBe(0);
+    expect(runCli(["migrate", "strip", "--json", "--write", "."], { cwd: good }).status).toBe(0);
   }
   {
     const dir = dirWith({ "good.ts": GOOD });
 
-    const r = runCliTsx(["migrate", "strip", "."], { cwd: dir });
+    const r = runCli(["migrate", "strip", "."], { cwd: dir });
 
     expect(r.stdout).not.toMatch(/^wrote /m);
     expect(r.stdout).toMatch(/^dry {2}good\.ts → good\.js$/m);
     expect(existsSync(join(dir, "good.js"))).toBe(false);
 
-    const j = runCliTsx(["migrate", "strip", "--json", "."], { cwd: dir });
+    const j = runCli(["migrate", "strip", "--json", "."], { cwd: dir });
     const parsed = JSON.parse(j.stdout) as StripRow[];
     expect(parsed[0]!.writeStatus).toBe("planned");
   }
@@ -6081,7 +6081,7 @@ type StripEnvelope = {
   }
   {
     const dir = dirWith({ "a-good.ts": GOOD, "z-bad.ts": BAD });
-    const r = runCliTsx(["migrate", "strip", "--json", "."], { cwd: dir });
+    const r = runCli(["migrate", "strip", "--json", "."], { cwd: dir });
     expect(r.status).toBe(1);
     // `--json` 顶层形状恒为数组（信封是单元素数组）
     const __env = JSON.parse(r.stdout) as StripEnvelope[];
@@ -6336,7 +6336,7 @@ describe("-dry-run 与 --write 同时给出时以 dry-run 为准", () => {
   {
     const { cwd, file, sidecar } = makeProject();
     try {
-      const r = runCliTsx(["check", file, "--fix", "--write", "--dry-run"], { cwd });
+      const r = runCli(["check", file, "--fix", "--write", "--dry-run"], { cwd });
       const out = r.stdout + r.stderr;
       // 计划面：打印 diff + 「planned (dry-run)」
       expect(out).toContain("planned (dry-run)");
@@ -6351,7 +6351,7 @@ describe("-dry-run 与 --write 同时给出时以 dry-run 为准", () => {
   {
     const { cwd, file, sidecar } = makeProject();
     try {
-      const r = runCliTsx(["check", file, "--fix", "--write"], { cwd });
+      const r = runCli(["check", file, "--fix", "--write"], { cwd });
       const out = r.stdout + r.stderr;
       expect(out).toContain("edit(s) written");
       expect(existsSync(sidecar)).toBe(true);
@@ -6362,7 +6362,7 @@ describe("-dry-run 与 --write 同时给出时以 dry-run 为准", () => {
   {
     const { cwd, file, sidecar } = makeProject();
     try {
-      const r = runCliTsx(["check", file, "--fix"], { cwd });
+      const r = runCli(["check", file, "--fix"], { cwd });
       const out = r.stdout + r.stderr;
       expect(out).toContain("planned (dry-run)");
       expect(existsSync(sidecar)).toBe(false);
@@ -6424,7 +6424,7 @@ __scenario_1: {
     try {
       const file = makeUnreadable(dir);
       if (file === undefined) break __scenario_1; // root：无法构造 EACCES
-      const r = runCliTsx(["check", file, "--json"]);
+      const r = runCli(["check", file, "--json"]);
       expect(r.stdout.length, "stdout 不得为空（--json 面永不为空）").toBeGreaterThan(0);
       const env = JSON.parse(r.stdout) as {
         ok: boolean;
@@ -6446,7 +6446,7 @@ __scenario_2: {
     try {
       const file = makeUnreadable(dir);
       if (file === undefined) break __scenario_2; // root
-      const r = runCliTsx(["check", file]);
+      const r = runCli(["check", file]);
       expect(r.status).toBe(1);
       expect(r.stderr).toContain("fix:");
       expect(r.stderr).toMatch(/Cannot read .*u\.js/);
@@ -6459,7 +6459,7 @@ __scenario_2: {
   {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug630-"));
     try {
-      const r = runCliTsx(["check", join(dir, "nope.js"), "--json"]);
+      const r = runCli(["check", join(dir, "nope.js"), "--json"]);
       const env = JSON.parse(r.stdout) as {
         ok: boolean;
         pathErrors?: Array<{ code: string }>;
@@ -6535,7 +6535,7 @@ function lastJsonLine(stderr: string): unknown {
     const file = join(dir, "bad.js");
     writeFileSync(file, BAD, "utf8");
     try {
-      const r = runCliTsx(["check", file, "--json", "--gitlab"]);
+      const r = runCli(["check", file, "--json", "--gitlab"]);
       // 门禁语义不变：L2 entry may-throw（error）⇒ exit 1
       expect(r.status).toBe(1);
 
@@ -6566,7 +6566,7 @@ function lastJsonLine(stderr: string): unknown {
     const file = join(dir, "bad.js");
     writeFileSync(file, BAD, "utf8");
     try {
-      const r = runCliTsx(["check", file, "--json"]);
+      const r = runCli(["check", file, "--json"]);
       expect(r.status).toBe(1);
       expect(JSON.parse(r.stdout).ok).toBe(false);
       expect(r.stderr).not.toContain("check_name");
@@ -6579,7 +6579,7 @@ function lastJsonLine(stderr: string): unknown {
     const file = join(dir, "bad.js");
     writeFileSync(file, BAD, "utf8");
     try {
-      const r = runCliTsx(["check", file, "--gitlab"]);
+      const r = runCli(["check", file, "--gitlab"]);
       expect(r.status).toBe(1);
       const rows = JSON.parse(r.stdout) as CodeQualityRow[];
       expect(Array.isArray(rows)).toBe(true);
@@ -6873,7 +6873,7 @@ function makeProject(nudoCheck: string): { cwd: string; file: string } {
   {
     const { cwd, file } = makeProject(`{"profile":"bogus","entryThrows":"warning"}`);
     try {
-      const r = runCliTsx(["check", file], { cwd });
+      const r = runCli(["check", file], { cwd });
       expect(r.stderr).toContain(
         'warning: package.json nudo.check.profile: unknown value "bogus" (expected: adoption | strict) — using warning',
       );
@@ -6888,7 +6888,7 @@ function makeProject(nudoCheck: string): { cwd: string; file: string } {
   {
     const { cwd, file } = makeProject(`{"profile":"bogus"}`);
     try {
-      const r = runCliTsx(["check", file], { cwd });
+      const r = runCli(["check", file], { cwd });
       expect(r.stderr).toContain(
         'warning: package.json nudo.check.profile: unknown value "bogus" (expected: adoption | strict) — using default strict',
       );
@@ -6900,7 +6900,7 @@ function makeProject(nudoCheck: string): { cwd: string; file: string } {
   {
     const { cwd, file } = makeProject(`{"profile":"bogus"}`);
     try {
-      const r = runCliTsx(["check", file, "--entry-throws", "warning"], { cwd });
+      const r = runCli(["check", file, "--entry-throws", "warning"], { cwd });
       expect(r.stderr).toContain("— using warning");
       expect(r.stderr).not.toContain("using default strict");
       expect(r.status).toBe(0);
@@ -6996,9 +6996,9 @@ function cacheFiles(root: string): string[] {
     writeFileSync(join(dir, "node.js"), NODE_JS, "utf8");
     try {
       const env = { NUDO_CACHE_DIR: cache };
-      const r1 = runCliTsx(["check", file, "--json"], { env });
-      const r2 = runCliTsx(["check", file, "--json"], { env });
-      const r3 = runCliTsx(["check", file, "--json"], { env });
+      const r1 = runCli(["check", file, "--json"], { env });
+      const r2 = runCli(["check", file, "--json"], { env });
+      const r3 = runCli(["check", file, "--json"], { env });
       const j1 = JSON.parse(r1.stdout) as CheckJsonLike;
       const j2 = JSON.parse(r2.stdout) as CheckJsonLike;
       const j3 = JSON.parse(r3.stdout) as CheckJsonLike;
@@ -7028,8 +7028,8 @@ function cacheFiles(root: string): string[] {
     writeFileSync(join(dir, "node.js"), NODE_JS, "utf8");
     try {
       const env = { NUDO_CACHE_DIR: cache };
-      runCliTsx(["check", file], { env });
-      const hot = runCliTsx(["check", file], { env });
+      runCli(["check", file], { env });
+      const hot = runCli(["check", file], { env });
       const issueLines = hot.stdout
         .split("\n")
         .filter((l) => l.includes("(nudo:dual-entry)"));
@@ -7047,7 +7047,7 @@ function cacheFiles(root: string): string[] {
     writeFileSync(join(dir, "node.js"), NODE_JS, "utf8");
     try {
       const env = { NUDO_CACHE_DIR: cache };
-      runCliTsx(["check", file, "--json"], { env });
+      runCli(["check", file, "--json"], { env });
       const files = cacheFiles(cache);
       expect(files.length).toBeGreaterThan(0);
       for (const f of files) {
@@ -7102,7 +7102,7 @@ describe("-what-if 不再静默吞掉机器 / 观察旗标", () => {
   {
     const { cwd, file } = makeProject();
     try {
-      const r = runCliTsx(
+      const r = runCli(
         ["check", file, "--json", "--what-if", "raw:string", "--target", "raw"],
         { cwd },
       );
@@ -7129,7 +7129,7 @@ describe("-what-if 不再静默吞掉机器 / 观察旗标", () => {
         ["--watch"],
       ];
       for (const combo of combos) {
-        const r = runCliTsx(
+        const r = runCli(
           ["check", file, ...combo, "--what-if", "raw:string", "--target", "raw"],
           { cwd },
         );
@@ -7145,7 +7145,7 @@ describe("-what-if 不再静默吞掉机器 / 观察旗标", () => {
   {
     const { cwd, file, other } = makeProject();
     try {
-      const r = runCliTsx(
+      const r = runCli(
         ["check", file, other, "--what-if", "raw:string", "--target", "raw"],
         { cwd },
       );
@@ -7160,7 +7160,7 @@ describe("-what-if 不再静默吞掉机器 / 观察旗标", () => {
   {
     const { cwd, file } = makeProject();
     try {
-      const r = runCliTsx(
+      const r = runCli(
         ["check", file, "--what-if", "raw:string", "--target", "raw"],
         { cwd },
       );
@@ -7410,7 +7410,7 @@ function diffHeaderLines(stdout: string): { minus: string[]; plus: string[] } {
         "utf-8",
       );
       writeFileSync(join(cwd, "lib.js"), SRC, "utf-8");
-      const r = runCliTsx(["check", "--fix", "lib.js"], { cwd });
+      const r = runCli(["check", "--fix", "lib.js"], { cwd });
       const { minus, plus } = diffHeaderLines(r.stdout);
       // 旧实现：--- 两份（自印 + unifiedDiff 自带）、+++ 两份
       expect(minus, "unified diff 只允许一对 ---/+++ 头").toHaveLength(1);
@@ -7444,7 +7444,7 @@ function diffHeaderLines(stdout: string): { minus: string[]; plus: string[] } {
         "utf-8",
       );
       writeFileSync(join(cwd, "lib.js"), SRC, "utf-8");
-      const r = runCliTsx(["check", "--fix", "lib.js"], { cwd });
+      const r = runCli(["check", "--fix", "lib.js"], { cwd });
       expect(r.stdout).toContain("--- a/lib.nudo.js");
       const g = spawnSync("git", ["apply", "--check", "-p1"], {
         cwd,

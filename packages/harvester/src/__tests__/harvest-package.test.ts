@@ -9,7 +9,7 @@ import { join, resolve } from "node:path";
 import { dtsToContractDraft, dtsPathToContractDraft } from "../dts-contract-draft.ts";
 import { makeWorkDir, runNudoCheck, writeSidecar } from "./harvest-helpers-product-face.ts";
 import { bareSpecToAbsModules, packageHarvestToAbsModules } from "../harvest-to-abs.ts";
-import { formatShape, type Abs, abs, getFnImpl, type Slot, abs as makeAbs, strLit, type LiteralValue } from "@nudojs/core";
+import { formatShape, type Abs, abs, getFnImpl, type Slot, strLit, type LiteralValue } from "@nudojs/core";
 import { harvestDts, promotedNamesOf, emitEnvModule } from "../harvest-dts.ts";
 import { absToHarvestSig, harvestSigToAbs, materializeHarvestJson, serializeHarvestJson, HARVEST_DISK_ABI } from "../harvest-json.ts";
 import { harvestPackageCached } from "../harvest-auto.ts";
@@ -2263,7 +2263,7 @@ describe("磁盘回读保留声明字面量的精度", () => {
 
 /** `"\\" | "/"`（与夹具同形：两个字面量的 sum） */
 function sum2(): Abs {
-  return makeAbs({ k: "sum", members: [strLit("\\"), strLit("/")] }, undefined, undefined, "exact");
+  return abs({ k: "sum", members: [strLit("\\"), strLit("/")] }, undefined, undefined, "exact");
 }
 
 /** Abs 的字面量值（非 `lit` 项 ⇒ undefined）。 */

@@ -6,7 +6,7 @@ import { type Abs, checkSource, resetCheckSourceMemo, resetGeneralizeMemo, reset
 import { analyzeFile, resetAllAnalysisCaches } from "../index.ts";
 import { generateDts, dtsModuleSurface, projectFunctionDts, projectModuleDts } from "../emit/dts-generator.ts";
 import { absToZodSchemaModule } from "../emit/schema-generator.ts";
-import { analyzeFile as analyzeFile___nudojs_service, analyzeFile as analyzeFile___nudojs_service_1 } from "@nudojs/service";
+import { analyzeFile as analyzeFile___nudojs_service } from "@nudojs/service";
 import { type DirectiveDiag, parse, parseCaseArgExpr } from "@nudojs/parser";
 import { collectEvalReplacements, resolveEvalInjection } from "../eval-injection.ts";
 import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, rmSync, chmodSync } from "node:fs";
@@ -16,9 +16,9 @@ import { emitDerivedFromRoot } from "../emit/contract-derivation-emit.ts";
 import { emitContract } from "../emit/contract-emitter.ts";
 import { resetAbsCallBudget, resetEvalForkBudget, listTopFunctions } from "@nudojs/core/internal";
 import { analyzeFileWithEvalFailures } from "../analyzer-orchestrate.ts";
-import { tmpProject, withTmpProject, writeTmpFile, tmpProject as makeTmpProject } from "./tmp-project.ts";
+import { tmpProject, withTmpProject, writeTmpFile } from "./tmp-project.ts";
 import { collectTopLevelFunctions } from "../analyzer-ast.ts";
-import { analyzeFile as analyzeFile_____analyzer_ts, analyzeFile as analyzeFile_____analyzer_ts_1, analyzeFile as analyzeFile_____analyzer_ts_2, analyzeFile as analyzeFile_____analyzer_ts_3, analyzeFile as analyzeFile_____analyzer_ts_4, analyzeFile as analyzeFile_____analyzer_ts_5, analyzeFile as analyzeFile_____analyzer_ts_6, analyzeFile as analyzeFile_____analyzer_ts_7 } from "../analyzer.ts";
+import { analyzeFile as analyzeFile_____analyzer_ts, } from "../analyzer.ts";
 import { buildTestReport } from "../test-report.ts";
 import { inferenceFailed, caseExpectedSatisfied, formatExpected } from "../analyzer-orchestrate-uncached-cases.ts";
 import { neverAbs } from "../evaluator/call-record.ts";
@@ -466,19 +466,19 @@ describe("解构形参的默认值 ⇒ 可省", () => {
   it("`{ x = 1, y = x + 1 } = {}` ⇒ 形参可省（不是必填）；对照组：无默认值的解构形参仍必填", () => {
   {
     const dts = generateDts(
-      analyzeFile___nudojs_service_1("/test/bug107.js", `export function f({ x = 1, y = x + 1 } = {}) { return y; }\n`),
+      analyzeFile___nudojs_service("/test/bug107.js", `export function f({ x = 1, y = x + 1 } = {}) { return y; }\n`),
     );
     expect(dts).toMatch(/export declare function f\(_p0\?: /);
   }
   {
     const dts = generateDts(
-      analyzeFile___nudojs_service_1("/test/bug107b.js", `export function g({ x = 1 } = undefined) { return x; }\n`),
+      analyzeFile___nudojs_service("/test/bug107b.js", `export function g({ x = 1 } = undefined) { return x; }\n`),
     );
     // `= undefined` 也是默认值形态 ⇒ 可省
     expect(dts).toMatch(/export declare function g\(_p0\?: /);
 
     const required = generateDts(
-      analyzeFile___nudojs_service_1("/test/bug107c.js", `export function r({ x }) { return x; }\n`),
+      analyzeFile___nudojs_service("/test/bug107c.js", `export function r({ x }) { return x; }\n`),
     );
     expect(required).toMatch(/export declare function r\(_p0: /);
   }
@@ -855,7 +855,7 @@ export function boom() {
   {
     const diags = withTmpProject("nudo-b206-", (dir) => {
       const file = writeTmpFile(dir, "f.js", THROWING);
-      return analyzeFile_____analyzer_ts_1(file, readFileSync(file, "utf-8"))!.diagnostics;
+      return analyzeFile_____analyzer_ts(file, readFileSync(file, "utf-8"))!.diagnostics;
     });
     expect(diags.filter((d) => d.code === "nudo:case-expected")).toHaveLength(0);
   }
@@ -863,7 +863,7 @@ export function boom() {
     const src = THROWING.replace("=> never", "=> number()");
     const diags = withTmpProject("nudo-b206-neg-", (dir) => {
       const file = writeTmpFile(dir, "f.js", src);
-      return analyzeFile_____analyzer_ts_1(file, readFileSync(file, "utf-8"))!.diagnostics;
+      return analyzeFile_____analyzer_ts(file, readFileSync(file, "utf-8"))!.diagnostics;
     });
     expect(diags.filter((d) => d.code === "nudo:case-expected")).toHaveLength(1);
   }
@@ -1151,13 +1151,13 @@ function paramsOf(src: string, dir: string): Map<string, string[]> {
 
   it("export function 的形参用源码真名（改前：arg0/arg1）；带默认值的形参：名字与个数都在（改前：arg0 一个 / arg1 假名）；rest 形参计入声明形参数并保留 ... 形态（改前：只剩 1 个）；负控制：箭头 const 导出的形参面不变", () => {
   {
-    const dir = makeTmpProject("nudo-b463-", { "main.js": SRC });
+    const dir = tmpProject("nudo-b463-", { "main.js": SRC });
     const params = paramsOf(SRC, dir);
     expect(params.get("expPlain")).toEqual(["a", "b"]);
     expect(params.get("expNamed")).toEqual(["alpha", "beta"]);
   }
   {
-    const dir = makeTmpProject("nudo-b463-", { "main.js": SRC });
+    const dir = tmpProject("nudo-b463-", { "main.js": SRC });
     const params = paramsOf(SRC, dir);
     expect(params.get("expDefault")).toEqual(["a", "b"]);
     // plainDefault 是私有本地绑定（仅经别名 aliasedDefault 导出）——不得
@@ -1166,12 +1166,12 @@ function paramsOf(src: string, dir: string): Map<string, string[]> {
     expect(params.get("aliasedDefault")).toEqual(["a", "b"]);
   }
   {
-    const dir = makeTmpProject("nudo-b463-", { "main.js": SRC });
+    const dir = tmpProject("nudo-b463-", { "main.js": SRC });
     const params = paramsOf(SRC, dir);
     expect(params.get("restExp")).toEqual(["a", "...more"]);
   }
   {
-    const dir = makeTmpProject("nudo-b463-", { "main.js": SRC });
+    const dir = tmpProject("nudo-b463-", { "main.js": SRC });
     const params = paramsOf(SRC, dir);
     expect(params.get("arrowDefault")).toEqual(["a", "b"]);
   }
@@ -1229,7 +1229,7 @@ const censusSlots = (source: string): string[] =>
 
 /** 分析面（test / export / contract 共用）里的函数名 */
 const analysisNames = (source: string, file = "/test/census.js"): string[] =>
-  analyzeFile_____analyzer_ts_2(file, source).functions.map((f) => f.name);
+  analyzeFile_____analyzer_ts(file, source).functions.map((f) => f.name);
 
 
   it("export const 箭头 / 函数表达式都进普查（普查名 = 导出槽名）；多声明符逐个收（不只首个）；非函数初始化不进普查；分析面看得见该函数，且入口求值拿到返回值", () => {
@@ -1259,7 +1259,7 @@ const analysisNames = (source: string, file = "/test/census.js"): string[] =>
 
 
     const source = "export const slugify = (s) => String(s).toLowerCase();";
-    const result = analyzeFile_____analyzer_ts_2("/test/bug469.js", source);
+    const result = analyzeFile_____analyzer_ts("/test/bug469.js", source);
     expect(result.functions.map((f) => f.name)).toEqual(["slugify"]);
     const entry = result.functions[0]!.cases.find((c) => c.name.startsWith("entry@"));
     expect(entry).toBeDefined();
@@ -1285,7 +1285,7 @@ describe("具名 default 导出按 default 槽回退求值", () => {
 
 
     const source = "export default function f() { return 1; }";
-    const result = analyzeFile_____analyzer_ts_2("/test/bug489.js", source);
+    const result = analyzeFile_____analyzer_ts("/test/bug489.js", source);
     expect(result.functions.map((f) => f.name)).toEqual(["f"]);
     const entry = result.functions[0]!.cases.find((c) => c.name.startsWith("entry@"));
     expect(entry).toBeDefined();
@@ -1352,7 +1352,7 @@ describe("module.exports = { f: fn } 的成员函数进普查", () => {
 
 
     const source = 'module.exports = { greet: function (name) { return "hi " + name; } };';
-    const result = analyzeFile_____analyzer_ts_2("/test/bug995.js", source);
+    const result = analyzeFile_____analyzer_ts("/test/bug995.js", source);
     expect(result.functions.map((f) => f.name)).toEqual(["greet"]);
   }
 });
@@ -1482,7 +1482,7 @@ export function f() {
   return y;
 }
 `;
-    const result = analyzeFile_____analyzer_ts_3(join(dir, "root.js"), source);
+    const result = analyzeFile_____analyzer_ts(join(dir, "root.js"), source);
     expect(formatShape(result.functions[0].cases[0].abs)).toBe("number");
   });
 });
@@ -1495,7 +1495,7 @@ describe("依赖侧注入（接线后转绿）", () => {
 export function call() { return getCfg(); }
 `,
     });
-    const result = analyzeFile_____analyzer_ts_3(join(dir, "main.js"), `import { getCfg } from "./dep.js";
+    const result = analyzeFile_____analyzer_ts(join(dir, "main.js"), `import { getCfg } from "./dep.js";
 export function call() { return getCfg(); }
 `);
     const fn = result.functions.find((f) => f.name === "call");
@@ -1534,7 +1534,7 @@ export function setStr() { val = "hello"; }
 
 function entryShape(files: Record<string, string>, entry: string): string {
   const dir = tmpProject("nudo-bug476-", files);
-  const result = analyzeFile_____analyzer_ts_4(join(dir, entry), files[entry]);
+  const result = analyzeFile_____analyzer_ts(join(dir, entry), files[entry]);
   const fn = result.functions.find((f) => f.name === "get");
   return fn ? formatShape(fn.cases[0].abs) : "<no-fn>";
 }
@@ -1582,7 +1582,7 @@ export function get() { return val; }
 export function bump() { n = n + 1; return n; }
 export function read() { return n; }
 `;
-    const result = analyzeFile_____analyzer_ts_4(join(dir, "same.js"), source);
+    const result = analyzeFile_____analyzer_ts(join(dir, "same.js"), source);
     const bump = result.functions.find((f) => f.name === "bump");
     const read = result.functions.find((f) => f.name === "read");
     expect(bump ? formatShape(bump.cases[0].abs) : "").toBe("1");
@@ -1660,7 +1660,7 @@ const JS_SOURCE = `export function upper(a) {
   resetAllAnalysisCaches();
 
 
-    const result = analyzeFile_____analyzer_ts_5("/test/bug479.ts", TS_SOURCE);
+    const result = analyzeFile_____analyzer_ts("/test/bug479.ts", TS_SOURCE);
     const entry = result.functions[0]!.cases.find((c) => c.name.startsWith("entry@"));
     expect(entry).toBeDefined();
     expect(formatShape(entry!.argAbs[0]!)).toBe("string");
@@ -1676,14 +1676,14 @@ const JS_SOURCE = `export function upper(a) {
   resetAllAnalysisCaches();
 
 
-    const dts = generateDts(analyzeFile_____analyzer_ts_5("/test/bug479.ts", TS_SOURCE));
+    const dts = generateDts(analyzeFile_____analyzer_ts("/test/bug479.ts", TS_SOURCE));
     expect(dts).toContain("export declare function upper(a: string)");
   }
   {
   resetAllAnalysisCaches();
 
 
-    const result = analyzeFile_____analyzer_ts_5("/test/bug479.ts", TS_SOURCE);
+    const result = analyzeFile_____analyzer_ts("/test/bug479.ts", TS_SOURCE);
     expect(result.functions.map((f) => f.name)).toEqual(["upper"]);
     const entry = result.functions[0]!.cases.find((c) => c.name.startsWith("entry@"));
     expect(entry).toBeDefined();
@@ -1692,7 +1692,7 @@ const JS_SOURCE = `export function upper(a) {
   resetAllAnalysisCaches();
 
 
-    const result = analyzeFile_____analyzer_ts_5("/test/bug479.js", JS_SOURCE);
+    const result = analyzeFile_____analyzer_ts("/test/bug479.js", JS_SOURCE);
     const entry = result.functions.find((f) => f.name === "upper")?.cases.find((c) =>
       c.name.startsWith("entry@"),
     );
@@ -1703,7 +1703,7 @@ const JS_SOURCE = `export function upper(a) {
   resetAllAnalysisCaches();
 
 
-    const result = analyzeFile_____analyzer_ts_5("/test/bug479-throws.js", JS_SOURCE);
+    const result = analyzeFile_____analyzer_ts("/test/bug479-throws.js", JS_SOURCE);
     const entry = result.functions.find((f) => f.name === "upper")?.cases.find((c) =>
       c.name.startsWith("entry@"),
     );
@@ -1759,7 +1759,7 @@ withTmpProject("nudo-b495-", (dir) => {
 export const add = fn({ a: number(
 `,
       );
-      const result = analyzeFile_____analyzer_ts_6(file, readFileSync(file, "utf-8"));
+      const result = analyzeFile_____analyzer_ts(file, readFileSync(file, "utf-8"));
       expect(codes(result)).toContain("nudo:contract-load");
       expect(codes(result)).not.toContain("nudo:contract-entry-only");
     });
@@ -1768,7 +1768,7 @@ export const add = fn({ a: number(
 withTmpProject("nudo-b495b-", (dir) => {
       const src = `export function add(a, b) { return a + b; }\n`;
       const file = writeTmpFile(dir, "calc.js", src);
-      const result = analyzeFile_____analyzer_ts_6(file, readFileSync(file, "utf-8"));
+      const result = analyzeFile_____analyzer_ts(file, readFileSync(file, "utf-8"));
       expect(codes(result)).toContain("nudo:contract-entry-only");
       expect(codes(result)).not.toContain("nudo:contract-load");
     });
@@ -1784,7 +1784,7 @@ withTmpProject("nudo-b495c-", (dir) => {
 export const add = fn({ a: number(), b: number() });
 `,
       );
-      const result = analyzeFile_____analyzer_ts_6(file, readFileSync(file, "utf-8"));
+      const result = analyzeFile_____analyzer_ts(file, readFileSync(file, "utf-8"));
       expect(codes(result)).not.toContain("nudo:contract-entry-only");
       expect(codes(result)).not.toContain("nudo:contract-load");
     });
@@ -2117,7 +2117,7 @@ function analyzeSrc(src: string): {
 } {
   return withTmpProject("nudo-b649-", (dir) => {
     const file = writeTmpFile(dir, "f.js", src);
-    return analyzeFile_____analyzer_ts_7(file, readFileSync(file, "utf-8"));
+    return analyzeFile_____analyzer_ts(file, readFileSync(file, "utf-8"));
   });
 }
 

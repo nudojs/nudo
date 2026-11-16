@@ -2,16 +2,16 @@
  * 模块套件：求值面：控制流/迭代/守卫/作用域。
  */
 import { describe, it, expect } from "vitest";
-import { litValue, anyAbs, abs, num, type Abs as Abs_____abs_ts, absLit, type Abs as Abs_____abs_ts_1 } from "../abs.ts";
+import { litValue, anyAbs, abs, num, type Abs as Abs_____abs_ts, absLit } from "../abs.ts";
 import { transpileSource, checkSource, pTrue } from "../index.ts";
 import { callLit, call, val, isNever, throwsError } from "./eval-helpers.ts";
 import { formatAbs } from "../format/format.ts";
-import { litValue as litValue___nudojs_core, checkSource as checkSource___nudojs_core, pTrue as pTrue___nudojs_core, litValue as litValue___nudojs_core_1, type Abs, litValue as litValue___nudojs_core_2, checkSource as checkSource___nudojs_core_1, pTrue as pTrue___nudojs_core_1, checkSource as checkSource___nudojs_core_2, pTrue as pTrue___nudojs_core_2, litValue as litValue___nudojs_core_3, checkSource as checkSource___nudojs_core_3, pTrue as pTrue___nudojs_core_3, litValue as litValue___nudojs_core_4, litValue as litValue___nudojs_core_5, transpileSource as transpileSource___nudojs_core, litValue as litValue___nudojs_core_6, litValue as litValue___nudojs_core_7 } from "@nudojs/core";
+import { litValue as litValue___nudojs_core, checkSource as checkSource___nudojs_core, pTrue as pTrue___nudojs_core, type Abs, transpileSource as transpileSource___nudojs_core, } from "@nudojs/core";
 import { l2Count, sigOf, sidecarOpts, withStdImport, stdOpts } from "./nudo-constraints.ts";
 import { runTranspiled, callTranspiledExportFull } from "../exec/run.ts";
 import { $lit, withInvariantSpecs } from "../exec/runtime/state.ts";
 import { transpileSource as transpileSource_____exec_transpile_ts } from "../exec/transpile.ts";
-import { pTrue as pTrue_____pred_ts, ge, le, predToString, pTrue as pTrue_____pred_ts_1 } from "../pred.ts";
+import { pTrue as pTrue_____pred_ts, ge, le, predToString } from "../pred.ts";
 import { joinAbs } from "../objects.ts";
 import { applyInvariantsToPack } from "../exec/runtime/invariant-apply.ts";
 import { lit, v } from "../term.ts";
@@ -640,7 +640,7 @@ describe("指令作用范围按 AST 节点身份（字符区间）", () => {
 
 /** 结果字面量值（非字面量 → "not-lit"） */
 function lit(a: Abs): unknown {
-  const r = litValue___nudojs_core_1(a);
+  const r = litValue___nudojs_core(a);
   return r.ok ? r.value : "not-lit";
 }
 
@@ -1381,7 +1381,7 @@ describe("for 循环体接 nullish 守卫（零 L2 / 不报 may-throw）", () =>
 
 /** 引擎求值结果字面量值 */
 function v(src: string, ...args: unknown[]) {
-  return litValue___nudojs_core_2(callLit(src, "f", ...args).result);
+  return litValue___nudojs_core(callLit(src, "f", ...args).result);
 }
 
 const NUDO_SRC = `
@@ -1393,7 +1393,7 @@ const opts = sidecarOpts("std183c", NUDO_SRC, "/t/b183.js");
 const IMP = `/// @nudo:import { strOrNull, num, posNum } from "./std183c.nudo.js"\n`;
 
 function check(src: string) {
-  return checkSource___nudojs_core_1("/t/b183.js", IMP + src, pTrue___nudojs_core_1, opts);
+  return checkSource___nudojs_core("/t/b183.js", IMP + src, pTrue___nudojs_core, opts);
 }
 
 
@@ -1746,7 +1746,7 @@ const opts = sidecarOpts("std185dw", NUDO_SRC, "/t/b185dw.js");
 const IMP = `/// @nudo:import { num, posNum, posOrZero, strOrNull } from "./std185dw.nudo.js"\n`;
 
 function check(src: string) {
-  return checkSource___nudojs_core_2("/t/b185dw.js", IMP + src, pTrue___nudojs_core_2, opts);
+  return checkSource___nudojs_core("/t/b185dw.js", IMP + src, pTrue___nudojs_core, opts);
 }
 
 /** L1 契约违约数 */
@@ -1938,7 +1938,7 @@ const opts = sidecarOpts("std185c", NUDO_SRC, "/t/b185.js");
 const IMP = `/// @nudo:import { num, posNum, strOrNull } from "./std185c.nudo.js"\n`;
 
 function check(src: string) {
-  return checkSource___nudojs_core_2("/t/b185.js", IMP + src, pTrue___nudojs_core_2, opts);
+  return checkSource___nudojs_core("/t/b185.js", IMP + src, pTrue___nudojs_core, opts);
 }
 
 describe("while 循环体接关系守卫（L1 契约成立）", () => {
@@ -2103,7 +2103,7 @@ describe("裸块 / try / catch / finally 内的早退补集窄化生效", () => 
 
 /** 引擎求值结果字面量值 */
 function v(src: string, ...args: unknown[]) {
-  return litValue___nudojs_core_3(callLit(src, "f", ...args).result);
+  return litValue___nudojs_core(callLit(src, "f", ...args).result);
 }
 
 const NUDO_SRC = `
@@ -2114,7 +2114,7 @@ const opts = sidecarOpts("std186c", NUDO_SRC, "/t/b186.js");
 const IMP = `/// @nudo:import { strOrNull, num } from "./std186c.nudo.js"\n`;
 
 function check(src: string) {
-  return checkSource___nudojs_core_3("/t/b186.js", IMP + src, pTrue___nudojs_core_3, opts);
+  return checkSource___nudojs_core("/t/b186.js", IMP + src, pTrue___nudojs_core, opts);
 }
 
 
@@ -2324,7 +2324,7 @@ describe("可选调用命中 nullish 时整链短路（剩余成员读不再求�
 
 /** 结果字面量值（litValue） */
 function v(src: string) {
-  return litValue___nudojs_core_4(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 /** 抛错名（无抛错 → ""） */
@@ -2482,7 +2482,7 @@ describe("表达式体的写回排在表达式取值之后", () => {
 
 /** 引擎求值结果字面量值 */
 function v(src: string, ...args: unknown[]) {
-  return litValue___nudojs_core_5(callLit(src, "f", ...args).result);
+  return litValue___nudojs_core(callLit(src, "f", ...args).result);
 }
 
 
@@ -2598,7 +2598,7 @@ const wrap = (body: string) => `export function f() { ${body} }`;
 
 /** 结果字面量值（litValue） */
 function v(src: string) {
-  return litValue___nudojs_core_6(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 /** 抛错名（无抛错 → ""） */
@@ -3391,7 +3391,7 @@ describe("switch-literal-disc-abs-test", () => {
 
 
 /** 抽象 number 判别值（非字面量） */
-const NUMBER_ABS = abs({ k: "prim", type: "number" }, undefined, pTrue_____pred_ts_1, "exact");
+const NUMBER_ABS = abs({ k: "prim", type: "number" }, undefined, pTrue_____pred_ts, "exact");
 
 /** 引擎返回域（formatAbs 渲染） */
 function domain(src: string, arg: unknown): string {
@@ -3406,7 +3406,7 @@ function checkSwitch(src: string, file: string) {
   return checkSource_____check_check_ts(
     file,
     src,
-    pTrue_____pred_ts_1,
+    pTrue_____pred_ts,
     {
       loadModule: (spec: string): string | undefined =>
         spec.includes("s241")
@@ -3520,10 +3520,10 @@ describe("switch-miss-path-narrowing", () => {
 
 
 /** 抽象实参 string | null（契约面同形：union(string(), lit(null))） */
-const strOrNull: Abs_____abs_ts_1 = joinAbs(absLit("ab"), absLit(null));
+const strOrNull: Abs_____abs_ts = joinAbs(absLit("ab"), absLit(null));
 
 /** may-throw 面（never = 不抛） */
-function mayThrow(src: string, args: Abs_____abs_ts_1[]): boolean {
+function mayThrow(src: string, args: Abs_____abs_ts[]): boolean {
   const rec = call(src, "f", args);
   return !isNever(rec.throws);
 }
@@ -3647,7 +3647,7 @@ describe("match/exec 结果的可迭代面（原生数组 exotic）", () => {
 
 
 function v(src: string) {
-  return litValue___nudojs_core_7(call(src, "f").result);
+  return litValue___nudojs_core(call(src, "f").result);
 }
 
 
@@ -3730,7 +3730,7 @@ function v(src: string) {
       `export function f() { const m = /a(b)c/.exec("abc"); return Object.keys(m).join(","); }`,
       "f",
     );
-    const lv = litValue___nudojs_core_7(r.result);
+    const lv = litValue___nudojs_core(r.result);
     expect(lv.ok).toBe(true);
     expect(String(lv.ok ? lv.value : undefined)).toBe("0,1,index,input,groups");
   }

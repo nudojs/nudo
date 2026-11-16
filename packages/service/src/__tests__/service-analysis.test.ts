@@ -5,7 +5,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { readFileSync, mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
 import { analyzeFile, collectCallRecords, analyzeFileAsync as analyzeFileAsync_____analyzer_ts } from "../analyzer.ts";
 import { litValue, numLit, type Abs, formatShape, resetCheckSourceMemo, resetGeneralizeMemo, resetNudoModuleExecCache, resetParseSourceCache, abs, strLit } from "@nudojs/core";
-import { withTmpProject, writeTmpFile, tmpProject, tmpProject as makeTmpProject } from "./tmp-project.ts";
+import { withTmpProject, writeTmpFile, tmpProject } from "./tmp-project.ts";
 import { synthesizeExternalFunctions, dedupeCallRecords } from "../analyzer-diagnose.ts";
 import { MAX_RECORD_TYPE_NODES, neverAbs, type CallRecord } from "../evaluator/call-record.ts";
 import { tmpdir } from "node:os";
@@ -16,7 +16,7 @@ import { analyzeFileAsync } from "@nudojs/service";
 import { clearEvalCache } from "../eval-run.ts";
 import { clearAbsModuleCache } from "../abs-modules-graph.ts";
 import { disambiguateCallsiteNames, callsiteCaseName, caseExpectedSatisfied } from "../analyzer-orchestrate-uncached-cases.ts";
-import { collectCallRecords as collectCallRecords_____analyzer_orchestrate_calls_ts, collectCallRecords as collectCallRecords_____analyzer_orchestrate_calls_ts_1, collectCallRecords as collectCallRecords_____analyzer_orchestrate_calls_ts_2 } from "../analyzer-orchestrate-calls.ts";
+import { collectCallRecords as collectCallRecords_____analyzer_orchestrate_calls_ts, } from "../analyzer-orchestrate-calls.ts";
 import { injectBindings, typeExprToDirective } from "../what-if.ts";
 import type { Diagnostic } from "../analyzer-types.ts";
 import { collectCheckSupplementIssues } from "../check-issues.ts";
@@ -1175,7 +1175,7 @@ function callNames(result: ReturnType<typeof analyzeFile>, name: string): string
       const lib = writeTmpFile(dir, "lib.js", LIB);
       const a = writeTmpFile(dir, "a.js", SITE_A);
       const b = writeTmpFile(dir, "b.js", SITE_B);
-      const external = [...collectCallRecords_____analyzer_orchestrate_calls_ts_1(a, readFileSync(a, "utf-8")), ...collectCallRecords_____analyzer_orchestrate_calls_ts_1(b, readFileSync(b, "utf-8"))];
+      const external = [...collectCallRecords_____analyzer_orchestrate_calls_ts(a, readFileSync(a, "utf-8")), ...collectCallRecords_____analyzer_orchestrate_calls_ts(b, readFileSync(b, "utf-8"))];
       const names = callNames(analyzeFile(lib, readFileSync(lib, "utf-8"), undefined, external), "add").filter((n) => n.startsWith("call@"));
       expect(names.length).toBe(2);
       expect(new Set(names).size).toBe(2);
@@ -1201,7 +1201,7 @@ function callNames(result: ReturnType<typeof analyzeFile>, name: string): string
       const lib = writeTmpFile(dir, "lib.js", '/**\n * @nudo:case "call@a.js:L2" (1, 2)\n */\nexport function add(a, b) { return a + b; }\n');
       const a = writeTmpFile(dir, "a.js", SITE_A);
       const b = writeTmpFile(dir, "b.js", SITE_B);
-      const external = [...collectCallRecords_____analyzer_orchestrate_calls_ts_1(a, readFileSync(a, "utf-8")), ...collectCallRecords_____analyzer_orchestrate_calls_ts_1(b, readFileSync(b, "utf-8"))];
+      const external = [...collectCallRecords_____analyzer_orchestrate_calls_ts(a, readFileSync(a, "utf-8")), ...collectCallRecords_____analyzer_orchestrate_calls_ts(b, readFileSync(b, "utf-8"))];
       expect(callNames(analyzeFile(lib, readFileSync(lib, "utf-8"), undefined, external), "add")).toContain("call@b.js:L2");
     });
   });
@@ -1422,7 +1422,7 @@ function project(include: string[] | undefined, exclude?: string[]): string {
   const analysis: Record<string, unknown> = { mode: "all" };
   if (include) analysis.include = include;
   if (exclude) analysis.exclude = exclude;
-  return makeTmpProject("nudo-scope-480-", {
+  return tmpProject("nudo-scope-480-", {
     "package.json": JSON.stringify({ name: "fx", nudo: { analysis } }),
   });
 }
@@ -1441,7 +1441,7 @@ const SRC = "export function f(x) {\n  return x;\n}\n";
     const analysis: Record<string, unknown> = { mode: "all" };
     if (include) analysis.include = include;
     if (exclude) analysis.exclude = exclude;
-    return makeTmpProject("nudo-scope-480-", { "package.json": JSON.stringify({ name: "fx", nudo: { analysis } }) });
+    return tmpProject("nudo-scope-480-", { "package.json": JSON.stringify({ name: "fx", nudo: { analysis } }) });
   };
   const fileIn = (dir: string, rel: string): string => {
     const file = join(dir, ...rel.split("/"));
@@ -1639,7 +1639,7 @@ describe("call@ 见证值 = 调用现场观测值（不被目标语境重求值�
     withTmpProject("nudo-b486-", (dir) => {
       const lib = writeTmpFile(dir, "lib.js", "let counter = 0;\nexport function addTo(k) { counter += k; return counter; }\n");
       const usage = writeTmpFile(dir, "usage.js", 'import { addTo } from "./lib.js";\naddTo(5);\naddTo(1);\n');
-      const external = collectCallRecords_____analyzer_orchestrate_calls_ts_2(usage, readFileSync(usage, "utf-8"));
+      const external = collectCallRecords_____analyzer_orchestrate_calls_ts(usage, readFileSync(usage, "utf-8"));
       const fn = analyzeFile(lib, readFileSync(lib, "utf-8"), undefined, external).functions.find((f) => f.name === "addTo")!;
       const values = fn.cases.filter((c) => c.name.startsWith("call@")).map((c) => litVal(c.abs)).sort((a, b) => Number(a) - Number(b));
       expect(values).toEqual([5, 6]);
@@ -1647,7 +1647,7 @@ describe("call@ 见证值 = 调用现场观测值（不被目标语境重求值�
     withTmpProject("nudo-b486b-", (dir) => {
       const lib = writeTmpFile(dir, "lib.js", "export function add(a, b) { return a + b; }\n");
       const usage = writeTmpFile(dir, "usage.js", 'import { add } from "./lib.js";\nconst x = add(1, 2);\n');
-      const external = collectCallRecords_____analyzer_orchestrate_calls_ts_2(usage, readFileSync(usage, "utf-8"));
+      const external = collectCallRecords_____analyzer_orchestrate_calls_ts(usage, readFileSync(usage, "utf-8"));
       const call = analyzeFile(lib, readFileSync(lib, "utf-8"), undefined, external).functions.find((f) => f.name === "add")!.cases.find((c) => c.name.startsWith("call@"))!;
       expect(litVal(call.abs)).toBe(3);
     });

@@ -3,31 +3,31 @@
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { val, call, resetEngineCaches, objSlots, throwsError, callLit } from "./eval-helpers.ts";
-import { litValue, checkSource as checkSource___nudojs_core, pTrue as pTrue___nudojs_core, resetCheckSourceMemo as resetCheckSourceMemo___nudojs_core, resetGeneralizeMemo as resetGeneralizeMemo___nudojs_core, checkSource as checkSource___nudojs_core_1, pTrue as pTrue___nudojs_core_1, runTranspiled, callTranspiledExportApply, absFunction, checkSource as checkSource___nudojs_core_2, pTrue as pTrue___nudojs_core_2, litC as litC___nudojs_core, nullable, number as number___nudojs_core, union as union___nudojs_core } from "@nudojs/core";
+import { litValue, checkSource as checkSource___nudojs_core, pTrue as pTrue___nudojs_core, resetCheckSourceMemo as resetCheckSourceMemo___nudojs_core, resetGeneralizeMemo as resetGeneralizeMemo___nudojs_core, runTranspiled, callTranspiledExportApply, absFunction, litC as litC___nudojs_core, nullable, number as number___nudojs_core, union as union___nudojs_core } from "@nudojs/core";
 import { checkSource, resetCheckSourceMemo } from "../check/check.ts";
 import { pTrue, implies, and, eq, ge, le, gt, lt, assumeFinite, ne } from "../pred.ts";
-import { checkSource as checkSource_____index_ts, pTrue as pTrue_____index_ts, checkSource as checkSource_____index_ts_1, pTrue as pTrue_____index_ts_1, checkSource as checkSource_____index_ts_2, pTrue as pTrue_____index_ts_2, checkSource as checkSource_____index_ts_3, pTrue as pTrue_____index_ts_3, checkSource as checkSource_____index_ts_4, pTrue as pTrue_____index_ts_4, checkSource as checkSource_____index_ts_5, pTrue as pTrue_____index_ts_5, checkSource as checkSource_____index_ts_6, generalizeFromAst, pTrue as pTrue_____index_ts_6, checkSource as checkSource_____index_ts_7, pTrue as pTrue_____index_ts_7, checkSource as checkSource_____index_ts_8, pTrue as pTrue_____index_ts_8, checkSource as checkSource_____index_ts_9, pTrue as pTrue_____index_ts_9, checkSource as checkSource_____index_ts_10, pTrue as pTrue_____index_ts_10, checkSource as checkSource_____index_ts_11, checkSource as checkSource_____index_ts_12, pTrue as pTrue_____index_ts_11, transpileSource, checkSource as checkSource_____index_ts_13, pTrue as pTrue_____index_ts_12, abs, gt as gt_____index_ts, v as v_____index_ts, checkSource as checkSource_____index_ts_14, pTrue as pTrue_____index_ts_13, array, boolean, constraintToEntryAbs, isIntFlag, lit as lit_____index_ts, number as number_____index_ts, string, literalMeetsConstraint, checkSource as checkSource_____index_ts_15, pTrue as pTrue_____index_ts_14, checkSource as checkSource_____index_ts_16, pTrue as pTrue_____index_ts_15, checkSource as checkSource_____index_ts_17, pTrue as pTrue_____index_ts_16, checkSource as checkSource_____index_ts_18, pTrue as pTrue_____index_ts_17, checkSource as checkSource_____index_ts_19, pTrue as pTrue_____index_ts_18, checkSource as checkSource_____index_ts_20, pTrue as pTrue_____index_ts_19, checkSource as checkSource_____index_ts_21, pTrue as pTrue_____index_ts_20, parseSource as parseSource_____index_ts, formatAbs, checkSource as checkSource_____index_ts_22, pTrue as pTrue_____index_ts_21, checkSource as checkSource_____index_ts_23, pTrue as pTrue_____index_ts_22, checkSource as checkSource_____index_ts_24, pTrue as pTrue_____index_ts_23, checkSource as checkSource_____index_ts_25, pTrue as pTrue_____index_ts_24, checkSource as checkSource_____index_ts_26, fn as fn_____index_ts, number as number_____index_ts_1, pTrue as pTrue_____index_ts_25, throwConstraintToKinds, union, checkArg, checkSource as checkSource_____index_ts_27, ge as ge_____index_ts, lenTerm, lit as lit_____index_ts_1, number as number_____index_ts_2, numLit, pTrue as pTrue_____index_ts_26, strLit, v as v_____index_ts_1, checkSource as checkSource_____index_ts_28, pTrue as pTrue_____index_ts_27, checkSource as checkSource_____index_ts_29, pTrue as pTrue_____index_ts_28, checkSource as checkSource_____index_ts_30, pTrue as pTrue_____index_ts_29, checkSource as checkSource_____index_ts_31, pTrue as pTrue_____index_ts_30, checkSource as checkSource_____index_ts_32, pTrue as pTrue_____index_ts_31, termToString, lit as lit_____index_ts_2, checkSource as checkSource_____index_ts_33, pTrue as pTrue_____index_ts_32, listFnDirectiveScopes, parseSource as parseSource_____index_ts_1, checkSource as checkSource_____index_ts_34, pTrue as pTrue_____index_ts_33, instantiateReturn, type Abs as Abs_____index_ts, checkSource as checkSource_____index_ts_35, pTrue as pTrue_____index_ts_34, checkSource as checkSource_____index_ts_36, pTrue as pTrue_____index_ts_35, formatShape as formatShape_____index_ts, lit as lit_____index_ts_3, num as num_____index_ts, v as v_____index_ts_2 } from "../index.ts";
+import { checkSource as checkSource_____index_ts, pTrue as pTrue_____index_ts, generalizeFromAst, transpileSource, abs, gt as gt_____index_ts, v as v_____index_ts, array, boolean, constraintToEntryAbs, isIntFlag, lit as lit_____index_ts, number as number_____index_ts, string, literalMeetsConstraint, parseSource as parseSource_____index_ts, formatAbs, fn as fn_____index_ts, throwConstraintToKinds, union, checkArg, ge as ge_____index_ts, lenTerm, numLit, strLit, termToString, listFnDirectiveScopes, instantiateReturn, type Abs as Abs_____index_ts, formatShape as formatShape_____index_ts, num as num_____index_ts } from "../index.ts";
 import { sidecarOpts, errorsOf, issuesOf, sigOf, makeFiles, stdOpts, l2Count, withStdImport } from "./nudo-constraints.ts";
-import { app, lit, v as termVar, simplifyTerm, type Term, v, lit as termLit } from "../term.ts";
+import { app, lit, simplifyTerm, type Term, v } from "../term.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
 import { takeContractDiags, formatConstraint, resetSidecarLoadFailureCache } from "../contract/contract.ts";
 import { takeRefineDiags, extractRefineReturnFromSource, setRefineDiagCollector, resetNudoModuleExecCache } from "../refine.ts";
 import type { CheckIssue } from "../check/check-report.ts";
-import { fn, litC, shape, string as str, number, constraintToEntryAbs as constraintToEntryAbs_____constraint_ts, derefConstraint, string as string_____constraint_ts, union as union_____constraint_ts, type NudoConstraint } from "../constraint.ts";
+import { fn, litC, shape, string as str, number, constraintToEntryAbs as constraintToEntryAbs_____constraint_ts, derefConstraint, union as union_____constraint_ts, type NudoConstraint } from "../constraint.ts";
 import { evalThrowsOutcome, definiteModuleThrowOf } from "../check/check-may-throw.ts";
 import { parseSource } from "../parse-source.ts";
 import { throwAbsToKinds, errorTypeAbs } from "../diagnostics/may-throw.ts";
-import { litValue as litValue_____abs_ts, type Abs, litValue as litValue_____abs_ts_1, abs as abs_____abs_ts, type Shape, abs as abs_____abs_ts_1, numLit as numLit_____abs_ts, abs as abs_____abs_ts_2, numLit as numLit_____abs_ts_1, abs as abs_____abs_ts_3, abs as abs_____abs_ts_4, litValue as litValue_____abs_ts_2, numLit as numLit_____abs_ts_2, abs as abs_____abs_ts_5, litValue as litValue_____abs_ts_3, abs as abs_____abs_ts_6, litValue as litValue_____abs_ts_4, litValue as litValue_____abs_ts_5, litValue as litValue_____abs_ts_6, num, str as str_____abs_ts, absLit, abs as abs_____abs_ts_7, abs as abs_____abs_ts_8, abs as abs_____abs_ts_9, litValue as litValue_____abs_ts_7, abs as abs_____abs_ts_10 } from "../abs.ts";
+import { litValue as litValue_____abs_ts, type Abs, abs as abs_____abs_ts, type Shape, numLit as numLit_____abs_ts, num, str as str_____abs_ts, absLit, } from "../abs.ts";
 import { checkReturnConstraint } from "../check/check-return.ts";
 import { assumeConsumed, noteAssumeConsumed, resetAssumeConsumed } from "../assume-ledger.ts";
 import { listClassEntryNames } from "../scan/scan-top-functions.ts";
 import { $await } from "../exec/runtime/async.ts";
 import { leqAbs } from "../leq.ts";
-import { literalMeetsConstraint as literalMeetsConstraint_____domain_membership_ts, literalMeetsConstraint as literalMeetsConstraint_____domain_membership_ts_1, literalMeetsConstraint as literalMeetsConstraint_____domain_membership_ts_2 } from "../domain-membership.ts";
-import { tryRunTranspiledDetailed, runTranspiled as runTranspiled_____exec_run_ts, callTranspiledExportFull, runTranspiled as runTranspiled_____exec_run_ts_1, runTranspiled as runTranspiled_____exec_run_ts_2, runTranspiled as runTranspiled_____exec_run_ts_3, runTranspiled as runTranspiled_____exec_run_ts_4 } from "../exec/run.ts";
-import { formatShape, formatAbs as formatAbs_____format_format_ts, formatAbs as formatAbs_____format_format_ts_1, formatAbs as formatAbs_____format_format_ts_2, formatAbs as formatAbs_____format_format_ts_3 } from "../format/format.ts";
+import { literalMeetsConstraint as literalMeetsConstraint_____domain_membership_ts, } from "../domain-membership.ts";
+import { tryRunTranspiledDetailed, runTranspiled as runTranspiled_____exec_run_ts, callTranspiledExportFull, } from "../exec/run.ts";
+import { formatShape, formatAbs as formatAbs_____format_format_ts, } from "../format/format.ts";
 import { denoteGuard } from "../denote.ts";
-import { getFnImpl, absFunction as absFunction_____abs_fn_ts, absFunction as absFunction_____abs_fn_ts_1, makeAbsApplyResult } from "../abs-fn.ts";
+import { getFnImpl, absFunction as absFunction_____abs_fn_ts, makeAbsApplyResult } from "../abs-fn.ts";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -187,7 +187,7 @@ function check(contract: string, arg: string) {
 export function f(x) { return x; }
 export function use() { return f(${arg}); }
 `;
-  return checkSource_____index_ts_1(FILE, src, pTrue_____index_ts_1, sidecarOpts("std7", SIDE, FILE));
+  return checkSource_____index_ts(FILE, src, pTrue_____index_ts, sidecarOpts("std7", SIDE, FILE));
 }
 
 function violations(r: { issues: Array<{ code: string }> }) {
@@ -296,7 +296,7 @@ function echoAb(x) {
   return x;
 }
 `;
-    const r = checkSource_____index_ts_2("/t/bug001/app.js", src, pTrue_____index_ts_2, libOpts());
+    const r = checkSource_____index_ts("/t/bug001/app.js", src, pTrue_____index_ts, libOpts());
     expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
   }
   {
@@ -500,15 +500,15 @@ export class D {
 
   it("static method returns its value；instance method still returns its value；class value itself stays a class signature", () => {
   {
-    const r = checkSource_____index_ts_3("/t/bug-004.js", SRC, pTrue_____index_ts_3);
+    const r = checkSource_____index_ts("/t/bug-004.js", SRC, pTrue_____index_ts);
     expect(sigOf(r, "D.s1")).toBe("42");
   }
   {
-    const r = checkSource_____index_ts_3("/t/bug-004.js", SRC, pTrue_____index_ts_3);
+    const r = checkSource_____index_ts("/t/bug-004.js", SRC, pTrue_____index_ts);
     expect(sigOf(r, "D.instance")).toBe("7");
   }
   {
-    const r = checkSource_____index_ts_3("/t/bug-004.js", SRC, pTrue_____index_ts_3);
+    const r = checkSource_____index_ts("/t/bug-004.js", SRC, pTrue_____index_ts);
     expect(sigOf(r, "D")).toBe("D");
   }
 });
@@ -571,7 +571,7 @@ const isLit = (t: Term, value: unknown): boolean =>
     expect(isLit(simplifyTerm(sub(lit(2.5), lit(1))), 1.5)).toBe(true);
   }
   {
-    const x = termVar("x");
+    const x = v("x");
     const r = simplifyTerm(sub(x, lit(0)));
     expect(r).toEqual(x);
   }
@@ -633,7 +633,7 @@ function check(sidecar: string) {
     "/t/lib.nudo.js": sidecar,
     "/t/tmpl.nudo.js": `import { lit } from "@nudojs/core";\nexport const fortyTwo = lit(42);\n`,
   });
-  return checkSource_____index_ts_4("/t/lib.js", SRC, pTrue_____index_ts_4, {
+  return checkSource_____index_ts("/t/lib.js", SRC, pTrue_____index_ts, {
     loadModule,
     fromFile: "/t/lib.js",
   });
@@ -748,14 +748,14 @@ export const pick = fn({ v: number() });
 
   it("union(lit(1), lit(2), lit(3)) ⇒ `1 | 2 | 3`（不是 `number`）；负控制：裸 number 契约仍是 `number`", () => {
   {
-    const r = checkSource_____index_ts_5("/test/file.js", SRC, pTrue_____index_ts_5, optsWithSidecar(UNION_SIDE));
+    const r = checkSource_____index_ts("/test/file.js", SRC, pTrue_____index_ts, optsWithSidecar(UNION_SIDE));
     const sig = r.signatures.find((s) => s.name === "pick");
     expect(sig).toBeDefined();
     expect(sig!.paramTypes?.[0]).toBe("1 | 2 | 3");
     expect(sig!.paramTypes?.[0]).not.toBe("number");
   }
   {
-    const r = checkSource_____index_ts_5("/test/file.js", SRC, pTrue_____index_ts_5, optsWithSidecar(NUM_SIDE));
+    const r = checkSource_____index_ts("/test/file.js", SRC, pTrue_____index_ts, optsWithSidecar(NUM_SIDE));
     const sig = r.signatures.find((s) => s.name === "pick");
     expect(sig!.paramTypes?.[0]).toBe("number");
   }
@@ -791,7 +791,7 @@ export function bump() { return ++n; }
 
 /** check 闸门面：bump() 的签名显示串（原生恒 "1"）。 */
 function bumpSig(file: string): string {
-  return sigOf(checkSource_____index_ts_6(file, SRC, pTrue_____index_ts_6), "bump");
+  return sigOf(checkSource_____index_ts(file, SRC, pTrue_____index_ts), "bump");
 }
 
 
@@ -829,7 +829,7 @@ describe("module initializer definitely throws ⇒ nudo:module-throw", () => {
 
 
 function moduleThrows(src: string, file: string) {
-  const r = checkSource_____index_ts_7(file, src, pTrue_____index_ts_7);
+  const r = checkSource_____index_ts(file, src, pTrue_____index_ts);
   return r.issues.filter((i) => i.code === "nudo:module-throw");
 }
 
@@ -1027,7 +1027,7 @@ const SRC = `export function pick(s = "abc") { return s; }\n`;
 function frozenCheck(src: string) {
   const files = { "/t/e.js": src, "/t/e.nudo.js": PICK_SIDECAR };
   const { loadModule } = makeFiles(files);
-  return checkSource_____index_ts_8("/t/e.js", src, pTrue_____index_ts_8, { loadModule, fromFile: "/t/e.js" });
+  return checkSource_____index_ts("/t/e.js", src, pTrue_____index_ts, { loadModule, fromFile: "/t/e.js" });
 }
 
 
@@ -1052,7 +1052,7 @@ function frozenCheck(src: string) {
   {
     const src = `export function pick(s = "abc") { return s; }\n`;
     const { loadModule } = makeFiles({ "/t/e.js": src });
-    const r = checkSource_____index_ts_8("/t/e.js", src, pTrue_____index_ts_8, { loadModule, fromFile: "/t/e.js" });
+    const r = checkSource_____index_ts("/t/e.js", src, pTrue_____index_ts, { loadModule, fromFile: "/t/e.js" });
     expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
   }
   {
@@ -1071,12 +1071,12 @@ function frozenCheck(src: string) {
 export const pick = fn({ a: number(), b: number() }, number());
 `;
     const { loadModule } = makeFiles({ "/t/e.js": src, "/t/e.nudo.js": sidecar });
-    const r = checkSource_____index_ts_8("/t/e.js", src, pTrue_____index_ts_8, { loadModule, fromFile: "/t/e.js" });
+    const r = checkSource_____index_ts("/t/e.js", src, pTrue_____index_ts, { loadModule, fromFile: "/t/e.js" });
     expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
   }
   {
     const opts = sidecarOpts("e.nudo", PICK_SIDECAR, "/t/e.js");
-    const r = checkSource_____index_ts_8("/t/e.js", SRC, pTrue_____index_ts_8, opts);
+    const r = checkSource_____index_ts("/t/e.js", SRC, pTrue_____index_ts, opts);
     expect(r.issues.some((i) => i.severity === "error" && i.fn === "pick")).toBe(true);
   }
 });
@@ -1126,7 +1126,7 @@ export const f = fn({ n: number() }, number().ge(0));
 
 function check(src: string, sidecar = SIDECAR_GE1) {
   const { loadModule } = makeFiles({ "/t/f.nudo.js": sidecar });
-  return checkSource_____index_ts_9("/t/f.js", src, pTrue_____index_ts_9, {
+  return checkSource_____index_ts("/t/f.js", src, pTrue_____index_ts, {
     loadModule,
     fromFile: "/t/f.js",
   });
@@ -1265,19 +1265,19 @@ export const h = fn({ a: shape({ kind: lit("a"), n: number() }) }, number());
 
   it("顶层形参：`lit(3)` ⇒ `3`（不是 `lit(3)`）；对象判别槽：`kind: lit(\"a\")` ⇒ `{ kind: \"a\", n: number }`；负控制：无数值界契约的渲染不变（`number` 仍是 `number`）", () => {
   {
-    const r = checkSource_____index_ts_10("/test/file.js", SRC, pTrue_____index_ts_10, optsWithSidecar(SIDE));
+    const r = checkSource_____index_ts("/test/file.js", SRC, pTrue_____index_ts, optsWithSidecar(SIDE));
     const sig = r.signatures.find((s) => s.name === "g");
     expect(sig).toBeDefined();
     expect(sig!.paramTypes?.[0]).toBe("3");
     expect(sig!.paramTypes?.join(", ")).not.toContain("lit(");
   }
   {
-    const r = checkSource_____index_ts_10("/test/file.js", SLOT_SRC, pTrue_____index_ts_10, optsWithSidecar(SLOT_SIDE));
+    const r = checkSource_____index_ts("/test/file.js", SLOT_SRC, pTrue_____index_ts, optsWithSidecar(SLOT_SIDE));
     const sig = r.signatures.find((s) => s.name === "h");
     expect(sig!.paramTypes?.[0]).toBe('{ kind: "a", n: number }');
   }
   {
-    const r = checkSource_____index_ts_10("/test/file.js", SRC, pTrue_____index_ts_10, optsWithSidecar(SIDE));
+    const r = checkSource_____index_ts("/test/file.js", SRC, pTrue_____index_ts, optsWithSidecar(SIDE));
     const sig = r.signatures.find((s) => s.name === "g");
     expect(sig!.paramTypes?.[1]).toBe("number");
     expect(sig!.paramTypes?.[3]).toBe("string");
@@ -1357,7 +1357,7 @@ import { fn, number } from "@nudojs/core";
 export const f = fn({ x: number().gt(0) }, number().ge(1));
 `;
     const files = { "/t/bug-1004.nudo.js": sidecar };
-    const r = checkSource_____index_ts_11("/t/bug-1004.js", impl, pTrue, {
+    const r = checkSource_____index_ts("/t/bug-1004.js", impl, pTrue, {
       ...makeFiles(files),
       fromFile: "/t/bug-1004.js",
     });
@@ -1370,7 +1370,7 @@ import { fn, number } from "@nudojs/core";
 export const f = fn({ x: number().ge(0) }, number().ge(2));
 `;
     const files = { "/t/bug-1004-ctl.nudo.js": sidecar };
-    const r = checkSource_____index_ts_11("/t/bug-1004-ctl.js", impl, pTrue, {
+    const r = checkSource_____index_ts("/t/bug-1004-ctl.js", impl, pTrue, {
       ...makeFiles(files),
       fromFile: "/t/bug-1004-ctl.js",
     });
@@ -1675,7 +1675,7 @@ function run(side: string) {
       fingerprint: "eval:b1023#scale",
     }),
   };
-  return checkSource___nudojs_core_1("/t/b1023.js", CALLER, pTrue___nudojs_core_1, {
+  return checkSource___nudojs_core("/t/b1023.js", CALLER, pTrue___nudojs_core, {
     loadModule: (spec: string): string | undefined => {
       if (spec.includes("scale.nudo.js")) return side;
       if (spec.includes("scale.js")) return LIB;
@@ -1730,7 +1730,7 @@ export const r = grade({ card: { grade: -1 } });
       fingerprint: "eval:b1023#grade",
     }),
   };
-  const r = checkSource___nudojs_core_1("/t/b1023-dot.js", caller, pTrue___nudojs_core_1, {
+  const r = checkSource___nudojs_core("/t/b1023-dot.js", caller, pTrue___nudojs_core, {
     loadModule: (spec: string): string | undefined => {
       if (spec.includes("grade.nudo.js")) return SIDE_DOT;
       if (spec.includes("grade.js")) return LIB_DOT;
@@ -1957,7 +1957,7 @@ const acctSrc = `export class Account {
 
   it("构造器做算术 ⇒ 方法入口不再报 nudo:entry-may-throw（改前：error 级 1 条）；构造器做比较 / 字符串拼接 / 成员调用 ⇒ 同上（都只算构造器的账）；构造器显式 throw ⇒ 也不归因给方法（那是 `new C()` 入口的事）；方法体**自己**会抛 ⇒ 仍要报（闸门不整体关掉）；方法体读构造器写入的字段（any）⇒ 成员调用仍报（构造器仍要跑）；静态方法口径不变（静态桥不跑构造器 ⇒ 它自己的算术照报）；单元层：实例方法的 throws ", () => {
   {
-    const r = checkSource_____index_ts_12("acct.js", acctSrc, pTrue_____index_ts_11, stdOpts);
+    const r = checkSource_____index_ts("acct.js", acctSrc, pTrue_____index_ts, stdOpts);
     expect(l2Count(r, "Account.describe")).toBe(0);
     expect(r.issues.filter((i) => i.severity === "error")).toHaveLength(0);
     expect(sigOf(r, "Account.describe")).not.toContain("throws");
@@ -1969,7 +1969,7 @@ const acctSrc = `export class Account {
       `export class A { constructor(x) { this.v = x.toFixed(); } describe() { return "a"; } }`,
     ];
     for (const src of variants) {
-      const r = checkSource_____index_ts_12("acct.js", src, pTrue_____index_ts_11, stdOpts);
+      const r = checkSource_____index_ts("acct.js", src, pTrue_____index_ts, stdOpts);
       expect(l2Count(r, "A.describe")).toBe(0);
     }
   }
@@ -1978,7 +1978,7 @@ const acctSrc = `export class Account {
   constructor(x) { throw new TypeError("ctor"); }
   describe() { return "a"; }
 }`;
-    const r = checkSource_____index_ts_12("acct.js", src, pTrue_____index_ts_11, stdOpts);
+    const r = checkSource_____index_ts("acct.js", src, pTrue_____index_ts, stdOpts);
     expect(l2Count(r, "A.describe")).toBe(0);
   }
   {
@@ -1986,7 +1986,7 @@ const acctSrc = `export class Account {
   constructor(x) { this.v = x; }
   describe() { throw new TypeError("m"); }
 }`;
-    const r = checkSource_____index_ts_12("acct.js", src, pTrue_____index_ts_11, stdOpts);
+    const r = checkSource_____index_ts("acct.js", src, pTrue_____index_ts, stdOpts);
     expect(l2Count(r, "A.describe")).toBe(1);
     const issue = r.issues.find(
       (i) => i.code === "nudo:entry-may-throw" && i.fn === "A.describe",
@@ -1999,7 +1999,7 @@ const acctSrc = `export class Account {
   constructor(x) { this.v = x; }
   describe() { return this.v.toFixed(); }
 }`;
-    const r = checkSource_____index_ts_12("acct.js", src, pTrue_____index_ts_11, stdOpts);
+    const r = checkSource_____index_ts("acct.js", src, pTrue_____index_ts, stdOpts);
     expect(l2Count(r, "A.describe")).toBe(1);
   }
   {
@@ -2007,12 +2007,12 @@ const acctSrc = `export class Account {
   constructor(x) { this.v = x + 1; }
   static make(y) { return y + 1; }
 }`;
-    const r = checkSource_____index_ts_12("acct.js", src, pTrue_____index_ts_11, stdOpts);
+    const r = checkSource_____index_ts("acct.js", src, pTrue_____index_ts, stdOpts);
     expect(l2Count(r, "A.make")).toBe(1);
   }
 __scenario_1: {
     const file = parseSource(acctSrc);
-    const out = evalThrowsOutcome(acctSrc, "Account.describe", [], {}, pTrue_____index_ts_11, file);
+    const out = evalThrowsOutcome(acctSrc, "Account.describe", [], {}, pTrue_____index_ts, file);
     expect(out.kind).toBe("analyzed");
     if (out.kind !== "analyzed") break __scenario_1;
     expect(throwAbsToKinds(out.result.throws)).toEqual([]);
@@ -2023,7 +2023,7 @@ __scenario_2: {
   describe() { throw new TypeError("m"); }
 }`;
     const file = parseSource(src);
-    const out = evalThrowsOutcome(src, "A.describe", [], {}, pTrue_____index_ts_11, file);
+    const out = evalThrowsOutcome(src, "A.describe", [], {}, pTrue_____index_ts, file);
     expect(out.kind).toBe("analyzed");
     if (out.kind !== "analyzed") break __scenario_2;
     expect(throwAbsToKinds(out.result.throws)).toEqual(["TypeError"]);
@@ -2088,7 +2088,7 @@ function v(src: string, fnName = "f") {
 
 /** check 门禁的整文件报告 */
 function report(src: string) {
-  return checkSource_____index_ts_13("/t/async-gen-decl.js", src, pTrue_____index_ts_12, {});
+  return checkSource_____index_ts("/t/async-gen-decl.js", src, pTrue_____index_ts, {});
 }
 
 /** 诊断码集 */
@@ -2466,7 +2466,7 @@ export const positive = number().gt(0);
 
 function check(src: string, file = "/t/undef.js") {
   const imp = `/// @nudo:import { positive } from "./std.nudo.js"\n`;
-  return checkSource_____index_ts_14(file, imp + src, pTrue_____index_ts_13, sidecarOpts("std.nudo", SIDE, file));
+  return checkSource_____index_ts(file, imp + src, pTrue_____index_ts, sidecarOpts("std.nudo", SIDE, file));
 }
 
 function violations(r: { issues: { code: string }[] }): number {
@@ -2776,7 +2776,7 @@ function retDiags(body: string, cname: string, file = "/t/bug1115.js"): string[]
  */
 export function f(x) {${body}}
 `);
-  const r = checkSource_____index_ts_15(file, src, pTrue_____index_ts_14, stdOpts);
+  const r = checkSource_____index_ts(file, src, pTrue_____index_ts, stdOpts);
   return r.issues
     .filter(
       (i) => i.code === "nudo:constraint-violated" || i.code === "nudo:unproven-return",
@@ -2934,7 +2934,7 @@ function retDiags(body: string, cname: string, file = "/t/bug1116.js"): string[]
  */
 export function f(x) {${body}}
 `);
-  const r = checkSource_____index_ts_16(file, src, pTrue_____index_ts_15, stdOpts);
+  const r = checkSource_____index_ts(file, src, pTrue_____index_ts, stdOpts);
   return r.issues
     .filter(
       (i) => i.code === "nudo:constraint-violated" || i.code === "nudo:unproven-return",
@@ -3178,7 +3178,7 @@ beforeEach(() => {
 function checkWithSidecar(sidecar: string, src: string, base = "nan") {
   const file = `/t/${base}.js`;
   const { loadModule } = makeFiles({ [`/t/${base}.nudo.js`]: sidecar });
-  return checkSource_____index_ts_17(file, src, pTrue_____index_ts_16, { loadModule, fromFile: file });
+  return checkSource_____index_ts(file, src, pTrue_____index_ts, { loadModule, fromFile: file });
 }
 
 
@@ -3211,7 +3211,7 @@ function checkWithSidecar(sidecar: string, src: string, base = "nan") {
  * @nudo:contract x nanLit
  */
 export function f(x) { return x; }`;
-    const r = checkSource_____index_ts_17("/t/src.js", src, pTrue_____index_ts_16, { loadModule, fromFile: "/t/src.js" });
+    const r = checkSource_____index_ts("/t/src.js", src, pTrue_____index_ts, { loadModule, fromFile: "/t/src.js" });
     expect(r.issues.filter((i) => i.code === "nudo:contract-conflict")).toEqual([]);
   }
   {
@@ -3243,7 +3243,7 @@ export function f(x) { return x; }`;
  * @nudo:contract x two
  */
 export function f(x) { return x; }`;
-    const r = checkSource_____index_ts_17("/t/src2.js", src, pTrue_____index_ts_16, { loadModule, fromFile: "/t/src2.js" });
+    const r = checkSource_____index_ts("/t/src2.js", src, pTrue_____index_ts, { loadModule, fromFile: "/t/src2.js" });
     expect(r.issues.filter((i) => i.code === "nudo:contract-conflict").length).toBeGreaterThan(0);
   }
 });
@@ -3309,7 +3309,7 @@ function denyingLoader(probes: string[] = []) {
   takeContractDiags();
 
 
-    const r = checkSource_____index_ts_18("/t/a.js", "export function f(){return 1}", pTrue_____index_ts_17, {
+    const r = checkSource_____index_ts("/t/a.js", "export function f(){return 1}", pTrue_____index_ts, {
       fromFile: "/t/a.js",
       autoBind: false,
       loadModule: denyingLoader(),
@@ -3325,7 +3325,7 @@ function denyingLoader(probes: string[] = []) {
 
 
     const probes: string[] = [];
-    checkSource_____index_ts_18("/t/b.js", "export function f(){return 1}", pTrue_____index_ts_17, {
+    checkSource_____index_ts("/t/b.js", "export function f(){return 1}", pTrue_____index_ts, {
       fromFile: "/t/b.js",
       autoBind: false,
       loadModule: denyingLoader(probes),
@@ -3339,7 +3339,7 @@ function denyingLoader(probes: string[] = []) {
 
 
     const src = `import { d } from './dep.js';\nexport function run() { return d(); }\n`;
-    const r = checkSource_____index_ts_18("/t/main.js", src, pTrue_____index_ts_17, {
+    const r = checkSource_____index_ts("/t/main.js", src, pTrue_____index_ts, {
       fromFile: "/t/main.js",
       loadModule: (spec, from) => {
         throw Object.assign(new Error(`EACCES: permission denied, open '${from}/${spec}'`), {
@@ -3360,7 +3360,7 @@ function denyingLoader(probes: string[] = []) {
 
 
     const src = `export function alpha(x) { return x; }\n`;
-    const r = checkSource_____index_ts_18("/t/alpha.js", src, pTrue_____index_ts_17, {
+    const r = checkSource_____index_ts("/t/alpha.js", src, pTrue_____index_ts, {
       fromFile: "/t/alpha.js",
       loadModule: denyingLoader(),
     });
@@ -3377,7 +3377,7 @@ function denyingLoader(probes: string[] = []) {
 
     // 源码没有任何导出 ⇒ 没有同名绑定需要那份侧车 ⇒ 侧车**没被读**过
     const src = `function helper(x) { return x; }\n`;
-    const r = checkSource_____index_ts_18("/t/helper.js", src, pTrue_____index_ts_17, {
+    const r = checkSource_____index_ts("/t/helper.js", src, pTrue_____index_ts, {
       fromFile: "/t/helper.js",
       loadModule: denyingLoader(),
     });
@@ -3436,14 +3436,14 @@ describe("async 体的多 await（≥2 个挂起点）", () => {
 /** 调用导出的 f，返回同步段观测到的字面量值 */
 function syncVal(src: string): unknown {
   const r = call(src, "f");
-  const lv = litValue_____abs_ts_1(r.result);
+  const lv = litValue_____abs_ts(r.result);
   return lv.ok ? lv.value : lv;
 }
 
 /** 调用导出的 f，返回其 promise 兑现值的字面量（await 之后的结果） */
 function awaitedVal(src: string, fnName = "f"): unknown {
   const r = call(src, fnName);
-  const lv = litValue_____abs_ts_1($await(r.result as never));
+  const lv = litValue_____abs_ts($await(r.result as never));
   return lv.ok ? lv.value : lv;
 }
 
@@ -3645,7 +3645,7 @@ describe("check 面（签名）不受多 await 影响", () => {
     const src = `let cache = "cold";
       async function warm(){ await null; await null; cache = "warm" }
       export async function readCache(){ await warm(); return cache }`;
-    const r = checkSource_____index_ts_19("/t/src.js", src, pTrue_____index_ts_18, {});
+    const r = checkSource_____index_ts("/t/src.js", src, pTrue_____index_ts, {});
     expect(sigOf(r, "readCache")).toBe('promise<"warm">');
   }
   {
@@ -3655,7 +3655,7 @@ describe("check 面（签名）不受多 await 影响", () => {
 
     const src = `async function g(){ await null; await null; throw new Error("boom"); }
       export async function f(){ await g(); return 1 }`;
-    const r = checkSource_____index_ts_19("/t/src.js", src, pTrue_____index_ts_18, {});
+    const r = checkSource_____index_ts("/t/src.js", src, pTrue_____index_ts, {});
     expect(sigOf(r, "f")).toBe("promise<never>");
   }
 });
@@ -3874,7 +3874,7 @@ export function outer() {
 
 function run(ret: string) {
   const { loadModule } = makeFiles({ "/t/t.nudo.js": SIDECAR });
-  return checkSource_____index_ts_20("/t/lib.js", src(ret), pTrue_____index_ts_19, {
+  return checkSource_____index_ts("/t/lib.js", src(ret), pTrue_____index_ts, {
     loadModule,
     fromFile: "/t/lib.js",
   });
@@ -4016,7 +4016,7 @@ const issueSet = (r: { issues: { code: string; fn?: string }[] }) =>
 
     const f = "/t/bug1152-a.js";
     const o = sidecarOpts("std.nudo", SIDE, f);
-    const r = checkSource_____index_ts_21(f, srcWithLemma(1), pTrue_____index_ts_20, { ...o, entryThrows: "off" as const });
+    const r = checkSource_____index_ts(f, srcWithLemma(1), pTrue_____index_ts, { ...o, entryThrows: "off" as const });
     expect(reliedCount(r)).toBe(1);
     expect(r.issues.some((i) => i.code === "nudo:unproven-return")).toBe(false);
     const relied = r.issues.find((i) => i.code === "nudo:assume-relied")!;
@@ -4032,8 +4032,8 @@ const issueSet = (r: { issues: { code: string; fn?: string }[] }) =>
     const f = "/t/bug1152-b.js";
     const o = sidecarOpts("std.nudo", SIDE, f);
     const c = { ...o, entryThrows: "off" as const };
-    expect(reliedCount(checkSource_____index_ts_21(f, srcWithLemma(1), pTrue_____index_ts_20, c))).toBe(1);
-    const r = checkSource_____index_ts_21(f, srcWithLemma(1), pTrue_____index_ts_20, c);
+    expect(reliedCount(checkSource_____index_ts(f, srcWithLemma(1), pTrue_____index_ts, c))).toBe(1);
+    const r = checkSource_____index_ts(f, srcWithLemma(1), pTrue_____index_ts, c);
     expect(reliedCount(r)).toBe(1);
     expect(r.issues.some((i) => i.code === "nudo:unproven-return")).toBe(false);
   }
@@ -4046,8 +4046,8 @@ const issueSet = (r: { issues: { code: string; fn?: string }[] }) =>
     const f = "/t/bug1152-c.js";
     const o = sidecarOpts("std.nudo", SIDE, f);
     const c = { ...o, entryThrows: "off" as const };
-    expect(reliedCount(checkSource_____index_ts_21(f, srcWithLemma(1), pTrue_____index_ts_20, c))).toBe(1);
-    const r = checkSource_____index_ts_21(f, srcWithLemma(2), pTrue_____index_ts_20, c);
+    expect(reliedCount(checkSource_____index_ts(f, srcWithLemma(1), pTrue_____index_ts, c))).toBe(1);
+    const r = checkSource_____index_ts(f, srcWithLemma(2), pTrue_____index_ts, c);
     expect(reliedCount(r)).toBe(1);
     expect(r.issues.some((i) => i.code === "nudo:unproven-return")).toBe(false);
   }
@@ -4062,7 +4062,7 @@ const issueSet = (r: { issues: { code: string; fn?: string }[] }) =>
     const src = srcWithLemma(1);
     const pre = unseeded("sim", src, o);
     expect(pre).toBeDefined();
-    const r = checkSource_____index_ts_21(f, src, pTrue_____index_ts_20, { ...o, entryThrows: "off" as const });
+    const r = checkSource_____index_ts(f, src, pTrue_____index_ts, { ...o, entryThrows: "off" as const });
     expect(reliedCount(r)).toBe(1);
     expect(r.issues.some((i) => i.code === "nudo:unproven-return")).toBe(false);
     expect(r.issues.some((i) => i.code === "nudo:constraint-violated")).toBe(false);
@@ -4081,7 +4081,7 @@ const issueSet = (r: { issues: { code: string; fn?: string }[] }) =>
     expect(coldFmt).not.toContain("≥ 0");
     const o2 = sidecarOpts("std.nudo", SIDE, f);
     const c = { ...o2, entryThrows: "off" as const };
-    expect(reliedCount(checkSource_____index_ts_21(f, src, pTrue_____index_ts_20, c))).toBe(1);
+    expect(reliedCount(checkSource_____index_ts(f, src, pTrue_____index_ts, c))).toBe(1);
     const afterFmt = formatAbs(unseeded("sim", src, o2)!.symbolic);
     expect(afterFmt).toBe(coldFmt);
   }
@@ -4094,10 +4094,10 @@ const issueSet = (r: { issues: { code: string; fn?: string }[] }) =>
     const f = "/t/bug1152-f.js";
     const o = sidecarOpts("std.nudo", SIDE, f);
     const c = { ...o, entryThrows: "off" as const };
-    const cold = checkSource_____index_ts_21(f, srcNoLemma(1), pTrue_____index_ts_20, c);
+    const cold = checkSource_____index_ts(f, srcNoLemma(1), pTrue_____index_ts, c);
     expect(reliedCount(cold)).toBe(0);
     expect(cold.issues.some((i) => i.code === "nudo:unproven-return" && i.fn === "sim")).toBe(true);
-    const again = checkSource_____index_ts_21(f, srcNoLemma(1), pTrue_____index_ts_20, c);
+    const again = checkSource_____index_ts(f, srcNoLemma(1), pTrue_____index_ts, c);
     expect(issueSet(again)).toEqual(issueSet(cold));
   }
 });
@@ -4138,7 +4138,7 @@ describe("种子（invariant）求值不得命中 L0", () => {
     const f = "/t/bug1152-g1.js";
     const o = sidecarOpts("nudo", SCALAR_SIDE, f);
     expect(unseeded("lastLoop", scalarSrc, o)).toBeDefined();
-    const r = checkSource_____index_ts_21(f, scalarSrc, pTrue_____index_ts_20, { ...o, entryThrows: "off" as const });
+    const r = checkSource_____index_ts(f, scalarSrc, pTrue_____index_ts, { ...o, entryThrows: "off" as const });
     expect(invariantRelied(r)).toBe(1);
     expect(r.issues.some((i) => i.code === "nudo:unproven-return")).toBe(false);
   }
@@ -4153,7 +4153,7 @@ describe("种子（invariant）求值不得命中 L0", () => {
     const coldFmt = formatAbs(unseeded("lastLoop", scalarSrc, o)!.symbolic);
     expect(coldFmt).not.toContain("inv#");
     const o2 = sidecarOpts("nudo", SCALAR_SIDE, f);
-    expect(invariantRelied(checkSource_____index_ts_21(f, scalarSrc, pTrue_____index_ts_20, { ...o2, entryThrows: "off" as const }))).toBe(1);
+    expect(invariantRelied(checkSource_____index_ts(f, scalarSrc, pTrue_____index_ts, { ...o2, entryThrows: "off" as const }))).toBe(1);
     const afterFmt = formatAbs(unseeded("lastLoop", scalarSrc, o2)!.symbolic);
     expect(afterFmt).toBe(coldFmt);
   }
@@ -4192,7 +4192,7 @@ export function safe() { return 2; }`;
     const src = `export function f(g) { return h(g); }
 export function safe() { return 1; }
 function h(g) { return g().x++; }`;
-    const r = checkSource_____index_ts_22("b1153-1.js", src, pTrue_____index_ts_21, stdOpts);
+    const r = checkSource_____index_ts("b1153-1.js", src, pTrue_____index_ts, stdOpts);
     expect(l2Count(r, "f")).toBe(1);
     expect(l2Count(r, "safe")).toBe(0);
     // 证据上屏（门禁过滤 ≠ 藏事实）
@@ -4203,7 +4203,7 @@ function h(g) { return g().x++; }`;
     const src = `export function f(g) { return h(g); }
 function h(g) { return k(g); }
 function k(g) { return g().x++; }`;
-    const r = checkSource_____index_ts_22("b1153-2.js", src, pTrue_____index_ts_21, stdOpts);
+    const r = checkSource_____index_ts("b1153-2.js", src, pTrue_____index_ts, stdOpts);
     expect(l2Count(r, "f")).toBe(1);
   }
   {
@@ -4211,43 +4211,43 @@ function k(g) { return g().x++; }`;
 function a(g) { return b(g); }
 function b(g) { return a(g) || k(g); }
 function k(g) { return g().x++; }`;
-    const r = checkSource_____index_ts_22("b1153-3.js", src, pTrue_____index_ts_21, stdOpts);
+    const r = checkSource_____index_ts("b1153-3.js", src, pTrue_____index_ts, stdOpts);
     expect(l2Count(r, "f")).toBe(1);
   }
   {
     const src = `export class C { constructor(g) { g().x++; } }`;
-    const r = checkSource_____index_ts_22("b1153-4.js", src, pTrue_____index_ts_21, stdOpts);
+    const r = checkSource_____index_ts("b1153-4.js", src, pTrue_____index_ts, stdOpts);
     expect(l2Count(r, "C")).toBe(1);
     expect(r.ok).toBe(false);
   }
   {
     const src = `export class C { constructor(g) { g().x++; } m() { return 1; } }`;
-    const r = checkSource_____index_ts_22("b1153-5.js", src, pTrue_____index_ts_21, stdOpts);
+    const r = checkSource_____index_ts("b1153-5.js", src, pTrue_____index_ts, stdOpts);
     expect(l2Count(r, "C.m")).toBe(1);
   }
   {
     const src = `export class C { m() { return 1; } n(g) { return g().x++; } }`;
-    const r = checkSource_____index_ts_22("b1153-6.js", src, pTrue_____index_ts_21, stdOpts);
+    const r = checkSource_____index_ts("b1153-6.js", src, pTrue_____index_ts, stdOpts);
     expect(l2Count(r, "C.m")).toBe(0);
     expect(l2Count(r, "C.n")).toBe(1);
   }
   {
     const src = `exports.f = function (g) { return g().x++; };`;
-    const r = checkSource_____index_ts_22("b1153-7.js", src, pTrue_____index_ts_21, stdOpts);
+    const r = checkSource_____index_ts("b1153-7.js", src, pTrue_____index_ts, stdOpts);
     expect(l2Count(r, "f")).toBe(1);
   }
   {
-    const arrow = checkSource_____index_ts_22(
+    const arrow = checkSource_____index_ts(
       "b1153-8.js",
       `module.exports.f = (g) => g().x++;`,
-      pTrue_____index_ts_21,
+      pTrue_____index_ts,
       stdOpts,
     );
     expect(l2Count(arrow, "f")).toBe(1);
-    const obj = checkSource_____index_ts_22(
+    const obj = checkSource_____index_ts(
       "b1153-9.js",
       `module.exports = { f: function (g) { return g().x++; } };`,
-      pTrue_____index_ts_21,
+      pTrue_____index_ts,
       stdOpts,
     );
     expect(l2Count(obj, "f")).toBe(1);
@@ -4255,26 +4255,26 @@ function k(g) { return g().x++; }`;
   {
     const src = `function h(g) { return g().x++; }
 export function f() { return 1; }`;
-    const r = checkSource_____index_ts_22("b1153-10.js", src, pTrue_____index_ts_21, stdOpts);
-    const clean = checkSource_____index_ts_22("b1153-clean.js", CLEAN, pTrue_____index_ts_21, stdOpts);
+    const r = checkSource_____index_ts("b1153-10.js", src, pTrue_____index_ts, stdOpts);
+    const clean = checkSource_____index_ts("b1153-clean.js", CLEAN, pTrue_____index_ts, stdOpts);
     expect(l2Count(r, "f")).toBe(0);
     expect(r.ok).toBe(clean.ok);
   }
   {
     const src = `export function f() { return 1; }
 class D { constructor(g) { g().x++; } }`;
-    const r = checkSource_____index_ts_22("b1153-11.js", src, pTrue_____index_ts_21, stdOpts);
+    const r = checkSource_____index_ts("b1153-11.js", src, pTrue_____index_ts, stdOpts);
     expect(l2Count(r, "f")).toBe(0);
   }
   {
     const src = `export function f() { return h(); }
 function h() { return new K(); }
 class K { constructor(g) { g().x++; } }`;
-    const r = checkSource_____index_ts_22("b1153-12.js", src, pTrue_____index_ts_21, stdOpts);
+    const r = checkSource_____index_ts("b1153-12.js", src, pTrue_____index_ts, stdOpts);
     expect(l2Count(r, "f")).toBe(1);
   }
   {
-    const r = checkSource_____index_ts_22("b1153-13.js", CLEAN, pTrue_____index_ts_21, stdOpts);
+    const r = checkSource_____index_ts("b1153-13.js", CLEAN, pTrue_____index_ts, stdOpts);
     expect(l2Count(r)).toBe(0);
     expect(r.ok).toBe(true);
   }
@@ -4365,7 +4365,7 @@ const IMPORTED =
 
 function check(src: string, file = "/t/nonscalar.js") {
   const imp = `/// @nudo:import { ${IMPORTED} } from "./std.nudo.js"\n`;
-  return checkSource_____index_ts_23(file, imp + src, pTrue_____index_ts_22, sidecarOpts("std.nudo", SIDE, file));
+  return checkSource_____index_ts(file, imp + src, pTrue_____index_ts, sidecarOpts("std.nudo", SIDE, file));
 }
 
 /** 函数体内调用（静态扫描路径 —— 的缺口所在） */
@@ -4568,7 +4568,7 @@ function moduleThrowIssues(r: { issues: { code: string; severity: string; messag
   {
     const src = `throw new TypeError("boom");
 export function f(){ return 1; }`;
-    const r = checkSource_____index_ts_24("b1158-1.js", src, pTrue_____index_ts_23);
+    const r = checkSource_____index_ts("b1158-1.js", src, pTrue_____index_ts);
     const hits = moduleThrowIssues(r);
     expect(hits).toHaveLength(1);
     expect(hits[0]!.severity).toBe("error");
@@ -4583,11 +4583,11 @@ export function f(){ return 1; }`;
     expect(sigOf(r, "f")).toBe("unknown");
   }
   {
-    const r = checkSource_____index_ts_24(
+    const r = checkSource_____index_ts(
       "b1158-2.js",
       `{ throw new RangeError("r"); }
 export function f(){ return 1; }`,
-      pTrue_____index_ts_23,
+      pTrue_____index_ts,
     );
     const hits = moduleThrowIssues(r);
     expect(hits).toHaveLength(1);
@@ -4597,33 +4597,33 @@ export function f(){ return 1; }`,
     expect(r.ok).toBe(false);
   }
   {
-    const before = checkSource_____index_ts_24(
+    const before = checkSource_____index_ts(
       "b1158-3a.js",
       `throw new Error("boom");
 export function a(){ return 1; }
 export function b(x){ return x; }`,
-      pTrue_____index_ts_23,
+      pTrue_____index_ts,
     );
     expect(moduleThrowIssues(before)).toHaveLength(1);
     expect(l2Count(before)).toBe(0);
     expect(before.ok).toBe(false);
 
-    const after = checkSource_____index_ts_24(
+    const after = checkSource_____index_ts(
       "b1158-3b.js",
       `export function a(){ return 1; }
 export function b(x){ return x; }
 throw new Error("late");`,
-      pTrue_____index_ts_23,
+      pTrue_____index_ts,
     );
     expect(moduleThrowIssues(after)).toHaveLength(1);
     expect(moduleThrowIssues(after)[0]!.line).toBe(3);
   }
   {
-    const r = checkSource_____index_ts_24(
+    const r = checkSource_____index_ts(
       "b1158-4.cjs",
       `exports.f = function(){ return 1; };
 throw new Error("cjs boom");`,
-      pTrue_____index_ts_23,
+      pTrue_____index_ts,
     );
     expect(moduleThrowIssues(r)).toHaveLength(1);
     expect(r.ok).toBe(false);
@@ -4631,32 +4631,32 @@ throw new Error("cjs boom");`,
   {
     const src = `if (typeof window === "undefined") throw new Error("no window");
 export function f(){ return 1; }`;
-    const r = checkSource_____index_ts_24("b1158-5.js", src, pTrue_____index_ts_23);
+    const r = checkSource_____index_ts("b1158-5.js", src, pTrue_____index_ts);
     expect(moduleThrowIssues(r)).toEqual([]);
     expect(r.ok).toBe(true);
     expect(sigOf(r, "f")).toBe("1");
   }
   {
-    const r = checkSource_____index_ts_24(
+    const r = checkSource_____index_ts(
       "b1158-6.js",
       `try { throw new Error("x"); } catch { }
 export function f(){ return 1; }`,
-      pTrue_____index_ts_23,
+      pTrue_____index_ts,
     );
     expect(moduleThrowIssues(r)).toEqual([]);
     expect(r.ok).toBe(true);
   }
   {
-    const r = checkSource_____index_ts_24(
+    const r = checkSource_____index_ts(
       "b1158-7.js",
       `export function f(){ throw new Error("x"); }`,
-      pTrue_____index_ts_23,
+      pTrue_____index_ts,
     );
     expect(moduleThrowIssues(r)).toEqual([]);
     expect(l2Count(r, "f")).toBe(1);
   }
   {
-    const r = checkSource_____index_ts_24("b1158-8.js", `export function f(){ return 1; }`, pTrue_____index_ts_23);
+    const r = checkSource_____index_ts("b1158-8.js", `export function f(){ return 1; }`, pTrue_____index_ts);
     expect(moduleThrowIssues(r)).toEqual([]);
     expect(r.ok).toBe(true);
     expect(sigOf(r, "f")).toBe("1");
@@ -4682,7 +4682,7 @@ export function f(){ return 1; }`;
     expect(tryRunTranspiledDetailed(src, { mode: "analyze" }).fallback?.reason).toBe(
       "module-throw",
     );
-    const r = checkSource_____index_ts_24("b1158-9.js", src, pTrue_____index_ts_23);
+    const r = checkSource_____index_ts("b1158-9.js", src, pTrue_____index_ts);
     expect(moduleThrowIssues(r)).toEqual([]);
   }
   {
@@ -4691,7 +4691,7 @@ export function f(){ return 1; }`;
     expect(tryRunTranspiledDetailed(json, { mode: "analyze" }).fallback?.reason).toBe(
       "module-throw",
     );
-    const rj = checkSource_____index_ts_24("b1158-10a.js", json, pTrue_____index_ts_23);
+    const rj = checkSource_____index_ts("b1158-10a.js", json, pTrue_____index_ts);
     expect(moduleThrowIssues(rj)).toHaveLength(1);
     expect(moduleThrowIssues(rj)[0]!.message).toContain("SyntaxError");
 
@@ -4701,21 +4701,21 @@ export function f(){ return 1; }`;
     expect(
       tryRunTranspiledDetailed(nullish, { mode: "analyze" }).fallback?.reason,
     ).toBe("module-throw");
-    const rn = checkSource_____index_ts_24("b1158-10b.js", nullish, pTrue_____index_ts_23);
+    const rn = checkSource_____index_ts("b1158-10b.js", nullish, pTrue_____index_ts);
     expect(moduleThrowIssues(rn)).toHaveLength(1);
     expect(moduleThrowIssues(rn)[0]!.message).toContain("TypeError");
   }
   {
     // react-dom/client.react-server.js 原文（同一语义的缩形）：无任何入口，
     // 装载即抛 ⇒ 模块不可导入。这是**程序自己的** fail-fast，不是引擎近似。
-    const r = checkSource_____index_ts_24(
+    const r = checkSource_____index_ts(
       "b1158-11.js",
       `'use strict';
 
 throw new Error(
   'react-dom/client is not supported in React Server Components.'
 );`,
-      pTrue_____index_ts_23,
+      pTrue_____index_ts,
     );
     const hits = moduleThrowIssues(r);
     expect(hits).toHaveLength(1);
@@ -4727,27 +4727,27 @@ throw new Error(
     const src = `throw new TypeError("boom");
 export function f(){ return 1; }`;
 
-    const off = checkSource_____index_ts_24("b1158-12a.js", src, pTrue_____index_ts_23, { entryThrows: "off" });
+    const off = checkSource_____index_ts("b1158-12a.js", src, pTrue_____index_ts, { entryThrows: "off" });
     expect(moduleThrowIssues(off)).toEqual([]);
     expect(off.ok).toBe(true);
 
-    const warn = checkSource_____index_ts_24("b1158-12b.js", src, pTrue_____index_ts_23, { entryThrows: "warning" });
+    const warn = checkSource_____index_ts("b1158-12b.js", src, pTrue_____index_ts, { entryThrows: "warning" });
     expect(moduleThrowIssues(warn).map((i) => i.severity)).toEqual(["warning"]);
     expect(warn.ok).toBe(true);
 
-    const ignored = checkSource_____index_ts_24("b1158-12c.js", src, pTrue_____index_ts_23, {
+    const ignored = checkSource_____index_ts("b1158-12c.js", src, pTrue_____index_ts, {
       ignoreThrows: ["TypeError"],
     });
     expect(moduleThrowIssues(ignored)).toEqual([]);
 
     // `Error` 盖整族（TypeError ⊂ Error 族）
-    const family = checkSource_____index_ts_24("b1158-12d.js", src, pTrue_____index_ts_23, {
+    const family = checkSource_____index_ts("b1158-12d.js", src, pTrue_____index_ts, {
       ignoreThrows: ["Error"],
     });
     expect(moduleThrowIssues(family)).toEqual([]);
 
     // 负控：不相干的 ignore 名不得放行
-    const other = checkSource_____index_ts_24("b1158-12e.js", src, pTrue_____index_ts_23, {
+    const other = checkSource_____index_ts("b1158-12e.js", src, pTrue_____index_ts, {
       ignoreThrows: ["RangeError"],
     });
     expect(moduleThrowIssues(other)).toHaveLength(1);
@@ -4788,10 +4788,10 @@ describe("判据边界：对象字面量的成员集不是 own 键集", () => {
     ).not.toBeUndefined();
   }
   {
-    const r = checkSource_____index_ts_24(
+    const r = checkSource_____index_ts(
       "b1158-proto.js",
       `const ok = ({}).hasOwnProperty("a");\nconst n = null;\nn.foo();`,
-      pTrue_____index_ts_23,
+      pTrue_____index_ts,
     );
     const hits = moduleThrowIssues(r);
     expect(hits).toHaveLength(1);
@@ -4827,7 +4827,7 @@ describe("may-throw 建议必须与门禁判定同源", () => {
 
 
 function check(src: string) {
-  return checkSource_____index_ts_25("/t/risky.js", src, pTrue_____index_ts_24, {});
+  return checkSource_____index_ts("/t/risky.js", src, pTrue_____index_ts, {});
 }
 
 const BODY = `
@@ -5176,7 +5176,7 @@ describe("侧车 fn() 的 throws 槽必须按分隔符拆分", () => {
 
 /** 侧车 fn() 的 throws 槽 → 申报的 kind 名 */
 const kindsOf = (throws: string | ReturnType<typeof union>) =>
-  throwConstraintToKinds(fn_____index_ts({ x: number_____index_ts_1() }, number_____index_ts_1(), { throws }).fn!.throws);
+  throwConstraintToKinds(fn_____index_ts({ x: number_____index_ts() }, number_____index_ts(), { throws }).fn!.throws);
 
 
   it("逗号串 ⇒ 两个 kind 名（改前整串当**一个**名）；竖线 / 空白分隔同样拆分（与指令面同口径）；单个 kind / `*` / union 形态不受影响；与指令面 `@nudo:throws` 的切分口径一致（同一 spec 同一 kind 集）；端到端：侧车 `throws: \"TypeError, RangeError\"` 放行已申报的 TypeError（改前 L2 假红）", () => {
@@ -5219,7 +5219,7 @@ const kindsOf = (throws: string | ReturnType<typeof union>) =>
 export const use = fn({ x: number() }, number(), { throws: "TypeError, RangeError" });
 `;
       writeFileSync(join(dir, "use.nudo.js"), side);
-      const r = checkSource_____index_ts_26(srcPath, src, pTrue_____index_ts_25, {
+      const r = checkSource_____index_ts(srcPath, src, pTrue_____index_ts, {
         fromFile: srcPath,
         loadModule: (spec) => (spec.endsWith("use.nudo.js") ? side : undefined),
         autoBind: true,
@@ -5279,7 +5279,7 @@ export const cArr3 = array(number()).min(3);
 
 function check(src: string, file = "/t/minmax.js") {
   const imp = `/// @nudo:import { cLen3, cArr3 } from "./std.nudo.js"\n`;
-  return checkSource_____index_ts_27(file, imp + src, pTrue_____index_ts_26, sidecarOpts("std.nudo", SIDE, file));
+  return checkSource_____index_ts(file, imp + src, pTrue_____index_ts, sidecarOpts("std.nudo", SIDE, file));
 }
 
 /** 参数通道（谓词执法）的违例 */
@@ -5308,10 +5308,10 @@ function returnViolations(r: {
   takeContractDiags();
 
 
-    expect(() => number_____index_ts_2().min(1)).toThrow(/only string \/ array length chains/);
-    expect(() => number_____index_ts_2().min(1)).toThrow(/prim=number/);
-    expect(() => number_____index_ts_2().max(1)).toThrow(/only string \/ array length chains/);
-    expect(() => number_____index_ts_2().length(1)).toThrow(/only string \/ array length chains/);
+    expect(() => number_____index_ts().min(1)).toThrow(/only string \/ array length chains/);
+    expect(() => number_____index_ts().min(1)).toThrow(/prim=number/);
+    expect(() => number_____index_ts().max(1)).toThrow(/only string \/ array length chains/);
+    expect(() => number_____index_ts().length(1)).toThrow(/only string \/ array length chains/);
   }
   {
   resetEngineCaches();
@@ -5332,8 +5332,8 @@ function returnViolations(r: {
     expect(() => string().min(1)).not.toThrow();
     expect(() => string().max(20)).not.toThrow();
     expect(() => string().length(3)).not.toThrow();
-    expect(() => array(number_____index_ts_2()).min(3)).not.toThrow();
-    expect(() => array(number_____index_ts_2()).max(2)).not.toThrow();
+    expect(() => array(number_____index_ts()).min(3)).not.toThrow();
+    expect(() => array(number_____index_ts()).max(2)).not.toThrow();
   }
 });
 
@@ -5416,7 +5416,7 @@ export function gArr() { return [1, 2, 3]; }
 });
 
 describe("decideLitCmp 不得把 length(...) 当普通数值比较", () => {
-  const lengthAtLeast1 = ge_____index_ts(lenTerm(v_____index_ts_1("s")), lit_____index_ts_1(1));
+  const lengthAtLeast1 = ge_____index_ts(lenTerm(v_____index_ts("s")), lit_____index_ts(1));
 
   it("数字字面量 × length(s) ≥ 1 ⇒ 不可判定（不是「满足」）；数字字面量 0 × length(s) ≥ 1 同样是「不可判定」（不是「违例」）；字符串字面量 × length(s) ≥ 1 ⇒ 按长度语义裁决；纯 var 左项的数值比较语义不变", () => {
   {
@@ -5457,8 +5457,8 @@ describe("decideLitCmp 不得把 length(...) 当普通数值比较", () => {
   takeContractDiags();
 
 
-    expect(checkArg(numLit(3), ge_____index_ts(v_____index_ts_1("s"), lit_____index_ts_1(1)))).toBeUndefined();
-    expect(checkArg(numLit(0), ge_____index_ts(v_____index_ts_1("s"), lit_____index_ts_1(1)))?.code).toBe(
+    expect(checkArg(numLit(3), ge_____index_ts(v_____index_ts("s"), lit_____index_ts(1)))).toBeUndefined();
+    expect(checkArg(numLit(0), ge_____index_ts(v_____index_ts("s"), lit_____index_ts(1)))?.code).toBe(
       "nudo:constraint-violated",
     );
   }
@@ -5482,7 +5482,7 @@ export const cNumLen = ${RAW("number")};
 `;
   function checkRaw(src: string) {
     const imp = `/// @nudo:import { cStrLen, cNumLen } from "./std.nudo.js"\n`;
-    return checkSource_____index_ts_27("/t/raw.js", imp + src, pTrue_____index_ts_26, sidecarOpts("std.nudo", SIDE_RAW));
+    return checkSource_____index_ts("/t/raw.js", imp + src, pTrue_____index_ts, sidecarOpts("std.nudo", SIDE_RAW));
   }
 
   it("数字实参：3 与 0 都不落进数值比较（0 不再假红）；字符串实参：参数位按长度语义裁决（'ab' 放行 / '' 违例）；与返回位同结论（字符串长度链：'ab' 两通道放行 / '' 两通道违例）", () => {
@@ -5580,8 +5580,8 @@ describe("先放大再折半不得被放松成假红", () => {
 
 /** x: number, x > 0（与夹具 `std.nudo.js` 的 `positive` 同形） */
 function positiveX() {
-  const x = termVar("x");
-  return abs_____abs_ts_1({ k: "prim", type: "number" }, x, gt(x, termLit(0)), "path");
+  const x = v("x");
+  return abs_____abs_ts({ k: "prim", type: "number" }, x, gt(x, lit(0)), "path");
 }
 
 const violations = (r: ReturnType<typeof issuesOf>) =>
@@ -5619,7 +5619,7 @@ function f(x) {
     const x = positiveX();
     const halved = div(add(x, x), numLit_____abs_ts(2));
     expect(assertImplies(halved, number().gt(0)).status).toBe("proved");
-    const printed = formatAbs_____format_format_ts_1(halved);
+    const printed = formatAbs_____format_format_ts(halved);
     expect(printed).toContain("> 0");
     expect(printed).not.toContain("-5e-324");
   }
@@ -5671,8 +5671,8 @@ describe("取整内建的 strict 端点须做见证步进", () => {
 
 
 function numBound(n: number) {
-  const t = termVar("x");
-  return abs_____abs_ts_2({ k: "prim", type: "number" }, t, gt(t, termLit(n)), "path");
+  const t = v("x");
+  return abs_____abs_ts({ k: "prim", type: "number" }, t, gt(t, lit(n)), "path");
 }
 
 const violations = (r: ReturnType<typeof issuesOf>) =>
@@ -5710,7 +5710,7 @@ function f(x) {
     const ceilAbs = evalMathMethod("ceil", [numBound(0)])!;
     const b = numericBounds(ceilAbs);
     expect(b?.lo).toEqual({ value: 1, strict: false });
-    expect(formatAbs_____format_format_ts_2(ceilAbs)).toContain("≥ 1");
+    expect(formatAbs_____format_format_ts(ceilAbs)).toContain("≥ 1");
     expect(assertImplies(ceilAbs, number().gt(0)).status).toBe("proved");
   }
   {
@@ -5723,12 +5723,12 @@ function f(x) {
     expect(assertImplies(floorAbs, number().gt(5)).status).toBe("disproved");
   }
   {
-    const t = termVar("x");
-    const xLt0 = abs_____abs_ts_2({ k: "prim", type: "number" }, t, { op: "lt", a: t, b: termLit(0) } as never, "path");
+    const t = v("x");
+    const xLt0 = abs_____abs_ts({ k: "prim", type: "number" }, t, { op: "lt", a: t, b: lit(0) } as never, "path");
     const floorAbs = evalMathMethod("floor", [xLt0])!;
     expect(numericBounds(floorAbs)?.hi).toEqual({ value: -1, strict: false });
     // 常量折叠路径不受影响
-    expect(evalMathMethod("ceil", [numLit_____abs_ts_1(0)])).toEqual(
+    expect(evalMathMethod("ceil", [numLit_____abs_ts(0)])).toEqual(
       expect.objectContaining({ shape: { k: "prim", type: "number" } }),
     );
   }
@@ -5843,7 +5843,7 @@ const C = (b: unknown): NudoConstraint => derefConstraint(b as never);
     expect(leqAbs(single, caseArg(C(number().gt(0)))).ok).toBe(true);
   }
   {
-    const actual = caseArg(C(union_____constraint_ts(number().gt(0), string_____constraint_ts())));
+    const actual = caseArg(C(union_____constraint_ts(number().gt(0), str())));
     const r = leqAbs(actual, caseArg(C(number().gt(0))));
     expect(r.ok).toBe(false);
     expect(r.reason).toMatch(/sum member/);
@@ -5857,7 +5857,7 @@ const C = (b: unknown): NudoConstraint => derefConstraint(b as never);
   {
     // `narrow.ts` 的 `{ ...a, shape: sum }` 会保留 a.pred ⇒ 此时不得跳过聚合判定。
     const members = [entry(C(number().gt(0))), entry(C(number().gt(5)))];
-    const withTopPred = abs_____abs_ts_3(
+    const withTopPred = abs_____abs_ts(
       { k: "sum", members },
       v("__arg"),
       lt(v("__arg"), lit(0)),
@@ -5866,7 +5866,7 @@ const C = (b: unknown): NudoConstraint => derefConstraint(b as never);
     expect(leqAbs(withTopPred, caseArg(C(number().gt(0)))).ok).toBe(false);
     // 对照：同成员、无顶层 pred ⇒ 放行（本 BUG 的修复点）
     expect(
-      leqAbs(abs_____abs_ts_3({ k: "sum", members }, undefined, undefined, "path"), caseArg(C(number().gt(0))))
+      leqAbs(abs_____abs_ts({ k: "sum", members }, undefined, undefined, "path"), caseArg(C(number().gt(0))))
         .ok,
     ).toBe(true);
   }
@@ -5914,7 +5914,7 @@ describe("域共享元素 Abs 不得折「同值」", () => {
 
 /** 契约元素域的代表形状（obj：非字面量、无 var 项 ⇒ 只走「同 Abs」支） */
 const item = (): Abs =>
-  abs_____abs_ts_4({ k: "obj", slots: { id: { value: numLit_____abs_ts_2(1) } } }, undefined, undefined, "exact");
+  abs_____abs_ts({ k: "obj", slots: { id: { value: numLit_____abs_ts(1) } } }, undefined, undefined, "exact");
 
 
   it("同一 Abs 引用：非域共享仍折 true，域共享折 undefined；契约类型数组的 xs[0] === xs[1] 不得删掉 false 臂；字面量数组（元素各自铸造、非域共享）仍精确判 diff", () => {
@@ -5926,13 +5926,13 @@ const item = (): Abs =>
     expect(strictEqAbs(markDomainShared(el), el)).toBeUndefined();
   }
   {
-    const xs = abs_____abs_ts_4({ k: "arr", element: item() }, undefined, undefined, "exact");
+    const xs = abs_____abs_ts({ k: "arr", element: item() }, undefined, undefined, "exact");
     const src = `export function f(xs) {
   if (xs[0] === xs[1]) { return "same"; }
   return "diff";
 }`;
     const r = call(src, "f", [xs]);
-    const v = litValue_____abs_ts_2(r.result);
+    const v = litValue_____abs_ts(r.result);
     // 修复前：exact "same"（宿主不可能产出的错值）⇒ 此断言必挂
     expect(v.ok ? v.value : undefined).not.toBe("same");
   }
@@ -5943,7 +5943,7 @@ const item = (): Abs =>
   return "diff";
 }`;
     const r = call(src, "f", []);
-    expect(litValue_____abs_ts_2(r.result)).toEqual({ ok: true, value: "diff" });
+    expect(litValue_____abs_ts(r.result)).toEqual({ ok: true, value: "diff" });
   }
 });
 
@@ -6012,7 +6012,7 @@ function check(src: string, sidecar: string) {
     "/t/a.nudo.js": sidecar,
     "/t/std.nudo.js": `import { number } from "@nudojs/core";\nexport const positive = number().ge(0);\n`,
   });
-  return checkSource_____index_ts_28("/t/a.js", src, pTrue_____index_ts_27, { loadModule, fromFile: "/t/a.js" });
+  return checkSource_____index_ts("/t/a.js", src, pTrue_____index_ts, { loadModule, fromFile: "/t/a.js" });
 }
 
 function drifts(r: ReturnType<typeof check>) {
@@ -6091,9 +6091,9 @@ describe("mock 宿主内建名不再被 env skip 表吞掉", () => {
 
 
 const num = (v: number) =>
-  abs_____abs_ts_5({ k: "prim", type: "number" }, { op: "lit", value: v }, pTrue, "exact");
+  abs_____abs_ts({ k: "prim", type: "number" }, { op: "lit", value: v }, pTrue, "exact");
 const str = (v: string) =>
-  abs_____abs_ts_5({ k: "prim", type: "string" }, { op: "lit", value: v }, pTrue, "exact");
+  abs_____abs_ts({ k: "prim", type: "string" }, { op: "lit", value: v }, pTrue, "exact");
 
 const mockFn = (v: number | string) =>
   absFunction_____abs_fn_ts(["x"], {
@@ -6109,9 +6109,9 @@ const mockFn = (v: number | string) =>
     const mocked = callTranspiledExportFull(withMock, "run", []);
     const host = callTranspiledExportFull(without, "run", []);
     // 对照组：宿主 Math.floor(1.5) = 1
-    expect(litValue_____abs_ts_3(host.result)).toEqual({ ok: true, value: 1 });
+    expect(litValue_____abs_ts(host.result)).toEqual({ ok: true, value: 1 });
     // mock 生效 ⇒ 结果不再是宿主值
-    expect(litValue_____abs_ts_3(mocked.result)).not.toEqual(litValue_____abs_ts_3(host.result));
+    expect(litValue_____abs_ts(mocked.result)).not.toEqual(litValue_____abs_ts(host.result));
   }
   {
     const src = `export function run() { return JSON.stringify({ a: 1 }); }`;
@@ -6119,21 +6119,21 @@ const mockFn = (v: number | string) =>
     const without = runTranspiled_____exec_run_ts(src, { mode: "exec" });
     const mocked = callTranspiledExportFull(withMock, "run", []);
     const host = callTranspiledExportFull(without, "run", []);
-    expect(litValue_____abs_ts_3(host.result)).toEqual({ ok: true, value: '{"a":1}' });
-    expect(litValue_____abs_ts_3(mocked.result)).not.toEqual(litValue_____abs_ts_3(host.result));
+    expect(litValue_____abs_ts(host.result)).toEqual({ ok: true, value: '{"a":1}' });
+    expect(litValue_____abs_ts(mocked.result)).not.toEqual(litValue_____abs_ts(host.result));
   }
   {
     const src = `export function run() { return Math.floor(1.5); }`;
     const exports = runTranspiled_____exec_run_ts(src, { mode: "exec", envGlobals: { Math: num(42) } });
     const full = callTranspiledExportFull(exports, "run", []);
     // env 的 Math 被跳过 ⇒ 仍是宿主 Math.floor(1.5) = 1
-    expect(litValue_____abs_ts_3(full.result)).toEqual({ ok: true, value: 1 });
+    expect(litValue_____abs_ts(full.result)).toEqual({ ok: true, value: 1 });
   }
   {
     const src = `export function run() { return fetch("x"); }`;
     const exports = runTranspiled_____exec_run_ts(src, { mode: "exec", mocks: { fetch: mockFn("MOCKED") } });
     const full = callTranspiledExportFull(exports, "run", []);
-    expect(litValue_____abs_ts_3(full.result)).toEqual({ ok: true, value: "MOCKED" });
+    expect(litValue_____abs_ts(full.result)).toEqual({ ok: true, value: "MOCKED" });
   }
 });
 
@@ -6163,9 +6163,9 @@ describe("可选 require 走 cjsMain 分支（返回 module.exports 本身）", 
 
 
 const num = (v: number) =>
-  abs_____abs_ts_6({ k: "prim", type: "number" }, { op: "lit", value: v }, pTrue, "exact");
+  abs_____abs_ts({ k: "prim", type: "number" }, { op: "lit", value: v }, pTrue, "exact");
 const obj = (slots: Record<string, unknown>) =>
-  abs_____abs_ts_6(
+  abs_____abs_ts(
     {
       k: "obj",
       slots: Object.fromEntries(
@@ -6186,7 +6186,7 @@ const obj = (slots: Record<string, unknown>) =>
   try { d = require("./b.js"); } catch (e) { d = require("./c.js"); }
   return d;
 }`;
-    const exports = runTranspiled_____exec_run_ts_1(src, {
+    const exports = runTranspiled_____exec_run_ts(src, {
       mode: "exec",
       modules: { "./b.js": { named: {}, default: obj({ v: num(2) }), cjsMain: true } },
     });
@@ -6196,7 +6196,7 @@ const obj = (slots: Record<string, unknown>) =>
   }
   {
     const src = `export function f() { return require("./b.js"); }`;
-    const exports = runTranspiled_____exec_run_ts_1(src, {
+    const exports = runTranspiled_____exec_run_ts(src, {
       mode: "exec",
       modules: { "./b.js": { named: {}, default: obj({ v: num(2) }), cjsMain: true } },
     });
@@ -6209,7 +6209,7 @@ const obj = (slots: Record<string, unknown>) =>
   try { d = require("./b.js"); } catch (e) { d = require("./c.js"); }
   return d;
 }`;
-    const exports = runTranspiled_____exec_run_ts_1(src, {
+    const exports = runTranspiled_____exec_run_ts(src, {
       mode: "exec",
       modules: { "./b.js": { named: { v: num(2) } } },
     });
@@ -6252,13 +6252,13 @@ describe("require 缺失模块按原生抛（catch 臂是活代码）", () => {
     const src = `export function f() {
   try { require("./nope.js"); return "no-throw"; } catch (e) { return "threw"; }
 }`;
-    const exports = runTranspiled_____exec_run_ts_2(src, { mode: "exec" });
+    const exports = runTranspiled_____exec_run_ts(src, { mode: "exec" });
     const full = callTranspiledExportFull(exports, "f", []);
-    expect(litValue_____abs_ts_4(full.result)).toEqual({ ok: true, value: "threw" });
+    expect(litValue_____abs_ts(full.result)).toEqual({ ok: true, value: "threw" });
   }
   {
     const src = `export function f() { return require("./nope.js"); }`;
-    const exports = runTranspiled_____exec_run_ts_2(src, { mode: "exec" });
+    const exports = runTranspiled_____exec_run_ts(src, { mode: "exec" });
     const full = callTranspiledExportFull(exports, "f", []);
     expect(throwsError(full.throws, "Error")).toBe(true);
   }
@@ -6266,12 +6266,12 @@ describe("require 缺失模块按原生抛（catch 臂是活代码）", () => {
     const src = `export function f() {
   try { require("./ok.js"); return "no-throw"; } catch (e) { return "threw"; }
 }`;
-    const exports = runTranspiled_____exec_run_ts_2(src, {
+    const exports = runTranspiled_____exec_run_ts(src, {
       mode: "exec",
       modules: { "./ok.js": { named: { v: 1 } } },
     });
     const full = callTranspiledExportFull(exports, "f", []);
-    expect(litValue_____abs_ts_4(full.result)).toEqual({ ok: true, value: "no-throw" });
+    expect(litValue_____abs_ts(full.result)).toEqual({ ok: true, value: "no-throw" });
     expect(full.throws?.shape?.k ?? "never").toBe("never");
   }
 });
@@ -6318,7 +6318,7 @@ function absOf(body: string): Abs {
 function tupleLits(a: Abs): unknown[] | undefined {
   if (a.shape.k !== "tuple") return undefined;
   const out = a.shape.elements.map((e) => {
-    const v = litValue_____abs_ts_5(e);
+    const v = litValue_____abs_ts(e);
     return v.ok ? v.value : undefined;
   });
   return out.some((v) => v === undefined) ? undefined : out;
@@ -6338,7 +6338,7 @@ function tupleLits(a: Abs): unknown[] | undefined {
     expect(tupleLits(els[0]!)).toEqual(["code", 42]);
   }
   {
-    expect(litValue_____abs_ts_5(absOf("return JSON.stringify(mkErr());"))).toEqual({
+    expect(litValue_____abs_ts(absOf("return JSON.stringify(mkErr());"))).toEqual({
       ok: true,
       value: '{"code":42}',
     });
@@ -6381,7 +6381,7 @@ function tupleLits(a: Abs): unknown[] | undefined {
       "stack",
       "message",
     ]);
-    expect(litValue_____abs_ts_5(absOf('return JSON.stringify(new TypeError("x"));'))).toEqual({
+    expect(litValue_____abs_ts(absOf('return JSON.stringify(new TypeError("x"));'))).toEqual({
       ok: true,
       value: "{}",
     });
@@ -6389,7 +6389,7 @@ function tupleLits(a: Abs): unknown[] | undefined {
   {
     expect(tupleLits(absOf("return Object.keys(/x/);"))).toEqual([]);
     expect(tupleLits(absOf("return Object.getOwnPropertyNames(/x/);"))).toEqual(["lastIndex"]);
-    expect(litValue_____abs_ts_5(absOf("return JSON.stringify(/x/);"))).toEqual({ ok: true, value: "{}" });
+    expect(litValue_____abs_ts(absOf("return JSON.stringify(/x/);"))).toEqual({ ok: true, value: "{}" });
   }
   {
     const a = call(
@@ -6440,28 +6440,28 @@ describe("多声明符导出的第 2+ 个声明符也是导出", () => {
 
   it("export const a = 1, b = 2 ⇒ a 与 b 都是导出；多声明符的值正确（b = 2）；三个声明符全收；对照：独立声明 + 独立 export 只有 a 是导出（b 不是）；export function / export class 口径不变", () => {
   {
-    const exports = runTranspiled_____exec_run_ts_3(`export const a = 1, b = 2;`, { mode: "exec" });
+    const exports = runTranspiled_____exec_run_ts(`export const a = 1, b = 2;`, { mode: "exec" });
     expect(Object.keys(exports).sort()).toEqual(["a", "b"]);
   }
   {
-    const exports = runTranspiled_____exec_run_ts_3(`export const a = 1, b = 2;`, { mode: "exec" });
-    expect(litValue_____abs_ts_6(exports["b"] as never)).toEqual({ ok: true, value: 2 });
+    const exports = runTranspiled_____exec_run_ts(`export const a = 1, b = 2;`, { mode: "exec" });
+    expect(litValue_____abs_ts(exports["b"] as never)).toEqual({ ok: true, value: 2 });
   }
   {
-    const exports = runTranspiled_____exec_run_ts_3(`export const a = 1, b = 2, c = 3;`, {
+    const exports = runTranspiled_____exec_run_ts(`export const a = 1, b = 2, c = 3;`, {
       mode: "exec",
     });
     expect(Object.keys(exports).sort()).toEqual(["a", "b", "c"]);
   }
   {
     // 与多声明符的转译产物逐字相同 ⇒ 只有源 AST 能区分二者
-    const exports = runTranspiled_____exec_run_ts_3(`export const a = 1;\nconst b = 2;`, {
+    const exports = runTranspiled_____exec_run_ts(`export const a = 1;\nconst b = 2;`, {
       mode: "exec",
     });
     expect(Object.keys(exports)).toEqual(["a"]);
   }
   {
-    const exports = runTranspiled_____exec_run_ts_3(
+    const exports = runTranspiled_____exec_run_ts(
       `export function f() { return 1; }\nexport class K {}`,
       { mode: "exec" },
     );
@@ -6517,7 +6517,7 @@ describe("env 模块（CJS 互操作）的 ESM 默认导入", () => {
 
 
 /** 假 env 导出：`fs.readFileSync` 形态（返回字符串 + 可能抛 Error） */
-const readFileSyncAbs = absFunction_____abs_fn_ts_1(["p"], {
+const readFileSyncAbs = absFunction_____abs_fn_ts(["p"], {
   apply: () => makeAbsApplyResult(str_____abs_ts(), errorTypeAbs("Error")),
 });
 
@@ -6541,7 +6541,7 @@ export function f() { return fs.readFileSync("/x").length; }
 
 /** 跑一次导出函数，返回「结果形态 / throws 形态」 */
 function callSummary(src: string, mod: AbsModuleExports): string {
-  const run = runTranspiled_____exec_run_ts_4(src, { mode: "analyze", modules: { "./m.js": mod } });
+  const run = runTranspiled_____exec_run_ts(src, { mode: "analyze", modules: { "./m.js": mod } });
   const r = callTranspiledExportFull(run, "f", []);
   return `${formatShape(r.result)} / throws=${formatShape(r.throws)}`;
 }
@@ -6703,7 +6703,7 @@ export function g() {
   return f("abc");
 }
 `;
-    const r = checkSource_____index_ts_29("/t/f.js", src, pTrue_____index_ts_28, { loadModule, fromFile: "/t/f.js" });
+    const r = checkSource_____index_ts("/t/f.js", src, pTrue_____index_ts, { loadModule, fromFile: "/t/f.js" });
     const load = r.issues.find((i) => i.code === "nudo:contract-load");
     expect(load).toBeDefined();
     expect(load!.message).toContain("finite numeric bound expected");
@@ -6791,7 +6791,7 @@ export function g() {
   return f("abcd");
 }
 `;
-    const r = checkSource_____index_ts_30("/t/f.js", src, pTrue_____index_ts_29, { loadModule, fromFile: "/t/f.js" });
+    const r = checkSource_____index_ts("/t/f.js", src, pTrue_____index_ts, { loadModule, fromFile: "/t/f.js" });
     const load = r.issues.find((i) => i.code === "nudo:contract-load");
     expect(load).toBeDefined();
     expect(load!.message).toContain("finite numeric bound expected");
@@ -6817,7 +6817,7 @@ export function g() {
   return f("abcd");
 }
 `;
-    const r = checkSource_____index_ts_30("/t/f.js", src, pTrue_____index_ts_29, { loadModule, fromFile: "/t/f.js" });
+    const r = checkSource_____index_ts("/t/f.js", src, pTrue_____index_ts, { loadModule, fromFile: "/t/f.js" });
     expect(r.issues.filter((i) => i.code === "nudo:constraint-violated").length).toBeGreaterThan(0);
   }
 });
@@ -6878,14 +6878,14 @@ const SRC = `export function f(x) { return x; }`;
 
   it("check 签名面的参数类型保留字面量（改前拓宽成 number）；负控制：裸 number 契约不被改成 lit(...)", () => {
   {
-    const r = checkSource_____index_ts_31("/test/file.js", SRC, pTrue_____index_ts_30, optsWithSidecar(LIT_SIDE));
+    const r = checkSource_____index_ts("/test/file.js", SRC, pTrue_____index_ts, optsWithSidecar(LIT_SIDE));
     const sig = r.signatures.find((s) => s.name === "f");
     expect(sig).toBeDefined();
     expect(sig!.paramTypes?.[0]).toBe("1");
     expect(sig!.paramTypes?.[0]).not.toBe("number");
   }
   {
-    const r = checkSource_____index_ts_31("/test/file.js", SRC, pTrue_____index_ts_30, optsWithSidecar(NUM_SIDE));
+    const r = checkSource_____index_ts("/test/file.js", SRC, pTrue_____index_ts, optsWithSidecar(NUM_SIDE));
     const sig = r.signatures.find((s) => s.name === "f");
     expect(sig!.paramTypes?.[0]).toBe("number");
   }
@@ -7046,9 +7046,9 @@ describe("bigint 字面量保 n 后缀", () => {
     resetSidecarLoadFailureCache();
 
 
-    expect(termToString(lit_____index_ts_2(10n))).toBe("10n");
-    expect(termToString(lit_____index_ts_2(10))).toBe("10");
-    expect(termToString(lit_____index_ts_2(0n))).toBe("0n");
+    expect(termToString(lit_____index_ts(10n))).toBe("10n");
+    expect(termToString(lit_____index_ts(10))).toBe("10");
+    expect(termToString(lit_____index_ts(0n))).toBe("0n");
   }
   {
     resetCheckSourceMemo();
@@ -7061,7 +7061,7 @@ describe("bigint 字面量保 n 后缀", () => {
       "/t/big.nudo.js": `import { fn, lit } from "@nudojs/core";\nexport const g = fn({ n: lit(10n) }, lit(10n));`,
     });
     const src = `export function g(n) { return 10; }`;
-    const r = checkSource_____index_ts_32("/t/big.js", src, pTrue_____index_ts_31, {
+    const r = checkSource_____index_ts("/t/big.js", src, pTrue_____index_ts, {
       loadModule,
       fromFile: "/t/big.js",
     });
@@ -7123,7 +7123,7 @@ function recordWithHostPrev(): AbsAssignRecord {
   return {
     name: "g",
     prev: parseInt as unknown as Abs,
-    next: abs_____abs_ts_7({ k: "prim", type: "number" }, undefined, undefined, "exact"),
+    next: abs_____abs_ts({ k: "prim", type: "number" }, undefined, undefined, "exact"),
     line: 2,
   } as AbsAssignRecord;
 }
@@ -7131,9 +7131,9 @@ function recordWithHostPrev(): AbsAssignRecord {
 
   it("产品面：顶层 env 全局重赋值 ⇒ checkSource 不抛；产品面：其它 env 全局（构造器 / Promise）同样不抛；整轮门禁不被腰斩：排在崩溃文件之后的文件仍被检查并出诊断；判定层：prev 是裸宿主值 ⇒ 不抛、不报（fail-closed）；原生语义未变：重赋值后 g 就是 1；控制组：Abs↔Abs 的标量改型仍报 nudo:assign-mismatch（守卫未吃掉通道信号）", () => {
   {
-    let report: ReturnType<typeof checkSource_____index_ts_33> | undefined;
+    let report: ReturnType<typeof checkSource_____index_ts> | undefined;
     expect(() => {
-      report = checkSource_____index_ts_33("bug-368-env.js", ENV_GLOBAL_REASSIGN, pTrue_____index_ts_32, {
+      report = checkSource_____index_ts("bug-368-env.js", ENV_GLOBAL_REASSIGN, pTrue_____index_ts, {
         entryThrows: "off",
       });
     }).not.toThrow();
@@ -7147,7 +7147,7 @@ function recordWithHostPrev(): AbsAssignRecord {
     for (const g of ["String", "Number", "Promise", "setTimeout", "isNaN"]) {
       const src = `let g = ${g};\ng = 1;`;
       expect(() => {
-        checkSource_____index_ts_33(`bug-368-${g}.js`, src, pTrue_____index_ts_32, { entryThrows: "off" });
+        checkSource_____index_ts(`bug-368-${g}.js`, src, pTrue_____index_ts, { entryThrows: "off" });
       }).not.toThrow();
     }
   }
@@ -7163,7 +7163,7 @@ function recordWithHostPrev(): AbsAssignRecord {
         continue;
       }
       try {
-        const r = checkSource_____index_ts_33(name, src, pTrue_____index_ts_32, { entryThrows: "off" });
+        const r = checkSource_____index_ts(name, src, pTrue_____index_ts, { entryThrows: "off" });
         seen.push(`${name}:CHECKED:${r.issues.map((i) => i.code).join(",")}`);
       } catch {
         aborted = true;
@@ -7186,7 +7186,7 @@ function recordWithHostPrev(): AbsAssignRecord {
     expect(v.ok ? v.value : undefined).toBe(1);
   }
   {
-    const r = checkSource_____index_ts_33("bug-368-control.js", AFTER_CRASH, pTrue_____index_ts_32, {
+    const r = checkSource_____index_ts("bug-368-control.js", AFTER_CRASH, pTrue_____index_ts, {
       entryThrows: "off",
     });
     const mismatch = r.issues.filter((i) => i.code === "nudo:assign-mismatch");
@@ -7270,12 +7270,12 @@ function sigValues(display: string): string[] {
     expect(implies(eq(x, y), le(x, z))).toBe(false);
   }
   {
-    const a = abs_____abs_ts_8({ k: "any" }, x, undefined, "exact");
-    const b = abs_____abs_ts_8({ k: "any" }, y, undefined, "exact");
-    expect(formatAbs_____format_format_ts_3(cmp("le", a, b, eq(x, y)))).toMatch(/^true\b/);
-    expect(formatAbs_____format_format_ts_3(cmp("ge", a, b, eq(x, y)))).toMatch(/^true\b/);
+    const a = abs_____abs_ts({ k: "any" }, x, undefined, "exact");
+    const b = abs_____abs_ts({ k: "any" }, y, undefined, "exact");
+    expect(formatAbs_____format_format_ts(cmp("le", a, b, eq(x, y)))).toMatch(/^true\b/);
+    expect(formatAbs_____format_format_ts(cmp("ge", a, b, eq(x, y)))).toMatch(/^true\b/);
     // a === b ⇒ ¬(a < b)
-    expect(formatAbs_____format_format_ts_3(cmp("lt", a, b, eq(x, y)))).toMatch(/^false\b/);
+    expect(formatAbs_____format_format_ts(cmp("lt", a, b, eq(x, y)))).toMatch(/^false\b/);
   }
   {
     const r = issuesOf(
@@ -7405,7 +7405,7 @@ describe("leqAbs 的字面量同一性按 SameValue（Object.is）判定", () =>
 
 /** 数字字面量 Abs（term 保留 -0 的符号） */
 function numLit(value: number) {
-  return abs_____abs_ts_9({ k: "prim", type: "number" }, lit(value), undefined, "exact");
+  return abs_____abs_ts({ k: "prim", type: "number" }, lit(value), undefined, "exact");
 }
 
 
@@ -7434,7 +7434,7 @@ function numLit(value: number) {
   }
   {
     const r = call("export function f() { return 0; }", "f", []);
-    const actual = litValue_____abs_ts_7(r.result);
+    const actual = litValue_____abs_ts(r.result);
     expect(actual.ok).toBe(true);
     const actualValue = actual.ok ? actual.value : undefined;
     expect(Object.is(actualValue, -0)).toBe(false);
@@ -7561,7 +7561,7 @@ export { a, b };
 `;
 
 function scopesOf(src: string) {
-  return listFnDirectiveScopes(parseSource_____index_ts_1(src));
+  return listFnDirectiveScopes(parseSource_____index_ts(src));
 }
 
 function scopeNamed(src: string, name: string) {
@@ -7747,7 +7747,7 @@ const FILE = "/t/std434.js";
 
 /** 走共享脚手架（nudo-constraints.ts）的侧车 opts —— 不内联副本 */
 function check(src: string) {
-  return checkSource___nudojs_core_2(FILE, IMP + src, pTrue___nudojs_core_2, sidecarOpts("std434", SIDE, FILE));
+  return checkSource___nudojs_core(FILE, IMP + src, pTrue___nudojs_core, sidecarOpts("std434", SIDE, FILE));
 }
 
 /** 调用点前置条件违例（nudo:constraint-violated）条数 */
@@ -7987,7 +7987,7 @@ export function use() { return calc(-1); }
 
   const checkCaller = (files: Record<string, string>) => {
     const { loadModule } = makeFiles(files);
-    return checkSource_____index_ts_34("/t/b.js", CALLER, pTrue_____index_ts_33, { loadModule, fromFile: "/t/b.js" });
+    return checkSource_____index_ts("/t/b.js", CALLER, pTrue_____index_ts, { loadModule, fromFile: "/t/b.js" });
   };
 
   it("export default function calc + 具名侧车 ⇒ 调用点报违例；export { calc as default } + 具名侧车 ⇒ 调用点报违例；侧车写 export default fn(…) ⇒ 仍然执法（不回归）；具名导入（对照）⇒ 仍然执法", () => {
@@ -8026,7 +8026,7 @@ export function use() { return calc(-1); }
       "/t/a.nudo.js": SIDECAR_NAMED,
     });
     const src = `import { calc } from "./a.js";\nexport function use() { return calc(-1); }\n`;
-    const r = checkSource_____index_ts_34("/t/c.js", src, pTrue_____index_ts_33, { loadModule, fromFile: "/t/c.js" });
+    const r = checkSource_____index_ts("/t/c.js", src, pTrue_____index_ts, { loadModule, fromFile: "/t/c.js" });
     expect(r.issues.filter((i) => i.code === "nudo:constraint-violated").length).toBe(1);
   }
 });
@@ -8299,7 +8299,7 @@ export function fieldUnionN(o) { return o; }
 function violations(calls: string): number {
   const { loadModule } = makeFiles({ "/t/lib.nudo.js": SIDECAR });
   const src = `${DECLS}${calls}\n`;
-  const r = checkSource_____index_ts_35("/t/lib.js", src, pTrue_____index_ts_34, { loadModule, fromFile: "/t/lib.js" });
+  const r = checkSource_____index_ts("/t/lib.js", src, pTrue_____index_ts, { loadModule, fromFile: "/t/lib.js" });
   return r.issues.filter((i) => i.code === "nudo:constraint-violated").length;
 }
 
@@ -8313,9 +8313,9 @@ function violations(calls: string): number {
     resetCheckSourceMemo();
 
 
-    expect(literalMeetsConstraint_____domain_membership_ts_1(1n, litC(1n))).toBe(true);
-    expect(literalMeetsConstraint_____domain_membership_ts_1(2n, litC(1n))).toBe(false);
-    expect(literalMeetsConstraint_____domain_membership_ts_1(1, litC(1n))).toBe(false);
+    expect(literalMeetsConstraint_____domain_membership_ts(1n, litC(1n))).toBe(true);
+    expect(literalMeetsConstraint_____domain_membership_ts(2n, litC(1n))).toBe(false);
+    expect(literalMeetsConstraint_____domain_membership_ts(1, litC(1n))).toBe(false);
   }
   {
     resetCheckSourceMemo();
@@ -8379,7 +8379,7 @@ export const fieldLitZero = fn({ o: shape({ v: lit(0) }) }, any());`,
 export function fieldLitZero(o) { return o; }
 fieldLitZero({ v: -0 });
 `;
-    const r = checkSource_____index_ts_35("/t/lib.js", src, pTrue_____index_ts_34, { loadModule, fromFile: "/t/lib.js" });
+    const r = checkSource_____index_ts("/t/lib.js", src, pTrue_____index_ts, { loadModule, fromFile: "/t/lib.js" });
     expect(r.issues.filter((i) => i.code === "nudo:constraint-violated")).toEqual([]);
   }
 });
@@ -8426,22 +8426,22 @@ describe("字面量同一性（域隶属面：字段位 / 数组元素位）", (
     resetCheckSourceMemo();
 
 
-    expect(literalMeetsConstraint_____domain_membership_ts_2(-0, litC(0))).toBe(true);
-    expect(literalMeetsConstraint_____domain_membership_ts_2(0, litC(-0))).toBe(true);
+    expect(literalMeetsConstraint_____domain_membership_ts(-0, litC(0))).toBe(true);
+    expect(literalMeetsConstraint_____domain_membership_ts(0, litC(-0))).toBe(true);
   }
   {
     resetCheckSourceMemo();
 
 
-    expect(literalMeetsConstraint_____domain_membership_ts_2(1, litC(0))).toBe(false);
-    expect(literalMeetsConstraint_____domain_membership_ts_2(-1, litC(0))).toBe(false);
+    expect(literalMeetsConstraint_____domain_membership_ts(1, litC(0))).toBe(false);
+    expect(literalMeetsConstraint_____domain_membership_ts(-1, litC(0))).toBe(false);
   }
   {
     resetCheckSourceMemo();
 
 
-    expect(literalMeetsConstraint_____domain_membership_ts_2(NaN, litC(NaN))).toBe(true);
-    expect(literalMeetsConstraint_____domain_membership_ts_2(0, litC(NaN))).toBe(false);
+    expect(literalMeetsConstraint_____domain_membership_ts(NaN, litC(NaN))).toBe(true);
+    expect(literalMeetsConstraint_____domain_membership_ts(0, litC(NaN))).toBe(false);
   }
   {
     resetCheckSourceMemo();
@@ -8458,7 +8458,7 @@ export function arrLit(a) { return a; }
 fldLit({ v: -0 });
 arrLit([-0]);
 `;
-    const r = checkSource_____index_ts_36("/t/lib.js", src, pTrue_____index_ts_35, { loadModule, fromFile: "/t/lib.js" });
+    const r = checkSource_____index_ts("/t/lib.js", src, pTrue_____index_ts, { loadModule, fromFile: "/t/lib.js" });
     expect(r.issues.filter((i) => i.code === "nudo:constraint-violated")).toEqual([]);
   }
   {
@@ -8476,7 +8476,7 @@ export function arrLit(a) { return a; }
 fldLit({ v: 1 });
 arrLit([1]);
 `;
-    const r = checkSource_____index_ts_36("/t/lib.js", src, pTrue_____index_ts_35, { loadModule, fromFile: "/t/lib.js" });
+    const r = checkSource_____index_ts("/t/lib.js", src, pTrue_____index_ts, { loadModule, fromFile: "/t/lib.js" });
     const violated = r.issues.filter((i) => i.code === "nudo:constraint-violated");
     expect(violated.length).toBe(2);
   }
@@ -8519,17 +8519,17 @@ describe("0 / x folding keeps the denominator sign", () => {
 
 
 /** 分母 x：可证 < 0 */
-const negX = abs(num_____index_ts().shape, v_____index_ts_2("x"), lt(v_____index_ts_2("x"), lit_____index_ts_3(0)), "path");
+const negX = abs(num_____index_ts().shape, v_____index_ts("x"), lt(v_____index_ts("x"), lit_____index_ts(0)), "path");
 /** 分母 x：可证 >= 1（恒正） */
-const posX = abs(num_____index_ts().shape, v_____index_ts_2("x"), ge(v_____index_ts_2("x"), lit_____index_ts_3(1)), "path");
+const posX = abs(num_____index_ts().shape, v_____index_ts("x"), ge(v_____index_ts("x"), lit_____index_ts(1)), "path");
 /** 分母 x：可证 >= 0 且 ≠ 0（issue #170 的口径） */
-const nonNegX = abs(num_____index_ts().shape, v_____index_ts_2("x"), ge(v_____index_ts_2("x"), lit_____index_ts_3(0)), "path");
+const nonNegX = abs(num_____index_ts().shape, v_____index_ts("x"), ge(v_____index_ts("x"), lit_____index_ts(0)), "path");
 
 function lit0() {
-  return abs(num_____index_ts().shape, lit_____index_ts_3(0), undefined, "exact");
+  return abs(num_____index_ts().shape, lit_____index_ts(0), undefined, "exact");
 }
 function lit1() {
-  return abs(num_____index_ts().shape, lit_____index_ts_3(1), undefined, "exact");
+  return abs(num_____index_ts().shape, lit_____index_ts(1), undefined, "exact");
 }
 
 /** 取字面量值（-0 需按 SameValue 判，不能用 ===） */
@@ -8566,15 +8566,15 @@ function litOf(a: unknown): unknown {
     // 分母 x ∈ [-5, 5]（符号不可证）⇒ 不折
     const bothSides = abs(
       num_____index_ts().shape,
-      v_____index_ts_2("y"),
-      and(ge(v_____index_ts_2("y"), lit_____index_ts_3(-5)), lt(v_____index_ts_2("y"), lit_____index_ts_3(5))),
+      v_____index_ts("y"),
+      and(ge(v_____index_ts("y"), lit_____index_ts(-5)), lt(v_____index_ts("y"), lit_____index_ts(5))),
       "path",
     );
     const mixed = div_____arithmetic_ts(lit0(), bothSides, pTrue, undefined);
     expect(litOf(mixed)).toBeUndefined();
   }
   {
-    const r = div_____arithmetic_ts(lit0(), nonNegX, and(ne(v_____index_ts_2("x"), lit_____index_ts_3(0))), undefined);
+    const r = div_____arithmetic_ts(lit0(), nonNegX, and(ne(v_____index_ts("x"), lit_____index_ts(0))), undefined);
     expect(litOf(r)).toBe(0);
     expect(Object.is(litOf(r), -0)).toBe(false);
     // 无 ne 事实 ⇒ 不折
@@ -8645,8 +8645,8 @@ describe("re-export 的分支条件只看 source，不看 modules 表在不在",
 
 
 
-const num = abs_____abs_ts_10({ k: "prim", type: "number" }, undefined, undefined, "exact");
-const str = abs_____abs_ts_10({ k: "prim", type: "string" }, undefined, undefined, "exact");
+const num = abs_____abs_ts({ k: "prim", type: "number" }, undefined, undefined, "exact");
+const str = abs_____abs_ts({ k: "prim", type: "string" }, undefined, undefined, "exact");
 
 /** 来源模块（同时有 named.x 与 default） */
 const SRC_MOD: AbsModuleExports = { named: { x: str }, default: num };

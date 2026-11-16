@@ -24,7 +24,7 @@ import { structuralAssignIssues } from "../check/check-assign.ts";
 import type { AbsAssignRecord, AbsCallRecord } from "../ast-records.ts";
 import { DIAG } from "../../internal.ts";
 import { $lit } from "../exec/runtime/state.ts";
-import { abs as abs_____abs_ts, abs as abs_____abs_ts_1, litValue, type Abs } from "../abs.ts";
+import { abs as abs_____abs_ts, litValue, type Abs } from "../abs.ts";
 
 // ---------------------------------------------------------------------------
 // drift 的今日域证据包含函数体内的调用点
@@ -2334,7 +2334,7 @@ function recordWithHostNext(): AbsAssignRecord {
   };
   return {
     name: "f",
-    prev: abs_____abs_ts_1({ k: "fn", params: [] }, undefined, undefined, "exact"),
+    prev: abs_____abs_ts({ k: "fn", params: [] }, undefined, undefined, "exact"),
     next: hostFn as unknown as Abs,
     line: 5,
   } as AbsAssignRecord;

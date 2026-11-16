@@ -3,7 +3,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { parse } from "../parse.ts";
-import { extractFileDirectives, type DirectiveDiag, extractInlineDirectives, extractDirectives, type CaseDirective, runWithDirectiveDiags as runWithDirectiveDiags_____directives_ts, runWithDirectiveDiags as runWithDirectiveDiags_____directives_ts_1, runWithDirectiveDiags as runWithDirectiveDiags_____directives_ts_2, type MockDirective, parseCaseArgExpr } from "../directives.ts";
+import { extractFileDirectives, type DirectiveDiag, extractInlineDirectives, extractDirectives, type CaseDirective, runWithDirectiveDiags as runWithDirectiveDiags_____directives_ts, type MockDirective, parseCaseArgExpr } from "../directives.ts";
 import { formatShape, extractFileEnvNames, extractMockModuleRecords, litValue, type Abs } from "@nudojs/core";
 import { emitDirectiveDiag, runWithDirectiveDiags } from "../directives/diag.ts";
 import { parseCaseExpectedAbs, parseAbsExprDiag, parseAbsExpr } from "../directives/case-arg.ts";
@@ -219,7 +219,7 @@ function extractWithDiags(source: string) {
 const EXPECTED_CTX = '@nudo:case "t" => expected';
 const withDiags = <T>(fn: () => T): { value: T; diags: DirectiveDiag[] } => {
   const diags: DirectiveDiag[] = [];
-  const value = runWithDirectiveDiags_____directives_ts_1(diags, fn);
+  const value = runWithDirectiveDiags_____directives_ts(diags, fn);
   return { value, diags };
 };
 
@@ -636,7 +636,7 @@ describe("行注释 @nudo:import 位置错位可见", () => {
 
     const src = `export function bar(y) {\n  /// @nudo:import { positive } from "./std.nudo.js"\n  return y;\n}\n`;
     const inDomain: DirectiveDiag[] = [];
-    runWithDirectiveDiags_____directives_ts_2(inDomain, () => {
+    runWithDirectiveDiags_____directives_ts(inDomain, () => {
       extractFileDirectives(parse(src));
     });
     expect(inDomain.filter((d) => d.message.includes("@nudo:import"))).toHaveLength(1);

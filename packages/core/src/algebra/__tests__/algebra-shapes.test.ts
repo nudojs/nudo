@@ -13,14 +13,14 @@ import type { CheckIssue } from "../check/check-report.ts";
 import { takeRefineDiags, resetNudoModuleExecCache } from "../refine.ts";
 import { takeContractDiags, resetSidecarLoadFailureCache } from "../contract/contract.ts";
 import { $lit } from "../exec/runtime/state.ts";
-import { resetCheckSourceMemo, checkSource as checkSource_____check_check_ts, checkSource as checkSource_____check_check_ts_1 } from "../check/check.ts";
+import { resetCheckSourceMemo, checkSource as checkSource_____check_check_ts } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
 import { runTranspiled, callTranspiledExportFull } from "../exec/run.ts";
 import { absFunction, markPureFn } from "../abs-fn.ts";
-import { pTrue as pTrue_____pred_ts, predToString, pTrue as pTrue_____pred_ts_1, pTrue as pTrue_____pred_ts_2 } from "../pred.ts";
+import { pTrue as pTrue_____pred_ts, predToString, } from "../pred.ts";
 import { $call, clearPureMemo } from "../exec/call.ts";
 import { clearPureCallMemo } from "../exec/calls.ts";
-import { checkSource as checkSource___nudojs_core, pTrue as pTrue___nudojs_core, checkSource as checkSource___nudojs_core_1, pTrue as pTrue___nudojs_core_1, resetCheckSourceMemo as resetCheckSourceMemo___nudojs_core, resetGeneralizeMemo as resetGeneralizeMemo___nudojs_core } from "@nudojs/core";
+import { checkSource as checkSource___nudojs_core, pTrue as pTrue___nudojs_core, resetCheckSourceMemo as resetCheckSourceMemo___nudojs_core, resetGeneralizeMemo as resetGeneralizeMemo___nudojs_core } from "@nudojs/core";
 import { formatShape } from "../format/format.ts";
 import { listTopFunctions } from "../scan/scan.ts";
 
@@ -1526,7 +1526,7 @@ const FILE = "/t/std429b.js";
 function check(src: string) {
   resetCheckSourceMemo___nudojs_core();
   resetGeneralizeMemo___nudojs_core();
-  return checkSource___nudojs_core_1(FILE, IMP + src, pTrue___nudojs_core_1, sidecarOpts("std429b", SIDE, FILE));
+  return checkSource___nudojs_core(FILE, IMP + src, pTrue___nudojs_core, sidecarOpts("std429b", SIDE, FILE));
 }
 
 /** 调用点前置条件违例（nudo:constraint-violated） */
@@ -1659,7 +1659,7 @@ const FILE = "/t/std429.js";
 function check(src: string) {
   resetCheckSourceMemo___nudojs_core();
   resetGeneralizeMemo___nudojs_core();
-  return checkSource___nudojs_core_1(FILE, IMP + src, pTrue___nudojs_core_1, sidecarOpts("std429", SIDE, FILE));
+  return checkSource___nudojs_core(FILE, IMP + src, pTrue___nudojs_core, sidecarOpts("std429", SIDE, FILE));
 }
 
 /** 调用点前置条件违例（nudo:constraint-violated） */
@@ -1762,7 +1762,7 @@ function check(src: string) {
   return checkSource_____check_check_ts(
     "/t/std430.js",
     IMP + src,
-    pTrue_____pred_ts_1,
+    pTrue_____pred_ts,
     sidecarOpts("std430", SIDE),
   );
 }
@@ -2243,7 +2243,7 @@ const OBJ_LITERAL = `module.exports = {
 export const greet = fn({}, number());
 `;
     const { loadModule } = makeFiles({ "/t/b997/D.nudo.js": sidecar });
-    const r = checkSource_____check_check_ts_1("/t/b997/D.js", src, pTrue_____pred_ts_2, { loadModule, fromFile: "/t/b997/D.js" });
+    const r = checkSource_____check_check_ts("/t/b997/D.js", src, pTrue_____pred_ts, { loadModule, fromFile: "/t/b997/D.js" });
     // 普查名是 greet（不是 inner）⇒ 侧车契约绑定得上 ⇒ 违例被报出来
     expect(r.signatures.some((s) => s.name === "greet")).toBe(true);
     expect(r.signatures.some((s) => s.name === "inner")).toBe(false);

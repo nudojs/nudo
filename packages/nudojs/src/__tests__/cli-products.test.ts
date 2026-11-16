@@ -5,7 +5,7 @@ import { describe, it, expect, afterAll, beforeEach, afterEach } from "vitest";
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, basename } from "node:path";
-import { runCliTsx, runCliTsx as runCli, writeSrcTsconfig } from "./helpers/run-cli.ts";
+import { runCliTsx as runCli, writeSrcTsconfig } from "./helpers/run-cli.ts";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 
@@ -53,10 +53,10 @@ const SRC = "export function clean(x) {\n  return x + 1;\n}\nclean(1);\n";
     }
     const out = join(dir, "out");
 
-    const a = runCliTsx(["export", join(dir, "A", "clean.js"), "--format", "dts", "--out", out]);
+    const a = runCli(["export", join(dir, "A", "clean.js"), "--format", "dts", "--out", out]);
     expect(a.status).toBe(0);
     expect(a.stdout).toContain("wrote");
-    const b = runCliTsx(["export", join(dir, "B", "clean.js"), "--format", "dts", "--out", out]);
+    const b = runCli(["export", join(dir, "B", "clean.js"), "--format", "dts", "--out", out]);
     expect(b.status).toBe(0);
 
     const products = readdirSync(out).filter((f) => f.endsWith(".d.ts"));
@@ -73,8 +73,8 @@ const SRC = "export function clean(x) {\n  return x + 1;\n}\nclean(1);\n";
     const outA = join(dir, "outA");
     const outB = join(dir, "outB");
 
-    expect(runCliTsx(["export", join(dir, "A", "clean.js"), "--format", "dts", "--out", outA]).status).toBe(0);
-    expect(runCliTsx(["export", join(dir, "B", "clean.js"), "--format", "dts", "--out", outB]).status).toBe(0);
+    expect(runCli(["export", join(dir, "A", "clean.js"), "--format", "dts", "--out", outA]).status).toBe(0);
+    expect(runCli(["export", join(dir, "B", "clean.js"), "--format", "dts", "--out", outB]).status).toBe(0);
 
     const a = readFileSync(join(outA, "clean.d.ts"), "utf-8");
     const b = readFileSync(join(outB, "clean.d.ts"), "utf-8");
@@ -132,7 +132,7 @@ const DTS_DECL = /^export declare function .*$/gm;
     const dir = mkdtempSync(join(tmpdir(), "nudo-b028-"));
     dirs.push(dir);
     writeFileSync(join(dir, "collide.js"), SRC, "utf-8");
-    const r = runCliTsx(["export", join(dir, "collide.js"), "--format", "all"]);
+    const r = runCli(["export", join(dir, "collide.js"), "--format", "all"]);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("export declare function fooInput(y: unknown): unknown;");
     expect(r.stdout).toContain("export declare function fooOutput(z: unknown): unknown;");
@@ -148,9 +148,9 @@ const DTS_DECL = /^export declare function .*$/gm;
     writeFileSync(join(dir, "collide.js"), SRC, "utf-8");
     const out = join(dir, "out");
 
-    const stdout = runCliTsx(["export", join(dir, "collide.js"), "--format", "all"]);
+    const stdout = runCli(["export", join(dir, "collide.js"), "--format", "all"]);
     expect(stdout.status).toBe(0);
-    const written = runCliTsx(["export", join(dir, "collide.js"), "--format", "all", "--out", out]);
+    const written = runCli(["export", join(dir, "collide.js"), "--format", "all", "--out", out]);
     expect(written.status).toBe(0);
 
     const dtsName = readdirSync(out).find((f) => f.endsWith(".d.ts"));
@@ -210,14 +210,14 @@ function fixture(): string {
   it("只有再导出的模块：dts 产出再导出声明（不是「无函数」早退）；负控制：本地函数 + 再导出的模块两条面都在；负控制：真的没有导出面的模块仍如实说明（不静默零产物）", () => {
   {
     const dir = fixture();
-    const r = runCliTsx(["export", join(dir, "reexp.js"), "--format", "dts"]);
+    const r = runCli(["export", join(dir, "reexp.js"), "--format", "dts"]);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain('export { helper } from "./cjs.js";');
     expect(r.stdout).not.toContain("No analyzed functions found");
   }
   {
     const dir = fixture();
-    const r = runCliTsx(["export", join(dir, "mix.js"), "--format", "dts"]);
+    const r = runCli(["export", join(dir, "mix.js"), "--format", "dts"]);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("export declare function own(): number;");
     expect(r.stdout).toContain('export { helper } from "./cjs.js";');
@@ -225,7 +225,7 @@ function fixture(): string {
   {
     const dir = fixture();
     writeFileSync(join(dir, "empty.js"), "const x = 1;\nexport { };\n", "utf-8");
-    const r = runCliTsx(["export", join(dir, "empty.js"), "--format", "dts"]);
+    const r = runCli(["export", join(dir, "empty.js"), "--format", "dts"]);
     expect(r.status).toBe(0);
     expect(r.stdout + r.stderr).toContain("No ");
   }
@@ -458,8 +458,8 @@ function fixture(): { obj: string; dot: string } {
   it("dts 面：返回位是真类型（不是 unknown），且与 dot 形态逐字一致；zod 面：Output 是联合（不是 `z.unknown()`），且与 dot 形态逐字一致；guard 面：校验器真的校验（不是 `return true;`），且与 dot 形态逐字一致", () => {
   {
     const { obj, dot } = fixture();
-    const o = runCliTsx(["export", "--format", "dts", obj]);
-    const d = runCliTsx(["export", "--format", "dts", dot]);
+    const o = runCli(["export", "--format", "dts", obj]);
+    const d = runCli(["export", "--format", "dts", dot]);
     expect(o.status).toBe(0);
     expect(o.stdout).toContain("export declare function h(x: unknown): number | string;");
     expect(o.stdout).not.toContain("): unknown;");
@@ -467,8 +467,8 @@ function fixture(): { obj: string; dot: string } {
   }
   {
     const { obj, dot } = fixture();
-    const o = runCliTsx(["export", "--format", "schema", obj]);
-    const d = runCliTsx(["export", "--format", "schema", dot]);
+    const o = runCli(["export", "--format", "schema", obj]);
+    const d = runCli(["export", "--format", "schema", dot]);
     expect(o.status).toBe(0);
     expect(o.stdout).not.toContain("hOutput = z.unknown()");
     expect(o.stdout).toContain("z.union([");
@@ -476,8 +476,8 @@ function fixture(): { obj: string; dot: string } {
   }
   {
     const { obj, dot } = fixture();
-    const o = runCliTsx(["export", "--format", "guard", obj]);
-    const d = runCliTsx(["export", "--format", "guard", dot]);
+    const o = runCli(["export", "--format", "guard", obj]);
+    const d = runCli(["export", "--format", "guard", dot]);
     expect(o.status).toBe(0);
     expect(o.stdout).not.toContain("return true;");
     expect(o.stdout).toContain('typeof data === "number" || typeof data === "string"');
@@ -542,10 +542,10 @@ needsPositive(-1);
   {
     const { dir, lib, usage } = project();
     try {
-      const before = runCliTsx(["check", lib]);
+      const before = runCli(["check", lib]);
       expect(before.status, before.stdout).toBe(0);
 
-      const freeze = runCliTsx(["test", lib, "--from", usage, "--freeze"]);
+      const freeze = runCli(["test", lib, "--from", usage, "--freeze"]);
       // 退出码不是本条的判据：调用点上确实存在违反契约的实参 ⇒ 分析面如实报
       // `nudo:contract-domain-exceeds`（error 级，口径）⇒ exit 1 是**正确**的。
       // 的判据是「固化不得把该违约搬进被调方」。
@@ -557,7 +557,7 @@ needsPositive(-1);
       // 旧行为：`(-1)` 也被写进来 ⇒ 随后 `nudo:case-inconsistency` 判红
       expect(after).not.toContain("call@usage.js:L3");
 
-      const check = runCliTsx(["check", lib]);
+      const check = runCli(["check", lib]);
       expect(check.stdout, check.stdout).not.toContain("case-inconsistency");
       expect(check.status, check.stdout).toBe(0);
     } finally {
@@ -567,10 +567,10 @@ needsPositive(-1);
   {
     const { dir, lib, usage } = project();
     try {
-      const first = runCliTsx(["test", lib, "--from", usage, "--freeze"]);
+      const first = runCli(["test", lib, "--from", usage, "--freeze"]);
       expect(first.stdout).toContain("freeze →");
       const once = readFileSync(lib, "utf-8");
-      const upd = runCliTsx(["test", lib, "--from", usage, "--freeze=update"]);
+      const upd = runCli(["test", lib, "--from", usage, "--freeze=update"]);
       expect(upd.stdout).toContain("freeze: no changes.");
       expect(upd.stdout).not.toContain("freeze →");
       expect(readFileSync(lib, "utf-8")).toBe(once);
@@ -640,7 +640,7 @@ function withProject(files: Record<string, string>, fn: (dir: string) => void): 
   it("default 函数：declare function + `export { main as default }`；default 类：declare class + `export { Box as default }`；单独 --format dts 同样合法（存成 .ts 也可编译）；具名导出保持既有 `export declare function` 形态", () => {
   {
     withProject({ "defexp.js": DEFAULT_FN }, (dir) => {
-      const out = runCliTsx(["export", join(dir, "defexp.js"), "--format", "all"]).stdout;
+      const out = runCli(["export", join(dir, "defexp.js"), "--format", "all"]).stdout;
       expect(out).toContain("declare function main(");
       expect(out).toContain("export { main as default };");
       // `export default function` 在普通模块里没有实现 ⇒ TS2391
@@ -649,7 +649,7 @@ function withProject(files: Record<string, string>, fn: (dir: string) => void): 
   }
   {
     withProject({ "defcls.js": DEFAULT_CLASS }, (dir) => {
-      const out = runCliTsx(["export", join(dir, "defcls.js"), "--format", "all"]).stdout;
+      const out = runCli(["export", join(dir, "defcls.js"), "--format", "all"]).stdout;
       expect(out).toContain("declare class Box {");
       expect(out).toContain("export { Box as default };");
       expect(out).not.toMatch(/^export default class /m);
@@ -657,14 +657,14 @@ function withProject(files: Record<string, string>, fn: (dir: string) => void): 
   }
   {
     withProject({ "defexp.js": DEFAULT_FN }, (dir) => {
-      const out = runCliTsx(["export", join(dir, "defexp.js"), "--format", "dts"]).stdout;
+      const out = runCli(["export", join(dir, "defexp.js"), "--format", "dts"]).stdout;
       expect(out).toContain("declare function main(");
       expect(out).toContain("export { main as default };");
     });
   }
   {
     withProject({ "named.js": NAMED }, (dir) => {
-      const out = runCliTsx(["export", join(dir, "named.js"), "--format", "all"]).stdout;
+      const out = runCli(["export", join(dir, "named.js"), "--format", "all"]).stdout;
       expect(out).toContain("export declare function add(");
       expect(out).not.toContain("as default");
     });
@@ -1191,7 +1191,7 @@ function nodeCheck(path: string): { status: number; stderr: string } {
     dirs.push(dir);
     writeFileSync(join(dir, "a.ts"), EXPORT_ASSIGN_TS, "utf-8");
 
-    const r = runCliTsx(["migrate", "strip", "--write", "--no-draft", join(dir, "a.ts")]);
+    const r = runCli(["migrate", "strip", "--write", "--no-draft", join(dir, "a.ts")]);
     expect(r.status, r.stderr).toBe(0);
     expect(r.stderr).not.toContain("TypeScript syntax");
 
@@ -1207,7 +1207,7 @@ function nodeCheck(path: string): { status: number; stderr: string } {
     dirs.push(dir);
     writeFileSync(join(dir, "b.ts"), NAMESPACE_EXPORT_TS, "utf-8");
 
-    const r = runCliTsx(["migrate", "strip", "--write", "--no-draft", join(dir, "b.ts")]);
+    const r = runCli(["migrate", "strip", "--write", "--no-draft", join(dir, "b.ts")]);
     expect(r.status, r.stderr).toBe(0);
     expect(r.stderr).not.toContain("TypeScript syntax");
 
@@ -1227,7 +1227,7 @@ function nodeCheck(path: string): { status: number; stderr: string } {
     writeFileSync(join(dir, "a.ts"), EXPORT_ASSIGN_TS, "utf-8");
     writeFileSync(join(dir, "b.ts"), NAMESPACE_EXPORT_TS, "utf-8");
 
-    const r = runCliTsx(["migrate", "strip", "--write", "--no-draft", dir]);
+    const r = runCli(["migrate", "strip", "--write", "--no-draft", dir]);
     expect(r.status, r.stderr).toBe(0);
     expect(r.stderr).not.toContain("TypeScript syntax");
     for (const name of ["a.js", "b.js"]) {

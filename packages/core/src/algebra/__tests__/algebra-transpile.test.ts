@@ -2,19 +2,19 @@
  * 模块套件：转译器语句/表达式/类/作用域面。
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { litValue, checkSource as checkSource___nudojs_core, pTrue as pTrue___nudojs_core, checkSource as checkSource___nudojs_core_1, pTrue as pTrue___nudojs_core_1, resetCheckSourceMemo as resetCheckSourceMemo___nudojs_core, resetGeneralizeMemo as resetGeneralizeMemo___nudojs_core } from "@nudojs/core";
+import { litValue, checkSource as checkSource___nudojs_core, pTrue as pTrue___nudojs_core, resetCheckSourceMemo as resetCheckSourceMemo___nudojs_core, resetGeneralizeMemo as resetGeneralizeMemo___nudojs_core } from "@nudojs/core";
 import { call, val, throwsError, resetEngineCaches, isNever, effects, callLit } from "./eval-helpers.ts";
-import { checkSource, instantiateConstraint, number, pTrue, shape, formatShape, num, objOf, str, strLit, type Abs, constraintAdmitsNullish, constraintToEntryAbs, litC, union, transpileSource, omit, partial, pick, extractRefinesFromSource, findFnDirectiveScope, listFnDirectiveScopes, parseSource as parseSource_____index_ts, extractDeclaredThrows, parseSource as parseSource_____index_ts_1 } from "../index.ts";
-import { predToString, pTrue as pTrue_____pred_ts, pTrue as pTrue_____pred_ts_1, pTrue as pTrue_____pred_ts_2 } from "../pred.ts";
+import { checkSource, instantiateConstraint, number, pTrue, shape, formatShape, num, objOf, str, strLit, type Abs, constraintAdmitsNullish, constraintToEntryAbs, litC, union, transpileSource, omit, partial, pick, extractRefinesFromSource, findFnDirectiveScope, listFnDirectiveScopes, parseSource as parseSource_____index_ts, extractDeclaredThrows } from "../index.ts";
+import { predToString, pTrue as pTrue_____pred_ts, } from "../pred.ts";
 import { sidecarOpts, makeFiles, issuesOf, sigOf, l2Count, stdOpts, withStdImport } from "./nudo-constraints.ts";
-import { anyAbs, litValue as litValue_____abs_ts, numLit, litValue as litValue_____abs_ts_1, abs, absLit, num as num_____abs_ts, type Abs as Abs_____abs_ts, litValue as litValue_____abs_ts_2, type Abs as Abs_____abs_ts_1, litValue as litValue_____abs_ts_3, type Abs as Abs_____abs_ts_2, type Shape } from "../abs.ts";
+import { anyAbs, litValue as litValue_____abs_ts, numLit, abs, absLit, num as num_____abs_ts, type Abs as Abs_____abs_ts, type Shape } from "../abs.ts";
 import { parseSource } from "../parse-source.ts";
 import { injectForFunctionScope, generalizeFromAst, resetGeneralizeMemo } from "../generalize.ts";
 import { runTranspiled, callTranspiledExportFull, bindingsOf } from "../exec/run.ts";
 import { formatShape as formatShape_____format_format_ts } from "../format/format.ts";
 import { takeRefineDiags } from "../refine.ts";
 import { takeContractDiags } from "../contract/contract.ts";
-import { checkSource as checkSource_____check_check_ts, checkSource as checkSource_____check_check_ts_1, resetCheckSourceMemo, checkSource as checkSource_____check_check_ts_2 } from "../check/check.ts";
+import { checkSource as checkSource_____check_check_ts, resetCheckSourceMemo } from "../check/check.ts";
 import { checkCallSite } from "../diagnostics/diagnostics.ts";
 import { $copy } from "../exec/runtime/containers/obj.ts";
 import { leqAbs, requiredFnArity } from "../leq.ts";
@@ -1953,7 +1953,7 @@ function callSite(src: string, callee: string, args: number[]) {
     takeContractDiags();
 
 
-    const r = checkSource_____check_check_ts_1(
+    const r = checkSource_____check_check_ts(
       "/t/bug1131.js",
       `export function cartTotal(items, couponPercent = 0) {
   return items.length + couponPercent;
@@ -1962,7 +1962,7 @@ export function receipt(items, couponPercent = 0) {
   return cartTotal(items, couponPercent);
 }
 `,
-      pTrue_____pred_ts_1,
+      pTrue_____pred_ts,
       { fromFile: "/t/bug1131.js" },
     );
     expect(r.issues.filter((i) => i.code === "nudo:arg-count")).toEqual([]);
@@ -3335,7 +3335,7 @@ describe("fork 快照不得对宿主全局抛裸 TypeError", () => {
 export function f() { return 1; }`;
     const exports = runTranspiled(src, { mode: "analyze" });
     const rec = callTranspiledExportFull(exports, "f", []);
-    expect(litValue_____abs_ts_1(rec.result)).toEqual({ ok: true, value: 1 });
+    expect(litValue_____abs_ts(rec.result)).toEqual({ ok: true, value: 1 });
     // fail-closed：引擎不真的写宿主全局
     expect((globalThis as Record<string, unknown>).__nudo_bug194_probe).toBeUndefined();
   }
@@ -3343,7 +3343,7 @@ export function f() { return 1; }`;
     const src = `globalThis.__nudo_bug194_probe2 = 1;
 export function f() { return 1; }`;
     const exports = runTranspiled(src, { mode: "analyze" });
-    expect(litValue_____abs_ts_1(callTranspiledExportFull(exports, "f", []).result)).toEqual({
+    expect(litValue_____abs_ts(callTranspiledExportFull(exports, "f", []).result)).toEqual({
       ok: true,
       value: 1,
     });
@@ -4016,15 +4016,15 @@ function mkPlain() {
 `;
 
 /** 求值 f() 的结果 Abs */
-function absOf(body: string): Abs_____abs_ts_1 {
+function absOf(body: string): Abs_____abs_ts {
   return call(`${PRELUDE}\nexport function f() { ${body} }`, "f").result;
 }
 
 /** tuple 的逐元素字面量（任一元素无 lit 项 ⇒ undefined） */
-function tupleLits(a: Abs_____abs_ts_1): unknown[] | undefined {
+function tupleLits(a: Abs_____abs_ts): unknown[] | undefined {
   if (a.shape.k !== "tuple") return undefined;
   const out = a.shape.elements.map((e) => {
-    const v = litValue_____abs_ts_2(e);
+    const v = litValue_____abs_ts(e);
     return v.ok ? v.value : undefined;
   });
   return out.some((v) => v === undefined) ? undefined : out;
@@ -4041,13 +4041,13 @@ function tupleLits(a: Abs_____abs_ts_1): unknown[] | undefined {
   {
     const a = absOf("return Object.entries(mk());");
     expect(a.shape.k).toBe("tuple");
-    const els = (a.shape as { elements: Abs_____abs_ts_1[] }).elements;
+    const els = (a.shape as { elements: Abs_____abs_ts[] }).elements;
     expect(els.length).toBe(1);
     expect(tupleLits(els[0]!)).toEqual(["y", 2]);
   }
   {
     const a = absOf("return JSON.stringify(mk());");
-    expect(litValue_____abs_ts_2(a)).toEqual({ ok: true, value: '{"y":2}' });
+    expect(litValue_____abs_ts(a)).toEqual({ ok: true, value: '{"y":2}' });
   }
   {
     expect(tupleLits(absOf("return Object.keys(Object.assign({}, mk()));"))).toEqual(["y"]);
@@ -4075,7 +4075,7 @@ function tupleLits(a: Abs_____abs_ts_1): unknown[] | undefined {
   }
   {
     expect(tupleLits(absOf("return Object.keys(mkPlain());"))).toEqual(["y"]);
-    expect(litValue_____abs_ts_2(absOf("return JSON.stringify(mkPlain());"))).toEqual({
+    expect(litValue_____abs_ts(absOf("return JSON.stringify(mkPlain());"))).toEqual({
       ok: true,
       value: '{"y":2}',
     });
@@ -4145,13 +4145,13 @@ module.exports.probe = function(){ return module.exports.answer; };
 export function f() { return module.exports.answer; }`;
     const exports = runTranspiled(src, { mode: "exec" });
     const full = callTranspiledExportFull(exports, "f", []);
-    expect(litValue_____abs_ts_3(full.result)).toEqual({ ok: true, value: 42 });
+    expect(litValue_____abs_ts(full.result)).toEqual({ ok: true, value: 42 });
   }
   {
     // 原生 CJS：`this` === module.exports ⇒ `this.answer = 7` ⇒ 导出 { answer: 7 }
     const src = `this.answer = 7;`;
     const exports = runTranspiled(src, { mode: "exec" });
-    expect(litValue_____abs_ts_3(exports["answer"] as never)).toEqual({ ok: true, value: 7 });
+    expect(litValue_____abs_ts(exports["answer"] as never)).toEqual({ ok: true, value: 7 });
   }
   {
     const src = `export function f() { return 1; }
@@ -4715,7 +4715,7 @@ describe("fn-optional-params", () => {
 
 
 /** fn shape（可选带 `optionalParams` 标记——写侧口径） */
-function fnAbs(params: string[], optionalParams?: boolean[]): Abs_____abs_ts_2 {
+function fnAbs(params: string[], optionalParams?: boolean[]): Abs_____abs_ts {
   const shape = {
     k: "fn" as const,
     params,
@@ -4725,7 +4725,7 @@ function fnAbs(params: string[], optionalParams?: boolean[]): Abs_____abs_ts_2 {
 }
 
 /** 形参表面 → fn shape（写侧口径：形参 optional 标记 → shape optionalParams） */
-function fnAbsFromFormals(formals: FormalParam[]): Abs_____abs_ts_2 {
+function fnAbsFromFormals(formals: FormalParam[]): Abs_____abs_ts {
   return fnAbs(
     formalParamDisplayNames(formals),
     formals.map((f) => f.optional === true),
@@ -4837,7 +4837,7 @@ describe("optional-params-write-side", () => {
 
 /** 转译产物里取某个导出绑定的 fn shape */
 function fnShapeOf(src: string, name: string): { params: string[]; optionalParams?: boolean[] } | undefined {
-  const exports = runTranspiled(src, { mode: "analyze" }) as Record<string, Abs_____abs_ts_2>;
+  const exports = runTranspiled(src, { mode: "analyze" }) as Record<string, Abs_____abs_ts>;
   const v = exports[name];
   const sh = v?.shape;
   if (!sh || sh.k !== "fn") return undefined;
@@ -4845,7 +4845,7 @@ function fnShapeOf(src: string, name: string): { params: string[]; optionalParam
 }
 
 /** fn shape（无标记）——目标侧 */
-function fnAbs(params: string[]): Abs_____abs_ts_2 {
+function fnAbs(params: string[]): Abs_____abs_ts {
   return abs({ k: "fn", params }, undefined, undefined, "exact");
 }
 
@@ -5027,7 +5027,7 @@ function violated(callSrc: string): Array<{ message: string; actual?: string; ex
   resetCheckSourceMemo();
   resetGeneralizeMemo();
   const { loadModule } = makeFiles({ "/t/sum.nudo.js": SIDECAR });
-  const r = checkSource_____check_check_ts_2("/t/sum.js", `${SUM}${callSrc}`, pTrue_____pred_ts_2, {
+  const r = checkSource_____check_check_ts("/t/sum.js", `${SUM}${callSrc}`, pTrue_____pred_ts, {
     loadModule,
     fromFile: "/t/sum.js",
     autoBind: true,
@@ -5222,7 +5222,7 @@ export function f(x) {
 `;
 
 function scopeNames(src: string): string[] {
-  return listFnDirectiveScopes(parseSource_____index_ts_1(src)).map((s) => s.name);
+  return listFnDirectiveScopes(parseSource_____index_ts(src)).map((s) => s.name);
 }
 
 
@@ -5243,7 +5243,7 @@ function scopeNames(src: string): string[] {
     expect(scopeNames(CJS_ARROW)).toEqual(["f"]);
   }
   {
-    const scope = findFnDirectiveScope(parseSource_____index_ts_1(CJS_CONTRACT), "f");
+    const scope = findFnDirectiveScope(parseSource_____index_ts(CJS_CONTRACT), "f");
     expect(scope?.commentLines.join(" ")).toContain("@nudo:contract x positive");
   }
   {
@@ -5339,7 +5339,7 @@ const FILE = "/t/std431.js";
 function check(src: string) {
   resetCheckSourceMemo___nudojs_core();
   resetGeneralizeMemo___nudojs_core();
-  return checkSource___nudojs_core_1(FILE, IMP + src, pTrue___nudojs_core_1, sidecarOpts("std431", SIDE, FILE));
+  return checkSource___nudojs_core(FILE, IMP + src, pTrue___nudojs_core, sidecarOpts("std431", SIDE, FILE));
 }
 
 /** 调用点前置条件违例（nudo:constraint-violated） */
