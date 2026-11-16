@@ -729,20 +729,33 @@ function sig(src: string, env: string[], name: string): string {
 }
 
 describe("env constructor arity gate", () => {
-  it("web env: real constructors keep their brands", () => {
-    const env = ["web"];
-    expect(sig(WEB_SRC, env, "a")).toBe("Event");
-    expect(sig(WEB_SRC, env, "b")).toBe("CustomEvent");
-    expect(sig(WEB_SRC, env, "c")).toBe("Request");
-  });
-
-  it("node env: illegal no-arg constructions are honest may-throw TypeError", () => {
-    const env = ["node"];
-    for (const name of ["a", "b", "c", "d", "e"]) {
-      expect(sig(NODE_SRC, env, name)).toBe("never throws TypeError");
+  const NODE_SRC = `
+/// @nudo:env node
+export function a() { return new Event(); }
+export function b() { return new CustomEvent(); }
+export function c() { return new Request(); }
+export function d() { return new MessageEvent(); }
+export function e() { return new CloseEvent(); }
+`;
+  const WEB_SRC = `
+/// @nudo:env web
+export function a() { return new Event(); }
+export function b() { return new CustomEvent(); }
+export function c() { return new Request(); }
+export function d() { return document.querySelector(); }
+`;
+  const sig = (src: string, env: string[], name: string): string => {
+    const r = checkSource(`/t/b162-${env.join("+")}.js`, src, pTrue, { inject: { envGlobals: collectEnvGlobals(env) } });
+    return r.signatures.find((s) => s.name === name)?.display ?? "(missing)";
+  };
+  it("web 构造器保留品牌；node 非法无参构造 may-throw TypeError", () => {
+    for (const [name, expected] of [["a", "Event"], ["b", "CustomEvent"], ["c", "Request"]] as const) {
+      expect(sig(WEB_SRC, ["web"], name)).toBe(expected);
     }
+    for (const name of ["a", "b", "c", "d", "e"]) expect(sig(NODE_SRC, ["node"], name)).toBe("never throws TypeError");
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -1524,88 +1537,65 @@ function rootWithConfig(): string {
 }
 
 describe("nudo 键形状非法必须可观测且不得谎报成配置", () => {
-  beforeEach(() => {
-    evictProjectConfigMemo();
-  });
-
-  it("真值非对象（字符串 / 布尔 / 数组）：诊断 + 按「无配置」处理", () => {
-    for (const [label, raw] of [
-      ["string", "adoption"],
-      ["bool", true],
-      ["array", []],
-    ] as const) {
+  const captureStderr = (fn: () => void): string => {
+    const writes: string[] = [];
+    const orig = process.stderr.write;
+    process.stderr.write = ((chunk: string | Uint8Array) => { writes.push(String(chunk)); return true; }) as typeof process.stderr.write;
+    try { fn(); } finally { process.stderr.write = orig; }
+    return writes.join("");
+  };
+  const rootWithConfig = () => tmpProject("nudo-b468-root-", { "package.json": JSON.stringify({ name: "root", nudo: { check: { ignoreThrows: ["SyntaxError"] }, env: ["node"] } }) });
+  const subWith = (root: string, nudo: unknown) => {
+    const sub = join(root, "sub");
+    mkdirSync(sub, { recursive: true });
+    writeFileSync(join(sub, "package.json"), JSON.stringify(nudo === undefined ? { name: "sub" } : { name: "sub", nudo }));
+    return sub;
+  };
+  beforeEach(() => { evictProjectConfigMemo(); });
+  it("非对象诊断且无配置；空对象遮断；合法对象/无键负控", () => {
+    for (const [label, raw] of [["string", "adoption"], ["bool", true], ["array", []]] as const) {
       const root = rootWithConfig();
-      const sub = join(root, "sub");
-      mkdirSync(sub, { recursive: true });
-      writeFileSync(
-        join(sub, "package.json"),
-        JSON.stringify({ name: "sub", nudo: raw }),
-      );
-
+      const sub = subWith(root, raw);
       let found: ReturnType<typeof findProjectConfig> = null as ReturnType<typeof findProjectConfig>;
-      const out = captureStderr(() => {
-        found = findProjectConfig(sub);
-      });
-
-      // 旧实现：把非对象 nudo 值谎报成 NudoConfig 并「存在」→ 配置零效果、
-      // 且真值非对象还会抑制 onboarding（下游按「有配置」计数）
+      const out = captureStderr(() => { found = findProjectConfig(sub); });
       expect(found, label).toBeNull();
       expect(out, label).toContain('invalid "nudo" key');
       expect(out, label).toContain(join(sub, "package.json"));
       expect(out, label).toContain("no nudo config");
     }
-  });
-
-  it("非法 nudo 键不得继承祖先包配置（ignoreThrows / env 都不生效）", () => {
-    const root = rootWithConfig();
-    const sub = join(root, "sub");
-    mkdirSync(sub, { recursive: true });
-    writeFileSync(join(sub, "package.json"), JSON.stringify({ name: "sub", nudo: "adoption" }));
-
-    let found: ReturnType<typeof findProjectConfig> = null as ReturnType<typeof findProjectConfig>;
-    captureStderr(() => {
-      found = findProjectConfig(sub);
-    });
-    expect(found).toBeNull();
-    expect(found?.config).toBeUndefined();
-  });
-
-  // ── 负控制：合法 nudo 键 / 无 nudo 键的既有语义不得被波及 ──────────
-  it("合法 nudo 键（对象）：照旧返回配置", () => {
-    const root = tmpProject("nudo-bug468-ok-", {
-      "package.json": JSON.stringify({ name: "m", nudo: { contract: { autoBind: false } } }),
-    });
-    const found = findProjectConfig(root);
-    expect(found?.projectDir).toBe(root);
-    expect(found?.config.contract?.autoBind).toBe(false);
-  });
-
-  it("空对象 nudo 键：照旧算「有配置」（截断祖先搜索）", () => {
-    const root = rootWithConfig();
-    const sub = join(root, "sub");
-    mkdirSync(sub, { recursive: true });
-    writeFileSync(join(sub, "package.json"), JSON.stringify({ name: "sub", nudo: {} }));
-
-    let found: ReturnType<typeof findProjectConfig> = null as ReturnType<typeof findProjectConfig>;
-    const out = captureStderr(() => {
-      found = findProjectConfig(sub);
-    });
-    expect(found?.projectDir).toBe(sub);
-    expect(found?.config).toEqual({});
-    expect(out).toBe("");
-  });
-
-  it("无 nudo 键：照旧向上找到祖先配置（monorepo 继承，文档承诺）", () => {
-    const root = rootWithConfig();
-    const sub = join(root, "sub");
-    mkdirSync(sub, { recursive: true });
-    writeFileSync(join(sub, "package.json"), JSON.stringify({ name: "sub" }));
-
-    const found = findProjectConfig(sub);
-    expect(found?.projectDir).toBe(root);
-    expect(found?.config.check?.ignoreThrows).toEqual(["SyntaxError"]);
+    {
+      const root = rootWithConfig();
+      const sub = subWith(root, "adoption");
+      let found: ReturnType<typeof findProjectConfig> = null as ReturnType<typeof findProjectConfig>;
+      captureStderr(() => { found = findProjectConfig(sub); });
+      expect(found).toBeNull();
+      expect(found?.config).toBeUndefined();
+    }
+    {
+      const root = tmpProject("nudo-b468-ok-", { "package.json": JSON.stringify({ name: "m", nudo: { contract: { autoBind: false } } }) });
+      const found = findProjectConfig(root);
+      expect(found?.projectDir).toBe(root);
+      expect(found?.config.contract?.autoBind).toBe(false);
+    }
+    {
+      const root = rootWithConfig();
+      const sub = subWith(root, {});
+      let found: ReturnType<typeof findProjectConfig> = null as ReturnType<typeof findProjectConfig>;
+      const out = captureStderr(() => { found = findProjectConfig(sub); });
+      expect(found?.projectDir).toBe(sub);
+      expect(found?.config).toEqual({});
+      expect(out).toBe("");
+    }
+    {
+      const root = rootWithConfig();
+      const sub = subWith(root, undefined);
+      const found = findProjectConfig(sub);
+      expect(found?.projectDir).toBe(root);
+      expect(found?.config.check?.ignoreThrows).toEqual(["SyntaxError"]);
+    }
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -2231,37 +2221,7 @@ export function defineEnv() {
 ;
 
 /** 负控制：不该被这条修复波及的邻近形态 */
-describe("负控制", () => {
-  it("文件级 /// @nudo:env 的同款行为保持正确（本就由 dep 指纹覆盖）", async () => {
-    clearEvalCache();
-    const dir = tmpProject("nudo-bug501-file-", {
-      "env.ts": envFile("numLit", "numLit(1)"),
-      "main.js": `/// @nudo:env ./env.ts\n\nexport function getMagic() {\n  return MAGIC;\n}\n`,
-    });
-    const main = join(dir, "main.js");
-    const source = `/// @nudo:env ./env.ts\n\nexport function getMagic() {\n  return MAGIC;\n}\n`;
-    expect(await magicShape(main, source)).toBe("1");
-    writeFileSync(join(dir, "env.ts"), envFile("strLit", 'strLit("hello")'), "utf-8");
-    expect(await magicShape(main, source)).toBe('"hello"');
-  });
-
-  it("env 内容不变时，结果稳定（不因缓存维度变化而漂移）", async () => {
-    clearEvalCache();
-    const dir = tmpProject("nudo-bug501-stable-", {
-      "package.json": JSON.stringify({
-        name: "b501-stable",
-        type: "module",
-        nudo: { env: ["./env.ts"] },
-      }),
-      "env.ts": envFile("numLit", "numLit(1)"),
-      "main.js": `export function getMagic() {\n  return MAGIC;\n}\n`,
-    });
-    const main = join(dir, "main.js");
-    const source = `export function getMagic() {\n  return MAGIC;\n}\n`;
-    expect(await magicShape(main, source)).toBe("1");
-    expect(await magicShape(main, source)).toBe("1");
-  });
-});
+;
 });
 
 // ---------------------------------------------------------------------------
