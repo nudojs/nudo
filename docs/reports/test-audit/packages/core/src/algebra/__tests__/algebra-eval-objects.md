@@ -34,19 +34,8 @@ static 块内 super.m 参与运算（原生 3）	计算键/static 表	没测该�
 箭头表达式的 this 仍词法继承外层（箭头无自己的 this）	计算键/static 表	没测该层	keep	keep	—
 方法自身的默认值（m(x = this.v)）仍是 3	计算键/static 表	没测该层	keep	keep	—
 箭头默认值的 this 词法继承外层方法（`() => this.v` 同）	计算键/static 表	没测该层	keep	keep	—
-for (o.x of [1,2,3]) 后 o.x === 3	计算键/static 表	没测该层	keep	keep	—
-for (o.x in {a:1,b:2}) 后 o.x === 'b'	计算键/static 表	没测该层	keep	keep	—
-头写回后体内可读到当轮值	计算键/static 表	没测该层	keep	keep	—
-计算键成员头：o[key] 写回生效	计算键/static 表	没测该层	keep	keep	—
-多层成员头：o.a.x 写回生效	计算键/static 表	没测该层	keep	keep	—
-标识符头：for (x of …) 写回既有绑定	计算键/static 表	没测该层	keep	keep	—
-标识符头（for-in）：for (k in …) 写回既有绑定	计算键/static 表	没测该层	keep	keep	—
-标识符头写 const 绑定 = 原生 TypeError（写回通道的 const 守卫）	计算键/static 表	没测该层	keep	keep	—
-for (o.x of [1,2,3]) 后 o.x 折出 3（不再是旧值 0）	计算键/static 表	没测该层	keep	keep	—
-const 头不写回外层绑定（仍是块级每轮新绑定）	计算键/static 表	没测该层	keep	keep	—
-let 头不写回外层绑定	计算键/static 表	没测该层	keep	keep	—
-未被头赋值的成员保持旧值	计算键/static 表	没测该层	keep	keep	—
-成员头不影响其它成员	计算键/static 表	没测该层	keep	keep	—
+of/in 成员头、计算键、多层、标识符头、const 守卫与原生对拍	for-of/array-like 表	没测该层	keep	keep	—
+产品面签名折新值；const/let 头与未赋值成员负控	for-of/array-like 表	没测该层	keep	keep	—
 if 测试位：比较用旧值，写回在求值点	计算键/static 表	没测该层	keep	keep	—
 if 测试位：前缀与字符串分支同样走对	计算键/static 表	没测该层	keep	keep	—
 switch 判别位：判别式取旧值（匹配 case 0）	计算键/static 表	没测该层	keep	keep	—
@@ -232,19 +221,8 @@ seal / freeze / preventExtensions 之后建新键 → TypeError（改前静默�
 {get: undefined, value: 1} → TypeError（字段存在性语义；改前静默折 1）	计算键/static 表	没测该层	keep	keep	—
 已有可配置属性：未指定字段保持原值、显式字段双向覆盖（enumerable 可恢复）	计算键/static 表	没测该层	keep	keep	—
 新建属性未指定字段缺省 false（原生描述符面）	计算键/static 表	没测该层	keep	keep	—
-Array.from：访问器 length 决定元素数（原生 "a,b"，改前 ""）	计算键/static 表	没测该层	keep	keep	—
-Array.from：getter 副作用落地且**只发生一次**（原生 "2:1"，改前 "0:0"）	计算键/static 表	没测该层	keep	keep	—
-Array.from：索引访问器的值被取到（原生 "g"，改前 ""）	计算键/static 表	没测该层	keep	keep	—
-借用调用 slice.call：访问器 length 生效（原生 "a,b"，改前 ""）	计算键/static 表	没测该层	keep	keep	—
-借用调用 map.call：访问器 length 生效（原生 "A,B"，改前 ""）	计算键/static 表	没测该层	keep	keep	—
-借用调用 indexOf.call：访问器 length 生效（原生 1，改前 -1）	计算键/static 表	没测该层	keep	keep	—
-索引访问器 + 数据 length：两个来源各按其读域（原生 "a,z,"）	计算键/static 表	没测该层	keep	keep	—
-data-length 的 array-like 仍按槽读	计算键/static 表	没测该层	keep	keep	—
-迭代物（数组 / 字符串 / Set）不受 array-like 臂影响	计算键/static 表	没测该层	keep	keep	—
-无 length 槽的闭对象仍折 0 长（原生 0）	计算键/static 表	没测该层	keep	keep	—
-访问器 length 返回 undefined ⇒ ToLength 0（原生 0）	计算键/static 表	没测该层	keep	keep	—
-访问器 length 返回字符串 "2" ⇒ ToLength 2（原生 2）	计算键/static 表	没测该层	keep	keep	—
-L2 门禁：访问器 array-like 是**纯值错**——门禁恒绿，差异在签名	计算键/static 表	没测该层	keep	keep	—
+Array.from/借用 slice/map/indexOf 取访问器 length 与索引；getter 只一次；混合来源	for-of/array-like 表	没测该层	keep	keep	—
+负控：data-length/迭代物/无 length/ToLength/门禁	for-of/array-like 表	没测该层	keep	keep	—
 回调 this 是 thisArg（原生 20，改前假抛 TypeError）	计算键/static 表	没测该层	keep	keep	—
 回调 this 参与返回值计算（原生 "v1|v2"，改前假抛）	计算键/static 表	没测该层	keep	keep	—
 thisArg 为 null ⇒ 回调 this 是 null（原生 "null"，改前 "undefined"）	计算键/static 表	没测该层	keep	keep	—
@@ -703,4 +681,30 @@ Reflect 面一致：同一陷阱经 Reflect 面拿到同一个 42	dup:Proxy gOPD
 陷阱返回非对象 → TypeError（ToPropertyDescriptor 前置，原生同款）	dup:Proxy gOPD 表	commit:3a00aa10
 原型链上的键不是自有属性：gOPD({}, "toString") === undefined	dup:Proxy gOPD 表	commit:3a00aa10
 普通对象的描述符三标志不变（writable/enumerable/configurable 全 true）	dup:Proxy gOPD 表	commit:3a00aa10
+for (o.x of [1,2,3]) 后 o.x === 3	dup:for-of/array-like 表	commit:2d907008
+for (o.x in {a:1,b:2}) 后 o.x === 'b'	dup:for-of/array-like 表	commit:2d907008
+头写回后体内可读到当轮值	dup:for-of/array-like 表	commit:2d907008
+计算键成员头：o[key] 写回生效	dup:for-of/array-like 表	commit:2d907008
+多层成员头：o.a.x 写回生效	dup:for-of/array-like 表	commit:2d907008
+标识符头：for (x of …) 写回既有绑定	dup:for-of/array-like 表	commit:2d907008
+标识符头（for-in）：for (k in …) 写回既有绑定	dup:for-of/array-like 表	commit:2d907008
+标识符头写 const 绑定 = 原生 TypeError（写回通道的 const 守卫）	dup:for-of/array-like 表	commit:2d907008
+for (o.x of [1,2,3]) 后 o.x 折出 3（不再是旧值 0）	dup:for-of/array-like 表	commit:2d907008
+const 头不写回外层绑定（仍是块级每轮新绑定）	dup:for-of/array-like 表	commit:2d907008
+let 头不写回外层绑定	dup:for-of/array-like 表	commit:2d907008
+未被头赋值的成员保持旧值	dup:for-of/array-like 表	commit:2d907008
+成员头不影响其它成员	dup:for-of/array-like 表	commit:2d907008
+Array.from：访问器 length 决定元素数（原生 "a,b"，改前 ""）	dup:for-of/array-like 表	commit:2d907008
+Array.from：getter 副作用落地且**只发生一次**（原生 "2:1"，改前 "0:0"）	dup:for-of/array-like 表	commit:2d907008
+Array.from：索引访问器的值被取到（原生 "g"，改前 ""）	dup:for-of/array-like 表	commit:2d907008
+借用调用 slice.call：访问器 length 生效（原生 "a,b"，改前 ""）	dup:for-of/array-like 表	commit:2d907008
+借用调用 map.call：访问器 length 生效（原生 "A,B"，改前 ""）	dup:for-of/array-like 表	commit:2d907008
+借用调用 indexOf.call：访问器 length 生效（原生 1，改前 -1）	dup:for-of/array-like 表	commit:2d907008
+索引访问器 + 数据 length：两个来源各按其读域（原生 "a,z,"）	dup:for-of/array-like 表	commit:2d907008
+data-length 的 array-like 仍按槽读	dup:for-of/array-like 表	commit:2d907008
+迭代物（数组 / 字符串 / Set）不受 array-like 臂影响	dup:for-of/array-like 表	commit:2d907008
+无 length 槽的闭对象仍折 0 长（原生 0）	dup:for-of/array-like 表	commit:2d907008
+访问器 length 返回 undefined ⇒ ToLength 0（原生 0）	dup:for-of/array-like 表	commit:2d907008
+访问器 length 返回字符串 "2" ⇒ ToLength 2（原生 2）	dup:for-of/array-like 表	commit:2d907008
+L2 门禁：访问器 array-like 是**纯值错**——门禁恒绿，差异在签名	dup:for-of/array-like 表	commit:2d907008
 ```
