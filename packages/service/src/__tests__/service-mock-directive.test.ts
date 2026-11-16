@@ -1436,30 +1436,20 @@ export function useFs() { return 1; }
 `;
 
 describe("nudo:mock-invalid severity", () => {
-  it("mock expression parse failure is a warning, not an error", () => {
+  it("表达式解析失败 = warning（两通道一致）；缺 mock 文件仍是 error", () => {
+    const MOCK_EXPR = '// @nudo:mock fs = foo(1)\nexport function useFs() { return 1; }\n';
+    const MOCK_MISSING_FILE = '// @nudo:mock fs from "./definitely-missing-mock-file.js"\nexport function useFs() { return 1; }\n';
     const r = analyzeFile("/t/b460/mock-expr.js", MOCK_EXPR);
     const diags = r.diagnostics.filter((d) => d.code === "nudo:mock-invalid");
     expect(diags.length).toBeGreaterThan(0);
-    for (const d of diags) {
-      expect(d.severity).toBe("warning");
-    }
-  });
-
-  it("both mock-invalid channels (static validation + mock seed) agree", () => {
-    const r = analyzeFile("/t/b460/mock-expr-agree.js", MOCK_EXPR);
-    const sevs = new Set(
-      r.diagnostics.filter((d) => d.code === "nudo:mock-invalid").map((d) => d.severity),
-    );
-    expect([...sevs]).toEqual(["warning"]);
-  });
-
-  it("missing mock file stays an error (no fake green)", () => {
-    const r = analyzeFile("/t/b460/mock-missing.js", MOCK_MISSING_FILE);
-    const errs = r.diagnostics.filter((d) => d.severity === "error");
+    for (const d of diags) expect(d.severity).toBe("warning");
+    expect([...new Set(r.diagnostics.filter((d) => d.code === "nudo:mock-invalid").map((d) => d.severity))]).toEqual(["warning"]);
+    const missing = analyzeFile("/t/b460/mock-missing.js", MOCK_MISSING_FILE);
+    const errs = missing.diagnostics.filter((d) => d.severity === "error");
     expect(errs.length).toBeGreaterThan(0);
     expect(errs.some((d) => d.code === "nudo:module-missing")).toBe(true);
   });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -1525,23 +1515,35 @@ function sigValue(source: string, fromFile: string, name: string): unknown {
 }
 
 describe("内联 mock 的可构造性 facet", () => {
-  it("内联箭头 mock：new 定抛 ⇒ 走 catch 分支（原生 caught，修复前 mocked）", () => {
-    expect(sigValue(INLINE_ARROW, "/tmp/bug482-a.js", "greet")).toBe("caught");
-  });
+  const INLINE_ARROW = '/**\n * @nudo:mock Greeter = () => ({ msg: "mocked" })\n */\nexport function greet() {\n  try { return new Greeter().msg; } catch { return "caught"; }\n}\n';
+  const INLINE_FN_EXPR = '/**\n * @nudo:mock Greeter = function () { this.msg = "mocked"; }\n */\nexport function greet() {\n  try { return new Greeter().msg; } catch { return "caught"; }\n}\n';
+  const LOCAL_ARROW = 'const Greeter = () => ({ msg: "mocked" });\n\nexport function greet() {\n  try { return new Greeter().msg; } catch { return "caught"; }\n}\n';
+  const seedsOf = (source: string, fromFile: string) => mockDirectivesToAbsSeeds(extractDirectivesQuiet(parse(source)), { fromFile });
+  const sigValue = (source: string, fromFile: string, name: string): unknown => {
+    const mocks = mockSeedsToAbsMocks(seedsOf(source, fromFile));
+    const report = checkSource(fromFile, source, undefined, { inject: { mocks }, fromFile });
+    const sig = report.signatures.find((s) => s.name === name);
+    expect(sig, name).toBeDefined();
+    const lit = litValue(sig!.abs);
+    return lit.ok ? lit.value : sig!.display;
+  };
+  it("箭头不可构造；function 表达式可构造；from/本地箭头仍是 caught", () => {
+    expect(sigValue(INLINE_ARROW, "/tmp/b482-a.js", "greet")).toBe("caught");
+    expect(seedsOf(INLINE_ARROW, "/tmp/b482-b.js").seedFns.Greeter?.ctor).toBe(false);
+    expect(seedsOf(INLINE_FN_EXPR, "/tmp/b482-c.js").seedFns.Greeter?.ctor).toBe(true);
+    expect(sigValue(INLINE_FN_EXPR, "/tmp/b482-d.js", "greet")).not.toBe("caught");
+    expect(sigValue(LOCAL_ARROW, "/tmp/b482-e.js", "greet")).toBe("caught");
 
-  it("内联 mock 的种子带 ctor facet（箭头 ⇒ 不可构造）", () => {
-    const seeds = seedsOf(INLINE_ARROW, "/tmp/bug482-b.js");
-    expect(seeds.seedFns.Greeter?.ctor).toBe(false);
+    const dir = makeTmpProject("nudo-b482-", { "mocks/greeter.js": 'export const Greeter = () => ({ msg: "mocked" });\n', "app.js": '/**\n * @nudo:mock Greeter from "./mocks/greeter.js"\n */\nexport function greet() {\n  try { return new Greeter().msg; } catch { return "caught"; }\n}\n' });
+    const entry = join(dir, "app.js");
+    const source = readFileSync(entry, "utf-8");
+    const mocks = mockSeedsToAbsMocks(mockDirectivesToAbsSeeds(extractDirectivesQuiet(parse(source)), { fromFile: entry }));
+    const report = checkSource(entry, source, undefined, { inject: { mocks }, fromFile: entry });
+    const sig = report.signatures.find((s) => s.name === "greet");
+    const lit = litValue(sig!.abs);
+    expect(lit.ok ? lit.value : sig!.display).toBe("caught");
   });
-
-  it("内联 function 表达式 mock：可构造（ctor:true），不走 catch 分支", () => {
-    const seeds = seedsOf(INLINE_FN_EXPR, "/tmp/bug482-c.js");
-    expect(seeds.seedFns.Greeter?.ctor).toBe(true);
-    // 构造成功（不再定抛 TypeError）⇒ 结果不是 catch 分支的 "caught"
-    const value = sigValue(INLINE_FN_EXPR, "/tmp/bug482-d.js", "greet");
-    expect(value).not.toBe("caught");
-  });
-});
+});;
 
 describe("负控制 —— from 形态与本地箭头不受影响", () => {
   it("from 形态（mock 文件导出箭头）仍是 caught", () => {
@@ -1635,27 +1637,40 @@ function check(file: string, source: string, entry: string) {
 }
 
 describe("rejects 形态建模成 reject 的 promise（不是 never）", () => {
-  it("返回类型是 promise 面（eff/promise），不是 never", () => {
-    const report = check("/tmp/bug488-a.js", REJECTS, "/tmp/bug488-a.js");
-    const sig = report.signatures.find((s) => s.name === "f");
-    expect(sig).toBeDefined();
-    expect(sig!.abs.shape.k).toBe("eff");
-    expect((sig!.abs.shape as { eff?: string }).eff).toBe("promise");
-    expect(formatShape(sig!.abs)).not.toBe("never");
-  });
+  const REJECTS = '/**\n * @nudo:mock fetch = stub().rejects(new Error("x"))\n */\nexport function f() {\n  return fetch("/x");\n}\n';
+  const RESOLVES = '/**\n * @nudo:mock fetch = stub().resolves(42)\n */\nexport function f() {\n  return fetch("/x");\n}\n';
+  const RETURNS = '/**\n * @nudo:mock fetch = stub().returns(42)\n */\nexport function f() {\n  return fetch("/x");\n}\n';
+  const check = (file: string, source: string, entry: string) => {
+    const mocks = mockSeedsToAbsMocks(mockDirectivesToAbsSeeds(extractDirectivesQuiet(parse(source)), { fromFile: entry }));
+    return checkSource(entry, source, undefined, { inject: { mocks }, fromFile: entry, loadModule: defaultLoadModule });
+  };
+  it("rejects 是 promise 面不是 never；string() 契约报 unproven；resolves/returns 不变", () => {
+    const rejects = check("/tmp/b488-a.js", REJECTS, "/tmp/b488-a.js");
+    const rejectsSig = rejects.signatures.find((s) => s.name === "f")!;
+    expect(rejectsSig.abs.shape.k).toBe("eff");
+    expect((rejectsSig.abs.shape as { eff?: string }).eff).toBe("promise");
+    expect(formatShape(rejectsSig.abs)).not.toBe("never");
 
-  it("返回契约不再被 never 空洞满足（string() 判为不满足 ⇒ 报 unproven-return）", () => {
-    const dir = makeTmpProject("nudo-bug488-", {
-      "a.js": REJECTS,
-      "a.nudo.js": `import { fn, string } from "@nudojs/core";\nexport const f = fn({}, string());\n`,
-    });
+    const dir = makeTmpProject("nudo-b488-", { "a.js": REJECTS, "a.nudo.js": 'import { fn, string } from "@nudojs/core";\nexport const f = fn({}, string());\n' });
     const entry = join(dir, "a.js");
     const source = readFileSync(entry, "utf-8");
-    const report = check(entry, source, entry);
-    const unproven = report.issues.filter((i) => i.code === "nudo:unproven-return");
-    expect(unproven.length).toBeGreaterThanOrEqual(1);
+    expect(check(entry, source, entry).issues.filter((i) => i.code === "nudo:unproven-return").length).toBeGreaterThanOrEqual(1);
+
+    const resolves = check("/tmp/b488-b.js", RESOLVES, "/tmp/b488-b.js");
+    const resolvesSig = resolves.signatures.find((s) => s.name === "f")!;
+    expect(resolvesSig.abs.shape.k).toBe("eff");
+    expect(formatShape(resolvesSig.abs)).toContain("42");
+    const returns = check("/tmp/b488-c.js", RETURNS, "/tmp/b488-c.js");
+    const returnsSig = returns.signatures.find((s) => s.name === "f")!;
+    expect(returnsSig.abs.shape.k).toBe("prim");
+    expect(formatShape(returnsSig.abs)).toContain("42");
+
+    const dir2 = makeTmpProject("nudo-b488b-", { "b.js": RESOLVES, "b.nudo.js": 'import { fn, string } from "@nudojs/core";\nexport const f = fn({}, string());\n' });
+    const entry2 = join(dir2, "b.js");
+    const source2 = readFileSync(entry2, "utf-8");
+    expect(check(entry2, source2, entry2).issues.filter((i) => i.code === "nudo:unproven-return").length).toBeGreaterThanOrEqual(1);
   });
-});
+});;
 
 describe("负控制 —— resolves / returns 形态不受影响", () => {
   it("resolves 形态仍是 promise<42>", () => {
