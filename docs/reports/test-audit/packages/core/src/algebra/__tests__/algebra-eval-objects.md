@@ -70,18 +70,8 @@ Symbol.unscopables：Array 原型上是 16 键对象	计算键/static 表	没测
 实例面经原型链继承同一成员（new Map()[Symbol.toStringTag]）	计算键/static 表	没测该层	keep	keep	—
 Map 原型的 @@iterator 借调落到集合迭代派发（不再假抛）	计算键/static 表	没测该层	keep	keep	—
 负控制：字符串键成员不受影响（Map.prototype.get 仍是函数）	计算键/static 表	没测该层	keep	keep	—
-函数构造器实例：Object.setPrototypeOf(f, null) → false	计算键/static 表	没测该层	keep	keep	—
-类实例：Object.setPrototypeOf(a, null) → false	计算键/static 表	没测该层	keep	keep	—
-负控制：未改写原型的实例仍折 exact true	计算键/static 表	没测该层	keep	keep	—
-负控制：派生类实例 instanceof 父类 → true	计算键/static 表	没测该层	keep	keep	—
-负控制：原型对象 instanceof 自身 → false；instanceof 父类 → true	计算键/static 表	没测该层	keep	keep	—
-F.prototype = {} 之后 f instanceof F → false（实例记录真实 [[Prototype]]）	计算键/static 表	没测该层	keep	keep	—
-F.prototype = 5 之后 f instanceof F → TypeError（RHS prototype 非对象）	计算键/static 表	没测该层	keep	keep	—
-换原型前造的旧实例与换后造的新实例可区分（原生 "false|true"）	计算键/static 表	没测该层	keep	keep	—
-原型替换后新造的实例仍 instanceof 构造器 → true	计算键/static 表	没测该层	keep	keep	—
-原型替换写成 null → TypeError（RHS prototype 非对象）	计算键/static 表	没测该层	keep	keep	—
-setPrototypeOf 到普通对象后不再折 exact true（原型链不可判 → 降 boolean）	计算键/static 表	没测该层	keep	keep	—
-负控制：原型替换后 fn 仍可调用、prototype 读回是新原型	计算键/static 表	没测该层	keep	keep	—
+S7 面：自身/派生/替换/置 null/Function 口径/闭 obj/RHS 不可判护栏/已知债	instanceof 表	没测该层	keep	keep	—
+原型链面：置 null 不折 true/未改写仍 true/原型对象自身/替换与可调用负控	instanceof 表	没测该层	keep	keep	—
 A.prototype = {} → TypeError（catch 吸收）	计算键/static 表	没测该层	keep	keep	—
 A.prototype = {} 无 catch → 函数抛 TypeError（throws 面）	计算键/static 表	没测该层	keep	keep	—
 写穿后类的实例方法仍在（写没生效）	计算键/static 表	没测该层	keep	keep	—
@@ -709,4 +699,16 @@ HOF 传递（数组 map 回调）→ 方法体正常执行（this=undefined 不�
 借用不记 may-throw（throws 域干净）	dup:owner/借用方法表	commit:2d85a5f8
 负控制：对象字面量方法的借用不受影响（原本就正确）	dup:owner/借用方法表	commit:2d85a5f8
 负控制：方法体真读 undefined 接收者的 this 时定抛 TypeError	dup:owner/借用方法表	commit:2d85a5f8
+函数构造器实例：Object.setPrototypeOf(f, null) → false	dup:instanceof 表	commit:1c15489f
+类实例：Object.setPrototypeOf(a, null) → false	dup:instanceof 表	commit:1c15489f
+负控制：未改写原型的实例仍折 exact true	dup:instanceof 表	commit:1c15489f
+负控制：派生类实例 instanceof 父类 → true	dup:instanceof 表	commit:1c15489f
+负控制：原型对象 instanceof 自身 → false；instanceof 父类 → true	dup:instanceof 表	commit:1c15489f
+F.prototype = {} 之后 f instanceof F → false（实例记录真实 [[Prototype]]）	dup:instanceof 表	commit:1c15489f
+F.prototype = 5 之后 f instanceof F → TypeError（RHS prototype 非对象）	dup:instanceof 表	commit:1c15489f
+换原型前造的旧实例与换后造的新实例可区分（原生 "false|true"）	dup:instanceof 表	commit:1c15489f
+原型替换后新造的实例仍 instanceof 构造器 → true	dup:instanceof 表	commit:1c15489f
+原型替换写成 null → TypeError（RHS prototype 非对象）	dup:instanceof 表	commit:1c15489f
+setPrototypeOf 到普通对象后不再折 exact true（原型链不可判 → 降 boolean）	dup:instanceof 表	commit:1c15489f
+负控制：原型替换后 fn 仍可调用、prototype 读回是新原型	dup:instanceof 表	commit:1c15489f
 ```
