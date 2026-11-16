@@ -67,21 +67,8 @@ primitive 原型值被忽略（原型仍是 Object.prototype）	计算键/static
 方法名 __proto__ 仍是自有键（不是原型设定）	计算键/static 表	没测该层	keep	keep	—
 字面量里的 this 仍指向外层（IIFE 不得改 this 绑定）	计算键/static 表	没测该层	keep	keep	—
 带 __proto__ 的字面量里 this 绑定同样不变（IIFE 路径）	计算键/static 表	没测该层	keep	keep	—
-D1 o.a.b = 2：写在 getter 返回的对象上（原生 1——getter 每次新对象）	计算键/static 表	没测该层	keep	keep	—
-D2 h.inner.c += 1：写在 getter 返回的对象上（原生 2——同一对象）	计算键/static 表	没测该层	keep	keep	—
-D3 o.a.b = 2 不得触发中间层 a 的 setter（原生 0）	计算键/static 表	没测该层	keep	keep	—
-D4 冻结根的内层仍可写（原生 2——原生不对中间层做 [[Set]]）	计算键/static 表	没测该层	keep	keep	—
-D5 o.a.b += 2（a 是 getter）→ 原生 1，且不抛	计算键/static 表	没测该层	keep	keep	—
-D6 o.a.b = 2（a 是只读 getter）不抛 TypeError（原生 ok）	计算键/static 表	没测该层	keep	keep	—
-D7 delete o.a.b（a 是 getter）不抛（原生 ok）	计算键/static 表	没测该层	keep	keep	—
-D8 o.a.b++（a 是 getter）不抛（原生 ok）	计算键/static 表	没测该层	keep	keep	—
-E1 负控制：单层写 o.a = {b:5}（数据属性）→ 5	计算键/static 表	没测该层	keep	keep	—
-E2 负控制：单层写 o.a = 5 仍触发 setter → 5	计算键/static 表	没测该层	keep	keep	—
-E3 负控制：单层写 o.a = 5（只读访问器）仍定抛 TypeError	计算键/static 表	没测该层	keep	keep	—
-E4 负控制：数据属性链 o.a.b = 2 → 2	计算键/static 表	没测该层	keep	keep	—
-E5 负控制：数据属性链 o.a.b += 2 → 3	计算键/static 表	没测该层	keep	keep	—
-E6 负控制：数据属性链 o.a.b++ → 2	计算键/static 表	没测该层	keep	keep	—
-E7 负控制：delete o.a.b（数据属性链）→ gone	计算键/static 表	没测该层	keep	keep	—
+getter 中间层：新对象/同对象/不触发 setter/冻结根内层可写/复合与 delete 不抛	成员路径/sealed 表	没测该层	keep	keep	—
+负控：单层 Put 访问器语义与数据属性链不变	成员路径/sealed 表	没测该层	keep	keep	—
 getter 槽投影成读域值（原生读 1），不是 exact undefined	计算键/static 表	没测该层	keep	keep	—
 formatAbs（无损面）的 shape 段同口径	计算键/static 表	没测该层	keep	keep	—
 getter 槽投影成字符串读域（原生读 "s"）	计算键/static 表	没测该层	keep	keep	—
@@ -219,21 +206,7 @@ true.toString() → "true"	计算键/static 表	没测该层	keep	keep	—
 Object.prototype.toString.call({}) → "[object Object]"（泛型面不受影响）	计算键/static 表	没测该层	keep	keep	—
 Object.prototype.toString.call([]) → "[object Array]"（泛型面不受影响）	计算键/static 表	没测该层	keep	keep	—
 Symbol('x').description → "x"（既有语义）	计算键/static 表	没测该层	keep	keep	—
-sealed 数组 length 截断写 → TypeError	计算键/static 表	没测该层	keep	keep	—
-负控制：sealed 数组 length 增长 → 合法（length = 5）	计算键/static 表	没测该层	keep	keep	—
-负控制：sealed 数组 length 同长写 → 合法（不删任何属性）	计算键/static 表	没测该层	keep	keep	—
-负控制：未 seal 数组 length 截断 → 合法（length = 1）	计算键/static 表	没测该层	keep	keep	—
-负控制：preventExtensions 数组 length 截断 → 合法（元素仍可配置）	计算键/static 表	没测该层	keep	keep	—
-负控制：frozen 数组 length 截断 → TypeError（既有正确）	计算键/static 表	没测该层	keep	keep	—
-负控制：未 seal 数组 pop() → 正常（length = 2）	计算键/static 表	没测该层	keep	keep	—
-负控制：sealed 数组 push() → TypeError（既有正确）	计算键/static 表	没测该层	keep	keep	—
-sealed 数组 pop() → TypeError	计算键/static 表	没测该层	keep	keep	—
-sealed 数组 shift() → TypeError	计算键/static 表	没测该层	keep	keep	—
-负控制：sealed 空数组 pop() → 不抛（原生不删任何属性）	计算键/static 表	没测该层	keep	keep	—
-负控制：sealed 空数组 shift() → 不抛（原生不删任何属性）	计算键/static 表	没测该层	keep	keep	—
-负控制：preventExtensions 数组 pop()/shift() → 不抛（元素仍可配置）	计算键/static 表	没测该层	keep	keep	—
-稀疏：sealed [1,,] 的 pop() → 不抛（末位是洞，非自有属性）	计算键/static 表	没测该层	keep	keep	—
-稀疏：sealed [,,3] 的 shift() → TypeError（前移要在不可扩展数组上新增自有属性）	计算键/static 表	没测该层	keep	keep	—
+sealed 截断/pop/shift 抛；增长/同长/未 seal/preventExtensions/frozen 口径	成员路径/sealed 表	没测该层	keep	keep	—
 A.g = 5（static getter-only）→ TypeError（catch 吸收）	计算键/static 表	没测该层	keep	keep	—
 A.g = 5 无 catch → 函数抛 TypeError（throws 面）	计算键/static 表	没测该层	keep	keep	—
 写抛后 getter 值不变（仍 1）	计算键/static 表	没测该层	keep	keep	—
@@ -691,4 +664,34 @@ symbol 键：{ [Symbol.iterator]: 2, get [Symbol.iterator](){} } → 访问器�
 方法简写在后：{ x(){}, get x(){} } → 访问器胜出（读 undefined）	dup:重复键仲裁表	commit:7134e5af
 其它键不受重复键仲裁牵连	dup:重复键仲裁表	commit:7134e5af
 无重复键的字面量不受影响（普通数据属性）	dup:重复键仲裁表	commit:7134e5af
+D1 o.a.b = 2：写在 getter 返回的对象上（原生 1——getter 每次新对象）	dup:成员路径/sealed 表	commit:cb863afe
+D2 h.inner.c += 1：写在 getter 返回的对象上（原生 2——同一对象）	dup:成员路径/sealed 表	commit:cb863afe
+D3 o.a.b = 2 不得触发中间层 a 的 setter（原生 0）	dup:成员路径/sealed 表	commit:cb863afe
+D4 冻结根的内层仍可写（原生 2——原生不对中间层做 [[Set]]）	dup:成员路径/sealed 表	commit:cb863afe
+D5 o.a.b += 2（a 是 getter）→ 原生 1，且不抛	dup:成员路径/sealed 表	commit:cb863afe
+D6 o.a.b = 2（a 是只读 getter）不抛 TypeError（原生 ok）	dup:成员路径/sealed 表	commit:cb863afe
+D7 delete o.a.b（a 是 getter）不抛（原生 ok）	dup:成员路径/sealed 表	commit:cb863afe
+D8 o.a.b++（a 是 getter）不抛（原生 ok）	dup:成员路径/sealed 表	commit:cb863afe
+E1 负控制：单层写 o.a = {b:5}（数据属性）→ 5	dup:成员路径/sealed 表	commit:cb863afe
+E2 负控制：单层写 o.a = 5 仍触发 setter → 5	dup:成员路径/sealed 表	commit:cb863afe
+E3 负控制：单层写 o.a = 5（只读访问器）仍定抛 TypeError	dup:成员路径/sealed 表	commit:cb863afe
+E4 负控制：数据属性链 o.a.b = 2 → 2	dup:成员路径/sealed 表	commit:cb863afe
+E5 负控制：数据属性链 o.a.b += 2 → 3	dup:成员路径/sealed 表	commit:cb863afe
+E6 负控制：数据属性链 o.a.b++ → 2	dup:成员路径/sealed 表	commit:cb863afe
+E7 负控制：delete o.a.b（数据属性链）→ gone	dup:成员路径/sealed 表	commit:cb863afe
+sealed 数组 length 截断写 → TypeError	dup:成员路径/sealed 表	commit:cb863afe
+负控制：sealed 数组 length 增长 → 合法（length = 5）	dup:成员路径/sealed 表	commit:cb863afe
+负控制：sealed 数组 length 同长写 → 合法（不删任何属性）	dup:成员路径/sealed 表	commit:cb863afe
+负控制：未 seal 数组 length 截断 → 合法（length = 1）	dup:成员路径/sealed 表	commit:cb863afe
+负控制：preventExtensions 数组 length 截断 → 合法（元素仍可配置）	dup:成员路径/sealed 表	commit:cb863afe
+负控制：frozen 数组 length 截断 → TypeError（既有正确）	dup:成员路径/sealed 表	commit:cb863afe
+负控制：未 seal 数组 pop() → 正常（length = 2）	dup:成员路径/sealed 表	commit:cb863afe
+负控制：sealed 数组 push() → TypeError（既有正确）	dup:成员路径/sealed 表	commit:cb863afe
+sealed 数组 pop() → TypeError	dup:成员路径/sealed 表	commit:cb863afe
+sealed 数组 shift() → TypeError	dup:成员路径/sealed 表	commit:cb863afe
+负控制：sealed 空数组 pop() → 不抛（原生不删任何属性）	dup:成员路径/sealed 表	commit:cb863afe
+负控制：sealed 空数组 shift() → 不抛（原生不删任何属性）	dup:成员路径/sealed 表	commit:cb863afe
+负控制：preventExtensions 数组 pop()/shift() → 不抛（元素仍可配置）	dup:成员路径/sealed 表	commit:cb863afe
+稀疏：sealed [1,,] 的 pop() → 不抛（末位是洞，非自有属性）	dup:成员路径/sealed 表	commit:cb863afe
+稀疏：sealed [,,3] 的 shift() → TypeError（前移要在不可扩展数组上新增自有属性）	dup:成员路径/sealed 表	commit:cb863afe
 ```
