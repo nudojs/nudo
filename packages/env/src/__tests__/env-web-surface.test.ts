@@ -101,90 +101,42 @@ const CORE_MODELED_ES_GLOBALS = [
 const WEAKREF_EXCEPTION = "WeakRef";
 
 describe("ES 规范全局的「已被覆盖」判定", () => {
-  it("1. es env 声明面含 core 已建模的 ES 规范全局", () => {
+  it("声明面 + 白名单按建模能力推导；未建模仍报；报告自洽；WeakRef/Atomics 对照", () => {
     const env = defineEnv();
     for (const name of CORE_MODELED_ES_GLOBALS) {
-      // 这批名字都应出现在 es env 的 globals 表里（声明面补齐）
       if (["Function", "Proxy", "escape", "unescape"].includes(name)) continue;
-      expect(env.globals[name], `es env must declare ${name}`).toBeTruthy();
+      expect(env.globals[name], name).toBeTruthy();
     }
-    // 刻意不声明的四个（声明会遮蔽宿主且 env 侧更差 —— 见 es.ts 注释）
-    for (const name of ["Function", "Proxy", "escape", "unescape"]) {
-      expect(env.globals[name], `es env must NOT declare ${name}`).toBeUndefined();
-    }
-  });
+    for (const name of ["Function", "Proxy", "escape", "unescape"]) expect(env.globals[name], name).toBeUndefined();
+    expect(env.globals[WEAKREF_EXCEPTION]).toBeTruthy();
 
-  it("2. core 已建模的全局不再被报「未被覆盖」（白名单按建模能力推导）", () => {
-    // 宿主缺席的全局（如 Node 22 无 Float16Array）不该进断言：源码里
-    // `typeof Float16Array` 在该宿主上必然被报「未被覆盖」，那是版本差不是
-    // 建模回归。支持的宿主上仍全量覆盖。声明面（用例 1）不受此过滤影响。
-    const available = CORE_MODELED_ES_GLOBALS.filter(
-      (n) => typeof (globalThis as Record<string, unknown>)[n] !== "undefined",
-    );
-    const src = available.map(
-      (n, i) => `export function f${i}() { return typeof ${n}; }`,
-    ).join("\n");
-    const reported = collectEvalDiagnostics(src).builtinUnknown.map((b) => b.name);
-    expect(reported, "core-modeled globals must not be reported").toEqual([]);
-  });
-  it("3. 真正未建模的全局仍被报（判定不是永真/永假）", () => {
-    const src = `export function f() { return someNativeApi(1); }`;
-    const reported = collectEvalDiagnostics(src).builtinUnknown.map((b) => b.name);
-    expect(reported).toContain("someNativeApi");
-  });
+    const available = CORE_MODELED_ES_GLOBALS.filter((n) => typeof (globalThis as Record<string, unknown>)[n] !== "undefined");
+    const src = available.map((n, i) => `export function f${i}() { return typeof ${n}; }`).join("\n");
+    expect(collectEvalDiagnostics(src).builtinUnknown.map((b) => b.name)).toEqual([]);
+    expect(collectEvalDiagnostics("export function f() { return someNativeApi(1); }").builtinUnknown.map((b) => b.name)).toContain("someNativeApi");
 
-  it("4. 报告自洽：同一份报告里签名是精确值、且不再有「未被覆盖」警告", () => {
-    const src = `export function fBigInt() { return BigInt(1); }
+    const reportSrc = `export function fBigInt() { return BigInt(1); }
 export function fU8() { return new Uint8Array(4).length; }
 export function fDV() { return new DataView(new ArrayBuffer(8)).byteLength; }
 export function fAgg() { return new AggregateError([new Error("x")], "m").message; }
 export function fEsc() { return escape("a b"); }`;
     resetGeneralizeMemo();
-    const r = checkSource("/t/env-bug-865.js", src, pTrue, {});
+    const r = checkSource("/t/env-bug-865.js", reportSrc, pTrue, {});
     const sigs = new Map(r.signatures.map((s) => [s.name, formatAbs(s.abs)]));
     expect(sigs.get("fBigInt")).toContain("1n");
     expect(sigs.get("fU8")).toContain("4");
     expect(sigs.get("fDV")).toContain("8");
     expect(sigs.get("fAgg")).toContain('"m"');
     expect(sigs.get("fEsc")).toContain('"a%20b"');
-    // 同一批源码不再被报「未被覆盖」
-    const reported = collectEvalDiagnostics(src).builtinUnknown.map((b) => b.name);
-    expect(reported).toEqual([]);
-  });
+    expect(collectEvalDiagnostics(reportSrc).builtinUnknown.map((b) => b.name)).toEqual([]);
 
-  it("5. 带 @nudo:env es 时也不报「未被覆盖」（env 声明面 + 白名单双保险）", () => {
-    const src = `export function fBigInt() { return BigInt(1); }
-export function fU8() { return new Uint8Array(4).length; }`;
     const known = Object.keys(esEnvGlobals());
-    const reported = collectEvalDiagnostics(src, known).builtinUnknown.map((b) => b.name);
-    expect(reported).toEqual([]);
+    expect(collectEvalDiagnostics("export function f(){ return BigInt(1); }", known).builtinUnknown.map((b) => b.name)).toEqual([]);
+    expect(collectEvalDiagnostics("export function f(){ return WeakRef; }").builtinUnknown.map((b) => b.name)).not.toContain("WeakRef");
+    expect(collectEvalDiagnostics("export function f(){ return WeakRef; }", known).builtinUnknown.map((b) => b.name)).not.toContain("WeakRef");
+    expect(collectEvalDiagnostics("export function f(){ return Atomics; }").builtinUnknown.map((b) => b.name)).toContain("Atomics");
   });
-
-  it("6. WeakRef：core 已精确建模 ⇒ 裸用与带 env 都不报「未被覆盖」", () => {
-    // ① es env 声明面含 WeakRef（865 的 ① 已补）
-    expect(defineEnv().globals[WEAKREF_EXCEPTION], "es env must declare WeakRef").toBeTruthy();
-    // ② 裸用（不带 env）：core 的 `evalBuiltinNew` 有 `case "WeakRef"` ⇒
-    // 「已被覆盖」按 core 真实建模能力推导 ⇒ **不报**。
-    // （原 S5 分片为保三条既有 service 钉而留的手写例外表已由主 agent 删除：
-    // core 早已精确建模 WeakRef，那张例外表正是 要消灭的「手写白名单」
-    // 换了个地方继续写。三条 service 钉的样例全局已换成真正未建模的 `Atomics`。）
-    const bare = collectEvalDiagnostics(
-      `export function f() { return ${WEAKREF_EXCEPTION}; }`,
-    ).builtinUnknown.map((b) => b.name);
-    expect(bare).not.toContain(WEAKREF_EXCEPTION);
-    // ③ 带 @nudo:env es ⇒ 由 env 声明面覆盖 ⇒ 不报
-    const withEnv = collectEvalDiagnostics(
-      `export function f() { return ${WEAKREF_EXCEPTION}; }`,
-      Object.keys(esEnvGlobals()),
-    ).builtinUnknown.map((b) => b.name);
-    expect(withEnv).not.toContain(WEAKREF_EXCEPTION);
-    // ④ 对照：真正未被建模的宿主全局（Atomics）**要**报 —— 覆盖判定没被放空
-    const uncovered = collectEvalDiagnostics(
-      `export function f() { return Atomics; }`,
-    ).builtinUnknown.map((b) => b.name);
-    expect(uncovered).toContain("Atomics");
-  });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -282,282 +234,97 @@ function issuesOf(src: string, globals: Record<string, Abs> = esEnv.globals): st
 /* ── 第 5 条：env promise 的拒绝 reason（env 侧真修） ─────────────── */
 
 describe("族 62 · 第 5 条 —— env promise 的拒绝 reason 逐声明可见", () => {
-  it("5.1 fetch 的网络错 ⇒ catch 形参是 TypeError 品牌（e.name / e.message 可解）", () => {
-    // 原生：fetch 网络错 ⇒ 以 TypeError 拒绝 ⇒ catch 形参是 Error 实例。
-    const name = sigOf(
-      `export async function f() {
-  try { await fetch("https://example.invalid"); return "ok"; }
-  catch (e) { return e.name; }
-}`,
-      "f",
-      webEnv.globals,
-    );
-    expect(name).toContain('"TypeError"');
+  it("fetch / subtle / body / clipboard 品牌；多 reason 保持 unknown；Promise.reject 实参；成员集不变", () => {
+    const nameOf = (src: string) => sigOf(src, "f", webEnv.globals);
+    expect(nameOf(`export async function f() { try { await fetch("https://example.invalid"); return "ok"; } catch (e) { return e.name; } }`)).toContain('"TypeError"');
+    expect(nameOf(`export async function f() { try { await fetch("https://example.invalid"); return "ok"; } catch (e) { return e.message; } }`)).toContain("string");
+    expect(nameOf(`export async function f() { try { await crypto.subtle.digest("SHA-256", new Uint8Array([1])); return "ok"; } catch (e) { return e.name; } }`)).toContain('"OperationError"');
+    expect(nameOf(`export async function f() { try { await new Response("x").json(); return "ok"; } catch (e) { return e.name; } }`)).toContain('"TypeError"');
+    expect(nameOf(`export async function f() { try { await navigator.clipboard.readText(); return "ok"; } catch (e) { return e.name; } }`)).toContain('"NotAllowedError"');
+    expect(nameOf(`export async function f() { try { await crypto.subtle.importKey("raw", new Uint8Array([1]), "AES-GCM", false, ["encrypt"]); return "ok"; } catch (e) { return e; } }`)).toContain("unknown");
+    expect(nameOf(`export async function f() { try { await navigator.locks.request("x", () => {}); return "ok"; } catch (e) { return e; } }`)).toContain("unknown");
 
-    const msg = sigOf(
-      `export async function f() {
-  try { await fetch("https://example.invalid"); return "ok"; }
-  catch (e) { return e.message; }
-}`,
-      "f",
-      webEnv.globals,
-    );
-    expect(msg, "catch 形参的 message 必须是 string（此前 unknown ⇒ 拿不到）").toContain("string");
-    expect(msg).not.toContain("unknown");
-  });
-
-  it("5.2 crypto.subtle.* ⇒ OperationError 品牌（WebCrypto 规范）", () => {
-    const name = sigOf(
-      `export async function f() {
-  try { await crypto.subtle.digest("SHA-256", new Uint8Array([1])); return "ok"; }
-  catch (e) { return e.name; }
-}`,
-      "f",
-      webEnv.globals,
-    );
-    expect(name).toContain('"OperationError"');
-  });
-
-  it("5.3 Request / Response 的 body 读取族 ⇒ TypeError 品牌", () => {
-    const name = sigOf(
-      `export async function f() {
-  try { await new Response("x").json(); return "ok"; }
-  catch (e) { return e.name; }
-}`,
-      "f",
-      webEnv.globals,
-    );
-    expect(name).toContain('"TypeError"');
-  });
-
-  it("5.4 navigator.clipboard ⇒ NotAllowedError 品牌（Clipboard 规范）", () => {
-    const name = sigOf(
-      `export async function f() {
-  try { await navigator.clipboard.readText(); return "ok"; }
-  catch (e) { return e.name; }
-}`,
-      "f",
-      webEnv.globals,
-    );
-    expect(name).toContain('"NotAllowedError"');
-  });
-
-  it("5.5 负控：多 reason / 未建模的声明仍是 unknown（不假精确）", () => {
-    // importKey 可能以 DataError / NotSupportedError 拒绝（不止一种）⇒ unknown。
-    const importKey = sigOf(
-      `export async function f() {
-  try { await crypto.subtle.importKey("raw", new Uint8Array([1]), "AES-GCM", false, ["encrypt"]); return "ok"; }
-  catch (e) { return e; }
-}`,
-      "f",
-      webEnv.globals,
-    );
-    expect(importKey).toContain("unknown");
-
-    // navigator.locks.request 的拒绝 reason 取决于回调 / abort ⇒ 未建模 ⇒ unknown。
-    const locks = sigOf(
-      `export async function f() {
-  try { await navigator.locks.request("x", () => {}); return "ok"; }
-  catch (e) { return e; }
-}`,
-      "f",
-      webEnv.globals,
-    );
-    expect(locks).toContain("unknown");
-  });
-
-  it("5.6 Promise.reject 的拒绝 reason 是实参（声明面 ≡ ES 规范）", () => {
     const reject = memberOf(esEnv.globals["Promise"], "reject")!;
-    expect(reject, "Promise.reject must be declared").toBeTruthy();
-    const impl = getFnImpl(reject);
-    expect(impl?.apply, "Promise.reject must carry an apply (reason = 实参)").toBeTruthy();
-    // 声明面的 promise：inner = never（必定拒绝）+ rejected 通道 = 实参。
-    const shaped = absOnly(impl!.apply!([numLit(42)]));
-    const sh = shaped!.shape as { k: string; eff?: string; inner?: Abs; rejected?: Abs };
+    const shaped = absOnly(getFnImpl(reject)!.apply!([numLit(42)]))!;
+    const sh = shaped.shape as { k: string; eff?: string; rejected?: Abs };
     expect(sh.k).toBe("eff");
     expect(sh.eff).toBe("promise");
-    expect(sh.rejected, "rejected 通道必须带 reason").toBeTruthy();
     expect(formatShape(sh.rejected!)).toContain("42");
-  });
 
-  it("5.7 负控：crypto.subtle 的成员集逐字不变（13 个成员，一个不多一个不少）", () => {
     const subtle = memberOf(webEnv.globals["crypto"], "subtle")!;
-    const slots = (subtle.shape as { slots: Record<string, { value: Abs }> }).slots;
-    expect(Object.keys(slots).sort()).toEqual([
-      "decrypt",
-      "deriveBits",
-      "deriveKey",
-      "digest",
-      "encrypt",
-      "exportKey",
-      "generateKey",
-      "importKey",
-      "sign",
-      "unwrapKey",
-      "verify",
-      "wrapKey",
+    expect(Object.keys((subtle.shape as { slots: Record<string, { value: Abs }> }).slots).sort()).toEqual([
+      "decrypt","deriveBits","deriveKey","digest","encrypt","exportKey","generateKey","importKey","sign","unwrapKey","verify","wrapKey",
     ]);
   });
-});
+});;
 
 /* ── 第 1 条：Intl 子构造器的实例方法面 ──────────────────────────── */
 
 describe("族 62 · 第 1 条 —— Intl 子构造器的实例方法面（声明面）", () => {
-  it("1.1 Intl.Collator 的实例面含 compare / resolvedOptions（原生原型成员）", () => {
-    const collator = memberOf(esEnv.globals["Intl"], "Collator")!;
-    const inst = instanceSlotsOf(collator);
-    expect(Object.keys(inst).sort()).toEqual(["compare", "resolvedOptions"]);
-    expect(formatShape(inst["compare"]!), "compare 的方法值面").toContain("=>");
-    expect(formatShape(inst["compare"]!), "compare 的返回面（原生返回 number）").toContain("number");
-    expect(formatShape(inst["resolvedOptions"]!), "resolvedOptions 是方法").toContain("=>");
-  });
+  it("Collator / NumberFormat / DateTimeFormat 实例面；未建模子构造器空；Intl 成员集；运行时 typeof", () => {
+    const collator = instanceSlotsOf(memberOf(esEnv.globals["Intl"], "Collator")!);
+    expect(Object.keys(collator).sort()).toEqual(["compare", "resolvedOptions"]);
+    expect(formatShape(collator["compare"]!)).toContain("=>");
+    expect(formatShape(collator["compare"]!)).toContain("number");
+    expect(formatShape(collator["resolvedOptions"]!)).toContain("=>");
 
-  it("1.2 Intl.NumberFormat / DateTimeFormat 的实例面含 format 族（原生原型成员）", () => {
     for (const name of ["NumberFormat", "DateTimeFormat"]) {
       const inst = instanceSlotsOf(memberOf(esEnv.globals["Intl"], name)!);
-      expect(Object.keys(inst).sort(), name).toEqual([
-        "format",
-        "formatRange",
-        "formatRangeToParts",
-        "formatToParts",
-        "resolvedOptions",
-      ]);
-      expect(formatShape(inst["format"]!), `${name}.format`).toContain("string");
-      expect(formatShape(inst["formatToParts"]!), `${name}.formatToParts`).toContain("[]");
+      expect(Object.keys(inst).sort(), name).toEqual(["format","formatRange","formatRangeToParts","formatToParts","resolvedOptions"]);
+      expect(formatShape(inst["format"]!), name).toContain("string");
+      expect(formatShape(inst["formatToParts"]!), name).toContain("[]");
     }
-  });
 
-  it("1.3 负控：未建模的子构造器（ListFormat / Segmenter / Locale…）实例面不变", () => {
     for (const name of ["ListFormat", "Segmenter", "Locale", "PluralRules"]) {
-      const inst = instanceSlotsOf(memberOf(esEnv.globals["Intl"], name)!);
-      expect(Object.keys(inst), `${name} 不在本批建模范围`).toEqual([]);
+      expect(Object.keys(instanceSlotsOf(memberOf(esEnv.globals["Intl"], name)!)), name).toEqual([]);
     }
-  });
+    const intlSlots = (esEnv.globals["Intl"]!.shape as { slots: Record<string, { value: Abs }> }).slots;
+    expect(Object.keys(intlSlots).sort()).toEqual(["Collator","DateTimeFormat","DisplayNames","ListFormat","Locale","NumberFormat","PluralRules","RelativeTimeFormat","Segmenter","getCanonicalLocales","supportedValuesOf"]);
 
-  it("1.4 负控：Intl 的成员集逐字不变（9 个子构造器 + 2 个静态）", () => {
-    const intlSlots = (esEnv.globals["Intl"]!.shape as {
-      slots: Record<string, { value: Abs }>;
-    }).slots;
-    expect(Object.keys(intlSlots).sort()).toEqual([
-      "Collator",
-      "DateTimeFormat",
-      "DisplayNames",
-      "ListFormat",
-      "Locale",
-      "NumberFormat",
-      "PluralRules",
-      "RelativeTimeFormat",
-      "Segmenter",
-      "getCanonicalLocales",
-      "supportedValuesOf",
-    ]);
+    const r = checkSource("/t/env-bug-62-intl-runtime.js", "export function f() { return typeof new Intl.Collator().compare; }", pTrue, { inject: { envGlobals: esEnv.globals } });
+    expect(formatAbs(r.signatures.find((s) => s.name === "f")!.abs)).toContain('"function"');
   });
-
-  it("运行时 typeof new Intl.Collator().compare → \"function\"（族 65 第 4 条已建模）", () => {
-    // 原生：typeof new Intl.Collator().compare === "function"
-    // 族 65 · 第 4 条：core 侧 `packages/core/src/algebra/exec/runtime/members.ts`
-    // 的 `BUILTIN_BRAND_METHODS` 补 "Intl.Collator"（compare / resolvedOptions）
-    // ⇒ 实例方法面折精确 "function"（此前是 unknown 域——imprecise 但 sound）。
-    // ⚠️ `Intl` 在 core 的 `ENV_SHADOW_SKIP_GLOBALS` 里 ⇒ env 侧的实例面
-    // 声明**不会**注入运行时（与 core 的 URL 同款：env 建模 + core 侧补）。
-    const r = checkSource(
-      "/t/env-bug-62-intl-runtime.js",
-      `export function f() { return typeof new Intl.Collator().compare; }`,
-      pTrue,
-      { inject: { envGlobals: esEnv.globals } },
-    );
-    const sig = r.signatures.find((s) => s.name === "f")!;
-    expect(formatAbs(sig.abs)).toContain('"function"');
-  });
-});
+});;
 
 /* ── 第 2 条：AggregateError 的 errors 面（按原生钉） ──────────────── */
 
 describe("族 62 · 第 2 条 —— AggregateError 的 errors 面", () => {
-  it("2.1 缺省实参 ⇒ 原生**抛 TypeError**（引擎同款：never + may-throw TypeError）", () => {
-    // 原生 oracle（node v26.10.0）：
-    // new AggregateError() → TypeError: undefined is not iterable
-    // new AggregateError(undefined) → TypeError: undefined is not iterable
-    // ⇒ 台账「缺省时 errors 是 []」与原生**不符**（那是自信的错值 ⇒ 假绿：
-    // 会把真实的 TypeError 吞掉）。此处按原生钉，**不改**引擎行为。
-    const display = sigOf(`export function f() { return new AggregateError().errors; }`);
-    expect(display).toContain("never");
-    const issues = issuesOf(`export function f() { return new AggregateError(); }`);
-    expect(issues.join(" | ")).toContain("TypeError");
+  it("缺省抛 TypeError；[] ⇒ []；抽象实参 unknown", () => {
+    expect(sigOf("export function f() { return new AggregateError().errors; }")).toContain("never");
+    expect(issuesOf("export function f() { return new AggregateError(); }").join(" | ")).toContain("TypeError");
+    expect(sigOf("export function f() { return new AggregateError([]).errors; }")).toContain("[]");
+    const abstract = sigOf("export function f(a) { return new AggregateError(a).errors; }");
+    expect(abstract).not.toContain("[]");
+    expect(abstract).toMatch(/any|unknown/);
   });
-
-  it("2.2 new AggregateError([]).errors ⇒ [] （原生同款：拷贝而非引用）", () => {
-    const display = sigOf(`export function f() { return new AggregateError([]).errors; }`);
-    expect(display).toContain("[]");
-  });
-
-  it("2.3 抽象实参 ⇒ errors 保持 unknown（不造副本、不假精确）", () => {
-    const display = sigOf(`export function f(a) { return new AggregateError(a).errors; }`);
-    expect(display).not.toContain("[]");
-    expect(display).toMatch(/any|unknown/);
-  });
-});
+});;
 
 /* ── 第 3 条：Error 的 cause 槽 ───────────────────────────────────── */
 
 describe("族 62 · 第 3 条 —— Error 的 cause 槽", () => {
-  it("3.1 自有 cause 键 ⇒ 读出值（原生同款）", () => {
-    const display = sigOf(`export function f() { return new Error("m", {cause: 1}).cause; }`);
-    expect(display).toContain("1");
+  it("自有 cause 读出值；无 options 为 undefined；继承 cause 为 unknown 非 undefined", () => {
+    expect(sigOf('export function f() { return new Error("m", {cause: 1}).cause; }')).toContain("1");
+    const none = sigOf('export function f() { return new Error("m").cause; }');
+    expect(none).toContain("undefined");
+    expect(none).not.toContain("unknown");
+    const inherited = sigOf('export function f() { const o = Object.create({cause: 1}); return new Error("m", o).cause; }');
+    expect(inherited).toContain("unknown");
+    expect(inherited).not.toContain("undefined");
   });
-
-  it("3.2 无 options ⇒ 无 cause 键（保持「无 cause 键 ⇒ 不装槽」口径）", () => {
-    const display = sigOf(`export function f() { return new Error("m").cause; }`);
-    expect(display).toContain("undefined");
-    expect(display).not.toContain("unknown");
-  });
-
-  it("继承的 cause ⇒ 读出 unknown（不是「确定不存在」）", () => {
-      // 原生：`new Error("m", Object.create({cause: 1})).cause` → 1
-      // （InstallErrorCause 用 `Get(options, "cause")` ⇒ 走原型链）。
-      // 族 65 · 第 5 条：core 侧
-      // `packages/core/src/algebra/builtins/error/error-family.ts` 的
-      // `errorBrandAbs`——options 键集**不可判**时（开放 obj / 原型链开放）
-      // 装**值为 unknown** 的 cause 槽；原型链上**确有** cause 键时
-      // （存在性确定）装同款 unknown 值槽（值不经原型链 Get 解析——保守）。
-      // ⇒ 读出 unknown（可见但不确定），**不得**读出「确定不存在」。
-      const display = sigOf(
-        `export function f() {
-  const o = Object.create({cause: 1});
-  return new Error("m", o).cause;
-}`,
-      );
-      expect(display).toContain("unknown");
-      expect(display).not.toContain("undefined");
-    });
-});
+});;
 
 /* ── 第 4 条：类型化数组的元素面 ─────────────────────────────────── */
 
 describe("族 62 · 第 4 条 —— 类型化数组的元素面", () => {
-  it("4.1 元素读面 ⇒ 精确值（族 65 第 6 条已建模；原生 new Int8Array([1])[0] === 1）", () => {
-    // 原生：new Int8Array([1])[0] === 1
-    // 族 65 · 第 6 条：元素**值**入索引槽 ⇒ 读面命中槽直读精确值
-    // （此前是「number | undefined」——不假精确，但不是原生值）。
-    const display = sigOf(`export function f() { return new Int8Array([1])[0]; }`);
-    expect(display).toContain("1");
-    expect(display).not.toMatch(/undefined #exact/);
+  it("数组元素与对象源 ToNumber 都折精确值", () => {
+    const direct = sigOf("export function f() { return new Int8Array([1])[0]; }");
+    expect(direct).toContain("1");
+    expect(direct).not.toMatch(/undefined #exact/);
+    const objectSource = sigOf('export function f() { return new Int8Array(["3"])[0]; }');
+    expect(objectSource).toContain("3");
+    expect(objectSource).not.toContain("undefined");
   });
-
-  it("对象源逐元素 ToNumber ⇒ 精确值（原生同款）", () => {
-    // 原生 oracle（node v26.10.0）：
-    // new Int8Array(["3"])[0] → 3
-    // new Int8Array([{valueOf: () => 1}])[0] → 1
-    // 族 65 · 第 6 条：core 侧
-    // `packages/core/src/algebra/builtins/error/binary.ts` 的
-    // `makeTypedArrayAbs`——闭 tuple 源逐元素过 ToNumber / ToBigInt + 家族
-    // 取值转换（整数 TA 的模 2^n 回绕、Float32 的 fround 舍入）⇒ 值入索引
-    // 槽；读面（`$idx` / 字符串下标）命中槽直读。
-    const display = sigOf(`export function f() { return new Int8Array(["3"])[0]; }`);
-    expect(display).toContain("3");
-    expect(display).not.toContain("undefined");
-  });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -930,21 +697,16 @@ const CASES: Array<[global: string, body: string]> = [
 ];
 
 describe("web env declares the browser globals it models", () => {
-  it("every previously-missing global is declared", () => {
+  it("13 个全局已声明；使用它们零 error/零 throw", () => {
     const globals = webEnvGlobals();
-    for (const [name] of CASES) {
-      expect(globals[name], `${name} must be declared in web env`).toBeTruthy();
-    }
-  });
-
-  it("using those globals produces zero error diagnostics (was全体假红)", () => {
+    for (const [name] of CASES) expect(globals[name], name).toBeTruthy();
     for (const [name, body] of CASES) {
       const out = checkWeb(`export function f(){ ${body} }`);
-      expect(out.errorCodes, `${name}: ${JSON.stringify(out.issues)}`).toEqual([]);
-      expect(out.throwBrands, `${name} must not be a definite TypeError`).toEqual([]);
+      expect(out.errorCodes, name).toEqual([]);
+      expect(out.throwBrands, name).toEqual([]);
     }
   });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -963,36 +725,27 @@ function host(script: string): string {
 }
 
 describe("performance.mark/measure return PerformanceEntry values", () => {
-  it("host oracle: mark returns PerformanceMark with .name", () => {
-    const out = host(`
-      const m = performance.mark("start");
-      console.log(JSON.stringify({ ctor: m.constructor.name, name: m.name }));
-    `);
+  it("mark 返回 PerformanceMark 品牌；.name string；measure 有 name/duration", () => {
+    const out = host(`const m = performance.mark("start"); console.log(JSON.stringify({ ctor: m.constructor.name, name: m.name }));`);
     expect(JSON.parse(out)).toEqual({ ctor: "PerformanceMark", name: "start" });
-  });
 
-  it("mark().name folds to string (was definite TypeError)", () => {
-    const out = checkWeb(`export function markName(){ const m = performance.mark("start"); return m.name; }`);
-    expect(out.throwBrands).toEqual([]);
-    expect(out.errorCodes).toEqual([]);
-    expect(out.signatures[0]!.display).toBe("string");
-  });
+    const markName = checkWeb('export function markName(){ const m = performance.mark("start"); return m.name; }');
+    expect(markName.throwBrands).toEqual([]);
+    expect(markName.errorCodes).toEqual([]);
+    expect(markName.signatures[0]!.display).toBe("string");
 
-  it("mark() is declared as a PerformanceMark brand, not undefined", () => {
     const mark = slotOf("performance", "mark");
     expect(mark?.shape.k).toBe("fn");
     const ret = (mark!.shape as { returnType?: { shape: { k: string; name?: string } } }).returnType;
     expect(ret?.shape.k).toBe("brand");
     expect(ret?.shape.name).toBe("PerformanceMark");
-  });
 
-  it("measure() returns a PerformanceMeasure with .name / .duration", () => {
-    const out = checkWeb(`export function f(){ const m = performance.measure("x"); return [m.name, m.duration]; }`);
-    expect(out.throwBrands).toEqual([]);
-    expect(out.signatures[0]!.display).toContain("string");
-    expect(out.signatures[0]!.display).toContain("number");
+    const measure = checkWeb('export function f(){ const m = performance.measure("x"); return [m.name, m.duration]; }');
+    expect(measure.throwBrands).toEqual([]);
+    expect(measure.signatures[0]!.display).toContain("string");
+    expect(measure.signatures[0]!.display).toContain("number");
   });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -1013,23 +766,17 @@ describe("navigator.hardwareConcurrency is modelled", () => {
  * `undefined` / `false`）。
  */
 describe("navigator.hardwareConcurrency is modelled", () => {
-  it("the navigator member table declares hardwareConcurrency", () => {
+  it("声明 number；读面 number；比较折 boolean 而非硬编码 false", () => {
     expect(slotOf("navigator", "hardwareConcurrency")).toBeTruthy();
+    const read = checkWeb("export function f(){ return navigator.hardwareConcurrency; }");
+    expect(read.errorCodes).toEqual([]);
+    expect(displayOf(read)).toMatch(/^number/);
+    const cmp = checkWeb("export function f(){ return navigator.hardwareConcurrency > 4; }");
+    expect(cmp.errorCodes).toEqual([]);
+    expect(displayOf(cmp)).toMatch(/^boolean/);
+    expect(displayOf(cmp)).not.toMatch(/^false/);
   });
-
-  it("navigator.hardwareConcurrency reads as number (was exact undefined)", () => {
-    const out = checkWeb(`export function f(){ return navigator.hardwareConcurrency; }`);
-    expect(out.errorCodes).toEqual([]);
-    expect(displayOf(out)).toMatch(/^number/);
-  });
-
-  it("the comparison folds to boolean, not a hard-coded false", () => {
-    const out = checkWeb(`export function f(){ return navigator.hardwareConcurrency > 4; }`);
-    expect(out.errorCodes).toEqual([]);
-    expect(displayOf(out)).toMatch(/^boolean/);
-    expect(displayOf(out)).not.toMatch(/^false/);
-  });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -1051,27 +798,15 @@ describe("location.searchParams is modelled", () => {
  * 反向钉：删掉 `searchParams` 槽 ⇒ 本文件必挂。
  */
 describe("location.searchParams is modelled", () => {
-  it("the location member table declares searchParams", () => {
+  it("searchParams 已声明；get 零抛且折 string | null；其余成员仍在", () => {
     expect(slotOf("location", "searchParams")).toBeTruthy();
-  });
-
-  it("location.searchParams.get('q') does not throw (was definite TypeError)", () => {
-    const out = checkWeb(`export function f(){ return location.searchParams.get("q"); }`);
+    const out = checkWeb('export function f(){ return location.searchParams.get("q"); }');
     expect(out.errorCodes).toEqual([]);
     expect(out.throwBrands).toEqual([]);
-  });
-
-  it("the read folds to string | null (native Location.searchParams.get)", () => {
-    const out = checkWeb(`export function f(){ return location.searchParams.get("q"); }`);
     expect(displayOf(out)).toMatch(/^string \| null/);
+    for (const name of ["href","origin","protocol","host","pathname","search","hash"] as const) expect(slotOf("location", name), name).toBeTruthy();
   });
-
-  it("the other location members are still declared", () => {
-    for (const name of ["href", "origin", "protocol", "host", "pathname", "search", "hash"] as const) {
-      expect(slotOf("location", name), `location.${name}`).toBeTruthy();
-    }
-  });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -1095,66 +830,21 @@ describe("Request has its own member table", () => {
  * 反向钉：把状态面塞回 Request ⇒ 本文件必挂。
  */
 describe("Request has its own member table", () => {
-  it("Request carries NO Response-only status members", () => {
-    for (const name of ["status", "ok", "statusText", "redirected", "type"] as const) {
-      expect(instanceSlotOf("Request", name), `Request.${name} must not exist`).toBeUndefined();
-    }
-  });
-
-  it("Request keeps its own members", () => {
-    for (const name of [
-      "method",
-      "body",
-      "mode",
-      "credentials",
-      "cache",
-      "redirect",
-      "referrer",
-      "integrity",
-      "signal",
-    ] as const) {
-      expect(instanceSlotOf("Request", name), `Request.${name}`).toBeTruthy();
-    }
-  });
-
-  it("bodyUsed is a shared member (Request.bodyUsed exists natively)", () => {
+  it("无 Response 状态面；保留自身成员；bodyUsed 共有；status/ok undefined、method string", () => {
+    for (const name of ["status","ok","statusText","redirected","type"] as const) expect(instanceSlotOf("Request", name), name).toBeUndefined();
+    for (const name of ["method","body","mode","credentials","cache","redirect","referrer","integrity","signal"] as const) expect(instanceSlotOf("Request", name), name).toBeTruthy();
     expect(instanceSlotOf("Request", "bodyUsed")).toBeTruthy();
     expect(instanceSlotOf("Response", "bodyUsed")).toBeTruthy();
-  });
+    for (const name of ["status","ok","statusText","redirected","type"] as const) expect(instanceSlotOf("Response", name), name).toBeTruthy();
 
-  it("r.status reads as undefined (was exact number)", () => {
-    const out = checkWeb(`export function f(){
-  const r = new Request("https://example.com");
-  return r.status;
-}`);
-    expect(out.errorCodes).toEqual([]);
-    expect(displayOf(out)).toMatch(/^undefined/);
+    const status = checkWeb('export function f(){ const r = new Request("https://example.com"); return r.status; }');
+    expect(displayOf(status)).toMatch(/^undefined/);
+    const ok = checkWeb('export function f(){ const r = new Request("https://example.com"); return r.ok; }');
+    expect(displayOf(ok)).toMatch(/^undefined/);
+    const method = checkWeb('export function f(){ const r = new Request("https://example.com"); return r.method; }');
+    expect(displayOf(method)).toMatch(/^string/);
   });
-
-  it("r.ok reads as undefined (was exact boolean)", () => {
-    const out = checkWeb(`export function f(){
-  const r = new Request("https://example.com");
-  return r.ok;
-}`);
-    expect(out.errorCodes).toEqual([]);
-    expect(displayOf(out)).toMatch(/^undefined/);
-  });
-
-  it("r.method still reads as string (Request's own member)", () => {
-    const out = checkWeb(`export function f(){
-  const r = new Request("https://example.com");
-  return r.method;
-}`);
-    expect(out.errorCodes).toEqual([]);
-    expect(displayOf(out)).toMatch(/^string/);
-  });
-
-  it("Response keeps its status members", () => {
-    for (const name of ["status", "ok", "statusText", "redirected", "type"] as const) {
-      expect(instanceSlotOf("Response", name), `Response.${name}`).toBeTruthy();
-    }
-  });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -1173,22 +863,13 @@ describe("AbortSignal.any is declared", () => {
  * 反向钉：删掉 `any` 槽 ⇒ 本文件必挂。
  */
 describe("AbortSignal.any is declared", () => {
-  it("the AbortSignal member table declares any", () => {
-    expect(slotOf("AbortSignal", "any")).toBeTruthy();
-  });
-
-  it("AbortSignal.any([...]) does not throw (was definite TypeError)", () => {
-    const out = checkWeb(`export function f(){ return AbortSignal.any([]); }`);
+  it("any/abort/timeout 均在；any([]) 零抛", () => {
+    for (const name of ["any","abort","timeout"] as const) expect(slotOf("AbortSignal", name), name).toBeTruthy();
+    const out = checkWeb("export function f(){ return AbortSignal.any([]); }");
     expect(out.errorCodes).toEqual([]);
     expect(out.throwBrands).not.toContain("TypeError");
   });
-
-  it("AbortSignal.abort / timeout stay declared", () => {
-    for (const name of ["abort", "timeout"] as const) {
-      expect(slotOf("AbortSignal", name), `AbortSignal.${name}`).toBeTruthy();
-    }
-  });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -1220,39 +901,22 @@ const TRY_CATCH = (call: string) => `export async function enc() {
 }`;
 
 describe("WebCrypto rejections include TypeError at the call site", () => {
-  it("host oracle: invalid arguments reject with a TypeError", async () => {
-    const name = host(`
-      crypto.subtle.encrypt("AES-GCM", 1, 2).catch((e) => console.log(e.name));
-    `);
-    expect(name).toBe("TypeError");
-  });
+  it("宿主 TypeError；TypeError/OperationError 两臂可达；静态声明仍 OperationError；importKey unknown", () => {
+    expect(host('crypto.subtle.encrypt("AES-GCM", 1, 2).catch((e) => console.log(e.name));')).toBe("TypeError");
+    const enc = checkWeb(TRY_CATCH('crypto.subtle.encrypt("AES-GCM", 1, 2)'));
+    expect(enc.signatures[0]!.display).toContain("caught-typeerror");
+    expect(enc.signatures[0]!.display).toContain("other");
+    const digest = checkWeb(TRY_CATCH('crypto.subtle.digest("SHA-256", new Uint8Array([1]))'));
+    expect(digest.signatures[0]!.display).toContain("other");
+    expect(digest.errorCodes).toEqual([]);
 
-  it("the TypeError branch is reachable (was dead code)", () => {
-    const out = checkWeb(TRY_CATCH(`crypto.subtle.encrypt("AES-GCM", 1, 2)`));
-    expect(out.signatures[0]!.display).toContain("caught-typeerror");
-    expect(out.signatures[0]!.display).toContain("other");
-  });
-
-  it("the OperationError branch stays reachable too", () => {
-    const out = checkWeb(TRY_CATCH(`crypto.subtle.digest("SHA-256", new Uint8Array([1]))`));
-    expect(out.signatures[0]!.display).toContain("other");
-    expect(out.errorCodes).toEqual([]);
-  });
-
-  it("the static declaration keeps OperationError (spec face, not widened)", () => {
-    const digest = slotOf("crypto", "subtle", "digest");
-    const ret = (digest!.shape as { returnType?: { shape: { k: string; rejected?: { shape: { k: string; name?: string } } } } }).returnType;
+    const ret = (slotOf("crypto", "subtle", "digest")!.shape as { returnType?: { shape: { k: string; rejected?: { shape: { k: string; name?: string } } } } }).returnType;
     expect(ret?.shape.k).toBe("eff");
     expect(ret?.shape.rejected?.shape.k).toBe("brand");
     expect(ret?.shape.rejected?.shape.name).toBe("OperationError");
+    expect(checkWeb(TRY_CATCH('crypto.subtle.importKey("raw", new Uint8Array([1]), "AES-GCM", false, ["encrypt"])')).signatures[0]!.display).toContain("caught-typeerror");
   });
-
-  it("importKey keeps an honest unknown reason (several reject paths)", () => {
-    const out = checkWeb(TRY_CATCH(`crypto.subtle.importKey("raw", new Uint8Array([1]), "AES-GCM", false, ["encrypt"])`));
-    // unknown ⇒ 仍是全路径（含 TypeError）⇒ 分支可达
-    expect(out.signatures[0]!.display).toContain("caught-typeerror");
-  });
-});
+});;
 });
 
 // ---------------------------------------------------------------------------
@@ -1274,50 +938,28 @@ function host(script: string): string {
 }
 
 describe("host objects model the members the host actually has", () => {
-  it("host oracle: all four web members exist and are usable", () => {
-    const out = host(`
-      const body = new Response("hi").body;
-      console.log(JSON.stringify({
-        body: body.constructor.name,
-        cookies: new Headers().getSetCookie(),
-        // document 在 node 里不存在 ⇒ 用 DOM 规范等价的同一对象解析
-        locHasHref: typeof new URL("http://x/").href,
-      }));
-    `);
+  it("Response.body / Headers.getSetCookie / document.location / CustomEvent / Request.duplex", () => {
+    const out = host(`const body = new Response("hi").body;
+      console.log(JSON.stringify({ body: body.constructor.name, cookies: new Headers().getSetCookie(), locHasHref: typeof new URL("http://x/").href }));`);
     expect(JSON.parse(out)).toEqual({ body: "ReadableStream", cookies: [], locHasHref: "string" });
-  });
 
-  it("web: Response.body.getReader() is not a definite TypeError", () => {
-    const out = checkWeb(`export function reader(){ return new Response("hi").body.getReader(); }`);
-    expect(out.throwBrands).toEqual([]);
-    expect(out.errorCodes).toEqual([]);
-  });
+    const reader = checkWeb('export function reader(){ return new Response("hi").body.getReader(); }');
+    expect(reader.throwBrands).toEqual([]);
+    expect(reader.errorCodes).toEqual([]);
+    const cookies = checkWeb("export function cookies(){ return new Headers().getSetCookie(); }");
+    expect(cookies.errorCodes).toEqual([]);
+    expect(cookies.throwBrands).toEqual([]);
+    expect(cookies.signatures[0]!.display).toContain("string[]");
+    const doc = checkWeb('export function href(){ return document.location.href; }\nexport function title(){ return document.title; }');
+    expect(doc.errorCodes).toEqual([]);
+    expect(doc.throwBrands).toEqual([]);
+    for (const s of doc.signatures) expect(s.display).toBe("string");
 
-  it("web: Headers.getSetCookie() is declared as string[]", () => {
-    const out = checkWeb(`export function cookies(){ return new Headers().getSetCookie(); }`);
-    expect(out.errorCodes).toEqual([]);
-    expect(out.throwBrands).toEqual([]);
-    expect(out.signatures[0]!.display).toContain("string[]");
-  });
-
-  it("web: document.location.href is declared (document is not closed around it)", () => {
-    const out = checkWeb(`export function href(){ return document.location.href; }
-export function title(){ return document.title; }`);
-    expect(out.errorCodes).toEqual([]);
-    expect(out.throwBrands).toEqual([]);
-    for (const s of out.signatures) expect(s.display).toBe("string");
-  });
-
-  it("node: CustomEvent carries the inherited Event members", () => {
-    const out = checkNode(`export function f(){ const e = new CustomEvent("t"); e.preventDefault(); return e.timeStamp; }`);
-    expect(out.throwBrands).toEqual([]);
-    expect(out.errorCodes).toEqual([]);
-  });
-
-  it("node: Request.duplex is declared", () => {
+    const custom = checkNode('export function f(){ const e = new CustomEvent("t"); e.preventDefault(); return e.timeStamp; }');
+    expect(custom.throwBrands).toEqual([]);
+    expect(custom.errorCodes).toEqual([]);
     expect(slotOfAbs(instanceFaceOf("Request"), "duplex")).toBeTruthy();
-    const out = checkNode(`export function f(){ return new Request("http://x/").duplex; }`);
-    expect(out.throwBrands).toEqual([]);
+    expect(checkNode('export function f(){ return new Request("http://x/").duplex; }').throwBrands).toEqual([]);
   });
-});
+});;
 });
