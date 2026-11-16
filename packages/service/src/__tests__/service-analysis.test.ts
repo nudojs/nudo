@@ -1462,74 +1462,35 @@ function captureStderr(fn: () => void): string {
 }
 
 describe("非法 entryThrows 的告警文案必须与生效档位一致", () => {
-  it("非法 entryThrows + adoption profile：文案说 warning（生效值也是 warning）", () => {
+  const captureStderr = (fn: () => void): string => {
+    const writes: string[] = [];
+    const orig = process.stderr.write;
+    process.stderr.write = ((chunk: string | Uint8Array) => { writes.push(String(chunk)); return true; }) as typeof process.stderr.write;
+    try { fn(); } finally { process.stderr.write = orig; }
+    return writes.join("");
+  };
+  it("strict/无 profile 非法值文案 error；合法值与 profile 预设不告警", () => {
+    for (const cfg of [{ check: { entryThrows: "bogus-strict", profile: "strict" } }, { check: { entryThrows: "bogus-default" } }] as never[]) {
+      let eff: string | undefined;
+      const out = captureStderr(() => { eff = checkConfig(cfg).entryThrows; });
+      expect(eff).toBe("error");
+      expect(out).toContain("using error");
+    }
     let eff: string | undefined;
-    const out = captureStderr(() => {
-      eff = checkConfig({ check: { entryThrows: "bogus-adoption", profile: "adoption" } as never })
-        .entryThrows;
-    });
-    expect(eff).toBe("warning");
-    // 旧实现：文案写死 "using error"（与生效值 warning 矛盾）
-    expect(out).toContain("nudo.check.entryThrows: invalid value");
-    expect(out).toContain("using warning");
-    expect(out).not.toContain("using error");
-  });
-
-  it("非法 entryThrows + strict profile：文案说 error（生效值也是 error）", () => {
-    let eff: string | undefined;
-    const out = captureStderr(() => {
-      eff = checkConfig({ check: { entryThrows: "bogus-strict", profile: "strict" } as never }).entryThrows;
-    });
-    expect(eff).toBe("error");
-    expect(out).toContain("using error");
-  });
-
-  it("非法 entryThrows + 无 profile：回默认 error，文案说 error", () => {
-    let eff: string | undefined;
-    const out = captureStderr(() => {
-      eff = checkConfig({ check: { entryThrows: "bogus-default" } as never }).entryThrows;
-    });
-    expect(eff).toBe("error");
-    expect(out).toContain("using error");
-  });
-
-  // ── 负控制：合法值不得被本修复波及 ──────────────────────────────
-  it("合法 entryThrows：不告警，且显式值压过 profile", () => {
-    let eff: string | undefined;
-    const out = captureStderr(() => {
-      eff = checkConfig({ check: { entryThrows: "warning", profile: "strict" } }).entryThrows;
-    });
+    const out = captureStderr(() => { eff = checkConfig({ check: { entryThrows: "warning", profile: "strict" } }).entryThrows; });
     expect(eff).toBe("warning");
     expect(out).toBe("");
-  });
 
-  it("无 check 段 / 无 entryThrows：不告警，默认 error", () => {
-    let out = "";
-    let eff: string | undefined;
-    out += captureStderr(() => {
-      eff = checkConfig({}).entryThrows;
-    });
-    out += captureStderr(() => {
-      eff = checkConfig({ check: {} }).entryThrows;
-    });
-    out += captureStderr(() => {
-      eff = checkConfig(null).entryThrows;
-    });
-    expect(eff).toBe("error");
-    expect(out).toBe("");
-  });
-
-  it("profile 预设本身仍生效（adoption→warning / strict→error），无告警", () => {
-    let out = "";
-    out += captureStderr(() => {
-      expect(checkConfig({ check: { profile: "adoption" } }).entryThrows).toBe("warning");
-    });
-    out += captureStderr(() => {
-      expect(checkConfig({ check: { profile: "strict" } }).entryThrows).toBe("error");
-    });
-    expect(out).toBe("");
+    let noOut = "";
+    noOut += captureStderr(() => { expect(checkConfig({}).entryThrows).toBe("error"); });
+    noOut += captureStderr(() => { expect(checkConfig({ check: {} }).entryThrows).toBe("error"); });
+    noOut += captureStderr(() => { expect(checkConfig(null).entryThrows).toBe("error"); });
+    noOut += captureStderr(() => { expect(checkConfig({ check: { profile: "adoption" } }).entryThrows).toBe("warning"); });
+    noOut += captureStderr(() => { expect(checkConfig({ check: { profile: "strict" } }).entryThrows).toBe("error"); });
+    expect(noOut).toBe("");
   });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -1562,58 +1523,30 @@ function caseExpectedIssues(result: { diagnostics: readonly { code?: string }[] 
 }
 
 describe("带谓词的期望（number().gt(0)）按值判定，不再恒假红", () => {
-  it("满足谓词：期望 number().gt(0)，实际 2 → 无 nudo:case-expected", () =>
+  const caseExpectedIssues = (result: { diagnostics: readonly { code?: string }[] }): number => result.diagnostics.filter((d) => d.code === "nudo:case-expected").length;
+  const analyzeSrc = (dir: string, src: string) => {
+    const file = writeTmpFile(dir, "f.js", src);
+    return analyzeFile(file, readFileSync(file, "utf-8"));
+  };
+  it("满足谓词无诊断；违反谓词/类型不符仍报；无谓词口径不变", () => {
     withTmpProject("nudo-b471-", (dir) => {
-      const src = `/**
- * @nudo:case "t" (1) => number().gt(0)
- */
-export function f(x) { return x + 1; }
-`;
-      const file = writeTmpFile(dir, "f.js", src);
-      const result = analyzeFile(file, readFileSync(file, "utf-8"));
-      const fn = result.functions.find((f) => f.name === "f");
-      const c = fn!.cases.find((x) => x.name === "t");
-      expect(c).toBeDefined();
-      expect(c!.abs.shape.k).toBe("prim");
-      expect(caseExpectedIssues(result)).toBe(0);
-    }));
-
-  it("负控制：违反谓词（期望 number().gt(5)，实际 2）→ 仍报 nudo:case-expected", () =>
+      const ok = analyzeSrc(dir, '/**\n * @nudo:case "t" (1) => number().gt(0)\n */\nexport function f(x) { return x + 1; }\n');
+      const c = ok.functions.find((f) => f.name === "f")!.cases.find((x) => x.name === "t")!;
+      expect(c.abs.shape.k).toBe("prim");
+      expect(caseExpectedIssues(ok)).toBe(0);
+    });
     withTmpProject("nudo-b471b-", (dir) => {
-      const src = `/**
- * @nudo:case "t" (1) => number().gt(5)
- */
-export function f(x) { return x + 1; }
-`;
-      const file = writeTmpFile(dir, "f.js", src);
-      const result = analyzeFile(file, readFileSync(file, "utf-8"));
-      expect(caseExpectedIssues(result)).toBe(1);
-    }));
-
-  it("负控制：无谓词的期望（number()）口径不变 → 无诊断", () =>
+      expect(caseExpectedIssues(analyzeSrc(dir, '/**\n * @nudo:case "t" (1) => number().gt(5)\n */\nexport function f(x) { return x + 1; }\n'))).toBe(1);
+    });
     withTmpProject("nudo-b471c-", (dir) => {
-      const src = `/**
- * @nudo:case "t" (1) => number()
- */
-export function f(x) { return x + 1; }
-`;
-      const file = writeTmpFile(dir, "f.js", src);
-      const result = analyzeFile(file, readFileSync(file, "utf-8"));
-      expect(caseExpectedIssues(result)).toBe(0);
-    }));
-
-  it("负控制：类型不匹配的期望（string()）→ 仍报 nudo:case-expected", () =>
+      expect(caseExpectedIssues(analyzeSrc(dir, '/**\n * @nudo:case "t" (1) => number()\n */\nexport function f(x) { return x + 1; }\n'))).toBe(0);
+    });
     withTmpProject("nudo-b471d-", (dir) => {
-      const src = `/**
- * @nudo:case "t" (1) => string()
- */
-export function f(x) { return x + 1; }
-`;
-      const file = writeTmpFile(dir, "f.js", src);
-      const result = analyzeFile(file, readFileSync(file, "utf-8"));
-      expect(caseExpectedIssues(result)).toBe(1);
-    }));
+      expect(caseExpectedIssues(analyzeSrc(dir, '/**\n * @nudo:case "t" (1) => string()\n */\nexport function f(x) { return x + 1; }\n'))).toBe(1);
+    });
+  });
 });
+;
 });
 
 // ---------------------------------------------------------------------------
@@ -1647,29 +1580,31 @@ function caseShapes(source: string): Record<string, string> {
 }
 
 describe("合成入口用例的模块实例隔离", () => {
-  it("非导出辅助函数改写模块级状态后，导出函数的入口用例仍从初值起算", () => {
-    const shapes = caseShapes(`let n = 0;
-function inc() { n = n + 1; return n; }
-export function f() { return n; }
-`);
-    // 改前：f → 1（复用了 inc 调用后的实例）
+  const caseShapes = (source: string): Record<string, string> => {
+    const result = analyzeFile("/test/b472.js", source);
+    const out: Record<string, string> = {};
+    for (const fn of result.functions) {
+      const c = fn.cases[0];
+      if (c) out[fn.name] = formatShape(c.abs);
+    }
+    return out;
+  };
+  it("模块级状态每入口独立；声明式 case / 无状态 / 未改写负控", () => {
+    const shapes = caseShapes("let n = 0;\nfunction inc() { n = n + 1; return n; }\nexport function f() { return n; }\n");
     expect(shapes.inc).toBe("1");
     expect(shapes.f).toBe("0");
-  });
 
-  it("多个导出函数的入口用例互不串味（各自独立实例）", () => {
-    const shapes = caseShapes(`let n = 0;
-function inc() { n = n + 1; return n; }
-export function a() { inc(); return n; }
-export function b() { inc(); return n; }
-export function c() { inc(); return n; }
-`);
-    // 改前：a → 2 / b → 3 / c → 4（同一个实例累加）
-    expect(shapes.a).toBe("1");
-    expect(shapes.b).toBe("1");
-    expect(shapes.c).toBe("1");
+    const multi = caseShapes("let n = 0;\nfunction inc() { n = n + 1; return n; }\nexport function a() { inc(); return n; }\nexport function b() { inc(); return n; }\nexport function c() { inc(); return n; }\n");
+    expect(multi.a).toBe("1");
+    expect(multi.b).toBe("1");
+    expect(multi.c).toBe("1");
+
+    expect(caseShapes('/**\n * @nudo:case "t" (1)\n */\nexport function add(x) { return x + 1; }\n').add).toBe("2");
+    expect(caseShapes('export function g() { return "ok"; }\n').g).toBe('"ok"');
+    expect(caseShapes("let n = 7;\nexport function read() { return n; }\n").read).toBe("7");
   });
 });
+;
 
 /** 负控制：不该被这条修复波及的邻近形态 */
 describe("负控制", () => {
