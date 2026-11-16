@@ -910,140 +910,41 @@ describe("负控制：this 归属不被改写", () => {
 // for (o.x of …) 成员头每轮写回成员槽
 // ---------------------------------------------------------------------------
 describe("for (o.x of …) 成员头每轮写回成员槽", () => {
-/**
- * 回归：`for (o.x of …)` / `for (o.x in …)` 的**成员表达式头**。
- *
- * ES 语义（ForIn/OfHeadEvaluation 的 AssignmentElement 形态）：头目标是
- * **赋值目标**——每轮把迭代项**写回**该成员槽（`o.x` = 末轮项）。
- *
- * 修复前：头绑定只认「声明符 / 标识符」两种形态 ⇒ `MemberExpression` 头
- * **落不到任何一支** ⇒ 头只绑到回调形参 `_item`，**没有任何**对 `o.x` 的
- * 赋值发射 ⇒ `o.x` 保持循环前的旧值（引擎折出 exact `0`，原生是末轮值
- * `3` / `"b"`）⇒ L2 假绿 + `nudo test` 假红。
- *
- * 不变量（负控制钉住）：`const` / `let` 头仍是块级每轮新绑定（不写回外层
- * 绑定）；未被头赋值的成员保持旧值。
- */
-
-
-
-
-
-/** 引擎求值结果字面量值 */
-function v(src: string) {
-  return litValue___nudojs_core_6(call(src, "f").result);
-}
-
-/** 原生 oracle（new Function） */
-function native(body: string): unknown {
-  // eslint-disable-next-line no-new-func
-  return new Function(body)();
-}
-
-const wrap = (body: string) => `export function f() { ${body} }`;
-
-describe("for (o.x of …) 成员头每轮写回成员槽", () => {
-  it("for (o.x of [1,2,3]) 后 o.x === 3", () => {
-    const src = wrap(`const o={x:0}; for (o.x of [1,2,3]) {} return o.x;`);
-    expect(v(src)).toEqual({ ok: true, value: 3 });
-    expect(native(`const o={x:0}; for (o.x of [1,2,3]) {} return o.x;`)).toBe(3);
+  const wrap = (body: string) => `export function f() { ${body} }`;
+  const v = (src: string) => litValue(call(src, "f").result);
+  const native = (body: string): unknown => new Function(body)();
+  it("of/in 成员头、计算键、多层、标识符头、const 守卫与原生对拍", () => {
+    for (const [src, want] of [
+      [`const o={x:0}; for (o.x of [1,2,3]) {} return o.x;`, 3],
+      [`const o={x:0}; for (o.x in {a:1,b:2}) {} return o.x;`, "b"],
+      [`const o={x:0,y:0}; for (o.x of [1,2]) { o.y = o.x * 2; } return o.y;`, 4],
+      [`const o={x:0}; const key="x"; for (o[key] of [1,2,3]) {} return o.x;`, 3],
+      [`const o={a:{x:0}}; for (o.a.x of [1,2,3]) {} return o.a.x;`, 3],
+      [`let x=0; for (x of [1,2,3]) {} return x;`, 3],
+      [`let k=""; for (k in {a:1,b:2}) {} return k;`, "b"],
+    ] as const) {
+      expect(v(wrap(src)), src).toEqual({ ok: true, value: want });
+      expect(native(src), src).toBe(want);
+    }
+    const constHead = `const c = 1; try { for (c of [1,2]) {} return c; } catch (e) { return "TypeError"; }`;
+    expect(v(wrap(constHead))).toEqual({ ok: true, value: "TypeError" });
+    expect(native(constHead)).toBe("TypeError");
   });
-
-  it("for (o.x in {a:1,b:2}) 后 o.x === 'b'", () => {
-    const src = wrap(`const o={x:0}; for (o.x in {a:1,b:2}) {} return o.x;`);
-    expect(v(src)).toEqual({ ok: true, value: "b" });
-    expect(native(`const o={x:0}; for (o.x in {a:1,b:2}) {} return o.x;`)).toBe("b");
-  });
-
-  it("头写回后体内可读到当轮值", () => {
-    const src = wrap(`const o={x:0,y:0}; for (o.x of [1,2]) { o.y = o.x * 2; } return o.y;`);
-    expect(v(src)).toEqual({ ok: true, value: 4 });
-    expect(native(`const o={x:0,y:0}; for (o.x of [1,2]) { o.y = o.x * 2; } return o.y;`)).toBe(4);
-  });
-
-  it("计算键成员头：o[key] 写回生效", () => {
-    const src = wrap(`const o={x:0}; const key="x"; for (o[key] of [1,2,3]) {} return o.x;`);
-    expect(v(src)).toEqual({ ok: true, value: 3 });
-    expect(native(`const o={x:0}; const key="x"; for (o[key] of [1,2,3]) {} return o.x;`)).toBe(3);
-  });
-
-  it("多层成员头：o.a.x 写回生效", () => {
-    const src = wrap(`const o={a:{x:0}}; for (o.a.x of [1,2,3]) {} return o.a.x;`);
-    expect(v(src)).toEqual({ ok: true, value: 3 });
-    expect(native(`const o={a:{x:0}}; for (o.a.x of [1,2,3]) {} return o.a.x;`)).toBe(3);
-  });
-
-  it("标识符头：for (x of …) 写回既有绑定", () => {
-    const src = wrap(`let x=0; for (x of [1,2,3]) {} return x;`);
-    expect(v(src)).toEqual({ ok: true, value: 3 });
-    expect(native(`let x=0; for (x of [1,2,3]) {} return x;`)).toBe(3);
-  });
-
-  it("标识符头（for-in）：for (k in …) 写回既有绑定", () => {
-    const src = wrap(`let k=""; for (k in {a:1,b:2}) {} return k;`);
-    expect(v(src)).toEqual({ ok: true, value: "b" });
-    expect(native(`let k=""; for (k in {a:1,b:2}) {} return k;`)).toBe("b");
-  });
-
-  it("标识符头写 const 绑定 = 原生 TypeError（写回通道的 const 守卫）", () => {
-    const src = wrap(`const c = 1; try { for (c of [1,2]) {} return c; } catch (e) { return "TypeError"; }`);
-    expect(v(src)).toEqual({ ok: true, value: "TypeError" });
-    expect(
-      native(`const c = 1; try { for (c of [1,2]) {} return c; } catch (e) { return "TypeError"; }`),
-    ).toBe("TypeError");
-  });
-});
-
-describe("产品面：nudo check 签名不再折出旧值", () => {
-  const NUDO_SRC = `
-export const num = number();
-`;
-  const opts = sidecarOpts("std178c", NUDO_SRC, "/t/b178.js");
-  const IMP = `/// @nudo:import { num } from "./std178c.nudo.js"\n`;
-
-  it("for (o.x of [1,2,3]) 后 o.x 折出 3（不再是旧值 0）", () => {
-    const r = checkSource___nudojs_core(
-      "/t/b178.js",
-      IMP +
-        `
-export function f() {
-  const o = { x: 0 };
-  for (o.x of [1, 2, 3]) {}
-  return o.x;
-}
-`,
-      pTrue___nudojs_core,
-      opts,
-    );
+  it("产品面签名折新值；const/let 头与未赋值成员负控", () => {
+    const NUDO_SRC = "\nexport const num = number();\n";
+    const opts = sidecarOpts("std178c", NUDO_SRC, "/t/b178.js");
+    const IMP = '/// @nudo:import { num } from "./std178c.nudo.js"\n';
+    const r = checkSource___nudojs_core("/t/b178.js", IMP + "\nexport function f() {\n  const o = { x: 0 };\n  for (o.x of [1, 2, 3]) {}\n  return o.x;\n}\n", pTrue___nudojs_core, opts);
     expect(r.summary.errors).toBe(0);
     expect(sigOf(r, "f")).toMatch(/3/);
     expect(sigOf(r, "f")).not.toMatch(/=> 0$/);
+    expect(v(wrap(`let x=0; for (const y of [1,2]) {} return x;`))).toEqual({ ok: true, value: 0 });
+    expect(v(wrap(`let x=0; for (let y of [1,2]) {} return x;`))).toEqual({ ok: true, value: 0 });
+    expect(v(wrap(`const o={x:0,y:7}; for (const y of [1,2]) {} return o.x+"/"+o.y;`))).toEqual({ ok: true, value: "0/7" });
+    expect(v(wrap(`const o={x:0,y:7}; for (o.x of [1,2]) {} return o.y;`))).toEqual({ ok: true, value: 7 });
   });
 });
-
-describe("负控制：无头赋值的目标保持旧值", () => {
-  it("const 头不写回外层绑定（仍是块级每轮新绑定）", () => {
-    const src = wrap(`let x=0; for (const y of [1,2]) {} return x;`);
-    expect(v(src)).toEqual({ ok: true, value: 0 });
-    expect(native(`let x=0; for (const y of [1,2]) {} return x;`)).toBe(0);
-  });
-
-  it("let 头不写回外层绑定", () => {
-    const src = wrap(`let x=0; for (let y of [1,2]) {} return x;`);
-    expect(v(src)).toEqual({ ok: true, value: 0 });
-  });
-
-  it("未被头赋值的成员保持旧值", () => {
-    const src = wrap(`const o={x:0,y:7}; for (const y of [1,2]) {} return o.x+"/"+o.y;`);
-    expect(v(src)).toEqual({ ok: true, value: "0/7" });
-  });
-
-  it("成员头不影响其它成员", () => {
-    const src = wrap(`const o={x:0,y:7}; for (o.x of [1,2]) {} return o.y;`);
-    expect(v(src)).toEqual({ ok: true, value: 7 });
-  });
-});
-});
+;
 
 // ---------------------------------------------------------------------------
 // 成员目标自增的写回时刻（测试位 / 判别位 / 步进位）
@@ -3952,164 +3853,35 @@ describe("defineProperty 实现 ValidateAndApplyPropertyDescriptor", () => {
 // array-like 的访问器 length / 索引不再被忽略
 // ---------------------------------------------------------------------------
 describe("array-like 的访问器 length / 索引不再被忽略", () => {
-/**
- * 回归：array-like 的 `length` / 索引是**访问器**时不再整体失效。
- *
- * ES 语义（node 实测）：
- * - `Array.from(arrayLike)` 走 array-like 路径时**先** GetMethod(items,
- * @@iterator)（无 ⇒ 走 length 路径），随后 `len = ToLength(Get(items,
- * "length"))`，再对 k ∈ [0, len) 逐个 `Get(items, k)`；
- * - 对象字面量的 `get length()` / `get 0()` 是**真访问器**——每次
- * Array.from 恰好读一次 length、每个索引各读一次（getter 的副作用
- * 真实发生）。
- *
- * 修复前：array-like 读数**裸读 shape 槽**，而 transpile 只在槽里留
- * `$lit(void 0)` 占位（真 getter 住 accessorTable 侧表）⇒ length 被当
- * undefined（ToLength → 0 ⇒ 折 exact 空数组）、索引读成 undefined，且
- * getter 的副作用（计数 / 写状态）整体消失。
- *
- * 修法：`evalArrayFrom` 的 array-like 臂改经 `accessorReadDomain`
- * （accessors.ts——投影面同款读法）取 length / 索引的读域；每次
- * Array.from 对同一键只读一次（原生同款）。
- *
- * 负控制钉住：data-length 形态、数组 / 字符串 / Set 迭代物、无 length
- * 槽、只有索引访问器而 length 是数据槽——全部与原生同口径不变。
- */
-
-
-
-
-
-
-/** 结果字面量值（litValue） */
-function v(src: string) {
-  return litValue___nudojs_core_27(call(src, "f").result);
-}
-
-const wrap = (body: string) => `export function f() { ${body} }`;
-
-describe("array-like 的访问器 length / 索引不再被忽略", () => {
-  it("Array.from：访问器 length 决定元素数（原生 \"a,b\"，改前 \"\"）", () => {
-    expect(
-      v(wrap(`const o = { get length(){ return 2; }, 0: "a", 1: "b" }; return Array.from(o).join(",");`)),
-    ).toEqual({ ok: true, value: "a,b" });
+  const wrap = (body: string) => `export function f() { ${body} }`;
+  const v = (src: string) => litValue(call(src, "f").result);
+  it("Array.from/借用 slice/map/indexOf 取访问器 length 与索引；getter 只一次；混合来源", () => {
+    expect(v(wrap(`const o = { get length(){ return 2; }, 0: "a", 1: "b" }; return Array.from(o).join(",");`))).toEqual({ ok: true, value: "a,b" });
+    expect(v(wrap(`let n = 0; const o = { get length(){ n++; return 2; }, 0: "a", 1: "b" }; const a = Array.from(o); return a.length + ":" + n;`))).toEqual({ ok: true, value: "2:1" });
+    expect(v(wrap(`const o = { get 0(){ return "g"; }, length: 1 }; return Array.from(o).join(",");`))).toEqual({ ok: true, value: "g" });
+    expect(v(wrap(`const o = { get length(){ return 2; }, 0: "a", 1: "b" }; return Array.prototype.slice.call(o).join(",");`))).toEqual({ ok: true, value: "a,b" });
+    expect(v(wrap(`const o = { get length(){ return 2; }, 0: "a", 1: "b" }; return Array.prototype.map.call(o, x => x.toUpperCase()).join(",");`))).toEqual({ ok: true, value: "A,B" });
+    expect(v(wrap(`const o = { get length(){ return 2; }, 0: "a", 1: "b" }; return Array.prototype.indexOf.call(o, "b");`))).toEqual({ ok: true, value: 1 });
+    expect(v(wrap(`const o = { get 1(){ return "z"; }, length: 3, 0: "a" }; return Array.from(o).join(",");`))).toEqual({ ok: true, value: "a,z," });
   });
-
-  it("Array.from：getter 副作用落地且**只发生一次**（原生 \"2:1\"，改前 \"0:0\"）", () => {
-    expect(
-      v(
-        wrap(
-          `let n = 0; const o = { get length(){ n++; return 2; }, 0: "a", 1: "b" }; const a = Array.from(o); return a.length + ":" + n;`,
-        ),
-      ),
-    ).toEqual({ ok: true, value: "2:1" });
-  });
-
-  it("Array.from：索引访问器的值被取到（原生 \"g\"，改前 \"\"）", () => {
-    expect(
-      v(wrap(`const o = { get 0(){ return "g"; }, length: 1 }; return Array.from(o).join(",");`)),
-    ).toEqual({ ok: true, value: "g" });
-  });
-
-  it("借用调用 slice.call：访问器 length 生效（原生 \"a,b\"，改前 \"\"）", () => {
-    expect(
-      v(
-        wrap(
-          `const o = { get length(){ return 2; }, 0: "a", 1: "b" }; return Array.prototype.slice.call(o).join(",");`,
-        ),
-      ),
-    ).toEqual({ ok: true, value: "a,b" });
-  });
-
-  it("借用调用 map.call：访问器 length 生效（原生 \"A,B\"，改前 \"\"）", () => {
-    expect(
-      v(
-        wrap(
-          `const o = { get length(){ return 2; }, 0: "a", 1: "b" }; return Array.prototype.map.call(o, x => x.toUpperCase()).join(",");`,
-        ),
-      ),
-    ).toEqual({ ok: true, value: "A,B" });
-  });
-
-  it("借用调用 indexOf.call：访问器 length 生效（原生 1，改前 -1）", () => {
-    expect(
-      v(
-        wrap(
-          `const o = { get length(){ return 2; }, 0: "a", 1: "b" }; return Array.prototype.indexOf.call(o, "b");`,
-        ),
-      ),
-    ).toEqual({ ok: true, value: 1 });
-  });
-
-  it("索引访问器 + 数据 length：两个来源各按其读域（原生 \"a,z,\"）", () => {
-    expect(
-      v(wrap(`const o = { get 1(){ return "z"; }, length: 3, 0: "a" }; return Array.from(o).join(",");`)),
-    ).toEqual({ ok: true, value: "a,z," });
-  });
-});
-
-describe("负控制：非访问器形态不受影响", () => {
-  it("data-length 的 array-like 仍按槽读", () => {
-    expect(
-      v(wrap(`const o = { length: 2, 0: "a", 1: "b" }; return Array.from(o).join(",");`)),
-    ).toEqual({ ok: true, value: "a,b" });
-    expect(
-      v(wrap(`const o = { length: 2, 0: "a", 1: "b" }; return Array.prototype.slice.call(o).join(",");`)),
-    ).toEqual({ ok: true, value: "a,b" });
-    expect(
-      v(wrap(`const o = { length: 2, 0: "a", 1: "b" }; return Array.prototype.indexOf.call(o, "b");`)),
-    ).toEqual({ ok: true, value: 1 });
-  });
-
-  it("迭代物（数组 / 字符串 / Set）不受 array-like 臂影响", () => {
-    // 迭代物走迭代路径（返抽象 arr——元素域 join，非 tuple）：与 array-like 臂无关
+  it("负控：data-length/迭代物/无 length/ToLength/门禁", () => {
+    expect(v(wrap(`const o = { length: 2, 0: "a", 1: "b" }; return Array.from(o).join(",");`))).toEqual({ ok: true, value: "a,b" });
+    expect(v(wrap(`const o = { length: 2, 0: "a", 1: "b" }; return Array.prototype.slice.call(o).join(",");`))).toEqual({ ok: true, value: "a,b" });
+    expect(v(wrap(`const o = { length: 2, 0: "a", 1: "b" }; return Array.prototype.indexOf.call(o, "b");`))).toEqual({ ok: true, value: 1 });
     expect(call(wrap(`return Array.from([1,2]);`)).result.shape.k).toBe("arr");
     expect(call(wrap(`return Array.from("ab");`)).result.shape.k).toBe("arr");
     expect(call(wrap(`return Array.from(new Set([1,2]));`)).result.shape.k).toBe("arr");
-  });
-
-  it("无 length 槽的闭对象仍折 0 长（原生 0）", () => {
-    expect(v(wrap(`const o = { 0: "a", 1: "b" }; return Array.from(o).length;`))).toEqual({
-      ok: true,
-      value: 0,
-    });
-  });
-
-  it("访问器 length 返回 undefined ⇒ ToLength 0（原生 0）", () => {
-    expect(v(wrap(`const o = { get length(){ return undefined; }, 0: "a" }; return Array.from(o).length;`)))
-      .toEqual({ ok: true, value: 0 });
-  });
-
-  it("访问器 length 返回字符串 \"2\" ⇒ ToLength 2（原生 2）", () => {
-    expect(v(wrap(`const o = { get length(){ return "2"; }, 0: "a", 1: "b" }; return Array.from(o).length;`)))
-      .toEqual({ ok: true, value: 2 });
-  });
-
-  it("L2 门禁：访问器 array-like 是**纯值错**——门禁恒绿，差异在签名", () => {
-    // 改前改后门禁都是 0 诊断（不抛）——差异只体现在签名值上。
-    const r = checkSource(
-      "/t/bug294-arrlike.js",
-      `export function fromAccessorLength() {
-  const o = { get length() { return 2; }, 0: "a", 1: "b" };
-  return Array.from(o).join(",");
-}
-`,
-      pTrue,
-      {},
-    );
+    expect(v(wrap(`const o = { 0: "a", 1: "b" }; return Array.from(o).length;`))).toEqual({ ok: true, value: 0 });
+    expect(v(wrap(`const o = { get length(){ return undefined; }, 0: "a" }; return Array.from(o).length;`))).toEqual({ ok: true, value: 0 });
+    expect(v(wrap(`const o = { get length(){ return "2"; }, 0: "a", 1: "b" }; return Array.from(o).length;`))).toEqual({ ok: true, value: 2 });
+    const r = checkSource("/t/b294-arrlike.js", `export function fromAccessorLength() {\n  const o = { get length() { return 2; }, 0: "a", 1: "b" };\n  return Array.from(o).join(",");\n}\n`, pTrue, {});
     expect(r.issues.some((i) => i.code === "nudo:entry-may-throw")).toBe(false);
   });
-});
-
-describe("越界待办（读面 / apply 面仍绕过访问器侧表）", () => {
-  // 下列三处的读数在**我方文件之外**（arr-index.ts 的 $len / $idx、
-  // invoke.ts 的 expandApplyArgs）——裸读槽 ⇒ 拿到占位 undefined。
-  // 修法：同款经 accessorReadDomain（accessors.ts 已导出）取读域。
   it.todo("原生 o.length === 2（引擎当前 undefined）——需 arr-index.ts 的 $len 经 accessorReadDomain");
   it.todo("原生 o[0] === \"g\"（引擎当前 undefined）——需 arr-index.ts 的 $idx 经 accessorReadDomain");
   it.todo("原生 f.apply(null, o) === 3（引擎当前 0）——需 invoke.ts 的 expandApplyArgs 经 accessorReadDomain");
 });
-});
+;
 
 // ---------------------------------------------------------------------------
 // Array.from 的第三实参 thisArg 透传给回调
