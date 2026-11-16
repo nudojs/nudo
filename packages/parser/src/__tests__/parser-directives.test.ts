@@ -13,12 +13,6 @@ import { parseSinonExpr } from "../directives/mock-expr.ts";
 // ---------------------------------------------------------------------------
 // 文件级指令（mock-module / import / env）诊断
 // ---------------------------------------------------------------------------
-function fileDiags(src: string): DirectiveDiag[] {
-  const diags: DirectiveDiag[] = [];
-  extractFileDirectives(parse(src), { diags });
-  return diags;
-}
-
 function inlineOf(source: string): {
   dirs: ReturnType<typeof extractInlineDirectives>;
   diags: DirectiveDiag[];
@@ -378,383 +372,107 @@ describe("解析失败与显式 unknown 可区分", () => {
 // ---------------------------------------------------------------------------
 // file-level directives in a class / object body are not file scope
 // ---------------------------------------------------------------------------
-describe("file-level directives in a class / object body are not file scope", () => {
-/**
- * 的「文件级指令**位置闸门**」漏掉 **class 体 / 对象字面量体**
- * ⇒ 方法（字段）**上方**的 `/// @nudo:env` 被**静默提升**成**整文件** env（零诊断）。
- *
- * 根因（`file-directives.ts` 的 `functionBodyRanges`）：闸门区间取自
- * `listFnDirectiveScopes` 的 `scope.node.start/end`；对 `ClassMethod` /
- * `ObjectMethod`，Babel 给的 `node.start` 是**方法键**的位置 ⇒ 方法**上方**的
- * 行注释落在区间**之外** ⇒ 不算 misplaced ⇒ 指令被提升成文件级。
- *
- * 修法：闸门区间再纳入**类体（`ClassBody`）**与**对象字面量体
- * （`ObjectExpression`）** ⇒ 方法 / 字段上方的注释一并被拦下（忽略 +
- * `nudo:directive-syntax` 告警），与函数体口径一致。
- *
- * ⚠ 类**声明上方**的注释（`/// @nudo:env node` 写在 `class A {` 之前）仍是
- * 合法的顶层位置 ⇒ 放行（对照组）。
- */
-
-
-
-
 function fileDiags(src: string): DirectiveDiag[] {
   const diags: DirectiveDiag[] = [];
   extractFileDirectives(parse(src), { diags });
   return diags;
 }
 
-/** 类体里、方法上方的文件级指令。 */
-const ENV_IN_CLASS = `export class A {
-  /// @nudo:env node
-  m() {
-    return 1;
-  }
-}
-`;
-
-/** 对象字面量里、方法上方的文件级指令。 */
-const ENV_IN_OBJECT = `export const o = {
-  /// @nudo:env node
-  m() {
-    return 1;
-  },
-};
-`;
-
-/** 类体里、字段上方的文件级指令。 */
-const ENV_IN_CLASS_FIELD = `export class A {
-  /// @nudo:env node
-  x = 1;
-}
-`;
-
-/** mock-module 同样受闸门约束。 */
-const MOCK_MODULE_IN_CLASS = `export class A {
-  /// @nudo:mock-module "fs" from "./mock-fs.js"
-  m() {
-    return 1;
-  }
-}
-`;
-
-describe("file-level directives in a class / object body are not file scope", () => {
-  it("`/// @nudo:env node` above a class method is not promoted + is diagnosed", () => {
-    const diags = fileDiags(ENV_IN_CLASS);
-    expect(diags).toHaveLength(1);
-    expect(diags[0]!.code).toBe("nudo:directive-syntax");
-    expect(diags[0]!.message).toContain("at the top of the file");
-    expect(extractFileDirectives(parse(ENV_IN_CLASS), { diags: [] })).toEqual([]);
-  });
-
-  it("`/// @nudo:env node` above an object-literal method is not promoted + is diagnosed", () => {
-    const diags = fileDiags(ENV_IN_OBJECT);
-    expect(diags).toHaveLength(1);
-    expect(diags[0]!.code).toBe("nudo:directive-syntax");
-    expect(extractFileDirectives(parse(ENV_IN_OBJECT), { diags: [] })).toEqual([]);
-  });
-
-  it("`/// @nudo:env node` above a class field is not promoted + is diagnosed", () => {
-    const diags = fileDiags(ENV_IN_CLASS_FIELD);
-    expect(diags).toHaveLength(1);
-    expect(diags[0]!.code).toBe("nudo:directive-syntax");
-    expect(extractFileDirectives(parse(ENV_IN_CLASS_FIELD), { diags: [] })).toEqual([]);
-  });
-
-  it("`/// @nudo:mock-module` above a class method is not promoted + is diagnosed", () => {
-    const diags = fileDiags(MOCK_MODULE_IN_CLASS);
-    expect(diags).toHaveLength(1);
-    expect(diags[0]!.code).toBe("nudo:directive-syntax");
-    expect(extractFileDirectives(parse(MOCK_MODULE_IN_CLASS), { diags: [] })).toEqual([]);
-  });
-
-  it("control: the same directive above the class declaration still works", () => {
-    const src = `/// @nudo:env node\nexport class A {\n  m() {\n    return 1;\n  }\n}\n`;
-    expect(fileDiags(src)).toEqual([]);
-    expect(extractFileDirectives(parse(src), { diags: [] })).toEqual([
-      { kind: "env", envs: ["node"] },
-    ]);
-  });
-
-  it("control: the same directive above the object literal statement still works", () => {
-    const src = `/// @nudo:env node\nexport const o = {\n  a: 1,\n};\n`;
-    expect(fileDiags(src)).toEqual([]);
-    expect(extractFileDirectives(parse(src), { diags: [] })).toEqual([
-      { kind: "env", envs: ["node"] },
-    ]);
-  });
-
-  it("control: a directive inside a function body is still diagnosed (Bug 847 unchanged)", () => {
-    const src = `export function f(a) {\n  /// @nudo:env node\n  return 1;\n}\n`;
-    const diags = fileDiags(src);
-    expect(diags).toHaveLength(1);
-    expect(diags[0]!.code).toBe("nudo:directive-syntax");
-    expect(extractFileDirectives(parse(src), { diags: [] })).toEqual([]);
-  });
-});
-});
-
-// ---------------------------------------------------------------------------
-// file-level directives in an array / destructuring body are not file scope
-// ---------------------------------------------------------------------------
-describe("file-level directives in an array / destructuring body are not file scope", () => {
-/**
- * 文件级指令的**位置闸门**漏掉 **ArrayExpression（数组字面量体）**
- * 与 **ObjectPattern（解构模式体）** ⇒ 写在数组元素 / 解构键**上方**的
- * `/// @nudo:env` 被**静默提升**成**整文件** env（零诊断）。
- *
- * 根因：闸门区间只覆盖「函数体」（）+「类体 / 对象字面量体」
- * （）；数组字面量体与解构模式体同属**嵌套体**，却**不在**闸门区间内
- * ⇒ 同族洞未闭合（两条通道**同口径**地漏，不是通道漂移）。
- *
- * 修法：闸门区间再纳入 `ArrayExpression` 与 `ObjectPattern`（+ 同族孪生
- * `ArrayPattern`）（parser AST 通道 + core 文本通道**孪生同款**）⇒ 数组元素 /
- * 解构键上方的文件级指令被拦下（不提升 + `nudo:directive-syntax` 告警，
- * **既有诊断码**）。
- *
- * ⚠ 声明**上方**的顶层指令（`class A {` / `const a = [` / `const {` 之前）
- * 仍是合法的顶层位置 ⇒ 放行（对照组）。
- */
-
-
-
-
-
-function fileDiags(src: string): DirectiveDiag[] {
-  const diags: DirectiveDiag[] = [];
-  extractFileDirectives(parse(src), { diags });
-  return diags;
-}
-
-/** parser AST 通道抽到的 env 名（文件级）。 */
-function parserEnvs(src: string): string[] {
-  return extractFileDirectives(parse(src), { diags: [] })
+const parserEnvs = (src: string): string[] =>
+  extractFileDirectives(parse(src), { diags: [] })
     .filter((d) => d.kind === "env")
     .flatMap((d) => d.envs);
-}
 
-/** parser AST 通道抽到的 mock-module 记录（归一化，与 core 文本通道同形）。 */
-function parserMockModules(src: string): Array<{
-  source: string;
-  names?: string[];
-  fromPath: string;
-}> {
-  return extractFileDirectives(parse(src), { diags: [] })
+const parserMockModules = (src: string): Array<{ source: string; names?: string[]; fromPath: string }> =>
+  extractFileDirectives(parse(src), { diags: [] })
     .filter((d) => d.kind === "mock-module")
-    .map((d) => ({
-      source: d.source,
-      ...(d.names ? { names: d.names } : {}),
-      fromPath: d.fromPath,
-    }));
-}
+    .map((d) => ({ source: d.source, ...(d.names ? { names: d.names } : {}), fromPath: d.fromPath }));
 
-/** core 文本通道抽到的 mock-module 记录（同形归一化）。 */
-function coreMockModules(src: string): Array<{
-  source: string;
-  names?: string[];
-  fromPath: string;
-}> {
-  return extractMockModuleRecords(src).map((r) => ({
-    source: r.source,
-    ...(r.names ? { names: r.names } : {}),
-    fromPath: r.fromPath,
-  }));
-}
+const coreMockModules = (src: string): Array<{ source: string; names?: string[]; fromPath: string }> =>
+  extractMockModuleRecords(src).map((r) => ({ source: r.source, ...(r.names ? { names: r.names } : {}), fromPath: r.fromPath }));
 
-// ---------------------------------------------------------------------------
-// 样例（新增两类嵌套体）
-// ---------------------------------------------------------------------------
+const envInClass = `export class A {\n  /// @nudo:env node\n  m() { return 1; }\n}\n`;
+const envInObject = `export const o = {\n  /// @nudo:env node\n  m() { return 1; },\n};\n`;
+const envInClassField = `export class A {\n  /// @nudo:env node\n  x = 1;\n}\n`;
+const mockInClass = `export class A {\n  /// @nudo:mock-module "fs" from "./mock-fs.js"\n  m() { return 1; }\n}\n`;
+const envInArray = `export const a = [\n  /// @nudo:env node\n  1,\n];\n`;
+const envInObjectPattern = `export const {\n  /// @nudo:env node\n  a,\n} = obj;\n`;
+const envInArrayPattern = `export const [\n  /// @nudo:env node\n  a,\n] = arr;\n`;
+const mockInArray = `export const a = [\n  /// @nudo:mock-module "fs" from "./mock-fs.js"\n  1,\n];\n`;
+const mockInObjectPattern = `export const {\n  /// @nudo:mock-module "fs" from "./mock-fs.js"\n  a,\n} = obj;\n`;
+const envInNestedArray = `export const a = [\n  [\n    /// @nudo:env node\n    1,\n  ],\n];\n`;
 
-/** 数组字面量体：元素上方的文件级指令。 */
-const ENV_IN_ARRAY = `export const a = [
-  /// @nudo:env node
-  1,
-];
-`;
-
-/** 解构模式体（`ObjectPattern`）：键上方的文件级指令。 */
-const ENV_IN_OBJECT_PATTERN = `export const {
-  /// @nudo:env node
-  a,
-} = obj;
-`;
-
-/** 数组解构模式体（`ArrayPattern`，`ObjectPattern` 的同族孪生）：元素上方的文件级指令。 */
-const ENV_IN_ARRAY_PATTERN = `export const [
-  /// @nudo:env node
-  a,
-] = arr;
-`;
-
-/** 数组字面量体里的 mock-module。 */
-const MOCK_MODULE_IN_ARRAY = `export const a = [
-  /// @nudo:mock-module "fs" from "./mock-fs.js"
-  1,
-];
-`;
-
-/** 解构模式体里的 mock-module。 */
-const MOCK_MODULE_IN_OBJECT_PATTERN = `export const {
-  /// @nudo:mock-module "fs" from "./mock-fs.js"
-  a,
-} = obj;
-`;
-
-/** 更深一层：数组里的数组。 */
-const ENV_IN_NESTED_ARRAY = `export const a = [
-  [
-    /// @nudo:env node
-    1,
-  ],
-];
-`;
-
-// ---------------------------------------------------------------------------
-// 验收 1 / 2：数组字面量体 + 解构模式体
-// ---------------------------------------------------------------------------
-
-describe("file-level directives in an array / destructuring body are not file scope", () => {
-  it("`/// @nudo:env node` above an array element is not promoted + is diagnosed", () => {
-    const diags = fileDiags(ENV_IN_ARRAY);
-    expect(diags).toHaveLength(1);
-    expect(diags[0]!.code).toBe("nudo:directive-syntax");
-    expect(diags[0]!.message).toContain("at the top of the file");
-    expect(extractFileDirectives(parse(ENV_IN_ARRAY), { diags: [] })).toEqual([]);
-    // core 文本通道：同一口径 ⇒ 同样不生效
-    expect(extractFileEnvNames(ENV_IN_ARRAY)).toEqual([]);
+describe("嵌套体里的文件级指令不提升", () => {
+  it("class 体 / 对象字面量体 / 字段 / mock-module 均拦截并告警", () => {
+    const blocked = [
+      { name: "class method", src: envInClass, kind: "env" },
+      { name: "object method", src: envInObject, kind: "env" },
+      { name: "class field", src: envInClassField, kind: "env" },
+      { name: "mock-module in class", src: mockInClass, kind: "mock" },
+    ];
+    for (const { name, src, kind } of blocked) {
+      const diags = fileDiags(src);
+      expect(diags, name).toHaveLength(1);
+      expect(diags[0]!.code, name).toBe("nudo:directive-syntax");
+      expect(diags[0]!.message, name).toContain("at the top of the file");
+      expect(extractFileDirectives(parse(src), { diags: [] }), name).toEqual([]);
+      if (kind === "env") expect(extractFileEnvNames(src), name).toEqual([]);
+      else expect(extractMockModuleRecords(src), name).toEqual([]);
+    }
   });
 
-  it("`/// @nudo:env node` above a destructuring key is not promoted + is diagnosed", () => {
-    const diags = fileDiags(ENV_IN_OBJECT_PATTERN);
-    expect(diags).toHaveLength(1);
-    expect(diags[0]!.code).toBe("nudo:directive-syntax");
-    expect(diags[0]!.message).toContain("at the top of the file");
-    expect(extractFileDirectives(parse(ENV_IN_OBJECT_PATTERN), { diags: [] })).toEqual([]);
-    expect(extractFileEnvNames(ENV_IN_OBJECT_PATTERN)).toEqual([]);
+  it("数组 / 解构模式 / 嵌套数组里的 env 与 mock-module 均拦截", () => {
+    const blocked = [
+      { name: "array element env", src: envInArray, kind: "env" },
+      { name: "object pattern env", src: envInObjectPattern, kind: "env" },
+      { name: "array pattern env", src: envInArrayPattern, kind: "env" },
+      { name: "mock in array", src: mockInArray, kind: "mock" },
+      { name: "mock in object pattern", src: mockInObjectPattern, kind: "mock" },
+      { name: "nested array env", src: envInNestedArray, kind: "env" },
+    ];
+    for (const { name, src, kind } of blocked) {
+      const diags = fileDiags(src);
+      expect(diags, name).toHaveLength(1);
+      expect(diags[0]!.code, name).toBe("nudo:directive-syntax");
+      expect(extractFileDirectives(parse(src), { diags: [] }), name).toEqual([]);
+      if (kind === "env") expect(extractFileEnvNames(src), name).toEqual([]);
+      else expect(extractMockModuleRecords(src), name).toEqual([]);
+    }
   });
 
-  it("`/// @nudo:env node` above an array-pattern element is not promoted + is diagnosed", () => {
-    const diags = fileDiags(ENV_IN_ARRAY_PATTERN);
+  it("对照：声明上方的顶层指令与函数体内指令口径", () => {
+    const legal = [
+      { name: "class 上方", src: `/// @nudo:env node\nexport class A { m() { return 1; } }\n` },
+      { name: "对象字面量上方", src: `/// @nudo:env node\nexport const o = { a: 1 };\n` },
+    ];
+    for (const { name, src } of legal) {
+      expect(fileDiags(src), name).toEqual([]);
+      expect(extractFileDirectives(parse(src), { diags: [] }), name).toEqual([{ kind: "env", envs: ["node"] }]);
+    }
+    const inFn = `export function f() {\n  /// @nudo:env node\n  return 1;\n}\n`;
+    const diags = fileDiags(inFn);
     expect(diags).toHaveLength(1);
     expect(diags[0]!.code).toBe("nudo:directive-syntax");
-    expect(diags[0]!.message).toContain("at the top of the file");
-    expect(extractFileDirectives(parse(ENV_IN_ARRAY_PATTERN), { diags: [] })).toEqual([]);
-    expect(extractFileEnvNames(ENV_IN_ARRAY_PATTERN)).toEqual([]);
-  });
-
-  it("`/// @nudo:mock-module` above an array element is not promoted + is diagnosed", () => {
-    const diags = fileDiags(MOCK_MODULE_IN_ARRAY);
-    expect(diags).toHaveLength(1);
-    expect(diags[0]!.code).toBe("nudo:directive-syntax");
-    expect(extractFileDirectives(parse(MOCK_MODULE_IN_ARRAY), { diags: [] })).toEqual([]);
-    expect(extractMockModuleRecords(MOCK_MODULE_IN_ARRAY)).toEqual([]);
-  });
-
-  it("`/// @nudo:mock-module` above a destructuring key is not promoted + is diagnosed", () => {
-    const diags = fileDiags(MOCK_MODULE_IN_OBJECT_PATTERN);
-    expect(diags).toHaveLength(1);
-    expect(diags[0]!.code).toBe("nudo:directive-syntax");
-    expect(extractFileDirectives(parse(MOCK_MODULE_IN_OBJECT_PATTERN), { diags: [] })).toEqual([]);
-    expect(extractMockModuleRecords(MOCK_MODULE_IN_OBJECT_PATTERN)).toEqual([]);
-  });
-
-  it("a nested array body is gated too (deeper nesting)", () => {
-    const diags = fileDiags(ENV_IN_NESTED_ARRAY);
-    expect(diags).toHaveLength(1);
-    expect(diags[0]!.code).toBe("nudo:directive-syntax");
-    expect(extractFileDirectives(parse(ENV_IN_NESTED_ARRAY), { diags: [] })).toEqual([]);
-    expect(extractFileEnvNames(ENV_IN_NESTED_ARRAY)).toEqual([]);
+    expect(extractFileDirectives(parse(inFn), { diags: [] })).toEqual([]);
   });
 });
 
-// ---------------------------------------------------------------------------
-// 验收 3：类体 / 对象字面量体（ 行为不得回退）
-// ---------------------------------------------------------------------------
-
-describe("the class / object body gate () is not regressed", () => {
-  it("`/// @nudo:env node` above a class method is still blocked + diagnosed", () => {
-    const src = `export class A {\n  /// @nudo:env node\n  m() {\n    return 1;\n  }\n}\n`;
-    const diags = fileDiags(src);
-    expect(diags).toHaveLength(1);
-    expect(diags[0]!.code).toBe("nudo:directive-syntax");
-    expect(extractFileDirectives(parse(src), { diags: [] })).toEqual([]);
-    expect(extractFileEnvNames(src)).toEqual([]);
-  });
-
-  it("`/// @nudo:env node` above a class field is still blocked + diagnosed", () => {
-    const src = `export class A {\n  /// @nudo:env node\n  x = 1;\n}\n`;
-    const diags = fileDiags(src);
-    expect(diags).toHaveLength(1);
-    expect(diags[0]!.code).toBe("nudo:directive-syntax");
-    expect(extractFileDirectives(parse(src), { diags: [] })).toEqual([]);
-    expect(extractFileEnvNames(src)).toEqual([]);
-  });
-
-  it("`/// @nudo:env node` above an object-literal method is still blocked + diagnosed", () => {
-    const src = `export const o = {\n  /// @nudo:env node\n  m() {\n    return 1;\n  },\n};\n`;
-    const diags = fileDiags(src);
-    expect(diags).toHaveLength(1);
-    expect(diags[0]!.code).toBe("nudo:directive-syntax");
-    expect(extractFileDirectives(parse(src), { diags: [] })).toEqual([]);
-    expect(extractFileEnvNames(src)).toEqual([]);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// 验收 4 / 5：合法顶层位置放行（不得过度拦截）
-// ---------------------------------------------------------------------------
-
-describe("legal top-level positions still pass (no over-blocking)", () => {
-  it("a top-of-file directive still works", () => {
-    const src = `/// @nudo:env node\nexport function f() {\n  return 1;\n}\n`;
-    expect(fileDiags(src)).toEqual([]);
-    expect(extractFileDirectives(parse(src), { diags: [] })).toEqual([
-      { kind: "env", envs: ["node"] },
-    ]);
-    expect(extractFileEnvNames(src)).toEqual(["node"]);
-  });
-
-  it("a directive above a class declaration still works", () => {
-    const src = `/// @nudo:env node\nexport class A {\n  m() {\n    return 1;\n  }\n}\n`;
-    expect(fileDiags(src)).toEqual([]);
-    expect(parserEnvs(src)).toEqual(["node"]);
-    expect(extractFileEnvNames(src)).toEqual(["node"]);
-  });
-
-  it("a directive above an object literal statement still works", () => {
-    const src = `/// @nudo:env node\nexport const o = {\n  a: 1,\n};\n`;
-    expect(fileDiags(src)).toEqual([]);
-    expect(parserEnvs(src)).toEqual(["node"]);
-    expect(extractFileEnvNames(src)).toEqual(["node"]);
-  });
-
-  it("a directive above an array literal statement still works", () => {
-    const src = `/// @nudo:env node\nexport const a = [1, 2];\n`;
-    expect(fileDiags(src)).toEqual([]);
-    expect(parserEnvs(src)).toEqual(["node"]);
-    expect(extractFileEnvNames(src)).toEqual(["node"]);
-  });
-
-  it("a directive above a destructuring declaration still works", () => {
-    const src = `/// @nudo:env node\nexport const { a, b } = obj;\n`;
-    expect(fileDiags(src)).toEqual([]);
-    expect(parserEnvs(src)).toEqual(["node"]);
-    expect(extractFileEnvNames(src)).toEqual(["node"]);
-  });
-
-  it("a directive above an array-destructuring declaration still works", () => {
-    const src = `/// @nudo:env node\nexport const [a, b] = arr;\n`;
-    expect(fileDiags(src)).toEqual([]);
-    expect(parserEnvs(src)).toEqual(["node"]);
-    expect(extractFileEnvNames(src)).toEqual(["node"]);
-  });
-
-  it("a top-level directive after an array literal still works", () => {
-    const src = `export const a = [1, 2];\n/// @nudo:env node\n`;
-    expect(fileDiags(src)).toEqual([]);
-    expect(parserEnvs(src)).toEqual(["node"]);
-    expect(extractFileEnvNames(src)).toEqual(["node"]);
+describe("合法顶层指令不被过度拦截", () => {
+  it("文件首 / class 上方 / 对象 / 数组 / 两种解构 / 数组后置都放行且两通道一致", () => {
+    const cases = [
+      `/// @nudo:env node\nexport function f() { return 1; }\n`,
+      `/// @nudo:env node\nexport class A { m() { return 1; } }\n`,
+      `/// @nudo:env node\nexport const o = { a: 1 };\n`,
+      `/// @nudo:env node\nexport const a = [1, 2];\n`,
+      `/// @nudo:env node\nexport const { a, b } = obj;\n`,
+      `/// @nudo:env node\nexport const [a, b] = arr;\n`,
+      `export const a = [1, 2];\n/// @nudo:env node\n`,
+    ];
+    for (const src of cases) {
+      expect(fileDiags(src), src).toEqual([]);
+      expect(parserEnvs(src), src).toEqual(["node"]);
+      expect(extractFileEnvNames(src), src).toEqual(["node"]);
+    }
   });
 });
 
@@ -909,7 +627,6 @@ describe("the parser AST channel and the core text channel agree case by case", 
       expect(parserMockModules(src)).toEqual(coreMockModules(src));
     },
   );
-});
 });
 
 // ---------------------------------------------------------------------------
