@@ -1,19 +1,11 @@
 ```audit
 title	rootCause	gap	action	status	evidence
+子目录文件与同目录文件：改 env 内容都必须 miss	env 并集/项目根表	没测该层	keep	keep	—
+项目级 env 按项目根：存在不假阳、加载失败可见；文件级仍按文件目录	env 并集/项目根表	没测该层	keep	keep	—
+顺序无关；Response/performance 并集；pf 不判必抛；单 env 负控	env 并集/项目根表	没测该层	keep	keep	—
 覆盖 .js/.mjs/.cjs/.ts/.mts/.cts；排除声明/侧车/draft/JSX	env 缓存首表	没测该层	keep	keep	—
 env 内容变 mtime 不变 ⇒ 必须 miss；内容不变两次一致	env 缓存首表	没测该层	keep	keep	—
 default 槽 + interop 标记；默认/命名空间同签名；无假 unknown-inference；具名槽不污染	env 缓存首表	没测该层	keep	keep	—
-"env 名顺序互换 ⇒ 签名逐字相同 + 门禁结论相同"	"回归：多个 `@nudo:env` 名的合并必须取**并集**（与书写顺序无关）。 病灶（`packages/service/src/evaluator/env-loader.ts` · `applyEnvDefinition`）： 同名全局被**整块替换**（后一个 env 赢）⇒ `@nudo:env node, web` 与 `@nudo:env web, node` 得到两张不同的全局表 ⇒ **同一份源码**签名不同、 门禁结论相反（OK vs FAILED）——与文档承诺的 env 名之间是 union 相悖。 断言：expect(a.sigs).toEqual(b.sigs);；expect(a.issues).toE"	夹具漏形态	keep	keep	—
-"合并后的 Response 是并集：实例面覆盖 web 侧与 node 侧的全部槽位"	"回归：多个 `@nudo:env` 名的合并必须取**并集**（与书写顺序无关）。 病灶（`packages/service/src/evaluator/env-loader.ts` · `applyEnvDefinition`）： 同名全局被**整块替换**（后一个 env 赢）⇒ `@nudo:env node, web` 与 `@nudo:env web, node` 得到两张不同的全局表 ⇒ **同一份源码**签名不同、 门禁结论相反（OK vs FAILED）——与文档承诺的 env 名之间是 union 相悖。 断言：expect(mergedSlots.has(\"type\")).toBe(true); // web 侧"	夹具漏形态	keep	keep	—
-"合并后的 performance 含 web 侧独有的 toJSON + node 侧槽位（逐槽并集）"	"回归：多个 `@nudo:env` 名的合并必须取**并集**（与书写顺序无关）。 病灶（`packages/service/src/evaluator/env-loader.ts` · `applyEnvDefinition`）： 同名全局被**整块替换**（后一个 env 赢）⇒ `@nudo:env node, web` 与 `@nudo:env web, node` 得到两张不同的全局表 ⇒ **同一份源码**签名不同、 门禁结论相反（OK vs FAILED）——与文档承诺的 env 名之间是 union 相悖。 断言：expect(mergedSlots.has(\"toJSON\")).toBe(true);；expect"	夹具漏形态	keep	keep	—
-"pf() 两种顺序下都不再判「必抛 TypeError」（toJSON 并集后存在）"	"回归：多个 `@nudo:env` 名的合并必须取**并集**（与书写顺序无关）。 病灶（`packages/service/src/evaluator/env-loader.ts` · `applyEnvDefinition`）： 同名全局被**整块替换**（后一个 env 赢）⇒ `@nudo:env node, web` 与 `@nudo:env web, node` 得到两张不同的全局表 ⇒ **同一份源码**签名不同、 门禁结论相反（OK vs FAILED）——与文档承诺的 env 名之间是 union 相悖。 断言：expect(pf, names.join(\",\")).not.toContain(\"never thr"	夹具漏形态	keep	keep	—
-"负控：单 env（只写 web）时全局表与 check 行为逐字不变"	"一次 check 的可比面：签名串 + 诊断码 + 门禁结论 断言：expect(Object.keys(loaded).sort()).toEqual(Object.keys(own).sort());；expect(formatAbs(loaded[key]!), key).toBe(formatAbs(value));"	没测该层	keep	keep	—
-"负控：单 env（只写 node）时全局表与 env 自身声明逐字不变"	"回归：多个 `@nudo:env` 名的合并必须取**并集**（与书写顺序无关）。 病灶（`packages/service/src/evaluator/env-loader.ts` · `applyEnvDefinition`）： 同名全局被**整块替换**（后一个 env 赢）⇒ `@nudo:env node, web` 与 `@nudo:env web, node` 得到两张不同的全局表 ⇒ **同一份源码**签名不同、 门禁结论相反（OK vs FAILED）——与文档承诺的 env 名之间是 union 相悖。 断言：expect(Object.keys(loaded).sort()).toEqual(Object.ke"	夹具漏形态	keep	keep	—
-"假阳：项目级 env 在项目根存在 ⇒ 不得报「找不到 <proj>/src/env.ts」"	"没有 defineEnv 导出 ⇒ 加载「成功」但不是合法 env ⇒ 真实加载失败。 断言：expect(msgs).toEqual([]);"	没测该层	keep	keep	—
-"假阴：项目级 env 真实加载失败（记在项目根基准）⇒ 必须报出来"	"没有 defineEnv 导出 ⇒ 加载「成功」但不是合法 env ⇒ 真实加载失败。 断言：expect(msgs.length).toBeGreaterThan(0);；expect(msgs.join(\"\\n\")).toContain(join(dir, \"env.ts\"));"	没测该层	keep	keep	—
-"文件级 env 仍按**文件目录**解析（不得改成项目根）"	"没有 defineEnv 导出 ⇒ 加载「成功」但不是合法 env ⇒ 真实加载失败。 断言：expect(msgs).toHaveLength(1);；expect(msgs[0]).toContain(join(dir, \"src\", \"missing.ts\"));"	没测该层	keep	keep	—
-"env 文件在项目根、被分析文件在子目录 ⇒ 改 env 内容必须 miss"	"整文件分析缓存键里新增的「项目级 path env **内容**」维度用错了 **基准目录**。 修前：`analysisFileCacheKey` 用 `pathEnvContentFingerprint(projectEnvNames, dirname(filePath))` ⇒ 项目级 env（`package.json#nudo.env: [\"./env.ts\"]`，文件 在**项目根**）在被分析文件位于子目录（`src/app.js`）时，指纹读的是**不存在** 的 `<proj>/src/env.ts` ⇒ 内容退化成 `\"<unreadable>\"` 的常量哈希 ⇒ 键对该 env 的内容**实际不敏感**（想要的"	没测该层	keep	keep	—
-"负控制：env 文件与被分析文件同目录（项目根 = 文件目录）时同样必须 miss"	"整文件分析缓存键里新增的「项目级 path env **内容**」维度用错了 **基准目录**。 修前：`analysisFileCacheKey` 用 `pathEnvContentFingerprint(projectEnvNames, dirname(filePath))` ⇒ 项目级 env（`package.json#nudo.env: [\"./env.ts\"]`，文件 在**项目根**）在被分析文件位于子目录（`src/app.js`）时，指纹读的是**不存在** 的 `<proj>/src/env.ts` ⇒ 内容退化成 `\"<unreadable>\"` 的常量哈希 ⇒ 键对该 env 的内容**实际不敏感**（想要的"	没测该层	keep	keep	—
 "① 文件带 @nudo:env node ⇒ 项目级 env 仍可见（不是 never、无 builtin-unknown 假阳）"	"被分析文件**不带** `@nudo:env`（基线：项目级 env 恰好可见）。 断言：expect(ret).toContain(\"42\");；expect(ret).not.toContain(\"never\");"	没测该层	keep	keep	—
 "② 文件不带 @nudo:env ⇒ 行为不回退（仍能解析项目级 env）"	"被分析文件**不带** `@nudo:env`（基线：项目级 env 恰好可见）。 断言：expect(ret).toContain(\"42\");；expect(ret).not.toContain(\"never\");"	没测该层	keep	keep	—
 "③ 分析器通道与 CLI `nudo check` 结论一致（都 f() => 42）"	"被分析文件**不带** `@nudo:env`（基线：项目级 env 恰好可见）。 断言：expect(sig).toBeDefined();；expect(sig!.display).toContain(\"42\");"	没测该层	keep	keep	—
@@ -153,4 +145,15 @@ env 内容变、mtime 不变 ⇒ 第二次分析必须看到新类型（不得�
 对照组：env 内容不变 ⇒ 两次结论一致（缓存仍可命中，不引入抖动）	dup:env 缓存首表	commit:4e046aad
 与 migrate verify 同口径：.js/.mjs/.cjs/.ts/.mts/.cts 都是目标	dup:env 缓存首表	commit:4e046aad
 仍排除：声明文件 / 侧车 / draft / JSX（能力边界）	dup:env 缓存首表	commit:4e046aad
+env 名顺序互换 ⇒ 签名逐字相同 + 门禁结论相同	dup:env 并集/项目根表	commit:7999ba75
+合并后的 Response 是并集：实例面覆盖 web 侧与 node 侧的全部槽位	dup:env 并集/项目根表	commit:7999ba75
+合并后的 performance 含 web 侧独有的 toJSON + node 侧槽位（逐槽并集）	dup:env 并集/项目根表	commit:7999ba75
+pf() 两种顺序下都不再判「必抛 TypeError」（toJSON 并集后存在）	dup:env 并集/项目根表	commit:7999ba75
+负控：单 env（只写 web）时全局表与 check 行为逐字不变	dup:env 并集/项目根表	commit:7999ba75
+负控：单 env（只写 node）时全局表与 env 自身声明逐字不变	dup:env 并集/项目根表	commit:7999ba75
+假阳：项目级 env 在项目根存在 ⇒ 不得报「找不到 <proj>/src/env.ts」	dup:env 并集/项目根表	commit:7999ba75
+假阴：项目级 env 真实加载失败（记在项目根基准）⇒ 必须报出来	dup:env 并集/项目根表	commit:7999ba75
+文件级 env 仍按**文件目录**解析（不得改成项目根）	dup:env 并集/项目根表	commit:7999ba75
+env 文件在项目根、被分析文件在子目录 ⇒ 改 env 内容必须 miss	dup:env 并集/项目根表	commit:7999ba75
+负控制：env 文件与被分析文件同目录（项目根 = 文件目录）时同样必须 miss	dup:env 并集/项目根表	commit:7999ba75
 ```
