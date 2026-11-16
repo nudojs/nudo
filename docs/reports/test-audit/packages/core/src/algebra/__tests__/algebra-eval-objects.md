@@ -106,18 +106,7 @@ Object.prototype.toString 改写后 → 闭对象调用走用户写的实现	计
 prototype 读 description 抛；L2 记抛；实例与其它键负控	prim 成员表	没测该层	keep	keep	—
 number/boolean/bigint/属性读缺失 → undefined；后续读记 TypeError；string 同款	prim 成员表	没测该层	keep	keep	—
 负控：prim 原型方法/继承名/对象面不变	prim 成员表	没测该层	keep	keep	—
-Symbol('x').toString() → "Symbol(x)"	计算键/static 表	没测该层	keep	keep	—
-Symbol('x').toLocaleString() → "Symbol(x)"（不是 "[object Symbol]"）	计算键/static 表	没测该层	keep	keep	—
-Symbol().toString.call(1) → TypeError（brand check 不再丢）	计算键/static 表	没测该层	keep	keep	—
-Symbol.prototype.toString.call(1) → TypeError（负控制：原生同款）	计算键/static 表	没测该层	keep	keep	—
-typeof Symbol().toString → "function"	计算键/static 表	没测该层	keep	keep	—
-Symbol('x').valueOf() 仍是符号自身（既有语义）	计算键/static 表	没测该层	keep	keep	—
-(5).toString() → "5"	计算键/static 表	没测该层	keep	keep	—
-"ab".toString() → "ab"	计算键/static 表	没测该层	keep	keep	—
-true.toString() → "true"	计算键/static 表	没测该层	keep	keep	—
-Object.prototype.toString.call({}) → "[object Object]"（泛型面不受影响）	计算键/static 表	没测该层	keep	keep	—
-Object.prototype.toString.call([]) → "[object Array]"（泛型面不受影响）	计算键/static 表	没测该层	keep	keep	—
-Symbol('x').description → "x"（既有语义）	计算键/static 表	没测该层	keep	keep	—
+实例 toString/toLocaleString 取值；brand check 抛；typeof/valueOf；其它 prim 与泛型面负控	Symbol/freeze 表	没测该层	keep	keep	—
 sealed 截断/pop/shift 抛；增长/同长/未 seal/preventExtensions/frozen 口径	成员路径/sealed 表	没测该层	keep	keep	—
 A.g = 5（static getter-only）→ TypeError（catch 吸收）	计算键/static 表	没测该层	keep	keep	—
 A.g = 5 无 catch → 函数抛 TypeError（throws 面）	计算键/static 表	没测该层	keep	keep	—
@@ -204,12 +193,7 @@ array-like 迭代物同样透传 thisArg（原生 8）	计算键/static 表	没�
 L2 门禁不再假红：带 thisArg 的 Array.from 不再被判 may-throw	计算键/static 表	没测该层	keep	keep	—
 Reflect/Object 两面：陷阱派发/补全/任意键/非对象 TypeError/无陷阱回靶/非 Proxy 负控	Proxy gOPD 表	没测该层	keep	keep	—
 陷阱返回 undefined 不抛不假精确；原型键/三标志负控	Proxy gOPD 表	没测该层	keep	keep	—
-freeze：preventExtensions 陷阱返回 false ⇒ TypeError（改前不抛）	计算键/static 表	没测该层	keep	keep	—
-seal：preventExtensions 陷阱返回 false ⇒ TypeError（改前不抛）	计算键/static 表	没测该层	keep	keep	—
-freeze：defineProperty 陷阱返回 false ⇒ TypeError（改前不抛）	计算键/static 表	没测该层	keep	keep	—
-freeze：preventExtensions + 逐键 defineProperty 陷阱都派发（改前一个都不派发）	计算键/static 表	没测该层	keep	keep	—
-seal：同样派发两个陷阱（改前一个都不派发）	计算键/static 表	没测该层	keep	keep	—
-负控制：无陷阱的 Proxy 冻结不抛（原生同款）	计算键/static 表	没测该层	keep	keep	—
+preventExtensions/defineProperty 陷阱派发与 false 抛；调用序；无陷阱负控	Symbol/freeze 表	没测该层	keep	keep	—
 Proxy defineProperty 陷阱返 false → 返 false（改前定抛 TypeError）	计算键/static 表	没测该层	keep	keep	—
 Proxy defineProperty 陷阱返 true → 返 true	计算键/static 表	没测该层	keep	keep	—
 普通对象：成功 → true 且值落地	计算键/static 表	没测该层	keep	keep	—
@@ -711,4 +695,22 @@ F.prototype = 5 之后 f instanceof F → TypeError（RHS prototype 非对象）
 原型替换写成 null → TypeError（RHS prototype 非对象）	dup:instanceof 表	commit:1c15489f
 setPrototypeOf 到普通对象后不再折 exact true（原型链不可判 → 降 boolean）	dup:instanceof 表	commit:1c15489f
 负控制：原型替换后 fn 仍可调用、prototype 读回是新原型	dup:instanceof 表	commit:1c15489f
+Symbol('x').toString() → "Symbol(x)"	dup:Symbol/freeze 表	commit:088103ec
+Symbol('x').toLocaleString() → "Symbol(x)"（不是 "[object Symbol]"）	dup:Symbol/freeze 表	commit:088103ec
+Symbol().toString.call(1) → TypeError（brand check 不再丢）	dup:Symbol/freeze 表	commit:088103ec
+Symbol.prototype.toString.call(1) → TypeError（负控制：原生同款）	dup:Symbol/freeze 表	commit:088103ec
+typeof Symbol().toString → "function"	dup:Symbol/freeze 表	commit:088103ec
+Symbol('x').valueOf() 仍是符号自身（既有语义）	dup:Symbol/freeze 表	commit:088103ec
+(5).toString() → "5"	dup:Symbol/freeze 表	commit:088103ec
+"ab".toString() → "ab"	dup:Symbol/freeze 表	commit:088103ec
+true.toString() → "true"	dup:Symbol/freeze 表	commit:088103ec
+Object.prototype.toString.call({}) → "[object Object]"（泛型面不受影响）	dup:Symbol/freeze 表	commit:088103ec
+Object.prototype.toString.call([]) → "[object Array]"（泛型面不受影响）	dup:Symbol/freeze 表	commit:088103ec
+Symbol('x').description → "x"（既有语义）	dup:Symbol/freeze 表	commit:088103ec
+freeze：preventExtensions 陷阱返回 false ⇒ TypeError（改前不抛）	dup:Symbol/freeze 表	commit:088103ec
+seal：preventExtensions 陷阱返回 false ⇒ TypeError（改前不抛）	dup:Symbol/freeze 表	commit:088103ec
+freeze：defineProperty 陷阱返回 false ⇒ TypeError（改前不抛）	dup:Symbol/freeze 表	commit:088103ec
+freeze：preventExtensions + 逐键 defineProperty 陷阱都派发（改前一个都不派发）	dup:Symbol/freeze 表	commit:088103ec
+seal：同样派发两个陷阱（改前一个都不派发）	dup:Symbol/freeze 表	commit:088103ec
+负控制：无陷阱的 Proxy 冻结不抛（原生同款）	dup:Symbol/freeze 表	commit:088103ec
 ```
