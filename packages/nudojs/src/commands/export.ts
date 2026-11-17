@@ -210,7 +210,12 @@ function moduleIdOf(filePath: string, source: string): string {
   }
   const stem = basename(filePath).replace(/\.[cm]?[jt]s$/, "");
   const exports = [...localNamedExports(source)].sort().join(",");
-  return `${stem}|${exports}`;
+  // BUG-049：包外键必须带**目录维度** —— 旧键只有 `stem|导出集合`，两个不同
+  // 目录下的同名同导出模块得到同一个键 ⇒ `isSameModule` 判真 ⇒ 后导出的
+  // 静默覆盖前者的全部四份产物（exit 0、零告警）。目录名进键即可区分常见的
+  // 兄弟模块，且仍不含绝对路径（产物可复现）。
+  const parent = basename(dirname(filePath));
+  return parent && parent !== "." ? `${parent}/${stem}|${exports}` : `${stem}|${exports}`;
 }
 
 async function runExport(

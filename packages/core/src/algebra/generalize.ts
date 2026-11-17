@@ -872,6 +872,9 @@ export function extractFn(
   const entryStrict = (body: Node): boolean =>
     fnStrict || hasUseStrictDirective(body) || inStrictRegion(body);
 
+  // BUG-064：`export default <本地名>` 的导出槽是**标识符引用**，不是函数声明。
+  // 记下本地名，循环结束后把它的条目别名成 "default"。
+  let defaultLocalName: string | undefined;
   for (const stmt of file.program.body) {
     // export function / export const = fn / export default function
     let decl: Node = stmt;
@@ -880,6 +883,8 @@ export function extractFn(
     }
     if (stmt.type === "ExportDefaultDeclaration" && stmt.declaration) {
       decl = stmt.declaration;
+      const d = decl as { type?: string; name?: string };
+      if (d.type === "Identifier" && typeof d.name === "string") defaultLocalName = d.name;
     }
     if (decl.type === "FunctionDeclaration" && decl.id) {
       const formals = formalParamsFromNodes(decl.params as never);
@@ -1011,6 +1016,14 @@ export function extractFn(
       });
       formalsByName.set("default", formals);
     }
+  }
+
+  // BUG-064：把 `export default <本地名>` 的本地条目别名成 default（跨模块
+  // 桥接取 `extractFn(dep, "default")` 时不再拿到空形参表 ⇒ 假红 param-mismatch）。
+  if (defaultLocalName !== undefined && env.fns.has(defaultLocalName)) {
+    env.fns.set("default", env.fns.get(defaultLocalName)!);
+    const f = formalsByName.get(defaultLocalName);
+    if (f) formalsByName.set("default", f);
   }
 
   // CJS：exports.f = fn / module.exports = { f(){} } / module.exports = fn

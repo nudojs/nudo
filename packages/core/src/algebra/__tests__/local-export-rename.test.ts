@@ -70,4 +70,15 @@ describe("local export rename name mapping", () => {
     expect(g).toBeDefined();
     expect(g!.params).toEqual(["x"]);
   });
+
+  it("export default <本地名> 的形参表按本地声明取（BUG-064）", () => {
+    const src = `function inner(a) { return a; }\nexport default inner;\n`;
+    expect(extractFn(src, "default")?.params).toEqual(["a"]);
+    expect(generalizeFromAst("default", src)?.params).toEqual(["a"]);
+  });
+
+  it("负控制：export default 表达式（匿名函数）照旧按 default 取", () => {
+    const src = `export default function (b) { return b; }\n`;
+    expect(extractFn(src, "default")?.params).toEqual(["b"]);
+  });
 });
