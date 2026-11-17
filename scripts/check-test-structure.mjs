@@ -50,6 +50,21 @@ for (const file of files) {
   const at = (n) => `${file}:${sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1}`;
   const report = (n, message) => errors.push(`${at(n)} ${message}`);
 
+  // 进程级 e2e 的车道归属靠文件名：CI 的 PR/main 车道按 `**/*.e2e.test.ts`
+  // 排除它们（只在 nightly / `test:local --e2e` 跑）。import run-cli 却不带
+  // `.e2e` 后缀 = 悄悄回流到 PR 门禁，必须显式改名。
+  if (!file.endsWith(".e2e.test.ts")) {
+    for (const st of sf.statements) {
+      if (
+        ts.isImportDeclaration(st) &&
+        ts.isStringLiteralLike(st.moduleSpecifier) &&
+        st.moduleSpecifier.text === "./helpers/run-cli.ts"
+      ) {
+        report(st, "进程级 e2e（import helpers/run-cli）必须命名为 *.e2e.test.ts");
+      }
+    }
+  }
+
   const walk = (n) => {
     if (ts.isEmptyStatement(n)) {
       const p = n.parent;

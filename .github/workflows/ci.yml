@@ -21,10 +21,16 @@ concurrency:
 
 # 矩阵（build 只跑一次，dist 经 nudo-dist artifact 共享；构建产物另
 # 经 actions/cache 跨 run 复用——源码未变的 PR 直接命中缓存跳过 tsup）：
-#   push main         → lint / build / test×2 shard（全量，无 --changed）+ benchmark
-#   push dev|ci       → lint / build / test×2 shard（--changed 快速通道）
-#   pull_request      → lint / build / test-coverage×2 shard（--changed 子集 + fs-input，唯一测试门禁）
-#   schedule/dispatch → build / test:coverage×2 shard + coverage-merge（全量 + 硬阈值）/ benchmark / node-matrix
+#   push main         → lint / build / test×2 shard（全量 − e2e，无 --changed）+ benchmark
+#   push dev|ci       → lint / build / test×2 shard（--changed − e2e 快速通道）
+#   pull_request      → lint / build / test-coverage×2 shard（--changed 子集 − e2e + fs-input，唯一测试门禁）
+#   schedule/dispatch → build / test:coverage×2 shard + coverage-merge（全量，含 e2e + 硬阈值）/ benchmark / node-matrix
+#
+# CLI e2e（`*.e2e.test.ts`，进程级 spawn）只在 nightly / 手动 dispatch 执行
+# （2026-11-17 决策：快速迭代期以单元+集成覆盖率作为 PR/main 门禁；e2e 由
+# 夜间全量兜底）。改动 CLI / 进程面时本地跑 `pnpm run test:local --e2e`
+# （或 `--e2e --changed`）。发布门禁因此不再包含 e2e——发布前若动过 CLI，
+# 必须手动补跑一次 e2e。
 # 快速通道细节：test / test-coverage 按 git diff <since>...HEAD 选测试
 # （vitest --changed，模块图 + forceRerunTriggers 安全网，见
 # vitest.config.ts）；lint job 在无 .ts/.tsx/tsconfig/lockfile 变更时跳过三个 tsc。
@@ -277,6 +283,8 @@ jobs:
     name: Test (shard ${{ matrix.shard }}/2)
     # 仅 push：dev|ci 走 --changed 快速通道，main 全量跑（发布门禁——
     # Release 复用同 SHA 的 CI 绿结论）。
+    # 2026-11-17 起本 job 排除 `*.e2e.test.ts`（进程级 CLI e2e 只在 nightly/
+    # dispatch 跑，见文件头）；动过 CLI/进程面的发布必须手动补 `test:local --e2e`。
     # PR 不跑本 job：test-coverage-pr 用同一批 --changed 用例出覆盖率报告，
     # 用例失败它同样红，双跑只白花两个 runner 的分钟（详见文件头矩阵）。
     # 2 shard 并发压墙时；fail-fast 关闭以保留双 shard 结果。
@@ -358,9 +366,9 @@ jobs:
           if [ -n "${{ steps.changed.outputs.since }}" ]; then
             # --passWithNoTests：--changed 只命中 1 个文件时，2/2 shard 不能报
             # “shard count > test files”
-            npm run test -- --changed "${{ steps.changed.outputs.since }}" --shard=${{ matrix.shard }}/2 --passWithNoTests
+            npm run test -- --changed "${{ steps.changed.outputs.since }}" --shard=${{ matrix.shard }}/2 --exclude "**/*.e2e.test.ts" --passWithNoTests
           else
-            npm run test -- --shard=${{ matrix.shard }}/2
+            npm run test -- --shard=${{ matrix.shard }}/2 --exclude "**/*.e2e.test.ts"
           fi
 
   test-coverage-pr:
@@ -429,6 +437,7 @@ jobs:
           pnpm run test:coverage:diff --
           --changed "${{ github.event.pull_request.base.sha }}"
           --shard=${{ matrix.shard }}/2
+          --exclude "**/*.e2e.test.ts"
           --passWithNoTests
 
       - name: Upload coverage

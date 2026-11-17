@@ -26,32 +26,44 @@ worker 数按本机核数取（CI 仍 4）。2026-11-17 实测（16 核）：
 
 | 命令 | 面 | 用时 |
 |---|---|---|
-| `pnpm run test:local -- --changed` | 变更相关（日常内循环；与 CI PR 同口径） | 秒级 |
-| `pnpm run test:local --fast` | 全量减去 CLI e2e 目录与真实包扫描 | ~68s（893 文件） |
-| `pnpm run test:local` | 全量（预推送自检） | ~107s（978 文件 / 12438 用例） |
+| `pnpm run test:local -- --changed` | 变更相关（日常内循环，**含**受影响的 e2e） | 秒级 |
+| `pnpm run test:local --fast` | PR / main 门禁口径：全量 − 进程级 e2e − 真实包扫描 | ~74s（918 文件） |
+| `pnpm run test:local --e2e [-- --changed]` | 进程级 e2e（nightly 口径） | ~40s（58 文件 / 735 用例） |
+| `pnpm run test:local` | 全量（预推送自检，含 e2e） | ~106s（978 文件 / 12438 用例） |
 
-CI 不跑 `test:local`：PR / dev push 用 `--changed`（+ `test:fs-input`），
-main push 与 nightly 才跑全量——那是发布门禁。
+CI 车道（`NUDO_TEST_CLI=dist`，见 `.github/workflows/ci.yml` 头注）：
+
+- PR：`--changed` − e2e + `test:fs-input` + 覆盖率（唯一测试门禁）；
+- push dev|ci：`--changed` − e2e；
+- push main：全量 − e2e（发布门禁）；
+- nightly / dispatch：全量（含 e2e）+ 阈值覆盖率。
+
+进程级 e2e（`*.e2e.test.ts`，58 文件 / 735 用例，每条 2–5 次 CLI spawn）
+2026-11-17 起**只在 nightly / dispatch 与本地 `--e2e` 执行**：快速迭代期用
+单元 + 集成覆盖率作 PR/main 门禁，e2e 由夜间全量兜底。命名由
+`check-test-structure` 强制（import `helpers/run-cli` 的测试文件必须叫
+`*.e2e.test.ts`），防止新增 e2e 静默回流到 PR 门禁。
+
+代价记明：**发布门禁不再覆盖 CLI e2e**——动过 CLI / 进程面的发布必须本地补
+`pnpm run test:local --e2e`（或 `--e2e --changed`）。CI 侧仍有
+`verify:examples` 真实跑 CLI 示例矩阵承担一层冒烟。
 
 耗时用例分层（选面依据，不按文件数看）：
 
 - **unit**：core / service 投影 / env / parser 的引擎与代数断言（单用例多为 ms 级）。
-- **进程级 e2e**：`packages/nudojs/src/__tests__/`（958 用例，占测试体时长约一半；
-  每条 2–5 次 CLI spawn）。
+- **进程级 e2e**：`*.e2e.test.ts`（58 文件，约占测试体时长一半）。
 - **真编译门禁**：`service/emit` 里调 `tscNoEmit` 的 15 个文件（222 用例，真 tsc）。
 - **外部 oracle**：`check-real-*`（真实 npm 包）+ harvester 真实 `@types` 语料。
 
 `--changed` 的实际选择面取决于依赖方向（2026-11-17 用 `vitest list --changed`
 实测）：改 `packages/nudojs` 的叶子文件（如 `check-gate-config.ts`）只选
 **19 个文件**；改 `packages/core` 的任意引擎模块（`algebra/term.ts` 加一行
-注释）选中 **904 / 978 文件**（含 42 个 CLI e2e 文件）——CLI / LSP 测试静态
-import 引擎，所以引擎变更下 PR 实际≈全量。反向盲区也记一笔：纯 spawn 的 CLI
-用例不静态 import 改动模块，不会进 `--changed` 选择，只由 main / nightly 全量
-兜底。
+注释）选中 **904 / 978 文件**（含 40 个 e2e 文件）——CLI / LSP 测试静态
+import 引擎，所以引擎变更下 PR 实际≈全量（e2e 已在 CI 侧排除，本地
+`--changed` 仍会跑到受影响的 e2e）。
 
-因此 `--fast` 省的是**本地内循环**；CI 的 PR 墙钟在引擎变更下接近全量。想让
-PR 更短优先加 shard（成本换时间），不要削门禁。
-`--fast` 与 `--changed` 互斥（快面排除 CLI e2e，组合会静默漏测）。
+`--fast` 与 `--changed` 互斥（快面排除 e2e，组合会静默漏测）；`--fast` 与
+`--e2e` 互斥。
 
 Also useful:
 

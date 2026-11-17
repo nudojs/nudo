@@ -1,11 +1,14 @@
 /**
  * 本地测试快车道：`pnpm run test:local [-- --changed | --fast]`
  *
- * 三种用法（本地开发循环；CI 保持 build → test 两步，门禁口径不变）：
- * - `test:local`                 全量（预推送自检）
+ * 四种用法（本地开发循环；CI 保持 build → test 两步，门禁口径不变）：
+ * - `test:local`                 全量（预推送自检，含 e2e）
  * - `test:local -- --changed`    变更相关（日常内循环；与 CI PR 同口径）
- * - `test:local --fast`          全量减去 e2e / 外部 oracle 两条慢通道
- *                                （CLI e2e 目录 + 真实 npm 包扫描）：893 文件，~68s
+ * - `test:local --fast`          全量减去 e2e 进程通道与真实包扫描（CI PR/main 口径）
+ * - `test:local --e2e`           只跑进程级 e2e（`*.e2e.test.ts`；可加 --changed）
+ *
+ * 2026-11-17 起 CLI e2e 只在 nightly 跑：PR/main 的测试门禁 = 单元+集成 +
+ * 覆盖率，改动 CLI/进程面时本地 `test:local --e2e` 补跑。
  *
  * 通用优化：
  * 1. CLI e2e 走 `NUDO_TEST_CLI=dist`——每次 spawn 省掉 tsx 转译
@@ -105,6 +108,13 @@ while (args[0] === "--") args.shift();
 // 宁可直接报错也不要给出「改过 CLI 但本地绿」的假信号。
 const fast = args.includes("--fast");
 if (fast) args.splice(args.indexOf("--fast"), 1);
+// `--e2e`：只跑进程级 e2e（`*.e2e.test.ts`），可配 `--changed` 只跑受影响的。
+const e2eOnly = args.includes("--e2e");
+if (e2eOnly) args.splice(args.indexOf("--e2e"), 1);
+if (fast && e2eOnly) {
+  console.error("[test:local] --fast 与 --e2e 互斥：一个排除 e2e，一个只跑 e2e。");
+  process.exit(2);
+}
 if (fast && args.some((a) => a === "--changed" || a.startsWith("--changed="))) {
   console.error("[test:local] --fast 与 --changed 不能同时用：--fast 会跳过 CLI e2e，");
   console.error("             与「只跑变更相关」组合会静默漏测；日常内循环用 --changed，");
@@ -118,13 +128,22 @@ if (distStale()) {
   if (build.status !== 0) process.exit(build.status ?? 1);
 }
 
-const vitestArgs = ["run", ...args];
+const vitestArgs = ["run"];
+if (e2eOnly) {
+  // 只跑进程级 e2e（nightly 车道的手动对应物）；可与 --changed 组合。
+  // 用带点的后缀过滤，避免误匹配 `exec-e2e.test.ts` 这类普通单测。
+  // 必须放在用户参数之前：`--changed` 的可选值是下一个位置参数，放后面会被
+  // 当成 since（实测变成 `git diff .e2e.test.ts...HEAD`）。
+  vitestArgs.push(".e2e.test.ts");
+}
+vitestArgs.push(...args);
 if (fast) {
-  // CLI e2e（进程 spawn）与真实 npm 包扫描（外部 oracle）不进快面：
-  // 前者 83 文件 / 958 用例占测试体时长 ~52%，后者依赖 node_modules 里的包。
+  // 进程级 e2e（`*.e2e.test.ts`）与真实 npm 包扫描（外部 oracle）不进快面：
+  // 前者 58 文件占测试体时长约一半（每例 2–5 次 CLI spawn），后者依赖
+  // node_modules 里的包。CI 的 PR/main 车道与这里同口径。
   vitestArgs.push(
     "--exclude",
-    "packages/nudojs/src/__tests__/**",
+    "**/*.e2e.test.ts",
     "--exclude",
     "packages/core/src/algebra/__tests__/check-real-*.test.ts",
   );
