@@ -402,9 +402,30 @@ function constraintDropped(c: NudoConstraint, prefix = ""): string[] {
   return out;
 }
 
+/**
+ * 模块面作用域（BUG-051）：`shadowedGlobals` = 本模块里被用户绑定（类 / 导入 /
+ * 顶层声明）遮蔽掉的全局构造器名。
+ *
+ * brand 的形状只有 `{name}`，**不含值身份** ⇒ `class Date { … }` 的实例与真
+ * 内建 Date 实例在 Abs 上完全同形。而 zod / standard 两个运行时产物面都是
+ * **独立模块**（不 import 源的任何绑定）⇒ `z.instanceof(Date)` 在产物里恒
+ * 解析为**全局** Date ⇒ 用户类实例被自己的校验器拒收（文案 `expected Date,
+ * received Date`），与 dts 面（`declare class Date` 正确解析）相反裁决。
+ *
+ * 口径：名字被遮蔽 ⇒ 无法证明是内建实例 ⇒ **降级 unknown 并留痕**（与 Bug 233
+ * 的「无可判定的运行时构造器」同一降级路径：放行不拒收，损失进 dropped 台账）。
+ */
+export type SchemaProjectionScope = {
+  /** 本模块里遮蔽了同名全局构造器的用户绑定（`class Date` / `import { Date }` …） */
+  shadowedGlobals?: ReadonlySet<string>;
+};
+
 /** Abs → SchemaNode + dropped（优先 core absToConstraint；失败则 shape 尽力） */
-export function absToSchemaNode(a: Abs): { node: SchemaNode; dropped: string[] } {
-  return absToSchemaNodeB(a, new ProjectionBudget());
+export function absToSchemaNode(
+  a: Abs,
+  opts?: { scope?: SchemaProjectionScope },
+): { node: SchemaNode; dropped: string[] } {
+  return absToSchemaNodeB(a, new ProjectionBudget(), opts?.scope);
 }
 
 /**
@@ -537,6 +558,7 @@ function syncArrayLengthBounds(node: SchemaNode, a: Abs, dropped: string[]): Sch
 function absToSchemaNodeB(
   a: Abs,
   budget: ProjectionBudget,
+  scope?: SchemaProjectionScope,
 ): { node: SchemaNode; dropped: string[] } {
   const dropped: string[] = [];
 
@@ -644,13 +666,18 @@ function absToSchemaNodeB(
     return { node: { k: "unknown" }, dropped };
   }
   try {
-    return absToSchemaShape(a, budget, dropped);
+    return absToSchemaShape(a, budget, dropped, scope);
   } finally {
     budget.exit();
   }
 }
 
-function absToSchemaShape(a: Abs, budget: ProjectionBudget, dropped: string[]): { node: SchemaNode; dropped: string[] } {
+function absToSchemaShape(
+  a: Abs,
+  budget: ProjectionBudget,
+  dropped: string[],
+  scope?: SchemaProjectionScope,
+): { node: SchemaNode; dropped: string[] } {
   const s = a.shape;
   switch (s.k) {
     case "never":
@@ -692,7 +719,7 @@ function absToSchemaShape(a: Abs, budget: ProjectionBudget, dropped: string[]): 
         // 不进产物面（与 core 的约束面 / guard 面 / format 面同判据；判据见
         // `internal-slot.ts`）。约束投影（`absToConstraint`）漏掉的槽在此兜住。
         if (isInvisibleObjSlot(key, slot, s.slots)) continue;
-        const sub = absToSchemaNodeB(slot.value, budget);
+        const sub = absToSchemaNodeB(slot.value, budget, scope);
         dropped.push(...sub.dropped.map((n) => `${key}: ${n}`));
         slots.push({ key, node: sub.node, ...(slot.optional ? { optional: true } : {}) });
       }
@@ -711,7 +738,7 @@ function absToSchemaShape(a: Abs, budget: ProjectionBudget, dropped: string[]): 
       // BUG-094：数组自身 preds → minLen / maxLen；表达不了的进台账（不静默丢）
       const bounds = arrayLengthBounds(a.pred, a.term);
       dropped.push(...bounds.dropped);
-      const sub = absToSchemaNodeB(s.element, budget);
+      const sub = absToSchemaNodeB(s.element, budget, scope);
       dropped.push(...sub.dropped);
       return {
         node: {
@@ -732,7 +759,7 @@ function absToSchemaShape(a: Abs, budget: ProjectionBudget, dropped: string[]): 
           dropped.push(`tuple hole at ${i} not projected (slot absent ≠ undefined)`);
           return { k: "unknown" } as const;
         }
-        const sub = absToSchemaNodeB(e, budget);
+        const sub = absToSchemaNodeB(e, budget, scope);
         dropped.push(...sub.dropped);
         return sub.node;
       });
@@ -740,7 +767,7 @@ function absToSchemaShape(a: Abs, budget: ProjectionBudget, dropped: string[]): 
       // zod 渲染 `.rest(...)`——不得静默丢弃（有损投影必须可观测）
       let rest: SchemaNode | undefined;
       if (s.rest) {
-        const sub = absToSchemaNodeB(s.rest, budget);
+        const sub = absToSchemaNodeB(s.rest, budget, scope);
         dropped.push(...sub.dropped);
         rest = sub.node;
       }
@@ -748,7 +775,7 @@ function absToSchemaShape(a: Abs, budget: ProjectionBudget, dropped: string[]): 
     }
     case "sum": {
       const members = s.members.map((m) => {
-        const sub = absToSchemaNodeB(m, budget);
+        const sub = absToSchemaNodeB(m, budget, scope);
         dropped.push(...sub.dropped);
         return sub.node;
       });
@@ -757,7 +784,7 @@ function absToSchemaShape(a: Abs, budget: ProjectionBudget, dropped: string[]): 
     case "fn":
       return { node: { k: "fn" }, dropped };
     case "eff": {
-      const inner = absToSchemaNodeB(s.inner, budget);
+      const inner = absToSchemaNodeB(s.inner, budget, scope);
       dropped.push(...inner.dropped);
       return {
         node: s.eff === "promise" ? { k: "promise", inner: inner.node } : inner.node,
@@ -771,6 +798,14 @@ function absToSchemaShape(a: Abs, budget: ProjectionBudget, dropped: string[]): 
       // 降级 z.unknown()（放行不拒收）并把损失记进 dropped 台账。
       if (!isRuntimeGlobalCtorName(s.name)) {
         dropped.push(`brand not projected (no runtime constructor): ${s.name}`);
+        return { node: { k: "unknown" }, dropped };
+      }
+      // BUG-051：名字被本模块的用户绑定遮蔽 ⇒ 实例身份不是内建（`class Date`
+      // 的实例），产物里的同名标识符却解析为全局 ⇒ `z.instanceof` 会拒收函数
+      // 自己的返回值。降级 unknown（放行）+ 留痕，与上面「无运行时构造器」
+      // 同一路径。
+      if (scope?.shadowedGlobals?.has(s.name)) {
+        dropped.push(`brand shadowed by a local binding (not the global constructor): ${s.name}`);
         return { node: { k: "unknown" }, dropped };
       }
       return { node: { k: "brand", name: s.name }, dropped };
@@ -1179,16 +1214,22 @@ const DIALECT_RENDERERS: Record<
   zod: renderZod,
 };
 
-export function projectAbsToSchema(a: Abs, opts?: { dialect?: SchemaDialect }): SchemaProjection {
+export function projectAbsToSchema(
+  a: Abs,
+  opts?: { dialect?: SchemaDialect; scope?: SchemaProjectionScope },
+): SchemaProjection {
   const dialect: SchemaDialect = opts?.dialect ?? "zod";
-  const { node, dropped } = absToSchemaNode(a);
+  const { node, dropped } = absToSchemaNode(a, opts?.scope ? { scope: opts.scope } : undefined);
   const render = DIALECT_RENDERERS[dialect] ?? renderZod;
   const rendered = render(node);
   // 两层台账合并：节点层（Abs → 节点）+ 渲染层（节点 → zod 源码）
   return { source: rendered.source, dialect, dropped: [...dropped, ...rendered.dropped] };
 }
 
-export function absToSchemaSource(a: Abs, opts?: { dialect?: SchemaDialect }): string {
+export function absToSchemaSource(
+  a: Abs,
+  opts?: { dialect?: SchemaDialect; scope?: SchemaProjectionScope },
+): string {
   return projectAbsToSchema(a, opts).source;
 }
 
@@ -1223,13 +1264,16 @@ export function safeExportIdent(name: string, used?: Set<string>): string {
  */
 export function absToZodSchemaModule(
   exports: Record<string, Abs>,
-  opts?: { banner?: string },
+  opts?: { banner?: string; scope?: SchemaProjectionScope },
 ): ZodModuleProjection {
   const dropped: string[] = [];
   const decls: string[] = [];
   const used = new Set<string>();
   for (const [name, abs] of Object.entries(exports)) {
-    const p = projectAbsToSchema(abs, { dialect: "zod" });
+    const p = projectAbsToSchema(abs, {
+      dialect: "zod",
+      ...(opts?.scope ? { scope: opts.scope } : {}),
+    });
     dropped.push(...p.dropped.map((n) => `${name}: ${n}`));
     decls.push(`export const ${zodExportIdent(name, used)} = ${p.source};`);
   }

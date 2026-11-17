@@ -112,7 +112,11 @@ type InitPathLike = {
  * ⇒ 放弃内联。作用域外未声明的名字（全局）无法证明被写过 ⇒ 放行。
  * 自引用（`const x = x`）是 TDZ ⇒ 同样放弃。
  */
-function freeVarsStable(initPath: InitPathLike, selfName: string): boolean {
+function freeVarsStable(
+  initPath: InitPathLike,
+  selfName: string,
+  refPaths: ReadonlyArray<{ scope?: { getBinding(name: string): unknown } }>,
+): boolean {
   const names: string[] = [];
   if (initPath.node.type === "Identifier") {
     names.push((initPath.node as unknown as { name: string }).name);
@@ -128,6 +132,16 @@ function freeVarsStable(initPath: InitPathLike, selfName: string): boolean {
       | { constantViolations?: unknown[] }
       | undefined;
     if (binding && (binding.constantViolations?.length ?? 0) > 0) return false;
+    // BUG-073：内联把 init 文本搬到**使用点**⇒ 名字解析随目标作用域改变。
+    // 使用点作用域若把该自由名**重新绑定**（`const x = a + 1` 被搬进还声明了
+    // `const a = 10` 的内层函数），表达式里的 `a` 就指到另一个绑定 ⇒ 值静默
+    // 改变（实测 `f(1)()` 从 2 变 11）。判据 = 使用点解析到的绑定必须与声明点
+    // **同一个绑定对象**（全局名两侧都无绑定 ⇒ 相等 ⇒ 照旧放行）。
+    for (const r of refPaths) {
+      const useScope = r.scope;
+      if (!useScope) continue; // 无作用域信息 ⇒ 不因此拒绝（保持旧口径）
+      if (useScope.getBinding(name) !== binding) return false;
+    }
   }
   return true;
 }
@@ -332,7 +346,7 @@ export function inlineVariableAt(
         const initPath = (path as unknown as { get(key: string): InitPathLike }).get(
           "init",
         );
-        if (!freeVarsStable(initPath, d.id.name)) return;
+        if (!freeVarsStable(initPath, d.id.name, binding?.referencePaths ?? [])) return;
 
         // 真正的使用点（过滤声明侧节点：ExportNamedDeclaration / ExportSpecifier）
         const refs: Hit["refs"] = [];

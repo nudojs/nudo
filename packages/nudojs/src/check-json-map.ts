@@ -205,6 +205,15 @@ export type FromCallsiteFile = {
 export type StaticFromDomainOptions = {
   /** 被调方（被检查文件）绝对路径 */
   targetPath: string;
+  /**
+   * 被调方源码（默认导出的**声明名**要靠它解析）。
+   *
+   * BUG-068：core 的 `nudo:constraint-violated` 报的是**解析后的被调名**
+   * （`import d from …` 调用 `d(-1)` ⇒ `fn` 是目标模块里那个函数的声明名，
+   * **不是**本地名 `d`）⇒ 默认导入的现场文件必须知道目标侧的声明名才能把
+   * 证据归到被调方。缺席时该形态不归因（不猜）。
+   */
+  targetSource?: string;
   /** `--from` 现场文件（调用点文件） */
   callsites: readonly FromCallsiteFile[];
   /** import 说明符解析（相对现场文件）⇒ 解析到被调方的 import 即证据来源 */
@@ -223,20 +232,84 @@ function sameModulePath(a: string, b: string): boolean {
 }
 
 /**
- * 现场文件里指向被调方的 import 绑定：本地名 → 被调方导出名
- * （命名空间导入记为 `"*"` ⇒ 成员访问 `ns.f` 归到导出 `f`）。
+ * 现场文件**指向被调方**的导入面（按**目标导出名**建，不按本地名）。
+ *
+ * BUG-068：core 的 `nudo:constraint-violated` 里 `issue.fn` 是**解析后的
+ * 被调名**，不是现场文件里的本地名 ——
+ *
+ * | 现场写法 | core 报的 `fn` | 本地名 |
+ * |---|---|---|
+ * | `import { setDelay }` | `setDelay` | `setDelay` |
+ * | `import { setDelay as sd }` | `setDelay` | `sd` |
+ * | `import * as space` + `space.setDelay(…)` | `setDelay` | （成员名） |
+ * | `import d from …` + `d(…)`（`export default function setDelay`） | `setDelay` | `d` |
+ *
+ * 旧实现建的是「本地名 → 导入名」表 ⇒ 只有第一行因键值巧合命中；别名 /
+ * 命名空间 / 默认导入三种形态**一律零命中**，而默认导入更糟：`ImportDefaultSpecifier`
+ * 根本不入表 ⇒ `bindings.size === 0` ⇒ 整份现场文件被跳过（连带丢掉同文件
+ * 其它调用的证据）。
+ *
+ * 现在改按**目标导出名**判定「这个被调名是不是从被调方导进来的」：
+ * - 命名导入 → `imported`（别名无关，`sd` 也记 `setDelay`）；
+ * - `import { default as g }` → 按默认导入处理；
+ * - 命名空间导入 → 任意名字都可能（`namespace` 开闸）；
+ * - 默认导入 → 目标模块里该默认导出的**声明名**（`targetSource` 解析）。
  */
-function targetImportBindings(
-  site: FromCallsiteFile,
-  opts: StaticFromDomainOptions,
-): Map<string, string> {
-  const bindings = new Map<string, string>();
-  if (!opts.resolveModule) return bindings;
+type TargetImportFace = {
+  /** 命名导入的目标导出名（别名无关） */
+  imported: Set<string>;
+  /** 是否有命名空间导入（任意成员名都可能） */
+  namespace: boolean;
+  /** 是否有默认导入 */
+  hasDefault: boolean;
+};
+
+/** 目标模块默认导出的**声明名**（`export default function f` ⇒ "f"）。 */
+function defaultExportLocalName(source: string | undefined): string | undefined {
+  if (!source) return undefined;
+  let ast: ReturnType<typeof parse>;
+  try {
+    ast = parse(source);
+  } catch {
+    return undefined;
+  }
+  for (const stmt of programBody(ast)) {
+    if (stmt.type === "ExportDefaultDeclaration") {
+      const decl = stmt.declaration;
+      if (
+        (decl.type === "FunctionDeclaration" ||
+          decl.type === "ClassDeclaration" ||
+          decl.type === "FunctionExpression" ||
+          decl.type === "ClassExpression") &&
+        decl.id
+      ) {
+        return decl.id.name;
+      }
+      if (decl.type === "Identifier") return decl.name;
+    }
+    // `export { f as default }`：默认导出的值就是本地绑定 f
+    if (stmt.type === "ExportNamedDeclaration" && !stmt.source) {
+      for (const spec of stmt.specifiers ?? []) {
+        if (spec.type !== "ExportSpecifier") continue;
+        const exported = spec.exported.type === "Identifier" ? spec.exported.name : String(spec.exported.value);
+        if (exported !== "default") continue;
+        const local = spec.local.type === "Identifier" ? spec.local.name : undefined;
+        if (local) return local;
+      }
+    }
+  }
+  return undefined;
+}
+
+/** 现场文件 → 它从被调方导入了什么（按目标导出名建面）。 */
+function targetImportFace(site: FromCallsiteFile, opts: StaticFromDomainOptions): TargetImportFace {
+  const face: TargetImportFace = { imported: new Set(), namespace: false, hasDefault: false };
+  if (!opts.resolveModule) return face;
   let ast: ReturnType<typeof parse>;
   try {
     ast = parse(site.source);
   } catch {
-    return bindings; // 解析失败 ⇒ 无证据（不猜）
+    return face; // 解析失败 ⇒ 无证据（不猜）
   }
   for (const stmt of programBody(ast)) {
     if (stmt.type !== "ImportDeclaration") continue;
@@ -248,24 +321,42 @@ function targetImportBindings(
           spec.imported.type === "Identifier"
             ? spec.imported.name
             : String(spec.imported.value);
-        bindings.set(spec.local.name, imported);
+        if (imported === "default") face.hasDefault = true;
+        else face.imported.add(imported);
       } else if (spec.type === "ImportNamespaceSpecifier") {
-        bindings.set(spec.local.name, "*");
+        face.namespace = true;
+      } else if (spec.type === "ImportDefaultSpecifier") {
+        face.hasDefault = true;
       }
     }
   }
-  return bindings;
+  return face;
 }
 
-/** 现场文件里的本地名 → 被调方导出名（命名空间成员 `ns.f` → `f`）。 */
-function resolveExportName(local: string, bindings: Map<string, string>): string | undefined {
-  const direct = bindings.get(local);
-  if (direct !== undefined && direct !== "*") return direct;
-  const dot = local.lastIndexOf(".");
-  if (dot > 0) {
-    const obj = local.slice(0, dot);
-    const prop = local.slice(dot + 1);
-    if (bindings.get(obj) === "*") return prop;
+/** 导出面是否为空（空 ⇒ 现场文件与被调方没有导入边，不必跑 checkSource）。 */
+function faceIsEmpty(face: TargetImportFace): boolean {
+  return face.imported.size === 0 && !face.namespace && !face.hasDefault;
+}
+
+/**
+ * 把 core 报的**被调名**翻译成被调方的导出名（不是被调方 ⇒ undefined）。
+ *
+ * 判据全部按**导出名**（见 `TargetImportFace`）：core 已经解析过别名 /
+ * 命名空间成员 / 默认导入，这里只回答「该名字是否经导入边来自被调方」。
+ */
+function resolveExportName(
+  callee: string,
+  face: TargetImportFace,
+  opts: StaticFromDomainOptions,
+): string | undefined {
+  if (face.imported.has(callee)) return callee;
+  // 命名空间导入：`space.<name>(…)` 解析后的名字就是导出名（也允许同名本地
+  // 函数撞名——那种情况 core 的 `fn` 不带接收者，无从区分，取保守的「有证据」）
+  if (face.namespace) return callee;
+  if (face.hasDefault) {
+    // 默认导入：core 报的是目标模块里的**声明名**
+    const declared = defaultExportLocalName(opts.targetSource);
+    if (declared !== undefined && callee === declared) return declared;
   }
   return undefined;
 }
@@ -297,8 +388,8 @@ function resolveExportName(local: string, bindings: Map<string, string>): string
 export function staticFromDomainIssues(opts: StaticFromDomainOptions): CheckIssue[] {
   const out: CheckIssue[] = [];
   for (const site of opts.callsites) {
-    const bindings = targetImportBindings(site, opts);
-    if (bindings.size === 0) continue;
+    const face = targetImportFace(site, opts);
+    if (faceIsEmpty(face)) continue;
     let report: CheckReport;
     try {
       report = checkSource(site.path, site.source, pTrue, {
@@ -314,7 +405,7 @@ export function staticFromDomainIssues(opts: StaticFromDomainOptions): CheckIssu
       if (issue.code !== DIAG.constraintViolated) continue;
       const local = issue.fn;
       if (!local) continue;
-      const exportName = resolveExportName(local, bindings);
+      const exportName = resolveExportName(local, face, opts);
       if (!exportName) continue;
       // core 的消息形状：`${被调名}[${参数位}]: argument ⊭ precondition`
       const key = callSiteKeyOf(issue.message);

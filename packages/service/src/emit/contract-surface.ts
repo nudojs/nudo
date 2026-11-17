@@ -54,7 +54,7 @@ import {
   type Term,
   type TypeofName,
 } from "@nudojs/core";
-import { DIAG } from "@nudojs/core/internal";
+import { DIAG, exportedNameOfLocal } from "@nudojs/core/internal";
 import { analyzeFileAsync } from "../analyzer.ts";
 import { type CallRecord } from "../evaluator/call-record.ts";
 import { defaultLoadModule, type LoadModule } from "../load-module.ts";
@@ -74,6 +74,16 @@ function collectDepContents(
 
 export type ContractSurfaceEntry = {
   fn: string;
+  /**
+   * **导出名**（与 `fn` 不同时才在）——BUG-048：`export { shout as yell }` 的
+   * 本地名是 `shout`、导出名是 `yell`，而 `--fn` 的名单口径是**导出名**
+   * （DESIGN-003：契约身份恒为导出名；`--draft` / `--emit` 两面早已如此）。
+   *
+   * 打印面此前只比 `fn` ⇒ 真导出名 `yell` 被判「没命中」、`--fn shout` 反而
+   * 命中（另两面结论相反）。候选表同样只取本地名 ⇒ 把非导出名标成
+   * `available exports`，按提示改名继续失败。
+   */
+  identity?: string;
   /** 本文件 named export（自动绑定边界口径：localNamedExports） */
   kind: "export" | "local";
   source: "handwritten" | "generated" | "implicit";
@@ -265,6 +275,7 @@ function effectiveEntry(
   fn: { name: string; paramNames: string[]; formals?: FormalParam[] },
   eff: EffectiveContract,
   kind: "export" | "local",
+  identity?: string,
 ): ContractSurfaceEntry {
   const slots = formalSlotsOf(fn);
   const bindable = contractParamNameSet(fn.formals ?? []);
@@ -284,6 +295,7 @@ function effectiveEntry(
   }
   return {
     fn: fn.name,
+    ...(identity !== undefined ? { identity } : {}),
     kind,
     source: eff.source,
     params: slots.map((s, i) => ({
@@ -695,6 +707,13 @@ export async function contractSurface(
   const loadModule = opts.loadModule ?? defaultLoadModule;
   const exported = localNamedExports(source);
   const kindOf = (fnName: string): "export" | "local" => (exported.has(fnName) ? "export" : "local");
+  // BUG-048：本地名 → 导出名（`export { shout as yell }` ⇒ 条目要能按 `yell` 被
+  // `--fn` 选中；候选表也只列导出名）。同名直出 / default 导出 ⇒ undefined。
+  const identityCache = new Map<string, string | undefined>();
+  const identityOf = (fnName: string): string | undefined => {
+    if (!identityCache.has(fnName)) identityCache.set(fnName, exportedNameOfLocal(source, fnName));
+    return identityCache.get(fnName);
+  };
 
   // BUG-044：`caseMode` 与**门禁面**（check / health / migrate）同口径 =
   // `"none"`。`@nudo:case` 是**调试见证**（docs/concepts/directives.md:44），
@@ -803,7 +822,7 @@ export async function contractSurface(
       }
     }
     if (eff) {
-      entries.push(effectiveEntry(fn, eff, kindOf(fn.name)));
+      entries.push(effectiveEntry(fn, eff, kindOf(fn.name), identityOf(fn.name)));
       continue;
     }
     // implicit：argAbs / combinedAbs（无损 Abs 源）；展示仍外延串。
@@ -825,7 +844,15 @@ export async function contractSurface(
       const last = fn.cases[fn.cases.length - 1]!;
       ret = absToImplicitDisplay(last.abs);
     }
-    entries.push({ fn: fn.name, kind: kindOf(fn.name), source: "implicit", params, returns: ret });
+    const identity = identityOf(fn.name);
+    entries.push({
+      fn: fn.name,
+      ...(identity !== undefined ? { identity } : {}),
+      kind: kindOf(fn.name),
+      source: "implicit",
+      params,
+      returns: ret,
+    });
   }
 
   if (disk?.enabled && contractKey && !useCache && analysis.functions.length > 0) {

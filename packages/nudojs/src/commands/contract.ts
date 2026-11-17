@@ -102,11 +102,26 @@ async function runContractPrint(
     process.exitCode = 1;
     return;
   }
-  const shown = fnNames.length > 0 ? entries.filter((e) => fnNames.includes(e.fn)) : entries;
+  // BUG-048：`--fn` 的名单口径是**导出名**（DESIGN-003：契约身份恒为导出名，
+  // 与 `--draft` / `--emit` 两面一致）。`export { shout as yell }` 的条目
+  // `fn` 是本地名 `shout`、`identity` 是导出名 `yell` ⇒ 两个名字都要认，
+  // 否则真导出名被拒、本地名反而命中（同命令族三面结论相反）。
+  const matches = (e: (typeof entries)[number], n: string): boolean =>
+    e.fn === n || e.identity === n;
+  const shown =
+    fnNames.length > 0 ? entries.filter((e) => fnNames.some((n) => matches(e, n))) : entries;
   // `--fn` 一处都没命中 ⇒ 与 --draft / --emit 同纪律：usage error + exit 1
   // （绝不静默输出空条目表）。
   if (fnNames.length > 0 && shown.length === 0) {
-    const candidates = [...new Set(entries.map((e) => e.fn))].sort();
+    // 候选表只列**能当 `--fn` 用的名字**（导出名）：非导出的本地名标成
+    // `available exports` 会让用户按提示改名继续失败（BUG-048 的另一半）。
+    const candidates = [
+      ...new Set(
+        entries
+          .map((e) => e.identity ?? (e.kind === "export" ? e.fn : undefined))
+          .filter((n): n is string => n !== undefined),
+      ),
+    ].sort();
     const message =
       `Usage error: --fn ${fnNames.map((n) => `\`${n}\``).join(", ")} matched no contract entry in ${rel}` +
       (candidates.length > 0 ? `\navailable exports: ${candidates.join(", ")}` : "");

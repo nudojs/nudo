@@ -491,6 +491,22 @@ function reportOrphanSidecarExports(
   }
 }
 
+/**
+ * 侧车里的**嵌套约束袋**：`export const K = { run: fn(…), stop: fn(…) }`。
+ *
+ * BUG-058：袋的顶层名必然与**类名同名**，所以类条目（`fnName === "K"`）的同名
+ * 直查会拿到袋本身。判据是「至少一个自有成员是 Nudo 约束」——只有标量 / 空
+ * 对象 / 普通数据对象才继续按「非约束导出」报错（真写错的契约不得被吞）。
+ */
+function isNestedConstraintBag(v: unknown): boolean {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return false;
+  try {
+    return Object.keys(v).some((k) => isNudoConstraint((v as Record<string, unknown>)[k]));
+  } catch {
+    return false;
+  }
+}
+
 function loadSidecarBinding(
   source: string,
   fnName: string,
@@ -571,6 +587,19 @@ function loadSidecarBinding(
   // 2. 嵌套对象 `export const Class = { method: fn(…) }`
   // 3. C4.4：`export { local as default }` + 侧车 `export default`
   let binding: unknown = Object.hasOwn(exports, fnName) ? exports[fnName] : undefined;
+  // BUG-058：**嵌套袋形态**（`export const K = { run: fn(…) }`）的袋名必然与类名
+  // 同名 ⇒ 类条目 `K` 在这一步拿到的是袋对象（不是 Nudo 约束）⇒ 旧实现在
+  // `isNudoConstraint` 闸门处报 `export 'K' is not a Nudo constraint`（假红），
+  // 而 `K.run` 早已从这个袋里取到约束、契约**确实生效**（`nudo export` 也被
+  // 同一条诊断阻断 ⇒ 零产物）。
+  //
+  // 判据：值里**至少有一个自有成员是 Nudo 约束** ⇒ 这是一个袋（类级容器），不是
+  // 「错放在这里的非约束导出」 ⇒ 不作为同名直查命中（交给下面的嵌套袋分支按
+  // `Class.method` 取；类条目本身没有契约，静默 ok:false）。
+  // 空对象 / 标量等仍走原路径报错（真写错的导出不得被吞）。
+  if (binding !== undefined && !isNudoConstraint(binding) && isNestedConstraintBag(binding)) {
+    binding = undefined;
+  }
   // 绑定键解析成功时的键（paramTexts 查询用，与 binding 解析同序）
   let bindingKey: string | undefined;
   // 侧车里**真实持有**该绑定的导出名（诊断点名用；Bug 359：别名 / default /

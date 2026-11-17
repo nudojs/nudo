@@ -1796,3 +1796,70 @@ describe("nudo contract --from-dts --write · 落盘位置与覆盖保护", () =
 });
 });
 });
+
+// ---------------------------------------------------------------------------
+// 打印面 --fn 的名单口径 = 导出名（与 --draft / --emit 两面一致）
+// ---------------------------------------------------------------------------
+describe("打印面 --fn 的名单口径 = 导出名", () => {
+/**
+ * `contract --fn <导出名>` 被拒、`--fn <非导出本地名>` 反而命中。
+ *
+ * 改前：打印面 `entries.filter((e) => fnNames.includes(e.fn))` —— `e.fn` 是
+ * **本地名**（`ContractSurfaceEntry` 没有导出身份字段），候选表同样取本地名。
+ * `export { shout as yell }` 的条目只能按 `shout` 选中 ⇒
+ *
+ * ```
+ * $ nudo contract --fn yell lib.js
+ * Usage error: --fn `yell` matched no contract entry in lib.js
+ * available exports: helper, pub, shout      # ← 前两个不是导出，第三个是本地名
+ * ```
+ *
+ * 而同命令族的 `--draft --fn yell` / `--emit --fn yell` 都是 exit 0（它们比
+ * `e.fn` **和** `e.identity`）⇒ 三面结论相反；候选表还把非导出名标成
+ * `available exports`，按提示改名会继续失败。
+ *
+ * 钉：
+ * - `--fn <导出名>` ⇒ exit 0 且打印该条目的本地名（身份是导出名）；
+ * - 未命中 ⇒ exit 1，候选表**只列导出名**（不含 `helper` / `shout`）；
+ * - 对照：`--fn <普通导出名>` 行为不变。
+ */
+const LIB = `function helper(x) { return x + 1; }
+/**
+ * @nudo:case "dom" (string())
+ */
+function shout(s) { return s.toUpperCase(); }
+export { shout as yell };
+export function pub(y) { return helper(y); }
+`;
+
+function makeFixture(): string {
+  const dir = mkdtempSync(join(tmpdir(), "nudo-contract-fn-export-"));
+  writeFileSync(join(dir, "package.json"), `{"type":"module"}\n`, "utf-8");
+  writeFileSync(join(dir, "lib.js"), LIB, "utf-8");
+  // 夹具 cwd 下 `@nudojs/*` 会落到各包 dist（陈旧构建）⇒ paths 钉到仓内 src
+  writeSrcTsconfig(dir);
+  return dir;
+}
+
+  it("--fn yell ⇒ exit 0（改前 usage error）；未命中候选只列导出名；对照 --fn pub 不变", () => {
+    const dir = makeFixture();
+    try {
+      const hit = runCli(["contract", "--fn", "yell", "lib.js"], { cwd: dir });
+      expect(hit.status).toBe(0);
+      expect(hit.stdout).toContain("shout");
+
+      const miss = runCli(["contract", "--fn", "nope", "lib.js"], { cwd: dir });
+      expect(miss.status).toBe(1);
+      expect(miss.stderr).toContain("available exports: pub, yell");
+      // 非导出本地名不得被推荐（按提示改名会继续失败）
+      expect(miss.stderr).not.toContain("helper");
+      expect(miss.stderr).not.toContain("shout");
+
+      const control = runCli(["contract", "--fn", "pub", "lib.js"], { cwd: dir });
+      expect(control.status).toBe(0);
+      expect(control.stdout).toContain("pub");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 90000); // 3 个 CLI 子进程（tsx 冷启动）
+});

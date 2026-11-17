@@ -31,6 +31,23 @@ describe("B2 refactor.inline", () => {
     const r = inlineVariableAt(src, 2, 6);
     expect(r).toBeNull();
   });
+
+  /**
+   * BUG-073：内联把初始化器文本搬到**使用点** ⇒ 自由名的解析随目标作用域改变。
+   * 使用点所在作用域重新绑定了同一个名字（`const a = 10`）时内联会让值静默
+   * 改变（`f(1)()` 从 2 变 11）；对照（不遮蔽）必须照常内联，否则这条闸门
+   * 会把绝大多数正常内联一起关掉。
+   */
+  it("rejects inlining when the use site shadows a free name of the initializer", () => {
+    const shadowed = `export function f(a) {\n  const x = a + 1;\n  return () => {\n    const a = 10;\n    return x;\n  };\n}\n`;
+    // 光标在 x 的声明（line 1, col 8）
+    expect(inlineVariableAt(shadowed, 2, 8)).toBeNull();
+
+    // 对照：内层只声明**别的**名字 ⇒ 自由名 a 仍解析到形参 ⇒ 允许内联
+    const control = `export function f(a) {\n  const x = a + 1;\n  return () => {\n    const b = 10;\n    return x;\n  };\n}\n`;
+    const r = inlineVariableAt(control, 2, 8);
+    expect(r && "edits" in r).toBe(true);
+  });
 });
 
 describe("B2 refactor.rewrite — make param optional", () => {

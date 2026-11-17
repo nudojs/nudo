@@ -1533,3 +1533,127 @@ export function h() {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// re-export barrel：references / definition / rename 不得在中转处断链
+// ---------------------------------------------------------------------------
+describe("re-export barrel 的导航与改名面", () => {
+/**
+ * importer 集合只认「import 边**直接**解析到定义文件」的边。
+ *
+ * ```js
+ * // lib.js
+ * export class Box { … }
+ * // barrel.js
+ * export { Box } from "./lib.js";
+ * // app.js
+ * import { Box } from "./barrel.js";
+ * ```
+ *
+ * 旧口径在 barrel 处断链：
+ * - `references(lib.js 的 Box)` ⇒ 只有 lib + barrel 的说明符，**app 不在**；
+ * - `definition(app.js 的 new Box)` ⇒ 报 barrel.js（位置却是 lib 的坐标）；
+ * - `rename(lib.js 的 Box)` ⇒ WorkspaceEdit 不含 app.js ⇒ 应用后
+ *   `node` 在模块链接期抛 `does not provide an export named 'Box'`
+ *   （`node --check` 看不出来）。
+ *
+ * 钉：三面都必须穿过 barrel；多跳同名 barrel 同样要跟住；别名 re-export
+ * （`export { Box as Crate }`）只改那条边、不连坐 `Crate` 的 importer
+ * （`Crate` 是另一个身份，与 `export { hidden as visible }` 同口径）。
+ */
+let h: LspHarness | null = null;
+afterEach(() => {
+  h?.cleanup();
+  h = null;
+});
+
+const LIB = `export class Box { constructor(v) { this.v = v; } }
+export function make(a) { return new Box(a); }
+`;
+const BARREL = `export { Box, make } from "./lib.js";
+`;
+const APP = `import { Box, make } from "./barrel.js";
+export const b = new Box(1);
+export const m = make(2);
+`;
+
+  it("references / definition / rename 穿过同名 barrel；多跳同样跟住", async () => {
+  {
+    h = await startLspWithFiles({ "lib.js": LIB, "barrel.js": BARREL, "app.js": APP });
+    const refs = locationsOf(
+      h.req("textDocument/references", {
+        textDocument: { uri: h.uri("lib.js") },
+        position: { line: 0, character: 13 }, // export class Box
+        context: { includeDeclaration: true },
+      }),
+    );
+    // barrel 的说明符
+    expect(refs).toContainEqual({ file: "barrel.js", line: 0, character: 9, endLine: 0, endCharacter: 12 });
+    // app 的 import 说明符 + 使用处（旧口径两处都不在）
+    expect(refs).toContainEqual({ file: "app.js", line: 0, character: 9, endLine: 0, endCharacter: 12 });
+    expect(refs).toContainEqual({ file: "app.js", line: 1, character: 21, endLine: 1, endCharacter: 24 });
+  }
+  {
+    h = await startLspWithFiles({ "lib.js": LIB, "barrel.js": BARREL, "app.js": APP });
+    const defs = locationsOf(
+      h.req("textDocument/definition", {
+        textDocument: { uri: h.uri("app.js") },
+        position: { line: 1, character: 21 }, // new Box(1)
+      }),
+    );
+    // 真正的声明在 lib.js（旧口径报 barrel.js + lib 的坐标）
+    expect(defs[0]).toEqual({ file: "lib.js", line: 0, character: 13, endLine: 0, endCharacter: 16 });
+  }
+  {
+    h = await startLspWithFiles({ "lib.js": LIB, "barrel.js": BARREL, "app.js": APP });
+    const edits = editsOf(
+      h.req("textDocument/rename", {
+        textDocument: { uri: h.uri("lib.js") },
+        position: { line: 0, character: 14 },
+        newName: "Crate",
+      }),
+    );
+    // 定义 + lib 内部使用 + barrel 说明符 + app 的 import 与使用
+    expect(edits).toContainEqual({ file: "lib.js", line: 0, character: 13, endLine: 0, endCharacter: 16, newText: "Crate" });
+    expect(edits).toContainEqual({ file: "lib.js", line: 1, character: 37, endLine: 1, endCharacter: 40, newText: "Crate" });
+    expect(edits).toContainEqual({ file: "barrel.js", line: 0, character: 9, endLine: 0, endCharacter: 12, newText: "Crate" });
+    expect(edits).toContainEqual({ file: "app.js", line: 0, character: 9, endLine: 0, endCharacter: 12, newText: "Crate" });
+    expect(edits).toContainEqual({ file: "app.js", line: 1, character: 21, endLine: 1, endCharacter: 24, newText: "Crate" });
+  }
+  {
+    // 多跳 barrel：lib ← inner ← barrel ← app
+    const INNER = `export { Box } from "./lib.js";\n`;
+    const BARREL2 = `export { Box } from "./inner.js";\n`;
+    h = await startLspWithFiles({ "lib.js": LIB, "inner.js": INNER, "barrel.js": BARREL2, "app.js": APP });
+    const edits = editsOf(
+      h.req("textDocument/rename", {
+        textDocument: { uri: h.uri("app.js") },
+        position: { line: 1, character: 21 }, // new Box(1)
+        newName: "Crate",
+      }),
+    );
+    for (const file of ["lib.js", "inner.js", "barrel.js", "app.js"]) {
+      expect(edits.some((e) => e.file === file)).toBe(true);
+    }
+  }
+  }, 120000);
+
+  it("别名 re-export：只改那条边，不连坐别名 importer", async () => {
+    const INNER = `export { Box as Crate } from "./lib.js";\n`;
+    const APP2 = `import { Crate } from "./inner.js";\nexport const c = new Crate(1);\n`;
+    h = await startLspWithFiles({ "lib.js": LIB, "inner.js": INNER, "app.js": APP2 });
+    const edits = editsOf(
+      h.req("textDocument/rename", {
+        textDocument: { uri: h.uri("lib.js") },
+        position: { line: 0, character: 14 },
+        newName: "Zed",
+      }),
+    );
+    // lib 的声明与内部使用
+    expect(edits).toContainEqual({ file: "lib.js", line: 0, character: 13, endLine: 0, endCharacter: 16, newText: "Zed" });
+    // inner 的**导入侧**（`Box`）改成 Zed，导出名 `Crate` 不动
+    expect(edits).toContainEqual({ file: "inner.js", line: 0, character: 9, endLine: 0, endCharacter: 12, newText: "Zed" });
+    // app 的 `Crate` 是另一个身份 ⇒ 不得编辑
+    expect(edits.some((e) => e.file === "app.js")).toBe(false);
+  }, 120000);
+});

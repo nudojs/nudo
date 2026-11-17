@@ -454,6 +454,70 @@ function awaitedAbs(a: Abs): Abs {
 }
 
 /**
+ * 契约域种子的**实参表**（按形参位装配）——契约种子求值的唯一口径。
+ *
+ * BUG-082：种子必须按**形参位**装配，不能按名字查表。
+ *
+ * 旧实现用「契约参数名 → Abs」表 + `fn.paramNames`（求值占位名）去查：解构
+ * 形参的占位名是 `_p0`、契约键是 `a` / `_` / `card.grade` ⇒ **永不命中** ⇒
+ * 播种全 `any` ⇒ 重算出的返回 Abs 是 any ⇒ zod / standard / guard / dts 四个
+ * 发布面把返回投影成空域（`z.unknown()` / `{"k":"unknown"}` / `return true` /
+ * `unknown`），而 `nudo check` 用 `FormalParam.pattern` 展开另走一套种子
+ * （`unifiedParamFace`）⇒ 精确。同一知识在两面分叉。
+ *
+ * 现在用**同一个定位器**（`locateContractParam`，与参数面同源）把契约参数映射
+ * 到形参位：字段契约合成一个对象 Abs（键取属性键，点路径合成嵌套槽），整对象
+ * 契约直接作实参。数组解构的种子不做（需按元素下标造元组 ⇒ 该位给 `any`，
+ * fail-closed 不伪造精度）。
+ */
+export function contractSeedArgs(fn: FunctionAnalysis, eff: EffectiveContract | undefined): Abs[] {
+  const binders = eff?.binders ? new Map(Object.entries(eff.binders)) : undefined;
+  const entryOf = (p: { param: string; constraint: NudoConstraint }): Abs =>
+    constraintToEntryAbs(p.constraint, p.param, undefined, binders);
+  const formals = formalList(fn);
+  const located = (eff?.params ?? []).map((p) => ({ p, loc: locateContractParam(formals, p.param) }));
+  const seedArgs: Abs[] = [];
+  for (const formal of formals) {
+    const own = located.filter((l) => l.loc?.index === formal.index);
+    // ① 整参契约（标识形参 / 解构形参的整对象契约，含 `_`）
+    const whole = own.find((l) => l.loc?.field === undefined && l.loc?.rest !== true);
+    if (whole) {
+      seedArgs.push(entryOf(whole.p));
+      continue;
+    }
+    // ② 解构形参的字段契约 ⇒ 合成一个对象 Abs 作实参
+    if (formal.kind === "pattern") {
+      if (formal.patternKind === "array" || own.length === 0) {
+        seedArgs.push(anyEntryAbs());
+        continue;
+      }
+      const trees = new Map<string, SlotTree>();
+      for (const { p, loc } of own) {
+        const path = loc?.fieldPath ?? (loc?.field !== undefined ? [loc.field] : undefined);
+        if (!path) continue;
+        const key = path[0]!;
+        const tree = trees.get(key) ?? { children: new Map() };
+        insertPath(tree, path, entryOf(p));
+        trees.set(key, tree);
+      }
+      const slots = Object.create(null) as Record<string, { value: Abs }>;
+      for (const [key, tree] of trees) slots[key] = { value: treeAbs(tree) };
+      seedArgs.push(obj(slots));
+      continue;
+    }
+    // ③ 剩余参数：契约描述的是**元素**类型（参数面同口径包一层数组）
+    const rest = own.find((l) => l.loc?.rest === true);
+    if (rest) {
+      const el = entryOf(rest.p);
+      seedArgs.push(makeAbs({ k: "arr", element: el }, undefined, undefined, el.conf));
+      continue;
+    }
+    seedArgs.push(anyEntryAbs());
+  }
+  return seedArgs;
+}
+
+/**
  * 契约域**种子重算**：用契约参数 Abs 作种子重跑一次函数，取返回位。
  *
  * 与 dts 面的种子口径同向（契约参数 = 种子，缺省位 = `any`）；求值失败 ⇒
@@ -465,14 +529,7 @@ function seedDomainReturn(
   ctx: FaceContext | undefined,
 ): Abs | undefined {
   if (!eff || eff.params.length === 0 || !ctx) return undefined;
-  const byName = new Map<string, Abs>();
-  const binders = eff.binders ? new Map(Object.entries(eff.binders)) : undefined;
-  for (const p of eff.params)
-    byName.set(p.param, constraintToEntryAbs(p.constraint, p.param, undefined, binders));
-  const seedArgs = fn.paramNames.map((n) => {
-    const bare = n.startsWith("...") ? n.slice(3) : n;
-    return byName.get(bare) ?? byName.get(n) ?? anyEntryAbs();
-  });
+  const seedArgs = contractSeedArgs(fn, eff);
   try {
     return (
       tryEvalCall(ctx.source, ctx.filePath, fn.name, seedArgs, ctx.mocks ? { mocks: ctx.mocks } : {}) ??

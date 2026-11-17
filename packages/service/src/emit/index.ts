@@ -77,9 +77,11 @@ export {
   absToSchemaSource,
   absToSchemaNode,
   absToZodSchemaModule,
+  isRuntimeGlobalCtorName,
   type SchemaDialect,
   type SchemaNode,
   type SchemaProjection,
+  type SchemaProjectionScope,
   type SchemaRefinement,
   type ZodModuleProjection,
 } from "./schema-generator.ts";

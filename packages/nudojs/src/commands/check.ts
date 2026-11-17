@@ -1296,6 +1296,9 @@ export async function runCheck(file: string, opts: RunCheckOptions = {}): Promis
   const fromStaticIssues = dedupeFromStaticIssues(
     staticFromDomainIssues({
       targetPath: filePath,
+      // BUG-068：默认导入的现场文件要靠目标模块默认导出的**声明名**归因
+      // （core 报的是解析后的被调名，不是现场文件的本地名）
+      targetSource: source,
       callsites: fromCallsiteFiles(opts),
       resolveModule: resolveModulePath,
       loadModule: defaultLoadModule,
