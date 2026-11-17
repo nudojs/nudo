@@ -1,4 +1,4 @@
-# CLAUDE.md
+# AGENT.md
 
 <!-- CLI semantics: docs/design/cli-semantics.md — primary verbs check/test/contract/export/health. migrate = one-way TypeScript retirement gate (status|strip|verify|retire), not a primary verb. Harvest is not a product verb. -->
 

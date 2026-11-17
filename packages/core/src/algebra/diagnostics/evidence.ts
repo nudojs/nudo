@@ -7,7 +7,7 @@
  * 由类型保证，不再依赖 review 或按码白名单（ADR §10 决议 2）。
  *
  * 本模块是分析期包装类型，**不是 Abs 的新槽位**，不参与 `leqAbs` /
- * `formatShape` / 求值；Abs 仍是唯一类型表示（CLAUDE.md:9）。
+ * `formatShape` / 求值；Abs 仍是唯一类型表示（AGENT.md:9）。
  * 阶段 0 零行为变更：不接任何产品面，仅由单元测试消费。
  */
 import { DIAG, type DiagCode } from "./diag-codes.ts";

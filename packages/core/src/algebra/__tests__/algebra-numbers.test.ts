@@ -1936,7 +1936,7 @@ describe("实例方法桥不得把构造器的 throws 归因到方法", () => {
  * 三个错：
  * ① 归因错——TypeError 来自构造器，`Account.describe` 本身不抛；
  * ② 该 TypeError 是 `any` 实参的**假象**（真实调用点传 number 时构造器 total）；
- * ③ 该诊断是 error 级（CLAUDE.md：L2 entry may-throw 默认 error）⇒ 卡死用户 CI。
+ * ③ 该诊断是 error 级（AGENT.md：L2 entry may-throw 默认 error）⇒ 卡死用户 CI。
  *
  * 修法：构造器改在**独立 may-throw 会话**里跑（软效果与硬抛都不归因给方法），
  * 方法体自身的证据照常收集（闸门不整体关掉）。

@@ -967,7 +967,7 @@ export function makeUser(name) {
 `);
     expect(dts).toContain("export declare class C {");
     // 类形参无类型证据 ⇒ TS 投影面为 `unknown`（nudo any ≈ TS unknown）；
-    // nudo 展示面仍显示 any（CLAUDE.md：入口无约束形参），两者作用域不同。
+    // nudo 展示面仍显示 any（AGENT.md：入口无约束形参），两者作用域不同。
     expect(dts).toContain("constructor(v: unknown);");
     // 同上：实例方法返回类型精度随分析面提升，不钉死 unknown。
     expect(dts).toMatch(/m\(x: (any|unknown)\): [^;]+;/);

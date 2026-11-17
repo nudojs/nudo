@@ -43,7 +43,7 @@
 | `package-vitest-config.mjs` | 包内 vitest 配置的共享实现 | `packages/*/vitest.config.ts` |
 | `run-fs-input-tests.mjs` | 跑 `fs-input-tests.mjs` 清单里的测试 | `test:fs-input`（CI 增量路径） |
 | `scan-real-packages.ts` | 语料包 `nudo check` 扫描报告生成 | `docs/check-real-packages.md` |
-| `test-baseline.mjs` | 全仓已知失败集合按宿主固化与机器对比 | `test:baseline`（CLAUDE.md 验证配方） |
+| `test-baseline.mjs` | 全仓已知失败集合按宿主固化与机器对比 | `test:baseline`（AGENT.md 验证配方） |
 | `test-local.mjs` | 本地测试快车道（`--changed` / `--fast` / `--e2e` / `--oracle`） | `test:local`（CONTRIBUTING.md） |
 | `verify-doc-examples.sh` | 站点文档 `verify` 代码块的输出钉 | `verify:docs`（`ci.yml`） |
 | `verify-examples.sh` | `docs/examples` 命令矩阵 + 输出钉 | `verify:examples`（`ci.yml`） |

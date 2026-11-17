@@ -20,7 +20,7 @@
  *     （HTML 注释不计正文——只留模板注释视为未填）
  *
  * 本门禁只判「理由是否存在」，不判质量；质量是 review 的事。机制说明见
- * CLAUDE.md「Diff 面纪律」。
+ * AGENT.md「Diff 面纪律」。
  */
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";

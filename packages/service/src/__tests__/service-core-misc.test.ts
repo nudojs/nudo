@@ -159,7 +159,7 @@ describe("类形参归一为 TS unknown（TS 投影面）", () => {
  * case/combinedAbs 证据（分析面对类成员给的就是 `unknown`）。
  *
  * 历史：曾把 ① 从硬编码 `unknown` 改成 `any`，理由是
- * `CLAUDE.md` 的展示面分面约定（无约束 ⇒ any）。2026-11-06 产品裁定
+ * `AGENT.md` 的展示面分面约定（无约束 ⇒ any）。2026-11-06 产品裁定
  * 「nudo any ≈ TS unknown」明确该规则只管 **nudo 展示 / CLI 面**；
  * **TS 投影面**把无约束 any 映成 TS `unknown`（top）⇒ ① 回到 `unknown`，
  * 但理由不是「推断失败」，而是「TS 侧的 top」。`nudo check` 的签名面

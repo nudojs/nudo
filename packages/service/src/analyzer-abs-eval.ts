@@ -589,7 +589,7 @@ export function tryEvalEntryAbs(
  */
 const pendingDisplay = new WeakMap<CaseResult, { head: string }>();
 
-/** bare unknown = 推断失败（CLAUDE.md：unknown 只在真失败时出现） */
+/** bare unknown = 推断失败（AGENT.md：unknown 只在真失败时出现） */
 function isBareUnknown(a: Abs): boolean {
   return a.shape.k === "unknown" && !a.term;
 }

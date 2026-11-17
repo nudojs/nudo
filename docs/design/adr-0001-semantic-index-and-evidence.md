@@ -1,7 +1,7 @@
 # ADR 0001 · SemanticIndex 与 Evidence（分析面事实一致性）
 
 > **状态**：**已接受（Accepted）** · 2026-11-14 §10 五项决议已拍板；阶段 0 与阶段 1 切片 1–3 已落地（2026-11-15），实施记录与验收见 §13–§16。
-> **真源**：架构 → [`kernel-merge.md`](./kernel-merge.md) 与 `CLAUDE.md`；命令面 → [`cli-semantics.md`](./cli-semantics.md)；契约单源 → [`refine-derivation.md`](./refine-derivation.md)；架构债 → [`architecture-debt.md`](./architecture-debt.md)；会话缓存 → [`cache-invalidation.md`](./cache-invalidation.md)。
+> **真源**：架构 → [`kernel-merge.md`](./kernel-merge.md) 与 `AGENT.md`；命令面 → [`cli-semantics.md`](./cli-semantics.md)；契约单源 → [`refine-derivation.md`](./refine-derivation.md)；架构债 → [`architecture-debt.md`](./architecture-debt.md)；会话缓存 → [`cache-invalidation.md`](./cache-invalidation.md)。
 > **触发**：`tmp/bug-report.md`（审计批次 2026-11-14，34 条 bug，夹具与逐字输出在 `/tmp/**`；其中前五批基于 HEAD `86bc56e1`，第六批基于 `f689d81b`，**实施前须重新定位行号**）。
 > **接线点（阶段 0–1 已落地）**：`core/src/algebra/scan/semantic-index.ts`、`core/src/algebra/diagnostics/evidence.ts`；已接线 `core/src/algebra/check/check.ts`、`service/src/analyzer-ast.ts`；待迁移 `service/src/emit/dts-generator.ts`、`nudojs/src/commands/**`、`lsp/src/lsp-surface/**`。
 > **纪律**：单轨 Abs，**不引入第二 IR**；不动 Abs 形状 / `leqAbs` / `formatShape`；不改变 C0 / L2 / `any` ≠ `unknown` 语义；不触公共 API 冻结；新模块一律进已有子域（`pnpm run lint:hygiene`）。
@@ -45,9 +45,9 @@
 
 ## 3. 硬约束（不可协商）
 
-1. **单轨 Abs**：`CLAUDE.md:9` 与 `plans/2026-11-09-abs-improvement-plan.md:10` 明确规定「不新增第二 IR」；dts / LSP / 序列化是**单向、有损**的外延渲染，「Nothing reads a projection back」。因此 `SemanticIndex` 是**绑定与入口元数据**，`Evidence<T>` 是**分析期证据标签**；两者都不是值 IR，不参与求值、`leqAbs`、`formatShape`、Abs 缓存 ABI。Abs 仍是唯一类型表示。
+1. **单轨 Abs**：`AGENT.md:9` 与 `plans/2026-11-09-abs-improvement-plan.md:10` 明确规定「不新增第二 IR」；dts / LSP / 序列化是**单向、有损**的外延渲染，「Nothing reads a projection back」。因此 `SemanticIndex` 是**绑定与入口元数据**，`Evidence<T>` 是**分析期证据标签**；两者都不是值 IR，不参与求值、`leqAbs`、`formatShape`、Abs 缓存 ABI。Abs 仍是唯一类型表示。
 2. **包环约束**：`core/src/algebra/parse-source.ts:3` 明写 core **刻意不依赖** `@nudojs/parser`；core 也**未**引入 `@babel/traverse`（仅 service 使用）。binder 必须落在 core 内部、只产出纯数据；service 的 traverse 降级为消费方。
-3. **子域冻结**：`CLAUDE.md:73-78`——`algebra/` 顶层剩余文件由 `pnpm run lint:hygiene` 冻结，新模块一律进已有子域。故落点为 `algebra/scan/`（索引）与 `algebra/diagnostics/`（证据），**不是** `algebra/semantic-index.ts` 这类顶层新文件（修正口头方案）。
+3. **子域冻结**：`AGENT.md:73-78`——`algebra/` 顶层剩余文件由 `pnpm run lint:hygiene` 冻结，新模块一律进已有子域。故落点为 `algebra/scan/`（索引）与 `algebra/diagnostics/`（证据），**不是** `algebra/semantic-index.ts` 这类顶层新文件（修正口头方案）。
 4. **公共 API 冻结**：`core/src/index.ts` / `algebra/index.ts` / `internal.ts` 的导出快照不得擅自扩张；跨包暴露按 §10 决议 3 走 `@nudojs/core/internal`，不新增公开导出。
 5. **动 Abs 形状的门槛**：`architecture-debt.md:159`——需全仓门禁 + 改前基线。本方案不动 Abs 形状，故**不触发**该门槛；这是可渐进落地的前提。
 6. **既有语义不改**：`any` = 未约束入口，`unknown` = 推断失败（`cli-semantics.md`）；L1/L2、退出码、诊断码的产品口径不变。本方案只是把「`unknown` 只能由推断失败产生」编码进类型。
@@ -113,7 +113,7 @@ export type ModuleForm = { kind: "esm" } | { kind: "cjs"; exportEquals: SymbolId
 | **C · 把 `SymbolId` / `Evidence` 塞进 `Abs.facets`** | 动 Abs 形状 ⇒ 触发 `architecture-debt.md:159` 全仓基线；且把绑定元数据混入值语义会污染 `leqAbs` / `formatShape` / 磁盘缓存 ABI（`HARVEST_DISK_ABI`），与单轨 Abs 口径冲突。 |
 | **D · 新建 `packages/semantics` 包** | 新增包依赖与发布面，收益不抵；纯数据索引留在 `core/scan`，由已允许依赖方向的 `service → core` 消费即可。 |
 | **E · 只统一 dts 投影层** | 是 D3 的真子集，可先做但不能解决 check / LSP 面的假绿假红；保留为阶段 1 的一个迁移切片，不单独立项。 |
-| **F · 引入第二个 IR（typed AST / HIR）** | 直接违反 `CLAUDE.md:9` 与 plans 纪律「单轨 Abs；不新增第二 IR」。 |
+| **F · 引入第二个 IR（typed AST / HIR）** | 直接违反 `AGENT.md:9` 与 plans 纪律「单轨 Abs；不新增第二 IR」。 |
 
 ## 6. 覆盖矩阵
 
@@ -130,7 +130,7 @@ export type ModuleForm = { kind: "esm" } | { kind: "cjs"; exportEquals: SymbolId
 
 | 阶段 | 动作 | 验收 | 回滚 |
 |---|---|---|---|
-| **0 · 影子对拍**（零语义变更） | 新增两个子域模块 + 类型 + 差分测试；用报告 34 条「一变量对照」夹具断言 `index.entries` / `exportSlots` 与旧扫描器的分歧并**输出清单**，不修行为。**证据固化**：`tmp/bug-report.md` 与 `/tmp/**` 夹具均被 `.gitignore` 忽略、不入版本库，故本阶段须把最低限度的一变量夹具与逐字输出转成仓库内测试，否则评审与后续回归无据可依；**范围**按 §10 决议 5，仅 ESM / CJS 主路径 | `pnpm run build` → `pnpm run lint` → `pnpm run test`（按 `CLAUDE.md:32` 先 build）；`pnpm run lint:hygiene` | 纯新增文件 + 测试，直接 revert |
+| **0 · 影子对拍**（零语义变更） | 新增两个子域模块 + 类型 + 差分测试；用报告 34 条「一变量对照」夹具断言 `index.entries` / `exportSlots` 与旧扫描器的分歧并**输出清单**，不修行为。**证据固化**：`tmp/bug-report.md` 与 `/tmp/**` 夹具均被 `.gitignore` 忽略、不入版本库，故本阶段须把最低限度的一变量夹具与逐字输出转成仓库内测试，否则评审与后续回归无据可依；**范围**按 §10 决议 5，仅 ESM / CJS 主路径 | `pnpm run build` → `pnpm run lint` → `pnpm run test`（按 `AGENT.md:32` 先 build）；`pnpm run lint:hygiene` | 纯新增文件 + 测试，直接 revert |
 | **1 · 逐面双读迁移** | `check` → `service` → `dts` → `LSP` → `export`，每切一面删一份孪生实现，旧路径留开关式 fallback | 每面：金标 `check-recall-gold` / `check-gold`、真实包零 FP、差分语料、`verify:examples`、`test:fs-input`；`cache-invalidation.md` 的键纪律须把 Evidence 纳入 `analysisFileCacheKey` / `fnDepSeg`，否则 watch / LSP 命中陈旧结论 | 双读开关关回旧路径；每面一个 PR |
 | **2 · 收紧不变量** | 三条 CI 断言：① 产物 `tsc --strict` 必可编译；② 同一文件 check/test/dts/LSP 结论一致；③ 任何 `degraded` 不得无诊断消失 | 断言先以 warning 观察一轮，全绿后升 error | 断言降级为 warning |
 | **3 · 删旧** | `constNames` 外挂集、`EXPORT_BLOCKING_CODES`、`definiteModuleThrowOf` 语法证据表、`resolveExportSlotCall` 形态枚举、双读 fallback | 阶段 1/2 全绿 + 公共 API 快照无新增导出 | git revert |
@@ -183,7 +183,7 @@ export type ModuleForm = { kind: "esm" } | { kind: "cjs"; exportEquals: SymbolId
 
 ## 12. 参考
 
-`CLAUDE.md`（架构 / 子域冻结 / CI）、`docs/README.md`（文档生命周期）、`CONTRIBUTING.md:120-127`、
+`AGENT.md`（架构 / 子域冻结 / CI）、`docs/README.md`（文档生命周期）、`CONTRIBUTING.md:120-127`、
 `docs/design/kernel-merge.md`、`cli-semantics.md`、`refine-derivation.md`、`architecture-debt.md`、
 `cache-invalidation.md`、`evaluation.md`、`plans/2026-11-09-abs-improvement-plan.md`、
 `tmp/bug-report.md`（34 条根因与逐字输出；**本地审计材料，`tmp/` 与 `/tmp/**` 夹具不入 git，故 §7 阶段 0 要求固化**）、

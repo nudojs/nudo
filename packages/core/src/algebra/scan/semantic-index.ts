@@ -3,7 +3,7 @@
  *
  * 一次 binding 产出的**纯数据**索引：以身份（`SymbolId`）取代字符串名字作为
  * 跨面引用的唯一键。本文件不参与求值、`leqAbs`、`formatShape`，也不是值 IR
- * ——Abs 仍是唯一类型表示（CLAUDE.md:9 / kernel-merge.md）。
+ * ——Abs 仍是唯一类型表示（AGENT.md:9 / kernel-merge.md）。
  *
  * 阶段 0 范围（ADR §10 决议 5）：仅 ESM / CJS 主路径的导出槽与入口形态；
  * namespace、`.ts` 参数属性、完整块级作用域链留阶段 1。
