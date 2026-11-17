@@ -8,7 +8,7 @@ import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { clearPathEnvCaches, defaultLoadModule } from "@nudojs/service";
-import { makeValidateDeps, createMockConnection, type AnyHandler, withLspServer, withTempDir } from "./helpers.ts";
+import { makeValidateDeps, createMockConnection, type AnyHandler, withLspServer, withTempDir, waitForDiagnostics, waitForValue } from "./helpers.ts";
 import { createNudoServer } from "../server.ts";
 import { DIAG } from "@nudojs/core/internal";
 import { actionsForIssue } from "@nudojs/core";
@@ -500,12 +500,12 @@ function openSession(src: string): {
   it("push 通道：nudo:case-expected 的 range 不越过行尾", async () => {
     const { mock, uri, cleanup } = openSession(SRC);
     try {
-      await new Promise((r) => setTimeout(r, 800));
+      await waitForDiagnostics(mock, uri);
       await mock.requests.get("workspace/executeCommand")!({
         command: "nudo.selectCase",
         arguments: [uri, "one", 0],
       });
-      await new Promise((r) => setTimeout(r, 800));
+      await waitForDiagnostics(mock, uri, { code: CASE_CODE });
 
       const lines = SRC.split("\n");
       const pushed = mock.sentDiagnostics
@@ -527,12 +527,12 @@ function openSession(src: string): {
   it("pull 通道：nudo:case-expected 的 range 不越过行尾（同 push 口径）", async () => {
     const { mock, uri, cleanup } = openSession(SRC);
     try {
-      await new Promise((r) => setTimeout(r, 800));
+      await waitForDiagnostics(mock, uri);
       await mock.requests.get("workspace/executeCommand")!({
         command: "nudo.selectCase",
         arguments: [uri, "one", 0],
       });
-      await new Promise((r) => setTimeout(r, 800));
+      await waitForDiagnostics(mock, uri, { code: CASE_CODE });
 
       const res: any = await mock.requests.get("textDocument/diagnostic")!({
         textDocument: { uri },
@@ -1185,18 +1185,24 @@ const PKG = JSON.stringify({
   nudo: { analysis: { diagnostics: "verbose" } },
 });
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 
 
   it("pull 通道对 a.js 报告 nudo:recursion-truncated + nudo:module-cycle", async () => {
     await withLspServer(
       { "a.js": A, "b.js": B, "package.json": PKG },
       async (ctx) => {
-        // 环图装载 + 有界求值 + 多轮 validate 都需要时间
-        await sleep(1200);
-        const res: any = await ctx.req("textDocument/diagnostic")({
-          textDocument: { uri: ctx.uri("a.js") },
-        });
+        // 环图装载 + 有界求值 + 多轮 validate 都需要时间：轮询到目标码出现
+        const res: any = await waitForValue(
+          () => ctx.req("textDocument/diagnostic")({ textDocument: { uri: ctx.uri("a.js") } }),
+          (r: any) => {
+            const codes = (r?.items ?? []).map((d: any) => d.code);
+            return (
+              codes.includes("nudo:recursion-truncated") && codes.includes("nudo:module-cycle")
+            );
+          },
+          { timeout: 1200, interval: 25 },
+        );
         const items: any[] = res?.items ?? [];
         const codes = items.map((d) => d.code);
 
@@ -1238,11 +1244,16 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
           },
         });
       }
-      await sleep(1200);
-      const codes = mock.sentDiagnostics
-        .filter((p: any) => p.uri === uri)
-        .flatMap((p: any) => p.diagnostics)
-        .map((d: any) => d.code);
+      const codes = await waitForValue(
+        () =>
+          mock.sentDiagnostics
+            .filter((p: any) => p.uri === uri)
+            .flatMap((p: any) => p.diagnostics)
+            .map((d: any) => d.code),
+        (list: string[]) =>
+          list.includes("nudo:recursion-truncated") && list.includes("nudo:module-cycle"),
+        { timeout: 1200, interval: 25 },
+      );
       expect(codes, `push 诊断码：${JSON.stringify(codes)}`).toContain(
         "nudo:recursion-truncated",
       );
@@ -1282,7 +1293,7 @@ describe("pull 诊断必须含 env 通道", () => {
 
 
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 
 const SRC = '/// @nudo:env "./nope.mjs"\nexport function g2() {\n  return 1;\n}\n';
 
@@ -1304,7 +1315,7 @@ const SRC = '/// @nudo:env "./nope.mjs"\nexport function g2() {\n  return 1;\n}\
       mock.notifications.get("textDocument/didOpen")!({
         textDocument: { uri, languageId: "javascript", version: 1, text: SRC },
       });
-      await sleep(800);
+      await waitForDiagnostics(mock, uri, { code: "nudo:env-unresolved" });
       const res = (await mock.requests.get("textDocument/diagnostic")!({
         textDocument: { uri },
       })) as { kind?: string; items?: { code?: string; message?: string }[] };
@@ -1344,7 +1355,7 @@ describe("push 与 pull 诊断面同形（env 通道 parity）", () => {
 
 
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 
 const SRC = '/// @nudo:env "./nope.mjs"\nexport function g2() {\n  return 1;\n}\n';
 
@@ -1366,7 +1377,7 @@ const SRC = '/// @nudo:env "./nope.mjs"\nexport function g2() {\n  return 1;\n}\
       mock.notifications.get("textDocument/didOpen")!({
         textDocument: { uri, languageId: "javascript", version: 1, text: SRC },
       });
-      await sleep(800);
+      await waitForDiagnostics(mock, uri, { code: "nudo:env-unresolved" });
 
       const pushed = mock.sentDiagnostics
         .filter((d) => d.uri === uri)

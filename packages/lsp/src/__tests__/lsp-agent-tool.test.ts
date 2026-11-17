@@ -2,7 +2,7 @@
  * 模块套件：agent tool 面（路径错误/deps 懒加载/env 预载/error flag/文件校验）。
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { withLspServer, withTempDir, createMockConnection } from "./helpers.ts";
+import { withLspServer, withTempDir, createMockConnection, waitForDiagnostics } from "./helpers.ts";
 import { join } from "node:path";
 import { writeFileSync, mkdtempSync, rmSync } from "node:fs";
 import { codeActionParams, missingFieldDiag, mountCodeActions } from "./lsp-harness-code-actions.ts";
@@ -250,7 +250,7 @@ afterEach(() => {
         text: APP_SRC,
       },
     });
-    await new Promise((r) => setTimeout(r, 300));
+    await waitForDiagnostics(mock, `file://${file}`);
     const after = await mock.requests.get("nudo/trace")!({ file, functionName: "getMagic" });
     expect(before.content[0].text).toBe(after.content[0].text);
     expect(after.content[0].text).toContain("99");

@@ -403,7 +403,7 @@ register({ id: 1 });             // error: missing u.name
 | **人工 recall** | `check-recall-gold.test.ts` | recall = precision = **1.0**（144 条人工标注，含 require/ESM 跨文件；knownFn=0） |
 | **shape 契约** | `check-shape-gold.test.ts` | 字段 / 可选 / 边界 |
 | **case ⊆ refine** | `check-case-consistency.test.ts` | 见证 ⊆ 定义域 |
-| **真实包精度** | `check-real-commander.test.ts` / `check-real-packages.test.ts` | 10 个真实包上**零** error 级误报（`constraint-violated` / `assign-mismatch` / `arg-structure`） |
+| **真实包精度** | `check-real-commander.oracle.test.ts` / `check-real-packages.oracle.test.ts` | 10 个真实包上**零** error 级误报（`constraint-violated` / `assign-mismatch` / `arg-structure`） |
 
 L2 开启后，any-param / 入口 may-throw 相关金标需按 L2 off/on **分套件**；zero-FP 基线以 L2 off 叙述为准。
 

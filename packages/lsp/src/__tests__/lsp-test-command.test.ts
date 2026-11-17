@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Connection } from "vscode-languageserver/node";
 import { createNudoServer } from "../server.ts";
-import { createMockConnection, type AnyHandler, withLspServer } from "./helpers.ts";
+import { createMockConnection, type AnyHandler, withLspServer, waitForDiagnostics } from "./helpers.ts";
 import { analyzeFileAsync, buildTestReport } from "@nudojs/service";
 import { suggestCase } from "../agent-tools.ts";
 
@@ -106,7 +106,7 @@ function handler(mock: ReturnType<typeof createMockConnection>, method: string):
     mock.notifications.get("textDocument/didOpen")!({
       textDocument: { uri, languageId: "javascript", version: 1, text: SRC },
     });
-    await new Promise((r) => setTimeout(r, 300));
+    await waitForDiagnostics(mock, uri);
 
     await exec({ command: "nudo.selectCase", arguments: [uri, "f", -1, "?"] });
 

@@ -21,26 +21,24 @@ concurrency:
 
 # 矩阵（build 只跑一次，dist 经 nudo-dist artifact 共享；构建产物另
 # 经 actions/cache 跨 run 复用——源码未变的 PR 直接命中缓存跳过 tsup）：
-#   push main         → lint / build / test×2 shard（全量 − e2e，无 --changed）+ benchmark
-#   push dev|ci       → lint / build / test×2 shard（--changed − e2e 快速通道）
-#   pull_request      → lint / build / test-coverage×2 shard（--changed 子集 − e2e + fs-input，唯一测试门禁）
-#   schedule/dispatch → build / test:coverage×2 shard + coverage-merge（全量，含 e2e + 硬阈值）/ benchmark / node-matrix
+#   push main         → lint / build / test×2 shard（全量 − e2e/oracle，无 --changed）+ benchmark
+#   push dev|ci       → lint / build / test×2 shard（--changed − e2e/oracle 快速通道）
+#   pull_request      → lint / build / test-pr×2 shard（--changed 子集 − e2e/oracle + fs-input，唯一测试门禁）
+#   schedule/dispatch → build / test:coverage×2 shard + coverage-merge（全量，含 e2e/oracle + 硬阈值）/ benchmark / node-matrix
 #
-# CLI e2e（`*.e2e.test.ts`，进程级 spawn）只在 nightly / 手动 dispatch 执行
-# （2026-11-17 决策：快速迭代期以单元+集成覆盖率作为 PR/main 门禁；e2e 由
-# 夜间全量兜底）。改动 CLI / 进程面时本地跑 `pnpm run test:local --e2e`
-# （或 `--e2e --changed`）。发布门禁因此不再包含 e2e——发布前若动过 CLI，
-# 必须手动补跑一次 e2e。
-# 快速通道细节：test / test-coverage 按 git diff <since>...HEAD 选测试
+# 慢通道（2026-11-17 决策，快速迭代期）：
+# - 进程级 e2e（`*.e2e.test.ts`，CLI spawn）与外部 oracle（`*.oracle.test.ts`，
+#   真实 npm 包 / @types 语料）只在 nightly / 手动 dispatch 执行；
+# - PR/main 门禁 = 单元 + 集成用例；本地补跑用 `pnpm run test:local --e2e`
+#   （或 `--oracle`，都可配 `--changed`）；
+# - 发布门禁因此不再覆盖 e2e/oracle——动过 CLI、进程面或 harvest/真实包精度
+#   的发布必须手动补跑。
+# 快速通道细节：test / test-pr 按 git diff <since>...HEAD 选测试
 # （vitest --changed，模块图 + forceRerunTriggers 安全网，见
 # vitest.config.ts）；lint job 在无 .ts/.tsx/tsconfig/lockfile 变更时跳过三个 tsc。
-# coverage（v8 插桩 + 阈值聚合，慢 30–60%）：夜间/手动跑全量 + 硬阈值；
-# PR 跑 --changed 子集并关阈值，只把报告交给 codecov，让覆盖率回退在
-# PR 内可见而不是等 ≤24h（子集覆盖率天然低于全量基线，不能用全局阈值判）。
-# PR 不再单跑裸 test job：覆盖率报告必须自跑用例才能产出，同一批
-# --changed 用例双跑只白花两个 runner 的分钟（两 job 并行，墙钟本不叠加）。
-# PR 覆盖率拆 2 shard 并发，两个 shard 各上传 coverage-final.json（同一
-# codecov flag，由 codecov 按 commit 合并）；阈值在 PR 上已关，无需本地 merge。
+# coverage（v8 插桩 + 阈值聚合，慢 30–60%）只在 nightly / dispatch 跑全量 +
+# 硬阈值；PR 不再产出覆盖率报告（2026-11-17：PR 门禁只看用例红绿，codecov
+# 数据由 nightly 提供；避免为插桩多付一份墙钟）。
 # main push 的发布门禁 = 全量测试（2 shard，无 --changed）+ lint + benchmark。
 # verify:examples / verify:docs 跑真实 CLI（tsx 直连包源码）——输入面含
 # 包源码，ts 或 docs 变更都要跑；两者都没动的 push（version-bump 合并、
@@ -285,7 +283,7 @@ jobs:
     # Release 复用同 SHA 的 CI 绿结论）。
     # 2026-11-17 起本 job 排除 `*.e2e.test.ts`（进程级 CLI e2e 只在 nightly/
     # dispatch 跑，见文件头）；动过 CLI/进程面的发布必须手动补 `test:local --e2e`。
-    # PR 不跑本 job：test-coverage-pr 用同一批 --changed 用例出覆盖率报告，
+    # PR 不跑本 job：test-pr 用同一批 --changed 用例做门禁（无覆盖率），
     # 用例失败它同样红，双跑只白花两个 runner 的分钟（详见文件头矩阵）。
     # 2 shard 并发压墙时；fail-fast 关闭以保留双 shard 结果。
     if: ${{ github.event_name == 'push' }}
@@ -366,18 +364,18 @@ jobs:
           if [ -n "${{ steps.changed.outputs.since }}" ]; then
             # --passWithNoTests：--changed 只命中 1 个文件时，2/2 shard 不能报
             # “shard count > test files”
-            npm run test -- --changed "${{ steps.changed.outputs.since }}" --shard=${{ matrix.shard }}/2 --exclude "**/*.e2e.test.ts" --passWithNoTests
+            npm run test -- --changed "${{ steps.changed.outputs.since }}" --shard=${{ matrix.shard }}/2 --exclude "**/*.e2e.test.ts" --exclude "**/*.oracle.test.ts" --passWithNoTests
           else
-            npm run test -- --shard=${{ matrix.shard }}/2 --exclude "**/*.e2e.test.ts"
+            npm run test -- --shard=${{ matrix.shard }}/2 --exclude "**/*.e2e.test.ts" --exclude "**/*.oracle.test.ts"
           fi
 
-  test-coverage-pr:
-    name: Test & Coverage (shard ${{ matrix.shard }}/2)
-    # PR 的测试门禁：--changed 子集 + 覆盖率报告。分 2 shard 并发压墙时；
-    # 每个 shard 各传一份 coverage-final.json，同一 codecov flag 由 codecov
-    # 按 commit 合并（PR 阈值已关，不需要本地 merge）。
-    # 矩阵化后 check 名从 "Test & Coverage" 变成带 shard 后缀的两个 check，
-    # branch protection 需要同步。
+  test-pr:
+    name: Test PR (shard ${{ matrix.shard }}/2)
+    # PR 的测试门禁：--changed 子集（− e2e/oracle）+ fs-input，**不产出覆盖率**
+    # （2026-11-17 决策：PR 只看用例红绿；覆盖率与硬阈值回到 nightly/dispatch）。
+    # 分 2 shard 并发压墙时。
+    # ⚠ check 名从 "Test & Coverage (shard i/2)" 改为 "Test PR (shard i/2)"，
+    # branch protection 的 required checks 需同步。
     if: ${{ github.event_name == 'pull_request' }}
     needs: build
     strategy:
@@ -434,22 +432,12 @@ jobs:
 
       - name: Test
         run: >
-          pnpm run test:coverage:diff --
+          npm run test --
           --changed "${{ github.event.pull_request.base.sha }}"
           --shard=${{ matrix.shard }}/2
           --exclude "**/*.e2e.test.ts"
+          --exclude "**/*.oracle.test.ts"
           --passWithNoTests
-
-      - name: Upload coverage
-        # 空 --changed 子集（或 fs-input 先失败）时不产生 coverage-final.json
-        if: ${{ always() && hashFiles('coverage/coverage-final.json') != '' }}
-        # v7
-        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./coverage/coverage-final.json
-          flags: pr-diff
-          fail_ci_if_error: false
 
   test-coverage:
     name: Test & Coverage (shard ${{ matrix.shard }}/2)

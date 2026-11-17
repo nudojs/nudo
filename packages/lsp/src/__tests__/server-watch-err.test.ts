@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { FileChangeType } from "vscode-languageserver/node";
+import { waitForValue } from "./helpers.ts";
 
 // handleNudoDepFileChanged 注入失败形态：真实实现难以稳定抛错，
 // 部分 mock validation.ts（其余导出原样透传）验证空 catch 已改为可见日志。
@@ -41,7 +42,7 @@ describe("watched-files 重检失败可见性", () => {
       deps,
     );
     // void promise 链在一个微任务后落进 catch
-    await new Promise((r) => setTimeout(r, 0));
+    await waitForValue(() => errSpy.mock.calls.length, (n) => n >= 1, { timeout: 100 });
     expect(errSpy).toHaveBeenCalledTimes(1);
     const [msg, err] = errSpy.mock.calls[0] as unknown as [string, Error];
     expect(msg).toContain("[nudo-lsp] dep file revalidate failed");

@@ -1,14 +1,16 @@
 /**
- * 本地测试快车道：`pnpm run test:local [-- --changed | --fast]`
+ * 本地测试快车道：`pnpm run test:local [-- --changed | --fast | --e2e | --oracle]`
  *
- * 四种用法（本地开发循环；CI 保持 build → test 两步，门禁口径不变）：
- * - `test:local`                 全量（预推送自检，含 e2e）
- * - `test:local -- --changed`    变更相关（日常内循环；与 CI PR 同口径）
- * - `test:local --fast`          全量减去 e2e 进程通道与真实包扫描（CI PR/main 口径）
+ * 车道（本地开发循环；CI 保持 build → test 两步）：
+ * - `test:local`                 全量（预推送自检，含 e2e/oracle）
+ * - `test:local -- --changed`    变更相关（日常内循环；含受影响的慢用例）
+ * - `test:local --fast`          PR/main 门禁口径：全量 − e2e − 外部 oracle
  * - `test:local --e2e`           只跑进程级 e2e（`*.e2e.test.ts`；可加 --changed）
+ * - `test:local --oracle`        只跑外部 oracle（`*.oracle.test.ts`；可加 --changed）
  *
- * 2026-11-17 起 CLI e2e 只在 nightly 跑：PR/main 的测试门禁 = 单元+集成 +
- * 覆盖率，改动 CLI/进程面时本地 `test:local --e2e` 补跑。
+ * 2026-11-17 起 e2e 与外部 oracle 只在 nightly / dispatch 跑：PR/main 的测试
+ * 门禁 = 单元 + 集成用例（PR 不再产覆盖率报告）。改动 CLI/进程面或
+ * harvest/真实包精度时用对应车道本地补跑。
  *
  * 通用优化：
  * 1. CLI e2e 走 `NUDO_TEST_CLI=dist`——每次 spawn 省掉 tsx 转译
@@ -17,7 +19,7 @@
  * 3. worker 数由 vitest.config.ts 决定（本地 = 核数；CI 仍 4）。
  *
  * 2026-11-17 实测（16 核，978 文件 / 12438 用例）：
- * `pnpm run test` 423s → `test:local` 107s；`--fast` 68s。
+ * `pnpm run test` 423s → `test:local` ~100s；`--fast` ~67s；`--e2e` ~40s；`--oracle` ~6s。
  *
  * dist 刷新判定只看非测试源码：tsup 输入不含 `__tests__` / `*.test.ts`，
  * 所以纯测试改动不触发重建，CLI e2e 测的仍是同一份实现。
@@ -111,8 +113,11 @@ if (fast) args.splice(args.indexOf("--fast"), 1);
 // `--e2e`：只跑进程级 e2e（`*.e2e.test.ts`），可配 `--changed` 只跑受影响的。
 const e2eOnly = args.includes("--e2e");
 if (e2eOnly) args.splice(args.indexOf("--e2e"), 1);
-if (fast && e2eOnly) {
-  console.error("[test:local] --fast 与 --e2e 互斥：一个排除 e2e，一个只跑 e2e。");
+// `--oracle`：只跑外部 oracle（`*.oracle.test.ts`），可配 `--changed`。
+const oracleOnly = args.includes("--oracle");
+if (oracleOnly) args.splice(args.indexOf("--oracle"), 1);
+if ([fast, e2eOnly, oracleOnly].filter(Boolean).length > 1) {
+  console.error("[test:local] --fast / --e2e / --oracle 互斥。");
   process.exit(2);
 }
 if (fast && args.some((a) => a === "--changed" || a.startsWith("--changed="))) {
@@ -136,16 +141,19 @@ if (e2eOnly) {
   // 当成 since（实测变成 `git diff .e2e.test.ts...HEAD`）。
   vitestArgs.push(".e2e.test.ts");
 }
+if (oracleOnly) {
+  vitestArgs.push(".oracle.test.ts");
+}
 vitestArgs.push(...args);
 if (fast) {
-  // 进程级 e2e（`*.e2e.test.ts`）与真实 npm 包扫描（外部 oracle）不进快面：
-  // 前者 58 文件占测试体时长约一半（每例 2–5 次 CLI spawn），后者依赖
-  // node_modules 里的包。CI 的 PR/main 车道与这里同口径。
+  // 慢通道（e2e / 外部 oracle）不进快面：前者 58 文件占测试体时长约一半
+  // （每例 2–5 次 CLI spawn），后者依赖 node_modules 里的包。CI 的 PR/main
+  // 车道与这里同口径。
   vitestArgs.push(
     "--exclude",
     "**/*.e2e.test.ts",
     "--exclude",
-    "packages/core/src/algebra/__tests__/check-real-*.test.ts",
+    "**/*.oracle.test.ts",
   );
 }
 

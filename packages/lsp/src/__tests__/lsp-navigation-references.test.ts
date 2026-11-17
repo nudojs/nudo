@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { parse } from "@nudojs/parser";
 import { collectMethodReferences, collectBindingReferences, buildRenameEdits } from "../symbols.ts";
 import { createNudoServer } from "../server.ts";
-import { createMockConnection, withLspServer } from "./helpers.ts";
+import { createMockConnection, withLspServer, waitForDiagnostics } from "./helpers.ts";
 import { startLspWithFiles, locationsOf, editsOf, type LspHarness } from "./lsp-harness-navigation.ts";
 
 
@@ -362,7 +362,7 @@ async function withServer<T>(
     mock.notifications.get("textDocument/didOpen")!({
       textDocument: { uri, languageId: "javascript", version: 1, text: src },
     });
-    await new Promise((r) => setTimeout(r, 200));
+    await waitForDiagnostics(mock, uri);
     return await fn(mock, uri);
   } finally {
     rmSync(dir, { recursive: true, force: true });

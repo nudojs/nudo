@@ -2,7 +2,7 @@
  * 模块套件：lsp-check-contract-channels（LSP 分片；1 文件 = 1 worker）。
  */
 import { describe, it, expect } from "vitest";
-import { withLspServer, withTempDir, createMockConnection } from "./helpers.ts";
+import { withLspServer, withTempDir, createMockConnection, waitForDiagnostics } from "./helpers.ts";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -714,7 +714,7 @@ const DEFAULT_PKG = { name: "bug779-default", private: true, type: "module" };
   {
     const { mock, uri, cleanup } = openSession(VERBOSE_PKG);
     try {
-      await new Promise((r) => setTimeout(r, 900));
+      await waitForDiagnostics(mock, uri, { code: ASSUME_CODE });
       const pushed = mock.sentDiagnostics
         .filter((p: any) => p.uri === uri)
         .flatMap((p: any) => p.diagnostics)
@@ -728,7 +728,7 @@ const DEFAULT_PKG = { name: "bug779-default", private: true, type: "module" };
   {
     const { mock, uri, cleanup } = openSession(VERBOSE_PKG);
     try {
-      await new Promise((r) => setTimeout(r, 900));
+      await waitForDiagnostics(mock, uri, { code: ASSUME_CODE });
       const res: any = await mock.requests.get("textDocument/diagnostic")!({
         textDocument: { uri },
       });
@@ -742,7 +742,8 @@ const DEFAULT_PKG = { name: "bug779-default", private: true, type: "module" };
   {
     const { mock, uri, cleanup } = openSession(DEFAULT_PKG);
     try {
-      await new Promise((r) => setTimeout(r, 900));
+      // 负向断言：等「分析已发布」即静默窗口起点（不是等 ASSUME_CODE 出现）
+      await waitForDiagnostics(mock, uri);
       const pushed = mock.sentDiagnostics
         .filter((p: any) => p.uri === uri)
         .flatMap((p: any) => p.diagnostics)

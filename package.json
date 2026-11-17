@@ -20,7 +20,6 @@
     "test:local": "node scripts/test-local.mjs",
     "test:ci": "pnpm run build && pnpm run test",
     "test:coverage": "NODE_OPTIONS=--max-old-space-size=8192 vitest run --coverage",
-    "test:coverage:diff": "NUDO_COVERAGE_THRESHOLDS=off NODE_OPTIONS=--max-old-space-size=8192 vitest run --coverage",
     "test:coverage:merge": "NODE_OPTIONS=--max-old-space-size=8192 vitest run --merge-reports=coverage-blobs --coverage",
     "test:fs-input": "node scripts/run-fs-input-tests.mjs",
     "coverage:floors": "node scripts/coverage-floors.mjs",

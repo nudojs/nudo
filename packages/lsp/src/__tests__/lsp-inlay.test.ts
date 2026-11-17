@@ -6,7 +6,7 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createNudoServer } from "../server.ts";
-import { createMockConnection, withLspServer } from "./helpers.ts";
+import { createMockConnection, withLspServer, waitForDiagnostics } from "./helpers.ts";
 
 type Range = { start: { line: number; character: number }; end: { line: number; character: number } };
 type Hint = { position: { line: number; character: number }; label: string; tooltip?: string };
@@ -40,7 +40,7 @@ async function hintsFor(
   mock.notifications.get("textDocument/didOpen")!({
     textDocument: { uri, languageId: "javascript", version: 1, text },
   });
-  await new Promise((r) => setTimeout(r, 250));
+  await waitForDiagnostics(mock, uri);
   return (mock.requests.get("textDocument/inlayHint")!({
     textDocument: { uri },
     ...(range ? { range } : {}),
@@ -283,7 +283,9 @@ async function paramInlaySession(
       },
     });
   }
-  await new Promise((r) => setTimeout(r, 300));
+  for (const name of Object.keys(files)) {
+    await waitForDiagnostics(mock, `file://${join(dir, name)}`);
+  }
   return {
     req: (method: string) => mock.requests.get(method)!,
     uri: (name: string) => `file://${join(dir, name)}`,
@@ -303,7 +305,9 @@ async function paramInlaySession(
     for (const [name, text] of Object.entries(files)) {
       mock.notifications.get("textDocument/didOpen")!({ textDocument: { uri: `file://${join(dir, name)}`, languageId: "javascript", version: 1, text } });
     }
-    await new Promise((r) => setTimeout(r, 300));
+    for (const name of Object.keys(files)) {
+      await waitForDiagnostics(mock, `file://${join(dir, name)}`);
+    }
     return { req: (method: string) => mock.requests.get(method)!, uri: (name: string) => `file://${join(dir, name)}`, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
   };
   it("真 unknown 挂 ⚠ + 引擎债 tooltip；无约束参数与显式 any() 不加警示", async () => {

@@ -65,6 +65,12 @@ for (const file of files) {
     }
   }
 
+  // 真实包扫描（check-real-*）是外部 oracle 车道：CI 的 PR/main 车道按
+  // `**/*.oracle.test.ts` 排除，命名不符会静默回流到 PR 门禁。
+  if (/check-real-[^/]*\.test\.ts$/.test(file) && !file.endsWith(".oracle.test.ts")) {
+    report(sf, "真实包 oracle（check-real-*）必须命名为 *.oracle.test.ts");
+  }
+
   const walk = (n) => {
     if (ts.isEmptyStatement(n)) {
       const p = n.parent;

@@ -7,7 +7,7 @@
 | Suite | Question | Oracle / metric | Product gate? | Entry |
 |-------|----------|-----------------|:---:|-------|
 | **check gold** (in `packages/core`) | Can `nudo check` classify known violations? | 178 hand-labeled rows, **recall=precision=1.0** | **Yes** (CI) | `pnpm vitest run packages/core/src/algebra/__tests__/check-recall-gold.test.ts` |
-| **real-package zero-FP** | Does `check` stay quiet on real OSS JS? | 0 error on commander / lodash / … | **Yes** (CI) | `check-real-packages.test.ts` |
+| **real-package zero-FP** | Does `check` stay quiet on real OSS JS? | 0 error on commander / lodash / … | **Yes** (CI) | `check-real-packages.oracle.test.ts` |
 | **S1 monorepo** | Cold / warm / edit latency at repo scale | wall-clock (synthetic 120-file corpus) | No (baseline report) | `pnpm run benchmark:s1` → `docs/reports/s1-perf-baseline.md` |
 | **S1 real corpus** (ABS-16) | Same phases on a **real monorepo** + cache hit telemetry | wall-clock + `fn-summary` hit/miss deltas + host info | No (measurement only) | `pnpm run benchmark:s1:real` → `docs/reports/s1-perf-baseline-real.md` ⚠️ 2026-11-12 首测数字失真（语料污染 + 宿主 fs shim），保留但勿引用 |
 | **S1 real corpus — clean** (ABS-16 订正) | Same phases, generated-output dirs skipped and `NODE_OPTIONS` removed | wall-clock + host-env row + skip dirs | No (measurement only) | `pnpm run benchmark:s1:real:clean` → `docs/reports/s1-perf-baseline-real-clean.md` |

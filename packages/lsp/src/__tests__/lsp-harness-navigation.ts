@@ -9,7 +9,7 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createNudoServer } from "../server.ts";
-import { createMockConnection } from "./helpers.ts";
+import { createMockConnection, waitForDiagnostics } from "./helpers.ts";
 
 export type LspLocation = {
   file: string;
@@ -30,6 +30,8 @@ export type LspHarness = {
   dir: string;
   /** 模拟一次未保存的编辑（buffer 变、磁盘不变） */
   changeBuffer: (name: string, text: string) => void;
+  /** 等该文件在编辑后的下一轮诊断发布（替代固定 sleep） */
+  waitReady: (name: string) => Promise<void>;
   cleanup: () => void;
 };
 
@@ -51,7 +53,11 @@ export async function startLspWithFiles(files: Record<string, string>): Promise<
       },
     });
   }
-  await new Promise((r) => setTimeout(r, 300));
+  for (const name of Object.keys(files)) {
+    await waitForDiagnostics(mock, `file://${join(dir, name)}`);
+  }
+  const publishedCount = (name: string): number =>
+    mock.sentDiagnostics.filter((p: any) => p.uri === `file://${join(dir, name)}`).length;
   return {
     req: (method, params) => mock.requests.get(method)!(params),
     uri: (name) => `file://${join(dir, name)}`,
@@ -61,6 +67,10 @@ export async function startLspWithFiles(files: Record<string, string>): Promise<
         textDocument: { uri: `file://${join(dir, name)}`, version: 2 },
         contentChanges: [{ text }],
       });
+    },
+    waitReady: async (name) => {
+      const before = publishedCount(name);
+      await waitForDiagnostics(mock, `file://${join(dir, name)}`, { minCount: before + 1 });
     },
     cleanup: () => rmSync(dir, { recursive: true, force: true }),
   };

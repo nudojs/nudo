@@ -58,4 +58,4 @@ Corpus is **unannotated pure JS**. tsc only enters weak `allowJs+checkJs` here â
 |-------|--------|----------|
 | `benchmark/s1` | synthetic monorepo | scale curve / edit cost |
 | **`benchmark/oss`** | **real OSS JS packages** | **real-code perf + zero-FP** |
-| `check-real-packages.test.ts` | same packages | CI precision unit gate |
+| `check-real-packages.oracle.test.ts` | same packages | CI precision unit gate |

@@ -175,7 +175,7 @@ pnpm run check src/ --ignore-throws TypeError,RangeError
 | 人工 recall = precision = 1.0 | `packages/core/src/algebra/__tests__/check-recall-gold.test.ts`（144 条，knownFn=0） |
 | shape 精化 | `check-shape-gold.test.ts` |
 | case ⊆ refine | `check-case-consistency.test.ts` |
-| 真实包零误报 | `check-real-packages.test.ts` / `check-real-commander.test.ts` |
+| 真实包零误报 | `check-real-packages.oracle.test.ts` / `check-real-commander.oracle.test.ts` |
 | 示例矩阵 | `docs/examples/README.md` + `scripts/verify-examples.sh` |
 
 ```bash

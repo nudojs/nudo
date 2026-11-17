@@ -4,7 +4,7 @@
  * client-capabilities 与 server-watch-err 因模块级 vi.mock 保留独立入口。
  */
 import { describe, it, expect, beforeEach, beforeAll, afterAll, afterEach } from "vitest";
-import { createMockConnection, withLspServer, type AnyHandler, makeValidateDeps, type MockConnection, withTempDir } from "./helpers.ts";
+import { createMockConnection, withLspServer, type AnyHandler, makeValidateDeps, type MockConnection, withTempDir, waitForDiagnostics, waitForValue } from "./helpers.ts";
 import { createNudoServer } from "../server.ts";
 import { ErrorCodes, type Connection } from "vscode-languageserver/node";
 import { NUDO_EXECUTE_COMMANDS, NUDO_INITIALIZE_CAPABILITIES, NUDO_AGENT_TOOL_NAMES } from "../public-api.ts";
@@ -340,7 +340,7 @@ function mockClientWithDelayedWorkspaceFolders(): {
     });
     // 补订阅排在 `initialize` 之后的下一轮事件循环（落在库自己的
     // `fillServerCapabilities` 之后 ⇒ 不多发 `client/registerCapability`）。
-    await new Promise((r) => setTimeout(r, 0));
+    await waitForValue(() => listeners.length, (n) => n >= 1, { timeout: 100 });
     // initialize 之后：getter 可用 ⇒ 订阅补上（且不重复订阅）
     expect(listeners.length, "initialize 之后未建立订阅").toBe(1);
 
@@ -471,7 +471,7 @@ function withProject(
           text: MAIN_SRC,
         },
       });
-      await new Promise((r) => setTimeout(r, 300));
+      await waitForDiagnostics(mock, uri);
 
       const res = (await mock.requests.get("workspace/executeCommand")!({
         command: "nudo.trace",
@@ -831,7 +831,7 @@ describe("URI 编解码互逆（编码侧 pathToFileURL / 解码侧 fileURLToPat
         thrown = e;
       }
       expect(thrown, "didOpen 抛了 ⇒ 该通知中断 ⇒ 该文档零诊断").toBeUndefined();
-      await new Promise((r) => setTimeout(r, 300));
+      await waitForDiagnostics(mock, uri);
       const published = mock.sentDiagnostics.filter((d) => d.uri === uri);
       expect(published.length, "该文档从未进入分析 ⇒ 零诊断").toBeGreaterThan(0);
       const last = published[published.length - 1];
@@ -1546,10 +1546,13 @@ export const need = fn({ x: number() }, number());
     notification(mock, "workspace/didChangeConfiguration")({
       settings: { nudo: { inlayHints: { parameters: true } } },
     });
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect((await inlayLabels(mock, uri)).some((l) => l.includes("where"))).toBe(
-      true,
-    );
+    expect(
+      await waitForValue(
+        async () => (await inlayLabels(mock, uri)).some((l) => l.includes("where")),
+        (v) => v === true,
+        { timeout: 1000 },
+      ),
+    ).toBe(true);
     notification(mock, "workspace/didChangeConfiguration")({
       settings: { nudo: { inlayHints: { parameters: false } } },
     });

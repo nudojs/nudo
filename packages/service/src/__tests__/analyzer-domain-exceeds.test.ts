@@ -8,7 +8,7 @@
  * - real-package zero-FP：真实包（ms / kleur）注入记录回灌 analyzeFile，
  * 证明接线在真实包上不产生 domain-exceeds FP（夹具包声明在 core
  * devDependencies，createRequire 从 core 位置按 Node 解析规则定位——
- * 沿用 check-real-packages.test.ts 方案）
+ * 沿用 check-real-packages.oracle.test.ts 方案）
  */
 import { describe, it, expect } from "vitest";
 import { writeFileSync, readFileSync } from "node:fs";
@@ -164,7 +164,7 @@ export function area(x) {
 
 describe("real-package zero-FP：真实包注入记录不产生 domain-exceeds", () => {
   /**
- * 夹具包声明在 core devDependencies（沿 check-real-packages.test.ts 的
+ * 夹具包声明在 core devDependencies（沿 check-real-packages.oracle.test.ts 的
  * createRequire 方案）；service 侧从 core 位置按 Node 解析规则定位。
  */
   const coreRequire = createRequire(

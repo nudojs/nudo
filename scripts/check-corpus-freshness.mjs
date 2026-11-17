@@ -6,7 +6,7 @@
  *   node scripts/check-corpus-freshness.mjs
  *
  * 语义：
- * - 语料 = check-real-packages.test.ts 扫描的真实包（docs/check-real-packages.md
+ * - 语料 = check-real-packages.oracle.test.ts 扫描的真实包（docs/check-real-packages.md
  *   语料表）。增删/升级语料须同步四处：packages/core/package.json devDependencies、
  *   测试套件、docs 语料表（版本 + 上次刷新列）、本脚本 CORPUS。
  * - 提醒档：installed 与 latest 的 **major** 不一致才提醒（major 落后 = 语料
@@ -82,7 +82,7 @@ for (const { pkg, version } of installed) {
 if (majorBehind > 0) {
   console.log(
     `\n${majorBehind} 个语料 major 落后：升级后须同步 packages/core/package.json devDependencies、` +
-      `check-real-packages.test.ts、docs/check-real-packages.md 语料表（版本 + 上次刷新）与本脚本 CORPUS。`,
+      `check-real-packages.oracle.test.ts、docs/check-real-packages.md 语料表（版本 + 上次刷新）与本脚本 CORPUS。`,
   );
 } else {
   console.log("\n全部语料与 registry latest 同 major 代际。");

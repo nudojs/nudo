@@ -8,7 +8,7 @@ import { join, basename } from "node:path";
 import { parse } from "@nudojs/parser";
 import { collectMethodReferences, hasAmbiguousMethodReceiver, renameTargetAt } from "../symbols.ts";
 import { createNudoServer } from "../server.ts";
-import { createMockConnection, withLspServer, withTempDir } from "./helpers.ts";
+import { createMockConnection, withLspServer, withTempDir, waitForDiagnostics } from "./helpers.ts";
 import { pathToFileURL } from "node:url";
 import { defaultLoadModule } from "@nudojs/service";
 import { checkToLspDiagnostics } from "../validation.ts";
@@ -152,7 +152,9 @@ async function renameEdits(
         },
       });
     }
-    await new Promise((r) => setTimeout(r, 300));
+    for (const name of Object.keys(files)) {
+      await waitForDiagnostics(mock, `file://${paths[name]}`);
+    }
     const handler = mock.requests.get("textDocument/rename");
     expect(handler, "rename handler not registered").toBeTruthy();
     const res = handler!({

@@ -35,7 +35,7 @@ import { positionalCommandParams } from "../agent-tools.ts";
 import { configIgnoreThrows, parseIgnoreThrows } from "../gate-config.ts";
 import { cacheKey, checkToLspDiagnostics, handleNudoDepFileChanged } from "../validation.ts";
 import { createNudoServer } from "../server.ts";
-import { createMockConnection, withLspServer } from "./helpers.ts";
+import { createMockConnection, withLspServer, waitForDiagnostics } from "./helpers.ts";
 import { openLspDocument, requestCompletion } from "./lsp-harness-semantic-tokens.ts";
 
 /* ───────────────────────── 夹具 ───────────────────────── */
@@ -468,7 +468,7 @@ describe("env 模板反向边（LSP 接 service 的 env 反向边表）", () => 
       mock.notifications.get("textDocument/didOpen")!({
         textDocument: { uri: mainUri, languageId: "javascript", version: 1, text: MAIN_SRC },
       });
-      await new Promise((r) => setTimeout(r, 800));
+      await waitForDiagnostics(mock, mainUri);
       const before = mock.sentDiagnostics.filter((d) => d.uri === mainUri);
       expect(before.length).toBeGreaterThan(0);
       expect(
@@ -480,7 +480,7 @@ describe("env 模板反向边（LSP 接 service 的 env 反向边表）", () => 
       mock.notifications.get("workspace/didChangeWatchedFiles")!({
         changes: [{ uri: `file://${envFile}`, type: FileChangeType.Changed }],
       });
-      await new Promise((r) => setTimeout(r, 1000));
+      await waitForDiagnostics(mock, mainUri, { code: "nudo:env-unresolved" });
 
       const afterCodes = mock.sentDiagnostics
         .filter((d) => d.uri === mainUri)

@@ -30,6 +30,52 @@ import type { LspDiagnostic, ValidateTextDeps } from "../validation.ts";
 
 export type AnyHandler = (params: any) => any;
 
+/**
+ * 轮询直到 `accept(value)` 成立；**超时返回最后一次取值**（不抛错）——
+ * 调用点的原断言会按原样失败，诊断信息不变，但正常路径从「固定 sleep」
+ * 变成「条件就绪即走」（典型 10–30ms vs 250–1000ms）。
+ *
+ * probe 可以是同步请求处理器（LSP 协议面 handler 本身是同步的）或 async 回调。
+ * 负向断言（「不得再次发布」这类静默窗口）不要用本函数——那些必须固定等待。
+ */
+export async function waitForValue<T>(
+  probe: () => T | Promise<T>,
+  accept: (value: T) => boolean,
+  { timeout = 2000, interval = 10 }: { timeout?: number; interval?: number } = {},
+): Promise<T> {
+  const start = Date.now();
+  let value = await probe();
+  while (!accept(value)) {
+    if (Date.now() - start >= timeout) return value;
+    await new Promise((r) => setTimeout(r, interval));
+    value = await probe();
+  }
+  return value;
+}
+
+/**
+ * 等某文档的发布面就绪：`didOpen` / `didChange` / `selectCase` 之后，用
+ * 「该 uri 已发布过 N 次诊断（可限定诊断码）」作为分析完成信号，替代固定
+ * sleep。超时同样返回最后一次取值，让原断言按原样失败。
+ */
+export async function waitForDiagnostics(
+  mock: ReturnType<typeof createMockConnection>,
+  uri: string,
+  {
+    minCount = 1,
+    timeout = 2000,
+    code,
+  }: { minCount?: number; timeout?: number; code?: string } = {},
+): Promise<any[]> {
+  const match = () =>
+    mock.sentDiagnostics.filter(
+      (p: any) =>
+        p.uri === uri &&
+        (code === undefined || (p.diagnostics ?? []).some((d: any) => d.code === code)),
+    );
+  return waitForValue(match, (list) => list.length >= minCount, { timeout });
+}
+
 export function createMockConnection() {
   const requests = new Map<string, AnyHandler>();
   const notifications = new Map<string, AnyHandler>();
@@ -265,8 +311,14 @@ async function runLspServer(
         },
       });
     }
-    // 等分析缓存就绪
-    await new Promise((r) => setTimeout(r, 300));
+    // 等分析缓存就绪：每份打开的文档都发布过一次诊断（含空数组）即视为就绪；
+    // 300ms 是**上限**（个别文档不发布时退回旧的固定等待语义）。
+    const openedUris = Object.keys(files).map((name) => `file://${join(dir, name)}`);
+    await waitForValue(
+      () => new Set(mock.sentDiagnostics.map((p: any) => p.uri)),
+      (seen) => openedUris.every((u) => seen.has(u)),
+      { timeout: 300, interval: 5 },
+    );
     await fn({
       req: (method: string) => mock.requests.get(method)!,
       uri: (name: string) => `file://${join(dir, name)}`,

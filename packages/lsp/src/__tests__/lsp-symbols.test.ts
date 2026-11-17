@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse } from "@nudojs/parser";
 import { documentSymbols, findIdentifierAtPosition, resolveDefinition, resolveReferences, collectImportBindings, findExportDefinition } from "../symbols.ts";
-import { withLspServer, withLspServerCapabilities, createMockConnection } from "./helpers.ts";
+import { withLspServer, withLspServerCapabilities, createMockConnection, waitForDiagnostics } from "./helpers.ts";
 import { createNudoServer } from "../server.ts";
 
 // ---------------------------------------------------------------------------
@@ -349,7 +349,7 @@ async function protocolSymbols(src: string): Promise<Sym[]> {
     mock.notifications.get("textDocument/didOpen")!({
       textDocument: { uri, languageId: "javascript", version: 1, text: src },
     });
-    await new Promise((r) => setTimeout(r, 200));
+    await waitForDiagnostics(mock, uri);
     const handler = mock.requests.get("textDocument/documentSymbol");
     expect(handler, "documentSymbol handler not registered").toBeTruthy();
     const res = handler!({ textDocument: { uri } });
@@ -451,7 +451,7 @@ async function protocolSymbols(src: string): Promise<Sym[]> {
     mock.notifications.get("textDocument/didOpen")!({
       textDocument: { uri, languageId: "javascript", version: 1, text: src },
     });
-    await new Promise((r) => setTimeout(r, 200));
+    await waitForDiagnostics(mock, uri);
     const handler = mock.requests.get("textDocument/documentSymbol");
     expect(handler, "documentSymbol handler not registered").toBeTruthy();
     const res = handler!({ textDocument: { uri } });
@@ -543,7 +543,7 @@ async function protocolSymbols(src: string): Promise<Sym[]> {
     mock.notifications.get("textDocument/didOpen")!({
       textDocument: { uri, languageId: "javascript", version: 1, text: src },
     });
-    await new Promise((r) => setTimeout(r, 200));
+    await waitForDiagnostics(mock, uri);
     const handler = mock.requests.get("textDocument/documentSymbol");
     expect(handler, "documentSymbol handler not registered").toBeTruthy();
     const res = handler!({ textDocument: { uri } });

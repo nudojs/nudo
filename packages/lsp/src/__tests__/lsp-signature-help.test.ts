@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getCompletionsAtPosition } from "../lsp-surface/completions.ts";
 import { createNudoServer } from "../server.ts";
-import { createMockConnection, withLspServer } from "./helpers.ts";
+import { createMockConnection, waitForDiagnostics, withLspServer } from "./helpers.ts";
 import { absFunction, num, relationFn, shapeOnlyFn, str, formatShape, type Abs } from "@nudojs/core";
 import { buildSignatureHelp } from "../signature-help.ts";
 import { parse } from "@nudojs/parser";
@@ -72,7 +72,7 @@ function tmpFile(src: string): { dir: string; file: string } {
       mock.notifications.get("textDocument/didOpen")!({
         textDocument: { uri, languageId: "javascript", version: 1, text },
       });
-      await new Promise((r) => setTimeout(r, 200));
+      await waitForDiagnostics(mock, uri);
       const sig = mock.requests.get("textDocument/signatureHelp")!;
       const col = "export function use() { return withDefault(".length;
       const res = sig({ textDocument: { uri }, position: { line: 3, character: col } });
@@ -178,7 +178,7 @@ function tmpFile(src: string): { dir: string; file: string } {
       mock.notifications.get("textDocument/didOpen")!({
         textDocument: { uri, languageId: "javascript", version: 1, text: SRC },
       });
-      await new Promise((r) => setTimeout(r, 250));
+      await waitForDiagnostics(mock, uri);
       const sig = mock.requests.get("textDocument/signatureHelp")!;
 
       const seen: Array<{ col: number; active: number | undefined; n: number }> = [];
@@ -220,7 +220,7 @@ function tmpFile(src: string): { dir: string; file: string } {
       mock.notifications.get("textDocument/didOpen")!({
         textDocument: { uri, languageId: "javascript", version: 1, text: src },
       });
-      await new Promise((r) => setTimeout(r, 250));
+      await waitForDiagnostics(mock, uri);
       const sig = mock.requests.get("textDocument/signatureHelp")!;
       const line = src.split("\n")[2]!;
       for (const col of [line.indexOf("1"), line.indexOf("2"), line.indexOf("3")]) {
@@ -291,7 +291,7 @@ function tmpFile(src: string): { dir: string; file: string } {
       mock.notifications.get("textDocument/didOpen")!({
         textDocument: { uri, languageId: "javascript", version: 1, text: SRC },
       });
-      await new Promise((r) => setTimeout(r, 250));
+      await waitForDiagnostics(mock, uri);
       const sig = mock.requests.get("textDocument/signatureHelp")!;
 
       const res = sig({ textDocument: { uri }, position: { line: 5, character: COL_ARG1 } });
@@ -315,7 +315,7 @@ function tmpFile(src: string): { dir: string; file: string } {
       mock.notifications.get("textDocument/didOpen")!({
         textDocument: { uri, languageId: "javascript", version: 1, text: SRC },
       });
-      await new Promise((r) => setTimeout(r, 250));
+      await waitForDiagnostics(mock, uri);
       const sig = mock.requests.get("textDocument/signatureHelp")!;
 
       const atCallee = sig({ textDocument: { uri }, position: { line: 5, character: COL_CALLEE } });
@@ -349,7 +349,7 @@ function tmpFile(src: string): { dir: string; file: string } {
       mock.notifications.get("textDocument/didOpen")!({
         textDocument: { uri, languageId: "javascript", version: 1, text: src },
       });
-      await new Promise((r) => setTimeout(r, 250));
+      await waitForDiagnostics(mock, uri);
       const sig = mock.requests.get("textDocument/signatureHelp")!;
       const col = src.split("\n")[5]!.indexOf("1");
       const res = sig({ textDocument: { uri }, position: { line: 5, character: col } });
@@ -428,7 +428,7 @@ function tmpFile(src: string): { dir: string; file: string } {
       mock.notifications.get("textDocument/didOpen")!({
         textDocument: { uri, languageId: "javascript", version: 1, text: SRC },
       });
-      await new Promise((r) => setTimeout(r, 250));
+      await waitForDiagnostics(mock, uri);
       const sig = mock.requests.get("textDocument/signatureHelp")!;
 
       const res = sig({
@@ -455,7 +455,7 @@ function tmpFile(src: string): { dir: string; file: string } {
       mock.notifications.get("textDocument/didOpen")!({
         textDocument: { uri, languageId: "javascript", version: 1, text: SRC },
       });
-      await new Promise((r) => setTimeout(r, 250));
+      await waitForDiagnostics(mock, uri);
       const sig = mock.requests.get("textDocument/signatureHelp")!;
 
       const res = sig({
@@ -481,7 +481,7 @@ function tmpFile(src: string): { dir: string; file: string } {
       mock.notifications.get("textDocument/didOpen")!({
         textDocument: { uri, languageId: "javascript", version: 1, text: SRC },
       });
-      await new Promise((r) => setTimeout(r, 250));
+      await waitForDiagnostics(mock, uri);
       const sig = mock.requests.get("textDocument/signatureHelp")!;
 
       const res = sig({
@@ -512,7 +512,7 @@ function tmpFile(src: string): { dir: string; file: string } {
       mock.notifications.get("textDocument/didOpen")!({
         textDocument: { uri, languageId: "javascript", version: 1, text: src },
       });
-      await new Promise((r) => setTimeout(r, 250));
+      await waitForDiagnostics(mock, uri);
       const sig = mock.requests.get("textDocument/signatureHelp")!;
       const res = sig({
         textDocument: { uri },
@@ -593,7 +593,7 @@ function tmpFile(src: string): { dir: string; file: string } {
       mock.notifications.get("textDocument/didOpen")!({
         textDocument: { uri, languageId: "javascript", version: 1, text: SRC },
       });
-      await new Promise((r) => setTimeout(r, 250));
+      await waitForDiagnostics(mock, uri);
       const sig = mock.requests.get("textDocument/signatureHelp")!;
 
       const res = sig({ textDocument: { uri }, position: { line: 3, character: COL_ARG1 } });
@@ -617,7 +617,7 @@ function tmpFile(src: string): { dir: string; file: string } {
       mock.notifications.get("textDocument/didOpen")!({
         textDocument: { uri, languageId: "javascript", version: 1, text: SRC },
       });
-      await new Promise((r) => setTimeout(r, 250));
+      await waitForDiagnostics(mock, uri);
       const sig = mock.requests.get("textDocument/signatureHelp")!;
 
       for (const col of [COL_OBJ, COL_METHOD, COL_OPEN]) {
@@ -650,7 +650,7 @@ function tmpFile(src: string): { dir: string; file: string } {
       mock.notifications.get("textDocument/didOpen")!({
         textDocument: { uri, languageId: "javascript", version: 1, text: src },
       });
-      await new Promise((r) => setTimeout(r, 250));
+      await waitForDiagnostics(mock, uri);
       const sig = mock.requests.get("textDocument/signatureHelp")!;
       const col = src.split("\n")[2]!.indexOf("1");
       const res = sig({ textDocument: { uri }, position: { line: 2, character: col } });
@@ -734,7 +734,7 @@ function tmpFile(src: string): { dir: string; file: string } {
       mock.notifications.get("textDocument/didOpen")!({
         textDocument: { uri, languageId: "javascript", version: 1, text: SRC },
       });
-      await new Promise((r) => setTimeout(r, 250));
+      await waitForDiagnostics(mock, uri);
       const sig = mock.requests.get("textDocument/signatureHelp")!;
 
       const res = sig({
@@ -763,7 +763,7 @@ function tmpFile(src: string): { dir: string; file: string } {
       mock.notifications.get("textDocument/didOpen")!({
         textDocument: { uri, languageId: "javascript", version: 1, text: SRC },
       });
-      await new Promise((r) => setTimeout(r, 250));
+      await waitForDiagnostics(mock, uri);
       const sig = mock.requests.get("textDocument/signatureHelp")!;
 
       const res = sig({

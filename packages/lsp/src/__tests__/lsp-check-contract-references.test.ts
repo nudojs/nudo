@@ -1180,7 +1180,7 @@ export function oldName(n) {
   {
     h = await startLspWithFiles({ "def.js": DEF, "use.js": USE });
     h.changeBuffer("def.js", DEF_BUFFER);
-    await new Promise((r) => setTimeout(r, 100));
+    await h.waitReady("def.js");
     const defs = locationsOf(
       h.req("textDocument/definition", {
         textDocument: { uri: h.uri("use.js") },
@@ -1198,7 +1198,7 @@ export function oldName(n) {
   {
     h = await startLspWithFiles({ "def.js": DEF, "use.js": USE });
     h.changeBuffer("def.js", DEF_BUFFER);
-    await new Promise((r) => setTimeout(r, 100));
+    await h.waitReady("def.js");
     const refs = locationsOf(
       h.req("textDocument/references", {
         textDocument: { uri: h.uri("use.js") },
@@ -1217,7 +1217,7 @@ export function oldName(n) {
   {
     h = await startLspWithFiles({ "def.js": DEF, "use.js": USE });
     h.changeBuffer("def.js", DEF_BUFFER);
-    await new Promise((r) => setTimeout(r, 100));
+    await h.waitReady("def.js");
     const edits = editsOf(
       h.req("textDocument/rename", {
         textDocument: { uri: h.uri("use.js") },

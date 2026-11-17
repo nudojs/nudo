@@ -12,7 +12,7 @@ import { getHoverAtPosition } from "../lsp-surface.ts";
 import { collectAbsInlays } from "@nudojs/core/internal";
 import { formatContractTierLine, CONTRACT_SOURCE_ABBR } from "@nudojs/core";
 import { computeContractLenses, hoverTool, type ContractLens, buildLspInjection } from "../agent-tools.ts";
-import { withTempDir, withLspServer, createMockConnection } from "./helpers.ts";
+import { withTempDir, withLspServer, createMockConnection, waitForDiagnostics, waitForValue } from "./helpers.ts";
 import { defaultLoadModule } from "@nudojs/service";
 import { createNudoServer } from "../server.ts";
 
@@ -907,7 +907,7 @@ async function hoverSignatureAt(
   mock.notifications.get("textDocument/didOpen")!({
     textDocument: { uri, languageId: "javascript", version: 1, text },
   });
-  await new Promise((r) => setTimeout(r, 250));
+  await waitForDiagnostics(mock, uri);
   const hover = mock.requests.get("textDocument/hover")!;
   const res = hover({
     textDocument: { uri },
@@ -1016,7 +1016,7 @@ async function hoverSignatureAt(
   mock.notifications.get("textDocument/didOpen")!({
     textDocument: { uri, languageId: "javascript", version: 1, text },
   });
-  await new Promise((r) => setTimeout(r, 250));
+  await waitForDiagnostics(mock, uri);
   const hover = mock.requests.get("textDocument/hover")!;
   const res = hover({
     textDocument: { uri },
@@ -1137,7 +1137,7 @@ async function open(file: string, text: string) {
   mock.notifications.get("textDocument/didOpen")!({
     textDocument: { uri, languageId: "javascript", version: 1, text },
   });
-  await new Promise((r) => setTimeout(r, 250));
+  await waitForDiagnostics(mock, uri);
   const hover = mock.requests.get("textDocument/hover")!;
   const codeLens = mock.requests.get("textDocument/codeLens")!;
   const exec = mock.requests.get("workspace/executeCommand")!;
@@ -1169,10 +1169,13 @@ async function open(file: string, text: string) {
         command: "nudo.selectCase",
         arguments: [`file://${file}`, "classify", 0, "c1"],
       });
-      await new Promise((r) => setTimeout(r, 250));
 
       // 选中 case 后：CodeLens 翻 ○，hover 必须同步（改前 hover 仍恒 ●）
-      expect(contractLens()?.command?.title).toBe("○ contract / imp");
+      expect(
+        await waitForValue(() => contractLens()?.command?.title, (t) => t === "○ contract / imp", {
+          timeout: 250,
+        }),
+      ).toBe("○ contract / imp");
       expect(firstLine()).toBe("○ contract / imp");
       // 两个面逐字一致
       expect(firstLine()).toBe(contractLens()?.command?.title);
@@ -1191,12 +1194,16 @@ async function open(file: string, text: string) {
         command: "nudo.selectCase",
         arguments: [uri, "classify", 0, "c1"],
       });
-      await new Promise((r) => setTimeout(r, 250));
-      expect(firstLine()).toBe("○ contract / imp");
+      expect(
+        await waitForValue(() => firstLine(), (t) => t === "○ contract / imp", { timeout: 250 }),
+      ).toBe("○ contract / imp");
 
       exec({ command: "nudo.selectContract", arguments: [uri, "classify"] });
-      await new Promise((r) => setTimeout(r, 250));
-      expect(contractLens()?.command?.title).toBe("● contract / imp");
+      expect(
+        await waitForValue(() => contractLens()?.command?.title, (t) => t === "● contract / imp", {
+          timeout: 250,
+        }),
+      ).toBe("● contract / imp");
       expect(firstLine()).toBe("● contract / imp");
     } finally {
       rmSync(dir, { recursive: true, force: true });
