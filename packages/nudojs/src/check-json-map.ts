@@ -301,6 +301,90 @@ function defaultExportLocalName(source: string | undefined): string | undefined 
   return undefined;
 }
 
+/** 导入 / 导出说明符的名字（Identifier 或字符串字面量名） */
+function specifierName(n: { type: string; name?: string; value?: unknown } | undefined): string | undefined {
+  if (!n) return undefined;
+  if (n.type === "Identifier") return n.name;
+  return n.value === undefined ? undefined : String(n.value);
+}
+
+/** 合并两张导入面 */
+function mergeFace(into: TargetImportFace, from: TargetImportFace): void {
+  for (const n of from.imported) into.imported.add(n);
+  into.namespace ||= from.namespace;
+  into.hasDefault ||= from.hasDefault;
+}
+
+/**
+ * BUG-078：沿 **re-export barrel** 追一条 import 边到被调方。
+ *
+ * 现场文件 `import { make } from "./barrel.js"`，`barrel.js` 里
+ * `export { make } from "./lib.js"` ⇒ 这条边**最终**指向被调方。旧口径只认
+ * 「import 直接解析到 lib.js」，barrel 的现场文件零绑定 ⇒ 整份证据被丢弃
+ * （`check lib.js --from throughBarrel.js` 恒绿）。
+ *
+ * 按**导出名**逐跳翻译（别名 re-export `export { make as build }` 也算），
+ * 支持 `export * from` 与 `export { default as … } from`；模块源由
+ * `opts.loadModule` 读取，`seen` 防环。解析不到的边不加面（fail-closed）。
+ */
+function reexportFace(
+  specifier: string,
+  fromFile: string,
+  wanted: ReadonlySet<string>,
+  wildcard: boolean,
+  seen: Set<string>,
+  opts: StaticFromDomainOptions,
+): TargetImportFace {
+  const out: TargetImportFace = { imported: new Set(), namespace: false, hasDefault: false };
+  const resolved = opts.resolveModule?.(specifier, fromFile);
+  if (!resolved) return out;
+  if (sameModulePath(resolved, opts.targetPath)) {
+    for (const n of wanted) {
+      if (n === "default") out.hasDefault = true;
+      else out.imported.add(n);
+    }
+    // `import * as ns` ⇒ 被调方任意导出名都可能被访问
+    if (wildcard) out.namespace = true;
+    return out;
+  }
+  const key = resolve(resolved);
+  if (seen.has(key)) return out;
+  seen.add(key);
+  let src: string | undefined;
+  try {
+    src = opts.loadModule?.(specifier, fromFile);
+  } catch {
+    return out;
+  }
+  if (!src) return out;
+  let ast: ReturnType<typeof parse>;
+  try {
+    ast = parse(src);
+  } catch {
+    return out;
+  }
+  for (const stmt of programBody(ast)) {
+    // `export * from "./lib.js"`：现场要的名字原样往下传
+    if (stmt.type === "ExportAllDeclaration" && stmt.source) {
+      mergeFace(out, reexportFace(stmt.source.value, resolved, wanted, wildcard, seen, opts));
+      continue;
+    }
+    if (stmt.type !== "ExportNamedDeclaration" || !stmt.source) continue;
+    const next = new Set<string>();
+    for (const spec of stmt.specifiers ?? []) {
+      if (spec.type !== "ExportSpecifier") continue;
+      const exported = specifierName(spec.exported);
+      const imported = specifierName(spec.local);
+      if (!exported || !imported) continue;
+      if (wildcard || wanted.has(exported)) next.add(imported);
+    }
+    if (next.size > 0) {
+      mergeFace(out, reexportFace(stmt.source.value, resolved, next, false, seen, opts));
+    }
+  }
+  return out;
+}
+
 /** 现场文件 → 它从被调方导入了什么（按目标导出名建面）。 */
 function targetImportFace(site: FromCallsiteFile, opts: StaticFromDomainOptions): TargetImportFace {
   const face: TargetImportFace = { imported: new Set(), namespace: false, hasDefault: false };
@@ -313,24 +397,45 @@ function targetImportFace(site: FromCallsiteFile, opts: StaticFromDomainOptions)
   }
   for (const stmt of programBody(ast)) {
     if (stmt.type !== "ImportDeclaration") continue;
-    const resolved = opts.resolveModule(stmt.source.value, site.path);
-    if (!resolved || !sameModulePath(resolved, opts.targetPath)) continue;
+    const wanted = new Set<string>();
+    let wildcard = false;
     for (const spec of stmt.specifiers) {
       if (spec.type === "ImportSpecifier") {
-        const imported =
-          spec.imported.type === "Identifier"
-            ? spec.imported.name
-            : String(spec.imported.value);
-        if (imported === "default") face.hasDefault = true;
-        else face.imported.add(imported);
+        const imported = specifierName(spec.imported);
+        if (imported) wanted.add(imported);
       } else if (spec.type === "ImportNamespaceSpecifier") {
-        face.namespace = true;
+        wildcard = true;
       } else if (spec.type === "ImportDefaultSpecifier") {
-        face.hasDefault = true;
+        wanted.add("default");
       }
     }
+    const resolved = opts.resolveModule(stmt.source.value, site.path);
+    if (resolved && sameModulePath(resolved, opts.targetPath)) {
+      for (const name of wanted) {
+        if (name === "default") face.hasDefault = true;
+        else face.imported.add(name);
+      }
+      if (wildcard) face.namespace = true;
+      continue;
+    }
+    // 不是直接 import ⇒ 沿 barrel 的再导出链继续追（BUG-078）
+    mergeFace(face, outFromReexport(stmt.source.value, site.path, wanted, wildcard, opts));
   }
   return face;
+}
+
+/** 现场 import 边的 re-export 链（每次调用独立 visited 集合） */
+function outFromReexport(
+  specifier: string,
+  fromFile: string,
+  wanted: ReadonlySet<string>,
+  wildcard: boolean,
+  opts: StaticFromDomainOptions,
+): TargetImportFace {
+  if (wanted.size === 0 && !wildcard) {
+    return { imported: new Set(), namespace: false, hasDefault: false };
+  }
+  return reexportFace(specifier, fromFile, wanted, wildcard, new Set(), opts);
 }
 
 /** 导出面是否为空（空 ⇒ 现场文件与被调方没有导入边，不必跑 checkSource）。 */

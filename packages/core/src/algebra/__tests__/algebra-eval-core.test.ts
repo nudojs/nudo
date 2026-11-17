@@ -3045,7 +3045,26 @@ describe("absShapeForTsTypeText 不进**公共**面（负控；internal 面已�
   {
     expect(absShapeForTsTypeText("number")).toEqual({ k: "prim", type: "number" });
     expect(absShapeForTsTypeText("string")).toEqual({ k: "prim", type: "string" });
-    expect(absShapeForTsTypeText("Array<string>")).toBeUndefined();
+    // BUG-036：内建复合类型现在进形状面（数组 / 对象 / 联合），不再是
+    // 「只认 5 个 primitive、其余一律 undefined」的旧口径。
+    expect(absShapeForTsTypeText("Array<string>")).toMatchObject({
+      k: "arr",
+      element: { shape: { k: "prim", type: "string" } },
+    });
+    expect(absShapeForTsTypeText("number[]")).toMatchObject({
+      k: "arr",
+      element: { shape: { k: "prim", type: "number" } },
+    });
+    expect(absShapeForTsTypeText("{ a: number }")).toMatchObject({
+      k: "obj",
+      slots: { a: { value: { shape: { k: "prim", type: "number" } } } },
+    });
+    expect(absShapeForTsTypeText("string | number")).toMatchObject({
+      k: "sum",
+      members: [{ shape: { k: "prim", type: "string" } }, { shape: { k: "prim", type: "number" } }],
+    });
+    // 别名 / 泛型实例化仍不映射（不猜）
+    expect(absShapeForTsTypeText("Record<string, number>")).toBeUndefined();
   }
   {
     const pub = (await import("@nudojs/core")) as unknown as Record<string, unknown>;

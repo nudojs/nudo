@@ -2060,3 +2060,98 @@ describe("-from 的调用点义务按静态判据复核", () => {
 
 });
 });
+
+// ---------------------------------------------------------------------------
+// 复合类型注解 / Function.prototype 间接调用的调用点执法
+// ---------------------------------------------------------------------------
+describe("复合类型注解与 call/apply/bind 间接调用", () => {
+  const dirs: string[] = [];
+  afterAll(() => {
+    for (const d of dirs) rmSync(d, { recursive: true, force: true });
+  });
+  const tmp = (files: Record<string, string>): string => {
+    const d = mkdtempSync(join(tmpdir(), "nudo-r1-forms-"));
+    dirs.push(d);
+    for (const [name, content] of Object.entries(files)) writeFileSync(join(d, name), content, "utf-8");
+    return d;
+  };
+
+  it(".ts 复合类型注解（数组 / 对象 / 联合）进入口 Abs ⇒ 合法 TS 不再 L2 假红", () => {
+    const d = tmp({
+      "ann.ts": `export function p4(x: number[]) { return x.length; }
+export function p5(x: { a: number }) { return x.a; }
+export function p6(x: string | number) { return String(x); }
+`,
+    });
+    const r = runCliTsx(["check", join(d, "ann.ts")]);
+    expect(r.status, r.stdout + r.stderr).toBe(0);
+    expect(r.stdout).toContain("p4(x: number[]) => number");
+    expect(r.stdout).toContain("p5(x: { a: number }) => number");
+    expect(r.stdout).toContain("p6(x: string | number) => string");
+  });
+
+  it("f.call / f.apply / f.bind 间接调用的现场都有契约义务与见证（不再假绿）", () => {
+    const d = tmp({
+      "u.js": `export function f(x) { return x; }
+f(-1);
+f.call(null, -2);
+f.apply(null, [-3]);
+const b = f.bind(null);
+b(-4);
+`,
+      "u.nudo.js": `import { fn, number } from "@nudojs/core";
+export const f = fn({ x: number().gt(0) }, number());
+`,
+    });
+    const chk = runCliTsx(["check", join(d, "u.js")]);
+    expect(chk.status).toBe(1);
+    // L2 直接 / L3 .call / L4 .apply / L6 bind 结果 ⇒ 四条都在
+    for (const line of ["[ERROR L2 f]", "[ERROR L3 f]", "[ERROR L4 f]", "[ERROR L6 f]"]) {
+      expect(chk.stdout).toContain(line);
+    }
+    const tst = runCliTsx(["test", join(d, "u.js")]);
+    expect(tst.stdout).toContain("call@L2");
+    expect(tst.stdout).toContain("call@L3");
+    expect(tst.stdout).toContain("call@L4");
+    expect(tst.stdout).toContain("4 synthetic case(s)");
+  }, 120000);
+});
+
+// ---------------------------------------------------------------------------
+// 导出对象字面量的 spread 成员进入口表（BUG-108 的主形态）
+// ---------------------------------------------------------------------------
+describe("导出对象经 spread 引入的方法也受门禁覆盖", () => {
+  const dirs: string[] = [];
+  afterAll(() => {
+    for (const d of dirs) rmSync(d, { recursive: true, force: true });
+  });
+  const tmp = (files: Record<string, string>): string => {
+    const d = mkdtempSync(join(tmpdir(), "nudo-spread-entry-"));
+    dirs.push(d);
+    for (const [name, content] of Object.entries(files)) writeFileSync(join(d, name), content, "utf-8");
+    return d;
+  };
+
+  it("`export default { ...base }` 里 base 的必抛方法报 nudo:entry-may-throw", () => {
+    const d = tmp({
+      "s.js": `const base = { bad() { throw new Error("boom"); } };
+export default { ...base, good() { return 1; } };
+`,
+    });
+    const r = runCliTsx(["check", join(d, "s.js")]);
+    expect(r.status).toBe(1);
+    expect(r.stdout).toContain("bad() => unknown  throws Error");
+    expect(r.stdout).toContain("nudo:entry-may-throw");
+  }, 120000);
+
+  it("负控制：spread 来源的方法不抛 ⇒ 不误报", () => {
+    const d = tmp({
+      "ctl.js": `const base = { fine() { return 1; } };
+export default { ...base, good() { return 1; } };
+`,
+    });
+    const r = runCliTsx(["check", join(d, "ctl.js")]);
+    expect(r.status, r.stdout).toBe(0);
+    expect(r.stdout).toContain("fine()");
+  }, 120000);
+});

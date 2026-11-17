@@ -1372,3 +1372,58 @@ function makeFixture(): string {
     expect(declFor(specFor("BU"))).toContain("export declare class BU");
   }, 180000); // 3 个 CLI 子进程（tsx 冷启动）
 });
+
+// ---------------------------------------------------------------------------
+// 表达式超类 / CJS 导出函数对象上的附加成员
+// ---------------------------------------------------------------------------
+describe("表达式超类与 CJS 函数对象附加成员进声明面", () => {
+  const dirs: string[] = [];
+  afterAll(() => {
+    for (const d of dirs) rmSync(d, { recursive: true, force: true });
+  });
+  const tmp = (): string => {
+    const d = mkdtempSync(join(tmpdir(), "nudo-r1-emit-forms-"));
+    dirs.push(d);
+    return d;
+  };
+
+  it("extends mixin(Base) ⇒ 发开放构造基类 + 台账（继承成员不再 TS2339）", () => {
+    const d = tmp();
+    writeFileSync(
+      join(d, "m.js"),
+      `const mixin = (B) => class extends B { m() { return 1; } };
+class Base { b() { return 2; } }
+export class C extends mixin(Base) { c() { return 3; } }
+`,
+      "utf-8",
+    );
+    const r = runCli(["export", "--format", "dts", "--out", join(d, "out"), join(d, "m.js")]);
+    expect(r.status, r.stderr).toBe(0);
+    const dts = readFileSync(join(d, "out", "m.d.ts"), "utf-8");
+    expect(dts).toContain("nudo:unresolved-superclass C");
+    expect(dts).toContain("extends mixin(Base)");
+    expect(dts).toMatch(/declare const __nudo_base_C: \{ new \(\): any; \[key: string\]: any \};/);
+    expect(dts).toContain("extends __nudo_base_C");
+  }, 120000);
+
+  it("module.exports = f + f.version / f.helper ⇒ namespace 合并声明", () => {
+    const d = tmp();
+    writeFileSync(
+      join(d, "f.cjs"),
+      `function f(x) { return x + 1; }
+f.version = "1.0";
+f.helper = function (y) { return y * 2; };
+module.exports = f;
+`,
+      "utf-8",
+    );
+    const r = runCli(["export", "--format", "dts", "--out", join(d, "out"), join(d, "f.cjs")]);
+    expect(r.status, r.stderr).toBe(0);
+    const dts = readFileSync(join(d, "out", "f.d.cts"), "utf-8");
+    expect(dts).toContain("declare function f(");
+    expect(dts).toContain("export = f;");
+    expect(dts).toContain("declare namespace f {");
+    expect(dts).toContain("const version: string;");
+    expect(dts).toContain("function helper(y: unknown): unknown;");
+  }, 120000);
+});

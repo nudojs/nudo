@@ -125,12 +125,60 @@ function computeLocalNamedExports(source: string, filename?: string): Set<string
   };
   /** P1：本地 ClassDeclaration 表（export { Foo } / export default Foo 解析用） */
   const localClasses = new Map<string, NodeLike>();
+  /**
+   * BUG-108：本地**对象字面量**表（`const api = {…}; export { api }` 与
+   * 对象 spread 来源 `{ ...base }` 解析用）。
+   */
+  const localObjects = new Map<string, NodeLike>();
   for (const stmt of ast.program.body) {
     const s = stmt as NodeLike;
-    if (s.type !== "ClassDeclaration") continue;
-    const idName = identName(s.id as NodeLike | undefined);
-    if (idName) localClasses.set(idName, s);
+    if (s.type === "ClassDeclaration") {
+      const idName = identName(s.id as NodeLike | undefined);
+      if (idName) localClasses.set(idName, s);
+      continue;
+    }
+    const d = s.type === "ExportNamedDeclaration" || s.type === "ExportDefaultDeclaration"
+      ? (s.declaration as NodeLike | undefined)
+      : s;
+    if (d?.type !== "VariableDeclaration") continue;
+    for (const decl of (d.declarations as NodeLike[] | undefined) ?? []) {
+      const n = identName(decl.id as NodeLike | undefined);
+      const init = decl.init as NodeLike | undefined;
+      if (n && init?.type === "ObjectExpression") localObjects.set(n, init);
+    }
   }
+  /**
+   * 对象字面量的成员键（含 `{ ...base }` 展开）。
+   * 只认静态可解析的 Identifier 来源与内联对象；动态 spread 不猜。
+   */
+  const addObjectMemberKeys = (
+    out: Set<string>,
+    obj: NodeLike | undefined,
+    seen: Set<NodeLike> = new Set(),
+  ): void => {
+    if (!obj || obj.type !== "ObjectExpression" || seen.has(obj)) return;
+    seen.add(obj);
+    for (const raw of (obj.properties as NodeLike[] | undefined) ?? []) {
+      const p = raw as NodeLike & { kind?: string; argument?: NodeLike };
+      if (p.type === "SpreadElement" || p.type === "SpreadProperty") {
+        const arg = p.argument;
+        const src =
+          arg?.type === "Identifier" && typeof arg.name === "string"
+            ? localObjects.get(arg.name)
+            : arg?.type === "ObjectExpression"
+              ? arg
+              : undefined;
+        if (src) addObjectMemberKeys(out, src, seen);
+        continue;
+      }
+      if (p.type !== "ObjectProperty" && p.type !== "Property" && p.type !== "ObjectMethod") {
+        continue;
+      }
+      if (p.kind && p.kind !== "method") continue; // getter/setter 非入口
+      const keyName = classMethodKey(p as NodeLike & { key?: NodeLike; computed?: boolean });
+      if (keyName) out.add(keyName);
+    }
+  };
   const addClassMethodKeys = (
     out: Set<string>,
     decl: NodeLike | undefined,
@@ -320,6 +368,8 @@ function computeLocalNamedExports(source: string, filename?: string): Set<string
           if (localName) {
             out.add(localName);
             addClassMethodKeys(out, localClasses.get(localName));
+            // BUG-108：`const api = {…}; export { api }` 的对象成员也是公共入口
+            addObjectMemberKeys(out, localObjects.get(localName));
           }
         }
         continue;
@@ -348,19 +398,7 @@ function computeLocalNamedExports(source: string, filename?: string): Set<string
           // Bug 90：ESM `export const api = { m(){} }` 的对象字面量方法——
           // 与 CJS `module.exports = {…}` 同口径（成员键 = 导出槽名）。
           if (init?.type === "ObjectExpression") {
-            for (const raw of (init.properties as NodeLike[] | undefined) ?? []) {
-              const p = raw as NodeLike & { kind?: string; computed?: boolean };
-              if (
-                p.type !== "ObjectProperty" &&
-                p.type !== "Property" &&
-                p.type !== "ObjectMethod"
-              ) {
-                continue;
-              }
-              if (p.kind && p.kind !== "method") continue; // getter/setter 非入口
-              const keyName = classMethodKey(p as NodeLike & { key?: NodeLike; computed?: boolean });
-              if (keyName) out.add(keyName);
-            }
+            addObjectMemberKeys(out, init);
           }
         }
       } else if (d.type === "TSModuleDeclaration") {
@@ -403,7 +441,11 @@ function computeLocalNamedExports(source: string, filename?: string): Set<string
           if (n && !importedLocalNames.has(n)) {
             out.add(n);
             addClassMethodKeys(out, localClasses.get(n));
+            addObjectMemberKeys(out, localObjects.get(n));
           }
+        } else if (d.type === "ObjectExpression") {
+          // BUG-108：`export default { ...base, good(){} }` 的成员（包括 spread 来源）
+          addObjectMemberKeys(out, d);
         }
       }
       continue;

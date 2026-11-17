@@ -2947,6 +2947,14 @@ export interface DtsClassMemberSurface {
   /** Bug 73：源码里写下的超类**类型实参**原文（`extends Base<string>` ⇒ `["string"]`） */
   superTypeArguments?: string[];
   /**
+   * BUG-109：超类是**表达式**（`extends mixin(Base)`）时的原文。
+   *
+   * `surfaceQualifiedName` 只认标识符 / 点号限定名 ⇒ 表达式超类整条被丢，
+   * 产物的继承链断裂（消费方对继承成员 TS2339），且零台账。这里保留原文
+   * 用作降级台账，并发一个开放的构造基类（见 `dtsClassDeclaration`）。
+   */
+  superExpressionText?: string;
+  /**
    * 实例字段（BUG-151）：构造器里的 `this.x = …` 与类属性初始化器。
    *
    * 分析面对 `class C` 绑定给出的 brand 是**构造器面**（实例形状只有 `name`）
@@ -3121,7 +3129,16 @@ export interface DtsModuleSurface {
    * 仅在「除该值外没有别的导出」时设置：`export =` 不得与其他导出共存
    * （TS2309），混用时保持既有 ESM 投影。
    */
-  exportEquals?: { readonly local: string };
+  exportEquals?: {
+    readonly local: string;
+    /**
+     * BUG-110：挂在**导出函数对象**上的属性 / 方法（`f.version = …` /
+     * `f.helper = function…`）。TS 里等价于 `declare function f` +
+     * `declare namespace f { … }` 的声明合并；旧产物只发可调用签名 ⇒
+     * 消费方 `f.version` / `f.helper` 一律 TS2339。
+     */
+    members?: string[];
+  };
 }
 
 /** AST 节点最小形状（Babel AST 的鸭子类型——不引 @babel/types） */
@@ -3566,6 +3583,14 @@ function scanClassSurface(
     decl.superTypeArguments as SurfaceNode | undefined,
     source,
   );
+  // BUG-109：超类不是标识符 / 限定名，而是表达式（`extends mixin(Base)` /
+  // `extends (class { … })`）⇒ 留原文作台账，发射侧降级成开放构造基类。
+  // 注意：`superName` 有值但**不可解析**（`extends Unknown`）是另一条既有
+  // 降级路径（不发射 extends，避免 TS2304）⇒ 不在本条范围内。
+  const superExpressionText =
+    decl.superClass !== undefined && superName === undefined && source !== undefined
+      ? surfaceSlice(source, decl.superClass as SurfaceNode)
+      : undefined;
   const instanceMethods: DtsClassMethodSurface[] = [];
   const staticMethods: DtsClassMethodSurface[] = [];
   const staticFields: DtsClassFieldSurface[] = [];
@@ -3874,6 +3899,7 @@ function scanClassSurface(
     ...(typeParamsText !== undefined ? { typeParamsText } : {}),
     ...(superClass !== undefined ? { superClass } : {}),
     ...(superTypeArguments.length > 0 ? { superTypeArguments } : {}),
+    ...(superExpressionText !== undefined ? { superExpressionText } : {}),
     ...(instanceFields.length > 0 ? { instanceFields } : {}),
     ...(staticFields.length > 0 ? { staticFields } : {}),
     ...(accessors.length > 0 ? { accessors } : {}),
@@ -4661,12 +4687,48 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
   const hasExportedTypeDecl = (surface.typeDeclarations ?? []).some((t) =>
     /^\s*export\b/.test(t),
   );
+  /**
+   * BUG-110：`module.exports = f` 之后 `f.version = …` / `f.helper = function…`
+   * 是**函数对象上的成员写**。TS 的可调用模块用声明合并表达：
+   * `declare function f` + `declare namespace f { … }`。此前 CJS 槽采集只收
+   * `exports.x` / `module.exports.x`，这些 `f.<prop>` 一条都不进产物 ⇒
+   * 消费方 `f.version` / `f.helper(2)` 全部 TS2339。
+   */
+  const exportEqualsMembersOf = (local: string): string[] => {
+    if (local === "") return [];
+    const out: string[] = [];
+    for (const stmt of body) {
+      if (stmt.type !== "ExpressionStatement") continue;
+      const e = stmt.expression as SurfaceNode | undefined;
+      if (e?.type !== "AssignmentExpression" || e.operator !== "=") continue;
+      const left = e.left as SurfaceNode | undefined;
+      if (left?.type !== "MemberExpression" || left.computed === true) continue;
+      const obj = left.object as SurfaceNode | undefined;
+      if (obj?.type !== "Identifier" || obj.name !== local) continue;
+      const name = surfaceName(left.property as SurfaceNode | undefined);
+      if (!name || !isJsBindingIdent(name)) continue;
+      const init = e.right as SurfaceNode | undefined;
+      if (init?.type === "FunctionExpression" || init?.type === "ArrowFunctionExpression") {
+        const params = surfaceParamNames(init.params as SurfaceNode[] | undefined)
+          .map((p, i) => classParamDecl(p, i))
+          .join(", ");
+        out.push(`function ${name}(${params}): unknown;`);
+      } else {
+        out.push(`const ${name}: ${valueTypeTextOfInit(init)};`);
+      }
+    }
+    return out;
+  };
   if (
     exportEqualsCandidate !== undefined &&
     surface.exportBindings.size === 1 &&
     !hasExportedTypeDecl
   ) {
-    surface.exportEquals = { local: exportEqualsCandidate };
+    const members = exportEqualsMembersOf(exportEqualsCandidate);
+    surface.exportEquals = {
+      local: exportEqualsCandidate,
+      ...(members.length > 0 ? { members } : {}),
+    };
   }
 
   // ── Bug 57：函数 / 方法级类型形参子句（普查名 → `<T>` 原文）──
@@ -5139,6 +5201,16 @@ function projectModuleDtsInner(
       }
     }
     if (converted) lines.push(`export = ${dtsIdentifier(target)};`);
+    // BUG-110：函数对象上的附加成员走声明合并（`declare namespace f { … }`）。
+    // 放在 `export =` 之前 / 之后都合法；这里统一在其它声明之后追加。
+    const members = surface.exportEquals.members ?? [];
+    if (members.length > 0) {
+      lines.push(
+        `declare namespace ${dtsIdentifier(target)} {`,
+        ...members.map((m) => `  ${m}`),
+        "}",
+      );
+    }
   }
 
   // ── 模块级值声明（BUG-190）──
@@ -5430,23 +5502,37 @@ function dtsClassDeclaration(
   // Bug 12：匿名 default 类的普查名就是 "default"，保留字不能当类名 ⇒
   // 用合成声明名 `_default`（`export default class _default { … }` 合法）。
   const declaredName = className === "default" ? "_default" : className;
-  const header = `${declaredName}${typeParamsText}${superText}`;
+  // BUG-109：表达式超类（`extends mixin(Base)`）无法按名字解析，但继承链
+  // 不能整条消失。降级成一个**开放构造基类**：实例 / 静态成员都可读可调用
+  // （`any` 只出现在这条显式降级里），并发台账点名原文——比对每个继承成员
+  // 报 TS2339 更可诊断，也不会把「作者声明的继承」静默撤销。
+  const superExpr = cls?.superExpressionText;
+  const baseName = `__nudo_base_${declaredName}`;
+  const degradedSuper = superText === "" && superExpr !== undefined;
+  const prelude = degradedSuper
+    ? [
+        `// nudo:unresolved-superclass ${declaredName} — extends ${sanitizeCommentText(superExpr)} (projected as open structural base)`,
+        `declare const ${baseName}: { new (): any; [key: string]: any };`,
+      ]
+    : [];
+  const effectiveSuperText = degradedSuper ? ` extends ${baseName}` : superText;
+  const header = `${declaredName}${typeParamsText}${effectiveSuperText}`;
   // Bug 42：abstract 类修饰符。
   const abs = cls?.isAbstract ? "abstract " : "";
   const exportNames =
     cls?.exportNames ?? (cls?.exportName !== undefined ? [cls.exportName] : []);
   const exportName = exportNames[0];
-  // BUG-189：同一个类可同时是具名导出与 default 导出 ⇒ 主声明之后逐条补
-  // `export { C as <name> };`（旧实现只发一个名字 ⇒ default 导出消失）。
   const extras = exportNames
     .slice(1)
     .map((n) => `export { ${declaredName} as ${exportNameRepr(n)} };`);
-  if (exportName === undefined) return [`declare ${abs}class ${header} {${inner}}`];
+  if (exportName === undefined)
+    return [...prelude, `declare ${abs}class ${header} {${inner}}`];
   if (exportName === "default")
-    return [`export default ${abs}class ${header} {${inner}}`, ...extras];
+    return [...prelude, `export default ${abs}class ${header} {${inner}}`, ...extras];
   if (exportName === className)
-    return [`export declare ${abs}class ${header} {${inner}}`, ...extras];
+    return [...prelude, `export declare ${abs}class ${header} {${inner}}`, ...extras];
   return [
+    ...prelude,
     `declare ${abs}class ${header} {${inner}}`,
     `export { ${declaredName} as ${exportNameRepr(exportName)} };`,
     ...extras,

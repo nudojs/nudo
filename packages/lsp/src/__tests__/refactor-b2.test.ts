@@ -62,6 +62,18 @@ describe("B2 refactor.rewrite — make param optional", () => {
     expect(r.edits[0]!.range.start.line).toBe(0);
   });
 
+  it("TS 的可选形参 x?: T 已经是可选 ⇒ 不再出手（对照：x: T 照常出手）", () => {
+    // 旧行为：把 `x?: number` 整段改成 `x: number = undefined`，`?` 静默
+    // 消失、strict 工程编不过；安全类重构不该对已满足前提的代码动手。
+    const already = `export function f(x?: number) { return x; }\n`;
+    expect(makeParamOptionalAt(already, 1, 18)).toBeNull();
+    const plain = `export function f(x: number) { return x; }\n`;
+    const r = makeParamOptionalAt(plain, 1, 18);
+    expect(r && "edits" in r).toBe(true);
+    if (!r || !("edits" in r)) return;
+    expect(r.edits[0]!.newText).toBe("x: number = undefined");
+  });
+
   it("ignores a non-parameter identifier", () => {
     const src = `function f(a) {\n  return a;\n}\n`;
     const r = makeParamOptionalAt(src, 2, 9);

@@ -19,7 +19,7 @@ import {
 
 /** 形态：service 的对象字面量分支已收到 `a`，两面一致。 */
 const DESTRUCTURED = `export const { a } = { a: () => 1 };`;
-/** 形态：service 普查为空，索引登记 `m`。 */
+/** 形态：BUG-108 后 service 普查也收 default 对象成员 `m`，两面一致。 */
 const DEFAULT_OBJECT = `export default { m() { return 1; } };`;
 const CONTROL = `export function f() { return 1; }`;
 
@@ -54,13 +54,13 @@ describe("ADR 0001 阶段 1 · service 入口面只读索引", () => {
     expect(takeServiceEntryFace()).toBeUndefined();
   });
 
-  it("开启影子后经真实分析管线产出分歧：default 对象成员 m 被索引登记", () => {
+  it("default 对象成员 m：索引与 service 普查同面（旧版普查遗漏，阴影会报分歧）", () => {
     setSemanticIndexShadow(true);
     analyzeFile("/test/face-on.js", DEFAULT_OBJECT);
     const snapshot = takeServiceEntryFace();
     expect(snapshot).toBeDefined();
     expect(snapshot!.indexed).toContain("m");
-    expect(snapshot!.added).toContain("m");
+    expect(snapshot!.added).not.toContain("m");
   });
 
   it("控制夹具：service 普查与索引一致，added / missing 均为空", () => {

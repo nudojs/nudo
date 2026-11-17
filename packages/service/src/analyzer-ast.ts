@@ -262,12 +262,104 @@ export function assignmentChainName(expr: Node): string | null {
  * Member / class-method calls are recorded as `Class.method` / bare `method`
  * (see `$invoke` noteEvalCallRecord) and synthesize `call@` the same way.
  */
+/**
+ * BUG-108：顶层对象字面量按**绑定名**索引（spread 来源查表用）。
+ * `const base = { bad(){…} }; export const api = { ...base }` 里 `base` 不是
+ * 导出槽，只能按名字找到它的成员定义。
+ */
+function localObjectLiteralsOf(ast: Node): Map<string, Node> {
+  const out = new Map<string, Node>();
+  if (ast.type !== "File") return out;
+  for (const stmt of programBody(ast)) {
+    const d =
+      stmt.type === "ExportNamedDeclaration" || stmt.type === "ExportDefaultDeclaration"
+        ? (stmt as { declaration?: Node | null }).declaration
+        : stmt;
+    if (d?.type !== "VariableDeclaration") continue;
+    for (const decl of getDeclarations(d)) {
+      const id = asIdentifier(decl.id as Node);
+      if (id && decl.init?.type === "ObjectExpression") out.set(id.name, decl.init as Node);
+    }
+  }
+  return out;
+}
+
+/** 对象字面量的成员表（含 `{ ...base }` 展开；只认本地字面量 / 内联对象）。 */
+function flattenObjectProps(
+  objLit: Node,
+  locals: ReadonlyMap<string, Node>,
+  seen: Set<Node> = new Set(),
+): Node[] {
+  if (objLit.type !== "ObjectExpression" || seen.has(objLit)) return [];
+  seen.add(objLit);
+  const out: Node[] = [];
+  for (const raw of ((objLit as unknown as { properties?: unknown[] }).properties ?? [])) {
+    const prop = raw as Node & { argument?: Node & { name?: string } };
+    if (prop.type === "SpreadElement" || prop.type === "SpreadProperty") {
+      const arg = prop.argument;
+      const src =
+        arg?.type === "Identifier" && arg.name
+          ? locals.get(arg.name)
+          : arg?.type === "ObjectExpression"
+            ? arg
+            : undefined;
+      if (src) out.push(...flattenObjectProps(src, locals, seen));
+      continue;
+    }
+    out.push(prop);
+  }
+  return out;
+}
+
 export function collectTopLevelFunctions(
   ast: Node,
 ): { name: string; node: Node; stmt: Node; noDeclaration: boolean; assignedName?: string }[] {
   const results: { name: string; node: Node; stmt: Node; noDeclaration: boolean; assignedName?: string }[] = [];
   if (ast.type !== "File") return results;
   const body = programBody(ast);
+  const localObjects = localObjectLiteralsOf(ast);
+  /** `export { api }` / `export default api` ⇒ 本地对象成员也是公共入口 */
+  const exportedObjectNames = new Set<string>();
+  for (const stmt of body) {
+    if (stmt.type === "ExportNamedDeclaration" && !(stmt as { declaration?: unknown }).declaration) {
+      for (const spec of ((stmt as { specifiers?: unknown[] }).specifiers ?? []) as Node[]) {
+        if (spec.type !== "ExportSpecifier") continue;
+        const n = exportSpecifierLocalName(spec);
+        if (n) exportedObjectNames.add(n);
+      }
+    }
+    if (stmt.type === "ExportDefaultDeclaration") {
+      const d = (stmt as { declaration?: Node }).declaration;
+      if (d?.type === "Identifier" && d.name) exportedObjectNames.add(d.name);
+    }
+  }
+  /** 把（展开后的）对象成员登记成函数入口——三处对象导出形态共用同一口径 */
+  const pushObjectFns = (objLit: Node, stmt: Node): void => {
+    for (const prop of flattenObjectProps(objLit, localObjects)) {
+      if (prop.type === "ObjectMethod") {
+        if ((prop as { kind?: string }).kind !== "method") continue;
+        const keyName = objectMemberKeyName(prop);
+        if (!keyName) continue;
+        results.push({ name: keyName, node: prop, stmt, noDeclaration: true, assignedName: keyName });
+        continue;
+      }
+      if (prop.type !== "ObjectProperty") continue;
+      const value = (prop as { value?: Node }).value;
+      if (!isFnExprValue(value)) continue;
+      const keyName = objectMemberKeyName(prop);
+      const fnId = namedFnExprId(value);
+      const name = keyName ?? fnId;
+      if (!name) continue;
+      const assignedName = fnId && fnId !== name ? fnId : undefined;
+      results.push({
+        name,
+        node: value,
+        stmt,
+        noDeclaration: true,
+        ...(assignedName ? { assignedName } : {}),
+      });
+    }
+  };
 
   // C4.2：class 导出面与 core localNamedExports 同口径——
   // export class / class+export list / export default Class/Identifier
@@ -439,37 +531,8 @@ export function collectTopLevelFunctions(
           // 与 CJS `module.exports = {…}` 分支逐字同口径（成员键 = 导出槽名）。
           // 此前 ESM 半边整体缺席 ⇒ check OK / 0 fn、`test` 无函数可分析。
           const objLit = declarator.init as Node | null | undefined;
-          if (objLit?.type === "ObjectExpression") {
-            for (const prop of objLit.properties) {
-              if (prop.type === "ObjectMethod") {
-                if (prop.kind !== "method") continue; // getter / setter 非入口
-                const keyName = objectMemberKeyName(prop);
-                if (!keyName) continue;
-                results.push({
-                  name: keyName,
-                  node: prop,
-                  stmt,
-                  noDeclaration: true,
-                  assignedName: keyName,
-                });
-                continue;
-              }
-              if (prop.type !== "ObjectProperty") continue;
-              const value = prop.value as Node;
-              if (!isFnExprValue(value)) continue;
-              const keyName = objectMemberKeyName(prop);
-              const fnId = namedFnExprId(value);
-              const name = keyName ?? fnId;
-              if (!name) continue;
-              results.push({
-                name,
-                node: value,
-                stmt,
-                noDeclaration: true,
-                ...(fnId && fnId !== name ? { assignedName: fnId } : {}),
-              });
-            }
-          }
+          // BUG-108：展开 `{ ...base }` 引入的成员也是模块入口
+          if (objLit?.type === "ObjectExpression") pushObjectFns(objLit, stmt);
         }
         continue;
       }
@@ -488,6 +551,11 @@ export function collectTopLevelFunctions(
       // 已收；这里只剩匿名 default 形态（普查名 = 导出槽 "default"）。
       if (d.type === "FunctionDeclaration") {
         results.push({ name: "default", node: d, stmt, noDeclaration: true });
+      } else if (d?.type === "ObjectExpression") {
+        // BUG-108：`export default { ...base }` 的成员（含 spread 来源）也是入口
+        pushObjectFns(d, stmt);
+      } else if (d?.type === "Identifier" && typeof d.name === "string" && localObjects.has(d.name)) {
+        pushObjectFns(localObjects.get(d.name)!, stmt);
       } else if (isFnExprValue(d)) {
         results.push({ name: "default", node: d, stmt, noDeclaration: true });
       }
@@ -498,6 +566,14 @@ export function collectTopLevelFunctions(
         const id = asIdentifier(declarator.id as Node);
         if (id && isFnExprValue(declarator.init)) {
           results.push({ name: id.name, node: declarator.init, stmt, noDeclaration: true });
+          continue;
+        }
+        // BUG-108：`const api = {…}; export { api }` ⇒ 对象成员是模块边界入口
+        if (
+          id && exportedObjectNames.has(id.name) &&
+          declarator.init?.type === "ObjectExpression"
+        ) {
+          pushObjectFns(declarator.init as Node, stmt);
         }
       }
       continue;
@@ -520,41 +596,8 @@ export function collectTopLevelFunctions(
         // module.exports = { f: fn } —— 与 core listTopFunctions 的 CJS 分支同口径：
         // 逐个 ObjectProperty / ObjectMethod 取成员函数（key 名 = 导出槽名）。
         const objLit = expr.right as Node;
-        if (objLit?.type === "ObjectExpression") {
-          for (const prop of objLit.properties) {
-            if (prop.type === "ObjectMethod") {
-              // 只收普通方法：getter / setter 不是可调用入口
-              if (prop.kind !== "method") continue;
-              const keyName = objectMemberKeyName(prop);
-              if (!keyName) continue;
-              results.push({
-                name: keyName,
-                node: prop,
-                stmt,
-                noDeclaration: true,
-                assignedName: keyName,
-              });
-              continue;
-            }
-            if (prop.type !== "ObjectProperty") continue;
-            const value = prop.value as Node;
-            if (!isFnExprValue(value)) continue;
-            const keyName = objectMemberKeyName(prop);
-            // Bug 997：**导出槽名优先**（core: fallbackName ?? r.id?.name）——
-            // 命名函数表达式的自有 id 不夺走导出槽的身份
-            const fnId = namedFnExprId(value);
-            const name = keyName ?? fnId;
-            if (!name) continue;
-            const assignedName = fnId && fnId !== name ? fnId : undefined;
-            results.push({
-              name,
-              node: value,
-              stmt,
-              noDeclaration: true,
-              ...(assignedName ? { assignedName } : {}),
-            });
-          }
-        }
+        // BUG-108：CJS 对象导出同样展开 spread 来源
+        if (objLit?.type === "ObjectExpression") pushObjectFns(objLit, stmt);
       }
     }
   }

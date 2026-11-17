@@ -486,6 +486,12 @@ export function makeParamOptionalAt(
         // `x: number` ⇒ 类型标注就在这段文本里，必须原样带进新文本。
         const covered = textIn(source, range);
         const name = path.node.name;
+        // BUG-079：TS 的可选形参 `x?: number` 已经是可选（与 JS 的
+        // AssignmentPattern 等价）。剥 TS 时 `Identifier.optional` 被删掉，
+        // 但 Identifier 的 loc 仍覆盖 `x?: number` ⇒ 从**源码原文**判：
+        // 名字后面紧跟 `?` ⇒ 不再出手。旧行为把区间 18..28 整段改成
+        // `x: number = undefined`：`?` 静默消失，strict 工程编不过。
+        if (/^\s*\?/.test(covered.slice(name.length))) return;
         const typeText = (path.node as unknown as { nudoTypeText?: string })
           .nudoTypeText;
         let paramText: string;

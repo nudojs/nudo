@@ -1329,6 +1329,57 @@ export function extractFn(
     formalsByName.set(scope.name, formals);
   }
 
+  // BUG-108：对象字面量（含 `{ ...base }`）的方法体登记。
+  // `listTopFunctions` / 入口表已认这些成员键，但 `extractFn` 此前只在
+  // 「export 包装的 VariableDeclaration 自有属性」上登记 env.fns ⇒ spread
+  // 来源 / `export { api }` 形态的泛化取不到方法体，执法面只能合成假签名。
+  const localObjectNodes = new Map<string, Node>();
+  for (const stmt of file.program.body) {
+    let d: Node = stmt;
+    if (stmt.type === "ExportNamedDeclaration" || stmt.type === "ExportDefaultDeclaration") {
+      d = (stmt.declaration ?? stmt) as Node;
+    }
+    if (d.type !== "VariableDeclaration") continue;
+    for (const dd of d.declarations) {
+      if (dd.id.type === "Identifier" && dd.init?.type === "ObjectExpression") {
+        localObjectNodes.set(dd.id.name, dd.init);
+      }
+    }
+  }
+  const registerObjectFnBodies = (obj: Node | undefined, seen = new Set<Node>()): void => {
+    if (!obj || obj.type !== "ObjectExpression" || seen.has(obj)) return;
+    seen.add(obj);
+    for (const raw of (obj as unknown as { properties?: Node[] }).properties ?? []) {
+      const p = raw as Node & { kind?: string; argument?: Node & { name?: string } };
+      if (p.type === "SpreadElement" || p.type === "SpreadProperty") {
+        const arg = p.argument;
+        const src =
+          arg?.type === "Identifier" && arg.name
+            ? localObjectNodes.get(arg.name)
+            : arg?.type === "ObjectExpression"
+              ? arg
+              : undefined;
+        if (src) registerObjectFnBodies(src, seen);
+        continue;
+      }
+      const key = ident((p as unknown as { key?: unknown }).key);
+      if (!key || env.fns.has(key)) continue; // 真顶层函数优先，不被对象成员覆盖
+      if (p.type === "ObjectMethod" && (!p.kind || p.kind === "method")) {
+        registerFnNode(key, p as never);
+      } else if (p.type === "ObjectProperty") {
+        const v = (p as unknown as { value?: Node }).value;
+        if (v?.type === "FunctionExpression" || v?.type === "ArrowFunctionExpression") {
+          registerFnNode(key, v as never);
+        }
+      }
+    }
+  };
+  for (const obj of localObjectNodes.values()) registerObjectFnBodies(obj);
+  for (const stmt of file.program.body) {
+    if (stmt.type !== "ExportDefaultDeclaration") continue;
+    if (stmt.declaration?.type === "ObjectExpression") registerObjectFnBodies(stmt.declaration);
+  }
+
   const fn = env.fns.get(fnName);
   if (!fn) return undefined;
   return { params: fn.params, body: fn.body, env, formals: formalsByName.get(fnName) ?? [] };

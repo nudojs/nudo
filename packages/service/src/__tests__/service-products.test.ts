@@ -878,7 +878,7 @@ const JS_UPPER = `export function upper(a) {
   const declOf = (source: string, file = "/test/bug479-service.ts"): string => generateDts(analyzeFile(file, source)).split("\n").find((l) => l.startsWith("export declare function")) ?? "";
   const TS_UPPER = "export function upper(a: string): string {\n  return a.toUpperCase();\n}\n";
   const JS_UPPER = "export function upper(a) {\n  return a.toUpperCase();\n}\n";
-  it("TS 注解映射 entry@ 实参；不可映射回落 any", () => {
+  it("TS 注解映射 entry@ 实参；复合类型也进形状面（别名等仍回落 any）", () => {
     const upper = analyzeFile("/test/bug479-entry.ts", TS_UPPER).functions.find((f) => f.name === "upper")!;
     expect(formatShape(entryCase(upper).argAbs[0]!)).toBe("string");
     const add = analyzeFile("/test/bug479-entry2.ts", "export function add(x: number, y: number): number {\n  return x + y;\n}\n").functions.find((f) => f.name === "add")!;
@@ -888,7 +888,10 @@ const JS_UPPER = `export function upper(a) {
     expect(formatShape(entryCase(upper).throwsAbs)).toBe("never");
     expect(formatShape(entryCase(upper).abs)).toBe("string");
     const len = analyzeFile("/test/bug479-entry5.ts", "export function len(a: string[]): number {\n  return a.length;\n}\n").functions.find((f) => f.name === "len")!;
-    expect(formatShape(entryCase(len).argAbs[0]!)).toBe("any");
+    // BUG-036：数组注解不再退 any（旧口径 `string[]` 不在 5 个 primitive 表里）
+    expect(formatShape(entryCase(len).argAbs[0]!)).toBe("string[]");
+    const alias = analyzeFile("/test/bug479-entry6.ts", "export function pick(a: Record<string, number>): number {\n  return a.x;\n}\n").functions.find((f) => f.name === "pick")!;
+    expect(formatShape(entryCase(alias).argAbs[0]!)).toBe("any");
   });
 }
 

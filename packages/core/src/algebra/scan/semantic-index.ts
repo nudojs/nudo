@@ -421,11 +421,53 @@ function buildIndex(file: File): SemanticIndex {
     classDefs.push({ cname, symbolId: ownerId, keys: table.keys, direct });
   }
 
-  function objectPropertyKeys(obj: AnyNode): string[] {
+  /**
+   * BUG-108：顶层对象字面量按**绑定名**索引（spread 来源查表用）。
+   * `const base = { bad(){…} }; export default { ...base }` 里 `base` 是普通
+   * 顶层声明，不是导出槽 ⇒ 只能按名字找它的成员定义。
+   */
+  const objectLiteralsByName = new Map<string, AnyNode>();
+  for (const raw of ((rootNode as { program?: { body?: AnyNode[] } }).program?.body ?? [])) {
+    let d: AnyNode = raw;
+    if (d.type === "ExportNamedDeclaration" || d.type === "ExportDefaultDeclaration") {
+      d = (isNode(d.declaration) ? d.declaration : d) as AnyNode;
+    }
+    if (d.type !== "VariableDeclaration") continue;
+    for (const dd of (d.declarations ?? []) as AnyNode[]) {
+      const id = dd.id as AnyNode | undefined;
+      const init = dd.init as AnyNode | undefined;
+      if (
+        isNode(id) && id.type === "Identifier" &&
+        typeof id.name === "string" &&
+        isNode(init) && init.type === "ObjectExpression"
+      ) {
+        objectLiteralsByName.set(id.name, init);
+      }
+    }
+  }
+
+  function objectPropertyKeys(obj: AnyNode, seen: Set<AnyNode> = new Set()): string[] {
     const out: string[] = [];
     if (!Array.isArray(obj.properties)) return out;
+    if (seen.has(obj)) return out;
+    seen.add(obj);
     for (const p of obj.properties) {
       if (!isNode(p)) continue;
+      // BUG-108：`{ ...base }` 的 SpreadElement 没有 key，但 `base` 的方法
+      // 在运行时确实是导出对象的成员 ⇒ 展开同名对象字面量（含多跳），
+      // 只认静态可解析的 Identifier / 内联 ObjectExpression，不猜动态值。
+      if (p.type === "SpreadElement" || p.type === "SpreadProperty") {
+        const arg = (p as { argument?: AnyNode }).argument;
+        if (!isNode(arg)) continue;
+        const src =
+          arg.type === "Identifier" && typeof arg.name === "string"
+            ? objectLiteralsByName.get(arg.name)
+            : arg.type === "ObjectExpression"
+              ? arg
+              : undefined;
+        if (src) out.push(...objectPropertyKeys(src, seen));
+        continue;
+      }
       // BUG-996 同口径：getter / setter 是访问器，不是可调用入口。
       // `isFunctionValue(p)` 对 ObjectMethod 恒为 true，只看 type 会把
       // `get f() {}` / `set f(v) {}` 登记成入口 ⇒ check 造出假的

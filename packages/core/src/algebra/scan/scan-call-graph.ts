@@ -989,6 +989,50 @@ function walkStatements(
   }
 }
 
+/**
+ * `const g = f.bind(null)` 的绑定目标（BUG-045）。
+ *
+ * `.bind` 不执行函数，但它返回的**就是** `f` 的绑定版 ⇒ `g(-1)` 与
+ * `f(-1)` 同一条调用点义务。旧别名表只收 `const g = f`（Identifier 初值）
+ * ⇒ `g` 被登记成「普通声明」（遮蔽）⇒ 调用点整条跳过，连 `nudo test`
+ * 见证都不记。
+ *
+ * 只认「无预绑定实参」的形态（`f.bind(null)`）；`f.bind(null, 1)` 会改变
+ * 实参数量与位置，本表没有携带绑定实参的槽 ⇒ 不猜、不登记（fail-closed）。
+ */
+function bindAliasTargetOf(
+  init: Record<string, unknown>,
+  frame: ScopeFrame,
+  knownSet: Set<string>,
+  extOf: (name: string) => ExternalFnRef | undefined,
+): { fn?: string; external?: ExternalFnRef } | undefined {
+  if (init.type !== "CallExpression" && init.type !== "OptionalCallExpression") return undefined;
+  const callee = init.callee as Record<string, unknown> | undefined;
+  if (
+    !callee ||
+    (callee.type !== "MemberExpression" && callee.type !== "OptionalMemberExpression")
+  ) {
+    return undefined;
+  }
+  const prop = callee.property as Record<string, unknown> | undefined;
+  const isBind =
+    !callee.computed && prop?.type === "Identifier" && prop.name === "bind"
+      ? true
+      : callee.computed === true && prop?.type === "StringLiteral" && prop.value === "bind";
+  if (!isBind) return undefined;
+  // 只带 thisArg（其余预绑定实参不建模）
+  if (((init.arguments as unknown[] | undefined) ?? []).length !== 1) return undefined;
+  const obj = callee.object as Record<string, unknown> | undefined;
+  if (obj?.type !== "Identifier" || typeof obj.name !== "string") return undefined;
+  const target = obj.name;
+  if (knownSet.has(target)) return { fn: target };
+  const aliased = frame.aliases.get(target);
+  if (aliased) return { fn: aliased };
+  const ext = frame.externals.get(target) ?? extOf(target);
+  if (ext) return { external: ext };
+  return undefined;
+}
+
 export function collectCallResolvers(
   source: string,
   knownFns: string[],
@@ -1249,11 +1293,18 @@ export function collectCallResolvers(
         // `resolveScopedName` 判成 shadowed ⇒ 整条调用点零义务（假绿）。
         const extOf = (name: string): ExternalFnRef | undefined =>
           frame.externals.get(name) ?? externalFn.get(name);
+        // BUG-045：`const g = f.bind(null)` ⇒ g 是 f 的绑定别名
+        const bindAlias = bindAliasTargetOf(init, frame, knownSet, extOf);
         // const f = needsPositive
         if (init.type === "Identifier" && typeof init.name === "string" && knownSet.has(init.name)) {
           // 别名绑定进**当前作用域**（Bug 1106：内层的 `const f = g` 不该影响
           // 外层同名调用点的解析）
           frame.aliases.set(id.name, init.name);
+        } else if (bindAlias?.fn !== undefined) {
+          frame.aliases.set(id.name, bindAlias.fn);
+        } else if (bindAlias?.external !== undefined) {
+          frame.externals.set(id.name, bindAlias.external);
+          externalFn.set(id.name, bindAlias.external);
         } else if (
           init.type === "Identifier" &&
           typeof init.name === "string" &&

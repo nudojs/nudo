@@ -62,3 +62,60 @@ describe("默认导出的跨文件证据名字路", () => {
     expect(codes(dir, "use3.js")).toContain("nudo:contract-domain-exceeds");
   }, 60000);
 });
+
+// ---------------------------------------------------------------------------
+// --from 的静态通道必须穿过 re-export barrel
+// ---------------------------------------------------------------------------
+describe("--from 静态证据经 barrel 传递", () => {
+/** 旧口径只认「import 直接解析到 lib.js」⇒ 经 barrel 引入的现场文件零绑定、
+ * 整份证据被跳过（同一违例 `check caller` 红、`check lib --from caller` 绿）。
+ */
+  const dirs: string[] = [];
+  afterAll(() => {
+    for (const d of dirs) rmSync(d, { recursive: true, force: true });
+  });
+  const fixture = (): string => {
+    const d = mkdtempSync(join(tmpdir(), "nudo-from-barrel-"));
+    dirs.push(d);
+    writeFileSync(join(d, "shapes.nudo.js"), "export const positive = number().gt(0);\n", "utf-8");
+    writeFileSync(
+      join(d, "lib.js"),
+      '/// @nudo:import { positive } from "./shapes.nudo.js"\n' +
+        "/** @nudo:contract x positive */\n" +
+        "export function make(x) { return { x }; }\n",
+      "utf-8",
+    );
+    writeFileSync(join(d, "barrel.js"), 'export { make } from "./lib.js";\n', "utf-8");
+    writeFileSync(join(d, "barrel2.js"), 'export { make } from "./barrel.js";\n', "utf-8");
+    return d;
+  };
+  const codes = (d: string, from: string): string[] => {
+    const r = runCliTsx([
+      "check", join(d, "lib.js"), "--from", join(d, from), "--json",
+    ]);
+    const json = JSON.parse(r.stdout) as { issues?: Array<{ code: string; actual?: string }> };
+    return (json.issues ?? []).map((i) => i.code);
+  };
+
+  it("对照（直接 import）与实验组（barrel / 多跳 barrel）同结论", () => {
+    const d = fixture();
+    writeFileSync(
+      join(d, "direct.js"),
+      'import { make } from "./lib.js";\nexport function caller() { return make(-2); }\n',
+      "utf-8",
+    );
+    writeFileSync(
+      join(d, "throughBarrel.js"),
+      'import { make } from "./barrel.js";\nexport function caller() { return make(-2); }\n',
+      "utf-8",
+    );
+    writeFileSync(
+      join(d, "deep.js"),
+      'import { make } from "./barrel2.js";\nexport function caller() { return make(-2); }\n',
+      "utf-8",
+    );
+    for (const f of ["direct.js", "throughBarrel.js", "deep.js"]) {
+      expect(codes(d, f), f).toContain("nudo:contract-domain-exceeds");
+    }
+  }, 120000);
+});

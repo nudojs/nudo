@@ -929,6 +929,48 @@ export function scanLiteralCalls(
    * 作用域链（Bug 1106 / 1107）：进入**开作用域**的节点时把子作用域 id 前插
    * 到链首（与收集侧 `walkStatements` 同一套 id 算法 ⇒ 两端口径一致）。
    */
+/**
+ * `Function.prototype.call / apply` 的**间接调用**形态（BUG-045）。
+ *
+ * `f.call(null, -1)` / `f.apply(null, [-1])` 真正执行的是 `f`，成员名只是
+ * 转发器；旧口径把整个 callee 当 `接收者.属性` 查表 ⇒ `f.call` 未命中 ⇒
+ * 调用点契约零执法（`check` 假绿、`nudo test` 连见证都不记）。
+ *
+ * 只认静态形态：`.call` 去掉第一个 thisArg；`.apply` 取第二个实参的
+ * **数组字面量**元素（非字面量 ⇒ 不猜 arity，返回 undefined）。
+ */
+function indirectCallOf(
+  call: Record<string, unknown>,
+): { target: Record<string, unknown>; args: Array<Record<string, unknown>> } | undefined {
+  const callee = call.callee as Record<string, unknown> | undefined;
+  if (
+    !callee ||
+    (callee.type !== "MemberExpression" && callee.type !== "OptionalMemberExpression")
+  ) {
+    return undefined;
+  }
+  const target = callee.object as Record<string, unknown> | undefined;
+  if (!target) return undefined;
+  const prop = callee.property as Record<string, unknown> | undefined;
+  const name =
+    !callee.computed && prop?.type === "Identifier"
+      ? prop.name
+      : callee.computed === true && prop?.type === "StringLiteral"
+        ? prop.value
+        : undefined;
+  if (name !== "call" && name !== "apply") return undefined;
+  const args = (call.arguments as Array<Record<string, unknown>>) ?? [];
+  if (name === "call") return { target, args: args.slice(1) };
+  const list = args[1] as Record<string, unknown> | undefined;
+  if (!list || list.type !== "ArrayExpression") return undefined;
+  return {
+    target,
+    args: ((list.elements as Array<Record<string, unknown> | null> | undefined) ?? []).filter(
+      (e): e is Record<string, unknown> => e !== null && e !== undefined,
+    ),
+  };
+}
+
   const visit = (n: unknown, chain: ScopeChain = [""]): void => {
     if (!n || typeof n !== "object") return;
     const obj = n as Record<string, unknown> & {
@@ -953,6 +995,24 @@ export function scanLiteralCalls(
       } else if (resolved?.external) {
         const name = resolved.external.fnName || "require()";
         checkExternalCall(resolved.external, args, name, obj.loc, chain);
+      }
+      // BUG-045：`f.call(null, -1)` / `f.apply(null, [-1])` 的**真实**被调者是
+      // 接收者 `f`（实参去掉 thisArg / 展开字面量数组）⇒ 与直接调用共用同一
+      // 条调用点义务 + 见证路径（原来的成员分支解析不到 `f.call` ⇒ 全绿）。
+      const indirect = indirectCallOf(obj as Record<string, unknown>);
+      if (indirect) {
+        const real = resolveCalleeFn(indirect.target, resolve, knownSet, chain);
+        if (typeof real === "string") {
+          checkOneCall(real, indirect.args, obj.loc, chain);
+        } else if (real?.external) {
+          checkExternalCall(
+            real.external,
+            indirect.args,
+            real.external.fnName || "require()",
+            obj.loc,
+            chain,
+          );
+        }
       }
     }
     // BUG-003：局部绑定表的**声明面**。此前只登记 `const` + 纯标识符声明符，
