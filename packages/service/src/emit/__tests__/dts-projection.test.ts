@@ -2190,3 +2190,93 @@ describe("类成员的修饰符面（可见性 / 可选性 / static 序）", () 
     expect(dts).toContain("b: number;");
   });
 });
+
+// ---------------------------------------------------------------------------
+// 继承来的 static 不得在子类里投影成实例方法
+// ---------------------------------------------------------------------------
+describe("子类不得把基类的 static 方法发射成实例方法", () => {
+/**
+ * 分析面把基类方法也登记到导出子类名下（未导出基类的方法也是子类公共面），
+ * 但登记名 `` `${sub}.${name}` `` **不带 static 标记** ⇒「仅 static」守卫只
+ * 查**该类自己**源码面的 `staticMethods` ⇒ 继承来的 static 落进实例方法
+ * 循环：
+ *
+ * ```ts
+ * export declare class A { static v(): number; }
+ * export declare class B extends A { v(): number; }   // ← 凭空实例方法
+ * ```
+ *
+ * 消费方 `new B().v()` 类型检查通过、运行期 `undefined is not a function`
+ * （`B.v()` 才是真的）。判据：沿 `extends` 链继承来的 static 同样算「仅
+ * static」，子类不重复声明（TS 里 `extends` 本身就继承静态面）。
+ */
+function moduleDts(source: string): string {
+  const result = analyzeFile("/test/static-inherit.ts", source);
+  const surface = dtsModuleSurface(source);
+  const entries = result.functions
+    .filter((fn) => fn.cases.length > 0)
+    .map((fn) => ({ fn, projection: projectFunctionDts(fn, undefined, surface) }));
+  return projectModuleDts(surface, entries).lines.join("\n");
+}
+
+function classBody(dts: string, header: string): string {
+  const start = dts.indexOf(header);
+  if (start < 0) return "";
+  const end = dts.indexOf("\n}", start);
+  return end < 0 ? dts.slice(start) : dts.slice(start, end);
+}
+
+  it("基类 static + 子类空体 ⇒ 子类不声明实例方法；消费方只能走静态面", () => {
+    const dts = moduleDts(`export class A {
+  static v() {
+    return 1;
+  }
+}
+export class B extends A {}
+`);
+    expect(dts).toContain("static v()");
+    const bBody = classBody(dts, "export declare class B extends A {");
+    expect(bBody).toContain("export declare class B extends A {}");
+    expect(bBody).not.toMatch(/\bv\(\)/);
+
+    // 消费方：`B.v()` 合法（继承的静态面），`new B().v()` 必须被拒
+    const ok = tscNoEmit({
+      "mod.d.ts": dts,
+      "use.ts": 'import { B } from "./mod.js";\nconst n: number = B.v();\nexport { n };\n',
+    });
+    expect(ok.ok, ok.stderr).toBe(true);
+    const bad = tscNoEmit({
+      "mod.d.ts": dts,
+      "use.ts": 'import { B } from "./mod.js";\nexport const r = new B().v();\n',
+    });
+    expect(bad.ok).toBe(false);
+  });
+
+  it("对照：基类是**实例**方法 ⇒ 子类照样声明实例方法（不回归）", () => {
+    const dts = moduleDts(`export class A {
+  v() {
+    return 1;
+  }
+}
+export class B extends A {}
+`);
+    expect(classBody(dts, "export declare class B extends A {")).toMatch(/v\(\)/);
+  });
+
+  it("对照：子类自己写了同名实例方法（覆盖基类 static）⇒ 仍按实例方法声明", () => {
+    const dts = moduleDts(`export class A {
+  static v() {
+    return 1;
+  }
+}
+export class B extends A {
+  v() {
+    return 2;
+  }
+}
+`);
+    const bBody = classBody(dts, "export declare class B extends A {");
+    expect(bBody).toMatch(/\bv\(\)/);
+    expect(classBody(dts, "export declare class A {")).toContain("static v()");
+  });
+});

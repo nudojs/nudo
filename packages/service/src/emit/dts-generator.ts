@@ -4723,6 +4723,8 @@ function projectModuleDtsInner(
         // BUG-151：`extends <base>`——基类泛型时补 `any` 实参（TS2314：泛型基类
         // 缺类型实参会让整份产物编译不过）。
         superClauseText(className, surface),
+        // BUG-070：继承来的 static 不得在子类里投影成实例方法
+        inheritedStaticNamesOf(className, surface),
       ),
     );
   }
@@ -4901,6 +4903,17 @@ function dtsClassDeclaration(
   memberList: Array<{ member: string; lines: string[] }>,
   fields: DtsClassFieldSurface[],
   superText = "",
+  /**
+   * 沿 `extends` 链**继承来的**静态成员名（BUG-070）。
+   *
+   * 分析面把基类的 `static` 方法也登记到导出子类名下（Bug 64：未导出基类的
+   * 方法也是子类公共面的一部分），但登记名 `` `${sub}.${m.name}` `` **不带
+   * static 标记** ⇒ 下面的「Bug 13」守卫只查**该类自己**源码面的
+   * `staticMethods` ⇒ 继承来的 static 落进实例方法循环，产物对子类凭空声明
+   * 一个**实例**方法（`export class Sub extends Base {}` ⇒ `v(): number;`），
+   * 消费方 `new Sub().v()` 类型检查通过、运行期 `TypeError`。
+   */
+  inheritedStatics: ReadonlySet<string> = new Set(),
 ): string[] {
   const body: string[] = [];
   const methodNames = new Set<string>();
@@ -4926,10 +4939,14 @@ function dtsClassDeclaration(
   const staticSurface = cls?.staticMethods ?? [];
   // Bug 13：「仅 static」的方法在普查面被登记成同名实例方法 ⇒ 那条是幻影，
   // 只发源码面的 static 版本；同名 static + instance 同时存在时不跳过。
+  //
+  // BUG-070：**继承来的** static 同样算「仅 static」——`Sub extends Base {}`
+  // 的 `Sub.v` 来自基类的 `static v`，子类不得把它投影成实例方法（基类那条
+  // static 由 `extends Base` 继承下来，消费方照样能 `Sub.v()`）。
   const staticOnly = new Set(
-    staticSurface
-      .filter((sm) => !instanceSurface.some((im) => im.name === sm.name))
-      .map((sm) => sm.name),
+    [...staticSurface.map((sm) => sm.name), ...inheritedStatics].filter(
+      (name) => !instanceSurface.some((im) => im.name === name),
+    ),
   );
   // Bug 86：源码面方法的访问修饰符查表。
   const accessibility = new Map<string, string>();
@@ -5029,6 +5046,30 @@ function dtsClassDeclaration(
  * 实参（TS2314：泛型基类缺类型实参会让整份产物编译不过；`unknown` 是 TS
  * 的 top，2026-11-06 归一后产物里不再出现语义为「无约束」的 `any`）。
  */
+/**
+ * 沿 `extends` 链收集**继承来的**静态成员名（BUG-070）。
+ *
+ * 只收**本模块**里能查到的基类（分析面沿 `superClass` 登记继承方法时同样只
+ * 走本地类）；基类自己 override 的方法按 ES 语义以最近一层为准——这里取并集
+ * 即可，因为「子类 own 实例方法同名」会在调用方（`staticOnly`）里把该名字剔掉。
+ */
+function inheritedStaticNamesOf(
+  className: string,
+  surface: DtsModuleSurface | undefined,
+): Set<string> {
+  const out = new Set<string>();
+  const seen = new Set<string>([className]);
+  let base = surface?.classes.get(className)?.superClass;
+  while (base !== undefined && !seen.has(base)) {
+    seen.add(base);
+    const cls = surface?.classes.get(base);
+    if (!cls) break;
+    for (const m of cls.staticMethods ?? []) out.add(m.name);
+    base = cls.superClass;
+  }
+  return out;
+}
+
 function superClauseText(
   className: string,
   surface: DtsModuleSurface | undefined,
