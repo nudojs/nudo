@@ -259,10 +259,9 @@ function refinementsFromPreds(
         dropped.push(`pred not projected: ${predToString(p)}`);
         continue;
       }
-      if (typeof v === "number" && Number.isNaN(v)) {
-        dropped.push(`pred not projected (NaN): ${predToString(p)}`);
-        continue;
-      }
+      // BUG-137：NaN 是**精确字面量**（check 面按 Object.is 判），不得丢成
+      // number 域——那会让 zod / standard 校验器接受契约明确拒绝的 1 /
+      // Infinity。zod 渲染层对 NaN 出 `z.nan()`，standard 面按 Object.is 比。
       if (hasEqLit && !Object.is(eqLit, v)) {
         dropped.push(`conflicting eq preds: ${predToString(p)}`);
         continue;
@@ -577,12 +576,13 @@ function absToSchemaNodeB(
   const tag = generatorTagOf(a);
   if (tag) return { node: { k: "generator", tag }, dropped };
 
-  // lit term 优先（与 projection 一致；NaN 不产 lit）
+  // lit term 优先（与 projection 一致）。NaN 必须作为**精确字面量**保留：
+  // 契约 `lit(NaN)` 在 check 面判 `1` / `Infinity` 违约，投影若丢成 number
+  // 域（BUG-137）⇒ zod / standard 校验器接受门禁拒绝的值。zod 用 z.nan()
+  // （z.literal(NaN) 的 `===` 口径永不命中），standard 面已按 Object.is 判。
   if (a.term?.op === "lit") {
     const v = a.term.value;
-    if (typeof v === "number" && Number.isNaN(v)) {
-      dropped.push("lit NaN not projected (widened to the number domain)");
-    } else if (
+    if (
       v === null ||
       v === undefined ||
       typeof v === "string" ||
@@ -699,9 +699,9 @@ function absToSchemaShape(
         self: a.term,
       });
       dropped.push(...d);
-      // hasEqLit 为 tagged 判据（BUG-019）；NaN eq 已在通道内 drop 记录，
-      // 防御性 !isNaN 只挡 NaN（不再误挡 undefined）
-      if (hasEqLit && (eqLit === undefined || !Number.isNaN(eqLit as number))) {
+      // hasEqLit 为 tagged 判据（BUG-019）：lit(undefined) 与「无 eq」必须
+      // 区分；NaN 同样保留为精确 lit（BUG-137）。
+      if (hasEqLit) {
         return { node: { k: "lit", value: eqLit }, dropped };
       }
       return { node: { k: "prim", type: s.type, refinements }, dropped };
@@ -953,6 +953,9 @@ function renderZod(node: SchemaNode): { source: string; dropped: string[] } {
       if (typeof v === "string") return { source: `z.literal(${JSON.stringify(v)})`, dropped: [] };
       if (typeof v === "boolean") return { source: `z.literal(${v})`, dropped: [] };
       if (typeof v === "number") {
+        // BUG-137：`z.literal(NaN)` 在 zod 里用 `===` 比较（NaN 永不命中）
+        // ⇒ 精确 NaN 契约必须写成 `z.nan()`（Object.is 口径）。
+        if (Number.isNaN(v)) return { source: "z.nan()", dropped: [] };
         // Bug 1065：`-0` 与 `0` 身份不同（Object.is / 1/x 可观察），而
         // `String(-0) === "0"` ⇒ 负号被抹掉 ⇒ 产物写 `z.literal(0)`
         // ⇒ **比门禁宽**（门禁按 `lit(-0)` 判红、zod 放行 `0`）⇒ 假绿。
@@ -1083,16 +1086,22 @@ function renderZod(node: SchemaNode): { source: string; dropped: string[] } {
       //
       // 只对**必填**的污染键槽补：其余键 `!(k in Object.prototype)` ⇒ 子句
       // 退化成 `k in value`（即 zod 原生判据），无需额外代码。
+      //
+      // BUG-050：该子句必须校验**原始输入**。`.superRefine` 挂在 `z.object`
+      // 之后收到的是解析后的输出——zod 已把 `in` 命中的继承值物化成自有属性
+      // ⇒ `Object.hasOwn(value, k)` 恒真、子句成为死代码。改用
+      // `z.preprocess`（在解析前执行；内层 schema 的输出类型不变）：
+      // `Object.create({ toString: "s" })` 仍按原型键放行，`{}` 被拒。
+      const requiredChecks: string[] = [];
       for (const slot of node.slots) {
         if (slot.optional) continue;
         if (!Object.hasOwn(Object.prototype, slot.key)) continue;
         const k = JSON.stringify(slot.key);
-        source +=
-          `\n  .superRefine((value, ctx) => {\n` +
+        requiredChecks.push(
           `    if (!(Object.hasOwn(value, ${k}) || (${k} in value && !Object.hasOwn(Object.prototype, ${k})))) {\n` +
-          `      ctx.addIssue({ code: "custom", message: "required", path: [${k}] });\n` +
-          `    }\n` +
-          `  })`;
+            `      ctx.addIssue({ code: "custom", message: "required", path: [${k}] });\n` +
+            `    }`,
+        );
       }
       for (const slot of protoSlots) {
         const inner = renderZod(slot.node);
@@ -1109,6 +1118,15 @@ function renderZod(node: SchemaNode): { source: string; dropped: string[] } {
           `    const parsed = (${inner.source}).safeParse(desc.value);\n` +
           `    if (!parsed.success) ctx.addIssue({ code: "custom", message: parsed.error.issues.map((i) => i.message).join("; ") || "invalid", path: ["__proto__"] });\n` +
           `  })`;
+      }
+      if (requiredChecks.length > 0) {
+        source =
+          `z.preprocess((value, ctx) => {\n` +
+          `  if (value !== null && typeof value === "object") {\n` +
+          requiredChecks.join("\n") +
+          `\n  }\n` +
+          `  return value;\n` +
+          `}, ${source})`;
       }
       return { source, dropped };
     }

@@ -469,10 +469,9 @@ function makeFixture(): string {
     );
 
     expect(r.status).toBe(0);
-    // 调用点**点观测**不再直接成为字面量契约 —— 先 `widenObservationAbs`
-    // 再 `joinThenProject` ⇒ 一次调用 `alpha({ x: 5 })` 折出
-    // `shape({ x: number() })` / `number()`（不是 `lit(5)`）。
-    expect(r.stdout).toContain("+export const alpha = fn({ p: shape({ x: number() }) }, number());");
+    // BUG-113：emit 持久化**精确观测字面量** —— `alpha({ x: 5 })` 折出
+    // `shape({ x: lit(5) })` / `lit(5)`（宽化只属于 draft 面）。
+    expect(r.stdout).toContain("+export const alpha = fn({ p: shape({ x: lit(5) }) }, lit(5));");
     // beta 的生成段**不在**改动面里（只作为 diff 上下文出现）
     expect(r.stdout).not.toContain("-export const beta");
     expect(r.stdout).not.toContain("+export const beta");

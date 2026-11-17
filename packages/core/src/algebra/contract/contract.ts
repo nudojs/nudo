@@ -479,7 +479,28 @@ function reportOrphanSidecarExports(
   const srcExports = [...localNamedExports(source)];
   for (const name of orphans) {
     const v = Object.hasOwn(exps, name) ? exps[name] : undefined;
-    if (!isNudoConstraint(v) || !v.fn) continue;
+    // BUG-059：对象袋（`export const X = { K: { run: fn(…) } }`）既不是约束
+    // 也不被任何源码函数认领 ⇒ 旧实现直接 continue ⇒ 契约静默零义务。凡
+    // **含** Nudo 约束的孤儿袋都必须报（深度 2：袋 / 多一层包装）。
+    const nestedConstraint = (x: unknown, depth: number): boolean => {
+      if (depth <= 0 || typeof x !== "object" || x === null || Array.isArray(x)) return false;
+      return Object.keys(x).some((k) => {
+        const v = (x as Record<string, unknown>)[k];
+        return isNudoConstraint(v) || nestedConstraint(v, depth - 1);
+      });
+    };
+    if (!isNudoConstraint(v) || !v.fn) {
+      // 非 fn 的 **Nudo 约束**（`export const findings = array(...)`）是契约库
+      // 的正常条目，不是「袋」——只有普通对象才进入嵌套扫描。
+      if (!isNudoConstraint(v) && nestedConstraint(v, 2)) {
+        collectDiag({
+          code: DIAG.contractLoad,
+          message: `sidecar '${spec}' export '${name}' holds nested constraints that no source function claims — export each binding as 'Class_method' / 'Class.method', or use a bag named after the class: export const Class = { method: fn(…) }`,
+          file: sidecarPath,
+        });
+      }
+      continue;
+    }
     // 「像是打错一字」才是事故（契约被静默丢弃）；其余是契约库的正常条目。
     const hint = srcExports.find((s) => looksLikeTypo(name, s));
     if (hint === undefined) continue;
@@ -650,7 +671,7 @@ function loadSidecarBinding(
     ) {
       collectDiag({
         code: DIAG.contractLoad,
-        message: `sidecar key '${method}' does not bind '${fnName}' — use '${cls}.${method}', '${cls}_${method}', or nested { ${cls}: { ${method}: … } }`,
+        message: `sidecar key '${method}' does not bind '${fnName}' — use '${cls}.${method}', '${cls}_${method}', or a class-named bag: export const ${cls} = { ${method}: … }`,
         file: sidecarPath,
       });
     }

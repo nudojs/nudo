@@ -71,6 +71,7 @@ import {
   isNullProtoObj,
   getSlot,
   setSlot,
+  getProtoAbs,
   canonicalArrayIndex,
   isUserFnSlotOwner,
   markUserFnSlots,
@@ -113,7 +114,8 @@ import { setReceiverToStringResolver } from "../../../builtins/object-proto.ts";
 // 直连 builtins/error/iterator.ts，不经 barrel（与 iterate.ts 同款口径；barrel
 // 未导出该函数，且本分片不改 barrel）。
 import { collectionIteratorFor } from "../../../builtins/error/iterator.ts";
-import { urlSearchParamsSizeAbs } from "../../../builtins/error/web.ts";
+import { urlSearchParamsSizeAbs, recomputeUrlAfterComponentSet } from "../../../builtins/error/web.ts";
+import { typedArrayAccessorAbs } from "../../../builtins/error/binary.ts";
 import { URL_WRITABLE_COMPONENTS } from "../brand-tables.ts";
 import { registerUrlSearchParamsParent } from "../url-live.ts";
 import {
@@ -1218,7 +1220,7 @@ function getBrandProtoMember(ctx: GetCtx): Abs | undefined {
 
 /** brand 注册面：内建表（方法/访问器/符号/原型值）、类注册表与内层解包。 */
 function getRegisteredBrandMember(ctx: GetCtx): Abs | undefined {
-  const { o, key, opts } = ctx;
+  const { o, key, opts, receiver } = ctx;
   if (o.shape.k === "brand") {
     // Bug 65：读 `u.searchParams` 时登记父 URL 反向指针——后续对该 brand
     // 的 set/append/delete/sort 会原地改 @@entries，需回写父 URL 的
@@ -1309,6 +1311,12 @@ function getRegisteredBrandMember(ctx: GetCtx): Abs | undefined {
     // 自有数据属性优先于原型访问器（原生属性查找：own → prototype）
     // 必须 getSlot：constructor/toString 等键裸读会踩宿主 Object.prototype
     if (inner?.shape.k === "obj") {
+      // Bug 115：`Object.defineProperty(instance, k, { get, enumerable })`
+      // 把访问器装进**内层 obj** 的 accessorTable（槽里只有占位）。读面
+      // 必须先查侧表（与对象字面量 getObjMember 同口径，this = 实例），
+      // 否则占位 `unknown` 被当数据槽返回 ⇒ getter 从不执行、异常丢失。
+      const acc = lookupObjAccessor(inner, key);
+      if (acc) return acc.get ? acc.get(receiver ?? o) : undef();
       const slot = getSlot(inner.shape.slots, key);
       if (slot && !slot.optional) return slot.value;
     }
@@ -1506,6 +1514,13 @@ function getBrandTailMember(ctx: GetCtx, isClassVal: boolean, inner: Abs): Abs {
       }
       return joinAbs(abs({ k: "prim", type: elem }, undefined, undefined, "exact"), undef());
     }
+  }
+  // BUG-129：TypedArray 实例二进制访问器（buffer / byteLength / byteOffset）
+  // 的值读模型——presence 表里的名字此前直接折 unknown，导致
+  // `new Uint8Array(a.buffer)` 落 length 形态（假 RangeError | TypeError）。
+  if (!isClassVal) {
+    const taAcc = typedArrayAccessorAbs(o, key);
+    if (taAcc !== undefined) return taAcc;
   }
   // Bug 40：已知原型访问器名（BUILTIN_BRAND_ACCESSORS，$in presence 表）
   // 的值读若槽面未建模 → 诚实 unknown——不得落闭 obj 槽 miss 折精确
@@ -1856,6 +1871,24 @@ function getObjMember(ctx: GetCtx): Abs | undefined {
     const slot = getSlot((o.shape as ObjShape).slots, key);
     if (slot) {
       // optional 槽在 JS 中可能缺席 → 读到 undefined，不能报 definite presence
+      if (slot.optional) return joinAbs(slot.value, undef());
+      // Bug 124：`inherited` 槽是 Object.create(proto) 的**存在性镜像**
+      //（值折 unknown）——真值必须按原型对象求值（getter / 方法体），
+      // 不得把镜像当数据槽返回。
+      if (slot.inherited !== true) return slot.value;
+    }
+    // Bug 124：普通对象的原型链成员（Object.create(proto) /
+    // `{ __proto__: proto }` / Object.setPrototypeOf 均已入 protoTable）——
+    // 原生 [[Get]] 沿链取值：数据槽 / getter（this = receiver）/ 方法。
+    // 此前直接落 open/闭槽 miss（继承 getter 折 unknown，必抛零执法）。
+    // `__proto__` 本身是特殊的原型访问器（下方分支），不得沿链读。
+    if (key !== "__proto__") {
+      const proto = getProtoAbs(o);
+      if (proto && proto !== o) return $get(proto, key, opts, receiver ?? o);
+    }
+    if (slot) {
+      // 无 protoTable 的 inherited 槽（构造来源不支持链解析时）——保持
+      // 旧保守读值（unknown），不冒充数据槽值。
       if (slot.optional) return joinAbs(slot.value, undef());
       return slot.value;
     }
@@ -2230,6 +2263,18 @@ function setBrandInstanceMember(ctx: SetCtx): Abs | undefined {
     });
     if (becomesOwn) {
       setPropFlags(inner, key, { enumerable: true });
+    }
+    // BUG-126：URL 组件 setter 的原生语义是重算同一解析状态的全部投影
+    // （href / pathname / search / hash …）并同步 live `searchParams`。
+    // 仅改被写槽会让派生组件停在旧快照（自信错值）。重算在 web.ts 单源
+    // 实现（宿主 URL 规范实现；抽象值退 string 域）。
+    if (
+      o.shape.name === "URL" &&
+      URL_WRITABLE_COMPONENTS.has(key) &&
+      // 用户类可同名 URL（BUG-052 同族）——其实例组件是普通字段，不重算。
+      classSpecOfAbs(o) === undefined
+    ) {
+      recomputeUrlAfterComponentSet(o, key, value);
     }
     clearStaleTermPred(o);
     return o;

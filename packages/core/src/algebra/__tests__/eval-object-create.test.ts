@@ -202,9 +202,9 @@ describe("控制组: proto 面", () => {
     // null proto：nullProto 标记，Object.prototype 成员缺席
     const np = call(`export function f() { const o = Object.create(null); return "toString" in o; }`);
     expect(litValue(np.result)).toEqual({ ok: true, value: false });
-    // 对象 proto：合法，缺槽读保守 unknown
+    // 对象 proto：合法；继承数据槽按原型读出（BUG-124：精确 1）
     const op = call(`export function f() { return Object.create({ x: 1 }).x; }`);
-    expect(kindOf(op.result)).toBe("unknown");
+    expect(litValue(op.result)).toEqual({ ok: true, value: 1 });
     expect(isNever(op.throws)).toBe(true);
     // 字面量 proto：定抛
     for (const src of [

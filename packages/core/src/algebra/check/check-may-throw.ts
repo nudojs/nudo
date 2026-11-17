@@ -37,11 +37,12 @@
 import { VISITOR_KEYS, type Node } from "@babel/types";
 import type { Abs } from "../abs.ts";
 import { abs, never, isAbsLike } from "../abs.ts";
+import { joinAbs } from "../objects.ts";
 import type { Phi } from "../pred.ts";
 import { pTrue } from "../pred.ts";
 import { formatShape } from "../format/format.ts";
 import type { PolyFn } from "../generalize.ts";
-import { classMethodIsStatic, ctorParamAbsArgs, entrySelfReferenceCount, injectForFunctionScope } from "../generalize.ts";
+import { classMethodIsStatic, ctorParamAbsArgs, entrySelfReferenceCount, entryThisReceiverOf, injectForFunctionScope } from "../generalize.ts";
 import type { CheckOptions } from "./check-types.ts";
 import { $invoke, $new, withExecPhi } from "../exec/index.ts";
 import { currentEvalRoundEpoch } from "../collector-scope.ts";
@@ -202,6 +203,8 @@ export function collectEntryMayThrows(
     // （kind, cause）去重（求值顺序稳定 ⇒ 输出顺序稳定）。
     const seenEffects = new Set<string>();
     return effects.filter((e) => {
+      // BUG-084：async 体内的 soft 效果只让 promise 拒绝，不是入口同步抛
+      if (e.asyncBody === true) return false;
       const key = `${e.kind}\u0000${e.cause}`;
       if (seenEffects.has(key)) return false;
       seenEffects.add(key);
@@ -331,9 +334,19 @@ export function evalThrowsOutcome(
   // 判定面单源（isAbsLike）：同判定面后行为差异仅限「带 shape 无 conf 的
   // 宿主对象」——正是要修的误判（宿主臂而非 Abs 臂）
   const isAbsVal = isAbsLike;
+  // BUG-133：TS `this: T` 接收者注解——入口按接收者契约求值（否则
+  // `this.area()` 被记 property on undefined ⇒ L2 假红）。
+  const entryThisArg = fnName.includes(".") ? undefined : entryThisReceiverOf(source, fnName, file);
   const call = (name: string, callArgs: Abs[]): TranspiledCallResult | undefined => {
     try {
-      return callTranspiledExportFull(exports, name, callArgs, phi.op === "true" ? undefined : { phi });
+      return callTranspiledExportFull(
+        exports,
+        name,
+        callArgs,
+        phi.op === "true" && entryThisArg === undefined
+          ? undefined
+          : { ...(phi.op === "true" ? {} : { phi }), ...(entryThisArg ? { thisArg: entryThisArg } : {}) },
+      );
     } catch {
       return undefined;
     }
@@ -432,6 +445,30 @@ export function evalThrowsOutcome(
     // 与 CJS 的 default obj 桥同口径，按导出对象 + 成员键派发（否则 ESM
     // 同形在 L2 完全不可见 ⇒ 无条件必抛判 OK / exit 0）。
     if (file && !fnName.includes(".")) {
+      // BUG-108 / BUG-138：以**求值导出表**的 obj 槽为准（spread 来源方法在
+      // AST 上没有自有 ObjectMethod 节点；`export { api }` 的槽名也不是 AST
+      // 变量名）。多个导出对象都含同名方法时按入口名的折叠语义 union。
+      const receivers: Abs[] = [];
+      for (const v of Object.values(exports)) {
+        if (!isAbsVal(v) || (v as Abs).shape.k !== "obj") continue;
+        const slot = (v as Abs & { shape: { slots: Record<string, { value: Abs }> } }).shape.slots[fnName];
+        if (slot !== undefined && slot.value.shape.k === "fn") receivers.push(v as Abs);
+      }
+      if (receivers.length > 0) {
+        const results = receivers.map((d) =>
+          invokeAsThrows(() => $invoke(d, fnName, args), phi),
+        );
+        return {
+          kind: "analyzed",
+          result:
+            results.length === 1
+              ? results[0]!
+              : {
+                  result: results.reduce((acc, r) => joinAbs(acc, r.result), never),
+                  throws: results.reduce((acc, r) => joinAbs(acc, r.throws), never),
+                },
+        };
+      }
       const owner = esmObjectMemberOwnerOf(file, fnName);
       if (owner !== undefined) {
         const d = exports[owner];

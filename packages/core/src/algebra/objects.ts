@@ -1232,6 +1232,28 @@ export function isNullProtoWithoutCoercerSlot(a: Abs): boolean {
   return !has("toString") && !has("valueOf") && !has("@@toPrimitive");
 }
 
+/**
+ * 闭普通对象且**无用户 ToPrimitive 钩子**（自有 toString / valueOf /
+ * @@toPrimitive 槽或访问器）——`ToPrimitive(obj, default|string)` 走
+ * Object.prototype：valueOf 返回对象本身、toString 返回 `"[object Tag]"`，
+ * 恒得 string 且无用户副作用。null-proto 不在此列（无 Object.prototype
+ * 回落，ToPrimitive 定抛，由 isNullProtoWithoutCoercer 处理）；open /
+ * index 形成员未知，不可折。
+ *
+ * 与 template.ts 的默认标签折叠同判据（那边只看数据槽；这里把访问器也
+ * 算作钩子——getter 可能抛错，不得静默折成常量）。
+ */
+export function isClosedObjectWithoutCoercer(a: Abs): boolean {
+  if (a.shape.k !== "obj") return false;
+  const so = a.shape as { open?: boolean; index?: unknown; slots?: Record<string, unknown> };
+  if (so.open || so.index || isNullProtoObj(a)) return false;
+  for (const name of ["toString", "valueOf", "@@toPrimitive"] as const) {
+    if (so.slots && Object.prototype.hasOwnProperty.call(so.slots, name)) return false;
+    if (lookupObjAccessor(a, name)) return false;
+  }
+  return true;
+}
+
 /** 同一对象的不可变更新（$set/$del）迁移 nullProto 标记 */
 export function migrateNullProto(from: Abs, to: Abs): Abs {
   if (nullProtoMarks.has(from as object)) nullProtoMarks.set(to as object, true);

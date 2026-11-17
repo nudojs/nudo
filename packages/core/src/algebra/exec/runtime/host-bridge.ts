@@ -16,6 +16,7 @@ import { noBody as sharedNoBody } from "../../builtins/shared.ts";
 import { pTrue } from "../../pred.ts";
 import { joinAbs } from "../../objects.ts";
 import { getHostGlobalFnCall } from "../hooks.ts";
+import { markKnownEmptyInstanceCtor } from "../class-registry.ts";
 import { currentAssumePremises, currentInvariantSpecs, withAssumePremises, withInvariantSpecs } from "./phi.ts";
 import {
   isNudoReturn,
@@ -239,13 +240,13 @@ function padOmittedArgs(
 export function $fnVal(
   params: string[],
   impl: (...args: Abs[]) => Abs,
-  opts?: { bindThis?: boolean; ctor?: boolean; padArgs?: boolean; length?: number; effectFree?: boolean; closed?: boolean; kind?: string; fnKind?: "function" | "async" | "generator" | "async-generator"; optionalParams?: boolean[] },
+  opts?: { bindThis?: boolean; ctor?: boolean; padArgs?: boolean; length?: number; effectFree?: boolean; closed?: boolean; kind?: string; fnKind?: "function" | "async" | "generator" | "async-generator"; optionalParams?: boolean[]; emptyBody?: boolean },
 ): Abs {
   const argsOf =
     opts?.padArgs === false
       ? (a: Abs[]) => a
       : (a: Abs[]) => padOmittedArgs(impl, a);
-  return absFunction(
+  const fn = absFunction(
     params,
     {
       body: noBody,
@@ -278,4 +279,7 @@ export function $fnVal(
       ...(opts?.length !== undefined ? { length: opts.length } : {}),
     },
   );
+  // Bug 141：空体匿名函数表达式作构造器 ⇒ 实例自有面确定为空。
+  if (opts?.emptyBody) markKnownEmptyInstanceCtor(fn);
+  return fn;
 }

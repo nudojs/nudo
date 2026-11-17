@@ -111,3 +111,62 @@ describe("defineProperty accessor descriptors install and validate", () => {
     expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
   });
 });
+
+/**
+ * BUG-115：类实例上的**自有访问器**（`Object.defineProperty(instance, k,
+ * { get, enumerable: true })`）——真 getter 住内层 obj 的 accessorTable，
+ * 槽里只有占位。此前 `$get` / `$spread` / `Object.assign` / `Object.entries`
+ * 把它当数据槽读取 ⇒ getter 从不调用、返回值折 unknown、必抛异常零执法
+ * （普通对象同款访问器正确抛）。修复：四个消费面统一按 side table 求值。
+ */
+describe("BUG-115 class instance own accessors ($get / spread / assign / entries)", () => {
+  const mk = (getBody: string) =>
+    `class C { x = 1; } function mk() { const c = new C(); Object.defineProperty(c, "y", { get() { ${getBody} }, enumerable: true }); return c; }`;
+
+  it("$get 调用 getter（读 this）", () => {
+    const r = call(
+      `export function f() { ${mk("return this.x + 6;")} return mk().y; }`,
+    );
+    expect(litValue(r.result)).toEqual({ ok: true, value: 7 });
+  });
+
+  it("spread / Object.assign 求值 getter", () => {
+    expect(
+      litValue(call(`export function f() { ${mk("return 7;")} return JSON.stringify({ ...mk() }); }`).result),
+    ).toEqual({ ok: true, value: '{"x":1,"y":7}' });
+    expect(
+      litValue(call(`export function f() { ${mk("return 7;")} return JSON.stringify(Object.assign({}, mk())); }`).result),
+    ).toEqual({ ok: true, value: '{"x":1,"y":7}' });
+  });
+
+  it("Object.entries / values 求值 getter", () => {
+    expect(
+      litValue(
+        call(
+          `export function f() { ${mk("return 7;")} return Object.entries(mk()).map(([k, v]) => k + ":" + v).join(","); }`,
+        ).result,
+      ),
+    ).toEqual({ ok: true, value: "x:1,y:7" });
+    expect(
+      litValue(
+        call(
+          `export function f() { ${mk("return 7;")} return Object.values(mk()).join(","); }`,
+        ).result,
+      ),
+    ).toEqual({ ok: true, value: "1,7" });
+  });
+
+  it("必抛 getter 在四个消费面都传播异常", () => {
+    const body = mk('throw new Error("g");');
+    const cases = [
+      `return mk().y;`,
+      `return ({ ...mk() }).y;`,
+      `return Object.assign({}, mk()).y;`,
+      `return Object.entries(mk());`,
+    ];
+    for (const tail of cases) {
+      const r = call(`export function f() { ${body} ${tail} }`);
+      expect(throwsName(r), tail).toBe("Error");
+    }
+  });
+});

@@ -32,6 +32,7 @@ import {
   type ExportFormat,
 } from "../export-format.ts";
 import type { SchemaDialect } from "@nudojs/service/emit";
+import { DIAG } from "@nudojs/core/internal";
 import {
   buildEffectiveContractOptions,
   resolveEvalMocks,
@@ -167,7 +168,24 @@ async function runExport(
   dialect?: SchemaDialect,
 ): Promise<void> {
   const filePath = resolve(file);
-  const source = readFileSync(filePath, "utf-8");
+  // BUG-091：读失败走路径错误通道（`nudo:path-io` + fix 行），不冒泡裸 errno。
+  let source: string;
+  try {
+    source = readFileSync(filePath, "utf-8");
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    reportPathErrors([
+      {
+        path: filePath,
+        code: DIAG.pathIo,
+        message: `Cannot read ${filePath}: ${reason}`,
+        suggestion:
+          "check the path exists and is readable (file permissions / IO); fix the path or grant access, then re-run",
+      },
+    ]);
+    process.exitCode = 1;
+    return;
+  }
   // case 档 "none"：与**门禁面**（check / health / migrate）同口径 —— 发布面
   // **不**消费 `@nudo:case`。文档明文（`docs/concepts/directives.md:44`）：
   // 「Cases are debug witnesses … not the contract product」。旧实现用 "all"

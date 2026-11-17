@@ -58,7 +58,9 @@ export const tag = fn({ n: number().gt(0) }, string());
 `;
 
 /** 收敛态：直写正文 + 派生分支并进来的溯源行（） */
-const SIDECAR_CONVERGED = `import { fn, number, string } from "@nudojs/core";
+const SIDECAR_CONVERGED = `import { litC as lit } from "@nudojs/core"; // nudo:emit-builders
+
+import { fn, number, string } from "@nudojs/core";
 
 // 手写段（tag）：API 表面想强制的契约
 export const tag = fn({ n: number().gt(0) }, string());
@@ -67,7 +69,7 @@ export const tag = fn({ n: number().gt(0) }, string());
 // source: lib.js:wrap
 // derived-from: lib.js:tag
 // evidence: local
-export const wrap = fn({ text: number() }, string());
+export const wrap = fn({ text: lit(42) }, lit("(42)"));
 `;
 
 function makeFixture(): { dir: string; libJs: string; sidecar: string } {
@@ -99,7 +101,7 @@ describe("（LSP 面）：contract.emit 的根侧车单写者", () => {
       const after = readFileSync(sidecar, "utf-8");
 
       // ① 直写分支正文优先（派生分支只并标签行，不整段覆盖）
-      expect(after).toContain("export const wrap = fn({ text: number() }, string());");
+      expect(after).toContain('export const wrap = fn({ text: lit(42) }, lit("(42)"));');
       // ② 溯源行**真的落盘**（改前被后写者整段抹掉）
       expect(after).toContain("// derived-from: lib.js:tag");
       // ③ 手写段原样保留
@@ -152,7 +154,7 @@ describe("（LSP 面）：contract.emit 的根侧车单写者", () => {
       expect(text).toContain("[dry-run]");
       // 预览要求加的溯源行，真实写盘**确实会产生**（改前：预览有、盘上没有）
       expect(text).toContain("+// derived-from: lib.js:tag");
-      expect(text).toContain("+export const wrap = fn({ text: number() }, string());");
+      expect(text).toContain('+export const wrap = fn({ text: lit(42) }, lit("(42)"));');
       // dry-run 绝不写盘
       expect(readFileSync(sidecar, "utf-8")).toBe(SIDECAR);
       expect(sidecarWrites(sidecar)).toHaveLength(0);
@@ -178,7 +180,7 @@ describe("（LSP 面）：contract.emit 的根侧车单写者", () => {
       const after = readFileSync(sidecar, "utf-8");
       // 改前：派生分支先写（派生正文 + 溯源行），add 模式的直写分支随即
       // 判「段已存在 ⇒ no-change」⇒ 直写正文**永不上盘**。
-      expect(after).toContain("export const wrap = fn({ text: number() }, string());");
+      expect(after).toContain('export const wrap = fn({ text: lit(42) }, lit("(42)"));');
       expect(after).toContain("export const tag = fn({ n: number().gt(0) }, string());");
       // （add 面）：add 面新建的直写段也必须带 `// derived-from:`
       // 溯源行（改前 add 面把直写新建段当成「既有段」跳过 ⇒ 溯源行永不落盘）。

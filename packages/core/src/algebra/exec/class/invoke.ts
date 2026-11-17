@@ -24,6 +24,7 @@ import { typedArrayElementOf } from "../../builtins/shared.ts";
 import { typedArrayEnumKeyView } from "../../builtins/object/enum-entries.ts";
 import { MAX_CONCRETE_LOOP_ITERS } from "../runtime/loop-budget.ts";
 import { $get, namespaceNameOf, callAtFunctionBoundary } from "../runtime.ts";
+import { accessorReadDomain } from "../../accessors.ts";
 import { withNewTargetReset, undef, asAbsVal } from "../runtime/state.ts";
 import { $call, routeApplyThrows } from "../call.ts";
 import { callHostGlobalFn } from "../calls.ts";
@@ -469,7 +470,13 @@ function invokeCallApplyBind(
         });
       }
       if (s.k === "obj" && s.open !== true) {
-        const lenAbs = getSlot(s.slots, "length")?.value;
+        // Bug 127：array-like 的 length / 索引可能是**自有访问器**
+        // （`{ get length(){…}, get 0(){…} }`）——真值住 accessorTable 侧表，
+        // 槽里只有占位。裸读槽会把 length 当缺失（apply 传 0 个实参 ⇒
+        // 三参全 undefined ⇒ NaN）且丢掉 getter 副作用。原生 apply 的
+        // CreateListFromArrayLike 每次 Get 一次 ⇒ 这里同样按一次读值取。
+        const accLen = accessorReadDomain(a, "length");
+        const lenAbs = accLen ?? getSlot(s.slots, "length")?.value;
         if (!lenAbs || isNullishLitAbs(lenAbs)) return [];
         const lv = litValue(lenAbs);
         if (lv.ok) {
@@ -485,6 +492,11 @@ function invokeCallApplyBind(
             const count = Math.trunc(n);
             const out: Abs[] = [];
             for (let i = 0; i < count; i++) {
+              const accIdx = accessorReadDomain(a, String(i));
+              if (accIdx !== undefined) {
+                out.push(accIdx);
+                continue;
+              }
               const slot = getSlot(s.slots, String(i));
               if (slot && !slot.optional) {
                 out.push(slot.value);

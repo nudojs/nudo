@@ -145,3 +145,40 @@ describe("不回退面（空类 / 具名类表达式 / 类声明）", () => {
     );
   });
 });
+
+/**
+ * BUG-141：匿名类表达式 / 匿名函数表达式作构造器——实例 brand 无槽表，
+ * `chainHasOpaqueFnParent` 把缺席成员折 unknown（不是 exact undefined）⇒
+ * `o.missing.deeper` 在 unknown 上读成员不记 may-throw（门禁假绿）。空体
+ * 构造器已求值且确定不安装自有成员，不满足「体不透明」前提。修复：空体
+ * 构造器登记 knownEmptyInstance ⇒ 伪父链的缺席读取折 exact undefined。
+ */
+describe("BUG-141 anonymous empty constructors expose empty own face", () => {
+  const throwsName = (r: ReturnType<typeof call>): string | undefined =>
+    r.throws?.shape?.k === "brand" ? (r.throws as { shape: { name: string } }).shape.name : undefined;
+
+  it("new (class {})() / new (function () {})() 的缺席成员链必抛 TypeError", () => {
+    expect(throwsName(call(`export function f() { const o = new (class {})(); return o.missing.deeper; }`))).toBe(
+      "TypeError",
+    );
+    expect(throwsName(call(`export function f() { const o = new (function () {})(); return o.missing.deeper; }`))).toBe(
+      "TypeError",
+    );
+  });
+
+  it("对照：具名空类 / NamedEvaluation 空类 / 非空体匿名类本就判 TypeError", () => {
+    expect(
+      throwsName(call(`export function f() { class Empty {} const o = new Empty(); return o.missing.deeper; }`)),
+    ).toBe("TypeError");
+    expect(
+      throwsName(call(`export function f() { const Named = class {}; const o = new Named(); return o.missing.deeper; }`)),
+    ).toBe("TypeError");
+    expect(
+      throwsName(
+        call(
+          `export function f() { const o = new (class { constructor() { this.v = 1; } })(); return o.missing.deeper; }`,
+        ),
+      ),
+    ).toBe("TypeError");
+  });
+});

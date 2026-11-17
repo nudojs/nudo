@@ -261,6 +261,75 @@ type BindingInfo = {
   capturedWrites: CapturedWrite[];
 };
 
+/**
+ * 选区是否需要外层**动态接收者**（`this` / `super` / `new.target`）。
+ *
+ * 提取出的函数插在模块级语句位置，普通函数调用里 `this` 是 undefined
+ * （ESM）或 globalThis（CJS sloppy）⇒ 搬走 `this.x` 必然改变语义 / 运行期
+ * 抛 TypeError（BUG-072）。嵌套**普通函数**有自己的 `this`（提取不改变
+ * 其绑定）⇒ 跳过其子树；箭头函数继承外层 `this` ⇒ 必须继续扫。
+ */
+function selectionUsesDynamicReceiver(ast: Node, nodes: Node[]): boolean {
+  let hit = false;
+  /**
+   * 该动态接收者是否属于选区**内部**的普通函数（那层 `this` / `super` /
+   * `new.target` 由它自己承载，提取不改变绑定）——向上走到选区块根为止；
+   * 遇到非箭头函数即「本地承载」。箭头函数继承外层 ⇒ 继续向上。
+   */
+  const locallyBound = (
+    path: { parentPath: { node: Node; parentPath: unknown; isFunction?: () => boolean } | null },
+    root: Node,
+  ): boolean => {
+    let p = path.parentPath as
+      | { node: Node; parentPath: unknown; isFunction?: () => boolean }
+      | null;
+    while (p) {
+      if (p.isFunction?.() && p.node.type !== "ArrowFunctionExpression") return true;
+      if (p.node === root) break;
+      p = p.parentPath as typeof p;
+    }
+    return false;
+  };
+  const inSelection = (node: Node): Node | undefined => {
+    const loc = node.loc;
+    if (!loc) return undefined;
+    return nodes.find((n) => n.loc && locCovers(n.loc, loc));
+  };
+  try {
+    traverseEsm()(ast, {
+      ThisExpression(path) {
+        const root = inSelection(path.node);
+        if (root && !locallyBound(path as never, root)) {
+          hit = true;
+          path.stop();
+        }
+      },
+      Super(path) {
+        const root = inSelection(path.node);
+        if (root && !locallyBound(path as never, root)) {
+          hit = true;
+          path.stop();
+        }
+      },
+      MetaProperty(path) {
+        const mp = path.node as unknown as {
+          meta?: { name?: string };
+          property?: { name?: string };
+        };
+        if (mp.meta?.name !== "new" || mp.property?.name !== "target") return;
+        const root = inSelection(path.node);
+        if (root && !locallyBound(path as never, root)) {
+          hit = true;
+          path.stop();
+        }
+      },
+    });
+  } catch {
+    /* partial：下面还有可解析性自检兜底 */
+  }
+  return hit;
+}
+
 function analyzeSelectionBindings(
   ast: Node,
   selectedNodes: Node[],
@@ -346,6 +415,15 @@ function analyzeSelectionBindings(
         // 赋值写
         if (parent.type === "AssignmentExpression" && parent.left === path.node) {
           writtenInSel.add(name);
+          // BUG-117：赋值目标同样是**自由读**——新函数必须收到当前值
+          // （`x = compute()` 的 `x` 不是新函数的声明，丢掉它就得到未声明
+          // 标识符，ESM 直接 ReferenceError）。`x++` 分支一直是这个口径，
+          // 这里此前提前 return ⇒ 只在「选区内还有一次读」时碰巧正确。
+          const binding = path.scope.getBinding(name);
+          const evalLoc = binding ? ((binding.identifier as Node).loc ?? undefined) : undefined;
+          if (binding && (!evalLoc || !locIntersects(evalLoc, selLoc))) {
+            freeReads.add(name);
+          }
           return;
         }
         if (parent.type === "UpdateExpression") {
@@ -512,6 +590,17 @@ export function extractFunction(
     return { ok: false, reason: "AST walk failed" };
   }
 
+  // BUG-072：选区里的 `this` / `super` / `new.target` 依赖外层函数的动态
+  // 接收者。新函数在模块级语句位置被普通调用 ⇒ 这些名字不再指原接收者。
+  // 拒绝提取（宁可不给动作，也不产出运行期必崩的 edit）。
+  const receiverDependent = [...statements.map((s) => s.node), ...(exprBox.node ? [exprBox.node] : [])];
+  if (receiverDependent.length > 0 && selectionUsesDynamicReceiver(ast, receiverDependent)) {
+    return {
+      ok: false,
+      reason: "selection reads this / super / new.target; cannot extract to a module-level function",
+    };
+  }
+
   // 优先：完整语句序列
   if (statements.length === 0 && exprBox.node) {
     // 表达式提取
@@ -531,7 +620,12 @@ export function extractFunction(
 
     const paramList = uniqueParams.join(", ");
     const functionText = `function ${fnName}(${paramList}) {\n  return ${indentBlock(exprSrc, "  ").trimStart()};\n}\n`;
-    const callText = `${fnName}(${paramList})`;
+    const callExpr = `${fnName}(${paramList})`;
+    // BUG-117：表达式选区自身是对外层变量的**纯赋值**（`x = compute()`）时，
+    // 新函数返回赋值结果还不够——调用点必须把结果写回外层变量，否则
+    // 赋值语义丢失（CJS sloppy 下还会静默写全局）。
+    const assignWrite = bindings.capturedWrites.find((w) => w.kind === "assign");
+    const callText = assignWrite ? `${assignWrite.name} = ${callExpr}` : callExpr;
     const replaceRange = babelLocToLsp(exprLoc);
 
     // 生成新源码：先插函数，再替换表达式（按偏移从后往前）

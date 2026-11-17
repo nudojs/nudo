@@ -1993,7 +1993,7 @@ const create = (expr: string) =>
   val(`export function f() { const o = Object.create({ a: 1 }); return ${expr}; }`);
 
 
-  it("\"a\" in Object.create({a:1}) 折 exact true（HasProperty 口径）；自有键面不得见继承槽（Object.keys/values/entries/for-in）；值面维持保守 unknown（只承诺存在性，不冒充确定值）；对照：自有属性对象行为不变；门禁面：f(Object.create({a:1})) 不再报 missing field（与三个导出产物同结论）；门禁面负控制：真缺字段仍报 missing field（不得整面放水）", () => {
+  it("\"a\" in Object.create({a:1}) 折 exact true（HasProperty 口径）；自有键面不得见继承槽（Object.keys/values/entries/for-in）；继承数据槽值按原型读出（BUG-124：o.a = 1，不再是保守 unknown）；对照：自有属性对象行为不变；门禁面：f(Object.create({a:1})) 不再报 missing field（与三个导出产物同结论）；门禁面负控制：真缺字段仍报 missing field（不得整面放水）", () => {
   {
     expect(create('"a" in o')).toEqual({ ok: true, value: true });
   }
@@ -2005,7 +2005,9 @@ const create = (expr: string) =>
     expect(create('Object.hasOwn(o, "a")')).toEqual({ ok: true, value: false });
   }
   {
-    expect(create("o.a")).toEqual({ ok: false, value: undefined });
+    // BUG-124：继承槽不再是「值 unknown」——`$get` 沿 protoTable 读原型
+    // （数据槽取值、getter 以 receiver 为 this 求值）。
+    expect(create("o.a")).toEqual({ ok: true, value: 1 });
   }
   {
     expect(
@@ -3407,4 +3409,69 @@ const INTERNAL_ID_RE = /#\d+/;
 
 
 
+});
+
+/**
+ * BUG-123：Proxy `[[GetOwnProperty]]` 靶一致性不变量缺「靶不可扩展」分支。
+ * ES2024 10.5.5 step 13 → IsCompatiblePropertyDescriptor：靶上不存在该键且
+ * 靶不可扩展 ⇒ 陷阱不得凭空报告描述符（原生定抛 TypeError）。此前该分支
+ * 早退 ⇒ 原生必抛的导出入口 `nudo check` 判绿（门禁假绿）。
+ */
+describe("BUG-123 Proxy gOPD non-extensible target invariant", () => {
+  const gate = (body: string) => `export function f() { ${body} }`;
+  const read = (target: string) =>
+    `${target} const p = new Proxy(t, { getOwnPropertyDescriptor() { return { value: 1, writable: true, enumerable: true, configurable: true }; } }); return Object.getOwnPropertyDescriptor(p, "a");`;
+
+  it("靶不可扩展 + 陷阱报告缺席键 ⇒ entry may throw TypeError", () => {
+    const r = issuesOf(
+      gate(read(`const t = {}; Object.preventExtensions(t);`)),
+      "/t/proxy-gopd-nonext.js",
+    );
+    expect(l2Count(r)).toBe(1);
+    expect(r.issues.find((i) => i.code === "nudo:entry-may-throw")?.severity).toBe("error");
+  });
+
+  it("对照：可扩展靶 + 同一陷阱 ⇒ 零 L2（原生不抛）", () => {
+    const r = issuesOf(gate(read(`const t = {};`)), "/t/proxy-gopd-ext.js");
+    expect(l2Count(r)).toBe(0);
+  });
+});
+
+/**
+ * BUG-124：普通对象**原型链**上的访问器/方法（Object.create(proto) /
+ * `{ __proto__: proto }` / Object.setPrototypeOf）此前把镜像槽值折 unknown
+ * ⇒ getter / 方法体从不求值，必抛 getter 零执法（门禁假绿），返回值也丢域。
+ * 修复：$get 在 inherited 槽 / protoTable 处沿链求值（getter this = receiver）。
+ */
+describe("BUG-124 ordinary object prototype-chain accessors/methods", () => {
+  it("Object.create(proto) 的 getter 以 receiver 求值", () => {
+    const r = call(
+      `export function f() { const proto = { v: 2, get x() { return this.v; } }; const o = Object.create(proto); o.v = 7; return o.x; }`,
+    );
+    expect(litValue(r.result)).toEqual({ ok: true, value: 7 });
+  });
+
+  it("必抛 getter / 方法在四种原型形态上都传播异常", () => {
+    const cases = [
+      `const proto = { get x() { throw new Error("boom"); } }; return Object.create(proto).x;`,
+      `const proto = { m() { throw new Error("boom"); } }; return Object.create(proto).m();`,
+      `const proto = { get x() { throw new Error("boom"); } }; const o = { __proto__: proto }; return o.x;`,
+      `const proto = { get x() { throw new Error("boom"); } }; const o = {}; Object.setPrototypeOf(o, proto); return o.x;`,
+    ];
+    for (const body of cases) {
+      const r = call(`export function f() { ${body} }`);
+      expect(throwsError(r.throws, "Error"), body).toBe(true);
+    }
+  });
+
+  it("对照：自有属性 getter 与类继承行为不变", () => {
+    const own = call(
+      `export function f() { const o = { v: 2, get x() { return this.v; } }; o.v = 7; return o.x; }`,
+    );
+    expect(litValue(own.result)).toEqual({ ok: true, value: 7 });
+    const inherited = call(
+      `export function f() { class A { m() { throw new Error("boom"); } } class B extends A {} return new B().m(); }`,
+    );
+    expect(throwsError(inherited.throws, "Error")).toBe(true);
+  });
 });

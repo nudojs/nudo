@@ -64,6 +64,16 @@ export type EvalClassSpec = {
    */
   ctorLength?: number;
   /**
+   * Bug 141：**空体构造器**（匿名空类表达式快路径 `$classExpr` / 空体
+   * 匿名函数表达式作 ctor）——构造器体已求过值且不安装任何自有成员。
+   *
+   * fn 伪父的既有口径是「ctor 体不透明 ⇒ 缺席成员不可折 undefined」
+   * （`chainHasOpaqueFnParent`）。空体不满足该前提：实例自有面**确定为空**
+   * ⇒ 缺席读取必须折 exact undefined（后续 `.deeper` 才能报 may-throw）。
+   * 本标记只由已知空体的构造器登记点写入（不猜非空体）。
+   */
+  knownEmptyInstance?: boolean;
+  /**
    * 静态字段：R5 起值可为 thunk（以类值为 this 求值——原生
    * ClassFieldDefinitionEvaluation 的 receiver 是类值；箭头/`this.x`
    * 读写随之恢复）。旧行（宿主 Abs）保持兼容。
@@ -327,13 +337,27 @@ export function lookupClassValue(name: string): Abs | undefined {
 const fnParentNames = new WeakMap<object, string>();
 let fnParentSeq = 0;
 
+/**
+ * Bug 141：已知**空体**构造器（匿名空类表达式 / 空体匿名函数表达式）——
+ * 构造结果无任何自有成员（不是「体不透明」）。按 fn Abs 身份登记；伪父
+ * spec 据此带 `knownEmptyInstance`，实例缺席读取不再折 unknown。
+ */
+const knownEmptyInstanceCtors = new WeakSet<object>();
+
+export function markKnownEmptyInstanceCtor(fnAbs: Abs): void {
+  knownEmptyInstanceCtors.add(fnAbs as object);
+}
+
 /** fn Abs → 伪父名（不存在则合成并注册空 spec + 类值映射）。 */
 export function ensureFnParentName(fnAbs: Abs): string {
   let n = fnParentNames.get(fnAbs);
   if (n === undefined) {
     n = `__nudoFnParent${++fnParentSeq}`;
     fnParentNames.set(fnAbs, n);
-    registerEvalClass({ name: n });
+    registerEvalClass({
+      name: n,
+      ...(knownEmptyInstanceCtors.has(fnAbs as object) ? { knownEmptyInstance: true } : {}),
+    });
     registerClassValue(n, fnAbs);
   }
   return n;

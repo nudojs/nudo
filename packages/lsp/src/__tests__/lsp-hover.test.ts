@@ -1211,3 +1211,50 @@ async function open(file: string, text: string) {
   });
 
 });
+
+// ---------------------------------------------------------------------------
+// BUG-071：跨模块函数绑定的 hover 不得泄漏 arity-only `?` / 假 exact
+// ---------------------------------------------------------------------------
+describe("BUG-071 导入函数 hover 与声明处 / check 同口径", () => {
+  const LIB = `export function add(a, b) { return a + b; }\n`;
+  const MAIN = `import { add } from "./lib.js";\nexport function total(x) { return add(x, 1); }\ntotal(1);\n`;
+
+  function hoverText(value: unknown): string {
+    const contents = (value as { contents?: { value?: string } } | null)?.contents;
+    return contents?.value ?? "";
+  }
+
+  it("调用点 / import 说明符都不出现 `(a, b) => ?` 或 `conf: exact`", async () => {
+    await withLspServer({ "lib.js": LIB, "main.js": MAIN }, async ({ req, uri }) => {
+      for (const position of [
+        { line: 0, character: 9 }, // import 说明符
+        { line: 1, character: 35 }, // 调用点 `add`
+      ]) {
+        const text = hoverText(
+          req("textDocument/hover")({
+            textDocument: { uri: uri("main.js") },
+            position,
+          }),
+        );
+        expect(text).not.toContain("=> ?");
+        expect(text).not.toContain("conf: exact");
+        expect(text).toContain("add");
+        expect(text).toContain("number | string");
+      }
+    });
+  });
+
+  it("import 说明符的 hover 与声明处 check 签名逐字一致", async () => {
+    await withLspServer({ "lib.js": LIB, "main.js": MAIN }, async ({ req, uri }) => {
+      const text = hoverText(
+        req("textDocument/hover")({
+          textDocument: { uri: uri("main.js") },
+          position: { line: 0, character: 9 },
+        }),
+      );
+      expect(text).toContain(
+        "add(a: any, b: any) => number | string  throws TypeError",
+      );
+    });
+  });
+});

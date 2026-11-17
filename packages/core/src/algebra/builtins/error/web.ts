@@ -35,23 +35,26 @@ import { noteBoxedCtorArg } from "./boxed.ts";
  *  无宿主实例（抽象 input / 抽象 base 的 may-throw 臂）：组件槽取 string 域
  *  ——解析成功时原生各组件恒为 string（空串也是 string），不得空槽 miss 成
  *  `undefined`（fn-sig-impl URL symbolic 回归）。 */
+/** URL 品牌的可写/可读组件名（构造槽与 setter 重算共用单一序）。 */
+const URL_COMPONENT_KEYS = [
+  "href",
+  "origin",
+  "protocol",
+  // Bug 163：`host`（含端口；`hostname` 不含）是 `URL.prototype` 的
+  // 真实访问器——主机面漏建模 ⇒ `u.host` 折 exact undefined（假绿）+
+  // `"host" in u` 折 exact false（假红）。
+  "host",
+  "hostname",
+  "pathname",
+  "search",
+  "hash",
+  "port",
+  "username",
+  "password",
+] as const;
+
 function urlBrandAbs(u?: URL): Abs {
-  const componentKeys = [
-    "href",
-    "origin",
-    "protocol",
-    // Bug 163：`host`（含端口；`hostname` 不含）是 `URL.prototype` 的
-    // 真实访问器——主机面漏建模 ⇒ `u.host` 折 exact undefined（假绿）+
-    // `"host" in u` 折 exact false（假红）。
-    "host",
-    "hostname",
-    "pathname",
-    "search",
-    "hash",
-    "port",
-    "username",
-    "password",
-  ] as const;
+  const componentKeys = URL_COMPONENT_KEYS;
   const slots: Record<string, { value: Abs }> = {};
   for (const key of componentKeys) {
     slots[key] = { value: u ? strLit(u[key]) : str("path") };
@@ -71,6 +74,63 @@ function urlBrandAbs(u?: URL): Abs {
     undefined,
     u ? "exact" : "path",
   );
+}
+
+/**
+ * BUG-126：URL 组件 **setter** 后的派生组件重算（原生 URL 组件是同一
+ * 解析状态的投影——`u.search = "?q=1"` 同时改 search / href，`u.href = …`
+ * 改全部组件与 live `searchParams`）。
+ *
+ * 修前 `setBrandInstanceMember` 只改被写的那一个槽：其余组件与
+ * `searchParams` 条目表停在构造期快照（自信错值，check 全绿）。
+ *
+ * 口径：旧 href 与新值都是字符串字面量时，用宿主 `URL`（规范实现）按原生
+ * setter 语义重放，再把全部组件槽与 sp 条目表就地回写（引用共享 ⇒ 调用点
+ * 可见）。不可判（抽象输入 / 抽象值）⇒ 派生组件退成 string 域、sp 条目表
+ * 丢弃（sound：不发布陈旧精确值）。
+ */
+export function recomputeUrlAfterComponentSet(url: Abs, key: string, value: Abs): void {
+  if (url.shape.k !== "brand" || url.shape.name !== "URL") return;
+  if (!(URL_COMPONENT_KEYS as readonly string[]).includes(key)) return;
+  const inner = url.shape.shape;
+  if (inner.shape.k !== "obj") return;
+  const slots = (inner.shape as { slots: Record<string, { value: Abs }> }).slots;
+  const href = getSlot(slots, "href")?.value;
+  const hrefR = href ? litValue(href) : undefined;
+  const valueR = litValue(value);
+  if (!hrefR?.ok || typeof hrefR.value !== "string" || !valueR.ok || typeof valueR.value !== "string") {
+    // 不可重算：所有**其它**组件不再可信 ⇒ string 域；searchParams 条目表
+    // 丢弃（读取面 unknown）。
+    for (const k of URL_COMPONENT_KEYS) {
+      if (k !== key) setSlot(slots, k, { value: str("path") });
+    }
+    const sp = getSlot(slots, "searchParams")?.value;
+    if (sp?.shape.k === "brand" && sp.shape.name === "URLSearchParams") {
+      const spInner = sp.shape.shape;
+      if (spInner.shape.k === "obj") {
+        delete (spInner.shape as { slots: Record<string, unknown> }).slots[URL_SEARCH_PARAMS_ENTRIES_SLOT];
+      }
+    }
+    return;
+  }
+  try {
+    const u = new URL(hrefR.value);
+    (u as unknown as Record<string, string>)[key] = valueR.value;
+    for (const k of URL_COMPONENT_KEYS) {
+      setSlot(slots, k, { value: strLit((u as unknown as Record<string, string>)[k]!) });
+    }
+    const sp = getSlot(slots, "searchParams")?.value;
+    if (sp?.shape.k === "brand" && sp.shape.name === "URLSearchParams") {
+      urlSearchParamsSetEntries(sp, parseQueryEntries(u.search));
+    }
+  } catch {
+    // 宿主拒绝该赋值（normalize 不可能发生：URL setter 对不合法输入是
+    // no-op；防御性兜底）——派生面退 string 域，不发布陈旧值。
+    for (const k of URL_COMPONENT_KEYS) {
+      if (k !== key) setSlot(slots, k, { value: str("path") });
+    }
+    recordMayThrow({ kind: "TypeError", cause: "URL component setter value may be invalid" });
+  }
 }
 
 /**

@@ -229,3 +229,45 @@ describe("for-in abstract receiver key domain", () => {
     expect(evalSrc(`export function st() { let s = 0; for (const k in "abc") { s += 1; } return s; }`, "st", []).value).toBe("3");
   });
 });
+
+/**
+ * BUG-118：用户类实例在类体里定义 `[Symbol.iterator]` —— 迭代性分类器
+ * （iterabilityKind 的 brand 分支）此前只查内层实例字段 ⇒ 合法自定义
+ * iterable 判 may ⇒ spread / for-of 假记 `throws TypeError`（值面其实
+ * 已由 collectUserIterElems 求出精确元素序）。修复：类注册面存在时复用
+ * userIteratorFn（原型链 $get + hasRealImpl）判 total。
+ */
+describe("BUG-118 user class @@iterator is total", () => {
+  it("class method [Symbol.iterator] spread/for-of 无 may TypeError", () => {
+    const spread = evalSrc(
+      `export class PlainIter { constructor(){ this.x = 1; } [Symbol.iterator]() { return [1,2][Symbol.iterator](); } }
+       export function f() { return [...new PlainIter()]; }`,
+    );
+    expect(spread.effects).not.toContain("TypeError");
+    expect(spread.value).toContain("1");
+    expect(spread.value).toContain("2");
+
+    const forOf = evalSrc(
+      `export class GenIter { constructor(){ this.x = 1; } *[Symbol.iterator]() { yield 7; } }
+       export function f() { let n = 0; for (const v of new GenIter()) n += v; return n; }`,
+    );
+    expect(forOf.effects).not.toContain("TypeError");
+    expect(forOf.value).toContain("7");
+  });
+
+  it("对照：无 @@iterator 的用户类仍判 may（原生必抛）", () => {
+    const r = evalSrc(
+      `export class NoIter { constructor(){ this.x = 1; } }
+       export function f() { return [...new NoIter()]; }`,
+    );
+    expect(r.effects).toContain("TypeError");
+  });
+
+  it("对照：对象字面量 [Symbol.iterator] 仍 total", () => {
+    const r = evalSrc(
+      `export function f() { const o = { *[Symbol.iterator]() { yield 1; yield 2; } }; return [...o]; }`,
+    );
+    expect(r.effects).not.toContain("TypeError");
+    expect(r.value).toContain("1");
+  });
+});

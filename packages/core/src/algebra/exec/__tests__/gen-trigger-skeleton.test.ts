@@ -109,7 +109,7 @@ describe("A1 步骤 2/3 · 延迟体触发点骨架（步骤 3 生产已接线�
       function* gen(x) { n = x; yield 1; yield n; }
       return gen(5);
     }`);
-    expect(formatAbs(r.result)).toEqual('{ "0": 1, "1": 5 }  #exact');
+    expect(formatAbs(r.result)).toEqual('Generator<1 | 5, undefined, unknown>  #exact');
   });
 
   it("步骤 3 后构造点精确值（Bug 212 c1：native 0）", () => {

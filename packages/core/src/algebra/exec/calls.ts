@@ -283,7 +283,12 @@ function ensureDeniedHostFnTable(): void {
   deniedHostFnTableBuilt = true;
   const g = globalThis as Record<string, unknown>;
   for (const n of DENIED_HOST_GLOBALS) {
-    const v = g[n];
+    // BUG-093：Node 把 localStorage / sessionStorage 装成 accessor，裸读会触发
+    // ExperimentalWarning（stderr 污染，机器契约面要求干净）。身份表只收
+    // **函数值**，descriptor 有 get/无 value 时不可能有函数值可登记 ⇒ 跳过。
+    const desc = Object.getOwnPropertyDescriptor(g, n);
+    if (desc !== undefined && desc.value === undefined) continue;
+    const v = desc !== undefined ? desc.value : g[n];
     if (typeof v === "function") deniedHostFnNames.set(v, n);
   }
 }

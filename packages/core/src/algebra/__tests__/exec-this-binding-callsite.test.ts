@@ -15,6 +15,8 @@ import { describe, it, expect } from "vitest";
 import { litValue } from "@nudojs/core";
 import { call } from "./eval-helpers.ts";
 import { diffBody } from "./differential/harness.ts";
+import { checkSource, pTrue } from "../index.ts";
+import { sigOf } from "./nudo-constraints.ts";
 
 describe("动态赋值方法的 this 绑定（成员调用注入接收者）", () => {
   it("o.get = function(){ return this.v; }; o.get() → 1（非 never/TypeError）", () => {
@@ -133,4 +135,27 @@ describe("differential native 对照（隐式 return 体）", () => {
       expect(diffBody(body)).toBeNull();
     },
   );
+});
+
+
+/**
+ * BUG-133：TS `this: T` 接收者注解被忽略——`this` 不是运行时形参（Bug 397
+ * 口径正确），但入口按裸调用求值 ⇒ this = undefined ⇒ 合法 `this.area()`
+ * 记 may-throw TypeError（L2 假红）+ 返回域塌 never。修复：入口求值通道
+ * 携带接收者 Abs（命名 interface/type 字面量转成员槽；不可映射形态折 any
+ * ——不伪造成员域也不产生假抛），`callTranspiledExportFull` 以 apply 传入。
+ */
+describe("BUG-133 TS this: T receiver annotation", () => {
+  const src = `
+export interface Shape { area(): number }
+export function withThis(this: Shape, x: number): number { return this.area() + x; }
+export function withoutThis(x: number): number { return x + 1; }
+`;
+  const r = checkSource("/t/this-receiver-133.ts", src, pTrue);
+  it("L2 不再假红，签名返回 number", () => {
+    expect(r.issues.filter((i) => i.code === "nudo:entry-may-throw")).toEqual([]);
+    expect(sigOf(r, "withThis")).toContain("number");
+    expect(sigOf(r, "withThis")).not.toContain("never");
+    expect(sigOf(r, "withoutThis")).toContain("number");
+  });
 });

@@ -24,7 +24,7 @@ import { joinAbs, objOf, getSlot, type ObjShape } from "../../objects.ts";
 import { markFreshInstance } from "../../key/instance-id.ts";
 import { absFunction, getFnImpl } from "../../abs-fn.ts";
 import { NudoThrow, isNudoThrow, undef, litTruth, asAbsVal, $fnVal, noBody, isNudoReturn, isNudoBreak, isNudoContinue, pushThrowExit, takeThrowExits } from "./state.ts";
-import { pushMayThrowFrame, popMayThrowFrame, recordMayThrow, throwPayloadOf, errorTypeAbs, type MayThrowEffect } from "../may-throw.ts";
+import { pushMayThrowFrame, popMayThrowFrame, flushMayThrowEffects, recordMayThrow, throwPayloadOf, errorTypeAbs, type MayThrowEffect } from "../may-throw.ts";
 import { registerGenElements, registerGenDeferred, registerGenDrain, genDrainViewOf, userIterOf, fireGenTrigger, registerGenTrigger, copyMatchIterTables, notePendingGen, type GenDeferred } from "../match-iter.ts";
 import { thenableAdoption, queuePromiseMicro, registerPendingPromise, isPendingPromiseShape, onPromiseSettled, flushPromiseWaiters } from "../../builtins/promise.ts";
 import { currentYieldStack, getGenJoinOverride, getGenPathSensitive, type GenYieldCollector, setGenJoinOverride, bumpGenPathSensitive } from "./control.ts";
@@ -115,6 +115,14 @@ function takePendingAwaitRejections(mine: Abs[]): Abs[] {
 export function $async(thunk: () => Abs): Abs {
   const saved = awaitUnsettledHit;
   awaitUnsettledHit = false;
+  // BUG-084：async 体内的 soft may-throw（any 成员读 / any 调用 / ToNumber
+  // 强转等）不是**同步抛**——原生只会让返回的 promise 拒绝，调用点从不抛。
+  // 此前没有自己的帧，效果直接落到 L2 入口 collector ⇒ `async function
+  // f(x){return x.y}` 被 `nudo:entry-may-throw` 假红（同函数显式 throw 反而
+  // 被 $async 的 catch 降级成 rejected ⇒ 同 kind 两面结论相反）。
+  // 帧内效果随 async 边界消化（promise 拒绝通道的建模另见 rejectedChannel；
+  // 这里只保证不冒充同步抛）。
+  pushMayThrowFrame();
   // Bug 99：async thunk 自带 try/catch（$catchReturn）是体内 $loopReturn 的
   // 目标边界——终末值进 promise inner，不是外层函数 exits。本地开 loopExits
   // 作用域收抽象循环吸收的早退臂值，并入 thunk 返回值
@@ -228,6 +236,11 @@ export function $async(thunk: () => Abs): Abs {
     }
     throw e;
   } finally {
+    // BUG-084：async 体的 soft may-throw 只让 promise 拒绝，不是调用点同步抛。
+    // 帧内效果打标记后**直接交给 collector**（不经外层 try 帧：调用方的
+    // try/catch 不能捕获异步拒绝），L2 入口门禁按标记过滤。
+    const soft = popMayThrowFrame(false);
+    if (soft.length > 0) flushMayThrowEffects(soft.map((e) => ({ ...e, asyncBody: true })));
     // Bug 220：未被吸收的 await 拒绝不得留在 throw 通道（不得外溢成调用方
     // may-throw）——已并入 promise 的 rejected 通道
     takePending();
@@ -304,7 +317,7 @@ export function $asyncGen(genFn: () => Generator): Abs {
   }
   let first: IteratorResult<unknown>;
   try {
-    first = loopExitsAls.run(localExits, () => it.next());
+    first = loopExitsAls.run(localExits, () => stepAsyncBody(() => it.next()));
   } catch (e) {
     settleAsyncGen(promise, e, localExits, rejections);
     return promise;
@@ -392,6 +405,17 @@ function scheduleAsyncGenResume(
 }
 
 /** 推进一步（恢复）；又遇挂起点 ⇒ 继续排队 */
+/** 单步 async 体执行：soft may-throw 标记为 promise 拒绝（不同步抛） */
+function stepAsyncBody<T>(step: () => T): T {
+  pushMayThrowFrame();
+  try {
+    return step();
+  } finally {
+    const soft = popMayThrowFrame(false);
+    if (soft.length > 0) flushMayThrowEffects(soft.map((e) => ({ ...e, asyncBody: true })));
+  }
+}
+
 function stepAsyncGen(
   it: Generator,
   promise: Abs,
@@ -401,7 +425,10 @@ function stepAsyncGen(
 ): void {
   let res: IteratorResult<unknown>;
   try {
-    res = loopExitsAls.run(localExits, () => step());
+    // BUG-084：generator 驱动的 async 体每一步都在自己的 may-throw 帧里跑
+    // （生成器对象把体 soft 效果延迟到消费点重放 ⇒ 不隔离就冒充调用方
+    // 同步抛；after-await 的成员读曾是假红）。
+    res = loopExitsAls.run(localExits, () => stepAsyncBody(step));
   } catch (e) {
     settleAsyncGen(promise, e, localExits, rejections);
     return;

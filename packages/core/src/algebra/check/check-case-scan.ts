@@ -13,7 +13,11 @@
 
 import { parseSource as parse } from "../parse-source.ts";
 import { stripStringsKeepComments } from "../format/code-text.ts";
-import { listFnDirectiveScopes, scanCaseTags } from "../directive-scan.ts";
+import {
+  listFnDirectiveScopes,
+  scanCaseTags,
+  objectBindingNames,
+} from "../directive-scan.ts";
 import { findTopLevelColon, splitTopLevelArgs, stripJsdocContinuation } from "../format/text-scan.ts";
 import type { Abs } from "../abs.ts";
 import { abs, numLit, bigintLit } from "../abs.ts";
@@ -744,8 +748,23 @@ export function scanCaseInconsistency(
     const cur = minDepthByName.get(s.name);
     if (cur === undefined || d < cur) minDepthByName.set(s.name, d);
   }
+  const objectOwners = objectBindingNames(file);
+  /**
+   * BUG-138：对象字面量方法的指令 scope 名是 `${owner}.${key}`（`api.m`），
+   * 而入口普查名是**裸键** `m` ⇒ case 见证此前整条不参与对账（契约已由
+   * `findFnDirectiveScope` 的回退命中）。只对**顶层对象字面量绑定**做映射；
+   * 类方法的 scope 名 `C.m` 不走此路（类入口名也是 `C.m`）。
+   */
+  const entryNameOfScope = (scope: { name: string; owner?: string }): string | undefined => {
+    if (knownFns.includes(scope.name)) return scope.name;
+    const owner = scope.owner;
+    if (owner === undefined || !objectOwners.has(owner)) return undefined;
+    const bare = scope.name.slice(scope.name.lastIndexOf(".") + 1);
+    return knownFns.includes(bare) ? bare : undefined;
+  };
   for (const scope of caseScopes) {
-    if (!knownFns.includes(scope.name)) continue;
+    const entryName = entryNameOfScope(scope);
+    if (entryName === undefined) continue;
     if ((scope.depth ?? 0) !== minDepthByName.get(scope.name)) continue;
     for (let ci = 0; ci < scope.commentTexts.length; ci++) {
       const text = scope.commentTexts[ci]!;
@@ -758,7 +777,7 @@ export function scanCaseInconsistency(
         // ⚠ 不再把 argsText 重新塞回 `@nudo:case "x" (...)` 用正则反解
         //   （贪婪 `[\s\S]*` 会吃到最后一个 `)`，且字符串里的 `)` 会切错）。
         const caseArgs = splitTopLevelArgs(stripJsdocContinuation(tag.argsText));
-        checkCaseAgainstReqs(scope.name, tag.name, caseArgs, startLine);
+        checkCaseAgainstReqs(entryName, tag.name, caseArgs, startLine);
       }
     }
   }

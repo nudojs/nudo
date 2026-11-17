@@ -272,7 +272,27 @@ async function runTest(
   } = {},
 ): Promise<void> {
   const filePath = resolve(file);
-  const source = readFileSync(filePath, "utf-8");
+  // BUG-091：读失败必须走命令层的失败信封（`--json` 绝不空 stdout + 裸 errno）
+  let source: string;
+  try {
+    source = readFileSync(filePath, "utf-8");
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    const pathError: PathError = {
+      path: filePath,
+      code: DIAG.pathIo,
+      message: `Cannot read ${filePath}: ${reason}`,
+      suggestion:
+        "check the path exists and is readable (file permissions / IO); fix the path or grant access, then re-run",
+    };
+    if (opts.json) {
+      emitJsonDoc(failureEnvelope(filePath, [pathError], opts.targetErrors), opts.jsonLines === true);
+    } else {
+      reportPathErrors([pathError]);
+    }
+    process.exitCode = 1;
+    return;
+  }
   const analysis = await analyzeForTest(filePath, source, opts.from, opts.alsoSynthesizeCases);
   if (!analysis.ok) {
     // Bug 650：解析失败此前直接上浮到顶层 catch ⇒ 裸 message、无文件名、

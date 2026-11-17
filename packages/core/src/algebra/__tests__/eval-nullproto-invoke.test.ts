@@ -100,10 +100,10 @@ describe("evaluator definitely-uncallable member calls throw", () => {
     expect(
       litValue(call(`export function f() { const o = {...{x: 1}}; return o.foo(); }`).result),
     ).toEqual({ ok: false });
-    // create(proto) 动态原型不建模（path conf）→ 保守
+    // create(proto) 动态原型（BUG-124：沿 protoTable 求值 → 精确 "hi"）
     expect(
       litValue(call(`export function f() { const p = {greet() { return 'hi'; }}; return Object.create(p).greet(); }`).result),
-    ).toEqual({ ok: false });
+    ).toEqual({ ok: true, value: "hi" });
   });
 
   it("existing methods unaffected", () => {

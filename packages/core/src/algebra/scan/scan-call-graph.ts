@@ -1331,7 +1331,40 @@ export function collectCallResolvers(
         // const api = { needsPositive } / const api = { f }（f 是导入绑定）
         if (init.type === "ObjectExpression") {
           for (const p of (init.properties as Array<Record<string, unknown>> | undefined) ?? []) {
-            if (p.type !== "ObjectProperty") continue;
+            // BUG-138：对象字面量的**方法定义**（`const api = { m(x){} }`）不
+            // 是 ObjectProperty ⇒ 旧实现整条跳过 ⇒ `api.m(-1)` 解析不出被调名，
+            // 写在方法注释上的 `@nudo:contract` 在调用点零执法（普查名仍是
+            // 裸键 `m`，与入口表同口径）。
+            if (p.type === "ObjectMethod") {
+              const kind = typeof p.kind === "string" ? p.kind : "method";
+              if (kind === "get" || kind === "set") continue;
+              const mk = p.key as { type?: string; name?: string; value?: unknown } | undefined;
+              const propKey =
+                mk?.type === "Identifier" ? mk.name : mk?.type === "StringLiteral" ? String(mk.value) : undefined;
+              if (!propKey) continue;
+              const memberKey = `${id.name}.${propKey}`;
+              if (knownSet.has(propKey)) frame.members.set(memberKey, propKey);
+              continue;
+            }
+            if (p.type !== "ObjectProperty") {
+              // `{ ...base }`：展开源的成员在调用图上与源对象同名绑定（运行时
+              // 是同一函数）⇒ 把源的 `owner.key` 映射复制到新接收者。
+              if (p.type === "SpreadElement" || p.type === "SpreadProperty") {
+                const arg = (p as { argument?: { type?: string; name?: string } }).argument;
+                if (arg?.type !== "Identifier" || !arg.name) continue;
+                const prefix = `${arg.name}.`;
+                for (const [k, v] of frame.members) {
+                  if (k.startsWith(prefix)) frame.members.set(`${id.name}.${k.slice(prefix.length)}`, v);
+                }
+                for (const [k, v] of frame.externalMembers) {
+                  if (!k.startsWith(prefix)) continue;
+                  const nk = `${id.name}.${k.slice(prefix.length)}`;
+                  frame.externalMembers.set(nk, v);
+                  externalMember.set(nk, v);
+                }
+              }
+              continue;
+            }
             const key = p.key as { type?: string; name?: string; value?: unknown };
             const value = p.value as { type?: string; name?: string } | undefined;
             if (value?.type !== "Identifier" || !value.name) continue;

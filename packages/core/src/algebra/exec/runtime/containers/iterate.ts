@@ -68,6 +68,7 @@ import { markMatchArrayView } from "../../../builtins/regexp.ts";
 // Bug 198：集合条目 live 视图（直连 builtins/error/iterator.ts，不经 barrel——
 // 与 invoke-arr.ts 同款「避开 barrel re-export」的直连口径）。
 import { collectionLiveEntries } from "../../../builtins/error/iterator.ts";
+import { urlSearchParamsEntriesOf } from "../../../builtins/error/web.ts";
 import { typedArrayEnumKeyView } from "../../../builtins/object/enum-entries.ts";
 import {
   anyMemberResult,
@@ -76,7 +77,7 @@ import { errorTypeAbs, recordMayThrow } from "../../may-throw.ts";
 import { NudoThrow, undef, asAbsVal, $lit, isNudoBreak, isNudoContinue, noBody, confPartialPacked, litTruth } from "../state.ts";
 import { markDomainShared } from "../../../len-sharing.ts";
 import { getFnImpl } from "../../../abs-fn.ts";
-import { getEvalClass, lookupClassValue, fnProtoOf } from "../../class-registry.ts";
+import { getEvalClass, lookupClassValue, fnProtoOf, classSpecOfAbs } from "../../class-registry.ts";
 import { DEFAULT_MAX_LOOP_ITERS, MAX_CONCRETE_LOOP_ITERS, LOOP_TRUNCATION_LABEL } from "../loop-budget.ts";
 import { genReturnAtOf } from "../gen-return-at.ts";
 import { makeLoopWidener } from "../loop-widen.ts";
@@ -126,6 +127,11 @@ export function $arrRest(a: Abs, start: number): Abs {
     return abs({ k: "tuple", elements: sliced }, undefined, undefined, a.conf);
   }
   a = asAbsVal(a);
+  // BUG-125：URLSearchParams 的 rest 解构按条目表切片（@@iterator === entries）。
+  {
+    const urlSpEls = builtinExactIterableElems(a);
+    if (urlSpEls) return tupleOrWiden(urlSpEls.slice(start), a.conf);
+  }
   // Bug 56/N3：Arguments brand → 委托 tuple 内层——方法形参 rest 绑定
   //（emitParamBindingFromArgs 的 $arrRest 读 $arguments 槽）此前落尾
   // unknown（rest 形参在「读 arguments 的方法」里同样丢精度）
@@ -223,6 +229,10 @@ export function $concat(a: Abs, b: Abs): Abs {
   const expand = (x: Abs): Abs[] | null => {
     if (isSetAbs(x)) return setElementsAbs(x);
     if (isMapAbs(x)) return mapEntriesAbs(x);
+    // BUG-125：URLSearchParams 自身可迭代（@@iterator === entries）——
+    // 条目表精确展开（此前落 brand delegation → inner 无枚举元素 ⇒ [unknown]）。
+    const urlSpEls = builtinExactIterableElems(x);
+    if (urlSpEls) return urlSpEls;
     // Bug 236：boxed String 品牌——字符序列精确展开（原生 String 包装对象
     // 可迭代：String.prototype[Symbol.iterator] 按 code point 产出字符）
     const boxedChars = boxedStringChars(x);
@@ -379,6 +389,15 @@ export function iterabilityKind(a: Abs): IterabilityKind {
     // 可迭代、展开定抛）也只记 may（不精确）。查原型而非内层 ⇒ 分流成立。
     const protoKind = builtinBrandProtoIterability(s.name);
     if (protoKind) return protoKind;
+    // BUG-125：URLSearchParams 的 @@iterator === entries（规范固定）——
+    // 条目表是否已知只影响元素域精度，不影响「恒可迭代」这一分类。
+    if (s.name === "URLSearchParams" && !getEvalClass(s.name)) return "total";
+    // BUG-118：用户类实例在**类体里**定义 `[Symbol.iterator]` —— 原型面
+    // 就是可迭代事实（与对象字面量的 `s.slots["@@iterator"]` 同口径）。
+    // 判据复用同一实现 userIteratorFn（$get 沿类链解析 + hasRealImpl）；
+    // 内层只有实例字段 ⇒ 旧回落恒 may（合法自定义 iterable 判红）。
+    // 用**随值携带的类规格**判身份（同名类跨模块 last-wins 不串味）。
+    if (classSpecOfAbs(a) !== undefined && userIteratorFn(a)) return "total";
     return iterabilityKind(s.shape) === "total" ? "total" : "may";
   }
   return "may";
@@ -400,6 +419,31 @@ function builtinBrandProtoIterability(name: string): IterabilityKind | undefined
   if (name !== "String" && name !== "Number" && name !== "Boolean") return undefined;
   if (getEvalClass(name)) return undefined; // 用户类同名 → 不可套内建结论
   return name === "String" ? "total" : "definite";
+}
+
+/**
+ * BUG-125：内建 brand 的**精确可迭代元素序列**（目前仅 URLSearchParams）。
+ *
+ * `URLSearchParams` 的 `@@iterator` 是 `entries`（WHATWG）——条目表由
+ * `urlSearchParamsEntriesOf`（web.ts 单一真值源）给出时，spread / for-of /
+ * 数组解构 / `Array.from` 都可精确展开。此前 `iterabilityKind` 的 brand
+ * 分支只认 String/Number/Boolean 原型面 ⇒ URLSearchParams 落 may（假
+ * TypeError），且 `elemsOf` / `$concat.expand` 无条目表分支 ⇒ 元素域
+ * `[unknown]`。用户类同名（`class URLSearchParams`）时不套内建结论。
+ */
+export function builtinExactIterableElems(a: Abs): Abs[] | undefined {
+  if (a.shape.k !== "brand" || a.shape.name !== "URLSearchParams") return undefined;
+  if (getEvalClass("URLSearchParams")) return undefined; // 用户类同名 → 自定义迭代面
+  const entries = urlSearchParamsEntriesOf(a);
+  if (!entries) return undefined;
+  return entries.map(([n, v]) =>
+    abs(
+      { k: "tuple", elements: [strLit(n), strLit(v)] },
+      undefined,
+      undefined,
+      "exact",
+    ),
+  );
 }
 
 /**
@@ -660,6 +704,18 @@ export function $iterCheck(a: unknown, maxElements?: number): UserIterReader | n
   // Bug 34：体内抛错的生成器（延迟异常挂对象侧表）——解构消费触达抛点
   replayGenDeferred(v);
   const bounded = maxElements !== undefined && maxElements >= 0;
+  // BUG-125：URLSearchParams 的数组解构按条目表读取（与 @@iterator === entries
+  // 同源）——必须先于用户迭代协议采集：brand 的 @@iterator 是内建符号成员
+  // （可调用派发），collectUserIterElems 只会采到 unknown 兜底。
+  {
+    const urlSpEls = builtinExactIterableElems(v);
+    if (urlSpEls) {
+      return {
+        get: (i: number): Abs => (i < urlSpEls.length ? urlSpEls[i]! : undef()),
+        rest: (i: number): Abs => $arr(urlSpEls.slice(i)),
+      };
+    }
+  }
   const r = collectUserIterElems(
     v,
     maxElements === undefined || maxElements < 0 ? USER_ITER_MAX_STEPS : maxElements,
@@ -813,6 +869,10 @@ function elemsOf(a: Abs): Abs[] {
   if (drained) return drained;
   const mi = matchIterElements(a);
   if (mi) return mi;
+  // BUG-125：URLSearchParams 自身 @@iterator === entries——条目表精确展开
+  //（此分支必须先于 collectUserIterElems / brand 内层 delegation）。
+  const urlSpEls = builtinExactIterableElems(a);
+  if (urlSpEls) return urlSpEls;
   const svR = litValue(a);
   const sv = svR.ok ? svR.value : undefined;
   // 字面量字符串：code points 精确展开（必须先于抽象 prim 臂——lit 也是
@@ -1300,6 +1360,8 @@ export function $forOf(
         ? [...sv].length
         : // Bug 236：boxed String 品牌——length 自有槽（原生可迭代，长度可知）
           boxedStringLength(iterable) ??
+          // BUG-125：URLSearchParams 条目数可判（@@iterator === entries）
+          builtinExactIterableElems(iterable)?.length ??
           (collectionExactLen(iterable) ?? sideIterLen(iterable));
   const items = asyncOnly
     ? // Bug 141：async generator（**生成器对象**，只有 @@asyncIterator 槽）——

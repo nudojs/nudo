@@ -14,6 +14,7 @@ import {
 import { resolve, dirname, relative, join, basename, sep, isAbsolute } from "node:path";
 import {
   stripGeneratedCaseDirectives,
+  blankGeneratedCaseDirectives,
   insertGeneratedCaseDirectives,
   type EmitResult,
 } from "@nudojs/service/emit";
@@ -403,13 +404,22 @@ export async function reemitUpdate(
   // 展示面（`result`）必须来自**最终要写的那份文本**：指令 case 在、
   // 行号就是用户打开文件时看到的行号。
   const stripped = stripGeneratedCaseDirectives(source);
+  // BUG-076：混合块里的生成态见证不会被剥离（手写 case 在 ⇒ 整块保留），
+  // 但分析必须把它们当**已失效**（否则旧 call@ 被读成 directive case ⇒
+  // 当前调用点不再合成 ⇒ health 恒 0 drift、freeze no changes）。用行数
+  // 不变的空白视图分析；写盘基源仍是 stripped.source（行号对齐）。
+  const analysisSource = blankGeneratedCaseDirectives(stripped.source);
   const baseAnalysis = await analyzeFileAsync(
     filePath,
-    stripped.source,
+    analysisSource,
     undefined,
     from,
     undefined,
     "all",
+    // BUG-076：混合块（手写 case 仍在）里的函数也必须合成当前调用点证据，
+    // 否则旧 call@ 抹白后没有任何新见证可写 ⇒ 「no changes」恒绿。
+    // 只在确有残留生成行时打开（普通文件剥离后的分析保持既有行为）。
+    analysisSource !== stripped.source ? true : undefined,
   );
   const emitOut = await emitWithFinalCoordinates(
     filePath,
@@ -548,7 +558,22 @@ export function collectExternalRecords(
       continue;
     }
     for (const sf of siteFiles) {
-      const source = readFileSync(sf, "utf-8");
+      // BUG-091：现场文件读失败必须落 path-io（旧实现裸读 ⇒ 顶层裸 errno /
+      // --json 0 字节 stdout）。EACCES 不再「上抛」。
+      let source: string;
+      try {
+        source = readFileSync(sf, "utf-8");
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        pushPathError({
+          path: sf,
+          code: DIAG.pathIo,
+          message: `Cannot read callsite file ${sf}: ${reason}`,
+          suggestion:
+            "check the path exists and is readable (file permissions / IO); fix the path or grant access, then re-run",
+        });
+        continue;
+      }
       // 探针**先行**（不再挂在「0 条记录」分支上）：
       // - Bug 466：0 条记录 ⇒「现场文件里没有调用」与「现场文件读失败」同形，
       //   必须区分（读失败被吞成 0 条记录 ⇒ 静默 entry@ + exit 0 假绿）。

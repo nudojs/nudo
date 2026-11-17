@@ -274,6 +274,16 @@ export function transpileFunctionExpr(
       // `nudo:assign-mismatch` 假红；JS 语义下 `(x = 1) => x` 可零参调用）。
       // 与 `nameList` 同源同长度（同一个 `formalParamsFromNodes`）⇒ 下标对齐。
       const optionalSrc = `, optionalParams: [${paramOptionalFlags(fn.params).join(", ")}]`;
+      // Bug 141：空体块（`function () {}`）作构造器时实例自有面确定为空——
+      // 与「ctor 体不透明」区分开（见 class-registry.knownEmptyInstance）。
+      // 异步/生成器体不在本判定（它们不是构造器可执行体）。
+      const emptyBodySrc =
+        !fn.generator &&
+        fn.async !== true &&
+        fn.body.type === "BlockStatement" &&
+        (fn.body as { body?: unknown[] }).body?.length === 0
+          ? ", emptyBody: true"
+          : "";
       // Bug 69：原生 fn.length（首个默认值/rest 前形参数）——宿主 impl 是
       // 解糖产物（`_p{i}` 占位全成真参），长度不可信，transpile 侧记真值
       const fnLen = nativeParamArity(fn.params);
@@ -377,14 +387,14 @@ export function transpileFunctionExpr(
               : `function (${argsParamParts.join(", ")}) { return $async(() => {\n${inner}\n}); }`
             : `function (${argsParamParts.join(", ")}) {\n${inner}\n}`;
           // Bug 7：hasArgs 时体内已归一缺参——钩子补齐会膨胀 arguments.length
-          return `$fnVal(${nameList}, ${wrap}, { ctor: ${fnCtor}${hasArgs ? ", padArgs: false" : ""}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${kindSrc}${optionalSrc} })`;
+          return `$fnVal(${nameList}, ${wrap}, { ctor: ${fnCtor}${hasArgs ? ", padArgs: false" : ""}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${kindSrc}${optionalSrc}${emptyBodySrc} })`;
         }
         if (fn.async && !fn.generator) {
           // Bug 201：async 体走生成器路径 ⇒ 表达式体提升进 `function*(){…}`
           //（箭头表达式体不是生成器——`yield` 会是语法错误）
-          return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => ${asyncGen ? `$asyncGen(function* () {\n${inner}\n})` : `$async(() => {\n${inner}\n})`}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${kindSrc}${optionalSrc} })`;
+          return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => ${asyncGen ? `$asyncGen(function* () {\n${inner}\n})` : `$async(() => {\n${inner}\n})`}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${kindSrc}${optionalSrc}${emptyBodySrc} })`;
         }
-        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${kindSrc}${optionalSrc} })`;
+        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${kindSrc}${optionalSrc}${emptyBodySrc} })`;
       }
       const bodySrc = transpileExpression(fn.body as Expression, fnBodyOpts);
       // Bug 188：表达式体的**写回**（rebinds）不得排在表达式求值之前。
@@ -430,21 +440,21 @@ export function transpileFunctionExpr(
             ? `function (${argsParamParts.join(", ")}) {\n${genHoistPrologue.join("\n")}\n${inner}\n}`
             : `function (${argsParamParts.join(", ")}) {\n${inner}\n}`;
           // Bug 7：hasArgs 时体内已归一缺参——钩子补齐会膨胀 arguments.length
-          return `$fnVal(${nameList}, ${wrap}, { ctor: ${fnCtor}${hasArgs ? ", padArgs: false" : ""}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${kindSrc}${optionalSrc} })`;
+          return `$fnVal(${nameList}, ${wrap}, { ctor: ${fnCtor}${hasArgs ? ", padArgs: false" : ""}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${kindSrc}${optionalSrc}${emptyBodySrc} })`;
         }
-        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${kindSrc}${optionalSrc} })`;
+        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${kindSrc}${optionalSrc}${emptyBodySrc} })`;
       }
       // 表达式体：块体包裹跑语句级 rebind pass——`()=>n++` / `()=>a.push(1)`
       // 的写回此前静默丢失（表达式上下文无语句级扫描）
       if (rebinds.length > 0) {
         const inner = retSeq("  ").join("\n");
-        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${kindSrc}${optionalSrc} })`;
+        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${kindSrc}${optionalSrc}${emptyBodySrc} })`;
       }
       if (fn.async) {
         // Bug 201：生成器路径 ⇒ 表达式体提升进 `function*(){…}`
-        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => ${asyncGen ? `$asyncGen(function* () {\nreturn ${bodySrc};\n})` : `$async(() => ${bodySrc})`}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${kindSrc}${optionalSrc} })`;
+        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => ${asyncGen ? `$asyncGen(function* () {\nreturn ${bodySrc};\n})` : `$async(() => ${bodySrc})`}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${kindSrc}${optionalSrc}${emptyBodySrc} })`;
       }
-      return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => ${bodySrc}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${kindSrc}${optionalSrc} })`;
+      return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => ${bodySrc}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${kindSrc}${optionalSrc}${emptyBodySrc} })`;
       })();
       if (!nfeName) return fnValSrc;
       // IIFE 绑定 NFE 自身名：调用期 g 已是 fn Abs（体内引用按词法捕获）；

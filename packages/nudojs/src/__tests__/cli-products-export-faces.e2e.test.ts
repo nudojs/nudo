@@ -888,7 +888,9 @@ export const wrap = fn({ text: number() }, string());
 `;
 
 /** 收敛态：直写正文 + 派生分支并进来的溯源行（） */
-const SIDECAR_CONVERGED = `import { fn, number } from "@nudojs/core";
+const SIDECAR_CONVERGED = `import { litC as lit } from "@nudojs/core"; // nudo:emit-builders
+
+import { fn, number } from "@nudojs/core";
 
 // 手写段（tag）：API 表面想强制的契约
 export const tag = fn({ n: number().gt(0) }, string());
@@ -897,7 +899,7 @@ export const tag = fn({ n: number().gt(0) }, string());
 // source: lib.js:wrap
 // derived-from: lib.js:tag
 // evidence: local
-export const wrap = fn({ text: number() }, string());
+export const wrap = fn({ text: lit(42) }, lit("(42)"));
 `;
 
 function makeFixture(): string {
@@ -972,7 +974,7 @@ function makeFixture(): string {
 
     expect(r.status).toBe(1);
     expect(r.stdout).toContain("[dry-run] would update lib.nudo.js:");
-    expect(r.stdout).toContain("+export const wrap = fn({ text: number() }, string());");
+    expect(r.stdout).toContain('+export const wrap = fn({ text: lit(42) }, lit("(42)"));');
     // 手写段不被触碰
     expect(r.stdout).not.toContain("-export const tag");
     expect(readFileSync(sidecar, "utf-8")).toBe(drifted);
@@ -1040,7 +1042,7 @@ export const positive = number().gt(0);
 `;
 
 /** 同一段：直写分支的正文（`number()`）+ 派生分支并进来的溯源行 */
-const EXPECTED_WRAP = `export const foo = fn({ a: number() }, number());`;
+const EXPECTED_WRAP = `export const foo = fn({ a: lit(1) }, lit(2));`;
 
 function makeFixture(): { dir: string; sidecar: string } {
   const dir = mkdtempSync(join(tmpdir(), "nudo-bug-196-"));
@@ -1073,9 +1075,8 @@ function addedLines(diff: string): string[] {
     expect(r.status, r.stdout + r.stderr).toBe(0);
 
     const written = readFileSync(sidecar, "utf-8");
-    // 直写分支的正文（`number()`）优先于派生分支的 `lit(1)`
+    // BUG-113：直写分支的精确观测与派生分支同域（`lit(1)` / `lit(2)`）
     expect(written).toContain(EXPECTED_WRAP);
-    expect(written).not.toContain("lit(1)");
     // 派生分支的溯源行**真的落盘**（旧实现被直写分支整段覆盖 ⇒ 永不出现）
     expect(written).toContain("// derived-from: lib.js:bar");
     // 台账与文件一致：内容真的变了 ⇒ 必须报 Updated

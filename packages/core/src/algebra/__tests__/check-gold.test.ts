@@ -98,8 +98,8 @@ export function scale(x) { return x + 1; }
     source: `
 export async function load(id) { return id + 1; }
 `,
-    expectOk: false,
-    expectCode: "nudo:entry-may-throw",
+    // BUG-084：async 体抛错只让 promise 拒绝，不构成调用点同步抛 ⇒ 入口 total
+    expectOk: true,
   },
   {
     name: "class constructor listed",

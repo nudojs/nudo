@@ -1101,7 +1101,7 @@ export function formatDraftModule(
     }
     if (e.fn.includes(".")) {
       lines.push(
-        `//   sidecar key may also be written as \`${sanitizeLineCommentText(e.fn)}\` / nested { ${sanitizeLineCommentText(e.fn.split(".")[1] ?? "")}: … }`,
+        `//   sidecar key may also be written as \`${sanitizeLineCommentText(e.fn)}\` / a class-named bag: export const ${sanitizeLineCommentText(e.fn.split(".")[0] ?? "")} = { ${sanitizeLineCommentText(e.fn.split(".")[1] ?? "")}: … }`,
       );
     }
     lines.push("");

@@ -366,3 +366,75 @@ export function f() { return o?.a; }
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// BUG-055 / BUG-057 / BUG-090：成员面键形态、detail 占位符、跨行点号
+// ---------------------------------------------------------------------------
+describe("BUG-055 成员补全不得发非标识符 label", () => {
+  it("对象字面量的 `123` / `a-b` / `hello world` 不入 `o.` 候选；合法键保留", () => {
+    withTempDir("nudo-bug055-", (dir) => {
+      const src = `export const o = { ok: 1, "a-b": 2, "hello world": 3, 123: 4 };\no.\n`;
+      const file = join(dir, "nonident.js");
+      writeFileSync(file, src, "utf-8");
+      const items = getCompletionsAtPosition(file, src, 2, 2);
+      expect(items.map((i) => i.label)).toEqual(["ok"]);
+      // 变量面 detail 仍保留 core 的引号渲染（不是成员面）
+      const vars = getCompletionsAtPosition(file, src, 2, 0);
+      expect(vars.find((i) => i.label === "o")?.detail).toContain('"a-b"');
+    });
+  });
+
+  it("类实例的非法成员键同样过滤（brand 下钻到 obj 面）", () => {
+    withTempDir("nudo-bug055-class-", (dir) => {
+      const src = `export class C { constructor() { this.ok = 1; this["a-b"] = 2; } }\nconst c = new C();\nc.\n`;
+      const file = join(dir, "clsnonident.js");
+      writeFileSync(file, src, "utf-8");
+      const items = getCompletionsAtPosition(file, src, 3, 2);
+      expect(items.map((i) => i.label)).toEqual(["ok"]);
+    });
+  });
+});
+
+describe("BUG-057 补全 detail 不泄漏内部 `?` 占位符", () => {
+  it("成员函数走 check 签名公式；嵌套 fn 槽的返回位补 any，不出现 `?`", () => {
+    withTempDir("nudo-bug057-", (dir) => {
+      const src = `export const helper = { twice(q) { return q * 2; } };\nexport function freeTwice(q) { return q * 2; }\nexport const pick = helper.twice;\nhelper.\n`;
+      const file = join(dir, "detail_pair.js");
+      writeFileSync(file, src, "utf-8");
+
+      const members = getCompletionsAtPosition(file, src, 4, 7);
+      expect(members.find((i) => i.label === "twice")?.detail).toBe(
+        "twice(q: any) => any",
+      );
+
+      const vars = getCompletionsAtPosition(file, src, 4, 0);
+      expect(vars.find((i) => i.label === "helper")?.detail).toBe(
+        "{ twice: (q) => any }",
+      );
+      expect(vars.find((i) => i.label === "freeTwice")?.detail).toBe(
+        "freeTwice(q: any) => any",
+      );
+      for (const item of [...members, ...vars]) {
+        expect(item.detail ?? "").not.toContain("?");
+      }
+    });
+  });
+});
+
+describe("BUG-090 链式换行后的行首点号补全", () => {
+  it("`o\\n  .|` 与单行 `o.|` 给同一候选", () => {
+    withTempDir("nudo-bug090-", (dir) => {
+      const multiline = `export const o = { alpha: 1 };\nexport function use() {\n  return o\n    .;\n}\n`;
+      const file = join(dir, "multiline-dot.js");
+      writeFileSync(file, multiline, "utf-8");
+      const multi = getCompletionsAtPosition(file, multiline, 4, 5);
+      expect(multi.map((i) => i.label)).toContain("alpha");
+
+      const single = `export const o = { alpha: 1 };\nexport function use() {\n  return o.;\n}\n`;
+      const ctl = join(dir, "multiline-dot-ctl.js");
+      writeFileSync(ctl, single, "utf-8");
+      const oneLine = getCompletionsAtPosition(ctl, single, 3, 11);
+      expect(oneLine.map((i) => i.label)).toEqual(multi.map((i) => i.label));
+    });
+  });
+});

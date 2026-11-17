@@ -368,7 +368,7 @@ describe("generator calls are total (body throws deferred to iteration)", () => 
     // 生成器对象带迭代器协议面（无 yield 元素槽）——**协议面在运行面**
     // （`typeof gi.next`），不在**投影面**（协议槽是 internal 槽，
     // 不进签名面）；体内 throw 仍被 $gen 丢弃式帧吞掉（调用期不表面）
-    expect(r.value).toMatch(/^\{/);
+    expect(r.value).toBe("Generator<unknown, undefined, unknown>");
     expect(r.kinds).toEqual([]);
     expect(r.throws).not.toContain("Error");
     // 协议面负控制（运行面）

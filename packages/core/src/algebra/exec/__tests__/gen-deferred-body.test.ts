@@ -30,7 +30,7 @@ describe("A1 步骤 3 · 延迟体触发（构造期不跑体）", () => {
     let runs = 0;
     const g = twoYields(() => { runs++; });
     expect(runs).toBe(0);
-    expect(formatAbs(g)).toBe("{  }  #path");
+    expect(formatAbs(g)).toBe("Generator<unknown, undefined, unknown>  #path");
     expect(g.facets?.genElements).toHaveLength(0);
   });
 
@@ -39,7 +39,7 @@ describe("A1 步骤 3 · 延迟体触发（构造期不跑体）", () => {
     const g = twoYields(() => { runs++; });
     expect(shown(matchIterElements(g))).toEqual(["1  #exact", "2  #exact"]);
     expect(runs).toBe(1);
-    expect(formatAbs(g)).toContain('"0": 1');
+    expect(formatAbs(g)).toContain("Generator<1 | 2, undefined, unknown>");
     expect(g.facets?.genElements).toHaveLength(2);
   });
 
@@ -57,8 +57,8 @@ describe("A1 步骤 3 · 延迟体触发（构造期不跑体）", () => {
     const g = twoYields(() => { runs++; });
     const copy = snapshotAbs(g);
     expect(shown(matchIterElements(copy))).toEqual(["1  #exact", "2  #exact"]);
-    expect(formatAbs(g)).toContain('"0": 1');
-    expect(formatAbs(copy)).toContain('"1": 2');
+    expect(formatAbs(g)).toContain("Generator<1 | 2, undefined, unknown>");
+    expect(formatAbs(copy)).toContain("Generator<1 | 2, undefined, unknown>");
     expect(g.facets?.genElements).toHaveLength(2);
     expect(copy.facets?.genElements).toHaveLength(2);
     expect(runs).toBe(1);

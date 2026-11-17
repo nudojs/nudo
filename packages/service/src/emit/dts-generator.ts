@@ -617,11 +617,16 @@ function absToTSTypeInner(a: Abs, typeVars: Map<string, string> | undefined, bud
         // dts 投影须取 getter 读域，否则把 getter 的返回值谎报成 exact
         // `undefined`。
         const slotAbs = slotAbsOf(a, k, slot.value);
-        const inner = absToTSTypeB(slotAbs, typeVars, budget);
+        // BUG-075：契约面的槽位字面量住在 **pred**（`eq(k, lit("n"))`），
+        // 不在 term ⇒ 只读 absToTSType 会把判别键拓宽成 `string`，
+        // `{ k: "n"; v: number } | { k: "s"; v: string }` 的判别联合退化成
+        // 交叉积，消费方接受 check 判红的值。契约字面量集优先。
+        const litTs = contractLiteralTSType(slotAbs);
+        const inner = litTs ?? absToTSTypeB(slotAbs, typeVars, budget);
         // Bug 77：`as const` 值声明通道 ⇒ 对象槽按只读投影（`readonly k: …`）。
         const ro = currentReadonlySlots ? "readonly " : "";
         if (slot.optional) {
-          const t = wrapComplexAbs(slotAbs, typeVars, budget);
+          const t = litTs ?? wrapComplexAbs(slotAbs, typeVars, budget);
           entries.push(`${ro}${formatPropKey(k)}?: ${t}`);
           continue;
         }
@@ -1900,7 +1905,11 @@ function computeMainSignature(
     paramNames.push(name);
     paramTypes.push(typeStr);
   }
-  const params = renderParamSlots(slots);
+  // BUG-133：`this: T` 是 TS 声明的接收者契约（不占运行时形参位，但 dts
+  // 必须保留子句；否则消费方 `.call(receiver, …)` 失去接收者校验）。
+  const thisClause = thisReceiverClause(fn, ctx);
+  const renderedParams = renderParamSlots(slots);
+  const params = thisClause === "" ? renderedParams : [thisClause, ...renderedParams];
   const retAbs = contract?.return ?? returnAbsOf(fn);
   // BUG-214：**纯调用点观测**（只有 call@ 见证）的返回位是**一次调用**的取值，
   // 不是函数的类型 ⇒ 对象槽里的字面量必须拓宽（否则发布的 .d.ts 让消费端对
@@ -2529,6 +2538,27 @@ function isTypePredicateText(text: string): boolean {
  * （`fn.declaredReturnType`）⇒ 可解析时**原样保留**；引用到不可解析的类型名
  * ⇒ 落台账并回落观测（与 `tsParamAnnotation` 同口径）。
  */
+/**
+ * BUG-133：`this: T` 接收者子句。类型名不可解析 ⇒ 台账 + 省略（不产出
+ * TS2304）；可解析的本地声明 / import 回传 typeRefs（模块面补声明 / import）。
+ */
+function thisReceiverClause(fn: FunctionAnalysis, ctx?: DtsProjectionCtx): string {
+  const raw = fn.thisReceiverType?.trim();
+  if (!raw) return "";
+  const surface = ctx?.surface;
+  for (const name of annotationTypeRefs(raw)) {
+    if (TS_TYPE_TOKENS.has(name)) continue;
+    if (surface !== undefined && !isTypeNameResolvable(name, surface)) {
+      ctx?.dropped?.push(`${fn.name}: ${name} (this receiver)`);
+      return "";
+    }
+    if (surface?.classes.has(name) || surface?.imports?.has(name) === true) {
+      ctx?.typeRefs?.add(name);
+    }
+  }
+  return `this: ${raw}`;
+}
+
 function tsReturnPredicate(fn: FunctionAnalysis, ctx?: DtsProjectionCtx): string | undefined {
   const raw = tsAnnotationTypeText(fn.declaredReturnType);
   if (!raw || !isTypePredicateText(raw)) return undefined;

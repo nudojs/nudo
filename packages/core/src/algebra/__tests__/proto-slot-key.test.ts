@@ -43,11 +43,13 @@ describe("JSON.parse __proto__ is an own data property", () => {
 });
 
 describe("object literal non-computed __proto__ is the prototype special form", () => {
-  it("__proto__: obj sets prototype — inherited reads must not fold undefined", () => {
-    // 原生 o.x === 1；引擎曾折 undefined #exact（假精确）
+  it("__proto__: obj sets prototype — inherited reads evaluate the proto", () => {
+    // 原生 o.x === 1；引擎曾折 undefined #exact（假精确）——BUG-124 起沿
+    // protoTable 读取原型数据槽（精确 1，不再保守 unknown）
     const r = call(`export function f() { const o={__proto__:{x:1}}; return o.x; }`);
     expect(isExactUndefined(r.result)).toBe(false);
-    expect(fmt(`export function f() { const o={__proto__:{x:1}}; return o.x; }`)).not.toContain("#exact");
+    expect(litValue(r.result)).toEqual({ ok: true, value: 1 });
+    expect(fmt(`export function f() { const o={__proto__:{x:1}}; return o.x; }`)).toContain("1");
   });
 
   it("'x' in o is true for inherited x", () => {
@@ -95,10 +97,10 @@ describe("computed / assignment __proto__ keeps an own property on null-proto", 
 });
 
 describe("o.__proto__ = obj on a normal object sets the prototype", () => {
-  it("inherited read after assignment is not exact undefined", () => {
+  it("inherited read after assignment evaluates the assigned prototype", () => {
     const r = call(`export function f() { const o={}; o.__proto__={x:1}; return o.x; }`);
     expect(isExactUndefined(r.result)).toBe(false);
-    expect(fmt(`export function f() { const o={}; o.__proto__={x:1}; return o.x; }`)).not.toContain("#exact");
+    expect(litValue(r.result)).toEqual({ ok: true, value: 1 });
   });
 
   it("Object.setPrototypeOf similarly stops folding exact undefined", () => {

@@ -62,6 +62,7 @@ import { widenTupleToArr } from "./arr-make.ts";
 import { $set, $get } from "./member.ts";
 // 族 58 · Bug 5：任意 brand 的 "length" 槽读（单一事实源，见 members.ts）。
 import { brandLengthSlotValue } from "../members.ts";
+import { accessorReadDomain } from "../../../accessors.ts";
 import { symbolSlotKeyOf } from "./symbol-slot.ts";
 
 /** 下标读 a[i]；规范数组下标走精确投影，确定非下标键 → undefined，否则并所有元素；string[i] → 单字符 */
@@ -623,6 +624,12 @@ export function $len(a: Abs, opts?: { silent?: boolean }): Abs {
   // obj 自有 length 槽（Bug 34：$tpl 模板对象的 quasis 数；也覆盖
   // {length: n} 字面量）——成员读取语义，闭槽精确
   if (a.shape.k === "obj") {
+    // Bug 127：自有 `get length()` 的真值住访问器侧表（槽里只有
+    // transpile 落的 `$lit(void 0)` 占位；defineProperty 形态甚至无槽）——
+    // 裸读槽会把 length 折精确 undefined、getter 副作用整体丢失。
+    // Array.from 的 array-like 臂已走同一读法（accessorReadDomain）。
+    const accLen = accessorReadDomain(a, "length");
+    if (accLen !== undefined) return accLen;
     const slot = getSlot(a.shape.slots, "length");
     if (slot && !slot.optional) return slot.value;
   }

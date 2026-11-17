@@ -28,6 +28,11 @@ export type MayThrowEffect = {
   recv?: string;
   /** 成员名 */
   name?: string;
+  /**
+   * BUG-084：效果发生在 **async 函数体**内 ⇒ 只会让返回的 promise 拒绝，
+   * 不构成调用点同步抛。L2 入口门禁过滤本标记；观测面（eval/test）仍可见。
+   */
+  asyncBody?: boolean;
   line?: number;
   column?: number;
 };

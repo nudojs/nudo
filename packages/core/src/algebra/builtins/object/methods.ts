@@ -68,7 +68,7 @@ import { mapEntriesAbs } from "../../collections.ts";
 import { undefAbs } from "../../hof.ts";
 import { NudoThrow } from "../../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "../../exec/may-throw.ts";
-import { lookupObjAccessor } from "../../accessors.ts";
+import { lookupObjAccessor, accessorTable } from "../../accessors.ts";
 import { absFunction } from "../../abs-fn.ts";
 import { isSymbolAbs } from "../symbol.ts";
 import { boolPrim, str, isPrimLike, noBody, typedArrayElementOf } from "../shared.ts";
@@ -658,7 +658,19 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
     const slots = (inner.shape as ObjShape).slots as Record<string, { value: Abs }>;
     // Bug 276：flags 载体取 **brand**（a0）——isEnumerableView 会并查 brand
     // 自身与其内层 obj 两套载体（defineProperty 的 flags 记在 brand 上）
-    return enumKeys(slots, a0!).map((k) => [k, getSlot(slots, k)!.value] as [string, Abs]);
+    // Bug 115：自有 getter 住内层 obj 的 accessorTable —— keys/values/entries
+    // 的 [[Get]] 必须调用 getter（this = 实例）。键集 = 枚举槽 ∪ 可枚举访问器键。
+    const acc = accessorTable.get(inner as object);
+    const keys = new Set(enumKeys(slots, a0!));
+    if (acc) {
+      for (const k of acc.keys()) {
+        if (isEnumerableView(a0!, k)) keys.add(k);
+      }
+    }
+    return [...keys].map((k): [string, Abs] => {
+      const g = acc?.get(k)?.get;
+      return [k, g ? g(a0!) : (getSlot(slots, k)?.value ?? unknown)];
+    });
   };
 
   /** Bug 125：TA brand 枚举投影素材——typedArrayEnumKeyView（exact/open/

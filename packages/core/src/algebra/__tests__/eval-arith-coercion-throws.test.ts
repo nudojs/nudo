@@ -146,7 +146,9 @@ describe("arithmetic over abstract operand records may TypeError", () => {
   });
 
   it("obj 抽象面（valueOf 可产 bigint/Symbol）→ may TypeError；具体 obj 字面量不报", () => {
-    const objAbs = abs({ k: "obj", slots: {} }, undefined, undefined, "path");
+    // 开放对象（成员未知 ⇒ 可能有 valueOf/@@toPrimitive 钩子）才是抽象面；
+    // 闭对象字面量无 coercer ⇒ 原生恒 ToString "[object Object]"（BUG-037）。
+    const objAbs = abs({ k: "obj", slots: {}, open: true }, undefined, undefined, "path");
     expect(collectEffects(() => add(objAbs, numLit(1)))).toContain("TypeError");
     expect(collectEffects(() => cmp("lt", objAbs, numLit(1)))).toContain("TypeError");
     // 源级：具体对象成员算术折叠，无假报

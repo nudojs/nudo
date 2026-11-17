@@ -397,8 +397,25 @@ export function $spread(a: Abs, b: Abs): Abs {
     if (ciInner) {
       const ciSlots = (ciInner.shape as ObjShape).slots;
       const pub: Record<string, Slot> = {};
-      for (const k of enumOwnKeys(ciInner, ciSlots)) {
-        setSlot(pub, k, getSlot(ciSlots, k)!);
+      // Bug 115：`Object.defineProperty(instance, k, { get, enumerable })`
+      // 的真 getter 住内层 obj 的 accessorTable（槽里只有占位成本）——
+      // CopyDataProperties 必须**调用** getter（this = 实例）并拷结果。
+      // 键集取枚举自有槽 ∪ 可枚举访问器键（纯访问器键可能无同名槽）。
+      const ciAcc = accessorTable.get(ciInner as object);
+      const keys = new Set(enumOwnKeys(b0, ciSlots));
+      if (ciAcc) {
+        for (const k of ciAcc.keys()) {
+          if (isEnumerableView(b0, k)) keys.add(k);
+        }
+      }
+      for (const k of keys) {
+        const g = ciAcc?.get(k)?.get;
+        const slot = getSlot(ciSlots, k);
+        if (g) {
+          setSlot(pub, k, { value: g(b0) });
+        } else if (slot) {
+          setSlot(pub, k, slot);
+        }
       }
       b0 = abs({ k: "obj", slots: pub }, undefined, undefined, b0.conf);
     }

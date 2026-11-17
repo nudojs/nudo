@@ -69,7 +69,12 @@ export function dtsFaceEntry(
     filePath,
     ...(evalMocks ? { mocks: evalMocks } : {}),
   });
-  if (contractReturn === undefined && contractParams.length > 0) {
+  if (
+    contractReturn === undefined &&
+    contractParams.length > 0 &&
+    // BUG-102：rest 形参无法用固定实参播种（见 contract-face 的 seedDomainReturn）
+    !fn.paramNames.some((n) => n.startsWith("..."))
+  ) {
     // BUG-082：种子按**形参位**装配（与 zod / standard 面同源：`contractSeedArgs`）
     // —— 按名字查表在**解构形参**上恒不命中（占位名 `_p0` vs 契约名 `a`）⇒
     // 播种全 any ⇒ .d.ts 返回 `unknown`，而 `nudo check` 对同一函数是 `=> number`。

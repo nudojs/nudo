@@ -28,9 +28,16 @@
  */
 
 import type { Abs } from "../../abs.ts";
-import { abs, boolLit, bool, unknown, litValue } from "../../abs.ts";
+import { abs, boolLit, bool, numLit, unknown, litValue } from "../../abs.ts";
 import { joinAbs, setSlot } from "../../objects.ts";
-import { undefAbs } from "../../hof.ts";
+import { undefAbs, applyCallbackValue, validateCallableArg } from "../../hof.ts";
+import { pTrue } from "../../pred.ts";
+import { emptyEnv } from "../../ast-env.ts";
+import { defaultLeakBudget } from "../../diagnostics/leak.ts";
+import { NudoThrow } from "../../exec/nudo-throw.ts";
+import { errorTypeAbs, recordMayThrow } from "../../exec/may-throw.ts";
+import { litTruth } from "../../exec/runtime/state.ts";
+import { TUPLE_MATERIALIZE_CAP } from "../../containers.ts";
 import { registerGenElements, registerGenDrain } from "../../exec/match-iter.ts";
 import { absFunction } from "../../abs-fn.ts";
 import { markFreshInstance } from "../../key/instance-id.ts";
@@ -206,6 +213,203 @@ export function collectionIteratorAbs(els: Abs[], live?: CollectionLiveEntries):
     next: { value: next },
     "@@iterator": { value: absFunction([], { body: noBody }, { ctor: false }) },
   };
+  /**
+   * BUG-114：ES2025 `%IteratorPrototype%` 助手方法（`toArray` / `map` /
+   * `filter` / `take` / `drop` / `flatMap` / `reduce` / `forEach` / `some` /
+   * `every` / `find`）。原生这些方法挂在 `%IteratorPrototype%` 上，Array /
+   * Map / Set 迭代器都继承 ⇒ `.values().toArray()` 恒可调用。此前协议对象
+   * 只有 `next` / `@@iterator` 两个槽 ⇒ 第一次属性读落 miss ⇒ 调用未知
+   * 记 TypeError（L2 假红，与 env 的 Iterator brand 声明自相矛盾）。
+   *
+   * 语义：助手消费迭代器**剩余元素**（与 next 共享游标 / live 视图）；
+   * map / filter / take / drop / flatMap 产出新的集合迭代器（元素表为
+   * 求值结果，惰性时机差异记为精度边，不伪造副作用）；reduce / forEach /
+   * some / every / find 当场驱动回调。所有槽 `enumerable:false`（原生在
+   * 原型上，Object.keys(iter) 仍为 []）。
+   */
+  const drainRemaining = (): Abs[] => {
+    if (live) return live.takeAll();
+    const remaining = [...liveEls];
+    liveEls.length = 0;
+    state.i = els.length;
+    return remaining;
+  };
+  const helperArray = (items: Abs[]): Abs =>
+    items.length > TUPLE_MATERIALIZE_CAP
+      ? abs(
+          { k: "arr", element: items.length ? items.reduce((x, y) => joinAbs(x, y)) : unknown },
+          undefined,
+          undefined,
+          "path",
+        )
+      : abs({ k: "tuple", elements: items }, undefined, undefined, "exact");
+  const helperFn = (apply: (args: Abs[]) => Abs): Abs =>
+    absFunction([], { body: noBody, apply }, { ctor: false });
+  const callCb = (fn: Abs | undefined, cbArgs: Abs[], cause: string): Abs => {
+    validateCallableArg(fn, cause);
+    if (!fn) return unknown;
+    return applyCallbackValue(fn, cbArgs, emptyEnv(), pTrue, defaultLeakBudget);
+  };
+  const countOf = (arg: Abs | undefined): number | undefined => {
+    const v = litValue(arg ?? unknown);
+    if (!v.ok) return undefined;
+    const raw = v.value;
+    // ToIntegerOrInfinity 字面量面：undefined/null → 0；boolean → 0/1；
+    // string → ToNumber（NaN → 0）；number NaN → 0；负值 → RangeError；
+    // symbol / bigint → TypeError（原生 ToNumber 定抛）。
+    if (raw === undefined || raw === null) return 0;
+    if (typeof raw === "boolean") return raw ? 1 : 0;
+    if (typeof raw === "symbol" || typeof raw === "bigint") {
+      throw new NudoThrow(errorTypeAbs("TypeError"));
+    }
+    let n: number;
+    if (typeof raw === "number") n = raw;
+    else if (typeof raw === "string") n = Number(raw);
+    else return undefined;
+    if (Number.isNaN(n)) return 0;
+    if (n < 0) throw new NudoThrow(errorTypeAbs("RangeError"));
+    return Math.trunc(n);
+  };
+  const flattenOne = (v: Abs): Abs[] => {
+    if (v.shape.k === "tuple") return [...v.shape.elements];
+    if (v.shape.k === "arr") return [v.shape.element];
+    if (isSetAbs(v)) return setElementsAbs(v);
+    if (isMapAbs(v)) return mapEntriesAbs(v);
+    const lv = litValue(v);
+    if (lv.ok && typeof lv.value === "string") {
+      return [...lv.value].map((c) => abs({ k: "prim", type: "string" }, { op: "lit", value: c }, pTrue, "exact"));
+    }
+    return [v];
+  };
+  const helperSlots: Record<string, { value: Abs }> = {
+    toArray: {
+      value: helperFn((): Abs => helperArray(drainRemaining())),
+    },
+    map: {
+      value: helperFn((args: Abs[]): Abs => {
+        const src = drainRemaining();
+        return collectionIteratorAbs(
+          src.map((el, i) => callCb(args[0], [el, numLit(i)], "Iterator.prototype.map callback may not be callable")),
+        );
+      }),
+    },
+    filter: {
+      value: helperFn((args: Abs[]): Abs => {
+        const src = drainRemaining();
+        const out: Abs[] = [];
+        for (let i = 0; i < src.length; i++) {
+          const keep = litTruth(
+            callCb(args[0], [src[i]!, numLit(i)], "Iterator.prototype.filter callback may not be callable"),
+          );
+          // 抽象谓词：保留元素（过度近似；native 可能过滤掉它）
+          if (keep !== false) out.push(src[i]!);
+        }
+        return collectionIteratorAbs(out);
+      }),
+    },
+    take: {
+      value: helperFn((args: Abs[]): Abs => {
+        const n = countOf(args[0]);
+        if (n === undefined) {
+          recordMayThrow({ kind: "RangeError", cause: "Iterator.prototype.take count may be negative or invalid" });
+          return abstractSeqIteratorAbs(unknown);
+        }
+        return collectionIteratorAbs(drainRemaining().slice(0, n));
+      }),
+    },
+    drop: {
+      value: helperFn((args: Abs[]): Abs => {
+        const n = countOf(args[0]);
+        if (n === undefined) {
+          recordMayThrow({ kind: "RangeError", cause: "Iterator.prototype.drop count may be negative or invalid" });
+          return abstractSeqIteratorAbs(unknown);
+        }
+        return collectionIteratorAbs(drainRemaining().slice(n));
+      }),
+    },
+    flatMap: {
+      value: helperFn((args: Abs[]): Abs => {
+        const src = drainRemaining();
+        const out: Abs[] = [];
+        for (let i = 0; i < src.length; i++) {
+          out.push(
+            ...flattenOne(
+              callCb(args[0], [src[i]!, numLit(i)], "Iterator.prototype.flatMap callback may not be callable"),
+            ),
+          );
+        }
+        return collectionIteratorAbs(out);
+      }),
+    },
+    reduce: {
+      value: helperFn((args: Abs[]): Abs => {
+        const src = drainRemaining();
+        validateCallableArg(args[0], "Iterator.prototype.reduce callback may not be callable");
+        const hasInit = args.length >= 2;
+        if (src.length === 0) {
+          if (!hasInit) throw new NudoThrow(errorTypeAbs("TypeError"));
+          return args[1]!;
+        }
+        let acc = hasInit ? args[1]! : src[0]!;
+        const start = hasInit ? 0 : 1;
+        for (let i = start; i < src.length; i++) {
+          acc = callCb(
+            args[0],
+            [acc, src[i]!, numLit(i)],
+            "Iterator.prototype.reduce callback may not be callable",
+          );
+        }
+        return acc;
+      }),
+    },
+    forEach: {
+      value: helperFn((args: Abs[]): Abs => {
+        const src = drainRemaining();
+        for (let i = 0; i < src.length; i++) {
+          callCb(args[0], [src[i]!, numLit(i)], "Iterator.prototype.forEach callback may not be callable");
+        }
+        return undefAbs();
+      }),
+    },
+    some: {
+      value: helperFn((args: Abs[]): Abs => {
+        const src = drainRemaining();
+        let sawUnknown = false;
+        for (let i = 0; i < src.length; i++) {
+          const t = litTruth(callCb(args[0], [src[i]!, numLit(i)], "Iterator.prototype.some callback may not be callable"));
+          if (t === true) return boolLit(true);
+          if (t === undefined) sawUnknown = true;
+        }
+        return sawUnknown ? bool() : boolLit(false);
+      }),
+    },
+    every: {
+      value: helperFn((args: Abs[]): Abs => {
+        const src = drainRemaining();
+        let sawUnknown = false;
+        for (let i = 0; i < src.length; i++) {
+          const t = litTruth(callCb(args[0], [src[i]!, numLit(i)], "Iterator.prototype.every callback may not be callable"));
+          if (t === false) return boolLit(false);
+          if (t === undefined) sawUnknown = true;
+        }
+        return sawUnknown ? bool() : boolLit(true);
+      }),
+    },
+    find: {
+      value: helperFn((args: Abs[]): Abs => {
+        const src = drainRemaining();
+        let sawUnknown = false;
+        for (let i = 0; i < src.length; i++) {
+          const el = src[i]!;
+          const t = litTruth(callCb(args[0], [el, numLit(i)], "Iterator.prototype.find callback may not be callable"));
+          if (t === true) return el;
+          if (t === undefined) sawUnknown = true;
+        }
+        return sawUnknown ? joinAbs(src.length ? src.reduce((x, y) => joinAbs(x, y)) : unknown, undefAbs()) : undefAbs();
+      }),
+    },
+  };
+  for (const [k, v] of Object.entries(helperSlots)) setSlot(slots, k, v);
   const iter = abs(
     { k: "obj", slots },
     undefined,
@@ -220,6 +424,9 @@ export function collectionIteratorAbs(els: Abs[], live?: CollectionLiveEntries):
   setPropFlags(iter, "@@iterator", { enumerable: false });
   // Bug 198 根治点：live 迭代器**不登记静态侧表**（见上注释）——元素面
   // 由下面的消费视图（live 视图）承担；快照模式才登记静态元素表。
+  // BUG-114：助手方法原生在 %IteratorPrototype%（非自有可枚举）——
+  // Object.keys(iter) / for-in 的键视图仍为空。
+  for (const k of Object.keys(helperSlots)) setPropFlags(iter, k, { enumerable: false });
   if (!live) registerGenElements(iter, liveEls);
   registerGenDrain(iter, {
     drain: (): Abs[] => {

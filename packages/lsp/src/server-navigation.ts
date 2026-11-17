@@ -308,7 +308,7 @@ connection.onDocumentSymbol((params) => {
           if (s.children?.length) flatten(s.children, s.name);
         }
       };
-      flatten(documentSymbols(ast), undefined);
+      flatten(documentSymbols(ast, document.getText()), undefined);
       return out;
     }
     const toLsp = (s: DocumentSymbolItem): DocumentSymbol => {
@@ -322,7 +322,7 @@ connection.onDocumentSymbol((params) => {
         children: s.children?.map(toLsp),
       };
     };
-    return documentSymbols(ast).map(toLsp);
+    return documentSymbols(ast, document.getText()).map(toLsp);
   } catch {
     return [];
   }
@@ -399,7 +399,7 @@ connection.onWorkspaceSymbol((params) => {
           if (sym.children?.length) flatten(sym.children, sym.name);
         }
       };
-      flatten(documentSymbols(ast), undefined);
+      flatten(documentSymbols(ast, source), undefined);
     } catch {
       /* skip unparseable */
     }

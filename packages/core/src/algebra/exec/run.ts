@@ -50,6 +50,7 @@ import { drainPromiseMicros, errorBrandAbs } from "../builtins.ts";
 import { sourceHasCjsExports, sourceHasEsmSyntax, sourceIsStrict } from "../format/code-text.ts";
 import { isNudoThrow, isNudoReturn, $isForkExit, runWithLoopExits, takeLoopExits, takeThrowExits, asAbsVal, withNewTargetReset, NudoThrow } from "./runtime.ts";
 import { $call } from "./call.ts";
+import { $invoke } from "./class/invoke.ts";
 import { refineFnReturnType } from "./class.ts";
 import {
   runWithCollectorScope,
@@ -1175,7 +1176,7 @@ export function callTranspiledExportFull(
   exports: Record<string, unknown>,
   name: string,
   args: Abs[],
-  opts?: { phi?: Phi; shareArgs?: boolean; preferLocal?: boolean },
+  opts?: { phi?: Phi; shareArgs?: boolean; preferLocal?: boolean; thisArg?: Abs },
 ): TranspiledCallResult {
   // Bug 82：按导出表所属模块恢复写门 strictness（跨模块导出桥取对侧
   // 口径）；元数据缺失则保持当前全局值，不改变既有行为。
@@ -1249,9 +1250,22 @@ function callTranspiledExportFullInner(
   exports: Record<string, unknown>,
   name: string,
   args: Abs[],
-  opts?: { phi?: Phi; shareArgs?: boolean; preferLocal?: boolean },
+  opts?: { phi?: Phi; shareArgs?: boolean; preferLocal?: boolean; thisArg?: Abs },
 ): TranspiledCallResult {
   const fn = callTargetOf(exports, name, opts?.preferLocal === true);
+  // BUG-108：ESM 导出的**对象字面量方法**（含 spread 来源）在入口表里是裸键
+  // 名（`api.bad` ⇒ `bad`），但运行时不在顶层导出槽 ⇒ callTargetOf 落空 ⇒
+  // L2 throws 求值看不到方法体（`bad() => unknown`，必抛方法判绿）。按导出的
+  // 对象值找同名自有 fn 槽，以**接收者绑定**调用；多个宿主按 union 合并
+  // （入口名已按裸键折叠，任一宿主的抛域都算该入口的义务）。
+  const memberReceivers: Abs[] = [];
+  if (fn === undefined && !name.includes(".")) {
+    for (const v of Object.values(exports)) {
+      if (!isAbsVal(v) || (v as Abs).shape.k !== "obj") continue;
+      const slot = (v as Abs & { shape: { slots: Record<string, { value: Abs }> } }).shape.slots[name];
+      if (slot !== undefined && slot.value.shape.k === "fn") memberReceivers.push(v as Abs);
+    }
+  }
   if (typeof fn === "function") {
     // 宿主裸值（raw string/array/number…）先经 asAbsVal 收成 Abs（与 $fork
     // 对缺参/宿主裸值同口径）：否则裸值流进代数算子（$not/$forOf/…）读
@@ -1273,9 +1287,33 @@ function callTranspiledExportFullInner(
     // 宿主函数（无源码可分析）⇒ 回落记 internal（DEC-006 canary）
     return runExportCallGuarded(() => {
       const invoke = () =>
-        withNewTargetReset(() => (fn as (...a: Abs[]) => unknown)(...callArgs));
+        withNewTargetReset(() =>
+          // BUG-133：TS `this: T` 接收者注解经入口求值通道传入（缺省 undefined
+          // ≡ 旧行为——strict 下直接调用的 this 也是 undefined）。
+          (fn as (...a: Abs[]) => unknown).apply(opts?.thisArg as never, callArgs),
+        );
       return opts?.phi ? withExecPhi(opts.phi, invoke) : invoke();
     }, { fallbackOrigin: "host" });
+  }
+  if (fn === undefined && memberReceivers.length > 0) {
+    // 别名保真：`o.m(obj, obj)` 的两个实参必须映射到同一个副本（与下方
+    // JS 导出分支共用同一 copyMemo 口径）。
+    const copyMemo = new WeakMap<object, Abs>();
+    const callArgs = args.map((a) => {
+      if (!isAbsLike(a)) return asAbsVal(a);
+      return opts?.shareArgs ? (a as Abs) : $copy(a as Abs, copyMemo);
+    });
+    const results = memberReceivers.map((recv) =>
+      runExportCallGuarded(() => {
+        const invoke = () => $invoke(recv, name, callArgs);
+        return opts?.phi ? withExecPhi(opts.phi, invoke) : invoke();
+      }, { fallbackOrigin: "module" }),
+    );
+    if (results.length === 1) return results[0]!;
+    return {
+      result: results.reduce((acc, r) => joinAbs(acc, r.result), never),
+      throws: results.reduce((acc, r) => joinAbs(acc, r.throws), never),
+    };
   }
   if (isAbsVal(fn)) {
     // export const f = (x) => …：导出值是一等 fn Abs —— 按调用语义 apply

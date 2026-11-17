@@ -169,11 +169,28 @@ export function assignSourceSlots(src: Abs): Record<string, { value: Abs }> | un
     const inner = classInstanceInnerOf(src);
     if (inner) {
       const slots: Record<string, { value: Abs }> = {};
+      const innerSlots = (inner.shape as ObjShape).slots;
       // Bug 276：flags 载体取 **brand**（src）——enumOwnKeys → isNonEnumerable
       // 会并查 brand 自身与其内层 obj 两套载体（defineProperty 的 flags 记在
       // brand 上；只查 inner ⇒ 不可枚举自有键被拷进 assign 结果）
-      for (const k of enumOwnKeys(src, (inner.shape as ObjShape).slots)) {
-        setSlot(slots, k, getSlot((inner.shape as ObjShape).slots as Record<string, { value: Abs }>, k)!);
+      // Bug 115：自有访问器（defineProperty(instance, k, { get })）的真 getter
+      // 住内层 obj 的 accessorTable —— assign 的 CopyDataProperties 必须调用
+      // getter（this = 实例）。键集 = 枚举槽 ∪ 可枚举访问器键。
+      const acc = accessorTable.get(inner as object);
+      const keys = new Set(enumOwnKeys(src, innerSlots));
+      if (acc) {
+        for (const k of acc.keys()) {
+          if (isEnumerableView(src, k)) keys.add(k);
+        }
+      }
+      for (const k of keys) {
+        const g = acc?.get(k)?.get;
+        const slot = getSlot(innerSlots as Record<string, { value: Abs }>, k);
+        if (g) {
+          setSlot(slots, k, { value: g(src) });
+        } else if (slot) {
+          setSlot(slots, k, slot);
+        }
       }
       return slots;
     }
@@ -1116,6 +1133,14 @@ export function enforceProxyGetOwnPropDescInvariant(
   if (!hasSlot && acc === undefined) {
     // 规则 1：靶无该自有键 ⇒ 陷阱描述符必须可配置
     if (trapView.configurable === false) {
+      throw new NudoThrow(errorTypeAbs("TypeError"));
+    }
+    // 规则 1b：靶**不可扩展**时，陷阱不得凭空报告一个靶上不存在的属性
+    //（ES2024 10.5.5 step 13 → IsCompatiblePropertyDescriptor →
+    // ValidateAndApplyPropertyDescriptor：current 缺失且 extensible=false
+    // ⇒ false ⇒ TypeError）。此前该分支早退，从不看靶的可扩展性 ⇒
+    // `Object.preventExtensions(t)` + 陷阱返回描述符被误判绿灯。
+    if (!currentPropDesc(target, key).extensible) {
       throw new NudoThrow(errorTypeAbs("TypeError"));
     }
     return;

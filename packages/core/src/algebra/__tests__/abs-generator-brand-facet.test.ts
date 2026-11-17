@@ -83,23 +83,23 @@ describe("A11 残余 · TReturn（genReturn）随值携带", () => {
   });
 });
 
-describe("A11 · brand 不发布到展示投影面（既有契约）", () => {
-  it("生成器对象的 formatShape 仍是结构面，且保留数字下标元素域", () => {
+describe("A11 · 展示投影面按生成器协议渲染（BUG-094）", () => {
+  it("生成器对象的 formatShape 是 Generator<…>，不再摊平数字下标对象", () => {
     const g = genObjectOf("BrandGenFormatD", false);
     expect(g.facets?.brand).toBe("Generator");
-    const text = formatShape(g);
-    expect(text).toMatch(/^\{/);
-    expect(text).toContain('"0": 1');
+    expect(formatShape(g)).toBe("Generator<1, undefined, unknown>");
   });
 
-  it("异步生成器对象的 formatShape 同样不发布身份", () => {
-    expect(formatShape(genObjectOf("BrandGenFormatE", true))).toMatch(/^\{/);
+  it("异步生成器对象的 formatShape 是 AsyncGenerator<…>", () => {
+    expect(formatShape(genObjectOf("BrandGenFormatE", true))).toBe(
+      "AsyncGenerator<1, undefined, unknown>",
+    );
   });
 
   it("快照后的生成器对象仍带 brand（身份不随侧表丢失）", () => {
     const snap = snapshotAbs(genObjectOf("BrandGenFormatF", false));
     expect(snap.facets?.brand).toBe("Generator");
-    expect(formatShape(snap)).toMatch(/^\{/);
+    expect(formatShape(snap)).toBe("Generator<1, undefined, unknown>");
   });
 
   it("负控：普通对象不挂槽位 ⇒ 结构投影逐字不变", () => {

@@ -111,6 +111,7 @@ export {
   serializeCaseArg,
   buildCaseDirective,
   stripGeneratedCaseDirectives,
+  blankGeneratedCaseDirectives,
   insertGeneratedCaseDirectives,
   unifiedDiff,
   type EmitSkipReason,

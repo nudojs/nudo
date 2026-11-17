@@ -1579,7 +1579,8 @@ describe("生成器体构造期副作用——步骤 1 join 隔离（wrong-exact
     }`);
     // 元素槽 = 构造期 yield 收集（1 与 5 均 #exact）；外层 n 的 join 折回
     // 发生在收集**之后**（finally）⇒ 不污染元素面。
-    expect(formatAbs(r.result)).toEqual('{ "0": 1, "1": 5 }  #exact');
+    // BUG-094：生成器返回域按协议渲染（不再摊平成数字下标对象）
+    expect(formatAbs(r.result)).toEqual('Generator<1 | 5, undefined, unknown>  #exact');
   }
   {
     const r = call(`export function f() {
@@ -1992,17 +1993,15 @@ describe("（S18）：投影面不发布 internal 槽", () => {
     expect(sig).not.toContain("throw");
     expect(sig).not.toContain("constructor");
     expect(sig).not.toContain("@@iterator");
-    // 负控制：元素域（数字下标槽）仍发布
-    expect(sig).toContain('"0": 1');
-    expect(sig).toContain('"1": "s"');
+    // BUG-094：元素域按生成器类型参数发布
+    expect(sig).toContain('Generator<1 | "s", undefined, unknown>');
   }
   {
     const strAbs = abs({ k: "prim", type: "string" }, undefined, undefined, "path");
     const sig = formatAbs_____format_format_ts(
       call(`export function* g(s) { yield* s; }`, "g", [strAbs]).result as never,
     );
-    expect(sig).toContain('"0": string');
-    expect(sig).not.toContain("unknown");
+    expect(sig).toContain("Generator<string, undefined, unknown>");
   }
   {
     const shape = call(`export function* g() { yield 1; }`, "g").result.shape as unknown as {
@@ -2311,7 +2310,7 @@ describe("（S21）：与 S18 签名面 / 访问器读域同口径", () => {
     const sig = formatAbs_____format_format_ts(call(GEN_SRC, "g").result as Abs);
     expect(sig).not.toContain("@@iterator");
     expect(sig).not.toContain("next");
-    expect(sig).toContain('"0": 1');
+    expect(sig).toContain('Generator<1 | "s", undefined, unknown>');
   }
   {
     const src = `export function f() { return { get ab() { return 1; } }; }`;

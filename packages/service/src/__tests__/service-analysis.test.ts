@@ -229,9 +229,8 @@ afterEach(() => {
     const r = await emitContract(file, { mode: "update", all: true });
     expect(r.written).toContain("add");
     const sidecar = readFileSync(join(dir, "lib.nudo.js"), "utf-8");
-    expect(sidecar).toContain("export const add = fn({ a: number(), b: number() }, number());");
-    expect(sidecar).not.toContain("lit(1)");
-    expect(sidecar).not.toContain("lit(3)");
+    // BUG-113：emit 持久化**精确观测字面量**（widen 只属于 draft 面）
+    expect(sidecar).toContain("export const add = fn({ a: lit(1), b: lit(2) }, lit(3));");
 
     const subFile = join(dir, "sub.js");
     writeFileSync(subFile, '/**\n * @nudo:case "c" (1, 2) => 3\n */\nexport function sub(a, b) {\n  return a - b;\n}\n');

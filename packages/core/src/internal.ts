@@ -267,3 +267,5 @@ export {
   type PublishGateShadow,
   type RawDiagnostic,
 } from "./algebra/diagnostics/evidence-shadow.ts";
+
+export { entryThisReceiverOf, entryThisReceiverTypeTextOf } from "./algebra/generalize.ts";

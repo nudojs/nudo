@@ -102,3 +102,52 @@ describe("entries/keys/values return iterator objects", () => {
     expect(v(`export function f() { return Object.keys(new Set().values()).length; }`)).toBe(0);
   });
 });
+
+/**
+ * BUG-114：ES2025 `%IteratorPrototype%` 助手方法（toArray / map / filter /
+ * take / drop / flatMap / reduce / forEach / some / every / find）。
+ *
+ * 根因：collectionIteratorAbs 的协议对象只有 next / @@iterator 两个槽 ⇒
+ * Array/Map/Set 迭代器的第一次助手方法读落 miss，调用未知被记 TypeError
+ * （L2 假红，与 env 的 Iterator brand 声明自相矛盾）。修复：同一工厂挂上
+ * 助手方法（非枚举，共享 next 游标 / live 视图）。
+ */
+describe("BUG-114 ES2025 iterator helpers on Array/Map/Set iterators", () => {
+  it("toArray / keys / entries", () => {
+    expect(v(`export function f() { return [1,2].values().toArray().join(","); }`)).toBe("1,2");
+    expect(v(`export function f() { return [1,2].keys().toArray().join(","); }`)).toBe("0,1");
+    expect(v(`export function f() { return [1,2].entries().toArray().length; }`)).toBe(2);
+    expect(v(`export function f() { return new Map([["a",1]]).values().toArray().join(","); }`)).toBe("1");
+    expect(v(`export function f() { return new Set([1]).values().toArray().join(","); }`)).toBe("1");
+  });
+
+  it("map / filter / take / drop 链", () => {
+    expect(v(`export function f() { return [1,2].values().map(x => x * 2).toArray().join(","); }`)).toBe("2,4");
+    expect(v(`export function f() { return [1,2,3].values().filter(x => x > 1).toArray().join(","); }`)).toBe("2,3");
+    expect(v(`export function f() { return [1,2,3].values().take(2).toArray().join(","); }`)).toBe("1,2");
+    expect(v(`export function f() { return [1,2,3].values().drop(1).toArray().join(","); }`)).toBe("2,3");
+    expect(v(`export function f() { return [1,2].values().flatMap(x => [x, x]).toArray().length; }`)).toBe(4);
+  });
+
+  it("reduce / forEach / some / every / find", () => {
+    expect(v(`export function f() { return [1,2,3].values().reduce((a,b) => a + b, 0); }`)).toBe(6);
+    expect(v(`export function f() { return [1,2,3].values().reduce((a,b) => a + b); }`)).toBe(6);
+    expect(v(`export function f() { let n = 0; [1,2].values().forEach(x => { n += x; }); return n; }`)).toBe(3);
+    expect(v(`export function f() { return [1,2].values().some(x => x === 2); }`)).toBe(true);
+    expect(v(`export function f() { return [1,2].values().every(x => x > 0); }`)).toBe(true);
+    expect(v(`export function f() { return [1,2,3].values().find(x => x > 1); }`)).toBe(2);
+  });
+
+  it("take/drop 的 ToIntegerOrInfinity 字面量面（undefined → 0、负值 RangeError）", () => {
+    expect(v(`export function f() { return [1,2].values().take(undefined).toArray().length; }`)).toBe(0);
+    expect(v(`export function f() { return [1,2].values().take("1").toArray().join(","); }`)).toBe("1");
+    const neg = call(`export function f() { return [1,2].values().take(-1).toArray().length; }`);
+    expect(neg.throws?.shape?.k).toBe("brand");
+    expect((neg.throws as { shape: { name: string } }).shape.name).toBe("RangeError");
+  });
+
+  it("助手方法非自有可枚举键（Object.keys(iter) 仍为 []）", () => {
+    expect(v(`export function f() { return Object.keys([1,2].values()).length; }`)).toBe(0);
+    expect(v(`export function f() { return typeof [1,2].values().toArray; }`)).toBe("function");
+  });
+});

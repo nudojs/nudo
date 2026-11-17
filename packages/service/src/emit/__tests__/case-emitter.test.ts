@@ -355,11 +355,33 @@ function add(a, b) {
 `;
     const result = insertGeneratedCaseDirectives(
       source,
-      makeAnalysis([makeFn("add", 4, [{ name: "call@L9", args: [num()], source: "callsite" }])]),
+      makeAnalysis([makeFn("add", 4, [{ name: "call@L9", args: [absLit(1)], source: "callsite" }])]),
     );
     expect(result.changed).toBe(false);
     expect(result.skipped).toEqual([{ fn: "add", reason: "already-generated" }]);
     expect(result.source).toBe(source);
+  });
+
+  it("refreshes a stale generated witness in a mixed block (BUG-076)", () => {
+    const source = `/**
+ * @nudo:case "mine" (1)
+ * @nudo:case "call@L9" (2)
+ */
+function add(a, b) {
+  return a + b;
+}
+`;
+    const result = insertGeneratedCaseDirectives(
+      source,
+      makeAnalysis([makeFn("add", 4, [{ name: "call@L9", args: [absLit(3)], source: "callsite" }])]),
+      { rebuildGenerated: true },
+    );
+    expect(result.changed).toBe(true);
+    expect(result.written).toEqual([{ fn: "add", cases: ["call@L9"] }]);
+    // 手写 case 原样保留，生成的陈旧载荷被替换
+    expect(result.source).toContain('@nudo:case "mine" (1)');
+    expect(result.source).toContain('@nudo:case "call@L9" (3)');
+    expect(result.source).not.toContain('@nudo:case "call@L9" (2)');
   });
 
   it("appends a newly discovered call site to an already-frozen function", () => {

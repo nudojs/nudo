@@ -1230,10 +1230,23 @@ export function renameTargetFromAst(
               computed?: boolean;
               shorthand?: boolean;
               value?: Node | null;
+              imported?: Node;
               local?: Node;
               exported?: Node;
             })
           | null;
+        // BUG-065：未别名命名导入 `import { shared }` 的 `imported` 与 `local`
+        // 是**两个不同节点但 loc 相同**；遍历先命中 imported，而它不是绑定
+        // ⇒ 同一个坐标的 rename / prepareRename 恒 null（references /
+        // definition 正常）。跳过 imported，让同 loc 的 local 走绑定面；
+        // 别名导入（`a as b`）的 imported 位置不是可改名身份，跳过也仍是
+        // 「无命中 ⇒ null」——与旧口径一致。
+        if (
+          parent?.type === "ImportSpecifier" &&
+          (parent as { imported?: Node }).imported === path.node
+        ) {
+          return;
+        }
         // 私有成员（`#name`）：babel 把键 / 用点包成 `PrivateName`
         // ⇒ 命中范围取 **PrivateName**（含 `#`）⇒ 光标落在 `#` 上也算命中
         const priv =
@@ -1980,8 +1993,69 @@ function rangeOfNode(node: Node): DocumentSymbolItem["range"] {
   return rangeOfLoc(locFromNode(node));
 }
 
+/**
+ * 标识符在**源码里实际写出的长度**（含 `\uXXXX` 转义；不含 TS 类型注解 /
+ * 可选 `?`）。Babel 把类型注解算进 Identifier 的 `loc.end` / `end`（BUG-066），
+ * 而 `name` 又是解码后的文本（BUG-723：转义写法不能按 name 长度截断）——
+ * 所以只能从源码起始位置按 IdentifierStart / IdentifierPart / Unicode
+ * 转义扫描。
+ */
+export function identifierWrittenLength(source: string, node: Node): number | undefined {
+  const loc = node.loc;
+  const start =
+    (node as { start?: number }).start ??
+    (loc?.start as { index?: number } | undefined)?.index;
+  if (typeof start !== "number" || start < 0 || start >= source.length) return undefined;
+  const isStart = (ch: string): boolean => ch === "$" || ch === "_" || /\p{ID_Start}/u.test(ch);
+  const isPart = (ch: string): boolean => ch === "$" || ch === "_" || /\p{ID_Continue}/u.test(ch);
+  let i = start;
+  let first = true;
+  while (i < source.length) {
+    if (source[i] === "\\" && source[i + 1] === "u") {
+      // Unicode 转义（`\u0061` / `\u{61}`）是标识符字符的合法写法
+      if (source[i + 2] === "{") {
+        const close = source.indexOf("}", i + 3);
+        if (close < 0) break;
+        i = close + 1;
+      } else {
+        i += 6;
+      }
+      first = false;
+      continue;
+    }
+    const cp = source.codePointAt(i);
+    if (cp === undefined) break;
+    const ch = String.fromCodePoint(cp);
+    if (first ? isStart(ch) : isPart(ch)) {
+      i += ch.length;
+      first = false;
+      continue;
+    }
+    break;
+  }
+  return i > start ? i - start : undefined;
+}
+
+/**
+ * 标识符的 **name 范围**（声明名 / 形参名）。有源码时按源码扫描截掉
+ * 类型注解；无源码（纯 AST 调用方）保持旧跨度，避免误伤转义写法。
+ */
+function identifierNameRange(
+  id: Node,
+  source?: string,
+): DocumentSymbolItem["selectionRange"] {
+  const loc = id.loc;
+  if (!source || !loc || loc.start.line !== loc.end.line) return rangeOfNode(id);
+  const written = identifierWrittenLength(source, id);
+  if (written === undefined) return rangeOfNode(id);
+  return {
+    start: { line: loc.start.line - 1, character: loc.start.column },
+    end: { line: loc.start.line - 1, character: loc.start.column + written },
+  };
+}
+
 /** 顶层函数 / 类 / 变量 → DocumentSymbol（方法作为 children） */
-export function documentSymbols(ast: Node): DocumentSymbolItem[] {
+export function documentSymbols(ast: Node, source?: string): DocumentSymbolItem[] {
   const out: DocumentSymbolItem[] = [];
   const body = programBody(ast);
 
@@ -2046,11 +2120,16 @@ export function documentSymbols(ast: Node): DocumentSymbolItem[] {
     idNode: Identifier | null | undefined,
     exported: boolean,
     fallbackName?: string,
+    rangeNode?: Node,
   ): void => {
     const name = idNode?.name ?? fallbackName;
     if (!name) return;
-    const range = rangeOfNode(fnNode);
-    const selection = idNode?.name ? rangeOfNode(idNode) : range;
+    // BUG-067：CJS 成员导出（`exports.f = fn`）的 idNode 是成员**键**，
+    // 位于初始化表达式之前 ⇒ 若 range 只取 fnNode，selectionRange 会落在
+    // range 外（LSP 规范 MUST：selectionRange ⊆ range）。传 rangeNode 时
+    // range 覆盖整个赋值语句。
+    const range = rangeOfNode(rangeNode ?? fnNode);
+    const selection = idNode?.name ? identifierNameRange(idNode, source) : range;
     const children: DocumentSymbolItem[] = [];
     const params: string[] = (fnNode.params ?? [])
       .map((p) => paramDisplayName(p))
@@ -2145,7 +2224,7 @@ export function documentSymbols(ast: Node): DocumentSymbolItem[] {
             prop.type === "Identifier" &&
             (right.type === "FunctionExpression" || right.type === "ArrowFunctionExpression")
           ) {
-            pushFn(right, prop, true);
+            pushFn(right, prop, true, undefined, stmt);
           }
         }
       }
@@ -2195,7 +2274,7 @@ export function documentSymbols(ast: Node): DocumentSymbolItem[] {
             detail,
             kind: isFn ? SymbolKind.Function : SymbolKind.Variable,
             range: rangeOfNode(d),
-            selectionRange: rangeOfNode(id),
+            selectionRange: identifierNameRange(id, source),
           });
           emitSpecExports(id.name, isFn ? SymbolKind.Function : SymbolKind.Variable, []);
           continue;
@@ -2207,7 +2286,7 @@ export function documentSymbols(ast: Node): DocumentSymbolItem[] {
             detail,
             kind: SymbolKind.Variable,
             range: rangeOfNode(binding),
-            selectionRange: rangeOfNode(binding),
+            selectionRange: identifierNameRange(binding, source),
           });
           emitSpecExports(binding.name, SymbolKind.Variable, []);
         }

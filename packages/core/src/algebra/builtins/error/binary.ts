@@ -48,6 +48,7 @@ import {
 } from "../shared.ts";
 
 import { isNullishLit, isDefinitelyUndefinedArg } from "./error-family.ts";
+import { classInstanceInnerOf } from "../../exec/class-registry.ts";
 
 /** ES ToIndex 校验分类（ArrayBuffer length / DataView byteOffset·byteLength） */
 type ToIndexClass = { k: "ok" } | { k: "range" } | { k: "type" } | { k: "may" };
@@ -323,7 +324,10 @@ export function makeTypedArrayAbs(name: string, args: Abs[]): Abs {
   // prototype.set 的越界档（offset + srcLen > targetLen）据此可判。
   // length 槽标 enumerable:false——for-in / Object.keys 枚举视图保持空
   //（原生同）。
-  const slots: Record<string, { value: Abs }> = {};
+  const slots: Record<string, { value: Abs; internal?: boolean }> = {
+    // BUG-129：数组 / 长度形态的视图起点恒 0（原生 byteOffset 访问器）。
+    byteOffset: { value: numLit(0) },
+  };
   let lenSlotExactForm = false;
   if (len && len.shape.k === "prim" && args.length === 1) {
     lenSlotExactForm = true;
@@ -361,6 +365,15 @@ export function makeTypedArrayAbs(name: string, args: Abs[]): Abs {
   }
   const inner = objOf(slots);
   if (lenSlotExactForm) setPropFlags(inner, "length", { enumerable: false });
+  setPropFlags(inner, "byteOffset", { enumerable: false });
+  // BUG-129：数组/长度形态使用新分配、恰好覆盖全部字节的缓冲区 ⇒
+  // buffer.byteLength = length × BYTES_PER_ELEMENT（长度可判时入槽）。
+  const selfLenV = slots.length ? toIndexLiteralValue(slots.length.value) : undefined;
+  const selfBpe = TA_BYTES_PER_ELEMENT[name] ?? 1;
+  if (selfLenV !== undefined) {
+    slots["@@bufferByteLength"] = { internal: true, value: numLit(selfLenV * selfBpe) };
+    setPropFlags(inner, "@@bufferByteLength", { enumerable: false });
+  }
   return abs({ k: "brand", name, shape: inner }, undefined, undefined, "path");
 }
 
@@ -437,7 +450,11 @@ function makeTypedArrayFromBuffer(
   }
   // length 槽：可折则折（显式 lenV / 缺省尾段整除；buffer 形态原生非
   // 可枚举自有数据属性，同数字形态口径）
-  const slots: Record<string, { value: Abs }> = {};
+  // BUG-129：byteOffset 也是视图状态（原生原型访问器读该值）——buffer
+  // 形态记录构造 offset；数组/长度形态恒 0（下方 makeTypedArrayAbs 同）。
+  const slots: Record<string, { value: Abs; internal?: boolean }> = {
+    byteOffset: { value: offV !== undefined ? numLit(offV) : numPrim("path") },
+  };
   const foldLen =
     !lenDefaulted && lenV !== undefined
       ? lenV
@@ -445,8 +462,42 @@ function makeTypedArrayFromBuffer(
         ? (bufLenV - offV) / bpe
         : undefined;
   if (foldLen !== undefined) slots.length = { value: numLit(foldLen) };
+  // BUG-129：`.buffer` 的 byteLength 是**底层缓冲区**长度（视图可能只覆盖
+  // 一段）。记录构造期已知的 bufLen；不可判则缺席 ⇒ `.buffer` 的 byteLength
+  // 折 unknown（不把视图长度冒充缓冲区长度）。
+  if (bufLenV !== undefined) slots["@@bufferByteLength"] = { internal: true, value: numLit(bufLenV) };
+  // BUG-129：`.buffer` 重建视图——synthetic ArrayBuffer 携带源 TA 引用时，
+  // 元素对齐（同 BYTES_PER_ELEMENT、相对源视图起点按元素对齐）则逐元素保留
+  // 值；不齐（混合元素大小 / 非对齐视图 / 源 offset 不可判）只折长度，值域
+  // 走元素域 ∪ undefined。
+  const srcTa =
+    buf.shape.k === "brand" &&
+    buf.shape.name === "ArrayBuffer" &&
+    buf.shape.shape.shape.k === "obj"
+      ? getSlot(
+          (buf.shape.shape.shape as { slots: Record<string, { value: Abs }> }).slots,
+          "@@taSource",
+        )?.value
+      : undefined;
+  if (srcTa && srcTa.shape.k === "brand" && foldLen !== undefined && offV !== undefined) {
+    const srcBpe = TA_BYTES_PER_ELEMENT[srcTa.shape.name];
+    const srcInner = srcTa.shape.shape;
+    if (srcBpe === bpe && srcInner.shape.k === "obj") {
+      const srcSlots = (srcInner.shape as { slots: Record<string, { value: Abs }> }).slots;
+      const srcByteOffAbs = srcSlots.byteOffset ? toIndexLiteralValue(srcSlots.byteOffset.value) : undefined;
+      if (srcByteOffAbs !== undefined && offV >= srcByteOffAbs && (offV - srcByteOffAbs) % bpe === 0) {
+        const srcOffset = (offV - srcByteOffAbs) / bpe;
+        for (let i = 0; i < foldLen; i++) {
+          const el = getSlot(srcSlots, String(srcOffset + i))?.value;
+          if (el) slots[String(i)] = { value: el };
+        }
+      }
+    }
+  }
   const inner = objOf(slots);
   if (slots.length) setPropFlags(inner, "length", { enumerable: false });
+  setPropFlags(inner, "byteOffset", { enumerable: false });
+  if (slots["@@bufferByteLength"]) setPropFlags(inner, "@@bufferByteLength", { enumerable: false });
   return abs({ k: "brand", name, shape: inner }, undefined, undefined, "path");
 }
 
@@ -461,6 +512,62 @@ function bufferByteLengthLiteral(buf: Abs): number | undefined {
   if (inner.shape.k !== "obj") return undefined;
   const slot = getSlot(inner.shape.slots, "byteLength")?.value;
   return slot !== undefined ? toIndexLiteralValue(slot) : undefined;
+}
+
+/**
+ * BUG-129：TypedArray 实例二进制访问器（`.buffer` / `.byteLength` /
+ * `.byteOffset`）的值读模型。这三个名字此前只在 BUILTIN_BRAND_ACCESSORS
+ * 的 `$in` presence 表里，值读直接折诚实 unknown ⇒ `a.byteLength` 无精度、
+ * `new Uint8Array(a.buffer)` 不命中 buffer 形态（落 length 形态，被
+ * ToIndex 记假 RangeError | TypeError）。
+ *
+ * - `.byteLength` = length × BYTES_PER_ELEMENT（length 槽精确时可折）；
+ * - `.byteOffset` = 构造期记录的 byteOffset 槽（数组/长度形态恒 0）；
+ * - `.buffer` = ArrayBuffer brand（byteLength 槽 + 内部 `@@taSource` 引用，
+ *   供 `makeTypedArrayFromBuffer` 在元素对齐时保留元素值）。
+ *
+ * 返回 undefined = 不是 TypedArray（调用方继续既有表/unknown 面）。
+ */
+export function typedArrayAccessorAbs(ta: Abs, key: string): Abs | undefined {
+  if (ta.shape.k !== "brand") return undefined;
+  // 用户类可同名 `Uint8Array`（polyfill / 包装）——实例不是内建 TA，
+  // 不套二进制访问器模型（值身份判据同 classInstanceInnerOf）。
+  if (classInstanceInnerOf(ta) !== undefined) return undefined;
+  const bpe = TA_BYTES_PER_ELEMENT[ta.shape.name];
+  if (bpe === undefined) return undefined;
+  const inner = ta.shape.shape;
+  const slots =
+    inner.shape.k === "obj"
+      ? (inner.shape as { slots: Record<string, { value: Abs }> }).slots
+      : undefined;
+  const lenV = slots?.length ? toIndexLiteralValue(slots.length.value) : undefined;
+  if (key === "byteLength") {
+    return lenV !== undefined ? numLit(lenV * bpe) : numPrim("path");
+  }
+  if (key === "byteOffset") {
+    const offV = slots?.byteOffset ? toIndexLiteralValue(slots.byteOffset.value) : undefined;
+    // 所有已建模构造来源（数组 / 长度 / buffer）都记录 byteOffset；
+    // 缺失（from/of 产物等）时 0 是原生默认视图起点（不冒充越界值）。
+    return numLit(offV ?? 0);
+  }
+  if (key === "buffer") {
+    const bslots: Record<string, { value: Abs }> = { "@@taSource": { value: ta } };
+    // 底层缓冲区长度（视图可能只覆盖一段）——不拿视图长度冒充。
+    const bufLenV = slots?.["@@bufferByteLength"]
+      ? toIndexLiteralValue(slots["@@bufferByteLength"]!.value)
+      : undefined;
+    if (bufLenV !== undefined) bslots.byteLength = { value: numLit(bufLenV) };
+    const bufInner = objOf(bslots);
+    setPropFlags(bufInner, "@@taSource", { enumerable: false });
+    if (bslots.byteLength) setPropFlags(bufInner, "byteLength", { enumerable: false });
+    return abs(
+      { k: "brand", name: "ArrayBuffer", shape: bufInner },
+      undefined,
+      undefined,
+      bufLenV !== undefined ? "exact" : "path",
+    );
+  }
+  return undefined;
 }
 
 /**
@@ -853,7 +960,17 @@ export function evalTypedArrayStatic(
       const els = (items.shape as { elements: Abs[] }).elements;
       for (let i = 0; i < els.length; i++) {
         enforceTaItem(
-          applyCallbackValue(mapFn, [els[i]!, numLit(i)], emptyEnv(), pTrue, defaultLeakBudget),
+          applyCallbackValue(
+            mapFn,
+            [els[i]!, numLit(i)],
+            emptyEnv(),
+            pTrue,
+            defaultLeakBudget,
+            // Bug 128：第三实参 thisArg 透传（原生 %TypedArray%.from(items,
+            // mapFn, thisArg)）——缺省会令回调 this 恒 undefined，合法
+            // `this.k` 读取被记成必抛 TypeError（Array.from 同款已传）。
+            args[2],
+          ),
           elem,
         );
       }

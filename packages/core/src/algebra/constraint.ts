@@ -35,7 +35,7 @@ import {
 import { v as termVar, lit as termLit, app as termApp, type Term } from "./term.ts";
 import type { Abs } from "./abs.ts";
 import { abs, unknown } from "./abs.ts";
-import { joinAbs } from "./objects.ts";
+import { joinAbs, joinValues } from "./objects.ts";
 // ABS-01：binder / ref 的名字文法与源内指令（@nudo:assume 等）同源——
 // codegen-escape 是 leaf 模块，无环。
 import { isJsBindingIdent } from "./format/codegen-escape.ts";
@@ -1874,10 +1874,15 @@ function constraintOnTermAbs(
     // 全员同 prim 字面量 → or(eq…) 保留字面量域（见 samePrimLiteralUnionAbs）
     const litUnion = samePrimLiteralUnionAbs(c.members, at);
     if (litUnion) return litUnion;
-    // 混合形态（界 / 跨 prim / shape…）：joinAbs 折叠
+    // 混合形态（界 / 跨 prim / shape…）：成员**析取**必须保留。
+    // BUG-075：此前 reduce(joinAbs) 对两个 obj 做 joinObjects ⇒ 逐槽取并
+    // （`{k:"n"|"s", v:number|string}` 的积），析取相关性在入口 Abs 就丢了
+    // ⇒ dts / guard / zod / standard 四份产物接受 check 判红的交叉值。
+    // joinValues 对 obj 成员保留 sum；同 prim 无 pred 成员仍收成 bare prim
+    // （与下方锚定分支的口径一致）。
     const joined = c.members
       .map((m) => constraintOnTermAbs(m, at, depth, binders))
-      .reduce((a, b) => joinAbs(a, b));
+      .reduce((a, b) => joinValues(a, b));
     // 同 prim 非字面量成员经 joinValues 塌缩丢 term/pred——重锚定参数项并补
     // typeof，与裸 prim 链（number()/string()）的 entry Abs 同构（drift 双向
     // leq 的锚定对称性）
@@ -2026,7 +2031,15 @@ export function throwConstraintToKinds(
       .split(/[,\s|]+/)
       .map((s) => s.trim())
       .filter(Boolean)) {
-      if (part === "*" || part === "any") any = true;
+      // BUG-120：只有文档化的 `*` 是通配。`"any"` 在指令面一直被当错误
+      // 类名（永不匹配 ⇒ 假红），侧车面却静默当通配（整入口免检 ⇒ 假绿）。
+      // 统一为**非法 token**：显式报错，用户改写为 `*` 或真实 kind。
+      if (part === "any") {
+        throw new Error(
+          'nudo fn(): "any" is not a throws kind — use "*" for any thrown error, or name the error kinds (e.g. "TypeError")',
+        );
+      }
+      if (part === "*") any = true;
       else out.add(part);
     }
   };

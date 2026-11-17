@@ -749,7 +749,7 @@ describe("（产物半）— 形参表过滤 `this` 接收者标注", () => {
  *
  * 钉：
  * - `extractFormals` 不返回 `this` 形参、后续形参的 index 前移；
- * - dts 产物面没有 `this` 形参；
+ * - dts 产物面保留 `this: T` 接收者子句（BUG-133；不是运行时形参）；
  * - 负控制：普通形参表不受影响（index 连续、`this` 之外的形参原样）。
  */
 
@@ -791,14 +791,14 @@ const WITH_THIS = `export function withThis(this: { x: number }, a: number): num
     throw new Error("no function declaration found");
   };
   const WITH_THIS = "export function withThis(this: { x: number }, a: number): number {\n  return a;\n}\n";
-  it("extractFormals/ParamNames 不含 this 且 index 重排；dts 无 this；普通表原样", () => {
+  it("extractFormals/ParamNames 不含 this 且 index 重排；dts 保留 this 接收者子句；普通表原样", () => {
     const formals = extractFormals(firstFnNode(WITH_THIS));
     expect(formals.map((f) => (f.kind === "id" ? f.name : f.kind))).toEqual(["a"]);
     expect(formals.map((f) => f.index)).toEqual([0]);
     expect(extractParamNames(firstFnNode(WITH_THIS))).toEqual(["a"]);
     const dts = generateDts(analyzeFile("/test/bug397-dts.ts", WITH_THIS));
-    expect(dts).not.toContain("this:");
-    expect(dts).toContain("export declare function withThis(a:");
+    expect(dts).toContain("this: { x: number }");
+    expect(dts).toContain("export declare function withThis(this: { x: number }, a:");
     const plain = extractFormals(firstFnNode("export function plain(a: number, b: string): string {\n  return b;\n}\n"));
     expect(plain.map((f) => f.index)).toEqual([0, 1]);
     expect(plain.map((f) => (f.kind === "id" ? f.name : f.kind))).toEqual(["a", "b"]);

@@ -315,10 +315,16 @@ export function unifiedParamFace(
       used.add(hitIdx);
       const { p } = located[hitIdx]!;
       if (formal.kind === "rest") {
-        // 契约描述的是**元素**类型（dts 面同口径：`...rest: T[]`）
+        // 契约描述的是**元素**类型（dts 面同口径：`...rest: T[]`）——但契约
+        // 本身已是数组（`array(number())`）时不得再包一层（BUG-101：否则
+        // `{ nums: [[1],[2]] }` 放行、合法 `{ nums: [1,2,3] }` 被拒，与 dts
+        // 的 restParamType 口径相反）。
         out.push({
           name: formal.name,
-          abs: makeAbs({ k: "arr", element: p.abs }, undefined, undefined, p.abs.conf),
+          abs:
+            p.abs.shape.k === "arr"
+              ? p.abs
+              : makeAbs({ k: "arr", element: p.abs }, undefined, undefined, p.abs.conf),
           // BUG-109：对象槽面上「`rest` 键缺省」= 空 rest 数组 = 零实参调用
           // （`g()` 是合法调用）⇒ 该槽可选；渲染成**必填**槽会让函数的每一次
           // 合法调用都被入参 schema 拒绝。
@@ -327,12 +333,13 @@ export function unifiedParamFace(
         });
         continue;
       }
-      // BUG-108：契约级 ∪ 声明级（默认形参）——与 standard 面同口径；
-      // 只取契约级会让 zod 面把带默认值的位印成必填（三面互斥）。
+      // BUG-108 / BUG-086：契约级 ∪ 声明级（默认形参 / TS `?`）——与
+      // standard 面同口径；只取契约级会让 zod 面把带默认值或 TS 可选位的
+      // 形参印成必填（发布校验器拒绝源码合法载荷）。
       out.push({
         name: formal.name,
         abs: p.abs,
-        optional: p.optional === true || formal.kind === "default",
+        optional: p.optional === true || formal.kind === "default" || formal.optional === true,
       });
       continue;
     }
@@ -529,6 +536,12 @@ function seedDomainReturn(
   ctx: FaceContext | undefined,
 ): Abs | undefined {
   if (!eff || eff.params.length === 0 || !ctx) return undefined;
+  // BUG-102：rest 形参的绑定是**实参收集**（长度由实参个数决定），而种子
+  // 只能传固定个 Abs —— 把契约数组当**一个**实参传 ⇒ `[contractArray]`
+  // 单元素见证 ⇒ `xs.length` 折 lit(1)、`xs[0]` 折契约本身；发布出的返回
+  // 校验器拒绝实现自己的真实返回值。rest 位不可用固定实参播种 ⇒ fail-closed
+  // 回落观测面（combinedAbs），与 check / dts 同源。
+  if (formalList(fn).some((f) => f.kind === "rest")) return undefined;
   const seedArgs = contractSeedArgs(fn, eff);
   try {
     return (

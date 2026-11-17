@@ -105,7 +105,11 @@ describe("P3b: fn 表达式父类——链身份与成员读", () => {
     expect(v(`${pre}return new B().x;`)).toEqual({ ok: true, value: 1 });
   });
   it("new B().zz 不折缺席（fn 父 ctor 体不透明 → sound）", () => {
-    expect((v(`${pre}return new B().zz;`) as { ok: boolean }).ok).toBe(false);
+    // BUG-141：空体 fn 构造器已登记 knownEmptyInstance（缺席折 exact
+    // undefined）；本钉针对**体不透明**（非空体）的 fn 伪父——用含赋值的
+    // 函数体保住「c 体可能装任意自有成员」的前提。
+    const opaque = `const Base = function(){ this.w = 1; }; Base.prototype.x = 1; class B extends Base {} `;
+    expect((v(`${opaque}return new B().zz;`) as { ok: boolean }).ok).toBe(false);
   });
   it("new B() instanceof Base → true（注册类值身份匹配）", () => {
     expect(v(`${pre}return new B() instanceof Base;`)).toEqual({ ok: true, value: true });

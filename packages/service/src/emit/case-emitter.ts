@@ -363,6 +363,24 @@ export function buildCaseDirective(name: string, argsAbs: Abs[]): string | null 
  * 注意：手写但以 call@ 命名的 case 同样会被删——call@ 前缀保留为生成物标记。
  * removed 返回被删指令名列表（按出现顺序）。
  */
+/**
+ * 供**分析**使用的源码视图：把生成态 `call@` case 指令抹成空注释行（行数
+ * 不变）。BUG-076：混合块（手写 case + 生成见证）不参与剥离，但分析若仍把
+ * 旧见证当 directive case 读到，就不再合成当前调用点证据 ⇒ 陈旧见证永远
+ * 不刷新。写盘基源仍用 `stripGeneratedCaseDirectives` 的结果（手写块原样）。
+ */
+export function blankGeneratedCaseDirectives(source: string): string {
+  return source
+    .split("\n")
+    .map((line) => {
+      if (!GENERATED_CASE_LINE_REGEX.test(line)) return line;
+      const at = line.indexOf("@nudo:case");
+      const close = line.indexOf("*/", at);
+      return line.slice(0, at) + (close >= 0 ? "*/" : "");
+    })
+    .join("\n");
+}
+
 export function stripGeneratedCaseDirectives(source: string): { source: string; removed: string[] } {
   // BOM 单独保管：剥离**可能删掉首行**（BOM 就长在首行上）⇒ BOM 必须原样
   // 接回，否则「剥离 → 写回」会把文件头的 BOM 弄丢（#562）。
@@ -715,6 +733,8 @@ export function insertGeneratedCaseDirectives(
 
   type Edit = { line: number; column: number; directives: string[]; fn: string };
   const edits: Edit[] = [];
+  /** 同块混合形态下**同名但载荷已变**的生成见证：就地替换该行（BUG-076） */
+  const replacements: Array<{ line: number; directive: string; fn: string }> = [];
 
   for (const fn of analysis.functions) {
     const existingCases = existing.get(fn.name) ?? [];
@@ -777,7 +797,34 @@ export function insertGeneratedCaseDirectives(
     // 对着被调方判红（一个本来绿色的文件被自己的 freeze 操作变成红色）。
     const contractGuard = contractGuardOf(fn, body, opts);
     for (const c of callsiteCases) {
-      if (existingNames.has(c.name)) continue;
+      const sameName = existingCases.find((e) => e.name === c.name);
+      if (sameName !== undefined) {
+        // BUG-076：混合块（手写 case + 生成 call@）里的生成态见证不被剥离
+        // ⇒ 仅按名字跳过会让**载荷已变**的陈旧见证永久留存（health 0 drift、
+        // freeze no changes）。同文件同载荷才算新鲜；不同载荷就地改写该行。
+        const oldPayload = serializeCaseArgs(sameName.argsAbs);
+        const newPayload = serializeCaseArgs(c.argAbs ?? []);
+        if (oldPayload !== undefined && oldPayload === newPayload) continue;
+        const violation = contractGuard?.(c.argAbs ?? []);
+        if (violation !== undefined) {
+          skipped.push({
+            fn: fn.name,
+            reason: "contract-violation",
+            detail: `case ${c.name}: ${violation}`,
+          });
+          dropped++;
+          continue;
+        }
+        const directive = buildCaseDirective(c.name, c.argAbs ?? []);
+        if (directive === null || sameName.commentLine === undefined) {
+          skipped.push({ fn: fn.name, reason: "no-serializable-cases", detail: `case ${c.name} not serializable` });
+          dropped++;
+          continue;
+        }
+        replacements.push({ line: sameName.commentLine, directive, fn: fn.name });
+        names.push(c.name);
+        continue;
+      }
       const key = witnessKeyOf(c.name, c.argAbs ?? []);
       if (key !== undefined && existingPayloads.has(key)) {
         // 同文件、同实参的见证已固化（行号漂移 / 重复调用点）⇒ 不重复写
@@ -803,9 +850,9 @@ export function insertGeneratedCaseDirectives(
         if (key !== undefined) existingPayloads.add(key);
       }
     }
-    if (built.length === 0) {
+    if (built.length === 0 && names.length === 0) {
       // 本轮无新见证可写：
-      // - 见证**已固化**（同名）⇒ skip "already-generated"；
+      // - 见证**已固化**（同名同载荷）⇒ skip "already-generated"；
       // - 见证**不可序列化**⇒ 上面已逐 case 记 skip（不再叠一条
       //   "already-generated"——那会把「写不出来」说成「早就写过了」）。
       if (dropped === 0) {
@@ -813,7 +860,9 @@ export function insertGeneratedCaseDirectives(
       }
       continue;
     }
-    edits.push({ line: fn.loc.start.line, column: fn.loc.start.column, directives: built, fn: fn.name });
+    if (built.length > 0) {
+      edits.push({ line: fn.loc.start.line, column: fn.loc.start.column, directives: built, fn: fn.name });
+    }
     written.push({ fn: fn.name, cases: names });
   }
 
@@ -831,6 +880,16 @@ export function insertGeneratedCaseDirectives(
   // 若写盘层后续改成「逐行记录行尾 + 逐行还原」的模型，本处 eolTail 须并入
   // 那套模型（否则 "\r" 会重复一次）。
   const eolTail = dominantEol(body) === "\r\n" ? "\r" : "";
+  // BUG-076：先就地替换陈旧生成见证（行数不变 ⇒ 后续插入的行号继续有效）
+  for (const r of replacements) {
+    const idx = r.line - 1;
+    const oldLine = lines[idx];
+    if (oldLine === undefined) continue;
+    const at = oldLine.indexOf("@nudo:case");
+    const prefix = at >= 0 ? oldLine.slice(0, at) : `${leadingIndent(oldLine)}* `;
+    const cr = oldLine.endsWith("\r") ? "\r" : "";
+    lines[idx] = prefix + r.directive.replace(/^\s*\*\s*/, "") + cr;
+  }
   for (const edit of edits) {
     const declIdx = edit.line - 1;
     // 缩进基准 = 声明行的行首缩进（声明**语句**的列），不是函数节点的列：

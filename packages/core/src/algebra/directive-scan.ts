@@ -753,7 +753,7 @@ export function findFnDirectiveScope(
  */
 const objectOwnerCache = new WeakMap<object, Set<string>>();
 
-function objectBindingNames(file: File): Set<string> {
+export function objectBindingNames(file: File): Set<string> {
   const cached = objectOwnerCache.get(file);
   if (cached !== undefined) return cached;
   const out = new Set<string>();

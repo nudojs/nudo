@@ -60,3 +60,26 @@ describe("A6 relaxSidecarConstraint (shared implementation)", () => {
     expect(out).not.toContain("number().int().gt(0)");
   });
 });
+
+// BUG-060：类方法的平铺侧车键 `K_run` 与 quoted `"K.run"` / 顶层函数同面
+describe("A6 BUG-060 flat Class_method sidecar key", () => {
+  const flat = `import { fn, number } from "@nudojs/core";\nexport const K_run = fn({ n: number() }, number().gt(40));\n`;
+  const quoted = `import { fn, number } from "@nudojs/core";\nconst _nudo_1 = fn({ n: number() }, number().gt(40));\nexport { _nudo_1 as "K.run" };\n`;
+
+  it("平铺 K_run：没有 constraintText 也能定位返回槽并放宽", () => {
+    const out = relaxSidecarConstraint(flat, "K.run");
+    expect(out).toBeDefined();
+    expect(out).toContain("export const K_run = fn({ n: number() }, number())");
+    expect(out).not.toContain("number().gt(40)");
+  });
+
+  it("quoted \"K.run\" 与顶层函数对照不回归", () => {
+    expect(relaxSidecarConstraint(quoted, "K.run")).toContain(
+      "fn({ n: number() }, number())",
+    );
+    const top = `export const f = fn({ n: number() }, number().gt(40));\n`;
+    expect(relaxSidecarConstraint(top, "f")).toContain(
+      "export const f = fn({ n: number() }, number())",
+    );
+  });
+});
