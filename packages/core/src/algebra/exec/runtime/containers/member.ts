@@ -133,7 +133,7 @@ import {
   OBJECT_PROTO_NAMES,
 } from "../../member-diag.ts";
 import { errorTypeAbs, recordMayThrow } from "../../may-throw.ts";
-import { getEvalClass, lookupClassValue, fnProtoOf, classSpecOfAbs, type EvalClassSpec } from "../../class-registry.ts";
+import { getEvalClass, lookupClassValue, fnProtoOf, classSpecOfAbs, carryClassSpec, type EvalClassSpec } from "../../class-registry.ts";
 import { classNameOfValue, markClassValue } from "../../../class-mark.ts";
 import { markFreshInstance, freshInstanceIdOf } from "../../../key/instance-id.ts";
 import { NudoThrow, undef, isOobUndef, throwStrictWrite, NudoSilentWrite, clearStaleTermPred, asAbsVal, $lit, noBody, enforceProxyGetInvariant, hostFnKindOf } from "../state.ts";
@@ -2165,6 +2165,13 @@ function setBrandInstanceMember(ctx: SetCtx): Abs | undefined {
     // 判（构造器工件槽同无标记，不可放行）；超罕见边，留侧表迁移任务。
     if (
       !opts?.internal &&
+      // BUG-052：本表以**实例 brand 名**建键（`Map` / `Set` / …），而用户类
+      // 可以叫同一个名字（polyfill / 测试替身 / `class Set` 包装）。用户类
+      // 实例上 `size` 是**普通可写数据属性**（类里没有内建访问器）⇒ 不得套
+      // 内建 getter-only 判据（否则 `this.size = 0` 假判 TypeError、签名塌
+      // `never`）。判据用**值身份**而非名字：随值携带的类规格在场 ⇒ 用户类
+      // 实例（`classSpecOfAbs` 口径见 class-registry：内建 brand 恒 undefined）。
+      classSpecOfAbs(o) === undefined &&
       BUILTIN_BRAND_ACCESSORS[o.shape.name]?.has(key) &&
       // Bug 37：URL 的 10 个组件访问器都**带 setter**（可写）。presence 表
       // 收录它们只为 `$in` 精确判定，不是只读声明——此前整张表被写门当
@@ -2244,6 +2251,8 @@ function setBrandInnerMember(ctx: SetCtx): Abs {
   // 类 Abs 不可变更新后仍是类值（静态访问器派发依赖身份）
   const clsName = classNameOfValue(o as object);
   if (clsName) markClassValue(next as object, clsName);
+  // BUG-052：类规格同样随副本过户（值身份判据，见 setBrandInstanceMember）
+  carryClassSpec(o, next);
   return next;
 }
 

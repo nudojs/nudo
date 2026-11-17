@@ -717,12 +717,84 @@ export function findFnDirectiveScope(
   file: File,
   fnName: string,
 ): FnDirectiveScope | undefined {
+  const scopes = listFnDirectiveScopes(file);
   let best: FnDirectiveScope | undefined;
-  for (const s of listFnDirectiveScopes(file)) {
+  for (const s of scopes) {
     if (s.name !== fnName) continue;
     if (!best || (s.depth ?? 0) < (best.depth ?? 0)) best = s;
   }
-  return best;
+  if (best !== undefined) return best;
+  // BUG-138：对象字面量方法在两条通道里名字不同——普查面
+  // （`scan-top-functions` 的 `objectMethodKeys`）按**成员键**推裸名 `m`，
+  // 指令面按 `${owner}.${key}` 建 scope（`api.m`）⇒ 按裸名查恒不命中 ⇒
+  // `@nudo:contract` / `@nudo:throws` 整段静默消失（同一注释块里的
+  // `@nudo:case` 却按 `api.m` 生效）。裸名未命中时回退到**唯一**的「顶层
+  // 对象字面量方法」scope；多于一个（两个对象都有 `m`）不猜。
+  const owners = objectBindingNames(file);
+  if (owners.size === 0) return undefined;
+  let alt: FnDirectiveScope | undefined;
+  for (const s of scopes) {
+    if ((s.depth ?? 0) !== 0) continue;
+    const owner = s.owner;
+    if (owner === undefined || !owners.has(owner)) continue;
+    if (s.name !== `${owner}.${fnName}`) continue;
+    if (alt !== undefined) return undefined; // 歧义：两个对象字面量都有该键
+    alt = s;
+  }
+  return alt;
+}
+
+/**
+ * 顶层「对象字面量绑定名」集合（`const/let/var <name> = { … }`，含 export
+ * 包装；CJS 面登记 `module.exports`）。缓存口径同 fnScopeCache（同一 AST
+ * 只算一次）——BUG-138 的回退判据只认**对象字面量**宿主，类/函数的同名
+ * 成员不能冒充（`class C { m(){} }` 的 scope 名也是 `C.m`，但普查面推的
+ * 是 `C.m` 而非裸名 `m`，回退不该把它抢过来）。
+ */
+const objectOwnerCache = new WeakMap<object, Set<string>>();
+
+function objectBindingNames(file: File): Set<string> {
+  const cached = objectOwnerCache.get(file);
+  if (cached !== undefined) return cached;
+  const out = new Set<string>();
+  for (const stmt of file.program.body) {
+    const s = stmt as { type?: string; declaration?: unknown; expression?: unknown };
+    const decl =
+      s.type === "ExportNamedDeclaration" || s.type === "ExportDefaultDeclaration"
+        ? s.declaration
+        : stmt;
+    const d = decl as {
+      type?: string;
+      declarations?: Array<{ id?: { type?: string; name?: string }; init?: { type?: string } | null }>;
+    };
+    if (d?.type === "VariableDeclaration") {
+      for (const v of d.declarations ?? []) {
+        if (v.id?.type === "Identifier" && v.id.name !== undefined && v.init?.type === "ObjectExpression") {
+          out.add(v.id.name);
+        }
+      }
+      continue;
+    }
+    // CJS：`module.exports = { m() {} }` —— 指令面把成员命名为
+    // `module.exports.m`（owner 取左值原文）
+    const e = s.expression as {
+      type?: string;
+      left?: { type?: string; object?: { name?: string }; property?: { name?: string } };
+      right?: { type?: string };
+    };
+    if (
+      s.type === "ExpressionStatement" &&
+      e?.type === "AssignmentExpression" &&
+      e.right?.type === "ObjectExpression" &&
+      e.left?.type === "MemberExpression" &&
+      e.left.object?.name === "module" &&
+      e.left.property?.name === "exports"
+    ) {
+      out.add("module.exports");
+    }
+  }
+  objectOwnerCache.set(file, out);
+  return out;
 }
 
 /**

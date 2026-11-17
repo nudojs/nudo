@@ -35,7 +35,7 @@ import { symbolSlotKeyOf } from "./containers/symbol-slot.ts";
 // $in/$del/$delRes 全是运行期调用。
 import { guardedPrologueEntry } from "./containers/guarded-entry.ts";
 import { arrayLengthIsNonConfigurable } from "./array-length.ts";
-import { getEvalClass, lookupClassValue, BUILTIN_ERROR_SUPER, fnProtoOf, type EvalClassSpec } from "../class-registry.ts";
+import { getEvalClass, lookupClassValue, BUILTIN_ERROR_SUPER, fnProtoOf, carryClassSpec, type EvalClassSpec } from "../class-registry.ts";
 import { classNameOfValue, markClassValue } from "../../class-mark.ts";
 import { NudoThrow, noBody, throwStrictWrite, clearStaleTermPred, asAbsVal, $lit, litTruth, proxyTargetInnerObj } from "./state.ts";
 import { $objAccessor, lookupObjAccessor, accessorTable } from "../../accessors.ts";
@@ -1520,6 +1520,10 @@ function delInner(o: Abs, key: Abs): Abs {
     const next = abs({ k: "brand", name: o.shape.name, shape: inner }, undefined, undefined, o.conf);
     const clsName = classNameOfValue(o as object);
     if (clsName) markClassValue(next as object, clsName);
+    // BUG-052：用户类实例的类规格随副本过户——写门按值身份判定（见
+    // member.ts 的 setBrandInstanceMember），副本丢了规格会让 `size` 重新
+    // 撞上内建访问器表
+    carryClassSpec(o, next);
     return next;
   }
   if (o.shape.k === "obj" && keyStr !== undefined) {
