@@ -5,7 +5,7 @@
  * guard 三面一致性、health 漂移、abs 侧车。缺陷编号只保留在 it 标题。
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync, mkdirSync, existsSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync, rmSync, mkdirSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runCliNode as runCli, runCliTsx, repoRoot } from "./helpers/run-cli.ts";
@@ -1331,4 +1331,77 @@ const SOURCE = [
     expect(r.stdout).toContain("export declare function f(x: number): number;");
   }, 30000);
 
+});
+
+// ---------------------------------------------------------------------------
+// --from-dts 的接受目标名必须是「会绑定」的那个侧车
+// ---------------------------------------------------------------------------
+describe("contract --from-dts：接受目标名与会绑定名一致", () => {
+/**
+ * 侧车绑定是**按分析目标源模块**的（core `sidecarPathOf(fromFile)`）：声明
+ * 文件 `.d.ts` 本身不是分析目标 ⇒ `api.d.ts` 的侧车 `api.nudo.ts` 绑不到
+ * 任何东西；真正绑定的是**运行时模块**旁边的侧车（`api.d.ts` + `api.js` ⇒
+ * `api.nudo.js`）。
+ *
+ * 旧实现两处各错一边、同一条命令输出互相矛盾：
+ * - 草稿正文硬编码 `<target>.nudo.js`（`.ts` 源的实际侧车是 `.nudo.ts`）；
+ * - 单文件 `next` 行用 `sidecarPathOf(anchor)`（`.d.ts` ⇒ `.nudo.ts`，永不绑定）。
+ *
+ * 照错的那个名字接受 ⇒ `nudo check` exit 0（假绿：契约永不生效）。
+ * 钉：正文与 `next` 行点名**同一个**会绑定的名字；照它接受后违例必须报出来。
+ */
+const dirs: string[] = [];
+afterAll(() => {
+  for (const d of dirs) rmSync(d, { recursive: true, force: true });
+});
+
+function tmpDir(): string {
+  const dir = mkdtempSync(join(tmpdir(), "nudo-from-dts-target-"));
+  dirs.push(dir);
+  return dir;
+}
+
+  it(".ts 源 ⇒ 正文与 next 行都点名 <stem>.nudo.ts（不再硬编码 .nudo.js）", () => {
+    const dir = tmpDir();
+    writeFileSync(
+      join(dir, "y.ts"),
+      `export function h(a: number): string { return a > 0 ? "x" : (1 as any); }\n`,
+      "utf-8",
+    );
+    const r = runCliTsx(["contract", "--from-dts", "--write", join(dir, "y.ts")]);
+    expect(r.status).toBe(0);
+    // next 行（stdout）与草稿正文（落盘）必须点名**同一个**会绑定的名字
+    expect(r.stdout).toContain("copy accepted exports into ");
+    expect(r.stdout).toContain("y.nudo.ts to accept");
+    expect(readFileSync(join(dir, "y.nudo.draft.ts"), "utf-8")).toContain("into y.nudo.ts to accept");
+  }, 120000);
+
+  it(".d.ts 源 ⇒ 点名运行时模块旁边的 <stem>.nudo.js；照它接受后违例报出来（不再假绿）", () => {
+    const dir = tmpDir();
+    writeFileSync(join(dir, "e.d.ts"), "export declare function df(a: string): boolean;\n", "utf-8");
+    writeFileSync(join(dir, "e.js"), `export function df(a) { return "not a boolean"; }\n`, "utf-8");
+    const w = runCliTsx(["contract", "--from-dts", "--write", join(dir, "e.d.ts")]);
+    expect(w.status).toBe(0);
+    expect(w.stdout).toContain("copy accepted exports into ");
+    expect(w.stdout).toContain("e.nudo.js to accept");
+
+    // 照提示接受：草稿正文的 import 行起写进 e.nudo.js
+    const draft = readFileSync(join(dir, "e.nudo.draft.ts"), "utf-8").split("\n");
+    const start = draft.findIndex((l) => l.startsWith("import "));
+    expect(start).toBeGreaterThan(0);
+    writeFileSync(join(dir, "e.nudo.js"), draft.slice(start).join("\n"), "utf-8");
+
+    const c = runCliTsx(["check", join(dir, "e.js")]);
+    expect(c.status).toBe(1);
+    expect(c.stdout).toContain("nudo:constraint-violated");
+  }, 120000);
+
+  it(".d.ts 旁边没有运行时模块 ⇒ 仍点名 <stem>.nudo.ts，并明说它绑不到任何东西", () => {
+    const dir = tmpDir();
+    writeFileSync(join(dir, "s.d.ts"), "export declare function solo(a: string): boolean;\n", "utf-8");
+    const r = runCliTsx(["contract", "--from-dts", join(dir, "s.d.ts")]);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("copy into s.nudo.ts to enforce");
+    expect(r.stdout).toContain("no runtime module found beside s.d.ts");
+  }, 120000);
 });

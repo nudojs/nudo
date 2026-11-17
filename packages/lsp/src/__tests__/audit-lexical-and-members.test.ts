@@ -93,3 +93,53 @@ describe("成员面并入类成员表", () => {
     expect(labels(requestCompletion(mock, uri, at.line, 2))).toContain("m");
   });
 });
+
+describe("成员面不得按名字并入同名类的静态成员", () => {
+/**
+ * 接收者是**局部对象**、但对象名与同文件的类名相同时，补全把该类的静态
+ * 方法并进来了（按**文本名**查 `localClassMemberTable`，没有身份校验）：
+ *
+ * ```js
+ * export class Config { static load() { return 1; } }
+ * export function make() { const Config = { port: 8080 }; return Config.; }
+ * ```
+ *
+ * 接收者的 Abs 明明是 `{ port: 8080 }`，候选却是 `["port","load"]` ⇒ 接受
+ * `load` 即写出运行期 `TypeError: Config.load is not a function`。
+ * 真正的类值接收者恒为 brand（走静态面）⇒ 按名兜底分支只可能在碰撞时执行。
+ */
+  const SHADOW = [
+    "export class Config {",
+    "  static load() { return 1; }",
+    "}",
+    "export function make() {",
+    "  const Config = { port: 8080 };",
+    "  return Config.;",
+    "}",
+  ].join("\n");
+
+  it("局部对象遮蔽同名类 ⇒ 只给对象自己的成员（不含类的静态方法）", async () => {
+    const { mock, uri } = await openLspDocument(SHADOW, "file:///tmp/nudo-088/a.js");
+    const at = lineOf(SHADOW, "return Config.");
+    const got = labels(requestCompletion(mock, uri, at.line, at.text.indexOf("Config.") + 7));
+    expect(got).toContain("port");
+    expect(got).not.toContain("load");
+  });
+
+  it("对照：局部对象改名为 cfg（不遮蔽）⇒ 仍只有对象成员", async () => {
+    const SRC = SHADOW.replace("const Config = { port: 8080 };", "const cfg = { port: 8080 };")
+      .replace("return Config.;", "return cfg.;");
+    const { mock, uri } = await openLspDocument(SRC, "file:///tmp/nudo-088/b.js");
+    const at = lineOf(SRC, "return cfg.");
+    const got = labels(requestCompletion(mock, uri, at.line, at.text.indexOf("cfg.") + 4));
+    expect(got).toEqual(["port"]);
+  });
+
+  it("对照：类值接收者（`Config.`）仍给静态方法（不过度拦截）", async () => {
+    const SRC = ["export class Config {", "  static load() { return 1; }", "}", "Config."].join("\n");
+    const { mock, uri } = await openLspDocument(SRC, "file:///tmp/nudo-088/c.js");
+    const at = lineOf(SRC, "Config.");
+    const got = labels(requestCompletion(mock, uri, at.line, at.text.indexOf("Config.") + 7));
+    expect(got).toContain("load");
+  });
+});

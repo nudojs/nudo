@@ -133,16 +133,25 @@ function getMemberCompletions(
   const base = getCompletionsForAbs(bound);
   // BUG-034：类实例的品牌 shape 只带 own 字段槽，原型方法不在里面 ⇒ 补全区
   // 必须并入类成员表（与 check / hover 的成员面同源：`localClassMemberTable`）。
+  //
+  // BUG-088：这里**只能**走 brand 面。旧实现在其后还有一条兜底分支
+  // （`receiver.segments.length === 1` ⇒ 按**文本名**并入静态成员），
+  // 但类值接收者（`K.`）**恒为** brand（`root === cls` ⇒ 静态面）⇒ 那条兜底
+  // 的每一次执行都是「名字与某个类相同、但绑定不是该类」的碰撞：
+  //
+  // ```js
+  // export class Config { static load() { return 1; } }
+  // export function make() { const Config = { port: 8080 }; return Config.; }
+  // ```
+  //
+  // ⇒ 补全给出 `port` + **`load`**（接收者 Abs 明明是 `{ port }`），接受即写出
+  // 运行期 `TypeError: Config.load is not a function`。
   if (bound.shape.k === "brand") {
     // 类**值**本身也是 brand（静态槽挂在同一个品牌上）⇒ 接收者就是类名时
     // 走静态面，否则是实例面。两面成员集合不同，不得混用。
     const cls = bound.shape.name;
     const face = receiver.segments.length === 1 && root === cls ? "static" : "instance";
     return mergeMemberItems(base, classMemberItems(source, cls, face));
-  }
-  // 类值面（`K.`）：静态方法同样不在静态字段槽里。
-  if (receiver.segments.length === 1) {
-    return mergeMemberItems(base, classMemberItems(source, root, "static"));
   }
   return base;
 }

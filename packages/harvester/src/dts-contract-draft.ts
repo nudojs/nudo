@@ -1517,6 +1517,16 @@ export function formatDtsContractDraft(
   label: string,
   files: string[],
   exports: DtsExportDraft[],
+  /**
+   * 接受目标文件名（`<stem>.nudo.ts` / `<stem>.nudo.js`）—— **必须**是接收
+   * 这份草稿后会真正**绑定**的那个侧车名（BUG-038）。
+   *
+   * 旧实现把 `"<target>.nudo.js"` 硬编码进正文：`.ts` 源的实际侧车是
+   * `<stem>.nudo.ts`，照草稿正文接受 ⇒ 契约永不绑定（`nudo check` exit 0，
+   * 与同一条命令 stdout 的 `next` 行互相矛盾）。缺省保留旧文案（调用方
+   * 无法确定目标时——多文件合并草稿没有单一目标）。
+   */
+  acceptTarget?: string,
 ): string {
   const draftable = exports.filter((e) => e.dsl !== undefined);
   const used = new Set<string>(["fn"]);
@@ -1538,7 +1548,7 @@ export function formatDtsContractDraft(
     "//",
     "// Reverse-engineered from TypeScript declarations — NOT a sidecar contract.",
     "// This file is never loaded for check. Review each export, then copy it",
-    "// into <target>.nudo.js to accept (that is when obligations go live).",
+    `// into ${acceptTarget ?? "<target>.nudo.js"} to accept (that is when obligations go live).`,
     "//",
     "// After accept: strengthen with Pred builders (number().gt(0) …) —",
     "// dts cannot express algebraic implications (x>0 ⇒ x+1>1).",
@@ -1651,6 +1661,11 @@ function readDtsFiles(paths: string[]): DtsScan {
 export function dtsToContractDraft(
   dtsFiles: string[],
   label?: string,
+  /**
+   * 接受目标文件名（写进草稿正文的「copy it into …」那行）—— 见
+   * {@link formatDtsContractDraft} 的同名参数（BUG-038）。缺省保留旧文案。
+   */
+  opts?: { acceptTarget?: string },
 ): DtsContractDraft {
   const files = dtsFiles.filter((f) => existsSync(f));
   const exports: DtsExportDraft[] = [];
@@ -1679,7 +1694,7 @@ export function dtsToContractDraft(
     }
   }
   const name = label ?? (files[0] ? basename(files[0]).replace(/\.d\.ts$/, "") : "dts");
-  const draftSource = formatDtsContractDraft(name, files, exports);
+  const draftSource = formatDtsContractDraft(name, files, exports, opts?.acceptTarget);
   const unprojected = exports.filter((e) => e.dsl === undefined).length;
   const partial = exports.filter((e) => e.partial && e.dsl !== undefined).length;
   return {
