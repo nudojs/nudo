@@ -115,6 +115,33 @@ function emittedNudoNames(code: string): Set<string> {
   return out;
 }
 
+type CorpusScan = { emitted: Set<string>; transpiled: number };
+let corpusScan: CorpusScan | undefined;
+
+/**
+ * 全语料 × 4 变体只转译一次，两个守卫用例共享（此前各跑一遍，约 3s/遍；
+ * 语料 1000+ 变体）。转译抛错（unsupported 形态）不在本层负责——差分/eval
+ * 门禁覆盖，这里只扫产物词形。
+ */
+function scanCorpusOnce(): CorpusScan {
+  if (corpusScan) return corpusScan;
+  const emitted = new Set<string>();
+  let transpiled = 0;
+  for (const src of corpusSources()) {
+    for (const opts of OPTION_VARIANTS) {
+      let code: string;
+      try {
+        code = transpileSource(src, opts);
+      } catch {
+        continue;
+      }
+      transpiled++;
+      for (const n of emittedNudoNames(code)) emitted.add(n);
+    }
+  }
+  return (corpusScan = { emitted, transpiled });
+}
+
 describe("__nudo* 注入名 / 生成码局部名漂移守卫", () => {
   it("注入名单单一真值源：NUDO_HOST_ARG_NAMES 与 12 名字面清单同序恒等", () => {
     // 顺序也是契约：hostArgs 按同序 map 供给实参——序错位 = 值错位（无诊断）。
@@ -147,20 +174,7 @@ describe("__nudo* 注入名 / 生成码局部名漂移守卫", () => {
   });
 
   it("transpileSource 产物里的每个 __nudo* 词形都在白名单（语料漂移守卫）", () => {
-    const emitted = new Set<string>();
-    let transpiled = 0;
-    for (const src of corpusSources()) {
-      for (const opts of OPTION_VARIANTS) {
-        let code: string;
-        try {
-          code = transpileSource(src, opts);
-        } catch {
-          continue; // 语料里 unsupported 形态由差分/eval 门禁负责（此处只扫产物）
-        }
-        transpiled++;
-        for (const n of emittedNudoNames(code)) emitted.add(n);
-      }
-    }
+    const { emitted, transpiled } = scanCorpusOnce();
     // 语料没有整体退化成「全部 unsupported」（否则本守卫空转）
     expect(transpiled).toBeGreaterThan(1000);
     const unknown = [...emitted].filter((n) => !isKnownNudoName(n)).sort();
@@ -171,16 +185,7 @@ describe("__nudo* 注入名 / 生成码局部名漂移守卫", () => {
   });
 
   it("语料覆盖不空转：关键注入名与局部名族必须真的出现", () => {
-    const emitted = new Set<string>();
-    for (const src of corpusSources()) {
-      for (const opts of OPTION_VARIANTS) {
-        try {
-          for (const n of emittedNudoNames(transpileSource(src, opts))) emitted.add(n);
-        } catch {
-          /* unsupported 语料不在本层负责 */
-        }
-      }
-    }
+    const { emitted } = scanCorpusOnce();
     // 8 个发射器引用的注入名全部要被语料触发（host target 变体承担模块面）
     for (const n of EMITTED_HOST_ARGS) {
       expect(emitted.has(n), `语料未触发注入名 ${n}（扩展 crafted 语料或查发射点）`).toBe(true);

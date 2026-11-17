@@ -27,7 +27,14 @@
 // 直引 src 入口：vitest 下 `@nudojs/core` 经 node_modules → dist（构建产物
 // 滞后于工作区源码），差分门禁要对照**当前源码**的引擎行为——引擎修复
 // 未重建 dist 时 dist 侧假绿/假红都会掩蔽真实回归
-import { runTranspiled, callTranspiledExportFull, litValue, formatShape } from "../../../index.ts";
+import {
+  runTranspiled,
+  callTranspiledExportFull,
+  litValue,
+  formatShape,
+  setEvalFallbackCollector,
+  type EvalFallback,
+} from "../../../index.ts";
 import { getPropFlags } from "../../builtins.ts";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
@@ -200,23 +207,32 @@ export function runCorpus(corpus: string[]): {
   compared: number;
   mismatches: string[];
   skipped: string[];
+  fallbacks: EvalFallback[];
 } {
   let compared = 0;
   const mismatches: string[] = [];
   const skipped: string[] = [];
-  for (const body of corpus) {
-    const b = evalAbs(body);
-    const m = compareBody(body, native(body), b);
-    if (m) {
-      compared++; // 已对账且分歧（FALSE-THROW / MISSED-THROW / MISMATCH）
-      mismatches.push(m);
-    } else if (b.throws || b.res !== undefined) {
-      compared++; // 对账相等（含引擎证明必抛 = native 同抛的 THROW 域相等）
-    } else {
-      skipped.push(body); // concrete() 盲区且 native 未抛：合法 skip，进基线门禁
+  // 差分门禁同时承担「B 回落不变量」：同一份语料只跑一次，回落记录随结果
+  // 返回（此前 eval-fallback 另起一次全语料重跑，占单文件 15.5s）。
+  const fallbacks: EvalFallback[] = [];
+  setEvalFallbackCollector((f) => fallbacks.push(f));
+  try {
+    for (const body of corpus) {
+      const b = evalAbs(body);
+      const m = compareBody(body, native(body), b);
+      if (m) {
+        compared++; // 已对账且分歧（FALSE-THROW / MISSED-THROW / MISMATCH）
+        mismatches.push(m);
+      } else if (b.throws || b.res !== undefined) {
+        compared++; // 对账相等（含引擎证明必抛 = native 同抛的 THROW 域相等）
+      } else {
+        skipped.push(body); // concrete() 盲区且 native 未抛：合法 skip，进基线门禁
+      }
     }
+  } finally {
+    setEvalFallbackCollector(null);
   }
-  return { compared, mismatches, skipped };
+  return { compared, mismatches, skipped, fallbacks };
 }
 
 // ---- skip 基线门禁 ----------------------------------------------------
