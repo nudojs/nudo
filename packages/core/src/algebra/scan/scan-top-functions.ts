@@ -93,7 +93,22 @@ export function listTopFunctions(source: string, file?: ReturnType<typeof parse>
   const names: string[] = [];
   /** 本地类（ClassDeclaration + `export const C = class {}` 的类表达式） */
   const localClasses = new Map<string, Node>();
+  /** 本地对象字面量（BUG-108：`{ ...base }` 的展开源要能查到成员键） */
+  const localObjects = new Map<string, Node>();
   for (const stmt of f.program.body) {
+    const vd0 =
+      stmt.type === "ExportNamedDeclaration" && stmt.declaration?.type === "VariableDeclaration"
+        ? stmt.declaration
+        : stmt.type === "VariableDeclaration"
+          ? stmt
+          : undefined;
+    if (vd0) {
+      for (const d0 of vd0.declarations) {
+        if (d0.id.type === "Identifier" && d0.init?.type === "ObjectExpression") {
+          if (!localObjects.has(d0.id.name)) localObjects.set(d0.id.name, d0.init as Node);
+        }
+      }
+    }
     if (stmt.type === "ClassDeclaration") {
       const cname = (stmt as { id?: { name?: string } }).id?.name;
       if (cname) localClasses.set(cname, stmt);
@@ -172,6 +187,41 @@ export function listTopFunctions(source: string, file?: ReturnType<typeof parse>
       names.push(`${cname}.${m.key}`);
     }
   };
+  /**
+   * BUG-108：对象字面量的可调用成员键——含 **spread** 引入的成员
+   * （`{ ...base }` 在原生里就是同一个函数值；旧实现只读 own 属性 ⇒
+   * 经展开引入的方法不入入口表，运行期必抛也零执法）。
+   * 只在展开源是本地对象字面量时递归（未知来源不猜）。
+   */
+  const objectMethodKeys = (node: Node | undefined, seen = new Set<Node>()): string[] => {
+    if (!node || node.type !== "ObjectExpression" || seen.has(node)) return [];
+    seen.add(node);
+    const out: string[] = [];
+    for (const p of ((node as { properties?: unknown[] }).properties ?? [])) {
+      const prop = p as {
+        type?: string;
+        kind?: string;
+        value?: { type?: string };
+        argument?: { type?: string; name?: string };
+      };
+      if (prop.type === "SpreadElement") {
+        const arg = prop.argument;
+        const src = arg?.type === "Identifier" && arg.name ? localObjects.get(arg.name) : undefined;
+        out.push(...objectMethodKeys(src, seen));
+        continue;
+      }
+      if (prop.type === "ObjectMethod" || prop.type === "ClassMethod") {
+        if (prop.kind && prop.kind !== "method") continue;
+      } else if (prop.type === "ObjectProperty" || prop.type === "Property") {
+        const v = prop.value?.type;
+        if (v !== "FunctionExpression" && v !== "ArrowFunctionExpression") continue;
+      } else continue;
+      const keyName = memberKeyOf(prop as never);
+      if (keyName) out.push(keyName);
+    }
+    return out;
+  };
+
   for (const stmt of f.program.body) {
     let decl: Node = stmt;
     if (stmt.type === "ExportNamedDeclaration" && stmt.declaration) {
@@ -212,25 +262,22 @@ export function listTopFunctions(source: string, file?: ReturnType<typeof parse>
           collectClassMethods(d.id.name, d.init as Node);
           continue;
         }
+        // BUG-054：`export const svc = new Svc()`（Svc 是本地**未导出**类）——
+        // 实例方法即模块的公开 API。旧实现全文件无 NewExpression 分支 ⇒
+        // 整个模块 `0 fn`，调用方 `svc.run()` 零执法（侧车契约同盲）。
+        if (initType === "NewExpression" && isExported) {
+          const callee = (d.init as { callee?: { type?: string; name?: string } }).callee;
+          const cname = callee?.type === "Identifier" ? callee.name : undefined;
+          const cls = cname !== undefined ? localClasses.get(cname) : undefined;
+          if (cname && cls) collectClassMethods(cname, cls);
+          continue;
+        }
         // Bug 90：ESM `export const api = { m(){} }` 的对象字面量方法——与 CJS
         // `module.exports = { m(){} }` 同口径（成员键 = 导出槽名 ⇒ 进函数普查）。
         // 只对 export 包装的声明收集（未导出对象不是模块边界入口 ⇒ 不假红）。
         if (initType === "ObjectExpression" && isExported) {
-          for (const p of ((d.init as { properties?: unknown[] }).properties ?? [])) {
-            const prop2 = p as {
-              type?: string;
-              kind?: string;
-              value?: { type?: string };
-            };
-            if (prop2.type === "ObjectMethod" || prop2.type === "ClassMethod") {
-              // getter / setter 不是可调用入口
-              if (prop2.kind && prop2.kind !== "method") continue;
-            } else if (prop2.type === "ObjectProperty" || prop2.type === "Property") {
-              const v = prop2.value?.type;
-              if (v !== "FunctionExpression" && v !== "ArrowFunctionExpression") continue;
-            } else continue;
-            const keyName = memberKeyOf(p);
-            if (keyName && !names.includes(keyName)) names.push(keyName);
+          for (const keyName of objectMethodKeys(d.init as Node)) {
+            if (!names.includes(keyName)) names.push(keyName);
           }
         }
       }

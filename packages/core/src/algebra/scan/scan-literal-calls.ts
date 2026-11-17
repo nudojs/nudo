@@ -932,7 +932,13 @@ export function scanLiteralCalls(
     // BUG-032：可选链调用在原生里与同名非可选调用完全等价（f?.() / c?.m() /
     // c.m?.() 都真正执行），AST 层是 OptionalCallExpression ⇒ 必须与
     // CallExpression 共用同一条调用点义务路径。
-    if (obj.type === "CallExpression" || obj.type === "OptionalCallExpression") {
+    if (
+      obj.type === "CallExpression" ||
+      obj.type === "OptionalCallExpression" ||
+      // BUG-077：`new F(args)` 同样是调用点——构造式调用与直接调用在原生里
+      // 走同一份形参/前置契约义务（旧实现只认 Call 族 ⇒ 换个 `new` 就全绿）。
+      obj.type === "NewExpression"
+    ) {
       const callee = obj.callee as Record<string, unknown>;
       const args = (obj.arguments as Array<Record<string, unknown>>) ?? [];
       const resolved = resolveCalleeFn(callee, resolve, knownSet, chain);

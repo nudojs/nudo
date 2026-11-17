@@ -2920,6 +2920,45 @@ function surfaceName(n: SurfaceNode | undefined): string | undefined {
 }
 
 /**
+ * BUG-119：类成员**计算键**的静态名（`["a" + "b"]` / `` [`x${"y"}`] ``）。
+ * 只折静态可判的字符串拼接/模板；动态键（变量 / 成员表达式）返回 undefined
+ * （不猜 ⇒ 不假造成员）。旧实现只认 Identifier/StringLiteral ⇒ 整条成员丢失。
+ */
+function surfaceComputedKeyName(n: SurfaceNode | undefined): string | undefined {
+  if (!n) return undefined;
+  if (n.type === "StringLiteral" && typeof n.value === "string") return n.value;
+  if (n.type === "NumericLiteral" && typeof n.value === "number") return String(n.value);
+  if (n.type === "TemplateLiteral") {
+    const exprs = (n.expressions as SurfaceNode[] | undefined) ?? [];
+    const quasis = (n.quasis as SurfaceNode[] | undefined) ?? [];
+    if (exprs.length === 0 && quasis.length === 1) {
+      const cooked = (quasis[0]?.value as SurfaceNode | undefined)?.cooked;
+      return typeof cooked === "string" ? cooked : undefined;
+    }
+    // 静态可折的 `${"a"}`：逐段拼
+    let out = "";
+    for (let i = 0; i < quasis.length; i++) {
+      const cooked = (quasis[i]?.value as SurfaceNode | undefined)?.cooked;
+      if (typeof cooked !== "string") return undefined;
+      out += cooked;
+      const e = exprs[i];
+      if (e) {
+        const v = surfaceComputedKeyName(e);
+        if (v === undefined) return undefined;
+        out += v;
+      }
+    }
+    return out;
+  }
+  if (n.type === "BinaryExpression" && n.operator === "+") {
+    const l = surfaceComputedKeyName(n.left as SurfaceNode | undefined);
+    const r = surfaceComputedKeyName(n.right as SurfaceNode | undefined);
+    return l !== undefined && r !== undefined ? l + r : undefined;
+  }
+  return undefined;
+}
+
+/**
  * 变量声明模式里的**全部绑定名**（Bug 63）。`export const { a, b } = src` /
  * `export const [c, ...rest] = arr` 的 `id` 是 ObjectPattern / ArrayPattern，
  * 旧扫描只读 `surfaceName(d.id)`（恒 undefined）⇒ 这些运行时真实存在的导出
@@ -3241,8 +3280,38 @@ function scanClassSurface(
       if (value && typeof value === "object") collectThisAssignments(value as SurfaceNode);
     }
   };
+  // BUG-083：`static { this.x = … }`（ClassStaticBlock）写入的静态成员。
+  // 旧实现只认字段/方法节点 ⇒ 静态块整条被跳过，产物缺成员（消费方 TS2339，
+  // 运行期成员其实存在）。只登记 `this.<k> = <expr>` 形态（动态键不猜）。
+  const collectStaticAssignments = (node: SurfaceNode | undefined): void => {
+    if (!node || typeof node !== "object") return;
+    if (node.type === "AssignmentExpression" || node.type === "AssignmentPattern") {
+      const left = node.left as SurfaceNode | undefined;
+      const obj = left?.object as SurfaceNode | undefined;
+      if (left?.type === "MemberExpression" && obj?.type === "ThisExpression") {
+        const key =
+          left.computed === true
+            ? surfaceComputedKeyName(left.property as SurfaceNode | undefined)
+            : surfaceName(left.property as SurfaceNode | undefined);
+        if (key) addStaticField(key, { value: node.right as SurfaceNode | undefined });
+      }
+    }
+    for (const value of Object.values(node)) {
+      if (Array.isArray(value)) {
+        for (const v of value) {
+          if (v && typeof v === "object") collectStaticAssignments(v as SurfaceNode);
+        }
+        continue;
+      }
+      if (value && typeof value === "object") collectStaticAssignments(value as SurfaceNode);
+    }
+  };
   for (const raw of body) {
     const mem = raw as SurfaceNode & { kind?: string; static?: boolean; value?: SurfaceNode };
+    if (mem.type === "ClassStaticBlock" || mem.type === "StaticBlock") {
+      collectStaticAssignments(mem.body as SurfaceNode | undefined);
+      continue;
+    }
     // Bug 88：index signature 是公开索引面。
     if (mem.type === "TSIndexSignature") {
       const t = indexSignatureText(mem, source);
@@ -3263,7 +3332,11 @@ function scanClassSurface(
         hasPrivateIdentifier = true;
         continue;
       }
-      const key = surfaceName(mem.key as SurfaceNode | undefined);
+      // BUG-119：计算键走静态折名（`["a" + "b"]` / `["x"]`）
+      const key =
+        mem.computed === true
+          ? surfaceComputedKeyName(mem.key as SurfaceNode | undefined)
+          : surfaceName(mem.key as SurfaceNode | undefined);
       if (!key) continue;
       // Bug 23：static 字段也收集（旧的 `mem.static !== true` 过滤把它整条挡掉）。
       if (mem.static === true) addStaticField(key, mem);
@@ -3276,7 +3349,10 @@ function scanClassSurface(
       mem.type === "TSDeclareMethod";
     if (!isMethod) continue;
     const kind = mem.kind ?? "method";
-    const keyName = surfaceName(mem.key as SurfaceNode | undefined);
+    const keyName =
+      mem.computed === true
+        ? surfaceComputedKeyName(mem.key as SurfaceNode | undefined)
+        : surfaceName(mem.key as SurfaceNode | undefined);
     if (!keyName) continue;
     const fnNode = surfaceMemberFn(mem);
     const params = surfaceParamNames(fnNode.params as SurfaceNode[] | undefined);
@@ -3925,6 +4001,16 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
         ) {
           const id = surfaceName(decl.id as SurfaceNode | undefined);
           if (id) bind(id, id);
+        } else if (decl.type === "TSDeclareFunction") {
+          // BUG-131：ambient `export declare function f(): T;` 没有函数体、
+          // 不进分析面 ⇒ 旧实现既不登记也不发射，整条从产物消失（消费方
+          // TS2305）。声明面即事实：原文镜像进产物（与 interface/type 同口径）。
+          const id = surfaceName(decl.id as SurfaceNode | undefined);
+          if (id) {
+            bind(id, id);
+            const text = surfaceSlice(source, stmt);
+            if (text) surface.typeDeclarations!.push(text);
+          }
         } else if (decl.type === "VariableDeclaration") {
           for (const d of (decl.declarations as SurfaceNode[] | undefined) ?? []) {
             // Bug 63：解构导出绑定（ObjectPattern / ArrayPattern / RestElement）
@@ -4540,6 +4626,15 @@ function projectModuleDtsInner(
     for (const name of brands.keys()) {
       if (surface.classes.has(name)) classNames.add(name);
     }
+    // BUG-054：`export const svc = new Svc()`（Svc 未导出）——值声明的 brand
+    // 也要求在产物里可解析（否则 `svc: Svc` + 无声明 ⇒ 消费方 TS2304）。
+    if (values) {
+      for (const a of values.values()) {
+        for (const name of brandNamesInAbs(a)) {
+          if (surface.classes.has(name)) classNames.add(name);
+        }
+      }
+    }
     // BUG-168：注解原文引用的**本地类**同样要声明（否则产物里那个名字是
     // TS2304）；这类类不是导出面成员 ⇒ 只发 `declare class`（不导出）。
     for (const name of annotationRefs) {
@@ -5027,6 +5122,49 @@ function brandFieldLines(
 }
 
 /** Abs 树里的 brand（类实例类型）收集：类名 → brand Abs */
+/**
+ * BUG-054：Abs 里出现的 brand 类名集合（值声明的实例类型 ⇒ 产物要能解析该类）。
+ */
+function brandNamesInAbs(a: Abs | undefined, out: Set<string> = new Set()): Set<string> {
+  const seen = new Set<Abs>();
+  const visit = (x: Abs | undefined): void => {
+    if (!x || seen.has(x)) return;
+    seen.add(x);
+    const s = x.shape;
+    switch (s.k) {
+      case "brand":
+        if (isJsBindingIdent(s.name) || /^[A-Z][A-Za-z0-9_$]*$/.test(s.name)) out.add(s.name);
+        visit(s.shape);
+        return;
+      case "obj":
+        for (const slot of Object.values(s.slots)) visit(slot.value);
+        return;
+      case "arr":
+        visit(s.element);
+        return;
+      case "tuple":
+        for (const e of s.elements) visit(e);
+        if (s.rest) visit(s.rest);
+        return;
+      case "fn":
+        for (const pt of s.paramTypes ?? []) visit(pt);
+        if (s.returnType) visit(s.returnType);
+        for (const slot of Object.values(s.slots ?? {})) visit(slot.value);
+        return;
+      case "sum":
+        for (const m of s.members) visit(m);
+        return;
+      case "eff":
+        visit(s.inner);
+        return;
+      default:
+        return;
+    }
+  };
+  visit(a);
+  return out;
+}
+
 function collectBrandAbs(
   fn: FunctionAnalysis,
   contract: DtsContractFace | undefined,

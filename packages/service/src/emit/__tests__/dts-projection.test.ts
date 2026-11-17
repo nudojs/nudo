@@ -2100,3 +2100,54 @@ describe("类字段的初始化器形状（函数值 / 断言包装）", () => {
     expect(dts).toContain("plain: number;");
   });
 });
+
+describe("类成员 / 模块声明的形态覆盖", () => {
+  const dtsOf = (src: string): string => {
+    const result = analyzeFile("/test/member-forms.ts", src);
+    const surface = dtsModuleSurface(src);
+    const entries = result.functions
+      .filter((fn) => fn.cases.length > 0)
+      .map((fn) => ({ fn, projection: projectFunctionDts(fn, undefined, surface) }));
+    return projectModuleDts(surface, entries).lines.join("\n");
+  };
+
+  it("静态块写入的成员进类体、计算键成员按静态名落地（BUG-083 / BUG-119）", () => {
+    const dts = dtsOf(`export class C {
+  static base = 1;
+  static {
+    this.extra = "hi";
+  }
+  ["a" + "b"]() { return 1; }
+  static ["x" + "y"] = 2;
+}
+`);
+    expect(dts).toContain("static extra: string;");
+    expect(dts).toContain("ab(): unknown;");
+    expect(dts).toContain("static xy: number;");
+  });
+
+  it("ambient `export declare function` 原文镜像进产物（BUG-131）", () => {
+    const dts = dtsOf(`export declare function df(a: string): boolean;
+export declare class DC { m(): number; }
+`);
+    expect(dts).toContain("export declare function df(a: string): boolean;");
+    expect(dts).toContain("export declare class DC {");
+  });
+
+  it("导出实例（本地非导出类）⇒ 补 declare class + 值声明可解析（BUG-054）", () => {
+    const src = `class Svc {
+  run(x) { return x.length; }
+}
+export const svc = new Svc();
+`;
+    const result = analyzeFile("/test/member-forms.ts", src);
+    const surface = dtsModuleSurface(src);
+    const values = new Map([...result.bindings].map(([n, info]) => [n, info.abs]));
+    const entries = result.functions
+      .filter((fn) => fn.cases.length > 0)
+      .map((fn) => ({ fn, projection: projectFunctionDts(fn, undefined, surface) }));
+    const dts = projectModuleDts(surface, entries, { values }).lines.join("\n");
+    expect(dts).toContain("declare class Svc {");
+    expect(dts).toContain("export declare const svc: Svc;");
+  });
+});
