@@ -1262,3 +1262,55 @@ afterEach(() => {
   });
 
 });
+
+// ---------------------------------------------------------------------------
+// 源 vs 产物仲裁：`.cts → .cjs` 也是一条产物链
+// ---------------------------------------------------------------------------
+describe("目录目标集的 .cts / .cjs 仲裁", () => {
+/** 产物索引此前只登记 `.js` / `.mjs`，`.cts` 又错用 `.js` 索引 ⇒
+ * `.cts` + 无关 `boom.js` 时被静默丢弃（假绿）、`.cts` + 真正的 `boom.cjs`
+ * 时两个都分析（计数翻倍）。期望：`.cts` 只看 `.cjs` 产物。
+ */
+  const dirs: string[] = [];
+  afterAll(() => {
+    for (const d of dirs) rmSync(d, { recursive: true, force: true });
+  });
+  const mk = (): string => {
+    const d = mkdtempSync(join(tmpdir(), "nudo-cts-arbitration-"));
+    dirs.push(d);
+    return d;
+  };
+
+  it(".cts + 真正的 .cjs 产物 ⇒ 只分析产物一次", () => {
+    const d = mk();
+    const src = join(d, "boom.cts");
+    const prod = join(d, "boom.cjs");
+    writeFileSync(src, `export function boom() { throw new Error("boom"); }\n`, "utf-8");
+    writeFileSync(prod, `export function boom() { throw new Error("boom"); }\n`, "utf-8");
+    expect(collectNudoFiles(d)).toEqual([prod]);
+  });
+
+  it(".cts + 无关的同 stem .js ⇒ 两个模块都进门禁（.cts 不得被压掉）", () => {
+    const d = mk();
+    const src = join(d, "boom.cts");
+    const other = join(d, "boom.js");
+    writeFileSync(src, `export function boom() { throw new Error("boom"); }\n`, "utf-8");
+    writeFileSync(other, `export function unrelated() { return 1; }\n`, "utf-8");
+    const files = collectNudoFiles(d);
+    expect(files).toContain(src);
+    expect(files).toContain(other);
+  });
+
+  it("对照：.ts + .js / .mts + .mjs 的产物胜出口径不变", () => {
+    const d = mk();
+    writeFileSync(join(d, "a.ts"), `export function a() { return 1; }\n`, "utf-8");
+    writeFileSync(join(d, "a.js"), `export function a() { return 2; }\n`, "utf-8");
+    writeFileSync(join(d, "b.mts"), `export function b() { return 1; }\n`, "utf-8");
+    writeFileSync(join(d, "b.mjs"), `export function b() { return 2; }\n`, "utf-8");
+    const files = collectNudoFiles(d);
+    expect(files).toContain(join(d, "a.js"));
+    expect(files).toContain(join(d, "b.mjs"));
+    expect(files).not.toContain(join(d, "a.ts"));
+    expect(files).not.toContain(join(d, "b.mts"));
+  });
+});

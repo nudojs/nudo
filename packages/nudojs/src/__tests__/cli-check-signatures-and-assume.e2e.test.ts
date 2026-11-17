@@ -1564,3 +1564,41 @@ describe("-assume 坏值 ⇒ 用法错误 + 非零 exit", () => {
 
 });
 });
+
+// ---------------------------------------------------------------------------
+// check --abs 的候选表必须包含类与类方法（与门禁签名表同源）
+// ---------------------------------------------------------------------------
+describe("check --abs 的候选表包含类与类方法", () => {
+  const dirs: string[] = [];
+  afterAll(() => {
+    for (const d of dirs) rmSync(d, { recursive: true, force: true });
+  });
+  const tmp = (name: string, source: string): string => {
+    const d = mkdtempSync(join(tmpdir(), "nudo-abs-class-"));
+    dirs.push(d);
+    writeFileSync(join(d, name), source, "utf-8");
+    return join(d, name);
+  };
+
+  it("class-only 文件：不再报 Function not found，Box 与 Box.get 都在观察面", () => {
+    const f = tmp("only.js", `export class Box { constructor(v) { this.v = v; } get() { return this.v; } }\n`);
+    const r = runCliTsx(["check", f, "--abs"]);
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.stderr).not.toContain("Function not found");
+    expect(r.stdout).toContain("Box()");
+    expect(r.stdout).toContain("Box.get()");
+  });
+
+  it("混合文件：类成员与顶层函数同表，--fn 也认类方法名", () => {
+    const f = tmp("k.js", `export class Point { constructor(x) { this.x = x; } getX() { return this.x; } }
+export function plain(x) { return x; }
+`);
+    const r = runCliTsx(["check", f, "--abs", "--fn", "Box.get"]);
+    // 拼错的名字仍按「用法错误」拒绝（不是静默 unknown）
+    expect(r.status).toBe(1);
+    expect(r.stdout + r.stderr).toContain("Function not found");
+    const ok = runCliTsx(["check", f, "--abs", "--fn", "Point.getX"]);
+    expect(ok.status, ok.stderr).toBe(0);
+    expect(ok.stdout).toContain("Point.getX()");
+  });
+});

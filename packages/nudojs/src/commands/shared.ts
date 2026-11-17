@@ -755,17 +755,23 @@ function collectNudoFilesIn(
   for (const entry of entries) {
     kinds.set(entry.name, entryKind(entry, join(dir, entry.name)));
   }
-  // 同目录里**已存在的产物**（`.js` / `.mjs`，按 stem 索引）——
+  // 同目录里**已存在的产物**（`.js` / `.mjs` / `.cjs`，按 stem 索引）——
   // 「源 vs 产物」同 stem 冲突时**产物胜出**（Bug 1053：门禁要门禁发布物）。
   // 只收**分析目标**：侧车（`*.nudo.js`）/ draft 不是产物 ⇒ 不能压掉源。
+  // BUG-087：`.cts → .cjs` 也是一条 strip 产物链（与 `.mts → .mjs` 对称）。
+  // 旧表漏了 `.cjs` ⇒ `.cts` 被无关的 `boom.js` 压掉（假绿）、与**真正的**
+  // `boom.cjs` 产物并存（同一模块分析两遍、计数翻倍）。
   const jsProducts = new Set<string>(); // .js 产物（stem）
   const mjsProducts = new Set<string>(); // .mjs 产物（stem）
+  const cjsProducts = new Set<string>(); // .cjs 产物（stem）
   for (const entry of entries) {
     if (kinds.get(entry.name) !== "file") continue;
     const fullPath = join(dir, entry.name);
     const lower = entry.name.toLowerCase();
     if (lower.endsWith(".mjs")) {
       if (isNudoTargetPath(fullPath)) mjsProducts.add(entry.name.slice(0, entry.name.length - 4));
+    } else if (lower.endsWith(".cjs")) {
+      if (isNudoTargetPath(fullPath)) cjsProducts.add(entry.name.slice(0, entry.name.length - 4));
     } else if (lower.endsWith(".js")) {
       if (isNudoTargetPath(fullPath)) jsProducts.add(entry.name.slice(0, entry.name.length - 3));
     }
@@ -794,7 +800,11 @@ function collectNudoFilesIn(
     const stem = sourceStemOf(entry.name);
     if (stem !== undefined) {
       const lower = entry.name.toLowerCase();
-      const products = lower.endsWith(".mts") ? mjsProducts : jsProducts;
+      const products = lower.endsWith(".mts")
+        ? mjsProducts
+        : lower.endsWith(".cts")
+          ? cjsProducts
+          : jsProducts;
       if (products.has(stem)) continue;
     }
     // 范围闸门（产品默认安全排除 [+ watch 扫描的用户 include/exclude]）

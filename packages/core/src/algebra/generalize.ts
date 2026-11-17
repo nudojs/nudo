@@ -2248,9 +2248,11 @@ function formatPoly(
 }
 
 /**
- * 列出源码中的顶层函数名。
- * 与 scan.listTopFunctions 对齐：解 export default / export const 箭头与函数表达式。
- * （不 import scan：scan 依赖本文件，避免环。完整 CJS/class 面用 listTopFunctions。）
+ * 列出源码中的顶层入口名。
+ * 与 scan.listTopFunctions 对齐：解 export default / export const 箭头与函数
+ * 表达式，**并展开类**（构造器面 `Box` + 实例方法 `Box.get`）——`check` 的
+ * 签名表本来就把这两类算作 fn，观察面不能只认顶层 FunctionDeclaration。
+ * （不 import scan：scan 依赖本文件，避免环。完整 CJS 面用 listTopFunctions。）
  */
 export function listFunctionNames(source: string): string[] {
   const file = babelParse(source);
@@ -2276,6 +2278,36 @@ export function listFunctionNames(source: string): string[] {
         ) {
           push((d.id as { name: string }).name);
         }
+      }
+      return;
+    }
+    // BUG-098：类与类方法整面曾是 `--abs` 的盲区（class-only 文件直接
+    // `Function not found` + exit 1，而同一次运行的门禁打印 `OK · 2 fn`）。
+    if (decl.type === "ClassDeclaration" || decl.type === "ClassExpression") {
+      const id = (decl as { id?: { name?: string } }).id;
+      const className = id?.name ?? (stmtType === "ExportDefaultDeclaration" ? "default" : undefined);
+      if (!className) return;
+      push(className); // 构造器面（签名表里的 `Box(…) => Box`）
+      const body = (decl as { body?: { body?: Node[] } }).body?.body ?? [];
+      for (const raw of body) {
+        const m = raw as {
+          type?: string;
+          kind?: string;
+          computed?: boolean;
+          static?: boolean;
+          key?: { type?: string; name?: string; value?: string };
+        };
+        if (
+          m.type !== "ClassMethod" &&
+          m.type !== "MethodDefinition" &&
+          m.type !== "TSDeclareMethod" &&
+          m.type !== "ObjectMethod"
+        ) {
+          continue;
+        }
+        if (m.computed === true || m.kind === "constructor") continue;
+        const key = m.key?.type === "Identifier" ? m.key.name : m.key?.value;
+        if (key) push(`${className}.${key}`);
       }
       return;
     }

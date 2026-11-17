@@ -70,3 +70,55 @@ describe("module resolve candidate table (ext-table drift)", () => {
     expect(byPath.has(indexTs)).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// NodeNext：说明符写编译产物后缀（./lib.js）时先改回 TS 源后缀
+// ---------------------------------------------------------------------------
+describe("NodeNext 声明相对说明符的改写", () => {
+/**
+ * `tsc` 的 nodenext 官方写法是「import 时写**产物**后缀」：`.ts` 源码里
+ * `import { add } from "./lib.js"` 会先被改回 `./lib.ts` 再查盘。旧候选表
+ * 只拼后缀（`lib.js.js` / `lib.js.ts`）⇒ `nudo:module-missing` 假红、跨模块
+ * 返回值退 unknown；`.mts` 引用方更只有一条 ESM 候选。
+ */
+  it(".ts 引用方：./lib.js 的改写候选优先，且真的装载到 lib.ts", () => {
+    const dir = tmpProject("nudo-nodenext-ts-", {
+      "lib.ts": `export function add(a: number, b: number): number { return a + b; }\n`,
+      "use.ts": `import { add } from "./lib.js";\nexport function total(a: number, b: number) { return add(a, b); }\n`,
+    });
+    const libTs = join(dir, "lib.ts");
+    const use = join(dir, "use.ts");
+    const cands = moduleResolveCandidates("./lib.js", use);
+    expect(cands[0]).toBe(libTs);
+    expect(resolveModuleFile("./lib.js", use)).toBe(libTs);
+    expect(defaultLoadModule("./lib.js", use)).toContain("add");
+  });
+
+  it(".mts 引用方：ESM 表也改写 ./lib.js → ./lib.mts（旧表只探一条 lib.js）", () => {
+    const dir = tmpProject("nudo-nodenext-mts-", {
+      "lib.mts": `export function add(a: number, b: number): number { return a + b; }\n`,
+      "use.mts": `import { add } from "./lib.js";\nexport function total(a: number, b: number) { return add(a, b); }\n`,
+    });
+    expect(resolveModuleFile("./lib.js", join(dir, "use.mts"))).toBe(join(dir, "lib.mts"));
+    expect(moduleResolveCandidates("./lib.mjs", join(dir, "use.mts"))[0]).toBe(
+      join(dir, "lib.mts"),
+    );
+  });
+
+  it("对照：无后缀说明符的候选表逐字不变（旧行为不受影响）", () => {
+    const dir = tmpProject("nudo-nodenext-bare-", {
+      "use.ts": `import { add } from "./lib";\n`,
+    });
+    const cands = moduleResolveCandidates("./lib", join(dir, "use.ts"));
+    const base = join(dir, "lib");
+    expect(cands).toEqual([
+      base,
+      `${base}.js`,
+      `${base}.mjs`,
+      `${base}.ts`,
+      join(base, "index.js"),
+      join(base, "index.mjs"),
+      join(base, "index.ts"),
+    ]);
+  });
+});

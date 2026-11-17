@@ -1113,6 +1113,14 @@ function deleteTypeSyntaxFields(
   ) {
     delete node.optional;
   }
+  // BUG-136：变量声明符上的确定赋值断言（`export let a!: number`）。
+  // Babel 把 `!` 记在 **VariableDeclarator.definite**（不是 id、更不是类成员），
+  // 上面的类成员清理块只覆盖 `Class*` 节点族 ⇒ 生成器照样打印 `a!` ⇒ 产物
+  // `node --check` 报 Unexpected token '!'，而 `migrate strip` 仍 `wrote` + exit 0。
+  // `!` 只是类型断言、无运行时语义（与 `tsc` 降级同形），直接删字段。
+  if (node.type === "VariableDeclarator" && node.definite === true) {
+    delete node.definite;
+  }
   // 类的 implements 子句与继承泛型实参
   if ("implements" in node) delete node.implements;
   if ("superTypeParameters" in node) delete node.superTypeParameters;

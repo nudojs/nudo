@@ -126,6 +126,10 @@ function tsOnlyConstructs(ast: unknown, out: string[] = [], seen = new Set<objec
   const type = typeof node.type === "string" ? node.type : undefined;
   if (type === "TSParameterProperty") {
     out.push("constructor parameter property");
+  } else if (type === "VariableDeclarator" && node.definite === true) {
+    // BUG-136：`let a!: number` 的 `!` 只应在剥除阶段消失；若仍残留 ⇒ 产物
+    // 不是合法 JS，闸门必须拦住（不能 `wrote` + exit 0 落一份 Node 拒绝的文件）。
+    out.push("variable definite assignment assertion ('let a!: T')");
   } else if (type && TS_ONLY_MODULE_STATEMENTS.has(type)) {
     out.push(TS_ONLY_MODULE_STATEMENTS.get(type)!);
   } else if (type && TS_ONLY_EXIT_STATEMENTS.has(type)) {

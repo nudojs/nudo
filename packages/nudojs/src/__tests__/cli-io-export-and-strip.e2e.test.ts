@@ -2008,3 +2008,58 @@ describe("nudo export --out · 写失败回放已落盘清单", () => {
   }, 60000); // 1 个 CLI 子进程（tsx 冷启动）
 
 });
+
+// ---------------------------------------------------------------------------
+// CJS 顶层重复声明 / 变量声明符的确定赋值断言
+// ---------------------------------------------------------------------------
+describe("CJS 重复声明与变量 definite 断言的产物合法性", () => {
+  const dirs: string[] = [];
+  afterAll(() => {
+    for (const d of dirs) rmSync(d, { recursive: true, force: true });
+  });
+  const tmp = (files: Record<string, string>): string => {
+    const d = mkdtempSync(join(tmpdir(), "nudo-cjs-definite-"));
+    dirs.push(d);
+    for (const [name, content] of Object.entries(files)) writeFileSync(join(d, name), content, "utf-8");
+    return d;
+  };
+
+  it(".cjs 的顶层重复声明是合法 CJS：check 不再判 syntax error（node --check 通过）", () => {
+    const d = tmp({
+      "package.json": `{"type":"commonjs"}\n`,
+      "dup.cjs": `function f() { return 1; }
+function f(x) { return "s"; }
+module.exports = f;
+`,
+      "fnvar.cjs": `function g() { return 1; }
+var g = 2;
+module.exports = g;
+`,
+    });
+    for (const name of ["dup.cjs", "fnvar.cjs"]) {
+      const r = runCli(["check", join(d, name)]);
+      expect(r.status, r.stderr).toBe(0);
+      expect(r.stdout).toContain("OK");
+      expect(r.stderr).not.toContain("already been declared");
+    }
+  });
+
+  it("`export let a!: number` 的 `!` 被剥除 ⇒ 产物 node --check 通过（旧产物 `export let a!;` 非法）", () => {
+    const d = tmp({
+      "c.ts": `export let a!: number;
+export var b!: string;
+declare var c: number;
+`,
+    });
+    const r = runCli(["migrate", "strip", join(d, "c.ts"), "--write", "--no-draft"]);
+    expect(r.status, r.stderr).toBe(0);
+    const js = join(d, "c.js");
+    expect(existsSync(js)).toBe(true);
+    const code = readFileSync(js, "utf-8");
+    expect(code).toContain("export let a;");
+    expect(code).toContain("export var b;");
+    expect(code).not.toContain("!");
+    const checked = spawnSync("node", ["--check", js], { encoding: "utf-8" });
+    expect(checked.status, checked.stderr).toBe(0);
+  });
+});

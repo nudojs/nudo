@@ -92,14 +92,44 @@ export function getParseSourceCacheSize(): number {
  * - 插件集**不随调用方变化**（重试与否只由源码文本决定）⇒ AST LRU 缓存键
  *   （mode + source）**不动**，不存在 `.ts` / `.js` 串味。
  */
+/**
+ * 源码的模块类型（BUG-085）。
+ *
+ * Babel 的 `sourceType: "module"` 会在**语法层**禁掉顶层重复声明（ESM 的
+ * 静态语义），但 CJS 允许 `function f(){} function f(x){}` / `function g(){}
+ * var g = 2`（`node --check` 通过、运行时后者覆盖前者）。旧口径恒按 module
+ * 解析 ⇒ 合法 `.cjs` 在 `check` / `test` / `export` 三面整份被判 syntax
+ * error（零签名、零产物）。
+ *
+ * core 不读文件系统（不能在 core 层查 `package.json#type`），因此按
+ * **扩展名 + 源码标记**判定：`.cjs` / `.cts` 恒是 CJS；其余只在「源码有明显
+ * CJS 标记且没有 ESM 语法」时按 script 解析 ⇒ ESM 行为逐字不变。
+ */
+type SourceType = "module" | "script";
+function sourceTypeFor(filename: string | undefined, source: string): SourceType {
+  const lower = (filename ?? "").toLowerCase();
+  // ESM 语法（含 `import.meta`）显式优先——`.cts` / `.cjs` 里也常写
+  // `export function …`（tsc 会降级成 CJS 产物，nudo 的门禁同样按模块解析）。
+  // 若对这些文件强制 script，会把合法 ESM 语法判成 syntax error（反噬）。
+  if (/(?:^|[\n;])\s*(?:import|export)\b/m.test(source) || /\bimport\.meta\b/.test(source)) {
+    return "module";
+  }
+  if (lower.endsWith(".cjs") || lower.endsWith(".cts")) return "script";
+  if (lower.endsWith(".mjs") || lower.endsWith(".mts")) return "module";
+  return /\bmodule\.exports\b|\bexports\.[A-Za-z_$]|\brequire\s*\(/.test(source)
+    ? "script"
+    : "module";
+}
+
 function parseWithJsxFallback(
   source: string,
   plugins: readonly ParsePlugin[],
   opts?: { errorRecovery?: boolean; keepTs?: boolean; filename?: string },
 ): File {
+  const sourceType = sourceTypeFor(opts?.filename, source);
   const parseWith = (ps: readonly ParsePlugin[]): File =>
     babelParse(source, {
-      sourceType: "module",
+      sourceType,
       plugins: [...ps],
       attachComment: true,
       errorRecovery: opts?.errorRecovery === true,
@@ -148,9 +178,10 @@ export function parseSource(
   if (source.length > MAX_AST_SOURCE_CHARS) {
     return parseUncached(source, opts);
   }
-  // 缓存键必须含**插件模式**：同一段源码在 `.js`（无 typescript 插件）与
-  // `.ts`（有）下是两棵不同的 AST ⇒ 只按 source 做键会让两棵树串味。
-  const key = `${parseModeFor(opts?.filename)}\u0000${source}`;
+  // 缓存键必须含**插件模式 + 模块类型**：同一段源码在 `.js`（无 typescript
+  // 插件）与 `.ts`（有）下是两棵不同的 AST，在 ESM / CJS 下也是 ⇒ 只按
+  // source 做键会让两棵树串味。
+  const key = `${parseModeFor(opts?.filename)}:${sourceTypeFor(opts?.filename, source)}\u0000${source}`;
   const hit = astCache.get(key);
   if (hit !== undefined) {
     astCache.delete(key);

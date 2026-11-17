@@ -780,9 +780,12 @@ function dropSupersededSources(files: readonly string[]): string[] {
   for (const [, list] of byDir) {
     const jsProducts = new Set<string>();
     const mjsProducts = new Set<string>();
+    // BUG-087：`.cts → .cjs` 也是产物链（与 `shared.ts` 的目录仲裁同口径）。
+    const cjsProducts = new Set<string>();
     for (const f of list) {
       const name = basename(f).toLowerCase();
       if (name.endsWith(".mjs")) mjsProducts.add(name.slice(0, -4));
+      else if (name.endsWith(".cjs")) cjsProducts.add(name.slice(0, -4));
       else if (name.endsWith(".js")) jsProducts.add(name.slice(0, -3));
     }
     for (const f of list) {
@@ -792,7 +795,11 @@ function dropSupersededSources(files: readonly string[]): string[] {
       else if (name.endsWith(".cts") && !name.endsWith(".d.cts")) stem = name.slice(0, -4);
       else if (name.endsWith(".ts") && !name.endsWith(".d.ts")) stem = name.slice(0, -3);
       if (stem !== undefined) {
-        const products = name.endsWith(".mts") ? mjsProducts : jsProducts;
+        const products = name.endsWith(".mts")
+          ? mjsProducts
+          : name.endsWith(".cts")
+            ? cjsProducts
+            : jsProducts;
         if (products.has(stem)) continue;
       }
       out.push(f);
