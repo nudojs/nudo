@@ -12,6 +12,7 @@ pnpm run build          # tsup → dist/ (required before test — see below)
 pnpm run lint           # tsc --noEmit -p tsconfig.lint.json
 pnpm run lint:tests     # tsc --noEmit -p tsconfig.test-lint.json
 pnpm run lint:hygiene   # 静态卫生 + core 子域边界（两条 node 脚本）
+pnpm run check:diff-face -- --base origin/main  # 加法成本：超出解释线（净增/新增源码或测试文件）须 --reason 或填 PR 模板小节
 pnpm run test           # vitest run
 pnpm run test:local     # 本地快车道：按需 build + CLI e2e 走 dist（见下）
 pnpm run verify:examples  # docs/examples command matrix (exit codes)

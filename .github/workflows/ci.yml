@@ -161,6 +161,17 @@ jobs:
       - name: Static hygiene & core subdomain gate
         run: pnpm run lint:hygiene
 
+      # Diff 面门禁（加法成本）：源码净增 / 新增源码或测试文件超出
+      # package.json#nudo.diffBudget ⇒ PR body 的任务书小节必须非空
+      # （模板 .github/PULL_REQUEST_TEMPLATE.md，门禁直接读它取标题）。
+      # 只对 PR 生效：push 的 before 面在合并之后重算已无「本批改动」语义。
+      - name: Diff face (budget / merge-then-delete)
+        if: github.event_name == 'pull_request'
+        env:
+          DIFF_FACE_BASE: ${{ github.event.pull_request.base.sha }}
+          DIFF_FACE_PR_BODY: ${{ github.event.pull_request.body }}
+        run: pnpm run check:diff-face
+
       # 生成文件（releases*.md / api skeleton / versioning 版本表）不得与源漂移
       - name: Docs generation drift gate
         run: |

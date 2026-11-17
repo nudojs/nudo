@@ -14,6 +14,7 @@
     "check:subdomains": "node scripts/check-core-subdomains.mjs",
     "check:test-structure": "node scripts/check-test-structure.mjs",
     "check:release-notes": "node scripts/check-changeset-notes.mjs",
+    "check:diff-face": "node scripts/check-diff-face.mjs",
     "build": "pnpm run build:packages",
     "build:packages": "pnpm -r --filter '@nudojs/*' --filter 'nudojs' --filter 'vite-plugin-nudo' run build",
     "test": "NODE_OPTIONS=--max-old-space-size=8192 vitest run",
@@ -62,6 +63,13 @@
     "verify:docs": "bash scripts/verify-doc-examples.sh",
     "check:aliases": "node scripts/check-aliases.mjs",
     "branch:hygiene": "node scripts/branch-hygiene.mjs"
+  },
+  "nudo": {
+    "diffBudget": {
+      "sourceNetLines": 250,
+      "newSourceFiles": 2,
+      "newTestFiles": 0
+    }
   },
   "devDependencies": {
     "@babel/parser": "^8.1.0",
