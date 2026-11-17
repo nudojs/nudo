@@ -28,13 +28,43 @@ const FORMAT_HOST: ts.FormatDiagnosticsHost = {
   getNewLine: () => "\n",
 };
 
+/**
+ * lib `.d.ts` 的 SourceFile 缓存（跨 program 复用）。
+ *
+ * `createProgram` 每次都会重新读盘 + 解析 lib.*.d.ts（~80 个文件，占单次
+ * 门禁约 1/4 时间）。SourceFile 不可变，按文件复用是安全的（TS 自己的
+ * `createDocumentRegistry` 做同一件事）。实测 525ms → 381ms/program。
+ */
+const LIB_SOURCE_CACHE = new Map<string, ts.SourceFile>();
+
+function createStringCachingHost(): ts.CompilerHost {
+  const host = ts.createCompilerHost({});
+  const baseGetSourceFile = host.getSourceFile.bind(host);
+  host.getSourceFile = (fileName, languageVersion, onError, shouldCreateNewSourceFile) => {
+    const isLib = fileName.includes("/typescript/lib/");
+    const key = `${fileName}:${typeof languageVersion === "object" ? languageVersion.languageVersion : languageVersion}`;
+    if (isLib && !shouldCreateNewSourceFile) {
+      const hit = LIB_SOURCE_CACHE.get(key);
+      if (hit) return hit;
+    }
+    const sourceFile = baseGetSourceFile(fileName, languageVersion, onError, shouldCreateNewSourceFile);
+    if (isLib && sourceFile) LIB_SOURCE_CACHE.set(key, sourceFile);
+    return sourceFile;
+  };
+  return host;
+}
+
 /** 跑一个 strict program，只把 error 级诊断算失败（tsc 退出码同口径）。 */
 function runProgram(fileNames: string[], options: ts.CompilerOptions): TscResult {
-  const program = ts.createProgram(fileNames, {
-    noEmit: true,
-    strict: true,
-    ...options,
-  });
+  const program = ts.createProgram(
+    fileNames,
+    {
+      noEmit: true,
+      strict: true,
+      ...options,
+    },
+    createStringCachingHost(),
+  );
   const diagnostics = ts
     .getPreEmitDiagnostics(program)
     .filter((d) => d.category === ts.DiagnosticCategory.Error);

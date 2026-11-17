@@ -105,7 +105,9 @@ const run = spawnSync(vitest, ["run", ...process.argv.slice(2)], {
     // 核数取 worker（vitest.config.ts 的 CI 分支固定 4）。CI job 用
     // `pnpm run test`，不走这里。
     CI: "",
-    NODE_OPTIONS: process.env.NODE_OPTIONS ?? "--max-old-space-size=8192",
+    // 不注入 `--max-old-space-size=8192`：8GB 老生代让 worker 只涨不回收，
+    // 16 worker 全量 RSS 4.4GB（默认堆 1.1GB）且明显变慢（162s vs 109s）。
+    NODE_OPTIONS: process.env.NODE_OPTIONS ?? "",
   },
 });
 process.exit(run.status ?? 1);
