@@ -20,11 +20,29 @@ pnpm run verify:docs      # doc code samples still run
 
 **Build before test is mandatory.** Vitest aliases packages to `src`, but `@nudo:env` dynamic imports resolve `@nudojs/*` through package.json `exports` to `dist/`. CI runs `build` before `test` for the same reason; do the same locally.
 
-`pnpm run test:local -- [vitest args]` 是本地开发循环的快车道：dist 落后于
-非测试源码时才重建（纯测试改动跳过），然后以 `NUDO_TEST_CLI=dist` 跑 CLI e2e
-（每次 spawn 0.9s → 0.22s）；worker 数按本机核数取（CI 仍 4）。2026-11-17
-实测全量 978 文件 / 12438 用例（16 核）：`pnpm run test` 423s →
-`test:local` 107s。
+`pnpm run test:local ...` 是本地快车道：dist 落后于非测试源码时才重建（纯测试
+改动跳过），CLI e2e 以 `NUDO_TEST_CLI=dist` 跑（每次 spawn 0.9s → 0.22s），
+worker 数按本机核数取（CI 仍 4）。2026-11-17 实测（16 核）：
+
+| 命令 | 面 | 用时 |
+|---|---|---|
+| `pnpm run test:local -- --changed` | 变更相关（日常内循环；与 CI PR 同口径） | 秒级 |
+| `pnpm run test:local --fast` | 全量减去 CLI e2e 目录与真实包扫描 | ~68s（893 文件） |
+| `pnpm run test:local` | 全量（预推送自检） | ~107s（978 文件 / 12438 用例） |
+
+CI 不跑 `test:local`：PR / dev push 用 `--changed`（+ `test:fs-input`），
+main push 与 nightly 才跑全量——那是发布门禁。
+
+耗时用例分层（选面依据，不按文件数看）：
+
+- **unit**：core / service 投影 / env / parser 的引擎与代数断言（单用例多为 ms 级）。
+- **进程级 e2e**：`packages/nudojs/src/__tests__/`（958 用例，占测试体时长约一半；
+  每条 2–5 次 CLI spawn）。
+- **真编译门禁**：`service/emit` 里调 `tscNoEmit` 的 15 个文件（222 用例，真 tsc）。
+- **外部 oracle**：`check-real-*`（真实 npm 包）+ harvester 真实 `@types` 语料。
+
+后三类只在 `--changed` 命中、或全量门禁（main / nightly / 预推送）里执行。
+`--fast` 与 `--changed` 互斥（快面排除 CLI e2e，组合会静默漏测）。
 
 Also useful:
 

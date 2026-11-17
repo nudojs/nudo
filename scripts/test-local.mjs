@@ -1,14 +1,20 @@
 /**
- * 本地测试快车道：`pnpm run test:local -- [vitest args]`
+ * 本地测试快车道：`pnpm run test:local [-- --changed | --fast]`
  *
- * 只改本地开发循环，CI 保持 build → test 两步不变：
+ * 三种用法（本地开发循环；CI 保持 build → test 两步，门禁口径不变）：
+ * - `test:local`                 全量（预推送自检）
+ * - `test:local -- --changed`    变更相关（日常内循环；与 CI PR 同口径）
+ * - `test:local --fast`          全量减去 e2e / 外部 oracle 两条慢通道
+ *                                （CLI e2e 目录 + 真实 npm 包扫描）：893 文件，~68s
+ *
+ * 通用优化：
  * 1. CLI e2e 走 `NUDO_TEST_CLI=dist`——每次 spawn 省掉 tsx 转译
  *    （0.9s → 0.22s，全仓 900+ 处 spawn）。
  * 2. dist 只在**落后于非测试源码**时重建（tsup 全量约 47s；纯测试改动跳过）。
- * 3. worker 数由 vitest.config.ts 决定（本地 = 核数 − 4；CI 仍 4）。
+ * 3. worker 数由 vitest.config.ts 决定（本地 = 核数；CI 仍 4）。
  *
- * 2026-11-17 实测（16 核，HEAD 259a81b2，968 文件 / 12439 用例）：
- * `pnpm run test` 423s → `pnpm run test:local` 146s（+ 首次 build 47s）。
+ * 2026-11-17 实测（16 核，978 文件 / 12438 用例）：
+ * `pnpm run test` 423s → `test:local` 107s；`--fast` 68s。
  *
  * dist 刷新判定只看非测试源码：tsup 输入不含 `__tests__` / `*.test.ts`，
  * 所以纯测试改动不触发重建，CLI e2e 测的仍是同一份实现。
@@ -43,7 +49,9 @@ function newestMtime(dir, accept) {
     for (const e of entries) {
       const p = join(d, e.name);
       if (e.isDirectory()) {
-        if (e.name === "node_modules") continue;
+        // tsup 输入不含测试面（`__tests__/` 下的 harness/helper 虽不是
+        // `*.test.ts`，同样不进 dist）——否则只改测试 helper 就会误触发重建。
+        if (e.name === "node_modules" || e.name === "__tests__") continue;
         walk(p);
       } else if (accept(e.name)) {
         const { mtimeMs } = statSync(p);
@@ -88,14 +96,42 @@ function distStale() {
   return false;
 }
 
+const args = process.argv.slice(2);
+// 直接 `node scripts/test-local.mjs -- <filter>` 时 `--` 会被 vitest 当成
+// 「之后的都交给下层」，位置过滤失效（实测会跑全量）。剥掉。
+while (args[0] === "--") args.shift();
+// `--fast`：跳过 e2e / 外部 oracle 通道（本脚本自己的旗标，不传给 vitest）。
+// 与 `--changed` 互斥：changed 命中的 CLI e2e 文件会被 exclude 静默吞掉，
+// 宁可直接报错也不要给出「改过 CLI 但本地绿」的假信号。
+const fast = args.includes("--fast");
+if (fast) args.splice(args.indexOf("--fast"), 1);
+if (fast && args.some((a) => a === "--changed" || a.startsWith("--changed="))) {
+  console.error("[test:local] --fast 与 --changed 不能同时用：--fast 会跳过 CLI e2e，");
+  console.error("             与「只跑变更相关」组合会静默漏测；日常内循环用 --changed，");
+  console.error("             宽面自检用 --fast。");
+  process.exit(2);
+}
+
 if (distStale()) {
   console.log("[test:local] dist 落后于非测试源码 → pnpm run build");
   const build = spawnSync("pnpm", ["run", "build"], { stdio: "inherit", cwd: repoRoot });
   if (build.status !== 0) process.exit(build.status ?? 1);
 }
 
+const vitestArgs = ["run", ...args];
+if (fast) {
+  // CLI e2e（进程 spawn）与真实 npm 包扫描（外部 oracle）不进快面：
+  // 前者 83 文件 / 958 用例占测试体时长 ~52%，后者依赖 node_modules 里的包。
+  vitestArgs.push(
+    "--exclude",
+    "packages/nudojs/src/__tests__/**",
+    "--exclude",
+    "packages/core/src/algebra/__tests__/check-real-*.test.ts",
+  );
+}
+
 const vitest = join(repoRoot, "node_modules", ".bin", "vitest");
-const run = spawnSync(vitest, ["run", ...process.argv.slice(2)], {
+const run = spawnSync(vitest, vitestArgs, {
   stdio: "inherit",
   cwd: process.cwd(),
   env: {
