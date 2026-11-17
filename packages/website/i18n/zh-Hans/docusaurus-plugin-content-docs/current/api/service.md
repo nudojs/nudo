@@ -610,7 +610,7 @@ type SymbolTable = {
 ## Export inventory
 
 <!-- NUDO-API-SKELETON:BEGIN -->
-> 由 `pnpm run docs:gen:api` 从包导出面（`PUBLIC_API.md` / `src/index.ts`）生成 —— 请勿手改本块。重新生成：`node scripts/gen-api-docs.mjs`。每行名字带稳定锚点 `#slug`（符号名小写）。
+> 由 `node scripts/gen-api-docs.mjs` 从包导出面（`PUBLIC_API.md` / `src/index.ts`）生成 —— 请勿手改本块（或在 `pnpm run docs:gen` 里一并再生）。每行名字带稳定锚点 `#slug`（符号名小写）。
 
 含 `@nudojs/service`（`src/index.ts`）面与 `@nudojs/service/emit` 公开 emit 面。
 

@@ -192,7 +192,7 @@ createEnvironment(parent?, bindings?)
 ## Export inventory
 
 <!-- NUDO-API-SKELETON:BEGIN -->
-> 由 `pnpm run docs:gen:api` 从包导出面（`PUBLIC_API.md` / `src/index.ts`）生成 —— 请勿手改本块。重新生成：`node scripts/gen-api-docs.mjs`。每行名字带稳定锚点 `#slug`（符号名小写）。
+> 由 `node scripts/gen-api-docs.mjs` 从包导出面（`PUBLIC_API.md` / `src/index.ts`）生成 —— 请勿手改本块（或在 `pnpm run docs:gen` 里一并再生）。每行名字带稳定锚点 `#slug`（符号名小写）。
 
 产品面清单来自 `packages/core/PUBLIC_API.md` §2，按子节分组：类型系统核心（§2.1）与 Exec 运行时（§2.2，`$op` 族）。`src/index.ts` 中其余非 `$op` 再导出名折叠进下方清单。宿主机件在 `@nudojs/core/internal`，刻意不在本表。
 

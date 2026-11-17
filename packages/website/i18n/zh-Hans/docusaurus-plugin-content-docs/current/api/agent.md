@@ -279,7 +279,7 @@ Nudo 无法表达的名字会降级为 `unknown`——**绝不**被悄悄放宽�
 ## Export inventory
 
 <!-- NUDO-API-SKELETON:BEGIN -->
-> 由 `pnpm run docs:gen:api` 从包导出面（`PUBLIC_API.md` / `src/index.ts`）生成 —— 请勿手改本块。重新生成：`node scripts/gen-api-docs.mjs`。每行名字带稳定锚点 `#slug`（符号名小写）。
+> 由 `node scripts/gen-api-docs.mjs` 从包导出面（`PUBLIC_API.md` / `src/index.ts`）生成 —— 请勿手改本块（或在 `pnpm run docs:gen` 里一并再生）。每行名字带稳定锚点 `#slug`（符号名小写）。
 
 Agent 工具来自 `AGENT_TOOL_SOURCES`（`packages/lsp/src/agent-tools.ts`），与 `src/public-api.ts` 的 `nudo.*` executeCommand / `nudo/*` 请求名同源钉住。`codeLens` 仅服务端；`selectCase` / `getActiveCases` 是编辑器命令，不是 agent 工具。
 
