@@ -2694,6 +2694,8 @@ export interface DtsClassFieldSurface {
   name: string;
   type: string;
   readonly?: boolean;
+  /** BUG-044：`x?: T` 的可选修饰符（旧实现丢弃 ⇒ 消费方读到不存在的值） */
+  optional?: boolean;
   accessibility?: "private" | "protected" | "public";
   isAbstract?: boolean;
 }
@@ -2726,6 +2728,8 @@ export interface DtsClassMemberSurface {
   staticMethods: DtsClassMethodSurface[];
   /** 构造器形参名（无显式构造器 ⇒ undefined ⇒ 不发构造器声明） */
   ctorParams?: string[];
+  /** BUG-042：构造器可见性（`private constructor` ⇒ 消费方不可 `new`） */
+  ctorAccessibility?: "private" | "protected" | "public";
   /** Bug 48：构造器形参的源码类型注解（与 ctorParams 平行；无注解 ⇒ undefined） */
   ctorParamTypes?: Array<string | undefined>;
   /**
@@ -3025,7 +3029,12 @@ function valueTypeTextOfInit(init: SurfaceNode | undefined): string {
 /** 形参名列表（Identifier / RestElement / AssignmentPattern / 模式 → argN） */
 function surfaceParamNames(params: SurfaceNode[] | undefined): string[] {
   return (params ?? []).map((p, i) => {
-    if (p.type === "Identifier" && typeof p.name === "string") return p.name;
+    if (p.type === "Identifier" && typeof p.name === "string") {
+      // BUG-122：TS 可选形参 `n?: number` 的 `?` 挂在 Identifier 上
+      // （`optional: true`），不是 AssignmentPattern ⇒ 旧实现丢标记，
+      // 消费方 `new C()` 报 TS2554。
+      return p.optional === true ? `${p.name}?` : p.name;
+    }
     if (p.type === "RestElement") {
       const arg = p.argument as SurfaceNode | undefined;
       const n = surfaceName(arg);
@@ -3190,6 +3199,8 @@ function scanClassSurface(
   let hasPrivateIdentifier = false;
   let ctorParams: string[] | undefined;
   let ctorParamTypes: Array<string | undefined> | undefined;
+  /** BUG-042：构造器可见性（源码修饰符；缺省 public） */
+  let ctorAccessibility: "private" | "protected" | "public" | undefined;
   const instanceFields: DtsClassFieldSurface[] = [];
   /** BUG-033：无注解 getter（待按返回值观测补类型） */
   const pendingGetters: Array<{ index: number; fn: SurfaceNode; isStatic: boolean }> = [];
@@ -3222,6 +3233,8 @@ function scanClassSurface(
       ...(mem.readonly === true ? { readonly: true } : {}),
       ...(accessibilityOf(mem) ? { accessibility: accessibilityOf(mem) } : {}),
       ...(mem.abstract === true ? { isAbstract: true } : {}),
+      // BUG-044：`x?: T` 的 `?` 挂在 key 上（不在 typeAnnotation 节点里）
+      ...(mem.optional === true ? { optional: true } : {}),
     });
   };
   const addStaticField = (name: string, mem: SurfaceNode): void => {
@@ -3231,6 +3244,7 @@ function scanClassSurface(
       name,
       type: classFieldType(mem.value as SurfaceNode | undefined, fieldAnnotation(mem)),
       ...(mem.readonly === true ? { readonly: true } : {}),
+      ...(mem.optional === true ? { optional: true } : {}),
       ...(accessibilityOf(mem) ? { accessibility: accessibilityOf(mem) } : {}),
     });
   };
@@ -3366,6 +3380,7 @@ function scanClassSurface(
       const rawParams = (fnNode.params as SurfaceNode[] | undefined) ?? [];
       if (ctorParams === undefined) {
         ctorParams = params;
+        ctorAccessibility = accessibilityOf(mem);
         // Bug 48：构造器形参的源码类型注解（解包 TSParameterProperty /
         // AssignmentPattern）——只放行在产物里可解析的类型，否则回落 unknown。
         ctorParamTypes = rawParams.map((p) => {
@@ -3479,6 +3494,7 @@ function scanClassSurface(
     staticMethods,
     ...(ctorParams !== undefined ? { ctorParams } : {}),
     ...(ctorParamTypes !== undefined ? { ctorParamTypes } : {}),
+    ...(ctorAccessibility !== undefined ? { ctorAccessibility } : {}),
     ...(typeParams.length > 0 ? { typeParams } : {}),
     ...(typeParamsText !== undefined ? { typeParamsText } : {}),
     ...(superClass !== undefined ? { superClass } : {}),
@@ -3640,8 +3656,9 @@ function namespaceClassLines(decl: SurfaceNode, source: string): string[] {
   if (scanned.hasPrivateIdentifier) lines.push("#private;");
   for (const idx of scanned.indexSignatures ?? []) lines.push(idx);
   if (scanned.ctorParams) {
+    const ctorPrefix = scanned.ctorAccessibility ? `${scanned.ctorAccessibility} ` : "";
     lines.push(
-      `constructor(${scanned.ctorParams.map((p, i) => classParamDecl(p, i)).join(", ")});`,
+      `${ctorPrefix}constructor(${scanned.ctorParams.map((p, i) => classParamDecl(p, i)).join(", ")});`,
     );
   }
   for (const m of scanned.instanceMethods) {
@@ -3658,7 +3675,7 @@ function namespaceClassLines(decl: SurfaceNode, source: string): string[] {
     lines.push(`${prefix}static ${m.name}(${params}): ${m.returnType ?? "unknown"};`);
   }
   for (const f of scanned.staticFields ?? []) {
-    lines.push(`${fieldPrefix(f)}static ${formatPropKey(f.name)}: ${f.type};`);
+    lines.push(`${staticFieldPrefix(f)}${formatPropKey(f.name)}${f.optional ? "?" : ""}: ${f.type};`);
   }
   for (const a of scanned.accessors ?? []) {
     const st = a.isStatic ? "static " : "";
@@ -3669,7 +3686,7 @@ function namespaceClassLines(decl: SurfaceNode, source: string): string[] {
     );
   }
   for (const f of scanned.instanceFields ?? []) {
-    lines.push(`${fieldPrefix(f)}${formatPropKey(f.name)}: ${f.type};`);
+    lines.push(`${fieldPrefix(f)}${formatPropKey(f.name)}${f.optional ? "?" : ""}: ${f.type};`);
   }
   const header =
     superName !== undefined
@@ -4840,6 +4857,21 @@ function projectModuleDtsInner(
   return { lines: [...importLines, ...ledger, ...lines], params };
 }
 
+/**
+ * 静态字段修饰符前缀（BUG-041）：`static` 必须排在 `readonly` 之前
+ * （TS1029 "'static' modifier must precede 'readonly' modifier"）。旧实现先拼
+ * `fieldPrefix`（readonly/accessibility）再拼 `static` ⇒ `readonly static`。
+ */
+function staticFieldPrefix(f: DtsClassFieldSurface): string {
+  const parts = [
+    f.accessibility ?? "",
+    "static",
+    f.readonly ? "readonly" : "",
+    f.isAbstract ? "abstract" : "",
+  ].filter(Boolean);
+  return `${parts.join(" ")} `;
+}
+
 /** 字段修饰符前缀（Bug 77 readonly / Bug 86 accessibility / Bug 42 abstract）。 */
 function fieldPrefix(f: DtsClassFieldSurface): string {
   const parts = [
@@ -4886,7 +4918,9 @@ function dtsClassDeclaration(
         return safe.startsWith("...") ? `${safe}: ${t}[]` : `${safe}: ${t}`;
       })
       .join(", ");
-    body.push(`constructor(${params});`);
+    // BUG-042：构造器可见性（`private constructor` ⇒ 消费方不可 `new`）
+    const ctorPrefix = cls.ctorAccessibility ? `${cls.ctorAccessibility} ` : "";
+    body.push(`${ctorPrefix}constructor(${params});`);
   }
   const instanceSurface = cls?.instanceMethods ?? [];
   const staticSurface = cls?.staticMethods ?? [];
@@ -4939,7 +4973,7 @@ function dtsClassDeclaration(
   }
   // Bug 23：static 字段（运行时公开数据属性）
   for (const f of cls?.staticFields ?? []) {
-    body.push(`${fieldPrefix(f)}static ${formatPropKey(f.name)}: ${f.type};`);
+    body.push(`${staticFieldPrefix(f)}${formatPropKey(f.name)}${f.optional ? "?" : ""}: ${f.type};`);
   }
   // Bug 23：访问器（getter / setter 属于公开类型面）
   for (const a of cls?.accessors ?? []) {
@@ -4954,7 +4988,7 @@ function dtsClassDeclaration(
   // 实例字段（brand 实例形状 ∪ 源码面字段）
   for (const f of fields) {
     if (methodNames.has(f.name)) continue;
-    body.push(`${fieldPrefix(f)}${formatPropKey(f.name)}: ${f.type};`);
+    body.push(`${fieldPrefix(f)}${formatPropKey(f.name)}${f.optional ? "?" : ""}: ${f.type};`);
   }
   // Bug 74：类型形参子句优先取源码原文（含默认值 / 约束），否则按名字表补槽。
   const typeParams = cls?.typeParams ?? [];

@@ -2151,3 +2151,42 @@ export const svc = new Svc();
     expect(dts).toContain("export declare const svc: Svc;");
   });
 });
+
+describe("类成员的修饰符面（可见性 / 可选性 / static 序）", () => {
+  const dtsOf = (src: string): string => {
+    const result = analyzeFile("/test/modifiers.ts", src);
+    const surface = dtsModuleSurface(src);
+    const entries = result.functions
+      .filter((fn) => fn.cases.length > 0)
+      .map((fn) => ({ fn, projection: projectFunctionDts(fn, undefined, surface) }));
+    return projectModuleDts(surface, entries).lines.join("\n");
+  };
+
+  it("构造器可见性 / 形参可选 / 字段可选 / `static readonly` 顺序（BUG-042/122/044/041）", () => {
+    const dts = dtsOf(`export class C {
+  private constructor(n?: number) {}
+  static make(): C { return new C(); }
+  x?: number;
+  static readonly z: string = "a";
+  static q?: number;
+}
+`);
+    expect(dts).toContain("private constructor(n?: number);");
+    expect(dts).toContain("x?: number;");
+    // TS1029：static 在 readonly 之前
+    expect(dts).toContain("static readonly z: string;");
+    expect(dts).toContain("static q?: number;");
+    const check = tscNoEmit({ "mod.d.ts": dts, "use.ts": 'import { C } from "./mod.js";\nexport const v: C = C.make();\n' });
+    expect(check.ok, check.stderr).toBe(true);
+  });
+
+  it("负控制：public 构造器不加修饰符、无 `?` 的形参照旧必填", () => {
+    const dts = dtsOf(`export class P {
+  constructor(a: number) {}
+  b: number = 1;
+}
+`);
+    expect(dts).toContain("constructor(a: number);");
+    expect(dts).toContain("b: number;");
+  });
+});
