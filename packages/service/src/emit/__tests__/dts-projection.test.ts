@@ -1551,24 +1551,24 @@ function moduleDts(source: string, path = "/test/bug168-annotation.ts"): string 
 }
 
 
-  it("泛型函数的类型形参不放行：`id<T>(x: T)` ⇒ `id(x: unknown)` + 台账；多类型形参：`pair<A, B>` ⇒ 两个形参都回落观测口径（TS 投影面为 unknown）；本地 interface 放行（原文镜像进产物）⇒ 注解保留、零台账；TS 全局类型名照旧放行（Date / Record / Promise 不产生台账）；本地类（未导出）被注解引用 ⇒ 补 `declare class`（产物必须能解析该名）；别的模块的 import ⇒ ", () => {
+  it("泛型函数的类型形参放行：`id<T>(x: T): T` 原文保留且零台账（类型形参就在同一条声明的 `<T>` 里）；多类型形参 `pair<A, B>` 同理；本地 interface 放行（原文镜像进产物）⇒ 注解保留、零台账；TS 全局类型名照旧放行（Date / Record / Promise 不产生台账）；本地类（未导出）被注解引用 ⇒ 补 `declare class`（产物必须能解析该名）；别的模块的 import ⇒ ", () => {
   {
     const dts = moduleDts(`export function id<T>(x: T): T {
   return x;
 }
 `);
-    expect(dts).toContain("export declare function id(x: unknown): unknown;");
-    expect(dts).not.toContain("id(x: T)");
-    expect(dts).toContain("nudo:dropped-type-annotation id.x: T");
+    // 旧口径把 `T` 当成「未在本模块声明」丢弃并落误导性台账；Abs 域里没有
+    // 类型变量这个维度 ⇒ 观测只能给 unknown，产物据此丢掉参数↔返回关系。
+    expect(dts).toContain("export declare function id<T>(x: T): T;");
+    expect(dts).not.toContain("nudo:dropped-type-annotation");
   }
   {
     const dts = moduleDts(`export function pair<A, B>(a: A, b: B): [A, B] {
   return [a, b];
 }
 `);
-    expect(dts).toContain("export declare function pair(a: unknown, b: unknown): [unknown, unknown];");
-    expect(dts).not.toContain("pair(a: A");
-    expect(dts).not.toContain("b: B)");
+    expect(dts).toContain("export declare function pair<A, B>(a: A, b: B): [A, B];");
+    expect(dts).not.toContain("nudo:dropped-type-annotation");
   }
   {
     const dts = moduleDts(`interface Point { x: number; y: number }
@@ -2399,5 +2399,165 @@ export function assertAny(x: unknown): asserts x { if (x === undefined) throw ne
     const dts = moduleDts(`export function truthy(x) { return typeof x === "string"; }\n`);
     expect(dts).toContain(": boolean;");
     expect(dts).not.toContain(" is ");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 泛型类裸引用补实参 / 值声明取注解 / 类型形参入作用域 / as const 逐层冻结
+// ---------------------------------------------------------------------------
+describe("泛型类裸引用补实参、值声明取注解、类型形参入作用域、as const 冻结", () => {
+function valuesOf(source: string, path: string): Map<string, Abs> {
+  const result = analyzeFile(path, source);
+  const out = new Map<string, Abs>();
+  for (const [name, info] of result.bindings) out.set(name, info.abs);
+  return out;
+}
+
+function moduleDts(source: string, path = "/test/r2-generics.ts"): string {
+  const result = analyzeFile(path, source);
+  const surface = dtsModuleSurface(source);
+  const entries = result.functions
+    .filter((fn) => fn.cases.length > 0)
+    .map((fn) => ({ fn, projection: projectFunctionDts(fn, undefined, surface) }));
+  return projectModuleDts(surface, entries, { values: valuesOf(source, path) }).lines.join("\n");
+}
+
+  it("无默认类型形参的泛型类：返回位补 `<unknown>`，产物独立编译通过（旧口径裸名 ⇒ TS2314）", () => {
+    const dts = moduleDts(`export class Stack<T> {
+  items: T[] = [];
+  push(x: T) {
+    this.items.push(x);
+  }
+}
+export function make(): Stack<number> {
+  return new Stack<number>();
+}
+`);
+    expect(dts).toContain("export declare class Stack<T> {");
+    expect(dts).toContain("make(): Stack<unknown>;");
+    expect(dts).not.toMatch(/make\(\): Stack;/);
+    const check = tscNoEmit({ "mod.d.ts": dts });
+    expect(check.ok, check.stderr).toBe(true);
+  });
+
+  it("对照：类型形参全有默认值 ⇒ 裸名照旧（不回归），且消费方 `mk()` 合法", () => {
+    const dts = moduleDts(`export class Box<T = string> {
+  value: T = "x" as T;
+  get(): T {
+    return this.value;
+  }
+}
+export function mk(): Box {
+  return new Box();
+}
+`);
+    expect(dts).toContain("export declare class Box<T = string> {");
+    expect(dts).toContain("mk(): Box;");
+    const check = tscNoEmit({
+      "mod.d.ts": dts,
+      "use.ts": 'import { mk } from "./mod.js";\nexport const b = mk();\n',
+    });
+    expect(check.ok, check.stderr).toBe(true);
+  });
+
+  it("值声明的类型注解优先于观测：`const c1: number[] = []` 不再塌成 unknown[]，无初始化器的 `let l: number` 不再是 undefined", () => {
+    const dts = moduleDts(`export const c1: number[] = [];
+export const c2: number[] = [1, 2];
+export let l: number;
+export const u: number | null = null;
+export declare const dv: number;
+`);
+    expect(dts).toContain("export declare const c1: number[];");
+    expect(dts).toContain("export declare const c2: number[];");
+    expect(dts).toContain("export declare let l: number;");
+    expect(dts).toContain("export declare const u: number | null;");
+    expect(dts).toContain("export declare const dv: number;");
+    expect(dts).not.toContain("nudo:unresolved-value dv");
+    const check = tscNoEmit({
+      "mod.d.ts": dts,
+      "use.ts":
+        'import { c1, l, u } from "./mod.js";\n' +
+        "export const x: number[] = c1;\nexport const y: number = l;\n" +
+        "export const z: number | null = u;\n",
+    });
+    expect(check.ok, check.stderr).toBe(true);
+  });
+
+  it("对照：无注解仍按观测；注解引用不可解析的名字 ⇒ 不采用并落台账", () => {
+    const dts = moduleDts(`export const n = 1;
+export const bad: Hidden = 1 as any;
+`);
+    expect(dts).toContain("export declare const n: number;");
+    expect(dts).toContain("export declare const bad: number;");
+    expect(dts).toContain("nudo:dropped-type-annotation bad: Hidden");
+  });
+
+  it("声明自己的类型形参可解析：`id<T>(v: T): T` / 类字段 / 构造器 / 方法全保真，零台账", () => {
+    const dts = moduleDts(`export function id<T>(v: T): T {
+  return v;
+}
+export class Box<T> {
+  value: T = null as any;
+  constructor(v: T) {
+    this.value = v;
+  }
+  get v(): T {
+    return this.value;
+  }
+  m(a: T): T {
+    return a;
+  }
+}
+`);
+    expect(dts).toContain("export declare function id<T>(v: T): T;");
+    expect(dts).toContain("export declare class Box<T> {");
+    expect(dts).toContain("value: T;");
+    expect(dts).toContain("constructor(v: T);");
+    expect(dts).toContain("m(a: T): T;");
+    expect(dts).not.toContain("nudo:dropped-type-annotation");
+    // compat 行不得残留没有 `<T>` 作用域的 `T`
+    expect(dts).not.toContain("export declare function id(v: T)");
+
+    const check = tscNoEmit({
+      "mod.d.ts": dts,
+      "use.ts":
+        'import { id, Box } from "./mod.js";\n' +
+        "export const s: string = id<string>(\"a\");\n" +
+        "const b = new Box<string>(\"x\");\n" +
+        "export const t: string = b.value;\n" +
+        "export const u: string = b.m(\"y\");\n",
+    });
+    expect(check.ok, check.stderr).toBe(true);
+  });
+
+  it("`as const` 元组是只读的：`readonly [1, 2]`，且嵌套断言只冻结内层（外层属性仍可写）", () => {
+    const dts = moduleDts(`export const arr = [1, 2] as const;
+export const obj = { a: 1 } as const;
+export const nested = { x: [1, 2] as const };
+export const deep = { a: 1, d: [1, 2] } as const;
+`);
+    expect(dts).toContain("export declare const arr: readonly [1, 2];");
+    expect(dts).toContain("export declare const obj: { readonly a: 1 };");
+    expect(dts).toContain("export declare const nested: { x: readonly [1, 2] };");
+    expect(dts).toContain(
+      "export declare const deep: { readonly a: 1; readonly d: readonly [1, 2] };",
+    );
+
+    const read = tscNoEmit({
+      "mod.d.ts": dts,
+      "use.ts":
+        'import { arr, nested, deep } from "./mod.js";\n' +
+        "export const a: readonly [1, 2] = arr;\n" +
+        "export const b: { x: readonly [1, 2] } = nested;\n" +
+        "export const c: readonly [1, 2] = deep.d;\n",
+    });
+    expect(read.ok, read.stderr).toBe(true);
+
+    // 反向：冻结的元组不得写得进去
+    const write = tscNoEmit({
+      "mod.d.ts": dts,
+      "use.ts": 'import { arr } from "./mod.js";\narr[0] = 1;\n',
+    });
+    expect(write.ok).toBe(false);
   });
 });
