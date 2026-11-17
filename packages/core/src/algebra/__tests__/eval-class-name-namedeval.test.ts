@@ -1,5 +1,5 @@
 /**
- * Bug 133：类表达式的 ES **NamedEvaluation**——匿名类表达式绑定到名字时，
+ * 类表达式的 ES **NamedEvaluation**——匿名类表达式绑定到名字时，
  * 以该名字为类名（`const K = class {}` → `K.name === "K"`）。
  *
  * 根因：转译期发射类定义时就把名字定死（`$class(<合成名>, {…})`，类表达式
@@ -21,7 +21,7 @@ function v(src: string) {
   return litValue(call(src, "f").result);
 }
 
-describe("Bug 133: 类表达式的 NamedEvaluation（绑定名为类名）", () => {
+describe("类表达式的 NamedEvaluation（绑定名为类名）", () => {
   it("变量声明：`const K = class {…}` → K.name === \"K\"", () => {
     expect(
       v(`export function f() { const K = class { m() { return 1; } }; return K.name; }`),
@@ -81,7 +81,7 @@ describe("Bug 133: 类表达式的 NamedEvaluation（绑定名为类名）", () 
       ok: true,
       value: "K",
     });
-    // 空类体仍走 $classExpr fn 形状（Bug 80 pinned 形态）
+    // 空类体仍走 $classExpr fn 形状（pinned 形态）
     expect(v(`export function f() { const K = class {}; return typeof K; }`)).toEqual({
       ok: true,
       value: "function",

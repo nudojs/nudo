@@ -1,12 +1,12 @@
 // benchmark gate 机器因子探测（benchmark/src/noise.js + 两个 gate 的
 // --allow-uniform-shift）：
 // 1) detectUniformShift 纯函数单测——均匀 +10% 命中 / 非均匀、幅度 <5%、
-//    方向不一致、指标数 <3 不命中；
+// 方向不一致、指标数 <3 不命中；
 // 2) 子进程实跑两个 gate（惯例同 gate-major.test.ts 的 GATE_MAJOR_ROOT
-//    锚点覆写 + execFileSync）——oss 均匀 +11% 假红默认 exit 1 且带醒目
-//    提示、旗标放行；非均匀或混入 FP 回退时旗标无效；src gate 基线只有
-//    avgMs 单计时指标，不构成「均匀」证据，旗标下 3.5x 仍红（其 3.0x
-//    阈值本身远大于 10~13% 机器因子，见 gate.js 头注）。
+// 锚点覆写 + execFileSync）——oss 均匀 +11% 假红默认 exit 1 且带醒目
+// 提示、旗标放行；非均匀或混入 FP 回退时旗标无效；src gate 基线只有
+// avgMs 单计时指标，不构成「均匀」证据，旗标下 3.5x 仍红（其 3.0x
+// 阈值本身远大于 10~13% 机器因子，见 gate.js 头注）。
 import { describe, it, expect, afterEach } from "vitest";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";

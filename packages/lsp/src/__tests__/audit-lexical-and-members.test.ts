@@ -1,11 +1,11 @@
 /**
  * 审计 34 · D7：LSP 与 CLI 同源。
  *
- * - BUG-019：词法上下文判据（多行模板 / 多行块注释 / 正则体内部不得给候选）；
- * - BUG-034：成员面并入类成员表（实例原型方法 / 静态方法）。
+ * - 词法上下文判据（多行模板 / 多行块注释 / 正则体内部不得给候选）；
+ * - 成员面并入类成员表（实例原型方法 / 静态方法）。
  */
 import { describe, expect, it } from "vitest";
-import { openLspDocument, requestCompletion } from "./lsp-bug-d4-harness.ts";
+import { openLspDocument, requestCompletion } from "./lsp-harness-semantic-tokens.ts";
 
 const labels = (items: { label: string }[]): string[] => items.map((i) => i.label);
 
@@ -16,7 +16,7 @@ function lineOf(src: string, needle: string): { line: number; text: string } {
   return { line, text: lines[line]! };
 }
 
-describe("BUG-019 — 多行字面量 / 块注释 / 正则体内部零候选", () => {
+describe("多行字面量 / 块注释 / 正则体内部零候选", () => {
   const SRC = [
     "export const modObj = { alpha: 1, beta: \"x\" };",
     "export const msg = `first line",
@@ -56,7 +56,7 @@ describe("BUG-019 — 多行字面量 / 块注释 / 正则体内部零候选", (
   });
 });
 
-describe("BUG-034 — 成员面并入类成员表", () => {
+describe("成员面并入类成员表", () => {
   const SRC = [
     "export class K {",
     "  n = 1;",

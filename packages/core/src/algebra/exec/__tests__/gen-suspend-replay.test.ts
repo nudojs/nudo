@@ -5,7 +5,7 @@
  * 时间轴机制本身（不经转译链）：构造期零捕获、首个 `next()` 回放到第 1 个
  * 挂起点、后续 `next()` / 迭代 drain 单调推进、别名共享、async 同编、无钩子
  * 时零开销。端到端的 native 值面验收见
- * `algebra/__tests__/eval-bug-212-generator-body-eager.test.ts`。
+ * `algebra/__tests__/eval--generator-body-eager.part.ts`。
  *
  * 纪律：体仍只跑一次、只捕获一次序列；回放**不重跑体**（实验 E 的重复
  * 副作用不得回归），且绝不回卷（`.return()` / 耗尽后的 `next()` 不倒退）。

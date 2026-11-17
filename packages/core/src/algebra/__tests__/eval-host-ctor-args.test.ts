@@ -1,5 +1,5 @@
 /**
- * 求值引擎宿主构造器实参校验（wave 6：Bug 15/16/17/18/37/41/53/63/85）：
+ * 求值引擎宿主构造器实参校验（wave 6：）：
  * 原生构造器实参的确定非法形态不得折成 brand/promise/调用结果 + throws=never。
  * 三档口径：definite（prim/缺省/nullish 字面量等）→ NudoThrow（调用边界收成
  * throws TypeError/RangeError）；any/unknown/含坏成员 union → recordMayThrow
@@ -65,9 +65,9 @@ function isBrand(r: unknown, name: string): boolean {
   return !!a && typeof a === "object" && a.shape?.k === "brand" && a.shape.name === name;
 }
 
-// --- Bug 15：new WeakMap/WeakSet iterable 实参 ----------------------------
+// --- new WeakMap/WeakSet iterable 实参 ----------------------------
 
-describe("Bug 15: WeakMap/WeakSet constructor iterable argument", () => {
+describe("WeakMap/WeakSet constructor iterable argument", () => {
   it("non-iterable literal argument → definite TypeError", () => {
     for (const src of [
       `export function f() { return new WeakMap(1); }`,
@@ -98,9 +98,9 @@ describe("Bug 15: WeakMap/WeakSet constructor iterable argument", () => {
   });
 });
 
-// --- Bug 16：new Promise(executor) IsCallable -----------------------------
+// --- new Promise(executor) IsCallable -----------------------------
 
-describe("Bug 16: Promise executor callability", () => {
+describe("Promise executor callability", () => {
   it("non-callable literal executor → definite TypeError（catch 不得吞）", () => {
     for (const src of [
       `export function f() { return new Promise(1); }`,
@@ -125,9 +125,9 @@ describe("Bug 16: Promise executor callability", () => {
   });
 });
 
-// --- Bug 17：f.apply(thisArg, argArray) CreateListFromArrayLike -----------
+// --- f.apply(thisArg, argArray) CreateListFromArrayLike -----------
 
-describe("Bug 17: Function.prototype.apply argArray validation", () => {
+describe("Function.prototype.apply argArray validation", () => {
   it("non-nullish primitive argArray → definite TypeError（不得计算调用结果）", () => {
     for (const src of [
       `export function f() { return (function () { return 1; }).apply(null, 1); }`,
@@ -154,9 +154,9 @@ describe("Bug 17: Function.prototype.apply argArray validation", () => {
   });
 });
 
-// --- Bug 18：reduce/reduceRight 空数组无初值 ------------------------------
+// --- reduce/reduceRight 空数组无初值 ------------------------------
 
-describe("Bug 18: reduce/reduceRight empty array without initial value", () => {
+describe("reduce/reduceRight empty array without initial value", () => {
   it("empty tuple + no initial → definite TypeError", () => {
     for (const src of [
       `export function f() { return [].reduce(() => {}); }`,
@@ -189,9 +189,9 @@ describe("Bug 18: reduce/reduceRight empty array without initial value", () => {
   });
 });
 
-// --- Bug 37：new Proxy IsObject ×2 ---------------------------------------
+// --- new Proxy IsObject ×2 ---------------------------------------
 
-describe("Bug 37: new Proxy target/handler IsObject", () => {
+describe("new Proxy target/handler IsObject", () => {
   it("prim/nullish target 或 handler → definite TypeError", () => {
     for (const src of [
       `export function f() { return new Proxy(1, {}); }`,
@@ -218,9 +218,9 @@ describe("Bug 37: new Proxy target/handler IsObject", () => {
   });
 });
 
-// --- Bug 41：new ArrayBuffer ToIndex --------------------------------------
+// --- new ArrayBuffer ToIndex --------------------------------------
 
-describe("Bug 41: new ArrayBuffer ToIndex validation", () => {
+describe("new ArrayBuffer ToIndex validation", () => {
   it("负数/超界/±∞ 字面量（含数字字符串折算）→ definite RangeError", () => {
     for (const src of [
       `export function f() { return new ArrayBuffer(-1); }`,
@@ -265,9 +265,9 @@ describe("Bug 41: new ArrayBuffer ToIndex validation", () => {
   });
 });
 
-// --- Bug 53：装箱构造器 symbol 实参 ---------------------------------------
+// --- 装箱构造器 symbol 实参 ---------------------------------------
 
-describe("Bug 53: boxed Number/String symbol argument", () => {
+describe("boxed Number/String symbol argument", () => {
   it("new Number/String(Symbol()) → definite TypeError", () => {
     for (const src of [
       `export function f() { return new Number(Symbol()); }`,
@@ -301,9 +301,9 @@ describe("Bug 53: boxed Number/String symbol argument", () => {
   });
 });
 
-// --- Bug 63：new DataView IsArrayBuffer / ToIndex -------------------------
+// --- new DataView IsArrayBuffer / ToIndex -------------------------
 
-describe("Bug 63: new DataView buffer validation", () => {
+describe("new DataView buffer validation", () => {
   it("非 ArrayBuffer 字面量接收者 → definite TypeError", () => {
     for (const src of [
       `export function f() { return new DataView(1); }`,
@@ -332,9 +332,9 @@ describe("Bug 63: new DataView buffer validation", () => {
   });
 });
 
-// --- Bug 85：new URL ToString + 解析校验 ----------------------------------
+// --- new URL ToString + 解析校验 ----------------------------------
 
-describe("Bug 85: new URL input validation", () => {
+describe("new URL input validation", () => {
   it("不可解析字面量 / symbol / 缺省 → definite TypeError", () => {
     for (const src of [
       `export function f() { return new URL("not a url"); }`,

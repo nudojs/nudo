@@ -1,15 +1,15 @@
 /**
- * Bug 2 / Bug 34（生成器语义两连，同族）：
- * - Bug 2：终末 return 值——`$gen(body)` 此前把生成器体当 thunk 跑并丢弃
- *   返回值，done:true 的 value 恒 undefined。native（node 实测）：
- *   `{yield 1; return 9}` 第二个 next() → {value: 9, done: true}；裸
- *   `return 5` 同理；值只在首个 done:true 交付一次（此后 next →
- *   value undefined）。
- * - Bug 34：体内异常——`yield*` 非可迭代 / 显式 throw / 运行时抛错此前被
- *   $gen 调用期 catch 静默吞掉（迭代截断成前缀或空，异常丢失、gate 静默）。
- *   native：异常延迟到首个触达抛点的 next()/迭代消费抛出（此后 done），
- *   g() 本身永不抛。gate 面：体内 soft may-throw（`yield* x`、x:any）挂
- *   生成器对象、消费点重记——仅构造不消费仍静默（Bug 58 口径保持）。
+ * / （生成器语义两连，同族）：
+ * - 终末 return 值——`$gen(body)` 此前把生成器体当 thunk 跑并丢弃
+ * 返回值，done:true 的 value 恒 undefined。native（node 实测）：
+ * `{yield 1; return 9}` 第二个 next() → {value: 9, done: true}；裸
+ * `return 5` 同理；值只在首个 done:true 交付一次（此后 next →
+ * value undefined）。
+ * - 体内异常——`yield*` 非可迭代 / 显式 throw / 运行时抛错此前被
+ * $gen 调用期 catch 静默吞掉（迭代截断成前缀或空，异常丢失、gate 静默）。
+ * native：异常延迟到首个触达抛点的 next()/迭代消费抛出（此后 done），
+ * g() 本身永不抛。gate 面：体内 soft may-throw（`yield* x`、x:any）挂
+ * 生成器对象、消费点重记——仅构造不消费仍静默（口径保持）。
  * 每条断言与 node 真实执行对齐（值域 + throws 域双钉）。
  */
 import { describe, it, expect } from "vitest";
@@ -64,7 +64,7 @@ function litOf(src: string, fnName: string, args: Abs[] = []): { ok: boolean; va
   };
 }
 
-describe("Bug 2: generator terminal return value survives to the first done:true", () => {
+describe("generator terminal return value survives to the first done:true", () => {
   it("yield 1; return 9 → 第二个 next() 的 value 是 9（native 9，引擎此前 undefined）", () => {
     const r = litOf(
       `export function f() { function* g() { yield 1; return 9; } const it = g(); it.next(); return it.next().value; }`,
@@ -151,7 +151,7 @@ describe("Bug 2: generator terminal return value survives to the first done:true
   });
 });
 
-describe("Bug 34: generator-body exceptions propagate to the consumer, not silently truncated", () => {
+describe("generator-body exceptions propagate to the consumer, not silently truncated", () => {
   it("yield* {}：首个 next() 抛 TypeError（native TypeError，引擎此前 {done:true}）", () => {
     const r = evalSrc(
       `export function f() { function* g() { yield* {}; } return g().next().done; }`,
@@ -317,7 +317,7 @@ describe("Bug 34: generator-body exceptions propagate to the consumer, not silen
   });
 });
 
-describe("Bug 83: 生成器 @@iterator 槽是自返方法（() => it），不再 body-less fn", () => {
+describe("生成器 @@iterator 槽是自返方法（() => it），不再 body-less fn", () => {
   // native（node 实测）：%GeneratorPrototype%[Symbol.iterator] 是
   // function(){ return this; }——it[Symbol.iterator]() === it 折 true；
   // 经槽再入（it[Symbol.iterator]().next() / [...it[Symbol.iterator]()]）

@@ -1,5 +1,5 @@
 /**
- * BUG-012：symbol 参与数值/位运算一律 TypeError（与 add / Number(sym) 同口径）。
+ * symbol 参与数值/位运算一律 TypeError（与 add / Number(sym) 同口径）。
  * 此前仅 add() 检查 isSym；sub/mul/div/mod、一元 -/+/~、位运算回落 unknown，
  * 漏报 L2 entry-may-throw。本文件钉死全部算子实例的硬抛行为。
  */
@@ -36,7 +36,7 @@ function expectTypeError(fn: () => unknown): void {
   expect((payload.shape as { name?: string }).name).toBe("TypeError");
 }
 
-describe("BUG-012: symbol × numeric/bitwise ops throw TypeError", () => {
+describe("symbol × numeric/bitwise ops throw TypeError", () => {
   const s = makeSymbolAbs();
   const one = numLit(1);
 
@@ -104,7 +104,7 @@ describe("BUG-012: symbol × numeric/bitwise ops throw TypeError", () => {
   });
 });
 
-describe("BUG-012: evaluator routes Symbol() ops to THROW", () => {
+describe("evaluator routes Symbol() ops to THROW", () => {
   const cases: string[] = [
     `Symbol() - 1`,
     `1 - Symbol()`,

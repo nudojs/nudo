@@ -1,5 +1,5 @@
 /**
- * Bug 40 回归：内建 brand 原型方法的 presence 面（值读 typeof / `in`）。
+ * 回归：内建 brand 原型方法的 presence 面（值读 typeof / `in`）。
  *
  * 此前 BUILTIN_BRAND_METHODS 无 ArrayBuffer / SharedArrayBuffer / DataView /
  * TypedArray 非回调方法 / WeakRef / FinalizationRegistry 条目，Date/RegExp/
@@ -8,16 +8,16 @@
  * 折精确 false——对原生恒有成员做 wrong-exact 断言（feature detection
  * `if (typeof buf.resize === "function")` 被证伪）。修复口径：
  * - members.ts BUILTIN_BRAND_METHODS 按宿主原型面补齐（Node 26
- *   Object.getOwnPropertyNames(X.prototype) 实测名录）；
+ * Object.getOwnPropertyNames(X.prototype) 实测名录）；
  * - TA 家族换 TYPED_ARRAY_PROTO_METHOD_NAMES 全量面（回调调用派发仍只认
- *   TYPED_ARRAY_CALLBACK_METHODS）；base64/hex 仅 Uint8Array 自有；
+ * TYPED_ARRAY_CALLBACK_METHODS）；base64/hex 仅 Uint8Array 自有；
  * - BUILTIN_BRAND_ACCESSORS 补二进制/TA/RegExp 访问器名（$in presence）；
  * - @@iterator 值读只对 ITERABLE_BRANDS（Map/Set/TA）折 "function"——
- *   Date/WeakMap/Error 等非可迭代 brand 原生 undefined，此前也折 "function"
- *   （反向 wrong-exact）；
+ * Date/WeakMap/Error 等非可迭代 brand 原生 undefined，此前也折 "function"
+ * （反向 wrong-exact）；
  * - ArrayBuffer/SAB/DataView/WeakRef/FCR 进 NAMESPACE_GLOBALS——
- *   `typeof ArrayBuffer.prototype.slice` 此前落宿主 fn 通用通道的空闭 obj
- *   → "undefined"（Bug 56 通道补齐）。
+ * `typeof ArrayBuffer.prototype.slice` 此前落宿主 fn 通用通道的空闭 obj
+ * → "undefined"（通道补齐）。
  *
  * 缺席名控制组：内建原型面闭合（宿主固定成员），未注册名折精确
  * undefined/false 与原生一致（不是 imprecision 债）；any 接收者才走诚实
@@ -49,7 +49,7 @@ function valWithArgs(src: string, args: Abs[]): string {
   return lv.ok ? JSON.stringify(lv.value) : formatShape(r.result);
 }
 
-describe("Bug 40: typeof 值读——报告矩阵（修后全折 function）", () => {
+describe("typeof 值读——报告矩阵（修后全折 function）", () => {
   const cases: [string, string][] = [
     ["typeof new ArrayBuffer(8).slice", "function f() { return typeof new ArrayBuffer(8).slice; }"],
     ["typeof new ArrayBuffer(8).resize", "function f() { return typeof new ArrayBuffer(8).resize; }"],
@@ -71,7 +71,7 @@ describe("Bug 40: typeof 值读——报告矩阵（修后全折 function）", (
   }
 });
 
-describe("Bug 40: in 操作符——报告矩阵（修后全折 true）", () => {
+describe("in 操作符——报告矩阵（修后全折 true）", () => {
   const cases: [string, string][] = [
     ["\"slice\" in new ArrayBuffer(8)", "function f() { return 'slice' in new ArrayBuffer(8); }"],
     ["\"resize\" in new ArrayBuffer(8)", "function f() { return 'resize' in new ArrayBuffer(8); }"],
@@ -88,7 +88,7 @@ describe("Bug 40: in 操作符——报告矩阵（修后全折 true）", () => 
   }
 });
 
-describe("Bug 40: Date / RegExp / Map / Set 家族冷门方法", () => {
+describe("Date / RegExp / Map / Set 家族冷门方法", () => {
   const cases: [string, string, string][] = [
     ["typeof new Date().toUTCString", "function f() { return typeof new Date().toUTCString; }", '"function"'],
     ["typeof new Date().getUTCFullYear", "function f() { return typeof new Date().getUTCFullYear; }", '"function"'],
@@ -109,7 +109,7 @@ describe("Bug 40: Date / RegExp / Map / Set 家族冷门方法", () => {
   }
 });
 
-describe("Bug 40: TA 家族抽样（12 家族共用 %TypedArray%.prototype 面）", () => {
+describe("TA 家族抽样（12 家族共用 %TypedArray%.prototype 面）", () => {
   // 宿主缺席的家族（VERSION_SKEW 已登记，如 Node 22 无 Float16Array）不生成
   // 用例：源码 `new Float16Array(2)` 在该宿主上是 ReferenceError，不属于建模回归。
   // 支持的宿主上仍逐家族全量抽样，覆盖不缩水。
@@ -134,7 +134,7 @@ describe("Bug 40: TA 家族抽样（12 家族共用 %TypedArray%.prototype 面�
   });
 });
 
-describe("Bug 40: 访问器 presence（BUILTIN_BRAND_ACCESSORS 补 $in）", () => {
+describe("访问器 presence（BUILTIN_BRAND_ACCESSORS 补 $in）", () => {
   const cases: [string, string][] = [
     ["\"length\" in ta", "function f() { return 'length' in new Uint8Array(4); }"],
     ["\"buffer\" in ta", "function f() { return 'buffer' in new Uint8Array(4); }"],
@@ -166,7 +166,7 @@ describe("Bug 40: 访问器 presence（BUILTIN_BRAND_ACCESSORS 补 $in）", () =
   });
 });
 
-describe("Bug 40: @@iterator 值读按可迭代性分流（ITERABLE_BRANDS）", () => {
+describe("@@iterator 值读按可迭代性分流（ITERABLE_BRANDS）", () => {
   it("可迭代 brand（Map/Set/TA）→ \"function\"", () => {
     expect(val("function f() { return typeof new Map()[Symbol.iterator]; }")).toBe('"function"');
     expect(val("function f() { return typeof new Set()[Symbol.iterator]; }")).toBe('"function"');
@@ -182,7 +182,7 @@ describe("Bug 40: @@iterator 值读按可迭代性分流（ITERABLE_BRANDS）", 
   });
 });
 
-describe("Bug 40: X.prototype.<method> 值读（Bug 56 通道补二进制/弱引用家族）", () => {
+describe("X.prototype.<method> 值读（通道补二进制/弱引用家族）", () => {
   const cases: [string, string][] = [
     ["typeof ArrayBuffer.prototype.slice", "function f() { return typeof ArrayBuffer.prototype.slice; }"],
     ["typeof SharedArrayBuffer.prototype.grow", "function f() { return typeof SharedArrayBuffer.prototype.grow; }"],
@@ -197,7 +197,7 @@ describe("Bug 40: X.prototype.<method> 值读（Bug 56 通道补二进制/弱引
   }
 });
 
-describe("Bug 40: 控制组", () => {
+describe("控制组", () => {
   it("表内名（既有表）不回退", () => {
     expect(val("function f() { return typeof new Map().get; }")).toBe('"function"');
     expect(val("function f() { return typeof /a/.test; }")).toBe('"function"');
@@ -265,7 +265,7 @@ describe("URLSearchParams / TextDecoder / Intl 构造器 presence（review 补�
     // 兜底折 honest unknown，typeof 折 string 域（修复前落闭 obj
     // 槽 miss 折精确 "undefined"，对原生恒有成员 wrong-exact）
     expect(val("function f() { return typeof new TextDecoder().encoding; }")).toBe('"string"');
-    // Bug 322 顺带：URLSearchParams 的 size **已建模**（条目表 → 条目数，
+    // 顺带：URLSearchParams 的 size **已建模**（条目表 → 条目数，
     // 原生是 number 型 getter）⇒ typeof 精确 "number"（原生一致；此前
     // 保守折 string 域）。
     expect(val("function f() { return typeof new URLSearchParams('a=1').size; }")).toBe('"number"');

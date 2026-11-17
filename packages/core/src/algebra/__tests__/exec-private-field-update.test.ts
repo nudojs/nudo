@@ -1,5 +1,5 @@
 /**
- * Bug 80（私有字段 ++/--/逻辑赋值）：UpdateExpression 与逻辑赋值
+ * （私有字段 ++/--/逻辑赋值）：UpdateExpression 与逻辑赋值
  * （||=/&&=/??=）的 MemberExpression 臂只认 memberPathOf——PrivateName
  * 非 computed 且非 Identifier → null → 落 update:++ / assign:||=
  * NudoUnsupportedError，一个 `this.#n++` 令整模块 fail-closed（全导出
@@ -16,7 +16,7 @@ import { call } from "./eval-helpers.ts";
 
 const run = (src: string) => litValue(call(src).result);
 
-describe("Bug 80: 私有字段自增/自减（此前整模块 fail-closed）", () => {
+describe("私有字段自增/自减（此前整模块 fail-closed）", () => {
   it("this.#x++; return this.#x → 2（写回在表达式内生效）", () => {
     expect(
       run(`export function f() { class C { #x = 1; bump() { this.#x++; return this.#x; } } return new C().bump(); }`),
@@ -51,7 +51,7 @@ describe("Bug 80: 私有字段自增/自减（此前整模块 fail-closed）", (
   });
 });
 
-describe("Bug 80: 私有字段逻辑赋值（||= / &&= / ??=）", () => {
+describe("私有字段逻辑赋值（||= / &&= / ??=）", () => {
   it("this.#x ||= v：truthy 保留 / falsy 写入", () => {
     expect(
       run(`export function f() { class C { #x = 1; b() { this.#x ||= 9; return this.#x; } } return new C().b(); }`),
@@ -86,7 +86,7 @@ describe("Bug 80: 私有字段逻辑赋值（||= / &&= / ??=）", () => {
   });
 });
 
-describe("Bug 80 controls：既有私有名面不回归", () => {
+describe("controls：既有私有名面不回归", () => {
   it("this.#x += 1 / = 7 / #m() / #x in o（普通/复合赋值与方法面）", () => {
     expect(
       run(`export function f() { class C { #x = 1; b() { this.#x += 1; return this.#x; } } return new C().b(); }`),

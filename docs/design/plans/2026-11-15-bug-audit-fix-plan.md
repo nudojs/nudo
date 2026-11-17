@@ -42,7 +42,7 @@
 
 **验收**：BUG-018 的 `min.js` / `doc.nudo.js` 从 `FAILED` 变 `OK`，签名 `y: (z: number) => ret`；对照 `ctl.js` 逐字不变。
 
-**已交付（2026-11-15）**：`generalize.ts` 在 `effectiveContract` 之后把 `eff.binders`（Record）转成 `contractBinders`（ReadonlyMap），三处 `constraintToEntryAbs` 统一传入；`min.js` 现为 `OK`、`paramTypes[1] = "(number = bind:a) => any"`，`ctl.js` 仍 `(any) => any`。回归钉 `core-bug-018-cross-slot-binders.test.ts`。**残余**：外层 `catch {}` 对「真正未绑定的 ref」仍退 `any`（fail-open）——归入 D1 下一步与 020 一起收口。
+**已交付（2026-11-15）**：`generalize.ts` 在 `effectiveContract` 之后把 `eff.binders`（Record）转成 `contractBinders`（ReadonlyMap），三处 `constraintToEntryAbs` 统一传入；`min.js` 现为 `OK`、`paramTypes[1] = "(number = bind:a) => any"`，`ctl.js` 仍 `(any) => any`。回归钉 `core--cross-slot-binders.part.ts`。**残余**：外层 `catch {}` 对「真正未绑定的 ref」仍退 `any`（fail-open）——归入 D1 下一步与 020 一起收口。
 
 ## 4. D2 · 唯一优先级格（BUG-007 / 014 / 033）
 

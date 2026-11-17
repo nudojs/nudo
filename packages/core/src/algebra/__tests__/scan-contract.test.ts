@@ -5,7 +5,7 @@
  * - 跨文件（import / namespace member）侧车按定义文件路径绑定
  * - fwd 转发（wrapper→target）在侧车来源下仍工作
  * - conflict（源码 refine × 侧车手写绑定矛盾）→ nudo:contract-conflict 只在
- *   checkSource fn 级报告（scan 调用点级曾双报，已收口）
+ * checkSource fn 级报告（scan 调用点级曾双报，已收口）
  * - 无侧车时不做 body 必填 slot 门禁（C0.1 契约模型）
  */
 import { describe, it, expect } from "vitest";
@@ -143,7 +143,7 @@ const r = lib.needsPos(-1);
     const err = issues.find((i) => i.code === "nudo:constraint-violated");
     expect(err).toBeDefined();
     expect(err!.severity).toBe("error");
-    // Bug 442：被调名按**被调方本地声明名**解析（契约绑定面以本地名为键），
+    // 被调名按**被调方本地声明名**解析（契约绑定面以本地名为键），
     // 不再写死导出名 "default" ⇒ displayName 走 external.fnName = "needsPos"
     expect(err!.fn).toBe("needsPos");
   });
@@ -387,7 +387,7 @@ describe("re-export 跳转相对中间模块解析", () => {
 // （check-recall-gold any-assign-to-number-ok）同口径——此前 shape
 // 通道对 any 报 error 是假阳性：纯 JS 消费方形参天然 any，逐函数
 // 采纳契约会把所有传 any 的调用点变成 error。
-describe("#76：any 实参对 shape 契约不构成违例", () => {
+describe("any 实参对 shape 契约不构成违例", () => {
   const sidecar = `export const literalString = fn({ node: shape({ type: string(), value: string() }) });`;
 
   const loadWith = (files: Record<string, string>) => {

@@ -5,7 +5,7 @@
  * 「申报」的真值只来自契约解析本身（签名面 provenance 或契约面诊断），
  * 不读源码字符串、不按阻断码表反推。
  *
- * 本文件同时钉住 BUG-021（`contract-syntax` 此前 exit 0、零上屏）。
+ * 本文件同时钉住 （`contract-syntax` 此前 exit 0、零上屏）。
  */
 import { describe, it, expect, afterEach } from "vitest";
 import { DIAG, setPublishGateShadow, takePublishGateShadow } from "@nudojs/core/internal";
@@ -23,7 +23,7 @@ const DECLARED = `/// @nudo:import { num } from "./f.nudo.js"
  * @nudo:contract x num
  */
 export function f(x) { return x; }`;
-/** 申报但契约写坏（BUG-021）：约束名不是合法约束。 */
+/** 申报但契约写坏（）：约束名不是合法约束。 */
 const BROKEN = `/**
  * @nudo:contract x number()
  */
@@ -94,14 +94,14 @@ describe("ADR 0001 §4 D3 · 语义发布门", () => {
     expect(diags.blocking).toBe(false);
   });
 
-  it("BUG-021：契约解析失败 ⇒ 诊断上屏且阻断（此前 exit 0、零诊断）", () => {
+  it("契约解析失败 ⇒ 诊断上屏且阻断（此前 exit 0、零诊断）", () => {
     const diags = collectExportDiagnostics(makeOpts(BROKEN, []));
     const syntax = diags.entries.find((d) => d.code === DIAG.contractSyntax);
     expect(syntax).toBeDefined();
     expect(diags.blocking).toBe(true);
   });
 
-  it("BUG-233：warning 级 contract-conflict 仍阻断（不靠 severity）", () => {
+  it("warning 级 contract-conflict 仍阻断（不靠 severity）", () => {
     const diags = collectExportDiagnostics(makeOpts(PLAIN, [CONFLICT]));
     expect(diags.blocking).toBe(true);
     expect(diags.conflicts).toHaveLength(1);

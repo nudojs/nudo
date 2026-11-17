@@ -15,7 +15,7 @@ import {
 } from "../lsp-surface.ts";
 import { buildSemanticTokens, SEMANTIC_TOKEN_TYPES } from "../semantic-tokens.ts";
 import { analyzeFile } from "@nudojs/service";
-import { abs, num, str, numLit, formatShape, type Abs } from "@nudojs/core";
+import { abs, num, str, numLit,  } from "@nudojs/core";
 import { parse } from "@nudojs/parser";
 import { buildSymbolTable, findDefinition, findReferences, findIdentifierAtPosition } from "../symbols.ts";
 import {
@@ -91,7 +91,6 @@ function alwaysString(x) {
 `;
 
 describe("LSP Integration - Full Pipeline", () => {
-
   describe("analyzeFile", () => {
     it("analyzes all functions with directives", () => {
       const result = analyzeFile(filePath, testCode);
@@ -597,7 +596,7 @@ describe("LSP Integration - Narrowing Features", () => {
     expect(processFn).toBeDefined();
     // 两条**点观测**见证 + 一条入口兜底见证（entry@）：无断言的 case 指令只是
     // 见证、不是调用域声明 ⇒ 该函数仍走 entry@ 合成（返回面由推断域承担，
-    // Bug 511）⇒ 台账里多一条 entry@ 见证。
+    // ）⇒ 台账里多一条 entry@ 见证。
     expect(processFn!.cases.length).toBe(3);
     // The "with-val" case should return a string
     const withValCase = processFn!.cases.find(c => c.name === "with-val");
@@ -827,7 +826,7 @@ describe("LSP Integration - Agent Tools (whatIf / suggestCase / trace)", () => {
     const text = synthesized.content[0].text;
     expect(text).toContain('Function "add" has 2 synthesized case(s); suggested directives:');
     expect(text).toContain("/**");
-    // Bug 655：建议里的名字是**手写见证名**（`witness@<n>`，避开合成 / 固化
+    // 建议里的名字是**手写见证名**（`witness@<n>`，避开合成 / 固化
     // 名字空间 `call@` / `entry@`）+ **带 `=> expected`**（观测值）。
     expect(text).toContain(' * @nudo:case "witness@1" (1, 2) => 3');
     expect(text).toContain(' * @nudo:case "witness@2" ("x", "y") => "xy"');

@@ -1,10 +1,10 @@
 /**
  * case 字符串的 `serialize → parse` 往返（含反斜杠）。
  *
- * ★ 族 28 接线（Bug 840）：指令文法改为**解释 JS 转义**（parser 的
+ * ★ 族 28 接线（）：指令文法改为**解释 JS 转义**（parser 的
  * `scanStringLiteral` 取 Babel 的 cooked 值）⇒
- *  - 序列化侧**转义** `\`（值 `foo\` ⇒ 指令文本 `"foo\\"`）；
- *  - 解析侧把 `"foo\\"` 读成值 `foo\`。
+ * - 序列化侧**转义** `\`（值 `foo\` ⇒ 指令文本 `"foo\\"`）；
+ * - 解析侧把 `"foo\\"` 读成值 `foo\`。
  * 旧契约（`\` 不当转义、原样 slice）已随族 28 废止 ——
  * 旧契约下 `"foo\"` 表示值 `foo\`，那会让 `serialize → parse` 往返失真。
  */

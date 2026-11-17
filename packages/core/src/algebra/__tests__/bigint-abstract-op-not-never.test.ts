@@ -3,10 +3,10 @@
  *
  * 回归背景：foldBigintBinOp / foldNumericBinOp 在一侧 bigint 字面量、另一侧
  * 非 bigint prim 时一律 NudoThrow(TypeError)。但：
- *   1n + s（s: string prim）  原生 `"1…"`（ToString 拼接），引擎 TypeError/never
- *   1n + x（x: any）          x 实为 2n 时得 3n、为 "s" 时得 "1s"，引擎恒 TypeError
- *   1n & x（x: any）          x 实为 2n 时得 0n，引擎恒 TypeError
- *   2n ** x（x: any）         可能 8n / RangeError / TypeError，引擎恒 TypeError
+ * 1n + s（s: string prim） 原生 `"1…"`（ToString 拼接），引擎 TypeError/never
+ * 1n + x（x: any） x 实为 2n 时得 3n、为 "s" 时得 "1s"，引擎恒 TypeError
+ * 1n & x（x: any） x 实为 2n 时得 0n，引擎恒 TypeError
+ * 2n ** x（x: any） 可能 8n / RangeError / TypeError，引擎恒 TypeError
  * 确定混型（1n+1 / 1n+true / 1n+null）仍须硬抛——见 bigint-mixed-op-throws。
  */
 import { describe, it, expect } from "vitest";

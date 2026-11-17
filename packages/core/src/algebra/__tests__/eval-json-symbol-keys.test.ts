@@ -1,5 +1,5 @@
 /**
- * Bug 73：计算 symbol 键投影为 "@@X" 字符串槽后，JSON.stringify 把它当
+ * 计算 symbol 键投影为 "@@X" 字符串槽后，JSON.stringify 把它当
  * 可枚举字符串键序列化（'{"@@iterator":5}'，原生 "{}"）。修复：投影期
  * （[Symbol.X] 字面量/赋值/方法/访问器）经 $set opts.symbolKey 打
  * Slot.symbolKey 标记；stringifyObj（absToJsonNative / jsonStringifyTotal
@@ -11,7 +11,7 @@ import { describe, it, expect } from "vitest";
 import { litValue } from "@nudojs/core";
 import { call } from "./eval-helpers.ts";
 
-describe("Bug 73: JSON.stringify skips symbol-keyed slots", () => {
+describe("JSON.stringify skips symbol-keyed slots", () => {
   it("computed Symbol.iterator key is not serialized", () => {
     expect(litValue(call(`export function f() { return JSON.stringify({[Symbol.iterator]: 5}); }`).result))
       .toEqual({ ok: true, value: "{}" });

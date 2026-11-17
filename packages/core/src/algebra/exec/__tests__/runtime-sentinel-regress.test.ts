@@ -2,23 +2,23 @@
  * 运行时「宿主哨兵」回归（PR fix/core 评审 D1/D2）：
  *
  * D1 —— `$set` 对空值接收者不得炸宿主。
- *   DEC-006 B/C 契约：非 Abs 目标 fail-closed **返回原接收者**（调用点
- *   `root = $set(root, …)` 重绑为自赋值 no-op），禁止读 `.shape` 炸宿主
- *   TypeError（`$get` 同口径）。此前宿主写面用 `undefined` 哨兵表示
- *   「处理器未命中」，而 fail-closed 的返回值**就是原接收者**——可能正是
- *   `undefined` ⇒ 与哨兵同形 ⇒ 落穿到 `switch (o.shape.k)` 读 undefined
- *   的宿主 TypeError（`$set(null, …)` 因 null ≠ undefined 侥幸不炸）。
- *   修法：宿主写面的处置信号改为判别对象（hit/value），未命中与
- *   fail-closed 不再同形。`$get` 语义不变。
+ * DEC-006 B/C 契约：非 Abs 目标 fail-closed **返回原接收者**（调用点
+ * `root = $set(root, …)` 重绑为自赋值 no-op），禁止读 `.shape` 炸宿主
+ * TypeError（`$get` 同口径）。此前宿主写面用 `undefined` 哨兵表示
+ * 「处理器未命中」，而 fail-closed 的返回值**就是原接收者**——可能正是
+ * `undefined` ⇒ 与哨兵同形 ⇒ 落穿到 `switch (o.shape.k)` 读 undefined
+ * 的宿主 TypeError（`$set(null, …)` 因 null ≠ undefined 侥幸不炸）。
+ * 修法：宿主写面的处置信号改为判别对象（hit/value），未命中与
+ * fail-closed 不再同形。`$get` 语义不变。
  *
  * D2 —— `$switch` 的隐式 no-match 臂不得贡献 yield 收集器。
- *   臂协议共用 `beginSwitchArms()`：每个臂都过 `withIsolatedYields` 并把
- *   收集器记进臂列表；`mergeArmYields` 按**非 null 收集器个数**分流——
- *   隐式臂的空收集器把「单臂 switch」翻成多臂 join（`genPathSensitive++`
- *   + `genJoinOverride`）⇒ `$gen` 的元素类型降 unknown。native 侧单臂
- *   switch 的 yield 元素是精确字面量（`switch (x) { case 1: yield "a" }`
- *   ⇒ "a"）。修法：隐式臂记 null（同 `$fork` 隐式 else 口径）。
- *   多臂 switch 行为**不变**（仍走多臂 join）。
+ * 臂协议共用 `beginSwitchArms()`：每个臂都过 `withIsolatedYields` 并把
+ * 收集器记进臂列表；`mergeArmYields` 按**非 null 收集器个数**分流——
+ * 隐式臂的空收集器把「单臂 switch」翻成多臂 join（`genPathSensitive++`
+ * + `genJoinOverride`）⇒ `$gen` 的元素类型降 unknown。native 侧单臂
+ * switch 的 yield 元素是精确字面量（`switch (x) { case 1: yield "a" }`
+ * ⇒ "a"）。修法：隐式臂记 null（同 `$fork` 隐式 else 口径）。
+ * 多臂 switch 行为**不变**（仍走多臂 join）。
  */
 import { describe, it, expect } from "vitest";
 import { $set, $get } from "../runtime/containers/member.ts";

@@ -3,16 +3,16 @@
  *
  * 回归背景：
  * 1. String.prototype.at 完全未接管（`'hello'.at(0)` → unknown），
- *    而 charAt/slice 已按 ToIntegerOrInfinity 折叠——at 是同族漏网点。
+ * 而 charAt/slice 已按 ToIntegerOrInfinity 折叠——at 是同族漏网点。
  * 2. Array.prototype.at 只认 Number.isInteger 字面量；缺省/undefined/
- *    null/true/'1'/1.9 一概 join 全部元素，与原生
- *    ToIntegerOrInfinity 语义不符：
- *      [1,2,3].at()       → 1
- *      [1,2,3].at(null)   → 1
- *      [1,2,3].at(true)   → 2
- *      [1,2,3].at('1')    → 2
- *      [1,2,3].at(1.9)    → 2
- *      'hello'.at(-1)     → "o"
+ * null/true/'1'/1.9 一概 join 全部元素，与原生
+ * ToIntegerOrInfinity 语义不符：
+ * [1,2,3].at() → 1
+ * [1,2,3].at(null) → 1
+ * [1,2,3].at(true) → 2
+ * [1,2,3].at('1') → 2
+ * [1,2,3].at(1.9) → 2
+ * 'hello'.at(-1) → "o"
  *
  * 同类排查：charAt/charCodeAt/slice/substring（string）已修；
  * Array.at 的索引强制是 array 侧同族漏网点。
@@ -69,7 +69,7 @@ describe("Array.prototype.at ToIntegerOrInfinity", () => {
   });
 
   it("abstract index does not pin a single element", () => {
-    // Bug 7 边界归一：缺省实参 i ≡ undefined → i + 0 折 NaN → at(0) 确定是 1
+    // 边界归一：缺省实参 i ≡ undefined → i + 0 折 NaN → at(0) 确定是 1
     //（原生 [1,2,3].at(undefined + 0) === 1）
     expect(val(`export function f(i) { return [1,2,3].at(i + 0); }`)).toEqual({ ok: true, value: 1 });
     // 显式抽象下标不得钉成字面量

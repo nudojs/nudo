@@ -8,9 +8,9 @@
  * 修复验收（调用计数断言）：
  * - 同一 (file, version) 连续 N 次入口 → analyzeFile 只跑 1 次；
  * - reuse 路径（result.bindings）→ lsp-surface 的
- *   collectAbsBindingsFromGraph 0 次；
+ * collectAbsBindingsFromGraph 0 次；
  * - IDE 处理器 catch 静默吞错修复：分析 throw → connection.console.error
- *   留痕且返回语义不变（null / []）。
+ * 留痕且返回语义不变（null / []）。
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { mkdtempSync, writeFileSync, rmSync, utimesSync } from "node:fs";
@@ -55,7 +55,7 @@ import {
   analysisCache,
 } from "../validation.ts";
 import { getHoverAtPosition, getCompletionsAtPosition } from "../lsp-surface.ts";
-import { createMockConnection } from "./helpers.ts";
+import { createMockConnection, waitForDiagnostics } from "./helpers.ts";
 
 const SRC = `const greeting = "hi";
 export function f(x) { return greeting + x; }
@@ -155,7 +155,7 @@ describe("IDE handlers via protocol surface", () => {
       textDocument: { uri, languageId: "javascript", version: 1, text: SRC },
     });
     // didOpen 的异步 validate 落定（建条目 / 发诊断）
-    await new Promise((r) => setTimeout(r, 30));
+    await waitForDiagnostics(mock, uri, { timeout: 30 });
 
     const hover = mock.requests.get("textDocument/hover")!;
     const first = hover({ textDocument: { uri }, position: { line: 0, character: 8 } });
@@ -179,7 +179,7 @@ describe("IDE handlers via protocol surface", () => {
         text: "export function g(x) { return x; }\n",
       },
     });
-    await new Promise((r) => setTimeout(r, 30));
+    await waitForDiagnostics(mock, boomUri, { timeout: 30 });
     const out = hover({ textDocument: { uri: boomUri }, position: { line: 0, character: 17 } });
     expect(out).toBeNull();
     expect(mock.consoleErrors.some((e) => e.includes("nudo hover failed"))).toBe(true);
@@ -193,7 +193,7 @@ describe("IDE handlers via protocol surface", () => {
     mock.notifications.get("textDocument/didOpen")!({
       textDocument: { uri, languageId: "javascript", version: 1, text: SRC },
     });
-    await new Promise((r) => setTimeout(r, 30));
+    await waitForDiagnostics(mock, uri, { timeout: 30 });
 
     const completion = mock.requests.get("textDocument/completion")!;
     const items = completion({ textDocument: { uri }, position: { line: 0, character: 0 } });
@@ -223,7 +223,7 @@ describe("IDE handlers via protocol surface", () => {
     mock.notifications.get("textDocument/didOpen")!({
       textDocument: { uri, languageId: "javascript", version: 1, text: multi },
     });
-    await new Promise((r) => setTimeout(r, 30));
+    await waitForDiagnostics(mock, uri, { timeout: 30 });
 
     const sig = mock.requests.get("textDocument/signatureHelp")!;
     // 光标在跨行首参 `1`（line 3, col 4）：旧 visitor 误报 activeParameter=1

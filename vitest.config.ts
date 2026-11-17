@@ -1,3 +1,4 @@
+import { availableParallelism } from "node:os";
 import { defineConfig } from "vitest/config";
 import { vitestAlias } from "./scripts/workspace-aliases.mjs";
 
@@ -34,7 +35,17 @@ export default defineConfig({
     ],
     // lodash harvest + relationFn 图会顶爆默认 isolate 堆
     pool: "forks",
-    maxWorkers: 4,
+    // isolate 必须保持 true：关隔离（--isolate=false）全量 107s→63s，但同一
+    // worker 内多文件共享模块实例导致 23 例 / 14 文件顺序相关假红。补齐
+    // 25 个 reset/clear 的 setupFiles 复位层后仍是 25 例 / 15 文件（vi.mock
+    // 计数、globalThis 宿主面枚举、模块初始化顺序都会漂），且复位层自身改
+    // 模块加载顺序又会引入新红——投入产出与 CI 稳定性都不成立。线程池同
+    // 收益级别但 RSS 3.9GB（forks 1.1GB）。
+    // 引擎/测试对「冷模块态」的隐藏依赖没有全局钩子可兜，别为速度关隔离。
+    // CI 的 2 shard 各自跑在 4 vCPU runner 上，单 shard 4 worker 已足够。
+    // 本地沿用 4 会浪费 3/4 硬件（实测全量 4w 423s；16 核机器上 12w 116s、
+    // 16w 109s，CPU 1460%、RSS 1.1GB）。本地用满核数，CI 保持 4。
+    maxWorkers: process.env.CI ? 4 : Math.max(4, availableParallelism()),
     // 默认 5s 是**单测**口径；CLI e2e（`nudojs/src/__tests__` 里 spawn
     // `tsx <cli src>` 的那批）每条用例 spawn 1–5 个 tsx 子进程，单次 ≈1.5–2.5s
     // ——在 4 worker / 2 core 的 CI shard 上会因 CPU 争用翻到 5s 以上（同一用例

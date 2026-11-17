@@ -2,9 +2,9 @@
  * normCmp 比较归一的 IEEE 回归（DEC-007 Phase A）。
  *
  * 背景：`a op b` 曾被归一为 `(a-b) op 0`，对 ±Infinity 不等价：
- *   - eq(Inf,Inf) 为真，而 Inf-Inf=NaN，NaN===0 为假
- *   - ge/le(Inf,Inf) 同理
- *   - ne(Inf,Inf) 为假，而 NaN!==0 为真（假证方向）
+ * - eq(Inf,Inf) 为真，而 Inf-Inf=NaN，NaN===0 为假
+ * - ge/le(Inf,Inf) 同理
+ * - ne(Inf,Inf) 为假，而 NaN!==0 为真（假证方向）
  * 因此 eq/ge/le/ne 不经减法归一，改两侧区间直接比较；
  * 反身 a op a 走比较语义（x===x 对 Inf 为真），NaN 可能路径 fail-closed。
  */

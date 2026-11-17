@@ -10,11 +10,35 @@
 import { runTranspiled, callTranspiledExportFull } from "../exec/run.ts";
 import { $lit } from "../exec/runtime/state.ts";
 import { litValue, anyAbs, type Abs } from "../abs.ts";
+import { resetCheckSourceMemo } from "../check/check.ts";
+import { resetGeneralizeMemo } from "../generalize.ts";
+import { resetParseSourceCache } from "../parse-source.ts";
+import { resetAbsCallBudget, resetEvalForkBudget } from "../call-budget.ts";
+import { resetNudoModuleExecCache } from "../refine.ts";
+import { resetSidecarLoadFailureCache } from "../contract/contract.ts";
 import {
   runWithMayThrowSession,
   setMayThrowCollector,
   type MayThrowEffect,
 } from "../diagnostics/may-throw.ts";
+
+/**
+ * 引擎全局缓存 / 预算的**统一复位面**。
+ *
+ * 新增 `reset*` 时只改这里：各测试的 `beforeEach` 调用本函数，不再各自抄
+ * 一份清单（此前 38 个文件逐字重复同一组 7 个调用，新缓存加入时会各自过期）。
+ * 只做复位，不 drain 诊断收集器 —— `takeRefineDiags` / `takeContractDiags`
+ * 仍由调用方按原顺序执行。
+ */
+export function resetEngineCaches(): void {
+  resetCheckSourceMemo();
+  resetGeneralizeMemo();
+  resetParseSourceCache();
+  resetAbsCallBudget();
+  resetEvalForkBudget();
+  resetNudoModuleExecCache();
+  resetSidecarLoadFailureCache();
+}
 
 /** 转译源并调用导出函数（analyze 模式），返回 CallRecord */
 export function call(src: string, fnName = "f", args: Abs[] = []) {

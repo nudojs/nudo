@@ -3,11 +3,11 @@
  *
  * 背景：`@nudo:assume d <= max` 下 `1 - d/max ∈ [0,1]` 的证明缺三步——
  * ① `$eq`/`$ne` 不可判定时落裸 bool()，`max === 0` 守卫分支收不到
- *   eq/ne 路径事实（假臂 Φ 无 ne(max,0)）；
+ * eq/ne 路径事实（假臂 Φ 无 ne(max,0)）；
  * ② numericBounds 不折 `ne(x,n) ∧ x≥n ⇒ x>n`（分母正性供不出，
- *   divAssumeBounds 的 posDen 需要严格下界）；
+ * divAssumeBounds 的 posDen 需要严格下界）；
  * ③ `d = cond ? 0 : Math.max(...)` 的 fork 合并 sum 无根 term——引理
- *   项不匹配 + 字面量 0 臂无界污染 join。
+ * 项不匹配 + 字面量 0 臂无界污染 join。
  *
  * 修法：① cmp("eq"/"ne") 符号面（ops.ts $eq/$ne）；② numericBounds
  * 端点等值排除收紧（arithmetic.ts collectExclusions*）；③ $assumeAnchor
@@ -28,7 +28,7 @@ import { div, numericBounds } from "../arithmetic.ts";
 const dAbs = abs(num().shape, v("d"), ge(v("d"), lit(0)), "path");
 const maxGe0 = abs(num().shape, v("max"), ge(v("max"), lit(0)), "path");
 
-describe("#170 numericBounds ne 端点收紧", () => {
+describe("numericBounds ne 端点收紧", () => {
   it("ne(max,0) 在 Φ、ge(max,0) 在自身 pred ⇒ lo 严格", () => {
     const b = numericBounds(maxGe0, and(ne(v("max"), lit(0))));
     expect(b?.lo).toEqual({ value: 0, strict: true });
@@ -56,7 +56,7 @@ describe("#170 numericBounds ne 端点收紧", () => {
 
 // —— 单元：div 假臂折叠（①+②+引理合力） ————————————————
 
-describe("#170 div 假臂分母正性", () => {
+describe("div 假臂分母正性", () => {
   const leDMax = and(le(v("d"), v("max")));
   it("ne(max,0) ∧ ge ⇒ posDen ⇒ d/max ∈ [0,1]", () => {
     const r = div(dAbs, maxGe0, and(ne(v("max"), lit(0))), leDMax);
@@ -97,7 +97,7 @@ export function sim(a, b) {
   return max === 0 ? 1 : 1 - d / max;
 }`;
 
-describe("#170 similarity 端到端", () => {
+describe("similarity 端到端", () => {
   it("inline Math.max(a.length, b.length)：证得 + assume-relied", () => {
     const r = checkSource("/t/sim170.js", `${callee}\n${simBody}`, pTrue, opts);
     expect(r.issues.some((i) => i.code === "nudo:unproven-return")).toBe(false);

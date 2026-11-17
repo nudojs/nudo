@@ -58,7 +58,7 @@ describe("ABS-12 · 宿主全局能力清单", () => {
   it("default-deny：未列名查询 = denied", () => {
     expect(hostGlobalCapability("__nudo_not_a_real_global__")).toBe("denied");
     expect(hostGlobalCapability("fetch")).toBe("denied");
-    // Function / FinalizationRegistry 由引擎显式建模（Bug 29 / Bug 43）
+    // Function / FinalizationRegistry 由引擎显式建模（/ ）
     // ⇒ 分类为 allowed（建模面不执行宿主实现）
     expect(hostGlobalCapability("Function")).toBe("allowed");
     expect(hostGlobalCapability("FinalizationRegistry")).toBe("allowed");

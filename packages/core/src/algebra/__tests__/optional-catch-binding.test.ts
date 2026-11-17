@@ -1,13 +1,13 @@
 /**
- * 可选 catch 绑定（`catch { … }`）不引入绑定回归（报告 Bug 175）。
+ * 可选 catch 绑定（`catch { … }`）不引入绑定回归（报告 ）。
  *
  * ES2019 的可选 catch 绑定**不引入任何绑定**。此前转译把载体名回落成
  * **硬编码 `"e"`**：
  * ① 遮蔽外层同名绑定 → 自信错值（`catch { return e }` 读到引擎凭空造的
- *    异常值，而不是外层的 "outer"）；
+ * 异常值，而不是外层的 "outer"）；
  * ② 顶掉未声明名的 ReferenceError → 漏抛 / 假绿（签名里没有 throws）；
  * ③ 与用户自己的 `let e` 撞车 → 同一块重复声明 → 转译崩溃、类型塌成
- *    unknown + 误导诊断（"path not covered, or native"）。
+ * unknown + 误导诊断（"path not covered, or native"）。
  *
  * 修法：可选绑定**不发射用户可见绑定**——catch 体按原样解析外层名字。
  *

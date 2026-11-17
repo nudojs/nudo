@@ -56,7 +56,7 @@ describe("evaluator instanceof @@hasInstance", () => {
   });
 
   it("object without hasInstance falls back to prototype chain", () => {
-    // Bug 33：无 @@hasInstance 槽的闭 obj RHS 确定 non-callable → 原生定抛
+    // 无 @@hasInstance 槽的闭 obj RHS 确定 non-callable → 原生定抛
     // TypeError（修前静默折 false——wrong-exact）。见 eval-instanceof-rhs.test.ts。
     const r = call(`export function f() { let o = {}; return 5 instanceof o; }`);
     expect(litValue(r.result).ok).toBe(false);

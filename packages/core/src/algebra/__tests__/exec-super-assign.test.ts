@@ -1,5 +1,5 @@
 /**
- * Bug 55（super 属性赋值）：实例方法/构造器内 `super.x = v`（含复合赋值 /
+ * （super 属性赋值）：实例方法/构造器内 `super.x = v`（含复合赋值 /
  * 计算键）此前 AssignmentExpression 成员路径无 Super 拦截——裸发
  * `/* super *\/` 注释哨兵 → `$set(, "x", v)` 宿主硬 SyntaxError（整模块
  * 编译失败）。静态方法体（staticSuperSrc）不受影响。
@@ -14,7 +14,7 @@ import { litValue } from "@nudojs/core";
 import { call } from "./eval-helpers.ts";
 import { diffBody } from "./differential/harness.ts";
 
-describe("Bug 55: super 属性赋值（报告五个变体）", () => {
+describe("super 属性赋值（报告五个变体）", () => {
   it("super.x = 5 → b.x === 5", () => {
     const r = call(
       `export function f() { class A { constructor() { this.x = 1; } } class B extends A { inc() { super.x = 5; } } const b = new B(); b.inc(); return b.x; }`,
@@ -53,11 +53,11 @@ describe("Bug 55: super 属性赋值（报告五个变体）", () => {
   });
 });
 
-describe("Bug 55: SetSuper 语义边界", () => {
+describe("SetSuper 语义边界", () => {
   it("静态方法 super.x = 5（R5 receiver 化）：写落 this（B.x），父类 A.x 不动", () => {
     // R5：静态方法体 this = 类值后，super.x = v 按原生 SetSuper——父类
     // 无 setter → CreateDataProperty on receiver（this = B）。此前引擎按
-    // staticSuperSrc 近似写父类 A.x（Bug 55 时代的临时口径）。
+    // staticSuperSrc 近似写父类 A.x（时代的临时口径）。
     const r = call(
       `export function f() { class A {} class B extends A { static inc() { super.x = 5; } } B.inc(); return B.x; }`,
     );
@@ -124,7 +124,7 @@ describe("R2a: super 读闭链缺槽折 undefined（原 unknown → 复合赋值
       `export function f() { class A {} class B extends A { g() { return typeof super.hasOwnProperty; } } return new B().g(); }`,
     );
     expect(litValue(r.result)).toEqual({ ok: true, value: "function" });
-    // Bug 266：super.constructor = **父类构造器**（原生父类原型上的
+    // super.constructor = **父类构造器**（原生父类原型上的
     // "constructor" 自有属性 ⇒ 父类值）——不再是内置 Object（此前本用例
     // 钉的是错值：super.constructor === Object 折 true）。原生实测：
     // `super.constructor === Object` → false；`super.constructor === A` → true。
@@ -187,7 +187,7 @@ describe("R2a: super 读闭链缺槽折 undefined（原 unknown → 复合赋值
   });
 });
 
-describe("Bug 55: differential native 对照（隐式 return 体）", () => {
+describe("differential native 对照（隐式 return 体）", () => {
   const corpus = [
     `class A { constructor() { this.x = 1; } } class B extends A { inc() { super.x = 5; } } const b = new B(); b.inc(); return b.x;`,
     `class A { constructor() { this.x = 1; } } class B extends A { inc() { const k = "x"; super[k] = 5; } } const b = new B(); b.inc(); return b.x;`,

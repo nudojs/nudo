@@ -12,7 +12,7 @@
  * 与 agent JSON 面同一实现）。本文件曾是 CLI 侧平行副本，且已漂移两处
  * （caseLines 容器缩进 BUG-136 / 期望渲染带谓词 Bug 207）⇒ 去重后此处只
  * **再导出**，供既有消费路径（`commands/test.ts`、lsp 的
- * `lsp-bug-136-witness-line-parity.test.ts`）按原路径取同一份实现。
+ * `lsp--witness-line-parity.part.ts`）按原路径取同一份实现。
  * 本文件保留 CLI 专属职责：entry@ × 有效契约的注解判定（entryContractNoteFns）。
  */
 import { dirname } from "node:path";

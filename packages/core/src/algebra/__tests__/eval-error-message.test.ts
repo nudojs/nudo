@@ -3,9 +3,9 @@
  *
  * 原生语义：
  * - message 恒为字符串：缺省/undefined → ""；非字符串字面量 → ToString
- *   （new Error(5).message === "5"，new Error(null).message === "null"）。
+ * （new Error(5).message === "5"，new Error(null).message === "null"）。
  * - AggregateError(errors, message[, options])：第一实参是 errors 数组
- *   （.errors），第二实参才是 message。
+ * （.errors），第二实参才是 message。
  * - 第二（Error）或第三（AggregateError）实参 options 的 cause 挂 .cause。
  *
  * 修复前：errorBrandAbs(name, args[0]) 把 AggregateError 的 errors 数组

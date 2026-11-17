@@ -1,5 +1,5 @@
 /**
- * BUG-025：collectEvalReplacements 异常时
+ * collectEvalReplacements 异常时
  * 返回半张注入表——@nudo:replace/@nudo:as
  * 前几条生效、后几条静默消失（应 exact 的
  * Abs 变 unknown/真执行），半配置注入比
@@ -40,7 +40,7 @@ const b = 2;
 const c = 3;
 `;
 
-describe("BUG-025: collectEvalReplacements fail-closed", () => {
+describe("collectEvalReplacements fail-closed", () => {
   beforeEach(() => {
     state.calls = 0;
     state.throwAt = 0;

@@ -5,25 +5,25 @@ import { asyncBodyPlan } from "../transpile/async-plan.ts";
 import { transpileModule } from "../transpile.ts";
 
 /**
- * async-plan 对齐 drift-gate（Bug 1139 家族防护）。
+ * async-plan 对齐 drift-gate（家族防护）。
  *
  * `async-plan.ts` 是对**发射器结构知识**（哪些位置会把 await 包进宿主 thunk）
- * 的手工镜像表——历史上两者脱节过（Bug 1139：表判 gen 而发射侧包 thunk ⇒
+ * 的手工镜像表——历史上两者脱节过（表判 gen 而发射侧包 thunk ⇒
  * `yield` 落进嵌套箭头 ⇒ `new Function` SyntaxError ⇒ 整模块假绿）。
  * run.ts 已有 SyntaxError → disableAsyncGen 重试的安全网（灾难形态已消除），
  * 但表判错仍会**静默**退化为同步近似（精度无声丢失）——本测试把两类判错
  * 都变成红：
  *
  * 1. **表本身**：每个位置类别的 allSafe 判定与表头文档逐行互钉（GEN ⇒ true，
- *    THUNK ⇒ false）。
+ * THUNK ⇒ false）。
  * 2. **表 ↔ 发射器对齐（V8 oracle）**：表判 allSafe 的体，转译产物必须真的
- *    能被 `new Function` 编译——若发射器把某位置包进了宿主 thunk，`yield`
- *    落进嵌套箭头，V8 编译器自己报 SyntaxError（ESM 源 ⇒ strict 前缀 ⇒
- *    yield-as-identifier 不合法）。**编译器即对齐判据**，无须文本检查。
+ * 能被 `new Function` 编译——若发射器把某位置包进了宿主 thunk，`yield`
+ * 落进嵌套箭头，V8 编译器自己报 SyntaxError（ESM 源 ⇒ strict 前缀 ⇒
+ * yield-as-identifier 不合法）。**编译器即对齐判据**，无须文本检查。
  * 3. THUNK 体走同步路径（$await thunk），产物同样必须可编译——钉住
- *    disableAsyncGen 兜底路径的可用性。
+ * disableAsyncGen 兜底路径的可用性。
  * 4. 四个 asyncBodyPlan 消费面（函数体 / 对象方法 / 类方法 / 顶层 await）
- *    各钉一条真挂起产物可编译。
+ * 各钉一条真挂起产物可编译。
  */
 
 /** 生成器级（gen）：await 内联在生成器体里 ⇒ 可发射 yield ⇒ allSafe */
@@ -109,7 +109,7 @@ const compiles = (source: string): boolean => {
   }
 };
 
-describe("async-plan 表逐行互钉（Bug 1139 drift-gate）", () => {
+describe("async-plan 表逐行互钉（drift-gate）", () => {
   for (const [label, body] of GEN) {
     it(`gen：${label} ⇒ allSafe`, () => {
       const plan = asyncBodyPlan(parseBody(body));

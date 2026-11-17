@@ -4,7 +4,7 @@
 > **真源**：架构 → [`kernel-merge.md`](./kernel-merge.md) 与 `CLAUDE.md`；命令面 → [`cli-semantics.md`](./cli-semantics.md)；契约单源 → [`refine-derivation.md`](./refine-derivation.md)；架构债 → [`architecture-debt.md`](./architecture-debt.md)；会话缓存 → [`cache-invalidation.md`](./cache-invalidation.md)。
 > **触发**：`tmp/bug-report.md`（审计批次 2026-11-14，34 条 bug，夹具与逐字输出在 `/tmp/**`；其中前五批基于 HEAD `86bc56e1`，第六批基于 `f689d81b`，**实施前须重新定位行号**）。
 > **接线点（阶段 0–1 已落地）**：`core/src/algebra/scan/semantic-index.ts`、`core/src/algebra/diagnostics/evidence.ts`；已接线 `core/src/algebra/check/check.ts`、`service/src/analyzer-ast.ts`；待迁移 `service/src/emit/dts-generator.ts`、`nudojs/src/commands/**`、`lsp/src/lsp-surface/**`。
-> **纪律**：单轨 Abs，**不引入第二 IR**；不动 Abs 形状 / `leqAbs` / `formatShape`；不改变 C0 / L2 / `any` ≠ `unknown` 语义；不触公共 API 冻结；新模块一律进已有子域（`pnpm run check:subdomains`）。
+> **纪律**：单轨 Abs，**不引入第二 IR**；不动 Abs 形状 / `leqAbs` / `formatShape`；不改变 C0 / L2 / `any` ≠ `unknown` 语义；不触公共 API 冻结；新模块一律进已有子域（`pnpm run lint:hygiene`）。
 > **交付物**：阶段 0 为文档 + 测试纯新增，无 changeset；阶段 1 起涉及发布包行为，已按 `CONTRIBUTING.md:126` 补 `.changeset/adr-0001-stage1-entry-face.md`（覆盖切片 1–3）。
 
 > **Executive summary (EN).** A 2026-11-14 audit found 34 bugs; 15 are design defects and 19 are omission defects, but 15 of those 19 are symptoms of one architectural gap: multiple parallel AST scanners / emitters / diagnostic lines with no single source of truth. This ADR proposes two analysis-time-only abstractions — a `SemanticIndex` (one binding pass keyed by `SymbolId`, read-only across every product face) and `Evidence<T>` (a typed lattice of declared / observed / degraded sources, with no constructor for silently degrading to `any`). Neither is a value IR: Abs remains the single type system, and all projections stay one-way and lossy. Rollout is a four-stage strangler with a zero-behavior-change shadow-diff phase, gated by the existing gold / real-package / differential suites.
@@ -47,7 +47,7 @@
 
 1. **单轨 Abs**：`CLAUDE.md:9` 与 `plans/2026-11-09-abs-improvement-plan.md:10` 明确规定「不新增第二 IR」；dts / LSP / 序列化是**单向、有损**的外延渲染，「Nothing reads a projection back」。因此 `SemanticIndex` 是**绑定与入口元数据**，`Evidence<T>` 是**分析期证据标签**；两者都不是值 IR，不参与求值、`leqAbs`、`formatShape`、Abs 缓存 ABI。Abs 仍是唯一类型表示。
 2. **包环约束**：`core/src/algebra/parse-source.ts:3` 明写 core **刻意不依赖** `@nudojs/parser`；core 也**未**引入 `@babel/traverse`（仅 service 使用）。binder 必须落在 core 内部、只产出纯数据；service 的 traverse 降级为消费方。
-3. **子域冻结**：`CLAUDE.md:73-78`——`algebra/` 顶层剩余文件由 `pnpm run check:subdomains` 冻结，新模块一律进已有子域。故落点为 `algebra/scan/`（索引）与 `algebra/diagnostics/`（证据），**不是** `algebra/semantic-index.ts` 这类顶层新文件（修正口头方案）。
+3. **子域冻结**：`CLAUDE.md:73-78`——`algebra/` 顶层剩余文件由 `pnpm run lint:hygiene` 冻结，新模块一律进已有子域。故落点为 `algebra/scan/`（索引）与 `algebra/diagnostics/`（证据），**不是** `algebra/semantic-index.ts` 这类顶层新文件（修正口头方案）。
 4. **公共 API 冻结**：`core/src/index.ts` / `algebra/index.ts` / `internal.ts` 的导出快照不得擅自扩张；跨包暴露按 §10 决议 3 走 `@nudojs/core/internal`，不新增公开导出。
 5. **动 Abs 形状的门槛**：`architecture-debt.md:159`——需全仓门禁 + 改前基线。本方案不动 Abs 形状，故**不触发**该门槛；这是可渐进落地的前提。
 6. **既有语义不改**：`any` = 未约束入口，`unknown` = 推断失败（`cli-semantics.md`）；L1/L2、退出码、诊断码的产品口径不变。本方案只是把「`unknown` 只能由推断失败产生」编码进类型。
@@ -130,7 +130,7 @@ export type ModuleForm = { kind: "esm" } | { kind: "cjs"; exportEquals: SymbolId
 
 | 阶段 | 动作 | 验收 | 回滚 |
 |---|---|---|---|
-| **0 · 影子对拍**（零语义变更） | 新增两个子域模块 + 类型 + 差分测试；用报告 34 条「一变量对照」夹具断言 `index.entries` / `exportSlots` 与旧扫描器的分歧并**输出清单**，不修行为。**证据固化**：`tmp/bug-report.md` 与 `/tmp/**` 夹具均被 `.gitignore` 忽略、不入版本库，故本阶段须把最低限度的一变量夹具与逐字输出转成仓库内测试，否则评审与后续回归无据可依；**范围**按 §10 决议 5，仅 ESM / CJS 主路径 | `pnpm run build` → `pnpm run lint` → `pnpm run test`（按 `CLAUDE.md:32` 先 build）；`pnpm run check:subdomains` | 纯新增文件 + 测试，直接 revert |
+| **0 · 影子对拍**（零语义变更） | 新增两个子域模块 + 类型 + 差分测试；用报告 34 条「一变量对照」夹具断言 `index.entries` / `exportSlots` 与旧扫描器的分歧并**输出清单**，不修行为。**证据固化**：`tmp/bug-report.md` 与 `/tmp/**` 夹具均被 `.gitignore` 忽略、不入版本库，故本阶段须把最低限度的一变量夹具与逐字输出转成仓库内测试，否则评审与后续回归无据可依；**范围**按 §10 决议 5，仅 ESM / CJS 主路径 | `pnpm run build` → `pnpm run lint` → `pnpm run test`（按 `CLAUDE.md:32` 先 build）；`pnpm run lint:hygiene` | 纯新增文件 + 测试，直接 revert |
 | **1 · 逐面双读迁移** | `check` → `service` → `dts` → `LSP` → `export`，每切一面删一份孪生实现，旧路径留开关式 fallback | 每面：金标 `check-recall-gold` / `check-gold`、真实包零 FP、差分语料、`verify:examples`、`test:fs-input`；`cache-invalidation.md` 的键纪律须把 Evidence 纳入 `analysisFileCacheKey` / `fnDepSeg`，否则 watch / LSP 命中陈旧结论 | 双读开关关回旧路径；每面一个 PR |
 | **2 · 收紧不变量** | 三条 CI 断言：① 产物 `tsc --strict` 必可编译；② 同一文件 check/test/dts/LSP 结论一致；③ 任何 `degraded` 不得无诊断消失 | 断言先以 warning 观察一轮，全绿后升 error | 断言降级为 warning |
 | **3 · 删旧** | `constNames` 外挂集、`EXPORT_BLOCKING_CODES`、`definiteModuleThrowOf` 语法证据表、`resolveExportSlotCall` 形态枚举、双读 fallback | 阶段 1/2 全绿 + 公共 API 快照无新增导出 | git revert |
@@ -316,8 +316,8 @@ BUG-024 ESM 类表达式    census=[C.m]            indexed=[C,C.m]          +[C
 **默认切换前的风险实测**（临时把 `entryFaceEnabled` 默认置 `true` 跑全量，随后**立即恢复 `false`**；该状态不是交付状态，也未进入任何测试快照）：
 
 - 1769 文件 / 18056 用例：**6 失败 / 5 文件**。其中 2 条是我们自己「默认关闭」的自指断言（`entry-face-shadow.test.ts`、`semantic-index-face.test.ts`），**4 条是真实回归**：
-  - `core-bug-996-cjs-getter-setter-not-entry.test.ts`（getter / setter 各 1 条）：`objectPropertyKeys` 只看 `isFunctionValue(p)`，未看 `kind` ⇒ 访问器被当成可调用入口，报假 `entry may-throw` / `opaque-result`（§16 实测 `indexed=[f]`）。
-  - `core-bug-1149-tmp-name-shadowing-rest.test.ts`、`core-bug-1159-hardcoded-temp-names.test.ts` 各 1 条：**`FunctionDeclaration` 无条件 `addEntry`** 且 walker 遍历整棵 AST ⇒ 函数体内嵌套声明被当成模块顶层入口（§16 实测 `SRC_D2` 的 `function g(){}`：`old=[f] indexed=[f,g]`）⇒ 名字解析不到、假 `nudo:opaque-result`。此处「内部临时名」是当时的错误推测，§16 已按实测更正。
+  - `core--cjs-getter-setter-not-entry.part.ts`（getter / setter 各 1 条）：`objectPropertyKeys` 只看 `isFunctionValue(p)`，未看 `kind` ⇒ 访问器被当成可调用入口，报假 `entry may-throw` / `opaque-result`（§16 实测 `indexed=[f]`）。
+  - `transpile-temp-names.test.ts` 的两处「撞名时无假 `nudo:opaque-result`（整模块 fail-closed 面）」用例（原 `core-bug-1149` / `1159` 两组，现已并入模块套件）：**`FunctionDeclaration` 无条件 `addEntry`** 且 walker 遍历整棵 AST ⇒ 函数体内嵌套声明被当成模块顶层入口（§16 实测 `SRC_D2` 的 `function g(){}`：`old=[f] indexed=[f,g]`）⇒ 名字解析不到、假 `nudo:opaque-result`。此处「内部临时名」是当时的错误推测，§16 已按实测更正。
 - 三份金标（`check-gold` / `check-recall-gold` / `check-shape-gold`）在**开启**状态下仍 233/233 全绿 ⇒ 缺口集中在 **`entries` 精度**，不是优先级格或整体架构。
 
 ⇒ **切片 3 的前置条件**：先在 binder Pass 2 排除访问器与内部临时名，再考虑默认切换；不得用白名单压掉这 4 条（§10 决议 4）。

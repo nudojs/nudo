@@ -1,5 +1,5 @@
 import {describe, it, expect} from "vitest";
-import {runTranspiled, callTranspiledExportFull, $lit, litValue, absToString} from "@nudojs/core";
+import {runTranspiled, callTranspiledExportFull, litValue, absToString} from "@nudojs/core";
 
 describe("evaluator class / this", () => {
   it("constructor writes fields; method reads this", () => {

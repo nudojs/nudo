@@ -1,5 +1,5 @@
 /**
- * Bug 19 回归：语句位 `Object.defineProperties(o, props)` 不回写 o。
+ * 回归：语句位 `Object.defineProperties(o, props)` 不回写 o。
  * 根因：描述符安装是「不可变更新 + 返回 target」的单一机器
  * （applyPropertyDescriptor，object.ts），语句位置必须由 transpile 的
  * rebind 通道把返回容器写回第一实参绑定——emitStmtWritebackRebinds 原本只
@@ -39,7 +39,7 @@ function tupleLitsOf(a: Abs | undefined): unknown[] | undefined {
   return a.shape.elements.map((e) => litOf(e));
 }
 
-describe("Bug 19: statement-level Object.defineProperties writes back to target", () => {
+describe("statement-level Object.defineProperties writes back to target", () => {
   it("语句位数据描述符：o.a → 1（native 1，修复前 exact undefined）", () => {
     const r = evalAbs(
       `function f() { const o = {}; Object.defineProperties(o, { a: { value: 1 } }); return o.a; }`,

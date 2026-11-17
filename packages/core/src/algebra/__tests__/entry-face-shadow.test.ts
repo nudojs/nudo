@@ -94,7 +94,7 @@ describe("ADR 0001 阶段 1 · 切片 3 索引普查面（默认开启）", () =
     expect(old).not.toContain("a");
     const names = resolveEntryFace(file, old);
     expect(names).toContain("f"); // 旧入口不因切换消失
-    expect(names).toContain("a"); // BUG-015 的解构导出被登记
+    expect(names).toContain("a"); // 的解构导出被登记
     expect(compareEntryFaces(file, old).added).toContain("a");
   });
 

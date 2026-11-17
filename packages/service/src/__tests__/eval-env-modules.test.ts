@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { join } from "node:path";
+import "node:path";
 import { analyzeFile, clearEvalCache } from "@nudojs/service";
 import { formatShape } from "@nudojs/core";
 

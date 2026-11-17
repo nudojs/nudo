@@ -1,5 +1,5 @@
 /**
- * Bug 84：私有槽泄漏为可枚举自有属性——internal 槽标志，全 introspection 面。
+ * 私有槽泄漏为可枚举自有属性——internal 槽标志，全 introspection 面。
  *
  * 私有字段（#x）此前存为实例内层 obj 的普通 "#x" 字符串槽：for-in 枚举出
  * "#x"、hasOwnProperty("#x") → true、gOPN/keys/spread/assign/stringify 全部
@@ -8,9 +8,9 @@
  * 修复数据流：transpile 期 PrivateName 打 private 标记（计算键公共字段
  * ["#x"] 不带）→ applyInstanceFields 落地槽打 Slot.internal（覆写保留）→
  * 各 introspection 面查标剔除。合法公共字符串键 {"#x":1} 与私有槽同键空间
- * 共存，不得误伤（"#x" in obj 的接受歧义是 Bug 78 混淆键设计权衡）。
+ * 共存，不得误伤（"#x" in obj 的接受歧义是 混淆键设计权衡）。
  *
- * 不变量：$get/$set(obj, "#x", …) 直连键访问照常（Bug 78 语义）；$in 的槽
+ * 不变量：$get/$set(obj, "#x", …) 直连键访问照常（语义）；$in 的槽
  * 存在性查询不受 internal 影响（#x in this → true）。
  */
 import {describe, it, expect} from "vitest";
@@ -18,7 +18,7 @@ import {runTranspiled, callTranspiledExportFull, transpileSource, litValue, form
 import {getPropFlags} from "../builtins.ts";
 
 /** concrete 抽取（differential/harness.ts 口径）：lit 值 / tuple / obj 逐槽
- *  （getPropFlags 过滤 enumerable:false 非枚举键），非具体 → undefined */
+ * （getPropFlags 过滤 enumerable:false 非枚举键），非具体 → undefined */
 function concrete(a: Abs | undefined): unknown {
   if (!a || typeof a !== "object") return a;
   const lvR = litValue(a);
@@ -54,7 +54,7 @@ function exec(src: string): unknown {
   return c !== undefined ? c : `abs=${formatAbs(r!)}`;
 }
 
-describe("Bug 84: private fields are internal slots — invisible to introspection", () => {
+describe("private fields are internal slots — invisible to introspection", () => {
   it("for-in over instance enumerates only public fields", () => {
     expect(exec(`class A { #x = 1; pub = 2; } let s = ""; for (const k in new A()) { s += k; } return s;`)).toBe("pub");
   });
@@ -86,7 +86,7 @@ describe("Bug 84: private fields are internal slots — invisible to introspecti
   });
 });
 
-describe("Bug 84: invariants — direct access, $in, public '#'-string keys", () => {
+describe("invariants — direct access, $in, public '#'-string keys", () => {
   it("this.#x direct read still works (Bug 78 semantics)", () => {
     expect(exec(`class A { #x = 1; m() { return this.#x; } } return new A().m();`)).toBe(1);
   });
@@ -122,14 +122,14 @@ describe("Bug 84: invariants — direct access, $in, public '#'-string keys", ()
   });
 });
 
-describe("Bug 84: transpile emits the private flag on instanceFields spec", () => {
+describe("transpile emits the private flag on instanceFields spec", () => {
   it("PrivateName → { name, private: true }; computed/public keys unflagged", () => {
     const code = transpileSource(
       `export function f() { class A { #x = 1; ["#y"] = 2; pub = 3; } return new A(); }`,
     );
     // init thunk 内含 '}'，不能用单列正则——按 entry 边界切片逐条断言
     const fields = code.slice(code.indexOf("instanceFields: ["), code.indexOf("],", code.indexOf("instanceFields: [")));
-    // Bug 158：私有名键按**声明类**作用域化（"#<类名>::<私有名>"）——私有名
+    // 私有名键按**声明类**作用域化（"#<类名>::<私有名>"）——私有名
     // 条目按"可选作用域前缀"匹配（公有键无前缀），意图不变
     const entryOf = (name: string): string => {
       const re = new RegExp(`\\{ name: "(?:#[^"]*::)?${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}",`);
@@ -145,7 +145,7 @@ describe("Bug 84: transpile emits the private flag on instanceFields spec", () =
   });
 });
 
-describe("Bug 84 precision: class-instance gOPD / JSON fold", () => {
+describe("precision: class-instance gOPD / JSON fold", () => {
   it("gOPD on public field → exact data descriptor (native: all-true flags)", () => {
     expect(
       exec(
@@ -193,7 +193,7 @@ describe("Bug 84 precision: class-instance gOPD / JSON fold", () => {
     ).toBe('{"pub":2}');
   });
   it("JSON.stringify with toJSON method folds exactly (Bug 381: toJSON hook really called)", () => {
-    // Bug 381 起 toJSON 步**真调用**（原生 SerializeJSONProperty 步骤 2：经原型
+    // 起 toJSON 步**真调用**（原生 SerializeJSONProperty 步骤 2：经原型
     // 查找取 toJSON 并以 key "" 调用）⇒ 引擎与原生同款折精确值（native 返回
     // "T"，序列化文本为 "\"T\""）。修前：toJSON 槽只被**探测**（不执行）⇒ 折
     // 抽象（abs=…）——那是「钩子从不调用」时代的保守折法。
@@ -204,7 +204,7 @@ describe("Bug 84 precision: class-instance gOPD / JSON fold", () => {
     expect(r).toBe('"T"');
   });
   it("JSON.stringify with dynamic defineProperty getter folds via accessor dispatch", () => {
-    // 动态访问器：内层占位槽 + 侧表派发 getter（Bug 57 口径）→ 精确
+    // 动态访问器：内层占位槽 + 侧表派发 getter（口径）→ 精确
     expect(
       exec(
         `class A { pub = 2; } const a = new A();` +

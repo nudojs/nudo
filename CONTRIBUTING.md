@@ -11,13 +11,63 @@ pnpm install            # workspace deps
 pnpm run build          # tsup → dist/ (required before test — see below)
 pnpm run lint           # tsc --noEmit -p tsconfig.lint.json
 pnpm run lint:tests     # tsc --noEmit -p tsconfig.test-lint.json
-pnpm run lint:hygiene   # 静态卫生 + core 子域边界（两条 node 脚本）
+pnpm run lint:hygiene   # 静态卫生 + scripts 准入 + core 子域边界（7 条 node 门禁）
+pnpm run check:diff-face -- --base origin/main  # 加法成本：超出解释线（净增/新增源码或测试文件）须 --reason 或填 PR 模板小节
 pnpm run test           # vitest run
+pnpm run test:local     # 本地快车道：按需 build + CLI e2e 走 dist（见下）
 pnpm run verify:examples  # docs/examples command matrix (exit codes)
 pnpm run verify:docs      # doc code samples still run
 ```
 
 **Build before test is mandatory.** Vitest aliases packages to `src`, but `@nudo:env` dynamic imports resolve `@nudojs/*` through package.json `exports` to `dist/`. CI runs `build` before `test` for the same reason; do the same locally.
+
+`pnpm run test:local ...` 是本地快车道：dist 落后于非测试源码时才重建（纯测试
+改动跳过），CLI e2e 以 `NUDO_TEST_CLI=dist` 跑（每次 spawn 0.9s → 0.22s），
+worker 数按本机核数取（CI 仍 4）。2026-11-17 实测（16 核）：
+
+| 命令 | 面 | 用时 |
+|---|---|---|
+| `pnpm run test:local -- --changed` | 变更相关（日常内循环，**含**受影响的 e2e/oracle） | 秒级 |
+| `pnpm run test:local --fast` | PR / main 门禁口径：全量 − e2e − 外部 oracle | ~67s（917 文件 / 11683 用例） |
+| `pnpm run test:local --e2e [-- --changed]` | 进程级 e2e（nightly 口径） | ~40s（58 文件 / 735 用例） |
+| `pnpm run test:local --oracle [-- --changed]` | 外部 oracle（nightly 口径） | ~6s（3 文件 / 20 用例） |
+| `pnpm run test:local` | 全量（预推送自检，含 e2e/oracle） | ~106s（978 文件 / 12438 用例） |
+
+CI 车道（`NUDO_TEST_CLI=dist`，见 `.github/workflows/ci.yml` 头注）：
+
+- PR（`test-pr`）：`--changed` − e2e/oracle + `test:fs-input`（唯一测试门禁；**不产覆盖率**）；
+- push dev|ci：`--changed` − e2e/oracle；
+- push main：全量 − e2e/oracle（发布门禁）；
+- nightly / dispatch：全量（含 e2e/oracle）+ 阈值覆盖率 + codecov。
+
+慢通道（2026-11-17 起**只在 nightly / dispatch 与本地对应车道执行**）：
+进程级 e2e（`*.e2e.test.ts`，58 文件 / 735 用例，每条 2–5 次 CLI spawn）与
+外部 oracle（`*.oracle.test.ts`，真实 npm 包 / `@types` 语料）。快速迭代期
+用单元 + 集成用例作 PR/main 门禁，慢通道由夜间全量兜底。e2e 命名由
+`check-test-structure` 强制（import `helpers/run-cli` 的测试文件必须叫
+`*.e2e.test.ts`）；外部 oracle 按约定命名 `*.oracle.test.ts`。
+
+代价记明：**发布门禁不再覆盖 e2e / 外部 oracle**——动过 CLI、进程面或
+harvest/真实包精度面的发布必须本地补 `pnpm run test:local --e2e` /
+`--oracle`（或加 `--changed`）。CI 侧仍有 `verify:examples` 真实跑 CLI
+示例矩阵承担一层冒烟。
+
+耗时用例分层（选面依据，不按文件数看）：
+
+- **unit**：core / service 投影 / env / parser 的引擎与代数断言（单用例多为 ms 级）。
+- **进程级 e2e**：`*.e2e.test.ts`（58 文件，约占测试体时长一半）。
+- **真编译门禁**：`service/emit` 里调 `tscNoEmit` 的 15 个文件（222 用例，真 tsc）。
+- **外部 oracle**：`*.oracle.test.ts`（`check-real-*` 真实 npm 包 + harvester 真实 `@types`）。
+
+`--changed` 的实际选择面取决于依赖方向（2026-11-17 用 `vitest list --changed`
+实测）：改 `packages/nudojs` 的叶子文件（如 `check-gate-config.ts`）只选
+**19 个文件**；改 `packages/core` 的任意引擎模块（`algebra/term.ts` 加一行
+注释）选中 **904 / 978 文件**（含 40 个 e2e 文件）——CLI / LSP 测试静态
+import 引擎，所以引擎变更下 PR 实际≈全量（e2e/oracle 已在 CI 侧排除，本地
+`--changed` 仍会跑到受影响的慢用例）。
+
+`--fast` 与 `--changed` 互斥（快面排除慢通道，组合会静默漏测）；
+`--fast` / `--e2e` / `--oracle` 三者互斥。
 
 Also useful:
 
@@ -44,15 +94,62 @@ Because there is no style linter, **reviewers** must watch what the type-checker
 - **`as` creep in tests** — type assertions that hide real type errors or paper over API drift. Prefer fixing types over `as`.
 - **Comment rot** — comments that describe deleted behavior, wrong invariants, or stale design decisions. Update or delete them in the same PR.
 
-### 回归钉：按特性族聚合，不再一 bug 一文件
+### 测试结构：describe = 特性/上下文，it = 单一可观测行为
 
-`packages/*/src/__tests__/` 现有 2150+ 个测试文件，其中约 1350 个是 `*-bug-NNN-*.test.ts`
-单案回归钉。文件数本身已成为 CI 调度成本（`vitest.config.ts` 的 4 worker / 30s 超时 /
-2 shard）。新增回归时：
+BDD 口径落在 vitest 树上：
 
-- **优先**追加到同族的表驱动文件（`it.each` / case 表），或并入已有的同族 `-bug-`
-  文件；确需新文件时在 PR 里说明为什么不能合并。
-- **按族收敛入口已对 16 个族启用**：`scripts/aggregate-tests.mjs` 把同族
+- `describe` 描述**被验证的特性/上下文**（Given），可以套嵌表达前置条件；不得
+  用同名 describe 再包一层，也不得带缺陷号/批次代号（`Bug 123` / `族 12` / `#123`）。
+- `it` 描述**一个可观测行为**（When → Then）：返回值、诊断码/文案、退出码、
+  产物文本。断言必须钉具体可观测值，不得只断言「不抛 / 非空」。
+- 矩阵化套件（同一 describe 下大量同构场景）允许把多个场景名合并进一个 `it`
+  标题，用 `；` 分隔；场景体用独立**块语句**承载：
+
+  ```ts
+  describe("absToTSType", () => {
+    it("字面量 number ⇒ 42；字面量 string ⇒ \"hello\"", () => {
+      { expect(absToTSType(numLit(42))).toBe("42"); }
+      { expect(absToTSType(strLit("hello"))).toBe('"hello"'); }
+    });
+  });
+  ```
+
+  需要提前退出用 labeled block（`__scenario_1: { … break __scenario_1; … }`），
+  **禁止** `(() => { … })()` / `await (async () => { … })()` 承载场景：它会毁掉
+  失败定位、`-t` 过滤与覆盖率归因，并留下 `;;` 空语句。
+- 场景段不得为空或相邻重复；同一场景的多个面拆成同一块的多个断言，而不是
+  重复场景名。
+
+门禁：`scripts/check-test-structure.mjs`（挂在 `lint:hygiene`）拒绝 IIFE 场景、
+空语句、同名 describe 套嵌、describe 标题里的缺陷号/批次代号、空/重复场景段。
+
+### 回归测试：按模块/不变量归属，不按缺陷编号拆文件
+
+`packages/**/__tests__/` 现有 1043 个测试相关 `.ts`（978 个入口 + 65 个
+harness/helper），`*.part.ts` = 0。**2026-11-15 起不再有缺陷编号命名**：历史
+1360 个 `*-bug-NNN-*` 已改为 `<domain>-<特性>.test.ts`（旧 `--` 分隔亦已清除），命名门禁
+（`scripts/check-test-names.mjs`，挂在 `lint:hygiene`）拒绝新增此类文件名。
+**巨型 e2e 套件按面拆分，不要聚合成单文件**：vitest 以文件为并行粒度（1 文件
+= 1 worker），单文件内用例串行；CLI e2e 单文件 200s+ 会把全量墙钟钉死。
+门禁覆盖 `__tests__/**` 下**全部 `.ts`**（含 harness/helper）；缺陷编号与计划
+批次代号（`absNN` / `p0` / `c41` / `phase2` / `w9` …）都不得作为文件名；编号
+只能出现在 `it` 标题、commit、changeset。
+缺陷编号是批次内的局部编号，会跨批次复用（如 `core-254` 的两组文件互不相关），
+不能当稳定身份；文件应是模块规格的载体，不应随缺陷生命周期增删。新增回归时：
+
+- **先回答“原测试为什么没覆盖”**，四选一并据此选动作：① 该层/该形态没测；
+  ② 夹具形状漏了（array-like / spread / 可选链……）⇒ 修原夹具；③ 旧断言钉了
+  错误行为 ⇒ 改/删旧断言，**不得**并存 re-pin；④ 门禁没跑到（路径/矩阵遗漏）
+  ⇒ 修门禁。答案写进 PR，不写成一个新文件的由来。
+- **默认修改该模块的表驱动用例**（`it.each` / case 表）；同一根因的多个面是
+  加行/加维度，不是加文件。
+- **文件名描述模块/特性，缺陷编号只出现在 `it` 标题、commit、changeset。**
+  不要按缺陷编号新建测试文件。
+- 仅三种理由允许新建文件：该模块没有套件；需要不同 harness（spawn CLI / fs
+  布局 / native oracle）；跨模块产品契约（CLI exit code / dts）。
+- 表 / 镜像 / 注册表类根因必须同时补**完整性/漂移门禁**（枚举发射点或键集，
+  新成员未入表即红），不要只补样例。
+- **按族收敛入口已对 21 个族启用**：`scripts/aggregate-tests.mjs` 把同族
   `*-bug-NNN-*.test.ts` 原地改名为 `*.part.ts`，由 `zz-agg-<族>.test.ts` import，
   vitest 入口从 N 降到 1。2026-11-05 全量试点（20 族 / 1329 文件）曾暴露
   **模块共享污染**（同一入口内的 part 共享模块实例 ⇒ 全局注册表 / oracle /
@@ -68,9 +165,11 @@ Because there is no style linter, **reviewers** must watch what the type-checker
   `--revert-only <key>` 单族回退；`vscode-host-stub.ts::makeExtensionContext`
   补 activate 前的注册表面复位。`vscode/.../lsp` 6 + `service/.../service` 114
   = **120 文件 → 2 入口**（全仓 1769 → 1651），逐族验证 0 新增失败。
-  **剩余 4 个 R 级族 / 795 文件仍不得套用**：全量试聚合新增 7 条失败
-  （core/eval/lsp/cli 共享 memo / registry / stub 与 watch 事件假设），已用
-  `--revert-only` 精确回退 ⇒ 需逐族补统一复位后再验证。
+  **2026-11-15 收口剩余 4 个 R 级族**：core 314 + eval 145 + misc 22 + lsp 141
+  + cli 154 = **776 个 part → 81 个入口**（`--max-parts 10` 切分），逐族全绿；
+  历史「共享 memo / registry / stub」污染在统一复位（`resetEngineCaches`）后
+  未复现。全仓入口 1744 → 1049（含 113 个 `zz-agg` 入口）。大族必须继续按
+  `--max-parts 10` 切分，不要一次性整族单入口聚合（单入口会钉死 shard）。
   **纪律**：① 每次 `--apply` 必须带 `--only <完整 key>`（不带会一次性套用
   全部剩余族，`--only` 是**精确 key 相等**，不是目录前缀）；② `--revert`
   是**全局**的且忽略 `--only`（会还原全部已启用族）——单族回退用
@@ -89,7 +188,7 @@ Because there is no style linter, **reviewers** must watch what the type-checker
 - **全仓基线对比（按宿主）**：宿主面（`Float16Array` / ES 全局清单）、`fs.watch`
   事件数与临时路径归一化会随平台 / Node 大版本漂移，基线按
   `<platform>/<node major>`（如 `darwin/22`、`linux/24`）分桶，固化在
-  `docs/reports/test-baseline-failures.json`。全量跑完用
+  `tmp/test-baseline-failures.json`（本地生成，不入库）。全量跑完用
   `pnpm run test:baseline -- /tmp/nudo-test.log` 对比**当前宿主**的桶：**新增失败一律判红**，
   基线项偶尔不出现只告警（flaky 不制造假红）。修好某条或聚合改了文件名后
   跑 `pnpm run test:baseline -- --update /tmp/nudo-test.log` 只重写当前宿主条目；
@@ -101,7 +200,18 @@ Because there is no style linter, **reviewers** must watch what the type-checker
   重新实现 `mkdtempSync` / 清理逻辑。
 - `pnpm run lint:hygiene` 兜住 `tsc` 看不到、此前靠 reviewer 人工盯的几类问题：
   无说明的空 `catch`、内联 harness 复制、非 CLI 生产源码里的 `console.log`，
-  以及 `algebra/` 顶层继续平铺。新增检查规则同样要有明确理由，不做风格 linter。
+  以及 `algebra/` 顶层继续平铺、`scripts/` 与 npm 入口的未登记/孤儿项。
+  新增检查规则同样要有明确理由，不做风格 linter。
+
+### 仓内脚本纪律：`scripts/` 与 npm 入口
+
+`scripts/` 的索引与准入规则在 [`scripts/README.md`](./scripts/README.md)：
+
+- **一次性脚本不提交。** 分析 / 实验 / 迁移取样在 `/tmp` 跑，结论落 `docs/`，行为
+  留成测试。入库的唯一判据是**有常驻触发方**：CI、npm 入口、被触发的脚本、测试。
+- **新增 / 改名 / 删除脚本时同步索引**（`scripts/README.md` 的「## 文件」表：用途 + 触发方）。
+- **`package.json#scripts` 只收 CI 调用、`docs/examples` 命令矩阵、高频主入口。**
+  其余用 `node scripts/…` 直调；同义别名一律合并。
 
 ### Root `devDependencies` that look dead but are not
 
@@ -137,5 +247,6 @@ A static import scan over `packages/**/src` will flag these root `devDependencie
 | `packages/lsp` | IDE surface + language server |
 | `packages/env` / `packages/harvester` | API environments / `@types` harvest |
 | `docs/design/` | Design sources of truth (not tutorials) |
+| `scripts/` | Tooling — index + admission rules in [`scripts/README.md`](./scripts/README.md) |
 
 > **`@nudojs/core` dual-mapping footgun.** When a `tsconfig` maps `@nudojs/core` to `src`, it must also map `@nudojs/core/internal` → `packages/core/src/internal.ts`. Mapping only `.` while letting `./internal` resolve to `dist` loads **two** copies of engine machinery (e.g. may-throw collectors) and silently drops soft may-throw effects. See [`packages/core/PUBLIC_API.md`](./packages/core/PUBLIC_API.md).

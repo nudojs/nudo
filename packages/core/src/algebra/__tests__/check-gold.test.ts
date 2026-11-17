@@ -13,9 +13,9 @@ type Gold = {
   expectOk: boolean;
   expectCode?: string;
   /**
-   * T10a drift 夹具：按 spec 键（如 "./file.nudo.js"）提供侧车内容，
-   * 优先于 stdLoadModule（其对任意 .nudo.js 都回 STD 约束库）。
-   */
+ * T10a drift 夹具：按 spec 键（如 "./file.nudo.js"）提供侧车内容，
+ * 优先于 stdLoadModule（其对任意 .nudo.js 都回 STD 约束库）。
+ */
   files?: Record<string, string>;
 };
 
@@ -83,7 +83,7 @@ const r = add(1, 2);
     expectOk: true,
   },
   {
-    // Bug 8（wave 3）：`x + 1`（x:any）原生 may TypeError（x=1n / Symbol()）
+    // （wave 3）：`x + 1`（x:any）原生 may TypeError（x=1n / Symbol()）
     // —— L2 现如实报 entry-may-throw；本用例意图（导出函数列入 signatures）不变。
     name: "ESM export function still listed",
     source: `
@@ -93,7 +93,7 @@ export function scale(x) { return x + 1; }
     expectCode: "nudo:entry-may-throw",
   },
   {
-    // Bug 8（wave 3）：同上——`id + 1`（id:any）may TypeError；listing 意图不变。
+    // （wave 3）：同上——`id + 1`（id:any）may TypeError；listing 意图不变。
     name: "async function listed",
     source: `
 export async function load(id) { return id + 1; }

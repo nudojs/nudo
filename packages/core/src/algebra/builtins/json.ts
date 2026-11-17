@@ -645,7 +645,7 @@ function stringifyFnReplacer(
  * 本函数只恢复**副作用通道**（调用次数 / 捕获变量的写 / this 绑定）；
  * parse 的**值域**仍保守 unknown（逐键变换未建模——既有回归
  * eval-json.test.ts「reviver arg stays conservative」与
- * eval-object-json-w9.test.ts「callable reviver degrades to unknown」钉此
+ * object-json.test.ts「callable reviver degrades to unknown」钉此
  * 口径，见报告的「或至少」分支）。
  */
 function runJsonReviver(root: unknown, rev: Abs): void {

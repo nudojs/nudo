@@ -1,5 +1,5 @@
 /**
- * Bug 6（运行时内建建模）：内建抛错载荷 catch 形参的 .name/.message 折
+ * （运行时内建建模）：内建抛错载荷 catch 形参的 .name/.message 折
  * undefined——errorTypeAbs 只把错误名放 brand 层（shape.name），内层 obj
  * slots 为空；$get brand 分支自有槽 miss → $get(inner) → 空槽 → undefAbs。
  * 原生：e.name 是品牌名（静态可知）、e.message 恒 string 域。
@@ -11,7 +11,7 @@ import { describe, it, expect } from "vitest";
 import { litValue, formatAbs, strLit } from "@nudojs/core";
 import { call } from "./eval-helpers.ts";
 
-describe("Bug 6: builtin throw payload catch param has name/message slots", () => {
+describe("builtin throw payload catch param has name/message slots", () => {
   it('"a".includes(/a/) 的 catch 形参 e.name → "TypeError"', () => {
     const r = call(
       `export function f(s) { try { return "a".includes(/a/); } catch (e) { return e.name; } }`,

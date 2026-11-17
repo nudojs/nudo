@@ -63,7 +63,7 @@ declare module "idxmod" {
     const mod = env.modules["idxmod"]!;
     expect(mod["uniq"]).toBeDefined();
     expect(mod["chunk"]).toBeDefined();
-    // BUG-253：提升只对模块作用域成立 —— 这些成员**不得**泄漏成裸全局
+    // 提升只对模块作用域成立 —— 这些成员**不得**泄漏成裸全局
     // （`@types/lodash` 实测因此产生 60 个幽灵全局：`clone` / `isEqual` / `now`
     // 会劫持用户自有名字）。
     expect(env.globals["uniq"]).toBeUndefined();

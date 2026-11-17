@@ -2,9 +2,9 @@
  * 数值界提取 / 比较判定。
  * 回归背景：
  * 1. collectBoundsFromPred / collectBoundsFromPhi 只识别「变量在左、字面量在右」，
- *    `0 < x`（≡ x>0）与 `5 > x`（≡ x<5）的界被整段丢掉，约束传播与比较判定失效。
+ * `0 < x`（≡ x>0）与 `5 > x`（≡ x<5）的界被整段丢掉，约束传播与比较判定失效。
  * 2. decideByBounds 在等界处忽略 strict：x<5 ∧ y>5 仍应推出 x<y；
- *    x≤5 ∧ y≥5 仍应推出 x≤y；x≥5 ∧ y<5 仍应推出 x>y。
+ * x≤5 ∧ y≥5 仍应推出 x≤y；x≥5 ∧ y<5 仍应推出 x>y。
  */
 import { describe, it, expect } from "vitest";
 import {
@@ -18,7 +18,7 @@ import {
   ge,
   lt,
   le,
-  and,
+
   formatAbs,
 } from "../index.ts";
 

@@ -1,6 +1,6 @@
 /**
- * Bug 20 → Bug 60：JSON.stringify 环形值。Bug 20 修复了 jsonStringifyTotal
- * 预检无环守卫的栈溢出（软 may-throw + partial 值域）；Bug 60 进一步把
+ * → JSON.stringify 环形值。修复了 jsonStringifyTotal
+ * 预检无环守卫的栈溢出（软 may-throw + partial 值域）；进一步把
  * **可判定环**（$set 就地写槽的引用语义，`o.self = o` 产出真 Abs 环；
  * seen 集改「在栈」语义——重入即真环，共享非环引用 `{x:t,y:t}` 不误伤）
  * 升级为原生同面硬抛 TypeError「Converting circular structure to JSON」
@@ -48,7 +48,7 @@ function isThrowsBrand(t: unknown, name: string): boolean {
   return !!a && typeof a === "object" && a.shape?.k === "brand" && a.shape.name === name;
 }
 
-describe("JSON.stringify cyclic receivers (Bug 20 / Bug 60)", () => {
+describe("JSON.stringify cyclic receivers (/ )", () => {
   it("self-referencing object: definite TypeError (native parity)", () => {
     const r = call(
       `export function f() { const o = {}; o.self = o; return JSON.stringify(o); }`,

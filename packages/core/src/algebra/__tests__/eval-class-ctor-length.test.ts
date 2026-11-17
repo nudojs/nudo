@@ -1,6 +1,6 @@
 /**
  * P2b：类值 .length = 构造器元数（首个默认值（AssignmentPattern）/rest
- * 形参**前**的形参数——Bug 69 nativeParamArity 同口径）。隐式构造器：
+ * 形参**前**的形参数——nativeParamArity 同口径）。隐式构造器：
  * 基类 `constructor(){}`、派生 `constructor(...args){super(...args)}`——
  * 均 0（原生派生空类不继承父元数）。transpile 期经 spec.ctorLength 通道
  * 记录，$get 类值分支折 exact；自有静态 length 槽/静态访问器优先

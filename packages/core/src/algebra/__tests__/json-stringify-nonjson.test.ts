@@ -7,7 +7,7 @@
  * 嵌套 function 仍是 NOT_LITERAL→partial（可接受超集），不在本回归面。
  */
 import { describe, it, expect } from "vitest";
-import { litValue, formatAbs } from "../index.ts";
+import { formatAbs } from "../index.ts";
 import { call, val } from "./eval-helpers.ts";
 
 describe("JSON.stringify top-level non-JSON values return undefined", () => {

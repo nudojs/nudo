@@ -1,7 +1,7 @@
 /**
  * $removeNullish 透传回归（PR #93 review）：
  * - 非 Abs 裸宿主值：恒等透传——调用边界（$fork 臂）经 asAbsVal 收拢，
- *   提前折 unknown 是无谓退化
+ * 提前折 unknown 是无谓退化
  * - Abs 分支语义保持：nullish 并集剥 nullish、纯 nullish 原样、非 nullish 原样
  * - `??` / `??=` 转译 golden：`M[k] ?? 'z'` 的非 nullish 臂只取左值非 nullish 部分
  */

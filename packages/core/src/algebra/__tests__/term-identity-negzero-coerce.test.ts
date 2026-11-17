@@ -2,9 +2,9 @@
  * simplifyTerm 代数恒等式。
  * 回归背景：
  * 1. `x - 0 = x` 对 +0 成立，但对 -0 被减数不成立：(-0)-(-0)=+0。
- *    `b.value === 0` 在 JS 里也匹配 lit(-0)，旧实现把 x-(-0) 折成 x。
+ * `b.value === 0` 在 JS 里也匹配 lit(-0)，旧实现把 x-(-0) 折成 x。
  * 2. `x * 1 = x` 只对 number 成立；"5"*1=5、true*1=1、null*1=0。
- *    foldLiterals 只折双方 number，其余落进恒等式后原样保留，值和类型都错。
+ * foldLiterals 只折双方 number，其余落进恒等式后原样保留，值和类型都错。
  */
 import { describe, it, expect } from "vitest";
 import { simplifyTerm, app, lit, v, mul, numVar, numLit, litValue } from "../index.ts";

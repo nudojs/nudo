@@ -9,11 +9,11 @@
  * 拿不准的一律进 ALLOWED_IMPRECISE 并注明「未建模，接受 unknown」。
  *
  * 键形：
- * - `global:<Name>`            —— globalThis 自有属性名
- * - `<Brand>.static.<prop>`    —— 构造器/命名空间对象自有属性名
- * - `<Brand>.proto.<prop>`     —— `<Brand>.prototype` 自有属性名
- * - `Intl.ns.<prop>`           —— Intl 命名空间自有属性名（含子构造器名）
- * - `Intl.<Sub>.static/proto`  —— Intl 子构造器面
+ * - `global:<Name>` —— globalThis 自有属性名
+ * - `<Brand>.static.<prop>` —— 构造器/命名空间对象自有属性名
+ * - `<Brand>.proto.<prop>` —— `<Brand>.prototype` 自有属性名
+ * - `Intl.ns.<prop>` —— Intl 命名空间自有属性名（含子构造器名）
+ * - `Intl.<Sub>.static/proto` —— Intl 子构造器面
  *
  * 枚举口径：静态面跳过 `length/name/arguments/caller`（函数元属性，全宿主
  * 均匀未建模，不追踪）；原型面跳过 `constructor`（同因）。symbol 键自有
@@ -100,13 +100,13 @@ export const INTL_SUB_CTORS: readonly string[] = [
 /**
  * MODELED：引擎有分发/校验 case 的名字（理由 cites 派发点）。
  * 分发面速查：
- * - builtins/error.ts   evalBuiltinNew / evalBuiltinInstanceMethod / evalBigIntStatic
- * - exec/class.ts       $new 宿主表 / $invokeInner（数组方法、装箱、bigint/number 折叠）
+ * - builtins/error.ts evalBuiltinNew / evalBuiltinInstanceMethod / evalBigIntStatic
+ * - exec/class.ts $new 宿主表 / $invokeInner（数组方法、装箱、bigint/number 折叠）
  * - exec/runtime/containers.ts NAMESPACE_GLOBALS / TYPED_ARRAY_ELEMENT / $get 命名空间投影
- * - exec/runtime/members.ts   BUILTIN_BRAND_METHODS
- * - builtins/object.ts  BUILTIN_BRAND_NO_ENUM_KEYS / evalObjectMethod
+ * - exec/runtime/members.ts BUILTIN_BRAND_METHODS
+ * - builtins/object.ts BUILTIN_BRAND_NO_ENUM_KEYS / evalObjectMethod
  * - builtins/{math,string,number,json,date,regexp,promise,reflect,symbol,global,array,object-proto}.ts
- * - exec/calls.ts       GLOBAL_FNS / NEVER_EXEC_HOST_FN_NAMES
+ * - exec/calls.ts GLOBAL_FNS / NEVER_EXEC_HOST_FN_NAMES
  */
 export const MODELED: Record<string, string> = {
   // ---- globalThis 名字（引擎有专属派发/校验/拦截 case） --------------------
@@ -146,7 +146,7 @@ export const MODELED: Record<string, string> = {
   "global:FinalizationRegistry": "makeFinalizationRegistryAbs($new FinalizationRegistry+evalBuiltinNew case FinalizationRegistry,Bug25 cleanupCallback IsCallable 校验)+BUILTIN_BRAND_NO_ENUM_KEYS(Bug43 枚举面)+evalBuiltinInstanceMethod register/unregister(Bug43 弱键校验)",
   "global:Function": "makeDynamicFunctionAbs($new Function 分支+evalBuiltinNew case Function,Bug29 实参 ToString 校验；动态体值域 fn shape 保守)；调用形走通用宿主口径",
   "global:Intl": "NAMESPACE_GLOBALS(Bug44)+typeof Intl 折 object(ops.$typeof)+$get 成员投影(NumberFormat/DateTimeFormat 构造器值)",
-  // TypedArray：元素域建模（下标读投影）；构造面 Bug 21 / 静态面 Bug 27
+  // TypedArray：元素域建模（下标读投影）；构造面 / 静态面 
   "global:Uint8Array": "TYPED_ARRAY_ELEMENT 元素域(builtins/shared.ts 单一事实源)+$new makeTypedArrayAbs(Bug21；Bug38 数字形态 length 槽非可枚举入 brand，$len 读取)+evalTypedArrayStatic(Bug27；Bug37 from mapFn IsCallable 校验+tuple items mapper 逐元素执行)+NAMESPACE_GLOBALS(Bug27)+$invokeInner 回调族(Bug36：invokeArrMethod 复用+TYPED_ARRAY_CALLBACK_METHODS 值读/$in)+evalBuiltinInstanceMethod set(Bug38：%TypedArray%.proto.set——共享基类非自有属性不进地板枚举；ToIndex/ToObject/越界三段校验)",
   "global:Uint8ClampedArray": "TYPED_ARRAY_ELEMENT 元素域(builtins/shared.ts)+makeTypedArrayAbs 构造 ToIndex(Bug21)+evalTypedArrayStatic(Bug27)+NAMESPACE_GLOBALS(Bug27)",
   "global:Int8Array": "TYPED_ARRAY_ELEMENT 元素域(builtins/shared.ts)+makeTypedArrayAbs 构造 ToIndex(Bug21)+evalTypedArrayStatic(Bug27)+NAMESPACE_GLOBALS(Bug27)",
@@ -159,7 +159,7 @@ export const MODELED: Record<string, string> = {
   "global:Float64Array": "TYPED_ARRAY_ELEMENT 元素域(builtins/shared.ts)+makeTypedArrayAbs 构造 ToIndex(Bug21)+evalTypedArrayStatic(Bug27)+NAMESPACE_GLOBALS(Bug27)",
   "global:BigInt64Array": "TYPED_ARRAY_ELEMENT(bigint) 元素域(builtins/shared.ts)+makeTypedArrayAbs 构造 ToIndex(Bug21)+evalTypedArrayStatic of 走 ToBigInt(Bug27)+NAMESPACE_GLOBALS(Bug27)",
   "global:BigUint64Array": "TYPED_ARRAY_ELEMENT(bigint) 元素域(builtins/shared.ts)+makeTypedArrayAbs 构造 ToIndex(Bug21)+evalTypedArrayStatic of 走 ToBigInt(Bug27)+NAMESPACE_GLOBALS(Bug27)",
-  // TypedArray 静态面（Bug 27 入 NAMESPACE_GLOBALS 后 $get 命名空间投影）：
+  // TypedArray 静态面（入 NAMESPACE_GLOBALS 后 $get 命名空间投影）：
   // static.prototype → protoBrandAbs（constructor 槽）；BYTES_PER_ELEMENT →
   // 宿主常量真值 $lit 折叠
   "Float16Array.static.prototype": "NAMESPACE_GLOBALS(Bug27)→protoBrandAbs",
@@ -548,7 +548,7 @@ export const MODELED: Record<string, string> = {
   "SharedArrayBuffer.proto.maxByteLength": "makeSharedArrayBufferAbs 槽",
   "DataView.proto.byteLength": "makeDataViewAbs 槽(Bug63)",
   "DataView.proto.byteOffset": "makeDataViewAbs 槽(Bug63)",
-  // Bug 35：get/set 存取族——bounds 校验（越界定抛 RangeError/抽象 may）
+  // get/set 存取族——bounds 校验（越界定抛 RangeError/抽象 may）
   // + 读元素域（number/bigint）/写 undefined（evalBuiltinInstanceMethod）
   "DataView.proto.getBigInt64": "evalBuiltinInstanceMethod(Bug35 bounds+bigint 域)",
   "DataView.proto.getBigUint64": "evalBuiltinInstanceMethod(Bug35 bounds+bigint 域)",
@@ -590,7 +590,7 @@ export const MODELED: Record<string, string> = {
   "URL.proto.toJSON": "evalBuiltinInstanceMethod(Bug42 ≡href)",
   "TextDecoder.proto.encoding": "makeTextDecoderAbs encoding 槽(Bug45)",
 
-  // ---- Intl（Bug 44：命名空间 + 两个格式化构造器）--------------------------
+  // ---- Intl（命名空间 + 两个格式化构造器）--------------------------
   "Intl.ns.NumberFormat": "makeIntlCtorAbs 构造器值($get 命名空间分支)+evalBuiltinNew:Intl.NumberFormat(makeIntlFormatAbs locale 校验,Bug44)",
   "Intl.ns.DateTimeFormat": "makeIntlCtorAbs 构造器值($get 命名空间分支)+evalBuiltinNew:Intl.DateTimeFormat(makeIntlFormatAbs locale 校验,Bug44)",
   "Intl.NumberFormat.static.prototype": "$get fn 面 prototype 折 obj（Bug9 构造器值，Bug44）",
@@ -657,16 +657,16 @@ export const MODELED: Record<string, string> = {
   "Reflect.static.set": "reflect.ts",
   "Reflect.static.setPrototypeOf": "reflect.ts",
 
-  // ---- Bug 40：brand 原型 presence 面（值读 typeof / $in 精确） --------------
+  // ---- brand 原型 presence 面（值读 typeof / $in 精确） --------------
   // members.ts BUILTIN_BRAND_METHODS / BUILTIN_BRAND_ACCESSORS 按宿主原型面
   // 补齐 + NAMESPACE_GLOBALS 补二进制/弱引用构造器（.prototype 通道）。
-  // 调用面除既有派发（Bug35/43 等）外仍诚实 unknown——presence 精确不
+  // 调用面除既有派发（ 等）外仍诚实 unknown——presence 精确不
   // 伪造调用结果。
   "Map.proto.getOrInsert": "BUILTIN_BRAND_METHODS presence 值读/$in(Bug40)；调用 unknown",
   "Map.proto.getOrInsertComputed": "BUILTIN_BRAND_METHODS presence 值读/$in(Bug40)；调用 unknown",
   "WeakMap.proto.getOrInsert": "BUILTIN_BRAND_METHODS presence 值读/$in(Bug40)；调用 unknown",
   "WeakMap.proto.getOrInsertComputed": "BUILTIN_BRAND_METHODS presence 值读/$in(Bug40)；调用 unknown",
-  // Set.proto.union 等 7 方法已随 Bug 28 迁 MODELED（GetSetRecord 校验 +
+  // Set.proto.union 等 7 方法已随 迁 MODELED（GetSetRecord 校验 +
   // setMethodFold 折叠/诚实 unknown）。
   "RegExp.proto.compile": "BUILTIN_BRAND_METHODS presence 值读/$in(Bug40)；调用 unknown",
   "RegExp.proto.unicodeSets": "BUILTIN_BRAND_ACCESSORS $in true+值读诚实 unknown(Bug40)；REGEX_FLAG_SLOTS 值面仍 7 标志",
@@ -843,7 +843,7 @@ export const ALLOWED_IMPRECISE: Record<string, string> = {
   "AggregateError.static.prototype": "Error 子类未入 NAMESPACE_GLOBALS，接受 unknown",
 
   // ---- TypedArray 原型常量/base64 面（static.prototype/BYTES_PER_ELEMENT
-  // ---- 已随 Bug 27 入 NAMESPACE_GLOBALS 迁 MODELED；from/of 非自有属性
+  // ---- 已随 入 NAMESPACE_GLOBALS 迁 MODELED；from/of 非自有属性
   // ---- 不进地板枚举，校验面见 evalTypedArrayStatic） -----------------------
   "Uint8Array.static.fromBase64": "base64/hex 提案面未建模，接受 unknown",
   "Uint8Array.static.fromHex": "base64/hex 提案面未建模，接受 unknown",
@@ -1062,7 +1062,7 @@ export const VERSION_SKEW: ReadonlySet<string> = new Set([
  * 产品宿主面，也不该**逐厂商名**登记进台账（否则换一个工具链就要改仓库）。
  *
  * 口径：只在**枚举侧**跳过；未登记的**真实**宿主全局仍然硬失败。`env` 包的
- * 宿主面对账（`env-bug-61-node-surface.test.ts`）有同一判定，两处必须同步。
+ * 宿主面对账（`env-node-surface-oracle.test.ts`）有同一判定，两处必须同步。
  */
 export function isInjectedHostGlobal(name: string): boolean {
   return name.startsWith("__vitest_") || /^__[A-Za-z0-9_]*_LOADED__$/.test(name);

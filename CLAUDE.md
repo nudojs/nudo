@@ -18,8 +18,10 @@ Product CLI face (`docs/design/cli-semantics.md`): primary verbs are `check` / `
 pnpm install            # Install dependencies (requires pnpm@11.28.0, see packageManager)
 pnpm run build          # Build all packages with tsup
 pnpm run test           # Run all tests (vitest run)
+pnpm run test:local     # Lanes: --changed (inner) / --fast (no e2e/oracle) / --e2e / --oracle / full
 pnpm run test:watch     # Run tests in watch mode
 pnpm run lint           # Type-check all packages (tsc --noEmit -p tsconfig.lint.json)
+pnpm run check:diff-face  # 加法成本门禁（净增/新增源码或测试文件 → 任务书理由；默认 base origin/main）
 pnpm run check <file>   # gate + signatures (Day 0 / CI)
 pnpm run test:cli <file>  # case reports (call@/entry@ + debug witnesses)
 pnpm run nudo -- <args>  # full CLI (contract / export / health / migrate / …)
@@ -34,6 +36,8 @@ pnpm run docs:serve     # Serve production build (both locales)
 > `pnpm run test` is **vitest** (package tests), not the CLI case reporter — that is `test:cli`. Product CLI surface: `check` / `test:cli` / `nudo -- contract|export|health|migrate`.
 >
 > Docusaurus `start` serves **one locale per process**. Default `docs:dev` is English only, so `/nudo/zh-Hans/` will 404 until you run `docs:dev:zh` (or `docs:build` + `docs:serve`).
+>
+> **`scripts/` 与 npm 入口纪律**（索引 `scripts/README.md`）：一次性分析/实验/迁移脚本**不提交**（`/tmp` 里跑，结论落 `docs/` 或测试）；入库脚本必须有常驻触发方并在索引登记一行；`package.json#scripts` 只收 CI 调用 / `docs/examples` 矩阵 / 高频主入口，其余用 `node scripts/…` 直调，同义别名一律合并。
 
 Run a single test file: `pnpm vitest run packages/core/src/algebra/__tests__/check-gold.test.ts`
 
@@ -71,9 +75,9 @@ Product CLI lives in `packages/nudojs` (published as `nudojs`, bin `nudo`). The 
 ## Architecture
 
 > 2026-11-05：`algebra/` 顶层 93 个平铺 `.ts` 中的 50 个已归入
-> `check/ scan/ format/ contract/ diagnostics/ key/` 六个二级子域（codemod
-> `scripts/relocate-core-subdomains.mjs`，795 处相对导入机械重写）。剩余 43 个
-> 顶层文件由 `pnpm run check:subdomains` 冻结，新模块一律进已有子域。
+> `check/ scan/ format/ contract/ diagnostics/ key/` 六个二级子域（一次性 codemod，
+> 795 处相对导入机械重写；脚本已随迁移结案移出仓库）。剩余 43 个
+> 顶层文件由 `pnpm run lint:hygiene`（`check-core-subdomains`）冻结，新模块一律进已有子域。
 > `scripts/aggregate-tests.mjs` 可按族收敛测试入口，但全量试点发现同一聚合
 > 入口内 part 共享模块实例会污染全局状态 ⇒ 已回滚；只允许逐族验证后启用。
 
@@ -100,14 +104,39 @@ Product CLI lives in `packages/nudojs` (published as `nudojs`, bin `nudo`). The 
 - Test files use `describe`/`it`/`expect` from vitest
 - Versioning via @changesets/cli with public access, base branch `main`
 
+## Test Design (product modules, not bug ledgers)
+
+Tests are the executable spec of a **product module/face**, not a ledger of historical bugs.
+
+- **Ownership**: one suite per module/face; file name describes the module/face, never a bug or plan code. Defect IDs belong only in `it` titles, commits, changesets.
+- **Matrix first**: encode the contract as a table of `(axis combination → observable)`: input/Abs shape × operation × expected value / diagnostic / exit / guard / runtime acceptance. Every row asserts a concrete observable, never just “no throw”.
+- **Oracle anchoring**: use real runtime / `tsc` / CLI output as the oracle where possible. Exact product surfaces (signatures, diagnostics, exit codes, dts text) are contracts; internal helper names are not, unless explicitly a cache/determinism contract.
+- **Bug intake**: before adding a case, answer “why didn’t the existing matrix catch it?” — missing axis → add rows/dimension; fixture-shape gap → extend the fixture space; old assertion wrong → replace/delete it; gate/path not executed → fix the gate. If the case only restates an existing row, do not add it.
+- **Merge, then delete**: when a matrix row absorbs a bug-specific case (same invariant, same or stronger assertions), delete the old case in the same change. Keep a standalone case only for a distinct contract face that cannot be tabulated (brand/exotic objects, `tsc` compile gates, process/fs layout, native oracles with incompatible harnesses).
+- **Deletion discipline**: delete only exact duplicates or assertions of wrong behavior; record evidence in the commit message (`dup:` / `incorrect:` + commit). No silent deletion and no assertion weakening.
+- **No bug-only suites**: provenance may stay in `it` titles, but the structure must be module contract; new bug-number/plan-code file names are rejected by `scripts/check-test-names.mjs`.
+- **Axis growth, not prose growth**: extend tables by adding an axis or boundary value, not by re-stating the same invariant in new prose. Suites that are entirely one-off narratives should be collapsed into `it.each`.
+- **The matrix is the map, not the deliverable**: it locates coverage; deletion evidence lives in commits. Product tests are the deliverable. A module is not “audited” by adding keep rows only.
+- **Verification**: targeted suite + `pnpm run lint:tests`; per batch run full `pnpm exec vitest run --maxWorkers=4` and `pnpm run test:baseline -- <log>`.
+
+## Diff 面纪律（加法成本）
+
+加法默认免费会累积成臃肿。本仓把「多」变成需要书面解释的动作——不判质量，只强制写下来。
+
+- **任务书 = PR 模板**（`.github/PULL_REQUEST_TEMPLATE.md`）：现有实现证据 / 新增文件理由 / 删除清单 / 不做清单。**动手前**填（写进 issue、计划或 PR 草稿皆可）；删除清单确无删除也写「无」，不允许留空。模板的二级标题是门禁解析契约，改名即改门禁行为。
+- **门禁**：`pnpm run check:diff-face --base <ref>`（无 `--base` 时用 `origin/main` 的 PR 语义）。触发线 = `scripts/check-diff-face.mjs` 的 `BUDGET` 常量（默认：源码净增 250 行、新增源码文件 2 个、新增测试文件 0 个）。触发后必须给理由：`--reason "<≥40 字符>"` / `DIFF_FACE_REASON`，或 PR body 填满模板全部小节（HTML 注释不计正文）。
+- **新增测试文件默认零容忍**：先尝试并入既有矩阵文件（新行/新轴）；确实不行，书面回答「为何不能并入」或「吸收/替换了哪个旧条目」。「合并即删」的删除与新增在同一 diff 内完成，不留给以后清理。
+- **答不上来 = 删东西**，不是加一行解释。阈值是解释线不是上限：调阈值 = 改脚本里的 `BUDGET`（一次显式代码 diff），不是绕过门禁的默认路径。
+- CI 在 PR 的 lint job 用 `base.sha` + PR body 跑；push 不跑（合并后重算已无「本批改动」语义）。
+
 ## TypeScript Config
 
 - `tsconfig.base.json`: ES2022 target, ESNext module, bundler resolution, strict, noEmit
-- `tsconfig.json`: extends `tsconfig.base.json` + generated `tsconfig.paths.json`; project references for core, parser, nudojs, service. Path aliases are NOT restated here — single source is `scripts/workspace-aliases.mjs` (drift gate: `pnpm run check:aliases`)
+- `tsconfig.json`: extends `tsconfig.base.json` + generated `tsconfig.paths.json`; project references for core, parser, nudojs, service. Path aliases are NOT restated here — single source is `scripts/workspace-aliases.mjs` (drift gate: `pnpm run lint:hygiene`; `node scripts/check-aliases.mjs --write` 重新生成)
 - `tsconfig.lint.json`: Includes all packages (excludes tests) for CI type-checking
 - Each package has its own `tsconfig.json` extending base with project references
 
 ## CI
 
-- **CI** (`.github/workflows/ci.yml`): build once, dist shared via `nudo-dist` artifact + `actions/cache` (src-hash keyed); CLI e2e uses `NUDO_TEST_CLI=dist` (node + built dist, no per-case tsx spawn). Matrix: push main → lint/build/test (2 shards, full run — no `--changed`) + benchmark; push dev|ci → lint/build/test (2 shards, `vitest --changed <before>` + narrowed forceRerunTriggers, vitest.config.ts; `test:fs-input` runs unconditionally on incremental paths because fs reads are invisible to the module graph; tsc and verify:* skipped when their inputs unchanged); PRs → lint/build/test-coverage-pr (2 shards, `vitest run --coverage --changed <base.sha>`, thresholds off, codecov merges both uploads) — that run **is** the PR's test gate; nightly schedule → test-coverage (2 shards, blob reports) + coverage-merge (`vitest --merge-reports`, hard thresholds) + benchmark + node-matrix (Node engine-version smoke: bin + verify:examples on the lowest advertised Node — engines-drift red tracker). CI's same-SHA green conclusion is the publish/deploy gate for Release & Docs-deploy (explicit polling, fail-closed — no duplicate inline lint/test).
+- **CI** (`.github/workflows/ci.yml`): build once, dist shared via `nudo-dist` artifact + `actions/cache` (src-hash keyed); CLI e2e uses `NUDO_TEST_CLI=dist` (node + built dist, no per-case tsx spawn). Matrix: push main → lint/build/test (2 shards, full run − `*.e2e.test.ts`/`*.oracle.test.ts` — no `--changed`) + benchmark; push dev|ci → lint/build/test (2 shards, `vitest --changed <before>` − e2e/oracle + narrowed forceRerunTriggers, vitest.config.ts; `test:fs-input` runs unconditionally on incremental paths because fs reads are invisible to the module graph; tsc and verify:* skipped when their inputs unchanged); PRs → lint/build/test-pr (2 shards, `vitest run --changed <base.sha>` − e2e/oracle, no coverage) — that run **is** the PR's test gate; nightly schedule → test-coverage (2 shards, blob reports, full incl. `*.e2e.test.ts`/`*.oracle.test.ts`) + coverage-merge (`vitest --merge-reports`, hard thresholds) + codecov + benchmark + node-matrix (Node engine-version smoke: bin + verify:examples on the lowest advertised Node — engines-drift red tracker). Slow lanes (process-level e2e `*.e2e.test.ts`, 58 files; external oracles `*.oracle.test.ts`, real npm packages / @types corpora) run only on nightly/dispatch and locally via `pnpm run test:local --e2e|--oracle [-- --changed]`; a release that touched CLI/process surfaces or real-package precision must run them manually. CI's same-SHA green conclusion is the publish/deploy gate for Release & Docs-deploy (explicit polling, fail-closed — no duplicate inline lint/test).
 - **Release** (`.github/workflows/release.yml`): two routes — pending changesets → version-only Version PR (no build/test); no changesets + unpublished versions → same-SHA CI gate + `nudo-dist` reuse → publish → package VS Code extension → publish to Marketplace/Open VSX. Docs deploy is decoupled (`.github/workflows/docs-deploy.yml`: same-SHA CI gate + dist reuse → GitHub Pages).

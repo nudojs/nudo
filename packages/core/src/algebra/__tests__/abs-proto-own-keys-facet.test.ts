@@ -18,7 +18,7 @@ import { objectProtoBrand, protoBrandAbs } from "../builtins/ctor.ts";
 import { protoOwnKeysOf } from "../exec/runtime/brand-tables.ts";
 import { builtinBrandOwnKeyNames } from "../builtins/object/enum-entries.ts";
 import { call, tupleEls } from "./eval-helpers.ts";
-import { formatShape } from "../format/format.ts";
+import "../format/format.ts";
 
 type OwnKeys = NonNullable<AbsFacets["protoOwnKeys"]>;
 

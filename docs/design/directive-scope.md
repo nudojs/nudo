@@ -1,6 +1,6 @@
 # 指令作用域与抽取单源契约（D6=G2 · D5=F1）
 
-> 状态：产品契约。回归锁：`packages/parser/src/__tests__/directive-scope-g2.test.ts`、
+> 状态：产品契约。回归锁：`packages/parser/src/__tests__/directive-scope.test.ts`、
 > `packages/parser/src/__tests__/file-directives-prefix.test.ts`。
 
 ## 1. 作用域（G2）

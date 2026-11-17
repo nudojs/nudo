@@ -1,6 +1,6 @@
 /**
  * 草稿产物检查共享助手：真跑 `node --check`（草稿必须是**合法 JS**——
- * 解析期 SyntaxError 会让整份侧车失联，见 Bug 527 / 545）。
+ * 解析期 SyntaxError 会让整份侧车失联，见 ）。
  */
 import { execFileSync } from "node:child_process";
 

@@ -3,7 +3,7 @@
  *
  * 契约（见 abs.ts 的 fn shape 注释）：
  * 1. `instantiateReturn` 在实参**唯一按声明序命中**某 arm（同元数 + 逐参 leq）
- *    时用该 arm 的返回位；零命中回落 union 返回面（不新造 may-throw）。
+ * 时用该 arm 的返回位；零命中回落 union 返回面（不新造 may-throw）。
  * 2. `overloads` 是 Abs 数据 ⇒ subst/snapshot 必须搬运（α 替换 / 等价副本）。
  * 3. `absKey` 区分不同重载集（memo/fingerprint 不得串）。
  * 4. union 面（paramTypes/returnType）仍是权威外延面：leq/展示不读 overloads。

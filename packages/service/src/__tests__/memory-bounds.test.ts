@@ -11,14 +11,14 @@ import {
   resetSessionCacheLimitState,
   getSessionCacheLimits,
 } from "../session-cache-limits.ts";
-import { getAnalysisFileCacheSize, clearAnalysisFileCache } from "../analysis-file-cache.ts";
+import { getAnalysisFileCacheSize,  } from "../analysis-file-cache.ts";
 import {
   getFnAnalysisCacheSize,
-  clearFnAnalysisCache,
+
   fnAnalysisCacheSet,
   type CachedFnAnalysis,
 } from "../fn-analysis-cache.ts";
-import { getEvalCacheSize, clearEvalCache } from "../eval-run.ts";
+import { getEvalCacheSize,  } from "../eval-run.ts";
 import { analyzeFile } from "../analyzer.ts";
 import { resetAllAnalysisCaches } from "../session-cache.ts";
 import { getHarvestCacheSize, clearHarvestCache, harvestPackageCached } from "@nudojs/harvester";

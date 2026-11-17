@@ -1,5 +1,5 @@
 /**
- * BUG-008 service 侧回归：EvalCallRecord → CallRecord 桥。
+ * service 侧回归：EvalCallRecord → CallRecord 桥。
  * threw 时 result 位承载抛出 Abs（$callNamed / class.ts 同约定），
  * 桥后 throwsAbs 必须是非 never 载荷——不得落成 never+never 被
  * isLeakedCallRecord 判「泄漏」丢弃。
@@ -22,7 +22,7 @@ function collect(src: string, fnName: string): EvalCallRecord[] {
   return records;
 }
 
-describe("BUG-008: callRecordFromAbsCall keeps throw payload", () => {
+describe("callRecordFromAbsCall keeps throw payload", () => {
   it("custom throw payload → throwsAbs non-never, resultAbs never", () => {
     const records = collect(
       `
@@ -65,7 +65,7 @@ describe("BUG-008: callRecordFromAbsCall keeps throw payload", () => {
     ).toBe(true);
   });
 
-  it("BUG-028: threw omitted → throwsAbs unknown (fail-closed, not clean success)", () => {
+  it("threw omitted → throwsAbs unknown (fail-closed, not clean success)", () => {
     // producer 缺陷（threw 漏设）：无法区分成功 / 异常——
     // throws 域升 unknown，不把 payload 当干净成功
     // （旧实现 !!r.threw → 干净成功 + never+never 泄漏面）
@@ -79,7 +79,7 @@ describe("BUG-008: callRecordFromAbsCall keeps throw payload", () => {
     expect(isLeakedCallRecord(rec)).toBe(false);
   });
 
-  it("BUG-028: threw: false stays a clean success (throwsAbs never)", () => {
+  it("threw: false stays a clean success (throwsAbs never)", () => {
     const rec = callRecordFromAbsCall({
       fnName: "f",
       args: [numLit(1)],

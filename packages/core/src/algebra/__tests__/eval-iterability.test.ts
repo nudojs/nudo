@@ -1,9 +1,9 @@
 /**
  * 迭代族 throws/值域回归（wave 2 — Bugs 6/7/13/68）：
- * - Bug 6：$elems 可迭代性守卫（for-of / call·new spread 实参）
- * - Bug 7：数组解构（ArrayPattern）接收者的 GetIterator 校验
- * - Bug 13：for await 的 await 标志（异步可迭代性 + 仅异步可迭代接收者不折同步投影）
- * - Bug 68：for-in 抽象接收者的键域（unknown ≠ 空键集，体至少跑一次）
+ * - $elems 可迭代性守卫（for-of / call·new spread 实参）
+ * - 数组解构（ArrayPattern）接收者的 GetIterator 校验
+ * - for await 的 await 标志（异步可迭代性 + 仅异步可迭代接收者不折同步投影）
+ * - for-in 抽象接收者的键域（unknown ≠ 空键集，体至少跑一次）
  *
  * 原生 ground truth：node v26（TypeError 与迭代次数均以原生为准）。
  * 断言三面：value（值域）/ throws（NudoThrow 边界收成面）/ effects（recordMayThrow 软效果）。
@@ -48,9 +48,9 @@ function evalSrc(
   };
 }
 
-// --- Bug 6：$elems 可迭代性守卫（for-of / spread 实参） ---------------------
+// --- $elems 可迭代性守卫（for-of / spread 实参） ---------------------
 
-describe("Bug 6: $elems iterability guard (for-of / spread args)", () => {
+describe("$elems iterability guard (for-of / spread args)", () => {
   it("for-of over prim-literal receivers → definite TypeError (native: TypeError)", () => {
     for (const recv of ["1", "null", "true", "undefined"]) {
       const r = evalSrc(
@@ -83,9 +83,9 @@ describe("Bug 6: $elems iterability guard (for-of / spread args)", () => {
   });
 });
 
-// --- Bug 7：数组解构 GetIterator 校验 ---------------------------------------
+// --- 数组解构 GetIterator 校验 ---------------------------------------
 
-describe("Bug 7: array destructuring GetIterator validation", () => {
+describe("array destructuring GetIterator validation", () => {
   it("const [x] = 1 / null / {} 与 const [...r] = null → definite TypeError", () => {
     for (const init of ["1", "null", "{}"]) {
       const r = evalSrc(`export function f() { const [x] = ${init}; return x; }`, "f", []);
@@ -114,9 +114,9 @@ describe("Bug 7: array destructuring GetIterator validation", () => {
   });
 });
 
-// --- Bug 13：for await 的 await 标志 ----------------------------------------
+// --- for await 的 await 标志 ----------------------------------------
 
-describe("Bug 13: for await honors the await flag", () => {
+describe("for await honors the await flag", () => {
   it("for await (const v of 1) → definite rejection（native: f() rejects with TypeError，不逃逸调用点）", () => {
     const r = evalSrc(
       `export async function f() { for await (const v of 1) {} return 1; }`,
@@ -190,14 +190,14 @@ describe("Bug 13: for await honors the await flag", () => {
   });
 });
 
-// --- Bug 68：for-in 抽象接收者键域 ------------------------------------------
+// --- for-in 抽象接收者键域 ------------------------------------------
 
-describe("Bug 68: for-in abstract receiver key domain", () => {
+describe("for-in abstract receiver key domain", () => {
   it("for-in over any：体至少跑一次，计数器无上界域（不再假精确 0）", () => {
     const r = evalSrc(
       `export function f(x) { let s = 0; for (const k in x) { s += 1; } return s; }`,
     );
-    // Bug 47 宽化：抽象键序列单代表迭代 + 增长计数器 → 无上界 number
+    // 宽化：抽象键序列单代表迭代 + 增长计数器 → 无上界 number
     //（native x 可有任意多键；体不跑则折精确 0——not "0" 仍守住该回归面）
     expect(r.value).toContain("number");
     expect(r.value).not.toBe("0");
@@ -214,7 +214,7 @@ describe("Bug 68: for-in abstract receiver key domain", () => {
     const r = evalSrc(
       `export function f(x) { let t = "none"; for (const k in x) { t = typeof k; } return t; }`,
     );
-    // Bug 47 宽化：t 从 "none" 增长到 "string" 后宽化到无上界 string 域
+    // 宽化：t 从 "none" 增长到 "string" 后宽化到无上界 string 域
     //（仍证明键是 string——不是 number/unknown）
     expect(r.value.startsWith("string")).toBe(true);
   });

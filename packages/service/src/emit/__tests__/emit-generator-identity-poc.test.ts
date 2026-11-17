@@ -60,7 +60,7 @@ const cases = (): ReadonlyArray<readonly [string, unknown]> =>
 const zodTagPredicate = (tag: "Generator" | "AsyncGenerator"): string =>
   `Object.prototype.toString.call(v) === "[object ${tag}]"`;
 
-/** guard 产物是 .ts ⇒ 剥掉类型标注后真跑（与 BUG-130 夹具同法）。 */
+/** guard 产物是 .ts ⇒ 剥掉类型标注后真跑（与 夹具同法）。 */
 function guardOf(source: string, name: string): (v: unknown) => boolean {
   const js = source
     .replace("(value: unknown): boolean", "(value)")
@@ -98,7 +98,7 @@ describe("生成器身份产物面（bug fix · 三面收紧）", () => {
     const guard = generateGuardFunctionFromAbs("isgenOutput", a);
     expect(guard).toContain('Object.prototype.toString.call(data) === "[object Generator]"');
     expect(guard).toContain('typeof data === "object"');
-    // 不得引入无全局名字的构造器（Bug 233：模块求值期 ReferenceError）
+    // 不得引入无全局名字的构造器（模块求值期 ReferenceError）
     expect(guard).not.toContain("GeneratorFunction");
     expect(absToSchemaSource(a)).not.toContain("z.instanceof");
     expect(absToSchemaSource(a)).not.toContain("GeneratorFunction");

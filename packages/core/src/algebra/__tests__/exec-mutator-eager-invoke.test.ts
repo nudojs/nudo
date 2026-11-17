@@ -1,9 +1,9 @@
 /**
- * Bug 49 / Bug 51：数组 mutator 在 $invoke 调用点就地变更。
+ * / 数组 mutator 在 $invoke 调用点就地变更。
  *
- * Bug 49——同表达式内多个 mutator 此前都在「变更前容器」上求值（延迟到
+ * 同表达式内多个 mutator 此前都在「变更前容器」上求值（延迟到
  * 语句尾重绑）：s.pop()+s.pop() 折 6（原生 5）、sort 后 reverse 看到未
- * 排序数组。Bug 51——CallExpression 接收者（m.get("a").push(1)）不可
+ * 排序数组。CallExpression 接收者（m.get("a").push(1)）不可
  * 语句位重绑，变更被静默丢弃。根修：invokeArrMethod 的 mutator 分支经
  * $arrMutContainer 就地 writeBack（Abs 身份不变 → 别名/成员槽/Map 条目
  * 同步可见），语句位不再发射重绑行。
@@ -20,7 +20,7 @@ function expectNative(src: string, expected: unknown, fnName = "f") {
   expect(lv).toEqual({ ok: true, value: expected });
 }
 
-describe("Bug 49 — compound mutator expressions evaluate sequentially", () => {
+describe("compound mutator expressions evaluate sequentially", () => {
   it("s.pop() + s.pop() sees the first pop (native 5, was 6)", () => {
     expectNative(
       `export function f() { const s = [1, 2, 3]; return s.pop() + s.pop(); }`,
@@ -82,7 +82,7 @@ describe("Bug 49 — compound mutator expressions evaluate sequentially", () => 
   });
 });
 
-describe("Bug 51 — non-rebindable receiver mutators persist", () => {
+describe("non-rebindable receiver mutators persist", () => {
   it("m.get(\"a\").push(1) persists into the Map entry (native 1, was 0)", () => {
     expectNative(
       `

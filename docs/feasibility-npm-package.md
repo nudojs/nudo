@@ -1,7 +1,7 @@
 # 替换 TypeScript 可行性报告（第二份：真实 npm 包）
 
 > 对象：`commander`（monorepo 依赖，有 `.d.ts` + JS 入口）  
-> 工具：`scripts/scan-npm-package.ts`  
+> 工具：一次性扫描脚本（结案后移出仓库，见 git 历史）  
 > 前提：CJS require 静态解析、harvest-package、nudo check 门禁已落地
 
 ---
@@ -18,7 +18,7 @@ check:    argument.js → OK
 命令：
 
 ```bash
-npx tsx scripts/scan-npm-package.ts commander
+# 一次性脚本，已随结案移出仓库（git 历史可回溯）；现行语料扫描见 scripts/scan-real-packages.ts
 ```
 
 ---
@@ -87,5 +87,5 @@ npx tsx scripts/scan-npm-package.ts commander
 - CJS：`packages/service/src/static-imports.ts`  
 - harvest：`packages/service/src/harvest-package.ts`  
 - check：`packages/core/src/algebra/check.ts`  
-- 扫描：`scripts/scan-npm-package.ts [pkg]`  
+- 扫描：一次性脚本（已移出仓库；现行语料扫描 `scripts/scan-real-packages.ts`）  
 - 测试：全绿（`pnpm run test`，数量随提交增长，不在此钉死）

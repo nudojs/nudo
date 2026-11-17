@@ -3,9 +3,9 @@
  * 回归背景：startsWith/endsWith/includes/split/replace/indexOf 只认
  * typeof string/number 实参，缺省与非字符串字面量（undefined/true/null/1）
  * 一概折 boolPrim/numPrim/strPrim——原生对首参做 ToString：
- *   'abc'.startsWith()===false、'abcundefined'.startsWith(undefined)===true、
- *   'hello'.split()===['hello']、'a1b'.split(1)===['a','b']、
- *   'ab'.replace('a')==='undefinedb'、'abc'.indexOf()===-1。
+ * 'abc'.startsWith()===false、'abcundefined'.startsWith(undefined)===true、
+ * 'hello'.split()===['hello']、'a1b'.split(1)===['a','b']、
+ * 'ab'.replace('a')==='undefinedb'、'abc'.indexOf()===-1。
  * parseInt()/parseFloat() 缺省首参 ≡ undefined → ToString → NaN。
  * 同类：string-index-methods 已修 charAt/slice/substring 的位置实参
  * ToString；搜索/分隔/替换与 parseInt 家族是同族漏网点。

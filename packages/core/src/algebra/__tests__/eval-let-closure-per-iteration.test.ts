@@ -1,15 +1,15 @@
 /**
  * 每迭代 `let` 闭包 vs `var` 共享绑定：
  * - `for (let i = …)`：每迭代独立绑定——闭包捕获当次 i（0+1+2=3）。
- *   落点：for 主路径把 initName 作 $for 各闭包形参，每轮新绑定。
+ * 落点：for 主路径把 initName 作 $for 各闭包形参，每轮新绑定。
  * - `for (var i = …)`：函数作用域共享——所有闭包读到同一最终 i。
- *   落点：extractForInitName 对 var 返回 null，路由 fallback（init 就地发射，
- *   test/update/body 读真实绑定）。
+ * 落点：extractForInitName 对 var 返回 null，路由 fallback（init 就地发射，
+ * test/update/body 读真实绑定）。
  * - `forEach((x) => …)` 每回调参数已有语义保持（每回调独立形参）。
  * 抽象边界循环（条件非具体）仍走 $for 的 pack/unpack 保守 join，不假装精确。
  */
 import { describe, it, expect } from "vitest";
-import { litValue, formatShape } from "@nudojs/core";
+import { litValue,  } from "@nudojs/core";
 import { call } from "./eval-helpers.ts";
 
 describe("evaluator per-iteration let closures", () => {

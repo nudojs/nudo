@@ -1,15 +1,15 @@
 /**
- * Bug 41：BigInt.asIntN / asUintN 的 value 实参（args[1]）过 ToBigInt
+ * BigInt.asIntN / asUintN 的 value 实参（args[1]）过 ToBigInt
  * （与 bits 档的 ToIndex 镜像，error.ts evalBigIntStatic）。此前 value 只在
  * bigint 字面量时折叠，其余字面量与抽象臂一律保守 bigint-prim——零校验零
  * 抛错：number/symbol 字面量该抛 TypeError、非法 string/对象字面量该抛
  * SyntaxError 全部漏掉，L2 gate 对 `asIntN(1, x)` 静默。
  *
  * node 实测 ground truth：
- *   asIntN(1,1)→TypeError；asIntN(1,Symbol())→TypeError；
- *   asIntN(1,'x')→SyntaxError；asIntN(1,{})→SyntaxError；
- *   asIntN(1,'1')→-1n；asIntN(1,true)→-1n；asUintN(1,true)→1n；
- *   asIntN(1,1n)→-1n（既有折叠保持）。
+ * asIntN(1,1)→TypeError；asIntN(1,Symbol())→TypeError；
+ * asIntN(1,'x')→SyntaxError；asIntN(1,{})→SyntaxError；
+ * asIntN(1,'1')→-1n；asIntN(1,true)→-1n；asUintN(1,true)→1n；
+ * asIntN(1,1n)→-1n（既有折叠保持）。
  */
 import { describe, it, expect } from "vitest";
 import { runTranspiled, callTranspiledExportFull, litValue, checkSource, pTrue } from "@nudojs/core";
@@ -55,7 +55,7 @@ function l2Of(r: ReturnType<typeof check>, fn?: string) {
 const primNum = () => abs({ k: "prim", type: "number" }, undefined, undefined, "path");
 const primStr = () => abs({ k: "prim", type: "string" }, undefined, undefined, "path");
 
-describe("Bug 41: value 字面量档过 ToBigInt（node ground truth）", () => {
+describe("value 字面量档过 ToBigInt（node ground truth）", () => {
   it("number / symbol 字面量 → definite TypeError（asIntN 与 asUintN 同面）", () => {
     for (const src of [
       `export function f() { return BigInt.asIntN(1, 1); }`,
@@ -115,7 +115,7 @@ describe("Bug 41: value 字面量档过 ToBigInt（node ground truth）", () => 
   });
 });
 
-describe("Bug 41: value 抽象档按 shape 分档", () => {
+describe("value 抽象档按 shape 分档", () => {
   const SRC = `export function f(v) { return BigInt.asIntN(8, v); }`;
 
   it("抽象 symbol prim → definite TypeError", () => {
@@ -165,7 +165,7 @@ describe("Bug 41: value 抽象档按 shape 分档", () => {
   });
 });
 
-describe("Bug 41: L2 gate 记 value 面可能抛（checkSource）", () => {
+describe("L2 gate 记 value 面可能抛（checkSource）", () => {
   it("无约束 x：asIntN(1, x) 报 entry-may-throw（此前静默）", () => {
     const r = check(`export function f(x) { return BigInt.asIntN(1, x); }`);
     const l2 = l2Of(r, "f");

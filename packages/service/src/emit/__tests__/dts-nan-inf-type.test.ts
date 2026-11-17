@@ -6,7 +6,7 @@
  * 同类：模板固定段含 ` / \ / ${ 时未转义，类型字面量语法被截断。
  */
 import { describe, it, expect } from "vitest";
-import { abs, lit, numLit, strLit, pTrue } from "@nudojs/core";
+import { abs, lit, numLit, strLit,  } from "@nudojs/core";
 import { absToTSType } from "@nudojs/service/emit/dts-generator";
 
 function nanLit() {

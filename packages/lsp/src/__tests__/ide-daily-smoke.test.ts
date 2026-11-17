@@ -92,7 +92,7 @@ describe("A6 IDE daily smoke — sidecar go-to-definition", () => {
     const sidecarPath = join(dir, "add2.nudo.js");
     writeFileSync(srcPath, EXPORT_SRC);
     // 侧车必须是**引擎真正消费**的形态：`fn({ … }, …)` 的导出绑定。
-    // 值模板（`number().int()`）不是契约（见 Bug 728），不应出现在 definition 结果里。
+    // 值模板（`number().int()`）不是契约（见 ），不应出现在 definition 结果里。
     writeFileSync(
       sidecarPath,
       'import { fn, number } from "@nudojs/core";\nexport const add2 = fn({ x: number().int() }, number());\n',

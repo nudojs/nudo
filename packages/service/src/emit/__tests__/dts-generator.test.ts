@@ -28,65 +28,54 @@ const unknownAbs = (): Abs => abs({ k: "unknown" }, undefined, undefined, "parti
 const bigintPrim = (): Abs => abs({ k: "prim", type: "bigint" }, undefined, undefined, "exact");
 
 describe("absToTSType", () => {
-  it("converts literal number", () => {
+  it("converts literal number；converts literal string；converts literal boolean；converts null and undefined；converts primitive types；converts object type；converts array type；converts union array type with parens；converts tuple type；converts tuple ", () => {
+  {
     expect(absToTSType(numLit(42))).toBe("42");
-  });
-
-  it("converts literal string", () => {
+  }
+  {
     expect(absToTSType(strLit("hello"))).toBe('"hello"');
-  });
-
-  it("converts literal boolean", () => {
+  }
+  {
     expect(absToTSType(boolLit(true))).toBe("true");
-  });
-
-  it("converts null and undefined", () => {
+  }
+  {
     expect(absToTSType(nullLit())).toBe("null");
     expect(absToTSType(undefLit())).toBe("undefined");
-  });
-
-  it("converts primitive types", () => {
+  }
+  {
     expect(absToTSType(num())).toBe("number");
     expect(absToTSType(str())).toBe("string");
     expect(absToTSType(bool())).toBe("boolean");
-  });
-
-  it("converts object type", () => {
+  }
+  {
     const obj = objOf({ x: { value: num() }, y: { value: str() } });
     expect(absToTSType(obj)).toBe("{ x: number; y: string }");
-  });
-
-  it("converts array type", () => {
+  }
+  {
     expect(absToTSType(arrOf(num()))).toBe("number[]");
-  });
-
-  it("converts union array type with parens", () => {
+  }
+  {
     expect(absToTSType(arrOf(unionOf(num(), str())))).toBe("(number | string)[]");
-  });
-
-  it("converts tuple type", () => {
+  }
+  {
     expect(absToTSType(tupleOf([num(), str()]))).toBe("[number, string]");
-  });
-
-  it("converts tuple rest element union with parens (BUG-005)", () => {
+  }
+  {
     expect(absToTSType(tupleOf([str()], unionOf(num(), str())))).toBe(
       "[string, ...(number | string)[]]",
     );
-  });
-
-  it("converts tuple rest element fn with parens (BUG-005)", () => {
+  }
+  {
     expect(absToTSType(tupleOf([str()], fnAbs(["x"], num(), [num()])))).toBe(
       "[string, ...((x: number) => number)[]]",
     );
-  });
-
-  it("keeps tuple rest arr path unchanged (BUG-005 regression)", () => {
+  }
+  {
     expect(absToTSType(tupleOf([str()], arrOf(unionOf(num(), str()))))).toBe(
       "[string, ...(number | string)[]]",
     );
-  });
-
-  it("param widen keeps tuple rest slot instead of collapsing to wrong array (BUG-002)", () => {
+  }
+  {
     // [1, ...string] 拓宽不得塌成 number[]（拒绝合法值）；rest 与固定位同型才退化 array
     const heterogeneous = {
       name: "f",
@@ -100,78 +89,92 @@ describe("absToTSType", () => {
       cases: [{ name: "c", argAbs: [tupleOf([numLit(1), numLit(2)], num())], args: [], abs: num() }],
     } as never as Parameters<typeof generateFunctionDtsLines>[0];
     expect(generateFunctionDtsLines(homogeneous).join("\n")).toContain("arg0: number[]");
-  });
-
-  it("renders tuple holes distinctly from explicit undefined (BUG-020)", () => {
+  }
+  {
     // hole 槽（`1 in a` 为 false）不得伪装成显式 undefined 元素
     const sparse = tupleSparse();
     const dense = tupleDense();
     expect(absToTSType(sparse)).toBe("[1, hole: undefined, 3]");
     expect(absToTSType(dense)).toBe("[1, undefined, 3]");
-  });
-
-  it("renders leading/trailing tuple holes (BUG-020)", () => {
+  }
+  {
     const lead = tupleLead();
     expect(absToTSType(lead)).toBe("[hole: undefined, 1]");
     const trail = tupleTrail();
     expect(absToTSType(trail)).toBe("[1, hole: undefined]");
     const multi = tupleMulti();
     expect(absToTSType(multi)).toBe("[hole: undefined, 1, hole: undefined]");
-  });
-
-  it("converts promise type", () => {
+  }
+  {
     expect(absToTSType(promiseOf(num()))).toBe("Promise<number>");
-  });
-
-  it("converts instance type", () => {
+  }
+  {
     expect(absToTSType(brandOf("Error"))).toBe("Error");
-  });
-
-  it("converts union type", () => {
+  }
+  {
     expect(absToTSType(unionOf(num(), str()))).toBe("number | string");
-  });
-
-  it("converts never and unknown", () => {
+  }
+  {
     expect(absToTSType(neverAbs())).toBe("never");
     expect(absToTSType(unknownAbs())).toBe("unknown");
-  });
-
-  it("fn 非数组 rest 参数提升为 (T)[]（合法 TS，BUG-020）", () => {
+  }
+  {
     const f = fnAbs(["...args"], num(), [unionOf(num(), str())]);
     expect(absToTSType(f)).toBe("(...args: (number | string)[]) => number");
-  });
-
-  it("fn tuple rest 参数数组化（合法 TS，BUG-020）", () => {
+  }
+  {
     const f = fnAbs(["...args"], num(), [tupleOf([num()])]);
     // 元组类型在数组元素位无需额外括号（sum/fn 才需要，wrapComplexAbs 口径）
     expect(absToTSType(f)).toBe("(...args: [number][]) => number");
-  });
-
-  it("fn prim rest 参数产 number[]（无冗余括号，BUG-020）", () => {
+  }
+  {
     const f = fnAbs(["...args"], num(), [num()]);
     expect(absToTSType(f)).toBe("(...args: number[]) => number");
-  });
-
-  it("fn 缺 paramTypes 的 rest 保持 unknown[]（BUG-020 回归）", () => {
+  }
+  {
     const f = fnAbs(["...args"], num());
     expect(absToTSType(f)).toBe("(...args: unknown[]) => number");
-  });
-
-  it("optional 形参标签保留 ?（BUG-020）", () => {
+  }
+  {
     const f = fnAbs(["x", "options?"], num(), [num(), objOf({})]);
-    // Bug 565：零成员对象不再是 TS 的 `{}`（= 任意非 nullish 值）⇒
+    // 零成员对象不再是 TS 的 `{}`（= 任意非 nullish 值）⇒
     // `Record<string, never>`（空对象类型）
     expect(absToTSType(f)).toBe("(x: number, options?: Record<string, never>) => number");
-  });
-
-  it("非法 optional 名仍落 argN（BUG-020 回归）", () => {
+  }
+  {
     const f = fnAbs(["a-b?"], num(), [num()]);
     expect(absToTSType(f)).toBe("(arg0: number) => number");
-  });
+  }
+});
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 });
 
 describe("generateDts", () => {
-  it("generates .d.ts from analysis result", () => {
+  it("generates .d.ts from analysis result；generates single overload for single case；uses actual parameter names from AST；generates JSDoc comments；generates JSDoc with case names for multiple overloads；handles rest parameters；widens literal param", () => {
+  {
     const source = `
 /**
  * @nudo:case "concrete" (1, 2)
@@ -191,9 +194,8 @@ function add(a, b) {
     // symbolic case 与主签名同形（无信息损失），不再重复罗列
     expect(dts).not.toContain("): 3;");
     expect(dts).not.toContain("Case: symbolic");
-  });
-
-  it("generates single overload for single case", () => {
+  }
+  {
     const source = `
 /**
  * @nudo:case "test" (number())
@@ -206,9 +208,8 @@ function identity(x) {
     const dts = generateDts(result);
     expect(dts).toContain("export declare function identity");
     expect(dts).toContain("x: number");
-  });
-
-  it("uses actual parameter names from AST", () => {
+  }
+  {
     const source = `
 /**
  * @nudo:case "numbers" (number(), number())
@@ -223,9 +224,8 @@ function add(a, b) {
     expect(dts).toContain("b: number");
     expect(dts).not.toContain("arg0");
     expect(dts).not.toContain("arg1");
-  });
-
-  it("generates JSDoc comments", () => {
+  }
+  {
     const source = `
 /**
  * @nudo:case "test" (string())
@@ -240,9 +240,8 @@ function greet(name) {
     expect(dts).toContain("* @param name - string");
     expect(dts).toContain("* @returns");
     expect(dts).toContain("*/");
-  });
-
-  it("generates JSDoc with case names for multiple overloads", () => {
+  }
+  {
     const source = `
 /**
  * @nudo:case "str" (string()) => number()
@@ -256,9 +255,8 @@ function convert(x) {
     const dts = generateDts(result);
     expect(dts).toContain("Case: str");
     expect(dts).toContain("Case: num");
-  });
-
-  it("handles rest parameters", () => {
+  }
+  {
     const source = `
 /**
  * @nudo:case "test" (array(number()))
@@ -270,9 +268,8 @@ function sum(...nums) {
     const result = analyzeFile("/test/rest.js", source);
     const dts = generateDts(result);
     expect(dts).toContain("...nums");
-  });
-
-  it("widens literal params so widened calls compile (safeSqrt scenario)", () => {
+  }
+  {
     const source = `
 /**
  * @nudo:case "valid" (10)
@@ -287,7 +284,7 @@ function safeSqrt(x) {
 `;
     const result = analyzeFile("/test/sqrt2.js", source);
     const dts = generateDts(result);
-    // 单一 widen 主签名。**参数面与返回面同源**（Bug 511）：无断言的 case
+    // 单一 widen 主签名。**参数面与返回面同源**（）：无断言的 case
     // 指令只是**见证**（"这次调用没抛、返回了这个"），不是调用域声明 ⇒
     // 产物面取**推断域**（入口求值：实参无约束 ⇒ 返回 unknown），而不是把两个
     // 点观测 join 成 number —— 后者会发布一个**不 sound** 的契约
@@ -297,9 +294,8 @@ function safeSqrt(x) {
     // 字面量精度（含 throwing case 的 never）保留在 JSDoc
     expect(dts).toContain("Case: valid (10) => 10");
     expect(dts).toContain("Case: negative (-1) => never");
-  });
-
-  it("widens literal params for a single-case function too", () => {
+  }
+  {
     const source = `
 /**
  * @nudo:case "only" (42)
@@ -313,9 +309,8 @@ function pass(x) {
     // 同上：单点观测不独占产物面（返回面取推断域 ⇒ unknown）——见 safeSqrt 用例的说明
     expect(dts).toContain("export declare function pass(x: unknown): unknown;");
     expect(dts.match(/export declare function pass\b/g)).toHaveLength(1);
-  });
-
-  it("widens string and boolean literal params to base types", () => {
+  }
+  {
     const source = `
 /**
  * @nudo:case "s" ("fast")
@@ -330,9 +325,8 @@ function flag(x) {
     // 同上：无断言 case 指令是见证、不是域声明 ⇒ 产物面取推断域（见 safeSqrt 用例的说明）
     expect(dts).toContain("export declare function flag(x: unknown): unknown;");
     expect(dts).toContain('Case: s ("fast") => "fast"');
-  });
-
-  it("widens bigint literal params (hand-built analysis)", () => {
+  }
+  {
     const fn = {
       name: "big",
       loc: { start: { line: 1, column: 0 }, end: { line: 1, column: 9 } },
@@ -348,9 +342,8 @@ function flag(x) {
     };
     const dts = generateDts({ functions: [fn] } as unknown as Parameters<typeof generateDts>[0]);
     expect(dts).toContain("export declare function big(n: bigint): bigint;");
-  });
-
-  it("marks mixed-arity tail params optional", () => {
+  }
+  {
     const source = `
 /**
  * @nudo:case "one" (number())
@@ -364,9 +357,8 @@ function either(x, y) {
     const dts = generateDts(result);
     expect(dts).toContain("either(x: number, y?: string)");
     expect(dts.match(/export declare function either\b/g)).toHaveLength(1);
-  });
-
-  it("keeps the rest-args form for case-less combined functions", () => {
+  }
+  {
     const fn = {
       name: "entryOnly",
       loc: { start: { line: 1, column: 0 }, end: { line: 1, column: 9 } },
@@ -376,9 +368,8 @@ function either(x, y) {
     };
     const dts = generateDts({ functions: [fn] } as unknown as Parameters<typeof generateDts>[0]);
     expect(dts).toBe("export declare function entryOnly(...args: unknown[]): Promise<number>;\n");
-  });
-
-  it("widens homogeneous tuple params to arrays (reduceSum scenario)", () => {
+  }
+  {
     const source = `
 // @nudo:case "t" ([1, 2, 3, 4, 5])
 function reduceSum(arr) {
@@ -391,9 +382,8 @@ function reduceSum(arr) {
     // （tsc TS2345），字面量长度只是单次调用观察，不构成约束 → number[]
     expect(dts).toContain("export declare function reduceSum(arr: number[]): number;");
     expect(dts).toContain("Case: t ([1, 2, 3, 4, 5]) => 15");
-  });
-
-  it("widens heterogeneous tuple params positionally", () => {
+  }
+  {
     const source = `
 // @nudo:case "t" ([1, "two"])
 function pair(p) {
@@ -405,9 +395,8 @@ function pair(p) {
     // 异构元素保留 widened 定长元组：[number, string] 的位置语义真实，
     // 且不拦截合法的按位调用；返回位（协变）保留字面量精度
     expect(dts).toContain("export declare function pair(p: [number, string]): [1, \"two\"];");
-  });
-
-  it("widens object param property values (single case)", () => {
+  }
+  {
     const source = `
 /**
  * @nudo:case "concrete" ({ name: "Alice", age: 30 })
@@ -422,9 +411,8 @@ function greet(person) {
     // 不匹配 { name: "Alice"; age: 30 }，同类拦截问题）
     expect(dts).toContain("export declare function greet(person: { name: string; age: number }): string;");
     expect(dts).toContain('Case: concrete ({ name: "Alice"; age: 30 })');
-  });
-
-  it("keeps return-position precision while widening params (contrast)", () => {
+  }
+  {
     const source = `
 // @nudo:case "t" ([1, 2])
 function tupleEcho(arr) {
@@ -435,9 +423,8 @@ function tupleEcho(arr) {
     const dts = generateDts(result);
     // 参数位（逆变）递归 widen → number[]；返回位（协变）保留字面量精度
     expect(dts).toContain("export declare function tupleEcho(arr: number[]): [1, 2];");
-  });
-
-  it("dedupes same-shaped widened object params across cases", () => {
+  }
+  {
     const source = `
 /**
  * @nudo:case "a" ({ id: 1 })
@@ -453,9 +440,8 @@ function byId(q) {
     // `{ id: number } | { id: number }` 重复成员
     expect(dts).toContain("export declare function byId(q: { id: number }): number;");
     expect(dts).not.toContain("{ id: number } | { id: number }");
-  });
-
-  it("dedupes extracted underscore names from destructured params", () => {
+  }
+  {
     const fn = {
       name: "pair",
       loc: { start: { line: 1, column: 0 }, end: { line: 1, column: 9 } },
@@ -476,9 +462,8 @@ function byId(q) {
     const dts = generateDts({ functions: [fn] } as unknown as Parameters<typeof generateDts>[0]);
     expect(dts).toContain("export declare function pair(_: { a: number }, _2: { b: string }): number;");
     expect(dts).toContain("@param _2 - { b: string }");
-  });
-
-  it("keeps nested literal precision inside Promise payloads", () => {
+  }
+  {
     const fn = {
       name: "fetchData",
       loc: { start: { line: 1, column: 0 }, end: { line: 1, column: 9 } },
@@ -495,5 +480,24 @@ function byId(q) {
     const dts = generateDts({ functions: [fn] } as unknown as Parameters<typeof generateDts>[0]);
     // widen 只作用于顶层标量字面量；Promise 载荷精度保留（既有行为）
     expect(dts).toContain("export declare function fetchData(): Promise<42>;");
-  });
+  }
+});
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 });

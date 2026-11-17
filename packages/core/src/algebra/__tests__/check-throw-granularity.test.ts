@@ -1,19 +1,19 @@
 /**
- * throws 域判定与值域计算粒度一致性回归（Bug 2 / 3 / 23 / 25）。
+ * throws 域判定与值域计算粒度一致性回归（）。
  *
  * 共同症状：`nudo check` L2 门（nudo:entry-may-throw）假阳性——守卫已证明
  * 不可能抛的代码被记 may-throw TypeError。修复分两层：
  *
- * - 转译层守卫剪影（Bug 2/3/23）：nullish / typeof 守卫的臂内影子重绑。
- *   Bug 2：早退提升路径（transpileFnBodyStmts）此前不做剪影——非终结尾句
- *   在 fork 外执行，`p.major` 撞未剪 null 臂记假 may-throw。
- *   Bug 3：复合 `p === null || p === undefined`、`typeof u === "undefined"`
- *   守卫此前不在 nullishGuardOf 白名单；严格 `p === null`/`p === undefined`
- *   剪除粒度按字面量（严格等价只排除该字面量，`null === undefined` 为 false）。
- *   Bug 23：typeof 类型守卫（`typeof v === "string"` 等）完全无剪枝机制。
- * - 判定层 sum 成员感知（Bug 23/25）：isMaybeBigintOperand 对 sum 分配成员
- *   ——纯 prim union（number|string）绝不可能是 Symbol/bigint，不随
- *   obj/fn/brand/any 成员连坐。
+ * - 转译层守卫剪影（）：nullish / typeof 守卫的臂内影子重绑。
+ * 早退提升路径（transpileFnBodyStmts）此前不做剪影——非终结尾句
+ * 在 fork 外执行，`p.major` 撞未剪 null 臂记假 may-throw。
+ * 复合 `p === null || p === undefined`、`typeof u === "undefined"`
+ * 守卫此前不在 nullishGuardOf 白名单；严格 `p === null`/`p === undefined`
+ * 剪除粒度按字面量（严格等价只排除该字面量，`null === undefined` 为 false）。
+ * typeof 类型守卫（`typeof v === "string"` 等）完全无剪枝机制。
+ * - 判定层 sum 成员感知（）：isMaybeBigintOperand 对 sum 分配成员
+ * ——纯 prim union（number|string）绝不可能是 Symbol/bigint，不随
+ * obj/fn/brand/any 成员连坐。
  *
  * 假阴性红线（真实可抛路径不得被剪掉）：
  * - 严格 `p === null` 守卫假值臂的 p 仍可能 undefined（g1 对照）
@@ -57,9 +57,9 @@ const sumOf = (members: Abs[]): Abs => ({ shape: { k: "sum", members }, conf: "e
 const PARSE = `function parse(s) { if (s === 'x') return { major: 1 }; return null; }`;
 const NUM_OR_STR = "/** @nudo:contract v numOrStr */";
 
-// --- Bug 2：非终结尾句的守卫剪枝透传 ---------------------------------------
+// --- 非终结尾句的守卫剪枝透传 ---------------------------------------
 
-describe("Bug 2: null 守卫后接非终结尾语句零 L2", () => {
+describe("null 守卫后接非终结尾语句零 L2", () => {
   it("b1：中间绑定 + 尾 return（守卫后仅多一行 const t = p.major）", () => {
     const r = check(
       `${PARSE}\nexport function b1(s) { const p = parse(s); if (p === null) return -1; const t = p.major; return t; }`,
@@ -92,9 +92,9 @@ describe("Bug 2: null 守卫后接非终结尾语句零 L2", () => {
   });
 });
 
-// --- Bug 3：复合 / typeof-undefined 守卫识别 + 剪除粒度 ---------------------
+// --- 复合 / typeof-undefined 守卫识别 + 剪除粒度 ---------------------
 
-describe("Bug 3: 复合与 typeof undefined 守卫零 L2", () => {
+describe("复合与 typeof undefined 守卫零 L2", () => {
   it("b2：p === null || p === undefined 复合守卫", () => {
     const r = check(
       `${PARSE}\nexport function b2(s) { const p = parse(s); if (p === null || p === undefined) return -1; return p.major; }`,
@@ -161,9 +161,9 @@ describe("Bug 3: 复合与 typeof undefined 守卫零 L2", () => {
   });
 });
 
-// --- Bug 23：typeof 类型守卫剪枝 -------------------------------------------
+// --- typeof 类型守卫剪枝 -------------------------------------------
 
-describe("Bug 23: typeof 类型守卫七面零 L2", () => {
+describe("typeof 类型守卫七面零 L2", () => {
   const faces: Array<[string, string, RegExp]> = [
     ["addStr", `export function addStr(v) { if (typeof v === "string") { return v + "!"; } return 0; }`, /^string \| 0\b/],
     ["relStr", `export function relStr(v) { if (typeof v === "string") { return v > "a"; } return false; }`, /^boolean/],
@@ -218,9 +218,9 @@ describe("Bug 23: typeof 类型守卫七面零 L2", () => {
   });
 });
 
-// --- Bug 25：纯 union 契约的关系运算（判定层成员感知） ----------------------
+// --- 纯 union 契约的关系运算（判定层成员感知） ----------------------
 
-describe("Bug 25: 纯 prim union 关系运算零假 L2", () => {
+describe("纯 prim union 关系运算零假 L2", () => {
   it("plainRel：numOrStr > 'a' 不记 may-throw（成员绝不 Symbol）", () => {
     const r = check(`${NUM_OR_STR}\nexport function plainRel(v) { return v > "a"; }`);
     expect(l2Count(r, "plainRel")).toBe(0);

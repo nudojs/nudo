@@ -1,27 +1,13 @@
-/**
- * DEC-004: resolve-npm exports 模式键 / 条件树 / 数组 fallback。
- * 三类反例（finding F2）：
- * 1. 子路径模式键 `"./*": "./dist/*.js"` → pkg/feature 命中 dist/feature.js
- * 2. 条件唯一出口挂在 browser 下 → pickExport 不得 miss
- * 3. 数组 fallback `["./miss.js", "./hit.js"]` → 命中 ./hit.js
- */
+/** DEC-004: resolve-npm exports 模式键 / 条件树 / 数组 fallback / 包含性 / nudo 面。 */
 import { describe, it, expect, vi } from "vitest";
 import { writeFileSync, mkdirSync, chmodSync } from "node:fs";
 import { join } from "node:path";
-import {
-  resolveNpmJsEntry,
-  resolveNpmJsEntryDetailed,
-  resolveNpmNudo,
-} from "../evaluator/resolve-npm.ts";
+import { resolveNpmJsEntry, resolveNpmJsEntryDetailed, resolveNpmNudo } from "../evaluator/resolve-npm.ts";
 import { tmpProject } from "./tmp-project.ts";
 
-/** root 对 chmod 000 免疫，真实 EACCES 用例无法生效 */
 const isRoot = process.geteuid?.() === 0;
 
-function makePkg(
-  pkgJson: Record<string, unknown>,
-  files: Record<string, string> = {},
-): { dir: string; pkgDir: string } {
+function makePkg(pkgJson: Record<string, unknown>, files: Record<string, string> = {}): { dir: string; pkgDir: string } {
   const dir = tmpProject("nudo-exports-");
   const pkgDir = join(dir, "node_modules", "pkg");
   mkdirSync(pkgDir, { recursive: true });
@@ -34,417 +20,196 @@ function makePkg(
   return { dir, pkgDir };
 }
 
-describe("exports pattern keys (./x/*)", () => {
-  it("resolves pkg/feature via './*': './dist/*.js'", () => {
-    const { dir, pkgDir } = makePkg(
-      { exports: { "./*": "./dist/*.js" } },
-      { "dist/feature.js": "export const x = 1;" },
-    );
-    const hit = resolveNpmJsEntry("pkg/feature", dir);
-    expect(hit).toBe(join(pkgDir, "dist", "feature.js"));
+describe("exports resolution", () => {
+  it("模式键：跨段 star、长前缀、exact 优先", () => {
+    {
+      const { dir, pkgDir } = makePkg({ exports: { "./*": "./dist/*.js" } }, { "dist/feature.js": "x" });
+      expect(resolveNpmJsEntry("pkg/feature", dir)).toBe(join(pkgDir, "dist", "feature.js"));
+    }
+    {
+      const { dir, pkgDir } = makePkg({ exports: { "./*": "./dist/*.js" } }, { "dist/a/b.js": "x" });
+      expect(resolveNpmJsEntry("pkg/a/b", dir)).toBe(join(pkgDir, "dist", "a", "b.js"));
+    }
+    {
+      const { dir, pkgDir } = makePkg({ exports: { "./*": "./dist/*.js", "./special/*": "./src/*.js" } }, { "dist/special/x.js": "a", "src/x.js": "b" });
+      expect(resolveNpmJsEntry("pkg/special/x", dir)).toBe(join(pkgDir, "src", "x.js"));
+    }
+    {
+      const { dir, pkgDir } = makePkg({ exports: { "./*": "./dist/*.js", "./feature": "./exact.js" } }, { "dist/feature.js": "a", "exact.js": "b" });
+      expect(resolveNpmJsEntry("pkg/feature", dir)).toBe(join(pkgDir, "exact.js"));
+    }
   });
 
-  it("resolves pkg/a/b via './*': './dist/*.js' (star matches across segments)", () => {
-    const { dir, pkgDir } = makePkg(
-      { exports: { "./*": "./dist/*.js" } },
-      { "dist/a/b.js": "export const x = 1;" },
-    );
-    const hit = resolveNpmJsEntry("pkg/a/b", dir);
-    expect(hit).toBe(join(pkgDir, "dist", "a", "b.js"));
+  it("条件键：browser-only / default 优先 / node 优先 / types 兜底 / .d.ts 不可执行 / 嵌套", () => {
+    {
+      const { dir, pkgDir } = makePkg({ exports: { ".": { browser: "./only-browser.js" } } }, { "only-browser.js": "x" });
+      expect(resolveNpmJsEntry("pkg", dir)).toBe(join(pkgDir, "only-browser.js"));
+    }
+    {
+      const { dir, pkgDir } = makePkg({ exports: { ".": { browser: "./browser.js", default: "./default.js" } } }, { "browser.js": "a", "default.js": "b" });
+      expect(resolveNpmJsEntry("pkg", dir)).toBe(join(pkgDir, "default.js"));
+    }
+    {
+      const { dir, pkgDir } = makePkg({ exports: { ".": { browser: "./browser.js", node: "./node.js" } } }, { "browser.js": "a", "node.js": "b" });
+      expect(resolveNpmJsEntry("pkg", dir)).toBe(join(pkgDir, "node.js"));
+    }
+    {
+      const { dir, pkgDir } = makePkg({ exports: { ".": { types: "./index.d.ts", default: "./index.js" } } }, { "index.d.ts": "declare const x: number", "index.js": "x" });
+      expect(resolveNpmJsEntry("pkg", dir)).toBe(join(pkgDir, "index.js"));
+    }
+    {
+      const { dir } = makePkg({ exports: { ".": { types: "./index.d.ts" } } }, { "index.d.ts": "declare const x: number" });
+      expect(resolveNpmJsEntry("pkg", dir)).toBeNull();
+    }
+    {
+      const { dir, pkgDir } = makePkg({ exports: { ".": { node: { require: "./cjs/index.js" }, default: "./esm/index.js" } } }, { "cjs/index.js": "module.exports={}", "esm/index.js": "export default {}" });
+      expect(resolveNpmJsEntryDetailed("pkg", dir, "require").path).toBe(join(pkgDir, "cjs", "index.js"));
+      expect(resolveNpmJsEntryDetailed("pkg", dir, "import").path).toBe(join(pkgDir, "esm", "index.js"));
+    }
   });
 
-  it("prefers longer prefix in pattern keys", () => {
-    const { dir, pkgDir } = makePkg(
-      { exports: { "./*": "./dist/*.js", "./special/*": "./src/*.js" } },
-      {
-        "dist/special/x.js": "export const a = 1;",
-        "src/x.js": "export const b = 2;",
-      },
-    );
-    const hit = resolveNpmJsEntry("pkg/special/x", dir);
-    expect(hit).toBe(join(pkgDir, "src", "x.js"));
+  it("数组 fallback：首个合法目标即停（缺失也不跳到下一个）；条件数组", () => {
+    {
+      const { dir } = makePkg({ exports: { "./f": ["./miss.js", "./hit.js"] } }, { "hit.js": "x" });
+      const r = resolveNpmJsEntryDetailed("pkg/f", dir);
+      expect(r.path).toBeNull();
+      expect(r.exportsUnresolved).toBe(true);
+    }
+    {
+      const { dir, pkgDir } = makePkg({ exports: { "./f": ["./hit1.js", "./hit2.js"] } }, { "hit1.js": "a", "hit2.js": "b" });
+      expect(resolveNpmJsEntry("pkg/f", dir)).toBe(join(pkgDir, "hit1.js"));
+    }
+    {
+      const { dir } = makePkg({ exports: { ".": ["./miss.mjs", "./hit.js"] } }, { "hit.js": "x" });
+      expect(resolveNpmJsEntryDetailed("pkg", dir).exportsUnresolved).toBe(true);
+    }
+    {
+      const { dir, pkgDir } = makePkg({ exports: { ".": [{ browser: "./miss-browser.js" }, { default: "./hit.js" }] } }, { "hit.js": "x" });
+      expect(resolveNpmJsEntry("pkg", dir)).toBe(join(pkgDir, "hit.js"));
+    }
   });
 
-  it("exact key takes precedence over pattern", () => {
-    const { dir, pkgDir } = makePkg(
-      { exports: { "./*": "./dist/*.js", "./feature": "./exact.js" } },
-      {
-        "dist/feature.js": "export const a = 1;",
-        "exact.js": "export const b = 2;",
-      },
-    );
-    const hit = resolveNpmJsEntry("pkg/feature", dir);
-    expect(hit).toBe(join(pkgDir, "exact.js"));
-  });
-});
-
-describe("exports condition keys (browser)", () => {
-  it("resolves via browser-only condition", () => {
-    const { dir, pkgDir } = makePkg(
-      { exports: { ".": { browser: "./only-browser.js" } } },
-      { "only-browser.js": "export const x = 1;" },
-    );
-    const hit = resolveNpmJsEntry("pkg", dir);
-    expect(hit).toBe(join(pkgDir, "only-browser.js"));
+  it("包目录包含性：.. 子路径 / 模式替换逃逸 / 包外目标均拒绝", () => {
+    {
+      const { dir } = makePkg({ exports: { ".": "./index.js" } }, { "index.js": "x" });
+      expect(resolveNpmJsEntryDetailed("pkg/../../evil", dir).path).toBeNull();
+    }
+    {
+      const { dir, pkgDir } = makePkg({ exports: { "./*": "./dist/*.js" } }, { "dist/feature.js": "a", "escape.js": "evil" });
+      expect(resolveNpmJsEntry("pkg/feature", dir)).toBe(join(pkgDir, "dist", "feature.js"));
+      expect(resolveNpmJsEntryDetailed("pkg/feature/../../escape", dir).path).toBeNull();
+    }
+    {
+      const { dir } = makePkg({ exports: { ".": "../outside.js" } }, {});
+      writeFileSync(join(dir, "node_modules", "outside.js"), "x");
+      const r = resolveNpmJsEntryDetailed("pkg", dir);
+      expect(r.path).toBeNull();
+      expect(r.exportsUnresolved).toBe(true);
+    }
   });
 
-  it("prefers default over browser when both present", () => {
-    const { dir, pkgDir } = makePkg(
-      { exports: { ".": { browser: "./browser.js", default: "./default.js" } } },
-      {
-        "browser.js": "export const a = 1;",
-        "default.js": "export const b = 2;",
-      },
-    );
-    // 分析面取 Node/default；browser 仅 browser-only 时兜底
-    expect(resolveNpmJsEntry("pkg", dir)).toBe(join(pkgDir, "default.js"));
+  it("exports miss 不回退 main / 兄弟文件，并报 exportsUnresolved；成功/无 exports 不报", () => {
+    {
+      const { dir } = makePkg({ main: "index.js", exports: { "./other": "./other.js" } }, { "index.js": "a", "other.js": "b" });
+      const r = resolveNpmJsEntryDetailed("pkg/feature", dir);
+      expect(r.path).toBeNull();
+      expect(r.exportsUnresolved).toBe(true);
+    }
+    {
+      const { dir } = makePkg({ main: "index.js", exports: { "./f": "./missing.js" } }, { "index.js": "a" });
+      expect(resolveNpmJsEntryDetailed("pkg/f", dir).exportsUnresolved).toBe(true);
+    }
+    {
+      const { dir } = makePkg({ exports: { "./f": "./dist/f.js" } }, { "f.js": "wrong" });
+      expect(resolveNpmJsEntryDetailed("pkg/f", dir).exportsUnresolved).toBe(true);
+    }
+    {
+      const { dir, pkgDir } = makePkg({ exports: { "./f": "./f.js" } }, { "f.js": "x" });
+      const r = resolveNpmJsEntryDetailed("pkg/f", dir);
+      expect(r.path).toBe(join(pkgDir, "f.js"));
+      expect(r.exportsUnresolved).toBe(false);
+    }
+    {
+      const { dir, pkgDir } = makePkg({ main: "index.js" }, { "index.js": "x" });
+      const r = resolveNpmJsEntryDetailed("pkg", dir);
+      expect(r.path).toBe(join(pkgDir, "index.js"));
+      expect(r.exportsUnresolved).toBe(false);
+    }
   });
 
-  it("prefers node over browser when both present", () => {
-    const { dir, pkgDir } = makePkg(
-      { exports: { ".": { browser: "./browser.js", node: "./node.js" } } },
-      {
-        "browser.js": "export const a = 1;",
-        "node.js": "export const b = 2;",
-      },
-    );
-    const hit = resolveNpmJsEntry("pkg", dir);
-    expect(hit).toBe(join(pkgDir, "node.js"));
+  it("resolveNpmNudo：嵌套条件 / 数组 / nudo 子条件 / 模式键 / 无 nudo 返回 null", () => {
+    {
+      const { dir, pkgDir } = makePkg({ exports: { ".": { node: { nudo: "./index.nudo.js" }, default: "./index.js" } } }, { "index.nudo.js": "a", "index.js": "b" });
+      expect(resolveNpmNudo("pkg", dir)).toBe(join(pkgDir, "index.nudo.js"));
+    }
+    {
+      const { dir, pkgDir } = makePkg({ exports: { "./f": ["./miss.js", { nudo: "./f.nudo.js" }] } }, { "f.nudo.js": "x" });
+      expect(resolveNpmNudo("pkg/f", dir)).toBe(join(pkgDir, "f.nudo.js"));
+    }
+    {
+      const { dir, pkgDir } = makePkg({ exports: { ".": { nudo: { import: "./index.nudo.mjs", default: "./index.nudo.js" }, default: "./index.js" } } }, { "index.nudo.mjs": "a", "index.nudo.js": "b", "index.js": "c" });
+      expect(resolveNpmNudo("pkg", dir)).toBe(join(pkgDir, "index.nudo.mjs"));
+    }
+    {
+      const { dir, pkgDir } = makePkg({ exports: { "./*": { nudo: "./dist/*.nudo.js" } } }, { "dist/feature.nudo.js": "x" });
+      expect(resolveNpmNudo("pkg/feature", dir)).toBe(join(pkgDir, "dist", "feature.nudo.js"));
+    }
+    {
+      const { dir } = makePkg({ exports: { ".": { default: "./index.js" } } }, { "index.js": "x" });
+      expect(resolveNpmNudo("pkg", dir)).toBeNull();
+    }
   });
 
-  it("types is only a fallback (after all JS conditions miss)", () => {
-    const { dir, pkgDir } = makePkg(
-      { exports: { ".": { types: "./index.d.ts", default: "./index.js" } } },
-      {
-        "index.d.ts": "export declare const x: number;",
-        "index.js": "export const x = 1;",
-      },
-    );
-    // default 命中 → 不走 types
-    expect(resolveNpmJsEntry("pkg", dir)).toBe(join(pkgDir, "index.js"));
-  });
-
-  it("does not treat .d.ts as a runnable entry (types fallback skipped for eval)", () => {
-    const { dir } = makePkg(
-      { exports: { ".": { types: "./index.d.ts" } } },
-      { "index.d.ts": "export declare const x: number;" },
-    );
-    // 声明文件不是可执行入口——eval 路径不得返回 .d.ts
-    expect(resolveNpmJsEntry("pkg", dir)).toBeNull();
-  });
-
-  it("recursive condition nesting: { node: { require: ... } }", () => {
-    const { dir, pkgDir } = makePkg(
-      { exports: { ".": { node: { require: "./cjs/index.js" }, default: "./esm/index.js" } } },
-      {
-        "cjs/index.js": "module.exports = {};",
-        "esm/index.js": "export default {};",
-      },
-    );
-    // 条件键按**消费形态**分表（Bug 477）：require 面命中嵌套的 require 条件，
-    // import 面 miss 后落到 default —— 固定顺序的表做不到这一点。
-    expect(resolveNpmJsEntryDetailed("pkg", dir, "require").path).toBe(
-      join(pkgDir, "cjs", "index.js"),
-    );
-    expect(resolveNpmJsEntryDetailed("pkg", dir, "import").path).toBe(
-      join(pkgDir, "esm", "index.js"),
-    );
-  });
-});
-
-describe("exports array fallback", () => {
-  // BUG-270：Node 的数组回退只看「目标**非法**」，**不看存在性**——
-  // 首个目标合法但文件缺失时解析就停在该目标上（装载期 ERR_MODULE_NOT_FOUND）。
-  // 旧用例（"skips missing file and hits next in array"）固化的是这条缺陷。
-  it("stops at the first valid target even when the file is missing (BUG-270)", () => {
-    const { dir } = makePkg(
-      { exports: { "./f": ["./miss.js", "./hit.js"] } },
-      { "hit.js": "export const x = 1;" },
-    );
-    const r = resolveNpmJsEntryDetailed("pkg/f", dir);
-    expect(r.path).toBeNull();
-    expect(r.exportsUnresolved).toBe(true);
-  });
-
-  it("uses first entry when it exists", () => {
-    const { dir, pkgDir } = makePkg(
-      { exports: { "./f": ["./hit1.js", "./hit2.js"] } },
-      {
-        "hit1.js": "export const a = 1;",
-        "hit2.js": "export const b = 2;",
-      },
-    );
-    expect(resolveNpmJsEntry("pkg/f", dir)).toBe(join(pkgDir, "hit1.js"));
-  });
-
-  it("root-entry array stops at the first valid (missing) target (BUG-270)", () => {
-    const { dir } = makePkg(
-      { exports: { ".": ["./miss.mjs", "./hit.js"] } },
-      { "hit.js": "export const x = 1;" },
-    );
-    const r = resolveNpmJsEntryDetailed("pkg", dir);
-    expect(r.path).toBeNull();
-    expect(r.exportsUnresolved).toBe(true);
-  });
-
-  it("array with conditions inside: [{ browser: ... }, { default: ... }]", () => {
-    const { dir, pkgDir } = makePkg(
-      {
-        exports: {
-          ".": [
-            { browser: "./miss-browser.js" },
-            { default: "./hit.js" },
-          ],
-        },
-      },
-      { "hit.js": "export const x = 1;" },
-    );
-    expect(resolveNpmJsEntry("pkg", dir)).toBe(join(pkgDir, "hit.js"));
-  });
-});
-
-describe("package-dir containment (no .. escape)", () => {
-  it("rejects subpath with .. segments", () => {
-    const { dir } = makePkg(
-      { exports: { ".": "./index.js" } },
-      { "index.js": "export const x = 1;" },
-    );
-    // pkg/../../evil 不是包内说明符——不得解析出包外文件
-    const r = resolveNpmJsEntryDetailed("pkg/../../evil", dir);
-    expect(r.path).toBeNull();
-  });
-
-  it("rejects pattern substitution that escapes via ..", () => {
-    const { dir, pkgDir } = makePkg(
-      { exports: { "./*": "./dist/*.js" } },
-      {
-        "dist/feature.js": "export const a = 1;",
-        "escape.js": "export const evil = 1;",
-      },
-    );
-    // substitution "../../escape" → dist/../../escape.js 会逃出 pkgDir
-    // 合法 feature 仍须命中
-    expect(resolveNpmJsEntry("pkg/feature", dir)).toBe(join(pkgDir, "dist", "feature.js"));
-    const escaped = resolveNpmJsEntryDetailed("pkg/feature/../../escape", dir);
-    expect(escaped.path).toBeNull();
-  });
-
-  it("rejects exports target that points outside the package", () => {
-    const { dir } = makePkg({ exports: { ".": "../outside.js" } }, {});
-    // 包外旁路文件（node_modules/outside.js）
-    writeFileSync(join(dir, "node_modules", "outside.js"), "export const x = 1;");
-    const r = resolveNpmJsEntryDetailed("pkg", dir);
-    expect(r.path).toBeNull();
-    expect(r.exportsUnresolved).toBe(true);
-  });
-});
-
-describe("exports misses do not fall through to main / direct path", () => {
-  it("does not fall back to main when exports key is missing", () => {
-    const { dir } = makePkg(
-      { main: "index.js", exports: { "./other": "./other.js" } },
-      { "index.js": "export const x = 1;", "other.js": "export const y = 2;" },
-    );
-    // Node: ERR_PACKAGE_PATH_NOT_EXPORTED——不得静默改用 main
-    const r = resolveNpmJsEntryDetailed("pkg/feature", dir);
-    expect(r.path).toBeNull();
-    expect(r.exportsUnresolved).toBe(true);
-  });
-
-  it("does not fall back to main when exports target file is missing", () => {
-    const { dir } = makePkg(
-      { main: "index.js", exports: { "./f": "./missing.js" } },
-      { "index.js": "export const x = 1;" },
-    );
-    const r = resolveNpmJsEntryDetailed("pkg/f", dir);
-    expect(r.path).toBeNull();
-    expect(r.exportsUnresolved).toBe(true);
-  });
-
-  it("does not fall back to a sibling file when exports target is missing", () => {
-    const { dir } = makePkg(
-      { exports: { "./f": "./dist/f.js" } },
-      { "f.js": "export const wrong = 1;" },
-    );
-    // exports 指向 dist/f.js（缺失）；包根 f.js 不得顶替
-    const r = resolveNpmJsEntryDetailed("pkg/f", dir);
-    expect(r.path).toBeNull();
-    expect(r.exportsUnresolved).toBe(true);
-  });
-});
-
-describe("exports-unresolved diagnostic", () => {
-  it("flags exportsUnresolved when exports has no matching key", () => {
-    const { dir } = makePkg(
-      { exports: { "./other": "./other.js" } },
-      { "other.js": "export const x = 1;" },
-    );
-    const r = resolveNpmJsEntryDetailed("pkg/feature", dir);
-    expect(r.path).toBeNull();
-    expect(r.exportsUnresolved).toBe(true);
-  });
-
-  it("flags exportsUnresolved when target file is missing", () => {
-    const { dir } = makePkg({ exports: { "./f": "./missing.js" } });
-    const r = resolveNpmJsEntryDetailed("pkg/f", dir);
-    expect(r.path).toBeNull();
-    expect(r.exportsUnresolved).toBe(true);
-  });
-
-  it("does not flag when exports resolves successfully", () => {
-    const { dir, pkgDir } = makePkg(
-      { exports: { "./f": "./f.js" } },
-      { "f.js": "export const x = 1;" },
-    );
-    const r = resolveNpmJsEntryDetailed("pkg/f", dir);
-    expect(r.path).toBe(join(pkgDir, "f.js"));
-    expect(r.exportsUnresolved).toBe(false);
-  });
-
-  it("does not flag when no exports field exists", () => {
-    const { dir, pkgDir } = makePkg({ main: "index.js" }, { "index.js": "export const x = 1;" });
-    const r = resolveNpmJsEntryDetailed("pkg", dir);
-    expect(r.path).toBe(join(pkgDir, "index.js"));
-    expect(r.exportsUnresolved).toBe(false);
-  });
-});
-
-describe("resolveNpmNudo aligned exports reading", () => {
-  it("finds nudo in nested condition object", () => {
-    const { dir, pkgDir } = makePkg(
-      { exports: { ".": { node: { nudo: "./index.nudo.js" }, default: "./index.js" } } },
-      {
-        "index.nudo.js": "export const x = 1;",
-        "index.js": "export const y = 2;",
-      },
-    );
-    expect(resolveNpmNudo("pkg", dir)).toBe(join(pkgDir, "index.nudo.js"));
-  });
-
-  it("finds nudo nested in array fallback", () => {
-    const { dir, pkgDir } = makePkg(
-      { exports: { "./f": ["./miss.js", { nudo: "./f.nudo.js" }] } },
-      { "f.nudo.js": "export const x = 1;" },
-    );
-    expect(resolveNpmNudo("pkg/f", dir)).toBe(join(pkgDir, "f.nudo.js"));
-  });
-
-  it("resolves nested nudo: { import, default } with JS conditions", () => {
-    const { dir, pkgDir } = makePkg(
-      {
-        exports: {
-          ".": {
-            nudo: { import: "./index.nudo.mjs", default: "./index.nudo.js" },
-            default: "./index.js",
-          },
-        },
-      },
-      {
-        "index.nudo.mjs": "export const x = 1;",
-        "index.nudo.js": "export const y = 2;",
-        "index.js": "export const z = 3;",
-      },
-    );
-    // import 条件在 JS_CONDITIONS 中排在 default 前 → 命中 .mjs
-    expect(resolveNpmNudo("pkg", dir)).toBe(join(pkgDir, "index.nudo.mjs"));
-  });
-
-  it("pattern key works for resolveNpmNudo", () => {
-    const { dir, pkgDir } = makePkg(
-      { exports: { "./*": { nudo: "./dist/*.nudo.js" } } },
-      { "dist/feature.nudo.js": "export const x = 1;" },
-    );
-    expect(resolveNpmNudo("pkg/feature", dir)).toBe(join(pkgDir, "dist", "feature.nudo.js"));
-  });
-
-  it("returns null when no nudo condition present", () => {
-    const { dir } = makePkg(
-      { exports: { ".": { default: "./index.js" } } },
-      { "index.js": "export const x = 1;" },
-    );
-    expect(resolveNpmNudo("pkg", dir)).toBeNull();
-  });
-});
-
-describe("fs error taxonomy: EACCES 可见，不炸解析，不静默 unknown", () => {
-  it("包未安装（package.json ENOENT）→ 安静 miss，无告警", () => {
+  it("fs 错误分类：ENOENT 安静 miss", () => {
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       const dir = tmpProject("nudo-npm-fs-enoent-");
       expect(resolveNpmJsEntry("pkg", dir)).toBeNull();
       expect(resolveNpmNudo("pkg", dir)).toBeNull();
       expect(errSpy).not.toHaveBeenCalled();
-    } finally {
-      vi.restoreAllMocks();
-    }
+    } finally { vi.restoreAllMocks(); }
   });
 
-  it.runIf(!isRoot)("package.json 读 EACCES（pkg 目录 000）→ null + console.error 可见", () => {
-    const { dir, pkgDir } = makePkg({ main: "index.js" }, { "index.js": "export const x = 1;" });
-    chmodSync(pkgDir, 0o000);
-    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    try {
-      let path: string | null = "sentinel";
-      expect(() => {
-        path = resolveNpmJsEntry("pkg", dir);
-      }).not.toThrow();
-      expect(path).toBeNull();
-      expect(errSpy).toHaveBeenCalled();
-      const msg = errSpy.mock.calls.map((c) => String(c[0])).join("\n");
-      expect(msg).toContain("[nudo]");
-      expect(msg).toContain("package.json");
-      expect(msg).toContain("EACCES");
-    } finally {
-      chmodSync(pkgDir, 0o755);
-      vi.restoreAllMocks();
+  it.runIf(!isRoot)("EACCES 可见且不炸：package.json / legacy main 候选 / nudo 候选", () => {
+    {
+      const { dir, pkgDir } = makePkg({ main: "index.js" }, { "index.js": "x" });
+      chmodSync(pkgDir, 0o000);
+      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        let path: string | null = "sentinel";
+        expect(() => { path = resolveNpmJsEntry("pkg", dir); }).not.toThrow();
+        expect(path).toBeNull();
+        const msg = errSpy.mock.calls.map((c) => String(c[0])).join("\\n");
+        expect(msg).toContain("[nudo]");
+        expect(msg).toContain("package.json");
+        expect(msg).toContain("EACCES");
+      } finally { chmodSync(pkgDir, 0o755); vi.restoreAllMocks(); }
     }
-  });
-
-  it.runIf(!isRoot)(
-    "入口候选 stat EACCES（legacy main 指向锁定目录）→ miss + 可见，不炸",
-    () => {
+    {
       const { dir, pkgDir } = makePkg({ main: "./locked/index.js" }, {});
       mkdirSync(join(pkgDir, "locked"), { recursive: true });
-      writeFileSync(join(pkgDir, "locked", "index.js"), "export const x = 1;", "utf-8");
+      writeFileSync(join(pkgDir, "locked", "index.js"), "x", "utf-8");
       chmodSync(join(pkgDir, "locked"), 0o000);
       const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
       try {
-        let result: { path: string | null; exportsUnresolved: boolean } | undefined;
-        expect(() => {
-          result = resolveNpmJsEntryDetailed("pkg", dir);
-        }).not.toThrow();
+        let result: { path: string | null } | undefined;
+        expect(() => { result = resolveNpmJsEntryDetailed("pkg", dir); }).not.toThrow();
         expect(result?.path).toBeNull();
-        expect(errSpy).toHaveBeenCalled();
-        const msg = errSpy.mock.calls.map((c) => String(c[0])).join("\n");
-        expect(msg).toContain("[nudo]");
-        expect(msg).toContain("EACCES");
-      } finally {
-        chmodSync(join(pkgDir, "locked"), 0o755);
-        vi.restoreAllMocks();
-      }
-    },
-  );
-
-  it.runIf(!isRoot)("resolveNpmNudo 入口候选 stat EACCES → null + 可见", () => {
-    const { dir, pkgDir } = makePkg(
-      { exports: { ".": { nudo: "./locked/index.nudo.js" } } },
-      {},
-    );
-    mkdirSync(join(pkgDir, "locked"), { recursive: true });
-    writeFileSync(join(pkgDir, "locked", "index.nudo.js"), "export const x = 1;", "utf-8");
-    chmodSync(join(pkgDir, "locked"), 0o000);
-    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    try {
-      let path: string | null = "sentinel";
-      expect(() => {
-        path = resolveNpmNudo("pkg", dir);
-      }).not.toThrow();
-      expect(path).toBeNull();
-      expect(errSpy).toHaveBeenCalled();
-      expect(String(errSpy.mock.calls[0]?.[0])).toContain("EACCES");
-    } finally {
-      chmodSync(join(pkgDir, "locked"), 0o755);
-      vi.restoreAllMocks();
+        expect(errSpy.mock.calls.map((c) => String(c[0])).join("\\n")).toContain("EACCES");
+      } finally { chmodSync(join(pkgDir, "locked"), 0o755); vi.restoreAllMocks(); }
+    }
+    {
+      const { dir, pkgDir } = makePkg({ exports: { ".": { nudo: "./locked/index.nudo.js" } } }, {});
+      mkdirSync(join(pkgDir, "locked"), { recursive: true });
+      writeFileSync(join(pkgDir, "locked", "index.nudo.js"), "x", "utf-8");
+      chmodSync(join(pkgDir, "locked"), 0o000);
+      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        let path: string | null = "sentinel";
+        expect(() => { path = resolveNpmNudo("pkg", dir); }).not.toThrow();
+        expect(path).toBeNull();
+        expect(String(errSpy.mock.calls[0]?.[0])).toContain("EACCES");
+      } finally { chmodSync(join(pkgDir, "locked"), 0o755); vi.restoreAllMocks(); }
     }
   });
 });

@@ -1,5 +1,5 @@
 /**
- * Bug 160：对象**解构**的计算键是**裸标识符**时，引擎读的是 `o["<标识符名>"]`
+ * 对象**解构**的计算键是**裸标识符**时，引擎读的是 `o["<标识符名>"]`
  * 而不是 `o[k]` → 恒读成 `undefined`（精确错值），且 `k` 从未被求值。
  *
  * 根因：transpile/helpers.ts 的 `staticKeyOf` 只看节点的 type/name，**不看
@@ -23,7 +23,7 @@ function v(src: string) {
   return litValue(call(src, "f").result);
 }
 
-describe("Bug 160: 解构的计算键（裸标识符）按值读，不按标识符名读", () => {
+describe("解构的计算键（裸标识符）按值读，不按标识符名读", () => {
   it("`{ [k]: v } = o` 读 o[k]（不是 o[\"k\"]）", () => {
     expect(
       v(`export function f() { let k = "dyn"; const o = { dyn: 42 }; const { [k]: v } = o; return v; }`),

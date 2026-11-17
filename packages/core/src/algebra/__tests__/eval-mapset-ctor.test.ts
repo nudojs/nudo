@@ -1,10 +1,10 @@
 /**
  * 求值引擎 Set/Map 构造器 iterable 语义：
  * - new Set(str) 按 code point 展开字符串（此前 elementsFrom 只认 tuple/arr →
- *   恒空集 size=0 假精确）
+ * 恒空集 size=0 假精确）
  * - new Set(set)/new Map(map) 拷贝条目表（此前同样空）
  * - new Map(entries) 的条目必须是对象——prim 条目原生 TypeError
- *   （"Iterator value … is not an entry object"），此前静默忽略/部分吞掉
+ * （"Iterator value … is not an entry object"），此前静默忽略/部分吞掉
  * - 非可迭代实参（number/bool/symbol、闭对象）原生 TypeError，此前折空容器
  * 修复：elementsFrom 增 string/Set/Map 分支；ctorArgDefinitelyInvalid 判定
  * 确定非法实参，求值引擎 $new 硬抛 NudoThrow(TypeError)（catch 可吸收），

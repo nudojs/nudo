@@ -9,7 +9,7 @@
  * Number 另漏 ToNumber(null)=0 与 Number(5n)=5。
  */
 import { describe, it, expect } from "vitest";
-import { litValue } from "../index.ts";
+import "../index.ts";
 import { val } from "./eval-helpers.ts";
 
 describe("String / Boolean fold undefined literal and missing args", () => {

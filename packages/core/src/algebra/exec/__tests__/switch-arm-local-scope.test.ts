@@ -15,13 +15,13 @@
  * `batchDecl`（**只收本语句表层**的 let/const/class/function）并在 walk 里
  * `pushShadow`。实测覆盖（→ 剔除，不进集合）：
  * - 直接位于 case 子句的 `let` / `const` / `function` / `class`（带不带
- *   花括号都一样）；
+ * 花括号都一样）；
  * - 嵌套块（任意深度）内的 `let` / `const` / `function` / `class`
- *   （walk 的 `BlockStatement` 分支按块作用域 pushShadow）；
+ * （walk 的 `BlockStatement` 分支按块作用域 pushShadow）；
  * - `for` / `for-of` / `for-in` 头部的 `let` / `const` 绑定；
  * - `catch` 形参（含解构形态）、嵌套函数形参、嵌套函数体内 `let` / `const`
- *   与**提升的 `var` / 函数声明**（walk 的 `CatchClause` /
- *   `FUNCTION_SCOPE_TYPES` / `BlockStatement` 遮蔽）。
+ * 与**提升的 `var` / 函数声明**（walk 的 `CatchClause` /
+ * `FUNCTION_SCOPE_TYPES` / `BlockStatement` 遮蔽）。
  *
  * 不剔除（语义正确，不是缺陷）：`var`——它是**函数**作用域绑定，不是臂
  * 作用域绑定；与外层同一函数作用域的 `var` 同名时本就是同一绑定
@@ -35,7 +35,7 @@
  *
  * 断言两条独立证据：
  * 1. 发射文本里**没有**该名字的 switch 槽位/快照行（`__sw\d+_a` /
- *    `$copy(a,`）——集合里没有 ⇒ 快照行不会发射；
+ * `$copy(a,`）——集合里没有 ⇒ 快照行不会发射；
  * 2. 引擎值与原生一致（原生锚定 5）。
  * 负控制：臂**真的**写外层 `a` 时快照行必须存在（防止未来把过滤做过头，
  * 把真正需要 fork 协议的写一起丢掉）。

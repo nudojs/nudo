@@ -1,5 +1,5 @@
 /**
- * Bug 125：TypedArray 枚举视图——整数索引异质属性（ECMA-262 §10.4.5）是
+ * TypedArray 枚举视图——整数索引异质属性（ECMA-262 §10.4.5）是
  * 自有 { writable, enumerable, configurable: true } 键 "0".."length-1"；
  * length 是 %TypedArray%.prototype 访问器（非自有键，gOPN 不含）。
  * 此前 BUILTIN_BRAND_NO_ENUM_KEYS 整族折空：Object.keys/values/entries/
@@ -27,7 +27,7 @@ function shapeOf(src: string): { k: string; elements?: Abs[]; element?: Abs } {
   return s;
 }
 
-describe("Bug 125: TypedArray 枚举视图（Object.keys/values/entries/gOPN + for-in）", () => {
+describe("TypedArray 枚举视图（Object.keys/values/entries/gOPN + for-in）", () => {
   it("Object.keys：数字形态精确 0..n-1；gOPN 同键集且不含 length", () => {
     expect(tupleEls(result(`export function run() { return Object.keys(new Uint8Array(3)); }`))).toEqual(["0", "1", "2"]);
     expect(tupleEls(result(`export function run() { return Object.keys(new Uint8Array(0)); }`))).toEqual([]);

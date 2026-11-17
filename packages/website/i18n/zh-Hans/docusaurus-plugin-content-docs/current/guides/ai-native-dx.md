@@ -83,8 +83,6 @@ wrongFixGreen nudo=3/5   ts=5/5
 ```bash
 pnpm run agent-dx                      # table
 node benchmark/agent-dx/run.mjs --json # ingest
-pnpm run agent-eval                    # Nudo-only 10-task red→green
-pnpm run dx-metrics                    # fix-rate / time-to-green
 ```
 
 源码：[`benchmark/agent-dx/`](https://github.com/nudojs/nudo/tree/main/benchmark/agent-dx)。

@@ -1871,7 +1871,7 @@ function settledEntry(el: Abs): Abs {
  * 各元素 reason，message = "All promises were rejected"）。
  * 本地构造（不引 error-family.ts——它已引本文件，闭环会成环），槽位口径与
  * errorBrandAbs 同款（name 走原型链槽、stack/message/errors 不可枚举）。
- * parity 由 __tests__/eval-bug-293-promise-combinator-settle.test.ts 钉住
+ * parity 由 __tests__/eval--promise-combinator-settle.part.ts 钉住
  * （errorBrandAbs 槽位口径变化 ⇒ 该测试先红）。
  */
 export function aggregateErrorAbs(reasons: Abs[]): Abs {

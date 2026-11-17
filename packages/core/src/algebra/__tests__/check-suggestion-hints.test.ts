@@ -2,15 +2,15 @@
  * DX 改善：截断/宿主拦截诊断的 suggestion 带**具体修值/可粘贴骨架**。
  *
  * - `nudo:fork-truncated` → `package.json#nudo.analysis.maxForks=<N>`（N 从
- *   观测 fork 数推：max(20000, 观测×1.5 向上取整到千)；观测不可得回 20000）
+ * 观测 fork 数推：max(20000, 观测×1.5 向上取整到千)；观测不可得回 20000）
  * - `nudo:host-effect-blocked` → 按 fetch/定时器/构造器分族的**单行**
- *   `@nudo:mock` 骨架。「粘贴可用」双向钉：无 mock 时报 issue + suggestion
- *   含骨架；骨架语义等价的 mock 注入后 issue 消失、签名恢复精确。
- *   （骨架的端到端粘贴验证——JSDoc 原样粘贴经 parser→service 全管线——
- *   见 docs/reference/diagnostics.md 的示例与 website mocking 文档。）
+ * `@nudo:mock` 骨架。「粘贴可用」双向钉：无 mock 时报 issue + suggestion
+ * 含骨架；骨架语义等价的 mock 注入后 issue 消失、签名恢复精确。
+ * （骨架的端到端粘贴验证——JSDoc 原样粘贴经 parser→service 全管线——
+ * 见 docs/reference/diagnostics.md 的示例与 website mocking 文档。）
  * - `nudo:recursion-truncated` depth/calls 臂 → `@nudo:budget depth=128` /
- *   `calls=40000`（默认上限 ×2 起，或从观测值推）；cycle 臂维持「抬预算
- *   无效」的代码级建议不动。
+ * `calls=40000`（默认上限 ×2 起，或从观测值推）；cycle 臂维持「抬预算
+ * 无效」的代码级建议不动。
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { checkSource, pTrue, resetCheckSourceMemo, abs, absFunction, type Abs } from "@nudojs/core";
@@ -26,7 +26,7 @@ import {
   suggestedForkCeiling,
 } from "../check/check-report.ts";
 
-// —— 骨架语义等价的 Abs 构造（与 core-bug-274 的 mockFn 同族手法） ——
+// —— 骨架语义等价的 Abs 构造（与 core-的 mockFn 同族手法） ——
 
 const num = (v: number) =>
   abs({ k: "prim", type: "number" }, { op: "lit", value: v }, pTrue, "exact");

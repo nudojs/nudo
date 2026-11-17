@@ -1,7 +1,7 @@
 /**
- * Bug 57/71：Proxy target/handler 保留。修复前 makeProxyAbs 丢弃两者——
- * `Array.isArray(new Proxy([], {}))` 假 false（Bug 57）、读折 undefined/NaN、
- * `in` 假 false、赋值绕过 set 陷阱、陷阱返回 false 不抛（Bug 71）。
+ * ：Proxy target/handler 保留。修复前 makeProxyAbs 丢弃两者——
+ * `Array.isArray(new Proxy([], {}))` 假 false（）、读折 undefined/NaN、
+ * `in` 假 false、赋值绕过 set 陷阱、陷阱返回 false 不抛（）。
  * 修复：brand inner = target Abs + match-iter 侧表挂 handler；get/has/set
  * 陷阱经 $call 派发（this = handler、首参 target），无陷阱回退靶语义。
  */
@@ -13,7 +13,7 @@ function v(src: string) {
   return litValue(call(src, "f").result);
 }
 
-describe("Bug 57: Array.isArray 看穿 Proxy 到靶形态", () => {
+describe("Array.isArray 看穿 Proxy 到靶形态", () => {
   it("new Proxy([], {}) → true", () => {
     expect(v(`export function f() { return Array.isArray(new Proxy([], {})); }`)).toEqual({ ok: true, value: true });
   });
@@ -31,7 +31,7 @@ describe("Bug 57: Array.isArray 看穿 Proxy 到靶形态", () => {
   });
 });
 
-describe("Bug 71: in / 成员读 / 赋值走陷阱或靶", () => {
+describe("in / 成员读 / 赋值走陷阱或靶", () => {
   it("\"a\" in new Proxy({a:1}, {}) → true（无陷阱回退靶包含）", () => {
     expect(v(`export function f() { const p = new Proxy({ a: 1 }, {}); return "a" in p; }`)).toEqual({ ok: true, value: true });
   });

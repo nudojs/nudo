@@ -4,8 +4,8 @@
  * #119：optional()/nullable() 槽的裸模板插值误报
  * `ToString coercion of abstract operand (Symbol)`，签名折成
  * `=> string throws TypeError`。复现（1.3.10）：
- *   shape({ file: string().optional() }) 下 `${f.file}`
- *   nullable(string()) 下 `${s}`
+ * shape({ file: string().optional() }) 下 `${f.file}`
+ * nullable(string()) 下 `${s}`
  * 原生语义：`${undefined}`/`${null}` 输出 "undefined"/"null"（ToString 对
  * nullish 恒 total），只有 Symbol 抛——契约已把槽限为 string|undefined，
  * 不存在 Symbol 可能性。
@@ -43,7 +43,7 @@ function check(src: string) {
 
 const IMPORT = `/// @nudo:import { fView, nullableStr } from "./std.nudo.js"\n`;
 
-describe("#119 optional()/nullable() 槽模板插值不报 entry-may-throw", () => {
+describe("optional()/nullable() 槽模板插值不报 entry-may-throw", () => {
   it("plainTemplate：`${f.file}` 契约 string|undefined 零 L2，签名不 throws", () => {
     const r = check(`${IMPORT}/**
  * @nudo:contract f fView
@@ -53,7 +53,7 @@ export function plainTemplate(f) { return \`\${f.file}\`; }
     expect(l2Count(r)).toBe(0);
     expect(r.summary.errors).toBe(0);
     expect(sigOf(r, "plainTemplate")).toBe("string");
-    // 置信度仍是 path（`display` 自 Bug 413 起是人类面口径的 shape 渲染，
+    // 置信度仍是 path（`display` 自 起是人类面口径的 shape 渲染，
     // 不再带 `#conf` 段 ⇒ 置信度改看 `conf` 字段）
     expect(r.signatures.find((s) => s.name === "plainTemplate")?.conf).toBe("path");
     expect(sigOf(r, "plainTemplate")).not.toContain("throws");
@@ -120,7 +120,7 @@ export function bitOr(f) { return f.line | 0; }
   });
 });
 
-describe("#119 对照组：may-throw 打点不越界", () => {
+describe("对照组：may-throw 打点不越界", () => {
   it("无契约 any 参数的 `${x}` 仍报 L2（既定 policy）", () => {
     const r = check(`export function anyTpl(x) { return \`\${x}\`; }`);
     expect(l2Count(r, "anyTpl")).toBeGreaterThan(0);

@@ -17,9 +17,9 @@ import { fileURLToPath } from "node:url";
  *
  * Both paths are documented intentionally:
  * - HARD: when @types/node is resolvable in this worktree, harvest must
- *   succeed with stats and respect maxFiles budget.
+ * succeed with stats and respect maxFiles budget.
  * - SKIP: when absent (or NUDO_HARVEST_NODE=off), tests soft-skip with an
- *   explicit message — still allowed, never a silent green on a wrong env.
+ * explicit message — still allowed, never a silent green on a wrong env.
  */
 
 // packages/service/src/__tests__/ → monorepo root (vitest cwd may already be root)

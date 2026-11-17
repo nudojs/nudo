@@ -21,7 +21,7 @@ const CLAMP_CONTRACT = `
  */
 `;
 
-describe("#68 Math.min/max bounds", () => {
+describe("Math.min/max bounds", () => {
   it("clamp100: NaN 臂 → error（option 1：形态 1 仍报）", () => {
     const r = retIssues(`
 ${CLAMP_CONTRACT}

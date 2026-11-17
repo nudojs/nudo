@@ -1,8 +1,8 @@
 /**
  * issue #153 回归：数组 mutator（push/unshift/splice…）的 spread 实参
  * `f.push(...xs)` 此前在两条转译路径被折成单参 `$unknown()`，污染容器元素域：
- * - stmt.ts ExpressionStatement mutator 快路径（Bug 49/51 后已移除——统一
- *   走 $invoke 调用点就地变更）；
+ * - stmt.ts ExpressionStatement mutator 快路径（ 后已移除——统一
+ * 走 $invoke 调用点就地变更）；
  * - emit.ts emitStmtWritebackRebinds 重绑行（同上移除）。
  * 现口径：与普通调用（expr.ts $callNamed/$invoke，DEC-006 K5）同——
  * `...$elems(<expr>)` 生成数组字面量内的 JS spread，把 $elems 返回的

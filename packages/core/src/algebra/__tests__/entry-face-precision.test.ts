@@ -3,10 +3,10 @@
  *
  * 这两条是「默认切换到索引普查面」的前置条件（§15 实验暴露的 4 条真实回归
  * 的两个根因）：
- * - BUG-996：`objectPropertyKeys` 曾把 CJS 对象字面量的 getter / setter
- *   当成可调用入口（ObjectMethod 恒被 `isFunctionValue` 认作函数值）；
- * - BUG-1149 / 1159：`FunctionDeclaration` 无条件进普查，函数体内**嵌套**
- *   声明也被当成模块顶层入口 ⇒ 名字解析不到 ⇒ 假 `nudo:opaque-result`。
+ * - `objectPropertyKeys` 曾把 CJS 对象字面量的 getter / setter
+ * 当成可调用入口（ObjectMethod 恒被 `isFunctionValue` 认作函数值）；
+ * - / 1159：`FunctionDeclaration` 无条件进普查，函数体内**嵌套**
+ * 声明也被当成模块顶层入口 ⇒ 名字解析不到 ⇒ 假 `nudo:opaque-result`。
  *
  * 断言同时覆盖「索引面」与「开启开关后的 check 门禁面」，防止只修一半。
  */

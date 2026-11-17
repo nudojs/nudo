@@ -45,7 +45,7 @@ function sig(r: ReturnType<typeof check>, fn: string): string {
   return r.signatures.find((s) => s.name === fn)?.display ?? "(missing)";
 }
 
-describe("#110 env class extends Error: super(message) 落 name/message 槽", () => {
+describe("env class extends Error: super(message) 落 name/message 槽", () => {
   it("msgErr 签名：string 域（修复前 undefined #exact 假精确）", () => {
     const r = check();
     const d = sig(r, "msgErr");

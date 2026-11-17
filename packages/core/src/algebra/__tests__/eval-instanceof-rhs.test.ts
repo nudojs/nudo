@@ -1,11 +1,11 @@
 /**
- * Bug 33 回归：`instanceof` RHS（右操作数）的可调用性校验。
+ * 回归：`instanceof` RHS（右操作数）的可调用性校验。
  *
  * 原生 InstanceofOperator（node v26 实测）：
  * (1) 非对象 RHS（null/undefined/prim）→ TypeError "Right-hand side of
- *     'instanceof' is not an object"；
+ * 'instanceof' is not an object"；
  * (2) RHS 链上有 @@hasInstance → GetMethod 取之：不可调用槽直接 TypeError
- *     （"x is not a function"），可调用则调用并 ToBoolean 结果；
+ * （"x is not a function"），可调用则调用并 ToBoolean 结果；
  * (3) IsCallable(RHS) → OrdinaryHasInstance；
  * (4) 否则 TypeError "Right-hand side of 'instanceof' is not callable"。
  *
@@ -13,24 +13,24 @@
  * may），obj/arr/tuple RHS 落未校验臂 → 静默成功（catch 面 "no-throw"、
  * L2 gate 假阴），而语义相同的 prim-RHS 形式被正确标记。修复口径：
  * - arr/tuple：继承面（Array/Object.prototype）无 @@hasInstance，引擎内
- *   也从不携带 call impl → 定抛 TypeError；
+ * 也从不携带 call impl → 定抛 TypeError；
  * - 闭 obj（字面量 / Object.create(null) 闭 null-proto）：自有槽集完整，
- *   无 callable @@hasInstance 槽即确定 non-callable → 定抛；槽值不可调用
- *   同折定抛（原生 GetMeyhod 直接抛）；callable 槽 optional（可能缺位）→ may；
+ * 无 callable @@hasInstance 槽即确定 non-callable → 定抛；槽值不可调用
+ * 同折定抛（原生 GetMeyhod 直接抛）；callable 槽 optional（可能缺位）→ may；
  * - open obj（Object.create(proto) / setPrototypeOf 产物，动态继承不建模）
- *   → 保守不抛（imprecision 优于 wrong-exact）；
+ * → 保守不抛（imprecision 优于 wrong-exact）；
  * - brand 实例（new Map() 等值）non-callable → 原生定抛，但 Proxy（apply
- *   trap）可 callable，引擎不可区分 → may TypeError；类值（内建构造器 /
- *   用户 class，classNameOfValue 已标）是 constructor 函数 → 合法不记。
+ * trap）可 callable，引擎不可区分 → may TypeError；类值（内建构造器 /
+ * 用户 class，classNameOfValue 已标）是 constructor 函数 → 合法不记。
  *
  * 已知 imprecision（fn 形状 RHS 不校验，node 实测钉原生口径）：
  * - 箭头 / async 函数 / 方法作 RHS：原生无 .prototype → TypeError
- *   ("Function has non-object prototype 'undefined' in instanceof check")；
+ * ("Function has non-object prototype 'undefined' in instanceof check")；
  * - 普通 function / class / generator fn：有 .prototype → 合法（generator
- *   fn 原生**不**抛，实测 `({}) instanceof (function*(){})` → false）；
+ * fn 原生**不**抛，实测 `({}) instanceof (function*(){})` → false）；
  * - 绑定函数取决于目标（目标无 .prototype 则抛，如
- *   `({}) instanceof Function.prototype.bind(null)` 抛、
- *   `({}) instanceof (function(){}).bind(null)` → false）。
+ * `({}) instanceof Function.prototype.bind(null)` 抛、
+ * `({}) instanceof (function(){}).bind(null)` → false）。
  * 引擎 fn shape 的 ctor facet 把箭头/async 与 generator 混同（三者皆不可
  * new），definite 会误抛 generator RHS、may 会误报 generator RHS（假 gate
  * 噪声）——保持不校验，箭头/async RHS 静默 boolean 是 documented 债。
@@ -82,7 +82,7 @@ function gateFace(
 const thrown = (rhsExpr: string, left = "({})"): string =>
   `export function f() { try { ${left} instanceof ${rhsExpr}; return "no-throw"; } catch (e) { return e.constructor.name; } }`;
 
-describe("Bug 33: obj/arr/tuple RHS 定抛 TypeError（catch 面）", () => {
+describe("obj/arr/tuple RHS 定抛 TypeError（catch 面）", () => {
   const cases: [string, string][] = [
     ["({}) instanceof ({})", thrown("({})")],
     ["({}) instanceof []", thrown("[]")],
@@ -99,7 +99,7 @@ describe("Bug 33: obj/arr/tuple RHS 定抛 TypeError（catch 面）", () => {
   }
 });
 
-describe("Bug 33: prim RHS 控制组（Bug 5 既有臂不回退）", () => {
+describe("prim RHS 控制组（既有臂不回退）", () => {
   const cases: [string, string][] = [
     ["({}) instanceof 1", thrown("1")],
     ["({}) instanceof null", thrown("null")],
@@ -113,7 +113,7 @@ describe("Bug 33: prim RHS 控制组（Bug 5 既有臂不回退）", () => {
   }
 });
 
-describe("Bug 33: gate 面（L2）", () => {
+describe("gate 面（L2）", () => {
   it("obj/arr/tuple RHS definite → 入口 throws TypeError（修前静默）", () => {
     expect(gateFace(`export function f() { return ({}) instanceof ({}); }`).throws).toContain("TypeError");
     expect(gateFace(`export function f() { return ({}) instanceof []; }`).throws).toContain("TypeError");
@@ -146,7 +146,7 @@ describe("Bug 33: gate 面（L2）", () => {
   });
 });
 
-describe("Bug 33: 合法控制组值面不回退（@@hasInstance / class / D 类口径）", () => {
+describe("合法控制组值面不回退（@@hasInstance / class / D 类口径）", () => {
   it("自定义 @@hasInstance 调用面保持（callable 槽放行）", () => {
     expect(
       litValue(

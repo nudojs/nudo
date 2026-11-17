@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { Plugin } from "vite";
 import nudoPlugin, { type NudoPluginOptions } from "../index.ts";
 
-// checkSource 崩溃注入（BUG-023 回归）：vi.hoisted 让 vi.mock 工厂可读写
+// checkSource 崩溃注入（回归）：vi.hoisted 让 vi.mock 工厂可读写
 // 状态；默认透传真实实现，既有用例行为不变。注意：vite-node 的模块
 // namespace 导出不可枚举（`{...actual}` 会得到空模块），必须按
 // getOwnPropertyNames 逐键拷贝再覆盖 checkSource。
@@ -243,7 +243,7 @@ export function getName(user) {
   });
 });
 
-describe("vite-plugin-nudo check pipeline failures (BUG-023)", () => {
+describe("vite-plugin-nudo check pipeline failures ()", () => {
   // 稳定进入 check 面（导出入口）；与上方用例同源
   const entrySource = `
 export function getName(user) {

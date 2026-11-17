@@ -2,349 +2,152 @@ import { describe, it, expect } from "vitest";
 import { parse } from "../parse.ts";
 import { extractDirectives, parseCaseArgExpr, type CaseDirective } from "../directives.ts";
 import { litValue, num, str, bool, getFnImpl } from "@nudojs/core";
+import { stripTypes } from "@nudojs/core";
+
+const fnImpl = (expr: string) => {
+  const abs = parseCaseArgExpr(expr);
+  const impl = getFnImpl(abs);
+  return { abs, impl };
+};
 
 describe("parseCaseArgExpr", () => {
-  it("parses number() / string() / boolean()", () => {
+  it("构建器 / 数字 / 字符串 / 布尔 / null / undefined / lit", () => {
     expect(parseCaseArgExpr("number()").shape).toEqual(num().shape);
     expect(parseCaseArgExpr("string()").shape).toEqual(str().shape);
     expect(parseCaseArgExpr("boolean()").shape).toEqual(bool().shape);
+    const literals: Array<[string, unknown]> = [
+      ["42", 42], ["-3", -3], ["1.5", 1.5],
+      ['"hello"', "hello"], ["'world'", "world"],
+      ["true", true], ["false", false], ["null", null], ["undefined", undefined],
+      ["lit(42)", 42], ['lit("hi")', "hi"],
+    ];
+    for (const [expr, value] of literals) expect(litValue(parseCaseArgExpr(expr)), expr).toEqual({ ok: true, value });
   });
 
-  it("parses numeric literals", () => {
-    expect(litValue(parseCaseArgExpr("42"))).toEqual({ ok: true, value: 42 });
-    expect(litValue(parseCaseArgExpr("-3"))).toEqual({ ok: true, value: -3 });
-    expect(litValue(parseCaseArgExpr("1.5"))).toEqual({ ok: true, value: 1.5 });
-  });
-
-  it("parses string literals", () => {
-    expect(litValue(parseCaseArgExpr('"hello"'))).toEqual({ ok: true, value: "hello" });
-    expect(litValue(parseCaseArgExpr("'world'"))).toEqual({ ok: true, value: "world" });
-  });
-
-  it("parses boolean literals", () => {
-    expect(litValue(parseCaseArgExpr("true"))).toEqual({ ok: true, value: true });
-    expect(litValue(parseCaseArgExpr("false"))).toEqual({ ok: true, value: false });
-  });
-
-  it("parses null and undefined", () => {
-    expect(litValue(parseCaseArgExpr("null"))).toEqual({ ok: true, value: null });
-    expect(litValue(parseCaseArgExpr("undefined"))).toEqual({ ok: true, value: undefined });
-  });
-
-  it("parses bare unknown / any / never", () => {
-    expect(parseCaseArgExpr("unknown").shape.k).toBe("unknown");
-    expect(parseCaseArgExpr("any").shape.k).toBe("unknown");
+  it("unknown / any / never / any()", () => {
+    for (const expr of ["unknown", "any", "any()"]) expect(parseCaseArgExpr(expr).shape.k, expr).toBe("unknown");
     expect(parseCaseArgExpr("never").shape.k).toBe("never");
-    expect(parseCaseArgExpr("any()").shape.k).toBe("unknown");
   });
 
-  it("parses lit(...)", () => {
-    expect(litValue(parseCaseArgExpr("lit(42)"))).toEqual({ ok: true, value: 42 });
-    expect(litValue(parseCaseArgExpr('lit("hi")'))).toEqual({ ok: true, value: "hi" });
-  });
-
-  it("parses union(...)", () => {
+  it("union 成员", () => {
     const result = parseCaseArgExpr("union(number(), string())");
     expect(result.shape.k).toBe("sum");
-    if (result.shape.k === "sum") {
-      expect(result.shape.members).toHaveLength(2);
+    if (result.shape.k === "sum") expect(result.shape.members).toHaveLength(2);
+  });
+
+  it("箭头 / function 字面量保留 params、body 与 strict 未记录", () => {
+    const cases = [
+      { expr: "(x) => x * 2", params: ["x"], body: "BinaryExpression" },
+      { expr: "x => x + 1", params: ["x"] },
+      { expr: "(a, b) => a + b", params: ["a", "b"] },
+      { expr: "function(x) { return x * 2; }", params: ["x"], body: "BlockStatement" },
+    ];
+    for (const { expr, params, body } of cases) {
+      const { abs, impl } = fnImpl(expr);
+      expect(abs.shape.k, expr).toBe("fn");
+      expect(impl?.params, expr).toEqual(params);
+      if (body) expect(impl?.body?.type, expr).toBe(body);
+      expect(impl?.strict, expr).toBeUndefined();
     }
   });
 
-  it("parses arrow function literal with parenthesized params", () => {
-    const result = parseCaseArgExpr("(x) => x * 2");
-    expect(result.shape.k).toBe("fn");
-    const impl = getFnImpl(result);
-    expect(impl?.params).toEqual(["x"]);
-    expect(impl?.body?.type).toBe("BinaryExpression");
-  });
-
-  it("parses arrow function literal without parens", () => {
-    const result = parseCaseArgExpr("x => x + 1");
-    expect(result.shape.k).toBe("fn");
-    expect(getFnImpl(result)?.params).toEqual(["x"]);
-  });
-
-  it("parses arrow function literal with multiple params", () => {
-    const result = parseCaseArgExpr("(a, b) => a + b");
-    expect(result.shape.k).toBe("fn");
-    expect(getFnImpl(result)?.params).toEqual(["a", "b"]);
-  });
-
-  it("parses function expression literal", () => {
-    const result = parseCaseArgExpr("function(x) { return x * 2; }");
-    expect(result.shape.k).toBe("fn");
-    expect(getFnImpl(result)?.params).toEqual(["x"]);
-    expect(getFnImpl(result)?.body?.type).toBe("BlockStatement");
-  });
-
-  it("arrow / function literals leave strict unrecorded (enclosing source kind unknown)", () => {
-    // 本文法只拿到指令表达式文本：ESM/CJS 种类未随 @nudo:case 流转 ⇒ 不写
-    // strict（sloppy，保守）——不得按表达式形态猜。
-    for (const expr of ["(x) => x * 2", "function(x) { return x * 2; }"]) {
-      // 同 abs-modules-strict：实现缺失时 `?.strict` 也是 undefined ⇒ 先钉
-      // impl 存在，再钉 strict 未记录。
-      const impl = getFnImpl(parseCaseArgExpr(expr));
-      expect(impl).toBeDefined();
-      expect(impl?.strict).toBeUndefined();
-    }
-  });
-
-  it("does not treat strings containing => as functions", () => {
+  it("字符串里的 => 不是函数；T.* 文法已删除", () => {
     const result = parseCaseArgExpr('"a => b"');
     expect(litValue(result)).toEqual({ ok: true, value: "a => b" });
     expect(result.shape.k).toBe("prim");
-    if (result.shape.k === "prim") {
-      expect(result.shape.type).toBe("string");
-    }
-  });
-
-  it("does not parse deleted T.* grammar (unknown)", () => {
+    if (result.shape.k === "prim") expect(result.shape.type).toBe("string");
     expect(parseCaseArgExpr("T.number").shape.k).toBe("unknown");
   });
 });
 
 describe("extractDirectives", () => {
-  it("extracts @nudo:case directives from function", () => {
-    const source = `
+  const caseDirs = (src: string) =>
+    extractDirectives(parse(src)).flatMap((f) => f.directives.filter((d): d is CaseDirective => d.kind === "case"));
+
+  it("同一函数上的具体 / 符号 case 都保留实参", () => {
+    const results = extractDirectives(parse(`
 /**
  * @nudo:case "concrete" (1, 2)
  * @nudo:case "symbolic" (number(), number())
  */
-function calc(a, b) {
-  return a + b;
-}
-`;
-    const ast = parse(source);
-    const results = extractDirectives(ast);
+function calc(a, b) { return a + b; }
+`));
     expect(results).toHaveLength(1);
     expect(results[0].name).toBe("calc");
     expect(results[0].directives).toHaveLength(2);
-
-    const d0 = results[0].directives[0];
-    expect(d0.kind).toBe("case");
-    if (d0.kind !== "case") throw new Error("expected case directive");
+    const [d0, d1] = results[0].directives;
+    if (d0?.kind !== "case" || d1?.kind !== "case") throw new Error("expected case directives");
     expect(d0.name).toBe("concrete");
-    expect(d0.argsAbs).toHaveLength(2);
-    expect(litValue(d0.argsAbs[0]!)).toEqual({ ok: true, value: 1 });
-    expect(litValue(d0.argsAbs[1]!)).toEqual({ ok: true, value: 2 });
-
-    const d1 = results[0].directives[1];
-    expect(d1.kind).toBe("case");
-    if (d1.kind !== "case") throw new Error("expected case directive");
+    expect(d0.argsAbs.map((a) => litValue(a))).toEqual([{ ok: true, value: 1 }, { ok: true, value: 2 }]);
     expect(d1.name).toBe("symbolic");
-    expect(d1.argsAbs[0]!.shape.k).toBe("prim");
-    expect(d1.argsAbs[1]!.shape.k).toBe("prim");
+    expect(d1.argsAbs.map((a) => a.shape.k)).toEqual(["prim", "prim"]);
   });
 
-  it("extracts from multiple functions", () => {
-    const source = `
-/**
- * @nudo:case "test" (1)
- */
-function foo(x) { return x; }
-
-/**
- * @nudo:case "test2" ("hello")
- */
-function bar(s) { return s; }
-`;
-    const ast = parse(source);
-    const results = extractDirectives(ast);
-    expect(results).toHaveLength(2);
-    expect(results[0].name).toBe("foo");
-    expect(results[1].name).toBe("bar");
-  });
-
-  it("ignores functions without directives", () => {
-    const source = `
+  it("多函数各自绑定；无指令函数被忽略", () => {
+    const results = extractDirectives(parse(`
 function noDirective(x) { return x; }
-
-/**
- * @nudo:case "test" (number())
- */
-function withDirective(x) { return x + 1; }
-`;
-    const ast = parse(source);
-    const results = extractDirectives(ast);
-    expect(results).toHaveLength(1);
-    expect(results[0].name).toBe("withDirective");
+/** @nudo:case "test" (1) */
+function foo(x) { return x; }
+/** @nudo:case "test2" ("hello") */
+function bar(s) { return s; }
+`));
+    expect(results.map((r) => r.name)).toEqual(["foo", "bar"]);
   });
 
-  it("handles string arguments in case", () => {
-    const source = `
-/**
- * @nudo:case "string test" ("hello", "world")
- */
-function greet(a, b) { return a + b; }
-`;
-    const ast = parse(source);
-    const results = extractDirectives(ast);
-    const d = results[0].directives[0];
-    if (d.kind !== "case") throw new Error("expected case directive");
-    expect(d.argsAbs).toHaveLength(2);
-    expect(litValue(d.argsAbs[0]!)).toEqual({ ok: true, value: "hello" });
-    expect(litValue(d.argsAbs[1]!)).toEqual({ ok: true, value: "world" });
-  });
+  it("字符串 / 元组+箭头 / 嵌套对象箭头实参", () => {
+    const strings = caseDirs(`/** @nudo:case "string test" ("hello", "world") */\nfunction greet(a, b) { return a + b; }`);
+    expect(strings[0]!.argsAbs.map((a) => litValue(a))).toEqual([{ ok: true, value: "hello" }, { ok: true, value: "world" }]);
 
-  it("extracts arrow function literal as case argument", () => {
-    const source = `
-/**
- * @nudo:case "x" ([1, 2, 3], (a) => a * 2)
- */
-function apply(items, cb) { return items; }
-`;
-    const ast = parse(source);
-    const results = extractDirectives(ast);
-    const d = results[0].directives[0];
-    expect(d.kind).toBe("case");
-    if (d.kind !== "case") throw new Error("expected case directive");
-    expect(d.argsAbs[0]!.shape.k).toBe("tuple");
-    expect(d.argsAbs[1]!.shape.k).toBe("fn");
-  });
+    const arrow = caseDirs(`/** @nudo:case "x" ([1, 2, 3], (a) => a * 2) */\nfunction apply(items, cb) { return items; }`);
+    expect(arrow[0]!.argsAbs.map((a) => a.shape.k)).toEqual(["tuple", "fn"]);
 
-  it("extracts arrow function inside nested object literal in case", () => {
-    const source = `
-/**
- * @nudo:case "s" ({ fn: (a) => a })
- */
-function use(opts) { return opts; }
-`;
-    const ast = parse(source);
-    const results = extractDirectives(ast);
-    const d = results[0].directives[0];
-    expect(d.kind).toBe("case");
-    if (d.kind !== "case") throw new Error("expected case directive");
-    expect(d.argsAbs[0]!.shape.k).toBe("obj");
-    if (d.argsAbs[0]!.shape.k === "obj") {
-      const fn = d.argsAbs[0]!.shape.slots.fn?.value;
-      expect(fn?.shape.k).toBe("fn");
+    const nested = caseDirs(`/** @nudo:case "s" ({ fn: (a) => a }) */\nfunction use(opts) { return opts; }`);
+    expect(nested[0]!.argsAbs[0]!.shape.k).toBe("obj");
+    if (nested[0]!.argsAbs[0]!.shape.k === "obj") {
+      expect(nested[0]!.argsAbs[0]!.shape.slots.fn?.value?.shape.k).toBe("fn");
     }
   });
 });
 
-// ---------------------------------------------------------------------------
-// `=> expected` 允许写在续行（与多行实参同构）；不吞下一个 `@nudo:`。
-// 回归：F-3 跨行 `=>` 被静默丢弃 → nudo test 不断言。
-// ---------------------------------------------------------------------------
+describe("case => expected 续行", () => {
+  const caseDirs = (src: string) =>
+    extractDirectives(parse(src)).flatMap((f) => f.directives.filter((d): d is CaseDirective => d.kind === "case"));
 
-describe("case => expected on continuation lines", () => {
-  function caseDirs(src: string) {
-    return extractDirectives(parse(src)).flatMap((f) =>
-      f.directives.filter((d): d is CaseDirective => d.kind === "case"),
-    );
-  }
+  it("下一行 / 单行 / 多行实参后的 expected 都被采纳", () => {
+    const nextLine = caseDirs(`/**\n * @nudo:case "t" (1)\n * => 2\n */\nfunction f(x) { return x; }`);
+    expect(litValue(nextLine[0]!.argsAbs[0]!)).toEqual({ ok: true, value: 1 });
+    expect(litValue(nextLine[0]!.expected!)).toEqual({ ok: true, value: 2 });
 
-  it("=> expected on the next comment line is honored", () => {
-    const cases = caseDirs(`
-/**
- * @nudo:case "t" (1)
- * => 2
- */
-function f(x) { return x; }
-`);
-    expect(cases).toHaveLength(1);
-    expect(cases[0]!.expected).toBeDefined();
-    expect(litValue(cases[0]!.expected!)).toEqual({ ok: true, value: 2 });
-    expect(litValue(cases[0]!.argsAbs[0]!)).toEqual({ ok: true, value: 1 });
+    const single = caseDirs(`/** @nudo:case "t" (1) => 2 */\nfunction f(x) { return x; }`);
+    expect(litValue(single[0]!.expected!)).toEqual({ ok: true, value: 2 });
+
+    const multi = caseDirs(`/**\n * @nudo:case "t" (\n *   1,\n *   2\n * )\n * => 3\n */\nfunction f(a, b) { return a + b; }`);
+    expect(multi[0]!.argsAbs).toHaveLength(2);
+    expect(multi[0]!.argsAbs.map((a) => litValue(a))).toEqual([{ ok: true, value: 1 }, { ok: true, value: 2 }]);
+    expect(litValue(multi[0]!.expected!)).toEqual({ ok: true, value: 3 });
   });
 
-  it("single-line => expected still works (control)", () => {
-    const cases = caseDirs(`
-/**
- * @nudo:case "t" (1) => 2
- */
-function f(x) { return x; }
-`);
-    expect(cases).toHaveLength(1);
-    expect(cases[0]!.expected).toBeDefined();
-    expect(litValue(cases[0]!.expected!)).toEqual({ ok: true, value: 2 });
+  it("续行 expected 不吞下一个 case", () => {
+    const cases = caseDirs(`/**\n * @nudo:case "t" (1)\n * => 2\n * @nudo:case "u" (3) => 4\n */\nfunction f(x) { return x; }`);
+    expect(cases.map((c) => c.name)).toEqual(["t", "u"]);
+    expect(cases.map((c) => litValue(c.expected!))).toEqual([{ ok: true, value: 2 }, { ok: true, value: 4 }]);
   });
 
-  it("multi-line args + expected on a later line", () => {
-    const cases = caseDirs(`
-/**
- * @nudo:case "t" (
- *   1,
- *   2
- * )
- * => 3
- */
-function f(a, b) { return a + b; }
-`);
-    expect(cases).toHaveLength(1);
-    expect(cases[0]!.argsAbs).toHaveLength(2);
-    expect(litValue(cases[0]!.argsAbs[0]!)).toEqual({ ok: true, value: 1 });
-    expect(litValue(cases[0]!.argsAbs[1]!)).toEqual({ ok: true, value: 2 });
-    expect(cases[0]!.expected).toBeDefined();
-    expect(litValue(cases[0]!.expected!)).toEqual({ ok: true, value: 3 });
-  });
-
-  it("does not swallow the next @nudo:case directive", () => {
-    const cases = caseDirs(`
-/**
- * @nudo:case "t" (1)
- * => 2
- * @nudo:case "u" (3) => 4
- */
-function f(x) { return x; }
-`);
-    expect(cases).toHaveLength(2);
-    expect(cases[0]!.name).toBe("t");
-    expect(litValue(cases[0]!.expected!)).toEqual({ ok: true, value: 2 });
-    expect(cases[1]!.name).toBe("u");
-    expect(litValue(cases[1]!.expected!)).toEqual({ ok: true, value: 4 });
-  });
-
-  it("same-line non-arrow content keeps no expected (old behavior)", () => {
-    const cases = caseDirs(`
-/**
- * @nudo:case "t" (1) note: witness only
- * => 2
- */
-function f(x) { return x; }
-`);
-    expect(cases).toHaveLength(1);
-    expect(cases[0]!.expected).toBeUndefined();
-  });
-
-  it("same-line expected is not polluted by later prose lines", () => {
-    const cases = caseDirs(`
-/**
- * @nudo:case "t" (1) => 2
- * trailing prose must not enter the expression
- */
-function f(x) { return x; }
-`);
-    expect(cases).toHaveLength(1);
-    expect(litValue(cases[0]!.expected!)).toEqual({ ok: true, value: 2 });
-  });
-
-  it("next-line !! throws without => does not invent an expected", () => {
-    const cases = caseDirs(`
-/**
- * @nudo:case "neg" (0)
- * !! throws Error
- */
-function f(x) { return x; }
-`);
-    expect(cases).toHaveLength(1);
-    expect(cases[0]!.expected).toBeUndefined();
+  it("无 => 的正文 / 散文 / next-line !! 都不发明 expected", () => {
+    const cases = [
+      `/**\n * @nudo:case "t" (1) note: witness only\n * => 2\n */\nfunction f(x) { return x; }`,
+      `/**\n * @nudo:case "neg" (0)\n * !! throws Error\n */\nfunction f(x) { return x; }`,
+    ];
+    for (const src of cases) {
+      const d = caseDirs(src)[0]!;
+      expect(d.expected, src).toBeUndefined();
+    }
+    const prose = caseDirs(`/**\n * @nudo:case "t" (1) => 2\n * trailing prose must not enter the expression\n */\nfunction f(x) { return x; }`);
+    expect(litValue(prose[0]!.expected!)).toEqual({ ok: true, value: 2 });
   });
 });
 
-// ---------------------------------------------------------------------------
-// TS 剥除 pass：parse() 统一剥除 TS-only 语法（见 ../strip-types.ts）。
-// 断言方式：剥除后的 TS 源 AST 与等价 JS 源 AST 在去除位置/注释元数据后
-// 结构等价。
-// ---------------------------------------------------------------------------
-
-import { stripTypes } from "@nudojs/core";
-
-const META_KEYS = new Set([
-  "loc", "start", "end", "range",
-  "leadingComments", "trailingComments", "innerComments", "comments", "tokens", "extra",
-]);
+const META_KEYS = new Set(["loc", "start", "end", "range", "leadingComments", "trailingComments", "innerComments", "comments", "tokens", "extra"]);
 
 function normalize(node: unknown): unknown {
   if (Array.isArray(node)) return node.map(normalize);
@@ -359,60 +162,36 @@ function normalize(node: unknown): unknown {
   return node;
 }
 
-function expectStrippedEquivalent(tsSource: string, jsSource: string): void {
+const expectStrippedEquivalent = (tsSource: string, jsSource: string): void => {
   expect(normalize(parse(tsSource))).toEqual(normalize(parse(jsSource)));
-}
+};
 
-describe("stripTypes: parse() 统一 TS 剥除", () => {
-  it("参数/返回标注被剥除", () => {
-    expectStrippedEquivalent(
-      "function add(a: number, b: number): number { return a + b; }",
-      "function add(a, b) { return a + b; }",
-    );
+describe("stripTypes：TS 剥除", () => {
+  it("标注 / 泛型 / 断言 / satisfies / 泛型调用 / new / 实例化 / 类成员等价于 JS", () => {
+    const pairs: Array<[string, string]> = [
+      ["function add(a: number, b: number): number { return a + b; }", "function add(a, b) { return a + b; }"],
+      ["const f = <T,>(v: T, opt?: boolean): T => v;", "const f = (v, opt) => v;"],
+      ["const y = x as string; const z = y!.length;", "const y = x; const z = y.length;"],
+      ["const c = { a: 1 } as const; const s = { b: 2 } satisfies Alias;", "const c = { a: 1 }; const s = { b: 2 };"],
+      ["const r = id<string>(1); const c = new Map<string, number>();", "const r = id(1); const c = new Map();"],
+      ["const g = id<number>;", "const g = id;"],
+      [
+        `class Pt implements Shape {\n  [key: string]: unknown;\n  x: number = 0;\n  declare hidden: string;\n  get(): number { return this.x; }\n}`,
+        `class Pt {\n  x = 0;\n  get() { return this.x; }\n}`,
+      ],
+    ];
+    for (const [ts, js] of pairs) expectStrippedEquivalent(ts, js);
   });
 
-  it("箭头函数泛型/标注/可选参数被剥除", () => {
-    expectStrippedEquivalent(
-      "const f = <T,>(v: T, opt?: boolean): T => v;",
-      "const f = (v, opt) => v;",
-    );
-  });
-
-  it("as 断言与非空断言解包", () => {
-    expectStrippedEquivalent(
-      "const y = x as string; const z = y!.length;",
-      "const y = x; const z = y.length;",
-    );
-  });
-
-  it("as const 与 satisfies 解包", () => {
-    expectStrippedEquivalent(
-      "const c = { a: 1 } as const; const s = { b: 2 } satisfies Alias;",
-      "const c = { a: 1 }; const s = { b: 2 };",
-    );
-  });
-
-  it("尖括号断言 <T>x 解析成功（TS+JSX 硬失败后降级去 jsx 重试），剥除器仍处理 TSTypeAssertion 节点", () => {
-    // Bug 451（口径更新）：`.ts`（非 `.tsx`）里 `<T>x` 是**合法** TS（tsc exit 0）
-    // ⇒ 解析层在 TS+JSX **硬失败**时**去掉 jsx 重试一次**（core 的
-    // `parseWithJsxFallback`）⇒ `<T>x` 回到 TS 语法（TSTypeAssertion）
-    // ⇒ 剥除器仍处理 TSTypeAssertion 节点（unwrapExpression 分支）。
-    // ⚠ 与 tsc 在 **.tsx** 中的行为不同（.tsx 里必须写 `as`）：parse() 拿不到
-    // 扩展名 ⇒ 无法按扩展名分流插件集（路线 B 未采纳）。
+  it("尖括号断言 <T>x 剥成被断言表达式", () => {
     const ast = parse("const y = <string>x;");
-    expect(ast.program.body).toHaveLength(1);
     const decl = ast.program.body[0] as any;
     expect(decl.type).toBe("VariableDeclaration");
-    // 剥除后 init 是**被断言的表达式本身**（不是 TSTypeAssertion 节点）
     expect(decl.declarations[0].init.type).toBe("Identifier");
     expect(decl.declarations[0].init.name).toBe("x");
   });
 
-  it("interface / type alias / declare 声明被删除；enum 被合成成运行时对象（Bug 913）", () => {
-    // 口径更新（Bug 913）：TS 的 `enum` **有运行时语义**（tsc 编译成带反向映射的
-    // 对象）⇒ 剥除器不再把它整条删除，而是**合成**一个等价的运行时对象
-    // （`var Color = (function (Color) { … })({})`）⇒ 成员引用不再退化成
-    // 未绑定全局读取。`declare enum`（环境声明）仍然整条删除。
+  it("interface / type / declare 删除；enum 合成运行时对象；declare enum 删除", () => {
     const ast = parse(`
 interface User { name: string }
 type Alias = { tag: "x" };
@@ -421,57 +200,46 @@ declare const gone: string;
 declare function goneFn(): void;
 function kept(n) { return n; }
 `);
-    const body = ast.program.body;
-    expect(body).toHaveLength(2);
-    // [0] = 合成的 enum 运行时对象（var Color = …）
-    expect(body[0].type).toBe("VariableDeclaration");
-    expect((body[0] as any).kind).toBe("var");
-    expect((body[0] as any).declarations[0].id.name).toBe("Color");
-    // [1] = 幸存的用户函数
-    expect(body[1].type).toBe("FunctionDeclaration");
-    expect((body[1] as any).id.name).toBe("kept");
+    expect(ast.program.body).toHaveLength(2);
+    const first = ast.program.body[0] as any;
+    expect(first.type).toBe("VariableDeclaration");
+    expect(first.kind).toBe("var");
+    expect(first.declarations[0].id.name).toBe("Color");
+    expect((ast.program.body[1] as any).id.name).toBe("kept");
+
+    const declEnum = parse("declare enum Color { Red }\nfunction kept(n) { return n; }");
+    expect(declEnum.program.body).toHaveLength(1);
+    expect(declEnum.program.body[0]!.type).toBe("FunctionDeclaration");
+    expect(parse("declare abstract class AbstractBase { abstract m(): void; x: number; }").program.body).toHaveLength(0);
   });
 
-  it("declare enum（环境声明）仍然整条删除", () => {
-    const ast = parse(`
-declare enum Color { Red }
-function kept(n) { return n; }
-`);
-    const body = ast.program.body;
-    expect(body).toHaveLength(1);
-    expect(body[0].type).toBe("FunctionDeclaration");
-  });
-
-  it("export 包装的类型声明整体删除", () => {
-    const ast = parse(`
+  it("export 包裹的类型声明整体删除", () => {
+    const body = parse(`
 export interface User { name: string }
 export type Alias = string;
 export declare class Gone {}
 export default interface Def {}
 export const real = 1;
-`);
-    const body = ast.program.body;
+`).program.body;
     expect(body).toHaveLength(1);
-    expect(body[0].type).toBe("ExportNamedDeclaration");
+    expect(body[0]!.type).toBe("ExportNamedDeclaration");
   });
 
-  it("import type 删除，混合 type specifier 剔除", () => {
+  it("import type / 混合 specifier / 全 type-only", () => {
     expectStrippedEquivalent(
       'import type { A } from "m";\nimport { type C, b } from "m";\nuse(b);',
       'import { b } from "m";\nuse(b);',
     );
-    const ast = parse('import { type Only } from "m";');
-    expect(ast.program.body).toHaveLength(0);
+    expect(parse('import { type Only } from "m";').program.body).toHaveLength(0);
   });
 
   it("export type 与 type-only re-export 删除", () => {
-    const ast = parse(`
+    const body = parse(`
 const A = 1;
 const keep = 2;
 export type { A } from "./m";
 export { type A, keep };
-`);
-    const body = ast.program.body;
+`).program.body;
     expect(body).toHaveLength(3);
     const last = body[2] as any;
     expect(last.type).toBe("ExportNamedDeclaration");
@@ -479,74 +247,32 @@ export { type A, keep };
     expect(last.specifiers[0].local.name).toBe("keep");
   });
 
-  it("泛型调用与 new 的类型实参剥除", () => {
-    expectStrippedEquivalent(
-      "const r = id<string>(1); const c = new Map<string, number>();",
-      "const r = id(1); const c = new Map();",
-    );
-  });
-
-  it("裸泛型引用（TSInstantiationExpression）解包", () => {
-    expectStrippedEquivalent(
-      "const g = id<number>;",
-      "const g = id;",
-    );
-  });
-
-  it("类成员：implements/索引签名/标注剥除，declare·abstract 成员删除", () => {
-    expectStrippedEquivalent(
-      `
-class Pt implements Shape {
-  [key: string]: unknown;
-  x: number = 0;
-  declare hidden: string;
-  get(): number { return this.x; }
-}
-`,
-      `
-class Pt {
-  x = 0;
-  get() { return this.x; }
-}
-`,
-    );
-    const ast = parse("declare abstract class AbstractBase { abstract m(): void; x: number; }");
-    expect(ast.program.body).toHaveLength(0);
-  });
-
-  it("declare module / declare namespace 删除", () => {
-    const ast = parse(`
+  it("declare module / namespace 删除", () => {
+    const body = parse(`
 declare module "x" { export const y: string; }
 declare namespace NS { const z: string; }
 function kept() {}
-`);
-    expect(ast.program.body).toHaveLength(1);
+`).program.body;
+    expect(body).toHaveLength(1);
   });
 
-  it("loc 保持：删除类型声明不重排兄弟节点位置", () => {
-    const ast = parse("interface I {}\nfunction f() {}\nfunction g() {}");
-    const body = ast.program.body;
+  it("loc 保持：删除类型声明不重排兄弟节点", () => {
+    const body = parse("interface I {}\nfunction f() {}\nfunction g() {}").program.body;
     expect(body).toHaveLength(2);
-    expect(body[0].loc?.start.line).toBe(2);
-    expect(body[1].loc?.start.line).toBe(3);
+    expect(body[0]!.loc?.start.line).toBe(2);
+    expect(body[1]!.loc?.start.line).toBe(3);
   });
 
-  it("纯 JS 源码剥除为 no-op 且返回同一棵 AST", () => {
-    const js = "/** @nudo:case \"a\" (number()) */\nfunction f(x) { return x; }\n";
+  it("纯 JS 剥除为 no-op 且返回同一棵 AST", () => {
+    const js = '/** @nudo:case "a" (number()) */\nfunction f(x) { return x; }\n';
     const once = parse(js);
     const snapshot = JSON.stringify(normalize(once));
     expect(stripTypes(once)).toBe(once);
     expect(JSON.stringify(normalize(parse(js)))).toBe(snapshot);
   });
 
-  it("@nudo:case 指令在 .ts 源上照常提取（注释 loc 对齐不受剥除影响）", () => {
-    const ts = `interface Ctx { id: number }
-/**
- * @nudo:case "ints" (1, 2)
- * @nudo:case "syms" (number(), number())
- */
-function add(a: number, b: number): number { return a + b; }
-`;
+  it(".ts 源上的 @nudo:case 照常提取且注释行号对齐", () => {
+    const ts = `interface Ctx { id: number }\n/**\n * @nudo:case "ints" (1, 2)\n * @nudo:case "syms" (number(), number())\n */\nfunction add(a: number, b: number): number { return a + b; }\n`;
     const results = extractDirectives(parse(ts));
     expect(results).toHaveLength(1);
     expect(results[0].name).toBe("add");

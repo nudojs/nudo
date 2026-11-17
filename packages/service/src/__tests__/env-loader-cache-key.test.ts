@@ -2,9 +2,9 @@
  * path env 缓存键精度（mtimeMs+size 双值）与 fallback 副本内容指纹。
  *
  * - 键/校验此前只看 mtime：粗 mtime 粒度文件系统上「同秒编辑」→ 旧
- *   defineEnv 工厂陈旧命中，recordPathEnvFile 重登记旧值自我续命。
+ * defineEnv 工厂陈旧命中，recordPathEnvFile 重登记旧值自我续命。
  * - fallback 副本文件名此前只含 path:mtime：内容变而键不变时 Node/vite
- *   ESM 按同一 URL 命中旧模块，新内容永不生效。
+ * ESM 按同一 URL 命中旧模块，新内容永不生效。
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { writeFileSync, utimesSync, readdirSync, readFileSync, existsSync } from "node:fs";

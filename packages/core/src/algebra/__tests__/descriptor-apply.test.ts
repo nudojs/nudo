@@ -1,24 +1,24 @@
 /**
- * Bug 84/86/117/118 回归：Object.defineProperty / defineProperties 描述符
+ * 回归：Object.defineProperty / defineProperties 描述符
  * 安装机器（descriptor.ts applyPropertyDescriptor + methods.ts 键投影）。
  *
- * - Bug 84：accessor→data 机制变化——旧 getter/setter 随键从侧表删除
- *   （成员读不再折旧 getter 值）、已有 flags 作基底合并（accessor 安装期
- *   的 enumerable:false 不被抹掉）、机制变化 writable 缺省 false、
- *   unconfigurable 属性改机制原生定抛 TypeError。
- * - Bug 86：tuple 接收者不再静默丢弃——下标键逐位装（增长段 hole、空
- *   描述符清 hole）、length 截断/延长、enumerable:false 下标从枚举视图
- *   剔除、frozen/sealed 语义。
- * - Bug 117：键走 ToPropertyKey 投影（bool/null/undefined/缺省 → 字符串
- *   键；well-known symbol → "@@X" 投影槽 + symbolKey 标记，读路径同键；
- *   Object.keys 不泄漏投影槽）。
- * - Bug 118：descriptor value 直取槽中 Abs 落槽（fn/obj/tuple/bigint/
- *   symbol/null 值不再经 litValue 往返丢失）。
+ * - accessor→data 机制变化——旧 getter/setter 随键从侧表删除
+ * （成员读不再折旧 getter 值）、已有 flags 作基底合并（accessor 安装期
+ * 的 enumerable:false 不被抹掉）、机制变化 writable 缺省 false、
+ * unconfigurable 属性改机制原生定抛 TypeError。
+ * - tuple 接收者不再静默丢弃——下标键逐位装（增长段 hole、空
+ * 描述符清 hole）、length 截断/延长、enumerable:false 下标从枚举视图
+ * 剔除、frozen/sealed 语义。
+ * - 键走 ToPropertyKey 投影（bool/null/undefined/缺省 → 字符串
+ * 键；well-known symbol → "@@X" 投影槽 + symbolKey 标记，读路径同键；
+ * Object.keys 不泄漏投影槽）。
+ * - descriptor value 直取槽中 Abs 落槽（fn/obj/tuple/bigint/
+ * symbol/null 值不再经 litValue 往返丢失）。
  */
 import { describe, it, expect } from "vitest";
 import { val, call, throwsError, objSlots } from "./eval-helpers.ts";
 
-describe("Bug 84: accessor→data redefinition drops the stale accessor", () => {
+describe("accessor→data redefinition drops the stale accessor", () => {
   it("member read returns the new data value, not the old getter", () => {
     expect(
       val(`export function f() { const o = {}; Object.defineProperty(o, "x", { get() { return 3; }, configurable: true }); Object.defineProperty(o, "x", { value: 2 }); return o.x; }`),
@@ -62,7 +62,7 @@ describe("Bug 84: accessor→data redefinition drops the stale accessor", () => 
   });
 });
 
-describe("Bug 86: defineProperty on tuple receivers installs", () => {
+describe("defineProperty on tuple receivers installs", () => {
   it("index define lands in the element", () => {
     expect(
       val(`export function f() { const a = [1]; Object.defineProperty(a, "0", { value: 8 }); return a[0]; }`),
@@ -132,7 +132,7 @@ describe("Bug 86: defineProperty on tuple receivers installs", () => {
   });
 });
 
-describe("Bug 117: defineProperty key coercion (ToPropertyKey)", () => {
+describe("defineProperty key coercion (ToPropertyKey)", () => {
   it("well-known symbol keys install behind the @@projection", () => {
     expect(
       val(`export function f() { const o = {}; Object.defineProperty(o, Symbol.iterator, { value: function () { return 1; } }); return typeof o[Symbol.iterator]; }`),
@@ -185,7 +185,7 @@ describe("Bug 117: defineProperty key coercion (ToPropertyKey)", () => {
   });
 });
 
-describe("Bug 118: descriptor value installs the Abs directly", () => {
+describe("descriptor value installs the Abs directly", () => {
   it("fn value stays callable", () => {
     expect(
       val(`export function f() { const o = {}; Object.defineProperty(o, "f", { value: function () { return 42; } }); return o.f(); }`),

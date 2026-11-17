@@ -86,7 +86,7 @@ describe("refactor gold — shadowing", () => {
 
   it("rename inner n does not touch outer n", () => {
     const ast = parse(src);
-    // line 4 `    const n = 2` — n at column 10
+    // line 4 ` const n = 2` — n at column 10
     const refs = collectBindingReferences(ast, "n", { line: 4, column: 10 }, "file:///s.js");
     const lines = refs.map((r) => r.loc.start.line).sort();
     expect(lines).toEqual([4, 5]);
@@ -94,7 +94,7 @@ describe("refactor gold — shadowing", () => {
 
   it("rename outer n does not touch inner n", () => {
     const ast = parse(src);
-    // line 2 `  const n = 1` — n at column 8
+    // line 2 ` const n = 1` — n at column 8
     const refs = collectBindingReferences(ast, "n", { line: 2, column: 8 }, "file:///s.js");
     const lines = [...new Set(refs.map((r) => r.loc.start.line))].sort();
     expect(lines).toContain(2);

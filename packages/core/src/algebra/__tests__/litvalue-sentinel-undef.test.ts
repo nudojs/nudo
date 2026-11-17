@@ -2,12 +2,12 @@
  * litValue 哨兵：lit(undefined) 与「无字面量 / 抽象实参」不得混同。
  * 回归背景：
  * 1) 模板 startsWith/endsWith/includes 用 litValue(args[1])!==undefined
- *    判「有位置参」，抽象位置参被当成缺省 → 假精确 true。
+ * 判「有位置参」，抽象位置参被当成缺省 → 假精确 true。
  * 2) Set/Map 的 litKeyOf 对 lit(undefined) 返回 undefined，被
- *    `lk !== undefined` 当成非字面量 → 重复 add 不去重、size 假精确。
+ * `lk !== undefined` 当成非字面量 → 重复 add 不去重、size 假精确。
  */
 import { describe, it, expect } from "vitest";
-import { litValue, formatShape, anyAbs } from "../index.ts";
+import { litValue, anyAbs } from "../index.ts";
 import { call } from "./eval-helpers.ts";
 
 describe("litValue sentinel: abstract pos arg / undefined Set key", () => {
@@ -22,7 +22,7 @@ describe("litValue sentinel: abstract pos arg / undefined Set key", () => {
     // 不得 exact true（n 抽象时可能 false）
     const exactTrue = a?.term?.op === "lit" && a.term.value === true && a.conf === "exact";
     expect(exactTrue).toBe(false);
-    // Bug 7 边界归一：缺省 x/n ≡ undefined → "helloundefined".startsWith
+    // 边界归一：缺省 x/n ≡ undefined → "helloundefined".startsWith
     // ("hello", 0) 原生确定 true（显式 undefined 实参同面）
     expect(litValue(call(
       `export function f(x, n) { const s = "hello" + x; return s.startsWith("hello", n); }`,
@@ -38,7 +38,7 @@ describe("litValue sentinel: abstract pos arg / undefined Set key", () => {
     const a = r.result as { term?: { op?: string; value?: unknown }; conf?: string };
     const exactTrue = a?.term?.op === "lit" && a.term.value === true && a.conf === "exact";
     expect(exactTrue).toBe(false);
-    // Bug 7 边界归一：缺省 n ≡ undefined → endPosition 缺省取串长，原生确定 true
+    // 边界归一：缺省 n ≡ undefined → endPosition 缺省取串长，原生确定 true
     expect(litValue(call(
       `export function f(x, n) { const s = "a" + x + "bc"; return s.endsWith("bc", n); }`,
     ).result)).toEqual({ ok: true, value: true });
@@ -53,7 +53,7 @@ describe("litValue sentinel: abstract pos arg / undefined Set key", () => {
     const a = r.result as { term?: { op?: string; value?: unknown }; conf?: string };
     const exactTrue = a?.term?.op === "lit" && a.term.value === true && a.conf === "exact";
     expect(exactTrue).toBe(false);
-    // Bug 7 边界归一：缺省 n ≡ undefined → 位置 0，原生确定 true
+    // 边界归一：缺省 n ≡ undefined → 位置 0，原生确定 true
     expect(litValue(call(
       `export function f(x, n) { const s = "a" + x + "b"; return s.includes("a", n); }`,
     ).result)).toEqual({ ok: true, value: true });

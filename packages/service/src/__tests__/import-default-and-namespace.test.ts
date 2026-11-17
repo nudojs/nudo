@@ -1,5 +1,5 @@
 /**
- * 混合 import 形态（默认 + 命名空间）回归（报告 Bug 153）。
+ * 混合 import 形态（默认 + 命名空间）回归（报告 ）。
  *
  * `import d, * as ns from "./dep.mjs"` 被摊平成
  * `import { default as d, * as ns } from "./dep.mjs"`：既不是合法 ESM，

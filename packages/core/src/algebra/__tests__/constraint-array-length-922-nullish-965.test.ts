@@ -1,5 +1,5 @@
 /**
- * Bug 922 —— 数组**自身**的长度界（`array(number()).min(3)`）在约束 → Abs
+ * 数组**自身**的长度界（`array(number()).min(3)`）在约束 → Abs
  * 投影里整条蒸发 ⇒ 契约面 / zod 面 / standard 面 / 门禁面全都看不见这条界
  * ⇒ 门禁 exit 0 放行（完全静默的假绿），用户写下的约束在任何产物里都不留
  * 痕迹。
@@ -11,9 +11,9 @@
  * 修法（两半）：
  * 1. 数组分支承载顶层 preds（与 prim 分支同款）⇒ Abs 面有位置；
  * 2. 执法面（`scan-literal-calls.ts`）的 length 通道对**数组值**求值（此前
- *    只处理字符串 ⇒ 数组实参的长度界整条被跳过）。
+ * 只处理字符串 ⇒ 数组实参的长度界整条被跳过）。
  *
- * Bug 965 —— `lit(null)` / `lit(undefined)` 的整条约束在 Abs 里消失（pred
+ * `lit(null)` / `lit(undefined)` 的整条约束在 Abs 里消失（pred
  * 被丢弃 + shape 退成 unknown）⇒ 形参退化成 `unknown`、调用点前置条件不再
  * 执法（假绿）⇒ 三个面三种答案。
  *
@@ -45,7 +45,7 @@ function violated(r: { issues: { code: string }[] }): number {
   return r.issues.filter((i) => i.code === "nudo:constraint-violated").length;
 }
 
-describe("Bug 922 —— 数组自身的长度界：Abs 承载 + 门禁执法", () => {
+describe("数组自身的长度界：Abs 承载 + 门禁执法", () => {
   it("Abs 投影承载数组自身的长度界（ge(length(xs), 3)）", () => {
     const a = constraintToEntryAbs(array(number()).min(3), "xs");
     expect(a.shape.k).toBe("arr");
@@ -81,7 +81,7 @@ export function use() { return g([1, 2, 3]); }
   });
 });
 
-describe("Bug 965 —— lit(null) / lit(undefined)：Abs 保留 pred + 门禁执法", () => {
+describe("lit(null) / lit(undefined)：Abs 保留 pred + 门禁执法", () => {
   it("Abs 投影不再丢 pred（lit(null) 的 eq 约束留在 pred 槽）", () => {
     const a = constraintToEntryAbs(litC(null), "x");
     expect(a.pred).toBeDefined();

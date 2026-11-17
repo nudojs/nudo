@@ -10,12 +10,12 @@
  * 纪律：生产侧**不登记任何触发器** ⇒ 三条 `fireOnce()` 恒为 WeakMap miss，
  * 既有值面逐字不变。回归钉用「手工登记 + 真实协议调用」证明：
  * ① 三条旁路确实各能触发且幂等；② 与 7 个读出面共享同一触发器（先到先触发）；
- * ③ 未登记时协议面值面与 Bug 212 / 族 01 精确串一致。
+ * ③ 未登记时协议面值面与 / 族 01 精确串一致。
  *
  * 本文件不改任何生产语义，只验证接线。
  */
 import { describe, it, expect } from "vitest";
-import { abs, numLit, type Abs } from "../../abs.ts";
+import { numLit, type Abs } from "../../abs.ts";
 import { formatAbs } from "../../format/format.ts";
 import { call, val } from "../../__tests__/eval-helpers.ts";
 import {
@@ -38,7 +38,7 @@ function realGen(): Abs {
 
 /**
  * 调协议方法；`$get` 取 internal 槽的 fn Abs，再经 `$call` 派发。
- * `.throw()` 按原生语义同步抛 `NudoThrow`（Bug 34 延迟异常面）——本钉只
+ * `.throw()` 按原生语义同步抛 `NudoThrow`（延迟异常面）——本钉只
  * 关心「有没有触发」，故吞掉载荷；不吞会让调用本身中断，误判成接线失败。
  */
 function invoke(g: Abs, name: "next" | "return" | "throw", args: Abs[] = []): void {

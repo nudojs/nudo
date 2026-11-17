@@ -1,5 +1,5 @@
 /**
- * Bug 112（对象字面量计算键访问器键双求值）：对象字面量 emitter 把同一
+ * （对象字面量计算键访问器键双求值）：对象字面量 emitter 把同一
  * computedKeySrc 内嵌两处——占位槽写 $setKey(acc, key, void 0) 与访问器
  * 注册 $objAccessorKey(acc, key, …)——副作用键表达式翻倍
  *（`{ get ["a" + (n++, "")]() {} }` → n=2，native n=1）。
@@ -15,7 +15,7 @@ import { diffBody } from "./differential/harness.ts";
 
 const run = (src: string) => litValue(call(src).result);
 
-describe("Bug 112: 计算键访问器的键表达式只求值一次", () => {
+describe("计算键访问器的键表达式只求值一次", () => {
   it("get [计算键]：副作用计数 1（此前 2）", () => {
     expect(
       run(`export function f() { let n = 0; const o = { get ["a" + (n++, "")]() { return 1; } }; return n; }`),
@@ -56,7 +56,7 @@ describe("Bug 112: 计算键访问器的键表达式只求值一次", () => {
   });
 });
 
-describe("Bug 112 controls：单次求值族不回归", () => {
+describe("controls：单次求值族不回归", () => {
   it("计算数据键 / 计算方法键：各一次", () => {
     expect(
       run(`export function f() { let n = 0; const o = { [("a" + (n++, ""))]: 1 }; return n; }`),

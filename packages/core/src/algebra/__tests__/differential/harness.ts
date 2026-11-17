@@ -4,17 +4,17 @@
  *
  * 比较规则（diff3 同源）：
  * - eval 产非具体 Abs 且未抛错（concrete() 返回 undefined）→ 值域无法比较，
- *   记入 skipped 台账；其中不在 skip-baseline.json 基线内的新增 skip =
- *   门禁失败（unknown 回归不得静默漏网——Bug 33/38 机制）；
+ * 记入 skipped 台账；其中不在 skip-baseline.json 基线内的新增 skip =
+ * 门禁失败（unknown 回归不得静默漏网—— 机制）；
  * - eval 结果 Abs 为 never（引擎证明必抛，NudoThrow 被
- *   callTranspiledExportFull 折进 result=never）→ 按 throws 通道对账：
- *   native 未抛 = FALSE-THROW；native 同抛 = 相等（bug 46/48/60/71 的
- *   掩蔽通道已关）；
+ * callTranspiledExportFull 折进 result=never）→ 按 throws 通道对账：
+ * native 未抛 = FALSE-THROW；native 同抛 = 相等（ 的
+ * 掩蔽通道已关）；
  * - eval 抛错（宿主异常）→ 走 FALSE-THROW 对账：native 未抛 → FALSE-THROW
- *   MISMATCH；native 同抛 → 对账相等（THROW 域两侧均钉住，计入 compared）；
+ * MISMATCH；native 同抛 → 对账相等（THROW 域两侧均钉住，计入 compared）；
  * - native 抛错而 eval 给非 never 抽象值 → MISSED-THROW（值域展示
- *   formatShape 域；engineNoThrow = 引擎声称不可能抛 = 错误定值）。
- *   sound 过近似（throws 域已建模）钉 knownMissedThrows 豁免+告警；
+ * formatShape 域；engineNoThrow = 引擎声称不可能抛 = 错误定值）。
+ * sound 过近似（throws 域已建模）钉 knownMissedThrows 豁免+告警；
  * - native 抛错而 eval 折具体值 → 假精确 MISMATCH；
  * - 两侧具体值不等 → MISMATCH。
  *
@@ -27,7 +27,14 @@
 // 直引 src 入口：vitest 下 `@nudojs/core` 经 node_modules → dist（构建产物
 // 滞后于工作区源码），差分门禁要对照**当前源码**的引擎行为——引擎修复
 // 未重建 dist 时 dist 侧假绿/假红都会掩蔽真实回归
-import { runTranspiled, callTranspiledExportFull, litValue, formatShape } from "../../../index.ts";
+import {
+  runTranspiled,
+  callTranspiledExportFull,
+  litValue,
+  formatShape,
+  setEvalFallbackCollector,
+  type EvalFallback,
+} from "../../../index.ts";
 import { getPropFlags } from "../../builtins.ts";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
@@ -126,7 +133,7 @@ function evalAbs(body: string): EvalSide {
     const full = callTranspiledExportFull(exports, "__run", []);
     // never 结果 = 引擎证明必抛（NudoThrow 被 callTranspiledExportFull 折进
     // result=never 而非宿主抛出）。此前 concrete()(never)=undefined → 静默 skip，
-    // 就是 bug 46/48/60/71 的掩蔽通道——映射到 throws 通道走 FALSE-THROW 对账。
+    // 就是 的掩蔽通道——映射到 throws 通道走 FALSE-THROW 对账。
     if (full.result?.shape?.k === "never") return { res: undefined, throws: true };
     const c = concrete(full.result);
     return c === undefined
@@ -152,7 +159,7 @@ function compareBody(body: string, n: string, b: EvalSide): string | null {
   }
   if (b.res === undefined) {
     // concrete() 盲区行也要对 throw 域对账：native 抛错而引擎给非 never
-    // 抽象值 → MISSED-THROW（此前静默 skip——bug 46/48/60/71 的掩蔽模式）。
+    // 抽象值 → MISSED-THROW（此前静默 skip—— 的掩蔽模式）。
     // engineNoThrow = 引擎 throws 域也为 never（声称不可能抛）= 错误定值；
     // 否则值域是过近似但 throws 已建模（sound，钉 knownMissedThrows）。
     if (n.startsWith("THROW:")) {
@@ -200,38 +207,47 @@ export function runCorpus(corpus: string[]): {
   compared: number;
   mismatches: string[];
   skipped: string[];
+  fallbacks: EvalFallback[];
 } {
   let compared = 0;
   const mismatches: string[] = [];
   const skipped: string[] = [];
-  for (const body of corpus) {
-    const b = evalAbs(body);
-    const m = compareBody(body, native(body), b);
-    if (m) {
-      compared++; // 已对账且分歧（FALSE-THROW / MISSED-THROW / MISMATCH）
-      mismatches.push(m);
-    } else if (b.throws || b.res !== undefined) {
-      compared++; // 对账相等（含引擎证明必抛 = native 同抛的 THROW 域相等）
-    } else {
-      skipped.push(body); // concrete() 盲区且 native 未抛：合法 skip，进基线门禁
+  // 差分门禁同时承担「B 回落不变量」：同一份语料只跑一次，回落记录随结果
+  // 返回（此前 eval-fallback 另起一次全语料重跑，占单文件 15.5s）。
+  const fallbacks: EvalFallback[] = [];
+  setEvalFallbackCollector((f) => fallbacks.push(f));
+  try {
+    for (const body of corpus) {
+      const b = evalAbs(body);
+      const m = compareBody(body, native(body), b);
+      if (m) {
+        compared++; // 已对账且分歧（FALSE-THROW / MISSED-THROW / MISMATCH）
+        mismatches.push(m);
+      } else if (b.throws || b.res !== undefined) {
+        compared++; // 对账相等（含引擎证明必抛 = native 同抛的 THROW 域相等）
+      } else {
+        skipped.push(body); // concrete() 盲区且 native 未抛：合法 skip，进基线门禁
+      }
     }
+  } finally {
+    setEvalFallbackCollector(null);
   }
-  return { compared, mismatches, skipped };
+  return { compared, mismatches, skipped, fallbacks };
 }
 
 // ---- skip 基线门禁 ----------------------------------------------------
 // skip-baseline.json：
 // - skips：key = `<batch>.<section>` → 该节当前合法 skip 的语料体
-//   （concrete() 盲区快照，native 未抛错）。新增 skip（不在基线内）=
-//   新增 unknown 回归 = 门禁失败；基线收缩（引擎变精确）只 console.warn，
-//   不失败。
+// （concrete() 盲区快照，native 未抛错）。新增 skip（不在基线内）=
+// 新增 unknown 回归 = 门禁失败；基线收缩（引擎变精确）只 console.warn，
+// 不失败。
 // - knownFalseThrows：body → 一行理由。FALSE-THROW 金丝雀（引擎 result=never
-//   而 native 返回值）——引擎缺陷未修期间豁免于门禁（DEC-006 同款：带理由
-//   响亮告警，绝不静默吞掉），修复后收紧。
+// 而 native 返回值）——引擎缺陷未修期间豁免于门禁（DEC-006 同款：带理由
+// 响亮告警，绝不静默吞掉），修复后收紧。
 // - knownMissedThrows：body → 一行理由。MISSED-THROW 钉：native 抛错而引擎
-//   给非 never 抽象值。sound 过近似（引擎 throws 域已建模）可长期钉；
-//   engineNoThrow（引擎声称不可能抛）= 错误定值 = bug 金丝雀，钉必须带
-//   「reported」理由并在修复后收紧。
+// 给非 never 抽象值。sound 过近似（引擎 throws 域已建模）可长期钉；
+// engineNoThrow（引擎声称不可能抛）= 错误定值 = bug 金丝雀，钉必须带
+// 「reported」理由并在修复后收紧。
 // 钉按类别 + 标签（body 前 100 字符）匹配：FALSE-THROW 钉不掩盖同类语料的
 // 新 MISMATCH / MISSED-THROW。
 

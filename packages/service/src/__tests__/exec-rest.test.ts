@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
   runTranspiled,
-  callTranspiledExportFull,
+
   $lit,
-  $arr,
+
   litValue,
 } from "@nudojs/core";
 

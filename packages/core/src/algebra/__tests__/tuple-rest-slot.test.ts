@@ -1,5 +1,5 @@
 /**
- * BUG-002（pattern: tuple-rest-slot-dropped）— core 内部各面的 rest 槽回归。
+ * （pattern: tuple-rest-slot-dropped）— core 内部各面的 rest 槽回归。
  *
  * tuple shape 的 `rest?: Abs`（abs.ts）在固定位被逐槽处理的每个面都必须被
  * 装进语义：此前 leq / widenForAssign / schema 投影整槽丢失（各自测试文件），
@@ -18,7 +18,7 @@ import { call } from "./eval-helpers.ts";
 const tup = (elements: Abs[], rest?: Abs): Abs =>
   abs({ k: "tuple", elements, ...(rest ? { rest } : {}) }, undefined, undefined, "exact");
 
-describe("widenForAssign keeps tuple rest in element join (BUG-002)", () => {
+describe("widenForAssign keeps tuple rest in element join ()", () => {
   it("fixed elements + rest both join into widened array element", () => {
     // [1, ...string] 拓宽 → (number | string)[]，不得丢 string 臂
     const w = widenForAssign(tup([numLit(1)], str()));
@@ -50,7 +50,7 @@ describe("widenForAssign keeps tuple rest in element join (BUG-002)", () => {
   });
 });
 
-describe("runtime rest slot survives copy / destructure (BUG-002)", () => {
+describe("runtime rest slot survives copy / destructure ()", () => {
   it("$copy snapshot keeps rest (arg round-trip through call)", () => {
     // 实参经调用边界拷贝；返回原值必须仍携带 rest 槽
     const r = call(`export function f(a) { return a; }`, "f", [tup([numLit(1)], str())]);

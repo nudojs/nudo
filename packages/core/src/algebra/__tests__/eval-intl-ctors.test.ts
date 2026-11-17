@@ -1,5 +1,5 @@
 /**
- * Bug 44 回归：Intl 命名空间完全未建模——`typeof Intl` → engine unknown、
+ * 回归：Intl 命名空间完全未建模——`typeof Intl` → engine unknown、
  * `Intl.NumberFormat` 未知成员读 → unknown callee → `$new` unknown 路径
  * （`new Intl.NumberFormat("bad-locale-$$")` 假成功，L2 漏报原生 RangeError）。
  *
@@ -61,7 +61,7 @@ function evalSrc(
   };
 }
 
-describe("typeof Intl 面（Bug 44：命名空间此前 engine unknown）", () => {
+describe("typeof Intl 面（命名空间此前 engine unknown）", () => {
   it("typeof Intl → exact 'object'（native: object）", () => {
     expect(litValue(call(`export function f() { return typeof Intl; }`).result))
       .toEqual({ ok: true, value: "object" });

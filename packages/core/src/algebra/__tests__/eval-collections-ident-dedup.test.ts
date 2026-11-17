@@ -1,5 +1,5 @@
 /**
- * Bug 88 回归：Set/Map 非字面量（对象 / any 绑定）键此前永不去重——
+ * 回归：Set/Map 非字面量（对象 / any 绑定）键此前永不去重——
  * `new Set([k, k]).size` / `s.add(x); s.add(x)` / `new Map([[k,1],[k,2]])`
  * 折错 exact 条数。修复：条目表加身份通道（collections.ts identKeyOf /
  * refIdentKeyOf——引用语义键进 Map 身份通道与精确 miss 折叠，绑定级键
@@ -21,7 +21,7 @@ function boolArg(): Abs {
   return abs({ k: "prim", type: "boolean" }, undefined, undefined, "path");
 }
 
-describe("Bug 88：Set 非字面量键 SameValueZero 去重", () => {
+describe("Set 非字面量键 SameValueZero 去重", () => {
   it("new Set([k, k]).size === 1（exact）", () => {
     const r = call(`export function f() { const k = {}; return new Set([k, k]).size; }`);
     expect(val(`export function f() { const k = {}; return new Set([k, k]).size; }`)).toEqual({
@@ -137,7 +137,7 @@ describe("Bug 88：Set 非字面量键 SameValueZero 去重", () => {
   });
 });
 
-describe("Bug 88：Map 非字面量键 SameValueZero 去重", () => {
+describe("Map 非字面量键 SameValueZero 去重", () => {
   it("new Map([[k,1],[k,2]]) 单条目：size / keys / entries / values", () => {
     expect(val(`export function f() { const k = {}; return new Map([[k, 1], [k, 2]]).size; }`)).toEqual({
       ok: true,

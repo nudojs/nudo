@@ -1,5 +1,5 @@
 /**
- * RegExp 状态调用（test/exec/compile）的**实参只求值一次**回归（Bug 171）。
+ * RegExp 状态调用（test/exec/compile）的**实参只求值一次**回归（）。
  *
  * 根因：`expr/call.ts` 的正则状态写回分支把同一份 `[${args}]` 源码文本内联进
  * $invoke（真调用）与 $reStateCall（取 lastIndex 再走一次）两处 ⇒ 实参表达式

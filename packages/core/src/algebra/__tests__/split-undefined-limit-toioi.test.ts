@@ -1,8 +1,8 @@
 /**
  * split(undefined, limit)：limit 走 ToUint32，不是 Number(lim)>0
- *   "abc".split(undefined, 0.5)   原生 []（ToUint32(0.5)=0）
- *   "abc".split(undefined, -1)    原生 ["abc"]（ToUint32(-1)=2^32-1）
- *   "abc".split(undefined, Infinity) 原生 []（ToUint32(Inf)=0）
+ * "abc".split(undefined, 0.5) 原生 []（ToUint32(0.5)=0）
+ * "abc".split(undefined, -1) 原生 ["abc"]（ToUint32(-1)=2^32-1）
+ * "abc".split(undefined, Infinity) 原生 []（ToUint32(Inf)=0）
  * 缺省/显式 undefined limit → 2^32-1（不是 ToUint32(undefined)=0）。
  */
 import { describe, it, expect } from "vitest";

@@ -1,5 +1,5 @@
 /**
- * Bug 99 回归：抽象 test 的 while/for 体内 return 丢 0 迭代路径。
+ * 回归：抽象 test 的 while/for 体内 return 丢 0 迭代路径。
  *
  * 根因：$for/$whileSeq 把体内 NudoReturn 令牌当异常原样重抛——函数边界
  * 只收体内返回值，0 迭代（test 首轮即假）与后续退出路径的 post-loop 语句
@@ -42,7 +42,7 @@ function genIdentityProbe(genSrc: string): string {
 export function probe() { const gi = f(1); return typeof gi.next + "|" + typeof gi.return + "|" + typeof gi.throw; }`;
 }
 
-describe("Bug 99: while/for 体内 return 的 0 迭代路径（exec 面）", () => {
+describe("while/for 体内 return 的 0 迭代路径（exec 面）", () => {
   it("while：any 参 → 返回臂与出口续体 join（不再折 0 #exact）", () => {
     const r = call(
       `export function f(x) { while (x < 0) { return 0; } return x; }`,
@@ -140,7 +140,7 @@ describe("Bug 99: while/for 体内 return 的 0 迭代路径（exec 面）", () 
   });
 });
 
-describe("Bug 99: Controls——既有循环面不回归", () => {
+describe("Controls——既有循环面不回归", () => {
   it("while(false)：出口独占（any，体内 return 不可达）", () => {
     expect(disp(call(`export function f(x) { while (false) { return 0; } return x; }`, "f", [anyAbs]))).toBe("any");
     expect(disp(call(`export function f(x) { while (x < 0) { } return x; }`, "f", [anyAbs]))).toBe("any");
@@ -182,7 +182,7 @@ describe("Bug 99: Controls——既有循环面不回归", () => {
   });
 });
 
-describe("Bug 99: thunk 边界——gen/async 体内循环 return 不产幻影臂", () => {
+describe("thunk 边界——gen/async 体内循环 return 不产幻影臂", () => {
   it("async：体内 return 进 promise inner（promise<9 | 5>，无裸 number 臂）", () => {
     const r = call(
       `export async function f(x) { while (x < 0) { return 5; } return 9; }`,
@@ -211,7 +211,7 @@ describe("Bug 99: thunk 边界——gen/async 体内循环 return 不产幻影�
     const SRC = `export function* f(x) { while (x < 0) { return 5; } return 9; }`;
     const r = call(SRC, "f", [anyAbs]);
     const d = disp(r);
-    // Bug 240：生成器的协议槽（next/return/throw/constructor/@@iterator）是
+    // 生成器的协议槽（next/return/throw/constructor/@@iterator）是
     // internal 槽 ⇒ 不进投影面（`constructor: GeneratorFunction` 不再出现）；
     // 「是生成器对象」改由**运行面**协议槽钉（探针调的是**同一个** `f`）。
     expect(d).toMatch(/^\{/);
@@ -235,7 +235,7 @@ export function probe() { const gi = plain(1); return typeof gi.next + "|" + typ
   });
 });
 
-describe("Bug 99: 签名面（checkSource）", () => {
+describe("签名面（checkSource）", () => {
   it("whileGuard 入口签名：any 入参返回 any | 0（0 迭代路径入签）", () => {
     const r = issuesOf(`
 function whileGuard(x) {

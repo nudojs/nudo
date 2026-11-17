@@ -2031,7 +2031,7 @@ function generalizeFromAstUncached(
     // ABS-14：降级通道（body 不可用 / 预算截断）。只在 body 路径 fail-closed
     // 出 unknown #opaque 且两个开关至少一个启用时查摘要；替换与否由
     // tryDegradedChannel 的全部 sound 检查决定（独立验证见
-    // abs14-degraded-channels.test.ts），绝不在别处静默放宽结论。
+    // degraded-channels.test.ts），绝不在别处静默放宽结论。
     //
     // symbolic 一次跑同样不参与：写侧（fnSummarySetFnLevel）与 crossModule
     // 通道都排除 symbolic，读侧必须同口径 —— 否则同进程里先有一次真实

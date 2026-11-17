@@ -3,10 +3,10 @@
  *
  * 引擎不建模 `.next(v)` 入参 ⇒ `makeGenObject` 填最保守的 `unknown`（与 TS
  * 该类型形参默认值等价），本文件证明「槽位 → 搬运 → 键 → 投影」整条链已
- * 真实接通，且**不退化**既有 Bug 554 / A11 的两实参精确串。
+ * 真实接通，且**不退化**既有 / A11 的两实参精确串。
  *
  * 纪律：手工构造 / 无 `facets.genNext` 的旧 Abs 逐字不变；三实参恒带
- * `<…>`，绝不输出裸 `Generator`（TS2314，见 emit-bug-521）。
+ * `<…>`，绝不输出裸 `Generator`（TS2314，见 emit-）。
  */
 import { describe, it, expect } from "vitest";
 import { abs, numLit, type Abs } from "@nudojs/core";

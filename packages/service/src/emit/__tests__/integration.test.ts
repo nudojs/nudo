@@ -8,7 +8,7 @@ import {
 import { generateDts } from "../dts-generator.ts";
 import { analyzeFile, resetAllAnalysisCaches } from "@nudojs/service";
 
-/** Bug 1001：Abs 的 number prim 域 = 全部 JS number（含 NaN / ±Infinity）⇒ zod 侧放宽 */
+/** Abs 的 number prim 域 = 全部 JS number（含 NaN / ±Infinity）⇒ zod 侧放宽 */
 const WIDE_NUMBER = "z.number().or(z.nan()).or(z.literal(Infinity)).or(z.literal(-Infinity))";
 
 // 用例级缓存隔离：整文件分析管线背后的会话级缓存
@@ -75,7 +75,7 @@ function double(x) {
     expect(formatShape(fn.cases[0].abs)).toBe("number");
 
     // Zod schema should produce a valid number schema
-    // （Bug 1001：Abs number prim 域含 NaN / ±Infinity ⇒ zod 侧放宽）
+    // （Abs number prim 域含 NaN / ±Infinity ⇒ zod 侧放宽）
     const zod = absToSchemaSource(fn.cases[0].abs);
     expect(zod).toBe(WIDE_NUMBER);
 
@@ -293,7 +293,7 @@ function safeSqrt(x) {
     const fn = result.functions[0];
 
     // 两条**点观测**见证 + 一条入口兜底见证（entry@）：无断言的 case 指令只是
-    // 见证、不是调用域声明 ⇒ 该函数仍走 entry@ 合成（返回面由推断域承担，Bug 511）
+    // 见证、不是调用域声明 ⇒ 该函数仍走 entry@ 合成（返回面由推断域承担，）
     expect(fn.cases).toHaveLength(3);
 
     // The valid case should not throw
@@ -350,7 +350,7 @@ function alwaysFails(x) {
 
 import { isNudoTargetPath } from "@nudojs/service";
 
-describe("integration: .ts source through the full pipeline", () => {
+describe("integration。ts source through the full pipeline", () => {
   const tsSource = `
 interface Point { x: number; y: number }
 import type { Gone } from "./no-such-module";

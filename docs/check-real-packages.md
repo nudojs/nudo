@@ -5,7 +5,7 @@
 <!-- corpus-manual:start -->
 ## 语料清单与新鲜度
 
-语料 = `packages/core/src/algebra/__tests__/check-real-packages.test.ts` 扫描的真实 npm 包，声明于 `packages/core` devDependencies（`packages/core/node_modules` 解析安装）。版本为 2026-10-16 从磁盘实查的安装版本：
+语料 = `packages/core/src/algebra/__tests__/check-real-packages.oracle.test.ts` 扫描的真实 npm 包，声明于 `packages/core` devDependencies（`packages/core/node_modules` 解析安装）。版本为 2026-10-16 从磁盘实查的安装版本：
 
 | 语料 | 语料版本 | 上次刷新 |
 |---|---|---|
@@ -28,7 +28,7 @@
 | `nudo:assign-mismatch` | **0** |
 | `nudo:arg-structure` | **0** |
 
-CI 门禁：`check-real-commander.test.ts` 对三种 error code 一并锁零。
+CI 门禁：`check-real-commander.oracle.test.ts` 对三种 error code 一并锁零。
 
 以下为文件级扫描摘要（`npx tsx scripts/scan-real-packages.ts` 生成，重跑即刷新；2026-09 首扫（仅 constraint 时代）已验证零 error）：
 

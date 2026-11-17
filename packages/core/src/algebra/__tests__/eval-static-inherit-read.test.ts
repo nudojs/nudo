@@ -2,9 +2,9 @@
  * N2：类值继承静态成员读——原生静态成员挂构造器 [[Prototype]] 链
  * （B.__proto__ = A），own 槽优先后须沿 extends 链上溯：
  * - 静态字段（声明 / 计算键 / static 块 / 动态写）——此前 own 槽 miss
- *   直接落闭 obj 面折 unknown（显示 "undefined"），B.x 丢精度；
+ * 直接落闭 obj 面折 unknown（显示 "undefined"），B.x 丢精度；
  * - 内建父构造器静态（B extends Object → B.keys / E extends Error →
- *   E.captureStackTrace）——此前折精确 undefined（wrong-exact）；
+ * E.captureStackTrace）——此前折精确 undefined（wrong-exact）；
  * - presence（`"m2" in A` / `"x" in B`）——此前实例/静态面混判
  * （`"m" in B`（实例方法）折 true、`"m2" in B`（静态）折 false，双 wrong）。
  * 修复：$get 类值臂链走（祖先类值槽——同一 Abs 引用，B.x === A.x 恒等
@@ -64,7 +64,7 @@ describe("N2: inherited static field reads walk the extends chain", () => {
   });
 });
 
-describe("N2: inherited static methods / accessors（既有 Bug 18 面控制）", () => {
+describe("N2: inherited static methods / accessors（既有 面控制）", () => {
   it("B.m() ← A static m → 1；typeof B.m → function", () => {
     expect(v(`class A { static m() { return 1; } } class B extends A {} return B.m();`)).toEqual({ ok: true, value: 1 });
     expect(v(`class A { static m() { return 1; } } class B extends A {} return typeof B.m;`)).toEqual({ ok: true, value: "function" });

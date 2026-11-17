@@ -5,7 +5,7 @@
  * - 顺序双 resolve：原生只认第一次——无 fork 时 first-wins
  * - 执行器内 $fork 分叉：各臂 resolve 值 join（不得 first-wins 假精确）
  * - 只 reject / 永不 settle / 抽象 fn → promise<unknown>（不假装 resolve）
- * - executor 抛错 → promise 以抛出值**拒绝**（Bug 310：原生语义，catch 臂可达）
+ * - executor 抛错 → promise 以抛出值**拒绝**（原生语义，catch 臂可达）
  * - .then(cb) 可映射回调 returnType → promise<映射结果>；做不到诚实 unknown
  * - Promise.resolve / new Promise 结果一致处对齐
  */

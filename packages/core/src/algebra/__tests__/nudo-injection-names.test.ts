@@ -3,22 +3,22 @@
  *
  * 引擎在生成码里使用两类 `__nudo*` 名字：
  * 1. **注入名**（12 个）：run.ts 以 NUDO_HOST_ARG_NAMES 作为模块体 new Function
- *    的**形参面**（实参按同序供给）；发射器在生成码里按名引用（`__nudoBindImport(…)`、
- *    `__nudoExportLazy(…)`、require 改写 `__nudoRequire(…)`…）。静默改名任一侧
- *    = 生成码 ReferenceError ⇒ 整模块 fail-closed（无诊断）——此前名单是真值
- *    但零守卫。
+ * 的**形参面**（实参按同序供给）；发射器在生成码里按名引用（`__nudoBindImport(…)`、
+ * `__nudoExportLazy(…)`、require 改写 `__nudoRequire(…)`…）。静默改名任一侧
+ * = 生成码 ReferenceError ⇒ 整模块 fail-closed（无诊断）——此前名单是真值
+ * 但零守卫。
  * 2. **局部名**：发射器自分配的内部临时量 / 槽位 / 属性键（`__nudoTm_0`、
- *    `__nudoMpRoot`、`__nudoNonCtor`…）。撞用户标识符时经 internalTmpName 加
- *    `_\d+` 后缀避让（Bug 1058/1059/1127），序号族（`__nudoLv2`、`__nudoSw0_1`）
- *    带位序。
+ * `__nudoMpRoot`、`__nudoNonCtor`…）。撞用户标识符时经 internalTmpName 加
+ * `_\d+` 后缀避让（），序号族（`__nudoLv2`、`__nudoSw0_1`）
+ * 带位序。
  *
  * 本测试四层钉：
  * - 名单恒等：NUDO_HOST_ARG_NAMES 与 12 名字面清单逐项同序（防手改真值源；
- *   序错位 = 实参错位）；
+ * 序错位 = 实参错位）；
  * - 名单归类：每个注入名要么在「转译产物发射面」要么在「run.ts 包装层独占」
- *   （差集显式钉住——新增名必须显式归类）；
+ * （差集显式钉住——新增名必须显式归类）；
  * - 语料漂移：差分语料 + crafted 模块形态 × 4 变体的 transpileSource 产物里
- *   每个 `__nudo[A-Za-z0-9_]+` 出现 ∈ 注入名 ∪ 局部名白名单；
+ * 每个 `__nudo[A-Za-z0-9_]+` 出现 ∈ 注入名 ∪ 局部名白名单；
  * - 不空转：语料必须真的触发关键族（否则守卫退化）。
  */
 import { describe, expect, it } from "vitest";
@@ -49,16 +49,16 @@ const WRAPPER_ONLY_HOST_ARGS: readonly string[] = [
 /**
  * 生成码**局部名**基名（实际名可带 `_\d+` 避让后缀）。发射点：
  * - run.ts 模块单元骨架：__nudoRet / __nudoK / __nudoGet / __nudoV / __nudoD /
- *   __nudoSlot / __nudoHidden / __nudoCjsOrig / __nudoCjsThis；
+ * __nudoSlot / __nudoHidden / __nudoCjsOrig / __nudoCjsThis；
  * - statement.ts / fn-body.ts：__nudoArgs（arguments 槽）/ __nudoFnRet（函数体
- *   catch 载体）/ __nudoRet（try 内 return 载体）/ __nudoDwFirst（do-while 首轮
- *   标记）/ __nudoDefaultFn / __nudoDefaultClass（匿名默认导出合成名）/
- *   __nudoNonCtor（函数声明非构造标记属性）；
+ * catch 载体）/ __nudoRet（try 内 return 载体）/ __nudoDwFirst（do-while 首轮
+ * 标记）/ __nudoDefaultFn / __nudoDefaultClass（匿名默认导出合成名）/
+ * __nudoNonCtor（函数声明非构造标记属性）；
  * - call.ts：__nudoDefR / __nudoReArgs；optional-chain.ts：__nudoDelP / __nudoDelK /
- *   __nudoDelN / __nudoDelR；operators.ts：__nudoDelP / __nudoDelK / __nudoDelD；
+ * __nudoDelN / __nudoDelR；operators.ts：__nudoDelP / __nudoDelK / __nudoDelD；
  * - member-path.ts / assignment.ts：__nudoMp* 族（Root/Val/Old/New/Res/DelK/Obj/Key）；
  * - object.ts：__nudoObjBase / __nudoProtoBox；transpile.ts：__nudoRefreshKeep
- *   （live import refresh 的模块域强持有）。
+ * （live import refresh 的模块域强持有）。
  */
 const LOCAL_BASES: readonly string[] = [
   "__nudoRet",
@@ -115,6 +115,33 @@ function emittedNudoNames(code: string): Set<string> {
   return out;
 }
 
+type CorpusScan = { emitted: Set<string>; transpiled: number };
+let corpusScan: CorpusScan | undefined;
+
+/**
+ * 全语料 × 4 变体只转译一次，两个守卫用例共享（此前各跑一遍，约 3s/遍；
+ * 语料 1000+ 变体）。转译抛错（unsupported 形态）不在本层负责——差分/eval
+ * 门禁覆盖，这里只扫产物词形。
+ */
+function scanCorpusOnce(): CorpusScan {
+  if (corpusScan) return corpusScan;
+  const emitted = new Set<string>();
+  let transpiled = 0;
+  for (const src of corpusSources()) {
+    for (const opts of OPTION_VARIANTS) {
+      let code: string;
+      try {
+        code = transpileSource(src, opts);
+      } catch {
+        continue;
+      }
+      transpiled++;
+      for (const n of emittedNudoNames(code)) emitted.add(n);
+    }
+  }
+  return (corpusScan = { emitted, transpiled });
+}
+
 describe("__nudo* 注入名 / 生成码局部名漂移守卫", () => {
   it("注入名单单一真值源：NUDO_HOST_ARG_NAMES 与 12 名字面清单同序恒等", () => {
     // 顺序也是契约：hostArgs 按同序 map 供给实参——序错位 = 值错位（无诊断）。
@@ -147,20 +174,7 @@ describe("__nudo* 注入名 / 生成码局部名漂移守卫", () => {
   });
 
   it("transpileSource 产物里的每个 __nudo* 词形都在白名单（语料漂移守卫）", () => {
-    const emitted = new Set<string>();
-    let transpiled = 0;
-    for (const src of corpusSources()) {
-      for (const opts of OPTION_VARIANTS) {
-        let code: string;
-        try {
-          code = transpileSource(src, opts);
-        } catch {
-          continue; // 语料里 unsupported 形态由差分/eval 门禁负责（此处只扫产物）
-        }
-        transpiled++;
-        for (const n of emittedNudoNames(code)) emitted.add(n);
-      }
-    }
+    const { emitted, transpiled } = scanCorpusOnce();
     // 语料没有整体退化成「全部 unsupported」（否则本守卫空转）
     expect(transpiled).toBeGreaterThan(1000);
     const unknown = [...emitted].filter((n) => !isKnownNudoName(n)).sort();
@@ -171,16 +185,7 @@ describe("__nudo* 注入名 / 生成码局部名漂移守卫", () => {
   });
 
   it("语料覆盖不空转：关键注入名与局部名族必须真的出现", () => {
-    const emitted = new Set<string>();
-    for (const src of corpusSources()) {
-      for (const opts of OPTION_VARIANTS) {
-        try {
-          for (const n of emittedNudoNames(transpileSource(src, opts))) emitted.add(n);
-        } catch {
-          /* unsupported 语料不在本层负责 */
-        }
-      }
-    }
+    const { emitted } = scanCorpusOnce();
     // 8 个发射器引用的注入名全部要被语料触发（host target 变体承担模块面）
     for (const n of EMITTED_HOST_ARGS) {
       expect(emitted.has(n), `语料未触发注入名 ${n}（扩展 crafted 语料或查发射点）`).toBe(true);
@@ -221,7 +226,7 @@ const OPTION_VARIANTS: readonly object[] = [
 ] as const;
 
 /** crafted 模块形态：注入名/局部名的发射触发面（import/export/require/try/
- *  for-of/class/private/匿名默认导出/计算键/可选拈 require…）。 */
+ * for-of/class/private/匿名默认导出/计算键/可选拈 require…）。 */
 const CRAFTED: readonly string[] = [
   // 模块面：import / export / re-export / star / default / namespace / 动态 import
   `import { a, b as c } from "./m.js"; import d from "./m.js"; import * as ns from "./m.js";\nexport const k = a + c + d + ns.x;`,

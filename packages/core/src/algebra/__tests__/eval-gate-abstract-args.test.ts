@@ -1,5 +1,5 @@
 /**
- * Gate 假阴回归（Bug 4 / 6 / 7 / 11）——同形四案：运行时（定抛 / 折值）对，
+ * Gate 假阴回归（）——同形四案：运行时（定抛 / 折值）对，
  * 抽象实参臂漏记 recordMayThrow → L2 `nudo:entry-may-throw` 静默。
  * 三面口径：抽象实参（any 入口参）→ gate 记 TypeError（+ 运行时 effects 含
  * TypeError）；字面量 / 具体接收者控制组 → gate 静默（原生 total）或定抛
@@ -44,11 +44,11 @@ function evalSrc(
   };
 }
 
-// --- Bug 4：Object.hasOwn / getPrototypeOf 抽象接收者 ------------------------
+// --- Object.hasOwn / getPrototypeOf 抽象接收者 ------------------------
 // node 实测：Object.getPrototypeOf(null) / Object.hasOwn(null, "a") 抛
 // TypeError（ToObject / RequireObjectCoercible）；对象接收者全定。
 
-describe("Bug 4: Object.hasOwn/getPrototypeOf any 接收者 gate 记 may TypeError", () => {
+describe("Object.hasOwn/getPrototypeOf any 接收者 gate 记 may TypeError", () => {
   it("any 接收者：L2 记 + 运行时 effects 含 TypeError", () => {
     const r = check(`
       export function gp(x) { return Object.getPrototypeOf(x); }
@@ -92,11 +92,11 @@ describe("Bug 4: Object.hasOwn/getPrototypeOf any 接收者 gate 记 may TypeErr
   });
 });
 
-// --- Bug 6：`k in o` 抽象键 --------------------------------------------------
+// --- `k in o` 抽象键 --------------------------------------------------
 // node 实测：非对象右操作数一律抛 TypeError（o = null/undefined/1/"s"）；
 // 对象接收者（含抽象键）永不抛；此前抽象键在 $in 早退，漏记 any 接收者臂。
 
-describe("Bug 6: `k in o` 抽象键 + any 接收者 gate 记 may TypeError", () => {
+describe("`k in o` 抽象键 + any 接收者 gate 记 may TypeError", () => {
   it("抽象键 + any 接收者：L2 记 + 运行时 effects 含 TypeError", () => {
     const r = check(`export function f(k, o) { return k in o; }`);
     expect(l2Count(r, "f")).toBeGreaterThan(0);
@@ -121,11 +121,11 @@ describe("Bug 6: `k in o` 抽象键 + any 接收者 gate 记 may TypeError", () 
   });
 });
 
-// --- Bug 7：Symbol(x) 抽象描述符 ---------------------------------------------
+// --- Symbol(x) 抽象描述符 ---------------------------------------------
 // node 实测：Symbol(Symbol()) 抛 TypeError（ToString(Symbol)）；string/
-// number/bigint/缺省描述符全定（Bug 23 臂）。
+// number/bigint/缺省描述符全定（臂）。
 
-describe("Bug 7: Symbol(x) any 描述符 gate 记 may TypeError", () => {
+describe("Symbol(x) any 描述符 gate 记 may TypeError", () => {
   it("any 描述符：L2 记 + 运行时 effects 含 TypeError", () => {
     const r = check(`export function f(x) { return Symbol(x); }`);
     expect(l2Count(r, "f")).toBeGreaterThan(0);
@@ -165,11 +165,11 @@ describe("Bug 7: Symbol(x) any 描述符 gate 记 may TypeError", () => {
   });
 });
 
-// --- Bug 11：String.fromCharCode(x) 抽象实参 ---------------------------------
+// --- String.fromCharCode(x) 抽象实参 ---------------------------------
 // node 实测：String.fromCharCode(Symbol()) / (1n) 抛 TypeError（ToNumber）；
 // 数值域全定（ToUint16），无 RangeError 臂——仅记 TypeError。
 
-describe("Bug 11: String.fromCharCode(x) any 实参 gate 记 may TypeError", () => {
+describe("String.fromCharCode(x) any 实参 gate 记 may TypeError", () => {
   it("any 实参：L2 记 + 运行时 effects 含 TypeError", () => {
     const r = check(`export function f(x) { return String.fromCharCode(x); }`);
     expect(l2Count(r, "f")).toBeGreaterThan(0);

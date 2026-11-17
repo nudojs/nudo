@@ -1,5 +1,5 @@
 /**
- * 溢出数值字面量（`1e400`）不再折成 `null` 回归（报告 Bug 150）。
+ * 溢出数值字面量（`1e400`）不再折成 `null` 回归（报告 ）。
  *
  * Babel 把 `1e400` 解析为 `NumericLiteral{value: Infinity}`（raw 仍是
  * "1e400"）。转译侧用 `JSON.stringify(expr.value)` 把字面量渲染回源码文本

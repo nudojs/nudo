@@ -76,7 +76,7 @@ describe("env-skip 派生自 HOST_INTRINSIC_NAMES ∪ NAMESPACE_GLOBALS", () => 
       ).toBe(name);
     }
     // 非表内宿主对象（刻意未路由，见 member.ts 注释）不误命中
-    //（RegExp 自 Bug 56、ArrayBuffer 自 Bug 40 起入路由表——负控制换 Atomics）
+    //（RegExp 自 、ArrayBuffer 自 起入路由表——负控制换 Atomics）
     expect(namespaceNameOf(Atomics)).toBeUndefined();
     expect(namespaceNameOf(console)).toBeUndefined();
     expect(namespaceNameOf({})).toBeUndefined();

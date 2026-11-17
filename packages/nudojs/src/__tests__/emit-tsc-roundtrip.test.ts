@@ -3,10 +3,14 @@ import { mkdtempSync, writeFileSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
 import { generateFunctionDtsLines } from "@nudojs/service/emit";
 import { analyzeFileAsync } from "@nudojs/service";
 
 const dirs: string[] = [];
+
+/** 本仓 devDependency 的 tsc 入口（`pnpm exec tsc` 每次多付 ~0.7s）。 */
+const tscBin = createRequire(import.meta.url).resolve("typescript/bin/tsc");
 
 afterAll(() => {
   for (const d of dirs) rmSync(d, { recursive: true, force: true });
@@ -14,7 +18,7 @@ afterAll(() => {
 
 function tscNoEmit(file: string): { ok: boolean; stderr: string } {
   try {
-    execFileSync("pnpm", ["exec", "tsc", "--noEmit", "--strict", "--skipLibCheck", "--ignoreConfig", file], {
+    execFileSync(process.execPath, [tscBin, "--noEmit", "--strict", "--skipLibCheck", "--ignoreConfig", file], {
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"],
     });

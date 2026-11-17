@@ -38,7 +38,7 @@ describe("evaluator replace named capture groups", () => {
     expect(litValue(r.result)).toEqual({ ok: true, value: "a[b]c" });
   });
 
-  // --- Bug 62：命名组时 replacer 末尾的 groups 对象实参 ------------------
+  // --- 命名组时 replacer 末尾的 groups 对象实参 ------------------
   // 此前 replWrapper 检测到 groups 却从 callArgs 丢弃 → arguments.length 4、
   // groups undefined、groups.d 假 TypeError（L2 false-positive）。
   it("arguments.length counts the trailing groups object (5, native parity)", () => {

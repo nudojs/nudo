@@ -331,7 +331,7 @@ export const decide = fn(
   it("unconstrained param falls back to design §2 `any`; non-call local stays fail-closed null", () => {
     const src = `export function scale(x) {\n  return x * 2;\n}\n`;
     // 无契约、无提升：**形参**回落 design §2 的「无约束 any」（与函数名面
-    // `scale(x: any)` 同口径——Bug 774：此前形参位 hover **完全为空**，
+    // `scale(x: any)` 同口径——此前形参位 hover **完全为空**，
     // 同一 hover 的函数名面却显示 `x: any`）
     expect(getHoverAtPosition("/t/param-null.js", src, 1, 23)?.typeText).toBe(
       "x: any",
@@ -376,7 +376,7 @@ export const run = fn({ items: array(shape({ ok: boolean() })) }, number());
   it("call-initialized local hovers from EvalCallRecord (entry-args call)", () => {
     const f = withSidecar(MAIN, "run.nudo.js", "items");
     const loadModule = makeBufferAwareLoadModule(() => undefined);
-    // line 9: `  const kept = countOf(items);` — kept col 9
+    // line 9: ` const kept = countOf(items);` — kept col 9
     const hover = getHoverAtPosition(f, MAIN, 9, 9, undefined, { loadModule });
     expect(hover).not.toBeNull();
     expect(hover!.typeText).toMatch(/^kept: /);
@@ -387,7 +387,7 @@ export const run = fn({ items: array(shape({ ok: boolean() })) }, number());
   it("sibling top-level fn reference inside case fn body hovers (binding face)", () => {
     const f = withSidecar(MAIN, "run.nudo.js", "items");
     const loadModule = makeBufferAwareLoadModule(() => undefined);
-    // line 9: `  const kept = countOf(items);` — countOf col 18（callee；
+    // line 9: ` const kept = countOf(items);` — countOf col 18（callee；
     // 本地函数 → intension 面；此处验证同文件顶层引用也走通）
     const hover = getHoverAtPosition(f, MAIN, 9, 18, undefined, { loadModule });
     expect(hover).not.toBeNull();
@@ -746,13 +746,13 @@ export const astNode = union(
 
   it("return 关键字位 hover 显示整个返回表达式的推导类型（无 ident 前缀）", () => {
     const { f, loadModule, cleanup } = setup();
-    // L3 `  if (node.type === 'Literal') return node.value;`——return 起始 col 31；
+    // L3 ` if (node.type === 'Literal') return node.value;`——return 起始 col 31；
     // 窄化 Literal 臂后 node.value → string
     const ret = getHoverAtPosition(f, MAIN, 3, 31, undefined, { loadModule });
     expect(ret).not.toBeNull();
     expect(ret!.typeText).toBe("string");
     expect(ret!.abs).toBe(ret!.typeText);
-    // L5 `  return q ? q.value.cooked : null;`——return 起始 col 2；
+    // L5 ` return q ? q.value.cooked : null;`——return 起始 col 2；
     // 三元 join：cooked: string 与 null
     const ret5 = getHoverAtPosition(f, MAIN, 5, 2, undefined, { loadModule });
     expect(ret5).not.toBeNull();
@@ -763,7 +763,7 @@ export const astNode = union(
 
   it("表达式内非标识符位 hover（`?.[` / `[0]`）有类型", () => {
     const { f, loadModule, cleanup } = setup();
-    // L4 `  const q = node.quasis?.[0];`——`?.`（col 24）与 `[0]`（col 26）
+    // L4 ` const q = node.quasis?.[0];`——`?.`（col 24）与 `[0]`（col 26）
     // 都不在任何标识符跨距内：最小 span 候选 = OptionalMemberExpression
     // （起始键 = node 值读记录）→ 整体 union（pretty 按臂断行）
     const optChain = getHoverAtPosition(f, MAIN, 4, 24, undefined, { loadModule });

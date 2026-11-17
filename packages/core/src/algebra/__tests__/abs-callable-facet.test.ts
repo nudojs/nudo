@@ -1,8 +1,8 @@
 /**
  * A2+A8 · `callable` 槽位启用的回归钉。
  *
- * 台账复测订正：运行时「类值不带 new 被调 → TypeError」已由 Bug 272 闭合
- * （`core-bug-272-class-no-new.test.ts`）。**本槽位补的是承载位**：旧判据
+ * 台账复测订正：运行时「类值不带 new 被调 → TypeError」已由 闭合
+ * （`core--class-no-new.part.ts`）。**本槽位补的是承载位**：旧判据
  * 靠 `class-mark.ts` 的 WeakMap 对象身份 + `_rest` 单形参启发式，跨
  * `snapshotAbs` / `substAbs` / 重铸后静默漏判；`facets.callable = false`
  * 随 Abs 值搬运 ⇒ 重建后仍是权威判据。

@@ -1,5 +1,5 @@
 /**
- * Bug 82 回归：数组解构绑定 Set/Map 元素——$idx/$arrRest 此前无 Set/Map
+ * 回归：数组解构绑定 Set/Map 元素——$idx/$arrRest 此前无 Set/Map
  * brand 臂，落 inner obj 槽 miss 折 undefined（元素绑 undefined、rest 折
  * undef、后续成员读假抛 TypeError）。修复：与 spread / for-of /
  * Array.from 口径一致，消费同源侧表（setElementsAbs / mapEntriesAbs）；
@@ -8,7 +8,7 @@
 import { describe, it, expect } from "vitest";
 import { call, val, tupleEls } from "./eval-helpers.ts";
 
-describe("Bug 82：数组解构绑定 Set/Map 元素", () => {
+describe("数组解构绑定 Set/Map 元素", () => {
   it("Set 解构逐位绑元素（值使用不再 NaN / undefined）", () => {
     expect(val(`export function f() { const [a, b] = new Set([1, 2]); return a + b; }`))
       .toEqual({ ok: true, value: 3 });

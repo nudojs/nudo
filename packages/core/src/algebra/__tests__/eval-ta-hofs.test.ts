@@ -1,12 +1,12 @@
 /**
- * Bug 36 回归：TypedArray 原型回调族（forEach/map/filter/reduce/every/some/
+ * 回归：TypedArray 原型回调族（forEach/map/filter/reduce/every/some/
  * find + 同族 findIndex/findLast/findLastIndex/reduceRight）。
  *
  * 此前 TA 实例是 $new 宿主兜底的空 brand（evalBuiltinInstanceMethod 与
  * BUILTIN_BRAND_METHODS 两层派发表皆无 TA 条目），HOF 调用落 $get →
  * undef → unknown：
  * - 非函数回调不抛（native GetCallback 先于任何迭代定抛 TypeError——
- *   零长度 TA 也抛，node 实测）；
+ * 零长度 TA 也抛，node 实测）；
  * - 回调闭包体静默不跑（副作用计数器折 wrong-exact 0、回调内 throw 被吞）；
  * - L2 gate 假阴（Array 孪生 [1].forEach(x) 已正确记 may TypeError）。
  *
@@ -23,7 +23,7 @@ import { describe, it, expect } from "vitest";
 import { checkSource } from "../check/check.ts";
 import { type Abs, anyAbs, litValue } from "../abs.ts";
 import { formatShape } from "../format/format.ts";
-import { $lit } from "../exec/runtime/state.ts";
+import "../exec/runtime/state.ts";
 import { call, val, effects } from "./eval-helpers.ts";
 import { l2Count } from "./nudo-constraints.ts";
 
@@ -49,7 +49,7 @@ function check(src: string) {
   return checkSource("/t/eval-ta-hofs.js", src);
 }
 
-describe("Bug 36：TA HOF 非函数回调定抛 TypeError（GetCallback 前置）", () => {
+describe("TA HOF 非函数回调定抛 TypeError（GetCallback 前置）", () => {
   it.each([
     ["forEach", `new Uint8Array([1]).forEach(1)`],
     ["map", `new Uint8Array([1]).map(1)`],
@@ -89,7 +89,7 @@ describe("Bug 36：TA HOF 非函数回调定抛 TypeError（GetCallback 前置�
   });
 });
 
-describe("Bug 36：TA HOF 回调闭包体执行（副作用/抛错传播）", () => {
+describe("TA HOF 回调闭包体执行（副作用/抛错传播）", () => {
   it("forEach 回调跑（报告 repro：计数器 wrong-exact 0 → 1）", () => {
     expect(val(`export function f() { let n = 0; new Uint8Array([1]).forEach(() => { n++; }); return n; }`))
       .toEqual({ ok: true, value: 1 });
@@ -125,7 +125,7 @@ describe("Bug 36：TA HOF 回调闭包体执行（副作用/抛错传播）", ()
   });
 });
 
-describe("Bug 36：TA HOF 返回面对齐数组 HOF 口径", () => {
+describe("TA HOF 返回面对齐数组 HOF 口径", () => {
   it("forEach → undefined", () => {
     expect(shape(`export function f() { return new Uint8Array([1]).forEach(() => {}); }`)).toBe("undefined");
   });
@@ -170,7 +170,7 @@ describe("Bug 36：TA HOF 返回面对齐数组 HOF 口径", () => {
   });
 });
 
-describe("Bug 36：L2 gate 面（any 回调记 may TypeError）", () => {
+describe("L2 gate 面（any 回调记 may TypeError）", () => {
   it("forEach(x)/map(x) 抽象回调 → entry-may-throw", () => {
     const r = check(`
       export function fe(x) { return new Uint8Array([1]).forEach(x); }
@@ -209,7 +209,7 @@ describe("Bug 36：L2 gate 面（any 回调记 may TypeError）", () => {
   });
 });
 
-describe("Bug 36：控制组与边界", () => {
+describe("控制组与边界", () => {
   it("typeof ta.forEach === \"function\"（方法值读通道）", () => {
     expect(val(`export function f() { return typeof new Uint8Array([1]).forEach; }`))
       .toEqual({ ok: true, value: "function" });
@@ -232,7 +232,7 @@ describe("Bug 36：控制组与边界", () => {
   });
 });
 
-describe("Bug 100：TA HOF 回调按已知长度逐下标执行（不再只跑一次）", () => {
+describe("TA HOF 回调按已知长度逐下标执行（不再只跑一次）", () => {
   it.each([
     ["字面量源 5 元", 5, `new Uint8Array([1, 2, 3, 4, 5])`],
     ["字面量源 3 元", 3, `new Uint8Array([9, 8, 7])`],

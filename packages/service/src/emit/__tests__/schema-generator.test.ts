@@ -28,7 +28,7 @@ const numWith = (pred: Pred): Abs => numVar("x", pred, "exact");
 const strWith = (pred: Pred): Abs =>
   abs({ k: "prim", type: "string" }, { op: "var", id: "s" }, pred, "exact");
 /**
- * Bug 1001：Abs 的 `number` prim 域 = **全部 JS number**（含 NaN / ±Infinity）；
+ * Abs 的 `number` prim 域 = **全部 JS number**（含 NaN / ±Infinity）；
  * zod 的 `z.number()` 只收有限数 ⇒ zod 侧必须放宽（否则消费方拿导出的 schema
  * 校验函数自己的返回值会假红）。
  */
@@ -179,7 +179,7 @@ describe("pred → zod refinements", () => {
 
   it("projects string length bounds", () => {
     const a = strWith(ge(app("length", [v("s")]), lit(1)));
-    // BUG-203：Abs 的 length 是 UTF-16 码元，zod 的 .min() 是码点 ⇒ 用 refine
+    // Abs 的 length 是 UTF-16 码元，zod 的 .min() 是码点 ⇒ 用 refine
     expect(absToSchemaSource(a)).toBe("z.string().refine((s) => s.length >= 1)");
   });
 
@@ -244,7 +244,7 @@ describe("absToZodSchemaModule", () => {
   });
 });
 
-describe("BUG-019: eqLit 通道 tagged 化 + 非有限界不投影（S6-004）", () => {
+describe("eqLit 通道 tagged 化 + 非有限界不投影（S6-004）", () => {
   it("eq(x, lit(undefined)) 投影为 z.undefined() 而非静默丢弃", () => {
     const a = numWith(eq(v("x"), lit(undefined)));
     const { node, dropped } = absToSchemaNode(a);
@@ -278,7 +278,7 @@ describe("BUG-019: eqLit 通道 tagged 化 + 非有限界不投影（S6-004）",
     const a = numWith(gt(v("x"), lit(Infinity)));
     const { dropped } = absToSchemaNode(a);
     expect(dropped.some((d) => d.includes("not projected"))).toBe(true);
-    // 界本身不投影（`Infinity` 只出现在 number prim 的**域**渲染里——Bug 1001）
+    // 界本身不投影（`Infinity` 只出现在 number prim 的**域**渲染里——）
     expect(absToSchemaSource(a)).not.toContain(".gt(Infinity)");
     expect(absToSchemaSource(a)).not.toContain(".lt(Infinity)");
   });

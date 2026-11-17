@@ -4,7 +4,7 @@ import {
   callTranspiledExportFull,
   $lit,
   litValue,
-  absToString,
+
 } from "@nudojs/core";
 
 function inferCall(src: string, fnName: string, args: Parameters<typeof $lit>[0][] = []) {

@@ -3,7 +3,7 @@ import {
   rmSync,
   readFileSync,
   readdirSync,
-  existsSync,
+
   mkdirSync,
   writeFileSync,
 } from "node:fs";
@@ -57,7 +57,7 @@ vi.mock("node:fs", async (importOriginal) => {
 });
 
 describe("B3 disk cache store", () => {
-  it("round-trips JSON values when enabled", () =>
+  it("roundtrip / disabled fail-open / key 源与配置敏感 / sidecar 敏感 / hash 稳定", () => {
     withTmpProject("nudo-cache-", (root) => {
       const c = new DiskCache({ root, namespace: "check" });
       expect(c.enabled).toBe(true);
@@ -65,69 +65,26 @@ describe("B3 disk cache store", () => {
       expect(c.get(key)).toBeUndefined();
       c.set(key, { ok: true, n: 1 });
       expect(c.get(key)).toEqual({ ok: true, n: 1 });
-    }));
+    });
+    const off = new DiskCache({ root: undefined, namespace: "check" });
+    expect(off.enabled).toBe(false);
+    expect(off.get("x")).toBeUndefined();
+    expect(() => off.set("x", 1)).not.toThrow();
 
-  it("is disabled without root and fails open", () => {
-    const c = new DiskCache({ root: undefined, namespace: "check" });
-    expect(c.enabled).toBe(false);
-    expect(c.get("x")).toBeUndefined();
-    expect(() => c.set("x", 1)).not.toThrow();
-  });
-
-  it("key changes with source and autoBind", () => {
     const a = checkCacheKey("/p/a.js", "a", { autoBind: true });
-    const b = checkCacheKey("/p/a.js", "b", { autoBind: true });
-    const c = checkCacheKey("/p/a.js", "a", { autoBind: false });
-    expect(a).not.toBe(b);
-    expect(a).not.toBe(c);
-  });
-
-  it("key flips on entryThrows / ignoreThrows (L2 config must not stale-cache)", () => {
+    expect(checkCacheKey("/p/a.js", "b", { autoBind: true })).not.toBe(a);
+    expect(checkCacheKey("/p/a.js", "a", { autoBind: false })).not.toBe(a);
     const src = "export function getName(u){ return u.name; }\n";
-    const base = checkCacheKey("/p/a.js", src, {
-      autoBind: true,
-      analysisCfg: { entryThrows: "error", ignoreThrows: "-" },
-    });
-    const off = checkCacheKey("/p/a.js", src, {
-      autoBind: true,
-      analysisCfg: { entryThrows: "off", ignoreThrows: "-" },
-    });
-    const ignored = checkCacheKey("/p/a.js", src, {
-      autoBind: true,
-      analysisCfg: { entryThrows: "error", ignoreThrows: "TypeError" },
-    });
-    const emptyIgnore = checkCacheKey("/p/a.js", src, {
-      autoBind: true,
-      analysisCfg: { entryThrows: "error", ignoreThrows: "" },
-    });
-    expect(base).not.toBe(off);
-    expect(base).not.toBe(ignored);
-    expect(ignored).not.toBe(emptyIgnore);
-  });
+    const base = checkCacheKey("/p/a.js", src, { autoBind: true, analysisCfg: { entryThrows: "error", ignoreThrows: "-" } });
+    expect(checkCacheKey("/p/a.js", src, { autoBind: true, analysisCfg: { entryThrows: "off", ignoreThrows: "-" } })).not.toBe(base);
+    expect(checkCacheKey("/p/a.js", src, { autoBind: true, analysisCfg: { entryThrows: "error", ignoreThrows: "TypeError" } })).not.toBe(base);
+    expect(checkCacheKey("/p/a.js", src, { autoBind: true, analysisCfg: { entryThrows: "error", ignoreThrows: "" } })).not.toBe(checkCacheKey("/p/a.js", src, { autoBind: true, analysisCfg: { entryThrows: "error", ignoreThrows: "TypeError" } }));
 
-  it("checkCacheKey: sidecar content flips the key (CI must miss on contract change)", () => {
-    const src = "export function add(a, b) { return a + b; }\n";
-    const base = checkCacheKey("/p/a.js", src, {
-      autoBind: true,
-      projectDir: "/p",
-      sidecarContent: "export const add = fn({ a: number() }, number());\n",
-    });
-    const changed = checkCacheKey("/p/a.js", src, {
-      autoBind: true,
-      projectDir: "/p",
-      sidecarContent: "export const add = fn({ a: number().gt(0) }, number());\n",
-    });
-    const noSidecar = checkCacheKey("/p/a.js", src, {
-      autoBind: true,
-      projectDir: "/p",
-      sidecarContent: null,
-    });
-    expect(base).not.toBe(changed);
-    expect(base).not.toBe(noSidecar);
-    expect(base).toHaveLength(64);
-  });
-
-  it("sha256 and relativizePath are stable", () => {
+    const addSrc = "export function add(a, b) { return a + b; }\n";
+    const sideBase = checkCacheKey("/p/a.js", addSrc, { autoBind: true, projectDir: "/p", sidecarContent: "export const add = fn({ a: number() }, number());\n" });
+    expect(checkCacheKey("/p/a.js", addSrc, { autoBind: true, projectDir: "/p", sidecarContent: "export const add = fn({ a: number().gt(0) }, number());\n" })).not.toBe(sideBase);
+    expect(checkCacheKey("/p/a.js", addSrc, { autoBind: true, projectDir: "/p", sidecarContent: null })).not.toBe(sideBase);
+    expect(sideBase).toHaveLength(64);
     expect(sha256Hex("x")).toHaveLength(64);
     expect(ANALYSIS_ABI).toMatch(/^nudo-check-cache-v\d+\+\d/);
     expect(relativizePath("/root/src/a.js", "/root")).toBe("src/a.js");
@@ -135,203 +92,89 @@ describe("B3 disk cache store", () => {
 });
 
 describe("B3 disk cache atomic write", () => {
-  afterEach(() => {
-    fsControl.writeFileSync = null;
-    fsControl.renameSync = null;
-  });
-
-  const cachePath = (root: string, key: string) =>
-    join(root, "check", key.slice(0, 2), `${key}.json`);
-
-  it("interrupted write leaves no torn JSON at the cache path", () =>
+  afterEach(() => { fsControl.writeFileSync = null; fsControl.renameSync = null; });
+  const cachePath = (root: string, key: string) => join(root, "check", key.slice(0, 2), `${key}.json`);
+  it("中断写/rename 失败保留旧完整 JSON 且无 tmp；成功写原子发布", () => {
     withTmpProject("nudo-cache-atomic-", (root) => {
       const c = new DiskCache({ root, namespace: "check" });
       const key = checkCacheKey("/p/a.js", "export const x = 1;\n", { autoBind: true });
       const first = { ok: true, n: 1 };
       c.set(key, first);
-
       const target = cachePath(root, key);
       expect(JSON.parse(readFileSync(target, "utf8")).value).toEqual(first);
-
-      // 模拟中断写：writeFileSync 只落一半字节后崩溃
       fsControl.writeFileSync = (p, data, opts) => {
         const text = String(data);
         fsControl.real!.writeFileSync(p, text.slice(0, Math.floor(text.length / 2)), opts as never);
         throw new Error("simulated crash mid-write");
       };
-
-      // fail-open：不抛出
       expect(() => c.set(key, { ok: false, n: 2 })).not.toThrow();
-
-      // 目标仍是完整 JSON（旧值），绝不能是半截
-      const raw = readFileSync(target, "utf8");
-      expect(() => JSON.parse(raw)).not.toThrow();
-      expect(JSON.parse(raw).value).toEqual(first);
-
-      // 不残留孤儿 tmp
-      expect(readdirSync(dirname(target)).filter((f) => f.includes(".tmp-"))).toEqual([]);
-    }));
-
-  it("rename failure cleans tmp and keeps the previous entry intact", () =>
-    withTmpProject("nudo-cache-atomic-", (root) => {
-      const c = new DiskCache({ root, namespace: "check" });
-      const key = checkCacheKey("/p/a.js", "export const x = 2;\n", { autoBind: true });
-      const first = { ok: true };
-      c.set(key, first);
-      const target = cachePath(root, key);
-
-      fsControl.renameSync = () => {
-        throw new Error("simulated rename failure");
-      };
-
-      expect(() => c.set(key, { ok: false })).not.toThrow();
-
+      expect(() => JSON.parse(readFileSync(target, "utf8"))).not.toThrow();
       expect(JSON.parse(readFileSync(target, "utf8")).value).toEqual(first);
       expect(readdirSync(dirname(target)).filter((f) => f.includes(".tmp-"))).toEqual([]);
-      expect(existsSync(target)).toBe(true);
-    }));
-
-  it("successful set publishes atomically and leaves no tmp files", () =>
-    withTmpProject("nudo-cache-atomic-", (root) => {
-      const c = new DiskCache({ root, namespace: "check" });
-      const key = checkCacheKey("/p/a.js", "export const x = 3;\n", { autoBind: true });
+      fsControl.writeFileSync = null;
+      fsControl.renameSync = () => { throw new Error("simulated rename failure"); };
+      expect(() => c.set(key, { ok: false })).not.toThrow();
+      expect(JSON.parse(readFileSync(target, "utf8")).value).toEqual(first);
+      expect(readdirSync(dirname(target)).filter((f) => f.includes(".tmp-"))).toEqual([]);
+      fsControl.renameSync = null;
       c.set(key, { v: 1 });
       c.set(key, { v: 2 });
-      const target = cachePath(root, key);
       expect(JSON.parse(readFileSync(target, "utf8")).value).toEqual({ v: 2 });
       expect(readdirSync(dirname(target))).toEqual([`${key}.json`]);
-    }));
+    });
+  });
 });
 
 describe("B3 Phase B contract table cache", () => {
-  const src = "export function add(a, b) { return a + b; }\n";
-  const sidecarA = "export const add = fn({ a: number() }, number());\n";
-  const sidecarB = "export const add = fn({ a: number().gt(0) }, number());\n";
-
-  it("contractCacheKey: source / sidecar / autoBind each flip the key", () => {
-    const base = contractCacheKey("/p/a.js", src, {
-      autoBind: true,
-      projectDir: "/p",
-      sidecarSource: sidecarA,
-    });
+  it("contract key 源/sidecar/autoBind 敏感；无 sidecar 与 autoBind=false 同段；表 roundtrip", () => {
+    const src = "export function add(a, b) { return a + b; }\n";
+    const sidecarA = "export const add = fn({ a: number() }, number());\n";
+    const sidecarB = "export const add = fn({ a: number().gt(0) }, number());\n";
+    const base = contractCacheKey("/p/a.js", src, { autoBind: true, projectDir: "/p", sidecarSource: sidecarA });
     expect(base).toHaveLength(64);
-    expect(
-      contractCacheKey("/p/a.js", src + "\n", {
-        autoBind: true,
-        projectDir: "/p",
-        sidecarSource: sidecarA,
-      }),
-    ).not.toBe(base);
-    expect(
-      contractCacheKey("/p/a.js", src, {
-        autoBind: true,
-        projectDir: "/p",
-        sidecarSource: sidecarB,
-      }),
-    ).not.toBe(base);
-    expect(
-      contractCacheKey("/p/a.js", src, {
-        autoBind: false,
-        projectDir: "/p",
-        sidecarSource: sidecarA,
-      }),
-    ).not.toBe(base);
-  });
-
-  it("contractCacheKey: no sidecar / autoBind=false share the sc0 segment", () => {
-    const noSc = contractCacheKey("/p/a.js", src, { autoBind: false, projectDir: "/p" });
-    const abFalse = contractCacheKey("/p/a.js", src, {
-      autoBind: false,
-      projectDir: "/p",
-      sidecarSource: sidecarA,
-    });
-    // autoBind=false 时侧车内容不进键（不 ambient 加载，契约读不到侧车）
-    expect(noSc).toBe(abFalse);
-  });
-
-  it("contract table round-trips through DiskCache namespace", () =>
+    expect(contractCacheKey("/p/a.js", src + "\n", { autoBind: true, projectDir: "/p", sidecarSource: sidecarA })).not.toBe(base);
+    expect(contractCacheKey("/p/a.js", src, { autoBind: true, projectDir: "/p", sidecarSource: sidecarB })).not.toBe(base);
+    expect(contractCacheKey("/p/a.js", src, { autoBind: false, projectDir: "/p", sidecarSource: sidecarA })).not.toBe(base);
+    expect(contractCacheKey("/p/a.js", src, { autoBind: false, projectDir: "/p" })).toBe(contractCacheKey("/p/a.js", src, { autoBind: false, projectDir: "/p", sidecarSource: sidecarA }));
     withTmpProject("nudo-contract-", (root) => {
       const disk = new DiskCache({ root, namespace: "contract" });
       const key = contractCacheKey("/p/a.js", src, { autoBind: true, projectDir: "/p" });
       expect(disk.get(key)).toBeUndefined();
-      const table = {
-        fns: {
-          add: {
-            fnName: "add",
-            params: [
-              {
-                param: "a",
-                constraint: { __nudoConstraint: true, prim: "number", preds: [] },
-              },
-            ],
-            source: "handwritten" as const,
-          },
-          helper: null,
-        },
-      };
+      const table = { fns: { add: { fnName: "add", params: [{ param: "a", constraint: { __nudoConstraint: true, prim: "number", preds: [] } }], source: "handwritten" as const }, helper: null } };
       disk.set(key, table);
       expect(disk.get(key)).toEqual(table);
-    }));
+    });
+  });
 });
 
 describe("B3/B4 config", () => {
-  it("diskCacheRoot: true → .nudo/cache under project", () => {
+  it("diskCacheRoot / callSiteBudget / import specs / dep content key", () => {
     const prev = process.env.NUDO_CACHE_DIR;
     delete process.env.NUDO_CACHE_DIR;
     try {
       expect(diskCacheRoot({ cache: true }, "/proj")).toBe(join("/proj", ".nudo/cache"));
       expect(diskCacheRoot({ cache: false }, "/proj")).toBeUndefined();
       expect(diskCacheRoot({}, "/proj")).toBeUndefined();
-    } finally {
-      if (prev !== undefined) process.env.NUDO_CACHE_DIR = prev;
-    }
-  });
-
-  it("callSiteBudget defaults to 3 and clamps", () => {
+    } finally { if (prev !== undefined) process.env.NUDO_CACHE_DIR = prev; }
     expect(analysisConfig(null).callSiteBudget).toBe(3);
     expect(analysisConfig({ analysis: { callSiteBudget: 10 } }).callSiteBudget).toBe(10);
     expect(analysisConfig({ analysis: { callSiteBudget: 0 } }).callSiteBudget).toBe(3);
     expect(analysisConfig({ analysis: { callSiteBudget: 999 } }).callSiteBudget).toBe(64);
-  });
-
-  it("extractNudoImportSpecs parses named and namespace forms", () => {
-    expect(
-      extractNudoImportSpecs(
-        `/// @nudo:import { positive } from "./std.nudo.js"\n/// @nudo:import * as helpers from "./h.nudo.js"\n`,
-      ),
-    ).toEqual(["./std.nudo.js", "./h.nudo.js"]);
-  });
-
-  it("checkCacheKey: @nudo:import dep content flips the key", () => {
-    const src = `/// @nudo:import { positive } from "./std.nudo.js"\nexport function f(x){return x;}\n`;
-    const a = checkCacheKey("/p/a.js", src, {
-      autoBind: true,
-      projectDir: "/p",
-      depContents: [{ path: "/p/std.nudo.js", content: "export const positive = 1;\n" }],
-    });
-    const b = checkCacheKey("/p/a.js", src, {
-      autoBind: true,
-      projectDir: "/p",
-      depContents: [{ path: "/p/std.nudo.js", content: "export const positive = 2;\n" }],
-    });
+    expect(extractNudoImportSpecs('/// @nudo:import { positive } from "./std.nudo.js"\n/// @nudo:import * as helpers from "./h.nudo.js"\n')).toEqual(["./std.nudo.js", "./h.nudo.js"]);
+    const src = '/// @nudo:import { positive } from "./std.nudo.js"\nexport function f(x){return x;}\n';
+    const a = checkCacheKey("/p/a.js", src, { autoBind: true, projectDir: "/p", depContents: [{ path: "/p/std.nudo.js", content: "export const positive = 1;\n" }] });
+    const b = checkCacheKey("/p/a.js", src, { autoBind: true, projectDir: "/p", depContents: [{ path: "/p/std.nudo.js", content: "export const positive = 2;\n" }] });
     expect(a).not.toBe(b);
   });
 });
 
 describe("B3 path key portability (F-6 / FIX-D3)", () => {
-  /** 两台不同 checkout 根：同逻辑布局 → 同 key；内容变 → miss */
-  function makeCheckout(layout: "node_modules" | "monorepo" | "pnpm"): {
-    root: string;
-    projectDir: string;
-    filePath: string;
-    depPath: string;
-  } {
+  const makeCheckout = (layout: "node_modules" | "monorepo" | "pnpm") => {
     const root = tmpProject("nudo-checkout-");
     const projectDir = join(root, "packages", "pkg");
     const filePath = join(projectDir, "src", "a.js");
     mkdirSync(join(projectDir, "src"), { recursive: true });
     writeFileSync(filePath, "export const x = 1;\n");
-
     if (layout === "node_modules") {
       const depDir = join(root, "node_modules", "foo");
       mkdirSync(depDir, { recursive: true });
@@ -346,149 +189,44 @@ describe("B3 path key portability (F-6 / FIX-D3)", () => {
       writeFileSync(depPath, "export const positive = 1;\n");
       return { root, projectDir, filePath, depPath };
     }
-    // monorepo：树内 packages/pkg + 树外 shared/（hoisted 非 node_modules）
     writeFileSync(join(root, "pnpm-workspace.yaml"), "packages:\n  - packages/*\n");
     mkdirSync(join(root, "shared"), { recursive: true });
     const depPath = join(root, "shared", "util.js");
     writeFileSync(depPath, "export const positive = 1;\n");
     return { root, projectDir, filePath, depPath };
-  }
-
-  const keyFor = (
-    c: { projectDir: string; filePath: string; depPath: string },
-    depContent: string,
-  ) =>
-    checkCacheKey(c.filePath, "export const x = 1;\n", {
-      autoBind: true,
-      projectDir: c.projectDir,
-      depContents: [{ path: c.depPath, content: depContent }],
-    });
-
-  it("node_modules dep: same key across different checkout roots", () => {
-    const a = makeCheckout("node_modules");
-    const b = makeCheckout("node_modules");
-    try {
-      expect(a.root).not.toBe(b.root);
-      // BUG-241：**入口文件**的键带项目身份 ⇒ 两个 checkout 的同相对路径
-      // 不再同键（这正是「共享 NUDO_CACHE_DIR 不得互相污染」的要求）。
-      // 依赖**段**的可移植性由下面的 relativizePath 断言钉住。
-      expect(relativizePath(a.depPath, a.projectDir)).toBe("node_modules/foo/lib.js");
-      expect(relativizePath(b.depPath, b.projectDir)).toBe("node_modules/foo/lib.js");
-      expect(keyFor(a, "export const positive = 1;\n")).not.toBe(
-        keyFor(b, "export const positive = 1;\n"),
-      );
-    } finally {
-      rmSync(a.root, { recursive: true, force: true });
-      rmSync(b.root, { recursive: true, force: true });
+  };
+  const keyFor = (c: { projectDir: string; filePath: string; depPath: string }, depContent: string) => checkCacheKey(c.filePath, "export const x = 1;\n", { autoBind: true, projectDir: c.projectDir, depContents: [{ path: c.depPath, content: depContent }] });
+  it("布局可移植 / 入口键带项目身份 / 内容 miss / 绝对路径不明文 / pnpm store / orphan 内容寻址", () => {
+    for (const layout of ["node_modules", "pnpm", "monorepo"] as const) {
+      const a = makeCheckout(layout);
+      const b = makeCheckout(layout);
+      try {
+        const expected = layout === "monorepo" ? "shared/util.js" : "node_modules/foo/lib.js";
+        expect(relativizePath(a.depPath, a.projectDir), layout).toBe(expected);
+        expect(relativizePath(b.depPath, b.projectDir), layout).toBe(expected);
+        expect(keyFor(a, "export const positive = 1;\n"), layout).not.toBe(keyFor(b, "export const positive = 1;\n"));
+      } finally { rmSync(a.root, { recursive: true, force: true }); rmSync(b.root, { recursive: true, force: true }); }
     }
-  });
-
-  it("pnpm virtual-store dep: logical node_modules/<pkg> segment is portable", () => {
-    const a = makeCheckout("pnpm");
-    const b = makeCheckout("pnpm");
-    try {
-      expect(relativizePath(a.depPath, a.projectDir)).toBe("node_modules/foo/lib.js");
-      expect(relativizePath(b.depPath, b.projectDir)).toBe("node_modules/foo/lib.js");
-      // BUG-241：入口键带项目身份（不同 checkout ⇒ 不同键）；路径维仍可移植
-      expect(keyFor(a, "export const positive = 1;\n")).not.toBe(
-        keyFor(b, "export const positive = 1;\n"),
-      );
-    } finally {
-      rmSync(a.root, { recursive: true, force: true });
-      rmSync(b.root, { recursive: true, force: true });
-    }
-  });
-
-  it("monorepo out-of-tree dep: root-relative under workspace root is portable", () => {
-    const a = makeCheckout("monorepo");
-    const b = makeCheckout("monorepo");
-    try {
-      expect(relativizePath(a.depPath, a.projectDir)).toBe("shared/util.js");
-      expect(relativizePath(b.depPath, b.projectDir)).toBe("shared/util.js");
-      // BUG-241：入口键带项目身份（不同 checkout ⇒ 不同键）；路径维仍可移植
-      expect(keyFor(a, "export const positive = 1;\n")).not.toBe(
-        keyFor(b, "export const positive = 1;\n"),
-      );
-    } finally {
-      rmSync(a.root, { recursive: true, force: true });
-      rmSync(b.root, { recursive: true, force: true });
-    }
-  });
-
-  it("dep content change → key miss (even with portable path segment)", () => {
     const a = makeCheckout("node_modules");
     try {
-      expect(keyFor(a, "export const positive = 1;\n")).not.toBe(
-        keyFor(a, "export const positive = 2;\n"),
-      );
-    } finally {
-      rmSync(a.root, { recursive: true, force: true });
-    }
-  });
-
-  it("no projectDir: absolute path never enters the key in the clear", () => {
-    const a = makeCheckout("node_modules");
-    try {
-      const abs = a.depPath.split(sep).join("/");
-      const rel = relativizePath(a.depPath);
-      expect(rel).toBe("node_modules/foo/lib.js");
-      expect(rel).not.toBe(abs);
-      expect(rel.startsWith("/")).toBe(false);
-
-      // 无任何稳定逻辑根：仍禁止绝对路径明文进 key
+      expect(keyFor(a, "export const positive = 1;\n")).not.toBe(keyFor(a, "export const positive = 2;\n"));
+      expect(relativizePath(a.depPath, undefined)).toBe("node_modules/foo/lib.js");
       const orphan = join(a.root, "elsewhere", "unique-orphan-file.js");
       mkdirSync(join(a.root, "elsewhere"), { recursive: true });
       writeFileSync(orphan, "x\n");
-      const orphanAbs = orphan.split(sep).join("/");
       const fallback = relativizePath(orphan);
-      expect(fallback).not.toBe(orphanAbs);
       expect(fallback.startsWith("/")).toBe(false);
-      expect(fallback).not.toContain(orphanAbs);
-    } finally {
-      rmSync(a.root, { recursive: true, force: true });
-    }
-  });
-
-  it("pnpm store realpath (no node_modules segment): content-addressed logical segment is portable", () => {
-    // realpath 穿出 node_modules 后的 pnpm store 落点：文件名即内容哈希
+      expect(fallback).not.toContain(orphan.split(sep).join("/"));
+    } finally { rmSync(a.root, { recursive: true, force: true }); }
     const hash = "a".repeat(62);
-    const p1 = `/Users/alice/Library/pnpm/store/v3/files/aa/${hash}`;
-    const p2 = `/home/ci/.local/share/pnpm/store/v3/files/aa/${hash}`;
-    expect(relativizePath(p1)).toBe(`pnpm-store:aa${hash}`);
-    expect(relativizePath(p2)).toBe(`pnpm-store:aa${hash}`);
-    expect(relativizePath(p1)).toBe(relativizePath(p2));
-    // 绝对路径明文绝不进 key
-    expect(relativizePath(p1)).not.toContain("/Users/alice");
-  });
-
-  it("pnpm store single-segment hash layout is also portable", () => {
-    const hash = "b".repeat(64);
-    const p1 = `/Users/alice/.pnpm-store/v10/files/${hash}`;
-    const p2 = `/home/ci/.pnpm-store/v10/files/${hash}`;
-    expect(relativizePath(p1)).toBe(`pnpm-store:${hash}`);
-    expect(relativizePath(p2)).toBe(relativizePath(p1));
-  });
-
-  it("orphan dep with known content: content fingerprint replaces ext: path hash", () => {
+    expect(relativizePath(`/Users/alice/Library/pnpm/store/v3/files/aa/${hash}`)).toBe(`pnpm-store:aa${hash}`);
+    expect(relativizePath(`/home/ci/.local/share/pnpm/store/v3/files/aa/${hash}`)).toBe(`pnpm-store:aa${hash}`);
+    const h2 = "b".repeat(64);
+    expect(relativizePath(`/Users/alice/.pnpm-store/v10/files/${h2}`)).toBe(`pnpm-store:${h2}`);
     const content = "export const positive = 1;\n";
-    const a = checkCacheKey("/p/a.js", "export const x = 1;\n", {
-      autoBind: true,
-      projectDir: "/p",
-      depContents: [{ path: "/Users/alice/store/orphan.js", content }],
-    });
-    const b = checkCacheKey("/p/a.js", "export const x = 1;\n", {
-      autoBind: true,
-      projectDir: "/p",
-      depContents: [{ path: "/home/ci/store/orphan.js", content }],
-    });
-    // 同内容、不同机器绝对路径 → 同 key（内容指纹，不是路径 hash）
-    expect(a).toBe(b);
-    // 内容变 → miss
-    const c = checkCacheKey("/p/a.js", "export const x = 1;\n", {
-      autoBind: true,
-      projectDir: "/p",
-      depContents: [{ path: "/Users/alice/store/orphan.js", content: content + "//x\n" }],
-    });
-    expect(c).not.toBe(a);
+    const ka = checkCacheKey("/p/a.js", "export const x = 1;\n", { autoBind: true, projectDir: "/p", depContents: [{ path: "/Users/alice/store/orphan.js", content }] });
+    const kb = checkCacheKey("/p/a.js", "export const x = 1;\n", { autoBind: true, projectDir: "/p", depContents: [{ path: "/home/ci/store/orphan.js", content }] });
+    expect(ka).toBe(kb);
+    expect(checkCacheKey("/p/a.js", "export const x = 1;\n", { autoBind: true, projectDir: "/p", depContents: [{ path: "/Users/alice/store/orphan.js", content: content + "//x\n" }] })).not.toBe(ka);
   });
 });

@@ -5,7 +5,7 @@
  * - apply 可返回裸 Abs（= 不抛）或 AbsApplyResult `{ abs, throws }`（throws 必填）。
  * - $call 单点路由 throws 面：always-throw → NudoThrow；may-throw → pushThrowExit。
  * - 包装 callTranspiledExportFull 的唯一入口是 callTranspiledExportApply——
- *   新包装点经该工厂不可能再丢 throws。
+ * 新包装点经该工厂不可能再丢 throws。
  */
 import { describe, it, expect } from "vitest";
 import {
@@ -257,7 +257,7 @@ describe("source gate — new wrap points cannot drop throws (FIX-D7)", () => {
         if (!p.endsWith(".ts") || p.endsWith(".test.ts")) continue;
         const text = readFileSync(p, "utf-8");
         // 危险模式：apply 回调内手拆 callTranspiledExportFull(...).result
-        // （BUG-006 根因）。合法路径是 callTranspiledExportApply 工厂。
+        // （根因）。合法路径是 callTranspiledExportApply 工厂。
         const re = /apply\s*:[\s\S]{0,200}?callTranspiledExportFull\s*\([\s\S]{0,120}?\)\s*\.result/g;
         if (re.test(text)) offenders.push(p);
       }
@@ -387,7 +387,7 @@ describe("relationFn throws face (A3)", () => {
 /**
  * 架构债 A4：构造路径（$new / bind 产物 [[Construct]]）不丢 apply 的 throws 槽。
  * 旧实现 `isAbsApplyResult(x) ? x.abs : x` 手拆 ⇒ 构造器声明的 throws 只在
- * 调用面生效，`new X()` 面恒「不抛」（env-bug-64 的 2.4 曾钉住该假绿）。
+ * 调用面生效，`new X()` 面恒「不抛」（env-的 2.4 曾钉住该假绿）。
  */
 describe("$new routes apply throws channel (A4)", () => {
   const throws = errorTypeAbs("TypeError");
@@ -401,7 +401,7 @@ describe("$new routes apply throws channel (A4)", () => {
       const v = $new(ctor, [numLit(1)]);
       return { v, exits: takeThrowExits() };
     });
-    // Bug 250：apply 返回 object-like ⇒ 用它
+    // apply 返回 object-like ⇒ 用它
     expect(r.v).toBe(inst);
     expect(r.exits).toHaveLength(1);
     expect(r.exits[0]).toBe(throws);

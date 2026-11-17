@@ -1,5 +1,5 @@
 /**
- * BUG-028：tryEvalCall 对缺 result 的
+ * tryEvalCall 对缺 result 的
  * TranspiledCallResult 显式 isAbsVal 守卫
  * + noteEvalFallback（旧实现 `!r` 死检查：
  * 类型级 result 必填使检查不可达，运行时
@@ -36,7 +36,7 @@ import {
   type EvalFallback,
 } from "@nudojs/core";
 
-describe("BUG-028: tryEvalCall broken-result guard", () => {
+describe("tryEvalCall broken-result guard", () => {
   beforeEach(() => {
     state.broken = false;
   });

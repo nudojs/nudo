@@ -13,7 +13,7 @@
 > 的时序），经复核在本内核里不是局部改造（见 §5.4 订正）。
 > 关联：诚实台账 → [`limitations.md`](./limitations.md) §1.4；架构债台账 →
 > [`architecture-debt.md`](./architecture-debt.md) A1；仓内回归钉 →
-> [`eval-bug-212-generator-body-eager.test.ts`](../packages/core/src/algebra/__tests__/eval-bug-212-generator-body-eager.test.ts)、
+> [`eval--generator-body-eager.part.ts`](../packages/core/src/algebra/__tests__/eval--generator-body-eager.part.ts)、
 > [`eval-generator-cross-function-consume.test.ts`](../packages/core/src/algebra/__tests__/eval-generator-cross-function-consume.test.ts)。
 > 分片：S10 · 族 44 · **研究级** · 出路 **B（精确登记）** · 2026-10-23
 >
@@ -50,7 +50,7 @@
 **局部收窄方案的可行性判定**（结论：局部收窄**可行**，但落在 **S11 的转译侧** ⇒ 本片不能单独落地）。
 
 **本片状态判定：局部收窄已落地**（2026-11-04，S11 转译侧实施步骤 1 ⇒ 交付新钉
-`eval-bug-212-generator-body-eager.test.ts`；步骤 2–4 待续，债面收窄为「时间轴缺失」）。
+`eval--generator-body-eager.part.ts`；步骤 2–4 待续，债面收窄为「时间轴缺失」）。
 
 ---
 
@@ -157,7 +157,7 @@ export function f() {
 
 ### 1.6 症状复现（before-state 取证）
 
-> 仓内回归钉：`packages/core/src/algebra/__tests__/eval-bug-212-generator-body-eager.test.ts`
+> 仓内回归钉：`packages/core/src/algebra/__tests__/eval--generator-body-eager.part.ts`
 > （4 条 `it.todo` 逐条对应下面 4 行原生语义；负控制钉住族 01 的 eager 收集口径）。
 
 | body | native | 引擎（当前） |
@@ -265,11 +265,11 @@ Abs = `shape × term × pred × conf`（`packages/core/src/algebra/abs.ts`）—
 
 `packages/core/src/algebra/__tests__/`：`exec-generator.test.ts`、`exec-generator-consumption.test.ts`、
 `exec-generator-precision.test.ts`、`exec-generator-protocol.test.ts`、`eval-generator-semantics.test.ts`、
-`eval-bug-141-async-generator.test.ts`、`eval-bug-141-decl-async-generator.test.ts`、
-`eval-bug-141-async-iter-elems.test.ts`、`eval-bug-229-yield-star-return-forward.test.ts`、
-`eval-bug-240-generator-own-properties.test.ts`、`eval-bug-240-guard-internal-slots.test.ts`、
-`eval-bug-212-generator-body-eager.test.ts`（**本族**：4 条 `it.todo` = 未闭合缺口）、
-`eval-loop-return-join.test.ts`（`$gen` 本地作用域臂）、`eval-bug-198-s20-residual-live-iter.test.ts`。
+`eval--async-generator.part.ts`（合并 decl / iter-elems 两钉）、
+`eval--yield-star-return-forward.part.ts`、
+`eval--generator-own-properties.part.ts`（合并 guard-internal-slots 钉）、
+`eval--generator-body-eager.part.ts`（**本族**：4 条 `it.todo` = 未闭合缺口）、
+`eval-loop-return-join.test.ts`（`$gen` 本地作用域臂）、`eval--s20-residual-live-iter.part.ts`。
 
 ---
 
@@ -301,7 +301,7 @@ Abs = `shape × term × pred × conf`（`packages/core/src/algebra/abs.ts`）—
 > `$copy` 第二实参 = 共享 `WeakMap` 身份 memo ⇒ 同一对象只拷一次，别名组内不分裂身份；
 > 临时名 `__g0_<n>` / `__gCopyMemo` 经 `internalTmpName`/`internalTmpNameSet` 避让用户同名
 > 标识符）。四个 `$gen` 发射点全部接入；快照集为空时**零发射**（不写外层绑定的生成器产物
-> 逐字不变）。回归钉：`eval-bug-212-generator-body-eager.test.ts`（12 用例：四行症状 +
+> 逐字不变）。回归钉：`eval--generator-body-eager.part.ts`（12 用例：四行症状 +
 > 四发射点 + 元素面承重 + 容器/别名组 + 负控制）。**残余**（→ §5.5 订正注）：首个 yield
 > 挂起点中间值不在 join 内；步骤 2–4 待续。
 
@@ -407,7 +407,7 @@ WeakMap miss，值面逐字不变。回归钉
 
 | 面 | 必改 expectation（精确文件） |
 |---|---|
-| 构造点值域 | `eval-bug-212-generator-body-eager.test.ts:49,59,70,81`（`'0 \| 1  #exact'` 等四行）、`:91,:99,:107,:115`（四发射点）、`:126`（元素面 exact）、`:138`（长度域）、`:149`（别名组） |
+| 构造点值域 | `eval--generator-body-eager.part.ts:49,59,70,81`（`'0 \| 1  #exact'` 等四行）、`:91,:99,:107,:115`（四发射点）、`:126`（元素面 exact）、`:138`（长度域）、`:149`（别名组） |
 | 元素面 / dts | `exec-generator.test.ts:24,43,72,74,76,124,134`、`exec-generator-protocol.test.ts`（16 条）、`exec-generator-consumption.test.ts` / `-precision.test.ts` / `eval-generator-semantics.test.ts` 全族；`service/src/emit/__tests__/emit-abs-brand-projection.test.ts:85-91`（元素槽空 ⇒ `Generator<unknown>`） |
 | 差分语料 | `differential/corpus/batch5.ts:310-317`、`batch11.ts:541-544`、`batch20-transpile-adversarial.ts:102-106` 共 14 条（「先消费再取值」形态在触发点覆盖 `next()` / spread / for-of 三条后应仍绿） |
 | 委托表 | `async.ts:790-823` 的 `genDelegationStack` 在**体执行序**里建 ⇒ 随体延后则下标对位失效即「不转发」 |
@@ -442,8 +442,8 @@ WeakMap miss，值面逐字不变。回归钉
 （Abs 需有「按 yield 点分段的状态序列 / 可恢复挂起帧」这一维）。
 
 证据已固化为可执行 PoC（不接生产、不改既有断言）：
-- core 侧 `core/src/algebra/exec/__tests__/a1-laziness-evidence-core.test.ts`（A / D / E，4 例）
-- service 侧 `service/src/emit/__tests__/a1-laziness-evidence-poc.test.ts`（B / C，2 例）
+- core 侧 `core/src/algebra/exec/__tests__/laziness-evidence-core.test.ts`（A / D / E，4 例）
+- service 侧 `service/src/emit/__tests__/laziness-evidence-poc.test.ts`（B / C，2 例）
 - 旁路基线 `core/src/algebra/exec/__tests__/gen-trigger-protocol-faces.test.ts`（7 例）
 
 **下一轮若要真推进，最小前置清单**（按依赖序）：① `conf` 可提升机制 +
@@ -519,7 +519,7 @@ WeakMap miss，值面逐字不变。回归钉
 
 | 前置 | 复核结论 | 落地 |
 |---|---|---|
-| ① `conf` 可提升 + `leqAbs` | **原判定「影响 L1/L2 门禁精度」被实测推翻**：`leq.ts` 全文 0 次 `conf`；`leqAbs(path, exact)` 与反向均 `{ok:true}`；`absKey` / `absShapeKey` 不进 conf。真正要设计的是 ⓐ **缓存键失效**（同键复用 path 时期结论，升 exact 后不自动重算）与 ⓑ **`confJoin` 单调不升**（一旦有中间 join 参与，提升必须显式重算）；`formatAbs` 的 `#exact` / `#path` 后缀会变 ⇒ 精确串断言需逐条复核 | `core/.../__tests__/a1-conf-promotion-evidence.test.ts`（4 例） |
+| ① `conf` 可提升 + `leqAbs` | **原判定「影响 L1/L2 门禁精度」被实测推翻**：`leq.ts` 全文 0 次 `conf`；`leqAbs(path, exact)` 与反向均 `{ok:true}`；`absKey` / `absShapeKey` 不进 conf。真正要设计的是 ⓐ **缓存键失效**（同键复用 path 时期结论，升 exact 后不自动重算）与 ⓑ **`confJoin` 单调不升**（一旦有中间 join 参与，提升必须显式重算）；`formatAbs` 的 `#exact` / `#path` 后缀会变 ⇒ 精确串断言需逐条复核 | `core/.../__tests__/conf-promotion-evidence.test.ts`（4 例） |
 | ③ `snapshotAbs` 侧表迁移 | **已修（A7 镜像一致性缺口）**：`$copy` 早有 `copyMatchIterTables`，`snapshotAbs` 此前只搬 fn impl ⇒ 生成器 / 模板 / matchAll / 用户迭代器 / Proxy 的迭代元素、延迟异常、drain 视图在副本上整体丢失（L2 假阴）。`hof.ts` 末尾补 `copyMatchIterTables(a, out)`；`match-iter.ts` 只依赖 algebra 顶层叶子、不依赖 `hof.ts` ⇒ 无环。**与 `$copy` 同口径共享视图引用**（副本消费推进原对象状态，负控钉住） | `core/.../__tests__/snapshot-match-iter-tables.test.ts`（6 例），全仓 0 新增失败 |
 | ② dts 元素域通道 | **第三种已落地**（显式承载位 + 注解一致性诊断；fork 分支 `unknown` → `number \| string`）；**符号 PoC 轮**进一步实证「独立编译实例 + `any` 入口」可回填承载位、体延后零精度损失 ⇒ 接产绑定步骤 3，不单独接 | `core/.../gen-elements-facet.test.ts`（7 例）、`service/.../emit-gen-elements-facet.test.ts`（9 例）、实验 F（2 例）、`exec/__tests__/symbolic-yield-domain-poc.test.ts`（21 例） |
 
@@ -778,7 +778,7 @@ async generator 的 replay 异常交付 rejected promise（不再二次包裹）
 `yield` / `return` 的残余已于 2026-11-14 结案不做**：`yield` 需真挂起/续体；`return`
 需正常/重放双发射的 tagged-return 协议，收益仅覆盖低频形态且无需求证据 ⇒ 保持 C 的
 sound 过近似（`false | true`），见 ABS 计划 §5/§8。夹具
-`abs13-abrupt-completion.test.ts`（15 例）。
+`abrupt-completion.test.ts`（15 例）。
 
 **剩余（本轮时点）**：步骤 4 全量真挂起（含非绑定类副作用时序）；
 `conf` 可提升机制与 `snapshotAbs` shape 槽补写失效前置，因求值收口排空 +
@@ -849,7 +849,7 @@ sound 过近似（`false | true`），见 ABS 计划 §5/§8。夹具
 
 **回归**：新增 `exec/__tests__/gen-suspend-replay.test.ts`（8 例机制钉：
 构造期零捕获 / 首次回放 / 单调推进 / drain / 别名广播 / async 同编 /
-嵌套帧隔离 + 终态格 / 无钩子零开销）；`eval-bug-212-generator-body-eager.test.ts` 的 c3/c4
+嵌套帧隔离 + 终态格 / 无钩子零开销）；`eval--generator-body-eager.part.ts` 的 c3/c4
 断言重订为精确 native 值并补 2 例推进用例（14 例全绿）；
 `eval-generator-cross-function-consume.test.ts` 的步骤 4 todo 升级为
 5 例验收（含两类 sound 守卫与 `.return()` 回退，9 例全绿）。

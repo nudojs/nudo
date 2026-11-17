@@ -70,7 +70,7 @@ describe("R2b: 生成器 / 迭代器 / 实例 / 字面量", () => {
     expect(v(`export function f() { const g = function* () { yield 1; }; return g() === g(); }`)).toBe(false);
   });
 
-  it("[].values() 迭代器两次 → false", () => {
+  it(".values() 迭代器两次 → false", () => {
     expect(v(`export function f() { return [1].values() === [1].values(); }`)).toBe(false);
   });
 

@@ -3,9 +3,9 @@
  * 未登记名字即失败——防「未建模面静默漏网」。
  *
  * - 正向：globalThis 自有名 + 策展 brand 的 prototype/静态自有名，每个必须
- *   ∈ MODELED ∪ ALLOWED_IMPRECISE；
+ * ∈ MODELED ∪ ALLOWED_IMPRECISE；
  * - 反向：台账条目在运行时已不存在 → 失败（防僵尸条目；Node 版本/上下文
- *   漂移条目经 VERSION_SKEW 豁免）；
+ * 漂移条目经 VERSION_SKEW 豁免）；
  * - 自检：两级台账互斥、VERSION_SKEW 不含未登记键。
  *
  * 新名字分诊指引：给引擎补分发/校验 case 后登记 MODELED（理由 cites 派发点）；

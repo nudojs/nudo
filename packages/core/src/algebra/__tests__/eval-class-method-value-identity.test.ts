@@ -123,7 +123,7 @@ describe("P2a: 差分对账（native oracle）", () => {
   });
 });
 
-describe("Bug 89: 用户类方法一等值借用调用（.call/.apply/.bind）经 apply 钩子重入分派", () => {
+describe("用户类方法一等值借用调用（.call/.apply/.bind）经 apply 钩子重入分派", () => {
   // native：classMethodValueAbs 产的方法值此前是 noBody 无 apply 的 fn——
   // $call 编译空 body 折 wrong-exact undefined。修复：apply 钩子经
   // protoMethodDispatch 转发 $invoke(thisVal, key, args)（实例面 findMethod /

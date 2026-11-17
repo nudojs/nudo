@@ -1,12 +1,12 @@
 /**
  * async 函数拒绝域回归（F2 家族）：
  * - 体 throw 不同步抛调用点：调用恒返回 promise，体抛错 ⇒ 确定拒绝
- *   （inner=never + rejected 通道）。此前 NudoThrow 直接穿透 $async 调用点，
- *   被 .catch 处理的拒绝也变成 caller throw（差分 knownFalseThrows 项）。
+ * （inner=never + rejected 通道）。此前 NudoThrow 直接穿透 $async 调用点，
+ * 被 .catch 处理的拒绝也变成 caller throw（差分 knownFalseThrows 项）。
  * - await 确定拒绝的 promise：体内抛 reason（原生 reject → await throw），
- *   不得折假精确 resolved 值；try/catch 内由既有 catch 机制吸收。
+ * 不得折假精确 resolved 值；try/catch 内由既有 catch 机制吸收。
  * - async 体 `return <promise>`：原生递归采纳 thenable，不假嵌套
- *   promise<promise<…>>。
+ * promise<promise<…>>。
  * 每条断言与 Node 真实执行对齐（值域 + throws 域双钉）。
  */
 import { describe, it, expect } from "vitest";

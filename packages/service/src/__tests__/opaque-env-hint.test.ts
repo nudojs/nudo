@@ -1,11 +1,11 @@
 /**
  * nudo:opaque-result 的 remediation hint 分流（DX）：
  * - 文件 import/require 了内置模块（node: 前缀或 node:module isBuiltin 名单
- *   ——@nudojs/env 模块面的可得超集）且无任何 env 生效（无 /// @nudo:env、
- *   无 inject envGlobals）→ hint 指向 env 声明（may/declare 口径，不做过诺）；
+ * ——@nudojs/env 模块面的可得超集）且无任何 env 生效（无 /// @nudo:env、
+ * 无 inject envGlobals）→ hint 指向 env 声明（may/declare 口径，不做过诺）；
  * - 有 env（CLI buildCheckInjection 同口径注入后 native 调用可推断）、
- *   env 已声明（如 es）但不含该模块面、非内置模块 import、纯自包含 opaque
- *   → 维持原始 hint。
+ * env 已声明（如 es）但不含该模块面、非内置模块 import、纯自包含 opaque
+ * → 维持原始 hint。
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import {

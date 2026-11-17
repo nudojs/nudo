@@ -1,12 +1,12 @@
 /**
- * for 步进 lowering 回归（报告 Bug 132 / Bug 144）。
+ * for 步进 lowering 回归（报告 / ）。
  *
- * Bug 132：主 for 路径（`for (let i = …)`）把 `i++` 降成 `i = $add(i, $lit(1))`
+ * 主 for 路径（`for (let i = …)`）把 `i++` 降成 `i = $add(i, $lit(1))`
  * —— `$add` 是二元 `+`：bigint + number 走 mixed-bigint 抛 TypeError 臂；
  * string 左操作数走字符串拼接臂（"5"++ 原生 6，拼接得 "51"）。同仓库另外
  * 三处步进 lowering 早已用 $updateAdd/$updateSub（ToNumeric ± 1）。
  *
- * Bug 144：步进闭包的**返回值**被当成 $for 的状态线程——序列表达式
+ * 步进闭包的**返回值**被当成 $for 的状态线程——序列表达式
  * （`i++, n++`）的值是末项值（后缀自增回旧值），循环变量因此停滞 / 超跑。
  * 修法：步进只取副作用，状态线程恒为循环变量自身（与 fallback 路径同口径）。
  *

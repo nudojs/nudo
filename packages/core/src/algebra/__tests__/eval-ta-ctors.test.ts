@@ -1,12 +1,12 @@
 /**
- * 求值引擎 TypedArray 构造器/静态面实参校验（Bug 21/27）：
- * - Bug 21：`new <TA>(length)` 跳过 ToIndex——负/超界 → 定抛 RangeError、
- *   symbol/bigint → 定抛 TypeError、抽象 → may（与 makeArrayBufferAbs 同
- *   口径；两个分发面 evalBuiltinNew + $new 宿主表共用 builder）。
- * - Bug 27：`%TypedArray%.from` items 跳过 ToObject（nullish → 定抛
- *   TypeError、可能 nullish 的抽象 → may）；`.of` 逐项跳过元素转换
- *   （number 域 symbol/bigint 项定抛；bigint 域 number/symbol/nullish 项
- *   定抛、string 项 StringToBigInt）。mapFn 校验属 Bug 37（另行任务）。
+ * 求值引擎 TypedArray 构造器/静态面实参校验（）：
+ * - `new <TA>(length)` 跳过 ToIndex——负/超界 → 定抛 RangeError、
+ * symbol/bigint → 定抛 TypeError、抽象 → may（与 makeArrayBufferAbs 同
+ * 口径；两个分发面 evalBuiltinNew + $new 宿主表共用 builder）。
+ * - `%TypedArray%.from` items 跳过 ToObject（nullish → 定抛
+ * TypeError、可能 nullish 的抽象 → may）；`.of` 逐项跳过元素转换
+ * （number 域 symbol/bigint 项定抛；bigint 域 number/symbol/nullish 项
+ * 定抛、string 项 StringToBigInt）。mapFn 校验属 （另行任务）。
  * 全部断言与 node v26 ground truth 对齐（见 tmp/bug-report.md 两案矩阵）。
  */
 import { describe, it, expect } from "vitest";
@@ -65,9 +65,9 @@ function isBrand(r: unknown, name: string): boolean {
   return !!a && typeof a === "object" && a.shape?.k === "brand" && a.shape.name === name;
 }
 
-// --- Bug 21：new <TA>(length) ToIndex 校验 --------------------------------
+// --- new <TA>(length) ToIndex 校验 --------------------------------
 
-describe("Bug 21: TypedArray constructor ToIndex validation", () => {
+describe("TypedArray constructor ToIndex validation", () => {
   it("负数/超界/±∞ 字面量（含数字字符串折算）→ definite RangeError（全家族）", () => {
     for (const src of [
       `export function f() { return new Uint8Array(-1); }`,
@@ -136,9 +136,9 @@ describe("Bug 21: TypedArray constructor ToIndex validation", () => {
   });
 });
 
-// --- Bug 27：%TypedArray%.from / .of 静态面校验 ----------------------------
+// --- %TypedArray%.from / .of 静态面校验 ----------------------------
 
-describe("Bug 27: TypedArray static from/of validation", () => {
+describe("TypedArray static from/of validation", () => {
   it("from(nullish) → definite TypeError（含 Int16/Float64/BigInt64/Float16 家族）", () => {
     for (const src of [
       `export function f() { return Uint8Array.from(null); }`,
@@ -227,9 +227,9 @@ describe("Bug 27: TypedArray static from/of validation", () => {
   });
 });
 
-// --- Bug 101：new <TA>(buffer, byteOffset?, byteLength?) bounds ------------
+// --- new <TA>(buffer, byteOffset?, byteLength?) bounds ------------
 
-describe("Bug 101: TypedArray constructor buffer-form bounds", () => {
+describe("TypedArray constructor buffer-form bounds", () => {
   it("byteOffset 越界 / 未对齐 / 视图越出 → definite RangeError", () => {
     for (const src of [
       `export function f() { const b = new ArrayBuffer(8); return new Uint8Array(b, 9); }`,
@@ -294,9 +294,9 @@ describe("Bug 101: TypedArray constructor buffer-form bounds", () => {
   });
 });
 
-// --- Bug 125 载体：字面量源形态 length 槽 ----------------------------------
+// --- 载体：字面量源形态 length 槽 ----------------------------------
 
-describe("Bug 125 carrier: literal-source length slot", () => {
+describe("carrier: literal-source length slot", () => {
   it("tuple 源 length = elements.length（hole 计入；node 实测 [1,,3].length===3）", () => {
     expect(litValueOf(`export function f() { return new Uint8Array([1, 2]).length; }`)).toBe(2);
     expect(litValueOf(`export function f() { return new Uint8Array([1, , 3]).length; }`)).toBe(3);
@@ -305,9 +305,9 @@ describe("Bug 125 carrier: literal-source length slot", () => {
   });
 });
 
-// --- Bug 131：构造 / .from 逐项元素转换 -------------------------------------
+// --- 构造 / .from 逐项元素转换 -------------------------------------
 
-describe("Bug 131: TypedArray constructor/from item conversion", () => {
+describe("TypedArray constructor/from item conversion", () => {
   it("number 域构造源：bigint/symbol 项 → definite TypeError（此前 throws 域 never 假 total）", () => {
     for (const src of [
       `export function f() { return new Uint8Array([1n]); }`,

@@ -7,11 +7,11 @@ import {runTranspiled, callTranspiledExportFull} from "../run.ts";
  * 历史实现是行级正则 + `endsWith(";")` / 括号计数启发式，三类输入静默改变
  * 程序语义（均已实证为旧行为）：
  * 1. 多行语句（回调体内行以 `;`/`}` 结尾）提前终止跳过 → 语句尾悬空
- *    → `new Function` SyntaxError（`setTimeout(fn, 100)` 整模块不可分析）；
+ * → `new Function` SyntaxError（`setTimeout(fn, 100)` 整模块不可分析）；
  * 2. 字符串里的未配对 `(`（如 `"fetch("`）计入括号平衡 → 连带误删后续
- *    顶层 `export function`（导出整体静默变 unknown）；
+ * 顶层 `export function`（导出整体静默变 unknown）；
  * 3. 列 0 的 `catch (` 头匹配「未知全局调用」正则 → catch 头被剥 →
- *    顶层 try/catch 一律 SyntaxError。
+ * 顶层 try/catch 一律 SyntaxError。
  *
  * 现实现为**发射期源 AST 过滤**（`transpile/analyze-strip.ts`，run.ts 不再
  * 解析生成产物）。本文件是语义契约：剥离对象仍被整体剥除（不执行副作用、

@@ -156,7 +156,7 @@ describe("runtime import surface", () => {
 });
 
 /** 语料：覆盖计算键调用 / try-catch（软抛出与 $catchReturn）/ @nudo:assume /
- *  async / 类 / 对象字面量 / 赋值（含 const 面）——每新增发射点都应加一行。 */
+ * async / 类 / 对象字面量 / 赋值（含 const 面）——每新增发射点都应加一行。 */
 const CORPUS: readonly string[] = [
   // 计算键调用（$invokeKey）与可选链
   `function f(o, k, x) { return o[k](x); }`,

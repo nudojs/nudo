@@ -4,12 +4,12 @@
  * 被钉住的事故形态：引擎内部临时名（`__` 前缀）若**绕过分配器写死**，
  * 与用户标识符撞名有两种失效——遮蔽（自信错值 ⇒ 闸门假绿）或重复声明
  * （产物非法 JS ⇒ `new Function` SyntaxError ⇒ 整模块 fail-closed ⇒
- * L2 假绿）。Bug 1058 / 1059 / 1127 / 1146 / 1149 / 1151 / 1159 全是
+ * L2 假绿）。 全是
  * 这一族。本守卫把防线从「运行时撞名才炸」前移到 CI：
  *
  * - 对语料逐个 `transpileSource` → 用 `parseSource` 解析**产物** → walk
- *   全部声明位（VariableDeclarator / 函数与类声明 id / 形参 / catch 参数
- *   / import 说明符 / 标签名）收集绑定名；
+ * 全部声明位（VariableDeclarator / 函数与类声明 id / 形参 / catch 参数
+ * / import 说明符 / 标签名）收集绑定名；
  * - 减去**源码自身**声明的同名绑定（用户写 `__foo` 是合法 JS，不算引擎名）；
  * - 断言剩余的 `__` 前缀名全部命中已知白名单（每项注明来源文件）。
  *
@@ -30,7 +30,7 @@ import { sectionsOf } from "./differential/harness.ts";
 // ---- 白名单（单一维护点）------------------------------------------------
 //
 // 匹配规则：`^(?:条目)(_\\d+)?$`——`_\\d+` 是 internalTmpName / safeTmpName
-// 撞名避让后缀（Bug 1058 / 181：`__this` → `__this_1`）。条目里的 `\\d+`
+// 撞名避让后缀（：`__this` → `__this_1`）。条目里的 `\\d+`
 // 是发射序号（StmtEmitState / tryTmpSeq 计数器）。**新增 `__` 名必须**：
 // 走分配器（internalTmpName / internalTmpNameSet / forkTmpNames /
 // switchTmpNames）且在此登记条目 + 来源，否则本守卫红。
@@ -39,15 +39,15 @@ const entry = (body: string): RegExp => new RegExp(`^(?:${body})${AVOID_SUFFIX}$
 
 /** [正则, 样例名, 来源] —— 样例用于自检正则没写坏（锚点 / 转义笔误）。 */
 const KNOWN_INTERNAL_NAMES: ReadonlyArray<readonly [RegExp, string, string]> = [
-  // ---- emit.ts：fork 协议分配器 forkTmpNames（Bug 1151-b）----
+  // ---- emit.ts：fork 协议分配器 forkTmpNames（b）----
   [entry("__fk\\d+(_set)?_.+"), "__fk1_set_x", "emit.ts forkTmpNames（__fk<i>_<绑定名> / __fk<i>_set_<绑定名>）"],
   [entry("__cont|__fkT|__fkR|__fkCons|__fkArmMemo|__fkCopyMemo"), "__fkT", "emit.ts forkTmpNames 单例（cont/test/result/构造臂/memo）"],
-  // ---- emit.ts：switch 协议分配器 switchTmpNames（Bug 1151-b）----
+  // ---- emit.ts：switch 协议分配器 switchTmpNames（b）----
   // 注意臂 set 标志是 `__sw${i}set_${n}`（set 前**无**下划线——与 fork 族
   // `__fk${i}_set_${n}` 的历史形态不一致，勿「顺手统一」）。
   [entry("__sw\\d+(set)?_.+"), "__sw0_x", "emit.ts switchTmpNames（__sw<i>_<绑定名> / __sw<i>set_<绑定名>）"],
   [entry("__swD|__swR|__p"), "__p", "emit.ts switchTmpNames 单例（判别式/结果/join 数组 __p）"],
-  // ---- stmt/statement.ts：switch 面（internalTmpName / internalTmpNameSet，Bug 1159）----
+  // ---- stmt/statement.ts：switch 面（internalTmpName / internalTmpNameSet，）----
   [
     entry("__swT|__swTV|__swTD|__swAllDone|__swTestRead|__swEval|__swEvalAll|__swI|__swJ|__swArmMemo|__swCopyMemo|__swRefreshMemo"),
     "__swAllDone",
@@ -273,7 +273,7 @@ describe("转译产物内部名卫生（__ 前缀声明位 ⊆ 已知白名单�
     for (const [re, sample] of KNOWN_INTERNAL_NAMES) {
       expect(re.test(sample), `${re} 应命中样例 ${sample}`).toBe(true);
     }
-    // 避让后缀形态（Bug 1058/181：撞名 → 基名_1）也必须命中
+    // 避让后缀形态（：撞名 → 基名_1）也必须命中
     expect(isKnownInternalName("__this_1")).toBe(true);
     expect(isKnownInternalName("__fk0_x_2")).toBe(true);
     // 两族 set 标志的历史形态（fork 带 _、switch 不带——见上）都必须命中

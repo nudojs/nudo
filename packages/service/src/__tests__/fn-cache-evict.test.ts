@@ -60,7 +60,7 @@ describe("evictFnAnalysisCacheForFiles", () => {
   });
 });
 
-describe("fn analysis cache LRU order (BUG-012)", () => {
+describe("fn analysis cache LRU order ()", () => {
   beforeEach(() => {
     resetSessionCacheLimitState();
     clearFnAnalysisCache();

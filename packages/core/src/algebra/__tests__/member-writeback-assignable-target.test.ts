@@ -6,7 +6,7 @@
  * `$nodoPos(name, line, col)`（位置插桩**读**），而各写回点把同一个
  * `rootSrc` 当作**赋值目标**用：
  *
- *     $nodoPos(o, 2, 24) = $del($nodoPos(o, 2, 24), $lit("a"));
+ * $nodoPos(o, 2, 24) = $del($nodoPos(o, 2, 24), $lit("a"));
  *
  * 这是**非法 JS**（赋值目标不是简单赋值目标）⇒ new Function 抛 SyntaxError
  * ⇒ 整个模块求值失败（fail-closed）⇒ 带成员写回的模块导出全部退化为

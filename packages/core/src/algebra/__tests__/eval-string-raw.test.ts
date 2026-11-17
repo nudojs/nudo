@@ -1,13 +1,13 @@
 /**
- * 求值引擎 String.raw 定抛/良性面（Bug 97）：
+ * 求值引擎 String.raw 定抛/良性面（）：
  * 此前 evalStringStatic 的 raw 分支对闭 obj 无 raw 槽折 str("path") 且
  * throws 域 never——假 total。原生两级定抛面：
  * ① ToObject(templates)——缺实参/nullish 字面量 → TypeError；
  * ② Get(template,"raw") 后 ToObject(raw)——闭 obj 无 raw 槽（及 prim/tuple/
- *    arr 无 raw 访问面形态，node 实测 String.raw(5)/String.raw([1,2]) 同抛）
- *    → 确定 TypeError；open obj / any/unknown/sum → may TypeError；
- *    raw 内容面：nullish raw → 定抛、symbol 元素 → 定抛、抽象 raw/元素 → may；
- *    字面量非数组 raw（raw:5 原生 ""）良性。
+ * arr 无 raw 访问面形态，node 实测 String.raw(5)/String.raw([1,2]) 同抛）
+ * → 确定 TypeError；open obj / any/unknown/sum → may TypeError；
+ * raw 内容面：nullish raw → 定抛、symbol 元素 → 定抛、抽象 raw/元素 → may；
+ * 字面量非数组 raw（raw:5 原生 ""）良性。
  * 全部断言与 node v26 ground truth 对齐。
  */
 import { describe, it, expect } from "vitest";
@@ -18,7 +18,7 @@ const throwsName = (r: { throws: unknown }): string | undefined =>
     ? undefined
     : (r.throws as { shape?: { name?: string } })?.shape?.name;
 
-describe("Bug 97: String.raw definite-throw faces", () => {
+describe("String.raw definite-throw faces", () => {
   it("缺实参 / nullish / 无 raw 访问面形态 → definite TypeError", () => {
     for (const src of [
       `export function f() { return String.raw(); }`,

@@ -4,13 +4,13 @@
  * join/宽化位（widenLoopJoin / widenFinal）按绑定名实施强化；证明依赖了
  * 它时上屏 `nudo:invariant-relied` info 审计。本套件钉：
  * - 主靶（levenshtein 型 DP + if-guard）：证得 + relied；对照（无指令）
- *   与无 guard 原样版（OOB 诚实面）仍 unproven
+ * 与无 guard 原样版（OOB 诚实面）仍 unproven
  * - 标量形态（W1：`last = j` 循环携带）
  * - 文法/绑定名校验 → warning nudo:invariant-invalid（issue 结构）
  * - 槽（currentInvariantSpecs / withInvariantSpecs）set/restore/嵌套/异常
- *   + callAtFunctionBoundary 边界清空（callee 帧不继承）
+ * + callAtFunctionBoundary 边界清空（callee 帧不继承）
  * - 跨帧护栏：caller 声明 invariant，callee 同名循环局部不受染（unsound
- *   假证明指纹 = proved via @nudo:invariant）
+ * 假证明指纹 = proved via @nudo:invariant）
  * - applyInvariantsToPack 单元（下钻/叶子/lit 不改写/非 obj 直通）
  * - 无 invariant → 零 nudo:invariant-* 诊断
  *
@@ -70,7 +70,7 @@ describe("@nudo:invariant 主靶（levenshtein 型 DP）", () => {
  */
 export function levenshtein(a, b) {${levenshteinBody}}
 `,
-      // Bug 129：Array.from({length: m+1}) 抽象长度 may 超 2^32-1 →
+      // Array.from({length: m+1}) 抽象长度 may 超 2^32-1 →
       // RangeError（native 实测 {length: 2**32} 定抛）——L2 合法 note，
       // 本用例主靶是 invariant 证明面，按惯例 ignoreThrows 拆分预期。
       { ...levOpts, ignoreThrows: ["RangeError"] },

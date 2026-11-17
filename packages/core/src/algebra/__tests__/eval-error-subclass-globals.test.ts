@@ -1,5 +1,5 @@
 /**
- * Bug 68：Error 家族七子类进 NAMESPACE_GLOBALS（+ env-skip 同步）。修复前
+ * Error 家族七子类进 NAMESPACE_GLOBALS（+ env-skip 同步）。修复前
  * `RangeError` 全局落宿主 fn 通用通道 → `.prototype` 捏匿名闭 obj：
  * `.constructor === X` 假 false（折 Object）、`X.prototype.toString.call(...)`
  * 假派 Object.prototype.toString（"[object Error]"）。入表后 .prototype 走
@@ -23,7 +23,7 @@ const SUBCLASSES = [
   "AggregateError",
 ] as const;
 
-describe("Bug 68: X.prototype.constructor === X（七子类）", () => {
+describe("X.prototype.constructor === X（七子类）", () => {
   for (const name of SUBCLASSES) {
     it(`${name}.prototype.constructor === ${name} → true`, () => {
       expect(v(`export function f() { return ${name}.prototype.constructor === ${name}; }`)).toEqual({ ok: true, value: true });
@@ -37,7 +37,7 @@ describe("Bug 68: X.prototype.constructor === X（七子类）", () => {
   });
 });
 
-describe("Bug 68: X.prototype.toString 派发 Error 家族格式", () => {
+describe("X.prototype.toString 派发 Error 家族格式", () => {
   it("RangeError.prototype.toString.call(new RangeError(\"m\")) → \"RangeError: m\"", () => {
     expect(v(`export function f() { return RangeError.prototype.toString.call(new RangeError("m")); }`)).toEqual({ ok: true, value: "RangeError: m" });
   });

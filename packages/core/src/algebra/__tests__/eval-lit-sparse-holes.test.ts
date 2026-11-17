@@ -1,5 +1,5 @@
 /**
- * Bug 14：$lit（case 实参 / litAbsFromJs）稀疏数组丢洞——数组分支
+ * $lit（case 实参 / litAbsFromJs）稀疏数组丢洞——数组分支
  * v.map(...) 无视洞下标（map 保留洞），tuple 形状不带 holes 槽 →
  * 洞与显式 undefined 元素不可区分：`in` / hasOwnProperty 在洞下标折
  * 精确 true（原生 false）。修复：转换时按 `i in v` 探洞，把洞下标
@@ -9,7 +9,7 @@ import { describe, it, expect } from "vitest";
 import { litValue, formatShape } from "@nudojs/core";
 import { callLit as call } from "./eval-helpers.ts";
 
-describe("$lit sparse array case args keep holes (Bug 14)", () => {
+describe("$lit sparse array case args keep holes ()", () => {
   it("1 in [1,,3] (case arg) is false; present indices true", () => {
     const r = call(`export function f(a) { return 1 in a; }`, "f", [1, , 3]);
     expect(litValue(r.result)).toEqual({ ok: true, value: false });

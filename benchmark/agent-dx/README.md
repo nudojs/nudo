@@ -51,13 +51,10 @@ avgRounds     (detected) nudo=1    ts=1
 
 **读法：** TS 的 0 token 往往是 **SG 沉默**——agent 根本看不见 bug；Nudo 多付的是**看见**的 token。
 
-## 与其它套件的分工
+## 定位
 
-| 套件 | 问 |
-|------|----|
-| `pnpm run agent-eval` | Nudo 自身 10 题红→绿是否 100% |
-| `pnpm run agent-dx` | **Nudo vs TS 同 bug 对照**（本项目） |
-| `pnpm run dx-metrics` | fix-rate / time-to-green 运营基线 |
+本套件只回答一个问题：**同一 bug 在 Nudo vs tsc 下是否被检出**（`pnpm run agent-dx`）。
+更重的修复环评测（多文件 + 真实历史 bug）在 `benchmark/lsp-rounds/`。
 
 ## 诚实边界
 

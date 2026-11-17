@@ -4,8 +4,8 @@
  * - 对象字面量属性值：后续项被解析成新属性的键 → new Function SyntaxError
  * - 数组元素：一项变多项（长度静默翻倍）
  * - 类计算键（TS 降级产物 `[(_A = new WeakMap(), …, "k")]` 正是该形态）：
- *   整文件 eval-incapable → 模块图逐依赖重试 → yargs hub-edit 4.4x 回归
- *   （CI OSS baseline gate 5 连红）。修复：序列统一括号包裹。
+ * 整文件 eval-incapable → 模块图逐依赖重试 → yargs hub-edit 4.4x 回归
+ * （CI OSS baseline gate 5 连红）。修复：序列统一括号包裹。
  * 每条断言与 Node 真实执行对齐（修前：SyntaxError×3 + 数组静默撕裂）。
  */
 import { describe, it, expect } from "vitest";

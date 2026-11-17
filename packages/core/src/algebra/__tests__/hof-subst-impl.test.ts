@@ -1,12 +1,12 @@
 /**
- * A7 / Bug 810 引擎面回归：`substAbs` 重建 fn Shape 时必须搬运 impl 侧表。
+ * A7 / 引擎面回归：`substAbs` 重建 fn Shape 时必须搬运 impl 侧表。
  *
  * 改前（debt A7）：`substShape` case "fn" 只重建形状 ⇒ impl（按 Abs 身份挂
  * WeakMap）丢失 ⇒ 替换产物退化 shape-only fn ⇒ D 路径（impl.relation 的
  * inferFrom / condFallback / throws / fingerprint 等 impl 独有数据）静默
- * 丢失 ⇒ 泛型方法调用经接口 α 代入后折 any/unknown（Bug 810 的引擎面半边；
+ * 丢失 ⇒ 泛型方法调用经接口 α 代入后折 any/unknown（的引擎面半边；
  * 收割面半边 = harvest-dts 的 α 作用域隔离，见 harvester 的
- * harvest-bug-810-method-type-param-shadow.test.ts）。
+ * harvest--method-type-param-shadow.part.ts）。
  *
  * 口径（见 hof.ts `substFnImpl`）：行为面（apply/body/闭包）与标量 facet
  * α 无关 ⇒ 原样搬运；relation 槽是 Abs 数据 ⇒ 按 map 替换并与 shape 槽
@@ -34,7 +34,7 @@ const tVar = (): Abs => abs({ k: "any" }, v("T"), undefined, "path");
 const eVar = (): Abs => abs({ k: "any" }, v("E"), undefined, "path");
 const arrOf = (el: Abs): Abs => abs({ k: "arr", element: el }, undefined, undefined, "exact");
 
-/** Bug 810 场景的方法签名：first<T>(x: T): T extends (infer E)[] ? E : string */
+/** 场景的方法签名：first<T>(x: T): T extends (infer E)[] ? E : string */
 function condMethod(): Abs {
   return relationFn([tVar()], eVar(), {
     params: ["x"],
@@ -43,7 +43,7 @@ function condMethod(): Abs {
   });
 }
 
-describe("A7 / Bug 810 引擎面 —— substAbs 搬运 fn impl 侧表", () => {
+describe("A7 / 引擎面 —— substAbs 搬运 fn impl 侧表", () => {
   it("泛型方法经 α 代入后 impl 存活（改前丢 ⇒ D 路径退化）", () => {
     const m = condMethod();
     expect(getFnImpl(m)).toBeDefined();

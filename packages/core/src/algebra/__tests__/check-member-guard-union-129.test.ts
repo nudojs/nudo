@@ -70,7 +70,7 @@ const CONTRACT = `/**
  */
 `;
 
-describe("#129 成员真值守卫：union 成员剪影后链式读零 L2", () => {
+describe("成员真值守卫：union 成员剪影后链式读零 L2", () => {
   it("issue 原型 sn4：判别窄化 + property 守卫 + 链式读 0 L2", () => {
     const r = check(`${CONTRACT}
 export function sn4(node) {
@@ -112,7 +112,7 @@ export function varGuard(node) {
   });
 });
 
-describe("#129 控制组：守卫缺失的诚实残差仍报", () => {
+describe("控制组：守卫缺失的诚实残差仍报", () => {
   it("无守卫链式读：尾臂 property 槽缺席 → 恰好 1 条 L2（may 态保守）", () => {
     const r = check(`${CONTRACT}
 export function noGuard(node) {
@@ -138,7 +138,7 @@ export function falsyArm(node) {
   });
 });
 
-describe("#129 评审加固：缺席槽 ≠ 读 undefined（$get 同口径）", () => {
+describe("评审加固：缺席槽 ≠ 读 undefined（$get 同口径）", () => {
   it("toString 守卫键不剪闭缺席臂：原型链读出函数，签名保留 string", () => {
     const sidecar = `
 import { string, shape, union } from "@nudojs/core";
@@ -265,7 +265,7 @@ type AnyAbs = {
 };
 const asShape = (a: unknown): AnyAbs["shape"] => (a as { shape: AnyAbs["shape"] }).shape;
 
-describe("#129 运行时单元：$removeMemberNullish sum 分支", () => {
+describe("运行时单元：$removeMemberNullish sum 分支", () => {
   it("剪缺席槽闭成员，单成员塌缩，发射序 $removeNullish 先行", () => {
     const asUnion = union(
       shape({ type: lit("Identifier"), name: string() }),

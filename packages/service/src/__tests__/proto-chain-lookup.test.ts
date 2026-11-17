@@ -1,5 +1,5 @@
 /**
- * BUG-001 回归（service 侧）：导出名命中 Object.prototype 成员。
+ * 回归（service 侧）：导出名命中 Object.prototype 成员。
  *
  * `fnName in run.exports` 走原型链：模块没有自有 toString/constructor/
  * hasOwnProperty 导出时，把 Object.prototype 成员当模块导出调用
@@ -51,7 +51,7 @@ describe("mock-module partial overlay does not pick Object.prototype names", () 
     const r = applyMockModuleDirectivesFromSource(src, base, {
       fromFile: join(dir, "app.js"),
     });
-    // Bug 963：**点名**但 mock 没有导出的名字不再静默跳过 ⇒ 走错误出口
+    // **点名**但 mock 没有导出的名字不再静默跳过 ⇒ 走错误出口
     // （nudo:module-missing / error）且该条指令**不生效**（fail-closed：
     // 原模块保持原样，绝不产生「一半 mock、一半原模块」的混合程序）。
     // ⇒ mock 的 `a` 也不会被叠进来（整条指令被拒）。

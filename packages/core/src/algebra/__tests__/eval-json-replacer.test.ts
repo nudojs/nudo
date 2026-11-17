@@ -1,5 +1,5 @@
 /**
- * Bug 59：JSON.stringify 的 callable replacer 此前不调用、不记 may-throw——
+ * JSON.stringify 的 callable replacer 此前不调用、不记 may-throw——
  * 抛错 replacer 静默「成功」（L2 盲区）。修复：fn 形 replacer 逐项桥接
  * （原生 SerializeJSONProperty 语义：每个键——含根 ""——先调
  * replacer.call(holder, key, value)，再对返回值递归序列化）。逐层剥离
@@ -11,7 +11,7 @@ import { describe, it, expect } from "vitest";
 import { litValue } from "@nudojs/core";
 import { call, effects, throwsError } from "./eval-helpers.ts";
 
-describe("Bug 59: JSON.stringify callable replacer", () => {
+describe("JSON.stringify callable replacer", () => {
   it("throwing replacer propagates the definite throw (native parity)", () => {
     const r = call(
       `export function f() {

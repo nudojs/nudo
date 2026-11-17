@@ -4,19 +4,19 @@
  * 四类扩展形态此前误报 nudo:entry-may-throw（1.3.10 等价 main 实测，
  * `extractEmbeddedJs` 报 `may throw TypeError → computed member on nullish
  * (union arm)`）：
- *   1. 赋值即守卫：`while ((m = re.exec(content)))` / `if ((m = f()))`——
- *      测试真值 ⇒ 赋予 m 的值非 nullish，此前 nullishGuardOf 不认
- *      AssignmentExpression，循环/分支体内 m 携 null 臂记假 may-throw。
- *      while 路径按轮收窄：体工厂内 IIFE `((m) => { … })($removeNullish(m))`
- *      每次进体以当前绑定求 remove 串；do-while 只收窄内层 $whileSeq 体拷贝
- *      （首轮先于测试，保持未收窄）。
- *   2. 成员宽松等价守卫：`node.property == null` / `!= null`——宽松等价下
- *      缺槽 undefined 与 null 互通，比较假/真 ⇒ 槽在场且槽值非 nullish
- *      （issue #120 静态名守卫形态）；严格 `!==` 仍不识别（undefined 可能，
- *      文档化边界，见控制组 iii）。
- *   3. 多名复合：`obj == null || node.property == null` 穿透臂双事实——
- *      此前 compositeNullishGuardOf 异名保守 undefined，现 nullishGuardsOf
- *      同方向递归展开、一名一影子参数齐用（((a, b) => THUNK)(rm a, rm b)）。
+ * 1. 赋值即守卫：`while ((m = re.exec(content)))` / `if ((m = f()))`——
+ * 测试真值 ⇒ 赋予 m 的值非 nullish，此前 nullishGuardOf 不认
+ * AssignmentExpression，循环/分支体内 m 携 null 臂记假 may-throw。
+ * while 路径按轮收窄：体工厂内 IIFE `((m) => { … })($removeNullish(m))`
+ * 每次进体以当前绑定求 remove 串；do-while 只收窄内层 $whileSeq 体拷贝
+ * （首轮先于测试，保持未收窄）。
+ * 2. 成员宽松等价守卫：`node.property == null` / `!= null`——宽松等价下
+ * 缺槽 undefined 与 null 互通，比较假/真 ⇒ 槽在场且槽值非 nullish
+ * （issue #120 静态名守卫形态）；严格 `!==` 仍不识别（undefined 可能，
+ * 文档化边界，见控制组 iii）。
+ * 3. 多名复合：`obj == null || node.property == null` 穿透臂双事实——
+ * 此前 compositeNullishGuardOf 异名保守 undefined，现 nullishGuardsOf
+ * 同方向递归展开、一名一影子参数齐用（((a, b) => THUNK)(rm a, rm b)）。
  *
  * 控制组（剪影不越界）：无守卫读、循环体写守卫名（影子吞写 → 跳过收窄）、
  * 严格成员守卫、do-while 首轮读仍报 L2。
@@ -41,7 +41,7 @@ function check(src: string) {
   return checkSource("/t/guard-while-assign-118.js", IMP + src, pTrue, opts);
 }
 
-describe("#118 v3 赋值即守卫不再误报 entry-may-throw", () => {
+describe("v3 赋值即守卫不再误报 entry-may-throw", () => {
   it("issue #118 原始形态：while ((m = re.exec(content))) 体内 m[2] 读零 L2", () => {
     const r = check(`
 /**
@@ -83,7 +83,7 @@ export function ifAssign(v) {
   it("while 单语句体（非块）赋值守卫：m[1] 直读成员面（Bug 3 口径拆分）", () => {
     // 单语句体（非块）同样进 IIFE 收窄；块体形态见上例。
     // #118 主题（赋值即守卫压掉 m 自身的 null 臂误报）仍由上两例钉住；
-    // 本例 m[1] 直读成员（元素域 any）：`.length` 修 Bug 3 后与 `.foo`
+    // 本例 m[1] 直读成员（元素域 any）：`.length` 修 后与 `.foo`
     // 同口径记录 may-throw TypeError（修前的「零 L2」是 $len 假阴面）。
     const r = check(`
 /**
@@ -102,7 +102,7 @@ export function whileSingleStmtBody(v) {
   });
 });
 
-describe("#120 多名复合 / 成员宽松等价守卫不再误报", () => {
+describe("多名复合 / 成员宽松等价守卫不再误报", () => {
   it("`obj == null || node.property == null` 穿透臂 node.property.name 读零 L2", () => {
     const r = check(`
 /**
@@ -152,7 +152,7 @@ export function looseMemberGuard(node) {
   });
 });
 
-describe("#118 v3 控制组：守卫剪枝不越界（仍报 entry-may-throw）", () => {
+describe("v3 控制组：守卫剪枝不越界（仍报 entry-may-throw）", () => {
   it("i. 无守卫的 exec 结果下标读仍报", () => {
     const r = check(`
 /**

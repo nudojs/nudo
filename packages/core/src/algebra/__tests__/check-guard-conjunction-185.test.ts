@@ -4,16 +4,16 @@
  *
  * 修复前根因（三处）：
  * 1. `matchRelIdentLitComposite` 对不同名合取项**只保留先到**的名字 ⇒
- *    事实臂只给一个参数挂界 ⇒ `x + y` 区间只折一侧；
+ * 事实臂只给一个参数挂界 ⇒ `x + y` 区间只折一侧；
  * 2. `&&` 右操作数（短路 cons 臂）不接 left 的关系事实 ⇒
- *    `x >= 1 && (y >= 2 ? x + y : 3)` 的右臂丢 x 的界；
+ * `x >= 1 && (y >= 2 ? x + y : 3)` 的右臂丢 x 的界；
  * 3. 早退后续路径 / else 臂 / 三元 alt 臂不接 `!(A ∧ …)` 的**否定事实**
- *    （`!` 是精确布尔取反：`!(A ∧ …)` 为假 ⇒ `A ∧ …` 为真，NaN 不可达）。
+ * （`!` 是精确布尔取反：`!(A ∧ …)` 为假 ⇒ `A ∧ …` 为真，NaN 不可达）。
  *
  * 精度红线（issue 要求的另一半**不得**实现）：顺序早退
  * `if (x < 1) return 3; … return x + y;` 与 De Morgan
  * `if (x < 1 || y < 2) return 3; …` 的后续路径不能断言 `x >= 1`/`y >= 2`——
- * `¬(x < k)` 只蕴含 `x ≥ k ∨ x is NaN`（Bug 1115），而 `number()` 含 NaN：
+ * `¬(x < k)` 只蕴含 `x ≥ k ∨ x is NaN`（），而 `number()` 含 NaN：
  * 原生 `add6(NaN, 5) = NaN ⊭ ge(3)`，证明即假绿。
  */
 import { describe, it, expect } from "vitest";
@@ -122,7 +122,7 @@ describe("issue #185：不可健全证明的形态保持 unproven（NaN 红线�
 
   it("裸关系补集（Bug 1115）：if (x < 0) return 0; return x; 仍不得证成 nonNeg", () => {
     const diags = retDiags1(" if (x < 0) return 0; return x;", "nonNeg");
-    // 既有口径（Bug 1115 / Bug 1116）：后续路径返回项是声明域参数 ⇒ 可证伪
+    // 既有口径（/ ）：后续路径返回项是声明域参数 ⇒ 可证伪
     // ⇒ 该契约在 x=NaN 时确实被违反 ⇒ 必须报（不得静默）
     expect(diags).toHaveLength(1);
   });

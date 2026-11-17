@@ -1,5 +1,5 @@
 import {describe, it, expect} from "vitest";
-import {runTranspiled, callTranspiledExportFull, $lit, litValue, absToString, transpileSource, formatAbs, anyAbs, abs, numLit, strLit} from "@nudojs/core";
+import {runTranspiled, callTranspiledExportFull, litValue, transpileSource, formatAbs, anyAbs, abs, numLit, strLit} from "@nudojs/core";
 import {$copy} from "../exec/runtime/containers.ts";
 import {registerGenDeferred, replayGenDeferred, registerGenElements, matchIterElements, registerMatchIter} from "../exec/match-iter.ts";
 import {NudoThrow} from "../exec/nudo-throw.ts";
@@ -49,9 +49,9 @@ export function sum() {
     expect(out).toContain("$yield(");
   });
 
-  // Bug 82：yield* 委托——读 delegate 标志，元素逐个压入（不是整个可迭代
+  // yield* 委托——读 delegate 标志，元素逐个压入（不是整个可迭代
   // 值）；迭代性校验同 $elems 分类器；表达式值 = 内层迭代器 return 值
-  //（保守 unknown）。生成器**调用**原生全量（Bug 58：体内 throw 属首个
+  //（保守 unknown）。生成器**调用**原生全量（体内 throw 属首个
   // next() 迭代期，调用期吞掉）——故 definite 抛在此只体现为值域前缀截断。
   it("yield* tuple / string → yields ELEMENTS (native: [...j()] === [1, 2])", () => {
     const src = `
@@ -66,7 +66,7 @@ export function sum() {
 }
 `;
     const exports = runTranspiled(src, { mode: "analyze" });
-    // Bug 22：生成器对象是带迭代器协议面的 obj（不再是 yield 元组数组）——
+    // 生成器对象是带迭代器协议面的 obj（不再是 yield 元组数组）——
     // 值域断言经原生迭代面（spread）消费
     const rj = callTranspiledExportFull(exports, "spreadJ", []);
     expect(formatAbs(rj.result as never)).toContain("[1, 2]");
@@ -76,7 +76,7 @@ export function sum() {
     expect(litValue(rs.result)).toEqual({ ok: true, value: 3 });
   });
 
-  // Bug 82：yield* 委托——迭代性校验同 $elems 分类器。Bug 34 修复后：
+  // yield* 委托——迭代性校验同 $elems 分类器。修复后：
   // 非可迭代接收者的 definite TypeError 不再静默截断值域（native
   // `[...g()]` 整抛，前缀不出货）——断言迁到 throws 面（值域前缀语义
   // 见 eval-generator-semantics.test.ts 的 next() 链：前缀 yield 照常

@@ -159,8 +159,8 @@ if (splitKey) {
 
 if (revertOnly) {
   // 单族回退（`--revert` 是全局的，会抹掉全部已启用族 —— CONTRIBUTING 的
-  // 已知坑）。key = "<dir>/<family>"；只动该 dir 下 `<family>-bug-*.part.ts`
-  // 与该族的 zz-agg 入口，其余族逐字不动。
+  // 已知坑）。key = "<dir>/<family>"；part 从该族 zz-agg 入口的 import 反查
+  // （2026-11-15 起 part 已改为特性命名，不再带 `<family>-bug-` 前缀）。
   const slash = revertOnly.lastIndexOf("/");
   if (slash < 0) {
     console.error("--revert-only needs a full key like packages/vscode/src/__tests__/lsp");
@@ -168,12 +168,17 @@ if (revertOnly) {
   }
   const dir = revertOnly.slice(0, slash);
   const family = revertOnly.slice(slash + 1);
-  const parts = [...trackedFiles()].filter(
-    (f) =>
-      dirname(f) === dir &&
-      basename(f).startsWith(`${family}-bug-`) &&
-      f.endsWith(PART_SUFFIX),
+  const entryRe = new RegExp(`^${AGG_PREFIX}${family}(-\\d+)?\\.test\\.ts$`);
+  const entries = [...trackedFiles()].filter(
+    (f) => dirname(f) === dir && entryRe.test(basename(f)),
   );
+  const parts = [];
+  for (const rel of entries) {
+    for (const line of readFileSync(join(repoRoot, rel), "utf8").split("\n")) {
+      const m = /^import "\.\/(.+\.part\.ts)";$/.exec(line);
+      if (m) parts.push(`${dir}/${m[1]}`);
+    }
+  }
   let restored = 0;
   for (const rel of parts) {
     const back = rel.slice(0, -PART_SUFFIX.length) + ".test.ts";

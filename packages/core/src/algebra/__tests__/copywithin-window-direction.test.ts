@@ -2,8 +2,8 @@
  * copyWithin 方向：ES 用**相对解析后**的 from/to 判 overlap
  * （from < to && from+count > to → 倒序）。此前比较原始 toIOI 的 s/t，
  * 负下标会翻方向：
- *   [0,1,2,3,4].copyWithin(1,-3)  原生 [0,2,3,4,4]，引擎 [0,4,4,4,4]
- *   [0,1,2,3,4].copyWithin(-3,1)  原生 [0,1,1,2,3]，引擎 [0,1,1,1,1]
+ * [0,1,2,3,4].copyWithin(1,-3) 原生 [0,2,3,4,4]，引擎 [0,4,4,4,4]
+ * [0,1,2,3,4].copyWithin(-3,1) 原生 [0,1,1,2,3]，引擎 [0,1,1,1,1]
  */
 import { describe, it, expect } from "vitest";
 import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";

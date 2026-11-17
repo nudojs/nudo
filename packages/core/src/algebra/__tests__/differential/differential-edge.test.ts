@@ -25,7 +25,7 @@ describe("differential corpus batch10-13", () => {
   for (const [file, mod] of FILES) {
     for (const [name, corpus] of sectionsOf(mod)) {
       it(`${file}.${name} zero mismatch`, () => {
-        const { compared, mismatches, skipped } = runCorpus(corpus);
+        const { compared, mismatches, skipped, fallbacks } = runCorpus(corpus);
         totalCompared += compared;
         const unexpected = unexpectedMismatches(mismatches, corpus);
         expect(
@@ -36,6 +36,11 @@ describe("differential corpus batch10-13", () => {
         expect(
           freshSkips,
           `${file}.${name} compared=${compared}: new skipped line(s) outside skip-baseline.json (unknown regression)\n${freshSkips.map((s) => `  [${s.replace(/\n/g, " ").slice(0, 100)}]`).join("\n")}`,
+        ).toEqual([]);
+        const freshFallbacks = fallbacks.map((f) => `${f.reason}: ${f.message}`);
+        expect(
+          freshFallbacks,
+          `${file}.${name}: engine B fallback(s) must be zero (unsupported / internal)\n${freshFallbacks.join("\n")}`,
         ).toEqual([]);
       }, 120_000);
     }

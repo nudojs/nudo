@@ -1,15 +1,15 @@
 /**
- * Bug 10 / Bug 32 回归：obj/arr/tuple 被调者的调用面与构造面。
+ * / 回归：obj/arr/tuple 被调者的调用面与构造面。
  *
- * Bug 10：$callDispatch 非函数 callee 臂此前只分两档（prim/nullish-lit 定抛
+ * $callDispatch 非函数 callee 臂此前只分两档（prim/nullish-lit 定抛
  * tier 1、any 记 may-throw tier 2），obj/arr/tuple 字面量被调者落尾
  * return unknown——原生 `({})()` / `[]()` 定抛 TypeError（… is not a
  * function），引擎静默成功；L2 gate 对 `const o = {}; o()`（定抛）假阴性，
  * 而 `1()` / `null()` 反而正确报。桥接论据空置：attachFnImpl 只产 fn 形状
  * Abs——obj/arr/tuple 从不携带调用面 → 定抛。
  *
- * Bug 32：$new 的 !spec 落空只校验 fn 形（ctor 旗标），obj/arr/tuple 被调者
- * 直落 $call（同 Bug 10 缺口）→ `new ({})()` 静默成功。原生 [[Construct]]
+ * $new 的 !spec 落空只校验 fn 形（ctor 旗标），obj/arr/tuple 被调者
+ * 直落 $call（同 缺口）→ `new ({})()` 静默成功。原生 [[Construct]]
  * 先做 IsConstructor(C)——obj/arr/tuple 恒非构造器 → 定抛 TypeError
  * （… is not a constructor）。
  *
@@ -63,7 +63,7 @@ function expectMayThrowTypeErr(src: string) {
   expect(issues.some((i) => i.message.includes("TypeError"))).toBe(true);
 }
 
-describe("Bug 10：调用 obj/arr/tuple 被调者定抛 TypeError", () => {
+describe("调用 obj/arr/tuple 被调者定抛 TypeError", () => {
   it("({})() in try/catch → caught", () => {
     expectCaught(
       `export function f() { try { const o = {}; o(); return "no-throw"; } catch (e) { return "caught"; } }`,
@@ -76,7 +76,7 @@ describe("Bug 10：调用 obj/arr/tuple 被调者定抛 TypeError", () => {
     );
   });
 
-  it("[]() → caught（tuple 0 元）", () => {
+  it("() → caught（tuple 0 元）", () => {
     expectCaught(
       `export function f() { try { const a = []; a(); return "no-throw"; } catch (e) { return "caught"; } }`,
     );
@@ -105,7 +105,7 @@ describe("Bug 10：调用 obj/arr/tuple 被调者定抛 TypeError", () => {
   });
 });
 
-describe("Bug 10：合法调用面不回退", () => {
+describe("合法调用面不回退", () => {
   it("箭头函数值直调保持精确", () => {
     expect(val(`export function f() { const g = () => 7; return g(); }`)).toEqual({
       ok: true,
@@ -143,7 +143,7 @@ describe("Bug 10：合法调用面不回退", () => {
   });
 });
 
-describe("Bug 10：L2 gate（definite TypeError 不再假阴性）", () => {
+describe("L2 gate（definite TypeError 不再假阴性）", () => {
   it("const o = {}; o() → entry-may-throw TypeError", () => {
     expectMayThrowTypeErr(`export function f() { const o = {}; return o(); }`);
   });
@@ -170,7 +170,7 @@ describe("Bug 10：L2 gate（definite TypeError 不再假阴性）", () => {
   });
 });
 
-describe("Bug 32：new obj/arr/tuple 被调者定抛 TypeError", () => {
+describe("new obj/arr/tuple 被调者定抛 TypeError", () => {
   it("new ({})(1) → caught", () => {
     expectCaught(
       `export function f() { try { new ({})(1); return "no-throw"; } catch (e) { return "caught"; } }`,
@@ -232,7 +232,7 @@ describe("Bug 32：new obj/arr/tuple 被调者定抛 TypeError", () => {
   });
 });
 
-describe("Bug 32：合法构造面不回退", () => {
+describe("合法构造面不回退", () => {
   it("new (class {})() → 对象不抛", () => {
     const r = run(`export function f() { const C = class {}; return new (C)(); }`);
     expect(r.throws?.shape?.k ?? "never", `throws for class new`).toBe("never");
@@ -259,7 +259,7 @@ describe("Bug 32：合法构造面不回退", () => {
   });
 });
 
-describe("Bug 32：L2 gate（definite TypeError 不再假阴性）", () => {
+describe("L2 gate（definite TypeError 不再假阴性）", () => {
   it("new ({})() → entry-may-throw TypeError", () => {
     expectMayThrowTypeErr(`export function f() { const o = {}; return new (o)(); }`);
   });

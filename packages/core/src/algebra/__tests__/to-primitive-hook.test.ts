@@ -1,5 +1,5 @@
 /**
- * Bug 82：`coerceToStringParts` 漏 `@@toPrimitive` 钩子槽。
+ * `coerceToStringParts` 漏 `@@toPrimitive` 钩子槽。
  *
  * 对象字面量计算键 `[Symbol.toPrimitive](h){…}` 经 symbolKeyOf 投影存为
  * `"@@toPrimitive"` 字符串槽。仅有该钩子的对象无自有 toString/valueOf →
@@ -38,7 +38,7 @@ function assertPrimShape(result: ReturnType<typeof runBody>["result"]) {
 
 const HOOK_SRC = `const o = { [Symbol.toPrimitive](h) { return "P"; } };`;
 
-describe("Bug 82: @@toPrimitive hook blocks default tag fold", () => {
+describe("@@toPrimitive hook blocks default tag fold", () => {
   it("o + \"x\" stays abstract string, not \"[object Object]x\"", () => {
     const { result } = runBody(`${HOOK_SRC} return o + "x";`);
     expectAbstractString(result);

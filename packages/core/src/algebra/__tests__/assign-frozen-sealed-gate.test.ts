@@ -4,9 +4,9 @@
  * D1（回归 vs main）：frozen 目标的抛错门此前在**读源之前**按「每个源实参」
  * 无条件硬抛。原生 Object.assign 只在**实际执行 Set(target, key, value,
  * true)** 时失败（node 26 oracle）：
- *   Object.assign(Object.freeze({}), {})     → 不抛
- *   Object.assign(Object.freeze({}), null)   → 不抛
- *   Object.assign(Object.freeze({}), {a:1})  → TypeError
+ * Object.assign(Object.freeze({}), {}) → 不抛
+ * Object.assign(Object.freeze({}), null) → 不抛
+ * Object.assign(Object.freeze({}), {a:1}) → TypeError
  * 现改为**源的可枚举自有键贡献分类**：零键 ⇒ 跳过（不写不抛）；键集不可判
  * ⇒ 记 may-throw（不定抛）；键集已知非空 ⇒ 逐键 [[Set]] 判定（新建键 /
  * 不可写数据属性 / 改原型 ⇒ TypeError；自有·继承 setter 派发 ⇒ 成功——

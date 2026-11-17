@@ -2,7 +2,7 @@
 /**
  * 真实 npm 包 nudo check 扫描报告 → docs/check-real-packages.md。
  * 用法：npx tsx scripts/scan-real-packages.ts [pkg...]
- * 默认：scripts/lib/corpus.mjs 的全量语料（check-real-packages.test.ts 同序）。
+ * 默认：scripts/lib/corpus.mjs 的全量语料（check-real-packages.oracle.test.ts 同序）。
  *
  * 文档结构：标题 + 生成日期由本脚本产出；`<!-- corpus-manual:start/end -->`
  * 之间为手工维护节（语料新鲜度表、CI 门禁说明）——重跑本脚本原样保留，
@@ -81,7 +81,7 @@ function scanPkg(pkg: string): FileReport[] {
     // 跳过过大的单文件（求值成本）
     if (source.length > 400_000) continue;
     try {
-      // L2 关 + host loader + fromFile（与 check-real-packages.test.ts /
+      // L2 关 + host loader + fromFile（与 check-real-packages.oracle.test.ts /
       // benchmark:oss 同口径：未注解第三方包没有 @nudo:throws 侧车，L2 恒噪声）
       const r = checkSource(f, source, pTrue, {
         entryThrows: "off",

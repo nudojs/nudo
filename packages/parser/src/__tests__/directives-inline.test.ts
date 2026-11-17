@@ -4,108 +4,70 @@ import { extractInlineDirectives } from "../directives.ts";
 
 function getFirstStmtDirectives(source: string) {
   const ast = parse(source);
-  const body = ast.program.body;
-  for (const stmt of body) {
+  for (const stmt of ast.program.body) {
     const directives = extractInlineDirectives(stmt);
     if (directives.length > 0) return directives;
   }
   return [];
 }
 
-describe("extractInlineDirectives", () => {
-  it("extracts @nudo:as directive", () => {
-    const source = `
-// @nudo:as shape({ port: number() })
+const AS_CASES = [
+  {
+    name: "builder 与对象字面量都产出 obj",
+    lines: ["// @nudo:as shape({ port: number() })", "// @nudo:as { port: number() }"],
+    shape: "obj",
+  },
+  { name: "块注释同样可承载 @nudo:as", lines: ["/* @nudo:as number() */"], shape: "prim" },
+];
+
+describe("extractInlineDirectives：@nudo:as", () => {
+  it.each(AS_CASES)("$name", ({ lines, shape }) => {
+    for (const line of lines) {
+      const directives = getFirstStmtDirectives(`
+${line}
 const config = JSON.parse(text);
-`;
-    const directives = getFirstStmtDirectives(source);
-    expect(directives).toHaveLength(1);
-    expect(directives[0].kind).toBe("as");
-    if (directives[0].kind === "as") {
-      expect(directives[0].typeAbs.shape.k).toBe("obj");
+`);
+      expect(directives).toHaveLength(1);
+      expect(directives[0].kind).toBe("as");
+      if (directives[0].kind === "as") expect(directives[0].typeAbs.shape.k).toBe(shape);
     }
   });
+});
 
-  it("extracts @nudo:as with object literal", () => {
-    const source = `
-// @nudo:as { port: number() }
-const config = JSON.parse(text);
-`;
-    const directives = getFirstStmtDirectives(source);
-    expect(directives).toHaveLength(1);
-    if (directives[0].kind === "as") {
-      expect(directives[0].typeAbs.shape.k).toBe("obj");
-    }
-  });
+const REPLACE_CASES = [
+  { name: "标识符目标", line: "// @nudo:replace a number()", target: "a", shape: "prim" },
+  { name: "成员表达式目标", line: "// @nudo:replace res.data array(number())", target: "res.data", shape: "arr" },
+  { name: "调用表达式目标", line: "// @nudo:replace JSON.parse(input) shape({ id: number() })", target: "JSON.parse(input)", shape: "obj" },
+];
 
-  it("extracts @nudo:replace directive with identifier target", () => {
-    const source = `
-// @nudo:replace a number()
+describe("extractInlineDirectives：@nudo:replace 目标形式", () => {
+  it.each(REPLACE_CASES)("$name", ({ line, target, shape }) => {
+    const directives = getFirstStmtDirectives(`
+${line}
 const x = a + b;
-`;
-    const directives = getFirstStmtDirectives(source);
+`);
     expect(directives).toHaveLength(1);
     expect(directives[0].kind).toBe("replace");
     if (directives[0].kind === "replace") {
-      expect(directives[0].targetSource).toBe("a");
-      expect(directives[0].typeAbs.shape.k).toBe("prim");
+      expect(directives[0].targetSource).toBe(target);
+      expect(directives[0].typeAbs.shape.k).toBe(shape);
     }
   });
+});
 
-  it("extracts @nudo:replace directive with member expression target", () => {
-    const source = `
-// @nudo:replace res.data array(number())
-const items = res.data;
-`;
-    const directives = getFirstStmtDirectives(source);
-    expect(directives).toHaveLength(1);
-    if (directives[0].kind === "replace") {
-      expect(directives[0].targetSource).toBe("res.data");
-    }
-  });
-
-  it("extracts @nudo:replace with call expression target", () => {
-    const source = `
-// @nudo:replace JSON.parse(input) shape({ id: number() })
-const data = JSON.parse(input);
-`;
-    const directives = getFirstStmtDirectives(source);
-    expect(directives).toHaveLength(1);
-    if (directives[0].kind === "replace") {
-      expect(directives[0].targetSource).toBe("JSON.parse(input)");
-    }
-  });
-
-  it("extracts multiple directives on the same statement", () => {
-    const source = `
+describe("extractInlineDirectives：语句级聚合", () => {
+  it("同一语句多条指令被全部提取；无指令语句返回空", () => {
+    const multi = getFirstStmtDirectives(`
 // @nudo:replace a number()
 // @nudo:replace b string()
 const x = a + b;
-`;
-    const directives = getFirstStmtDirectives(source);
-    expect(directives).toHaveLength(2);
-    expect(directives[0].kind).toBe("replace");
-    expect(directives[1].kind).toBe("replace");
-  });
+`);
+    expect(multi).toHaveLength(2);
+    expect(multi.map((d) => d.kind)).toEqual(["replace", "replace"]);
 
-  it("returns empty for statements without directives", () => {
-    const source = `
+    const none = getFirstStmtDirectives(`
 const x = 1 + 2;
-`;
-    const directives = getFirstStmtDirectives(source);
-    expect(directives).toHaveLength(0);
-  });
-
-  it("accepts block comments for @nudo:as (F-3 #10)", () => {
-    const source = `
-/* @nudo:as number() */
-const x = 1;
-`;
-    const directives = getFirstStmtDirectives(source);
-    expect(directives).toHaveLength(1);
-    expect(directives[0].kind).toBe("as");
-    if (directives[0].kind === "as") {
-      expect(directives[0].typeAbs.shape.k).toBe("prim");
-    }
+`);
+    expect(none).toEqual([]);
   });
 });

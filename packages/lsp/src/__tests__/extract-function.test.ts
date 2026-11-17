@@ -99,7 +99,7 @@ describe("extractFunction — guards", () => {
     expect(r.functionName).toBe("extracted");
   });
 
-  // Bug 971：兜底名 `extracted` **空闲时保持不变**（上面那条既有口径不变），
+  // 兜底名 `extracted` **空闲时保持不变**（上面那条既有口径不变），
   // 被占用时才自动改名（占用检查做在 extract-function.ts 内部）。
   it("renames the fallback when the name is taken", () => {
     const s = `export function extracted() {\n  return 0;\n}\n\nexport function f() {\n  const x = 1;\n  return x + 1;\n}\n`;
@@ -142,11 +142,11 @@ describe("applyEdits / extractToWorkspaceEdit", () => {
   });
 });
 
-// Bug 450：`applyEdits` 的**坐标口径**混用（排序用原 source、应用用已被改写
+// `applyEdits` 的**坐标口径**混用（排序用原 source、应用用已被改写
 // 的 out）⇒ 区间嵌套（插入点落在替换范围内部）时落点按陈旧坐标漂移 ⇒ 源文件
 // 被搅成垃圾。既有 `applyEdits` 用例只测「两个不相交 edit」⇒ 覆盖缺口 ⇒ 本块
 // 补上「嵌套区间」这一形态（既有用例逐字保留，不改不删）。
-describe("applyEdits — 区间嵌套（Bug 450）", () => {
+describe("applyEdits — 区间嵌套（）", () => {
   const nested = [
     { range: { start: { line: 0, character: 5 }, end: { line: 0, character: 9 } }, newText: "REPL" },
     { range: { start: { line: 0, character: 6 }, end: { line: 0, character: 6 } }, newText: "INS" },

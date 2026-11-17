@@ -1,12 +1,12 @@
 /**
  * setter 体早退控制流回归（F3 家族）：
  * - 裸 `return;`/带值 return/throw 臂不得顶掉接收者——原生 setter 返回值被
- *   丢弃（赋值表达式值 = RHS），thunk 契约恒返回 __this。此前体内早退 if
- *   提升折 `return $fork(...)`，joined 臂值被当接收者 → $set 把 c 重绑成
- *   undefined → 后续成员读 TypeError（差分 knownFalseThrows 项）。
+ * 丢弃（赋值表达式值 = RHS），thunk 契约恒返回 __this。此前体内早退 if
+ * 提升折 `return $fork(...)`，joined 臂值被当接收者 → $set 把 c 重绑成
+ * undefined → 后续成员读 TypeError（差分 knownFalseThrows 项）。
  * - 接收者回收：体内经别名绑定写接收者（o._v / c._v / C._v——标识符根成员
- *   写进 fork 协议，臂 copy/join 重绑别名绑定）时，赋值点 `root = $set(root, …)`
- *   不得拿过时 __this 冲掉 join（否则成员读折 undefined）。
+ * 写进 fork 协议，臂 copy/join 重绑别名绑定）时，赋值点 `root = $set(root, …)`
+ * 不得拿过时 __this 冲掉 join（否则成员读折 undefined）。
  * 每条断言与 Node 真实执行对齐（值域 + throws 域双钉）。
  */
 import { describe, it, expect } from "vitest";

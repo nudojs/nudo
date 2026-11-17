@@ -5,12 +5,12 @@
  * 普通对象 toString → "[object Object]"），对 undefined 走 ToString。
  * 此前 coerceToStringParts / add 混合分支完全不认 tuple/arr/obj/
  * lit(undefined)：
- *   [] + []            → unknown   （原生 ""）
- *   [1,2] + ''         → unknown   （原生 "1,2"）
- *   'x' + []           → unknown   （原生 "x"）
- *   undefined + 'x'    → unknown   （原生 "undefinedx"）
- *   {a:1} + ''         → unknown   （原生 "[object Object]"）
- *   [1] + 1            → number|string（原生 "11"，纯 string）
+ * [] + [] → unknown （原生 ""）
+ * [1,2] + '' → unknown （原生 "1,2"）
+ * 'x' + [] → unknown （原生 "x"）
+ * undefined + 'x' → unknown （原生 "undefinedx"）
+ * {a:1} + '' → unknown （原生 "[object Object]"）
+ * [1] + 1 → number|string（原生 "11"，纯 string）
  *
  * 同类排查：null/bigint/boolean 字面量与 string 字面量拼接已正确；
  * 数组/对象/undefined 是同族 ToPrimitive 漏网点。
@@ -24,7 +24,7 @@ function shape(src: string) {
 }
 
 describe("array ToPrimitive in +", () => {
-  it("[] + [] is empty string join", () => {
+  it("+ [] is empty string join", () => {
     expect(val(`export function f() { return [] + []; }`)).toEqual({ ok: true, value: "" });
   });
 
@@ -69,7 +69,7 @@ describe("object / undefined ToString in +", () => {
   });
 });
 
-describe("undefined + non-string literal folds ToNumber (Bug 10)", () => {
+describe("undefined + non-string literal folds ToNumber ()", () => {
   // native：ToNumber(undefined)=NaN，数值加法恒 NaN（number 值域）——
   // string 臂不可能，不得折 number|string 并集。string 字面量仍在上方
   // 走 ToString 拼接臂（"undefined"），不得被 ToNumber 折叠劫走。

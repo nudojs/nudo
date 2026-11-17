@@ -9,7 +9,7 @@
  * undefined），对照已正确。
  */
 import { describe, it, expect } from "vitest";
-import { litValue } from "../index.ts";
+import "../index.ts";
 import { val } from "./eval-helpers.ts";
 
 describe("relational compare folds lit(undefined) to false", () => {

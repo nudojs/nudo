@@ -1,5 +1,5 @@
 /**
- * Bug 70（对象字面量 async 方法）：ObjectMethod 分支此前只包 $gen
+ * （对象字面量 async 方法）：ObjectMethod 分支此前只包 $gen
  * （generator），无 prop.async 处理——`{ async m() {} }` 丢 async 修饰，
  * 调用返回裸体值（1）而非 Promise（instanceof Promise false、
  * toString [object Number]、constructor !== Promise、两次调用恒等）。
@@ -12,7 +12,7 @@ import { litValue, formatShape } from "@nudojs/core";
 import { call } from "./eval-helpers.ts";
 import { diffBody } from "./differential/harness.ts";
 
-describe("Bug 70: 对象字面量 async 方法返回 Promise", () => {
+describe("对象字面量 async 方法返回 Promise", () => {
   it("o.m() instanceof Promise → true", () => {
     const r = call(
       `export function f() { const o = { async m() { return 1; } }; return o.m() instanceof Promise; }`,
@@ -65,7 +65,7 @@ describe("Bug 70: 对象字面量 async 方法返回 Promise", () => {
   });
 });
 
-describe("Bug 70: differential native 对照（隐式 return 体）", () => {
+describe("differential native 对照（隐式 return 体）", () => {
   const corpus = [
     `const o = { async m() { return 1; } }; return o.m() instanceof Promise;`,
     `const o = { async m() { return 1; } }; return Object.prototype.toString.call(o.m());`,

@@ -1,5 +1,5 @@
 /**
- * Bug 32：对象 rest-only 解构（`const {...r} = X`）的接收者校验。
+ * 对象 rest-only 解构（`const {...r} = X`）的接收者校验。
  *
  * 原生对象解构 = ToObject(receiver) + CopyDataProperties：null/undefined
  * 接收者在任何键读之前抛 TypeError；any 接收者 may；非 nullish prim
@@ -52,7 +52,7 @@ function evalSrc(
   };
 }
 
-describe("Bug 32: object-rest receiver validation", () => {
+describe("object-rest receiver validation", () => {
   it("nullish 字面量接收者 → definite TypeError（native: TypeError）", () => {
     expect(evalSrc(`export function f() { const {...r} = null; return r; }`).throws).toContain("TypeError");
     expect(evalSrc(`export function g() { const {...r} = undefined; return r; }`, "g").throws).toContain("TypeError");

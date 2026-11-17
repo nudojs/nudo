@@ -1,7 +1,7 @@
 /**
- * 算子守卫 throws 域回归（bug-report wave 1：Bug 2/3/4/5/10/12/14/70）。
+ * 算子守卫 throws 域回归（bug-report wave 1：）。
  * 不变量：原生异常不得折成 result=unknown/any, throws=never（假「保证不抛」）；
- * 反向（Bug 3/14/70 控制组）：总函数不得假报 may-throw。
+ * 反向（ 控制组）：总函数不得假报 may-throw。
  * 原生语义以 node v26 为准（delete (1).a 原生**不抛**——装箱临时对象上
  * delete 恒 true；bug 报告中 prim 接收者恒抛的表述以 node 实测为准）。
  */
@@ -85,9 +85,9 @@ function evalSrc(
   };
 }
 
-// --- Bug 2：$call / $new 非函数 callee -----------------------------------
+// --- $call / $new 非函数 callee -----------------------------------
 
-describe("Bug 2: $call/$new on non-function callee", () => {
+describe("$call/$new on non-function callee", () => {
   it("prim / nullish 字面量 callee → hard NudoThrow（definite TypeError）", () => {
     expect(throwsNudoThrow(() => $call($lit(null), []))).toBe(true);
     expect(throwsNudoThrow(() => $call($lit(1), []))).toBe(true);
@@ -115,9 +115,9 @@ describe("Bug 2: $call/$new on non-function callee", () => {
   });
 });
 
-// --- Bug 3：可选链 x?.a 不得假报 may-throw -------------------------------
+// --- 可选链 x?.a 不得假报 may-throw -------------------------------
 
-describe("Bug 3: optional chain single guarded access is total", () => {
+describe("optional chain single guarded access is total", () => {
   it("x?.a → 无 TypeError 效果（此前 noteAnyMemberMayThrow 假报）", () => {
     const r = evalSrc(`export function f(x) { return x?.a; }`);
     expect(r.effects).not.toContain("TypeError");
@@ -141,9 +141,9 @@ describe("Bug 3: optional chain single guarded access is total", () => {
   });
 });
 
-// --- Bug 4：in 非对象 RHS -------------------------------------------------
+// --- in 非对象 RHS -------------------------------------------------
 
-describe("Bug 4: 'in' on non-object RHS", () => {
+describe("'in' on non-object RHS", () => {
   it("prim/nullish RHS → hard NudoThrow（definite TypeError）", () => {
     expect(throwsNudoThrow(() => $in($lit("a"), $lit(null)))).toBe(true);
     expect(throwsNudoThrow(() => $in($lit("a"), $lit(1)))).toBe(true);
@@ -164,9 +164,9 @@ describe("Bug 4: 'in' on non-object RHS", () => {
   });
 });
 
-// --- Bug 5：instanceof RHS 校验 + nullish LHS 精确 false ------------------
+// --- instanceof RHS 校验 + nullish LHS 精确 false ------------------
 
-describe("Bug 5: instanceof non-object RHS / nullish LHS", () => {
+describe("instanceof non-object RHS / nullish LHS", () => {
   it("非对象 RHS → hard NudoThrow（ident 与 non-ident 两路）", () => {
     expect(throwsNudoThrow(() => $instanceof($lit(1), "C", $lit(null)))).toBe(true);
     expect(throwsNudoThrow(() => $instanceof($lit(1), "undefined", $lit(undefined)))).toBe(true);
@@ -198,9 +198,9 @@ describe("Bug 5: instanceof non-object RHS / nullish LHS", () => {
   });
 });
 
-// --- Bug 10：delete 非对象接收者 ------------------------------------------
+// --- delete 非对象接收者 ------------------------------------------
 
-describe("Bug 10: delete on nullish/any receiver", () => {
+describe("delete on nullish/any receiver", () => {
   it("nullish 接收者 → hard NudoThrow（definite TypeError）", () => {
     expect(throwsNudoThrow(() => $delRes($lit(null), $lit("a")))).toBe(true);
     expect(throwsNudoThrow(() => $delRes($lit(undefined), $lit("a")))).toBe(true);
@@ -224,9 +224,9 @@ describe("Bug 10: delete on nullish/any receiver", () => {
   });
 });
 
-// --- Bug 12：计算成员读 $idx 守卫 -----------------------------------------
+// --- 计算成员读 $idx 守卫 -----------------------------------------
 
-describe("Bug 12: computed member read $idx guards", () => {
+describe("computed member read $idx guards", () => {
   it("nullish 接收者 → hard NudoThrow（与 $get 同源）", () => {
     expect(throwsNudoThrow(() => $idx($lit(null), $lit(0)))).toBe(true);
     expect(throwsNudoThrow(() => $idx($lit(undefined), $lit("k")))).toBe(true);
@@ -250,9 +250,9 @@ describe("Bug 12: computed member read $idx guards", () => {
   });
 });
 
-// --- Bug 14：typeof 未声明标识符豁免 --------------------------------------
+// --- typeof 未声明标识符豁免 --------------------------------------
 
-describe("Bug 14: typeof undeclared identifier is total", () => {
+describe("typeof undeclared identifier is total", () => {
   it("typeof undeclaredX → 'undefined'，无 ReferenceError", () => {
     const r = evalSrc(`export function f() { return typeof undeclaredX; }`, "f", []);
     expect(r.value).toBe('"undefined"');
@@ -276,9 +276,9 @@ describe("Bug 14: typeof undeclared identifier is total", () => {
   });
 });
 
-// --- Bug 70：prim 接收者缺失方法调用 --------------------------------------
+// --- prim 接收者缺失方法调用 --------------------------------------
 
-describe("Bug 70: method call missing on prim receiver", () => {
+describe("method call missing on prim receiver", () => {
   it("'ab'.map(fn) / (1).foo() / (true).x() → may TypeError", () => {
     expect(evalSrc(`export function f() { return "ab".map((c) => c); }`, "f", []).effects).toContain("TypeError");
     expect(evalSrc(`export function f() { return (1).foo(); }`, "f", []).effects).toContain("TypeError");
@@ -286,7 +286,7 @@ describe("Bug 70: method call missing on prim receiver", () => {
   });
 
   it("原型上真实存在（含未建模/装箱 Object.prototype）的方法不得假报", () => {
-    // trimStart 未建模（Bug 72）但原生存在 → 不得 TypeError
+    // trimStart 未建模（）但原生存在 → 不得 TypeError
     expect(evalSrc(`export function f() { return " ab".trimStart(); }`, "f", []).effects).not.toContain("TypeError");
     expect(evalSrc(`export function f() { return (1).toFixed(2); }`, "f", []).effects).not.toContain("TypeError");
     expect(evalSrc(`export function f() { return (1).hasOwnProperty("a"); }`, "f", []).effects).not.toContain("TypeError");

@@ -1,7 +1,7 @@
 /**
  * ToPropertyKey 回归：计算键 `o[k]` / `k in o` / `delete o[k]` / `o[k]=v`
  * 对 null / undefined / boolean 字面量必须走 ToString：
- *   o[null] ≡ o["null"]，o[undefined] ≡ o["undefined"]，o[true] ≡ o["true"]
+ * o[null] ≡ o["null"]，o[undefined] ≡ o["undefined"]，o[true] ≡ o["true"]
  *
  * 回归背景：$idx 用 litValue(i) 取键——lit(undefined) 被哨兵吞成「无 lit」，
  * 落进「抽象下标 → join 全部元素」；null/boolean 非 string|number 也被当成

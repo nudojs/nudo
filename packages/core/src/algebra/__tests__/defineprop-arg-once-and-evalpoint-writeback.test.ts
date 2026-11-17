@@ -2,10 +2,10 @@
  * `Object.defineProperty` 实参只求值一次（137）+ `delete` / `defineProperty`
  * 的写回在**求值点**发生（176）回归。
  *
- * Bug 137：语句位 defineProperty 的「写回」**重发整条调用** —— 除第一实参外
+ * 语句位 defineProperty 的「写回」**重发整条调用** —— 除第一实参外
  * 每个实参都被求值两次（计算键 / 描述符里的副作用翻倍）。
  *
- * Bug 176：`delete` / `Object.defineProperty` 是**两段式**发射——表达式段发
+ * `delete` / `Object.defineProperty` 是**两段式**发射——表达式段发
  * 只读值通道（$delRes），真正的变更被收成一条**语句位**写回行 ⇒ 出现在更大
  * 表达式里时，写回只能挂在整条语句之后 ⇒ 同一条表达式里排在它后面的读看到
  * **变更前**的状态。

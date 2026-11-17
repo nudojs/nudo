@@ -18,7 +18,7 @@ beforeEach(() => {
 });
 
 describe("F-3 #6-8: malformed @nudo:contract segments", () => {
-  it("#6 x > 0 → nudo:contract-syntax diagnostic", () => {
+  it("x > 0 → nudo:contract-syntax diagnostic", () => {
     takeRefineDiags();
     const src = `/**
  * @nudo:contract x > 0
@@ -30,7 +30,7 @@ export function f(x) { return x; }`;
     expect(diags.some((d) => d.code === "nudo:contract-syntax" && d.message.includes("x > 0"))).toBe(true);
   });
 
-  it("#7 x number() (inline builder) → nudo:contract-syntax diagnostic", () => {
+  it("x number() (inline builder) → nudo:contract-syntax diagnostic", () => {
     takeRefineDiags();
     const src = `/**
  * @nudo:contract x number()
@@ -42,7 +42,7 @@ export function f(x) { return x; }`;
     expect(diags.some((d) => d.code === "nudo:contract-syntax")).toBe(true);
   });
 
-  it("#8 x,y pos → diagnostic for 'x' segment, 'y pos' still works", () => {
+  it("x,y pos → diagnostic for 'x' segment, 'y pos' still works", () => {
     takeRefineDiags();
     const src = `
 /// @nudo:import { pos } from "./c.nudo.js"

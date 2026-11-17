@@ -1,8 +1,8 @@
 /**
- * Bug 149：Proxy 陷阱收到的**符号键**必须是**真 symbol**（规范 PropertyKey），
+ * Proxy 陷阱收到的**符号键**必须是**真 symbol**（规范 PropertyKey），
  * 不是引擎内部的 "@@X" 字符串槽键投影。
  *
- * 根因：转译期把 `obj[Symbol.x]` 投影成 `$get(obj, "@@x")`（Bug 73 的内部
+ * 根因：转译期把 `obj[Symbol.x]` 投影成 `$get(obj, "@@x")`（的内部
  * 槽键表示），陷阱派发处（runtime/containers/member.ts 的 get/set 陷阱、
  * runtime/members.ts 的 has 陷阱）把该内部表示当 PropertyKey 传出 ⇒ 按
  * symbol 分派的 handler 全部失灵（typeof k 得 "string"、String(k) 得
@@ -17,7 +17,7 @@
  * 的 PropertyKey**——不得混叠（陷阱仍须收到字符串）。
  *
  * 已知遗留（不属本条，见报告族 02）：has/set 陷阱返回值未做 ToBoolean
- * （Bug 209）——本文件只用返回真布尔的 handler 断言，不依赖该口径。
+ * （）——本文件只用返回真布尔的 handler 断言，不依赖该口径。
  */
 import { describe, it, expect } from "vitest";
 import { litValue } from "@nudojs/core";
@@ -27,7 +27,7 @@ function v(src: string) {
   return litValue(call(src, "f").result);
 }
 
-describe("Bug 149: Proxy 陷阱的符号键是真 symbol（不是 \"@@X\" 串）", () => {
+describe("Proxy 陷阱的符号键是真 symbol（不是 \"@@X\" 串）", () => {
   it("get 陷阱：typeof k → \"symbol\"", () => {
     expect(
       v(`export function f() { const p = new Proxy({}, { get(t, k) { return typeof k; } }); return p[Symbol.iterator]; }`),

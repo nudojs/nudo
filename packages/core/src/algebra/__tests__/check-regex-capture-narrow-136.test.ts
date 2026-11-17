@@ -3,17 +3,17 @@
  *
  * 1.3.15 回归 FP：`m[1].trim()` 守卫后 push 的数组元素仍带 undefined 臂
  * → array(string()) 误报 constraint-violated。三件耦合修复：
- *   (a) execRegexBrand 抽象 subject 分支：均质 element（string|undefined）
- *      的 arr → 与具体路径 matchResultAbs 同构的 per-index 槽 obj（"0"=string、
- *      "1".."ng"=string|undefined、length=numLit(1+ng)、index/input=prim、
- *      groups=具名组 obj|undefined），整体仍 null|match 二值 join；
- *   (b) memberGuardTarget 计算键数值字面量：`if (m[1])` 走既有
- *      $removeMemberNullish 槽剪影（此前计算键不识别，显式守卫不窄化）；
- *   (c) 测试式方法调用接收者非 nullish 事实：`if (m[1].trim().length > 0)`
- *      的调用求值到达 ⇒ 接收者非 nullish（nullish 臂在 .trim 成员读处
- *      throws 分流），两臂影子重绑后 `out.push(m[1])` 剥掉 undefined 臂。
- *      短路方向：`A && B` 的 B 位仅真值臂、`A || B` 的 B 位仅假值臂；
- *      `?.` 可选链短路不蕴含接收者非 nullish（控制组）。
+ * (a) execRegexBrand 抽象 subject 分支：均质 element（string|undefined）
+ * 的 arr → 与具体路径 matchResultAbs 同构的 per-index 槽 obj（"0"=string、
+ * "1".."ng"=string|undefined、length=numLit(1+ng)、index/input=prim、
+ * groups=具名组 obj|undefined），整体仍 null|match 二值 join；
+ * (b) memberGuardTarget 计算键数值字面量：`if (m[1])` 走既有
+ * $removeMemberNullish 槽剪影（此前计算键不识别，显式守卫不窄化）；
+ * (c) 测试式方法调用接收者非 nullish 事实：`if (m[1].trim().length > 0)`
+ * 的调用求值到达 ⇒ 接收者非 nullish（nullish 臂在 .trim 成员读处
+ * throws 分流），两臂影子重绑后 `out.push(m[1])` 剥掉 undefined 臂。
+ * 短路方向：`A && B` 的 B 位仅真值臂、`A || B` 的 B 位仅假值臂；
+ * `?.` 可选链短路不蕴含接收者非 nullish（控制组）。
  *
  * 诚实化不回退：无守卫直推仍 [string|undefined]（#136 修的是窄化不是放宽）；
  * 无契约（subject any）时 exec 的 ToString 强制 may TypeError 仍报 L2
@@ -45,9 +45,9 @@ function l2Of(r: ReturnType<typeof check>, fn?: string) {
 }
 
 /**
- * 签名置信度（**口径更新 · 族 09 S5 · Bug 413**）。
+ * 签名置信度（**口径更新 · 族 09 S5 · **）。
  *
- * `display` 自 Bug 413 起是**人类面口径**的 shape 渲染（与 `nudo check` 的
+ * `display` 自 起是**人类面口径**的 shape 渲染（与 `nudo check` 的
  * 签名行逐字同源）⇒ 不再带 `#exact` / `#path` 置信度段 ⇒ 置信度证据改看
  * `signatures[].conf`（**证据不丢**，只是换了字段）。
  */
@@ -55,7 +55,7 @@ function confOf(r: { signatures: { name: string; conf: string }[] }, fn: string)
   return r.signatures.find((s) => s.name === fn)?.conf ?? "(missing)";
 }
 
-describe("#136 issue 原样：守卫后 push 元素不再带 undefined 臂", () => {
+describe("issue 原样：守卫后 push 元素不再带 undefined 臂", () => {
   it("while + (m = re.exec(content)) + if (m[1].trim().length > 0)：0 error、返回 [string]", () => {
     const r = check(`
 /**
@@ -74,13 +74,13 @@ export function rg(content) {
 `);
     expect(r.summary.errors).toBe(0);
     // 零迭代 [] | 各轮守卫后 push——undefined 臂已剥（修前 [string|undefined]
-    // ⊭ array(string()) 误报 constraint-violated）。Bug 49/51 后 push 在
+    // ⊭ array(string()) 误报 constraint-violated）。 后 push 在
     // sum 接收者上按成员生效（旧语句位重绑对 sum 是 no-op，≥2 轮的 push
     // 被静默丢弃——不健全）：出口是有界预算内 {0..8} 次入栈的精确并集，
     // 每臂元素恒 string（无 undefined 臂）
     expect(sigOf(r, "rg")).not.toContain("undefined");
     expect(sigOf(r, "rg")).toContain("[]");
-    // 置信度证据改看 `sig.conf`（`display` 自 Bug 413 起不再带 `#conf` 段）
+    // 置信度证据改看 `sig.conf`（`display` 自 起不再带 `#conf` 段）
     expect(confOf(r, "rg")).toBe("exact");
   });
 
@@ -118,10 +118,10 @@ export function rgExplicit(content) {
 }
 `);
     expect(r.summary.errors).toBe(0);
-    // 同上（Bug 49/51：{0..8} 次入栈并集，元素恒 string，无 undefined 臂）
+    // 同上（：{0..8} 次入栈并集，元素恒 string，无 undefined 臂）
     expect(sigOf(r, "rgExplicit")).not.toContain("undefined");
     expect(sigOf(r, "rgExplicit")).toContain("[]");
-    // 置信度证据改看 `sig.conf`（`display` 自 Bug 413 起不再带 `#conf` 段）
+    // 置信度证据改看 `sig.conf`（`display` 自 起不再带 `#conf` 段）
     expect(confOf(r, "rgExplicit")).toBe("exact");
   });
 
@@ -147,7 +147,7 @@ export function rgNoGuard(content) {
   });
 });
 
-describe("#136 (a) 抽象匹配结果的 per-index 槽（matchResultAbs 同构）", () => {
+describe("(a) 抽象匹配结果的 per-index 槽（matchResultAbs 同构）", () => {
   it("m[0]/m.length/m.index/m.input 可读且类型合理", () => {
     const r = check(`
 /**
@@ -165,7 +165,7 @@ export function parts(content) {
     expect(r.summary.errors).toBe(0);
     // 1 捕获组 → length 恒 2；整匹配 string（非空命中）；index:number；
     // input:string（修前均质 arr：m[0] 也带 undefined、length/index/input unknown）。
-    // Bug 99：exec 首败零迭代臂（native 无匹配 → return null）现被正确汇合
+    // exec 首败零迭代臂（native 无匹配 → return null）现被正确汇合
     // ——原断言钉的是丢 null 臂的 unsound 行为。
     // ⚠ 断言强度：`display` **精确相等**（不是前缀正则——前缀正则会放过
     // 「多一条 undefined 臂」这类变宽）+ 置信度**单独**断言（两件事分开钉）。
@@ -189,8 +189,8 @@ export function named(content) {
 `);
     expect(r.summary.errors).toBe(0);
     // 具名组槽 string|undefined（未参与捕获 undefined）；join 尾注为
-    // undefAbs 的 unknown 形状显示（Bug 22 口径，非引擎债）。
-    // Bug 99：exec 首败零迭代臂 → return null 汇入（原断言丢 null 臂）。
+    // undefAbs 的 unknown 形状显示（口径，非引擎债）。
+    // exec 首败零迭代臂 → return null 汇入（原断言丢 null 臂）。
     // ⚠ `display` **精确相等**（前缀正则会放过「多一条 undefined 臂」）。
     expect(sigOf(r, "named")).toBe("null | string | undefined");
     expect(confOf(r, "named")).toBe("exact");
@@ -210,7 +210,7 @@ export function concrete() {
   });
 });
 
-describe("#136 (c) 方法调用接收者事实的短路方向（sound 钉）", () => {
+describe("(c) 方法调用接收者事实的短路方向（sound 钉）", () => {
   it("A || m[1].trim()…：真值臂（cons）无事实——undefined 保留", () => {
     const r = check(`
 /**
@@ -248,7 +248,7 @@ export function orAlt(content) {
 `);
     expect(r.summary.errors).toBe(0);
     // 整体假 ⇒ A 假且 B 求值到达 ⇒ 接收者非 nullish。
-    // Bug 99：exec 首败零迭代臂 → return null 汇入（原断言丢 null 臂）。
+    // exec 首败零迭代臂 → return null 汇入（原断言丢 null 臂）。
     // ⚠ `display` **精确相等**：`null | string`（**没有** undefined 臂——
     // 前缀正则 `/^null \| string/` 会放过 `null | string | undefined` ⇒
     // 「假值臂剥离 undefined」这条语义就没人钉了）。
@@ -272,7 +272,7 @@ export function optionalChain(content) {
 }
 `);
     expect(r.summary.errors).toBe(0);
-    // 可选链不窄化：undefined 臂如实保留（Bug 49/51 后是 {0..8} 次入栈
+    // 可选链不窄化：undefined 臂如实保留（ 后是 {0..8} 次入栈
     // 并集，每臂元素 string | undefined）
     expect(sigOf(r, "optionalChain")).toContain("string | undefined");
     expect(sigOf(r, "optionalChain")).toContain("[]");

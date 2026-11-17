@@ -25,7 +25,7 @@ const opts = {
   fromFile: "/t/fromidx.js",
 };
 
-describe("#176 Array.from mapFn 下标界（端到端）", () => {
+describe("Array.from mapFn 下标界（端到端）", () => {
   it("dp[0][0]：抽象长度 a.length+1 → ge(0) 证得（此前 unproven-return）", () => {
     const src = `export function f(a) { const dp = Array.from({length: a.length + 1}, (_, i) => [i]); return dp[0][0]; }`;
     const r = checkSource("/t/fromidx.js", src, pTrue, opts);
@@ -79,7 +79,7 @@ function hasAtom(idx: Abs, op: "ge" | "lt", b: Term): boolean {
   );
 }
 
-describe("#176 单元：下标 Abs 的 term/pred", () => {
+describe("单元：下标 Abs 的 term/pred", () => {
   const nAbs = abs(num().shape, v("n"), ge(v("n"), lit(0)), "path");
 
   it("抽象长度（prim number 带项）：fromIdx# 项 + ge(·,0) ∧ lt(·, n)", () => {

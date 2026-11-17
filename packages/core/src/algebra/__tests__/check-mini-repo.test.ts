@@ -15,7 +15,7 @@ const mini = (f: string) => readFileSync(resolve(root, "docs/examples/mini-repo"
 describe("mini-repo check gold", () => {
   it("validators.js: no false positives", () => {
     const r = checkSource("validators.js", mini("validators.js"));
-    // L1 零误报不变；L2（Bug 8/31 wave 3）：`n > 0` / `n < lo` 等算术/关系
+    // L1 零误报不变；L2（ wave 3）：`n > 0` / `n < lo` 等算术/关系
     // 比较 over any 形参原生 may TypeError（n=Symbol()）——isPositive/clamp
     // 如实报 entry-may-throw（与 user-service.js 的 sumAges 同口径）。
     expect(

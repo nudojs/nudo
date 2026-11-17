@@ -62,7 +62,7 @@ function id(x) {
     expect(r.issues.filter((i) => i.code === "nudo:case-inconsistency")).toEqual([]);
   });
 
-  // Bug 1：纯 bounds 分支此前不执法 .int() 标志——number().int() 的非整数
+  // 纯 bounds 分支此前不执法 .int() 标志——number().int() 的非整数
   // 见证静默通过（hasEqOr 分支经 literalMeetsConstraint 已执法）。
   it("error: 非整数见证 ⊭ number().int()（纯 int，无 range 原子）", () => {
     const r = issuesOf(`

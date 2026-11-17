@@ -63,7 +63,7 @@ export const real = number().gt(1);
   });
 });
 
-describe("侧车 loader：.nudo.ts TS 语法剥除", () => {
+describe("侧车 loader。nudo.ts TS 语法剥除", () => {
   it("带类型注解/泛型/as/! 的合法 TS 契约正常求值（不再 exec 崩溃）", () => {
     const src = `
 export const positive: number = number().gt(0);

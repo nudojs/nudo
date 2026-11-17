@@ -8,9 +8,9 @@ import { checkSource, pTrue } from "../index.ts";
  * 随后重赋 `versions.map(...).filter(...)`。两个失真源叠加曾报
  * nudo:assign-mismatch：
  * 1. filter 对空元组返回 `unknown[]`（无界长度——filter 不增元素，失真）；
- *    对不确定谓词的小元组返回无界 arr 而非有界子序列和。
+ * 对不确定谓词的小元组返回无界 arr 而非有界子序列和。
  * 2. widenForAssign 无 sum 分支：全数组成员的 sum 不按 tuple 分支同口径
- *    拓宽（可变绑定持数组后赋任意数组是合法 JS）。
+ * 拓宽（可变绑定持数组后赋任意数组是合法 JS）。
  *
  * 修复后：filter 空元组 → `[]`；不确定谓词 ≤3 元组 → 精确子集和；
  * 全数组 sum → 拓宽为单 arr。本用例两门齐绿。

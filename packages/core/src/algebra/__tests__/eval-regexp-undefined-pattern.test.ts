@@ -1,5 +1,5 @@
 /**
- * Bug 95 回归：RegExp 构造面 undefined pattern 此前被字符串化为
+ * 回归：RegExp 构造面 undefined pattern 此前被字符串化为
  * "undefined"（`new RegExp(undefined).source === "undefined"`）——原生
  * undefined 折空模式（(?:)。null 保持 "null"（String(null)，非字面缺参）。
  * 修复：builtins/regexp.ts 构造分支 pv === undefined 折 ""。
@@ -9,7 +9,7 @@
 import { describe, it, expect } from "vitest";
 import { val } from "./eval-helpers.ts";
 
-describe("Bug 95：RegExp 构造 undefined pattern 折空模式", () => {
+describe("RegExp 构造 undefined pattern 折空模式", () => {
   it("new RegExp(undefined).source === '(?:)'（void 0 同）", () => {
     expect(val(`export function f() { return new RegExp(undefined).source; }`)).toEqual({
       ok: true,

@@ -1,19 +1,19 @@
 /**
  * 算术 / 强转 / 关系算子的抽象操作数 may-TypeError 回归
- * （bug-report wave 3：Bug 8 + Bug 31）。
+ * （bug-report wave 3：+ ）。
  *
  * 不变量：原生异常不得折成 result=…, throws=never（假「保证不抛」）。
- *   Bug 8：`x + 1` 等（x:any）原生 may TypeError（x=1n 混型 / Symbol 强转；
- *   node 实测），引擎此前全部 throws=never。覆盖 add/sub/mul/div/mod、
- *   pow/位运算（foldNumericBinOp 回退）、一元 + ~ -、模板串（$add 链）。
- *   控制组：`1n + x` / `1n / x`（bigint 面 → foldBigintBinOp 已记）、
- *   `1n + 1`（字面量混型 → 硬抛）行为不变。
- *   反向（不得假报）：refined number/string/bigint prim、unknown 令牌
- *   （引擎 fail-closed，wave 1 口径：may-tier 对 any 记、对 unknown 不记）、
- *   字面量全具体运算——零效果。
- *   Bug 31：`x < 1` 等（x:any）原生 may TypeError（x=Symbol()），
- *   cmp 的 both-terms 臂与抽象回退臂都要记；bigint 关系比较合法
- *   （`1n < 2n` → true）不得报。Symbol 字面量仍硬抛（控制组）。
+ * `x + 1` 等（x:any）原生 may TypeError（x=1n 混型 / Symbol 强转；
+ * node 实测），引擎此前全部 throws=never。覆盖 add/sub/mul/div/mod、
+ * pow/位运算（foldNumericBinOp 回退）、一元 + ~ -、模板串（$add 链）。
+ * 控制组：`1n + x` / `1n / x`（bigint 面 → foldBigintBinOp 已记）、
+ * `1n + 1`（字面量混型 → 硬抛）行为不变。
+ * 反向（不得假报）：refined number/string/bigint prim、unknown 令牌
+ * （引擎 fail-closed，wave 1 口径：may-tier 对 any 记、对 unknown 不记）、
+ * 字面量全具体运算——零效果。
+ * `x < 1` 等（x:any）原生 may TypeError（x=Symbol()），
+ * cmp 的 both-terms 臂与抽象回退臂都要记；bigint 关系比较合法
+ * （`1n < 2n` → true）不得报。Symbol 字面量仍硬抛（控制组）。
  */
 import { describe, it, expect } from "vitest";
 import {
@@ -88,9 +88,9 @@ function evalSrc(
   };
 }
 
-// --- Bug 8：二元算术 / 幂 / 位运算 ----------------------------------------
+// --- 二元算术 / 幂 / 位运算 ----------------------------------------
 
-describe("Bug 8: arithmetic over abstract operand records may TypeError", () => {
+describe("arithmetic over abstract operand records may TypeError", () => {
   it("x + 1 / x - 1 / x * 2 / x / 1 / x % 1 → may TypeError，值域不变", () => {
     const cases: Array<[string, string]> = [
       ["export function f(x) { return x + 1; }", "number | string"],
@@ -155,9 +155,9 @@ describe("Bug 8: arithmetic over abstract operand records may TypeError", () => 
   });
 });
 
-// --- Bug 8 反向：不得假报 --------------------------------------------------
+// --- 反向：不得假报 --------------------------------------------------
 
-describe("Bug 8 precision: total operands record nothing", () => {
+describe("precision: total operands record nothing", () => {
   it("prim number/string/bigbit 操作数（refined 参数面）零效果", () => {
     const n = num();
     const s = str();
@@ -202,9 +202,9 @@ describe("Bug 8 precision: total operands record nothing", () => {
   });
 });
 
-// --- Bug 31：关系算子 -------------------------------------------------------
+// --- 关系算子 -------------------------------------------------------
 
-describe("Bug 31: relational over abstract operand records may TypeError", () => {
+describe("relational over abstract operand records may TypeError", () => {
   it("x < / <= / > / >= 1（两侧任一 any 位）→ may TypeError，值域 boolean", () => {
     const cases = [
       "export function f(x) { return x < 1; }",

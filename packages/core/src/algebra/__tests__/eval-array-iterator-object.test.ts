@@ -1,5 +1,5 @@
 /**
- * Bug 63：Array.prototype.entries/keys/values 返回元素序列（tuple），
+ * Array.prototype.entries/keys/values 返回元素序列（tuple），
  * 而非迭代器对象。Array.isArray 折 true、Object.keys 折 ["0","1","2"]、
  * typeof .next 折 "undefined"——三面全 wrong-exact。
  * 修复：tuple 接收者走 Map/Set 的 collectionIteratorAbs 协议面（next/
@@ -24,7 +24,7 @@ const abstractArr = abs(
   "partial",
 );
 
-describe("Bug 63: entries/keys/values return iterator objects", () => {
+describe("entries/keys/values return iterator objects", () => {
   it("Array.isArray → false（迭代器对象非数组）", () => {
     expect(v(`export function f() { return Array.isArray([1,2,3].entries()); }`)).toBe(false);
     expect(v(`export function f() { return Array.isArray([1,2,3].keys()); }`)).toBe(false);

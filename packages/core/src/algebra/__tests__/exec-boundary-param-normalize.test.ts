@@ -1,18 +1,18 @@
 /**
- * 函数边界缺参归一（Bug 7 / Bug 12）回归。
+ * 函数边界缺参归一（/ ）回归。
  *
- * Bug 7（部分传参）：省略的尾实参以宿主 undefined 流入函数体——
- *   `$add` 等算子读 .shape 崩溃被调用边界收成假 may-throw（`two(s)` 对
- *   `two(a, b)` 报 entry-may-throw），或经 return 通道泄漏裸 undefined
- *   （违反 TranspiledCallResult.result: Abs 不变量）。
- *   修复：宿主绑定元数内省略槽位按「显式传 undefined」语义归一为
- *   lit(undefined)——函数声明/类方法在体内 prologue 收形（$absVal），
- *   函数表达式/对象方法在 $fnVal apply 钩子按 impl.length 补齐。
+ * （部分传参）：省略的尾实参以宿主 undefined 流入函数体——
+ * `$add` 等算子读 .shape 崩溃被调用边界收成假 may-throw（`two(s)` 对
+ * `two(a, b)` 报 entry-may-throw），或经 return 通道泄漏裸 undefined
+ * （违反 TranspiledCallResult.result: Abs 不变量）。
+ * 修复：宿主绑定元数内省略槽位按「显式传 undefined」语义归一为
+ * lit(undefined)——函数声明/类方法在体内 prologue 收形（$absVal），
+ * 函数表达式/对象方法在 $fnVal apply 钩子按 impl.length 补齐。
  *
- * Bug 12（零参调用）：省略形参原以宿主 undefined 落进 $get 的宿主值
- *   回落分支折 unknown 且漏记 may-throw（确定抛被折成保证不抛——
- *   throws 域假阴性）。归一为 lit(undefined) 后 `$get`/解构守卫走
- *   nullish 硬抛（与显式传 undefined 实参同面）。
+ * （零参调用）：省略形参原以宿主 undefined 落进 $get 的宿主值
+ * 回落分支折 unknown 且漏记 may-throw（确定抛被折成保证不抛——
+ * throws 域假阴性）。归一为 lit(undefined) 后 `$get`/解构守卫走
+ * nullish 硬抛（与显式传 undefined 实参同面）。
  *
  * 统一语义：省略 ≡ 显式传 undefined。红线：默认参照常取默认
  * （$orDefault 对 lit(undefined) 兼容）、rest 收 [] 不补、
@@ -43,7 +43,7 @@ function throwsName(r: ReturnType<typeof callTranspiledExportFull>): string {
   return r.throws.shape.k === "brand" ? (r.throws.shape as { name?: string }).name ?? "?" : r.throws.shape.k;
 }
 
-describe("Bug 7：部分传参——省略尾实参归一为 lit(undefined)", () => {
+describe("部分传参——省略尾实参归一为 lit(undefined)", () => {
   it("内部调用 two(s)：值域 number|string，不再崩成 unknown（any 侧 may-throw 由 check 门记）", () => {
     const r = run(
       `function two(a, b) { return a + b; }\nexport function go(s) { return two(s); }`,
@@ -101,7 +101,7 @@ describe("Bug 7：部分传参——省略尾实参归一为 lit(undefined)", ()
   });
 });
 
-describe("Bug 12：零参调用——省略形参的成员读/解构记 throws（不再 unknown 无抛）", () => {
+describe("零参调用——省略形参的成员读/解构记 throws（不再 unknown 无抛）", () => {
   it("f(a){a.b} 零参 → throws TypeError（原生确定抛）", () => {
     const r = run(`export function go(a) { return a.b; }`, []);
     expect(throwsName(r)).toBe("TypeError");

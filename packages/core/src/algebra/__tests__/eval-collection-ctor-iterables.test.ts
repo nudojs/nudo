@@ -1,22 +1,22 @@
 /**
- * Bug 8 回归：集合构造器 iterable 实参校验（值级 + L2 gate 两面）。
+ * 回归：集合构造器 iterable 实参校验（值级 + L2 gate 两面）。
  * node 实测原生口径（AddEntriesFromIterable / CanBeHeldWeakly）：
  * - Map/WeakMap 条目必须是对象：new Map([null]) / ([undefined]) / ([1]) /
- *   (["s"]) / ([Symbol()]) → TypeError "Iterator value … is not an entry object"
- *   ——nullish/symbol 字面量挂 shape k:"unknown" + lit term，旧 primEntry
- *   （shape.k === "prim"）绕过 → 漏抛；
+ * (["s"]) / ([Symbol()]) → TypeError "Iterator value … is not an entry object"
+ * ——nullish/symbol 字面量挂 shape k:"unknown" + lit term，旧 primEntry
+ * （shape.k === "prim"）绕过 → 漏抛；
  * - WeakMap 条目键 = Get(entry, "0") 须可弱持有：new WeakMap([{}]) / ([[]]) /
- *   ([["a"]]) / ([["a",1]]) / ([[null,1]]) / ([() => {}]) / ([new Date()])
- *   → TypeError "Invalid value used as weak map key"——闭对象无 0 槽 → 键
- *   undefined 非弱键，旧口径只查 ≥2 元组的首元素 prim → 漏抛；
+ * ([["a"]]) / ([["a",1]]) / ([[null,1]]) / ([() => {}]) / ([new Date()])
+ * → TypeError "Invalid value used as weak map key"——闭对象无 0 槽 → 键
+ * undefined 非弱键，旧口径只查 ≥2 元组的首元素 prim → 漏抛；
  * - 一元/零元组与无 0 槽对象都是合法 entry：new Map([["a"]]).size === 1
- *   （值 undefined）、new Map([[]]).size === 1、new Map([{}]).size === 1
- *   ——旧实现 ≥2 元组才入表 → size 假 0（batch21 电池残余）；
+ * （值 undefined）、new Map([[]]).size === 1、new Map([{}]).size === 1
+ * ——旧实现 ≥2 元组才入表 → size 假 0（batch21 电池残余）；
  * - WeakSet 元素走 CanBeHeldWeakly（非 IsObject）：new WeakSet([Symbol()])
- *   合法（symbol 可弱持有，node 实测不抛）——旧 primEntry 一刀切 → 假抛；
+ * 合法（symbol 可弱持有，node 实测不抛）——旧 primEntry 一刀切 → 假抛；
  * - L2 gate：new Map/Set/WeakMap/WeakSet(x)（x 抽象）记 may TypeError
- *   （报告 repro：四构造器全静默）；元素抽象 new Map([x]) / 抽象字符串
- *   new Map("x"+s) 同记；Map/Set 拷贝构造（迭代协议全定）不记。
+ * （报告 repro：四构造器全静默）；元素抽象 new Map([x]) / 抽象字符串
+ * new Map("x"+s) 同记；Map/Set 拷贝构造（迭代协议全定）不记。
  */
 import { describe, it, expect } from "vitest";
 import { checkSource } from "../check/check.ts";
@@ -68,7 +68,7 @@ function evalSrc(
   };
 }
 
-describe("Bug 8: 集合构造器元素级 entry 校验（值级定抛）", () => {
+describe("集合构造器元素级 entry 校验（值级定抛）", () => {
   it("Map 非 entry 对象条目（nullish/symbol 字面量挂 unknown 形态）→ TypeError", () => {
     for (const src of [
       `export function f() { return new Map([null]).size; }`,
@@ -127,7 +127,7 @@ describe("Bug 8: 集合构造器元素级 entry 校验（值级定抛）", () =>
   });
 });
 
-describe("Bug 8: 合法 entry 对齐原生（一元/零元组与对象条目入表）", () => {
+describe("合法 entry 对齐原生（一元/零元组与对象条目入表）", () => {
   it("new Map([['a']]).size === 1，get('a') → undefined，has('a') → true", () => {
     expect(numLitOf(call(`export function f() { return new Map([["a"]]).size; }`).result)).toBe(1);
     expect(litValue(call(`export function f() { return new Map([["a"]]).get("a"); }`).result as never)).toEqual({
@@ -177,7 +177,7 @@ describe("Bug 8: 合法 entry 对齐原生（一元/零元组与对象条目入�
   });
 });
 
-describe("Bug 8: L2 gate —— 抽象实参记 may TypeError", () => {
+describe("L2 gate —— 抽象实参记 may TypeError", () => {
   it("报告 repro 矩阵：new Map/Set/WeakMap/WeakSet(x) 全报（旧全静默）", () => {
     const r = check(`
       export function fm(x) { return new Map(x); }

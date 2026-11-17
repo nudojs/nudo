@@ -7,7 +7,7 @@
  * - Object.assign(null|undefined, src)：原生 TypeError
  * - Object.defineProperty(prim|null, …)：原生 TypeError
  * - Object.keys('abc') → ['0','1','2']、values('abc') → ['a','b','c']：
- *   此前折 arr（精度缺口）
+ * 此前折 arr（精度缺口）
  * 修复：evalObjectMethod（+ evaluator runtimeAssignObject）nullish/prim 字面量
  * 硬抛 NudoThrow(TypeError)——求值引擎经 $catchVal 吸收、ast-eval 在
  * namespace 调用点吸收为 EvalResult{threw}；字符串字面量折叠索引键/字符。

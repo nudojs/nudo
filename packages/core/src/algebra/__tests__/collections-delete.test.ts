@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { makeMapAbs, makeSetAbs, mapSetEntry, mapGetEntry, mapHasEntry, mapDeleteEntry, mapClearEntries, setAddEntry, setHasEntry, setDeleteEntry, setClearEntries, mapSizeAbs, setSizeAbs, $lit, $fork, abs, formatAbs, litValue, strLit, numLit } from "@nudojs/core";
+import { makeMapAbs, makeSetAbs, mapSetEntry, mapGetEntry, mapDeleteEntry, mapClearEntries, setAddEntry, setHasEntry, setDeleteEntry, setClearEntries, mapSizeAbs, $fork, abs, formatAbs, litValue, strLit, numLit } from "@nudojs/core";
 
 function abstractBool() {
   return abs({ k: "prim", type: "boolean" } as never, undefined, undefined, "path" as never);

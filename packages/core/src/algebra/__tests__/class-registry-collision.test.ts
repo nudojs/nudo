@@ -1,5 +1,5 @@
 /**
- * BUG-026：class registry 裸名键——同图两模块各声明
+ * class registry 裸名键——同图两模块各声明
  * 同名 class 时后者静默顶掉前者，$new / 成员查找
  * 解析到错误 spec 且无诊断。
  *
@@ -23,7 +23,7 @@ import {
   type EvalFallback,
 } from "@nudojs/core";
 
-describe("BUG-026: class registry 同名碰撞", () => {
+describe("class registry 同名碰撞", () => {
   it("different-shape same-name classes record a collision", () => {
     clearBClasses();
     $class("Parser", {

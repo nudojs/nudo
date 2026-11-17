@@ -1,5 +1,5 @@
 /**
- * 空体 class 表达式保留 `extends` 回归（报告 Bug 154）。
+ * 空体 class 表达式保留 `extends` 回归（报告 ）。
  *
  * class **表达式**的 lowering 用「体是否为空」做快路径：体为空就发
  * `$classExpr()`，**绕过了 `classSpecOf`**——而 `extends` 子句正是由

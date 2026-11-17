@@ -16,14 +16,13 @@
  * Usage (from monorepo root):
  *   pnpm run coverage:env
  *   pnpm run coverage:env --json   # stdout JSON only
- *   pnpm run coverage:env -- --check  # CI: fail if committed baseline drifted
  *
  * Output:
- *   docs/reports/env-coverage-baseline.json
- *   docs/reports/env-coverage-baseline.md
+ *   tmp/reports/env-coverage-baseline.json
+ *   tmp/reports/env-coverage-baseline.md
  */
 
-import { mkdirSync, writeFileSync, existsSync, readFileSync } from "node:fs";
+import { mkdirSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
@@ -35,43 +34,7 @@ import { defineEnv as defineNodeEnv } from "../packages/env/src/node.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const jsonMode = process.argv.includes("--json");
-const checkMode = process.argv.includes("--check");
 const generatedAt = new Date().toISOString();
-
-/** Stable payload for drift checks — ignores timestamps. Pins node + es/web probes. */
-function coverageStablePayload(report: {
-  nodeProbes: { counts: unknown; leaf: unknown; total: unknown; results: unknown };
-  esProbes?: { counts: unknown; leaf: unknown; total: unknown; results: unknown };
-  webProbes?: { counts: unknown; leaf: unknown; total: unknown; results: unknown };
-  libraryProbes?: unknown;
-  envModuleKeys?: unknown;
-}): string {
-  return JSON.stringify({
-    envModuleKeys: report.envModuleKeys,
-    nodeProbes: {
-      counts: report.nodeProbes.counts,
-      leaf: report.nodeProbes.leaf,
-      total: report.nodeProbes.total,
-      results: report.nodeProbes.results,
-    },
-    esProbes: report.esProbes
-      ? {
-          counts: report.esProbes.counts,
-          leaf: report.esProbes.leaf,
-          total: report.esProbes.total,
-          results: report.esProbes.results,
-        }
-      : undefined,
-    webProbes: report.webProbes
-      ? {
-          counts: report.webProbes.counts,
-          leaf: report.webProbes.leaf,
-          total: report.webProbes.total,
-          results: report.webProbes.results,
-        }
-      : undefined,
-  });
-}
 
 type EnvDef = {
   globals: Record<string, Abs>;
@@ -407,7 +370,7 @@ function tryResolvePkg(pkg: string): boolean {
   return existsSync(join(root, "node_modules", pkg));
 }
 
-function main(): void {
+export function buildEnvCoverageReport() {
   const envs: Record<string, EnvDef> = {
     es: defineEsEnv() as EnvDef,
     web: defineWebEnv() as EnvDef,
@@ -489,49 +452,22 @@ function main(): void {
     libraryProbes: lievalResults,
   };
 
-  const outDir = join(root, "docs", "reports");
+  return report;
+}
+
+function main(): void {
+  const report = buildEnvCoverageReport();
+  const nodeResults = report.nodeProbes.results;
+  const nodeCounts = report.nodeProbes.counts;
+  const nodeLeaf = report.nodeProbes.leaf;
+  const esResults = report.esProbes.results;
+  const weevalResults = report.webProbes.results;
+  const lievalResults = report.libraryProbes;
+
+  const outDir = join(root, "tmp", "reports");
   mkdirSync(outDir, { recursive: true });
   const jsonPath = join(outDir, "env-coverage-baseline.json");
   const mdPath = join(outDir, "env-coverage-baseline.md");
-
-  if (checkMode) {
-    let committed: string | null = null;
-    try {
-      committed = readFileSync(jsonPath, "utf8");
-    } catch {
-      committed = null;
-    }
-    if (!committed) {
-      process.stderr.write(
-        `env-coverage-baseline --check: missing ${jsonPath}; run \`pnpm run coverage:env\` and commit\n`,
-      );
-      process.exit(1);
-    }
-    let committedPayload = "";
-    try {
-      committedPayload = coverageStablePayload(JSON.parse(committed));
-    } catch {
-      process.stderr.write(
-        `env-coverage-baseline --check: unparseable ${jsonPath}; run \`pnpm run coverage:env\` and commit\n`,
-      );
-      process.exit(1);
-    }
-    const freshPayload = coverageStablePayload(report);
-    if (committedPayload !== freshPayload) {
-      process.stderr.write(
-        `env-coverage-baseline --check: docs/reports/env-coverage-baseline.* is stale.\n` +
-          `Run \`pnpm run coverage:env\` and commit the regenerated reports.\n` +
-          `Fresh: node resolved ${nodeCounts.resolved}/${report.nodeProbes.total} ` +
-          `(leaf-clean=${nodeLeaf.clean}, unknown=${nodeCounts.unknown}, ` +
-          `mock-required=${nodeCounts["mock-required"]})\n`,
-      );
-      process.exit(1);
-    }
-    process.stdout.write(
-      `env-coverage-baseline --check: committed baseline matches (node resolved ${nodeCounts.resolved}/${report.nodeProbes.total})\n`,
-    );
-    return;
-  }
 
   writeFileSync(jsonPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
 
@@ -616,7 +552,7 @@ function main(): void {
   md.push(report.envModuleKeys.nodeModules.join("\n"));
   md.push("```");
   md.push("");
-  md.push(`JSON twin: \`docs/reports/env-coverage-baseline.json\``);
+  md.push(`JSON twin: \`tmp/reports/env-coverage-baseline.json\``);
   md.push("");
 
   writeFileSync(mdPath, md.join("\n"), "utf8");
@@ -633,4 +569,4 @@ function main(): void {
   }
 }
 
-main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();

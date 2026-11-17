@@ -6,14 +6,13 @@
  * native 抛错域与值域。
  *
  * 探针后不入库的 MISMATCH 形态（= 剩余缺口面台账，编号见 bug-report）：
- * - new Map([null]) / new WeakMap([{}])：元素级 entry/key 校验——Bug 8
- *   已修（ctorArgDefinitelyInvalid 走 classifyEntryObject /
- *   classifyCanBeHeldWeakly），回归锁定于 eval-collection-ctor-iterables.test.ts；
- * - new Map([["a"]]).size：一元 pair 折 size 0——Bug 8 已修（makeMapAbs
- *   任意长度元组/对象条目入表），同上回归锁定；
+ * - new Map([null]) / new WeakMap([{}])：元素级 entry/key 校验——* 已修（ctorArgDefinitelyInvalid 走 classifyEntryObject /
+ * classifyCanBeHeldWeakly），回归锁定于 eval-collection-ctor-iterables.test.ts；
+ * - new Map([["a"]]).size：一元 pair 折 size 0——已修（makeMapAbs
+ * 任意长度元组/对象条目入表），同上回归锁定；
  * - BigInt 数组/USP 闭 obj pair 元素/装箱缺省实参/Array.from undefined
- *   mapper 四面已修（eval-battery-leftovers.test.ts 回归锁定），随修复入库。
- * Intl.NumberFormat/DateTimeFormat 未建模（Bug 44 修复中）整族不入库。
+ * mapper 四面已修（eval-battery-leftovers.test.ts 回归锁定），随修复入库。
+ * Intl.NumberFormat/DateTimeFormat 未建模（修复中）整族不入库。
  */
 export const mapCtor = [
   `try { new Map(0); return "no-throw"; } catch (e) { return e.constructor.name; }`,
@@ -133,7 +132,7 @@ export const bufferCtor = [
   `try { return new DataView(new ArrayBuffer(8)).byteLength; } catch (e) { return e.constructor.name; }`,
   `try { return new DataView(new ArrayBuffer(8), 4).byteLength; } catch (e) { return e.constructor.name; }`,
   `try { new DataView(new ArrayBuffer(8), -1); return "no-throw"; } catch (e) { return e.constructor.name; }`,
-  // Bug 35 已修（ctor bounds）：越界定抛 RangeError，随修复入库
+  // 已修（ctor bounds）：越界定抛 RangeError，随修复入库
   `try { new DataView(new ArrayBuffer(8), 4, 8); return "no-throw"; } catch (e) { return e.constructor.name; }`,
   `try { new DataView(new ArrayBuffer(8), 9); return "no-throw"; } catch (e) { return e.constructor.name; }`,
 ];

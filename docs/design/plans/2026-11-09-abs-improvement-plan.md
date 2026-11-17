@@ -4,7 +4,7 @@
 > 本文件只保留**现行项、决策锚与触发条件**；已交付项的立项正文已删除，证据在
 > 测试、changeset 与 git（`git log --grep 'ABS-'`）。
 > **编号保留**：`§5` 与各 `ABS-*` 编号不复用 —— `benchmark/s1/README.md` 与
-> `core/src/algebra/__tests__/abs14-equivalence-baseline.test.ts` 直接引用 `§5`。
+> `core/src/algebra/__tests__/equivalence-baseline.test.ts` 直接引用 `§5`。
 > **真源**：架构 → [`../kernel-merge.md`](../kernel-merge.md)；限制 → [`../limitations.md`](../limitations.md)；
 > 求值 → [`../evaluation.md`](../evaluation.md)；缓存 → [`../persistent-cache.md`](../persistent-cache.md)。
 > **纪律**：单轨 Abs；不新增第二 IR；不改变 C0 / L2 / `unknown` 语义；任何影响 `leqAbs` / check 的改动
@@ -17,8 +17,8 @@
 - **已交付**：`ABS-01`…`ABS-12`、`ABS-14`、`ABS-16` 第①步、`ABS-18`。正文删除，状态见 §1。
 - **仍开放**：`ABS-16`③（worker 并行，parked）、`ABS-17`（写时复制，暂缓）。
   `ABS-13` 残余已结案不做（见 §8）；`ABS-15` 已交付。
-- **性能线判定**：通用冷路径到此可停 —— 用户口径 `dist` time-to-green 374ms（2s 目标 5.3× 余量，
-  `docs/reports/dx-metrics.md`）；watch 典型编辑 total 667–929ms 达标；语义编辑 hub ≈2.2s
+- **性能线判定**：通用冷路径到此可停 —— 用户口径 `dist` time-to-green 374ms（2s 目标 5.3× 余量）；
+  watch 典型编辑 total 667–929ms 达标；语义编辑 hub ≈2.2s
   （CPU-bound），属单文件成本（`ABS-17`）或 worker 并行（`ABS-16`③），不在通用优化面。
 - **不做**：从 body AST 发明契约义务；把 `unknown` 当 `any`；追完整 TS 泛型/HM；
   无隔离宣称 sandbox；追求内建 100% 覆盖；无指标重写 Shape。
@@ -70,7 +70,7 @@
 + 方案 A-narrow（可安全抽取的 finalizer thunk 在 `.return()` / 无 catch 的 `.throw()` 时
 按内→外重放）。实测：`.return()` / `.throw()` 穿 side-effect finally 精确 `true`、嵌套
 `[true, true]`；`for-of` break 穿 `finally` / `yield*` 委托精确 `true`；async 走 rejected promise；
-finalizer 条件抛错精确传播。夹具 `abs13-abrupt-completion.test.ts`（15 例）。
+finalizer 条件抛错精确传播。夹具 `abrupt-completion.test.ts`（15 例）。
 
 **残余（2026-11-14 结案不做）**：finalizer 含 **`yield` / `return` 语句**。
 `yield` 需要真挂起/续体（CPS，XL）；`return` 即使不含 yield 也需要
@@ -93,8 +93,8 @@ finalizer 条件抛错精确传播。夹具 `abs13-abrupt-completion.test.ts`（
    秩 1；α–α 只允许按声明序单向依赖；禁止条件类型 / 映射类型 / `infer` / 高阶多态。
 2. **先走三条保守通道**：`bodyUnavailable` / `budgetTruncated` / `crossModule`；主路径仍以 body 为准。
 3. **等价性门禁是开工前置**：快路径 ≡ body 路径的返回值 Abs 逐字节一致
-   （`abs14-equivalence-baseline.ts` / `abs14-fastpath.test.ts`，用见证 Φ 绕开 memo 层）；
-   降级通道另见 `abs14-degraded-channels.test.ts`。
+   （`equivalence-baseline.ts` / `fastpath.test.ts`，用见证 Φ 绕开 memo 层）；
+   降级通道另见 `degraded-channels.test.ts`。
 4. **摘要缓存只留一套**：`key/fn-summary.ts` 是唯一跨实例摘要存储。
 
 **边界**：`TypeParam.bounds` 是 `PolyFn` 元数据且目前 **write-only**（全仓无读者）；
@@ -106,7 +106,7 @@ finalizer 条件抛错精确传播。夹具 `abs13-abrupt-completion.test.ts`（
 **已落地**：`key/facet-specs.ts::FACET_SPECS` 是 `AbsFacets` 槽位唯一登记表
 （`satisfies Record<keyof AbsFacets, FacetSpec>`，新增槽位不登记即编译红）；
 `kind` 同时决定 `facetKey` 编码与 `cloneAbsFacets` 搬运策略；改前后
-`facetKey` / `absKey` / `cloneAbsFacets` 逐字节 diff 为空；门禁 `abs15-facet-registry.test.ts`（14 例）。
+`facetKey` / `absKey` / `cloneAbsFacets` 逐字节 diff 为空；门禁 `facet-registry.test.ts`（14 例）。
 
 **候选（全部已交付）**：
 
@@ -147,9 +147,9 @@ finalizer 条件抛错精确传播。夹具 `abs13-abrupt-completion.test.ts`（
 逐文件 69–378ms，CPU/wall 1.10–1.28；冷态单价是 warm 的 2.5–4.7×（依赖共享热缓存）；
 LPT 上限 warm W=4 ≈487ms / W=8 ≈378ms，cold×3 时 W=4 ≈1461ms。
 **触发条件**：真实用户仓库语义编辑轮 >3s，或出现第二个并行分析消费者。
-**2026-11-14 复测**（`edit-loop-metrics --semantic`，48 文件 / hub comparator）：
+**2026-11-14 复测**（一次性仪器，48 文件 / hub comparator）：
 debounce 211ms · analyze **2002ms** · total **2213ms**（3/3）⇒ 触发未命中，维持 parked。
-复测命令：`pnpm run edit-loop-metrics -- --semantic --rounds 3 --profile`。
+复测仪器已随脚本整理移出仓库（同口径 harness 可从 git 历史取回后再跑）。
 
 ### ABS-17 大对象图 `$copy`（`[ ]` 结案暂缓）
 
@@ -174,7 +174,7 @@ analyze 20.8s 已满足耗时，但热点是 strip-types 24% + GC 11%，`$copy` 
 
 ### ABS-18 watch 增量重算（`[x]` 2026-11-13）
 
-**已交付**：① 吞改动竞态（`recordVersions` 前移 + 确定性 e2e `abs18-watch-write-race.test.ts`）；
+**已交付**：① 吞改动竞态（`recordVersions` 前移 + 确定性 e2e `watch-write-race.test.ts`）；
 ② inert 编辑（`load-deps-fp` 指纹对齐 `stableAnalyzeKeySource` + 只逐出 `changedFiles`）；
 ③ 注入对象复用（`check-injection-cache.ts`，LRU 256，仅 watch 传入）+ 轮内依赖指纹 memo
 （`beginDepFingerprintEpoch`）+ gating 同值复用（`loaderIdentity`）。
@@ -206,13 +206,12 @@ total **667–684ms**；leaf analyze 210ms / total **421ms**（早期批次为 h
 | any / unknown 比例与原因分布 | `ABS-02` 的效果 | `nudo health` / check JSON |
 | wrong-exact 数量 | `ABS-06` 的正确性 | 一致性矩阵 |
 | 金标 recall / precision | `ABS-07` / `ABS-08` / `ABS-09` | core gold suites |
-| time-to-green | DX 回归 | `pnpm run dx-metrics`（双口径） |
 | cold / warm / edit | 规模与摘要收益 | `benchmark:s1`（合成 120 文件）/ `benchmark:s1:real:clean`（真实仓，干净 env） |
 | 逐文件耗时 / 依赖装载 / CPU 栈 | `ABS-16` 口径核查、`ABS-17` 复现 | `benchmark/s1/profile-cold.mts`（`--corpus . --rounds 1 --top 30`；CPU 栈加 `--only` + `node --cpu-prof`） |
 | 打包器导出形态 / 规模梯度 | `ABS-17` 阴性对照 | `benchmark/s1/generate-bundle-fixtures.mts --count N` + `profile-cold.mts --corpus benchmark/s1/.bundles` |
-| 快路径 / body 路径逐字节 diff | `ABS-14` 等价门禁 | `abs14-equivalence-baseline.test.ts` + `abs14-fastpath.test.ts`（`applied` 必须增长）；降级通道 `abs14-degraded-channels.test.ts` |
+| 快路径 / body 路径逐字节 diff | `ABS-14` 等价门禁 | `equivalence-baseline.test.ts` + `fastpath.test.ts`（`applied` 必须增长）；降级通道 `degraded-channels.test.ts` |
 | 缓存命中率 | `ABS-05` / `ABS-10` / `ABS-16` | `s1-perf-baseline-real.json#cacheTelemetry`（实例级 + 函数级分列；服务层无计数 API） |
-| watch 增量轮分相 | `ABS-18` | `NUDO_WATCH_PROFILE=1` + `scripts/edit-loop-metrics.mjs --profile` |
+| watch 增量轮分相 | `ABS-18` | `NUDO_WATCH_PROFILE=1`（分相仪器已移出仓库，git 历史可回溯） |
 
 ## 8. 不做 / 边界
 

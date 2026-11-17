@@ -25,7 +25,7 @@ export function length(x) { return \`\${x}\`.length; }
 export function num(x) { return 1 + x; }
 `;
 
-/** formatAbs 前缀即 shape 面：`string  #path` / `number  #path`，并集是 `number | string` */
+/** formatAbs 前缀即 shape 面：`string #path` / `number #path`，并集是 `number | string` */
 function faceOf(src: string, name: string, args: unknown[] = []) {
   const out = formatAbs(callFn(SRC, name, args).result);
   return out.split(/\s{2,}/)[0]!;

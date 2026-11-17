@@ -1,12 +1,12 @@
 /**
- * 类 C 抽象求值回归（Bug 6 / 21）——数组 HOF 累加器 / thisArg 同族：
- * - Bug 6：无初值 reduce / reduceRight（抽象数组）累加器钉 unknown → 回调
- *   内 `unknown + number` 凭空多出 `+` 的字符串拼接臂（`number | string`）。
- *   原生语义：无初值首累加器 = 首元素，域 = 元素域（number）。
- * - Bug 21：map/filter/forEach/some/every/find/… 的第二实参 thisArg 被忽略
- *   → 回调宿主 this = undefined → `this.k` 假 may-throw（property on
- *   undefined）→ 回调路径折 bottom → 整体 `never`。原生 GetThisBinding：
- *   thisArg 即回调 this（字面量对象透传，恒 total）。
+ * 类 C 抽象求值回归（）——数组 HOF 累加器 / thisArg 同族：
+ * - 无初值 reduce / reduceRight（抽象数组）累加器钉 unknown → 回调
+ * 内 `unknown + number` 凭空多出 `+` 的字符串拼接臂（`number | string`）。
+ * 原生语义：无初值首累加器 = 首元素，域 = 元素域（number）。
+ * - map/filter/forEach/some/every/find/… 的第二实参 thisArg 被忽略
+ * → 回调宿主 this = undefined → `this.k` 假 may-throw（property on
+ * undefined）→ 回调路径折 bottom → 整体 `never`。原生 GetThisBinding：
+ * thisArg 即回调 this（字面量对象透传，恒 total）。
  * 修复：reduce 无初值 acc = 元素域（tuple 路径原生首/末在场元素不变）；
  * callFn 增可选 thisVal → applyCallbackAbs/$call/impl.apply 钩子注入宿主
  * this（回调体 $rawThis 原样接到，与 call/apply/bind 同通道）。
@@ -17,7 +17,7 @@ import { describe, it, expect } from "vitest";
 import {
   runTranspiled,
   callTranspiledExportFull,
-  litValue,
+
   formatAbs,
   abs,
 } from "@nudojs/core";
@@ -59,7 +59,7 @@ function evalWithArgs(
   };
 }
 
-describe("Bug 6: 无初值 reduce / reduceRight 累加器域 = 元素域", () => {
+describe("无初值 reduce / reduceRight 累加器域 = 元素域", () => {
   it("xs.reduce((a,b)=>a+b) → number（不再 number | string）", () => {
     const r = evalWithArgs(
       `export function f(xs) { return xs.reduce((a, b) => a + b); }`,
@@ -99,7 +99,7 @@ describe("Bug 6: 无初值 reduce / reduceRight 累加器域 = 元素域", () =>
   });
 });
 
-describe("Bug 21: 数组 HOF thisArg 注入（GetThisBinding）", () => {
+describe("数组 HOF thisArg 注入（GetThisBinding）", () => {
   it("map：字面量 thisArg 透传 → [7, 7]（node 实测）", () => {
     const r = evalWithArgs(
       `export function f() { const xs = [1, 2]; return xs.map(function () { return this.k; }, { k: 7 }); }`,

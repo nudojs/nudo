@@ -3,10 +3,10 @@
  *
  * 纪律（与 A2/A8/A10/A11 槽位同口径）：
  * - 真值来源是 `$gen` 的**完整 yield 序列**（`makeGenObject` 的 `full`），
- *   不是 `$arr(ys.els)` 之后可能被 widen 的 shape 数字下标槽（Bug 53）。
+ * 不是 `$arr(ys.els)` 之后可能被 widen 的 shape 数字下标槽（）。
  * - 数字槽**仍然并存**（消费点 / 族 01 口径依赖它），本槽位不替换 shape。
  * - 数组做浅拷贝、Abs 元素按引用共享；`snapshotAbs` / `substAbs` /
- *   `renameAbs` / `join` 都经 `cloneAbsFacets`，副本不得共享同一数组。
+ * `renameAbs` / `join` 都经 `cloneAbsFacets`，副本不得共享同一数组。
  * - `facetKey` 必须逐项编 `absKey`，否则不同元素域的生成器共享 memo。
  * - 缺省（手工构造 / 静态收割 / 旧 Abs）⇒ 消费面严格 fallback。
  */

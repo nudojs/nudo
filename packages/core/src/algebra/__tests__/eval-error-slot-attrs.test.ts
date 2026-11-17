@@ -1,11 +1,11 @@
 /**
- * Bug 66：error 实例 name/message/stack 的属性属主/可枚举面。
+ * error 实例 name/message/stack 的属性属主/可枚举面。
  * 此前 errorBrandAbs 把三槽建成普通自有可枚举槽：
  * - hasOwnProperty("name") 折 true（原生 false——name 经原型链从
- *   X.prototype.name 解析，非实例自有）
+ * X.prototype.name 解析，非实例自有）
  * - propertyIsEnumerable("message"|"name"|"stack") 折 true（原生 false
- *   ——message/stack 自有但不可枚举；flags 侧表记在内层 Abs，外层 brand
- *   查询 miss）
+ * ——message/stack 自有但不可枚举；flags 侧表记在内层 Abs，外层 brand
+ * 查询 miss）
  * 修复：name 槽打 Slot.inherited（自有面 introspection 折 false，$get 直读
  * /$in 不受影响）；propertyIsEnumerable 沿 brand 剥内层查 enumerable 侧表；
  * $set 公有覆写 inherited 槽落地转自有可枚举（e.name = "X"、子类 name 字段）。
@@ -19,7 +19,7 @@ function v(src: string): unknown {
   return r.ok ? r.value : undefined;
 }
 
-describe("Bug 66: error slot own/enumerable attributes", () => {
+describe("error slot own/enumerable attributes", () => {
   it("hasOwnProperty(\"name\") → false（name 继承自 X.prototype，非自有）", () => {
     expect(v(`export function f() { return new Error("m").hasOwnProperty("name"); }`)).toBe(false);
     expect(v(`export function f() { return new TypeError("m").hasOwnProperty("name"); }`)).toBe(false);
@@ -111,7 +111,7 @@ describe("R4: error brand introspection（gOPD / Object.hasOwn / gOPN 安装序�
   });
 
   it("gOPD stack → 数据描述符面（engine 全局 stack 数据槽模型，值域 string）", () => {
-    // 引擎把 stack 建模为自有数据槽（Bug 59——$get e.stack 折 string 域），
+    // 引擎把 stack 建模为自有数据槽（$get e.stack 折 string 域），
     // gOPD 沿同模型折数据描述符；V8 原生是访问器描述符（get/set）——
     // 引擎侧无访问器建模，writable/enumerable/configurable 仍精确
     expect(v(`export function f() { const d = Object.getOwnPropertyDescriptor(new Error("m"), "stack"); return [typeof d.value, d.writable, d.enumerable, d.configurable].join(","); }`))

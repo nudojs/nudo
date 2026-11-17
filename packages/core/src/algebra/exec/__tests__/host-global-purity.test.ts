@@ -6,10 +6,10 @@
  * 生成器的**绑定归并回写**与成员写的**根重绑**会 `$join($copy(host), …)` ⇒
  * `asAbsVal` 出包装 Abs 写进 `globalThis`：
  * - `process.env.DEBUG = ns`（debug 包顶层 + `save()` 的 if/else）⇒ 宿主
- *   `process` 被换成 Abs 对象（`process.exit` / `prependListener` 全丢，
- *   tsx preflight 直接崩）；
+ * `process` 被换成 Abs 对象（`process.exit` / `prependListener` 全丢，
+ * tsx preflight 直接崩）；
  * - `Error.stackTraceLimit = n` 一类宿主函数成员写 ⇒ `globalThis.Error`
- *   被换成 facade Abs（之后所有 `err instanceof Error` 崩）。
+ * 被换成 facade Abs（之后所有 `err instanceof Error` 崩）。
  *
  * 修法：归并回写/根重绑只在运行时判据 `$rebindable(<名>, <绑定>)` 为真时发生——
  * Abs 绑定与**局部宿主函数**（函数声明/表达式，asAbsVal 门面延迟桥接）可重绑；

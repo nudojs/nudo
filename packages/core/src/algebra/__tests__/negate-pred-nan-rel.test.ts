@@ -14,11 +14,11 @@ import {
   numLit,
   lit,
   v,
-  gt,
+
   ge,
   lt,
-  le,
-  and,
+
+
   formatAbs,
 } from "../index.ts";
 

@@ -1,38 +1,38 @@
 /**
- * Bug 52 / 53 / 54（生成器消费状态与 .return()/.throw() 恢复语义）：
+ * （生成器消费状态与 .return()/.throw() 恢复语义）：
  *
- * - Bug 53：$gen 此前经 `$arr(ys)` 提取元素列表——>cap（>8）widen 成 arr
- *   后塌缩成单代表元素，首个 next() 即 `{done:true}`（9-yield 循环 /
- *   while(true) 全截断）。修复：**完整收集序列**驱动 next()/done 与元素
- *   侧表；$arr widen 只保留给形状槽（类型面合法过近似）。
+ * - $gen 此前经 `$arr(ys)` 提取元素列表——>cap（>8）widen 成 arr
+ * 后塌缩成单代表元素，首个 next() 即 `{done:true}`（9-yield 循环 /
+ * while(true) 全截断）。修复：**完整收集序列**驱动 next()/done 与元素
+ * 侧表；$arr widen 只保留给形状槽（类型面合法过近似）。
  *
- * - Bug 54：spread / for-of / Array.from / 解构 / yield* 此前从元素侧表
- *   index 0 重放，忽略 next() 消费位（`it.next(); [...it].length` 假 1）。
- *   修复：消费位 live 视图——next() 推进时同步收缩，迭代消费点 drain
- *   排空（此后生成器 done，native 迭代协议耗尽语义）；数组解构逐项
- *   $idx 也按消费位读。
+ * - spread / for-of / Array.from / 解构 / yield* 此前从元素侧表
+ * index 0 重放，忽略 next() 消费位（`it.next(); [...it].length` 假 1）。
+ * 修复：消费位 live 视图——next() 推进时同步收缩，迭代消费点 drain
+ * 排空（此后生成器 done，native 迭代协议耗尽语义）；数组解构逐项
+ * $idx 也按消费位读。
  *
- * - Bug 52：eager 快照模型无挂起帧可恢复——.return() 盲返注入值、
- *   .throw() 盲抛。修复：yield 点 try 上下文位（transpile 静态标注，
- *   $yield/$yieldStar 第二实参）分级：
- *   · finally 仅副作用（无 yield/return）→ .return(v) 精确透传 v；
- *   · finally 含 return → 值并 unknown、done 恒 true（无 yield）；
- *   · finally 含 yield → 值并 unknown、done 并 boolean、续体 poisoned
- *     （此后 next() → {value: unknown, done: boolean}）；
- *   · .throw(e) 挂 try/catch 内 → 被吸收：{value: unknown, done:
- *     boolean} + may-throw（catch 体收集期未执行、可重抛），不再定值抛；
- *     R1a 精化：catch 静态事实（无 yield、重抛不被外层 catch 二次吸收）
- *     且挂起点后无剩余收集 yield → 吸收必完成，done 折 true（native）；
- *   · 无 finally/catch 的挂起点（含未启动 / 已耗尽）保持原生精确：
- *     .return(v) → v；.throw(e) → 抛 e。
- *   soundness 纪律：消除 wrong-definite（native 值恒在值域内），
- *   完整续体恢复（真跑 finally/catch 体）超出 eager 快照模型能力。
+ * - eager 快照模型无挂起帧可恢复——.return() 盲返注入值、
+ * .throw() 盲抛。修复：yield 点 try 上下文位（transpile 静态标注，
+ * $yield/$yieldStar 第二实参）分级：
+ * · finally 仅副作用（无 yield/return）→ .return(v) 精确透传 v；
+ * · finally 含 return → 值并 unknown、done 恒 true（无 yield）；
+ * · finally 含 yield → 值并 unknown、done 并 boolean、续体 poisoned
+ * （此后 next() → {value: unknown, done: boolean}）；
+ * · .throw(e) 挂 try/catch 内 → 被吸收：{value: unknown, done:
+ * boolean} + may-throw（catch 体收集期未执行、可重抛），不再定值抛；
+ * R1a 精化：catch 静态事实（无 yield、重抛不被外层 catch 二次吸收）
+ * 且挂起点后无剩余收集 yield → 吸收必完成，done 折 true（native）；
+ * · 无 finally/catch 的挂起点（含未启动 / 已耗尽）保持原生精确：
+ * .return(v) → v；.throw(e) → 抛 e。
+ * soundness 纪律：消除 wrong-definite（native 值恒在值域内），
+ * 完整续体恢复（真跑 finally/catch 体）超出 eager 快照模型能力。
  */
 import {describe, it, expect} from "vitest";
 import {litValue, formatAbs} from "@nudojs/core";
 import {call, effects, isNever, objSlots, throwsError} from "./eval-helpers.ts";
 
-describe("Bug 53: >8 yield 序列不截断（完整序列驱动 next/done）", () => {
+describe(">8 yield 序列不截断（完整序列驱动 next/done）", () => {
   it("for i<9：第二个 next().value → 1（native 1）", () => {
     const r = call(
       `export function f() { function* g() { for (let i = 0; i < 9; i++) { yield i; } } const it = g(); it.next(); return it.next().value; }`,
@@ -90,7 +90,7 @@ describe("Bug 53: >8 yield 序列不截断（完整序列驱动 next/done）", (
   });
 });
 
-describe("Bug 54: 迭代消费从当前位继续（不再从 0 重放）", () => {
+describe("迭代消费从当前位继续（不再从 0 重放）", () => {
   it("it.next(); [...it].length → 0（native 0）", () => {
     const r = call(
       `export function f() { function* g() { yield 1; } const it = g(); it.next(); return [...it].length; }`,
@@ -155,7 +155,7 @@ describe("Bug 54: 迭代消费从当前位继续（不再从 0 重放）", () =>
   });
 });
 
-describe("Bug 52: .return()/.throw() 挂起点语义（try 上下文分级，无 wrong-definite）", () => {
+describe(".return()/.throw() 挂起点语义（try 上下文分级，无 wrong-definite）", () => {
   it("finally 含 return：.return(99).value 不再 wrong-definite 99（native \"fin\"；值域 99⊔unknown）", () => {
     const r = call(
       `export function f() { function* g() { try { yield 1; } finally { return "fin"; } } const it = g(); it.next(); return it.return(99).value; }`,
@@ -287,7 +287,7 @@ describe("Bug 52: .return()/.throw() 挂起点语义（try 上下文分级，无
     const r = call(
       `export function f() { let leak; function* outer() { try { yield 1; const i2 = (function* () { yield 10; })(); i2.next(); leak = i2.return(77).value; } finally { return "f"; } } const o = outer(); o.next(); o.next(); return leak; }`,
     );
-    // Bug 212（A1 步骤 1）：outer 体写外层 leak（native 构造点 leak=
+    // （A1 步骤 1）：outer 体写外层 leak（native 构造点 leak=
     // undefined、drain 后 leak=77）⇒ eager 体照跑但写折成 join
     // （undefined | 77）——不再是字面量 77。语义点保持：77 必须在 join
     // 内（inner 裸 .return 不被 outer 的 try 上下文污染），且不含 outer
@@ -310,7 +310,7 @@ describe("Bug 52: .return()/.throw() 挂起点语义（try 上下文分级，无
   });
 });
 
-describe("Bug 52/54 混合：for-of/next 与 .return 共享消费位", () => {
+describe("混合：for-of/next 与 .return 共享消费位", () => {
   it("for-of 部分消费后 .return 走裸路径（挂起在循环外 yield）", () => {
     // for-of 排空后生成器 done——.return(9) 精确 {value:9, done:true}（native 同）
     const r = call(

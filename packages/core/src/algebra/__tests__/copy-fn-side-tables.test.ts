@@ -3,9 +3,9 @@
  *
  * 修复前 fn 分支（fork/loop 快照）只迁移 impl/invariants：
  * - null-proto 标记丢失 ⇒ `Object.setPrototypeOf(f, null)` 后经 fork 副本
- *   读 `f.__proto__` 从 undefined 翻成 Function.prototype；
+ * 读 `f.__proto__` 从 undefined 翻成 Function.prototype；
  * - 新鲜实例 id 丢失 ⇒ 快照副本与另一次创建事件比较从 `false` 退化成
- *   unknown（strictEq 只在双方都有 id 时折 false）。
+ * unknown（strictEq 只在双方都有 id 时折 false）。
  * brand 分支同样缺 fresh-id 迁移。
  */
 import { describe, it, expect } from "vitest";

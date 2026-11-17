@@ -1,0 +1,1562 @@
+/**
+ * 模块套件：Node 宿主面（globals/process/fs/path/os/module/console/spawn/util）。
+ */
+import { describe, it, expect } from "vitest";
+import { checkSource, pTrue, formatShape, type Abs, boolLit, objOf, strLit, numLit, $new, resetGeneralizeMemo, relationFn, instantiateReturn, undefAbs, abs, type AbsModuleExports, getFnImpl, unknown } from "@nudojs/core";
+import { defineEnv } from "../node.ts";
+import { execFileSync, spawnSync as nodeSpawnSync } from "node:child_process";
+import { checkNode, staticSlotOf, nodeSlotOf, slotOfAbs, memberNames } from "./env-member-tables-helpers.ts";
+import fs, { readFile } from "node:fs";
+import fsp from "node:fs/promises";
+import { callSite, envMember, innerOf, slotsOf, brandName, applyOut } from "./env-helpers-builtin-calls.ts";
+import nodePath, { type FormatInputPathObject } from "node:path";
+import { pathToFileURL as nodePathToFileURL } from "node:url";
+import { callSite as callSite____env_bug_s4_helpers_ts, brandName as brandName____env_bug_s4_helpers_ts, thrownBrand, } from "./env-helpers-call-site.ts";
+import os from "node:os";
+import { runWithMayThrowSession, setMayThrowCollector } from "@nudojs/core/internal";
+import { defineEnv as defineEnv_____es_ts } from "../es.ts";
+import { checkWeb, webEnvGlobals } from "./env-helpers-globals.ts";
+import { ok as nodeOk, strictEqual as nodeStrictEqual, fail as nodeFail } from "node:assert";
+import { brandOf, objAbs, prim } from "../abs-helpers.ts";
+import { inherits as nodeInherits, promisify as nodePromisify, types as hostTypes } from "node:util";
+
+// ---------------------------------------------------------------------------
+// node env 全局清单补齐（未建模构造器不再铸空 brand）
+// ---------------------------------------------------------------------------
+describe("node env 全局清单补齐（未建模构造器不再铸空 brand）", () => {
+/**
+ * env node：全局清单只覆盖 41/139；未建模的宿主构造器被 core 的
+ * `$new` 兜底铸成**空 brand**（闭 obj 无槽）⇒ 成员读 exact undefined ⇒
+ * 再链式读一次就成「定抛 TypeError」（假红）；未建模的**全局对象**
+ * （crypto / performance / navigator …）退化成 unknown + 误导诊断
+ * `nudo:unknown-inference`。
+ *
+ * 修法（packages/env/src/node.ts）：补齐 node 侧可构造/不可构造的宿主全局
+ * 清单（ctor:true / ctor:false + 实例面 + 静态面），并补全局对象面。
+ *
+ * 证据口径：
+ * - **原生 oracle**：本文件直接对真实 Node 运行时断言（同一进程内）。
+ * - **引擎探针**：checkSource + node env globals ⇒ 签名 / 诊断。
+ */
+
+
+
+
+
+const env = defineEnv();
+
+function globalOf(name: string): Abs {
+  const g = env.globals[name];
+  expect(g, `global "${name}" missing`).toBeTruthy();
+  return g!;
+}
+
+function shapeOf(a: Abs | undefined, label: string): string {
+  expect(a, `expected Abs at ${label}`).toBeTruthy();
+  return formatShape(a!);
+}
+
+function walk(a: Abs | undefined, ...keys: string[]): Abs | undefined {
+  let cur: Abs | undefined = a;
+  for (const k of keys) {
+    if (!cur) return undefined;
+    if (cur.shape.k === "brand") cur = cur.shape.shape as Abs | undefined;
+    if (!cur || cur.shape.k !== "obj") return undefined;
+    cur = cur.shape.slots[k]?.value;
+  }
+  return cur;
+}
+
+/** 构造器的**实例面**（envFn 的 returnType） */
+function instanceOf(a: Abs): Abs {
+  return a.shape.k === "fn" && a.shape.returnType ? a.shape.returnType : a;
+}
+
+function check(src: string) {
+  return checkSource("/t/env-bug-863.js", src, pTrue, {
+    inject: { envGlobals: env.globals },
+  });
+}
+
+
+  it("17 构造器声明与 ctor 面；全局对象面；引擎探针零假红；randomUUID 恒 string", () => {
+    for (const name of ["AbortController","Blob","BroadcastChannel","CustomEvent","DOMException","Event","EventTarget","File","MessageChannel","ReadableStream","Request","Response","TransformStream","URLPattern","WritableStream"] as const) {
+      const ctor = (globalThis as Record<string, unknown>)[name];
+      if (ctor !== undefined) expect(typeof ctor, name).toBe("function");
+      const g = globalOf(name);
+      expect(g.shape.k, name).toBe("fn");
+      expect((g.shape as { ctor?: boolean }).ctor, name).toBe(true);
+      expect(instanceOf(g).shape.k, name).toBe("brand");
+    }
+    for (const name of ["AbortSignal", "MessagePort"] as const) {
+      const ctor = (globalThis as Record<string, unknown>)[name];
+      if (ctor !== undefined) expect(() => new (ctor as new () => unknown)()).toThrow(TypeError);
+      expect((globalOf(name).shape as { ctor?: boolean }).ctor, name).toBe(false);
+    }
+    expect(shapeOf(walk(globalOf("crypto"), "randomUUID"), "crypto.randomUUID")).toContain("=>");
+    expect(shapeOf(walk(globalOf("performance"), "now"), "performance.now")).toContain("=>");
+    expect(shapeOf(walk(globalOf("navigator"), "hardwareConcurrency"), "navigator.hardwareConcurrency")).toContain("number");
+
+    const src = `
+      export function bc() { return new BroadcastChannel("x").name; }
+      export function mp() { return typeof new MessageChannel().port1.postMessage; }
+      export function ws() { return typeof new WritableStream().getWriter; }
+      export function ts() { return typeof new TransformStream().readable; }
+      export function fl() { return new File([], "x").name; }
+      export function et() { return typeof new EventTarget().dispatchEvent; }
+      export function up() { return typeof new URLPattern({ pathname: "/a" }).test; }
+      export function ac() { return typeof new AbortController().abort; }
+      export function ru() { return crypto.randomUUID(); }
+    `;
+    const r = check(src);
+    expect(r.issues.filter((i) => i.code === "nudo:entry-may-throw")).toEqual([]);
+    expect(r.issues.filter((i) => i.code === "nudo:unknown-inference")).toEqual([]);
+    const byName = new Map(r.signatures.map((s) => [s.name, s.display]));
+    expect(byName.get("bc")).toMatch(/^string\b/);
+    expect(byName.get("fl")).toMatch(/^string\b/);
+    expect(byName.get("ru")).toMatch(/^string\b/);
+    expect(byName.get("ws")).toMatch(/^"function"/);
+    expect(byName.get("et")).toMatch(/^"function"/);
+    expect(byName.get("up")).toMatch(/^"function"/);
+    expect(byName.get("ac")).toMatch(/^"function"/);
+    expect(typeof crypto.randomUUID()).toBe("string");
+  });
+
+});
+
+// ---------------------------------------------------------------------------
+// node env declares host functions as functions
+// ---------------------------------------------------------------------------
+describe("node env declares host functions as functions", () => {
+/**
+ * 族 15 · node env 把宿主上的**函数 / 构造器**声明成 brand（数据值）：
+ * - `AbortSignal.any`（静态工厂）⇒ `typeof` 折 `"object"`（宿主 `"function"`）；
+ * - `WebAssembly.Module/Instance/Memory/Table/Global` 与
+ * `Temporal.Instant/PlainDate/PlainTime/PlainDateTime/ZonedDateTime`
+ * （可 `new` 的构造器）⇒ 同样折 `"object"`。
+ *
+ * 后果：`if (typeof X.y === "function")` 的特性探测分支被判**恒假**
+ * ⇒ 用户会据此删掉真实有效的分支（自信的错字面量）。
+ *
+ * 反向钉：把任一声明改回 `brandOf(...)` ⇒ 对应 `typeof` 断言必挂。
+ */
+function host(script: string): string {
+  return execFileSync(process.execPath, ["-e", script], { encoding: "utf-8" }).trim();
+}
+
+const MEMBERS: Array<[label: string, expr: string]> = [
+  ["AbortSignal.any", "AbortSignal.any"],
+  ["WebAssembly.Module", "WebAssembly.Module"],
+  ["WebAssembly.Instance", "WebAssembly.Instance"],
+  ["WebAssembly.Memory", "WebAssembly.Memory"],
+  ["WebAssembly.Table", "WebAssembly.Table"],
+  ["WebAssembly.Global", "WebAssembly.Global"],
+  ["Temporal.Instant", "Temporal.Instant"],
+  ["Temporal.PlainDate", "Temporal.PlainDate"],
+  ["Temporal.PlainTime", "Temporal.PlainTime"],
+  ["Temporal.PlainDateTime", "Temporal.PlainDateTime"],
+  ["Temporal.ZonedDateTime", "Temporal.ZonedDateTime"],
+];
+
+/**
+ * 宿主实测的成员 `typeof`；宿主**没有**该成员所属的根全局时为 `null`。
+ *
+ * 宿主面随 Node 版本漂移：`Temporal` 全局是 Node 26 才进 ESM 全局面的
+ * （Node 24 没有）⇒ `typeof Temporal.Instant` 在旧宿主上直接 `ReferenceError`。
+ * env 的 node 面按**最新宿主**声明 ⇒ `Temporal` 是登记过的「超前声明」
+ * （见 env-的 `DECLARED_AHEAD_OF_HOST` 漂移闸）⇒ 宿主缺失按 `null` 记，
+ * 不许让旧宿主把整个 oracle 炸掉。
+ */
+function hostMemberTypes(): Array<string | null> {
+  const probes = MEMBERS.map(
+    ([, e]) =>
+      `(() => { const root = globalThis.${e.slice(0, e.indexOf("."))};` +
+      ` return root === undefined ? null : typeof ${e}; })()`,
+  );
+  const out = host(`console.log(JSON.stringify([${probes.join(", ")}]));`);
+  return JSON.parse(out) as Array<string | null>;
+}
+
+
+  it("宿主成员全是函数；typeof 折 \"function\"；AbortSignal.any 可调用且返回 AbortSignal", () => {
+    const types = hostMemberTypes();
+    expect(types).toHaveLength(MEMBERS.length);
+    MEMBERS.forEach(([label], i) => {
+      const t = types[i]!;
+      if (t === null) { expect(label.startsWith("Temporal."), label).toBe(true); return; }
+      expect(t, label).toBe("function");
+    });
+    expect(types.filter((t) => t !== null).every((t) => t === "function")).toBe(true);
+
+    const src = MEMBERS.map(([label], i) => `export function t${i}(){ return typeof ${label}; }`).join("\n");
+    const out = checkNode(src);
+    MEMBERS.forEach(([label], i) => {
+      expect(out.signatures.find((s) => s.name === `t${i}`)?.display, label).toBe('"function"');
+    });
+
+    const any = staticSlotOf("AbortSignal", "any");
+    expect(any?.shape.k).toBe("fn");
+    expect((any!.shape as { returnType?: { shape: { k: string; name?: string } } }).returnType?.shape.name).toBe("AbortSignal");
+    expect(checkNode("export function f(){ return AbortSignal.any([]); }").throwBrands).toEqual([]);
+  });
+
+});
+
+// ---------------------------------------------------------------------------
+// process.hrtime 是可调用的（不再 unknown + 误导诊断）
+// ---------------------------------------------------------------------------
+describe("process.hrtime 是可调用的（不再 unknown + 误导诊断）", () => {
+/**
+ * node env 的 `process.hrtime` 被建模成**不可调用的对象** ⇒
+ * `process.hrtime()` 退化成 `unknown` + **误导诊断** `nudo:unknown-inference`
+ * （把责任指向用户代码）。
+ *
+ * 修法：`process.hrtime` 建成**可调用**的 envFn（返回 [seconds, nanos] 数组），
+ * `bigint` 作为挂在它身上的静态槽（`opts.slots`）——原生
+ * `process.hrtime.bigint()` 返回 bigint。
+ *
+ * 证据口径：原生 oracle（同进程真实 process.hrtime）+ 引擎探针。
+ */
+
+
+
+
+
+const env = defineEnv();
+
+function shapeOf(a: Abs | undefined, label: string): string {
+  expect(a, `expected Abs at ${label}`).toBeTruthy();
+  return formatShape(a!);
+}
+
+function walk(a: Abs | undefined, ...keys: string[]): Abs | undefined {
+  let cur: Abs | undefined = a;
+  for (const k of keys) {
+    if (!cur) return undefined;
+    if (cur.shape.k === "brand") cur = cur.shape.shape as Abs | undefined;
+    if (!cur || cur.shape.k !== "obj") return undefined;
+    cur = cur.shape.slots[k]?.value;
+  }
+  return cur;
+}
+
+/** fn 形全局的**静态槽**面（envFn 的 `opts.slots`） */
+function staticSlot(a: Abs | undefined, name: string): Abs | undefined {
+  if (!a || a.shape.k !== "fn") return undefined;
+  const slots = (a.shape as { slots?: Record<string, { value: Abs }> }).slots;
+  return slots?.[name]?.value;
+}
+
+function check(src: string) {
+  return checkSource("/t/env-bug-875.js", src, pTrue, {
+    inject: { envGlobals: env.globals },
+  });
+}
+
+
+  it("原生 hrtime 函数与 bigint；env 可调用 + 静态槽；引擎零假红且签名精确", () => {
+    expect(typeof process.hrtime).toBe("function");
+    const t = process.hrtime();
+    expect(Array.isArray(t)).toBe(true);
+    expect(t.length).toBe(2);
+    expect(typeof t[0]).toBe("number");
+    expect(typeof t[1]).toBe("number");
+    expect(typeof process.hrtime.bigint()).toBe("bigint");
+
+    const hrtime = walk(env.globals.process, "hrtime");
+    expect(hrtime!.shape.k).toBe("fn");
+    expect(shapeOf(hrtime, "hrtime")).toContain("=>");
+    expect(shapeOf(staticSlot(hrtime, "bigint"), "hrtime.bigint")).toContain("bigint");
+
+    const r = check(`export function useHrtime() { return process.hrtime(); }
+export function useHrtimeBigint() { return process.hrtime.bigint(); }`);
+    expect(r.issues.filter((i) => i.code === "nudo:unknown-inference")).toEqual([]);
+    expect(r.issues.filter((i) => i.code === "nudo:entry-may-throw")).toEqual([]);
+    const byName = new Map(r.signatures.map((s) => [s.name, s.display]));
+    expect(byName.get("useHrtime")).toMatch(/^number\[\]/);
+    expect(byName.get("useHrtimeBigint")).toMatch(/^bigint\b/);
+  });
+
+});
+
+// ---------------------------------------------------------------------------
+// process 再补 7 个真实成员（不再定抛 TypeError）
+// ---------------------------------------------------------------------------
+describe("process 再补 7 个真实成员（不再定抛 TypeError）", () => {
+/**
+ * env node 的 `process` 成员表**再缺 7 个真实成员**
+ * （`umask` / `getActiveResourcesInfo` / `resourceUsage` / `availableMemory` /
+ * `loadEnvFile` / `getBuiltinModule` / `constrainedMemory`）⇒ 正确代码拿到 7 处
+ * `nudo:entry-may-throw` 假红。
+ *
+ * 修法：packages/env/src/node.ts 的 `process` 表补这 7 个成员。
+ * `loadEnvFile` 只声明「不抛」的常规路径（原生对**不存在**的文件抛 ENOENT——
+ * 那是错误路径的精度债，见交付报告；声明 may-throw 会把 L2 门禁假红引回来）。
+ *
+ * 证据口径：原生 oracle（同进程真实 process）+ 引擎探针。
+ */
+
+
+
+
+
+const env = defineEnv();
+
+function shapeOf(a: Abs | undefined, label: string): string {
+  expect(a, `expected Abs at ${label}`).toBeTruthy();
+  return formatShape(a!);
+}
+
+function walk(a: Abs | undefined, ...keys: string[]): Abs | undefined {
+  let cur: Abs | undefined = a;
+  for (const k of keys) {
+    if (!cur) return undefined;
+    if (cur.shape.k === "brand") cur = cur.shape.shape as Abs | undefined;
+    if (!cur || cur.shape.k !== "obj") return undefined;
+    cur = cur.shape.slots[k]?.value;
+  }
+  return cur;
+}
+
+function check(src: string) {
+  return checkSource("/t/env-bug-892.js", src, pTrue, {
+    inject: { envGlobals: env.globals },
+  });
+}
+
+
+  it("七个成员宿主/ env 均在；引擎零假红且签名精确", () => {
+    for (const name of ["umask","getActiveResourcesInfo","resourceUsage","availableMemory","loadEnvFile","getBuiltinModule","constrainedMemory"] as const) {
+      expect(typeof (process as unknown as Record<string, unknown>)[name], name).toBe("function");
+      expect(shapeOf(walk(env.globals.process, name), name)).toContain("=>");
+    }
+    const src = `
+      export function a() { return process.umask(0o022); }
+      export function b() { return process.getActiveResourcesInfo(); }
+      export function c() { return process.resourceUsage(); }
+      export function d() { return process.availableMemory(); }
+      export function e(p) { return process.loadEnvFile(p); }
+      export function f(id) { return process.getBuiltinModule(id); }
+      export function g() { return process.constrainedMemory(); }
+    `;
+    const r = check(src);
+    expect(r.issues.filter((i) => i.code === "nudo:entry-may-throw")).toEqual([]);
+    expect(r.issues.filter((i) => i.code === "nudo:unknown-inference")).toEqual([]);
+    const byName = new Map(r.signatures.map((s) => [s.name, s.display]));
+    expect(byName.get("a")).toMatch(/^number\b/);
+    expect(byName.get("b")).toMatch(/^string\[\]/);
+    expect(byName.get("d")).toMatch(/^number\b/);
+    expect(byName.get("g")).toMatch(/^number\b/);
+  });
+
+});
+
+// ---------------------------------------------------------------------------
+// process 补 5 个真实成员（不再定抛 TypeError）
+// ---------------------------------------------------------------------------
+describe("process 补 5 个真实成员（不再定抛 TypeError）", () => {
+/**
+ * node env 的 `process` 成员表**缺 5 个真实成员**
+ * （`emitWarning` / `abort` / `kill` / `release` / `features`）⇒ 正确代码拿到
+ * 5 处 `nudo:entry-may-throw` 假红（成员读出 exact undefined ⇒ 调用 undefined
+ * ⇒ 引擎**证明**「必抛 TypeError」）。
+ *
+ * 修法：packages/env/src/node.ts 的 `process` 表补这 5 个成员。
+ * `features` 用**开放键 + boolean|string|undefined 值域**（键随构建而变；
+ * 值域不用 unknown——否则 `process.features.icu` 退化成 unknown 并误报
+ * nudo:unknown-inference）。
+ *
+ * 证据口径：原生 oracle（同进程真实 process）+ 引擎探针。
+ */
+
+
+
+
+
+const env = defineEnv();
+
+function shapeOf(a: Abs | undefined, label: string): string {
+  expect(a, `expected Abs at ${label}`).toBeTruthy();
+  return formatShape(a!);
+}
+
+function walk(a: Abs | undefined, ...keys: string[]): Abs | undefined {
+  let cur: Abs | undefined = a;
+  for (const k of keys) {
+    if (!cur) return undefined;
+    if (cur.shape.k === "brand") cur = cur.shape.shape as Abs | undefined;
+    if (!cur || cur.shape.k !== "obj") return undefined;
+    cur = cur.shape.slots[k]?.value;
+  }
+  return cur;
+}
+
+function check(src: string) {
+  return checkSource("/t/env-bug-876.js", src, pTrue, {
+    inject: { envGlobals: env.globals },
+  });
+}
+
+
+  it("五个成员宿主/env 均在；引擎零假红且签名精确", () => {
+    for (const name of ["emitWarning","abort","kill"] as const) expect(typeof (process as unknown as Record<string, unknown>)[name], name).toBe("function");
+    expect(typeof process.release).toBe("object");
+    expect(typeof process.features).toBe("object");
+    expect(typeof process.release.name).toBe("string");
+    expect(shapeOf(walk(env.globals.process, "release", "name"), "release.name")).toContain("string");
+    expect(shapeOf(walk(env.globals.process, "features"), "process.features")).toBeTruthy();
+    for (const name of ["emitWarning","abort","kill"]) expect(shapeOf(walk(env.globals.process, name), name)).toContain("=>");
+
+    const r = check(`
+      export function g1() { return process.emitWarning("x"); }
+      export function g2() { return process.features.icu; }
+      export function g3() { return process.release.name; }
+      export function g4() { return process.kill(1, "SIGTERM"); }
+    `);
+    expect(r.issues.filter((i) => i.code === "nudo:entry-may-throw")).toEqual([]);
+    expect(r.issues.filter((i) => i.code === "nudo:unknown-inference")).toEqual([]);
+    const byName = new Map(r.signatures.map((s) => [s.name, s.display]));
+    expect(byName.get("g3")).toMatch(/^string\b/);
+    expect(byName.get("g4")).toMatch(/^boolean\b/);
+  });
+
+});
+
+// ---------------------------------------------------------------------------
+// process.stdin 成员表补全（不再定抛 TypeError）
+// ---------------------------------------------------------------------------
+describe("process.stdin 成员表补全（不再定抛 TypeError）", () => {
+/**
+ * env node：`process.stdin` 只建模 `{on}` ⇒ `process.stdin.setEncoding("utf8")`
+ * 被判**定抛 TypeError**（假红；原生不抛）。
+ *
+ * 修法：process 的三个流（stdin / stdout / stderr）共用一张 Socket 面
+ * （packages/env/src/node.ts 的 `processStreamBase`）——on/once/off/emit/
+ * addListener/removeListener/pipe/destroy/setEncoding/pause/resume/read/
+ * isTTY/fd/readable/writable；stdin 另加只读面，stdout/stderr 另加可写面。
+ *
+ * 证据口径：原生 oracle（同进程真实 process.stdin）+ 引擎探针。
+ */
+
+
+
+
+
+const env = defineEnv();
+
+function shapeOf(a: Abs | undefined, label: string): string {
+  expect(a, `expected Abs at ${label}`).toBeTruthy();
+  return formatShape(a!);
+}
+
+function walk(a: Abs | undefined, ...keys: string[]): Abs | undefined {
+  let cur: Abs | undefined = a;
+  for (const k of keys) {
+    if (!cur) return undefined;
+    if (cur.shape.k === "brand") cur = cur.shape.shape as Abs | undefined;
+    if (!cur || cur.shape.k !== "obj") return undefined;
+    cur = cur.shape.slots[k]?.value;
+  }
+  return cur;
+}
+
+function check(src: string) {
+  return checkSource("/t/env-bug-869.js", src, pTrue, {
+    inject: { envGlobals: env.globals },
+  });
+}
+
+
+  it("宿主与 env 均有 stream 成员；调用零 throws", () => {
+    for (const name of ["setEncoding","pause","resume","read","on"] as const) expect(typeof (process.stdin as unknown as Record<string, unknown>)[name], name).toBe("function");
+    const stdin = walk(env.globals.process, "stdin");
+    for (const name of ["on","once","off","emit","setEncoding","pause","resume","read"]) expect(shapeOf(walk(stdin, name), name)).toContain("=>");
+    expect(shapeOf(walk(stdin, "isTTY"), "isTTY")).toBeTruthy();
+    expect(shapeOf(walk(stdin, "fd"), "fd")).toContain("number");
+
+    const r = check(`export function s1() { return process.stdin.setEncoding("utf8"); }
+export function s2() { return process.stdin.on("data", (c) => { void c; }); }`);
+    expect(r.issues.filter((i) => i.code === "nudo:entry-may-throw")).toEqual([]);
+    for (const s of r.signatures) expect(s.throws, s.name).toBeUndefined();
+  });
+
+});
+
+// ---------------------------------------------------------------------------
+// process.stdout / stderr 成员表补全（不再定抛 TypeError）
+// ---------------------------------------------------------------------------
+describe("process.stdout / stderr 成员表补全（不再定抛 TypeError）", () => {
+/**
+ * node env 的 `process.stdout` / `process.stderr` 面**只有 `write`**
+ * ⇒ `.on(...)` 必抛 TypeError ⇒ L2 门禁假红。
+ *
+ * 修法：stdout / stderr 与 stdin 共用 Socket 面（packages/env/src/node.ts 的
+ * `processStreamBase`），另加可写面（write / end / cork / uncork）。
+ *
+ * 证据口径：原生 oracle（同进程真实 process.stdout/stderr）+ 引擎探针。
+ */
+
+
+
+
+
+const env = defineEnv();
+
+function shapeOf(a: Abs | undefined, label: string): string {
+  expect(a, `expected Abs at ${label}`).toBeTruthy();
+  return formatShape(a!);
+}
+
+function walk(a: Abs | undefined, ...keys: string[]): Abs | undefined {
+  let cur: Abs | undefined = a;
+  for (const k of keys) {
+    if (!cur) return undefined;
+    if (cur.shape.k === "brand") cur = cur.shape.shape as Abs | undefined;
+    if (!cur || cur.shape.k !== "obj") return undefined;
+    cur = cur.shape.slots[k]?.value;
+  }
+  return cur;
+}
+
+function check(src: string) {
+  return checkSource("/t/env-bug-871.js", src, pTrue, {
+    inject: { envGlobals: env.globals },
+  });
+}
+
+
+  it("宿主与 env 均有 on/once/off/emit/write/end；调用零 throws", () => {
+    for (const s of [process.stdout, process.stderr]) for (const name of ["on","once","off","emit","write"] as const) expect(typeof (s as unknown as Record<string, unknown>)[name], name).toBe("function");
+    for (const name of ["stdout", "stderr"]) {
+      const stream = walk(env.globals.process, name);
+      for (const m of ["on","once","off","emit","write","end","destroy","cork","uncork"]) expect(shapeOf(walk(stream, m), `${name}.${m}`)).toContain("=>");
+    }
+    const r = check(`export function o1() { return process.stdout.on("data", (c) => { void c; }); }
+export function o2() { return process.stderr.on("error", (c) => { void c; }); }
+export function o3() { return process.stdout.write("x"); }`);
+    expect(r.issues.filter((i) => i.code === "nudo:entry-may-throw")).toEqual([]);
+    for (const s of r.signatures) expect(s.throws, s.name).toBeUndefined();
+  });
+
+});
+
+// ---------------------------------------------------------------------------
+// process.title is modelled
+// ---------------------------------------------------------------------------
+describe("process.title is modelled", () => {
+/**
+ * 族 15 · 全局 `process` 是**封闭对象**且槽表漏 `title`
+ * ⇒ 读 `process.title` 得到 exact `undefined` ⇒
+ * - `process.title.length` 判「确定抛 TypeError」（L2 假红，exit 1）；
+ * - `typeof process.title` 折成 **`"undefined"`**（宿主 `"string"`）
+ * ⇒ 特性探测分支被**反向**折叠（控制流也错）。
+ *
+ * 反向钉：删掉 `title` 槽 ⇒ 本文件必挂。
+ */
+
+  it("title 声明 string；length/ typeof 精确；version 对照", () => {
+    expect(typeof process.title).toBe("string");
+    expect(process.title.length).toBeGreaterThan(0);
+    expect(nodeSlotOf("process", "title")).toBeTruthy();
+    const length = checkNode("export function f(){ return process.title.length; }");
+    expect(length.signatures[0]!.display).toBe("number");
+    expect(length.throwBrands).toEqual([]);
+    expect(length.errorCodes).toEqual([]);
+    expect(checkNode("export function f(){ return typeof process.title; }").signatures[0]!.display).toBe('"string"');
+    const control = checkNode("export function a(){ return process.version.length; }\nexport function b(){ return typeof process.version; }");
+    expect(control.signatures.find((s) => s.name === "a")!.display).toBe("number");
+    expect(control.signatures.find((s) => s.name === "b")!.display).toBe('"string"');
+    expect(control.throwBrands).toEqual([]);
+  });
+
+});
+
+// ---------------------------------------------------------------------------
+// fs/promises 结果对象与同步族共用成员表
+// ---------------------------------------------------------------------------
+describe("fs/promises 结果对象与同步族共用成员表", () => {
+/**
+ * 族 29 · `fs/promises` 的结果对象是同步族的**裁剪副本**
+ * ——`fsPromisesModule.stat` 只抄了 12 个槽（比同步族少 9 个），且
+ * `readdir` 的 `Dirent` 是**空 shape 的 brand** ⇒ 成员读出
+ * **exact `undefined` / `NaN` / `never`**——那是**确定的错值**，不是精度债。
+ *
+ * 修法：`statsAbs` / `direntAbs` 抽成**共享常量**，同步族与 promise 族
+ * 共用同一张成员表（原生 oracle：两族的成员表**完全一致**）。
+ *
+ * 原生 oracle（Node v26）：`fs.statSync(p)` 与 `fs.promises.stat(p)` 的
+ * 成员表一致（数据属性 + 原型上的谓词方法 + Date 时刻）。
+ */
+
+
+
+
+
+
+/** promise 兑现值的内层（`promiseOf(x)` ⇒ x）。 */
+function promiseInner(a: unknown): Abs | undefined {
+  if (!a) return undefined;
+  const s = (a as Abs).shape as { k?: string; inner?: Abs };
+  return s.k === "eff" ? s.inner : undefined;
+}
+
+/** 数组的元素类型。 */
+function elementOf(a: Abs | undefined): Abs | undefined {
+  if (!a) return undefined;
+  const s = a.shape as { k?: string; element?: Abs };
+  return s.k === "arr" ? s.element : undefined;
+}
+
+/** sum 里的某个成员（按品牌名找）。 */
+function sumMember(a: Abs | undefined, brandNameWanted: string): Abs | undefined {
+  if (!a) return undefined;
+  const s = a.shape as { k?: string; members?: Abs[] };
+  if (s.k !== "sum") return undefined;
+  return s.members?.find((m) => m.shape.k === "brand" && (m.shape as { name: string }).name === brandNameWanted);
+}
+
+
+  it("Stats 成员表同步/promise 共用；Dirent 有 shape；withFileTypes 分叉；缺槽反钉", async () => {
+    const sync = fs.statSync("/tmp");
+    const promised = await fsp.stat("/tmp");
+    expect(Object.keys(promised).sort()).toEqual(Object.keys(sync).sort());
+    for (const m of ["isFile","isDirectory","isSymbolicLink","isBlockDevice","isCharacterDevice","isFIFO","isSocket"]) {
+      expect(typeof (sync as unknown as Record<string, unknown>)[m], m).toBe("function");
+      expect(typeof (promised as unknown as Record<string, unknown>)[m], m).toBe("function");
+    }
+
+    const ret = envMember("node:fs/promises", "stat").shape as { returnType?: Abs };
+    const inner = promiseInner(ret.returnType)!;
+    const slots = slotsOf(inner);
+    for (const k of ["isFile","isDirectory","isSymbolicLink","isBlockDevice","isCharacterDevice","isFIFO","isSocket","size","mode","uid","gid","ino","dev","nlink","blksize","blocks","rdev","mtime","ctime","atime","birthtime","mtimeMs","ctimeMs","atimeMs","birthtimeMs"]) {
+      expect(slots[k], k).toBeDefined();
+    }
+    expect(formatShape(slots["mtimeMs"]!.value)).toBe("number");
+    expect(formatShape(slots["mtime"]!.value)).toBe("Date");
+    expect(formatShape(slots["isFile"]!.value)).toContain("bool");
+
+    const syncSlots = Object.keys(slotsOf((envMember("node:fs", "statSync").shape as { returnType: Abs }).returnType)).sort();
+    const promisedSlots = Object.keys(slotsOf(promiseInner((envMember("node:fs/promises", "stat").shape as { returnType?: Abs }).returnType)!)).sort();
+    expect(promisedSlots).toEqual(syncSlots);
+
+    const readdir = promiseInner((envMember("node:fs/promises", "readdir").shape as { returnType?: Abs }).returnType!)!;
+    const element = elementOf(innerOf(readdir))!;
+    const direntBrand = sumMember(element, "Dirent")!;
+    const dslots = slotsOf(innerOf(direntBrand)!);
+    expect(Object.keys(dslots).sort()).toEqual(["isDirectory","isFile","isSymbolicLink","name","parentPath"]);
+    expect(formatShape(dslots["name"]!.value)).toBe("string");
+
+    const site = callSite(envMember("node:fs/promises", "stat"), [strLit("/tmp")]);
+    const liveSlots = slotsOf(promiseInner(site.value)!);
+    expect(liveSlots["mtimeMs"]).toBeDefined();
+    expect(liveSlots["nlink"]).toBeDefined();
+    expect(liveSlots["isBlockDevice"]).toBeDefined();
+
+    const native = await fsp.readdir("/tmp", { withFileTypes: true });
+    expect(native[0]?.isFile).toBeTypeOf("function");
+    const typed = callSite(envMember("node:fs/promises", "readdir"), [strLit("/tmp"), objOf({ withFileTypes: { value: boolLit(true) } })]);
+    const typedElement = elementOf(promiseInner(typed.value!)!)!;
+    expect(typedElement.shape.k).toBe("brand");
+    expect(slotsOf(innerOf(typedElement)!)["name"]).toBeDefined();
+  });
+
+});
+
+// ---------------------------------------------------------------------------
+// node:fs 同步族的 throws 面
+// ---------------------------------------------------------------------------
+describe("node:fs 同步族 throws 与例外", () => {
+  const MAY_THROW = ["readFileSync","writeFileSync","appendFileSync","mkdirSync","rmdirSync","unlinkSync","renameSync","copyFileSync","statSync","readdirSync","realpathSync","readlinkSync","symlinkSync","chmodSync","chownSync","accessSync"];
+  const NATIVE_THROWS: Array<[string, () => unknown]> = [
+    ["readFileSync", () => fs.readFileSync("/nope/nope.txt")],
+    ["writeFileSync", () => fs.writeFileSync("/nope/nope.txt", "x")],
+    ["appendFileSync", () => fs.appendFileSync("/nope/nope.txt", "x")],
+    ["mkdirSync", () => fs.mkdirSync("/nope/nope-dir")],
+    ["rmdirSync", () => fs.rmdirSync("/nope/nope-dir")],
+    ["unlinkSync", () => fs.unlinkSync("/nope/nope.txt")],
+    ["renameSync", () => fs.renameSync("/nope/a", "/nope/b")],
+    ["copyFileSync", () => fs.copyFileSync("/nope/a", "/nope/b")],
+    ["statSync", () => fs.statSync("/nope/nope.txt")],
+    ["readdirSync", () => fs.readdirSync("/nope/nope-dir")],
+    ["realpathSync", () => fs.realpathSync("/nope/nope.txt")],
+    ["readlinkSync", () => fs.readlinkSync("/nope/nope.txt")],
+    ["symlinkSync", () => fs.symlinkSync("/nope/a", "/nope/b")],
+    ["chmodSync", () => fs.chmodSync("/nope/nope.txt", 0o644)],
+    ["chownSync", () => fs.chownSync("/nope/nope.txt", 0, 0)],
+    ["accessSync", () => fs.accessSync("/nope/nope.txt")],
+  ];
+
+  it("同步族记 Error may-throw；existsSync/rmSync force 不抛；成功路径不塌 never；抽象实参同口径", () => {
+    for (const [name, fn] of NATIVE_THROWS) {
+      let caught: unknown;
+      try { fn(); } catch (e) { caught = e; }
+      expect(caught, `${name} 原生应抛`).toBeTruthy();
+      const e = caught as { name?: string; code?: string };
+      expect(e.name, name).toBe("Error");
+      expect(e.code, name).toBe("ENOENT");
+    }
+
+    for (const name of MAY_THROW) {
+      const site = callSite(envMember("node:fs", name), [strLit("/nope/nope.txt")]);
+      expect(site.threw, name).toBeUndefined();
+      expect(site.exits.length, name).toBe(1);
+      expect(brandName(site.exits[0]), name).toBe("Error");
+    }
+
+    expect(fs.existsSync("/nope/nope.txt")).toBe(false);
+    const exists = callSite(envMember("node:fs", "existsSync"), [strLit("/nope/nope.txt")]);
+    expect(exists.exits).toHaveLength(0);
+
+    const ok = callSite(envMember("node:fs", "readFileSync"), [strLit("/etc/hostname")]);
+    expect(ok.value).toBeDefined();
+    expect(ok.value!.shape.k).not.toBe("never");
+
+    expect(() => fs.rmSync("/nope/nope.txt", { force: true })).not.toThrow();
+    const forceTrue = objOf({ force: { value: boolLit(true) } });
+    expect(callSite(envMember("node:fs", "rmSync"), [strLit("/nope/nope.txt"), forceTrue]).exits).toHaveLength(0);
+    expect(() => fs.rmSync("/nope/nope.txt")).toThrow();
+    const noForce = callSite(envMember("node:fs", "rmSync"), [strLit("/nope/nope.txt")]);
+    expect(noForce.exits).toHaveLength(1);
+    expect(brandName(noForce.exits[0])).toBe("Error");
+
+    const abstractSite = callSite(envMember("node:fs", "readFileSync"), [prim.str()]);
+    expect(abstractSite.exits).toHaveLength(1);
+    expect(brandName(abstractSite.exits[0])).toBe("Error");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// statSync / fs.promises.stat 的返回域（含 undefined 分支）
+// ---------------------------------------------------------------------------
+const promiseInner = (a: unknown): Abs | undefined => {
+  if (!a) return undefined;
+  const s = (a as Abs).shape as { k?: string; inner?: Abs };
+  return s.k === "eff" ? s.inner : undefined;
+};
+const NO_ENTRY = objOf({ throwIfNoEntry: { value: boolLit(false) } });
+
+describe("stat 返回域的 undefined 分支", () => {
+  it("同步/promise 族在 throwIfNoEntry:false 时含 undefined；默认形态不含", async () => {
+    expect(fs.statSync("/nope/nope.txt", { throwIfNoEntry: false })).toBeUndefined();
+    expect(() => fs.statSync("/nope/nope.txt")).toThrow();
+    const st = fs.statSync("/nope/nope.txt", { throwIfNoEntry: false });
+    expect(() => (st as { isFile: () => boolean }).isFile()).toThrow(TypeError);
+
+    const noEntry = callSite(envMember("node:fs", "statSync"), [strLit("/nope/nope.txt"), NO_ENTRY]);
+    expect(formatShape(noEntry.value!), "返回域应含 undefined").toContain("undefined");
+    const normal = callSite(envMember("node:fs", "statSync"), [strLit("/tmp")]);
+    expect(formatShape(normal.value!), "默认形态不该含 undefined").not.toContain("undefined");
+
+    const native = await fsp.stat("/nope/nope.txt", { throwIfNoEntry: false }).then(
+      (v) => ({ resolved: v as unknown }),
+      (e: NodeJS.ErrnoException) => ({ rejected: e.code }),
+    );
+    if ("resolved" in native) expect(native.resolved).toBeUndefined();
+    else expect(native.rejected).toBe("ENOENT");
+    const pstat = callSite(envMember("node:fs/promises", "stat"), [strLit("/nope/nope.txt"), NO_ENTRY]);
+    const inner = promiseInner(pstat.value);
+    expect(inner).toBeDefined();
+    expect(formatShape(inner!), "兑现值域应含 undefined").toContain("undefined");
+    const pnormal = callSite(envMember("node:fs/promises", "stat"), [strLit("/tmp")]);
+    expect(formatShape(promiseInner(pnormal.value)!), "默认形态不该含 undefined").not.toContain("undefined");
+
+    const declared = envMember("node:fs", "statSync").shape as { returnType?: Abs };
+    expect(formatShape(declared.returnType!)).not.toContain("undefined");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// node:path 族实参类型执法
+// ---------------------------------------------------------------------------
+const UNDEF = { shape: { k: "unknown" }, term: { op: "lit", value: undefined }, conf: "exact" } as Abs;
+const BAD = [
+  { name: "join(123)", member: "join", args: [numLit(123)], native: () => nodePath.join(123 as unknown as string) },
+  { name: "join('a', 1)", member: "join", args: [strLit("a"), numLit(1)], native: () => nodePath.join("a", 1 as unknown as string) },
+  { name: "basename('/x/y.txt', 5)", member: "basename", args: [strLit("/x/y.txt"), numLit(5)], native: () => nodePath.basename("/x/y.txt", 5 as unknown as string) },
+  { name: "dirname(123)", member: "dirname", args: [numLit(123)], native: () => nodePath.dirname(123 as unknown as string) },
+  { name: "extname(456)", member: "extname", args: [numLit(456)], native: () => nodePath.extname(456 as unknown as string) },
+  { name: "isAbsolute(123)", member: "isAbsolute", args: [numLit(123)], native: () => nodePath.isAbsolute(123 as unknown as string) },
+  { name: "relative('/a', 7)", member: "relative", args: [strLit("/a"), numLit(7)], native: () => nodePath.relative("/a", 7 as unknown as string) },
+  { name: "normalize(789)", member: "normalize", args: [numLit(789)], native: () => nodePath.normalize(789 as unknown as string) },
+  { name: "parse(123)", member: "parse", args: [numLit(123)], native: () => nodePath.parse(123 as unknown as string) },
+  { name: "resolve(789)", member: "resolve", args: [numLit(789)], native: () => nodePath.resolve(789 as unknown as string) },
+  { name: "format(123)", member: "format", args: [numLit(123)], native: () => nodePath.format(123 as unknown as FormatInputPathObject) },
+];
+const absFace = (fn: Abs, args: Abs[]): Abs => {
+  const out = applyOut(fn, args) as Abs | { abs: Abs };
+  return out && typeof out === "object" && "abs" in (out as Record<string, unknown>) ? (out as { abs: Abs }).abs : (out as Abs);
+};
+const throwsFace = (fn: Abs, args: Abs[]): Abs | undefined => (applyOut(fn, args) as { throws?: Abs })?.throws;
+
+const GOOD = [
+  { name: "join('a','b')", member: "join", args: [strLit("a"), strLit("b")], native: () => nodePath.join("a", "b") },
+  { name: "basename('/x/y.txt')", member: "basename", args: [strLit("/x/y.txt")], native: () => nodePath.basename("/x/y.txt") },
+  { name: "basename('/x/y.txt', undefined)", member: "basename", args: [strLit("/x/y.txt"), UNDEF], native: () => nodePath.basename("/x/y.txt", undefined) },
+  { name: "dirname('/x/y.txt')", member: "dirname", args: [strLit("/x/y.txt")], native: () => nodePath.dirname("/x/y.txt") },
+  { name: "extname('/x/y.txt')", member: "extname", args: [strLit("/x/y.txt")], native: () => nodePath.extname("/x/y.txt") },
+  { name: "isAbsolute('/x')", member: "isAbsolute", args: [strLit("/x")], native: () => nodePath.isAbsolute("/x") },
+  { name: "relative('/a','/b')", member: "relative", args: [strLit("/a"), strLit("/b")], native: () => nodePath.relative("/a", "/b") },
+  { name: "normalize('/x/./y')", member: "normalize", args: [strLit("/x/./y")], native: () => nodePath.normalize("/x/./y") },
+  { name: "parse('/x/y.txt')", member: "parse", args: [strLit("/x/y.txt")], native: () => nodePath.parse("/x/y.txt") },
+];
+
+describe("node:path 实参执法", () => {
+  it("坏实参必抛 TypeError/值面 never；合法实参照原生精确折叠", () => {
+    for (const c of BAD) {
+      expect(() => c.native(), c.name).toThrow(TypeError);
+      const site = callSite(envMember("node:path", c.member), c.args);
+      expect(site.threw, c.name).toBeTruthy();
+      expect(site.value, c.name).toBeUndefined();
+      const fn = envMember("node:path", c.member);
+      expect(absFace(fn, c.args).shape.k, c.name).toBe("never");
+      expect(brandName(throwsFace(fn, c.args)), c.name).toBe("TypeError");
+    }
+    expect(callSite(envMember("node:path", "basename"), [strLit("/x/y.txt"), numLit(5)]).value).toBeUndefined();
+
+    for (const c of GOOD) {
+      const native = c.native();
+      const site = callSite(envMember("node:path", c.member), c.args);
+      expect(site.threw, c.name).toBeUndefined();
+      expect(site.exits, c.name).toHaveLength(0);
+      if (typeof native === "string") expect(formatShape(site.value!), c.name).toBe(JSON.stringify(native));
+      else expect(site.value!.shape.k).not.toBe("never");
+    }
+  });
+
+  it("抽象实参 may-throw TypeError；posix.join(123) 必抛", () => {
+    const fn = envMember("node:path", "join");
+    const unknown = { shape: { k: "unknown" }, conf: "partial" } as Abs;
+    expect(absFace(fn, [unknown]).shape.k).not.toBe("never");
+    expect(brandName(throwsFace(fn, [unknown]))).toBe("TypeError");
+    expect(() => nodePath.posix.join(123 as unknown as string)).toThrow(TypeError);
+    const posix = envMember("node:path", "posix");
+    const join = (posix.shape as { shape: Abs }).shape;
+    const member = (join.shape as { slots: Record<string, { value: Abs }> }).slots["join"]!.value;
+    expect(callSite(member, [numLit(123)]).threw).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// path.posix / path.win32 carry parse and format
+// ---------------------------------------------------------------------------
+const parsedOf = (pathObj: unknown, input: string): string => formatShape(applyOut(pathObj as never, [strLit(input)]) as never);
+
+describe("path.posix / path.win32 的 parse 与 format", () => {
+  it("平台成员表声明 parse/format；posix 与顶层同源；win32 平台特定；format 拒绝非对象", () => {
+    expect(nodePath.posix.parse("/a/b.txt")).toEqual(nodePath.parse("/a/b.txt"));
+    expect(nodePath.win32.parse("a\\b.txt")).toEqual({ root: "", dir: "a", base: "b.txt", ext: ".txt", name: "b" });
+    expect(nodePath.posix.format({ dir: "/a", base: "b.txt" })).toBe("/a/b.txt");
+
+    for (const platform of ["posix", "win32"] as const) {
+      const face = envMember("node:path", platform);
+      for (const member of ["parse", "format", "join", "sep"]) expect(slotOfAbs(face, member), `path.${platform}.${member}`).toBeTruthy();
+    }
+
+    const top = envMember("node:path", "parse");
+    const posixParse = slotOfAbs(envMember("node:path", "posix"), "parse")!;
+    const expected = parsedOf(top, "/a/b.txt");
+    expect(parsedOf(posixParse, "/a/b.txt")).toBe(expected);
+    expect(expected).toContain("/a");
+
+    const win32Parse = slotOfAbs(envMember("node:path", "win32"), "parse")!;
+    const winOut = parsedOf(win32Parse, "a\\b.txt");
+    expect(winOut).toContain("b.txt");
+    expect(winOut).not.toContain("never");
+
+    const format = slotOfAbs(envMember("node:path", "posix"), "format")!;
+    const roundTrip = applyOut(envMember("node:path", "parse"), [strLit("/a/b.txt")]) as Abs;
+    expect(formatShape(callSite(format, [roundTrip]).value!)).toBe("string");
+    const bad = callSite(format, [numLit(1)]);
+    expect(bad.value).toBeUndefined();
+    expect(bad.threw !== undefined || bad.exits.length > 0).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// pathToFileURL 返回完整 URL 面
+// ---------------------------------------------------------------------------
+const urlEnv = defineEnv();
+const urlFace = urlEnv.modules!.url!;
+const urlSlotsOf = (a: Abs): Record<string, Abs> => {
+  const shape = a.shape as { k: string; slots?: Record<string, { value: Abs }> };
+  expect(shape.k).toBe("obj");
+  const out: Record<string, Abs> = {};
+  for (const [k, slot] of Object.entries(shape.slots ?? {})) out[k] = slot.value;
+  return out;
+};
+const litOf = (a: Abs | undefined): string | undefined => {
+  const t = a?.term as { op?: string; value?: unknown } | undefined;
+  return t?.op === "lit" ? String(t.value) : undefined;
+};
+
+describe("pathToFileURL 返回完整 URL 面", () => {
+  it("字面量路径含全部组件且值与原生一致；声明面完整", () => {
+    const site = callSite____env_bug_s4_helpers_ts(urlFace.pathToFileURL!, [strLit("/tmp/x.txt")]);
+    expect(site.threw).toBeUndefined();
+    expect(site.exits).toHaveLength(0);
+    const slots = urlSlotsOf(site.value!);
+    const native = nodePathToFileURL("/tmp/x.txt");
+    for (const key of ["href", "origin", "protocol", "username", "password", "host", "hostname", "port", "pathname", "search", "hash", "toString", "toJSON"]) {
+      expect(Object.keys(slots), key).toContain(key);
+    }
+    for (const key of ["href", "pathname", "protocol", "host", "hostname", "port", "search", "hash", "origin", "username", "password"] as const) {
+      expect(litOf(slots[key]), key).toBe(native[key]);
+      expect(slots[key], key).toBeTruthy();
+    }
+    const fmt = formatShape(urlFace.pathToFileURL!);
+    for (const key of ["href", "pathname", "protocol", "origin", "toString", "toJSON"]) expect(fmt, key).toContain(key);
+    expect(litOf(slots.pathname)).not.toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// os.cpus() 的 times 成员表
+// ---------------------------------------------------------------------------
+describe("os.cpus() 的 times 成员表", () => {
+/**
+ * 族 29 · `os.cpus()` 的结果对象**缺 `times` 槽** ⇒
+ * `cpus()[0].times.user` 读出 **exact `undefined`** ⇒ 引擎判「property
+ * 'user' on undefined ⇒ 定抛 TypeError」——**假红**（原生正常返回数字）。
+ *
+ * 原生 oracle（Node v26）：`os.cpus()[0]` 的自有键 = model / speed / times，
+ * `times` 的键 = user / nice / sys / idle / irq。
+ * 旧面只建模 model / speed ⇒ times 缺槽 ⇒ 读出 exact undefined（不是精度债，
+ * 是**确定的错值**）。
+ */
+
+
+
+
+
+
+  it("元素 keys = model/speed/times；times 五个 number 成员且与原生键集一致", () => {
+    const ret = envMember("node:os", "cpus");
+    expect(ret.shape.k).toBe("fn");
+    const arr = (ret.shape as { returnType?: { shape: { element: Abs } } }).returnType!;
+    expect(arr.shape).toMatchObject({ k: "arr" });
+    const slots = slotsOf(arr.shape.element);
+    expect(Object.keys(slots).sort()).toEqual(["model", "speed", "times"]);
+    const times = slots["times"]!.value;
+    const tslots = slotsOf(times);
+    expect(Object.keys(tslots).sort()).toEqual(["idle", "irq", "nice", "sys", "user"]);
+    for (const k of ["user", "nice", "sys", "idle", "irq"]) expect(formatShape(tslots[k]!.value), k).toBe("number");
+
+    const native = os.cpus()[0]!;
+    expect(Object.keys(slots).sort()).toEqual(Object.keys(native).sort());
+    expect(Object.keys(tslots).sort()).toEqual(Object.keys(native.times).sort());
+    expect(slots["times"]).toBeDefined();
+    expect(tslots["user"]).toBeDefined();
+  });
+
+});
+
+// ---------------------------------------------------------------------------
+// env node 模块导出构造器带 ctor:true
+// ---------------------------------------------------------------------------
+describe("env node 模块导出构造器带 ctor:true", () => {
+/**
+ * env node：`node:url` / `node:util` 的**模块导出构造器缺 `ctor: true`**
+ * ⇒ 合法 `new URL(…)` / `new TextEncoder()` 被判**定抛 TypeError**（**假红**）。
+ *
+ * 原生 oracle（Node v26.10.0 独立进程实测）：
+ * new URL("https://x.dev/a") → OK（href = "https://x.dev/a"）
+ * new URLSearchParams("a=1") → OK
+ * new TextEncoder() → OK
+ * new TextDecoder("utf-8") → OK
+ * —— **一个都不抛**。
+ *
+ * 旧实现：模块导出是 fn 形 callee 且**没有 `ctor` 标记** ⇒ core 的 `$new`
+ * 落「fn 形 callee 构造性未知」分支 ⇒ 记
+ * `recordMayThrow({kind:"TypeError", cause:"new on function value of unknown constructibility"})`
+ * ⇒ 上层 L2 门禁对合法 Node 代码报 `nudo:entry-may-throw`（**假红**）。
+ *
+ * 修法：给这四个**模块导出**构造器补 `{ ctor: true }`。
+ * **刻意不加 `name`**——带 name 会让 `$new` 按名派发到 core 的 `evalBuiltinNew`
+ * （core 的 URL 模型），改道构造路径、丢掉 env 的字面量精度路径
+ * （见 `packages/core/src/algebra/exec/class/declare.ts` 的 `ctorName` 分支）。
+ *
+ * 断言双向：正向钉住 ctor 标记 + `$new` 不再记 unknown-constructibility may-throw
+ * + 实例面完整；反向（把 `ctor: true` 去掉）本文件必须失败。
+ */
+
+
+
+
+
+const env = defineEnv();
+const url = env.modules!.url!;
+const util = env.modules!.util!;
+
+/** `$new` 取证：返回值 + 期间记下的 may-throw 效果 */
+function newSite(
+  ctor: Abs,
+  args: Abs[],
+): { value?: Abs; mayThrows: { kind: string; cause?: string }[] } {
+  const mayThrows: { kind: string; cause?: string }[] = [];
+  const value = runWithMayThrowSession(() => {
+    setMayThrowCollector((e) => mayThrows.push({ kind: e.kind, cause: e.cause }));
+    return $new(ctor, args);
+  });
+  return { value, mayThrows };
+}
+
+
+  it("四个构造器 ctor:true；new 各面不记 may-throw 且实例面完整；无 ctor 的 fn 记 unknown constructibility", () => {
+    const url = defineEnv().modules!.url!;
+    const util = defineEnv().modules!.util!;
+    for (const ctor of [url.URL, url.URLSearchParams, util.TextEncoder, util.TextDecoder]) {
+      expect(ctor).toBeTruthy();
+      expect(ctor!.shape.k).toBe("fn");
+      expect((ctor!.shape as { ctor?: boolean }).ctor).toBe(true);
+    }
+
+    const urlSite = newSite(url.URL!, [strLit("https://x.dev/a")]);
+    expect(urlSite.mayThrows).toEqual([]);
+    expect(urlSite.value!.shape.k).toBe("obj");
+    const urlSlots = (urlSite.value!.shape as { slots: Record<string, { value: Abs }> }).slots;
+    expect(urlSlots.href!.value).toBeDefined();
+    expect(formatLit(urlSlots.href!.value)).toBe("https://x.dev/a");
+
+    const paramsSite = newSite(url.URLSearchParams!, [strLit("a=1")]);
+    expect(paramsSite.mayThrows).toEqual([]);
+    const paramsSlots = (paramsSite.value!.shape as { slots: Record<string, { value: Abs }> }).slots;
+    expect(Object.keys(paramsSlots)).toEqual(expect.arrayContaining(["get", "toString"]));
+
+    const enc = newSite(util.TextEncoder!, []);
+    expect(enc.mayThrows).toEqual([]);
+    const encSlots = (enc.value!.shape as { slots: Record<string, { value: Abs }> }).slots;
+    expect(Object.keys(encSlots)).toEqual(expect.arrayContaining(["encode", "encoding"]));
+
+    const dec = newSite(util.TextDecoder!, [strLit("utf-8")]);
+    expect(dec.mayThrows).toEqual([]);
+    expect(Object.keys((dec.value!.shape as { slots: Record<string, { value: Abs }> }).slots)).toContain("decode");
+
+    const bad = newSite(util.inspect!, []);
+    expect(bad.mayThrows).toHaveLength(1);
+    expect(bad.mayThrows[0]!.kind).toBe("TypeError");
+    expect(bad.mayThrows[0]!.cause).toContain("unknown constructibility");
+  });
+
+
+/** lit term 的字面量值（取不到 ⇒ undefined） */
+function formatLit(a: Abs): string | undefined {
+  const t = a.term as { op?: string; value?: unknown } | undefined;
+  return t?.op === "lit" ? String(t.value) : undefined;
+}
+});
+
+// ---------------------------------------------------------------------------
+// console 成员表补全（es env）
+// ---------------------------------------------------------------------------
+describe("console 成员表补全（es env）", () => {
+/**
+ * 族 29 · es env 的 `console` 成员表不完整 ⇒ 缺成员读出
+ * **exact undefined** ⇒ `console.timeStamp()` 折「调用 undefined」=
+ * **定抛 TypeError**，而原生**不抛** ⇒ L2 `nudo:entry-may-throw` **假红**。
+ *
+ * 根因：`packages/env/src/es.ts` 的 `consoleSlots` 是 18 个名字的**手写
+ * 白名单**，缺 `timeStamp` / `dirxml` / `profile` / `profileEnd`
+ * （node v26 实测存在）——闭对象缺槽读出 exact undefined（不是 unknown）。
+ *
+ * 断言双向：
+ * - 正向：成员表**含** node v26 的公有 console 方法集；调用这些成员
+ * **不**产生 entry-may-throw；签名按原生拆（log 变参 / time 收 label? /
+ * assert 收 (condition, ...args)）。
+ * - 反向：把成员表改回旧白名单 ⇒ 本文件必须失败（成员表断言 + 引擎
+ * 诊断断言双侧都会红）。
+ */
+
+
+
+
+/** es env 的全局表（≡ service 侧 `collectEnvGlobals(["es"])`）。 */
+function esEnvGlobals(): Record<string, Abs> {
+  return { ...defineEnv_____es_ts().globals };
+}
+
+type CheckResult = ReturnType<typeof checkSource>;
+
+function checkWithEs(src: string): CheckResult {
+  resetGeneralizeMemo();
+  return checkSource("/t/env-bug-861.js", src, pTrue, {
+    inject: { envGlobals: esEnvGlobals() },
+  });
+}
+
+/** 取 console 对象的某个成员槽（env 声明面）。 */
+function consoleMember(name: string): Abs | undefined {
+  const consoleAbs = defineEnv_____es_ts().globals.console!;
+  expect(consoleAbs.shape.k, "console must be an object").toBe("obj");
+  const slots = (consoleAbs.shape as { slots?: Record<string, { value: Abs }> }).slots ?? {};
+  return slots[name]?.value;
+}
+
+/** fn 形状的形参标签（envFn 写入 shape.params）。 */
+function paramsOf(fn: Abs): string[] {
+  expect(fn.shape.k).toBe("fn");
+  return (fn.shape as { params: string[] }).params;
+}
+
+
+  it("公有方法齐全、缺的四个成员零假红、签名按原生拆、Console 可构造", () => {
+    const expected = ["log","info","debug","warn","error","trace","dir","dirxml","table","group","groupCollapsed","groupEnd","count","countReset","assert","clear","time","timeLog","timeEnd","timeStamp","profile","profileEnd","context","createTask","Console"];
+    for (const name of expected) {
+      const fn = consoleMember(name);
+      expect(fn, name).toBeTruthy();
+      expect(fn!.shape.k, name).toBe("fn");
+    }
+
+    for (const expr of ['console.timeStamp("m")', "console.dirxml({ a: 1 })", 'console.profile("m")', 'console.profileEnd("m")']) {
+      const r = checkWithEs(`export function f() { ${expr}; }`);
+      expect(r.issues.filter((i) => i.code === "nudo:entry-may-throw"), expr).toEqual([]);
+      const sig = r.signatures.find((s) => s.name === "f")!;
+      expect(formatShape(sig.abs), expr).not.toMatch(/\bnever\b/);
+    }
+
+    expect(paramsOf(consoleMember("log")!)).toEqual(["...args"]);
+    expect(paramsOf(consoleMember("error")!)).toEqual(["...args"]);
+    expect(paramsOf(consoleMember("time")!)).toEqual(["label?"]);
+    expect(paramsOf(consoleMember("timeEnd")!)).toEqual(["label?"]);
+    expect(paramsOf(consoleMember("timeStamp")!)).toEqual(["label?"]);
+    expect(paramsOf(consoleMember("assert")!)).toEqual(["condition", "...args"]);
+    expect(paramsOf(consoleMember("count")!)).toEqual(["label?"]);
+    expect(paramsOf(consoleMember("groupEnd")!)).toEqual([]);
+
+    const existing = checkWithEs('export function f() { console.log("a", 1); console.error("e"); console.warn("w"); console.info("i"); console.assert(false, "m"); }');
+    expect(existing.issues.filter((i) => i.code === "nudo:entry-may-throw")).toEqual([]);
+    const ctor = checkWithEs("export function f() { return new console.Console(); }");
+    expect(ctor.issues.filter((i) => i.code === "nudo:entry-may-throw")).toEqual([]);
+    expect(formatShape(ctor.signatures.find((s) => s.name === "f")!.abs)).toContain("Console");
+  });
+
+});
+
+// ---------------------------------------------------------------------------
+// spawnSync 返回域补齐 pid / output / signal
+// ---------------------------------------------------------------------------
+describe("spawnSync 返回域补齐 pid / output / signal", () => {
+/**
+ * node env 的 `node:child_process.spawnSync` 返回域是**闭合 4 槽对象**
+ * （status / stdout / stderr / error）⇒ 缺 `pid` / `output` / `signal` ⇒
+ * `spawnSync(...).pid` 读出 **exact `undefined`**（**错值**：原生是 number）、
+ * `spawnSync(...).output[0]` 落「在 undefined 上取下标」⇒ 引擎**证明**
+ * 「必抛 TypeError」⇒ L2 门禁**假红**。
+ *
+ * 原生 oracle（Node v26.10.0 独立进程实测）：
+ * Object.keys(spawnSync(process.execPath, ["-e", "0"])) =
+ * ["status", "signal", "output", "pid", "stdout", "stderr"]
+ * （`error` 只在 spawn 失败时出现——失败时原生**确实**带 error 键）
+ * pid = number（进程 pid）
+ * output = [null, Buffer, Buffer]（stdio 未接管 stdout 时首项为 null）
+ * signal = null（成功时）
+ * status = 0（成功时）
+ *
+ * 新建模：返回域补齐 `pid` / `output` / `signal`（并保留 `error`：spawn 失败时
+ * 原生确实带该键）。
+ *
+ * 断言双向：正向钉住「成员表齐全 + 类型与原生一致」；
+ * 反向（把返回域改回 4 槽闭合对象）本文件必须失败。
+ */
+
+
+
+
+
+const env = defineEnv();
+const cp = env.modules!["child_process"]!;
+
+/** obj 槽位（obj shape ⇒ slots） */
+function slotsOf(a: Abs): Record<string, Abs> {
+  const shape = a.shape as { k: string; slots?: Record<string, { value: Abs }> };
+  expect(shape.k).toBe("obj");
+  const out: Record<string, Abs> = {};
+  for (const [k, slot] of Object.entries(shape.slots ?? {})) out[k] = slot.value;
+  return out;
+}
+
+/** spawnSync 的**声明返回面** */
+function declaredFace(): Abs {
+  const fn = cp.spawnSync!;
+  expect(fn.shape.k).toBe("fn");
+  const rt = (fn.shape as { returnType?: Abs }).returnType;
+  expect(rt, "spawnSync must declare a return face").toBeTruthy();
+  return rt!;
+}
+
+
+  it("声明键集与原生一致（除 error）；pid number；output/signal/status 含 null", () => {
+    const slots = slotsOf(declaredFace());
+    for (const key of ["pid", "output", "signal", "status", "stdout", "stderr"]) expect(Object.keys(slots), key).toContain(key);
+    const native = nodeSpawnSync(process.execPath, ["-e", "0"]);
+    expect(Object.keys(slots).filter((k) => k !== "error").sort()).toEqual(Object.keys(native).sort());
+    expect(formatShape(slots.pid!)).toBe("number");
+    expect(formatShape(slots.output!)).toContain("null");
+    expect(formatShape(slots.signal!)).toContain("null");
+    expect(formatShape(slots.status!)).toContain("null");
+    expect(slots.pid).toBeTruthy();
+  });
+
+});
+
+// ---------------------------------------------------------------------------
+// queueMicrotask keeps core's callable-arg validation
+// ---------------------------------------------------------------------------
+describe("queueMicrotask keeps core's callable-arg validation", () => {
+/**
+ * 族 29 web env 的 `queueMicrotask` 声明**挡掉** core 的可调用实参校验。
+ *
+ * 根因：env 的 `queueMicrotask` 是一条**纯类型声明** ⇒ 引擎把该全局整体换成
+ * env 声明路径 ⇒ core 的 `blockHostSideEffect` / `validateCallableArg`
+ * （`packages/core/src/algebra/exec/calls.ts:290-298`）**根本没被调用** ⇒
+ * 非可调用实参的 TypeError 丢失 ⇒ L2 门禁**假绿**（去掉 env 指令反而判红）。
+ *
+ * 修法（已实测）：**删掉 web env 的 `queueMicrotask` 声明** ⇒ 回落宿主 ⇒ core
+ * 的 `validateCallableArg` 生效 ⇒ 记 TypeError。
+ *
+ * 原生 oracle（node v26.10.0）：
+ * queueMicrotask(1) → TypeError: The "callback" argument must be of type
+ * function. Received type number (1)
+ *
+ * 反向钉：把 `queueMicrotask` 加回 env 全局表 ⇒ 本文件必挂。
+ */
+
+  it("web env 不声明；非可调用实参记 TypeError 且 env/host 同口径；可调用实参不报", () => {
+    expect(webEnvGlobals()["queueMicrotask"]).toBeUndefined();
+    const nonCallable = checkWeb("export function f(){ queueMicrotask(1); return 1; }");
+    expect(nonCallable.throwBrands).toContain("TypeError");
+    const withEnv = checkWeb("export function f(){ queueMicrotask(1); return 1; }", true);
+    const hostOnly = checkWeb("export function f(){ queueMicrotask(1); return 1; }", false);
+    expect(withEnv.throwBrands).toEqual(hostOnly.throwBrands);
+    expect(withEnv.throwBrands).toContain("TypeError");
+    const callable = checkWeb("export function f(){ queueMicrotask(function () {}); return 1; }");
+    expect(callable.throwBrands).not.toContain("TypeError");
+  });
+
+});
+
+// ---------------------------------------------------------------------------
+// node:assert 族有真实 throws 面
+// ---------------------------------------------------------------------------
+const env = defineEnv();
+const assertMod = env.modules!.assert!;
+
+function regexpOf(source: string, flags = ""): Abs {
+  return brandOf("RegExp", objAbs({ source: strLit(source), flags: strLit(flags) }));
+}
+const ABSTRACT = prim.str();
+
+function nativeErrorName(fn: () => void): string | undefined {
+  try { fn(); return undefined; } catch (e) { return (e as Error).name; }
+}
+
+describe("node:assert 族 throws 面", () => {
+  it("失败必抛 / 成立零抛 / 抽象 may-throw / 缺参 TypeError", () => {
+    expect(nativeErrorName(() => nodeOk(false))).toBe("AssertionError");
+    const bad = callSite____env_bug_s4_helpers_ts(assertMod.ok!, [boolLit(false)]);
+    expect(bad.threw).toBeTruthy();
+    expect(thrownBrand(bad.threw)).toBe("AssertionError");
+    const okTrue = callSite____env_bug_s4_helpers_ts(assertMod.ok!, [boolLit(true)]);
+    expect(okTrue.threw).toBeUndefined();
+    expect(okTrue.exits).toHaveLength(0);
+    const abstract = callSite____env_bug_s4_helpers_ts(assertMod.ok!, [ABSTRACT]);
+    expect(abstract.threw).toBeUndefined();
+    expect(abstract.exits).toHaveLength(1);
+    expect(brandName____env_bug_s4_helpers_ts(abstract.exits[0]!)).toBe("AssertionError");
+
+    const strictBad = callSite____env_bug_s4_helpers_ts(assertMod.strictEqual!, [numLit(1), numLit(2)]);
+    expect(thrownBrand(strictBad.threw)).toBe("AssertionError");
+    const strictGood = callSite____env_bug_s4_helpers_ts(assertMod.strictEqual!, [numLit(1), numLit(1)]);
+    expect(strictGood.threw).toBeUndefined();
+    expect(strictGood.exits).toHaveLength(0);
+
+    const deepSame = callSite____env_bug_s4_helpers_ts(assertMod.deepStrictEqual!, [objAbs({ a: numLit(1) }), objAbs({ a: numLit(1) })]);
+    expect(deepSame.threw).toBeUndefined();
+    expect(deepSame.exits).toHaveLength(0);
+    const deepDiff = callSite____env_bug_s4_helpers_ts(assertMod.deepStrictEqual!, [objAbs({ a: numLit(1) }), objAbs({ a: numLit(2) })]);
+    expect(thrownBrand(deepDiff.threw)).toBe("AssertionError");
+
+    const notSame = callSite____env_bug_s4_helpers_ts(assertMod.notStrictEqual!, [numLit(1), numLit(1)]);
+    expect(thrownBrand(notSame.threw)).toBe("AssertionError");
+    const notDiff = callSite____env_bug_s4_helpers_ts(assertMod.notStrictEqual!, [numLit(1), numLit(2)]);
+    expect(notDiff.threw).toBeUndefined();
+    expect(notDiff.exits).toHaveLength(0);
+
+    const hit = callSite____env_bug_s4_helpers_ts(assertMod.match!, [strLit("abc"), regexpOf("b")]);
+    expect(hit.exits).toHaveLength(0);
+    const miss = callSite____env_bug_s4_helpers_ts(assertMod.match!, [strLit("abc"), regexpOf("z")]);
+    expect(thrownBrand(miss.threw)).toBe("AssertionError");
+
+    expect(nativeErrorName(() => nodeFail("boom"))).toBe("AssertionError");
+    expect(thrownBrand(callSite____env_bug_s4_helpers_ts(assertMod.fail!, []).threw)).toBe("AssertionError");
+
+    expect(nativeErrorName(() => (nodeStrictEqual as (a: unknown, b?: unknown) => void)(1))).toBe("TypeError");
+    const missing = callSite____env_bug_s4_helpers_ts(assertMod.strictEqual!, [numLit(1)]);
+    expect(thrownBrand(missing.threw)).toBe("TypeError");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// node:util 品牌形参函数：具名导入调用面不得 L2 假红
+// ---------------------------------------------------------------------------
+describe("node:util 品牌形参函数：具名导入调用面不得 L2 假红", () => {
+/**
+ * （族 29 · S6）—— **core 侧根因**回归钉。
+ *
+ * 现象：`node:util` 的**品牌形参**函数（`promisify` / `callbackify` /
+ * `inherits` / `isDeepStrictEqual`）在**具名导入**调用面
+ * （`import { promisify } from "node:util"` ⇒ `promisify(readFile)`）
+ * ⇒ **L2 门禁假红**（native 必不抛，引擎却记 `may throw TypeError`），
+ * 而**成员调用**面（`util.promisify(readFile)`）完全正常
+ * ⇒ 同一函数**两种口径**。
+ *
+ * 根因（core 侧）：的**实参归一化**只补在 `$invoke`（成员调用面），
+ * 没补在**普通调用面**（具名导入 / 直接调用）。普通调用面把**裸宿主值**
+ * （宿主函数 / 宿主构造器 / 用户函数声明——transpile 侧直发 host function）
+ * 原样灌进 `bindTypeVars`（`packages/core/src/algebra/hof.ts`）
+ * ——`arg.shape` 解引用 `undefined` ⇒ TypeError 冒泡
+ * ⇒ 上层当成「这个调用可能抛」⇒ 记 may TypeError ⇒ **L2 假红**。
+ *
+ * 修法（core · S6）：
+ * 1. `packages/core/src/algebra/hof.ts` 的 `bindTypeVars`：实参**无形状**
+ * ⇒ **不参与类型变量绑定**（不再崩）。
+ * 2. **普通调用面也做实参归一化**（与
+ * `packages/core/src/algebra/exec/class/invoke.ts` 的 段同款）：
+ * `hof.ts` 的 `setRawArgNormalizer` 注册 `asAbsVal` 门面
+ * ⇒ 成员调用面 / 普通调用面共用同一门面 ⇒ **两种口径一致**。
+ *
+ * 本钉直接驱动引擎（core 的 `checkSource` + env 模块直注），
+ * 不经 service 的 `@nudo:env` 指令层。
+ *
+ * ⚠️ 与 S4 的 `env--util-brand-params.part.ts`（env 侧：给
+ * `node:util` 四兄弟加 `apply`，建模侧规避）**互补**：本钉的**判别钉**
+ * 走 `fs.readFile(path, enc, cb)`（仍是 relation 形态 ⇒ 只由 core 侧
+ * 修复兜住）+ 一条 core API 直钉 ⇒ **拆掉 core 修复 ⇒ 本文件必红**。
+ */
+
+
+
+
+
+const nodeEnv = defineEnv();
+
+/** env 的 `brandOf("Function")` 形状（品牌形参面） */
+const fnBrand = abs(
+  { k: "brand", name: "Function", shape: abs({ k: "unknown" }, undefined, undefined, "path") },
+  undefined,
+  undefined,
+  "path",
+);
+
+/** 裸宿主函数 / 宿主构造器（普通调用面的实参——无 Abs 形状） */
+const rawHostFn = function Sub() {};
+const rawHostCtor = Object;
+
+/** env 模块表 → core 的模块导出表（与 service 的 `collectEnvModules` 同口径） */
+function modulesOf(def: {
+  modules?: Record<string, Record<string, Abs>>;
+}): Record<string, AbsModuleExports> {
+  const out: Record<string, AbsModuleExports> = {};
+  for (const [spec, named] of Object.entries(def.modules ?? {})) {
+    out[spec] = { named: { ...named } };
+  }
+  return out;
+}
+
+const NODE_MODULES = modulesOf(nodeEnv);
+
+function check(src: string) {
+  resetGeneralizeMemo();
+  return checkSource("/t/x.js", src, pTrue, {
+    modules: NODE_MODULES,
+    inject: { envGlobals: nodeEnv.globals, modules: NODE_MODULES },
+  });
+}
+
+function codesOf(src: string): string[] {
+  return check(src).issues.map((i) => i.code);
+}
+
+function sigOf(src: string, name: string): { display: string; throws?: string } {
+  const sig = check(src).signatures.find((s) => s.name === name);
+  expect(sig, `signature "${name}" missing`).toBeTruthy();
+  return { display: sig!.display, throws: sig!.throws };
+}
+
+/** L2 入口 may-throw 门禁（假红就是它） */
+const MAY_THROW = "nudo:entry-may-throw";
+
+
+  it("具名/成员调用零 L2 且口径一致；裸宿主实参不崩；真抛入口仍报 L2", () => {
+    const NAMED = `/// @nudo:env node
+import { promisify } from "node:util";
+import { readFile } from "node:fs";
+export function use() { return promisify(readFile); }
+`;
+    const MEMBER = `/// @nudo:env node
+import * as util from "node:util";
+import { readFile } from "node:fs";
+export function use() { return util.promisify(readFile); }
+`;
+    for (const src of [NAMED, MEMBER]) {
+      const codes = codesOf(src);
+      expect(codes, src).not.toContain(MAY_THROW);
+      expect(sigOf(src, "use").throws, src).toBeUndefined();
+    }
+    expect(sigOf(NAMED, "use").display).toBe(sigOf(MEMBER, "use").display);
+
+    const inheritsSrc = `/// @nudo:env node
+import { inherits } from "node:util";
+export function Sub() {}
+export function use() { return inherits(Sub, Object); }
+`;
+    expect(codesOf(inheritsSrc)).not.toContain(MAY_THROW);
+    expect(sigOf(inheritsSrc, "use").throws).toBeUndefined();
+    expect(sigOf(inheritsSrc, "use").display).not.toMatch(/unknown/);
+
+    const deepSrc = `/// @nudo:env node
+import { isDeepStrictEqual } from "node:util";
+export function use(a, b) { return isDeepStrictEqual(a, b); }
+`;
+    expect(codesOf(deepSrc)).not.toContain(MAY_THROW);
+
+    const callbackSrc = `/// @nudo:env node
+import { readFile } from "node:fs";
+function cb(err, data) { return data; }
+export function use() { return readFile("x.txt", "utf8", cb); }
+`;
+    expect(codesOf(callbackSrc)).not.toContain(MAY_THROW);
+    expect(sigOf(callbackSrc, "use").throws).toBeUndefined();
+    expect(sigOf(callbackSrc, "use").display).not.toMatch(/unknown/);
+
+    const rel = relationFn([fnBrand], undefAbs());
+    expect(() => instantiateReturn(rel, [rawHostFn as never])).not.toThrow();
+    expect(() => instantiateReturn(rel, [rawHostCtor as never])).not.toThrow();
+
+    expect(codesOf('export function use() { throw new Error("boom"); }')).toContain(MAY_THROW);
+    const syncSrc = `/// @nudo:env node
+import { readFileSync } from "node:fs";
+export function use() { return readFileSync("/definitely/not/here.txt", "utf8"); }
+`;
+    expect(codesOf(syncSrc)).toContain(MAY_THROW);
+  });
+
+});
+
+// ---------------------------------------------------------------------------
+// node:util 品牌形参不参与类型变量绑定（env 侧）
+// ---------------------------------------------------------------------------
+describe("node:util 品牌形参不参与类型变量绑定（env 侧）", () => {
+/**
+ * `node:util` 的**品牌形参**函数（promisify / callbackify / inherits /
+ * isDeepStrictEqual）在**具名导入**调用下 ⇒ L2 门禁**假红**（原生必不抛）。
+ *
+ * 原生 oracle（Node v26.10.0 独立进程实测）：
+ * promisify(readFile) / callbackify(asyncFn) / inherits(Sub, Object) /
+ * isDeepStrictEqual({a:1},{a:1}) —— **一个都不抛**。
+ *
+ * 旧实现：这四个函数是 relation 面 ⇒ 调用走 core 的 relation 实例化
+ * （`bindTypeVars` 做类型变量绑定）。**具名导入**调用时实参可能是**裸宿主值**
+ * （宿主函数 / 用户函数声明）⇒ 品牌形参参与绑定时会在代数解引用点炸掉 ⇒
+ * 上层记「可能抛 TypeError」⇒ L2 门禁假红（同一函数**成员调用**却完全正常）。
+ *
+ * 本文件钉的是 **env 侧**那一半（core 侧由 S6 负责：调用面实参归一化 +
+ * 绑定保护）：
+ * - 这四个函数走 **apply 面** ⇒ **不进入 relation 实例化** ⇒ 品牌形参
+ * **不参与类型变量绑定**（建模侧规避，不依赖实参是否已被归一化）；
+ * - 签名面（paramTypes / returnType）**不变** ⇒ format 仍是
+ * "(Function, Function) => undefined" 这类干净文本。
+ *
+ * 断言双向：正向钉住「有 apply + 裸宿主实参不炸 + 签名不变」；
+ * 反向（把 apply 去掉、改回 relation 面）本文件必须失败。
+ */
+
+
+
+
+
+
+
+const env = defineEnv();
+const util = env.modules!.util!;
+
+/** 裸宿主函数（**不是** Abs）——具名导入调用时引擎拿到的就是这种实参 */
+const HOST_FN = function Sub(): void {};
+
+
+  it("四兄弟走 apply 面；裸宿主实参不炸；签名干净；原生不抛；零 throw exit", () => {
+    const util = defineEnv().modules!.util!;
+    for (const fn of [util.promisify, util.callbackify, util.inherits, util.isDeepStrictEqual]) {
+      expect(fn).toBeTruthy();
+      expect(getFnImpl(fn!)?.apply).toBeTypeOf("function");
+    }
+    const HOST_FN = function Sub(): void {};
+    const inheritsSite = callSite____env_bug_s4_helpers_ts(util.inherits!, [HOST_FN as unknown as Abs, HOST_FN as unknown as Abs]);
+    expect(inheritsSite.threw).toBeUndefined();
+    expect(inheritsSite.exits).toHaveLength(0);
+    expect(formatShape(inheritsSite.value!)).toBe("undefined");
+
+    const promisifySite = callSite____env_bug_s4_helpers_ts(util.promisify!, [HOST_FN as unknown as Abs]);
+    expect(promisifySite.exits).toHaveLength(0);
+    expect(formatShape(promisifySite.value!)).toBe("PromiseFn");
+
+    const callbackifySite = callSite____env_bug_s4_helpers_ts(util.callbackify!, [HOST_FN as unknown as Abs]);
+    expect(callbackifySite.exits).toHaveLength(0);
+    expect(formatShape(callbackifySite.value!)).toBe("CallbackFn");
+
+    const deepSite = callSite____env_bug_s4_helpers_ts(util.isDeepStrictEqual!, [HOST_FN as unknown as Abs, HOST_FN as unknown as Abs]);
+    expect(deepSite.exits).toHaveLength(0);
+    expect(formatShape(deepSite.value!)).toBe("boolean");
+
+    expect(formatShape(util.inherits!)).toBe("(Function, Function) => undefined");
+    expect(formatShape(util.promisify!)).toBe("(CallbackFn) => PromiseFn");
+    expect(formatShape(util.callbackify!)).toBe("(PromiseFn) => CallbackFn");
+    expect(formatShape(util.isDeepStrictEqual!)).toBe("(Value, Value) => boolean");
+    for (const fn of [util.inherits!, util.promisify!, util.callbackify!, util.isDeepStrictEqual!]) {
+      expect(formatShape(fn)).not.toMatch(/(^|[^\w])(unknown|any)([^\w]|$)/);
+    }
+
+    expect(() => nodeInherits(HOST_FN, Object)).not.toThrow();
+    expect(() => nodePromisify(readFile)).not.toThrow();
+    expect(brandName____env_bug_s4_helpers_ts(inheritsSite.exits[0])).toBeUndefined();
+  });
+
+});
+
+// ---------------------------------------------------------------------------
+// util.types models every host predicate
+// ---------------------------------------------------------------------------
+describe("util.types models every host predicate", () => {
+/**
+ * 族 15 · `util.types` 是**封闭对象**且只建模 **8** 个谓词，
+ * 宿主上有 **43** 个（缺 35，含 `isMap` / `isSet` / `isProxy` /
+ * `isWeakMap` / `isUint8Array` …）⇒ 缺的成员读出 **exact `undefined`**
+ * ⇒ `types.isMap(new Map())` 被判「确定抛 TypeError」⇒ L2 门禁假红（exit 1）。
+ *
+ * 修法：按宿主成员集补齐（全部 `(value) => boolean`）+ 宿主实测护栏。
+ *
+ * 反向钉：删掉任一补上的谓词 ⇒ 差分断言必挂。
+ */
+
+  it("宿主谓词齐全；每个都是 (any)=>boolean；模块面 apply 干净", () => {
+    expect(hostTypes.isMap(new Map())).toBe(true);
+    expect(hostTypes.isSet(new Set())).toBe(true);
+    expect(hostTypes.isDate(new Date())).toBe(true);
+    expect(Object.keys(hostTypes).length).toBeGreaterThanOrEqual(43);
+
+    const types = envMember("node:util", "types");
+    const declared = new Set(memberNames(types));
+    const missing = Object.keys(hostTypes).filter((k) => !declared.has(k));
+    expect(missing, `util.types is missing: ${missing.join(", ")}`).toEqual([]);
+
+    const isMap = slotOfAbs(types, "isMap")!;
+    const r = callSite(isMap, [unknown]);
+    expect(formatShape(r.value!)).toBe("boolean");
+    expect(r.exits).toEqual([]);
+
+    for (const name of ["isMap", "isSet", "isProxy", "isWeakMap", "isUint8Array"]) {
+      const slot = (types.shape as { slots: Record<string, { value: { shape: { k: string } } }> }).slots[name]!;
+      expect(slot.value.shape.k, name).toBe("fn");
+    }
+  });
+
+});

@@ -1,9 +1,9 @@
 /**
  * 求值引擎数组回调方法求值语义：
  * 1. map/flatMap/forEach/filter/reduce/reduceRight 对 hole 槽位**跳过回调**
- *    （原生 HasProperty 检查），map 输出保留 hole 位置；
+ * （原生 HasProperty 检查），map 输出保留 hole 位置；
  * 2. some/every/find/findIndex 不检查 HasProperty：hole 位置回调收到
- *    undefined（原生 Get 语义）；
+ * undefined（原生 Get 语义）；
  * 3. 回调必须收到索引实参 (el, i)；
  * 4. some/every/find/findIndex 按回调结果**短路**（命中即停，副作用计数精确）；
  * 5. filter 逐位调用谓词（此前 evaluator 降 arr 不调回调，副作用假精确 t=0）；

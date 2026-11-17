@@ -1,8 +1,7 @@
 /**
  * A2 残余 · 类构造器作 `JSON.stringify` replacer 从 `may-throw` 升为**定抛**。
  *
- * 台账 `architecture-debt.md` A2 的残余口径：运行时裸调用定抛已由 Bug 272
- * 闭合，但 `builtins/json.ts::brandCallable` 靠 `class-mark` WeakMap 只记
+ * 台账 `architecture-debt.md` A2 的残余口径：运行时裸调用定抛已由 * 闭合，但 `builtins/json.ts::brandCallable` 靠 `class-mark` WeakMap 只记
  * `recordMayThrow` ⇒ sound 但非确定抛（L2 假红）。本批次改读
  * `facets.callable === false`（随值搬运，覆盖快照 / subst / harvest 回放）。
  *

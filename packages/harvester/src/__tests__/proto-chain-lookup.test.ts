@@ -1,5 +1,5 @@
 /**
- * BUG-001 回归（harvester 侧）：lookupHarvested 的模块/导出表裸索引。
+ * 回归（harvester 侧）：lookupHarvested 的模块/导出表裸索引。
  * moduleName/exportName 为 toString 等 Object.prototype 成员且 harvest 表
  * 无同名自有键时，裸读把原型成员当 harvest 导出喂给 formatShape。
  * 存在性必须按自有属性判定。

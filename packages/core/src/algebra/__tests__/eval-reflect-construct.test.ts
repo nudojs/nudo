@@ -1,5 +1,5 @@
 /**
- * Bug 121 回归：Reflect.construct 校验错槽位。
+ * 回归：Reflect.construct 校验错槽位。
  *
  * apply/construct 共用一条 enforceArgsList(args[2])——apply 的 argsList 在
  * args[2]，construct 的在 args[1]：2 参合法形 Reflect.construct(A, []) 被
@@ -22,7 +22,7 @@ function expectTypeError(src: string): void {
   expect(throwsError(r.throws, "TypeError"), src).toBe(true);
 }
 
-describe("Bug 121：Reflect.construct 2 参合法形不再假抛", () => {
+describe("Reflect.construct 2 参合法形不再假抛", () => {
   it("typeof → \"object\" 域（原生 object）；try/catch 走 no 臂", () => {
     const src = `export function f() { class A{} return typeof Reflect.construct(A, []); }`;
     const r = call(src);
@@ -41,7 +41,7 @@ describe("Bug 121：Reflect.construct 2 参合法形不再假抛", () => {
   });
 });
 
-describe("Bug 121：argsList（args[1]）本体校验——此前漏抛面", () => {
+describe("argsList（args[1]）本体校验——此前漏抛面", () => {
   it("非对象 argsList → 定抛 TypeError（原生 CreateListFromArrayLike）", () => {
     expectTypeError(`export function f() { class A{} return Reflect.construct(A, "s"); }`);
     expectTypeError(`export function f() { class A{} return Reflect.construct(A, "s", A); }`);
@@ -50,7 +50,7 @@ describe("Bug 121：argsList（args[1]）本体校验——此前漏抛面", () 
   });
 });
 
-describe("Bug 121：newTarget（args[2] 在场）IsConstructor 校验——此前漏抛面", () => {
+describe("newTarget（args[2] 在场）IsConstructor 校验——此前漏抛面", () => {
   it("普通对象 / nullish 字面量 / 非构造 fn → 定抛 TypeError（原生）", () => {
     expectTypeError(`export function f() { class A{} return Reflect.construct(A, [], {}); }`);
     expectTypeError(`export function f() { class A{} return Reflect.construct(A, {}, {}); }`);
@@ -65,13 +65,13 @@ describe("Bug 121：newTarget（args[2] 在场）IsConstructor 校验——此�
   });
 });
 
-describe("Bug 121：apply 面控制组（槽位索引不回归）", () => {
+describe("apply 面控制组（槽位索引不回归）", () => {
   it("Reflect.apply 3 参合法形照常；argsList 缺省仍定抛", () => {
     expect(val(`export function f() { return typeof Reflect.apply(Math.max, null, [1]); }`))
       .toEqual({ ok: true, value: "number" });
     expectTypeError(`export function f() { return Reflect.apply(Math.max, null); }`);
     expectTypeError(`export function f() { return Reflect.apply(Math.max, null, 1); }`);
-    // 既有 target 校验（wave11 Bug 19 钉面）
+    // 既有 target 校验（wave11 钉面）
     expectTypeError(`export function f() { return Reflect.construct(1, []); }`);
   });
 });
