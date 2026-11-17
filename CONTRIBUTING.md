@@ -205,17 +205,13 @@ harness/helper），`*.part.ts` = 0。**2026-11-15 起不再有缺陷编号命�
 
 ### 仓内脚本纪律：`scripts/` 与 npm 入口
 
-`scripts/` 的清单与准入规则在 [`scripts/README.md`](./scripts/README.md)，由
-`scripts/check-scripts.mjs`（挂在 `lint:hygiene`）机械校验：
+`scripts/` 的索引与准入规则在 [`scripts/README.md`](./scripts/README.md)：
 
 - **一次性脚本不提交。** 分析 / 实验 / 迁移取样在 `/tmp` 跑，结论落 `docs/`，行为
   留成测试。入库的唯一判据是**有常驻触发方**：CI、npm 入口、被触发的脚本、测试。
-- **新增脚本必须同时登记索引**（`scripts/README.md` 的「## 文件」表：用途 + 触发方）。
-  未登记、登记腐烂、无人引用的文件都会红。
+- **新增 / 改名 / 删除脚本时同步索引**（`scripts/README.md` 的「## 文件」表：用途 + 触发方）。
 - **`package.json#scripts` 只收 CI 调用、`docs/examples` 命令矩阵、高频主入口。**
-  新入口必须在仓库内有真实调用点，否则按「孤儿入口」拦下；同义别名一律合并。
-- **预算是显式的**：文件数与入口数写死在 `check-scripts.mjs` 的 `BUDGET`，扩容是一次
-  需要理由的 diff（与 `check-core-subdomains.mjs` 的 `MAX_TOP_LEVEL_TS` 同口径）。
+  其余用 `node scripts/…` 直调；同义别名一律合并。
 
 ### Root `devDependencies` that look dead but are not
 

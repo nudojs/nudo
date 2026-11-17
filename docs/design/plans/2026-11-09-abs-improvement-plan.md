@@ -17,8 +17,8 @@
 - **已交付**：`ABS-01`…`ABS-12`、`ABS-14`、`ABS-16` 第①步、`ABS-18`。正文删除，状态见 §1。
 - **仍开放**：`ABS-16`③（worker 并行，parked）、`ABS-17`（写时复制，暂缓）。
   `ABS-13` 残余已结案不做（见 §8）；`ABS-15` 已交付。
-- **性能线判定**：通用冷路径到此可停 —— 用户口径 `dist` time-to-green 374ms（2s 目标 5.3× 余量，
-  `docs/reports/dx-metrics.md`）；watch 典型编辑 total 667–929ms 达标；语义编辑 hub ≈2.2s
+- **性能线判定**：通用冷路径到此可停 —— 用户口径 `dist` time-to-green 374ms（2s 目标 5.3× 余量）；
+  watch 典型编辑 total 667–929ms 达标；语义编辑 hub ≈2.2s
   （CPU-bound），属单文件成本（`ABS-17`）或 worker 并行（`ABS-16`③），不在通用优化面。
 - **不做**：从 body AST 发明契约义务；把 `unknown` 当 `any`；追完整 TS 泛型/HM；
   无隔离宣称 sandbox；追求内建 100% 覆盖；无指标重写 Shape。
@@ -147,9 +147,9 @@ finalizer 条件抛错精确传播。夹具 `abrupt-completion.test.ts`（15 例
 逐文件 69–378ms，CPU/wall 1.10–1.28；冷态单价是 warm 的 2.5–4.7×（依赖共享热缓存）；
 LPT 上限 warm W=4 ≈487ms / W=8 ≈378ms，cold×3 时 W=4 ≈1461ms。
 **触发条件**：真实用户仓库语义编辑轮 >3s，或出现第二个并行分析消费者。
-**2026-11-14 复测**（`edit-loop-metrics --semantic`，48 文件 / hub comparator）：
+**2026-11-14 复测**（一次性仪器，48 文件 / hub comparator）：
 debounce 211ms · analyze **2002ms** · total **2213ms**（3/3）⇒ 触发未命中，维持 parked。
-复测命令：`pnpm run edit-loop-metrics -- --semantic --rounds 3 --profile`。
+复测仪器已随脚本整理移出仓库（同口径 harness 可从 git 历史取回后再跑）。
 
 ### ABS-17 大对象图 `$copy`（`[ ]` 结案暂缓）
 
@@ -206,13 +206,12 @@ total **667–684ms**；leaf analyze 210ms / total **421ms**（早期批次为 h
 | any / unknown 比例与原因分布 | `ABS-02` 的效果 | `nudo health` / check JSON |
 | wrong-exact 数量 | `ABS-06` 的正确性 | 一致性矩阵 |
 | 金标 recall / precision | `ABS-07` / `ABS-08` / `ABS-09` | core gold suites |
-| time-to-green | DX 回归 | `pnpm run dx-metrics`（双口径） |
 | cold / warm / edit | 规模与摘要收益 | `benchmark:s1`（合成 120 文件）/ `benchmark:s1:real:clean`（真实仓，干净 env） |
 | 逐文件耗时 / 依赖装载 / CPU 栈 | `ABS-16` 口径核查、`ABS-17` 复现 | `benchmark/s1/profile-cold.mts`（`--corpus . --rounds 1 --top 30`；CPU 栈加 `--only` + `node --cpu-prof`） |
 | 打包器导出形态 / 规模梯度 | `ABS-17` 阴性对照 | `benchmark/s1/generate-bundle-fixtures.mts --count N` + `profile-cold.mts --corpus benchmark/s1/.bundles` |
 | 快路径 / body 路径逐字节 diff | `ABS-14` 等价门禁 | `equivalence-baseline.test.ts` + `fastpath.test.ts`（`applied` 必须增长）；降级通道 `degraded-channels.test.ts` |
 | 缓存命中率 | `ABS-05` / `ABS-10` / `ABS-16` | `s1-perf-baseline-real.json#cacheTelemetry`（实例级 + 函数级分列；服务层无计数 API） |
-| watch 增量轮分相 | `ABS-18` | `NUDO_WATCH_PROFILE=1` + `scripts/edit-loop-metrics.mjs --profile` |
+| watch 增量轮分相 | `ABS-18` | `NUDO_WATCH_PROFILE=1`（分相仪器已移出仓库，git 历史可回溯） |
 
 ## 8. 不做 / 边界
 

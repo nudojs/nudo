@@ -9,8 +9,7 @@
  *   node scripts/check-aliases.mjs          # exit 1 if tsconfig.paths.json drifts
  *   node scripts/check-aliases.mjs --write  # regenerate tsconfig.paths.json from SoT
  *
- * Root package.json script (for parent/CI to add if missing):
- *   "check:aliases": "node scripts/check-aliases.mjs"
+ * Wired into `lint:hygiene` (`pnpm run lint:hygiene`), so CI catches drift.
  */
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
