@@ -35,10 +35,13 @@ export default defineConfig({
     ],
     // lodash harvest + relationFn 图会顶爆默认 isolate 堆
     pool: "forks",
-    // isolate 保持默认 true：关隔离（--isolate=false）实测 core 40s→14.4s，
-    // 但同一 worker 内多文件共享模块实例会漏 memo / 类注册表 / 路由表，
-    // 出现 5 例顺序相关假红；线程池同收益级别但 RSS 3.9GB（forks 1.1GB）。
-    // 引擎缓存没有全局复位钩子，别为速度关隔离。
+    // isolate 必须保持 true：关隔离（--isolate=false）全量 107s→63s，但同一
+    // worker 内多文件共享模块实例导致 23 例 / 14 文件顺序相关假红。补齐
+    // 25 个 reset/clear 的 setupFiles 复位层后仍是 25 例 / 15 文件（vi.mock
+    // 计数、globalThis 宿主面枚举、模块初始化顺序都会漂），且复位层自身改
+    // 模块加载顺序又会引入新红——投入产出与 CI 稳定性都不成立。线程池同
+    // 收益级别但 RSS 3.9GB（forks 1.1GB）。
+    // 引擎/测试对「冷模块态」的隐藏依赖没有全局钩子可兜，别为速度关隔离。
     // CI 的 2 shard 各自跑在 4 vCPU runner 上，单 shard 4 worker 已足够。
     // 本地沿用 4 会浪费 3/4 硬件（实测全量 4w 423s；16 核机器上 12w 116s、
     // 16w 109s，CPU 1460%、RSS 1.1GB）。本地用满核数，CI 保持 4。
