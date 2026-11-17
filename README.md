@@ -194,7 +194,7 @@ issues
 
 Drop `square(0)` (or pass a positive) and `nudo check` exits 0. That is the Day-1 loop: `*.nudo.js` templates (`number().gt(0)`, `shape({…})`, …) or `@nudo:contract` turn call-site facts into L1 obligations.
 
-Runnable samples: [`docs/examples/constraints/`](./docs/examples/constraints/) · [`docs/examples/errors/01-constraint-gt.js`](./docs/examples/errors/01-constraint-gt.js). Timed newcomer path (internal baseline, not a CI gate): `pnpm run learning-cost`.
+Runnable samples: [`docs/examples/constraints/`](./docs/examples/constraints/) · [`docs/examples/errors/01-constraint-gt.js`](./docs/examples/errors/01-constraint-gt.js).
 
 ## Packages
 

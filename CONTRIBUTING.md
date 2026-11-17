@@ -11,7 +11,7 @@ pnpm install            # workspace deps
 pnpm run build          # tsup → dist/ (required before test — see below)
 pnpm run lint           # tsc --noEmit -p tsconfig.lint.json
 pnpm run lint:tests     # tsc --noEmit -p tsconfig.test-lint.json
-pnpm run lint:hygiene   # 静态卫生 + core 子域边界（两条 node 脚本）
+pnpm run lint:hygiene   # 静态卫生 + scripts 准入 + core 子域边界（7 条 node 门禁）
 pnpm run check:diff-face -- --base origin/main  # 加法成本：超出解释线（净增/新增源码或测试文件）须 --reason 或填 PR 模板小节
 pnpm run test           # vitest run
 pnpm run test:local     # 本地快车道：按需 build + CLI e2e 走 dist（见下）
@@ -200,7 +200,22 @@ harness/helper），`*.part.ts` = 0。**2026-11-15 起不再有缺陷编号命�
   重新实现 `mkdtempSync` / 清理逻辑。
 - `pnpm run lint:hygiene` 兜住 `tsc` 看不到、此前靠 reviewer 人工盯的几类问题：
   无说明的空 `catch`、内联 harness 复制、非 CLI 生产源码里的 `console.log`，
-  以及 `algebra/` 顶层继续平铺。新增检查规则同样要有明确理由，不做风格 linter。
+  以及 `algebra/` 顶层继续平铺、`scripts/` 与 npm 入口的未登记/孤儿项。
+  新增检查规则同样要有明确理由，不做风格 linter。
+
+### 仓内脚本纪律：`scripts/` 与 npm 入口
+
+`scripts/` 的清单与准入规则在 [`scripts/README.md`](./scripts/README.md)，由
+`scripts/check-scripts.mjs`（挂在 `lint:hygiene`）机械校验：
+
+- **一次性脚本不提交。** 分析 / 实验 / 迁移取样在 `/tmp` 跑，结论落 `docs/`，行为
+  留成测试。入库的唯一判据是**有常驻触发方**：CI、npm 入口、被触发的脚本、测试。
+- **新增脚本必须同时登记索引**（`scripts/README.md` 的「## 文件」表：用途 + 触发方）。
+  未登记、登记腐烂、无人引用的文件都会红。
+- **`package.json#scripts` 只收 CI 调用、`docs/examples` 命令矩阵、高频主入口。**
+  新入口必须在仓库内有真实调用点，否则按「孤儿入口」拦下；同义别名一律合并。
+- **预算是显式的**：文件数与入口数写死在 `check-scripts.mjs` 的 `BUDGET`，扩容是一次
+  需要理由的 diff（与 `check-core-subdomains.mjs` 的 `MAX_TOP_LEVEL_TS` 同口径）。
 
 ### Root `devDependencies` that look dead but are not
 
@@ -236,5 +251,6 @@ A static import scan over `packages/**/src` will flag these root `devDependencie
 | `packages/lsp` | IDE surface + language server |
 | `packages/env` / `packages/harvester` | API environments / `@types` harvest |
 | `docs/design/` | Design sources of truth (not tutorials) |
+| `scripts/` | Tooling — index + admission rules in [`scripts/README.md`](./scripts/README.md) |
 
 > **`@nudojs/core` dual-mapping footgun.** When a `tsconfig` maps `@nudojs/core` to `src`, it must also map `@nudojs/core/internal` → `packages/core/src/internal.ts`. Mapping only `.` while letting `./internal` resolve to `dist` loads **two** copies of engine machinery (e.g. may-throw collectors) and silently drops soft may-throw effects. See [`packages/core/PUBLIC_API.md`](./packages/core/PUBLIC_API.md).

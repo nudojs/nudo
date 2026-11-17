@@ -359,8 +359,8 @@ changeset `.changeset/generator-identity-validator-fix.md` 为
 `@nudojs/service: patch`，正文明确「bug 修复，非 breaking」。
 
 **同期配套（2026-11-05，零语义重构）**：`algebra/` 顶层 93 个平铺 `.ts` 中 50 个
-已由 `scripts/relocate-core-subdomains.mjs --apply` 归入 6 个子域（795 处相对
-导入机械重写，codemod 幂等），剩余 43 个由 `scripts/check-core-subdomains.mjs`
+已由一次性 codemod 归入 6 个子域（795 处相对导入机械重写，幂等；codemod 随迁移
+结案移出仓库），剩余 43 个由 `scripts/check-core-subdomains.mjs`
 冻结。`scripts/aggregate-tests.mjs` 的入口收敛全量试点因模块共享污染（新增 15 条
 失败）已回滚；2026-11-05 改为**按 S / M / R 三级逐族验证**：已启用 14 个
 S+M 族（410 文件 → 14 入口，全仓 vitest 入口 2005 → 1769）。

@@ -2,14 +2,15 @@
  * Boundary gate for packages/core/src/algebra.
  *
  * core holds ~54% of the repo's TypeScript. 2026-11-05: 50 of the 93 flat
- * algebra/*.ts files were relocated into six new subdomains by
- * `scripts/relocate-core-subdomains.mjs --apply` (795 relative specifiers
- * rewritten mechanically). The remaining flat files are the unclassified
+ * algebra/*.ts files were relocated into six new subdomains by a one-off
+ * codemod (795 relative specifiers rewritten mechanically; the codemod itself
+ * was retired with the migration). The remaining flat files are the unclassified
  * core kernels (abs.ts / objects.ts / leq.ts / hof.ts / …).
  *
  * This gate freezes the remaining flat area and forces NEW modules into an
- * existing subdomain. Re-run the codemod (or move files by hand) to lower
- * MAX_TOP_LEVEL_TS further; never raise it without a review.
+ * existing subdomain. A further consolidation moves files by hand (the one-off
+ * relocation codemod was retired with the 2026-11-05 change) and LOWERS
+ * MAX_TOP_LEVEL_TS; never raise it without a review.
  *
  *   node scripts/check-core-subdomains.mjs
  *

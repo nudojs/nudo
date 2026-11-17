@@ -55,7 +55,6 @@ avgRounds     (detected) nudo=1    ts=1
 
 | 套件 | 问 |
 |------|----|
-| `pnpm run agent-eval` | Nudo 自身 10 题红→绿是否 100% |
 | `pnpm run agent-dx` | **Nudo vs TS 同 bug 对照**（本项目） |
 | `pnpm run dx-metrics` | fix-rate / time-to-green 运营基线 |
 

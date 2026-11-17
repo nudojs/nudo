@@ -1,8 +1,8 @@
 /**
  * Changeset 标注口径门禁（2026-11-05 产品裁决的回归钉）。
  *
- *   pnpm run check:release-notes
- *   pnpm run check:release-notes -- --allow-breaking
+ *   node scripts/check-changeset-notes.mjs
+ *   node scripts/check-changeset-notes.mjs --allow-breaking
  *
  * 裁决：本批（Abs.facets / HARVEST_DISK_ABI v15 / 生成器身份校验器收紧）
  * **整批不判定为 breaking 变更** ⇒ `.changeset/*.md` 不得出现

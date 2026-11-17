@@ -36,6 +36,8 @@ pnpm run docs:serve     # Serve production build (both locales)
 > `pnpm run test` is **vitest** (package tests), not the CLI case reporter — that is `test:cli`. Product CLI surface: `check` / `test:cli` / `nudo -- contract|export|health|migrate`.
 >
 > Docusaurus `start` serves **one locale per process**. Default `docs:dev` is English only, so `/nudo/zh-Hans/` will 404 until you run `docs:dev:zh` (or `docs:build` + `docs:serve`).
+>
+> **`scripts/` 与 npm 入口纪律**（索引 `scripts/README.md`，门禁 `scripts/check-scripts.mjs` 挂在 `lint:hygiene`）：一次性分析/实验/迁移脚本**不提交**（`/tmp` 里跑，结论落 `docs/` 或测试）；入库脚本必须有常驻触发方并在索引登记；`package.json#scripts` 新入口必须在仓库内有真实调用点（CI / `docs/examples` 矩阵 / 高频主入口），其余用 `node scripts/…` 直调；文件数与入口数有预算上限，扩容是一次显式 diff。
 
 Run a single test file: `pnpm vitest run packages/core/src/algebra/__tests__/check-gold.test.ts`
 
@@ -73,8 +75,8 @@ Product CLI lives in `packages/nudojs` (published as `nudojs`, bin `nudo`). The 
 ## Architecture
 
 > 2026-11-05：`algebra/` 顶层 93 个平铺 `.ts` 中的 50 个已归入
-> `check/ scan/ format/ contract/ diagnostics/ key/` 六个二级子域（codemod
-> `scripts/relocate-core-subdomains.mjs`，795 处相对导入机械重写）。剩余 43 个
+> `check/ scan/ format/ contract/ diagnostics/ key/` 六个二级子域（一次性 codemod，
+> 795 处相对导入机械重写；脚本已随迁移结案移出仓库）。剩余 43 个
 > 顶层文件由 `pnpm run check:subdomains` 冻结，新模块一律进已有子域。
 > `scripts/aggregate-tests.mjs` 可按族收敛测试入口，但全量试点发现同一聚合
 > 入口内 part 共享模块实例会污染全局状态 ⇒ 已回滚；只允许逐族验证后启用。
