@@ -2280,3 +2280,124 @@ export class B extends A {
     expect(classBody(dts, "export declare class A {")).toContain("static v()");
   });
 });
+
+// ---------------------------------------------------------------------------
+// 类字段 / 访问器的注解引用导入名 ⇒ 必须补 import type
+// ---------------------------------------------------------------------------
+describe("类字段注解引用导入名要补 import type", () => {
+/**
+ * 类字段注解走的是**第三条**引用通道（`DtsClassFieldSurface.type` 保存原文、
+ * 访问器取 `nodeAnnotationText`）：名字被 `isResolvableName` 放行留在产物里，
+ * 但 `annotationRefs` 只登记函数/方法投影的 `typeRefs`、镜像类型声明与超类名
+ * ⇒ 产物里 `opts: Opts` 没有 `import type { Opts }` ⇒ 消费方 TS2304。
+ * 同一份文件只要类里多一个 `normalize(o: Opts)` 方法就能编译。
+ */
+function moduleDts(source: string): string {
+  const result = analyzeFile("/test/field-import.ts", source);
+  const surface = dtsModuleSurface(source);
+  const entries = result.functions
+    .filter((fn) => fn.cases.length > 0)
+    .map((fn) => ({ fn, projection: projectFunctionDts(fn, undefined, surface) }));
+  return projectModuleDts(surface, entries).lines.join("\n");
+}
+
+const BASE = `export interface Opts { retries: number; }\n`;
+
+  it("只有字段注解引用导入名 ⇒ 产物自带 import type，且可与依赖产物一起编译", () => {
+    // 两个模块各自投影（与 `export --out` 的逐文件口径一致）
+    const base = moduleDts(BASE);
+    const client = moduleDts(`import type { Opts } from "./base.js";
+export class Client {
+  opts: Opts;
+  constructor(opts) {
+    this.opts = opts;
+  }
+  retries() {
+    return this.opts.retries;
+  }
+}
+`);
+    expect(client).toContain('import type { Opts } from "./base.js";');
+    expect(client).toContain("opts: Opts;");
+    const check = tscNoEmit({
+      "base.d.ts": base.replace(/^\/\/ nudo-export-module: .*$/m, ""),
+      "client.d.ts": client.replace(/^\/\/ nudo-export-module: .*$/m, ""),
+    });
+    expect(check.ok, check.stderr).toBe(true);
+  });
+
+  it("对照：未引用的导入名不补（不过度补行）", () => {
+    const client = moduleDts(`import type { Opts } from "./base.js";
+export class Client {
+  n = 1;
+}
+`);
+    expect(client).not.toContain("import type { Opts }");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 返回位的类型谓词 / 断言签名必须原样保留
+// ---------------------------------------------------------------------------
+describe("返回位的类型谓词不被丢成 boolean", () => {
+/**
+ * 谓词是返回位的类型本身（`x is string` / `asserts x is string`），不是 Abs
+ * 能表达的维度 ⇒ 观测面只给 `boolean` / `undefined`：
+ *
+ * ```ts
+ * export declare function isStr(x: unknown): boolean;      // 旧
+ * export declare function assertStr(x: unknown): undefined; // 旧
+ * ```
+ *
+ * 消费方据此窄化全失（`if (isStr(x)) x.toUpperCase()` / `assertStr(x); x.toUpperCase()`
+ * 都是 TS18046）。`tsc --declaration` 的产物是 `x is string` / `asserts x is string`。
+ */
+function moduleDts(source: string, path = "/test/predicate.ts"): string {
+  const result = analyzeFile(path, source);
+  const surface = dtsModuleSurface(source);
+  const entries = result.functions
+    .filter((fn) => fn.cases.length > 0)
+    .map((fn) => ({ fn, projection: projectFunctionDts(fn, undefined, surface) }));
+  return projectModuleDts(surface, entries).lines.join("\n");
+}
+
+const SRC = `export function isStr(x: unknown): x is string { return typeof x === "string"; }
+export function assertStr(x: unknown): asserts x is string { if (typeof x !== "string") throw new Error("no"); }
+export function assertAny(x: unknown): asserts x { if (x === undefined) throw new Error("no"); }
+`;
+
+  it("三种形态（x is T / asserts x is T / asserts x）都保留原文，消费方窄化成立", () => {
+    const dts = moduleDts(SRC);
+    expect(dts).toContain("export declare function isStr(x: unknown): x is string;");
+    expect(dts).toContain("export declare function assertStr(x: unknown): asserts x is string;");
+    expect(dts).toContain("export declare function assertAny(x: unknown): asserts x;");
+
+    const check = tscNoEmit({
+      "mod.d.ts": dts.replace(/^\/\/ nudo-export-module: .*$/m, ""),
+      "use.ts":
+        'import { isStr, assertStr } from "./mod.js";\n' +
+        "export function f(x: unknown) {\n" +
+        "  if (isStr(x)) return x.toUpperCase();\n" +
+        "  assertStr(x);\n" +
+        "  return x.toUpperCase();\n" +
+        "}\n",
+    });
+    expect(check.ok, check.stderr).toBe(true);
+  });
+
+  it("谓词引用不可解析的类型名 ⇒ 不发射（回落观测）+ 台账点名", () => {
+    const dts = moduleDts(
+      `export function isUndef(x: unknown): x is Nope { return true; }\n`,
+      "/test/predicate-unresolved.ts",
+    );
+    expect(dts).not.toContain("x is Nope");
+    expect(dts).toContain("nudo:dropped-type-annotation");
+    expect(dts).toContain("return predicate");
+  });
+
+  it("对照：普通返回注解不受影响（仍按观测面一致口径发 boolean）", () => {
+    const dts = moduleDts(`export function truthy(x) { return typeof x === "string"; }\n`);
+    expect(dts).toContain(": boolean;");
+    expect(dts).not.toContain(" is ");
+  });
+});

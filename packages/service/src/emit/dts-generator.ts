@@ -1811,11 +1811,16 @@ function computeMainSignature(
         observedOnly ? widenObservedReturnAbs(widenTopLevelAbs(retAbs)) : widenTopLevelAbs(retAbs),
       )
     : "unknown";
-  const returnType = contract?.return
-    ? contractReturnTSType(contract.return, typeVars)
-    : hofReturn && isNoInfoType(observedReturnType.replace(/\[\]$/, ""))
-      ? absToTSType(hofReturn, typeVars)
-      : observedReturnType;
+  // BUG-134：类型谓词 / 断言签名是**返回位的类型**（声明级证据）⇒ 优先于
+  // 观测面（观测只能给 `boolean` / `undefined`）；手写契约返回位仍是最高优先。
+  const predicateReturn = contract?.return ? undefined : tsReturnPredicate(fn, ctx);
+  const returnType =
+    contract?.return
+      ? contractReturnTSType(contract.return, typeVars)
+      : (predicateReturn ??
+        (hofReturn && isNoInfoType(observedReturnType.replace(/\[\]$/, ""))
+          ? absToTSType(hofReturn, typeVars)
+          : observedReturnType));
   // ABS-03：可达性过滤（与 contractOnlySignature 同源）
   // 可达性只看**类型文本**（paramTypes / returnType）——形参名不是类型引用
   const typeParams = reachableTypeParams(
@@ -2393,6 +2398,48 @@ function returnAnnotationMismatch(
     return undefined;
   }
   return { declared: want, observed: got };
+}
+
+/** 类型谓词 / 断言签名文本（`x is T` / `this is T` / `asserts x` / `asserts x is T`） */
+function isTypePredicateText(text: string): boolean {
+  const t = text.trim();
+  return (
+    /^asserts\s+(?:this|[A-Za-z_$][\w$]*)(?:\s+is\s+[\s\S]+)?$/.test(t) ||
+    /^(?:this|[A-Za-z_$][\w$]*)\s+is\s+[\s\S]+$/.test(t)
+  );
+}
+
+/**
+ * 返回位的**类型谓词 / 断言签名**（BUG-134）。
+ *
+ * 谓词是返回位的类型本身，不是 Abs 能表达的维度 ⇒ 观测面只给 `boolean` /
+ * `undefined`，产物把窄化契约整条丢掉：消费方 `if (isStr(x)) x.toUpperCase()`
+ * 与 `assertStr(x); x.toUpperCase()` 都报 TS18046（`tsc --declaration` 的产物
+ * 是 `x is string` / `asserts x is string`）。声明面原文已采集
+ * （`fn.declaredReturnType`）⇒ 可解析时**原样保留**；引用到不可解析的类型名
+ * ⇒ 落台账并回落观测（与 `tsParamAnnotation` 同口径）。
+ */
+function tsReturnPredicate(fn: FunctionAnalysis, ctx?: DtsProjectionCtx): string | undefined {
+  const raw = tsAnnotationTypeText(fn.declaredReturnType);
+  if (!raw || !isTypePredicateText(raw)) return undefined;
+  const trimmed = raw.trim();
+  const withoutAsserts = trimmed.replace(/^asserts\s+/, "");
+  const isPart = /^(?:this|[A-Za-z_$][\w$]*)\s+is\s+([\s\S]+)$/.exec(withoutAsserts);
+  // `asserts x`（无类型位）⇒ 没有类型名要核对，原样保留
+  if (!isPart) return trimmed;
+  const typePart = isPart[1]!;
+  for (const name of annotationTypeRefs(typePart)) {
+    if (TS_TYPE_TOKENS.has(name)) continue;
+    const surface = ctx?.surface;
+    if (!isTypeNameResolvable(name, surface)) {
+      ctx?.dropped?.push(`${fn.name}: ${name} (return predicate)`);
+      return undefined;
+    }
+    if (surface?.classes.has(name) || surface?.imports?.has(name) === true) {
+      ctx?.typeRefs?.add(name);
+    }
+  }
+  return trimmed;
 }
 
 /**
@@ -4810,6 +4857,24 @@ function projectModuleDtsInner(
   for (const t of surface?.typeDeclarations ?? []) {
     for (const n of annotationTypeRefs(t)) typeDeclRefs.add(n);
   }
+  // BUG-121：**类字段 / 访问器**的注解是第三条引用通道——`DtsClassFieldSurface.type`
+  // 保存注解**原文**、访问器直接取 `nodeAnnotationText`，两者都原样进产物，
+  // 但此前只有函数/方法投影的 `typeRefs`、镜像类型声明、超类名会进
+  // `annotationRefs` ⇒ 「类字段保存注入依赖」（`opts: Opts`）这种常见写法
+  // 产出的 `.d.ts` 里 `Opts` **没有对应的 `import type`** ⇒ 消费方 TS2304，
+  // 而同一份文件只要类里多一个 `normalize(o: Opts)` 方法就能编译。
+  //
+  // 这些成员此时已经写进 `lines`（类体在 import 块之前装配）⇒ 按**产物文本**
+  // 里的标识符补登记（与注解原文同源，不另开扫描通道；本地类在上面已排除，
+  // 多补一条未使用的 `import type` 在 `.d.ts` 里无害，漏补则是硬错）。
+  if (surface?.imports) {
+    const emittedIdents = new Set(lines.join("\n").match(/[A-Za-z_$][\w$]*/g) ?? []);
+    for (const name of surface.imports.keys()) {
+      if (annotationRefs.has(name)) continue;
+      if (emittedIdents.has(name)) annotationRefs.add(name);
+    }
+  }
+
   if (surface?.imports) {
     for (const [name, imp] of surface.imports) {
       // 只为**被引用**的名字补 import：brand 类名（Bug 233）/ 注解原文引用的
