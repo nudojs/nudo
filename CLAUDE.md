@@ -122,9 +122,9 @@ Tests are the executable spec of a **product module/face**, not a ledger of hist
 加法默认免费会累积成臃肿。本仓把「多」变成需要书面解释的动作——不判质量，只强制写下来。
 
 - **任务书 = PR 模板**（`.github/PULL_REQUEST_TEMPLATE.md`）：现有实现证据 / 新增文件理由 / 删除清单 / 不做清单。**动手前**填（写进 issue、计划或 PR 草稿皆可）；删除清单确无删除也写「无」，不允许留空。模板的二级标题是门禁解析契约，改名即改门禁行为。
-- **门禁**：`pnpm run check:diff-face --base <ref>`（无 `--base` 时用 `origin/main` 的 PR 语义）。触发线 = `package.json#nudo.diffBudget`（默认：源码净增 250 行、新增源码文件 2 个、新增测试文件 0 个）。触发后必须给理由：`--reason "<≥40 字符>"` / `DIFF_FACE_REASON`，或 PR body 填满模板全部小节（HTML 注释不计正文）。
+- **门禁**：`pnpm run check:diff-face --base <ref>`（无 `--base` 时用 `origin/main` 的 PR 语义）。触发线 = `scripts/check-diff-face.mjs` 的 `BUDGET` 常量（默认：源码净增 250 行、新增源码文件 2 个、新增测试文件 0 个）。触发后必须给理由：`--reason "<≥40 字符>"` / `DIFF_FACE_REASON`，或 PR body 填满模板全部小节（HTML 注释不计正文）。
 - **新增测试文件默认零容忍**：先尝试并入既有矩阵文件（新行/新轴）；确实不行，书面回答「为何不能并入」或「吸收/替换了哪个旧条目」。「合并即删」的删除与新增在同一 diff 内完成，不留给以后清理。
-- **答不上来 = 删东西**，不是加一行解释。阈值是解释线不是上限：调阈值是一次显式动作（改 `package.json`），不是绕过门禁的默认路径。
+- **答不上来 = 删东西**，不是加一行解释。阈值是解释线不是上限：调阈值 = 改脚本里的 `BUDGET`（一次显式代码 diff），不是绕过门禁的默认路径。
 - CI 在 PR 的 lint job 用 `base.sha` + PR body 跑；push 不跑（合并后重算已无「本批改动」语义）。
 
 ## TypeScript Config

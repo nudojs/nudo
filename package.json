@@ -64,13 +64,6 @@
     "check:aliases": "node scripts/check-aliases.mjs",
     "branch:hygiene": "node scripts/branch-hygiene.mjs"
   },
-  "nudo": {
-    "diffBudget": {
-      "sourceNetLines": 250,
-      "newSourceFiles": 2,
-      "newTestFiles": 0
-    }
-  },
   "devDependencies": {
     "@babel/parser": "^8.1.0",
     "@babel/traverse": "^8.1.0",

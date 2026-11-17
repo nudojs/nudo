@@ -8,7 +8,7 @@
  *   pnpm run check:diff-face -- --reason "为什么这批改动不能更小"
  *   CI: DIFF_FACE_BASE=<sha> DIFF_FACE_PR_BODY="<PR body>" pnpm run check:diff-face
  *
- * 三条触发线（阈值 = package.json#nudo.diffBudget 的「解释线」，不是上限）：
+ * 三条触发线（阈值 = 本文件 BUDGET 的「解释线」，不是上限）：
  *   1. 源码面净增行数 > sourceNetLines
  *   2. 新增源码文件数 > newSourceFiles
  *   3. 新增测试文件数 > newTestFiles（默认 0：每新增一个测试文件都要回答
@@ -30,7 +30,12 @@ import { fileURLToPath } from "node:url";
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const TEMPLATE_PATH = join(repoRoot, ".github", "PULL_REQUEST_TEMPLATE.md");
 const MIN_REASON_CHARS = 40;
-const DEFAULTS = { sourceNetLines: 250, newSourceFiles: 2, newTestFiles: 0 };
+
+// 触发线 = 「解释线」，不是上限。策略常量放脚本内（与 check-core-subdomains.mjs
+// 的 MAX_TOP_LEVEL_TS、gate-major.mjs 的 MAJOR_CEILING 同口径）——改阈值是一次
+// 显式代码 diff。刻意不进 package.json#nudo：那个命名空间是发布版 CLI 的项目
+// 配置面（nudo.env / nudo.check.ignoreThrows），仓内工具链不占位。
+const BUDGET = { sourceNetLines: 250, newSourceFiles: 2, newTestFiles: 0 };
 
 const argv = process.argv.slice(2);
 const opt = (name) => {
@@ -44,24 +49,6 @@ function git(args) {
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
   });
-}
-
-function readBudget() {
-  let configured = {};
-  try {
-    configured = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")).nudo?.diffBudget ?? {};
-  } catch {
-    configured = {};
-  }
-  const pick = (key) => {
-    const value = configured[key];
-    return Number.isInteger(value) && value >= 0 ? value : DEFAULTS[key];
-  };
-  return {
-    sourceNetLines: pick("sourceNetLines"),
-    newSourceFiles: pick("newSourceFiles"),
-    newTestFiles: pick("newTestFiles"),
-  };
 }
 
 function resolveBase() {
@@ -256,7 +243,7 @@ function signed(n) {
 }
 
 function main() {
-  const budget = readBudget();
+  const budget = BUDGET;
   const base = resolveBase();
   if (!base) {
     console.error(
