@@ -9,7 +9,7 @@ import {mkdtempSync, writeFileSync, rmSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join, dirname} from "node:path";
 import {fileURLToPath, pathToFileURL} from "node:url";
-import {transpileSource, litValue, formatShape, $lit, num, type Abs} from "@nudojs/core";
+import {transpileSource, litValue, formatShape, $lit, num, anyAbs, bitandAbs, bitnotAbs, type Abs} from "@nudojs/core";
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -101,5 +101,12 @@ describe("evaluator bitwise / shift / exponent / unary-plus", () => {
     const r = run(num(), num());
     expect(formatShape(r)).toBe("number");
     expect(litValue(r)).toEqual({ ok: false });
+  });
+
+  it("any operand yields number (not unknown) and no unknown-inference", () => {
+    // BUG-111：`any & 1` / `~any` 与 `+ - * / %` 同口径 ⇒ number；
+    // 旧回退臂只认 prim 三型，结果退 unknown 并误报 nudo:unknown-inference。
+    expect(formatShape(bitandAbs(anyAbs, $lit(1)))).toBe("number");
+    expect(formatShape(bitnotAbs(anyAbs))).toBe("number");
   });
 });

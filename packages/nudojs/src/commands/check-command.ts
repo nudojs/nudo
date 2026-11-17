@@ -582,7 +582,7 @@ export function registerCheckCommand(program: Command): void {
           if (applied.length > 0) notes.push(`Bindings applied: ${applied.join(", ")}`);
           if (unapplied.length > 0) {
             notes.push(
-              `Bindings not applied (no top-level declaration found): ${unapplied.join(", ")}`,
+              `Bindings not applied (no injectable top-level variable declaration; @nudo:as does not apply to functions/classes): ${unapplied.join(", ")}`,
             );
           }
           console.log(`Type of "${opts.target}": ${typeStr}`);

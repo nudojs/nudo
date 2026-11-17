@@ -1134,7 +1134,8 @@ describe("构造器 / static 方法默认值不丢", () => {
   {
     const dts = moduleDts(SRC);
     expect(dts).toContain("constructor(a?: unknown);");
-    expect(dts).toContain("static make(x?: unknown): unknown;");
+    // BUG-095：无返回注解的 static 方法取分析面签名（此例 `return new C()` ⇒ C）
+    expect(dts).toContain("static make(x?: unknown): C;");
     expect(dts).toContain("inst(y?: unknown)");
   }
   {
@@ -1733,8 +1734,9 @@ export let counter = 0;
 }
 `);
     expect(dts).toContain("export declare enum Level {");
-    expect(dts).toContain("Low,");
-    expect(dts).toContain("High,");
+    // BUG-139：隐式自增算出字面量（tsc 同口径，消费方 `const x: 1 = Level.High` 可编译）
+    expect(dts).toContain("Low = 0,");
+    expect(dts).toContain("High = 1,");
     const check = tscNoEmit({
       "mod.d.ts": dts,
       "use.ts": 'import { Level } from "./mod.js";\nconst l: Level = Level.High;\nexport { l };\n',
@@ -2071,4 +2073,30 @@ describe("ABS-03 schema 数值界投影", () => {
 });
 
 });
+});
+
+describe("类字段的初始化器形状（函数值 / 断言包装）", () => {
+  const classDts = (src: string): string => {
+    const result = analyzeFile("/test/class-field-init.ts", src);
+    const surface = dtsModuleSurface(src);
+    const entries = result.functions
+      .filter((fn) => fn.cases.length > 0)
+      .map((fn) => ({ fn, projection: projectFunctionDts(fn, undefined, surface) }));
+    return projectModuleDts(surface, entries).lines.join("\n");
+  };
+  it("函数值保留调用签名、断言/satisfies 包住的初始化器按内层定型（BUG-043 / BUG-135）", () => {
+    const dts = classDts(`export class C {
+  fn = (x: number) => x + 1;
+  zero = () => 1;
+  asserted = ([1, 2] as const) satisfies readonly number[];
+  plain = 1;
+}
+`);
+    // 函数值：不再退化成 unknown（消费方 TS18046）
+    expect(dts).toContain("fn: (a0: unknown) => unknown;");
+    expect(dts).toContain("zero: () => unknown;");
+    // 断言 / satisfies 包装按内层数组定型（旧实现整条 unknown）
+    expect(dts).toContain("asserted: unknown[];");
+    expect(dts).toContain("plain: number;");
+  });
 });

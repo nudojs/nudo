@@ -1075,7 +1075,7 @@ export async function whatIf(
     const notes: string[] = [];
     if (applied.length > 0) notes.push(`Bindings applied: ${applied.join(", ")}`);
     if (unapplied.length > 0) {
-      notes.push(`Bindings not applied (no top-level declaration found): ${unapplied.join(", ")}`);
+      notes.push(`Bindings not applied (no injectable top-level variable declaration; @nudo:as does not apply to functions/classes): ${unapplied.join(", ")}`);
     }
     return textResult(
       `Type of "${target}": ${typeStr}${notes.length > 0 ? `\n${notes.join("\n")}` : ""}`,

@@ -114,13 +114,14 @@ describe("arithmetic over abstract operand records may TypeError", () => {
     }
   });
 
-  it("+x / ~x / -x → may TypeError，值域不变", () => {
+  it("+x / ~x / -x → may TypeError；~x 的值域是 number（BUG-111）", () => {
     for (const u of ["+", "~", "-"]) {
       const r = evalSrc(`export function f(x) { return ${u}x; }`);
       expect(r.effects, u).toContain("TypeError");
     }
     expect(evalSrc(`export function f(x) { return +x; }`).value).toBe("unknown");
-    expect(evalSrc(`export function f(x) { return ~x; }`).value).toBe("unknown");
+    // BUG-111：`~any` 的结果域是 number（ToInt32 恒得 number，与 `&` / `|` 同口径）
+    expect(evalSrc(`export function f(x) { return ~x; }`).value).toBe("number");
     expect(evalSrc(`export function f(x) { return -x; }`).value).toBe("unknown");
   });
 

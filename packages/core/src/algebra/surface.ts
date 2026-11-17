@@ -171,8 +171,11 @@ function bitwiseResultShape(a: Abs, b: Abs): Abs {
     });
   }
   const numLike = (x: Abs): boolean =>
-    x.shape.k === "prim" &&
-    (x.shape.type === "number" || x.shape.type === "string" || x.shape.type === "boolean");
+    // BUG-111：`any` 操作数的位运算结果是 number（`+ - * / %` 同口径）；
+    // 旧判据只认 prim 三型 ⇒ `any & 1` 退 unknown 并误报 unknown-inference。
+    x.shape.k === "any" ||
+    (x.shape.k === "prim" &&
+      (x.shape.type === "number" || x.shape.type === "string" || x.shape.type === "boolean"));
   const bigLike = (x: Abs): boolean => x.shape.k === "prim" && x.shape.type === "bigint";
   if (bigLike(a) || bigLike(b)) {
     return bigLike(a) && bigLike(b)
@@ -213,6 +216,10 @@ export function bitxorAbs(a: Abs, b: Abs): Abs {
 export function bitnotAbs(a: Abs): Abs {
   const folded = foldNumericUnOp(a, (x) => ~x, (x) => ~x);
   if (folded) return folded;
+  // BUG-111：`~any` 是 number（与 `~prim` 同口径）。
+  if (a.shape.k === "any") {
+    return abs({ k: "prim", type: "number" }, undefined, undefined, confJoin(a.conf, "widened"));
+  }
   if (a.shape.k === "prim") {
     if (a.shape.type === "bigint") {
       return abs({ k: "prim", type: "bigint" }, undefined, undefined, confJoin(a.conf, "widened"));

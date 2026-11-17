@@ -63,9 +63,35 @@ function splitTopLevelUnion(expr: string): string[] {
  * 整条表达式只要有一项认不出，**整条**降级为 `unknown`：联合成员里塞裸
  * `unknown` 不是合法的约束构建器实参（`union(number(), unknown)` 会炸）。
  */
+/**
+ * BUG-099：TS 结构类型表达式（`{a:number}` / `number[]` / `(a:number)=>T`）
+ * 在 `@nudo:as` 文法里表达不了 —— 它们既不是构建器调用，也不是字面量，
+ * 注入后只会被 `parseCaseArgExpr` 降级成 `unknown` / 不完整形状。
+ * 旧实现按「含 `[({` 或 `=>` 就当可表达」放行 ⇒ 回显「按原样应用」。
+ */
+function looksLikeTypeExpression(expr: string): boolean {
+  const s = expr.trim();
+  // 数组类型：`number[]` / `readonly string[]`
+  if (/\b[A-Za-z_$][\w$]*(\[\])+/.test(s)) return true;
+  // 泛型类型引用：`Array<T>` / `Record<…>`
+  if (/^\s*(?:readonly\s+)?(?:Array|ReadonlyArray|Record|Promise|Map|Set|Partial|Required)\s*</.test(s))
+    return true;
+  // 对象类型：`{ a: number }`（值侧是类型名而非字面量）
+  if (
+    /^\s*\{/.test(s) &&
+    /:\s*(?:number|string|boolean|bigint|symbol|object|void|never|unknown|any)\b(?!\s*\()/.test(s)
+  )
+    return true;
+  // 函数类型：`(a: number) => string`（形参带类型注解）
+  if (/^\s*\([^)]*:[^)]*\)\s*=>/.test(s)) return true;
+  // 联合/交叉里含结构片段：交给上面的成员级判定（顶层 `|` 已切分）
+  return false;
+}
+
 function mapTypeExpr(expr: string): { directive: string; faithful: boolean } {
   const members = splitTopLevelUnion(expr);
   if (members.length === 0) return { directive: "unknown", faithful: false };
+  if (looksLikeTypeExpression(expr)) return { directive: "unknown", faithful: false };
   let faithful = true;
   const mapped = members.map((m) => {
     // TS 类型引用：`T.*` 文法已物理删除，认不出
@@ -216,6 +242,14 @@ export function injectBindings(
   // 使 JSDoc / 前置注释仍与语句相邻）。
   const declSites = new Map<string, DeclSite>();
   for (const stmt of programBody(ast)) {
+    // BUG-100：`@nudo:as` 是**语句级 init 覆盖**（只作用于变量声明初值 /
+    // return 值，见 transpile `matchAsOverride`）。函数 / 类声明没有初值可盖，
+    // 旧实现把它们一并登记成注入点 ⇒ 回显 `Bindings applied` 而类型零变化。
+    const target =
+      stmt.type === "ExportNamedDeclaration" && stmt.declaration
+        ? stmt.declaration
+        : stmt;
+    if (target.type !== "VariableDeclaration") continue;
     const names = new Set<string>();
     declaredNames(stmt, names);
     if (names.size === 0 || !stmt.loc || stmt.start == null) continue;

@@ -3457,6 +3457,18 @@ function classFieldType(init: SurfaceNode | undefined, annotation?: string): str
 /** 初始化器形状 → 基类型（供 `classFieldType` 与 default 表达式投影复用）。 */
 function classFieldTypeOfInit(init: SurfaceNode | undefined): string {
   if (!init) return "unknown";
+  // BUG-135：断言 / satisfies 包住的初始化器按内层表达式定型
+  // （`x = <T>v` / `x = v satisfies T` / `x = v!` 与不带包装同口径）。
+  const unwrapped: Record<string, string> = {
+    TSAsExpression: "expression",
+    TSTypeAssertion: "expression",
+    TSNonNullExpression: "expression",
+    TSSatisfiesExpression: "expression",
+  };
+  const innerKey = init.type !== undefined ? unwrapped[init.type] : undefined;
+  if (innerKey) {
+    return classFieldTypeOfInit(init[innerKey] as SurfaceNode | undefined);
+  }
   switch (init.type) {
     case "NumericLiteral":
       return "number";
@@ -3473,6 +3485,15 @@ function classFieldTypeOfInit(init: SurfaceNode | undefined): string {
     case "NullLiteral":
       // `state = null` —— TS 对类字段的推断就是 `null`（不是 any/unknown）
       return "null";
+    case "ArrowFunctionExpression":
+    case "FunctionExpression": {
+      // BUG-043：类字段的函数值与对象字面量同口径（保留调用签名，不退 unknown）。
+      const params = Array.isArray(init.params) ? (init.params as SurfaceNode[]) : [];
+      const slots = params.map((p, i) =>
+        p?.type === "RestElement" ? `...args${i === 0 ? "" : String(i)}: unknown[]` : `a${i}: unknown`,
+      );
+      return `(${slots.join(", ")}) => unknown`;
+    }
     case "UnaryExpression": {
       // `-1` / `+1`
       const arg = init.argument as SurfaceNode | undefined;
@@ -4071,16 +4092,33 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
           : Array.isArray(enumBody?.members)
             ? (enumBody!.members as SurfaceNode[])
             : [];
-      const enumMembers = members
-        .map((m) => {
-          const name =
-            surfaceName(m.id as SurfaceNode | undefined) ??
-            surfaceName(m.key as SurfaceNode | undefined);
-          if (!name) return undefined;
-          const init = enumInitText(m.initializer as SurfaceNode | undefined);
-          return init !== undefined ? { name, init } : { name };
-        })
-        .filter((m): m is { name: string; init?: string } => m !== undefined);
+      const enumMembers: { name: string; init?: string }[] = [];
+      // BUG-139：数值 enum 的隐式自增必须算出字面量（tsc 产物同口径）——
+      // 否则消费端 `const y: 2 = E.B` 因成员类型退成 `E.B` 而 TS2322。
+      let prevNumeric: number | undefined = -1; // 首个无初始化器成员 ⇒ 0（tsc 同口径）
+      for (const m of members) {
+        const name =
+          surfaceName(m.id as SurfaceNode | undefined) ??
+          surfaceName(m.key as SurfaceNode | undefined);
+        if (!name) continue;
+        const initNode = m.initializer as SurfaceNode | undefined;
+        const init = enumInitText(initNode);
+        if (init !== undefined) {
+          enumMembers.push({ name, init });
+          prevNumeric =
+            initNode?.type === "NumericLiteral" && typeof initNode.value === "number"
+              ? initNode.value
+              : // 负数 / 其它可折叠表达式不算，避免猜错值。
+                undefined;
+          continue;
+        }
+        if (prevNumeric !== undefined) {
+          prevNumeric += 1;
+          enumMembers.push({ name, init: String(prevNumeric) });
+          continue;
+        }
+        enumMembers.push({ name });
+      }
       // Bug 25：`export const enum` 的 `const` 限定必须保留（否则消费端 tsc
       // 通过、运行时 import 报「does not provide an export named …」）。
       surface.values.set(id, {
@@ -4788,12 +4826,21 @@ function dtsClassDeclaration(
     );
   }
   // 静态方法（源码面）
+  // BUG-095：JS 源码没有返回注解 ⇒ 从分析面同名成员的签名行取返回类型
+  // （实例方法一直走分析面，static 只读注解是两套口径）。
+  const analysisReturnOf = (name: string): string | undefined => {
+    const entry = memberList.find((m) => m.member === name);
+    if (!entry) return undefined;
+    const last = entry.lines[entry.lines.length - 1];
+    if (!last) return undefined;
+    const m = /\)\s*:\s*([^;]+);\s*$/.exec(last);
+    return m?.[1]?.trim();
+  };
   for (const m of staticSurface) {
     const params = m.params.map((p, i) => classParamDecl(p, i)).join(", ");
     const prefix = m.accessibility ? `${m.accessibility} ` : "";
-    body.push(
-      `${prefix}static ${m.name}${m.typeParams ?? ""}(${params}): ${m.returnType ?? "unknown"};`,
-    );
+    const ret = m.returnType ?? analysisReturnOf(m.name) ?? "unknown";
+    body.push(`${prefix}static ${m.name}${m.typeParams ?? ""}(${params}): ${ret};`);
   }
   // Bug 23：static 字段（运行时公开数据属性）
   for (const f of cls?.staticFields ?? []) {
