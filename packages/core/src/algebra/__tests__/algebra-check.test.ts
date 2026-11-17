@@ -575,7 +575,7 @@ function classEntryGate(
 }
 
 
-  it("类导出入口进 L2 入口表（`new C()` 是真实入口）；构造器**无条件抛** ⇒ 证据进类入口的 throws 域（修前：空 ⇒ 假绿）；构造器在 **any 实参**下才抛 ⇒ 不进 throws 域（不假红）；端到端：类入口进入口表后，构造器必抛必须报在类入口上（不零诊断）；构造器软 throw ⇒ 全文件零 error 级 L2（原假红保持消除）；构造器必抛 ⇒ **不**归因给实例方法（Bug 1070 口径不变）；构造器上申报 `@nudo:throws` ", () => {
+  it("类导出入口进 L2 入口表（`new C()` 是真实入口）；构造器**无条件抛** ⇒ 证据进类入口的 throws 域（修前：空 ⇒ 假绿）；构造器在 **any 实参**下才抛 ⇒ 不进 throws 域（不假红）；端到端：类入口进入口表后，构造器必抛必须报在类入口上（不零诊断）；构造器软 throw ⇒ 与函数入口同款进类入口 throws 域（BUG-107 修前被嵌套会话吞掉）；构造器必抛 ⇒ **不**归因给实例方法（Bug 1070 口径不变）；构造器上申报 `@nudo:throws` ", () => {
   {
   resetCheckSourceMemo();
   resetGeneralizeMemo();
@@ -616,7 +616,10 @@ function classEntryGate(
   takeContractDiags();
 
 
-    expect(classEntryGate(CTOR_SOFT)).toEqual([]);
+    // BUG-107：构造器体 = 类入口的体 ⇒ 软效果（any 上的算术强制转换）与
+    // 函数入口**同款**进 throws 域（同文件 `export function f(x){return x+1}`
+    // 本来就是这个结论）⇒ 不再在嵌套会话里被隔离掉。
+    expect(classEntryGate(CTOR_SOFT)).toEqual([{ fn: "SoftCtor", kind: "TypeError" }]);
   }
   {
   resetCheckSourceMemo();
@@ -649,9 +652,11 @@ function classEntryGate(
 
 
     const r = checkSource("acct-soft.js", CTOR_SOFT, pTrue, stdOpts);
-    expect(l2Count(r)).toBe(0);
-    expect(r.issues.filter((i) => i.severity === "error")).toHaveLength(0);
-    // 方法入口的证据照常（构造器的软效果不进方法入口的收集域）
+    // BUG-107：构造器软效果 ⇒ 类入口报一条 L2（与 `export function f(x){return x+1}`
+    // 同结论；旧实现嵌套 may-throw 会话 ⇒ 内层 collector 吞掉 ⇒ 整条判绿）
+    expect(l2Count(r)).toBe(1);
+    expect(r.issues.filter((i) => i.severity === "error")).toHaveLength(1);
+    // 方法入口的证据照常（构造器的 throws 不归因给**方法**入口——Bug 1070 口径不变）
     expect(sigOf(r, "SoftCtor.describe")).not.toContain("throws");
   }
   {

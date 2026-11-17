@@ -599,6 +599,15 @@ export function registerCheckCommand(program: Command): void {
           usageErrorExit(opts.json, "error: --json cannot be combined with --abs");
           return;
         }
+        // BUG-092：`--gitlab` 的 stdout 是**恰好一份** Code Quality JSON 数组
+        // ⇒ 代数观察面无处可放。与 `--json --abs` 同口径：命令级 usage error
+        // （旧实现只在 `emitCheckReport` 的 `--gitlab` 分支里静默丢弃 `--abs`，
+        // 逐字节等同于不带 `--abs`）。放在这里早退 ⇒ 不会出现「部分文件已
+        // 上屏 / 部分文件被拒」的半个机器面。
+        if (opts.gitlab && opts.abs) {
+          usageErrorExit(false, "error: --gitlab cannot be combined with --abs");
+          return;
+        }
         // 非 --json：路径错误走 usageError+exit（历史行为）
         if (!opts.json) {
           reportPathErrors(targetErrors);

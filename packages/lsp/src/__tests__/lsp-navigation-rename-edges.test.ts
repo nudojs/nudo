@@ -1482,3 +1482,54 @@ type RenameResult = { changes: Record<string, Array<{ range: unknown; newText: s
 
 
 });
+
+// ---------------------------------------------------------------------------
+// 改名冲突校验覆盖**编辑集里的每个文件**
+// ---------------------------------------------------------------------------
+describe("改名冲突：编辑集逐文件校验", () => {
+  const LIB = `export const shared = 1;\n`;
+  /** 导入方：模块作用域已有同名绑定（与对照组唯一差异 = `const sharedLocal`） */
+  const THIRD_COLLIDE = `import { shared } from "./lib.js";
+
+const sharedLocal = 5;
+
+export function h() {
+  return shared + sharedLocal;
+}
+`;
+  const THIRD_OK = `import { shared } from "./lib.js";
+
+export function h() {
+  return shared;
+}
+`;
+  type RenameResult = { changes?: Record<string, Array<{ newText: string }>> } | null;
+
+  it("导入方已有同名模块级绑定 ⇒ 拒绝改名（不产出会把该文件改成重复声明的编辑集）；对照组：无该绑定 ⇒ 正常编辑（BUG-062）", async () => {
+    {
+      await withLspServer({ "lib.js": LIB, "third.js": THIRD_COLLIDE }, async ({ req, uri }) => {
+        const res = req("textDocument/rename")({
+          textDocument: { uri: uri("lib.js") },
+          position: { line: 0, character: 13 },
+          newName: "sharedLocal",
+        }) as RenameResult;
+        // 旧实现只校验目标文件 / 定义文件 ⇒ 这里返回一个把 third.js 改成
+        // `import { sharedLocal } …` + `const sharedLocal = 5` 的编辑集
+        // ⇒ 应用后 `Identifier 'sharedLocal' has already been declared`
+        expect(res).toBeNull();
+      });
+    }
+    {
+      await withLspServer({ "lib.js": LIB, "third.js": THIRD_OK }, async ({ req, uri }) => {
+        const res = req("textDocument/rename")({
+          textDocument: { uri: uri("lib.js") },
+          position: { line: 0, character: 13 },
+          newName: "sharedLocal",
+        }) as RenameResult;
+        expect(res).not.toBeNull();
+        const edits = Object.values(res!.changes ?? {}).flat();
+        expect(edits.map((e) => e.newText)).toEqual(["sharedLocal", "sharedLocal", "sharedLocal"]);
+      });
+    }
+  });
+});

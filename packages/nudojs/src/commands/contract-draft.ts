@@ -33,6 +33,15 @@ type ContractFaceDiagnostic = {
   message: string;
 };
 
+/**
+ * BUG-047：命令级 `--fn` 命中账本（结构类型 —— 与 `contract.ts` 的同名类型同形，
+ * 不跨模块 import，零新增公开导出）。
+ */
+type FnMatchTracker = {
+  hits: number;
+  misses: Array<{ rel: string; message: string; candidates: string[] }>;
+};
+
 export async function runContractDraft(
   file: string,
   opts: {
@@ -43,6 +52,12 @@ export async function runContractDraft(
     records?: CallRecord[];
     /** --json 面：路径错误并入 draft JSON（绝不静默 ok + exit≠0） */
     pathErrors?: PathError[];
+    /**
+     * BUG-047：命令级 `--fn` 命中账本。给了它 ⇒ 本 root 零命中时**不**在这里
+     * 报 usage error / 设 exit（`--fn` 是过滤器，不是逐文件断言）；由命令层跨
+     * 全部 root 汇总后再判「一处都没命中」。
+     */
+    fnMatch?: FnMatchTracker;
   },
 ): Promise<void> {
   const { draftContract, formatDraftSummary, writeContractDraft, sidecarDraftPath } =
@@ -129,6 +144,12 @@ export async function runContractDraft(
     const message =
       `Usage error: --fn ${opts.fnNames.map((n) => `\`${n}\``).join(", ")} matched no export in ${rel}; nothing was written` +
       (candidates.length > 0 ? `\navailable exports: ${candidates.join(", ")}` : "");
+    // BUG-047：多 root 形态下 `--fn` 是过滤器 ⇒ 本 root 零命中记进命令级账本，
+    // 由命令层跨全部 root 汇总后再判「一处都没命中」（不在这里 exit）。
+    if (opts.fnMatch) {
+      opts.fnMatch.misses.push({ rel, message, candidates });
+      return;
+    }
     if (opts.json) {
       // 机器面：stdout 必须是一份合法 JSON 文档（命令层的聚合层把它收进数组外壳）
       console.log(
@@ -144,6 +165,8 @@ export async function runContractDraft(
     process.exitCode = 1;
     return;
   }
+  // BUG-047：本 root 命中过名单 ⇒ 记进命令级账本
+  if (opts.fnNames.length > 0 && opts.fnMatch) opts.fnMatch.hits += 1;
   const draftRel = relFromCwd(sidecarDraftPath(filePath)) || sidecarDraftPath(filePath);
   // AI4：--json → draftSource + unified diff（审阅面）
   if (opts.json) {

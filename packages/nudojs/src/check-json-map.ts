@@ -340,6 +340,15 @@ export function staticFromDomainIssues(opts: StaticFromDomainOptions): CheckIssu
  * 执行态通道（分析器 `nudo:contract-domain-exceeds`）与静态通道（本模块的
  * `staticFromDomainIssues`）判的是**同一处事实**（被调方某参数位被调用实参
  * 超出）⇒ 同（被调名, 参数位）只报一条，执行态优先（既有 `--from` 面口径）。
+ *
+ * BUG-069：去重键**只有** `被调名[参数位]`，不看证据值 ⇒ 只要该参数位有一处
+ * **被执行**的违例占了键，同一参数位其它调用点 / 其它 `--from` 现场文件的
+ * 违例（不同 `actual`）全部被当重复项清掉 ⇒ 报告对 `--from` 集合**非单调**
+ * （加一个现场文件反而让证据变少，用户修完 `-81` 重跑才看到 `-82`）。
+ * 键里带上**证据值**：只有「同一参数位 + 同一违约值」才是同一条事实。
+ *
+ * 不同调用点 / 不同现场文件给出**同一个**违约值时仍合并成一条（值相同 ⇒ 修法
+ * 相同），与 Bug 643 的正面口径一致。
  */
 export function dedupeFromStaticIssues(
   staticIssues: readonly CheckIssue[],
@@ -349,12 +358,12 @@ export function dedupeFromStaticIssues(
   for (const e of executionIssues) {
     if (e.code !== DIAG.contractDomainExceeds) continue;
     const key = callSiteKeyOf(e.message);
-    if (key) seen.add(key.key);
+    if (key) seen.add(`${key.key}@${plainEvidence(e.actual)}`);
   }
   if (seen.size === 0) return [...staticIssues];
   return staticIssues.filter((s) => {
     const key = callSiteKeyOf(s.message);
-    return key === undefined || !seen.has(key.key);
+    return key === undefined || !seen.has(`${key.key}@${plainEvidence(s.actual)}`);
   });
 }
 

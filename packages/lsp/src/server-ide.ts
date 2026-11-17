@@ -789,8 +789,22 @@ export function attachSignatureHelp(deps: IdeDeps): void {
           { result, ast },
           memberPath,
         );
+        // BUG-056：成员分支缺裸标识符分支已有的 arity-only 闸 ⇒ 采信「调用点
+        // 观测过的 fn Abs」（对象字面量方法槽在模块初始化求值中被
+        // `helper.twice(3)` 观测过 ⇒ `returnType = 6` 而 `paramTypes` 仍空）
+        // ⇒ 渲染成 `(q: any) => 6`：既断言 q 无约束、又断言任意 q 都返回 6，
+        // 且随实参漂移（`twice(5)` ⇒ `=> 10`），与 hover / check 的
+        // `(q: any) => unknown` 直接矛盾。与裸标识符分支同款：让位
+        // `resolveCalleePolyFn`（声明域签名）。
         if (memberAbs && memberAbs.shape.k === "fn") {
-          const help = buildSignatureHelp(memberAbs, callInfo.currentParamIndex);
+          // 观测面空壳（有形参名、无 `paramTypes`、返回位是某次调用的观测值）
+          // ⇒ **丢掉观测返回位**再渲染：形参名照用，返回位回落 `unknown`
+          // （与 hover / check 的声明域签名同口径），绝不输出 `(q: any) => 6`
+          // 这种「随实参漂移的假精确」。
+          const shown = isObservationOnlyFnAbs(memberAbs)
+            ? hideObservedReturnType(memberAbs)
+            : memberAbs;
+          const help = buildSignatureHelp(shown, callInfo.currentParamIndex);
           if (help) return help;
         }
       } else {
@@ -808,8 +822,7 @@ export function attachSignatureHelp(deps: IdeDeps): void {
         // generalize 内涵面（同一时刻 hover 给精确签名 ⇒ 同一 LSP 面自相矛盾）。
         // 与 hover 的 `deferIfArityOnlyFn` 同款闸门：`returnType` 槽空的
         // arity-only fn **不采纳**，回落路径③（`resolveCalleePolyFn`）。
-        const arityOnly = fnAbs?.shape.k === "fn" && fnAbs.shape.returnType === undefined;
-        if (fnAbs && fnAbs.shape.k === "fn" && !arityOnly) {
+        if (fnAbs && fnAbs.shape.k === "fn" && !isArityOnlyFnAbs(fnAbs)) {
           const help = buildSignatureHelp(fnAbs, callInfo.currentParamIndex);
           if (help) return help;
         }
@@ -827,6 +840,41 @@ export function attachSignatureHelp(deps: IdeDeps): void {
       return null;
     }
   });
+}
+
+/**
+ * `fnOf()` 造的 **arity-only 声明空壳**（无 `returnType` 槽）判定。
+ *
+ * BUG-104（裸标识符分支）/ BUG-056（成员分支）：这种 fn Abs 只有形参个数，
+ * 没有形参类型也没有返回域 ⇒ 渲染成「形参一律 any、返回 unknown」的假签名
+ * （或采信调用点观测值 ⇒ 随实参漂移的 `(q: any) => 6`）⇒ 必须让位声明域
+ * 签名（`resolveCalleePolyFn`）。
+ */
+function isArityOnlyFnAbs(a: { shape: { k: string } } | undefined): boolean {
+  if (!a || a.shape.k !== "fn") return false;
+  return (a.shape as { returnType?: unknown }).returnType === undefined;
+}
+
+/**
+ * **观测面 fn Abs**（BUG-056）：成员被调者从模块图拿到的那份 Abs 可能只是
+ * 「这次调用观测到的值」，**没有形参域**（`paramTypes` 槽缺席）——形参一律
+ * 回落 `any`，返回位却是观测值（`exact`）⇒ 渲染成 `(q: any) => 6`：既断言
+ * `q` 无约束、又断言任意 `q` 都返回 6，且随实参漂移（`twice(5)` ⇒ `=> 10`），
+ * 与声明域签名（hover / check 的 `(q: any) => unknown`）自相矛盾。
+ *
+ * 判据比 `isArityOnlyFnAbs` 多一条：**`paramTypes` 缺席也算观测面空壳**。
+ * 只在成员分支用（裸标识符分支的既有闸门不动）。
+ */
+function isObservationOnlyFnAbs(a: { shape: { k: string } } | undefined): boolean {
+  if (!a || a.shape.k !== "fn") return false;
+  const shape = a.shape as { returnType?: unknown; paramTypes?: readonly unknown[] };
+  if (shape.returnType === undefined) return true;
+  return shape.paramTypes === undefined || shape.paramTypes.length === 0;
+}
+
+/** 抹掉**观测到的**返回位（`returnType`），保留形参名 ⇒ 渲染回落 `unknown` */
+function hideObservedReturnType<T extends { shape: { k: string } }>(a: T): T {
+  return { ...a, shape: { ...a.shape, returnType: undefined } };
 }
 
 /**

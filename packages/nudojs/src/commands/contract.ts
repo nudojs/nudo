@@ -52,10 +52,26 @@ function reportContractFaceDiagnostics(diags: readonly ContractFaceDiagnostic[])
   if (diags.some((d) => d.severity === "error")) process.exitCode = 1;
 }
 
+/**
+ * BUG-047：`--fn` 是**过滤器**（`cli-reference.md`），不是逐文件的「必须存在」
+ * 断言。三个分支面（print / draft / emit）各自只能看见自己那个 root ⇒ 逐 root
+ * 判「一个都没命中」会把过滤器升格成断言（`--fn shout a.js b.js` 里 `b.js` 没有
+ * `shout` ⇒ usage error + exit 1，而 `a.js` 已经写盘）。
+ *
+ * 命令层用这个共享账本汇总：分支面命中就 +1，零命中就记一条 miss（**不**打印、
+ * 不设 exit）；循环结束后由命令层判「跨全部 root 一处都没命中」那条防拼写门禁。
+ */
+export type FnMatchTracker = {
+  /** 命中过名单里任一名字的 root 数 */
+  hits: number;
+  /** 零命中的 root（文案 + 候选名，供命令级报错复用） */
+  misses: Array<{ rel: string; message: string; candidates: string[] }>;
+};
+
 async function runContractPrint(
   file: string,
   records?: CallRecord[],
-  opts?: { json?: boolean; fnNames?: string[]; all?: boolean },
+  opts?: { json?: boolean; fnNames?: string[]; all?: boolean; fnMatch?: FnMatchTracker },
 ): Promise<void> {
   const { contractSurface } = await import("@nudojs/service/emit");
   const filePath = resolve(file);
@@ -94,6 +110,12 @@ async function runContractPrint(
     const message =
       `Usage error: --fn ${fnNames.map((n) => `\`${n}\``).join(", ")} matched no contract entry in ${rel}` +
       (candidates.length > 0 ? `\navailable exports: ${candidates.join(", ")}` : "");
+    // BUG-047：多 root 形态下本条只是「这个文件没有这个导出名」⇒ 记进命令级
+    // 账本，由命令层跨全部 root 汇总后再决定是否报错（不在这里 exit）。
+    if (opts?.fnMatch) {
+      opts.fnMatch.misses.push({ rel, message, candidates });
+      return;
+    }
     if (opts?.json === true) {
       console.log(
         JSON.stringify(
@@ -108,6 +130,8 @@ async function runContractPrint(
     process.exitCode = 1;
     return;
   }
+  // BUG-047：本 root 命中过名单 ⇒ 记进命令级账本（有命中即证明名单没拼错）
+  if (fnNames.length > 0 && opts?.fnMatch) opts.fnMatch.hits += 1;
 
   // 族 21 Bug 670：`--json` 是**机器面** ⇒ stdout 必须是合法 JSON。
   // 改前本函数完全不看 `opts.json` ⇒ `nudo contract --json` 把人类文本
@@ -430,6 +454,21 @@ export function registerContractCommand(program: Command): void {
           usageError("Usage error: --emit and --draft are mutually exclusive");
           return;
         }
+        // ②b BUG-080：`--fn` × `--all` 在**动作面**（--emit / --draft）同样互斥。
+        //
+        // 打印面早已显式拒绝（`runContractPrint`：--fn 与 --all 同给 ⇒ usage
+        // error），但 emit / draft 两支只把 `--fn` 当过滤器：`--all` 既没被转发
+        // 也没被校验 ⇒ `--emit --fn a2 --all` 的作用面被**静默收窄到 a2**
+        // （exit 0、零告警、`b3` 的生成段长期陈旧，用户以为刚全量重生成）。
+        // 与 ⑤/⑥ 同一条纪律：「不许给了不生效且不报错」。
+        if (opts.fn !== undefined && opts.fn.length > 0 && opts.all === true && (opts.emit || opts.draft)) {
+          const face = opts.emit ? "--emit" : "--draft";
+          usageError(
+            `Usage error: --fn and --all are mutually exclusive on the ${face} face`,
+            "drop --all to refresh only the names given by --fn, or drop --fn to regenerate every generated segment",
+          );
+          return;
+        }
         // ③ `--write` 需要草稿模式：**`--draft` 或 `--from-dts`**
         //    （help 与 cli-reference 的口径都是「With --draft / --from-dts」）
         if (opts.write === true && !opts.draft && !opts.fromDts) {
@@ -535,6 +574,10 @@ export function registerContractCommand(program: Command): void {
         if (jsonMode && allPathErrors.length > 0) process.exitCode = 1;
         // --json：跨文件聚合层（Bug 658）——每个 root 一项，循环后**一次**打印
         const jsonEntries: ContractJsonEntry[] = [];
+        // BUG-047：`--fn` 是**过滤器** ⇒ 三个分支面逐 root 零命中时只记账不报错；
+        // 命令层跨全部 root 汇总后判「一处都没命中」那条防拼写门禁。
+        const fnMatch: FnMatchTracker = { hits: 0, misses: [] };
+        const fnNames = opts.fn ?? [];
         for (const t of roots) {
           const rel = relFromCwd(t) || t;
           const runRoot = async (): Promise<void> => {
@@ -545,6 +588,7 @@ export function registerContractCommand(program: Command): void {
                 dryRun: opts.dryRun === true,
                 json: jsonMode,
                 records: externalRecords,
+                fnMatch,
               });
             } else if (opts.emit) {
               await runContractEmit(t, {
@@ -553,6 +597,7 @@ export function registerContractCommand(program: Command): void {
                 dryRun: opts.dryRun === true,
                 exitOnDiff: opts.exitOnDiff === true,
                 records: externalRecords,
+                fnMatch,
                 // 族 20 · Bug 667（片 C）：emit 分支的 JSON 信封由
                 // `contract-emit.ts` 消费 `opts.json`（该字段由片 C 加进 opts 类型）
                 // ⇒ 这里用**展开**传（展开不吃 excess property 检查
@@ -566,6 +611,7 @@ export function registerContractCommand(program: Command): void {
                 json: jsonMode,
                 fnNames: opts.fn ?? [],
                 all: opts.all === true,
+                fnMatch,
               });
             }
           };
@@ -578,7 +624,12 @@ export function registerContractCommand(program: Command): void {
             }
             continue;
           }
+          const missesBefore = fnMatch.misses.length;
           const captured = await captureRootDocument(runRoot);
+          // BUG-047：本 root 只是「没有这个导出名」⇒ 过滤器行为，不产出
+          // 机器面条目（分支面已被账本拦下、stdout 为空 ⇒ 下面那条
+          // 「不是 JSON 文档」判定会误报成分析失败）。
+          if (fnMatch.misses.length > missesBefore) continue;
           if (captured.ok) {
             jsonEntries.push(captured.doc as ContractJsonEntry);
           } else {
@@ -596,6 +647,30 @@ export function registerContractCommand(program: Command): void {
               ...(captured.raw ? { output: captured.raw } : {}),
             });
           }
+        }
+        // BUG-047：跨全部 root 汇总 —— 名单里的名字**任何** root 都没命中 ⇒
+        // 才是一次真正的拼写错误（单 root 时逐字沿用分支面旧文案）。
+        if (fnNames.length > 0 && fnMatch.hits === 0 && fnMatch.misses.length > 0) {
+          const missed = fnMatch.misses;
+          const message =
+            missed.length === 1
+              ? missed[0]!.message
+              : `Usage error: --fn ${fnNames.map((n) => `\`${n}\``).join(", ")} matched no export in any of ${missed.length} targets; nothing was written` +
+                `\navailable exports:` +
+                missed
+                  .map((m) =>
+                    m.candidates.length > 0 ? `\n  ${m.rel}: ${m.candidates.join(", ")}` : `\n  ${m.rel}: (none)`,
+                  )
+                  .join("");
+          if (jsonMode) {
+            jsonEntries.push({
+              file: missed.length === 1 ? missed[0]!.rel : "",
+              errors: [{ code: CONTRACT_USAGE_ERROR_CODE, message }],
+            });
+          } else {
+            console.error(message);
+          }
+          process.exitCode = 1;
         }
         if (jsonMode) {
           // 路径错误是**命令级**事实（不是某个 root 的）⇒ 独立成一项

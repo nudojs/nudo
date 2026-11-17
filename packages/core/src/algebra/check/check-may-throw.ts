@@ -125,6 +125,27 @@ export function collectEntryMayThrows(
       // P2-a：L2 throws 求值 evaluator 优先（may-throw 效果通道共享
       // recordMayThrow）。
       const outcome = evalThrowsOutcome(source, fnName, evalArgs, scopedOpts, phi, file);
+      // -----------------------------------------------------------------
+      // BUG-039：**缺参**这一路（默认值初始化器）
+      //
+      // L2 入口的实参只有「形参 Abs」这一种给法（`f(any)`）⇒ 默认值初始化器
+      // 的判据 `arg === undefined` 永不成立 ⇒ `function f1(a = null.x)` 在
+      // `nudo check` 判绿，而原生 `f1()` **必抛** TypeError（同文件的 `nudo
+      // test` 空实参用例也明确报 `nudo:may-throw`）⇒ 两面结论相反。
+      //
+      // 补一条**零实参**求值：这条路把每个默认形参真的置成 `undefined` ⇒
+      // 初始化器按源码顺序执行（`f4(a = 1, b = a.nope)` 里 `a` 先取 1 ⇒ `b`
+      // 不抛，与原生 `f4()` 一致）。只在**存在默认形参**时补跑（否则零实参
+      // 只是「any 的子集」⇒ 纯重复求值，白付一次预算）。
+      // 证据合并后统一去重（见函数末尾）：两趟都命中的同一条事实只留一条。
+      let probe: ThrowsOutcome | undefined;
+      if (g.formals?.some((f) => f.kind === "default")) {
+        try {
+          probe = evalThrowsOutcome(source, fnName, [], scopedOpts, phi, file);
+        } catch {
+          // 缺参求值失败 ⇒ 证据缺失（与主路径同口径：不叠报 may-throw）
+        }
+      }
       if (outcome.kind === "unanalyzable") {
         // Bug 380：转译器拒绝构造 ⇒ 整条 L2 证据缺失 ⇒ 记 fail-closed
         // 证据（kind=Error ⇒ 「入口可能抛 Error」是 sound 的过近似：
@@ -151,19 +172,23 @@ export function collectEntryMayThrows(
         return effects;
       }
       if (outcome.kind !== "analyzed") return effects;
-      const full = outcome.result;
-      // 显式 throw（未被 try 消化）也进 L2
-      if (full.throws && full.throws.shape.k !== "never") {
+      /** 显式 throw（未被 try 消化）也进 L2 —— 主路径与缺参探针**同款**折叠 */
+      const pushHardThrows = (result: TranspiledCallResult): void => {
+        if (!result.throws || result.throws.shape.k === "never") return;
         // sum 拆成多个 kind——禁止 `kind: "TypeError | Error"` 假单名
-        for (const tName of throwAbsToKinds(full.throws)) {
+        for (const tName of throwAbsToKinds(result.throws)) {
           if (!effects.some((e) => e.kind === tName && e.cause.startsWith("throw"))) {
             effects.push({
               kind: tName,
-              cause: `throw ${formatShape(full.throws)}`,
+              cause: `throw ${formatShape(result.throws)}`,
             });
           }
         }
-      }
+      };
+      pushHardThrows(outcome.result);
+      // BUG-039：默认值里**自己的** hard throw（`a = (() => { throw … })()`）
+      // 只在零实参那趟出现 ⇒ 探针的 throws 域同样要折进本入口
+      if (probe?.kind === "analyzed") pushHardThrows(probe.result);
     } catch {
       // 求值失败 ⇒ L2 证据缺失（**不叠报** may-throw）。
       //
@@ -173,7 +198,15 @@ export function collectEntryMayThrows(
     } finally {
       setMayThrowCollector(null);
     }
-    return effects;
+    // BUG-039：两趟求值（any 实参 / 零实参）可能产出同一条事实 ⇒ 按
+    // （kind, cause）去重（求值顺序稳定 ⇒ 输出顺序稳定）。
+    const seenEffects = new Set<string>();
+    return effects.filter((e) => {
+      const key = `${e.kind}\u0000${e.cause}`;
+      if (seenEffects.has(key)) return false;
+      seenEffects.add(key);
+      return true;
+    });
   });
 }
 
@@ -515,23 +548,23 @@ function isClassValueAbs(v: Abs): boolean {
 }
 
 /**
- * 类导出入口（`new C()`）的 throws 域（Bug 1096）。
+ * 类导出入口（`new C()`）的 throws 域（Bug 1096 / BUG-107）。
  *
- * 口径（与实例方法桥的构造器隔离**孪生**，两处同构）：
- * - 构造器在**独立 may-throw 会话**里跑 ⇒ 软效果（`recordMayThrow`：any
- *   补位的强制转换 / any 成员访问）与 try 帧栈都**不进**本入口的收集域。
- *   依据 Bug 1070：构造器体里的 `x + 1` / `x.toFixed()` 在**无注解**形参上
- *   必产 TypeError ⇒ 那是 any 补位的**伪影**（真实调用点传具体实参时构造器
- *   可能 是 total 的）⇒ 报它 = 假红（一个普通类就能卡死用户 CI）。注释掉的
- *   形参（BUG-020 起按注解构造，不再补 any）同理不归因给入口。
- * - **硬抛**（NudoThrow：构造器里的无条件 `throw`）**进** throws 域 ⇒ 这是
- *   `new C()` 的真实 may-throw ⇒ 归因落点 = 类声明处的 `Class` 入口（此前
- *   构造器必抛被 `catch {}` 吞掉 ⇒ check 闸门与 `nudo test` 见证面双面
- *   不可见 ⇒ 假绿）。
+ * 口径：**与函数入口完全同款**——构造器体就是这个入口的体，所以它产生的
+ * 一切 may-throw 证据（硬抛 `NudoThrow` + `recordMayThrow` 软效果）都进本入口
+ * 的收集域。**不**在嵌套的 may-throw 会话里跑。
  *
- * 与实例方法桥的差别只有一处：**这里不吞硬抛**（要把它交给门禁），实例方法
- * 桥仍按 Bug 1070 口径把构造器的 throws 挡在方法入口之外（硬抛 ⇒ 裸实例
- * 兜底，见 {@link instanceForMethodBridge}）。
+ * BUG-107（旧实现的根因）：这里曾经再开一层 `runWithMayThrowSession`，理由是
+ * 把 any 补位的强制转换当成「伪影」（Bug 1070 口径，那时只针对**实例方法桥**
+ * ——为了分析 `obj.m()` 而顺手构造实例，构造器的软效果对**方法**入口确实是
+ * 伪影）。但 `new C()` 是**类入口本身**：`constructor(x) { x.y.z }` 与
+ * `export function G(x) { x.y.z }` 是同一个体，运行时 `new C(undefined)` 必抛
+ * TypeError。嵌套会话（`runFresh` 语义，全新隔离）让内层 collector 的软效果
+ * 一个都到不了外层 ⇒ 导出的类构造入口整条判绿（`nudo check` 对「new 必抛」
+ * 的类报 OK，而同文件同体的函数报 error）。
+ *
+ * 实例方法桥（{@link instanceForMethodBridge}）的构造器隔离**不变**：那里构造
+ * 实例只是为了拿 `this`，构造器的 throws 归因落点是类入口，不该算到方法上。
  */
 function classEntryThrows(
   clsAbs: Abs,
@@ -539,10 +572,7 @@ function classEntryThrows(
   clsName: string,
   phi: Phi,
 ): TranspiledCallResult {
-  return invokeAsThrows(
-    () => runWithMayThrowSession(() => $new(clsAbs, ctorArgs(file, clsName))),
-    phi,
-  );
+  return invokeAsThrows(() => $new(clsAbs, ctorArgs(file, clsName)), phi);
 }
 
 /**

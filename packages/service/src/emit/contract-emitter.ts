@@ -1010,22 +1010,72 @@ function collectGeneratedSections(sidecarSrc: string): GeneratedSection[] {
 
 /**
  * 从语句起点向上找含 nudo 自己 `@generated` 标记的连续注释块的字节起点；
- * 块内无标记或起点上方不是注释块 → undefined（跳过规则与 leadingCommentHas
- * 镜像：空行与 `\*\/` 可跨，遇代码行停）。
+ * 块内无标记或起点上方不是注释块 → undefined。
+ *
+ * BUG-046（旧实现的根因）：回扫时**跳过空行**，且把任何行注释 / 块注释续行
+ * 都算进同一块 ⇒ 只要连续注释里出现过 `@generated` 标记行，块起点就一路退到
+ * **最上面的手写注释**（中间隔着空行也算连续）⇒ 手写注释被算进 `prev.text`，
+ * `collectGeneratedSections` 按该起点切段 ⇒ 用户注释被并入生成段、重新发射时
+ * **静默删除**，同时台账把「段体逐字未变」报成 `written`、`--exit-on-diff`
+ * 在契约零变化时红。
+ *
+ * 新规则：
+ * - **空行 = 块边界**（停）——注释块不跨空行；手写注释与生成段之间常以空行
+ *   分隔，正是这条界线；
+ * - 块注释（以斜杠星号开头、以星号斜杠结尾）内部允许空行与 `*` 续行；
+ * - 其余以 `//` / `*` 开头的行按行注释处理；
+ * - 遇到代码行停。
  */
 function generatedCommentBlockStart(src: string, pos: number): number | undefined {
   const lines = src.slice(0, pos).split("\n");
   let blockStartLine = -1;
   let sawGenerated = false;
-  for (let i = lines.length - 1; i >= 0; i--) {
+  const startsBlockComment = (line: string): boolean => line.trim().startsWith("/*");
+  const scanLine = (i: number): void => {
     const line = lines[i]!.trim();
-    if (line === "" || line === "*/") continue;
-    if (line.startsWith("//") || line.startsWith("/*") || line.startsWith("*")) {
-      blockStartLine = i;
-      if (isGeneratedMarkerLine(line)) sawGenerated = true;
+    blockStartLine = i;
+    if (isGeneratedMarkerLine(line)) sawGenerated = true;
+  };
+  let i = lines.length - 1;
+  // 首元素是**语句所在行**在语句之前的残余（列 0 处 = 空串），不是空行分隔符
+  let firstFragment = true;
+  while (i >= 0) {
+    const line = lines[i]!.trim();
+    if (line === "") {
+      if (firstFragment) {
+        firstFragment = false;
+        i--;
+        continue;
+      }
+      break; // 空行结束注释块（BUG-046）
+    }
+    firstFragment = false;
+    if (line === "*/") {
+      // 块注释：向上找配对的 `/*`（块内空行 / `*` 续行合法）
+      let j = i - 1;
+      while (j >= 0) {
+        const l = lines[j]!.trim();
+        if (startsBlockComment(l)) break;
+        if (l !== "" && !l.startsWith("*")) {
+          j = -1; // 块内出现代码行 ⇒ 不成块
+          break;
+        }
+        j--;
+      }
+      if (j < 0) break;
+      for (let k = j; k <= i; k++) {
+        if (isGeneratedMarkerLine(lines[k]!.trim())) sawGenerated = true;
+      }
+      blockStartLine = j;
+      i = j - 1;
       continue;
     }
-    break;
+    if (line.startsWith("//") || startsBlockComment(line) || line.startsWith("*")) {
+      scanLine(i);
+      i--;
+      continue;
+    }
+    break; // 代码行
   }
   if (!sawGenerated || blockStartLine < 0) return undefined;
   const prefix = lines.slice(0, blockStartLine);

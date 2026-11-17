@@ -75,6 +75,32 @@ describe("emitContract", () => {
     expect(readFileSync(sidecar, "utf-8")).toBe(`export const add2 = fn({ x: number() });\n`);
   });
 
+  it("手写注释不被并入生成段：段上方 / 段间 / 文件末尾的注释原样保留，且段体逐字未变 ⇒ no-change（BUG-046）", async () => {
+    const file = join(dir, "note.js");
+    writeFileSync(
+      file,
+      `/**\n * @nudo:case "dom" (string())\n */\nexport function shout(s) {\n  return s.toUpperCase();\n}\n`,
+    );
+    await emitContract(file, { fnNames: ["shout"], mode: "update", all: true });
+    const sidecar = join(dir, "note.nudo.js");
+    const generated = readFileSync(sidecar, "utf-8");
+    // 上方注释（空行分隔）+ 段间注释 + 文件末尾注释
+    const annotated = `// DO NOT WIDEN: this contract is load-bearing\n\n${generated}\n// trailing note\n`;
+    writeFileSync(sidecar, annotated);
+
+    const r = await emitContract(file, { fnNames: ["shout"], mode: "update", all: true, dryRun: true });
+    // 段体逐字未变 ⇒ 不是 written（旧实现把手写注释算进段文本 ⇒ 报 written）
+    expect(r.written).toEqual([]);
+    expect(r.changed).toBe(false);
+    expect(r.diff).toBeUndefined();
+
+    const applied = await emitContract(file, { fnNames: ["shout"], mode: "update", all: true });
+    expect(applied.changed).toBe(false);
+    const after = readFileSync(sidecar, "utf-8");
+    // 手写注释一个字节都不丢
+    expect(after).toBe(annotated);
+  });
+
   it("update mode is idempotent (second run reports no change)", async () => {
     const file = join(dir, "add.js");
     writeFileSync(file, ADD_JS);

@@ -1019,3 +1019,35 @@ describe("buildSignatureHelp (LSP-G7)", () => {
   });
 
 });
+
+// ---------------------------------------------------------------------------
+// signatureHelp：成员被调者不采信「调用点观测过的 fn Abs」
+// ---------------------------------------------------------------------------
+describe("signatureHelp：成员被调者走声明域签名", () => {
+  const SRC = `export const helper = {
+  twice(q) {
+    return q * 2;
+  },
+};
+export function twiceFree(q) {
+  return q * 2;
+}
+helper.twice(3);
+twiceFree(3);
+`;
+  it("`helper.twice(` 不得渲染成 `(q: any) => 6`（随实参漂移的假精确）；顶层函数对照不变（BUG-056）", async () => {
+    await withLspServer({ "sig.js": SRC }, async ({ req, uri }) => {
+      const at = (line: number, col: number): { signatures?: Array<{ label: string }> } =>
+        req("textDocument/signatureHelp")({
+          textDocument: { uri: uri("sig.js") },
+          position: { line, character: col },
+        }) as { signatures?: Array<{ label: string }> };
+      // 成员被调者：声明域签名（与 hover / check 同口径）
+      const memberLabel = at(8, "helper.twice(".length).signatures?.[0]?.label;
+      expect(memberLabel).toBe("(q: any) => unknown");
+      // 裸标识符对照：本来就是声明域签名（BUG-104 的闸门）
+      const freeLabel = at(9, "twiceFree(".length).signatures?.[0]?.label;
+      expect(freeLabel).toBe("(q: any) => number");
+    });
+  });
+});

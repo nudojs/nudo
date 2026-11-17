@@ -718,7 +718,11 @@ export function scanLiteralCalls(
         hasInfo = absArgs.some(isInformativeArg);
       }
     }
-    if (!hasInfo || absArgs.length === 0) return;
+    // BUG-053：调用点验证面（元数）必须排在「实参无信息」早退**之前** ——
+    // 同文件通道（`checkOneCall`）已按这个顺序修过，跨文件这条没跟上：
+    // `one()` 这类零实参调用 `absArgs.length === 0` ⇒ 旧实现在到达
+    // `checkCallSite` 之前就 return ⇒ `nudo:arg-count` **永不产生**（只有
+    // 带默认值补齐的 `opt()` 因 `absArgs` 被填到形参数而侥幸过闸）。
     let full: Array<
       [number, RefineEntry, string[] | undefined, boolean | undefined, number | undefined]
     > = [];
@@ -767,6 +771,8 @@ export function scanLiteralCalls(
       });
       return;
     }
+    // BUG-053：实参个数与实参信息量无关 ⇒ 元数检查已在上面跑过，这里才早退
+    if (!hasInfo || absArgs.length === 0) return;
     // Bug 1105：展开处停止（rest / length 边界不把展开槽位算进已知长度）
     const contractArgsExt =
       parsedExt.spreadAt !== undefined ? absArgs.slice(0, parsedExt.spreadAt) : absArgs;
