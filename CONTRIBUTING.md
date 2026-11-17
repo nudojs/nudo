@@ -23,7 +23,6 @@ pnpm run verify:docs      # doc code samples still run
 `pnpm run test:local -- [vitest args]` 是本地开发循环的快车道：dist 落后于
 非测试源码时才重建（纯测试改动跳过），然后以 `NUDO_TEST_CLI=dist` 跑 CLI e2e
 （每次 spawn 0.9s → 0.22s）；worker 数按本机核数取（CI 仍 4）。2026-11-17
-`test:local` 112s。
 实测全量 978 文件 / 12438 用例（16 核）：`pnpm run test` 423s →
 `test:local` 107s。
 
