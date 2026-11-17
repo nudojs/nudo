@@ -41,7 +41,16 @@ main push 与 nightly 才跑全量——那是发布门禁。
 - **真编译门禁**：`service/emit` 里调 `tscNoEmit` 的 15 个文件（222 用例，真 tsc）。
 - **外部 oracle**：`check-real-*`（真实 npm 包）+ harvester 真实 `@types` 语料。
 
-后三类只在 `--changed` 命中、或全量门禁（main / nightly / 预推送）里执行。
+`--changed` 的实际选择面取决于依赖方向（2026-11-17 用 `vitest list --changed`
+实测）：改 `packages/nudojs` 的叶子文件（如 `check-gate-config.ts`）只选
+**19 个文件**；改 `packages/core` 的任意引擎模块（`algebra/term.ts` 加一行
+注释）选中 **904 / 978 文件**（含 42 个 CLI e2e 文件）——CLI / LSP 测试静态
+import 引擎，所以引擎变更下 PR 实际≈全量。反向盲区也记一笔：纯 spawn 的 CLI
+用例不静态 import 改动模块，不会进 `--changed` 选择，只由 main / nightly 全量
+兜底。
+
+因此 `--fast` 省的是**本地内循环**；CI 的 PR 墙钟在引擎变更下接近全量。想让
+PR 更短优先加 shard（成本换时间），不要削门禁。
 `--fast` 与 `--changed` 互斥（快面排除 CLI e2e，组合会静默漏测）。
 
 Also useful:
