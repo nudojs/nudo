@@ -22,11 +22,22 @@ describe("export --out 的模块标识与绝对路径无关", () => {
  * `// nudo-export-module:` 还内嵌**构建机绝对路径** ⇒ 同一份源码在不同
  * checkout / 不同机器上产出不同字节。
  *
- * 修法：模块标识改为**与路径无关**的稳定 id（包内 ⇒ `<包名>/<相对包根路径>`；
- * 包外 ⇒ `<stem>|<导出名集合>`），marker 里不再写绝对路径。
+ * 修法：模块标识改为**不含绝对路径的稳定 id**（包内 ⇒ `<包名>/<相对包根路径>`；
+ * 包外 ⇒ `<父目录名>/<stem>|<导出名集合>`），marker 里不再写绝对路径。
+ *
+ * 包外键带**父目录名**是 BUG-049 的另一半：旧的 `stem|导出集` 让两个不同源文件
+ * （`a/util.js` 与 `b/util.js`，同名同导出）得到同一个标识 ⇒ `isSameModule` 判真
+ * ⇒ 后导出的静默覆盖前者的四份产物（exit 0、零告警）。父目录名进键即可区分
+ * 兄弟模块，且仍是**相对**的（不含构建机路径）。
+ *
+ * 「同一份源码 ⇒ 同一字节」的真正不变量因此收窄为「**同布局**的两个 checkout
+ * ⇒ 同一字节」：树里相对布局相同（都叫 `a/clean.js`）的两个 checkout 得到同一个
+ * 标识、同一份产物；而 `A/clean.js` 与 `B/clean.js` 是**两个模块**，各产一份。
  *
  * 钉：
- * - 两个目录下的同一份源码导出后，`--out` 目录里**只有一份**产物（原地覆盖）；
+ * - 同布局的两个 checkout 导出到同一 `--out` ⇒ 只有一份产物（原地覆盖），
+ *   marker 与正文逐字相同；
+ * - 不同目录下的同名模块 ⇒ 两份产物互不覆盖（BUG-049）；
  * - marker 行不含绝对路径（可复现构建）。
  */
 
@@ -43,45 +54,71 @@ afterAll(() => {
 const SRC = "export function clean(x) {\n  return x + 1;\n}\nclean(1);\n";
 
 
-  it("同一份源码在两个目录下导出到同一 out 目录 ⇒ 只有一份产物；产物 marker 不含绝对路径（同一源码 ⇒ 同一字节）", () => {
+  it("同布局的两个 checkout 导出到同一 out ⇒ 只有一份产物、marker 与正文逐字相同；不同目录的同名模块 ⇒ 两份产物互不覆盖；marker 不含绝对路径", () => {
   {
+    // 唯一变量 = checkout 根不同，树里相对布局相同（都叫 `a/clean.js`）
     const dir = mkdtempSync(join(tmpdir(), "nudo-b016-"));
     dirs.push(dir);
-    for (const sub of ["A", "B"]) {
-      mkdirSync(join(dir, sub), { recursive: true });
-      writeFileSync(join(dir, sub, "clean.js"), SRC, "utf-8");
+    for (const root of ["co1", "co2"]) {
+      mkdirSync(join(dir, root, "a"), { recursive: true });
+      writeFileSync(join(dir, root, "a", "clean.js"), SRC, "utf-8");
     }
     const out = join(dir, "out");
 
-    const a = runCli(["export", join(dir, "A", "clean.js"), "--format", "dts", "--out", out]);
+    const a = runCli(["export", join(dir, "co1", "a", "clean.js"), "--format", "dts", "--out", out]);
     expect(a.status).toBe(0);
     expect(a.stdout).toContain("wrote");
-    const b = runCli(["export", join(dir, "B", "clean.js"), "--format", "dts", "--out", out]);
+    const first = readFileSync(join(out, "clean.d.ts"), "utf-8");
+    const b = runCli(["export", join(dir, "co2", "a", "clean.js"), "--format", "dts", "--out", out]);
     expect(b.status).toBe(0);
 
     const products = readdirSync(out).filter((f) => f.endsWith(".d.ts"));
-    // 改前：clean.d.ts（A 的遗留副本）+ clean.<hash>.d.ts（B 的新副本）
+    // 改前：clean.d.ts（co1 的遗留副本）+ clean.<hash>.d.ts（co2 的新副本）
     expect(products).toEqual(["clean.d.ts"]);
+    const marker = readFileSync(join(out, "clean.d.ts"), "utf-8").split("\n")[0]!;
+    // 相对布局相同 ⇒ 同一个模块标识（父目录名 `a`，不含 checkout 路径）
+    expect(marker).toBe("// nudo-export-module: a/clean|clean");
+    expect(marker).not.toContain(dir);
+    expect(readFileSync(join(out, "clean.d.ts"), "utf-8")).toBe(first);
   }
   {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-b016-marker-"));
+    // BUG-049：两个**不同的源文件**（同名同导出集合）不得被判成同一模块
+    const dir = mkdtempSync(join(tmpdir(), "nudo-b049-"));
     dirs.push(dir);
     mkdirSync(join(dir, "A"), { recursive: true });
     mkdirSync(join(dir, "B"), { recursive: true });
     writeFileSync(join(dir, "A", "clean.js"), SRC, "utf-8");
     writeFileSync(join(dir, "B", "clean.js"), SRC, "utf-8");
-    const outA = join(dir, "outA");
-    const outB = join(dir, "outB");
+    const out = join(dir, "out");
 
-    expect(runCli(["export", join(dir, "A", "clean.js"), "--format", "dts", "--out", outA]).status).toBe(0);
-    expect(runCli(["export", join(dir, "B", "clean.js"), "--format", "dts", "--out", outB]).status).toBe(0);
+    expect(runCli(["export", join(dir, "A", "clean.js"), "--format", "dts", "--out", out]).status).toBe(0);
+    expect(runCli(["export", join(dir, "B", "clean.js"), "--format", "dts", "--out", out]).status).toBe(0);
 
-    const a = readFileSync(join(outA, "clean.d.ts"), "utf-8");
-    const b = readFileSync(join(outB, "clean.d.ts"), "utf-8");
-    const marker = a.split("\n")[0]!;
-    expect(marker).toMatch(/^\/\/ nudo-export-module: clean\|clean$/);
-    expect(marker).not.toContain(dir);
-    expect(a).toBe(b);
+    const products = readdirSync(out).filter((f) => f.endsWith(".d.ts")).sort();
+    expect(products).toHaveLength(2);
+    expect(products).toContain("clean.d.ts");
+    const unique = products.find((f) => f !== "clean.d.ts")!;
+    expect(unique).toMatch(/^clean\.[0-9a-f]{8}\.d\.ts$/);
+    // 规范名仍归 A（后导出的不得原地吃掉前一份），第二份带 B 的模块标识
+    expect(readFileSync(join(out, "clean.d.ts"), "utf-8").split("\n")[0]!).toBe(
+      "// nudo-export-module: A/clean|clean",
+    );
+    expect(readFileSync(join(out, unique), "utf-8").split("\n")[0]!).toBe(
+      "// nudo-export-module: B/clean|clean",
+    );
+  }
+  {
+    // 同一路径重复导出 ⇒ 幂等（不新增 hash 副本、字节不变）
+    const dir = mkdtempSync(join(tmpdir(), "nudo-b016-idem-"));
+    dirs.push(dir);
+    mkdirSync(join(dir, "a"), { recursive: true });
+    writeFileSync(join(dir, "a", "clean.js"), SRC, "utf-8");
+    const out = join(dir, "out");
+    expect(runCli(["export", join(dir, "a", "clean.js"), "--format", "dts", "--out", out]).status).toBe(0);
+    const once = readFileSync(join(out, "clean.d.ts"), "utf-8");
+    expect(runCli(["export", join(dir, "a", "clean.js"), "--format", "dts", "--out", out]).status).toBe(0);
+    expect(readdirSync(out).filter((f) => f.endsWith(".d.ts"))).toEqual(["clean.d.ts"]);
+    expect(readFileSync(join(out, "clean.d.ts"), "utf-8")).toBe(once);
   }
 });
 
