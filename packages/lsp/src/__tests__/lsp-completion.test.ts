@@ -346,3 +346,23 @@ const SRC = "export const obj = { alpha: 1, beta: 2 };\nobj.\n";
   });
 
 });
+
+// ---------------------------------------------------------------------------
+// 可选链接收者
+// ---------------------------------------------------------------------------
+describe("可选链 `o?.` 的成员补全", () => {
+  it("`o?.` 与 `o.` 同候选（BUG-089）", () => {
+    const src = `export const o = { a: 1, b: 2 };
+export function f() { return o?.a; }
+`;
+    withTempDir("nudo-opt-chain-", (dir) => {
+      const file = join(dir, "c.js");
+      writeFileSync(file, src, "utf-8");
+      // 光标在 `o?.` 之后（行 2、`o` 起始列 28 → 点号后第 32 列）
+      const items = getCompletionsAtPosition(file, src, 2, 32);
+      const labels = items.map((i) => i.label);
+      expect(labels).toContain("a");
+      expect(labels).toContain("b");
+    });
+  });
+});

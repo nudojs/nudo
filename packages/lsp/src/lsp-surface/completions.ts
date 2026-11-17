@@ -415,6 +415,10 @@ function isCodePrefix(prefix: string): boolean {
 function classifyReceiver(head: string): Receiver {
   const cur = head.replace(/\s+$/u, "");
   if (cur === "") return { kind: "unknown" };
+  // BUG-089：可选链接收者（`o?.` / `f()?.` / `a[0]?.`）——尾随 `?` 是链操作符，
+  // 不是接收者的一部分。旧实现在这里让 `?` 落到末字符分派 ⇒ unknown ⇒ 零候选
+  // （同一行 `o.` 正常）。
+  if (cur[cur.length - 1] === "?") return classifyReceiver(cur.slice(0, -1));
   const last = cur[cur.length - 1]!;
 
   // ① 括号表达式 / 调用表达式
