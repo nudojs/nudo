@@ -3417,7 +3417,7 @@ const INTERNAL_ID_RE = /#\d+/;
  * 靶不可扩展 ⇒ 陷阱不得凭空报告描述符（原生定抛 TypeError）。此前该分支
  * 早退 ⇒ 原生必抛的导出入口 `nudo check` 判绿（门禁假绿）。
  */
-describe("BUG-123 Proxy gOPD non-extensible target invariant", () => {
+describe("Proxy gOPD non-extensible target invariant（BUG-123）", () => {
   const gate = (body: string) => `export function f() { ${body} }`;
   const read = (target: string) =>
     `${target} const p = new Proxy(t, { getOwnPropertyDescriptor() { return { value: 1, writable: true, enumerable: true, configurable: true }; } }); return Object.getOwnPropertyDescriptor(p, "a");`;
@@ -3443,7 +3443,7 @@ describe("BUG-123 Proxy gOPD non-extensible target invariant", () => {
  * ⇒ getter / 方法体从不求值，必抛 getter 零执法（门禁假绿），返回值也丢域。
  * 修复：$get 在 inherited 槽 / protoTable 处沿链求值（getter this = receiver）。
  */
-describe("BUG-124 ordinary object prototype-chain accessors/methods", () => {
+describe("ordinary object prototype-chain accessors/methods（BUG-124）", () => {
   it("Object.create(proto) 的 getter 以 receiver 求值", () => {
     const r = call(
       `export function f() { const proto = { v: 2, get x() { return this.v; } }; const o = Object.create(proto); o.v = 7; return o.x; }`,

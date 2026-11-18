@@ -9,8 +9,10 @@
  */
 import { describe, it, expect } from "vitest";
 import { checkSource, pTrue } from "../index.ts";
+import { litValue } from "../abs.ts";
 import { sidecarOpts } from "./nudo-constraints.ts";
 import { transpileSource } from "../exec/index.ts";
+import { call, callLit } from "./eval-helpers.ts";
 
 const SIDECAR = `
 export const ge1 = number().ge(1);
@@ -82,5 +84,58 @@ describe("宿主内建遮蔽集按作用域计算", () => {
     // 形参绑定按遮蔽发射（prologue 一行）；模块级 `NaN` 仍是内建字面量
     expect(code.match(/\$absVal\(NaN\)/g) ?? []).toHaveLength(1);
     expect(code).toContain("export let h = $lit(0/0);");
+  });
+});
+
+/**
+ * 形参遮蔽的**两个新增作用域面**（其余路径由 `transpileFnBodyStmts` 的
+ * varScope 重算覆盖）：
+ * - 箭头**表达式体**（不经 fn-body 重算）——`(NaN) => NaN`；
+ * - 参数默认值表达式（在函数自身作用域求值）——`function f(NaN, b = NaN)`；
+ * - 具名函数/类**表达式**的自身名（NFE 体内可见的不可变绑定）——
+ *   `function undefined(){ return undefined }`。
+ * 修复前三者都把内建名折成字面量（`$lit(0/0)` / `$lit(void 0)`）。
+ */
+describe("形参 / NFE 自身名遮蔽（BUG-1071）", () => {
+  it("箭头表达式体：形参 NaN 遮蔽内建", () => {
+    expect(litValue(callLit(`export const f = (NaN) => NaN;`, "f", 1).result)).toEqual({
+      ok: true,
+      value: 1,
+    });
+  });
+
+  it("参数默认值：NaN 形参遮蔽内建（声明面与函数表达式面）", () => {
+    expect(
+      litValue(callLit(`export function f(NaN, b = NaN) { return b; }`, "f", 1).result),
+    ).toEqual({ ok: true, value: 1 });
+    expect(
+      litValue(callLit(`export const f = function (NaN, b = NaN) { return b; };`, "f", 1).result),
+    ).toEqual({ ok: true, value: 1 });
+  });
+
+  it("箭头表达式体的 NaN 守卫：Number 形参不被当内建", () => {
+    const code = transpileSource("export const f = (Number, x) => Number.isNaN(x) ? 1 : 2;\n");
+    // 遮蔽后 `Number.isNaN` 是用户值调用 ⇒ 不得产出 ne(x, NaN) 收窄
+    expect(code).not.toContain("$refineNotNaN(x)");
+  });
+
+  it("具名函数表达式的自身名在体内可见（NFE self-name）", () => {
+    expect(
+      litValue(
+        call(
+          `export function f() { const g = function undefined() { return typeof undefined; }; return g(); }`,
+        ).result,
+      ),
+    ).toEqual({ ok: true, value: "function" });
+  });
+
+  it("具名类表达式的自身名在类体内可见", () => {
+    expect(
+      litValue(
+        call(
+          `export function f() { const C = class undefined { static t() { return typeof undefined; } }; return C.t(); }`,
+        ).result,
+      ),
+    ).toEqual({ ok: true, value: "function" });
   });
 });

@@ -1982,7 +1982,7 @@ describe("生成器对象的自有可枚举面为空", () => {
 });
 
 describe("（S18）：投影面不发布 internal 槽", () => {
-  it("签名面不发布协议方法槽（无 next/return/throw/constructor/@@iterator）；签名面保留数字下标元素域（yield* s → \"0\": string）——族 01 口径不被破；@@iterator 槽按符号键投影建模（\"@@iterator\" 槽带 symbolKey 标记）；负控制：协议面在运行面仍可用（typeof gi.next → \"function\"）", () => {
+  it("签名面不发布协议方法槽（无 next/return/throw/constructor/@@iterator）；签名面按生成器类型参数发布元素域（yield* s → Generator<string, …>）——元素域不被丢；@@iterator 槽按符号键投影建模（\"@@iterator\" 槽带 symbolKey 标记）；负控制：协议面在运行面仍可用（typeof gi.next → \"function\"）", () => {
   {
     const sig = formatAbs_____format_format_ts(
       call(`export function* g() { yield 1; yield "s"; }`, "g").result as never,
@@ -2021,10 +2021,34 @@ describe("（S18）：投影面不发布 internal 槽", () => {
     ).toEqual({ ok: true, value: "function" });
   }
 });
-
-
-
+  it("手写迭代器对象（普通 next + return/throw + @@iterator 自有成员）不冒充 Generator——退回普通对象投影；负控：真生成器仍按协议渲染", () => {
+    // 无 facets.brand 的旧 Abs 兜底只看协议槽名字 ⇒ 用户手写的迭代器对象
+    // （成员是普通自有属性，不是 internal 槽）曾被谎报成 Generator。
+    const hand = formatAbs_____format_format_ts(
+      call(
+        `export function f() { return { next() {}, return() {}, [Symbol.iterator]() {} }; }`,
+        "f",
+      ).result as never,
+    );
+    expect(hand).not.toContain("Generator");
+    expect(hand).toContain("next");
+    const handThrow = formatAbs_____format_format_ts(
+      call(
+        `export function f() { return { next() {}, throw() {}, [Symbol.iterator]() {} }; }`,
+        "f",
+      ).result as never,
+    );
+    expect(handThrow).not.toContain("Generator");
+    // 负控：真生成器（协议槽 internal）仍渲染协议形态
+    const gen = formatAbs_____format_format_ts(
+      call(`export function* g() { yield 1; }`, "g").result as never,
+    );
+    expect(gen).toContain("Generator<1, undefined, unknown>");
+  });
 });
+
+
+
 }
 
 describe("guard-internal-slots", () => {

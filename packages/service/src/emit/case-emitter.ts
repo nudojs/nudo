@@ -885,10 +885,20 @@ export function insertGeneratedCaseDirectives(
     const idx = r.line - 1;
     const oldLine = lines[idx];
     if (oldLine === undefined) continue;
-    const at = oldLine.indexOf("@nudo:case");
-    const prefix = at >= 0 ? oldLine.slice(0, at) : `${leadingIndent(oldLine)}* `;
+    // `\r` 先摘下来：后面按 `*/` 切出的后缀若含行尾 "\r" 会再补一次（重复行尾）。
     const cr = oldLine.endsWith("\r") ? "\r" : "";
-    lines[idx] = prefix + r.directive.replace(/^\s*\*\s*/, "") + cr;
+    const line = cr === "" ? oldLine : oldLine.slice(0, -1);
+    const at = line.indexOf("@nudo:case");
+    const prefix = at >= 0 ? line.slice(0, at) : `${leadingIndent(line)}* `;
+    // 陈旧见证行可能是块注释的**末行**（` * @nudo:case "call@L4" (2) */`）——
+    // 整行重写会把 `*/` 一起删掉（写盘后注释永不闭合），同行 `*/` 之后的
+    // 其他内容（第二个指令 / 行尾注释）也会丢。只替换指令本体，从 `*/`
+    // 起的后缀原样接在新指令之后；后缀缺失时保持整行替换（普通 JSDoc 行）。
+    const closeAt = at >= 0 ? line.indexOf("*/", at) : -1;
+    const suffix = closeAt >= 0 ? line.slice(closeAt) : "";
+    const body = r.directive.replace(/^\s*\*\s*/, "");
+    lines[idx] =
+      prefix + body + (suffix === "" ? "" : `${body.endsWith(" ") ? "" : " "}${suffix}`) + cr;
   }
   for (const edit of edits) {
     const declIdx = edit.line - 1;

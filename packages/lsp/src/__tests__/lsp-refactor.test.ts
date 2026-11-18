@@ -1754,7 +1754,7 @@ const SRC = ["const total = 1;", ""].join("\n");
 // ---------------------------------------------------------------------------
 // BUG-072 / BUG-117：extract 不得产出语义已变的代码
 // ---------------------------------------------------------------------------
-describe("BUG-072 选区读 this / super 时拒绝提取", () => {
+describe("选区读 this / super 时拒绝提取（BUG-072）", () => {
   const CLS = `export class C {\n  constructor() { this.v = 21; }\n  m() {\n    const y = this.v * 2;\n    return y;\n  }\n}\n`;
 
   it("方法体选区读 this ⇒ 拒绝（不产出模块级函数）", () => {
@@ -1776,7 +1776,7 @@ describe("BUG-072 选区读 this / super 时拒绝提取", () => {
   });
 });
 
-describe("BUG-117 选区里的纯赋值目标进形参表并写回", () => {
+describe("选区里的纯赋值目标进形参表并写回（BUG-117）", () => {
   const SRC = `export function f(compute) {\n  let x = 0;\n  x = compute();\n  return x;\n}\n`;
 
   it("语句选区：x 进 params，调用点 x = extracted(compute, x)，运行仍为 5", () => {

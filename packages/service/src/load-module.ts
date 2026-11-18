@@ -102,7 +102,13 @@ function resolveTableOf(fromFile: string): ResolveTable {
  *
  * 按**引用方扩展名**生成改写候选，放在候选表最前（命中即优先）；改写文件
  * 不存在时 statSync 自然 miss，回落既有候选表，不改任何旧行为。
- * `.mts` 的 ESM 表本来只有 `[p]` 一条 ⇒ 这里也补上了 `.js` → `.mts`。
+ *
+ * 改写表必须与 `tsc` 同口径（不能按引用方格式自己发明）：
+ * - `.js` → `lib.ts` / `lib.tsx` / `lib.d.ts`，**对全部 `.ts/.tsx/.mts/.cts`
+ *   引用方相同**——tsc 不按引用方把 `.js` 换成 `.mts`/`.cts`（`.mts` 引用方
+ *   + 只有 `lib.mts` ⇒ TS2307；+ `lib.ts` ⇒ OK）；
+ * - `.mjs` → `lib.mts`，`.cjs` → `lib.cts`（格式后缀各归各）；
+ * - `.jsx` → `lib.tsx` / `lib.ts`。
  */
 function nodeNextSpecRewrites(spec: string, fromFile: string): string[] {
   const importerExt = extname(fromFile).toLowerCase();
@@ -117,8 +123,6 @@ function nodeNextSpecRewrites(spec: string, fromFile: string): string[] {
   const m = /\.(js|jsx|mjs|cjs)$/.exec(spec);
   if (!m) return [];
   const stem = spec.slice(0, -m[0].length);
-  const isEsmImporter = importerExt === ".mts";
-  const isCjsImporter = importerExt === ".cts";
   switch (m[1]) {
     case "mjs":
       return [`${stem}.mts`];
@@ -127,12 +131,9 @@ function nodeNextSpecRewrites(spec: string, fromFile: string): string[] {
     case "jsx":
       // `.jsx` 说明符对应 `.tsx` 源；同时试 `.ts`（同一产物后缀的宽松口径）
       return [`${stem}.tsx`, `${stem}.ts`];
-    default: {
-      // `.js` 在 .mts / .cts 里按各自格式优先；在 .ts 里按 .ts / .tsx 顺序
-      const own = isEsmImporter ? `${stem}.mts` : isCjsImporter ? `${stem}.cts` : `${stem}.ts`;
-      const extra = importerExt === ".tsx" ? [`${stem}.tsx`] : [`${stem}.ts`];
-      return [own, ...(extra[0] === own ? [] : extra)];
-    }
+    default:
+      // `.js` 是**声明相对**后缀：与引用方扩展名无关，固定试 TS 源后缀。
+      return [`${stem}.ts`, `${stem}.tsx`, `${stem}.d.ts`];
   }
 }
 

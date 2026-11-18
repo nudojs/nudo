@@ -29,7 +29,7 @@
 
 import type { Abs } from "../../abs.ts";
 import { abs, numLit, litValue, boolLit, bool, unknown, strLit, bigintLit } from "../../abs.ts";
-import { objOf, getSlot } from "../../objects.ts";
+import { objOf, getSlot, canonicalArrayIndex } from "../../objects.ts";
 import { isSetAbs, isMapAbs } from "../../collections.ts";
 import { validateCallableArg, applyCallbackValue } from "../../hof.ts";
 import { pTrue } from "../../pred.ts";
@@ -487,9 +487,17 @@ function makeTypedArrayFromBuffer(
       const srcByteOffAbs = srcSlots.byteOffset ? toIndexLiteralValue(srcSlots.byteOffset.value) : undefined;
       if (srcByteOffAbs !== undefined && offV >= srcByteOffAbs && (offV - srcByteOffAbs) % bpe === 0) {
         const srcOffset = (offV - srcByteOffAbs) / bpe;
-        for (let i = 0; i < foldLen; i++) {
-          const el = getSlot(srcSlots, String(srcOffset + i))?.value;
-          if (el) slots[String(i)] = { value: el };
+        // BUG-129：只拷源视图**实际存在**的数字槽。原实现按 foldLen 逐下标取槽
+        // ——foldLen 来自底层缓冲区 byteLength（可达 2^53-1，如
+        // `new Uint8Array(new Uint8Array(2e9).buffer)`）⇒ 巨大缓冲区的循环把
+        // 分析拖死；缺失槽 getSlot 本就返回 undefined ⇒ 两口径等价，但上界
+        // 变成源槽数。
+        for (const [k, s] of Object.entries(srcSlots)) {
+          const idx = canonicalArrayIndex(k);
+          if (idx === undefined) continue;
+          const i = idx - srcOffset;
+          if (i < 0 || i >= foldLen) continue;
+          slots[String(i)] = { value: s.value };
         }
       }
     }

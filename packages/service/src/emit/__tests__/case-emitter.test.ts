@@ -384,6 +384,28 @@ function add(a, b) {
     expect(result.source).not.toContain('@nudo:case "call@L9" (2)');
   });
 
+  it("keeps the block terminator when the refreshed witness sits on the last line", () => {
+    // 陈旧见证可能落在块注释的**末行**（`… (2) */`）：整行重写会连 `*/`
+    // 一起删掉 ⇒ 写盘后注释永不闭合，函数声明被吞进注释里。
+    const source = `/**
+ * @nudo:case "mine" (1)
+ * @nudo:case "call@L9" (2) */
+function add(a, b) {
+  return a + b;
+}
+`;
+    const result = insertGeneratedCaseDirectives(
+      source,
+      makeAnalysis([makeFn("add", 4, [{ name: "call@L9", args: [absLit(3)], source: "callsite" }])]),
+      { rebuildGenerated: true },
+    );
+    expect(result.changed).toBe(true);
+    expect(result.source).toContain('@nudo:case "call@L9" (3) */');
+    expect(result.source).not.toContain('"call@L9" (2)');
+    expect(result.source.match(/\*\//g)).toHaveLength(1);
+    expect(result.source.endsWith("function add(a, b) {\n  return a + b;\n}\n")).toBe(true);
+  });
+
   it("appends a newly discovered call site to an already-frozen function", () => {
     // 二次 freeze：已固化函数**新增**的调用点要看得见（族 14 ）——
     // 旧口径「函数已有 case 指令 ⇒ 整函数跳过」⇒ 新见证被静默丢弃。

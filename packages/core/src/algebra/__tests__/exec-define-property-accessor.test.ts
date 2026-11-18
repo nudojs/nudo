@@ -119,7 +119,7 @@ describe("defineProperty accessor descriptors install and validate", () => {
  * 把它当数据槽读取 ⇒ getter 从不调用、返回值折 unknown、必抛异常零执法
  * （普通对象同款访问器正确抛）。修复：四个消费面统一按 side table 求值。
  */
-describe("BUG-115 class instance own accessors ($get / spread / assign / entries)", () => {
+describe("class instance own accessors ($get / spread / assign / entries)（BUG-115）", () => {
   const mk = (getBody: string) =>
     `class C { x = 1; } function mk() { const c = new C(); Object.defineProperty(c, "y", { get() { ${getBody} }, enumerable: true }); return c; }`;
 
@@ -168,5 +168,71 @@ describe("BUG-115 class instance own accessors ($get / spread / assign / entries
       const r = call(`export function f() { ${body} ${tail} }`);
       expect(throwsName(r), tail).toBe("Error");
     }
+  });
+});
+
+/**
+ * 自有访问器的**键视图 vs 值视图**（BUG-115）：Object.keys /
+ * Object.getOwnPropertyNames / Reflect.ownKeys 是纯键投影（原生**不执行**
+ * [[Get]]）；Object.values / entries / spread / assign 才求值 getter。
+ * `Object.assign(frozenTarget, instance)` 的 frozen dry-run（键基数）同样
+ * 不得预求值源 getter——原生在首个失败 [[Set]] 处抛，后续 getter 零次执行。
+ */
+describe("own accessor keys-only views（BUG-115）", () => {
+  /** 实例：数据键 x 在前、可枚举 getter 键 y 在后（getter 计数 n） */
+  const counted = (getBody = "n += 1; return 2;") =>
+    `let n = 0; class C { x = 1; } const c = new C(); Object.defineProperty(c, "y", { get() { ${getBody} }, enumerable: true });`;
+
+  it("Object.keys / gOPN 不求值 getter；values / entries 求值一次", () => {
+    expect(
+      litValue(
+        call(
+          `export function f() { ${counted()} const vals = Object.values(c).length; n = 0; Object.keys(c); return vals + "," + n; }`,
+        ).result,
+      ),
+    ).toEqual({ ok: true, value: "2,0" });
+    expect(
+      litValue(
+        call(
+          `export function f() { ${counted()} Object.getOwnPropertyNames(c); return n; }`,
+        ).result,
+      ),
+    ).toEqual({ ok: true, value: 0 });
+    expect(
+      litValue(
+        call(
+          `export function f() { ${counted()} Object.keys(c).join(","); return n; }`,
+        ).result,
+      ),
+    ).toEqual({ ok: true, value: 0 });
+    expect(
+      litValue(
+        call(
+          `export function f() { ${counted()} Object.values(c); return n; }`,
+        ).result,
+      ),
+    ).toEqual({ ok: true, value: 1 });
+  });
+
+  it("必抛 getter 不使 Object.keys 抛（值视图仍抛）", () => {
+    const src = `export function f() { ${counted('throw new Error("g");')} return Object.keys(c).join(","); }`;
+    const keys = call(src);
+    expect(throwsName(keys)).toBeUndefined();
+    expect(litValue(keys.result)).toEqual({ ok: true, value: "x,y" });
+    expect(throwsName(call(`export function f() { ${counted('throw new Error("g");')} return Object.values(c); }`))).toBe(
+      "Error",
+    );
+  });
+
+  it("frozen 目标 assign：首键 [[Set]] 即抛 ⇒ 源 getter 零次求值", () => {
+    const r = call(
+      `export function f() { ${counted()} try { Object.assign(Object.freeze({}), c); } catch (e) { return n; } return -1; }`,
+    );
+    expect(litValue(r.result)).toEqual({ ok: true, value: 0 });
+    const t = call(`export function f() { ${counted()} return Object.assign(Object.freeze({}), c); }`);
+    expect(throwsName(t)).toBe("TypeError");
+    // 对照：非 frozen 目标求值 getter 一次并完成拷贝
+    const ok = call(`export function f() { ${counted()} const t = Object.assign({}, c); return [t.y, n].join(","); }`);
+    expect(litValue(ok.result)).toEqual({ ok: true, value: "2,1" });
   });
 });

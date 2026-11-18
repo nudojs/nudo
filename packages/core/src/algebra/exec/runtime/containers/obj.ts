@@ -28,6 +28,7 @@ import {
   getSlot,
   setSlot,
   setProtoAbs,
+  markKeySetOpenAbs,
 } from "../../../objects.ts";
 import { getFnImpl, attachFnImpl } from "../../../abs-fn.ts";
 import {
@@ -439,10 +440,18 @@ export function $spread(a: Abs, b: Abs): Abs {
       }
     }
   }
+  // any 展开：无约束键 → open obj（不是空 {} / unknown）
+  // BUG-1071：`any` 源的**自有键集不可判**（可能新增任意键）——合成的
+  // open obj 必须带 `markKeySetOpenAbs`（与 objects.ts `spread()` 的抽象源
+  // 臂同语义），否则键家族（Object.keys/values/entries）会把 `{...x}` 折
+  // exact 空元组（自信的确切错值），原型链读面也会把继承值当定值。
+  // 具体对象源仍走原路径（键集已知 ⇒ 结果可精确）。
+  const anySpreadSrc = (): Abs =>
+    markKeySetOpenAbs(abs({ k: "obj", slots: {}, open: true }, undefined, undefined, "partial"));
   if (aa?.shape?.k === "any" || b0?.shape?.k === "any") {
     const base = spreadObj(
-      aa?.shape?.k === "any" ? abs({ k: "obj", slots: {}, open: true }, undefined, undefined, "partial") : aa,
-      b0?.shape?.k === "any" ? abs({ k: "obj", slots: {}, open: true }, undefined, undefined, "partial") : b0,
+      aa?.shape?.k === "any" ? anySpreadSrc() : aa,
+      b0?.shape?.k === "any" ? anySpreadSrc() : b0,
     );
     return base;
   }

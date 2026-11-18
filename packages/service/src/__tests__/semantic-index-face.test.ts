@@ -6,7 +6,12 @@
  * `shadowEnabled` 控制：默认不建索引，保证分析热路径零额外遍历。
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { setSemanticIndexEntryFace, setSemanticIndexShadow } from "@nudojs/core/internal";
+import { checkSource, pTrue } from "@nudojs/core";
+import {
+  buildSemanticIndex,
+  setSemanticIndexEntryFace,
+  setSemanticIndexShadow,
+} from "@nudojs/core/internal";
 import { parse } from "@nudojs/parser";
 import { analyzeFile } from "../analyzer.ts";
 import { analysisFileCacheKey } from "../analyzer-cache.ts";
@@ -115,5 +120,59 @@ describe("ADR 0001 阶段 1 · service 入口面只读索引", () => {
     const off = analysisFileCacheKey("/test/cache-face.js", CONTROL).auxKey;
     expect(on).toBe(onAgain);
     expect(off).not.toBe(on);
+  });
+});
+
+describe("对象字面量展开的 last-wins / const-only 口径（索引面与普查同面）", () => {
+  const indexEntries = (src: string): readonly string[] => buildSemanticIndex(parse(src)).entries;
+
+  it("spread 之后的非可调用覆盖 ⇒ helper 不进入口表，other 保留", () => {
+    const entries = indexEntries(`const base = { helper() { return 1; }, other() { return 3; } };
+export const api = { ...base, helper: 42 };
+`);
+    expect(entries).not.toContain("helper");
+    expect(entries).toContain("other");
+  });
+
+  it("spread 之后的同名对象方法覆盖前者：helper 只登记一次", () => {
+    const entries = indexEntries(`const base = { helper() { return 1; } };
+export const api = { ...base, helper() { return 2; } };
+`);
+    expect(entries.filter((n) => n === "helper")).toHaveLength(1);
+  });
+
+  it("let/var 对象的初值不入索引：重赋值后 stale / fresh 都不登记", () => {
+    const entries = indexEntries(`let base = { stale() { return 1; } };
+base = { fresh() { return 2; } };
+export const api = { ...base };
+`);
+    expect(entries).not.toContain("stale");
+    expect(entries).not.toContain("fresh");
+  });
+
+  it("checkSource 签名面不残留 stale / helper（index ∪ 旧面补齐无陈旧入口）", () => {
+    const stale = checkSource(
+      "/t/face-stale.js",
+      `let base = { stale() { return 1; } };
+base = { fresh() { return 2; } };
+export const api = { ...base };
+`,
+      pTrue,
+      { fromFile: "/t/face-stale.js" },
+    );
+    expect(stale.signatures.map((s) => s.name)).not.toContain("stale");
+
+    const overridden = checkSource(
+      "/t/face-override.js",
+      `const base = { helper() { return 1; }, other() { return 3; } };
+export const api = { ...base, helper: 42 };
+export function h() { return api.helper(); }
+`,
+      pTrue,
+      { fromFile: "/t/face-override.js" },
+    );
+    const names = overridden.signatures.map((s) => s.name);
+    expect(names).not.toContain("helper");
+    expect(names).toContain("other");
   });
 });

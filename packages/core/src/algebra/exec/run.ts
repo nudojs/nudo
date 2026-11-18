@@ -1324,7 +1324,12 @@ function callTranspiledExportFullInner(
       // 原生异常按 BUG-073 归 module-throw（不是引擎缺陷）。
       const impl = getFnImpl(fn);
       const fallbackOrigin: EvalFallbackOrigin = impl?.apply ? "host" : "module";
-      return runExportCallGuarded(() => $call(fn, args), {
+      // 编译体 apply 钩子把 thisArg 送进宿主 this（$rawThis 承接）；缺省
+      // undefined ≡ 旧行为（strict 直接调用的 this 也是 undefined）。
+      // BUG-1071：此前只在宿主函数分支传 thisArg ⇒ `export const f =
+      // function(this: Area){ return this.area() }` 的一等 fn Abs 出口
+      // 丢掉接收者 ⇒ 体内 `this` 折 undefined ⇒ 假 entry-may-throw。
+      return runExportCallGuarded(() => $call(fn, args, opts?.thisArg), {
         // 观测结果回填 fn.returnType 槽（与类方法槽同口径，展示用
         // 不回写分析）——arity-only fn Abs 调用后携带真实返回
         onNormal: (r) => refineFnReturnType(fn, r),

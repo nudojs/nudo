@@ -64,13 +64,51 @@ function splitTopLevelUnion(expr: string): string[] {
  * `unknown` 不是合法的约束构建器实参（`union(number(), unknown)` 会炸）。
  */
 /**
+ * 把引号字符串的内容替换成等长空白（保留引号与长度，下标/偏移不变）。
+ *
+ * 结构判定只看字符串**外侧**：`lit("items[]")` 与 `"number[]"` 里的 `[]`
+ * 是**载荷文本**（合法构建器实参 / 字符串字面量），不是数组类型语法。
+ * 旧实现直接对原文跑结构正则 ⇒ 这两个合法载荷被误判成「TS 结构类型」，
+ * 注入 `unknown` 并把回显记成不忠实。
+ */
+function maskQuotedStrings(expr: string): string {
+  let out = "";
+  let inString: string | null = null;
+  for (let i = 0; i < expr.length; i++) {
+    const c = expr[i]!;
+    if (inString) {
+      // 转义感知（与 splitTopLevelUnion 同口径）：`\` + 任意字符整体遮掉
+      if (c === "\\" && i + 1 < expr.length) {
+        out += "  ";
+        i++;
+        continue;
+      }
+      if (c === inString) {
+        inString = null;
+        out += c;
+      } else {
+        out += " ";
+      }
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      inString = c;
+      out += c;
+      continue;
+    }
+    out += c;
+  }
+  return out;
+}
+
+/**
  * BUG-099：TS 结构类型表达式（`{a:number}` / `number[]` / `(a:number)=>T`）
  * 在 `@nudo:as` 文法里表达不了 —— 它们既不是构建器调用，也不是字面量，
  * 注入后只会被 `parseCaseArgExpr` 降级成 `unknown` / 不完整形状。
  * 旧实现按「含 `[({` 或 `=>` 就当可表达」放行 ⇒ 回显「按原样应用」。
  */
 function looksLikeTypeExpression(expr: string): boolean {
-  const s = expr.trim();
+  const s = maskQuotedStrings(expr).trim();
   // 数组类型：`number[]` / `readonly string[]`
   if (/\b[A-Za-z_$][\w$]*(\[\])+/.test(s)) return true;
   // 泛型类型引用：`Array<T>` / `Record<…>`

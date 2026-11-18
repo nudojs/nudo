@@ -755,8 +755,18 @@ export function scanCaseInconsistency(
    * `findFnDirectiveScope` 的回退命中）。只对**顶层对象字面量绑定**做映射；
    * 类方法的 scope 名 `C.m` 不走此路（类入口名也是 `C.m`）。
    */
-  const entryNameOfScope = (scope: { name: string; owner?: string }): string | undefined => {
+  const entryNameOfScope = (scope: {
+    name: string;
+    owner?: string;
+    depth?: number;
+  }): string | undefined => {
     if (knownFns.includes(scope.name)) return scope.name;
+    // BUG-138：只映射**顶层**对象字面量方法的 scope（`depth === 0`，与
+    // `findFnDirectiveScope` 的回退同口径）。函数体内同名对象（局部 `const
+    // api = { log(){…} }`）的 scope 名也是 `api.log`，owner 名可能与顶层导出
+    // 对象撞名 ⇒ 不加 depth 闸门时，局部的 `@nudo:case` 会拿去对账无关入口的
+    // 契约（假 `nudo:case-inconsistency`）。
+    if ((scope.depth ?? 0) !== 0) return undefined;
     const owner = scope.owner;
     if (owner === undefined || !objectOwners.has(owner)) return undefined;
     const bare = scope.name.slice(scope.name.lastIndexOf(".") + 1);

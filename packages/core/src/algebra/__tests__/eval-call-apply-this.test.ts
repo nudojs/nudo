@@ -8,6 +8,7 @@
 import { describe, it, expect } from "vitest";
 import { litValue } from "@nudojs/core";
 import { call } from "./eval-helpers.ts";
+import { runTranspiled, callTranspiledExportFull, setEvalCallCollector, type EvalCallRecord } from "../index.ts";
 
 describe("evaluator call/apply/bind thisArg", () => {
   it("call passes primitive thisArg (strict: no boxing)", () => {
@@ -57,7 +58,7 @@ describe("evaluator call/apply/bind thisArg", () => {
  * Array.from 的同款访问器已走 accessorReadDomain（两面结论相反）。修复：
  * 两个消费点与 Array.from 同口径（读一次、副作用一次）。
  */
-describe("BUG-127 own accessor length ($len / Function.prototype.apply)", () => {
+describe("自有访问器 length 的读取（$len / Function.prototype.apply）（BUG-127）", () => {
   it("$len 求值对象字面量 / defineProperty 的自有 getter", () => {
     expect(
       litValue(call(`export function f() { const o = { get length() { return 2; } }; return o.length; }`).result),
@@ -103,5 +104,62 @@ describe("BUG-127 own accessor length ($len / Function.prototype.apply)", () => 
         ).result,
       ),
     ).toEqual({ ok: true, value: 6 });
+  });
+});
+
+/**
+ * BUG-1071：`.call` / `.apply` / bind 产物调用的调用点见证（BUG-045）此前只在
+ * 成功路径发——调用抛出时 `finally` 之前的 `noteIndirectCall` 根本没执行 ⇒
+ * `nudo test` 里这条间接调用的现场像「从没执行过」。修复：调用包进 thunk，
+ * 记录在 `finally` 发（`threw: true` + `throwPayloadOf(e)`，与类方法/属性值
+ * 派发同形）。
+ */
+describe("间接调用抛出也发调用点见证（BUG-1071）", () => {
+  function recordsOf(src: string, fnName = "f"): EvalCallRecord[] {
+    const records: EvalCallRecord[] = [];
+    const prev = setEvalCallCollector((r) => records.push(r));
+    try {
+      const run = runTranspiled(src, { mode: "analyze" });
+      callTranspiledExportFull(run, fnName, []);
+    } finally {
+      setEvalCallCollector(prev);
+    }
+    return records;
+  }
+
+  const THROWING = `function boom() { throw new TypeError("x"); }`;
+
+  it(".call 抛出：record.threw = true，载荷为 TypeError brand", () => {
+    const rec = recordsOf(`export function f() { ${THROWING} boom.call(null); }`).find(
+      (r) => r.fnName === "boom",
+    );
+    expect(rec).toBeDefined();
+    expect(rec!.threw).toBe(true);
+    expect(rec!.result.shape.k).toBe("brand");
+    expect((rec!.result.shape as { name?: string }).name).toBe("TypeError");
+  });
+
+  it(".apply 抛出同款见证", () => {
+    const rec = recordsOf(`export function f() { ${THROWING} boom.apply(null, []); }`).find(
+      (r) => r.fnName === "boom",
+    );
+    expect(rec).toBeDefined();
+    expect(rec!.threw).toBe(true);
+  });
+
+  it("bind 产物调用抛出同款见证", () => {
+    const rec = recordsOf(`export function f() { ${THROWING} const g = boom.bind(null); g(); }`).find(
+      (r) => r.fnName === "boom",
+    );
+    expect(rec).toBeDefined();
+    expect(rec!.threw).toBe(true);
+  });
+
+  it("对照：未抛的 .call 见证仍 threw = false", () => {
+    const rec = recordsOf(
+      `export function f() { function ok() { return 1; } ok.call(null); }`,
+    ).find((r) => r.fnName === "ok");
+    expect(rec).toBeDefined();
+    expect(rec!.threw).toBe(false);
   });
 });

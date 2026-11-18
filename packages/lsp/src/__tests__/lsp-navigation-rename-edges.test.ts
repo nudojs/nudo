@@ -1561,11 +1561,17 @@ describe("re-export barrel 的导航与改名面", () => {
  * （`export { Box as Crate }`）只改那条边、不连坐 `Crate` 的 importer
  * （`Crate` 是另一个身份，与 `export { hidden as visible }` 同口径）。
  */
-let h: LspHarness | null = null;
+const started: LspHarness[] = [];
 afterEach(() => {
-  h?.cleanup();
-  h = null;
+  // 本套件每个 it 起多个 server：逐个累积后统一清理（只清最后一个会把
+  // 其余临时目录留在 /tmp）。
+  for (const harness of started.splice(0)) harness.cleanup();
 });
+const start = async (files: Record<string, string>): Promise<LspHarness> => {
+  const harness = await startLspWithFiles(files);
+  started.push(harness);
+  return harness;
+};
 
 const LIB = `export class Box { constructor(v) { this.v = v; } }
 export function make(a) { return new Box(a); }
@@ -1579,7 +1585,7 @@ export const m = make(2);
 
   it("references / definition / rename 穿过同名 barrel；多跳同样跟住", async () => {
   {
-    h = await startLspWithFiles({ "lib.js": LIB, "barrel.js": BARREL, "app.js": APP });
+    const h = await start({ "lib.js": LIB, "barrel.js": BARREL, "app.js": APP });
     const refs = locationsOf(
       h.req("textDocument/references", {
         textDocument: { uri: h.uri("lib.js") },
@@ -1594,7 +1600,7 @@ export const m = make(2);
     expect(refs).toContainEqual({ file: "app.js", line: 1, character: 21, endLine: 1, endCharacter: 24 });
   }
   {
-    h = await startLspWithFiles({ "lib.js": LIB, "barrel.js": BARREL, "app.js": APP });
+    const h = await start({ "lib.js": LIB, "barrel.js": BARREL, "app.js": APP });
     const defs = locationsOf(
       h.req("textDocument/definition", {
         textDocument: { uri: h.uri("app.js") },
@@ -1605,7 +1611,7 @@ export const m = make(2);
     expect(defs[0]).toEqual({ file: "lib.js", line: 0, character: 13, endLine: 0, endCharacter: 16 });
   }
   {
-    h = await startLspWithFiles({ "lib.js": LIB, "barrel.js": BARREL, "app.js": APP });
+    const h = await start({ "lib.js": LIB, "barrel.js": BARREL, "app.js": APP });
     const edits = editsOf(
       h.req("textDocument/rename", {
         textDocument: { uri: h.uri("lib.js") },
@@ -1624,7 +1630,7 @@ export const m = make(2);
     // 多跳 barrel：lib ← inner ← barrel ← app
     const INNER = `export { Box } from "./lib.js";\n`;
     const BARREL2 = `export { Box } from "./inner.js";\n`;
-    h = await startLspWithFiles({ "lib.js": LIB, "inner.js": INNER, "barrel.js": BARREL2, "app.js": APP });
+    const h = await start({ "lib.js": LIB, "inner.js": INNER, "barrel.js": BARREL2, "app.js": APP });
     const edits = editsOf(
       h.req("textDocument/rename", {
         textDocument: { uri: h.uri("app.js") },
@@ -1641,7 +1647,7 @@ export const m = make(2);
   it("别名 re-export：只改那条边，不连坐别名 importer", async () => {
     const INNER = `export { Box as Crate } from "./lib.js";\n`;
     const APP2 = `import { Crate } from "./inner.js";\nexport const c = new Crate(1);\n`;
-    h = await startLspWithFiles({ "lib.js": LIB, "inner.js": INNER, "app.js": APP2 });
+    const h = await start({ "lib.js": LIB, "inner.js": INNER, "app.js": APP2 });
     const edits = editsOf(
       h.req("textDocument/rename", {
         textDocument: { uri: h.uri("lib.js") },

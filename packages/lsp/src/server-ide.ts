@@ -867,7 +867,14 @@ function isArityOnlyFnAbs(a: { shape: { k: string } } | undefined): boolean {
  */
 function isObservationOnlyFnAbs(a: { shape: { k: string } } | undefined): boolean {
   if (!a || a.shape.k !== "fn") return false;
-  const shape = a.shape as { returnType?: unknown; paramTypes?: readonly unknown[] };
+  const shape = a.shape as {
+    params?: readonly unknown[];
+    returnType?: unknown;
+    paramTypes?: readonly unknown[];
+  };
+  // 零参函数没有「随实参漂移」的可能（调用点观测值就是声明域返回位）
+  // ⇒ 不按观测面空壳降级，与裸标识符分支同口径渲染。
+  if ((shape.params?.length ?? 0) === 0) return false;
   if (shape.returnType === undefined) return true;
   return shape.paramTypes === undefined || shape.paramTypes.length === 0;
 }

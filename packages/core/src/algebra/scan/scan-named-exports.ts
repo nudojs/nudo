@@ -128,6 +128,10 @@ function computeLocalNamedExports(source: string, filename?: string): Set<string
   /**
    * BUG-108：本地**对象字面量**表（`const api = {…}; export { api }` 与
    * 对象 spread 来源 `{ ...base }` 解析用）。
+   *
+   * 只收顶层 **`const`** 初值：`let` / `var` 可能被重赋值 ⇒ 旧初值不是当前
+   * 对象，按它展开会把已经不存在的成员登记成导出槽（陈旧成员 = 假红）。
+   * 与 service `localObjectLiteralsOf` / core `scan-top-functions` 同口径。
    */
   const localObjects = new Map<string, NodeLike>();
   for (const stmt of ast.program.body) {
@@ -141,25 +145,35 @@ function computeLocalNamedExports(source: string, filename?: string): Set<string
       ? (s.declaration as NodeLike | undefined)
       : s;
     if (d?.type !== "VariableDeclaration") continue;
+    if ((d as { kind?: string }).kind !== "const") continue;
     for (const decl of (d.declarations as NodeLike[] | undefined) ?? []) {
       const n = identName(decl.id as NodeLike | undefined);
       const init = decl.init as NodeLike | undefined;
-      if (n && init?.type === "ObjectExpression") localObjects.set(n, init);
+      if (!n || !init) continue;
+      if (init.type === "ObjectExpression") localObjects.set(n, init);
+      // `const C = class { … }; export { C }`：类表达式绑定同样进类表——
+      // `export { C }` 的成员键（`C.m`）是真实导出槽，L2 入口表据此执法。
+      // 未导出的绑定只入表不产名（与 `listTopFunctions` 同口径）。
+      else if (init.type === "ClassExpression" || init.type === "ClassDeclaration") {
+        localClasses.set(n, init);
+      }
     }
   }
   /**
-   * 对象字面量的成员键（含 `{ ...base }` 展开）。
-   * 只认静态可解析的 Identifier 来源与内联对象；动态 spread 不猜。
+   * `{ ...base }` 展开后的成员节点（源顺序；spread 源只认顶层 `const` 对象
+   * 字面量 / 内联对象，动态来源不猜）。环保护按**路径**生效：兄弟重复展开
+   * （`{...base, ...base}`）仍参与 last-wins，真·循环被路径挡住。
    */
-  const addObjectMemberKeys = (
-    out: Set<string>,
+  const objectMembers = (
     obj: NodeLike | undefined,
-    seen: Set<NodeLike> = new Set(),
-  ): void => {
-    if (!obj || obj.type !== "ObjectExpression" || seen.has(obj)) return;
-    seen.add(obj);
+    path: ReadonlySet<NodeLike> = new Set(),
+  ): NodeLike[] => {
+    if (!obj || obj.type !== "ObjectExpression" || path.has(obj)) return [];
+    const nextPath = new Set(path);
+    nextPath.add(obj);
+    const out: NodeLike[] = [];
     for (const raw of (obj.properties as NodeLike[] | undefined) ?? []) {
-      const p = raw as NodeLike & { kind?: string; argument?: NodeLike };
+      const p = raw as NodeLike & { argument?: NodeLike };
       if (p.type === "SpreadElement" || p.type === "SpreadProperty") {
         const arg = p.argument;
         const src =
@@ -168,9 +182,47 @@ function computeLocalNamedExports(source: string, filename?: string): Set<string
             : arg?.type === "ObjectExpression"
               ? arg
               : undefined;
-        if (src) addObjectMemberKeys(out, src, seen);
+        if (src) out.push(...objectMembers(src, nextPath));
         continue;
       }
+      out.push(p);
+    }
+    return out;
+  };
+  /**
+   * 对象字面量的**最终**成员键（含 `{ ...base }` 展开）。
+   *
+   * 原生对象字面量是 last-wins：同一静态键后出现的成员覆盖先出现的（覆盖
+   * 目标含访问器 / 非可调用）。旧实现按源顺序直接 `out.add` ⇒
+   * `{ ...base, get m(){} }` 仍保留 base 的 `m`（把已被覆盖的成员登记成导出
+   * 槽 = 假红绑定）。⇒ 先展开成有序成员表，按静态键做 last-wins，只登记
+   * 最终成员里**非访问器**的键。动态计算键不可静态定名 ⇒ 不参与去重、也不
+   * 产键（与 service `flattenObjectProps` 同口径）。
+   */
+  const addObjectMemberKeys = (out: Set<string>, obj: NodeLike | undefined): void => {
+    const finalMembers: NodeLike[] = [];
+    const at = new Map<string, number>();
+    for (const p of objectMembers(obj)) {
+      const keyType = (p.key as NodeLike | undefined)?.type;
+      const computedLiteral = keyType === "StringLiteral" || keyType === "NumericLiteral";
+      if (p.computed === true && !computedLiteral) {
+        finalMembers.push(p);
+        continue;
+      }
+      const keyName = classMethodKey(p as NodeLike & { key?: NodeLike; computed?: boolean });
+      if (keyName === undefined) {
+        finalMembers.push(p);
+        continue;
+      }
+      const idx = at.get(keyName);
+      if (idx === undefined) {
+        at.set(keyName, finalMembers.length);
+        finalMembers.push(p);
+      } else {
+        finalMembers[idx] = p;
+      }
+    }
+    for (const p of finalMembers) {
       if (p.type !== "ObjectProperty" && p.type !== "Property" && p.type !== "ObjectMethod") {
         continue;
       }
@@ -354,10 +406,18 @@ function computeLocalNamedExports(source: string, filename?: string): Set<string
           // （check/scan/LSP 按本地声明名消费；侧车键可以是 default）
           if (name === "default") {
             out.add("default");
-            if (localName && !importedLocalNames.has(localName)) out.add(localName);
-            // P1：本地 class 经 export list 导出 → 也登记 Class.method
             if (localName && !importedLocalNames.has(localName)) {
-              addClassMethodKeys(out, localClasses.get(localName));
+              out.add(localName);
+              // BUG-108：`const api = {…}; export { api as default }` —— 成员键
+              // 同样是默认导出对象的公共面（`export { api }` / `export default
+              // api` 两路都登记；别名 default 一路此前漏了 ⇒ 侧车成员契约
+              // （`export const m = fn(…)`）整段不绑定 = 假绿）。
+              addObjectMemberKeys(out, localObjects.get(localName));
+            }
+            // P1：本地 class 经 export list 导出 → 也登记 Class.method
+            // （类表达式可能匿名 ⇒ 用导出槽的本地名当成员前缀）
+            if (localName && !importedLocalNames.has(localName)) {
+              addClassMethodKeys(out, localClasses.get(localName), localName);
             }
             continue;
           }
@@ -367,7 +427,7 @@ function computeLocalNamedExports(source: string, filename?: string): Set<string
           out.add(name);
           if (localName) {
             out.add(localName);
-            addClassMethodKeys(out, localClasses.get(localName));
+            addClassMethodKeys(out, localClasses.get(localName), localName);
             // BUG-108：`const api = {…}; export { api }` 的对象成员也是公共入口
             addObjectMemberKeys(out, localObjects.get(localName));
           }
@@ -440,7 +500,7 @@ function computeLocalNamedExports(source: string, filename?: string): Set<string
           const n = identName(d);
           if (n && !importedLocalNames.has(n)) {
             out.add(n);
-            addClassMethodKeys(out, localClasses.get(n));
+            addClassMethodKeys(out, localClasses.get(n), n);
             addObjectMemberKeys(out, localObjects.get(n));
           }
         } else if (d.type === "ObjectExpression") {
@@ -468,6 +528,22 @@ function computeLocalNamedExports(source: string, filename?: string): Set<string
         if (right.type === "ObjectExpression") {
           const props = (right.properties as NodeLike[] | undefined) ?? [];
           for (const p of props) {
+            // BUG-108：`module.exports = { ...base }` 的成员在运行时就是导出
+            // 对象的成员 ⇒ 展开源同口径登记（只认静态可解析的对象字面量
+            // 绑定，动态 spread 不猜）。与 ESM `export const api = { ...base }`
+            // 及索引 / service 面一致；此前 CJS 分支只读 own 属性 ⇒ 展开引入
+            // 的方法零登记 ⇒ 侧车成员契约整段不绑定（假绿）。
+            if (p.type === "SpreadElement" || p.type === "SpreadProperty") {
+              const arg = (p as NodeLike & { argument?: NodeLike }).argument;
+              const src =
+                arg?.type === "Identifier" && typeof arg.name === "string"
+                  ? localObjects.get(arg.name)
+                  : arg?.type === "ObjectExpression"
+                    ? arg
+                    : undefined;
+              if (src) addObjectMemberKeys(out, src);
+              continue;
+            }
             // Babel 8 对象方法是 ObjectMethod，不是 ObjectProperty
             if (
               p.type !== "ObjectProperty" &&

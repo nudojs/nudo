@@ -79,6 +79,12 @@ export function getParseSourceCacheSize(): number {
   return astCache.size;
 }
 
+/** `/` 在这些词之后是正则开始，否则按除法（与 code-text 同口径） */
+const MASK_REGEX_KEYWORDS = new Set([
+  "await", "case", "delete", "do", "else", "in", "instanceof", "new",
+  "of", "return", "throw", "typeof", "void", "yield",
+]);
+
 /**
  * 解析本体（插件集给定）。
  *
@@ -93,6 +99,152 @@ export function getParseSourceCacheSize(): number {
  *   （mode + source）**不动**，不存在 `.ts` / `.js` 串味。
  */
 /**
+ * 等长掩码：注释与字符串/模板**内容**替换为空格（换行保留），模板插值
+ * `${…}` 里的代码保持可见（插值是代码岛——`${require(…)}` /
+ * `${import.meta.url}` 必须参与分类）。
+ *
+ * 为什么不复用 `format/code-text.ts` 的 `stripCommentsAndStrings`：该模块
+ * import 本文件（`parseSource`），反向 import 会成环。故这里保留一份**小**
+ * 词法器，只服务模块类型判定（不需要字符串区间等完整信息）。正则字面量按
+ * 「前一有效字符」启发式识别并掩码（`/(?:export\s+)?/` 里的 export 不是
+ * 代码；与 code-text 同口径，`if (x) /re/` 这类极端写法按除法处理）。
+ */
+function maskCommentsAndStrings(source: string): string {
+  const out = source.split("");
+  const n = source.length;
+  // 正则字面量里的词（`/(?:export\s+)?/`）不是代码——打包产物里常见，必须
+  // 掩码。`/` 是除法还是正则按前一有效字符启发。
+  const regexAllowedAt = (idx: number): boolean => {
+    let j = idx - 1;
+    while (j >= 0 && /\s/.test(source[j]!)) j--;
+    if (j < 0) return true;
+    const c = source[j]!;
+    if (c === ")" || c === "]" || c === "}") return false;
+    if (!/[A-Za-z0-9_$]/.test(c)) return true;
+    let k = j;
+    while (k >= 0 && /[A-Za-z0-9_$]/.test(source[k]!)) k--;
+    return MASK_REGEX_KEYWORDS.has(source.slice(k + 1, j + 1));
+  };
+  const mask = (i: number): void => {
+    const c = out[i];
+    if (c !== undefined && c !== "\n" && c !== "\r") out[i] = " ";
+  };
+  // 模板内容面 → `${` 进入插值代码面（braceDepth 配对 `}` 后回模板）。
+  type Ctx = { template: boolean; braceDepth: number };
+  const stack: Ctx[] = [];
+  let i = 0;
+  while (i < n) {
+    const ch = source[i]!;
+    const top = stack[stack.length - 1];
+    if (top?.template === true) {
+      // 模板内容：除插值定界符外全部掩码
+      if (ch === "\\") {
+        mask(i);
+        if (i + 1 < n) mask(i + 1);
+        i += 2;
+        continue;
+      }
+      if (ch === "`") {
+        stack.pop();
+        i++;
+        continue;
+      }
+      if (ch === "$" && source[i + 1] === "{") {
+        stack.push({ template: false, braceDepth: 0 });
+        i += 2;
+        continue;
+      }
+      mask(i);
+      i++;
+      continue;
+    }
+    // 代码面：注释 / 字符串 / 模板
+    if (ch === "/" && source[i + 1] === "/") {
+      while (i < n && source[i] !== "\n") {
+        mask(i);
+        i++;
+      }
+      continue;
+    }
+    if (ch === "/" && source[i + 1] === "*") {
+      mask(i);
+      mask(i + 1);
+      i += 2;
+      while (i < n && !(source[i] === "*" && source[i + 1] === "/")) {
+        mask(i);
+        i++;
+      }
+      if (i < n) {
+        mask(i);
+        mask(i + 1);
+        i += 2;
+      }
+      continue;
+    }
+    if (ch === "/" && regexAllowedAt(i)) {
+      // 正则体 + flags 全掩码（char class 内的 `/` 不结束正则）
+      mask(i);
+      i++;
+      let inClass = false;
+      while (i < n) {
+        const c = source[i]!;
+        if (c === "\\") {
+          mask(i);
+          if (i + 1 < n) mask(i + 1);
+          i += 2;
+          continue;
+        }
+        if (c === "\n") break; // 未闭合：按行截断
+        if (c === "[") inClass = true;
+        else if (c === "]") inClass = false;
+        mask(i);
+        i++;
+        if (c === "/" && !inClass) {
+          while (i < n && /[a-z]/i.test(source[i]!)) {
+            mask(i);
+            i++;
+          }
+          break;
+        }
+      }
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      mask(i);
+      i++;
+      while (i < n) {
+        const c = source[i]!;
+        if (c === "\\") {
+          mask(i);
+          if (i + 1 < n) mask(i + 1);
+          i += 2;
+          continue;
+        }
+        mask(i);
+        i++;
+        if (c === ch || c === "\n") break; // 未闭合按行截断
+      }
+      continue;
+    }
+    if (ch === "`") {
+      stack.push({ template: true, braceDepth: 0 });
+      i++;
+      continue;
+    }
+    if (top !== undefined && !top.template) {
+      if (ch === "{") {
+        top.braceDepth++;
+      } else if (ch === "}") {
+        if (top.braceDepth === 0) stack.pop(); // 插值结束 → 回模板内容面
+        else top.braceDepth--;
+      }
+    }
+    i++;
+  }
+  return out.join("");
+}
+
+/**
  * 源码的模块类型（BUG-085）。
  *
  * Babel 的 `sourceType: "module"` 会在**语法层**禁掉顶层重复声明（ESM 的
@@ -104,19 +256,29 @@ export function getParseSourceCacheSize(): number {
  * core 不读文件系统（不能在 core 层查 `package.json#type`），因此按
  * **扩展名 + 源码标记**判定：`.cjs` / `.cts` 恒是 CJS；其余只在「源码有明显
  * CJS 标记且没有 ESM 语法」时按 script 解析 ⇒ ESM 行为逐字不变。
+ *
+ * 标记探测先做**等长掩码**（注释 / 字符串 / 模板内容不可见）：注释里提到
+ * `require(`、模板里一行以 `export` 开头都不得改变分类。ESM 探针按保留字
+ * 位置判（`module.exports` 的属性位 `.export` 与对象键 `export:` 排除），
+ * 不要求 `export` 在行首/分号后——`function f() {} export { f }` 这类同行
+ * 写法同样是合法 ESM。
  */
 type SourceType = "module" | "script";
 function sourceTypeFor(filename: string | undefined, source: string): SourceType {
   const lower = (filename ?? "").toLowerCase();
+  const code = maskCommentsAndStrings(source);
   // ESM 语法（含 `import.meta`）显式优先——`.cts` / `.cjs` 里也常写
   // `export function …`（tsc 会降级成 CJS 产物，nudo 的门禁同样按模块解析）。
   // 若对这些文件强制 script，会把合法 ESM 语法判成 syntax error（反噬）。
-  if (/(?:^|[\n;])\s*(?:import|export)\b/m.test(source) || /\bimport\.meta\b/.test(source)) {
+  // import/export 是保留字：代码区出现且不在属性位 / 对象键位即模块语法；
+  // `import(` 是动态导入（CJS 合法）⇒ 排除；`\b` 排除 `import_vscode` 这类
+  // 打包器生成的普通标识符（esbuild 产物，曾被误判成静态 import）。
+  if (/(?<![\w$.])import\b(?!\s*[(:])/.test(code) || /(?<![\w$.])export\b(?!:)/.test(code)) {
     return "module";
   }
   if (lower.endsWith(".cjs") || lower.endsWith(".cts")) return "script";
   if (lower.endsWith(".mjs") || lower.endsWith(".mts")) return "module";
-  return /\bmodule\.exports\b|\bexports\.[A-Za-z_$]|\brequire\s*\(/.test(source)
+  return /\bmodule\.exports\b|\bexports\.[A-Za-z_$]|\brequire\s*\(/.test(code)
     ? "script"
     : "module";
 }
@@ -124,9 +286,9 @@ function sourceTypeFor(filename: string | undefined, source: string): SourceType
 function parseWithJsxFallback(
   source: string,
   plugins: readonly ParsePlugin[],
+  sourceType: SourceType,
   opts?: { errorRecovery?: boolean; keepTs?: boolean; filename?: string },
 ): File {
-  const sourceType = sourceTypeFor(opts?.filename, source);
   const parseWith = (ps: readonly ParsePlugin[]): File =>
     babelParse(source, {
       sourceType,
@@ -152,7 +314,13 @@ function parseUncached(
   opts?: { errorRecovery?: boolean; keepTs?: boolean; filename?: string },
 ): File {
   const mode = parseModeFor(opts?.filename);
-  const ast = parseWithJsxFallback(source, PLUGINS_BY_MODE[mode], opts);
+  // 模块类型只算一次（掩码分类是 O(source)；parseWithJsxFallback 的重试共用）
+  const ast = parseWithJsxFallback(
+    source,
+    PLUGINS_BY_MODE[mode],
+    sourceTypeFor(opts?.filename, source),
+    opts,
+  );
   // keepTs：保留 TS 节点（侧车 .nudo.ts 的语句级文本改写需要未剥除的
   // 区间——rewriteSidecarSource 据此切掉类型注解/声明）
   // 剥除时把**类型注解文本**留在节点上（nudoTypeText / nudoReturnTypeText）——

@@ -14,7 +14,7 @@
 import type { Expression, Node } from "@babel/types";
 import type { TranspileOptions } from "./types.ts";
 import { emitTranspileExpression } from "./transpile-dispatch.ts";
-import { foldRequireSpecArg, staticKeyOf, isConstAssignTarget, symbolKeyOf, userIdentInfoOf, bumpDestrTmpSeq, safeTmpName, internalTmpName, internalTmpNameSet, collectFreeAssignedNames, collectVarHoistNames, expandAliasNames } from "./helpers.ts";
+import { foldRequireSpecArg, staticKeyOf, isConstAssignTarget, symbolKeyOf, userIdentInfoOf, bumpDestrTmpSeq, safeTmpName, internalTmpName, internalTmpNameSet, collectFreeAssignedNames, collectVarHoistNames, expandAliasNames, collectPatternNames, shadowedIntrinsicsOf } from "./helpers.ts";
 import { memberPathOf, setPathSrc, memberSideEffectWriteStmt } from "./member-path.ts";
 import { STRING_REGEX_ARG_STATE_NAMES } from "./ops.ts";
 import { NudoUnsupportedError } from "../unsupported.ts";
@@ -387,6 +387,31 @@ export function emitDestructure(
 }
 
 /**
+ * 形参绑定根作用域的内建遮蔽（BUG-1071）：参数默认值 / 解构默认值表达式在
+ * **本函数作用域**求值 ⇒ 本函数的形参名（含解构 / rest 绑定名）按名遮蔽
+ * 宿主内建（`function f(NaN, b = NaN)` 的 `b = NaN` 读的是形参 NaN，不是
+ * 全局；`(NaN) => NaN` 同）。
+ *
+ * 只并入**本层**形参名（`collectPatternNames`）：调用方 opts 的单元级扫描
+ * 口径不变——嵌套函数体是独立作用域，兄弟函数的形参不得关掉本函数的
+ * `Number.isFinite` 守卫事实（见 helper/scope-collect 的 NESTED_SCOPE_TYPES）。
+ * 无新增内建名时原样返回 opts（产物逐字节不变）。
+ */
+export function withParamIntrinsicShadows(
+  params: readonly Node[],
+  opts: TranspileOptions,
+): TranspileOptions {
+  const names = new Set<string>();
+  for (const p of params) collectPatternNames(p, names);
+  if (names.size === 0) return opts;
+  const shadowed = shadowedIntrinsicsOf(
+    undefined,
+    new Set([...(opts.shadowedIntrinsics ?? []), ...names]),
+  );
+  return shadowed ? { ...opts, shadowedIntrinsics: shadowed } : opts;
+}
+
+/**
  * 函数参数签名 + 解构 prologue：
  * Identifier 直通；ObjectPattern/ArrayPattern/AssignmentPattern 用占位参数
  * `_p{i}` 接收，再在函数体首部 emitDestructure / $orDefault 绑定。
@@ -399,6 +424,8 @@ export function emitParamBinding(
   pad: string,
   opts: TranspileOptions,
 ): { sig: string[]; rest?: string; prologue: string[]; defaulted: number[] } {
+  // BUG-1071：默认值表达式按**本函数**作用域求值——形参名并入遮蔽集
+  const exprOpts = withParamIntrinsicShadows(params, opts);
   const sig: string[] = [];
   const prologue: string[] = [];
   const defaulted: number[] = [];
@@ -432,7 +459,7 @@ export function emitParamBinding(
       rest = ph;
       // Bug 161：形参绑定**可变**（原生 `function f([...a]) { a = 5; }` 合法）
       // ——此前按 const 发射 ⇒ 体内再赋抛 TypeError（假红 + 错值）。
-      emitDestructure(p.argument, ph, "let", pad, opts, prologue, tmpSeq);
+      emitDestructure(p.argument, ph, "let", pad, exprOpts, prologue, tmpSeq);
       return;
     }
     const ph = safeTmpName(`_p${i}`, userInfo);
@@ -443,20 +470,20 @@ export function emitParamBinding(
       // 二者此前恰好相等，但跳过 `this` 形参（Bug 397）后两者会错位一位
       // ⇒ 宿主签名的 `= void 0` 落错位置 ⇒ 默认参语义被挪到别的形参上。
       defaulted.push(sig.length - 1);
-      const def = emitTranspileExpression(p.right as Expression, opts);
+      const def = emitTranspileExpression(p.right as Expression, exprOpts);
       if (p.left.type === "Identifier") {
         // Bug 161：默认参绑定可变（原生 `function f(a = 1) { a = 5; }` 合法）
         prologue.push(`${pad}let ${p.left.name} = $orDefault(${ph}, () => ${def});`);
       } else {
         const t = safeTmpName(`_pd${i}`, userInfo);
         prologue.push(`${pad}const ${t} = $orDefault(${ph}, () => ${def});`);
-        emitDestructure(p.left, t, "let", pad, opts, prologue, tmpSeq);
+        emitDestructure(p.left, t, "let", pad, exprOpts, prologue, tmpSeq);
       }
       return;
     }
     if (p.type === "ObjectPattern" || p.type === "ArrayPattern") {
       // Bug 161：形参解构绑定可变（原生可再赋）
-      emitDestructure(p, ph, "let", pad, opts, prologue, tmpSeq);
+      emitDestructure(p, ph, "let", pad, exprOpts, prologue, tmpSeq);
     }
   });
   return { sig, rest, prologue, defaulted };
@@ -477,6 +504,8 @@ export function emitParamBindingFromArgs(
   opts: TranspileOptions,
   argsSrc: string,
 ): { prologue: string[]; rest?: string; namedCount: number } {
+  // BUG-1071：默认值 / 解构默认值表达式按**本函数**作用域求值——形参名并入遮蔽集
+  const exprOpts = withParamIntrinsicShadows(params, opts);
   const prologue: string[] = [];
   let rest: string | undefined;
   let namedCount = 0;
@@ -501,7 +530,7 @@ export function emitParamBindingFromArgs(
         // rest 语法上必为末参 → namedCount 此处已终值
         prologue.push(`${pad}let ${rest} = $arrRest(${argsSrc}, ${namedCount});`);
         // Bug 161：形参 rest 绑定可变
-        emitDestructure(p.argument, rest, "let", pad, opts, prologue, tmpSeq);
+        emitDestructure(p.argument, rest, "let", pad, exprOpts, prologue, tmpSeq);
       }
       return;
     }
@@ -515,19 +544,19 @@ export function emitParamBindingFromArgs(
       return;
     }
     if (p.type === "AssignmentPattern") {
-      const def = emitTranspileExpression(p.right as Expression, opts);
+      const def = emitTranspileExpression(p.right as Expression, exprOpts);
       if (p.left.type === "Identifier") {
         prologue.push(`${pad}let ${p.left.name} = $orDefault(${idxSrc}, () => ${def});`);
       } else {
         const t = safeTmpName(`_pd${i}`, userInfo);
         prologue.push(`${pad}let ${t} = $orDefault(${idxSrc}, () => ${def});`);
         // Bug 161：默认参的解构绑定可变
-        emitDestructure(p.left, t, "let", pad, opts, prologue, tmpSeq);
+        emitDestructure(p.left, t, "let", pad, exprOpts, prologue, tmpSeq);
       }
       return;
     }
     if (p.type === "ObjectPattern" || p.type === "ArrayPattern") {
-      emitDestructure(p, idxSrc, "let", pad, opts, prologue, tmpSeq);
+      emitDestructure(p, idxSrc, "let", pad, exprOpts, prologue, tmpSeq);
     }
   });
   if (rest && !restBoundEarly) {

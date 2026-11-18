@@ -109,10 +109,13 @@ describe("同名遮蔽：引用/定义/改名按绑定分派", () => {
       const changes = res?.changes ?? {};
       const touched = Object.keys(changes).map((uri) => relOf(uri, ctx.dir)).sort();
       expect(touched).toEqual(["use.js"]);
-      const at = (changes[Object.keys(changes)[0]!] ?? [])
+      const edits = changes[Object.keys(changes)[0]!] ?? [];
+      const at = edits
         .map((e) => `${e.range.start.line}:${e.range.start.character}`)
         .sort();
       expect(at).toEqual(["2:8", "3:9"]);
+      // 只钉位置集合的话，空替换（newText: ""）也能通过 ⇒ 逐条钉替换文本。
+      expect(edits.map((e) => e.newText)).toEqual(["localOnly", "localOnly"]);
     });
   });
 
@@ -130,10 +133,13 @@ describe("同名遮蔽：引用/定义/改名按绑定分派", () => {
       // 行为不变：导入名身份仍是「目标模块的导出」
       expect(touched).toEqual(["lib.js", "third.js", "use.js"]);
       // use.js 里只改导入说明符与 g 的用点 —— **不**碰 f 体内的局部量
-      const useAt = (changes[Object.keys(changes).find((u) => u.endsWith("use.js"))!] ?? [])
+      const useEdits = changes[Object.keys(changes).find((u) => u.endsWith("use.js"))!] ?? [];
+      const useAt = useEdits
         .map((e) => `${e.range.start.line}:${e.range.start.character}`)
         .sort();
       expect(useAt).toEqual(["0:9", "6:9"]);
+      // 只钉位置集合的话，空替换（newText: ""）也能通过 ⇒ 逐条钉替换文本。
+      expect(useEdits.map((e) => e.newText)).toEqual(["shared2", "shared2"]);
     });
   });
 });

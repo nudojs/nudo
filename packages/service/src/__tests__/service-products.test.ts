@@ -803,6 +803,15 @@ const WITH_THIS = `export function withThis(this: { x: number }, a: number): num
     expect(plain.map((f) => f.index)).toEqual([0, 1]);
     expect(plain.map((f) => (f.kind === "id" ? f.name : f.kind))).toEqual(["a", "b"]);
   });
+
+  it("`this : T` 的空格写法同样进入 dts 接收者子句", () => {
+    // 入口闸门用 `\bthis\s*:`（不是裸子串 "this:"）：`this : T` 是合法 TS，
+    // 旧判据漏掉空格形态 ⇒ analysis.thisReceiverType 为空 ⇒ dts 丢接收者子句。
+    const spaced = "export function withThis(this : { x: number }, a: number): number {\n  return a;\n}\n";
+    const dts = generateDts(analyzeFile("/test/bug397-dts-spaced.ts", spaced));
+    expect(dts).toContain("this: { x: number }");
+    expect(dts).toContain("export declare function withThis(this: { x: number }, a:");
+  });
 }
 });
 

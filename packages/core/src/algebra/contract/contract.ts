@@ -528,6 +528,78 @@ function isNestedConstraintBag(v: unknown): boolean {
   }
 }
 
+/**
+ * 源码条目是否是**类**（嵌套袋抑制的唯一前提）。
+ *
+ * BUG-058 的袋形态是「类名 == 袋名」（`export const K = { run: fn(…) }` 对应
+ * 源码里的 `class K`）⇒ 类条目的同名直查拿到袋对象是**预期**的，可静默跳过。
+ * 普通函数 / 默认导出 / 标量条目的同名袋不是类形态 ⇒ 契约会被静默丢弃，
+ * 必须照旧报 `not a Nudo constraint`。
+ */
+function sourceEntryIsClass(source: string, fnName: string): boolean {
+  let ast: ReturnType<typeof parseSource>;
+  try {
+    ast = parseSource(source, { errorRecovery: true });
+  } catch {
+    return false;
+  }
+  const classNames = new Set<string>();
+  const aliasExport = new Map<string, string>();
+  let hasDefaultClass = false;
+  type DeclLike = {
+    type?: string;
+    id?: { name?: string } | null;
+    declarations?: Array<{ id?: { type?: string; name?: string }; init?: { type?: string } | null }>;
+  };
+  const collect = (decl: unknown, isDefault: boolean): void => {
+    const d = decl as DeclLike | null | undefined;
+    if (!d) return;
+    if (d.type === "ClassDeclaration" || d.type === "ClassExpression") {
+      if (d.id?.name) classNames.add(d.id.name);
+      else if (isDefault) hasDefaultClass = true;
+      return;
+    }
+    if (d.type !== "VariableDeclaration") return;
+    for (const v of d.declarations ?? []) {
+      if (v.id?.type === "Identifier" && v.id.name && v.init?.type === "ClassExpression") {
+        classNames.add(v.id.name);
+      }
+    }
+  };
+  for (const stmt of ast.program.body) {
+    const s = stmt as {
+      type?: string;
+      declaration?: unknown;
+      specifiers?: Array<{
+        type?: string;
+        local?: { name?: string };
+        exported?: { name?: string; value?: string };
+      }>;
+    };
+    if (s.type === "ExportDefaultDeclaration") {
+      collect(s.declaration, true);
+      continue;
+    }
+    if (s.type === "ExportNamedDeclaration") {
+      collect(s.declaration, false);
+      for (const spec of s.specifiers ?? []) {
+        if (spec.type !== "ExportSpecifier" || spec.local?.name === undefined) continue;
+        const exported = spec.exported?.name ?? spec.exported?.value;
+        if (exported !== undefined) aliasExport.set(spec.local.name, exported);
+      }
+      continue;
+    }
+    collect(stmt, false);
+  }
+  if (fnName === "default" && hasDefaultClass) return true;
+  if (classNames.has(fnName)) return true;
+  // 别名导出：`class Internal {}; export { Internal as K }`
+  for (const name of classNames) {
+    if (aliasExport.get(name) === fnName) return true;
+  }
+  return false;
+}
+
 function loadSidecarBinding(
   source: string,
   fnName: string,
@@ -617,8 +689,15 @@ function loadSidecarBinding(
   // 判据：值里**至少有一个自有成员是 Nudo 约束** ⇒ 这是一个袋（类级容器），不是
   // 「错放在这里的非约束导出」 ⇒ 不作为同名直查命中（交给下面的嵌套袋分支按
   // `Class.method` 取；类条目本身没有契约，静默 ok:false）。
+  // 袋必须按**类名**命名：源码条目不是类（普通函数 / 默认导出函数 / 标量）时
+  // 同名袋不是类容器 ⇒ 不得静默丢弃契约诊断（照旧报 `not a Nudo constraint`）。
   // 空对象 / 标量等仍走原路径报错（真写错的导出不得被吞）。
-  if (binding !== undefined && !isNudoConstraint(binding) && isNestedConstraintBag(binding)) {
+  if (
+    binding !== undefined &&
+    !isNudoConstraint(binding) &&
+    isNestedConstraintBag(binding) &&
+    sourceEntryIsClass(source, fnName)
+  ) {
     binding = undefined;
   }
   // 绑定键解析成功时的键（paramTexts 查询用，与 binding 解析同序）

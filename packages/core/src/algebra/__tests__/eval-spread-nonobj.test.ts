@@ -9,7 +9,7 @@
  * 字符串 own keys 是 UTF-16 code unit（astral 两键），不是 for-of code point。
  */
 import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull, litValue, unknown } from "@nudojs/core";
+import { runTranspiled, callTranspiledExportFull, litValue, unknown, anyAbs } from "@nudojs/core";
 import { call } from "./eval-helpers.ts";
 
 describe("evaluator object spread of non-object sources", () => {
@@ -54,6 +54,22 @@ describe("evaluator object spread of non-object sources", () => {
     const exports = runTranspiled(src, { mode: "analyze" });
     const x = { shape: { k: "arr", element: unknown }, conf: "path" } as never;
     expect(litValue(callTranspiledExportFull(exports, "f", [x]).result)).toEqual({ ok: false });
+  });
+
+  it("any source does not fold an exact key cardinality; concrete object stays exact (BUG-1071)", () => {
+    // `$spread` 把 any 源合成空槽 open obj（键集不可判）——键家族据此折
+    // partial，不得折 exact 空元组（此前 `Object.keys({...x}).length` → 0）。
+    expect(
+      litValue(call(`export function f(x) { return Object.keys({...x}).length; }`, "f", [anyAbs]).result),
+    ).toEqual({ ok: false });
+    // 链式 spread 同样保持「键集不可判」
+    expect(
+      litValue(call(`export function f(x) { return Object.keys({...x, a: 1}).length; }`, "f", [anyAbs]).result),
+    ).toEqual({ ok: false });
+    // 对照：具体对象源的键集已知 ⇒ 精确键表
+    expect(
+      litValue(call(`export function f() { return Object.keys({...{a:1}}).join(","); }`).result),
+    ).toEqual({ ok: true, value: "a" });
   });
 });
 

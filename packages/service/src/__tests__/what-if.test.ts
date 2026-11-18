@@ -38,6 +38,19 @@ describe("AI3 what-if injectBindings", () => {
     expect(ok.applied).toEqual(["o: {a:1}"]);
   });
 
+  it("does not mistake quoted payloads for structural TS types", () => {
+    // 结构判定只看字符串外侧：`lit("items[]")` / `"number[]"` 里的 `[]` 是
+    // 载荷文本（合法构建器实参 / 字符串字面量），不是数组类型语法。
+    expect(typeExprToDirective('lit("items[]")')).toBe('lit("items[]")');
+    expect(typeExprToDirective('"number[]"')).toBe('"number[]"');
+    const src = `const o = { a: 1 };\n`;
+    const { applied, source } = injectBindings(src, [
+      { name: "o", type: 'lit("items[]")' },
+    ]);
+    expect(applied).toEqual(['o: lit("items[]")']);
+    expect(source).toContain('// @nudo:as lit("items[]")');
+  });
+
   it("reports function/class bindings as not applied instead of fake success (BUG-100)", () => {
     const src = `export function f() { return 1; }\nexport class K {}\n`;
     const { applied, unapplied, source } = injectBindings(src, [

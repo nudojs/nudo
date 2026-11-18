@@ -960,13 +960,25 @@ function indirectCallOf(
         : undefined;
   if (name !== "call" && name !== "apply") return undefined;
   const args = (call.arguments as Array<Record<string, unknown>>) ?? [];
-  if (name === "call") return { target, args: args.slice(1) };
+  if (name === "call") {
+    // `f.call(...xs)`：thisArg 槽本身是**展开** ⇒ 后面的实参位置与个数都不
+    // 可判（`args.slice(1)` 会把唯一的展开元素丢掉 ⇒ 按 0 实参重新执法 =
+    // 假红）⇒ 整条间接调用让位（fail-closed：不猜元数）。
+    const first = args[0];
+    if (first && (first.type === "SpreadElement" || first.type === "SpreadProperty")) {
+      return undefined;
+    }
+    return { target, args: args.slice(1) };
+  }
   const list = args[1] as Record<string, unknown> | undefined;
   if (!list || list.type !== "ArrayExpression") return undefined;
   return {
     target,
-    args: ((list.elements as Array<Record<string, unknown> | null> | undefined) ?? []).filter(
-      (e): e is Record<string, unknown> => e !== null && e !== undefined,
+    // 数组空洞（`f.apply(null, [1,,3])`）在原生里是**显式 undefined 实参**
+    // ⇒ 保留槽位（个数与运行时一致）。旧实现把空洞过滤掉 ⇒ 3 个实参按 2 个
+    // 执法 ⇒ 本该报「第 2 位违反契约」的调用点反而报元数 / 静默。
+    args: ((list.elements as Array<Record<string, unknown> | null> | undefined) ?? []).map(
+      (e) => e ?? { type: "Identifier", name: "undefined" },
     ),
   };
 }

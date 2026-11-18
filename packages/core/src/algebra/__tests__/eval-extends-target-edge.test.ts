@@ -25,7 +25,8 @@
  * 同值；$new 匿名 fn 构造器实例 brand 用伪父名（new Base().x 沿 proto 折）。
  */
 import {describe, it, expect} from "vitest";
-import {val} from "./eval-helpers.ts";
+import {val, call, isNever} from "./eval-helpers.ts";
+import { litValue } from "../abs.ts";
 
 const v = (src: string) => val(`function f() { ${src} }`);
 
@@ -171,5 +172,49 @@ describe("P3: 控制组（既有面不回归）", () => {
     expect(v(`class TA extends Uint8Array {} return TA.BYTES_PER_ELEMENT;`)).toEqual({ ok: true, value: 1 });
     expect(v(`class Mp extends Map {} return typeof Mp.groupBy;`)).toEqual({ ok: true, value: "function" });
     expect(v(`class Pg extends Promise {} return typeof Pg.all;`)).toEqual({ ok: true, value: "function" });
+  });
+});
+
+/**
+ * BUG-1071：派生类实例的 brand 名是派生类名，内建访问器表按内建名建键
+ * ⇒ 写门直查落空 ⇒ getter-only 写被静默接受（`s.size = 0` 原生 strict
+ * 定抛 TypeError）。owner 改为沿类链解析（要求链洞处 `superBuiltinHost`
+ * 放行的真实宿主内建父）；用户类同名内建（无内建父）保持普通数据属性。
+ */
+describe("内建父 getter-only 访问器的写门（BUG-1071）", () => {
+  const throwsName = (r: ReturnType<typeof call>): string | undefined =>
+    r.throws?.shape?.k === "brand" ? (r.throws as { shape: { name: string } }).shape.name : undefined;
+
+  it("class S extends Set {}：s.size = 0 定抛 TypeError", () => {
+    const r = call(`export function f() { class S extends Set {} const s = new S(); s.size = 0; return "ok"; }`);
+    expect(throwsName(r)).toBe("TypeError");
+    expect(isNever(r.result)).toBe(true);
+  });
+
+  it("class M extends Map {} / class U extends URL {} 的 origin 写同款", () => {
+    expect(
+      throwsName(call(`export function f() { class M extends Map {} const m = new M(); m.size = 0; return "ok"; }`)),
+    ).toBe("TypeError");
+    expect(
+      throwsName(
+        call(
+          `export function f() { class U extends URL {} const u = new U("https://x.com/a"); u.origin = "https://y.com"; return "ok"; }`,
+        ),
+      ),
+    ).toBe("TypeError");
+  });
+
+  it("对照：同名用户类 Set（无内建父）的 size 仍是普通可写数据属性", () => {
+    const r = call(
+      `export function f() { class Set { constructor() { this.size = 0; } } const s = new Set(); s.size = 0; return typeof s.size; }`,
+    );
+    expect(isNever(r.throws)).toBe(true);
+    expect(litValue(r.result)).toEqual({ ok: true, value: "number" });
+  });
+
+  it("对照：URL 派生的可写组件（带 setter）不误判 TypeError", () => {
+    expect(
+      v(`class U3 extends URL {} const u = new U3("https://x.com/a"); u.href = "https://x.com/b"; return u.href;`),
+    ).toEqual({ ok: true, value: "https://x.com/b" });
   });
 });

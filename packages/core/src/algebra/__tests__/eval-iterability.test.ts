@@ -237,7 +237,7 @@ describe("for-in abstract receiver key domain", () => {
  * 已由 collectUserIterElems 求出精确元素序）。修复：类注册面存在时复用
  * userIteratorFn（原型链 $get + hasRealImpl）判 total。
  */
-describe("BUG-118 user class @@iterator is total", () => {
+describe("user class @@iterator is total（BUG-118）", () => {
   it("class method [Symbol.iterator] spread/for-of 无 may TypeError", () => {
     const spread = evalSrc(
       `export class PlainIter { constructor(){ this.x = 1; } [Symbol.iterator]() { return [1,2][Symbol.iterator](); } }

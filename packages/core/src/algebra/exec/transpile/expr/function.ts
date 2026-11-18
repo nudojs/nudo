@@ -46,7 +46,7 @@ import {
   thisCarrierOf,
   copyConstScope,
 } from "../helpers.ts";
-import { emitStmtWritebackRebinds, emitParamBinding, emitParamBindingFromArgs, genOuterFreeWriteNames, genFreeWriteWrap, genSuspendTail } from "../emit.ts";
+import { emitStmtWritebackRebinds, emitParamBinding, emitParamBindingFromArgs, withParamIntrinsicShadows, genOuterFreeWriteNames, genFreeWriteWrap, genSuspendTail } from "../emit.ts";
 import { emitTranspileExpression as transpileExpression } from "../transpile-dispatch.ts";
 import { transpileFnBodyStmts } from "../stmt/fn-body.ts";
 import { asyncBodyPlan } from "../async-plan.ts";
@@ -196,6 +196,14 @@ export function transpileFunctionExpr(
       // Bug 1160：载体名是**转译单元共享名**（`thisCarrierOf`），prologue /
       // 宿主形参 / 体内 this 读三方同名。
       const thisSlot = thisCarrierOf(opts);
+      // BUG-1071：本函数形参名——默认值表达式（paramOpts 侧由
+      // emitParamBinding 自并）与**箭头表达式体**（不经 transpileFnBodyStmts
+      // 的 varScope 扣除路径）都要按本函数作用域遮蔽宿主内建。
+      const fnParamShadows = paramNamesOfFn(fn.params);
+      // BUG-1071：形参名的内建遮蔽并集（外层已遮蔽 ∪ 本函数形参）——
+      // 表达式体路径没有 fn-body 的 varScope 重算，只能从这里拿；
+      // 默认值表达式由 emitParamBinding / emitParamBindingFromArgs 内部自并。
+      const paramShadowedIntrinsics = withParamIntrinsicShadows(fn.params, opts).shadowedIntrinsics;
       const paramOpts: TranspileOptions = {
         ...opts,
         // Bug 201：默认参数表达式不是 async 体的生成器段（原生：await 在
@@ -216,7 +224,6 @@ export function transpileFunctionExpr(
       // 也须看到遮蔽后的 constNames；块体路径在 transpileFnBodyStmts 里
       // 再扣一次，同名幂等）。默认值表达式走 paramOpts（未扣）——默认式
       // 里写外层 const 原生照抛。
-      const fnParamShadows = paramNamesOfFn(fn.params);
       const fnBodyConstNames =
         opts.constNames && fnParamShadows.size > 0
           ? copyConstScope(opts.constNames, fnParamShadows)
@@ -234,6 +241,10 @@ export function transpileFunctionExpr(
         ...opts,
         // 函数体作用域边界：外层 NaN 守卫别名不继承（形参可同名遮蔽）
         nanAliases: undefined,
+        // BUG-1071：本函数形参名统一并进体遮蔽集——块体路径由
+        // transpileFnBodyStmts 的 varScope.skip 再并一次（幂等），
+        // **表达式体**路径没有该重算，只能在这里拿到（`(NaN) => NaN`）。
+        ...(paramShadowedIntrinsics ? { shadowedIntrinsics: paramShadowedIntrinsics } : {}),
         inLoop: 0,
         // 函数体是新边界：return 是本函数的返回，不是外层 if 臂的退出信号
         conditionalFlow: 0,
@@ -277,9 +288,17 @@ export function transpileFunctionExpr(
       // Bug 141：空体块（`function () {}`）作构造器时实例自有面确定为空——
       // 与「ctor 体不透明」区分开（见 class-registry.knownEmptyInstance）。
       // 异步/生成器体不在本判定（它们不是构造器可执行体）。
+      //
+      // BUG-1071：形参默认值 / 解构 / rest 是**构造调用期**执行的代码——
+      // `class B extends function (a = (this.x = 1)) {}` 的空体 ctor 仍会
+      // 经默认值写 `this` 自有属性 ⇒ 「实例自有面为空」不成立（此前只看体
+      // 长度 ⇒ `new B().x` 折 exact undefined，原生 1）。判据收紧为全部
+      // 形参都是光秃秃的 Identifier（无默认值/解构/rest 子树）。
+      const emptyBodyParamsPlain = fn.params.every((p) => p.type === "Identifier");
       const emptyBodySrc =
         !fn.generator &&
         fn.async !== true &&
+        emptyBodyParamsPlain &&
         fn.body.type === "BlockStatement" &&
         (fn.body as { body?: unknown[] }).body?.length === 0
           ? ", emptyBody: true"

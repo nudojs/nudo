@@ -13,6 +13,7 @@ import { collectAbsInlays } from "@nudojs/core/internal";
 import { formatContractTierLine, CONTRACT_SOURCE_ABBR } from "@nudojs/core";
 import { computeContractLenses, hoverTool, type ContractLens, buildLspInjection } from "../agent-tools.ts";
 import { withTempDir, withLspServer, createMockConnection, waitForDiagnostics, waitForValue } from "./helpers.ts";
+import { startLspWithFiles } from "./lsp-harness-navigation.ts";
 import { defaultLoadModule } from "@nudojs/service";
 import { createNudoServer } from "../server.ts";
 
@@ -1215,7 +1216,7 @@ async function open(file: string, text: string) {
 // ---------------------------------------------------------------------------
 // BUG-071：跨模块函数绑定的 hover 不得泄漏 arity-only `?` / 假 exact
 // ---------------------------------------------------------------------------
-describe("BUG-071 导入函数 hover 与声明处 / check 同口径", () => {
+describe("导入函数 hover 与声明处 / check 同口径（BUG-071）", () => {
   const LIB = `export function add(a, b) { return a + b; }\n`;
   const MAIN = `import { add } from "./lib.js";\nexport function total(x) { return add(x, 1); }\ntotal(1);\n`;
 
@@ -1256,5 +1257,72 @@ describe("BUG-071 导入函数 hover 与声明处 / check 同口径", () => {
         "add(a: any, b: any) => number | string  throws TypeError",
       );
     });
+  });
+
+  it("声明的定义在别的文件时，同名嵌套函数不得冒充导入目标", async () => {
+    const nested = `import { add } from "./lib.js";
+export function outer() {
+  function add(x) {
+    return x;
+  }
+  return add(1);
+}
+`;
+    await withLspServer({ "lib.js": LIB, "main.js": nested }, async ({ req, uri }) => {
+      const text = hoverText(
+        req("textDocument/hover")({
+          textDocument: { uri: uri("main.js") },
+          position: { line: 0, character: 9 }, // import 说明符
+        }),
+      );
+      // 旧口径按名字在本文件 generalize ⇒ 命中 outer 内的 `add(x)`。
+      expect(text).toContain(
+        "add(a: any, b: any) => number | string  throws TypeError",
+      );
+    });
+  });
+
+  it("别名 import 按目标声明名 generalize（imported 侧 / local 侧同面）", async () => {
+    const aliased = `import { add as plus } from "./lib.js";
+export function total(x) {
+  return plus(x, 1);
+}
+`;
+    await withLspServer({ "lib.js": LIB, "main.js": aliased }, async ({ req, uri }) => {
+      for (const character of [9, 16]) {
+        const text = hoverText(
+          req("textDocument/hover")({
+            textDocument: { uri: uri("main.js") },
+            position: { line: 0, character }, // `add` / `plus`
+          }),
+        );
+        // 旧口径在目标文件里按本地别名 `plus` 找函数 ⇒ generalize 恒空，
+        // hover 回落绑定面的 `plus`（无 `throws` 声明面签名）。
+        expect(text).toContain(
+          "add(a: any, b: any) => number | string  throws TypeError",
+        );
+      }
+    });
+  });
+
+  it("未保存的依赖 buffer 优先于磁盘（loadModule 走相对说明符）", async () => {
+    const h = await startLspWithFiles({
+      "lib.js": `export function add(a, b) { return a + b; }\n`,
+      "main.js": `import { add } from "./lib.js";\nexport function total(x) { return add(x, 1); }\n`,
+    });
+    try {
+      h.changeBuffer("lib.js", `export function add(a, b, c) { return a + b + c; }\n`);
+      await h.waitReady("lib.js");
+      const text = hoverText(
+        h.req("textDocument/hover", {
+          textDocument: { uri: h.uri("main.js") },
+          position: { line: 0, character: 9 },
+        }),
+      );
+      // 旧口径把绝对路径传给 makeBufferAwareLoadModule ⇒ 只落磁盘 ⇒ 2 形参。
+      expect(text).toContain("add(a: any, b: any, c: any)");
+    } finally {
+      h.cleanup();
+    }
   });
 });

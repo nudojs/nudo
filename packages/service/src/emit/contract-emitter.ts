@@ -50,10 +50,8 @@ import {
   DIAG,
   exportedNameOfLocal,
   isGeneratedMarkerLine,
-  isPointConstraint,
   runWithCollectorScope,
   sectionChainList,
-  widenObservationAbs,
 } from "@nudojs/core/internal";
 
 import { writeFileAtomic } from "../write-atomic.ts";
@@ -874,17 +872,13 @@ function projectFunctionDsl(fn: FunctionAnalysis): FunctionProjection {
         : // 既无调用点证据、也无域声明 ⇒ 只剩入口推断（entry@）；指令见证是
           // 观测、不是声明 ⇒ 不得进返回义务。
           fn.cases.filter((c) => c.source !== "directive");
-  // BUG-021：调用点观测是**点**——观测集只覆盖一个点（无析取成员）时，
-  // 进投影器前剥到基类型（精度留在 `Case:` 见证里）。多值观测域
-  // （`union(lit(1), lit(-2))`）是**真实观测域**，保留字面量并集：拓宽会把它
-  // 塌成 `number()`，drift 对账再也看不见域变化（BUG-199 的两面对账必须与
-  // 写盘同判据，见 core `isPointConstraint`）。带断言的 `@nudo:case` 是
-  // **域声明** ⇒ 一律不拓宽。
-  // BUG-113：`contract --emit` 按文档承诺持久化**精确观测字面量**（与 draft
-  // 面的 widen 语义相反）。此前对单点观测复用 draft 的拓宽判据 ⇒ `wrap(42)`
-  // 写成 `number()`、返回写成 `string()`：字面量变化（42→43）零 drift，
-  // `--dry-run --exit-on-diff` 恒绿；刷新还会把用户手写的 `lit(42)` 改宽。
-  // 观测多值域本来就保留字面量并集（joinThenProject），单点同样保真。
+  // BUG-021 / BUG-113：`contract --emit` 走**写盘**判据，不是 draft 面的
+  // widen 语义 —— 观测（单点与多值同口径）先 join 再投影，字面量**原样
+  // 保真**：`wrap(42)` 写成 `lit(42)`，不会被拓宽成 `number()`。多值观测域
+  // （`union(lit(1), lit(-2))`）本来就保留字面量并集；单点同样保真，否则
+  // 字面量变化（42→43）零 drift、`--dry-run --exit-on-diff` 恒绿，刷新还会
+  // 把用户手写的 `lit(42)` 改宽。带断言的 `@nudo:case` 是**域声明**，与点
+  // 观测一样按字面量投影。
   const projectObserved = (absList: Abs[]): NudoConstraint | undefined =>
     joinThenProject(absList);
 

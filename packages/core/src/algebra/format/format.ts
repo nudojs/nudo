@@ -236,15 +236,21 @@ function formatShapeInner(a: Abs, budget: ProjectionBudget, ind: string): string
       // BUG-094：生成器对象是「带内部协议槽的 obj」——逐槽摊平只剩数字
       // yield 槽（甚至为空）⇒ `{ "0": 1 }` / `{  }`，与同次 dts 的
       // `Generator<…>` 矛盾。身份取随值携带的 facets.brand（重建 / 快照后
-      // 协议槽可能丢失）；无 facet 的旧 Abs 用 next+return/throw 协议槽兜底。
+      // 协议槽可能丢失）；无 facet 的旧 Abs 用**内部**协议槽兜底。
       const carriedBrand = a.facets?.brand;
+      // 无 brand 时的旧 Abs 兜底：协议槽必须**全是 internal 槽**——真生成器
+      // 对象按 Bug 240 把 next/return/throw/@@iterator 装成 internal（原生
+      // 生成器没有自有可枚举属性）。手写迭代器对象（`{ next, return,
+      // [Symbol.iterator] }`）的成员是普通自有属性 ⇒ 不得冒充 Generator，
+      // 否则投影面把用户对象谎报成生成器类型。
+      const internalSlot = (k: string): boolean => s.slots[k]?.internal === true;
       const genBrand =
         carriedBrand === "Generator" || carriedBrand === "AsyncGenerator"
           ? carriedBrand
-          : s.slots["next"] !== undefined &&
-              (s.slots["return"] !== undefined || s.slots["throw"] !== undefined) &&
-              (s.slots["@@iterator"] !== undefined || s.slots["@@asyncIterator"] !== undefined)
-            ? s.slots["@@asyncIterator"] !== undefined
+          : internalSlot("next") &&
+              (internalSlot("return") || internalSlot("throw")) &&
+              (internalSlot("@@iterator") || internalSlot("@@asyncIterator"))
+            ? internalSlot("@@asyncIterator")
               ? "AsyncGenerator"
               : "Generator"
             : undefined;

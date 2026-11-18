@@ -103,10 +103,15 @@ describe("evaluator bitwise / shift / exponent / unary-plus", () => {
     expect(litValue(r)).toEqual({ ok: false });
   });
 
-  it("any operand yields number (not unknown) and no unknown-inference", () => {
-    // BUG-111：`any & 1` / `~any` 与 `+ - * / %` 同口径 ⇒ number；
-    // 旧回退臂只认 prim 三型，结果退 unknown 并误报 nudo:unknown-inference。
+  it("any operand: 单侧 any 仍是 number，双 any / ~any 是 unknown；bigint 字面量仍折叠", () => {
+    // 单侧 any + 确定 number：bigint 只可能来自 any 侧，混型位运算原生
+    // TypeError ⇒ 非抛结果恒 number（精度保留）。
     expect(formatShape(bitandAbs(anyAbs, $lit(1)))).toBe("number");
-    expect(formatShape(bitnotAbs(anyAbs))).toBe("number");
+    // 双 any 可能**同为 bigint**（`1n & 1n` 合法 ⇒ bigint）⇒ 不得报 number。
+    expect(formatShape(bitandAbs(anyAbs, anyAbs))).toBe("unknown");
+    // `~1n === -2n` 合法且非抛 ⇒ `~any` 的值域不是 number。
+    expect(formatShape(bitnotAbs(anyAbs))).toBe("unknown");
+    // 负控：bigint 字面量仍精确折叠（ToNumeric 不截断 bigint）。
+    expect(formatShape(bitnotAbs($lit(1n)))).toBe("-2n");
   });
 });

@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { openLspDocument, requestCompletion } from "./lsp-harness-semantic-tokens.ts";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { withTempDir } from "./helpers.ts";
+import { withTempDir, withLspServer } from "./helpers.ts";
 import { getCompletionsAtPosition } from "../lsp-surface/completions.ts";
 import { getHoverAtPosition } from "../lsp-surface/hover.ts";
 
@@ -370,7 +370,7 @@ export function f() { return o?.a; }
 // ---------------------------------------------------------------------------
 // BUG-055 / BUG-057 / BUG-090：成员面键形态、detail 占位符、跨行点号
 // ---------------------------------------------------------------------------
-describe("BUG-055 成员补全不得发非标识符 label", () => {
+describe("成员补全不得发非标识符 label（BUG-055）", () => {
   it("对象字面量的 `123` / `a-b` / `hello world` 不入 `o.` 候选；合法键保留", () => {
     withTempDir("nudo-bug055-", (dir) => {
       const src = `export const o = { ok: 1, "a-b": 2, "hello world": 3, 123: 4 };\no.\n`;
@@ -395,7 +395,7 @@ describe("BUG-055 成员补全不得发非标识符 label", () => {
   });
 });
 
-describe("BUG-057 补全 detail 不泄漏内部 `?` 占位符", () => {
+describe("补全 detail 不泄漏内部 `?` 占位符（BUG-057）", () => {
   it("成员函数走 check 签名公式；嵌套 fn 槽的返回位补 any，不出现 `?`", () => {
     withTempDir("nudo-bug057-", (dir) => {
       const src = `export const helper = { twice(q) { return q * 2; } };\nexport function freeTwice(q) { return q * 2; }\nexport const pick = helper.twice;\nhelper.\n`;
@@ -421,7 +421,7 @@ describe("BUG-057 补全 detail 不泄漏内部 `?` 占位符", () => {
   });
 });
 
-describe("BUG-090 链式换行后的行首点号补全", () => {
+describe("链式换行后的行首点号补全（BUG-090）", () => {
   it("`o\\n  .|` 与单行 `o.|` 给同一候选", () => {
     withTempDir("nudo-bug090-", (dir) => {
       const multiline = `export const o = { alpha: 1 };\nexport function use() {\n  return o\n    .;\n}\n`;
@@ -435,6 +435,35 @@ describe("BUG-090 链式换行后的行首点号补全", () => {
       writeFileSync(ctl, single, "utf-8");
       const oneLine = getCompletionsAtPosition(ctl, single, 3, 11);
       expect(oneLine.map((i) => i.label)).toEqual(multi.map((i) => i.label));
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 零参成员被调者：没有「随实参漂移」面 ⇒ 不按观测面空壳降级
+// ---------------------------------------------------------------------------
+describe("零参成员被调者的签名弹窗与裸标识符同面", () => {
+  it("`helper.zero(` 与 `zero(` 都渲染 `() => 42`", async () => {
+    const src = `export const helper = { zero() { return 42; } };
+export function zero() { return 42; }
+helper.zero();
+zero();
+`;
+    await withLspServer({ "sig.js": src }, async ({ req, uri }) => {
+      const signatureAt = (
+        line: number,
+        character: number,
+      ): string | undefined => {
+        const res = req("textDocument/signatureHelp")({
+          textDocument: { uri: uri("sig.js") },
+          position: { line, character },
+        }) as { signatures?: Array<{ label: string }> };
+        return res.signatures?.[0]?.label;
+      };
+      // 旧口径把零参成员当成观测面空壳（无 paramTypes）⇒ 抹掉返回位 ⇒
+      // `() => unknown`，而裸标识符对照是声明域 `() => 42`。
+      expect(signatureAt(2, "helper.zero(".length)).toBe("() => 42");
+      expect(signatureAt(3, "zero(".length)).toBe("() => 42");
     });
   });
 });

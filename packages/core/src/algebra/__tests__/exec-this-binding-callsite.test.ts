@@ -143,9 +143,13 @@ describe("differential native 对照（隐式 return 体）", () => {
  * 口径正确），但入口按裸调用求值 ⇒ this = undefined ⇒ 合法 `this.area()`
  * 记 may-throw TypeError（L2 假红）+ 返回域塌 never。修复：入口求值通道
  * 携带接收者 Abs（命名 interface/type 字面量转成员槽；不可映射形态折 any
- * ——不伪造成员域也不产生假抛），`callTranspiledExportFull` 以 apply 传入。
+ * ——不伪造成员域也不产生假抛）。
+ *
+ * BUG-1071：`callTranspiledExportFull` 此前只在**宿主函数**分支传 thisArg；
+ * `export const f = function(this: Area){…}` 的导出值是一等 fn Abs，走
+ * `$call(fn, args)` 无接收者 ⇒ 同一假红。
  */
-describe("BUG-133 TS this: T receiver annotation", () => {
+describe("TS this: T 接收者注解（BUG-133）", () => {
   const src = `
 export interface Shape { area(): number }
 export function withThis(this: Shape, x: number): number { return this.area() + x; }
@@ -157,5 +161,15 @@ export function withoutThis(x: number): number { return x + 1; }
     expect(sigOf(r, "withThis")).toContain("number");
     expect(sigOf(r, "withThis")).not.toContain("never");
     expect(sigOf(r, "withoutThis")).toContain("number");
+  });
+
+  it("export const f = function(this: Area){…} 同样承接接收者（BUG-1071）", () => {
+    const src2 = `
+export interface Area { area(): number }
+export const f = function(this: Area): number { return this.area(); };
+`;
+    const r2 = checkSource("/t/this-receiver-const-1071.ts", src2, pTrue);
+    expect(r2.issues.filter((i) => i.code === "nudo:entry-may-throw")).toEqual([]);
+    expect(sigOf(r2, "f")).not.toContain("never");
   });
 });

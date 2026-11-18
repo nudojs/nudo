@@ -114,15 +114,20 @@ describe("arithmetic over abstract operand records may TypeError", () => {
     }
   });
 
-  it("+x / ~x / -x → may TypeError；~x 的值域是 number（BUG-111）", () => {
+  it("+x / ~x / -x → may TypeError；~x 的值域含 bigint ⇒ unknown（bigint 负控：~1n 合法折叠）", () => {
     for (const u of ["+", "~", "-"]) {
       const r = evalSrc(`export function f(x) { return ${u}x; }`);
       expect(r.effects, u).toContain("TypeError");
     }
     expect(evalSrc(`export function f(x) { return +x; }`).value).toBe("unknown");
-    // BUG-111：`~any` 的结果域是 number（ToInt32 恒得 number，与 `&` / `|` 同口径）
-    expect(evalSrc(`export function f(x) { return ~x; }`).value).toBe("number");
+    // `~any` 不得报 number：any 可能是 bigint（`~1n === -2n` 合法且非抛）⇒
+    // 与 negAbs 的抽象回退同口径退 unknown。
+    expect(evalSrc(`export function f(x) { return ~x; }`).value).toBe("unknown");
     expect(evalSrc(`export function f(x) { return -x; }`).value).toBe("unknown");
+    // 负控：bigint 字面量走 ToNumeric 折叠（不是 TypeError，结果仍是 bigint）
+    const big = evalSrc(`export function f() { return ~1n; }`, "f", []);
+    expect(big.value).toBe("-2n");
+    expect(big.effects).not.toContain("TypeError");
   });
 
   it("模板串 `${x}`（$add 链）与 `\"a\" + x` → may TypeError（Symbol 维度），值域 string", () => {

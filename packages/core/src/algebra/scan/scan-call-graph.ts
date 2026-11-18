@@ -608,6 +608,113 @@ function unwrapExportDecl(stmt: unknown): unknown {
     : stmt;
 }
 
+/**
+ * BUG-138：模块级**导出对象字面量**的本地绑定名（含经 spread 进入导出面的源）。
+ *
+ * 调用图的 `api.m ⇒ m` 成员映射只对这类对象生效：对象方法在普查面 / 侧车
+ * 绑定面里的名字是**裸键** `m`（`export const api = { m(){} }` ⇒ 入口名 `m`），
+ * 只有导出对象的方法才有那份签名 / 契约。局部对象字面量的方法跟无关顶层
+ * 函数同名时借用那份签名 ⇒ 合法调用按**别人的**元数判红（假红）。
+ *
+ * 口径：`export const api = {…}` / `export { api }`（含 `as default`）/
+ * `export default api` / `module.exports = api`；导出对象字面量里
+ * `{ ...base }` 的**源**也算导出（运行时它的方法就在导出对象上，普查面
+ * 同样按裸键登记）。
+ */
+function exportedObjectBindingNames(file: ReturnType<typeof parse>): Set<string> {
+  const out = new Set<string>();
+  /** 顶层对象字面量绑定（`{ ...base }` 的源按名字查） */
+  const topObjects = new Map<string, Record<string, unknown>>();
+  /** 导出面直接出现的对象字面量（`export default {…}` / `module.exports = {…}`） */
+  const literals: Array<Record<string, unknown>> = [];
+
+  for (const stmt of file.program.body) {
+    const s = stmt as {
+      type?: string;
+      declaration?: unknown;
+      source?: unknown;
+      specifiers?: Array<Record<string, unknown>>;
+      expression?: Record<string, unknown>;
+    };
+    const decl = unwrapExportDecl(stmt) as
+      | { type?: string; declarations?: Array<Record<string, unknown>> }
+      | undefined;
+    if (decl?.type === "VariableDeclaration") {
+      for (const v of decl.declarations ?? []) {
+        const id = v.id as { type?: string; name?: string } | undefined;
+        const init = v.init as { type?: string } | undefined;
+        if (id?.type !== "Identifier" || !id.name || init?.type !== "ObjectExpression") {
+          continue;
+        }
+        const obj = init as Record<string, unknown>;
+        topObjects.set(id.name, obj);
+        // `export const api = {…}`：绑定本身就在导出槽上
+        if (s.type === "ExportNamedDeclaration") {
+          out.add(id.name);
+          literals.push(obj);
+        }
+      }
+    }
+    if (s.type === "ExportNamedDeclaration") {
+      // 声明形态已处理；re-export（有 source）不绑源码
+      if (decl || s.source) continue;
+      // export { api } / export { api as default }（无 source ⇒ 本地绑定）
+      for (const sp of s.specifiers ?? []) {
+        if (sp.type !== "ExportSpecifier") continue;
+        const local = sp.local as { type?: string; name?: string } | undefined;
+        if (local?.type === "Identifier" && local.name) out.add(local.name);
+      }
+      continue;
+    }
+    if (s.type === "ExportDefaultDeclaration") {
+      const d = s.declaration as { type?: string; name?: string } | undefined;
+      if (d?.type === "Identifier" && d.name) out.add(d.name);
+      else if (d?.type === "ObjectExpression") literals.push(d as Record<string, unknown>);
+      continue;
+    }
+    if (s.type !== "ExpressionStatement") continue;
+    const e = s.expression as
+      | { type?: string; left?: Record<string, unknown>; right?: Record<string, unknown> }
+      | undefined;
+    if (e?.type !== "AssignmentExpression") continue;
+    const left = e.left;
+    const right = e.right;
+    if (left?.type !== "MemberExpression") continue;
+    const obj = left.object as { type?: string; name?: string } | undefined;
+    // `module.exports = { … }` / `module.exports = api`（CJS 的默认导出槽）
+    const isModuleExportsSlot =
+      obj?.type === "Identifier" &&
+      obj.name === "module" &&
+      (left.property as { name?: string } | undefined)?.name === "exports";
+    if (!isModuleExportsSlot) continue;
+    if (right?.type === "ObjectExpression") literals.push(right);
+    else if (right?.type === "Identifier" && typeof right.name === "string") out.add(right.name);
+  }
+
+  // 导出的名字指向对象字面量 ⇒ 该字面量在导出面上；再沿 spread 展开源
+  const queue = [...literals];
+  for (const name of out) {
+    const lit = topObjects.get(name);
+    if (lit) queue.push(lit);
+  }
+  const seen = new Set<object>();
+  while (queue.length > 0) {
+    const obj = queue.pop()!;
+    if (seen.has(obj)) continue;
+    seen.add(obj);
+    for (const raw of (obj.properties as Array<Record<string, unknown>> | undefined) ?? []) {
+      if (raw.type !== "SpreadElement" && raw.type !== "SpreadProperty") continue;
+      const arg = raw.argument as { type?: string; name?: string } | undefined;
+      if (arg?.type !== "Identifier" || typeof arg.name !== "string") continue;
+      const src = topObjects.get(arg.name);
+      if (!src) continue;
+      out.add(arg.name);
+      queue.push(src);
+    }
+  }
+  return out;
+}
+
 /** 模块顶层 `class <name>` 声明（含 export 包装） */
 function findClassDecl(
   file: ReturnType<typeof parse>,
@@ -999,10 +1106,17 @@ function walkStatements(
  *
  * 只认「无预绑定实参」的形态（`f.bind(null)`）；`f.bind(null, 1)` 会改变
  * 实参数量与位置，本表没有携带绑定实参的槽 ⇒ 不猜、不登记（fail-closed）。
+ *
+ * 目标名**按词法作用域链**解析（与 `resolveScopedName` 同口径）：局部同名
+ * 声明（形参 / 局部 `const` / 局部函数）不是顶层同名函数 ⇒ 旧实现先查
+ * 全文件普查表（`knownSet`）⇒ `const f = () => 1; f.bind(null)` 被当成
+ * 顶层 `f` 的别名 ⇒ 调用点按**别人的**元数判红（合法代码假红）。
+ * 链上被遮蔽 ⇒ 不登记（fail-closed），不回落普查表。
  */
 function bindAliasTargetOf(
   init: Record<string, unknown>,
-  frame: ScopeFrame,
+  resolve: CallResolve,
+  chain: ScopeChain,
   knownSet: Set<string>,
   extOf: (name: string) => ExternalFnRef | undefined,
 ): { fn?: string; external?: ExternalFnRef } | undefined {
@@ -1025,10 +1139,14 @@ function bindAliasTargetOf(
   const obj = callee.object as Record<string, unknown> | undefined;
   if (obj?.type !== "Identifier" || typeof obj.name !== "string") return undefined;
   const target = obj.name;
+  // 词法作用域优先：命中别名 / 外部绑定就用它；命中同名声明（遮蔽）就
+  // 不登记；链上都没有才回落普查面（顶层函数）。
+  const scoped = resolveScopedName(resolve, chain, target);
+  if (scoped?.kind === "alias") return { fn: scoped.fn };
+  if (scoped?.kind === "external") return { external: scoped.ref };
+  if (scoped?.kind === "shadowed") return undefined;
   if (knownSet.has(target)) return { fn: target };
-  const aliased = frame.aliases.get(target);
-  if (aliased) return { fn: aliased };
-  const ext = frame.externals.get(target) ?? extOf(target);
+  const ext = extOf(target);
   if (ext) return { external: ext };
   return undefined;
 }
@@ -1115,6 +1233,48 @@ export function collectCallResolvers(
     return classBindingCache.get(key);
   };
   resolveOut.namespaceClassBinding = namespaceClassBinding;
+  /**
+   * BUG-138：模块级**导出对象字面量**的绑定名 —— `id.name ∈ exportedBags` 且
+   * 声明在模块帧时，`ObjectMethod` 成员才做 `api.m ⇒ m` 映射（局部对象的
+   * 同名方法与无关顶层函数不共享签名）。
+   */
+  const exportedBags = exportedObjectBindingNames(file);
+  /**
+   * BUG-108：`{ ...base }` 的成员绑定传播。
+   *
+   * 运行时展开是「把源的成员搬到新接收者」，所以成员绑定也要跟着搬；源对象
+   * 可能在**外层作用域**（模块级的 `export const base = {…}`，展开写在函数
+   * 体里）⇒ 沿作用域链读 `<src>.<prop>`，写到**当前帧**的 `<dest>.<prop>`。
+   *
+   * 遮蔽口径与 `resolveScopedMember` 同款：内层**声明**了 `src` 却没有任何
+   * 成员绑定 ⇒ 不再回落外层（外层的 `src` 不是这里的 `src`）。
+   */
+  const propagateSpreadMembers = (
+    chain: ScopeChain,
+    dest: string,
+    src: string,
+    frame: ScopeFrame,
+  ): void => {
+    const prefix = `${src}.`;
+    for (const sid of chain) {
+      const f = scopes.frames.get(sid);
+      if (!f) continue;
+      let hit = false;
+      for (const [k, v] of f.members) {
+        if (!k.startsWith(prefix)) continue;
+        frame.members.set(`${dest}.${k.slice(prefix.length)}`, v);
+        hit = true;
+      }
+      for (const [k, v] of f.externalMembers) {
+        if (!k.startsWith(prefix)) continue;
+        const nk = `${dest}.${k.slice(prefix.length)}`;
+        frame.externalMembers.set(nk, v);
+        externalMember.set(nk, v);
+        hit = true;
+      }
+      if (hit || f.names.has(src)) return;
+    }
+  };
   // ObjectPattern 解构导入（动态 import 与 require 两路同款单源）：属性名
   // → exported；绑定名 → local（省略别名时与 exported 同名）。
   const bindPatternImports = (
@@ -1294,7 +1454,7 @@ export function collectCallResolvers(
         const extOf = (name: string): ExternalFnRef | undefined =>
           frame.externals.get(name) ?? externalFn.get(name);
         // BUG-045：`const g = f.bind(null)` ⇒ g 是 f 的绑定别名
-        const bindAlias = bindAliasTargetOf(init, frame, knownSet, extOf);
+        const bindAlias = bindAliasTargetOf(init, resolveOut, chain, knownSet, extOf);
         // const f = needsPositive
         if (init.type === "Identifier" && typeof init.name === "string" && knownSet.has(init.name)) {
           // 别名绑定进**当前作用域**（Bug 1106：内层的 `const f = g` 不该影响
@@ -1330,46 +1490,62 @@ export function collectCallResolvers(
         }
         // const api = { needsPositive } / const api = { f }（f 是导入绑定）
         if (init.type === "ObjectExpression") {
+          // BUG-138：`api.m ⇒ m` 只对**模块级导出的对象字面量**成立（普查面 /
+          // 侧车只给这类对象登记裸键 `m` 的签名与契约）。局部对象（未导出）
+          // 的方法没有这份签名 ⇒ 与无关顶层函数同名时不得借用它（否则合法
+          // 调用按别人的元数判红）。
+          const exportedBag = (chain[0] ?? "") === "" && exportedBags.has(id.name);
           for (const p of (init.properties as Array<Record<string, unknown>> | undefined) ?? []) {
             // BUG-138：对象字面量的**方法定义**（`const api = { m(x){} }`）不
             // 是 ObjectProperty ⇒ 旧实现整条跳过 ⇒ `api.m(-1)` 解析不出被调名，
             // 写在方法注释上的 `@nudo:contract` 在调用点零执法（普查名仍是
             // 裸键 `m`，与入口表同口径）。
             if (p.type === "ObjectMethod") {
+              if (!exportedBag) continue;
               const kind = typeof p.kind === "string" ? p.kind : "method";
               if (kind === "get" || kind === "set") continue;
               const mk = p.key as { type?: string; name?: string; value?: unknown } | undefined;
+              const computed = p.computed === true;
               const propKey =
-                mk?.type === "Identifier" ? mk.name : mk?.type === "StringLiteral" ? String(mk.value) : undefined;
+                mk?.type === "Identifier"
+                  ? computed
+                    ? undefined
+                    : mk.name
+                  : mk?.type === "StringLiteral"
+                    ? String(mk.value)
+                    : mk?.type === "NumericLiteral"
+                      ? String(mk.value)
+                      : undefined;
               if (!propKey) continue;
               const memberKey = `${id.name}.${propKey}`;
               if (knownSet.has(propKey)) frame.members.set(memberKey, propKey);
               continue;
             }
-            if (p.type !== "ObjectProperty") {
+            if (p.type === "SpreadElement" || p.type === "SpreadProperty") {
               // `{ ...base }`：展开源的成员在调用图上与源对象同名绑定（运行时
-              // 是同一函数）⇒ 把源的 `owner.key` 映射复制到新接收者。
-              if (p.type === "SpreadElement" || p.type === "SpreadProperty") {
-                const arg = (p as { argument?: { type?: string; name?: string } }).argument;
-                if (arg?.type !== "Identifier" || !arg.name) continue;
-                const prefix = `${arg.name}.`;
-                for (const [k, v] of frame.members) {
-                  if (k.startsWith(prefix)) frame.members.set(`${id.name}.${k.slice(prefix.length)}`, v);
-                }
-                for (const [k, v] of frame.externalMembers) {
-                  if (!k.startsWith(prefix)) continue;
-                  const nk = `${id.name}.${k.slice(prefix.length)}`;
-                  frame.externalMembers.set(nk, v);
-                  externalMember.set(nk, v);
-                }
-              }
+              // 是同一函数）⇒ 把源的 `owner.key` 映射复制到新接收者。源按
+              // **作用域链**解析（模块级导出对象在函数体里展开也要搬得到）。
+              const arg = (p as { argument?: { type?: string; name?: string } }).argument;
+              if (arg?.type !== "Identifier" || !arg.name) continue;
+              propagateSpreadMembers(chain, id.name, arg.name, frame);
               continue;
             }
+            if (p.type !== "ObjectProperty") continue;
             const key = p.key as { type?: string; name?: string; value?: unknown };
             const value = p.value as { type?: string; name?: string } | undefined;
             if (value?.type !== "Identifier" || !value.name) continue;
+            // 动态计算键（`{ [k]: fn }`）没有稳定成员名 ⇒ 不映射；静态字面量
+            // 计算键（`{ ["m"]: fn }`）与 `{ m: fn }` 同口径。
             const propKey =
-              key?.type === "Identifier" ? key.name : key?.type === "StringLiteral" ? String(key.value) : undefined;
+              key?.type === "Identifier"
+                ? p.computed === true
+                  ? undefined
+                  : key.name
+                : key?.type === "StringLiteral"
+                  ? String(key.value)
+                  : key?.type === "NumericLiteral"
+                    ? String(key.value)
+                    : undefined;
             if (!propKey) continue;
             const memberKey = `${id.name}.${propKey}`;
             if (knownSet.has(value.name)) {

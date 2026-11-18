@@ -403,6 +403,11 @@ function $invokeInner(
  * `fnName` / `callLoc` ⇒ `nudo test` 只打印直接调用的 `call@L…` 见证，
  * 间接调用的现场像从没执行过一样。这里在派发出口补一条记录（与
  * `$callNamed` 同形状）；解析不到函数名 / 没有调用点坐标时不猜。
+ *
+ * BUG-1071：记录必须在 `finally` 发——此前只在成功路径发（调用结果作实参
+ * 传入）⇒ 抛出的 `.call` / `.apply` / bind 产物调用没有任何见证（`nudo
+ * test` 看调用点"没执行过"，与同文件的类方法/属性值派发口径不一致）。
+ * `threw: true` + 载荷 = `throwPayloadOf(e)`，与其它发射点同形。
  */
 function indirectCallNameOf(target: unknown): string | undefined {
   if (typeof target === "function") return (target as { name?: string }).name || undefined;
@@ -416,20 +421,30 @@ function indirectCallNameOf(target: unknown): string | undefined {
 function noteIndirectCall(
   target: unknown,
   callArgs: Abs[],
-  result: Abs,
+  invoke: () => Abs,
   loc?: [number, number],
 ): Abs {
-  const name = indirectCallNameOf(target);
-  if (name) {
-    noteEvalCallRecord({
-      fnName: name,
-      args: callArgs,
-      result,
-      ...(loc ? { callLoc: { line: loc[0], column: loc[1] } } : {}),
-      threw: false,
-    });
+  let result: Abs = unknown;
+  let threw = false;
+  try {
+    result = invoke();
+    return result;
+  } catch (e) {
+    threw = true;
+    result = throwPayloadOf(e);
+    throw e;
+  } finally {
+    const name = indirectCallNameOf(target);
+    if (name) {
+      noteEvalCallRecord({
+        fnName: name,
+        args: callArgs,
+        result,
+        ...(loc ? { callLoc: { line: loc[0], column: loc[1] } } : {}),
+        threw,
+      });
+    }
   }
-  return result;
 }
 
 function invokeCallApplyBind(
@@ -536,25 +551,25 @@ function invokeCallApplyBind(
     //（thisArg 对宿主全局无意义，原生忽略）
     if (method === "call") {
       const bridged = callHostGlobalFn(thisVal, args.slice(1));
-      if (bridged !== undefined) return noteIndirectCall(thisVal, args.slice(1), bridged, loc);
+      if (bridged !== undefined) return noteIndirectCall(thisVal, args.slice(1), () => bridged, loc);
       // thisArg（Abs）作为宿主 this 传入；函数体 prologue $rawThis(this) 承接。
       // 缺 thisArg（call() 无实参）→ 宿主 undefined ≡ strict this undefined。
       const callArgs = args.slice(1);
       return noteIndirectCall(
         thisVal,
         callArgs,
-        callAtFunctionBoundary(() => fn.apply(args[0] as never, callArgs)),
+        () => callAtFunctionBoundary(() => fn.apply(args[0] as never, callArgs)),
         loc,
       );
     }
     if (method === "apply") {
       const callArgs = expandApplyArgs(args[1]);
       const bridged = callHostGlobalFn(thisVal, callArgs);
-      if (bridged !== undefined) return noteIndirectCall(thisVal, callArgs, bridged, loc);
+      if (bridged !== undefined) return noteIndirectCall(thisVal, callArgs, () => bridged, loc);
       return noteIndirectCall(
         thisVal,
         callArgs,
-        callAtFunctionBoundary(() => fn.apply(args[0] as never, callArgs)),
+        () => callAtFunctionBoundary(() => fn.apply(args[0] as never, callArgs)),
         loc,
       );
     }
@@ -569,11 +584,11 @@ function invokeCallApplyBind(
           // Bug 26：宿主全局 bind 产物同样经桥（boundThis 宿主全局原生忽略）
           const allArgs = [...bound, ...callArgs];
           const bridged = callHostGlobalFn(thisVal, allArgs);
-          if (bridged !== undefined) return noteIndirectCall(thisVal, allArgs, bridged);
+          if (bridged !== undefined) return noteIndirectCall(thisVal, allArgs, () => bridged);
           return noteIndirectCall(
             thisVal,
             allArgs,
-            callAtFunctionBoundary(() => fn.apply(boundThis as never, allArgs)),
+            () => callAtFunctionBoundary(() => fn.apply(boundThis as never, allArgs)),
           );
         },
       },
@@ -614,11 +629,11 @@ function invokeCallApplyBind(
       // 缺 thisArg（call() 无实参）→ undefined ≡ strict this undefined。
       if (method === "call") {
         const callArgs = args.slice(1);
-        return noteIndirectCall(thisVal, callArgs, $call(thisVal, callArgs, args[0]), loc);
+        return noteIndirectCall(thisVal, callArgs, () => $call(thisVal, callArgs, args[0]), loc);
       }
       if (method === "apply") {
         const callArgs = expandApplyArgs(args[1]);
-        return noteIndirectCall(thisVal, callArgs, $call(thisVal, callArgs, args[0]), loc);
+        return noteIndirectCall(thisVal, callArgs, () => $call(thisVal, callArgs, args[0]), loc);
       }
     }
     if (isCallable || isClassValue) {
@@ -636,7 +651,7 @@ function invokeCallApplyBind(
             return noteIndirectCall(
               thisVal,
               allArgs,
-              callAtFunctionBoundary(() => $call(thisVal, allArgs, boundThis)),
+              () => callAtFunctionBoundary(() => $call(thisVal, allArgs, boundThis)),
             );
           },
         },

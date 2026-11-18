@@ -71,8 +71,14 @@ describe("用户类遮蔽内建名 ⇒ zod 面不得按全局构造器投影", (
       { fn: "makeTopDate", inputs: [], returns: brandOf("Date") },
       { scope: scopeOf("Date") },
     );
-    // 产物里的 brand 节点带名字 ⇒ 反向断言：没有以 Date 为名的 brand 子句
-    expect(mod.source).not.toMatch(/"k": "brand",\s*"name": "Date"/);
+    // 产物里的 brand 节点带名字 ⇒ 反向断言：序列化是紧凑 JSON（`"k":"brand"`），
+    // 带空格的 `/"k": "brand"/` 永远匹配不上（旧断言对未遮蔽模块也恒绿）。
+    expect(mod.source).not.toContain('"k":"brand"');
+    // 对照：未遮蔽的同一序列化**确实**带 brand 节点 ⇒ 上面的反向断言不是恒真。
+    expect(
+      absToStandardSchemaFunction({ fn: "makeTopDate", inputs: [], returns: brandOf("Date") })
+        .source,
+    ).toContain('"k":"brand"');
     expect(mod.dropped.join("\n")).toContain("brand shadowed by a local binding");
   });
 

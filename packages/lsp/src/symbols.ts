@@ -3828,6 +3828,10 @@ function referencesOfExportedSymbol(
   }
 
   const cross = findCrossFileReferences(declFile, localNameInDef, {
+    // 扫描根必须仍是**用户导入的那个文件**所在目录：src/index.js 转出
+    // src/lib/deep.js 时，消费方住在 src/app —— 以声明目录为根会把它们
+    // 全部漏掉（references / rename 只覆盖 src/lib 内部）。
+    rootDir: dirname(definingFile),
     extraFiles: [...(opts.extraFiles ?? []), opts.fromFile],
     sourceProvider: opts.sourceProvider,
   });

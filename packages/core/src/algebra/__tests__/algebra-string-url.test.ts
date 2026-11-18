@@ -1585,7 +1585,7 @@ describe("抽象接收者的 matchAll 抽象臂（methods.ts matchAllAbstractArm
  * （元素域 unknown）。修复：`@@iterator === entries`（WHATWG），条目表
  * （urlSearchParamsEntriesOf 单一真值源）在四个消费面精确展开。
  */
-describe("BUG-125 URLSearchParams iterable面", () => {
+describe("URLSearchParams iterable面（BUG-125）", () => {
   const sp = `new URLSearchParams("a=1&b=2")`;
 
   it("spread / for-of / Array.from / 解构 = 条目表", () => {
@@ -1619,7 +1619,7 @@ describe("BUG-125 URLSearchParams iterable面", () => {
  * 同一解析状态的投影；修复：setter 后按宿主 URL 重放并回写全部组件与
  * `searchParams` 条目表（抽象值退 string 域，不发布陈旧精确值）。
  */
-describe("BUG-126 URL component setters recompute derived components", () => {
+describe("URL component setters recompute derived components（BUG-126）", () => {
   it("search setter 同步 searchParams（与 spMutator 对称）", () => {
     expect(
       litValue(

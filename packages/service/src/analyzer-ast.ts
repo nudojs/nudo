@@ -276,6 +276,9 @@ function localObjectLiteralsOf(ast: Node): Map<string, Node> {
         ? (stmt as { declaration?: Node | null }).declaration
         : stmt;
     if (d?.type !== "VariableDeclaration") continue;
+    // 只有 `const` 的初值是**不可重新赋值**的：`let` / `var` 可能被改写，
+    // 旧初值不是当前对象 ⇒ 展开/查表会解析到陈旧的成员定义，不入索引。
+    if ((d as { kind?: string }).kind !== "const") continue;
     for (const decl of getDeclarations(d)) {
       const id = asIdentifier(decl.id as Node);
       if (id && decl.init?.type === "ObjectExpression") out.set(id.name, decl.init as Node);
@@ -288,10 +291,14 @@ function localObjectLiteralsOf(ast: Node): Map<string, Node> {
 function flattenObjectProps(
   objLit: Node,
   locals: ReadonlyMap<string, Node>,
-  seen: Set<Node> = new Set(),
+  seen: ReadonlySet<Node> = new Set(),
 ): Node[] {
   if (objLit.type !== "ObjectExpression" || seen.has(objLit)) return [];
-  seen.add(objLit);
+  // 环保护按**路径**生效（复制一份向下传，不在全局 `seen` 上永久占位）：
+  // 同一字面量出现在兄弟展开里（`{...base, ...base}`）时，后一次展开的成员
+  // 仍要参与 last-wins（真·循环 `const a = {...a}` 在展开时已在路径上被挡）。
+  const path = new Set(seen);
+  path.add(objLit);
   const out: Node[] = [];
   for (const raw of ((objLit as unknown as { properties?: unknown[] }).properties ?? [])) {
     const prop = raw as Node & { argument?: Node & { name?: string } };
@@ -303,12 +310,45 @@ function flattenObjectProps(
           : arg?.type === "ObjectExpression"
             ? arg
             : undefined;
-      if (src) out.push(...flattenObjectProps(src, locals, seen));
+      if (src) out.push(...flattenObjectProps(src, locals, path));
       continue;
     }
     out.push(prop);
   }
-  return out;
+  // 对象字面量语义是 **last-wins**：同一 key 后出现的成员覆盖先出现的
+  // （`{...base, helper(){…}}` 不得留下两条 `helper`；`{...base, helper: 42}`
+  // 里 base 的函数已被覆盖）。展开成员与显式成员同表按源顺序去重，覆盖
+  // 目标含 callable / accessor / 非 callable（由下游按最终成员的形态判定）。
+  // 计算键不可静态定名 ⇒ 不参与去重（保留两条，不猜）。
+  const deduped: Node[] = [];
+  const keyIdx = new Map<string, number>();
+  for (const prop of out) {
+    const meta = prop as unknown as { key?: { type?: string }; computed?: unknown };
+    const keyNode = meta.key;
+    const computedLiteral =
+      keyNode?.type === "StringLiteral" ||
+      keyNode?.type === "NumericLiteral" ||
+      keyNode?.type === "BigIntLiteral" ||
+      keyNode?.type === "Literal";
+    if (meta.computed === true && !computedLiteral) {
+      // 动态计算键（`[x]`）不可静态定名 ⇒ 不参与去重（保留两条，不猜）
+      deduped.push(prop);
+      continue;
+    }
+    const key = objectMemberKeyName(prop);
+    if (key === null) {
+      deduped.push(prop);
+      continue;
+    }
+    const at = keyIdx.get(key);
+    if (at === undefined) {
+      keyIdx.set(key, deduped.length);
+      deduped.push(prop);
+    } else {
+      deduped[at] = prop;
+    }
+  }
+  return deduped;
 }
 
 export function collectTopLevelFunctions(

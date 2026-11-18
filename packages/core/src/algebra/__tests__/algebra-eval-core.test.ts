@@ -8,7 +8,7 @@ import { absToConstraint } from "../contract/projection.ts";
 import { predToString, pTrue, gtNum } from "../pred.ts";
 import { denoteGuard } from "../../internal.ts";
 import { checkSource, resetCheckSourceMemo } from "../check/check.ts";
-import { resetGeneralizeMemo, buildArgsFromAssume } from "../generalize.ts";
+import { resetGeneralizeMemo, buildArgsFromAssume, listFunctionNames } from "../generalize.ts";
 import type { CheckIssue } from "../check/check-report.ts";
 import { sidecarOpts, errorsOf, issuesOf, sigOf, withStdImport, stdOpts } from "./nudo-constraints.ts";
 import { litValue, abs, pTrue as pTrue___nudojs_core, type Abs as Abs___nudojs_core, str, anyAbs, runTranspiled as runTranspiled___nudojs_core, callTranspiledExportFull as callTranspiledExportFull___nudojs_core, unknown, relationFn, formatShape } from "@nudojs/core";
@@ -3059,6 +3059,35 @@ describe("absShapeForTsTypeText 不进**公共**面（负控；internal 面已�
       k: "obj",
       slots: { a: { value: { shape: { k: "prim", type: "number" } } } },
     });
+    // 结构类型不封闭值域：对象字面量 / `object` / `{}` 都是**开放**对象
+    //（额外属性 + 可选缺键都合法），嵌套对象同一口径。
+    for (const objText of ["{ a: number }", "object", "{}"]) {
+      expect(absShapeForTsTypeText(objText), objText).toMatchObject({ k: "obj", open: true });
+    }
+    expect(absShapeForTsTypeText("{ a: { b: number } }")).toMatchObject({
+      k: "obj",
+      open: true,
+      slots: { a: { value: { shape: { k: "obj", open: true } } } },
+    });
+    // 可选 / rest 元组长度可变 ⇒ 降级为 arr(元素域并集)，不得是定长 tuple。
+    for (const tupleText of [
+      "[string, number?]",
+      "[string, number ?]",
+      "[string, ...number[]]",
+      "[string, ... number[]]",
+    ]) {
+      const sh = absShapeForTsTypeText(tupleText);
+      expect(sh, tupleText).toMatchObject({ k: "arr" });
+      const elem = sh?.k === "arr" ? sh.element.shape : undefined;
+      expect(elem).toMatchObject({ k: "sum" });
+      expect(elem?.k === "sum" ? elem.members.length : 0, tupleText).toBe(2);
+    }
+    // 负控：定长必填元组口径不变。
+    expect(absShapeForTsTypeText("[string, number]")).toMatchObject({ k: "tuple" });
+    // null / undefined / void 不是值形状 ⇒ 整条不映射（不得嵌 unknown 令牌）
+    for (const nullishText of ["null", "undefined", "void", "string | null"]) {
+      expect(absShapeForTsTypeText(nullishText), nullishText).toBeUndefined();
+    }
     expect(absShapeForTsTypeText("string | number")).toMatchObject({
       k: "sum",
       members: [{ shape: { k: "prim", type: "string" } }, { shape: { k: "prim", type: "number" } }],
@@ -3071,8 +3100,83 @@ describe("absShapeForTsTypeText 不进**公共**面（负控；internal 面已�
     expect(pub.absShapeForTsTypeText).toBeUndefined();
   }
 });
+  it("复合注解端到端：合法更宽值不再判错精确（\"b\" in x 非 exact false；可选 / rest 元组 length 非 exact 2；Object.keys 不是 exact 键表，嵌套槽同口径）", () => {
+    const r = checkSource(
+      "/t/ts-annotations.ts",
+      `export function hasB(x: { a: number }) { return "b" in x; }
+export function keys(x: { a: number }) { return Object.keys(x); }
+export function objectKeys(x: object) { return Object.keys(x); }
+export function optionalLen(x: [string, number?]) { return x.length; }
+export function restLen(x: [string, ...number[]]) { return x.length; }
+export function nestedKeys(x: { a: { b: number } }) { return Object.keys(x.a).length; }
+export function nestedHasZ(x: { a: { b: number } }) { return "z" in x.a; }`,
+      pTrue,
+      {},
+    );
+    // 改前：false / ["a"] / [] / 2 / `any throws TypeError`（错精确 + 假抛）
+    expect(sigOf(r, "hasB")).toBe("boolean");
+    // 开放对象的键集未知 ⇒ 键家族折 partial（不得是 exact ["a"]）
+    expect(sigOf(r, "keys")).toBe("string[]");
+    expect(sigOf(r, "objectKeys")).toBe("string[]");
+    expect(sigOf(r, "optionalLen")).toBe("number");
+    expect(sigOf(r, "restLen")).toBe("number");
+    // 嵌套开放对象槽同样不得折错精确（合法 {a:{b:1, c:2}}）
+    expect(sigOf(r, "nestedKeys")).not.toBe("1");
+    expect(sigOf(r, "nestedKeys")).toBe("number");
+    expect(sigOf(r, "nestedHasZ")).toBe("boolean");
+    expect(r.issues.filter((i) => i.code === "nudo:entry-may-throw")).toEqual([]);
+  });
 
 });
+});
+
+// ---------------------------------------------------------------------------
+// 声明面分类 / 列名 / 侧车袋：复审确认的三条静默失败
+// ---------------------------------------------------------------------------
+
+describe("parse-source 模块类型按掩码源码判定（注释 / 字符串 / 模板内容不参与）", () => {
+  it("同行 ESM 语法不被注释里的 require( 拉成 script；.cjs 模板里的 export 行不判 module；模板插值仍是代码", () => {
+    // 合法 ESM（`}` 后同行 `export`）+ 注释提到 require( ⇒ 仍是 module
+    const esm = `function f() {} export { f }; // require("x")\n`;
+    expect(parseSource(esm, { filename: "/t/a.js" }).program.sourceType).toBe("module");
+    // `.cjs`：模板内容里一行以 export 开头 ⇒ 不得判 module
+    // （否则合法的重复声明整份被判 syntax error）
+    const cjs = "const t = `\nexport const x = 1;\n`;\nfunction f() {}\nfunction f(a) { return a; }\n";
+    expect(parseSource(cjs, { filename: "/t/a.cjs" }).program.sourceType).toBe("script");
+    // 模板插值是代码岛：`${import.meta.url}` 仍判 module（.js + CJS 标记）
+    const interp = `const u = \`\${import.meta.url}\`;\nmodule.exports = u;\n`;
+    expect(parseSource(interp, { filename: "/t/b.js" }).program.sourceType).toBe("module");
+    // 负控：真 CJS `.js` 仍是 script；`.mjs` 恒 module
+    expect(parseSource(`module.exports = 1;\n`, { filename: "/t/c.js" }).program.sourceType).toBe("script");
+    expect(parseSource(`const x = 1;\n`, { filename: "/t/d.mjs" }).program.sourceType).toBe("module");
+    // 打包器产物：`import_vscode` 标识符与正则里的 `export` 都不是模块语法
+    const bundle = `var import_vscode = require("vscode");\nconst re = /(?:export\\s+)?function/;\nmodule.exports = { re };\n`;
+    expect(parseSource(bundle, { filename: "/t/bundle.js" }).program.sourceType).toBe("script");
+  });
+});
+
+describe("listFunctionNames 不列没有签名表条目的类访问器", () => {
+  it("get/set 不进名单（签名面只有构造器面与方法）；负控：普通方法仍在名单", () => {
+    const names = listFunctionNames(
+      `export class C {\n  get x() { return 1; }\n  set x(v) {}\n  m() { return 2; }\n}\n`,
+    );
+    expect(names).toEqual(["C", "C.m"]);
+  });
+});
+
+describe("侧车嵌套袋只在源码条目是类时静默（BUG-058 判据收紧）", () => {
+  it("普通函数的同名袋不再静默丢弃契约——仍报 not a Nudo constraint；负控：类名袋照旧被当容器（无诊断，方法契约生效）", () => {
+    const SIDE = `import { fn, number } from "@nudojs/core";\nexport const K = { run: fn({ a: number() }, number()) };\n`;
+    const opts = sidecarOpts("bag.nudo", SIDE, "/t/bag.js");
+    // 改前：袋判据不看源码声明种类 ⇒ 普通函数 K 的同名袋被当容器静默跳过，
+    // 契约被丢弃且无任何诊断（签名退 any）。
+    const plain = checkSource("/t/bag.js", `export function K(a) { return a; }`, pTrue, opts);
+    const diags = plain.issues.filter((i) => i.code === "nudo:contract-load");
+    expect(diags.map((i) => i.message).join("\n")).toContain("is not a Nudo constraint");
+    const cls = checkSource("/t/bag.js", `export class K { run(a) { return a; } }`, pTrue, opts);
+    expect(cls.issues.filter((i) => i.code === "nudo:contract-load")).toEqual([]);
+    expect(sigOf(cls, "K.run")).toBe("number");
+  });
 });
 
 // ---------------------------------------------------------------------------

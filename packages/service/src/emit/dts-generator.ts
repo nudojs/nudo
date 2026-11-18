@@ -221,15 +221,20 @@ type BrandScope = {
   /** 产物里可解析的类名 */
   names: ReadonlySet<string>;
   /**
-   * 类名 → **必填**类型形参个数（无默认值的形参）。
+   * 类名 → **必填**类型形参的占位实参（按声明顺序）。
    *
    * BUG-040：`class Box<T>` 在返回位被投影成裸 `Box` ⇒ 产物 TS2314（Generic
    * type 'Box<T>' requires 1 type argument(s)）。内建泛型早就在
    * `BUILTIN_GENERIC_BRANDS` 里补了 `unknown` 实参，用户类缺这一档。只对
    * **必填**形参补（有默认值的 `class Box<T = string>` 裸名合法，保持逐字
    * 不变——既有回归钉的就是这一半）。
+   *
+   * 回归修正：占位实参不能一律 `unknown`——`class C<T extends string>` 会被
+   * 填成 `C<unknown>` ⇒ 消费端 TS2344（`unknown` 不满足约束）。无约束 ⇒
+   * `unknown`；约束自包含 ⇒ 约束原文（`C<string>`）；否则 `any`（TS 的
+   * `any` 满足任意约束，不会把「不可解析」变成编译错误）。
    */
-  requiredArgs: ReadonlyMap<string, number>;
+  requiredArgFillers: ReadonlyMap<string, readonly string[]>;
 };
 
 let currentBrandScope: BrandScope | undefined;
@@ -268,16 +273,16 @@ function withReadonlySlots<T>(fn: () => T): T {
  */
 function brandScopeOf(surface: DtsModuleSurface | undefined): BrandScope {
   const names = new Set<string>();
-  const requiredArgs = new Map<string, number>();
-  if (!surface) return { names, requiredArgs };
+  const requiredArgFillers = new Map<string, readonly string[]>();
+  if (!surface) return { names, requiredArgFillers };
   for (const [name, cls] of surface.classes) {
     names.add(name);
-    const required = requiredTypeParamCount(cls.typeParamsText, cls.typeParams);
-    if (required > 0) requiredArgs.set(name, required);
+    const fillers = requiredTypeArgFillers(cls.typeParamsText, cls.typeParams, surface);
+    if (fillers.length > 0) requiredArgFillers.set(name, fillers);
   }
   // 导入类的形参个数要看被导入模块，模块面拿不到 ⇒ 只能原样（与旧口径一致）。
   for (const name of surface.imports?.keys() ?? []) names.add(name);
-  return { names, requiredArgs };
+  return { names, requiredArgFillers };
 }
 
 /**
@@ -289,9 +294,20 @@ function splitTopLevel(text: string, sep: string): string[] {
   const out: string[] = [];
   let depth = 0;
   let cur = "";
-  for (const ch of text) {
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]!;
     if (ch === "<" || ch === "(" || ch === "[" || ch === "{") depth++;
-    else if (ch === ">" || ch === ")" || ch === "]" || ch === "}") depth--;
+    // 箭头函数 `=>`（`T extends (x: number) => string, U`）里的 `>` 是运算符
+    // 而不是闭合括号：当成闭合会把 depth 减成负数，后续 `,` 全被当成实参内
+    // 分隔符 ⇒ 第二个形参 `U` 从子句里消失（形参名 / 返回位引用被误判未声明）。
+    else if (
+      (ch === ">" && text[i - 1] !== "=") ||
+      ch === ")" ||
+      ch === "]" ||
+      ch === "}"
+    ) {
+      depth--;
+    }
     if (ch === sep && depth === 0) {
       out.push(cur);
       cur = "";
@@ -314,20 +330,70 @@ function typeParamNamesInClause(clause: string | undefined): string[] {
     .filter((n): n is string => n !== undefined);
 }
 
-/** 子句里**必填**（无 `=` 默认值）的形参个数；无子句原文 ⇒ 按名字表全算 */
-function requiredTypeParamCount(
+/**
+ * 类型形参声明里是否有**默认值**（顶层 `=`，不是箭头 `=>`）。
+ *
+ * `T extends (x: number) => string` 的 `=` 属于箭头类型：按裸 `=` 切分会把它
+ * 误判成「有默认值 ⇒ 可省」⇒ 裸类名不补实参（TS2314）。
+ */
+function typeParamHasDefault(text: string): boolean {
+  let depth = 0;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]!;
+    if (ch === "<" || ch === "(" || ch === "[" || ch === "{") depth++;
+    else if (
+      (ch === ">" && text[i - 1] !== "=") ||
+      ch === ")" ||
+      ch === "]" ||
+      ch === "}"
+    ) {
+      depth--;
+    } else if (ch === "=" && depth === 0 && text[i + 1] !== ">") return true;
+  }
+  return false;
+}
+
+/**
+ * 裸类名的**必填**类型形参占位实参（BUG-040 + 约束修正）。
+ *
+ * `class Box<T>` 被投影成裸 `Box` ⇒ TS2314，缺什么补什么；但 `unknown` 会
+ * 违反声明里的约束（`class C<T extends string>` ⇒ `C<unknown>` 是 TS2344）：
+ * - 无约束 ⇒ `unknown`（无信息，TS 的 top）；
+ * - 约束自包含（只引用 TS 内建 / 产物里可解析的名字，且不引用本类自己的
+ *   其它形参）⇒ 约束原文（`C<string>`）；
+ * - 否则 ⇒ `any`（满足任意约束；比让整份产物编译失败可诊断）。
+ */
+function requiredTypeArgFillers(
   clause: string | undefined,
   names: readonly string[] | undefined,
-): number {
-  if (!clause) return names?.length ?? 0;
+  surface: DtsModuleSurface | undefined,
+): string[] {
+  const fallback = (): string[] => (names ?? []).map(() => "unknown");
+  if (!clause) return fallback();
   const trimmed = clause.trim();
-  if (!/^</.test(trimmed)) return names?.length ?? 0;
-  const inner = trimmed.slice(1, trimmed.lastIndexOf(">"));
-  return splitTopLevel(inner, ",").filter((p) => {
-    const t = p.trim();
-    if (t === "") return false;
-    return splitTopLevel(t, "=").length === 1; // 顶层无 `=` ⇒ 必填
-  }).length;
+  if (!/^</.test(trimmed)) return fallback();
+  const lastClose = trimmed.lastIndexOf(">");
+  const inner = trimmed.slice(1, lastClose >= 0 ? lastClose : undefined);
+  const ownNames = new Set(names ?? typeParamNamesInClause(clause));
+  const out: string[] = [];
+  for (const part of splitTopLevel(inner, ",")) {
+    const text = part.trim();
+    if (text === "") continue;
+    // 有默认值的形参可省略 ⇒ 不补实参（`class Box<T = string>` 裸名合法）
+    if (typeParamHasDefault(text)) continue;
+    const m = /^(?:(?:const|in|out)\s+)*[A-Za-z_$][\w$]*\s+extends\s+([\s\S]+)$/.exec(text);
+    const constraint = m?.[1]?.trim();
+    if (!constraint) {
+      out.push("unknown");
+      continue;
+    }
+    // 引用本类其它形参（`U extends T`）在裸名使用点不在作用域里 ⇒ any。
+    const selfContained = annotationTypeRefs(constraint).every(
+      (n) => !ownNames.has(n) && isTypeNameResolvable(n, surface),
+    );
+    out.push(selfContained ? constraint : "any");
+  }
+  return out;
 }
 
 /**
@@ -345,11 +411,11 @@ function brandTSType(name: string): string {
   const scope = currentBrandScope;
   if (scope === undefined) return name;
   if (scope.names.has(name)) {
-    // BUG-040：必填类型形参必须补实参（TS2314）——`unknown` 是 TS 的 top，
-    // 与内建泛型（`Map` ⇒ `Map<unknown, unknown>`）同口径。
-    const required = scope.requiredArgs.get(name) ?? 0;
-    if (required <= 0) return name;
-    return `${name}<${Array.from({ length: required }, () => "unknown").join(", ")}>`;
+    // BUG-040：必填类型形参必须补实参（TS2314）——占位实参按约束选择
+    // （`unknown` 违反 `T extends string` ⇒ TS2344；见 `requiredTypeArgFillers`）。
+    const fillers = scope.requiredArgFillers.get(name);
+    if (!fillers || fillers.length === 0) return name;
+    return `${name}<${fillers.join(", ")}>`;
   }
   if (isRuntimeGlobalCtorName(name)) return name;
   return "unknown";
@@ -2541,14 +2607,22 @@ function isTypePredicateText(text: string): boolean {
 /**
  * BUG-133：`this: T` 接收者子句。类型名不可解析 ⇒ 台账 + 省略（不产出
  * TS2304）；可解析的本地声明 / import 回传 typeRefs（模块面补声明 / import）。
+ *
+ * 修正：
+ * - 本声明自己的类型形参（`g<T>(this: Box<T>)` 的 `T`）是合法类型名，
+ *   不能按「未在本模块声明」丢弃（与 `tsParamAnnotation` 同口径）；
+ * - 无模块面时也必须走同一可解析性判据（旧实现跳过校验 ⇒ 纯投影面把
+ *   未声明的 `this` 类型写成 TS2304，且零台账）；
+ * - 不可解析 ⇒ 省略子句并落 `(this receiver)` 台账。
  */
 function thisReceiverClause(fn: FunctionAnalysis, ctx?: DtsProjectionCtx): string {
   const raw = fn.thisReceiverType?.trim();
   if (!raw) return "";
   const surface = ctx?.surface;
+  const declaredTypeParams = ctxTypeParamNames(ctx);
   for (const name of annotationTypeRefs(raw)) {
-    if (TS_TYPE_TOKENS.has(name)) continue;
-    if (surface !== undefined && !isTypeNameResolvable(name, surface)) {
+    if (TS_TYPE_TOKENS.has(name) || declaredTypeParams.has(name)) continue;
+    if (!isTypeNameResolvable(name, surface)) {
       ctx?.dropped?.push(`${fn.name}: ${name} (this receiver)`);
       return "";
     }
@@ -2789,10 +2863,15 @@ function dtsFunctionDeclaration(
     }
     const tparams =
       hofSig.typeParams.length > 0 ? `<${hofSig.typeParams.join(", ")}>` : "";
+    // BUG-133：`this: T` 接收者子句在 HOF 泛型分支同样要发射（旧实现只走
+    // 观测签名分支 ⇒ `g<T>(this: Box<T>) { return (x) => … }` 的接收者契约
+    // 整条消失）。子句可解析性判据与降级台账同 `thisReceiverClause`。
+    const hofThis = thisReceiverClause(fn, ctx);
+    const hofParams = hofThis === "" ? hofSig.params : [hofThis, ...hofSig.params];
     lines.push(
       ...dtsExportDeclaration(
         form,
-        `${tparams}(${hofSig.params.join(", ")}): ${returnType}`,
+        `${tparams}(${hofParams.join(", ")}): ${returnType}`,
       ),
     );
     return {
@@ -2933,6 +3012,14 @@ export interface DtsClassMethodSurface {
   isAbstract?: boolean;
   /** 方法声明的返回类型注解原文（abstract / 无分析证据的方法用） */
   returnType?: string;
+  /**
+   * 无返回注解时的**方法体观测**返回类型（单条 `return` 的字面量 / 字段引用）。
+   *
+   * 静态方法与同名实例方法共用一条分析面签名（core 只普查一条 `C.m`）⇒
+   * `analysisReturnOf` 的形参不匹配时不能复用实例位证据；此时按静态方法
+   * **自己的**方法体给出可观测的类型（与 getter 同一证据标准）。
+   */
+  observedReturnType?: string;
   /** 方法级类型形参子句原文（`<U>`） */
   typeParams?: string;
 }
@@ -3263,7 +3350,7 @@ function patternBindingNames(id: SurfaceNode | undefined): string[] {
  * `import { obj, arr }` 拿到的不是 `object` / `unknown[]` 这种会 TS2322 的
  * 宽类型。只映射字面量形状，表达式一律 unknown（声明面不猜求值结果）。
  */
-function valueTypeTextOfInit(init: SurfaceNode | undefined): string {
+function valueTypeTextOfInit(init: SurfaceNode | undefined, source?: string): string {
   if (!init) return "unknown";
   if (init.type === "ObjectExpression") {
     const parts: string[] = [];
@@ -3272,7 +3359,7 @@ function valueTypeTextOfInit(init: SurfaceNode | undefined): string {
       const k = surfaceName(p.key as SurfaceNode | undefined);
       if (!k) continue;
       const v = (p.value ?? undefined) as SurfaceNode | undefined;
-      parts.push(`${k}: ${v ? valueTypeTextOfInit(v) : "unknown"}`);
+      parts.push(`${k}: ${v ? valueTypeTextOfInit(v, source) : "unknown"}`);
     }
     return parts.length > 0 ? `{ ${parts.join("; ")} }` : "object";
   }
@@ -3280,11 +3367,11 @@ function valueTypeTextOfInit(init: SurfaceNode | undefined): string {
     const elems = ((init.elements as SurfaceNode[] | undefined) ?? []).filter(
       (e): e is SurfaceNode => !!e,
     );
-    const types = [...new Set(elems.map(valueTypeTextOfInit))];
+    const types = [...new Set(elems.map((e) => valueTypeTextOfInit(e, source)))];
     if (types.length === 0) return "unknown[]";
     return types.length === 1 ? `${types[0]}[]` : `(${types.join(" | ")})[]`;
   }
-  return classFieldTypeOfInit(init);
+  return classFieldTypeOfInit(init, source);
 }
 
 /** 节点是否被 `as const` / `<const>` 冻结（BUG-077 / BUG-140） */
@@ -3399,26 +3486,42 @@ function wrapArrayElementType(t: string): string {
  * `nested = { x: [1, 2] as const }` 的绑定本身不是 `as const`（对象未冻结）
  * ⇒ 外层属性不是 `readonly`，内层数组是 `readonly [1, 2]`。只有这种「外层
  * 可变、内层冻结」的形态需要走这里；顶层 `as const` 仍走既有只读通道。
+ *
+ * **拿不准就不投影**（返回 undefined ⇒ 调用方回落到分析面的观测 Abs）：
+ * 展开 / 计算键 / 方法 / 访问器 / 数组展开这些形态按源码逐槽枚举会**丢键**
+ * 或把元素域算错（旧实现静默跳过 ⇒ `{ ["a"]: [1, 2] as const }` 变成
+ * `Record<string, never>`、`{ ...base, … }` 丢掉 `b`、getter 丢掉 `g`）。
  */
-function constAwareValueType(node: SurfaceNode | undefined): string {
-  if (!node) return "unknown";
+function constAwareValueType(node: SurfaceNode | undefined, source?: string): string | undefined {
+  if (!node) return undefined;
   if (isConstAssertionNode(node)) return frozenLiteralType(node.expression as SurfaceNode | undefined);
   if (node.type === "ObjectExpression") {
     const parts: string[] = [];
     for (const p of (node.properties as SurfaceNode[] | undefined) ?? []) {
-      if (p.type !== "ObjectProperty" && p.type !== "Property") continue;
-      if (p.computed === true) continue;
+      // 展开 / 方法 / getter / setter：不是「静态可枚举的数据属性」
+      if (p.type !== "ObjectProperty" && p.type !== "Property") return undefined;
+      if (typeof p.kind === "string" && p.kind !== "init") return undefined;
+      if (p.computed === true) return undefined;
       const k = surfaceName(p.key as SurfaceNode | undefined);
-      if (!k) continue;
-      parts.push(`${formatPropKey(k)}: ${constAwareValueType(p.value as SurfaceNode | undefined)}`);
+      if (!k) return undefined;
+      const v = constAwareValueType(p.value as SurfaceNode | undefined, source);
+      if (v === undefined) return undefined;
+      parts.push(`${formatPropKey(k)}: ${v}`);
     }
     return parts.length === 0 ? "Record<string, never>" : `{ ${parts.join("; ")} }`;
   }
   if (node.type === "ArrayExpression") {
-    const elems = ((node.elements as SurfaceNode[] | undefined) ?? []).filter(
-      (e): e is SurfaceNode => e !== null && e !== undefined,
-    );
-    const types = [...new Set(elems.map(constAwareValueType))];
+    const raw = (node.elements as Array<SurfaceNode | null> | undefined) ?? [];
+    // 空洞 / 展开：元素域无法按源码列点确定
+    if (raw.some((e) => e === null || e === undefined || e.type === "SpreadElement")) {
+      return undefined;
+    }
+    const types: string[] = [];
+    for (const e of raw as SurfaceNode[]) {
+      const t = constAwareValueType(e, source);
+      if (t === undefined) return undefined;
+      if (!types.includes(t)) types.push(t);
+    }
     if (types.length === 0) return "unknown[]";
     const wrapped = types.map(wrapArrayElementType);
     return wrapped.length === 1 ? `${wrapped[0]}[]` : `(${wrapped.join(" | ")})[]`;
@@ -3634,6 +3737,8 @@ function scanClassSurface(
   const instanceFields: DtsClassFieldSurface[] = [];
   /** BUG-033：无注解 getter（待按返回值观测补类型） */
   const pendingGetters: Array<{ index: number; fn: SurfaceNode; isStatic: boolean }> = [];
+  /** 无返回注解的静态方法（待按方法体观测补类型；与 getter 同一证据标准） */
+  const pendingStaticMethods: Array<{ entry: DtsClassMethodSurface; fn: SurfaceNode }> = [];
   const fieldNames = new Set<string>();
   const staticFieldNames = new Set<string>();
 
@@ -3658,7 +3763,7 @@ function scanClassSurface(
     instanceFields.push({
       name,
       // Bug 44：有初始化器看形状，没有则取源码类型注解（不是 `unknown`）。
-      type: classFieldType(init, fieldAnnotation(mem)),
+      type: classFieldType(init, fieldAnnotation(mem), source, resolvableInClass),
       // Bug 77 / 86：readonly 与访问修饰符保真。
       ...(mem.readonly === true ? { readonly: true } : {}),
       ...(accessibilityOf(mem) ? { accessibility: accessibilityOf(mem) } : {}),
@@ -3672,7 +3777,7 @@ function scanClassSurface(
     staticFieldNames.add(name);
     staticFields.push({
       name,
-      type: classFieldType(mem.value as SurfaceNode | undefined, fieldAnnotation(mem)),
+      type: classFieldType(mem.value as SurfaceNode | undefined, fieldAnnotation(mem), source, resolvableInClass),
       ...(mem.readonly === true ? { readonly: true } : {}),
       ...(mem.optional === true ? { optional: true } : {}),
       ...(accessibilityOf(mem) ? { accessibility: accessibilityOf(mem) } : {}),
@@ -3698,7 +3803,12 @@ function scanClassSurface(
     fieldNames.add(name);
     instanceFields.push({
       name,
-      type: classFieldType(init, safeFieldTypeAnnotation(nodeAnnotationText(inner, source), resolvableInClass)),
+      type: classFieldType(
+        init,
+        safeFieldTypeAnnotation(nodeAnnotationText(inner, source), resolvableInClass),
+        source,
+        resolvableInClass,
+      ),
       ...(readonly ? { readonly: true } : {}),
       ...(accessibility ? { accessibility } : {}),
     });
@@ -3857,8 +3967,12 @@ function scanClassSurface(
       ...(returnType ? { returnType } : {}),
       ...(methodTypeParams ? { typeParams: methodTypeParams } : {}),
     };
-    if (mem.static === true) staticMethods.push(entry);
-    else instanceMethods.push(entry);
+    if (mem.static === true) {
+      staticMethods.push(entry);
+      if (returnType === undefined) pendingStaticMethods.push({ entry, fn: fnNode });
+    } else {
+      instanceMethods.push(entry);
+    }
   }
   // BUG-033：getter 的返回值观测（无注解档）。
   // **只在 getter 体内恰有一个 `return` 时**采用——多 return 可能返回不同类型，
@@ -3874,6 +3988,13 @@ function scanClassSurface(
       accessors[g.index] = { ...prev, type: observed };
     }
   }
+  // 静态方法的**方法体观测**（无注解档）：同名 static / instance 在分析面只有
+  // 一条签名（core 普查按 `C.m` 去重），形参不匹配时不能复用实例位返回类型；
+  // 此时按静态方法自己的单条 `return` 给可观测类型（与 getter 同判据）。
+  for (const m of pendingStaticMethods) {
+    const observed = getterObservedType(m.fn, true);
+    if (observed !== undefined) m.entry.observedReturnType = observed;
+  }
   function getterObservedType(fnNode: SurfaceNode, isStatic: boolean): string | undefined {
     const returns: SurfaceNode[] = [];
     collectReturns(fnNode.body as SurfaceNode | undefined, returns);
@@ -3888,7 +4009,7 @@ function scanClassSurface(
       const table = isStatic ? staticFields : instanceFields;
       return table.find((f) => f.name === key)?.type;
     }
-    const t = classFieldTypeOfInit(ret);
+    const t = classFieldTypeOfInit(ret, source, resolvableInClass);
     return t === "unknown" ? undefined : t;
   }
   /** getter 体内的 `return`（不跨函数边界；收到第二条即可停） */
@@ -3899,7 +4020,11 @@ function scanClassSurface(
       node.type === "ArrowFunctionExpression" ||
       node.type === "FunctionDeclaration" ||
       node.type === "ClassMethod" ||
-      node.type === "MethodDefinition"
+      node.type === "MethodDefinition" ||
+      // 对象字面量里的方法 / 访问器同样是函数边界：`{ f() { return 1 } }`
+      // 的 `return` 不是外层 getter / static 方法的返回值。
+      node.type === "ObjectMethod" ||
+      node.type === "ClassPrivateMethod"
     ) {
       return;
     }
@@ -3940,27 +4065,101 @@ function scanClassSurface(
 }
 
 /**
- * enum 成员初始化器 → 字面量文本（BUG-190）。
+ * enum 成员初始化器 → **常量值**（BUG-190 + 数值链修正）。
  *
- * 只投影**字面量**（字符串 / 数字 / 负数）：声明面不猜表达式求值结果
- * （`A = other.length` 这类保持无名成员，语义仍可用）。字符串枚举的成员类型
- * 是字面量类型 ⇒ 丢掉 `= "a"` 会把成员降级成数值 enum。
+ * 只折 TS 允许的「常量 enum 表达式」：字面量 / 负数 / 模板 / 前序成员引用 /
+ * 算术 / 位运算 / 字符串拼接。其余（调用、成员访问、外部变量）⇒ undefined：
+ * 声明面不猜求值结果，也**绝不**把不可渲染的初始化器当成「无初始化器」去
+ * 自增（`enum E { A = 1, B = val() }` 的 B 不是 2）。
+ *
+ * 返回 `number | string`，由调用方渲染成 TS 字面量文本。
  */
-function enumInitText(node: SurfaceNode | undefined): string | undefined {
+function enumConstValue(
+  node: SurfaceNode | undefined,
+  members: ReadonlyMap<string, number | string>,
+): number | string | undefined {
   if (!node) return undefined;
-  if (node.type === "StringLiteral") {
-    return typeof node.value === "string" ? JSON.stringify(node.value) : undefined;
-  }
-  if (node.type === "NumericLiteral") {
-    return typeof node.value === "number" ? String(node.value) : undefined;
-  }
-  if (node.type === "UnaryExpression" && node.operator === "-") {
-    const arg = node.argument as SurfaceNode | undefined;
-    if (arg?.type === "NumericLiteral" && typeof arg.value === "number") {
-      return `-${String(arg.value)}`;
+  switch (node.type) {
+    case "StringLiteral":
+      return typeof node.value === "string" ? node.value : undefined;
+    case "NumericLiteral":
+      return typeof node.value === "number" ? node.value : undefined;
+    case "Identifier":
+      // 同一 enum 内**已折出**的成员引用（`B = A + 1`）；外部绑定不猜。
+      return node.name === undefined ? undefined : members.get(String(node.name));
+    case "TemplateLiteral": {
+      const quasis = (node.quasis as SurfaceNode[] | undefined) ?? [];
+      const exprs = (node.expressions as SurfaceNode[] | undefined) ?? [];
+      let out = "";
+      for (let i = 0; i < quasis.length; i++) {
+        const cooked = (quasis[i]?.value as SurfaceNode | undefined)?.cooked;
+        if (typeof cooked !== "string") return undefined;
+        out += cooked;
+        const e = exprs[i];
+        if (e !== undefined) {
+          const v = enumConstValue(e, members);
+          if (v === undefined) return undefined;
+          out += String(v);
+        }
+      }
+      return out;
     }
+    case "UnaryExpression": {
+      const arg = enumConstValue(node.argument as SurfaceNode | undefined, members);
+      if (typeof arg !== "number") return undefined;
+      if (node.operator === "-") return -arg;
+      if (node.operator === "+") return arg;
+      if (node.operator === "~") return ~arg;
+      return undefined;
+    }
+    case "ParenthesizedExpression":
+      return enumConstValue(node.expression as SurfaceNode | undefined, members);
+    case "BinaryExpression": {
+      const l = enumConstValue(node.left as SurfaceNode | undefined, members);
+      const r = enumConstValue(node.right as SurfaceNode | undefined, members);
+      if (l === undefined || r === undefined) return undefined;
+      const op = String(node.operator ?? "");
+      // `+` 是 enum 里唯一允许字符串的运算符（`"a" + "b"` / `"a" + 1`）
+      if (op === "+") {
+        if (typeof l === "string" || typeof r === "string") return String(l) + String(r);
+        return l + r;
+      }
+      if (typeof l !== "number" || typeof r !== "number") return undefined;
+      switch (op) {
+        case "-":
+          return l - r;
+        case "*":
+          return l * r;
+        case "/":
+          return l / r;
+        case "%":
+          return l % r;
+        case "**":
+          return l ** r;
+        case "<<":
+          return l << r;
+        case ">>":
+          return l >> r;
+        case ">>>":
+          return l >>> r;
+        case "&":
+          return l & r;
+        case "|":
+          return l | r;
+        case "^":
+          return l ^ r;
+        default:
+          return undefined;
+      }
+    }
+    default:
+      return undefined;
   }
-  return undefined;
+}
+
+/** 折出的常量值 → enum 初始化器文本（`String(-0)` 与 tsc 一致为 `0`） */
+function enumInitTextOfValue(value: number | string): string {
+  return typeof value === "string" ? JSON.stringify(value) : String(value);
 }
 
 /**
@@ -3972,25 +4171,40 @@ function enumInitText(node: SurfaceNode | undefined): string | undefined {
  * - `observed`：初始化器形状（无注解时才用；仍不猜表达式）。
  * - 否则 `unknown`（不是「无类型」，是「未观测到」）。
  */
-function classFieldType(init: SurfaceNode | undefined, annotation?: string): string {
+function classFieldType(
+  init: SurfaceNode | undefined,
+  annotation?: string,
+  source?: string,
+  isResolvable?: (name: string) => boolean,
+): string {
   if (annotation !== undefined) return annotation;
-  return classFieldTypeOfInit(init);
+  return classFieldTypeOfInit(init, source, isResolvable);
 }
 
 /** 初始化器形状 → 基类型（供 `classFieldType` 与 default 表达式投影复用）。 */
-function classFieldTypeOfInit(init: SurfaceNode | undefined): string {
+function classFieldTypeOfInit(
+  init: SurfaceNode | undefined,
+  source?: string,
+  isResolvable?: (name: string) => boolean,
+): string {
   if (!init) return "unknown";
-  // BUG-135：断言 / satisfies 包住的初始化器按内层表达式定型
-  // （`x = <T>v` / `x = v satisfies T` / `x = v!` 与不带包装同口径）。
-  const unwrapped: Record<string, string> = {
-    TSAsExpression: "expression",
-    TSTypeAssertion: "expression",
-    TSNonNullExpression: "expression",
-    TSSatisfiesExpression: "expression",
-  };
-  const innerKey = init.type !== undefined ? unwrapped[init.type] : undefined;
-  if (innerKey) {
-    return classFieldTypeOfInit(init[innerKey] as SurfaceNode | undefined);
+  // BUG-135：断言包装不再「一律按内层」——
+  // `ro = [1, 2] as const` 会丢掉只读（`unknown[]`）、
+  // `x = 1 as number | string` 会被窄化成 `number`（公开面比实现窄 ⇒ 消费方
+  // 按源码注解赋值即 TS2322）。`as const` 走冻结字面量通道；`as T` / `<T>`
+  // 用可解析的断言原文（`satisfies T` / `v!` 不改变值类型 ⇒ 仍按内层）。
+  if (init.type === "TSAsExpression" || init.type === "TSTypeAssertion") {
+    const inner = init.expression as SurfaceNode | undefined;
+    if (isConstAssertionNode(init)) return frozenLiteralType(inner);
+    const asserted =
+      source === undefined
+        ? undefined
+        : surfaceSlice(source, init.typeAnnotation as SurfaceNode | undefined);
+    const safe = asserted ? safeFieldTypeAnnotation(asserted, isResolvable) : undefined;
+    return safe ?? classFieldTypeOfInit(inner, source, isResolvable);
+  }
+  if (init.type === "TSNonNullExpression" || init.type === "TSSatisfiesExpression") {
+    return classFieldTypeOfInit(init.expression as SurfaceNode | undefined, source, isResolvable);
   }
   switch (init.type) {
     case "NumericLiteral":
@@ -4275,7 +4489,7 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
    */
   const noteCjsValue = (name: string, init: SurfaceNode | undefined): void => {
     if (!name || surface.values.has(name)) return;
-    surface.values.set(name, { kind: "const", typeText: valueTypeTextOfInit(init) });
+    surface.values.set(name, { kind: "const", typeText: valueTypeTextOfInit(init, source) });
   };
   /** `module.exports` / `exports` → true */  const isExportsTarget = (n: SurfaceNode | undefined): boolean => {
     if (!n) return false;
@@ -4527,7 +4741,7 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
       if (!surface.values.has("_default")) {
         surface.values.set("_default", {
           kind: "const",
-          typeText: valueTypeTextOfInit(decl),
+          typeText: valueTypeTextOfInit(decl, source),
         });
       }
       bind("default", "_default");
@@ -4602,9 +4816,14 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
         // BUG-140：绑定本身不是 `as const`、但初始化器内部有断言
         // （`{ x: [1, 2] as const }`）⇒ 按源码逐层冻结语义投影，别走可变容器
         // 拓宽（那会把内层元组的字面量与只读一起拓掉）。
+        //
+        // 回归修正：与 `annotation` 同一条守卫——只对**单标识符**绑定挂这个
+        // 类型。解构模式（`const { x, y } = { … }`）的初始化器类型描述的是
+        // **整个右值**，挂到每个绑定上会让 `x`/`y` 都声明成整个对象
+        // （消费端 TS2339）；模式绑定回落到分析面的观测类型。
         const nestedConstType =
-          !isAsConst(init) && containsConstAssertion(init)
-            ? constAwareValueType(init)
+          idNode?.type === "Identifier" && !isAsConst(init) && containsConstAssertion(init)
+            ? constAwareValueType(init, source)
             : undefined;
         // Bug 63：解构声明模式展开**全部绑定名**（`{ a, b }` / `[c, ...rest]`）
         // ⇒ 每个绑定都进 surface.values（dtsValueDeclarations 逐条读它）。
@@ -4636,29 +4855,39 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
       const enumMembers: { name: string; init?: string }[] = [];
       // BUG-139：数值 enum 的隐式自增必须算出字面量（tsc 产物同口径）——
       // 否则消费端 `const y: 2 = E.B` 因成员类型退成 `E.B` 而 TS2322。
+      //
+      // 回归修正：**只有**「源码没写初始化器」(`initNode === undefined`) 才能
+      // 自增。写了但不可折的初始化器（`B = val()` / `A = other.length`）既
+      // 不能凭空 +1（`enum E { A = 1, B = val() }` 的 B 不是 2），也不能猜值 ⇒
+      // 只发射成员名并断开数值链（tsc `--declaration` 同形：`B`）。
       let prevNumeric: number | undefined = -1; // 首个无初始化器成员 ⇒ 0（tsc 同口径）
+      const constValues = new Map<string, number | string>();
       for (const m of members) {
         const name =
           surfaceName(m.id as SurfaceNode | undefined) ??
           surfaceName(m.key as SurfaceNode | undefined);
         if (!name) continue;
         const initNode = m.initializer as SurfaceNode | undefined;
-        const init = enumInitText(initNode);
-        if (init !== undefined) {
-          enumMembers.push({ name, init });
-          prevNumeric =
-            initNode?.type === "NumericLiteral" && typeof initNode.value === "number"
-              ? initNode.value
-              : // 负数 / 其它可折叠表达式不算，避免猜错值。
-                undefined;
+        if (initNode === undefined) {
+          if (prevNumeric !== undefined) {
+            prevNumeric += 1;
+            constValues.set(name, prevNumeric);
+            enumMembers.push({ name, init: String(prevNumeric) });
+          } else {
+            enumMembers.push({ name });
+          }
           continue;
         }
-        if (prevNumeric !== undefined) {
-          prevNumeric += 1;
-          enumMembers.push({ name, init: String(prevNumeric) });
+        const value = enumConstValue(initNode, constValues);
+        if (value === undefined) {
+          prevNumeric = undefined;
+          enumMembers.push({ name });
           continue;
         }
-        enumMembers.push({ name });
+        constValues.set(name, value);
+        // 字符串成员不参与后续自增（`enum { A = "a", B }` 本身是 TS1061）。
+        prevNumeric = typeof value === "number" ? value : undefined;
+        enumMembers.push({ name, init: enumInitTextOfValue(value) });
       }
       // Bug 25：`export const enum` 的 `const` 限定必须保留（否则消费端 tsc
       // 通过、运行时 import 报「does not provide an export named …」）。
@@ -4744,7 +4973,7 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
           .join(", ");
         out.push(`function ${name}(${params}): unknown;`);
       } else {
-        out.push(`const ${name}: ${valueTypeTextOfInit(init)};`);
+        out.push(`const ${name}: ${valueTypeTextOfInit(init, source)};`);
       }
     }
     return out;
@@ -5410,6 +5639,42 @@ function withMethodModifier(lines: string[], prefix: string): string[] {
   return out;
 }
 
+/** 形参声明 → 基名（`...rest` / `y?` / `y: unknown` ⇒ `rest` / `y` / `y`） */
+function paramBaseName(decl: string): string {
+  let t = decl.trim();
+  if (t.startsWith("...")) t = t.slice(3);
+  const colon = t.indexOf(":");
+  if (colon >= 0) t = t.slice(0, colon);
+  t = t.trim();
+  return t.endsWith("?") ? t.slice(0, -1) : t;
+}
+
+/**
+ * 分析面签名行 → 形参基名表（`m(x: unknown, y?: T): R;` ⇒ `["x", "y"]`）。
+ * 括号按深度配对（形参类型里可能有函数类型）；解析失败 ⇒ undefined。
+ */
+function analysisLineParamNames(line: string): string[] | undefined {
+  const open = line.indexOf("(");
+  if (open < 0) return undefined;
+  let depth = 0;
+  let close = -1;
+  for (let i = open; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === "(") depth++;
+    else if (ch === ")") {
+      depth--;
+      if (depth === 0) {
+        close = i;
+        break;
+      }
+    }
+  }
+  if (close < 0) return undefined;
+  const inner = line.slice(open + 1, close).trim();
+  if (inner === "") return [];
+  return splitTopLevel(inner, ",").map(paramBaseName);
+}
+
 /** 类声明行（导出形态 + 类型形参 + 超类 + 构造器 + 方法 + 字段 + 修饰符） */
 function dtsClassDeclaration(
   className: string,
@@ -5488,18 +5753,37 @@ function dtsClassDeclaration(
   // 静态方法（源码面）
   // BUG-095：JS 源码没有返回注解 ⇒ 从分析面同名成员的签名行取返回类型
   // （实例方法一直走分析面，static 只读注解是两套口径）。
-  const analysisReturnOf = (name: string): string | undefined => {
+  //
+  // 回归修正：分析面按**裸成员名**（`C.m`）查——同名 static / instance 只有
+  // 一条签名（实例位）⇒ 直接复用会把实例方法的返回类型贴到静态方法上
+  // （wrong-exact）。只有形参名 / 元数一致（同一条声明的同一调用面）才复用；
+  // 否则回落到静态方法自己的方法体观测，再否则 `unknown`。
+  const analysisReturnOf = (name: string, params: readonly string[]): string | undefined => {
     const entry = memberList.find((m) => m.member === name);
     if (!entry) return undefined;
     const last = entry.lines[entry.lines.length - 1];
     if (!last) return undefined;
-    const m = /\)\s*:\s*([^;]+);\s*$/.exec(last);
-    return m?.[1]?.trim();
+    const ret = /\)\s*:\s*([^;]+);\s*$/.exec(last);
+    if (!ret) return undefined;
+    const analysisParams = analysisLineParamNames(last);
+    const want = params.map(paramBaseName);
+    if (
+      !analysisParams ||
+      analysisParams.length !== want.length ||
+      analysisParams.some((n, i) => n !== want[i])
+    ) {
+      return undefined;
+    }
+    return ret[1]?.trim();
   };
   for (const m of staticSurface) {
     const params = m.params.map((p, i) => classParamDecl(p, i)).join(", ");
     const prefix = m.accessibility ? `${m.accessibility} ` : "";
-    const ret = m.returnType ?? analysisReturnOf(m.name) ?? "unknown";
+    const ret =
+      m.returnType ??
+      analysisReturnOf(m.name, m.params) ??
+      m.observedReturnType ??
+      "unknown";
     body.push(`${prefix}static ${m.name}${m.typeParams ?? ""}(${params}): ${ret};`);
   }
   // Bug 23：static 字段（运行时公开数据属性）

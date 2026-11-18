@@ -72,6 +72,7 @@ import {
   getSlot,
   setSlot,
   getProtoAbs,
+  keySetIncompleteAbs,
   canonicalArrayIndex,
   isUserFnSlotOwner,
   markUserFnSlots,
@@ -651,6 +652,36 @@ function userChainHasMember(brandName: string, key: string, upto: string): boole
     if (spec && ownRecValue(spec.accessors, key) !== undefined) return true;
   }
   return false;
+}
+
+/**
+ * BUG-1071：**写门的内建访问器 owner**——派生类实例（`class S extends Set`）
+ * 的 brand 名是派生类名，而访问器表按**内建**名建键 ⇒ 直查 `BUILTIN_BRAND_
+ * ACCESSORS[o.shape.name]` 落空 ⇒ getter-only 写门整条失效（`s.size = 0`
+ * 原生 strict 定抛 TypeError，引擎静默建自有槽）。
+ *
+ * 沿类链找**宿主内建**祖先：自身环是用户规格、链洞处要求直接子类带
+ * `superBuiltinHost`（extends 目标是真实宿主内建，不是同名 mock fn）——
+ * 用户类同名内建（BUG-052 的 `class Set`，无内建父）不算 owner，其 `size`
+ * 仍是普通可写数据属性。无类规格（内建 brand 实例本体）保持原直查口径。
+ */
+function builtinAccessorOwnerOf(
+  brandName: string,
+  spec: EvalClassSpec | undefined,
+  key: string,
+): string | undefined {
+  if (spec === undefined) {
+    return ownTableEntry(BUILTIN_BRAND_ACCESSORS, brandName)?.has(key) ? brandName : undefined;
+  }
+  const links = classChainLinks(brandName, spec);
+  for (let i = 1; i < links.length; i++) {
+    const link = links[i]!;
+    if (link.spec !== undefined) continue; // 已注册用户类（同名内建由用户面遮蔽）
+    const child = links[i - 1]!.spec;
+    if (!child?.superBuiltinHost || child.superName !== link.name) continue;
+    if (ownTableEntry(BUILTIN_BRAND_ACCESSORS, link.name)?.has(key)) return link.name;
+  }
+  return undefined;
 }
 
 /** Bug 204：符号成员模型 → Abs 值（@@toStringTag 字符串 / 方法 / 对象）。 */
@@ -1882,9 +1913,24 @@ function getObjMember(ctx: GetCtx): Abs | undefined {
     // 原生 [[Get]] 沿链取值：数据槽 / getter（this = receiver）/ 方法。
     // 此前直接落 open/闭槽 miss（继承 getter 折 unknown，必抛零执法）。
     // `__proto__` 本身是特殊的原型访问器（下方分支），不得沿链读。
+    //
+    // BUG-1071：只有 receiver 的**自有键集完整**时，链上取值才是唯一可能值。
+    // 不完备的两个来源：动态键域（`index`）与「键集可能多于槽表」标记
+    // （`markKeySetOpenAbs`——抽象键写 / 抽象源 Object.assign·spread）。
+    // `open` 本身不用：`Object.create(proto)` 也置 open，但它的**自有键集
+    // 已知为空**（BUG-326 口径），链上读仍是定值。
+    // 不完备时未知自有键可能遮住原型链值——`Object.assign(Object.create({a:1}),
+    // x)` 的 `x.a` 是自有属性（可为任意值），此前折 `1 #exact`；`o.b` 同理可能
+    // 来自 x（折叠 `undefined #exact`）⇒ 链上读与 `unknown` 求并（含链上
+    // 缺席的 `undefined`），不做精确折叠。
+    const ownKeysComplete =
+      !keySetIncompleteAbs(o) && (o.shape as ObjShape).index === undefined;
     if (key !== "__proto__") {
       const proto = getProtoAbs(o);
-      if (proto && proto !== o) return $get(proto, key, opts, receiver ?? o);
+      if (proto && proto !== o) {
+        const inherited = $get(proto, key, opts, receiver ?? o);
+        return ownKeysComplete ? inherited : joinAbs(inherited, unknown);
+      }
     }
     if (slot) {
       // 无 protoTable 的 inherited 槽（构造来源不支持链解析时）——保持
@@ -2196,23 +2242,20 @@ function setBrandInstanceMember(ctx: SetCtx): Abs | undefined {
     // writable:true 自建数据槽后覆写（原生成功）此处仍抛——descriptor
     // 的 writeInPlace 复用原 Abs 身份不迁移 propFlags 侧表，豁免不可
     // 判（构造器工件槽同无标记，不可放行）；超罕见边，留侧表迁移任务。
-    if (
-      !opts?.internal &&
-      // BUG-052：本表以**实例 brand 名**建键（`Map` / `Set` / …），而用户类
-      // 可以叫同一个名字（polyfill / 测试替身 / `class Set` 包装）。用户类
-      // 实例上 `size` 是**普通可写数据属性**（类里没有内建访问器）⇒ 不得套
-      // 内建 getter-only 判据（否则 `this.size = 0` 假判 TypeError、签名塌
-      // `never`）。判据用**值身份**而非名字：随值携带的类规格在场 ⇒ 用户类
-      // 实例（`classSpecOfAbs` 口径见 class-registry：内建 brand 恒 undefined）。
-      classSpecOfAbs(o) === undefined &&
-      BUILTIN_BRAND_ACCESSORS[o.shape.name]?.has(key) &&
-      // Bug 37：URL 的 10 个组件访问器都**带 setter**（可写）。presence 表
-      // 收录它们只为 `$in` 精确判定，不是只读声明——此前整张表被写门当
-      // getter-only ⇒ `u.href = …` 合法写被误判确定 TypeError（假红 +
-      // 签名塌 never）。仅 origin / searchParams 仍是 getter-only。
-      !(o.shape.name === "URL" && URL_WRITABLE_COMPONENTS.has(key))
-    ) {
-      throwStrictWrite();
+    // BUG-1071：owner 沿**类链**解析（派生类实例的内建父访问器同样只读；
+    // 用户类同名内建 / 无内建父不套判据，见 builtinAccessorOwnerOf）。
+    if (!opts?.internal) {
+      const accOwner = builtinAccessorOwnerOf(o.shape.name, classSpecOfAbs(o), key);
+      if (
+        accOwner !== undefined &&
+        // Bug 37：URL 的 10 个组件访问器都**带 setter**（可写）。presence 表
+        // 收录它们只为 `$in` 精确判定，不是只读声明——此前整张表被写门当
+        // getter-only ⇒ `u.href = …` 合法写被误判确定 TypeError（假红 +
+        // 签名塌 never）。仅 origin / searchParams 仍是 getter-only。
+        !(accOwner === "URL" && URL_WRITABLE_COMPONENTS.has(key))
+      ) {
+        throwStrictWrite();
+      }
     }
     // Bug 197：类实例的 [[Set]] 原型链写门——receiver **无自有该键**时，
     // 原生沿 [[Prototype]] 链上溯（A.prototype → 父类原型 → …）：首个

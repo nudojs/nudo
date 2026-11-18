@@ -170,6 +170,15 @@ export function collectDeclaredBindingNames(node: unknown, acc: Set<string> = ne
       if (o.type === "FunctionDeclaration" || o.type === "ClassDeclaration") {
         collectPatternNames(o.id, acc);
       }
+      // BUG-1071：具名函数 / 类**表达式**的自身名是其**体内**可见的绑定
+      // （FunctionExpressionEvaluation / ClassDefinitionEvaluation 建的
+      // immutable binding）——止步分支此前只记声明名 ⇒ `function
+      // undefined(){ return undefined }` 的体内读被当成宿主内建
+      // （`$lit(void 0)`，原生返回函数自身）。扫描面是「本作用域链可见的
+      // 绑定」的保守超集：多记一个名字只会少折内建，不会造出假字面量。
+      if (o.type === "FunctionExpression" || o.type === "ClassExpression") {
+        collectPatternNames(o.id, acc);
+      }
       return;
     }
     switch (o.type) {

@@ -33,9 +33,11 @@ import {
   type EvalFallback,
 } from "@nudojs/core";
 import { resetAbsCallBudget } from "@nudojs/core/internal";
+import { parse } from "@nudojs/parser";
 import { analyzeFileAsync } from "@nudojs/service";
 import { clearEvalCache, tryEvalCallFull } from "../eval-run.ts";
 import { clearAbsModuleCache } from "../abs-modules-graph.ts";
+import { collectTopLevelFunctions } from "../analyzer-ast.ts";
 import { tmpProject } from "./tmp-project.ts";
 
 // ---------------------------------------------------------------------------
@@ -150,6 +152,42 @@ describe("CJS `module.exports = { … }` 成员函数求值", () => {
     expect(formatShape(boom.combinedAbs!)).toBe("never");
     const witness = boom.cases.find((c) => c.name.startsWith("entry@"))!;
     expect(formatShape(witness.throwsAbs)).toBe("Error");
+  });
+});
+
+describe("对象字面量展开的成员覆盖（last-wins 普查口径）", () => {
+  const censusNames = (source: string): string[] =>
+    collectTopLevelFunctions(parse(source)).map((f) => f.name);
+
+  it("spread 之后的同名对象方法覆盖前者（helper 只登记一次）", () => {
+    const names = censusNames(`const base = { helper() { return 1; } };
+module.exports = { ...base, helper() { return 2; } };
+`);
+    expect(names.filter((n) => n === "helper")).toHaveLength(1);
+  });
+
+  it("spread 之后的非可调用覆盖 ⇒ base 的函数不再是入口", () => {
+    // `{...base, helper: 42}` 的最终值不是函数 ⇒ 不得把 base 的 helper 当入口
+    // （旧实现把两条成员都推进入口表，base 的函数一直存活）。
+    const names = censusNames(`const base = { helper() { return 1; } };
+module.exports = { ...base, helper: 42 };
+`);
+    expect(names).not.toContain("helper");
+  });
+
+  it("仅 spread（后面无覆盖）仍登记 base 的成员", () => {
+    expect(censusNames(`const base = { helper() { return 1; } };
+module.exports = { ...base };
+`)).toEqual(["helper"]);
+  });
+
+  it("let/var 对象的初值不入索引（重赋值后旧对象是陈旧的）", () => {
+    // 只有 `const` 初值不可改写；`let base = …; base = {}` 后展开旧初值
+    // 会把已经不存在的成员登记成入口。
+    expect(censusNames(`let base = { helper() { return 1; } };
+base = {};
+module.exports = { ...base };
+`)).not.toContain("helper");
   });
 });
 

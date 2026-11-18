@@ -1364,7 +1364,7 @@ greet({ id: 2 });
 // ---------------------------------------------------------------------------
 // BUG-060：类方法的平铺侧车键 `K_run` 也必须有 relax quickfix
 // ---------------------------------------------------------------------------
-describe("BUG-060 类方法平铺侧车键的 relax quickfix", () => {
+describe("类方法平铺侧车键的 relax quickfix（BUG-060）", () => {
   const CLASS_JS = `export class K { run(n) { return 5; } }\n`;
   const CLASS_SC = `import { fn, number } from "@nudojs/core";
 

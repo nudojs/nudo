@@ -486,12 +486,14 @@ describe("构造器 may-throw 证据的归因落点", () => {
  *
  * 修法（两处**就地复刻**的孪生实现，必须同构）：
  * - 证据通道（`check-may-throw.ts`）：**类导出入口**（`new C()`）进 L2 入口
- * 表 ⇒ 构造器的**硬抛**（无条件 throw）进 throws 域 ⇒ 报在**类声明位置**的
- * `Class` 入口上；构造器的**软效果**（any 补位的强制转换，口径）
- * **不进** ⇒ 普通类不触发 error 级 `nudo:entry-may-throw`（不假红）。
+ *   表 ⇒ 构造器的**硬抛**（无条件 throw）与**软效果**（any 补位的强制转换，
+ *   `recordMayThrow`）都进本入口的 throws 域（与函数入口同款——构造器体
+ *   就是类入口的体；BUG-107 移除了此处的嵌套 may-throw 会话）⇒ 报在
+ *   **类声明位置**的 `Class` 入口上。**实例方法入口**仍隔离构造器软效果
+ *   （Bug 1070：构造实例只为拿 `this`，不是 `new C()` 这个入口）。
  * - 值域通道（`generalize.ts`）：裸实例的内层改 **unknown**（构造器写过的字段
- * = **不可知**，不是「确定不存在」）⇒ 不折确定的 undefined / NaN，不在虚构
- * 实例上抛 ⇒ 签名落 `unknown`（或等价的不确定形态），不折 `never`。
+ *   = **不可知**，不是「确定不存在」）⇒ 不折确定的 undefined / NaN，不在虚构
+ *   实例上抛 ⇒ 签名落 `unknown`（或等价的不确定形态），不折 `never`。
  *
  * 端到端接线（**check.ts**，见交付报告）：`names` 需并入类导出入口清单
  * （`listClassEntryNames`）⇒ 类入口才进 L2 门禁。接线前本文件用**门禁同口径
@@ -530,7 +532,11 @@ const CTOR_THROW = `export class ThrowCtor {
   describe() { return "a"; }
 }`;
 
-/** 构造器在 **any 实参**下才抛（`x + 1` 的 ToNumeric 风险）⇒ any 补位的伪影 */
+/**
+ * 构造器在 **any 实参**下才有 may-throw（`x + 1` 的 ToNumeric 风险）⇒
+ * `recordMayThrow` 软效果。作为**类入口**的证据进 throws 域（BUG-107）；
+ * 但**不**归因给实例方法入口（Bug 1070：方法桥构造实例只为拿 `this`）。
+ */
 const CTOR_SOFT = `export class SoftCtor {
   constructor(x) { this.v = x + 1; }
   describe() { return this.v; }
@@ -575,7 +581,7 @@ function classEntryGate(
 }
 
 
-  it("类导出入口进 L2 入口表（`new C()` 是真实入口）；构造器**无条件抛** ⇒ 证据进类入口的 throws 域（修前：空 ⇒ 假绿）；构造器在 **any 实参**下才抛 ⇒ 不进 throws 域（不假红）；端到端：类入口进入口表后，构造器必抛必须报在类入口上（不零诊断）；构造器软 throw ⇒ 与函数入口同款进类入口 throws 域（BUG-107 修前被嵌套会话吞掉）；构造器必抛 ⇒ **不**归因给实例方法（Bug 1070 口径不变）；构造器上申报 `@nudo:throws` ", () => {
+  it("类导出入口进 L2 入口表（`new C()` 是真实入口）；构造器**无条件抛** ⇒ 证据进类入口的 throws 域（修前：空 ⇒ 假绿）；构造器在 **any 实参**下的软效果归因给类入口、**不**进实例方法入口（不假红）；端到端：类入口进入口表后，构造器必抛必须报在类入口上（不零诊断）；构造器软效果 ⇒ 与函数入口同款进类入口 throws 域（嵌套会话隔离已移除，BUG-107）；构造器必抛 ⇒ **不**归因给实例方法（Bug 1070 口径不变）；构造器上申报 `@nudo:throws` ", () => {
   {
   resetCheckSourceMemo();
   resetGeneralizeMemo();

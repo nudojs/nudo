@@ -546,12 +546,17 @@ function enumSlotsOf(over: Abs): Record<string, Slot> {
 /**
  * spread：base ⊕ over（右侧覆盖，不是 join）
  * 未出现在 over 的 key 保留 base；over 的 key 覆盖。
+ *
+ * BUG-1071：源键集不可判（抽象源 / 抽象 base / 已标「键集不完备」的一侧）
+ * 时给结果打 `markKeySetOpenAbs`——`open` 只是「缺槽读保守」，不表示自有
+ * 键集未知（`Object.create(proto)` 也置 open 但键集已知，BUG-326 口径）。
+ * 键家族（Object.keys 等）与原型链读面据此折 partial / 不折精确继承值。
  */
 export function spread(base: Abs, over: Abs): Abs {
   if (!isObj(base) && !isObj(over)) {
-    // 其中一侧 unknown：结果 open + 保留已知
-    if (isObj(over)) return { shape: { ...over.shape, open: true }, conf: confJoin(base.conf, over.conf) };
-    if (isObj(base)) return { shape: { ...base.shape, open: true }, conf: confJoin(base.conf, over.conf) };
+    // 其中一侧 unknown：结果 open + 保留已知（未知侧的键集未知 ⇒ 标记）
+    if (isObj(over)) return markKeySetOpenAbs({ shape: { ...over.shape, open: true }, conf: confJoin(base.conf, over.conf) });
+    if (isObj(base)) return markKeySetOpenAbs({ shape: { ...base.shape, open: true }, conf: confJoin(base.conf, over.conf) });
     return unknown;
   }
   if (!isObj(over)) {
@@ -571,7 +576,8 @@ export function spread(base: Abs, over: Abs): Abs {
       ) {
         // 忽略源：base 原样（无 base 的裸 spread 由调用方保证 base 非空）
         if (!isObj(base)) return unknown;
-        return { shape: { ...base.shape }, conf: confJoin(base.conf, over.conf) };
+        const out: Abs = { shape: { ...base.shape }, conf: confJoin(base.conf, over.conf) };
+        return keySetIncompleteAbs(base) ? markKeySetOpenAbs(out) : out;
       }
     }
     const indexSlots = spreadIndexSlots(over);
@@ -580,20 +586,31 @@ export function spread(base: Abs, over: Abs): Abs {
       for (const [k, s] of Object.entries(indexSlots)) setSlot(slots, k, s);
       const shape: ObjShape = { k: "obj", slots };
       if (base.shape.open) shape.open = true;
-      return { shape, conf: confJoin(base.conf, over.conf) };
+      const out: Abs = { shape, conf: confJoin(base.conf, over.conf) };
+      return keySetIncompleteAbs(base) ? markKeySetOpenAbs(out) : out;
     }
-    // 既有保守路径：over 不可判定 → open
+    // 既有保守路径：over 不可判定 → open。但源键集**可判**的形态保持旧口径：
+    // 内建 brand（Error/Map/… 的枚举面已知，本模型不展开其内部槽）与非字符串
+    // prim（number/boolean/bigint/nullish/symbol 恒无自有枚举键）。否则
+    // `Object.keys({...new Error("m")})` 会从精确 `0` 退成 partial。
     if (!isObj(base)) return unknown;
-    return {
+    const keyFaceKnown =
+      over.shape.k === "brand" ||
+      (over.shape.k === "prim" && over.shape.type !== "string");
+    const out: Abs = {
       shape: { ...base.shape, open: true },
       conf: confJoin(base.conf, "partial"),
     };
+    return keySetIncompleteAbs(base) || keySetIncompleteAbs(over) || !keyFaceKnown
+      ? markKeySetOpenAbs(out)
+      : out;
   }
   if (!isObj(base)) {
     // Bug 109：over 侧枚举视图（CopyDataProperties）——defineProperty 记的
-    // enumerable:false 自有键与 internal 私有槽不拷贝
+    // enumerable:false 自有键与 internal 私有槽不拷贝。
+    // BUG-1071：base 不可判 ⇒ 结果自有键集未知 ⇒ 标记。
     const shape: ObjShape = { ...over.shape, slots: enumSlotsOf(over), open: true };
-    return { shape, conf: confJoin(base.conf, over.conf) };
+    return markKeySetOpenAbs({ shape, conf: confJoin(base.conf, over.conf) });
   }
 
   const slots: Record<string, Slot> = { ...base.shape.slots };
@@ -608,7 +625,9 @@ export function spread(base: Abs, over: Abs): Abs {
   if (base.shape.index || over.shape.index) {
     shape.index = over.shape.index ?? base.shape.index;
   }
-  return { shape, conf: confJoin(base.conf, over.conf) };
+  const out: Abs = { shape, conf: confJoin(base.conf, over.conf) };
+  // 已标不完备的一侧把标记带进结果（`{...x, a: 1}` 的链式 spread）
+  return keySetIncompleteAbs(base) || keySetIncompleteAbs(over) ? markKeySetOpenAbs(out) : out;
 }
 
 /** {...str} / {...arr} 的数字键投影：可确定 → 槽表；不可 → undefined */

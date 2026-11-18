@@ -24,10 +24,6 @@ import { call, isNever, throwsError } from "./eval-helpers.ts";
 
 const anyAbs = abs({ k: "any" }, undefined, undefined, "path");
 
-function kindOf(r: unknown): string | undefined {
-  return (r as { shape?: { k?: string } })?.shape?.k;
-}
-
 /** string[] 折叠断言（Object.keys 视图） */
 function strArr(r: unknown): string[] | undefined {
   const a = r as { shape?: { k?: string; elements?: unknown[] } };
@@ -216,5 +212,22 @@ describe("控制组: proto 面", () => {
       expect(isNever(r.result), src).toBe(true);
       expect(throwsError(r.throws, "TypeError"), src).toBe(true);
     }
+  });
+
+  it("抽象源 assign 到 Object.create(proto) 后不折精确继承值（BUG-1071）", () => {
+    // 原生：x 可能带自有 a / b ⇒ o.a / o.b 是任意值；此前链上读折
+    // `1 #exact` / `undefined #exact`（未知自有键遮住了原型链值）
+    const a = call(
+      `export function f(x) { const o = Object.assign(Object.create({ a: 1 }), x); return o.a; }`,
+      "f",
+      [anyAbs],
+    );
+    expect(litValue(a.result).ok).toBe(false);
+    const b = call(
+      `export function f(x) { const o = Object.assign(Object.create({ a: 1 }), x); return o.b; }`,
+      "f",
+      [anyAbs],
+    );
+    expect(litValue(b.result).ok).toBe(false);
   });
 });
