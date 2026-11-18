@@ -2054,7 +2054,74 @@ describe("-from 的调用点义务按静态判据复核", () => {
     );
     expect(deduped.length).toBe(0);
   }
-});
+  });
+
+  it("执行态 actual 是多值聚合串 ⇒ 按值拆开去重（-81 / -82 折回执行态；-83 保留；字符串内逗号不切）", () => {
+    const execution = [
+      {
+        severity: "error" as const,
+        code: "nudo:contract-domain-exceeds",
+        message: "make[p]: cross-file call-site domain evidence -81, -82 exceeds handwritten contract",
+        actual: "-81, -82",
+      },
+    ];
+    const statics = [
+      {
+        severity: "error" as const,
+        code: "nudo:contract-domain-exceeds",
+        message: "make[p]: cross-file call-site domain evidence -81 exceeds handwritten contract",
+        actual: "-81",
+      },
+      {
+        severity: "error" as const,
+        code: "nudo:contract-domain-exceeds",
+        message: "make[p]: cross-file call-site domain evidence -82 exceeds handwritten contract",
+        actual: "-82",
+      },
+      {
+        severity: "error" as const,
+        code: "nudo:contract-domain-exceeds",
+        message: "make[p]: cross-file call-site domain evidence -83 exceeds handwritten contract",
+        actual: "-83",
+      },
+    ];
+    const deduped = dedupeFromStaticIssues(statics, execution);
+    // 执行态通道只留**一条**（聚合串）；静态通道里已被它覆盖的值不再重复
+    expect(deduped.map((i) => i.actual)).toEqual(["-83"]);
+
+    // 字符串证据是 JSON 引号形态：引号内的 `, ` 不是值分隔符
+    const stringExecution = [
+      {
+        severity: "error" as const,
+        code: "nudo:contract-domain-exceeds",
+        message: 's[q]: cross-file call-site domain evidence "a, b", -1 exceeds handwritten contract',
+        actual: '"a, b", -1',
+      },
+    ];
+    const stringStatics = [
+      {
+        severity: "error" as const,
+        code: "nudo:contract-domain-exceeds",
+        message: 's[q]: cross-file call-site domain evidence "a, b" exceeds handwritten contract',
+        actual: '"a, b"',
+      },
+      {
+        severity: "error" as const,
+        code: "nudo:contract-domain-exceeds",
+        message: "s[q]: cross-file call-site domain evidence -1 exceeds handwritten contract",
+        actual: "-1",
+      },
+      {
+        severity: "error" as const,
+        code: "nudo:contract-domain-exceeds",
+        message: 's[q]: cross-file call-site domain evidence "c, d" exceeds handwritten contract',
+        actual: '"c, d"',
+      },
+    ];
+    expect(dedupeFromStaticIssues(stringStatics, stringExecution).map((i) => i.actual)).toEqual([
+      '"c, d"',
+    ]);
+  });
 
 
 
@@ -2092,6 +2159,10 @@ export function p6(x: string | number) { return String(x); }
 
   it("f.call / f.apply / f.bind 间接调用的现场都有契约义务与见证（不再假绿）", () => {
     const d = tmp({
+      // 见证数固定：4 处调用点都在 budget 内 ⇒ `nudo test` 逐个打印精确
+      // `call@`（默认 budget=3 时第 4 处被折成 `call@symbolic`，bind 见证
+      // 只能靠「4 synthetic case(s)」这条计数间接断言 ⇒ 不算钉住）。
+      "package.json": `{"name":"forms","type":"module","nudo":{"analysis":{"callSiteBudget":8}}}\n`,
       "u.js": `export function f(x) { return x; }
 f(-1);
 f.call(null, -2);
@@ -2113,6 +2184,9 @@ export const f = fn({ x: number().gt(0) }, number());
     expect(tst.stdout).toContain("call@L2");
     expect(tst.stdout).toContain("call@L3");
     expect(tst.stdout).toContain("call@L4");
+    // bind 结果的见证点名**它自己的实参 / 返回值**（不是被预算折叠的符号见证）
+    expect(tst.stdout).toContain("(-4) => -4");
+    expect(tst.stdout).not.toContain("call@symbolic");
     expect(tst.stdout).toContain("4 synthetic case(s)");
   }, 120000);
 });

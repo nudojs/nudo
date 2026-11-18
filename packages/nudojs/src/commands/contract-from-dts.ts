@@ -390,20 +390,28 @@ export async function runContractFromDts(
     console.log(
       `// ${draft.stats.exports} projectable exports · ${draft.stats.skipped} skipped · ${draft.stats.files} d.ts`,
     );
-    console.log(
-      // BUG-038：点名**会绑定**的侧车名（`.ts` 源 ⇒ `*.nudo.ts`；`.d.ts` 源
-      // ⇒ 运行时模块旁边的 `*.nudo.js`），不再硬编码 `*.nudo.js`。
-      `// pass --write to save as ${outRel}; copy into ${basename(acceptTargetPath)} to enforce`,
-    );
     if (acceptTargets.length > 0) {
+      // Bug 54 续修：多文件合并草稿**没有**单一接受目标 ⇒ 头行不得再点名
+      // `copy into <a.nudo.ts>`（照它抄，来自 b.d.ts 的导出会被放进 a 的侧车，
+      // 永不绑定 ⇒ 静默零义务）。与 `--write` 分支同一措辞：逐导出点名
+      // **定义它的模块**的侧车。
       console.log(
-        `// this draft merges ${dtsFiles.length} .d.ts sources — accept each export into its OWN module sidecar:`,
+        `// pass --write to save as ${outRel}; this draft merges ${dtsFiles.length} .d.ts sources — accept each export into the sidecar of the module that DEFINES it (sidecar binding is per source module):`,
       );
       for (const t of acceptTargets) {
         console.log(
           `//   ${t.name}  (from ${t.from}) → ${t.sidecarRel ?? "(source unknown — review before accepting)"}`,
         );
       }
+      console.log(
+        `// hint: an export accepted into a different module's sidecar is never bound (silent green)`,
+      );
+    } else {
+      console.log(
+        // BUG-038：点名**会绑定**的侧车名（`.ts` 源 ⇒ `*.nudo.ts`；`.d.ts` 源
+        // ⇒ 运行时模块旁边的 `*.nudo.js`），不再硬编码 `*.nudo.js`。
+        `// pass --write to save as ${outRel}; copy into ${basename(acceptTargetPath)} to enforce`,
+      );
     }
     if (singleAccept !== undefined && !singleAccept.bound) {
       // BUG-038（`.d.ts` 无运行时兄弟）：侧车必须挨着**定义该导出的运行时模块**

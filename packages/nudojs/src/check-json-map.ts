@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import {
   checkSource,
   formatCheckReport,
+  localNamedExports,
   pTrue,
   serializeCheckJson,
   type CheckIssue,
@@ -455,9 +456,18 @@ function resolveExportName(
   opts: StaticFromDomainOptions,
 ): string | undefined {
   if (face.imported.has(callee)) return callee;
-  // 命名空间导入：`space.<name>(…)` 解析后的名字就是导出名（也允许同名本地
-  // 函数撞名——那种情况 core 的 `fn` 不带接收者，无从区分，取保守的「有证据」）
-  if (face.namespace) return callee;
+  // 命名空间导入：`space.<name>(…)` 解析后的名字就是导出名。但命名空间只开
+  // 「**可能**经目标导出」的闸，不是「任意被调名都是目标的导出」——现场文件
+  // 还会 import 别的模块，core 对**那些**调用报的违例也会进同一份 report
+  // （旧口径一律归因 ⇒ 被调方根本不导出这个名字 ⇒ 假门禁）。判据落在被调方
+  // 的**导出表**上（targetSource 恒由 runCheck 供给；缺席 ⇒ 不猜，与默认导入
+  // 同口径）。同名本地函数撞名（core 的 `fn` 不带接收者）也因此只能按导出名
+  // 判——宁可少报一条证据，也不把别人的调用算到被调方头上。
+  if (face.namespace) {
+    if (opts.targetSource !== undefined && localNamedExports(opts.targetSource).has(callee)) {
+      return callee;
+    }
+  }
   if (face.hasDefault) {
     // 默认导入：core 报的是目标模块里的**声明名**
     const declared = defaultExportLocalName(opts.targetSource);
@@ -545,6 +555,13 @@ export function staticFromDomainIssues(opts: StaticFromDomainOptions): CheckIssu
  *
  * 不同调用点 / 不同现场文件给出**同一个**违约值时仍合并成一条（值相同 ⇒ 修法
  * 相同），与 Bug 643 的正面口径一致。
+ *
+ * BUG-069 续修：执行态通道对同一参数位只产**一条** issue，`actual` 是该位
+ * 所有违约值用 `", "` 连接后的**聚合串**（`make(-81); make(-82)` ⇒
+ * `-81, -82`）⇒ 拿整串当单个值去比，静态通道的两条（`-81` / `-82`）都不命中
+ * ⇒ 同一事实报三遍。执行态的 `actual` 按值拆开（字符串值是 JSON 引号形态，
+ * 引号内的 `, ` 不是分隔符），逐值进 seen；静态通道里**不在**执行态集合中的
+ * 值（如 `-83`）照常保留。
  */
 export function dedupeFromStaticIssues(
   staticIssues: readonly CheckIssue[],
@@ -554,13 +571,54 @@ export function dedupeFromStaticIssues(
   for (const e of executionIssues) {
     if (e.code !== DIAG.contractDomainExceeds) continue;
     const key = callSiteKeyOf(e.message);
-    if (key) seen.add(`${key.key}@${plainEvidence(e.actual)}`);
+    if (!key) continue;
+    for (const value of splitEvidenceList(plainEvidence(e.actual))) {
+      seen.add(`${key.key}@${value}`);
+    }
   }
   if (seen.size === 0) return [...staticIssues];
   return staticIssues.filter((s) => {
     const key = callSiteKeyOf(s.message);
     return key === undefined || !seen.has(`${key.key}@${plainEvidence(s.actual)}`);
   });
+}
+
+/**
+ * 证据聚合串 → 逐值。执行态通道的 `actual` 形如 `-81, -82`，字符串值带
+ * JSON 引号（`"a, b", -1`）⇒ 只在**引号外**的 `", "` 处切分。
+ */
+function splitEvidenceList(actual: string): string[] {
+  const out: string[] = [];
+  let start = 0;
+  let i = 0;
+  while (i < actual.length) {
+    const c = actual[i]!;
+    if (c === '"') {
+      // JSON 字符串：跳过转义对（`\"` / `\\`）直到闭合引号
+      i++;
+      while (i < actual.length) {
+        if (actual[i] === "\\") {
+          i += 2;
+          continue;
+        }
+        if (actual[i] === '"') {
+          i++;
+          break;
+        }
+        i++;
+      }
+      continue;
+    }
+    if (c === "," && actual[i + 1] === " ") {
+      out.push(actual.slice(start, i));
+      i += 2;
+      start = i;
+      continue;
+    }
+    i++;
+  }
+  out.push(actual.slice(start));
+  return out.filter((v) => v !== "");
 }
 
 /** 消息里的「被调名[参数位]」键（两条 `--from` 通道共用同一形状） */

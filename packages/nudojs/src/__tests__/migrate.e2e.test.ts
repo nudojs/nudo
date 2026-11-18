@@ -248,6 +248,53 @@ describe("nudo migrate", () => {
     expect(text).toContain("pnpm run typecheck");
   });
 
+  it("A1: workflow 里只剩编译器角色的 tsc ⇒ typescript 保留（不摘依赖、不报 blocker）", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-wf-compiler-"));
+    dirs.push(dir);
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({
+        name: "demo",
+        devDependencies: { typescript: "^5.0.0" },
+      }),
+      "utf-8",
+    );
+    // `-p` 指向**会 emit** 的项目 ⇒ 编译器角色（原样保留）
+    writeFileSync(
+      join(dir, "tsconfig.json"),
+      JSON.stringify({ compilerOptions: { outDir: "dist", declaration: true } }),
+      "utf-8",
+    );
+    const wfDir = join(dir, ".github", "workflows");
+    mkdirSync(wfDir, { recursive: true });
+    writeFileSync(
+      join(wfDir, "build.yml"),
+      ["name: CI", "jobs:", "  build:", "    steps:", "      - run: npx tsc -p tsconfig.json", ""].join(
+        "\n",
+      ),
+      "utf-8",
+    );
+
+    // status：依赖是**有意保留**（不是 blocker），与 retire 决策同源
+    const rows = migrateStatus(dir);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.blockers).not.toContain("typescript still in dependencies");
+    expect(rows[0]!.preserved?.deps).toEqual(["devDependencies"]);
+
+    // retire --all：没有可退役的东西 ⇒ 不注入脚本、不摘依赖
+    expect(migrateRetireAll(dir)).toEqual([]);
+    const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf-8"));
+    expect(pkg.devDependencies.typescript).toBe("^5.0.0");
+    expect(pkg.scripts).toBeUndefined();
+    expect(existsSync(join(dir, ".nudo", "migrate-retired.json"))).toBe(false);
+
+    // 单目标：如实说「tsc 只是编译器」（不再谎报 removed），且零写盘
+    expect(() => migrateRetire(dir)).toThrow(/only a compiler/);
+    expect(JSON.parse(readFileSync(join(dir, "package.json"), "utf-8")).devDependencies.typescript).toBe(
+      "^5.0.0",
+    );
+  });
+
   it("A1: migrateRetireAll batches workspace packages", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-all-"));
     dirs.push(dir);

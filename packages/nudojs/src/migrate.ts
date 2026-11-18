@@ -1518,6 +1518,13 @@ type WorkflowScan = {
   changes: Array<{ from: string; to: string; line: number }>;
   /** 每个 tsc 调用一条（命令原文，trimmed） */
   tscCommands: string[];
+  /**
+   * 原文里**每个含 tsc 调用的 `run:` 命令**一条（命令原文，trimmed）——
+   * 含编译器角色那些不会被改写的（`tscCommands` 只数被改写的门禁行）。
+   * 用于「退役后还剩多少 tsc」：把改写后的文本再扫一遍 ⇒ 剩下的就是被
+   * 原样保留的编译器调用。
+   */
+  tscCalls: string[];
 };
 
 /**
@@ -1531,6 +1538,7 @@ function scanWorkflowText(text: string, root?: string): WorkflowScan {
   const out: string[] = [];
   const changes: Array<{ from: string; to: string; line: number }> = [];
   const tscCommands: string[] = [];
+  const tscCalls: string[] = [];
   let i = 0;
   while (i < lines.length) {
     const line = lines[i]!;
@@ -1576,6 +1584,7 @@ function scanWorkflowText(text: string, root?: string): WorkflowScan {
       const folded = value.trim().startsWith(">");
       const logical = folded ? body.replace(/\n+/g, " ") : body;
       const calls = findTscCalls(logical);
+      if (isTscCommand(logical)) tscCalls.push(logical.trim());
       const { cmd, changed } = rewriteTscCommand(logical, root);
       if (!changed) {
         out.push(line, ...content);
@@ -1599,6 +1608,7 @@ function scanWorkflowText(text: string, root?: string): WorkflowScan {
       continue;
     }
     const calls = findTscCalls(scalar.value);
+    if (isTscCommand(scalar.value)) tscCalls.push(scalar.value.trim());
     const { cmd, changed } = rewriteTscCommand(scalar.value, root);
     if (!changed) {
       out.push(line);
@@ -1610,7 +1620,7 @@ function scanWorkflowText(text: string, root?: string): WorkflowScan {
     out.push(`${keyPart}${emitYamlScalar(scalar, cmd)}${scalar.tail}`);
     i++;
   }
-  return { text: out.join("\n"), changes, tscCommands };
+  return { text: out.join("\n"), changes, tscCommands, tscCalls };
 }
 
 export function rewriteWorkflowText(text: string, root?: string): {
@@ -1855,10 +1865,17 @@ export function migrateStatus(rootDir: string): MigrateStatusRow[] {
     // 旧实现只看「脚本里有 tsc」「依赖里有 typescript」⇒ 已退役项目永久挂
     // 2 个 blocker（`retired: true` 与 blockers 同时成立 ⇒ status 与 retire
     // 结论相反，用户按提示反复跑已完成的 retire）。
-    const scope = retireSurface(pkg ?? {}, r);
-    const keepTypescript = scope.compilerScripts.length > 0;
+    //
+    // BUG-096 续修：直接复用 `retireScope`（**单一真源**）——编译器角色不只在
+    // package.json 脚本里，CI workflow 里被原样保留的 tsc 行同样要
+    // `typescript` ⇒ `keepTypescript` 必须含「退役后 workflow 仍存在的 tsc」。
+    // 旧判据只看脚本 ⇒ 只有 workflow 跑编译器的包被报成
+    // 「typescript still in dependencies」blocker，而 retire 又会摘掉它。
+    const scope = retireScope(r, pkg ?? {}, {});
+    const surface = scope.surface;
+    const keepTypescript = scope.keepTypescript;
     // tsc 门禁脚本仍在 ⇒ 阻塞；与 .ts 数量无关（0 个 .ts 恰恰是最该退役的场景）
-    if (scope.gateScripts.length > 0) blockers.push("tsc still in scripts");
+    if (surface.gateScripts.length > 0) blockers.push("tsc still in scripts");
     if (tsFiles > 0 && !hasNudoGate) {
       blockers.push("no nudo check/test script yet");
     }
@@ -1885,7 +1902,7 @@ export function migrateStatus(rootDir: string): MigrateStatusRow[] {
     if (workflowHits.length > 0) {
       blockers.push(`${workflowHits.length} tsc line(s) in .github/workflows`);
     }
-    const preservedScripts = [...scope.compilerScripts];
+    const preservedScripts = [...surface.compilerScripts];
     const preserved = {
       scripts: preservedScripts,
       deps: preservedDepFields,
@@ -3166,6 +3183,37 @@ function planWorkflowRewritesIn(
   return out;
 }
 
+/**
+ * 退役**之后** workflow 面仍会执行的 tsc 命令（BUG-096 续修）。
+ *
+ * `rewriteWorkflowText` 只把**门禁角色**的 tsc 改写成 `nudo check`；编译器
+ * 角色（会 emit，如 `tsc -p tsconfig.json`）的短语**原样保留** ⇒ 退役后 CI
+ * 仍在调用 `tsc` ⇒ `typescript` 依赖不得摘。旧判据只看 package.json 的脚本
+ * （`RetireSurface.compilerScripts`）⇒「只有 workflow 跑编译器」的包被摘掉
+ * 依赖、CI 当场坏掉，而报告说「removed typescript」。
+ *
+ * 判据落在**改写计划的落盘文本**上：计划命中的文件用计划文本，其余用现状
+ * 原文（计划为空 = `--no-workflows` / 无自有 workflow ⇒ 现状就是退役后）。
+ * 与 `listWorkflowTscLinesIn`（只数**会被改写**的门禁行，blocker 口径）分面，
+ * 两处共用同一份计划。
+ */
+function workflowTscCallsAfterRetire(
+  dir: string | undefined,
+  root: string,
+  planned: readonly PlannedWorkflowWrite[],
+): string[] {
+  if (!dir) return [];
+  const plannedByPath = new Map(planned.map((w) => [resolve(w.path), w.text]));
+  const out: string[] = [];
+  for (const name of readdirSync(dir)) {
+    if (!/\.ya?ml$/i.test(name)) continue;
+    const path = join(dir, name);
+    const text = plannedByPath.get(resolve(path)) ?? readFileSync(path, "utf-8");
+    out.push(...scanWorkflowText(text, root).tscCalls);
+  }
+  return out;
+}
+
 /** workflow 改写记录投影（stdout 报文与落盘 marker 共用 ⇒ 同键同型） */
 function workflowRewriteRecords(planned: PlannedWorkflowWrite[]): RetireWorkflowChange[] {
   return planned.flatMap((w) =>
@@ -3316,6 +3364,8 @@ function retireScope(
 ): {
   surface: RetireSurface;
   plannedWorkflows: PlannedWorkflowWrite[];
+  /** 退役后 workflow 面仍会执行的 tsc 命令（编译器角色被原样保留） */
+  keptWorkflowTsc: string[];
   keepTypescript: boolean;
   depRemovable: boolean;
   /** 本次运行**真要改东西**（不含「早已退役、本次无操作」） */
@@ -3327,12 +3377,22 @@ function retireScope(
   // 退役子包不得越界改写它）
   const plannedWorkflows =
     opts.workflows === false ? [] : planWorkflowRewritesIn(ownWorkflowDir(root), root);
-  // 编译器脚本仍要 tsc ⇒ typescript 依赖不得摘（摘了 build 当场坏掉）
-  const keepTypescript = surface.compilerScripts.length > 0;
+  // BUG-096 续修：编译器角色不止在 package.json 脚本里——workflow 的 tsc 行
+  // 同样会被原样保留（`rewriteWorkflowText` 只改门禁角色）⇒ 判据必须看
+  // **改写计划落盘后**仍存在的 tsc。与 `migrate status` 同源
+  // （`workflowTscCallsAfterRetire`），否则依赖被摘而 CI 仍在跑 `npx tsc`。
+  const keptWorkflowTsc = workflowTscCallsAfterRetire(
+    ownWorkflowDir(root),
+    root,
+    plannedWorkflows,
+  );
+  // 编译器脚本 / 保留的 CI tsc 仍要 tsc ⇒ typescript 依赖不得摘
+  const keepTypescript = surface.compilerScripts.length > 0 || keptWorkflowTsc.length > 0;
   const depRemovable = surface.hasTypescriptDep && !keepTypescript;
   return {
     surface,
     plannedWorkflows,
+    keptWorkflowTsc,
     keepTypescript,
     depRemovable,
     hasWorkToDo:
@@ -3357,11 +3417,14 @@ function planRetirePackage(
   if (read.kind === "invalid") throw new Error(`package.json parse failed: ${read.error}`);
   if (read.kind === "unreadable") throw new Error(`package.json unreadable: ${read.error}`);
   const pkg = read.value;
-  const { surface, plannedWorkflows, keepTypescript, depRemovable, hasWorkToDo } = retireScope(
-    root,
-    pkg,
-    opts,
-  );
+  const {
+    surface,
+    plannedWorkflows,
+    keptWorkflowTsc,
+    keepTypescript,
+    depRemovable,
+    hasWorkToDo,
+  } = retireScope(root, pkg, opts);
   const markerDir = join(root, ".nudo");
   const marker = join(markerDir, "migrate-retired.json");
   const alreadyRetired = statSync(marker, { throwIfNoEntry: false })?.isFile() === true;
@@ -3375,9 +3438,16 @@ function planRetirePackage(
   const recovering = hasRetiringMarker && !alreadyRetired && !hasWorkToDo;
 
   if (!hasWorkToDo && !alreadyRetired && !recovering) {
-    if (surface.compilerScripts.length > 0) {
+    // 编译器角色可能在 package.json 脚本里，也可能只在 CI workflow 里（被
+    // BUG-096 的改写原样保留）——两处都点名，否则用户看到「no tsc/typescript
+    // in scope」而仓库里明明跑着 `npx tsc -p tsconfig.json`。
+    const compilerEvidence = [
+      ...surface.compilerScripts,
+      ...keptWorkflowTsc.map((cmd) => `workflow: ${cmd}`),
+    ];
+    if (compilerEvidence.length > 0) {
       throw new Error(
-        `nothing to retire (tsc is only a compiler here: ${surface.compilerScripts.join(", ")} — \`nudo check\` does not emit artifacts)`,
+        `nothing to retire (tsc is only a compiler here: ${compilerEvidence.join(", ")} — \`nudo check\` does not emit artifacts)`,
       );
     }
     throw new Error("nothing to retire (no tsc/typescript in scope)");
@@ -3599,7 +3669,8 @@ export function migrateRetireAll(
     }
     if (read.kind === "missing") continue;
     const scope = retireScope(r, read.value, opts);
-    // 没有可摘的依赖、没有门禁角色 tsc、也没有 workflow 里的 tsc 行 ⇒ 不注入、不写标记
+    // 没有可摘的依赖、没有门禁角色 tsc、也没有**会被改写的** workflow tsc 行
+    // ⇒ 不注入、不写标记（只有编译器角色 tsc 的包 = 无可退役，依赖保留）
     if (!scope.hasWorkToDo) continue;
     try {
       plans.push(planRetirePackage(r, opts));

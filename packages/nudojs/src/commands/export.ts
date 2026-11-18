@@ -20,6 +20,7 @@ import {
   type Abs,
   type FormalParam,
 } from "@nudojs/core";
+import { parse } from "@nudojs/parser";
 import { analyzeFileAsync, type CaseResult, type FunctionAnalysis } from "@nudojs/service";
 import { dtsModuleSurface, isRuntimeGlobalCtorName } from "@nudojs/service/emit";
 import {
@@ -161,6 +162,65 @@ function arrayPatternParamFaces(
   return out;
 }
 
+/**
+ * BUG-051 续修：源码里**任意深度**的类名（声明 / 表达式，含赋给变量的
+ * 类表达式）——保守集合，只用于「这个名字是否被本模块的类遮蔽」。
+ *
+ * 判据必须覆盖 `export default class Date` 与函数 / 块级 `class Date`：
+ * `result.bindings` 只收**顶层语句**的绑定 ⇒ 这两种形态漏掉，而它们的实例
+ * brand 名就是 `Date` ⇒ 产物仍发 `z.instanceof(Date)`（产物模块里恒解析为
+ * 全局）⇒ 校验器拒收实现自己的返回值。类名是唯一需要的信息，AST 走一遍
+ * 全部类节点即可；多收一个同名类只会让该 brand 降级为 unknown（放行 +
+ * 留痕），不会假绿。
+ */
+function classNamesInSource(source: string): Set<string> {
+  const out = new Set<string>();
+  let ast: unknown;
+  try {
+    ast = parse(source);
+  } catch {
+    return out;
+  }
+  const visit = (node: unknown): void => {
+    if (node === null || typeof node !== "object") return;
+    if (Array.isArray(node)) {
+      for (const n of node) visit(n);
+      return;
+    }
+    const rec = node as Record<string, unknown>;
+    const type = rec.type;
+    if (type === "ClassDeclaration" || type === "ClassExpression") {
+      const id = rec.id as Record<string, unknown> | null | undefined;
+      if (id && typeof id.name === "string") out.add(id.name);
+    } else if (type === "VariableDeclarator") {
+      // `const Date = class { … }`：类表达式自身无 id ⇒ 绑定名来自声明符
+      const init = rec.init as Record<string, unknown> | undefined;
+      if (init?.type === "ClassExpression") {
+        const id = rec.id as Record<string, unknown> | undefined;
+        if (id && typeof id.name === "string") out.add(id.name);
+      }
+    }
+    for (const [key, value] of Object.entries(rec)) {
+      // 位置 / 注释等元数据不是子节点（避免无谓遍历与自引用）
+      if (
+        key === "loc" ||
+        key === "start" ||
+        key === "end" ||
+        key === "leadingComments" ||
+        key === "trailingComments" ||
+        key === "innerComments" ||
+        key === "comments" ||
+        key === "tokens"
+      ) {
+        continue;
+      }
+      if (value !== null && typeof value === "object") visit(value);
+    }
+  };
+  visit(ast);
+  return out;
+}
+
 async function runExport(
   file: string,
   format: ExportFormat,
@@ -230,7 +290,7 @@ async function runExport(
   const dtsSurface = dtsModuleSurface(source);
 
   /**
-   * BUG-051：本模块里**遮蔽了同名全局构造器**的用户绑定（`class Date` /
+   * BUG-051 续修：本模块里**遮蔽了同名全局构造器**的用户绑定（`class Date` /
    * `import { Date } from …` / 顶层 `const Map = …`）。
    *
    * brand 的 Abs 只有 `{name}`，不含值身份 ⇒ `class Date` 的实例与真内建
@@ -240,11 +300,20 @@ async function runExport(
    * class Date`）判对。判据用**绑定表**（类 / 函数 / 顶层值 / import 本地名
    * 都在里面）而不是 `dtsSurface.imports`——后者按**导出名**建键
    * （`import { X as Y }` 记 "X"），拿不到本地绑定名。
+   *
+   * `result.bindings` 只含**顶层语句**的绑定 ⇒ `export default class Date`
+   * 与函数 / 块级 `class Date` 漏掉（它们照样遮蔽同名全局，实例 brand 仍是
+   * `Date`）⇒ 产物仍发 `z.instanceof(Date)`。补两道来源：模块类面（顶层类
+   * 声明，含 default）与全深度类名 AST 扫描（保守；多判遮蔽只降精度，不会
+   * 把真实全局实例错判成可投影）。
    */
   const shadowedGlobals = new Set<string>();
-  for (const name of result.bindings.keys()) {
+  const noteShadowedGlobal = (name: string): void => {
     if (isRuntimeGlobalCtorName(name)) shadowedGlobals.add(name);
-  }
+  };
+  for (const name of result.bindings.keys()) noteShadowedGlobal(name);
+  for (const name of dtsSurface.classes.keys()) noteShadowedGlobal(name);
+  for (const name of classNamesInSource(source)) noteShadowedGlobal(name);
   const brandScope = shadowedGlobals.size > 0 ? { shadowedGlobals } : undefined;
 
   // 空产物的唯一判据：**既无本地函数，也无模块面可发射内容**（BUG-033 的再导出 /
@@ -317,7 +386,14 @@ async function runExport(
     const baseName = fn.name;
 
     // 运行时校验器应尽量反映**契约域**，而不是单次调用点字面量。
-    const eff = effectiveContract(source, baseName, effOpts);
+    const declared = effectiveContract(source, baseName, effOpts);
+    // `@generated` 档 = emit 时刻的**事实快照**（docs/design/refine-derivation.md：
+    // 不执法，只 drift）。公开产物面（zod / standard / guard / dts）把它当
+    // 义务发布 ⇒ `fn({a: lit(1)}, lit(2))` 让产物只接受 `a: 1` / 返回 `2`，
+    // 而实现允许任意值、`nudo check` 也只报 warning（nudo:contract-drift）
+    // ⇒ 门禁与产物相反裁决，产物拒收实现自己的合法返回值。生成档不进公开
+    // 面：回落分析面 Abs（真实可接受域的观测近似）。
+    const eff = declared?.source === "generated" ? undefined : declared;
     // 契约面上下文（契约域种子重算 / 违约复核需要源码与路径）
     const faceCtx = {
       source,

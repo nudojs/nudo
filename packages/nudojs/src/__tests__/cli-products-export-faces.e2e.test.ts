@@ -120,7 +120,7 @@ const SRC = "export function clean(x) {\n  return x + 1;\n}\nclean(1);\n";
     expect(readdirSync(out).filter((f) => f.endsWith(".d.ts"))).toEqual(["clean.d.ts"]);
     expect(readFileSync(join(out, "clean.d.ts"), "utf-8")).toBe(once);
   }
-});
+}, 120_000); // 6 个 CLI 子进程（tsx 冷启动）
 
 
 });
@@ -981,6 +981,22 @@ function makeFixture(): string {
   }
 }); // 2 个 CLI 子进程（tsx 冷启动）
 
+  it("收敛侧车（@generated 段 = 调用点字面量）⇒ export dts 不得把快照当义务发布", () => {
+    const dir = makeFixture();
+    // 收敛态侧车：wrap 段是 `@generated`（`lit(42)` / `lit("(42)")`）
+    writeFileSync(join(dir, "lib.nudo.js"), SIDECAR_CONVERGED, "utf-8");
+
+    const r = runCli(["export", "lib.js", "--format", "dts"], { cwd: dir });
+    expect(r.status).toBe(0);
+    // 生成档是**事实快照**（不执法，只 drift；check 面只报 warning）⇒ 公开
+    // dts 不得收窄到那次调用的字面量（`wrap("x")` 是合法调用，产物必须接受）
+    expect(r.stdout).not.toContain("text: 42");
+    expect(r.stdout).toContain("export declare function wrap(text: number): string;");
+    expect(r.stdout).not.toContain('wrap(text: 42): "(42)"');
+    // 手写段仍是义务（对照：不是一刀切丢契约）
+    expect(r.stdout).toContain("export declare function tag(n: number): string;");
+  }, 60000); // 1 个 CLI 子进程（tsx 冷启动）
+
    // 3 个 CLI 子进程
 
    // 1 个 CLI 子进程
@@ -1011,7 +1027,8 @@ describe("nudo contract --emit · 同一侧车同一段 = 一个写者", () => {
  * 夹具（与 `tmp/repro/` 同形，但测试自建临时目录 ⇒ 不读写 tmp/）：
  * `lib.js` 里 `@nudo:contract` 让 `bar` 成为 root ⇒ 派生推导点名下游导出
  * `foo`（派生段 = `fn({ a: lit(1) }, lit(2))`），而 `foo` 同时被直写分支覆盖
- * （`fn({ a: number() }, number())`）⇒ 同一段两个写者。
+ * （宽化只属于 draft 面；emit 两个分支都落**精确观测**：`fn({ a: lit(1) }, lit(2))`）
+ * ⇒ 同一段两个写者。
  *
  * ⚠ CLI 子进程的 `@nudojs/service/emit` 解析会按 **cwd** 找 tsconfig：cwd 是
  * 临时夹具 ⇒ 落到 `packages/service/dist/`（可能是旧构建，的语义
@@ -1041,7 +1058,7 @@ const STD = `import { number } from "@nudojs/core";
 export const positive = number().gt(0);
 `;
 
-/** 同一段：直写分支的正文（`number()`）+ 派生分支并进来的溯源行 */
+/** 同一段：直写正文（BUG-113 的精确观测 `lit(1)` / `lit(2)`，不是宽化后的 `number()`）+ 派生分支并进来的溯源行 */
 const EXPECTED_WRAP = `export const foo = fn({ a: lit(1) }, lit(2));`;
 
 function makeFixture(): { dir: string; sidecar: string } {
@@ -1230,6 +1247,19 @@ function makeFixture(): string {
     `export function makeGlobalDate() { return new Date(); }\n`,
     "utf-8",
   );
+  // `export default class Date` 与函数内的 `class Date`：两者都遮蔽同名全局，
+  // 但都不在顶层 `result.bindings` 里（后者是块级绑定）。
+  writeFileSync(
+    join(dir, "shadow-nested.js"),
+    `export default class Date { constructor() { this.v = 1; } }
+export function makeDefaultDate() { return new Date(); }
+export function makeLocalDate() {
+  class Date { constructor() { this.v = 2; } }
+  return new Date();
+}
+`,
+    "utf-8",
+  );
   return dir;
 }
 
@@ -1249,6 +1279,21 @@ function makeFixture(): string {
     const zodB = readFileSync(join(dir, "out-b", "plain.nudo.schema.zod.ts"), "utf-8");
     expect(zodB).toContain("export const makeGlobalDateOutput = z.instanceof(Date);");
   }, 120000); // 2 个 CLI 子进程（tsx 冷启动）
+
+  it("export default class / 函数内 class 同样遮蔽 ⇒ z.unknown()（不得按全局 Date 投影）", () => {
+    const dir = makeFixture();
+    dirs.push(dir);
+
+    const r = runCli(["export", "shadow-nested.js", "--format", "all", "--out", "out-nested"], {
+      cwd: dir,
+    });
+    expect(r.status).toBe(0);
+    const zod = readFileSync(join(dir, "out-nested", "shadow-nested.nudo.schema.zod.ts"), "utf-8");
+    expect(zod).not.toContain("z.instanceof(Date)");
+    expect(zod).toContain("export const makeDefaultDateOutput = z.unknown();");
+    expect(zod).toContain("export const makeLocalDateOutput = z.unknown();");
+    expect(zod).toContain("brand shadowed by a local binding");
+  }, 120000); // 1 个 CLI 子进程（tsx 冷启动）
 });
 
 // ---------------------------------------------------------------------------
@@ -1310,6 +1355,33 @@ function makeFixture(): string {
     expect(out).toContain("return (typeof data === \"number\") && (data > 0);");
     // dts：返回 number（不是 unknown）
     expect(out).toContain("export declare function g<a>(_p0: { a: number }): number;");
+  }, 60000); // 1 个 CLI 子进程
+
+  it("解构里契约未申报的绑定不得被折成 exact undefined 发布（返回面 / 产物面）", () => {
+    const dir = makeFixture();
+    // 契约只申报 grade；`extra` 是解构绑定但没申报 ⇒ 种子对象**开放**
+    // ⇒ `extra` 读 unknown（不是 exact undefined）。旧口径下契约种子对象是
+    // 闭合 obj ⇒ `return { grade, extra }` 的 extra 被折成 undefined 并发布
+    // （zod `extra: z.undefined()` / dts `extra: undefined`）⇒ 校验器只接受
+    // `extra: undefined`，而实现允许任意 `extra`。
+    writeFileSync(
+      join(dir, "obj_extra.js"),
+      `/// @nudo:import { pos } from "./shapes.nudo.js"
+/** @nudo:contract grade pos */
+export function pick({ grade, extra }) { return { grade, extra }; }
+`,
+      "utf-8",
+    );
+    const r = runCli(["export", "obj_extra.js", "--format", "all"], { cwd: dir });
+    expect(r.status).toBe(0);
+    const out = r.stdout;
+    // 产物不得声称 extra 是 undefined（合法的 extra: 7 会被拒收）
+    expect(out).not.toContain("z.undefined()");
+    expect(out).not.toContain("extra: undefined");
+    // 契约申报的键仍精确；未申报的绑定读 unknown（放行）
+    expect(out).toContain("grade: z.number().gt(0)");
+    expect(out).toContain("extra: z.unknown()");
+    expect(out).toContain("extra: unknown");
   }, 60000); // 1 个 CLI 子进程
 });
 

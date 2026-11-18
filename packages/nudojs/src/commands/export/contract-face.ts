@@ -185,12 +185,25 @@ function observedMinArity(cases: readonly CaseResult[]): number {
 /** 槽位树：点路径契约的叶子按路径挂树，最后一次性物化成嵌套 obj（Bug 620）。 */
 type SlotTree = { leaf?: Abs; children: Map<string, SlotTree> };
 
-/** 槽位树 → Abs（叶子 = 约束 Abs；子树 = 嵌套 obj）。 */
-function treeAbs(tree: SlotTree): Abs {
+/** 开放对象：未列出的键读 `unknown`（不是 exact `undefined`）。 */
+function openObj(slots: Record<string, { value: Abs }>): Abs {
+  return makeAbs({ k: "obj", slots, open: true }, undefined, undefined, "exact");
+}
+
+/**
+ * 槽位树 → Abs（叶子 = 约束 Abs；子树 = 嵌套 obj）。
+ *
+ * `open` 只给**契约域种子**用：种子对象只列契约申报的字段，解构形参里
+ * **没申报**的绑定（`{ grade, extra }` 的 `extra`）在闭合对象上读成 exact
+ * `undefined` ⇒ 返回值 / 产物凭空多出一个 `extra: undefined` 槽（`z.undefined()`
+ * / dts `extra: undefined`），而实现允许任意值。开放对象让未列键读 `unknown`
+ * ⇒ 不伪造精确值（解构 `{ a, b }` 里契约申报的 `a` 仍精确）。
+ */
+function treeAbs(tree: SlotTree, open = false): Abs {
   if (tree.children.size === 0) return tree.leaf ?? anyEntryAbs();
   const slots = Object.create(null) as Record<string, { value: Abs }>;
-  for (const [key, child] of tree.children) slots[key] = { value: treeAbs(child) };
-  return obj(slots);
+  for (const [key, child] of tree.children) slots[key] = { value: treeAbs(child, open) };
+  return open ? openObj(slots) : obj(slots);
 }
 
 /** 把叶子 Abs 挂到路径上（路径首段是槽位键，不进树）。 */
@@ -508,8 +521,13 @@ export function contractSeedArgs(fn: FunctionAnalysis, eff: EffectiveContract | 
         trees.set(key, tree);
       }
       const slots = Object.create(null) as Record<string, { value: Abs }>;
-      for (const [key, tree] of trees) slots[key] = { value: treeAbs(tree) };
-      seedArgs.push(obj(slots));
+      // BUG-620 续修：种子对象（及嵌套树）必须**开放**——解构形参里契约
+      // 没申报的绑定在闭合对象上读成 exact `undefined` ⇒ 返回面 / 产物凭空
+      // 多出一个 `undefined` 槽（`{ grade, extra }` 只申报 `grade` 时
+      // `extra` 被折成 undefined 并发布）。开放后未申报绑定读 `unknown`
+      // ⇒ 不伪造精确值；契约申报的键仍精确（`g({a,b}){return a}` 不受影响）。
+      for (const [key, tree] of trees) slots[key] = { value: treeAbs(tree, true) };
+      seedArgs.push(openObj(slots));
       continue;
     }
     // ③ 剩余参数：契约描述的是**元素**类型（参数面同口径包一层数组）

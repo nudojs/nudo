@@ -356,10 +356,10 @@ describe("nudo contract --emit --fn 未命中 · 过滤器不降级", () => {
  * `skipped <fn> (not-an-export)` 通道（与 LSP / agent 面同款文案）；
  * ③ 对照组：名字正确时**只**改那一个（作用域没被放大）。
  *
- * ⚠ **口径变更后的重钉**（对照组里的 alpha 段）：调用点**点观测**不再
- * 直接成为字面量契约 —— 先 `widenObservationAbs` 再 `joinThenProject` ⇒ 一次
- * 调用 `alpha({ x: 5 })` 折出 `shape({ x: number() })` / `number()`，而不是
- * `shape({ x: lit(5) })` / `lit(5)`。
+ * ⚠ **口径**（对照组里的 alpha 段）：emit 持久化**精确观测字面量**（BUG-113）
+ * —— 一次调用 `alpha({ x: 5 })` 折出 `shape({ x: lit(5) })` / `lit(5)`。
+ * `widenObservationAbs` 的宽化只属于 **draft 面**；`@generated` 段本身是
+ * 事实快照（不执法、只 drift），公开产物面（export）也不拿它当义务。
  */
 
 
@@ -749,6 +749,46 @@ describe("-from-dts 不得绕过用法校验（先校验、后分派）", () => 
 
 
 });
+});
+
+
+// ---------------------------------------------------------------------------
+// --from-dts 多文件草稿的接受目标提示（逐导出点名各自模块侧车）
+// ---------------------------------------------------------------------------
+describe("--from-dts 多文件草稿的接受目标提示", () => {
+/**
+ * 多文件模式合并 N 个 `.d.ts` 的导出，但草稿头行仍按**单个**接受目标说
+ * `copy into a.nudo.ts to enforce`（`dtsFiles[0]` 的侧车）⇒ 照它把来自
+ * `b.d.ts` 的导出抄进 a 的侧车 ⇒ 永不绑定（静默零义务）。
+ *
+ * 钉：多文件模式的 stdout **不得**出现单一接受的 `copy into …`；逐导出点名
+ * 会绑定的侧车（每个导出各自的运行时模块旁边），并说明跨模块接受不生效。
+ * 单文件模式的既有提示由 `cli-contract.e2e` 的钉子覆盖（不在本文件里回归）。
+ */
+it("stdout 头行不得再点名单一 sidecar（逐导出点名各自模块侧车）", () => {
+  const dir = mkdtempSync(join(tmpdir(), "nudo-from-dts-multi-guidance-"));
+  try {
+    writeFileSync(join(dir, "package.json"), `{"name":"multi","type":"module"}\n`, "utf-8");
+    writeFileSync(join(dir, "a.js"), "export function alpha(n) { return n; }\n", "utf-8");
+    writeFileSync(join(dir, "a.d.ts"), "export declare function alpha(n: number): number;\n", "utf-8");
+    writeFileSync(join(dir, "b.js"), "export function beta(s) { return s; }\n", "utf-8");
+    writeFileSync(join(dir, "b.d.ts"), "export declare function beta(s: string): string;\n", "utf-8");
+
+    const r = runCli(["contract", "--from-dts", "."], { cwd: dir });
+    expect(r.status).toBe(0);
+    // 头行不得再给单一接受目标（旧口径：`copy into a.nudo.ts to enforce`）
+    expect(r.stdout).not.toContain("copy into ");
+    // 逐导出点名**会绑定**的侧车（定义该导出的运行时模块旁边）
+    expect(r.stdout).toContain(
+      "accept each export into the sidecar of the module that DEFINES it",
+    );
+    expect(r.stdout).toMatch(/alpha\s+\(from a\.d\.ts\) → a\.nudo\.js/);
+    expect(r.stdout).toMatch(/beta\s+\(from b\.d\.ts\) → b\.nudo\.js/);
+    expect(r.stdout).toContain("never bound (silent green)");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}, 60000); // 1 个 CLI 子进程（tsx 冷启动）
 });
 
 

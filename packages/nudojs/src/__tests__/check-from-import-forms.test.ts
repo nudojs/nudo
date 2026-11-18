@@ -111,6 +111,26 @@ describe("--from 静态通道：四种导入形态都要归因到被调方", () 
     expect(actuals(dir, "lib-named.js", siteOf(dir, "other.js", other), NAMED)).toEqual([]);
   });
 
+  it("命名空间导入只归因**目标真实导出**的名字（别的模块的违约不得算到被调方头上）", () => {
+    const dir = makeFixture();
+    // 另一份契约模块：`other` 只在这个模块里导出（被调方 lib-named.js 没有）
+    const otherSrc = `/// @nudo:import { delay } from "./shapes.nudo.js"
+/** @nudo:contract ms delay */
+export function other(ms) { return ms; }
+`;
+    writeFileSync(join(dir, "other-contract.js"), otherSrc, "utf-8");
+    // 现场文件同时 import 被调方（命名空间）与别的契约模块 ⇒ checkSource 会
+    // 报两条约束违例。旧口径「有命名空间导入 ⇒ 任意被调名都归因」把
+    // `other(-5)` 也算到 lib-named.js（它根本不导出 other）⇒ 假门禁。
+    const site = `import * as space from "./lib-named.js";
+import { other } from "./other-contract.js";
+export function bad() { space.setDelay(-103); return other(-5); }
+`;
+    expect(actuals(dir, "lib-named.js", siteOf(dir, "uses-two-imports.js", site), NAMED)).toEqual([
+      "nudo:contract-domain-exceeds|setDelay|-103",
+    ]);
+  });
+
   it("默认导入的归因依赖目标默认导出的声明名（`export { f as default }` 同口径）", () => {
     const dir = makeFixture();
     // `export { hidden as default }`：默认导出值是本地绑定 hidden
