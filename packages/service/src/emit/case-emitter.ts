@@ -357,13 +357,6 @@ export function buildCaseDirective(name: string, argsAbs: Abs[]): string | null 
 }
 
 /**
- * 从源码剥离所有本模块生成的 @nudo:case 指令（名字以 call@ 开头，整行删除）。
- * 若所属 JSDoc 块因此只剩空 ` *` 行（无其他 @nudo:* 指令、无文字内容），
- * 连块首 `/**` 行与块尾行整块删除。绝不碰非 case 指令与普通注释。
- * 注意：手写但以 call@ 命名的 case 同样会被删——call@ 前缀保留为生成物标记。
- * removed 返回被删指令名列表（按出现顺序）。
- */
-/**
  * 供**分析**使用的源码视图：把生成态 `call@` case 指令抹成空注释行（行数
  * 不变）。BUG-076：混合块（手写 case + 生成见证）不参与剥离，但分析若仍把
  * 旧见证当 directive case 读到，就不再合成当前调用点证据 ⇒ 陈旧见证永远
@@ -381,6 +374,13 @@ export function blankGeneratedCaseDirectives(source: string): string {
     .join("\n");
 }
 
+/**
+ * 从源码剥离所有本模块生成的 @nudo:case 指令（名字以 call@ 开头，整行删除）。
+ * 若所属 JSDoc 块因此只剩空 ` *` 行（无其他 @nudo:* 指令、无文字内容），
+ * 连块首 `/**` 行与块尾行整块删除。绝不碰非 case 指令与普通注释。
+ * 注意：手写但以 call@ 命名的 case 同样会被删——call@ 前缀保留为生成物标记。
+ * removed 返回被删指令名列表（按出现顺序）。
+ */
 export function stripGeneratedCaseDirectives(source: string): { source: string; removed: string[] } {
   // BOM 单独保管：剥离**可能删掉首行**（BOM 就长在首行上）⇒ BOM 必须原样
   // 接回，否则「剥离 → 写回」会把文件头的 BOM 弄丢（#562）。
