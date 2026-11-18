@@ -170,16 +170,27 @@ function bitwiseResultShape(a: Abs, b: Abs): Abs {
       cause: "ToNumeric/ToInt32 coercion of abstract operand",
     });
   }
-  const numLike = (x: Abs): boolean =>
+  // 确定可 ToInt32 的 prim（number / string / boolean）——混合 bigint 只会抛，
+  // 不产出值 ⇒ 非抛结果恒 number。
+  const definiteNumLike = (x: Abs): boolean =>
     x.shape.k === "prim" &&
     (x.shape.type === "number" || x.shape.type === "string" || x.shape.type === "boolean");
+  const anyLike = (x: Abs): boolean => x.shape.k === "any";
   const bigLike = (x: Abs): boolean => x.shape.k === "prim" && x.shape.type === "bigint";
   if (bigLike(a) || bigLike(b)) {
     return bigLike(a) && bigLike(b)
       ? abs({ k: "prim", type: "bigint" }, undefined, undefined, confJoin(a.conf, b.conf))
       : abs({ k: "unknown" }, undefined, undefined, "partial");
   }
-  if (numLike(a) && numLike(b)) {
+  // 双 `any` 可能**同为 bigint**（`1n & 1n` 合法 ⇒ bigint）⇒ 结果域必须含
+  // bigint ⇒ unknown。任一 `any` + 确定 number/string/boolean：bigint 只可能
+  // 来自 any 侧，混型位运算原生 TypeError ⇒ **非抛**结果恒 number。
+  // （旧实现把 any 当 numLike ⇒ `any & any` 谎报 number。）
+  if (
+    (anyLike(a) && definiteNumLike(b)) ||
+    (anyLike(b) && definiteNumLike(a)) ||
+    (definiteNumLike(a) && definiteNumLike(b))
+  ) {
     return abs({ k: "prim", type: "number" }, undefined, undefined, confJoin(a.conf, b.conf));
   }
   return abs({ k: "unknown" }, undefined, undefined, "partial");
@@ -213,6 +224,12 @@ export function bitxorAbs(a: Abs, b: Abs): Abs {
 export function bitnotAbs(a: Abs): Abs {
   const folded = foldNumericUnOp(a, (x) => ~x, (x) => ~x);
   if (folded) return folded;
+  // `~any` 不得报 number：any 可能是 bigint（`~1n === -2n` 合法且非抛，
+  // bigint 域无 ToInt32 截断）⇒ 结果域随操作数而定 ⇒ unknown（与 negAbs 的
+  // 抽象回退同口径；unknown 操作数本就走同一支）。
+  if (a.shape.k === "any" || a.shape.k === "unknown") {
+    return abs({ k: "unknown" }, undefined, undefined, "partial");
+  }
   if (a.shape.k === "prim") {
     if (a.shape.type === "bigint") {
       return abs({ k: "prim", type: "bigint" }, undefined, undefined, confJoin(a.conf, "widened"));

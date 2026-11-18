@@ -2054,9 +2054,178 @@ describe("-from 的调用点义务按静态判据复核", () => {
     );
     expect(deduped.length).toBe(0);
   }
-});
+  });
+
+  it("执行态 actual 是多值聚合串 ⇒ 按值拆开去重（-81 / -82 折回执行态；-83 保留；字符串内逗号不切）", () => {
+    const execution = [
+      {
+        severity: "error" as const,
+        code: "nudo:contract-domain-exceeds",
+        message: "make[p]: cross-file call-site domain evidence -81, -82 exceeds handwritten contract",
+        actual: "-81, -82",
+      },
+    ];
+    const statics = [
+      {
+        severity: "error" as const,
+        code: "nudo:contract-domain-exceeds",
+        message: "make[p]: cross-file call-site domain evidence -81 exceeds handwritten contract",
+        actual: "-81",
+      },
+      {
+        severity: "error" as const,
+        code: "nudo:contract-domain-exceeds",
+        message: "make[p]: cross-file call-site domain evidence -82 exceeds handwritten contract",
+        actual: "-82",
+      },
+      {
+        severity: "error" as const,
+        code: "nudo:contract-domain-exceeds",
+        message: "make[p]: cross-file call-site domain evidence -83 exceeds handwritten contract",
+        actual: "-83",
+      },
+    ];
+    const deduped = dedupeFromStaticIssues(statics, execution);
+    // 执行态通道只留**一条**（聚合串）；静态通道里已被它覆盖的值不再重复
+    expect(deduped.map((i) => i.actual)).toEqual(["-83"]);
+
+    // 字符串证据是 JSON 引号形态：引号内的 `, ` 不是值分隔符
+    const stringExecution = [
+      {
+        severity: "error" as const,
+        code: "nudo:contract-domain-exceeds",
+        message: 's[q]: cross-file call-site domain evidence "a, b", -1 exceeds handwritten contract',
+        actual: '"a, b", -1',
+      },
+    ];
+    const stringStatics = [
+      {
+        severity: "error" as const,
+        code: "nudo:contract-domain-exceeds",
+        message: 's[q]: cross-file call-site domain evidence "a, b" exceeds handwritten contract',
+        actual: '"a, b"',
+      },
+      {
+        severity: "error" as const,
+        code: "nudo:contract-domain-exceeds",
+        message: "s[q]: cross-file call-site domain evidence -1 exceeds handwritten contract",
+        actual: "-1",
+      },
+      {
+        severity: "error" as const,
+        code: "nudo:contract-domain-exceeds",
+        message: 's[q]: cross-file call-site domain evidence "c, d" exceeds handwritten contract',
+        actual: '"c, d"',
+      },
+    ];
+    expect(dedupeFromStaticIssues(stringStatics, stringExecution).map((i) => i.actual)).toEqual([
+      '"c, d"',
+    ]);
+  });
 
 
 
 });
+});
+
+// ---------------------------------------------------------------------------
+// 复合类型注解 / Function.prototype 间接调用的调用点执法
+// ---------------------------------------------------------------------------
+describe("复合类型注解与 call/apply/bind 间接调用", () => {
+  const dirs: string[] = [];
+  afterAll(() => {
+    for (const d of dirs) rmSync(d, { recursive: true, force: true });
+  });
+  const tmp = (files: Record<string, string>): string => {
+    const d = mkdtempSync(join(tmpdir(), "nudo-r1-forms-"));
+    dirs.push(d);
+    for (const [name, content] of Object.entries(files)) writeFileSync(join(d, name), content, "utf-8");
+    return d;
+  };
+
+  it(".ts 复合类型注解（数组 / 对象 / 联合）进入口 Abs ⇒ 合法 TS 不再 L2 假红", () => {
+    const d = tmp({
+      "ann.ts": `export function p4(x: number[]) { return x.length; }
+export function p5(x: { a: number }) { return x.a; }
+export function p6(x: string | number) { return String(x); }
+`,
+    });
+    const r = runCliTsx(["check", join(d, "ann.ts")]);
+    expect(r.status, r.stdout + r.stderr).toBe(0);
+    expect(r.stdout).toContain("p4(x: number[]) => number");
+    expect(r.stdout).toContain("p5(x: { a: number }) => number");
+    expect(r.stdout).toContain("p6(x: string | number) => string");
+  });
+
+  it("f.call / f.apply / f.bind 间接调用的现场都有契约义务与见证（不再假绿）", () => {
+    const d = tmp({
+      // 见证数固定：4 处调用点都在 budget 内 ⇒ `nudo test` 逐个打印精确
+      // `call@`（默认 budget=3 时第 4 处被折成 `call@symbolic`，bind 见证
+      // 只能靠「4 synthetic case(s)」这条计数间接断言 ⇒ 不算钉住）。
+      "package.json": `{"name":"forms","type":"module","nudo":{"analysis":{"callSiteBudget":8}}}\n`,
+      "u.js": `export function f(x) { return x; }
+f(-1);
+f.call(null, -2);
+f.apply(null, [-3]);
+const b = f.bind(null);
+b(-4);
+`,
+      "u.nudo.js": `import { fn, number } from "@nudojs/core";
+export const f = fn({ x: number().gt(0) }, number());
+`,
+    });
+    const chk = runCliTsx(["check", join(d, "u.js")]);
+    expect(chk.status).toBe(1);
+    // L2 直接 / L3 .call / L4 .apply / L6 bind 结果 ⇒ 四条都在
+    for (const line of ["[ERROR L2 f]", "[ERROR L3 f]", "[ERROR L4 f]", "[ERROR L6 f]"]) {
+      expect(chk.stdout).toContain(line);
+    }
+    const tst = runCliTsx(["test", join(d, "u.js")]);
+    expect(tst.stdout).toContain("call@L2");
+    expect(tst.stdout).toContain("call@L3");
+    expect(tst.stdout).toContain("call@L4");
+    // bind 结果的见证点名**它自己的实参 / 返回值**（不是被预算折叠的符号见证）
+    expect(tst.stdout).toContain("(-4) => -4");
+    expect(tst.stdout).not.toContain("call@symbolic");
+    expect(tst.stdout).toContain("4 synthetic case(s)");
+  }, 120000);
+});
+
+// ---------------------------------------------------------------------------
+// 导出对象字面量的 spread 成员进入口表（BUG-108 的主形态）
+// ---------------------------------------------------------------------------
+describe("导出对象经 spread 引入的方法也受门禁覆盖", () => {
+  const dirs: string[] = [];
+  afterAll(() => {
+    for (const d of dirs) rmSync(d, { recursive: true, force: true });
+  });
+  const tmp = (files: Record<string, string>): string => {
+    const d = mkdtempSync(join(tmpdir(), "nudo-spread-entry-"));
+    dirs.push(d);
+    for (const [name, content] of Object.entries(files)) writeFileSync(join(d, name), content, "utf-8");
+    return d;
+  };
+
+  it("`export default { ...base }` 里 base 的必抛方法报 nudo:entry-may-throw", () => {
+    const d = tmp({
+      "s.js": `const base = { bad() { throw new Error("boom"); } };
+export default { ...base, good() { return 1; } };
+`,
+    });
+    const r = runCliTsx(["check", join(d, "s.js")]);
+    expect(r.status).toBe(1);
+    expect(r.stdout).toContain("bad() => unknown  throws Error");
+    expect(r.stdout).toContain("nudo:entry-may-throw");
+  }, 120000);
+
+  it("负控制：spread 来源的方法不抛 ⇒ 不误报", () => {
+    const d = tmp({
+      "ctl.js": `const base = { fine() { return 1; } };
+export default { ...base, good() { return 1; } };
+`,
+    });
+    const r = runCliTsx(["check", join(d, "ctl.js")]);
+    expect(r.status, r.stdout).toBe(0);
+    expect(r.stdout).toContain("fine()");
+  }, 120000);
 });

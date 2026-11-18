@@ -834,10 +834,15 @@ function synthesizeEnum(
     // （Bug 234）——裸标识符在产物里是**未绑定全局** ⇒ 运行期 ReferenceError。
     // tsc 的 emit 同口径（`B = A * 10` ⇒ `E[E["B"] = E["A"] * 10]`）。
     const expr = transformValue(init, source, opts, ctx) as Record<string, unknown>;
+    // BUG-105：分类必须在 `rewriteEnumMemberRefs` **之前**——该改写是原地
+    // 的（`B = A` ⇒ `E["A"]`），改写后分类器只看得到 MemberExpression ⇒
+    // 字符串成员被误判成数值 ⇒ 产物多出反向键，且当字符串值撞上其它成员名
+    // 时覆盖那个成员的值（tsc 不建反向映射）。先用变换后的表达式判（能看穿
+    // TS 断言），再改写，最后把本成员的静态形态写回表（支持 `C = B = A` 链）。
+    const isStringValue = computedMemberIsString(expr, memberKinds);
     rewriteEnumMemberRefs(expr, name, memberKeys);
     if (opts?.report) opts.report.enumComputedMemberRewritten = true;
-    // 字符串值的计算成员**不**建反向映射（tsc 口径）——静态可判定时同口径。
-    const isStringValue = computedMemberIsString(init, memberKinds);
+    memberKinds.set(key, isStringValue ? "string" : "number");
     stmts.push(enumMemberAssign(name, key, expr, !isStringValue));
     prevValue = undefined;
     prevKey = key;
@@ -1112,6 +1117,14 @@ function deleteTypeSyntaxFields(
     (node.type === "Identifier" || node.type === "ObjectPattern" || node.type === "ArrayPattern" || node.type === "RestElement")
   ) {
     delete node.optional;
+  }
+  // BUG-136：变量声明符上的确定赋值断言（`export let a!: number`）。
+  // Babel 把 `!` 记在 **VariableDeclarator.definite**（不是 id、更不是类成员），
+  // 上面的类成员清理块只覆盖 `Class*` 节点族 ⇒ 生成器照样打印 `a!` ⇒ 产物
+  // `node --check` 报 Unexpected token '!'，而 `migrate strip` 仍 `wrote` + exit 0。
+  // `!` 只是类型断言、无运行时语义（与 `tsc` 降级同形），直接删字段。
+  if (node.type === "VariableDeclarator" && node.definite === true) {
+    delete node.definite;
   }
   // 类的 implements 子句与继承泛型实参
   if ("implements" in node) delete node.implements;

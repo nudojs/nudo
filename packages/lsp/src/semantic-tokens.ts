@@ -20,6 +20,7 @@ import {
  * 不再在 LSP 侧维护第二份弱化实现。
  */
 import { maskCommentsAndStrings } from "@nudojs/core/internal";
+import { identifierWrittenLength } from "./symbols.ts";
 
 /**
  * Semantic tokens 图例（tokenTypes 下标即 LSP 编码里的 tokenType 值）。
@@ -236,10 +237,16 @@ export function buildSemanticTokens(
       typeof nodeStart === "number" && typeof nodeEnd === "number" && nodeEnd > nodeStart
         ? nodeEnd - nodeStart
         : undefined;
+    // BUG-066：TypeScript 注解挂在 Identifier 的 `end` / `loc.end` 上
+    // （`count: number` ⇒ loc 越过注解），但 token 只能盖住名字本身。
+    // 源码扫描给出**实际写法**的长度（含 `\uXXXX` 转义，BUG-723），
+    // 同时截掉 `: type` / 可选 `?`。扫描失败才回落节点跨度。
+    const written = identifierWrittenLength(source, id);
     const length =
-      typeof endColumn === "number" && endColumn > startColumn
+      written ??
+      (typeof endColumn === "number" && endColumn > startColumn
         ? endColumn - startColumn
-        : (sourceSpan ?? name.length);
+        : (sourceSpan ?? name.length));
     tokens.push({
       line: loc.start.line - 1,
       char: startColumn,

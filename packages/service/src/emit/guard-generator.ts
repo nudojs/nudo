@@ -105,7 +105,17 @@ function stripInvisibleSlots(a: Abs, memo: Map<Abs, Abs> = new Map()): Abs {
             value = absUnknown;
           }
         }
-        slots[k] = { ...slot, value: stripInvisibleSlots(value, memo) };
+        // BUG-063：**必须**用 defineProperty 写入 —— `slots["__proto__"] = …`
+        // 命中 `Object.prototype.__proto__` 的 setter ⇒ 克隆体没有该自有键 ⇒
+        // `denoteGuard` 看不到 `{ ["__proto__"]: 1 }` 这个槽，守卫退化成
+        // 「只要是对象」⇒ 发布的 `is<fn>Output` **接受**域外值（同一次导出的
+        // standard / zod 校验器对同一值 REJECT）。
+        Object.defineProperty(slots, k, {
+          value: { ...slot, value: stripInvisibleSlots(value, memo) },
+          enumerable: true,
+          writable: true,
+          configurable: true,
+        });
       }
       copy.shape = { ...s, slots };
       break;

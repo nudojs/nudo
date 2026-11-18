@@ -6,6 +6,9 @@
  *
  * - generalize 保留 term 结构（λα. α+1）
  * - 调用点实例化把 α 换成具体 Abs 后再求值
+ * - `.ts` 注解映射出的**开放对象** Abs 打 `markKeySetOpenAbs`（键集不完备）
+ *   标记，嵌套对象槽递归同口径 ⇒ Object.keys/values/entries 不折成错精确；
+ *   标记只落在新建 Abs 上，共享 Shape 不被污染。
  */
 
 import { parseSource as babelParse } from "./parse-source.ts";
@@ -23,7 +26,8 @@ import type { Phi, Pred } from "./pred.ts";
 import { pTrue, predToString, and } from "./pred.ts";
 import type { Abs, Shape } from "./abs.ts";
 import { abs, never, unknown, bigintLit, boolLit, isAbsLike, numLit, strLit } from "./abs.ts";
-import { joinAbs } from "./objects.ts";
+import { absFunction } from "./abs-fn.ts";
+import { joinAbs, markKeySetOpenAbs } from "./objects.ts";
 import { leqAbs } from "./leq.ts";
 import type { AstEnv } from "./ast-env.ts";
 import { emptyEnv } from "./ast-env.ts";
@@ -238,6 +242,46 @@ export function ctorParamCountOf(
 }
 
 /**
+ * 递归给对象 Abs 的**对象槽**打「键集不完备」标记：开放对象 Abs 自己标，
+ * 嵌套槽 Abs 里再出现开放对象同样标（`Object.keys(x.a.b)` 也要诚实折
+ * partial——合法实参 `{a:{b:1, c:2}}` 的 `c` 不在声明槽里）。
+ *
+ * 标记只落在 Abs 值上；Shape 是共享/可复用的，需要改槽时复制 Shape 与槽表
+ * （`{...s, slots}`），绝不原地改。无变化时返回原 Abs（不额外分配）。
+ */
+function markOpenObjSlots(a: Abs): Abs {
+  const s = a.shape;
+  if (s.k !== "obj") return a;
+  let slots: Extract<Shape, { k: "obj" }>["slots"] | undefined;
+  for (const [k, slot] of Object.entries(s.slots)) {
+    const v = slot.value;
+    if (v.shape.k !== "obj") continue;
+    const marked = markOpenObjSlots(v);
+    if (marked === v) continue;
+    if (slots === undefined) slots = { ...s.slots };
+    slots[k] = { ...slot, value: marked };
+  }
+  const base =
+    slots === undefined ? a : abs({ ...s, slots }, a.term, a.pred, a.conf);
+  return s.open === true ? markKeySetOpenAbs(base) : base;
+}
+
+/**
+ * TS 注解形状 → 入口 Abs。开放对象（`{a: number}` / `object` / `{}` 与带
+ * 未建模成员的具名声明）额外打 **键集不完备** 标记（`markKeySetOpenAbs`），
+ * 嵌套对象槽递归同口径（见 {@link markOpenObjSlots}）。
+ *
+ * `open: true` 只表示「可能有未知键」（`"b" in x` / spread 面）；键家族
+ * （Object.keys/values/entries）的精确折叠判据是独立标记
+ * （`keySetIncompleteAbs`）。不标 ⇒ 合法更宽值 `{a: 1, b: 2}` 会让
+ * `Object.keys(x)` 折成 exact `["a"]`（错精确）。
+ * 标记只落在**本次新建的 Abs** 上：共享 Shape 可能被缓存 / 复用，不得污染。
+ */
+function annotationAbsOf(shape: Shape | undefined, term?: Term): Abs {
+  return markOpenObjSlots(abs(shape ?? { k: "any" }, term, pTrue, "path"));
+}
+
+/**
  * 类方法桥 / 类入口的**构造实参**（BUG-020）。
  *
  * 此前一律补 `any` ⇒ 构造器体 `this.size = size` 把 `any` 写进实例槽 ⇒
@@ -259,7 +303,7 @@ export function ctorParamAbsArgs(
 ): Abs[] {
   return ctorFormalsOf(fileAst, clsName).map((f) => {
     const shape = absShapeForTsTypeText(f.tsType);
-    return abs(shape ?? { k: "any" }, undefined, pTrue, "path");
+    return annotationAbsOf(shape);
   });
 }
 
@@ -479,7 +523,7 @@ function classEntryPolyFn(
     const shape = absShapeForTsTypeText(f.tsType);
     return {
       id: `A${i + 1}`,
-      value: abs(shape ?? { k: "any" }, undefined, pTrue, "path"),
+      value: annotationAbsOf(shape),
     };
   });
   return {
@@ -579,6 +623,11 @@ export function resetGeneralizeMemo(): void {
   resetFnSummaryCache();
   // BUG-056：evaluator 的 run 表同样要清（活模块状态，跨轮不可复用）
   evalRunMemo.clear();
+  // BUG-133：`this:` 接收者解析 memo（按源确定性；跨轮清掉避免持有旧 Abs
+  // 与整源 keepTs AST）
+  thisReceiverMemo.clear();
+  thisReceiverTypeTextMemo.clear();
+  keepTsAstMemo.clear();
 }
 
 export function getGeneralizeMemoSize(): number {
@@ -872,6 +921,9 @@ export function extractFn(
   const entryStrict = (body: Node): boolean =>
     fnStrict || hasUseStrictDirective(body) || inStrictRegion(body);
 
+  // BUG-064：`export default <本地名>` 的导出槽是**标识符引用**，不是函数声明。
+  // 记下本地名，循环结束后把它的条目别名成 "default"。
+  let defaultLocalName: string | undefined;
   for (const stmt of file.program.body) {
     // export function / export const = fn / export default function
     let decl: Node = stmt;
@@ -880,6 +932,8 @@ export function extractFn(
     }
     if (stmt.type === "ExportDefaultDeclaration" && stmt.declaration) {
       decl = stmt.declaration;
+      const d = decl as { type?: string; name?: string };
+      if (d.type === "Identifier" && typeof d.name === "string") defaultLocalName = d.name;
     }
     if (decl.type === "FunctionDeclaration" && decl.id) {
       const formals = formalParamsFromNodes(decl.params as never);
@@ -1011,6 +1065,14 @@ export function extractFn(
       });
       formalsByName.set("default", formals);
     }
+  }
+
+  // BUG-064：把 `export default <本地名>` 的本地条目别名成 default（跨模块
+  // 桥接取 `extractFn(dep, "default")` 时不再拿到空形参表 ⇒ 假红 param-mismatch）。
+  if (defaultLocalName !== undefined && env.fns.has(defaultLocalName)) {
+    env.fns.set("default", env.fns.get(defaultLocalName)!);
+    const f = formalsByName.get(defaultLocalName);
+    if (f) formalsByName.set("default", f);
   }
 
   // CJS：exports.f = fn / module.exports = { f(){} } / module.exports = fn
@@ -1316,6 +1378,57 @@ export function extractFn(
     formalsByName.set(scope.name, formals);
   }
 
+  // BUG-108：对象字面量（含 `{ ...base }`）的方法体登记。
+  // `listTopFunctions` / 入口表已认这些成员键，但 `extractFn` 此前只在
+  // 「export 包装的 VariableDeclaration 自有属性」上登记 env.fns ⇒ spread
+  // 来源 / `export { api }` 形态的泛化取不到方法体，执法面只能合成假签名。
+  const localObjectNodes = new Map<string, Node>();
+  for (const stmt of file.program.body) {
+    let d: Node = stmt;
+    if (stmt.type === "ExportNamedDeclaration" || stmt.type === "ExportDefaultDeclaration") {
+      d = (stmt.declaration ?? stmt) as Node;
+    }
+    if (d.type !== "VariableDeclaration") continue;
+    for (const dd of d.declarations) {
+      if (dd.id.type === "Identifier" && dd.init?.type === "ObjectExpression") {
+        localObjectNodes.set(dd.id.name, dd.init);
+      }
+    }
+  }
+  const registerObjectFnBodies = (obj: Node | undefined, seen = new Set<Node>()): void => {
+    if (!obj || obj.type !== "ObjectExpression" || seen.has(obj)) return;
+    seen.add(obj);
+    for (const raw of (obj as unknown as { properties?: Node[] }).properties ?? []) {
+      const p = raw as Node & { kind?: string; argument?: Node & { name?: string } };
+      if (p.type === "SpreadElement" || p.type === "SpreadProperty") {
+        const arg = p.argument;
+        const src =
+          arg?.type === "Identifier" && arg.name
+            ? localObjectNodes.get(arg.name)
+            : arg?.type === "ObjectExpression"
+              ? arg
+              : undefined;
+        if (src) registerObjectFnBodies(src, seen);
+        continue;
+      }
+      const key = ident((p as unknown as { key?: unknown }).key);
+      if (!key || env.fns.has(key)) continue; // 真顶层函数优先，不被对象成员覆盖
+      if (p.type === "ObjectMethod" && (!p.kind || p.kind === "method")) {
+        registerFnNode(key, p as never);
+      } else if (p.type === "ObjectProperty") {
+        const v = (p as unknown as { value?: Node }).value;
+        if (v?.type === "FunctionExpression" || v?.type === "ArrowFunctionExpression") {
+          registerFnNode(key, v as never);
+        }
+      }
+    }
+  };
+  for (const obj of localObjectNodes.values()) registerObjectFnBodies(obj);
+  for (const stmt of file.program.body) {
+    if (stmt.type !== "ExportDefaultDeclaration") continue;
+    if (stmt.declaration?.type === "ObjectExpression") registerObjectFnBodies(stmt.declaration);
+  }
+
   const fn = env.fns.get(fnName);
   if (!fn) return undefined;
   return { params: fn.params, body: fn.body, env, formals: formalsByName.get(fnName) ?? [] };
@@ -1465,6 +1578,233 @@ function fnParamNodesOf(
   return params ?? [];
 }
 
+/** BUG-133：`this:` 接收者解析 memo（函数名 + 源；有界 LRU-ish）。 */
+const thisReceiverMemo = new Map<string, Abs | undefined>();
+const THIS_RECEIVER_MEMO_MAX = 64;
+
+/**
+ * BUG-133：**保留 TS 节点**的解析结果（按源、有界）。
+ *
+ * stripTypes 会把 `this: T` 从运行 AST 剥掉，只有 keepTs AST 能读注解。
+ * check 的每个入口都要看同一份源 ⇒ 此前每函数一次整源 reparse；本缓存让
+ * {@link entryThisReceiverTypeTextOf} 与 {@link entryThisReceiverOf} **共用**
+ * 同一棵 keepTs AST（分析按文件串行，4 条足够覆盖交替分析的少量源）。
+ */
+const keepTsAstMemo = new Map<string, ReturnType<typeof babelParse>>();
+const KEEP_TS_AST_MEMO_MAX = 4;
+
+function keepTsAstOf(source: string): ReturnType<typeof babelParse> {
+  const hit = keepTsAstMemo.get(source);
+  if (hit !== undefined) {
+    keepTsAstMemo.delete(source); // LRU bump
+    keepTsAstMemo.set(source, hit);
+    return hit;
+  }
+  const ast = babelParse(source, { keepTs: true, filename: undefined }) as ReturnType<typeof babelParse>;
+  if (keepTsAstMemo.size >= KEEP_TS_AST_MEMO_MAX) {
+    const oldest = keepTsAstMemo.keys().next().value;
+    if (oldest !== undefined) keepTsAstMemo.delete(oldest);
+  }
+  keepTsAstMemo.set(source, ast);
+  return ast;
+}
+
+/** `this: T` 注解原文 memo（源 + 函数名；有界）——dts 面每个入口查一次。 */
+const thisReceiverTypeTextMemo = new Map<string, string | undefined>();
+const THIS_RECEIVER_TYPE_TEXT_MEMO_MAX = 64;
+
+/**
+ * BUG-133：TS `this: T` 接收者注解 → 入口求值接收者 Abs。
+ *
+ * `this` 不是运行时形参（formalParamsFromNodes 按 Bug 397 跳过），但它是
+ * **接收者契约**：绑定模式下 `this.area()` 合法、函数在契约内 total。此前
+ * 入口按裸调用求值 ⇒ this = undefined ⇒ 合法成员读被判 may-throw TypeError
+ *（L2 假红）+ 返回域塌 never。
+ *
+ * 命名 interface / type alias 从保留 TS 节点的 AST 取成员面（方法与属性
+ * 槽）；可映射的简单类型文本同样可用。仍不可判的形态（内联方法签名 /
+ * 泛型实例化等）折 `any`（未知接收者面，不伪造成员域，也不产生假抛）。
+ * 无 `this:` 注解 → undefined（旧行为）。
+ */
+/** BUG-133：`this: T` 注解的类型原文（dts 接收者子句用；无注解 ⇒ undefined） */
+export function entryThisReceiverTypeTextOf(
+  source: string,
+  fnName: string,
+  fileAst?: ReturnType<typeof babelParse>,
+): string | undefined {
+  // 结果只取决于（source, fnName）：注解原文由源切片得到，fileAst 只是同一源
+  // 的另一棵树 ⇒ 有界 memo（dts 面每个入口都会问一次）。
+  const memoKey = `${fnName}\u0000${source}`;
+  if (thisReceiverTypeTextMemo.has(memoKey)) return thisReceiverTypeTextMemo.get(memoKey);
+  const finish = (v: string | undefined): string | undefined => {
+    if (thisReceiverTypeTextMemo.size >= THIS_RECEIVER_TYPE_TEXT_MEMO_MAX) {
+      const oldest = thisReceiverTypeTextMemo.keys().next().value;
+      if (oldest !== undefined) thisReceiverTypeTextMemo.delete(oldest);
+    }
+    thisReceiverTypeTextMemo.set(memoKey, v);
+    return v;
+  };
+  if (!/\bthis\s*:/.test(source)) return finish(undefined);
+  type ThisNode = {
+    type?: string;
+    name?: string;
+    typeAnnotation?: { typeAnnotation?: { start?: number; end?: number } };
+  };
+  const read = (ast: ReturnType<typeof babelParse>): string | undefined => {
+    const params = fnParamNodesOf(ast, fnName) as ThisNode[];
+    const node = params.find((p) => p?.type === "Identifier" && p.name === "this");
+    const ann = node?.typeAnnotation?.typeAnnotation;
+    if (ann && typeof ann.start === "number" && typeof ann.end === "number") {
+      return source.slice(ann.start, ann.end);
+    }
+    return undefined;
+  };
+  const stripped = fileAst ? read(fileAst) : undefined;
+  if (stripped !== undefined) return finish(stripped);
+  // stripTypes 会把 `this: T` 从运行 AST 移除 ⇒ keepTs AST（按源缓存，
+  // 与 entryThisReceiverOf 共用）只为读注解。
+  return finish(read(keepTsAstOf(source)));
+}
+
+export function entryThisReceiverOf(
+  source: string,
+  fnName: string,
+  fileAst?: ReturnType<typeof babelParse>,
+): Abs | undefined {
+  // keepTs 解析（仅用于取 `this:` 注解）按（函数名, 源）memo——check 的每个
+  // 入口 + generalize 的每次实例化都会调本函数，重复全源解析代价不必要。
+  const memoKey = `${fnName}\u0000${source}`;
+  if (thisReceiverMemo.has(memoKey)) return thisReceiverMemo.get(memoKey);
+  const finish = (v: Abs | undefined): Abs | undefined => {
+    if (thisReceiverMemo.size >= THIS_RECEIVER_MEMO_MAX) {
+      const oldest = thisReceiverMemo.keys().next().value;
+      if (oldest !== undefined) thisReceiverMemo.delete(oldest);
+    }
+    thisReceiverMemo.set(memoKey, v);
+    return v;
+  };
+  type ThisNode = {
+    type?: string;
+    name?: string;
+    nudoTypeText?: string;
+    typeAnnotation?: { typeAnnotation?: { start?: number; end?: number } };
+  };
+  const params = fnParamNodesOf(fileAst ?? babelParse(source), fnName) as ThisNode[];
+  let node = params.find((p) => p?.type === "Identifier" && p.name === "this");
+  let typeText = node?.nudoTypeText;
+  let keepAst: ReturnType<typeof babelParse> | undefined;
+  if (!node && /\bthis\s*:/.test(source)) {
+    // stripTypes 会把 `this: T` 形参整体从 AST 剥掉（它不占运行时形参位）——
+    // 保留 TS 节点的 AST 里才能看到注解。只在源里确实出现 `this:` 时付这趟
+    // 解析（绝大多数函数零开销）；AST 按源缓存并与
+    // entryThisReceiverTypeTextOf 共用（同一入口两面不重复 reparse）。
+    keepAst = keepTsAstOf(source);
+    const keepParams = fnParamNodesOf(keepAst, fnName) as ThisNode[];
+    node = keepParams.find((p) => p?.type === "Identifier" && p.name === "this");
+    const ann = node?.typeAnnotation?.typeAnnotation;
+    if (ann && typeof ann.start === "number" && typeof ann.end === "number") {
+      typeText = source.slice(ann.start, ann.end);
+    }
+  }
+  if (!node) return finish(undefined);
+  // 命名 interface / type alias：从保留 TS 节点的 AST 取成员面（方法与属性
+  // 槽）——`this.area()` 才能按契约 total 而不是「any 上的方法调用」。
+  const named = typeText?.trim();
+  const declShape = named && keepAst ? tsTypeDeclShape(keepAst, named, source) : undefined;
+  const shape = declShape ?? absShapeForTsTypeText(typeText);
+  const usable =
+    shape !== undefined && !(shape.k === "obj" && (shape as { open?: boolean }).open === true && declShape === undefined)
+      ? shape
+      : ({ k: "any" } as const);
+  return finish(annotationAbsOf(usable));
+}
+
+/**
+ * BUG-133：`this: T` 的具名类型声明 → obj Abs 形状（interface / type
+ * 字面量）。方法与属性成员转成槽：方法 = 零参 relation fn（返回注解域，
+ * 缺失 → any），属性 = 注解域；索引签名 / 未知成员置 `open`（不谎报精确）。
+ * 解析不到声明 → undefined（调用方回落 any）。
+ */
+function tsTypeDeclShape(
+  ast: ReturnType<typeof babelParse>,
+  typeName: string,
+  source: string,
+): Shape | undefined {
+  const name = typeName.trim();
+  const nodeOf = (n: unknown): Shape | undefined => {
+    if (!n || typeof (n as { start?: unknown }).start !== "number" || typeof (n as { end?: unknown }).end !== "number") {
+      return undefined;
+    }
+    const t = absShapeForTsTypeText(source.slice((n as { start: number }).start, (n as { end: number }).end));
+    return t;
+  };
+  const typeAbs = (n: unknown): Abs => {
+    const sh = nodeOf(n);
+    return abs(sh ?? { k: "any" }, undefined, pTrue, "path");
+  };
+  const shapeOfMembers = (members: unknown[]): Shape => {
+    const slots: Extract<Shape, { k: "obj" }>["slots"] = {};
+    let open = false;
+    for (const m of members as Array<{
+      type?: string;
+      key?: { type?: string; name?: string; value?: unknown };
+      optional?: boolean;
+      typeAnnotation?: { typeAnnotation?: unknown };
+      returnType?: { typeAnnotation?: unknown };
+      parameters?: unknown[];
+      params?: unknown[];
+    }>) {
+      const key =
+        m.key?.type === "Identifier"
+          ? m.key.name
+          : m.key?.type === "StringLiteral" || m.key?.type === "NumericLiteral"
+            ? String(m.key.value)
+            : undefined;
+      if (key === undefined) {
+        open = true;
+        continue;
+      }
+      if (m.type === "TSMethodSignature" || m.type === "TSDeclareMethod") {
+        const ret = typeAbs(m.returnType?.typeAnnotation ?? m.typeAnnotation?.typeAnnotation);
+        const paramCount = (m.parameters ?? m.params ?? []).length;
+        const fn = absFunction(
+          Array.from({ length: paramCount }, (_, i) => `_a${i}`),
+          { apply: () => ret },
+          { ctor: false, returnType: ret },
+        );
+        slots[key] = { value: fn, ...(m.optional ? { optional: true } : {}) };
+      } else if (m.type === "TSPropertySignature" || m.type === "ClassProperty" || m.type === "PropertyDefinition") {
+        slots[key] = {
+          value: typeAbs(m.typeAnnotation?.typeAnnotation),
+          ...(m.optional ? { optional: true } : {}),
+        };
+      } else {
+        open = true;
+      }
+    }
+    return { k: "obj", slots, ...(open ? { open: true } : {}) };
+  };
+  for (const stmt of (ast.program.body as unknown[])) {
+    let n = stmt as {
+      type?: string;
+      id?: { name?: string };
+      declaration?: unknown;
+    };
+    if (n.type === "ExportNamedDeclaration" && n.declaration) {
+      n = n.declaration as typeof n;
+    }
+    if (n.id?.name !== name) continue;
+    if (n.type === "TSInterfaceDeclaration") {
+      return shapeOfMembers((n as unknown as { body: { body: unknown[] } }).body.body);
+    }
+    if (n.type === "TSTypeAliasDeclaration") {
+      const ann = (n as unknown as { typeAnnotation?: { type?: string; members?: unknown[] } }).typeAnnotation;
+      if (ann?.type === "TSTypeLiteral") return shapeOfMembers(ann.members ?? []);
+    }
+  }
+  return undefined;
+}
+
 function generalizeFromAstUncached(
   fnName: string,
   source: string,
@@ -1537,12 +1877,14 @@ function generalizeFromAstUncached(
     // Bug 479：`.ts` 源的形参带**声明类型**（剥除 pass 的旁路 nudoTypeText）
     // ⇒ 入口形参不再是「无约束 any」（否则 `a.toUpperCase()` 之类在
     // 合法 TypeScript 上产生 nudo:entry-may-throw 假红）。
-    // 无注解 / 不可映射的类型（别名、泛型、对象类型）⇒ 仍是 any（不猜）。
+    // 无注解 / 不可映射的类型（别名、泛型实例化、交叉 / 条件类型…）⇒ 仍是
+    // any（不猜）；对象字面量按**开放对象**映射（结构类型不封闭值域），
+    // 可选 / rest 元组降级为元素域数组（长度可变）。
     const shape = absShapeForTsTypeText(formals[i]?.tsType);
     return {
       id: `${label}${i + 1}`,
       // 无约束参数 = any（任意 JS 值），不是 unknown（分析无信息）
-      value: abs(shape ?? { k: "any" }, termVar(`${label}${i + 1}`), pTrue, "path"),
+      value: annotationAbsOf(shape, termVar(`${label}${i + 1}`)),
     };
   });
 
@@ -1788,6 +2130,8 @@ function generalizeFromAstUncached(
   //      不写关系契约保留）
   // 其余一律解释路径。B 失败回落。
   const fileAst = opts.file ?? babelParse(source);
+  // BUG-133：`this: T` 接收者（顶层函数；类方法走实例桥，不在此列）。
+  const entryThisArg = fnName.includes(".") ? undefined : entryThisReceiverOf(source, fnName, fileAst);
   // import 按 spec 可解析性判定：body 引用的导入名其 spec 在注入表内 → B 可
   // （绑定缺失名在 eval 内 crash-and-swallow，解释路径的未绑定名处理更干净）；
   // 未注入（调用方未传 modules）→ 与旧行为一致走解释路径。
@@ -1923,7 +2267,7 @@ function generalizeFromAstUncached(
             }
             return a;
           });
-          return callTranspiledExportFull(evalRun, fnName, evalArgs, { phi, preferLocal: true }).result;
+          return callTranspiledExportFull(evalRun, fnName, evalArgs, { phi, preferLocal: true, thisArg: entryThisArg }).result;
         } else {
           // Bug 489 / 995：本地名不在导出表 ⇒ 兜底解析导出槽
           // （具名 default 导出 → default 槽；CJS 对象字面量 → 成员桥）。
@@ -1951,6 +2295,7 @@ function generalizeFromAstUncached(
           return callTranspiledExportFull(evalRun, slot.key, evalArgs, {
             phi,
             preferLocal: true,
+            thisArg: entryThisArg,
           }).result;
         }
       };
@@ -2235,9 +2580,11 @@ function formatPoly(
 }
 
 /**
- * 列出源码中的顶层函数名。
- * 与 scan.listTopFunctions 对齐：解 export default / export const 箭头与函数表达式。
- * （不 import scan：scan 依赖本文件，避免环。完整 CJS/class 面用 listTopFunctions。）
+ * 列出源码中的顶层入口名。
+ * 与 scan.listTopFunctions 对齐：解 export default / export const 箭头与函数
+ * 表达式，**并展开类**（构造器面 `Box` + 实例方法 `Box.get`）——`check` 的
+ * 签名表本来就把这两类算作 fn，观察面不能只认顶层 FunctionDeclaration。
+ * （不 import scan：scan 依赖本文件，避免环。完整 CJS 面用 listTopFunctions。）
  */
 export function listFunctionNames(source: string): string[] {
   const file = babelParse(source);
@@ -2263,6 +2610,40 @@ export function listFunctionNames(source: string): string[] {
         ) {
           push((d.id as { name: string }).name);
         }
+      }
+      return;
+    }
+    // BUG-098：类与类方法整面曾是 `--abs` 的盲区（class-only 文件直接
+    // `Function not found` + exit 1，而同一次运行的门禁打印 `OK · 2 fn`）。
+    if (decl.type === "ClassDeclaration" || decl.type === "ClassExpression") {
+      const id = (decl as { id?: { name?: string } }).id;
+      const className = id?.name ?? (stmtType === "ExportDefaultDeclaration" ? "default" : undefined);
+      if (!className) return;
+      push(className); // 构造器面（签名表里的 `Box(…) => Box`）
+      const body = (decl as { body?: { body?: Node[] } }).body?.body ?? [];
+      for (const raw of body) {
+        const m = raw as {
+          type?: string;
+          kind?: string;
+          computed?: boolean;
+          static?: boolean;
+          key?: { type?: string; name?: string; value?: string };
+        };
+        if (
+          m.type !== "ClassMethod" &&
+          m.type !== "MethodDefinition" &&
+          m.type !== "TSDeclareMethod" &&
+          m.type !== "ObjectMethod"
+        ) {
+          continue;
+        }
+        // 访问器（get/set）没有签名表条目（签名面只收构造器面与方法）⇒
+        // 列名不得虚构 `C.x`（`--abs` 会按名单取一个不存在的函数）。
+        if (m.computed === true || m.kind === "constructor" || m.kind === "get" || m.kind === "set") {
+          continue;
+        }
+        const key = m.key?.type === "Identifier" ? m.key.name : m.key?.value;
+        if (key) push(`${className}.${key}`);
       }
       return;
     }

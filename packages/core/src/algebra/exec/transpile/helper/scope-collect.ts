@@ -122,29 +122,65 @@ export function collectPatternNames(id: unknown, acc: Set<string>): void {
 }
 
 /**
- * 声明绑定名扫描（宿主内建遮蔽判定用）：收集 AST/Program 内**全部绑定
- * 位置**的名字——变量声明模式（含解构 / 默认值 / rest）、函数 / 类声明与
- * 表达式自身名、各类函数形态的形参、catch 参数、import specifier local、
- * TS 参数属性。
+ * 声明绑定名扫描（宿主内建遮蔽判定用）：收集 **node 自身作用域链**里可见的
+ * 绑定名——变量声明模式（含解构 / 默认值 / rest）、函数 / 类**声明名**、
+ * catch 参数、import specifier local、TS 参数属性；node 本身是函数节点时
+ * 另收其自身名与形参。
  *
- * 保守口径：**任意作用域**出现同名绑定都计入（不做词法作用域归属）。调用
- * 方只需要「本单元内该名字是否被用户绑定过」的单位级事实；读点发射标识符
- * 本身时由 JS 词法绑定决定读值，全单元保守遮蔽只损失字面量折叠精度，不改
- * 语义。loc / comments 等非 AST 面键直接跳过（无绑定信息，纯开销）。
+ * 作用域口径（BUG-074）：嵌套**函数体 / 类体**是独立作用域 ⇒ 其中的形参、
+ * 局部名**不**遮蔽外层读写点，扫描在此止步（函数 / 类声明名仍属外层绑定，
+ * 只记名字不下降）。旧实现整棵子树一次扫（任意作用域命中都计入）⇒ 兄弟函数
+ * 的 `function f(Number)` 或体内 `const Number = …` 会把**别的函数**里的
+ * `Number.isFinite` / `Number.isNaN` 守卫事实整片关掉 ⇒ 合法代码判
+ * `nudo:constraint-violated`（假红）。
+ *
+ * 各函数体边界自己补回自己的形参遮蔽（见 fn-body.ts 的 `transpileFnBodyStmts`
+ * ——`varScope.skip`），所以「本作用域可见」= 本层声明 ∪ 外层传入 ∪ 本层形参。
+ *
+ * loc / comments 等非 AST 面键直接跳过（无绑定信息，纯开销）。
  */
 const BINDING_SCAN_SKIP_KEYS: ReadonlySet<string> = new Set([
   "loc", "start", "end", "range", "extra",
   "leadingComments", "trailingComments", "innerComments", "comments", "tokens", "errors",
 ]);
 
+/** 嵌套作用域边界：其内部绑定不属于外层（见 `collectDeclaredBindingNames` 口径） */
+const NESTED_SCOPE_TYPES: ReadonlySet<string> = new Set([
+  "FunctionDeclaration",
+  "FunctionExpression",
+  "ArrowFunctionExpression",
+  "ObjectMethod",
+  "ClassMethod",
+  "ClassPrivateMethod",
+  "ClassDeclaration",
+  "ClassExpression",
+  "StaticBlock",
+]);
+
 export function collectDeclaredBindingNames(node: unknown, acc: Set<string> = new Set()): Set<string> {
-  const visit = (n: unknown): void => {
+  const visit = (n: unknown, isRoot: boolean): void => {
     if (!n || typeof n !== "object") return;
     if (Array.isArray(n)) {
-      for (const c of n) visit(c);
+      for (const c of n) visit(c, false);
       return;
     }
     const o = n as { type?: string; [k: string]: unknown };
+    // 嵌套函数 / 方法 / 类体：止步（声明名已在下面 switch 记过的不再重复）
+    if (!isRoot && o.type !== undefined && NESTED_SCOPE_TYPES.has(o.type)) {
+      if (o.type === "FunctionDeclaration" || o.type === "ClassDeclaration") {
+        collectPatternNames(o.id, acc);
+      }
+      // BUG-1071：具名函数 / 类**表达式**的自身名是其**体内**可见的绑定
+      // （FunctionExpressionEvaluation / ClassDefinitionEvaluation 建的
+      // immutable binding）——止步分支此前只记声明名 ⇒ `function
+      // undefined(){ return undefined }` 的体内读被当成宿主内建
+      // （`$lit(void 0)`，原生返回函数自身）。扫描面是「本作用域链可见的
+      // 绑定」的保守超集：多记一个名字只会少折内建，不会造出假字面量。
+      if (o.type === "FunctionExpression" || o.type === "ClassExpression") {
+        collectPatternNames(o.id, acc);
+      }
+      return;
+    }
     switch (o.type) {
       case "VariableDeclarator":
         collectPatternNames(o.id, acc);
@@ -180,10 +216,10 @@ export function collectDeclaredBindingNames(node: unknown, acc: Set<string> = ne
     for (const key of Object.keys(o)) {
       if (BINDING_SCAN_SKIP_KEYS.has(key)) continue;
       const v = o[key];
-      if (v && typeof v === "object") visit(v);
+      if (v && typeof v === "object") visit(v, false);
     }
   };
-  visit(node);
+  visit(node, true);
   return acc;
 }
 
@@ -191,9 +227,12 @@ export function collectDeclaredBindingNames(node: unknown, acc: Set<string> = ne
  * 本转译单元**遮蔽宿主内建**的名字集（undefined / NaN / Infinity 的子集，
  * 外加 `Number`：NaN 守卫 `Number.isNaN(x)` 的识别依赖它未被遮蔽）。
  *
- * 判据 = 声明绑定扫描命中 ∪ 调用方补给（`extra`：mock/env 注入名、body-fn
+ * 判据 = 本作用域绑定扫描命中 ∪ 调用方补给（`extra`：mock/env 注入名、body-fn
  * 的形参 / 闭包绑定名）。无命中 → undefined（调用方不写 opts 字段，产物逐
  * 字节不变）。
+ *
+ * 作用域口径见 {@link collectDeclaredBindingNames}（嵌套函数体不再计入）；
+ * 每个函数体边界由 `transpileFnBodyStmts` 用 `extra` 补回自己的形参名。
  *
  * 说明：`Number` 不在 `HOST_INTRINSIC_SET`（它不是字面量折叠面），但
  * `stmt/predicates.ts::nanGuardOf` 必须知道用户是否用同名绑定/形参遮蔽了它，

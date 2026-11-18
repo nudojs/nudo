@@ -421,16 +421,112 @@ function buildIndex(file: File): SemanticIndex {
     classDefs.push({ cname, symbolId: ownerId, keys: table.keys, direct });
   }
 
-  function objectPropertyKeys(obj: AnyNode): string[] {
-    const out: string[] = [];
+  /**
+   * BUG-108：顶层对象字面量按**绑定名**索引（spread 来源查表用）。
+   * `const base = { bad(){…} }; export default { ...base }` 里 `base` 是普通
+   * 顶层声明，不是导出槽 ⇒ 只能按名字找它的成员定义。
+   *
+   * 只收顶层 **`const`** 初值：`let` / `var` 可能被重赋值
+   * （`let base = { stale(){} }; base = { fresh(){} }`）⇒ 旧初值不是当前对象，
+   * 展开/查表会把已经不存在的成员登记成入口（陈旧成员 = 假红）。重赋值后的
+   * 新值不是词法事实 ⇒ 不猜（与 service `localObjectLiteralsOf` / core
+   * `scan-top-functions` 同口径）。
+   */
+  const objectLiteralsByName = new Map<string, AnyNode>();
+  for (const raw of ((rootNode as { program?: { body?: AnyNode[] } }).program?.body ?? [])) {
+    let d: AnyNode = raw;
+    if (d.type === "ExportNamedDeclaration" || d.type === "ExportDefaultDeclaration") {
+      d = (isNode(d.declaration) ? d.declaration : d) as AnyNode;
+    }
+    if (d.type !== "VariableDeclaration") continue;
+    if (d.kind !== "const") continue;
+    for (const dd of (d.declarations ?? []) as AnyNode[]) {
+      const id = dd.id as AnyNode | undefined;
+      const init = dd.init as AnyNode | undefined;
+      if (
+        isNode(id) && id.type === "Identifier" &&
+        typeof id.name === "string" &&
+        isNode(init) && init.type === "ObjectExpression"
+      ) {
+        objectLiteralsByName.set(id.name, init);
+      }
+    }
+  }
+
+  /**
+   * `{ ...base }` 展开后的**成员节点**（源顺序；spread 源只认顶层 `const`
+   * 对象字面量 / 内联对象）。环保护按**路径**生效（复制一份向下传）：
+   * 同一字面量出现在兄弟展开里（`{...base, ...base}`）时后一次仍参与
+   * last-wins；真·循环（`const a = {...a}`）在展开时已被路径挡住。
+   */
+  function objectMembersOf(obj: AnyNode, path: ReadonlySet<AnyNode> = new Set()): AnyNode[] {
+    const out: AnyNode[] = [];
     if (!Array.isArray(obj.properties)) return out;
+    if (path.has(obj)) return out;
+    const nextPath = new Set(path);
+    nextPath.add(obj);
     for (const p of obj.properties) {
       if (!isNode(p)) continue;
+      // BUG-108：`{ ...base }` 的 SpreadElement 没有 key，但 `base` 的方法
+      // 在运行时确实是导出对象的成员 ⇒ 展开同名对象字面量（含多跳），
+      // 只认静态可解析的 Identifier / 内联 ObjectExpression，不猜动态值。
+      if (p.type === "SpreadElement" || p.type === "SpreadProperty") {
+        const arg = (p as { argument?: AnyNode }).argument;
+        if (!isNode(arg)) continue;
+        const src =
+          arg.type === "Identifier" && typeof arg.name === "string"
+            ? objectLiteralsByName.get(arg.name)
+            : arg.type === "ObjectExpression"
+              ? arg
+              : undefined;
+        if (src) out.push(...objectMembersOf(src, nextPath));
+        continue;
+      }
+      out.push(p);
+    }
+    return out;
+  }
+
+  /**
+   * 对象字面量的**最终**成员表（last-wins）。
+   *
+   * 原生对象字面量同一静态键后出现的成员覆盖先出现的（覆盖目标含可调用 /
+   * 访问器 / 非可调用）⇒ 旧实现按源顺序直接产键 ⇒ `{...base, helper: 42}`
+   * 里 base 的 `helper` 仍存活（把已被覆盖的成员登记成入口 = 假红），
+   * `{...base, helper(){…}}` 又可能留下重复记录。这里先展开 + 去重，
+   * 下游（`objectPropertyKeys`）只按**最终**成员的形态判可调用性。
+   * 动态计算键不可静态定名 ⇒ 不参与去重（保留，不猜）。
+   */
+  function finalObjectMembersOf(obj: AnyNode): AnyNode[] {
+    const out: AnyNode[] = [];
+    const at = new Map<string, number>();
+    for (const p of objectMembersOf(obj)) {
+      const keyName = staticKeyOf(p.key, p.computed === true);
+      if (keyName === undefined) {
+        // 动态计算键 / 不可静态定名的键 ⇒ 不参与去重（保留，不猜）
+        out.push(p);
+        continue;
+      }
+      const idx = at.get(keyName);
+      if (idx === undefined) {
+        at.set(keyName, out.length);
+        out.push(p);
+      } else {
+        out[idx] = p;
+      }
+    }
+    return out;
+  }
+
+  function objectPropertyKeys(obj: AnyNode): string[] {
+    const out: string[] = [];
+    for (const p of finalObjectMembersOf(obj)) {
       // BUG-996 同口径：getter / setter 是访问器，不是可调用入口。
       // `isFunctionValue(p)` 对 ObjectMethod 恒为 true，只看 type 会把
       // `get f() {}` / `set f(v) {}` 登记成入口 ⇒ check 造出假的
       // `nudo:entry-may-throw` / `nudo:opaque-result`（与 service 侧
       // `analyzer-ast.ts` 的 `prop.kind !== "method"` 判据一致）。
+      // 只有**最终**成员是访问器 / 非函数时才排除（被覆盖的旧成员不再复活）。
       const kind = typeof p.kind === "string" ? p.kind : "method";
       if (kind === "get" || kind === "set") continue;
       const keyName = staticKeyOf(p.key, p.computed === true);

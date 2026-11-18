@@ -308,7 +308,7 @@ connection.onDocumentSymbol((params) => {
           if (s.children?.length) flatten(s.children, s.name);
         }
       };
-      flatten(documentSymbols(ast), undefined);
+      flatten(documentSymbols(ast, document.getText()), undefined);
       return out;
     }
     const toLsp = (s: DocumentSymbolItem): DocumentSymbol => {
@@ -322,7 +322,7 @@ connection.onDocumentSymbol((params) => {
         children: s.children?.map(toLsp),
       };
     };
-    return documentSymbols(ast).map(toLsp);
+    return documentSymbols(ast, document.getText()).map(toLsp);
   } catch {
     return [];
   }
@@ -399,7 +399,7 @@ connection.onWorkspaceSymbol((params) => {
           if (sym.children?.length) flatten(sym.children, sym.name);
         }
       };
-      flatten(documentSymbols(ast), undefined);
+      flatten(documentSymbols(ast, source), undefined);
     } catch {
       /* skip unparseable */
     }
@@ -607,6 +607,16 @@ connection.onRenameRequest((params) => {
         }
       }
     }
+    // BUG-062：**编辑集里的每个文件**都要做一遍名字冲突校验。
+    // 旧实现只校验两处（目标文件 + 定义文件）⇒ 其它「接收编辑的文件」（导入方
+    // / re-export 方，来自 resolveReferences）零校验：把 `shared` 改成一个在
+    // **导入方文件**里已存在的模块级绑定名 ⇒ 编辑集把它改成
+    // `import { sharedLocal } …` + `const sharedLocal = 5` ⇒ 重复声明，
+    // `node --check` 直接 SyntaxError（客户端会整批应用）。
+    // 判据与前面两处**同源**（`renameNameConflicts`），逐文件作用域各自独立。
+    // 返回 true = **有冲突** ⇒ 拒绝整批改名（不产出编辑集）
+    if (renameConflictsAcrossEdits(locations, params.newName, sourceProvider)) return null;
+
     const changes = buildRenameEdits(params.newName, locations);
     if (Object.keys(changes).length === 0) return null;
     return { changes };
@@ -614,6 +624,52 @@ connection.onRenameRequest((params) => {
     return null;
   }
 });
+
+/**
+ * BUG-062：**编辑集逐文件**的名字冲突校验。
+ *
+ * rename 的编辑集会跨多个文件（定义位 / 引用位 / re-export 位 / 侧车契约位，
+ * 来自 `resolveReferences` 与侧车探测）。旧实现只校验**目标文件**与**定义
+ * 文件**两处作用域 ⇒ 其它接收编辑的文件零校验：把 `shared` 改成
+ * `sharedLocal` 时，那个在**导入方**里已存在 `const sharedLocal = 5` 的文件
+ * 会被改成 `import { sharedLocal } …` + `const sharedLocal = 5` ⇒
+ * `Identifier has already been declared`（客户端整批应用 ⇒ 文件直接语法错）。
+ *
+ * 判据与前面两处**同源**（`renameNameConflicts`）：每个文件各自作用域独立，
+ * 只要该文件里**本符号**的任一编辑位解析出的身份与新名冲突，就拒绝整批改名
+ * （拒绝优于改坏——与 Bug 712 的歧义拒绝同一哲学）。
+ */
+function renameConflictsAcrossEdits(
+  locations: ReadonlyArray<{
+    uri: string;
+    loc: { start: { line: number; column: number } };
+  }>,
+  newName: string,
+  sourceProvider: (path: string) => string | undefined,
+): boolean {
+  const byFile = new Map<string, Array<{ line: number; column: number }>>();
+  for (const l of locations) {
+    const fp = uriToFilePath(l.uri);
+    if (!fp) continue;
+    const list = byFile.get(fp);
+    if (list) list.push(l.loc.start);
+    else byFile.set(fp, [l.loc.start]);
+  }
+  for (const [fp, positions] of byFile) {
+    let ast: ReturnType<typeof parse>;
+    try {
+      const src = sourceProvider(fp) ?? readFileSync(fp, "utf-8");
+      ast = parse(src);
+    } catch {
+      continue; // 读不出 / 解析不了 ⇒ 该文件不在可校验范围（编辑集本就只含可读文件）
+    }
+    for (const pos of positions) {
+      const t = renameTargetFromAst(ast, pos.line, pos.column);
+      if (t && "kind" in t && renameNameConflicts(ast, t, newName)) return true;
+    }
+  }
+  return false;
+}
 
 connection.onPrepareRename((params) => {
   const document = documents.get(params.textDocument.uri);

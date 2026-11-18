@@ -233,6 +233,52 @@ function formatShapeInner(a: Abs, budget: ProjectionBudget, ind: string): string
       return s.type;
     }
     case "obj": {
+      // BUG-094：生成器对象是「带内部协议槽的 obj」——逐槽摊平只剩数字
+      // yield 槽（甚至为空）⇒ `{ "0": 1 }` / `{  }`，与同次 dts 的
+      // `Generator<…>` 矛盾。身份取随值携带的 facets.brand（重建 / 快照后
+      // 协议槽可能丢失）；无 facet 的旧 Abs 用**内部**协议槽兜底。
+      const carriedBrand = a.facets?.brand;
+      // 无 brand 时的旧 Abs 兜底：协议槽必须**全是 internal 槽**——真生成器
+      // 对象按 Bug 240 把 next/return/throw/@@iterator 装成 internal（原生
+      // 生成器没有自有可枚举属性）。手写迭代器对象（`{ next, return,
+      // [Symbol.iterator] }`）的成员是普通自有属性 ⇒ 不得冒充 Generator，
+      // 否则投影面把用户对象谎报成生成器类型。
+      const internalSlot = (k: string): boolean => s.slots[k]?.internal === true;
+      const genBrand =
+        carriedBrand === "Generator" || carriedBrand === "AsyncGenerator"
+          ? carriedBrand
+          : internalSlot("next") &&
+              (internalSlot("return") || internalSlot("throw")) &&
+              (internalSlot("@@iterator") || internalSlot("@@asyncIterator"))
+            ? internalSlot("@@asyncIterator")
+              ? "AsyncGenerator"
+              : "Generator"
+            : undefined;
+      if (genBrand !== undefined) {
+        const carriedElems = a.facets?.genElements;
+        const elems: Abs[] = carriedElems
+          ? [...carriedElems]
+          : Object.entries(s.slots)
+              .filter(([k]) => /^(?:0|[1-9]\d*)$/.test(k))
+              .map(([, slot]) => slot.value);
+        const seenElems = new Set<string>();
+        const elemParts: string[] = [];
+        for (const e of elems) {
+          const t = formatShapeB(e, budget, ind);
+          if (!seenElems.has(t)) {
+            seenElems.add(t);
+            elemParts.push(t);
+          }
+        }
+        const elemType = elemParts.length > 0 ? elemParts.join(" | ") : "unknown";
+        const retType = a.facets?.genReturn
+          ? formatShapeB(a.facets.genReturn, budget, ind)
+          : "undefined";
+        const nextType = a.facets?.genNext
+          ? formatShapeB(a.facets.genNext, budget, ind)
+          : "unknown";
+        return `${genBrand}<${elemType}, ${retType}, ${nextType}>`;
+      }
       // Bug 240：internal 槽不进投影面（内部槽不是自有属性）——规范数组
       // 下标槽除外（承载元素域，族 01 口径）。
       const entries = Object.entries(s.slots)

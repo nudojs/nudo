@@ -518,8 +518,12 @@ export type CapabilityMode = "strict" | "trusted";
 let explicitCapabilityMode: CapabilityMode | undefined;
 
 /**
- * 显式设置能力档（测试 / 宿主用）。进程级设置，**必须在分析开始前**调用；
- * 分析结果缓存不含该维度（CLI 由 `NUDO_CAPABILITIES` 在进程启动时确定）。
+ * 显式设置能力档（测试 / 宿主用）。进程级设置，**必须在分析开始前**调用。
+ *
+ * BUG-116：磁盘缓存键**含**该维度（`disk-cache.ts` 的 `capsSeg`）。旧注释说
+ * 「CLI 由 `NUDO_CAPABILITIES` 在进程启动时确定 ⇒ 缓存不必含该维度」，但
+ * `.nudo/cache` 是跨进程持久层：trusted 先写、strict 后命中 ⇒ strict 独有的
+ * `nudo:capability-denied` 整段消失。
  */
 export function setCapabilityMode(mode: CapabilityMode | undefined): void {
   explicitCapabilityMode = mode;

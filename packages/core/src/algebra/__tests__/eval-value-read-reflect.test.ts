@@ -200,9 +200,9 @@ describe("keys 家族对 Object.create(<obj>) 恒 total", () => {
     expect(fmt(gopn.result)).toBe("string[]");
   });
 
-  it("obj-proto 原型读保持保守（不折假 undefined——nullproto pin 兼容）", () => {
+  it("obj-proto 原型读按原型求值（BUG-124：精确 1，不再折保守 unknown）", () => {
     const r = call(`export function f() { return Object.create({ x: 1 }).x; }`);
-    expect(fmt(r.result)).toBe("unknown");
+    expect(fmt(r.result)).toBe("1");
   });
 });
 

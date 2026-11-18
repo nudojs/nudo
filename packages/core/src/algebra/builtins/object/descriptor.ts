@@ -87,6 +87,7 @@ import {
   setProtoAbs,
   getProtoAbs,
   isNullProtoObj,
+  markKeySetOpenAbs,
   type ObjShape,
 } from "../../objects.ts";
 import { undefAbs } from "../../hof.ts";
@@ -112,6 +113,27 @@ import { proxyPartsOf, proxyTrapOf } from "../../exec/match-iter.ts";
 import { proxyTargetInnerObj, asAbsVal, clearStaleTermPred } from "../../exec/runtime/state.ts";
 import { isSymbolAbs } from "../../key/symbol-id.ts";
 import { isNullishLitAbs } from "../../surface.ts";
+
+/**
+ * Bug 84/115：用户类实例源的**可枚举自有键**（槽 ∪ 可枚举访问器；原生迭代
+ * 序）——**不求值 getter**（键集判定路径不得触发 [[Get]]）。
+ */
+function classInstanceSourceKeys(src: Abs, inner: Abs): string[] {
+  const innerSlots = (inner.shape as ObjShape).slots;
+  // Bug 276：flags 载体取 **brand**（src）——enumOwnKeys → isNonEnumerable
+  // 会并查 brand 自身与其内层 obj 两套载体（defineProperty 的 flags 记在
+  // brand 上；只查 inner ⇒ 不可枚举自有键被拷进 assign 结果）
+  // Bug 115：自有访问器（defineProperty(instance, k, { get })）的真 getter
+  // 住内层 obj 的 accessorTable —— 键集 = 枚举槽 ∪ 可枚举访问器键。
+  const acc = accessorTable.get(inner as object);
+  const keys = new Set(enumOwnKeys(src, innerSlots));
+  if (acc) {
+    for (const k of acc.keys()) {
+      if (isEnumerableView(src, k)) keys.add(k);
+    }
+  }
+  return [...keys];
+}
 
 export function assignSourceSlots(src: Abs): Record<string, { value: Abs }> | undefined {
   const s = src.shape;
@@ -169,11 +191,16 @@ export function assignSourceSlots(src: Abs): Record<string, { value: Abs }> | un
     const inner = classInstanceInnerOf(src);
     if (inner) {
       const slots: Record<string, { value: Abs }> = {};
-      // Bug 276：flags 载体取 **brand**（src）——enumOwnKeys → isNonEnumerable
-      // 会并查 brand 自身与其内层 obj 两套载体（defineProperty 的 flags 记在
-      // brand 上；只查 inner ⇒ 不可枚举自有键被拷进 assign 结果）
-      for (const k of enumOwnKeys(src, (inner.shape as ObjShape).slots)) {
-        setSlot(slots, k, getSlot((inner.shape as ObjShape).slots as Record<string, { value: Abs }>, k)!);
+      const innerSlots = (inner.shape as ObjShape).slots;
+      const acc = accessorTable.get(inner as object);
+      for (const k of classInstanceSourceKeys(src, inner)) {
+        const g = acc?.get(k)?.get;
+        const slot = getSlot(innerSlots as Record<string, { value: Abs }>, k);
+        if (g) {
+          setSlot(slots, k, { value: g(src) });
+        } else if (slot) {
+          setSlot(slots, k, slot);
+        }
       }
       return slots;
     }
@@ -181,6 +208,21 @@ export function assignSourceSlots(src: Abs): Record<string, { value: Abs }> | un
   if (s.k === "prim") return s.type === "string" ? undefined : {};
   if (s.k === "eff" || s.k === "never") return {}; // Promise 无自有可枚举键
   return undefined; // arr/brand/sum/fn/any/unknown…：键集未知
+}
+
+/**
+ * 源的可枚举自有**键**（原生迭代序）——**不求值 getter** 的键集投影。
+ *
+ * frozen 目标的 assign dry-run（键基数判定）只判"有没有键"：原生在首个失败
+ * 的 [[Set]] 前不会执行后续源键的 [[Get]]（`Object.assign(Object.freeze({}),
+ * instanceWithGetter)` 的 getter 原生 0 次），而 assignSourceSlots 会一次性
+ * 求值全部 getter（副作用多发）。键集不可判 → undefined。
+ */
+export function assignSourceKeys(src: Abs): string[] | undefined {
+  const inner = classInstanceInnerOf(src);
+  if (inner) return classInstanceSourceKeys(src, inner);
+  const slots = assignSourceSlots(src);
+  return slots === undefined ? undefined : Object.keys(slots);
 }
 
 /**
@@ -208,9 +250,9 @@ function assignSourceKeyCardinality(src: Abs): "none" | "some" | "unknown" {
     }
     return s.open ? "unknown" : "none";
   }
-  const slots = assignSourceSlots(src);
-  if (slots === undefined) return "unknown";
-  return Object.keys(slots).length > 0 ? "some" : "none";
+  const keys = assignSourceKeys(src);
+  if (keys === undefined) return "unknown";
+  return keys.length > 0 ? "some" : "none";
 }
 
 /**
@@ -1118,6 +1160,14 @@ export function enforceProxyGetOwnPropDescInvariant(
     if (trapView.configurable === false) {
       throw new NudoThrow(errorTypeAbs("TypeError"));
     }
+    // 规则 1b：靶**不可扩展**时，陷阱不得凭空报告一个靶上不存在的属性
+    //（ES2024 10.5.5 step 13 → IsCompatiblePropertyDescriptor →
+    // ValidateAndApplyPropertyDescriptor：current 缺失且 extensible=false
+    // ⇒ false ⇒ TypeError）。此前该分支早退，从不看靶的可扩展性 ⇒
+    // `Object.preventExtensions(t)` + 陷阱返回描述符被误判绿灯。
+    if (!currentPropDesc(target, key).extensible) {
+      throw new NudoThrow(errorTypeAbs("TypeError"));
+    }
     return;
   }
   /**
@@ -1510,6 +1560,47 @@ function throwAssignTypeError(): never {
   throw new NudoThrow(errorTypeAbs("TypeError"));
 }
 
+/**
+ * BUG-115：frozen **obj** 目标 × 类实例源——按原生 CopyDataProperties 顺序
+ * 逐键推进（Get 一个 → Set 一个；Set 定失败即抛）。
+ *
+ * `assignSourceSlots` 会先把**全部**源 getter 求值再逐键写；首键 [[Set]] 就
+ * 定失败时（`Object.assign(Object.freeze({}), instanceWithGetter)`，实例的
+ * 首个键是数据字段），原生在首个键的 Set 处就抛，后续 getter **零次**执行
+ * ——一次性投影会把 getter 跑一次（副作用多发）。
+ *
+ * 返回 true = 本源已消费（写 / 抛均已完成）；false = 不适用（非类实例源）。
+ */
+function assignFrozenObjFromInstance(target: Abs, src: Abs): boolean {
+  const inner = classInstanceInnerOf(src);
+  if (!inner) return false;
+  const innerSlots = (inner.shape as ObjShape).slots;
+  const acc = accessorTable.get(inner as object);
+  for (const k of classInstanceSourceKeys(src, inner)) {
+    const g = acc?.get(k)?.get;
+    const slot = getSlot(innerSlots as Record<string, { value: Abs }>, k);
+    // 仅 setter 的访问器键无 getter / 无槽：原生 [[Get]] 得 undefined
+    const v = g ? g(src) : (slot?.value ?? undefAbs());
+    const plan = classifyAssignSet(target, k, v);
+    if (plan.act === "setter") {
+      plan.set(target, v);
+      continue;
+    }
+    // __proto__ setter 对原始值静默忽略（原生同）
+    if (plan.act === "ignore") continue;
+    if (plan.act === "open") {
+      recordMayThrow({
+        kind: "TypeError",
+        cause: "Object.assign to frozen target may write a non-writable property",
+      });
+      continue;
+    }
+    // "write"（新建键 / 不可写数据属性）| "throw" | "proto"（改原型）⇒ TypeError
+    throwAssignTypeError();
+  }
+  return true;
+}
+
 /** obj 目标 × obj 源：逐键 [[Set]]（分类共享 classifyAssignSet）就地写。 */
 function mergeAssignObject(
   target: Abs,
@@ -1769,10 +1860,32 @@ export function performObjectAssign(args: Abs[]): Abs {
       }
       continue;
     }
+    // BUG-115：frozen obj 目标 × 类实例源——按原生顺序逐键（Get→Set），
+    // 首键 Set 定失败时不得先求值后续源 getter（见 assignFrozenObjFromInstance）。
+    if (st === "frozen" && acc.shape.k === "obj" && assignFrozenObjFromInstance(acc, src)) {
+      continue;
+    }
+    // 原生 Object.assign：nullish 源直接跳过；number/boolean/bigint/symbol
+    // 原始值没有自有可枚举键 ⇒ 不写不抛。这些形态不得走下面的「键集未知」
+    // 保守臂（会把目标误标成键集不完备，甚至给字面量目标打标记）。
+    const litVal = src.term?.op === "lit" ? src.term.value : undefined;
+    const litNoKeys =
+      src.term?.op === "lit" &&
+      (litVal === null ||
+        litVal === undefined ||
+        typeof litVal === "number" ||
+        typeof litVal === "boolean" ||
+        typeof litVal === "bigint" ||
+        typeof litVal === "symbol");
+    const primNoKeys = src.shape.k === "prim" && src.shape.type !== "string";
+    if (litNoKeys || primNoKeys) continue;
     const srcSlots = assignSourceSlots(src);
     if (srcSlots === undefined) {
       // 键集未知（strPrim 非字面量 / arr / brand / sum / fn…）：保守降级，
       // 不得折「无变化」假精确
+      // BUG-1071：抽象/未知源的实际写入可能新增任意自有键 ⇒ 结果自有键集
+      // 不完备（键家族 / 原型链读面据此折 partial，不得折精确继承值）。
+      markKeySetOpenAbs(acc);
       if (acc.shape.k === "obj") {
         acc.shape.open = true;
       } else if (acc.shape.k === "tuple") {

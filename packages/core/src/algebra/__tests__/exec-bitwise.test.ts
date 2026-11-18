@@ -9,7 +9,7 @@ import {mkdtempSync, writeFileSync, rmSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join, dirname} from "node:path";
 import {fileURLToPath, pathToFileURL} from "node:url";
-import {transpileSource, litValue, formatShape, $lit, num, type Abs} from "@nudojs/core";
+import {transpileSource, litValue, formatShape, $lit, num, anyAbs, bitandAbs, bitnotAbs, type Abs} from "@nudojs/core";
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -101,5 +101,17 @@ describe("evaluator bitwise / shift / exponent / unary-plus", () => {
     const r = run(num(), num());
     expect(formatShape(r)).toBe("number");
     expect(litValue(r)).toEqual({ ok: false });
+  });
+
+  it("any operand: 单侧 any 仍是 number，双 any / ~any 是 unknown；bigint 字面量仍折叠", () => {
+    // 单侧 any + 确定 number：bigint 只可能来自 any 侧，混型位运算原生
+    // TypeError ⇒ 非抛结果恒 number（精度保留）。
+    expect(formatShape(bitandAbs(anyAbs, $lit(1)))).toBe("number");
+    // 双 any 可能**同为 bigint**（`1n & 1n` 合法 ⇒ bigint）⇒ 不得报 number。
+    expect(formatShape(bitandAbs(anyAbs, anyAbs))).toBe("unknown");
+    // `~1n === -2n` 合法且非抛 ⇒ `~any` 的值域不是 number。
+    expect(formatShape(bitnotAbs(anyAbs))).toBe("unknown");
+    // 负控：bigint 字面量仍精确折叠（ToNumeric 不截断 bigint）。
+    expect(formatShape(bitnotAbs($lit(1n)))).toBe("-2n");
   });
 });

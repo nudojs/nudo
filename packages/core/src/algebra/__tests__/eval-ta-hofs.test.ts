@@ -294,3 +294,35 @@ describe("TA HOF 回调按已知长度逐下标执行（不再只跑一次）", 
       .toEqual({ ok: true, value: 5 });
   });
 });
+
+/**
+ * BUG-128：%TypedArray%.from(items, mapFn, thisArg) 第三实参被丢弃——
+ * applyCallbackValue 未传 thisVal ⇒ 回调 this 恒 undefined ⇒ 合法
+ * `this.k` 读被记必抛 TypeError（Array.from 同款已正确）。修复：透传
+ * args[2]（12 个 TA 家族共用本路径）。
+ */
+describe("%TypedArray%.from thisArg（BUG-128）", () => {
+  it("Uint8Array / Int8Array / Uint16Array.from 回调读 this.k", () => {
+    for (const fam of ["Uint8Array", "Int8Array", "Uint16Array"]) {
+      expect(
+        val(
+          `export function f() { let n = 0; ${fam}.from([1, 2], function () { n += this.k; return 0; }, { k: 3 }); return n; }`,
+        ),
+        fam,
+      ).toEqual({ ok: true, value: 6 });
+    }
+  });
+
+  it("对照：无 thisArg / Array.from 同形不变", () => {
+    expect(
+      val(
+        `export function f() { let n = 0; Uint8Array.from([1, 2], function () { n += 1; return 0; }); return n; }`,
+      ),
+    ).toEqual({ ok: true, value: 2 });
+    expect(
+      val(
+        `export function f() { let n = 0; Array.from([1, 2], function () { n += this.k; return 0; }, { k: 3 }); return n; }`,
+      ),
+    ).toEqual({ ok: true, value: 6 });
+  });
+});

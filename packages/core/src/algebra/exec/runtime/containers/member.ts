@@ -71,6 +71,8 @@ import {
   isNullProtoObj,
   getSlot,
   setSlot,
+  getProtoAbs,
+  keySetIncompleteAbs,
   canonicalArrayIndex,
   isUserFnSlotOwner,
   markUserFnSlots,
@@ -113,7 +115,8 @@ import { setReceiverToStringResolver } from "../../../builtins/object-proto.ts";
 // 直连 builtins/error/iterator.ts，不经 barrel（与 iterate.ts 同款口径；barrel
 // 未导出该函数，且本分片不改 barrel）。
 import { collectionIteratorFor } from "../../../builtins/error/iterator.ts";
-import { urlSearchParamsSizeAbs } from "../../../builtins/error/web.ts";
+import { urlSearchParamsSizeAbs, recomputeUrlAfterComponentSet } from "../../../builtins/error/web.ts";
+import { typedArrayAccessorAbs } from "../../../builtins/error/binary.ts";
 import { URL_WRITABLE_COMPONENTS } from "../brand-tables.ts";
 import { registerUrlSearchParamsParent } from "../url-live.ts";
 import {
@@ -133,7 +136,7 @@ import {
   OBJECT_PROTO_NAMES,
 } from "../../member-diag.ts";
 import { errorTypeAbs, recordMayThrow } from "../../may-throw.ts";
-import { getEvalClass, lookupClassValue, fnProtoOf, classSpecOfAbs, type EvalClassSpec } from "../../class-registry.ts";
+import { getEvalClass, lookupClassValue, fnProtoOf, classSpecOfAbs, carryClassSpec, type EvalClassSpec } from "../../class-registry.ts";
 import { classNameOfValue, markClassValue } from "../../../class-mark.ts";
 import { markFreshInstance, freshInstanceIdOf } from "../../../key/instance-id.ts";
 import { NudoThrow, undef, isOobUndef, throwStrictWrite, NudoSilentWrite, clearStaleTermPred, asAbsVal, $lit, noBody, enforceProxyGetInvariant, hostFnKindOf } from "../state.ts";
@@ -649,6 +652,36 @@ function userChainHasMember(brandName: string, key: string, upto: string): boole
     if (spec && ownRecValue(spec.accessors, key) !== undefined) return true;
   }
   return false;
+}
+
+/**
+ * BUG-1071：**写门的内建访问器 owner**——派生类实例（`class S extends Set`）
+ * 的 brand 名是派生类名，而访问器表按**内建**名建键 ⇒ 直查 `BUILTIN_BRAND_
+ * ACCESSORS[o.shape.name]` 落空 ⇒ getter-only 写门整条失效（`s.size = 0`
+ * 原生 strict 定抛 TypeError，引擎静默建自有槽）。
+ *
+ * 沿类链找**宿主内建**祖先：自身环是用户规格、链洞处要求直接子类带
+ * `superBuiltinHost`（extends 目标是真实宿主内建，不是同名 mock fn）——
+ * 用户类同名内建（BUG-052 的 `class Set`，无内建父）不算 owner，其 `size`
+ * 仍是普通可写数据属性。无类规格（内建 brand 实例本体）保持原直查口径。
+ */
+function builtinAccessorOwnerOf(
+  brandName: string,
+  spec: EvalClassSpec | undefined,
+  key: string,
+): string | undefined {
+  if (spec === undefined) {
+    return ownTableEntry(BUILTIN_BRAND_ACCESSORS, brandName)?.has(key) ? brandName : undefined;
+  }
+  const links = classChainLinks(brandName, spec);
+  for (let i = 1; i < links.length; i++) {
+    const link = links[i]!;
+    if (link.spec !== undefined) continue; // 已注册用户类（同名内建由用户面遮蔽）
+    const child = links[i - 1]!.spec;
+    if (!child?.superBuiltinHost || child.superName !== link.name) continue;
+    if (ownTableEntry(BUILTIN_BRAND_ACCESSORS, link.name)?.has(key)) return link.name;
+  }
+  return undefined;
 }
 
 /** Bug 204：符号成员模型 → Abs 值（@@toStringTag 字符串 / 方法 / 对象）。 */
@@ -1218,7 +1251,7 @@ function getBrandProtoMember(ctx: GetCtx): Abs | undefined {
 
 /** brand 注册面：内建表（方法/访问器/符号/原型值）、类注册表与内层解包。 */
 function getRegisteredBrandMember(ctx: GetCtx): Abs | undefined {
-  const { o, key, opts } = ctx;
+  const { o, key, opts, receiver } = ctx;
   if (o.shape.k === "brand") {
     // Bug 65：读 `u.searchParams` 时登记父 URL 反向指针——后续对该 brand
     // 的 set/append/delete/sort 会原地改 @@entries，需回写父 URL 的
@@ -1309,6 +1342,12 @@ function getRegisteredBrandMember(ctx: GetCtx): Abs | undefined {
     // 自有数据属性优先于原型访问器（原生属性查找：own → prototype）
     // 必须 getSlot：constructor/toString 等键裸读会踩宿主 Object.prototype
     if (inner?.shape.k === "obj") {
+      // Bug 115：`Object.defineProperty(instance, k, { get, enumerable })`
+      // 把访问器装进**内层 obj** 的 accessorTable（槽里只有占位）。读面
+      // 必须先查侧表（与对象字面量 getObjMember 同口径，this = 实例），
+      // 否则占位 `unknown` 被当数据槽返回 ⇒ getter 从不执行、异常丢失。
+      const acc = lookupObjAccessor(inner, key);
+      if (acc) return acc.get ? acc.get(receiver ?? o) : undef();
       const slot = getSlot(inner.shape.slots, key);
       if (slot && !slot.optional) return slot.value;
     }
@@ -1506,6 +1545,13 @@ function getBrandTailMember(ctx: GetCtx, isClassVal: boolean, inner: Abs): Abs {
       }
       return joinAbs(abs({ k: "prim", type: elem }, undefined, undefined, "exact"), undef());
     }
+  }
+  // BUG-129：TypedArray 实例二进制访问器（buffer / byteLength / byteOffset）
+  // 的值读模型——presence 表里的名字此前直接折 unknown，导致
+  // `new Uint8Array(a.buffer)` 落 length 形态（假 RangeError | TypeError）。
+  if (!isClassVal) {
+    const taAcc = typedArrayAccessorAbs(o, key);
+    if (taAcc !== undefined) return taAcc;
   }
   // Bug 40：已知原型访问器名（BUILTIN_BRAND_ACCESSORS，$in presence 表）
   // 的值读若槽面未建模 → 诚实 unknown——不得落闭 obj 槽 miss 折精确
@@ -1857,6 +1903,39 @@ function getObjMember(ctx: GetCtx): Abs | undefined {
     if (slot) {
       // optional 槽在 JS 中可能缺席 → 读到 undefined，不能报 definite presence
       if (slot.optional) return joinAbs(slot.value, undef());
+      // Bug 124：`inherited` 槽是 Object.create(proto) 的**存在性镜像**
+      //（值折 unknown）——真值必须按原型对象求值（getter / 方法体），
+      // 不得把镜像当数据槽返回。
+      if (slot.inherited !== true) return slot.value;
+    }
+    // Bug 124：普通对象的原型链成员（Object.create(proto) /
+    // `{ __proto__: proto }` / Object.setPrototypeOf 均已入 protoTable）——
+    // 原生 [[Get]] 沿链取值：数据槽 / getter（this = receiver）/ 方法。
+    // 此前直接落 open/闭槽 miss（继承 getter 折 unknown，必抛零执法）。
+    // `__proto__` 本身是特殊的原型访问器（下方分支），不得沿链读。
+    //
+    // BUG-1071：只有 receiver 的**自有键集完整**时，链上取值才是唯一可能值。
+    // 不完备的两个来源：动态键域（`index`）与「键集可能多于槽表」标记
+    // （`markKeySetOpenAbs`——抽象键写 / 抽象源 Object.assign·spread）。
+    // `open` 本身不用：`Object.create(proto)` 也置 open，但它的**自有键集
+    // 已知为空**（BUG-326 口径），链上读仍是定值。
+    // 不完备时未知自有键可能遮住原型链值——`Object.assign(Object.create({a:1}),
+    // x)` 的 `x.a` 是自有属性（可为任意值），此前折 `1 #exact`；`o.b` 同理可能
+    // 来自 x（折叠 `undefined #exact`）⇒ 链上读与 `unknown` 求并（含链上
+    // 缺席的 `undefined`），不做精确折叠。
+    const ownKeysComplete =
+      !keySetIncompleteAbs(o) && (o.shape as ObjShape).index === undefined;
+    if (key !== "__proto__") {
+      const proto = getProtoAbs(o);
+      if (proto && proto !== o) {
+        const inherited = $get(proto, key, opts, receiver ?? o);
+        return ownKeysComplete ? inherited : joinAbs(inherited, unknown);
+      }
+    }
+    if (slot) {
+      // 无 protoTable 的 inherited 槽（构造来源不支持链解析时）——保持
+      // 旧保守读值（unknown），不冒充数据槽值。
+      if (slot.optional) return joinAbs(slot.value, undef());
       return slot.value;
     }
     // Bug 195：数组视图对象（模板对象 / RegExp exec 结果——原生是数组 exotic）
@@ -2163,16 +2242,20 @@ function setBrandInstanceMember(ctx: SetCtx): Abs | undefined {
     // writable:true 自建数据槽后覆写（原生成功）此处仍抛——descriptor
     // 的 writeInPlace 复用原 Abs 身份不迁移 propFlags 侧表，豁免不可
     // 判（构造器工件槽同无标记，不可放行）；超罕见边，留侧表迁移任务。
-    if (
-      !opts?.internal &&
-      BUILTIN_BRAND_ACCESSORS[o.shape.name]?.has(key) &&
-      // Bug 37：URL 的 10 个组件访问器都**带 setter**（可写）。presence 表
-      // 收录它们只为 `$in` 精确判定，不是只读声明——此前整张表被写门当
-      // getter-only ⇒ `u.href = …` 合法写被误判确定 TypeError（假红 +
-      // 签名塌 never）。仅 origin / searchParams 仍是 getter-only。
-      !(o.shape.name === "URL" && URL_WRITABLE_COMPONENTS.has(key))
-    ) {
-      throwStrictWrite();
+    // BUG-1071：owner 沿**类链**解析（派生类实例的内建父访问器同样只读；
+    // 用户类同名内建 / 无内建父不套判据，见 builtinAccessorOwnerOf）。
+    if (!opts?.internal) {
+      const accOwner = builtinAccessorOwnerOf(o.shape.name, classSpecOfAbs(o), key);
+      if (
+        accOwner !== undefined &&
+        // Bug 37：URL 的 10 个组件访问器都**带 setter**（可写）。presence 表
+        // 收录它们只为 `$in` 精确判定，不是只读声明——此前整张表被写门当
+        // getter-only ⇒ `u.href = …` 合法写被误判确定 TypeError（假红 +
+        // 签名塌 never）。仅 origin / searchParams 仍是 getter-only。
+        !(accOwner === "URL" && URL_WRITABLE_COMPONENTS.has(key))
+      ) {
+        throwStrictWrite();
+      }
     }
     // Bug 197：类实例的 [[Set]] 原型链写门——receiver **无自有该键**时，
     // 原生沿 [[Prototype]] 链上溯（A.prototype → 父类原型 → …）：首个
@@ -2224,6 +2307,18 @@ function setBrandInstanceMember(ctx: SetCtx): Abs | undefined {
     if (becomesOwn) {
       setPropFlags(inner, key, { enumerable: true });
     }
+    // BUG-126：URL 组件 setter 的原生语义是重算同一解析状态的全部投影
+    // （href / pathname / search / hash …）并同步 live `searchParams`。
+    // 仅改被写槽会让派生组件停在旧快照（自信错值）。重算在 web.ts 单源
+    // 实现（宿主 URL 规范实现；抽象值退 string 域）。
+    if (
+      o.shape.name === "URL" &&
+      URL_WRITABLE_COMPONENTS.has(key) &&
+      // 用户类可同名 URL（BUG-052 同族）——其实例组件是普通字段，不重算。
+      classSpecOfAbs(o) === undefined
+    ) {
+      recomputeUrlAfterComponentSet(o, key, value);
+    }
     clearStaleTermPred(o);
     return o;
   }
@@ -2244,6 +2339,8 @@ function setBrandInnerMember(ctx: SetCtx): Abs {
   // 类 Abs 不可变更新后仍是类值（静态访问器派发依赖身份）
   const clsName = classNameOfValue(o as object);
   if (clsName) markClassValue(next as object, clsName);
+  // BUG-052：类规格同样随副本过户（值身份判据，见 setBrandInstanceMember）
+  carryClassSpec(o, next);
   return next;
 }
 

@@ -24,6 +24,7 @@ import { typedArrayElementOf } from "../../builtins/shared.ts";
 import { typedArrayEnumKeyView } from "../../builtins/object/enum-entries.ts";
 import { MAX_CONCRETE_LOOP_ITERS } from "../runtime/loop-budget.ts";
 import { $get, namespaceNameOf, callAtFunctionBoundary } from "../runtime.ts";
+import { accessorReadDomain } from "../../accessors.ts";
 import { withNewTargetReset, undef, asAbsVal } from "../runtime/state.ts";
 import { $call, routeApplyThrows } from "../call.ts";
 import { callHostGlobalFn } from "../calls.ts";
@@ -310,7 +311,7 @@ function $invokeInner(
   // 派发体见 invokeCallApplyBind；undefined = 接收者不可调用（非 fn / 无可
   // 调用 impl / 非类值的普通对象）⇒ 继续后续面（原生此处同样读属性再调用）。
   if (method === "call" || method === "apply" || method === "bind") {
-    const callBindR = invokeCallApplyBind(thisVal, method, args);
+    const callBindR = invokeCallApplyBind(thisVal, method, args, loc);
     if (callBindR !== undefined) return callBindR;
   }
   // 宿主 JS 命名空间对象（Math/Number/JSON…）→ Abs builtin 表
@@ -394,10 +395,63 @@ function $invokeInner(
  * 成员值 / 可构造类值）⇒ 交回 dispatcher 继续后续面（原生此时同样按普通
  * 成员读 + 调用处理，例如 `({call: 1}).call()`）。
  */
+/**
+ * BUG-045：`.call` / `.apply` / `.bind` 间接调用的**调用点见证**。
+ *
+ * 求值器本来就能执行这三条 Function.prototype 路径，但走的是 `$call`
+ * （按值调用）而不是 `$callNamed`（按名调用）⇒ `EvalCallRecord` 里没有
+ * `fnName` / `callLoc` ⇒ `nudo test` 只打印直接调用的 `call@L…` 见证，
+ * 间接调用的现场像从没执行过一样。这里在派发出口补一条记录（与
+ * `$callNamed` 同形状）；解析不到函数名 / 没有调用点坐标时不猜。
+ *
+ * BUG-1071：记录必须在 `finally` 发——此前只在成功路径发（调用结果作实参
+ * 传入）⇒ 抛出的 `.call` / `.apply` / bind 产物调用没有任何见证（`nudo
+ * test` 看调用点"没执行过"，与同文件的类方法/属性值派发口径不一致）。
+ * `threw: true` + 载荷 = `throwPayloadOf(e)`，与其它发射点同形。
+ */
+function indirectCallNameOf(target: unknown): string | undefined {
+  if (typeof target === "function") return (target as { name?: string }).name || undefined;
+  if (isAbsLike(target)) {
+    const n = ((target as Abs).shape as { name?: unknown }).name;
+    return typeof n === "string" && n.length > 0 ? n : undefined;
+  }
+  return undefined;
+}
+
+function noteIndirectCall(
+  target: unknown,
+  callArgs: Abs[],
+  invoke: () => Abs,
+  loc?: [number, number],
+): Abs {
+  let result: Abs = unknown;
+  let threw = false;
+  try {
+    result = invoke();
+    return result;
+  } catch (e) {
+    threw = true;
+    result = throwPayloadOf(e);
+    throw e;
+  } finally {
+    const name = indirectCallNameOf(target);
+    if (name) {
+      noteEvalCallRecord({
+        fnName: name,
+        args: callArgs,
+        result,
+        ...(loc ? { callLoc: { line: loc[0], column: loc[1] } } : {}),
+        threw,
+      });
+    }
+  }
+}
+
 function invokeCallApplyBind(
   thisVal: Abs,
   method: string,
   args: Abs[],
+  loc?: [number, number],
 ): Abs | undefined {
   // apply 第二参：tuple 精确展开；JS 数组逐项；Abs arr 长度未知 → 单 element
   // （类型层欠近似）；null/undefined → 无参（JS 语义）；其它 → unknown 槽位
@@ -431,7 +485,13 @@ function invokeCallApplyBind(
         });
       }
       if (s.k === "obj" && s.open !== true) {
-        const lenAbs = getSlot(s.slots, "length")?.value;
+        // Bug 127：array-like 的 length / 索引可能是**自有访问器**
+        // （`{ get length(){…}, get 0(){…} }`）——真值住 accessorTable 侧表，
+        // 槽里只有占位。裸读槽会把 length 当缺失（apply 传 0 个实参 ⇒
+        // 三参全 undefined ⇒ NaN）且丢掉 getter 副作用。原生 apply 的
+        // CreateListFromArrayLike 每次 Get 一次 ⇒ 这里同样按一次读值取。
+        const accLen = accessorReadDomain(a, "length");
+        const lenAbs = accLen ?? getSlot(s.slots, "length")?.value;
         if (!lenAbs || isNullishLitAbs(lenAbs)) return [];
         const lv = litValue(lenAbs);
         if (lv.ok) {
@@ -447,6 +507,11 @@ function invokeCallApplyBind(
             const count = Math.trunc(n);
             const out: Abs[] = [];
             for (let i = 0; i < count; i++) {
+              const accIdx = accessorReadDomain(a, String(i));
+              if (accIdx !== undefined) {
+                out.push(accIdx);
+                continue;
+              }
               const slot = getSlot(s.slots, String(i));
               if (slot && !slot.optional) {
                 out.push(slot.value);
@@ -486,15 +551,27 @@ function invokeCallApplyBind(
     //（thisArg 对宿主全局无意义，原生忽略）
     if (method === "call") {
       const bridged = callHostGlobalFn(thisVal, args.slice(1));
-      if (bridged !== undefined) return bridged;
+      if (bridged !== undefined) return noteIndirectCall(thisVal, args.slice(1), () => bridged, loc);
       // thisArg（Abs）作为宿主 this 传入；函数体 prologue $rawThis(this) 承接。
       // 缺 thisArg（call() 无实参）→ 宿主 undefined ≡ strict this undefined。
-      return callAtFunctionBoundary(() => fn.apply(args[0] as never, args.slice(1)));
+      const callArgs = args.slice(1);
+      return noteIndirectCall(
+        thisVal,
+        callArgs,
+        () => callAtFunctionBoundary(() => fn.apply(args[0] as never, callArgs)),
+        loc,
+      );
     }
     if (method === "apply") {
-      const bridged = callHostGlobalFn(thisVal, expandApplyArgs(args[1]));
-      if (bridged !== undefined) return bridged;
-      return callAtFunctionBoundary(() => fn.apply(args[0] as never, expandApplyArgs(args[1])));
+      const callArgs = expandApplyArgs(args[1]);
+      const bridged = callHostGlobalFn(thisVal, callArgs);
+      if (bridged !== undefined) return noteIndirectCall(thisVal, callArgs, () => bridged, loc);
+      return noteIndirectCall(
+        thisVal,
+        callArgs,
+        () => callAtFunctionBoundary(() => fn.apply(args[0] as never, callArgs)),
+        loc,
+      );
     }
     const boundThis = args[0];
     const bound = args.slice(1);
@@ -505,9 +582,14 @@ function invokeCallApplyBind(
       {
         apply: (callArgs) => {
           // Bug 26：宿主全局 bind 产物同样经桥（boundThis 宿主全局原生忽略）
-          const bridged = callHostGlobalFn(thisVal, [...bound, ...callArgs]);
-          if (bridged !== undefined) return bridged;
-          return callAtFunctionBoundary(() => fn.apply(boundThis as never, [...bound, ...callArgs]));
+          const allArgs = [...bound, ...callArgs];
+          const bridged = callHostGlobalFn(thisVal, allArgs);
+          if (bridged !== undefined) return noteIndirectCall(thisVal, allArgs, () => bridged);
+          return noteIndirectCall(
+            thisVal,
+            allArgs,
+            () => callAtFunctionBoundary(() => fn.apply(boundThis as never, allArgs)),
+          );
         },
       },
       hostFacet !== undefined ? { ctor: hostFacet } : undefined,
@@ -546,10 +628,12 @@ function invokeCallApplyBind(
       // 由 $call 派发注入首参；普通 fn 经 apply 钩子进宿主 this。
       // 缺 thisArg（call() 无实参）→ undefined ≡ strict this undefined。
       if (method === "call") {
-        return $call(thisVal, args.slice(1), args[0]);
+        const callArgs = args.slice(1);
+        return noteIndirectCall(thisVal, callArgs, () => $call(thisVal, callArgs, args[0]), loc);
       }
       if (method === "apply") {
-        return $call(thisVal, expandApplyArgs(args[1]), args[0]);
+        const callArgs = expandApplyArgs(args[1]);
+        return noteIndirectCall(thisVal, callArgs, () => $call(thisVal, callArgs, args[0]), loc);
       }
     }
     if (isCallable || isClassValue) {
@@ -562,10 +646,14 @@ function invokeCallApplyBind(
       const absBoundFn = absFunction(
         boundFnParams(thisVal, bound.length),
         {
-          apply: (callArgs) =>
-            callAtFunctionBoundary(() =>
-              $call(thisVal, [...bound, ...callArgs], boundThis),
-            ),
+          apply: (callArgs) => {
+            const allArgs = [...bound, ...callArgs];
+            return noteIndirectCall(
+              thisVal,
+              allArgs,
+              () => callAtFunctionBoundary(() => $call(thisVal, allArgs, boundThis)),
+            );
+          },
         },
         boundCtor !== undefined ? { ctor: boundCtor } : undefined,
       );

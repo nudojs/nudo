@@ -93,7 +93,30 @@ export function listTopFunctions(source: string, file?: ReturnType<typeof parse>
   const names: string[] = [];
   /** 本地类（ClassDeclaration + `export const C = class {}` 的类表达式） */
   const localClasses = new Map<string, Node>();
+  /**
+   * 本地对象字面量（BUG-108：`{ ...base }` 的展开源要能查到成员键）。
+   *
+   * 只收顶层 **`const`** 初值：`let` / `var` 可能被重新赋值（
+   * `let base = { stale(){} }; base = { fresh(){} }`）⇒ 旧初值不是当前对象，
+   * 展开/查表会把已经不存在的成员登记成入口（陈旧成员 = 假红）。重赋值后的
+   * 新值不是词法事实 ⇒ 不猜（与 service `localObjectLiteralsOf` 同口径）。
+   * 同名重复声明按**最后一条**（`var` 允许重声明；服务面同为 Map.set）。
+   */
+  const localObjects = new Map<string, Node>();
   for (const stmt of f.program.body) {
+    const vd0 =
+      stmt.type === "ExportNamedDeclaration" && stmt.declaration?.type === "VariableDeclaration"
+        ? stmt.declaration
+        : stmt.type === "VariableDeclaration"
+          ? stmt
+          : undefined;
+    if (vd0 && (vd0 as { kind?: string }).kind === "const") {
+      for (const d0 of vd0.declarations) {
+        if (d0.id.type === "Identifier" && d0.init?.type === "ObjectExpression") {
+          localObjects.set(d0.id.name, d0.init as Node);
+        }
+      }
+    }
     if (stmt.type === "ClassDeclaration") {
       const cname = (stmt as { id?: { name?: string } }).id?.name;
       if (cname) localClasses.set(cname, stmt);
@@ -101,10 +124,14 @@ export function listTopFunctions(source: string, file?: ReturnType<typeof parse>
     }
     // Bug 61：`export const C = class { … }` 的类表达式——求值是完整类值，
     // 但建表只扫 ClassDeclaration ⇒ 类表达式永远不在 localClasses 里。
+    // BUG-054：**未导出**的类表达式同样是可 `new` 的类值（`const Svc =
+    // class {…}; export const svc = new Svc()`）⇒ 顶层类表达式一律入表。
     const vd =
       stmt.type === "ExportNamedDeclaration" && stmt.declaration?.type === "VariableDeclaration"
         ? stmt.declaration
-        : undefined;
+        : stmt.type === "VariableDeclaration"
+          ? stmt
+          : undefined;
     if (vd?.type === "VariableDeclaration") {
       for (const d of vd.declarations) {
         if (d.id.type === "Identifier" && d.init?.type === "ClassExpression") {
@@ -115,7 +142,18 @@ export function listTopFunctions(source: string, file?: ReturnType<typeof parse>
   }
   /** 经任意 export 形态暴露的 class 本地名 */
   const exportedClassNames = new Set<string>();
+  /**
+   * 已登记过方法的类名。
+   *
+   * BUG-054：同一类的多个导出形态会**重复**调用 `collectClassMethods`
+   * （`export { Svc }` / `export default Svc` 与 `export const svc = new Svc()`、
+   * 两个实例导出 `new Svc()` …）⇒ 旧实现直接 `names.push` ⇒ 普查表出现两条
+   * 同名 `Svc.run`（按名索引的签名表互相顶替，与 Bug 437 同款）。
+   */
+  const collectedClasses = new Set<string>();
   const collectClassMethods = (cname: string, decl: Node) => {
+    if (collectedClasses.has(cname)) return;
+    collectedClasses.add(cname);
     /** 读一个类（声明 / 表达式）的 own 方法 */
     const readMethods = (
       d: Node,
@@ -172,6 +210,111 @@ export function listTopFunctions(source: string, file?: ReturnType<typeof parse>
       names.push(`${cname}.${m.key}`);
     }
   };
+
+  /** 对象字面量成员节点（ObjectMethod / ObjectProperty / SpreadElement…） */
+  type ObjectMemberNode = {
+    type?: string;
+    kind?: string;
+    computed?: boolean;
+    key?: { type?: string; name?: string; value?: unknown };
+    value?: { type?: string };
+    argument?: { type?: string; name?: string };
+  };
+
+  /**
+   * `{ ...base }` 展开后的**成员节点**（源顺序；spread 源只认顶层 `const`
+   * 对象字面量）。环保护按**路径**生效（复制一份向下传）：同一字面量出现在
+   * 兄弟展开里（`{...base, ...base}`）时后一次仍参与 last-wins，真·循环
+   * （`const a = {...a}`）在路径上被挡。
+   */
+  const flattenObjectMembers = (
+    node: Node | undefined,
+    path: ReadonlySet<Node> = new Set(),
+  ): ObjectMemberNode[] => {
+    if (!node || node.type !== "ObjectExpression" || path.has(node)) return [];
+    const nextPath = new Set(path);
+    nextPath.add(node);
+    const out: ObjectMemberNode[] = [];
+    for (const raw of (node as { properties?: unknown[] }).properties ?? []) {
+      const p = raw as ObjectMemberNode;
+      if (p.type === "SpreadElement" || p.type === "SpreadProperty") {
+        const arg = p.argument;
+        const src =
+          arg?.type === "Identifier" && typeof arg.name === "string"
+            ? localObjects.get(arg.name)
+            : arg?.type === "ObjectExpression"
+              ? (arg as unknown as Node)
+              : undefined;
+        if (src) out.push(...flattenObjectMembers(src, nextPath));
+        continue;
+      }
+      out.push(p);
+    }
+    return out;
+  };
+
+  /**
+   * last-wins：原生对象字面量同一静态键后出现的成员覆盖先出现的
+   * （覆盖目标含可调用 / 访问器 / 非可调用）。动态计算键不可静态定名
+   * ⇒ 不参与去重、也不产键（与 service `flattenObjectProps` 同口径）。
+   */
+  const finalObjectMembers = (node: Node | undefined): ObjectMemberNode[] => {
+    const out: ObjectMemberNode[] = [];
+    const at = new Map<string, number>();
+    for (const m of flattenObjectMembers(node)) {
+      const keyType = m.key?.type;
+      const computedLiteral = keyType === "StringLiteral" || keyType === "NumericLiteral";
+      if (m.computed === true && !computedLiteral) {
+        out.push(m);
+        continue;
+      }
+      const keyName = memberKeyOf(m as never);
+      if (keyName === undefined) {
+        out.push(m);
+        continue;
+      }
+      const idx = at.get(keyName);
+      if (idx === undefined) {
+        at.set(keyName, out.length);
+        out.push(m);
+      } else {
+        out[idx] = m;
+      }
+    }
+    return out;
+  };
+
+  /** 最终成员是否可调用（ObjectMethod kind=method / 属性值是函数表达式） */
+  const isCallableObjectMember = (m: ObjectMemberNode): boolean => {
+    if (m.type === "ObjectMethod" || m.type === "ClassMethod") {
+      return !m.kind || m.kind === "method";
+    }
+    if (m.type === "ObjectProperty" || m.type === "Property") {
+      const v = m.value?.type;
+      return v === "FunctionExpression" || v === "ArrowFunctionExpression";
+    }
+    return false;
+  };
+
+  /**
+   * BUG-108：对象字面量的**最终**可调用成员键（含 spread 展开）。
+   *
+   * 旧实现按源顺序直接把可调用成员推入结果 ⇒ `{ ...base, helper: 42 }` 里
+   * base 的 `helper` 仍然存活（把已被覆盖、不再是函数的成员登记成入口 =
+   * 假红），`{ ...base, helper(){…} }` 又会留下两条同名记录（按名索引的签名
+   * 互相顶替，与 Bug 437 同款）⇒ 由 {@link finalObjectMembers} 先展开 +
+   * last-wins，再只取最终成员里可调用的那些。
+   */
+  const objectMethodKeys = (node: Node | undefined): string[] => {
+    const out: string[] = [];
+    for (const m of finalObjectMembers(node)) {
+      if (!isCallableObjectMember(m)) continue;
+      const keyName = memberKeyOf(m as never);
+      if (keyName) out.push(keyName);
+    }
+    return out;
+  };
+
   for (const stmt of f.program.body) {
     let decl: Node = stmt;
     if (stmt.type === "ExportNamedDeclaration" && stmt.declaration) {
@@ -212,25 +355,22 @@ export function listTopFunctions(source: string, file?: ReturnType<typeof parse>
           collectClassMethods(d.id.name, d.init as Node);
           continue;
         }
+        // BUG-054：`export const svc = new Svc()`（Svc 是本地**未导出**类）——
+        // 实例方法即模块的公开 API。旧实现全文件无 NewExpression 分支 ⇒
+        // 整个模块 `0 fn`，调用方 `svc.run()` 零执法（侧车契约同盲）。
+        if (initType === "NewExpression" && isExported) {
+          const callee = (d.init as { callee?: { type?: string; name?: string } }).callee;
+          const cname = callee?.type === "Identifier" ? callee.name : undefined;
+          const cls = cname !== undefined ? localClasses.get(cname) : undefined;
+          if (cname && cls) collectClassMethods(cname, cls);
+          continue;
+        }
         // Bug 90：ESM `export const api = { m(){} }` 的对象字面量方法——与 CJS
         // `module.exports = { m(){} }` 同口径（成员键 = 导出槽名 ⇒ 进函数普查）。
         // 只对 export 包装的声明收集（未导出对象不是模块边界入口 ⇒ 不假红）。
         if (initType === "ObjectExpression" && isExported) {
-          for (const p of ((d.init as { properties?: unknown[] }).properties ?? [])) {
-            const prop2 = p as {
-              type?: string;
-              kind?: string;
-              value?: { type?: string };
-            };
-            if (prop2.type === "ObjectMethod" || prop2.type === "ClassMethod") {
-              // getter / setter 不是可调用入口
-              if (prop2.kind && prop2.kind !== "method") continue;
-            } else if (prop2.type === "ObjectProperty" || prop2.type === "Property") {
-              const v = prop2.value?.type;
-              if (v !== "FunctionExpression" && v !== "ArrowFunctionExpression") continue;
-            } else continue;
-            const keyName = memberKeyOf(p);
-            if (keyName && !names.includes(keyName)) names.push(keyName);
+          for (const keyName of objectMethodKeys(d.init as Node)) {
+            if (!names.includes(keyName)) names.push(keyName);
           }
         }
       }
@@ -351,37 +491,26 @@ export function listTopFunctions(source: string, file?: ReturnType<typeof parse>
       pushFnFromInit(isNamedFn ? undefined : "default", right);
       const objLit = right as { type?: string; properties?: unknown[] } | undefined;
       if (objLit?.type === "ObjectExpression") {
-        for (const p of objLit.properties ?? []) {
-          const prop2 = p as {
+        // BUG-108：`module.exports = { ...base }` 与 ESM 同口径——展开成**最终**
+        // 成员表（last-wins）后逐个登记：`{ ...base, helper: 42 }` 的最终
+        // helper 不是函数 ⇒ base 的 helper 不得当入口（旧实现先到先得，base
+        // 的函数一直存活）；`{ ...base, helper(){…} }` 只登记一次。
+        for (const member of finalObjectMembers(objLit as unknown as Node)) {
+          const prop2 = member as {
             type?: string;
             kind?: string;
-            key?: { type?: string; name?: string; value?: unknown };
             value?: unknown;
-            params?: unknown[];
-            body?: unknown;
-            async?: boolean;
-            id?: { name?: string };
           };
           if (prop2.type === "ObjectMethod" || prop2.type === "ClassMethod") {
             // Bug 996：getter / setter **不是**可调用入口（`kind` 是 get/set）⇒
             // 不进普查（否则凭空造出 `f() => unknown` + 假的 L2 entry-may-throw）。
             if (prop2.kind && prop2.kind !== "method") continue;
-            const keyName =
-              prop2.key?.type === "Identifier"
-                ? prop2.key.name
-                : prop2.key?.type === "StringLiteral" || prop2.key?.type === "NumericLiteral"
-                  ? String(prop2.key.value)
-                  : undefined;
+            const keyName = memberKeyOf(member as never);
             if (keyName && !names.includes(keyName)) names.push(keyName);
             continue;
           }
           if (prop2.type !== "ObjectProperty" && prop2.type !== "Property") continue;
-          const keyName =
-            prop2.key?.type === "Identifier"
-              ? prop2.key.name
-              : prop2.key?.type === "StringLiteral" || prop2.key?.type === "NumericLiteral"
-                ? String(prop2.key.value)
-                : undefined;
+          const keyName = memberKeyOf(member as never);
           if (keyName) pushFnFromInit(keyName, prop2.value);
         }
       }

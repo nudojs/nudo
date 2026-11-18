@@ -37,7 +37,17 @@ function replaceInFnRegion(
   fnName: string,
   replacer: (region: string) => string | undefined,
 ): string | undefined {
-  const located = matchSidecarFnDecl(src, fnName);
+  // 侧车键有两种合法身份：`Class.method` / quoted 别名，以及 `contract
+  // --draft` / core 绑定都认可的**平铺** `Class_method`（BUG-060）。定位按
+  // 导出名优先，找不到再按平铺键找——与 core 的绑定键解析同口径。
+  const candidates = fnName.includes(".")
+    ? [fnName, fnName.replace(/\./g, "_")]
+    : [fnName];
+  let located: ReturnType<typeof matchSidecarFnDecl> | undefined;
+  for (const key of candidates) {
+    located = matchSidecarFnDecl(src, key);
+    if (located !== undefined) break;
+  }
   if (located === undefined) return undefined;
   const start = located.start;
   const open = located.openParen;

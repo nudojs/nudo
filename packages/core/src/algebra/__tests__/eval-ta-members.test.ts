@@ -1,5 +1,5 @@
 /**
- * 回归：TypedArray/ArrayBuffer 成员面三案。
+ * 回归：TypedArray/ArrayBuffer 成员面四案。
  *
  * - %TypedArray%.from(items, mapFn) —— mapFn GetMethod 前置校验
  * 此前完全缺失（args[1] 被忽略）：非函数 mapFn 不抛（native 先于任何
@@ -302,5 +302,73 @@ describe("L2 gate 面", () => {
     const src = `export function f(o) { const b = new ArrayBuffer(8, o); return b.resize(4); }`;
     expect(effects(src)).toContain("TypeError");
     expect(effects(src)).toContain("RangeError");
+  });
+});
+
+/**
+ * BUG-129：TypedArray 实例的 `.buffer` / `.byteLength` / `.byteOffset`
+ * 访问器未建模（presence 表有名字、值读折 unknown）⇒ `.buffer` 重建视图
+ * 落 length 形态，被 ToIndex 记假 `RangeError | TypeError`，且元素值丢失。
+ * 修复：byteLength = length × BYTES_PER_ELEMENT、byteOffset 构造期入槽、
+ * .buffer 产 ArrayBuffer brand（byteLength + 源 TA 引用，元素对齐时保留值）。
+ */
+describe("TypedArray binary accessors（BUG-129）", () => {
+  it("byteLength / byteOffset 精确", () => {
+    expect(val(`export function f() { const a = new Uint8Array([1, 2]); return a.byteLength; }`)).toEqual({
+      ok: true,
+      value: 2,
+    });
+    expect(val(`export function f() { const a = new Uint8Array([1, 2]); return a.byteOffset; }`)).toEqual({
+      ok: true,
+      value: 0,
+    });
+    expect(
+      val(`export function f() { const a = new Uint16Array([1, 2, 3]); return a.byteLength; }`),
+    ).toEqual({ ok: true, value: 6 });
+  });
+
+  it("a.buffer 重建视图保留长度 / 元素值、不记假 RangeError", () => {
+    expect(
+      val(
+        `export function f() { const a = new Uint8Array([1, 2]); const b = new Uint8Array(a.buffer); return [b.length, b[0]].join(","); }`,
+      ),
+    ).toEqual({ ok: true, value: "2,1" });
+    expect(
+      val(
+        `export function f() { const a = new Uint8Array([1, 2, 3]); const b = new Uint8Array(a.buffer, 1, 2); return [b.length, b[0], b[1]].join(","); }`,
+      ),
+    ).toEqual({ ok: true, value: "2,2,3" });
+  });
+
+  it("视图的 .byteOffset / .byteLength 与底层 .buffer.byteLength 不混同", () => {
+    expect(
+      val(
+        `export function f() { const b = new ArrayBuffer(4); const a = new Uint8Array(b, 1, 2); return [a.byteOffset, a.byteLength, a.buffer.byteLength].join(","); }`,
+      ),
+    ).toEqual({ ok: true, value: "1,2,4" });
+  });
+
+  it("对照：ArrayBuffer 直接构造不变", () => {
+    expect(
+      val(
+        `export function f() { const b = new ArrayBuffer(2); const v = new Uint8Array(b); return v.length; }`,
+      ),
+    ).toEqual({ ok: true, value: 2 });
+  });
+
+  it("超大缓冲区重建视图：只拷实际存在的数字槽（不按 byteLength 逐下标）", () => {
+    // 修复前按 foldLen（= 缓冲区 byteLength，可达 2^53-1）逐下标取源槽 ——
+    // 2e9 长度的视图重建把分析拖死。修复后上界 = 源实际槽数。
+    expect(
+      val(
+        `export function f() { const a = new Uint8Array(2e9); const b = new Uint8Array(a.buffer); return b.length; }`,
+      ),
+    ).toEqual({ ok: true, value: 2000000000 });
+    // 对照：小缓冲区的元素拷贝仍逐位保留
+    expect(
+      val(
+        `export function f() { const a = new Uint8Array([7, 8]); const b = new Uint8Array(a.buffer); return [b.length, b[0], b[1]].join(","); }`,
+      ),
+    ).toEqual({ ok: true, value: "2,7,8" });
   });
 });

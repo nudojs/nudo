@@ -68,7 +68,7 @@ import { mapEntriesAbs } from "../../collections.ts";
 import { undefAbs } from "../../hof.ts";
 import { NudoThrow } from "../../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "../../exec/may-throw.ts";
-import { lookupObjAccessor } from "../../accessors.ts";
+import { lookupObjAccessor, accessorTable } from "../../accessors.ts";
 import { absFunction } from "../../abs-fn.ts";
 import { isSymbolAbs } from "../symbol.ts";
 import { boolPrim, str, isPrimLike, noBody, typedArrayElementOf } from "../shared.ts";
@@ -646,19 +646,44 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
     );
   };
 
-  /** Bug 84：用户类实例 brand 的公有可枚举自有键值对（私有 Slot.internal
-   * 剔除）；非类实例面 → undefined（调用方保持既有保守口径）
-   * Bug 295：Object.keys|values|entries 是**字符串键**视图——symbol 键不进
-   * （原生类实例的 keys 家族看不到 Symbol.toStringTag）。enumOwnKeys 是
-   * CopyDataProperties 视图（含 symbol 键）⇒ 这里用本地 enumKeys
-   * （includeSymbols 默认 false）。 */
-  const classInstanceEnumEntries = (a0: Abs | undefined): Array<[string, Abs]> | undefined => {
+  /** Bug 84/115：用户类实例的公有可枚举自有键（顺序 = 槽序 ∪ 访问器安装序）。
+   *  **不求值 getter**——Object.keys / gOPN 是纯键视图（原生不执行 [[Get]]，
+   *  访问器只由 accessorTable 侧表记录）；非类实例面 → undefined。
+   *  Bug 295：Object.keys 家族是**字符串键**视图——symbol 键不进（原生类实例
+   *  的 keys 家族看不到 Symbol.toStringTag）。enumKeys 是 CopyDataProperties
+   *  视图（含 symbol 键）⇒ 这里用本地 enumKeys（includeSymbols 默认 false）。 */
+  const classInstanceEnumKeys = (a0: Abs | undefined): string[] | undefined => {
     const inner = a0 ? classInstanceInnerOf(a0) : undefined;
     if (!inner) return undefined;
     const slots = (inner.shape as ObjShape).slots as Record<string, { value: Abs }>;
     // Bug 276：flags 载体取 **brand**（a0）——isEnumerableView 会并查 brand
     // 自身与其内层 obj 两套载体（defineProperty 的 flags 记在 brand 上）
-    return enumKeys(slots, a0!).map((k) => [k, getSlot(slots, k)!.value] as [string, Abs]);
+    // Bug 115：自有 getter 住内层 obj 的 accessorTable —— 键集 = 枚举槽 ∪
+    // 可枚举访问器键。
+    const acc = accessorTable.get(inner as object);
+    const keys = new Set(enumKeys(slots, a0!));
+    if (acc) {
+      for (const k of acc.keys()) {
+        if (isEnumerableView(a0!, k)) keys.add(k);
+      }
+    }
+    return [...keys];
+  };
+
+  /** Bug 84/115：用户类实例的公有可枚举自有键值对（私有 Slot.internal
+   *  剔除）；非类实例面 → undefined（调用方保持既有保守口径）。
+   *  Object.values / entries / spread / assign 是 **[[Get]] 语义**——真 getter
+   *  （this = 实例）在此求值；纯键视图必须走 classInstanceEnumKeys。 */
+  const classInstanceEnumEntries = (a0: Abs | undefined): Array<[string, Abs]> | undefined => {
+    const inner = a0 ? classInstanceInnerOf(a0) : undefined;
+    const keys = classInstanceEnumKeys(a0);
+    if (!inner || !keys) return undefined;
+    const slots = (inner.shape as ObjShape).slots as Record<string, { value: Abs }>;
+    const acc = accessorTable.get(inner as object);
+    return keys.map((k): [string, Abs] => {
+      const g = acc?.get(k)?.get;
+      return [k, g ? g(a0!) : (getSlot(slots, k)?.value ?? unknown)];
+    });
   };
 
   /** Bug 125：TA brand 枚举投影素材——typedArrayEnumKeyView（exact/open/
@@ -977,9 +1002,10 @@ function inheritedProtoSlots(proto: Abs): Record<string, { value: Abs; inherited
         }
         // Bug 84：用户类实例——内层闭 obj 公有可枚举自有键（私有槽 internal 剔除；
         // 此前整 brand 保守 partial string[]）
-        const ciKeys = classInstanceEnumEntries(a0);
+        // Bug 115：Object.keys 是纯键视图——只取键集，**不求值 getter**
+        const ciKeys = classInstanceEnumKeys(a0);
         if (ciKeys) {
-          return abs({ k: "tuple", elements: ciKeys.map(([k]) => strLit(k)) }, undefined, undefined, "exact");
+          return abs({ k: "tuple", elements: ciKeys.map((k) => strLit(k)) }, undefined, undefined, "exact");
         }
       }
       // Bug 61：抽象接收者（any/unknown/含 nullish 臂 union）may ToObject 抛——

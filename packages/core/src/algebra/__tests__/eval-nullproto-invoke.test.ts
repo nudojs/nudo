@@ -6,8 +6,10 @@
  * Object.prototype 可回退，任何缺失方法名都确定缺失。
  * 修复：definitelyUncallableMember 共用判定（null-proto 缺失名 / 闭 exact
  * 对象非 OP 名缺失槽 / 槽值字面量非可调用）→ NudoThrow(TypeError)；
- * ast-eval 同判定返回 EvalResult{threw}。open/path 对象（spread/assign/
- * create(proto) 产物）与 OP 原型名保持保守不抛（避免假抛 false positive）。
+ * ast-eval 同判定返回 EvalResult{threw}。**键集不可判**的对象（spread /
+ * 抽象源 assign 产物）与 OP 原型名保持保守不抛（避免假抛 false positive）；
+ * `Object.create(proto)` / `setPrototypeOf` 的已知原型链按 protoTable 求值
+ * （BUG-124：链上方法/数据槽可精确派发）。
  */
 import { describe, it, expect } from "vitest";
 import { litValue } from "@nudojs/core";
@@ -91,7 +93,7 @@ describe("evaluator definitely-uncallable member calls throw", () => {
     }
   });
 
-  it("Object.prototype names fold; open objects stay conservative (no throw)", () => {
+  it("Object.prototype names fold; unknown-key objects stay conservative; proto chains evaluate", () => {
     // OP 名已建模：({}).toString() → "[object Object]"
     expect(
       litValue(call(`export function f() { return ({}).toString(); }`).result),
@@ -100,10 +102,10 @@ describe("evaluator definitely-uncallable member calls throw", () => {
     expect(
       litValue(call(`export function f() { const o = {...{x: 1}}; return o.foo(); }`).result),
     ).toEqual({ ok: false });
-    // create(proto) 动态原型不建模（path conf）→ 保守
+    // create(proto) 动态原型（BUG-124：沿 protoTable 求值 → 精确 "hi"）
     expect(
       litValue(call(`export function f() { const p = {greet() { return 'hi'; }}; return Object.create(p).greet(); }`).result),
-    ).toEqual({ ok: false });
+    ).toEqual({ ok: true, value: "hi" });
   });
 
   it("existing methods unaffected", () => {

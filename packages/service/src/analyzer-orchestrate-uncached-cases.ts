@@ -77,6 +77,7 @@ import { mockSeedsToAbsMocks, mockScopeSelected, type AbsMockSeeds } from "./moc
 import type { CallSiteRecord } from "./analyzer-orchestrate-calls.ts";
 import { findProjectConfig, contractConfig, analysisConfig } from "./evaluator/config.ts";
 import { defaultLoadModule } from "./load-module.ts";
+import { entryThisReceiverOf } from "@nudojs/core/internal";
 import { tryEvalCall, tryEvalCallFull, tryRunEval } from "./eval-run.ts";
 import {
   buildAbsImportLocalMap,
@@ -1340,6 +1341,8 @@ export function evaluateEntryCase(env: UncachedCaseEnv, candidate: SynthCandidat
     const argAbsEntry = (fnNode ? extractFormals(fnNode, env.source) : []).map((f) =>
       f.kind === "rest" ? restEntryArgAbs() : tsAnnotationArgAbs(f.tsType),
     );
+    // BUG-133：`this: T` 接收者注解是入口求值的绑定上下文（不是形参位）
+    const entryThisArg = entryThisReceiverOf(env.source, candidate.analysis.name);
     // Bug 511：domainOnly 模式（函数已带点观测见证）——入口求值只为产出推断域。
     const domainOnly = candidate.domainOnly === true;
     const callRecordsBefore = env.callRecords.length;
@@ -1364,6 +1367,7 @@ export function evaluateEntryCase(env: UncachedCaseEnv, candidate: SynthCandidat
               // —— 入口求值时一并采集，落进共享 callRecords ⇒ 被调方能
               // 合成 call@ 见证（否则永远只有 entry@ ⇒ 调用点域丢失）。
               collectCalls: true,
+              ...(entryThisArg ? { thisArg: entryThisArg } : {}),
               ...(loadModule ? { loadModule } : {}),
               depKey: fnDepSeg,
             },
@@ -1372,6 +1376,7 @@ export function evaluateEntryCase(env: UncachedCaseEnv, candidate: SynthCandidat
             ? tryEvalCallFull(source, filePath, candidate.assignedName, argAbsEntry, {
                 envNames,
                 mocks: mockSeedsToAbsMocks(seeds),
+                ...(entryThisArg ? { thisArg: entryThisArg } : {}),
                 ...(loadModule ? { loadModule } : {}),
                 depKey: fnDepSeg,
               })
@@ -1561,6 +1566,7 @@ export function evaluateThrowsOnly(env: UncachedCaseEnv, candidate: SynthCandida
   const argAbsEntry = (fnNode ? extractFormals(fnNode, env.source) : []).map((f) =>
     f.kind === "rest" ? restEntryArgAbs() : tsAnnotationArgAbs(f.tsType),
   );
+  const entryThisArg = entryThisReceiverOf(env.source, candidate.analysis.name);
   let hardThrowsAbs: Abs = neverAbs;
   const effects: MayThrowEffect[] = [];
   setMayThrowCollector((e) => effects.push(e));
@@ -1576,6 +1582,7 @@ export function evaluateThrowsOnly(env: UncachedCaseEnv, candidate: SynthCandida
           mocks: mockSeedsToAbsMocks(seeds),
           // 只取证据：成员诊断不收、调用点证据不采
           collectMemberDiags: false,
+          ...(entryThisArg ? { thisArg: entryThisArg } : {}),
           ...(loadModule ? { loadModule } : {}),
           depKey: fnDepSeg,
         },

@@ -177,9 +177,9 @@ const key = buildKey("docs", "readme");
 | <a id="dtscontractdraft"></a>`DtsContractDraft` | type | — | `DtsContractDraft = { label: string; files: string[]; exports: DtsExportDraft[]; draftSource: string; stats: { files: number; exports: num...` |
 | <a id="dtsexportdraft"></a>`DtsExportDraft` | type | — | `DtsExportDraft = { name: string; dsl?: string; note?: string; kind: "function" \| "value" \| "class" \| "other"; partial?: boolean; }` |
 | <a id="dtspathtocontractdraft"></a>`dtsPathToContractDraft` | fn | 目录/文件入口：内部解析 .d.ts 列表。 | `dtsPathToContractDraft( path: string, label?: string, ): DtsContractDraft` |
-| <a id="dtstocontractdraft"></a>`dtsToContractDraft` | fn | 从 .d.ts 路径列表生成契约草稿（不写盘）。 | `dtsToContractDraft( dtsFiles: string[], label?: string, ): DtsContractDraft` |
+| <a id="dtstocontractdraft"></a>`dtsToContractDraft` | fn | 从 .d.ts 路径列表生成契约草稿（不写盘）。 | `dtsToContractDraft( dtsFiles: string[], label?: string, opts?: { acceptTarget?: string }, ): DtsContractDraft` |
 | <a id="emitenvmodule"></a>`emitEnvModule` | fn | — | `emitEnvModule(env: HarvestedEnv, pkgName: string): string` |
-| <a id="formatdtscontractdraft"></a>`formatDtsContractDraft` | fn | 组装 `@nudo:draft` 模块（与 formatDraftModule 同纪律：不 ambient 绑定）。 | `formatDtsContractDraft( label: string, files: string[], exports: DtsExportDraft[], ): string` |
+| <a id="formatdtscontractdraft"></a>`formatDtsContractDraft` | fn | 组装 `@nudo:draft` 模块（与 formatDraftModule 同纪律：不 ambient 绑定）。 | `formatDtsContractDraft( label: string, files: string[], exports: DtsExportDraft[], acceptTarget?: string, ): string` |
 | <a id="formatharvestsummary"></a>`formatHarvestSummary` | fn | harvest 结果 → 人类可读导出表 | `formatHarvestSummary(h: PackageHarvest): string` |
 | <a id="getharvestcachesize"></a>`getHarvestCacheSize` | fn | 测试/诊断：当前条目数（≤ HARVEST_CACHE_MAX） | `getHarvestCacheSize(): number` |
 | <a id="getnodeharvestcachesize"></a>`getNodeHarvestCacheSize` | fn | Number of cached harvest results (diagnostics / tests). | `getNodeHarvestCacheSize(): number` |

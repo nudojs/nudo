@@ -7,9 +7,12 @@
  * （verify:examples 逐字节 pin CLI 输出）。
  */
 import { basename } from "node:path";
+import { readFileSync } from "node:fs";
 import { paint } from "../ui.ts";
 import {
   buildUnknownExplanations,
+  contractTierOf,
+  effectiveContract,
   formatCheckReport,
   formatGithubAnnotations,
   formatGitlabCodeQuality,
@@ -19,8 +22,9 @@ import {
   type CheckJson,
   type CheckReport,
   type GitlabCodeQualityIssue,
+  type NudoConstraint,
 } from "@nudojs/core";
-import { entryVariantIssueForFile, mergeCheckIssues } from "@nudojs/service";
+import { defaultLoadModule, entryVariantIssueForFile, mergeCheckIssues } from "@nudojs/service";
 import { runAbsView } from "./shared.ts";
 import {
   docsDiagnosticCodes,
@@ -295,12 +299,81 @@ export function emitHardErrorCiAnnotations(
   }
 }
 
+/**
+ * 「纯 `any()`」契约判定（与 core `postcondition.ts` 的同名判据同口径）：
+ * 无 prim / preds / 结构 / members / fn / int 位，且**不是** lazy / ref / binder
+ * / 关系式（那四类都是真实义务，不得当成 any()）。
+ */
+function isBareAnyConstraint(c: NudoConstraint): boolean {
+  return (
+    !c.prim &&
+    c.preds.length === 0 &&
+    !c.fields &&
+    !c.element &&
+    !c.members &&
+    !c.fn &&
+    !c.lazy &&
+    !c.ref &&
+    c.binder === undefined &&
+    !c.relational &&
+    c.int !== true
+  );
+}
+
+/**
+ * BUG-106：`--explain-unknown` 的**契约归因**钩子（`contractSourceOf` /
+ * `explicitAnyOf`）。
+ *
+ * `ExplainInput` 定义了这两个钩子，`buildUnknownExplanations` 用它们区分
+ * 「显式 `any()` 契约」/「契约存在但没覆盖这个形参」/「完全没有契约」三态；
+ * 但 CLI 从未传过它们 ⇒ `explicit-any` 分支与「contract does not cover them」
+ * 分支**永不可达** ⇒ 显式 `any()` 被报成「没契约」，用户按建议去加一条**已经
+ * 在侧车里**的契约。
+ *
+ * 纯观察面：只在 `--explain-unknown`（人类面）物化，不参与任何判定。
+ */
+function contractExplainHooks(
+  filePath: string,
+  cache: Pick<CheckCacheState, "proj" | "autoBind">,
+): {
+  contractSourceOf: (fn: string) => "handwritten" | "generated" | "implicit" | undefined;
+  explicitAnyOf: (fn: string) => boolean;
+} {
+  let source: string | undefined;
+  const readSource = (): string => {
+    if (source === undefined) {
+      try {
+        source = readFileSync(filePath, "utf-8");
+      } catch {
+        source = ""; // 读不到 ⇒ 两个钩子都回落「无契约」（不抛：观察面不得改变退出码）
+      }
+    }
+    return source;
+  };
+  // 与 check 面**同源**的装配参数（autoBind / projectDir 决定侧车是否参与绑定）。
+  // `loadModule` 不是可选的：`loadSidecarBinding` 首行就 `if (!loadModule ||
+  // !fromFile) return { ok: false }` ⇒ 不传它则侧车永不绑定，两个钩子恒回落
+  // 「无契约」（这正是 BUG-106 的现场）。
+  const tierOpts = {
+    loadModule: (spec: string, from: string): string | undefined => defaultLoadModule(spec, from),
+    ...(cache.autoBind !== undefined ? { autoBind: cache.autoBind } : {}),
+    ...(cache.proj?.projectDir !== undefined ? { projectDir: cache.proj.projectDir } : {}),
+  };
+  return {
+    contractSourceOf: (fn) => contractTierOf(readSource(), fn, filePath, tierOpts)?.source,
+    explicitAnyOf: (fn) => {
+      const eff = effectiveContract(readSource(), fn, { fromFile: filePath, ...tierOpts });
+      return eff !== undefined && eff.params.some((p) => isBareAnyConstraint(p.constraint));
+    },
+  };
+}
+
 export async function emitCheckReport(
   filePath: string,
   reportIn: CheckReport,
   cache: Pick<
     CheckCacheState,
-    "disk" | "cacheKey" | "cached" | "useDisk" | "cachedJson"
+    "disk" | "cacheKey" | "cached" | "useDisk" | "cachedJson" | "proj" | "autoBind"
   >,
   injectionSetupFailed: boolean,
   opts: RunCheckOptions,
@@ -404,10 +477,21 @@ export async function emitCheckReport(
     console.log(JSON.stringify(checkJson, null, 2));
     emitCiAnnotations();
   } else if (opts.gitlab) {
+    // BUG-092：`--gitlab` 的 stdout 是**严格的机器面**（恰好一份 Code Quality
+    // JSON 数组），代数观察面在这里无处可放。旧实现本分支排在 `--abs` 之前
+    // 且从不 consult `opts.abs` ⇒ `--abs --gitlab` 与 `--gitlab` 逐字节相同
+    // （观察面静默蒸发、无 usage error），而 `--json --abs` 是显式用法错误
+    // ⇒ 同一对旗标两套语义。这里与 `--json` 分支同口径：显式用法错误。
+    if (opts.abs) {
+      console.error("error: --gitlab cannot be combined with --abs");
+      process.exitCode = 1;
+      return;
+    }
     emitCiAnnotations();
     if (!report.ok) {
-      // 仍打印简报，便于日志
-      console.error(paint(formatCheckReport(report, { verbose: false })));
+      // 仍打印简报，便于日志（BUG-092：verbose 此前硬编码 false ⇒
+      // `--gitlab --verbose` 的详细证据被吞掉）
+      console.error(paint(formatCheckReport(report, { verbose: opts.verbose === true })));
     }
   } else if (opts.quiet) {
     // --quiet（人类文本面）：压 signatures 段——issues + summary + 门禁 exit
@@ -465,6 +549,8 @@ export async function emitCheckReport(
       issues: report.issues,
       budget: report.budget,
       ...(opts.evalFallbacks ? { evalFallbacks: opts.evalFallbacks } : {}),
+      // BUG-106：契约归因钩子（显式 any() / 契约未覆盖形参）
+      ...contractExplainHooks(filePath, cache),
     });
     console.log("");
     const text = formatUnknownExplanations(explanations);

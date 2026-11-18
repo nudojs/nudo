@@ -833,3 +833,30 @@ const leadingTexts = (node: unknown): string[] => {
 
 
 });
+
+describe("migrate strip: enum 字符串成员别名（BUG-105）", () => {
+  it("B = A（字符串成员别名）不建反向映射；结果与 tsc 同形", () => {
+    const ast = parseSource(`export enum E { X = 0, A = "X", B = A }`, { keepTs: true });
+    stripTypes_____strip_types_ts(ast, undefined, {});
+    const program = ast.program as unknown as { body: Array<Record<string, unknown>> };
+    const first = program.body[0]!;
+    const decl = (first.type === "ExportNamedDeclaration" ? first.declaration : first) as Record<
+      string,
+      unknown
+    >;
+    const declarations = decl.declarations as Array<Record<string, unknown>>;
+    const init = declarations[0]!.init as Record<string, unknown>;
+    const callee = init.callee as Record<string, unknown>;
+    const fnBody = callee.body as { body: Array<Record<string, unknown>> };
+    const stmts = fnBody.body.slice(0, -1);
+    const last = stmts[stmts.length - 1]!;
+    const b = (last.type === "ExpressionStatement" ? last.expression : last) as Record<string, unknown>;
+    // 字符串成员：`E["B"] = E["A"]`（left 不是 `E[E["B"] = …]` 反向映射形态）
+    const left = b.left as Record<string, unknown>;
+    expect(left.type).toBe("MemberExpression");
+    expect((left.property as { value?: string }).value).toBe("B");
+    const right = b.right as Record<string, unknown>;
+    expect(right.type).toBe("MemberExpression");
+    expect((right.property as { value?: string }).value).toBe("A");
+  });
+});

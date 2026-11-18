@@ -2,11 +2,12 @@
  * 模块套件：documentSymbol / workspaceSymbol 面（跨文件/解构/let-var/default/类成员）。
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse } from "@nudojs/parser";
-import { documentSymbols, findIdentifierAtPosition, resolveDefinition, resolveReferences, collectImportBindings, findExportDefinition } from "../symbols.ts";
+import { documentSymbols, findIdentifierAtPosition, resolveDefinition, resolveReferences, collectImportBindings, findExportDefinition, renameTargetAt } from "../symbols.ts";
+import { buildSemanticTokens } from "../semantic-tokens.ts";
 import { withLspServer, withLspServerCapabilities, createMockConnection, waitForDiagnostics } from "./helpers.ts";
 import { createNudoServer } from "../server.ts";
 
@@ -698,4 +699,119 @@ type WsSymbol = {
     });
   });
 
+});
+
+// ---------------------------------------------------------------------------
+// BUG-065 / BUG-066 / BUG-067：import 说明符改名、注解跨度、CJS range 包含性
+// ---------------------------------------------------------------------------
+describe("未别名命名导入说明符可改名（BUG-065）", () => {
+  it("imported 与 local 同 loc ⇒ renameTargetAt 命中修改名绑定", () => {
+    const src = `import { shared } from "./lib.js";\nexport function h() { return shared; }\n`;
+    expect(renameTargetAt(src, 1, 9)).toMatchObject({
+      name: "shared",
+      kind: "binding",
+      loc: { start: { line: 1, column: 9 }, end: { line: 1, column: 15 } },
+    });
+  });
+
+  it("别名导入：imported 侧仍不可改名（只 local 是绑定）", () => {
+    const src = `import { a as b } from "./lib.js";\nexport function h() { return b; }\n`;
+    expect(renameTargetAt(src, 1, 9)).toBeNull();
+    expect(renameTargetAt(src, 1, 14)).toMatchObject({ name: "b", kind: "binding" });
+  });
+});
+
+describe("TS 注解不撑大标识符跨度（BUG-066）", () => {
+  it("semanticTokens：变量 / 形参 / 可选形参都只盖名字", () => {
+    const d = mkdtempSync(join(tmpdir(), "nudo-bug066-"));
+    try {
+      const write = (name: string, src: string): string => {
+        const file = join(d, name);
+        writeFileSync(file, src, "utf-8");
+        return file;
+      };
+      expect(buildSemanticTokens(write("typed.ts", "export const count: number = 1;\n"), "export const count: number = 1;\n")).toEqual([0, 13, 5, 1, 1]);
+      const param = "export function twice(n: number): number { return n * 2; }\n";
+      expect(buildSemanticTokens(write("param.ts", param), param)).toEqual([0, 16, 5, 0, 65, 0, 6, 1, 2, 1]);
+      const opt = "export function opt(x?: string) { return x; }\n";
+      expect(buildSemanticTokens(write("opt.ts", opt), opt)).toEqual([0, 16, 3, 0, 65, 0, 4, 1, 2, 1]);
+      // 转义写法仍按源码跨度（BUG-723 不回归）
+      const esc = `export const \\u0061bc: string = "x";\n`;
+      expect(buildSemanticTokens(write("esc.ts", esc), esc)).toEqual([0, 13, 8, 1, 1]);
+    } finally {
+      rmSync(d, { recursive: true, force: true });
+    }
+  });
+
+  it("documentSymbol：selectionRange 只盖变量名（不给 source 时保持旧口径）", () => {
+    const src = "export const count: number = 1;\n";
+    expect(documentSymbols(parse(src), src)[0]!.selectionRange).toEqual({
+      start: { line: 0, character: 13 },
+      end: { line: 0, character: 18 },
+    });
+    expect(documentSymbols(parse(src))[0]!.selectionRange).toEqual({
+      start: { line: 0, character: 13 },
+      end: { line: 0, character: 26 },
+    });
+  });
+});
+
+describe("CJS 成员导出的 selectionRange 必须包含在 range 内（BUG-067）", () => {
+  it("exports.f = fn / module.exports.f = fn 两条都满足 LSP MUST", () => {
+    const src = `exports.alpha = function (x) { return x; };\nmodule.exports.beta = (y) => y * 2;\n`;
+    const syms = documentSymbols(parse(src));
+    expect(syms.map((s) => s.name)).toEqual(["alpha", "beta"]);
+    for (const s of syms) {
+      expect(s.range.start.line).toBeLessThanOrEqual(s.selectionRange.start.line);
+      expect(s.range.end.line).toBeGreaterThanOrEqual(s.selectionRange.end.line);
+      if (s.range.start.line === s.selectionRange.start.line) {
+        expect(s.range.start.character).toBeLessThanOrEqual(s.selectionRange.start.character);
+      }
+      if (s.range.end.line === s.selectionRange.end.line) {
+        expect(s.range.end.character).toBeGreaterThanOrEqual(s.selectionRange.end.character);
+      }
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// barrel 引用集：扫描根必须是**导入入口文件**所在目录
+// ---------------------------------------------------------------------------
+describe("barrel 引用集覆盖入口目录下的闭合消费方", () => {
+  it("src/app 经 src/index.js 导入 src/lib/deep.js 的消费方不被扫描根截断", () => {
+    const d = mkdtempSync(join(tmpdir(), "nudo-barrel-root-"));
+    try {
+      const srcDir = join(d, "src");
+      mkdirSync(join(srcDir, "lib"), { recursive: true });
+      mkdirSync(join(srcDir, "app"), { recursive: true });
+      const entry = join(srcDir, "index.js");
+      const decl = join(srcDir, "lib", "deep.js");
+      const opened = join(srcDir, "app", "use.js");
+      const closed = join(srcDir, "app", "other.js");
+      writeFileSync(entry, `export { add } from "./lib/deep.js";\n`, "utf-8");
+      writeFileSync(decl, `export function add(a, b) { return a + b; }\n`, "utf-8");
+      const consumer = `import { add } from "../index.js";\nexport const n = add(1, 2);\n`;
+      writeFileSync(opened, consumer, "utf-8");
+      writeFileSync(closed, consumer, "utf-8");
+
+      const refs = resolveReferences(opened, consumer, "add", {
+        at: { line: 0, column: 9 }, // `add` in `import { add }`
+        includeDeclaration: true,
+      });
+      // 关闭的消费方（会话未打开、位于 src/app）也必须命中；旧口径以声明
+      // 目录 src/lib 为扫描根 ⇒ 这里一条都没有。
+      expect(refs.filter((r) => r.uri === closed).map((r) => r.loc.start)).toEqual([
+        { line: 1, column: 9 },
+        { line: 2, column: 17 },
+      ]);
+      // 打开的消费方同样覆盖（fromFile / extraFiles 通道）
+      expect(refs.filter((r) => r.uri === opened).map((r) => r.loc.start)).toEqual([
+        { line: 1, column: 9 },
+        { line: 2, column: 17 },
+      ]);
+      expect(refs.filter((r) => r.uri === decl).length).toBeGreaterThan(0);
+    } finally {
+      rmSync(d, { recursive: true, force: true });
+    }
+  });
 });

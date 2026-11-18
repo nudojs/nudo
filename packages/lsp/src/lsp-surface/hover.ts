@@ -10,6 +10,8 @@
  * 光标定位（position.ts）。
  */
 import type { File, Node } from "@babel/types";
+import { readFileSync } from "node:fs";
+import { dirname, relative } from "node:path";
 import {
   checkSource,
   formatAbs,
@@ -57,6 +59,8 @@ import {
   type SurfaceReuse,
 } from "./replay.ts";
 import { linkTypeVariables, projectParamAbs } from "./resolve.ts";
+import { resolveDefinition } from "../symbols.ts";
+import { formatShapeForIde } from "./completions.ts";
 export type HoverInfo = {
   /** 外延展示（formatShape / formatAbs） */
   typeText: string;
@@ -324,14 +328,20 @@ export function getHoverAtPosition(
   let gAbs: string | undefined;
   let gMulti: string | undefined;
   let gSig: string | undefined;
+  /** 内涵来自 import 目标模块（本文件没有声明） */
+  let crossModuleFn = false;
   if (fnName) {
-    try {
-      // refine（fromFile/侧车 ambient）与 modules（跨模块图）一并传入：
-      // 缺 refine → 参数无契约种子（A1）；缺 modules → 跨模块调用 unknown
-      const g = generalizeFromAst(fnName, source, {
-        ...(file ? { file } : {}),
+    /** 在给定文件 / 源码上按 `name` 做 generalize（模块图 / 注入包与当前文件同源）。 */
+    const generalizeNamedAt = (
+      name: string,
+      src: string,
+      fp: string,
+      ast?: File,
+    ): PolyFn | undefined =>
+      generalizeFromAst(name, src, {
+        ...(ast ? { file: ast } : {}),
         refine: {
-          fromFile: filePath,
+          fromFile: fp,
           ...(opts?.loadModule ? { loadModule: opts.loadModule } : {}),
           ...(opts?.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
         },
@@ -340,14 +350,92 @@ export function getHoverAtPosition(
         // env 全局缺席 ⇒ 推导链塌缩 unknown（与 `nudo check` 面分叉）。
         ...(opts?.inject ? { inject: opts.inject } : {}),
       });
+    /**
+     * 目标模块源码：`loadModule`（buffer 感知）只在**相对说明符**上查打开
+     * 的编辑器 buffer（`makeBufferAwareLoadModule` 的解析约束）——传绝对
+     * 路径会直接落磁盘 ⇒ 未保存的依赖改动被当成旧签名。按当前文件目录换成
+     * 相对说明符；磁盘读取保留为 loadModule 缺席 / 未命中时的兜底。
+     */
+    const loadDependencySource = (target: string): string => {
+      try {
+        const rel = relative(dirname(filePath), target);
+        const spec = rel.startsWith(".") ? rel : `./${rel}`;
+        const fromBuffer = opts?.loadModule?.(spec, filePath);
+        if (fromBuffer !== undefined) return fromBuffer;
+      } catch {
+        /* 路径形态异常 ⇒ 磁盘兜底 */
+      }
+      return readFileSync(target, "utf-8");
+    };
+    try {
+      // refine（fromFile/侧车 ambient）与 modules（跨模块图）一并传入：
+      // 缺 refine → 参数无契约种子（A1）；缺 modules → 跨模块调用 unknown
+      let g: PolyFn | undefined;
+      let gPath = filePath;
+      let gSource = source;
+      /** 内涵所属符号名（别名 import 的声明名 ≠ 本地别名） */
+      let gName = fnName;
+      /**
+       * 采用目标模块的定义面 generalize。返回是否成功（失败时调用方保持
+       * 绑定面，不再拿本文件的同名声明顶包）。
+       */
+      const adoptForeignDefinition = (def: {
+        filePath: string;
+        name: string;
+      }): boolean => {
+        const depSource = loadDependencySource(def.filePath);
+        const depG = generalizeNamedAt(def.name, depSource, def.filePath);
+        if (!depG) return false;
+        g = depG;
+        gPath = def.filePath;
+        gSource = depSource;
+        gName = def.name;
+        crossModuleFn = true;
+        return true;
+      };
+      // 声明位 / import 说明符：**先**解析 definition。本文件的 generalize
+      // 按名字找函数（`extractFn` 也收嵌套函数）⇒ 同名的嵌套函数会冒充导入
+      // 目标。定义位于本文件时才采信本地 generalize；指向别的文件时改在
+      // **声明所在文件**上 generalize（与声明处 hover / `nudo check` 同口径）。
+      let def: ReturnType<typeof resolveDefinition> = null;
+      if (fnDeclPos && filePath) {
+        try {
+          def = resolveDefinition(filePath, source, fnName, { at: { line, column } });
+        } catch {
+          def = null;
+        }
+      }
+      if (def && def.filePath !== filePath) {
+        adoptForeignDefinition(def);
+      } else {
+        g = generalizeNamedAt(fnName, source, filePath, file);
+      }
+      // BUG-071：导入绑定在当前文件没有声明 ⇒ 本文件 generalize 恒空。
+      // 沿 definition 解析到目标模块，在**声明所在文件**上 generalize /
+      // check —— 而不是把模块图里的 arity-only 壳（`(a, b) => ?`）当展示面。
+      // 别名 import（`import { add as plus }`）的目标声明名是 imported 侧
+      // （`add`）⇒ generalize / checkSignatureLine 都按声明名调用，否则目标
+      // 文件里按本地别名找不到函数（depG 恒空、hover 回落绑定面）。
+      if (!g && !(def && def.filePath !== filePath)) {
+        try {
+          def ??= filePath
+            ? resolveDefinition(filePath, source, fnName, {
+                at: { line, column },
+              })
+            : null;
+          if (def && def.filePath !== filePath) adoptForeignDefinition(def);
+        } catch {
+          /* 目标文件读不出 ⇒ 保持既有绑定面（下面也不会印 `?`） */
+        }
+      }
       if (g) {
         gDisplay = g.display;
         gAbs = formatAbs(g.symbolic);
-        gMulti = formatAbsMultiline(g.symbolic, fnName);
+        gMulti = formatAbsMultiline(g.symbolic, gName);
         // check 同口径签名（BUG-034/071/247/775/951 + Bug 83）：抽成
         // checkSignatureLine 同源函数——补全面也走它，避免同一次会话里
         // hover / check / 补全三面给出不同签名。
-        gSig = checkSignatureLine(filePath, source, fnName, opts, reuse, g);
+        gSig = checkSignatureLine(gPath, gSource, gName, opts, reuse, g);
       }
     } catch {
       // ignore
@@ -363,6 +451,21 @@ export function getHoverAtPosition(
       contractActive,
       ...(tier.display !== undefined ? { contractDisplay: tier.display } : {}),
     };
+  };
+  /**
+   * 导入函数的展示面（BUG-071）：签名 / 返回位来自**声明所在文件**的
+   * generalize + check 同源签名；不让模块图里的 arity-only 壳（或绑定面的
+   * `formatShape` 占位符）上屏。
+   */
+  const attachImportedFn = (): HoverInfo | null => {
+    if (!crossModuleFn || !gDisplay) return null;
+    return withTier({
+      typeText: gSig ?? gDisplay,
+      intension: gDisplay,
+      abs: gAbs,
+      absMultiline: gMulti,
+      ...(gSig ? { signature: gSig } : {}),
+    });
   };
   const attachIntension = (info: HoverInfo | null): HoverInfo | null => {
     if (!gDisplay) return withTier(info);
@@ -397,7 +500,11 @@ export function getHoverAtPosition(
   // 函数名 / callee 位 hover 由此回落下方 intension 面（引擎 generalize 语义，
   // 非源码文本近似）；fn Abs 已带 returnType（被调用观测过）时仍直读 Abs。
   const deferIfArityOnlyFn = (a: Abs | null): Abs | null => {
-    if (!a || !gDisplay) return a;
+    if (!a) return a;
+    // BUG-071：开关不得是 `gDisplay`——导入绑定在本文件没有声明 ⇒
+    // generalize 恒空，而旧实现因此**放行** arity-only 壳（`(a, b) => ?`
+    // + `conf: exact`）。arity-only fn 不是展示面：无条件让位给绑定面 /
+    // 内在面；本文件有 generalize 时下方 attachIntension 仍照旧接管。
     return a.shape.k === "fn" && a.shape.returnType === undefined ? null : a;
   };
 
@@ -451,7 +558,7 @@ export function getHoverAtPosition(
      *  缩进（obj 每槽一行 + 尾逗号、复合臂 union 按臂断行），
      *  纯 prim 联合保持单行 */
     const identHover = (value: Abs): HoverInfo => {
-      const text = `${ident}: ${formatShape(value, { maxDepth: 4, pretty: true })}`;
+      const text = `${ident}: ${formatShapeForIde(value, { maxDepth: 4, pretty: true })}`;
       return { typeText: text, abs: text };
     };
     // —— A. 参数面：光标在参数声明（含解构属性）或参数引用上时，从
@@ -615,7 +722,11 @@ export function getHoverAtPosition(
     // 缺失时经模块图（相对 + 裸包）现求——case 函数体内的 import 引用
     // （vetoFindings 等）由此返回。
     const absBound = !scopeShadowed && reuse?.result ? reuseBinding(reuse, ident) : undefined;
-    if (absBound) return attachIntension(identHover(absBound));
+    if (absBound) {
+      const imported = attachImportedFn();
+      if (imported) return imported;
+      return attachIntension(identHover(absBound));
+    }
     if (file && !scopeShadowed) {
       try {
         const seeds = mockDirectivesToAbsSeeds(extractDirectivesQuiet(file), {
@@ -626,7 +737,11 @@ export function getHoverAtPosition(
           seedFns: seeds.seedFns as never,
         });
         const fromGraph = absBinds.get(ident);
-        if (fromGraph) return attachIntension(identHover(fromGraph));
+        if (fromGraph) {
+          const imported = attachImportedFn();
+          if (imported) return imported;
+          return attachIntension(identHover(fromGraph));
+        }
       } catch {
         // fail-closed：绑定面求值失败 → 不产出 Abs（不拖垮 hover）
       }

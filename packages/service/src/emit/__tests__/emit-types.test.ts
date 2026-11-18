@@ -263,8 +263,8 @@ function rec(file: string, arg: number) {
     const bytes = readFileSync(sidecarPath, "utf-8");
     // 段头记录了证据范围（本项目分析闭包 ⇒ local）
     expect(bytes).toContain("// evidence: local");
-    // 宽域（不是单点字面量）——正是旧启发式判不了的那类
-    expect(bytes).toContain("export const f = fn({ x: number() }, number());");
+    // BUG-113：精确观测字面量
+    expect(bytes).toContain("export const f = fn({ x: lit(9) }, lit(10));");
 
     // 调用点被删 ⇒ 今天的分析完全没有证据；标记 local ⇒ 可证 ⇒ 删段
     writeFileSync(file, SRC_NO_EVIDENCE);
@@ -294,7 +294,7 @@ function rec(file: string, arg: number) {
     expect(first.written).toEqual(["f"]);
     const bytes = readFileSync(sidecarPath, "utf-8");
     expect(bytes).toContain("// evidence: external");
-    expect(bytes).toContain("export const f = fn({ x: number() }, number());");
+    expect(bytes).toContain("export const f = fn({ x: lit(4) }, lit(5));");
 
     // 第二次：不再给记录（等价于「本轮没采集使用现场」）⇒ 不得据此删段
     const second = await emitContract(file, { mode: "update" });
@@ -581,13 +581,12 @@ const numWith = (pred: Pred): Abs => abs({ k: "prim", type: "number" }, { op: "v
     expect(node).toEqual({ k: "prim", type: "number", refinements: [] });
   }
   {
-    // lit NaN 不可表达 ⇒ dropped + 兜底；兜底必须覆盖 NaN 的域
+    // BUG-137：lit(NaN) 是精确字面量 ⇒ 保真投影（z.nan()），不放宽成 number 域
     const nanLit = abs({ k: "prim", type: "number" }, { op: "lit", value: NaN }, undefined, "exact");
-    const { node, dropped } = absToSchemaNode(nanLit);
-    expect(dropped.some((d) => d.includes("NaN"))).toBe(true);
-    expect(node).toEqual({ k: "prim", type: "number", refinements: [] });
+    const { node } = absToSchemaNode(nanLit);
+    expect(node).toEqual({ k: "lit", value: NaN });
     const source = absToSchemaSource(nanLit);
-    expect(source).toContain("z.nan()");
+    expect(source).toBe("z.nan()");
   }
   {
     const lit42 = abs({ k: "prim", type: "number" }, { op: "lit", value: 42 }, undefined, "exact");
@@ -1736,7 +1735,8 @@ export function sub(a, b) { return a - b; }
     const sidecar = join(dir, "lib.nudo.js");
     const after = readFileSync(sidecar, "utf-8");
     expect(after).not.toContain("declare const");
-    expect(after).not.toContain("from \"@nudojs/core\"");
+    // BUG-112：.js 生成段同样自带 builder import（脱离 nudo 也能被 node 加载）
+    expect(after).toContain('// nudo:emit-builders');
     // 裸注入下侧车仍可装载（契约生效）
     const exports = execNudoModule(after);
     expect(Object.keys(exports)).toContain("sub");

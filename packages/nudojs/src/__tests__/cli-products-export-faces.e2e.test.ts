@@ -22,11 +22,22 @@ describe("export --out 的模块标识与绝对路径无关", () => {
  * `// nudo-export-module:` 还内嵌**构建机绝对路径** ⇒ 同一份源码在不同
  * checkout / 不同机器上产出不同字节。
  *
- * 修法：模块标识改为**与路径无关**的稳定 id（包内 ⇒ `<包名>/<相对包根路径>`；
- * 包外 ⇒ `<stem>|<导出名集合>`），marker 里不再写绝对路径。
+ * 修法：模块标识改为**不含绝对路径的稳定 id**（包内 ⇒ `<包名>/<相对包根路径>`；
+ * 包外 ⇒ `<父目录名>/<stem>|<导出名集合>`），marker 里不再写绝对路径。
+ *
+ * 包外键带**父目录名**是 BUG-049 的另一半：旧的 `stem|导出集` 让两个不同源文件
+ * （`a/util.js` 与 `b/util.js`，同名同导出）得到同一个标识 ⇒ `isSameModule` 判真
+ * ⇒ 后导出的静默覆盖前者的四份产物（exit 0、零告警）。父目录名进键即可区分
+ * 兄弟模块，且仍是**相对**的（不含构建机路径）。
+ *
+ * 「同一份源码 ⇒ 同一字节」的真正不变量因此收窄为「**同布局**的两个 checkout
+ * ⇒ 同一字节」：树里相对布局相同（都叫 `a/clean.js`）的两个 checkout 得到同一个
+ * 标识、同一份产物；而 `A/clean.js` 与 `B/clean.js` 是**两个模块**，各产一份。
  *
  * 钉：
- * - 两个目录下的同一份源码导出后，`--out` 目录里**只有一份**产物（原地覆盖）；
+ * - 同布局的两个 checkout 导出到同一 `--out` ⇒ 只有一份产物（原地覆盖），
+ *   marker 与正文逐字相同；
+ * - 不同目录下的同名模块 ⇒ 两份产物互不覆盖（BUG-049）；
  * - marker 行不含绝对路径（可复现构建）。
  */
 
@@ -43,47 +54,73 @@ afterAll(() => {
 const SRC = "export function clean(x) {\n  return x + 1;\n}\nclean(1);\n";
 
 
-  it("同一份源码在两个目录下导出到同一 out 目录 ⇒ 只有一份产物；产物 marker 不含绝对路径（同一源码 ⇒ 同一字节）", () => {
+  it("同布局的两个 checkout 导出到同一 out ⇒ 只有一份产物、marker 与正文逐字相同；不同目录的同名模块 ⇒ 两份产物互不覆盖；marker 不含绝对路径", () => {
   {
+    // 唯一变量 = checkout 根不同，树里相对布局相同（都叫 `a/clean.js`）
     const dir = mkdtempSync(join(tmpdir(), "nudo-b016-"));
     dirs.push(dir);
-    for (const sub of ["A", "B"]) {
-      mkdirSync(join(dir, sub), { recursive: true });
-      writeFileSync(join(dir, sub, "clean.js"), SRC, "utf-8");
+    for (const root of ["co1", "co2"]) {
+      mkdirSync(join(dir, root, "a"), { recursive: true });
+      writeFileSync(join(dir, root, "a", "clean.js"), SRC, "utf-8");
     }
     const out = join(dir, "out");
 
-    const a = runCli(["export", join(dir, "A", "clean.js"), "--format", "dts", "--out", out]);
+    const a = runCli(["export", join(dir, "co1", "a", "clean.js"), "--format", "dts", "--out", out]);
     expect(a.status).toBe(0);
     expect(a.stdout).toContain("wrote");
-    const b = runCli(["export", join(dir, "B", "clean.js"), "--format", "dts", "--out", out]);
+    const first = readFileSync(join(out, "clean.d.ts"), "utf-8");
+    const b = runCli(["export", join(dir, "co2", "a", "clean.js"), "--format", "dts", "--out", out]);
     expect(b.status).toBe(0);
 
     const products = readdirSync(out).filter((f) => f.endsWith(".d.ts"));
-    // 改前：clean.d.ts（A 的遗留副本）+ clean.<hash>.d.ts（B 的新副本）
+    // 改前：clean.d.ts（co1 的遗留副本）+ clean.<hash>.d.ts（co2 的新副本）
     expect(products).toEqual(["clean.d.ts"]);
+    const marker = readFileSync(join(out, "clean.d.ts"), "utf-8").split("\n")[0]!;
+    // 相对布局相同 ⇒ 同一个模块标识（父目录名 `a`，不含 checkout 路径）
+    expect(marker).toBe("// nudo-export-module: a/clean|clean");
+    expect(marker).not.toContain(dir);
+    expect(readFileSync(join(out, "clean.d.ts"), "utf-8")).toBe(first);
   }
   {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-b016-marker-"));
+    // BUG-049：两个**不同的源文件**（同名同导出集合）不得被判成同一模块
+    const dir = mkdtempSync(join(tmpdir(), "nudo-b049-"));
     dirs.push(dir);
     mkdirSync(join(dir, "A"), { recursive: true });
     mkdirSync(join(dir, "B"), { recursive: true });
     writeFileSync(join(dir, "A", "clean.js"), SRC, "utf-8");
     writeFileSync(join(dir, "B", "clean.js"), SRC, "utf-8");
-    const outA = join(dir, "outA");
-    const outB = join(dir, "outB");
+    const out = join(dir, "out");
 
-    expect(runCli(["export", join(dir, "A", "clean.js"), "--format", "dts", "--out", outA]).status).toBe(0);
-    expect(runCli(["export", join(dir, "B", "clean.js"), "--format", "dts", "--out", outB]).status).toBe(0);
+    expect(runCli(["export", join(dir, "A", "clean.js"), "--format", "dts", "--out", out]).status).toBe(0);
+    expect(runCli(["export", join(dir, "B", "clean.js"), "--format", "dts", "--out", out]).status).toBe(0);
 
-    const a = readFileSync(join(outA, "clean.d.ts"), "utf-8");
-    const b = readFileSync(join(outB, "clean.d.ts"), "utf-8");
-    const marker = a.split("\n")[0]!;
-    expect(marker).toMatch(/^\/\/ nudo-export-module: clean\|clean$/);
-    expect(marker).not.toContain(dir);
-    expect(a).toBe(b);
+    const products = readdirSync(out).filter((f) => f.endsWith(".d.ts")).sort();
+    expect(products).toHaveLength(2);
+    expect(products).toContain("clean.d.ts");
+    const unique = products.find((f) => f !== "clean.d.ts")!;
+    expect(unique).toMatch(/^clean\.[0-9a-f]{8}\.d\.ts$/);
+    // 规范名仍归 A（后导出的不得原地吃掉前一份），第二份带 B 的模块标识
+    expect(readFileSync(join(out, "clean.d.ts"), "utf-8").split("\n")[0]!).toBe(
+      "// nudo-export-module: A/clean|clean",
+    );
+    expect(readFileSync(join(out, unique), "utf-8").split("\n")[0]!).toBe(
+      "// nudo-export-module: B/clean|clean",
+    );
   }
-});
+  {
+    // 同一路径重复导出 ⇒ 幂等（不新增 hash 副本、字节不变）
+    const dir = mkdtempSync(join(tmpdir(), "nudo-b016-idem-"));
+    dirs.push(dir);
+    mkdirSync(join(dir, "a"), { recursive: true });
+    writeFileSync(join(dir, "a", "clean.js"), SRC, "utf-8");
+    const out = join(dir, "out");
+    expect(runCli(["export", join(dir, "a", "clean.js"), "--format", "dts", "--out", out]).status).toBe(0);
+    const once = readFileSync(join(out, "clean.d.ts"), "utf-8");
+    expect(runCli(["export", join(dir, "a", "clean.js"), "--format", "dts", "--out", out]).status).toBe(0);
+    expect(readdirSync(out).filter((f) => f.endsWith(".d.ts"))).toEqual(["clean.d.ts"]);
+    expect(readFileSync(join(out, "clean.d.ts"), "utf-8")).toBe(once);
+  }
+}, 120_000); // 6 个 CLI 子进程（tsx 冷启动）
 
 
 });
@@ -851,7 +888,9 @@ export const wrap = fn({ text: number() }, string());
 `;
 
 /** 收敛态：直写正文 + 派生分支并进来的溯源行（） */
-const SIDECAR_CONVERGED = `import { fn, number } from "@nudojs/core";
+const SIDECAR_CONVERGED = `import { litC as lit } from "@nudojs/core"; // nudo:emit-builders
+
+import { fn, number } from "@nudojs/core";
 
 // 手写段（tag）：API 表面想强制的契约
 export const tag = fn({ n: number().gt(0) }, string());
@@ -860,7 +899,7 @@ export const tag = fn({ n: number().gt(0) }, string());
 // source: lib.js:wrap
 // derived-from: lib.js:tag
 // evidence: local
-export const wrap = fn({ text: number() }, string());
+export const wrap = fn({ text: lit(42) }, lit("(42)"));
 `;
 
 function makeFixture(): string {
@@ -935,12 +974,28 @@ function makeFixture(): string {
 
     expect(r.status).toBe(1);
     expect(r.stdout).toContain("[dry-run] would update lib.nudo.js:");
-    expect(r.stdout).toContain("+export const wrap = fn({ text: number() }, string());");
+    expect(r.stdout).toContain('+export const wrap = fn({ text: lit(42) }, lit("(42)"));');
     // 手写段不被触碰
     expect(r.stdout).not.toContain("-export const tag");
     expect(readFileSync(sidecar, "utf-8")).toBe(drifted);
   }
 }); // 2 个 CLI 子进程（tsx 冷启动）
+
+  it("收敛侧车（@generated 段 = 调用点字面量）⇒ export dts 不得把快照当义务发布", () => {
+    const dir = makeFixture();
+    // 收敛态侧车：wrap 段是 `@generated`（`lit(42)` / `lit("(42)")`）
+    writeFileSync(join(dir, "lib.nudo.js"), SIDECAR_CONVERGED, "utf-8");
+
+    const r = runCli(["export", "lib.js", "--format", "dts"], { cwd: dir });
+    expect(r.status).toBe(0);
+    // 生成档是**事实快照**（不执法，只 drift；check 面只报 warning）⇒ 公开
+    // dts 不得收窄到那次调用的字面量（`wrap("x")` 是合法调用，产物必须接受）
+    expect(r.stdout).not.toContain("text: 42");
+    expect(r.stdout).toContain("export declare function wrap(text: number): string;");
+    expect(r.stdout).not.toContain('wrap(text: 42): "(42)"');
+    // 手写段仍是义务（对照：不是一刀切丢契约）
+    expect(r.stdout).toContain("export declare function tag(n: number): string;");
+  }, 60000); // 1 个 CLI 子进程（tsx 冷启动）
 
    // 3 个 CLI 子进程
 
@@ -972,7 +1027,8 @@ describe("nudo contract --emit · 同一侧车同一段 = 一个写者", () => {
  * 夹具（与 `tmp/repro/` 同形，但测试自建临时目录 ⇒ 不读写 tmp/）：
  * `lib.js` 里 `@nudo:contract` 让 `bar` 成为 root ⇒ 派生推导点名下游导出
  * `foo`（派生段 = `fn({ a: lit(1) }, lit(2))`），而 `foo` 同时被直写分支覆盖
- * （`fn({ a: number() }, number())`）⇒ 同一段两个写者。
+ * （宽化只属于 draft 面；emit 两个分支都落**精确观测**：`fn({ a: lit(1) }, lit(2))`）
+ * ⇒ 同一段两个写者。
  *
  * ⚠ CLI 子进程的 `@nudojs/service/emit` 解析会按 **cwd** 找 tsconfig：cwd 是
  * 临时夹具 ⇒ 落到 `packages/service/dist/`（可能是旧构建，的语义
@@ -1002,8 +1058,8 @@ const STD = `import { number } from "@nudojs/core";
 export const positive = number().gt(0);
 `;
 
-/** 同一段：直写分支的正文（`number()`）+ 派生分支并进来的溯源行 */
-const EXPECTED_WRAP = `export const foo = fn({ a: number() }, number());`;
+/** 同一段：直写正文（BUG-113 的精确观测 `lit(1)` / `lit(2)`，不是宽化后的 `number()`）+ 派生分支并进来的溯源行 */
+const EXPECTED_WRAP = `export const foo = fn({ a: lit(1) }, lit(2));`;
 
 function makeFixture(): { dir: string; sidecar: string } {
   const dir = mkdtempSync(join(tmpdir(), "nudo-bug-196-"));
@@ -1036,9 +1092,8 @@ function addedLines(diff: string): string[] {
     expect(r.status, r.stdout + r.stderr).toBe(0);
 
     const written = readFileSync(sidecar, "utf-8");
-    // 直写分支的正文（`number()`）优先于派生分支的 `lit(1)`
+    // BUG-113：直写分支的精确观测与派生分支同域（`lit(1)` / `lit(2)`）
     expect(written).toContain(EXPECTED_WRAP);
-    expect(written).not.toContain("lit(1)");
     // 派生分支的溯源行**真的落盘**（旧实现被直写分支整段覆盖 ⇒ 永不出现）
     expect(written).toContain("// derived-from: lib.js:bar");
     // 台账与文件一致：内容真的变了 ⇒ 必须报 Updated
@@ -1152,4 +1207,296 @@ function makeFixture(): string {
     expect(r.stderr).toContain("contract-conflict");
   }, 60000); // 1 个 CLI 子进程（tsx 冷启动）
 
+});
+
+// ---------------------------------------------------------------------------
+// 用户类遮蔽内建名 ⇒ 运行时产物面不得按全局构造器投影
+// ---------------------------------------------------------------------------
+describe("用户类遮蔽内建名 ⇒ 运行时产物面不得按全局构造器投影", () => {
+/**
+ * `class Date { constructor(){ this.v = 1 } }` + `return new Date()` ⇒
+ * zod 产物 `z.instanceof(Date)`（产物模块里 `Date` 恒解析为**全局**）⇒
+ * 校验器拒收函数**唯一**的返回形态（`expected Date, received Date`）；
+ * standard 面同源。dts 面（`declare class Date`）与 guard 面（结构性子句）
+ * 却放行 ⇒ 四面相反裁决。
+ *
+ * 根因是名字→身份：brand 的 Abs 只有 `{name}`，`isRuntimeGlobalCtorName`
+ * 只看名字；两个运行时产物面是独立模块，无从解析源文件的本地类。
+ *
+ * 钉（e2e 层：装配是否真的把模块绑定表喂进投影）：
+ * - 遮蔽模块：zod 面 `z.unknown()` + 台账点名，产物里没有 `z.instanceof(Date)`；
+ * - 对照模块（同一个名字、无本地类）：仍是 `z.instanceof(Date)`（不过度降级）。
+ */
+const dirs: string[] = [];
+afterAll(() => {
+  for (const d of dirs) rmSync(d, { recursive: true, force: true });
+});
+
+function makeFixture(): string {
+  const dir = mkdtempSync(join(tmpdir(), "nudo-brand-shadow-"));
+  writeFileSync(join(dir, "package.json"), `{"name":"fixture","type":"module"}\n`, "utf-8");
+  // 夹具 cwd 下 `@nudojs/*` 会落到各包 dist（陈旧构建）⇒ paths 钉到仓内 src
+  writeSrcTsconfig(dir);
+  writeFileSync(
+    join(dir, "shadow.js"),
+    `class Date { constructor() { this.v = 1; } }\nexport function makeTopDate() { return new Date(); }\n`,
+    "utf-8",
+  );
+  writeFileSync(
+    join(dir, "plain.js"),
+    `export function makeGlobalDate() { return new Date(); }\n`,
+    "utf-8",
+  );
+  // `export default class Date` 与函数内的 `class Date`：两者都遮蔽同名全局，
+  // 但都不在顶层 `result.bindings` 里（后者是块级绑定）。
+  writeFileSync(
+    join(dir, "shadow-nested.js"),
+    `export default class Date { constructor() { this.v = 1; } }
+export function makeDefaultDate() { return new Date(); }
+export function makeLocalDate() {
+  class Date { constructor() { this.v = 2; } }
+  return new Date();
+}
+`,
+    "utf-8",
+  );
+  return dir;
+}
+
+  it("遮蔽 ⇒ z.unknown() + 台账；对照 ⇒ 仍 z.instanceof(Date)", () => {
+    const dir = makeFixture();
+    dirs.push(dir);
+
+    const a = runCli(["export", "shadow.js", "--format", "all", "--out", "out-a"], { cwd: dir });
+    expect(a.status).toBe(0);
+    const zodA = readFileSync(join(dir, "out-a", "shadow.nudo.schema.zod.ts"), "utf-8");
+    expect(zodA).not.toContain("z.instanceof(Date)");
+    expect(zodA).toContain("export const makeTopDateOutput = z.unknown();");
+    expect(zodA).toContain("brand shadowed by a local binding");
+
+    const b = runCli(["export", "plain.js", "--format", "all", "--out", "out-b"], { cwd: dir });
+    expect(b.status).toBe(0);
+    const zodB = readFileSync(join(dir, "out-b", "plain.nudo.schema.zod.ts"), "utf-8");
+    expect(zodB).toContain("export const makeGlobalDateOutput = z.instanceof(Date);");
+  }, 120000); // 2 个 CLI 子进程（tsx 冷启动）
+
+  it("export default class / 函数内 class 同样遮蔽 ⇒ z.unknown()（不得按全局 Date 投影）", () => {
+    const dir = makeFixture();
+    dirs.push(dir);
+
+    const r = runCli(["export", "shadow-nested.js", "--format", "all", "--out", "out-nested"], {
+      cwd: dir,
+    });
+    expect(r.status).toBe(0);
+    const zod = readFileSync(join(dir, "out-nested", "shadow-nested.nudo.schema.zod.ts"), "utf-8");
+    expect(zod).not.toContain("z.instanceof(Date)");
+    expect(zod).toContain("export const makeDefaultDateOutput = z.unknown();");
+    expect(zod).toContain("export const makeLocalDateOutput = z.unknown();");
+    expect(zod).toContain("brand shadowed by a local binding");
+  }, 120000); // 1 个 CLI 子进程（tsx 冷启动）
+});
+
+// ---------------------------------------------------------------------------
+// 契约写在解构形参上 ⇒ 四个产物面的返回面不得塌成空域
+// ---------------------------------------------------------------------------
+describe("契约写在解构形参上 ⇒ 返回面保持契约域", () => {
+/**
+ * `function g({ a, b })` + `@nudo:contract a pos` ⇒ 契约域种子重算按**契约
+ * 参数名**建表、再拿**求值占位形参名**（`_p0`）去查 ⇒ 永不命中 ⇒ 播种全
+ * `any` ⇒ 返回 Abs 是 any ⇒ 四个产物面把返回投影成空域：
+ *
+ * ```
+ * export const gOutput = z.unknown();                                  // 任何值都放行
+ * __nudoCheck({"k":"unknown"}, value, [], issues);                     // standard 同
+ * export function isgOutput(value) { return true; }                    // guard 恒真
+ * export declare function g(_p0: { a: number }): unknown;              // dts unknown
+ * ```
+ *
+ * 而 `nudo check` 对同一函数是 `g({ a, b }: { a: number, b: unknown }) => number`，
+ * 对照（同契约、形参改成标识符）四份产物都精确 ⇒ 同一知识在**解构形态**下被丢。
+ *
+ * 钉：四份产物同时精确（任一面塌成空域都会让这条挂）。
+ */
+const CTX = `import { number } from "@nudojs/core";
+export const pos = number().gt(0);
+`;
+
+const SRC = `/// @nudo:import { pos } from "./shapes.nudo.js"
+/** @nudo:contract a pos */
+export function g({ a, b }) { return a; }
+`;
+
+const dirs: string[] = [];
+afterAll(() => {
+  for (const d of dirs) rmSync(d, { recursive: true, force: true });
+});
+
+function makeFixture(): string {
+  const dir = mkdtempSync(join(tmpdir(), "nudo-destructure-contract-"));
+  dirs.push(dir);
+  writeFileSync(join(dir, "package.json"), `{"type":"module"}\n`, "utf-8");
+  writeFileSync(join(dir, "shapes.nudo.js"), CTX, "utf-8");
+  writeFileSync(join(dir, "obj_pos.js"), SRC, "utf-8");
+  writeSrcTsconfig(dir);
+  return dir;
+}
+
+  it("zod / standard / guard / dts 四个面的返回面都是契约域（不再是空域）", () => {
+    const dir = makeFixture();
+    const r = runCli(["export", "obj_pos.js", "--format", "all"], { cwd: dir });
+    expect(r.status).toBe(0);
+    const out = r.stdout;
+
+    // zod：精确到 gt(0)
+    expect(out).toContain("export const gOutput = z.number().gt(0)");
+    // standard：节点是 prim number + numBound（不是 unknown）
+    expect(out).toContain(`__nudoCheck({"k":"prim","type":"number","refinements":[{"kind":"numBound","op":"gt","n":0}]}, value, [], issues);`);
+    // guard：真的校验（不是 return true）
+    expect(out).toContain("return (typeof data === \"number\") && (data > 0);");
+    // dts：返回 number（不是 unknown）
+    expect(out).toContain("export declare function g<a>(_p0: { a: number }): number;");
+  }, 60000); // 1 个 CLI 子进程
+
+  it("解构里契约未申报的绑定不得被折成 exact undefined 发布（返回面 / 产物面）", () => {
+    const dir = makeFixture();
+    // 契约只申报 grade；`extra` 是解构绑定但没申报 ⇒ 种子对象**开放**
+    // ⇒ `extra` 读 unknown（不是 exact undefined）。旧口径下契约种子对象是
+    // 闭合 obj ⇒ `return { grade, extra }` 的 extra 被折成 undefined 并发布
+    // （zod `extra: z.undefined()` / dts `extra: undefined`）⇒ 校验器只接受
+    // `extra: undefined`，而实现允许任意 `extra`。
+    writeFileSync(
+      join(dir, "obj_extra.js"),
+      `/// @nudo:import { pos } from "./shapes.nudo.js"
+/** @nudo:contract grade pos */
+export function pick({ grade, extra }) { return { grade, extra }; }
+`,
+      "utf-8",
+    );
+    const r = runCli(["export", "obj_extra.js", "--format", "all"], { cwd: dir });
+    expect(r.status).toBe(0);
+    const out = r.stdout;
+    // 产物不得声称 extra 是 undefined（合法的 extra: 7 会被拒收）
+    expect(out).not.toContain("z.undefined()");
+    expect(out).not.toContain("extra: undefined");
+    // 契约申报的键仍精确；未申报的绑定读 unknown（放行）
+    expect(out).toContain("grade: z.number().gt(0)");
+    expect(out).toContain("extra: z.unknown()");
+    expect(out).toContain("extra: unknown");
+  }, 60000); // 1 个 CLI 子进程
+});
+
+// ---------------------------------------------------------------------------
+// 同 basename 的两个依赖 ⇒ 两个说明符各绑各的落盘声明
+// ---------------------------------------------------------------------------
+describe("export --out · 同名依赖的说明符不得塌成同一个", () => {
+/**
+ * dts 说明符重基时把路径压平成 `./<basename>`（`./a/util.js` 与 `./b/util.js`
+ * ⇒ 都变 `./util.js`），而落盘侧早已给重名的第二份声明换成
+ * `util.<hash>.d.ts` ⇒ 两个 import 都指向**未换名**的那份：
+ *
+ * ```ts
+ * import type { AU } from "./util.js";   // 其实指向 a/util 的声明
+ * import type { BU } from "./util.js";   // 同一个 —— 但声明里没有 BU ⇒ TS2305
+ * ```
+ *
+ * 钉：`app.d.ts` 的两个说明符**不同**，且各自解析到**对应类**的声明。
+ * 旧实现下两个 `expect(specFor("AU")).not.toBe(specFor("BU"))` 直接挂。
+ */
+const dirs: string[] = [];
+afterAll(() => {
+  for (const d of dirs) rmSync(d, { recursive: true, force: true });
+});
+
+function makeFixture(): string {
+  const dir = mkdtempSync(join(tmpdir(), "nudo-spec-collision-"));
+  dirs.push(dir);
+  writeFileSync(join(dir, "package.json"), `{"name":"fixture","type":"module"}\n`, "utf-8");
+  writeSrcTsconfig(dir);
+  mkdirSync(join(dir, "a"), { recursive: true });
+  mkdirSync(join(dir, "b"), { recursive: true });
+  writeFileSync(join(dir, "a", "util.ts"), "export class AU { a = 1; }\n", "utf-8");
+  writeFileSync(join(dir, "b", "util.ts"), "export class BU { b = 1; }\n", "utf-8");
+  writeFileSync(
+    join(dir, "app.ts"),
+    `import { AU } from "./a/util.js";\nimport { BU } from "./b/util.js";\nexport function f(x: AU, y: BU): number { return 1; }\n`,
+    "utf-8",
+  );
+  return dir;
+}
+
+  it("两个同名依赖 ⇒ 两个不同说明符，各绑各的类", () => {
+    const dir = makeFixture();
+    const out = join(dir, "out");
+    for (const rel of ["a/util.ts", "b/util.ts", "app.ts"]) {
+      const r = runCli(["export", "--format", "dts", "--out", out, rel], { cwd: dir });
+      expect(r.status).toBe(0);
+    }
+    const app = readFileSync(join(out, "app.d.ts"), "utf-8");
+    const specFor = (name: string): string => {
+      const m = app.match(new RegExp(`import type \\{ ${name} \\} from "([^"]+)";`));
+      expect(m).not.toBeNull();
+      return m![1]!;
+    };
+    const declFor = (spec: string): string =>
+      readFileSync(join(out, spec.replace(/\.js$/, ".d.ts")), "utf-8");
+
+    expect(specFor("AU")).not.toBe(specFor("BU"));
+    expect(declFor(specFor("AU"))).toContain("export declare class AU");
+    expect(declFor(specFor("BU"))).toContain("export declare class BU");
+  }, 180000); // 3 个 CLI 子进程（tsx 冷启动）
+});
+
+// ---------------------------------------------------------------------------
+// 表达式超类 / CJS 导出函数对象上的附加成员
+// ---------------------------------------------------------------------------
+describe("表达式超类与 CJS 函数对象附加成员进声明面", () => {
+  const dirs: string[] = [];
+  afterAll(() => {
+    for (const d of dirs) rmSync(d, { recursive: true, force: true });
+  });
+  const tmp = (): string => {
+    const d = mkdtempSync(join(tmpdir(), "nudo-r1-emit-forms-"));
+    dirs.push(d);
+    return d;
+  };
+
+  it("extends mixin(Base) ⇒ 发开放构造基类 + 台账（继承成员不再 TS2339）", () => {
+    const d = tmp();
+    writeFileSync(
+      join(d, "m.js"),
+      `const mixin = (B) => class extends B { m() { return 1; } };
+class Base { b() { return 2; } }
+export class C extends mixin(Base) { c() { return 3; } }
+`,
+      "utf-8",
+    );
+    const r = runCli(["export", "--format", "dts", "--out", join(d, "out"), join(d, "m.js")]);
+    expect(r.status, r.stderr).toBe(0);
+    const dts = readFileSync(join(d, "out", "m.d.ts"), "utf-8");
+    expect(dts).toContain("nudo:unresolved-superclass C");
+    expect(dts).toContain("extends mixin(Base)");
+    expect(dts).toMatch(/declare const __nudo_base_C: \{ new \(\): any; \[key: string\]: any \};/);
+    expect(dts).toContain("extends __nudo_base_C");
+  }, 120000);
+
+  it("module.exports = f + f.version / f.helper ⇒ namespace 合并声明", () => {
+    const d = tmp();
+    writeFileSync(
+      join(d, "f.cjs"),
+      `function f(x) { return x + 1; }
+f.version = "1.0";
+f.helper = function (y) { return y * 2; };
+module.exports = f;
+`,
+      "utf-8",
+    );
+    const r = runCli(["export", "--format", "dts", "--out", join(d, "out"), join(d, "f.cjs")]);
+    expect(r.status, r.stderr).toBe(0);
+    const dts = readFileSync(join(d, "out", "f.d.cts"), "utf-8");
+    expect(dts).toContain("declare function f(");
+    expect(dts).toContain("export = f;");
+    expect(dts).toContain("declare namespace f {");
+    expect(dts).toContain("const version: string;");
+    expect(dts).toContain("function helper(y: unknown): unknown;");
+  }, 120000);
 });

@@ -1847,3 +1847,54 @@ it.each(CASES)("$name", ({ files, src, entry = "/t/f.js", expectCodes = [], abse
   if (ok !== undefined) expect(r.ok).toBe(ok);
 });
 });
+
+// ---------------------------------------------------------------------------
+// 嵌套约束袋：`export const K = { run: fn(…) }`
+// ---------------------------------------------------------------------------
+describe("嵌套约束袋（类名同名导出）", () => {
+/**
+ * `export const K = { run: fn(…) }` 的袋顶层名**必然与类名同名** ⇒ 类条目
+ * `K` 的同名直查拿到的是袋对象（不是 Nudo 约束）⇒ 旧实现在 `isNudoConstraint`
+ * 闸门处报 `export 'K' is not a Nudo constraint`（`nudo:contract-load`），
+ * 而 `K.run` **早已从这个袋里取到约束**（签名面是 `K.run(n: number) => number`，
+ * 返回槽换成 `string()` 立刻出现违例）⇒ 假红，且 `nudo export` 被同一条诊断
+ * 阻断（四份产物全无）。
+ *
+ * 判据：值里至少有一个自有成员是 Nudo 约束 ⇒ 是**袋**（类级容器），不是
+ * 「错放在这里的非约束导出」⇒ 类条目不报错，方法条目照常从袋里取。
+ * 负控制：`export const K = 1` 仍报 `is not a Nudo constraint`（真写错的
+ * 导出不得被吞）。
+ */
+const SRC = `export class K { run(n) { return n + 1; } }\n`;
+
+  it("袋形态不报 contract-load，且 K.run 真的绑到袋内契约", () => {
+    const { loadModule } = makeFiles({
+      "/t/K.nudo.js": `import { fn, number } from '@nudojs/core';\nexport const K = { run: fn({ n: number() }, number()) };`,
+    });
+    const r = checkSource("/t/K.js", SRC, pTrue, { loadModule, fromFile: "/t/K.js" });
+    expect(r.issues.filter((i) => i.code === "nudo:contract-load")).toEqual([]);
+    // 约束真的绑上了（不是「不报错但也不生效」）
+    const eff = effectiveContract(SRC, "K.run", { loadModule, fromFile: "/t/K.js", autoBind: true });
+    expect(eff?.source).toBe("handwritten");
+  });
+
+  it("负控制：非约束标量（无约束成员）仍报 is not a Nudo constraint", () => {
+    const { loadModule } = makeFiles({
+      "/t/K.nudo.js": `export const K = 1;`,
+    });
+    const r = checkSource("/t/K.js", SRC, pTrue, { loadModule, fromFile: "/t/K.js" });
+    expect(
+      r.issues.some(
+        (i) => i.code === "nudo:contract-load" && i.message.includes("is not a Nudo constraint"),
+      ),
+    ).toBe(true);
+  });
+
+  it("对照：平铺键 `K_run` 行为不变", () => {
+    const { loadModule } = makeFiles({
+      "/t/K.nudo.js": `import { fn, number } from '@nudojs/core';\nexport const K_run = fn({ n: number() }, number());`,
+    });
+    const r = checkSource("/t/K.js", SRC, pTrue, { loadModule, fromFile: "/t/K.js" });
+    expect(r.issues.filter((i) => i.code === "nudo:contract-load")).toEqual([]);
+  });
+});

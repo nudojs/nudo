@@ -15,16 +15,26 @@ import { and, gt, ge, lt, le, pTrue } from "../pred.ts";
 import type { Abs } from "../abs.ts";
 import { abs, confJoin, isNumPrim, isStrPrim, isBigPrim, litValue, num, numLit, str } from "../abs.ts";
 import { concatString, isTemplateLike } from "../template.ts";
-import { makeSum, isNullProtoWithoutCoercer, joinValues } from "../objects.ts";
+import { makeSum, isNullProtoWithoutCoercer, joinValues, isClosedObjectWithoutCoercer } from "../objects.ts";
 import { noteDerivationAdd } from "../derivation.ts";
 import { isSymbolAbs as isSym } from "../key/symbol-id.ts";
 import { NudoThrow } from "../diagnostics/nudo-throw.ts";
-import { errorTypeAbs } from "../diagnostics/may-throw.ts";
+import { errorTypeAbs, recordMayThrow } from "../diagnostics/may-throw.ts";
 import { distributeSumBinOp, numericOpTail, strLitResult, synthEndpoint, isAnyLike, coercibleLit, isNumericLike, assumePremiseList } from "./shared.ts";
 import { builtinBrandToPrimitive, noteCoercionMayThrow, noteAbstractArithMayThrow, foldBigintBinOp } from "./coerce.ts";
+import { mayToStringThrowOperand } from "../builtins/shared.ts";
 import { numericBounds, isNonNaN } from "./bounds.ts";
 // Bug 367：引理消费记账（叶子模块，仅 type import ⇒ 无运行时依赖环）
 import { noteAssumeConsumed } from "../assume-ledger.ts";
+
+/**
+ * `+` 拼接臂的 ToString may-throw（BUG-037）：用引擎的 ToString 分档判据，
+ * 但保留既有 wave-1 口径——**顶层 unknown 令牌不记**（引擎债不放大成 L2
+ * 假报；与 isMaybeCoercionThrowOperand 同款豁免）。
+ */
+function toStringMayThrow(a: Abs): boolean {
+  return a.shape.k !== "unknown" && mayToStringThrowOperand(a);
+}
 
 export function add(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   // Bug 25：内建 brand 操作数先经 ToPrimitive 强转（引擎已知 total——原型
@@ -101,9 +111,13 @@ export function add(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   // 字符串拼接（含 template parts）—— JS + 优先走 string：
   // `1n + "s" === "1s"`（ToString），不得落进 bigint 混型硬抛。
   if (isStrPrim(a) || isStrPrim(b) || isTemplateLike(a) || isTemplateLike(b)) {
-    // Bug 8：拼接臂的抽象操作数可能为 Symbol（`"" + Symbol()` / `${Symbol()}`
-    // 原生 TypeError；`${1n}` 合法 ToString，bigint 不在此维度）。值域不变。
-    noteCoercionMayThrow(a, b, "ToString coercion of abstract operand (Symbol)");
+    // Bug 8 / BUG-037：拼接臂是 **ToString（string hint）** 面，必须用引擎
+    // 的 ToString 分档判据（普通闭对象继承 Object.prototype.toString ⇒ 原生
+    // 恒 total）。此前复用 ToNumber 判据 ⇒ `{a:1} + ""` 值面已算出精确
+    // "[object Object]"、抛出面仍记假 TypeError（同一引擎两面相反裁决）。
+    if (toStringMayThrow(a) || toStringMayThrow(b)) {
+      recordMayThrow({ kind: "TypeError", cause: "ToString coercion of abstract operand (Symbol)" });
+    }
     return concatString(a, b);
   }
   // boolean/null/undefined 字面量与数字混合：ToNumber 折叠（与 sub/mul/div/mod
@@ -130,6 +144,30 @@ export function add(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
       return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
     }
     return concatString(a, b);
+  }
+
+  // BUG-037：闭普通对象（无自有 toString / valueOf / @@toPrimitive）在 `+`
+  // 的 ToPrimitive(default) 下恒得 `"[object Object]"`（string）⇒ 与原始
+  // 类型 / 另一个闭普通对象拼接恒为 string、原生不抛。此前该类操作数落
+  // 「数值/混合」臂（ToNumber 判据）⇒ 假记 TypeError 且值域停 number|string。
+  // 只对另一侧也是「ToPrimitive 结果已知为原始值」的形态折叠；抽象对象
+  // （可能带用户钩子）仍走下方保守臂。
+  if (isClosedObjectWithoutCoercer(a) || isClosedObjectWithoutCoercer(b)) {
+    const other = isClosedObjectWithoutCoercer(a) ? b : a;
+    const otherLit = litValue(other);
+    const otherPrimitive = otherLit.ok
+      ? otherLit.value === null ||
+        otherLit.value === undefined ||
+        (typeof otherLit.value !== "object" &&
+          typeof otherLit.value !== "function" &&
+          typeof otherLit.value !== "symbol")
+      : other.shape.k === "prim" && other.shape.type !== "symbol";
+    if (otherPrimitive || isClosedObjectWithoutCoercer(other)) {
+      if (toStringMayThrow(a) || toStringMayThrow(b)) {
+        recordMayThrow({ kind: "TypeError", cause: "ToString coercion of abstract operand (Symbol)" });
+      }
+      return concatString(a, b);
+    }
   }
 
   const big = foldBigintBinOp(a, b, (x, y) => x + y);

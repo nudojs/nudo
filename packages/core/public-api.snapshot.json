@@ -1455,6 +1455,8 @@
       "endDerivationSession",
       "enterCall",
       "enterEvalCallBudgetSession",
+      "entryThisReceiverOf",
+      "entryThisReceiverTypeTextOf",
       "errorTypeAbs",
       "escapeTemplateTypeFixed",
       "exceedsBudget",

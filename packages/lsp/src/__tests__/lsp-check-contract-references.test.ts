@@ -1359,8 +1359,47 @@ greet({ id: 2 });
   }
 });
 
+});
 
+// ---------------------------------------------------------------------------
+// BUG-060：类方法的平铺侧车键 `K_run` 也必须有 relax quickfix
+// ---------------------------------------------------------------------------
+describe("类方法平铺侧车键的 relax quickfix（BUG-060）", () => {
+  const CLASS_JS = `export class K { run(n) { return 5; } }\n`;
+  const CLASS_SC = `import { fn, number } from "@nudojs/core";
 
+export const K_run = fn({ n: number() }, number().gt(40));
+`;
 
+  it("K.run 的返回槽违例 ⇒ 下发 Relax sidecar contract for K.run，编辑落在 K_run 声明", () => {
+    withTempDir("nudo-bug060-", (dir) => {
+      const jsPath = join(dir, "class.js");
+      writeFileSync(jsPath, CLASS_JS, "utf-8");
+      writeFileSync(join(dir, "class.nudo.js"), CLASS_SC, "utf-8");
+      const uri = `file://${jsPath}`;
 
+      const target = checkToLspDiagnostics(jsPath, CLASS_JS, defaultLoadModule).filter(
+        (d) => {
+          const msg = typeof d.message === "string" ? d.message : d.message.value;
+          return /return value ⊭|number\(\)\.gt\(40\)/.test(msg);
+        },
+      );
+      expect(target).toHaveLength(1);
+
+      const handler = mountCodeActions(uri, CLASS_JS);
+      const actions = handler(codeActionParams(uri, target[0]!.range.start.line, [target[0]!]));
+      const relax = actions.filter((a) => /Relax sidecar contract/i.test(a.title));
+      expect(relax).toHaveLength(1);
+      expect(relax[0]!.title).toBe("Relax sidecar contract for K.run");
+
+      const edits = sidecarEdits(relax, uri);
+      expect(edits).toHaveLength(1);
+      expect(edits[0]!.newText).toContain(
+        "export const K_run = fn({ n: number() }, number())",
+      );
+      expect(edits[0]!.newText).not.toContain("number().gt(40)");
+      // 落盘后的侧车 = 编辑集本身（不是空转的 diff）
+      expect(applyEdits(CLASS_SC, edits)).toBe(edits[0]!.newText);
+    });
+  });
 });

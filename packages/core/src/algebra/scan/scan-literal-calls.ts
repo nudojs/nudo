@@ -718,7 +718,11 @@ export function scanLiteralCalls(
         hasInfo = absArgs.some(isInformativeArg);
       }
     }
-    if (!hasInfo || absArgs.length === 0) return;
+    // BUG-053：调用点验证面（元数）必须排在「实参无信息」早退**之前** ——
+    // 同文件通道（`checkOneCall`）已按这个顺序修过，跨文件这条没跟上：
+    // `one()` 这类零实参调用 `absArgs.length === 0` ⇒ 旧实现在到达
+    // `checkCallSite` 之前就 return ⇒ `nudo:arg-count` **永不产生**（只有
+    // 带默认值补齐的 `opt()` 因 `absArgs` 被填到形参数而侥幸过闸）。
     let full: Array<
       [number, RefineEntry, string[] | undefined, boolean | undefined, number | undefined]
     > = [];
@@ -767,6 +771,8 @@ export function scanLiteralCalls(
       });
       return;
     }
+    // BUG-053：实参个数与实参信息量无关 ⇒ 元数检查已在上面跑过，这里才早退
+    if (!hasInfo || absArgs.length === 0) return;
     // Bug 1105：展开处停止（rest / length 边界不把展开槽位算进已知长度）
     const contractArgsExt =
       parsedExt.spreadAt !== undefined ? absArgs.slice(0, parsedExt.spreadAt) : absArgs;
@@ -923,6 +929,60 @@ export function scanLiteralCalls(
    * 作用域链（Bug 1106 / 1107）：进入**开作用域**的节点时把子作用域 id 前插
    * 到链首（与收集侧 `walkStatements` 同一套 id 算法 ⇒ 两端口径一致）。
    */
+/**
+ * `Function.prototype.call / apply` 的**间接调用**形态（BUG-045）。
+ *
+ * `f.call(null, -1)` / `f.apply(null, [-1])` 真正执行的是 `f`，成员名只是
+ * 转发器；旧口径把整个 callee 当 `接收者.属性` 查表 ⇒ `f.call` 未命中 ⇒
+ * 调用点契约零执法（`check` 假绿、`nudo test` 连见证都不记）。
+ *
+ * 只认静态形态：`.call` 去掉第一个 thisArg；`.apply` 取第二个实参的
+ * **数组字面量**元素（非字面量 ⇒ 不猜 arity，返回 undefined）。
+ */
+function indirectCallOf(
+  call: Record<string, unknown>,
+): { target: Record<string, unknown>; args: Array<Record<string, unknown>> } | undefined {
+  const callee = call.callee as Record<string, unknown> | undefined;
+  if (
+    !callee ||
+    (callee.type !== "MemberExpression" && callee.type !== "OptionalMemberExpression")
+  ) {
+    return undefined;
+  }
+  const target = callee.object as Record<string, unknown> | undefined;
+  if (!target) return undefined;
+  const prop = callee.property as Record<string, unknown> | undefined;
+  const name =
+    !callee.computed && prop?.type === "Identifier"
+      ? prop.name
+      : callee.computed === true && prop?.type === "StringLiteral"
+        ? prop.value
+        : undefined;
+  if (name !== "call" && name !== "apply") return undefined;
+  const args = (call.arguments as Array<Record<string, unknown>>) ?? [];
+  if (name === "call") {
+    // `f.call(...xs)`：thisArg 槽本身是**展开** ⇒ 后面的实参位置与个数都不
+    // 可判（`args.slice(1)` 会把唯一的展开元素丢掉 ⇒ 按 0 实参重新执法 =
+    // 假红）⇒ 整条间接调用让位（fail-closed：不猜元数）。
+    const first = args[0];
+    if (first && (first.type === "SpreadElement" || first.type === "SpreadProperty")) {
+      return undefined;
+    }
+    return { target, args: args.slice(1) };
+  }
+  const list = args[1] as Record<string, unknown> | undefined;
+  if (!list || list.type !== "ArrayExpression") return undefined;
+  return {
+    target,
+    // 数组空洞（`f.apply(null, [1,,3])`）在原生里是**显式 undefined 实参**
+    // ⇒ 保留槽位（个数与运行时一致）。旧实现把空洞过滤掉 ⇒ 3 个实参按 2 个
+    // 执法 ⇒ 本该报「第 2 位违反契约」的调用点反而报元数 / 静默。
+    args: ((list.elements as Array<Record<string, unknown> | null> | undefined) ?? []).map(
+      (e) => e ?? { type: "Identifier", name: "undefined" },
+    ),
+  };
+}
+
   const visit = (n: unknown, chain: ScopeChain = [""]): void => {
     if (!n || typeof n !== "object") return;
     const obj = n as Record<string, unknown> & {
@@ -932,7 +992,13 @@ export function scanLiteralCalls(
     // BUG-032：可选链调用在原生里与同名非可选调用完全等价（f?.() / c?.m() /
     // c.m?.() 都真正执行），AST 层是 OptionalCallExpression ⇒ 必须与
     // CallExpression 共用同一条调用点义务路径。
-    if (obj.type === "CallExpression" || obj.type === "OptionalCallExpression") {
+    if (
+      obj.type === "CallExpression" ||
+      obj.type === "OptionalCallExpression" ||
+      // BUG-077：`new F(args)` 同样是调用点——构造式调用与直接调用在原生里
+      // 走同一份形参/前置契约义务（旧实现只认 Call 族 ⇒ 换个 `new` 就全绿）。
+      obj.type === "NewExpression"
+    ) {
       const callee = obj.callee as Record<string, unknown>;
       const args = (obj.arguments as Array<Record<string, unknown>>) ?? [];
       const resolved = resolveCalleeFn(callee, resolve, knownSet, chain);
@@ -941,6 +1007,24 @@ export function scanLiteralCalls(
       } else if (resolved?.external) {
         const name = resolved.external.fnName || "require()";
         checkExternalCall(resolved.external, args, name, obj.loc, chain);
+      }
+      // BUG-045：`f.call(null, -1)` / `f.apply(null, [-1])` 的**真实**被调者是
+      // 接收者 `f`（实参去掉 thisArg / 展开字面量数组）⇒ 与直接调用共用同一
+      // 条调用点义务 + 见证路径（原来的成员分支解析不到 `f.call` ⇒ 全绿）。
+      const indirect = indirectCallOf(obj as Record<string, unknown>);
+      if (indirect) {
+        const real = resolveCalleeFn(indirect.target, resolve, knownSet, chain);
+        if (typeof real === "string") {
+          checkOneCall(real, indirect.args, obj.loc, chain);
+        } else if (real?.external) {
+          checkExternalCall(
+            real.external,
+            indirect.args,
+            real.external.fnName || "require()",
+            obj.loc,
+            chain,
+          );
+        }
       }
     }
     // BUG-003：局部绑定表的**声明面**。此前只登记 `const` + 纯标识符声明符，

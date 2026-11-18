@@ -37,6 +37,7 @@ import {
   RUNTIME_GLOBAL_CTOR_NAME_LIST,
   safeExportIdent,
   type SchemaNode,
+  type SchemaProjectionScope,
   type SchemaRefinement,
 } from "./schema-generator.ts";
 import { generatorTagFromValue } from "./generator-identity.ts";
@@ -875,8 +876,9 @@ export function absToStandardSchemaModule(
  */
 export function absToStandardSchemaFunction(
   spec: StandardSchemaFunctionSpec,
-  opts?: { banner?: string },
+  opts?: { banner?: string; scope?: SchemaProjectionScope },
 ): StandardSchemaModuleProjection {
+  const nodeOpts = opts?.scope ? { scope: opts.scope } : undefined;
   const dropped: string[] = [];
   const bodies: string[] = [];
   const used = new Set<string>();
@@ -885,7 +887,7 @@ export function absToStandardSchemaFunction(
   // 整参：`<fn>_<param>`（字段级条目跳过——见上方不变量）
   for (const e of entries) {
     if (e.kind !== "param") continue;
-    const { node, dropped: d } = absToSchemaNode(e.abs);
+    const { node, dropped: d } = absToSchemaNode(e.abs, nodeOpts);
     const notes = d.map((n) => `${spec.fn}_${e.name}: ${n}`);
     dropped.push(...notes);
     bodies.push(
@@ -907,7 +909,7 @@ export function absToStandardSchemaFunction(
   if (spec.inputs !== undefined) {
     const slots: Array<{ key: string; node: SchemaNode; optional?: boolean }> = [];
     for (const e of entries) {
-      const { node, dropped: d } = absToSchemaNode(e.abs);
+      const { node, dropped: d } = absToSchemaNode(e.abs, nodeOpts);
       dropped.push(...d.map((n) => `${spec.fn}Input: ${e.name}: ${n}`));
       slots.push(
         e.optional === true ? { key: e.name, node, optional: true } : { key: e.name, node },
@@ -919,12 +921,12 @@ export function absToStandardSchemaFunction(
   // 返回面：**恒名** `<fn>Output`（Bug 614：名字与来源解耦）；内容：契约返回
   // 优先，否则观测返回。
   if (spec.returns) {
-    const { node, dropped: d } = absToSchemaNode(spec.returns);
+    const { node, dropped: d } = absToSchemaNode(spec.returns, nodeOpts);
     const notes = d.map((n) => `${spec.fn}Output: ${n}`);
     dropped.push(...notes);
     bodies.push(makeStandardSchemaSource(`${spec.fn}Output`, node, notes, used));
   } else if (spec.output) {
-    const { node, dropped: d } = absToSchemaNode(spec.output);
+    const { node, dropped: d } = absToSchemaNode(spec.output, nodeOpts);
     const notes = d.map((n) => `${spec.fn}Output: ${n}`);
     dropped.push(...notes);
     bodies.push(makeStandardSchemaSource(`${spec.fn}Output`, node, notes, used));

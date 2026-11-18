@@ -479,7 +479,28 @@ function reportOrphanSidecarExports(
   const srcExports = [...localNamedExports(source)];
   for (const name of orphans) {
     const v = Object.hasOwn(exps, name) ? exps[name] : undefined;
-    if (!isNudoConstraint(v) || !v.fn) continue;
+    // BUG-059：对象袋（`export const X = { K: { run: fn(…) } }`）既不是约束
+    // 也不被任何源码函数认领 ⇒ 旧实现直接 continue ⇒ 契约静默零义务。凡
+    // **含** Nudo 约束的孤儿袋都必须报（深度 2：袋 / 多一层包装）。
+    const nestedConstraint = (x: unknown, depth: number): boolean => {
+      if (depth <= 0 || typeof x !== "object" || x === null || Array.isArray(x)) return false;
+      return Object.keys(x).some((k) => {
+        const v = (x as Record<string, unknown>)[k];
+        return isNudoConstraint(v) || nestedConstraint(v, depth - 1);
+      });
+    };
+    if (!isNudoConstraint(v) || !v.fn) {
+      // 非 fn 的 **Nudo 约束**（`export const findings = array(...)`）是契约库
+      // 的正常条目，不是「袋」——只有普通对象才进入嵌套扫描。
+      if (!isNudoConstraint(v) && nestedConstraint(v, 2)) {
+        collectDiag({
+          code: DIAG.contractLoad,
+          message: `sidecar '${spec}' export '${name}' holds nested constraints that no source function claims — export each binding as 'Class_method' / 'Class.method', or use a bag named after the class: export const Class = { method: fn(…) }`,
+          file: sidecarPath,
+        });
+      }
+      continue;
+    }
     // 「像是打错一字」才是事故（契约被静默丢弃）；其余是契约库的正常条目。
     const hint = srcExports.find((s) => looksLikeTypo(name, s));
     if (hint === undefined) continue;
@@ -489,6 +510,94 @@ function reportOrphanSidecarExports(
       file: sidecarPath,
     });
   }
+}
+
+/**
+ * 侧车里的**嵌套约束袋**：`export const K = { run: fn(…), stop: fn(…) }`。
+ *
+ * BUG-058：袋的顶层名必然与**类名同名**，所以类条目（`fnName === "K"`）的同名
+ * 直查会拿到袋本身。判据是「至少一个自有成员是 Nudo 约束」——只有标量 / 空
+ * 对象 / 普通数据对象才继续按「非约束导出」报错（真写错的契约不得被吞）。
+ */
+function isNestedConstraintBag(v: unknown): boolean {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return false;
+  try {
+    return Object.keys(v).some((k) => isNudoConstraint((v as Record<string, unknown>)[k]));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 源码条目是否是**类**（嵌套袋抑制的唯一前提）。
+ *
+ * BUG-058 的袋形态是「类名 == 袋名」（`export const K = { run: fn(…) }` 对应
+ * 源码里的 `class K`）⇒ 类条目的同名直查拿到袋对象是**预期**的，可静默跳过。
+ * 普通函数 / 默认导出 / 标量条目的同名袋不是类形态 ⇒ 契约会被静默丢弃，
+ * 必须照旧报 `not a Nudo constraint`。
+ */
+function sourceEntryIsClass(source: string, fnName: string): boolean {
+  let ast: ReturnType<typeof parseSource>;
+  try {
+    ast = parseSource(source, { errorRecovery: true });
+  } catch {
+    return false;
+  }
+  const classNames = new Set<string>();
+  const aliasExport = new Map<string, string>();
+  let hasDefaultClass = false;
+  type DeclLike = {
+    type?: string;
+    id?: { name?: string } | null;
+    declarations?: Array<{ id?: { type?: string; name?: string }; init?: { type?: string } | null }>;
+  };
+  const collect = (decl: unknown, isDefault: boolean): void => {
+    const d = decl as DeclLike | null | undefined;
+    if (!d) return;
+    if (d.type === "ClassDeclaration" || d.type === "ClassExpression") {
+      if (d.id?.name) classNames.add(d.id.name);
+      else if (isDefault) hasDefaultClass = true;
+      return;
+    }
+    if (d.type !== "VariableDeclaration") return;
+    for (const v of d.declarations ?? []) {
+      if (v.id?.type === "Identifier" && v.id.name && v.init?.type === "ClassExpression") {
+        classNames.add(v.id.name);
+      }
+    }
+  };
+  for (const stmt of ast.program.body) {
+    const s = stmt as {
+      type?: string;
+      declaration?: unknown;
+      specifiers?: Array<{
+        type?: string;
+        local?: { name?: string };
+        exported?: { name?: string; value?: string };
+      }>;
+    };
+    if (s.type === "ExportDefaultDeclaration") {
+      collect(s.declaration, true);
+      continue;
+    }
+    if (s.type === "ExportNamedDeclaration") {
+      collect(s.declaration, false);
+      for (const spec of s.specifiers ?? []) {
+        if (spec.type !== "ExportSpecifier" || spec.local?.name === undefined) continue;
+        const exported = spec.exported?.name ?? spec.exported?.value;
+        if (exported !== undefined) aliasExport.set(spec.local.name, exported);
+      }
+      continue;
+    }
+    collect(stmt, false);
+  }
+  if (fnName === "default" && hasDefaultClass) return true;
+  if (classNames.has(fnName)) return true;
+  // 别名导出：`class Internal {}; export { Internal as K }`
+  for (const name of classNames) {
+    if (aliasExport.get(name) === fnName) return true;
+  }
+  return false;
 }
 
 function loadSidecarBinding(
@@ -571,6 +680,26 @@ function loadSidecarBinding(
   // 2. 嵌套对象 `export const Class = { method: fn(…) }`
   // 3. C4.4：`export { local as default }` + 侧车 `export default`
   let binding: unknown = Object.hasOwn(exports, fnName) ? exports[fnName] : undefined;
+  // BUG-058：**嵌套袋形态**（`export const K = { run: fn(…) }`）的袋名必然与类名
+  // 同名 ⇒ 类条目 `K` 在这一步拿到的是袋对象（不是 Nudo 约束）⇒ 旧实现在
+  // `isNudoConstraint` 闸门处报 `export 'K' is not a Nudo constraint`（假红），
+  // 而 `K.run` 早已从这个袋里取到约束、契约**确实生效**（`nudo export` 也被
+  // 同一条诊断阻断 ⇒ 零产物）。
+  //
+  // 判据：值里**至少有一个自有成员是 Nudo 约束** ⇒ 这是一个袋（类级容器），不是
+  // 「错放在这里的非约束导出」 ⇒ 不作为同名直查命中（交给下面的嵌套袋分支按
+  // `Class.method` 取；类条目本身没有契约，静默 ok:false）。
+  // 袋必须按**类名**命名：源码条目不是类（普通函数 / 默认导出函数 / 标量）时
+  // 同名袋不是类容器 ⇒ 不得静默丢弃契约诊断（照旧报 `not a Nudo constraint`）。
+  // 空对象 / 标量等仍走原路径报错（真写错的导出不得被吞）。
+  if (
+    binding !== undefined &&
+    !isNudoConstraint(binding) &&
+    isNestedConstraintBag(binding) &&
+    sourceEntryIsClass(source, fnName)
+  ) {
+    binding = undefined;
+  }
   // 绑定键解析成功时的键（paramTexts 查询用，与 binding 解析同序）
   let bindingKey: string | undefined;
   // 侧车里**真实持有**该绑定的导出名（诊断点名用；Bug 359：别名 / default /
@@ -621,7 +750,7 @@ function loadSidecarBinding(
     ) {
       collectDiag({
         code: DIAG.contractLoad,
-        message: `sidecar key '${method}' does not bind '${fnName}' — use '${cls}.${method}', '${cls}_${method}', or nested { ${cls}: { ${method}: … } }`,
+        message: `sidecar key '${method}' does not bind '${fnName}' — use '${cls}.${method}', '${cls}_${method}', or a class-named bag: export const ${cls} = { ${method}: … }`,
         file: sidecarPath,
       });
     }

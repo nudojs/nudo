@@ -1958,9 +1958,15 @@ const acctSrc = `export class Account {
   it("构造器做算术 ⇒ 方法入口不再报 nudo:entry-may-throw（改前：error 级 1 条）；构造器做比较 / 字符串拼接 / 成员调用 ⇒ 同上（都只算构造器的账）；构造器显式 throw ⇒ 也不归因给方法（那是 `new C()` 入口的事）；方法体**自己**会抛 ⇒ 仍要报（闸门不整体关掉）；方法体读构造器写入的字段（any）⇒ 成员调用仍报（构造器仍要跑）；静态方法口径不变（静态桥不跑构造器 ⇒ 它自己的算术照报）；单元层：实例方法的 throws ", () => {
   {
     const r = checkSource_____index_ts("acct.js", acctSrc, pTrue_____index_ts, stdOpts);
+    // 归因面：构造器的算术**不**归因给方法入口（本用例的正面口径）
     expect(l2Count(r, "Account.describe")).toBe(0);
-    expect(r.issues.filter((i) => i.severity === "error")).toHaveLength(0);
     expect(sigOf(r, "Account.describe")).not.toContain("throws");
+    // BUG-107：但它**是** `new Account(...)` 这个类入口的事实（同文件
+    // `export function f(x){return x+1}` 本来就被报）⇒ 全文件不再零 error，
+    // 且唯一那条的归因落点是类名而不是方法名。
+    const errs = r.issues.filter((i) => i.severity === "error");
+    expect(errs).toHaveLength(1);
+    expect(errs[0]!.fn).toBe("Account");
   }
   {
     const variants = [

@@ -103,8 +103,7 @@ describe("抽象字符串 for-of / yield* 循环变量 = string", () => {
 
   it("yield* s：generator 元素域 string", () => {
     const r = callWith(`export function* g(s) { yield* s; }`, [strAbs], "g");
-    expect(r.value).toContain('"0": string');
-    expect(r.value).not.toContain("unknown");
+    expect(r.value).toBe("Generator<string, undefined, unknown>");
   });
 
   it("spread 调用实参：f(...s) 元素 string（经 $elems 同口径）", () => {

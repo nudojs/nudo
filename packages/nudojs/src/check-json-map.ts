@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import {
   checkSource,
   formatCheckReport,
+  localNamedExports,
   pTrue,
   serializeCheckJson,
   type CheckIssue,
@@ -205,6 +206,15 @@ export type FromCallsiteFile = {
 export type StaticFromDomainOptions = {
   /** 被调方（被检查文件）绝对路径 */
   targetPath: string;
+  /**
+   * 被调方源码（默认导出的**声明名**要靠它解析）。
+   *
+   * BUG-068：core 的 `nudo:constraint-violated` 报的是**解析后的被调名**
+   * （`import d from …` 调用 `d(-1)` ⇒ `fn` 是目标模块里那个函数的声明名，
+   * **不是**本地名 `d`）⇒ 默认导入的现场文件必须知道目标侧的声明名才能把
+   * 证据归到被调方。缺席时该形态不归因（不猜）。
+   */
+  targetSource?: string;
   /** `--from` 现场文件（调用点文件） */
   callsites: readonly FromCallsiteFile[];
   /** import 说明符解析（相对现场文件）⇒ 解析到被调方的 import 即证据来源 */
@@ -223,49 +233,245 @@ function sameModulePath(a: string, b: string): boolean {
 }
 
 /**
- * 现场文件里指向被调方的 import 绑定：本地名 → 被调方导出名
- * （命名空间导入记为 `"*"` ⇒ 成员访问 `ns.f` 归到导出 `f`）。
+ * 现场文件**指向被调方**的导入面（按**目标导出名**建，不按本地名）。
+ *
+ * BUG-068：core 的 `nudo:constraint-violated` 里 `issue.fn` 是**解析后的
+ * 被调名**，不是现场文件里的本地名 ——
+ *
+ * | 现场写法 | core 报的 `fn` | 本地名 |
+ * |---|---|---|
+ * | `import { setDelay }` | `setDelay` | `setDelay` |
+ * | `import { setDelay as sd }` | `setDelay` | `sd` |
+ * | `import * as space` + `space.setDelay(…)` | `setDelay` | （成员名） |
+ * | `import d from …` + `d(…)`（`export default function setDelay`） | `setDelay` | `d` |
+ *
+ * 旧实现建的是「本地名 → 导入名」表 ⇒ 只有第一行因键值巧合命中；别名 /
+ * 命名空间 / 默认导入三种形态**一律零命中**，而默认导入更糟：`ImportDefaultSpecifier`
+ * 根本不入表 ⇒ `bindings.size === 0` ⇒ 整份现场文件被跳过（连带丢掉同文件
+ * 其它调用的证据）。
+ *
+ * 现在改按**目标导出名**判定「这个被调名是不是从被调方导进来的」：
+ * - 命名导入 → `imported`（别名无关，`sd` 也记 `setDelay`）；
+ * - `import { default as g }` → 按默认导入处理；
+ * - 命名空间导入 → 任意名字都可能（`namespace` 开闸）；
+ * - 默认导入 → 目标模块里该默认导出的**声明名**（`targetSource` 解析）。
  */
-function targetImportBindings(
-  site: FromCallsiteFile,
+type TargetImportFace = {
+  /** 命名导入的目标导出名（别名无关） */
+  imported: Set<string>;
+  /** 是否有命名空间导入（任意成员名都可能） */
+  namespace: boolean;
+  /** 是否有默认导入 */
+  hasDefault: boolean;
+};
+
+/** 目标模块默认导出的**声明名**（`export default function f` ⇒ "f"）。 */
+function defaultExportLocalName(source: string | undefined): string | undefined {
+  if (!source) return undefined;
+  let ast: ReturnType<typeof parse>;
+  try {
+    ast = parse(source);
+  } catch {
+    return undefined;
+  }
+  for (const stmt of programBody(ast)) {
+    if (stmt.type === "ExportDefaultDeclaration") {
+      const decl = stmt.declaration;
+      if (
+        (decl.type === "FunctionDeclaration" ||
+          decl.type === "ClassDeclaration" ||
+          decl.type === "FunctionExpression" ||
+          decl.type === "ClassExpression") &&
+        decl.id
+      ) {
+        return decl.id.name;
+      }
+      if (decl.type === "Identifier") return decl.name;
+    }
+    // `export { f as default }`：默认导出的值就是本地绑定 f
+    if (stmt.type === "ExportNamedDeclaration" && !stmt.source) {
+      for (const spec of stmt.specifiers ?? []) {
+        if (spec.type !== "ExportSpecifier") continue;
+        const exported = spec.exported.type === "Identifier" ? spec.exported.name : String(spec.exported.value);
+        if (exported !== "default") continue;
+        const local = spec.local.type === "Identifier" ? spec.local.name : undefined;
+        if (local) return local;
+      }
+    }
+  }
+  return undefined;
+}
+
+/** 导入 / 导出说明符的名字（Identifier 或字符串字面量名） */
+function specifierName(n: { type: string; name?: string; value?: unknown } | undefined): string | undefined {
+  if (!n) return undefined;
+  if (n.type === "Identifier") return n.name;
+  return n.value === undefined ? undefined : String(n.value);
+}
+
+/** 合并两张导入面 */
+function mergeFace(into: TargetImportFace, from: TargetImportFace): void {
+  for (const n of from.imported) into.imported.add(n);
+  into.namespace ||= from.namespace;
+  into.hasDefault ||= from.hasDefault;
+}
+
+/**
+ * BUG-078：沿 **re-export barrel** 追一条 import 边到被调方。
+ *
+ * 现场文件 `import { make } from "./barrel.js"`，`barrel.js` 里
+ * `export { make } from "./lib.js"` ⇒ 这条边**最终**指向被调方。旧口径只认
+ * 「import 直接解析到 lib.js」，barrel 的现场文件零绑定 ⇒ 整份证据被丢弃
+ * （`check lib.js --from throughBarrel.js` 恒绿）。
+ *
+ * 按**导出名**逐跳翻译（别名 re-export `export { make as build }` 也算），
+ * 支持 `export * from` 与 `export { default as … } from`；模块源由
+ * `opts.loadModule` 读取，`seen` 防环。解析不到的边不加面（fail-closed）。
+ */
+function reexportFace(
+  specifier: string,
+  fromFile: string,
+  wanted: ReadonlySet<string>,
+  wildcard: boolean,
+  seen: Set<string>,
   opts: StaticFromDomainOptions,
-): Map<string, string> {
-  const bindings = new Map<string, string>();
-  if (!opts.resolveModule) return bindings;
+): TargetImportFace {
+  const out: TargetImportFace = { imported: new Set(), namespace: false, hasDefault: false };
+  const resolved = opts.resolveModule?.(specifier, fromFile);
+  if (!resolved) return out;
+  if (sameModulePath(resolved, opts.targetPath)) {
+    for (const n of wanted) {
+      if (n === "default") out.hasDefault = true;
+      else out.imported.add(n);
+    }
+    // `import * as ns` ⇒ 被调方任意导出名都可能被访问
+    if (wildcard) out.namespace = true;
+    return out;
+  }
+  const key = resolve(resolved);
+  if (seen.has(key)) return out;
+  seen.add(key);
+  let src: string | undefined;
+  try {
+    src = opts.loadModule?.(specifier, fromFile);
+  } catch {
+    return out;
+  }
+  if (!src) return out;
+  let ast: ReturnType<typeof parse>;
+  try {
+    ast = parse(src);
+  } catch {
+    return out;
+  }
+  for (const stmt of programBody(ast)) {
+    // `export * from "./lib.js"`：现场要的名字原样往下传
+    if (stmt.type === "ExportAllDeclaration" && stmt.source) {
+      mergeFace(out, reexportFace(stmt.source.value, resolved, wanted, wildcard, seen, opts));
+      continue;
+    }
+    if (stmt.type !== "ExportNamedDeclaration" || !stmt.source) continue;
+    const next = new Set<string>();
+    for (const spec of stmt.specifiers ?? []) {
+      if (spec.type !== "ExportSpecifier") continue;
+      const exported = specifierName(spec.exported);
+      const imported = specifierName(spec.local);
+      if (!exported || !imported) continue;
+      if (wildcard || wanted.has(exported)) next.add(imported);
+    }
+    if (next.size > 0) {
+      mergeFace(out, reexportFace(stmt.source.value, resolved, next, false, seen, opts));
+    }
+  }
+  return out;
+}
+
+/** 现场文件 → 它从被调方导入了什么（按目标导出名建面）。 */
+function targetImportFace(site: FromCallsiteFile, opts: StaticFromDomainOptions): TargetImportFace {
+  const face: TargetImportFace = { imported: new Set(), namespace: false, hasDefault: false };
+  if (!opts.resolveModule) return face;
   let ast: ReturnType<typeof parse>;
   try {
     ast = parse(site.source);
   } catch {
-    return bindings; // 解析失败 ⇒ 无证据（不猜）
+    return face; // 解析失败 ⇒ 无证据（不猜）
   }
   for (const stmt of programBody(ast)) {
     if (stmt.type !== "ImportDeclaration") continue;
-    const resolved = opts.resolveModule(stmt.source.value, site.path);
-    if (!resolved || !sameModulePath(resolved, opts.targetPath)) continue;
+    const wanted = new Set<string>();
+    let wildcard = false;
     for (const spec of stmt.specifiers) {
       if (spec.type === "ImportSpecifier") {
-        const imported =
-          spec.imported.type === "Identifier"
-            ? spec.imported.name
-            : String(spec.imported.value);
-        bindings.set(spec.local.name, imported);
+        const imported = specifierName(spec.imported);
+        if (imported) wanted.add(imported);
       } else if (spec.type === "ImportNamespaceSpecifier") {
-        bindings.set(spec.local.name, "*");
+        wildcard = true;
+      } else if (spec.type === "ImportDefaultSpecifier") {
+        wanted.add("default");
       }
     }
+    const resolved = opts.resolveModule(stmt.source.value, site.path);
+    if (resolved && sameModulePath(resolved, opts.targetPath)) {
+      for (const name of wanted) {
+        if (name === "default") face.hasDefault = true;
+        else face.imported.add(name);
+      }
+      if (wildcard) face.namespace = true;
+      continue;
+    }
+    // 不是直接 import ⇒ 沿 barrel 的再导出链继续追（BUG-078）
+    mergeFace(face, outFromReexport(stmt.source.value, site.path, wanted, wildcard, opts));
   }
-  return bindings;
+  return face;
 }
 
-/** 现场文件里的本地名 → 被调方导出名（命名空间成员 `ns.f` → `f`）。 */
-function resolveExportName(local: string, bindings: Map<string, string>): string | undefined {
-  const direct = bindings.get(local);
-  if (direct !== undefined && direct !== "*") return direct;
-  const dot = local.lastIndexOf(".");
-  if (dot > 0) {
-    const obj = local.slice(0, dot);
-    const prop = local.slice(dot + 1);
-    if (bindings.get(obj) === "*") return prop;
+/** 现场 import 边的 re-export 链（每次调用独立 visited 集合） */
+function outFromReexport(
+  specifier: string,
+  fromFile: string,
+  wanted: ReadonlySet<string>,
+  wildcard: boolean,
+  opts: StaticFromDomainOptions,
+): TargetImportFace {
+  if (wanted.size === 0 && !wildcard) {
+    return { imported: new Set(), namespace: false, hasDefault: false };
+  }
+  return reexportFace(specifier, fromFile, wanted, wildcard, new Set(), opts);
+}
+
+/** 导出面是否为空（空 ⇒ 现场文件与被调方没有导入边，不必跑 checkSource）。 */
+function faceIsEmpty(face: TargetImportFace): boolean {
+  return face.imported.size === 0 && !face.namespace && !face.hasDefault;
+}
+
+/**
+ * 把 core 报的**被调名**翻译成被调方的导出名（不是被调方 ⇒ undefined）。
+ *
+ * 判据全部按**导出名**（见 `TargetImportFace`）：core 已经解析过别名 /
+ * 命名空间成员 / 默认导入，这里只回答「该名字是否经导入边来自被调方」。
+ */
+function resolveExportName(
+  callee: string,
+  face: TargetImportFace,
+  opts: StaticFromDomainOptions,
+): string | undefined {
+  if (face.imported.has(callee)) return callee;
+  // 命名空间导入：`space.<name>(…)` 解析后的名字就是导出名。但命名空间只开
+  // 「**可能**经目标导出」的闸，不是「任意被调名都是目标的导出」——现场文件
+  // 还会 import 别的模块，core 对**那些**调用报的违例也会进同一份 report
+  // （旧口径一律归因 ⇒ 被调方根本不导出这个名字 ⇒ 假门禁）。判据落在被调方
+  // 的**导出表**上（targetSource 恒由 runCheck 供给；缺席 ⇒ 不猜，与默认导入
+  // 同口径）。同名本地函数撞名（core 的 `fn` 不带接收者）也因此只能按导出名
+  // 判——宁可少报一条证据，也不把别人的调用算到被调方头上。
+  if (face.namespace) {
+    if (opts.targetSource !== undefined && localNamedExports(opts.targetSource).has(callee)) {
+      return callee;
+    }
+  }
+  if (face.hasDefault) {
+    // 默认导入：core 报的是目标模块里的**声明名**
+    const declared = defaultExportLocalName(opts.targetSource);
+    if (declared !== undefined && callee === declared) return declared;
   }
   return undefined;
 }
@@ -297,8 +503,8 @@ function resolveExportName(local: string, bindings: Map<string, string>): string
 export function staticFromDomainIssues(opts: StaticFromDomainOptions): CheckIssue[] {
   const out: CheckIssue[] = [];
   for (const site of opts.callsites) {
-    const bindings = targetImportBindings(site, opts);
-    if (bindings.size === 0) continue;
+    const face = targetImportFace(site, opts);
+    if (faceIsEmpty(face)) continue;
     let report: CheckReport;
     try {
       report = checkSource(site.path, site.source, pTrue, {
@@ -314,7 +520,7 @@ export function staticFromDomainIssues(opts: StaticFromDomainOptions): CheckIssu
       if (issue.code !== DIAG.constraintViolated) continue;
       const local = issue.fn;
       if (!local) continue;
-      const exportName = resolveExportName(local, bindings);
+      const exportName = resolveExportName(local, face, opts);
       if (!exportName) continue;
       // core 的消息形状：`${被调名}[${参数位}]: argument ⊭ precondition`
       const key = callSiteKeyOf(issue.message);
@@ -340,6 +546,22 @@ export function staticFromDomainIssues(opts: StaticFromDomainOptions): CheckIssu
  * 执行态通道（分析器 `nudo:contract-domain-exceeds`）与静态通道（本模块的
  * `staticFromDomainIssues`）判的是**同一处事实**（被调方某参数位被调用实参
  * 超出）⇒ 同（被调名, 参数位）只报一条，执行态优先（既有 `--from` 面口径）。
+ *
+ * BUG-069：去重键**只有** `被调名[参数位]`，不看证据值 ⇒ 只要该参数位有一处
+ * **被执行**的违例占了键，同一参数位其它调用点 / 其它 `--from` 现场文件的
+ * 违例（不同 `actual`）全部被当重复项清掉 ⇒ 报告对 `--from` 集合**非单调**
+ * （加一个现场文件反而让证据变少，用户修完 `-81` 重跑才看到 `-82`）。
+ * 键里带上**证据值**：只有「同一参数位 + 同一违约值」才是同一条事实。
+ *
+ * 不同调用点 / 不同现场文件给出**同一个**违约值时仍合并成一条（值相同 ⇒ 修法
+ * 相同），与 Bug 643 的正面口径一致。
+ *
+ * BUG-069 续修：执行态通道对同一参数位只产**一条** issue，`actual` 是该位
+ * 所有违约值用 `", "` 连接后的**聚合串**（`make(-81); make(-82)` ⇒
+ * `-81, -82`）⇒ 拿整串当单个值去比，静态通道的两条（`-81` / `-82`）都不命中
+ * ⇒ 同一事实报三遍。执行态的 `actual` 按值拆开（字符串值是 JSON 引号形态，
+ * 引号内的 `, ` 不是分隔符），逐值进 seen；静态通道里**不在**执行态集合中的
+ * 值（如 `-83`）照常保留。
  */
 export function dedupeFromStaticIssues(
   staticIssues: readonly CheckIssue[],
@@ -349,13 +571,54 @@ export function dedupeFromStaticIssues(
   for (const e of executionIssues) {
     if (e.code !== DIAG.contractDomainExceeds) continue;
     const key = callSiteKeyOf(e.message);
-    if (key) seen.add(key.key);
+    if (!key) continue;
+    for (const value of splitEvidenceList(plainEvidence(e.actual))) {
+      seen.add(`${key.key}@${value}`);
+    }
   }
   if (seen.size === 0) return [...staticIssues];
   return staticIssues.filter((s) => {
     const key = callSiteKeyOf(s.message);
-    return key === undefined || !seen.has(key.key);
+    return key === undefined || !seen.has(`${key.key}@${plainEvidence(s.actual)}`);
   });
+}
+
+/**
+ * 证据聚合串 → 逐值。执行态通道的 `actual` 形如 `-81, -82`，字符串值带
+ * JSON 引号（`"a, b", -1`）⇒ 只在**引号外**的 `", "` 处切分。
+ */
+function splitEvidenceList(actual: string): string[] {
+  const out: string[] = [];
+  let start = 0;
+  let i = 0;
+  while (i < actual.length) {
+    const c = actual[i]!;
+    if (c === '"') {
+      // JSON 字符串：跳过转义对（`\"` / `\\`）直到闭合引号
+      i++;
+      while (i < actual.length) {
+        if (actual[i] === "\\") {
+          i += 2;
+          continue;
+        }
+        if (actual[i] === '"') {
+          i++;
+          break;
+        }
+        i++;
+      }
+      continue;
+    }
+    if (c === "," && actual[i + 1] === " ") {
+      out.push(actual.slice(start, i));
+      i += 2;
+      start = i;
+      continue;
+    }
+    i++;
+  }
+  out.push(actual.slice(start));
+  return out.filter((v) => v !== "");
 }
 
 /** 消息里的「被调名[参数位]」键（两条 `--from` 通道共用同一形状） */

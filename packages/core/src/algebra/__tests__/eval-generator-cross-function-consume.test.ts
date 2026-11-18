@@ -35,7 +35,7 @@ describe("A1 步骤 3 · 生成器跨函数消费（R3-b 验收）", () => {
       n = 9;
       return it;
     }`);
-    expect(formatAbs(r.result)).toContain('"0": 9');
+    expect(formatAbs(r.result)).toContain("Generator<9, undefined, unknown>");
     // 求值收口排空后，随值搬运的完整 yield 序列仍在 facets 上（dts 同源）
     expect(r.result.facets?.genElements).toHaveLength(1);
   });
@@ -57,7 +57,7 @@ describe("A1 步骤 3 · 生成器跨函数消费（R3-b 验收）", () => {
       function* g() { yield 1; yield 2; }
       return g();
     }`);
-    expect(formatAbs(r.result)).toContain('"0": 1');
+    expect(formatAbs(r.result)).toContain('Generator<1 | 2, undefined, unknown>');
     expect(r.result.facets?.genElements).toHaveLength(2);
   });
 

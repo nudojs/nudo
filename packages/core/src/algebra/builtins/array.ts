@@ -29,7 +29,7 @@ import { isNullishLitAbs } from "../surface.ts";
 import { markFreshInstance } from "../key/instance-id.ts";
 import { recordMayThrow } from "../diagnostics/may-throw.ts";
 import { matchIterElements, replayGenDeferred, drainGenElements, genDrainViewOf, userIterLenOf } from "../exec/match-iter.ts";
-import { iterabilityKind, $elems } from "../exec/runtime/containers/iterate.ts";
+import { iterabilityKind, $elems, builtinExactIterableElems } from "../exec/runtime/containers/iterate.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs } from "../exec/may-throw.ts";
 import { and, ge, lt, pTrue, type Pred } from "../pred.ts";
@@ -261,6 +261,21 @@ function evalArrayFrom(args: Abs[]): Abs {
     }
   }
   const k = a0.shape.k;
+  // BUG-125：URLSearchParams 自身可迭代（@@iterator === entries）——条目表
+  // 已知时按迭代序精确发射（Array.from 的元素是 [name, value] 元组）。
+  // 此前 brand 落函数尾部 unknown。
+  {
+    const exactEls = builtinExactIterableElems(a0);
+    if (exactEls) {
+      const mapped = exactEls.map((el, i) => mapOne(el, numLit(i)));
+      return abs(
+        { k: "tuple", elements: mapped },
+        undefined,
+        undefined,
+        a0.conf === "exact" ? "exact" : "path",
+      );
+    }
+  }
   if (k === "arr") {
     // 抽象数组：单代表元素（索引未知）。arr shape 不携带长度面（元素域
     // 单代表，无 length 项可挂 lt）→ 下标只挂 ge(0)（迭代序号恒非负）。

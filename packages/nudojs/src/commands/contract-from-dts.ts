@@ -181,7 +181,49 @@ export async function runContractFromDts(
     label = basename(dtsFiles[0]).replace(/\.d\.ts$/, "");
   }
 
-  const draft = dtsToContractDraft(dtsFiles, label);
+  /**
+   * `.d.ts` 的**草稿接受目标** = 会真正绑定契约的那个侧车（BUG-038）。
+   *
+   * 侧车绑定是**按分析目标源模块**的（core `sidecarPathOf(fromFile)`）：声明
+   * 文件 `.d.ts` 本身不是分析目标（`nudo check api.d.ts` ⇒
+   * `Not an analysis target`）⇒ `api.d.ts` 的侧车 `api.nudo.ts` 绑不到任何
+   * 东西。真正绑定的是**运行时模块**旁边的侧车（`api.d.ts` + `api.js` ⇒
+   * `api.nudo.js`）。旧实现两处各错一边、同一条命令输出互相矛盾：
+   * - 草稿正文硬编码 `<target>.nudo.js`（`.ts` 源的实际侧车是 `.nudo.ts`）；
+   * - `next` 行用 `sidecarPathOf(anchor)`（`.d.ts` ⇒ `.nudo.ts`，永不绑定）。
+   *
+   * 判据：声明扩展名映射到它自己的运行时族（`.d.ts` → `.ts/.tsx/.js/.jsx`，
+   * `.d.mts` → `.mts/.mjs`，`.d.cts` → `.cts/.cjs`），取**存在**的第一个；
+   * 都不存在（纯声明包）⇒ 回落 `.d.ts` 相对名（此时无运行时可绑，提示点明）。
+   */
+  function acceptSidecarFor(inputPath: string): { sidecar: string; bound: boolean } {
+    const families: Record<string, readonly string[]> = {
+      ".d.ts": [".ts", ".tsx", ".js", ".jsx"],
+      ".d.mts": [".mts", ".mjs"],
+      ".d.cts": [".cts", ".cjs"],
+    };
+    const declExt = /\.d\.[mc]?ts$/.exec(inputPath)?.[0];
+    if (declExt === undefined) return { sidecar: sidecarPathOf(inputPath), bound: true };
+    const stem = inputPath.slice(0, inputPath.length - declExt.length);
+    for (const ext of families[declExt] ?? []) {
+      const runtime = `${stem}${ext}`;
+      if (existsSync(runtime)) return { sidecar: sidecarPathOf(runtime), bound: true };
+    }
+    return { sidecar: sidecarPathOf(inputPath), bound: false };
+  }
+
+  // 单文件模式才有**单一**接受目标；多文件合并草稿逐导出点名（见下）。草稿
+  // 正文的「copy it into …」只在单文件模式可写准。
+  const singleAccept = dtsFiles.length === 1 ? acceptSidecarFor(dtsFiles[0]!) : undefined;
+
+  // 草稿正文里的接受目标：单文件模式点名会绑定的那个侧车，多文件模式缺省
+  // （没有单一目标，正文只能保留 `<target>.nudo.js` 的占位说法）。
+  const draft = dtsToContractDraft(
+    dtsFiles,
+    label,
+    singleAccept ? { acceptTarget: basename(singleAccept.sidecar) } : undefined,
+  );
+
   if (droppedDirs > 0) {
     // 目录模式的遍历缺口计入汇总行（否则「0 skipped」是说谎）
     draft.stats.skipped += droppedDirs;
@@ -194,7 +236,10 @@ export async function runContractFromDts(
   const anchor = dtsFiles[0];
   const outPath = sidecarDraftPath(anchor);
   const outRel = relFromCwd(outPath) || outPath;
-  const sidecarRel = relFromCwd(sidecarPathOf(anchor)) || sidecarPathOf(anchor);
+  // 单文件模式点名**会绑定**的侧车（`.d.ts` ⇒ 运行时模块旁边的那个，BUG-038）；
+  // 多文件模式该行不打印（逐导出点名），`sidecarRel` 仅作回落。
+  const acceptTargetPath = singleAccept?.sidecar ?? sidecarPathOf(anchor);
+  const sidecarRel = relFromCwd(acceptTargetPath) || acceptTargetPath;
 
   // ── Bug 54 · 多文件合并草稿的「逐导出接受目标」 ─────────────────────────
   // 侧车绑定是**按源模块**的（core contract.ts:493-495：
@@ -218,13 +263,17 @@ export async function runContractFromDts(
           .filter((e) => e.dsl !== undefined)
           .map((e) => {
             const fromFile = perFileExport.get(e.name);
-            const scRel = fromFile
-              ? relFromCwd(sidecarPathOf(fromFile)) || sidecarPathOf(fromFile)
-              : undefined;
+            // BUG-038：点名的必须是**会绑定**的侧车 —— `.d.ts` 源的侧车在运行时
+            // 模块旁边（`b.d.ts` + `b.js` ⇒ `b.nudo.js`），`.d.ts` 相对名
+            // （`b.nudo.ts`）绑不到任何分析目标。
+            const accept = fromFile ? acceptSidecarFor(fromFile) : undefined;
             return {
               name: e.name,
               from: fromFile ? basename(fromFile) : "unknown source",
-              sidecarRel: scRel,
+              sidecarRel: accept
+                ? relFromCwd(accept.sidecar) || accept.sidecar
+                : undefined,
+              unbound: accept !== undefined && !accept.bound,
             };
           })
       : [];
@@ -318,9 +367,15 @@ export async function runContractFromDts(
           );
         }
         console.log(
-          `       note: bind in the sidecar beside the module that DEFINES the export at runtime (e.g. b.js → b.nudo.js); ` +
-            `the path above is the .d.ts-relative name`,
+          `       note: sidecar binding is per source module — accept into the sidecar that sits beside the module DEFINING the export at runtime (e.g. b.js → b.nudo.js)`,
         );
+        if (acceptTargets.some((t) => t.unbound)) {
+          // BUG-038：`.d.ts` 旁边没有运行时模块 ⇒ 上面那个 `.d.ts` 相对名
+          // **绑不到任何分析目标**（`nudo check b.d.ts` 不是分析目标）⇒ 明说。
+          console.log(
+            `       note: no runtime module sits beside those .d.ts ⇒ the path above is the .d.ts-relative name (it binds nothing until the runtime module exists)`,
+          );
+        }
         console.log(
           `       hint: an export accepted into a different module's sidecar is never bound (silent green)`,
         );
@@ -335,18 +390,35 @@ export async function runContractFromDts(
     console.log(
       `// ${draft.stats.exports} projectable exports · ${draft.stats.skipped} skipped · ${draft.stats.files} d.ts`,
     );
-    console.log(
-      `// pass --write to save as ${outRel}; copy into *.nudo.js to enforce`,
-    );
     if (acceptTargets.length > 0) {
+      // Bug 54 续修：多文件合并草稿**没有**单一接受目标 ⇒ 头行不得再点名
+      // `copy into <a.nudo.ts>`（照它抄，来自 b.d.ts 的导出会被放进 a 的侧车，
+      // 永不绑定 ⇒ 静默零义务）。与 `--write` 分支同一措辞：逐导出点名
+      // **定义它的模块**的侧车。
       console.log(
-        `// this draft merges ${dtsFiles.length} .d.ts sources — accept each export into its OWN module sidecar:`,
+        `// pass --write to save as ${outRel}; this draft merges ${dtsFiles.length} .d.ts sources — accept each export into the sidecar of the module that DEFINES it (sidecar binding is per source module):`,
       );
       for (const t of acceptTargets) {
         console.log(
           `//   ${t.name}  (from ${t.from}) → ${t.sidecarRel ?? "(source unknown — review before accepting)"}`,
         );
       }
+      console.log(
+        `// hint: an export accepted into a different module's sidecar is never bound (silent green)`,
+      );
+    } else {
+      console.log(
+        // BUG-038：点名**会绑定**的侧车名（`.ts` 源 ⇒ `*.nudo.ts`；`.d.ts` 源
+        // ⇒ 运行时模块旁边的 `*.nudo.js`），不再硬编码 `*.nudo.js`。
+        `// pass --write to save as ${outRel}; copy into ${basename(acceptTargetPath)} to enforce`,
+      );
+    }
+    if (singleAccept !== undefined && !singleAccept.bound) {
+      // BUG-038（`.d.ts` 无运行时兄弟）：侧车必须挨着**定义该导出的运行时模块**
+      // ⇒ 声明文件相对名绑不到任何东西，明说而不是让用户「已接受契约」自我安慰。
+      console.log(
+        `// note: no runtime module found beside ${basename(anchor)} — the sidecar must sit beside the module that defines the export at runtime (e.g. lib.js → lib.nudo.js)`,
+      );
     }
   }
 }

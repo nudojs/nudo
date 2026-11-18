@@ -6,7 +6,12 @@
  * `shadowEnabled` 控制：默认不建索引，保证分析热路径零额外遍历。
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { setSemanticIndexEntryFace, setSemanticIndexShadow } from "@nudojs/core/internal";
+import { checkSource, pTrue } from "@nudojs/core";
+import {
+  buildSemanticIndex,
+  setSemanticIndexEntryFace,
+  setSemanticIndexShadow,
+} from "@nudojs/core/internal";
 import { parse } from "@nudojs/parser";
 import { analyzeFile } from "../analyzer.ts";
 import { analysisFileCacheKey } from "../analyzer-cache.ts";
@@ -19,7 +24,7 @@ import {
 
 /** 形态：service 的对象字面量分支已收到 `a`，两面一致。 */
 const DESTRUCTURED = `export const { a } = { a: () => 1 };`;
-/** 形态：service 普查为空，索引登记 `m`。 */
+/** 形态：BUG-108 后 service 普查也收 default 对象成员 `m`，两面一致。 */
 const DEFAULT_OBJECT = `export default { m() { return 1; } };`;
 const CONTROL = `export function f() { return 1; }`;
 
@@ -54,13 +59,13 @@ describe("ADR 0001 阶段 1 · service 入口面只读索引", () => {
     expect(takeServiceEntryFace()).toBeUndefined();
   });
 
-  it("开启影子后经真实分析管线产出分歧：default 对象成员 m 被索引登记", () => {
+  it("default 对象成员 m：索引与 service 普查同面（旧版普查遗漏，阴影会报分歧）", () => {
     setSemanticIndexShadow(true);
     analyzeFile("/test/face-on.js", DEFAULT_OBJECT);
     const snapshot = takeServiceEntryFace();
     expect(snapshot).toBeDefined();
     expect(snapshot!.indexed).toContain("m");
-    expect(snapshot!.added).toContain("m");
+    expect(snapshot!.added).not.toContain("m");
   });
 
   it("控制夹具：service 普查与索引一致，added / missing 均为空", () => {
@@ -115,5 +120,59 @@ describe("ADR 0001 阶段 1 · service 入口面只读索引", () => {
     const off = analysisFileCacheKey("/test/cache-face.js", CONTROL).auxKey;
     expect(on).toBe(onAgain);
     expect(off).not.toBe(on);
+  });
+});
+
+describe("对象字面量展开的 last-wins / const-only 口径（索引面与普查同面）", () => {
+  const indexEntries = (src: string): readonly string[] => buildSemanticIndex(parse(src)).entries;
+
+  it("spread 之后的非可调用覆盖 ⇒ helper 不进入口表，other 保留", () => {
+    const entries = indexEntries(`const base = { helper() { return 1; }, other() { return 3; } };
+export const api = { ...base, helper: 42 };
+`);
+    expect(entries).not.toContain("helper");
+    expect(entries).toContain("other");
+  });
+
+  it("spread 之后的同名对象方法覆盖前者：helper 只登记一次", () => {
+    const entries = indexEntries(`const base = { helper() { return 1; } };
+export const api = { ...base, helper() { return 2; } };
+`);
+    expect(entries.filter((n) => n === "helper")).toHaveLength(1);
+  });
+
+  it("let/var 对象的初值不入索引：重赋值后 stale / fresh 都不登记", () => {
+    const entries = indexEntries(`let base = { stale() { return 1; } };
+base = { fresh() { return 2; } };
+export const api = { ...base };
+`);
+    expect(entries).not.toContain("stale");
+    expect(entries).not.toContain("fresh");
+  });
+
+  it("checkSource 签名面不残留 stale / helper（index ∪ 旧面补齐无陈旧入口）", () => {
+    const stale = checkSource(
+      "/t/face-stale.js",
+      `let base = { stale() { return 1; } };
+base = { fresh() { return 2; } };
+export const api = { ...base };
+`,
+      pTrue,
+      { fromFile: "/t/face-stale.js" },
+    );
+    expect(stale.signatures.map((s) => s.name)).not.toContain("stale");
+
+    const overridden = checkSource(
+      "/t/face-override.js",
+      `const base = { helper() { return 1; }, other() { return 3; } };
+export const api = { ...base, helper: 42 };
+export function h() { return api.helper(); }
+`,
+      pTrue,
+      { fromFile: "/t/face-override.js" },
+    );
+    const names = overridden.signatures.map((s) => s.name);
+    expect(names).not.toContain("helper");
+    expect(names).toContain("other");
   });
 });

@@ -214,8 +214,7 @@ describe("thunk 边界——gen/async 体内循环 return 不产幻影臂", () =
     // 生成器的协议槽（next/return/throw/constructor/@@iterator）是
     // internal 槽 ⇒ 不进投影面（`constructor: GeneratorFunction` 不再出现）；
     // 「是生成器对象」改由**运行面**协议槽钉（探针调的是**同一个** `f`）。
-    expect(d).toMatch(/^\{/);
-    expect(d).not.toMatch(/\|\s*5\b/);
+    expect(d).toBe("Generator<unknown, 9 | 5, unknown>");
     expect(disp(call(genIdentityProbe(SRC), "probe"))).toBe('"function|function|function"');
   });
 
@@ -223,8 +222,7 @@ describe("thunk 边界——gen/async 体内循环 return 不产幻影臂", () =
     const SRC = `export function* f(x) { switch (x) { case 1: return 5; } yield 1; return 9; }`;
     const r = call(SRC, "f", [anyAbs]);
     const d = disp(r);
-    expect(d).toMatch(/^\{/);
-    expect(d).not.toMatch(/\|\s*5\b/);
+    expect(d).toBe("Generator<1, 9 | 5, unknown>");
     expect(disp(call(genIdentityProbe(SRC), "probe"))).toBe('"function|function|function"');
   });
 

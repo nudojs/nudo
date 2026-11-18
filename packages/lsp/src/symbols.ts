@@ -1230,10 +1230,23 @@ export function renameTargetFromAst(
               computed?: boolean;
               shorthand?: boolean;
               value?: Node | null;
+              imported?: Node;
               local?: Node;
               exported?: Node;
             })
           | null;
+        // BUG-065：未别名命名导入 `import { shared }` 的 `imported` 与 `local`
+        // 是**两个不同节点但 loc 相同**；遍历先命中 imported，而它不是绑定
+        // ⇒ 同一个坐标的 rename / prepareRename 恒 null（references /
+        // definition 正常）。跳过 imported，让同 loc 的 local 走绑定面；
+        // 别名导入（`a as b`）的 imported 位置不是可改名身份，跳过也仍是
+        // 「无命中 ⇒ null」——与旧口径一致。
+        if (
+          parent?.type === "ImportSpecifier" &&
+          (parent as { imported?: Node }).imported === path.node
+        ) {
+          return;
+        }
         // 私有成员（`#name`）：babel 把键 / 用点包成 `PrivateName`
         // ⇒ 命中范围取 **PrivateName**（含 `#`）⇒ 光标落在 `#` 上也算命中
         const priv =
@@ -1980,8 +1993,69 @@ function rangeOfNode(node: Node): DocumentSymbolItem["range"] {
   return rangeOfLoc(locFromNode(node));
 }
 
+/**
+ * 标识符在**源码里实际写出的长度**（含 `\uXXXX` 转义；不含 TS 类型注解 /
+ * 可选 `?`）。Babel 把类型注解算进 Identifier 的 `loc.end` / `end`（BUG-066），
+ * 而 `name` 又是解码后的文本（BUG-723：转义写法不能按 name 长度截断）——
+ * 所以只能从源码起始位置按 IdentifierStart / IdentifierPart / Unicode
+ * 转义扫描。
+ */
+export function identifierWrittenLength(source: string, node: Node): number | undefined {
+  const loc = node.loc;
+  const start =
+    (node as { start?: number }).start ??
+    (loc?.start as { index?: number } | undefined)?.index;
+  if (typeof start !== "number" || start < 0 || start >= source.length) return undefined;
+  const isStart = (ch: string): boolean => ch === "$" || ch === "_" || /\p{ID_Start}/u.test(ch);
+  const isPart = (ch: string): boolean => ch === "$" || ch === "_" || /\p{ID_Continue}/u.test(ch);
+  let i = start;
+  let first = true;
+  while (i < source.length) {
+    if (source[i] === "\\" && source[i + 1] === "u") {
+      // Unicode 转义（`\u0061` / `\u{61}`）是标识符字符的合法写法
+      if (source[i + 2] === "{") {
+        const close = source.indexOf("}", i + 3);
+        if (close < 0) break;
+        i = close + 1;
+      } else {
+        i += 6;
+      }
+      first = false;
+      continue;
+    }
+    const cp = source.codePointAt(i);
+    if (cp === undefined) break;
+    const ch = String.fromCodePoint(cp);
+    if (first ? isStart(ch) : isPart(ch)) {
+      i += ch.length;
+      first = false;
+      continue;
+    }
+    break;
+  }
+  return i > start ? i - start : undefined;
+}
+
+/**
+ * 标识符的 **name 范围**（声明名 / 形参名）。有源码时按源码扫描截掉
+ * 类型注解；无源码（纯 AST 调用方）保持旧跨度，避免误伤转义写法。
+ */
+function identifierNameRange(
+  id: Node,
+  source?: string,
+): DocumentSymbolItem["selectionRange"] {
+  const loc = id.loc;
+  if (!source || !loc || loc.start.line !== loc.end.line) return rangeOfNode(id);
+  const written = identifierWrittenLength(source, id);
+  if (written === undefined) return rangeOfNode(id);
+  return {
+    start: { line: loc.start.line - 1, character: loc.start.column },
+    end: { line: loc.start.line - 1, character: loc.start.column + written },
+  };
+}
+
 /** 顶层函数 / 类 / 变量 → DocumentSymbol（方法作为 children） */
-export function documentSymbols(ast: Node): DocumentSymbolItem[] {
+export function documentSymbols(ast: Node, source?: string): DocumentSymbolItem[] {
   const out: DocumentSymbolItem[] = [];
   const body = programBody(ast);
 
@@ -2046,11 +2120,16 @@ export function documentSymbols(ast: Node): DocumentSymbolItem[] {
     idNode: Identifier | null | undefined,
     exported: boolean,
     fallbackName?: string,
+    rangeNode?: Node,
   ): void => {
     const name = idNode?.name ?? fallbackName;
     if (!name) return;
-    const range = rangeOfNode(fnNode);
-    const selection = idNode?.name ? rangeOfNode(idNode) : range;
+    // BUG-067：CJS 成员导出（`exports.f = fn`）的 idNode 是成员**键**，
+    // 位于初始化表达式之前 ⇒ 若 range 只取 fnNode，selectionRange 会落在
+    // range 外（LSP 规范 MUST：selectionRange ⊆ range）。传 rangeNode 时
+    // range 覆盖整个赋值语句。
+    const range = rangeOfNode(rangeNode ?? fnNode);
+    const selection = idNode?.name ? identifierNameRange(idNode, source) : range;
     const children: DocumentSymbolItem[] = [];
     const params: string[] = (fnNode.params ?? [])
       .map((p) => paramDisplayName(p))
@@ -2145,7 +2224,7 @@ export function documentSymbols(ast: Node): DocumentSymbolItem[] {
             prop.type === "Identifier" &&
             (right.type === "FunctionExpression" || right.type === "ArrowFunctionExpression")
           ) {
-            pushFn(right, prop, true);
+            pushFn(right, prop, true, undefined, stmt);
           }
         }
       }
@@ -2195,7 +2274,7 @@ export function documentSymbols(ast: Node): DocumentSymbolItem[] {
             detail,
             kind: isFn ? SymbolKind.Function : SymbolKind.Variable,
             range: rangeOfNode(d),
-            selectionRange: rangeOfNode(id),
+            selectionRange: identifierNameRange(id, source),
           });
           emitSpecExports(id.name, isFn ? SymbolKind.Function : SymbolKind.Variable, []);
           continue;
@@ -2207,7 +2286,7 @@ export function documentSymbols(ast: Node): DocumentSymbolItem[] {
             detail,
             kind: SymbolKind.Variable,
             range: rangeOfNode(binding),
-            selectionRange: rangeOfNode(binding),
+            selectionRange: identifierNameRange(binding, source),
           });
           emitSpecExports(binding.name, SymbolKind.Variable, []);
         }
@@ -2604,6 +2683,17 @@ export function findExportDefinition(
   exportName?: string;
   /** 导出说明符的**导出侧**位置（**别名导出**时给出） */
   exportLoc?: SourceLocation;
+  /**
+   * **跨文件**时 `loc` 实际所在的文件（BUG-104）。
+   *
+   * re-export 链（`export { Box } from "./lib.js"`）会跟到目标模块，返回的
+   * `loc` 属于**目标模块**；旧口径只回 loc 不回文件 ⇒ 调用方配对自己传进来的
+   * `resolvedPath`（barrel）⇒ F12 跳到 barrel 里却用 lib 的坐标（行号对不上）。
+   * 本地声明不设（= 调用方给的文件）。
+   */
+  filePath?: string;
+  /** **跨文件**时 `exportLoc` 实际所在的文件（别名 re-export 的说明符位）。 */
+  exportFile?: string;
 } | null {
   let ast: Node;
   try {
@@ -2662,7 +2752,18 @@ export function findExportDefinition(
           const targetSrc = readSourceWith(sourceProvider, target);
           if (targetSrc === undefined) continue;
           const reexported = findExportDefinition(targetSrc, local, target, sourceProvider);
-          if (reexported) return reexported;
+          // BUG-104：**报告 loc 真正所在的文件**（re-export 可以多跳，终点不是
+          // 本文件）⇒ 调用方不再把目标模块的坐标贴到 barrel 上。子层未标注
+          // 文件的那两档（本地声明 / 本地别名导出）都属于 `target`。
+          if (reexported) {
+            return {
+              ...reexported,
+              filePath: reexported.filePath ?? target,
+              ...(reexported.exportLoc
+                ? { exportFile: reexported.exportFile ?? target }
+                : {}),
+            };
+          }
           continue;
         }
         const table = buildSymbolTable(ast, "");
@@ -2688,6 +2789,75 @@ export function findExportDefinition(
     }
   }
   return null;
+}
+
+/**
+ * (文件, 导出名) ⇒ **声明真正所在的文件与位置**（re-export 链的终点，BUG-104）。
+ *
+ * barrel 只是 pass-through：`export { Box } from "./lib.js"` 让 barrel 对外
+ * 导出 `Box`，但声明在 lib。旧口径各处只拿 `resolvedPath`（barrel）配 lib 的
+ * 坐标 ⇒ F12 落在 barrel 的错行、references 在 barrel 处断链。
+ */
+export function resolveExportOrigin(
+  fromFile: string,
+  exportName: string,
+  sourceProvider?: SourceProvider,
+): {
+  filePath: string;
+  name: string;
+  kind: SymbolInfo["kind"];
+  loc: SourceLocation;
+  exportName?: string;
+  exportLoc?: SourceLocation;
+  exportFile?: string;
+} | null {
+  const src = readSourceWith(sourceProvider, fromFile);
+  if (src === undefined) return null;
+  const def = findExportDefinition(src, exportName, fromFile, sourceProvider);
+  if (!def) return null;
+  return { ...def, filePath: def.filePath ?? fromFile };
+}
+
+/** 位置相等（1-based 行 / 0-based 列，与 SourceLocation 同口径） */
+function samePos(
+  a: { line: number; column: number } | undefined,
+  b: { line: number; column: number } | undefined,
+): boolean {
+  return !!a && !!b && a.line === b.line && a.column === b.column;
+}
+
+/**
+ * 光标处的 `ident` 是否**就是这个 import 绑定**（而不是同名的遮蔽绑定）。
+ *
+ * BUG-061：`collectImportBindings(ast, fromFile).get(ident)` 只按**名字**取导入
+ * 绑定，从不判断光标所在的那个绑定是不是它 ⇒ `import { shared } from "./lib.js"`
+ * 之后又在函数体里 `const shared = 9`（极常见），那两处 `shared` 在名字层面
+ * 完全相同，但**绑定不同**：
+ *
+ * ```
+ * import { shared } from "./lib.js";
+ * export function f() { const shared = 9; return shared; }   // ← 函数局部量
+ * export function g() { return shared; }                    // ← 导入
+ * ```
+ *
+ * 旧口径下 references / F12 / rename 把二者当一个身份 ⇒ 一次「改局部变量」
+ * 会改掉包的公开导出、并改到会话从未打开的文件 ⇒ 消费方直接
+ * `SyntaxError: does not provide an export named …`。
+ *
+ * 判据用**同一张符号表**（`findDefinition` 已按作用域取最内层绑定）：光标处
+ * 解析到的声明位必须落在 import 说明符的**本地名**上。无光标位置时保持按名
+ * 兜底（旧口径），不改变无位置调用方的行为。
+ */
+function cursorBindingIsImport(
+  table: SymbolTable,
+  importLocalLoc: SourceLocation | undefined,
+  ident: string,
+  at?: { line: number; column: number },
+): boolean {
+  if (!at) return true;
+  if (!importLocalLoc) return false;
+  const def = findDefinition(table, ident, at);
+  return !!def && samePos(def.loc.start, importLocalLoc.start);
 }
 
 /**
@@ -2722,6 +2892,19 @@ export function findCrossFileDefinition(
     const bindings = collectImportBindings(ast, fromFile);
     const binding = bindings.get(ident);
     if (!binding?.resolvedPath) return null;
+    // BUG-061：同名的局部绑定不是这个 import ⇒ 定义位在本地（调用方按符号表
+    // 取），不得跳到目标模块的导出。
+    if (
+      options.at &&
+      !cursorBindingIsImport(
+        buildSymbolTable(ast, fromFile),
+        binding.localLoc,
+        ident,
+        options.at,
+      )
+    ) {
+      return null;
+    }
     resolvedPath = binding.resolvedPath;
     targetName = binding.importedName;
   }
@@ -2731,7 +2914,10 @@ export function findCrossFileDefinition(
   if (targetSource === undefined) return null;
   const def = findExportDefinition(targetSource, targetName, resolvedPath, options.sourceProvider);
   if (!def) return null;
-  return { filePath: resolvedPath, loc: def.loc, name: def.name };
+  // BUG-104：re-export barrel 处 `resolvedPath` 只是**中转**，真正的声明在
+  // `def.filePath`（多跳后可能更深）—— 旧口径把目标模块的坐标贴到 barrel 上，
+  // F12 落在 barrel 的错误行。
+  return { filePath: def.filePath ?? resolvedPath, loc: def.loc, name: def.name };
 }
 
 /**
@@ -2749,6 +2935,20 @@ export function findCrossFileDefinition(
  * - 命名空间 import（`import * as ns`）⇒ 只认 `ns.<exportName>` 的成员访问，
  *   裸 `ns` 的出现处不是引用；
  * - re-export（`export { a } from "./m"`）⇒ ExportSpecifier 的 imported 侧。
+ *
+ * **re-export 链**（BUG-104）：barrel 只是 pass-through，`export { Box } from
+ * "./lib.js"` 让 barrel **也**对外导出 `Box` ⇒ 任何 `import { Box } from
+ * "./barrel.js"` 都是对 lib 里 `Box` 的引用。旧实现要求 import 边**直接**解析
+ * 到定义文件 ⇒ 经 barrel 中转的 importer 一个都看不见：应用 rename 后
+ * `barrel.js` 已被改、真正的消费方没改 ⇒ 模块链接期
+ * `does not provide an export named 'Box'`（`node --check` 看不出来）。
+ *
+ * 现在按**不动点**沿 re-export 链传播「面」（文件 → 该文件里代表本符号的
+ * 导出名集合）：某条边的目标文件在面里且边引用的名字也在面里 ⇒ 这条边是
+ * 引用；**同名的** re-export 边额外把 `exportedName` 加入**本文件**的面 ⇒
+ * 下一轮继续往外传（多跳 barrel 自然覆盖）。别名 re-export
+ * （`export { Box as Crate }`）改的只是那条边（`Crate` 是**另一个身份**，
+ * 与 Bug 1066 同口径）⇒ 传播在此停止，别名的 importer 不进编辑集。
  */
 export function findCrossFileReferences(
   definingFile: string,
@@ -2787,6 +2987,8 @@ export function findCrossFileReferences(
     options.exportNames ?? exportedNamesIn(definingFile, exportName, options.sourceProvider);
 
   const definingNorm = resolve(definingFile);
+  // 一轮 parse：不动点只走内存（每轮重新 parse 200 个文件会拖垮 IDE 面）。
+  const parsed: Array<{ path: string; ast: Node; edges: CrossEdge[] }> = [];
   for (const cand of candidates) {
     if (resolve(cand) === definingNorm) continue;
     const src = readSourceWith(options.sourceProvider, cand);
@@ -2797,34 +2999,84 @@ export function findCrossFileReferences(
     } catch {
       continue;
     }
-    for (const edge of collectCrossEdges(ast, cand)) {
-      if (!edge.resolvedPath || resolve(edge.resolvedPath) !== definingNorm) continue;
-      if (edge.kind === "reexport") {
-        // re-export 边：ExportSpecifier 的 imported 侧是对目标模块导出的引用
-        if (!exportNames.includes(edge.importedName)) continue;
-        if (edge.importedLoc) out.push({ name: edge.importedName, loc: edge.importedLoc, uri: cand });
-        continue;
-      }
-      if (edge.importedName === "*") {
-        // 命名空间 import：只认成员访问（裸 ns 不是引用）
-        for (const loc of namespaceMemberReferences(ast, edge.local ?? "", exportNames)) {
-          out.push({ name: edge.importedName, loc, uri: cand });
+    parsed.push({ path: cand, ast, edges: collectCrossEdges(ast, cand) });
+  }
+
+  // 面：文件 → 该文件里代表**本符号**的导出名
+  const face = new Map<string, Set<string>>([[definingNorm, new Set(exportNames)]]);
+  const tables = new Map<string, SymbolTable>();
+  const tableOf = (path: string, ast: Node): SymbolTable => {
+    let t = tables.get(path);
+    if (t === undefined) {
+      t = buildSymbolTable(ast, path);
+      tables.set(path, t);
+    }
+    return t;
+  };
+  const pushed = new Set<string>();
+  const push = (name: string, loc: SourceLocation, uri: string): void => {
+    const key = `${uri}:${loc.start.line}:${loc.start.column}`;
+    if (pushed.has(key)) return;
+    pushed.add(key);
+    out.push({ name, loc, uri });
+  };
+
+  // 不动点：每轮只可能新增「(文件, 导出名)」对 ⇒ 有限步收敛。
+  for (;;) {
+    let changed = false;
+    for (const { path: cand, ast, edges } of parsed) {
+      const candNorm = resolve(cand);
+      for (const edge of edges) {
+        if (!edge.resolvedPath) continue;
+        const targetNames = face.get(resolve(edge.resolvedPath));
+        if (targetNames === undefined) continue;
+        if (edge.importedName === "*") {
+          // 命名空间 import（`import * as ns`）：目标文件整个在面里，成员名
+          // 由 `ns.<name>` 的成员访问决定；裸 `ns` 不是引用。
+          for (const loc of namespaceMemberReferences(ast, edge.local ?? "", [...targetNames])) {
+            push(edge.importedName, loc, cand);
+          }
+          continue;
         }
-        continue;
-      }
-      if (!exportNames.includes(edge.importedName)) continue;
-      if (edge.aliased) {
-        // 带别名：imported 侧才是对目标导出的引用（local 侧是另一个本地绑定）
-        if (edge.importedLoc) out.push({ name: edge.importedName, loc: edge.importedLoc, uri: cand });
-        continue;
-      }
-      // 无别名：本地名 == 导出名 ⇒ 本地引用位全部是对该导出的引用
-      const table = buildSymbolTable(ast, cand);
-      for (const ref of table.references) {
-        if (ref.name !== edge.local) continue;
-        out.push({ name: edge.local!, loc: ref.loc, uri: cand });
+        if (!targetNames.has(edge.importedName)) continue;
+        if (edge.kind === "reexport") {
+          // re-export 边：ExportSpecifier 的 imported 侧是对目标模块导出的引用
+          if (edge.importedLoc) push(edge.importedName, edge.importedLoc, cand);
+          // 本文件从此也对外代表本符号（导出名可能被换成别名）
+          //
+          // ⚠ **别名 re-export 是另一个身份**（与 Bug 1066 同口径）：
+          // `export { Box as Crate } from "./lib.js"` 里 `Crate` 是 barrel 的
+          // 对外名，改 lib 的 `Box` 只需把这条边改成 `export { Zed as Crate }`
+          // —— 传播下去会把 `import { Crate } from "./barrel.js"` 的消费方一并
+          // 改成 `Zed`（改名面变成「把别人的导出名改掉」）。同一名字的
+          // pass-through（`export { Box } from`）才继续往外传。
+          if (!edge.aliased && edge.exportedName !== undefined) {
+            const own = face.get(candNorm) ?? new Set<string>();
+            if (!own.has(edge.exportedName)) {
+              own.add(edge.exportedName);
+              face.set(candNorm, own);
+              changed = true;
+            }
+          }
+          continue;
+        }
+        if (edge.aliased) {
+          // 带别名：imported 侧才是对目标导出的引用（local 侧是另一个本地绑定）
+          if (edge.importedLoc) push(edge.importedName, edge.importedLoc, cand);
+          continue;
+        }
+        // 无别名：本地名 == 导出名 ⇒ 本地引用位里**绑定到该 import** 的那些
+        // 才是对该导出的引用（BUG-061：同名的局部遮蔽绑定不算——否则改一个
+        // 函数局部量会把定义文件的公开导出一起改掉）
+        const table = tableOf(cand, ast);
+        for (const ref of table.references) {
+          if (ref.name !== edge.local) continue;
+          if (!cursorBindingIsImport(table, edge.localLoc, ref.name, ref.loc.start)) continue;
+          push(edge.local!, ref.loc, cand);
+        }
       }
     }
+    if (!changed) break;
   }
   return out;
 }
@@ -3283,7 +3535,13 @@ function exportNameDeclarationAt(
     options.sourceProvider,
   );
   if (!def?.exportLoc || !def.exportName) return null;
-  return { filePath: binding.resolvedPath, loc: def.exportLoc, name: def.exportName };
+  // BUG-104：别名 re-export 的说明符位可能在**更深一跳**的文件里
+  // （`barrel1` 再导出 `barrel0` 的别名导出）⇒ 位置与文件必须同源。
+  return {
+    filePath: def.exportFile ?? binding.resolvedPath,
+    loc: def.exportLoc,
+    name: def.exportName,
+  };
 }
 
 /**
@@ -3410,9 +3668,13 @@ export function resolveReferences(
     });
   }
 
-  // ② 本文件的 ident 是 import 绑定
+  // ② 本文件的 ident 是 import 绑定 —— **且光标处的绑定就是它**
+  //    （BUG-061：同名的局部遮蔽绑定量不是 import 的函数 ⇒ 走 ③ 的本地口径）
   const binding = collectImportBindings(ast, fromFile).get(ident);
-  if (binding?.resolvedPath) {
+  if (
+    binding?.resolvedPath &&
+    cursorBindingIsImport(table, binding.localLoc, ident, options.at)
+  ) {
     // 带别名 ⇒ 符号是本地别名（imported 侧是对目标导出的引用，不是本地绑定）
     if (binding.aliased) {
       return dedup(localDef ? declOf(localDef) : [], localRefs);
@@ -3494,6 +3756,11 @@ export function resolveReferences(
 /**
  * 「某个模块的某个导出」的引用集合 = 定义位 + 定义文件内的引用 +
  * 所有 importer / re-exporter 的引用位。
+ *
+ * BUG-104：**先沿 re-export 链找到声明真正所在的文件**，再以它为基算三档。
+ * barrel 是 pass-through —— 在它内部既找不到声明（re-export 不绑本地名）、
+ * 也找不到本地引用，而 importer 的面必须从**声明文件**起算（否则
+ * `import { Box } from "./barrel.js"` 的消费方全部不可见）。
  */
 function referencesOfExportedSymbol(
   definingFile: string,
@@ -3507,7 +3774,9 @@ function referencesOfExportedSymbol(
     localRefs: ReferenceInfo[];
   },
 ): ReferenceInfo[] {
-  const defSource = readSourceWith(opts.sourceProvider, definingFile) ?? "";
+  const origin = resolveExportOrigin(definingFile, exportName, opts.sourceProvider);
+  const declFile = origin?.filePath ?? definingFile;
+  const defSource = readSourceWith(opts.sourceProvider, declFile) ?? "";
   let defAst: Node | null = null;
   try {
     defAst = parse(defSource);
@@ -3517,36 +3786,34 @@ function referencesOfExportedSymbol(
   const defLocalRefs: ReferenceInfo[] = [];
   let defDecl: ReferenceInfo[] = [];
   // 定义文件里的**本地名**（default 导出的本地名 ≠ 导出名 "default"）
-  let localNameInDef = exportName;
+  let localNameInDef = origin?.name ?? exportName;
   // 别名导出（`export { hidden as visible }`）⇒ 符号是**导出名** `visible`，
   // 本地名 `hidden` 是**另一个**身份（Bug 1066）
-  let exportedNameInDef = exportName;
-  let exportedLocInDef: SourceLocation | undefined;
-  if (defAst) {
-    const def = findExportDefinition(defSource, exportName, definingFile, opts.sourceProvider);
-    if (def) {
-      localNameInDef = def.name;
-      exportedNameInDef = def.exportName ?? def.name;
-      exportedLocInDef = def.exportLoc;
-    }
-    const defTable = buildSymbolTable(defAst, definingFile);
-    if (def?.exportLoc && exportedNameInDef !== localNameInDef) {
+  let exportedNameInDef = origin === null ? exportName : (origin.exportName ?? origin.name);
+  let exportedLocInDef: SourceLocation | undefined = origin?.exportLoc;
+  // 声明位在**本文件**（非跨文件 re-export）时才可能出现在编辑集里；跨文件的
+  // 声明位由调用方（resolveReferences 的 localDef / def 通道）负责。
+  if (defAst && origin) {
+    const defTable = buildSymbolTable(defAst, declFile);
+    if (origin.exportLoc && exportedNameInDef !== localNameInDef) {
       // 别名导出：定义文件内的引用 = 导出说明符的**导出侧**
       // （本地名 `hidden` 的声明 / 引用属于**另一个**身份 ⇒ 不得进编辑集：
       //   改了会把「导出名 ≠ 本地名」的模块图改断，importer 立刻失联）
       if (opts.includeDecl && exportedLocInDef) {
-        defDecl = [{ name: exportedNameInDef, loc: exportedLocInDef, uri: definingFile }];
+        defDecl = [
+          { name: exportedNameInDef, loc: exportedLocInDef, uri: origin.exportFile ?? declFile },
+        ];
       }
     } else {
-      if (opts.at && def) {
+      if (opts.at) {
         // 目标文件：从定义位点收集同绑定
         // D1：includeDeclaration 同样要透传（声明位在引用集合里也出现一次）
         defLocalRefs.push(
           ...collectBindingReferences(
             defAst,
             localNameInDef,
-            { line: def.loc.start.line, column: def.loc.start.column },
-            definingFile,
+            { line: origin.loc.start.line, column: origin.loc.start.column },
+            declFile,
             { includeDeclaration: opts.includeDecl },
           ),
         );
@@ -3555,12 +3822,16 @@ function referencesOfExportedSymbol(
       }
       const d = findDefinition(defTable, localNameInDef);
       if (d && opts.includeDecl) {
-        defDecl = [{ name: d.name, loc: d.loc, uri: definingFile }];
+        defDecl = [{ name: d.name, loc: d.loc, uri: declFile }];
       }
     }
   }
 
-  const cross = findCrossFileReferences(definingFile, localNameInDef, {
+  const cross = findCrossFileReferences(declFile, localNameInDef, {
+    // 扫描根必须仍是**用户导入的那个文件**所在目录：src/index.js 转出
+    // src/lib/deep.js 时，消费方住在 src/app —— 以声明目录为根会把它们
+    // 全部漏掉（references / rename 只覆盖 src/lib 内部）。
+    rootDir: dirname(definingFile),
     extraFiles: [...(opts.extraFiles ?? []), opts.fromFile],
     sourceProvider: opts.sourceProvider,
   });

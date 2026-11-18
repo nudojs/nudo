@@ -286,7 +286,8 @@ describe("Extract 的赋值写法不引入重复 const 声明", () => {
  * oracle（改前 → 改后）：
  * 改前 callText = "const x = extracted(compute);" ⇒ newText 不可解析
  * （Babel: Identifier 'x' has already been declared. (7:8)）
- * 改后 callText = "x = extracted(compute);" ⇒ newText 可解析
+ * 改后 callText = "x = extracted(compute);" ⇒ newText 可解析；
+ * BUG-117 再修：赋值目标 x 也是自由读 ⇒ "x = extracted(compute, x);"。
  */
 
 
@@ -309,8 +310,8 @@ __scenario_6: {
     const r = extractFunction(SRC, SEL);
     expect(r.ok).toBe(true);
     if (!r.ok) break __scenario_6;
-    // 改前是 "const x = extracted(compute);"
-    expect(r.callText).toBe("x = extracted(compute);");
+    // 赋值目标 x 既是写目标也是自由读 ⇒ 作为形参传入
+    expect(r.callText).toBe("x = extracted(compute, x);");
     expect(r.callText).not.toContain("const x");
   }
 __scenario_7: {
@@ -318,7 +319,7 @@ __scenario_7: {
     expect(r.ok).toBe(true);
     if (!r.ok) break __scenario_7;
     expect(r.newText).not.toContain("const x = extracted");
-    expect(r.newText).toContain("x = extracted(compute);");
+    expect(r.newText).toContain("x = extracted(compute, x);");
     expect(r.newText).toContain("let x = 0;");
     // 改前：Identifier 'x' has already been declared
     expect(() => parse(r.newText)).not.toThrow();
@@ -338,7 +339,7 @@ __scenario_7: {
       expect(extract).toBeDefined();
       const newText = extract!.edit!.changes[uri("m.mjs")]![0]!.newText;
       expect(newText).not.toContain("const x = extracted");
-      expect(newText).toContain("x = extracted(compute);");
+      expect(newText).toContain("x = extracted(compute, x);");
     });
   }
 __scenario_8: {
@@ -504,7 +505,7 @@ const ARROW_SRC = `export const f = (y) => {
 `;
 const OBJECT_SRC = `export const o = {
   m() {
-    return this.v * 2;
+    return 21 * 2;
   },
 };
 `;
@@ -534,7 +535,7 @@ __scenario_12: {
 __scenario_13: {
     const r = extractFunction(OBJECT_SRC, {
       start: { line: 2, character: 11 },
-      end: { line: 2, character: 21 },
+      end: { line: 2, character: 17 },
     });
     expect(r.ok).toBe(true);
     if (!r.ok) break __scenario_13;
@@ -1750,5 +1751,57 @@ const SRC = ["const total = 1;", ""].join("\n");
   }
 });
 
+// ---------------------------------------------------------------------------
+// BUG-072 / BUG-117：extract 不得产出语义已变的代码
+// ---------------------------------------------------------------------------
+describe("选区读 this / super 时拒绝提取（BUG-072）", () => {
+  const CLS = `export class C {\n  constructor() { this.v = 21; }\n  m() {\n    const y = this.v * 2;\n    return y;\n  }\n}\n`;
+
+  it("方法体选区读 this ⇒ 拒绝（不产出模块级函数）", () => {
+    const r = extractFunction(CLS, {
+      start: { line: 3, character: 4 },
+      end: { line: 3, character: 25 },
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toContain("this");
+  });
+
+  it("一变量对照：去掉 this 的同形选区仍可提取", () => {
+    const ctl = CLS.replace("this.v * 2", "21 * 2");
+    const r = extractFunction(ctl, {
+      start: { line: 3, character: 4 },
+      end: { line: 3, character: 21 },
+    });
+    expect(r.ok).toBe(true);
+  });
+});
+
+describe("选区里的纯赋值目标进形参表并写回（BUG-117）", () => {
+  const SRC = `export function f(compute) {\n  let x = 0;\n  x = compute();\n  return x;\n}\n`;
+
+  it("语句选区：x 进 params，调用点 x = extracted(compute, x)，运行仍为 5", () => {
+    const r = extractFunction(SRC, {
+      start: { line: 2, character: 2 },
+      end: { line: 2, character: 16 },
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.params).toEqual(["compute", "x"]);
+    expect(r.callText).toBe("x = extracted(compute, x);");
+    expect(runModule(r.newText, "M.f(() => 5)")).toBe("5");
+  });
+
+  it("表达式选区：赋值语义写回调用点，ESM 下不抛 ReferenceError", () => {
+    const r = extractFunction(SRC, {
+      start: { line: 2, character: 2 },
+      end: { line: 2, character: 15 },
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.params).toEqual(["compute", "x"]);
+    expect(r.callText).toBe("x = extracted(compute, x)");
+    expect(runModule(r.newText, "M.f(() => 5)")).toBe("5");
+  });
+});
 
 });

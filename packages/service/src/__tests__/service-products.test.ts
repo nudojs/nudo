@@ -749,7 +749,7 @@ describe("（产物半）— 形参表过滤 `this` 接收者标注", () => {
  *
  * 钉：
  * - `extractFormals` 不返回 `this` 形参、后续形参的 index 前移；
- * - dts 产物面没有 `this` 形参；
+ * - dts 产物面保留 `this: T` 接收者子句（BUG-133；不是运行时形参）；
  * - 负控制：普通形参表不受影响（index 连续、`this` 之外的形参原样）。
  */
 
@@ -791,17 +791,26 @@ const WITH_THIS = `export function withThis(this: { x: number }, a: number): num
     throw new Error("no function declaration found");
   };
   const WITH_THIS = "export function withThis(this: { x: number }, a: number): number {\n  return a;\n}\n";
-  it("extractFormals/ParamNames 不含 this 且 index 重排；dts 无 this；普通表原样", () => {
+  it("extractFormals/ParamNames 不含 this 且 index 重排；dts 保留 this 接收者子句；普通表原样", () => {
     const formals = extractFormals(firstFnNode(WITH_THIS));
     expect(formals.map((f) => (f.kind === "id" ? f.name : f.kind))).toEqual(["a"]);
     expect(formals.map((f) => f.index)).toEqual([0]);
     expect(extractParamNames(firstFnNode(WITH_THIS))).toEqual(["a"]);
     const dts = generateDts(analyzeFile("/test/bug397-dts.ts", WITH_THIS));
-    expect(dts).not.toContain("this:");
-    expect(dts).toContain("export declare function withThis(a:");
+    expect(dts).toContain("this: { x: number }");
+    expect(dts).toContain("export declare function withThis(this: { x: number }, a:");
     const plain = extractFormals(firstFnNode("export function plain(a: number, b: string): string {\n  return b;\n}\n"));
     expect(plain.map((f) => f.index)).toEqual([0, 1]);
     expect(plain.map((f) => (f.kind === "id" ? f.name : f.kind))).toEqual(["a", "b"]);
+  });
+
+  it("`this : T` 的空格写法同样进入 dts 接收者子句", () => {
+    // 入口闸门用 `\bthis\s*:`（不是裸子串 "this:"）：`this : T` 是合法 TS，
+    // 旧判据漏掉空格形态 ⇒ analysis.thisReceiverType 为空 ⇒ dts 丢接收者子句。
+    const spaced = "export function withThis(this : { x: number }, a: number): number {\n  return a;\n}\n";
+    const dts = generateDts(analyzeFile("/test/bug397-dts-spaced.ts", spaced));
+    expect(dts).toContain("this: { x: number }");
+    expect(dts).toContain("export declare function withThis(this: { x: number }, a:");
   });
 }
 });
@@ -878,7 +887,7 @@ const JS_UPPER = `export function upper(a) {
   const declOf = (source: string, file = "/test/bug479-service.ts"): string => generateDts(analyzeFile(file, source)).split("\n").find((l) => l.startsWith("export declare function")) ?? "";
   const TS_UPPER = "export function upper(a: string): string {\n  return a.toUpperCase();\n}\n";
   const JS_UPPER = "export function upper(a) {\n  return a.toUpperCase();\n}\n";
-  it("TS 注解映射 entry@ 实参；不可映射回落 any", () => {
+  it("TS 注解映射 entry@ 实参；复合类型也进形状面（别名等仍回落 any）", () => {
     const upper = analyzeFile("/test/bug479-entry.ts", TS_UPPER).functions.find((f) => f.name === "upper")!;
     expect(formatShape(entryCase(upper).argAbs[0]!)).toBe("string");
     const add = analyzeFile("/test/bug479-entry2.ts", "export function add(x: number, y: number): number {\n  return x + y;\n}\n").functions.find((f) => f.name === "add")!;
@@ -888,7 +897,10 @@ const JS_UPPER = `export function upper(a) {
     expect(formatShape(entryCase(upper).throwsAbs)).toBe("never");
     expect(formatShape(entryCase(upper).abs)).toBe("string");
     const len = analyzeFile("/test/bug479-entry5.ts", "export function len(a: string[]): number {\n  return a.length;\n}\n").functions.find((f) => f.name === "len")!;
-    expect(formatShape(entryCase(len).argAbs[0]!)).toBe("any");
+    // BUG-036：数组注解不再退 any（旧口径 `string[]` 不在 5 个 primitive 表里）
+    expect(formatShape(entryCase(len).argAbs[0]!)).toBe("string[]");
+    const alias = analyzeFile("/test/bug479-entry6.ts", "export function pick(a: Record<string, number>): number {\n  return a.x;\n}\n").functions.find((f) => f.name === "pick")!;
+    expect(formatShape(entryCase(alias).argAbs[0]!)).toBe("any");
   });
 }
 

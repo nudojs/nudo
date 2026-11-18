@@ -20,7 +20,7 @@ import {
   rmSync,
 } from "node:fs";
 import { join, dirname, relative, sep, isAbsolute } from "node:path";
-import { stablePathKey } from "@nudojs/core/internal";
+import { getCapabilityMode, stablePathKey } from "@nudojs/core/internal";
 import { writeFileAtomic } from "./write-atomic.ts";
 import {
   diskCacheRoot,
@@ -453,6 +453,13 @@ export function checkCacheKey(
   const cfgSeg = opts.analysisCfg
     ? `${opts.analysisCfg.mode ?? "-"}|${opts.analysisCfg.evalMissingSlot ?? "-"}|${opts.analysisCfg.callSiteBudget ?? "-"}|${opts.analysisCfg.entryThrows ?? "-"}|${opts.analysisCfg.ignoreThrows ?? "-"}|${maxForksDim}`
     : "-";
+  // BUG-116：**能力档**（`--capabilities` / `NUDO_CAPABILITIES`）也是会影响
+  // 报告内容的输入：strict 档会多产 `nudo:capability-denied`（summary.warnings
+  // 也随之变）。`.nudo/cache` 是**跨进程持久层** ⇒ 「进程启动时确定」并不能
+  // 让它免于串味：先跑 trusted 写盘，再跑 strict 命中 trusted 条目 ⇒ strict
+  // 独有的诊断与警告计数静默消失（反向亦然：trusted 运行显示 strict 的诊断）。
+  // 独立成段（不在 `cfgSeg` 里）⇒ 没传 analysisCfg 的调用方也带上该维度。
+  const capsSeg = getCapabilityMode();
   return sha256Hex(
     [
       ANALYSIS_ABI,
@@ -463,6 +470,7 @@ export function checkCacheKey(
       depSeg,
       envSeg,
       cfgSeg,
+      capsSeg,
     ].join("\0"),
   );
 }

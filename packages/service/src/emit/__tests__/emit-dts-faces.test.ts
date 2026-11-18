@@ -232,11 +232,48 @@ const SAME_NAME = `export class C {
   {
     const dts = moduleDts(SAME_NAME);
     expect(dts).toContain("export declare class C {");
-    expect(dts).toMatch(/static m\(y: (any|unknown)\): unknown;/);
+    // BUG-095 / 回归修正：static 方法返回类型不再借用同名**实例**方法的签名
+    // （两者形参不同名 ⇒ 分析面那条 `C.m` 是实例位证据，不可复用）。
+    // 这里改为观测静态方法自己的方法体（`return "stat"` ⇒ string）。
+    expect(dts).toMatch(/static m\(y: unknown\): string;/);
     // 实例成员 `m(...)` 只出现一次（重复的那条是静态方法被当成实例成员再投影）。
     // 补齐类方法入口兜底后返回类型从 unknown 变精确值，故不钉返回类型。
     const instanceMembers = dts.match(/^\s*m\(x: (?:any|unknown)\): [^;]+;$/gm) ?? [];
     expect(instanceMembers.length).toBe(1);
+  }
+  {
+    // 判别用例：实例 / 静态返回类型不同 ⇒ 静态位必须是 string（旧实现错成 number）
+    const dts = moduleDts(`export class D {
+  m(x) {
+    return 1;
+  }
+  static m(y) {
+    return "stat";
+  }
+}
+`);
+    expect(dts).toMatch(/static m\(y: unknown\): string;/);
+    expect(dts).not.toMatch(/static m\(y: unknown\): number;/);
+    const check = tscNoEmit({
+      "mod.d.ts": dts,
+      "use.ts": 'import { D } from "./mod.js";\nexport const s: string = D.m("x");\n',
+    });
+    expect(check.ok, check.stderr).toBe(true);
+  }
+  {
+    // 对象字面量里的方法 `return` 不是外层 static 方法的返回值（无外层 return
+    // ⇒ 运行时是 undefined）；旧实现把它当成静态方法的返回 ⇒ 假精确 `string`。
+    const dts = moduleDts(`export class E {
+  m(x) {
+    return 1;
+  }
+  static m(y) {
+    const o = { f() { return "s"; } };
+  }
+}
+`);
+    expect(dts).toMatch(/static m\(y: unknown\): unknown;/);
+    expect(dts).not.toMatch(/static m\(y: unknown\): string;/);
   }
   {
     const dts = moduleDts(SAME_NAME);
@@ -971,7 +1008,8 @@ export function makeUser(name) {
     expect(dts).toContain("constructor(v: unknown);");
     // 同上：实例方法返回类型精度随分析面提升，不钉死 unknown。
     expect(dts).toMatch(/m\(x: (any|unknown)\): [^;]+;/);
-    expect(dts).toMatch(/static s\(x: (any|unknown)\): unknown;/);
+    // BUG-095：static 返回类型随分析面精度提升（同上方实例位口径）
+    expect(dts).toMatch(/static s\(x: (any|unknown)\): [^;]+;/);
   }
   {
     const dts = moduleDts(`export * from "./dep.js";

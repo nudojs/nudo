@@ -854,8 +854,8 @@ function fixture(src: string, sidecar: string): { file: string; sidecarPath: str
     expect(r.removed).toBeUndefined();
     expect(r.written).toEqual(["f"]);
     const after = readFileSync(sidecarPath, "utf-8");
-    // 调用点点观测拓宽到基类型 ⇒ 段被改写成宽域
-    expect(after).toContain("export const f = fn({ x: number() }, number());");
+    // BUG-113：观测字面量保真 ⇒ 段被改写成当前调用点见证
+    expect(after).toContain("export const f = fn({ x: lit(9) }, lit(10));");
     expect(after).not.toContain("lit(5)");
   }
   {

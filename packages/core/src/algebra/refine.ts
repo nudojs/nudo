@@ -269,7 +269,15 @@ export class NudoSidecarError extends Error {
  * 侧车可注入的构建器：`@nudojs/core` 与一切裸包名 import 一律注入。
  * 名单单源在 constraint.ts 的 CONSTRAINT_BUILDERS——新增构建器只改那一处。
  */
-const sidecarInjects: Record<string, unknown> = CONSTRAINT_BUILDERS;
+const sidecarInjects: Record<string, unknown> = {
+  ...CONSTRAINT_BUILDERS,
+  // BUG-112：`contract --emit` 的 .js 生成段带显式 `import { litC as lit, … }`
+  // （使文件脱离 nudo 也能被 node / tsc 加载）。core 的 `lit` / `and` 同名
+  // 导出不是约束构建器，故导入名用 litC/andC；装载器必须把这两个 core 导出名
+  // 也映射到同一构建器，否则显式 import 会被判「not an injected builder」。
+  litC: CONSTRAINT_BUILDERS.lit,
+  andC: CONSTRAINT_BUILDERS.and,
+};
 
 function isSidecarSpec(spec: string): boolean {
   return spec.endsWith(".nudo.js") || spec.endsWith(".nudo.ts");
@@ -2119,6 +2127,20 @@ export function extractDeclaredThrows(
     collectDiag({
       code: DIAG.directiveSyntax,
       message: malformedDirectiveMessage("@nudo:throws", seg.raw, seg.reason, "<ErrorKind>"),
+      ...(loc ? { line: loc.line, ...(loc.column !== undefined ? { column: loc.column } : {}) } : {}),
+    });
+  }
+  // BUG-120：`any` 与侧车面统一为**非法 token**（不是通配）——同一份申报
+  // 不得在两条通道给出红/绿相反结论。诊断点名文档化的 `*`。
+  for (const line of lines) {
+    const m = line.match(/^@nudo:throws\s+(.+)$/i);
+    if (!m) continue;
+    if (!m[1]!.split(/[,\s|]+/).includes("any")) continue;
+    const loc = directiveSegLoc(source, scope, "@nudo:throws", line);
+    collectDiag({
+      code: DIAG.directiveSyntax,
+      message:
+        '@nudo:throws: "any" is not an error kind — use "*" to declare any thrown error, or name the kinds',
       ...(loc ? { line: loc.line, ...(loc.column !== undefined ? { column: loc.column } : {}) } : {}),
     });
   }

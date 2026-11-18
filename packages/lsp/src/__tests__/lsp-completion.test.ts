@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { openLspDocument, requestCompletion } from "./lsp-harness-semantic-tokens.ts";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { withTempDir } from "./helpers.ts";
+import { withTempDir, withLspServer } from "./helpers.ts";
 import { getCompletionsAtPosition } from "../lsp-surface/completions.ts";
 import { getHoverAtPosition } from "../lsp-surface/hover.ts";
 
@@ -345,4 +345,125 @@ const SRC = "export const obj = { alpha: 1, beta: 2 };\nobj.\n";
     );
   });
 
+});
+
+// ---------------------------------------------------------------------------
+// 可选链接收者
+// ---------------------------------------------------------------------------
+describe("可选链 `o?.` 的成员补全", () => {
+  it("`o?.` 与 `o.` 同候选（BUG-089）", () => {
+    const src = `export const o = { a: 1, b: 2 };
+export function f() { return o?.a; }
+`;
+    withTempDir("nudo-opt-chain-", (dir) => {
+      const file = join(dir, "c.js");
+      writeFileSync(file, src, "utf-8");
+      // 光标在 `o?.` 之后（行 2、`o` 起始列 28 → 点号后第 32 列）
+      const items = getCompletionsAtPosition(file, src, 2, 32);
+      const labels = items.map((i) => i.label);
+      expect(labels).toContain("a");
+      expect(labels).toContain("b");
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// BUG-055 / BUG-057 / BUG-090：成员面键形态、detail 占位符、跨行点号
+// ---------------------------------------------------------------------------
+describe("成员补全不得发非标识符 label（BUG-055）", () => {
+  it("对象字面量的 `123` / `a-b` / `hello world` 不入 `o.` 候选；合法键保留", () => {
+    withTempDir("nudo-bug055-", (dir) => {
+      const src = `export const o = { ok: 1, "a-b": 2, "hello world": 3, 123: 4 };\no.\n`;
+      const file = join(dir, "nonident.js");
+      writeFileSync(file, src, "utf-8");
+      const items = getCompletionsAtPosition(file, src, 2, 2);
+      expect(items.map((i) => i.label)).toEqual(["ok"]);
+      // 变量面 detail 仍保留 core 的引号渲染（不是成员面）
+      const vars = getCompletionsAtPosition(file, src, 2, 0);
+      expect(vars.find((i) => i.label === "o")?.detail).toContain('"a-b"');
+    });
+  });
+
+  it("类实例的非法成员键同样过滤（brand 下钻到 obj 面）", () => {
+    withTempDir("nudo-bug055-class-", (dir) => {
+      const src = `export class C { constructor() { this.ok = 1; this["a-b"] = 2; } }\nconst c = new C();\nc.\n`;
+      const file = join(dir, "clsnonident.js");
+      writeFileSync(file, src, "utf-8");
+      const items = getCompletionsAtPosition(file, src, 3, 2);
+      expect(items.map((i) => i.label)).toEqual(["ok"]);
+    });
+  });
+});
+
+describe("补全 detail 不泄漏内部 `?` 占位符（BUG-057）", () => {
+  it("成员函数走 check 签名公式；嵌套 fn 槽的返回位补 any，不出现 `?`", () => {
+    withTempDir("nudo-bug057-", (dir) => {
+      const src = `export const helper = { twice(q) { return q * 2; } };\nexport function freeTwice(q) { return q * 2; }\nexport const pick = helper.twice;\nhelper.\n`;
+      const file = join(dir, "detail_pair.js");
+      writeFileSync(file, src, "utf-8");
+
+      const members = getCompletionsAtPosition(file, src, 4, 7);
+      expect(members.find((i) => i.label === "twice")?.detail).toBe(
+        "twice(q: any) => any",
+      );
+
+      const vars = getCompletionsAtPosition(file, src, 4, 0);
+      expect(vars.find((i) => i.label === "helper")?.detail).toBe(
+        "{ twice: (q) => any }",
+      );
+      expect(vars.find((i) => i.label === "freeTwice")?.detail).toBe(
+        "freeTwice(q: any) => any",
+      );
+      for (const item of [...members, ...vars]) {
+        expect(item.detail ?? "").not.toContain("?");
+      }
+    });
+  });
+});
+
+describe("链式换行后的行首点号补全（BUG-090）", () => {
+  it("`o\\n  .|` 与单行 `o.|` 给同一候选", () => {
+    withTempDir("nudo-bug090-", (dir) => {
+      const multiline = `export const o = { alpha: 1 };\nexport function use() {\n  return o\n    .;\n}\n`;
+      const file = join(dir, "multiline-dot.js");
+      writeFileSync(file, multiline, "utf-8");
+      const multi = getCompletionsAtPosition(file, multiline, 4, 5);
+      expect(multi.map((i) => i.label)).toContain("alpha");
+
+      const single = `export const o = { alpha: 1 };\nexport function use() {\n  return o.;\n}\n`;
+      const ctl = join(dir, "multiline-dot-ctl.js");
+      writeFileSync(ctl, single, "utf-8");
+      const oneLine = getCompletionsAtPosition(ctl, single, 3, 11);
+      expect(oneLine.map((i) => i.label)).toEqual(multi.map((i) => i.label));
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 零参成员被调者：没有「随实参漂移」面 ⇒ 不按观测面空壳降级
+// ---------------------------------------------------------------------------
+describe("零参成员被调者的签名弹窗与裸标识符同面", () => {
+  it("`helper.zero(` 与 `zero(` 都渲染 `() => 42`", async () => {
+    const src = `export const helper = { zero() { return 42; } };
+export function zero() { return 42; }
+helper.zero();
+zero();
+`;
+    await withLspServer({ "sig.js": src }, async ({ req, uri }) => {
+      const signatureAt = (
+        line: number,
+        character: number,
+      ): string | undefined => {
+        const res = req("textDocument/signatureHelp")({
+          textDocument: { uri: uri("sig.js") },
+          position: { line, character },
+        }) as { signatures?: Array<{ label: string }> };
+        return res.signatures?.[0]?.label;
+      };
+      // 旧口径把零参成员当成观测面空壳（无 paramTypes）⇒ 抹掉返回位 ⇒
+      // `() => unknown`，而裸标识符对照是声明域 `() => 42`。
+      expect(signatureAt(2, "helper.zero(".length)).toBe("() => 42");
+      expect(signatureAt(3, "zero(".length)).toBe("() => 42");
+    });
+  });
 });

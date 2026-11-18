@@ -35,7 +35,7 @@ import { symbolSlotKeyOf } from "./containers/symbol-slot.ts";
 // $in/$del/$delRes 全是运行期调用。
 import { guardedPrologueEntry } from "./containers/guarded-entry.ts";
 import { arrayLengthIsNonConfigurable } from "./array-length.ts";
-import { getEvalClass, lookupClassValue, BUILTIN_ERROR_SUPER, fnProtoOf, type EvalClassSpec } from "../class-registry.ts";
+import { getEvalClass, lookupClassValue, BUILTIN_ERROR_SUPER, fnProtoOf, carryClassSpec, markKnownEmptyInstanceCtor, type EvalClassSpec } from "../class-registry.ts";
 import { classNameOfValue, markClassValue } from "../../class-mark.ts";
 import { NudoThrow, noBody, throwStrictWrite, clearStaleTermPred, asAbsVal, $lit, litTruth, proxyTargetInnerObj } from "./state.ts";
 import { $objAccessor, lookupObjAccessor, accessorTable } from "../../accessors.ts";
@@ -653,6 +653,10 @@ export function chainProtoSlotOf(startName: string, key: string, fromLevel: numb
  */
 export function chainHasOpaqueFnParent(startName: string): boolean {
   for (const n of evalClassChain(startName)) {
+    // Bug 141：已知空体构造器（匿名空类表达式 / 空体匿名函数表达式）的
+    // 实例自有面**已求值且确定为空**——不是「体不透明」⇒ 缺席可折
+    // exact undefined（后续成员访问照常报 may-throw）。
+    if (getEvalClass(n)?.knownEmptyInstance === true) continue;
     const cv = lookupClassValue(n);
     if (cv && cv.shape.k === "fn") return true;
   }
@@ -1338,6 +1342,9 @@ export function $classExpr(name?: string): Abs {
   // 标记），旧判据只能靠 `ctor + "_rest" 单形参`启发式。挂槽位后
   // isClassValueCallee 有确定判据，且快照 / subst 后不再漏判。
   v.facets = { ...(v.facets ?? {}), callable: false };
+  // Bug 141：空类体 ⇒ 实例自有面确定为空（不是「ctor 体不透明」）——
+  // 伪父 spec 据此刻 knownEmptyInstance，`o.missing` 折 exact undefined。
+  markKnownEmptyInstanceCtor(v);
   return v;
 }
 
@@ -1520,6 +1527,10 @@ function delInner(o: Abs, key: Abs): Abs {
     const next = abs({ k: "brand", name: o.shape.name, shape: inner }, undefined, undefined, o.conf);
     const clsName = classNameOfValue(o as object);
     if (clsName) markClassValue(next as object, clsName);
+    // BUG-052：用户类实例的类规格随副本过户——写门按值身份判定（见
+    // member.ts 的 setBrandInstanceMember），副本丢了规格会让 `size` 重新
+    // 撞上内建访问器表
+    carryClassSpec(o, next);
     return next;
   }
   if (o.shape.k === "obj" && keyStr !== undefined) {

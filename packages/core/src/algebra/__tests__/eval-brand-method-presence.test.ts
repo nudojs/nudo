@@ -151,11 +151,11 @@ describe("访问器 presence（BUILTIN_BRAND_ACCESSORS 补 $in）", () => {
       expect(val(src)).toBe("true");
     });
   }
-  it("访问器值读：槽面未建模名 → 诚实 unknown（typeof 折 string 域，不断言缺席）", () => {
+  it("访问器值读：未建模名 → 诚实 unknown（typeof 折 string 域）；已建模槽（.buffer）→ 精确 typeof", () => {
     // 原生 boolean/object/number——此前折精确 undefined（wrong-exact）
     expect(val("function f() { return typeof new ArrayBuffer(8).detached; }")).toBe("string");
     expect(val("function f() { return typeof new DataView(new ArrayBuffer(8)).buffer; }")).toBe("string");
-    expect(val("function f() { return typeof new Uint8Array(4).buffer; }")).toBe("string");
+    expect(val("function f() { return typeof new Uint8Array(4).buffer; }")).toBe('"object"');
     expect(val("function f() { return typeof new Uint8Array(4).BYTES_PER_ELEMENT; }")).toBe("string");
     expect(val("function f() { return typeof /a/.unicodeSets; }")).toBe("string");
   });

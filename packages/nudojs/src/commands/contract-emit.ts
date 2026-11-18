@@ -58,6 +58,15 @@ export async function runContractEmit(
      * ⇒ 本函数吐**单文件机器文档**（命令层的聚合层把它收进恒定数组外壳）。
      */
     json?: boolean;
+    /**
+     * BUG-047：命令级 `--fn` 命中账本（结构类型 —— 与 `contract.ts` 的同名类型
+     * 同形，不跨模块 import）。给了它 ⇒ 本 root 零命中时**不**在这里报 usage
+     * error / 设 exit，由命令层跨全部 root 汇总后再判「一处都没命中」。
+     */
+    fnMatch?: {
+      hits: number;
+      misses: Array<{ rel: string; message: string; candidates: string[] }>;
+    };
   },
 ): Promise<void> {
   const { emitContract, emitDerivedFromRoot, unifiedDiff } = await import(
@@ -218,6 +227,12 @@ export async function runContractEmit(
       const message =
         `Usage error: --fn ${fnNames.map((n) => `\`${n}\``).join(", ")} matched no export in ${rel}; nothing was written` +
         (candidates.length > 0 ? `\navailable exports: ${candidates.join(", ")}` : "");
+      // BUG-047：`--fn` 是过滤器 ⇒ 本 root 零命中记进命令级账本，由命令层
+      // 跨全部 root 汇总后再判「一处都没命中」（不在这里 exit）。
+      if (opts.fnMatch) {
+        opts.fnMatch.misses.push({ rel, message, candidates });
+        return;
+      }
       if (jsonMode) {
         // 机器面：吐**合法 JSON 文档**（否则聚合层判「不是 JSON 文档」）
         console.log(
@@ -233,6 +248,8 @@ export async function runContractEmit(
       process.exitCode = 1;
       return;
     }
+    // BUG-047：本 root 命中过名单 ⇒ 记进命令级账本
+    if (opts.fnMatch) opts.fnMatch.hits += 1;
   }
 
   // -------------------------------------------------------------------------

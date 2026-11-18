@@ -68,7 +68,7 @@ describe("A1 步骤 4 · 挂起点绑定回放（core 机制）", () => {
     expect(s.captures()).toBe(0);
     expect(s.read()).toBe("0  #exact");
     // 不读任何消费面（读出即触发）：空壳的形状/genElements 都是空的
-    expect(formatAbs(s.g)).toBe("{  }  #path");
+    expect(formatAbs(s.g)).toBe("Generator<unknown, undefined, unknown>  #path");
     expect(s.g.facets?.genElements).toHaveLength(0);
   });
 

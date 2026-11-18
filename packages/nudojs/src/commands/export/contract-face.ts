@@ -185,12 +185,25 @@ function observedMinArity(cases: readonly CaseResult[]): number {
 /** 槽位树：点路径契约的叶子按路径挂树，最后一次性物化成嵌套 obj（Bug 620）。 */
 type SlotTree = { leaf?: Abs; children: Map<string, SlotTree> };
 
-/** 槽位树 → Abs（叶子 = 约束 Abs；子树 = 嵌套 obj）。 */
-function treeAbs(tree: SlotTree): Abs {
+/** 开放对象：未列出的键读 `unknown`（不是 exact `undefined`）。 */
+function openObj(slots: Record<string, { value: Abs }>): Abs {
+  return makeAbs({ k: "obj", slots, open: true }, undefined, undefined, "exact");
+}
+
+/**
+ * 槽位树 → Abs（叶子 = 约束 Abs；子树 = 嵌套 obj）。
+ *
+ * `open` 只给**契约域种子**用：种子对象只列契约申报的字段，解构形参里
+ * **没申报**的绑定（`{ grade, extra }` 的 `extra`）在闭合对象上读成 exact
+ * `undefined` ⇒ 返回值 / 产物凭空多出一个 `extra: undefined` 槽（`z.undefined()`
+ * / dts `extra: undefined`），而实现允许任意值。开放对象让未列键读 `unknown`
+ * ⇒ 不伪造精确值（解构 `{ a, b }` 里契约申报的 `a` 仍精确）。
+ */
+function treeAbs(tree: SlotTree, open = false): Abs {
   if (tree.children.size === 0) return tree.leaf ?? anyEntryAbs();
   const slots = Object.create(null) as Record<string, { value: Abs }>;
-  for (const [key, child] of tree.children) slots[key] = { value: treeAbs(child) };
-  return obj(slots);
+  for (const [key, child] of tree.children) slots[key] = { value: treeAbs(child, open) };
+  return open ? openObj(slots) : obj(slots);
 }
 
 /** 把叶子 Abs 挂到路径上（路径首段是槽位键，不进树）。 */
@@ -315,10 +328,16 @@ export function unifiedParamFace(
       used.add(hitIdx);
       const { p } = located[hitIdx]!;
       if (formal.kind === "rest") {
-        // 契约描述的是**元素**类型（dts 面同口径：`...rest: T[]`）
+        // 契约描述的是**元素**类型（dts 面同口径：`...rest: T[]`）——但契约
+        // 本身已是数组（`array(number())`）时不得再包一层（BUG-101：否则
+        // `{ nums: [[1],[2]] }` 放行、合法 `{ nums: [1,2,3] }` 被拒，与 dts
+        // 的 restParamType 口径相反）。
         out.push({
           name: formal.name,
-          abs: makeAbs({ k: "arr", element: p.abs }, undefined, undefined, p.abs.conf),
+          abs:
+            p.abs.shape.k === "arr"
+              ? p.abs
+              : makeAbs({ k: "arr", element: p.abs }, undefined, undefined, p.abs.conf),
           // BUG-109：对象槽面上「`rest` 键缺省」= 空 rest 数组 = 零实参调用
           // （`g()` 是合法调用）⇒ 该槽可选；渲染成**必填**槽会让函数的每一次
           // 合法调用都被入参 schema 拒绝。
@@ -327,12 +346,13 @@ export function unifiedParamFace(
         });
         continue;
       }
-      // BUG-108：契约级 ∪ 声明级（默认形参）——与 standard 面同口径；
-      // 只取契约级会让 zod 面把带默认值的位印成必填（三面互斥）。
+      // BUG-108 / BUG-086：契约级 ∪ 声明级（默认形参 / TS `?`）——与
+      // standard 面同口径；只取契约级会让 zod 面把带默认值或 TS 可选位的
+      // 形参印成必填（发布校验器拒绝源码合法载荷）。
       out.push({
         name: formal.name,
         abs: p.abs,
-        optional: p.optional === true || formal.kind === "default",
+        optional: p.optional === true || formal.kind === "default" || formal.optional === true,
       });
       continue;
     }
@@ -454,6 +474,75 @@ function awaitedAbs(a: Abs): Abs {
 }
 
 /**
+ * 契约域种子的**实参表**（按形参位装配）——契约种子求值的唯一口径。
+ *
+ * BUG-082：种子必须按**形参位**装配，不能按名字查表。
+ *
+ * 旧实现用「契约参数名 → Abs」表 + `fn.paramNames`（求值占位名）去查：解构
+ * 形参的占位名是 `_p0`、契约键是 `a` / `_` / `card.grade` ⇒ **永不命中** ⇒
+ * 播种全 `any` ⇒ 重算出的返回 Abs 是 any ⇒ zod / standard / guard / dts 四个
+ * 发布面把返回投影成空域（`z.unknown()` / `{"k":"unknown"}` / `return true` /
+ * `unknown`），而 `nudo check` 用 `FormalParam.pattern` 展开另走一套种子
+ * （`unifiedParamFace`）⇒ 精确。同一知识在两面分叉。
+ *
+ * 现在用**同一个定位器**（`locateContractParam`，与参数面同源）把契约参数映射
+ * 到形参位：字段契约合成一个对象 Abs（键取属性键，点路径合成嵌套槽），整对象
+ * 契约直接作实参。数组解构的种子不做（需按元素下标造元组 ⇒ 该位给 `any`，
+ * fail-closed 不伪造精度）。
+ */
+export function contractSeedArgs(fn: FunctionAnalysis, eff: EffectiveContract | undefined): Abs[] {
+  const binders = eff?.binders ? new Map(Object.entries(eff.binders)) : undefined;
+  const entryOf = (p: { param: string; constraint: NudoConstraint }): Abs =>
+    constraintToEntryAbs(p.constraint, p.param, undefined, binders);
+  const formals = formalList(fn);
+  const located = (eff?.params ?? []).map((p) => ({ p, loc: locateContractParam(formals, p.param) }));
+  const seedArgs: Abs[] = [];
+  for (const formal of formals) {
+    const own = located.filter((l) => l.loc?.index === formal.index);
+    // ① 整参契约（标识形参 / 解构形参的整对象契约，含 `_`）
+    const whole = own.find((l) => l.loc?.field === undefined && l.loc?.rest !== true);
+    if (whole) {
+      seedArgs.push(entryOf(whole.p));
+      continue;
+    }
+    // ② 解构形参的字段契约 ⇒ 合成一个对象 Abs 作实参
+    if (formal.kind === "pattern") {
+      if (formal.patternKind === "array" || own.length === 0) {
+        seedArgs.push(anyEntryAbs());
+        continue;
+      }
+      const trees = new Map<string, SlotTree>();
+      for (const { p, loc } of own) {
+        const path = loc?.fieldPath ?? (loc?.field !== undefined ? [loc.field] : undefined);
+        if (!path) continue;
+        const key = path[0]!;
+        const tree = trees.get(key) ?? { children: new Map() };
+        insertPath(tree, path, entryOf(p));
+        trees.set(key, tree);
+      }
+      const slots = Object.create(null) as Record<string, { value: Abs }>;
+      // BUG-620 续修：种子对象（及嵌套树）必须**开放**——解构形参里契约
+      // 没申报的绑定在闭合对象上读成 exact `undefined` ⇒ 返回面 / 产物凭空
+      // 多出一个 `undefined` 槽（`{ grade, extra }` 只申报 `grade` 时
+      // `extra` 被折成 undefined 并发布）。开放后未申报绑定读 `unknown`
+      // ⇒ 不伪造精确值；契约申报的键仍精确（`g({a,b}){return a}` 不受影响）。
+      for (const [key, tree] of trees) slots[key] = { value: treeAbs(tree, true) };
+      seedArgs.push(openObj(slots));
+      continue;
+    }
+    // ③ 剩余参数：契约描述的是**元素**类型（参数面同口径包一层数组）
+    const rest = own.find((l) => l.loc?.rest === true);
+    if (rest) {
+      const el = entryOf(rest.p);
+      seedArgs.push(makeAbs({ k: "arr", element: el }, undefined, undefined, el.conf));
+      continue;
+    }
+    seedArgs.push(anyEntryAbs());
+  }
+  return seedArgs;
+}
+
+/**
  * 契约域**种子重算**：用契约参数 Abs 作种子重跑一次函数，取返回位。
  *
  * 与 dts 面的种子口径同向（契约参数 = 种子，缺省位 = `any`）；求值失败 ⇒
@@ -465,14 +554,13 @@ function seedDomainReturn(
   ctx: FaceContext | undefined,
 ): Abs | undefined {
   if (!eff || eff.params.length === 0 || !ctx) return undefined;
-  const byName = new Map<string, Abs>();
-  const binders = eff.binders ? new Map(Object.entries(eff.binders)) : undefined;
-  for (const p of eff.params)
-    byName.set(p.param, constraintToEntryAbs(p.constraint, p.param, undefined, binders));
-  const seedArgs = fn.paramNames.map((n) => {
-    const bare = n.startsWith("...") ? n.slice(3) : n;
-    return byName.get(bare) ?? byName.get(n) ?? anyEntryAbs();
-  });
+  // BUG-102：rest 形参的绑定是**实参收集**（长度由实参个数决定），而种子
+  // 只能传固定个 Abs —— 把契约数组当**一个**实参传 ⇒ `[contractArray]`
+  // 单元素见证 ⇒ `xs.length` 折 lit(1)、`xs[0]` 折契约本身；发布出的返回
+  // 校验器拒绝实现自己的真实返回值。rest 位不可用固定实参播种 ⇒ fail-closed
+  // 回落观测面（combinedAbs），与 check / dts 同源。
+  if (formalList(fn).some((f) => f.kind === "rest")) return undefined;
+  const seedArgs = contractSeedArgs(fn, eff);
   try {
     return (
       tryEvalCall(ctx.source, ctx.filePath, fn.name, seedArgs, ctx.mocks ? { mocks: ctx.mocks } : {}) ??

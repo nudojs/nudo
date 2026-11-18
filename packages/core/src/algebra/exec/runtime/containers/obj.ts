@@ -28,6 +28,7 @@ import {
   getSlot,
   setSlot,
   setProtoAbs,
+  markKeySetOpenAbs,
 } from "../../../objects.ts";
 import { getFnImpl, attachFnImpl } from "../../../abs-fn.ts";
 import {
@@ -397,8 +398,25 @@ export function $spread(a: Abs, b: Abs): Abs {
     if (ciInner) {
       const ciSlots = (ciInner.shape as ObjShape).slots;
       const pub: Record<string, Slot> = {};
-      for (const k of enumOwnKeys(ciInner, ciSlots)) {
-        setSlot(pub, k, getSlot(ciSlots, k)!);
+      // Bug 115：`Object.defineProperty(instance, k, { get, enumerable })`
+      // 的真 getter 住内层 obj 的 accessorTable（槽里只有占位成本）——
+      // CopyDataProperties 必须**调用** getter（this = 实例）并拷结果。
+      // 键集取枚举自有槽 ∪ 可枚举访问器键（纯访问器键可能无同名槽）。
+      const ciAcc = accessorTable.get(ciInner as object);
+      const keys = new Set(enumOwnKeys(b0, ciSlots));
+      if (ciAcc) {
+        for (const k of ciAcc.keys()) {
+          if (isEnumerableView(b0, k)) keys.add(k);
+        }
+      }
+      for (const k of keys) {
+        const g = ciAcc?.get(k)?.get;
+        const slot = getSlot(ciSlots, k);
+        if (g) {
+          setSlot(pub, k, { value: g(b0) });
+        } else if (slot) {
+          setSlot(pub, k, slot);
+        }
       }
       b0 = abs({ k: "obj", slots: pub }, undefined, undefined, b0.conf);
     }
@@ -422,10 +440,18 @@ export function $spread(a: Abs, b: Abs): Abs {
       }
     }
   }
+  // any 展开：无约束键 → open obj（不是空 {} / unknown）
+  // BUG-1071：`any` 源的**自有键集不可判**（可能新增任意键）——合成的
+  // open obj 必须带 `markKeySetOpenAbs`（与 objects.ts `spread()` 的抽象源
+  // 臂同语义），否则键家族（Object.keys/values/entries）会把 `{...x}` 折
+  // exact 空元组（自信的确切错值），原型链读面也会把继承值当定值。
+  // 具体对象源仍走原路径（键集已知 ⇒ 结果可精确）。
+  const anySpreadSrc = (): Abs =>
+    markKeySetOpenAbs(abs({ k: "obj", slots: {}, open: true }, undefined, undefined, "partial"));
   if (aa?.shape?.k === "any" || b0?.shape?.k === "any") {
     const base = spreadObj(
-      aa?.shape?.k === "any" ? abs({ k: "obj", slots: {}, open: true }, undefined, undefined, "partial") : aa,
-      b0?.shape?.k === "any" ? abs({ k: "obj", slots: {}, open: true }, undefined, undefined, "partial") : b0,
+      aa?.shape?.k === "any" ? anySpreadSrc() : aa,
+      b0?.shape?.k === "any" ? anySpreadSrc() : b0,
     );
     return base;
   }

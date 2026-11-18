@@ -12,6 +12,8 @@ type Gold = {
   source: string;
   expectOk: boolean;
   expectCode?: string;
+  /** 该用例必须列出的入口名（`report.signatures[].name`） */
+  expectSignature?: string;
   /**
  * T10a drift 夹具：按 spec 键（如 "./file.nudo.js"）提供侧车内容，
  * 优先于 stdLoadModule（其对任意 .nudo.js 都回 STD 约束库）。
@@ -91,12 +93,25 @@ export function scale(x) { return x + 1; }
 `,
     expectOk: false,
     expectCode: "nudo:entry-may-throw",
+    expectSignature: "scale",
   },
   {
-    // （wave 3）：同上——`id + 1`（id:any）may TypeError；listing 意图不变。
-    name: "async function listed",
+    // 异步函数照常列入 signatures；体抛错只让返回的 promise 拒绝，不构成
+    // 调用点同步抛 ⇒ 入口 total（BUG-084 口径）。
+    // BUG-1071：本用例此前用 `return id + 1`（不抛），没覆盖「异步抛错」
+    // 这条契约；改为真抛的 async 体，确保它**不**报 entry-may-throw。
+    name: "async function listed; async throw is a promise rejection",
     source: `
-export async function load(id) { return id + 1; }
+export async function load(id) { throw new TypeError("bad"); }
+`,
+    expectOk: true,
+    expectSignature: "load",
+  },
+  {
+    // 对照：同步函数体定抛仍是入口 may-throw（异步豁免不外溢）
+    name: "sync function throw stays entry-may-throw",
+    source: `
+export function loadSync(id) { throw new TypeError("bad"); }
 `,
     expectOk: false,
     expectCode: "nudo:entry-may-throw",
@@ -376,6 +391,12 @@ describe("nudo check gold standards", () => {
       }
       // 每个 case 至少能列出函数或明确无函数
       expect(Array.isArray(report.signatures)).toBe(true);
+      if (g.expectSignature !== undefined) {
+        expect(
+          report.signatures.map((s) => s.name),
+          formatIssues(report),
+        ).toContain(g.expectSignature);
+      }
     });
   }
 });

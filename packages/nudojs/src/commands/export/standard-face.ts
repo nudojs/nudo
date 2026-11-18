@@ -6,7 +6,7 @@
  * 与整参校验器同名同形、语义却不同，消费方必然误用）。
  */
 import { type Abs, type EffectiveContract } from "@nudojs/core";
-import { absToStandardSchemaFunction } from "@nudojs/service/emit";
+import { absToStandardSchemaFunction, type SchemaProjectionScope } from "@nudojs/service/emit";
 import type { FunctionAnalysis } from "@nudojs/service";
 import { effectiveContractReturnFace, type FaceContext, type ParamFace } from "./contract-face.ts";
 
@@ -35,6 +35,7 @@ export function standardFaceChunk(
   eff: EffectiveContract | undefined,
   outputAbs: Abs | undefined,
   ctx?: FaceContext,
+  scope?: SchemaProjectionScope,
 ): StandardFaceChunk | undefined {
   // 顶层形参可选性透传（族 17 · Bug 627）：契约允许的 `undefined` 在 standard
   // 面必须是**可选槽**（否则消费方拿它当必填 ⇒ 契约允许的调用被判非法）。
@@ -47,13 +48,16 @@ export function standardFaceChunk(
   if (stdInputs.length === 0 && stdReturns === undefined && outputAbs === undefined) {
     return undefined;
   }
-  const mod = absToStandardSchemaFunction({
-    fn: baseName,
-    inputs: stdInputs,
-    formals: fn.formals,
-    returns: stdReturns,
-    output: outputAbs,
-  });
+  const mod = absToStandardSchemaFunction(
+    {
+      fn: baseName,
+      inputs: stdInputs,
+      formals: fn.formals,
+      returns: stdReturns,
+      output: outputAbs,
+    },
+    scope ? { scope } : undefined,
+  );
   return {
     source: `\n// === ${baseName} Standard Schema ===\n${mod.source}`,
     dropped: mod.dropped.map((note) => `${baseName} ${note}`),

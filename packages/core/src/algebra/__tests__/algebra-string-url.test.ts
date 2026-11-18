@@ -1577,3 +1577,107 @@ describe("抽象接收者的 matchAll 抽象臂（methods.ts matchAllAbstractArm
 
 });
 });
+
+/**
+ * BUG-125：URLSearchParams 自身可迭代面——`iterabilityKind` 的 brand 分支
+ * 只查内建原型白名单（String/Number/Boolean）⇒ 判 may（假 TypeError），
+ * 且 `elemsOf` / `$concat.expand` / Array.from / 数组解构没有条目表分支
+ * （元素域 unknown）。修复：`@@iterator === entries`（WHATWG），条目表
+ * （urlSearchParamsEntriesOf 单一真值源）在四个消费面精确展开。
+ */
+describe("URLSearchParams iterable面（BUG-125）", () => {
+  const sp = `new URLSearchParams("a=1&b=2")`;
+
+  it("spread / for-of / Array.from / 解构 = 条目表", () => {
+    expect(
+      litValue(call(`export function f() { return [...${sp}].map(([k, v]) => k + v).join(","); }`).result),
+    ).toEqual({ ok: true, value: "a1,b2" });
+    expect(
+      litValue(call(`export function f() { let n = 0; for (const x of ${sp}) n++; return n; }`).result),
+    ).toEqual({ ok: true, value: 2 });
+    expect(
+      litValue(call(`export function f() { return Array.from(${sp}).map(([k, v]) => k + v).join(","); }`).result),
+    ).toEqual({ ok: true, value: "a1,b2" });
+    expect(
+      litValue(call(`export function f() { const [first] = ${sp}; return first.join("="); }`).result),
+    ).toEqual({ ok: true, value: "a=1" });
+  });
+
+  it("父 URL 的 searchParams 同样可精确展开；对照 .entries() 不变", () => {
+    expect(
+      litValue(call(`export function f() { return [...new URL("https://x.com/?a=1").searchParams].length; }`).result),
+    ).toEqual({ ok: true, value: 1 });
+    expect(
+      litValue(call(`export function f() { return [...${sp}.entries()].length; }`).result),
+    ).toEqual({ ok: true, value: 2 });
+  });
+});
+
+/**
+ * BUG-126：URL 组件 setter 只改自身槽——派生组件（href / pathname / …）与
+ * live `searchParams` 停在构造期快照（自信错值、check 全绿）。原生组件是
+ * 同一解析状态的投影；修复：setter 后按宿主 URL 重放并回写全部组件与
+ * `searchParams` 条目表（抽象值退 string 域，不发布陈旧精确值）。
+ */
+describe("URL component setters recompute derived components（BUG-126）", () => {
+  it("search setter 同步 searchParams（与 spMutator 对称）", () => {
+    expect(
+      litValue(
+        call(
+          `export function f() { const u = new URL("https://x.com/a"); u.search = "?q=1"; return JSON.stringify([u.search, u.searchParams.get("q")]); }`,
+        ).result,
+      ),
+    ).toEqual({ ok: true, value: '["?q=1","1"]' });
+    expect(
+      litValue(
+        call(
+          `export function f() { const u = new URL("https://x.com/a"); u.search = "?q=1"; return u.searchParams.toString(); }`,
+        ).result,
+      ),
+    ).toEqual({ ok: true, value: "q=1" });
+  });
+
+  it("href setter 重算全部组件", () => {
+    expect(
+      litValue(
+        call(
+          `export function f() { const u = new URL("https://x.com/a"); u.href = "https://x.com/?q=1"; return JSON.stringify([u.search, u.searchParams.get("q"), u.pathname]); }`,
+        ).result,
+      ),
+    ).toEqual({ ok: true, value: '["?q=1","1","/"]' });
+  });
+
+  it("pathname / search / hash setter 重算 href", () => {
+    expect(
+      litValue(
+        call(
+          `export function f() { const u = new URL("https://x.com/a?q=1"); u.pathname = "/b"; return u.href; }`,
+        ).result,
+      ),
+    ).toEqual({ ok: true, value: "https://x.com/b?q=1" });
+    expect(
+      litValue(
+        call(
+          `export function f() { const u = new URL("https://x.com/a?q=1"); u.search = "?r=2"; return u.href; }`,
+        ).result,
+      ),
+    ).toEqual({ ok: true, value: "https://x.com/a?r=2" });
+    expect(
+      litValue(
+        call(
+          `export function f() { const u = new URL("https://x.com/a?q=1"); u.hash = "#h"; return u.href; }`,
+        ).result,
+      ),
+    ).toEqual({ ok: true, value: "https://x.com/a?q=1#h" });
+  });
+
+  it("href setter 换整条 URL（hostname / pathname / search / hash）", () => {
+    expect(
+      litValue(
+        call(
+          `export function f() { const u = new URL("https://x.com/a?q=1"); u.href = "https://y.com:8080/b?r=2#h"; return JSON.stringify([u.href, u.hostname, u.pathname, u.search, u.hash]); }`,
+        ).result,
+      ),
+    ).toEqual({ ok: true, value: '["https://y.com:8080/b?r=2#h","y.com","/b","?r=2","#h"]' });
+  });
+});

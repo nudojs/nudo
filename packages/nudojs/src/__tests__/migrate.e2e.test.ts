@@ -248,6 +248,53 @@ describe("nudo migrate", () => {
     expect(text).toContain("pnpm run typecheck");
   });
 
+  it("A1: workflow 里只剩编译器角色的 tsc ⇒ typescript 保留（不摘依赖、不报 blocker）", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-wf-compiler-"));
+    dirs.push(dir);
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({
+        name: "demo",
+        devDependencies: { typescript: "^5.0.0" },
+      }),
+      "utf-8",
+    );
+    // `-p` 指向**会 emit** 的项目 ⇒ 编译器角色（原样保留）
+    writeFileSync(
+      join(dir, "tsconfig.json"),
+      JSON.stringify({ compilerOptions: { outDir: "dist", declaration: true } }),
+      "utf-8",
+    );
+    const wfDir = join(dir, ".github", "workflows");
+    mkdirSync(wfDir, { recursive: true });
+    writeFileSync(
+      join(wfDir, "build.yml"),
+      ["name: CI", "jobs:", "  build:", "    steps:", "      - run: npx tsc -p tsconfig.json", ""].join(
+        "\n",
+      ),
+      "utf-8",
+    );
+
+    // status：依赖是**有意保留**（不是 blocker），与 retire 决策同源
+    const rows = migrateStatus(dir);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.blockers).not.toContain("typescript still in dependencies");
+    expect(rows[0]!.preserved?.deps).toEqual(["devDependencies"]);
+
+    // retire --all：没有可退役的东西 ⇒ 不注入脚本、不摘依赖
+    expect(migrateRetireAll(dir)).toEqual([]);
+    const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf-8"));
+    expect(pkg.devDependencies.typescript).toBe("^5.0.0");
+    expect(pkg.scripts).toBeUndefined();
+    expect(existsSync(join(dir, ".nudo", "migrate-retired.json"))).toBe(false);
+
+    // 单目标：如实说「tsc 只是编译器」（不再谎报 removed），且零写盘
+    expect(() => migrateRetire(dir)).toThrow(/only a compiler/);
+    expect(JSON.parse(readFileSync(join(dir, "package.json"), "utf-8")).devDependencies.typescript).toBe(
+      "^5.0.0",
+    );
+  });
+
   it("A1: migrateRetireAll batches workspace packages", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-all-"));
     dirs.push(dir);
@@ -596,12 +643,36 @@ describe("nudo migrate", () => {
     writeFileSync(join(dir, "package.json"), pkgBefore, "utf-8");
     const missing = join(dir, "typo-does-not-exist");
 
+    // strip 仍在计划阶段硬失败（拿不到目标就没有 diff 可出）
     await expect(migrateStrip([missing], { write: true })).rejects.toThrow(/not found/);
-    await expect(migrateVerify([missing])).rejects.toThrow(/not found/);
+
+    // verify 反过来：缺失路径**只作废自己那一行**（逐目标记账），
+    // 不再是整份 results 作废 —— 否则同批里已经验过的目标白跑一遍还不上屏。
+    const rows = await migrateVerify([missing]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.code).toBe("not-found");
+    expect(rows[0]!.nudoOk).toBe(false);
+    expect(rows[0]!.error).toMatch(/not found/);
 
     expect(readFileSync(join(dir, "package.json"), "utf-8")).toBe(pkgBefore);
     expect(existsSync(join(dir, ".nudo", "migrate-retired.json"))).toBe(false);
     expect(readdirSync(dir).filter((f) => f.endsWith(".js"))).toHaveLength(0);
+  });
+
+  it("verify keeps the other targets when one path is missing", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-missing-mixed-"));
+    dirs.push(dir);
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "mixed" }), "utf-8");
+    const good = join(dir, "good.js");
+    writeFileSync(good, `export function f(x) { return x; }\n`, "utf-8");
+    const missing = join(dir, "typo-does-not-exist");
+
+    const rows = await migrateVerify([missing, good]);
+    expect(rows).toHaveLength(2);
+    const byCode = rows.find((r) => r.code === "not-found");
+    expect(byCode?.file).toContain("typo-does-not-exist");
+    // 同批的下一个目标照常验证过（旧实现根本走不到这里）
+    expect(rows.some((r) => r.nudoOk && r.file.endsWith("good.js"))).toBe(true);
   });
 
   it("existing package.json / source file still resolves to its directory", () => {

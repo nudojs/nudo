@@ -386,11 +386,22 @@ export function transpileFnBodyStmts(
     // 函数体边界：重算提升集；keepVarDecl 只属于模块顶层 export var 的
     // 直接声明发射，不得泄漏进嵌套函数体（否则块内 var 误发块级 let）
     // paramNames：形参重赋值不参与 assign-mismatch（见 types.ts 该字段说明）
+    // BUG-074：**函数体边界重算遮蔽集**。单元级扫描现在只收本作用域链的绑定
+    // （嵌套函数体止步，见 scope-collect 的 collectDeclaredBindingNames），
+    // 所以每个函数体边界要把**自己的**体（含嵌套块，扫到嵌套函数为止）与本层
+    // 形参并回：`function f(Number) { … }` 的形参、`function g() { const Number
+    // = … }` 的体内局部名都只遮蔽**本函数**，不得关掉兄弟函数的
+    // `Number.isFinite` 守卫事实（假红）。
+    const scopedShadow = shadowedIntrinsicsOf(
+      stmts,
+      new Set([...(opts.shadowedIntrinsics ?? []), ...varScope.skip]),
+    );
     varOpts = {
       ...opts,
       hoistedVarNames: hoisted,
       keepVarDecl: undefined,
       paramNames: varScope.skip,
+      ...(scopedShadow ? { shadowedIntrinsics: scopedShadow } : {}),
     };
     // P4b：函数边界参数遮蔽——继承的 constNames（外层 const / 类体不可变
     // 自有名）被本函数参数模式名遮蔽时必须扣除：`function f(K) { K = 5 }`

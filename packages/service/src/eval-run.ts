@@ -405,6 +405,8 @@ export function tryEvalCallFull(
     mocks?: Record<string, Abs>;
     /** 入口 Φ 种子（assume 约束——eval 侧路径条件收窄） */
     phi?: Phi;
+    /** BUG-133：TS `this: T` 接收者 Abs（自由函数入口求值） */
+    thisArg?: Abs;
     /** 宿主模块加载器；透传 tryRunEval（图组装 + depKey 同口径） */
     loadModule?: LoadModule;
     /** 宿主已计算的依赖指纹（跳过重算）；null = fail-closed 禁缓存 */
@@ -476,6 +478,7 @@ export function tryEvalCallFull(
           : callTranspiledExportFull(run.exports, fnName, args, {
               preferLocal: true,
               ...(opts.phi ? { phi: opts.phi } : {}),
+              ...(opts.thisArg ? { thisArg: opts.thisArg } : {}),
             });
       if (!full) return undefined;
       const all = [...(run.memberDiags ?? []), ...memberDiags];

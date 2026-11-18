@@ -6,6 +6,7 @@
  *   - analyzer-orchestrate-uncached-modules.ts  模块图组装（dep 指纹 / 整文件求值 / eval 静态诊断）
  *   - analyzer-orchestrate-uncached-cases.ts    case 合成 + entry 分析（@nudo:case / call@ / entry@）
  */
+import { entryThisReceiverTypeTextOf } from "@nudojs/core/internal";
 import { realpathSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import type { Node } from "@babel/types";
@@ -199,6 +200,19 @@ export function analyzeFileUncachedInner(
   alsoSynthesizeCases?: AlsoSynthesizeCases,
 ): AnalysisResult {
   const ast = parse(source, { filename: filePath });
+  // BUG-133：`this: T` 接收者注解（strip 后 AST 不可见，helper 自己 keepTs）。
+  // keepTs 整源解析昂贵 ⇒ 每文件只测**一次**正则（`\bthis\s*:`：漏掉
+  // `this : T` 会让带空格注解的函数静默丢 dts 接收者子句），命中后按函数名
+  // 缓存结果；指令路径与合成路径共用同一份查询。
+  const hasThisReceiverAnnotation = /\bthis\s*:/.test(source);
+  const thisReceiverTypeCache = new Map<string, string | undefined>();
+  const thisReceiverTypeOf = (fnName: string): string | undefined => {
+    if (!hasThisReceiverAnnotation) return undefined;
+    if (thisReceiverTypeCache.has(fnName)) return thisReceiverTypeCache.get(fnName);
+    const text = entryThisReceiverTypeTextOf(source, fnName);
+    thisReceiverTypeCache.set(fnName, text);
+    return text;
+  };
   // F-3 / D1: 指令文法诊断（nudo:directive-syntax）不再静默——并入 analysis diagnostics。
   // 显式通道：诊断直接落局部数组，不碰模块级 buffer（无 seq 锚 / 在途窃取窗口）
   const dirDiags: DirectiveDiag[] = [];
@@ -572,12 +586,16 @@ export function analyzeFileUncachedInner(
     // 据此保留源码里写下的类型。
     const formals = extractFormals(fn.node, source);
     const declaredReturnType = extractReturnAnnotation(fn.node);
+    // BUG-133：`this: T` 接收者注解（strip 后 AST 不可见，helper 自己 keepTs；
+    // 每文件的 keepTs 查询经 thisReceiverTypeOf 缓存 / 正则闸门）
+    const thisReceiverType = thisReceiverTypeOf(fn.name);
     const analysis: FunctionAnalysis = {
       name: fn.name,
       loc: fnLoc,
       paramNames,
       ...(formals.length > 0 ? { formals } : {}),
       ...(declaredReturnType ? { declaredReturnType } : {}),
+      ...(thisReceiverType ? { thisReceiverType } : {}),
       cases: [],
     };
     // noDeclaration 分类继承顶层函数普查（类方法 / CJS 绑定等无稳定导出名
@@ -793,6 +811,7 @@ export function analyzeFileUncachedInner(
     if (directiveFnStmts.has(stmt)) continue;
     const synthFormals = extractFormals(node, source);
     const synthReturnAnnotation = extractReturnAnnotation(node);
+    const synthThisReceiverType = thisReceiverTypeOf(name);
     const analysis: FunctionAnalysis = {
       name,
       loc: locFromNode(node),
@@ -801,6 +820,7 @@ export function analyzeFileUncachedInner(
       // 看不到 `.ts` 源的声明类型。形参表面与 paramNames 同源（下标对齐）。
       ...(synthFormals.length > 0 ? { formals: synthFormals } : {}),
       ...(synthReturnAnnotation ? { declaredReturnType: synthReturnAnnotation } : {}),
+      ...(synthThisReceiverType ? { thisReceiverType: synthThisReceiverType } : {}),
       cases: [],
     };
     if (noDeclaration) analysis.noDeclaration = true;

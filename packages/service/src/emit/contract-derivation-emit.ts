@@ -601,7 +601,15 @@ function headerOwnsExport(
 ): boolean {
   const chain = sectionChainIndices(stmts, exportIdx);
   let first = exportIdx;
-  for (const idx of chain) if (idx < first) first = idx;
+  for (const idx of chain) {
+    // BUG-112 后续：段链只认**段头之后**的语句。段头之前已有用户 import
+    // （或本工具写入的 `nudo:emit-builders` import）时，`sectionChainIndices`
+    // 会把它算进链首 ⇒ 段被误判为「头不拥有该 export」⇒ 派生分支把手写
+    // 判定打回、`derived-from:` 永不合并。
+    const start = stmts[idx]?.start;
+    if (start == null || start < headerPos) continue;
+    if (idx < first) first = idx;
+  }
   // 头之后的第一条顶层语句
   for (let k = 0; k < stmts.length; k++) {
     const start = stmts[k]!.start;

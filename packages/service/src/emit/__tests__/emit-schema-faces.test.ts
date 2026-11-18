@@ -391,12 +391,16 @@ describe("standard 节点的字面量序列化必须保真", () => {
     expect(validate(43).issues).toBeDefined();
   }
   {
-    const { node, dropped } = absToSchemaNode(litAbs(NaN));
-    // 降级（不是 lit(null)）——NaN 字面量在 Abs 里可表示，但 schema 面不投影它
-    expect(node).not.toEqual({ k: "lit", value: null });
-    expect(dropped.join(" ")).toContain("NaN");
+    // BUG-137：NaN 是**精确字面量**，必须保真投影（不得放宽成 number 域）
+    const { node } = absToSchemaNode(litAbs(NaN));
+    expect(node).toEqual({ k: "lit", value: NaN });
     const { source } = absToStandardSchema(litAbs(NaN), { name: "nanOutput" });
-    expect(source).not.toContain('"value":null');
+    expect(source).toContain('"value":NaN');
+    const mod = await loadGeneratedModule(source);
+    const validate = mod.nanOutput!["~standard"].validate;
+    expect(validate(NaN).issues).toBeUndefined();
+    expect(validate(1).issues).toBeDefined();
+    expect(validate(Infinity).issues).toBeDefined();
   }
 });
 

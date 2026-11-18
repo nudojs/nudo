@@ -5,7 +5,11 @@
  * `paramExps`），缺省即必填（契约是用户申报的调用域，权威）。
  */
 import { obj, type Abs } from "@nudojs/core";
-import { absToZodSchemaModule, type ZodModuleProjection } from "@nudojs/service/emit";
+import {
+  absToZodSchemaModule,
+  type SchemaProjectionScope,
+  type ZodModuleProjection,
+} from "@nudojs/service/emit";
 import type { ParamFace } from "./contract-face.ts";
 
 /** zod 入参槽：参数面 → zod 对象槽（契约级可选性 ⇒ `.optional()`）。 */
@@ -56,7 +60,8 @@ export function zodFaceEntries(
  */
 export function renderZodModule(
   schemaExports: Readonly<Record<string, Abs>>,
+  scope?: SchemaProjectionScope,
 ): ZodModuleProjection | undefined {
   if (Object.keys(schemaExports).length === 0) return undefined;
-  return absToZodSchemaModule(schemaExports);
+  return absToZodSchemaModule(schemaExports, scope ? { scope } : undefined);
 }

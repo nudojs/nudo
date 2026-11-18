@@ -14,6 +14,7 @@ import {
 import { resolve, dirname, relative, join, basename, sep, isAbsolute } from "node:path";
 import {
   stripGeneratedCaseDirectives,
+  blankGeneratedCaseDirectives,
   insertGeneratedCaseDirectives,
   type EmitResult,
 } from "@nudojs/service/emit";
@@ -403,13 +404,22 @@ export async function reemitUpdate(
   // 展示面（`result`）必须来自**最终要写的那份文本**：指令 case 在、
   // 行号就是用户打开文件时看到的行号。
   const stripped = stripGeneratedCaseDirectives(source);
+  // BUG-076：混合块里的生成态见证不会被剥离（手写 case 在 ⇒ 整块保留），
+  // 但分析必须把它们当**已失效**（否则旧 call@ 被读成 directive case ⇒
+  // 当前调用点不再合成 ⇒ health 恒 0 drift、freeze no changes）。用行数
+  // 不变的空白视图分析；写盘基源仍是 stripped.source（行号对齐）。
+  const analysisSource = blankGeneratedCaseDirectives(stripped.source);
   const baseAnalysis = await analyzeFileAsync(
     filePath,
-    stripped.source,
+    analysisSource,
     undefined,
     from,
     undefined,
     "all",
+    // BUG-076：混合块（手写 case 仍在）里的函数也必须合成当前调用点证据，
+    // 否则旧 call@ 抹白后没有任何新见证可写 ⇒ 「no changes」恒绿。
+    // 只在确有残留生成行时打开（普通文件剥离后的分析保持既有行为）。
+    analysisSource !== stripped.source ? true : undefined,
   );
   const emitOut = await emitWithFinalCoordinates(
     filePath,
@@ -548,7 +558,22 @@ export function collectExternalRecords(
       continue;
     }
     for (const sf of siteFiles) {
-      const source = readFileSync(sf, "utf-8");
+      // BUG-091：现场文件读失败必须落 path-io（旧实现裸读 ⇒ 顶层裸 errno /
+      // --json 0 字节 stdout）。EACCES 不再「上抛」。
+      let source: string;
+      try {
+        source = readFileSync(sf, "utf-8");
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        pushPathError({
+          path: sf,
+          code: DIAG.pathIo,
+          message: `Cannot read callsite file ${sf}: ${reason}`,
+          suggestion:
+            "check the path exists and is readable (file permissions / IO); fix the path or grant access, then re-run",
+        });
+        continue;
+      }
       // 探针**先行**（不再挂在「0 条记录」分支上）：
       // - Bug 466：0 条记录 ⇒「现场文件里没有调用」与「现场文件读失败」同形，
       //   必须区分（读失败被吞成 0 条记录 ⇒ 静默 entry@ + exit 0 假绿）。
@@ -755,17 +780,23 @@ function collectNudoFilesIn(
   for (const entry of entries) {
     kinds.set(entry.name, entryKind(entry, join(dir, entry.name)));
   }
-  // 同目录里**已存在的产物**（`.js` / `.mjs`，按 stem 索引）——
+  // 同目录里**已存在的产物**（`.js` / `.mjs` / `.cjs`，按 stem 索引）——
   // 「源 vs 产物」同 stem 冲突时**产物胜出**（Bug 1053：门禁要门禁发布物）。
   // 只收**分析目标**：侧车（`*.nudo.js`）/ draft 不是产物 ⇒ 不能压掉源。
+  // BUG-087：`.cts → .cjs` 也是一条 strip 产物链（与 `.mts → .mjs` 对称）。
+  // 旧表漏了 `.cjs` ⇒ `.cts` 被无关的 `boom.js` 压掉（假绿）、与**真正的**
+  // `boom.cjs` 产物并存（同一模块分析两遍、计数翻倍）。
   const jsProducts = new Set<string>(); // .js 产物（stem）
   const mjsProducts = new Set<string>(); // .mjs 产物（stem）
+  const cjsProducts = new Set<string>(); // .cjs 产物（stem）
   for (const entry of entries) {
     if (kinds.get(entry.name) !== "file") continue;
     const fullPath = join(dir, entry.name);
     const lower = entry.name.toLowerCase();
     if (lower.endsWith(".mjs")) {
       if (isNudoTargetPath(fullPath)) mjsProducts.add(entry.name.slice(0, entry.name.length - 4));
+    } else if (lower.endsWith(".cjs")) {
+      if (isNudoTargetPath(fullPath)) cjsProducts.add(entry.name.slice(0, entry.name.length - 4));
     } else if (lower.endsWith(".js")) {
       if (isNudoTargetPath(fullPath)) jsProducts.add(entry.name.slice(0, entry.name.length - 3));
     }
@@ -794,7 +825,11 @@ function collectNudoFilesIn(
     const stem = sourceStemOf(entry.name);
     if (stem !== undefined) {
       const lower = entry.name.toLowerCase();
-      const products = lower.endsWith(".mts") ? mjsProducts : jsProducts;
+      const products = lower.endsWith(".mts")
+        ? mjsProducts
+        : lower.endsWith(".cts")
+          ? cjsProducts
+          : jsProducts;
       if (products.has(stem)) continue;
     }
     // 范围闸门（产品默认安全排除 [+ watch 扫描的用户 include/exclude]）

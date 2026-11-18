@@ -114,14 +114,20 @@ describe("arithmetic over abstract operand records may TypeError", () => {
     }
   });
 
-  it("+x / ~x / -x → may TypeError，值域不变", () => {
+  it("+x / ~x / -x → may TypeError；~x 的值域含 bigint ⇒ unknown（bigint 负控：~1n 合法折叠）", () => {
     for (const u of ["+", "~", "-"]) {
       const r = evalSrc(`export function f(x) { return ${u}x; }`);
       expect(r.effects, u).toContain("TypeError");
     }
     expect(evalSrc(`export function f(x) { return +x; }`).value).toBe("unknown");
+    // `~any` 不得报 number：any 可能是 bigint（`~1n === -2n` 合法且非抛）⇒
+    // 与 negAbs 的抽象回退同口径退 unknown。
     expect(evalSrc(`export function f(x) { return ~x; }`).value).toBe("unknown");
     expect(evalSrc(`export function f(x) { return -x; }`).value).toBe("unknown");
+    // 负控：bigint 字面量走 ToNumeric 折叠（不是 TypeError，结果仍是 bigint）
+    const big = evalSrc(`export function f() { return ~1n; }`, "f", []);
+    expect(big.value).toBe("-2n");
+    expect(big.effects).not.toContain("TypeError");
   });
 
   it("模板串 `${x}`（$add 链）与 `\"a\" + x` → may TypeError（Symbol 维度），值域 string", () => {
@@ -145,7 +151,9 @@ describe("arithmetic over abstract operand records may TypeError", () => {
   });
 
   it("obj 抽象面（valueOf 可产 bigint/Symbol）→ may TypeError；具体 obj 字面量不报", () => {
-    const objAbs = abs({ k: "obj", slots: {} }, undefined, undefined, "path");
+    // 开放对象（成员未知 ⇒ 可能有 valueOf/@@toPrimitive 钩子）才是抽象面；
+    // 闭对象字面量无 coercer ⇒ 原生恒 ToString "[object Object]"（BUG-037）。
+    const objAbs = abs({ k: "obj", slots: {}, open: true }, undefined, undefined, "path");
     expect(collectEffects(() => add(objAbs, numLit(1)))).toContain("TypeError");
     expect(collectEffects(() => cmp("lt", objAbs, numLit(1)))).toContain("TypeError");
     // 源级：具体对象成员算术折叠，无假报

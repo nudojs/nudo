@@ -22,6 +22,7 @@ import {
   constraintToEntryAbs,
   fnConstraintToEntryReqs,
   isIntFlag,
+  any,
 } from "../constraint.ts";
 import { predToString } from "../pred.ts";
 import { leqAbs } from "../leq.ts";
@@ -436,4 +437,11 @@ describe("非法成员不再静默丢弃", () => {
 
 
 
+});
+
+describe("throws 通配 token（BUG-120）", () => {
+  it('"any" 不是通配 —— fn() 显式报错（与 @nudo:throws 同口径）', () => {
+    expect(() => fn({}, any(), { throws: "any" })).toThrow(/"any" is not a throws kind/);
+    expect(() => fn({}, any(), { throws: "*" })).not.toThrow();
+  });
 });

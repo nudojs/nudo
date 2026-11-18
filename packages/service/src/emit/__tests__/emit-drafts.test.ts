@@ -174,8 +174,8 @@ f(9);
 `,
     );
     expect(r.written).toEqual(["f"]);
-    // 调用点证据优先（点观测拓宽到基类型）⇒ 见证的 lit(5)/lit(6) 不得混入
-    expect(r.sidecar).toContain("export const f = fn({ x: number() }, number());");
+    // 调用点证据优先（BUG-113：精确观测）⇒ 见证的 lit(5)/lit(6) 不得混入
+    expect(r.sidecar).toContain("export const f = fn({ x: lit(9) }, lit(10));");
     expect(r.sidecar).not.toContain("lit(5)");
     expect(r.sidecar).not.toContain("lit(6)");
   }

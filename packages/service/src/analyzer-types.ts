@@ -71,6 +71,8 @@ export type FunctionAnalysis = {
    * 返回位复现）。缺省 = .js 源 / 未标注 ⇒ 零影响。
    */
   declaredReturnType?: string;
+  /** BUG-133：自由函数 `this: T` 接收者注解原文（dts 子句） */
+  thisReceiverType?: string;
   cases: CaseResult[];
   /** cases 结果 Abs 的 join；dts 返回位源。skip 函数恒为声明面（@nudo:skip =>），case 结果不参与（#176） */
   combinedAbs?: Abs;

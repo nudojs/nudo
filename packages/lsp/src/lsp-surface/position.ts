@@ -81,6 +81,18 @@ export function findFunctionNameAtPosition(
           foundDecl = false;
           return;
         }
+        // 导入说明符（BUG-071）：`import { add }` 的 imported / local 同 loc；
+        // 两侧都按本地绑定名解析（等价于声明位面）⇒ 跨模块签名面可达。
+        if (
+          parent.type === "ImportSpecifier" &&
+          ((parent as { imported?: unknown }).imported === path.node ||
+            (parent as { local?: unknown }).local === path.node)
+        ) {
+          const local = (parent as { local?: { type?: string; name?: string } }).local;
+          found = local?.type === "Identifier" ? local.name : path.node.name;
+          foundDecl = true;
+          return;
+        }
         // ClassMethod / ObjectMethod key → G2 绑定名（C.m / owner.key）
         if (
           (parent.type === "ClassMethod" ||

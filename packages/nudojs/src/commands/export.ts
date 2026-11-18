@@ -20,8 +20,9 @@ import {
   type Abs,
   type FormalParam,
 } from "@nudojs/core";
+import { parse } from "@nudojs/parser";
 import { analyzeFileAsync, type CaseResult, type FunctionAnalysis } from "@nudojs/service";
-import { dtsModuleSurface } from "@nudojs/service/emit";
+import { dtsModuleSurface, isRuntimeGlobalCtorName } from "@nudojs/service/emit";
 import {
   SCHEMA_DIALECTS,
   normalizeDialect,
@@ -32,6 +33,7 @@ import {
   type ExportFormat,
 } from "../export-format.ts";
 import type { SchemaDialect } from "@nudojs/service/emit";
+import { DIAG } from "@nudojs/core/internal";
 import {
   buildEffectiveContractOptions,
   resolveEvalMocks,
@@ -56,6 +58,7 @@ import {
   reportUnevidencedParams,
 } from "./export/diagnostics.ts";
 import { writeExportArtifacts, writtenPathLines } from "./export/io.ts";
+import { moduleIdOf } from "./export/module-id.ts";
 import { printExportStdout } from "./export/stdout.ts";
 
 // ---------------------------------------------------------------------------
@@ -160,57 +163,62 @@ function arrayPatternParamFaces(
 }
 
 /**
- * 最近的含 `package.json` 的祖先目录（无 ⇒ undefined）。
+ * BUG-051 续修：源码里**任意深度**的类名（声明 / 表达式，含赋给变量的
+ * 类表达式）——保守集合，只用于「这个名字是否被本模块的类遮蔽」。
+ *
+ * 判据必须覆盖 `export default class Date` 与函数 / 块级 `class Date`：
+ * `result.bindings` 只收**顶层语句**的绑定 ⇒ 这两种形态漏掉，而它们的实例
+ * brand 名就是 `Date` ⇒ 产物仍发 `z.instanceof(Date)`（产物模块里恒解析为
+ * 全局）⇒ 校验器拒收实现自己的返回值。类名是唯一需要的信息，AST 走一遍
+ * 全部类节点即可；多收一个同名类只会让该 brand 降级为 unknown（放行 +
+ * 留痕），不会假绿。
  */
-function packageRootOf(startDir: string): string | undefined {
-  let dir = startDir;
-  for (;;) {
-    if (existsSync(join(dir, "package.json"))) return dir;
-    const parent = dirname(dir);
-    if (parent === dir) return undefined;
-    dir = parent;
-  }
-}
-
-/** 包名（`package.json#name`，读不到 / 非字符串 ⇒ undefined）。 */
-function packageNameOf(root: string): string | undefined {
+function classNamesInSource(source: string): Set<string> {
+  const out = new Set<string>();
+  let ast: unknown;
   try {
-    const pkg: unknown = parseJsonText(readFileSync(join(root, "package.json"), "utf-8"));
-    if (pkg !== null && typeof pkg === "object") {
-      const name = (pkg as { name?: unknown }).name;
-      if (typeof name === "string" && name !== "") return name;
-    }
+    ast = parse(source);
   } catch {
-    /* 读不到 / 解析失败 ⇒ 退回相对路径口径 */
+    return out;
   }
-  return undefined;
-}
-
-/**
- * 模块标识（**与绝对路径无关**的稳定 id）——写进产物 marker，并作为
- * 「同一模块 ⇒ 原地覆盖」的判定键（BUG-016）。
- *
- * - 文件在**包根**（最近的含 `package.json` 的祖先目录）内 ⇒
- *   `<包名>/<相对包根的路径>`。同一份源码在不同 checkout / 不同机器上得到
- *   **同一个** id ⇒ 产物字节可复现，且不同文件仍得到不同 id；
- * - 包外（临时目录 / 单文件导出）⇒ `<stem>|<导出名集合>`：同一份源码放在不同
- *   绝对路径下仍是**同一模块**（第二次导出原地覆盖，不再新增 hash 后缀副本），
- *   导出名不同的同名文件仍是不同模块。改函数体不改导出名 ⇒ id 不变 ⇒
- *   重导仍是原地覆盖（BUG-231）。
- *
- * 旧口径直接把**绝对源路径**当模块标识 ⇒ 「同一模块」挂在本机路径上：
- * 换目录重导 ⇒ 多一份陈旧副本，且产物内嵌构建机绝对路径。
- */
-function moduleIdOf(filePath: string, source: string): string {
-  const root = packageRootOf(dirname(filePath));
-  if (root !== undefined) {
-    const name = packageNameOf(root);
-    const rel = relative(root, filePath).split(sep).join("/");
-    return name === undefined ? rel : `${name}/${rel}`;
-  }
-  const stem = basename(filePath).replace(/\.[cm]?[jt]s$/, "");
-  const exports = [...localNamedExports(source)].sort().join(",");
-  return `${stem}|${exports}`;
+  const visit = (node: unknown): void => {
+    if (node === null || typeof node !== "object") return;
+    if (Array.isArray(node)) {
+      for (const n of node) visit(n);
+      return;
+    }
+    const rec = node as Record<string, unknown>;
+    const type = rec.type;
+    if (type === "ClassDeclaration" || type === "ClassExpression") {
+      const id = rec.id as Record<string, unknown> | null | undefined;
+      if (id && typeof id.name === "string") out.add(id.name);
+    } else if (type === "VariableDeclarator") {
+      // `const Date = class { … }`：类表达式自身无 id ⇒ 绑定名来自声明符
+      const init = rec.init as Record<string, unknown> | undefined;
+      if (init?.type === "ClassExpression") {
+        const id = rec.id as Record<string, unknown> | undefined;
+        if (id && typeof id.name === "string") out.add(id.name);
+      }
+    }
+    for (const [key, value] of Object.entries(rec)) {
+      // 位置 / 注释等元数据不是子节点（避免无谓遍历与自引用）
+      if (
+        key === "loc" ||
+        key === "start" ||
+        key === "end" ||
+        key === "leadingComments" ||
+        key === "trailingComments" ||
+        key === "innerComments" ||
+        key === "comments" ||
+        key === "tokens"
+      ) {
+        continue;
+      }
+      if (value !== null && typeof value === "object") visit(value);
+    }
+  };
+  visit(ast);
+  return out;
 }
 
 async function runExport(
@@ -220,7 +228,24 @@ async function runExport(
   dialect?: SchemaDialect,
 ): Promise<void> {
   const filePath = resolve(file);
-  const source = readFileSync(filePath, "utf-8");
+  // BUG-091：读失败走路径错误通道（`nudo:path-io` + fix 行），不冒泡裸 errno。
+  let source: string;
+  try {
+    source = readFileSync(filePath, "utf-8");
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    reportPathErrors([
+      {
+        path: filePath,
+        code: DIAG.pathIo,
+        message: `Cannot read ${filePath}: ${reason}`,
+        suggestion:
+          "check the path exists and is readable (file permissions / IO); fix the path or grant access, then re-run",
+      },
+    ]);
+    process.exitCode = 1;
+    return;
+  }
   // case 档 "none"：与**门禁面**（check / health / migrate）同口径 —— 发布面
   // **不**消费 `@nudo:case`。文档明文（`docs/concepts/directives.md:44`）：
   // 「Cases are debug witnesses … not the contract product」。旧实现用 "all"
@@ -263,6 +288,33 @@ async function runExport(
   // （`export { x } from "./y.js"`，本文件无函数）也要出模块面产物；早退在
   // 模块面组装之前 ⇒ 再导出被整个丢掉（BUG-033）。
   const dtsSurface = dtsModuleSurface(source);
+
+  /**
+   * BUG-051 续修：本模块里**遮蔽了同名全局构造器**的用户绑定（`class Date` /
+   * `import { Date } from …` / 顶层 `const Map = …`）。
+   *
+   * brand 的 Abs 只有 `{name}`，不含值身份 ⇒ `class Date` 的实例与真内建
+   * Date 实例在 Abs 上同形。zod / standard 两个产物面是**独立模块**（不 import
+   * 源的任何绑定）⇒ 产物里的 `Date` 恒解析为全局 ⇒ `z.instanceof(Date)` 拒收
+   * 函数自己的返回值（`expected Date, received Date`），而 dts 面（`declare
+   * class Date`）判对。判据用**绑定表**（类 / 函数 / 顶层值 / import 本地名
+   * 都在里面）而不是 `dtsSurface.imports`——后者按**导出名**建键
+   * （`import { X as Y }` 记 "X"），拿不到本地绑定名。
+   *
+   * `result.bindings` 只含**顶层语句**的绑定 ⇒ `export default class Date`
+   * 与函数 / 块级 `class Date` 漏掉（它们照样遮蔽同名全局，实例 brand 仍是
+   * `Date`）⇒ 产物仍发 `z.instanceof(Date)`。补两道来源：模块类面（顶层类
+   * 声明，含 default）与全深度类名 AST 扫描（保守；多判遮蔽只降精度，不会
+   * 把真实全局实例错判成可投影）。
+   */
+  const shadowedGlobals = new Set<string>();
+  const noteShadowedGlobal = (name: string): void => {
+    if (isRuntimeGlobalCtorName(name)) shadowedGlobals.add(name);
+  };
+  for (const name of result.bindings.keys()) noteShadowedGlobal(name);
+  for (const name of dtsSurface.classes.keys()) noteShadowedGlobal(name);
+  for (const name of classNamesInSource(source)) noteShadowedGlobal(name);
+  const brandScope = shadowedGlobals.size > 0 ? { shadowedGlobals } : undefined;
 
   // 空产物的唯一判据：**既无本地函数，也无模块面可发射内容**（BUG-033 的再导出 /
   // BUG-190 的模块级值导出；Bug 24：**类与 namespace 同样是模块面可发射内容**）。
@@ -334,7 +386,14 @@ async function runExport(
     const baseName = fn.name;
 
     // 运行时校验器应尽量反映**契约域**，而不是单次调用点字面量。
-    const eff = effectiveContract(source, baseName, effOpts);
+    const declared = effectiveContract(source, baseName, effOpts);
+    // `@generated` 档 = emit 时刻的**事实快照**（docs/design/refine-derivation.md：
+    // 不执法，只 drift）。公开产物面（zod / standard / guard / dts）把它当
+    // 义务发布 ⇒ `fn({a: lit(1)}, lit(2))` 让产物只接受 `a: 1` / 返回 `2`，
+    // 而实现允许任意值、`nudo check` 也只报 warning（nudo:contract-drift）
+    // ⇒ 门禁与产物相反裁决，产物拒收实现自己的合法返回值。生成档不进公开
+    // 面：回落分析面 Abs（真实可接受域的观测近似）。
+    const eff = declared?.source === "generated" ? undefined : declared;
     // 契约面上下文（契约域种子重算 / 违约复核需要源码与路径）
     const faceCtx = {
       source,
@@ -358,7 +417,7 @@ async function runExport(
     }
 
     if (wantsStandard(format)) {
-      const chunk = standardFaceChunk(fn, baseName, paramExps, eff, outputAbs, faceCtx);
+      const chunk = standardFaceChunk(fn, baseName, paramExps, eff, outputAbs, faceCtx, brandScope);
       if (chunk) {
         standardChunks.push(chunk.source);
         for (const note of chunk.dropped) {
@@ -406,7 +465,7 @@ async function runExport(
   }
 
   const stem = basename(filePath).replace(/\.[cm]?[jt]s$/, "");
-  const schemaModule = renderZodModule(schemaExports);
+  const schemaModule = renderZodModule(schemaExports, brandScope);
 
   // 无证据参数的 stderr 提示（docs/design/cli-semantics.md §2 的 unknown
   // 例外面）：指向三条补证据路径，stdout 投影面保持可钉住

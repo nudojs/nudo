@@ -133,16 +133,25 @@ function getMemberCompletions(
   const base = getCompletionsForAbs(bound);
   // BUG-034：类实例的品牌 shape 只带 own 字段槽，原型方法不在里面 ⇒ 补全区
   // 必须并入类成员表（与 check / hover 的成员面同源：`localClassMemberTable`）。
+  //
+  // BUG-088：这里**只能**走 brand 面。旧实现在其后还有一条兜底分支
+  // （`receiver.segments.length === 1` ⇒ 按**文本名**并入静态成员），
+  // 但类值接收者（`K.`）**恒为** brand（`root === cls` ⇒ 静态面）⇒ 那条兜底
+  // 的每一次执行都是「名字与某个类相同、但绑定不是该类」的碰撞：
+  //
+  // ```js
+  // export class Config { static load() { return 1; } }
+  // export function make() { const Config = { port: 8080 }; return Config.; }
+  // ```
+  //
+  // ⇒ 补全给出 `port` + **`load`**（接收者 Abs 明明是 `{ port }`），接受即写出
+  // 运行期 `TypeError: Config.load is not a function`。
   if (bound.shape.k === "brand") {
     // 类**值**本身也是 brand（静态槽挂在同一个品牌上）⇒ 接收者就是类名时
     // 走静态面，否则是实例面。两面成员集合不同，不得混用。
     const cls = bound.shape.name;
     const face = receiver.segments.length === 1 && root === cls ? "static" : "instance";
     return mergeMemberItems(base, classMemberItems(source, cls, face));
-  }
-  // 类值面（`K.`）：静态方法同样不在静态字段槽里。
-  if (receiver.segments.length === 1) {
-    return mergeMemberItems(base, classMemberItems(source, root, "static"));
   }
   return base;
 }
@@ -415,6 +424,10 @@ function isCodePrefix(prefix: string): boolean {
 function classifyReceiver(head: string): Receiver {
   const cur = head.replace(/\s+$/u, "");
   if (cur === "") return { kind: "unknown" };
+  // BUG-089：可选链接收者（`o?.` / `f()?.` / `a[0]?.`）——尾随 `?` 是链操作符，
+  // 不是接收者的一部分。旧实现在这里让 `?` 落到末字符分派 ⇒ unknown ⇒ 零候选
+  // （同一行 `o.` 正常）。
+  if (cur[cur.length - 1] === "?") return classifyReceiver(cur.slice(0, -1));
   const last = cur[cur.length - 1]!;
 
   // ① 括号表达式 / 调用表达式
@@ -513,15 +526,21 @@ function parseReceiver(textBefore: string): Receiver | null {
  */
 export function sanitizeSourceForParsing(source: string): string {
   const masked = maskCommentsAndStrings(source);
-  /** A) 点后仅空白（⇒ 行尾）：原口径 */
-  const tailDot = /([\p{ID_Start}$_][\p{ID_Continue}$_]*|\d[\d_]*)\.\s*$/gmu;
+  /**
+   * A) 点后仅空白（⇒ 行尾）：原口径。
+   * BUG-090：标识符与点之间允许换行 / 缩进——链式调用换行后点号独占行首
+   * （`o\n  .`）同样是编辑中间态，旧文法要求相邻 ⇒ 消毒不生效 ⇒ 绑定解析
+   * 直接抛 ⇒ 零候选。
+   */
+  const tailDot = /([\p{ID_Start}$_][\p{ID_Continue}$_]*|\d[\d_]*)\s*\.\s*$/gmu;
   /** B) 点后紧跟标点 token：编辑中间态（BUG-185） */
-  const punctDot = /([\p{ID_Start}$_][\p{ID_Continue}$_]*)\.(?=[;),\]}])/gu;
+  const punctDot = /([\p{ID_Start}$_][\p{ID_Continue}$_]*)\s*\.(?=[;),\]}])/gu;
   const dots = new Set<number>();
   for (const re of [tailDot, punctDot]) {
     for (const m of masked.matchAll(re)) {
-      const dot = (m.index ?? 0) + (m[1]?.length ?? 0);
-      dots.add(dot);
+      // 点号位置按匹配文本内的最后一个 `.` 取（标识符与点之间可能有空白）
+      const dot = (m.index ?? 0) + m[0].lastIndexOf(".");
+      if (dot >= (m.index ?? 0)) dots.add(dot);
     }
   }
   if (dots.size === 0) return source;
@@ -768,7 +787,19 @@ function offsetOfPosition(
 function getTextBeforePosition(source: string, line: number, column: number): string {
   const lines = source.split("\n");
   if (line < 1 || line > lines.length) return "";
-  return lines[line - 1].slice(0, column);
+  const current = lines[line - 1]!.slice(0, column);
+  // BUG-090：链式调用换行后点号独占行首（prettier 常见产物）——
+  // `o\n  .|`。只取当前行的窗口只剩 `"  ."` ⇒ 接收者为空 ⇒ 零候选。
+  // 行首点号是链的**续行**：把上一行（以及连续的上一段续行）拼进窗口，
+  // 让 parseReceiver 看到完整接收者。非行首点号的常规形态逐字不变。
+  if (!/^\s*\.[\p{ID_Continue}$_]*\s*$/u.test(current)) return current;
+  let start = line - 1;
+  if (start > 0) {
+    start--;
+    // `.bar` 续行链：继续向上拼，直到根行（非续行）为止。
+    while (start > 0 && lines[start]!.trimStart().startsWith(".")) start--;
+  }
+  return [...lines.slice(start, line - 1), current].join("\n");
 }
 
 function getVariableCompletions(
@@ -902,13 +933,115 @@ function getPrimCompletions(prim: PrimName): CompletionItem[] {
 // Abs 接收者补全
 // ---------------------------------------------------------------------------
 
-/** Abs → 补全 detail（外延口径："1" / "number"） */
-function absDetail(a: Abs): string {
+/**
+ * arity-only fn 的返回槽为空（未被调用观测过）⇒ core 渲染器印内部占位符
+ * `?`。IDE 面不得外泄该占位符（BUG-057）：展示副本把缺失的返回槽补成
+ * `any`（check 签名公式同口径——「无约束」不是「未知」）。
+ *
+ * 只重建 shape 容器，term / pred / conf 等 Abs 元数据按引用保留；环用
+ * `seen` 截断（返还已建副本，formatShape 自身的 depth/cycle 预算继续兜底）。
+ */
+export function formatShapeForIde(
+  a: Abs,
+  opts?: { maxDepth?: number; showLits?: boolean; pretty?: boolean },
+): string {
+  const seen = new Map<Abs, Abs>();
+  // 克隆只服务展示；超过 formatShape 的展示深度就不再下钻（否则深图会被
+  // 整棵复制一遍——formatShape 原本在 maxDepth 处截断）。
+  const maxDepth = opts?.maxDepth ?? 64;
+  const fill = (abs: Abs, depth = 0): Abs => {
+    if (depth >= maxDepth) return abs;
+    const cached = seen.get(abs);
+    if (cached) return cached;
+    const clone: Abs = { ...abs };
+    seen.set(abs, clone);
+    const s = abs.shape;
+    switch (s.k) {
+      case "fn": {
+        const anyAbs: Abs = { shape: { k: "any" }, conf: "exact" };
+        const slots = s.slots
+          ? Object.fromEntries(
+              Object.entries(s.slots).map(([key, slot]) => [
+                key,
+                { ...slot, value: fill(slot.value, depth + 1) },
+              ]),
+            )
+          : undefined;
+        clone.shape = {
+          ...s,
+          paramTypes: s.paramTypes?.map((t) => fill(t, depth + 1)),
+          returnType: s.returnType ? fill(s.returnType, depth + 1) : anyAbs,
+          ...(slots ? { slots } : {}),
+          ...(s.overloads
+            ? {
+                overloads: s.overloads.map((o) => ({
+                  ...o,
+                  paramTypes: o.paramTypes.map((t) => fill(t, depth + 1)),
+                  returnType: fill(o.returnType, depth + 1),
+                })),
+              }
+            : {}),
+        };
+        break;
+      }
+      case "obj": {
+        clone.shape = {
+          ...s,
+          slots: Object.fromEntries(
+            Object.entries(s.slots).map(([key, slot]) => [
+              key,
+              { ...slot, value: fill(slot.value, depth + 1) },
+            ]),
+          ),
+          ...(s.index
+            ? {
+                index: {
+                  key: fill(s.index.key, depth + 1),
+                  value: fill(s.index.value, depth + 1),
+                },
+              }
+            : {}),
+        };
+        break;
+      }
+      case "arr":
+        clone.shape = { ...s, element: fill(s.element, depth + 1) };
+        break;
+      case "tuple":
+        clone.shape = {
+          ...s,
+          elements: s.elements.map((el) => fill(el, depth + 1)),
+          ...(s.rest ? { rest: fill(s.rest, depth + 1) } : {}),
+        };
+        break;
+      case "brand":
+        clone.shape = { ...s, shape: fill(s.shape, depth + 1) };
+        break;
+      case "eff":
+        clone.shape = {
+          ...s,
+          inner: fill(s.inner, depth + 1),
+          ...(s.rejected ? { rejected: fill(s.rejected, depth + 1) } : {}),
+        };
+        break;
+      case "sum":
+        clone.shape = { ...s, members: s.members.map((m) => fill(m, depth + 1)) };
+        break;
+      default:
+        break;
+    }
+    return clone;
+  };
   try {
-    return formatShape(a);
+    return formatShape(fill(a), opts);
   } catch {
     return formatAbs(a);
   }
+}
+
+/** Abs → 补全 detail（外延口径："1" / "number"；不泄漏内部 `?` 占位符） */
+function absDetail(a: Abs): string {
+  return formatShapeForIde(a);
 }
 
 /**
@@ -971,10 +1104,17 @@ function getCompletionsForAbs(a: Abs): CompletionItem[] {
     case "obj": {
       const completions: CompletionItem[] = [];
       for (const [key, slot] of Object.entries(s.slots)) {
+        // BUG-055：点号后的补全 label 会被客户端**原样**插入（本面不发
+        // insertText / textEdit）⇒ 非标识符键不得出现在 `o.` 成员面：
+        // `o.123` / `o.hello world` 语法错误，`o.a-b` 静默变减法。
+        // 合法标识符键照旧；变量面 detail 仍保留引号形态（formatShape）。
+        if (!isValidIdentifier(key)) continue;
         completions.push({
           label: key,
           kind: absIsFn(slot.value) ? "method" : "property",
-          detail: absDetail(slot.value),
+          // BUG-057：成员函数走与绑定面 / check 相同的签名公式，不是裸
+          // `formatShape`（后者会印 arity-only 占位符 `?`）。
+          detail: fnBindingDetail(key, slot.value) ?? absDetail(slot.value),
         });
       }
       return completions;
