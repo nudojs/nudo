@@ -50,8 +50,8 @@
     "prepublishOnly": "tsup"
   },
   "dependencies": {
-    "@babel/parser": "^8.1.0",
-    "@babel/types": "^8.1.0"
+    "@babel/parser": "^8.1.2",
+    "@babel/types": "^8.1.2"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

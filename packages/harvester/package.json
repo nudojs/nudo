@@ -33,7 +33,7 @@
     "prepublishOnly": "tsup src/index.ts --format esm --dts"
   },
   "dependencies": {
-    "@babel/types": "^8.1.0",
+    "@babel/types": "^8.1.2",
     "@nudojs/core": "workspace:*",
     "@nudojs/env": "workspace:*",
     "@nudojs/parser": "workspace:*",

@@ -45,7 +45,7 @@
     "vite": ">=5.0.0"
   },
   "devDependencies": {
-    "vite": "7.3.7"
+    "vite": "7.3.8"
   },
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts",
