@@ -29,7 +29,7 @@
  * `assertNeverShape`；需要「未知形态按 may / 违例处理」时，那属于 `unknown` /
  * `any` 变体自己的臂，不是兜底。
  */
-import type { Shape } from "./abs.ts";
+import type { Shape } from "../abs.ts";
 
 /** 全部形状变体（顺序与 `Shape` 联合的声明序一致，便于逐条对照）。 */
 export const SHAPE_KINDS = [

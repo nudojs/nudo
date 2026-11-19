@@ -35,7 +35,7 @@ import { bindImports, type AbsModuleExports } from "./abs-modules.ts";
 import { defaultLeakBudget, type LeakBudget } from "./diagnostics/leak.ts";
 import { formatShapeSlot } from "./format/format.ts";
 import { type RefineResolveOpts, extractFnBudget } from "./refine.ts";
-import { withFnBudgetOverride } from "./call-budget.ts";
+import { MAX_SAFE_CALL_DEPTH, withFnBudgetOverride } from "./call-budget.ts";
 import { withEvalBudgetOverride, runEvalCallBudgetTrial } from "./exec/calls.ts";
 import { LAZY_TEMPLATE_DEPTH, constraintToEntryAbs, instantiateConstraint } from "./constraint.ts";
 import {
@@ -609,7 +609,11 @@ function selfRecursionTrialLimits(
   fnBudget: { depth?: number; calls?: number } | undefined,
 ): { depth: number; calls: number } {
   return {
-    depth: Math.max(SELF_RECURSION_TRIAL_DEPTH, fnBudget?.depth ?? 0),
+    // BUG-172：试算同样不得越过宿主栈安全线（@nudo:budget 的值可能远大于它）。
+    depth: Math.min(
+      MAX_SAFE_CALL_DEPTH,
+      Math.max(SELF_RECURSION_TRIAL_DEPTH, fnBudget?.depth ?? 0),
+    ),
     calls: Math.max(SELF_RECURSION_TRIAL_CALLS, fnBudget?.calls ?? 0),
   };
 }
@@ -2686,11 +2690,15 @@ export function buildArgsFromAssume(
 ): Abs[] {
   const extracted = extractFn(source, fnName);
   if (!extracted) return [];
-  return extracted.params.map((p) => {
+  return extracted.params.map((p, i) => {
     if (assumeIds.has(p)) {
       // 界只来自用户声明（bounds）；没有声明就不写——不发明默认界。
       return abs({ k: "prim", type: "number" }, termVar(p), bounds?.get(p), "path");
     }
-    return abs({ k: "any" }, undefined, undefined, "path");
+    // BUG-158：`--abs` 的观察面必须与签名表 / `--json` / LSP hover 同源——
+    // 非 assume 形参的 TS 注解（`x: number`）本来就是入口域，不得一律
+    // 播种成 `any`（那会让同一函数在 `check` 与 `check --abs` 两个面
+    // 给出互斥的类型）。无注解 / 不可映射才回 any（不猜）。
+    return annotationAbsOf(absShapeForTsTypeText(extracted.formals[i]?.tsType), termVar(p));
   });
 }

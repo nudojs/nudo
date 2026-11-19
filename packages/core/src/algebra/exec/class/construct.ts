@@ -14,7 +14,7 @@
  */
 import type { Abs } from "../../abs.ts";
 import { abs, unknown, never, litValue, strLit, isAbsLike } from "../../abs.ts";
-import { assertNeverShape } from "../../shape-kinds.ts";
+import { assertNeverShape } from "../../check/shape-kinds.ts";
 import { objOf, getSlot, setSlot, setInstanceProto, type Slot } from "../../objects.ts";
 import { markFreshInstance } from "../../key/instance-id.ts";
 import { hostBuiltinCtorOf, evalClassChain } from "../runtime/members.ts";

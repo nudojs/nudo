@@ -31,6 +31,8 @@ import { basename, dirname, relative, resolve } from "node:path";
 import {
   CONSTRAINT_BUILDER_NAMES,
   abs as makeAbs,
+  absToConstraint,
+  generalizeFromAst,
   execNudoModule,
   formatConstraint,
   contractDiagCount,
@@ -423,7 +425,10 @@ export async function emitContract(
       const hit = planCache.get(name);
       if (hit) return hit;
       const fn = fnByName.get(localOf.get(name) ?? name);
-      const proj: FunctionProjection = fn === undefined ? { dsl: undefined } : projectFunctionDsl(fn);
+      const proj: FunctionProjection =
+        fn === undefined
+          ? { dsl: undefined }
+          : projectFunctionDsl(fn, source, opts.loadModule, abs);
       const dsl = proj.dsl;
       // BUG-035（证据范围）：段的证据是否混入 `--from` 外部记录（见
       // FunctionAnalysis.externalEvidence）——落进 `// evidence:` 行。
@@ -858,7 +863,61 @@ type FunctionProjection = { dsl?: string; noEvidence?: boolean };
  * 用 entry 推断（仅返回位；entry 实参恒 unknown，参数位无证据不产约束）。
  * 任一有证据位 joinThenProject 落空 → undefined（not-projectable，不产垃圾）。
  */
-function projectFunctionDsl(fn: FunctionAnalysis): FunctionProjection {
+/** 递归去掉 pred 层（类型仍可投影时的保守退化；关系式已有其它面承载） */
+function withoutPreds(a: Abs): Abs {
+  if (a.shape.k === "obj") {
+    const slots: Record<string, { value: Abs; optional?: boolean }> = {};
+    for (const [key, slot] of Object.entries(a.shape.slots)) {
+      slots[key] = {
+        value: withoutPreds(slot.value),
+        ...(slot.optional ? { optional: true } : {}),
+      };
+    }
+    return { ...a, shape: { ...a.shape, slots }, pred: undefined };
+  }
+  return a.pred ? { ...a, pred: undefined } : a;
+}
+
+/**
+ * BUG-159：运行期见证 Abs 的置信度撞 `PROJECTABLE_CONF`（widened/partial）时，
+ * 用**泛化签名**（`generalizeFromAst`，与 check / dts 同一真相源）兜底投影。
+ *
+ * 求值见证的实参是具体值 ⇒ `x + 1` / `x > 1` 失去 term ⇒ conf 降级 ⇒
+ * 旧实现把整段契约标成 `not-projectable`，而同一轮 `check` 发布 `conf: path`
+ * 的 `number` / `boolean`。泛化 Abs 带符号 term，能给出 `number()` /
+ * `boolean()`（关系 pred 不可表达时退化为类型域，不伪造关系）。
+ */
+function inferredProjection(
+  fn: FunctionAnalysis,
+  source: string,
+  loadModule?: (spec: string, fromFile: string) => string | undefined,
+  fromFile?: string,
+): { params: Array<NudoConstraint | undefined>; ret?: NudoConstraint } {
+  try {
+    const g = generalizeFromAst(fn.name, source, {
+      refine: {
+        ...(loadModule ? { loadModule } : {}),
+        ...(fromFile ? { fromFile } : {}),
+      },
+    });
+    if (!g) return { params: [] };
+    const project = (a: Abs): NudoConstraint | undefined =>
+      absToConstraint(a) ?? absToConstraint(withoutPreds(a));
+    return {
+      params: g.typeParams.map((t) => project(t.value)),
+      ...(g.symbolic ? { ret: project(g.symbolic) } : {}),
+    };
+  } catch {
+    return { params: [] };
+  }
+}
+
+function projectFunctionDsl(
+  fn: FunctionAnalysis,
+  source: string,
+  loadModule?: (spec: string, fromFile: string) => string | undefined,
+  fromFile?: string,
+): FunctionProjection {
   // #176：skip 函数不产侧车契约——@nudo:case 现已照常求值（运行时见证），
   // 但见证不参与面合成；skip 的面是 @nudo:skip => 声明（若有）。与旧口径
   // 一致：此前 skip 无 case → 无证据 → not-projectable。
@@ -898,6 +957,10 @@ function projectFunctionDsl(fn: FunctionAnalysis): FunctionProjection {
   // 观测一样按字面量投影。
   const projectObserved = (absList: Abs[]): NudoConstraint | undefined =>
     joinThenProject(absList);
+  // BUG-159：仅在运行期见证投影落空时才跑泛化（多数函数零额外成本）。
+  let inferred: ReturnType<typeof inferredProjection> | undefined;
+  const fallback = (): ReturnType<typeof inferredProjection> =>
+    (inferred ??= inferredProjection(fn, source, loadModule, fromFile));
 
   const paramParts: string[] = [];
   for (let i = 0; i < fn.paramNames.length; i++) {
@@ -907,7 +970,7 @@ function projectFunctionDsl(fn: FunctionAnalysis): FunctionProjection {
       if (a !== undefined) rawAbs.push(a);
     }
     if (rawAbs.length === 0) continue; // 无证据：参数位留空（不产约束）
-    const constraint = projectObserved(rawAbs);
+    const constraint = projectObserved(rawAbs) ?? fallback().params[i];
     // 证据在、但投影不出 ⇒ noEvidence 不置位（既有段必须保留，不得误删）
     if (constraint === undefined) return { dsl: undefined };
     paramParts.push(`${fn.paramNames[i]!}: ${formatConstraint(constraint)}`);
@@ -918,9 +981,11 @@ function projectFunctionDsl(fn: FunctionAnalysis): FunctionProjection {
   for (const c of returnCases) {
     if (c.throwsAbs.shape.k === "never") retRaw.push(c.abs);
   }
+  // BUG-159：运行期见证 conf=widened/partial（算出来的返回值）时，用泛化
+  // 返回位兜底；否则整段契约（含本来可投影的形参）会被误判 not-projectable。
   const retConstraint: NudoConstraint | undefined =
     retRaw.length > 0
-      ? projectObserved(retRaw)
+      ? projectObserved(retRaw) ?? fallback().ret
       : undefined;
   // 完全无证据（形参位与返回位都没有可投影证据）⇒ 今天的分析对该函数**什么
   // 都没看到** ⇒ 既有生成段描述的行为已不存在（BUG-035 残留：见证段/失效段

@@ -29,7 +29,7 @@ Only the fork budget is adjustable (`NUDO_MAX_FORKS` env wins over `nudo.analysi
 
 Three levers, in the order worth trying:
 
-1. **Add constraints.** Contracts (`*.nudo.js` / `@nudo:contract`) and call-site evidence narrow sets early — smaller Abs, fewer re-evaluations, fewer forks. This is the fix that also *improves* precision.
+1. **Add constraints.** Contracts (`*.nudo.js` / `@nudo:contract`) and call-site evidence narrow sets early — smaller Abs, fewer re-evaluations, fewer forks. This is the fix that also *improves* precision. Call depth is capped at the host-stack safety ceiling (192); a recursion that needs more depth must be restructured or pinned with a contract.
 2. **Split functions / flatten branches.** Deep call chains burn call depth; long `if`/`else` chains and loops-in-branches multiply `$fork` counts combinatorially. Extract helpers, return early, separate concerns.
 3. **Tune knobs and env.** Raise the fork budget (`NUDO_MAX_FORKS=20000` or `package.json#nudo.analysis.maxForks`); model the APIs you touch with `@nudo:env` / mocks so analysis stays on modeled, precise paths instead of forking over opaque values.
 

@@ -167,7 +167,72 @@ export function $copy(a: Abs, memo?: WeakMap<object, Abs>): Abs {
   // 禁止裸读 `.shape` 抛宿主 TypeError（那会被 run.ts 的 evalFallbackOf
   // 归为 nudo:internal ⇒ 合法代码门禁假红 + 引擎内部异常原文泄漏）。
   if (!isAbsLike(a)) return a;
-  return copyWithMemo(a, memo ?? new WeakMap());
+  const out = copyWithMemo(a, memo ?? new WeakMap());
+  registerLiveCopy(out, a);
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// BUG-161：fork 快照与 live 迭代器的桥
+//
+// `$forOf` / 数组 HOF 的 live 视图按值捕获接收者 Abs；条件分支臂的
+// `a = $copy(snapshot)` 把绑定重定向到副本，臂内 `a.pop()` 只改副本 ⇒
+// live 视图继续读**原 Abs**（陈旧长度/元素）。修法不是取消快照（那是
+// fork 隔离的基础），而是：
+// - 迭代/HOF 开始时把接收者登记为 live；
+// - `$copy` 若复制 live 接收者（或它的副本），登记「副本 → 原 Abs」；
+// - fork join 时把最终态**写回原 Abs 的身份**（`$syncLive`）⇒ 下一次
+//   live 读（下一轮迭代 / 下一个回调）看到真实状态。
+// 两个分支仍从各自的快照副本开始（臂间不串味）；同步只发生在 join 之后。
+// ---------------------------------------------------------------------------
+
+const liveContainers = new WeakSet<object>();
+const liveCopyRoots = new WeakMap<object, Abs>();
+
+/** 登记 live 接收者（数组/元组；HOF 与 for-of 共用） */
+export function markLiveContainer(a: Abs): void {
+  if (!isAbsLike(a)) return;
+  // 已是 live 根的快照副本 ⇒ 链已在 `$copy` 登记；把副本再标成 live 会
+  // **截断**副本 → 根链，fork join 就同步到副本而不是迭代器持有的原 Abs。
+  if (liveCopyRoots.has(a as object)) return;
+  if (a.shape.k === "tuple" || a.shape.k === "arr") liveContainers.add(a as object);
+}
+
+function liveRootOf(a: Abs): Abs | undefined {
+  if (!isAbsLike(a)) return undefined;
+  let cur: object = a as object;
+  // 深度防御：副本链只应有一层（snapshot → arm copy），环则放弃。
+  for (let depth = 0; depth < 16; depth++) {
+    if (liveContainers.has(cur)) return cur as Abs;
+    const next = liveCopyRoots.get(cur);
+    if (next === undefined) return undefined;
+    cur = next as object;
+  }
+  return undefined;
+}
+
+function registerLiveCopy(copy: Abs, src: Abs): void {
+  if (copy === src) return;
+  const root = liveRootOf(src);
+  if (root !== undefined) liveCopyRoots.set(copy as object, root);
+}
+
+/**
+ * fork join 的 live 同步：把 join 结果写回原 Abs 的**身份**（identity），
+ * 返回 join 结果供绑定重写。非 live 接收者零行为。
+ */
+export function $syncLive(joined: Abs, current: Abs): Abs {
+  const root = liveRootOf(current);
+  if (root === undefined || root === joined) return joined;
+  // 只同步数组族形状：sum（两臂元素不同时的 join）不是 live 视图能读的
+  // 容器形态；把它写回 root 还会让 sum 成员反向引用 root（成环 ⇒ 后续
+  // `$len` / format 递归爆栈，BUG-161 回归测试的 RangeError）。
+  if (joined.shape.k !== "tuple" && joined.shape.k !== "arr") return joined;
+  root.shape = joined.shape;
+  root.term = joined.term;
+  root.pred = joined.pred;
+  root.conf = joined.conf;
+  return joined;
 }
 
 /**

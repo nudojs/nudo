@@ -17,7 +17,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { formatShape } from "../index.ts";
-import { call, val } from "./eval-helpers.ts";
+import { call, val, throwsError } from "./eval-helpers.ts";
 
 function shape(src: string) {
   return formatShape(call(src).result);
@@ -100,5 +100,50 @@ describe("known-good neighbors stay exact", () => {
     expect(val(`export function f() { return true + 'x'; }`)).toEqual({ ok: true, value: "truex" });
     expect(val(`export function f() { return 1 + 2; }`)).toEqual({ ok: true, value: 3 });
     expect(shape(`export function f() { return 'a' + 'b'; }`)).toBe('"ab"');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 用户 ToPrimitive 钩子结果参与算术 / 关系 / 模板（BUG-142）
+// ---------------------------------------------------------------------------
+describe("user ToPrimitive hooks feed the operator value face", () => {
+  const valueOfObj = `const o = { valueOf() { return 7; } };`;
+  const toStringObj = `const o = { toString() { return "hi"; } };`;
+
+  it("valueOf: * / - / relational use the hook result", () => {
+    expect(val(`export function f() { ${valueOfObj} return o * 2; }`)).toEqual({
+      ok: true,
+      value: 14,
+    });
+    expect(val(`export function f() { ${valueOfObj} return o - 1; }`)).toEqual({
+      ok: true,
+      value: 6,
+    });
+    expect(val(`export function f() { ${valueOfObj} return o > 5; }`)).toEqual({
+      ok: true,
+      value: true,
+    });
+    expect(val(`export function f() { ${valueOfObj} return o + ""; }`)).toEqual({
+      ok: true,
+      value: "7",
+    });
+  });
+
+  it("string hint: template uses toString result; valueOf-only keeps Object.prototype.toString", () => {
+    expect(val("export function f() { const o = { toString() { return \"hi\"; } }; return `${o}`; }")).toEqual({
+      ok: true,
+      value: "hi",
+    });
+    expect(val("export function f() { const o = { valueOf() { return 7; } }; return `${o}`; }")).toEqual({
+      ok: true,
+      value: "[object Object]",
+    });
+  });
+
+  it("throwing hook propagates the user's Error (not a generic TypeError)", () => {
+    const r = call(
+      `export function f() { const o = { toString() { throw new Error("boom"); } }; return \`\${o}\`; }`,
+    );
+    expect(throwsError(r.throws, "Error")).toBe(true);
   });
 });

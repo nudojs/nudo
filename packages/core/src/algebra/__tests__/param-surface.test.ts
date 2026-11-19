@@ -3,6 +3,7 @@ import {
   formalParamsFromNodes,
   formalParamDisplayNames,
   contractParamNameSet,
+  jsDocOptionalParams,
   locateContractParam,
 } from "../format/param-surface.ts";
 import { generalizeFromAst } from "../generalize.ts";
@@ -184,5 +185,21 @@ export function d(x = 1) {
     const issue = r.issues.find((i) => i.code === "nudo:case-inconsistency");
     expect(issue).toBeDefined();
     expect(issue!.fn).toBe("d");
+  });
+});
+
+describe("jsDocOptionalParams（BUG-163：嵌套花括号类型）", () => {
+  it("`@param {{…}} [x]` / `{… | {…}}` / 字符串字面量类型里的花括号都能识别可选名", () => {
+    const names = jsDocOptionalParams([
+      {
+        leadingComments: [
+          { value: "* @param {{ a: number }} [opts] - nested object type" },
+          { value: '* @param {{ error: boolean } | Function} [contextOptions]' },
+          { value: '* @param {{ "a{b": string }} [weird]' },
+          { value: "* @param {number} [plain=1]" },
+        ],
+      },
+    ]);
+    expect([...names].sort()).toEqual(["contextOptions", "opts", "plain", "weird"]);
   });
 });

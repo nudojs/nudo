@@ -293,3 +293,31 @@ double(4);
     expect(r.ok).toBe(true);
   });
 });
+
+describe("nudo:contract-drift — 快照参数名已不是形参（BUG-147）", () => {
+  beforeEach(() => {
+    resetCheckSourceMemo();
+    resetGeneralizeMemo();
+    takeRefineDiags();
+    takeContractDiags();
+  });
+
+  it("形参重命名后 @generated 段必须出账（改前 idx<0 静默 continue ⇒ (no issues)）", () => {
+    const { loadModule } = makeFiles({
+      "/t/lib.nudo.js": GEN(`export const add = fn({ x: number() }, number());`),
+    });
+    const src = `export function add(y) { return 42; }\n`;
+    const r = checkSource("/t/lib.js", src, pTrue, {
+      loadModule,
+      fromFile: "/t/lib.js",
+    });
+    const drifts = r.issues.filter((i) => i.code === "nudo:contract-drift");
+    expect(drifts.length).toBe(1);
+    expect(drifts[0]!.severity).toBe("warning");
+    expect(drifts[0]!.fn).toBe("add");
+    expect(drifts[0]!.message).toContain("not a formal parameter");
+    expect(drifts[0]!.message).toContain("x");
+    expect(drifts[0]!.expected).toBe("y");
+    expect(r.ok).toBe(true);
+  });
+});

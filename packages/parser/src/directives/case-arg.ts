@@ -235,7 +235,10 @@ function constraintToCaseArgAbs(c: NudoConstraint, depth: number): Abs {
     return absExact({ k: "obj", slots });
   }
   // 裸构建器（无 pred / 结构）：number()/string()/boolean() → 干净 prim；
-  // any() → unknown。带 pred（number().gt(0)）仍走 entry Abs 以保留约束。
+  // any() → **any**（不是 unknown！BUG-162：产品口径 any = 无约束，unknown =
+  // 引擎推断失败；侧车 `fn({x:any()}, any())` 同一 token 给 any，指令文法
+  // 不得把显式声明降级成引擎债）。带 pred（number().gt(0)）仍走 entry Abs
+  // 以保留约束。
   // 注意：builder 上 int 是链式方法，不能用 !c.int 判断；只认数据标志 int === true。
   const bareScalar =
     !c.fields && !c.element && !c.members && !c.fn && c.int !== true && c.preds.length === 0;
@@ -243,7 +246,13 @@ function constraintToCaseArgAbs(c: NudoConstraint, depth: number): Abs {
     if (c.prim === "number" || c.prim === "string" || c.prim === "boolean") {
       return absExact({ k: "prim", type: c.prim });
     }
-    if (!c.prim) return absUnknown();
+    // 无 prim 的**空约束**（any()）⇒ 与侧车同一投影（constraintToEntryAbs
+    // 的 fallback 给 any）。rel/bind/ref/lazy 等有独立语义的裸形态保持
+    // 既有 unknown 折叠（不是「无约束」）。
+    if (!c.prim) {
+      const empty = !c.binder && !c.ref && !c.relational && !c.lazy;
+      return empty ? constraintToEntryAbs(c, "__arg") : absUnknown();
+    }
   }
   return constraintToEntryAbs(c, "__arg");
 }

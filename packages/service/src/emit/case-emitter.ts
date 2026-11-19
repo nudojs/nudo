@@ -168,6 +168,9 @@ function serializeCaseArgInner(a: Abs, budget: ProjectionBudget): string | null 
       if (s.type === "boolean") return "boolean()";
       return null;
     case "unknown":
+      // BUG-162 后 `any()` = any，不再是 unknown 的替身；显式 `unknown`
+      // 是字面量文法可解析的独立形态（parseLiteralOrStructure）。
+      return "unknown";
     case "any":
       return "any()";
     case "never":
@@ -276,6 +279,9 @@ function serializeCaseArgConstraintInner(a: Abs, budget: ProjectionBudget): stri
       if (s.type === "boolean") return "boolean()";
       return null;
     case "unknown":
+      // `unknown` 裸标识符不被 union 成员白名单接受；`any()` 语义已不是
+      // unknown ⇒ 这一位不可表达（不静默换成 any）。
+      return null;
     case "any":
       return "any()";
     case "never":

@@ -67,7 +67,7 @@ Constraint gate on **Abs** (type-as-computation). Same contract as CLI `nudo che
 
 | Field | Description |
 |-------|-------------|
-| `actions[].kind` | `draft` \| `relax` \| `callsite` \| `assume` \| `mock` \| `emit` \| `ignore-throws` \| `info` |
+| `actions[].kind` | `draft` \| `relax` \| `callsite` \| `adjust` \| `assume` \| `mock` \| `emit` \| `ignore-throws` \| `info` |
 | `actions[].command` | Optional executable command (e.g. `nudo contract --draft`); omit → label/hint only |
 | `actions[].label` | One-line instruction (same source as `suggestion`, often shorter) |
 | `actions[].hint` | Optional target Pred / field name for programmatic rewrites |

@@ -10,7 +10,7 @@ import { noteDerivationJoin } from "./derivation.ts";
 import { enumOwnKeys, setPropFlags, getPropFlags } from "./builtins/invariants.ts";
 import { $objAccessor, lookupObjAccessor, migrateAccessors } from "./accessors.ts";
 import { getFnImpl, isAbsApplyResult } from "./abs-fn.ts";
-import { recordMayThrow, formatThrowsAbs } from "./diagnostics/may-throw.ts";
+import { recordMayThrow, formatThrowsAbs, errorTypeAbs } from "./diagnostics/may-throw.ts";
 import { NudoThrow } from "./diagnostics/nudo-throw.ts";
 import { enterCall, exitCall, callBudgetKey, stableCallId, truncatedAbs } from "./call-budget.ts";
 import { classInstanceInnerOf, getEvalClass } from "./exec/class-registry.ts";
@@ -253,6 +253,49 @@ export function invokeToPrimitiveHook(recv: Abs, hint: CoercionHint): Abs | unde
   if (!h) return undefined;
   const r = h.call([]);
   return isPrimitiveResult(r) ? r : undefined;
+}
+
+/**
+ * 对象 → 原语（ToPrimitive(hint)）的**值面**：执行用户钩子并返回结果。
+ *
+ * BUG-142：`invokeToPrimitiveHook` 早已被 `Number()` / 松散相等面调用，
+ * 但 `+ - * /`、关系比较、模板拼接各自用「槽是否存在」另判一次，钩子
+ * 结果被丢弃 ⇒ 同一钩子体在 `Number(o)` 精确、在 `o * 2` 未知并假记
+ * TypeError。本函数是这些算子面的统一转换口：
+ * - 有用户钩子（@@toPrimitive / toString / valueOf）⇒ 返回钩子结果；
+ * - 闭普通对象无自有钩子 ⇒ 继承 Object.prototype.toString ⇒
+ *   `"[object Object]"`（number hint 继续由调用方 ToNumber 成 NaN）；
+ * - open / index / 不可判 → undefined（调用方保持保守）。
+ *
+ * 只处理 `obj`：内建 brand 的固定原型表由 `builtinBrandToPrimitive` 负责
+ * （避免 objects ⇄ arithmetic 环）。
+ */
+export function toPrimitiveCoercionOf(a: Abs, hint: CoercionHint): Abs | undefined {
+  if (a.shape.k !== "obj") return undefined;
+  if (isNullProtoObj(a) && isNullProtoWithoutCoercerSlot(a)) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
+  const hooked = invokeToPrimitiveHook(a, hint);
+  if (hooked !== undefined) return hooked;
+  const so = a.shape as {
+    slots?: Record<string, unknown>;
+    open?: boolean;
+    index?: unknown;
+  };
+  // 未知成员可能藏 coercer / default Object.prototype 方法不成立 ⇒ 不折。
+  if (so.open || so.index || isNullProtoObj(a)) return undefined;
+  const hasOwn = (name: string): boolean =>
+    Boolean(so.slots && Object.prototype.hasOwnProperty.call(so.slots, name)) ||
+    lookupObjAccessor(a, name) !== undefined;
+  if (hasOwn("@@toPrimitive")) return undefined;
+  // 自有 toString 已由 invokeToPrimitiveHook 走过；返回非原语 ⇒ 原生走
+  // valueOf 后仍非原语 ⇒ TypeError（不可折成默认 tag）。
+  if (hasOwn("toString")) return undefined;
+  // 余下形态（无自有 toString）：Object.prototype.toString 恒返回原语 ⇒
+  // string hint 的 OrdinaryToPrimitive 直接取它；number/default hint 的
+  // valueOf（自有或继承）返回对象后也回退到它。
+  const tag = defaultObjectTagOf(a);
+  return tag === undefined ? undefined : strLit(`[object ${tag}]`);
 }
 
 /**
@@ -1191,43 +1234,18 @@ export function isNullProtoObj(o: Abs): boolean {
 }
 
 /**
- * ToPrimitive 前置闸门（Bug 381）：**null-proto 无 coercer 判定** +
- * **用户转换钩子真调用**。
+ * ToPrimitive 前置闸门（Bug 381）：**纯判定**——闭 null-proto 且无自有
+ * coercer 的对象走 ToPrimitive 无路可走，原生定抛 TypeError。
  *
- * 修前本函数只探**存在性**（钩子槽在不在）⇒ 钩子体从不执行 ⇒ 钩子的副作用
- * 与 throw 域一并丢失（Bug 381：`valueOfCounter() => 0`；钩子体确定抛错被
- * 折成确定 `no-throw`）。修后按 hint 的 OrdinaryToPrimitive 口径**调用一次**
- * 钩子：副作用发生；钩子体抛错 → NudoThrow 传播（用户 try/catch 可吸收 ⇒
- * 原生同款）。
- *
- * 调用点（hint 随运算面走，BUG-058）：
- * - arithmetic/addsub.ts 的 `+` 臂（default hint；两个操作数各一次 ⇒
- *   `o + o` 调两次，与原生一致）
- * - builtins/global.ts 的 String() 面（**string hint**：toString 先，无自有
- *   toString ⇒ 不回退 valueOf——原生 `String({valueOf(){n++}})` 不调 valueOf）
- * - methods.ts 的 String.prototype.concat（ToString 面，应为 **string hint**；
- *   当前仍传默认值，见 BUG-058 报告）
- * - template.ts 的 concatString 走**纯判定**版（同一次强转只调一次钩子）
+ * BUG-142：本函数**不再调用钩子**（调用钩子属于值面
+ * {@link toPrimitiveCoercionOf}）。旧实现借本判定顺带执行一次钩子，
+ * 返回值被丢弃 ⇒ 同一对象在 `Number()` 精确、在 `o * 2` 未知；而且
+ * `String()` 面先判后调，钩子被调了两次。现在调用点：先
+ * `toPrimitiveCoercionOf`（执行一次钩子并拿结果），需要纯判定时再用本
+ * 函数。
  */
-export function isNullProtoWithoutCoercer(
-  a: Abs,
-  hint: CoercionHint = "default",
-): boolean {
-  if (a.shape.k === "obj" && isNullProtoObj(a) && isNullProtoWithoutCoercerSlot(a)) {
-    // null-proto 且**无**自有 coercer → ToPrimitive 无路可走 ⇒ 定抛
-    // TypeError（原生同款）
-    return true;
-  }
-  // 非 null-proto（null-proto 但**有** coercer / 普通对象 / brand）：按
-  // ToPrimitive(hint) 调一次用户钩子（副作用 + throw 域）。
-  //
-  // BUG-058：hint 不得写死——`String(x)` / 模板插值 走 **string hint**
-  // （toString 先；缺自有 toString ⇒ Object.prototype.toString 恒返回原语
-  // ⇒ **不回退 valueOf**），只有 `+` 运算符 / Number() 走 default/number。
-  // string hint 由 {@link invokeToPrimitiveHook} 的 string 分支落实：无自有
-  // toString 钩子时 `return undefined`（绝不回退 valueOf）。
-  invokeToPrimitiveHook(a, hint);
-  return false;
+export function isNullProtoWithoutCoercer(a: Abs, _hint: CoercionHint = "default"): boolean {
+  return a.shape.k === "obj" && isNullProtoObj(a) && isNullProtoWithoutCoercerSlot(a);
 }
 
 /**

@@ -30,6 +30,7 @@ import { createHash } from "node:crypto";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import {
   CONSTRAINT_BUILDER_NAMES,
+  absToConstraint,
   checkSource,
   constraintToEntryAbs,
   effectiveContract,
@@ -517,6 +518,27 @@ function projectDraftReturn(
         projected: true,
         evidence: rawEvidence,
       };
+    }
+    // BUG-159：运行期见证是**具体实参算出来的值**（`x + 1` / `x > 1`）时
+    // conf 会降成 widened/partial ⇒ joinThenProject 落空。同一轮 check 把
+    // 同一函数发布成 `conf: path` 的 number/boolean；这里用泛化返回位兜底，
+    // 不再把可表达的类型说成「not projectable」。
+    const inferred = inferredReturnDomain(fn, source, loadModule, fromFile);
+    const inferredC =
+      inferred === undefined
+        ? undefined
+        : (absToConstraint(inferred) ?? absToConstraint(stripPreds(inferred)));
+    if (inferredC !== undefined) {
+      const widened = widenDraftConstraint(inferredC);
+      if (widened !== undefined) {
+        return {
+          constraint: widened,
+          display: formatConstraint(widened),
+          projected: true,
+          // symbolic = generalize（草稿头已说明：不是调用点观测，是推断域）
+          evidence: "symbolic",
+        };
+      }
     }
     const shapeText = fn.combinedAbs
       ? formatShape(fn.combinedAbs)

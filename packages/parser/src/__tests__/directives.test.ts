@@ -25,7 +25,9 @@ describe("parseCaseArgExpr", () => {
   });
 
   it("unknown / any / never / any()", () => {
-    for (const expr of ["unknown", "any", "any()"]) expect(parseCaseArgExpr(expr).shape.k, expr).toBe("unknown");
+    for (const expr of ["unknown", "any"]) expect(parseCaseArgExpr(expr).shape.k, expr).toBe("unknown");
+    // BUG-162：显式 any() 与侧车同一 token 同口径 = any（不是 unknown）。
+    expect(parseCaseArgExpr("any()").shape.k).toBe("any");
     expect(parseCaseArgExpr("never").shape.k).toBe("never");
   });
 

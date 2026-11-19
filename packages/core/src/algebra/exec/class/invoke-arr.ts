@@ -15,6 +15,7 @@
 import type { Abs } from "../../abs.ts";
 import { abs, unknown, confJoin, litValue, bool, boolLit, numLit, isAbsLike } from "../../abs.ts";
 import { joinAbs, canonicalArrayIndex, getSlot } from "../../objects.ts";
+import { markLiveContainer } from "../runtime/containers/obj.ts";
 import { fromIdxAbs } from "../../builtins.ts";
 import { markDomainShared } from "../../len-sharing.ts";
 import { $lit, $arrMutContainer, callAtFunctionBoundary } from "../runtime.ts";
@@ -165,6 +166,9 @@ interface ArrCtx {
  * （见 liveShape / liveAt / liveGet）。
  */
 function makeArrCtx(arr: Abs, method: string, args: Abs[]): ArrCtx {
+  // BUG-161：HOF 接收者的 live 读视图同样要跨 fork 副本同步（回调内的
+  // `if (…) a.pop()` 走 fork/copy；join 时 `$syncLive` 写回这个身份）。
+  markLiveContainer(arr);
   const shape = arr.shape as ArrShape;
   const holes = shape.k === "tuple" ? ((arr.shape as { holes?: number[] }).holes ?? []) : [];
   const isHole = (i: number): boolean => holes.includes(i);

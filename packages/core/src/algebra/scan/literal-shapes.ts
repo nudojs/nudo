@@ -95,7 +95,7 @@ import type { Pred } from "../pred.ts";
 import { predToString } from "../pred.ts";
 import { formatAbs } from "../format/format.ts";
 import { DIAG } from "../diagnostics/diag-codes.ts";
-import { assertNeverShape } from "../shape-kinds.ts";
+import { assertNeverShape } from "../check/shape-kinds.ts";
 import { arrayLengthOf, restArgAbs, type LiteralScanCtx } from "./literal-args.ts";
 import {
   isNullishLitAbs,

@@ -102,7 +102,7 @@ const SAMPLES: Record<string, { expr: string; shapeK: string }> = {
   number: { expr: "number()", shapeK: "prim" },
   string: { expr: "string()", shapeK: "prim" },
   boolean: { expr: "boolean()", shapeK: "prim" },
-  any: { expr: "any()", shapeK: "unknown" },
+  any: { expr: "any()", shapeK: "any" },
   array: { expr: "array(number())", shapeK: "arr" },
   shape: { expr: "shape({ a: number() })", shapeK: "obj" },
   lit: { expr: "lit(42)", shapeK: "prim" },

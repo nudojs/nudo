@@ -111,6 +111,7 @@ export const RUNTIME_IMPORT_NAMES: readonly string[] = [
   "$async",
   "$asyncGen",
   "$copy",
+  "$syncLive",
   "$await",
   // 可选链 / 集合
   "$orDefault",

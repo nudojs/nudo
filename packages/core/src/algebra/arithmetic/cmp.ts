@@ -13,7 +13,7 @@ import type { Pred, Phi } from "../pred.ts";
 import { and, gt, ge, lt, le, implies, negatePred, totalOrderDual, pTrue } from "../pred.ts";
 import type { Abs } from "../abs.ts";
 import { abs, confJoin, isNumPrim, isStrPrim, litValue, boolLit } from "../abs.ts";
-import { makeSum } from "../objects.ts";
+import { makeSum, toPrimitiveCoercionOf } from "../objects.ts";
 import { isSymbolAbs as isSym } from "../key/symbol-id.ts";
 import { NudoThrow } from "../diagnostics/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "../diagnostics/may-throw.ts";
@@ -35,6 +35,15 @@ export function cmp(
     const fa = builtinBrandToPrimitive(a, "number");
     const fb = builtinBrandToPrimitive(b, "number");
     if (fa || fb) return cmp(op, fa ?? a, fb ?? b, phi);
+  }
+  // BUG-142：关系比较先 ToPrimitive(number)——采信用户 valueOf/toString
+  // 的返回值（`{valueOf(){return 7}} > 5` → true），不再把闭对象一律当
+  // 「可能是 Symbol」假记 may-throw。eq/ne 无强制转换，不走此块。
+  if (op !== "eq" && op !== "ne") {
+    const pa = toPrimitiveCoercionOf(a, "number");
+    if (pa !== undefined) return cmp(op, pa, b, phi);
+    const pb = toPrimitiveCoercionOf(b, "number");
+    if (pb !== undefined) return cmp(op, a, pb, phi);
   }
   // Symbol 参与关系比较：ToNumber/ToNumeric 原生 TypeError（与 add 同口径）。
   // eq/ne 不走此守卫：Symbol() === Symbol() 合法，由 strictEqAbs/looseEqAbs 分流。

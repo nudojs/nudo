@@ -3724,7 +3724,9 @@ const wrap = (body: string) => `export function f() { ${body} }`;
   {
     const r = call(wrap(`return String({});`), "f");
     expect(throwsError(r.throws, "TypeError")).toBe(false);
-    expect(formatShape___nudojs_core(r.result)).toBe("string");
+    // BUG-142：闭普通对象无自有钩子 ⇒ 继承 Object.prototype.toString，
+    // 原生 "[object Object]"；引擎现在按钩子结果折出精确字面量。
+    expect(formatShape___nudojs_core(r.result)).toBe('"[object Object]"');
   }
   {
     const r = call(wrap("return `${new Date(0)}`;"), "f");

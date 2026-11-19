@@ -419,15 +419,70 @@ export function jsDocOptionalParams(nodes: Array<unknown>): Set<string> {
       ?.leadingComments;
     for (const c of comments ?? []) {
       const text = c.value ?? "";
-      const re = /@param\s*(?:\{[^}]*\}\s*)?\[([^\]=]+)(?:=[^\]]*)?\]/g;
-      let m: RegExpExecArray | null;
-      while ((m = re.exec(text)) !== null) {
-        const name = (m[1] ?? "").trim();
-        if (name) out.add(name);
-      }
+      collectJsDocOptionalParams(text, out);
     }
   }
   return out;
+}
+
+/**
+ * 跳过 JSDoc 类型字面量 `{…}`（含嵌套花括号 / 引号内的花括号）。
+ * 起点必须是 `{`；返回闭合 `}` 之后的下标，未闭合返回 -1。
+ *
+ * BUG-163：旧实现用 `\{[^}]*\}` 正则——`@param {{ a: number }} [opts]`
+ * 在第一个 `}` 就截断 ⇒ 整条 `@param` 识别失败 ⇒ 可选形参退成必填
+ * （commander 的 `Command.help` / `Command.outputHelp` 假红）。
+ */
+function skipJsDocTypeLiteral(text: string, start: number): number {
+  let depth = 0;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i]!;
+    if (ch === '"' || ch === "'" || ch === "`") {
+      // 字符串字面量类型（`{ "a{b": string }`）里的花括号不参与配平。
+      i++;
+      while (i < text.length) {
+        if (text[i] === "\\") {
+          i += 2;
+          continue;
+        }
+        if (text[i] === ch) break;
+        i++;
+      }
+      continue;
+    }
+    if (ch === "{") {
+      depth++;
+      continue;
+    }
+    if (ch === "}") {
+      depth--;
+      if (depth === 0) return i + 1;
+      if (depth < 0) return -1;
+    }
+  }
+  return -1;
+}
+
+/** `@param` 行的可选名判定（注释文本 → 名字集合；与 jsDocOptionalParams 同源） */
+function collectJsDocOptionalParams(text: string, out: Set<string>): void {
+  const head = /@param\b/g;
+  let m: RegExpExecArray | null;
+  while ((m = head.exec(text)) !== null) {
+    let i = m.index + m[0].length;
+    while (i < text.length && /\s/.test(text[i]!)) i++;
+    // 可选的类型字面量（嵌套花括号也必须整体跳过）
+    if (text[i] === "{") {
+      const afterType = skipJsDocTypeLiteral(text, i);
+      if (afterType < 0) continue;
+      i = afterType;
+      while (i < text.length && /\s/.test(text[i]!)) i++;
+    }
+    if (text[i] !== "[") continue;
+    const end = text.indexOf("]", i + 1);
+    if (end < 0) continue;
+    const name = text.slice(i + 1, end).split("=")[0]!.trim();
+    if (name) out.add(name);
+  }
 }
 
 /**

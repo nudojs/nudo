@@ -196,3 +196,24 @@ describe("export dts — 模块级全局增强面（declare global / ambient nam
     expect(r.stdout).toContain("export declare const marker: number;");
   }, 30000);
 });
+
+// ---------------------------------------------------------------------------
+// BUG-153：export default class 的类方法见证按 default 槽解析
+// ---------------------------------------------------------------------------
+describe("export dts — default 导出类的方法见证", () => {
+  it("`export default class C { m(): number }` 产出 `m(): number`（改前 unknown）", () => {
+    const dir = fixtureDir({
+      "default.ts": `export default class Default {
+  m(): number { return 1; }
+  n(): string { return "x"; }
+}
+`,
+    });
+    const r = runCliTsx(["export", "default.ts", "--format", "dts"], { cwd: dir });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("m(): number;");
+    expect(r.stdout).toContain("n(): string;");
+    expect(r.stdout).not.toContain("m(): unknown");
+    expect(r.stdout).not.toContain("n(): unknown");
+  }, 30000);
+});

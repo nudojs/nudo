@@ -1510,3 +1510,27 @@ export function add(a, b) { return a + b; }
 
 
 });
+
+describe("contract --draft — 算出来的返回值用泛化签名投影（BUG-159）", () => {
+  it("x+1 / x>1 的返回值不再显示 not projectable", async () => {
+    const local = mkdtempSync(join(tmpdir(), "nudo-draft-159-"));
+    try {
+      const file = join(local, "calc.ts");
+      writeFileSync(
+        file,
+        `export function p02(x: number) { return x + 1; }
+export function p07(x: number) { return x > 1; }
+`,
+      );
+      const r = await draftContract(file);
+      const byName = new Map(r.entries.map((e) => [e.fn, e]));
+      expect(byName.get("p02")?.returns?.projected).toBe(true);
+      expect(byName.get("p02")?.returns?.display).toBe("number()");
+      expect(byName.get("p07")?.returns?.projected).toBe(true);
+      expect(byName.get("p07")?.returns?.display).toBe("boolean()");
+      expect(r.draftSource).not.toContain("not projectable");
+    } finally {
+      rmSync(local, { recursive: true, force: true });
+    }
+  });
+});

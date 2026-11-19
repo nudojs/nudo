@@ -1248,9 +1248,10 @@ describe("HOF / for-of 读当前容器（live 元素 + live 长度）", () => {
  * find/findIndex/findLast/findLastIndex **不查 HasProperty**——hole 位照样
  * 回调（值取 Get ⇒ undefined）。
  *
- * 已知边界（不在本片范围）：体内变异若发生在 **fork 分支**（条件语句）内，
- * 转译层 `$copy` 深拷贝绑定 ⇒ 变异落在副本上，接收者看不到（见报告「剩余
- * 风险」）。本钉覆盖**无条件**变异（绑定不被拷贝 ⇒ 接收者与回调同容器）。
+ * BUG-161：体内变异发生在 **fork 分支**（条件语句）内时，转译层的
+ * `$copy` 会把绑定重定向到副本；`$forOf` / HOF 却按值持有原 Abs ⇒ live
+ * 视图读陈旧状态。修法：迭代/HOF 开始时登记 live 接收者，`$copy` 记录
+ * 副本 → 原 Abs，fork join 时 `$syncLive` 把最终态写回原身份。
  */
 
 
@@ -1265,6 +1266,24 @@ const s = (body: string): unknown => {
   return (r.result as { term?: { value?: unknown } })?.term?.value;
 };
 
+
+  it("条件变异（fork 臂内）同样对后续迭代可见（BUG-161）：for-of / forEach / reduce / some / find", () => {
+    expect(
+      s(`const a=[1,2,3]; const out=[]; for (const v of a) { if (v===1) a.pop(); out.push(v); } return out.join(",");`),
+    ).toBe("1,2");
+    expect(
+      s(`const a=[1,2,3]; const out=[]; a.forEach((v)=>{ if(v===1) a.pop(); out.push(v); }); return out.join(",");`),
+    ).toBe("1,2");
+    expect(
+      s(`const a=[1,2,3]; return a.reduce((acc,v)=>{ if(v===1) a.pop(); return acc+v; }, 0);`),
+    ).toBe(3);
+    expect(
+      s(`const a=[1,2,3]; return a.some((v)=>{ if(v===1) a.pop(); return v===3; });`),
+    ).toBe(false);
+    expect(
+      s(`const a=[1,2,3]; return a.find((v)=>{ if(v===1) a.pop(); return v===3; });`),
+    ).toBe(undefined);
+  });
 
   it("forEach：体内改写元素值对后续迭代可见（原生 1,9,3）；forEach：体内截断长度 ⇒ 缺席位不再回调（原生只剩第 0 位）；forEach：体内 shift ⇒ 缺席位跳过（原生 1,3）；map / filter / reduce：同样读当前容器；for-of：元素值现读（原生 1,9,3）；for-of：长度现读——体内 shift 收缩（原生 1,3）；for-of：长度现读——体内截断（原生只剩 1）；对照：无体内变异时行为不变（原生 1,2,3）", () => {
   {

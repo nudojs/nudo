@@ -1051,3 +1051,34 @@ twiceFree(3);
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// signatureHelp：构造调用 `new K(…)`（BUG-144）
+// ---------------------------------------------------------------------------
+describe("signatureHelp：new 构造调用也有签名弹窗", () => {
+  it("`new K(1, |)` 返回构造器签名与 activeParameter（改前恒 null）", async () => {
+    const SRC = `export class K {
+  constructor(a, b = 2) { this.a = a; }
+}
+export function use() {
+  new K(1, );
+  return 1;
+}
+`;
+    await withLspServer({ "ctor.js": SRC }, async ({ req, uri }) => {
+      const at = (line: number, col: number): unknown =>
+        req("textDocument/signatureHelp")({
+          textDocument: { uri: uri("ctor.js") },
+          position: { line, character: col },
+        });
+      const res = at(4, "  new K(1, ".length) as {
+        signatures?: Array<{ label: string; parameters?: Array<{ label: string }> }>;
+        activeParameter?: number;
+      } | null;
+      expect(res).not.toBeNull();
+      expect(res?.signatures?.[0]?.label).toContain("K");
+      expect(res?.signatures?.[0]?.parameters?.length).toBeGreaterThanOrEqual(2);
+      expect(res?.activeParameter).toBe(1);
+    });
+  });
+});

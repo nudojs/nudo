@@ -9,7 +9,7 @@ import {
   bitxorAbs, bitnotAbs, shlAbs, shrAbs, ushrAbs, powAbs, toNumberAbs,
   toNumericAbs, updateAddAbs, updateSubAbs,
 } from "../../surface.ts";
-import { joinAbs, isNullProtoWithoutCoercer } from "../../objects.ts";
+import { joinAbs, isNullProtoWithoutCoercer, toPrimitiveCoercionOf } from "../../objects.ts";
 import { isSymbolAbs } from "../../key/symbol-id.ts";
 import { concatString } from "../../template.ts";
 import { mayToStringThrowOperand } from "../../builtins/shared.ts";
@@ -76,10 +76,16 @@ export function $toStr(a: Abs): Abs {
   // Symbol 的隐式 ToString 原生 TypeError（`${Symbol()}` / `"" + Symbol()`；
   // 与 `String(sym)` 的 SymbolDescriptiveString 不同）
   if (isSymbolAbs(a)) throw new NudoThrow(errorTypeAbs("TypeError"));
-  // 闸门 = null-proto 无 coercer 判定 **+** 按 hint 调一次用户钩子（string
-  // hint：toString 先、无自有 toString 不回退 valueOf）。⚠ 它内部已调用
-  // `invokeToPrimitiveHook`——此处**不得**再调一次（原生每次 ToPrimitive
-  // 只调一次钩子；多调即凭空多出副作用）。
+  // BUG-142：对象先做一次 ToPrimitive(string) 并**采信钩子结果**（
+  // `${ {toString(){return "hi"}} }` → "hi"；throwing hook → 用户 Error）。
+  // null-proto 无 coercer 由 helper 抛 TypeError；闭普通对象无钩子回落
+  // "[object Object]"；open/index 形保持下面的抽象臂。
+  {
+    const prim = toPrimitiveCoercionOf(a, "string");
+    if (prim !== undefined) return $toStr(prim);
+  }
+  // 纯判定（不对对象再调钩子）：null-proto 无 coercer 已在 helper 抛过；
+  // 这里只为非对象的可迭代/抽象面保留同一类型守卫。
   if (isNullProtoWithoutCoercer(a, "string")) {
     throw new NudoThrow(errorTypeAbs("TypeError"));
   }

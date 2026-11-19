@@ -33,6 +33,7 @@ import {
   formatShape,
   leqAbs,
   localNamedExports,
+  parseSource,
   effectiveContract,
   extractDeclaredThrows,
   unknown as absUnknown,
@@ -61,6 +62,7 @@ import {
   throwAbsToKinds,
   throwsKindCovered,
   makeSymbolicRestAbs,
+  resolveExportSlotCall,
   type MayThrowEffect,
   type EvalMemberDiag,
 } from "@nudojs/core/internal";
@@ -775,7 +777,19 @@ function evalClassMethodWitness(
       ...(opts.loadModule ? { loadModule: opts.loadModule } : {}),
       ...(opts.depKey !== undefined ? { depKey: opts.depKey } : {}),
     });
-    const exported = run?.exports?.[clsName] as unknown;
+    // BUG-153：`export default class C` 的导出槽是 `default`，本地名 `C`
+    // 不在导出表里（ESM 语义）。旧实现按本地名直查 ⇒ default 类的实例方法
+    // 见证全部拿不到类 Abs ⇒ 返回域塌 unknown，而同一文件 check 签名面
+    // 是精确的。本地名 → 导出槽（含 default / `export { C as default }`）
+    // 走与 generalize / check 同一解析器。
+    const exports = run?.exports;
+    let exported = exports?.[clsName] as unknown;
+    if (!(exported && typeof exported === "object" && "shape" in (exported as object)) && exports) {
+      const slot = resolveExportSlotCall(parseSource(source), clsName, exports);
+      if (slot?.kind === "default" || slot?.kind === "named") {
+        exported = exports[slot.key];
+      }
+    }
     if (exported && typeof exported === "object" && "shape" in (exported as object)) {
       clsAbs = exported as Abs;
     }

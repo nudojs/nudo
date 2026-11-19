@@ -130,6 +130,7 @@ export {
   $collectionForEach,
   $concat,
   $copy,
+  $syncLive,
   $elems,
   $forInKeys,
   $forOf,

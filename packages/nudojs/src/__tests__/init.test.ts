@@ -219,3 +219,49 @@ describe("nudo init — coexistence hint (LSP-G4)", () => {
     expect(logs.join("\n")).not.toContain("coexistence:");
   });
 });
+
+describe("nudo init — typo'd config keys (BUG-165)", () => {
+  it("nudo.check.profil typo: warns and writes the adoption baseline (keeps the typo key)", async () => {
+    const dir = tmpPkg(
+      JSON.stringify(
+        { name: "demo", nudo: { check: { profil: "adoption" } } },
+        null,
+        2,
+      ) + "\n",
+    );
+    await runInitCli(["init", dir]);
+    expect(process.exitCode).toBe(0);
+    const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf-8"));
+    expect(pkg.nudo.check.profile).toBe("adoption");
+    expect(pkg.nudo.check.profil).toBe("adoption");
+    expect(errs.join("\n")).toContain('unknown config key "nudo.check.profil"');
+    expect(errs.join("\n")).toContain("writing the adoption baseline");
+  });
+
+  it("nudo.chek top-level typo: warns and adds the baseline under nudo.check", async () => {
+    const dir = tmpPkg(
+      JSON.stringify({ name: "demo", nudo: { chek: { profile: "adoption" } } }, null, 2) + "\n",
+    );
+    await runInitCli(["init", dir]);
+    expect(process.exitCode).toBe(0);
+    const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf-8"));
+    expect(pkg.nudo.chek.profile).toBe("adoption");
+    expect(pkg.nudo.check).toEqual({ profile: "adoption" });
+    expect(errs.join("\n")).toContain('unknown config key "nudo.chek"');
+  });
+
+  it("valid nudo.check stays idempotent and only warns about unknowns", async () => {
+    const before =
+      JSON.stringify(
+        { name: "demo", nudo: { check: { profile: "strict" }, extra: 1 } },
+        null,
+        2,
+      ) + "\n";
+    const dir = tmpPkg(before);
+    await runInitCli(["init", dir]);
+    expect(process.exitCode).toBe(0);
+    expect(readFileSync(join(dir, "package.json"), "utf-8")).toBe(before);
+    expect(logs.some((l) => l.endsWith("already has a nudo config — nothing written."))).toBe(true);
+    expect(errs.join("\n")).toContain('unknown config key "nudo.extra"');
+  });
+});

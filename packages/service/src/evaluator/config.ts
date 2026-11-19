@@ -139,9 +139,45 @@ function describeValue(raw: unknown): string {
   }
 }
 
+/**
+ * 已识别的配置子键（BUG-165）：未知键必须**可见**——旧实现对 `nudo.check`
+ * 只读三个已知键，`profil: "adoption"` 一类 typo 被静默忽略 ⇒ 门禁仍按
+ * strict 判、`nudo init` 又因 nudo 键存在而拒绝写基线 ⇒ 项目永远红且无提示。
+ */
+const NUDO_CONFIG_KEYS = new Set([
+  "env",
+  "mocks",
+  "contract",
+  "analysis",
+  "cache",
+  "inlayHints",
+  "sessionCache",
+  "check",
+]);
+const CHECK_CONFIG_KEYS = new Set(["profile", "entryThrows", "ignoreThrows"]);
+
+function warnUnknownKeys(
+  value: unknown,
+  known: ReadonlySet<string>,
+  prefix: string,
+): void {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return;
+  for (const key of Object.keys(value)) {
+    if (known.has(key)) continue;
+    warnOnce(
+      `config.unknown.${prefix}.${key}`,
+      `nudo: unknown config key ${prefix}.${key} — ignored (known: ${[...known].join(", ")})\n`,
+    );
+  }
+}
+
 /** package.json#nudo 键 → 执法选项 */
 export function checkConfig(config: NudoConfig | null | undefined): CheckConfig {
+  // BUG-165：未知顶层键 / nudo.check 子键都上 stderr（进程内去重）。
+  // 放在读取已知键之前——typo 的“生效值”仍是默认，但用户能看到它被忽略。
+  warnUnknownKeys(config, NUDO_CONFIG_KEYS, "nudo");
   const raw = config?.check;
+  warnUnknownKeys(raw, CHECK_CONFIG_KEYS, "nudo.check");
   const rawEntry = raw?.entryThrows;
   const rawProfile = raw?.profile;
   let entryThrows: CheckConfig["entryThrows"] = "error";

@@ -86,6 +86,7 @@ import { makeLoopWidener } from "../loop-widen.ts";
 // invariant-apply.ts 的 hasInvariantSpecs 注释）。
 import { applyLoopExitJoin } from "../loop-exit-join.ts";
 import { noteLoopTruncation } from "../../../call-budget.ts";
+import { markLiveContainer } from "./obj.ts";
 import { callAtFunctionBoundary } from "../state.ts";
 import { $call } from "../../call.ts";
 import { $arr, tupleOrWiden, drainTupleOrWiden } from "./arr-make.ts";
@@ -1412,7 +1413,10 @@ export function $forOf(
   // 迭代期间的 push/shift 与元素改写可见；快照口径只看得到进体前的内容。
   const liveArr =
     shape.k === "tuple"
-      ? arrayLiveForOf(iterable, (shape as { elements: Abs[] }).elements)
+      ? // BUG-161：登记 live 接收者——条件分支臂的 `$copy` 副本在 fork join
+        // 后经 `$syncLive` 写回这个身份，下一轮 take() 才读得到新长度/元素。
+        (markLiveContainer(iterable),
+        arrayLiveForOf(iterable, (shape as { elements: Abs[] }).elements))
       : undefined;
 
   // N5：0 次出口臂（空容器/首元素前退出——同迭代后出口路径）
