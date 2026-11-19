@@ -24,7 +24,7 @@ import * as callsRt from "./calls.ts";
 import { $asyncGen } from "./runtime/async.ts";
 import { $call } from "./call.ts";
 // 模块体形参面判据的单一真值源（`$` 前缀语义 → 显式表；零依赖叶子，无环）。
-import { isRuntimeOpName } from "./transpile/runtime-import.ts";
+import { isRuntimeOpName, parseOpRenameMarker } from "./transpile/runtime-import.ts";
 
 let cached: Record<string, unknown> | undefined;
 
@@ -107,7 +107,7 @@ export function compileRuntimeUnit<T = unknown>(
   code: string,
   extraNames: readonly string[] = [],
 ): (...vals: unknown[]) => T {
-  const names = [...runtimeArgNames(), ...extraNames];
+  const names = [...renamedRuntimeArgNames(runtimeArgNames(), code), ...extraNames];
   const unit = new Function(...names, code) as (...vals: unknown[]) => T;
   return guardUnitArity(unit, names.length, "compileRuntimeUnit", "runtimeArgValues");
 }
@@ -122,7 +122,26 @@ export function compileRuntimeModuleUnit<T = unknown>(
   code: string,
   extraNames: readonly string[] = [],
 ): (...vals: unknown[]) => T {
-  const names = [...runtimeModuleArgNames(), ...extraNames];
+  const names = [...renamedRuntimeArgNames(runtimeModuleArgNames(), code), ...extraNames];
   const unit = new Function(...names, code) as (...vals: unknown[]) => T;
   return guardUnitArity(unit, names.length, "compileRuntimeModuleUnit", "runtimeModuleArgValues");
+}
+
+/**
+ * BUG-164：把运行时形参名按生成码里的**卫生改名表**换成生成名。
+ *
+ * 转译器只在「用户代码 / 依赖里声明了同名绑定」时才改算子名（`$call` →
+ * `$call$1`），并把改名表以 `//@nudo-op-renames {…}` 注释行写在生成码里
+ * （见 transpile/runtime-import.ts）。本函数让 `new Function` 的形参名与
+ * 生成码里的引用名一致 —— 值数组仍按**原序 / 原个数**喂（改名只动名字，
+ * 不动位置），故 `runtime*ArgValues()` 与 arity 守卫都不受影响。
+ *
+ * 无标记（绝大多数模块）⇒ 名单逐字不变。
+ */
+function renamedRuntimeArgNames(names: readonly string[], code: string): string[] {
+  const marker = code.indexOf("//@nudo-op-renames ");
+  if (marker === -1) return [...names];
+  const renames = parseOpRenameMarker(code);
+  if (renames.size === 0) return [...names];
+  return names.map((n) => renames.get(n) ?? n);
 }

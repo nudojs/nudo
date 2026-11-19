@@ -2,10 +2,10 @@
  * 模块套件：cli-products-contract-emit（CLI e2e 分片；1 文件 = 1 worker）。
  */
 import { describe, it, expect, afterAll, beforeEach, afterEach } from "vitest";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, existsSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, basename } from "node:path";
-import { runCliTsx as runCli, writeSrcTsconfig } from "./helpers/run-cli.ts";
+import { runCliTsx as runCli, writeSrcTsconfig, repoRoot } from "./helpers/run-cli.ts";
 import { spawnSync } from "node:child_process";
 
 
@@ -65,6 +65,10 @@ function nodeCheck(path: string): { status: number; stderr: string } {
     expect(existsSync(product)).toBe(true);
     const code = readFileSync(product, "utf-8");
     expect(code).not.toContain("export =");
+    // 分析面把 `export =` 降级成等价的 CJS 出口（BUG-160），**产物面**不得跟着
+    // 多出这条语句：`export =` 仍然整条删除 + 仍然打那条「出口面没了」的提示。
+    expect(code).not.toContain("module.exports");
+    expect(`${r.stdout}${r.stderr}`).toContain("CommonJS export surface is gone");
     const check = nodeCheck(product);
     expect(check.status, `${product}\n${check.stderr}`).toBe(0);
   }
@@ -1901,4 +1905,147 @@ function makeFixture(): string {
       rmSync(dir, { recursive: true, force: true });
     }
   }, 90000); // 3 个 CLI 子进程（tsx 冷启动）
+});
+
+// ---------------------------------------------------------------------------
+// `.nudo.ts` 侧车的 builder 声明头必须幂等
+// ---------------------------------------------------------------------------
+describe("contract --emit 刷新 `.nudo.ts` 侧车：builder 声明头幂等", () => {
+/**
+ * `.nudo.ts` 侧车没有 import 行，只有 `declare const fn: typeof
+ * import("@nudojs/core").fn;` 这类**纯类型**声明头（tsc 看得见、装载器在
+ * 运行时剥掉）。刷新时「哪些 builder 还缺声明」的判据必须看得见**已有**的
+ * 声明头；看不见 ⇒ 每次都判「全缺」⇒ 再前置一份 ⇒ 第二轮起 TS2451（重复
+ * 声明）、`nudo check` 报 `nudo:contract-load`、第三轮直接以 `is not
+ * parseable` 拒写：生成器把自己的产物写坏，用户只能手工删重复行。
+ *
+ * 钉（唯一变量 = 第几轮）：
+ * - 第 1 轮写出的侧车在第 2/3 轮**逐字不变**（声明头恒一份，且第 2/3 轮
+ *   报 `no contract changes`）；
+ * - 侧车始终能被 tsc 编译（无 TS2451）、`nudo check` 始终绿；
+ * - 唯一变量换成**证据**（调用实参 1,2 → 7,8）时只有生成段变化，声明头仍是
+ *   一份，且再刷一轮仍逐字不变；
+ * - 对照 `.js` 侧车（BUILD 走 import 行）：同一轮序下同样只出现一次。
+ */
+const TSC_ARGS = [
+  "--ignoreConfig",
+  "--strict",
+  "--noEmit",
+  "--module",
+  "nodenext",
+  "--moduleResolution",
+  "nodenext",
+];
+
+/** 夹具里的 tsc：只编译侧车一个文件（@nudojs/core 走 node_modules 符号链接）。 */
+function tscOn(dir: string, file: string): { status: number; stderr: string } {
+  const r = spawnSync(join(repoRoot, "node_modules/.bin/tsc"), [...TSC_ARGS, file], {
+    cwd: dir,
+    encoding: "utf-8",
+  });
+  return { status: r.status ?? 1, stderr: r.stderr ?? "" };
+}
+
+/** 造一个「仓内源码解析 + core 可解析」的夹具目录（浅链接 @nudojs/core）。 */
+function makeEmitFixture(prefix: string): string {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  writeFileSync(join(dir, "package.json"), `{"type":"module"}\n`, "utf-8");
+  // 子进程 CLI 按 cwd 的 tsconfig 解析 @nudojs/*（否则落到陈旧 dist）
+  writeSrcTsconfig(dir);
+  mkdirSync(join(dir, "node_modules/@nudojs"), { recursive: true });
+  symlinkSync(join(repoRoot, "packages/core"), join(dir, "node_modules/@nudojs/core"), "dir");
+  return dir;
+}
+
+  it("连续三轮 emit 同一 `.nudo.ts` 侧车：第 2/3 轮逐字不变（声明头恒一份）、tsc 编译过、check 绿；证据变化后仍只改生成段且再轮不变（BUG-169）", () => {
+    const dir = makeEmitFixture("nudo-emit-ts-sidecar-");
+    try {
+      writeFileSync(
+        join(dir, "lib.ts"),
+        `export function add(a: number, b: number): number { return a + b; }\n`,
+        "utf-8",
+      );
+      writeFileSync(join(dir, "use.ts"), `import { add } from "./lib.js";\nexport const v = add(1, 2);\n`, "utf-8");
+
+      const emit = () => runCli(["contract", "--emit", "--all", "lib.ts", "--from", "use.ts"], { cwd: dir });
+      const sidecar = join(dir, "lib.nudo.ts");
+      const read = () => readFileSync(sidecar, "utf-8");
+      /** 声明头行数（同一个 builder 声明的次数）——幂等判据的最小可读量。 */
+      const declCount = (text: string, builder: string) =>
+        text.split("\n").filter((line) => line === `declare const ${builder}: typeof import("@nudojs/core").${builder === "lit" ? "litC" : builder};`).length;
+
+      // ---- 第 1 轮：写出侧车（各一份声明头） ----
+      const round1 = emit();
+      expect(round1.status, `stderr=${round1.stderr}`).toBe(0);
+      const first = read();
+      expect(declCount(first, "fn")).toBe(1);
+      expect(declCount(first, "lit")).toBe(1);
+      expect(first).toContain("export const add = fn({ a: lit(1), b: lit(2) }, lit(3));");
+
+      // ---- 第 2/3 轮：逐字不变（唯一变量 = 轮次） ----
+      for (const round of [2, 3]) {
+        const again = emit();
+        expect(again.status, `round ${round} stderr=${again.stderr}`).toBe(0);
+        expect(again.stderr, `round ${round}`).not.toContain("not parseable");
+        expect(read(), `round ${round} 与第 1 轮必须逐字相同`).toBe(first);
+        expect(again.stdout, `round ${round} 应报无改动`).toContain("no contract changes");
+      }
+      // 侧车可被 tsc 编译（重复声明头会在这里报 TS2451 ×N）
+      const tsc1 = tscOn(dir, sidecar);
+      expect(tsc1.stderr, `tsc=${tsc1.stderr}`).not.toContain("TS2451");
+      expect(tsc1.status, `tsc stderr=${tsc1.stderr}`).toBe(0);
+      // `nudo check` 看得见侧车（重复声明会报 nudo:contract-load）
+      const check1 = runCli(["check", "lib.ts"], { cwd: dir });
+      expect(check1.status, `stderr=${check1.stderr}`).toBe(0);
+      expect(check1.stdout).not.toContain("nudo:contract-load");
+
+      // ---- 证据变化：只改生成段的载荷，声明头不多不少仍一份 ----
+      writeFileSync(join(dir, "use.ts"), `import { add } from "./lib.js";\nexport const v = add(7, 8);\n`, "utf-8");
+      const afterEvidence = emit();
+      expect(afterEvidence.status, `stderr=${afterEvidence.stderr}`).toBe(0);
+      const changed = read();
+      expect(changed).not.toBe(first);
+      expect(changed).toContain("fn({ a: lit(7), b: lit(8) }, lit(15))");
+      expect(declCount(changed, "fn")).toBe(1);
+      expect(declCount(changed, "lit")).toBe(1);
+      // 第 3 轮（证据已变过的文件再刷）⇒ 仍是 no changes + 逐字不变，
+      // 旧实现的「第三轮 is not parseable」不再出现
+      for (const round of [2, 3]) {
+        const again = emit();
+        expect(again.status, `round ${round} stderr=${again.stderr}`).toBe(0);
+        expect(again.stderr, `round ${round}`).not.toContain("not parseable");
+        expect(read(), `evidence round ${round}`).toBe(changed);
+      }
+      const tsc2 = tscOn(dir, sidecar);
+      expect(tsc2.status, `tsc stderr=${tsc2.stderr}`).toBe(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 120000); // 6 个 CLI 子进程 + 2 次 tsc
+
+  it("对照 `.js` 侧车：同一轮序下 builder import 行同样只出现一次（行为不变）", () => {
+    const dir = makeEmitFixture("nudo-emit-js-sidecar-");
+    try {
+      writeFileSync(join(dir, "lib.js"), `export function add(a, b) { return a + b; }\n`, "utf-8");
+      writeFileSync(join(dir, "use.js"), `import { add } from "./lib.js";\nexport const v = add(1, 2);\n`, "utf-8");
+      const emit = () => runCli(["contract", "--emit", "--all", "lib.js", "--from", "use.js"], { cwd: dir });
+      const sidecar = join(dir, "lib.nudo.js");
+      const read = () => readFileSync(sidecar, "utf-8");
+      const importLines = (text: string) =>
+        text.split("\n").filter((line) => line.includes("nudo:emit-builders")).length;
+
+      const round1 = emit();
+      expect(round1.status, `stderr=${round1.stderr}`).toBe(0);
+      const first = read();
+      expect(importLines(first)).toBe(1);
+      const round2 = emit();
+      expect(round2.status, `stderr=${round2.stderr}`).toBe(0);
+      expect(read()).toBe(first);
+      expect(importLines(read())).toBe(1);
+      const syntax = spawnSync(process.execPath, ["--check", sidecar], { encoding: "utf-8" });
+      expect(syntax.status, `node --check=${syntax.stderr}`).toBe(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 90000);
 });

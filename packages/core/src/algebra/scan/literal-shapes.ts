@@ -95,6 +95,7 @@ import type { Pred } from "../pred.ts";
 import { predToString } from "../pred.ts";
 import { formatAbs } from "../format/format.ts";
 import { DIAG } from "../diagnostics/diag-codes.ts";
+import { assertNeverShape } from "../shape-kinds.ts";
 import { arrayLengthOf, restArgAbs, type LiteralScanCtx } from "./literal-args.ts";
 import {
   isNullishLitAbs,
@@ -196,18 +197,42 @@ function projectArrayIndex(arg: Abs, index: number): Abs | undefined {
  * - `"number"` / `"string"` / `"boolean"` / `"bigint"` / `"symbol"`：prim 形状
  * - `"object"`：对象 / 数组 / 元组
  * - `"function"`：函数
- * - `undefined`：**无确定形态**（unknown / any / never / 无 term 的 nullish）
+ * - `undefined`：**无确定形态**（unknown / any / never / sum / 无 term 的 nullish）
  *   ⇒ 不可判定（不猜）
  *
  * brand 拆壳取内层（品牌值的形态仍是其内层类型）。
+ *
+ * BUG-150：`checkFieldConstraint` 的 prim 门与本函数的「obj / arr / tuple / fn
+ * 都是**确定**的非 prim」口径合并 —— 此前该门只认 `shape.k === "prim"`，其余
+ * 形态一律当「不可证」跳过 ⇒ `shape({ x: number() })` 收 `{x:{}}` / `{x:[]}` /
+ * `{x:[1]}` / `{x:() => 1}` / `{x:new Date(0)}` 全部零执法，而同一条约束在顶层
+ * 标量位（`checkReqs` 的 `argTypeofName`）与返回值面都报违例。
+ *
+ * 形态分派是**穷尽 switch**（`assertNeverShape` 兜底）：新增变体时编译期红，
+ * 不再「不认识的形态就静默跳过」。
  */
 function argScalarKind(arg: Abs): string | undefined {
   const sh = arg.shape;
-  const s = sh.k === "brand" ? sh.shape.shape : sh;
-  if (s.k === "prim") return s.type;
-  if (s.k === "obj" || s.k === "arr" || s.k === "tuple") return "object";
-  if (s.k === "fn") return "function";
-  return undefined;
+  switch (sh.k) {
+    case "prim":
+      return sh.type;
+    case "obj":
+    case "arr":
+    case "tuple":
+      return "object";
+    case "fn":
+      return "function";
+    case "brand":
+      return argScalarKind(sh.shape);
+    case "unknown":
+    case "any":
+    case "never":
+    case "eff":
+    case "sum":
+      return undefined;
+    default:
+      return assertNeverShape(sh);
+  }
 }
 
 /**
@@ -977,6 +1002,115 @@ export function checkShapeAgainstAbs(
   return false;
 }
 
+/**
+ * **嵌套位**的 element 门（`array(...)` 契约的两条义务）。
+ *
+ * BUG-152：此前只有 `if arr … else if tuple …`，**没有 else 臂** ⇒ 字段实参
+ * 既不是数组也不是 tuple 时整个门直接落空（既不报「不是数组」，也不报元素
+ * 约束）⇒ `shape({ a: array(number()) })` 收 `{a:5}` / `{a:"s"}` / `{a:null}` /
+ * `{a:{x:1}}` 全部静默，而同一契约在**顶层**参数位（`checkShapeReqs` 的
+ * element 门）报 `array at v`、发布出去的 guard / zod / standard 三面产物也
+ * **拒收**同一实参 ⇒ 门禁假绿 + 跨面矛盾。
+ *
+ * 三条臂（形态分派是穷尽 switch，`assertNeverShape` 兜底）：
+ *   ① arr / tuple ⇒ 逐元素递归（原有行为）；
+ *   ② **确定不是数组**（prim / obj / fn / eff，以及有 lit term 的 nullish）
+ *      ⇒ 「实参必须是数组」违例，文案与顶层同源（`array at <path>`）；
+ *   ③ 无信息（无 term 的 unknown / any、never、sum）⇒ 不可证 ⇒ 不猜。
+ *
+ * Bug 1157 同口径：brand 拆壳再判（品牌值的形态仍是其内层类型）。
+ * Bug 17 / 96 同口径：`array(...).optional()` 的契约级可选位放行 `undefined`
+ * （只放行 undefined；null 仍判违例，与顶层 `array at x` 同）。
+ */
+function checkElementGate(
+  ctx: LiteralScanCtx,
+  displayName: string,
+  paramName: string,
+  constraint: NudoConstraint,
+  fieldAbs: Abs,
+  fieldPath: string,
+  loc?: { start: { line: number; column: number } },
+  actualOf?: Abs,
+): void {
+  const element = constraint.element;
+  if (!element) return;
+  // Bug 1157 同口径：brand 拆壳再判（品牌值的形态仍是其内层类型）
+  if (fieldAbs.shape.k === "brand") {
+    checkElementGate(
+      ctx,
+      displayName,
+      paramName,
+      constraint,
+      fieldAbs.shape.shape,
+      fieldPath,
+      loc,
+      actualOf,
+    );
+    return;
+  }
+  /** 「实参必须是数组」违例（顶层 `array at <param>` 的同源文案） */
+  const notArray = (): void => {
+    if (constraint.isOptional && nullishKindOf(fieldAbs) === "undefined") return;
+    pushPrecondIssue(
+      ctx.out,
+      displayName,
+      paramName,
+      loc,
+      formatAbs(actualOf ?? fieldAbs),
+      `array at ${fieldPath}`,
+      `use a value satisfying the array constraint`,
+    );
+  };
+  const sh = fieldAbs.shape;
+  switch (sh.k) {
+    case "arr":
+      checkFieldConstraint(
+        ctx,
+        displayName,
+        paramName,
+        element,
+        sh.element,
+        `${fieldPath}[]`,
+        loc,
+        actualOf,
+      );
+      return;
+    case "tuple":
+      sh.elements.forEach((el, i) => {
+        checkFieldConstraint(
+          ctx,
+          displayName,
+          paramName,
+          element,
+          el,
+          `${fieldPath}[${i}]`,
+          loc,
+          actualOf,
+        );
+      });
+      return;
+    case "unknown":
+    case "any":
+      // 无 term 的 unknown / any = 无信息 ⇒ 不猜；有 lit term 的 nullish
+      // 是**确定**不满足 array（与顶层 element 门的 `isNullishLitAbs` 同口径）。
+      if (isNullishLitAbs(fieldAbs)) notArray();
+      return;
+    case "prim":
+    case "obj":
+    case "fn":
+    case "eff":
+      // 确定不是数组（typeof 是 prim / object / function）⇒ BUG-152 补的门
+      notArray();
+      return;
+    case "never":
+    case "sum":
+      // never 无值；sum 需逐成员判形态（本门不猜）
+      return;
+    default:
+      return assertNeverShape(sh);
+  }
+}
+
 /** 单字段：prim 类型 + 数值界 + 嵌套 shape + array 元素 + int + 长度
  *
  *  Bug 400：`actualOf` = **报告用实参**（默认 = 被检字段本身）。rest 形参
@@ -1011,8 +1145,14 @@ export function checkFieldConstraint(
   // 违例，文案是「v ∈ lit(1)」）⇒ 这里**不抢**它的诊断，保持文案不变。
   const hasEqDomain = c.preds.some((p) => p.op === "eq");
   if (c.prim) {
-    const actualPrim =
-      fieldAbs.shape.k === "prim" ? (fieldAbs.shape as { type: string }).type : undefined;
+    // BUG-150：实参的 typeof 档取**形态级**判定（`argScalarKind`）——
+    // obj / arr / tuple → "object"、fn → "function"、brand 拆壳。此前只看
+    // `shape.k === "prim"`，其余形态落 `undefined` 被当成「不可证」⇒ 嵌套位
+    // 对**确定非 prim** 的实参零执法（`{x:{}}` / `{x:[]}` / `{x:[1]}` /
+    // `{x:() => 1}` / `{x:new Date(0)}`），而同一约束在顶层标量位
+    // （`checkReqs` 的 `argTypeofName`）与返回值面都报 `typeof x = "number"`。
+    // 只有**无信息**（unknown / any / never / sum）仍是 `undefined` ⇒ 不猜。
+    const actualPrim = argScalarKind(fieldAbs);
     if (actualPrim === undefined) {
       // 无 prim 信息：nullish（有 term）**确定**违反裸 prim 契约；
       // 其它（无 term 的 unknown / any）不可证 ⇒ 不猜。
@@ -1064,34 +1204,9 @@ export function checkFieldConstraint(
     checkShapeAgainstAbs(ctx, displayName, paramName, c, fieldAbs, fieldPath, loc);
   }
 
-  // array 元素：逐元素检查
+  // array 元素：逐元素检查（BUG-152：非数组实参由同一门补「必须是数组」违例）
   if (c.element) {
-    if (fieldAbs.shape.k === "arr") {
-      checkFieldConstraint(
-        ctx,
-        displayName,
-        paramName,
-        c.element,
-        (fieldAbs.shape as { element: Abs }).element,
-        `${fieldPath}[]`,
-        loc,
-        actualOf,
-      );
-    } else if (fieldAbs.shape.k === "tuple") {
-      const els = (fieldAbs.shape as { elements: Abs[] }).elements;
-      els.forEach((el, i) => {
-        checkFieldConstraint(
-          ctx,
-          displayName,
-          paramName,
-          c.element!,
-          el,
-          `${fieldPath}[${i}]`,
-          loc,
-          actualOf,
-        );
-      });
-    }
+    checkElementGate(ctx, displayName, paramName, c, fieldAbs, fieldPath, loc, actualOf);
   }
 
   // 数值界 + 长度界（preds 里可能含 length(t) 比较）
@@ -1511,7 +1626,8 @@ function unionPredDecides(
   return judgeOrUnion(or, arg, argLen) === false;
 }
 
-/** array 成员的元素义务（逐元素；`arr` 走 join 元素、`tuple` 走逐槽） */
+/** array 成员的元素义务（走与字段位同一个 element 门：arr / tuple 逐元素、
+ *  非数组判「必须是数组」、brand 拆壳 —— 见 `checkElementGate`） */
 function checkArrayElements(
   ctx: LiteralScanCtx,
   displayName: string,
@@ -1520,22 +1636,6 @@ function checkArrayElements(
   arg: Abs,
   loc?: { start: { line: number; column: number } },
 ): void {
-  const element = m.element;
-  if (!element) return;
-  if (arg.shape.k === "arr") {
-    checkFieldConstraint(
-      ctx,
-      displayName,
-      paramName,
-      element,
-      (arg.shape as { element: Abs }).element,
-      `${paramName}[]`,
-      loc,
-    );
-  } else if (arg.shape.k === "tuple") {
-    const els = (arg.shape as { elements: Abs[] }).elements;
-    els.forEach((el, i) => {
-      checkFieldConstraint(ctx, displayName, paramName, element, el, `${paramName}[${i}]`, loc);
-    });
-  }
+  if (!m.element) return;
+  checkElementGate(ctx, displayName, paramName, m, arg, paramName, loc);
 }

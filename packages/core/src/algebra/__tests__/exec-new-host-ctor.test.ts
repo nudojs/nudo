@@ -130,3 +130,119 @@ describe("constructor primitive return follows [[Construct]]", () => {
     expect(litValue(r.result)).toEqual({ ok: true, value: 7 });
   });
 });
+
+describe("new 的 IsConstructor 门（brand 形 callee）", () => {
+  /**
+   * BUG-151：brand 形 callee 无构造器证据（非类值）时，原生 IsConstructor
+   * 恒 false ⇒ 定抛 TypeError。修复前 `new (new C())` 按 brand 名回表类 spec
+   * 真的构造出新实例（签名给 C），`C.prototype` / `Array.prototype` /
+   * `Object.prototype` 静默折 unknown。
+   */
+  const clsSrc = `class C { constructor(n) { this.n = n; } m() { return this.n; } }`;
+
+  it("BUG-151：new (new C()) 抛 TypeError（不再构造出 C 实例）", () => {
+    const r = call(
+      `export function f() { ${clsSrc} const inst = new C(1); return new inst(); }`,
+      "f",
+    );
+    expect(r.result.shape.k).toBe("never");
+    expect(throwsName(r)).toBe("TypeError");
+  });
+
+  it("BUG-151：new C.prototype() 抛 TypeError", () => {
+    const r = call(`export function f() { ${clsSrc} return new C.prototype(); }`, "f");
+    expect(r.result.shape.k).toBe("never");
+    expect(throwsName(r)).toBe("TypeError");
+  });
+
+  it("BUG-151：new Array.prototype() 抛 TypeError", () => {
+    const r = call(`export function f() { return new Array.prototype(); }`, "f");
+    expect(r.result.shape.k).toBe("never");
+    expect(throwsName(r)).toBe("TypeError");
+  });
+
+  it("BUG-151：new Object.prototype() 抛 TypeError", () => {
+    const r = call(`export function f() { return new Object.prototype(); }`, "f");
+    expect(r.result.shape.k).toBe("never");
+    expect(throwsName(r)).toBe("TypeError");
+  });
+
+  it("BUG-151 不回归：类值本身（ctor 旗标）照常构造", () => {
+    const r = call(`export function f() { ${clsSrc} return new C(2).m(); }`, "f");
+    expect(litValue(r.result)).toEqual({ ok: true, value: 2 });
+  });
+
+  it("BUG-151 不回归：匿名类表达式值照常构造", () => {
+    const r = call(
+      `export function f() { const K = class { m() { return 1; } }; return new K().m(); }`,
+      "f",
+    );
+    expect(litValue(r.result)).toEqual({ ok: true, value: 1 });
+  });
+
+  it("BUG-151 不回归：实例的 .constructor 是构造器值（可 new）", () => {
+    const r = call(
+      `export function f() { ${clsSrc} const inst = new C(1); return new (inst.constructor)(3).n; }`,
+      "f",
+    );
+    expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
+  });
+});
+
+describe("new 未建模宿主构造器的实例成员面", () => {
+  /**
+   * BUG-168：无 `@nudo:env` 时宿主全局构造器（Headers / FormData / Blob /
+   * EventTarget / AbortController / Request）铸空 brand ⇒ 实例成员读折
+   * exact undefined（typeof 折 "undefined"、链式调用折 never/必抛 TypeError）。
+   * 修复：按宿主原型链采成员名（方法 = 不可判返回值的一等 fn，访问器 /
+   * 数据属性 = honest unknown），槽打 inherited（自有键面按原生剔除）。
+   */
+  const six: Array<[string, string, string]> = [
+    ["Headers", `new Headers().get`, "get"],
+    ["FormData", `new FormData().append`, "append"],
+    ["Blob", `new Blob([]).text`, "text"],
+    ["EventTarget", `new EventTarget().addEventListener`, "addEventListener"],
+    ["AbortController", `new AbortController().abort`, "abort"],
+    ["Request", `new Request("http://x/").clone`, "clone"],
+  ];
+
+  for (const [ctorName, expr, member] of six) {
+    it(`BUG-168：typeof ${expr} === "function"（${ctorName}.prototype.${member}）`, () => {
+      const r = call(`export function f() { return typeof ${expr}; }`, "f");
+      expect(litValue(r.result)).toEqual({ ok: true, value: "function" });
+    });
+  }
+
+  it("BUG-168：new Headers().get('x') 不再折 never / 必抛 TypeError", () => {
+    const r = call(
+      `export function f() { const h = new Headers(); return h.get("x"); }`,
+      "f",
+    );
+    // 成员值诚实 unknown（不猜 string | null），但绝不折 never / 记抛
+    expect(r.result.shape.k).toBe("unknown");
+    expect(r.result.shape.k).not.toBe("never");
+  });
+
+  it("BUG-168：访问器值诚实 unknown（不折 exact number/undefined）", () => {
+    const r = call(`export function f() { return typeof new Blob([]).size; }`, "f");
+    // typeof 的是 unknown ⇒ 不是确定字面量（原生 "number"，引擎不冒充）
+    expect(litValue(r.result).ok).toBe(false);
+  });
+
+  it("BUG-168：继承原型链上的成员同面（Request.prototype.clone → function）", () => {
+    const r = call(`export function f() { const q = new Request("http://x/"); return typeof q.json; }`, "f");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "function" });
+  });
+
+  it("BUG-168：成员是原型面而非自有面（hasOwnProperty false / in true）", () => {
+    const own = call(`export function f() { return new Headers().hasOwnProperty("get"); }`, "f");
+    expect(litValue(own.result)).toEqual({ ok: true, value: false });
+    const has = call(`export function f() { return "get" in new Headers(); }`, "f");
+    expect(litValue(has.result)).toEqual({ ok: true, value: true });
+  });
+
+  it("BUG-168：同原型方法跨实例恒等（new Headers().get === new Headers().get）", () => {
+    const r = call(`export function f() { return new Headers().get === new Headers().get; }`, "f");
+    expect(litValue(r.result)).toEqual({ ok: true, value: true });
+  });
+});

@@ -13,7 +13,8 @@ import {
 } from "../constraint.ts";
 import { predToString } from "../pred.ts";
 import { execNudoModule } from "../refine.ts";
-import { issuesOf } from "./nudo-constraints.ts";
+import { checkSource, pTrue } from "../index.ts";
+import { issuesOf, sidecarOpts } from "./nudo-constraints.ts";
 
 function errorCodes(src: string): string[] {
   return issuesOf(src, "/t/shape.js")
@@ -295,5 +296,104 @@ take("");
 `, "/t/shape.js");
     expect(r.ok).toBe(false);
     expect(r.issues.some((i) => i.expected?.includes("length"))).toBe(true);
+  });
+});
+
+/**
+ * 嵌套字段位的两条契约门（prim 门 / element 门）。
+ *
+ * 口径基准是**同一条约束在顶层标量位的裁决**（`checkShapeReqs` /
+ * `checkReqs`）与 guard / zod / standard 三面产物：它们对同一实参都判违例，
+ * 嵌套位此前静默放行。
+ */
+const NESTED_SIDE = `
+export const scalarField = shape({ x: number() });
+export const arrField = shape({ a: array(number()) });
+`;
+const NESTED_FILE = "/t/nested-gate.js";
+const NESTED_MARK = "nested-gate";
+
+/** 单次调用的嵌套字段位诊断（error 面） */
+function nestedErrors(
+  arg: string,
+  contract: "scalarField" | "arrField",
+  prelude = "",
+): { code: string; expected?: string }[] {
+  const src = `/// @nudo:import { scalarField, arrField } from "./${NESTED_MARK}.nudo.js"
+/**
+ * @nudo:contract o ${contract}
+ */
+function f(o) { return 0; }
+${prelude}f(${arg});
+`;
+  return checkSource(NESTED_FILE, src, pTrue, sidecarOpts(NESTED_MARK, NESTED_SIDE)).issues.filter(
+    (i) => i.severity === "error",
+  );
+}
+
+describe("nested field gate: number() on a确定 non-prim value", () => {
+  it("nested number() rejects obj / arr / tuple / fn / brand with typeof text", () => {
+    const cases = ["{ x: {} }", "{ x: [] }", "{ x: [1] }", "{ x: () => 1 }", "{ x: new Date(0) }"];
+    for (const arg of cases) {
+      const errs = nestedErrors(arg, "scalarField");
+      expect(errs, arg).toHaveLength(1);
+      expect(errs[0]!.code, arg).toBe("nudo:constraint-violated");
+      expect(errs[0]!.expected, arg).toBe('typeof o.x = "number"');
+    }
+  });
+
+  it("nested number() keeps the existing nullish violations", () => {
+    for (const arg of ["{ x: null }", "{ x: undefined }"]) {
+      const errs = nestedErrors(arg, "scalarField");
+      expect(errs, arg).toHaveLength(1);
+      expect(errs[0]!.expected, arg).toBe('typeof o.x = "number"');
+    }
+  });
+
+  it("nested number() stays quiet on legal values (no new false red)", () => {
+    expect(nestedErrors("{ x: 1 }", "scalarField")).toEqual([]);
+    // 无信息实参（any / 未知标识符）不可证 ⇒ 不猜
+    expect(nestedErrors("{ x: payload }", "scalarField", "const payload = getPayload();\n")).toEqual(
+      [],
+    );
+  });
+
+  it("nested number() matches the top-level scalar verdict on the same value", () => {
+    // 同一 `{}` 实参：顶层 `number()` 报违例；嵌套字段位必须同结论
+    const top = issuesOf(`
+/**
+ * @nudo:contract n num
+ */
+function take(n) { return 0; }
+take({});
+`).issues.filter((i) => i.severity === "error");
+    expect(top.map((i) => i.expected)).toEqual(['typeof n = "number"']);
+    expect(nestedErrors("{ x: {} }", "scalarField")[0]!.expected).toBe('typeof o.x = "number"');
+  });
+});
+
+describe("nested field gate: array(...) requires an array", () => {
+  it("nested array() rejects prim / string / null / object fields", () => {
+    for (const arg of ["{ a: 5 }", '{ a: "s" }', "{ a: null }", "{ a: { x: 1 } }"]) {
+      const errs = nestedErrors(arg, "arrField");
+      expect(errs, arg).toHaveLength(1);
+      expect(errs[0]!.code, arg).toBe("nudo:constraint-violated");
+      expect(errs[0]!.expected, arg).toBe("array at o.a");
+    }
+  });
+
+  it("nested array() on a real array still reports only the element position", () => {
+    const errs = nestedErrors('{ a: [1, "x"] }', "arrField");
+    expect(errs).toHaveLength(1);
+    expect(errs[0]!.code).toBe("nudo:constraint-violated");
+    expect(errs[0]!.expected).toBe('typeof o.a[1] = "number"');
+  });
+
+  it("nested array() stays quiet on legal arrays (no new false red)", () => {
+    expect(nestedErrors("{ a: [1, 2] }", "arrField")).toEqual([]);
+    expect(nestedErrors("{ a: [] }", "arrField")).toEqual([]);
+    expect(
+      nestedErrors("{ a: payload }", "arrField", "const payload = getPayload();\n"),
+    ).toEqual([]);
   });
 });

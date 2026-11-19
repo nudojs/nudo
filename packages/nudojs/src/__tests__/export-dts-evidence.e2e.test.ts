@@ -156,3 +156,43 @@ describe("export dts — 导出面过滤与 unknown 例外", () => {
     expect(r.stdout).not.toContain("internal");
   }, 30000);
 });
+
+describe("export dts — 模块级全局增强面（declare global / ambient namespace）", () => {
+  it("全局增强整块进产物（BUG-167）：declare global 与 export interface 同文件并存", () => {
+    const dir = fixtureDir({
+      "aug.ts": [
+        `declare global {`,
+        `  interface Window {`,
+        `    nudoProbe: string;`,
+        `  }`,
+        `}`,
+        ``,
+        `declare namespace NodeJS {`,
+        `  interface ProcessEnv {`,
+        `    NUDO_MODE?: string;`,
+        `  }`,
+        `}`,
+        ``,
+        `export interface Local {`,
+        `  z: number;`,
+        `}`,
+        ``,
+        `export const marker = 1;`,
+        ``,
+      ].join("\n"),
+    });
+    const r = runCliTsx(["export", "aug.ts", "--format", "dts"], { cwd: dir });
+    expect(r.status).toBe(0);
+    // 裸 TSModuleDeclaration（global 增强）不是导出名 ⇒ 旧实现整块丢弃。
+    // 这里必须原样镜像（tsc `--declaration` 同口径），成员多寡不影响整块落地。
+    expect(r.stdout).toContain("declare global {");
+    expect(r.stdout).toContain("interface Window {");
+    expect(r.stdout).toContain("nudoProbe: string;");
+    // ambient 命名空间增强同样是裸 TSModuleDeclaration
+    expect(r.stdout).toContain("declare namespace NodeJS {");
+    expect(r.stdout).toContain("NUDO_MODE?: string;");
+    // 同一份文件的具名导出仍然照旧镜像
+    expect(r.stdout).toContain("export interface Local {");
+    expect(r.stdout).toContain("export declare const marker: number;");
+  }, 30000);
+});

@@ -7,37 +7,6 @@ import { stripTypes as stripTypes_____strip_types_ts } from "../strip-types.ts";
 import { call } from "../algebra/__tests__/eval-helpers.ts";
 import { litValue } from "../algebra/abs.ts";
 
-// ---------------------------------------------------------------------------
-// 派生类的构造器参数属性赋值必须落在 super(...) 之后
-// ---------------------------------------------------------------------------
-describe("派生类的构造器参数属性赋值必须落在 super(...) 之后", () => {
-/**
- * `strip-types` 把构造器参数属性赋值插到 `super()` **之前** ⇒
- * `migrate strip` 产出**运行期即抛**的 `.js`。
- *
- * 触发：派生类 + 构造器参数属性
- * ```ts
- * export class Base {}
- * export class Point extends Base {
- * constructor(private x: number) { super(); }
- * }
- * ```
- * 改前产物：`constructor(x) {this.x = x;super();}` ⇒ `new Point(1)` 实跑 ⇒
- * `ReferenceError: Must call super constructor in derived class before
- * accessing 'this' or returning from derived constructor`。
- *
- * 对照 tsc emit（同输入，`tsc --target es2022`）：`super(); this.x = x;`
- * （赋值在 super **之后**）⇒ 本文件按 tsc 口径对齐。
- *
- * 危害：`migrate` 是**一程闸门**（无回退路径）⇒ 写出的产物运行期直接崩；
- * `node --check` 只验语法（`this.x = x; super();` 语法合法）⇒ 兜底闸门放行。
- *
- * 修法：派生类的参数属性赋值落 `super(...)` **之后**；非派生类仍在构造器体
- * 开头（行为不变）。
- */
-
-
-
 type Stmt = { type?: string; expression?: Expr };
 type Expr = {
   type?: string;
@@ -119,6 +88,37 @@ function exprJs(node: Expr): string {
       throw new Error(`unsupported node: ${node.type}`);
   }
 }
+// ---------------------------------------------------------------------------
+// 派生类的构造器参数属性赋值必须落在 super(...) 之后
+// ---------------------------------------------------------------------------
+describe("派生类的构造器参数属性赋值必须落在 super(...) 之后", () => {
+/**
+ * `strip-types` 把构造器参数属性赋值插到 `super()` **之前** ⇒
+ * `migrate strip` 产出**运行期即抛**的 `.js`。
+ *
+ * 触发：派生类 + 构造器参数属性
+ * ```ts
+ * export class Base {}
+ * export class Point extends Base {
+ * constructor(private x: number) { super(); }
+ * }
+ * ```
+ * 改前产物：`constructor(x) {this.x = x;super();}` ⇒ `new Point(1)` 实跑 ⇒
+ * `ReferenceError: Must call super constructor in derived class before
+ * accessing 'this' or returning from derived constructor`。
+ *
+ * 对照 tsc emit（同输入，`tsc --target es2022`）：`super(); this.x = x;`
+ * （赋值在 super **之后**）⇒ 本文件按 tsc 口径对齐。
+ *
+ * 危害：`migrate` 是**一程闸门**（无回退路径）⇒ 写出的产物运行期直接崩；
+ * `node --check` 只验语法（`this.x = x; super();` 语法合法）⇒ 兜底闸门放行。
+ *
+ * 修法：派生类的参数属性赋值落 `super(...)` **之后**；非派生类仍在构造器体
+ * 开头（行为不变）。
+ */
+
+
+
 
 /** 真跑一遍：派生类壳（Base/Point）⇒ 返回 `new Point(1)` 的实例 */
 function runDerived(params: string[], stmts: Stmt[]): { x: unknown } {
@@ -204,11 +204,125 @@ export class Point extends Base {
     expect(report.ctorParamPropsSuperMissing).toBe(true);
   }
 });
+});
 
+// ---------------------------------------------------------------------------
+// 构造器参数属性必须在类体里发射字段声明（tsc emit 口径）
+// ---------------------------------------------------------------------------
+describe("构造器参数属性必须在类体里发射字段声明（tsc emit 口径）", () => {
+/**
+ * `constructor(private x: number)` 的 tsc emit 是**两半**：类字段声明 `x;`
+ * 与构造器里的 `this.x = x`。只补赋值（旧行为）在两个可观察面上偏移：
+ * ①自有属性**创建顺序**（`Object.keys` / `JSON.stringify` / spread 的键序由
+ * 「类字段初始化」与「构造器体赋值」的相对位置决定；tsc 把参数属性字段排在
+ * 其它字段**之前**）；②`this.x = …` 是 `[[Set]]`（命中原型链上的 getter-only
+ * 访问器 ⇒ TypeError），类字段声明是 `[[Define]]`（直接建自有属性）。
+ */
 
+/** 剥除后的类成员（按源序） */
+type ClassMember = {
+  type?: string;
+  key?: { name?: string };
+  value?: Expr | null;
+  kind?: string;
+  params?: Array<{ name?: string; type?: string; left?: { name?: string }; right?: Expr }>;
+  body?: { body: Stmt[] };
+};
 
+function classOf(src: string, clsName: string): { members: ClassMember[]; superName?: string } {
+  const ast = parseSource(src, { keepTs: true });
+  stripTypes(ast, src);
+  const decl = (ast.program.body as unknown[])
+    .map((n) => (n as { declaration?: unknown }).declaration ?? n)
+    .find((n) => {
+      const d = n as { type?: string; id?: { name?: string } };
+      return d?.type === "ClassDeclaration" && d.id?.name === clsName;
+    }) as { body: { body: ClassMember[] }; superClass?: { name?: string } } | undefined;
+  if (!decl) throw new Error(`no class ${clsName}`);
+  return { members: decl.body.body, superName: decl.superClass?.name };
+}
 
+/** 类体 → 可执行的 JS 类文本（只认本 describe 的形态，未知形态直接抛） */
+function renderClass(name: string, cls: { members: ClassMember[]; superName?: string }): string {
+  const lines = cls.members.map((m) => {
+    if (m.type === "ClassProperty") {
+      const key = m.key?.name ?? "";
+      return m.value ? `  ${key} = ${exprJs(m.value as Expr)};` : `  ${key};`;
+    }
+    if (m.type === "ClassMethod" && m.kind === "constructor") {
+      const params = (m.params ?? [])
+        .map((p) =>
+          p.left ? `${p.left.name ?? ""} = ${exprJs(p.right ?? {})}` : (p.name ?? ""),
+        )
+        .join(", ");
+      const stmts = (m.body?.body ?? []).map(stmtJs).join("\n");
+      return `  constructor(${params}) {\n${stmts}\n  }`;
+    }
+    throw new Error(`unsupported member: ${m.type}/${m.kind}`);
+  });
+  const heritage = cls.superName ? ` extends ${cls.superName}` : "";
+  return `class ${name}${heritage} {\n${lines.join("\n")}\n}`;
+}
 
+/** 类体成员的粗粒度形态（`field:a` / `ctor`） */
+const memberShapes = (cls: { members: ClassMember[] }): string[] =>
+  cls.members.map((m) =>
+    m.type === "ClassProperty" ? `field:${m.key?.name}` : `ctor:${m.kind}`,
+  );
+
+const paramPropSrc = `export class D {
+  z = 1;
+  constructor(public a: number, private b: string = "x") {}
+}
+`;
+
+  it("参数属性降级成「类体字段声明 + this.x = x」两半；字段按参数顺序位于类体最前（tsc：`a; b; z = 1;`）；普通字段不重复发射；派生类赋值仍在 super(...) 之后；真跑：键序与 tsc emit 一致，原型链 getter-only 不再被 [[Set]] 命中", () => {
+  {
+    // 静态面：字段按参数顺序、位于类体最前（tsc emit：`a; b; z = 1;`）
+    expect(memberShapes(classOf(paramPropSrc, "D"))).toEqual([
+      "field:a",
+      "field:b",
+      "field:z",
+      "ctor:constructor",
+    ]);
+  }
+  {
+    // 真跑：自有属性创建顺序 = ["a","b","z"]（tsc 产物 `Object.keys(new D(7))` 同值）
+    const src = `${renderClass("D", classOf(paramPropSrc, "D"))}\nreturn new D(7);`;
+    const inst = new Function(src)() as Record<string, unknown>;
+    expect(Object.keys(inst)).toEqual(["a", "b", "z"]);
+    expect(JSON.stringify(inst)).toBe('{"a":7,"b":"x","z":1}');
+  }
+  {
+    // 派生类：字段声明在类体（不是构造器），赋值仍在 super(...) 之后
+    const derived = `export class Base {}
+export class D extends Base {
+  constructor(public a: number) { super(); }
+}
+`;
+    const cls = classOf(derived, "D");
+    expect(memberShapes(cls)).toEqual(["field:a", "ctor:constructor"]);
+    expect(cls.members[1]?.body?.body.map(shape)).toEqual(["super", "assign:this.a"]);
+    // 真跑：字段声明是 [[Define]] ⇒ 原型链上同名 getter-only 不再让构造抛 TypeError
+    const run = `class Base {}
+Object.defineProperty(Base.prototype, "a", { get() { return 1; }, configurable: true });
+${renderClass("D", cls)}
+const d = new D(7);
+return [Object.prototype.hasOwnProperty.call(d, "a"), d.a];`;
+    expect(new Function(run)()).toEqual([true, 7]);
+  }
+  {
+    // 非参数属性（普通字段 / 普通形参）不重复发射字段声明
+    const plain = `export class P {
+  private x: number;
+  constructor(x: number) { this.x = x; }
+}
+`;
+    const cls = classOf(plain, "P");
+    expect(cls.members.filter((m) => m.type === "ClassProperty").length).toBe(1);
+    expect(memberShapes(cls)).toEqual(["field:x", "ctor:constructor"]);
+  }
+});
 });
 
 // ---------------------------------------------------------------------------
@@ -451,47 +565,80 @@ const imports = (src: string) =>
 });
 
 // ---------------------------------------------------------------------------
-// TS-only 的模块出口语句被剥除
+// TS-only 的模块出口语句：产物面剥除、分析面降级成 CJS 出口
 // ---------------------------------------------------------------------------
-describe("TS-only 的模块出口语句被剥除", () => {
+describe("TS-only 的模块出口语句：产物面剥除、分析面降级成 CJS 出口", () => {
 /**
- * TS-only 的 `export =` / `export as namespace` 未剥 ⇒ 产物不是合法 JS。
+ * `export =` 是 TS-only 语法（原样打印不是合法 JS），但它的**运行期形态**就是
+ * `module.exports = X`（tsc 的 CJS emit 逐字如此）。
  *
- * 根因：strip-types.ts 的 `isTypeOnlyStatement` 语句级 switch 缺
- * `TSExportAssignment` / `TSNamespaceExportDeclaration` 两个 case ⇒ 这两条
- * TS-only 语句被原样打印进 `.js` ⇒ `node --check` ⇒ SyntaxError。
+ * 旧口径把这两个面绑在一起：`isTypeOnlyStatement` 整条删除 ⇒ 产物合法了，
+ * 但**分析面**也就再看不见出口名 ⇒ `check` 的 L1/L2、`export --format dts`、
+ * `contract --draft` 三面对 `.ts` 的 `export = f` 全盲（同一函数体写成 `.cjs`
+ * `module.exports = f` 三面都生效）。
  *
- * 修法：switch 补这两个 case（两条语句被剥除）。
+ * 修法（分析视图 / 发射视图分开）：
+ * - 分析面（`parseSource` 的默认剥除 + keepTs 形态）把 `export = X` 降级成
+ *   等价的 CJS 出口语句 `module.exports = X`（带非枚举标记）⇒ 导出面扫描
+ *   与 `.cjs` 同一条分支；
+ * - 发射面（`stripTypes` 默认 `exportAssignment: "drop"`，migrate strip 走的
+ *   就是这条路）仍整条删除 + 回报 `exportAssignmentRemoved` ⇒ `.js` 产物、
+ *   「CommonJS export surface is gone」提示与 `--write` 行为**零变化**。
  */
-
 
 
 const body = (src: string) => parseSource(src).program.body;
 
+/** 语句 → `module.exports = <右值名>`（不是该形态 ⇒ undefined） */
+const cjsExportOf = (n: unknown): string | undefined => {
+  const stmt = n as { type?: string; expression?: { type?: string; left?: unknown; right?: { type?: string; name?: string } } };
+  const e = stmt.expression;
+  if (stmt.type !== "ExpressionStatement" || e?.type !== "AssignmentExpression") return undefined;
+  const left = e.left as { type?: string; object?: { name?: string }; property?: { name?: string } };
+  if (left?.type !== "MemberExpression") return undefined;
+  if (left.object?.name !== "module" || left.property?.name !== "exports") return undefined;
+  return e.right?.type === "Identifier" ? e.right.name : "";
+};
 
-  it("export = X（TSExportAssignment）整条删除；export as namespace X（TSNamespaceExportDeclaration）整条删除；export = 的右值（值引用）不产生残留语句；纯 JS 源码不受影响（结构性 no-op）", () => {
+  it("分析面：export = 降级成 `module.exports = X`（出口名可见）；export as namespace X 仍整条删除；发射面：export = 整条删除 + 回报 exportAssignmentRemoved（不进 .js）；纯 JS 源码不受影响（结构性 no-op）", () => {
   {
     const b = body(`declare namespace N { const x: number; }\nexport = N;`);
     expect(b.map((n) => n.type)).not.toContain("TSExportAssignment");
-    expect(b.some((n) => n.type === "TSExportAssignment")).toBe(false);
+    // 分析面：TS-only 语法本身消失，换成等价的 CJS 出口（与 `.cjs` 同形）
+    expect(b.map((n) => n.type)).toEqual(["ExpressionStatement"]);
+    expect(cjsExportOf(b[0])).toBe("N");
   }
   {
     const b = body(`export as namespace MyGlobal;\nexport declare const v: number;`);
     expect(b.some((n) => n.type === "TSNamespaceExportDeclaration")).toBe(false);
+    // 全局声明面（ambient）没有运行时出口 ⇒ 不合成任何语句
+    expect(b.map((n) => n.type)).toEqual([]);
   }
   {
     const b = body(`const N = { x: 1 };\nexport = N;`);
-    expect(b.map((n) => n.type)).toEqual(["VariableDeclaration"]);
+    expect(b.map((n) => n.type)).toEqual(["VariableDeclaration", "ExpressionStatement"]);
+    expect(cjsExportOf(b[1])).toBe("N");
+    // `export = N as any` 的断言也照常剥除（右值仍走递归剥除）
+    const asserted = body(`const N = { x: 1 };\nexport = N as any;`);
+    expect(cjsExportOf(asserted[1])).toBe("N");
+  }
+  {
+    // 发射面（migrate strip 的口径）：整条删除 + 事实回报
+    const ast = parseSource(`const N = { x: 1 };\nexport = N;`, { keepTs: true });
+    const report: { exportAssignmentRemoved?: boolean } = {};
+    stripTypes(ast, undefined, { report });
+    expect(ast.program.body.map((n) => n.type)).toEqual(["VariableDeclaration"]);
+    expect(report.exportAssignmentRemoved).toBe(true);
+    // 同一棵 keepTs 树（parse-source 预降级后）也只留前面那条声明
+    const lowered = parseSource(`const N = { x: 1 };\nexport = N;`, { keepTs: true });
+    stripTypes(lowered, undefined, {});
+    expect(lowered.program.body.map((n) => n.type)).toEqual(["VariableDeclaration"]);
   }
   {
     const b = body(`export const x = 1;\nexport default x;`);
     expect(b.map((n) => n.type)).toEqual(["ExportNamedDeclaration", "ExportDefaultDeclaration"]);
   }
 });
-
-
-
-
 });
 
 // ---------------------------------------------------------------------------

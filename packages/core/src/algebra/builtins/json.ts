@@ -211,10 +211,21 @@ function foldJsonTotalBrand(a: Abs): Abs | undefined {
  * 引用语义，`o.self = o` 产出真 Abs 环）→ 原生定抛 cyclic TypeError
  * → 不 total（Bug 20：seen 集防无限递归栈溢出，与 absToJsonNative
  * 同构）。
+ *
+ * BUG-148：联合（sum）是**组合臂**——运行期值位恰有成员之一，三由头对
+ * 每条分支都成立才叫 total。缺此臂时 `JSON.stringify(x ? 1 : 2)` 落
+ * 末尾 `return false` ⇒ 每个成员都可证明 total 的联合照样记 may-throw
+ * （值域已精确到 `1 | 2`，throws 面却宣称可能抛——L2 假红）。
  */
 function jsonStringifyTotal(a: Abs, seen: Set<object> = new Set()): boolean {
   const s = a.shape;
-  if (a.term?.op === "lit") return true;
+  if (a.term?.op === "lit") {
+    // BUG-148：bigint 字面量原生**定抛**（"Do not know how to serialize a
+    // BigInt"）。容器位由宿主 JSON.stringify 定抛（不达本判定），但**联合
+    // 成员位**没有值折叠臂（多值联合不能折成单一 JSON 文本）⇒ 必须在此
+    // 表态；否则 `1n | 2n` 的每个成员都算 total ⇒ 联合误判 total。
+    return typeof a.term.value !== "bigint";
+  }
   if (s.k === "fn") return true; // OMIT（值域省略，不抛）
   if (s.k === "eff") return true; // Promise / 生成器对象 → "{}"，恒不抛
   if (s.k === "prim") {
@@ -261,6 +272,14 @@ function jsonStringifyTotal(a: Abs, seen: Set<object> = new Set()): boolean {
       if (!jsonStringifyTotal(sv.value, seen)) return false;
     }
     return true;
+  }
+  if (s.k === "sum") {
+    // BUG-148：联合的 total 性 = 成员逐个 total（运行期恰有一个成员在值位
+    // ⇒ 三由头对每条分支都不可能才叫「恒不抛」）。逐成员用 seen **副本**：
+    // 分支间不共享栈帧——同一棵子树出现在两个分支里不是环（原生只序列化
+    // 被选中那一支），共享 seen 会把这种 DAG 误判成环 ⇒ 又造一条假红。
+    const members = (s as { members: Abs[] }).members;
+    return members.every((m) => jsonStringifyTotal(m, new Set(seen)));
   }
   return false;
 }

@@ -60,6 +60,31 @@ export declare function weird(x: SomeCustomBrand): void;
     expect(draft.draftSource).toContain("weird");
   });
 
+  it("rest 形参与同类型普通形参同口径投影元素类型（BUG-146）", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-from-dts-rest-"));
+    dirs.push(dir);
+    const dts = join(dir, "q.d.ts");
+    writeFileSync(
+      dts,
+      `export function gamma(...rest: string[]): number;
+export function plain(a: string[]): number;
+export function tally(...counts: number[]): number;
+`,
+      "utf-8",
+    );
+    const draft = dtsToContractDraft([dts], "q");
+    // rest 的注解本身就是数组类型 ⇒ 元素约束必须保真（旧实现早退成 array(any())）
+    expect(draft.draftSource).toContain("export const gamma = fn({ rest: array(string()) }, number())");
+    expect(draft.draftSource).toContain("export const tally = fn({ counts: array(number()) }, number())");
+    // 非 rest 的同类型形参口径不变
+    expect(draft.draftSource).toContain("export const plain = fn({ a: array(string()) }, number())");
+    // 整槽不得再落成元素域无约束的 array(any())
+    expect(draft.draftSource).not.toContain("array(any())");
+    // rest 位不再被记为 skipped
+    expect(draft.stats.exports).toBe(3);
+    expect(draft.stats.skipped).toBe(0);
+  });
+
   it("dtsPathToContractDraft walks a directory", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-from-dts3-"));
     dirs.push(dir);

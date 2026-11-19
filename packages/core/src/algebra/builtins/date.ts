@@ -18,9 +18,18 @@
  * - Bug 319：`toJSON` 单列一档——Invalid Date（tv=NaN）→ **null 字面量**
  *   （原生返回 null，不是字符串）；tv 已知且有效 → ISO 串；tv 不可知 → 保守
  *   `string | null` 域（不再是恒 string）。
+ * - BUG-154：time value 面共有**三档**，不是两档：
+ *   1. 已知值（`tv` facet：字面量实参 / 全字面量多参）→ 精确折叠，
+ *      NaN ⇒ 确定 RangeError；
+ *   2. **合法但值未知**（零参 `new Date()` = 当前时间，规范保证落在
+ *      ±8.64e15 内 ⇒ 恒非 Invalid）→ `DATE_VALID_TV_SLOT` 标记：
+ *      `toISOString` 恒不抛、`toJSON` 恒字符串；
+ *   3. 值未知且可能 Invalid（抽象实参 / 外部 Date）→ may 档。
+ *   setter 之后第 2 档退化为第 3 档（setTime(NaN) / 越界归一化能造出
+ *   Invalid Date，而起点 tv 未知 ⇒ 结果合法性不可判定）。
  */
 import type { Abs } from "../abs.ts";
-import { abs, strLit, numLit, absLit } from "../abs.ts";
+import { abs, strLit, numLit, boolLit, absLit } from "../abs.ts";
 import { numPrim, str, mayCoerceThrowOperand } from "./shared.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "../exec/may-throw.ts";
@@ -70,8 +79,11 @@ export function evalDateCtor(args: Abs[]): Abs {
   }
   // time-value facet：全字面量实参 → 原生 Date 构造计算
   // [[TimeValue]]（范围 clamp / 字符串解析 / Invalid 与原生
-  // 同口径——直接复用宿主构造器）。含非字面量实参或无参
-  // （= 当前时间，非编译期常量）→ 不设（消费方走 may 档）。
+  // 同口径——直接复用宿主构造器）。含非字面量实参 → 不设（消费方走 may 档）。
+  // BUG-154：**零参**是另一档——`new Date()` 取当前时间，规范保证落在
+  // 可表示区间内 ⇒ time value **值未知但恒合法**。这一档不写 tv（值不是
+  // 编译期常量，写具体数会造自信的错值），改写合法性标记槽（见
+  // DATE_VALID_TV_SLOT），消费方据此判「不可能是 Invalid Date」。
   let tv: number | undefined;
   if (args.length > 0 && args.every((a) => a.term?.op === "lit")) {
     const lits = args.map((a) => (a.term as { op: "lit"; value: unknown }).value);
@@ -98,7 +110,18 @@ export function evalDateCtor(args: Abs[]): Abs {
     {
       k: "brand",
       name: "Date",
-      shape: abs({ k: "obj", slots: {} }, undefined, undefined, "exact"),
+      shape: abs(
+        {
+          k: "obj",
+          slots:
+            args.length === 0
+              ? { [DATE_VALID_TV_SLOT]: { value: boolLit(true), internal: true } }
+              : {},
+        },
+        undefined,
+        undefined,
+        "exact",
+      ),
       ...(tv !== undefined ? { tv } : {}),
     },
     undefined,
@@ -190,6 +213,51 @@ function dateTvOf(recv: Abs): number | undefined {
 }
 
 /**
+ * BUG-154：零参 `new Date()`（= 当前时间）的 **time-value 合法性**标记。
+ *
+ * 规范保证当前时间落在 ±8.64e15 ms 内 ⇒ 零参构造**恒非 Invalid Date** ⇒
+ * `toISOString()` 恒不抛 `RangeError`、`toJSON()` 恒返回字符串。但具体
+ * time value 不是编译期常量 ⇒ 不能写 `tv`（写死具体数 = 自信的错值）。
+ * 缺的是「**合法但值未知**」这一档，与「值未知、可能 Invalid」的抽象
+ * Date（`new Date(x)` / 外部传入）区分开。
+ *
+ * 承载方式照抄装箱 prim 的 `[[PrimitiveValue]]` 范式：brand **内层 obj 的
+ * internal 槽**——投影面（自有键 / 枚举 / spread / JSON / descriptor）一律
+ * 按 `internal` 剔除，对用户可观察面不可见；但 `absKey` 的 obj 臂会带上
+ * 槽名与 flags ⇒ 「合法未知」与「抽象可能 Invalid」仍是**两个不同的结构
+ * 键**，不会被 join / 去重吞成同一个（合并「合法」进「可能 Invalid」是
+ * 保守方向，反向则是假绿）。
+ */
+const DATE_VALID_TV_SLOT = "[[ValidTimeValue]]";
+
+/** Date brand 的内层槽表（非 Date brand / 内层非 obj → undefined） */
+function dateInnerSlots(
+  recv: Abs,
+): Record<string, { value: Abs; internal?: boolean }> | undefined {
+  if (recv.shape.k !== "brand") return undefined;
+  const sh = recv.shape as { name?: string; shape?: Abs };
+  if (sh.name !== "Date" || !sh.shape) return undefined;
+  const inner = sh.shape;
+  if (inner.shape.k !== "obj") return undefined;
+  return inner.shape.slots as Record<string, { value: Abs; internal?: boolean }>;
+}
+
+/** BUG-154：time value **值未知但恒合法**（零参 `new Date()`） */
+function dateTvValidOf(recv: Abs): boolean {
+  return dateInnerSlots(recv)?.[DATE_VALID_TV_SLOT] !== undefined;
+}
+
+/**
+ * BUG-154：作废合法性标记。setter 之后不再成立（`setTime(NaN)` /
+ * 越界归一化都能把合法 Date 变成 Invalid Date，而起点 tv 未知 ⇒ 结果
+ * 合法性不可判定）⇒ 回落「可能 Invalid」的 may 档，绝不沿用旧标记。
+ */
+function clearDateTvValid(recv: Abs): void {
+  const slots = dateInnerSlots(recv);
+  if (slots) delete slots[DATE_VALID_TV_SLOT];
+}
+
+/**
  * Bug 297：回写 time value 槽。undefined = **不可知**（实参不可判定）——
  * 作废槽位：精确渲染面（toISOString）随之降级为 may-throw，绝不给过期日期。
  */
@@ -243,17 +311,21 @@ export function evalDateMethod(name: string, recv: Abs, args: Abs[]): Abs | unde
   // Bug 319：toJSON 单列一档——Invalid Date（tv=NaN）→ null 字面量（原生
   // 返回 null，不是字符串）；tv 已知且有效 → ISO 串；tv 不可知 → 保守
   // `string | null` 域（抽象 Date 可能是 Invalid Date）。
+  // BUG-154：但**零参构造**的 Date 是「合法、值未知」——toJSON ≡ toISOString
+  // 恒得串（原生 `new Date().toJSON()` 永不返回 null）⇒ 域收窄成 string。
   if (name === "toJSON") {
     const tv = dateTvOf(recv);
     if (tv !== undefined) {
       if (Number.isNaN(tv)) return absLit(null);
       return strLit(new Date(tv).toISOString());
     }
+    if (dateTvValidOf(recv)) return str("path");
     return abs({ k: "sum", members: [str("path"), absLit(null)] }, undefined, undefined, "path");
   }
   // toISOString：time-value facet 已知时精确——Invalid Date
   // （tv=NaN）确定 RangeError（原生）；valid → ISO 字面量
   // （确定性折叠）。facet 缺失（抽象 Date）→ may 档。
+  // BUG-154：合法性标记（零参构造）⇒ 值未知但必然合法 ⇒ 恒不抛。
   if (name === "toISOString") {
     const tv = dateTvOf(recv);
     if (tv !== undefined) {
@@ -262,6 +334,7 @@ export function evalDateMethod(name: string, recv: Abs, args: Abs[]): Abs | unde
       }
       return strLit(new Date(tv).toISOString());
     }
+    if (dateTvValidOf(recv)) return str("path");
     recordMayThrow({
       kind: "RangeError",
       cause: "Date.prototype.toISOString on possibly-Invalid Date",
@@ -286,8 +359,14 @@ export function evalDateMethod(name: string, recv: Abs, args: Abs[]): Abs | unde
     // Bug 297：setter 真正回写 time value（此前是空操作——精确渲染面给出
     // 过期日期）。tv 不可知（抽象 Date）→ 新值不可知（返回抽象 number，槽位
     // 保持不可知）；实参不可判定 → 作废槽位（精确面降级，不给过期日期）。
+    // BUG-154：起点的 tv 不可知时，**合法性标记也必须作废**——setter 能把
+    // 合法 Date 变成 Invalid（setTime(NaN) / 越界归一化），标记一旦留下就是
+    // 假绿（toISOString 宣称恒不抛）。
     const tv = dateTvOf(recv);
-    if (tv === undefined) return numPrim("path");
+    if (tv === undefined) {
+      clearDateTvValid(recv);
+      return numPrim("path");
+    }
     const next = applyDateSetter(name, tv, args);
     writeDateTv(recv, next);
     return next === undefined ? numPrim("path") : numLit(next);

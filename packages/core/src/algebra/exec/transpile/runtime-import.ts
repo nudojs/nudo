@@ -187,9 +187,58 @@ export const DEFAULT_RUNTIME_IMPORT = "@nudojs/core/exec";
 /**
  * 运行时 import 行（body-fn 编译执行 / evalExprAbs / 模块体拼接用）。
  * 产出形态：`import { $a, $b } from "<runtime>";`（单行，双引号说明符）。
+ *
+ * `renames`（BUG-164）：卫生改名表（`canonical → 生成名`）——命中项发
+ * `$a as $a$1`（本地绑定取生成名，生成码按生成名引用）。空表 / 缺省时
+ * 产物逐字不变。
  */
-export function runtimeImportOf(runtime: string): string {
-  return `import { ${RUNTIME_IMPORT_NAMES.join(", ")} } from ${JSON.stringify(runtime)};`;
+export function runtimeImportOf(
+  runtime: string,
+  renames?: ReadonlyMap<string, string>,
+): string {
+  if (renames === undefined || renames.size === 0) {
+    return `import { ${RUNTIME_IMPORT_NAMES.join(", ")} } from ${JSON.stringify(runtime)};`;
+  }
+  const specs = RUNTIME_IMPORT_NAMES.map((n) => {
+    const to = renames.get(n);
+    return to === undefined ? n : `${n} as ${to}`;
+  });
+  return `import { ${specs.join(", ")} } from ${JSON.stringify(runtime)};`;
+}
+
+/**
+ * BUG-164：算子卫生改名表的**载体行**（生成码首行，宿主侧再解析）。
+ *
+ * 为什么需要：改名后的生成码按**新名**引用算子（`$call$1(...)`），而运行时
+ * 符号由宿主以 `new Function(...形参, code)` 注入（rt.ts）——形参名必须与
+ * 生成码里的引用名一致。转译单元与编译单元之间只有**代码字符串**这一条
+ * 通道，故改名表随代码走一行注释（ESM 产物里同形，是合法注释）。
+ *
+ * 形态：`//@nudo-op-renames {"$call":"$call$1"}`（单行、JSON 对象、键序按
+ * 字典序 ⇒ 同源同产物）。无改名时不发（产物逐字不变）。
+ */
+export function opRenameMarkerOf(renames: ReadonlyMap<string, string>): string {
+  const obj: Record<string, string> = {};
+  for (const key of [...renames.keys()].sort()) obj[key] = renames.get(key)!;
+  return `//@nudo-op-renames ${JSON.stringify(obj)}`;
+}
+
+/** 解析 {@link opRenameMarkerOf} 的行；无标记 ⇒ 空表。 */
+export function parseOpRenameMarker(code: string): Map<string, string> {
+  const out = new Map<string, string>();
+  const m = /^\/\/@nudo-op-renames (\{[^\n]*\})\s*$/m.exec(code);
+  if (m === null) return out;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(m[1]);
+  } catch {
+    return out;
+  }
+  if (parsed === null || typeof parsed !== "object") return out;
+  for (const [from, to] of Object.entries(parsed as Record<string, unknown>)) {
+    if (typeof to === "string") out.set(from, to);
+  }
+  return out;
 }
 
 /** 模块体形参面含、ESM import 行**不含**的 `$` 前缀内部符号。

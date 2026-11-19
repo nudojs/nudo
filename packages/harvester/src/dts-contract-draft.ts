@@ -664,6 +664,16 @@ function paramSlots(
     // 会让元数 +1（第一个真实实参被绑到 `this` 槽）。判据同收割面。
     if (name === "this") return;
     if (p.dotDotDotToken) {
+      // rest 的注解**本身就是数组类型**：`...rest: string[]` 的 `p.type` 与
+      // `a: string[]` 是同一个节点形状 ⇒ 走同一次 `typeToDsl`，元素约束保真
+      // （旧实现在调用之前早退成 `array(any())`，`string[]` 的元素类型整段消失）。
+      // rest 位在契约面绑的是**整个实参数组**，所以投影结果必须是数组形状；
+      // 非数组注解（tuple / 单类型）才回落到 `array(any())`。
+      const d = typeToDsl(p.type, child(ctx));
+      if (d && d.dsl.startsWith("array(")) {
+        out.push({ name, optional: false, dsl: d.dsl, modeled: d.modeled });
+        return;
+      }
       ctx.notes.push(`${name}: rest parameter → array(any())`);
       out.push({ name, optional: false, dsl: "array(any())", modeled: false });
       return;

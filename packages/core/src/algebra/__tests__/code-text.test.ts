@@ -209,3 +209,27 @@ describe("sourceHasEsmSyntax (strict seam 的 ESM/CJS 面判定)", () => {
     expect(sourceHasEsmSyntax(`const w = obj.export;`)).toBe(false);
   });
 });
+
+describe("CJS 互操作序言（Object.defineProperty(exports, …)）是 exports 面", () => {
+  it("tsc/Babel 的 __esModule 序言必须预置 exports 绑定", () => {
+    expect(
+      sourceHasCjsExports(`Object.defineProperty(exports, "__esModule", { value: true });`),
+    ).toBe(true);
+    expect(
+      sourceHasCjsExports(`Object.defineProperty(module.exports, "v", { get: () => 1 });`),
+    ).toBe(true);
+  });
+
+  it("源里自己声明 exports 绑定 ⇒ 不预置（避免重复词法声明）", () => {
+    expect(
+      sourceHasCjsExports(`const exports = {};\nObject.defineProperty(exports, "v", { value: 1 });`),
+    ).toBe(false);
+  });
+
+  it("注释/字符串里的同名形态不算", () => {
+    expect(sourceHasCjsExports(`// Object.defineProperty(exports, "v", {})\nconst x = 1;`)).toBe(
+      false,
+    );
+    expect(sourceHasCjsExports(`const s = "Object.defineProperty(exports, \\"v\\")";`)).toBe(false);
+  });
+});

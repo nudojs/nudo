@@ -160,6 +160,70 @@ describe("Date.prototype methods", () => {
   });
 });
 
+/**
+ * 零参 `new Date()` 的 time value 面：**值未知但恒合法**。
+ *
+ * 规范保证当前时间落在 ±8.64e15 ms 内 ⇒ 零参构造恒不是 Invalid Date ⇒
+ * `toISOString()` 恒不抛 `RangeError`、`toJSON()` 恒返回字符串。此前零参
+ * 不设 time-value facet、与「可能 Invalid 的抽象 Date」共用 may 档 ⇒
+ * 合法且最常见的「取当前时间 ISO 串」被判 L2 假红，同一表达式的返回域
+ * 同时被放宽成 `string | null`。
+ *
+ * 判据是**实参个数**：`new Date(undefined)` / `new Date(NaN)`（Invalid）与
+ * `new Date(ms)`（精确）的行为都不得改变。
+ */
+describe("zero-arg new Date() is a known-valid time value", () => {
+  it("零参 new Date()：toISOString/toJSON 都不记 RangeError（值域 string）", () => {
+    const iso = evalSrc(`export function f() { return new Date().toISOString(); }`);
+    expect(iso.effects).toEqual([]);
+    expect(iso.resultShape).toMatchObject({ k: "prim", type: "string" });
+
+    const json = evalSrc(`export function f() { return new Date().toJSON(); }`);
+    expect(json.effects).toEqual([]);
+    expect(json.resultShape).toMatchObject({ k: "prim", type: "string" });
+
+    // 域收窄的可观察后果：零参 Date 的 toJSON 恒不是 null（原生同）
+    expect(evalSrc(`export function f() { const d = new Date(); return d.toJSON() === null; }`).value)
+      .toEqual({ ok: true, value: false });
+  });
+
+  it("Invalid Date 仍判 RangeError；toJSON 仍是 null 字面量", () => {
+    expect(throwsError(evalSrc(`export function f() { return new Date(undefined).toISOString(); }`).throws, "RangeError")).toBe(true);
+    expect(throwsError(evalSrc(`export function f() { return new Date(NaN).toISOString(); }`).throws, "RangeError")).toBe(true);
+    expect(evalSrc(`export function f() { return new Date(undefined).toJSON(); }`).value).toEqual({ ok: true, value: null });
+    expect(evalSrc(`export function f() { return new Date(NaN).toJSON(); }`).value).toEqual({ ok: true, value: null });
+  });
+
+  it("对照：new Date(v) 的既有精确行为不变", () => {
+    expect(evalSrc(`export function f() { return new Date(0).toISOString(); }`).value)
+      .toEqual({ ok: true, value: "1970-01-01T00:00:00.000Z" });
+    expect(evalSrc(`export function f() { return new Date(null).toISOString(); }`).value)
+      .toEqual({ ok: true, value: "1970-01-01T00:00:00.000Z" });
+    expect(evalSrc(`export function f() { return new Date(5).toISOString(); }`).value)
+      .toEqual({ ok: true, value: "1970-01-01T00:00:00.005Z" });
+    expect(evalSrc(`export function f() { return new Date("2020-01-01").toISOString(); }`).value)
+      .toEqual({ ok: true, value: "2020-01-01T00:00:00.000Z" });
+  });
+
+  it("setter 之后合法性标记作废（setTime 能造出 Invalid Date ⇒ 回落 may 档）", () => {
+    // 起点 tv 未知 ⇒ setter 结果合法性不可判定：不得沿用「恒合法」标记
+    const after = evalSrc(`export function f() { const d = new Date(); d.setTime(0); return d.toISOString(); }`);
+    expect(after.effects).toContain("RangeError");
+    // 对照：tv 已知的 Date 经 setter 仍精确（既有行为）
+    expect(evalSrc(`export function f() { const d = new Date(0); d.setTime(5); return d.toISOString(); }`).value)
+      .toEqual({ ok: true, value: "1970-01-01T00:00:00.005Z" });
+  });
+
+  it("内部标记槽不进用户可观察面（自有键 / 枚举 / JSON 投影不变）", () => {
+    expect(evalSrc(`export function f() { return JSON.stringify(Object.keys(new Date())); }`).value)
+      .toEqual({ ok: true, value: "[]" });
+    expect(evalSrc(`export function f() { return Object.getOwnPropertyNames(new Date()).length; }`).value)
+      .toEqual({ ok: true, value: 0 });
+    expect(evalSrc(`export function f() { return Object.prototype.hasOwnProperty.call(new Date(), "[[ValidTimeValue]]"); }`).value)
+      .toEqual({ ok: true, value: false });
+  });
+});
+
 describe("String.prototype arg coercion (search/replace/split/concat/pad/repeat)", () => {
   it("symbol args definite-throw TypeError on every surface", () => {
     for (const src of [

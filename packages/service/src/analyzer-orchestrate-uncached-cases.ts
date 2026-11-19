@@ -1123,8 +1123,20 @@ function synthesizeFrozenCallSiteCases(env: UncachedCaseEnv, fn: CaseDirectiveTa
     (r) => !frozenNames.has(callsiteCaseName(r, filePath, analysis.loc.start.line)),
   );
   if (fresh.length === 0) return;
-  // 超预算会额外产出 call@symbolic 聚合见证（不可固化成指令）→ 保守不合成
-  if (fresh.length > budget) return;
+  // **预算席位**：已固化的**逐点**见证已经占掉的席位。聚合伪见证
+  // `call@symbolic` 不是调用点，不占席位（旧版本可能把它写进过源码，这里
+  // 也不能把它算成「已覆盖的调用点」）。
+  //
+  // 旧判据只问「本轮 fresh 自己是否超预算」（`fresh.length > budget`），漏掉
+  // 「预算已被既有逐点见证占满」这一半：被折叠掉的逐点见证永远算 fresh ⇒
+  // 每轮都被追加进文件（BUG-170）；写进去的集合也从此与 `=update` 的全量
+  // 重建（按预算截断）不同 ⇒ 默认档 / `=update` / `health` 红绿乒乓。
+  const frozenPrecise = caseDirectives.filter((d) => d.name !== "call@symbolic").length;
+  const capacity = budget - frozenPrecise;
+  // 没有席位（预算已满）或新调用点本身就要折叠 ⇒ 保守不合成：这两种情况下
+  // 分析面会把余量折成 `call@symbolic` 聚合见证，而聚合见证**不可固化成
+  // 指令**——`=update` 的全量重建同样只写预算内那批 ⇒ 三面收敛到同一集合。
+  if (capacity <= 0 || fresh.length > capacity) return;
   synthesizeCallSiteCases(
     env,
     { name: fn.name, analysis },

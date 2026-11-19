@@ -35,8 +35,11 @@ import type { Node } from "@babel/types";
  *    ⇒ tsc 的 import elision 会把它**消掉**；不消掉的话，被 import 的模块被剥成
  *    空模块 ⇒ 产物 ESM 链接期 SyntaxError。判据是**语法级**的「值位置引用收集」
  *    （collectValueReferences），**保守**：拿不准的一律当值引用 ⇒ import 保留。
- *  - TS-only 的模块出口语句删除（Bug 446）：TSExportAssignment（`export = X`）/
- *    TSNamespaceExportDeclaration（`export as namespace X`）⇒ 原样打印不是合法 JS。
+ *  - TS-only 的模块出口语句：TSNamespaceExportDeclaration（`export as namespace X`）
+ *    整条删除；TSExportAssignment（`export = X`）**按面分开**（BUG-160）——
+ *    发射面（migrate strip）仍整条删除（Bug 446：原样打印不是合法 JS），
+ *    分析面降级成**等价的 CJS 出口** `module.exports = X`（tsc 的 emit 逐字如此）
+ *    ⇒ 导出面扫描（check 的 L1/L2 / dts / 契约绑定）看得见出口名。
  *  - 类成员：TSIndexSignature / TSDeclareMethod（含 abstract 方法）/ declare·abstract
  *    的 ClassProperty 删除；implements / superTypeParameters 字段删除；
  *    **类成员节点族**上的 `definite`（`x!`）与 `optional`（`y?` / `m?()`）删除
@@ -67,9 +70,13 @@ import type { Node } from "@babel/types";
  * 之外。
  *
  * 构造器参数属性（`constructor(private x)`）**已处理**（Bug 672 降级 + Bug 1071
- * 排序）：语义 =「字段 `x` + 构造器里 `this.x = x`」⇒ 产物补上那半句赋值；
- * **派生类**的赋值必须落在 `super(...)` **之后**（原生：`super()` 之前访问
+ * 排序 + BUG-155 字段声明）：语义 =「类字段声明 `x;` + 构造器里 `this.x = x`」
+ * ⇒ 产物两半都补（与 tsc 的 emit 同形：字段声明在类体**最前**、按参数顺序，
+ * 赋值对**派生类**必须落在 `super(...)` **之后**——原生：`super()` 之前访问
  * `this` ⇒ ReferenceError；tsc emit 同口径：`super(); this.x = x;`）。
+ * 只补赋值会同时偏移两个可观察面：自有属性**创建顺序**（`Object.keys` /
+ * `JSON.stringify` / spread）与 `[[Set]]`（`this.x = …` 命中原型链 getter ⇒
+ * TypeError）vs `[[Define]]`（类字段声明直接建自有属性）。
  */
 
 /** 数组槽位删除哨兵：语句/成员/specifier 只出现在数组上下文中 */
@@ -90,7 +97,8 @@ const SKIP_KEYS = new Set([
 ]);
 
 /**
- * 剥除选项（**可选**能力；分析面不传 ⇒ 行为与旧版逐字一致）。
+ * 剥除选项（**可选**能力；分析面不传 ⇒ 与旧版逐字一致，只有 `export =` 的
+ * 分析面形态由 parse-source 显式开启，见 exportAssignment）。
  *
  * - report：剥除**事实**回报（只写不改）。migrate strip 的 notes 据此判定
  *   「提示与事实是否一致」——注释 / 字符串里的 "enum " / "namespace "
@@ -98,6 +106,11 @@ const SKIP_KEYS = new Set([
  * - resolveSpecifier：相对说明符改写（migrate strip 的**产物**面）。
  *   给「相对 spec」返回「产物 spec」，返回 undefined 表示不改写；
  *   包说明符（"pkg" / "@scope/pkg"）永不进入该回调。
+ * - exportAssignment：`export = X` 的**面**（BUG-160）。
+ *   - `"drop"`（默认，发射面 / 产物）：整条删除（Bug 446 的既有口径）——
+ *     `export =` 不是合法 JS，migrate strip 的产物里不得出现；
+ *   - `"cjs"`（分析面）：降级成等价的 CJS 出口 `module.exports = X`（tsc 的
+ *     emit 逐字如此）⇒ 导出面扫描看得见出口名。分析视图与发射视图由此分开。
  *
  * report 的字段（**全部可选**；未发生的事实不写 ⇒ 调用方按 `=== true` 判定）：
  * - enumRemoved：TS enum 声明被**整条删除**（仅 `declare enum` —— 环境声明
@@ -145,6 +158,8 @@ type StripOptions = {
     ctorParamPropsSuperMissing?: boolean;
   };
   resolveSpecifier?: (spec: string) => string | undefined;
+  /** `export = X` 的处理面（BUG-160）：见文件头 StripOptions 注释 */
+  exportAssignment?: "drop" | "cjs";
 };
 
 /**
@@ -582,6 +597,90 @@ function carryComments(target: unknown, comments: unknown[], slot: "leading" | "
   rec[key] = slot === "leading" ? [...comments, ...existing] : [...existing, ...comments];
 }
 
+/**
+ * 「本语句是 `export = X` 的等价 CJS 出口」标记（**不可枚举**）。
+ *
+ * 由 `lowerCjsExportAssignments` / 分析面的降级写入，供发射面（migrate strip）
+ * 识别并按旧口径删除。不可枚举 ⇒ `Object.keys(node)` 看不见它（AST 结构等价
+ * 断言、遍历器、打印器都不受影响）。
+ */
+const CJS_EXPORT_ASSIGNMENT = "nudoCjsExportAssignment";
+
+function markCjsExportAssignment(stmt: Record<string, unknown>): void {
+  Object.defineProperty(stmt, CJS_EXPORT_ASSIGNMENT, {
+    value: true,
+    enumerable: false,
+    configurable: true,
+    writable: true,
+  });
+}
+
+/** 语句是否是 `export = X` 的等价 CJS 出口（见 CJS_EXPORT_ASSIGNMENT） */
+function isCjsExportAssignment(node: Record<string, unknown>): boolean {
+  return node[CJS_EXPORT_ASSIGNMENT] === true;
+}
+
+/**
+ * `export = X` → 等价的 CJS 出口语句 `module.exports = X`（BUG-160）。
+ *
+ * TS 的 `export = X` 在**运行期**就是 `module.exports = X`（tsc 的 CJS emit
+ * 逐字如此）⇒ 分析面要看见的出口名与 `.cjs` 的 `module.exports = X` 完全
+ * 一致。TS-only 语法本身仍不得进产物 ⇒ 该语句带标记，发射面照旧删除。
+ */
+function cjsExportAssignmentStatement(
+  node: Node & Record<string, unknown>,
+): Record<string, unknown> {
+  const stmt: Record<string, unknown> = {
+    type: "ExpressionStatement",
+    expression: {
+      type: "AssignmentExpression",
+      operator: "=",
+      left: {
+        type: "MemberExpression",
+        object: { type: "Identifier", name: "module" },
+        property: { type: "Identifier", name: "exports" },
+        computed: false,
+        optional: false,
+      },
+      right: node.expression,
+    },
+  };
+  // 位置信息沿用原语句（打印器的 retainLines / 注释对齐需要）
+  if (typeof node.start === "number") stmt.start = node.start;
+  if (typeof node.end === "number") stmt.end = node.end;
+  if (node.loc) stmt.loc = node.loc;
+  for (const key of COMMENT_KEYS) {
+    const comments = node[key];
+    if (Array.isArray(comments) && comments.length > 0) stmt[key] = comments;
+  }
+  return stmt;
+}
+
+/**
+ * 顶层 `export = X` 归一成 `module.exports = X`（BUG-160，**只动这一条语句**）。
+ *
+ * 给 **keepTs** 路径用（导出面扫描的解析口径）：dts 的 `dtsModuleSurface` 与
+ * 侧车改写都拿未剥除的 AST，`TSExportAssignment` 在其中原样存在，而所有导出面
+ * 消费方只认 ESM 声明与 CJS 赋值两种形态 ⇒ 出口名整条不可见。这里只做语法
+ * 归一（其余 TS 节点保持原样），归一后的语句带标记 ⇒ 发射路径（migrate）随后
+ * 的 strip 仍按旧口径删除它。
+ *
+ * 非 keepTs 路径不需要它：`stripTypes(…, { exportAssignment: "cjs" })` 在剥除
+ * 过程中完成同一归一。
+ */
+export function lowerCjsExportAssignments(ast: { program?: unknown }): void {
+  const program = ast.program as { body?: unknown[] } | undefined;
+  const body = program?.body;
+  if (!Array.isArray(body)) return;
+  for (let i = 0; i < body.length; i++) {
+    const stmt = body[i] as (Node & Record<string, unknown>) | undefined;
+    if (stmt?.type !== "TSExportAssignment") continue;
+    const lowered = cjsExportAssignmentStatement(stmt);
+    markCjsExportAssignment(lowered);
+    body[i] = lowered;
+  }
+}
+
 /** TS 的 `this` 形参：Babel 把它表示成「一个名叫 this 的 Identifier」 */
 function isThisParam(p: unknown): boolean {
   if (!p || typeof p !== "object") return false;
@@ -978,7 +1077,9 @@ function isTypeOnlyStatement(node: Node, ctx: StripContext): boolean {
       // Bug 913：运行时 enum 被**合成**成对象（见 synthesizeEnum）⇒ 只有
       // `declare enum`（环境声明）才整条删除。
       return isTsDeclareLike(node);
-    case "TSExportAssignment": // `export = X` —— TS-only 出口语句（Bug 446）
+    // `export = X`：发射面删除（Bug 446）；分析面由 transformNode 在进入本
+    // 判定**之前**降级成 `module.exports = X`（BUG-160）。
+    case "TSExportAssignment":
     case "TSNamespaceExportDeclaration": // `export as namespace X`（Bug 446）
       return true;
     case "TSModuleDeclaration":
@@ -1159,8 +1260,9 @@ function deleteTypeSyntaxFields(
  * 构造器参数属性降级（Bug 672）。
  *
  * `constructor(private opening: number)` 的语义 =「字段 `opening` + 构造器里
- * `this.opening = opening`」。TS 语法在 JS 里不存在 ⇒ 产物必须自己补上那半句
- * 赋值（字段声明不必显式写：JS 的 `this.x = …` 就是动态字段，语义等价）。
+ * `this.opening = opening`」。TS 语法在 JS 里不存在 ⇒ 产物必须自己补上**两半**
+ * （tsc 的 emit 同口径）：类体最前的字段声明 `opening;`（BUG-155，`[[Define]]` +
+ * 自有属性创建顺序）+ 构造器里的赋值（`[[Set]]` 语义下的值写入）。
  *
  * 两种 AST 形态都认：
  * - Babel 7：`TSParameterProperty` 包装节点（修饰符在包装节点上）；
@@ -1233,6 +1335,24 @@ function lowerConstructorParameterProperties(
   }
   if (names.length === 0) return;
   ctor.params = kept;
+
+  // 字段声明（BUG-155）：tsc 的 emit 是**两半**——类字段声明 `x;` + 构造器里
+  // `this.x = x`。只补赋值会偏移两个可观察面：①自有属性**创建顺序**（类字段
+  // 初始化 vs 构造器体赋值的相对位置；`Object.keys` / `JSON.stringify` /
+  // spread 可见）；②`this.x = …` 是 [[Set]]（命中原型链上的 getter-only 访问器
+  // ⇒ TypeError），类字段声明是 [[Define]]（直接建自有属性）。
+  //
+  // 位置与顺序对齐 tsc：参数属性字段位于类体**最前**，按参数顺序
+  // （`constructor(public a, private b)` + `z = 1` ⇒ `a; b; z = 1;`）。
+  members.unshift(
+    ...names.map((name) => ({
+      type: "ClassProperty",
+      key: { type: "Identifier", name },
+      value: null,
+      computed: false,
+      static: false,
+    })),
+  );
 
   // 构造器体插入 `this.x = x;`
   const ctorBody = ctor.body as { body?: unknown[] } | undefined;
@@ -1337,6 +1457,23 @@ function transformNode(
   if (node.type === "TSEnumDeclaration" && !isTsDeclareLike(node)) {
     if (opts?.report) opts.report.enumSynthesized = true;
     return synthesizeEnum(node, source, opts, ctx);
+  }
+  // BUG-160：`export = X` 的**分析面**降级——出口名必须在分析视图里可见
+  // （check 的 L1/L2 / dts / 契约绑定），而发射面仍按旧口径整条删除。
+  // 降级产出的 `module.exports = X` 与 `.cjs` 的 `module.exports = X` 同形 ⇒
+  // 下游导出面扫描零改动即可看见出口名。`X` 本身仍要递归剥除（断言 / 注解）
+  // ⇒ 换成降级节点后**继续走**本函数（不提前返回）。
+  if (node.type === "TSExportAssignment" && opts?.exportAssignment === "cjs") {
+    const lowered = cjsExportAssignmentStatement(node);
+    markCjsExportAssignment(lowered);
+    return transformNode(lowered as Node & Record<string, unknown>, source, opts, ctx);
+  }
+  // keepTs 预降级（lowerCjsExportAssignments）产出的标记语句 + 上面刚降级的
+  // 语句：分析面照常往下走（子节点仍要剥除），发射面（默认 "drop"）按旧行为
+  // 删除并回报事实。
+  if (isCjsExportAssignment(node) && opts?.exportAssignment !== "cjs") {
+    if (opts?.report) opts.report.exportAssignmentRemoved = true;
+    return REMOVE;
   }
   // 剥除事实回报（先于删除判定：enum 节点本函数就要删掉它）
   if (opts?.report) {

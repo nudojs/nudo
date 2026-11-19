@@ -2440,3 +2440,96 @@ function fixture(scripts: Record<string, string>): string {
 
 
 });
+
+// ---------------------------------------------------------------------------
+// migrate status 的子目录 / 源文件目标必须解析到最近的包根
+// ---------------------------------------------------------------------------
+describe("migrate status 的子目录 / 源文件目标必须解析到最近的包根", () => {
+/**
+ * `migrate status pkg/src` 过去把**子目录**当成包根（`resolveMigrateRoot`
+ * 对已存在目录原样返回）⇒ `packageJson: false` / `tscScripts: []` /
+ * `typescriptDep: false` 的伪包行，`tsc still in scripts` 与
+ * `typescript still in dependencies` 两个 blocker 静默消失（审计假绿）。
+ * 同一路径喂给 `retire` 却按包根判。
+ *
+ * 期望：目录 / 源文件目标都解析到**向上最近的 package.json** 所在目录，
+ * 产出与 `migrate status <pkg>` 逐字一致的包行（文本面 / `--json` 面同源）。
+ */
+
+const dirs: string[] = [];
+afterAll(() => {
+  for (const d of dirs) rmSync(d, { recursive: true, force: true });
+});
+
+/** 包根 + src 子目录 + 源文件；typecheck 是门禁、build 是编译器（无 tsconfig ⇒ 保守按 emit） */
+function pkgWithSrc(): string {
+  const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-status-subdir-"));
+  dirs.push(dir);
+  writeFileSync(
+    join(dir, "package.json"),
+    JSON.stringify({
+      name: "subdir",
+      version: "1.0.0",
+      scripts: { typecheck: "tsc --noEmit", build: "tsc -p tsconfig.json" },
+      dependencies: { typescript: "^5.6.0" },
+    }),
+    "utf-8",
+  );
+  mkdirSync(join(dir, "src"), { recursive: true });
+  writeFileSync(join(dir, "src", "math.ts"), "export const answer: number = 42;\n", "utf-8");
+  return dir;
+}
+
+  it("BUG-145：包根 / src 子目录 / 源文件 / package.json 文件四种目标给出**同一份**包行（含两个 blocker）", () => {
+    const dir = pkgWithSrc();
+    const expected = migrateStatus(dir);
+    expect(expected).toHaveLength(1);
+    expect(expected[0]!.root).toBe(relative(process.cwd(), dir));
+    expect(expected[0]!.packageJson).toBe(true);
+    expect(expected[0]!.tscScripts).toEqual(["typecheck", "build"]);
+    expect(expected[0]!.typescriptDep).toBe(true);
+    expect(expected[0]!.blockers).toContain("tsc still in scripts");
+    expect(expected[0]!.blockers).toContain("no nudo check/test script yet");
+
+    for (const target of [
+      join(dir, "src"),
+      join(dir, "src", "math.ts"),
+      join(dir, "package.json"),
+    ]) {
+      // 整行深比较：不得残留下级目录 / 伪包读数
+      expect(migrateStatus(target)).toEqual(expected);
+    }
+  });
+
+  it("BUG-145：`--json` 面与文本面同源（子目录目标也报 packageJson / tscScripts / typescriptDep）", () => {
+    const dir = pkgWithSrc();
+    const asPkg = runCliTsx(["migrate", "status", dir, "--json"]);
+    const asSrc = runCliTsx(["migrate", "status", join(dir, "src"), "--json"]);
+    expect(asPkg.status).toBe(0);
+    expect(asSrc.status).toBe(0);
+    expect(JSON.parse(asSrc.stdout)).toEqual(JSON.parse(asPkg.stdout));
+    const parsed = JSON.parse(asSrc.stdout) as Array<Record<string, unknown>>;
+    expect(parsed[0]!.packageJson).toBe(true);
+    expect(parsed[0]!.tscScripts).toEqual(["typecheck", "build"]);
+    expect(parsed[0]!.typescriptDep).toBe(true);
+  });
+
+  it("BUG-145 反向闸：`retire` 的包作用域不受影响（子目录目标仍报 no package.json，不得被 status 的向上搜索带着走）", () => {
+    const dir = pkgWithSrc();
+    expect(() => migrateRetire(join(dir, "src"), { workflows: false })).toThrow(
+      /no package.json under/,
+    );
+  });
+
+  it("BUG-145：仓库自带 example 的 src / 源文件目标与包根同结论（CLI 文本面）", () => {
+    const pkg = "docs/examples/migrate/before";
+    const asPkg = runCliTsx(["migrate", "status", pkg]);
+    const asSrc = runCliTsx(["migrate", "status", `${pkg}/src`]);
+    const asFile = runCliTsx(["migrate", "status", `${pkg}/src/math.ts`]);
+    expect(asPkg.status).toBe(0);
+    expect(asSrc.stdout).toBe(asPkg.stdout);
+    expect(asFile.stdout).toBe(asPkg.stdout);
+    expect(asSrc.stdout).toContain("tsc scripts: typecheck, build");
+    expect(asSrc.stdout).toContain("typescript still in dependencies");
+  });
+});
