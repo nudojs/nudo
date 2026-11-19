@@ -15,6 +15,7 @@ import {
   resetAbsCallBudget,
   setEvalForkBudgetLimit,
   MAX_EVAL_TOTAL_FORKS,
+  MAX_SAFE_CALL_DEPTH,
   withFnBudgetOverride,
   getAbsCallBudgetStats,
 } from "../call-budget.ts";
@@ -68,6 +69,14 @@ export function f(x) {
       expect(getAbsCallBudgetStats().maxForks).toBe(100);
     });
     expect(getAbsCallBudgetStats().maxForks).toBe(2);
+  });
+
+  it("withFnBudgetOverride clamps depth to the host-stack safe ceiling (BUG-172)", () => {
+    withFnBudgetOverride({ depth: 100_000 }, () => {
+      expect(getAbsCallBudgetStats().maxDepth).toBe(MAX_SAFE_CALL_DEPTH);
+    });
+    // 默认值恢复
+    expect(getAbsCallBudgetStats().maxDepth).toBe(64);
   });
 
   it("withFnBudgetOverride raises calls/depth and restores", () => {

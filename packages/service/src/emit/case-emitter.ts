@@ -168,6 +168,9 @@ function serializeCaseArgInner(a: Abs, budget: ProjectionBudget): string | null 
       if (s.type === "boolean") return "boolean()";
       return null;
     case "unknown":
+      // BUG-162 后 `any()` = any，不再是 unknown 的替身；显式 `unknown`
+      // 是字面量文法可解析的独立形态（parseLiteralOrStructure）。
+      return "unknown";
     case "any":
       return "any()";
     case "never":
@@ -276,6 +279,9 @@ function serializeCaseArgConstraintInner(a: Abs, budget: ProjectionBudget): stri
       if (s.type === "boolean") return "boolean()";
       return null;
     case "unknown":
+      // `unknown` 裸标识符不被 union 成员白名单接受；`any()` 语义已不是
+      // unknown ⇒ 这一位不可表达（不静默换成 any）。
+      return null;
     case "any":
       return "any()";
     case "never":
@@ -759,7 +765,14 @@ export function insertGeneratedCaseDirectives(
       skipped.push({ fn: fn.name, reason: "entry-only" });
       continue;
     }
-    const callsiteCases = fn.cases.filter((c) => c.source === "callsite");
+    // 只固化**逐点**见证（`call@<现场>:L<行>`）。超预算时分析面额外产出一条
+    // `call@symbolic` 聚合见证——它是「余量折叠」的伪见证，**不是调用点**：
+    // 写进源码就变成一条永不消失的生成态指令（下一轮 `=update` / `health`
+    // 从全量记录重建时不会产出它 ⇒ 判「少了 1 条」⇒ 默认档与门禁永远对不上，
+    // BUG-170）。聚合见证只活在本轮报告里（`call@symbolic` 精度提示仍照常出）。
+    const callsiteCases = fn.cases.filter(
+      (c) => c.source === "callsite" && c.aggregatedFrom === undefined,
+    );
     if (callsiteCases.length === 0) {
       skipped.push({
         fn: fn.name,

@@ -269,3 +269,6 @@ export {
 } from "./algebra/diagnostics/evidence-shadow.ts";
 
 export { entryThisReceiverOf, entryThisReceiverTypeTextOf } from "./algebra/generalize.ts";
+// 本地名 → 导出槽（default / 别名 / CJS 成员）：service 的类方法见证解析复用
+// （BUG-153：`export default class C` 的本地名不是导出槽名）。
+export { resolveExportSlotCall } from "./algebra/contract/export-slot.ts";

@@ -1003,6 +1003,32 @@ function skipBracedVar(cmd: string, start: number): number {
   return end === -1 ? cmd.length : end + 1;
 }
 
+/**
+ * 命令替换体（`$( … )`）里的命令文本——每段是**独立的命令上下文**。
+ * 与 `skipSubstitution` / `rewriteSubstitutionBodies` 同一套词法扫描
+ * （引号整体跳过，嵌套由 `skipSubstitution` 消费）。
+ */
+function substitutionBodies(cmd: string): string[] {
+  const out: string[] = [];
+  let i = 0;
+  const n = cmd.length;
+  while (i < n) {
+    const c = cmd[i]!;
+    if (c === "'" || c === '"' || c === "`") {
+      i = skipShellQuoted(cmd, i);
+      continue;
+    }
+    if (c === "$" && cmd[i + 1] === "(") {
+      const end = skipSubstitution(cmd, i);
+      out.push(cmd.slice(i + 2, Math.max(i + 2, end - 1)));
+      i = end;
+      continue;
+    }
+    i++;
+  }
+  return out;
+}
+
 /** 一个 shell 词（去引号后的内容 + 是否字面量 / 是否含展开语法） */
 type ShellWord = {
   start: number;
@@ -1208,24 +1234,7 @@ function rewriteSubstitutionBodies(cmd: string, root?: string): string {
 
 /** 命令替换内部是否含 tsc 调用（检测口径与改写口径同源） */
 function hasNestedTscCall(cmd: string): boolean {
-  let i = 0;
-  const n = cmd.length;
-  while (i < n) {
-    const c = cmd[i]!;
-    if (c === "'" || c === '"' || c === "`") {
-      i = skipShellQuoted(cmd, i);
-      continue;
-    }
-    if (c === "$" && cmd[i + 1] === "(") {
-      const end = skipSubstitution(cmd, i);
-      const inner = cmd.slice(i + 2, Math.max(i + 2, end - 1));
-      if (isTscCommand(inner)) return true;
-      i = end;
-      continue;
-    }
-    i++;
-  }
-  return false;
+  return substitutionBodies(cmd).some((body) => isTscCommand(body));
 }
 
 /**
@@ -1713,6 +1722,30 @@ function resolveMigrateRoot(rootDir: string): string {
 }
 
 /**
+ * `migrate status` 的目标根：目录 / 源文件都解析到**向上最近的 package.json
+ * 所在目录**（BUG-145）。
+ *
+ * 旧实现直接用 `resolveMigrateRoot`：已存在目录**原样返回** ⇒ `status pkg/src`
+ * 把子目录当成包根 ⇒ 产出 `packageJson: false` / `tscScripts: []` /
+ * `typescriptDep: false` 的**伪包行**，两个 blocker 静默消失（同一路径喂给
+ * `retire` 却按包根判——两个子命令作用域相反）。向上搜索与 `nudo init` /
+ * `retire` 的判定同口径。
+ *
+ * 找不到清单 ⇒ 退回 `resolveMigrateRoot` 的结果（「目标不是包」的既有语义
+ * 不变：仍由 status 出一行 `packageJson: false`，不新增报错面）。
+ */
+function resolveStatusRoot(rootDir: string): string {
+  const raw = resolveMigrateRoot(rootDir);
+  let cur = raw;
+  for (;;) {
+    if (existsSync(join(cur, "package.json"))) return cur;
+    const parent = dirname(cur);
+    if (parent === cur) return raw;
+    cur = parent;
+  }
+}
+
+/**
  * package.json 读取结果：**区分「不存在」/「解析失败」/「读失败」/「可读」**。
  * `readJson`（公共基建）把解析失败与「文件不存在」压成同一个 undefined——
  * 迁移面不能把「不知道」当成「没有」（status 假绿 / retire 谎报 no package.json）。
@@ -1810,7 +1843,8 @@ function belongsToOtherPackage(file: string, self: string, allRoots: string[]): 
 }
 
 export function migrateStatus(rootDir: string): MigrateStatusRow[] {
-  const root = resolveMigrateRoot(rootDir);
+  // BUG-145：子目录 / 源文件目标必须解析到最近的 package.json 所在包根
+  const root = resolveStatusRoot(rootDir);
   const { roots, excluded } = packageRoots(root);
   const excludedList = excludedPackages(excluded);
   const rows: MigrateStatusRow[] = [];
@@ -2972,20 +3006,15 @@ const TSC_EMIT_FLAGS = [
 ];
 
 /**
- * 脚本里 tsc 调用的角色：
- * - `gate`：类型门禁（`--noEmit` 或裸 tsc）⇒ 可改写成 `nudo check`
- * - `compiler`：编译器（发射旗标 / `-b` / `-p` 指向**会 emit** 的项目 /
- *   脚本名是构建角色且它**真的会 emit**）⇒ **原样保留**
- * - `null`：不是 tsc 调用（判定口径与改写口径同源：`isTscCommand`）
+ * **单条** tsc 调用（`call` 的 argv 段）的角色。
  *
- * 族 16 收口（Bug 586）：`-p <项目>` 只说明「用了项目配置」，**不代表会产产物**
- * —— tsconfig 里 `compilerOptions.noEmit: true` 时它就是**类型检查**。
- * 报告 586 的判据是「**真的会 emit**」（夹具 tsconfig 带 `outDir` + `declaration`）。
- * 脚本名（`build` 等）只是启发式，同样要让位于「是否真的 emit」。
+ * BUG-143：判据只作用于**这一段** argv——不得让同一条脚本里**别处**的
+ * `--noEmit` / emit 旗标决定它。`tsc --noEmit && tsc -p tsconfig.json`
+ * 因此得到 `[gate, compiler]`，而不是整串一个 gate。
  */
-function scriptTscRole(cmd: string, root?: string): "gate" | "compiler" | null {
-  if (!isTscCommand(cmd)) return null;
-  const masked = maskShellStringsAndComments(cmd);
+function tscCallRole(call: TscCall, cmd: string, root?: string): "gate" | "compiler" {
+  const argv = cmd.slice(call.argvStart, call.argvEnd);
+  const masked = maskShellStringsAndComments(argv);
   const hasNoEmit = /(^|\s)--noEmit(\s|=|$)/.test(masked);
   const buildMode = /(^|\s)(-b|--build)(\s|$)/.test(masked);
   const projectFlag = /(^|\s)(-p|--project)([\s=]|$)/.test(masked);
@@ -2995,7 +3024,7 @@ function scriptTscRole(cmd: string, root?: string): "gate" | "compiler" | null {
   if (projectFlag) {
     // `-p X`：读 X 的 tsconfig 判「会不会真的 emit」
     if (root) {
-      const project = tscProjectArg(cmd);
+      const project = tscProjectArg(argv);
       if (project !== undefined && !projectEmits(root, project)) return "gate";
     }
     return "compiler";
@@ -3012,8 +3041,37 @@ function scriptTscRole(cmd: string, root?: string): "gate" | "compiler" | null {
   //
   // 修法：与 `-p` 分支**同一条判据**（`projectEmits`）。脚本名不再是判据 ⇒
   // `COMPILER_SCRIPT_NAMES` 从本函数退场（名字提示已由 `-p` / tsconfig 覆盖）。
-  if (root && !projectEmits(root, tscProjectArg(cmd) ?? ".")) return "gate";
+  if (root && !projectEmits(root, tscProjectArg(argv) ?? ".")) return "gate";
   return "compiler";
+}
+
+/**
+ * 命令文本里**每个** tsc 调用的角色（含 `$( … )` 内的独立上下文）。
+ * 原顺序即脚本里的出现顺序。
+ */
+function tscCallRoles(cmd: string, root?: string): Array<"gate" | "compiler"> {
+  const out = findTscCalls(cmd).map((call) => tscCallRole(call, cmd, root));
+  for (const body of substitutionBodies(cmd)) out.push(...tscCallRoles(body, root));
+  return out;
+}
+
+/**
+ * 脚本里 tsc 调用的角色（脚本级聚合 · BUG-143）：
+ * - `gate`：**全部**调用都是类型门禁（`--noEmit` / 不 emit 的项目）⇒ 整条可改写
+ * - `compiler`：**任一**调用是编译器（会 emit）⇒ 该段必须保留；同一条脚本里的
+ *   门禁段仍按调用逐个改写成 `nudo check`（`rewriteTscPhrases` 用的是
+ *   `tscCallRole`，粒度一致）
+ * - `null`：不是 tsc 调用（判定口径与改写口径同源：`isTscCommand`）
+ *
+ * 族 16 收口（Bug 586）：`-p <项目>` 只说明「用了项目配置」，**不代表会产产物**
+ * —— tsconfig 里 `compilerOptions.noEmit: true` 时它就是**类型检查**。
+ * 报告 586 的判据是「**真的会 emit**」（夹具 tsconfig 带 `outDir` + `declaration`）。
+ * 脚本名（`build` 等）只是启发式，同样要让位于「是否真的 emit」。
+ */
+function scriptTscRole(cmd: string, root?: string): "gate" | "compiler" | null {
+  const roles = tscCallRoles(cmd, root);
+  if (roles.length === 0) return null;
+  return roles.includes("compiler") ? "compiler" : "gate";
 }
 
 /** 命令里 `-p/--project` 指向的**原始**项目路径（词法扫描，避开注释与引号误伤） */
@@ -3147,9 +3205,13 @@ function retireSurface(pkg: Record<string, unknown>, root?: string): RetireSurfa
   const gateScripts: string[] = [];
   const compilerScripts: string[] = [];
   for (const [name, cmd] of scriptCommandEntries(pkg)) {
-    const role = scriptTscRole(cmd, root);
-    if (role === "gate") gateScripts.push(name);
-    else if (role === "compiler") compilerScripts.push(name);
+    // BUG-143：按**每个 tsc 调用**分类——混合脚本（`tsc --noEmit && tsc -p …`）
+    // 既有门禁段（retire 会改写 ⇒ 仍是待办 / blocker），也有编译段
+    // （原样保留 ⇒ typescript 依赖不得摘）。两边都要点名。
+    const roles = tscCallRoles(cmd, root);
+    if (roles.length === 0) continue;
+    if (roles.includes("gate")) gateScripts.push(name);
+    if (roles.includes("compiler")) compilerScripts.push(name);
   }
   return {
     hasTypescriptDep: Boolean(mergePackageDeps(pkg).typescript),
@@ -3453,7 +3515,8 @@ function planRetirePackage(
     throw new Error("nothing to retire (no tsc/typescript in scope)");
   }
 
-  // scripts：门禁角色改写成 nudo check；编译器角色**原样保留**
+  // scripts：**逐条 tsc 调用**改角色——门禁段改写成 nudo check，编译段原样保留
+  // （BUG-143：`tsc --noEmit && tsc -p tsconfig.json` ⇒ `nudo check . && tsc -p tsconfig.json`）
   const rawScripts = pkg.scripts;
   const scripts: Record<string, unknown> =
     rawScripts && typeof rawScripts === "object" && !Array.isArray(rawScripts)
@@ -3463,9 +3526,14 @@ function planRetirePackage(
   const preservedScripts: RetirePreservedScript[] = [];
   let scriptsChanged = false;
   for (const [name, cmd] of scriptCommandEntries(pkg)) {
-    const role = scriptTscRole(cmd, root);
-    if (role === null) continue;
-    if (role === "compiler") {
+    if (scriptTscRole(cmd, root) === null) continue;
+    // `root` 交给改写器 ⇒ 它按**每个调用**的 argv 判角色：编译段原样保留，
+    // 其余照常换成 `nudo check`（判定与改写同源，不另开判据）。
+    const { cmd: rewritten } = rewriteTscCommand(cmd, root);
+    // package.json scripts 用本地 bin 名（任意 check 路径，不只 "."）
+    const local = rewritten.replace(/npx nudojs check /g, "nudo check ");
+    if (local === cmd) {
+      // 整条都是编译段 ⇒ 一字未改，如实记成「有意保留」
       preservedScripts.push({
         name,
         command: cmd,
@@ -3474,10 +3542,6 @@ function planRetirePackage(
       });
       continue;
     }
-    const { cmd: rewritten } = rewriteTscCommand(cmd);
-    // package.json scripts 用本地 bin 名（任意 check 路径，不只 "."）
-    const local = rewritten.replace(/npx nudojs check /g, "nudo check ");
-    if (local === cmd) continue;
     rewrittenScripts.push({ name, from: cmd, to: local });
     scripts[name] = local;
     scriptsChanged = true;

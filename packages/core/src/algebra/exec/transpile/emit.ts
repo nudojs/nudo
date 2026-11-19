@@ -814,7 +814,9 @@ export function forkJoinBindings(names: string[], pad = "", opts: TranspileOptio
       // 宿主函数…）持宿主值，`$join($copy(host), …)` 会 asAbsVal 出包装 Abs 并写进
       // globalThis（宿主 process.exit 等丢失）。运行时判据 `$rebindable` 精确区分两者
       // （Abs 绑定 / 局部宿主函数可重绑，见 $rebindable 注释）；宿主全局自赋值 no-op。
-      `${pad}${n} = $rebindable(${JSON.stringify(n)}, ${n}) ? ((${t.arm1Set[i]} && ${t.arm2Set[i]}) ? $join(${t.arm1[i]}, ${t.arm2[i]}) : (${t.arm1Set[i]} ? ${t.arm1[i]} : (${t.arm2Set[i]} ? ${t.arm2[i]} : ${n}))) : ${n};`,
+      // BUG-161：join 结果写回 live 接收者的**原身份**（`$forOf` / 数组 HOF
+      // 按值捕获了它）。非 live 绑定零行为；`$syncLive` 返回 join 结果。
+      `${pad}${n} = $rebindable(${JSON.stringify(n)}, ${n}) ? $syncLive(((${t.arm1Set[i]} && ${t.arm2Set[i]}) ? $join(${t.arm1[i]}, ${t.arm2[i]}) : (${t.arm1Set[i]} ? ${t.arm1[i]} : (${t.arm2Set[i]} ? ${t.arm2[i]} : ${n}))), ${n}) : ${n};`,
   );
 }
 

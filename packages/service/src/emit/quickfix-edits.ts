@@ -988,7 +988,14 @@ export function materializeAction(input: MaterializeInput): QuickfixPlan | undef
   // cycle 归因（#158）抬预算解不开（同抽象实参调用环），不提供该 quickfix；
   // depth/calls 归因带具体建议值（默认上限 ×2：depth 64→128、calls 20000→40000，
   // 与 core check.ts 的 suggestion 同口径）
-  if (code === DIAG.recursionTruncated && fn && input.reason !== "cycle") {
+  if (
+    code === DIAG.recursionTruncated &&
+    fn &&
+    input.reason !== "cycle" &&
+    // BUG-172：suggestion 显式不含 @nudo:budget = depth 已到宿主栈安全线；
+    // 此时下发预算 quickfix 必然把可判定截断变成 RangeError ⇒ 不下发。
+    (input.suggestion === undefined || input.suggestion.includes("@nudo:budget"))
+  ) {
     const dims = budgetDimsForReason(input.reason);
     const r = addBudgetAnnotation(source, fn, dims);
     if (!r) return undefined;

@@ -101,6 +101,15 @@ export function f(n) {
     const both = materializeAction({ ...base, reason: "budget" })!;
     expect(both.title).toContain("@nudo:budget calls=40000 depth=128 on down");
     expect(applyTextEdits(src, both.edits)).toContain("@nudo:budget calls=40000 depth=128");
+    // BUG-172：suggestion 明确不含 @nudo:budget（depth 已到宿主栈安全线）
+    // ⇒ 不下发预算编辑（否则把可判定截断变成 RangeError）。
+    expect(
+      materializeAction({
+        ...base,
+        reason: "depth",
+        suggestion: "the call-depth budget is already at the host-stack safe ceiling (192)",
+      }),
+    ).toBeUndefined();
     // 旧载荷（无 reason）→ 维持旧形态 forks=64（additive，不回写历史）
     const legacy = materializeAction({ ...base })!;
     expect(legacy.title).toContain("@nudo:budget forks=64 on down");

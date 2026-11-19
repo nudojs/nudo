@@ -155,7 +155,7 @@ describe("serializeCaseArg", () => {
     expect(serializeCaseArg(absObj({}))).toBe("{}");
     expect(serializeCaseArg(absObj({ "a-b": str() }))).toBe('{ "a-b": string() }');
     expect(serializeCaseArg(absUnion([num(), str()]))).toBe("union(number(), string())");
-    expect(serializeCaseArg(absUnknown())).toBe("any()");
+    expect(serializeCaseArg(absUnknown())).toBe("unknown");
     expect(serializeCaseArg(absExact({ k: "never" }))).toBe("never");
   });
 

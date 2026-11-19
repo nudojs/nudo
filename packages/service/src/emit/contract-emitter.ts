@@ -31,6 +31,8 @@ import { basename, dirname, relative, resolve } from "node:path";
 import {
   CONSTRAINT_BUILDER_NAMES,
   abs as makeAbs,
+  absToConstraint,
+  generalizeFromAst,
   execNudoModule,
   formatConstraint,
   contractDiagCount,
@@ -174,8 +176,12 @@ type SidecarNameTables = {
   fnFormLocals: Set<string>;
   /** 侧车已从 "@nudojs/core" import 的 builder 局部名（同名即已可用） */
   coreBuilderLocals: Set<string>;
-  /** 侧车里以 `declare const X: typeof import("@nudojs/core")…` 声明的 builder 名 */
-  declaredBuilders: Set<string>;
+  /**
+   * 侧车里以 `declare const X: typeof import("@nudojs/core")…` 声明的 builder：
+   * **表面名** → 声明用的本地名（`lit` → `lit`，别名形态 `lit` → `_nudo_lit`）。
+   * 值 = 该 builder 在本侧车里可用的标识符（段文本必须沿用它才幂等）。
+   */
+  declaredBuilders: Map<string, string>;
   /** 导出名 → 该导出绑定的语句区间（可整体替换者才允许就地替换） */
   exportSites: Map<string, ExportNameSite>;
 };
@@ -419,7 +425,10 @@ export async function emitContract(
       const hit = planCache.get(name);
       if (hit) return hit;
       const fn = fnByName.get(localOf.get(name) ?? name);
-      const proj: FunctionProjection = fn === undefined ? { dsl: undefined } : projectFunctionDsl(fn);
+      const proj: FunctionProjection =
+        fn === undefined
+          ? { dsl: undefined }
+          : projectFunctionDsl(fn, source, opts.loadModule, abs);
       const dsl = proj.dsl;
       // BUG-035（证据范围）：段的证据是否混入 `--from` 外部记录（见
       // FunctionAnalysis.externalEvidence）——落进 `// evidence:` 行。
@@ -457,6 +466,14 @@ export async function emitContract(
     const builderAvailable = (b: string): boolean =>
       tables.coreBuilderLocals.has(b) || tables.declaredBuilders.has(b);
     for (const b of neededBuilders) {
+      // 上一轮已经为它写过声明（`.nudo.ts` 只有 declare 头这条路）：段文本
+      // 必须沿用那个本地名 —— 否则第二轮改写 `lit(` 会撞上用户同名绑定，
+      // 或者又声明一次（重复声明 ⇒ TS2451）。这是幂等的第二处判据。
+      const declaredLocal = tables.declaredBuilders.get(b);
+      if (declaredLocal !== undefined) {
+        if (declaredLocal !== b) builderAlias.set(b, declaredLocal);
+        continue;
+      }
       // 本地已有同名绑定、且**不是** nudo builder → 声明会撞名（重复标识符）
       // → 走别名
       if (tables.localNames.has(b) && !builderAvailable(b)) {
@@ -702,13 +719,18 @@ export async function emitContract(
       missingBuilders.length > 0 &&
       (written.length > 0 || conflictText !== undefined)
     ) {
+      // 幂等最后一道：**文本里已有同款声明**（逐行等值）就不再前置。表解析
+      // 退化（见 collectDeclaredBuilders 的失败分支）时也不会写重复声明头
+      // ——重复声明 = 整份侧车不可加载（TS2451），比「少一行声明」严重得多。
+      const present = new Set(finalContent.split(eol));
       const decls = missingBuilders
         .map((b) => {
           const local = builderAlias.get(b) ?? b;
           return `declare const ${local}: typeof import("@nudojs/core").${coreExportNameOf(b)};`;
         })
+        .filter((line) => !present.has(line))
         .join(eol);
-      finalContent = `${decls}${eol}${eol}${finalContent}`;
+      if (decls !== "") finalContent = `${decls}${eol}${eol}${finalContent}`;
     }
     // .js 侧车：生成段是真实 JS 文件（用户会直接 `node` import / 被
     // `tsc --checkJs` 编译）⇒ 缺 builder import 时是 TS2304 / ReferenceError
@@ -841,7 +863,61 @@ type FunctionProjection = { dsl?: string; noEvidence?: boolean };
  * 用 entry 推断（仅返回位；entry 实参恒 unknown，参数位无证据不产约束）。
  * 任一有证据位 joinThenProject 落空 → undefined（not-projectable，不产垃圾）。
  */
-function projectFunctionDsl(fn: FunctionAnalysis): FunctionProjection {
+/** 递归去掉 pred 层（类型仍可投影时的保守退化；关系式已有其它面承载） */
+function withoutPreds(a: Abs): Abs {
+  if (a.shape.k === "obj") {
+    const slots: Record<string, { value: Abs; optional?: boolean }> = {};
+    for (const [key, slot] of Object.entries(a.shape.slots)) {
+      slots[key] = {
+        value: withoutPreds(slot.value),
+        ...(slot.optional ? { optional: true } : {}),
+      };
+    }
+    return { ...a, shape: { ...a.shape, slots }, pred: undefined };
+  }
+  return a.pred ? { ...a, pred: undefined } : a;
+}
+
+/**
+ * BUG-159：运行期见证 Abs 的置信度撞 `PROJECTABLE_CONF`（widened/partial）时，
+ * 用**泛化签名**（`generalizeFromAst`，与 check / dts 同一真相源）兜底投影。
+ *
+ * 求值见证的实参是具体值 ⇒ `x + 1` / `x > 1` 失去 term ⇒ conf 降级 ⇒
+ * 旧实现把整段契约标成 `not-projectable`，而同一轮 `check` 发布 `conf: path`
+ * 的 `number` / `boolean`。泛化 Abs 带符号 term，能给出 `number()` /
+ * `boolean()`（关系 pred 不可表达时退化为类型域，不伪造关系）。
+ */
+function inferredProjection(
+  fn: FunctionAnalysis,
+  source: string,
+  loadModule?: (spec: string, fromFile: string) => string | undefined,
+  fromFile?: string,
+): { params: Array<NudoConstraint | undefined>; ret?: NudoConstraint } {
+  try {
+    const g = generalizeFromAst(fn.name, source, {
+      refine: {
+        ...(loadModule ? { loadModule } : {}),
+        ...(fromFile ? { fromFile } : {}),
+      },
+    });
+    if (!g) return { params: [] };
+    const project = (a: Abs): NudoConstraint | undefined =>
+      absToConstraint(a) ?? absToConstraint(withoutPreds(a));
+    return {
+      params: g.typeParams.map((t) => project(t.value)),
+      ...(g.symbolic ? { ret: project(g.symbolic) } : {}),
+    };
+  } catch {
+    return { params: [] };
+  }
+}
+
+function projectFunctionDsl(
+  fn: FunctionAnalysis,
+  source: string,
+  loadModule?: (spec: string, fromFile: string) => string | undefined,
+  fromFile?: string,
+): FunctionProjection {
   // #176：skip 函数不产侧车契约——@nudo:case 现已照常求值（运行时见证），
   // 但见证不参与面合成；skip 的面是 @nudo:skip => 声明（若有）。与旧口径
   // 一致：此前 skip 无 case → 无证据 → not-projectable。
@@ -881,6 +957,10 @@ function projectFunctionDsl(fn: FunctionAnalysis): FunctionProjection {
   // 观测一样按字面量投影。
   const projectObserved = (absList: Abs[]): NudoConstraint | undefined =>
     joinThenProject(absList);
+  // BUG-159：仅在运行期见证投影落空时才跑泛化（多数函数零额外成本）。
+  let inferred: ReturnType<typeof inferredProjection> | undefined;
+  const fallback = (): ReturnType<typeof inferredProjection> =>
+    (inferred ??= inferredProjection(fn, source, loadModule, fromFile));
 
   const paramParts: string[] = [];
   for (let i = 0; i < fn.paramNames.length; i++) {
@@ -890,7 +970,7 @@ function projectFunctionDsl(fn: FunctionAnalysis): FunctionProjection {
       if (a !== undefined) rawAbs.push(a);
     }
     if (rawAbs.length === 0) continue; // 无证据：参数位留空（不产约束）
-    const constraint = projectObserved(rawAbs);
+    const constraint = projectObserved(rawAbs) ?? fallback().params[i];
     // 证据在、但投影不出 ⇒ noEvidence 不置位（既有段必须保留，不得误删）
     if (constraint === undefined) return { dsl: undefined };
     paramParts.push(`${fn.paramNames[i]!}: ${formatConstraint(constraint)}`);
@@ -901,9 +981,11 @@ function projectFunctionDsl(fn: FunctionAnalysis): FunctionProjection {
   for (const c of returnCases) {
     if (c.throwsAbs.shape.k === "never") retRaw.push(c.abs);
   }
+  // BUG-159：运行期见证 conf=widened/partial（算出来的返回值）时，用泛化
+  // 返回位兜底；否则整段契约（含本来可投影的形参）会被误判 not-projectable。
   const retConstraint: NudoConstraint | undefined =
     retRaw.length > 0
-      ? projectObserved(retRaw)
+      ? projectObserved(retRaw) ?? fallback().ret
       : undefined;
   // 完全无证据（形参位与返回位都没有可投影证据）⇒ 今天的分析对该函数**什么
   // 都没看到** ⇒ 既有生成段描述的行为已不存在（BUG-035 残留：见证段/失效段
@@ -1124,7 +1206,7 @@ function sidecarNameTables(sidecarSrc: string): SidecarNameTables | undefined {
     fnContractNames: new Set(),
     fnFormLocals: new Set(),
     coreBuilderLocals: new Set(),
-    declaredBuilders: new Set(),
+    declaredBuilders: new Map(),
     exportSites: new Map(),
   };
   if (sidecarSrc.trim() === "") return tables;
@@ -1172,20 +1254,10 @@ function sidecarNameTables(sidecarSrc: string): SidecarNameTables | undefined {
   };
   const collect = (stmt: Stmt, exported: boolean, outer?: Stmt): void => {
     if (stmt.type === "VariableDeclaration") {
-      // `declare const X: typeof import("@nudojs/core")…` —— 发射器写的 builder
-      // 类型声明（纯类型、运行时被侧车装载器剥掉）：认作「该 builder 已可用」
-      if ((stmt as { declare?: boolean }).declare === true) {
-        const text = sidecarSrc.slice(stmt.start ?? 0, stmt.end ?? 0);
-        if (text.includes('typeof import("@nudojs/core")')) {
-          for (const d of (stmt as any).declarations) {
-            if (d.id.type === "Identifier") {
-              tables.declaredBuilders.add(d.id.name);
-              tables.localNames.add(d.id.name);
-            }
-          }
-          return;
-        }
-      }
+      // 注意：`declare const X: typeof import("@nudojs/core")…`（发射器写的
+      // builder 类型声明）在**这棵树上不存在**——`parseSource` 是分析视图，
+      // TS 类型层整条被剥掉 ⇒ 只能由 {@link collectDeclaredBuilders} 用
+      // keepTs 视图补（BUG-169：在这里判 `declare === true` 是不可达的死分支）。
       collectVar(stmt, exported, outer ?? stmt);
     } else if (stmt.type === "FunctionDeclaration" || stmt.type === "ClassDeclaration") {
       if (stmt.id) {
@@ -1263,7 +1335,45 @@ function sidecarNameTables(sidecarSrc: string): SidecarNameTables | undefined {
     }
     collect(stmt, false);
   }
+  collectDeclaredBuilders(sidecarSrc, tables);
   return tables;
+}
+
+/**
+ * 侧车里的 builder 类型声明头 ⇒ `declaredBuilders`（表面名 → 声明用的本地名）。
+ *
+ * **必须用 keepTs 视图**：`parseSource` 缺省是**分析**视图，它把 TS 类型层
+ * 整条剥掉 ⇒ `declare const fn: typeof import("@nudojs/core").fn;` 在树上
+ * 根本不存在。用分析视图建表 ⇒ 表恒空 ⇒ `missingBuilders` 恒非空 ⇒ 每次
+ * 刷新都把声明头再前置一份（BUG-169：第二轮起 TS2451 / 第三轮
+ * `is not parseable`）。
+ *
+ * 名字表仍由分析视图给：那里的 `export const x = fn(…)` 没有被 TS 包装节点
+ * （`as` / 类型注解）改写，判据与历史口径一致；这里只补「声明头」这一项。
+ */
+function collectDeclaredBuilders(
+  sidecarSrc: string,
+  tables: SidecarNameTables,
+): void {
+  let ast: ReturnType<typeof parseSource>;
+  try {
+    ast = parseSource(sidecarSrc, { keepTs: true });
+  } catch {
+    return; // 分析视图已解析成功 ⇒ keepTs 失败只可能是极端形态，保守跳过
+  }
+  for (const stmt of ast.program.body) {
+    if (stmt.type !== "VariableDeclaration") continue;
+    if ((stmt as { declare?: boolean }).declare !== true) continue;
+    for (const d of stmt.declarations) {
+      if (d.id.type !== "Identifier") continue;
+      // 逐个声明符取自己的类型注解（多声明符的 declare 语句必须逐条判定）
+      const text = sidecarSrc.slice(d.start ?? 0, d.end ?? 0);
+      const m = /typeof\s+import\(\s*["']@nudojs\/core["']\s*\)\.([A-Za-z_$][\w$]*)/.exec(text);
+      if (m === null) continue;
+      tables.declaredBuilders.set(surfaceOfCoreExport(m[1]!), d.id.name);
+      tables.localNames.add(d.id.name);
+    }
+  }
 }
 
 /**
@@ -1332,4 +1442,15 @@ export function coreExportNameOf(surface: string): string {
   if (surface === "lit") return "litC";
   if (surface === "and") return "andC";
   return surface;
+}
+
+/**
+ * {@link coreExportNameOf} 的逆：core 的**导出名**（`declare const …:
+ * typeof import("@nudojs/core").litC` 里的 `litC`）→ DSL 表面名（`lit`）。
+ * 只有 litC / andC 两个别名，其余同名。
+ */
+function surfaceOfCoreExport(exportName: string): string {
+  if (exportName === "litC") return "lit";
+  if (exportName === "andC") return "and";
+  return exportName;
 }

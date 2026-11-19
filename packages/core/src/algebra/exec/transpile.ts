@@ -38,6 +38,7 @@ export { runtimeImportOf } from "./transpile/runtime-import.ts";
 import {
   collectVarHoistNames,
   collectExportVarNames,
+  collectPatternNames,
   userIdentInfo,
   bumpDestrTmpSeq,
   newStmtEmitState,
@@ -46,6 +47,7 @@ import {
   leadingConstAliasGroups,
   shadowedIntrinsicsOf,
 } from "./transpile/helpers.ts";
+import { finalizeOpHygiene, prepareOpHygiene } from "./transpile/hygiene.ts";
 import { staticExportDeclNamesOfProgram } from "./export-names.ts";
 export { transpileBodyNode } from "./transpile/stmt.ts";
 export { transpileExpression } from "./transpile/expr.ts";
@@ -180,6 +182,21 @@ function transpileFileDetailed(
     opts.mode === "analyze"
       ? analyzeTopLevelStatements(file.program.body)
       : file.program.body;
+  // BUG-164：算子名卫生（模块级 α-重命名）。**就地**改源 AST 里与运行时算子
+  // 同名的用户标识符 ⇒ 占位名（发射后原样还原，见 finally）。无冲突时原样
+  // 返回且不碰 AST（产物逐字不变）。
+  //
+  // 位置：在 meta（导出名 / import 面按**源名**算）与 analyze 剥离（按源语句
+  // 形态判定）之后、其余 AST 派生表之前（它们与占位名同空间一致）。占位名
+  // 只改 Identifier 的 name（不改节点身份 / 源偏移）⇒ analyze 剥离的判定面
+  // 不受影响；反过来先剥离再改名可保证剥离判据看到的仍是源名。
+  const hygiene = prepareOpHygiene(file.program, opts);
+  // 卫生占位名下的同名导出函数仍要发 `export ` 前缀——`meta` 的
+  // staticExportNames 按**源名**算（占位化之前），故把占位名补进判据集
+  // （发射后占位名文本还原成源名 ⇒ 产物导出面不变）。
+  for (const [ph, orig] of hygiene.placeholders) {
+    if (exportedDeclNames.has(orig)) exportedDeclNames.add(ph);
+  }
   // 模块顶层是**作用域边界**（与函数体同级）：模块体是**逐语句**发射的，
   // 不经函数体入口（transpileFnBodyStmts）⇒ 模块作用域此前**没有**别名组
   // ⇒ 顶层 fork（`if (…) { a.x = … }`）只快照/重绑 `a` ⇒ 别名伙伴 `b` 仍
@@ -187,6 +204,13 @@ function transpileFileDetailed(
   // 本层自有组 = 前导连续 const 声明里的直接别名（同函数体边界口径）；
   // 嵌套函数体按 fn-body.ts 的口径**继承**本组并按自身遮蔽名过滤。
   const moduleAliasGroups = leadingConstAliasGroups(emitBody);
+  // BUG-149：模块顶层**值绑定**名（function / class / var-let-const）。同名
+  // `namespace` 与之是 TS **声明合并**（源里只有一个值绑定）⇒ namespace 分支
+  // 不得再发 `const <名> = $unknown()`（重复词法声明 ⇒ 整模块 fail-closed +
+  // 合法源被判 nudo:module-throw）。名字空间自身没有对象模型 ⇒ 合并形态下
+  // 保留原值绑定（成员投影仍按既有精度口径）。
+  const nsMergedValueNames = moduleValueBindingNames(file.program.body);
+  const nsOpaqueNames = new Set<string>();
   const scopedOpts: TranspileOptions = {
     ...opts,
     destrTmpSeq,
@@ -200,6 +224,8 @@ function transpileFileDetailed(
     ...(shadowedIntrinsics ? { shadowedIntrinsics } : {}),
     // 顶层函数 `export ` 前缀判据（空集也传——缺省语义是「不发 export」）
     exportedDeclNames,
+    nsMergedValueNames,
+    nsOpaqueNames,
     ...(varEmitNames.size > 0 ? { hoistedVarNames: varEmitNames } : {}),
     ...(assumeFile ? { assumeDirectiveFile: true } : {}),
     ...(hostRefresh !== null ? { hostImportRefresh: hostRefresh } : {}),
@@ -207,7 +233,7 @@ function transpileFileDetailed(
   const lines: string[] = [
     `// nudo evaluator transpile — values are Abs; operators are overloaded calls`,
   ];
-  if (runtime !== null) lines.push(runtimeImportOf(runtime));
+  if (runtime !== null) lines.push(runtimeImportOf(runtime, hygiene.renames));
   lines.push(``);
   // Bug 456：refresh 闭包由模块域变量强持有（注册表是弱引用）——host 形态
   // 与 run.ts 文本改写同口径。
@@ -225,25 +251,63 @@ function transpileFileDetailed(
   if (moduleNanAliases && moduleNanAliases.size) {
     moduleNanAliases = filterWrittenAliases(moduleNanAliases, moduleWrittenOf());
   }
-  if (moduleHasVarDecl || moduleNanAliases) {
-    for (const stmt of emitBody) {
-      const stepOpts = moduleNanAliases
-        ? { ...scopedOpts, nanAliases: moduleNanAliases }
-        : scopedOpts;
-      lines.push(transpileStatement(stmt, 0, stepOpts));
-      moduleNanAliases = nanAliasesAfterStmt(
-        stmt,
-        moduleNanAliases,
-        scopedOpts.shadowedIntrinsics,
-        moduleWrittenOf,
-      );
+  try {
+    if (moduleHasVarDecl || moduleNanAliases) {
+      for (const stmt of emitBody) {
+        const stepOpts = moduleNanAliases
+          ? { ...scopedOpts, nanAliases: moduleNanAliases }
+          : scopedOpts;
+        lines.push(transpileStatement(stmt, 0, stepOpts));
+        moduleNanAliases = nanAliasesAfterStmt(
+          stmt,
+          moduleNanAliases,
+          scopedOpts.shadowedIntrinsics,
+          moduleWrittenOf,
+        );
+      }
+    } else {
+      for (const stmt of emitBody) {
+        lines.push(transpileStatement(stmt, 0, scopedOpts));
+      }
     }
-  } else {
-    for (const stmt of emitBody) {
-      lines.push(transpileStatement(stmt, 0, scopedOpts));
+  } finally {
+    // 源 AST 是 parse-source 的进程级缓存对象：占位名必须还原（异常路径也要
+    // 还），否则同源二次转译会看到占位名（同源不同产物）。
+    hygiene.restoreAst();
+  }
+  return { code: finalizeOpHygiene(lines.join("\n") + "\n", hygiene), meta };
+}
+
+/**
+ * BUG-149：模块顶层**值绑定**名集合（声明合并判据）。
+ *
+ * `function f` / `class C` / `enum E` / `var`-`let`-`const` 都是运行时值绑定；
+ * 同名 `namespace` 与它们是 TS 声明合并 ⇒ 源里只有一个值绑定。namespaces /
+ * 纯类型声明（interface / type）不在此集合（它们不产生值绑定）。
+ * `export` 包裹的声明按内层声明计（`export function f` 同口径）。
+ */
+function moduleValueBindingNames(body: readonly Statement[]): Set<string> {
+  const out = new Set<string>();
+  for (const stmt of body) {
+    const decl =
+      stmt.type === "ExportNamedDeclaration" || stmt.type === "ExportDefaultDeclaration"
+        ? stmt.declaration
+        : stmt;
+    if (!decl) continue;
+    if (decl.type === "FunctionDeclaration" || decl.type === "ClassDeclaration") {
+      if (decl.id) out.add(decl.id.name);
+      continue;
+    }
+    if (decl.type === "VariableDeclaration") {
+      for (const d of decl.declarations) collectPatternNames(d.id as Node, out);
+      continue;
+    }
+    if ((decl as { type: string }).type === "TSEnumDeclaration") {
+      const id = (decl as unknown as { id?: { type?: string; name?: string } }).id;
+      if (id?.type === "Identifier" && typeof id.name === "string") out.add(id.name);
     }
   }
-  return { code: lines.join("\n") + "\n", meta };
+  return out;
 }
 
 /**

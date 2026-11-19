@@ -404,3 +404,22 @@ describe("DESIGN-003 reserved-word exports (identity = exported name)", () => {
     expect(() => parseSource(sidecar)).not.toThrow();
   });
 });
+
+describe("emitContract — 算出来的返回值不再被 not-projectable（BUG-159）", () => {
+  it("x+1 / x*2 / x>1 的返回位用泛化签名兜底投影（同轮 check 是 conf:path）", async () => {
+    const src = `export function p01(x: number) { return x; }
+export function p02(x: number) { return x + 1; }
+export function p03(x: number) { return x * 2; }
+export function p07(x: number) { return x > 1; }
+`;
+    const file = join(dir, "calc.ts");
+    writeFileSync(file, src);
+    const r = await emitContract(file, { mode: "add", all: true });
+    expect(r.written).toEqual(["p01", "p02", "p03", "p07"]);
+    expect(r.skipped).toEqual([]);
+    const sidecar = readFileSync(join(dir, "calc.nudo.ts"), "utf-8");
+    expect(sidecar).toContain("export const p02 = fn({  }, number());");
+    expect(sidecar).toContain("export const p03 = fn({  }, number());");
+    expect(sidecar).toContain("export const p07 = fn({  }, boolean());");
+  });
+});

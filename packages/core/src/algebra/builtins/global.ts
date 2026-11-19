@@ -4,7 +4,7 @@
  */
 import type { Abs } from "../abs.ts";
 import { abs, litValue, numLit, strLit, boolLit, bigintLit, unknown, confJoin } from "../abs.ts";
-import { objOf, isNullProtoObj, isNullProtoWithoutCoercer, invokeToPrimitiveHook } from "../objects.ts";
+import { objOf, isNullProtoObj, isNullProtoWithoutCoercer, invokeToPrimitiveHook, toPrimitiveCoercionOf } from "../objects.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow, throwPayloadOf } from "../exec/may-throw.ts";
 import { numPrim, str, boolPrim, mayCoerceThrowOperand, mayToStringThrowOperand, isBigintPrimAbs } from "./shared.ts";
@@ -307,12 +307,16 @@ export function evalGlobalFn(name: string, args: Abs[]): Abs | undefined {
       if (args[0] && isSymbolAbs(args[0])) return stringOfSymbol(args[0]);
       if (!args[0]) return strLit("");
       if (a0Lit) return strLit(String(a0Lit.value));
-      // Bug 24（强转三连）：闭 null-proto 且无自有 coercer 槽 →
-      // ToPrimitive 无 coercer 可走，原生定抛 TypeError（node 实测
-      // String(Object.create(null))）；带 coercer 槽 / open / index 形
-      //（未知成员可能含 coercer）落到下方 may。判缺收口
-      // objects.isNullProtoWithoutCoercer（含 @@toPrimitive 槽，
-      // 与 arithmetic/template 的 `+` 臂单一事实源）
+      // BUG-142：对象先做一次 ToPrimitive(string) 并采信钩子结果
+      // （`String({toString(){return "hi"}})` → "hi"；throw 域随之而来）。
+      // null-proto 无 coercer 由 helper 抛 TypeError；闭普通对象无钩子回落
+      // "[object Object]"。open/index 形仍落下方保守臂。
+      if (args[0].shape.k === "obj") {
+        const prim = toPrimitiveCoercionOf(args[0], "string");
+        if (prim !== undefined) return evalGlobalFn("String", [prim]);
+      }
+      // 纯判定兜底（非 obj 面 / helper 返回 undefined 的开放对象）：不再
+      // 借判定调用钩子（同一次强转只调一次）。
       if (isNullProtoWithoutCoercer(args[0], "string")) {
         throw new NudoThrow(errorTypeAbs("TypeError"));
       }

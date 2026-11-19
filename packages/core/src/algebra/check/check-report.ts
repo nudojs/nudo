@@ -14,6 +14,7 @@ import type { Term } from "../term.ts";
 import type { Pred } from "../pred.ts";
 import { formatAbs, formatShape } from "../format/format.ts";
 import { CHECK_FACE_DIAG_CODES, DIAG } from "../diagnostics/diag-codes.ts";
+import { MAX_SAFE_CALL_DEPTH } from "../call-budget.ts";
 
 /**
  * 引擎内部**进程级计数器**变量 id（Bug 413）。
@@ -154,8 +155,17 @@ export type CheckIssue = Diagnostic & {
 
 /** 结构化修复动作（AI1；稳定枚举，只增不改语义） */
 export type CheckAction = {
-  /** draft=生成侧车草稿 · relax=放宽契约 · callsite=改实参 · assume/mock/emit/ignore=辅助 */
-  kind: "draft" | "relax" | "callsite" | "assume" | "mock" | "emit" | "ignore-throws" | "info";
+  /** draft=生成侧车草稿 · relax=放宽契约 · callsite=改实参 · adjust=按诊断调预算 · assume/mock/emit/ignore=辅助 */
+  kind:
+    | "draft"
+    | "relax"
+    | "callsite"
+    | "adjust"
+    | "assume"
+    | "mock"
+    | "emit"
+    | "ignore-throws"
+    | "info";
   /** agent 可执行命令（无则只读 label/hint） */
   command?: string;
   /** 一行说明（与 suggestion 同源或更短） */
@@ -309,10 +319,19 @@ export function suggestedForkCeiling(observedForks: number): number {
   return Math.max(20_000, ceilTo(observedForks * 1.5, 1_000));
 }
 
-/** depth 截断建议上限：默认 64×2=128 起，或观测深度 ×2 向上取整到 16 */
+/**
+ * depth 截断建议上限：默认 64×2=128 起，或观测深度 ×2 向上取整到 16。
+ *
+ * BUG-172：**不得超过宿主栈安全线**（`MAX_SAFE_CALL_DEPTH`）——否则建议值
+ * 本身会把「可判定的截断」变成 `RangeError` + `nudo:internal`。观测深度
+ * 已到安全线时，调用方必须改走「结构 / 契约」建议，不得再抬 depth。
+ */
 export function suggestedDepthCeiling(observedDepth: number): number {
-  if (!(observedDepth > 0)) return 128;
-  return Math.max(128, ceilTo(observedDepth * 2, 16));
+  if (!(observedDepth > 0)) return Math.min(128, MAX_SAFE_CALL_DEPTH);
+  return Math.min(
+    MAX_SAFE_CALL_DEPTH,
+    Math.max(128, ceilTo(observedDepth * 2, 16)),
+  );
 }
 
 /** calls 截断建议上限：默认 20000×2=40000 起，或观测调用数 ×2 向上取整到千 */
@@ -516,16 +535,33 @@ export function actionsForIssue(i: {
         },
       ];
     case DIAG.recursionTruncated:
-      // #158 归因：cycle 不是预算——不得把 agent 引向抬 @nudo:budget
+      // #158 归因：cycle 不是预算——不得把 agent 引向抬 @nudo:budget。
+      // BUG-171：depth/calls 臂是**可落盘的调整**（`@nudo:budget` 注解）⇒
+      // kind 必须是 `adjust` 而不是 `info`；CLI `--fix` 与 LSP code action
+      // 都只跳过 info，adjust 才能到达计划器的 `[adjust]` 分支。
+      const capped =
+        i.suggestion !== undefined && !i.suggestion.includes("@nudo:budget");
+      if (i.reason === "cycle" || i.reason === undefined || capped) {
+        return [
+          {
+            kind: "info",
+            label:
+              i.reason === "cycle"
+                ? "call cycle: same abstract arguments already on the stack — raising @nudo:budget cannot lift it; make the arguments vary per recursion level or declare @nudo:contract"
+                : capped
+                  ? (i.suggestion ??
+                    "call-depth budget is at the host-stack safe ceiling; raising it further can overflow the host stack — restructure the recursion or declare @nudo:contract")
+                  : "results widened to unknown — raise budget (@nudo:budget calls/depth on the function) or narrow control flow",
+          },
+        ];
+      }
       return [
         {
-          kind: "info",
-          label:
-            i.reason === "cycle"
-              ? "call cycle: same abstract arguments already on the stack — raising @nudo:budget cannot lift it; make the arguments vary per recursion level or declare @nudo:contract"
-              : i.reason === "depth" || i.reason === "calls" || i.reason === "budget"
-                ? `results widened to unknown — raise budget (@nudo:budget ${i.reason === "depth" ? "depth" : i.reason === "calls" ? "calls" : "calls/depth"} on the function) or narrow the recursion`
-                : "results widened to unknown — raise budget (@nudo:budget calls/depth on the function) or narrow control flow",
+          kind: "adjust",
+          label: `results widened to unknown — raise budget (@nudo:budget ${
+            i.reason === "depth" ? "depth" : i.reason === "calls" ? "calls" : "calls/depth"
+          } on the function) or narrow the recursion`,
+          ...(i.fn ? { hint: i.fn } : {}),
         },
       ];
     case DIAG.hostEffectBlocked: {

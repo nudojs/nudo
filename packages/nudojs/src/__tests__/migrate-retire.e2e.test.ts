@@ -1706,6 +1706,83 @@ function pkgWith(
     expect(pkg.devDependencies["typescript"]).toBeUndefined();
   });
 
+  it("BUG-143：混合脚本按**每个 tsc 调用**判角色 —— 门禁段改写、emit 段原样保留、typescript 不摘", () => {
+    // 每条脚本里都有一个 `--noEmit` 段 + 一个 emit 段；旧实现看到整串里的
+    // `--noEmit` 就整条判 gate（两段都变 nudo check + 摘依赖）⇒ 产物消失。
+    // 期望：只改门禁段，emit 段（`-p` 指真的会 emit 的 tsconfig / 发射旗标）
+    // 逐字保留，`typescript` 依赖不摘。
+    const emitCfg = { compilerOptions: { outDir: "dist", declaration: true } };
+    const cases: Array<{ name: string; script: string; expected: string }> = [
+      {
+        name: "and",
+        script: "tsc --noEmit && tsc -p tsconfig.json",
+        expected: "nudo check . && tsc -p tsconfig.json",
+      },
+      {
+        name: "semicolon",
+        script: "tsc --noEmit ; tsc -p tsconfig.json",
+        expected: "nudo check . ; tsc -p tsconfig.json",
+      },
+      {
+        name: "or",
+        script: "tsc --noEmit || tsc -p tsconfig.json",
+        expected: "nudo check . || tsc -p tsconfig.json",
+      },
+      {
+        name: "outdir-flag",
+        script: "tsc --noEmit && tsc --outDir dist",
+        expected: "nudo check . && tsc --outDir dist",
+      },
+    ];
+    for (const c of cases) {
+      const { dir } = pkgWith(c.name, { build: c.script }, emitCfg);
+      const result = migrateRetire(dir, { workflows: false });
+      const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf-8")) as {
+        devDependencies: Record<string, string>;
+        scripts: Record<string, string>;
+      };
+      // 门禁段退役、emit 段逐字保留（正、反两侧都断言 ⇒ 不是「整条没动」）
+      expect(pkg.scripts["build"]).toBe(c.expected);
+      expect(pkg.scripts["build"]).not.toBe(c.script);
+      // emit 段仍要 tsc ⇒ 依赖不得摘
+      expect(pkg.devDependencies["typescript"]).toBe("^5.0.0");
+      expect(result.removedDeps).not.toContain("devDependencies");
+      // 混合脚本有门禁段可退役 ⇒ 不得报「nothing to retire」
+      expect(result.rewrittenScripts.map((s) => s.name)).toEqual(["build"]);
+    }
+  });
+
+  it("BUG-143 反向闸：单条 tsc --noEmit 仍整条改写成 nudo check 且摘依赖（既有行为不回归）", () => {
+    const { dir } = pkgWith(
+      "single-noemit",
+      { typecheck: "tsc --noEmit" },
+      { compilerOptions: { outDir: "dist", declaration: true } },
+    );
+    const result = migrateRetire(dir, { workflows: false });
+    const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf-8")) as {
+      devDependencies: Record<string, string>;
+      scripts: Record<string, string>;
+    };
+    expect(pkg.scripts["typecheck"]).toBe("nudo check .");
+    expect(pkg.devDependencies["typescript"]).toBeUndefined();
+    expect(result.removedDeps).toContain("devDependencies");
+  });
+
+  it("BUG-143 反向闸：整条脚本只有 emit 调用 ⇒ 仍是 nothing to retire（不得凭空改写）", () => {
+    const { dir } = pkgWith(
+      "only-emit",
+      { build: "tsc -p tsconfig.json" },
+      { compilerOptions: { outDir: "dist", declaration: true } },
+    );
+    expect(() => migrateRetire(dir, { workflows: false })).toThrow(/nothing to retire/);
+    const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf-8")) as {
+      devDependencies: Record<string, string>;
+      scripts: Record<string, string>;
+    };
+    expect(pkg.scripts["build"]).toBe("tsc -p tsconfig.json");
+    expect(pkg.devDependencies["typescript"]).toBe("^5.0.0");
+  });
+
 });
 
 // ---------------------------------------------------------------------------

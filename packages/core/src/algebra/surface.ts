@@ -31,6 +31,7 @@ import {
 import { NudoThrow } from "./diagnostics/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "./diagnostics/may-throw.ts";
 import { isDomainShared } from "./len-sharing.ts";
+import { toPrimitiveCoercionOf } from "./objects.ts";
 
 // --- 位运算 / 移位 / 幂 / ToNumber（evaluator $bitand 等运算符路由） ---
 
@@ -272,6 +273,13 @@ export function powAbs(a: Abs, b: Abs): Abs {
     const fb = builtinBrandToPrimitive(b, "number");
     if (fa || fb) return powAbs(fa ?? a, fb ?? b);
   }
+  // BUG-142：用户 ToPrimitive(number) 的结果参与幂折叠。
+  {
+    const pa = toPrimitiveCoercionOf(a, "number");
+    if (pa !== undefined) return powAbs(pa, b);
+    const pb = toPrimitiveCoercionOf(b, "number");
+    if (pb !== undefined) return powAbs(a, pb);
+  }
   // Bug 106：两侧 bigint、至少一侧抽象——字面量负指数原生定抛 RangeError
   //（"Negative exponent is not allowed"；b ** -1n 不得静默抽象 bigint）。
   // 双字面量由 foldNumericBinOp 折叠臂同口径处理（本检查先触发同结果）。
@@ -334,6 +342,11 @@ export function toNumberAbs(a: Abs): Abs {
   {
     const fa = builtinBrandToPrimitive(a, "number");
     if (fa) return toNumberAbs(fa);
+  }
+  // BUG-142：用户对象钩子结果参与 ToNumber（`+{valueOf(){return "5"}}` → 5）。
+  {
+    const pa = toPrimitiveCoercionOf(a, "number");
+    if (pa !== undefined) return toNumberAbs(pa);
   }
   // Symbol 参与一元 + / ToNumber：原生 TypeError（与 add 同口径）
   if (isSym(a)) {
@@ -443,6 +456,11 @@ export function negAbs(a: Abs, _phi: Phi = pTrue): Abs {
   {
     const fa = builtinBrandToPrimitive(a, "number");
     if (fa) return negAbs(fa, _phi);
+  }
+  // BUG-142：用户对象钩子结果参与一元负号。
+  {
+    const pa = toPrimitiveCoercionOf(a, "number");
+    if (pa !== undefined) return negAbs(pa, _phi);
   }
   // Symbol 参与一元 -：ToNumber 原生 TypeError（与 add 同口径）
   if (isSym(a)) {

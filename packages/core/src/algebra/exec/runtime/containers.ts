@@ -14,6 +14,8 @@
 export {
   privateNameGuard,
   $copy,
+  $syncLive,
+  markLiveContainer,
   $obj,
   $setProto,
   $spread,

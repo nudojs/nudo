@@ -296,6 +296,24 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         const id = (stmt as unknown as { id?: { type?: string; name?: string; value?: string } }).id;
         const name = id?.type === "Identifier" ? id.name : id?.type === "StringLiteral" ? id.value : undefined;
         if (!name) return `${pad}// <namespace skipped>`;
+        // BUG-149：TS 声明合并（`function f` / `class C` / `enum E` +
+        // 同名 `namespace`）——源里只有**一个**运行时值绑定，namespace 分支
+        // 此前无条件再发 `const <名> = $unknown()` ⇒ 与同名值重复词法声明
+        // ⇒ 产物不是合法 JS ⇒ 整模块求值失败 ⇒ 合法 TS 被判
+        // `nudo:module-throw`（签名 / case / dts 全塌 unknown）。合并形态下
+        // **不发**同名绑定：保留原值绑定（namespace 成员投影仍按既有精度
+        // 口径，不污染同名值）。
+        if (opts.nsMergedValueNames?.has(name) === true) {
+          return `${pad}// <namespace ${name}: merged with the same-name value binding>`;
+        }
+        // 同名 namespace 重复声明（namespace 合并）同样只发一次 opaque 绑定
+        const emitted = opts.nsOpaqueNames;
+        if (emitted !== undefined) {
+          if (emitted.has(name)) {
+            return `${pad}// <namespace ${name}: merged with the same-name namespace>`;
+          }
+          emitted.add(name);
+        }
         return `${pad}const ${name} = $unknown();`;
       }
       throw new NudoUnsupportedError(

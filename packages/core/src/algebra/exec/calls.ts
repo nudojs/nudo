@@ -22,6 +22,7 @@ import { NudoThrow } from "./nudo-throw.ts";
 import { pureFnNameOf, makeAbsApplyResult } from "../abs-fn.ts";
 import {
   MAX_CALL_DEPTH,
+  MAX_SAFE_CALL_DEPTH,
   MAX_TOTAL_CALLS,
   callBudgetKey,
   createCallBudget,
@@ -736,7 +737,10 @@ export function withEvalBudgetOverride(
 ): void {
   const prev = evalBudget.getLimits();
   if (typeof budget.depth === "number" && Number.isFinite(budget.depth) && budget.depth >= 1) {
-    evalBudget.setLimits({ maxDepth: Math.floor(budget.depth) });
+    // BUG-172：同 A 路径——抽象预算不得超过宿主栈安全线。
+    evalBudget.setLimits({
+      maxDepth: Math.min(Math.floor(budget.depth), MAX_SAFE_CALL_DEPTH),
+    });
   }
   if (typeof budget.calls === "number" && Number.isFinite(budget.calls) && budget.calls >= 1) {
     evalBudget.setLimits({ maxCalls: Math.floor(budget.calls) });

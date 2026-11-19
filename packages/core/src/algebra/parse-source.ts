@@ -13,7 +13,7 @@
  */
 import { parse as babelParse } from "@babel/parser";
 import type { File } from "@babel/types";
-import { stripTypes } from "../strip-types.ts";
+import { lowerCjsExportAssignments, stripTypes } from "../strip-types.ts";
 
 /**
  * 会话内 AST 缓存上限。key 是完整 source——碰撞安全（SameValueZero），
@@ -331,8 +331,18 @@ function parseUncached(
   // 不可能出现）⇒ 剥除 pass 是严格 no-op，却要付两趟全 AST 遍历
   // （collectValueReferences + transformNode）。实测 OSS 语料（79 个纯 JS
   // 文件）：strip-types 占 `nudo check` 自身耗时 ~11%、占每次 parse 的近半。
-  if (opts?.keepTs === true || mode === "js") return ast;
-  return stripTypes(ast, source);
+  if (opts?.keepTs === true) {
+    // BUG-160：`export = X` 在 keepTs 树上是**未剥除**的 TS 语句，而所有导出
+    // 面消费方（dts 的 dtsModuleSurface / 侧车改写）只认 ESM 声明与 CJS 赋值
+    // 两种形态 ⇒ 出口名整条不可见。这里只把这一条语句归一成等价的 CJS 出口
+    // `module.exports = X`（带标记 ⇒ 发射路径随后的 strip 仍按旧口径删除）。
+    if (mode === "ts") lowerCjsExportAssignments(ast);
+    return ast;
+  }
+  if (mode === "js") return ast;
+  // 分析面（非发射面）：`export = X` 降级成等价的 CJS 出口（BUG-160）。
+  // 发射面（migrate strip）走 stripTypes 的默认值 "drop" ⇒ 产物面零变化。
+  return stripTypes(ast, source, { exportAssignment: "cjs" });
 }
 
 export function parseSource(

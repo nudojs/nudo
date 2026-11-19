@@ -21,13 +21,6 @@ function runBody(body: string) {
   return callTranspiledExportFull(exports, "__run", []);
 }
 
-/** 抽象 string 域断言：prim(string) 且非字面量（非 wrong-concrete） */
-function expectAbstractString(result: ReturnType<typeof runBody>["result"]) {
-  assertPrimShape(result);
-  const lv = litValue(result);
-  expect(lv.ok).toBe(false); // 不得折出具体串
-}
-
 /** 收窄 prim 形态并断言 type（expect().toBe() 不能做 TS 窄化，需真分支） */
 function assertPrimShape(result: ReturnType<typeof runBody>["result"]) {
   if (result.shape.k !== "prim") {
@@ -39,19 +32,19 @@ function assertPrimShape(result: ReturnType<typeof runBody>["result"]) {
 const HOOK_SRC = `const o = { [Symbol.toPrimitive](h) { return "P"; } };`;
 
 describe("@@toPrimitive hook blocks default tag fold", () => {
-  it("o + \"x\" stays abstract string, not \"[object Object]x\"", () => {
+  it("o + \"x\" uses the hook return value (not \"[object Object]x\")", () => {
     const { result } = runBody(`${HOOK_SRC} return o + "x";`);
-    expectAbstractString(result);
+    expect(litValue(result)).toEqual({ ok: true, value: "Px" });
   });
 
-  it("o + \"\" stays abstract string", () => {
+  it("o + \"\" uses the hook return value", () => {
     const { result } = runBody(`${HOOK_SRC} return o + "";`);
-    expectAbstractString(result);
+    expect(litValue(result)).toEqual({ ok: true, value: "P" });
   });
 
-  it("template literal `${o}` stays abstract string (template path)", () => {
+  it("template literal `${o}` uses the hook return value (template path)", () => {
     const { result } = runBody(`${HOOK_SRC} return \`\${o}\`;`);
-    expectAbstractString(result);
+    expect(litValue(result)).toEqual({ ok: true, value: "P" });
   });
 
   it("regression: {} + \"x\" still folds exactly to \"[object Object]x\"", () => {
@@ -60,8 +53,8 @@ describe("@@toPrimitive hook blocks default tag fold", () => {
     expect(litValue(result)).toEqual({ ok: true, value: "[object Object]x" });
   });
 
-  it("regression: custom toString slot still yields abstract string", () => {
+  it("regression: custom toString slot is executed (BUG-142)", () => {
     const { result } = runBody(`const o = { toString() { return "s"; } }; return o + "x";`);
-    expectAbstractString(result);
+    expect(litValue(result)).toEqual({ ok: true, value: "sx" });
   });
 });

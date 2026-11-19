@@ -171,8 +171,18 @@ describe("check 面：归因文案 + budget 块自洽", () => {
     expect(cyc[0]!.label).toContain("cannot lift");
     const dep = actionsForIssue({ code: "nudo:recursion-truncated", reason: "depth" });
     expect(dep[0]!.label).toContain("@nudo:budget depth");
+    // BUG-171：可落盘的预算调整必须是 adjust（CLI --fix / LSP 只跳过 info）
+    expect(dep[0]!.kind).toBe("adjust");
     const cal = actionsForIssue({ code: "nudo:recursion-truncated", reason: "calls" });
     expect(cal[0]!.label).toContain("@nudo:budget calls");
+    expect(cal[0]!.kind).toBe("adjust");
+    // BUG-172：已到宿主栈安全线（suggestion 不含 @nudo:budget）⇒ 不下发 adjust
+    const capped = actionsForIssue({
+      code: "nudo:recursion-truncated",
+      reason: "depth",
+      suggestion: "the call-depth budget is already at the host-stack safe ceiling (192)",
+    });
+    expect(capped[0]!.kind).toBe("info");
   });
 });
 

@@ -33,6 +33,7 @@ import {
   formatShape,
   leqAbs,
   localNamedExports,
+  parseSource,
   effectiveContract,
   extractDeclaredThrows,
   unknown as absUnknown,
@@ -61,6 +62,7 @@ import {
   throwAbsToKinds,
   throwsKindCovered,
   makeSymbolicRestAbs,
+  resolveExportSlotCall,
   type MayThrowEffect,
   type EvalMemberDiag,
 } from "@nudojs/core/internal";
@@ -775,7 +777,19 @@ function evalClassMethodWitness(
       ...(opts.loadModule ? { loadModule: opts.loadModule } : {}),
       ...(opts.depKey !== undefined ? { depKey: opts.depKey } : {}),
     });
-    const exported = run?.exports?.[clsName] as unknown;
+    // BUG-153：`export default class C` 的导出槽是 `default`，本地名 `C`
+    // 不在导出表里（ESM 语义）。旧实现按本地名直查 ⇒ default 类的实例方法
+    // 见证全部拿不到类 Abs ⇒ 返回域塌 unknown，而同一文件 check 签名面
+    // 是精确的。本地名 → 导出槽（含 default / `export { C as default }`）
+    // 走与 generalize / check 同一解析器。
+    const exports = run?.exports;
+    let exported = exports?.[clsName] as unknown;
+    if (!(exported && typeof exported === "object" && "shape" in (exported as object)) && exports) {
+      const slot = resolveExportSlotCall(parseSource(source), clsName, exports);
+      if (slot?.kind === "default" || slot?.kind === "named") {
+        exported = exports[slot.key];
+      }
+    }
     if (exported && typeof exported === "object" && "shape" in (exported as object)) {
       clsAbs = exported as Abs;
     }
@@ -1123,8 +1137,20 @@ function synthesizeFrozenCallSiteCases(env: UncachedCaseEnv, fn: CaseDirectiveTa
     (r) => !frozenNames.has(callsiteCaseName(r, filePath, analysis.loc.start.line)),
   );
   if (fresh.length === 0) return;
-  // 超预算会额外产出 call@symbolic 聚合见证（不可固化成指令）→ 保守不合成
-  if (fresh.length > budget) return;
+  // **预算席位**：已固化的**逐点**见证已经占掉的席位。聚合伪见证
+  // `call@symbolic` 不是调用点，不占席位（旧版本可能把它写进过源码，这里
+  // 也不能把它算成「已覆盖的调用点」）。
+  //
+  // 旧判据只问「本轮 fresh 自己是否超预算」（`fresh.length > budget`），漏掉
+  // 「预算已被既有逐点见证占满」这一半：被折叠掉的逐点见证永远算 fresh ⇒
+  // 每轮都被追加进文件（BUG-170）；写进去的集合也从此与 `=update` 的全量
+  // 重建（按预算截断）不同 ⇒ 默认档 / `=update` / `health` 红绿乒乓。
+  const frozenPrecise = caseDirectives.filter((d) => d.name !== "call@symbolic").length;
+  const capacity = budget - frozenPrecise;
+  // 没有席位（预算已满）或新调用点本身就要折叠 ⇒ 保守不合成：这两种情况下
+  // 分析面会把余量折成 `call@symbolic` 聚合见证，而聚合见证**不可固化成
+  // 指令**——`=update` 的全量重建同样只写预算内那批 ⇒ 三面收敛到同一集合。
+  if (capacity <= 0 || fresh.length > capacity) return;
   synthesizeCallSiteCases(
     env,
     { name: fn.name, analysis },

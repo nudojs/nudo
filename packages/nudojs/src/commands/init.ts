@@ -135,6 +135,61 @@ function describeValue(value: unknown): string {
 }
 
 /**
+ * 已知配置键（BUG-165）：init 的幂等判据不能只看「nudo 键存在」——
+ * `nudo: { chek: { … } }` / `nudo.check.profil` 都是拼写错误，加载器会
+ * 静默回落 strict，init 又拒绝写 adoption 基线 ⇒ 项目永远红。
+ */
+const NUDO_CONFIG_KEYS = new Set([
+  "env",
+  "mocks",
+  "contract",
+  "analysis",
+  "cache",
+  "inlayHints",
+  "sessionCache",
+  "check",
+]);
+const CHECK_CONFIG_KEYS = new Set(["profile", "entryThrows", "ignoreThrows"]);
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function unknownKeys(value: unknown, known: ReadonlySet<string>): string[] {
+  if (!isPlainObject(value)) return [];
+  return Object.keys(value).filter((key) => !known.has(key));
+}
+
+/**
+ * `nudo` 值里的拼写错误。`needsBaseline` = 没有任何**有效** check 键，且
+ * 存在未知键（空对象 / 只有 env 的配置保持既有幂等语义）。
+ */
+function configTypoOf(value: unknown): {
+  unknownNudo: string[];
+  unknownCheck: string[];
+  needsBaseline: boolean;
+} {
+  if (!isPlainObject(value)) return { unknownNudo: [], unknownCheck: [], needsBaseline: false };
+  const unknownNudo = unknownKeys(value, NUDO_CONFIG_KEYS);
+  const check = value.check;
+  const unknownCheck = unknownKeys(check, CHECK_CONFIG_KEYS);
+  const effectiveCheck =
+    isPlainObject(check) && Object.keys(check).some((key) => CHECK_CONFIG_KEYS.has(key));
+  return {
+    unknownNudo,
+    unknownCheck,
+    needsBaseline: !effectiveCheck && (unknownNudo.length > 0 || unknownCheck.length > 0),
+  };
+}
+
+/** 在既有 nudo 值上补 adoption 基线（保留其它已知/未知键，不删除用户数据） */
+function withAdoptionBaseline(value: unknown): unknown {
+  if (!isPlainObject(value)) return ADOPTION_BASELINE;
+  const check = isPlainObject(value.check) ? value.check : {};
+  return { ...value, check: { ...check, ...ADOPTION_BASELINE.check } };
+}
+
+/**
  * 目录是否是 **workspace / 容器根**（= 它的 nudo 键会影响其下所有包）。
  *
  * 真源（不自造）：`pnpm-workspace.yaml` / `lerna.json` /
@@ -503,12 +558,27 @@ export function runInit(startPath: string, io: InitIo = defaultIo): number {
     return 1;
   }
   const state = readNudoKeyState(read.pkg);
+  let typo: ReturnType<typeof configTypoOf> | undefined;
   if (state.valid) {
-    // 幂等：**有效**配置在场 ⇒ 只打印现状，不写盘
-    io.out(`${display} already has a nudo config — nothing written.`);
-    io.out("");
-    io.out(JSON.stringify({ nudo: state.value }, null, 2));
-    return 0;
+    typo = configTypoOf(state.value);
+    // BUG-165：未知键必须可见；且「nudo 键存在」不等于「有有效基线」——
+    // `nudo: { chek: … }` / `nudo.check.profil` 会让加载器静默回落 strict。
+    for (const key of typo.unknownNudo) {
+      io.err(`warning: unknown config key "nudo.${key}" — ignored`);
+    }
+    for (const key of typo.unknownCheck) {
+      io.err(`warning: unknown config key "nudo.check.${key}" — ignored`);
+    }
+    if (!typo.needsBaseline) {
+      // 幂等：**有效**配置在场 ⇒ 只打印现状，不写盘
+      io.out(`${display} already has a nudo config — nothing written.`);
+      io.out("");
+      io.out(JSON.stringify({ nudo: state.value }, null, 2));
+      return 0;
+    }
+    io.err(
+      `warning: ${display} has no effective nudo.check key (typo?) — writing the adoption baseline`,
+    );
   }
   // Bug 678：作用域不外溢——最近的 package.json 是 workspace / 容器根时，
   // 往那里写等于给**整仓**改门禁档（用户以为只初始化了一个包）。
@@ -552,7 +622,12 @@ export function runInit(startPath: string, io: InitIo = defaultIo): number {
       return 1;
     }
   }
-  const { content, collapsedDuplicates } = writeNudoKeyMinimally(read.raw, ADOPTION_BASELINE);
+  const baseline = state.present
+    ? state.valid
+      ? withAdoptionBaseline(state.value)
+      : ADOPTION_BASELINE
+    : ADOPTION_BASELINE;
+  const { content, collapsedDuplicates } = writeNudoKeyMinimally(read.raw, baseline);
   try {
     writeFileSync(pkgPath, content);
   } catch (err) {
@@ -569,15 +644,13 @@ export function runInit(startPath: string, io: InitIo = defaultIo): number {
       `warning: ${display} had ${collapsedDuplicates} duplicate "nudo" key(s) — the loader reads the last one (JSON.parse); collapsed them into a single "nudo" key holding the adoption baseline`,
     );
   }
-  if (state.present) {
+  if (state.present && !state.valid) {
     // 键存在但形状非法 ⇒ 加载器按「无配置」处理 ⇒ 这里替换成基线
     io.err(
       `warning: ${display} had an invalid "nudo" value (${describeValue(state.value)}) — replaced with the adoption baseline`,
     );
-    io.out(`nudo init: wrote adoption baseline to ${display}`);
-  } else {
-    io.out(`nudo init: wrote adoption baseline to ${display}`);
   }
+  io.out(`nudo init: wrote adoption baseline to ${display}`);
   io.out("");
   io.out(content.trimEnd());
   io.out("");

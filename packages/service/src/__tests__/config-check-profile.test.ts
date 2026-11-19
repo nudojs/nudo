@@ -49,6 +49,27 @@ describe("checkConfig gate profile", () => {
     }
   });
 
+  it("unknown nudo / nudo.check keys warn once (BUG-165)", () => {
+    const writes: string[] = [];
+    const orig = process.stderr.write;
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      writes.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      checkConfig({ chek: {} } as never);
+      checkConfig({ chek: {} } as never);
+      checkConfig({ check: { profil: "adoption" } } as never);
+      const out = writes.join("");
+      expect(out).toContain("unknown config key nudo.chek");
+      expect(out).toContain("unknown config key nudo.check.profil");
+      // 进程内去重：同一非法键只提示一次
+      expect(out.match(/nudo\.chek/g)?.length).toBe(1);
+    } finally {
+      process.stderr.write = orig;
+    }
+  });
+
   it("ignoreThrows list still parsed", () => {
     expect(checkConfig({ check: { ignoreThrows: ["TypeError"] } }).ignoreThrows).toEqual([
       "TypeError",

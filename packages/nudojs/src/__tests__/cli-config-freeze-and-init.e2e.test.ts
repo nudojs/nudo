@@ -5,7 +5,7 @@ import { describe, it, expect, afterEach, afterAll } from "vitest";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runCliTsx, runCliNode as runCli } from "./helpers/run-cli.ts";
+import { runCliTsx, runCliNode as runCli, writeSrcTsconfig } from "./helpers/run-cli.ts";
 import { findProjectConfig } from "@nudojs/service";
 import { runInit } from "../commands/init.ts";
 
@@ -998,4 +998,94 @@ const io = { out: () => {}, err: () => {} };
 
 
 
+});
+
+// ---------------------------------------------------------------------------
+// 超预算调用点：默认档 freeze 必须单次收敛、且不写聚合见证
+// ---------------------------------------------------------------------------
+describe("超预算调用点：默认档 freeze 单次收敛、聚合见证不落盘", () => {
+/**
+ * `callSiteBudget`（默认 3）之外的调用点被分析面折成**一条**聚合见证
+ * `call@symbolic`——它是「余量折叠」的伪见证，不是调用点。
+ *
+ * 旧行为：默认档把它当指令写盘，下一轮又把被折叠掉的**逐点**见证当「新增
+ * 调用点」追加（它永远不在已固化名单里）⇒ 单次 freeze 不收敛，文件从 4 条
+ * 长到 6 条；而 `--freeze=update` / `nudo health` 从**全量记录**重建（按预算
+ * 截断，只写 3 条逐点）⇒ 同一文件上三面红绿乒乓，CI 门禁永远对不上。
+ *
+ * 钉（唯一变量 = 命令面）：
+ * - 默认档第 1 轮写出的就是「预算内那批逐点见证」（3 条），文件里**没有**
+ *   `call@symbolic`；
+ * - 第 2 轮 `freeze: no changes.`，文件逐字不变；
+ * - `--freeze=update --dry-run --exit-on-diff`、`--freeze --dry-run
+ *   --exit-on-diff`、`nudo health` 三面在同一文件上全部 exit 0、0 drift；
+ * - `call@symbolic` 仍出现在**报告面**（精度提示的依据），只是不落盘。
+ */
+const INC_LIB = `export function inc(x) { return x + 1; }\n`;
+/** 5 个调用点 > 默认预算 3 ⇒ 后两个被折成聚合见证 */
+const INC_USE = `import { inc } from "./lib.js";
+export const a = inc(1);
+export const b = inc(2);
+export const c = inc(3);
+export const d = inc(4);
+export const e = inc(5);
+`;
+
+  it("默认档连跑两轮：第 2 轮 freeze: no changes.；三面（默认 / =update / health）同一文件全部 exit 0 且 0 drift；聚合见证只在报告面（BUG-170）", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-freeze-budget-"));
+    try {
+      writeFileSync(join(dir, "package.json"), `{"type":"module"}\n`, "utf-8");
+      // 子进程 CLI 按 cwd 的 tsconfig 解析 @nudojs/*（否则会测到陈旧 dist）
+      writeSrcTsconfig(dir);
+      writeFileSync(join(dir, "lib.js"), INC_LIB, "utf-8");
+      writeFileSync(join(dir, "use.js"), INC_USE, "utf-8");
+
+      const run = (args: string[]) => runCliTsx(args, { cwd: dir });
+      const read = () => readFileSync(join(dir, "lib.js"), "utf-8");
+
+      // ---- 第 1 轮：只写预算内的逐点见证 ----
+      const round1 = run(["test", "lib.js", "--from", "use.js", "--freeze"]);
+      expect(round1.status, `stderr=${round1.stderr}`).toBe(0);
+      const first = read();
+      expect(first).toContain('@nudo:case "call@use.js:L2" (1)');
+      expect(first).toContain('@nudo:case "call@use.js:L3" (2)');
+      expect(first).toContain('@nudo:case "call@use.js:L4" (3)');
+      // 聚合伪见证**不得**成为指令（它是余量折叠，不是调用点）
+      expect(first).not.toContain("call@symbolic");
+      // 报告面仍然看得见它（精度提示的依据不受影响）
+      expect(round1.stdout).toContain("call@symbolic");
+      expect(round1.stdout).toContain("3 directive(s)");
+
+      // ---- 第 2/3 轮：单次收敛后逐字不变 ----
+      for (const round of [2, 3]) {
+        const again = run(["test", "lib.js", "--from", "use.js", "--freeze"]);
+        expect(again.status, `round ${round} stderr=${again.stderr}`).toBe(0);
+        expect(again.stdout, `round ${round}`).toContain("freeze: no changes.");
+        expect(read(), `round ${round} 文件必须逐字不变`).toBe(first);
+      }
+
+      // ---- 三面同源：默认档 / =update 门禁 / health ----
+      const updateGate = run([
+        "test", "lib.js", "--from", "use.js", "--freeze=update", "--dry-run", "--exit-on-diff",
+      ]);
+      expect(updateGate.status, `stderr=${updateGate.stderr}`).toBe(0);
+      expect(updateGate.stdout).toContain("freeze: no changes.");
+
+      const defaultGate = run([
+        "test", "lib.js", "--from", "use.js", "--freeze", "--dry-run", "--exit-on-diff",
+      ]);
+      expect(defaultGate.status, `stderr=${defaultGate.stderr}`).toBe(0);
+      expect(defaultGate.stdout).toContain("freeze: no changes.");
+
+      const health = run(["health", "lib.js", "--from", "use.js"]);
+      expect(health.status, `stderr=${health.stderr}`).toBe(0);
+      expect(health.stdout).toContain("0 case drift");
+      expect(health.stdout).toContain("Result: OK");
+
+      // 门禁跑完不得改动文件（dry-run / health 都是只读面）
+      expect(read()).toBe(first);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 120000); // 6 个 CLI 子进程（tsx 冷启动）
 });

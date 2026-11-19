@@ -61,6 +61,7 @@ import {
 } from "../helpers.ts";
 import { emitStmtWritebackRebinds, forkArmThunkExpr, forkBindingDecls, forkJoinBindings, forkTmpNames } from "../emit.ts";
 import { emitTranspileExpression } from "../transpile-dispatch.ts";
+import { finalizeOpHygiene, prepareOpHygiene } from "../hygiene.ts";
 import { transpileStatement } from "./statement.ts";
 import { transpileBlockAsThunk } from "./block.ts";
 /** AST 扫描跳过的元数据键（避免把 loc/comments 当节点递归） */
@@ -751,8 +752,25 @@ export function transpileBodyNode(node: Node, opts: TranspileOptions): string {
   // 闭包绑定名，见 exec/body-fn.ts）。无命中不写字段（产物逐字节不变）。
   const shadowedIntrinsics = shadowedIntrinsicsOf(node, unitOpts.shadowedIntrinsics);
   if (shadowedIntrinsics) unitOpts = { ...unitOpts, shadowedIntrinsics };
-  if (isExpression(node as { type: string })) {
-    return `return ${emitTranspileExpression(node as Expression, unitOpts)};`;
+  // BUG-164：body 单元的**算子名卫生**。unitOpts.userIdents（调用方从 body
+  // AST + 形参收集）里的运行时算子名（`function f($add, x){ return x + 1 }`
+  // 的 `$add`）会被生成码的算子引用捕获（算子名是外层 `new Function` 的形参，
+  // 内层函数形参 / 局部声明遮蔽它）⇒ 自递归 / `$add is not a function`。
+  // 无冲突时不改名（产物逐字不变）；有冲突时生成名换成 gensym，宿主侧按
+  // 改名表行（rt.ts）同名注入。源 AST 是共享缓存对象 ⇒ 发射后必须还原。
+  const hygiene = prepareOpHygiene(node, unitOpts, "body");
+  try {
+    if (isExpression(node as { type: string })) {
+      return finalizeOpHygiene(
+        `return ${emitTranspileExpression(node as Expression, unitOpts)};`,
+        hygiene,
+      );
+    }
+    return finalizeOpHygiene(
+      withImplicitReturn(node, transpileStatement(node as Statement, 1, unitOpts), 1),
+      hygiene,
+    );
+  } finally {
+    hygiene.restoreAst();
   }
-  return withImplicitReturn(node, transpileStatement(node as Statement, 1, unitOpts), 1);
 }

@@ -997,3 +997,21 @@ const assumeIds = new Set(["x"]);
   });
 
 });
+
+describe("buildArgsFromAssume — TS 形参注解播种（BUG-158）", () => {
+  it("非 assume 形参的注解成为入口 Abs（number + #path），与签名表同源", () => {
+    const src = `export function withAnn(x: number) { return x + 1; }`;
+    const args = buildArgsFromAssume(src, "withAnn", new Set());
+    expect(args).toHaveLength(1);
+    expect(args[0]!.shape.k).toBe("prim");
+    if (args[0]!.shape.k === "prim") expect(args[0]!.shape.type).toBe("number");
+    expect(args[0]!.conf).toBe("path");
+    expect(args[0]!.term?.op).toBe("var");
+  });
+
+  it("无注解形参照旧为 any（不猜）", () => {
+    const src = `export function noAnn(x) { return x + 1; }`;
+    const args = buildArgsFromAssume(src, "noAnn", new Set());
+    expect(args[0]!.shape.k).toBe("any");
+  });
+});

@@ -2815,8 +2815,13 @@ const wrap = (body: string) => `export function f() { ${body} }`;
     expect(throwName(wrap(`const d = new Date(NaN); return d.toJSON();`))).toBe("");
   }
   {
-    // new Date() 的当前时间不可知 ⇒ toJSON 可能是 null（Invalid）或 ISO 串
-    expect(v(wrap(`const d = new Date(); return d.toJSON() === null;`))).toEqual({ ok: false });
+    // 零参 new Date() 取当前时间：规范保证落在可表示区间内 ⇒ 恒非 Invalid
+    // Date ⇒ toJSON 恒 ISO 串（null 只属于 Invalid Date）⇒ 比较可折确定 false。
+    // （抽象 Date / new Date(undefined) 才是 `string | null` 的 may 档。）
+    expect(v(wrap(`const d = new Date(); return d.toJSON() === null;`)))
+      .toEqual({ ok: true, value: false });
+    expect(v(wrap(`const d = new Date(undefined); return d.toJSON() === null;`)))
+      .toEqual({ ok: true, value: true });
   }
 });
 
@@ -3719,7 +3724,9 @@ const wrap = (body: string) => `export function f() { ${body} }`;
   {
     const r = call(wrap(`return String({});`), "f");
     expect(throwsError(r.throws, "TypeError")).toBe(false);
-    expect(formatShape___nudojs_core(r.result)).toBe("string");
+    // BUG-142：闭普通对象无自有钩子 ⇒ 继承 Object.prototype.toString，
+    // 原生 "[object Object]"；引擎现在按钩子结果折出精确字面量。
+    expect(formatShape___nudojs_core(r.result)).toBe('"[object Object]"');
   }
   {
     const r = call(wrap("return `${new Date(0)}`;"), "f");

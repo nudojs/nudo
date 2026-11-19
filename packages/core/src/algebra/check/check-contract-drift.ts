@@ -140,7 +140,25 @@ export function contractDriftIssues(
     // 参数位：今日域 = 逐调用点实参（证据门槛过滤）→ joinThenProject 投影
     for (const { param, constraint } of cand.eff.params) {
       const idx = cand.paramNames.indexOf(param);
-      if (idx < 0) continue; // 快照参数名已不在今日签名：无位置可对账
+      if (idx < 0) {
+        // BUG-147：`@generated` 段的参数名已不是形参（形参重命名 / 删除）时，
+        // 旧实现直接 `continue` ⇒ 该位既不绑定、也不报 mismatch、也不报
+        // drift ⇒ `check` 报 (no issues)，而 `health` / `contract` 已经看见
+        // 这条不一致。生成段没有 handwritten 的 contract-param-mismatch
+        // 通道，drift 就是它唯一的监督面 ⇒ 这里必须出账。
+        out.push({
+          severity: "warning",
+          code: DIAG.contractDrift,
+          message: `${cand.fnName}[${param}]: persisted @generated parameter is not a formal parameter (today: ${
+            cand.paramNames.length > 0 ? cand.paramNames.join(", ") : "(none)"
+          })`,
+          actual: param,
+          expected: cand.paramNames.join(", ") || "(no params)",
+          suggestion: `re-run nudo contract --emit to refresh the generated segment, or rename the parameter back to ${param}`,
+          fn: cand.fnName,
+        });
+        continue;
+      }
       const evidence: Array<{ abs: Abs; line?: number }> = [];
       for (const s of sites) {
         const a = s.args[idx];

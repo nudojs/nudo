@@ -14,7 +14,8 @@
  */
 import type { Abs } from "../../abs.ts";
 import { abs, unknown, never, litValue, strLit, isAbsLike } from "../../abs.ts";
-import { objOf, getSlot, setSlot, setInstanceProto } from "../../objects.ts";
+import { assertNeverShape } from "../../check/shape-kinds.ts";
+import { objOf, getSlot, setSlot, setInstanceProto, type Slot } from "../../objects.ts";
 import { markFreshInstance } from "../../key/instance-id.ts";
 import { hostBuiltinCtorOf, evalClassChain } from "../runtime/members.ts";
 import {
@@ -65,6 +66,7 @@ import {
   attachClassSpec,
   ensureFnParentName,
   resolveChainSpec,
+  classNameOfValue,
   type EvalClassSpec,
 } from "../class-registry.ts";
 import { rebrandClassAbs } from "./rebrand.ts";
@@ -139,7 +141,9 @@ function isObjectLikeAbs(v: Abs | undefined | null): boolean {
  * - fn 形 Abs：`shape.ctor` 旗标（Bug 9 机制）——true 可构造 / false 不可 /
  *   缺省不可判。
  * - brand 形 Abs：`ctor:true` = 类值（可构造）；其余 brand = 实例 / 原型
- *   对象（原生 IsConstructor 恒 false）。
+ *   对象（原生 IsConstructor 恒 false）。BUG-151：内建构造器身份 brand
+ *   （`builtinCtorAbs` 产物，无 `ctor` 旗标）由类值侧表 `markClassValue`
+ *   提供证据——它是 `.constructor` 读出的**构造器值**，不是实例。
  * - obj / arr / tuple / prim：恒不可构造。
  */
 function ctorFacetOfTarget(t: Abs | undefined): boolean | undefined {
@@ -151,23 +155,59 @@ function ctorFacetOfTarget(t: Abs | undefined): boolean | undefined {
   }
   if (!isAbsLike(t)) return false;
   const sh = (t as Abs).shape;
-  if (sh.k === "fn") {
-    if (sh.ctor === true) return true;
-    if (sh.ctor === false) return false;
-    return undefined;
-  }
-  if (sh.k === "brand") {
-    // 代理靶：代理本身的可构造性随**被代理的靶**（ProxyCreate 只在靶可
-    // 构造时装 [[Construct]]）——递归一层（原生代理链可嵌套）。
-    if (sh.name === "Proxy") {
-      const parts = proxyPartsOf(t as Abs);
-      if (!parts) return undefined;
-      return ctorFacetOfTarget(parts.target);
+  switch (sh.k) {
+    case "fn":
+      if (sh.ctor === true) return true;
+      if (sh.ctor === false) return false;
+      return undefined;
+    case "brand": {
+      // 代理靶：代理本身的可构造性随**被代理的靶**（ProxyCreate 只在靶可
+      // 构造时装 [[Construct]]）——递归一层（原生代理链可嵌套）。
+      if (sh.name === "Proxy") {
+        const parts = proxyPartsOf(t as Abs);
+        if (!parts) return undefined;
+        return ctorFacetOfTarget(parts.target);
+      }
+      if (sh.ctor === true) return true;
+      // BUG-151：`class C {}` 的类值带 `ctor:true`；内建构造器身份 brand
+      // （`new Map().constructor`）不带旗标但确有类值身份侧表标记。
+      return isClassValueAbs(t as Abs);
     }
-    return sh.ctor === true;
+    case "obj":
+    case "arr":
+    case "tuple":
+    case "prim":
+      return false;
+    // 抽象 / 不可达形态：不可判（fail-closed 由调用方决定）
+    case "never":
+    case "eff":
+    case "sum":
+    case "any":
+    case "unknown":
+      return undefined;
+    default:
+      return assertNeverShape(sh);
   }
-  if (sh.k === "obj" || sh.k === "arr" || sh.k === "tuple" || sh.k === "prim") return false;
-  return undefined;
+}
+
+/**
+ * BUG-151：callee 是**构造器值**的证据（brand 形）。
+ *
+ * brand 形同时承载三种原生语义完全不同的值：类值（`ctor: true`，可构造）、
+ * 实例（`new C()`，原生 IsConstructor 恒 false）、原型对象（`C.prototype`，
+ * 同上）。`specOf`（:200）按 brand **名**回表类 spec 会把「实例 `C`」误判成
+ * 类 `C` 的构造器 ⇒ `new (new C())` 真的构造出一个新实例（自信错值）。
+ *
+ * 判据只认**直接证据**（与 `ctorFacetOfTarget` 同源）：
+ * - `shape.ctor === true`：`$class` 类值 facet（随 shape 搬运，跨拷贝存活）；
+ * - `classNameOfValue`：类值侧表身份（`builtinCtorAbs` 产的无旗标构造器值；
+ *   跨 `subst` 丢身份但仍有 `ctor` 旗标，两路互补）。
+ *
+ * 无证据 ⇒ false ⇒ 调用方按原生 `IsConstructor` 恒 false 抛 TypeError。
+ */
+function isClassValueAbs(t: Abs): boolean {
+  const sh = t.shape;
+  return sh.k === "brand" && classNameOfValue(t as object) !== undefined;
 }
 
 /**
@@ -690,7 +730,81 @@ function probeHostGlobalCtor(cls: Function, args: Abs[]): void {
   }
 }
 
-/** new C(...) → 空 brand 实例 + ctor 写字段；非类构造走 impl/$call */
+/**
+ * BUG-168：未建模宿主全局构造器的**实例成员面**（原型链自有键采集）。
+ *
+ * 无 `@nudo:env` 时 `Headers` 等自由全局名解析到宿主真实构造器函数，且
+ * `evalBuiltinNew` 无内建建模 ⇒ `$new` 的宿主兜底（下方）此前固定铸
+ * `objOf({})` 空实例面 ⇒「声明了实例成员」的宿主类实例成员读全落
+ * 「缺席 ⇒ exact undefined」：
+ * - 值面：`typeof new Headers().get` 折 `"undefined"`（宿主 `"function"`）
+ *   —— 假精确；
+ * - 门禁面：`new Headers().get("x")` 在 undefined 上调用 ⇒ 确定 TypeError
+ *   ⇒ 合法确定代码被判 `never` / 必抛（L2 假红）。
+ *
+ * 实例面来源（无声明表可查时的诚实兜底）：
+ * - env 声明表（`packages/env/src/node.ts` 的 `Headers` 等）**只经
+ *   `@nudo:env` 注入**，那时 callee 是 env 的 fn Abs（`ctor:true` +
+ *   `returnType`），走 `$new` 的 Abs 分支、**根本到不了本兜底**；
+ *   `@nudojs/env` 依赖 `@nudojs/core`，core 反向 import 会成环 ⇒ 本分支
+ *   无法直接读表（有 env 时的实例面由该分支 `$call` 取声明 returnType）。
+ * - 因此这里采**宿主原型链**的字符串自有键（只读 `getOwnPropertyNames` /
+ *   `getOwnPropertyDescriptor`，零副作用、不执行任何宿主代码）：
+ *   方法（`typeof value === "function"`）装成「不可判断返回值的一等 fn」
+ *   （`typeof` 折 `"function"`、调用折 honest unknown，**不猜返回类型**）；
+ *   访问器与普通数据属性值不可静态确定 ⇒ honest `unknown`。
+ *
+ * 槽值打 `Slot.inherited`：这些成员是**原型**成员，`$get` / `$in` 可见，
+ * 而自有键面（`Object.keys` / gOPN / `hasOwnProperty` / JSON）按原生语义
+ * 剔除（与 `Object.create(proto)` 的继承镜像同口径）。
+ *
+ * 只读一次并缓存（按构造器函数身份；fn Abs 同键同引用 ⇒
+ * `new Headers().get === new Headers().get` 折 true，与原生一致）。
+ */
+type HostCtorProtoFace = ReadonlyArray<{ key: string; method: Abs | undefined }>;
+
+const hostCtorProtoFaceCache = new WeakMap<Function, HostCtorProtoFace>();
+
+function hostCtorProtoFace(cls: Function): HostCtorProtoFace {
+  const cached = hostCtorProtoFaceCache.get(cls);
+  if (cached) return cached;
+  const face: Array<{ key: string; method: Abs | undefined }> = [];
+  const seen = new Set<string>();
+  try {
+    let proto: unknown = (cls as { prototype?: unknown }).prototype;
+    // 沿原型链溯到 Object.prototype（不含）——`new EventTarget()` 之外的
+    // 派生宿主类（MessageEvent 等）把基类成员挂在祖先原型上，只看自有层会漏。
+    while (proto !== null && proto !== undefined && typeof proto === "object" && proto !== Object.prototype) {
+      for (const key of Object.getOwnPropertyNames(proto)) {
+        // constructor 面另有解析（实例 → 构造器值），不从原型抄
+        if (key === "constructor" || seen.has(key)) continue;
+        seen.add(key);
+        const desc = Object.getOwnPropertyDescriptor(proto, key);
+        const isMethod = desc !== undefined && "value" in desc && typeof desc.value === "function";
+        face.push({
+          key,
+          method: isMethod ? absFunction([], { apply: () => unknown }, { ctor: false }) : undefined,
+        });
+      }
+      proto = Object.getPrototypeOf(proto);
+    }
+  } catch {
+    // 宿主原型来自任意 runtime（可能被 Proxy / 冻结 / getter 干预）——
+    // 采集失败时保留已采部分，绝不因探测宿主面而中断被分析代码求值。
+  }
+  hostCtorProtoFaceCache.set(cls, face);
+  return face;
+}
+
+/** 宿主构造器实例的**内层 obj 面**（原型链成员镜像；每次构造新槽表，值共享） */
+function hostCtorInstanceInner(cls: Function): Abs {
+  const slots: Record<string, Slot> = {};
+  for (const { key, method } of hostCtorProtoFace(cls)) {
+    slots[key] = { value: method ?? unknown, inherited: true };
+  }
+  return objOf(slots);
+}
+
 /**
  * BUG-160：TextEncoder 的实例面建模（宿主全局分支 / 无专门 builtin 表条目）。
  *
@@ -718,6 +832,7 @@ function makeTextEncoderAbs(): Abs {
   );
 }
 
+/** new C(...) → brand 实例 + ctor 写字段；非类构造走 impl/$call */
 export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Abs {
   // Bug 932 顺带清理：具名导入物化不再把 fn Abs 包成 JS 箭头 wrapper
   // （bindImport 原样直出声明 Abs）⇒ `__nudoAbsFn` 回读已无生产方（死代码）。
@@ -979,8 +1094,16 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
     // BUG-159：宿主全局函数兜底**必须先过原生构造面探测**——恒不可构造的
     // 宿主构造器（Storage / Crypto / Iterator / Navigator …）与不可构造的
     // 宿主函数（parseInt 等，已在 hostFnCtorFacet 拦下）都不得铸空 brand。
-    if (isHostGlobalFn(cls)) probeHostGlobalCtor(cls, args);
-    const shape = objOf({});
+    const hostGlobal = isHostGlobalFn(cls);
+    if (hostGlobal) probeHostGlobalCtor(cls, args);
+    // BUG-168：实例面不再固定铸空——未建模宿主构造器（Headers / FormData /
+    // Blob / EventTarget / AbortController / Request …）按宿主原型链采成员名
+    // 装配（见 hostCtorProtoFace）。core 自有内建（`hostBuiltinCtorName` 命中，
+    // 如 Object）维持既有空实例面口径——它们的声明面走各自派发臂/内建表。
+    const shape =
+      hostGlobal && hostBuiltinCtorName(cls) === undefined
+        ? hostCtorInstanceInner(cls)
+        : objOf({});
     return abs({ k: "brand", name: clsName, shape }, undefined, undefined, "path");
   }
   // Bug 46：裸宿主命名空间对象（Math/JSON/Reflect——typeof "object" 且无
@@ -990,14 +1113,31 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
   if (cls && typeof cls === "object" && !isAbsLike(cls)) {
     throw new NudoThrow(errorTypeAbs("TypeError"));
   }
+  // BUG-151：原生 [[Construct]] 的**第一道门**是 IsConstructor(C)。brand 形
+  // 曾在 `specOf` 之后才判，而 `specOf` 按 brand **名**回表类 spec ⇒ 实例
+  // `C` 命中类 `C` 的 spec ⇒ `new (new C())` 真的跑了一遍构造器（签名给
+  // `C`、`new inst().m()` 折 undefined 而非 TypeError）。原型对象 brand
+  // （`C.prototype` / `Array.prototype` / `Object.prototype`，名以
+  // `.prototype` 结尾）回表失败则静默落 `$call` 折 unknown（零 TypeError
+  // 记录）——两种方向都错。
+  //
+  // 判据只认**构造器值的直接证据**（`ctorFacetOfTarget`：`ctor:true` 类值
+  // facet / 类值侧表身份）。brand 在 Proxy construct trap 下确实可构造，但
+  // 代理本身走上方 `name === "Proxy"` 臂（陷阱 + 靶可构造性判定），到不了
+  // 这里；此处剩下的 brand 全是实例 / 原型对象，原生 IsConstructor 恒 false。
+  if (isAbsLike(cls) && (cls as Abs).shape.k === "brand") {
+    if (ctorFacetOfTarget(cls as Abs) !== true) {
+      throw new NudoThrow(errorTypeAbs("TypeError"));
+    }
+  }
   const spec = specOf(cls);
   if (!spec) {
     // Bug 32：原生 [[Construct]] 先做 IsConstructor(C)——obj/arr/tuple 形
     // callee 恒非构造器（`new ({})()` 定抛 TypeError: not a constructor）。
     // 引擎内该三形 Abs 从不携带构造面（类 spec 走上方 constructClass 分支、
     // fn 形走下方 ctor 旗标分支、attachFnImpl 只产 fn 形状）→ 确定 TypeError，
-    // 不再静默落 $call（Bug 10 同缺口）。brand（Proxy construct trap 可
-    // 构造）/unknown（fail-closed 令牌）维持原口径不记。
+    // 不再静默落 $call（Bug 10 同缺口）。brand 形已在上方 IsConstructor 门
+    // 判定（BUG-151）；unknown（fail-closed 令牌）维持原口径不记。
     const fs = isAbsLike(cls)
       ? (cls as Abs).shape
       : undefined;

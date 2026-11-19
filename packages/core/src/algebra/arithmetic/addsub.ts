@@ -15,7 +15,7 @@ import { and, gt, ge, lt, le, pTrue } from "../pred.ts";
 import type { Abs } from "../abs.ts";
 import { abs, confJoin, isNumPrim, isStrPrim, isBigPrim, litValue, num, numLit, str } from "../abs.ts";
 import { concatString, isTemplateLike } from "../template.ts";
-import { makeSum, isNullProtoWithoutCoercer, joinValues, isClosedObjectWithoutCoercer } from "../objects.ts";
+import { makeSum, toPrimitiveCoercionOf, joinValues, isClosedObjectWithoutCoercer } from "../objects.ts";
 import { noteDerivationAdd } from "../derivation.ts";
 import { isSymbolAbs as isSym } from "../key/symbol-id.ts";
 import { NudoThrow } from "../diagnostics/nudo-throw.ts";
@@ -47,12 +47,15 @@ export function add(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   if (isSym(a) || isSym(b)) {
     throw new NudoThrow(errorTypeAbs("TypeError"));
   }
-  // 闭 null-proto 无自有 coercer（toString/valueOf/@@toPrimitive）→
-  // ToPrimitive 定抛 TypeError（`''+o` / `o+1` / `${o}` 全臂，node 实测
-  // "Cannot convert object to primitive value"）。open/index 形可能含
-  // coercer 由 helper 排除，落下方抽象臂。
-  if (isNullProtoWithoutCoercer(a) || isNullProtoWithoutCoercer(b)) {
-    throw new NudoThrow(errorTypeAbs("TypeError"));
+  // BUG-142：对象操作数先做一次 ToPrimitive(default)，**采信钩子返回值**
+  // （valueOf → 7 / toString → "hi"）。null-proto 无 coercer 由 helper 抛
+  // TypeError；闭普通对象无钩子回落 "[object Object]"；open/index 形保持
+  // 抽象臂（helper 返回 undefined）。
+  {
+    const pa = toPrimitiveCoercionOf(a, "default");
+    if (pa !== undefined) return add(pa, b, phi);
+    const pb = toPrimitiveCoercionOf(b, "default");
+    if (pb !== undefined) return add(a, pb, phi);
   }
   // 字面量快速路径（tagged：.ok 才是字面量，含 lit(undefined)）
   const ra = litValue(a);
@@ -341,6 +344,13 @@ export function sub(a: Abs, b: Abs, phi: Phi = pTrue, assume?: Phi): Abs {
     const fa = builtinBrandToPrimitive(a, "number");
     const fb = builtinBrandToPrimitive(b, "number");
     if (fa || fb) return sub(fa ?? a, fb ?? b, phi, assume);
+  }
+  // BUG-142：对象操作数 ToPrimitive(number)——采信钩子结果（`o - 1` → 6）。
+  {
+    const pa = toPrimitiveCoercionOf(a, "number");
+    if (pa !== undefined) return sub(pa, b, phi, assume);
+    const pb = toPrimitiveCoercionOf(b, "number");
+    if (pb !== undefined) return sub(a, pb, phi, assume);
   }
   // Symbol 参与算术/位运算：ToNumber/ToNumeric 原生 TypeError（与 add 同口径）
   if (isSym(a) || isSym(b)) {

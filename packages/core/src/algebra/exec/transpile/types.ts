@@ -165,6 +165,22 @@ export interface BaseEmitOpts {
    */
   exportedDeclNames?: ReadonlySet<string>;
   /**
+   * BUG-149：模块顶层**值绑定**名（`function` / `class` / `enum` / `var`-
+   * `let`-`const`）。同名 `namespace` 与之是 TS **声明合并**（源里只有一个
+   * 运行时值绑定）⇒ namespace 发射分支不得再发 `const <名> = $unknown()`：
+   * 那会与同名值的运行时绑定重复（`new Function` SyntaxError ⇒ 整模块
+   * fail-closed ⇒ 合法源被判 `nudo:module-throw`，签名 / case / dts 全塌
+   * unknown）。由根单元（transpileFileDetailed）从源 AST 计算并线程化；
+   * 缺省（低层单元直调）⇒ 无合并信息，按旧口径发 opaque 绑定。
+   */
+  nsMergedValueNames?: ReadonlySet<string>;
+  /**
+   * BUG-149：本单元**已发射**过 opaque 绑定的 namespace 名（同名 namespace
+   * 重复声明是 TS 允许的 namespace 合并）：只发一次 `const <名> = $unknown()`，
+   * 否则第二条即重复词法声明 ⇒ 整模块 fail-closed。根单元新建并线程化。
+   */
+  nsOpaqueNames?: Set<string>;
+  /**
    * 节点级 Abs 记录插桩（hover 重放用）：Identifier 值读与
    * 静态成员读的转译输出包 `$nodoPos(<src>, line, column)`，
    * 运行时把 (行, 列) → Abs 记入活跃的位置 collector（无收

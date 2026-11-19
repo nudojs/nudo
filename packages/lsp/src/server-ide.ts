@@ -39,7 +39,7 @@ import { generalizeFromAst, type PolyFn, type Abs } from "@nudojs/core";
 import { collectAbsInlays } from "@nudojs/core/internal";
 import { parse } from "@nudojs/parser";
 import { traverseEsm } from "./traverse-esm.ts";
-import type { CallExpression, File, Node } from "@babel/types";
+import type { CallExpression, File, NewExpression, Node } from "@babel/types";
 import {
   buildSignatureHelp,
   buildSignatureHelpFromPolyFn,
@@ -985,26 +985,34 @@ export function findEnclosingCall(
     currentParamIndex: number;
     callee?: Node;
   } | null = null;
+  // BUG-144：`new K(1, |)` 的 AST 是 NewExpression（不是 CallExpression）。
+  // 两种节点同带 `callee` / `arguments` / `loc`，签名面也同源（check 的
+  // `K(a,b) => K`）⇒ 同一游标判定，不得只扫普通调用。
+  const visitCall = (node: CallExpression | NewExpression): void => {
+    const loc = node.loc;
+    const calleeLoc = node.callee?.loc;
+    if (!loc || !calleeLoc) return;
+    // 完整区间包含（行列）；旧实现只比行号，同行调用尾/换行处会误命中
+    const contains =
+      (loc.start.line < line || (loc.start.line === line && loc.start.column <= column)) &&
+      (loc.end.line > line || (loc.end.line === line && loc.end.column >= column));
+    if (!contains) return;
+    // 命中后**继续下降**：内层调用也要参与竞争（取最内层）
+    if (result && !isInnererCall(node, result.callee)) return;
+    result = {
+      calleeLine: calleeLoc.start.line,
+      calleeCol: calleeLoc.start.column,
+      currentParamIndex: currentParamIndexOf(node, line, column),
+      callee: node.callee,
+    };
+  };
   try {
     traverseFn(ast, {
       CallExpression(path) {
-        const node = path.node;
-        const loc = node.loc;
-        const calleeLoc = node.callee?.loc;
-        if (!loc || !calleeLoc) return;
-        // 完整区间包含（行列）；旧实现只比行号，同行调用尾/换行处会误命中
-        const contains =
-          (loc.start.line < line || (loc.start.line === line && loc.start.column <= column)) &&
-          (loc.end.line > line || (loc.end.line === line && loc.end.column >= column));
-        if (!contains) return;
-        // 命中后**继续下降**：内层调用也要参与竞争（取最内层）
-        if (result && !isInnererCall(node, result.callee)) return;
-        result = {
-          calleeLine: calleeLoc.start.line,
-          calleeCol: calleeLoc.start.column,
-          currentParamIndex: currentParamIndexOf(node, line, column),
-          callee: node.callee,
-        };
+        visitCall(path.node);
+      },
+      NewExpression(path) {
+        visitCall(path.node);
       },
     });
   } catch {
@@ -1035,7 +1043,11 @@ function isInnererCall(cand: Node, kept: Node | undefined): boolean {
  * 截断到**形参个数**是签名面的职责（`buildSignatureHelp` 按签名参数表夹住
  * `activeParameter`，协议要求下标落在参数表内）。
  */
-function currentParamIndexOf(node: CallExpression, line: number, column: number): number {
+function currentParamIndexOf(
+  node: CallExpression | NewExpression,
+  line: number,
+  column: number,
+): number {
   let idx = 0;
   for (let i = 0; i < node.arguments.length; i++) {
     const argLoc = node.arguments[i]!.loc;

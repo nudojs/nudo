@@ -1500,3 +1500,67 @@ module.exports = f;
     expect(dts).toContain("function helper(y: unknown): unknown;");
   }, 120000);
 });
+
+// ---------------------------------------------------------------------------
+// TS `export = <local>` 的出口面与 CJS `module.exports = <local>` 同口径
+// ---------------------------------------------------------------------------
+describe("TS `export = <local>` 的出口面与 CJS `module.exports = <local>` 同口径", () => {
+/**
+ * `.ts` 的 `export = f` 在运行期就是 `module.exports = f`（tsc 的 CJS emit
+ * 逐字如此），但解析期的 strip 会把这条 TS-only 语句整条删掉 ⇒ 导出面扫描
+ * （check 的 L1/L2、`export --format dts`、`contract --draft`）对同一函数体
+ * 的两种写法给出**相反**结论：`.cjs` 判红、`.ts` 判绿且产物为空。
+ *
+ * 修法是**分析视图 / 发射视图分开**：分析面把语句降级成等价的 CJS 出口，
+ * 发射面（migrate strip 的产物）仍整条删除。本钉是导出面的回归钉。
+ */
+  const TS_EXPORT_ASSIGN = `function f(x: any) { return x.nope.deeper; }\nexport = f;\n`;
+  const CJS_EXPORT_ASSIGN = `function f(x) { return x.nope.deeper; }\nmodule.exports = f;\n`;
+
+  const dirs: string[] = [];
+  afterAll(() => {
+    for (const d of dirs) rmSync(d, { recursive: true, force: true });
+  });
+
+  function pair(): { ts: string; cjs: string } {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-export-assign-parity-"));
+    dirs.push(dir);
+    const ts = join(dir, "t.ts");
+    const cjs = join(dir, "t.cjs");
+    writeFileSync(ts, TS_EXPORT_ASSIGN, "utf-8");
+    writeFileSync(cjs, CJS_EXPORT_ASSIGN, "utf-8");
+    return { ts, cjs };
+  }
+
+  it("check：`export = f` 是入口（失败结论同 `.cjs`，不再判绿）；export dts：产出 `declare function f` + `export = f`（不再无产物）；contract --draft：为 f 出草稿（不再报 no draftable exports）", () => {
+  {
+    const { ts, cjs } = pair();
+    const a = runCli(["check", ts]);
+    const b = runCli(["check", cjs]);
+    expect(a.status, a.stdout + a.stderr).toBe(b.status);
+    expect(a.status).toBe(1);
+    expect(a.stdout).toContain("nudo:entry-may-throw");
+    expect(b.stdout).toContain("nudo:entry-may-throw");
+  }
+  {
+    const { ts, cjs } = pair();
+    const a = runCli(["export", "--format", "dts", "--out", join(ts, "..", "out"), ts]);
+    const b = runCli(["export", "--format", "dts", "--out", join(cjs, "..", "out"), cjs]);
+    expect(a.status, a.stdout + a.stderr).toBe(0);
+    expect(a.stdout).not.toContain("No exported declarations found");
+    const dts = readFileSync(join(ts, "..", "out", "t.d.ts"), "utf-8");
+    expect(dts).toContain("declare function f(x: any): unknown;");
+    expect(dts).toContain("export = f;");
+    expect(b.status, b.stdout + b.stderr).toBe(0);
+    const cts = readFileSync(join(cjs, "..", "out", "t.d.cts"), "utf-8");
+    expect(cts).toContain("export = f;");
+  }
+  {
+    const { ts } = pair();
+    const r = runCli(["contract", "--draft", ts]);
+    expect(r.status, r.stdout + r.stderr).toBe(0);
+    expect(r.stdout).toContain("export const f = fn(");
+    expect(r.stdout).not.toContain("no draftable exports");
+  }
+});
+});

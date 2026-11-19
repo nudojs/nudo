@@ -422,9 +422,26 @@ export function sourceHasModuleDependency(source: string): boolean {
   return /\brequire\s*\(/.test(s) || /\bimport\s*[{'"*]/.test(s);
 }
 
-/** 真实 CJS exports 赋值面（exports.x / exports[x] / module.x） */
+/**
+ * 真实 CJS exports 赋值面（exports.x / exports[x] / module.x）。
+ *
+ * TS 的 `export = X`（BUG-160）同样是 CJS 出口面：它的运行期形态就是
+ * `module.exports = X`（tsc 的 CJS emit 逐字如此），且 strip 后进入求值的
+ * 正是这条语句 ⇒ 必须按 CJS 面建模（预置 `exports` / `module` 绑定）。
+ * 只认 `export =`（`export ==` 不是语法；`export default` / `export {}` 不会
+ * 命中——`=` 后紧跟 `=` 的形态被排除）。
+ */
 export function sourceHasCjsExports(source: string): boolean {
-  return /\b(?:exports|module)\s*(?:\.|\[)/.test(stripCommentsAndStrings(source));
+  const s = stripCommentsAndStrings(source);
+  if (/\b(?:exports|module)\s*(?:\.|\[)/.test(s) || /\bexport\s*=(?!=)/.test(s)) return true;
+  // tsc / Babel 的 CJS 互操作序言：`Object.defineProperty(exports, "__esModule",
+  // { value: true })`（也见 `module.exports`）。此处 `exports` 是**裸标识符实参**，
+  // 上面那条「成员访问」判据看不见 ⇒ 生成码引用 `exports` 却没有预置绑定
+  // ⇒ 求值期 `ReferenceError: exports is not defined`（整文件 fail-closed）。
+  // 只认这个由编译器固定生成的形态（不推广到任意裸 `exports`）：源里自己
+  // 声明了 `exports` 绑定的模块按普通脚本处理，不预置（避免重复词法声明）。
+  if (/\b(?:const|let|var|function|class)\s+exports\b/.test(s)) return false;
+  return /\bObject\s*\.\s*defineProperty\s*\(\s*(?:module\s*\.\s*)?exports\b/.test(s);
 }
 
 /**

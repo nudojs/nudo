@@ -13,6 +13,18 @@ import {
 } from "./collector-scope.ts";
 
 export const MAX_CALL_DEPTH = 64;
+/**
+ * 宿主栈安全上限（BUG-172）：`@nudo:budget depth=` 只能把**抽象预算**
+ * 抬高，但每层抽象调用仍对应真实宿主栈帧；抬过本值会在预算守卫触发
+ * **之前**打爆宿主栈（`RangeError: Maximum call stack size exceeded` ⇒
+ * `nudo:internal`，门禁不可判定）。旧实现无钳制 ⇒ 用户按工具建议
+ * （观测深度 ×2）加预算，第三次必崩。
+ *
+ * 取值留足余量：本仓实测 240 层稳定、256 层起崩（Node 24）；192 既覆盖
+ * 常规深递归，又给不同宿主栈余量留出 ~25% 安全边际。需要更深递归的
+ * 代码应改结构 / 声明契约，而不是继续抬预算。
+ */
+export const MAX_SAFE_CALL_DEPTH = 192;
 /** 与 B 命名调用（calls.ts MAX_EVAL_TOTAL_CALLS）同阀：病态展开下 200k 级不可接受 */
 export const MAX_TOTAL_CALLS = 20_000;
 
@@ -379,7 +391,10 @@ export function withFnBudgetOverride(
   const prev = _aBudget.getLimits();
   const prevForks = _evalForkBudgetLimit;
   if (typeof budget.depth === "number" && Number.isFinite(budget.depth) && budget.depth >= 1) {
-    _aBudget.setLimits({ maxDepth: Math.floor(budget.depth) });
+    // BUG-172：抽象预算不得抬过宿主栈安全线（否则 RangeError 早于预算守卫）。
+    _aBudget.setLimits({
+      maxDepth: Math.min(Math.floor(budget.depth), MAX_SAFE_CALL_DEPTH),
+    });
   }
   if (typeof budget.calls === "number" && Number.isFinite(budget.calls) && budget.calls >= 1) {
     _aBudget.setLimits({ maxCalls: Math.floor(budget.calls) });

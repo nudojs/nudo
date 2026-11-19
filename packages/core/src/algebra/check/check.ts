@@ -22,6 +22,7 @@ import {
   getAbsCallBudgetStats,
   FORK_TRUNCATION_LABEL,
   HOST_EFFECT_LABEL_PREFIX,
+  MAX_SAFE_CALL_DEPTH,
   MATH_FOLD_ERROR_LABEL,
   PROMISE_MICRO_OVERFLOW_LABEL,
   PROMISE_MICRO_ERROR_LABEL,
@@ -1815,25 +1816,32 @@ function checkSourceInner(
     // （depth 64→128、calls 20000→40000；单源 suggested{Depth,Calls}Ceiling）。
     // cycle 臂不抬预算（文案已明说），不消费这两个值。
     const recursionStats = getAbsCallBudgetStats();
-    const depthFix = suggestedDepthCeiling(
-      Math.max(recursionStats.depth, recursionStats.evalDepth),
-    );
+    const observedDepth = Math.max(recursionStats.depth, recursionStats.evalDepth);
+    const depthFix = suggestedDepthCeiling(observedDepth);
     const callsFix = suggestedCallsCeiling(
       Math.max(recursionStats.calls, recursionStats.evalCalls),
     );
+    // BUG-172：depth 已到宿主栈安全线 ⇒ 再抬预算必然 RangeError。此时不给
+    // depth 建议（也不发 depth quickfix），改指向结构 / 契约。
+    const depthAtCeiling = observedDepth >= MAX_SAFE_CALL_DEPTH;
+    const suggestion = allCycle
+      ? "a call cycle is not a budget: make the recursion arguments vary per level, narrow the base case, or declare @nudo:contract — raising @nudo:budget will not change this"
+      : calls && !depth
+        ? `raise the function budget with @nudo:budget calls=${callsFix} (or narrow the recursion base case / declare @nudo:contract return)`
+        : depth && !calls && depthAtCeiling
+          ? `the call-depth budget is already at the host-stack safe ceiling (${MAX_SAFE_CALL_DEPTH}); raising it further can overflow the host stack — narrow the recursion base case or declare @nudo:contract return`
+          : depthAtCeiling
+            ? `the call-depth budget is already at the host-stack safe ceiling (${MAX_SAFE_CALL_DEPTH}); raising it further can overflow the host stack — narrow the recursion base case / declare @nudo:contract return (the total-calls dimension may still be raisable)`
+            : depth && !calls
+              ? `raise the function budget with @nudo:budget depth=${depthFix} (or narrow the recursion base case / declare @nudo:contract return)`
+              : `raise the function budget with @nudo:budget calls=${callsFix} depth=${depthFix} (or narrow the recursion base case / declare @nudo:contract return)`;
     issues.push({
       severity: "info",
       code: DIAG.recursionTruncated,
       message: allCycle
         ? `Recursive evaluation of '${label}' hit a call cycle (same abstract arguments already on the stack); result widened to unknown#opaque (cycle — budget cannot lift this)`
         : `Recursive evaluation of '${label}' was truncated (${depth && calls ? "depth/size budget" : depth ? "call-depth budget" : calls ? "total-calls budget" : "depth/size budget"}); result widened to unknown#opaque (budget — not inference debt)`,
-      suggestion: allCycle
-        ? "a call cycle is not a budget: make the recursion arguments vary per level, narrow the base case, or declare @nudo:contract — raising @nudo:budget will not change this"
-        : depth && !calls
-          ? `raise the function budget with @nudo:budget depth=${depthFix} (or narrow the recursion base case / declare @nudo:contract return)`
-          : calls && !depth
-            ? `raise the function budget with @nudo:budget calls=${callsFix} (or narrow the recursion base case / declare @nudo:contract return)`
-            : `raise the function budget with @nudo:budget calls=${callsFix} depth=${depthFix} (or narrow the recursion base case / declare @nudo:contract return)`,
+      suggestion,
       reason: allCycle ? "cycle" : depth && calls ? "budget" : depth ? "depth" : calls ? "calls" : "budget",
       fn: label,
     });

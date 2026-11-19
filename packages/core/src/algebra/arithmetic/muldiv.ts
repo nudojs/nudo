@@ -16,6 +16,7 @@ import { isSymbolAbs as isSym } from "../key/symbol-id.ts";
 import { NudoThrow } from "../diagnostics/nudo-throw.ts";
 import { errorTypeAbs } from "../diagnostics/may-throw.ts";
 import { numericOpTail, synthEndpoint, attainEndpoint, coercibleLit, isNumericLike, assumePremiseList } from "./shared.ts";
+import { toPrimitiveCoercionOf } from "../objects.ts";
 import { builtinBrandToPrimitive, foldBigintBinOp } from "./coerce.ts";
 import { numericBounds } from "./bounds.ts";
 // Bug 367：引理消费记账（叶子模块，仅 type import ⇒ 无运行时依赖环）
@@ -28,6 +29,15 @@ export function mul(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
     const fa = builtinBrandToPrimitive(a, "number");
     const fb = builtinBrandToPrimitive(b, "number");
     if (fa || fb) return mul(fa ?? a, fb ?? b, phi);
+  }
+  // BUG-142：对象操作数 ToPrimitive(number) —— 采信用户 valueOf/toString
+  // 的返回值（`{valueOf(){return 7}} * 2` → 14），不再落「抽象对象可能
+  // 是 Symbol」的假 may-throw 臂。
+  {
+    const pa = toPrimitiveCoercionOf(a, "number");
+    if (pa !== undefined) return mul(pa, b, phi);
+    const pb = toPrimitiveCoercionOf(b, "number");
+    if (pb !== undefined) return mul(a, pb, phi);
   }
   // Symbol 参与算术/位运算：ToNumber/ToNumeric 原生 TypeError（与 add 同口径）
   if (isSym(a) || isSym(b)) {
@@ -196,6 +206,14 @@ function divModLead(
     const fa = builtinBrandToPrimitive(a, "number");
     const fb = builtinBrandToPrimitive(b, "number");
     if (fa || fb) return { k: "done", result: self(fa ?? a, fb ?? b, phi) };
+  }
+  // BUG-142：div/mod 与 mul 同口径——对象 ToPrimitive(number) 的结果参与
+  // 后续字面量/区间折叠，而不是被当成「可能是 Symbol」直接判 may-throw。
+  {
+    const pa = toPrimitiveCoercionOf(a, "number");
+    if (pa !== undefined) return { k: "done", result: self(pa, b, phi) };
+    const pb = toPrimitiveCoercionOf(b, "number");
+    if (pb !== undefined) return { k: "done", result: self(a, pb, phi) };
   }
   if (isSym(a) || isSym(b)) {
     throw new NudoThrow(errorTypeAbs("TypeError"));

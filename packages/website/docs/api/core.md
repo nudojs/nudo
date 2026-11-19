@@ -393,7 +393,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="nudoloopsignal"></a>`NudoLoopSignal` | type | control-signal / throw | `NudoLoopSignal extends Error { readonly kind: "break" \| "continue"; readonly label: string \| undefined; readonly abstract: boolean; const...` |
 | <a id="nudoreturn"></a>`NudoReturn` | type | control-signal / throw | `NudoReturn extends Error { readonly absValue: Abs; constructor(absValue: Abs) { super("nudo:return"); this.name = "NudoReturn"; this.absV...` |
 | <a id="nudothrow"></a>`NudoThrow` | type | control-signal / throw | — |
-| <a id="runtimeimportof"></a>`runtimeImportOf` | fn | JS AST → `$op` program | `runtimeImportOf(runtime: string): string` |
+| <a id="runtimeimportof"></a>`runtimeImportOf` | fn | JS AST → `$op` program | `runtimeImportOf( runtime: string, renames?: ReadonlyMap<string, string>, ): string` |
 | <a id="setevalcallcollector"></a>`setEvalCallCollector` | fn | call-site recording for analyze | `setEvalCallCollector( collector: ((r: EvalCallRecord) => void) \| null, )` |
 | <a id="transpilebodynode"></a>`transpileBodyNode` | fn | JS AST → `$op` program | `transpileBodyNode(node: Node, opts: TranspileOptions): string` |
 | <a id="transpileexpression"></a>`transpileExpression` | fn | JS AST → `$op` program | `transpileExpression(expr: Expression, opts: TranspileOptions = {}): string` |
@@ -438,7 +438,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="callabsmethod"></a>`callAbsMethod` | fn | 调用 Abs 方法。返回 undefined = 未接管（调用方走其它路径）。 | `callAbsMethod( recv: Abs, name: string, args: Abs[], ): Abs \| undefined` |
 | <a id="callatfunctionboundary"></a>`callAtFunctionBoundary` | fn | 函数调用边界：callee 的 loop/early-return 不得冒泡成 caller 结果。 | `callAtFunctionBoundary<T>(body: () => T): T` |
 | <a id="canonicalarrayindex"></a>`canonicalArrayIndex` | fn | ES 规范数组下标（无前导零、&lt; 2^32-1）；非规范键返回 undefined | `canonicalArrayIndex(v: unknown): number \| undefined` |
-| <a id="checkaction"></a>`CheckAction` | type | 结构化修复动作（AI1；稳定枚举，只增不改语义） | `CheckAction = { kind: "draft" \| "relax" \| "callsite" \| "assume" \| "mock" \| "emit" \| "ignore-throws" \| "info"; command?: string; label: st...` |
+| <a id="checkaction"></a>`CheckAction` | type | 结构化修复动作（AI1；稳定枚举，只增不改语义） | `CheckAction = { kind: \| "draft" \| "relax" \| "callsite" \| "adjust" \| "assume" \| "mock" \| "emit" \| "ignore-throws" \| "info"; command?: stri...` |
 | <a id="checkissue"></a>`CheckIssue` | type | — | `CheckIssue = Diagnostic & { fn?: string; line?: number; column?: number; actual?: string; expected?: string; reason?: "cycle" \| "depth" \|...` |
 | <a id="checkjsonmulti"></a>`CheckJsonMulti` | type | 多文件 `check --json` 信封（CI / monorepo）。单文件仍输出裸 CheckJson。 | `CheckJsonMulti = { version: 1; kind: "multi"; ok: boolean; summary: CheckReport["summary"] & { files: number; budgetTruncated?: boolean }...` |
 | <a id="clearbclasses"></a>`clearBClasses` | fn | — | `clearBClasses(): void` |

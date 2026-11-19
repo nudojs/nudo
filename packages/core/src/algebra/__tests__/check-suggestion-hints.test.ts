@@ -78,11 +78,13 @@ describe("suggested{Fork,Depth,Calls}Ceiling：具体修值公式", () => {
     expect(suggestedForkCeiling(30_000)).toBe(45_000);
   });
 
-  it("depth：默认 64×2=128 起，观测×2 向上取整到 16", () => {
+  it("depth：默认 64×2=128 起，观测×2 向上取整到 16，且不超过宿主栈安全线", () => {
     expect(suggestedDepthCeiling(0)).toBe(128);
     expect(suggestedDepthCeiling(64)).toBe(128);
     expect(suggestedDepthCeiling(70)).toBe(144); // 140 → 16 位取整 144
-    expect(suggestedDepthCeiling(100)).toBe(208); // 200 → 16 位取整 208
+    // BUG-172：200 → 208，但必须钳到宿主栈安全线（192）
+    expect(suggestedDepthCeiling(100)).toBe(192);
+    expect(suggestedDepthCeiling(269)).toBe(192);
   });
 
   it("calls：默认 20000×2=40000 起，观测×2 向上取整到千", () => {

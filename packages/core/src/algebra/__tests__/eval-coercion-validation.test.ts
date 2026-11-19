@@ -91,7 +91,10 @@ describe("String(x) 补 ToPrimitive 校验", () => {
       `export function f() { const o = Object.create(null); o.toString = () => "hi"; return String(o); }`,
     );
     expect(isNever(coer.result)).toBe(false);
-    expect(coer.effects).toContain("TypeError");
+    // BUG-142：钩子体已被真调用并采信返回值（原生 "hi"）⇒ 不再只是
+    // 「槽体未知」的抽象 may。值面精确、抛出面 total。
+    expect(litOf(coer.result)).toBe("hi");
+    expect(coer.effects).toEqual([]);
     // {toString(){throw}}：起**钩子体真调用**（不再只探存在性）⇒
     // 钩子体抛错**必然传播**（原生同款：用户的 Error 直接抛出，用户 try/catch
     // 可捕）⇒ 结果 never + throws 面 = 用户的 Error（不再是 may TypeError

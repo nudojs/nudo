@@ -8,7 +8,7 @@
 import type { Abs } from "./abs.ts";
 import { abs, litValue, numLit, strLit, boolLit, unknown, str } from "./abs.ts";
 import { applyCallbackAbs, undefAbs, validateIndexArg } from "./hof.ts";
-import { joinAbs, objOf, setSlot, isNullProtoWithoutCoercer } from "./objects.ts";
+import { joinAbs, objOf, setSlot, isNullProtoWithoutCoercer, toPrimitiveCoercionOf } from "./objects.ts";
 import { NudoThrow } from "./diagnostics/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "./diagnostics/may-throw.ts";
 import { pTrue } from "./pred.ts";
@@ -760,14 +760,21 @@ export function callAbsMethod(
       // 逐参 ToString ⇒ ToPrimitive(**string hint**，BUG-058)：toString 先、
       // 无自有 toString 不回退 valueOf；闭 null-proto 无 coercer → 定抛
       //（字面量接收者折叠臂与抽象接收者共用；'x'.concat(o) node 实测 TypeError）
-      for (const a of args) {
+      const coerced = args.map((a) => {
+        // BUG-142：对象实参先 ToPrimitive(string) 并采信钩子结果
+        // （`'x'.concat({toString(){return "y"}})` → "xy"）。
+        if (a.shape.k === "obj") {
+          const prim = toPrimitiveCoercionOf(a, "string");
+          if (prim !== undefined) return prim;
+        }
         if (isNullProtoWithoutCoercer(a, "string")) {
           throw new NudoThrow(errorTypeAbs("TypeError"));
         }
-      }
+        return a;
+      });
       if (lit !== undefined) {
         let s = lit;
-        for (const a of args) {
+        for (const a of coerced) {
           // 抽象实参（term 非 lit）→ 拼接结果未知，保守；
           // Symbol 字面量 → 隐式 ToString 原生 THROW，保守
           if (a.term?.op !== "lit" || typeof a.term.value === "symbol") return strPrim("path");

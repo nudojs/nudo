@@ -315,10 +315,16 @@ describe("解析失败与显式 unknown 可区分", () => {
     for (const ctx of ["@nudo:as", "@nudo:replace", "@nudo:skip =>"]) {
       expect(withDiags(() => parseAbsExprDiag("bogus()", ctx)).value.shape.k, ctx).toBe("unknown");
     }
-    for (const expr of ["unknown", "any", "any()"]) {
+    for (const expr of ["unknown", "any"]) {
       const { value, diags } = withDiags(() => parseAbsExprDiag(expr, EXPECTED_CTX));
       expect(value.shape.k, expr).toBe("unknown");
       expect(diags, expr).toHaveLength(0);
+    }
+    // BUG-162：显式 any() 是 any（与侧车 fn({…}, any()) 同口径），零诊断。
+    {
+      const { value, diags } = withDiags(() => parseAbsExprDiag("any()", EXPECTED_CTX));
+      expect(value.shape.k).toBe("any");
+      expect(diags).toHaveLength(0);
     }
   });
 });

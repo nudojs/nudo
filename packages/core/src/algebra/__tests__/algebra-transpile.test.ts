@@ -4,13 +4,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { litValue, checkSource as checkSource___nudojs_core, pTrue as pTrue___nudojs_core, resetCheckSourceMemo as resetCheckSourceMemo___nudojs_core, resetGeneralizeMemo as resetGeneralizeMemo___nudojs_core } from "@nudojs/core";
 import { call, val, throwsError, resetEngineCaches, isNever, effects, callLit } from "./eval-helpers.ts";
-import { checkSource, instantiateConstraint, number, pTrue, shape, formatShape, num, objOf, str, strLit, type Abs, constraintAdmitsNullish, constraintToEntryAbs, litC, union, transpileSource, omit, partial, pick, extractRefinesFromSource, findFnDirectiveScope, listFnDirectiveScopes, parseSource as parseSource_____index_ts, extractDeclaredThrows } from "../index.ts";
+import { checkSource, instantiateConstraint, number, pTrue, shape, formatShape, num, objOf, str, strLit, type Abs, constraintAdmitsNullish, constraintToEntryAbs, litC, union, transpileSource, transpileBodyNode, omit, partial, pick, extractRefinesFromSource, findFnDirectiveScope, listFnDirectiveScopes, parseSource as parseSource_____index_ts, extractDeclaredThrows } from "../index.ts";
 import { predToString, pTrue as pTrue_____pred_ts, } from "../pred.ts";
 import { sidecarOpts, makeFiles, issuesOf, sigOf, l2Count, stdOpts, withStdImport } from "./nudo-constraints.ts";
 import { anyAbs, litValue as litValue_____abs_ts, numLit, abs, absLit, num as num_____abs_ts, type Abs as Abs_____abs_ts, type Shape } from "../abs.ts";
 import { parseSource } from "../parse-source.ts";
 import { injectForFunctionScope, generalizeFromAst, resetGeneralizeMemo } from "../generalize.ts";
 import { runTranspiled, callTranspiledExportFull, bindingsOf } from "../exec/run.ts";
+import { compileRuntimeModuleUnit, runtimeModuleArgValues } from "../exec/rt.ts";
 import { formatShape as formatShape_____format_format_ts } from "../format/format.ts";
 import { takeRefineDiags } from "../refine.ts";
 import { takeContractDiags } from "../contract/contract.ts";
@@ -5592,4 +5593,171 @@ c.m(1);
 
 
 }
+});
+
+// ---------------------------------------------------------------------------
+// TS 声明合并（function / class / enum + 同名 namespace）
+// ---------------------------------------------------------------------------
+describe("TS 声明合并：同名 namespace 不得覆盖同名值绑定", () => {
+  it("transpile：function + namespace 不再发同名 const（改前 `const f = $unknown()` 与 `function f` 重复 ⇒ 产物非法）；模块可装载且 f(1) = 2", () => {
+    const merged = `export function f(x: number): number { return x + 1; }
+export namespace f { export const v = 1; }`;
+    const code = transpileSource(merged, { target: "host", runtimeImport: null, filename: "/t/m.ts" });
+    expect(code).not.toContain("const f = $unknown()");
+    expect(code).toContain("function f(x)");
+  });
+
+  it("check：三形态（function / class / enum + 同名 namespace）与无 namespace 对照同判 OK，签名不回退 unknown", () => {
+    const ctl = checkSource("/t/ctl.ts", `export function merged(x: number): number { return x + 1; }`, pTrue, stdOpts);
+    expect(sigOf(ctl, "merged")).toContain("number");
+    expect(ctl.issues.filter((i) => i.code === "nudo:module-throw")).toEqual([]);
+
+    const fn = checkSource(
+      "/t/fn.ts",
+      `export function f(x: number): number { return x + 1; }
+export namespace f { export const v = 1; }`,
+      pTrue,
+      stdOpts,
+    );
+    expect(fn.issues.filter((i) => i.code === "nudo:module-throw")).toEqual([]);
+    // 与无 namespace 的对照**同签名**（不回退 unknown）
+    expect(sigOf(fn, "f")).toBe(sigOf(ctl, "merged"));
+    expect(sigOf(fn, "f")).not.toContain("unknown");
+
+    const cl = checkSource(
+      "/t/cl.ts",
+      `export class C { n = 1; }
+export namespace C { export const v = 2; }
+export function h(): number { return new C().n; }`,
+      pTrue,
+      stdOpts,
+    );
+    expect(cl.issues.filter((i) => i.code === "nudo:module-throw")).toEqual([]);
+    expect(sigOf(cl, "h")).toBe("1");
+
+    const en = checkSource(
+      "/t/en.ts",
+      `export enum E { A = 1 }
+export namespace E { export const v = 3; }
+export function g(): number { return E.A; }`,
+      pTrue,
+      stdOpts,
+    );
+    expect(en.issues.filter((i) => i.code === "nudo:module-throw")).toEqual([]);
+    expect(sigOf(en, "g")).toBe("1");
+  });
+
+  it("对照：裸 namespace（无合并）仍发 opaque 绑定 `const N = $unknown()`（既有精度口径不变）；同名 namespace 重复声明只发一次（改前：重复词法声明 ⇒ 整模块 fail-closed）", () => {
+    const bare = transpileSource(
+      `export namespace N { export const v = 1; }`,
+      { target: "host", runtimeImport: null, filename: "/t/bare.ts" },
+    );
+    expect(bare).toContain("const N = $unknown();");
+
+    const twice = transpileSource(
+      `export namespace M { export const a = 1; }
+export namespace M { export const b = 2; }
+export function probe(): number { return 1; }`,
+      { target: "host", runtimeImport: null, filename: "/t/twice.ts" },
+    );
+    expect(twice.split("const M = $unknown();").length - 1).toBe(1);
+    expect(call("export namespace M { export const a = 1; }\nexport namespace M { export const b = 2; }\nexport function probe() { return 1; }", "probe").result.shape.k).not.toBe("never");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 转译产物的算子名卫生（模块级 gensym）
+// ---------------------------------------------------------------------------
+describe("算子名卫生：用户同名顶层绑定不得被算子改写捕获", () => {
+  it("导出函数名叫 $add（与运行时算子同名）⇒ 不再自递归栈溢出：签名 number | string、无 nudo:internal / 无 unknown", () => {
+    const src = `export function $add(a, b) { return a + b; }`;
+    const r = checkSource("/t/h1.js", src, pTrue, stdOpts);
+    expect(r.issues.filter((i) => i.code === "nudo:internal")).toEqual([]);
+    expect(sigOf(r, "$add")).toContain("number | string");
+    expect(sigOf(r, "$add")).not.toContain("unknown");
+  });
+
+  it("顶层 `const $call = …`（改前 Identifier '$call' has already been declared）⇒ 模块可装载，f 的签名与原生口径一致", () => {
+    const src = `const $call = (x) => x + 1;
+export function f(a) { return $call(a); }`;
+    const r = checkSource("/t/h3.js", src, pTrue, stdOpts);
+    expect(r.issues.filter((i) => i.code === "nudo:module-throw")).toEqual([]);
+    expect(sigOf(r, "f")).toContain("number | string");
+  });
+
+  it("形参叫 $add（改前 `$add is not a function` / 引擎内部错误）⇒ 生成名换成 gensym，f($add, x) 仍精确", () => {
+    const src = `export function f($add, x) { return x + 1; }`;
+    const r = checkSource("/t/h4.js", src, pTrue, stdOpts);
+    expect(r.issues.filter((i) => i.code === "nudo:internal")).toEqual([]);
+    expect(sigOf(r, "f")).toContain("number | string");
+  });
+
+  it("有冲突时生成名是 gensym（`$add$1`）+ 改名表行；用户绑定名与导出名逐字不变；ESM 面 import 取别名", () => {
+    const src = `export function $add(a, b) { return a + b; }`;
+    const host = transpileSource(src, { target: "host", runtimeImport: null, filename: "/t/h1.js" });
+    expect(host).toContain("//@nudo-op-renames {\"$add\":\"$add$1\"}");
+    expect(host).toContain("function $add(a, b)");
+    expect(host).toContain("return($add$1(a, b));");
+    expect(host).toContain('__nudoExportLazy("$add", () => $add);');
+    const esm = transpileSource(src, { filename: "/t/h1.js" });
+    expect(esm).toContain("$add as $add$1");
+    expect(esm).toContain("export function $add(a, b)");
+  });
+
+  it("无冲突对照：产物不含改名表行、算子名逐字不变（同一份源码连跑两次也逐字相同——源 AST 占位名必须还原）", () => {
+    const src = `export function f(a, b) { return a + b; }`;
+    const once = transpileSource(src, { target: "host", runtimeImport: null, filename: "/t/clean.js" });
+    const twice = transpileSource(src, { target: "host", runtimeImport: null, filename: "/t/clean.js" });
+    expect(once).toBe(twice);
+    expect(once).not.toContain("@nudo-op-renames");
+    expect(once).not.toContain("$add$1");
+    expect(once).toBe(`// nudo evaluator transpile — values are Abs; operators are overloaded calls
+
+function f(a, b) {
+    a = $absVal(a);
+    b = $absVal(b);
+    return($add(a, b));
+}
+__nudoExportLazy("f", () => f);
+`);
+  });
+});
+
+describe("算子名卫生：gensym 避让、非引用位置不动、宿主注入同口径", () => {
+  it("用户已占用 `$add$1` ⇒ gensym 跳到 `$add$2`（生成名不得与用户标识符相撞）", () => {
+    const src = `const $add$1 = 1;
+export function $add(a, b) { return a + b + $add$1 * 0; }`;
+    const code = transpileSource(src, { target: "host", runtimeImport: null, filename: "/t/g.js" });
+    expect(code).toContain('{"$add":"$add$2"}');
+    expect(code).toContain("$add$2(a, b)");
+    expect(code).toContain("let $add$1 = $lit(1);");
+    expect(call(src, "$add", []).result.shape.k).not.toBe("never");
+  });
+
+  it("属性名 / 字符串 / 模板原文里的同名文本一律不动（只改调用位的算子引用）", () => {
+    const src = `const $add = 1;
+export function f(o) { return o.$add + $add; }
+export const s = "$add(1)";
+export function t(x) { return \`\${x}$add(\`; }`;
+    const code = transpileSource(src, { target: "host", runtimeImport: null, filename: "/t/p.js" });
+    expect(code).toContain('$get(o, "$add")');
+    expect(code).toContain('$lit("$add(1)")');
+    expect(code).toContain('$lit("$add(")');
+    // 用户绑定本身不动（只有算子的调用位改名）
+    expect(code).toContain("let $add = $lit(1);");
+    expect(code).toContain('$recordBinding("$add", $add);');
+  });
+
+  it("body 单元（形参叫 $call）：transpileBodyNode 产出改名表 + gensym（改前形参捕获算子 ⇒ `$call is not a function`）", () => {
+    const body = parseSource("x + 1").program.body[0];
+    const code = transpileBodyNode(body, { userIdents: new Set(["$add", "x"]) });
+    expect(code).toContain('//@nudo-op-renames {"$add":"$add$1"}');
+    expect(code).toContain("$add$1(");
+  });
+
+  it("宿主侧按改名表注入形参：带改名表行的单元里 `$lit$1` 解析得到真算子（改前 ReferenceError）", () => {
+    const fn = compileRuntimeModuleUnit<unknown>(`//@nudo-op-renames {"$lit":"$lit$1"}\nreturn $lit$1(7);`);
+    const r = fn(...runtimeModuleArgValues());
+    expect(litValue(r as never)).toEqual({ ok: true, value: 7 });
+  });
 });
