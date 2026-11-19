@@ -335,7 +335,16 @@ function formatShapeInner(a: Abs, budget: ProjectionBudget, ind: string): string
         holes.includes(i) ? "" : formatShapeB(el, budget, ind),
       );
       if (s.rest) {
-        parts.push(`...${formatShapeB(s.rest, budget, ind)}`);
+        // rest 槽是**元素域**（Shape 模型：`[A, ...B[]]` ⇒ elements:[A],
+        // rest:B）⇒ 渲染成 `...B[]`。漏掉 `[]` 会把元素域印成单值
+        // （`[number, ...string]`，不是合法 TS 形态，且把元素域误读成
+        // 一个位置元素）；union / fn 元素与 arr 分支同款加括号。
+        const restEl = formatShapeB(s.rest, budget, ind);
+        const restText =
+          s.rest.shape.k === "sum" || needsGrouping(s.rest.shape)
+            ? `(${restEl})[]`
+            : `${restEl}[]`;
+        parts.push(`...${restText}`);
       }
       return `[${parts.join(", ")}]`;
     }

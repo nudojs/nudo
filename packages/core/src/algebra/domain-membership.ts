@@ -157,6 +157,12 @@ function predHolds(lv: LiteralValue, p: Pred): boolean {
       return boundHolds(lv, p);
     case "typeof":
       return p.t.op === "var" && p.t.id === SELF && primMatches(p.type, lv);
+    // assumeFinite（number().finite() 唯一落进 preds 的形态）：字面量值的
+    // 有限性判定就是**值本身**——NaN / ±Infinity 不满足，其余 number 满足。
+    // 此前落 default false ⇒ 返回位 `fn({}, number().finite())` 连 5 / 0.5
+    // 都判「不满足」，契约恒红且不可满足。
+    case "assumeFinite":
+      return isSelfVar(p.t) && typeof lv === "number" && Number.isFinite(lv);
     // and 是合取：逐参数按同一规则判定（string().length(n) 的 preds 是
     // and 包裹的两个长度界，叶子仍是 gt/ge/lt/le，无假阳性风险）
     case "and":

@@ -14,7 +14,7 @@
  */
 import type { Abs } from "../abs.ts";
 import { abs, litValue, strLit, boolLit, unknown } from "../abs.ts";
-import { objOf, canonicalArrayIndex, getSlot, isNullProtoObj } from "../objects.ts";
+import { objOf, canonicalArrayIndex, getSlot, isNullProtoObj, makeSum } from "../objects.ts";
 import {
   isMapAbs,
   isSetAbs,
@@ -306,7 +306,10 @@ function typeTagOf(recv: Abs): string | undefined {
     }
     return "Object";
   }
-  return "Object";
+  // 其余形状（never / any / unknown / sum）**不可判标签**：原生标签随运行时值
+  // 而变（any / unknown）或空域（never）。此处若兜底成 "Object" 会被调用侧当
+  // 确切字面量发布（`conf: exact` 的 "[object Object]"），属自信错值。
+  return undefined;
 }
 
 /**
@@ -411,6 +414,19 @@ export function evalObjectProtoMethod(
       return thisVal;
     }
     case "toString": {
+      const s = thisVal.shape;
+      // 联合接收者：标签由运行时选中的成员决定 ⇒ 逐个投影后并入字面量联合；
+      // 任一分量不可判则退宽域 string（口径同 typeTagOf 的 undefined）。
+      if (s.k === "sum") {
+        let acc: Abs | undefined;
+        for (const m of s.members) {
+          const mTag = typeTagOf(m);
+          if (mTag === undefined) return str();
+          const piece = strLit(`[object ${mTag}]`);
+          acc = acc === undefined ? piece : makeSum(acc, piece);
+        }
+        return acc ?? str();
+      }
       const tag = typeTagOf(thisVal);
       if (tag === undefined) return str();
       return strLit(`[object ${tag}]`);

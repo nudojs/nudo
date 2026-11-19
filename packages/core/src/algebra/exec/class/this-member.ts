@@ -4,12 +4,19 @@
  * Invariants:
  * - 可选链臂（?.）已过 nullish 排除——不重复记 may-throw。
  * - $setKey 计算键写：非字面量 key → open + index join（不得写成字面
- *   槽 "?"）；对象字面量计算键 __proto__ 是自有数据属性（与 $set 的
- *   setter 语义分流）。
+ *   槽 "?"），并标「键集不完备」（抽象键不进槽表但其在原生侧存在——键家族
+ *   据此折 partial，不得折只含字面键的 exact）；对象字面量计算键 __proto__ 是
+ *   自有数据属性（与 $set 的 setter 语义分流）。
  */
 import type { Abs } from "../../abs.ts";
 import { abs, unknown, confJoin, litValue } from "../../abs.ts";
-import { objOf, joinAbs, setSlot, propertyKeyOf } from "../../objects.ts";
+import {
+  objOf,
+  joinAbs,
+  setSlot,
+  propertyKeyOf,
+  markKeySetOpenAbs,
+} from "../../objects.ts";
 import { builtinSuperCtorOf } from "../runtime/members.ts";
 import { $get, $set, asAbsVal, clearStaleTermPred, NudoThrow } from "../runtime.ts";
 import { withNewTargetReset } from "../runtime/state.ts";
@@ -178,16 +185,20 @@ export function $setKey(o: Abs, key: Abs, value: Abs): Abs {
     );
   }
   if (o.shape.k !== "obj") {
-    return abs(
-      {
-        k: "obj",
-        slots: {},
-        index: { key: unknown, value: val },
-        open: true,
-      },
-      undefined,
-      undefined,
-      confJoin("path", value.conf),
+    // 接收者形状不是对象（prim / unknown…）：写被丢弃，但原生侧键确实存在
+    // ⇒ 同下「键集不完备」口径。
+    return markKeySetOpenAbs(
+      abs(
+        {
+          k: "obj",
+          slots: {},
+          index: { key: unknown, value: val },
+          open: true,
+        },
+        undefined,
+        undefined,
+        confJoin("path", value.conf),
+      ),
     );
   }
   const shape = o.shape as { slots: Record<string, { value: Abs; optional?: boolean }>; index?: { key: Abs; value: Abs }; open?: boolean };
@@ -198,5 +209,10 @@ export function $setKey(o: Abs, key: Abs, value: Abs): Abs {
     open: true,
   });
   next.conf = confJoin(o.conf, value.conf);
-  return next;
+  // BUG-199：抽象键**不可判** ⇒ 该键不进槽表，但它在原生侧是自有的（
+  // `{[k]:1}` 的 `k`）⇒ 自有键集不完备。与 $idxSet 的抽象键臂
+  // （containers/arr-index.ts）同一判据：不标 ⇒ 键家族把「只含字面键」的
+  // 槽表折成 exact（`Object.keys({[k]:1,z:2})` ⇒ `["z"]`），同一写入换个
+  // 语法（`o[k]=1`）却正确折 `string[]`。
+  return markKeySetOpenAbs(next);
 }

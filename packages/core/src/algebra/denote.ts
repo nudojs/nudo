@@ -358,6 +358,11 @@ function predAsJs(p: Pred, v: string, a: Abs): string {
       const inner = predAsJs(p.arg, v, a);
       return inner === "true" ? "false" : `!(${inner})`;
     }
+    case "assumeFinite":
+      // number().finite() 在 preds 里的唯一投影：非 NaN / 非 ±Infinity。
+      // 此前落 default "true" ⇒ guard 面对 NaN/±Infinity 恒放行（比 `check`
+      // 宽且无台账）；与 `.int()` 的 `Number.isInteger` 同口径投影。
+      return `Number.isFinite(${v})`;
     case "gt":
     case "ge":
     case "lt":

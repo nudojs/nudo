@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Plugin } from "vite";
 import nudoPlugin, { type NudoPluginOptions } from "../index.ts";
+import { setProjectRoot } from "../scope.ts";
 
 // checkSource 崩溃注入（回归）：vi.hoisted 让 vi.mock 工厂可读写
 // 状态；默认透传真实实现，既有用例行为不变。注意：vite-node 的模块
@@ -31,10 +32,10 @@ vi.mock("@nudojs/core", async (importOriginal) => {
 });
 
 /** Vite hooks may be fn or ObjectHook{handler}; tests need a direct callable. */
-function hookFn(h: unknown): (...args: never[]) => unknown {
-  if (typeof h === "function") return h as (...args: never[]) => unknown;
+function hookFn(h: unknown): (...args: unknown[]) => unknown {
+  if (typeof h === "function") return h as (...args: unknown[]) => unknown;
   if (h && typeof h === "object" && "handler" in h && typeof (h as { handler?: unknown }).handler === "function") {
-    return (h as { handler: (...args: never[]) => unknown }).handler;
+    return (h as { handler: (...args: unknown[]) => unknown }).handler;
   }
   throw new Error("plugin hook missing");
 }
@@ -185,6 +186,25 @@ export function getName(user) {
     return result === null && warnFn.mock.calls.length > 0;
   }
 
+  // 带 root 的判定（字面量 include 的路径形态需要项目相对口径）：
+  // configResolved 会写模块级 root ⇒ 每个用例后复位，别污染后续无 root 的用例。
+  async function wasAnalyzedUnderRoot(
+    id: string,
+    root: string,
+    options: NudoPluginOptions,
+  ): Promise<boolean> {
+    const plugin = nudoPlugin(options);
+    hookFn(plugin.configResolved).call(plugin, { root });
+    const warnFn = vi.fn();
+    const ctx = { warn: warnFn, error: vi.fn() };
+    try {
+      const result = await transformOf(plugin).call(ctx, directiveSource, id);
+      return result === null && warnFn.mock.calls.length > 0;
+    } finally {
+      setProjectRoot(undefined);
+    }
+  }
+
   it("matches **/*.js at any depth by default", async () => {
     expect(await wasAnalyzed("/file.js")).toBe(true);
     expect(await wasAnalyzed("/project/src/nested/mod.js")).toBe(true);
@@ -233,13 +253,26 @@ export function getName(user) {
     expect(await wasAnalyzed("/src/lib.js", options)).toBe(true);
   });
 
-  it("falls back to literal substring matching for wildcard-free patterns", async () => {
-    const options = { include: ["generated"] };
-    expect(await wasAnalyzed("/src/generated/helpers.js", options)).toBe(true);
-    expect(await wasAnalyzed("/src/helpers.js", options)).toBe(false);
-
+  it("字面量 exclude 保持子串语义（黑名单要命中任意深度的同名目录）", async () => {
     const excluded = { include: ["**/*.js"], exclude: ["snapshots"] };
     expect(await wasAnalyzed("/src/snapshots/old.js", excluded)).toBe(false);
+    expect(await wasAnalyzed("/src/old.js", excluded)).toBe(true);
+  });
+
+  it("BUG-187 字面量 include 按路径形态（`src` 不吃兄弟目录 `src-other`）", async () => {
+    const options = { include: ["src"] };
+    expect(await wasAnalyzedUnderRoot("/proj/src/a.js", "/proj", options)).toBe(true);
+    // 子串语义会把这三个一并放进白名单（同模式写进 package.json 时服务闸门
+    // 判 false ⇒ 构建期与 LSP / watch 结论相反）
+    expect(await wasAnalyzedUnderRoot("/proj/src-other/b.js", "/proj", options)).toBe(false);
+    expect(await wasAnalyzedUnderRoot("/proj/my-src/c.js", "/proj", options)).toBe(false);
+    expect(await wasAnalyzedUnderRoot("/proj/srcx.js", "/proj", options)).toBe(false);
+  });
+
+  it("BUG-187 字面量 include 命中整棵子树（`src` ⇒ `src/deep/a.js`）", async () => {
+    expect(await wasAnalyzedUnderRoot("/proj/src/deep/a.js", "/proj", { include: ["src"] })).toBe(
+      true,
+    );
   });
 });
 

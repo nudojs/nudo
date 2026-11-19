@@ -13,11 +13,11 @@
  * declare.ts 头注释——两期共享，此处不重复。
  */
 import type { Abs } from "../../abs.ts";
-import { abs, unknown, never, litValue, strLit, isAbsLike } from "../../abs.ts";
+import { abs, unknown, never, litValue, strLit, isAbsLike, numLit, markArrayView } from "../../abs.ts";
 import { assertNeverShape } from "../../check/shape-kinds.ts";
 import { objOf, getSlot, setSlot, setInstanceProto, type Slot } from "../../objects.ts";
 import { markFreshInstance } from "../../key/instance-id.ts";
-import { hostBuiltinCtorOf, evalClassChain } from "../runtime/members.ts";
+import { hostBuiltinCtorOf, evalClassChain, isBuiltinProtoName } from "../runtime/members.ts";
 import {
   protoBrandAbs,
   extStateOf,
@@ -46,7 +46,7 @@ import {
   makeFinalizationRegistryAbs,
 } from "../../builtins.ts";
 import { makeMapAbs, makeSetAbs, ctorArgDefinitelyInvalid, makeWeakCollectionAbs } from "../../collections.ts";
-import { typedArrayElementOf } from "../../builtins/shared.ts";
+import { typedArrayElementOf, numPrim } from "../../builtins/shared.ts";
 import { $set, asAbsVal, callAtFunctionBoundary, clearStaleTermPred, NudoThrow } from "../runtime.ts";
 import { pushCtorFrame, popCtorFrame, withNewTargetReset, throwStrictWrite } from "../runtime/state.ts";
 import { $call, routeApplyThrows } from "../call.ts";
@@ -65,11 +65,16 @@ import {
   classSpecOfAbs,
   attachClassSpec,
   ensureFnParentName,
+  fnProtoOf,
   resolveChainSpec,
   classNameOfValue,
   type EvalClassSpec,
 } from "../class-registry.ts";
+// BUG-188：绑定级原型身份（类规格 → 原型 brand）直连 ctor 叶子。
+import { protoBrandForSpec } from "../../builtins/ctor.ts";
 import { rebrandClassAbs } from "./rebrand.ts";
+import { ARRAY_PROTO_METHOD_NAMES } from "../member-diag.ts";
+import { getProtoMethodDispatch } from "../hooks.ts";
 import { notePendingSuper, clearPendingSuper, superCalledFor } from "../super-access.ts";
 
 /** 类值/实例 → 定义 spec 的身份查询（BUG-172：侧表在 class-registry.ts） */
@@ -216,14 +221,24 @@ function isClassValueAbs(t: Abs): boolean {
  * - 宿主函数 **facade**（member.ts 的 `$set` 宿主函数臂建）：其
  *   "prototype" 槽即被替换后的新原型——实例的 [[Prototype]] 就是它
  *   （原生 `F.prototype = {}` 之后 `new F()` 的实例原型是新对象）。
- * - 其它 fn Abs（$fnVal 函数表达式 / env 构造器）：按名 protoBrandAbs
- *   （与 evalProtoChain / `f.prototype` 读同一载体）。
+ * - 其它 fn Abs（$fnVal 函数表达式 / env 构造器）：fnProtoOf（按 fn Abs
+ *   驻留，与 `f.prototype` 读同一载体；同名不同绑定各一份）。
  */
 export function fnAbsCtorProtoOf(cls: Abs, instName: string): Abs {
   const sh = cls.shape;
   if (sh.k === "fn" && sh.slots) {
     const slot = getSlot(sh.slots, "prototype");
     if (slot) return slot.value;
+  }
+  // BUG-188：与 `f.prototype` 读同一载体（fn Abs 驻留），不再按名回表——
+  // 同名函数表达式 / 类表达式各绑定一份原型。内建构造器（进程唯一、且
+  // 原型面另带专门方法 / 键集）仍按名驻留；用户函数遮蔽内建名时构造它会
+  // 注册同名空 spec（内建永不注册）⇒ 按身份。
+  if (sh.k === "fn") {
+    const nm = sh.name;
+    return nm !== undefined && isBuiltinProtoName(nm) && getEvalClass(nm) === undefined
+      ? protoBrandAbs(nm)
+      : fnProtoOf(cls);
   }
   return protoBrandAbs(instName);
 }
@@ -530,6 +545,103 @@ export function applyInstanceFields(spec: EvalClassSpec, thisVal: Abs): Abs {
 }
 
 /**
+ * BUG-186：`class X extends Array` 的实例面。
+ *
+ * Array 的构造产物是**数组形态**（`tuple` / `arr`），不是 brand —— 原生子类
+ * 实例是「数组 exotic + 子类原型链」。引擎里唯一能同时表达两者的承载是
+ * brand 的**内层** Abs：
+ * - 内层做成**数组视图 obj**（下标槽 + `length` 槽 + `view: "array"`）⇒
+ *   `$len`（`.length` 编译位只认 brand 内层 obj 的长度槽）、下标读、
+ *   `Array.isArray`、JSON 视图全部沿用既有数组视图口径；
+ * - 数组原型方法面另见 `ensureArraySubclassMethods`（品牌原型槽上的派发桥）。
+ */
+function arraySubclassInner(built: Abs): Abs {
+  const slots: Record<string, Slot> = {};
+  if (built.shape.k === "tuple") {
+    const holes = built.shape.holes;
+    built.shape.elements.forEach((el, i) => {
+      // 空洞（`new Array(3)`）原生不是自有属性 ⇒ 不建下标槽
+      if (holes?.includes(i)) return;
+      slots[String(i)] = { value: el };
+    });
+    slots.length = { value: numLit(built.shape.elements.length) };
+  } else if (built.shape.k === "arr") {
+    // 抽象长度（`Array(len)` 的 len 非常量）：长度不可判（保守 number 域），
+    // 下标值域 = 元素域（视图的索引读面）。
+    slots.length = { value: numPrim("partial") };
+    const inner = objOf(slots, { index: { key: unknown, value: built.shape.element } });
+    markArrayView(inner);
+    return inner;
+  } else {
+    // 调用点只喂 tuple / arr；其它形态（未来新增的数组类产物）原样返回，
+    // 由调用方决定是否合并身份。
+    return built;
+  }
+  const inner = objOf(slots);
+  markArrayView(inner);
+  return inner;
+}
+
+/** 数组视图形式的实例内层（方法派发桥的 receiver —— 槽对象与实例共享） */
+function arrayViewOfInstance(v: Abs | undefined): Abs | undefined {
+  if (!v || v.shape.k !== "brand") return undefined;
+  const inner = v.shape.shape;
+  if (inner.shape.k !== "obj") return undefined;
+  return abs({ ...inner.shape, view: "array" }, undefined, undefined, "exact");
+}
+
+/**
+ * 数组原型方法的**派发桥**（BUG-186）。
+ *
+ * 数组方法面（`push` / `map` / `join` …）的单一事实源是
+ * `invokeArrMethod`，它按**接收者形态**派发：`tuple` / `arr` 直接吃，数组样
+ * obj 走就地写面。而数组子类实例的接收者是 brand（子类身份所在）——
+ * 品牌面此前没有任何数组方法入口（`BUILTIN_BRAND_METHODS` 无 `Array`，
+ * `proto-borrow` 的 Array 臂只认 tuple/arr/obj）⇒ 读 `l.push` 得
+ * `undefined`、调用折 `TypeError`。
+ *
+ * 桥的做法：把这些名字作为**原型槽**挂一次（`A.prototype` 的原生面确实
+ * 有这些方法）；槽值是共享的 fn Abs，调用时按 `thisVal` 取实例的数组视图
+ * 再交回 `invokeArrMethod`（不复制数组语义）。原型槽优先于注册表方法体
+ * （与 `A.prototype.m = fn` 同一条读/调用路径），且原型自有键集由 spec /
+ * facet 决定 ⇒ 不污染 `Object.getOwnPropertyNames(A.prototype)`。
+ */
+const arraySubclassBridged = new WeakSet<object>();
+
+function arrayMethodBridge(name: string): Abs {
+  return absFunction(
+    [],
+    {
+      apply: (args, thisVal) => {
+        const view = arrayViewOfInstance(thisVal);
+        if (!view) return unknown;
+        // 与 member.ts 的 arrayViewMethodAbs 同口径：把接收者换成数组视图，
+        // 交回内建原型方法的**借用派发域**（Array 臂：mutator 就地写视图槽、
+        // 读方法物化后走 invokeArrMethod 单一事实源）。
+        return getProtoMethodDispatch()?.("Array", name, view, args) ?? unknown;
+      },
+    },
+    { ctor: false },
+  );
+}
+
+function ensureArraySubclassMethods(className: string, spec?: EvalClassSpec): void {
+  // BUG-188：原型写入落到**该类规格身份**的原型对象（与 `.prototype` 读 /
+  // 实例成员读同一载体）；无规格（内建 / 手写面）才按名兜底。
+  const proto = spec ? protoBrandForSpec(spec) : protoBrandAbs(className);
+  if (arraySubclassBridged.has(proto as object)) return;
+  arraySubclassBridged.add(proto as object);
+  if (proto.shape.k !== "brand" || proto.shape.shape.shape.k !== "obj") return;
+  const slots = proto.shape.shape.shape.slots;
+  for (const name of ARRAY_PROTO_METHOD_NAMES) {
+    // "@@iterator" 是**符号投影键**，不是字符串键（Bug 99）⇒ 不在此桥
+    if (name.startsWith("@@")) continue;
+    if (getSlot(slots, name) !== undefined) continue; // 用户自己写的原型槽优先
+    setSlot(slots, name, { value: arrayMethodBridge(name) });
+  }
+}
+
+/**
  * Bug 59：构造链（原生 [[Construct]] 沿继承链逐类初始化实例字段）：
  * - 显式 ctor 基类：实例字段 → ctor 体；
  * - 显式 ctor 派生类：直接跑 ctor 体（内部 super() → $super 递归父链，
@@ -576,9 +688,27 @@ export function constructClass(
     if (hostBuiltinCtorOf(className) !== undefined) {
       const built = evalBuiltinNew(className, args);
       if (built !== undefined) {
-        // 非 brand 产物（Array ctor 的数组 / Promise 的 eff 面）原生就是
-        // 第一形态值，直接返回；brand 产物嫁接内建槽到被构造 brand 名。
-        if (built.shape.k !== "brand") return built;
+        // 非 brand 产物：Promise 的 eff 面原生就是构造结果本身（直接返回）；
+        // 但**数组形态**（tuple / arr）在 `class X extends Array` 里必须与子类
+        // 身份合并（BUG-186，见下）。
+        if (built.shape.k !== "brand") {
+          if (built.shape.k !== "tuple" && built.shape.k !== "arr") return built;
+          // BUG-186：`class X extends Array` —— 构造产物是数组形态，直接返回
+          // 会把子类实例换成裸数组（自有方法 / 访问器在实例上不存在 ⇒
+          // `$invoke` 折 `never throws TypeError`；`in` / `constructor` /
+          // `typeof` 也全按普通数组作答）。
+          //
+          // 原生子类实例 = 「数组 exotic + 子类原型链」⇒ 保留 thisVal（brand
+          // 名 = 子类 ⇒ 方法链 / 原型槽 / instanceof 照旧），内层承载换成
+          // 数组视图（`.length` / 下标 / IsArray 读面照旧），数组方法面经
+          // ensureArraySubclassMethods 的派发桥接回 invokeArrMethod。
+          if (thisVal.shape.k !== "brand") return built;
+          const instName = thisVal.shape.name;
+          ensureArraySubclassMethods(instName, classSpecOfAbs(thisVal));
+          // 就地改 shape ⇒ Abs 身份不变（类规格侧表 / 实例新鲜标不丢）
+          thisVal.shape = { k: "brand", name: instName, shape: arraySubclassInner(built) };
+          return thisVal;
+        }
         const instName = thisVal.shape.k === "brand" ? thisVal.shape.name : className;
         // 内建集合的**条目表按 Abs 身份驻留**（collections.ts 的 WeakMap：
         // mapTables / setTables）——**重铸 Abs 会丢表** ⇒ 含内建父的类链
@@ -1047,13 +1177,12 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
     // Boolean…未进上方派发表）不走体执行——Abs 实参喂真 JS 构造器会产
     // 宿主原值（静默错值），维持既有空 brand 口径。
     if (hostBuiltinCtorName(cls) === undefined && !isHostGlobalFn(cls)) {
-      // Bug 113：函数声明（宿主函数）[[Construct]]——铸实例 brand 前注册
-      // 链键（$class 的 registerEvalClass 同款）：chainProtoSlotOf 沿
-      // protoBrandAbs(clsName) 链解析（f.prototype 写落同名 memo 槽——
-      // 宿主函数 prototype 读正是 protoBrandAbs），实例缺槽读不再 exact
-      // undefined。同名注册面（用户类）不覆写。不用 ensureFnParentName/
-      // asAbsVal：宿主函数每次铸新 fn Abs 会 miss fnProtoOf 的 WeakMap，
-      // 而本分支原型载体是 protoBrandAbs 名面。
+      // Bug 113 / BUG-188：函数声明（宿主函数）[[Construct]]——铸实例
+      // brand 前注册链键（$class 的 registerEvalClass 同款）；原型载体是
+      // **fn Abs 驻留**的 fnProtoOf（`F.prototype` 读 / $instanceof / 本
+      // 分支同一对象）。asAbsVal 有宿主函数稳定门面缓存（Bug 291），同一
+      // 函数声明恒同一 fn Abs ⇒ fnProtoOf 同一原型；不同绑定（不同作用域 /
+      // 模块）是不同宿主函数 ⇒ 各自一份原型。同名注册面（用户类）不覆写。
       if (!getEvalClass(clsName)) registerEvalClass({ name: clsName });
       const thisVal = abs(
         { k: "brand", name: clsName, shape: objOf({}) },
@@ -1061,12 +1190,13 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
         undefined,
         "path",
       );
-      // Bug 205：构造期捕获实例的真实 [[Prototype]]（宿主函数的 prototype
-      // 载体是 protoBrandAbs 名面——与 `F.prototype` 读同一对象）。捕获后
-      // 原型被替换（`F.prototype = {}`）时，instanceof 沿**记录的链**做
-      // 身份比较：换原型前造的实例记旧原型、换后造的新实例记新原型
-      // （原生 "false|true" 的区分依据）。
-      setInstanceProto(thisVal, protoBrandAbs(clsName));
+      // Bug 205 / BUG-188：构造期捕获实例的真实 [[Prototype]]（宿主函数的
+      // prototype 载体是 **fn Abs 驻留**的 fnProtoOf——与 `F.prototype`
+      // 读 / $instanceof 同一对象；同名函数声明各绑定一份）。捕获后原型被
+      // 替换（`F.prototype = {}`）时，instanceof 沿**记录的链**做身份比较：
+      // 换原型前造的实例记旧原型、换后造的新实例记新原型（原生
+      // "false|true" 的区分依据）。
+      setInstanceProto(thisVal, fnProtoOf(asAbsVal(cls)));
       // new.target 帧：构造器体内 new.target = 被构造的函数值
       pushCtorFrame(asAbsVal(cls));
       const entered = evalEnterCall(clsName, cls, args);
@@ -1291,9 +1421,12 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
     // 集；原手工面 carryClassSpec(thisVal, inst) 收敛于此——逐点比对见
     // rebrand.ts 头注释）。值身份换了，规格不能丢。
     const inst = rebrandClassAbs(thisVal, constructClass(className, thisVal, args, spec));
-    // Bug 205：构造期捕获类实例的真实 [[Prototype]]（= 类原型对象）——
-    // 原型被替换 / setPrototypeOf 后 instanceof 沿**记录的链**做身份比较。
-    if (inst.shape.k === "brand") setInstanceProto(inst, protoBrandAbs(className));
+    // Bug 205 / BUG-188：构造期捕获类实例的真实 [[Prototype]]（= 该类
+    // **规格身份**的原型对象；同名不同绑定各一份）——原型被替换 /
+    // setPrototypeOf 后 instanceof 沿**记录的链**做身份比较。
+    if (inst.shape.k === "brand") {
+      setInstanceProto(inst, spec ? protoBrandForSpec(spec) : protoBrandAbs(className));
+    }
     // R2b：每次 new 产出新实例——brand 形打新鲜实例标（=== 折 false；
     // 构造器 return 既有对象时重打只改该 Abs 引用的 id，别名恒等不受影响）
     return inst.shape.k === "brand" ? markFreshInstance(inst) : inst;

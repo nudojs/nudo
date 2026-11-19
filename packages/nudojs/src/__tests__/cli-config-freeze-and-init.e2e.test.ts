@@ -199,9 +199,10 @@ describe("-freeze=update 的见证坐标", () => {
     const { dir, file } = project(frozenFile(8, 1));
     try {
       const r = runCliTsx(["test", file]);
-      // 之前会出现两条：冻结写回的指令见证 `call@L8` + 活调用点合成的 `call@L9`
-      const caseLines = (r.stdout.match(/^ {2}call@L\d+/gm) ?? []).length;
-      expect(caseLines).toBe(1);
+      // BUG-223：指令见证以 `debug "call@…"` 上屏（与合成调用点 `call@…`
+      // 区分）；同一次调用只出现一条见证，不并存两条同形记录。
+      expect(r.stdout).toContain('debug "call@L8"');
+      expect(r.stdout).not.toMatch(/^ {2}call@L\d+/m);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

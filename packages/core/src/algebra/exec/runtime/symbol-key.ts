@@ -19,6 +19,7 @@
  *   恰是 "Symbol.iterator"，按 description 会误投影到 well-known 槽）。
  */
 import type { Abs } from "../../abs.ts";
+import { abs } from "../../abs.ts";
 import { litAbsFromJs } from "./state.ts";
 
 /** 宿主 Symbol 命名空间：属性名 → 真 symbol（well-known 全集） */
@@ -45,12 +46,22 @@ export function hostSymbolForSlotKey(slotKey: string): symbol | undefined {
 }
 
 /**
- * 内部槽键 "@@X" → symbol Abs（Proxy 陷阱 key 实参用）。
- * 非 well-known 槽键 → undefined（调用方退回字符串实参——不得凭空捏符号）。
+ * 内部槽键 "@@X" → symbol Abs（Proxy 陷阱 key 实参 / Reflect.ownKeys 元素用）。
+ *
+ * - well-known 槽键 → 宿主真 symbol 的 lit Abs（身份可复原）；
+ * - **用户符号**槽键 `@@sym#N`（symbol-slot.ts 产出）→ **类型级 symbol**
+ *   Abs：身份侧表只有 Abs→id 单向，id 无法反查 Abs，但键类型确定是
+ *   symbol ⇒ 退成 `prim symbol`，**不得**把内部槽键当字符串字面量发布
+ *   （那会让 typeof 折 "string"、join/charCodeAt 等 symbol 必抛的调用假绿）；
+ * - 其余槽键 → undefined（调用方退回字符串实参——不得凭空捏符号）。
  */
 export function symbolAbsForSlotKey(slotKey: string): Abs | undefined {
   const sym = hostSymbolForSlotKey(slotKey);
-  return sym === undefined ? undefined : litAbsFromJs(sym);
+  if (sym !== undefined) return litAbsFromJs(sym);
+  if (/^@@sym#\d+$/.test(slotKey)) {
+    return abs({ k: "prim", type: "symbol" }, undefined, undefined, "path");
+  }
+  return undefined;
 }
 
 /**

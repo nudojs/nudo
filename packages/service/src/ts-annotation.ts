@@ -24,8 +24,8 @@
  *   不是 unknown（分析失败）——与 design-cli-semantics §2 一致。
  */
 import type { Abs, Shape } from "@nudojs/core";
-import { abs as makeAbsVal, anyAbs } from "@nudojs/core";
-import { absShapeForTsTypeText } from "@nudojs/core/internal";
+import { abs as makeAbsVal, anyAbs, spread } from "@nudojs/core";
+import { absShapeForTsTypeText, absTypeForTsTypeText } from "@nudojs/core/internal";
 
 /**
  * 声明类型文本 → Abs 形状（不可映射 ⇒ undefined）。
@@ -37,12 +37,53 @@ export function tsAnnotationShape(text: string | undefined): Shape | undefined {
 }
 
 /**
- * 入口实参 Abs：声明类型可映射 ⇒ 该形状（conf `path`：形状已知、取值任意）；
- * 不可映射 / 无注解 ⇒ **any**（无约束入口参数 = 任意 JS 值）。
+ * 入口实参 Abs：声明类型可映射 ⇒ 该 Abs（conf `path`：形状已知、取值任意；
+ * nullish 成员带 lit term）；不可映射 / 无注解 ⇒ **any**（无约束入口参数 =
+ * 任意 JS 值）。
+ *
+ * BUG-205：开放对象（`{ a: number }` / `{}`）必须在 Abs 上带**键集不完备**
+ * 标记，否则键家族（`Object.keys/values/entries`）把声明槽折成 exact 字面
+ * 元组——一次**观测值**被发布成输出类型（dts 出 `["a"]`、guard 拒收函数自己
+ * 产生的 `["a","c"]`）。标记是 Abs 级 prop-flags 侧表位，造新 Abs 就丢，所以
+ * 播种面必须与 core 泛化面（generalize.ts 的 `annotationAbsOf`）同口径。
+ *
+ * 表达只用 core 既有传播面：「注解形状 ⊕ 键集不可判的未知对象」= `spread`
+ * （与 `{...x}` 同一判据：任一侧键集不完备 ⇒ 结果不完备），不在本包另立
+ * 第二套判定，也不复刻私有标记位。
  */
 export function tsAnnotationArgAbs(text: string | undefined): Abs {
-  const shape = tsAnnotationShape(text);
-  return shape ? makeAbsVal(shape, undefined, undefined, "path") : anyAbs;
+  // Abs 面映射（不是 Shape 面）：`string | null` / `number | undefined` 的
+  // nullish 字面量精度只能由 term 承载。Shape 面会把这类注解整条丢掉 ⇒
+  // 入口实参退 any ⇒ entry@ 观测的返回位变宽（dts `string | unknown`、
+  // zod `z.unknown()`、guard 恒真），与同一份产物里 `@param x - string | null`
+  // 的注解原文自相矛盾；而 check 泛化面（generalize.ts）早已走 Abs 面。
+  const mapped = absTypeForTsTypeText(text);
+  if (!mapped) return anyAbs;
+  return markOpenObjKeys(makeAbsVal(mapped.shape, mapped.term, undefined, "path"));
+}
+
+/**
+ * 递归给**对象槽**里的开放对象打键集不完备标记（与 core `markOpenObjSlots`
+ * 同口径：`Object.keys(x.a.b)` 也必须是诚实的 partial——合法实参
+ * `{a:{b:1, c:2}}` 的 `c` 不在声明槽里）。
+ *
+ * 标记只落在新 Abs 上：Shape 可被缓存 / 复用，改槽必须复制（copy-on-write），
+ * 无变化时返回原 Abs（不额外分配）。
+ */
+function markOpenObjKeys(a: Abs): Abs {
+  const s = a.shape;
+  if (s.k !== "obj") return a;
+  let slots: typeof s.slots | undefined;
+  for (const [key, slot] of Object.entries(s.slots)) {
+    const v = slot.value;
+    if (v.shape.k !== "obj") continue;
+    const marked = markOpenObjKeys(v);
+    if (marked === v) continue;
+    slots ??= { ...s.slots };
+    slots[key] = { ...slot, value: marked };
+  }
+  const base = slots === undefined ? a : makeAbsVal({ ...s, slots }, a.term, a.pred, a.conf);
+  return s.open === true ? spread(anyAbs, base) : base;
 }
 
 /**

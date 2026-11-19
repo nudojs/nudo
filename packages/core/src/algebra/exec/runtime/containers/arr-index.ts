@@ -125,6 +125,13 @@ export function $idx(
       // 无槽模型的容器面（tuple / arr / Set / Map / 生成器…）：符号键缺席
       // ——闭 tuple 恒缺席 → undefined；抽象 arr 的 expando 面不可判（写面
       // 丢弃 expando）→ unknown（同 arr 臂的确定非下标键口径）。
+      // tuple 的符号键走**与 $get / $in 同一事实源**（Array.prototype 的
+      // @@iterator 等原型符号成员确实存在），不得整体折「缺席」——否则
+      // `[1][Symbol.iterator]` 读值面（$get）说函数、计算键面（$idx）说
+      // undefined，同一语义两个结论。
+      if (a.shape.k === "tuple") {
+        return $get(a, symKey, { symbolKey: true, silent: opts?.silent });
+      }
       if (a.shape.k === "arr") return unknown;
       return undef();
     }
@@ -164,8 +171,14 @@ export function $idx(
   }
   if (a.shape.k === "tuple") {
     const els = a.shape.elements;
-    // 确定非下标键（"foo"、1.5…）：缺失属性 → undefined
-    if (iv !== undefined && idx === undefined) return undef();
+    // 确定非下标键（"foo"、1.5…）：交给 $get 的**同一事实源**判定——
+    // Array.prototype / Object.prototype 原型成员（"map"、"toString"、
+    // Symbol.iterator 投影…）必须读回方法值；只有表外键才确定缺失。
+    // 此前一律折 undefined ⇒ 动态派发 `const k="map"; a[k]` 恒 undefined，
+    // 而同一键的直读（$get）/ `in` / 调用三面全部命中。
+    if (iv !== undefined && idx === undefined) {
+      return $get(a, String(iv), { silent: opts?.silent });
+    }
     if (idx !== undefined) {
       if (idx < els.length) return els[idx]!;
       return undef();
@@ -539,6 +552,10 @@ export function $len(a: Abs, opts?: { silent?: boolean }): Abs {
     return anyMemberResult();
   }
   if (a.shape.k === "tuple") {
+    // rest 元组 `[A, ...B[]]` 的 length 是「前缀 + 任意条数」，不是前缀长度：
+    // 精确折成 `elements.length` 会让 `restLen(x)` 报 1，而原生
+    // `["a","b","c"].length === 3`。位置前缀之外的条数不可知 ⇒ number。
+    if (a.shape.rest) return abstractLen(a);
     return abs(
       { k: "prim", type: "number" },
       { op: "lit", value: a.shape.elements.length },

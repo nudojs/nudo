@@ -12,6 +12,8 @@ import { abs, unknown } from "../../abs.ts";
 import { getSlot, setSlot, propertyKeyOf, getProtoAbs, isNullProtoObj } from "../../objects.ts";
 import { findClassAccessor, findStaticClassAccessor } from "../runtime/members.ts";
 import { OBJECT_PROTO_METHOD_NAMES, objectProtoMethodAbs, builtinCtorAbs, protoOfRecv, protoBrandAbs } from "../../builtins.ts";
+// BUG-188：绑定级原型身份（类规格 → 原型 brand）直连 ctor 叶子。
+import { protoBrandForSpec } from "../../builtins/ctor.ts";
 import { $set, $lit, asAbsVal, lookupObjAccessor, clearStaleTermPred } from "../runtime.ts";
 import { withNewTargetReset, throwStrictWrite, undef } from "../runtime/state.ts";
 import { $call } from "../call.ts";
@@ -161,7 +163,7 @@ function superMethodAbsent(parentName: string, method: string, parentSpec?: Eval
     if (spec.accessors && Object.hasOwn(spec.accessors, method)) return false;
     // 动态原型写（A.prototype.m = fn）：注册表外 ⇒ 方法可能存在 ⇒ 不可判
     // （constructor 槽是原型对象自带的，不算动态写）
-    if (method !== "constructor" && protoSlotHasKey(cur, method)) return false;
+    if (method !== "constructor" && protoSlotHasKey(cur, method, spec)) return false;
     if (spec.superNull) return true; // extends null：链止于此（无 Object.prototype 尾）
     const next: string | undefined = spec.superName;
     if (!next) {
@@ -175,9 +177,15 @@ function superMethodAbsent(parentName: string, method: string, parentSpec?: Eval
   return false; // 环（防御）
 }
 
-/** 类原型对象上有该键的槽（动态原型写 / 内建槽）——不可判 ⇒ true（开链） */
-function protoSlotHasKey(className: string, key: string): boolean {
-  const pb = protoBrandAbs(className);
+/** 类原型对象上有该键的槽（动态原型写 / 内建槽）——不可判 ⇒ true（开链）。
+ *  BUG-188：有规格身份时按该类**自己的**原型 brand 查（动态写落在规格
+ *  原型上，同名类的另一个绑定写了同名槽不干扰本链的缺席判定）。 */
+function protoSlotHasKey(
+  className: string,
+  key: string,
+  spec?: EvalClassSpec,
+): boolean {
+  const pb = spec ? protoBrandForSpec(spec) : protoBrandAbs(className);
   if (pb.shape.k !== "brand") return true;
   const inner = pb.shape.shape;
   if (inner.shape.k !== "obj") return true;

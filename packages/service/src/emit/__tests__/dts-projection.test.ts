@@ -1106,8 +1106,9 @@ export class C { m(a = 1, ...rest) { return [a, rest]; } }
   it("默认形参渲染成 `a?:`，不是 `a: … | undefined`；消费端 f() / c.m() 通过 tsc（改前 TS2555）", () => {
   {
     const dts = moduleDts(SRC);
-    expect(dts).toContain("f(a?: unknown, ...rest: unknown[])");
-    expect(dts).toContain("m(a?: unknown, ...rest: unknown[])");
+    // BUG-193：默认值初始值是类型证据（`a = 1` ⇒ `number`）——旧实现印 unknown
+    expect(dts).toContain("f(a?: number, ...rest: unknown[])");
+    expect(dts).toContain("m(a?: number, ...rest: unknown[])");
     expect(dts).not.toContain("a: unknown | undefined");
   }
   {
@@ -1133,10 +1134,11 @@ describe("构造器 / static 方法默认值不丢", () => {
   it("构造器 / static 形参带 `?`（与实例位一致）；消费端 new C() / C.make() 通过 tsc（改前 TS2554）", () => {
   {
     const dts = moduleDts(SRC);
-    expect(dts).toContain("constructor(a?: unknown);");
+    // BUG-193：默认值 `a = 1` / `x = 2` / `y = 3` 是类型证据 ⇒ number
+    expect(dts).toContain("constructor(a?: number);");
     // BUG-095：无返回注解的 static 方法取分析面签名（此例 `return new C()` ⇒ C）
-    expect(dts).toContain("static make(x?: unknown): C;");
-    expect(dts).toContain("inst(y?: unknown)");
+    expect(dts).toContain("static make(x?: number): C;");
+    expect(dts).toContain("inst(y?: number)");
   }
   {
     const check = tscNoEmit({

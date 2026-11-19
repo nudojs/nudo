@@ -3,9 +3,9 @@
  */
 import type { Abs } from "../abs.ts";
 import { abs, strLit, unknown } from "../abs.ts";
-import { objOf, isNullProtoObj, getProtoAbs } from "../objects.ts";
+import { objOf, isNullProtoObj, getProtoAbs, getInstanceProto } from "../objects.ts";
 import { markClassValue, classNameOfValue } from "../class-mark.ts";
-import { getEvalClass, lookupClassValue, BUILTIN_ERROR_SUPER, fnProtoOf } from "../exec/class-registry.ts";
+import { getEvalClass, lookupClassValue, BUILTIN_ERROR_SUPER, fnProtoOf, classSpecOfAbs, type EvalClassSpec } from "../exec/class-registry.ts";
 import { pTrue } from "../pred.ts";
 import { str, noBody, typedArrayElementOf } from "./shared.ts";
 import { OBJECT_PROTO_NAMES } from "../object-proto-names.ts";
@@ -120,11 +120,22 @@ export function ctorNameOfRecv(recv: Abs): string | undefined {
 }
 
 /** `X.prototype` 形态（getPrototypeOf 结果；带 constructor 槽）。
- *  Bug 64：按名驻留——X.prototype 原生是唯一共享对象，两次读出 ===；
- *  protoOfRecv(B.prototype) 与 $get(ns,"prototype") 各自新建会让
- *  `Object.getPrototypeOf(RangeError.prototype) === Error.prototype`
- *  这类恒等丢精度（also 原地可变性跨读存活，原生语义）。 */
+ *  Bug 64：**同一绑定**内驻留——X.prototype 原生是该类唯一共享对象，
+ *  两次读出 ===（also 原地可变性跨读存活，原生语义）。
+ *
+ *  BUG-188：身份必须是**绑定**，不是名字。原生每次类定义求值各建一个
+ *  prototype 对象；两个同名但不同绑定的类（不同作用域 / 不同模块）的
+ *  `A.prototype` 是两个不同对象，`A.prototype.m = fn` 不得泄漏到另一个。
+ *  身份键 = 类**规格对象**（$class 每次求值新建、随类值 / 实例携带），
+ *  见 protoBrandForSpec。名表保留为「只有名字」的观测面回退（内建 brand
+ *  / format / denote 等）。 */
 const protoBrandByName = new Map<string, Abs>();
+/** 绑定级原型品牌（WeakMap 键 = 类规格身份；随旧规格回收，无记忆泄漏）。 */
+const protoBrandByIdentity = new WeakMap<object, Abs>();
+/** 原型 brand → 其绑定规格（extends 链按 superSpec 身份解析）。
+ *  单独侧表而非 classSpecOfAbs：后者语义是「类值 / 实例的身份」，原型
+ *  对象不是实例（classInstanceInnerOf / isDeclaredClassValue 等据此判形）。 */
+const protoBrandSpecs = new WeakMap<object, EvalClassSpec>();
 
 /** Bug 58/85/92 复盘：Function.prototype 原生是唯一 callable 的 prototype
  *  （typeof "function"；调用返 undefined）。**单一驻留 fn 面**——
@@ -193,66 +204,124 @@ function hostProtoOwnKeys(ctorName: string): { strings: string[]; symbols: strin
   };
 }
 
-export function protoBrandAbs(ctorName: string): Abs {
+/** 规格身份原型的自有字符串键（与 brand-tables 的按名表同口径，但取
+ *  **这份规格**的方法 / 访问器 / 源码定义序——同名类的另一个绑定不会
+ *  顶掉本绑定的 gOPN 面）。 */
+function specProtoOwnStringKeys(spec: EvalClassSpec): string[] | undefined {
+  if (spec.protoMemberOrder) return ["constructor", ...spec.protoMemberOrder];
+  const methods = Object.keys(spec.methods ?? {});
+  const accessors = Object.keys(spec.accessors ?? {});
+  if (methods.length > 0 && accessors.length > 0) return undefined;
+  const keys = ["constructor"];
+  for (const k of [...methods, ...accessors]) {
+    if (k === "constructor" || keys.includes(k)) continue;
+    keys.push(k);
+  }
+  return keys;
+}
+
+/** 新建一个原型 brand（未驻留——驻留由同名 / 绑定身份两表分别负责）。 */
+function makeProtoBrand(ctorName: string, spec?: EvalClassSpec): Abs {
+  // Bug 321：Error 家族原型带**自有数据属性** name / message（原生同上）——
+  // 此前原型面只装 constructor 槽 ⇒ `hasOwnProperty("name")` /
+  // `Object.hasOwn(prototype,"name")` / `"name" in prototype` 全折 false
+  // （原生 true）。槽装**内层 obj**（原型对象的自有面 = 内层槽面）。
+  const isErrFamily = ERROR_FAMILY_PROTO_NAMES.has(ctorName);
+  const slots: Record<string, { value: Abs }> = {
+    constructor: { value: builtinCtorAbs(ctorName) },
+  };
+  if (isErrFamily) {
+    slots.name = { value: strLit(ctorName) };
+    slots.message = { value: strLit("") };
+  }
+  const inner = objOf(slots);
+  const a = abs(
+    {
+      k: "brand",
+      name: `${ctorName}.prototype`,
+      shape: inner,
+    },
+    undefined,
+    undefined,
+    "exact",
+  );
+  // 原生：类 / 内建构造器的 prototype 上的 `constructor` 是**不可枚举**
+  // 数据属性（{writable:true, enumerable:false, configurable:true}）⇒
+  // for-in / Object.keys 看不到它。缺这个标记 ⇒ 引擎把 `constructor`
+  // 当可枚举键发布（`for (const k in A.prototype)` 得 ["constructor"]，
+  // 原生是 []）。
+  setPropFlags(a, "constructor", { enumerable: false, writable: true, configurable: true });
+  // A10：把自有键集从「按 brand 名查固定表」升级为「随 Abs 值携带」——
+  // subst / snapshot / join 会整包搬运，键集不再依赖名字能查回来。
+  // 引擎已建模面（Error 家族 / 用户类）优先用按名表；其余**内建**原型
+  // （Array / Map / Promise …）由 hostProtoOwnKeys 一次性采集宿主真实键集
+  // ⇒ gOPN / hasOwn / gOPS 从保守域升为与原生对拍的精确面。
+  // 用户类原型若在 registerEvalClass 之前创建：按名表查不到 spec、也不在
+  // 宿主构造器表内 ⇒ 不挂槽位，消费侧 protoOwnKeysOf 回落按名表（保守）。
+  const ownStrings =
+    spec !== undefined
+      ? specProtoOwnStringKeys(spec)
+      : protoBrandOwnStringKeys(`${ctorName}.prototype`);
+  const carried =
+    ownStrings !== undefined ? { strings: ownStrings } : hostProtoOwnKeys(ctorName);
+  if (carried !== undefined) {
+    a.facets = { ...(a.facets ?? {}), protoOwnKeys: carried };
+  }
+  if (isErrFamily) {
+    // Bug 321：name / message 同为**不可枚举**数据属性（原生描述符
+    // enumerable:false）——标记与 `constructor` 同挂**brand 自身**
+    // （枚举视图 isNonEnumerable 与 propertyIsEnumerable 的 flags 兜底
+    // 都读 brand 的表；挂内层会顶掉 propertyIsEnumerable 对
+    // `constructor` 的品牌级标记）。
+    setPropFlags(a, "name", { enumerable: false, writable: true, configurable: true });
+    setPropFlags(a, "message", { enumerable: false, writable: true, configurable: true });
+  }
+  return a;
+}
+
+export function protoBrandAbs(ctorName: string, identity?: object): Abs {
   // Object.prototype 与 objectProtoBrand() 单例同身份（constructor 槽 +
   // 不可枚举标记），分身会让 === 恒等丢精度
   if (ctorName === "Object") return objectProtoBrand();
+  if (identity !== undefined) {
+    // BUG-188：绑定级身份（类规格对象）——同名不同绑定各一个原型对象。
+    let a = protoBrandByIdentity.get(identity);
+    if (!a) {
+      a = makeProtoBrand(ctorName);
+      protoBrandByIdentity.set(identity, a);
+    }
+    return a;
+  }
   let a = protoBrandByName.get(ctorName);
   if (!a) {
-    // Bug 321：Error 家族原型带**自有数据属性** name / message（原生同上）——
-    // 此前原型面只装 constructor 槽 ⇒ `hasOwnProperty("name")` /
-    // `Object.hasOwn(prototype,"name")` / `"name" in prototype` 全折 false
-    // （原生 true）。槽装**内层 obj**（原型对象的自有面 = 内层槽面）。
-    const isErrFamily = ERROR_FAMILY_PROTO_NAMES.has(ctorName);
-    const slots: Record<string, { value: Abs }> = {
-      constructor: { value: builtinCtorAbs(ctorName) },
-    };
-    if (isErrFamily) {
-      slots.name = { value: strLit(ctorName) };
-      slots.message = { value: strLit("") };
-    }
-    const inner = objOf(slots);
-    a = abs(
-      {
-        k: "brand",
-        name: `${ctorName}.prototype`,
-        shape: inner,
-      },
-      undefined,
-      undefined,
-      "exact",
-    );
-    // 原生：类 / 内建构造器的 prototype 上的 `constructor` 是**不可枚举**
-    // 数据属性（{writable:true, enumerable:false, configurable:true}）⇒
-    // for-in / Object.keys 看不到它。缺这个标记 ⇒ 引擎把 `constructor`
-    // 当可枚举键发布（`for (const k in A.prototype)` 得 ["constructor"]，
-    // 原生是 []）。
-    setPropFlags(a, "constructor", { enumerable: false, writable: true, configurable: true });
-    // A10：把自有键集从「按 brand 名查固定表」升级为「随 Abs 值携带」——
-    // subst / snapshot / join 会整包搬运，键集不再依赖名字能查回来。
-    // 引擎已建模面（Error 家族 / 用户类）优先用按名表；其余**内建**原型
-    // （Array / Map / Promise …）由 hostProtoOwnKeys 一次性采集宿主真实键集
-    // ⇒ gOPN / hasOwn / gOPS 从保守域升为与原生对拍的精确面。
-    // 用户类原型若在 registerEvalClass 之前创建：按名表查不到 spec、也不在
-    // 宿主构造器表内 ⇒ 不挂槽位，消费侧 protoOwnKeysOf 回落按名表（保守）。
-    const ownStrings = protoBrandOwnStringKeys(`${ctorName}.prototype`);
-    const carried =
-      ownStrings !== undefined ? { strings: ownStrings } : hostProtoOwnKeys(ctorName);
-    if (carried !== undefined) {
-      a.facets = { ...(a.facets ?? {}), protoOwnKeys: carried };
-    }
-    if (isErrFamily) {
-      // Bug 321：name / message 同为**不可枚举**数据属性（原生描述符
-      // enumerable:false）——标记与 `constructor` 同挂**brand 自身**
-      // （枚举视图 isNonEnumerable 与 propertyIsEnumerable 的 flags 兜底
-      // 都读 brand 的表；挂内层会顶掉 propertyIsEnumerable 对
-      // `constructor` 的品牌级标记）。
-      setPropFlags(a, "name", { enumerable: false, writable: true, configurable: true });
-      setPropFlags(a, "message", { enumerable: false, writable: true, configurable: true });
-    }
+    a = makeProtoBrand(ctorName);
     protoBrandByName.set(ctorName, a);
   }
   return a;
+}
+
+/**
+ * BUG-188：类**规格身份** → 原型对象。`$class` 每次求值新建一份规格
+ * （随类值 / 实例携带，subst / 快照过户不丢），所以两个同名但不同绑定的
+ * 类各自命中自己的原型；同一绑定的两次 `.prototype` 读命中同一份。
+ *
+ * 原型 brand 同时挂上这份规格：`protoOfRecv` / `protoStepOf` 解析
+ * extends 链时按**规格身份**（superSpec）取父原型，不再裸名回表。
+ */
+export function protoBrandForSpec(spec: EvalClassSpec): Abs {
+  if (spec.name === "Object") return objectProtoBrand();
+  let a = protoBrandByIdentity.get(spec as object);
+  if (!a) {
+    a = makeProtoBrand(spec.name, spec);
+    protoBrandByIdentity.set(spec as object, a);
+  }
+  if (!protoBrandSpecs.has(a as object)) protoBrandSpecs.set(a as object, spec);
+  return a;
+}
+
+/** 原型 brand 的绑定规格（非类原型 brand → undefined）。 */
+export function protoBrandSpecOf(a: Abs | undefined): EvalClassSpec | undefined {
+  return a && typeof a === "object" ? protoBrandSpecs.get(a as object) : undefined;
 }
 
 /**
@@ -313,9 +382,11 @@ export function protoOfRecv(a: Abs): Abs {
     // 读出是宿主 fn 面——brand 折叠会与 fn 面 === 折错精确 false（原生
     // true），保守 unknown（抽象优于 wrong-exact）。
     if (classNameOfValue(a as object) !== undefined) {
-      const spec = getEvalClass(s.name);
+      const spec = classSpecOfAbs(a) ?? getEvalClass(s.name);
       const superName = (spec?.superName ?? BUILTIN_ERROR_SUPER[s.name]) || undefined;
       if (superName) {
+        // 类值的 [[Prototype]] 是**父构造器值**（不是父原型对象）——
+        // 按注册类值引用恒等（=== 折 exact）；找不回值才保守 unknown。
         return lookupClassValue(superName) ?? unknown;
       }
       // 基类值（含 extends null——[[Proto]] 仍 Function.prototype）
@@ -327,7 +398,9 @@ export function protoOfRecv(a: Abs): Abs {
     // 基类 → Object.prototype
     if (s.name.endsWith(".prototype")) {
       const owner = s.name.slice(0, -".prototype".length);
-      const spec = getEvalClass(owner);
+      // BUG-188：原型 brand 随身份携带规格——同名不同绑定的 prototype
+      // 对象各走自己的 extends 链（superSpec 是定义期解析的父规格身份）。
+      const spec = protoBrandSpecOf(a) ?? getEvalClass(owner);
       if (spec) {
         if (spec.superNull) return nullProtoLit;
         if (spec.superName) {
@@ -336,6 +409,7 @@ export function protoOfRecv(a: Abs): Abs {
           // 走既有 protoBrandAbs。
           const pcv = lookupClassValue(spec.superName);
           if (pcv && pcv.shape.k === "fn") return fnProtoOf(pcv);
+          if (spec.superSpec) return protoBrandForSpec(spec.superSpec);
           return protoBrandAbs(spec.superName);
         }
         return objectProtoBrand();
@@ -354,6 +428,13 @@ export function protoOfRecv(a: Abs): Abs {
       if (typedArrayElementOf(owner)) return protoBrandAbs(TYPED_ARRAY_PROTO_NAME);
       return objectProtoBrand();
     }
+    // BUG-188：实例的 [[Prototype]] 构造期已记录（类规格品牌 / fn 驻留
+    // prototype）——gPo / 写门 / instanceof 用同一身份，不再按名回表
+    // （同名不同绑定会拿到别人的原型）。
+    const recorded = getInstanceProto(a);
+    if (recorded !== undefined) return recorded;
+    const instSpec = classSpecOfAbs(a);
+    if (instSpec !== undefined) return protoBrandForSpec(instSpec);
     return protoBrandAbs(s.name);
   }
   if (s.k === "obj") {

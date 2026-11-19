@@ -21,6 +21,9 @@ import { absFunction, getFnImpl } from "../../abs-fn.ts";
 import { joinAbs, type ObjShape, type Slot, isNullProtoObj, getSlot, canonicalArrayIndex, propertyKeyOf, getProtoAbs, getInstanceProto } from "../../objects.ts";
 import { isNullishLitAbs } from "../../surface.ts";
 import { extStateOf, getPropFlags, isObjectProtoBrand, objectProtoBrand, protoOfRecv, hostBuiltinCtorName, protoBrandAbs } from "../../builtins.ts";
+// BUG-188：绑定级原型身份（类规格 → 原型 brand）直连 ctor 叶子，不经
+// barrel（本分片不改 algebra/builtins.ts 的导出面）。
+import { protoBrandForSpec, protoBrandSpecOf } from "../../builtins/ctor.ts";
 import { errorTypeAbs, recordMayThrow } from "../may-throw.ts";
 import { TYPED_ARRAY_ELEMENT } from "../../builtins/shared.ts";
 import { OBJECT_PROTO_NAMES, arrayProtoMemberForKey } from "../member-diag.ts";
@@ -35,7 +38,7 @@ import { symbolSlotKeyOf } from "./containers/symbol-slot.ts";
 // $in/$del/$delRes 全是运行期调用。
 import { guardedPrologueEntry } from "./containers/guarded-entry.ts";
 import { arrayLengthIsNonConfigurable } from "./array-length.ts";
-import { getEvalClass, lookupClassValue, BUILTIN_ERROR_SUPER, fnProtoOf, carryClassSpec, markKnownEmptyInstanceCtor, type EvalClassSpec } from "../class-registry.ts";
+import { getEvalClass, lookupClassValue, BUILTIN_ERROR_SUPER, fnProtoOf, isFnProtoAbs, carryClassSpec, markKnownEmptyInstanceCtor, classSpecOfAbs, type EvalClassSpec } from "../class-registry.ts";
 import { classNameOfValue, markClassValue } from "../../class-mark.ts";
 import { NudoThrow, noBody, throwStrictWrite, clearStaleTermPred, asAbsVal, $lit, litTruth, proxyTargetInnerObj } from "./state.ts";
 import { $objAccessor, lookupObjAccessor, accessorTable } from "../../accessors.ts";
@@ -49,7 +52,7 @@ import { deleteProtoMethod, bindCtorFacetOf } from "../class/declare.ts";
 // brand 静态表群已拆出到 ./brand-tables.ts（纯数据表 + 纯函数叶子，不反向
 // import 本文件）；下列 re-export 维持既有 import 面，消费方零改动。
 // brandHasProtoMember 依赖本文件的 evalClassChain/chainProtoSlotOf ⇒ 留守。
-import { BUILTIN_BRAND_ACCESSORS, BUILTIN_BRAND_METHODS, FUNCTION_PROTO_NAMES, PROMISE_PROTO_NAMES } from "./brand-tables.ts";
+import { BUILTIN_BRAND_ACCESSORS, BUILTIN_BRAND_METHODS, FUNCTION_PROTO_NAMES, PROMISE_PROTO_NAMES, ITERABLE_BRANDS } from "./brand-tables.ts";
 export {
   BUILTIN_BRAND_ACCESSORS,
   BUILTIN_BRAND_METHODS,
@@ -428,7 +431,20 @@ function inInner(key: Abs, o: Abs): Abs {
       return boolLit(OBJECT_PROTO_NAMES.has(keyStr) || FUNCTION_PROTO_NAMES.has(keyStr));
     }
     // class 实例：原型链上的方法/访问器/内建 brand 方法
-    if (o.shape.k === "brand" && brandHasProtoMember(o.shape.name, keyStr)) {
+    if (
+      o.shape.k === "brand" &&
+      brandHasProtoMember(o.shape.name, keyStr, classSpecOfAbs(o), getInstanceProto(o))
+    ) {
+      return boolLit(true);
+    }
+    // 内建可迭代 brand 的 @@iterator（**真符号键**才命中——字面量串键
+    // "@@iterator" 是另一个 PropertyKey，原生 `"@@iterator" in u8` false）
+    if (
+      o.shape.k === "brand" &&
+      keyStr === "@@iterator" &&
+      symSlotKey !== undefined &&
+      brandProtoHasIterator(o.shape.name)
+    ) {
       return boolLit(true);
     }
     if (objShape.open) return bool();
@@ -454,9 +470,17 @@ function inInner(key: Abs, o: Abs): Abs {
   return boolLit(OBJECT_PROTO_NAMES.has(keyStr));
 }
 
-export function brandHasProtoMember(brandName: string, key: string): boolean {
-  for (const name of evalClassChain(brandName)) {
-    const spec = getEvalClass(name);
+export function brandHasProtoMember(
+  brandName: string,
+  key: string,
+  startSpec?: EvalClassSpec,
+  startProto?: Abs,
+): boolean {
+  const links =
+    startSpec !== undefined && startSpec.name === brandName
+      ? classChainLinks(brandName, startSpec)
+      : evalClassChain(brandName).map((n) => ({ name: n, spec: getEvalClass(n) }));
+  for (const { name, spec } of links) {
     if (spec?.methods?.[key]) return true;
     if (spec?.accessors?.[key]) return true;
     const builtin = BUILTIN_BRAND_METHODS[name];
@@ -464,12 +488,35 @@ export function brandHasProtoMember(brandName: string, key: string): boolean {
     const builtinAcc = BUILTIN_BRAND_ACCESSORS[name];
     if (builtinAcc?.has(key)) return true;
   }
-  // Bug 113：原型链数据槽 presence（`A.prototype.x = 1` 落 protoBrandAbs
-  // memo 槽 / fn 伪父 fnProtoOf 槽 / 函数声明链 protoBrandAbs(n) 槽）——
-  // 值读（chainProtoSlotOf）已见而 in 判定此前忽略（`"zz" in new f()` 与
+  // Bug 113 / BUG-188：原型链数据槽 presence（`A.prototype.x = 1` 落该类
+  // **规格身份**的原型 brand memo 槽 / fn 伪父 fnProtoOf 槽）——值读
+  // （chainProtoSlotOf）已见而 in 判定此前忽略（`"zz" in new f()` 与
   // class 实例 `C.prototype.zz = 5; "zz" in new C()` 同折假精确 false）。
-  // constructor/__proto__ 由此处恒 miss（chainProtoSlotOf 专用分支排除）。
-  if (chainProtoSlotOf(brandName, key, 0) !== undefined) return true;
+  // className 相同的另一个绑定写了槽不得虚报 true（startSpec / startProto
+  // 提供接收者的绑定身份）。constructor/__proto__ 由此处恒 miss。
+  if (chainProtoSlotOf(brandName, key, 0, startSpec, startProto) !== undefined) return true;
+  return false;
+}
+
+/**
+ * 内建 brand 原型链上 `@@iterator` 的存在性（**单一事实源**：`$in` 与迭代
+ * 守卫 `iterabilityKind` 共用）。
+ *
+ * 原生规范固定：`ITERABLE_BRANDS`（Map / Set / URLSearchParams / TypedArray
+ * 家族）的原型确有 `Symbol.iterator`（值读面 `$get` 早已按同一张表折
+ * "function"）。此前 `$in` 只查内建**字符串键**方法表 / 迭代守卫只认
+ * String/Number/Boolean ⇒ 同一接收者的 `typeof u8[Symbol.iterator]` 说是
+ * 函数、`Symbol.iterator in u8` 却说缺席、spread 还记 may-throw TypeError。
+ *
+ * 同名用户类（`getEvalClass(name)` 命中）不套内建结论——原型面由用户类
+ * 自己决定。
+ */
+export function brandProtoHasIterator(brandName: string): boolean {
+  for (const name of evalClassChain(brandName)) {
+    if (!ITERABLE_BRANDS.has(name)) continue;
+    if (getEvalClass(name)) return false;
+    return true;
+  }
   return false;
 }
 
@@ -530,11 +577,18 @@ export function classChainLinks(
   ];
   const seen = new Set<string>([startSpec.name]);
   let cur: string | undefined = startSpec.superName;
+  let pendingSuper: EvalClassSpec | undefined = startSpec.superSpec;
   let depth = 0;
   while (cur && depth++ < 32 && !seen.has(cur)) {
     seen.add(cur);
-    const spec = getEvalClass(cur);
+    // BUG-172/188：父规格优先用定义期解析的 superSpec **引用**（同名父类
+    // 按身份，不串味）；无引用（内建父 / 手写面）才按名牌回表。
+    const spec =
+      pendingSuper !== undefined && pendingSuper.name === cur
+        ? pendingSuper
+        : getEvalClass(cur);
     out.push({ name: cur, spec });
+    pendingSuper = spec?.superSpec;
     cur = spec?.superName ?? BUILTIN_ERROR_SUPER[cur];
   }
   return out;
@@ -624,15 +678,40 @@ export function builtinSuperCtorOf(startName: string): { host: unknown; ns: stri
  * 在此列（专用分支）。未注册链名（洞）跳过——缺席折叠由调用方按
  * classChainHasHole 决定（洞 → 不可折缺席）。
  */
-export function chainProtoSlotOf(startName: string, key: string, fromLevel: number): Abs | undefined {
+export function chainProtoSlotOf(
+  startName: string,
+  key: string,
+  fromLevel: number,
+  startSpec?: EvalClassSpec,
+  startProto?: Abs,
+): Abs | undefined {
   if (key === "constructor" || key === "__proto__") return undefined;
-  const chain = evalClassChain(startName);
-  for (let i = fromLevel; i < chain.length; i++) {
-    const n = chain[i]!;
+  // BUG-188：第一层身份优先用**接收者记录的原型对象**（类规格品牌 /
+  // 宿主 fn 的驻留 prototype）——同名不同绑定的类各有自己的原型，按名
+  // 回表会读到别人的 `A.prototype.m` 写。记录缺失才落规格 / 名牌链。
+  if (fromLevel === 0 && startProto !== undefined) {
+    const sp = startProto.shape;
+    const inner = sp.k === "brand" ? sp.shape : sp.k === "obj" ? startProto : undefined;
+    if (inner && inner.shape.k === "obj") {
+      const slot = getSlot(inner.shape.slots, key);
+      if (slot && !slot.optional) return slot.value;
+    }
+    fromLevel = 1;
+  }
+  const links =
+    startSpec !== undefined && startName === startSpec.name
+      ? classChainLinks(startName, startSpec)
+      : evalClassChain(startName).map((n) => ({ name: n, spec: getEvalClass(n) }));
+  for (let i = fromLevel; i < links.length; i++) {
+    const { name: n, spec } = links[i]!;
     const cv = lookupClassValue(n);
     let protoInner: Abs | undefined;
     if (cv && cv.shape.k === "fn") {
       protoInner = fnProtoOf(cv); // fn 伪父：memo prototype 本体（闭 obj）
+    } else if (spec) {
+      // BUG-188：注册类按**规格身份**取原型（同名不同绑定各一份）。
+      const pb = protoBrandForSpec(spec).shape;
+      protoInner = pb.k === "brand" ? pb.shape : undefined;
     } else if (getEvalClass(n)) {
       const pb = protoBrandAbs(n).shape;
       protoInner = pb.k === "brand" ? pb.shape : undefined;
@@ -702,6 +781,21 @@ export function classChainHasHole(startName: string): boolean {
     return true;
   }
   return false;
+}
+
+/** 内建原型名（原型对象按名驻留——内建构造器进程内恒唯一，不需要
+ *  绑定级身份）。用户函数 / 类走 fnProtoOf / 规格品牌。 */
+const BUILTIN_PROTO_NAMES: ReadonlySet<string> = new Set([
+  "Array", "Object", "Function", "Date", "RegExp", "Error", "TypeError", "RangeError",
+  "ReferenceError", "SyntaxError", "URIError", "EvalError", "AggregateError",
+  "Map", "Set", "WeakMap", "WeakSet", "Promise", "String", "Number", "Boolean",
+  "Symbol", "BigInt", "ArrayBuffer", "SharedArrayBuffer", "DataView",
+  "URL", "URLSearchParams", "WeakRef", "FinalizationRegistry",
+  "Generator", "GeneratorFunction", "AsyncFunction", "AsyncGeneratorFunction",
+  ...Object.keys(TYPED_ARRAY_ELEMENT),
+]);
+export function isBuiltinProtoName(name: string): boolean {
+  return BUILTIN_PROTO_NAMES.has(name) || name.startsWith("Intl.");
 }
 
 /** 内建构造器名：对其 exact false / true 可判定；未知用户构造器名 → boolean */
@@ -927,29 +1021,44 @@ function fnPrototypeState(rv: Abs): "object" | "undefined" | "unknown" {
 function rhsPrototypeOf(
   rightName: string,
   rightVal?: Abs,
-): { proto: Abs; ctorName: string } | undefined {
+): { proto: Abs; ctorName: string; canonical: Abs } | undefined {
   if (rightVal === undefined) {
-    return { proto: protoBrandAbs(rightName), ctorName: rightName };
+    const p = protoBrandAbs(rightName);
+    return { proto: p, ctorName: rightName, canonical: p };
   }
   const rv = asAbsVal(rightVal);
   const sh = rv.shape;
   if (sh.k === "fn") {
     const nm = (sh as { name?: string }).name ?? rightName;
+    // BUG-188：fn 的原型身份按 **fn Abs** 驻留（fnProtoOf）——函数声明 /
+    // 表达式各绑定一份，不再按名共享。canonical 用于 instanceof 的
+    // 「原型被替换」判定（facade 的 prototype 槽优先）。
+    // 内建构造器的原型对象按名驻留（进程唯一）；用户函数（含转译的函数
+    // 声明 / 表达式）按 **fn Abs 身份**驻留——同名不同绑定各一份。
+    // 用户函数可遮蔽内建名（`function Array(){}`）：构造它时会注册同名
+    // 空 spec（内建构造器永不注册）⇒ 据此区分，不把用户绑定折成内建原型。
+    const canonical =
+      isBuiltinProtoName(nm) && getEvalClass(nm) === undefined
+        ? protoBrandAbs(nm)
+        : fnProtoOf(rv);
     if (sh.slots) {
       const slot = getSlot(sh.slots, "prototype");
-      if (slot) return { proto: slot.value, ctorName: nm };
+      if (slot) return { proto: slot.value, ctorName: nm, canonical };
     }
     // Bug 175：宿主 `.prototype` 是 undefined 的 fn 形状（箭头 / 方法 /
     // async / bind 产物 / Proxy）——不得合成 brand 原型（那是个**对象**，
     // Bug 205 的「prototype 非对象 ⇒ 定抛」门就永不触发）。返回 undefined
     // Abs ⇒ isDefinitelyNonObjectAbs 为真 ⇒ 门自然触发（与原生信息一致）。
     if (fnPrototypeState(rv) === "undefined") {
-      return { proto: $lit(undefined), ctorName: nm };
+      return { proto: $lit(undefined), ctorName: nm, canonical: protoBrandAbs(nm) };
     }
-    return { proto: protoBrandAbs(nm), ctorName: nm };
+    return { proto: canonical, ctorName: nm, canonical };
   }
   if (sh.k === "brand" && classNameOfValue(rv as object) !== undefined) {
-    return { proto: protoBrandAbs(rightName), ctorName: rightName };
+    // BUG-188：类值按**规格身份**取原型（同名不同绑定各一份）。
+    const spec = classSpecOfAbs(rv);
+    const p = spec ? protoBrandForSpec(spec) : protoBrandAbs(rightName);
+    return { proto: p, ctorName: rightName, canonical: p };
   }
   return undefined;
 }
@@ -999,7 +1108,7 @@ function closedObjRhsPrototype(rightName: string, rightVal: Abs | undefined): Ab
       const slot = getSlot(sh.slots, "prototype");
       if (slot) return slot.value;
     }
-    return protoBrandAbs(nm);
+    return isBuiltinProtoName(nm) ? protoBrandAbs(nm) : fnProtoOf(rv);
   }
   return undefined;
 }
@@ -1035,13 +1144,26 @@ function protoStepOf(cur: Abs): ProtoStep {
   const sh = cur.shape;
   if (sh.k === "brand" && sh.name.endsWith(".prototype")) {
     const owner = sh.name.slice(0, -".prototype".length);
-    if (getEvalClass(owner)?.superNull) return { kind: "end" };
+    // BUG-188：原型 brand 随身份携带规格 ⇒ 父原型按 superSpec 身份取
+    // （同名不同绑定的 extends 链不串味）；无规格才按名牌链兜底。
+    const spec = protoBrandSpecOf(cur) ?? getEvalClass(owner);
+    if (spec) {
+      if (spec.superNull) return { kind: "end" };
+      if (!spec.superName) return { kind: "next", proto: objectProtoBrand() };
+      if (spec.superSpec) return { kind: "next", proto: protoBrandForSpec(spec.superSpec) };
+      const pcv = lookupClassValue(spec.superName);
+      if (pcv && pcv.shape.k === "fn") return { kind: "next", proto: fnProtoOf(pcv) };
+      return { kind: "next", proto: protoBrandAbs(spec.superName) };
+    }
     const chain = evalProtoChain(sh.name);
     if (chain.length <= 1) return { kind: "next", proto: objectProtoBrand() };
     const pname = chain[1]!;
     const pbase = pname.endsWith(".prototype") ? pname.slice(0, -".prototype".length) : pname;
     return { kind: "next", proto: protoBrandAbs(pbase) };
   }
+  // fn 原型对象（fnProtoOf；函数声明 / 表达式 / 空体类表达式）——原生
+  // [[Prototype]] 恒 Object.prototype ⇒ 链可继续走一步。
+  if (isFnProtoAbs(cur)) return { kind: "next", proto: objectProtoBrand() };
   return { kind: "unknown" };
 }
 
@@ -1067,8 +1189,9 @@ function instanceofByProtoChain(left: Abs, rightName: string, rightVal?: Abs): A
   if (brandName.endsWith(".prototype")) return undefined;
   const rhs = rhsPrototypeOf(rightName, rightVal);
   if (rhs === undefined) return undefined;
-  const canonicalLhs = protoBrandAbs(brandName);
-  const canonicalRhs = protoBrandAbs(rhs.ctorName);
+  const lhsSpec = classSpecOfAbs(left);
+  const canonicalLhs = lhsSpec ? protoBrandForSpec(lhsSpec) : protoBrandAbs(brandName);
+  const canonicalRhs = rhs.canonical;
   const rec = getInstanceProto(left);
   const lhsChanged = rec !== undefined && rec !== canonicalLhs;
   const rhsChanged = rhs.proto !== canonicalRhs;

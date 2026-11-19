@@ -5,6 +5,7 @@ import { describe, it, expect, afterAll } from "vitest";
 import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { runCliTsx } from "./helpers/run-cli.ts";
 import { migrateStrip } from "../migrate.ts";
 
@@ -492,6 +493,135 @@ const TSX_SRC = `export function Comp(props: { name: string }) {\n  return <div 
     );
     expect((err as Error).message).toMatch(/Comp\.tsx/);
     expect((err as Error).message).toMatch(/no JSX transform/);
+  });
+
+});
+
+// ---------------------------------------------------------------------------
+// 产物必须可加载：解构默认值 / 类型专用再导出 / 包说明符提示
+// ---------------------------------------------------------------------------
+describe("产物必须可加载：解构默认值 / 类型专用再导出 / 包说明符提示", () => {
+/**
+ * BUG-219：`const { d = new Def() } = opts` 里的 `Def` 是值引用，但
+ * `collectValueReferences` 不访问 declarator 的 `id` ⇒ import 被 elide ⇒
+ * 产物加载成功、调用即 ReferenceError（且 notes 为空）。
+ *
+ * BUG-220：`export { Shape } from "./types.js"` 只作类型使用 ⇒ 保留被再
+ * 导出的空模块 ⇒ 链接期 SyntaxError；同文件的 import 却被正确 elide。
+ *
+ * BUG-182：包说明符的类型专用 import 保守保留（合规），但文档承诺的
+ * 「无法证明是值」提示结构性不可达 ⇒ 产物链接失败而 strip 零提示。
+ */
+
+const dirs: string[] = [];
+afterAll(() => {
+  for (const d of dirs) rmSync(d, { recursive: true, force: true });
+});
+
+/** 带 package.json 的新夹具目录 */
+function project(files: Record<string, string>): string {
+  const dir = mkdtempSync(join(tmpdir(), "nudo-strip-load-"));
+  dirs.push(dir);
+  writeFileSync(join(dir, "package.json"), '{ "type": "module" }\n', "utf-8");
+  for (const [name, content] of Object.entries(files)) {
+    mkdirSync(join(dir, name, ".."), { recursive: true });
+    writeFileSync(join(dir, name), content, "utf-8");
+  }
+  return dir;
+}
+
+  it("BUG-219 解构默认值引用本地 import ⇒ 保留 import，产物调用返回默认实例", async () => {
+    const dir = project({
+      "src/def.ts": `export class Def { kind = "def"; }\n`,
+      "src/main.ts": `import { Def } from "./def.js";
+export function pick(opts: { d?: Def }): Def {
+  const { d = new Def() } = opts;
+  return d;
+}
+`,
+    });
+    const results = await migrateStrip([join(dir, "src")], { write: true, draft: false });
+    const main = readFileSync(join(dir, "src", "main.js"), "utf-8");
+    expect(main).toContain(`import { Def } from "./def.js";`);
+    expect(results.find((r) => r.file.endsWith("main.ts"))?.notes).toEqual([]);
+    const mod = (await import(pathToFileURL(join(dir, "src", "main.js")).href)) as {
+      pick: (opts: Record<string, unknown>) => { kind: string };
+    };
+    expect(mod.pick({})).toEqual({ kind: "def" });
+  });
+
+  it("BUG-220 类型专用本地再导出 ⇒ 整条 elide，产物可加载", async () => {
+    const dir = project({
+      "src/types.ts": `export interface Shape { kind: string }\n`,
+      "src/main.ts": `import { Shape } from "./types.js";
+export { Shape } from "./types.js";
+export function area(s: Shape): number { return 1; }
+`,
+    });
+    await migrateStrip([join(dir, "src")], { write: true, draft: false });
+    const main = readFileSync(join(dir, "src", "main.js"), "utf-8");
+    expect(main).not.toContain("export { Shape }");
+    const mod = (await import(pathToFileURL(join(dir, "src", "main.js")).href)) as Record<
+      string,
+      unknown
+    >;
+    expect(Object.keys(mod)).toEqual(["area"]);
+  });
+
+  it("BUG-220 无本地 import 的 barrel 再导出 ⇒ 按源模块声明 elide（不再留下空模块再导出）", async () => {
+    const dir = project({
+      "src/types.ts": `export interface Shape { kind: string }\n`,
+      "src/index.ts": `export { Shape } from "./types.js";\n`,
+    });
+    await migrateStrip([join(dir, "src")], { write: true, draft: false });
+    expect(readFileSync(join(dir, "src", "index.js"), "utf-8")).not.toContain("export { Shape }");
+    // 空模块仍然可加载（改前：链接期 SyntaxError）
+    const mod = (await import(pathToFileURL(join(dir, "src", "index.js")).href)) as Record<
+      string,
+      unknown
+    >;
+    expect(Object.keys(mod)).toEqual([]);
+  });
+
+  it("BUG-220 类再导出：本文件只把它当类型用也不得删除（源模块声明是运行时值）", async () => {
+    const dir = project({
+      "src/types.ts": `export class Foo {}\n`,
+      "src/main.ts": `import { Foo } from "./types.js";
+export { Foo } from "./types.js";
+export function use(f: Foo): Foo { return f; }
+`,
+    });
+    await migrateStrip([join(dir, "src")], { write: true, draft: false });
+    expect(readFileSync(join(dir, "src", "main.js"), "utf-8")).toContain(
+      `export { Foo } from "./types.js";`,
+    );
+    const mod = (await import(pathToFileURL(join(dir, "src", "main.js")).href)) as Record<
+      string,
+      unknown
+    >;
+    expect(Object.keys(mod).sort()).toEqual(["Foo", "use"]);
+  });
+
+  it("BUG-182 包说明符的类型专用 import 保守保留 ⇒ 必须如实提示（本地对照无提示）", async () => {
+    const dir = project({
+      "src/main.ts": `import { Foo } from "typeonly-pkg";
+export function f(x: Foo): number { return x.a; }
+`,
+      "src/rel.ts": `import { Foo } from "./types.js";
+export function f(x: Foo): number { return x.a; }
+`,
+      "src/types.d.ts": `export interface Foo { a: number }\n`,
+    });
+    const results = await migrateStrip([join(dir, "src")], { write: true, draft: false });
+    const pkg = results.find((r) => r.file.endsWith("main.ts"));
+    const rel = results.find((r) => r.file.endsWith("rel.ts"));
+    expect(pkg?.notes.join("\n")).toContain("kept an import whose binding could not be proven type-only");
+    expect(pkg?.notes.join("\n")).toContain("package specifier");
+    // 保守保留本身不变（产物仍含包 import），但提示必须出现。
+    expect(readFileSync(join(dir, "src", "main.js"), "utf-8")).toContain(`import { Foo } from "typeonly-pkg";`);
+    // 本地对照：按 tsc 的 import elision 删除，且不产生「判不准」提示。
+    expect(rel?.notes).toEqual([]);
+    expect(readFileSync(join(dir, "src", "rel.js"), "utf-8")).not.toContain(`import { Foo }`);
   });
 
 });

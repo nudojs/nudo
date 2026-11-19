@@ -26,6 +26,8 @@ import { isSymbolAbs } from "../symbol.ts";
 import { str } from "../shared.ts";
 import { undefAbs } from "../../hof.ts";
 import { collectionIteratorAbs } from "./iterator.ts";
+import { $call } from "../../exec/call.ts";
+import { callAtFunctionBoundary } from "../../exec/runtime/state.ts";
 
 import { isNullishLit } from "./error-family.ts";
 import { noteBoxedCtorArg } from "./boxed.ts";
@@ -549,6 +551,27 @@ export function evalUrlSearchParamsMethod(
         recv,
         [...entries].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)),
       );
+      return undefAbs();
+    }
+    case "forEach": {
+      // Bug 204：原生 %URLSearchParams.prototype.forEach% 按**条目表**逐条
+      // `Call(callbackfn, thisArg, value, name, this)`——条目表已精确建模
+      //（entries/keys/for-of/get 同源），此前 switch 无该分支 ⇒ 回调从不
+      // 执行、副作用整段消失（累加结果折 exact []）。条目表不可知 ⇒ 保守
+      // unknown（回调可能改变外部状态，不得折「没执行」）。
+      if (entries === undefined) return unknown;
+      const cb = args[0];
+      const thisArg = args[1];
+      const invokeCb = (a: Abs[]): void => {
+        if (typeof cb === "function") {
+          callAtFunctionBoundary(() => {
+            Reflect.apply(cb as (...x: Abs[]) => unknown, thisArg as never, a);
+          });
+          return;
+        }
+        if (cb !== undefined) $call(cb, a, thisArg);
+      };
+      for (const [n, v] of entries) invokeCb([strLit(v), strLit(n), recv]);
       return undefAbs();
     }
     case "keys":

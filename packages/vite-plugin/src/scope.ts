@@ -86,7 +86,7 @@
  */
 import { lstatSync, readdirSync, realpathSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
-import { compileAnyMatcher, shouldAnalyzeFile } from "@nudojs/service";
+import { compileAnyMatcher, compilePattern, shouldAnalyzeFile } from "@nudojs/service";
 
 /**
  * 与 isNudoTargetPath 对齐：分析目标为 `.js` / `.mjs` / `.cjs` /
@@ -122,8 +122,46 @@ export type ScopeDecision = { skip: boolean; reason: string };
 
 type Matcher = (id: string) => boolean;
 
+/**
+ * 字面量模式的**路径形态**命中（白名单语义）：精确相等，或目录前缀。
+ *
+ * 与 `packages/service/src/glob.ts` 的 `literalPathHit` 同一语义、
+ * `analysis-scope.ts` 的 `includeHit` 同一口径：白名单是「要分析哪些文件」，
+ * 字面量模式表示**这个文件 / 这个目录**，不做子串搜索——子串会把
+ * `src-other/x.js` 一并放进 `include: ["src"]` 的白名单（黑名单语义倒灌，
+ * 见 BUG-187）。
+ *
+ * ⚠ 这里是 glob.ts 那份实现的镜像：`@nudojs/service` 的包入口尚未导出
+ * `compileIncludeMatcher`（导出面不在本次修复范围），故在插件侧按同一
+ * 判据实现；两处语义必须同改。
+ */
+function literalPathHit(pattern: string, path: string): boolean {
+  const pat = pattern.replace(/\\/g, "/").replace(/^\.\//, "");
+  const p = path.replace(/\\/g, "/");
+  if (p === pat) return true;
+  return p.startsWith(pat.endsWith("/") ? pat : `${pat}/`);
+}
+
+/**
+ * include（白名单）匹配器：通配符 → 共享 glob 编译器（与 exclude 同编译器、
+ * 同锚定语义）；无通配符 → **路径形态**（`literalPathHit`）。
+ *
+ * 此前 include 走 `compileAnyMatcher`（对无通配符模式 = **子串**），而同一模式
+ * 写进 `package.json#nudo.analysis.include` 时服务闸门走路径形态 ⇒ 构建期与
+ * LSP / watch 对同一文件结论相反（BUG-187）。
+ */
+function compileIncludeMatcher(patterns: string[] | string): Matcher {
+  const list = Array.isArray(patterns) ? patterns : [patterns];
+  const matchers = list.map((pattern): Matcher => {
+    const pat = pattern.replace(/\\/g, "/").replace(/^\.\//, "");
+    if (/[*?]/.test(pat)) return compilePattern(pat);
+    return (id) => literalPathHit(pat, id);
+  });
+  return (id) => matchers.some((match) => match(id));
+}
+
 /** include / exclude 匹配器（模块级；由 `configureScope` 编译一次后持有）。 */
-let includeMatch: Matcher = compileAnyMatcher(DEFAULT_INCLUDE);
+let includeMatch: Matcher = compileIncludeMatcher(DEFAULT_INCLUDE);
 let excludeMatch: Matcher = compileAnyMatcher(DEFAULT_EXCLUDE);
 
 /**
@@ -148,7 +186,7 @@ export function configureScope(options: ScopeOptions): void {
   let compiled = compiledCache.get(key);
   if (!compiled) {
     compiled = {
-      include: compileAnyMatcher(options.include ?? DEFAULT_INCLUDE),
+      include: compileIncludeMatcher(options.include ?? DEFAULT_INCLUDE),
       exclude: compileAnyMatcher(options.exclude ?? DEFAULT_EXCLUDE),
     };
     compiledCache.set(key, compiled);

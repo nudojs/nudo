@@ -1414,6 +1414,7 @@
       "absShapeForTsTypeText",
       "absStrLit",
       "absTemplateViews",
+      "absTypeForTsTypeText",
       "allAbsStr",
       "allFixedTextOfViews",
       "anyMemberResult",

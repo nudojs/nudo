@@ -26,7 +26,7 @@ import {
   type NudoConstraint,
 } from "@nudojs/core";
 import { wrapPromise } from "@nudojs/core/internal";
-import { domainEvidenceCases } from "@nudojs/service/emit";
+import { domainEvidenceCases, widenObservedLiterals } from "@nudojs/service/emit";
 import { tryEvalCall, type CaseResult, type FunctionAnalysis } from "@nudojs/service";
 import { evidencePathOf } from "./selection.ts";
 
@@ -128,9 +128,32 @@ function formalList(fn: FunctionAnalysis): FormalParam[] {
 
 /** 观测面同槽证据：域证据 case 的 argAbs join（无证据 = undefined）。 */
 function observedSlotAbs(cases: readonly CaseResult[], index: number): Abs | undefined {
-  const parts = cases.map((c) => c.argAbs[index]).filter((a): a is Abs => !!a);
+  const parts = cases
+    .map((c) => {
+      const a = c.argAbs[index];
+      if (!a) return undefined;
+      return isObservationCase(c) ? widenObservedLiterals(a) : a;
+    })
+    .filter((a): a is Abs => !!a);
   if (parts.length === 0) return undefined;
   return parts.reduce((a, b) => joinAbs(a, b));
+}
+
+/**
+ * 该 case 是**观测**（call@ / entry@ / 无断言指令见证）还是**域声明**
+ * （带 `=> expected` 的 `@nudo:case`）。
+ *
+ * 观测是「一次采样的快照」，发布成输入 / 输出域必须拓宽到基类型（否则
+ * 单点观测让校验器拒收函数自己的合法输入与输出）；带断言指令是用户申报
+ * 的域，保持精确（BUG-213 / BUG-511）。
+ */
+function isObservationCase(c: CaseResult): boolean {
+  return !(c.source === "directive" && c.expected !== undefined);
+}
+
+/** 全部 case 都是观测（没有断言指令）⇒ 观测返回 Abs 可按域拓宽。 */
+function observationOnlyCases(cases: readonly CaseResult[]): boolean {
+  return cases.length > 0 && cases.every(isObservationCase);
 }
 
 /**
@@ -162,14 +185,16 @@ function observedRestAbs(cases: readonly CaseResult[], restIndex: number): Abs |
   for (const c of cases) {
     const first = c.argAbs[restIndex];
     if (!first) continue;
+    const observed = isObservationCase(c);
     if (isEntryWitness(c) && first.shape.k === "arr") {
-      elements.push(first.shape.element);
+      const el = first.shape.element;
+      elements.push(observed ? widenObservedLiterals(el) : el);
       restConf ??= first.conf;
       continue;
     }
     for (let i = restIndex; i < c.argAbs.length; i++) {
       const a = c.argAbs[i];
-      if (a) elements.push(a);
+      if (a) elements.push(observed ? widenObservedLiterals(a) : a);
     }
   }
   if (elements.length === 0) return undefined;
@@ -403,11 +428,17 @@ export function unifiedReturnFace(
   ctx?: FaceContext,
 ): Abs | undefined {
   const observed = observedReturnFace(fn, caseResults);
+  // BUG-213：纯观测返回面（call@/entry@ 采样）不是函数域 ⇒ 发布前拓宽到
+  // 基类型。带断言的 @nudo:case 是域声明，保持精确。
+  const observedDomain =
+    observed !== undefined && observationOnlyCases(caseResults)
+      ? widenObservedLiterals(observed)
+      : observed;
   const contractReturn = contractReturnFace(eff);
   // 证据路径选择：契约返回面存在 ⇒ 走契约面（否则走观测面）
   if (evidencePathOf(contractReturn !== undefined) === "contract" && contractReturn !== undefined) {
     // 违约复核：实现不满足契约 ⇒ 不投影契约（回落实现实际返回）
-    if (contractViolated(fn, eff, observed, ctx)) return observed;
+    if (contractViolated(fn, eff, observed, ctx)) return observedDomain;
     // promise 保形：契约描述的是 await 后的值
     if (isPromiseAbs(observed)) return wrapPromise(contractReturn);
     return contractReturn;
@@ -417,7 +448,7 @@ export function unifiedReturnFace(
     const seeded = seedDomainReturn(fn, eff, ctx);
     if (seeded !== undefined) return seeded;
   }
-  return observed;
+  return observedDomain;
 }
 
 /**

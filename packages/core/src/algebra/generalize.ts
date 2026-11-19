@@ -27,8 +27,8 @@ import { pTrue, predToString, and } from "./pred.ts";
 import type { Abs, Shape } from "./abs.ts";
 import { abs, never, unknown, bigintLit, boolLit, isAbsLike, numLit, strLit } from "./abs.ts";
 import { absFunction } from "./abs-fn.ts";
-import { joinAbs, markKeySetOpenAbs } from "./objects.ts";
-import { leqAbs } from "./leq.ts";
+import { joinAbs, markEntryDomainAbs, markKeySetOpenAbs } from "./objects.ts";
+import { leqAbs, mayBeUndefinedAbs } from "./leq.ts";
 import type { AstEnv } from "./ast-env.ts";
 import { emptyEnv } from "./ast-env.ts";
 import { bindImports, type AbsModuleExports } from "./abs-modules.ts";
@@ -55,7 +55,7 @@ import {
 import { DependencyMemo } from "./key/memo-store.ts";
 import { loadModuleId, moduleMapId } from "./key/memo-identity.ts";
 import { instanceForMethodBridge } from "./bridge-instance.ts";
-import { snapshotAbs, type RelSource, type HofSite } from "./hof.ts";
+import { snapshotAbs, undefAbs, type RelSource, type HofSite } from "./hof.ts";
 import { currentEvalRoundEpoch } from "./collector-scope.ts";
 import { scanPromotions } from "./promote-scan.ts";
 import { tryRunTranspiled, callTranspiledExportFull, runTranspiledOptionsMemoKey, noteEvalFallback, type RunTranspiledOptions } from "./exec/run.ts";
@@ -66,7 +66,7 @@ import { $invoke, $staticInvoke } from "./exec/class.ts";
 import { isNudoThrow } from "./exec/nudo-throw.ts";
 import { makeSymbolicRestAbs } from "./exec/runtime/containers.ts";
 import { resolveExportSlotCall } from "./contract/export-slot.ts";
-import { absShapeForTsTypeText } from "./contract/ts-type-shape.ts";
+import { absShapeForTsTypeText, absTypeForTsTypeText } from "./contract/ts-type-shape.ts";
 
 /**
  * generalize 的 evaluator 模块执行缓存（按 source；run 不依赖实参）。
@@ -278,7 +278,42 @@ function markOpenObjSlots(a: Abs): Abs {
  * 标记只落在**本次新建的 Abs** 上：共享 Shape 可能被缓存 / 复用，不得污染。
  */
 function annotationAbsOf(shape: Shape | undefined, term?: Term): Abs {
-  return markOpenObjSlots(abs(shape ?? { k: "any" }, term, pTrue, "path"));
+  return markEntryDomainAbs(markOpenObjSlots(abs(shape ?? { k: "any" }, term, pTrue, "path")));
+}
+
+/**
+ * 声明类型**文本** → 入口 Abs（不可映射 / 无注解 ⇒ any）。
+ *
+ * 与 {@link annotationAbsOf} 的差别只在输入侧：这里直接吃 Abs 级映射
+ * （`absTypeForTsTypeText`），因此 `null` / `undefined` / `void` 的字面量
+ * 精度（lit term）能带进入口域——`x: string | null` 不再因为一个可空成员
+ * 整条退 any（否则 check / `--json` / LSP 报 any，而同一份产物的 dts 形参位
+ * 仍印 `string | null`）。
+ */
+function annotationAbsForText(text: string | undefined, term?: Term): Abs {
+  const mapped = absTypeForTsTypeText(text);
+  if (!mapped) return abs({ k: "any" }, term, pTrue, "path");
+  return markEntryDomainAbs(
+    markOpenObjSlots(abs(mapped.shape, mapped.term ?? term, pTrue, "path")),
+  );
+}
+
+/**
+ * 可选形参（TS `x?: T` / JSDoc `[x]`）的入口域并上 `undefined`。
+ *
+ * 省略实参时该绑定值就是 `undefined`（原生 `g()` 后 `x.toFixed()` 定抛），
+ * 入口域不含它 ⇒ 签名自信发布「总函数」，而同一文件里 `g()` 的调用点已被
+ * 折成 `never throws TypeError`（同进程两面互相打脸）。
+ *
+ * 只并 `kind === "id"` 的可选位：默认形参省略时取**默认值**（不是
+ * undefined），rest 形参恒是数组——两者都不含 undefined 臂。
+ */
+function withOptionalUndefined(a: Abs, f: FormalParam | undefined): Abs {
+  if (f?.optional !== true || f.kind !== "id") return a;
+  if (mayBeUndefinedAbs(a)) return a;
+  // join 造新 Abs（不继承 prop-flags）⇒ 入口域标记必须重打；`x?: T` 的
+  // undefined 臂正是 BUG-208 要进 throws 域的那一臂。
+  return markEntryDomainAbs(joinAbs(a, undefAbs()));
 }
 
 /**
@@ -300,10 +335,12 @@ function annotationAbsOf(shape: Shape | undefined, term?: Term): Abs {
 export function ctorParamAbsArgs(
   fileAst: ReturnType<typeof babelParse>,
   clsName: string,
+  /** 源码文本（TS 的 `v?: T` 标记在剥除 AST 里看不到，只能从源文本判定） */
+  source?: string,
 ): Abs[] {
-  return ctorFormalsOf(fileAst, clsName).map((f) => {
-    const shape = absShapeForTsTypeText(f.tsType);
-    return annotationAbsOf(shape);
+  return ctorFormalsOf(fileAst, clsName, source).map((f) => {
+    const abs = annotationAbsForText(f.tsType);
+    return withOptionalUndefined(abs, f);
   });
 }
 
@@ -353,8 +390,9 @@ function ctorParamNodesOf(
 function ctorFormalsOf(
   fileAst: ReturnType<typeof babelParse>,
   clsName: string,
+  source?: string,
 ): FormalParam[] {
-  return formalParamsFromNodes(ctorParamNodesOf(fileAst, clsName) as never);
+  return formalParamsFromNodes(ctorParamNodesOf(fileAst, clsName) as never, source);
 }
 
 /**
@@ -516,14 +554,13 @@ function classEntryPolyFn(
   const clsAbs = raw as Abs;
   // 类值 = brand + `ctor: true` facet（实例 brand 无此 facet）
   if (clsAbs.shape.k !== "brand" || clsAbs.shape.ctor !== true) return undefined;
-  const formals = ctorFormalsOf(fileAst, fnName);
+  const formals = ctorFormalsOf(fileAst, fnName, source);
   const params = formals.length > 0 ? formalParamSignatureNames(formals) : [];
   const typeParams: TypeParam[] = formals.map((f, i) => {
     // 构造器形参的 TS 声明类型（无注解 ⇒ 无约束 any，与普通入口同口径）
-    const shape = absShapeForTsTypeText(f.tsType);
     return {
       id: `A${i + 1}`,
-      value: annotationAbsOf(shape),
+      value: withOptionalUndefined(annotationAbsForText(f.tsType), f),
     };
   });
   return {
@@ -940,7 +977,9 @@ export function extractFn(
       if (d.type === "Identifier" && typeof d.name === "string") defaultLocalName = d.name;
     }
     if (decl.type === "FunctionDeclaration" && decl.id) {
-      const formals = formalParamsFromNodes(decl.params as never);
+      // source 必须传：`x?: T` 的 `?` 在剥除 AST 里已被删掉，只能从源文本判
+      // （不传 ⇒ optional 恒 false ⇒ 可选形参的入口域不含 undefined）。
+      const formals = formalParamsFromNodes(decl.params as never, source);
       env.fns.set(decl.id.name, {
         params: formalParamDisplayNames(formals),
         // Bug 399：逐位「可省略」标记（默认形参 / `?` / rest）——必选元数
@@ -1003,7 +1042,7 @@ export function extractFn(
         if (!keyName) continue;
         if (mem.static === true && instanceKeys.has(keyName)) continue;
         const fullName = `${cname}.${keyName}`;
-        const formals = formalParamsFromNodes((mem.params ?? []) as never);
+        const formals = formalParamsFromNodes((mem.params ?? []) as never, source);
         env.fns.set(fullName, {
           params: formalParamDisplayNames(formals),
           // Bug 399：逐位「可省略」标记（默认形参 / `?` / rest）——必选元数
@@ -1031,7 +1070,13 @@ export function extractFn(
             body: Node;
             async?: boolean;
           };
-          const formals = formalParamsFromNodes(init.params as never);
+          let formals = formalParamsFromNodes(init.params as never, source);
+          // 形参自己没有注解时，按 TS 的**上下文类型**（声明器上的类型注解）
+          // 补齐域——`const cb: Fn = (a) => a.toFixed()` 的 a 是 number。
+          if (formals.some((f) => f.tsType === undefined)) {
+            const ctx = contextualParamTypesOf(source, d.id.name);
+            if (ctx) formals = applyContextualParamTypes(formals, ctx);
+          }
           env.fns.set(d.id.name, {
             params: formalParamDisplayNames(formals),
             // Bug 399：逐位「可省略」标记（默认形参 / `?` / rest）——必选元数
@@ -1057,7 +1102,7 @@ export function extractFn(
         body: Node;
         async?: boolean;
       };
-      const formals = formalParamsFromNodes(init.params as never);
+      const formals = formalParamsFromNodes(init.params as never, source);
       env.fns.set("default", {
         params: formalParamDisplayNames(formals),
         // Bug 399：逐位「可省略」标记（默认形参 / `?` / rest）——必选元数
@@ -1094,7 +1139,7 @@ export function extractFn(
     if (node.type !== "FunctionExpression" && node.type !== "ArrowFunctionExpression" && node.type !== "ObjectMethod" && node.type !== "ClassMethod" && node.type !== "FunctionDeclaration") {
       return;
     }
-    const formals = formalParamsFromNodes((node.params ?? []) as never);
+    const formals = formalParamsFromNodes((node.params ?? []) as never, source);
     env.fns.set(key, {
       params: formalParamDisplayNames(formals),
       // Bug 399：逐位「可省略」标记（默认形参 / `?` / rest）——必选元数
@@ -1369,7 +1414,7 @@ export function extractFn(
     // （按源级 ∨ 函数体自身指令序言）。
     const isClassMethod =
       n.type === "ClassMethod" || n.type === "ClassPrivateMethod";
-    const formals = formalParamsFromNodes((n.params ?? []) as never);
+    const formals = formalParamsFromNodes((n.params ?? []) as never, source);
     env.fns.set(scope.name, {
       params: formalParamDisplayNames(formals),
       // Bug 399：逐位「可省略」标记（默认形参 / `?` / rest）——必选元数
@@ -1616,6 +1661,105 @@ function keepTsAstOf(source: string): ReturnType<typeof babelParse> {
 /** `this: T` 注解原文 memo（源 + 函数名；有界）——dts 面每个入口查一次。 */
 const thisReceiverTypeTextMemo = new Map<string, string | undefined>();
 const THIS_RECEIVER_TYPE_TEXT_MEMO_MAX = 64;
+
+/**
+ * 箭头 / 函数表达式形参的**上下文类型**（TS contextual typing）。
+ *
+ * `export const cb: Fn = (a, b) => {…}` 的形参自己没有注解，类型来自赋值目标
+ * 的类型注解（`Fn` 别名或内联函数类型）。TS 语义下 `a` 就是 number ⇒ 分析面
+ * 必须同口径：否则 `a.toFixed(2)` 落「any 上的方法调用」记 may-throw
+ * （`nudo:entry-may-throw` 假红），而同一文件里写了形参注解的等价函数
+ * （`function cbExplicit(a: number, b: string)`) 却正确。
+ *
+ * 只在**剥除 AST 看不到注解**（形参自己没 tsType）时问一次；解析不出
+ * （别名在别的模块 / 泛型函数类型 / 重载 / 非函数类型）⇒ undefined（不猜）。
+ */
+function contextualParamTypesOf(
+  source: string,
+  fnName: string,
+): Array<{ tsType?: string; optional?: boolean }> | undefined {
+  // 便宜的预筛：只有 `const/let/var <name>: <Type> = …` 才可能有上下文类型。
+  // 命中才付 keepTs 解析（按源有界 memo）——绝大多数入口不命中。
+  const escaped = fnName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  if (!new RegExp(`\\b(?:const|let|var)\\s+${escaped}\\s*:`).test(source)) return undefined;
+  const ast = keepTsAstOf(source);
+  /**
+   * 类型注解节点 → **函数类型**节点。只认内联 `TSFunctionType` 与同文件内
+   * 非泛型类型别名（可链式展开）：泛型别名 / 交叉 / 条件 / 导入别名都不展开
+   * ——展开要替换类型参数，猜错会把错误的域钉进入口（宁可回落 any）。
+   */
+  const fnTypeOf = (node: TsTypeNode | undefined, depth = 0): TsTypeNode | undefined => {
+    if (!node || depth > 4) return undefined;
+    if (node.type === "TSFunctionType") return node;
+    if (node.type === "TSParenthesizedType") return fnTypeOf(node.typeAnnotation, depth + 1);
+    // 有类型实参（`Fn<number>`）⇒ 形参位上是类型参数，不能当具体类型文本用
+    if (node.type !== "TSTypeReference" || node.typeName?.type !== "Identifier" || node.typeParameters) {
+      return undefined;
+    }
+    const aliasName = node.typeName.name;
+    if (!aliasName) return undefined;
+    for (const stmt of ast.program.body as unknown[]) {
+      const s = stmt as { type?: string; declaration?: unknown };
+      const d = (s.declaration ?? stmt) as TsTypeNode & { id?: { name?: string } };
+      if (d.type !== "TSTypeAliasDeclaration" || d.id?.name !== aliasName) continue;
+      // 泛型别名的形参类型引用了类型参数 ⇒ 同上面一样不展开
+      if (d.typeParameters) return undefined;
+      return fnTypeOf(d.typeAnnotation, depth + 1);
+    }
+    return undefined;
+  };
+  for (const stmt of ast.program.body as unknown[]) {
+    const s = stmt as { type?: string; declaration?: unknown };
+    const decl = (s.declaration ?? stmt) as {
+      type?: string;
+      declarations?: Array<{ id?: TsTypeNode & { name?: string }; init?: { type?: string } }>;
+    };
+    if (decl.type !== "VariableDeclaration") continue;
+    for (const d of decl.declarations ?? []) {
+      if (d.id?.type !== "Identifier" || d.id.name !== fnName) continue;
+      const initType = d.init?.type;
+      if (initType !== "ArrowFunctionExpression" && initType !== "FunctionExpression") continue;
+      const fnType = fnTypeOf(d.id.typeAnnotation?.typeAnnotation);
+      if (!fnType) return undefined;
+      // Babel 7 的 TSFunctionType 用 `params`（`parameters` 是 Babel 8 的名字）
+      return (fnType.params ?? fnType.parameters ?? []).map((p) => {
+        const t = p.typeAnnotation?.typeAnnotation;
+        const tsType =
+          typeof t?.start === "number" && typeof t?.end === "number" ? source.slice(t.start, t.end) : undefined;
+        return { ...(tsType !== undefined ? { tsType } : {}), ...(p.optional === true ? { optional: true } : {}) };
+      });
+    }
+  }
+  return undefined;
+}
+
+/** Babel TS 类型节点的最小面（只读 start/end 与展开别名所需字段）。 */
+type TsTypeNode = {
+  type?: string;
+  start?: number;
+  end?: number;
+  typeAnnotation?: TsTypeNode;
+  typeName?: { type?: string; name?: string };
+  typeParameters?: unknown;
+  params?: TsTypeNode[];
+  parameters?: TsTypeNode[];
+  optional?: boolean;
+};
+
+/**
+ * 用上下文类型补齐形参表里**没有自己注解**的位（逐位按下标对齐；TS 的
+ * contextual typing 就是逐位的）。已有注解的位不动（自注解优先于上下文）。
+ */
+function applyContextualParamTypes(
+  formals: readonly FormalParam[],
+  ctx: ReadonlyArray<{ tsType?: string; optional?: boolean }>,
+): FormalParam[] {
+  return formals.map((f, i) => {
+    const c = ctx[i];
+    if (!c?.tsType || f.tsType !== undefined) return f;
+    return { ...f, tsType: c.tsType, ...(c.optional === true ? { optional: true } : {}) };
+  });
+}
 
 /**
  * BUG-133：TS `this: T` 接收者注解 → 入口求值接收者 Abs。
@@ -1883,12 +2027,14 @@ function generalizeFromAstUncached(
     // 合法 TypeScript 上产生 nudo:entry-may-throw 假红）。
     // 无注解 / 不可映射的类型（别名、泛型实例化、交叉 / 条件类型…）⇒ 仍是
     // any（不猜）；对象字面量按**开放对象**映射（结构类型不封闭值域），
-    // 可选 / rest 元组降级为元素域数组（长度可变）。
-    const shape = absShapeForTsTypeText(formals[i]?.tsType);
+    // nullish 折 nullish 字面量 Abs，可选形参并入 undefined（省略即 undefined）。
     return {
       id: `${label}${i + 1}`,
       // 无约束参数 = any（任意 JS 值），不是 unknown（分析无信息）
-      value: annotationAbsOf(shape, termVar(`${label}${i + 1}`)),
+      value: withOptionalUndefined(
+        annotationAbsForText(formals[i]?.tsType, termVar(`${label}${i + 1}`)),
+        formals[i],
+      ),
     };
   });
 
@@ -2699,6 +2845,10 @@ export function buildArgsFromAssume(
     // 非 assume 形参的 TS 注解（`x: number`）本来就是入口域，不得一律
     // 播种成 `any`（那会让同一函数在 `check` 与 `check --abs` 两个面
     // 给出互斥的类型）。无注解 / 不可映射才回 any（不猜）。
-    return annotationAbsOf(absShapeForTsTypeText(extracted.formals[i]?.tsType), termVar(p));
+    // 与入口签名同一条域构造（nullish 精度 + 可选形参的 undefined 臂）。
+    return withOptionalUndefined(
+      annotationAbsForText(extracted.formals[i]?.tsType, termVar(p)),
+      extracted.formals[i],
+    );
   });
 }

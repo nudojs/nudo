@@ -1328,3 +1328,35 @@ export function markKeySetOpenAbs(o: Abs): Abs {
 export function keySetIncompleteAbs(o: Abs): boolean {
   return getPropFlags(o)?.has(KEY_SET_OPEN_MARK) === true;
 }
+
+// ---------------------------------------------------------------------------
+// 入口声明域标记（入口 Abs → 「这个 union 的 nullish 臂是**调用方可达**的
+// 声明域」）
+//
+// BUG-208：`x?: T` / `x: T | undefined` 的入口域含 undefined 臂 ⇒ 未守卫的
+// 成员调用（`x.toFixed()`）原生定抛，必须进 L2 throws 域；而**派生的槽读**
+// （`m[1].trim()` / `node.name.trim()`）的 undefined 臂是守卫事实的原料
+// （issue #136：调用求值到达 ⇒ 接收者非 nullish，两臂影子重绑后收窄），
+// 不得凭空记入口 may-throw。两者在 Abs 层同形（prim ∪ lit undefined），
+// 差别只在「这个域是不是入口声明给的」⇒ 在入口构造点打标（generalize 的
+// annotationAbsForText / withOptionalUndefined），union 派发据此分流。
+// 标记位与判定单一事实源放本叶子模块（键集标记同款 prop-flags 侧表）。
+// ---------------------------------------------------------------------------
+
+/** 「入口声明域」标记位（prop flags 侧表键——不进槽表，对枚举面零副作用） */
+const ENTRY_DOMAIN_MARK = "@@nudoEntryDomain";
+
+/** 标记入口声明域 Abs（union 派发的 nullish 臂据此记 may-throw） */
+export function markEntryDomainAbs(o: Abs): Abs {
+  setPropFlags(o, ENTRY_DOMAIN_MARK, {
+    writable: false,
+    enumerable: false,
+    configurable: false,
+  });
+  return o;
+}
+
+/** 该 Abs 是否来自入口声明域（形参 / 构造器形参 / `--abs` 实参） */
+export function isEntryDomainAbs(o: Abs | undefined): boolean {
+  return !!o && getPropFlags(o)?.has(ENTRY_DOMAIN_MARK) === true;
+}

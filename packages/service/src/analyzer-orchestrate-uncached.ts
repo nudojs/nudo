@@ -33,6 +33,8 @@ import {
   suggestedDepthCeiling,
   suggestedForkCeiling,
   semanticIndexEntryFaceSegment,
+  hashSource,
+  stableAnalyzeKeySource,
 } from "@nudojs/core/internal";
 import {
   parse,
@@ -105,6 +107,7 @@ import {
   shiftSourceLoc,
   shiftDiagnosticLines,
   shiftCallRecordLines,
+  externalRecordsFingerprint,
 } from "./analyzer-cache.ts";
 import {
   attachHofSnapshot,
@@ -135,6 +138,22 @@ import {
 function isPointObservationArgs(args: Abs[]): boolean {
   return args.length > 0 && args.every((a) => a.term?.op === "lit");
 }
+
+/**
+ * 逐函数缓存快照的待写项。
+ *
+ * 快照点必须在 entry@/call@ 合成**之后**（BUG-184）：合成会就地往
+ * `analysis.cases` / `combinedAbs` 里写见证，合成前落盘的快照一旦命中就会让
+ * 该函数本轮不参与合成 ⇒ 见证整段消失，且同一进程内同一调用结果取决于此前
+ * 跑过什么（LSP 长驻进程必然踩到）。
+ */
+type PendingFnCacheWrite = {
+  key: string;
+  analysis: FunctionAnalysis;
+  diagnostics: Diagnostic[];
+  caseHints: CaseHint[];
+  callRecords: CallRecord[];
+};
 
 /**
  * B 模块加载问题 kind → 诊断码/定档（单一查表；原为 kind→code 与
@@ -576,6 +595,33 @@ export function analyzeFileUncachedInner(
   // 函数级 throws 证据只补给导出函数（非导出函数没有入口面）。
   const exportedFnNames = localNamedExports(source, filePath);
 
+  // 合成阶段（entry@/call@）会就地改 analysis ⇒ 逐函数快照必须等它跑完再写，
+  // 否则命中回放的是一份**没有合成见证**的半成品（BUG-184：LSP 里先跑一次
+  // codeLens 就把后续 nudo/contract 的见证降级成 unknown）。
+  const pendingFnWrites: PendingFnCacheWrite[] = [];
+  const pendingFnWritesByAnalysis = new Map<FunctionAnalysis, PendingFnCacheWrite>();
+  // 整份源码指纹（懒算：只有参与合成的函数才需要它进键）
+  let synthScopeKeyMemo: string | undefined;
+  const synthScopeKey = (): string => {
+    if (synthScopeKeyMemo === undefined) synthScopeKeyMemo = hashSource(stableAnalyzeKeySource(source));
+    return synthScopeKeyMemo;
+  };
+  // 「选中了哪条 case」也进合成类函数的键：被选中的 case 会执行该函数体，
+  // 其内部调用点进共享记录表 ⇒ 影响**其它**函数的合成见证。
+  const activeCasesSeg =
+    activeCases && activeCases.size > 0
+      ? `ac=${[...activeCases.entries()]
+          .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+          .map(([k, v]) => `${k}=${v}`)
+          .join(",")}`
+      : "";
+  // 自定义 loadModule（LSP buffer-aware）≠ 默认磁盘加载器（与文件级键的 lm 段同口径）
+  const lmSeg = loadModule !== undefined && loadModule !== defaultLoadModule ? "lm1" : "lm0";
+  const extSeg =
+    externalCallRecords && externalCallRecords.length > 0
+      ? `x=${externalRecordsFingerprint(externalCallRecords)}`
+      : "";
+
   for (const fn of functions) {
     const skipDirective = fn.directives.find((d) => d.kind === "skip");
 
@@ -634,23 +680,45 @@ export function analyzeFileUncachedInner(
     // evaluating *other* functions — own/deps fingerprints cannot see those
     // call sites, so caching a synthesis result under own/deps would be
     // unsound (sibling body-edit that changes a call to this fn would miss
-    // the fingerprint). Case-directive results are self-contained.
+    // the fingerprint). BUG-184：参与合成的函数**可以**缓存，但键必须把
+    // 「整文件状态」一起编进去（见下方 synthEligible 的 w= / ac= 段），且
+    // 快照点必须在合成**之后**——否则命中回放的是一份没有 entry@/call@ 的
+    // 半成品，LSP 长驻进程里一次 codeLens（caseMode=all）就把后续
+    // nudo/contract / nudo/test / nudo/check 的见证永久降级。
     const fp = fnFpMap?.get(fn.name);
     // analysis 配置维度进 fn 键：evalMissingSlot / budget 等变更必须 miss
     // （整文件键已含，fn 键不加会陈旧命中 C0.5 诊断；maxForks 截断同理）
     const analysisFnKey = `m=${analysisCfg.mode}|e=${analysisCfg.evalMissingSlot}|b=${analysisCfg.callSiteBudget}|f=${analysisCfg.maxForks}`;
     // --both-paths（`nudo test` 教学对比面）：对**带 @nudo:case 的函数**也走
     // 合成路径——directive case 与 call@/entry@ 同轮同报（默认互斥见
-    // limitations §3.2.1）。须在 fnCacheKey **之前**算：both-paths 命中的函数
-    // 整体停用函数级缓存——合成结果来自**全文件**调用记录（own/deps 指纹看不
-    // 见 ⇒ 本就不可缓存，见下方 fnCacheKey 注释），且缓存快照点在合成**之前**
-    // ⇒ 命中会丢合成见证。pointWitnessOnly 的 domainOnly 语义不动（点观测 ⇒
-    // 入口兜底仍只作推断域）。
+    // limitations §3.2.1）。pointWitnessOnly 的 domainOnly 语义不动（点观测
+    // ⇒ 入口兜底仍只作推断域）。
     const bothPathsFn =
       caseDirectives.length > 0 &&
       caseIdxsToRun.length > 0 &&
       (alsoSynthesizeCases === true ||
         (Array.isArray(alsoSynthesizeCases) && alsoSynthesizeCases.includes(fn.name)));
+    // Bug 511：无断言的 case 指令是**见证**，不是调用域声明 ⇒ 点观测形态仍走
+    // entry@/call@ 合成（域由推断面给出）。此判据决定本函数是否进 synthCandidates
+    // ——必须在 fnCacheKey **之前**算完，键里要按「是否参与合成」补齐维度。
+    const hasAssertedCase = caseIdxsToRun.some((i) => caseDirectives[i]?.expected !== undefined);
+    const hasDomainShapedCase = caseIdxsToRun.some(
+      (i) => !isPointObservationArgs(caseDirectives[i]?.argsAbs ?? []),
+    );
+    const pointWitnessOnly =
+      caseIdxsToRun.length > 0 &&
+      !hasAssertedCase &&
+      !hasDomainShapedCase &&
+      extractDeclaredThrows(source, fn.name) === undefined;
+    // skip 函数不走合成（域由声明面接管，#176）
+    const synthEligible = !skipped && (caseIdxsToRun.length === 0 || pointWitnessOnly || bothPathsFn);
+    // 合成见证的输入是**整文件**调用记录：兄弟函数体里改一个调用点，本函数的
+    // entry@/call@ 就变了，而 own/deps 指纹看不见。⇒ 参与合成的函数额外把
+    // 整份源码指纹（w=）与「选中 case 表」（ac=，选中的函数体会执行 ⇒ 它内部的
+    // 调用点进共享记录表）编进键，命中才等价于「同一份分析再跑一遍」。
+    const scopeSeg = synthEligible
+      ? [`w=${synthScopeKey()}`, activeCasesSeg].filter((s) => s.length > 0).join("\0")
+      : "";
     const fnCacheKey =
       !fnDepFailClosed && fp && caseDirectives.length > 0 && !bothPathsFn
         ? [
@@ -666,7 +734,17 @@ export function analyzeFileUncachedInner(
             `cm=${caseMode}`,
             // ADR 0001 切片 3：索引面 / 旧面两档互不回放（文件级键同纪律）。
             `face=${semanticIndexEntryFaceSegment()}`,
-          ].join("\0")
+            // 自定义 loadModule（LSP buffer-aware）与默认磁盘加载器产出的分析
+            // 不同 ⇒ 两档互不回放（与文件级键的 lm 段同口径：本段此前只有文件级
+            // 键有，逐函数快照会被另一个加载器复用）。
+            lmSeg,
+            // 外部调用点记录（`--from` 现场）：已固化函数的二次 freeze 从它合成
+            // 新见证（synthesizeFrozenCallSiteCases）⇒ 内容变更必须 miss。
+            extSeg,
+            scopeSeg,
+          ]
+            .filter((s) => s.length > 0)
+            .join("\0")
         : undefined;
     const dLen0 = diagnostics.length;
     const hLen0 = caseHints.length;
@@ -711,25 +789,11 @@ export function analyzeFileUncachedInner(
     // 无 case，或本轮不求值 case（none / selected 未命中）→ entry@ 出签名；
     // skip 函数不走合成/entry@ 兜底——推断面由声明面接管（#176）
     //
-    // Bug 511：无断言的 case 指令是**见证**（"这次调用没抛、返回了这个"），不是
-    // 调用域声明。一个**点观测**（实参全是字面量 ⇒ 返回值也只是那个点）不能独占
-    // 返回面——否则 `nudo test --freeze` 把外部调用点写回源码后，导出面会塌缩成
-    // 那个单点字面量（zod 面 z.literal(3) / guard 面 data === 3）：守卫只接受 3，
-    // 把合法调用判非法，且 check 面（number | string）与 export 面（3）口径漂移。
-    // ⇒ 这类函数仍走 entry@/call@ 合成（域由推断面给出）；见证留在 case 台账里。
-    // 域形状的观测（实参是约束构建器 ⇒ 返回值本身就是域）与**带断言**的 case
-    // 都是域声明 ⇒ 不进合成路径（面由它们给出，与既有口径一致）。
-    const hasAssertedCase = caseIdxsToRun.some((i) => caseDirectives[i]?.expected !== undefined);
-    const hasDomainShapedCase = caseIdxsToRun.some(
-      (i) => !isPointObservationArgs(caseDirectives[i]?.argsAbs ?? []),
-    );
-    const pointWitnessOnly =
-      caseIdxsToRun.length > 0 &&
-      !hasAssertedCase &&
-      !hasDomainShapedCase &&
-      extractDeclaredThrows(source, fn.name) === undefined;
+    // Bug 511（见 fnCacheKey 前的 pointWitnessOnly 判据）：点观测形态的
+    // @nudo:case 是见证而非域声明 ⇒ 仍走 entry@/call@ 合成；域形状的观测与
+    // **带断言**的 case 都是域声明 ⇒ 不进合成路径（面由它们给出）。
     // --both-paths：见上方 fnCacheKey 前的 bothPathsFn（教学对比面接线）。
-    if (!skipped && (caseIdxsToRun.length === 0 || pointWitnessOnly || bothPathsFn)) {
+    if (synthEligible) {
       // pointWitnessOnly：入口兜底**只为产出推断域**（见证不得独占返回面）——
       // 其 entry@ 见证不进 case 台账，入口求值带出的调用点证据也不并入共享
       // 台账（见 SynthCandidate.domainOnly）。
@@ -787,13 +851,19 @@ export function analyzeFileUncachedInner(
     // hof 泛型快照是推断面产物（dts 泛型投影源）——skip 函数不采集
     if (!skipped) attachHofSnapshot(analysis, source);
 
+    // 快照**延后到合成之后**落盘（BUG-184）：entry@/call@ 合成会就地改
+    // analysis.cases / combinedAbs，且它发生在函数循环之后的合成阶段 ⇒ 此处
+    // 只登记待写项，合成循环结束时统一 flush（见下方 flushFnCacheWrites）。
     if (fnCacheKey) {
-      fnAnalysisCacheSet(fnCacheKey, {
-        analysis: cloneFunctionAnalysis(analysis),
+      const pending: PendingFnCacheWrite = {
+        key: fnCacheKey,
+        analysis,
         diagnostics: diagnostics.slice(dLen0),
         caseHints: caseHints.slice(hLen0),
         callRecords: callRecords.slice(cLen0),
-      });
+      };
+      pendingFnWrites.push(pending);
+      pendingFnWritesByAnalysis.set(analysis, pending);
     }
 
     functionResults.push(analysis);
@@ -911,6 +981,11 @@ export function analyzeFileUncachedInner(
   }
 
   for (const candidate of synthCandidates) {
+    // 本 candidate 在共享通道上的起点：合成产物要按这个切出来并入它自己的
+    // 逐函数快照（各 candidate 的合成段在数组里连续）。
+    const dStart = diagnostics.length;
+    const hStart = caseHints.length;
+    const cStart = callRecords.length;
     // 调用点来源有两路：本文件求值中观察到的调用，以及外部注入的
     // （使用现场文件——如测试——对本文导出函数的真实调用，CLI 经
     // --from 收集后传入）。带 targetModule 的记录先判归属：只有
@@ -990,12 +1065,39 @@ export function analyzeFileUncachedInner(
       if (exportedFnNames.has(candidate.name)) {
         evaluateThrowsOnly(caseEnv, candidate);
       }
-      continue;
+    } else {
+      // entry@ 兜底评估（含 may-throw 聚合与 entry-only 诊断）→ cases 文件
+      evaluateEntryCase(caseEnv, candidate);
     }
-
-    // entry@ 兜底评估（含 may-throw 聚合与 entry-only 诊断）→ cases 文件
-    evaluateEntryCase(caseEnv, candidate);
+    // 合成产物（见证 / 诊断 / 提示 / 调用点记录）并进该函数的待写快照——
+    // 快照点必须在合成之后，否则命中会丢掉刚合成出来的见证（BUG-184）。
+    const pendingWrite = pendingFnWritesByAnalysis.get(candidate.analysis);
+    if (pendingWrite) {
+      pendingWrite.diagnostics.push(...diagnostics.slice(dStart));
+      pendingWrite.caseHints.push(...caseHints.slice(hStart));
+      pendingWrite.callRecords.push(...callRecords.slice(cStart));
+    }
   }
+
+  // 逐函数快照统一落盘（合成之后）。cloneFunctionAnalysis 在**此刻**取，
+  // analysis.cases / combinedAbs 已含 entry@/call@ 合成产物。
+  //
+  // 诊断必须在**此刻**与共享通道对账：`settleEntryOnlyCandidates` 在调用点
+  // 证据出现后会 `splice` 掉该函数的 `nudo:contract-entry-only`（早期快照
+  // 里的副本不会随之消失）⇒ 直接存副本会让下一次命中回放一条已被撤销的
+  // info（同一调用在 1st 与 3rd 结果不同）。按对象身份求交 = 只保留**仍在**
+  // 最终诊断里的条目；合成期间新推入的条目同样在这个集合里。
+  const liveDiagnostics = new Set(diagnostics);
+  for (const p of pendingFnWrites) {
+    fnAnalysisCacheSet(p.key, {
+      analysis: cloneFunctionAnalysis(p.analysis),
+      diagnostics: p.diagnostics.filter((d) => liveDiagnostics.has(d)),
+      caseHints: p.caseHints,
+      callRecords: p.callRecords,
+    });
+  }
+  pendingFnWrites.length = 0;
+  pendingFnWritesByAnalysis.clear();
 
   if (!evalHosted) {
     buildNodeTypeMap(ast, globalEnv, nodeAbsMap);

@@ -71,6 +71,10 @@ import {
   type ScanLiteralCallsOptions,
 } from "./literal-args.ts";
 import { checkReqs, checkShapeReqs } from "./literal-shapes.ts";
+import {
+  applyPropertyDescriptor,
+  applyPropertyDescriptorVerdict,
+} from "../builtins/object/descriptor.ts";
 
 /** 静态实参求值辅助（历史对外形状：`scan.ts` re-export 保持不变） */
 export { absUnknown };
@@ -484,6 +488,70 @@ export function scanLiteralCalls(
     t === "ClassMethod" ||
     t === "ForOfStatement" ||
     t === "ForInStatement";
+
+  /**
+   * BUG-203：`Object.defineProperty(o, "k", { get(){…} })` /
+   * `Reflect.defineProperty` 的**静态重放**。
+   *
+   * 运行时把描述符装进 target 的**新 Abs**（访问器侧表也按新身份注册）；
+   * 函数体内的调用点只走这条 AST 静态走查 ⇒ 不重放时绑定仍是安装前的
+   * 对象（`const o = {}` ⇒ `{}`）⇒ `shape({ a: number() })` 把 getter 实参
+   * 判成 `missing field`（假红），而同一函数体的求值面读 getter 得 1
+   * （两个观察面互相打脸）。
+   *
+   * 只认静态可判形态：局部对象绑定 + 字符串字面量键 + 描述符字面量。
+   * 不可判 / 安装失败 ⇒ 该绑定置「无信息」（fail-closed：后续调用点跳过
+   * 执法，不得沿用安装前的旧值）。
+   */
+  const applyDefinePropertyStatement = (
+    expr: Record<string, unknown> | undefined,
+    chain: ScopeChain,
+  ): void => {
+    if (!expr || expr.type !== "CallExpression") return;
+    const callee = expr.callee as Record<string, unknown> | undefined;
+    if (!callee || callee.type !== "MemberExpression" || callee.computed === true) return;
+    const owner = callee.object as Record<string, unknown> | undefined;
+    const prop = callee.property as Record<string, unknown> | undefined;
+    if (owner?.type !== "Identifier" || (owner.name !== "Object" && owner.name !== "Reflect")) {
+      return;
+    }
+    if (prop?.type !== "Identifier" || prop.name !== "defineProperty") return;
+    const args = (expr.arguments as Array<Record<string, unknown> | null> | undefined) ?? [];
+    const targetNode = args[0];
+    const keyNode = args[1];
+    const descNode = args[2];
+    if (targetNode?.type !== "Identifier" || typeof targetNode.name !== "string") return;
+    if (keyNode?.type !== "StringLiteral" || typeof keyNode.value !== "string" || !descNode) {
+      return;
+    }
+    // 最近作用域的绑定（模块级 varAbs 不在 localBindings ⇒ 不就地改）
+    let bucket: Map<string, Abs> | undefined;
+    let current: Abs | undefined;
+    for (let i = 0; i < chain.length; i++) {
+      const b = localBindings.get(chain[i]!);
+      if (b?.has(targetNode.name)) {
+        bucket = b;
+        current = b.get(targetNode.name);
+        break;
+      }
+    }
+    if (!bucket || !current || current.shape.k !== "obj") return;
+    const parsed = parseCallArgs(scopedCtx(chain), [descNode]).absArgs[0];
+    if (!parsed) return;
+    try {
+      if (owner.name === "Reflect") {
+        const r = applyPropertyDescriptorVerdict(current, keyNode.value, parsed);
+        bucket.set(targetNode.name, r.ok ? r.next : current);
+      } else {
+        bucket.set(targetNode.name, applyPropertyDescriptor(current, keyNode.value, parsed));
+      }
+      return;
+    } catch {
+      // 描述符非法 / 重定义失败：原生该语句抛 ⇒ 后续语句不可达。静态面不
+      // 建模控制流，只把绑定降成无信息，避免用安装前的旧值继续执法。
+    }
+    bucket.set(targetNode.name, absUnknown());
+  };
 
   const checkOneCall = (
     fnName: string,
@@ -1042,6 +1110,13 @@ function indirectCallOf(
       localBindings.set(sid, bucket);
     }
     const ownBucket = bucket;
+    // BUG-203：安装语句先于后续调用点可见（顺序走查 = 语句顺序）
+    if (obj.type === "ExpressionStatement") {
+      applyDefinePropertyStatement(
+        obj.expression as Record<string, unknown> | undefined,
+        chain,
+      );
+    }
     if (obj.type === "VariableDeclaration") {
       const probe = scopedCtx(chain);
       const isConst = obj.kind === "const";

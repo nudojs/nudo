@@ -1198,3 +1198,84 @@ function fixture(): string {
   });
 
 });
+
+// ---------------------------------------------------------------------------
+// verify --with-tsc 的成员判定：不在 tsconfig 项目里的文件不得报绿
+// ---------------------------------------------------------------------------
+describe("verify --with-tsc 的成员判定：不在 tsconfig 项目里的文件不得报绿", () => {
+/**
+ * BUG-183：`tscBaselineForFile` 把 `run.ran`（`tsc -p` 进程 exit 0）当
+ * 「本文件干净」⇒ 被 `exclude` 掉的文件从未进入编译，却拿到 `tsc: ok`
+ * （`--json` 同样 `{"ok": true, "output": ""}`）⇒ 迁移审计假绿。
+ *
+ * 期望：成员事实来自 tsc 自己的 `--listFilesOnly`（与 `-p` 同一解析路径）；
+ * 项目外文件 `tsc.ok=false` + 原因。对照：删掉 exclude ⇒ 同一文件拿到真实的
+ * TS2322（证明不是「一律判红」）。
+ */
+
+const dirs: string[] = [];
+afterAll(() => {
+  for (const d of dirs) rmSync(d, { recursive: true, force: true });
+});
+
+type Row = { file: string; tsc?: { ok: boolean; output: string } };
+
+/** include src、可选 exclude src/legacy 的项目（放在 repo tmp/ 下 ⇒ pnpm exec 能解析 tsc） */
+function coverageProject(excludeLegacy: boolean): string {
+  mkdirSync(join(repoRoot, "tmp"), { recursive: true });
+  const dir = mkdtempSync(join(repoRoot, "tmp", "nudo-verify-cover-"));
+  dirs.push(dir);
+  mkdirSync(join(dir, "src", "legacy"), { recursive: true });
+  writeFileSync(
+    join(dir, "tsconfig.json"),
+    JSON.stringify({
+      compilerOptions: {
+        strict: true,
+        noEmit: true,
+        target: "ES2022",
+        module: "NodeNext",
+        moduleResolution: "NodeNext",
+      },
+      include: ["src"],
+      ...(excludeLegacy ? { exclude: ["src/legacy"] } : {}),
+    }),
+    "utf-8",
+  );
+  writeFileSync(join(dir, "src", "ok.ts"), "export const a: number = 1;\n", "utf-8");
+  writeFileSync(
+    join(dir, "src", "legacy", "old.ts"),
+    "export const b: string = 42;\n",
+    "utf-8",
+  );
+  return dir;
+}
+
+  it("BUG-183 被 exclude 的文件 ⇒ tsc.ok=false + not covered；项目内干净文件仍 ok", { timeout: 300_000 }, () => {
+    const dir = coverageProject(true);
+    const r = runCliTsx(["migrate", "verify", "--with-tsc", join(dir, "src"), "--json"]);
+    const rows = JSON.parse(r.stdout) as Row[];
+    const legacy = rows.find((x) => x.file.endsWith("old.ts"));
+    const ok = rows.find((x) => x.file.endsWith("ok.ts"));
+    expect(legacy).toBeDefined();
+    expect(ok).toBeDefined();
+    expect(legacy!.tsc).toBeDefined();
+    expect(legacy!.tsc!.ok).toBe(false);
+    expect(legacy!.tsc!.output).toContain("not covered by the tsc project");
+    expect(ok!.tsc).toBeDefined();
+    expect(ok!.tsc!.ok).toBe(true);
+    expect(ok!.tsc!.output).toBe("");
+  });
+
+  it("对照：删掉 exclude ⇒ 同一文件拿到真实 TS2322（不是一律判红）", { timeout: 300_000 }, () => {
+    const dir = coverageProject(false);
+    const r = runCliTsx(["migrate", "verify", "--with-tsc", join(dir, "src"), "--json"]);
+    const rows = JSON.parse(r.stdout) as Row[];
+    const legacy = rows.find((x) => x.file.endsWith("old.ts"));
+    expect(legacy).toBeDefined();
+    expect(legacy!.tsc).toBeDefined();
+    expect(legacy!.tsc!.ok).toBe(false);
+    expect(legacy!.tsc!.output).toContain("TS2322");
+    expect(legacy!.tsc!.output).not.toContain("not covered");
+  });
+
+});

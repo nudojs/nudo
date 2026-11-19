@@ -2505,3 +2505,17 @@ describe("单份契约内部矛盾要报 conflict", () => {
 
 }
 });
+
+describe("JSON.parse 抽象文本的 may-throw 口径", () => {
+  it("BUG-227 抽象 string 实参记 SyntaxError，入口不再折成恒 ok", () => {
+    const r = checkSource(
+      "/t/b227.js",
+      `export function parseNoCatch(s: string): unknown { return JSON.parse(s); }`,
+      pTrue,
+    );
+    const l2 = r.issues.filter((i) => i.code === "nudo:entry-may-throw");
+    expect(l2).toHaveLength(1);
+    expect(l2[0]!.message).toContain("SyntaxError");
+    expect(r.signatures.find((s) => s.name === "parseNoCatch")?.display).toContain("throws SyntaxError");
+  });
+});

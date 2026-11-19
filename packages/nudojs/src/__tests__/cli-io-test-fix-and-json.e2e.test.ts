@@ -979,12 +979,17 @@ afterAll(() => {
   for (const d of dirs) rmSync(d, { recursive: true, force: true });
 });
 
-/** 夹具：返回 bigint 的函数（lit bigint 不可投影 ⇒ 有 dropped 记录）。 */
+/** 夹具：finite() 谓词不可投影 ⇒ 有 dropped 记录（与 BUG-181 同源）。 */
 function fixture(): string {
   const dir = mkdtempSync(join(tmpdir(), "nudo-bug-1050-"));
   dirs.push(dir);
-  const file = join(dir, "bigint.js");
-  writeFileSync(file, "export function retBigInt() { return 1n; }\n", "utf-8");
+  const file = join(dir, "finite.js");
+  writeFileSync(file, "export function retFinite() { return 5; }\n", "utf-8");
+  writeFileSync(
+    join(dir, "finite.nudo.js"),
+    `import { fn, number } from "@nudojs/core";\nexport const retFinite = fn({}, number().finite());\n`,
+    "utf-8",
+  );
   return file;
 }
 
@@ -1002,7 +1007,7 @@ function count(text: string, pattern: RegExp): number {
     expect(r.stdout).toContain("// dropped preds (not projected into standard):");
     expect(r.stdout).not.toContain("not projected into zod");
     // 内容仍在（有损投影的披露通道不能丢）
-    expect(r.stdout).toContain("retBigInt");
+    expect(r.stdout).toContain("retFinite");
     expect(r.stdout).toContain("not projected");
   }
   {
