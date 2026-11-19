@@ -49,8 +49,8 @@
     "registry": "https://registry.npmjs.org"
   },
   "dependencies": {
-    "@babel/traverse": "^8.1.0",
-    "@babel/types": "^8.1.0",
+    "@babel/traverse": "^8.1.2",
+    "@babel/types": "^8.1.2",
     "@nudojs/core": "workspace:*",
     "@nudojs/parser": "workspace:*",
     "@nudojs/service": "workspace:*",

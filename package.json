@@ -48,9 +48,9 @@
     "ci:publish": "node scripts/ci-publish.mjs"
   },
   "devDependencies": {
-    "@babel/parser": "^8.1.0",
-    "@babel/traverse": "^8.1.0",
-    "@babel/types": "^8.1.0",
+    "@babel/parser": "^8.1.2",
+    "@babel/traverse": "^8.1.2",
+    "@babel/types": "^8.1.2",
     "@types/lodash": "^4.17.27",
     "@types/node": "^26.6.6",
     "@vitest/coverage-v8": "^5.1.0",
