@@ -655,7 +655,7 @@ createEnvironment(parent?, bindings?)
 | <a id="projectflatmapresult"></a>`projectFlatMapResult` | fn | flatMap 统一结果：展开后的元素 join 成 arr(γ)。 | `projectFlatMapResult( arrConf: Confidence, mapped: Abs[], ): Abs` |
 | <a id="propertykeyof"></a>`propertyKeyOf` | fn | ES ToPropertyKey 的折叠：null→"null"、undefined→"undefined"、 true/false→"true"/"false"、number/bigint/string → String(v)（ToString）。 | `propertyKeyOf(a: Abs \| undefined): string \| undefined` |
 | <a id="propflags"></a>`PropFlags` | type | — | `PropFlags = { writable?: boolean; enumerable?: boolean; configurable?: boolean; }` |
-| <a id="protobrandabs"></a>`protoBrandAbs` | fn | — | `protoBrandAbs(ctorName: string): Abs` |
+| <a id="protobrandabs"></a>`protoBrandAbs` | fn | — | `protoBrandAbs(ctorName: string, identity?: object): Abs` |
 | <a id="protoofrecv"></a>`protoOfRecv` | fn | Object.getPrototypeOf 的具体原型投影（constructor 链可解）。 | `protoOfRecv(a: Abs): Abs` |
 | <a id="ptrue"></a>`pTrue` | const | — | `const pTrue` |
 | <a id="ptypeof"></a>`ptypeof` | const | — | `const ptypeof` |
