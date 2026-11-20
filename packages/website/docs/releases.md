@@ -11,193 +11,180 @@ This page keeps each package’s **current** notes only. Full history: [Full rel
 
 | Package | Current version |
 |----------|-----------------|
-| `@nudojs/core` | 1.20.2 |
-| `@nudojs/service` | 1.12.4 |
-| `nudojs (CLI)` | 1.9.4 |
-| `@nudojs/parser` | 1.5.12 |
-| `@nudojs/lsp` | 1.10.4 |
-| `@nudojs/env` | 0.5.12 |
-| `@nudojs/harvester` | 0.6.4 |
-| `vite-plugin-nudo` | 0.7.5 |
-| `nudo-vscode` | 0.3.60 |
+| `@nudojs/core` | 1.20.3 |
+| `@nudojs/service` | 1.12.5 |
+| `nudojs (CLI)` | 1.9.5 |
+| `@nudojs/parser` | 1.5.13 |
+| `@nudojs/lsp` | 1.10.5 |
+| `@nudojs/env` | 0.5.13 |
+| `@nudojs/harvester` | 0.6.5 |
+| `vite-plugin-nudo` | 0.7.6 |
+| `nudo-vscode` | 0.3.61 |
 
 **Jump to package:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
 
-## @nudojs/core 1.20.2 {#pkg-core}
+## @nudojs/core 1.20.3 {#pkg-core}
 
-## 1.20.2
-
-### Patch Changes
-
-- cf4a389: Close the BUG-142..173 review batch: one judgment per fact across the evaluator, contract faces, migration commands, and IDE surface.
-  
-  **Evaluation** — user `@@toPrimitive` / `toString` / `valueOf` hooks are now executed once and their results feed `+ - * /`, relational compares, unary operators, templates, `String()` and `String.prototype.concat` instead of being discarded (BUG-142); conditional mutations inside `for..of` / array HOF callbacks are written back to the live receiver across `$copy` fork arms (BUG-161); `new Date()` carries a valid-time facet so `toISOString()` / `toJSON()` no longer report a false `RangeError` (BUG-154); constructor and host-global `new` paths distinguish non-constructors and expose host prototype members (BUG-151 / BUG-168); `JSON.stringify` handles unions of serializable values (BUG-148).
-  
-  **Contracts and check** — nested `number()` / `string()` gates reject definite non-primitives, nested `array(...)` requires an array (BUG-150 / BUG-152); `@generated` parameter names that no longer match formals are reported as drift (BUG-147); directive `any()` parses as `any`, and `unknown` serializes as `unknown` (BUG-162); JSDoc optional parameters survive nested type braces (BUG-163); unknown `nudo` / `nudo.check` keys warn, and `nudo init` writes the adoption baseline for typo'd configs (BUG-165); recursion-truncated suggestions emit actionable `adjust` actions (BUG-171), and `@nudo:budget depth` is capped at the host-stack safety ceiling (192) with unsafe quickfixes suppressed (BUG-172).
-  
-  **Dts / export** — default-export class methods resolve their export slot (BUG-153); class-method parameter annotations are carried through abstract methods and rest parameters (BUG-166 / BUG-173); object-literal member annotations and class return annotations are honored (BUG-156 / BUG-157); `declare global` blocks are mirrored (BUG-167); `contract --from-dts` preserves rest element types (BUG-146); contract emit/draft fall back to symbolic signatures when runtime witnesses are widened or partial (BUG-159); contract sidecar refresh is idempotent (BUG-169) and test freeze converges in one run (BUG-170).
-  
-  **TS syntax / migration** — namespace declaration merging, `export =`, constructor parameter properties, and `$`-prefixed operator hygiene are preserved through strip/transpile (BUG-149 / BUG-155 / BUG-160 / BUG-164); `migrate retire` judges each `tsc` invocation separately, and `migrate status` resolves subdirectory targets to their owning package (BUG-143 / BUG-145).
-  
-  **LSP** — `textDocument/signatureHelp` also handles `new K(...)` (BUG-144).
-  
-  Compatibility: the `@nudojs/core/exec` surface gains `$syncLive`; `CheckAction.kind` gains `adjust`; `check --abs` now seeds TS parameter annotations; `contract --emit` may add contracts for arithmetic return values that were previously skipped as not-projectable. These are additive or stricter-correctness changes, not breaking API removals.
-
-Older versions (63) → [Full release history](./releases-history.md#pkg-core)
-
-## @nudojs/service 1.12.4 {#pkg-service}
-
-## 1.12.4
+## 1.20.3
 
 ### Patch Changes
 
-- cf4a389: Close the BUG-142..173 review batch: one judgment per fact across the evaluator, contract faces, migration commands, and IDE surface.
+- b888b76: Close the BUG-174..238 audit batch: one judgment per fact across the evaluator, projection faces, migration tools, and reporting surfaces.
   
-  **Evaluation** — user `@@toPrimitive` / `toString` / `valueOf` hooks are now executed once and their results feed `+ - * /`, relational compares, unary operators, templates, `String()` and `String.prototype.concat` instead of being discarded (BUG-142); conditional mutations inside `for..of` / array HOF callbacks are written back to the live receiver across `$copy` fork arms (BUG-161); `new Date()` carries a valid-time facet so `toISOString()` / `toJSON()` no longer report a false `RangeError` (BUG-154); constructor and host-global `new` paths distinguish non-constructors and expose host prototype members (BUG-151 / BUG-168); `JSON.stringify` handles unions of serializable values (BUG-148).
+  **Evaluation and domains** — rest tuples keep their fixed prefix instead of collapsing to a single array element type; TS `null` / `undefined` / `void` annotations map to terms instead of degrading the whole annotation to `any`; optional parameters (`x?: T`) enter the entry domain with `undefined`; arrow parameters inherit contextual function types; `Object.prototype.toString` covers union / any / unknown receivers; computed array keys consult `Array.prototype`; `Object.assign` propagates the open-key-set marker; Proxy `ownKeys` honours trap-only and non-enumerable keys; `Map` / `Set` `forEach` forwards `thisArg`; `URLSearchParams.forEach` runs its callback; reflector symbol keys stay symbols; sparse-array descriptors skip holes and honour `enumerable`; typed arrays expose `@@iterator`.
   
-  **Contracts and check** — nested `number()` / `string()` gates reject definite non-primitives, nested `array(...)` requires an array (BUG-150 / BUG-152); `@generated` parameter names that no longer match formals are reported as drift (BUG-147); directive `any()` parses as `any`, and `unknown` serializes as `unknown` (BUG-162); JSDoc optional parameters survive nested type braces (BUG-163); unknown `nudo` / `nudo.check` keys warn, and `nudo init` writes the adoption baseline for typo'd configs (BUG-165); recursion-truncated suggestions emit actionable `adjust` actions (BUG-171), and `@nudo:budget depth` is capped at the host-stack safety ceiling (192) with unsafe quickfixes suppressed (BUG-172).
+  **Classes and effects** — `X.prototype` identity is keyed by class binding, so same-named classes in different scopes/modules no longer share prototype writes; `class X extends Array` keeps the subclass instance face; generator `.throw()` into a `try/catch` records may-throw only when the transpile-time catch facts allow a rethrow (`YIELD_CATCH_THROWS`); `JSON.parse(<abstract text>)` records `SyntaxError`; union receivers record the nullish arm only for declared entry domains, keeping guard-derived slot reads quiet.
   
-  **Dts / export** — default-export class methods resolve their export slot (BUG-153); class-method parameter annotations are carried through abstract methods and rest parameters (BUG-166 / BUG-173); object-literal member annotations and class return annotations are honored (BUG-156 / BUG-157); `declare global` blocks are mirrored (BUG-167); `contract --from-dts` preserves rest element types (BUG-146); contract emit/draft fall back to symbolic signatures when runtime witnesses are widened or partial (BUG-159); contract sidecar refresh is idempotent (BUG-169) and test freeze converges in one run (BUG-170).
+  **Dts / export** — overload sets are emitted without implementation signatures (free functions) and with full overload sets (methods); inline-object method names, same-module enum type refs, and string/template literal types survive resolvability checks; default parameter values are type evidence; contract `any()` slots no longer mint generic parameters; namespace constants and annotated `const f: T = …` keep their declared types; inherited members substitute base type arguments and preserve `private` / `protected`; constructor overloads and parameter-property optionality, symbol members, and type-only export aliases are emitted; observed return values / guard-zod domains are widened to base types (including a single call-site sample), while asserted `@nudo:case` literals stay exact.
   
-  **TS syntax / migration** — namespace declaration merging, `export =`, constructor parameter properties, and `$`-prefixed operator hygiene are preserved through strip/transpile (BUG-149 / BUG-155 / BUG-160 / BUG-164); `migrate retire` judges each `tsc` invocation separately, and `migrate status` resolves subdirectory targets to their owning package (BUG-143 / BUG-145).
+  **Migrate / strip** — folded YAML scalars preserve more-indented command lines; `migrate verify --with-tsc` rejects files outside the tsconfig project instead of reporting `ok`; strip keeps imports referenced from destructuring defaults, elides proven type-only re-exports, and surfaces package-specifier retain notes.
   
-  **LSP** — `textDocument/signatureHelp` also handles `new K(...)` (BUG-144).
+  **Reporting / tooling** — the per-function analysis cache no longer replays pre-synthesis snapshots or stale diagnostics across case modes; `health` prints the drift line alongside file errors and no longer labels a rewrite as `+1 new`; directive witnesses render as `debug "call@…"` instead of masquerading as call sites; `contract --from-dts --write` writes alias-shaped drafts; `contract --emit --json --dry-run` carries `dryRun: true` with an empty `written` list; `.d.mts` / `.d.cts` resolve `.mjs` / `.cjs` runtime siblings; vite `include` literals use the same path-shaped matcher as the service watcher.
   
-  Compatibility: the `@nudojs/core/exec` surface gains `$syncLive`; `CheckAction.kind` gains `adjust`; `check --abs` now seeds TS parameter annotations; `contract --emit` may add contracts for arithmetic return values that were previously skipped as not-projectable. These are additive or stricter-correctness changes, not breaking API removals.
-- Updated dependencies [cf4a389]
-  - @nudojs/core@1.20.2
-  - @nudojs/parser@1.5.12
-  - @nudojs/harvester@0.6.4
-  - @nudojs/env@0.5.12
+  Compatibility notes: `@nudojs/core/internal` gains `absTypeForTsTypeText`; `@nudojs/service/emit` gains the observation-widening helpers used by guard/zod/standard. Observed return types in generated `.d.ts` and runtime validators are now wider by design (a call-site sample is not a function domain); asserted cases keep exact literals. These are additive or stricter-correctness changes, not API removals.
 
-Older versions (65) → [Full release history](./releases-history.md#pkg-service)
+Older versions (64) → [Full release history](./releases-history.md#pkg-core)
 
-## nudojs (CLI) 1.9.4 {#pkg-nudojs}
+## @nudojs/service 1.12.5 {#pkg-service}
 
-## 1.9.4
+## 1.12.5
 
 ### Patch Changes
 
-- cf4a389: Close the BUG-142..173 review batch: one judgment per fact across the evaluator, contract faces, migration commands, and IDE surface.
+- b888b76: Close the BUG-174..238 audit batch: one judgment per fact across the evaluator, projection faces, migration tools, and reporting surfaces.
   
-  **Evaluation** — user `@@toPrimitive` / `toString` / `valueOf` hooks are now executed once and their results feed `+ - * /`, relational compares, unary operators, templates, `String()` and `String.prototype.concat` instead of being discarded (BUG-142); conditional mutations inside `for..of` / array HOF callbacks are written back to the live receiver across `$copy` fork arms (BUG-161); `new Date()` carries a valid-time facet so `toISOString()` / `toJSON()` no longer report a false `RangeError` (BUG-154); constructor and host-global `new` paths distinguish non-constructors and expose host prototype members (BUG-151 / BUG-168); `JSON.stringify` handles unions of serializable values (BUG-148).
+  **Evaluation and domains** — rest tuples keep their fixed prefix instead of collapsing to a single array element type; TS `null` / `undefined` / `void` annotations map to terms instead of degrading the whole annotation to `any`; optional parameters (`x?: T`) enter the entry domain with `undefined`; arrow parameters inherit contextual function types; `Object.prototype.toString` covers union / any / unknown receivers; computed array keys consult `Array.prototype`; `Object.assign` propagates the open-key-set marker; Proxy `ownKeys` honours trap-only and non-enumerable keys; `Map` / `Set` `forEach` forwards `thisArg`; `URLSearchParams.forEach` runs its callback; reflector symbol keys stay symbols; sparse-array descriptors skip holes and honour `enumerable`; typed arrays expose `@@iterator`.
   
-  **Contracts and check** — nested `number()` / `string()` gates reject definite non-primitives, nested `array(...)` requires an array (BUG-150 / BUG-152); `@generated` parameter names that no longer match formals are reported as drift (BUG-147); directive `any()` parses as `any`, and `unknown` serializes as `unknown` (BUG-162); JSDoc optional parameters survive nested type braces (BUG-163); unknown `nudo` / `nudo.check` keys warn, and `nudo init` writes the adoption baseline for typo'd configs (BUG-165); recursion-truncated suggestions emit actionable `adjust` actions (BUG-171), and `@nudo:budget depth` is capped at the host-stack safety ceiling (192) with unsafe quickfixes suppressed (BUG-172).
+  **Classes and effects** — `X.prototype` identity is keyed by class binding, so same-named classes in different scopes/modules no longer share prototype writes; `class X extends Array` keeps the subclass instance face; generator `.throw()` into a `try/catch` records may-throw only when the transpile-time catch facts allow a rethrow (`YIELD_CATCH_THROWS`); `JSON.parse(<abstract text>)` records `SyntaxError`; union receivers record the nullish arm only for declared entry domains, keeping guard-derived slot reads quiet.
   
-  **Dts / export** — default-export class methods resolve their export slot (BUG-153); class-method parameter annotations are carried through abstract methods and rest parameters (BUG-166 / BUG-173); object-literal member annotations and class return annotations are honored (BUG-156 / BUG-157); `declare global` blocks are mirrored (BUG-167); `contract --from-dts` preserves rest element types (BUG-146); contract emit/draft fall back to symbolic signatures when runtime witnesses are widened or partial (BUG-159); contract sidecar refresh is idempotent (BUG-169) and test freeze converges in one run (BUG-170).
+  **Dts / export** — overload sets are emitted without implementation signatures (free functions) and with full overload sets (methods); inline-object method names, same-module enum type refs, and string/template literal types survive resolvability checks; default parameter values are type evidence; contract `any()` slots no longer mint generic parameters; namespace constants and annotated `const f: T = …` keep their declared types; inherited members substitute base type arguments and preserve `private` / `protected`; constructor overloads and parameter-property optionality, symbol members, and type-only export aliases are emitted; observed return values / guard-zod domains are widened to base types (including a single call-site sample), while asserted `@nudo:case` literals stay exact.
   
-  **TS syntax / migration** — namespace declaration merging, `export =`, constructor parameter properties, and `$`-prefixed operator hygiene are preserved through strip/transpile (BUG-149 / BUG-155 / BUG-160 / BUG-164); `migrate retire` judges each `tsc` invocation separately, and `migrate status` resolves subdirectory targets to their owning package (BUG-143 / BUG-145).
+  **Migrate / strip** — folded YAML scalars preserve more-indented command lines; `migrate verify --with-tsc` rejects files outside the tsconfig project instead of reporting `ok`; strip keeps imports referenced from destructuring defaults, elides proven type-only re-exports, and surfaces package-specifier retain notes.
   
-  **LSP** — `textDocument/signatureHelp` also handles `new K(...)` (BUG-144).
+  **Reporting / tooling** — the per-function analysis cache no longer replays pre-synthesis snapshots or stale diagnostics across case modes; `health` prints the drift line alongside file errors and no longer labels a rewrite as `+1 new`; directive witnesses render as `debug "call@…"` instead of masquerading as call sites; `contract --from-dts --write` writes alias-shaped drafts; `contract --emit --json --dry-run` carries `dryRun: true` with an empty `written` list; `.d.mts` / `.d.cts` resolve `.mjs` / `.cjs` runtime siblings; vite `include` literals use the same path-shaped matcher as the service watcher.
   
-  Compatibility: the `@nudojs/core/exec` surface gains `$syncLive`; `CheckAction.kind` gains `adjust`; `check --abs` now seeds TS parameter annotations; `contract --emit` may add contracts for arithmetic return values that were previously skipped as not-projectable. These are additive or stricter-correctness changes, not breaking API removals.
-- Updated dependencies [cf4a389]
-  - @nudojs/core@1.20.2
-  - @nudojs/service@1.12.4
-  - @nudojs/parser@1.5.12
-  - @nudojs/harvester@0.6.4
-  - @nudojs/env@0.5.12
+  Compatibility notes: `@nudojs/core/internal` gains `absTypeForTsTypeText`; `@nudojs/service/emit` gains the observation-widening helpers used by guard/zod/standard. Observed return types in generated `.d.ts` and runtime validators are now wider by design (a call-site sample is not a function domain); asserted cases keep exact literals. These are additive or stricter-correctness changes, not API removals.
+- Updated dependencies [b888b76]
+  - @nudojs/core@1.20.3
+  - @nudojs/harvester@0.6.5
+  - @nudojs/env@0.5.13
+  - @nudojs/parser@1.5.13
 
-Older versions (62) → [Full release history](./releases-history.md#pkg-nudojs)
+Older versions (66) → [Full release history](./releases-history.md#pkg-service)
 
-## @nudojs/parser 1.5.12 {#pkg-parser}
+## nudojs (CLI) 1.9.5 {#pkg-nudojs}
 
-## 1.5.12
+## 1.9.5
 
 ### Patch Changes
 
-- cf4a389: Close the BUG-142..173 review batch: one judgment per fact across the evaluator, contract faces, migration commands, and IDE surface.
+- b888b76: Close the BUG-174..238 audit batch: one judgment per fact across the evaluator, projection faces, migration tools, and reporting surfaces.
   
-  **Evaluation** — user `@@toPrimitive` / `toString` / `valueOf` hooks are now executed once and their results feed `+ - * /`, relational compares, unary operators, templates, `String()` and `String.prototype.concat` instead of being discarded (BUG-142); conditional mutations inside `for..of` / array HOF callbacks are written back to the live receiver across `$copy` fork arms (BUG-161); `new Date()` carries a valid-time facet so `toISOString()` / `toJSON()` no longer report a false `RangeError` (BUG-154); constructor and host-global `new` paths distinguish non-constructors and expose host prototype members (BUG-151 / BUG-168); `JSON.stringify` handles unions of serializable values (BUG-148).
+  **Evaluation and domains** — rest tuples keep their fixed prefix instead of collapsing to a single array element type; TS `null` / `undefined` / `void` annotations map to terms instead of degrading the whole annotation to `any`; optional parameters (`x?: T`) enter the entry domain with `undefined`; arrow parameters inherit contextual function types; `Object.prototype.toString` covers union / any / unknown receivers; computed array keys consult `Array.prototype`; `Object.assign` propagates the open-key-set marker; Proxy `ownKeys` honours trap-only and non-enumerable keys; `Map` / `Set` `forEach` forwards `thisArg`; `URLSearchParams.forEach` runs its callback; reflector symbol keys stay symbols; sparse-array descriptors skip holes and honour `enumerable`; typed arrays expose `@@iterator`.
   
-  **Contracts and check** — nested `number()` / `string()` gates reject definite non-primitives, nested `array(...)` requires an array (BUG-150 / BUG-152); `@generated` parameter names that no longer match formals are reported as drift (BUG-147); directive `any()` parses as `any`, and `unknown` serializes as `unknown` (BUG-162); JSDoc optional parameters survive nested type braces (BUG-163); unknown `nudo` / `nudo.check` keys warn, and `nudo init` writes the adoption baseline for typo'd configs (BUG-165); recursion-truncated suggestions emit actionable `adjust` actions (BUG-171), and `@nudo:budget depth` is capped at the host-stack safety ceiling (192) with unsafe quickfixes suppressed (BUG-172).
+  **Classes and effects** — `X.prototype` identity is keyed by class binding, so same-named classes in different scopes/modules no longer share prototype writes; `class X extends Array` keeps the subclass instance face; generator `.throw()` into a `try/catch` records may-throw only when the transpile-time catch facts allow a rethrow (`YIELD_CATCH_THROWS`); `JSON.parse(<abstract text>)` records `SyntaxError`; union receivers record the nullish arm only for declared entry domains, keeping guard-derived slot reads quiet.
   
-  **Dts / export** — default-export class methods resolve their export slot (BUG-153); class-method parameter annotations are carried through abstract methods and rest parameters (BUG-166 / BUG-173); object-literal member annotations and class return annotations are honored (BUG-156 / BUG-157); `declare global` blocks are mirrored (BUG-167); `contract --from-dts` preserves rest element types (BUG-146); contract emit/draft fall back to symbolic signatures when runtime witnesses are widened or partial (BUG-159); contract sidecar refresh is idempotent (BUG-169) and test freeze converges in one run (BUG-170).
+  **Dts / export** — overload sets are emitted without implementation signatures (free functions) and with full overload sets (methods); inline-object method names, same-module enum type refs, and string/template literal types survive resolvability checks; default parameter values are type evidence; contract `any()` slots no longer mint generic parameters; namespace constants and annotated `const f: T = …` keep their declared types; inherited members substitute base type arguments and preserve `private` / `protected`; constructor overloads and parameter-property optionality, symbol members, and type-only export aliases are emitted; observed return values / guard-zod domains are widened to base types (including a single call-site sample), while asserted `@nudo:case` literals stay exact.
   
-  **TS syntax / migration** — namespace declaration merging, `export =`, constructor parameter properties, and `$`-prefixed operator hygiene are preserved through strip/transpile (BUG-149 / BUG-155 / BUG-160 / BUG-164); `migrate retire` judges each `tsc` invocation separately, and `migrate status` resolves subdirectory targets to their owning package (BUG-143 / BUG-145).
+  **Migrate / strip** — folded YAML scalars preserve more-indented command lines; `migrate verify --with-tsc` rejects files outside the tsconfig project instead of reporting `ok`; strip keeps imports referenced from destructuring defaults, elides proven type-only re-exports, and surfaces package-specifier retain notes.
   
-  **LSP** — `textDocument/signatureHelp` also handles `new K(...)` (BUG-144).
+  **Reporting / tooling** — the per-function analysis cache no longer replays pre-synthesis snapshots or stale diagnostics across case modes; `health` prints the drift line alongside file errors and no longer labels a rewrite as `+1 new`; directive witnesses render as `debug "call@…"` instead of masquerading as call sites; `contract --from-dts --write` writes alias-shaped drafts; `contract --emit --json --dry-run` carries `dryRun: true` with an empty `written` list; `.d.mts` / `.d.cts` resolve `.mjs` / `.cjs` runtime siblings; vite `include` literals use the same path-shaped matcher as the service watcher.
   
-  Compatibility: the `@nudojs/core/exec` surface gains `$syncLive`; `CheckAction.kind` gains `adjust`; `check --abs` now seeds TS parameter annotations; `contract --emit` may add contracts for arithmetic return values that were previously skipped as not-projectable. These are additive or stricter-correctness changes, not breaking API removals.
-- Updated dependencies [cf4a389]
-  - @nudojs/core@1.20.2
+  Compatibility notes: `@nudojs/core/internal` gains `absTypeForTsTypeText`; `@nudojs/service/emit` gains the observation-widening helpers used by guard/zod/standard. Observed return types in generated `.d.ts` and runtime validators are now wider by design (a call-site sample is not a function domain); asserted cases keep exact literals. These are additive or stricter-correctness changes, not API removals.
+- Updated dependencies [b888b76]
+  - @nudojs/core@1.20.3
+  - @nudojs/service@1.12.5
+  - @nudojs/harvester@0.6.5
+  - @nudojs/env@0.5.13
+  - @nudojs/parser@1.5.13
 
-Older versions (62) → [Full release history](./releases-history.md#pkg-parser)
+Older versions (63) → [Full release history](./releases-history.md#pkg-nudojs)
 
-## @nudojs/lsp 1.10.4 {#pkg-lsp}
+## @nudojs/parser 1.5.13 {#pkg-parser}
 
-## 1.10.4
+## 1.5.13
 
 ### Patch Changes
 
-- cf4a389: Close the BUG-142..173 review batch: one judgment per fact across the evaluator, contract faces, migration commands, and IDE surface.
-  
-  **Evaluation** — user `@@toPrimitive` / `toString` / `valueOf` hooks are now executed once and their results feed `+ - * /`, relational compares, unary operators, templates, `String()` and `String.prototype.concat` instead of being discarded (BUG-142); conditional mutations inside `for..of` / array HOF callbacks are written back to the live receiver across `$copy` fork arms (BUG-161); `new Date()` carries a valid-time facet so `toISOString()` / `toJSON()` no longer report a false `RangeError` (BUG-154); constructor and host-global `new` paths distinguish non-constructors and expose host prototype members (BUG-151 / BUG-168); `JSON.stringify` handles unions of serializable values (BUG-148).
-  
-  **Contracts and check** — nested `number()` / `string()` gates reject definite non-primitives, nested `array(...)` requires an array (BUG-150 / BUG-152); `@generated` parameter names that no longer match formals are reported as drift (BUG-147); directive `any()` parses as `any`, and `unknown` serializes as `unknown` (BUG-162); JSDoc optional parameters survive nested type braces (BUG-163); unknown `nudo` / `nudo.check` keys warn, and `nudo init` writes the adoption baseline for typo'd configs (BUG-165); recursion-truncated suggestions emit actionable `adjust` actions (BUG-171), and `@nudo:budget depth` is capped at the host-stack safety ceiling (192) with unsafe quickfixes suppressed (BUG-172).
-  
-  **Dts / export** — default-export class methods resolve their export slot (BUG-153); class-method parameter annotations are carried through abstract methods and rest parameters (BUG-166 / BUG-173); object-literal member annotations and class return annotations are honored (BUG-156 / BUG-157); `declare global` blocks are mirrored (BUG-167); `contract --from-dts` preserves rest element types (BUG-146); contract emit/draft fall back to symbolic signatures when runtime witnesses are widened or partial (BUG-159); contract sidecar refresh is idempotent (BUG-169) and test freeze converges in one run (BUG-170).
-  
-  **TS syntax / migration** — namespace declaration merging, `export =`, constructor parameter properties, and `$`-prefixed operator hygiene are preserved through strip/transpile (BUG-149 / BUG-155 / BUG-160 / BUG-164); `migrate retire` judges each `tsc` invocation separately, and `migrate status` resolves subdirectory targets to their owning package (BUG-143 / BUG-145).
-  
-  **LSP** — `textDocument/signatureHelp` also handles `new K(...)` (BUG-144).
-  
-  Compatibility: the `@nudojs/core/exec` surface gains `$syncLive`; `CheckAction.kind` gains `adjust`; `check --abs` now seeds TS parameter annotations; `contract --emit` may add contracts for arithmetic return values that were previously skipped as not-projectable. These are additive or stricter-correctness changes, not breaking API removals.
-- Updated dependencies [cf4a389]
-  - @nudojs/core@1.20.2
-  - @nudojs/service@1.12.4
-  - @nudojs/parser@1.5.12
+- Updated dependencies [b888b76]
+  - @nudojs/core@1.20.3
 
-Older versions (66) → [Full release history](./releases-history.md#pkg-lsp)
+Older versions (63) → [Full release history](./releases-history.md#pkg-parser)
 
-## @nudojs/env 0.5.12 {#pkg-env}
+## @nudojs/lsp 1.10.5 {#pkg-lsp}
 
-## 0.5.12
+## 1.10.5
 
 ### Patch Changes
 
-- Updated dependencies [cf4a389]
-  - @nudojs/core@1.20.2
+- Updated dependencies [b888b76]
+  - @nudojs/core@1.20.3
+  - @nudojs/service@1.12.5
+  - @nudojs/parser@1.5.13
 
-Older versions (62) → [Full release history](./releases-history.md#pkg-env)
+Older versions (67) → [Full release history](./releases-history.md#pkg-lsp)
 
-## @nudojs/harvester 0.6.4 {#pkg-harvester}
+## @nudojs/env 0.5.13 {#pkg-env}
 
-## 0.6.4
-
-### Patch Changes
-
-- cf4a389: Close the BUG-142..173 review batch: one judgment per fact across the evaluator, contract faces, migration commands, and IDE surface.
-  
-  **Evaluation** — user `@@toPrimitive` / `toString` / `valueOf` hooks are now executed once and their results feed `+ - * /`, relational compares, unary operators, templates, `String()` and `String.prototype.concat` instead of being discarded (BUG-142); conditional mutations inside `for..of` / array HOF callbacks are written back to the live receiver across `$copy` fork arms (BUG-161); `new Date()` carries a valid-time facet so `toISOString()` / `toJSON()` no longer report a false `RangeError` (BUG-154); constructor and host-global `new` paths distinguish non-constructors and expose host prototype members (BUG-151 / BUG-168); `JSON.stringify` handles unions of serializable values (BUG-148).
-  
-  **Contracts and check** — nested `number()` / `string()` gates reject definite non-primitives, nested `array(...)` requires an array (BUG-150 / BUG-152); `@generated` parameter names that no longer match formals are reported as drift (BUG-147); directive `any()` parses as `any`, and `unknown` serializes as `unknown` (BUG-162); JSDoc optional parameters survive nested type braces (BUG-163); unknown `nudo` / `nudo.check` keys warn, and `nudo init` writes the adoption baseline for typo'd configs (BUG-165); recursion-truncated suggestions emit actionable `adjust` actions (BUG-171), and `@nudo:budget depth` is capped at the host-stack safety ceiling (192) with unsafe quickfixes suppressed (BUG-172).
-  
-  **Dts / export** — default-export class methods resolve their export slot (BUG-153); class-method parameter annotations are carried through abstract methods and rest parameters (BUG-166 / BUG-173); object-literal member annotations and class return annotations are honored (BUG-156 / BUG-157); `declare global` blocks are mirrored (BUG-167); `contract --from-dts` preserves rest element types (BUG-146); contract emit/draft fall back to symbolic signatures when runtime witnesses are widened or partial (BUG-159); contract sidecar refresh is idempotent (BUG-169) and test freeze converges in one run (BUG-170).
-  
-  **TS syntax / migration** — namespace declaration merging, `export =`, constructor parameter properties, and `$`-prefixed operator hygiene are preserved through strip/transpile (BUG-149 / BUG-155 / BUG-160 / BUG-164); `migrate retire` judges each `tsc` invocation separately, and `migrate status` resolves subdirectory targets to their owning package (BUG-143 / BUG-145).
-  
-  **LSP** — `textDocument/signatureHelp` also handles `new K(...)` (BUG-144).
-  
-  Compatibility: the `@nudojs/core/exec` surface gains `$syncLive`; `CheckAction.kind` gains `adjust`; `check --abs` now seeds TS parameter annotations; `contract --emit` may add contracts for arithmetic return values that were previously skipped as not-projectable. These are additive or stricter-correctness changes, not breaking API removals.
-- Updated dependencies [cf4a389]
-  - @nudojs/core@1.20.2
-  - @nudojs/parser@1.5.12
-  - @nudojs/env@0.5.12
-
-Older versions (62) → [Full release history](./releases-history.md#pkg-harvester)
-
-## vite-plugin-nudo 0.7.5 {#pkg-vite-plugin}
-
-## 0.7.5
+## 0.5.13
 
 ### Patch Changes
 
-- Updated dependencies [cf4a389]
-  - @nudojs/core@1.20.2
-  - @nudojs/service@1.12.4
+- Updated dependencies [b888b76]
+  - @nudojs/core@1.20.3
 
-Older versions (65) → [Full release history](./releases-history.md#pkg-vite-plugin)
+Older versions (63) → [Full release history](./releases-history.md#pkg-env)
+
+## @nudojs/harvester 0.6.5 {#pkg-harvester}
+
+## 0.6.5
+
+### Patch Changes
+
+- b888b76: Close the BUG-174..238 audit batch: one judgment per fact across the evaluator, projection faces, migration tools, and reporting surfaces.
+  
+  **Evaluation and domains** — rest tuples keep their fixed prefix instead of collapsing to a single array element type; TS `null` / `undefined` / `void` annotations map to terms instead of degrading the whole annotation to `any`; optional parameters (`x?: T`) enter the entry domain with `undefined`; arrow parameters inherit contextual function types; `Object.prototype.toString` covers union / any / unknown receivers; computed array keys consult `Array.prototype`; `Object.assign` propagates the open-key-set marker; Proxy `ownKeys` honours trap-only and non-enumerable keys; `Map` / `Set` `forEach` forwards `thisArg`; `URLSearchParams.forEach` runs its callback; reflector symbol keys stay symbols; sparse-array descriptors skip holes and honour `enumerable`; typed arrays expose `@@iterator`.
+  
+  **Classes and effects** — `X.prototype` identity is keyed by class binding, so same-named classes in different scopes/modules no longer share prototype writes; `class X extends Array` keeps the subclass instance face; generator `.throw()` into a `try/catch` records may-throw only when the transpile-time catch facts allow a rethrow (`YIELD_CATCH_THROWS`); `JSON.parse(<abstract text>)` records `SyntaxError`; union receivers record the nullish arm only for declared entry domains, keeping guard-derived slot reads quiet.
+  
+  **Dts / export** — overload sets are emitted without implementation signatures (free functions) and with full overload sets (methods); inline-object method names, same-module enum type refs, and string/template literal types survive resolvability checks; default parameter values are type evidence; contract `any()` slots no longer mint generic parameters; namespace constants and annotated `const f: T = …` keep their declared types; inherited members substitute base type arguments and preserve `private` / `protected`; constructor overloads and parameter-property optionality, symbol members, and type-only export aliases are emitted; observed return values / guard-zod domains are widened to base types (including a single call-site sample), while asserted `@nudo:case` literals stay exact.
+  
+  **Migrate / strip** — folded YAML scalars preserve more-indented command lines; `migrate verify --with-tsc` rejects files outside the tsconfig project instead of reporting `ok`; strip keeps imports referenced from destructuring defaults, elides proven type-only re-exports, and surfaces package-specifier retain notes.
+  
+  **Reporting / tooling** — the per-function analysis cache no longer replays pre-synthesis snapshots or stale diagnostics across case modes; `health` prints the drift line alongside file errors and no longer labels a rewrite as `+1 new`; directive witnesses render as `debug "call@…"` instead of masquerading as call sites; `contract --from-dts --write` writes alias-shaped drafts; `contract --emit --json --dry-run` carries `dryRun: true` with an empty `written` list; `.d.mts` / `.d.cts` resolve `.mjs` / `.cjs` runtime siblings; vite `include` literals use the same path-shaped matcher as the service watcher.
+  
+  Compatibility notes: `@nudojs/core/internal` gains `absTypeForTsTypeText`; `@nudojs/service/emit` gains the observation-widening helpers used by guard/zod/standard. Observed return types in generated `.d.ts` and runtime validators are now wider by design (a call-site sample is not a function domain); asserted cases keep exact literals. These are additive or stricter-correctness changes, not API removals.
+- Updated dependencies [b888b76]
+  - @nudojs/core@1.20.3
+  - @nudojs/env@0.5.13
+  - @nudojs/parser@1.5.13
+
+Older versions (63) → [Full release history](./releases-history.md#pkg-harvester)
+
+## vite-plugin-nudo 0.7.6 {#pkg-vite-plugin}
+
+## 0.7.6
+
+### Patch Changes
+
+- b888b76: Close the BUG-174..238 audit batch: one judgment per fact across the evaluator, projection faces, migration tools, and reporting surfaces.
+  
+  **Evaluation and domains** — rest tuples keep their fixed prefix instead of collapsing to a single array element type; TS `null` / `undefined` / `void` annotations map to terms instead of degrading the whole annotation to `any`; optional parameters (`x?: T`) enter the entry domain with `undefined`; arrow parameters inherit contextual function types; `Object.prototype.toString` covers union / any / unknown receivers; computed array keys consult `Array.prototype`; `Object.assign` propagates the open-key-set marker; Proxy `ownKeys` honours trap-only and non-enumerable keys; `Map` / `Set` `forEach` forwards `thisArg`; `URLSearchParams.forEach` runs its callback; reflector symbol keys stay symbols; sparse-array descriptors skip holes and honour `enumerable`; typed arrays expose `@@iterator`.
+  
+  **Classes and effects** — `X.prototype` identity is keyed by class binding, so same-named classes in different scopes/modules no longer share prototype writes; `class X extends Array` keeps the subclass instance face; generator `.throw()` into a `try/catch` records may-throw only when the transpile-time catch facts allow a rethrow (`YIELD_CATCH_THROWS`); `JSON.parse(<abstract text>)` records `SyntaxError`; union receivers record the nullish arm only for declared entry domains, keeping guard-derived slot reads quiet.
+  
+  **Dts / export** — overload sets are emitted without implementation signatures (free functions) and with full overload sets (methods); inline-object method names, same-module enum type refs, and string/template literal types survive resolvability checks; default parameter values are type evidence; contract `any()` slots no longer mint generic parameters; namespace constants and annotated `const f: T = …` keep their declared types; inherited members substitute base type arguments and preserve `private` / `protected`; constructor overloads and parameter-property optionality, symbol members, and type-only export aliases are emitted; observed return values / guard-zod domains are widened to base types (including a single call-site sample), while asserted `@nudo:case` literals stay exact.
+  
+  **Migrate / strip** — folded YAML scalars preserve more-indented command lines; `migrate verify --with-tsc` rejects files outside the tsconfig project instead of reporting `ok`; strip keeps imports referenced from destructuring defaults, elides proven type-only re-exports, and surfaces package-specifier retain notes.
+  
+  **Reporting / tooling** — the per-function analysis cache no longer replays pre-synthesis snapshots or stale diagnostics across case modes; `health` prints the drift line alongside file errors and no longer labels a rewrite as `+1 new`; directive witnesses render as `debug "call@…"` instead of masquerading as call sites; `contract --from-dts --write` writes alias-shaped drafts; `contract --emit --json --dry-run` carries `dryRun: true` with an empty `written` list; `.d.mts` / `.d.cts` resolve `.mjs` / `.cjs` runtime siblings; vite `include` literals use the same path-shaped matcher as the service watcher.
+  
+  Compatibility notes: `@nudojs/core/internal` gains `absTypeForTsTypeText`; `@nudojs/service/emit` gains the observation-widening helpers used by guard/zod/standard. Observed return types in generated `.d.ts` and runtime validators are now wider by design (a call-site sample is not a function domain); asserted cases keep exact literals. These are additive or stricter-correctness changes, not API removals.
+- Updated dependencies [b888b76]
+  - @nudojs/core@1.20.3
+  - @nudojs/service@1.12.5
+
+Older versions (66) → [Full release history](./releases-history.md#pkg-vite-plugin)
 
 ## nudo-vscode 0.3.7 {#pkg-vscode}
 
