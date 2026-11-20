@@ -394,8 +394,8 @@ pin 'pnpm run test:cli docs/examples/algebra/a-spread-optional.js' \
   '({ host: "api.example.com" }) => { host: "api.example.com", port: 8080, debug: false }'
 pin 'pnpm run export:nudo docs/examples/algebra/a-spread-optional.js --format dts' \
   'createConfig(options: { port: number; debug: boolean } | Record<string, never> | { host: string })' \
-  ': { host: "localhost"; port: 3000; debug: true } | { host: "localhost"; port: 8080; debug: false } | { host: "api.example.com"; port: 8080; debug: false }' \
-  'Case: call@L24'
+  ': { host: string; port: number; debug: boolean }' \
+  'Case: call@L26'
 pin 'pnpm run test:cli docs/examples/algebra/b-hof-map.js' \
   '([1, 2, 3], (x) => ?) => [2, 4, 6]' \
   '(["a", "b"], (s) => ?) => ["A", "B"]'

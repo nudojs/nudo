@@ -91,7 +91,7 @@ The single-line commands in each subdirectory README and example file header are
 | `pnpm run test:cli docs/examples/algebra/0-add-intensional.js` | **0** | Literal cases (`call@` / `debug`) |
 | `pnpm run check docs/examples/algebra/0-add-intensional.js --abs --assume "x>0"` | **0** | Algebra view (term/pred/conf, `--assume`) |
 | `pnpm run test:cli docs/examples/algebra/a-spread-optional.js` | **0** | Spread config object |
-| `pnpm run export:nudo docs/examples/algebra/a-spread-optional.js --format dts` | **0** | dts projection: one widened signature + literal union (signature pinned on stdout) |
+| `pnpm run export:nudo docs/examples/algebra/a-spread-optional.js --format dts` | **0** | dts projection: one widened signature; observed return widened to base types, per-call literals kept in Case lines |
 | `pnpm run test:cli docs/examples/algebra/b-hof-map.js` | **0** | HOF callback propagation |
 | `pnpm run test:cli docs/examples/algebra/c-reduce-sum.js` | **0** | reduce single-pass accumulation |
 | `pnpm run test:cli docs/examples/algebra/d-mixin-meet.js` | **0** | Spread shape meet |
