@@ -28,3 +28,6 @@ createConfig({});
 createConfig({ host: "api.example.com" });
 
 export { createConfig };
+
+// 返回位是观测的拓宽（host: string / port: number / debug: boolean）；
+// 每个调用点的精确字面量只保留在导出产物的 JSDoc `Case:` 行。
