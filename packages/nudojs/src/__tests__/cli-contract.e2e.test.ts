@@ -1321,7 +1321,7 @@ const SOURCE = [
     const r = runCliTsx(["export", join(dir, "violate626.js"), "--format", "schema"]);
     expect(r.status).toBe(0);
     expect(r.stdout).not.toContain("fOutput = z.string()");
-    expect(r.stdout).toContain("fOutput = z.literal(1)");
+    expect(r.stdout).toContain("fOutput = z.number()");
   }, 30000);
 
   it("dts 返回类型与实现一致（不是被证否的契约）", () => {

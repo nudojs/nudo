@@ -31,8 +31,11 @@ import type {
  * externalCallRecords 内容指纹（与 dep contents 同类：内容变 → miss）。
  * 不用数组身份：CLI `--from` 每次重建数组会让身份键永不命中；
  * 同数组原地改写元素又会让身份键陈旧命中。
+ *
+ * 导出给逐函数键复用（BUG-184 根因 3）：已固化函数的二次 freeze 从外部记录
+ * 合成新见证 ⇒ 内容变更必须让 fn 级键 miss。
  */
-function externalRecordsFingerprint(records: CallRecord[]): string {
+export function externalRecordsFingerprint(records: CallRecord[]): string {
   const parts = records.map((r) =>
     [
       r.fnName,

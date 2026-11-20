@@ -158,6 +158,13 @@ type StripOptions = {
     ctorParamPropsSuperMissing?: boolean;
   };
   resolveSpecifier?: (spec: string) => string | undefined;
+  /**
+   * 再导出的类型证明（BUG-220）：`(source, name) => true` 表示源模块**本地**
+   * 说明符 `source` 的导出 `name` 只存在于类型空间（interface / type alias /
+   * declare …）⇒ `export { name } from source` 与 tsc 的 export elision 同口径
+   * 删除。返回 false / 不给回调 ⇒ 保留（单文件调用者没有源模块事实）。
+   */
+  isTypeOnlyReExport?: (source: string, name: string) => boolean;
   /** `export = X` 的处理面（BUG-160）：见文件头 StripOptions 注释 */
   exportAssignment?: "drop" | "cjs";
 };
@@ -175,6 +182,13 @@ type StripContext = {
   typeRefs: Set<string>;
   /** 「判不准」的值引用（`export { X }` 本地再导出：X 可能是值也可能是类型） */
   ambiguousRefs: Set<string>;
+  /**
+   * 再导出的类型证明（BUG-220，由调用方提供）：`export { X } from "./m.js"`
+   * 的 `X` 是**源模块**的绑定，本文件里的同名标识符证明不了它是类型
+   * （属性名 / 类型参数名也会进 typeRefs；类可以被 import 后只作类型使用却
+   * 仍是运行时导出）。只有拿到「源模块的该导出是类型声明」这一事实才可删。
+   */
+  isTypeOnlyReExport?: (source: string, name: string) => boolean;
 };
 
 /** 类型位置的字段（值位置引用收集时整棵子树跳过） */
@@ -397,6 +411,11 @@ function collectValueReferences(root: unknown): {
         return;
       // ---- 绑定位置：名字是绑定，不是引用 ----
       case "VariableDeclarator":
+        // BUG-219：`id` 是解构模式时，它的**默认值**（`{ d = new Def() }`）
+        // 与计算键是值位置 ⇒ 必须一起收集（visitParam 已按模式语义走：
+        // 绑定名不算引用、默认值算引用）。只访问 init 会把这类引用漏掉 ⇒
+        // import 被判「只在类型位置被用到」⇒ 产物少一条运行时 import。
+        visitParam(rec.id);
         visit(rec.init);
         return;
       case "FunctionDeclaration":
@@ -549,6 +568,31 @@ function isTypeOnlyImportSpecifier(
   if (typeof local !== "string" || local.length === 0) return false;
   if (ctx.valueRefs.has(local)) return false;
   return ctx.typeRefs.has(local);
+}
+
+/**
+ * 再导出的 specifier 是否「类型专用」（BUG-220）。
+ *
+ * `export { Shape } from "./types.js"` 的 `Shape` 是**源模块**的绑定，不是
+ * 本文件的绑定 ⇒ 本文件里的同名标识符证明不了任何事：属性名 / 类型参数名
+ * 也会进 typeRefs（broad by design），而类可以被 import 后只作类型使用却
+ * 仍是运行时导出（此时删掉再导出 = 静默丢失公开出口）。
+ *
+ * 证明只能来自**源模块**：调用方（migrate strip，有 filePath 与文件系统）
+ * 解析源模块的导出声明并回答「该名字是否只存在于类型空间」。没有回调
+ * （分析面 / 单文件调用）或回答不肯定 ⇒ **保留**（与旧口径一致）。
+ * 只对**本地**（相对路径）模块生效：包说明符的运行时导出面不由 nudo 决定。
+ */
+function isTypeOnlyReExportSpecifier(
+  spec: { local?: { name?: string } },
+  ctx: StripContext,
+  source: unknown,
+): boolean {
+  if (!ctx.isTypeOnlyReExport) return false;
+  if (typeof source !== "string" || !isLocalModuleSource({ value: source })) return false;
+  const local = spec.local?.name;
+  if (typeof local !== "string" || local.length === 0) return false;
+  return ctx.isTypeOnlyReExport(source, local);
 }
 
 /**
@@ -1118,6 +1162,17 @@ function isTypeOnlyStatement(node: Node, ctx: StripContext): boolean {
         const specs = anyNode.specifiers as { exportKind?: string }[] | null;
         if (!decl && specs && specs.length > 0 && specs.every((s) => s.exportKind === "type")) return true;
       }
+      // BUG-220：`export { Shape } from "./types.js"` —— 出口侧也要有**证明**
+      // 判据（同源 import 被判类型专用，见 helper）。导出侧此前只认显式
+      // `export type` / 类型声明 ⇒ 只作类型使用的本地再导出被保留 ⇒ 被再
+      // 导出的模块剥成空模块 ⇒ 链接期 SyntaxError。
+      {
+        const specs = anyNode.specifiers as { local?: { name?: string } }[] | null;
+        if (!decl && anyNode.source && specs && specs.length > 0) {
+          const source = (anyNode.source as { value?: unknown }).value;
+          if (specs.every((s) => isTypeOnlyReExportSpecifier(s, ctx, source))) return true;
+        }
+      }
       return false;
     }
     case "ExportAllDeclaration":
@@ -1534,16 +1589,28 @@ function transformNode(
     const specs = node.specifiers as unknown as { importKind?: string; local?: { name?: string } }[];
     const localModule = isLocalModuleSource(node.source as { value?: unknown } | undefined);
     node.specifiers = specs.filter((s) => !isTypeOnlyImportSpecifier(s, ctx, localModule)) as typeof node.specifiers;
-    if (opts?.report && localModule) {
-      // 事实回报：整条被消掉（零值引用）/ 保守保留（判不准的绑定）
+    if (opts?.report) {
+      // 事实回报（BUG-182：闸门**不得**绑在 localModule 上——文档与命令层
+      // 的提示文案明确覆盖 package specifier，闸门绑 localModule 会让那条
+      // 提示结构性不可达）。
       if (specs.length > 0 && node.specifiers.length === 0) {
         opts.report.typeOnlyImportRemoved = true;
       } else {
-        for (const s of specs) {
+        // 只看**幸存**的 specifier：被剔除的显式 `type` specifier 已经消掉，
+        // 不能再拿它报「判不准 ⇒ 保留」（BUG-182 的提示必须是事实）。
+        for (const s of node.specifiers as unknown as { local?: { name?: string } }[]) {
           const local = s.local?.name;
-          if (typeof local === "string" && ctx.ambiguousRefs.has(local)) {
+          if (typeof local !== "string") continue;
+          if (ctx.ambiguousRefs.has(local)) {
             // `export { X }` 本地再导出：X 可能是值也可能是类型 ⇒ 判不准 ⇒
             // 保守保留（产物面应提示人工确认）。
+            opts.report.typeOnlyImportKept = true;
+            break;
+          }
+          // 包说明符的绑定**只在类型位置**被引用：判据层保守保留（nudo 不剥
+          // 包 ⇒ 运行时导出是否存在不可知），但这是「无法证明是值」的事实 ⇒
+          // 必须回报，否则 strip 对自己的不可加载产物零提示。
+          if (!localModule && !ctx.valueRefs.has(local) && ctx.typeRefs.has(local)) {
             opts.report.typeOnlyImportKept = true;
             break;
           }
@@ -1552,7 +1619,15 @@ function transformNode(
     }
   } else if (node.type === "ExportNamedDeclaration") {
     if (node.specifiers) {
-      node.specifiers = node.specifiers.filter((s) => (s as { exportKind?: string }).exportKind !== "type");
+      const source = (node.source as { value?: unknown } | undefined)?.value;
+      node.specifiers = node.specifiers.filter(
+        (s) =>
+          (s as { exportKind?: string }).exportKind !== "type" &&
+          // BUG-220：与 isTypeOnlyStatement 的整条删除判定**同口径**（同一个
+          // helper）——混合再导出（`export { Shape, fn } from "./m.js"`）只剔
+          // 掉被证明是类型的那一项。
+          !isTypeOnlyReExportSpecifier(s as { local?: { name?: string } }, ctx, source),
+      );
     }
   }
 
@@ -1586,7 +1661,12 @@ export function stripTypes<T extends Node>(ast: T, source?: string, opts?: Strip
   // Bug 445：值位置引用收集（**剥除前**算一次 ⇒ 整趟 pass 共用 ⇒
   // isTypeOnlyStatement 与 transformNode 的两处 import 判定同口径）。
   const { valueRefs, typeRefs, ambiguousRefs } = collectValueReferences(ast);
-  const ctx: StripContext = { valueRefs, typeRefs, ambiguousRefs };
+  const ctx: StripContext = {
+    valueRefs,
+    typeRefs,
+    ambiguousRefs,
+    ...(opts?.isTypeOnlyReExport ? { isTypeOnlyReExport: opts.isTypeOnlyReExport } : {}),
+  };
   // Bug 968：剥除**前后**的 `@nudo:` 指令条数比对（兜底自检）。
   // 只在调用方要 report 时才算——分析面不传 opts ⇒ 这趟全 AST 遍历本来是
   // 纯 dead work（实测占 TS 源 parse 的 ~15%）。

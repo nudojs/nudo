@@ -372,8 +372,15 @@ export async function runContractEmit(
         {
           file: rel,
           sidecar: sc,
+          // dry-run 是**一等状态**（BUG-225）：改前 `--json --dry-run` 与真写盘
+          // 的信封逐字节相同（`changed: true` / `written: ["<fn>"]` / 带 diff），
+          // 机器消费者据此以为侧车已更新 ⇒ 跳过真正的 `--emit`，磁盘永远是旧的。
+          // ⇒ `written` 的语义钉死为「**写进** M 的导出名」（dry-run 下恒空），
+          // 计划集另走 `wouldWrite`（与人类面的 `[dry-run] would update` 同口径）。
+          dryRun: opts.dryRun === true,
           changed: mainResult.changed,
-          written: mainResult.written,
+          written: opts.dryRun ? [] : mainResult.written,
+          ...(opts.dryRun ? { wouldWrite: mainResult.written } : {}),
           skipped: mainResult.skipped.map((s) => ({ fn: s.fn, reason: s.reason })),
           // BUG-035 残留收口：证据消失 ⇒ 生成段被删（不是「保留原段」），
           // 机器面必须能看见删除清单（人类面走 formatEmitSummary 的 `removed:` 行）。

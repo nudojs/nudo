@@ -20,7 +20,8 @@
  * · finally 含 yield → 值并 unknown、done 并 boolean、续体 poisoned
  * （此后 next() → {value: unknown, done: boolean}）；
  * · .throw(e) 挂 try/catch 内 → 被吸收：{value: unknown, done:
- * boolean} + may-throw（catch 体收集期未执行、可重抛），不再定值抛；
+ * boolean}，不再定值抛；catch 体含 throw 时另记 may-throw（转译期
+ * YIELD_CATCH_THROWS；不含 throw 的 catch 体原生必吸收）；
  * R1a 精化：catch 静态事实（无 yield、重抛不被外层 catch 二次吸收）
  * 且挂起点后无剩余收集 yield → 吸收必完成，done 折 true（native）；
  * · 无 finally/catch 的挂起点（含未启动 / 已耗尽）保持原生精确：
@@ -234,11 +235,19 @@ describe(".return()/.throw() 挂起点语义（try 上下文分级，无 wrong-d
     expect(litValue(r.result)).toEqual({ ok: true, value: true });
   });
 
-  it(".throw 进 try/catch：catch 重抛面记 may-throw（sound 过近似）", () => {
-    const eff = effects(
+  it(".throw 进 try/catch：catch 体不含 throw → 不记 may-throw；含 throw → 记", () => {
+    // 修复前这里钉的是错误契约（catch 体只写 return 也记 may-throw）：
+    // 转译期 YIELD_CATCH_THROWS 已给出 catch 体是否可能把异常抛出去，
+    // 不含 throw 的 catch 体原生必吸收注入异常 ⇒ 不得记。
+    const absorbed = effects(
       `export function f() { function* h() { try { yield 1; } catch (e) { return "caught"; } } const it2 = h(); it2.next(); it2.throw(new Error("x")); return 0; }`,
     );
-    expect(eff).toContain("Error");
+    expect(absorbed).not.toContain("Error");
+
+    const rethrown = effects(
+      `export function f() { function* h() { try { yield 1; } catch (e) { throw e; } } const it2 = h(); it2.next(); it2.throw(new Error("x")); return 0; }`,
+    );
+    expect(rethrown).toContain("Error");
   });
 
   it(".throw 无 catch（裸 / finally-only / 未启动）：保持原生定值抛（native TypeError）", () => {

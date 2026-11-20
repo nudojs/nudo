@@ -900,6 +900,7 @@ type SymbolTable = {
 | <a id="typebinding"></a>`TypeBinding` | type | — | `TypeBinding = { name: string; type: string }` |
 | <a id="typeexprtodirective"></a>`typeExprToDirective` | fn | agent 面类型表达式 → `@nudo:as` 文法（认不出的表达式落到 `unknown`） | `typeExprToDirective(expr: string): string` |
 | <a id="unifieddiff"></a>`unifiedDiff` | fn | — | `unifiedDiff(a: string, b: string, path: string): string` |
+| <a id="widenobservedliterals"></a>`widenObservedLiterals` | fn | 逐节点把**观测 Abs** 里的字面量槽拓宽成基类型（含单个字面量）。 | `widenObservedLiterals(a: Abs, memo: Map<Abs, Abs> = new Map()): Abs` |
 | <a id="writecontractdraft"></a>`writeContractDraft` | fn | 写入 `*.nudo.draft.js`（覆盖草稿文件本身；不碰正式 `*.nudo.js`）。 | `writeContractDraft( filePath: string, draftSource: string, opts: { dryRun?: boolean; projectDir?: string; entries?: ReadonlyArray<Pick<ContractDraftEntry, "dsl" \| "skipped">>; draftable?: boolean; } = {}, ): WriteDraftResult` |
 | <a id="writedraftresult"></a>`WriteDraftResult` | type | — | `WriteDraftResult = { draftPath: string; written: boolean; changed: boolean; draftable: boolean; draftSource: string; skipped?: "hand-edit...` |
 | <a id="writefileatomic"></a>`writeFileAtomic` | fn | tmp + rename 原子写（同目录 temp ⇒ 崩溃/磁盘满时目标要么旧要么新，不会 半截）。随机后缀用 `randomBytes`（不是 `Math.random`/`Date.now`）：防可 预测 tmp 路径被预置符号链接劫持。 | `writeFileAtomic(path: string, data: string): void` |

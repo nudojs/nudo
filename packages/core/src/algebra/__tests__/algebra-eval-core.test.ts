@@ -3069,19 +3069,26 @@ describe("absShapeForTsTypeText 不进**公共**面（负控；internal 面已�
       open: true,
       slots: { a: { value: { shape: { k: "obj", open: true } } } },
     });
-    // 可选 / rest 元组长度可变 ⇒ 降级为 arr(元素域并集)，不得是定长 tuple。
-    for (const tupleText of [
-      "[string, number?]",
-      "[string, number ?]",
-      "[string, ...number[]]",
-      "[string, ... number[]]",
-    ]) {
+    // 可选位 `[string, number?]` 长度可变且位置不确定 ⇒ 降级为
+    // arr(元素域并集)；rest 元组 `[string, ...number[]]` 的位置前缀是真实
+    // 语义 ⇒ 保留 tuple + rest（length 是 number，不是前缀长度）。
+    for (const tupleText of ["[string, number?]", "[string, number ?]"]) {
       const sh = absShapeForTsTypeText(tupleText);
       expect(sh, tupleText).toMatchObject({ k: "arr" });
       const elem = sh?.k === "arr" ? sh.element.shape : undefined;
       expect(elem).toMatchObject({ k: "sum" });
       expect(elem?.k === "sum" ? elem.members.length : 0, tupleText).toBe(2);
     }
+    for (const tupleText of ["[string, ...number[]]", "[string, ... number[]]"]) {
+      const sh = absShapeForTsTypeText(tupleText);
+      expect(sh, tupleText).toMatchObject({
+        k: "tuple",
+        elements: [{ shape: { k: "prim", type: "string" } }],
+        rest: { shape: { k: "prim", type: "number" } },
+      });
+    }
+    // 纯 rest（无前缀）与 arr 同域，仍折 arr。
+    expect(absShapeForTsTypeText("[...number[]]")).toMatchObject({ k: "arr" });
     // 负控：定长必填元组口径不变。
     expect(absShapeForTsTypeText("[string, number]")).toMatchObject({ k: "tuple" });
     // null / undefined / void 不是值形状 ⇒ 整条不映射（不得嵌 unknown 令牌）

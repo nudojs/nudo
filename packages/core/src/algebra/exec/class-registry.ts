@@ -368,6 +368,13 @@ export function ensureFnParentName(fnAbs: Abs): string {
  *  `Base.prototype.x = 1` 写后读可见）。constructor 槽指回 fn 自身
  *  （MakeConstructor 语义）。 */
 const fnProtos = new WeakMap<object, Abs>();
+/** fn 原型对象的身份集（prototype 链一步：其 [[Prototype]] 原生恒
+ *  Object.prototype——protoStepOf / instanceof 身份比较用）。 */
+const fnProtoObjs = new WeakSet<object>();
+
+export function isFnProtoAbs(a: Abs | undefined): boolean {
+  return !!a && typeof a === "object" && fnProtoObjs.has(a as object);
+}
 
 export function fnProtoOf(fnAbs: Abs): Abs {
   let p = fnProtos.get(fnAbs);
@@ -382,6 +389,7 @@ export function fnProtoOf(fnAbs: Abs): Abs {
     // for-in / Object.keys 看不到（`for (const k in (function(){}).prototype)`
     // 原生是 []，缺标记则引擎发布 ["constructor"]）。
     setPropFlags(p, "constructor", { enumerable: false, writable: true, configurable: true });
+    fnProtoObjs.add(p as object);
     fnProtos.set(fnAbs, p);
   }
   return p;

@@ -206,7 +206,7 @@ function fixture(src: string): string {
     const schema = runCli(["export", join(dir, "lib.js"), "--format", "schema"]);
     expect(schema.status).toBe(0);
     expect(schema.stdout).not.toContain("z.array(z.array(");
-    expect(schema.stdout).toMatch(/export const restOneInput = z\.object\(\{ args: z\.array\(z\.(union|unknown)/);
+    expect(schema.stdout).toMatch(/export const restOneInput = z\.object\(\{ args: z\.array\(z\.number\(\)/);
   }
 });
 
@@ -1946,7 +1946,7 @@ function fixture(files: Record<string, string>): string {
     });
     const r = runCli(["export", join(dir, "d611.js"), "--format", "schema"]);
     expect(r.status).toBe(0);
-    expect(r.stdout).toContain("b: z.literal(2).optional()");
+    expect(r.stdout).toMatch(/b: z\.number\(\).*\.optional\(\)/);
   }
   {
     const dir = fixture({

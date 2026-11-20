@@ -11,6 +11,7 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   renameSync,
   rmSync,
   statSync,
@@ -1537,6 +1538,56 @@ type WorkflowScan = {
 };
 
 /**
+ * YAML `>`（折叠标量）的行折叠：**只把等缩进行之间的换行折成空格**。
+ *
+ * BUG-174：此前整块 `body.replace(/\n+/g, " ")` ⇒ 比首行**更缩进**的续行
+ * （YAML 规范里它们保留换行，是 `run: >` 写多条命令的惯用形态）被拼进上一条
+ * 命令，`rewriteTscCommand` 把整串当成一条 `tsc` 调用重写 ⇒ 后续
+ * `npm run build` / `npm publish` 被静默删掉。
+ *
+ * 折叠规则（YAML 1.2 §8.1.3 的最小实现）：
+ * - 相邻两行都**等缩进**（相对块缩进）⇒ 换行折成一个空格；
+ * - 任一侧**更缩进**（more-indented line）⇒ 保留换行（缩进也保留）；
+ * - 空行 ⇒ 换成换行（连续 k 个空行 ⇒ k 个换行）。
+ *
+ * @param bodyLines 已去掉块缩进的各行（空行保留为空串）
+ * @param baseIndent 块缩进（首行非空行的缩进）
+ */
+function foldBlockScalar(
+  bodyLines: string[],
+  baseIndent: number,
+): { text: string; blanksBefore: number[] } {
+  const lines: string[] = [];
+  /** `lines[i]` 之前要写几个**空行**（0 = 靠「更缩进」保留换行） */
+  const blanksBefore: number[] = [];
+  let prevMoreIndented = true;
+  let blanks = 0;
+  for (const raw of bodyLines) {
+    if (raw.trim() === "") {
+      blanks++;
+      continue;
+    }
+    const indent = raw.length - raw.trimStart().length;
+    const moreIndented = indent > baseIndent;
+    if (lines.length > 0) {
+      if (blanks > 0) blanksBefore.push(blanks);
+      else if (moreIndented || prevMoreIndented) blanksBefore.push(0);
+      else {
+        // 等缩进相邻行 ⇒ YAML 折叠成空格（仍是同一条逻辑行）
+        lines[lines.length - 1] += " " + raw.slice(baseIndent);
+        prevMoreIndented = moreIndented;
+        blanks = 0;
+        continue;
+      }
+    }
+    blanks = 0;
+    lines.push(raw.slice(baseIndent));
+    prevMoreIndented = moreIndented;
+  }
+  return { text: lines.join("\n"), blanksBefore };
+}
+
+/**
  * 扫描并改写 workflow YAML。
  * - 只有 `run:` 的标量是**命令位**：env 值 / 描述文字 / 注释都不是命令（Bug 579）。
  * - 块标量（`run: |` / `run: >`）整体按 YAML 语义取出、在**命令层面**改写、
@@ -1589,9 +1640,10 @@ function scanWorkflowText(text: string, root?: string): WorkflowScan {
       const body = bodyLines
         .map((l) => (l.trim() === "" ? "" : l.slice(baseIndent)))
         .join("\n");
-      // `>` 折叠标量：换行折成空格 ⇒ 多行本就是一条命令
+      // `>` 折叠标量：**等缩进**行之间折成空格；更缩进的行保留换行（BUG-174）
       const folded = value.trim().startsWith(">");
-      const logical = folded ? body.replace(/\n+/g, " ") : body;
+      const fold = folded ? foldBlockScalar(bodyLines, baseIndent) : undefined;
+      const logical = fold ? fold.text : body;
       const calls = findTscCalls(logical);
       if (isTscCommand(logical)) tscCalls.push(logical.trim());
       const { cmd, changed } = rewriteTscCommand(logical, root);
@@ -1603,8 +1655,19 @@ function scanWorkflowText(text: string, root?: string): WorkflowScan {
       changes.push({ from: logical.trim(), to: cmd.trim(), line: i + 1 });
       for (let k = 0; k < calls.length; k++) tscCommands.push(logical.trim());
       out.push(line);
-      const newBody = folded ? cmd.replace(/\n+/g, " ") : cmd;
-      for (const l of newBody.split("\n")) out.push(l === "" ? "" : pad + l);
+      // 按**逻辑行**回写：折叠标量的换行靠「更缩进续行」保留，段间换行靠
+      // 空行保留（YAML 里 k 个空行 = 逻辑文本里的 k 个换行）——二者都不得
+      // 再折回一行，否则续行会被并进上一条命令（BUG-174）。
+      {
+        const cmdLines = cmd.split("\n");
+        for (let k = 0; k < cmdLines.length; k++) {
+          const blanks = fold?.blanksBefore[k - 1] ?? 0;
+          // 逻辑行之间的空白：写回源里需 k 个空行（不是 k-1——空行是折叠
+          // 标量里唯一的换行来源）。
+          for (let b = 0; b < blanks && k > 0; b++) out.push("");
+          out.push(cmdLines[k] === "" ? "" : pad + cmdLines[k]);
+        }
+      }
       out.push(...tailLines);
       i = j;
       continue;
@@ -2019,9 +2082,15 @@ export function stripTsToJs(
     ? (spec: string): string | undefined =>
         resolveProductSpecifier(opts.filePath as string, spec, notes)
     : undefined;
+  // BUG-220：再导出的类型证明必须来自**源模块**（本文件的 typeRefs 证明
+  // 不了它；包说明符不由 nudo 剥除 ⇒ 保持保守保留）。
+  const isTypeOnlyReExport = opts.filePath
+    ? typeOnlyReExportResolver(opts.filePath)
+    : undefined;
   stripTypes(ast, undefined, {
     report,
     ...(resolveSpecifier ? { resolveSpecifier } : {}),
+    ...(isTypeOnlyReExport ? { isTypeOnlyReExport } : {}),
   });
   // 运行时 enum 现在是**被合成**而不是被删除（Bug 913）⇒ note 必须跟着改口径：
   // 「runtime semantics lost」对「已被合成」的文件是**误报**。
@@ -2169,6 +2238,273 @@ function resolveProductSpecifier(
     `relative specifier '${spec}' could not be resolved — extension not added (ESM requires an explicit file extension)`,
   );
   return undefined;
+}
+
+/** 再导出证明的候选扩展名（TS 源优先：迁移期 `.ts` 才是被剥除的事实源） */
+const RE_EXPORT_SOURCE_EXTS = [
+  ".ts",
+  ".tsx",
+  ".mts",
+  ".cts",
+  ".d.ts",
+  ".js",
+  ".jsx",
+  ".mjs",
+  ".cjs",
+] as const;
+
+/** 相对说明符 → 源文件（再导出证明用；只认本地模块） */
+function resolveReExportSource(fromFile: string, spec: string): string | undefined {
+  if (!spec.startsWith("./") && !spec.startsWith("../")) return undefined;
+  const base = resolve(dirname(fromFile), spec);
+  const ext = extname(base).toLowerCase();
+  const candidates: string[] = [];
+  if (ext === ".js" || ext === ".jsx") {
+    const stem = base.slice(0, -ext.length);
+    candidates.push(`${stem}.ts`, `${stem}.tsx`, base, `${stem}.d.ts`);
+  } else if (ext === ".mjs") {
+    const stem = base.slice(0, -ext.length);
+    candidates.push(`${stem}.mts`, base, `${stem}.d.mts`);
+  } else if (ext === ".cjs") {
+    const stem = base.slice(0, -ext.length);
+    candidates.push(`${stem}.cts`, base, `${stem}.d.cts`);
+  } else if (ext === ".ts" || ext === ".tsx" || ext === ".mts" || ext === ".cts") {
+    candidates.push(base);
+  } else {
+    for (const e of RE_EXPORT_SOURCE_EXTS) candidates.push(`${base}${e}`);
+  }
+  for (const e of RE_EXPORT_SOURCE_EXTS) candidates.push(join(base, `index${e}`));
+  for (const c of candidates) {
+    try {
+      if (statSync(c, { throwIfNoEntry: false })?.isFile()) return c;
+    } catch {
+      // 读不到 ⇒ 试下一个候选
+    }
+  }
+  return undefined;
+}
+
+/** 模块导出事实（BUG-220 的再导出证明；只做保守分类） */
+type ExportFact =
+  | { kind: "type" }
+  | { kind: "value" }
+  /** `export { A }`（无 source）——本地声明/导入，按 locals 解析 */
+  | { kind: "local"; local: string }
+  /** `export { A } from "./m.js"` */
+  | { kind: "reexport"; source: string; local: string };
+
+type ModuleExportFacts = {
+  exports: Map<string, ExportFact>;
+  /** 本文件顶层声明的名字 → 类型空间 / 运行时 */
+  locals: Map<string, "type" | "value">;
+  /** `export * from "./m.js"`（多个 star 有重名风险 ⇒ 不据此判类型） */
+  starSources: string[];
+};
+
+/** 顶层声明是否只存在于类型空间（declare / interface / type alias） */
+function isTypeOnlyDeclarationNode(decl: Record<string, unknown>): boolean {
+  const declare = decl.declare === true;
+  switch (decl.type) {
+    case "TSInterfaceDeclaration":
+    case "TSTypeAliasDeclaration":
+    case "TSDeclareFunction":
+      return true;
+    case "TSEnumDeclaration":
+      return declare; // 运行时 enum 会被 strip 合成为对象
+    case "ClassDeclaration":
+    case "FunctionDeclaration":
+    case "VariableDeclaration":
+    case "TSModuleDeclaration":
+      return declare; // `declare class / const / namespace` 没有运行时发射
+    default:
+      return false;
+  }
+}
+
+/** 绑定模式里的名字（`export const { a, b: c } = …`） */
+function boundNames(node: unknown, out: string[]): void {
+  if (!node || typeof node !== "object") return;
+  const rec = node as Record<string, unknown>;
+  switch (rec.type) {
+    case "Identifier":
+      if (typeof rec.name === "string") out.push(rec.name);
+      return;
+    case "ObjectPattern": {
+      const props = rec.properties;
+      if (!Array.isArray(props)) return;
+      for (const p of props) {
+        const prop = p as Record<string, unknown>;
+        if (prop.type === "RestElement") boundNames(prop.argument, out);
+        else boundNames(prop.value, out);
+      }
+      return;
+    }
+    case "ArrayPattern": {
+      const elems = rec.elements;
+      if (Array.isArray(elems)) for (const e of elems) boundNames(e, out);
+      return;
+    }
+    case "AssignmentPattern":
+      boundNames(rec.left, out);
+      return;
+    case "RestElement":
+      boundNames(rec.argument, out);
+      return;
+    default:
+      return;
+  }
+}
+
+/** 声明节点发射的名字（export 面用它登记导出） */
+function declarationNames(decl: Record<string, unknown>): string[] {
+  if (decl.type === "VariableDeclaration") {
+    const out: string[] = [];
+    const decls = decl.declarations;
+    if (Array.isArray(decls)) {
+      for (const d of decls) boundNames((d as { id?: unknown }).id, out);
+    }
+    return out;
+  }
+  const id = decl.id as { name?: unknown } | undefined;
+  return typeof id?.name === "string" ? [id.name] : [];
+}
+
+/** 顶层名字 → 类型 / 运行时（含未导出的声明，供 `export { A }` 解析） */
+function recordLocalDeclaration(
+  decl: Record<string, unknown>,
+  locals: Map<string, "type" | "value">,
+): void {
+  const kind = isTypeOnlyDeclarationNode(decl) ? "type" : "value";
+  for (const name of declarationNames(decl)) locals.set(name, kind);
+}
+
+/** 解析一个模块的导出面事实（解析失败 ⇒ undefined = 不证明） */
+function moduleExportFacts(file: string): ModuleExportFacts | undefined {
+  let text: string;
+  try {
+    text = readFileSync(file, "utf-8");
+  } catch {
+    return undefined;
+  }
+  let body: unknown[];
+  try {
+    const ast = parseSource(text, { keepTs: true });
+    const program = (ast as { program?: { body?: unknown[] } }).program;
+    if (!Array.isArray(program?.body)) return undefined;
+    body = program.body;
+  } catch {
+    return undefined;
+  }
+  const exports = new Map<string, ExportFact>();
+  const locals = new Map<string, "type" | "value">();
+  const starSources: string[] = [];
+  for (const raw of body) {
+    if (!raw || typeof raw !== "object") continue;
+    const node = raw as Record<string, unknown>;
+    switch (node.type) {
+      case "ExportNamedDeclaration": {
+        const decl = node.declaration as Record<string, unknown> | null | undefined;
+        if (decl) {
+          recordLocalDeclaration(decl, locals);
+          const kind = isTypeOnlyDeclarationNode(decl) ? "type" : "value";
+          for (const name of declarationNames(decl)) exports.set(name, { kind });
+          continue;
+        }
+        const source = (node.source as { value?: unknown } | null | undefined)?.value;
+        const specs = node.specifiers;
+        if (!Array.isArray(specs)) continue;
+        for (const s of specs) {
+          const spec = s as Record<string, unknown>;
+          const exported = (spec.exported as { name?: unknown } | undefined)?.name;
+          const local = (spec.local as { name?: unknown } | undefined)?.name;
+          if (typeof exported !== "string") continue;
+          if (spec.exportKind === "type") {
+            exports.set(exported, { kind: "type" });
+            continue;
+          }
+          if (typeof local !== "string") continue;
+          if (typeof source === "string") {
+            exports.set(exported, { kind: "reexport", source, local });
+          } else {
+            exports.set(exported, { kind: "local", local });
+          }
+        }
+        continue;
+      }
+      case "ExportDefaultDeclaration": {
+        const decl = node.declaration as Record<string, unknown> | undefined;
+        const typeOnly = decl !== undefined && isTypeOnlyDeclarationNode(decl);
+        exports.set("default", typeOnly ? { kind: "type" } : { kind: "value" });
+        continue;
+      }
+      case "ExportAllDeclaration": {
+        const source = (node.source as { value?: unknown } | undefined)?.value;
+        if (typeof source !== "string") continue;
+        const exported = (node.exported as { name?: unknown } | undefined)?.name;
+        // `export * as ns from "m"` 的 ns 是运行时命名空间对象
+        if (typeof exported === "string") exports.set(exported, { kind: "value" });
+        else starSources.push(source);
+        continue;
+      }
+      case "TSInterfaceDeclaration":
+      case "TSTypeAliasDeclaration":
+      case "TSDeclareFunction":
+      case "TSEnumDeclaration":
+      case "ClassDeclaration":
+      case "FunctionDeclaration":
+      case "VariableDeclaration":
+      case "TSModuleDeclaration":
+        recordLocalDeclaration(node, locals);
+        continue;
+      default:
+        continue;
+    }
+  }
+  return { exports, locals, starSources };
+}
+
+/**
+ * 源模块的导出 `name` 是否只存在于类型空间（BUG-220）。
+ *
+ * 保守方向：任何拿不准（解析失败 / 名字找不到 / 多个 `export *` 重名风险 /
+ * 本地导入再导出 / 包说明符）⇒ false（保留再导出）。只有拿到确定事实
+ * （interface / type alias / declare …）才返回 true。
+ */
+function isTypeOnlyModuleExport(
+  file: string,
+  name: string,
+  factsFor: (file: string) => ModuleExportFacts | undefined,
+  seen: Set<string>,
+): boolean {
+  const key = `${file}\u0000${name}`;
+  if (seen.has(key)) return false;
+  seen.add(key);
+  const facts = factsFor(file);
+  if (!facts) return false;
+  const fact = facts.exports.get(name);
+  if (!fact) {
+    if (facts.starSources.length !== 1) return false;
+    const target = resolveReExportSource(file, facts.starSources[0]!);
+    return target ? isTypeOnlyModuleExport(target, name, factsFor, seen) : false;
+  }
+  if (fact.kind === "type") return true;
+  if (fact.kind === "value") return false;
+  if (fact.kind === "local") return facts.locals.get(fact.local) === "type";
+  const target = resolveReExportSource(file, fact.source);
+  return target ? isTypeOnlyModuleExport(target, fact.local, factsFor, seen) : false;
+}
+
+/** 再导出证明回调（按文件缓存解析结果；一次 strip 一个实例） */
+function typeOnlyReExportResolver(fromFile: string): (source: string, name: string) => boolean {
+  const cache = new Map<string, ModuleExportFacts | undefined>();
+  const factsFor = (file: string): ModuleExportFacts | undefined => {
+    if (!cache.has(file)) cache.set(file, moduleExportFacts(file));
+    return cache.get(file);
+  };
+  return (source, name) => {
+    const target = resolveReExportSource(fromFile, source);
+    return target ? isTypeOnlyModuleExport(target, name, factsFor, new Set()) : false;
+  };
 }
 
 /** 用产物的扩展名重建说明符（保留调用方的目录形态） */
@@ -2581,6 +2917,14 @@ type TscRun = {
   raw: string;
   /** 文件级诊断 */
   diags: TscDiag[];
+  /** 所用 tsconfig（无 tsconfig = 按文件位置参数跑） */
+  tsconfig?: string;
+  /**
+   * 项目的**成员文件集**（BUG-183）：`tsc -p … --listFilesOnly` 的真实列表
+   * （绝对路径，realpath 归一）。undefined = 拿不到成员事实（tsc 不可用 /
+   * 配置非法）。
+   */
+  projectFiles?: Set<string>;
 };
 
 /** tsc 诊断行：`path(line,col): error TSxxxx: msg`（项目级错误无此形态） */
@@ -2610,6 +2954,46 @@ function parseTscDiags(raw: string): TscDiag[] {
 }
 
 /**
+ * 路径的规范形态（symlink 归一）——macOS 的 `/tmp → /private/tmp` 会让同一
+ * 文件出现两种绝对路径，成员判定必须按规范形态比较。
+ */
+function canonicalPath(p: string): string {
+  const abs = resolve(p);
+  try {
+    return realpathSync(abs);
+  } catch {
+    return abs;
+  }
+}
+
+/**
+ * tsconfig 项目的**成员文件集**（BUG-183）。
+ *
+ * `tsc -p` 的进程成功只说明「项目本身没有诊断」，**不**说明某个被检文件被
+ * 项目看过——`exclude` / `include` 未覆盖 / 未被引用的文件从未进入编译。
+ * 成员事实只能从 tsc 自己的文件列表拿（`--listFilesOnly` 与 `-p` 同一
+ * 解析路径：extends / files / include / exclude 全由 tsc 处理，不重写
+ * tsconfig 语义）。拿不到（tsc 不可用 / 配置非法）⇒ undefined。
+ */
+function tscProjectFiles(tsconfig: string, projectDir: string): Set<string> | undefined {
+  try {
+    const out = execFileSync("pnpm", ["exec", "tsc", "-p", tsconfig, "--listFilesOnly"], {
+      cwd: projectDir,
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const files = new Set<string>();
+    for (const line of out.split("\n")) {
+      const p = line.trim();
+      if (p !== "") files.add(canonicalPath(isAbsolute(p) ? p : resolve(projectDir, p)));
+    }
+    return files.size > 0 ? files : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * tsc 基线（Bug 582）：**项目级**跑一次，诊断按被检文件切分。
  *
  * 旧实现把源文件当**位置参数**传给 tsc ⇒ 现代 TS 见到「命令行给了文件 +
@@ -2618,6 +3002,8 @@ function parseTscDiags(raw: string): TscDiag[] {
  * - 有 tsconfig ⇒ `tsc -p <tsconfig>`（cwd = 项目根）——配置真正被加载；
  * - 无 tsconfig ⇒ 退回按文件位置参数（祖先链上没有 tsconfig ⇒ 不会有 TS5112）；
  * - 诊断按**被检文件**切分 ⇒ 干净文件与有错文件的基线必然不同。
+ * - BUG-183：项目成员事实（`--listFilesOnly`）与诊断同源 ⇒ 「文件没被项目
+ *   看过」不再拿到与「干净」相同的绿。
  */
 function runTscProject(dir: string, file: string, fallbackCwd: string): TscRun {
   const tsconfig = findNearestTsconfig(dir);
@@ -2625,26 +3011,39 @@ function runTscProject(dir: string, file: string, fallbackCwd: string): TscRun {
   const args = tsconfig
     ? ["exec", "tsc", "-p", tsconfig, "--noEmit", "--pretty", "false", "--skipLibCheck"]
     : ["exec", "tsc", "--noEmit", "--pretty", "false", "--skipLibCheck", file];
+  // BUG-183：项目成员事实与诊断同源（同一个 tsconfig）；一次 verify 每个
+  // 项目只算一次（tscCache 按 tsconfig 键驻留）。
+  const projectFiles = tsconfig ? tscProjectFiles(tsconfig, projectDir) : undefined;
+  const base = { projectDir, ...(tsconfig ? { tsconfig } : {}), ...(projectFiles ? { projectFiles } : {}) };
   try {
     const out = execFileSync("pnpm", args, {
       cwd: projectDir,
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"],
     });
-    return { projectDir, ran: true, raw: out, diags: parseTscDiags(out) };
+    return { ...base, ran: true, raw: out, diags: parseTscDiags(out) };
   } catch (e) {
     const err = e as { stdout?: string; stderr?: string; message?: string };
     const raw = `${err.stdout ?? ""}${err.stderr ?? err.message ?? ""}`.trim();
-    return { projectDir, ran: false, raw, diags: parseTscDiags(raw) };
+    return { ...base, ran: false, raw, diags: parseTscDiags(raw) };
   }
 }
 
 /** 单文件基线：只取该文件的诊断；项目级失败（无文件级诊断）时透传失败原因 */
 function tscBaselineForFile(run: TscRun, file: string): { ok: boolean; output: string } {
-  const abs = resolve(file);
-  const mine = run.diags.filter((d) => resolve(run.projectDir, d.file) === abs);
+  const abs = canonicalPath(file);
+  const mine = run.diags.filter((d) => canonicalPath(resolve(run.projectDir, d.file)) === abs);
   if (mine.length > 0) {
     return { ok: false, output: mine.map((d) => d.text).join("\n") };
+  }
+  // BUG-183：无本文件诊断有两种来源——「文件被检查过且干净」与「文件根本
+  // 不在项目里」。`run.ran` 只证明前者可能成立，不证明成员关系 ⇒ 必须按
+  // 项目的成员集判定，否则被 exclude 的文件会拿到与「干净」相同的假绿。
+  if (run.projectFiles && !run.projectFiles.has(abs)) {
+    return {
+      ok: false,
+      output: `not covered by the tsc project (${run.tsconfig ?? "tsconfig.json"}): the project never checked this file — add it to the project (files / include) to get a tsc baseline`,
+    };
   }
   // 无本文件诊断：要么干净（ran），要么错误在别的文件（项目级 diags 非空）
   if (run.ran || run.diags.length > 0) return { ok: true, output: "" };

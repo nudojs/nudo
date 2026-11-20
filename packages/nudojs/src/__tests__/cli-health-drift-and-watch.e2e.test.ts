@@ -1508,3 +1508,59 @@ afterAll(() => {
   });
 
 });
+
+// ---------------------------------------------------------------------------
+// 4. 「该刷什么」的 per-file 行必须与 Summary 同源（error / 改写标签）
+// ---------------------------------------------------------------------------
+
+describe("health 明细行与 Summary 的计数同源（error 共存 / 改写标签）", () => {
+  let dir2: string;
+  const q = (f: string): string => join(dir2, f);
+
+  const LIB = `export function f(a) { return a + 1; }\n`;
+  const USE_ONE = `import { f } from "./lib.js";\nf(1);\n`;
+  const USE_NINE = `import { f } from "./lib.js";\nf(9);\n`;
+  // 加载即报错（语法不合法）的侧车：health 给出 error 级 contract-load
+  const BROKEN_SIDECAR = `this is not valid javascript {{{\n`;
+
+  beforeAll(() => {
+    dir2 = mkdtempSync(join(tmpdir(), "nudo-health-detail-"));
+    writeSrcTsconfig(dir2);
+    writeFileSync(q("lib.js"), LIB);
+    writeFileSync(q("use.js"), USE_ONE);
+    // 固化见证（call@use.js:L2），再把同一调用点的实参改掉 ⇒ 只发生「改写」
+    const frozen = runCliTsx(["test", q("lib.js"), "--from", q("use.js"), "--freeze"], {
+      cwd: dir2,
+    });
+    if (frozen.status !== 0) throw new Error(`freeze failed: ${frozen.stdout}${frozen.stderr}`);
+    writeFileSync(q("use.js"), USE_NINE);
+  });
+
+  afterAll(() => {
+    rmSync(dir2, { recursive: true, force: true });
+  });
+
+  it("BUG-211 同一文件有 error 级诊断时仍打印 drift 行（含刷新命令）", { timeout: 60_000 }, () => {
+    writeFileSync(q("lib.nudo.js"), BROKEN_SIDECAR);
+    try {
+      const r = runCliTsx(["health", q("lib.js"), "--from", q("use.js")], { cwd: dir2 });
+      expect(r.status).toBe(1);
+      // error 与 drift 是共存的两份事实：Summary 计 `1 case drift` ⇒ 必须有
+      // 对应的 per-file 行（否则用户只看到一行错误，无从知道该刷什么）
+      expect(r.stdout, r.stdout).toContain("✗ error:");
+      expect(r.stdout).toContain("✗ drift: 1 witness directive(s) changed");
+      expect(r.stdout).toContain(`--freeze=update`);
+      expect(r.stdout).toContain("1 case drift");
+    } finally {
+      rmSync(q("lib.nudo.js"), { force: true });
+    }
+  });
+
+  it("BUG-212 同一调用点被改写 ⇒ 印 changed 而不是 new", { timeout: 60_000 }, () => {
+    const r = runCliTsx(["health", q("lib.js"), "--from", q("use.js")], { cwd: dir2 });
+    expect(r.stdout, r.stdout).toContain("1 witness directive(s) changed");
+    // 改写既不是新增调用点也不是删除：三个计数必须分得开
+    expect(r.stdout).toContain("(+0 new, -0 removed, 1 changed)");
+    expect(r.stdout).not.toContain("+1 new");
+  });
+});

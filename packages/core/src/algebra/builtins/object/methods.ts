@@ -901,14 +901,51 @@ function inheritedProtoSlots(proto: Abs): Record<string, { value: Abs; inherited
       {
         const outcome = proxyOwnKeysTrapKeys(a0);
         if (outcome.k === "keys") {
-          const enumKeys = proxyTargetEnumerableStringKeys(outcome.target);
-          if (enumKeys === undefined) {
+          // Bug 200：可枚举性按 [[GetOwnProperty]] 逐键判定（handler 的
+          // "getOwnPropertyDescriptor" 陷阱 → 缺陷阱才回退靶），**不得**用
+          // 靶的可枚举键集做交集——靶可扩展时 ownKeys 陷阱返回靶外键是
+          // 合法的（enforceProxyOwnKeysInvariant 只在靶不可扩展时禁 extra），
+          // 交集会静默丢掉这些键，也看不到陷阱描述符的 enumerable:false。
+          const targetEnumerable = proxyTargetEnumerableStringKeys(outcome.target);
+          const names: string[] = [];
+          let uncertain = false;
+          for (const k of outcome.keys) {
+            const kv: unknown = k.term?.op === "lit" ? k.term.value : undefined;
+            // symbol 键不进 Object.keys（原生）；抽象键 → 键集不完备
+            if (typeof kv === "symbol") continue;
+            if (typeof kv !== "string") {
+              uncertain = true;
+              continue;
+            }
+            const d = proxyGetOwnPropDescTrap(a0, strLit(kv));
+            if (d.k === "opaque") {
+              uncertain = true;
+              continue;
+            }
+            if (d.k === "absent") {
+              // 无 gOPD 陷阱 ⇒ [[GetOwnProperty]] 转发靶：靶上没有该键
+              // （或不可枚举）⇒ 该键不出现
+              if (targetEnumerable === undefined) {
+                uncertain = true;
+                continue;
+              }
+              if (targetEnumerable.includes(kv)) names.push(kv);
+              continue;
+            }
+            const ds = d.desc.shape;
+            const en =
+              ds.k === "obj" ? getSlot((ds as ObjShape).slots, "enumerable") : undefined;
+            const enV = en ? litValue(en.value) : { ok: false as const };
+            // 不可判 ⇒ 该键是否入列未知 → 整个键集不完备
+            if (!enV.ok) {
+              uncertain = true;
+              continue;
+            }
+            if (enV.value === true) names.push(kv);
+          }
+          if (uncertain) {
             return abs({ k: "arr", element: str("path") }, undefined, undefined, "partial");
           }
-          const names = outcome.keys
-            .filter((k) => typeof (k.term?.op === "lit" ? k.term.value : undefined) === "string")
-            .map((k) => String((k.term as { value: unknown }).value))
-            .filter((n) => enumKeys.includes(n));
           return abs({ k: "tuple", elements: names.map((n) => strLit(n)) }, undefined, undefined, "exact");
         }
         if (outcome.k === "opaque") {
@@ -1723,9 +1760,13 @@ function inheritedProtoSlots(proto: Abs): Record<string, { value: Abs; inherited
       }
       if (a0.shape.k === "tuple") {
         const holes = (a0.shape as { holes?: number[] }).holes ?? [];
-        const entries: Array<[string, Abs]> = a0.shape.elements.map(
-          (el, i) => [String(i), holes.includes(i) ? undefAbs() : el] as [string, Abs],
-        );
+        // Bug 221：空洞下标**不是**自有属性（OwnPropertyKeys 不含它）——
+        // 不得凭空造一条 `{ value: undefined, … }` 描述符；与同引擎的
+        // gOPN（先 filter holes）/ gOPD（空洞 → undefined）同口径。
+        const entries: Array<[string, Abs]> = a0.shape.elements
+          .map((el, i) => [i, el] as [number, Abs])
+          .filter(([i]) => !holes.includes(i))
+          .map(([i, el]) => [String(i), el] as [string, Abs]);
         entries.push(["length", numLit(a0.shape.elements.length)]);
         // 数组 length：writable:true、不可枚举、不可配置（node 实测）；
         // 索引元素全自有可写可枚举可配置（gOPD tuple 分支同口径）
@@ -1741,7 +1782,9 @@ function inheritedProtoSlots(proto: Abs): Record<string, { value: Abs; inherited
               }
             : {
                 writable: f?.writable !== false,
-                enumerable: true,
+                // Bug 222：下标可枚举性读**同一标志表**（defineProperty 记下的
+                // enumerable:false 必须在此可见——Object.keys 面早已用它剔除）
+                enumerable: f?.enumerable !== false,
                 configurable: f?.configurable !== false,
               };
         });
@@ -2353,7 +2396,10 @@ function inheritedProtoSlots(proto: Abs): Record<string, { value: Abs; inherited
             return mkDesc(
               a0.shape.elements[idx]!,
               tFlags?.writable !== false,
-              true,
+              // Bug 222：enumerable 不是恒 true——defineProperty 记在 flags 表
+              // 的 enumerable:false 必须投影到描述符面（Object.keys 面已生效，
+              // 两面对同一事实不得给出相反结论）。
+              tFlags?.enumerable !== false,
               tFlags?.configurable !== false,
             );
           }

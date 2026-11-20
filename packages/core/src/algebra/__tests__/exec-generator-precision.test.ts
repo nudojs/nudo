@@ -45,9 +45,15 @@ describe("R1a。throw-into-catch done 域静态分类", () => {
     expect(r.result.shape.k).toBe("unknown");
   });
 
-  it("吸收后 catch 重抛面 may-throw 保持（sound 过近似）", () => {
+  it("catch 体不含 throw 不记 may-throw；重抛才记（YIELD_CATCH_THROWS）", () => {
+    // 修复前这里钉的是错误契约（catch 体只写 return 也记 may-throw）。
+    // catch 体不含 throw ⇒ 注入异常必被吸收；含 throw 才可能抛出去。
     expect(effects(`export function f(){
       function* h(){ try { yield 1; } catch (e) { return "caught"; } }
+      const it = h(); it.next(); it.throw(new Error("x")); return 0;
+    }`)).not.toContain("Error");
+    expect(effects(`export function f(){
+      function* h(){ try { yield 1; } catch (e) { throw e; } }
       const it = h(); it.next(); it.throw(new Error("x")); return 0;
     }`)).toContain("Error");
   });

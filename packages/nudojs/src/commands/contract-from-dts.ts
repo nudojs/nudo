@@ -192,13 +192,19 @@ export async function runContractFromDts(
    * - 草稿正文硬编码 `<target>.nudo.js`（`.ts` 源的实际侧车是 `.nudo.ts`）；
    * - `next` 行用 `sidecarPathOf(anchor)`（`.d.ts` ⇒ `.nudo.ts`，永不绑定）。
    *
-   * 判据：声明扩展名映射到它自己的运行时族（`.d.ts` → `.ts/.tsx/.js/.jsx`，
-   * `.d.mts` → `.mts/.mjs`，`.d.cts` → `.cts/.cjs`），取**存在**的第一个；
-   * 都不存在（纯声明包）⇒ 回落 `.d.ts` 相对名（此时无运行时可绑，提示点明）。
+   * 判据：声明扩展名映射到它自己的运行时族（`.d.ts` → `.ts/.tsx/.js/.jsx/
+   * `.mjs`/`.cjs`，`.d.mts` → `.mts/.mjs`，`.d.cts` → `.cts/.cjs`），取**存在**
+   * 的第一个；都不存在（纯声明包）⇒ 回落 `.d.ts` 相对名（此时无运行时可绑，
+   * 提示点明）。
    */
   function acceptSidecarFor(inputPath: string): { sidecar: string; bound: boolean } {
+    // `.d.ts` 的运行时兄弟**包含 `.mjs` / `.cjs`**：纯 ESM 包（`"type":"module"`
+    // + `exports` 指向 `dist/index.mjs`）的 `types` 通常仍写 `index.d.ts` ——
+    // 漏掉这两档时 `lib.d.ts` + `lib.mjs` 走不到任何候选 ⇒ 谎报「no runtime
+    // module found beside lib.d.ts」且接受目标给 `lib.nudo.ts`（对 `.mjs`
+    // 模块永不绑定，契约静默假绿）。`.d.mts` / `.d.cts` 的两档保持不变。
     const families: Record<string, readonly string[]> = {
-      ".d.ts": [".ts", ".tsx", ".js", ".jsx"],
+      ".d.ts": [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"],
       ".d.mts": [".mts", ".mjs"],
       ".d.cts": [".cts", ".cjs"],
     };
@@ -326,6 +332,12 @@ export async function runContractFromDts(
       write = writeContractDraft(anchor, draftSource, {
         dryRun: opts.dryRun,
         ...(projectDir ? { projectDir } : {}),
+        // 可写性判据的**唯一来源**是解析层的 entries（与打印面的
+        // 「N projectable exports」同一份）：不传时助手退回 `export const <id> =`
+        // 正则兜底，而别名形态（导出名撞 builder 名 ⇒ `const _nudo_1 = …;
+        // export { _nudo_1 as number }`）不匹配该正则 ⇒ 打印面刚说「1 可投影」，
+        // 写盘面却说「nothing written」（BUG-224）。
+        entries: draft.exports,
       });
     } catch (err) {
       console.error(`error: ${(err as Error).message}`);
@@ -343,7 +355,10 @@ export async function runContractFromDts(
     // 真写盘的结果面（`--dry-run` 绝不声称已写盘，也不再倾倒草稿全文）。
     if (!opts.dryRun) {
       if (!write.draftable) {
+        // 「什么都没写」不是成功：`--write` 的语义就是落一份草稿，CI / 脚本
+        // 只看退出码 ⇒ exit 0 会让「草稿没生成」静默通过（BUG-224）。
         console.log(`${outRel}: draft has no writable exports; nothing written`);
+        process.exitCode = 1;
       } else if (write.written) {
         console.log(
           `wrote  ${outRel}  (${draft.stats.exports} exports from ${draft.stats.files} d.ts)`,

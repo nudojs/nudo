@@ -220,8 +220,14 @@ export {
 // 此前 service 内嵌逐字拷贝）
 export { isEsmProgram } from "./algebra/exec/transpile/meta.ts";
 // TS 声明类型文本 → Abs 形状（service 的 dts 产物面复用；此前复刻同表靠
-// drift-gate 测试互钉，见 ts-annotation-core-drift.test.ts 的历史头注释）
-export { absShapeForTsTypeText } from "./algebra/contract/ts-type-shape.ts";
+// drift-gate 测试互钉，见 ts-annotation-core-drift.test.ts 的历史头注释）。
+// `absTypeForTsTypeText` 是同一映射链的 Abs 面（带 nullish 字面量精度）——
+// service 的入口实参播种（ts-annotation.ts）必须与 core 泛化面同源，否则
+// `x: string | null` 在入口观测 / dts / zod / guard 面整条退 any。
+export {
+  absShapeForTsTypeText,
+  absTypeForTsTypeText,
+} from "./algebra/contract/ts-type-shape.ts";
 // check 签名面的形参类型文本（`nudo check` 与 lsp hover 的形参行同口径；
 // 此前 LSP 侧留同公式拷贝 formatEntryParamShapeLike 靠手工同步）
 export { formatEntryParamShape } from "./algebra/check/check-signatures.ts";

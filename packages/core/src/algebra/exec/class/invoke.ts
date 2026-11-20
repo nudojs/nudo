@@ -18,8 +18,8 @@
  */
 import type { Abs } from "../../abs.ts";
 import { abs, unknown, litValue, strLit, isAbsLike } from "../../abs.ts";
-import { joinAbs, getSlot, propertyKeyOf } from "../../objects.ts";
-import { TYPED_ARRAY_CALLBACK_METHODS, builtinSuperCtorOf, brandHasProtoMember, classChainHasHole, evalClassChain, BUILTIN_BRAND_METHODS, ITERABLE_BRANDS, chainProtoSlotOf, findStaticClassAccessor } from "../runtime/members.ts";
+import { joinAbs, getSlot, propertyKeyOf, getInstanceProto, isEntryDomainAbs } from "../../objects.ts";
+import { TYPED_ARRAY_CALLBACK_METHODS, builtinSuperCtorOf, brandHasProtoMember, classChainHasHole, classChainLinks, evalClassChain, isBuiltinProtoName, BUILTIN_BRAND_METHODS, ITERABLE_BRANDS, chainProtoSlotOf, findStaticClassAccessor } from "../runtime/members.ts";
 import { typedArrayElementOf } from "../../builtins/shared.ts";
 import { typedArrayEnumKeyView } from "../../builtins/object/enum-entries.ts";
 import { MAX_CONCRETE_LOOP_ITERS } from "../runtime/loop-budget.ts";
@@ -71,7 +71,10 @@ import {
   getEvalClass,
   classSpecOfAbs,
   registerEvalClass,
+  fnProtoOf,
 } from "../class-registry.ts";
+// BUG-188：绑定级原型身份（类规格 → 原型 brand）直连 ctor 叶子。
+import { protoBrandForSpec } from "../../builtins/ctor.ts";
 
 import { invokePrimitive } from "./prim-methods.ts";
 import { invokeArrMethod } from "./invoke-arr.ts";
@@ -609,7 +612,16 @@ function invokeCallApplyBind(
         if (!getEvalClass(n)) registerEvalClass({ name: n });
         return n;
       },
-      proto: () => protoBrandAbs((thisVal as { name?: string }).name || "Object"),
+      // BUG-188：用户函数与 `F.prototype` 读同一载体（fn Abs 驻留）——
+      // 宿主函数声明 / 表达式各绑定一份原型；内建构造器仍按名驻留
+      // （进程内唯一，且内建原型品牌带专门的方法 / 键集面）。
+      proto: () => {
+        const n = (thisVal as { name?: string }).name || "Object";
+        // 用户函数遮蔽内建名时会注册同名空 spec（内建构造器永不注册）。
+        return isBuiltinProtoName(n) && getEvalClass(n) === undefined
+          ? protoBrandAbs(n)
+          : fnProtoOf(asAbsVal(thisVal));
+      },
       construct: (instance, callArgs) =>
         callAtFunctionBoundary(() => fn.apply(instance as never, [...bound, ...callArgs])),
     });
@@ -671,6 +683,9 @@ function invokeCallApplyBind(
         },
         proto: () => {
           if (tShape.k === "brand") {
+            // BUG-188：类值按规格身份取原型（同名不同绑定各一份）。
+            const spec = classSpecOfAbs(thisVal);
+            if (spec) return protoBrandForSpec(spec);
             const cn = classNameOfValue(thisVal) ?? targetName;
             return cn ? protoBrandAbs(cn) : undefined;
           }
@@ -793,7 +808,22 @@ function invokeUnionReceiver(
   // 调用方已按 k === "sum" 分流；此处重述守卫仅为类型收窄（行为不变）。
   if (s.k !== "sum") return unknown;
   const results: Abs[] = [];
+  // 入口声明域（形参注解 / 构造器注解 / 契约域）的 nullish 臂是**调用方
+  // 可达**的输入 ⇒ 未守卫的方法读原生定抛，进 L2 throws 域（BUG-208）。
+  // 派生的槽读（`m[1].trim()` / `node.name.trim()`）不在此列：它们的
+  // undefined 臂是守卫事实的原料（issue #136：调用求值到达 ⇒ 接收者非
+  // nullish；两臂影子重绑后收窄），且既有的守卫窄化回归依赖「测试式里
+  // 不记入口 may-throw」的口径。判据是构造点打的入口域标记（objects.ts
+  // 的 markEntryDomainAbs），不是形状启发式——两者在 Abs 层同形。
+  const declaredDomain = isEntryDomainAbs(thisVal);
   for (const m of s.members) {
+    // nullish 成员（`number | undefined` 的 undefined 臂）：方法读定抛
+    // TypeError（原生 `undefined.toFixed`）⇒ 记 may-throw 并跳过该成员。
+    // `memberLikelyHasMethod` 对 nullish 返回 false，而下面的 prim / fn
+    // 记账只认 prim / fn 接收者 ⇒ 此前该臂的抛被整段吞掉 ⇒ 入口签名对
+    // `x?: T` / `T | undefined` 自信发布「总函数」，与同文件零参调用点的
+    // never + throws 自相矛盾（BUG-208 的值面缺口）。
+    if (declaredDomain && noteNullishMemberThrows(m, method, "method", loc)) continue;
     if (memberLikelyHasMethod(m, method)) {
       results.push($invoke(m, method, args, loc, undefined, keyOpts));
       continue;
@@ -939,7 +969,8 @@ function invokeBuiltinBrandMethod(
     // 数组 HOF 同口径；此前回调可调用性只在 invokeCb 内经 $call 逐条目
     // 触发，空 Map/Set 与对象回调形态静默不抛（L2 假阴）。
     validateCallableArg(args[0], `${brandName}.prototype.forEach callback may not be callable`);
-    const r = $collectionForEach(thisVal, args[0]);
+    // Bug 202：第二实参 thisArg 透传（原生 Call(callbackfn, thisArg, …)）
+    const r = $collectionForEach(thisVal, args[0], args[1]);
     if (r !== undefined) return r;
   }
   return undefined;
@@ -1087,7 +1118,7 @@ function dispatchInstanceMethod(
   if (
     classNameOfValue(thisVal as object) !== brandName &&
     !classChainHasHole(brandName) &&
-    !brandHasProtoMember(brandName, method) &&
+    !brandHasProtoMember(brandName, method, classSpecOfAbs(thisVal), getInstanceProto(thisVal)) &&
     !OBJECT_PROTO_NAMES.has(method) &&
     !instanceOwnFaceHasMember(thisVal, brandName, method) &&
     chainHasStaticMember(brandName, method, classSpecOfAbs(thisVal))
@@ -1324,7 +1355,7 @@ function knownSurfaceMemberAbsent(
     // 表外内建 brand：原型面不完备 → 缺席不可证
     if (BUILTIN_BRAND_METHODS[brandName] === undefined) return false;
     if (classChainHasHole(brandName)) return false;
-    if (brandHasProtoMember(brandName, method)) return false;
+    if (brandHasProtoMember(brandName, method, classSpecOfAbs(recv), getInstanceProto(recv))) return false;
     if (OBJECT_PROTO_NAMES.has(method)) return false;
     if (instanceOwnFaceHasMember(recv, brandName, method)) return false;
     if (builtinProtoOwnSlot("Object", method) !== undefined) return false;
@@ -1413,7 +1444,9 @@ function userClassWrittenMember(
       if (own && !own.optional) return own.value;
     }
   }
-  const proto = chainProtoSlotOf(brandName, method, 0);
+  // BUG-188：原型数据槽按接收者的**绑定身份**（规格 + 构造期记录的
+  // [[Prototype]]）解析——同名类的另一个绑定的 `A.prototype.m` 不可见。
+  const proto = chainProtoSlotOf(brandName, method, 0, classSpecOfAbs(recv), getInstanceProto(recv));
   if (proto !== undefined) return proto;
   return undefined;
 }
@@ -1636,10 +1669,20 @@ function classChainAllUserClasses(brandName: string): boolean {
  * chainProtoSlotOf 的数据槽面。调用面判定「方法缺席」时须排除它（访问器
  * 的返回值可能可调用 ⇒ 原生不抛）。
  */
-function classProtoChainHasAccessor(brandName: string, key: string): boolean {
-  for (const name of evalClassChain(brandName)) {
-    if (!getEvalClass(name)) continue; // 只看注册用户类的原型对象
-    const pb = protoBrandAbs(name);
+function classProtoChainHasAccessor(
+  brandName: string,
+  key: string,
+  recv?: Abs,
+): boolean {
+  const startSpec = recv ? classSpecOfAbs(recv) : undefined;
+  const links =
+    startSpec !== undefined && startSpec.name === brandName
+      ? classChainLinks(brandName, startSpec)
+      : evalClassChain(brandName).map((n) => ({ name: n, spec: getEvalClass(n) }));
+  for (const { name, spec } of links) {
+    if (!spec) continue; // 只看注册用户类的原型对象
+    // BUG-188：同名不同绑定各看自己的原型对象（按规格身份驻留）。
+    const pb = protoBrandForSpec(spec);
     const inner = pb.shape.k === "brand" ? pb.shape.shape : undefined;
     if (!inner || inner.shape.k !== "obj") continue;
     if (lookupObjAccessor(inner, key)) return true;
@@ -1672,11 +1715,15 @@ function callSiteHasNoCallableTarget(recv: Abs, method: string, readValue: Abs):
   // Object.prototype 名恒可得（a.toString() 原生不抛）
   if (OBJECT_PROTO_NAMES.has(method)) return false;
   // 原型链数据槽 / 原型访问器上装了该键 → 成员在场（其值可能可调用）
-  if (classProtoChainHasAccessor(brandName, method)) return false;
+  if (classProtoChainHasAccessor(brandName, method, recv)) return false;
   // 方法在整个原型链上缺席（注册表 + 类声明访问器 + 原型数据槽）且接收者
   // 自有面无同名成员（ctor `this.m = fn` 写入的承载者 / 实例字段）→
-  // 原生 TypeError
-  if (!brandHasProtoMember(brandName, method) && !instanceOwnFaceHasMember(recv, brandName, method)) {
+  // 原生 TypeError。BUG-188：缺席判定按接收者的绑定身份——同名类的另一
+  // 绑定写的 `A.prototype.m` 不得把本绑定的缺席折成「成员在场」。
+  if (
+    !brandHasProtoMember(brandName, method, classSpecOfAbs(recv), getInstanceProto(recv)) &&
+    !instanceOwnFaceHasMember(recv, brandName, method)
+  ) {
     return true;
   }
   // 方法在场但读到的值确定非可调用（undefined / 非函数字面量）→ 原生同抛

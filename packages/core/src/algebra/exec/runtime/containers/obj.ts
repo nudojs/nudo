@@ -385,6 +385,11 @@ function copyWithMemo(a: Abs, memo: WeakMap<object, Abs>): Abs {
     const next = abs({ k: "sum", members: [] }, a.term, a.pred, a.conf);
     memo.set(a, next);
     (next.shape as Extract<Shape, { k: "sum" }>).members = s.members.map((m) => copyWithMemo(m, memo));
+    // 所有可能挂 extState/propFlags 的形状都必须迁移不变性侧表（与
+    // tuple/arr/obj/fn/brand 同口径）：入口声明域标记（objects.ts 的
+    // markEntryDomainAbs）就挂在 sum 上——fork/调用边界快照丢标记会把
+    // `x?: T` 的 nullish 臂重新折成「无入口 throws」（BUG-208 回退）。
+    migrateInvariants(a, next);
     return next;
   }
   // prim / never / any / unknown：已在函数开头返回（不可变、不进 memo、无环）。

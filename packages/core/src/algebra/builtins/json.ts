@@ -732,6 +732,15 @@ export function evalJsonMethod(name: string, args: Abs[]): Abs | undefined {
       if (mayCoerceThrowOperand(a0Abs)) {
         recordMayThrow({ kind: "TypeError", cause: "JSON.parse text ToString may throw" });
       }
+      // 抽象文本的**解析失败面**：原生 JSON.parse 对非法文本定抛 SyntaxError
+      // （字面量分支已在下方真执行并硬抛）。少了这条，`try { JSON.parse(s) }
+      // catch { … }` 的 catch 臂被整段丢弃 ⇒ 入口签名折「恒 ok」且无 throws，
+      // 而同一文件的调用点却能折出 catch 值。口径与 BigInt(s) /
+      // decodeURIComponent(s) 的抽象输入一致。
+      recordMayThrow({
+        kind: "SyntaxError",
+        cause: "JSON.parse abstract text may not be valid JSON",
+      });
       return unknown; // 抽象实参：保守
     }
     const v = t.value;

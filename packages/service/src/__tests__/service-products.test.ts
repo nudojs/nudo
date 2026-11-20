@@ -68,10 +68,10 @@ function declOf(source: string): string {
 {
   const declOf = (source: string): string => generateDts(analyzeFile("/test/dts.js", source)).split("\n").find((l) => l.startsWith("export declare function")) ?? "";
   it("getter 读域：数字/字符串/this/嵌套/抛 unknown；不出现 exact undefined", () => {
-    expect(declOf('export function g() { return { get ab() { return 1; } }; }')).toContain("{ ab: 1 }");
-    expect(declOf('export function g() { return { get ab() { return "s"; } }; }')).toContain('{ ab: "s" }');
-    expect(declOf("export function g() { return { n: 41, get q() { return this.n; } }; }")).toContain("{ n: 41; q: 41 }");
-    expect(declOf("export function g() { return { inner: { get ab() { return 2; } } }; }")).toContain("{ inner: { ab: 2 } }");
+    expect(declOf('export function g() { return { get ab() { return 1; } }; }')).toContain("{ ab: number }");
+    expect(declOf('export function g() { return { get ab() { return "s"; } }; }')).toContain('{ ab: string }');
+    expect(declOf("export function g() { return { n: 41, get q() { return this.n; } }; }")).toContain("{ n: number; q: number }");
+    expect(declOf("export function g() { return { inner: { get ab() { return 2; } } }; }")).toContain("{ inner: { ab: number } }");
     expect(declOf('export function g() { return { get boom() { throw new Error("x"); } }; }')).toContain("{ boom: unknown }");
     expect(generateDts(analyzeFile("/test/dts.js", "export function g() { return { get ab() { return 1; } }; }"))).not.toContain("ab: undefined");
   });
@@ -80,7 +80,7 @@ function declOf(source: string): string {
 describe("dts 负控制：非 getter 槽不受影响", () => {
   const declOf = (source: string): string => generateDts(analyzeFile("/test/dts.js", source)).split("\n").find((l) => l.startsWith("export declare function")) ?? "";
   it("数据属性 / 显式 undefined / setter-only / 空对象", () => {
-    expect(declOf("export function g() { return { plain: 5 }; }")).toContain("{ plain: 5 }");
+    expect(declOf("export function g() { return { plain: 5 }; }")).toContain("{ plain: number }");
     expect(declOf("export function g() { return { u: undefined }; }")).toContain("{ u: undefined }");
     expect(declOf("export function g() { return { set ab(v) {} }; }")).toContain("{ ab: undefined }");
     expect(declOf("export function g() { return {}; }")).toContain("Record<string, never>");

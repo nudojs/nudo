@@ -2058,3 +2058,101 @@ const SIDECAR = `export const f = fn({ x: number().gt(10) });\n`;
   }, 120_000);
 
 });
+
+// ---------------------------------------------------------------------------
+// YAML 折叠标量的更缩进续行是独立命令
+// ---------------------------------------------------------------------------
+describe("YAML 折叠标量的更缩进续行是独立命令", () => {
+/**
+ * BUG-174：`run: >` 折叠标量被整块按「换行 = 空格」处理 ⇒ 比首行更缩进
+ * 的续行（YAML 规范里保留换行 ⇒ 是下一条命令）被并进 tsc 命令里 ⇒
+ * `rewriteTscCommand` 重写整串 ⇒ `npm run build` / `npm publish` 被静默删掉，
+ * exit 0、marker 记为普通 rewrite。
+ *
+ * 期望：只重写 `npx tsc --noEmit`，后两条命令逐字保留（仍是独立的 YAML
+ * 折叠标量行）；`--dry-run --json` 展示同一份计划且不写盘。
+ */
+
+const dirs: string[] = [];
+afterAll(() => {
+  for (const d of dirs) rmSync(d, { recursive: true, force: true });
+});
+
+const foldedWorkflow = [
+  "name: release",
+  "on: push",
+  "jobs:",
+  "  release:",
+  "    runs-on: ubuntu-latest",
+  "    steps:",
+  "      - uses: actions/checkout@v4",
+  "      - name: release",
+  "        run: >",
+  "          npx tsc --noEmit",
+  "            npm run build",
+  "            npm publish --access public",
+  "",
+].join("\n");
+
+/** 可退役包 + `run: >` 三命令 workflow */
+function foldedProject(): string {
+  const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-folded-"));
+  dirs.push(dir);
+  writeFileSync(
+    join(dir, "package.json"),
+    JSON.stringify({
+      name: "folded",
+      version: "1.0.0",
+      private: true,
+      type: "module",
+      scripts: { typecheck: "tsc --noEmit" },
+      devDependencies: { typescript: "^5.6.0" },
+    }),
+    "utf-8",
+  );
+  mkdirSync(join(dir, ".github", "workflows"), { recursive: true });
+  writeFileSync(join(dir, ".github", "workflows", "release.yml"), foldedWorkflow, "utf-8");
+  return dir;
+}
+
+  it("BUG-174 retire 只重写 tsc 行，更缩进的 npm run build / npm publish 逐字保留", () => {
+    const dir = foldedProject();
+    const result = migrateRetire(dir);
+    const wf = readFileSync(join(dir, ".github", "workflows", "release.yml"), "utf-8");
+
+    // 三条命令都在，且顺序不变（改前：后两条整段消失）
+    const check = wf.indexOf("npx nudojs check .");
+    const build = wf.indexOf("npm run build");
+    const publish = wf.indexOf("npm publish --access public");
+    expect(check).toBeGreaterThanOrEqual(0);
+    expect(build).toBeGreaterThan(check);
+    expect(publish).toBeGreaterThan(build);
+
+    // 折叠标量的语义形态保留：续行仍是「比首行多缩进」的独立源行
+    expect(wf).toContain(
+      "          npx nudojs check .\n            npm run build\n            npm publish --access public\n",
+    );
+
+    // 审计记录的是完整标量（三条命令），不是被截断的一条
+    expect(result.rewrittenWorkflows).toHaveLength(1);
+    const rec = result.rewrittenWorkflows[0]!;
+    expect(rec.from).toContain("npx tsc --noEmit");
+    expect(rec.from).toContain("npm run build");
+    expect(rec.from).toContain("npm publish --access public");
+    expect(rec.to).toContain("npx nudojs check .");
+    expect(rec.to).toContain("npm run build");
+    expect(rec.to).toContain("npm publish --access public");
+  });
+
+  it("BUG-174 --dry-run 展示同一份计划且不写盘", () => {
+    const dir = foldedProject();
+    const result = migrateRetire(dir, { dryRun: true });
+    expect(readFileSync(join(dir, ".github", "workflows", "release.yml"), "utf-8")).toBe(
+      foldedWorkflow,
+    );
+    expect(result.dryRun).toBe(true);
+    expect(result.rewrittenWorkflows[0]!.to).toContain("npm run build");
+    expect(result.rewrittenWorkflows[0]!.to).toContain("npm publish --access public");
+  });
+
+});

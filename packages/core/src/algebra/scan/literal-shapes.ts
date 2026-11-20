@@ -78,6 +78,7 @@
 import { litValue } from "../abs.ts";
 import type { Abs } from "../abs.ts";
 import { getSlot } from "../objects.ts";
+import { accessorReadDomain } from "../accessors.ts";
 import { mayBeUndefinedAbs, nonUndefinedAbsValues } from "../leq.ts";
 import { projectAbsPath } from "./path-projection.ts";
 import {
@@ -958,7 +959,16 @@ export function checkShapeAgainstAbs(
   >) {
     const slot = getSlot(slots, key);
     const fieldPath = path === paramName ? `${paramName}.${key}` : `${path}.${key}`;
-    if (!slot) {
+    // BUG-203：访问器**不住在槽表里**（对象字面量 getter 只留一个
+    // `$lit(void 0)` 占位槽，`Object.defineProperty` 的 getter 连槽都没有，
+    // 真 getter 住 accessorTable）⇒ 键存在性与读值都必须先经侧表，否则
+    // getter 实参被读成占位 `undefined` / 判 `missing field`（假红），而同一
+    // 对象在返回值契约面与函数体读面都是对的。读法与返回位
+    // （postcondition.ts 的 `accessorReadDomain(ret, key) ?? slot.value`）、
+    // format / denote / absToConstraint 同一读域函数。
+    const readDomain = accessorReadDomain(value, key);
+    const fieldValue = readDomain ?? slot?.value;
+    if (fieldValue === undefined) {
       if (!field.optional && !field.constraint.isOptional) {
         pushPrecondIssue(
           out,
@@ -975,7 +985,7 @@ export function checkShapeAgainstAbs(
     // BUG-246：可选槽**吸收 undefined**（TS 默认
     // `exactOptionalPropertyTypes: false` ⇒ `{ a?: string }` 的槽类型是
     // `string | undefined`）⇒ `{ a: undefined }` 是合法实参。
-    // 修前这里只对「**缺槽**」看可选位（上方 `if (!slot)` 的 continue），
+    // 修前这里只对「**缺槽**」看可选位（上方 `if (!fieldValue)` 的 continue），
     // 槽存在但值是 undefined 时照样进 prim 门 ⇒ 假红
     // `typeof a = "string"`（与签名面 `a?: string` 自相矛盾）。
     // 判定与 `leqAbs` 的槽规则**同口径**（共享 `mayBeUndefinedAbs` /
@@ -984,16 +994,16 @@ export function checkShapeAgainstAbs(
     // 仍判红；`null` 不被吸收（strictNullChecks）。必填字段不受影响。
     const optionalField = field.optional || field.constraint.isOptional;
     const fieldValues =
-      optionalField && mayBeUndefinedAbs(slot.value)
-        ? nonUndefinedAbsValues(slot.value)
-        : [slot.value];
-    for (const fieldValue of fieldValues) {
+      optionalField && mayBeUndefinedAbs(fieldValue)
+        ? nonUndefinedAbsValues(fieldValue)
+        : [fieldValue];
+    for (const v of fieldValues) {
       checkFieldConstraint(
         ctx,
         displayName,
         paramName,
         field.constraint,
-        fieldValue,
+        v,
         fieldPath,
         loc,
       );

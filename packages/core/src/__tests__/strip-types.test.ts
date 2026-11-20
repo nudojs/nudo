@@ -565,6 +565,113 @@ const imports = (src: string) =>
 });
 
 // ---------------------------------------------------------------------------
+// 解构默认值的值引用 / 类型专用再导出
+// ---------------------------------------------------------------------------
+describe("解构默认值的值引用 / 类型专用再导出", () => {
+/**
+ * BUG-219：`collectValueReferences` 把 `VariableDeclarator` 当纯绑定位
+ * （只访问 `init`，从不访问 `id`）⇒ `const { d = new Def() } = opts` 里的
+ * `Def` 不进 valueRefs；它又出现在类型位置 ⇒ import 被判「只在类型位置
+ * 被用到」⇒ 整条 elide ⇒ 产物能加载、一调用就 ReferenceError。
+ *
+ * BUG-220：`export { Shape } from "./types.js"` 的出口侧没有证明判据 ⇒
+ * 被再导出的模块剥成空模块 ⇒ 链接期 SyntaxError。证明只能来自**源模块**
+ * （回调由 migrate strip 提供）：本文件的 typeRefs 证明不了——属性名 /
+ * 类型参数名也会进 typeRefs，类也可被只作类型使用却仍是运行时导出。
+ * 没有回调 / 回答不肯定 ⇒ 保留（单文件调用者的旧口径）。
+ */
+
+const body = (src: string) => parseSource(src).program.body;
+const imports = (src: string) =>
+  body(src).filter((n) => n.type === "ImportDeclaration") as unknown as {
+    specifiers: { local: { name: string } }[];
+  }[];
+type ReExport = { specifiers: { local: { name: string } }[] };
+const reexportsOf = (nodes: unknown[]) =>
+  nodes.filter(
+    (n) => (n as { type?: string }).type === "ExportNamedDeclaration" && (n as { source?: unknown }).source,
+  ) as unknown as ReExport[];
+const reexports = (src: string) => reexportsOf(body(src));
+/** 剥除时带「源模块该导出是类型」证明 */
+function stripWithProof(src: string, proof: (source: string, name: string) => boolean): ReExport[] {
+  const ast = parseSource(src, { keepTs: true });
+  stripTypes(ast, undefined, { isTypeOnlyReExport: proof });
+  return reexportsOf((ast as { program: { body: unknown[] } }).program.body);
+}
+
+  it("BUG-219 解构模式默认值里的值引用 ⇒ import 保留（对象 / 数组 / 计算键）；纯绑定名不算引用", () => {
+    {
+      // 报告夹具：对象解构默认值
+      const kept = imports(
+        `import { Def } from "./def.js";\nexport function pick(opts: { d?: Def }): Def {\n  const { d = new Def() } = opts;\n  return d;\n}`,
+      );
+      expect(kept).toHaveLength(1);
+      expect(kept[0].specifiers.map((s) => s.local.name)).toEqual(["Def"]);
+    }
+    {
+      // 数组解构默认值
+      expect(
+        imports(`import { Def } from "./def.js";\nexport const [d = new Def()] = [];`),
+      ).toHaveLength(1);
+    }
+    {
+      // 计算键是值位置（`{[key]: v}`）
+      expect(
+        imports(`import { key } from "./k.js";\nexport const { [key]: v } = {};`),
+      ).toHaveLength(1);
+    }
+    {
+      // 反向闸：绑定名本身不是引用（`{ Foo: local }` 的 Foo 是键）；
+      // Foo 只在类型位置被用到 ⇒ 仍按 tsc 口径 elide。
+      expect(
+        imports(
+          `import { Foo } from "./m.js";\nexport const { Foo: local } = {};\nexport type T = Foo;`,
+        ),
+      ).toHaveLength(0);
+    }
+  });
+
+  it("BUG-220 源模块证明类型 ⇒ 再导出整条删除；无回调 / 证明为值 / 撞名 ⇒ 保留；混合只剔证明项", () => {
+    {
+      // 报告夹具：源模块证明 Shape 是类型 ⇒ 再导出（与 import）都 elide
+      const src = `import { Shape } from "./types.js";\nexport { Shape } from "./types.js";\nexport function area(s: Shape): number { return 1; }`;
+      expect(imports(src)).toHaveLength(0);
+      const kept = stripWithProof(src, (source, name) => source === "./types.js" && name === "Shape");
+      expect(kept).toHaveLength(0);
+    }
+    {
+      // 没有回调（分析面 / 单文件调用）⇒ 保留（旧口径；不得凭 typeRefs 猜）
+      const src = `export { Shape } from "./types.js";\nexport function area(s: Shape): number { return 1; }`;
+      expect(reexports(src)).toHaveLength(1);
+    }
+    {
+      // 证明为值（class 等运行时导出）⇒ 即使本文件只把它当类型用，也保留
+      const src = `import { Shape } from "./types.js";\nexport { Shape } from "./types.js";\nexport function area(s: Shape): number { return 1; }`;
+      expect(stripWithProof(src, () => false)).toHaveLength(1);
+    }
+    {
+      // 属性名撞名 + 无证明 ⇒ 保留
+      expect(
+        reexports(`export { name } from "./m.js";\nexport type T = { name: string };`),
+      ).toHaveLength(1);
+    }
+    {
+      // 混合：Shape 类型专用（elide 该项），val 值引用（保留该项）
+      const src = `import { Shape, val } from "./m.js";\nexport { Shape, val } from "./m.js";\nexport function f(s: Shape): number { return val; }`;
+      const kept = stripWithProof(src, (_source, name) => name === "Shape");
+      expect(kept).toHaveLength(1);
+      expect(kept[0].specifiers.map((s) => s.local.name)).toEqual(["val"]);
+    }
+    {
+      // 显式 `export type` 不需要源模块证明（既有行为）
+      const src = `export type { Shape } from "./types.js";\nexport function area(): number { return 1; }`;
+      expect(reexports(src)).toHaveLength(0);
+    }
+  });
+
+});
+
+// ---------------------------------------------------------------------------
 // TS-only 的模块出口语句：产物面剥除、分析面降级成 CJS 出口
 // ---------------------------------------------------------------------------
 describe("TS-only 的模块出口语句：产物面剥除、分析面降级成 CJS 出口", () => {

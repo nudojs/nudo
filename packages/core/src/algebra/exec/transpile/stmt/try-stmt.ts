@@ -29,6 +29,7 @@ import {
   YIELD_CATCH_RETURNS,
   YIELD_CATCH_YIELDS,
   YIELD_CATCH_RETHROWS,
+  YIELD_CATCH_THROWS,
   YIELD_FINALLY_THROWS,
 } from "../../yield-bits.ts";
 import { transpileStatement } from "./statement.ts";
@@ -178,8 +179,9 @@ export function emitTryStatement(
   const catchFacts = stmt.handler
     ? (() => {
         const cb = finalizerBits(stmt.handler!.body as Node);
-        const rethrows = catchMayRethrow(stmt.handler!) && ((opts.yieldTryCtx ?? 0) & YIELD_TRY_CATCH) !== 0;
-        return YIELD_TRY_CATCH | (cb.returns ? YIELD_CATCH_RETURNS : 0) | (cb.yields ? YIELD_CATCH_YIELDS : 0) | (rethrows ? YIELD_CATCH_RETHROWS : 0);
+        const mayRethrow = catchMayRethrow(stmt.handler!);
+        const rethrows = mayRethrow && ((opts.yieldTryCtx ?? 0) & YIELD_TRY_CATCH) !== 0;
+        return YIELD_TRY_CATCH | (cb.returns ? YIELD_CATCH_RETURNS : 0) | (cb.yields ? YIELD_CATCH_YIELDS : 0) | (rethrows ? YIELD_CATCH_RETHROWS : 0) | (mayRethrow ? YIELD_CATCH_THROWS : 0);
       })()
     : 0;
   // ABS-13 A：try/catch 体内有 yield 且 finalizer 可安全重放 ⇒ 抽成 thunk，
@@ -211,7 +213,7 @@ export function emitTryStatement(
       ? [...(opts.yieldFinalizers ?? []), finVar]
       : opts.yieldFinalizers;
   const innerYieldCtx =
-    ((opts.yieldTryCtx ?? 0) & ~(YIELD_CATCH_RETURNS | YIELD_CATCH_YIELDS | YIELD_CATCH_RETHROWS)) | finBits | catchFacts;
+    ((opts.yieldTryCtx ?? 0) & ~(YIELD_CATCH_RETURNS | YIELD_CATCH_YIELDS | YIELD_CATCH_RETHROWS | YIELD_CATCH_THROWS)) | finBits | catchFacts;
   const tryOpts: TranspileOptions = {
     ...opts,
     inTry: (opts.inTry ?? 0) + 1,

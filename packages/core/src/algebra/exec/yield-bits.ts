@@ -20,6 +20,12 @@ export const YIELD_FINALLY_RETURNS = 8;
 export const YIELD_CATCH_RETURNS = 16;
 export const YIELD_CATCH_YIELDS = 32;
 export const YIELD_CATCH_RETHROWS = 64;
+/** R1a 补面：catch 体**自身**可能把异常抛出去（含 throw 语句）。
+ *  与 64 分工：64 = 可能重抛**且**外层还有 catch（吸收结局不可分类）；
+ *  本位只看 catch 体自己会不会抛（与外层有无 catch 无关）——生成器
+ *  `.throw()` 注入 try/catch 时据此决定是否记 may-throw（无 throw 的
+ *  catch 体原生必吸收，不得把「可能重抛」当既定事实）。 */
+export const YIELD_CATCH_THROWS = 512;
 /** R1a：yield* 委托进**生成器对象**的 yield 点位（$yieldStar 运行时标注，
  *  非 transpile）：.throw() 原生转发进内层迭代器——内层 catch 吸收后续体
  *  （可再交付）超出外层 ctx 可分类面 → 吸收结局不可折 done。数组/字符串

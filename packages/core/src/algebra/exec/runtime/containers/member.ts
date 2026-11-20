@@ -72,6 +72,7 @@ import {
   getSlot,
   setSlot,
   getProtoAbs,
+  getInstanceProto,
   keySetIncompleteAbs,
   canonicalArrayIndex,
   isUserFnSlotOwner,
@@ -111,6 +112,8 @@ import { arrayMethodAbs } from "../../../builtins/array.ts";
 // 不经 barrel——barrel 未导出该注册函数，且本分片不改 barrel；同下方
 // collectionIteratorFor 的直连口径）。
 import { setReceiverToStringResolver } from "../../../builtins/object-proto.ts";
+// BUG-188：绑定级原型身份（类规格 → 原型 brand）直连 ctor 叶子。
+import { protoBrandForSpec, protoBrandSpecOf } from "../../../builtins/ctor.ts";
 // Bug 198（S20）：集合迭代器的 **live 视图** 构造器（collectionIteratorFor）——
 // 直连 builtins/error/iterator.ts，不经 barrel（与 iterate.ts 同款口径；barrel
 // 未导出该函数，且本分片不改 barrel）。
@@ -1083,9 +1086,10 @@ function getHostMember({ o, key, opts }: GetCtx): Abs | undefined {
         // Bug 64：宿主构造器（路由表外泄漏的全局/声明函数）的 prototype 带
         // owner 身份——protoBrandAbs（constructor 槽 + 按名驻留 === 恒等），
         // 不再捏匿名闭 obj（`X.prototype instanceof Super` 假精确 false）
-        return typeof fn.name === "string" && fn.name
-          ? protoBrandAbs(fn.name)
-          : abs({ k: "obj", slots: {} }, undefined, undefined, "path");
+        // BUG-188：函数声明的 prototype 按 **fn Abs** 驻留（fnProtoOf）——
+        // 同名但不同绑定（不同作用域 / 模块）的函数各一份，不再按名共享。
+        // 与 fn 形状的 `$get` / $instanceof / $new 走同一载体。
+        return fnProtoOf(asAbsVal(o as Function));
       }
       if (key === "call" || key === "apply" || key === "bind") {
         return absFunction([], { body: noBody }, { ctor: false });
@@ -1360,7 +1364,8 @@ function getRegisteredBrandMember(ctx: GetCtx): Abs | undefined {
       !isClassVal && o.shape.name.endsWith(".prototype") &&
       key !== "constructor" && key !== "__proto__" && !OBJECT_PROTO_NAMES.has(key)
     ) {
-      const ancHit = chainProtoSlotOf(o.shape.name.slice(0, -".prototype".length), key, 1);
+      // BUG-188：原型 brand 自带规格身份——祖先链按 superSpec 解析。
+      const ancHit = chainProtoSlotOf(o.shape.name.slice(0, -".prototype".length), key, 1, protoBrandSpecOf(o));
       if (ancHit !== undefined) return ancHit;
       if (classChainHasHole(o.shape.name.slice(0, -".prototype".length))) return unknown;
     }
@@ -1435,10 +1440,12 @@ function getBrandClassValueMember(ctx: GetCtx): Abs | undefined {
   }
   // 类值是 constructor 函数：prototype 对象与 Function.prototype 成员
   if (key === "prototype") {
-    // Bug 64：类原型带 owner 身份——protoBrandAbs("X")（constructor 槽 +
-    // 按名驻留；`X.prototype.hasOwnProperty("constructor")` 折 true、
-    // instanceof 链走可解析名），不再捏匿名闭 obj（链身份全丢）
-    return protoBrandAbs(o.shape.name);
+    // Bug 64：类原型带 owner 身份（constructor 槽；hasOwnProperty 折 true、
+    // instanceof 链走可解析名），不再捏匿名闭 obj（链身份全丢）。
+    // BUG-188：按**类规格身份**驻留——同一绑定两次读 ===；两个同名但
+    // 不同绑定的类各有一个原型对象（写 `A.prototype.m` 不再互相泄漏）。
+    const spec = classSpecOfAbs(o);
+    return spec ? protoBrandForSpec(spec) : protoBrandAbs(o.shape.name);
   }
   if (key === "call" || key === "apply" || key === "bind") {
     return absFunction([], { body: noBody }, { ctor: false });
@@ -1481,7 +1488,9 @@ function getBrandInstanceMember(ctx: GetCtx): Abs | undefined {
   // 不透明，实例自有面不可判）→ 缺席不可折 undefined（sound unknown；
   // 此前闭 obj miss 折 undefined 对抽象父是 wrong-exact）。
   // Object.prototype 成员（hasOwnProperty/…）走下方通用投影，不折。
-  const protoHit = chainProtoSlotOf(o.shape.name, key, 0);
+  // BUG-188：绑定身份（规格 + 构造期记录的 [[Prototype]]）优先——
+  // 同名不同绑定的原型数据槽（`A.prototype.m`）不跨类可见。
+  const protoHit = chainProtoSlotOf(o.shape.name, key, 0, classSpecOfAbs(o), getInstanceProto(o));
   if (protoHit !== undefined) return protoHit;
   if (
     key !== "constructor" && key !== "__proto__" && !OBJECT_PROTO_NAMES.has(key) &&

@@ -582,51 +582,47 @@ function healthJsonDoc(f: HealthJsonFacts) {
 }
 
 /**
- * 单个文件的文本面明细行（error 臂早退；输出与拆分前逐字节一致）。
+ * 单个文件的文本面明细行。
+ *
+ * 渲染口径：**一份 report 一份明细** —— error 只影响「函数摘要 / 配置 /
+ * uncovered」这三条（没有分析结果就无从谈它们），而「该刷什么」的三条事实
+ * （internal 回落 / 见证漂移 / 契约漂移）与 error 是否同时存在无关，一律照印
+ * ——Summary 已计入它们的计数，per-file 却没有对应行就是两面分叉（BUG-211）。
  *
  * `fromPaths` = `nudo health --from <paths...>`——drift 刷新提示里的
  * `nudo test --from …` 命令要原样回显它。
  */
 function printHealthReportLine(r: HealthReport, fromPaths: string[] | undefined): void {
   console.log(`${r.file}`);
+  // 「该刷什么」的三条事实（internal 回落 / 见证漂移 / 契约漂移）各自独立：
+  // 与 error 是否同时存在**无关**。此前 error 分支只补了前两条就 return ⇒
+  // 同一屏 Summary 报 `1 case drift`、per-file 却没有任何一行说明漂了哪条、
+  // 也不给 --freeze=update 命令（`--json` 面 meanwhile 同时带 drift 与 error）。
   if (r.error) {
     console.log(paintOne(`  ✗ error: ${r.error}`));
-    // 1145：internal 回落已是**门禁失败** ⇒ 本文件走 error 早退分支。
-    // 回落计数仍必须上屏（`--json` 面一直带着 `internal_fallbacks`）——
-    // 否则人类面只剩一行错误、机器面却有计数 ⇒ 两面不对称。
-    if ((r.internalFallbacks ?? 0) > 0) {
-      console.log(paintOne(`  ✗ internal_fallbacks: ${r.internalFallbacks}`));
+  } else {
+    const entryInfo = r.entryOnly > 0 ? `, ${r.entryOnly} entry-only` : "";
+    console.log(`  · ${r.functions} function(s)${entryInfo}`);
+    if (r.configShape) {
+      // 配置形状问题（468/936）——报告面可见：配置写坏了（`"nudo": true`
+      // / 假值键）本包按「无 nudo 配置」处理（不继承祖先配置），用户必须
+      // 知道，否则会以为祖先配置生效了。
+      console.log(paintOne(`  ⚠ config: ${r.configShape.message}`));
     }
-    // 契约漂移同理：Summary 已计入 `contract drift`，人类面若不打印
-    // 对应的 per-file 行，用户只看到一行错误、无从知道该刷新哪些槽位。
-    if ((r.contractDrift ?? 0) > 0) {
-      console.log(
-        paintOne(
-          `  ✗ contract drift: ${r.contractDrift} @generated slot(s) ≠ today's recompute — refresh with: nudo contract --emit ${r.file} --fn <name>`,
-        ),
-      );
+    if (r.uncovered.length > 0) {
+      console.log(paintOne(`  ⚠ uncovered (no call-site evidence): ${r.uncovered.join(", ")}`));
     }
-    return;
   }
-  const entryInfo = r.entryOnly > 0 ? `, ${r.entryOnly} entry-only` : "";
-  console.log(`  · ${r.functions} function(s)${entryInfo}`);
-  if (r.configShape) {
-    // 配置形状问题（468/936）——报告面可见：配置写坏了（`"nudo": true`
-    // / 假值键）本包按「无 nudo 配置」处理（不继承祖先配置），用户必须
-    // 知道，否则会以为祖先配置生效了。
-    console.log(paintOne(`  ⚠ config: ${r.configShape.message}`));
-  }
-  if (r.uncovered.length > 0) {
-    console.log(paintOne(`  ⚠ uncovered (no call-site evidence): ${r.uncovered.join(", ")}`));
+  // 1145：internal 回落已是**门禁失败**（引擎内部缺陷 ⇒ 该文件事实不完整）
+  // ⇒ 计数仍必须上屏：`--json` 面一直带着 `internal_fallbacks`。
+  if ((r.internalFallbacks ?? 0) > 0) {
+    console.log(paintOne(`  ✗ internal_fallbacks: ${r.internalFallbacks}`));
   }
   if (r.drift) {
-    const refresh = `nudo test ${r.file} --from ${(fromPaths ?? []).join(" ")} --freeze=update`;
-    console.log(
-      paintOne(
-        `  ✗ drift: ${r.drift.added + r.drift.removed} witness directive(s) changed (+${r.drift.added} new, -${r.drift.removed} removed) — refresh: ${refresh.trim()}`,
-      ),
-    );
+    console.log(paintOne(driftLine(r.file, r.drift, fromPaths)));
   }
+  // 契约漂移同理：Summary 已计入 `contract drift`，人类面若不打印
+  // 对应的 per-file 行，用户只看到一行错误、无从知道该刷新哪些槽位。
   if ((r.contractDrift ?? 0) > 0) {
     console.log(
       paintOne(
@@ -634,6 +630,7 @@ function printHealthReportLine(r: HealthReport, fromPaths: string[] | undefined)
       ),
     );
   }
+  if (r.error) return;
   if (r.budget?.truncated) {
     const b = r.budget;
     const onlyLoop =
@@ -657,11 +654,28 @@ function printHealthReportLine(r: HealthReport, fromPaths: string[] | undefined)
       ),
     );
   }
-  if ((r.internalFallbacks ?? 0) > 0) {
-    // 1145：internal 回落现在是**门禁失败**（引擎内部缺陷 ⇒ 该文件事实
-    // 不完整 ⇒ health 不得报 OK）——标记从「观察告警」升为「失败项」。
-    console.log(paintOne(`  ✗ internal_fallbacks: ${r.internalFallbacks}`));
-  }
+}
+
+/**
+ * 见证漂移的人类面行（文本面唯一渲染点；`--json` 面直接给
+ * `{added, removed, changed}` 三个计数）。
+ *
+ * `added` 的机器面口径 = 「新侧变更条数（真正新增 **+ 同一调用点被改写**）」，
+ * 而人类面把它直译成 `new` 就把「同一条见证的实参变了」说成「多了一个调用点」
+ * （BUG-212：用户会去找不存在的调用点，而该做的是重新 freeze 那条见证）。
+ * ⇒ 新增数 = `added - changed`，改写单独成段（为 0 时不打印，保持既有
+ * removed-only 行逐字不变）。
+ */
+function driftLine(
+  file: string,
+  drift: NonNullable<HealthReport["drift"]>,
+  fromPaths: string[] | undefined,
+): string {
+  const refresh = `nudo test ${file} --from ${(fromPaths ?? []).join(" ")} --freeze=update`;
+  const fresh = drift.added - drift.changed;
+  const segments = [`+${fresh} new`, `-${drift.removed} removed`];
+  if (drift.changed > 0) segments.push(`${drift.changed} changed`);
+  return `  ✗ drift: ${drift.added + drift.removed} witness directive(s) changed (${segments.join(", ")}) — refresh: ${refresh.trim()}`;
 }
 
 /**

@@ -26,7 +26,11 @@ import type { Abs, Pred, Slot, Term } from "@nudojs/core";
 import { lookupObjAccessor, termEquals, unknown as absUnknown } from "@nudojs/core";
 import { denoteGuard } from "@nudojs/core/internal";
 import { isInvisibleObjSlot } from "./internal-slot.ts";
-import { safeExportIdent, widenUncertainLiteral } from "./schema-generator.ts";
+import {
+  safeExportIdent,
+  widenUncertainLiteral,
+  widenObservedLiteralDomains,
+} from "./schema-generator.ts";
 
 /**
  * BUG-130 / BUG-131：把**产物面不可见**的槽从 Abs 树上摘掉，再交给 core 的
@@ -237,7 +241,7 @@ export function generateGuardFunctionFromAbs(name: string, abs: Abs, used?: Set<
   // Bug 1008：不确切置信度的字面量观测**不是**出口域 ⇒ 放宽到基类型
   // （否则守卫写成 `data === 1`，把「一次兜底观测」钉成出口域）。
   const widened = widenUncertainLiteral(abs);
-  const src = stripInvisibleSlots(widened ?? abs);
+  const src = stripInvisibleSlots(widenObservedLiteralDomains(widened ?? abs));
   // 2026-11-06：生成器身份子句由 core `denoteGuardB` 递归生成（顶层 + 嵌套
   // 槽值一视同仁），此处不再单独注入 ⇒ 与 zod / standard 面同口径，也不会
   // 在产物里重复两次身份判定。

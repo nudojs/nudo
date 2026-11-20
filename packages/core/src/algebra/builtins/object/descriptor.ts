@@ -88,6 +88,7 @@ import {
   getProtoAbs,
   isNullProtoObj,
   markKeySetOpenAbs,
+  keySetIncompleteAbs,
   type ObjShape,
 } from "../../objects.ts";
 import { undefAbs } from "../../hof.ts";
@@ -1654,6 +1655,11 @@ function mergeAssignObject(
     // "ignore"：__proto__ setter 对原始值静默忽略
   }
   if (ss.open) ts.open = true;
+  // BUG-201：源的自有键集不完备（抽象计算键写 `s[k]=1` / 已标标记的合并源）
+  // ⇒ 结果同口径不完备。槽表只含**已知**键，抽象键 / index 键不在其中——不
+  // 传播就折「只含已知键」的 exact，而同一源经 `{...s}` 折 `string[]`（原生
+  // 键确实被拷贝过去）。判据与写端（arr-index.ts 的 $idxSet 臂）同一个标记位。
+  if (keySetIncompleteAbs(src)) markKeySetOpenAbs(target);
 }
 
 /** brand（原型对象）目标 × obj 源：写内层 obj 的可枚举自有键值对。 */

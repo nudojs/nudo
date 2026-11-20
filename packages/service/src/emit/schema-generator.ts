@@ -12,8 +12,9 @@
  */
 
 import type { Abs, NudoConstraint, Pred, Term } from "@nudojs/core";
-import { absToConstraint, isIntFlag, predToString } from "@nudojs/core";
+import { absToConstraint, isIntFlag, joinAbs, predToString } from "@nudojs/core";
 import { formatObjectKey, toJsBindingIdent, ProjectionBudget } from "@nudojs/core/internal";
+import { widenAbsPrim } from "../evaluator/call-record.ts";
 import { sanitizeLineCommentText } from "./line-comment.ts";
 import { isHiddenInternalSlot, isInvisibleObjSlot } from "./internal-slot.ts";
 import {
@@ -38,14 +39,160 @@ import {
  * 不在 `emit/index.ts` 的导出清单里（内部工具，非公开 API）。
  */
 export function widenUncertainLiteral(a: Abs): Abs | undefined {
-  if (a.term?.op !== "lit") return undefined;
-  const conf = a.conf;
-  if (conf !== "widened" && conf !== "mock" && conf !== "partial" && conf !== "opaque") return undefined;
+  if (a.term?.op === "lit") {
+    const conf = a.conf;
+    if (
+      conf === "widened" ||
+      conf === "mock" ||
+      conf === "partial" ||
+      conf === "opaque"
+    ) {
+      const s = a.shape;
+      if (
+        s.k === "prim" &&
+        (s.type === "number" || s.type === "string" || s.type === "boolean")
+      ) {
+        // 去掉字面量 term（保留 shape / pred）⇒ 投影面按基类型渲染
+        return { ...a, term: undefined };
+      }
+    }
+  }
+  return widenObservedLiteralUnion(a);
+}
+
+/**
+ * BUG-213：**调用点观测聚合**出来的字面量联合 → 基类型。
+ *
+ * `f(s: string)` 有两个调用点 `f("a")` / `f("bb")` 时，产物面拿到的是
+ * `joinAbs(lit("a"), lit("bb"))` = `sum` of prim-lit 成员，且**没有** term /
+ * pred（作者申报的字面量域走 pred 通道：`term = var` + `pred = eq(...)`）。
+ * 这是「一次采样的快照」，不是函数声明的输入 / 输出域：把它发布成
+ * `z.union([z.literal("a"), z.literal("bb")])` / `data === 1 || data === 2`
+ * 会让导出的校验器拒收同一函数自己的合法输入与输出（`f("ccc")` / `f(...)=3`），
+ * 而 `check` / `dts` 对同一份源码都拓宽成 `string` / `number`。
+ *
+ * 复用既有的「字面量 → prim」拓宽（`widenAbsPrim`，与 BUG-1008 同一条管线），
+ * 只放宽不收窄。单个字面量（单个观测点 / 手工构造的字面量域）**不在此列**：
+ * 既有 schema / guard 测试把 literal 的直达投影当作契约面（`z.literal(42)`）。
+ */
+function widenObservedLiteralUnion(a: Abs): Abs | undefined {
   const s = a.shape;
-  if (s.k !== "prim") return undefined;
-  if (s.type !== "number" && s.type !== "string" && s.type !== "boolean") return undefined;
-  // 去掉字面量 term（保留 shape / pred）⇒ 投影面按基类型渲染
-  return { ...a, term: undefined };
+  if (s.k !== "sum" || s.members.length < 2) return undefined;
+  if (a.term !== undefined || a.pred !== undefined) return undefined;
+  if (
+    !s.members.every(
+      (m) => m.shape.k === "prim" && m.term?.op === "lit" && m.pred === undefined,
+    )
+  ) {
+    return undefined;
+  }
+  return s.members.map((m) => widenAbsPrim(m)).reduce((x, y) => joinAbs(x, y));
+}
+
+/**
+ * 递归版：把 Abs 树里**任意层级**的观测聚合字面量联合拓宽到基类型。
+ *
+ * 约束投影通道（`absToConstraint`）会绕过 `absToSchemaNodeB` 的逐槽递归
+ * ⇒ `fInput = z.object({ s: <观测联合> })` 的槽值不再经过单点拓宽。入口处
+ * 先做一次树级拓宽（只重建确有变化的节点；DAG 用 memo 保留身份与环）。
+ */
+export function widenObservedLiteralDomains(a: Abs, memo: Map<Abs, Abs> = new Map()): Abs {
+  return mapObservedLiteralTree(a, memo, widenObservedLiteralUnion);
+}
+
+/**
+ * 逐节点把**观测 Abs** 里的字面量槽拓宽成基类型（含单个字面量）。
+ *
+ * 与 `widenObservedLiteralDomains` 的差别是放宽条件：这里只看「是不是
+ * 字面量观测」，不要求「至少两个字面量成员的联合」。调用方负责**来源**
+ * 判断（只有 call@ / entry@ 观测才走这里；`@nudo:case` 断言是域声明，
+ * 保持精确）。用于 guard / zod / standard 的形参面与返回面：一次采样不是
+ * 函数域，单点也不该让发布出去的校验器拒收合法输入。
+ */
+export function widenObservedLiterals(a: Abs, memo: Map<Abs, Abs> = new Map()): Abs {
+  return mapObservedLiteralTree(a, memo, (x) => {
+    // 全字面量联合：逐成员拓宽后 **join 折叠**（`"a" | "bb"` ⇒ 单个 string，
+    // 而不是 `z.union([z.string(), z.string()])`）。
+    if (
+      x.shape.k === "sum" &&
+      x.shape.members.length > 1 &&
+      x.shape.members.every(
+        (m) => m.shape.k === "prim" && m.term?.op === "lit" && m.pred === undefined,
+      )
+    ) {
+      return x.shape.members.map(widenAbsPrim).reduce((p, q) => joinAbs(p, q));
+    }
+    if (x.shape.k === "prim" && x.term?.op === "lit" && x.pred === undefined) {
+      return widenAbsPrim(x);
+    }
+    return undefined;
+  });
+}
+
+/** 观测 Abs 树的共享遍历：leaf 返回替代节点（undefined = 原样继续递归）。 */
+function mapObservedLiteralTree(
+  a: Abs,
+  memo: Map<Abs, Abs>,
+  widenLeaf: (x: Abs) => Abs | undefined,
+): Abs {
+  const hit = memo.get(a);
+  if (hit) return hit;
+  const direct = widenLeaf(a);
+  if (direct !== undefined) {
+    memo.set(a, direct);
+    return direct;
+  }
+  const s = a.shape;
+  const copy: Abs = { ...a };
+  memo.set(a, copy);
+  let changed = false;
+  const child = (x: Abs): Abs => {
+    const w = mapObservedLiteralTree(x, memo, widenLeaf);
+    if (w !== x) changed = true;
+    return w;
+  };
+  switch (s.k) {
+    case "obj": {
+      const slots: typeof s.slots = {};
+      for (const [k, slot] of Object.entries(s.slots)) {
+        const value = child(slot.value);
+        Object.defineProperty(slots, k, {
+          value: value === slot.value ? slot : { ...slot, value },
+          enumerable: true,
+          writable: true,
+          configurable: true,
+        });
+      }
+      if (changed) copy.shape = { ...s, slots };
+      break;
+    }
+    case "arr":
+      copy.shape = { ...s, element: child(s.element) };
+      break;
+    case "tuple":
+      copy.shape = {
+        ...s,
+        elements: s.elements.map(child),
+        ...(s.rest !== undefined ? { rest: child(s.rest) } : {}),
+      };
+      break;
+    case "eff":
+      copy.shape = { ...s, inner: child(s.inner) };
+      break;
+    case "brand":
+      copy.shape = { ...s, shape: child(s.shape) };
+      break;
+    case "sum":
+      copy.shape = { ...s, members: s.members.map(child) };
+      break;
+    default:
+      break;
+  }
+  if (!changed) {
+    memo.set(a, a);
+    return a;
+  }
+  return copy;
 }
 
 export type SchemaDialect = "zod";
@@ -424,7 +571,19 @@ export function absToSchemaNode(
   a: Abs,
   opts?: { scope?: SchemaProjectionScope },
 ): { node: SchemaNode; dropped: string[] } {
-  return absToSchemaNodeB(a, new ProjectionBudget(), opts?.scope);
+  // BUG-213：先做一次树级观测域拓宽（约束投影通道不逐槽递归，见
+  // `widenObservedLiteralDomains`）。
+  const widened = widenObservedLiteralDomains(a);
+  const result = absToSchemaNodeB(widened, new ProjectionBudget(), opts?.scope);
+  if (widened === a) return result;
+  // 拓宽是**有损**的（精度下降），必须在既有 dropped 通道留痕。
+  return {
+    node: result.node,
+    dropped: [
+      "call-site literal observations widened to the base type",
+      ...result.dropped,
+    ],
+  };
 }
 
 /**
@@ -563,9 +722,17 @@ function absToSchemaNodeB(
 
   // Bug 1008：不确切置信度的字面量观测**不是**出口域 ⇒ 放宽到基类型
   // （放宽只松不紧 ⇒ 不会假红）。契约面（pred 通道）不受影响。
+  // BUG-213：调用点观测聚合的字面量联合走同一拓宽通道，台账文案要如实
+  // （它的 conf 是 exact，写「uncertain confidence: exact」自相矛盾）。
   const widened = widenUncertainLiteral(a);
   if (widened) {
-    dropped.push(`literal observation widened to the base type (uncertain confidence: ${a.conf})`);
+    const observedUnion =
+      a.shape.k === "sum" && a.term === undefined && a.pred === undefined;
+    dropped.push(
+      observedUnion
+        ? "call-site literal observations widened to the base type"
+        : `literal observation widened to the base type (uncertain confidence: ${a.conf})`,
+    );
     a = widened;
   }
 

@@ -309,6 +309,12 @@ function typeToDsl(node: ts.TypeNode | undefined, ctx: DraftCtx): Dsl | undefine
   if (ts.isParenthesizedTypeNode(node)) {
     return typeToDsl(node.type, child(ctx));
   }
+  // `readonly T[]` / `readonly [T, U]`：只读是**可变性修饰**，DSL 没有对应位，
+  // 但元素约束必须保留——整条降成 any() 会让接受草稿后元素面零执法。
+  // 与同文件 `ReadonlyArray<T>`（typeRefDsl）和收割面同口径。
+  if (ts.isTypeOperatorNode(node) && node.operator === ts.SyntaxKind.ReadonlyKeyword) {
+    return typeToDsl(node.type, child(ctx));
+  }
   if (ts.isTypeLiteralNode(node)) {
     const mark = noteMark(ctx);
     const dsl = membersToShape(node.members, ctx);

@@ -78,6 +78,7 @@ export {
   absToSchemaNode,
   absToZodSchemaModule,
   isRuntimeGlobalCtorName,
+  widenObservedLiterals,
   type SchemaDialect,
   type SchemaNode,
   type SchemaProjection,

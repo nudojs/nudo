@@ -95,6 +95,23 @@ export function tally(...counts: number[]): number;
     expect(draft.draftSource).toContain("export const a");
   });
 
+  it("BUG-178 readonly 数组的两种拼写都保留元素约束", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-from-dts-ro-"));
+    dirs.push(dir);
+    const dts = join(dir, "ro.d.ts");
+    writeFileSync(
+      dts,
+      `export declare function sum(xs: readonly number[]): number;
+export declare function sum2(xs: ReadonlyArray<number>): number;
+`,
+      "utf-8",
+    );
+    const draft = dtsToContractDraft([dts], "ro");
+    expect(draft.draftSource).toContain("export const sum = fn({ xs: array(number()) }, number())");
+    expect(draft.draftSource).toContain("export const sum2 = fn({ xs: array(number()) }, number())");
+    expect(draft.draftSource).not.toContain("unmodeled type");
+  });
+
   it("dtsPathToContractDraft: 入口不存在（ENOENT）→ 空草稿，不抛", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-from-dts-miss-"));
     dirs.push(dir);

@@ -1354,7 +1354,7 @@ function makeFixture(): string {
     // guard：真的校验（不是 return true）
     expect(out).toContain("return (typeof data === \"number\") && (data > 0);");
     // dts：返回 number（不是 unknown）
-    expect(out).toContain("export declare function g<a>(_p0: { a: number }): number;");
+    expect(out).toContain("export declare function g(_p0: { a: number }): number;");
   }, 60000); // 1 个 CLI 子进程
 
   it("解构里契约未申报的绑定不得被折成 exact undefined 发布（返回面 / 产物面）", () => {
@@ -1563,4 +1563,41 @@ describe("TS `export = <local>` 的出口面与 CJS `module.exports = <local>` �
     expect(r.stdout).not.toContain("no draftable exports");
   }
 });
+});
+
+// ---------------------------------------------------------------------------
+// 单点调用观测不是函数域（BUG-213）
+// ---------------------------------------------------------------------------
+describe("单点调用观测不发布成校验器域", () => {
+  const dirs: string[] = [];
+  afterAll(() => {
+    for (const d of dirs) rmSync(d, { recursive: true, force: true });
+  });
+
+  function fixture(source: string): string {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-b213-"));
+    dirs.push(dir);
+    const lib = join(dir, "lib.ts");
+    writeFileSync(lib, source, "utf-8");
+    return lib;
+  }
+
+  it("BUG-213 一个调用点也让 guard/zod 按基类型拓宽（不锁死字面量）", () => {
+    const lib = fixture(
+      `export function f(s: string): number { return s.length; }
+export function u1() { return f("a"); }
+export function u2() { return f("bb"); }
+`,
+    );
+    const g = runCli(["export", "--format", "guard", lib]);
+    expect(g.status, g.stdout + g.stderr).toBe(0);
+    expect(g.stdout).toContain('typeof data === "number"');
+    expect(g.stdout).not.toContain("data === 1");
+    const s = runCli(["export", "--format", "schema", lib]);
+    expect(s.status, s.stdout + s.stderr).toBe(0);
+    expect(s.stdout).toContain("fInput = z.object({ s: z.string() })");
+    expect(s.stdout).not.toContain('z.literal("a")');
+    expect(s.stdout).not.toContain("z.union([z.string(), z.string()])");
+  });
+
 });

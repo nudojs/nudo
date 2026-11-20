@@ -49,6 +49,7 @@ import {
   setSlot,
   getSlot,
   getProtoAbs,
+  getInstanceProto,
   canonicalArrayIndex,
 } from "../../../objects.ts";
 import {
@@ -70,6 +71,7 @@ import { markMatchArrayView } from "../../../builtins/regexp.ts";
 import { collectionLiveEntries } from "../../../builtins/error/iterator.ts";
 import { urlSearchParamsEntriesOf } from "../../../builtins/error/web.ts";
 import { typedArrayEnumKeyView } from "../../../builtins/object/enum-entries.ts";
+import { TYPED_ARRAY_ELEMENT } from "../../../builtins/shared.ts";
 import {
   anyMemberResult,
 } from "../../member-diag.ts";
@@ -77,7 +79,9 @@ import { errorTypeAbs, recordMayThrow } from "../../may-throw.ts";
 import { NudoThrow, undef, asAbsVal, $lit, isNudoBreak, isNudoContinue, noBody, confPartialPacked, litTruth } from "../state.ts";
 import { markDomainShared } from "../../../len-sharing.ts";
 import { getFnImpl } from "../../../abs-fn.ts";
-import { getEvalClass, lookupClassValue, fnProtoOf, classSpecOfAbs } from "../../class-registry.ts";
+import { getEvalClass, lookupClassValue, fnProtoOf, classSpecOfAbs, type EvalClassSpec } from "../../class-registry.ts";
+// BUG-188：绑定级原型身份（类规格 → 原型 brand）直连 ctor 叶子。
+import { protoBrandForSpec } from "../../../builtins/ctor.ts";
 import { DEFAULT_MAX_LOOP_ITERS, MAX_CONCRETE_LOOP_ITERS, LOOP_TRUNCATION_LABEL } from "../loop-budget.ts";
 import { genReturnAtOf } from "../gen-return-at.ts";
 import { makeLoopWidener } from "../loop-widen.ts";
@@ -95,7 +99,7 @@ import { $arr, tupleOrWiden, drainTupleOrWiden } from "./arr-make.ts";
 import { $get } from "./member.ts";
 // 同理置于最后：members.ts（类链/链洞工具）依赖 builtins.ts，导入序保持
 // builtins → member → members 的既有求值次序（函数级调用，无模块期求值）。
-import { evalClassChain, classChainHasHole } from "../members.ts";
+import { evalClassChain, classChainLinks, classChainHasHole, brandProtoHasIterator } from "../members.ts";
 // Bug 285：for-in 的 Proxy 臂复用 [[OwnPropertyKeys]] / [[GetOwnProperty]] 的
 // 单一实现（builtins/object/descriptor.ts）——该模块已在本文件的依赖图内
 // （builtins 桶 → object.ts → object/methods.ts → object/descriptor.ts），
@@ -248,7 +252,12 @@ export function $concat(a: Abs, b: Abs): Abs {
     if (ui) return ui.truncated ? [...ui.els, unknown] : ui.els;
     // brand 结构面在内层（issue #147）：Set/Map/match-iter brand 已在上方
     // 按名命中，此处只兜结构 delegation（内层 tuple 精确展开等）。
-    if (x.shape.k === "brand") return expand(x.shape.shape);
+    // TypedArray 家族的迭代元素在内层索引槽（原型 @@iterator 产出元素值）。
+    if (x.shape.k === "brand") {
+      const taEls = typedArrayIterElems(x);
+      if (taEls) return taEls;
+      return expand(x.shape.shape);
+    }
     // 内层 tuple 精确展开（裸 tuple 已被 $concat 顶部 tuple×tuple 分支
     // 吸收，此处只经 brand delegation 到达）：[...t1, ...brandT2] 保持
     // tuple 形状，元素域与长度均精确（此前折 arr）。
@@ -417,6 +426,12 @@ export function iterabilityKind(a: Abs): IterabilityKind {
  * 与 Bug 236 前的口径一致，无回归）。
  */
 function builtinBrandProtoIterability(name: string): IterabilityKind | undefined {
+  // TypedArray 家族 / Map / Set / URLSearchParams：原型链确实有 @@iterator
+  // （与 $get 值读面同一张 ITERABLE_BRANDS 表）。此前只认 String/Number/
+  // Boolean ⇒ TA 的 spread / for-of 走 may 分支记 TypeError（合法代码
+  // strict profile 下 exit 1），而同一接收者的 `typeof u8[Symbol.iterator]`
+  // 已折 "function"。
+  if (brandProtoHasIterator(name)) return "total";
   if (name !== "String" && name !== "Number" && name !== "Boolean") return undefined;
   if (getEvalClass(name)) return undefined; // 用户类同名 → 不可套内建结论
   return name === "String" ? "total" : "definite";
@@ -856,6 +871,29 @@ export function $tpl(cooked: Array<string | undefined>, raw: string[]): Abs {
   return t;
 }
 
+/**
+ * TypedArray brand 的**精确**迭代元素序列：长度槽可判且内层索引槽齐备时
+ * 逐槽取值（`[...new Uint8Array([1,2])]` → [1,2]）；任一位不可判 → undefined
+ * （调用方退元素域单代表，不得折半精确元组）。
+ */
+function typedArrayIterElems(x: Abs): Abs[] | undefined {
+  if (x.shape.k !== "brand") return undefined;
+  if (TYPED_ARRAY_ELEMENT[(x.shape as { name?: string }).name ?? ""] === undefined) {
+    return undefined;
+  }
+  const view = typedArrayEnumKeyView(x);
+  const inner = (x.shape as { shape?: Abs }).shape;
+  if (view?.k !== "exact" || !inner || inner.shape.k !== "obj") return undefined;
+  const slots = (inner.shape as unknown as { slots: Record<string, { value: Abs }> }).slots;
+  const out: Abs[] = [];
+  for (let i = 0; i < view.count; i++) {
+    const s = getSlot(slots, String(i));
+    if (!s) return undefined;
+    out.push(s.value);
+  }
+  return out;
+}
+
 function elemsOf(a: Abs): Abs[] {
   if (a.shape.k === "tuple") return [...a.shape.elements];
   // #175 残留：arr 元素域分发标记（len-sharing.ts——跨读不保证同值）
@@ -890,6 +928,18 @@ function elemsOf(a: Abs): Abs[] {
   // 触顶时尾域折 unknown（sound：剩余元素个数不可知）。
   const ui = collectUserIterElems(a, USER_ITER_MAX_STEPS);
   if (ui) return ui.truncated ? [...ui.els, unknown] : ui.els;
+  // TypedArray brand：原型 `@@iterator` 的元素序列 = 内层索引槽（长度精确时
+  // 逐槽；槽未物化则退元素域单代表）。与 `iterabilityKind` 的 total 判定、
+  // `$get` 的 ITERABLE_BRANDS 值读同口径——此前落 brand 内层空 obj ⇒
+  // `unknown[]`（可迭代却给不出元素域）。
+  if (a.shape.k === "brand") {
+    const elem = TYPED_ARRAY_ELEMENT[(a.shape as { name?: string }).name ?? ""];
+    if (elem) {
+      const exact = typedArrayIterElems(a);
+      if (exact) return exact;
+      return [abs({ k: "prim", type: elem }, undefined, undefined, "path")];
+    }
+  }
   // brand 结构面在内层（issue #147）：env/harvest 的 Array<T> brand 的
   // for-of / spread 元素域 = 内层 arr 元素（此前折 unknown）。Set/Map/
   // match-iter brand 已在上方按名命中侧表，此处只兜结构 delegation。
@@ -1109,19 +1159,32 @@ function brandProtoEnumerableKeys(brandName: string, recv: Abs): string[] | unde
   if (getProtoAbs(recv) !== undefined) return undefined;
   // 链洞（未注册父名）⇒ 可能漏掉中间层的可枚举键
   if (classChainHasHole(brandName)) return undefined;
+  // BUG-188：实例的绑定身份（规格 + 构造期记录的原型）优先——同名但
+  // 不同绑定的类各枚举自己的原型可枚举键（`A.prototype.b = 2` 不跨类）。
+  const startSpec = classSpecOfAbs(recv);
+  const startProto = getInstanceProto(recv);
+  const canonical = startSpec ? protoBrandForSpec(startSpec) : undefined;
+  if (startProto !== undefined && canonical !== undefined && startProto !== canonical) {
+    return undefined; // 类原型被替换过：链不再是注册表那条
+  }
+  const links =
+    startSpec !== undefined && startSpec.name === brandName
+      ? classChainLinks(brandName, startSpec)
+      : evalClassChain(brandName).map((n) => ({ name: n, spec: getEvalClass(n) }));
   const out: string[] = [];
-  for (const n of evalClassChain(brandName)) {
-    const inner = protoInnerOf(n);
+  for (let i = 0; i < links.length; i++) {
+    const { name: n, spec } = links[i]!;
+    const inner = protoInnerOf(n, spec, i === 0 ? startProto : undefined);
     if (!inner || inner.shape.k !== "obj") continue;
     // 原型对象自身被显式改过原型 → 其上的可枚举键不可判定
     if (getProtoAbs(inner) !== undefined) return undefined;
     // 类方法 / 实例访问器在原生是**非枚举**属性（`class A{ m(){} }` 的
     // `A.prototype.m` 不可枚举——for-in 看不到）——原型 obj 里带着这些槽，
     // 必须剔除（`A.prototype.m = 5` 也不改可枚举性：原属性非枚举）。
-    const spec = getEvalClass(n);
+    const levelSpec = spec ?? getEvalClass(n);
     const nonEnumerable = new Set<string>([
-      ...Object.keys(spec?.methods ?? {}),
-      ...Object.keys(spec?.accessors ?? {}),
+      ...Object.keys(levelSpec?.methods ?? {}),
+      ...Object.keys(levelSpec?.accessors ?? {}),
     ]);
     const keys = enumOwnStringKeys(inner, inner.shape.slots).filter(
       (k) => k !== "constructor" && !nonEnumerable.has(k),
@@ -1134,10 +1197,22 @@ function brandProtoEnumerableKeys(brandName: string, recv: Abs): string[] | unde
   return out;
 }
 
-/** 类名 → 其原型对象的内层 obj（注册类走 protoBrandAbs；函数声明走伪父） */
-function protoInnerOf(name: string): Abs | undefined {
+/** 类名 → 其原型对象的内层 obj（注册类走规格身份；函数声明走伪父）。 */
+function protoInnerOf(
+  name: string,
+  spec: EvalClassSpec | undefined,
+  startProto?: Abs,
+): Abs | undefined {
+  if (startProto !== undefined) {
+    const sp = startProto.shape;
+    return sp.k === "brand" ? sp.shape : sp.k === "obj" ? startProto : undefined;
+  }
   const cv = lookupClassValue(name);
   if (cv && cv.shape.k === "fn") return fnProtoOf(cv);
+  if (spec) {
+    const pbs = protoBrandForSpec(spec).shape;
+    return pbs.k === "brand" ? pbs.shape : undefined;
+  }
   if (getEvalClass(name)) {
     const pbs = protoBrandAbs(name).shape;
     return pbs.k === "brand" ? pbs.shape : undefined;
@@ -1552,16 +1627,19 @@ export function $forOf(
  * 原生 "a,b"，引擎快照口径只有 "a"）。表不干净（shadow / maybeAbsent）⇒
  * 无 live 视图 ⇒ 沿用快照口径。
  */
-export function $collectionForEach(recv: Abs, cb: unknown): Abs | undefined {
+export function $collectionForEach(recv: Abs, cb: unknown, thisArg?: Abs): Abs | undefined {
+  // Bug 202：原生 %Map/Set.prototype.forEach% 以 `Call(callbackfn, thisArg, …)`
+  // 调用回调（与 Array.prototype.forEach 的第二实参同一语义）——thisArg 必须
+  // 透传到回调调用位：宿主包装函数走 Reflect.apply、Abs fn 走 $call 第三参。
   const invokeCb = (args: Abs[]): void => {
     if (typeof cb === "function") {
       callAtFunctionBoundary(() => {
-        (cb as (...a: Abs[]) => unknown)(...args);
+        Reflect.apply(cb as (...a: Abs[]) => unknown, thisArg as never, args);
       });
       return;
     }
     if (isAbsLike(cb)) {
-      $call(cb as Abs, args);
+      $call(cb as Abs, args, thisArg);
     }
   };
   const live = collectionLiveEntries(recv);

@@ -28,7 +28,7 @@ import { pushMayThrowFrame, popMayThrowFrame, flushMayThrowEffects, recordMayThr
 import { registerGenElements, registerGenDeferred, registerGenDrain, genDrainViewOf, userIterOf, fireGenTrigger, registerGenTrigger, copyMatchIterTables, notePendingGen, type GenDeferred } from "../match-iter.ts";
 import { thenableAdoption, queuePromiseMicro, registerPendingPromise, isPendingPromiseShape, onPromiseSettled, flushPromiseWaiters } from "../../builtins/promise.ts";
 import { currentYieldStack, getGenJoinOverride, getGenPathSensitive, type GenYieldCollector, setGenJoinOverride, bumpGenPathSensitive } from "./control.ts";
-import { YIELD_TRY_FINALLY, YIELD_TRY_CATCH, YIELD_FINALLY_YIELDS, YIELD_FINALLY_RETURNS, YIELD_FINALLY_THROWS, YIELD_CATCH_YIELDS, YIELD_CATCH_RETHROWS, YIELD_DELEGATED_GEN } from "../yield-bits.ts";
+import { YIELD_TRY_FINALLY, YIELD_TRY_CATCH, YIELD_FINALLY_YIELDS, YIELD_FINALLY_RETURNS, YIELD_FINALLY_THROWS, YIELD_CATCH_YIELDS, YIELD_CATCH_RETHROWS, YIELD_CATCH_THROWS, YIELD_DELEGATED_GEN } from "../yield-bits.ts";
 import { $arr, $yieldStarElems, $get } from "./containers.ts";
 import { $call } from "../call.ts";
 import { loopExitsAls } from "./state.ts";
@@ -1099,12 +1099,18 @@ function makeGenObject(
       // 绑定退回 C 的 join 过近似（不能只留挂起点快照：finalizer 副作用会
       // 形成 native 不可能的定值，见 f10）。
       if (ctx & YIELD_TRY_FINALLY) joinGenSuspendTerminal(genSelf);
-      // 注入异常被 catch 吸收——catch 体在 eager 收集期未执行（无注入源）。
-      // catch 重抛面恒记 may-throw（不给出定值抛出）。
-      recordMayThrow({
-        kind: "Error",
-        cause: "generator .throw() into try/catch — unexecuted catch body may rethrow",
-      });
+      // 注入异常被 catch 吸收——catch 体在 eager 收集期未执行，但**转译期**
+      // 已算出它是否含 throw 语句（YIELD_CATCH_THROWS）。只有会抛的 catch
+      // 体才记 may-throw：不含 throw 的 catch 体原生必吸收注入异常（如
+      // `catch (e) { return "caught"; }`）——此前无条件记 may-throw 把
+      // 「可能重抛」当既定事实 ⇒ 合法代码 L2 门禁假红，且与 async 生成器
+      // 同形状（不记）结论相反。
+      if (ctx & YIELD_CATCH_THROWS) {
+        recordMayThrow({
+          kind: "Error",
+          cause: "generator .throw() into try/catch — catch body rethrows the injected error",
+        });
+      }
       // R1a：catch 静态事实（transpile 标注位）+ 收集序列分类吸收结局——
       // catch 体不含 yield 且可能重抛只进无 catch 外层（64 未置）、挂起点
       // 后无剩余已收集 yield（线性序列尾）、非 yield* 委托进生成器对象

@@ -58,9 +58,17 @@ export type TestReport = {
   caseLines: string[];
 };
 
+/**
+ * 人类面见证标签：判据是**见证来源**（`CaseResult.source`），不是名字前缀。
+ *
+ * `--freeze` 固化的指令见证按构造就叫 `call@L4` / `call@../t.js:L2`（`call@`
+ * 还是保留前缀）⇒ 按前缀判定会把**陈旧的固化快照**印成与「当前调用点」逐字
+ * 同形的标签，读者会把 `call@L4  (3, 4.5) => 13.5` 当成 L4 现在的调用结果
+ * （那时 L4 可能已是 JSDoc 行）——而 `--json` 的 `source` 与 LSP CodeLens 的
+ * `case "…"` 都区分得出来（BUG-223）。
+ */
 function caseLabel(c: CaseResult): string {
-  if (c.name.startsWith("call@") || c.name.startsWith("entry@")) return c.name;
-  return `debug "${c.name}"`;
+  return c.source === "directive" ? `debug "${c.name}"` : c.name;
 }
 
 /**
