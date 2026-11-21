@@ -66,7 +66,7 @@ import { $invoke, $staticInvoke } from "./exec/class.ts";
 import { isNudoThrow } from "./exec/nudo-throw.ts";
 import { makeSymbolicRestAbs } from "./exec/runtime/containers.ts";
 import { resolveExportSlotCall } from "./contract/export-slot.ts";
-import { absShapeForTsTypeText, absTypeForTsTypeText } from "./contract/ts-type-shape.ts";
+import { absShapeForTsTypeText, absTypeForTsTypeText, namedTypeTextsForSource, resolveNamedTypeText } from "./contract/ts-type-shape.ts";
 
 /**
  * generalize 的 evaluator 模块执行缓存（按 source；run 不依赖实参）。
@@ -290,8 +290,13 @@ function annotationAbsOf(shape: Shape | undefined, term?: Term): Abs {
  * 整条退 any（否则 check / `--json` / LSP 报 any，而同一份产物的 dts 形参位
  * 仍印 `string | null`）。
  */
-function annotationAbsForText(text: string | undefined, term?: Term): Abs {
-  const mapped = absTypeForTsTypeText(text);
+function annotationAbsForText(
+  text: string | undefined,
+  term?: Term,
+  typeParams?: ReadonlyMap<string, Abs>,
+  namedTypes?: ReadonlyMap<string, string>,
+): Abs {
+  const mapped = absTypeForTsTypeText(resolveNamedTypeText(text, namedTypes), typeParams);
   if (!mapped) return abs({ k: "any" }, term, pTrue, "path");
   return markEntryDomainAbs(
     markOpenObjSlots(abs(mapped.shape, mapped.term ?? term, pTrue, "path")),
@@ -338,8 +343,10 @@ export function ctorParamAbsArgs(
   /** 源码文本（TS 的 `v?: T` 标记在剥除 AST 里看不到，只能从源文本判定） */
   source?: string,
 ): Abs[] {
+  const env = source ? typeParamEnvOf(source, clsName) : undefined;
+  const namedTypes = source ? namedTypeTextsForSource(source) : undefined;
   return ctorFormalsOf(fileAst, clsName, source).map((f) => {
-    const abs = annotationAbsForText(f.tsType);
+    const abs = annotationAbsForText(f.tsType, undefined, env, namedTypes);
     return withOptionalUndefined(abs, f);
   });
 }
@@ -556,11 +563,16 @@ function classEntryPolyFn(
   if (clsAbs.shape.k !== "brand" || clsAbs.shape.ctor !== true) return undefined;
   const formals = ctorFormalsOf(fileAst, fnName, source);
   const params = formals.length > 0 ? formalParamSignatureNames(formals) : [];
+  const typeParamEnv = typeParamEnvOf(source, fnName);
+  const namedTypes = namedTypeTextsForSource(source);
   const typeParams: TypeParam[] = formals.map((f, i) => {
     // 构造器形参的 TS 声明类型（无注解 ⇒ 无约束 any，与普通入口同口径）
     return {
       id: `A${i + 1}`,
-      value: withOptionalUndefined(annotationAbsForText(f.tsType), f),
+      value: withOptionalUndefined(
+        annotationAbsForText(f.tsType, undefined, typeParamEnv, namedTypes),
+        f,
+      ),
     };
   });
   return {
@@ -1627,6 +1639,73 @@ function fnParamNodesOf(
   return params ?? [];
 }
 
+/**
+ * BUG-277：函数**类型参数表** → 入口注解可用域。
+ *
+ * `strip-types` 会删除声明处的 `typeParameters`（求值器不读），所以这里
+ * 从 keepTs AST 的同一作用域节点取 `<T extends string>`：约束可映射 ⇒
+ * 用约束 Abs；无约束 ⇒ any（无约束类型参数 = 任意值，不是推断失败）。
+ * 名字只在本函数作用域内生效，不污染同名模块别名。
+ */
+const typeParamEnvMemo = new Map<string, ReadonlyMap<string, Abs>>();
+const TYPE_PARAM_ENV_MEMO_MAX = 32;
+
+function typeParamEnvOf(source: string, fnName: string): ReadonlyMap<string, Abs> {
+  const key = `${fnName}\u0000${source}`;
+  const hit = typeParamEnvMemo.get(key);
+  if (hit) return hit;
+  const env = new Map<string, Abs>();
+  const ast = keepTsAstOf(source);
+  let best: { depth: number; node: unknown } | undefined;
+  for (const s of listFnDirectiveScopes(ast)) {
+    if (s.name !== fnName) continue;
+    const depth = s.depth ?? 0;
+    if (best === undefined || depth < best.depth) best = { depth, node: s.node };
+  }
+  const params = (best?.node as {
+    typeParameters?: {
+      params?: Array<{
+        // Babel 8：name 是 Identifier 节点；旧版是 string。
+        name?: string | { name?: string };
+        constraint?: { start?: number; end?: number };
+      }>;
+    };
+  } | undefined)?.typeParameters?.params;
+  for (const p of params ?? []) {
+    const rawName = p.name;
+    const name =
+      typeof rawName === "string"
+        ? rawName
+        : typeof rawName?.name === "string"
+          ? rawName.name
+          : undefined;
+    if (!name) continue;
+    const c = p.constraint;
+    const text =
+      c && typeof c.start === "number" && typeof c.end === "number"
+        ? source.slice(c.start, c.end)
+        : undefined;
+    env.set(name, (text ? absTypeForTsTypeText(text) : undefined) ?? abs({ k: "any" }, undefined, undefined, "exact"));
+  }
+  if (typeParamEnvMemo.size >= TYPE_PARAM_ENV_MEMO_MAX) {
+    const oldest = typeParamEnvMemo.keys().next().value;
+    if (oldest !== undefined) typeParamEnvMemo.delete(oldest);
+  }
+  typeParamEnvMemo.set(key, env);
+  return env;
+}
+
+/**
+ * service 入口见证面复用同一类型参数表（`@nudojs/core/internal`）。
+ * 无显式 `<T>` ⇒ 空表（调用方按旧路径映射）。
+ */
+export function typeParamEnvForFunction(
+  source: string,
+  fnName: string,
+): ReadonlyMap<string, Abs> {
+  return typeParamEnvOf(source, fnName);
+}
+
 /** BUG-133：`this:` 接收者解析 memo（函数名 + 源；有界 LRU-ish）。 */
 const thisReceiverMemo = new Map<string, Abs | undefined>();
 const THIS_RECEIVER_MEMO_MAX = 64;
@@ -2021,6 +2100,8 @@ function generalizeFromAstUncached(
     return joinAbs(entryAbs, initAbs);
   };
 
+  const entryTypeParamEnv = typeParamEnvOf(source, fnName);
+  const entryNamedTypes = namedTypeTextsForSource(source);
   const typeParams: TypeParam[] = params.map((p, i) => {
     // Bug 479：`.ts` 源的形参带**声明类型**（剥除 pass 的旁路 nudoTypeText）
     // ⇒ 入口形参不再是「无约束 any」（否则 `a.toUpperCase()` 之类在
@@ -2032,7 +2113,12 @@ function generalizeFromAstUncached(
       id: `${label}${i + 1}`,
       // 无约束参数 = any（任意 JS 值），不是 unknown（分析无信息）
       value: withOptionalUndefined(
-        annotationAbsForText(formals[i]?.tsType, termVar(`${label}${i + 1}`)),
+        annotationAbsForText(
+          formals[i]?.tsType,
+          termVar(`${label}${i + 1}`),
+          entryTypeParamEnv,
+          entryNamedTypes,
+        ),
         formals[i],
       ),
     };
@@ -2836,6 +2922,8 @@ export function buildArgsFromAssume(
 ): Abs[] {
   const extracted = extractFn(source, fnName);
   if (!extracted) return [];
+  const typeParamEnv = typeParamEnvOf(source, fnName);
+  const namedTypes = namedTypeTextsForSource(source);
   return extracted.params.map((p, i) => {
     if (assumeIds.has(p)) {
       // 界只来自用户声明（bounds）；没有声明就不写——不发明默认界。
@@ -2847,7 +2935,7 @@ export function buildArgsFromAssume(
     // 给出互斥的类型）。无注解 / 不可映射才回 any（不猜）。
     // 与入口签名同一条域构造（nullish 精度 + 可选形参的 undefined 臂）。
     return withOptionalUndefined(
-      annotationAbsForText(extracted.formals[i]?.tsType, termVar(p)),
+      annotationAbsForText(extracted.formals[i]?.tsType, termVar(p), typeParamEnv, namedTypes),
       extracted.formals[i],
     );
   });

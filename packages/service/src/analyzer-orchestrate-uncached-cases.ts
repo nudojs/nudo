@@ -79,7 +79,11 @@ import { mockSeedsToAbsMocks, mockScopeSelected, type AbsMockSeeds } from "./moc
 import type { CallSiteRecord } from "./analyzer-orchestrate-calls.ts";
 import { findProjectConfig, contractConfig, analysisConfig } from "./evaluator/config.ts";
 import { defaultLoadModule } from "./load-module.ts";
-import { entryThisReceiverOf } from "@nudojs/core/internal";
+import {
+  entryThisReceiverOf,
+  namedTypeTextsForSource,
+  typeParamEnvForFunction,
+} from "@nudojs/core/internal";
 import { tryEvalCall, tryEvalCallFull, tryRunEval } from "./eval-run.ts";
 import {
   buildAbsImportLocalMap,
@@ -1364,8 +1368,12 @@ export function evaluateEntryCase(env: UncachedCaseEnv, candidate: SynthCandidat
     // `xs.length` 记成字面量 1 ⇒ 三方言（zod / standard / guard）把这次兜底
     // 观测当出口域（literal(1)），导出校验器拒绝被导出函数自己的返回值；dts
     // 面写 number ⇒ 四方言矛盾。
+    const entryTypeParams = typeParamEnvForFunction(env.source, candidate.analysis.name);
+    const entryNamedTypes = namedTypeTextsForSource(env.source);
     const argAbsEntry = (fnNode ? extractFormals(fnNode, env.source) : []).map((f) =>
-      f.kind === "rest" ? restEntryArgAbs() : tsAnnotationArgAbs(f.tsType),
+      f.kind === "rest"
+        ? restEntryArgAbs()
+        : tsAnnotationArgAbs(f.tsType, entryTypeParams, entryNamedTypes),
     );
     // BUG-133：`this: T` 接收者注解是入口求值的绑定上下文（不是形参位）
     const entryThisArg = entryThisReceiverOf(env.source, candidate.analysis.name);
@@ -1589,8 +1597,12 @@ export function evaluateEntryCase(env: UncachedCaseEnv, candidate: SynthCandidat
 export function evaluateThrowsOnly(env: UncachedCaseEnv, candidate: SynthCandidate): void {
   const { source, filePath, envNames, seeds, loadModule, fnDepSeg } = env;
   const fnNode = candidate.node ? resolveFunctionNode(candidate.node) : undefined;
+  const entryTypeParams = typeParamEnvForFunction(env.source, candidate.analysis.name);
+  const entryNamedTypes = namedTypeTextsForSource(env.source);
   const argAbsEntry = (fnNode ? extractFormals(fnNode, env.source) : []).map((f) =>
-    f.kind === "rest" ? restEntryArgAbs() : tsAnnotationArgAbs(f.tsType),
+    f.kind === "rest"
+      ? restEntryArgAbs()
+      : tsAnnotationArgAbs(f.tsType, entryTypeParams, entryNamedTypes),
   );
   const entryThisArg = entryThisReceiverOf(env.source, candidate.analysis.name);
   let hardThrowsAbs: Abs = neverAbs;

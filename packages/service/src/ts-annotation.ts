@@ -25,7 +25,11 @@
  */
 import type { Abs, Shape } from "@nudojs/core";
 import { abs as makeAbsVal, anyAbs, spread } from "@nudojs/core";
-import { absShapeForTsTypeText, absTypeForTsTypeText } from "@nudojs/core/internal";
+import {
+  absShapeForTsTypeText,
+  absTypeForTsTypeText,
+  resolveNamedTypeText,
+} from "@nudojs/core/internal";
 
 /**
  * 声明类型文本 → Abs 形状（不可映射 ⇒ undefined）。
@@ -51,13 +55,17 @@ export function tsAnnotationShape(text: string | undefined): Shape | undefined {
  * （与 `{...x}` 同一判据：任一侧键集不完备 ⇒ 结果不完备），不在本包另立
  * 第二套判定，也不复刻私有标记位。
  */
-export function tsAnnotationArgAbs(text: string | undefined): Abs {
+export function tsAnnotationArgAbs(
+  text: string | undefined,
+  typeParams?: ReadonlyMap<string, Abs>,
+  namedTypes?: ReadonlyMap<string, string>,
+): Abs {
   // Abs 面映射（不是 Shape 面）：`string | null` / `number | undefined` 的
   // nullish 字面量精度只能由 term 承载。Shape 面会把这类注解整条丢掉 ⇒
   // 入口实参退 any ⇒ entry@ 观测的返回位变宽（dts `string | unknown`、
   // zod `z.unknown()`、guard 恒真），与同一份产物里 `@param x - string | null`
   // 的注解原文自相矛盾；而 check 泛化面（generalize.ts）早已走 Abs 面。
-  const mapped = absTypeForTsTypeText(text);
+  const mapped = absTypeForTsTypeText(resolveNamedTypeText(text, namedTypes), typeParams);
   if (!mapped) return anyAbs;
   return markOpenObjKeys(makeAbsVal(mapped.shape, mapped.term, undefined, "path"));
 }
