@@ -229,3 +229,53 @@ describe("guard 克隆 Abs 不得丢掉按身份键控的 accessor 侧表", () =
     expect(mod.isObj!(value)).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 入口实参播种：默认值 / 可选形参（BUG-246 / BUG-251）
+// ---------------------------------------------------------------------------
+describe("入口实参播种取默认值 / 可选 undefined 臂", () => {
+  const entryCaseOf = (source: string, file: string, fn: string) => {
+    const f = analyzeFile(file, source).functions.find((x) => x.name === fn)!;
+    return f.cases.find((c) => c.name.startsWith("entry@"))!;
+  };
+
+  it("BUG-246 无注解默认形参的入口实参是初始化式域（zod 入参不再 unknown）", () => {
+    const entry = entryCaseOf(
+      `export function noannot(a = 1): string { return a.toFixed(2); }\n`,
+      "/test/b246-entry.ts",
+      "noannot",
+    );
+    expect(entry.argAbs[0]!.shape).toEqual({ k: "prim", type: "number" });
+    expect(absToSchemaNode(entry.argAbs[0]!).node).toMatchObject({ k: "prim", type: "number" });
+  });
+
+  it("BUG-251 可选形参的入口实参与返回域都含 undefined 臂（standard 接受自家返回值）", async () => {
+    const entry = entryCaseOf(
+      `export function optNum(x?: number): number | undefined { return x; }\n`,
+      "/test/b251-entry.ts",
+      "optNum",
+    );
+    // 入参：number | undefined（省略实参 ⇒ 绑定值 undefined）
+    const inNode = absToSchemaNode(entry.argAbs[0]!).node;
+    const nodeHasUndef = (n: SchemaNode): boolean =>
+      n.k === "lit"
+        ? n.value === undefined
+        : n.k === "union"
+          ? n.members.some(nodeHasUndef)
+          : false;
+    expect(nodeHasUndef(inNode)).toBe(true);
+    // 返回位：standard 校验器必须接受 undefined（= 函数自己的合法返回值）
+    const f = analyzeFile(
+      "/test/b251-entry.ts",
+      `export function optNum(x?: number): number | undefined { return x; }\n`,
+    ).functions.find((x) => x.name === "optNum")!;
+    const { source } = absToStandardSchema(f.combinedAbs!, { name: "optNum_out" });
+    const mod = (await loadGeneratedModule(source)) as unknown as Record<
+      string,
+      { "~standard": { validate: (v: unknown) => { issues?: unknown[] } } }
+    >;
+    expect(mod.optNum_out!["~standard"].validate(undefined).issues).toBeUndefined();
+    // zod 输出方言同口径（union 含 undefined 臂）
+    expect(schemaNodeToZod(absToSchemaNode(f.combinedAbs!).node)).toContain("undefined");
+  });
+});
