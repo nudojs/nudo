@@ -1191,14 +1191,15 @@ optWithEvidence(1);
 export function optUndefinedDefault(a, b = undefined) { return a; }
 `;
     const dts = generateDts(analyzeFile("/test/s2-opt3.js", source));
-    expect(dts).toMatch(/export declare function optUndefinedDefault\(a: (unknown|any), b\?: (unknown|any)\)/);
+    expect(dts).toMatch(/export declare function optUndefinedDefault\(a: (unknown|any), b\?: (unknown|any|undefined)\)/);
   }
   {
     const source = `
 export function def(x = 1) { return x; }
 `;
     const dts = generateDts(analyzeFile("/test/s2-def.js", source));
-    expect(dts).toMatch(/export declare function def\(x\?: (unknown|any)\): (unknown|any);/);
+    // BUG-246：`x = 1` 的入口域 / 返回域取初始化式 number（TS 同口径）。
+    expect(dts).toMatch(/export declare function def\(x\?: (unknown|any|number)\): (unknown|any|number);/);
     const check = tscNoEmit({
       "mod.d.ts": dts,
       "use.ts": 'import { def } from "./mod.js";\nexport const r = def();\n',
