@@ -4,6 +4,7 @@
 import type { Statement, Node } from "@babel/types";
 import { indent } from "../helpers.ts";
 import { matchRelIdentLit, matchRelIdentLitComposite } from "../../../arithmetic.ts";
+import { parseSource } from "../../../parse-source.ts";
 
 export function stmtCompletesControl(stmt: Statement | undefined | null): boolean {
   if (!stmt) return false;
@@ -275,6 +276,17 @@ const typeofArgName = (n: unknown): string | undefined => {
     return t.argument.name;
   }
   return undefined;
+};
+
+/** `typeof` 守卫目标（BUG-291）：标识符或单层成员（`typeof o.v`）。
+ *  成员形态复用 memberGuardTarget 的单层静态/数值下标识别。 */
+const typeofTargetOf = (n: unknown): { name: string; key?: string } | undefined => {
+  const t = n as { type?: string; operator?: string; argument?: unknown };
+  if (t?.type !== "UnaryExpression" || t.operator !== "typeof") return undefined;
+  const arg = t.argument as { type?: string; name?: string };
+  if (arg?.type === "Identifier" && arg.name) return { name: arg.name };
+  const m = memberGuardTarget(t.argument);
+  return m ? { name: m.name, key: m.key } : undefined;
 };
 
 /** 粒度合并（复合守卫否定臂的合取事实）：覆盖两粒度 → nullish */
@@ -665,19 +677,159 @@ export function nullishGuardsOf(test: unknown, undefinedIsIntrinsic = true): Nul
 }
 
 /**
- * typeof 类型守卫（Bug 23）：`typeof v === "string"` / `"string" === typeof v`
- * （`===`/`!==`/`==`/`!=`）→ arm 臂内 v 的 typeof 恒为 typeOf（`===` → cons，
- * `!==` → alt）。"undefined" 交由 nullishGuardOf 的 grain 通道处理（同一
- * 表达式不得双守卫），此处不认。
+ * 类型守卫事实（Bug 23 / BUG-282 / BUG-290 / BUG-291）：
+ * - typeof 二元式：`typeof v === "string"`（`===` → cons，`!==` → alt），
+ *   目标可为标识符或单层成员（`typeof o.v`，memberKey）；
+ * - `in` 运算符（BUG-290）：`"a" in o`（cons）——inKey = 键名；
+ * - 用户定义类型谓词调用（BUG-282）：`isStr(x)`（cons）——typeOf = 谓词
+ *   声明的 typeof 名（`x is string`；只认 typeof 可表的目标类型）；
+ * - 以上任一形态的 `!` 取反 → arm 对调。
+ * "undefined" 交由 nullishGuardOf 的 grain 通道处理（同一表达式不得双守卫），
+ * typeof 形态不认。
  */
 export type TypeGuard = {
-  /** 被守卫的标识符 */
+  /** 被守卫的标识符（成员目标时是基名；`in` 时是对象名） */
   name: string;
-  /** typeof 结果字面量 */
+  /** typeof 结果字面量（标识符目标）。成员目标 / `in` 形态为 ""——只带
+   *  typeOf 的通道（三元 / `&&` 短路臂）对基名执行 `$narrowTypeOf(name,"")`
+   *  是安全 no-op（成员键 / in 键在该通道没有参数位，不能把基名本身按
+   *  typeof 剪错）。 */
   typeOf: string;
-  /** 该 typeof 事实成立的臂 */
+  /** 该 fact 成立的臂 */
   arm: "cons" | "alt";
+  /** BUG-291：成员目标键（`typeof o.v`） */
+  memberKey?: string;
+  /** BUG-291：成员目标的 typeof 名（memberKey 在场时由 typeNarrowCallOf 使用） */
+  memberTypeOf?: string;
+  /** BUG-290：`in` 守卫的成员键（`"a" in o`） */
+  inKey?: string;
 };
+
+/** 用户定义类型谓词声明（BUG-282）：`function isStr(x): x is string` →
+ *  { paramIndex: 0, typeOf: "string" }。只收顶层声明（模块作用域）——
+ *  名字在调用点按模块绑定解析，嵌套作用域的同名谓词可能被遮蔽，保守不收。 */
+type TypePredicateDecl = { paramIndex: number; typeOf: string };
+
+/** 当前转译单元的源码（由 statement.ts 的 transpileStatement 在每个语句
+ *  入口喂入）：typeGuardOf 的签名没有 opts，用户谓词声明只能按源码查表。
+ *  body-fn 单元（无 source）沿用最近一次模块转译的源码——同一文件的第一个
+ *  body 编译必然发生在其模块转译之后；跨文件顺序由 statement 入口刷新。 */
+let typePredicateSource: string | undefined;
+
+/** 源码 → 谓词表。parseSource 自带缓存（剥除 AST 保留 nudoReturnTypeText）。 */
+const typePredicateMemo = new Map<string, Map<string, TypePredicateDecl>>();
+const TYPE_PREDICATE_MEMO_MAX = 8;
+const EMPTY_TYPE_PREDICATES: ReadonlyMap<string, TypePredicateDecl> = new Map();
+
+/** statement 入口喂入当前源码（undefined 不清空——body-fn 单元无 source）。 */
+export function setTypePredicateSource(source: string | undefined): void {
+  if (source) typePredicateSource = source;
+}
+
+/** 谓词目标类型文本 → typeof 名（只认 typeof 可健全表达的分类；`x is
+ *  "a" | "b"` / 对象类型等保守放弃）。 */
+function typeOfPredicateTarget(text: string): string | undefined {
+  const t = text.trim();
+  if (t === "undefined") return undefined;
+  return TYPEOF_NAMES.has(t) ? t : undefined;
+}
+
+/** 谓词声明的参数索引（`x is T` 中 x 在形参表的位置）。 */
+function predicateParamIndex(fn: unknown, paramName: string): number {
+  const params = (fn as { params?: Array<{ type?: string; name?: string }> }).params ?? [];
+  return params.findIndex((p) => p?.type === "Identifier" && p.name === paramName);
+}
+
+function addPredicateDecl(name: string, fn: unknown, map: Map<string, TypePredicateDecl>): void {
+  const text = (fn as { nudoReturnTypeText?: unknown }).nudoReturnTypeText;
+  if (typeof text !== "string") return;
+  const m = /^\s*([A-Za-z_$][\w$]*)\s+is\s+(.+?)\s*$/.exec(text);
+  if (!m) return;
+  const paramName = m[1]!;
+  const typeOf = typeOfPredicateTarget(m[2]!);
+  if (typeOf === undefined) return;
+  const paramIndex = predicateParamIndex(fn, paramName);
+  if (paramIndex < 0) return;
+  map.set(name, { paramIndex, typeOf });
+}
+
+/** 顶层语句 → 谓词声明（FunctionDeclaration / const fn = function|arrow）。 */
+function collectPredicateDecls(stmt: unknown, map: Map<string, TypePredicateDecl>): void {
+  const s = stmt as { type?: string; declaration?: unknown; declarations?: unknown[] };
+  if (s?.type === "ExportNamedDeclaration" || s?.type === "ExportDefaultDeclaration") {
+    collectPredicateDecls(s.declaration, map);
+    return;
+  }
+  if (s?.type === "FunctionDeclaration") {
+    const n = (s as { id?: { name?: string } }).id?.name;
+    if (n) addPredicateDecl(n, s, map);
+    return;
+  }
+  if (s?.type === "VariableDeclaration") {
+    for (const d of (s.declarations ?? []) as Array<{
+      id?: { type?: string; name?: string };
+      init?: { type?: string };
+    }>) {
+      const n = d.id?.type === "Identifier" ? d.id.name : undefined;
+      if (!n || !d.init) continue;
+      if (d.init.type === "FunctionExpression" || d.init.type === "ArrowFunctionExpression") {
+        addPredicateDecl(n, d.init, map);
+      }
+    }
+  }
+}
+
+function typePredicatesOf(source: string | undefined): ReadonlyMap<string, TypePredicateDecl> {
+  if (!source) return EMPTY_TYPE_PREDICATES;
+  const hit = typePredicateMemo.get(source);
+  if (hit) {
+    typePredicateMemo.delete(source); // LRU bump
+    typePredicateMemo.set(source, hit);
+    return hit;
+  }
+  const map = new Map<string, TypePredicateDecl>();
+  try {
+    const ast = parseSource(source);
+    for (const stmt of ast.program.body) collectPredicateDecls(stmt, map);
+  } catch {
+    return EMPTY_TYPE_PREDICATES;
+  }
+  if (typePredicateMemo.size >= TYPE_PREDICATE_MEMO_MAX) {
+    const oldest = typePredicateMemo.keys().next().value;
+    if (oldest !== undefined) typePredicateMemo.delete(oldest);
+  }
+  typePredicateMemo.set(source, map);
+  return map;
+}
+
+/** 类型谓词调用事实（BUG-282）：`isStr(x)` / `isStr(o.v)` → 谓词目标事实。
+ *  只认模块顶层声明的谓词（名字解析保守）。参数位非单个标识符/成员时放弃。 */
+function predicateCallGuardOf(t: {
+  callee?: unknown;
+  arguments?: unknown;
+}): TypeGuard | undefined {
+  const callee = t.callee as { type?: string; name?: string };
+  if (callee?.type !== "Identifier" || !callee.name) return undefined;
+  const decl = typePredicatesOf(typePredicateSource).get(callee.name);
+  if (!decl) return undefined;
+  const args = t.arguments;
+  if (!Array.isArray(args)) return undefined;
+  const arg = args[decl.paramIndex] as { type?: string; name?: string } | undefined;
+  if (!arg) return undefined;
+  const target: { name: string; key?: string } | undefined =
+    arg.type === "Identifier" && arg.name
+      ? { name: arg.name }
+      : memberGuardTarget(arg);
+  if (!target) return undefined;
+  return {
+    name: target.name,
+    typeOf: target.key !== undefined ? "" : decl.typeOf,
+    arm: "cons",
+    ...(target.key !== undefined
+      ? { memberKey: target.key, memberTypeOf: decl.typeOf }
+      : {}),
+  };
+}
 
 export function typeGuardOf(test: unknown): TypeGuard | undefined {
   const t = test as {
@@ -685,17 +837,43 @@ export function typeGuardOf(test: unknown): TypeGuard | undefined {
     operator?: string;
     left?: unknown;
     right?: unknown;
+    argument?: unknown;
+    callee?: unknown;
+    arguments?: unknown;
   };
+  // `!isStr(x)` / `!(typeof o.v === "string")`：事实臂对调
+  if (t?.type === "UnaryExpression" && t.operator === "!") {
+    const g = typeGuardOf(t.argument);
+    return g ? { ...g, arm: g.arm === "cons" ? "alt" : "cons" } : undefined;
+  }
+  // BUG-282：用户定义类型谓词调用
+  if (t?.type === "CallExpression") return predicateCallGuardOf(t);
   if (t?.type !== "BinaryExpression") return undefined;
   const op = t.operator;
+  // BUG-290：`"a" in o` —— 右操作数是单层对象标识符；字面量键为字符串
+  // （数值键的 `in` 收窄面罕见，保守不认）。
+  if (op === "in") {
+    const right = t.right as { type?: string; name?: string };
+    if (right?.type !== "Identifier" || !right.name) return undefined;
+    if (!isStrLitNode(t.left)) return undefined;
+    return { name: right.name, typeOf: "", arm: "cons", inKey: t.left.value };
+  }
   if (op !== "===" && op !== "!==" && op !== "==" && op !== "!=") return undefined;
-  const lTo = typeofArgName(t.left);
-  const rTo = typeofArgName(t.right);
+  const lTo = typeofTargetOf(t.left);
+  const rTo = typeofTargetOf(t.right);
   const litSide = lTo !== undefined ? t.right : rTo !== undefined ? t.left : null;
-  const name = lTo ?? rTo;
-  if (name === undefined || !isStrLitNode(litSide)) return undefined;
+  const target = lTo ?? rTo;
+  if (target === undefined || !isStrLitNode(litSide)) return undefined;
   if (litSide.value === "undefined" || !TYPEOF_NAMES.has(litSide.value)) return undefined;
-  return { name, typeOf: litSide.value, arm: op === "===" || op === "==" ? "cons" : "alt" };
+  return {
+    name: target.name,
+    // 成员目标：短路径通道（只有 typeOf 参数）不得把基名按 typeof 剪错
+    typeOf: target.key !== undefined ? "" : litSide.value,
+    arm: op === "===" || op === "==" ? "cons" : "alt",
+    ...(target.key !== undefined
+      ? { memberKey: target.key, memberTypeOf: litSide.value }
+      : {}),
+  };
 }
 
 /**
@@ -803,6 +981,18 @@ export function narrowNullishArmThunks(
   );
 }
 
+/** TypeGuard → 运行时窄化调用串（typeof 标识符 / typeof 成员 / in）。 */
+function typeNarrowCallOf(g: TypeGuard, keep: boolean): string {
+  if (g.inKey !== undefined) {
+    return `$narrowIn(${g.name}, ${JSON.stringify(g.inKey)}, ${keep})`;
+  }
+  if (g.memberKey !== undefined) {
+    const t = g.memberTypeOf ?? g.typeOf;
+    return `$narrowTypeOf(${g.name}, ${JSON.stringify(t)}, ${keep}, ${JSON.stringify(g.memberKey)})`;
+  }
+  return `$narrowTypeOf(${g.name}, ${JSON.stringify(g.typeOf)}, ${keep})`;
+}
+
 /** typeof 类型守卫臂 thunk 的剪影包装：`((v) => THUNK)($narrowTypeOf(v, T, keep))`。
  *  事实臂（arm）保留匹配成员，对侧臂绑补集；守卫名在 fork 绑定集时跳过
  *  （与 nullish 剪影同规则）。 */
@@ -822,7 +1012,7 @@ export function narrowTypeArmThunks(
     thunk,
     guards.map((g) => ({
       name: g.name,
-      arg: `$narrowTypeOf(${g.name}, ${JSON.stringify(g.typeOf)}, ${arm === g.arm})`,
+      arg: typeNarrowCallOf(g, arm === g.arm),
     })),
     forkBindingNames,
     "multi",
@@ -836,11 +1026,54 @@ export function narrowTypeArmThunk(thunk: string, guard: TypeGuard | undefined, 
     thunk,
     [{
       name: guard.name,
-      arg: `$narrowTypeOf(${guard.name}, ${JSON.stringify(guard.typeOf)}, ${keep})`,
+      arg: typeNarrowCallOf(guard, keep),
     }],
     forkBindingNames,
     "multi",
   );
+}
+
+/**
+ * BUG-335：`if (guard) <写被守卫绑定>` 缺 else 时，隐式 else 臂（fall-through）
+ * 必须把**取反的守卫事实**应用到 join 基线。
+ *
+ * fork 协议在测试求值后快照被写绑定，缺 else 时隐式臂是常量
+ * `() => $lit(void 0)` ⇒ 臂尾 `__fk2_<name> = name` 捕获的仍是测试前快照
+ * （`string | undefined`）⇒ join 回来 `"x" | (string | undefined)` ⇒ 合法
+ * `a.length` 记假 TypeError。这里在隐式臂入口把**在 fork 绑定集里**的
+ * 守卫名按取反事实重绑（`a = $removeUndefined(a)` / `o = $removeMemberNullish(...)`）
+ * ——臂尾捕获到窄化值，join 得到 `string`。
+ *
+ * 只处理 fork 绑定集里的名字（join 保护）：不在集里的绑定若在此重绑，会
+ * 在「cons 臂正常完成」的路径上泄漏一个只在 fall-through 成立的窄化值。
+ * `arguments` / `eval` 等 strict 非法绑定名跳过（与影子重绑同口径）。
+ */
+export function narrowImplicitElseArmThunk(
+  thunk: string,
+  guards: readonly NullishGuard[],
+  typeGuards: readonly TypeGuard[],
+  forkBindingNames: ReadonlySet<string> | readonly string[],
+): string {
+  const names =
+    forkBindingNames instanceof Set ? (forkBindingNames as Set<string>) : new Set(forkBindingNames);
+  const lines: string[] = [];
+  const seen = new Set<string>();
+  for (const g of guards) {
+    if (g.arm !== "alt" || !names.has(g.name) || seen.has(g.name)) continue;
+    if (isStrictIllegalBinding(g.name)) continue;
+    seen.add(g.name);
+    lines.push(`${g.name} = ${nullishRemoveCallOf(g)};`);
+  }
+  for (const g of typeGuards) {
+    // 隐式 else = 测试为假：guard.arm === "alt" 的事实成立（keep=true），
+    // cons 事实取补集（keep=false）——与 narrowTypeArmThunk(arm="alt") 同口径。
+    if (!names.has(g.name) || seen.has(g.name)) continue;
+    if (isStrictIllegalBinding(g.name)) continue;
+    seen.add(g.name);
+    lines.push(`${g.name} = ${typeNarrowCallOf(g, g.arm === "alt")};`);
+  }
+  if (lines.length === 0) return thunk;
+  return `() => { ${lines.join(" ")} return (${thunk})(); }`;
 }
 
 // --- 判别等值守卫（issue #126） ---------------------------------------------
@@ -989,6 +1222,14 @@ export type SwitchCaseFacts = {
    * 判别变量名可与判别式无关（判别式是字面量 true 时）⇒ 独立于 name。
    */
   compareExclude?: { name: string; grain: "null" | "undefined" | "nullish" }[];
+  /**
+   * BUG-363：`switch (typeof x)` / `switch (typeof o.v)` 的 typeof 事实——
+   * case 标签是 typeof 结果名（"string" / "number" / …）。命中 = 本臂标签
+   * （单标签臂才产）；排除 = 其它臂的标签。应用时走 `$narrowTypeOf`
+   * （`key` 在场则收窄成员槽）。
+   */
+  typeOfHit?: string;
+  typeOfExclude?: string[];
 };
 
 /** case 测试节点的标签事实（null / undefined / prim 字面量；其余不可判） */
@@ -1144,11 +1385,52 @@ function booleanDiscCaseFacts(
 }
 
 /**
+ * BUG-363：`switch (typeof x)` 各臂的 typeof 事实。case 标签是 typeof 结果
+ * 名（TYPEOF_NAMES）；非 typeof 标签不参与。命中事实只在该臂**所有**测试
+ * 都是 typeof 标签且标签唯一时产生（多标签 = 并集，单值 `$narrowTypeOf`
+ * 表达不了）；排除事实按既有 case 标签排除口径（非 default 臂排其它非
+ * default 臂、default 臂只排之前臂）。
+ */
+function typeofSwitchCaseFacts(
+  target: { name: string; key?: string },
+  arms: readonly { tests: readonly unknown[]; isDefault: boolean }[],
+  undefinedIsIntrinsic = true,
+): (SwitchCaseFacts | undefined)[] {
+  const typeofLabelOf = (n: unknown): string | undefined => {
+    const l = caseLabelOf(n, undefinedIsIntrinsic);
+    return l?.k === "prim" && typeof l.v === "string" && TYPEOF_NAMES.has(l.v) ? l.v : undefined;
+  };
+  const labels = arms.map((a) => a.tests.map(typeofLabelOf));
+  return arms.map((arm, i) => {
+    const mine = labels[i]!.filter((v): v is string => v !== undefined);
+    const excl: string[] = [];
+    for (let j = 0; j < arms.length; j++) {
+      if (j === i) continue;
+      const other = arms[j]!;
+      if (other.isDefault) continue;
+      if (arm.isDefault && j > i) continue;
+      for (const v of labels[j]!) {
+        if (v === undefined || mine.includes(v)) continue;
+        if (!excl.includes(v)) excl.push(v);
+      }
+    }
+    const facts: SwitchCaseFacts = { name: target.name };
+    if (target.key !== undefined) facts.key = target.key;
+    const uniq = [...new Set(mine)];
+    const allTypeof = arm.tests.length > 0 && labels[i]!.every((v) => v !== undefined);
+    if (!arm.isDefault && allTypeof && uniq.length === 1) facts.typeOfHit = uniq[0]!;
+    if (excl.length > 0) facts.typeOfExclude = excl;
+    return facts;
+  });
+}
+
+/**
  * switch 各臂的 case 标签窄化事实（Bug 184）。
  *
  * 判别目标：标识符（`switch (x)`）或成员（`switch (o.kind)`，复用
  * memberGuardTarget 的判别身份识别）——其余形态（调用 / 计算键 / 三元）
- * 不产事实（宁缺毋假）。
+ * 不产事实（宁缺毋假）。`switch (typeof x)` / `switch (typeof o.v)`
+ * （BUG-363）走 typeofSwitchCaseFacts。
  *
  * 排除集合的取法：
  * - 非 default 臂：**其它**非 default 臂的标签（贯穿路径上判别值仍是本臂的
@@ -1174,6 +1456,9 @@ export function switchCaseFacts(
   if (disc?.type === "BooleanLiteral" && disc.value === true) {
     return arms.map((_arm, i) => booleanDiscCaseFacts(arms, i, undefinedIsIntrinsic));
   }
+  // BUG-363：`switch (typeof x)` —— 判别式是 UnaryExpression typeof
+  const typeOfTarget = typeofTargetOf(discriminant);
+  if (typeOfTarget) return typeofSwitchCaseFacts(typeOfTarget, arms, undefinedIsIntrinsic);
   let name: string;
   let key: string | undefined;
   if (disc?.type === "Identifier" && disc.name) {
@@ -1259,8 +1544,24 @@ export function narrowCaseLabelArmThunk(
 ): string {
   if (!facts) return thunk;
   let out = thunk;
-  // 判别名窄化（既有口径）：判别名在 fork 绑定集（臂内写 / 快照重绑）时跳过
-  if (facts.key !== undefined) {
+  // BUG-363：`switch (typeof x)` 的 typeof 事实——排除（keep=false）在内、
+  // 命中（keep=true）在外；成员判别式（`switch (typeof o.v)`）带 key 收窄槽。
+  const hasTypeOfFacts =
+    facts.typeOfHit !== undefined || (facts.typeOfExclude?.length ?? 0) > 0;
+  if (hasTypeOfFacts) {
+    const typeOfBindings: ArmShadowBinding[] = [];
+    const callOf = (t: string, keep: boolean): string =>
+      facts.key !== undefined
+        ? `$narrowTypeOf(${facts.name}, ${JSON.stringify(t)}, ${keep}, ${JSON.stringify(facts.key)})`
+        : `$narrowTypeOf(${facts.name}, ${JSON.stringify(t)}, ${keep})`;
+    for (const t of facts.typeOfExclude ?? []) {
+      typeOfBindings.push({ name: facts.name, arg: callOf(t, false) });
+    }
+    if (facts.typeOfHit !== undefined) {
+      typeOfBindings.push({ name: facts.name, arg: callOf(facts.typeOfHit, true) });
+    }
+    out = narrowArmShadowWrap(out, typeOfBindings, forkBindingNames, "seq");
+  } else if (facts.key !== undefined) {
     // 成员判别式：排除（keep=false）在内、命中（keep=true）在外
     const memberBindings: ArmShadowBinding[] = [];
     for (const v of facts.exclude ?? []) {

@@ -92,6 +92,8 @@ import {
   narrowRelNegationArmThunk,
   narrowRelComplementArmThunk,
   narrowNotNaNArmThunk,
+  narrowImplicitElseArmThunk,
+  setTypePredicateSource,
 } from "./predicates.ts";
 import {
   matchAsOverride,
@@ -153,6 +155,9 @@ export function undefinedIsIntrinsicOf(opts: TranspileOptions): boolean {
 }
 
 export function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptions): string {
+  // BUG-282：用户类型谓词（`x is string`）的调用点收窄需要声明表——
+  // typeGuardOf 的签名无 opts，按当前转译单元源码查表（parseSource 缓存）。
+  setTypePredicateSource(opts.source);
   const pad = indent(depth);
   switch (stmt.type) {
     case "ExportNamedDeclaration":
@@ -948,7 +953,17 @@ function emitIfStatement(
   // 需要真 alternate 参与 join，折 UNDEF_LIT。
   const alt = names.length
     ? forkArmThunkExpr(
-        altNarrowed === null ? `() => ${UNDEF_LIT}` : altNarrowed,
+        altNarrowed === null
+          ? // BUG-335：缺 else 时 fall-through 臂必须接**取反的守卫事实**——
+            // 否则臂尾快照捕获的是测试前基线，join 回 `T | undefined`。
+            // 只接单守卫事实（合取/析取的否定不蕴含单项否定）。
+            narrowImplicitElseArmThunk(
+              `() => ${UNDEF_LIT}`,
+              guards,
+              tguard ? [tguard] : [],
+              names,
+            )
+          : altNarrowed,
         1,
         names,
         padIn,
