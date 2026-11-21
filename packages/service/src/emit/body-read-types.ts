@@ -119,10 +119,23 @@ function litKind(node: Node | undefined): "string" | "number" | "boolean" | unde
   return undefined;
 }
 
+/**
+ * 用法推断口径（BUG-250 / BUG-268）：
+ * - `draft`：建议会被用户当成**类型**接受（`contract --draft`）⇒ 只收真正
+ *   蕴含类型的用法。强制转换 / 判定调用（`String(x)` / `Number(x)` /
+ *   `Boolean(x)` / `Array.isArray(x)`）、数值字面量一侧的 `+`、关系运算符、
+ *   `lastIndexOf`、`valueOf` 都不蕴含实参类型 ⇒ 退 `any()`（无信息）。
+ * - `quickfix`：建议是「消掉 L2 的**充分收窄**」，落盘前还要过
+ *   `quickfix-edits.ts` 的 totality 验证门 ⇒ 保留历史启发式（这些写法确实
+ *   让引擎证不出 total，收窄到 number/string 能通过验证）。
+ */
+type EvidenceMode = "draft" | "quickfix";
+
 /** 用法 → 类型提示。parent 是包含 `param.field` 的表达式。 */
 function hintFromUse(
   parent: Record<string, unknown> | undefined,
   key: "left" | "right" | "object" | "callee" | "argument" | "test" | "init",
+  mode: EvidenceMode,
 ): UseHint | undefined {
   if (!parent) return undefined;
   const t = parent.type as string | undefined;
@@ -139,7 +152,13 @@ function hintFromUse(
       if (lk === "boolean") return { type: "boolean()", via: "compare boolean lit" };
     }
     if (op === "+" ) {
-      if (lk === "number") return { type: "number()", via: "add number" };
+      if (lk === "number") {
+        // BUG-250 / BUG-268（draft 面）：另一侧是数值字面量**不蕴含**
+        // 这一侧是 number —— `"v" + 1` 合法（拼接），结果 string。
+        return mode === "draft"
+          ? { type: "any()", via: "add (number lit does not imply number)" }
+          : { type: "number()", via: "add number" };
+      }
       if (lk === "string") return { type: "string()", via: "concat string" };
       return { type: "any()", via: "add (unknown coerce)" };
     }
@@ -147,7 +166,9 @@ function hintFromUse(
       return { type: "number()", via: `arith ${op}` };
     }
     if (op === "<" || op === ">" || op === "<=" || op === ">=") {
-      return { type: "number()", via: `rel ${op}` };
+      // BUG-268（draft 面）：关系运算符对 `string` / `string` 完全合法
+      // （`"a" < "b"`）⇒ 不是 number 证据。
+      return mode === "draft" ? undefined : { type: "number()", via: `rel ${op}` };
     }
     return undefined;
   }
@@ -160,6 +181,13 @@ function hintFromUse(
   // param.field.toLowerCase() / .map() / .toFixed()
   if (t === "MemberExpression" || t === "OptionalMemberExpression") {
     const prop = keyOf(parent.property as Node | undefined);
+    // BUG-268（draft 面）：`lastIndexOf` 同时存在于 String / Array 原型；
+    // `valueOf` 是 Object.prototype 的恒等方法（字符串 / 对象上都是恒等）
+    // ⇒ 都不是类型证据。返回 any() 而不是 undefined：链式读（`o.xs.lastIndexOf`）
+    // 的叶判定要靠这个 hint 停在方法名之前，否则方法名会被当成字段。
+    if (mode === "draft" && (prop === "lastIndexOf" || prop === "valueOf")) {
+      return { type: "any()", via: `.${prop}() (ambiguous)` };
+    }
     if (prop && STRING_METHODS.has(prop) && prop !== "includes" && prop !== "indexOf" && prop !== "slice" && prop !== "concat" && prop !== "at") {
       return { type: "string()", via: `.${prop}()` };
     }
@@ -182,6 +210,9 @@ function hintFromUse(
 
   // String(param.field) / Number(...) / Boolean(...) / Array.isArray(...)
   if (t === "CallExpression" || t === "OptionalCallExpression") {
+    // BUG-250（draft 面）：强制转换 / 判定调用对实参类型**不蕴含任何信息**
+    // （`String(3)` / `Number("7")` / `Boolean(0)` / `Array.isArray("x")` 全合法）。
+    if (mode === "draft") return undefined;
     const callee = parent.callee as Node | undefined;
     const cname = callee?.type === "Identifier" ? (callee as { name: string }).name : undefined;
     if (cname === "String") return { type: "string()", via: "String()" };
@@ -285,7 +316,11 @@ const receiverChainOf = (
   return undefined;
 };
 
-const collectReads = (fnNode: Node, paramNames: Set<string>): ParamReads => {
+const collectReads = (
+  fnNode: Node,
+  paramNames: Set<string>,
+  mode: EvidenceMode,
+): ParamReads => {
   const reads: ParamReads = {
     paths: new Map(),
     arrays: new Map(),
@@ -424,8 +459,8 @@ const collectReads = (fnNode: Node, paramNames: Set<string>): ParamReads => {
             const nextProp = i + 1 < rev.length ? rev[i + 1]! : undefined;
             const h =
               nextProp !== undefined
-                ? hintFromUse(synthMemberParent(nextProp), "object")
-                : hintFromUse(parent, (parentKey as "left") ?? "object");
+                ? hintFromUse(synthMemberParent(nextProp), "object", mode)
+                : hintFromUse(parent, (parentKey as "left") ?? "object", mode);
             if (h) {
               leafLen = i + 1;
               leafHint = h;
@@ -459,7 +494,7 @@ const collectReads = (fnNode: Node, paramNames: Set<string>): ParamReads => {
             const elemPositions = ARRAY_CALLBACK_METHODS[link.method];
             const element =
               link.cb && elemPositions
-                ? collectReads(link.cb, elemParamNames(link.cb, elemPositions))
+                ? collectReads(link.cb, elemParamNames(link.cb, elemPositions), mode)
                 : undefined;
             list.push(element ? { method: link.method, element } : { method: link.method });
           }
@@ -481,7 +516,7 @@ const collectReads = (fnNode: Node, paramNames: Set<string>): ParamReads => {
         ) &&
         parentKey !== "object"
       ) {
-        const h = hintFromUse(parent, (parentKey as "left") ?? "object");
+        const h = hintFromUse(parent, (parentKey as "left") ?? "object", mode);
         if (h) {
           let list = reads.scalars.get(name);
           if (!list) reads.scalars.set(name, (list = []));
@@ -609,7 +644,7 @@ export function collectParamBodyReadTypes(source: string): BodyReadTypes {
     source,
     (fnName, fnNode, paramNames) => {
       if (paramNames.size === 0) return;
-      const reads = collectReads(fnNode, paramNames);
+      const reads = collectReads(fnNode, paramNames, "draft");
       const fieldsOf = new Map<string, BodyReadField[]>();
       for (const [pname, pathMap] of reads.paths) {
         const fields = fieldsFromPaths([pathMap]);
@@ -635,7 +670,7 @@ export function collectParamContracts(source: string): ParamContracts {
     source,
     (fnName, fnNode, paramNames) => {
       if (paramNames.size === 0) return;
-      const reads = collectReads(fnNode, paramNames);
+      const reads = collectReads(fnNode, paramNames, "quickfix");
       const byParam = new Map<string, ParamContractEvidence>();
       for (const pname of paramNames) {
         const ev = contractOf(reads, pname);

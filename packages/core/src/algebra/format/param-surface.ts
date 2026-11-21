@@ -327,6 +327,11 @@ export function formalParamsFromNodes(
       const nestedPaths: string[] = [];
       const boundIndex: Record<string, number> = {};
       if (left) collectPatternNames(left, top, nested, 0, propKey, [], nestedPaths, boundIndex);
+      // BUG-241：Babel 把 `{ a }: Opts = {}` / `[x]: [string] = []` 的注解
+      // 挂在 **left pattern** 上（AssignmentPattern 节点自己没有 typeAnnotation：
+      // 语法上 `: T` 位于 `=` 之前）。之前只读 AssignmentPattern 节点 ⇒ 带整参
+      // 默认值的解构形参 `tsType` 恒丢 ⇒ 入口域 any（假 may-throw）+ dts `_p0?: unknown`。
+      const patternTsType = left?.nudoTypeText ?? p.nudoTypeText;
       out.push({
         kind: "pattern",
         placeholder: `_p${index}`,
@@ -340,7 +345,7 @@ export function formalParamsFromNodes(
         index,
         // Bug 399：带默认值的解构形参可省略
         optional: true,
-        ...tsTypeOf(p),
+        ...(patternTsType ? { tsType: patternTsType } : {}),
       });
       continue;
     }

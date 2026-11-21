@@ -1593,6 +1593,7 @@ export function $yieldStar(
  * 保留转出以维持 `exec/runtime/async.ts` 深路径的既有导入者（测试等）。
  */
 export {
+  $narrowIn,
   $narrowMemberEq,
   $narrowTypeOf,
   $nullishTest,

@@ -31,7 +31,12 @@ import { v } from "../term.ts";
 import { formatConstraint } from "../contract/contract.ts";
 import { formalParamsFromNodes } from "../format/param-surface.ts";
 import { relGuardOf } from "../exec/transpile/stmt/predicates.ts";
-import { absShapeForTsTypeText } from "../contract/ts-type-shape.ts";
+import {
+  absShapeForTsTypeText,
+  absTypeForTsTypeText,
+  namedTypeTextsForSource,
+  resolveNamedTypeText,
+} from "../contract/ts-type-shape.ts";
 
 // ---------------------------------------------------------------------------
 // bigint 字面量契约的 prim 标注
@@ -3106,6 +3111,138 @@ describe("absShapeForTsTypeText 不进**公共**面（负控；internal 面已�
     const pub = (await import("@nudojs/core")) as unknown as Record<string, unknown>;
     expect(pub.absShapeForTsTypeText).toBeUndefined();
   }
+});
+
+describe("TS 声明类型文本 → Abs：字面量值域 / 索引签名 / 方法签名 / 新语法形态", () => {
+  it("字面量保留 lit term（十进制 / 十六 / 八 / 二 / BigInt / 分隔符 / 字符串 / 布尔）", () => {
+    const cases: Array<[string, string, unknown]> = [
+      ["42", "number", 42],
+      ["0xff", "number", 255],
+      ["0b1010", "number", 10],
+      ["0o777", "number", 511],
+      ["1_000", "number", 1000],
+      ["10n", "bigint", 10n],
+      ['"a"', "string", "a"],
+      ["true", "boolean", true],
+    ];
+    for (const [text, type, value] of cases) {
+      const a = absTypeForTsTypeText(text);
+      expect(a?.shape, text).toEqual({ k: "prim", type });
+      expect(a?.term, text).toEqual({ op: "lit", value });
+    }
+    const union = absTypeForTsTypeText('"a" | "b"');
+    expect(union?.shape.k).toBe("sum");
+    expect(
+      union?.shape.k === "sum" ? union.shape.members.map((m) => m.term) : [],
+    ).toEqual([{ op: "lit", value: "a" }, { op: "lit", value: "b" }]);
+  });
+
+  it("readonly 元组 / 元组标签 / 函数类型 / 模板字面量 / keyof / 索引访问 / 交叉", () => {
+    expect(absShapeForTsTypeText("readonly [number, string]")).toMatchObject({
+      k: "tuple",
+      elements: [{ shape: { k: "prim", type: "number" } }, { shape: { k: "prim", type: "string" } }],
+    });
+    expect(absShapeForTsTypeText("[x: number, y?: string]")).toMatchObject({ k: "arr" });
+    expect(absShapeForTsTypeText("(x: number) => string")).toMatchObject({
+      k: "fn",
+      params: ["x"],
+      paramTypes: [{ shape: { k: "prim", type: "number" } }],
+      returnType: { shape: { k: "prim", type: "string" } },
+    });
+    expect(absShapeForTsTypeText("`id-${number}`")).toEqual({ k: "prim", type: "string" });
+    const keyofShape = absShapeForTsTypeText("keyof { a: number; b: string }");
+    expect(keyofShape?.k).toBe("sum");
+    expect(
+      keyofShape?.k === "sum" ? keyofShape.members.map((m) => m.term) : [],
+    ).toEqual([{ op: "lit", value: "a" }, { op: "lit", value: "b" }]);
+    expect(absShapeForTsTypeText('{ a: number }["a"]')).toEqual({ k: "prim", type: "number" });
+    expect(absShapeForTsTypeText("[string, number][0]")).toEqual({ k: "prim", type: "string" });
+    expect(absShapeForTsTypeText("{ a: number } & { b: string }")).toMatchObject({
+      k: "obj",
+      slots: {
+        a: { value: { shape: { k: "prim", type: "number" } } },
+        b: { value: { shape: { k: "prim", type: "string" } } },
+      },
+    });
+  });
+
+  it("对象索引签名 / 方法签名进槽表；签名文本不再渲染成空对象", () => {
+    const idx = absTypeForTsTypeText("{ [k: string]: number }");
+    expect(idx).toMatchObject({
+      shape: {
+        k: "obj",
+        index: {
+          key: { shape: { k: "prim", type: "string" } },
+          value: { shape: { k: "prim", type: "number" } },
+        },
+      },
+    });
+    expect(formatShape(idx!)).toContain("[k: string]: number");
+    const method = absTypeForTsTypeText("{ m(x: number): string }");
+    expect(method).toMatchObject({
+      shape: {
+        k: "obj",
+        slots: {
+          m: {
+            value: {
+              shape: {
+                k: "fn",
+                params: ["x"],
+                paramTypes: [{ shape: { k: "prim", type: "number" } }],
+                returnType: { shape: { k: "prim", type: "string" } },
+              },
+            },
+          },
+        },
+      },
+    });
+  });
+
+  it("显式 unknown 注解带声明项，不再被当成推断失败", () => {
+    const a = absTypeForTsTypeText("unknown");
+    expect(a?.shape).toEqual({ k: "unknown" });
+    expect(a?.term).toEqual({ op: "var", id: "unknown#annotation" });
+  });
+
+  it("同文件 interface / type 别名引用可解析为结构化域（无损链式展开）", () => {
+    const src = `interface Opts { a: number; b?: string }
+type Name = string;
+type Alias = Opts;
+`;
+    const named = namedTypeTextsForSource(src);
+    expect(named.get("Opts")).toContain("a: number");
+    expect(resolveNamedTypeText("Opts", named)).toContain("a: number");
+    expect(resolveNamedTypeText("Alias", named)).toContain("a: number");
+    expect(absShapeForTsTypeText(resolveNamedTypeText("Opts", named))).toMatchObject({
+      k: "obj",
+      slots: {
+        a: { value: { shape: { k: "prim", type: "number" } } },
+        b: { value: { shape: { k: "prim", type: "string" } }, optional: true },
+      },
+    });
+    expect(absTypeForTsTypeText(resolveNamedTypeText("Name", named))?.shape).toEqual({
+      k: "prim",
+      type: "string",
+    });
+  });
+
+  it("泛型类型参数按调用方绑定表映射（T / T[] / 约束）", () => {
+    const env = new Map([
+      ["T", abs({ k: "prim", type: "string" }, undefined, undefined, "exact")],
+    ]);
+    expect(absTypeForTsTypeText("T", env)?.shape).toEqual({ k: "prim", type: "string" });
+    expect(absTypeForTsTypeText("T[]", env)?.shape).toMatchObject({
+      k: "arr",
+      element: { shape: { k: "prim", type: "string" } },
+    });
+    expect(absTypeForTsTypeText("T | undefined", env)?.shape).toMatchObject({
+      k: "sum",
+      members: [
+        { shape: { k: "prim", type: "string" } },
+        { shape: { k: "unknown" }, term: { op: "lit", value: undefined } },
+      ],
+    });
+  });
 });
   it("复合注解端到端：合法更宽值不再判错精确（\"b\" in x 非 exact false；可选 / rest 元组 length 非 exact 2；Object.keys 不是 exact 键表，嵌套槽同口径）", () => {
     const r = checkSource(

@@ -397,3 +397,78 @@ describe("生成产物内联副本必须与库函数版同口径处理 -0", () =
   });
 
 });
+
+// ---------------------------------------------------------------------------
+// 审计批次 252 / 253：空数组返回位与索引签名对象
+// ---------------------------------------------------------------------------
+describe("审计批次 252 / 253：空数组与索引签名", () => {
+  const emptyTuple = (): Abs =>
+    abs({ k: "tuple", elements: [] }, undefined, undefined, "exact");
+
+  it("BUG-252 空元组观测发布成 unknown[]（对照：非空元组仍是 tuple）", () => {
+    const empty = projectAbsToSchema(emptyTuple());
+    expect(empty.source).toContain("z.array(z.unknown())");
+    expect(empty.source).not.toContain("z.tuple([])");
+
+    const one = projectAbsToSchema(
+      abs({ k: "tuple", elements: [numLit(1)] }, undefined, undefined, "exact"),
+    );
+    expect(one.source).toContain("z.tuple([");
+    const standard = absToStandardSchema(emptyTuple(), { name: "empty" });
+    expect(standard.source).toContain('"k":"arr"');
+    expect(standard.source).not.toContain('"k":"tuple"');
+  });
+
+  it("BUG-252 守卫不再把空数组观测收窄成 length === 0", () => {
+    const guard = generateGuardFunctionFromAbs("isemptyOutput", emptyTuple());
+    expect(guard).not.toContain("length === 0");
+    expect(guard).toContain("Array.isArray(data)");
+  });
+
+  it("BUG-253 standard/guard 也投影索引签名的键 / 值域", () => {
+    const withIndex = abs(
+      {
+        k: "obj",
+        slots: {},
+        index: { key: abs({ k: "prim", type: "string" }, undefined, undefined, "exact"), value: numLit(1) },
+        open: true,
+      },
+      undefined,
+      undefined,
+      "exact",
+    );
+    const node = absToSchemaNode(withIndex).node;
+    expect(validateSchemaNode(node, { a: 1 }).issues).toBeUndefined();
+    expect(validateSchemaNode(node, { a: "x" }).issues).toBeDefined();
+
+    const standard = absToStandardSchema(withIndex, { name: "withIndex" });
+    expect(standard.source).toContain('"index":{"key":{"k":"prim","type":"string"');
+    expect(standard.source).toContain('"value":{"k":"lit","value":1}');
+
+    const guard = generateGuardFunctionFromAbs("iswithIndex", withIndex);
+    expect(guard).toContain("Object.keys(data).every");
+    expect(guard).not.toMatch(/return true;/);
+  });
+
+  it("BUG-253 索引签名按声明值域投影（对照：空对象）", () => {
+    const withIndex = abs(
+      {
+        k: "obj",
+        slots: {},
+        index: { key: abs({ k: "prim", type: "string" }, undefined, undefined, "exact"), value: numLit(1) },
+        open: true,
+      },
+      undefined,
+      undefined,
+      "exact",
+    );
+    const schema = projectAbsToSchema(withIndex);
+    expect(schema.source).toContain("z.record(z.string(),");
+    expect(schema.source).not.toBe("z.object({  })");
+
+    const empty = projectAbsToSchema(
+      abs({ k: "obj", slots: {}, open: true }, undefined, undefined, "exact"),
+    );
+    expect(empty.source).toBe("z.object({  })");
+  });
+});

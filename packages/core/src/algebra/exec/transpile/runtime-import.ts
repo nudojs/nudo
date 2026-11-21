@@ -68,6 +68,7 @@ export const RUNTIME_IMPORT_NAMES: readonly string[] = [
   "$ge",
   "$rebindable",
   "$join",
+  "$declDomain",
   // 字面量 / 控制流
   "$lit",
   "$litTruth",
@@ -147,6 +148,7 @@ export const RUNTIME_IMPORT_NAMES: readonly string[] = [
   "$removeNull",
   "$removeUndefined",
   "$removeMemberNullish",
+  "$narrowIn",
   "$narrowMemberEq",
   "$narrowTypeOf",
   // try 软抛出 / 记录

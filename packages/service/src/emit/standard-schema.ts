@@ -290,6 +290,16 @@ function checkNode(
           if (rec[key] === undefined && slot.optional) continue;
           checkNode(slot.node, rec[key], [...path, key], issues);
         }
+        // BUG-253：索引签名覆盖**已知槽之外**的自有键。JS 对象的键总是
+        // 字符串；规范数字键按 number 交给 key 域校验（`[k: number]`）。
+        if (node.index) {
+          for (const key of Object.keys(rec)) {
+            if (node.slots.some((s) => s.key === key)) continue;
+            const keyValue = /^(?:0|[1-9]\d*)$/.test(key) ? Number(key) : key;
+            checkNode(node.index.key, keyValue, [...path, key], issues);
+            checkNode(node.index.value, rec[key], [...path, key], issues);
+          }
+        }
         return;
       }
       case "arr": {
@@ -380,7 +390,13 @@ const CHECK_FN_SOURCE = `
 type NudoSchemaNode =
   | { k: "lit"; value: unknown }
   | { k: "prim"; type: "number" | "string" | "boolean" | "bigint" | "symbol"; refinements: readonly NudoRefinement[] }
-  | { k: "obj"; slots: readonly NudoSlot[]; arrayView?: boolean }
+  | {
+      k: "obj";
+      slots: readonly NudoSlot[];
+      arrayView?: boolean;
+      /** BUG-253：索引签名（已知槽之外的键按 key/value 声明域校验）。 */
+      index?: { key: NudoSchemaNode; value: NudoSchemaNode };
+    }
   | { k: "arr"; element: NudoSchemaNode; minLen?: number; maxLen?: number }
   | { k: "tuple"; elements: readonly NudoSchemaNode[]; rest?: NudoSchemaNode }
   | { k: "union"; members: readonly NudoSchemaNode[] }
@@ -528,6 +544,17 @@ function __nudoCheck(node: NudoSchemaNode, value: unknown, path: (string | numbe
         __nudoCheck(slot.node, rec[key], path, issues);
         path.pop();
       }
+      // BUG-253：索引签名（与库函数版逐字同口径）。
+      if (node.index) {
+        for (const key of Object.keys(rec)) {
+          if (node.slots.some((s) => s.key === key)) continue;
+          const keyValue = /^(?:0|[1-9]\d*)$/.test(key) ? Number(key) : key;
+          path.push(key);
+          __nudoCheck(node.index.key, keyValue, path, issues);
+          __nudoCheck(node.index.value, rec[key], path, issues);
+          path.pop();
+        }
+      }
       return;
     }
     case "arr": {
@@ -656,7 +683,11 @@ function schemaNodeSource(node: SchemaNode): string {
               s.optional ? ',"optional":true' : ""
             }}`,
         )
-        .join(",")}]${node.arrayView ? ',"arrayView":true' : ""}}`;
+        .join(",")}]${node.arrayView ? ',"arrayView":true' : ""}${
+        node.index
+          ? `,"index":{"key":${schemaNodeSource(node.index.key)},"value":${schemaNodeSource(node.index.value)}}`
+          : ""
+      }}`;
     case "arr":
       // BUG-094：长度界随节点序列化（丢它 = zod / standard 面放行违约数组）
       return `{"k":"arr","element":${schemaNodeSource(node.element)}${

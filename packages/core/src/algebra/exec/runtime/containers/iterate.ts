@@ -68,7 +68,7 @@ import { enumOwnStringKeys, enterPromiseForkArm, leavePromiseForkArm, protoBrand
 import { markMatchArrayView } from "../../../builtins/regexp.ts";
 // Bug 198：集合条目 live 视图（直连 builtins/error/iterator.ts，不经 barrel——
 // 与 invoke-arr.ts 同款「避开 barrel re-export」的直连口径）。
-import { collectionLiveEntries } from "../../../builtins/error/iterator.ts";
+import { collectionLiveEntries, abstractSeqElementOf } from "../../../builtins/error/iterator.ts";
 import { urlSearchParamsEntriesOf } from "../../../builtins/error/web.ts";
 import { typedArrayEnumKeyView } from "../../../builtins/object/enum-entries.ts";
 import { TYPED_ARRAY_ELEMENT } from "../../../builtins/shared.ts";
@@ -908,6 +908,11 @@ function elemsOf(a: Abs): Abs[] {
   if (drained) return drained;
   const mi = matchIterElements(a);
   if (mi) return mi;
+  // BUG-364：长度未知的序列迭代器（arr.keys/values/entries 的抽象臂、
+  // 抽象字符串迭代器）——元素域取单代表（表不声明长度 ⇒ for-of 仍
+  // unbounded，0 次出口由调用方 join 承接）。
+  const ase = abstractSeqElementOf(a);
+  if (ase !== undefined) return [ase];
   // BUG-125：URLSearchParams 自身 @@iterator === entries——条目表精确展开
   //（此分支必须先于 collectUserIterElems / brand 内层 delegation）。
   const urlSpEls = builtinExactIterableElems(a);

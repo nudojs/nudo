@@ -21,12 +21,17 @@ import {
   litValue,
   abs,
   formatAbs,
+  formatShape,
+  num,
+  str,
+  type Abs,
 } from "../../index.ts";
 import {
   runWithMayThrowSession,
   setMayThrowCollector,
   type MayThrowEffect,
 } from "../diagnostics/may-throw.ts";
+import { denoteGuard } from "../denote.ts";
 
 const anyAbs = abs({ k: "any" }, undefined, undefined, "path");
 
@@ -455,5 +460,81 @@ describe("findLast/findLastIndex/toSorted", () => {
     // 空接收者同样前置校验
     const r3 = evalSrc(`export function f() { return [].findLast(Symbol()); }`);
     expect(throwsTypeError(r3)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// fix-16：BUG-357 flat 元素域 / BUG-364 数组迭代器元素域
+// ---------------------------------------------------------------------------
+describe("BUG-357：flat 的元素域 = 展开后的元素域（不再与原元素 join）", () => {
+  const numAbs = num();
+  const strAbs = str();
+  const arrOf = (element: Abs): Abs => abs({ k: "arr", element }, undefined, undefined, "exact");
+
+  it("T[][] flat() → T[]；flat(0) 不展开；flat(2) 递归两层", () => {
+    const nn = arrOf(arrOf(numAbs));
+    expect(formatShape(call(`export function f(xs) { return xs.flat(); }`, [nn]).result as never)).toBe("number[]");
+    expect(formatShape(call(`export function f(xs) { return xs.flat(0); }`, [nn]).result as never)).toBe("number[][]");
+    const nnn = arrOf(arrOf(arrOf(numAbs)));
+    expect(formatShape(call(`export function f(xs) { return xs.flat(2); }`, [nnn]).result as never)).toBe("number[]");
+  });
+
+  it("(number | string)[][] flat() → (number | string)[]", () => {
+    const mixed = arrOf(abs({ k: "sum", members: [numAbs, strAbs] }, undefined, undefined, "path"));
+    expect(formatShape(call(`export function f(xs) { return xs.flat(); }`, [arrOf(mixed)]).result as never)).toBe(
+      "(number | string)[]",
+    );
+  });
+
+  it("非数组元素原样保留（flat 不是无条件去一层）", () => {
+    const mixed = arrOf(abs({ k: "sum", members: [numAbs, arrOf(strAbs)] }, undefined, undefined, "path"));
+    expect(formatShape(call(`export function f(xs) { return xs.flat(); }`, [mixed]).result as never)).toBe(
+      "(number | string)[]",
+    );
+  });
+
+  it("guard 面只接受 number 元素（校验器不再恒真）", () => {
+    const nn = arrOf(arrOf(numAbs));
+    const r = call(`export function f(xs) { return xs.flat(); }`, [nn]);
+    const guard = denoteGuard(r.result as never, "data");
+    expect(guard).toContain('typeof item === "number"');
+    expect(guard).not.toContain("(item) => true");
+  });
+});
+
+describe("BUG-364：长度未知数组的 values/keys/entries 保留元素域", () => {
+  const arrOf = (element: Abs): Abs => abs({ k: "arr", element }, undefined, undefined, "exact");
+  const strArr = arrOf(str());
+
+  it("values() 迭代元素 = string；for-of 结果 string[]", () => {
+    const r = evalSrc(
+      `export function f(xs) { const out = []; for (const v of xs.values()) out.push(v); return out; }`,
+      [strArr],
+    );
+    expect(r.effects).not.toContain("TypeError");
+    expect(formatShape(call(`export function f(xs) { const out = []; for (const v of xs.values()) out.push(v); return out; }`, [strArr]).result as never)).toBe("string[]");
+  });
+
+  it("keys() 迭代元素 = number（不再 number | string）", () => {
+    const src = `export function f(xs) { let t = 0; for (const i of xs.keys()) t += i; return t; }`;
+    const r = evalSrc(src, [strArr]);
+    expect(r.effects).not.toContain("TypeError");
+    expect(formatShape(call(src, [strArr]).result as never)).toBe("number");
+  });
+
+  it("entries() 解构 [i, v] 不记假 TypeError；Array.from(entries) 元素是 [number, string]", () => {
+    const src = `export function f(xs) { const out = []; for (const [i, v] of xs.entries()) out.push(String(i) + v); return out; }`;
+    const r = evalSrc(src, [strArr]);
+    expect(r.effects).not.toContain("TypeError");
+    expect(formatShape(call(src, [strArr]).result as never)).toBe("string[]");
+    const fromSrc = `export function f(xs) { return Array.from(xs.entries()); }`;
+    expect(formatShape(call(fromSrc, [strArr]).result as never)).toBe("[number, string][]");
+  });
+
+  it("next() 保留元素域（value = string | undefined，判空后成员读不假抛）", () => {
+    const src = `export function f(xs) { const it = xs.values(); const v = it.next().value; return v === undefined ? 0 : v.length; }`;
+    const r = evalSrc(src, [strArr]);
+    expect(r.effects).not.toContain("TypeError");
+    expect(formatShape(call(src, [strArr]).result as never)).toMatch(/^(0 \| number|number \| 0)$/);
   });
 });

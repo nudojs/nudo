@@ -60,8 +60,11 @@ export const D = class {
 
   it("产物含可 new 的类声明，不再是 const C: unknown", () => {
     const dts = moduleDts(SRC);
-    expect(dts).toContain("declare class C");
-    expect(dts).toContain("declare class D");
+    // BUG-360：类表达式是**值**（`const C = class`），tsc 发布
+    // `const C: typeof <expr>`，不是顶层 `declare class C`。
+    expect(dts).toMatch(/export declare const C: typeof \S+/);
+    expect(dts).toMatch(/export declare const D: typeof \S+/);
+    expect(dts).toContain("constructor();");
     expect(dts).not.toContain("const C: unknown");
     expect(dts).not.toContain("const D: unknown");
   });

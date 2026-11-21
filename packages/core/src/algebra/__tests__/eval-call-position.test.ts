@@ -95,10 +95,16 @@ describe("抽象字符串接收者 search/match/matchAll", () => {
     expect(r.effects).toEqual([]);
   });
 
-  it("match → null | 匹配数组（保守并，与 execRegexBrand 抽象 subject 臂同域）", () => {
+  it("match → null | 非 global 匹配数组（per-index 槽，与 execRegexBrand 抽象 subject 臂同域）", () => {
+    // BUG-341：非 global 结果是 RegExpMatchArray 形态——"0" 恒 string，
+    // 捕获组才可能 undefined；不再是均质 `(string | undefined)[]`。
     const r = evalWithArgs(`export function f(s) { return s.match(/a/); }`, [strAbs]);
     expect(r.value).toContain("null");
-    expect(r.value).toContain("[]");
+    expect(r.value).toContain('"0": string');
+    expect(r.value).not.toContain('"0": string | undefined');
+    const g = evalWithArgs(`export function f(s) { return s.match(/a/g); }`, [strAbs]);
+    expect(g.value).toContain("null");
+    expect(g.value).toContain("string[]");
   });
 
   it("matchAll：/g → RegExpMatchIterator；无 g → 定抛 TypeError", () => {

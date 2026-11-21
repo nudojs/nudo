@@ -501,3 +501,41 @@ function byId(q) {
 
 
 });
+
+// ---------------------------------------------------------------------------
+// 入口注解证据 → 产物面（BUG-241 / BUG-246 / BUG-251）
+// ---------------------------------------------------------------------------
+describe("入口注解证据进 dts（默认值 / 整参默认解构 / 可选形参）", () => {
+  const dts = (file: string, src: string) => generateDts(analyzeFile(file, src));
+
+  it("BUG-241 解构形参的整参默认值注解读 left pattern（产物不是 _p0?: unknown）", () => {
+    const out = dts(
+      "/test/b241-dts.ts",
+      `export function dd3({ a }: { a: number } = { a: 1 }): string { return a.toFixed(); }\n`,
+    );
+    expect(out).toContain("{ a }: { a: number }");
+    expect(out).not.toContain("_p0?: unknown");
+  });
+
+  it("BUG-246 无注解默认形参的产物形参取初始值域；返回位不被 any 观测覆盖", () => {
+    const out = dts(
+      "/test/b246-dts.ts",
+      [
+        `export function noannot(a = 1): string { return a.toFixed(2); }`,
+        `export function twoDefaults(a = 1, b = "x"): string { return b + a; }`,
+      ].join("\n"),
+    );
+    expect(out).toContain("noannot(a?: number): string");
+    expect(out).toContain("twoDefaults(a?: number, b?: string): string");
+    expect(out).not.toContain("number | string");
+  });
+
+  it("BUG-251 可选形参的返回位保留 undefined 臂（与 tsc 同宽）", () => {
+    const out = dts(
+      "/test/b251-dts.ts",
+      `export function optNum(x?: number): number | undefined { return x; }\n`,
+    );
+    expect(out).toContain("optNum(x?: number): number | undefined");
+    expect(out).not.toContain("optNum(x?: number): number;");
+  });
+});

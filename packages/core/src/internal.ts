@@ -227,6 +227,8 @@ export { isEsmProgram } from "./algebra/exec/transpile/meta.ts";
 export {
   absShapeForTsTypeText,
   absTypeForTsTypeText,
+  namedTypeTextsForSource,
+  resolveNamedTypeText,
 } from "./algebra/contract/ts-type-shape.ts";
 // check 签名面的形参类型文本（`nudo check` 与 lsp hover 的形参行同口径；
 // 此前 LSP 侧留同公式拷贝 formatEntryParamShapeLike 靠手工同步）
@@ -274,7 +276,7 @@ export {
   type RawDiagnostic,
 } from "./algebra/diagnostics/evidence-shadow.ts";
 
-export { entryThisReceiverOf, entryThisReceiverTypeTextOf } from "./algebra/generalize.ts";
+export { entryThisReceiverOf, entryThisReceiverTypeTextOf, typeParamEnvForFunction } from "./algebra/generalize.ts";
 // 本地名 → 导出槽（default / 别名 / CJS 成员）：service 的类方法见证解析复用
 // （BUG-153：`export default class C` 的本地名不是导出槽名）。
 export { resolveExportSlotCall } from "./algebra/contract/export-slot.ts";

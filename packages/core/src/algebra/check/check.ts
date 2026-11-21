@@ -808,7 +808,12 @@ function assumePremisesPhiOf(
  */
 function isTrueUnknownAbs(a: Abs | undefined): boolean {
   if (!a) return false;
-  if (a.shape.k === "unknown") return a.term?.op !== "lit";
+  if (a.shape.k === "unknown") {
+    // BUG-276：显式 `unknown` 注解由类型文本映射器打 `unknown#annotation`
+    // 声明项——它是源码事实，不是「分析没拿到信息」的引擎债。
+    if (a.term?.op === "var" && a.term.id.startsWith("unknown#annotation")) return false;
+    return a.term?.op !== "lit";
+  }
   if (a.shape.k === "sum") return a.shape.members.some((m) => isTrueUnknownAbs(m));
   return false;
 }

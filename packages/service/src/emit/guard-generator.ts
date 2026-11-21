@@ -128,6 +128,13 @@ function stripInvisibleSlots(a: Abs, memo: Map<Abs, Abs> = new Map()): Abs {
       copy.shape = { ...s, element: stripInvisibleSlots(s.element, memo) };
       break;
     case "tuple":
+      // BUG-252：空元组是**一次调用的空数组观测**（`return []`）⇒ 发布成
+      // `unknown[]`（与 dts / zod 同口径）。`length === 0` 会拒绝消费方
+      // push 之后的合法数组。
+      if (s.elements.length === 0 && s.rest === undefined) {
+        copy.shape = { k: "arr", element: absUnknown };
+        break;
+      }
       copy.shape = {
         ...s,
         elements: s.elements.map((e) => stripInvisibleSlots(e, memo)),
@@ -259,7 +266,38 @@ export function generateGuardFunctionFromAbs(name: string, abs: Abs, used?: Set<
   const body = hasIdentity
     ? body0.replaceAll("Array.isArray(data)", "Array.isArray(data as unknown)")
     : body0;
-  return `export function ${safeExportIdent(name, used)}(value: unknown): boolean {\n  ${dataDecl}value as ${valueType};\n  return ${body};\n}`;
+  // BUG-253：索引签名不在 `denoteGuard` 的槽模型里 ⇒ 顶层对象的已知槽之外
+  // 仍要按键 / 值声明域校验（`{ [k: string]: number }` 必须拒绝 `{a:"x"}`）。
+  const indexClause = objIndexGuardClause(src);
+  const withIndex =
+    indexClause === undefined
+      ? body
+      : body === "true"
+        ? indexClause
+        : `(${body}) && ${indexClause}`;
+  return `export function ${safeExportIdent(name, used)}(value: unknown): boolean {\n  ${dataDecl}value as ${valueType};\n  return ${withIndex};\n}`;
+}
+
+/**
+ * BUG-253：`obj` 的索引签名守卫子句（已知槽之外的键）。
+ *
+ * 键域是 `string` 时所有自有键都参与；`number` 时只校验规范数字键（JS 的键
+ * 恒为字符串，非数字键不属于 `[k: number]` 的值域）。
+ */
+function objIndexGuardClause(a: Abs): string | undefined {
+  if (a.shape.k !== "obj" || a.shape.index === undefined) return undefined;
+  const valueClause = denoteGuard(a.shape.index.value, "__v");
+  if (valueClause === "true") return undefined;
+  const keyAbs = a.shape.index.key;
+  const numericKey =
+    keyAbs.shape.k === "prim" && keyAbs.shape.type === "number";
+  const known = Object.keys(a.shape.slots).map((k) => JSON.stringify(k));
+  const notKnown =
+    known.length === 0 ? "true" : `![${known.join(", ")}].includes(__k)`;
+  const keyValue = numericKey
+    ? `(/^(?:0|[1-9]\\d*)$/.test(__k) ? ((__v) => ${valueClause})(data[__k]) : true)`
+    : `((__v) => ${valueClause})(data[__k])`;
+  return `Object.keys(data).every((__k) => ${notKnown} ? ${keyValue} : true)`;
 }
 
 /**

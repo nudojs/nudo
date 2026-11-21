@@ -66,6 +66,19 @@ describe("nudo export --format schema", () => {
     expect(body).toContain("scaleOutput");
   }, 30000);
 
+  it("declaration-sourced literal returns stay literal; observation-sourced widen (BUG-261)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-export-schema-"));
+    const file = writeFixture(
+      dir,
+      "lit.ts",
+      `export function litRet(): "abc" { return "abc"; }\nexport function plainRet() { return "abc"; }\n`,
+    );
+    const r = runCli(["export", file, "--format", "schema"]);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('export const litRetOutput = z.literal("abc");');
+    expect(r.stdout).toContain("export const plainRetOutput = z.string()");
+  }, 30000);
+
   it("rejects unknown format and unknown dialect", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-export-schema-"));
     const file = writeFixture(dir, "a.js", `export function a(x){ return x; }\n`);

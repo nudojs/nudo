@@ -190,7 +190,9 @@ function caller(y) { return uncalled(y); }
     expect(clone.noDeclaration).toBe(true);
     expect(clone.entryOnly).toBe(true);
     expect(clone.cases).toHaveLength(1);
-    expect(clone.cases[0]!.argAbs.map((a) => formatShape(a))).toEqual(["any", "any"]);
+    // BUG-246：`options = {}` 的默认值参与入口域（TS 推断为空对象），
+    // 不再是「默认值被忽略 ⇒ any」。
+    expect(clone.cases[0]!.argAbs.map((a) => formatShape(a))).toEqual(["any", "{  }"]);
     expect(clone.cases[0]!.name).toMatch(/^entry@L\d+$/);
     expect(formatShape(clone.cases[0]!.abs)).toBe("unknown");
 

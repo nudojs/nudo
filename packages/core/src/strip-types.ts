@@ -1082,6 +1082,96 @@ function isTsDeclareLike(node: Node): boolean {
   return (node as { declare?: unknown }).declare === true;
 }
 
+/**
+ * BUG-259：抽象方法的**声明面**旁路。
+ *
+ * `abstract m(): number;` 没有运行时实现 ⇒ {@link isTypeOnlyDeclaration} 把
+ * 它从类体整条删掉；但见证面（值域 generalize / 证据域 check-may-throw 的
+ * 类方法桥）仍要在**虚构实例**上求值具体方法体（`this.m()` 调用抽象钩子）。
+ * 桥构造实例时按本表补槽（返回声明域，不抛），否则合法模板方法记假
+ * `TypeError`。表存在类节点上（不可枚举 ⇒ AST 形状对其它消费方零变化）。
+ */
+export type NudoAbstractMethod = {
+  name: string;
+  /** 声明形参数（stub fn 的元数） */
+  arity: number;
+  /** 返回注解原文（缺省 ⇒ stub 返回 unknown） */
+  returnTypeText?: string;
+};
+
+const NUDO_ABSTRACT_METHODS = "nudoAbstractMethods";
+
+/** 类成员键的稳定名（Identifier / 字符串 / 数字字面量；计算键跳过） */
+function classMemberNameOf(member: {
+  computed?: unknown;
+  key?: { type?: string; name?: string; value?: unknown };
+}): string | undefined {
+  if (member.computed === true) return undefined;
+  const k = member.key;
+  if (!k) return undefined;
+  if (k.type === "Identifier") return typeof k.name === "string" ? k.name : undefined;
+  if (k.type === "StringLiteral" && typeof k.value === "string") return k.value;
+  if (k.type === "NumericLiteral" && typeof k.value === "number") return String(k.value);
+  return undefined;
+}
+
+/** 不可枚举旁路（任意载荷；与 setTypeText 同纪律） */
+function setHidden(node: Node & Record<string, unknown>, key: string, value: unknown): void {
+  Object.defineProperty(node, key, {
+    value,
+    enumerable: false,
+    configurable: true,
+    writable: true,
+  });
+}
+
+/** 读隐藏旁路（strip 后 AST 的消费方用；非该节点 ⇒ undefined） */
+export function abstractMethodsOfClassNode(node: unknown): NudoAbstractMethod[] {
+  const raw = (node as Record<string, unknown> | undefined)?.[NUDO_ABSTRACT_METHODS];
+  return Array.isArray(raw) ? (raw as NudoAbstractMethod[]) : [];
+}
+
+/**
+ * 记录类体里的抽象方法声明（**在**递归剥除子成员之前调用——成员随后被
+ * `isTypeOnlyDeclaration` 删除，返回注解也随后被 deleteTypeSyntaxFields 清掉）。
+ */
+function recordAbstractMethods(
+  node: Node & Record<string, unknown>,
+  source: string | undefined,
+): void {
+  const body = (node as { body?: { body?: unknown[] } }).body?.body;
+  if (!Array.isArray(body)) return;
+  const out: NudoAbstractMethod[] = [];
+  for (const raw of body) {
+    const m = raw as {
+      type?: string;
+      abstract?: unknown;
+      static?: unknown;
+      kind?: string;
+      computed?: unknown;
+      key?: { type?: string; name?: string; value?: unknown };
+      params?: unknown[];
+      returnType?: { typeAnnotation?: { start?: number; end?: number } };
+    } | null;
+    if (!m || m.abstract !== true || m.static === true) continue;
+    if (m.type !== "TSDeclareMethod" && m.type !== "ClassMethod") continue;
+    if (m.kind !== undefined && m.kind !== "method") continue;
+    const name = classMemberNameOf(m);
+    if (!name) continue;
+    const ann = m.returnType?.typeAnnotation;
+    const text =
+      source && ann && typeof ann.start === "number" && typeof ann.end === "number"
+        ? source.slice(ann.start, ann.end).trim() || undefined
+        : undefined;
+    out.push({
+      name,
+      arity: Array.isArray(m.params) ? m.params.length : 0,
+      ...(text ? { returnTypeText: text } : {}),
+    });
+  }
+  if (out.length > 0) setHidden(node, NUDO_ABSTRACT_METHODS, out);
+}
+
 /** 类型声明本身是否 TS-only（供 export 包装语句判断整体删除） */
 function isTypeOnlyDeclaration(decl: Node): boolean {
   switch (decl.type) {
@@ -1467,14 +1557,61 @@ function superCallIndex(stmts: unknown[]): number {
   return -1;
 }
 
-/** 表达式级解包：类型断言/满足断言/非空断言/裸泛型引用 → 内层表达式 */
-function unwrapExpression(node: Node & Record<string, unknown>): Node | null {
+/** 断言证据旁路（内层表达式节点上的有序算子表，见 unwrapExpression） */
+export type NudoAssertionOp =
+  | { kind: "as"; text: string }
+  | { kind: "nonnull" };
+
+const NUDO_ASSERT_OPS = "nudoAssertOps";
+
+function pushAssertionOp(inner: Node & Record<string, unknown>, op: NudoAssertionOp): void {
+  const prev = (inner as Record<string, unknown>)[NUDO_ASSERT_OPS];
+  const ops: NudoAssertionOp[] = Array.isArray(prev) ? [...(prev as NudoAssertionOp[])] : [];
+  ops.push(op);
+  setHidden(inner, NUDO_ASSERT_OPS, ops);
+}
+
+/** 读断言旁路（发射面用；无 ⇒ undefined） */
+export function assertionOpsOf(node: unknown): NudoAssertionOp[] | undefined {
+  const raw = (node as Record<string, unknown> | undefined)?.[NUDO_ASSERT_OPS];
+  return Array.isArray(raw) ? (raw as NudoAssertionOp[]) : undefined;
+}
+
+/**
+ * 表达式级解包：类型断言/满足断言/非空断言/裸泛型引用 → 内层表达式。
+ *
+ * BUG-265：断言携带的**类型证据**此前随节点一起消失（求值面看到的是内层
+ * 表达式的未收窄域 ⇒ `(v as string).toUpperCase()` 在 number 分支上记假
+ * `TypeError`）。这里在返回内层表达式时把证据留在**不可枚举旁路**上
+ * （`nudoAssertOps`，内→外有序）——发射面
+ * （exec/transpile/expr/transpile.ts）据此还原断言域；AST 形状与产物对
+ * 其它消费方零变化（旁路不可枚举，migrate strip 仍按纯 JS 发射）。
+ */
+function unwrapExpression(node: Node & Record<string, unknown>, source?: string): Node | null {
   switch (node.type) {
     case "TSAsExpression": // 含 as const
+    case "TSTypeAssertion": {
+      const inner = node.expression as (Node & Record<string, unknown>) | undefined;
+      if (!inner || typeof inner.type !== "string") return null;
+      const ann = node.typeAnnotation as { start?: unknown; end?: unknown } | undefined;
+      // `as const` 是冻结声明（不是类型断言）：映射器不认 `const`，别留
+      // 无效证据（否则发射面回落解包，行为与本改动前一致）。
+      const text =
+        source && typeof ann?.start === "number" && typeof ann?.end === "number"
+          ? source.slice(ann.start as number, ann.end as number).trim()
+          : undefined;
+      if (text && text !== "const") pushAssertionOp(inner, { kind: "as", text });
+      return inner;
+    }
+    case "TSNonNullExpression": {
+      const inner = node.expression as (Node & Record<string, unknown>) | undefined;
+      if (!inner || typeof inner.type !== "string") return null;
+      pushAssertionOp(inner, { kind: "nonnull" });
+      return inner;
+    }
     case "TSSatisfiesExpression":
-    case "TSTypeAssertion":
-    case "TSNonNullExpression":
     case "TSInstantiationExpression":
+      // satisfies 不改变表达式类型；裸泛型引用 `f<T>` 的类型实参已被擦除。
       return node.expression as Node;
     default:
       return null;
@@ -1576,6 +1713,9 @@ function transformNode(
   // 剥掉包装的形参随后一并走类型注解剥除（Bug 1071：派生类的赋值落
   // `super(...)` 之后）。
   if (node.type === "ClassDeclaration" || node.type === "ClassExpression") {
+    // BUG-259：抽象方法声明随后被 isTypeOnlyDeclaration 删除 ⇒ 先留旁路表
+    // （见证面桥补槽，具体方法体里的 `this.abstractHook()` 不再记假抛）。
+    recordAbstractMethods(node, source);
     lowerConstructorParameterProperties(node, opts);
   }
 
@@ -1644,7 +1784,7 @@ function transformNode(
     }
   }
 
-  return unwrapExpression(node) ?? node;
+  return unwrapExpression(node, source) ?? node;
 }
 
 /**

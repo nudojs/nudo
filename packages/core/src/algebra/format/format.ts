@@ -306,6 +306,13 @@ function formatShapeInner(a: Abs, budget: ProjectionBudget, ind: string): string
           }
           return `${key}${opt}: ${val}`;
         });
+      // BUG-253：索引签名是声明面事实，不能渲染成空对象 `{  }`——否则
+      // check 签名把已声明的键值域谎报成「无成员」。
+      if (s.index) {
+        const keyText = formatShapeB(s.index.key, budget, `${ind}  `);
+        const valueText = formatShapeB(s.index.value, budget, `${ind}  `);
+        entries.push(`[k: ${keyText}]: ${valueText}`);
+      }
       // pretty：每槽一行 + 尾逗号 + 2 空格缩进递增（值内嵌套以槽位
       // 行起点为基准列——悬挂式对齐）；空 obj 保持单行（与默认口径同形）
       if (budget.pretty && entries.length > 0) {

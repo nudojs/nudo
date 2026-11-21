@@ -24,8 +24,13 @@
  *   不是 unknown（分析失败）——与 design-cli-semantics §2 一致。
  */
 import type { Abs, Shape } from "@nudojs/core";
-import { abs as makeAbsVal, anyAbs, spread } from "@nudojs/core";
-import { absShapeForTsTypeText, absTypeForTsTypeText } from "@nudojs/core/internal";
+import { abs as makeAbsVal, anyAbs, joinAbs, spread, undefAbs } from "@nudojs/core";
+import {
+  absShapeForTsTypeText,
+  absTypeForTsTypeText,
+  makeSymbolicRestAbs,
+  resolveNamedTypeText,
+} from "@nudojs/core/internal";
 
 /**
  * 声明类型文本 → Abs 形状（不可映射 ⇒ undefined）。
@@ -51,13 +56,17 @@ export function tsAnnotationShape(text: string | undefined): Shape | undefined {
  * （与 `{...x}` 同一判据：任一侧键集不完备 ⇒ 结果不完备），不在本包另立
  * 第二套判定，也不复刻私有标记位。
  */
-export function tsAnnotationArgAbs(text: string | undefined): Abs {
+export function tsAnnotationArgAbs(
+  text: string | undefined,
+  typeParams?: ReadonlyMap<string, Abs>,
+  namedTypes?: ReadonlyMap<string, string>,
+): Abs {
   // Abs 面映射（不是 Shape 面）：`string | null` / `number | undefined` 的
   // nullish 字面量精度只能由 term 承载。Shape 面会把这类注解整条丢掉 ⇒
   // 入口实参退 any ⇒ entry@ 观测的返回位变宽（dts `string | unknown`、
   // zod `z.unknown()`、guard 恒真），与同一份产物里 `@param x - string | null`
   // 的注解原文自相矛盾；而 check 泛化面（generalize.ts）早已走 Abs 面。
-  const mapped = absTypeForTsTypeText(text);
+  const mapped = absTypeForTsTypeText(resolveNamedTypeText(text, namedTypes), typeParams);
   if (!mapped) return anyAbs;
   return markOpenObjKeys(makeAbsVal(mapped.shape, mapped.term, undefined, "path"));
 }
@@ -109,4 +118,140 @@ export function tsAnnotationTypeText(text: string | undefined): string | undefin
   // 控制字符
   if (/[\u0000-\u001f\u007f]/.test(t)) return undefined;
   return t;
+}
+
+// ---------------------------------------------------------------------------
+// entry@ 实参播种：与 core 泛化面（generalize.ts）同口径的三个证据通道
+// ---------------------------------------------------------------------------
+
+/** 域里是否已有 `undefined` 臂（sum 逐成员 / lit 哨兵） */
+function hasUndefinedArm(a: Abs): boolean {
+  if (a.shape.k === "sum") return a.shape.members.some(hasUndefinedArm);
+  return a.term?.op === "lit" && a.term.value === undefined;
+}
+
+/**
+ * BUG-251：可选形参（`x?: T`）的入口实参并上 `undefined` 臂。
+ *
+ * 省略实参时绑定值就是 `undefined`（TS 语义：`x?: T` 与 `x: T | undefined`
+ * 是同一个调用方可达域）。core 的入口域（{@link withOptionalUndefined} 同款）
+ * 已这样播种；service 的 entry@ 见证面此前只读注解文本 ⇒ 实参 Abs 偏窄 ⇒
+ * dts / guard / zod / standard 把返回位发布得比声明窄（自家的合法返回值被
+ * 自家守卫拒收）。
+ */
+export function tsOptionalEntryAbs(a: Abs): Abs {
+  return hasUndefinedArm(a) ? a : joinAbs(a, undefAbs());
+}
+
+/**
+ * BUG-240：rest 形参的入口实参（`$restBind` 直通协议）。
+ *
+ * - `...x: T[]` ⇒ 符号哨兵（term 标记保持 ⇒ 直通）但元素域取 `T`；
+ * - `...x: [A, B]` ⇒ 逐元素展开（`$arr` 折成精确元组）；
+ * - 无注解 / 不可映射 ⇒ 旧哨兵 arr(any)。
+ */
+export function tsRestEntryArgs(
+  tsType: string | undefined,
+  typeParams?: ReadonlyMap<string, Abs>,
+  namedTypes?: ReadonlyMap<string, string>,
+): Abs[] {
+  const sentinel = makeSymbolicRestAbs();
+  const declared = tsType
+    ? absTypeForTsTypeText(resolveNamedTypeText(tsType, namedTypes), typeParams)
+    : undefined;
+  const shape = declared?.shape;
+  if (shape?.k === "arr") return [makeAbsVal(shape, sentinel.term, sentinel.pred, sentinel.conf)];
+  if (shape?.k === "tuple") {
+    return shape.rest === undefined ? shape.elements : [...shape.elements, shape.rest];
+  }
+  return [sentinel];
+}
+
+/** 默认值初始化式的 AST 节点（形参表里的 AssignmentPattern 右值） */
+type InitNode = {
+  type?: string;
+  value?: unknown;
+  name?: string;
+  operator?: string;
+  argument?: InitNode;
+  properties?: Array<{ type?: string; key?: InitNode; value?: InitNode; computed?: unknown }>;
+  elements?: Array<InitNode | null>;
+  expressions?: unknown[];
+};
+
+/** 单个初始化值 → **拓宽后**的 Abs（参数是可变绑定：`= 1` ⇒ number） */
+function initValueAbsOf(n: InitNode | undefined | null): Abs | undefined {
+  if (!n || typeof n.type !== "string") return undefined;
+  switch (n.type) {
+    case "StringLiteral":
+      return typeof n.value === "string" ? makeAbsVal({ k: "prim", type: "string" }, undefined, undefined, "exact") : undefined;
+    case "NumericLiteral":
+      return typeof n.value === "number" ? makeAbsVal({ k: "prim", type: "number" }, undefined, undefined, "exact") : undefined;
+    case "BooleanLiteral":
+      return typeof n.value === "boolean" ? makeAbsVal({ k: "prim", type: "boolean" }, undefined, undefined, "exact") : undefined;
+    case "BigIntLiteral":
+      return makeAbsVal({ k: "prim", type: "bigint" }, undefined, undefined, "exact");
+    case "NullLiteral":
+      return makeAbsVal({ k: "unknown" }, { op: "lit", value: null }, undefined, "exact");
+    case "Identifier":
+      // `= undefined` 是显式字面量；其余标识符是引用（不猜）
+      return n.name === "undefined" ? undefAbs() : undefined;
+    case "TemplateLiteral":
+      return (n.expressions?.length ?? 0) === 0
+        ? makeAbsVal({ k: "prim", type: "string" }, undefined, undefined, "exact")
+        : undefined;
+    case "UnaryExpression": {
+      const arg = n.argument;
+      return (n.operator === "-" || n.operator === "+") && arg?.type === "NumericLiteral" && typeof arg.value === "number"
+        ? makeAbsVal({ k: "prim", type: "number" }, undefined, undefined, "exact")
+        : undefined;
+    }
+    case "ArrayExpression": {
+      const els = (n.elements ?? []).filter((e): e is InitNode => !!e);
+      if (els.length === 0) return makeAbsVal({ k: "arr", element: undefAbs() }, undefined, undefined, "exact");
+      const mapped = els.map(initValueAbsOf);
+      if (mapped.some((m) => m === undefined)) return undefined;
+      return makeAbsVal(
+        { k: "arr", element: (mapped as Abs[]).reduce((x, y) => joinAbs(x, y)) },
+        undefined,
+        undefined,
+        "exact",
+      );
+    }
+    case "ObjectExpression": {
+      const slots: Record<string, { value: Abs }> = {};
+      for (const p of n.properties ?? []) {
+        if (p.type !== "ObjectProperty" || p.computed === true) continue;
+        const k = p.key;
+        const name = k?.type === "Identifier" ? k.name : typeof k?.value === "string" || typeof k?.value === "number" ? String(k.value) : undefined;
+        if (name === undefined) continue;
+        const v = initValueAbsOf(p.value);
+        if (v === undefined) continue;
+        slots[name] = { value: v };
+      }
+      return makeAbsVal({ k: "obj", slots, open: true }, undefined, undefined, "exact");
+    }
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * BUG-246：无注解默认形参的入口实参 = 初始化式（拓宽后）域。
+ *
+ * `function f(a = 1)` 在 TS 里形参类型就是 `number`（dts 早已发布 `a?: number`）
+ * ——此前 entry@ 实参播种只读 `FormalParam.tsType`（无注解 ⇒ any）⇒ zod 入参
+ * `z.unknown()`、返回位被 any 观测污染成 `number | string`，与 dts 打架。
+ */
+export function tsDefaultParamAbsOf(
+  params: readonly unknown[] | undefined,
+  paramName: string,
+): Abs | undefined {
+  for (const raw of params ?? []) {
+    const p = raw as { type?: string; left?: { type?: string; name?: string }; right?: InitNode } | null;
+    if (!p || p.type !== "AssignmentPattern") continue;
+    if (p.left?.type !== "Identifier" || p.left.name !== paramName) continue;
+    return initValueAbsOf(p.right);
+  }
+  return undefined;
 }

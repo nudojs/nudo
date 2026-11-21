@@ -1331,19 +1331,52 @@ function arrFlat(ctx: ArrCtx): Abs {
     }
     return { els: out, degraded };
   };
+  /**
+   * BUG-357：元素域按 flat 语义展开 `d` 层。元素域是数组（arr/tuple）时
+   * 原生 flat 必定剥掉外层（结果元素 = 内层元素），**不再**与原元素域
+   * join——那是「元素可能不是数组」才成立的口径；对 `T[][]` 会把结果
+   * 发成 `(T[] | T)[]`（TS / 原生都是 `T[]`）。非数组元素在 flat 中原样
+   * 保留（d 层用尽后同样原样保留）。
+   */
+  const flattenEl = (el: Abs, d: number): Abs => {
+    if (d <= 0) return el;
+    const s = el.shape;
+    if (s.k === "arr") return flattenEl(s.element, d - 1);
+    if (s.k === "tuple") {
+      const hs = new Set(s.holes ?? []);
+      const parts: Abs[] = [];
+      for (let i = 0; i < s.elements.length; i++) {
+        if (hs.has(i)) continue;
+        parts.push(flattenEl(s.elements[i]!, d - 1));
+      }
+      if (s.rest) parts.push(flattenEl(s.rest, d - 1));
+      return parts.length > 0 ? parts.reduce((x, y) => joinAbs(x, y)) : unknown;
+    }
+    if (s.k === "sum") {
+      const parts = s.members.map((m) => flattenEl(m, d));
+      return parts.length > 0 ? parts.reduce((x, y) => joinAbs(x, y)) : unknown;
+    }
+    return el;
+  };
   if (shape.k === "arr") {
-    // 抽象数组：元素可能本身是数组（展开并入其元素域）也可能原样保留
-    const es = shape.element.shape;
-    const innerEls =
-      es.k === "tuple"
-        ? es.elements.length
-          ? es.elements.reduce((x, y) => joinAbs(x, y))
-          : unknown
-        : es.k === "arr"
-          ? es.element
-          : undefined;
-    const el = innerEls !== undefined ? joinAbs(shape.element, innerEls) : shape.element;
-    return abs({ k: "arr", element: el }, undefined, undefined, "partial");
+    // 抽象数组：每个元素都是同一元素域的代表；depth 0 → 原元素域，
+    // depth d>0 → 元素域按 flat 语义展开 d 层。抽象 depth 覆盖
+    // 「不展开」与「全展开」两域。
+    const es = shape.element;
+    if (depthRaw === null) {
+      // 抽象 depth：覆盖「不展开」与「全展开」。全展开用有限上界（32 层）
+      // ——理论上不可达的嵌套深度，同时防递归元素域成环时无界下降。
+      const deep = flattenEl(es, 32);
+      const el = deep === es ? es : joinAbs(es, deep);
+      return abs({ k: "arr", element: el }, undefined, undefined, "partial");
+    }
+    const depth = depthRaw === undefined ? 1 : Math.max(depthRaw, 0);
+    return abs(
+      { k: "arr", element: flattenEl(es, depth) },
+      undefined,
+      undefined,
+      "partial",
+    );
   }
   if (depthRaw === null) {
     // 抽象 depth：0..∞ 皆可能 → 元素域 = 浅层元素 ∪ 全展开元素
@@ -1362,11 +1395,13 @@ function arrFlat(ctx: ArrCtx): Abs {
   const depth = depthRaw === undefined ? 1 : Math.max(depthRaw, 0);
   const r = rec(shape.elements, holeSet, depth);
   if (r === null) {
-    // 含抽象 arr 展开：长度未知 → arr（元素 join）
-    const shallow = rec(shape.elements, holeSet, 0);
-    const el = shallow && shallow.els.length
-      ? shallow.els.reduce((x, y) => joinAbs(x, y))
-      : unknown;
+    // 含抽象 arr 展开：长度未知 → arr（元素域按同一 flat 语义逐元素展开）
+    const parts: Abs[] = [];
+    for (let i = 0; i < shape.elements.length; i++) {
+      if (holeSet.has(i)) continue;
+      parts.push(flattenEl(shape.elements[i]!, depth));
+    }
+    const el = parts.length > 0 ? parts.reduce((x, y) => joinAbs(x, y)) : unknown;
     return abs({ k: "arr", element: el }, undefined, undefined, "partial");
   }
   if (r.degraded) {
