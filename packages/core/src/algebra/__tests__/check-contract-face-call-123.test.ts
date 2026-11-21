@@ -10,10 +10,10 @@
  * 覆盖面（跨模块走 checkSource opts.modules 桥接 Abs——CLI 的
  * evalAbsModuleGraph 注入面同构；同文件走 ambient 侧车同名绑定）：
  * (a) issue 四变体（立即比较 / const 绑定 / 字面量右元 / 变量右元）跨模块清零；
- * (b) 同文件四变体清零（callee 自身返回契约 proved——BUG-362 后 arr 下标
- * 读无 OOB undefined 臂）；
+ * (b) 同文件四变体清零（callee 自身 unproven-return 警告保留）；
  * (c) probe 形态（纯转发 / 存 const）清零，调用方签名呈契约返回面 number；
- * (d) callee 自身 check 不变：契约参数面保留，返回契约 proved（BUG-362）；
+ * (d) callee 自身 check 不变：unproven-return 警告在场 + 推断签名（含
+ * #102 标记臂 undefined）保留；
  * (e) 精度控制：字面量实参结果保留字面量精度（不退化为 prim 面）；
  * (f) 返回约束精度：number().ge(0) 返回面让调用方 `d + 1 ≥ 1` /
  * `100 - d ≤ 100`（issue 的 `1 - d/max ≤ 1` 同形上界链）可证；
@@ -189,7 +189,7 @@ describe("(b) 同文件四变体：契约面采用后清零", () => {
   };
   const check = (src: string) => checkSource("/t/same123.js", src, pTrue, opts);
 
-  it("四变体 0 错误 / 0 L2 / 签名 boolean；callee 自身返回可证 number（BUG-362）", () => {
+  it("四变体 0 错误 / 0 L2 / 签名 boolean；callee 自身 unproven-return 保留", () => {
     const r = check(DISTANCE + FOUR_VARIANTS);
     expect(r.summary.errors).toBe(0);
     expect(l2Count(r)).toBe(0);
@@ -197,11 +197,9 @@ describe("(b) 同文件四变体：契约面采用后清零", () => {
       expect(sigOf(r, fn)).toMatch(/boolean/);
       expect(sigOf(r, fn)).not.toMatch(/throws/);
     }
-    // callee 诚实性不受调用边界面影响（d 项的同文件形态）。BUG-362
-    // 后 DP 的 arr 下标读按元素域投影（无 OOB undefined 臂）⇒
-    // `number()` 返回契约直接 proved，不再有 unproven-return 警告。
-    expect(codes(r)).not.toContain("nudo:unproven-return");
-    expect(sigOf(r, "levenshtein")).toBe("number");
+    // callee 诚实性不受调用边界面影响（d 项的同文件形态）
+    expect(codes(r)).toContain("nudo:unproven-return");
+    expect(sigOf(r, "levenshtein")).toMatch(/undefined/);
   });
 
   it("probe 形态同文件清零，签名呈契约返回面 number", () => {
@@ -218,7 +216,7 @@ describe("(b) 同文件四变体：契约面采用后清零", () => {
 // ---------------------------------------------------------------------------
 
 describe("(d) callee 自身 check 不变（distance.js 单独检查）", () => {
-  it("契约 proved（BUG-362 后 arr 下标读无 OOB 臂）；契约参数面保留", () => {
+  it("unproven-return 警告在场 + 推断签名（#102 标记臂）保留", () => {
     const opts = {
       loadModule: (spec: string) =>
         spec === "./distance.nudo.js" ? DISTANCE_SIDE : undefined,
@@ -226,16 +224,17 @@ describe("(d) callee 自身 check 不变（distance.js 单独检查）", () => {
     };
     const r = checkSource("/t/distance.js", DISTANCE, pTrue, opts);
     expect(r.summary.errors).toBe(0);
-    // BUG-362：arr 接收者的抽象下标读按元素域投影（TS 默认
-    // noUncheckedIndexedAccess off）⇒ DP 返回域是 number，`number()`
-    // 返回契约 proved，不再有 unproven-return 警告。
-    expect(codes(r)).not.toContain("nudo:unproven-return");
+    expect(codes(r)).toContain("nudo:unproven-return");
     const sig = r.signatures.find((s) => s.name === "levenshtein");
     expect(sig).toBeDefined();
     // 契约参数面上屏（callee 自身路径的既有行为，不因调用边界面改变）
     expect(sig!.paramTypes).toEqual(["string", "string"]);
-    // 真实臂经循环携带宽化（DP 表 cell 增长 → 无上界 prim 域）→ number
-    expect(sig!.display).toBe("number");
+    // 推断返回签名保留：#102 标记臂（undefined）未被返回面洗白。
+    // 真实臂经 循环携带宽化（DP 表 cell 增长 → 无上界 prim 域），
+    // 字面量枚举（0 | 1..7）折 number——`0` 臂不再单独保留（与
+    // eval-loop-carried-widen 同口径）
+    expect(sig!.display).toMatch(/undefined/);
+    expect(sig!.display).toMatch(/number/);
   });
 });
 

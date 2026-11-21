@@ -1093,9 +1093,49 @@ function widenParamAbsInner(a: Abs, budget: ProjectionBudget): Abs {
  * `throws` 面表达）。把它发布成底类型会**同时**制造假红（成员访问 TS2339）
  * 与假绿（可赋给任意类型）；没有声明层证据时回到无信息域 `unknown`。
  */
+/**
+ * BUG-362：OOB 合成 undefined 臂是引擎的**内部**精度产物（`conf=partial` +
+ * `lit(undefined)`），不是函数出口域。对外 dts 投影删除该臂；真实
+ * `undefined`（作者 return / 缺失 return）的 term 同为 lit(undefined)，但
+ * conf 不是 partial ⇒ 保留。
+ */
+function isSyntheticOobAbs(a: Abs): boolean {
+  return (
+    a.conf === "partial" &&
+    a.shape.k === "unknown" &&
+    a.term?.op === "lit" &&
+    a.term.value === undefined
+  );
+}
+
+function stripSyntheticOobArms(a: Abs): Abs {
+  if (a.shape.k === "sum") {
+    const members = a.shape.members
+      .filter((m) => !isSyntheticOobAbs(m))
+      .map((m) => stripSyntheticOobArms(m));
+    if (members.length === 0) return a;
+    if (members.length === 1) return members[0]!;
+    return { ...a, shape: { k: "sum", members } };
+  }
+  if (a.shape.k === "arr") {
+    const element = stripSyntheticOobArms(a.shape.element);
+    return element === a.shape.element ? a : { ...a, shape: { k: "arr", element } };
+  }
+  if (a.shape.k === "tuple") {
+    let changed = false;
+    const elements = a.shape.elements.map((m) => {
+      const w = stripSyntheticOobArms(m);
+      if (w !== m) changed = true;
+      return w;
+    });
+    return changed ? { ...a, shape: { ...a.shape, elements } } : a;
+  }
+  return a;
+}
+
 function widenReturnAbs(a: Abs, deep: boolean): Abs {
   if (a.shape.k === "never") return unknown;
-  const widened = deep ? widenParamAbs(a) : widenTopLevelAbs(a);
+  const widened = stripSyntheticOobArms(deep ? widenParamAbs(a) : widenTopLevelAbs(a));
   // BUG-252：返回位的**空数组字面量**观测 `[]` 不能发布成 0 长元组（消费方
   // `.push("x")` 报 TS2345 `never`）——与模块值通道同口径退化成 `unknown[]`。
   if (

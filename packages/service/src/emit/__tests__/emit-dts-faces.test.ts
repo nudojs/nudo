@@ -1174,9 +1174,9 @@ describe("— dts 顶层形参可选性来自声明形参表", () => {
 export function optNoEvidence(a, b = 2) { return a + b; }
 `;
     const dts = generateDts(analyzeFile("/test/s2-opt.js", source));
-    // 类型词（unknown / any）是类型渲染面的口径（不在本分片职责内）——
-    // 本钉只关心**可选性**标记。
-    expect(dts).toMatch(/export declare function optNoEvidence\(a: (unknown|any), b\?: (unknown|any)\)/);
+    // BUG-246：无注解默认值的形参类型取初始化式（number），不强制 any；
+    // 本钉只关心可选性标记，类型词接受 any / unknown / number。
+    expect(dts).toMatch(/export declare function optNoEvidence\(a: (unknown|any), b\?: (unknown|any|number)\)/);
   }
   {
     const source = `

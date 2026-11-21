@@ -97,10 +97,9 @@ export function levenshtein(a, b) {${levenshteinBody}}
     expect(r.issues.some((i) => i.code === "nudo:invariant-relied")).toBe(false);
   });
 
-  it("无 if-guard 原样版：arr 下标读不再并 undefined（BUG-362）⇒ invariant 直接证得", () => {
-    // dp 是抽象 arr；BUG-362 后抽象下标读按元素域投影（TS 默认
-    // noUncheckedIndexedAccess off），不再合成 OOB undefined 臂 ⇒
-    // invariant dp[*][*] >= 0 足以证得返回契约（无 unproven/违例）。
+  it("无 if-guard 原样版：OOB 读位诚实面（number | undefined）仍不可证", () => {
+    // 内层 row 域长度不可知——dp[m][n] 抽象下标读并 undefined 是读位事实，
+    // invariant 只强化元素值域，不抹 OOB 面：返回契约仍证不出（诚实）
     const r = checkOf(
       `
 /**
@@ -120,12 +119,14 @@ export function levenshtein(a, b) {
 `,
       levOpts,
     );
-    expect(r.issues.some((i) => i.code === "nudo:invariant-relied")).toBe(true);
-    expect(
-      r.issues.some(
-        (i) => i.code === "nudo:unproven-return" || i.code === "nudo:constraint-violated",
-      ),
-    ).toBe(false);
+    expect(r.issues.some((i) => i.code === "nudo:invariant-relied")).toBe(false);
+    const unproven = r.issues.find(
+      (i) => i.code === "nudo:unproven-return" || i.code === "nudo:constraint-violated",
+    );
+    expect(unproven).toBeDefined();
+    if (unproven!.code === "nudo:unproven-return") {
+      expect(unproven!.actual).toContain("undefined");
+    }
   });
 });
 

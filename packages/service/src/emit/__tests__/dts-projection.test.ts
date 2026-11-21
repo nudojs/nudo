@@ -2627,7 +2627,7 @@ export const deep = { a: 1, d: [1, 2] } as const;
     expect(dts).not.toMatch(/export declare const x: \{ x:/);
     expect(dts).not.toMatch(/export declare const y: \{ x:/);
     expect(dts).toContain("export declare const x: number[];");
-    expect(dts).toContain('export declare const y: "s";');
+    expect(dts).toContain("export declare const y: string;");
     const check = tscNoEmit({
       "mod.d.ts": dts,
       "use.ts":

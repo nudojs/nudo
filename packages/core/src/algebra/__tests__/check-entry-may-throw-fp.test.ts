@@ -96,10 +96,8 @@ export function lev(a, b) {
     // 此前被折成 `never throws TypeError`；widen 后诚实值域。后
     // 内层循环对 d 的元素域（fill 0 → min 增长）按增长宽化到无上界
     // number——比旧 `0 | undefined` 更 sound（native lev("a","b")=1 ∉
-    // {0,undefined}）。BUG-362：arr 接收者的抽象下标读按元素域投影
-    //（TS 默认 noUncheckedIndexedAccess off），不再并入 OOB undefined。
-    expect(sigOf(r, "lev")).toMatch(/^number\b/);
-    expect(sigOf(r, "lev")).not.toContain("undefined");
+    // {0,undefined}）；OOB undefined 臂保留（抽象下标不可证界内）
+    expect(sigOf(r, "lev")).toMatch(/^number \| undefined\b/);
   });
 
   it("简化 DP（vLoop3）契约下零 L2", () => {
@@ -175,28 +173,5 @@ describe("已知召回损失：无约束下标的真实 TypeError 穿门（oobUn
     const r = check(`export function h(i) { const d = [[1],[2]]; return d[i][0]; }`);
     expect(l2Count(r)).toBe(0);
     expect(sigOf(r, "h")).toMatch(/^1 \| 2 \| undefined\b/);
-  });
-});
-
-describe("BUG-362：arr 接收者的抽象下标读按元素域投影（无 OOB undefined 臂）", () => {
-  it("xs[i]（i: number）发布元素类型，不并 undefined —— tsc 默认 noUncheckedIndexedAccess off", () => {
-    const r = check(
-      `export function g(xs: number[], i: number) { return xs[i]; }
-export function gStr(xs: string[], i: number) { return xs[i]; }`,
-    );
-    expect(l2Count(r, "g")).toBe(0);
-    expect(sigOf(r, "g")).toBe("number");
-    expect(sigOf(r, "gStr")).toBe("string");
-  });
-
-  it("字面量下标对照不变（本修复只动抽象下标臂）", () => {
-    const r = check(`export function gLit(xs: number[]) { return xs[0]; }`);
-    expect(l2Count(r, "gLit")).toBe(0);
-    expect(sigOf(r, "gLit")).toBe("number");
-  });
-
-  it("tuple 臂的越界可能性保留（长度已知 → 抽象下标仍并 undefined）", () => {
-    const r = check(`export function t(i) { const xs = [1, 2]; return xs[i]; }`);
-    expect(sigOf(r, "t")).toMatch(/^1 \| 2 \| undefined\b/);
   });
 });
