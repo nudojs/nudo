@@ -171,9 +171,23 @@ export function namedTypeTextsForSource(source: string): ReadonlyMap<string, str
       if (!id?.name) continue;
       if (stmt.typeParameters) continue;
       if (type === "TSInterfaceDeclaration") {
-        const body = stmt.body as { start?: number; end?: number } | undefined;
+        const body = stmt.body as {
+          start?: number;
+          end?: number;
+          body?: Array<{ start?: number; end?: number }>;
+        } | undefined;
         if (typeof body?.start !== "number" || typeof body.end !== "number") continue;
-        out.set(id.name, `{${source.slice(body.start + 1, body.end - 1)}}`);
+        const members = Array.isArray(body.body)
+          ? body.body
+              .filter((m) => typeof m.start === "number" && typeof m.end === "number")
+              .map((m) => source.slice(m.start, m.end))
+          : [];
+        out.set(
+          id.name,
+          members.length > 0
+            ? `{${members.join(";")}}`
+            : `{${source.slice(body.start + 1, body.end - 1)}}`,
+        );
       } else if (type === "TSTypeAliasDeclaration") {
         const ann = stmt.typeAnnotation as { start?: number; end?: number } | undefined;
         if (typeof ann?.start !== "number" || typeof ann.end !== "number") continue;
@@ -531,9 +545,6 @@ function indexedAccessAbs(text: string, allowNullish: boolean, typeParams?: Read
  * - `false`（Shape 面）：返回 undefined，保住 Shape 消费者的旧口径
  *   （它们拿不到 term，会把 nullish 误读成「推断失败」）。
  */
-/** 显式 `unknown` 注解的项序号（每次映射唯一，避免不同形参撞同一项）。 */
-let unknownAnnotationSeq = 0;
-
 function mapTsType(
   text: string | undefined,
   allowNullish: boolean,
@@ -559,14 +570,9 @@ function mapTsType(
     case "unknown":
       // BUG-276：用户显式写的 `unknown` 不是「推断失败」。裸 unknown 形状
       // 无 term 是引擎债令牌（check 的 isTrueUnknownAbs）⇒ 带一个声明项，
-      // 让诊断面区分「源码声明」与「分析没拿到信息」。每次映射铸唯一项：
-      // 两个 `unknown` 形参不是同一个值（否则 `a === b` 会折叠成恒真）。
-      return abs(
-        { k: "unknown" },
-        v(`unknown#annotation#${++unknownAnnotationSeq}`),
-        undefined,
-        "exact",
-      );
+      // 让诊断面区分「源码声明」与「分析没拿到信息」。项身份固定：不能按
+      // 调用次数铸新 id，否则同一源码两次分析的 Abs 指纹不稳定。
+      return abs({ k: "unknown" }, v("unknown#annotation"), undefined, "exact");
     case "never":
       return absOf({ k: "never" });
     case "object":
