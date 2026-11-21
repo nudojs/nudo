@@ -792,3 +792,78 @@ export function absTypeForTsTypeText(
 ): Abs | undefined {
   return mapTsType(text, true, typeParams);
 }
+
+/**
+ * Abs → **可内联进转译产物**的 JS 源码（entry-only helper，BUG-265 / BUG-354）。
+ *
+ * 断言（`x as T`）与局部声明注解（`let x: T = …`）需要在发射期把声明域作为
+ * **值**注入生成代码。Abs 是纯数据（shape / term / pred / conf）——除函数
+ * 载体（impl 侧表）外都可序列化。本函数按值遍历：
+ * - 字符串 / 布尔 / null / number / bigint 正常渲染（bigint 带 `n`）；
+ * - 数组与**普通对象**递归（`undefined` 值字段按可选语义省略）；
+ * - 函数 / symbol / Map / Set / 循环引用 / 超深结构 ⇒ undefined（调用方
+ *   fail-closed：保持旧的解包行为，不伪造类型）。
+ *
+ * 返回的源码里数字键顺序与对象字面量一致；同一 Abs 恒同一文本（确定性
+ * 产物 / 差分基线依赖它）。
+ */
+export function entryAbsLiteralSourceOf(a: Abs | undefined): string | undefined {
+  if (!a) return undefined;
+  const MAX_DEPTH = 64;
+  const active = new Set<object>();
+  const ser = (value: unknown, depth: number): string | undefined => {
+    if (depth > MAX_DEPTH) return undefined;
+    if (value === null) return "null";
+    switch (typeof value) {
+      case "string":
+        return JSON.stringify(value);
+      case "boolean":
+        return value ? "true" : "false";
+      case "number":
+        if (Number.isNaN(value)) return "NaN";
+        if (value === Infinity) return "Infinity";
+        if (value === -Infinity) return "-Infinity";
+        return String(value);
+      case "bigint":
+        return `${value}n`;
+      case "function":
+      case "symbol":
+      case "undefined":
+        return undefined;
+      default:
+        break;
+    }
+    const obj = value as Record<string, unknown>;
+    if (active.has(obj)) return undefined;
+    if (Array.isArray(obj)) {
+      active.add(obj);
+      const parts: string[] = [];
+      for (const el of obj) {
+        const s = ser(el, depth + 1);
+        if (s === undefined) {
+          active.delete(obj);
+          return undefined;
+        }
+        parts.push(s);
+      }
+      active.delete(obj);
+      return `[${parts.join(", ")}]`;
+    }
+    const proto = Object.getPrototypeOf(obj);
+    if (proto !== Object.prototype && proto !== null) return undefined;
+    active.add(obj);
+    const parts: string[] = [];
+    for (const [k, v] of Object.entries(obj)) {
+      if (v === undefined) continue;
+      const s = ser(v, depth + 1);
+      if (s === undefined) {
+        active.delete(obj);
+        return undefined;
+      }
+      parts.push(`${JSON.stringify(k)}: ${s}`);
+    }
+    active.delete(obj);
+    return `{ ${parts.join(", ")} }`;
+  };
+  return ser(a, 0);
+}

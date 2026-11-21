@@ -159,6 +159,7 @@ export {
   $yieldStar,
 } from "./runtime/async.ts";
 export {
+  $declDomain,
   $narrowIn,
   $narrowMemberEq,
   $narrowTypeOf,

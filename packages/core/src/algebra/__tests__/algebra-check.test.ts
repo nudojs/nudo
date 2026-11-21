@@ -2519,3 +2519,112 @@ describe("JSON.parse 抽象文本的 may-throw 口径", () => {
     expect(r.signatures.find((s) => s.name === "parseNoCatch")?.display).toContain("throws SyntaxError");
   });
 });
+
+// ---------------------------------------------------------------------------
+// 入口域 / 见证面证据通道（BUG-239 / 240 / 241 / 246 / 259 / 265 / 354 / 359）
+// ---------------------------------------------------------------------------
+describe("入口域与见证面证据通道", () => {
+  const check = (src: string) => checkSource("/t/entry-batch.ts", src, pTrue);
+  const sig = (r: ReturnType<typeof check>, name: string) =>
+    r.signatures.find((s) => s.name === name);
+
+  it("BUG-239 内联对象 this: 接收者可成员读（与具名 interface 同口径）", () => {
+    const r = check(`export function inline(this: { x: number }): number { return this.x; }`);
+    expect(sig(r, "inline")?.display).toBe("number");
+    expect(sig(r, "inline")?.paramTypes).toEqual([]);
+    expect(l2Count(r, "inline")).toBe(0);
+  });
+
+  it("BUG-240 rest 形参入口域取声明元素域（数组 / 元组）", () => {
+    const r = check(
+      [
+        `export function restUse(...x: string[]): string { return (x[0] ?? "").toUpperCase(); }`,
+        `export function restTupUse(...x: [string, boolean]): string { return x[0].toUpperCase(); }`,
+      ].join("\n"),
+    );
+    expect(sig(r, "restUse")?.paramTypes).toEqual(["string[]"]);
+    expect(sig(r, "restUse")?.display).toBe("string");
+    expect(sig(r, "restTupUse")?.paramTypes).toEqual(["[string, boolean]"]);
+    expect(sig(r, "restTupUse")?.display).toBe("string");
+    expect(l2Count(r, "restUse") + l2Count(r, "restTupUse")).toBe(0);
+  });
+
+  it("BUG-241 解构形参的整参默认值注解读 left pattern", () => {
+    const r = check(
+      [
+        `export function dd3({ a }: { a: number } = { a: 1 }): string { return a.toFixed(); }`,
+        `export function arrd([x]: [string] = ["s"]): number { return x.length; }`,
+      ].join("\n"),
+    );
+    expect(sig(r, "dd3")?.paramTypes).toEqual(["{ a: number }"]);
+    expect(sig(r, "dd3")?.display).toBe("string");
+    expect(sig(r, "arrd")?.paramTypes).toEqual(["[string]"]);
+    expect(sig(r, "arrd")?.display).toBe("number");
+    expect(l2Count(r, "dd3") + l2Count(r, "arrd")).toBe(0);
+  });
+
+  it("BUG-246 无注解默认形参的入口域取初始化式（返回位不被 any 污染）", () => {
+    const r = check(
+      [
+        `export function noannot(a = 1): string { return a.toFixed(2); }`,
+        `export function twoDefaults(a = 1, b = "x"): string { return b + a; }`,
+      ].join("\n"),
+    );
+    expect(sig(r, "noannot")?.paramTypes).toEqual(["number"]);
+    expect(sig(r, "noannot")?.display).toBe("string");
+    expect(sig(r, "twoDefaults")?.paramTypes).toEqual(["number", "string"]);
+    expect(sig(r, "twoDefaults")?.display).toBe("string");
+    expect(l2Count(r, "noannot") + l2Count(r, "twoDefaults")).toBe(0);
+  });
+
+  it("BUG-259 抽象类的具体方法不因抽象钩子记假抛", () => {
+    const r = check(
+      `export abstract class A { abstract m(): number; use(): number { return this.m(); } }`,
+    );
+    expect(sig(r, "A.use")?.display).toBe("number");
+    expect(l2Count(r, "A.use")).toBe(0);
+  });
+
+  it("BUG-265 断言证据参与入口求值（as / 非空断言）", () => {
+    const r = check(
+      [
+        `export function viaAssert(v: string | number): string { return (v as string).toUpperCase(); }`,
+        `export function viaNonNull(o: { x?: string }): string { return o.x!; }`,
+      ].join("\n"),
+    );
+    expect(sig(r, "viaAssert")?.paramTypes).toEqual(["string | number"]);
+    expect(sig(r, "viaAssert")?.display).toBe("string");
+    expect(l2Count(r, "viaAssert")).toBe(0);
+    expect(sig(r, "viaNonNull")?.display).toBe("string");
+    expect(l2Count(r, "viaNonNull")).toBe(0);
+  });
+
+  it("BUG-354 局部 let/var 声明注解是 assign 对账的基线", () => {
+    const r = check(
+      [
+        `export function letAnnot1(): number { let x: string | number = 1; x = "abcd"; return x.length; }`,
+        `export function varAnnot(): number { var y: string | number = 1; y = "abcd"; return y.length; }`,
+        `export function objAnnot(): number { let o: { a?: number } = { a: 1 }; o = {}; return o.a ?? 0; }`,
+        `export function arrAnnot(): number { let xs: (string | number)[] = [1]; xs = ["a"]; return xs.length; }`,
+      ].join("\n"),
+    );
+    expect(r.issues.filter((i) => i.code === "nudo:assign-mismatch")).toHaveLength(0);
+  });
+
+  it("BUG-359 非直接导出类（export {C} / 类表达式）保留构造器形参表", () => {
+    const r = check(
+      [
+        `class C { constructor(public x: number) {} m(): number { return this.x; } }`,
+        `export { C };`,
+        `export const C2 = class { constructor(public y: number) {} m(): number { return this.y; } };`,
+      ].join("\n"),
+    );
+    expect(sig(r, "C")?.paramTypes).toEqual(["number"]);
+    expect(sig(r, "C")?.display).toBe("C");
+    expect(sig(r, "C.m")?.display).toBe("number");
+    expect(sig(r, "C2")?.paramTypes).toEqual(["number"]);
+    expect(sig(r, "C2")?.display).toBe("C2");
+    expect(sig(r, "C2.m")?.display).toBe("number");
+  });
+});
+

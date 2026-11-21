@@ -124,6 +124,12 @@ import {
   genSuspendTail,
 } from "../emit.ts";
 import { emitTranspileExpression } from "../transpile-dispatch.ts";
+import {
+  absTypeForTsTypeText,
+  entryAbsLiteralSourceOf,
+  namedTypeTextsForSource,
+  resolveNamedTypeText,
+} from "../../../contract/ts-type-shape.ts";
 import { paramNamesOf, transpileFnBodyStmts } from "./fn-body.ts";
 // Bug 174：形参默认值里的 `this` 判定（声明面与表达式面共用同一实现）
 import { asyncBodyPlan } from "../async-plan.ts";
@@ -685,6 +691,30 @@ function emitExpressionStatement(
   return `${pad}${emitTranspileExpression(stmt.expression, opts)};`;
 }
 
+/**
+ * BUG-354：局部 `let` / `var` 声明注解 → **声明域播种**的 Abs 源码
+ * （`$declDomain(<declaredAbs>, init)` 的第一实参）。
+ *
+ * 根因：`emitVariableDeclaration` 从不读 `d.id.typeAnnotation`（剥除 pass 把
+ * 注解留在 `nudoTypeText` 旁路）⇒ 绑定从初始化器的运行时值起步 ⇒
+ * `let x: string | number = 1; x = "abcd"` 的 assign 对账把 `1` 当 existing
+ * shape，合法重赋值记 `nudo:assign-mismatch`（假红、exit 1）。
+ *
+ * 注解不可映射（具名类 / 泛型实例 …）或无注解 / `const`（不可重赋值）⇒
+ * undefined（保持旧行为，不伪造声明域）。
+ */
+function declaredDomainSourceOf(
+  id: unknown,
+  kind: string,
+  opts: TranspileOptions,
+): string | undefined {
+  if (kind === "const") return undefined;
+  const text = (id as { nudoTypeText?: string } | undefined)?.nudoTypeText;
+  if (!text) return undefined;
+  const namedTypes = opts.source ? namedTypeTextsForSource(opts.source) : undefined;
+  return entryAbsLiteralSourceOf(absTypeForTsTypeText(resolveNamedTypeText(text, namedTypes)));
+}
+
 function emitVariableDeclaration(
   stmt: VariableDeclaration,
   depth: number,
@@ -742,10 +772,16 @@ function emitVariableDeclaration(
           // Bug 133：NamedEvaluation——`var K = class {}` 以绑定名为类名
           withClassNameHint(opts, d.init, d.id.name),
         );
+        const declSrc = declaredDomainSourceOf(d.id, stmt.kind, opts);
         const init = recInit(
           // Bug 164：@nudo:as 是**类型覆盖**——原 init **仍求值**
           // （副作用 + throws 域保留），本次绑定的值取断言值。
-          asVar ? `((${initSrc}), ${asVar})` : anchorInit(initSrc),
+          asVar
+            ? `((${initSrc}), ${asVar})`
+            : declSrc
+              ? // BUG-354：声明域作 assign 对账基线（初始化器保留为值证据）
+                `$declDomain(${declSrc}, ${anchorInit(initSrc)})`
+              : anchorInit(initSrc),
         );
         lines.push(`${pad}${d.id.name} = ${init};`);
         if (depth === 0) {
@@ -764,10 +800,16 @@ function emitVariableDeclaration(
             withClassNameHint(opts, d.init, d.id.name),
           )
         : "$lit(void 0)";
+      const declSrc = d.init ? declaredDomainSourceOf(d.id, stmt.kind, opts) : undefined;
       const init = recInit(
         // Bug 164：@nudo:as 是**类型覆盖**——原 init **仍求值**
         // （副作用 + throws 域保留），本次绑定的值取断言值。
-        asVar ? `((${initSrc}), ${asVar})` : anchorInit(initSrc),
+        asVar
+          ? `((${initSrc}), ${asVar})`
+          : declSrc
+            ? // BUG-354：声明域作 assign 对账基线（初始化器保留为值证据）
+              `$declDomain(${declSrc}, ${anchorInit(initSrc)})`
+            : anchorInit(initSrc),
       );
       const declKw = isVar ? "var" : kw;
       lines.push(`${pad}${declKw} ${d.id.name} = ${init};`);

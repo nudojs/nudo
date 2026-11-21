@@ -29,6 +29,7 @@ import { abs, never, unknown, bigintLit, boolLit, isAbsLike, numLit, strLit } fr
 import { absFunction } from "./abs-fn.ts";
 import { joinAbs, markEntryDomainAbs, markKeySetOpenAbs } from "./objects.ts";
 import { leqAbs, mayBeUndefinedAbs } from "./leq.ts";
+import { widenForAssign } from "./check/check-assign.ts";
 import type { AstEnv } from "./ast-env.ts";
 import { emptyEnv } from "./ast-env.ts";
 import { bindImports, type AbsModuleExports } from "./abs-modules.ts";
@@ -54,7 +55,7 @@ import {
 } from "./key/load-deps-fp.ts";
 import { DependencyMemo } from "./key/memo-store.ts";
 import { loadModuleId, moduleMapId } from "./key/memo-identity.ts";
-import { instanceForMethodBridge } from "./bridge-instance.ts";
+import { classNodeForName, instanceForMethodBridge } from "./bridge-instance.ts";
 import { snapshotAbs, undefAbs, type RelSource, type HofSite } from "./hof.ts";
 import { currentEvalRoundEpoch } from "./collector-scope.ts";
 import { scanPromotions } from "./promote-scan.ts";
@@ -368,24 +369,15 @@ function ctorParamNodesOf(
   fileAst: ReturnType<typeof babelParse>,
   clsName: string,
 ): unknown[] {
-  for (const stmt of fileAst.program.body) {
-    if (
-      (stmt.type === "ClassDeclaration" || stmt.type === "ExportNamedDeclaration") &&
-      "declaration" in (stmt as object)
-    ) {
-      const decl = stmt.type === "ExportNamedDeclaration"
-        ? (stmt as { declaration?: unknown }).declaration
-        : stmt;
-      if (!decl || typeof decl !== "object") continue;
-      const c = decl as { type?: string; id?: { name?: string }; body?: { body?: unknown[] } };
-      if (c.type === "ClassDeclaration" && c.id?.name === clsName) {
-        for (const m of c.body?.body ?? []) {
-          const mem = m as { kind?: string; params?: unknown[] };
-          if (mem.kind === "constructor") return mem.params ?? [];
-        }
-        return [];
-      }
-    }
+  // BUG-359：类节点解析走共享遍历（裸 ClassDeclaration + 类表达式 + 直接
+  // 导出）——旧实现只认「有 declaration 字段的语句 + ClassDeclaration」⇒
+  // `class C {…} export { C }` 与 `export const C = class {…}` 的构造器形参
+  // 表恒空（类入口元数 0、参数属性 `this.x` 失域）。
+  const c = classNodeForName(fileAst, clsName);
+  if (!c) return [];
+  for (const m of c.body?.body ?? []) {
+    const mem = m as { kind?: string; params?: unknown[] };
+    if (mem.kind === "constructor") return mem.params ?? [];
   }
   return [];
 }
@@ -1640,6 +1632,83 @@ function fnParamNodesOf(
 }
 
 /**
+ * BUG-246：**无注解**默认形参的入口域 = 初始化式（按可变绑定拓宽）。
+ *
+ * `function f(a = 1)` 在 TS 里的形参类型是 `number`（参数是可变绑定 ⇒
+ * 字面量拓宽成基类型），这也是同一份文件 dts 已发布的 `a?: number`。此前
+ * 入口域只看 `FormalParam.tsType`（无注解 ⇒ any）⇒ `a.toFixed()` 记假
+ * `TypeError`（exit 1）、zod 入参 `z.unknown()`、返回位又被 any 观测污染成
+ * `number | string`。有注解时注解优先（与 TS 同口径：注解即声明域）。
+ *
+ * 不可静态求值的初始化式（引用 / 调用）⇒ undefined（保持 any，不猜）。
+ */
+function defaultParamInitDomainOf(
+  fileAst: ReturnType<typeof babelParse>,
+  fnName: string,
+  paramName: string,
+): Abs | undefined {
+  for (const p of fnParamNodesOf(fileAst, fnName)) {
+    const ap = p as
+      | { type?: string; left?: { type?: string; name?: string }; right?: unknown }
+      | undefined;
+    if (ap?.type !== "AssignmentPattern") continue;
+    const left = ap.left;
+    if (left?.type !== "Identifier" || left.name !== paramName) continue;
+    const init = defaultInitAbsOf(ap.right);
+    return init ? widenForAssign(init) : undefined;
+  }
+  return undefined;
+}
+
+/**
+ * BUG-240：rest 形参的符号实参（引用面 `$restBind` 的直通协议）。
+ *
+ * - `...x: T[]` ⇒ 哨兵（term 标记保持，`$restBind` 直通）但元素域取 `T`；
+ * - `...x: [A, B]` ⇒ 逐元素展开成多个实参（`$restBind` 的 `$arr` 折成精确
+ *   元组，位置域不丢）；带 rest 尾的元组展开固定前缀 + 一个尾元素（长度只
+ *   是符号近似）；
+ * - 无注解 / 不可映射 ⇒ 旧哨兵 arr(any)（不猜）。
+ */
+function symbolicRestArgsOf(
+  tsType: string | undefined,
+  typeParams: ReadonlyMap<string, Abs> | undefined,
+  namedTypes: ReadonlyMap<string, string> | undefined,
+): Abs[] {
+  const sentinel = makeSymbolicRestAbs();
+  const declared = tsType
+    ? absTypeForTsTypeText(resolveNamedTypeText(tsType, namedTypes), typeParams)
+    : undefined;
+  const shape = declared?.shape;
+  if (shape?.k === "arr") return [{ ...sentinel, shape }];
+  if (shape?.k === "tuple") {
+    return shape.rest === undefined
+      ? shape.elements
+      : [...shape.elements, shape.rest];
+  }
+  return [sentinel];
+}
+
+/**
+ * L2 入口求值实参：与签名符号执行**同口径**（BUG-240）。
+ *
+ * `collectEntryMayThrows` 此前直接用 `typeParams[i].value`（rest 位的值是
+ * `arr(声明域)` 这个**位置实参**）⇒ `$restBind` 把它收成 `[arr(...)]` 一元
+ * 组 ⇒ `x[0]` 是数组而非元素 ⇒ 合法成员调用记假 `TypeError`。这里按
+ * {@link symbolicRestArgsOf} 展开（数组哨兵直通 / 元组逐位），与签名面同源。
+ */
+export function entryEvalArgsOf(g: PolyFn, source: string): Abs[] {
+  const restIdx = g.formals?.findIndex((f) => f.kind === "rest") ?? -1;
+  if (restIdx < 0) return g.typeParams.map((t) => t.value);
+  const env = typeParamEnvOf(source, g.name);
+  const named = namedTypeTextsForSource(source);
+  return g.typeParams.flatMap((t, i) =>
+    i === restIdx
+      ? symbolicRestArgsOf(g.formals?.[i]?.tsType, env, named)
+      : [t.value],
+  );
+}
+
+/**
  * BUG-277：函数**类型参数表** → 入口注解可用域。
  *
  * `strip-types` 会删除声明处的 `typeParameters`（求值器不读），所以这里
@@ -1939,10 +2008,20 @@ export function entryThisReceiverOf(
   const named = typeText?.trim();
   const declShape = named && keepAst ? tsTypeDeclShape(keepAst, named, source) : undefined;
   const shape = declShape ?? absShapeForTsTypeText(typeText);
+  // BUG-239：`open: true` 是**键集开放**（结构可接受额外键），不是「成员不可
+  // 判」——内联对象注解 `this: { x: number }` 与具名 interface 是同一个 TS
+  // 类型，成员槽完整可映射 ⇒ 必须可用（否则 `this.x` 落在 any 上记假
+  // TypeError，而具名 interface 写法零 throws）。只有**没有任何成员信息**的
+  // open 对象（`object` / `{}`：无槽、无索引签名、无具名声明）才回落 any
+  // ——那里成员面确实不可判，不伪造成员域也不产生假抛。
+  const memberlessOpen =
+    shape?.k === "obj" &&
+    shape.open === true &&
+    declShape === undefined &&
+    Object.keys(shape.slots).length === 0 &&
+    shape.index === undefined;
   const usable =
-    shape !== undefined && !(shape.k === "obj" && (shape as { open?: boolean }).open === true && declShape === undefined)
-      ? shape
-      : ({ k: "any" } as const);
+    shape !== undefined && !memberlessOpen ? shape : ({ k: "any" } as const);
   return finish(annotationAbsOf(usable));
 }
 
@@ -2102,6 +2181,7 @@ function generalizeFromAstUncached(
 
   const entryTypeParamEnv = typeParamEnvOf(source, fnName);
   const entryNamedTypes = namedTypeTextsForSource(source);
+  const entryDefaultAst = () => opts.file ?? babelParse(source);
   const typeParams: TypeParam[] = params.map((p, i) => {
     // Bug 479：`.ts` 源的形参带**声明类型**（剥除 pass 的旁路 nudoTypeText）
     // ⇒ 入口形参不再是「无约束 any」（否则 `a.toUpperCase()` 之类在
@@ -2109,18 +2189,27 @@ function generalizeFromAstUncached(
     // 无注解 / 不可映射的类型（别名、泛型实例化、交叉 / 条件类型…）⇒ 仍是
     // any（不猜）；对象字面量按**开放对象**映射（结构类型不封闭值域），
     // nullish 折 nullish 字面量 Abs，可选形参并入 undefined（省略即 undefined）。
+    const formal = formals[i];
+    // BUG-246：无注解默认形参的域取初始化式（拓宽后 = TS 推断的形参类型）。
+    const defaultInit =
+      formal?.tsType === undefined && formal?.kind === "default"
+        ? defaultParamInitDomainOf(entryDefaultAst(), fnName, formal.name)
+        : undefined;
     return {
       id: `${label}${i + 1}`,
       // 无约束参数 = any（任意 JS 值），不是 unknown（分析无信息）
-      value: withOptionalUndefined(
-        annotationAbsForText(
-          formals[i]?.tsType,
-          termVar(`${label}${i + 1}`),
-          entryTypeParamEnv,
-          entryNamedTypes,
-        ),
-        formals[i],
-      ),
+      value:
+        defaultInit !== undefined
+          ? markEntryDomainAbs(defaultInit)
+          : withOptionalUndefined(
+              annotationAbsForText(
+                formal?.tsType,
+                termVar(`${label}${i + 1}`),
+                entryTypeParamEnv,
+                entryNamedTypes,
+              ),
+              formal,
+            ),
     };
   });
 
@@ -2481,6 +2570,9 @@ function generalizeFromAstUncached(
               // BUG-020：构造实参按构造器形参注解构造（注解即域）——一律 any
               // 会让构造器写入的实例槽失去域，方法体读 `this.x` 退 any。
               ctorParamAbsArgs(fileAst, clsName ?? ""),
+              undefined,
+              // BUG-259：抽象方法桩（模板方法里的 `this.abstractHook()`）
+              { file: fileAst, source },
             );
             try {
               return withExecPhi(phi, () => $invoke(inst, methodName ?? "", args));
@@ -2666,11 +2758,20 @@ function generalizeFromAstUncached(
   // 签名符号执行对每形参恰注 1 个合成实参，rest 直注会把绑定塌缩成固定
   // 1 元组（`sigLen(...r) => 1` 错误具体值）；$restBind 识别哨兵直通。
   // 具名形参保持 any+var 合成实参（α 关系面不变）。
+  //
+  // BUG-240：哨兵的元素域取**声明类型**（`...x: string[]` ⇒ arr(string)、
+  // `...x: [string, boolean]` ⇒ 逐位元组实参），不再恒 arr(any)——此前
+  // `x[0]` 落 any，合法成员调用记假 TypeError（exit 1）；同文件普通数组 /
+  // 元组形参却精确。声明类型不可映射 / 无注解 ⇒ 保持旧哨兵（不猜）。
   const restIdx = formals.findIndex((f) => f.kind === "rest");
   const symbolicArgs =
     restIdx === -1
       ? typeParams.map((t) => t.value)
-      : typeParams.map((t, i) => (i === restIdx ? makeSymbolicRestAbs() : t.value));
+      : typeParams.flatMap((t, i) =>
+          i === restIdx
+            ? symbolicRestArgsOf(formals[i]?.tsType, entryTypeParamEnv, entryNamedTypes)
+            : [t.value],
+        );
   const symbolic = run(
     symbolicArgs,
     // 入口契约进 Φ，让 body 内的单调性可传播。
@@ -2924,6 +3025,7 @@ export function buildArgsFromAssume(
   if (!extracted) return [];
   const typeParamEnv = typeParamEnvOf(source, fnName);
   const namedTypes = namedTypeTextsForSource(source);
+  let defaultAst: ReturnType<typeof babelParse> | undefined;
   return extracted.params.map((p, i) => {
     if (assumeIds.has(p)) {
       // 界只来自用户声明（bounds）；没有声明就不写——不发明默认界。
@@ -2934,9 +3036,16 @@ export function buildArgsFromAssume(
     // 播种成 `any`（那会让同一函数在 `check` 与 `check --abs` 两个面
     // 给出互斥的类型）。无注解 / 不可映射才回 any（不猜）。
     // 与入口签名同一条域构造（nullish 精度 + 可选形参的 undefined 臂）。
+    // BUG-246：无注解默认形参取初始化式域（与签名面同源）。
+    const formal = extracted.formals[i];
+    if (formal?.tsType === undefined && formal?.kind === "default") {
+      defaultAst ??= babelParse(source);
+      const init = defaultParamInitDomainOf(defaultAst, fnName, formal.name);
+      if (init !== undefined) return markEntryDomainAbs(init);
+    }
     return withOptionalUndefined(
-      annotationAbsForText(extracted.formals[i]?.tsType, termVar(p), typeParamEnv, namedTypes),
-      extracted.formals[i],
+      annotationAbsForText(formal?.tsType, termVar(p), typeParamEnv, namedTypes),
+      formal,
     );
   });
 }

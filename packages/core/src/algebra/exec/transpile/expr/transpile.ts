@@ -16,6 +16,13 @@ import type { Expression, Node } from "@babel/types";
 import type { TranspileOptions } from "../types.ts";
 import { matchReplacement } from "../helpers.ts";
 import { NudoUnsupportedError } from "../../unsupported.ts";
+import { assertionOpsOf, type NudoAssertionOp } from "../../../../strip-types.ts";
+import {
+  absTypeForTsTypeText,
+  entryAbsLiteralSourceOf,
+  namedTypeTextsForSource,
+  resolveNamedTypeText,
+} from "../../../contract/ts-type-shape.ts";
 import { tryTranspileOptionalChain } from "./optional-chain.ts";
 import { transpileAtomExpr } from "./atom.ts";
 import { transpileOperatorExpr } from "./operators.ts";
@@ -66,10 +73,51 @@ function positionRecordWrap(expr: Expression, src: string): string {
   return src;
 }
 
+/**
+ * BUG-265：断言算子重入保护。
+ *
+ * 剥除 pass 把 `x as T` / `x!` 折叠成内层表达式，并在同一节点上留下**有序
+ * 算子表**（strip-types 的 `nudoAssertOps`）。发射时先按算子表还原断言域，
+ * 再正常发射内层表达式；重入集合让「发射内层」那一次跳过本处理器（否则
+ * 同一节点无限递归），不改写 AST（旁路保持，重复发射同一棵树结果一致）。
+ */
+const assertionEmissionInProgress = new WeakSet<object>();
+
+/** 断言算子的发射：最内层先求值，算子按内→外顺序叠加。 */
+function transpileAssertionOps(expr: Expression, ops: readonly NudoAssertionOp[], opts: TranspileOptions): string {
+  assertionEmissionInProgress.add(expr as object);
+  let src: string;
+  try {
+    src = transpileExpression(expr, opts);
+  } finally {
+    assertionEmissionInProgress.delete(expr as object);
+  }
+  const namedTypes = opts.source ? namedTypeTextsForSource(opts.source) : undefined;
+  for (const op of ops) {
+    if (op.kind === "nonnull") {
+      // 非空断言：剥 null / undefined 臂（既有窄化算子）。
+      src = `$removeNullish(${src})`;
+      continue;
+    }
+    // `as T` / `<T>x`：映射不到（具名类 / 泛型实例 / 不可序列化 Abs）⇒ 保留
+    // 内层值（与旧解包口径一致，不伪造声明域）。
+    const mapped = absTypeForTsTypeText(resolveNamedTypeText(op.text, namedTypes));
+    const literal = entryAbsLiteralSourceOf(mapped);
+    if (literal === undefined) continue;
+    // 内层仍求值（副作用 / throws 域保留），结果取断言域。
+    src = `((${src}), ${literal})`;
+  }
+  return src;
+}
+
 function transpileExpressionImpl(expr: Expression, opts: TranspileOptions = {}): string {
   // @nudo:replace：节点源码文本匹配则换成注入变量
   const rep = matchReplacement(expr as Node, opts);
   if (rep) return rep;
+  if (!assertionEmissionInProgress.has(expr as object)) {
+    const ops = assertionOpsOf(expr);
+    if (ops && ops.length > 0) return transpileAssertionOps(expr, ops, opts);
+  }
   // ChainExpression 不在 Expression 联合里，先剥一层；Babel 8 将 Super 移出 Expression
   const anyExpr = expr as unknown as { type: string; expression?: Expression };
   if (anyExpr.type === "ChainExpression" && anyExpr.expression) {
