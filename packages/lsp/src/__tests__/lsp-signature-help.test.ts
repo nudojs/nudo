@@ -54,7 +54,7 @@ function tmpFile(src: string): { dir: string; file: string } {
       // detail 不再用 `?` 占位返回值，改为与 hover / check 同口径的
       // 签名渲染（`<name>(<param>: <T>, …) => <R>`）；本用例仍钉「源码真名与
       // 真个数」（不是 arg0/arg1 假名）。
-      expect(detailOf("withDefault")).toBe("withDefault(x: any, y: any) => any");
+      expect(detailOf("withDefault")).toBe("withDefault(x: any, y: number) => any");
       expect(detailOf("withRest")).toBe("withRest(x: any, ...rest: any) => any");
       expect(detailOf("plain")).toBe("plain(x: any, y: any) => any");
     } finally {
@@ -80,7 +80,7 @@ function tmpFile(src: string): { dir: string; file: string } {
       // 裸标识符 callee 不再用 evaluator 的 arity-only fn Abs 冒充
       // 签名（返回位是占位 `unknown`）⇒ 落到与 hover 同源的 poly-fn 解析，
       // 返回位是真实推断（`x + y` ⇒ `number | string`）。
-      expect(label).toBe("(x: any, y: any) => number | string");
+      expect(label).toBe("(x: any, y: number) => number | string");
       expect(label).not.toContain("arg0");
     } finally {
       rmSync(dir, { recursive: true, force: true });

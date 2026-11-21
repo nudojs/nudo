@@ -10,6 +10,8 @@ import {
   unknown,
   anyAbs,
   substAbs,
+  provenanceOf,
+  leqAbs,
 } from "@nudojs/core";
 import {
   isTemplateLike,
@@ -20,6 +22,7 @@ import {
   sanitizeCommentText,
   toJsBindingIdent,
   ProjectionBudget,
+  absTypeForTsTypeText,
 } from "@nudojs/core/internal";
 import type { AnalysisResult, CaseResult, FunctionAnalysis } from "../analyzer.ts";
 import { domainEvidenceCases } from "./domain-cases.ts";
@@ -652,8 +655,19 @@ function symbolMemberLine(
 function applyObjectFnReturnOverride(key: string, ts: string): string {
   const override = currentObjectFnReturnOverrides?.get(key);
   if (override === undefined) return ts;
-  const at = ts.lastIndexOf("=> ");
-  return at >= 0 ? `${ts.slice(0, at + 3)}${override}` : ts;
+  // 只替换**外层**函数类型的返回位：返回类型本身可能是对象 / 函数类型，
+  // 里面还有嵌套 `=>`（`() => { get: () => number }`）⇒ lastIndexOf 会把
+  // 内层返回位改掉，得到 `getMilliseconds: () => Date` 这类错形。
+  let depth = 0;
+  for (let i = 0; i < ts.length - 1; i++) {
+    const ch = ts[i]!;
+    if (ch === "(" || ch === "[" || ch === "{" || ch === "<") depth++;
+    else if (ch === ")" || ch === "]" || ch === "}" || (ch === ">" && ts[i - 1] !== "=")) depth--;
+    if (depth === 0 && ch === "=" && ts[i + 1] === ">") {
+      return `${ts.slice(0, i + 2)} ${override}`;
+    }
+  }
+  return ts;
 }
 
 function absToTSTypeInner(a: Abs, typeVars: Map<string, string> | undefined, budget: ProjectionBudget): string {
@@ -1100,6 +1114,7 @@ function widenParamAbsInner(a: Abs, budget: ProjectionBudget): Abs {
  * conf 不是 partial ⇒ 保留。
  */
 function isSyntheticOobAbs(a: Abs): boolean {
+  if (provenanceOf(a) === "synthetic") return true;
   return (
     a.conf === "partial" &&
     a.shape.k === "unknown" &&
@@ -1576,6 +1591,8 @@ const TS_TYPE_TOKENS: ReadonlySet<string> = new Set([
   "GeneratorFunction", "AsyncGeneratorFunction", "Map", "ReadonlyMap", "WeakMap",
   "Set", "ReadonlySet", "WeakSet", "WeakRef", "FinalizationRegistry",
   "JSON", "Math", "Reflect", "Intl", "Proxy",
+  "Date", "RegExp", "Error", "EvalError", "RangeError", "ReferenceError",
+  "SyntaxError", "TypeError", "URIError", "AggregateError", "URL", "URLSearchParams",
   // BUG-245：lib.*.d.ts 里的**纯类型**全局名（无运行时构造器）——它们和
   // `Date` / `RegExp` 一样是环境内建，产物无需声明。旧白名单只覆盖关键字、
   // 工具类型与运行时构造器 ⇒ `RegExpMatchArray` / `IArguments` /
@@ -2553,7 +2570,7 @@ function computeMainSignature(
   // 是既有裁定（只落台账），这里不翻转它。
   const declaredReturn = contract?.return
     ? undefined
-    : tsDeclaredReturn(fn, observedReturnType, ctx);
+    : tsDeclaredReturn(fn, observedReturnType, ctx, retAbs);
   const returnType =
     contract?.return
       ? contractReturnTSType(contract.return, typeVars)
@@ -3313,6 +3330,7 @@ function tsDeclaredReturn(
   fn: FunctionAnalysis,
   observed: string,
   ctx?: DtsProjectionCtx,
+  observedAbs?: Abs,
 ): string | undefined {
   const raw = tsAnnotationTypeText(fn.declaredReturnType);
   // 谓词（`x is T` / `asserts x`）由 tsReturnPredicate 独占：它的名字扫描口径
@@ -3328,7 +3346,20 @@ function tsDeclaredReturn(
   // - BUG-274：声明是函数类型，观测只有 `(a0: unknown) => unknown`；
   // - BUG-261：声明是字面量类型（`"a"` / `42` / `true`），观测只能给基类型；
   // - BUG-362：观测下标读带 `| undefined`，声明是更窄的 `T`。
+  // 声明域比观测域更窄（`(): number` 而观测是 `number | string`）⇒ 声明
+  // 是发布契约，必须保留；只有「观测更窄」时才让位（既有协变口径）。
+  const declaredAbs = observedAbs
+    ? absTypeForTsTypeText(raw, {
+        typeParams: new Map([...declared].map((n) => [n, anyAbs])),
+      })
+    : undefined;
+  const declaredNarrower =
+    declaredAbs !== undefined &&
+    observedAbs !== undefined &&
+    leqAbs(declaredAbs, observedAbs).ok &&
+    !leqAbs(observedAbs, declaredAbs).ok;
   const declarationMorePrecise =
+    declaredNarrower ||
     hasLibGlobalTypeText(raw) ||
     isPlaceholderBuiltinType(observed) ||
     (hasReadonlyTypePrefix(raw) && !observed.includes("readonly")) ||

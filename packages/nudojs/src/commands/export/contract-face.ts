@@ -19,13 +19,14 @@ import {
   formatConstraint,
   joinAbs,
   locateContractParam,
+  withProvenance,
   obj,
   type Abs,
   type EffectiveContract,
   type FormalParam,
   type NudoConstraint,
 } from "@nudojs/core";
-import { wrapPromise } from "@nudojs/core/internal";
+import { absTypeForTsTypeText, wrapPromise } from "@nudojs/core/internal";
 import { domainEvidenceCases, widenObservedLiterals } from "@nudojs/service/emit";
 import { tryEvalCall, type CaseResult, type FunctionAnalysis } from "@nudojs/service";
 import { evidencePathOf } from "./selection.ts";
@@ -428,6 +429,15 @@ export function unifiedReturnFace(
   ctx?: FaceContext,
 ): Abs | undefined {
   const observed = observedReturnFace(fn, caseResults);
+  // BUG-261：声明返回里的字面量成员是声明面事实。优先用声明文本直接映射，
+  // 避免观测侧早已拓宽成 string 后再也拿不回 `"a" | "b"`。
+  if (declaredLiteralReturn(fn)) {
+    const declared = absTypeForTsTypeText(fn.declaredReturnType);
+    if (declared) {
+      const marked = withProvenance(declared, "declared");
+      return isPromiseAbs(observed) ? wrapPromise(marked) : marked;
+    }
+  }
   // BUG-213：纯观测返回面（call@/entry@ 采样）不是函数域 ⇒ 发布前拓宽到
   // 基类型。带断言的 @nudo:case 是域声明，保持精确。
   //

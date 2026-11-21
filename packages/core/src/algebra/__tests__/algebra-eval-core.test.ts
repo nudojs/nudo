@@ -3104,8 +3104,12 @@ describe("absShapeForTsTypeText 不进**公共**面（负控；internal 面已�
       k: "sum",
       members: [{ shape: { k: "prim", type: "string" } }, { shape: { k: "prim", type: "number" } }],
     });
-    // 别名 / 泛型实例化仍不映射（不猜）
-    expect(absShapeForTsTypeText("Record<string, number>")).toBeUndefined();
+    // 未在环境里声明的别名仍不映射（不猜）；`Record` 等内建泛型已进解析表。
+    expect(absShapeForTsTypeText("SomeUnmappedAlias")).toBeUndefined();
+    expect(absShapeForTsTypeText("Record<string, number>")).toMatchObject({
+      k: "obj",
+      index: { key: { shape: { k: "prim", type: "string" } } },
+    });
   }
   {
     const pub = (await import("@nudojs/core")) as unknown as Record<string, unknown>;

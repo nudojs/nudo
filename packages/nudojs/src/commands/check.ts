@@ -57,7 +57,14 @@ import {
   type DirectiveDiag,
 } from "@nudojs/parser";
 import { applyTextEdits, materializeAction, unifiedDiff } from "@nudojs/service/emit";
-import { DIAG, defaultExportLocalName } from "@nudojs/core/internal";
+import {
+  DIAG,
+  defaultExportLocalName,
+  importedTypeTextsForSource,
+  namedTypeTextsForSource,
+  valueTypeTextsForSource,
+  type AnnotationEnv,
+} from "@nudojs/core/internal";
 import {
   preloadPathEnvs,
   getPathEnvLoadErrors,
@@ -828,6 +835,39 @@ function fromCallsiteFiles(opts: RunCheckOptions): FromCallsiteFile[] {
   return out;
 }
 
+const annotationEnvMemo = new Map<string, AnnotationEnv>();
+const ANNOTATION_ENV_MEMO_MAX = 32;
+
+/** 被检查文件的注解环境：同文件声明 + 相对导入 type 声明 + 值引用。 */
+function annotationEnvForFile(source: string, filePath: string): AnnotationEnv {
+  const key = `${filePath}\u0000${source}`;
+  const hit = annotationEnvMemo.get(key);
+  if (hit) return hit;
+  const base = dirname(filePath);
+  const imported = importedTypeTextsForSource(source, (spec) => {
+    if (!spec.startsWith(".")) return undefined;
+    const raw = resolve(base, spec);
+    for (const p of [raw, `${raw}.ts`, `${raw}.tsx`, `${raw}.d.ts`, `${raw}.js`, `${raw}/index.ts`, `${raw}/index.d.ts`]) {
+      try {
+        return readFileSync(p, "utf8");
+      } catch {
+        // try next
+      }
+    }
+    return undefined;
+  });
+  const env: AnnotationEnv = {
+    namedTypes: new Map([...imported, ...namedTypeTextsForSource(source)]),
+    valueTypes: valueTypeTextsForSource(source),
+  };
+  if (annotationEnvMemo.size >= ANNOTATION_ENV_MEMO_MAX) {
+    const oldest = annotationEnvMemo.keys().next().value;
+    if (oldest !== undefined) annotationEnvMemo.delete(oldest);
+  }
+  annotationEnvMemo.set(key, env);
+  return env;
+}
+
 /**
  * checkSource 的**分析输入装配**（`runCheck` 与 `runCheckFix` 共用单源）。
  *
@@ -865,6 +905,7 @@ function checkSourceOptions(inputs: CheckSourceInputs): CheckOptions {
   return {
     loadModule: defaultLoadModule,
     fromFile: filePath,
+    annotationEnv: annotationEnvForFile(source, filePath),
     ...(inputs.autoBind === false ? { autoBind: false } : {}),
     ...(inputs.projectDir ? { projectDir: inputs.projectDir } : {}),
     entryThrows: inputs.entryThrows,

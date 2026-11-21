@@ -179,6 +179,17 @@ export type AbsFacets = {
    * `HARVEST_DISK_ABI`。填真实惰性序列属 A1 步骤 3/4，本槽位只预置承载。
    */
   genElements?: Abs[];
+  /**
+   * 证据来源（投影裁决用）：
+   * - `declared`：源码类型注解 / 声明；
+   * - `observed`：调用点 / entry@ 求值观测；
+   * - `asserted`：`as T` / `<T>x` / `!` 断言；
+   * - `inferred`：引擎从代码结构推导；
+   * - `synthetic`：引擎内部精度标记（OOB undefined 等），绝不出现在产物面。
+   *
+   * 缺省 = 旧 Abs（按 inferred 处理）。只影响投影裁决，不进 leq / 展示。
+   */
+  provenance?: "declared" | "observed" | "asserted" | "inferred" | "synthetic";
 };
 
 /**
@@ -191,6 +202,19 @@ export type AbsFacets = {
 export function cloneAbsFacets(f: AbsFacets | undefined): AbsFacets | undefined {
   if (f === undefined) return undefined;
   return cloneFacets(f);
+}
+
+export type Provenance = NonNullable<AbsFacets["provenance"]>;
+
+/** 打证据来源（缺省不分配新对象；不改变 shape/term/pred/conf）。 */
+export function withProvenance(a: Abs, provenance: Provenance): Abs {
+  if (a.facets?.provenance === provenance) return a;
+  return { ...a, facets: { ...a.facets, provenance } };
+}
+
+/** 读证据来源；缺省 = undefined（旧 Abs，按 inferred 处理）。 */
+export function provenanceOf(a: Abs | undefined): Provenance | undefined {
+  return a?.facets?.provenance;
 }
 
 export type Abs = {

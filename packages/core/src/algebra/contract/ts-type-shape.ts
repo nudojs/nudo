@@ -22,6 +22,43 @@ import { relationFn } from "../abs-fn.ts";
 import { parseSource } from "../parse-source.ts";
 import { lit, v, type Term } from "../term.ts";
 
+/**
+ * 注解解析上下文（**单一解析层**的输入）。
+ *
+ * 文本语法仍由本文件的 `mapTsType` 解析；名字解析（类型参数 / 同文件声明 /
+ * 导入声明 / 内建类型 / `typeof` 值引用）全部走这张表。调用方只需构造一次
+ * 环境，所有嵌套位共享同一份事实，避免「顶层能解析、对象槽里的同名引用
+ * 又回落 any」。
+ */
+export type AnnotationEnv = {
+  typeParams?: ReadonlyMap<string, Abs>;
+  namedTypes?: ReadonlyMap<string, string>;
+  valueTypes?: ReadonlyMap<string, string>;
+  builtins?: ReadonlyMap<string, Abs>;
+  /** 内部递归深度（只由本模块递增；调用方不传）。 */
+  depth?: number;
+};
+
+export type AnnotationEnvArg = AnnotationEnv | ReadonlyMap<string, Abs> | undefined;
+
+function normalizeAnnotationEnv(env: AnnotationEnvArg): AnnotationEnv | undefined {
+  if (!env) return undefined;
+  return (env instanceof Map ? { typeParams: env } : env) as AnnotationEnv | undefined;
+}
+
+let activeAnnotationEnv: AnnotationEnv | undefined;
+
+function withAnnotationEnv<T>(env: AnnotationEnvArg, fn: () => T): T {
+  if (env === undefined) return fn();
+  const prev = activeAnnotationEnv;
+  activeAnnotationEnv = { ...prev, ...normalizeAnnotationEnv(env) };
+  try {
+    return fn();
+  } finally {
+    activeAnnotationEnv = prev;
+  }
+}
+
 /** 形状 → 嵌套位用的 Abs（无 term / pred：声明域，不是求值观测） */
 function absOf(shape: Shape): Abs {
   return abs(shape, undefined, undefined, "exact");
@@ -59,6 +96,175 @@ function joinAbsList(list: Abs[]): Abs {
   return unique.length === 1
     ? unique[0]!
     : abs({ k: "sum", members: unique }, undefined, undefined, "exact");
+}
+
+/** 泛型实参切分（顶层逗号；`Map<string, number>` ⇒ 两项）。 */
+export function splitTypeArgs(text: string): string[] {
+  return splitTopLevel(text, ",").map((p) => p.trim());
+}
+
+/** 内建类型名的实例面（无泛型实参 / 非泛型内建）。 */
+function builtinTypeAbs(name: string): Abs | undefined {
+  const any = absOf({ k: "any" });
+  const str = absOf({ k: "prim", type: "string" });
+  const num = absOf({ k: "prim", type: "number" });
+  const bool = absOf({ k: "prim", type: "boolean" });
+  const undef = nullishAbs(undefined);
+  const fn0 = (ret: Abs): Abs => relationFn([], ret, { params: [] });
+  const fn1 = (arg: Abs, ret: Abs): Abs => relationFn([arg], ret, { params: ["value"] });
+  switch (name) {
+    case "Date":
+      return absOf({
+        k: "obj",
+        open: true,
+        slots: {
+          getTime: { value: fn0(num) },
+          valueOf: { value: fn0(num) },
+          toISOString: { value: fn0(str) },
+          toJSON: { value: fn0(str) },
+          getFullYear: { value: fn0(num) },
+          getMonth: { value: fn0(num) },
+          getDate: { value: fn0(num) },
+          getDay: { value: fn0(num) },
+          getHours: { value: fn0(num) },
+          getMinutes: { value: fn0(num) },
+          getSeconds: { value: fn0(num) },
+          getMilliseconds: { value: fn0(num) },
+        },
+      });
+    case "RegExp":
+      return absOf({
+        k: "obj",
+        open: true,
+        slots: {
+          source: { value: str },
+          flags: { value: str },
+          global: { value: bool },
+          ignoreCase: { value: bool },
+          multiline: { value: bool },
+          test: { value: fn1(str, bool) },
+          exec: { value: fn1(str, joinAbsList([any, nullishAbs(null)])) },
+        },
+      });
+    case "Error":
+      return absOf({
+        k: "obj",
+        open: true,
+        slots: {
+          name: { value: str },
+          message: { value: str },
+          stack: { value: joinAbsList([str, undef]), optional: true },
+        },
+      });
+    case "Promise":
+      return abs({ k: "eff", eff: "promise", inner: any }, undefined, undefined, "exact");
+    case "Map":
+      return absOf({ k: "obj", slots: {}, open: true, index: { key: any, value: any } });
+    case "Set":
+      return absOf({ k: "obj", slots: {}, open: true });
+    case "WeakMap":
+    case "WeakSet":
+      return absOf({ k: "obj", slots: {}, open: true });
+    case "Function":
+      return relationFn([], any, { params: [] });
+    case "Array":
+    case "ReadonlyArray":
+      return absOf({ k: "arr", element: any });
+    case "Object":
+      return absOf({ k: "obj", slots: {}, open: true });
+    default:
+      return undefined;
+  }
+}
+
+/** 泛型内建类型：`Map<K,V>` / `Set<T>` / `Promise<T>` / `Record<K,V>`。 */
+function builtinGenericAbs(text: string, allowNullish: boolean): Abs | undefined {
+  const m = /^([A-Za-z_$][\w$]*)\s*<([\s\S]+)>$/.exec(text.trim());
+  if (!m) return undefined;
+  const name = m[1]!;
+  const args = splitTypeArgs(m[2]!);
+  const mapped = args.map((a) => mapTsType(a, allowNullish));
+  if (mapped.some((a) => a === undefined)) return undefined;
+  const [a0, a1] = mapped as Abs[];
+  const any = absOf({ k: "any" });
+  const str = absOf({ k: "prim", type: "string" });
+  const num = absOf({ k: "prim", type: "number" });
+  const bool = absOf({ k: "prim", type: "boolean" });
+  const undef = nullishAbs(undefined);
+  const method = (params: Abs[], ret: Abs, names: string[]): Abs =>
+    relationFn(params, ret, { params: names });
+  switch (name) {
+    case "Map":
+    case "ReadonlyMap": {
+      const k = a0 ?? any;
+      const v = a1 ?? any;
+      const self = absOf({ k: "obj", slots: {}, open: true, index: { key: k, value: v } });
+      return absOf({
+        k: "obj",
+        open: true,
+        index: { key: k, value: v },
+        slots: {
+          get: { value: method([k], joinAbsList([v, undef]), ["key"]) },
+          set: { value: method([k, v], self, ["key", "value"]) },
+          has: { value: method([k], bool, ["key"]) },
+          delete: { value: method([k], bool, ["key"]) },
+          clear: { value: method([], self, []) },
+          size: { value: num, readonly: true },
+        },
+      });
+    }
+    case "WeakMap": {
+      const k = a0 ?? absOf({ k: "obj", slots: {}, open: true });
+      const v = a1 ?? any;
+      return absOf({
+        k: "obj",
+        open: true,
+        slots: {
+          get: { value: method([k], joinAbsList([v, undef]), ["key"]) },
+          set: { value: method([k, v], absOf({ k: "obj", slots: {}, open: true }), ["key", "value"]) },
+          has: { value: method([k], bool, ["key"]) },
+          delete: { value: method([k], bool, ["key"]) },
+        },
+      });
+    }
+    case "Set":
+    case "ReadonlySet": {
+      const v = a0 ?? any;
+      const self = absOf({ k: "obj", slots: {}, open: true });
+      return absOf({
+        k: "obj",
+        open: true,
+        slots: {
+          add: { value: method([v], self, ["value"]) },
+          has: { value: method([v], bool, ["value"]) },
+          delete: { value: method([v], bool, ["value"]) },
+          clear: { value: method([], self, []) },
+          size: { value: num, readonly: true },
+        },
+      });
+    }
+    case "WeakSet": {
+      const v = a0 ?? absOf({ k: "obj", slots: {}, open: true });
+      return absOf({
+        k: "obj",
+        open: true,
+        slots: {
+          add: { value: method([v], absOf({ k: "obj", slots: {}, open: true }), ["value"]) },
+          has: { value: method([v], bool, ["value"]) },
+          delete: { value: method([v], bool, ["value"]) },
+        },
+      });
+    }
+    case "Promise":
+      return abs({ k: "eff", eff: "promise", inner: a0 ?? any }, undefined, undefined, "exact");
+    case "Record": {
+      const k = a0 ?? str;
+      const v = a1 ?? any;
+      return absOf({ k: "obj", slots: {}, open: true, index: { key: k, value: v } });
+    }
+    default:
+      return undefined;
+  }
 }
 
 /** 括号记账：`>` 只有在不是 `=>` 的尾字符时才是闭合泛型实参的尖括号 */
@@ -202,6 +408,132 @@ export function namedTypeTextsForSource(source: string): ReadonlyMap<string, str
     if (oldest !== undefined) namedTypeTextMemo.delete(oldest);
   }
   namedTypeTextMemo.set(source, out);
+  return out;
+}
+
+/**
+ * 同文件顶层**值**声明 → 类型文本（`typeof X` 入口注解用）。
+ *
+ * 只收能静态写成类型的初始化器（字面量 / 对象 / 数组 / 函数 / 类不展开）；
+ * 引用 / 调用表达式不猜。跨文件值引用由 service 的导入表补齐。
+ */
+const valueTypeTextMemo = new Map<string, ReadonlyMap<string, string>>();
+const VALUE_TYPE_TEXT_MEMO_MAX = 8;
+
+export function valueTypeTextsForSource(source: string): ReadonlyMap<string, string> {
+  const hit = valueTypeTextMemo.get(source);
+  if (hit) return hit;
+  const out = new Map<string, string>();
+  try {
+    const ast = parseSource(source, { keepTs: true }) as unknown as {
+      program: { body: Array<Record<string, unknown>> };
+    };
+    for (const raw of ast.program.body) {
+      const stmt =
+        raw.type === "ExportNamedDeclaration" || raw.type === "ExportDefaultDeclaration"
+          ? ((raw.declaration as Record<string, unknown> | undefined) ?? raw)
+          : raw;
+      if (stmt.type === "VariableDeclaration") {
+        for (const d of (stmt.declarations as Array<Record<string, unknown>> | undefined) ?? []) {
+          const id = d.id as { type?: string; name?: string } | undefined;
+          const init = d.init as { start?: number; end?: number; type?: string } | undefined;
+          if (id?.type !== "Identifier" || typeof id.name !== "string" || !init) continue;
+          if (typeof init.start !== "number" || typeof init.end !== "number") continue;
+          const ok = new Set([
+            "ObjectExpression",
+            "ArrayExpression",
+            "StringLiteral",
+            "NumericLiteral",
+            "BooleanLiteral",
+            "BigIntLiteral",
+            "TemplateLiteral",
+            "ArrowFunctionExpression",
+            "FunctionExpression",
+            "ClassExpression",
+          ]);
+          if (!init.type || !ok.has(init.type)) continue;
+          out.set(id.name, source.slice(init.start, init.end));
+        }
+      } else if (stmt.type === "FunctionDeclaration") {
+        const id = stmt.id as { name?: string } | undefined;
+        if (!id?.name || typeof stmt.start !== "number" || typeof stmt.end !== "number") continue;
+        // `typeof fn` 的调用面：只投函数类型文本，不展开函数体。
+        const params = ((stmt.params as Array<Record<string, unknown>> | undefined) ?? []).map(
+          (p, i) => {
+            const ann = p.typeAnnotation as { typeAnnotation?: { start?: number; end?: number } } | undefined;
+            const t =
+              ann?.typeAnnotation &&
+              typeof ann.typeAnnotation.start === "number" &&
+              typeof ann.typeAnnotation.end === "number"
+                ? source.slice(ann.typeAnnotation.start, ann.typeAnnotation.end)
+                : "any";
+            const name = (p.name as string | undefined) ?? `arg${i}`;
+            return `${name}: ${t}`;
+          },
+        );
+        const rt = stmt.returnType as { typeAnnotation?: { start?: number; end?: number } } | undefined;
+        const ret =
+          rt?.typeAnnotation &&
+          typeof rt.typeAnnotation.start === "number" &&
+          typeof rt.typeAnnotation.end === "number"
+            ? source.slice(rt.typeAnnotation.start, rt.typeAnnotation.end)
+            : "any";
+        out.set(id.name, `(${params.join(", ")}) => ${ret}`);
+      }
+    }
+  } catch {
+    // 解析失败 ⇒ 空表
+  }
+  if (valueTypeTextMemo.size >= VALUE_TYPE_TEXT_MEMO_MAX) {
+    const oldest = valueTypeTextMemo.keys().next().value;
+    if (oldest !== undefined) valueTypeTextMemo.delete(oldest);
+  }
+  valueTypeTextMemo.set(source, out);
+  return out;
+}
+
+/**
+ * 跨文件类型声明：读 import 语句，把被导入模块的顶层 type/interface
+ * 声明的**文本**映射到本地名。`load` 由调用方提供（service 用 fs；
+ * core 测试可传内存表）。
+ *
+ * 只展开**具名 type 声明**（interface / type alias）；函数 / 类 / 值导入
+ * 不进本表（它们走 `valueTypes` 或 Abs 观测）。命名空间导入不展开。
+ */
+export function importedTypeTextsForSource(
+  source: string,
+  load: (specifier: string) => string | undefined,
+): ReadonlyMap<string, string> {
+  const out = new Map<string, string>();
+  try {
+    const ast = parseSource(source, { keepTs: true }) as unknown as {
+      program: { body: Array<Record<string, unknown>> };
+    };
+    for (const stmt of ast.program.body) {
+      if (stmt.type !== "ImportDeclaration") continue;
+      const srcNode = stmt.source as { value?: unknown } | undefined;
+      if (typeof srcNode?.value !== "string") continue;
+      const loaded = load(srcNode.value);
+      if (loaded === undefined) continue;
+      const decls = namedTypeTextsForSource(loaded);
+      for (const spec of (stmt.specifiers as Array<Record<string, unknown>> | undefined) ?? []) {
+        if (spec.type !== "ImportSpecifier") continue;
+        const imported = spec.imported as { name?: string; value?: string } | undefined;
+        const local = spec.local as { name?: string } | undefined;
+        const importedName =
+          typeof imported?.name === "string"
+            ? imported.name
+            : typeof imported?.value === "string"
+              ? imported.value
+              : undefined;
+        if (!importedName || !local?.name) continue;
+        const text = decls.get(importedName);
+        if (text !== undefined) out.set(local.name, text);
+      }
+    }
+  } catch {
+    // 解析失败 ⇒ 空表（回落 any，不猜）
+  }
   return out;
 }
 
@@ -553,10 +885,34 @@ function mapTsType(
   if (!text) return undefined;
   const t = unwrapParens(text.trim());
   if (!t) return undefined;
-  // 泛型类型参数（`T` / `T extends string`）：绑定由调用方（入口签名 /
-  // service 入口见证）从声明面的 `<T …>` 表注入（BUG-277）。
-  const bound = typeParams?.get(t);
+  // 名字解析：类型参数 → 内建类型 → 同文件/导入声明 → `typeof` 值引用。
+  const env = activeAnnotationEnv;
+  const bound = env?.typeParams?.get(t) ?? env?.builtins?.get(t) ?? builtinTypeAbs(t);
   if (bound) return bound;
+  const namedText = env?.namedTypes?.get(t);
+  if (namedText !== undefined && namedText.trim() !== t && (env?.depth ?? 0) < 8) {
+    const prev = activeAnnotationEnv;
+    activeAnnotationEnv = { ...env, depth: (env?.depth ?? 0) + 1 };
+    try {
+      return mapTsType(namedText, allowNullish, typeParams);
+    } finally {
+      activeAnnotationEnv = prev;
+    }
+  }
+  const typeofMatch = /^typeof\s+([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)$/.exec(t);
+  if (typeofMatch) {
+    const valueText = env?.valueTypes?.get(typeofMatch[1]!);
+    if (valueText !== undefined && valueText.trim() !== t && (env?.depth ?? 0) < 8) {
+      const prev = activeAnnotationEnv;
+      activeAnnotationEnv = { ...env, depth: (env?.depth ?? 0) + 1 };
+      try {
+        return mapTsType(valueText, allowNullish, typeParams);
+      } finally {
+        activeAnnotationEnv = prev;
+      }
+    }
+    return undefined;
+  }
 
   switch (t) {
     case "string":
@@ -658,6 +1014,9 @@ function mapTsType(
     const el = mapTsType(genericArr[1], allowNullish, typeParams);
     return el ? abs({ k: "arr", element: el }, undefined, undefined, "exact") : undefined;
   }
+  // `Map<K,V>` / `Set<T>` / `Promise<T>` / `Record<K,V>` / `WeakMap` …
+  const genericBuiltin = builtinGenericAbs(bare, allowNullish);
+  if (genericBuiltin) return genericBuiltin;
 
   // 元组 `[A, B]` / rest 元组 `[A, ...B[]]`。
   //
@@ -779,9 +1138,9 @@ function mapTsType(
  */
 export function absShapeForTsTypeText(
   text: string | undefined,
-  typeParams?: ReadonlyMap<string, Abs>,
+  env?: AnnotationEnvArg,
 ): Shape | undefined {
-  return mapTsType(text, false, typeParams)?.shape;
+  return withAnnotationEnv(env, () => mapTsType(text, false)?.shape);
 }
 
 /**
@@ -794,9 +1153,9 @@ export function absShapeForTsTypeText(
  */
 export function absTypeForTsTypeText(
   text: string | undefined,
-  typeParams?: ReadonlyMap<string, Abs>,
+  env?: AnnotationEnvArg,
 ): Abs | undefined {
-  return mapTsType(text, true, typeParams);
+  return withAnnotationEnv(env, () => mapTsType(text, true));
 }
 
 /**

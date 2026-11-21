@@ -12,7 +12,7 @@
  */
 
 import type { Abs, NudoConstraint, Pred, Term } from "@nudojs/core";
-import { absToConstraint, isIntFlag, joinAbs, predToString } from "@nudojs/core";
+import { absToConstraint, isIntFlag, joinAbs, predToString, provenanceOf } from "@nudojs/core";
 import { formatObjectKey, toJsBindingIdent, ProjectionBudget } from "@nudojs/core/internal";
 import { widenAbsPrim } from "../evaluator/call-record.ts";
 import { sanitizeLineCommentText } from "./line-comment.ts";
@@ -39,6 +39,9 @@ import {
  * 不在 `emit/index.ts` 的导出清单里（内部工具，非公开 API）。
  */
 export function widenUncertainLiteral(a: Abs): Abs | undefined {
+  // 声明 / 断言来源不是「一次观测」：字面量域必须保真。
+  const p = provenanceOf(a);
+  if (p === "declared" || p === "asserted") return undefined;
   if (a.term?.op === "lit") {
     const conf = a.conf;
     if (
@@ -137,6 +140,12 @@ function mapObservedLiteralTree(
 ): Abs {
   const hit = memo.get(a);
   if (hit) return hit;
+  // 声明 / 断言来源的字面量是域事实，不参与「观测一次采样」的拓宽。
+  const p = provenanceOf(a);
+  if (p === "declared" || p === "asserted") {
+    memo.set(a, a);
+    return a;
+  }
   const direct = widenLeaf(a);
   if (direct !== undefined) {
     memo.set(a, direct);

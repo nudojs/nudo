@@ -110,3 +110,38 @@ export function tscNoEmitConfig(tsconfigPath: string): TscResult {
   if (!parsed) return { ok: false, stderr: `failed to read ${tsconfigPath}` };
   return runProgram(parsed.fileNames, parsed.options);
 }
+
+/**
+ * 真 `tsc --declaration --emitDeclarationOnly`：返回 `<rel>.d.ts` 文本。
+ *
+ * 与 `tscNoEmit` 共用临时工程 / 进程内编译器；用于注解差分矩阵，直接对照
+ * tsc 的声明输出，而不是只测「nudo 产物能被 tsc 接受」。
+ */
+export function tscDeclaration(
+  files: Record<string, string>,
+  options: ts.CompilerOptions = {},
+): Record<string, string> {
+  const dir = tmpProject("nudo-dts-decl-");
+  const roots: string[] = [];
+  for (const [rel, content] of Object.entries(files)) {
+    const p = join(dir, rel);
+    writeFileSync(p, content.endsWith("\n") ? content : content + "\n", "utf-8");
+    roots.push(p);
+  }
+  const out: Record<string, string> = {};
+  const program = ts.createProgram(roots, {
+    declaration: true,
+    emitDeclarationOnly: true,
+    strict: true,
+    target: ts.ScriptTarget.ES2022,
+    module: ts.ModuleKind.ESNext,
+    moduleResolution: ts.ModuleResolutionKind.Bundler,
+    skipLibCheck: true,
+    ...options,
+  });
+  program.emit(undefined, (fileName, text) => {
+    if (!fileName.endsWith(".d.ts")) return;
+    out[fileName.replace(`${dir}/`, "")] = text;
+  });
+  return out;
+}

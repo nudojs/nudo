@@ -79,9 +79,12 @@ import type { CallSiteRecord } from "./analyzer-orchestrate-calls.ts";
 import { findProjectConfig, contractConfig, analysisConfig } from "./evaluator/config.ts";
 import { defaultLoadModule } from "./load-module.ts";
 import {
+  buildEntryDomain,
   entryThisReceiverOf,
   namedTypeTextsForSource,
   typeParamEnvForFunction,
+  valueTypeTextsForSource,
+  type AnnotationEnv,
 } from "@nudojs/core/internal";
 import { tryEvalCall, tryEvalCallFull, tryRunEval } from "./eval-run.ts";
 import {
@@ -97,12 +100,7 @@ import {
 } from "./analyzer-abs-eval.ts";
 import { COLLAPSE_LITERAL_THRESHOLD, dedupeCallRecords } from "./analyzer-diagnose.ts";
 import { extractFormals, extractParamNames, resolveFunctionNode } from "./analyzer-ast.ts";
-import {
-  tsAnnotationArgAbs,
-  tsDefaultParamAbsOf,
-  tsOptionalEntryAbs,
-  tsRestEntryArgs,
-} from "./ts-annotation.ts";
+import { importedTypeTextsForFile } from "./ts-annotation.ts";
 import type {
   AnalyzeLoadModule,
   CaseHint,
@@ -1343,20 +1341,22 @@ function entryArgAbsListOf(
   fnNode: Node | undefined,
   source: string,
   fnName: string,
+  filePath?: string,
 ): Abs[] {
   const formals = fnNode ? extractFormals(fnNode, source) : [];
   const paramNodes = (fnNode as unknown as { params?: unknown[] } | undefined)?.params;
-  const typeParams = typeParamEnvForFunction(source, fnName);
-  const namedTypes = namedTypeTextsForSource(source);
-  return formals.flatMap((f) => {
-    if (f.kind === "rest") return tsRestEntryArgs(f.tsType, typeParams, namedTypes);
-    if (f.tsType === undefined && f.kind === "default") {
-      const init = tsDefaultParamAbsOf(paramNodes, f.name);
-      if (init !== undefined) return [init];
-    }
-    const a = tsAnnotationArgAbs(f.tsType, typeParams, namedTypes);
-    return [f.kind === "id" && f.optional === true ? tsOptionalEntryAbs(a) : a];
-  });
+  const annotationEnv: AnnotationEnv = {
+    typeParams: typeParamEnvForFunction(source, fnName),
+    namedTypes: new Map([
+      ...importedTypeTextsForFile(source, filePath),
+      ...namedTypeTextsForSource(source),
+    ]),
+    valueTypes: valueTypeTextsForSource(source),
+  };
+  return buildEntryDomain(fnName, source, formals, {
+    paramNodes,
+    annotationEnv,
+  }).args;
 }
 
 export function evaluateEntryCase(env: UncachedCaseEnv, candidate: SynthCandidate): void {
@@ -1387,7 +1387,7 @@ export function evaluateEntryCase(env: UncachedCaseEnv, candidate: SynthCandidat
     // `xs.length` 记成字面量 1 ⇒ 三方言（zod / standard / guard）把这次兜底
     // 观测当出口域（literal(1)），导出校验器拒绝被导出函数自己的返回值；dts
     // 面写 number ⇒ 四方言矛盾。
-    const argAbsEntry = entryArgAbsListOf(fnNode, env.source, candidate.analysis.name);
+    const argAbsEntry = entryArgAbsListOf(fnNode, env.source, candidate.analysis.name, env.filePath);
     // BUG-133：`this: T` 接收者注解是入口求值的绑定上下文（不是形参位）
     const entryThisArg = entryThisReceiverOf(env.source, candidate.analysis.name);
     // Bug 511：domainOnly 模式（函数已带点观测见证）——入口求值只为产出推断域。
@@ -1610,7 +1610,7 @@ export function evaluateEntryCase(env: UncachedCaseEnv, candidate: SynthCandidat
 export function evaluateThrowsOnly(env: UncachedCaseEnv, candidate: SynthCandidate): void {
   const { source, filePath, envNames, seeds, loadModule, fnDepSeg } = env;
   const fnNode = candidate.node ? resolveFunctionNode(candidate.node) : undefined;
-  const argAbsEntry = entryArgAbsListOf(fnNode, env.source, candidate.analysis.name);
+  const argAbsEntry = entryArgAbsListOf(fnNode, env.source, candidate.analysis.name, env.filePath);
   const entryThisArg = entryThisReceiverOf(env.source, candidate.analysis.name);
   let hardThrowsAbs: Abs = neverAbs;
   const effects: MayThrowEffect[] = [];

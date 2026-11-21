@@ -19,7 +19,7 @@
  * runtime.ts 只做转出）；新增 narrow 算子放这里，不要回填 async.ts。
  */
 import type { Abs } from "../../abs.ts";
-import { abs, bool, boolLit, isNumPrim, numLit, strLit, isAbsLike } from "../../abs.ts";
+import { abs, bool, boolLit, isNumPrim, numLit, strLit, isAbsLike, withProvenance, provenanceOf, type Provenance } from "../../abs.ts";
 import { lit, termEquals } from "../../term.ts";
 import { pTrue, and, ne, implies, REL_COMPLEMENT_OPS, type Pred, type PrimName } from "../../pred.ts";
 import { migrateNullProto, type ObjShape } from "../../objects.ts";
@@ -42,10 +42,17 @@ import { currentExecPhi } from "./phi.ts";
  * `pred`）——`let n: number = 1` 与旧行为逐位相同（prim + lit 1），只有
  * 「声明比初始化器宽」的形态（联合 / 可选对象 / 联合数组）基线变正确。
  */
-export function $declDomain(declared: Abs, init: Abs): Abs {
+export function $declDomain(
+  declared: Abs,
+  init: Abs,
+  provenance?: Provenance,
+): Abs {
   if (!isAbsLike(declared)) return init;
   if (!isAbsLike(init)) return declared;
-  return abs(declared.shape, init.term, init.pred ?? declared.pred, declared.conf);
+  return withProvenance(
+    abs(declared.shape, init.term, init.pred ?? declared.pred, declared.conf),
+    provenance ?? provenanceOf(declared) ?? "inferred",
+  );
 }
 
 /**

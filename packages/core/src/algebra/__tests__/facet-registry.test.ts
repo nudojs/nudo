@@ -35,6 +35,7 @@ const SAMPLE: { [K in keyof AbsFacets]-?: AbsFacets[K] } = {
   genReturn: numLit(9),
   genNext: strLit("v"),
   genElements: [numLit(1)],
+  provenance: "declared",
 };
 
 describe("ABS-15 · 登记表覆盖与声明序", () => {
@@ -51,6 +52,7 @@ describe("ABS-15 · 登记表覆盖与声明序", () => {
       "genReturn",
       "genNext",
       "genElements",
+      "provenance",
     ]);
   });
 
@@ -69,6 +71,7 @@ describe("ABS-15 · facetKey 编码逐字节稳定", () => {
       facetKey({ protoOwnKeys: { strings: ["constructor"], symbols: ["Symbol.iterator"] } }),
     ).toBe('v1:k:["constructor"]:["Symbol.iterator"]');
     expect(facetKey({ brand: "Generator" })).toBe('v1:b:"Generator"');
+    expect(facetKey({ provenance: "declared" })).toBe('v1:p:"declared"');
   });
 
   it("组合槽位：顺序与分隔符（声明序，不依赖对象属性插入序）", () => {

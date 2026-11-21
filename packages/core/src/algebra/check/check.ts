@@ -1376,6 +1376,7 @@ function checkSourceInner(
         sidecarFp,
         modules: opts.modules,
         ...(opts.inject ? { inject: opts.inject } : {}),
+        ...(opts.annotationEnv ? { annotationEnv: opts.annotationEnv } : {}),
       }),
     );
     if (!g) {
@@ -1494,6 +1495,19 @@ function checkSourceInner(
       ...(isEntry ? { entry: true } : {}),
     });
 
+    // 注解解析单层：有源码注解但映射失败 ⇒ 入口域回落 any 是**已知精度
+    // 损失**，不是无约束。把名字打到诊断面，避免用户把 any 当成声明结果。
+    if (g.annotationUnresolved && g.annotationUnresolved.length > 0) {
+      issues.push({
+        severity: "warning",
+        code: DIAG.annotationUnresolved,
+        message: `${name}: unresolved type annotation (entry domain falls back to any)`,
+        actual: g.annotationUnresolved.join(", "),
+        expected: "a TypeScript type resolvable from the annotation environment",
+        suggestion:
+          "use a supported inline form, declare the type in the same file, or add its module to the analysis",
+      });
+    }
     // 真 unknown = 推导失败（design §2 / §5）：返回位或参数位都要报引擎债。
     // **预算截断不是推导失败**：已有 nudo:recursion-truncated / fork-truncated，
     // 不得再叠 nudo:unknown-inference（否则 agent 会去修不存在的引擎债）。

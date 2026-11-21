@@ -255,6 +255,12 @@ True `unknown` on a signature — inference failed. **Not** unconstrained entry 
 
 Context: [`any` vs `unknown`](../concepts/limits.md#any-vs-unknown) · [Dependency types](../guides/env-harvest.md)
 
+### `nudo:annotation-unresolved` {#nudo-annotation-unresolved}
+
+A source type annotation exists but the annotation resolver cannot map it to an Abs; the entry domain falls back to `any`. This is a known precision loss, not an unconstrained parameter. Fix: use a supported inline form, declare the type in the same file, or make the imported type module available to analysis. **Warning**.
+
+Context: [nudo check](../guides/check.md#what-it-checks)
+
 ### `nudo:unproven-return` {#nudo-unproven-return}
 
 Return postcondition could not be proved (any / unknown / opaque face, or a widened/bound-less arm facing a bounded obligation, or an out-of-bounds marker arm — an abstract index read like `d[m][n]` on a loop-built table joins a synthetic `undefined`; the loop-bound/length relation is lost, so neither proof nor disproof is possible). A bare widened `prim` arm still proves a bound-less prim contract (`number()` / `string()`) — the value domain is known even without term/pred evidence; only bounds (`gt(0)`, `int`, …) remain unprovable. **Warning** — inference failed to discharge the obligation; do not treat as success. Distinct from `nudo:constraint-violated` (definite violation).
