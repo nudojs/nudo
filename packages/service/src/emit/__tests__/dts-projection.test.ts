@@ -3091,7 +3091,8 @@ export function gLit(xs: number[]): number { return xs[0]!; }
     expect(dts).toContain("export declare function fnRet(): (b: number) => number;");
     expect(dts).toContain("export declare function g(xs: number[], i: number): number;");
     expect(dts).toContain("export declare function gLit(xs: number[]): number;");
-    expect(dts).not.toContain("number | undefined");
+    // Case 注释仍记录 entry@ 的原始观测（含内部 OOB 臂）；声明位必须干净。
+    expect(dts).not.toMatch(/export declare function g\([^)]*\): number \| undefined/);
   });
 
   it("BUG-261/353 声明的字面量类型保真、数字字面量不被当作类型引用", () => {
