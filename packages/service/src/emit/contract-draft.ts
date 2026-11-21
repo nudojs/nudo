@@ -41,6 +41,7 @@ import {
   contractDiagCount,
   isIntFlag,
   isNudoConstraint,
+  joinAbs,
   joinThenProject,
   leqAbs,
   localNamedExports,
@@ -65,6 +66,7 @@ import { analyzeFileAsync, type FunctionAnalysis } from "../analyzer.ts";
 import type { CallRecord } from "../evaluator/call-record.ts";
 import { defaultLoadModule, type LoadModule } from "../load-module.ts";
 import { allocNudoBinding, exportNameRepr } from "./export-binding.ts";
+import { coreExportNameOf } from "./contract-emitter.ts";
 import {
   collectContractFaceDiagnostics,
   type ContractFaceDiagnostic,
@@ -470,6 +472,34 @@ function typeCovers(c: NudoConstraint, domain: Abs): boolean {
   }
 }
 
+/**
+ * 泛化返回位 → 草稿返回约束（BUG-361）。
+ *
+ * 这条兜底路径**存在理由**就是运行期见证的 conf 降成 widened/partial
+ * （`x + 1` 这类实参值见证）⇒ 不能沿用 `absToConstraint` 的严格置信闸门
+ * （`PROJECTABLE_CONF` = exact/path），否则兜底必然落空、把明明可表达的
+ * `number` 写成「not projectable」。
+ *
+ * 口径（只放宽**顶层**，嵌套槽仍走严格投影）：
+ * 1. 先按原样投影（保留 exact/path 的既有结果）；
+ * 2. 落空时把 `sum` 成员 join（`number | 1` → `number`，联合形参下
+ *    `number | null` 的 `x + 1` 就是这个形态）；
+ * 3. 顶层 conf 放宽到 exact 再投影——置信是**观测路径**的信号，不是类型
+ *    本身；这里给出的是符号推断域（草稿头已标注 symbolic）。
+ */
+function projectedReturnConstraint(a: Abs): NudoConstraint | undefined {
+  const direct = absToConstraint(a) ?? absToConstraint(stripPreds(a));
+  if (direct !== undefined) return direct;
+  const joined =
+    a.shape.k === "sum"
+      ? a.shape.members.reduce((x, y) => joinAbs(x, y))
+      : a;
+  const relaxed = { ...joined, conf: "exact" as const };
+  return (
+    absToConstraint(relaxed) ?? absToConstraint(stripPreds(relaxed))
+  );
+}
+
 function projectDraftReturn(
   fn: FunctionAnalysis,
   returnCases: FunctionAnalysis["cases"],
@@ -523,11 +553,10 @@ function projectDraftReturn(
     // conf 会降成 widened/partial ⇒ joinThenProject 落空。同一轮 check 把
     // 同一函数发布成 `conf: path` 的 number/boolean；这里用泛化返回位兜底，
     // 不再把可表达的类型说成「not projectable」。
+    // BUG-361：兜底路径不得被 PROJECTABLE_CONF 挡住（见 projectedReturnConstraint）。
     const inferred = inferredReturnDomain(fn, source, loadModule, fromFile);
     const inferredC =
-      inferred === undefined
-        ? undefined
-        : (absToConstraint(inferred) ?? absToConstraint(stripPreds(inferred)));
+      inferred === undefined ? undefined : projectedReturnConstraint(inferred);
     if (inferredC !== undefined) {
       const widened = widenDraftConstraint(inferredC);
       if (widened !== undefined) {
@@ -729,7 +758,15 @@ function declaredThrowsOf(source: string, declLine: number): string[] | undefine
     const raw = lines[i] ?? "";
     if (/^\s*$/.test(raw)) continue;
     if (!/^\s*(\/\*\*|\*|\/\/)/.test(raw)) break;
-    block.push(raw.trim().replace(/^(\/\*\*|\*\/|\*|\/\/)\s?/, ""));
+    // 单行 JSDoc（`/** @nudo:throws A, B */`）的整段内容在同一行：只剥前导
+    // 标记会留下尾随 `*/` ⇒ 被 scanThrowsDecl 当成第三个错误名（BUG-267）。
+    // 与 check 面同口径（Babel 的 Comment.value 早已不含定界符）。
+    block.push(
+      raw
+        .trim()
+        .replace(/^(\/\*\*|\*\/|\*|\/\/)\s?/, "")
+        .replace(/\s*\*\/$/, ""),
+    );
   }
   if (block.length === 0) return undefined;
   const spec = scanThrowsDecl(block.reverse());
@@ -831,12 +868,17 @@ function draftDsl(entry: Pick<ContractDraftEntry, "params" | "returns" | "throws
  * body-read 参数自动填形状；已投影参数/返回沿用 draftDsl 的约束——
  * 建议行是绑定的完整替代，接受它不丢 callsite/symbolic 证据。
  * 无 body 建议（或全部参数无证据）时返回 undefined。
+ *
+ * BUG-269：throws 槽必须与正式 export 行同口径——只有**已申报**
+ * （`@nudo:throws` / 侧车）的 throws 才进契约；引擎算出的 may-throw
+ * 只进草稿头提示（BUG-198 规则），不得经建议行变成草稿义务。
  */
 function suggestedBodyDsl(
   params: ContractDraftEntry["params"],
   returns?: ContractDraftEntry["returns"],
   throws?: ContractDraftEntry["throws"],
 ): string | undefined {
+  const declaredThrows = throws?.declared === true ? throws : undefined;
   const hasBody = (p: ContractDraftEntry["params"][number]) =>
     p.bodyAccesses !== undefined && p.bodyAccesses.length > 0 && !p.projected;
   if (!params.some(hasBody)) return undefined;
@@ -856,7 +898,7 @@ function suggestedBodyDsl(
     returns?.projected && returns.constraint !== undefined
       ? toDraftBuilderDsl(formatConstraint(returns.constraint))
       : undefined;
-  return draftCall(obj, ret, throws);
+  return draftCall(obj, ret, declaredThrows);
 }
 
 /**
@@ -1060,7 +1102,16 @@ export function formatDraftModule(
       if (new RegExp(`(?<![\\w$])${b}\\s*\\(`).test(blob)) used.add(b);
     }
   }
-  const importList = BUILDERS.filter((b) => used.has(b)).join(", ");
+  // BUG-266：表面名 `lit` / `and` 在 core 的公开面是 **Term 构造器 / 项级合取**，
+  // 约束构建器的导出名是 `litC` / `andC` ⇒ 必须写 `litC as lit`，否则草稿
+  // 在用户工程里 `tsc` 报 TS2345、非 nudo 注入器装载直接抛。
+  // 别名映射取 `--emit` 面的单一真源（coreExportNameOf），不另维护一份。
+  const importList = BUILDERS.filter((b) => used.has(b))
+    .map((b) => {
+      const exportName = coreExportNameOf(b);
+      return exportName === b ? b : `${exportName} as ${b}`;
+    })
+    .join(", ");
   const importNames = new Set<string>(used);
   const exportUsed = new Set<string>();
   const hintLines = (throwsHints ?? []).map((h) => sanitizeLineCommentText(h));
@@ -1110,7 +1161,7 @@ export function formatDraftModule(
     } else if (e.returnEvidence === "symbolic") {
       lines.push(`//   returns: ${sanitizeLineCommentText(e.returns?.display ?? "")} (symbolic)`);
     }
-    const suggested = suggestedBodyDsl(e.params, e.returns);
+    const suggested = suggestedBodyDsl(e.params, e.returns, e.throws);
     if (suggested !== undefined) {
       // 内联建议行：去 `// ` 即合法侧车绑定语句（绑定名/别名与下方 export 行一致）
       lines.push("// suggested (uncomment to accept — body-read, not a contract):");
