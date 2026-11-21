@@ -22,7 +22,12 @@ import {
   callTranspiledExportFull,
   litValue,
   abs,
+  checkSource,
+  formatShape,
+  pTrue,
+  str,
 } from "@nudojs/core";
+import { l2Count, sigOf } from "./nudo-constraints.ts";
 import {
   runWithMayThrowSession,
   setMayThrowCollector,
@@ -383,5 +388,49 @@ describe("position args ToIntegerOrInfinity validation", () => {
     expect(evalSrc(`export function f() { return "a".indexOf("a", "2"); }`).value).toEqual({ ok: true, value: -1 });
     expect(evalSrc(`export function f() { return "abc".at(-1); }`).value).toEqual({ ok: true, value: "c" });
     expect(evalSrc(`export function f() { return "abc".at(true); }`).value).toEqual({ ok: true, value: "b" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// BUG-341：String.prototype.match 的抽象接收者结果域（global vs 非 global）
+// ---------------------------------------------------------------------------
+describe("BUG-341：String.match 抽象接收者的结果域", () => {
+  function check(src: string) {
+    return checkSource("/t/b341.js", src, pTrue, {});
+  }
+  const SRC = `
+export function matchFull(s: string) { const m = s.match(/a(b)/); return m ? m[0].length : 0; }
+export function matchGlobal(s: string) { const m = s.match(/a/g); return m ? m[0].length : 0; }
+export function matchCap(s: string) { const m = s.match(/a(b)/); return m ? m[1] : ""; }
+export function matchIdx(s: string) { const m = s.match(/a(b)/); return m ? m.index : -1; }
+`;
+
+  it("非 global / global 的 m[0].length 都不记假 TypeError（m[0] 恒 string）", () => {
+    const r = check(SRC);
+    expect(l2Count(r, "matchFull")).toBe(0);
+    expect(l2Count(r, "matchGlobal")).toBe(0);
+    expect(sigOf(r, "matchFull")).toMatch(/^(number \| 0|0 \| number)$/);
+    expect(sigOf(r, "matchGlobal")).toMatch(/^(number \| 0|0 \| number)$/);
+  });
+
+  it("捕获组 m[1] 仍是 string | undefined（只有整匹配被排除）", () => {
+    const r = check(SRC);
+    expect(sigOf(r, "matchCap")).toMatch(/undefined/);
+    expect(sigOf(r, "matchCap")).toMatch(/string/);
+  });
+
+  it("Abs probe：非 global 是 per-index 槽（\"0\": string），global 是 string[]", () => {
+    const sAbs = str();
+    const resultOf = (src: string) => {
+      const run = runTranspiled(src, { mode: "analyze" });
+      return (callTranspiledExportFull(run, "f", [sAbs] as never) as { result: unknown }).result;
+    };
+    const full = formatShape(resultOf(`export function f(s) { return s.match(/a(b)/); }`) as never);
+    expect(full).toContain('"0": string');
+    expect(full).not.toContain('"0": string | undefined');
+    expect(full).toContain('"1": string | undefined');
+    const global = formatShape(resultOf(`export function f(s) { return s.match(/a/g); }`) as never);
+    expect(global).toContain("string[]");
+    expect(global).not.toContain('"0"');
   });
 });

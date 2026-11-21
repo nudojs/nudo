@@ -29,6 +29,7 @@ import { isNullishLitAbs } from "../surface.ts";
 import { markFreshInstance } from "../key/instance-id.ts";
 import { recordMayThrow } from "../diagnostics/may-throw.ts";
 import { matchIterElements, replayGenDeferred, drainGenElements, genDrainViewOf, userIterLenOf } from "../exec/match-iter.ts";
+import { abstractSeqElementOf } from "./error/iterator.ts";
 import { iterabilityKind, $elems, builtinExactIterableElems } from "../exec/runtime/containers/iterate.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs } from "../exec/may-throw.ts";
@@ -258,6 +259,20 @@ function evalArrayFrom(args: Abs[]): Abs {
       let el = mapOne(mi[0]!, numLit(0));
       for (let i = 1; i < mi.length; i++) el = joinAbs(el, mapOne(mi[i]!, numLit(i)));
       return abs({ k: "arr", element: el }, undefined, undefined, "path");
+    }
+  }
+  {
+    // BUG-364：长度未知的数组迭代器（arr.keys/values/entries 的抽象臂）——
+    // 元素域由 `abstractSeqElementOf` 给出（单代表），长度未知 ⇒ arr
+    // （不是 exact 元组）。此前落 obj/array-like 兜底 ⇒ unknown[]。
+    const ase = abstractSeqElementOf(a0);
+    if (ase !== undefined) {
+      return abs(
+        { k: "arr", element: mapOne(ase, idxOrDrop()) },
+        undefined,
+        undefined,
+        "path",
+      );
     }
   }
   const k = a0.shape.k;

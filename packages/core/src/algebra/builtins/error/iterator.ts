@@ -11,9 +11,11 @@
  * - 精确迭代器挂元素侧表（registerGenElements/registerGenDrain）——
  *   spread/for-of/Array.from/.next() 链路全求值；消费位 live 视图
  *  （next() 推进收缩、drain 从当前位取剩余并排空，Bug 54）。
- * - abstractSeqIteratorAbs 长度不可知**不挂元素侧表**：next() 折
- *   {value: el ∪ undefined, done: boolean 域}（可能已耗尽），spread/
- *   for-of 走 unbounded join 保守面（不折精确长度）。
+ * - abstractSeqIteratorAbs 长度不可知**不挂静态元素侧表**（不声明长度）：
+ *   next() 折 {value: el ∪ undefined, done: boolean 域}（可能已耗尽），
+ *   spread/for-of 走 unbounded join 保守面（不折精确长度）。BUG-364 起
+ *   元素域另挂 `abstractSeqElemTables`（单代表，不参与长度判定）供
+ *   $elems / Array.from / dts 读取。
  * - 每次调用产出新迭代器对象（markFreshInstance，R2b）；条目投影供
  *   dispatch.ts 的 Map/Set 迭代 case 复用。
  * - Bug 198：collectionIteratorFor 产出**接收者 live 视图**的迭代器（条目
@@ -900,12 +902,33 @@ export function collectionIteratorFor(
 }
 
 /**
+ * BUG-364：长度未知序列迭代器的**元素域代表**侧表。
+ *
+ * 与静态元素表（registerGenElements）刻意分离：本表**不声明长度**——消费
+ * 面（`$elems`）只取元素域（单代表），迭代次数仍走 unbounded 口径（0 次
+ * 出口与出口 join 保留）。若误用静态元素表，`sideIterLen` 会读到代表元素
+ * 个数 1，把长度未知的迭代器折成「恰好一项」（少 0 次出口、丢失 sound）。
+ */
+const abstractSeqElemTables = new WeakMap<object, Abs>();
+
+/** 长度未知序列迭代器的元素域（无登记 → undefined）。 */
+export function abstractSeqElementOf(a: Abs): Abs | undefined {
+  return abstractSeqElemTables.get(a as object);
+}
+
+/**
  * Bug 63：抽象序列（长度未知 arr 接收者）的 keys/values/entries 迭代器
  * 对象。协议面与 collectionIteratorAbs 一致（next 槽 + @@iterator + 均
  * 不可枚举 → Array.isArray 折 false、Object.keys 折 []、typeof .next 折
- * "function"）；长度不可知**不挂元素侧表**——next() 折
+ * "function"）；长度不可知**不挂静态元素侧表**——next() 折
  * {value: el ∪ undefined, done: boolean 域}（可能已耗尽），spread/for-of
  * 走 unbounded join 保守面（不折精确长度）。
+ *
+ * BUG-364：元素域仍要**可读**——`xs.values()` / `keys()` / `entries()` 的
+ * 元素域（`$elems` 消费面）与 dts 的 `IterableIterator<T>` 实参都取自本
+ * 迭代器；此前只把 `el` 塞进 next 的 apply 闭包 ⇒ for-of 拿到 unknown
+ * （解构假抛）、dts 发 `IterableIterator<unknown>`。现在按「单代表元素域」
+ * 登记（abstractSeqElemTables + facets.genElements），长度语义不变。
  */
 export function abstractSeqIteratorAbs(el: Abs): Abs {
   const next = absFunction(
@@ -945,6 +968,12 @@ export function abstractSeqIteratorAbs(el: Abs): Abs {
   setSlot(slots, "@@iterator", { value: selfIteratorFn(iter) });
   setPropFlags(iter, "next", { enumerable: false });
   setPropFlags(iter, "@@iterator", { enumerable: false });
+  // BUG-364：元素域代表（消费面 `$elems` 读本表；长度仍未知，见上）。
+  abstractSeqElemTables.set(iter as object, el);
+  // dts 的 `IterableIterator<T>` 元素域真值源（facets.genElements）。
+  // 与生成器对象同口径：数组投影面浅拷贝、元素按引用共享；不登记静态
+  // 元素表 ⇒ 长度探针不会命中（unbounded 语义保持）。
+  iter.facets = { ...(iter.facets ?? {}), genElements: [el] };
   // R2b：同 collectionIteratorAbs——每次调用新迭代器对象
   return markFreshInstance(iter);
 }

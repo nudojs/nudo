@@ -764,10 +764,12 @@ function totalScore(dims) {
 });
 
 describe("issue #102：OOB marker 臂不 disproved（DP 表返回契约）", () => {
-  // 抽象下标读（d[m]）并入的 oobUndef marker（conf=partial 的合成
-  // undefined）此前作为 nullish 臂走 disproved → 契约 ERROR（gate 红）。
-  // marker 是引擎精度产物（长度事实丢失），非用户域 undefined——降
-  // unprovable（warning），真实臂证据充分时仍照常 disproved。
+  // 长度已知的 tuple 接收者，抽象下标读（d[m]）并入的 oobUndef marker
+  //（conf=partial 的合成 undefined）此前作为 nullish 臂走 disproved →
+  // 契约 ERROR（gate 红）。marker 是引擎精度产物（长度事实丢失），非用户
+  // 域 undefined——降 unprovable（warning），真实臂证据充分时仍照常
+  // disproved。BUG-362：arr 接收者的抽象下标读已按元素域投影（不再产
+  // marker），因此 DP 用例直接 proved；marker 语义由 tuple 臂覆盖。
   const LEV = `
 export function lev(a, b) {
   if (a === b) return 0;
@@ -794,18 +796,38 @@ export function lev(a, b) {
   return d[m][n];
 }`;
 
-  it("OSA levenshtein：number() 返回契约不报 error（marker → warning）；单 marker 臂（空表抽象下标读）同口径：warning 不 error；nullable 契约下多臂 marker discharged（与单臂 proved 对称）；nullable 契约下单 marker 臂 proved；真实 nullish 返回不受 marker 豁免影响（仍 error）", () => {
+  it("OSA levenshtein：number() 返回契约不报 error（BUG-362 后 arr 下标读已无 marker ⇒ 直接 proved）；tuple 臂的 OOB marker 仍降级 warning 不 error；单 marker 臂（空表抽象下标读）同口径：warning 不 error；nullable 契约下多臂 marker discharged（与单臂 proved 对称）；nullable 契约下单 marker 臂 proved；真实 nullish 返回不受 marker 豁免影响（仍 error）", () => {
   {
     const r = issuesOf(
       `/**\n * @nudo:contract a nonEmpty\n * @nudo:contract b nonEmpty\n * @nudo:contract return num\n */\n${LEV}`, "/t/ret.js");
+    expect(r.ok).toBe(true);
+    expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
+    // BUG-362：arr 接收者的抽象下标读按元素域投影（TS 默认
+    // noUncheckedIndexedAccess off），不再合成 undefined 臂 ⇒ 返回域是
+    // number，`num` 契约 proved（无 return 台账）。
+    const ret = r.issues.filter((i) => i.message.includes("@nudo:contract return"));
+    expect(ret).toEqual([]);
+    expect(r.signatures.find((s) => s.name === "lev")?.display).not.toMatch(/undefined/);
+  }
+  {
+    // marker 仍存在于**长度已知的 tuple** 臂：d[i] 越界位是合成 undefined
+    // ⇒ 返回契约只能 unprovable（warning），不得误判 ERROR（gate 红）。
+    const r = issuesOf(`
+/**
+ * @nudo:contract return num
+ */
+function missTuple(i) {
+  const d = [[1, 2], [3, 4]];
+  return d[i][0];
+}
+`, "/t/ret.js");
     expect(r.ok).toBe(true);
     expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
     const ret = r.issues.filter((i) => i.message.includes("@nudo:contract return"));
     expect(ret).toHaveLength(1);
     expect(ret[0]!.severity).toBe("warning");
     expect(ret[0]!.code).toBe("nudo:unproven-return");
-    // 签名仍诚实显示 OOB 臂（marker 只降级证明通道，不改值域显示）
-    expect(r.signatures.find((s) => s.name === "lev")?.display).toMatch(/undefined/);
+    expect(r.signatures.find((s) => s.name === "missTuple")?.display).toMatch(/undefined/);
   }
   {
     const r = issuesOf(`
@@ -825,8 +847,8 @@ function miss(i) {
     const r = issuesOf(
       `/**\n * @nudo:contract a nonEmpty\n * @nudo:contract b nonEmpty\n * @nudo:contract return nullableNum\n */\n${LEV}`, "/t/ret.js");
     expect(r.ok).toBe(true);
-    // 0 | number | marker：真实臂证毕，marker 的 undefined 可能性被
-    // nullable 域覆盖 → 整体 proved，不再残留 unproven-return warning
+    // 0 | number：真实臂证毕，nullable 域覆盖 → 整体 proved，不残留
+    // unproven-return warning
     expect(r.issues.filter((i) => i.message.includes("@nudo:contract return"))).toEqual([]);
   }
   {

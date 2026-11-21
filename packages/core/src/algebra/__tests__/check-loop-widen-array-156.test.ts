@@ -7,8 +7,10 @@
  * 机制（loop-widen.ts + control.ts widenLoopJoin + postcondition.ts）：
  * - diffGrowth tuple 长度失配 → {el}（长度维增长，arr 形状抹除），宽化走
  * arrify：元素域 = 全部观测元素域 join（空 tuple 成员贡献空）；
- * - OOB undefined 是**读位**事实（$idx 抽象下标读已并入元素 ∪ undefined，
- * 与 splice/sort 降 arr 同口径），不烘焙进元素域；
+ * - BUG-362（口径更新）：arr 接收者的 $idx 抽象下标读按元素域投影，不再
+ *   并入 oobUndef（TS 默认 noUncheckedIndexedAccess off ⇒ `xs[i]: T`）——
+ *   #156 的「元素域不得烘焙 undefined」由此成为**读位与元素域一致**；越界
+ *   可能性只由长度已知的 tuple 臂承担。
  * - 打包容器槽位 join（joinValues）不结构合并 obj 值 → sum-of-objs 里的
  * 顺序状态先 joinObjects 归一（normalizeForWiden），零元素成员不再独自
  * 放大成 arr(unknown)；
@@ -116,13 +118,14 @@ describe("issue #156：for…of + push 的元素域宽化（eval 面）", () => 
     ).toBe("number[]");
   });
 
-  it("抽象下标读回仍并入 OOB undefined（读位事实保留）", () => {
+  it("抽象下标读回不再并入 OOB undefined（BUG-362：arr 接收者按元素域投影）", () => {
     const s = evalOf(
       `export function f(xs) { const out = []; for (const x of xs) out.push(x); return out[xs.length]; }`,
     );
-    // out[xs.length]：抽象下标 → string | undefined（marker 不因元素域去 undefined 而丢）
-    expect(s).toContain("string");
-    expect(s).toContain("undefined");
+    // out[xs.length]：arr 接收者的抽象下标 → 元素域 string（TS 默认
+    // noUncheckedIndexedAccess off ⇒ `T`；BUG-362 移除了 arr 臂的合成
+    // undefined——越界可能性只属于长度已知的 tuple 臂）。
+    expect(s).toBe("string");
   });
 
   it("interrupted（break 打断代表体）：诚实 unknown[] 顶（未观测 push 仍可能）", () => {
