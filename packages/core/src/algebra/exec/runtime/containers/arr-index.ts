@@ -197,12 +197,15 @@ export function $idx(
     // 抽象值（$get 的 arr 臂返回 unknown）。
     // 闭 tuple 无 expando（写面已就地降 arr）⇒ 仍折 exact undefined。
     if (iv !== undefined && idx === undefined) return unknown;
-    // BUG-362：抽象下标读的元素域 = 数组声明元素域（TS 默认
-    // `noUncheckedIndexedAccess` off：`xs[i]` 的类型就是 `T`）。
-    // arr 形不建模数值空洞（holes 只在 tuple 上），越界可能性属于
-    // tuple（长度已知）臂的事实；此前在此并入 oobUndef 合成 undefined
-    // ⇒ dts 发布 `T | undefined`（tsc `T`）+ 消费方 TS2322 假红。
-    // 已知规范下标与抽象下标同口径（元素域投影）。
+    // 抽象下标可能 miss → 元素 ∪ oobUndef marker（越界是引擎精度产物，
+    // 内部保持 sound；BUG-362 的 `T | undefined` 发布于 dts/校验器投影面，
+    // 由 emit 侧剥掉该合成臂，不在这里删内部证据——删了会破坏
+    // `@nudo:invariant` 的循环宽化通道）。
+    if (idx === undefined) {
+      return joinAbs(a.shape.element, oobUndef());
+    }
+    // #175：具体下标读的元素投影是域分发（xs[0]/xs[1] 同一 element
+    // Abs、不同具体值）——标记后 abstractLen 不 memo 共享 len#N。
     return markDomainShared(a.shape.element);
   }
   // TypedArray brand：元素域 = 元素 prim ∪ undefined（长度未建模，下标可能

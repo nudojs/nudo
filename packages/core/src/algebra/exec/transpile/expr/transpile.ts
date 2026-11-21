@@ -104,8 +104,10 @@ function transpileAssertionOps(expr: Expression, ops: readonly NudoAssertionOp[]
     const mapped = absTypeForTsTypeText(resolveNamedTypeText(op.text, namedTypes));
     const literal = entryAbsLiteralSourceOf(mapped);
     if (literal === undefined) continue;
-    // 内层仍求值（副作用 / throws 域保留），结果取断言域。
-    src = `((${src}), ${literal})`;
+    // 内层仍求值（副作用 / throws 域保留）：声明域取 `$declDomain` 的
+    // shape，值证据（term / pred）保留内层——`1 as number` 仍是值 1，
+    // `v as string` 仍是 v 的值（不是把值替换成声明域对象）。
+    src = `$declDomain(${literal}, ${src})`;
   }
   return src;
 }

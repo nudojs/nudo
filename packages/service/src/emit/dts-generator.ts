@@ -3848,6 +3848,12 @@ export interface DtsValueSurface {
   /** Bug 77：`as const` ⇒ 对象槽按只读投影 */
   asConst?: boolean;
   /**
+   * BUG-260：顶层 `const <ident> = <primitive literal>`。tsc 对这种绑定保留
+   * 字面量类型；解构 / 对象初始化器仍按拓宽口径（`const {a} = {a:1}` ⇒
+   * `a: number`），不能用同一把闸门。
+   */
+  literalConst?: boolean;
+  /**
    * BUG-130：源码的类型注解原文（`export const c1: number[] = []` 的
    * `number[]`）。
    *
@@ -6277,6 +6283,16 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
           idNode?.type === "Identifier" &&
           annotation === undefined &&
           isUniqueSymbolInit(init);
+        // BUG-260：只有 `const <ident> = <primitive literal>` 保留字面量；
+        // 解构 / 复合初始化器仍走拓宽（与 tsc 的 const 推断一致）。
+        const literalConst =
+          kind === "const" &&
+          idNode?.type === "Identifier" &&
+          annotation === undefined &&
+          (init?.type === "StringLiteral" ||
+            init?.type === "NumericLiteral" ||
+            init?.type === "BooleanLiteral" ||
+            init?.type === "BigIntLiteral");
         // BUG-358：该绑定是值（不是函数 / 类值）——同名 phantom 函数入口不得
         // 抢占它的导出声明。
         const nonFunctionValue =
@@ -6297,6 +6313,7 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
             ...(nestedConstType !== undefined ? { nestedConstType } : {}),
             ...(fnMemberAnnotations.length > 0 ? { fnMemberAnnotations } : {}),
             ...(initTypeText !== undefined ? { initTypeText } : {}),
+            ...(literalConst ? { literalConst: true } : {}),
             ...(uniqueSymbol ? { uniqueSymbol: true } : {}),
             ...(userSymbolKeys.length > 0 ? { userSymbolKeys } : {}),
             ...(nonFunctionValue ? { nonFunctionValue: true } : {}),
@@ -8021,7 +8038,7 @@ function dtsValueDeclarations(
         if (!abs) return value.typeText ?? "unknown";
         const annotated = withMemberAnnotations(abs);
         if (value.asConst) return absToTSType(annotated);
-        if (value.kind === "const" && annotated.shape.k === "prim" && annotated.term?.op === "lit") {
+        if (value.literalConst === true && annotated.shape.k === "prim" && annotated.term?.op === "lit") {
           return absToTSType(annotated);
         }
         return absToTSType(widenModuleValueAbs(annotated));
