@@ -430,8 +430,14 @@ export function unifiedReturnFace(
   const observed = observedReturnFace(fn, caseResults);
   // BUG-213：纯观测返回面（call@/entry@ 采样）不是函数域 ⇒ 发布前拓宽到
   // 基类型。带断言的 @nudo:case 是域声明，保持精确。
+  //
+  // BUG-261：**声明注解**里的字面量类型也是声明面事实（`function f(): "abc"`），
+  // 不是一次观测采样 ⇒ 不得随观测路径拓宽（否则 zod / standard 把返回域发布成
+  // `string`，消费方 `const x: "abc" = f()` 反而被放行成任意字符串）。
   const observedDomain =
-    observed !== undefined && observationOnlyCases(caseResults)
+    observed !== undefined &&
+    observationOnlyCases(caseResults) &&
+    !declaredLiteralReturn(fn)
       ? widenObservedLiterals(observed)
       : observed;
   const contractReturn = contractReturnFace(eff);
@@ -449,6 +455,26 @@ export function unifiedReturnFace(
     if (seeded !== undefined) return seeded;
   }
   return observedDomain;
+}
+
+/**
+ * BUG-261：声明返回注解里是否含**字面量类型**成员。
+ *
+ * 只认字符串 / 数字 / bigint / 布尔字面量（与 `ts-type-shape` 的
+ * `literalAbsOf` 同集合）；`"abc" | string` 也算声明面含字面量。
+ */
+function declaredLiteralReturn(fn: FunctionAnalysis): boolean {
+  const text = fn.declaredReturnType?.trim();
+  if (!text) return false;
+  return text.split("|").some((raw) => {
+    const m = raw.trim();
+    return (
+      /^(["'`])[\s\S]*\1$/.test(m) ||
+      /^-?(?:\d[\d_]*(?:\.\d+)?)(?:n)?$/.test(m) ||
+      m === "true" ||
+      m === "false"
+    );
+  });
 }
 
 /**

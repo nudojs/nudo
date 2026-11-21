@@ -289,6 +289,41 @@ function withSymbolReturnOverrides<T>(overrides: ReadonlyMap<string, string> | u
 }
 
 /**
+ * BUG-263：用户符号成员键的源码名队列（按对象字面量属性顺序消费）。
+ * well-known symbol 不消费本队列（它们有稳定映射）。
+ */
+let currentUserSymbolKeys: string[] | undefined;
+function withUserSymbolKeys<T>(keys: readonly string[] | undefined, fn: () => T): T {
+  if (keys === undefined || keys.length === 0) return fn();
+  const prev = currentUserSymbolKeys;
+  currentUserSymbolKeys = [...keys];
+  try {
+    return fn();
+  } finally {
+    currentUserSymbolKeys = prev;
+  }
+}
+
+/**
+ * BUG-271：对象字面量方法 / 箭头值的**返回注解原文**（`Promise<number>` 等）。
+ *
+ * Abs 的 fn shape 只能承载 Shape 可映射的返回类型；`Promise<number>` / 具名
+ * 别名 / `string | null` 被 Shape 闸门丢成 `unknown`。源码注解在采集期已有，
+ * 渲染时按成员键覆盖返回位文本。
+ */
+let currentObjectFnReturnOverrides: ReadonlyMap<string, string> | undefined;
+function withObjectFnReturnOverrides<T>(overrides: ReadonlyMap<string, string> | undefined, fn: () => T): T {
+  if (overrides === undefined || overrides.size === 0) return fn();
+  const prev = currentObjectFnReturnOverrides;
+  currentObjectFnReturnOverrides = overrides;
+  try {
+    return fn();
+  } finally {
+    currentObjectFnReturnOverrides = prev;
+  }
+}
+
+/**
  * 模块面可解析的类名（本地声明的类 + 已 import 的类）——brand 类名只在这里
  * 列出的名字下才允许进产物。
  */
@@ -446,6 +481,8 @@ function requiredTypeArgFillers(
  * （族 15 S11 的 zod 白名单同源）——它们在 TS 里是环境内建类型名，无需声明。
  */
 function brandTSType(name: string): string {
+  const alias = BRAND_TYPE_ALIASES.get(name);
+  if (alias !== undefined) return alias;
   const builtin = BUILTIN_GENERIC_BRANDS.get(name);
   if (builtin !== undefined) return builtin;
   if (!isJsBindingIdent(name) && !/^[A-Z][A-Za-z0-9_$]*$/.test(name)) return "unknown";
@@ -588,7 +625,13 @@ function symbolMemberLine(
   typeVars: Map<string, string> | undefined,
   budget: ProjectionBudget,
 ): string | undefined {
-  const sym = WELL_KNOWN_SYMBOLS.get(k);
+  // BUG-263：用户 `Symbol()` 键的 Abs 槽是引擎内部 id（`@@sym#N`）；按属性
+  // 出现序从源码名队列取绑定名（`{ [tag]: 1 }` ⇒ `[tag]`）。
+  const userKey =
+    WELL_KNOWN_SYMBOLS.has(k) || !k.startsWith("@@sym#")
+      ? undefined
+      : currentUserSymbolKeys?.shift();
+  const sym = WELL_KNOWN_SYMBOLS.get(k) ?? userKey;
   if (sym === undefined) return undefined;
   const v = slot.value;
   if (v.shape.k === "fn") {
@@ -600,6 +643,17 @@ function symbolMemberLine(
     return `[${sym}](): ${ret}`;
   }
   return `[${sym}]: ${absToTSTypeB(v, typeVars, budget)}`;
+}
+
+/**
+ * BUG-271：把对象字面量方法的返回位换成源码注解原文（只替换 `=>` 之后的
+ * 返回类型；形参面保持 Abs 投影）。
+ */
+function applyObjectFnReturnOverride(key: string, ts: string): string {
+  const override = currentObjectFnReturnOverrides?.get(key);
+  if (override === undefined) return ts;
+  const at = ts.lastIndexOf("=> ");
+  return at >= 0 ? `${ts.slice(0, at + 3)}${override}` : ts;
 }
 
 function absToTSTypeInner(a: Abs, typeVars: Map<string, string> | undefined, budget: ProjectionBudget): string {
@@ -718,11 +772,20 @@ function absToTSTypeInner(a: Abs, typeVars: Map<string, string> | undefined, bud
           }
           if (isHiddenInternalSlot(k, slot)) continue;
           const slotAbs = slotAbsOf(a, k, slot.value);
-          const inner = absToTSTypeB(slotAbs, typeVars, budget);
+          const base = absToTSTypeB(slotAbs, typeVars, budget);
+          const inner =
+            slotAbs.shape.k === "fn" ? applyObjectFnReturnOverride(k, base) : base;
           const ro = currentReadonlySlots || slot.readonly === true ? "readonly " : "";
           sideEntries.push(
             slot.optional
-              ? `${ro}${formatPropKey(k)}?: ${wrapComplexAbs(slotAbs, typeVars, budget)}`
+              ? `${ro}${formatPropKey(k)}?: ${
+                  slotAbs.shape.k === "fn"
+                    ? applyObjectFnReturnOverride(
+                        k,
+                        wrapComplexAbs(slotAbs, typeVars, budget),
+                      )
+                    : wrapComplexAbs(slotAbs, typeVars, budget)
+                }`
               : `${ro}${formatPropKey(k)}: ${inner}`,
           );
         }
@@ -755,13 +818,19 @@ function absToTSTypeInner(a: Abs, typeVars: Map<string, string> | undefined, bud
         // `{ k: "n"; v: number } | { k: "s"; v: string }` 的判别联合退化成
         // 交叉积，消费方接受 check 判红的值。契约字面量集优先。
         const litTs = contractLiteralTSType(slotAbs);
-        const inner = litTs ?? absToTSTypeB(slotAbs, typeVars, budget);
+        const base = litTs ?? absToTSTypeB(slotAbs, typeVars, budget);
+        const inner =
+          slotAbs.shape.k === "fn" ? applyObjectFnReturnOverride(k, base) : base;
         // Bug 77：`as const` 值声明通道 ⇒ 对象槽按只读投影（`readonly k: …`）。
         // BUG-233：`slot.readonly` 是**分析面**带下来的事实（getter-only ⇒
         // 只读），与 `as const` 通道相互独立——两者任一成立都要发 readonly。
         const ro = currentReadonlySlots || slot.readonly === true ? "readonly " : "";
         if (slot.optional) {
-          const t = litTs ?? wrapComplexAbs(slotAbs, typeVars, budget);
+          const baseOpt = litTs ?? wrapComplexAbs(slotAbs, typeVars, budget);
+          const t =
+            slotAbs.shape.k === "fn"
+              ? applyObjectFnReturnOverride(k, baseOpt)
+              : baseOpt;
           entries.push(`${ro}${formatPropKey(k)}?: ${t}`);
           continue;
         }
@@ -1026,7 +1095,17 @@ function widenParamAbsInner(a: Abs, budget: ProjectionBudget): Abs {
  */
 function widenReturnAbs(a: Abs, deep: boolean): Abs {
   if (a.shape.k === "never") return unknown;
-  return deep ? widenParamAbs(a) : widenTopLevelAbs(a);
+  const widened = deep ? widenParamAbs(a) : widenTopLevelAbs(a);
+  // BUG-252：返回位的**空数组字面量**观测 `[]` 不能发布成 0 长元组（消费方
+  // `.push("x")` 报 TS2345 `never`）——与模块值通道同口径退化成 `unknown[]`。
+  if (
+    widened.shape.k === "tuple" &&
+    widened.shape.elements.length === 0 &&
+    widened.shape.rest === undefined
+  ) {
+    return { ...widened, shape: { k: "arr", element: anyAbs }, term: undefined, pred: undefined };
+  }
+  return widened;
 }
 
 /** 返回位（协变）：仅顶层（含 sum 成员）标量字面量 → 基类型，嵌套精度保留 */
@@ -1193,6 +1272,65 @@ function isNoInfoObservedType(ts: string): boolean {
   if (isNoInfoType(ts)) return true;
   const members = splitTopLevel(ts, "|").map((m) => m.trim());
   return members.length > 1 && members.some((m) => isNoInfoType(m));
+}
+
+/** 观测串是内建泛型的**占位**形态（`Map<unknown, unknown>` 等，BUG-254）。 */
+const PLACEHOLDER_BUILTIN_TYPES: ReadonlySet<string> = new Set(
+  BUILTIN_GENERIC_BRANDS.values(),
+);
+function isPlaceholderBuiltinType(ts: string): boolean {
+  const t = ts.trim();
+  if (PLACEHOLDER_BUILTIN_TYPES.has(t)) return true;
+  return /^(?:Readonly|Weak)?(?:Map|Set|Array|Promise|Generator|Iterator|Iterable)[A-Za-z]*<(?:unknown|object)(?:,\s*(?:unknown|object))?>$/.test(
+    t,
+  );
+}
+
+/** 顶层成员里是否出现 `readonly` 前缀（`readonly T[]` / `readonly [A, B]`）。 */
+function hasReadonlyTypePrefix(text: string): boolean {
+  return splitTopLevel(text, "|").some((m) => /^readonly\s+/.test(m.trim()));
+}
+
+/** 声明类型文本是否函数类型（`() => number` / `(b: number) => string`）。 */
+function isFunctionTypeText(text: string): boolean {
+  return tsAnnotationShape(text)?.k === "fn";
+}
+
+/**
+ * BUG-245：注解引用了 **lib 全局纯类型名**（Abs 无法表达）。这些名字是声明
+ * 面事实，观测（`null | [string] & {…}` / `Promise<{…}>`）只能给结构近似
+ * ⇒ 返回位必须保留声明注解。
+ */
+const LIB_GLOBAL_TYPE_NAMES: ReadonlySet<string> = new Set([
+  "IArguments",
+  "CallableFunction",
+  "NewableFunction",
+  "RegExpMatchArray",
+  "RegExpExecArray",
+  "PromiseSettledResult",
+  "PromiseFulfilledResult",
+  "PromiseRejectedResult",
+  "Disposable",
+  "AsyncDisposable",
+  "DisposableStack",
+  "AsyncDisposableStack",
+  "SuppressedError",
+]);
+function hasLibGlobalTypeText(text: string): boolean {
+  return annotationTypeRefs(text).some((n) => LIB_GLOBAL_TYPE_NAMES.has(n));
+}
+
+/** 联合成员里是否有**字面量类型**（`"a"` / `42` / `true` / `10n`）。 */
+function hasLiteralTypeText(text: string): boolean {
+  return splitTopLevel(text, "|").some((raw) => {
+    const m = raw.trim();
+    return (
+      /^["'`]/.test(m) ||
+      /^-?(?:\d+(?:\.\d+)?|\d[\d_]*)(?:n)?$/.test(m) ||
+      m === "true" ||
+      m === "false"
+    );
+  });
 }
 
 /** JS 字面量值 → TS 类型字面量（`42` / `"s"` / `true` / `null` / `undefined`） */
@@ -1398,6 +1536,26 @@ const TS_TYPE_TOKENS: ReadonlySet<string> = new Set([
   "GeneratorFunction", "AsyncGeneratorFunction", "Map", "ReadonlyMap", "WeakMap",
   "Set", "ReadonlySet", "WeakSet", "WeakRef", "FinalizationRegistry",
   "JSON", "Math", "Reflect", "Intl", "Proxy",
+  // BUG-245：lib.*.d.ts 里的**纯类型**全局名（无运行时构造器）——它们和
+  // `Date` / `RegExp` 一样是环境内建，产物无需声明。旧白名单只覆盖关键字、
+  // 工具类型与运行时构造器 ⇒ `RegExpMatchArray` / `IArguments` /
+  // `CallableFunction` / `PromiseSettledResult` 被判「未在本模块声明」而丢弃。
+  "IArguments", "CallableFunction", "NewableFunction", "RegExpMatchArray",
+  "RegExpExecArray", "PromiseSettledResult", "PromiseFulfilledResult",
+  "PromiseRejectedResult", "Disposable", "AsyncDisposable", "DisposableStack",
+  "AsyncDisposableStack", "SuppressedError", "WeakKey", "ArrayBufferView",
+  "NodeJS",
+]);
+
+/**
+ * 引擎 brand 名 → TS 类型名的别名（BUG-245）。
+ *
+ * `arguments` 的运行时 brand 是 `Arguments`，TS 里对应的是 `IArguments`；
+ * 直接把 `Arguments` 写进 `.d.ts` 是 TS2304，而按 unknown 降级又会丢掉
+ * 观察到的实参表。别名只作用于 brand 渲染与未解析台账。
+ */
+const BRAND_TYPE_ALIASES: ReadonlyMap<string, string> = new Map([
+  ["Arguments", "IArguments"],
 ]);
 
 /**
@@ -1535,7 +1693,14 @@ function templateExprEnd(text: string, start: number): number {
  * 其余标识符一律视为类型引用，由调用方核对「产物里可解析」。
  */
 function annotationTypeRefs(text: string): string[] {
-  const masked = maskStringLiteralText(text);
+  // BUG-353：字面量类型（`0xff` / `0b101` / `0o7` / `10n` / `1_000`）不是类型
+  // 引用——数字后缀里的字母（`xff`）会被标识符正则误抓。数字段按等长空格
+  // 遮蔽（与字符串遮蔽同机制），保持下标不变。
+  const numericMasked = maskStringLiteralText(text).replace(
+    /(?<![\w$.])(?:0[xX][0-9a-fA-F_]+|0[bB][01_]+|0[oO][0-7_]+|\d[\d_]*(?:\.\d+)?(?:[eE][+-]?\d+)?n?)(?![\w$])/g,
+    (m) => " ".repeat(m.length),
+  );
+  const masked = numericMasked;
   const out: string[] = [];
   for (const m of masked.matchAll(/[A-Za-z_$][A-Za-z0-9_$]*/g)) {
     const name = m[0];
@@ -1550,6 +1715,33 @@ function annotationTypeRefs(text: string): string[] {
     out.push(name);
   }
   return out;
+}
+
+/**
+ * 注解里的**值命名空间**引用（`typeof defaults` / `keyof typeof defaults` /
+ * `typeof handler` 里的 `defaults` / `handler`）。它们不是类型名，不能用
+ * `typeNames` 判定（BUG-262）。
+ */
+function typeofValueRefs(text: string): ReadonlySet<string> {
+  const out = new Set<string>();
+  const masked = maskStringLiteralText(text);
+  for (const m of masked.matchAll(/\btypeof\s+([A-Za-z_$][\w$]*)/g)) {
+    out.add(m[1]!);
+  }
+  return out;
+}
+
+/**
+ * 注解引用是否可解析：类型命名空间（本地类 / interface·type / import /
+ * 内建）或——仅当该引用前面有 `typeof`——本模块的值命名空间（BUG-262）。
+ */
+function isTypeRefResolvable(
+  name: string,
+  valuePosition: boolean,
+  surface: DtsModuleSurface | undefined,
+): boolean {
+  if (isTypeNameResolvable(name, surface)) return true;
+  return valuePosition && surface?.valueNames?.has(name) === true;
 }
 
 /**
@@ -1591,13 +1783,15 @@ function tsParamAnnotation(
   // 不可解析 ⇒ 不放行，回落 `paramTypeFromAbs` 的观测口径（与 check 面一致）
   // 并留台账；可解析 ⇒ 记下引用名，模块面据此补 `declare class` / `import type`。
   const declaredTypeParams = ctxTypeParamNames(ctx);
+  const valueRefs = typeofValueRefs(text);
   for (const name of annotationTypeRefs(text)) {
     if (TS_TYPE_TOKENS.has(name)) continue;
     const surface = ctx?.surface;
     // BUG-132：本声明自己的类型形参（`<T>` / 类的 `<T>`）同样可解析。
     if (declaredTypeParams.has(name)) continue;
-    // 可解析 = 环境内建 / 本地类 / 本地 interface·type / 会补 import type 的导入名。
-    if (!isTypeNameResolvable(name, surface)) {
+    // 可解析 = 环境内建 / 本地类 / 本地 interface·type / 会补 import type 的导入名
+    // / `typeof X` 的值命名空间（BUG-262）。
+    if (!isTypeRefResolvable(name, valueRefs.has(name), surface)) {
       ctx?.dropped?.push(`${fn.name}.${getParamName(fn, index)}: ${name}`);
       return undefined;
     }
@@ -1609,9 +1803,22 @@ function tsParamAnnotation(
   return text;
 }
 
-/** 数组类型文本（`T[]` / `Array<T>` / `ReadonlyArray<T>`） */
+/**
+ * rest 位可用的类型文本（`T[]` / `Array<T>` / `ReadonlyArray<T>` / 元组）。
+ *
+ * TS 4.0 起 rest 形参允许**元组**（`...x: [string, boolean]`：实参元数 = 元组
+ * 长度）⇒ 闸门必须放行 `[A, B]` / `readonly [A, B]`，否则注解被丢、回落
+ * 符号哨兵的 `unknown[]`（BUG-242）。
+ */
 function isArrayTypeText(t: string): boolean {
-  return /\[\]$/.test(t) || /^Array<.*>$/.test(t) || /^ReadonlyArray<.*>$/.test(t);
+  const text = t.trim();
+  return (
+    /\[\]$/.test(text) ||
+    /^Array<.*>$/.test(text) ||
+    /^ReadonlyArray<.*>$/.test(text) ||
+    /^readonly\s+\[[\s\S]*\]$/.test(text) ||
+    /^\[[\s\S]*\]$/.test(text)
+  );
 }
 
 /**
@@ -1893,6 +2100,41 @@ function patternNameFromPaths(paths: readonly string[]): string | undefined {
       .join(", ");
   const body = render(root);
   return body.length > 0 ? `{ ${body} }` : undefined;
+}
+
+/**
+ * BUG-249：解构形参的 **JS 绑定模式**文本。
+ *
+ * `FormalParam.bound` 是**契约寻址名集合**（rename `{ a: x }` 同时收属性键 `a`
+ * 与绑定名 `x`），不是语法上的绑定名。直接 join 会产出 `{ a, x, b }`——产物
+ * 自身 TS2339。这里按 `propKey`（契约名 → 源属性键）还原源码形态：
+ * 源键只在别处有 rename 时跳过自身，绑定名以 `源键: 绑定名` 形态出现。
+ */
+function bindingPatternText(
+  decl: Pick<DeclaredParam, "patternKind" | "bound" | "propKey">,
+): string {
+  if (decl.patternKind === "array") return `[ ${decl.bound.join(", ")} ]`;
+  const renamedSources = new Set<string>();
+  for (const b of decl.bound) {
+    const src = decl.propKey[b] ?? b;
+    if (src !== b) renamedSources.add(src);
+  }
+  const parts: string[] = [];
+  const emitted = new Set<string>();
+  for (const b of decl.bound) {
+    const src = decl.propKey[b] ?? b;
+    if (src === b) {
+      if (renamedSources.has(b)) continue; // 该源键由对应的 `src: binding` 渲染
+      if (emitted.has(b)) continue;
+      emitted.add(b);
+      parts.push(b);
+      continue;
+    }
+    if (emitted.has(src)) continue;
+    emitted.add(src);
+    parts.push(`${src}: ${b}`);
+  }
+  return `{ ${parts.join(", ")} }`;
 }
 
 /** 契约位查找结果 */
@@ -2183,10 +2425,7 @@ function computeMainSignature(
     } else if (boundCovered) {
       // Bug 394：数组解构渲染成**数组形态** `[ a, b ]`（与源码一致）——
       // 此前一律 `{ a, b }` ⇒ 声明面看得出是对象，与真实形参形态相反。
-      name =
-        decl?.patternKind === "array"
-          ? `[ ${decl.bound.join(", ")} ]`
-          : `{ ${decl.bound.join(", ")} }`;
+      name = decl !== undefined ? bindingPatternText(decl) : rawName;
     } else {
       name = rawName;
       const bare = isRest ? name.slice(3) : name;
@@ -2824,7 +3063,7 @@ function contractOnlySignature(
     const pathPattern =
       !boundCovered && hit.abs !== undefined ? patternNameFromPaths(hit.keys) : undefined;
     let name =
-      pathPattern ?? (boundCovered ? `{ ${decl.bound.join(", ")} }` : sanitizeParamName(raw, i));
+      pathPattern ?? (boundCovered ? bindingPatternText(decl) : sanitizeParamName(raw, i));
     if (usedNames.has(name)) {
       let n = 2;
       while (usedNames.has(`${name}${n}`)) n++;
@@ -2974,9 +3213,10 @@ function thisReceiverClause(fn: FunctionAnalysis, ctx?: DtsProjectionCtx): strin
   if (!raw) return "";
   const surface = ctx?.surface;
   const declaredTypeParams = ctxTypeParamNames(ctx);
+  const valueRefs = typeofValueRefs(raw);
   for (const name of annotationTypeRefs(raw)) {
     if (TS_TYPE_TOKENS.has(name) || declaredTypeParams.has(name)) continue;
-    if (!isTypeNameResolvable(name, surface)) {
+    if (!isTypeRefResolvable(name, valueRefs.has(name), surface)) {
       ctx?.dropped?.push(`${fn.name}: ${name} (this receiver)`);
       return "";
     }
@@ -2997,10 +3237,11 @@ function tsReturnPredicate(fn: FunctionAnalysis, ctx?: DtsProjectionCtx): string
   if (!isPart) return trimmed;
   const typePart = isPart[1]!;
   const declaredTypeParams = ctxTypeParamNames(ctx);
+  const valueRefs = typeofValueRefs(typePart);
   for (const name of annotationTypeRefs(typePart)) {
     if (TS_TYPE_TOKENS.has(name) || declaredTypeParams.has(name)) continue;
     const surface = ctx?.surface;
-    if (!isTypeNameResolvable(name, surface)) {
+    if (!isTypeRefResolvable(name, valueRefs.has(name), surface)) {
       ctx?.dropped?.push(`${fn.name}: ${name} (return predicate)`);
       return undefined;
     }
@@ -3041,18 +3282,33 @@ function tsDeclaredReturn(
   // 引用**本声明类型形参**的注解永远优先（BUG-132）：Abs 没有「类型变量」
   // 这个维度，观测只能给 unknown ⇒ 不采用就等于丢掉参数与返回的定义关系。
   const usesTypeParam = annotationTypeRefs(raw).some((n) => declared.has(n));
+  // 声明注解在下列情形**必须**保留（否则产物与 tsc 相反）：
+  // - BUG-254：观测是内建泛型占位（`Map<unknown, unknown>`）而声明给了实参；
+  // - BUG-257：声明是 `readonly T[]` / `readonly [A, B]`，观测没有只读维度；
+  // - BUG-274：声明是函数类型，观测只有 `(a0: unknown) => unknown`；
+  // - BUG-261：声明是字面量类型（`"a"` / `42` / `true`），观测只能给基类型；
+  // - BUG-362：观测下标读带 `| undefined`，声明是更窄的 `T`。
+  const declarationMorePrecise =
+    hasLibGlobalTypeText(raw) ||
+    isPlaceholderBuiltinType(observed) ||
+    (hasReadonlyTypePrefix(raw) && !observed.includes("readonly")) ||
+    (isFunctionTypeText(raw) && /=>\s*unknown/.test(observed)) ||
+    (hasLiteralTypeText(raw) && !hasLiteralTypeText(observed)) ||
+    (observed.includes("| undefined") && !raw.includes("| undefined"));
   if (
     !usesTypeParam &&
     raw !== "void" &&
+    !declarationMorePrecise &&
     !isNoInfoObservedType(observed) &&
     observed !== "never"
   ) {
     return undefined;
   }
+  const valueRefs = typeofValueRefs(raw);
   for (const name of annotationTypeRefs(raw)) {
     if (TS_TYPE_TOKENS.has(name) || declared.has(name)) continue;
     const surface = ctx?.surface;
-    if (!isTypeNameResolvable(name, surface)) {
+    if (!isTypeRefResolvable(name, valueRefs.has(name), surface)) {
       ctx?.dropped?.push(`${fn.name}: ${name} (return type)`);
       return undefined;
     }
@@ -3547,6 +3803,12 @@ export interface DtsClassSurface extends DtsClassMemberSurface {
   exportNames?: string[];
   /** 导出形态是 default（`export default class C`） */
   isDefault: boolean;
+  /**
+   * BUG-360：该绑定是**类表达式**（`export const C = class { … }`）。TS 里
+   * `C` 是值（构造器 + 静态成员），不是类型名 ⇒ 产物必须发 `declare const C:
+   * typeof <内部类>`，不能发 `export declare class C`。
+   */
+  isExpression?: boolean;
 }
 
 /**
@@ -3606,6 +3868,23 @@ export interface DtsValueSurface {
   nestedConstType?: string;
   /** BUG-157：对象字面量成员函数的源码注解（投影时叠加进 Abs，只补缺） */
   fnMemberAnnotations?: DtsObjectFnAnnotation[];
+  /**
+   * BUG-258 / BUG-254：初始化器 AST 的类型文本（仅 `typeof X` 引用与显式泛型
+   * 实参这类 Abs 表达不了的声明事实优先于分析面观测）。
+   */
+  initTypeText?: string;
+  /** BUG-264：`const s = Symbol("…")` ⇒ `unique symbol`。 */
+  uniqueSymbol?: boolean;
+  /** BUG-263：对象字面量里用户符号键的源码名（按出现序）。 */
+  userSymbolKeys?: string[];
+  /**
+   * BUG-358：初始化器**不是**函数 / 类值（`export const handle = 1`）。
+   *
+   * 分析面可能把同名**对象成员键**误登记成模块级函数入口（`registry.handle`
+   * 与 `const handle` 是两个实体）⇒ 当函数入口与一个非函数值绑定同名时，
+   * 以值绑定为准：值声明照发、phantom 函数入口不发射。
+   */
+  nonFunctionValue?: boolean;
 }
 
 /**
@@ -3653,6 +3932,13 @@ export interface DtsModuleSurface {
   exportBindings: Map<string, string>;
   /** 再导出语句（`export * from "x"` / `export { a as b } from "x"`） */
   reexports: string[];
+  /**
+   * BUG-309：**仅类型**再导出的本地别名（export 名 → 本地名）。无 source 的
+   * `export type { innerFn as localFn }` 由「导入绑定再导出」通道发射，那里
+   * 必须保留 `type` 修饰符，否则产物把类型导出升级成值导出（消费方假绿 +
+   * 运行期 ESM SyntaxError）。
+   */
+  typeOnlyExportBindings?: Map<string, string>;
   /** 类面（类本地名 → 类声明面） */
   classes: Map<string, DtsClassSurface>;
   /**
@@ -3709,6 +3995,13 @@ export interface DtsModuleSurface {
    * 声明」。
    */
   typeNames?: Set<string>;
+  /**
+   * BUG-262：本模块的顶层**值**名（函数声明 / 变量 / enum / import）。`typeof X`
+   * / `keyof typeof X` 引用的是值命名空间——只查 `typeNames` / `classes` 会把
+   * 同模块的 `const defaults`、`function handler` 判成「未在本模块声明」⇒
+   * 形参注解被丢弃并落与事实相反的台账。
+   */
+  valueNames?: Set<string>;
   /**
    * Bug 57：函数 / 方法级**类型形参子句**原文（`<T>` / `<A, B>` / `<T = string>`）。
    * 键是普查名（模块级 `gen`；类方法 `C.m`）；值直接切源码原文。
@@ -3877,21 +4170,84 @@ function objectFnMemberAnnotations(
 }
 
 /**
+ * BUG-263：对象字面量里**用户符号**计算键的源码名（`{ [tag]: 1 }` ⇒ `["tag"]`）。
+ *
+ * Abs 的槽键是引擎内部 id（`@@sym#N`），没有到源码绑定名的反查通道；按
+ * 属性出现序收集即可与 Abs 槽序一一对应（well-known symbol 由既有映射处理，
+ * 不参与本表）。嵌套对象递归展开，保证渲染顺序一致。
+ */
+function userSymbolMemberKeys(init: SurfaceNode | undefined): string[] {
+  if (!init || init.type !== "ObjectExpression") return [];
+  const out: string[] = [];
+  for (const p of (init.properties as SurfaceNode[] | undefined) ?? []) {
+    const key = p.key as SurfaceNode | undefined;
+    if (p.computed === true && key?.type === "Identifier" && typeof key.name === "string") {
+      out.push(key.name);
+    }
+    const v = p.value as SurfaceNode | undefined;
+    if (v?.type === "ObjectExpression") out.push(...userSymbolMemberKeys(v));
+  }
+  return out;
+}
+
+/**
  * 初始化器形状 → TS 类型串（Bug 62 的 CJS 值导出 / default 表达式兜底）。
  * 比 `classFieldTypeOfInit` 完整：对象逐成员投影、数组按元素 join ⇒ 消费端
  * `import { obj, arr }` 拿到的不是 `object` / `unknown[]` 这种会 TS2322 的
  * 宽类型。只映射字面量形状，表达式一律 unknown（声明面不猜求值结果）。
  */
-function valueTypeTextOfInit(init: SurfaceNode | undefined, source?: string): string {
+function valueTypeTextOfInit(
+  init: SurfaceNode | undefined,
+  source?: string,
+  isKnownValue?: (name: string) => boolean,
+  isResolvable?: (name: string, valuePosition?: boolean) => boolean,
+): string {
   if (!init) return "unknown";
   if (init.type === "ObjectExpression") {
     const parts: string[] = [];
+    const seen = new Set<string>();
     for (const p of (init.properties as SurfaceNode[] | undefined) ?? []) {
-      if (p.type !== "ObjectProperty" && p.type !== "Property" && p.type !== "ObjectMethod") continue;
-      const k = surfaceName(p.key as SurfaceNode | undefined);
-      if (!k) continue;
+      if (
+        p.type !== "ObjectProperty" &&
+        p.type !== "Property" &&
+        p.type !== "ObjectMethod"
+      ) {
+        continue;
+      }
+      const computed = p.computed === true;
+      const keyName = computed
+        ? surfaceSymbolKeyName(p.key as SurfaceNode | undefined) ??
+          surfaceName(p.key as SurfaceNode | undefined)
+        : surfaceName(p.key as SurfaceNode | undefined);
+      if (!keyName) continue;
+      const k = computed ? `[${keyName}]` : keyName;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      // BUG-355：ObjectMethod 的 `value` 在 Babel AST 上是 undefined——直接
+      // 当属性值读会得到 `unknown`。方法节点本身就是签名来源。
+      if (p.type === "ObjectMethod") {
+        const kind = String(p.kind ?? "method");
+        if (kind === "get") {
+          const ret =
+            safeFieldTypeAnnotation(nodeAnnotationText(p, source), isResolvable) ?? "unknown";
+          parts.push(`${k}: ${ret}`);
+          continue;
+        }
+        if (kind === "set") {
+          const params = (p.params as SurfaceNode[] | undefined) ?? [];
+          const ann =
+            safeFieldTypeAnnotation(nodeAnnotationText(params[0], source), isResolvable) ??
+            "unknown";
+          parts.push(`${k}: ${ann}`);
+          continue;
+        }
+        parts.push(`${k}: ${functionLiteralTypeText(p, source, isResolvable)}`);
+        continue;
+      }
       const v = (p.value ?? undefined) as SurfaceNode | undefined;
-      parts.push(`${k}: ${v ? valueTypeTextOfInit(v, source) : "unknown"}`);
+      parts.push(
+        `${k}: ${v ? valueTypeTextOfInit(v, source, isKnownValue, isResolvable) : "unknown"}`,
+      );
     }
     return parts.length > 0 ? `{ ${parts.join("; ")} }` : "object";
   }
@@ -3899,11 +4255,81 @@ function valueTypeTextOfInit(init: SurfaceNode | undefined, source?: string): st
     const elems = ((init.elements as SurfaceNode[] | undefined) ?? []).filter(
       (e): e is SurfaceNode => !!e,
     );
-    const types = [...new Set(elems.map((e) => valueTypeTextOfInit(e, source)))];
+    const types = [
+      ...new Set(elems.map((e) => valueTypeTextOfInit(e, source, isKnownValue, isResolvable))),
+    ];
     if (types.length === 0) return "unknown[]";
     return types.length === 1 ? `${types[0]}[]` : `(${types.join(" | ")})[]`;
   }
-  return classFieldTypeOfInit(init, source);
+  // BUG-258：`export const alias = target` / `{ fn: target }` 的类型是
+  // `typeof target`（引用声明的 TS 签名），不是合作过的 `() => unknown`。
+  if (init.type === "Identifier") {
+    const name = surfaceName(init);
+    if (name === "undefined") return "undefined";
+    if (name && isKnownValue?.(name) === true) return `typeof ${name}`;
+    return "unknown";
+  }
+  if (init.type === "NewExpression") {
+    return newExpressionTypeText(init, source);
+  }
+  return classFieldTypeOfInit(init, source, isResolvable);
+}
+
+/**
+ * 函数字面量 → TS 函数类型（BUG-356）：保留源码形参 / 返回注解。
+ *
+ * 旧实现的类字段分支硬编码 `(a0: unknown) => unknown` —— 注解就在 AST 上却
+ * 从不读取；同一注解在具名对象字面量通道是正确的。
+ */
+function functionLiteralTypeText(
+  fnNode: SurfaceNode,
+  source: string | undefined,
+  isResolvable?: (name: string, valuePosition?: boolean) => boolean,
+): string {
+  const params = Array.isArray(fnNode.params) ? (fnNode.params as SurfaceNode[]) : [];
+  const slots = params.map((p, i) => {
+    if (p.type === "RestElement") {
+      const arg = p.argument as SurfaceNode | undefined;
+      const name = surfaceName(arg) ?? `args${i}`;
+      const ann = safeFieldTypeAnnotation(nodeAnnotationText(arg, source), isResolvable);
+      return `...${name}${ann ? `: ${ann}` : ": unknown[]"}`;
+    }
+    if (p.type === "AssignmentPattern") {
+      const left = p.left as SurfaceNode | undefined;
+      const name = surfaceName(left) ?? `arg${i}`;
+      const ann = safeFieldTypeAnnotation(nodeAnnotationText(left, source), isResolvable);
+      const fallback = valueTypeTextOfInit(
+        p.right as SurfaceNode | undefined,
+        source,
+        undefined,
+        isResolvable,
+      );
+      return `${name}?${ann ? `: ${ann}` : fallback === "unknown" ? "" : `: ${fallback}`}`;
+    }
+    if (p.type === "Identifier") {
+      const name = surfaceName(p) ?? `arg${i}`;
+      const ann = safeFieldTypeAnnotation(nodeAnnotationText(p, source), isResolvable);
+      const opt = p.optional === true ? "?" : "";
+      return `${name}${opt}${ann ? `: ${ann}` : ": unknown"}`;
+    }
+    return `arg${i}: unknown`;
+  });
+  const ret =
+    safeFieldTypeAnnotation(nodeAnnotationText(fnNode, source), isResolvable) ??
+    (fnNode.async === true ? "Promise<unknown>" : "unknown");
+  return `(${slots.join(", ")}) => ${ret}`;
+}
+
+/** `new X<…>()` → `X<…>`（内建泛型缺实参时补占位，避免 TS2314，BUG-254）。 */
+function newExpressionTypeText(init: SurfaceNode, source?: string): string {
+  const callee = surfaceQualifiedName(init.callee as SurfaceNode | undefined);
+  if (!callee) return "object";
+  const params =
+    ((init.typeArguments as { params?: SurfaceNode[] } | undefined)?.params ?? []);
+  const args = (source === undefined ? [] : params.map((p) => surfaceSlice(source, p)))
+    .filter((t): t is string => t !== undefined && t.length > 0);
+  if (args.length > 0) return `${callee}<${args.join(", ")}>`;
+  return BUILTIN_GENERIC_BRANDS.get(callee) ?? callee;
 }
 
 /** 节点是否被 `as const` / `<const>` 冻结（BUG-077 / BUG-140） */
@@ -4217,11 +4643,14 @@ function isTypeNameResolvable(name: string, surface: DtsModuleSurface | undefine
  */
 function safeFieldTypeAnnotation(
   text: string | undefined,
-  isResolvable?: (name: string) => boolean,
+  isResolvable?: (name: string, valuePosition?: boolean) => boolean,
 ): string | undefined {
   if (!text) return undefined;
-  const ok = isResolvable ?? ((n: string) => TS_TYPE_TOKENS.has(n) || isRuntimeGlobalCtorName(n));
-  return annotationTypeRefs(text).every(ok) ? text : undefined;
+  const ok: (n: string, valuePosition?: boolean) => boolean =
+    isResolvable ??
+    ((n: string) => TS_TYPE_TOKENS.has(n) || isRuntimeGlobalCtorName(n));
+  const valueRefs = typeofValueRefs(text);
+  return annotationTypeRefs(text).every((n) => ok(n, valueRefs.has(n))) ? text : undefined;
 }
 
 /**
@@ -4233,8 +4662,9 @@ function safeValueAnnotation(
   surface: DtsModuleSurface | undefined,
   refs?: Set<string>,
 ): { text?: string; unresolved?: string } {
+  const valueRefs = typeofValueRefs(text);
   for (const name of annotationTypeRefs(text)) {
-    if (!isTypeNameResolvable(name, surface)) return { unresolved: name };
+    if (!isTypeRefResolvable(name, valueRefs.has(name), surface)) return { unresolved: name };
     if (surface?.classes.has(name) || surface?.imports?.has(name) === true) refs?.add(name);
   }
   return { text };
@@ -4303,7 +4733,7 @@ function coalesceClassMethodOverloads(list: DtsClassMethodSurface[]): void {
  */
 function scanClassSurface(
   decl: SurfaceNode,
-  isResolvable: (name: string) => boolean = () => false,
+  isResolvable: (name: string, valuePosition?: boolean) => boolean = () => false,
   source?: string,
 ): DtsClassMemberSurface {
   const body = (decl.body as { body?: SurfaceNode[] } | undefined)?.body ?? [];
@@ -4331,8 +4761,8 @@ function scanClassSurface(
   // interface·type / 内建）里，旧实现把整条注解当「未声明」丢弃 ⇒
   // `value: unknown` / `constructor(v: unknown)`，与紧邻的 `<T>` 自相矛盾。
   const typeParamScope = new Set(typeParams);
-  const resolvableInClass = (name: string): boolean =>
-    typeParamScope.has(name) || isResolvable(name);
+  const resolvableInClass = (name: string, valuePosition?: boolean): boolean =>
+    typeParamScope.has(name) || isResolvable(name, valuePosition);
   // BUG-151 / Bug 49：超类（namespace 限定名 `NS.Base` 也要保留）。
   const superName = surfaceQualifiedName(decl.superClass as SurfaceNode | undefined);
   const superClass = superName && isResolvable(superName) ? superName : undefined;
@@ -4418,7 +4848,13 @@ function scanClassSurface(
     instanceFields.push({
       name,
       // Bug 44：有初始化器看形状，没有则取源码类型注解（不是 `unknown`）。
-      type: classFieldType(init, fieldAnnotation(mem), source, resolvableInClass),
+      type: classFieldType(
+        init,
+        fieldAnnotation(mem),
+        source,
+        resolvableInClass,
+        mem.readonly === true,
+      ),
       // Bug 77 / 86：readonly 与访问修饰符保真。
       ...(mem.readonly === true ? { readonly: true } : {}),
       ...(accessibilityOf(mem) ? { accessibility: accessibilityOf(mem) } : {}),
@@ -4433,7 +4869,13 @@ function scanClassSurface(
     staticFieldNames.add(name);
     staticFields.push({
       name,
-      type: classFieldType(mem.value as SurfaceNode | undefined, fieldAnnotation(mem), source, resolvableInClass),
+      type: classFieldType(
+        mem.value as SurfaceNode | undefined,
+        fieldAnnotation(mem),
+        source,
+        resolvableInClass,
+        mem.readonly === true,
+      ),
       ...(mem.readonly === true ? { readonly: true } : {}),
       ...(mem.optional === true ? { optional: true } : {}),
       ...(accessibilityOf(mem) ? { accessibility: accessibilityOf(mem) } : {}),
@@ -4465,6 +4907,7 @@ function scanClassSurface(
         safeFieldTypeAnnotation(nodeAnnotationText(inner, source), resolvableInClass),
         source,
         resolvableInClass,
+        readonly,
       ),
       ...(readonly ? { readonly: true } : {}),
       ...(accessibility ? { accessibility } : {}),
@@ -5011,19 +5454,34 @@ function classFieldType(
   init: SurfaceNode | undefined,
   annotation?: string,
   source?: string,
-  isResolvable?: (name: string) => boolean,
+  isResolvable?: (name: string, valuePosition?: boolean) => boolean,
+  readonly = false,
 ): string {
   if (annotation !== undefined) return annotation;
-  return classFieldTypeOfInit(init, source, isResolvable);
+  return classFieldTypeOfInit(init, source, isResolvable, readonly);
 }
 
 /** 初始化器形状 → 基类型（供 `classFieldType` 与 default 表达式投影复用）。 */
 function classFieldTypeOfInit(
   init: SurfaceNode | undefined,
   source?: string,
-  isResolvable?: (name: string) => boolean,
+  isResolvable?: (name: string, valuePosition?: boolean) => boolean,
+  readonly = false,
 ): string {
   if (!init) return "unknown";
+  // BUG-273：`readonly r = 5` 与 `const r = 5` 同口径——TS 的只读属性**不参与
+  // 字面量拓宽**（`new K().r` 的类型是 `5`）。非 readonly 字段仍发 `number`。
+  if (
+    readonly &&
+    (init.type === "NumericLiteral" ||
+      init.type === "StringLiteral" ||
+      init.type === "BooleanLiteral" ||
+      init.type === "BigIntLiteral" ||
+      (init.type === "TemplateLiteral" &&
+        ((init.expressions as SurfaceNode[] | undefined) ?? []).length === 0))
+  ) {
+    return frozenLiteralType(init);
+  }
   // BUG-135：断言包装不再「一律按内层」——
   // `ro = [1, 2] as const` 会丢掉只读（`unknown[]`）、
   // `x = 1 as number | string` 会被窄化成 `number`（公开面比实现窄 ⇒ 消费方
@@ -5051,22 +5509,20 @@ function classFieldTypeOfInit(
     case "BooleanLiteral":
       return "boolean";
     case "ArrayExpression":
-      return "unknown[]";
     case "ObjectExpression":
+      // BUG-244：类字段通道此前只给容器粗型（`unknown[]` / `object`），而模块值
+      // 通道早已逐成员投影 ⇒ 同一形状在类字段位不可用。这里复用同一投影。
+      return valueTypeTextOfInit(init, source, undefined, isResolvable);
     case "NewExpression":
-      return "object";
+      // BUG-244 / BUG-254：`new Map<string, number>()` 的类型实参是源码事实。
+      return newExpressionTypeText(init, source);
     case "NullLiteral":
       // `state = null` —— TS 对类字段的推断就是 `null`（不是 any/unknown）
       return "null";
     case "ArrowFunctionExpression":
-    case "FunctionExpression": {
-      // BUG-043：类字段的函数值与对象字面量同口径（保留调用签名，不退 unknown）。
-      const params = Array.isArray(init.params) ? (init.params as SurfaceNode[]) : [];
-      const slots = params.map((p, i) =>
-        p?.type === "RestElement" ? `...args${i === 0 ? "" : String(i)}: unknown[]` : `a${i}: unknown`,
-      );
-      return `(${slots.join(", ")}) => unknown`;
-    }
+    case "FunctionExpression":
+      // BUG-356：保留源码形参 / 返回注解（与具名对象字面量同口径）。
+      return functionLiteralTypeText(init, source, isResolvable);
     case "UnaryExpression": {
       // `-1` / `+1`
       const arg = init.argument as SurfaceNode | undefined;
@@ -5314,6 +5770,8 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
     namespaces: new Map(),
     typeDeclarations: [],
     typeNames: new Set(),
+    valueNames: new Set(),
+    typeOnlyExportBindings: new Map(),
     typeParamClauses: new Map(),
     paramDefaults: new Map(),
     namespaceImports: new Map(),
@@ -5373,13 +5831,18 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
 
   // ── 类声明（本地名 → AST 节点） ──
   const classDecls = new Map<string, SurfaceNode>();
+  /** BUG-360：类表达式绑定（值是构造器，不是类型名）。 */
+  const classExpressions = new Set<string>();
   const addClass = (decl: SurfaceNode | null | undefined, preferName?: string): void => {
     // Bug 61：`export const C = class { … }` 的 ClassExpression 也是完整类值，
     // 只认 ClassDeclaration ⇒ dts 落成 `const C: unknown`（消费端 TS18046）。
     if (decl?.type !== "ClassDeclaration" && decl?.type !== "ClassExpression") return;
     // 类表达式自身的 id 是内部名（`class D {}`）⇒ 导出身份是变量名（preferName）。
     const id = preferName ?? surfaceName(decl.id as SurfaceNode | undefined);
-    if (id && !classDecls.has(id)) classDecls.set(id, decl);
+    if (id && !classDecls.has(id)) {
+      classDecls.set(id, decl);
+      if (decl.type === "ClassExpression") classExpressions.add(id);
+    }
   };
   /** `export const C = class {}` / `const C = class {}` 的类表达式注册 */
   const scanVarDeclsForClassExpr = (vd: SurfaceNode | null | undefined): void => {
@@ -5472,11 +5935,14 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
       const from = stmt.source as SurfaceNode | undefined;
       const src = JSON.stringify(String(from?.value ?? ""));
       const ns = surfaceName(stmt.exported as SurfaceNode | undefined);
+      // BUG-309：`export type * from` / `export type * as ns from` 的 `type`
+      // 必须保留——否则仅类型导出被发布成值导出。
+      const typeKw = stmt.exportKind === "type" ? "type " : "";
       if (ns) {
-        surface.reexports.push(`export * as ${exportNameRepr(ns)} from ${src};`);
+        surface.reexports.push(`export ${typeKw}* as ${exportNameRepr(ns)} from ${src};`);
         bind(ns, "");
       } else {
-        surface.reexports.push(`export * from ${src};`);
+        surface.reexports.push(`export ${typeKw}* from ${src};`);
       }
       continue;
     }
@@ -5486,12 +5952,16 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
       if (from) {
         // 再导出：`export * from` / `export { a as b } from` / `export * as ns from`
         const src = JSON.stringify(String(from.value ?? ""));
+        // BUG-309：语句级 `export type { … } from`。
+        const stmtTypeOnly = stmt.exportKind === "type";
         if (specs.length === 0) {
-          surface.reexports.push(`export * from ${src};`);
+          surface.reexports.push(`export ${stmtTypeOnly ? "type " : ""}* from ${src};`);
           continue;
         }
         const parts: string[] = [];
         for (const spec of specs) {
+          // BUG-309：specifier 级 `export { type x as y } from`。
+          const specTypeKw = spec.exportKind === "type" && !stmtTypeOnly ? "type " : "";
           if (spec.type === "ExportNamespaceSpecifier") {
             const ns = surfaceName(spec.exported as SurfaceNode | undefined);
             if (!ns) continue;
@@ -5499,7 +5969,9 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
             // `export { * as ns } from` 是非法 TS（TS1003/1005/1128/1434）。
             // Babel 8 把 `export * as ns from` 解析成 ExportNamedDeclaration +
             // ExportNamespaceSpecifier ⇒ 这条分支才是它真正走到的地方。
-            surface.reexports.push(`export * as ${exportNameRepr(ns)} from ${src};`);
+            surface.reexports.push(
+              `export ${stmtTypeOnly ? "type " : ""}* as ${exportNameRepr(ns)} from ${src};`,
+            );
             bind(ns, "");
             continue;
           }
@@ -5512,13 +5984,17 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
           const localRepr = exportNameRepr(local ?? exported);
           const exportedRepr = exportNameRepr(exported);
           parts.push(
-            local && local !== exported
-              ? `${localRepr} as ${exportedRepr}`
-              : exportedRepr,
+            `${specTypeKw}${
+              local && local !== exported
+                ? `${localRepr} as ${exportedRepr}`
+                : exportedRepr
+            }`,
           );
         }
         if (parts.length > 0) {
-          surface.reexports.push(`export { ${parts.join(", ")} } from ${src};`);
+          surface.reexports.push(
+            `export ${stmtTypeOnly ? "type " : ""}{ ${parts.join(", ")} } from ${src};`,
+          );
         }
         continue;
       }
@@ -5570,10 +6046,16 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
       }
       // BUG-217：类型声明的导出别名要单独记（见 pendingTypeAliasExports）——
       // 类型名的可判定性（typeNames）要等下面的原文镜像扫描结束。
+      const stmtTypeOnly = stmt.exportKind === "type";
+      const aliasSpecs = specs
+        .filter((spec): spec is SurfaceNode => spec.type === "ExportSpecifier");
+      // BUG-309：`export { type innerFn as localFn };`（无 source）的 specifier
+      // 级 `type` 与语句级同义——两者都要落到仅类型别名表。
       pendingTypeAliasExports.push({
-        typeOnly: stmt.exportKind === "type",
-        aliases: specs
-          .filter((spec): spec is SurfaceNode => spec.type === "ExportSpecifier")
+        typeOnly:
+          stmtTypeOnly ||
+          (aliasSpecs.length > 0 && aliasSpecs.every((spec) => spec.exportKind === "type")),
+        aliases: aliasSpecs
           .map((spec) => ({
             local: surfaceName(spec.local as SurfaceNode | undefined),
             exported: surfaceName(spec.exported as SurfaceNode | undefined),
@@ -5583,6 +6065,16 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
               a.local !== undefined && a.exported !== undefined,
           ),
       });
+      for (const spec of aliasSpecs) {
+        if (!stmtTypeOnly && spec.exportKind !== "type") continue;
+        // 记录「这个 export 名是仅类型」——发射通道（值 / 类 / 导入绑定）据此
+        // 保留 `type` 修饰符，而不是把它发布成值导出。
+        const exportedName = surfaceName(spec.exported as SurfaceNode | undefined);
+        const localName = surfaceName(spec.local as SurfaceNode | undefined);
+        if (exportedName !== undefined && localName !== undefined) {
+          surface.typeOnlyExportBindings!.set(exportedName, localName);
+        }
+      }
       for (const spec of specs) {
         if (spec.type === "ExportNamespaceSpecifier") {
           const ns = surfaceName(spec.exported as SurfaceNode | undefined);
@@ -5618,6 +6110,17 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
       }
       if (decl.type === "Identifier") {
         bind("default", surfaceName(decl) ?? "");
+        continue;
+      }
+      // BUG-272：`export default interface D { … }` / `export default type T = …`
+      // 是**类型声明**，不是值表达式——旧实现落到下面的 `_default: unknown`
+      // 值通道，接口声明与 typeNames 登记双双丢失（消费方 `import D` 当类型
+      // 用 TS2749）。原文镜像进 typeDeclarations（切片本身带 `export default`）。
+      if (decl.type === "TSInterfaceDeclaration" || decl.type === "TSTypeAliasDeclaration") {
+        const name = surfaceName(decl.id as SurfaceNode | undefined);
+        const text = surfaceSlice(source, stmt);
+        if (text) surface.typeDeclarations!.push(text);
+        if (name) surface.typeNames!.add(name);
         continue;
       }
       // Bug 20：非函数 / 非标识符的 `export default <表达式>`（42 / "x" /
@@ -5701,6 +6204,35 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
   // （`projectModuleDts` 的 `values` 实参）。
   /** Bug 77：`{…} as const` / `<const>{…}` ⇒ 对象槽按只读投影。 */
   const isAsConst = (init: SurfaceNode | undefined): boolean => isConstAssertionNode(init);
+  // BUG-258：顶层值名（`typeof target` 只对真正存在的绑定成立）——在值声明
+  // 扫描之前一次性收集，避免把局部 / 未声明名字写成 TS2304。
+  const knownTopLevelValues = new Set<string>();
+  for (const stmt of body) {
+    const decl =
+      stmt.type === "ExportNamedDeclaration" || stmt.type === "ExportDefaultDeclaration"
+        ? ((stmt.declaration as SurfaceNode | null | undefined) ?? stmt)
+        : stmt;
+    if (decl.type === "FunctionDeclaration" || decl.type === "ClassDeclaration") {
+      const id = surfaceName(decl.id as SurfaceNode | undefined);
+      if (id) knownTopLevelValues.add(id);
+    } else if (decl.type === "VariableDeclaration") {
+      for (const d of (decl.declarations as SurfaceNode[] | undefined) ?? []) {
+        for (const id of patternBindingNames(d.id as SurfaceNode | undefined)) {
+          knownTopLevelValues.add(id);
+        }
+      }
+    } else if (decl.type === "ImportDeclaration") {
+      for (const spec of (decl.specifiers as SurfaceNode[] | undefined) ?? []) {
+        const local = surfaceName(spec.local as SurfaceNode | undefined);
+        if (local) knownTopLevelValues.add(local);
+      }
+    }
+  }
+  /** BUG-264：`const s = Symbol("…")` ⇒ `unique symbol`（`Symbol.for` 除外）。 */
+  const isUniqueSymbolInit = (init: SurfaceNode | undefined): boolean =>
+    init?.type === "CallExpression" &&
+    surfaceName(init.callee as SurfaceNode | undefined) === "Symbol" &&
+    (init.callee as SurfaceNode | undefined)?.type === "Identifier";
   const noteValueDecl = (decl: SurfaceNode | null | undefined): void => {
     if (!decl) return;
     if (decl.type === "VariableDeclaration") {
@@ -5730,6 +6262,30 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
         // 单标识符绑定采集——解构模式上的初始化器类型描述的是整个右值。
         const fnMemberAnnotations =
           idNode?.type === "Identifier" ? objectFnMemberAnnotations(init, source) : [];
+        // BUG-258 / BUG-254：源码初始化器里 Abs 表达不了的声明事实（`typeof X`
+        // 引用 / 显式泛型实参）。只对单标识符绑定采集。
+        const initTypeText =
+          idNode?.type === "Identifier"
+            ? valueTypeTextOfInit(init, source, (n) => knownTopLevelValues.has(n))
+            : undefined;
+        // BUG-263：用户符号成员键（`{ [tag]: 1 }`）的源码名。
+        const userSymbolKeys =
+          idNode?.type === "Identifier" ? userSymbolMemberKeys(init) : [];
+        // BUG-264：`const s = Symbol("s")`（无显式 `: symbol` 注解）⇒ unique symbol。
+        const uniqueSymbol =
+          kind === "const" &&
+          idNode?.type === "Identifier" &&
+          annotation === undefined &&
+          isUniqueSymbolInit(init);
+        // BUG-358：该绑定是值（不是函数 / 类值）——同名 phantom 函数入口不得
+        // 抢占它的导出声明。
+        const nonFunctionValue =
+          init == null ||
+          (init.type !== "ArrowFunctionExpression" &&
+            init.type !== "FunctionExpression" &&
+            init.type !== "ClassExpression" &&
+            init.type !== "FunctionDeclaration" &&
+            init.type !== "ClassDeclaration");
         // Bug 63：解构声明模式展开**全部绑定名**（`{ a, b }` / `[c, ...rest]`）
         // ⇒ 每个绑定都进 surface.values（dtsValueDeclarations 逐条读它）。
         for (const id of patternBindingNames(idNode)) {
@@ -5740,6 +6296,10 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
             ...(annotation !== undefined ? { annotation } : {}),
             ...(nestedConstType !== undefined ? { nestedConstType } : {}),
             ...(fnMemberAnnotations.length > 0 ? { fnMemberAnnotations } : {}),
+            ...(initTypeText !== undefined ? { initTypeText } : {}),
+            ...(uniqueSymbol ? { uniqueSymbol: true } : {}),
+            ...(userSymbolKeys.length > 0 ? { userSymbolKeys } : {}),
+            ...(nonFunctionValue ? { nonFunctionValue: true } : {}),
           });
         }
       }
@@ -5811,6 +6371,33 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
     }
     if (stmt.type === "ExportNamedDeclaration") {
       noteValueDecl(stmt.declaration as SurfaceNode | null | undefined);
+    }
+  }
+  // BUG-262：值命名空间的名字面（`typeof X` 的 X 是**值**，不是类型）。
+  for (const local of surface.values.keys()) surface.valueNames!.add(local);
+  for (const stmt of body) {
+    const decl =
+      stmt.type === "ExportNamedDeclaration" || stmt.type === "ExportDefaultDeclaration"
+        ? ((stmt.declaration as SurfaceNode | null | undefined) ?? stmt)
+        : stmt;
+    if (decl.type === "FunctionDeclaration") {
+      const id = surfaceName(decl.id as SurfaceNode | undefined);
+      if (id) surface.valueNames!.add(id);
+    } else if (decl.type === "VariableDeclaration") {
+      for (const d of (decl.declarations as SurfaceNode[] | undefined) ?? []) {
+        for (const id of patternBindingNames(d.id as SurfaceNode | undefined)) {
+          surface.valueNames!.add(id);
+        }
+      }
+    }
+  }
+  // 导入的值同样在值命名空间（`typeof importedFn`）；`import type` 除外。
+  for (const stmt of body) {
+    if (stmt.type !== "ImportDeclaration" || stmt.importKind === "type") continue;
+    for (const spec of (stmt.specifiers as SurfaceNode[] | undefined) ?? []) {
+      if (spec.importKind === "type") continue;
+      const local = surfaceName(spec.local as SurfaceNode | undefined);
+      if (local) surface.valueNames!.add(local);
     }
   }
 
@@ -5906,12 +6493,13 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
    * 注解原文在产物里是否可解析（值声明 / CJS 函数成员共用；与类字段 /
    * 形参同一判据，落实在此处是因为 `typeNames` 已扫描完毕）。
    */
-  const isResolvableValueType = (name: string): boolean =>
+  const isResolvableValueType = (name: string, valuePosition?: boolean): boolean =>
     TS_TYPE_TOKENS.has(name) ||
     isRuntimeGlobalCtorName(name) ||
     classDecls.has(name) ||
     imports.has(name) ||
-    surface.typeNames!.has(name);
+    surface.typeNames!.has(name) ||
+    (valuePosition === true && surface.valueNames!.has(name));
   /**
    * BUG-110：`module.exports = f` 之后 `f.version = …` / `f.helper = function…`
    * 是**函数对象上的成员写**。TS 的可调用模块用声明合并表达：
@@ -6047,7 +6635,7 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
   // 同一口径）——只在这种名字上放行 `extends`。
   // Bug 49：namespace 限定名 `NS.Base` 的根名是命名空间导入 ⇒ 也算可解析
   // （`projectModuleDtsInner` 会补 `import * as NS`）。
-  const isResolvableName = (name: string): boolean => {
+  const isResolvableName = (name: string, valuePosition?: boolean): boolean => {
     if (name.includes(".")) {
       const root = name.split(".")[0]!;
       return surface.namespaceImports!.has(root) || imports.has(root);
@@ -6060,7 +6648,8 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
       classDecls.has(name) ||
       imports.has(name) ||
       isRuntimeGlobalCtorName(name) ||
-      surface.typeNames?.has(name) === true
+      surface.typeNames?.has(name) === true ||
+      (valuePosition === true && surface.valueNames!.has(name))
     );
   };
   for (const [local, decl] of classDecls) {
@@ -6080,6 +6669,7 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
       ...(exportName !== undefined ? { exportName } : {}),
       ...(exportNames.length > 0 ? { exportNames } : {}),
       isDefault: exportName === "default",
+      ...(classExpressions.has(local) ? { isExpression: true } : {}),
     });
   }
   return surface;
@@ -6405,6 +6995,9 @@ function projectModuleDtsInner(
     // BUG-231：声明器带可解析类型注解的 `const f = <箭头/函数表达式>` 由值声明
     // 通道发 `declare const f: T`（tsc 同形）⇒ 不再发函数声明。
     if (annotatedConstLocals.has(fn.name)) continue;
+    // BUG-358：同名**值绑定**（`export const handle = 1`）是权威声明；对象
+    // 成员键被误登记成的函数入口不得发射（否则常量声明整条消失）。
+    if (surface?.values.get(fn.name)?.nonFunctionValue === true) continue;
     if (projection.classMember) {
       const list = members.get(projection.classMember.className) ?? [];
       list.push({
@@ -6512,19 +7105,60 @@ function projectModuleDtsInner(
     return filtered;
   };
   for (const className of classNames) {
+    const cls = surface?.classes.get(className);
+    const clsMembers = members.get(className) ?? [];
+    const clsFields = fieldsOf(className);
+    const superText = superClauseText(className, surface);
+    const inheritedStatics = inheritedStaticNamesOf(className, surface);
+    const inheritedViews = inheritedMemberViews(className, surface, members);
+    // BUG-360：`export const C = class { … }` 是**值**（构造器对象），不是类型
+    // 名。发内部类 + `declare const C: typeof <内部类>`：`Array<C>` / `implements
+    // C` 与 tsc 一样报 TS2749，而 `new C(...)` / `C.static` 仍可用。
+    const exportNames = cls?.exportNames ?? (cls?.exportName !== undefined ? [cls.exportName] : []);
+    if (cls?.isExpression === true && exportNames.length > 0) {
+      const internal = `__nudo_expr_${dtsIdentifier(className)}`;
+      lines.push(
+        ...dtsClassDeclaration(
+          internal,
+          { ...cls, exportName: undefined, exportNames: [], isDefault: false },
+          clsMembers,
+          clsFields,
+          superText,
+          inheritedStatics,
+          inheritedViews,
+        ),
+      );
+      const primary = exportNames[0]!;
+      const declared = dtsIdentifier(className);
+      const extras = exportNames
+        .slice(1)
+        .map((n) => `export { ${declared} as ${exportNameRepr(n)} };`);
+      if (primary === "default") {
+        lines.push(`declare const ${declared}: typeof ${internal};`, "export default " + declared + ";", ...extras);
+      } else if (primary === className) {
+        lines.push(`export declare const ${declared}: typeof ${internal};`, ...extras);
+      } else {
+        lines.push(
+          `declare const ${declared}: typeof ${internal};`,
+          `export { ${declared} as ${exportNameRepr(primary)} };`,
+          ...extras,
+        );
+      }
+      continue;
+    }
     lines.push(
       ...dtsClassDeclaration(
         className,
-        surface?.classes.get(className),
-        members.get(className) ?? [],
-        fieldsOf(className),
+        cls,
+        clsMembers,
+        clsFields,
         // BUG-151：`extends <base>`——基类泛型时补 `any` 实参（TS2314：泛型基类
         // 缺类型实参会让整份产物编译不过）。
-        superClauseText(className, surface),
+        superText,
         // BUG-070：继承来的 static 不得在子类里投影成实例方法
-        inheritedStaticNamesOf(className, surface),
+        inheritedStatics,
         // BUG-194 / BUG-228：继承来的实例方法（类型实参已代入 + 修饰符保真）
-        inheritedMemberViews(className, surface, members),
+        inheritedViews,
       ),
     );
   }
@@ -6605,8 +7239,11 @@ function projectModuleDtsInner(
       const imp = surface.imports?.get(local);
       if (!imp) continue;
       const fromName = imp.kind === "default" ? "default" : (imp.importedName ?? local);
+      // BUG-309：本地 `export type { innerFn as localFn }` 仍是仅类型导出。
+      const typeKw =
+        surface.typeOnlyExportBindings?.get(exportName) === local ? "type " : "";
       lines.push(
-        `export { ${exportNameRepr(fromName)} as ${exportNameRepr(exportName)} } from ${JSON.stringify(
+        `export ${typeKw}{ ${exportNameRepr(fromName)} as ${exportNameRepr(exportName)} } from ${JSON.stringify(
           imp.specifier,
         )};`,
       );
@@ -6647,11 +7284,16 @@ function projectModuleDtsInner(
       if (!brands.has(name) && !annotationRefs.has(name) && !typeDeclRefs.has(name)) continue;
       if (surface.classes.has(name)) continue; // 本地已声明 ⇒ 走 declare class
       const src = JSON.stringify(imp.specifier);
-      importLines.push(
-        imp.kind === "default"
-          ? `import type ${name} from ${src};`
-          : `import type { ${name} } from ${src};`,
-      );
+      if (imp.kind === "default") {
+        importLines.push(`import type ${name} from ${src};`);
+        continue;
+      }
+      // BUG-243：`import type { User as U }` 的产物必须写 `User as U`——旧实现
+      // 只写本地名 `U`，而目标模块没有导出 `U` ⇒ 整份 `.d.ts` TS2305。
+      const imported = imp.importedName;
+      const spec =
+        imported !== undefined && imported !== name ? `${imported} as ${name}` : name;
+      importLines.push(`import type { ${spec} } from ${src};`);
     }
   }
   // Bug 49：namespace 限定超类（`extends NS.Base`）⇒ 补
@@ -6672,8 +7314,10 @@ function projectModuleDtsInner(
   const scope = brandScopeOf(surface);
   const unresolved = [...brands.keys()].filter(
     (name) =>
+      BRAND_TYPE_ALIASES.get(name) === undefined &&
       !BUILTIN_GENERIC_BRANDS.has(name) &&
       !scope.names.has(name) &&
+      !TS_TYPE_TOKENS.has(name) &&
       !isRuntimeGlobalCtorName(name),
   );
   const ledger =
@@ -7182,7 +7826,9 @@ function overlayObjectFnAnnotations(
   surface: DtsModuleSurface,
   refs?: Set<string>,
 ): Abs {
-  if (!annotations || annotations.length === 0 || a.shape.k !== "obj") return a;
+  // BUG-256：即使没有任何函数注解，也要走访问器实体化（getter-only 的
+  // `readonly` 是访问器表的事实，与注解无关）。
+  if (a.shape.k !== "obj") return a;
   const slots: Record<string, (typeof a.shape.slots)[string]> = { ...a.shape.slots };
   // BUG-235：本函数会造**新 Abs 身份**，而访问器侧表按对象身份键控 ⇒ 新对象
   // 再也查不到 getter，下游 `slotAbsOf` 落回 `$lit(void 0)` 占位槽，把 getter
@@ -7190,26 +7836,41 @@ function overlayObjectFnAnnotations(
   // 侧表无法整体迁移（`migrateAccessors` 不在公共面），但投影只需要读域 ⇒
   // 在造新对象前把它**实体化**进槽值。
   //
-  // BUG-233：getter-only（有 get 无 set）在 TS 里是**只读**属性，这里把该事实
-  // 落成槽标记（下游 widen 透传、渲染发 `readonly`）——新对象没有侧表，晚一步
-  // 就再也查不到。只对**声明面有返回注解**的访问器落标记：注解是声明级证据，
-  // 未注解的 getter 只有求值观测，两者不同源（既有投影口径把后者按观测面
-  // 原样投影，见 dts-projection 的 getter/as const 回归钉）。
-  const declaredAccessors = new Set(
-    annotations.filter((ann) => ann.returnType !== undefined).map((ann) => ann.key),
-  );
+  // BUG-233 / BUG-256：getter-only（有 get 无 set）在 TS 里是**只读**属性，
+  // 这里把该事实落成槽标记（下游 widen 透传、渲染发 `readonly`）——新对象
+  // 没有侧表，晚一步就再也查不到。旧实现只在「有返回注解」时落标记，且第一段
+  // 的改动因 `changed` 未置位被整体丢弃（`gAnnot` / `gPlain` 都发可写）。
+  //
+  // BUG-270：setter-only 的属性类型是 **setter 形参类型**（TS 语义），不是
+  // 占位槽的 `undefined`。参数注解在 `objectFnMemberAnnotations` 里已采集。
+  let changed = false;
   for (const [k, slot] of Object.entries(slots)) {
     const acc = lookupObjAccessor(a, k);
-    if (acc?.get === undefined) continue;
+    if (acc === undefined) continue;
+    if (acc.get === undefined) {
+      const ann = (annotations ?? []).find((a) => a.key === k);
+      const paramText = ann?.paramTypes[0];
+      if (paramText !== undefined && safeValueAnnotation(paramText, surface, refs).unresolved === undefined) {
+        const shape = tsAnnotationShape(paramText);
+        if (shape) {
+          slots[k] = { ...slot, value: makeAbs(shape, undefined, undefined, "path") };
+          changed = true;
+        }
+      }
+      continue;
+    }
     const read = slotAbsOf(a, k, slot.value);
-    slots[k] = {
-      ...slot,
-      ...(read !== slot.value ? { value: read } : {}),
-      ...(acc.set === undefined && declaredAccessors.has(k) ? { readonly: true } : {}),
-    };
+    const readonly = acc.set === undefined;
+    if (read !== slot.value || (readonly && slot.readonly !== true)) {
+      slots[k] = {
+        ...slot,
+        ...(read !== slot.value ? { value: read } : {}),
+        ...(readonly ? { readonly: true } : {}),
+      };
+      changed = true;
+    }
   }
-  let changed = false;
-  for (const ann of annotations) {
+  for (const ann of annotations ?? []) {
     const slot = slots[ann.key];
     if (!slot) continue;
     const fn = slot.value;
@@ -7277,7 +7938,13 @@ function dtsValueDeclarations(
     // 已被模块级函数声明占用（`export const f = () => …` 被分析成函数）⇒
     // 再发一条值声明会产出 TS2300（Duplicate identifier）。BUG-231 的例外：
     // 声明器注解可解析 ⇒ 函数声明已被抑制，值声明才是正确形态。
-    if (declaredLocals.has(local) && !annotatedFunctionLocals.has(local)) continue;
+    if (
+      declaredLocals.has(local) &&
+      !annotatedFunctionLocals.has(local) &&
+      value.nonFunctionValue !== true
+    ) {
+      continue;
+    }
     if (surface.classes.has(local)) continue;
     const abs = values?.get(local);
     let decl: string;
@@ -7307,8 +7974,22 @@ function dtsValueDeclarations(
           `// nudo:dropped-type-annotation ${local}: ${ann.unresolved} — type not declared in this module (falls back to the observed type)`,
         );
       }
+      // BUG-254 / BUG-258：初始化器 AST 里 Abs 表达不了的声明事实优先
+      // （`typeof target` / `new Map<string, number>()` 的显式实参）。
+      const initText = value.initTypeText;
+      const astPreferred =
+        initText !== undefined &&
+        (initText.includes("typeof ") ||
+          /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*<[\s\S]+>$/.test(initText));
+      // BUG-264：`const s = Symbol("s")` ⇒ `unique symbol`（显式 `: symbol`
+      // 注解已在上面优先）。
+      const uniqueSymbolText = value.uniqueSymbol === true ? "unique symbol" : undefined;
       // BUG-140：初始化器内部的 `as const`（外层可变、内层冻结）。
-      const declaredText = ann?.text ?? value.nestedConstType;
+      const declaredText =
+        ann?.text ??
+        value.nestedConstType ??
+        uniqueSymbolText ??
+        (astPreferred ? initText : undefined);
       if (abs === undefined && value.typeText === undefined && declaredText === undefined) {
         out.push(
           `// nudo:unresolved-value ${local} — no analysis binding (projected as unknown)`,
@@ -7324,21 +8005,33 @@ function dtsValueDeclarations(
         overlayObjectFnAnnotations(a, value.fnMemberAnnotations, surface, annotationRefs);
       // BUG-236：symbol 方法的返回注解走文本旁路（见 withSymbolReturnOverrides）
       const symbolReturns = new Map<string, string>();
+      // BUG-271：普通对象方法的返回注解（`Promise<number>` / 具名别名 /
+      // `string | null`）不能经 Shape 闸门——源码注解直接覆盖返回位文本。
+      const objectReturns = new Map<string, string>();
       for (const ann of value.fnMemberAnnotations ?? []) {
-        if (!ann.key.startsWith("@@") || ann.returnType === undefined) continue;
+        if (ann.returnType === undefined) continue;
         const safe = safeValueAnnotation(ann.returnType, surface, annotationRefs);
-        if (safe.text !== undefined) symbolReturns.set(ann.key, safe.text);
+        if (safe.text === undefined) continue;
+        if (ann.key.startsWith("@@")) symbolReturns.set(ann.key, safe.text);
+        else objectReturns.set(ann.key, safe.text);
       }
+      // BUG-260：`const` 不参与顶层字面量拓宽（tsc 对 `const c = "abc"` 保留
+      // `"abc"`）；`let` / `var` 仍拓宽。`as const` 完全不拓宽（冻结声明）。
+      const renderAbs = (): string => {
+        if (!abs) return value.typeText ?? "unknown";
+        const annotated = withMemberAnnotations(abs);
+        if (value.asConst) return absToTSType(annotated);
+        if (value.kind === "const" && annotated.shape.k === "prim" && annotated.term?.op === "lit") {
+          return absToTSType(annotated);
+        }
+        return absToTSType(widenModuleValueAbs(annotated));
+      };
       const render = (): string =>
-        abs
-          ? withSymbolReturnOverrides(symbolReturns, () =>
-              absToTSType(
-                value.asConst
-                  ? widenTopLevelAbs(withMemberAnnotations(abs))
-                  : widenModuleValueAbs(withMemberAnnotations(abs)),
-              ),
-            )
-          : (value.typeText ?? "unknown");
+        withUserSymbolKeys(value.userSymbolKeys, () =>
+          withObjectFnReturnOverrides(objectReturns, () =>
+            withSymbolReturnOverrides(symbolReturns, renderAbs),
+          ),
+        );
       const typeText = declaredText ?? (value.asConst ? withReadonlySlots(render) : render());
       decl = `declare ${value.kind} ${local}: ${typeText};`;
     }
