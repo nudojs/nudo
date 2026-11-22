@@ -8,7 +8,7 @@
 import { type Abs, type EffectiveContract } from "@nudojs/core";
 import {
   absToStandardSchemaFunction,
-  widenObservedTupleOutput,
+  projectValidatorOutput,
   type SchemaProjectionScope,
 } from "@nudojs/service/emit";
 import type { FunctionAnalysis } from "@nudojs/service";
@@ -49,7 +49,7 @@ export function standardFaceChunk(
     ...(p.optional === true ? { optional: true } : {}),
   }));
   const stdReturns = effectiveContractReturnFace(fn, eff, ctx);
-  const widenedOutput = outputAbs === undefined ? undefined : widenObservedTupleOutput(outputAbs);
+  const widenedOutput = outputAbs === undefined ? undefined : projectValidatorOutput(outputAbs);
   if (stdInputs.length === 0 && stdReturns === undefined && widenedOutput === undefined) {
     return undefined;
   }

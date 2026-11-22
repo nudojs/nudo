@@ -79,7 +79,6 @@ export {
   absToZodSchemaModule,
   isRuntimeGlobalCtorName,
   widenObservedLiterals,
-  widenObservedTupleOutput,
   type SchemaDialect,
   type SchemaNode,
   type SchemaProjection,
@@ -87,6 +86,8 @@ export {
   type SchemaRefinement,
   type ZodModuleProjection,
 } from "./schema-generator.ts";
+
+export { projectValidatorOutput } from "./projection-policy.ts";
 
 export {
   absToStandardSchemaFunction,

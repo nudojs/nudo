@@ -6,7 +6,12 @@ import type { Node, Statement, ClassDeclaration, File } from "@babel/types";
 import traverse from "@babel/traverse";
 // ADR 0001 阶段 1 · 切片 2：service 普查面只读消费 core 的绑定索引。
 // 方向 service → core/internal 已允许（kernel-merge.md「绑定索引层」）。
-import { buildSemanticIndex, semanticIndexShadowActive } from "@nudojs/core/internal";
+import {
+  buildSemanticIndex,
+  literalConstValuesOf,
+  memberKeyNameOf,
+  semanticIndexShadowActive,
+} from "@nudojs/core/internal";
 import {
   type Abs,
   type Environment,
@@ -150,64 +155,6 @@ export function fnNameLoc(node: Node, fallback: SourceLocation): SourceLocation 
 
 export function isFnExprValue(node: Node | null | undefined): node is Node {
   return !!node && (node.type === "FunctionExpression" || node.type === "ArrowFunctionExpression");
-}
-
-/**
- * 类方法键名（Bug 105）：Identifier（非计算）/ 字符串字面量 / 数字字面量 /
- * 静态计算字面键都返回稳定名；动态计算键（`[k]()`）⇒ undefined。
- *
- * service 普查此前用 parser 的 `classInstanceMethods`（只认 Identifier 键）
- * ⇒ 字符串 / 计算 / 数字键方法在 `nudo test` / `export` / `contract` 三个面
- * 全盲；core 的 `listTopFunctions` 已放宽到同一口径，此处对齐。
- */
-function classMethodKeyNameOf(
-  member: Node | null | undefined,
-  literalConsts?: ReadonlyMap<string, string>,
-): string | undefined {
-  const m = member as
-    | {
-        key?: { type?: string; name?: string; value?: unknown } | null;
-        computed?: boolean;
-      }
-    | null
-    | undefined;
-  const k = m?.key;
-  if (!k) return undefined;
-  if (k.type === "Identifier") {
-    if (typeof k.name !== "string") return undefined;
-    // BUG-385：`const k = "dyn"; class { [k]() {} }` —— computed Identifier
-    // 绑定到字面量 const 时是稳定名（tsc 保留 `[k]`，消费方按 `dyn` 访问）。
-    if (m?.computed === true) return literalConsts?.get(k.name);
-    return k.name;
-  }
-  if (typeof k.value === "string") return k.value;
-  if (typeof k.value === "number") return String(k.value);
-  return undefined;
-}
-
-/** 顶层 `const x = <字符串/数字字面量>` 的稳定值（BUG-385）。 */
-function literalConstValuesOf(body: readonly Node[]): Map<string, string> {
-  const out = new Map<string, string>();
-  for (const stmt of body) {
-    const decl =
-      stmt.type === "ExportNamedDeclaration"
-        ? ((stmt as { declaration?: Node }).declaration ?? stmt)
-        : stmt;
-    if (decl.type !== "VariableDeclaration" || (decl as { kind?: string }).kind !== "const") {
-      continue;
-    }
-    for (const d of (decl as { declarations?: unknown[] }).declarations ?? []) {
-      const id = (d as { id?: { type?: string; name?: string } }).id;
-      const init = (d as { init?: { type?: string; value?: unknown } | null }).init;
-      if (id?.type !== "Identifier" || typeof id.name !== "string" || !init) continue;
-      if (init.type === "StringLiteral" && typeof init.value === "string") {
-        out.set(id.name, init.value);
-      } else if (init.type === "NumericLiteral" && typeof init.value === "number") {
-        out.set(id.name, String(init.value));
-      }
-    }
-  }
-  return out;
 }
 
 export function namedFnExprId(node: Node): string | null {
@@ -454,7 +401,7 @@ export function collectTopLevelFunctions(
       }
       if (m.kind && m.kind !== "method") continue;
       // Bug 105：字符串 / 静态计算 / 数字键方法与 Identifier 键同口径
-      const keyName = classMethodKeyNameOf(member, literalConsts);
+      const keyName = memberKeyNameOf(member, literalConsts);
       const methodNode = methodFunctionNode(member);
       if (keyName === undefined || !methodNode) continue;
       out.push({ name: keyName, node: methodNode, isStatic: m.static === true });

@@ -99,36 +99,8 @@ function widenObservedLiteralUnion(a: Abs): Abs | undefined {
  * ⇒ `fInput = z.object({ s: <观测联合> })` 的槽值不再经过单点拓宽。入口处
  * 先做一次树级拓宽（只重建确有变化的节点；DAG 用 memo 保留身份与环）。
  */
-/** BUG-370：同构 prim 元组观测 → 数组（与 dts 的 tuple widen 同规则）。 */
-function widenObservedTuple(a: Abs): Abs | undefined {
-  const s = a.shape;
-  if (s.k !== "tuple" || (s.holes?.length ?? 0) > 0 || s.rest !== undefined) return undefined;
-  const els = s.elements;
-  if (els.length === 0) return undefined;
-  const first = els[0]!;
-  if (first.shape.k !== "prim") return undefined;
-  const firstType = first.shape.type;
-  if (!els.every((e) => e.shape.k === "prim" && e.shape.type === firstType)) return undefined;
-  return {
-    ...a,
-    shape: { k: "arr", element: widenAbsPrim(first) },
-    term: undefined,
-    pred: undefined,
-    conf: "exact",
-  };
-}
-
 export function widenObservedLiteralDomains(a: Abs, memo: Map<Abs, Abs> = new Map()): Abs {
   return mapObservedLiteralTree(a, memo, widenObservedLiteralUnion);
-}
-
-/**
- * BUG-370：**返回位**观测的同构元组 → 数组（与 dts 的 return widen 同规则）。
- * 只由 export 的三个 validator 面对 `<fn>Output` 调用——形参 / 手工构造的
- * tuple 不拓宽（保持既有形参契约与 BUG-252 的 `[1]` 元组精度）。
- */
-export function widenObservedTupleOutput(a: Abs): Abs {
-  return widenObservedTuple(a) ?? a;
 }
 
 /**

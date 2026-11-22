@@ -9,6 +9,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { checkSource, pTrue } from "@nudojs/core";
 import {
   buildSemanticIndex,
+  listTopFunctions,
   setSemanticIndexEntryFace,
   setSemanticIndexShadow,
 } from "@nudojs/core/internal";
@@ -174,5 +175,35 @@ export function h() { return api.helper(); }
     const names = overridden.signatures.map((s) => s.name);
     expect(names).not.toContain("helper");
     expect(names).toContain("other");
+  });
+});
+
+describe("计算成员键：core 扫描面与服务普查面同名（BUG-385 共享索引）", () => {
+  const SRC = `const k = "dyn";
+const n = 2;
+export class C {
+  [k]() { return 1; }
+  "str"() { return 2; }
+  [n]() { return 3; }
+  static s() { return 4; }
+  plain() { return 5; }
+}
+`;
+
+  it("字面量 const 计算键 / 字符串键 / 数字键 / 静态方法两面一致", () => {
+    const core = listTopFunctions(SRC);
+    const service = collectTopLevelFunctions(parse(SRC)).map((f) => f.name);
+    expect(service).toEqual(core);
+    expect(core).toEqual(["C.dyn", "C.str", "C.2", "C.s", "C.plain"]);
+  });
+
+  it("动态计算键（非字面量 const）仍不进任何一面", () => {
+    const src = `let k = "dyn";
+export class C { [k]() { return 1; } plain() { return 2; } }
+`;
+    const core = listTopFunctions(src);
+    const service = collectTopLevelFunctions(parse(src)).map((f) => f.name);
+    expect(core).not.toContain("C.dyn");
+    expect(service).toEqual(core);
   });
 });
