@@ -4139,6 +4139,46 @@ function surfaceName(n: SurfaceNode | undefined): string | undefined {
   return undefined;
 }
 
+/** 顶层 `const x = <字符串/数字字面量>` 的稳定值（BUG-385，按源码 memo）。 */
+const literalConstKeyMemo = new Map<string, ReadonlyMap<string, string>>();
+const LITERAL_CONST_KEY_MEMO_MAX = 8;
+function literalConstKeysOf(source: string | undefined): ReadonlyMap<string, string> {
+  if (source === undefined) return new Map();
+  const hit = literalConstKeyMemo.get(source);
+  if (hit) return hit;
+  const out = new Map<string, string>();
+  try {
+    const ast = parseSource(source, { errorRecovery: true, keepTs: true }) as unknown as {
+      program: { body: Array<Record<string, unknown>> };
+    };
+    for (const raw of ast.program.body) {
+      const stmt =
+        raw.type === "ExportNamedDeclaration" || raw.type === "ExportDefaultDeclaration"
+          ? ((raw.declaration as Record<string, unknown> | undefined) ?? raw)
+          : raw;
+      if (stmt.type !== "VariableDeclaration" || stmt.kind !== "const") continue;
+      for (const d of (stmt.declarations as Array<Record<string, unknown>> | undefined) ?? []) {
+        const id = d.id as { type?: string; name?: string } | undefined;
+        const init = d.init as { type?: string; value?: unknown } | null | undefined;
+        if (id?.type !== "Identifier" || typeof id.name !== "string" || !init) continue;
+        if (init.type === "StringLiteral" && typeof init.value === "string") {
+          out.set(id.name, init.value);
+        } else if (init.type === "NumericLiteral" && typeof init.value === "number") {
+          out.set(id.name, String(init.value));
+        }
+      }
+    }
+  } catch {
+    // 解析失败 ⇒ 空表（调用方按动态键处理）
+  }
+  if (literalConstKeyMemo.size >= LITERAL_CONST_KEY_MEMO_MAX) {
+    const oldest = literalConstKeyMemo.keys().next().value;
+    if (oldest !== undefined) literalConstKeyMemo.delete(oldest);
+  }
+  literalConstKeyMemo.set(source, out);
+  return out;
+}
+
 /**
  * BUG-119：类成员**计算键**的静态名（`["a" + "b"]` / `` [`x${"y"}`] ``）。
  * 只折静态可判的字符串拼接/模板；动态键（变量 / 成员表达式）返回 undefined
@@ -4910,7 +4950,14 @@ function scanClassSurface(
     if (mem.computed === true) {
       const sym = surfaceSymbolKeyName(mem.key as SurfaceNode | undefined);
       if (sym !== undefined) return { name: sym, symbolKey: true };
-      const folded = surfaceComputedKeyName(mem.key as SurfaceNode | undefined);
+      // BUG-385：`const k = "dyn"; [k]()` —— 绑定到字面量 const 的 computed
+      // Identifier 有稳定名（tsc 保留 `[k]`；产物发等价的 `dyn()`）。
+      const keyNode = mem.key as SurfaceNode | undefined;
+      if (keyNode?.type === "Identifier" && typeof keyNode.name === "string") {
+        const literal = literalConstKeysOf(source).get(keyNode.name);
+        if (literal !== undefined) return { name: literal };
+      }
+      const folded = surfaceComputedKeyName(keyNode);
       return folded !== undefined ? { name: folded } : undefined;
     }
     const name = surfaceName(mem.key as SurfaceNode | undefined);
@@ -7863,7 +7910,27 @@ function inheritedMemberViews(
   while (cur !== undefined) {
     const base = surface.classes.get(cur);
     if (!base) break;
-    for (const entry of members.get(cur) ?? []) {
+    // BUG-386：未导出基类不在分析面普查表里（`members` 只收导出类）⇒
+    // 从**源码面**（surface.classes 的方法签名）补继承视图。已导出的基类
+    // 仍优先用分析面行（含观测收窄的证据）。
+    const analysisEntries = members.get(cur) ?? [];
+    const seenMembers = new Set(analysisEntries.map((e) => e.member));
+    const sourceEntries: Array<{ member: string; lines: string[] }> = [];
+    for (const m of base.instanceMethods ?? []) {
+      if (seenMembers.has(m.name)) continue;
+      const params = m.params
+        .map((name, i) => {
+          const type = m.paramTypes?.[i] ?? m.paramDefaults?.[i];
+          return type === undefined ? name : `${name}: ${type}`;
+        })
+        .join(", ");
+      const ret = m.returnType ?? m.annotationReturnType ?? m.observedReturnType ?? "unknown";
+      sourceEntries.push({
+        member: m.name,
+        lines: [`${m.name}${m.optional === true ? "?" : ""}${m.typeParams ?? ""}(${params}): ${ret};`],
+      });
+    }
+    for (const entry of [...analysisEntries, ...sourceEntries]) {
       if (ownNames.has(entry.member)) continue; // 子类 own 方法覆盖
       if (out.has(entry.member)) continue; // 最近的声明类优先
       const accessibility = methodAccessibilityOf(base, entry.member);

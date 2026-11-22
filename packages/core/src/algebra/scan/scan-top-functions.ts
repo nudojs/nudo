@@ -24,7 +24,10 @@ import type { Node } from "@babel/types";
  * `scan-named-exports.ts` 的 `identName` / service 的 `classMemberKeyName`
  * 口径对齐（后者返回 `key.name ?? key.value`，含字符串 / 数字）。
  */
-function memberKeyOf(node: unknown): string | undefined {
+function memberKeyOf(
+  node: unknown,
+  literalConsts?: ReadonlyMap<string, string>,
+): string | undefined {
   const m = node as
     | {
         key?: { type?: string; name?: string; value?: unknown } | undefined;
@@ -34,12 +37,41 @@ function memberKeyOf(node: unknown): string | undefined {
   const k = m?.key;
   if (!k) return undefined;
   if (k.type === "Identifier") {
-    return m?.computed === true || typeof k.name !== "string" ? undefined : k.name;
+    if (typeof k.name !== "string") return undefined;
+    // BUG-385：`const k = "dyn"; [k]()` —— computed Identifier 本身不是稳定
+    // 名，但绑定到字面量 const 时是 TS 的稳定实体名（tsc 保留 `[k]`）。
+    if (m?.computed === true) return literalConsts?.get(k.name);
+    return k.name;
   }
   const v = k.value;
   if (typeof v === "string") return v;
   if (typeof v === "number") return String(v);
   return undefined;
+}
+
+/** 顶层 `const x = <字符串/数字字面量>` 的稳定值（BUG-385）。 */
+function literalConstValuesOf(body: readonly Node[]): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const stmt of body) {
+    const decl =
+      stmt.type === "ExportNamedDeclaration" || stmt.type === "ExportDefaultDeclaration"
+        ? ((stmt as { declaration?: Node }).declaration ?? stmt)
+        : stmt;
+    if (decl.type !== "VariableDeclaration" || (decl as { kind?: string }).kind !== "const") {
+      continue;
+    }
+    for (const d of decl.declarations) {
+      const id = d.id as { type?: string; name?: string } | undefined;
+      const init = d.init as { type?: string; value?: unknown } | null | undefined;
+      if (id?.type !== "Identifier" || typeof id.name !== "string" || !init) continue;
+      if (init.type === "StringLiteral" && typeof init.value === "string") {
+        out.set(id.name, init.value);
+      } else if (init.type === "NumericLiteral" && typeof init.value === "number") {
+        out.set(id.name, String(init.value));
+      }
+    }
+  }
+  return out;
 }
 
 /** 类体成员是否是可登记的方法（跳过 ctor / getter / setter / 类字段） */
@@ -91,6 +123,8 @@ export function defaultExportLocalName(
 export function listTopFunctions(source: string, file?: ReturnType<typeof parse>): string[] {
   const f = file ?? parse(source);
   const names: string[] = [];
+  /** BUG-385：顶层 `const k = "dyn"` ⇒ 计算键 `[k]()` 的稳定名。 */
+  const literalConsts = literalConstValuesOf(f.program.body);
   /** 本地类（ClassDeclaration + `export const C = class {}` 的类表达式） */
   const localClasses = new Map<string, Node>();
   /**
@@ -208,7 +242,7 @@ export function listTopFunctions(source: string, file?: ReturnType<typeof parse>
         };
         if (!isClassMethodNode(mem)) continue; // skip ctor/get/set/field
         // Bug 105：字符串 / 静态计算 / 数字键方法与 Identifier 键同口径
-        const keyName = memberKeyOf(mem);
+        const keyName = memberKeyOf(mem, literalConsts);
         if (!keyName) continue;
         out.push({ key: keyName, isStatic: mem.static === true });
       }
@@ -302,11 +336,17 @@ export function listTopFunctions(source: string, file?: ReturnType<typeof parse>
     for (const m of flattenObjectMembers(node)) {
       const keyType = m.key?.type;
       const computedLiteral = keyType === "StringLiteral" || keyType === "NumericLiteral";
-      if (m.computed === true && !computedLiteral) {
+      // BUG-385：`[k]` 且 `k` 是字面量 const 时可定名，不按动态键跳过。
+      const computedConst =
+        m.computed === true &&
+        keyType === "Identifier" &&
+        typeof m.key?.name === "string" &&
+        literalConsts.has(m.key.name);
+      if (m.computed === true && !computedLiteral && !computedConst) {
         out.push(m);
         continue;
       }
-      const keyName = memberKeyOf(m as never);
+      const keyName = memberKeyOf(m as never, literalConsts);
       if (keyName === undefined) {
         out.push(m);
         continue;
@@ -347,7 +387,7 @@ export function listTopFunctions(source: string, file?: ReturnType<typeof parse>
     const out: string[] = [];
     for (const m of finalObjectMembers(node)) {
       if (!isCallableObjectMember(m)) continue;
-      const keyName = memberKeyOf(m as never);
+      const keyName = memberKeyOf(m as never, literalConsts);
       if (keyName) out.push(keyName);
     }
     return out;
@@ -546,12 +586,12 @@ export function listTopFunctions(source: string, file?: ReturnType<typeof parse>
             // Bug 996：getter / setter **不是**可调用入口（`kind` 是 get/set）⇒
             // 不进普查（否则凭空造出 `f() => unknown` + 假的 L2 entry-may-throw）。
             if (prop2.kind && prop2.kind !== "method") continue;
-            const keyName = memberKeyOf(member as never);
+            const keyName = memberKeyOf(member as never, literalConsts);
             if (keyName && !names.includes(keyName)) names.push(keyName);
             continue;
           }
           if (prop2.type !== "ObjectProperty" && prop2.type !== "Property") continue;
-          const keyName = memberKeyOf(member as never);
+          const keyName = memberKeyOf(member as never, literalConsts);
           if (keyName) pushFnFromInit(keyName, prop2.value);
         }
       }

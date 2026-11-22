@@ -3077,6 +3077,43 @@ export class D { m(): number { return 1; } }
     expect(dts).toContain("export declare class D {");
   });
 
+  it("BUG-385 `const k = \"dyn\"` 的计算键类方法进类面（对照：动态键仍丢弃）", () => {
+    const dts = batchDts(
+      `const k = "dyn";
+export class CK {
+  lit(): number { return 1; }
+  [k](): number { return 2; }
+}
+`,
+    );
+    expect(dts).toContain("lit(): number;");
+    expect(dts).toContain("dyn(): number;");
+    const ctrl = batchDts(
+      `let k = "dyn";
+export class DK { [k](): number { return 2; } }
+`,
+      "/test/audit-computed-key-ctrl.ts",
+    );
+    expect(ctrl).not.toContain("dyn(): number;");
+  });
+
+  it("BUG-386 未导出泛型基类的继承方法按子类实参代入（对照：导出基类）", () => {
+    const dts = batchDts(
+      `class Base<T> { get(): T { throw new Error("x"); } }
+export class StrBase extends Base<string> { m(): string { return "m"; } }
+`,
+    );
+    expect(dts).toContain("get(): string;");
+    expect(dts).not.toContain("get(): unknown;");
+    const ctrl = batchDts(
+      `export class Base<T> { get(): T { throw new Error("x"); } }
+export class StrBase extends Base<string> { m(): string { return "m"; } }
+`,
+      "/test/audit-inherited-generic-ctrl.ts",
+    );
+    expect(ctrl).toContain("get(): string;");
+  });
+
   it("BUG-252/257/274/362 返回位：空数组 widen、readonly 声明保真、函数签名保真、抽象下标无 undefined 臂", () => {
     const dts = batchDts(
       `export function empty() { return []; }

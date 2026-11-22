@@ -160,7 +160,10 @@ export function isFnExprValue(node: Node | null | undefined): node is Node {
  * ⇒ 字符串 / 计算 / 数字键方法在 `nudo test` / `export` / `contract` 三个面
  * 全盲；core 的 `listTopFunctions` 已放宽到同一口径，此处对齐。
  */
-function classMethodKeyNameOf(member: Node | null | undefined): string | undefined {
+function classMethodKeyNameOf(
+  member: Node | null | undefined,
+  literalConsts?: ReadonlyMap<string, string>,
+): string | undefined {
   const m = member as
     | {
         key?: { type?: string; name?: string; value?: unknown } | null;
@@ -171,11 +174,40 @@ function classMethodKeyNameOf(member: Node | null | undefined): string | undefin
   const k = m?.key;
   if (!k) return undefined;
   if (k.type === "Identifier") {
-    return m?.computed === true || typeof k.name !== "string" ? undefined : k.name;
+    if (typeof k.name !== "string") return undefined;
+    // BUG-385：`const k = "dyn"; class { [k]() {} }` —— computed Identifier
+    // 绑定到字面量 const 时是稳定名（tsc 保留 `[k]`，消费方按 `dyn` 访问）。
+    if (m?.computed === true) return literalConsts?.get(k.name);
+    return k.name;
   }
   if (typeof k.value === "string") return k.value;
   if (typeof k.value === "number") return String(k.value);
   return undefined;
+}
+
+/** 顶层 `const x = <字符串/数字字面量>` 的稳定值（BUG-385）。 */
+function literalConstValuesOf(body: readonly Node[]): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const stmt of body) {
+    const decl =
+      stmt.type === "ExportNamedDeclaration"
+        ? ((stmt as { declaration?: Node }).declaration ?? stmt)
+        : stmt;
+    if (decl.type !== "VariableDeclaration" || (decl as { kind?: string }).kind !== "const") {
+      continue;
+    }
+    for (const d of (decl as { declarations?: unknown[] }).declarations ?? []) {
+      const id = (d as { id?: { type?: string; name?: string } }).id;
+      const init = (d as { init?: { type?: string; value?: unknown } | null }).init;
+      if (id?.type !== "Identifier" || typeof id.name !== "string" || !init) continue;
+      if (init.type === "StringLiteral" && typeof init.value === "string") {
+        out.set(id.name, init.value);
+      } else if (init.type === "NumericLiteral" && typeof init.value === "number") {
+        out.set(id.name, String(init.value));
+      }
+    }
+  }
+  return out;
 }
 
 export function namedFnExprId(node: Node): string | null {
@@ -357,6 +389,8 @@ export function collectTopLevelFunctions(
   const results: { name: string; node: Node; stmt: Node; noDeclaration: boolean; assignedName?: string }[] = [];
   if (ast.type !== "File") return results;
   const body = programBody(ast);
+  // BUG-385：`const k = "dyn"` 这类稳定字面量绑定 ⇒ 类计算键可定名。
+  const literalConsts = literalConstValuesOf(body);
   const localObjects = localObjectLiteralsOf(ast);
   /** `export { api }` / `export default api` ⇒ 本地对象成员也是公共入口 */
   const exportedObjectNames = new Set<string>();
@@ -420,7 +454,7 @@ export function collectTopLevelFunctions(
       }
       if (m.kind && m.kind !== "method") continue;
       // Bug 105：字符串 / 静态计算 / 数字键方法与 Identifier 键同口径
-      const keyName = classMethodKeyNameOf(member);
+      const keyName = classMethodKeyNameOf(member, literalConsts);
       const methodNode = methodFunctionNode(member);
       if (keyName === undefined || !methodNode) continue;
       out.push({ name: keyName, node: methodNode, isStatic: m.static === true });
