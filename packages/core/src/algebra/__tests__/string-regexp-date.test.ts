@@ -394,7 +394,7 @@ describe("position args ToIntegerOrInfinity validation", () => {
 // ---------------------------------------------------------------------------
 // BUG-341：String.prototype.match 的抽象接收者结果域（global vs 非 global）
 // ---------------------------------------------------------------------------
-describe("BUG-341：String.match 抽象接收者的结果域", () => {
+describe("String.match 抽象接收者的结果域", () => {
   function check(src: string) {
     return checkSource("/t/b341.js", src, pTrue, {});
   }

@@ -466,7 +466,7 @@ describe("findLast/findLastIndex/toSorted", () => {
 // ---------------------------------------------------------------------------
 // fix-16：BUG-357 flat 元素域 / BUG-364 数组迭代器元素域
 // ---------------------------------------------------------------------------
-describe("BUG-357：flat 的元素域 = 展开后的元素域（不再与原元素 join）", () => {
+describe("flat 的元素域 = 展开后的元素域（不再与原元素 join）", () => {
   const numAbs = num();
   const strAbs = str();
   const arrOf = (element: Abs): Abs => abs({ k: "arr", element }, undefined, undefined, "exact");
@@ -502,7 +502,7 @@ describe("BUG-357：flat 的元素域 = 展开后的元素域（不再与原元�
   });
 });
 
-describe("BUG-364：长度未知数组的 values/keys/entries 保留元素域", () => {
+describe("长度未知数组的 values/keys/entries 保留元素域", () => {
   const arrOf = (element: Abs): Abs => abs({ k: "arr", element }, undefined, undefined, "exact");
   const strArr = arrOf(str());
 

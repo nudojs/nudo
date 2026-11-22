@@ -68,7 +68,7 @@ describe("槽克隆不得吞掉 __proto__ 槽", () => {
   });
 });
 
-describe("BUG-253 索引签名守卫", () => {
+describe("索引签名守卫", () => {
   const indexed = (key: Abs, value: Abs): Abs =>
     abs(
       { k: "obj", slots: {}, index: { key, value }, open: true },

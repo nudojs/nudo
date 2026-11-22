@@ -4453,7 +4453,7 @@ describe("负控制（区间合并的邻近形态不回归）", () => {
 // ---------------------------------------------------------------------------
 // fix-16：BUG-289 Object.fromEntries 条目数组 / BUG-365 values·entries 值域
 // ---------------------------------------------------------------------------
-describe("BUG-289 / BUG-365：Object.fromEntries 条目数组与键家族值域投影", () => {
+describe("Object.fromEntries 条目数组与键家族值域投影", () => {
   const SRC = `
 export function feLit(): number { return Object.fromEntries([["a", 1]]).a ?? 0; }
 export function fePairs(kv: [string, number][]): number { return Object.fromEntries(kv).a ?? 0; }
@@ -4476,7 +4476,7 @@ export function localVals() { const local = { a: 1, b: "s" }; return Object.valu
 
   it("BUG-289：抽象键条目在结果对象上留下索引值域（.a / [k] 读 number）", () => {
     const kvAbs = abs(
-      { k: "arr", element: abs({ k: "tuple", elements: [abs({ k: "prim", type: "string" }, undefined, undefined, "path"), num()] }) },
+      { k: "arr", element: abs({ k: "tuple", elements: [abs({ k: "prim", type: "string" }, undefined, undefined, "path"), num()] }, undefined, undefined, "exact") },
       undefined,
       undefined,
       "exact",

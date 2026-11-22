@@ -338,7 +338,7 @@ function checkTs(src: string) {
   return checkSource("/t/guard-matrix.ts", src, pTrue, {});
 }
 
-describe("BUG-275 typeof 守卫收窄 unknown", () => {
+describe("typeof 守卫收窄 unknown", () => {
   const SRC = `
 export function g1(x: unknown): string { return typeof x === "string" ? x : ""; }
 export function g2(x: unknown): number { if (typeof x === "number") { return x; } return 0; }
@@ -359,7 +359,7 @@ export function g2(x: unknown): number { if (typeof x === "number") { return x; 
   });
 });
 
-describe("BUG-291 typeof 成员目标（typeof o.v）", () => {
+describe("typeof 成员目标守卫（typeof o.v）", () => {
   const SRC = `
 export function memGuard(o: { v: number } | { v: string }): string {
   if (typeof o.v === "number") { return o.v.toFixed(); }
@@ -399,7 +399,7 @@ export function plainGuard(x: number | string): string {
   });
 });
 
-describe("BUG-290 `in` 守卫剪 union 臂", () => {
+describe("`in` 守卫剪 union 臂", () => {
   const SRC = `
 export function inNarrow(o: { a: number } | { b: string }): number {
   if ("a" in o) { return o.a; }
@@ -439,7 +439,7 @@ export function inNarrowBoth(o: { a: number } | { a: number; b: string }): numbe
   });
 });
 
-describe("BUG-282 用户定义类型谓词参与调用点收窄", () => {
+describe("用户定义类型谓词参与调用点收窄", () => {
   const SRC = `
 export function isStr(x: string | number): x is string { return typeof x === "string"; }
 export function useGuard(x: string | number): string { return isStr(x) ? x.toUpperCase() : ""; }
@@ -463,7 +463,7 @@ export function useBoolOnly(x: string | number): string { return isStr(x) ? "yes
   });
 });
 
-describe("BUG-363 switch (typeof x) case 臂应用 typeof 事实", () => {
+describe("switch (typeof x) case 臂应用 typeof 事实", () => {
   const SRC = `
 export function switchTypeof(x: string | number): string {
   switch (typeof x) {
@@ -497,7 +497,7 @@ export function ifTypeof(x: string | number): string {
   });
 });
 
-describe("BUG-335 fork 隐式 else 接取反守卫", () => {
+describe("fork 隐式 else 接取反守卫", () => {
   const SRC = `
 export function identWriteThenRead(a?: string) { if (a === undefined) a = "x"; return a.length; }
 export function bangWriteThenRead(a?: string) { if (!a) a = "x"; return a.length; }
@@ -529,7 +529,7 @@ export function earlyReturnControl(a?: string) { if (a === undefined) return 0; 
   });
 });
 
-describe("BUG-292 成员逻辑赋值写回成员槽", () => {
+describe("成员逻辑赋值写回成员槽", () => {
   const SRC = `
 export function nullishAssign(o: { a?: number }) { o.a ??= 5; return o.a; }
 export function logicalOrAssign(o: { a?: number }) { o.a ||= 5; return o.a; }
