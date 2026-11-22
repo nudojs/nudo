@@ -703,12 +703,16 @@ export type TypeGuard = {
   memberTypeOf?: string;
   /** BUG-290：`in` 守卫的成员键（`"a" in o`） */
   inKey?: string;
+  /** BUG-372：`x instanceof A` 的类名（any/unknown 事实臂窄化为实例面） */
+  instanceName?: string;
+  /** BUG-375：`Array.isArray(x)`（事实臂剪成数组 / 补集臂剪掉数组） */
+  arrayCheck?: boolean;
 };
 
 /** 用户定义类型谓词声明（BUG-282）：`function isStr(x): x is string` →
  *  { paramIndex: 0, typeOf: "string" }。只收顶层声明（模块作用域）——
  *  名字在调用点按模块绑定解析，嵌套作用域的同名谓词可能被遮蔽，保守不收。 */
-type TypePredicateDecl = { paramIndex: number; typeOf: string };
+type TypePredicateDecl = { paramIndex: number; typeOf: string; asserts?: boolean };
 
 /** 当前转译单元的源码（由 statement.ts 的 transpileStatement 在每个语句
  *  入口喂入）：typeGuardOf 的签名没有 opts，用户谓词声明只能按源码查表。
@@ -743,14 +747,18 @@ function predicateParamIndex(fn: unknown, paramName: string): number {
 function addPredicateDecl(name: string, fn: unknown, map: Map<string, TypePredicateDecl>): void {
   const text = (fn as { nudoReturnTypeText?: unknown }).nudoReturnTypeText;
   if (typeof text !== "string") return;
-  const m = /^\s*([A-Za-z_$][\w$]*)\s+is\s+(.+?)\s*$/.exec(text);
+  // BUG-380：`asserts x is T` 的声明位是 `asserts` 前缀；调用 `assertS(x)`
+  // 之后的路径可以直接把 x 窄化为 T。
+  const assertsMatch = /^\s*asserts\s+([A-Za-z_$][\w$]*)\s+is\s+(.+?)\s*$/.exec(text);
+  const m =
+    assertsMatch ?? /^\s*([A-Za-z_$][\w$]*)\s+is\s+(.+?)\s*$/.exec(text);
   if (!m) return;
   const paramName = m[1]!;
   const typeOf = typeOfPredicateTarget(m[2]!);
   if (typeOf === undefined) return;
   const paramIndex = predicateParamIndex(fn, paramName);
   if (paramIndex < 0) return;
-  map.set(name, { paramIndex, typeOf });
+  map.set(name, { paramIndex, typeOf, ...(assertsMatch ? { asserts: true } : {}) });
 }
 
 /** 顶层语句 → 谓词声明（FunctionDeclaration / const fn = function|arrow）。 */
@@ -811,7 +819,9 @@ function predicateCallGuardOf(t: {
   const callee = t.callee as { type?: string; name?: string };
   if (callee?.type !== "Identifier" || !callee.name) return undefined;
   const decl = typePredicatesOf(typePredicateSource).get(callee.name);
-  if (!decl) return undefined;
+  // asserts 签名返回 void，不是布尔测试式；语句位的窄化见
+  // assertionNarrowingOf。
+  if (!decl || decl.asserts === true) return undefined;
   const args = t.arguments;
   if (!Array.isArray(args)) return undefined;
   const arg = args[decl.paramIndex] as { type?: string; name?: string } | undefined;
@@ -831,6 +841,55 @@ function predicateCallGuardOf(t: {
   };
 }
 
+/**
+ * BUG-380：语句位断言 `assertS(x);` 之后的窄化事实。
+ *
+ * `asserts x is T` 的调用表达式本身不是布尔测试式，不能走 `typeGuardOf`；
+ * 调用后的路径可以把实参绑定窄化为 T。只认单层 Identifier 实参（成员 /
+ * 解构实参没有可重绑的局部名）。
+ */
+export function assertionNarrowingOf(
+  stmt: unknown,
+): { name: string; typeOf: string } | undefined {
+  const s = stmt as { type?: string; expression?: unknown };
+  if (s?.type !== "ExpressionStatement") return undefined;
+  const e = s.expression as {
+    type?: string;
+    callee?: { type?: string; name?: string };
+    arguments?: unknown;
+  };
+  if (e?.type !== "CallExpression") return undefined;
+  const callee = e.callee;
+  if (callee?.type !== "Identifier" || !callee.name) return undefined;
+  const decl = typePredicatesOf(typePredicateSource).get(callee.name);
+  if (!decl?.asserts) return undefined;
+  const args = e.arguments;
+  if (!Array.isArray(args)) return undefined;
+  const arg = args[decl.paramIndex] as { type?: string; name?: string } | undefined;
+  if (arg?.type !== "Identifier" || !arg.name) return undefined;
+  return { name: arg.name, typeOf: decl.typeOf };
+}
+
+/** `Array.isArray(x)` → x（BUG-375）；其他形态 / 多参 ⇒ undefined。 */
+function arrayIsArrayArgOf(t: {
+  callee?: unknown;
+  arguments?: unknown;
+}): string | undefined {
+  const callee = t.callee as {
+    type?: string;
+    computed?: boolean;
+    object?: { type?: string; name?: string };
+    property?: { type?: string; name?: string };
+  };
+  if (callee?.type !== "MemberExpression" || callee.computed === true) return undefined;
+  if (callee.object?.type !== "Identifier" || callee.object.name !== "Array") return undefined;
+  if (callee.property?.type !== "Identifier" || callee.property.name !== "isArray") return undefined;
+  const args = t.arguments;
+  if (!Array.isArray(args) || args.length !== 1) return undefined;
+  const arg = args[0] as { type?: string; name?: string };
+  return arg?.type === "Identifier" && arg.name ? arg.name : undefined;
+}
+
 export function typeGuardOf(test: unknown): TypeGuard | undefined {
   const t = test as {
     type?: string;
@@ -847,9 +906,24 @@ export function typeGuardOf(test: unknown): TypeGuard | undefined {
     return g ? { ...g, arm: g.arm === "cons" ? "alt" : "cons" } : undefined;
   }
   // BUG-282：用户定义类型谓词调用
-  if (t?.type === "CallExpression") return predicateCallGuardOf(t);
+  if (t?.type === "CallExpression") {
+    // BUG-375：`Array.isArray(x)` —— 内置判定没有声明位，单独识别。
+    const arrayArg = arrayIsArrayArgOf(t);
+    if (arrayArg !== undefined) {
+      return { name: arrayArg, typeOf: "", arm: "cons", arrayCheck: true };
+    }
+    return predicateCallGuardOf(t);
+  }
   if (t?.type !== "BinaryExpression") return undefined;
   const op = t.operator;
+  // BUG-372：`x instanceof A` —— 右操作数是单层类名。
+  if (op === "instanceof") {
+    const left = t.left as { type?: string; name?: string };
+    const right = t.right as { type?: string; name?: string };
+    if (left?.type !== "Identifier" || !left.name) return undefined;
+    if (right?.type !== "Identifier" || !right.name) return undefined;
+    return { name: left.name, typeOf: "", arm: "cons", instanceName: right.name };
+  }
   // BUG-290：`"a" in o` —— 右操作数是单层对象标识符；字面量键为字符串
   // （数值键的 `in` 收窄面罕见，保守不认）。
   if (op === "in") {
@@ -983,6 +1057,12 @@ export function narrowNullishArmThunks(
 
 /** TypeGuard → 运行时窄化调用串（typeof 标识符 / typeof 成员 / in）。 */
 function typeNarrowCallOf(g: TypeGuard, keep: boolean): string {
+  if (g.arrayCheck === true) {
+    return `$narrowArray(${g.name}, ${keep})`;
+  }
+  if (g.instanceName !== undefined) {
+    return `$narrowInstanceof(${g.name}, ${JSON.stringify(g.instanceName)}, ${keep})`;
+  }
   if (g.inKey !== undefined) {
     return `$narrowIn(${g.name}, ${JSON.stringify(g.inKey)}, ${keep})`;
   }
@@ -1090,8 +1170,8 @@ export function narrowImplicitElseArmThunk(
 export type DiscriminantGuard = {
   /** 被守卫的标识符（判别基名） */
   name: string;
-  /** 判别键（非计算成员） */
-  key: string;
+  /** 判别键（非计算成员）；undefined = 标识符–字面量等值守卫 */
+  key?: string;
   /** 判别字面量（string/number/boolean） */
   value: string | number | boolean;
   /** 「x.key === value」事实成立的臂（`===` → cons / `!==` → alt） */
@@ -1116,13 +1196,29 @@ export function discriminantGuardOf(test: unknown): DiscriminantGuard | undefine
     lm !== undefined && isPrimLitNode(t.right) ? { target: lm, lit: t.right as { value: string | number | boolean } } :
     rm !== undefined && isPrimLitNode(t.left) ? { target: rm, lit: t.left as { value: string | number | boolean } } :
     undefined;
-  if (!m) return undefined;
-  return {
-    name: m.target.name,
-    key: m.target.key,
-    value: m.lit.value,
-    arm: t.operator === "===" ? "cons" : "alt",
-  };
+  if (m) {
+    return {
+      name: m.target.name,
+      key: m.target.key,
+      value: m.lit.value,
+      arm: t.operator === "===" ? "cons" : "alt",
+    };
+  }
+  // BUG-391：`k === "a"` 的标识符–字面量等值。只认 `===`（`!==` 的补集
+  // 无法用单一 Abs 表示）；事实臂把 k 影子重绑为 `$lit("a")`，对象下标读
+  // 因此能按字面量键分发。
+  if (t.operator !== "===") return undefined;
+  const left = t.left as { type?: string; name?: string };
+  const right = t.right as { type?: string; name?: string };
+  const pair =
+    left?.type === "Identifier" && left.name && isPrimLitNode(t.right)
+      ? { name: left.name, lit: t.right as { value: string | number | boolean } }
+      : right?.type === "Identifier" && right.name && isPrimLitNode(t.left)
+        ? { name: right.name, lit: t.left as { value: string | number | boolean } }
+        : undefined;
+  return pair !== undefined
+    ? { name: pair.name, value: pair.lit.value, arm: "cons" }
+    : undefined;
 }
 
 /**
@@ -1172,7 +1268,11 @@ export function narrowDiscriminantArmThunks(
     [...byName.keys()].map((name) => ({
       name,
       arg: (byName.get(name) ?? []).reduce(
-        (acc, g) => `$narrowMemberEq(${acc}, ${JSON.stringify(g.key)}, ${JSON.stringify(g.value)}, true)`,
+        (acc, g) =>
+          g.key === undefined
+            ? // BUG-391：`k === "a"` 事实臂 ⇒ k 必为字面量 "a"。
+              `$lit(${JSON.stringify(g.value)})`
+            : `$narrowMemberEq(${acc}, ${JSON.stringify(g.key)}, ${JSON.stringify(g.value)}, true)`,
         name,
       ),
     })),

@@ -160,7 +160,9 @@ export {
 } from "./runtime/async.ts";
 export {
   $declDomain,
+  $narrowArray,
   $narrowIn,
+  $narrowInstanceof,
   $narrowMemberEq,
   $narrowTypeOf,
   $nullishTest,

@@ -94,6 +94,7 @@ import {
   narrowNotNaNArmThunk,
   narrowImplicitElseArmThunk,
   setTypePredicateSource,
+  assertionNarrowingOf,
 } from "./predicates.ts";
 import {
   matchAsOverride,
@@ -682,10 +683,18 @@ function emitExpressionStatement(
   // 此处的语句位写回只剩 Bug 96 正则状态（见 emitStmtWritebackRebinds）。
   const expr = stmt.expression as Expression;
   const exprRebinds = emitStmtWritebackRebinds(expr, opts, pad);
-  if (exprRebinds.length > 0) {
+  // BUG-380：`assertS(x);` 之后把 x 窄化为断言目标类型（只对语句位
+  // `asserts x is T` 生效；表达式位 / 成员实参不猜）。
+  const assertion = assertionNarrowingOf(stmt);
+  const assertionLine =
+    assertion !== undefined
+      ? `${pad}${assertion.name} = $narrowTypeOf(${assertion.name}, ${JSON.stringify(assertion.typeOf)}, true);`
+      : undefined;
+  if (exprRebinds.length > 0 || assertionLine !== undefined) {
     return [
       `${pad}${emitTranspileExpression(expr, opts)};`,
       ...exprRebinds,
+      ...(assertionLine !== undefined ? [assertionLine] : []),
     ].join("\n");
   }
   return `${pad}${emitTranspileExpression(stmt.expression, opts)};`;

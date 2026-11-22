@@ -194,3 +194,65 @@ export function nestedTwoLevel(report) { if (report.scorecard.grade) return repo
     expect(l2Count(r, "nestedTwoLevel")).toBeGreaterThan(0);
   });
 });
+
+describe("守卫语法通道：instanceof / Array.isArray / asserts / 标识符字面量", () => {
+  it("instanceof：any 实参事实臂窄化为类实例，成员读零 L2", () => {
+    const r = checkSource(
+      "/t/guard-instanceof.ts",
+      `class A { length = 1; }
+export function inst(x: any): number {
+  if (x instanceof A) return x.length;
+  return 0;
+}
+`,
+      pTrue,
+    );
+    expect(r.summary.errors).toBe(0);
+    // 实例字段 `length = 1` 的观测是字面量 1；关键是成员读不再 may-throw。
+    expect(sigOf(r, "inst")).toMatch(/1 \| 0/);
+    expect(sigOf(r, "inst")).not.toMatch(/throws/);
+  });
+
+  it("Array.isArray：两臂分别窄化为数组 / 非数组，reduce 与 toUpperCase 均零 L2", () => {
+    const r = checkSource(
+      "/t/guard-array.ts",
+      `export function arr(x: string | number[]): string {
+  if (Array.isArray(x)) return String(x.reduce((a, b) => a + b, 0));
+  return x.toUpperCase();
+}
+`,
+      pTrue,
+    );
+    expect(r.summary.errors).toBe(0);
+    expect(sigOf(r, "arr")).not.toMatch(/throws/);
+  });
+
+  it("asserts x is T：断言调用后的路径把实参窄化为 T", () => {
+    const r = checkSource(
+      "/t/guard-asserts.ts",
+      `function assertS(x: unknown): asserts x is string {}
+export function use(x: string | number): string {
+  assertS(x);
+  return x.toUpperCase();
+}
+`,
+      pTrue,
+    );
+    expect(r.summary.errors).toBe(0);
+    expect(sigOf(r, "use")).not.toMatch(/throws/);
+  });
+
+  it("标识符–字面量等值：事实臂把 k 重绑为字面量，动态下标读按精确键分发", () => {
+    const r = checkSource(
+      "/t/guard-lit-eq.ts",
+      `export function upperA(o: { a: string; b: number }, k: string): string {
+  if (k === "a") return o[k].toUpperCase();
+  return "";
+}
+`,
+      pTrue,
+    );
+    expect(r.summary.errors).toBe(0);
+    expect(sigOf(r, "upperA")).not.toMatch(/throws/);
+  });
+});
