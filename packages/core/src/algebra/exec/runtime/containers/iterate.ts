@@ -196,25 +196,6 @@ export function $concat(a: Abs, b: Abs): Abs {
   if (as.k === "tuple" && bs.k === "tuple") {
     return tupleOrWiden([...as.elements, ...bs.elements], confJoin(a.conf, b.conf));
   }
-  // 一侧是抽象数组（arr）：spread 语义按元素并入（元素 join），
-  // 不得整体嵌为单元素——字面量链超 cap 降级为 arr 后继续吸收后续元素也走此分支
-  if (as.k === "arr" || bs.k === "arr") {
-    // 空 tuple 元素 join 无单位元——不得裸 reduce（DEC-006: Reduce of empty array）；
-    // 单位元是 bottom（never）而非 unknown（top）——空 tuple spread 不贡献
-    // 元素，join(never, x) = x（与下方 sideEl 同口径，Bug 4：[...xs] 元素域
-    // 被 unknown 污染成 number | unknown 的根因）
-    const ea: Abs = as.k === "tuple"
-      ? (as.elements.length ? as.elements.reduce((x, y) => joinAbs(x, y)) : abs({ k: "never" }, undefined, undefined, "exact"))
-      : as.k === "arr"
-        ? as.element
-        : a;
-    const eb: Abs = bs.k === "tuple"
-      ? (bs.elements.length ? bs.elements.reduce((x, y) => joinAbs(x, y)) : abs({ k: "never" }, undefined, undefined, "exact"))
-      : bs.k === "arr"
-        ? bs.element
-        : b;
-    return abs({ k: "arr", element: joinAbs(ea, eb) }, undefined, undefined, "path");
-  }
   // 剩余：至少一侧非 tuple/arr/string 字面量。
   // 迭代性守卫对齐共享分类器（iterabilityKind/guardIterable，与 $elems /
   // $iterCheck 同口径）：非字符串 prim（字面量或抽象 prim 面）与闭 obj
@@ -292,10 +273,51 @@ export function $concat(a: Abs, b: Abs): Abs {
     // arr 元素，不再折 unknown（Set/Map/match-iter brand 在 expand 按名命中）。
     // expanded 在此必为 null（顶部 if (expanded) 已返回）——显式传 null。
     if (x?.shape?.k === "brand") return sideEl(x.shape.shape, null);
+    // BUG-401：注解 Map/Set 的 obj 模型 + 长度未知迭代器——只贡献**元素域**
+    // 单代表，不声明长度（`$concat` 得 arr，不能折成定长 tuple）。
+    if (x?.facets?.brand === "Map" || x?.facets?.brand === "Set") {
+      const els = x.facets.genElements;
+      if (els && els.length > 0) return els.reduce((u, y) => joinAbs(u, y));
+    }
+    const ase = abstractSeqElementOf(x);
+    if (ase !== undefined) return ase;
     return unknown;
   };
+  // 只有**长度确定**的容器才允许走精确展开（否则 tuple 形会假装长度）。
+  // Set/Map/matchAll/生成器消费视图有精确条目；注解 Map/Set 与长度未知
+  // 迭代器只由 sideEl 取元素域（BUG-401）。
+  const exactEls = (x: Abs): Abs[] | null => {
+    if (
+      isSetAbs(x) ||
+      isMapAbs(x) ||
+      matchIterElements(x) !== undefined ||
+      genDrainViewOf(x) !== undefined
+    ) {
+      return expand(x);
+    }
+    // 内层 / 裸 tuple 是精确序列（[...brandTuple] 保持 tuple 形状）。
+    if (x.shape.k === "tuple") return [...x.shape.elements];
+    // brand 的结构面在内层：内层 tuple 仍是精确序列；内层 arr 长度未知 ⇒ null。
+    if (x.shape.k === "brand") return exactEls(x.shape.shape);
+    // 用户 iterable 只有在**本轮能走到 done** 时才是精确长度；抽象 done /
+    // 截断 ⇒ 交给 sideEl 的单代表元素域（不得折定长 tuple）。
+    if (userIteratorFn(x)) {
+      const ui = collectUserIterElems(x, USER_ITER_MAX_STEPS);
+      return ui && !ui.truncated ? ui.els : null;
+    }
+    return null;
+  };
+  // 一侧是抽象数组（arr）：spread 语义按元素并入（元素 join），
+  // 不得整体嵌为单元素——字面量链超 cap 降级为 arr 后继续吸收后续元素也走此分支。
+  // 非 arr/tuple 侧也按**元素域**取（`[...m, ...xs]` 的 m 是 iterable）——
+  // 直接拿接收者本身会把整个对象当元素（[...m] 折 arr<Map>）。
+  if (as.k === "arr" || bs.k === "arr") {
+    const ea: Abs = as.k === "arr" || as.k === "tuple" ? sideEl(a, null) : sideEl(a, exactEls(a));
+    const eb: Abs = bs.k === "arr" || bs.k === "tuple" ? sideEl(b, null) : sideEl(b, exactEls(b));
+    return abs({ k: "arr", element: joinAbs(ea, eb) }, undefined, undefined, "path");
+  }
   if (as.k === "tuple") {
-    const be = expand(b);
+    const be = exactEls(b);
     if (be) {
       // R1b：exact 生成器视图（线性收集序列）→ 重组越过 cap 出 exact 元组
       return drainTupleOrWiden(
@@ -314,7 +336,7 @@ export function $concat(a: Abs, b: Abs): Abs {
       "path",
     );
   }
-  const ae = expand(a);
+  const ae = exactEls(a);
   if (ae && bs.k === "tuple") {
     // R1b：同上——[...g()] 的元素域来自 drain 的权威序列，不受形状面 cap
     return drainTupleOrWiden(
@@ -900,6 +922,13 @@ function elemsOf(a: Abs): Abs[] {
   if (a.shape.k === "arr") return [markDomainShared(a.shape.element)];
   if (isSetAbs(a)) return setElementsAbs(a);
   if (isMapAbs(a)) return mapEntriesAbs(a);
+  // BUG-401：注解 `Map<K,V>` / `Set<T>` 的 obj 模型携带集合身份 facet
+  // （方法面保留 obj，元素域由 genElements 承载）——spread / for-of 直接
+  // 读条目代表，不落用户迭代器协议的「done 不可判 ⇒ unknown」兜底。
+  if (a.facets?.brand === "Map" || a.facets?.brand === "Set") {
+    const els = a.facets.genElements;
+    if (els && els.length > 0) return els;
+  }
   // Bug 236：boxed String 品牌——字符序列精确展开（原生可迭代）
   const boxedChars = boxedStringChars(a);
   if (boxedChars) return boxedChars;

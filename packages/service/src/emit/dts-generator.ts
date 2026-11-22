@@ -3358,8 +3358,15 @@ function tsDeclaredReturn(
     observedAbs !== undefined &&
     leqAbs(declaredAbs, observedAbs).ok &&
     !leqAbs(observedAbs, declaredAbs).ok;
+  // BUG-403 配套：enum 作返回注解时 tsc 保留 `Color`，不会改写成成员字面量
+  // 联合 / 基类型。观测域是新映射出的 `"red" | "green"` ⇒ 必须让声明名胜出。
+  const bareName = raw.trim();
+  const namedEnumReturn =
+    /^[A-Za-z_$][\w$]*$/.test(bareName) &&
+    ctx?.surface?.values.get(bareName)?.kind === "enum";
   const declarationMorePrecise =
     declaredNarrower ||
+    namedEnumReturn ||
     hasLibGlobalTypeText(raw) ||
     isPlaceholderBuiltinType(observed) ||
     (hasReadonlyTypePrefix(raw) && !observed.includes("readonly")) ||

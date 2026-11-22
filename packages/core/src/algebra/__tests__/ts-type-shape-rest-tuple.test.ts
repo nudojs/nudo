@@ -44,8 +44,21 @@ describe("TS rest 元组的 Shape 播种", () => {
     expect(r.result.shape).toMatchObject({ k: "prim", type: "number" });
   });
 
-  it("BUG-177 对照：定长元组不变；可选位（长度可变且位置不确定）仍降级为 arr(元素并集)", () => {
+  it("定长元组不变；可选位按合法长度逐臂保留位置（不再塌成 arr 元素并集）", () => {
     expect(shaped("[number, string]")).toBe("[number, string]");
-    expect(shaped("[string, number?]")).toBe("(string | number)[]");
+    expect(shaped("[string, number?]")).toBe("[string] | [string, number]");
+    expect(shaped("[number, string?, ...boolean[]]")).toBe(
+      "[number, ...boolean[]] | [number, string, ...boolean[]]",
+    );
+
+    const opt = absShapeForTsTypeText("[string, number?]");
+    if (!opt) throw new Error("unmapped optional tuple");
+    const r = call(
+      `export function firstOpt(t) { return t[0]; }`,
+      "firstOpt",
+      [abs(opt, undefined, undefined, "path")],
+    );
+    // 位置维度保留 ⇒ t[0] 恒 string（旧 arr 并集会给 string | number）。
+    expect(r.result.shape).toMatchObject({ k: "prim", type: "string" });
   });
 });
