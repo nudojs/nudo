@@ -33,13 +33,27 @@ import { isHiddenInternalSlot } from "./internal-slot.ts";
 import { isRuntimeGlobalCtorName } from "./schema-generator.ts";
 import { renderDtsParams, renderDtsSignature, type DtsParam } from "./dts-ir.ts";
 import type {
+  DtsClassAccessorSurface,
+  DtsClassFieldSurface,
+  DtsClassMemberSurface,
+  DtsClassMethodSurface,
+  DtsClassSurface,
+  DtsCtorSignatureSurface,
   DtsImportSurface,
+  DtsModuleSurface,
   DtsNamespaceSurface,
   DtsObjectFnAnnotation,
   DtsValueSurface,
 } from "./dts-ir.ts";
 export type {
+  DtsClassAccessorSurface,
+  DtsClassFieldSurface,
+  DtsClassMemberSurface,
+  DtsClassMethodSurface,
+  DtsClassSurface,
+  DtsCtorSignatureSurface,
   DtsImportSurface,
+  DtsModuleSurface,
   DtsNamespaceSurface,
   DtsObjectFnAnnotation,
   DtsValueSurface,
@@ -3715,308 +3729,6 @@ export function generateDts(result: AnalysisResult): string {
 // 再导出（`export * from` / `export {x} from`）按原样发射（Bug 939）：产物的
 // 导出面必须与源模块一致，否则消费方 import 直接 TS2305。
 // ---------------------------------------------------------------------------
-
-/**
- * 类**成员面**（源码形状：成员名 + 构造器形参）——`scanClassSurface` 的返回面，
- * 只描述类体本身、不含导出形态；`DtsClassSurface` 在其上叠加导出三件套
- * （exportName / exportNames / isDefault）。
- */
-/** 类字段投影面（实例 / static 共用）：名 + 类型 + 修饰符（Bug 23/77/86/42）。 */
-export interface DtsClassFieldSurface {
-  name: string;
-  type: string;
-  readonly?: boolean;
-  /** BUG-044：`x?: T` 的可选修饰符（旧实现丢弃 ⇒ 消费方读到不存在的值） */
-  optional?: boolean;
-  accessibility?: "private" | "protected" | "public";
-  isAbstract?: boolean;
-  /**
-   * BUG-216：well-known symbol 键（`[Symbol.iterator]` ⇒ name `"@@iterator"`）。
-   * 发射时必须还原成 `[Symbol.iterator]` 括号形态，不能当字符串键。
-   */
-  symbolKey?: boolean;
-}
-
-/** 类方法投影面（源码面）：实例 / static 共用。 */
-export interface DtsClassMethodSurface {
-  name: string;
-  params: string[];
-  /**
-   * 形参的源码类型注解原文（与 `params` 平行；无注解 / 注解不可解析 ⇒ undefined）。
-   *
-   * `params` 只承载**名字**——抽象方法 / 无体声明方法在分析面没有条目，发射侧
-   * 曾因此退成 `unknown`（形参注解整段丢失 ⇒ 消费方错实参 / 错覆写编译通过）。
-   * 注解在源码 AST 上本来就在，缺的只是这条通道。
-   */
-  paramTypes?: Array<string | undefined>;
-  /**
-   * BUG-193：默认值证据（与 `params` 平行；无注解的 `m(x = 1)` 位是 `number`）。
-   * 分析面签名（`C.m`）把该表当形参类型兜底。
-   */
-  paramDefaults?: Array<string | undefined>;
-  accessibility?: "private" | "protected" | "public";
-  isAbstract?: boolean;
-  /** 方法声明的返回类型注解原文（abstract / 无分析证据的方法用） */
-  returnType?: string;
-  /**
-   * **注解证据**的返回类型（无返回注解时按方法体静态定型）。
-   *
-   * 求值面对「声明字段 + 构造器写入」的实例字段播种 `any` ⇒ 方法体
-   * `this.n + 1` 被折成 `number | string`（`string` 分支不可达），而同次
-   * `check` 与 `tsc --declaration` 都是 `number`。源码注解（字段 / 形参 /
-   * 字面量）是声明面事实 ⇒ 这里给出静态定型结果，发射侧**只收窄不放宽**。
-   */
-  annotationReturnType?: string;
-  /**
-   * 无返回注解时的**方法体观测**返回类型（单条 `return` 的字面量 / 字段引用）。
-   *
-   * 静态方法与同名实例方法共用一条分析面签名（core 只普查一条 `C.m`）⇒
-   * `analysisReturnOf` 的形参不匹配时不能复用实例位证据；此时按静态方法
-   * **自己的**方法体给出可观测的类型（与 getter 同一证据标准）。
-   */
-  observedReturnType?: string;
-  /** 方法级类型形参子句原文（`<U>`） */
-  typeParams?: string;
-  /** BUG-215：`m?(): T` 的可选修饰符（旧实现丢弃 ⇒ 消费方零诊断调用） */
-  optional?: boolean;
-  /** BUG-216：well-known symbol 键（见 `DtsClassFieldSurface.symbolKey`） */
-  symbolKey?: boolean;
-  /**
-   * BUG-175：源码面**重载集**（声明序；非空 ⇒ 实现签名不得再发）。
-   *
-   * 实现签名（`m(a: any): any`）混进重载集会变成额外的 catch-all 重载 ⇒
-   * 消费方传入 tsc 会拒绝的实参也编译通过。tsc `--declaration` 只发重载声明。
-   */
-  overloads?: DtsClassMethodSurface[];
-  /**
-   * 采集期标记：该条是**无体声明**（重载声明 / abstract / declare 方法）。
-   * 主循环结束后与同名实现合并（实现作主条目、声明作 `overloads`）。
-   */
-  declarationOnly?: boolean;
-}
-
-/** 访问器投影面（Bug 23）：运行时是公开成员，dts 必须声明。 */
-export interface DtsClassAccessorSurface {
-  name: string;
-  kind: "get" | "set";
-  type: string;
-  isStatic?: boolean;
-  accessibility?: "private" | "protected" | "public";
-  /** BUG-216：well-known symbol 键 */
-  symbolKey?: boolean;
-}
-
-/** 构造器签名面（BUG-234：重载构造器逐条保留，声明序） */
-export interface DtsCtorSignatureSurface {
-  params: string[];
-  paramTypes?: Array<string | undefined>;
-  accessibility?: "private" | "protected" | "public";
-}
-
-export interface DtsClassMemberSurface {
-  /** 实例方法（名 + 形参名，源码序） */
-  instanceMethods: DtsClassMethodSurface[];
-  /** 静态方法（名 + 形参名，源码序） */
-  staticMethods: DtsClassMethodSurface[];
-  /** 构造器形参名（无显式构造器 ⇒ undefined ⇒ 不发构造器声明） */
-  ctorParams?: string[];
-  /** BUG-042：构造器可见性（`private constructor` ⇒ 消费方不可 `new`） */
-  ctorAccessibility?: "private" | "protected" | "public";
-  /** Bug 48：构造器形参的源码类型注解（与 ctorParams 平行；无注解 ⇒ undefined） */
-  ctorParamTypes?: Array<string | undefined>;
-  /**
-   * BUG-234：**重载构造器**的签名集（源码序；非空 ⇒ 只发这些声明，不发实现）。
-   *
-   * 旧实现只有一个 `ctorParams` 槽（首个构造器节点胜出）⇒ 后续重载整段丢弃，
-   * 消费方 `new C("s")` 被 TS2345 假红。
-   */
-  ctorOverloads?: DtsCtorSignatureSurface[];
-  /**
-   * BUG-168：源码声明的**类型形参名**（`class Box<T>` ⇒ `["T"]`）。
-   *
-   * 缺了类型形参槽，泛型类只能发射成裸类名 ⇒ 消费端 `new Box<string>(…)`
-   * 报 TS2558（"Expected 0 type arguments"）——实现允许的调用被产物判非法。
-   */
-  typeParams?: string[];
-  /** Bug 74：类型形参**子句原文**（`<T = string>`）——含默认值 / 约束，发射时优先于名字表 */
-  typeParamsText?: string;
-  /**
-   * BUG-151：超类的**本地名**（`class B extends A` ⇒ `"A"`）。
-   *
-   * 缺了 extends 子句 ⇒ 产物的继承链整条断掉 ⇒ 消费端 TS2339（继承成员不可见）
-   * + TS2741（子类不可赋给父类）——运行时成员全在，两条都是假红。
-   * 只在**产物里可解析**的类名上采集（否则 `extends Unknown` 是 TS2304）。
-   */
-  superClass?: string;
-  /** BUG-378：`implements` 子句原文（与 tsc 一致，接口的编译期义务不得丢）。 */
-  implements?: string[];
-  /** Bug 73：源码里写下的超类**类型实参**原文（`extends Base<string>` ⇒ `["string"]`） */
-  superTypeArguments?: string[];
-  /**
-   * BUG-109：超类是**表达式**（`extends mixin(Base)`）时的原文。
-   *
-   * `surfaceQualifiedName` 只认标识符 / 点号限定名 ⇒ 表达式超类整条被丢，
-   * 产物的继承链断裂（消费方对继承成员 TS2339），且零台账。这里保留原文
-   * 用作降级台账，并发一个开放的构造基类（见 `dtsClassDeclaration`）。
-   */
-  superExpressionText?: string;
-  /**
-   * 实例字段（BUG-151）：构造器里的 `this.x = …` 与类属性初始化器。
-   *
-   * 分析面对 `class C` 绑定给出的 brand 是**构造器面**（实例形状只有 `name`）
-   * ⇒ 实例字段只能从源码面采集；类型取初始化器的基类型（字面量 → number /
-   * string / boolean，其余 `unknown`——声明面有字段但类型不猜）。
-   */
-  instanceFields?: DtsClassFieldSurface[];
-  /** Bug 23：static 字段（源码面，运行时公开数据属性） */
-  staticFields?: DtsClassFieldSurface[];
-  /** Bug 23：访问器（getter / setter，源码面公开成员） */
-  accessors?: DtsClassAccessorSurface[];
-  /** Bug 42：类带 `abstract` 修饰符 */
-  isAbstract?: boolean;
-  /** Bug 87：类含 `#` 私有标识符字段 ⇒ 发射 `#private;` 名义标记 */
-  hasPrivateIdentifier?: boolean;
-  /** Bug 88：类体 index signature 声明文本（`[key: string]: …;`） */
-  indexSignatures?: string[];
-}
-
-/** 类声明面（成员面 + 导出形态） */
-export interface DtsClassSurface extends DtsClassMemberSurface {
-  /** 导出名（未导出 ⇒ undefined；`export default class C` ⇒ "default"） */
-  exportName?: string;
-  /**
-   * BUG-189：**全部**导出名（具名导出优先，其后的别名 / default 逐条补发）。
-   *
-   * 同一个本地绑定可以同时是具名导出与 default 导出
-   * （`export class C {}` + `export { C as default }`）——旧实现只留一个名字
-   * ⇒ 发布的 `.d.ts` 缺 default 导出 ⇒ 消费端 default import 报 TS2349/TS2351。
-   */
-  exportNames?: string[];
-  /** 导出形态是 default（`export default class C`） */
-  isDefault: boolean;
-  /**
-   * BUG-360：该绑定是**类表达式**（`export const C = class { … }`）。TS 里
-   * `C` 是值（构造器 + 静态成员），不是类型名 ⇒ 产物必须发 `declare const C:
-   * typeof <内部类>`，不能发 `export declare class C`。
-   */
-  isExpression?: boolean;
-}
-
-/** 模块导出面（源文件的导出面：导出名 → 本地绑定 + 类面 + 再导出 + 导入面） */
-export interface DtsModuleSurface {
-  /** 导出名 → 本地绑定名（CJS 槽 / 匿名 default / 再导出 ⇒ "" = 无本地绑定） */
-  exportBindings: Map<string, string>;
-  /** 再导出语句（`export * from "x"` / `export { a as b } from "x"`） */
-  reexports: string[];
-  /**
-   * BUG-309：**仅类型**再导出的本地别名（export 名 → 本地名）。无 source 的
-   * `export type { innerFn as localFn }` 由「导入绑定再导出」通道发射，那里
-   * 必须保留 `type` 修饰符，否则产物把类型导出升级成值导出（消费方假绿 +
-   * 运行期 ESM SyntaxError）。
-   */
-  typeOnlyExportBindings?: Map<string, string>;
-  /** 类面（类本地名 → 类声明面） */
-  classes: Map<string, DtsClassSurface>;
-  /**
-   * 导入面（可当类型名用的导入绑定名 → 模块说明符）。
-   *
-   * 具名导入按**导出名**记（`import { X as Y }` ⇒ 键 "X"——产物里补
-   * `import type { X } from "…"` 用的是导出名）；默认导入按**本地名**记
-   * （`import X from "…"` ⇒ 键 "X"，补 `import type X from "…"`）。
-   */
-  imports?: Map<string, DtsImportSurface>;
-  /**
-   * 模块级**值声明**（本地名 → 形态）——`export const/let/var` 与 TS `enum`
-   * （BUG-190）。声明种类决定发射写法（`export declare const`/`let`/`var`，
-   * enum 另发成员表）。
-   */
-  values: Map<string, DtsValueSurface>;
-  /**
-   * namespace 面（本地名 → 成员声明行）。BUG-191：`export namespace NS { … }`
-   * 在运行时是真实对象（求值器物化了它），旧实现只发射函数/类/值 ⇒ 产物里
-   * 没有 `NS` ⇒ 消费端 TS2305。
-   */
-  namespaces?: Map<string, DtsNamespaceSurface>;
-  /**
-   * Bug 22 / 75：模块顶层 `interface` / `type` 别名的**原文镜像**。
-   * 导出的（`export interface Top`）整段原文带 `export`；未导出的私有类型
-   * （`interface Hidden`）只发声明（tsc `--declaration` 同口径），让 namespace
-   * 成员引用私有类型时在产物里可解析（否则 TS2304）。
-   */
-  typeDeclarations?: string[];
-  /**
-   * BUG-217：局部导出别名指向**类型声明**时的导出语句（`export { I as IA };`
-   * / `export type { I as IB };`）。
-   *
-   * 类型声明的发射走源码切片通道（`typeDeclarations`），它**不查导出绑定表**
-   * ⇒ 值绑定的 `export { f as g }` 有 `dtsExtraExportLines` 补发，类型绑定
-   * 却没有对应物：只有类型别名导出的模块产物里**一条 export 都没有**（tsc 按
-   * 非模块处理 ⇒ 消费方 TS2306）。
-   */
-  typeExportAliases?: string[];
-  /**
-   * BUG-175：自由函数的**重载声明**名（本地名 → 是否自带 `export` 修饰符）。
-   *
-   * 重载声明（`TSDeclareFunction`）以原文镜像进产物；分析面同时会给实现发一条
-   * `export declare function …`——实现的形参注解通常是 `any` ⇒ 多出一条
-   * catch-all 重载（消费方传入 tsc 会拒绝的实参也编译通过）。发射侧见本表
-   * 就**不发实现签名**，只补导出胶水（别名 / default）。
-   */
-  functionOverloads?: Map<string, { exported: boolean }>;
-  /**
-   * BUG-005 / BUG-190：本模块**声明过的类型名**（`interface` / `type` 别名，
-   * 导出与否都算；以及**会被发射**的导出 `enum`）。它们会被同一份产物声明
-   * ⇒ 形参 / 字段注解里引用它们是可解析的，旧判据只认「本地类 / 导入名 /
-   * TS 全局名」⇒ 本地 interface 注解被丢成 `unknown`，台账还谎报「未在本模块
-   * 声明」。
-   */
-  typeNames?: Set<string>;
-  /**
-   * BUG-262：本模块的顶层**值**名（函数声明 / 变量 / enum / import）。`typeof X`
-   * / `keyof typeof X` 引用的是值命名空间——只查 `typeNames` / `classes` 会把
-   * 同模块的 `const defaults`、`function handler` 判成「未在本模块声明」⇒
-   * 形参注解被丢弃并落与事实相反的台账。
-   */
-  valueNames?: Set<string>;
-  /**
-   * Bug 57：函数 / 方法级**类型形参子句**原文（`<T>` / `<A, B>` / `<T = string>`）。
-   * 键是普查名（模块级 `gen`；类方法 `C.m`）；值直接切源码原文。
-   */
-  typeParamClauses?: Map<string, string>;
-  /**
-   * BUG-193：形参默认值的类型证据（普查名 → 逐位 TS 类型文本）。
-   *
-   * TS 对 `f(x = 1)` 的声明面推断是 `x?: number`（默认值初始值是类型证据）。
-   * 分析面入口 Abs 不含默认值 ⇒ dts 形参位曾落 `unknown`（消费方对错实参零
-   * 诊断）。这里从源码 `AssignmentPattern` 的初始值静态定型（只收字面量形状，
-   * 表达式不猜），只在**无显式注解**的位生效（注解是更高一档证据）。
-   */
-  paramDefaults?: Map<string, Array<string | undefined>>;
-  /**
-   * Bug 49：命名空间导入（`import * as NS from "…"`）的本地名 → 模块说明符。
-   * 命名空间限定超类（`extends NS.Base`）需要补 `import * as NS` 才可解析。
-   */
-  namespaceImports?: Map<string, string>;
-  /**
-   * BUG-008：CJS `module.exports = <单值>` 的模块形态。`local` = 承载该值的
-   * 本地名；`""` = 匿名右值（`module.exports = function () {}`），产物用
-   * `_default` 承载。`exportBindings` 里对应条目只是内部记账（让名字可解析），
-   * 不表示模块是 ESM。
-   *
-   * 仅在「除该值外没有别的导出」时设置：`export =` 不得与其他导出共存
-   * （TS2309），混用时保持既有 ESM 投影。
-   */
-  exportEquals?: {
-    readonly local: string;
-    /**
-     * BUG-110：挂在**导出函数对象**上的属性 / 方法（`f.version = …` /
-     * `f.helper = function…`）。TS 里等价于 `declare function f` +
-     * `declare namespace f { … }` 的声明合并；旧产物只发可调用签名 ⇒
-     * 消费方 `f.version` / `f.helper` 一律 TS2339。
-     */
-    members?: string[];
-  };
-}
 
 /** AST 节点最小形状（Babel AST 的鸭子类型——不引 @babel/types） */
 type SurfaceNode = Record<string, unknown> & { type?: string };

@@ -169,3 +169,107 @@ export interface DtsImportSurface {
    */
   importedName?: string;
 }
+
+/** 类字段声明面（实例 / static 共用）。 */
+export interface DtsClassFieldSurface {
+  name: string;
+  type: string;
+  readonly?: boolean;
+  optional?: boolean;
+  accessibility?: "private" | "protected" | "public";
+  isAbstract?: boolean;
+  /** well-known symbol 键（`[Symbol.iterator]` ⇒ `@@iterator`）；发射还原括号形态 */
+  symbolKey?: boolean;
+}
+
+/** 类方法声明面（实例 / static 共用）。 */
+export interface DtsClassMethodSurface {
+  name: string;
+  params: string[];
+  /** 与 params 平行的源码注解原文（无注解 ⇒ undefined） */
+  paramTypes?: Array<string | undefined>;
+  /** 与 params 平行的默认值证据（`m(x = 1)` ⇒ number） */
+  paramDefaults?: Array<string | undefined>;
+  accessibility?: "private" | "protected" | "public";
+  isAbstract?: boolean;
+  returnType?: string;
+  annotationReturnType?: string;
+  observedReturnType?: string;
+  typeParams?: string;
+  optional?: boolean;
+  symbolKey?: boolean;
+  /** 源码重载集（非空 ⇒ 实现签名不得再发） */
+  overloads?: DtsClassMethodSurface[];
+  declarationOnly?: boolean;
+}
+
+/** 访问器声明面。 */
+export interface DtsClassAccessorSurface {
+  name: string;
+  kind: "get" | "set";
+  type: string;
+  isStatic?: boolean;
+  accessibility?: "private" | "protected" | "public";
+  symbolKey?: boolean;
+}
+
+/** 构造器重载声明面。 */
+export interface DtsCtorSignatureSurface {
+  params: string[];
+  paramTypes?: Array<string | undefined>;
+  accessibility?: "private" | "protected" | "public";
+}
+
+/** 类体成员面（不含导出形态）。 */
+export interface DtsClassMemberSurface {
+  instanceMethods: DtsClassMethodSurface[];
+  staticMethods: DtsClassMethodSurface[];
+  ctorParams?: string[];
+  ctorAccessibility?: "private" | "protected" | "public";
+  ctorParamTypes?: Array<string | undefined>;
+  ctorOverloads?: DtsCtorSignatureSurface[];
+  typeParams?: string[];
+  typeParamsText?: string;
+  superClass?: string;
+  implements?: string[];
+  superTypeArguments?: string[];
+  superExpressionText?: string;
+  instanceFields?: DtsClassFieldSurface[];
+  staticFields?: DtsClassFieldSurface[];
+  accessors?: DtsClassAccessorSurface[];
+  isAbstract?: boolean;
+  hasPrivateIdentifier?: boolean;
+  indexSignatures?: string[];
+}
+
+/** 类声明面（成员面 + 导出形态）。 */
+export interface DtsClassSurface extends DtsClassMemberSurface {
+  exportName?: string;
+  exportNames?: string[];
+  isDefault: boolean;
+  /** `export const C = class { … }`：值是构造器，不是类型名 */
+  isExpression?: boolean;
+}
+
+/** 模块导出面（导出名 → 本地绑定 + 类 / 值 / namespace / 导入）。 */
+export interface DtsModuleSurface {
+  exportBindings: Map<string, string>;
+  reexports: string[];
+  typeOnlyExportBindings?: Map<string, string>;
+  classes: Map<string, DtsClassSurface>;
+  imports?: Map<string, DtsImportSurface>;
+  values: Map<string, DtsValueSurface>;
+  namespaces?: Map<string, DtsNamespaceSurface>;
+  typeDeclarations?: string[];
+  typeExportAliases?: string[];
+  functionOverloads?: Map<string, { exported: boolean }>;
+  typeNames?: Set<string>;
+  valueNames?: Set<string>;
+  typeParamClauses?: Map<string, string>;
+  paramDefaults?: Map<string, Array<string | undefined>>;
+  namespaceImports?: Map<string, string>;
+  exportEquals?: {
+    readonly local: string;
+    members?: string[];
+  };
+}
