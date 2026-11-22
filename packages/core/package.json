@@ -1,6 +1,6 @@
 {
   "name": "@nudojs/core",
-  "version": "1.20.3",
+  "version": "1.20.4",
   "engines": {
     "node": ">=22"
   },

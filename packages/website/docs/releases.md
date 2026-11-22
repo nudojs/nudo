@@ -11,180 +11,148 @@ This page keeps each package’s **current** notes only. Full history: [Full rel
 
 | Package | Current version |
 |----------|-----------------|
-| `@nudojs/core` | 1.20.3 |
-| `@nudojs/service` | 1.12.5 |
-| `nudojs (CLI)` | 1.9.5 |
-| `@nudojs/parser` | 1.5.13 |
-| `@nudojs/lsp` | 1.10.5 |
-| `@nudojs/env` | 0.5.13 |
-| `@nudojs/harvester` | 0.6.5 |
-| `vite-plugin-nudo` | 0.7.6 |
-| `nudo-vscode` | 0.3.61 |
+| `@nudojs/core` | 1.20.4 |
+| `@nudojs/service` | 1.12.6 |
+| `nudojs (CLI)` | 1.9.6 |
+| `@nudojs/parser` | 1.5.14 |
+| `@nudojs/lsp` | 1.10.6 |
+| `@nudojs/env` | 0.5.14 |
+| `@nudojs/harvester` | 0.6.6 |
+| `vite-plugin-nudo` | 0.7.7 |
+| `nudo-vscode` | 0.3.62 |
 
 **Jump to package:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
 
-## @nudojs/core 1.20.3 {#pkg-core}
+## @nudojs/core 1.20.4 {#pkg-core}
 
-## 1.20.3
-
-### Patch Changes
-
-- b888b76: Close the BUG-174..238 audit batch: one judgment per fact across the evaluator, projection faces, migration tools, and reporting surfaces.
-  
-  **Evaluation and domains** — rest tuples keep their fixed prefix instead of collapsing to a single array element type; TS `null` / `undefined` / `void` annotations map to terms instead of degrading the whole annotation to `any`; optional parameters (`x?: T`) enter the entry domain with `undefined`; arrow parameters inherit contextual function types; `Object.prototype.toString` covers union / any / unknown receivers; computed array keys consult `Array.prototype`; `Object.assign` propagates the open-key-set marker; Proxy `ownKeys` honours trap-only and non-enumerable keys; `Map` / `Set` `forEach` forwards `thisArg`; `URLSearchParams.forEach` runs its callback; reflector symbol keys stay symbols; sparse-array descriptors skip holes and honour `enumerable`; typed arrays expose `@@iterator`.
-  
-  **Classes and effects** — `X.prototype` identity is keyed by class binding, so same-named classes in different scopes/modules no longer share prototype writes; `class X extends Array` keeps the subclass instance face; generator `.throw()` into a `try/catch` records may-throw only when the transpile-time catch facts allow a rethrow (`YIELD_CATCH_THROWS`); `JSON.parse(<abstract text>)` records `SyntaxError`; union receivers record the nullish arm only for declared entry domains, keeping guard-derived slot reads quiet.
-  
-  **Dts / export** — overload sets are emitted without implementation signatures (free functions) and with full overload sets (methods); inline-object method names, same-module enum type refs, and string/template literal types survive resolvability checks; default parameter values are type evidence; contract `any()` slots no longer mint generic parameters; namespace constants and annotated `const f: T = …` keep their declared types; inherited members substitute base type arguments and preserve `private` / `protected`; constructor overloads and parameter-property optionality, symbol members, and type-only export aliases are emitted; observed return values / guard-zod domains are widened to base types (including a single call-site sample), while asserted `@nudo:case` literals stay exact.
-  
-  **Migrate / strip** — folded YAML scalars preserve more-indented command lines; `migrate verify --with-tsc` rejects files outside the tsconfig project instead of reporting `ok`; strip keeps imports referenced from destructuring defaults, elides proven type-only re-exports, and surfaces package-specifier retain notes.
-  
-  **Reporting / tooling** — the per-function analysis cache no longer replays pre-synthesis snapshots or stale diagnostics across case modes; `health` prints the drift line alongside file errors and no longer labels a rewrite as `+1 new`; directive witnesses render as `debug "call@…"` instead of masquerading as call sites; `contract --from-dts --write` writes alias-shaped drafts; `contract --emit --json --dry-run` carries `dryRun: true` with an empty `written` list; `.d.mts` / `.d.cts` resolve `.mjs` / `.cjs` runtime siblings; vite `include` literals use the same path-shaped matcher as the service watcher.
-  
-  Compatibility notes: `@nudojs/core/internal` gains `absTypeForTsTypeText`; `@nudojs/service/emit` gains the observation-widening helpers used by guard/zod/standard. Observed return types in generated `.d.ts` and runtime validators are now wider by design (a call-site sample is not a function domain); asserted cases keep exact literals. These are additive or stricter-correctness changes, not API removals.
-
-Older versions (64) → [Full release history](./releases-history.md#pkg-core)
-
-## @nudojs/service 1.12.5 {#pkg-service}
-
-## 1.12.5
+## 1.20.4
 
 ### Patch Changes
 
-- b888b76: Close the BUG-174..238 audit batch: one judgment per fact across the evaluator, projection faces, migration tools, and reporting surfaces.
+- 322ad41: Resolve the remaining audit batch: type-text mapping, entry domains, narrowing, dts/validator projection, builtins, and contract-draft evidence.
   
-  **Evaluation and domains** — rest tuples keep their fixed prefix instead of collapsing to a single array element type; TS `null` / `undefined` / `void` annotations map to terms instead of degrading the whole annotation to `any`; optional parameters (`x?: T`) enter the entry domain with `undefined`; arrow parameters inherit contextual function types; `Object.prototype.toString` covers union / any / unknown receivers; computed array keys consult `Array.prototype`; `Object.assign` propagates the open-key-set marker; Proxy `ownKeys` honours trap-only and non-enumerable keys; `Map` / `Set` `forEach` forwards `thisArg`; `URLSearchParams.forEach` runs its callback; reflector symbol keys stay symbols; sparse-array descriptors skip holes and honour `enumerable`; typed arrays expose `@@iterator`.
-  
-  **Classes and effects** — `X.prototype` identity is keyed by class binding, so same-named classes in different scopes/modules no longer share prototype writes; `class X extends Array` keeps the subclass instance face; generator `.throw()` into a `try/catch` records may-throw only when the transpile-time catch facts allow a rethrow (`YIELD_CATCH_THROWS`); `JSON.parse(<abstract text>)` records `SyntaxError`; union receivers record the nullish arm only for declared entry domains, keeping guard-derived slot reads quiet.
-  
-  **Dts / export** — overload sets are emitted without implementation signatures (free functions) and with full overload sets (methods); inline-object method names, same-module enum type refs, and string/template literal types survive resolvability checks; default parameter values are type evidence; contract `any()` slots no longer mint generic parameters; namespace constants and annotated `const f: T = …` keep their declared types; inherited members substitute base type arguments and preserve `private` / `protected`; constructor overloads and parameter-property optionality, symbol members, and type-only export aliases are emitted; observed return values / guard-zod domains are widened to base types (including a single call-site sample), while asserted `@nudo:case` literals stay exact.
-  
-  **Migrate / strip** — folded YAML scalars preserve more-indented command lines; `migrate verify --with-tsc` rejects files outside the tsconfig project instead of reporting `ok`; strip keeps imports referenced from destructuring defaults, elides proven type-only re-exports, and surfaces package-specifier retain notes.
-  
-  **Reporting / tooling** — the per-function analysis cache no longer replays pre-synthesis snapshots or stale diagnostics across case modes; `health` prints the drift line alongside file errors and no longer labels a rewrite as `+1 new`; directive witnesses render as `debug "call@…"` instead of masquerading as call sites; `contract --from-dts --write` writes alias-shaped drafts; `contract --emit --json --dry-run` carries `dryRun: true` with an empty `written` list; `.d.mts` / `.d.cts` resolve `.mjs` / `.cjs` runtime siblings; vite `include` literals use the same path-shaped matcher as the service watcher.
-  
-  Compatibility notes: `@nudojs/core/internal` gains `absTypeForTsTypeText`; `@nudojs/service/emit` gains the observation-widening helpers used by guard/zod/standard. Observed return types in generated `.d.ts` and runtime validators are now wider by design (a call-site sample is not a function domain); asserted cases keep exact literals. These are additive or stricter-correctness changes, not API removals.
-- Updated dependencies [b888b76]
-  - @nudojs/core@1.20.3
-  - @nudojs/harvester@0.6.5
-  - @nudojs/env@0.5.13
-  - @nudojs/parser@1.5.13
+  - TS annotations: same-file interface/type-alias references, generic type parameters and constraints, function/method signatures, index signatures, literal terms (including hex/bin/oct/BigInt/separators), readonly tuples, tuple labels, intersection merging, `keyof`, indexed access and template literal types now map into the entry domain. Explicit `unknown` annotations are declarations, not inference failures.
+  - Check/entry: default initializers, destructured defaults, rest annotations and optional-parameter undefined arms seed the same entry domain used by dts/guard/zod/standard; local `let`/`var` annotations feed assignment reconciliation.
+  - Narrowing: `typeof` narrows `unknown` and member targets, user-defined type predicates participate in call-site narrowing, `in` produces union pruning facts, member logical assignments write back, and switch/fallback arms apply negated guard facts.
+  - dts/validators: annotation gates recognize rest tuples, global lib type names and `typeof` value references; literal and readonly declarations survive observed returns; class fields/accessors and object methods keep their signatures; module value aliases, default interfaces, `export type`, class expressions, user symbols and `unique symbol` render correctly.
+  - Builtins: `Object.fromEntries` expands typed entry arrays; `String.match` and array iterators retain per-index/element domains; `flat` no longer joins the original element domain; abstract index reads do not invent an undefined arm.
+  - Architecture: one annotation resolver now owns type-parameter / same-file / imported / built-in / `typeof` name resolution, and one `buildEntryDomain` feeds check, L2, service entry witnesses, dts and validators. Unresolvable annotations surface as `nudo:annotation-unresolved` instead of silently falling back to `any`.
+  - Annotation names: relative / package `types` / tsconfig `paths` modules are resolved for type imports; explicit `unknown` and generic parameters now use provenance/term namespaces instead of silent `any`.
+  - Provenance: `Abs` gains a `provenance` facet (`declared` / `observed` / `asserted` / `inferred` / `synthetic`); dts and validator projection use it to preserve declared literals and drop synthetic OOB arms at the boundary.
+  - `contract --draft`: coercion calls and operator uses are not type evidence; drafts import the constraint `lit` alias, strip single-line JSDoc tails, keep throws in suggested bodies, and preserve generalized return obligations.
 
-Older versions (66) → [Full release history](./releases-history.md#pkg-service)
+Older versions (65) → [Full release history](./releases-history.md#pkg-core)
 
-## nudojs (CLI) 1.9.5 {#pkg-nudojs}
+## @nudojs/service 1.12.6 {#pkg-service}
 
-## 1.9.5
+## 1.12.6
 
 ### Patch Changes
 
-- b888b76: Close the BUG-174..238 audit batch: one judgment per fact across the evaluator, projection faces, migration tools, and reporting surfaces.
+- 322ad41: Resolve the remaining audit batch: type-text mapping, entry domains, narrowing, dts/validator projection, builtins, and contract-draft evidence.
   
-  **Evaluation and domains** — rest tuples keep their fixed prefix instead of collapsing to a single array element type; TS `null` / `undefined` / `void` annotations map to terms instead of degrading the whole annotation to `any`; optional parameters (`x?: T`) enter the entry domain with `undefined`; arrow parameters inherit contextual function types; `Object.prototype.toString` covers union / any / unknown receivers; computed array keys consult `Array.prototype`; `Object.assign` propagates the open-key-set marker; Proxy `ownKeys` honours trap-only and non-enumerable keys; `Map` / `Set` `forEach` forwards `thisArg`; `URLSearchParams.forEach` runs its callback; reflector symbol keys stay symbols; sparse-array descriptors skip holes and honour `enumerable`; typed arrays expose `@@iterator`.
-  
-  **Classes and effects** — `X.prototype` identity is keyed by class binding, so same-named classes in different scopes/modules no longer share prototype writes; `class X extends Array` keeps the subclass instance face; generator `.throw()` into a `try/catch` records may-throw only when the transpile-time catch facts allow a rethrow (`YIELD_CATCH_THROWS`); `JSON.parse(<abstract text>)` records `SyntaxError`; union receivers record the nullish arm only for declared entry domains, keeping guard-derived slot reads quiet.
-  
-  **Dts / export** — overload sets are emitted without implementation signatures (free functions) and with full overload sets (methods); inline-object method names, same-module enum type refs, and string/template literal types survive resolvability checks; default parameter values are type evidence; contract `any()` slots no longer mint generic parameters; namespace constants and annotated `const f: T = …` keep their declared types; inherited members substitute base type arguments and preserve `private` / `protected`; constructor overloads and parameter-property optionality, symbol members, and type-only export aliases are emitted; observed return values / guard-zod domains are widened to base types (including a single call-site sample), while asserted `@nudo:case` literals stay exact.
-  
-  **Migrate / strip** — folded YAML scalars preserve more-indented command lines; `migrate verify --with-tsc` rejects files outside the tsconfig project instead of reporting `ok`; strip keeps imports referenced from destructuring defaults, elides proven type-only re-exports, and surfaces package-specifier retain notes.
-  
-  **Reporting / tooling** — the per-function analysis cache no longer replays pre-synthesis snapshots or stale diagnostics across case modes; `health` prints the drift line alongside file errors and no longer labels a rewrite as `+1 new`; directive witnesses render as `debug "call@…"` instead of masquerading as call sites; `contract --from-dts --write` writes alias-shaped drafts; `contract --emit --json --dry-run` carries `dryRun: true` with an empty `written` list; `.d.mts` / `.d.cts` resolve `.mjs` / `.cjs` runtime siblings; vite `include` literals use the same path-shaped matcher as the service watcher.
-  
-  Compatibility notes: `@nudojs/core/internal` gains `absTypeForTsTypeText`; `@nudojs/service/emit` gains the observation-widening helpers used by guard/zod/standard. Observed return types in generated `.d.ts` and runtime validators are now wider by design (a call-site sample is not a function domain); asserted cases keep exact literals. These are additive or stricter-correctness changes, not API removals.
-- Updated dependencies [b888b76]
-  - @nudojs/core@1.20.3
-  - @nudojs/service@1.12.5
-  - @nudojs/harvester@0.6.5
-  - @nudojs/env@0.5.13
-  - @nudojs/parser@1.5.13
+  - TS annotations: same-file interface/type-alias references, generic type parameters and constraints, function/method signatures, index signatures, literal terms (including hex/bin/oct/BigInt/separators), readonly tuples, tuple labels, intersection merging, `keyof`, indexed access and template literal types now map into the entry domain. Explicit `unknown` annotations are declarations, not inference failures.
+  - Check/entry: default initializers, destructured defaults, rest annotations and optional-parameter undefined arms seed the same entry domain used by dts/guard/zod/standard; local `let`/`var` annotations feed assignment reconciliation.
+  - Narrowing: `typeof` narrows `unknown` and member targets, user-defined type predicates participate in call-site narrowing, `in` produces union pruning facts, member logical assignments write back, and switch/fallback arms apply negated guard facts.
+  - dts/validators: annotation gates recognize rest tuples, global lib type names and `typeof` value references; literal and readonly declarations survive observed returns; class fields/accessors and object methods keep their signatures; module value aliases, default interfaces, `export type`, class expressions, user symbols and `unique symbol` render correctly.
+  - Builtins: `Object.fromEntries` expands typed entry arrays; `String.match` and array iterators retain per-index/element domains; `flat` no longer joins the original element domain; abstract index reads do not invent an undefined arm.
+  - Architecture: one annotation resolver now owns type-parameter / same-file / imported / built-in / `typeof` name resolution, and one `buildEntryDomain` feeds check, L2, service entry witnesses, dts and validators. Unresolvable annotations surface as `nudo:annotation-unresolved` instead of silently falling back to `any`.
+  - Annotation names: relative / package `types` / tsconfig `paths` modules are resolved for type imports; explicit `unknown` and generic parameters now use provenance/term namespaces instead of silent `any`.
+  - Provenance: `Abs` gains a `provenance` facet (`declared` / `observed` / `asserted` / `inferred` / `synthetic`); dts and validator projection use it to preserve declared literals and drop synthetic OOB arms at the boundary.
+  - `contract --draft`: coercion calls and operator uses are not type evidence; drafts import the constraint `lit` alias, strip single-line JSDoc tails, keep throws in suggested bodies, and preserve generalized return obligations.
+- Updated dependencies [322ad41]
+  - @nudojs/core@1.20.4
+  - @nudojs/env@0.5.14
+  - @nudojs/harvester@0.6.6
+  - @nudojs/parser@1.5.14
 
-Older versions (63) → [Full release history](./releases-history.md#pkg-nudojs)
+Older versions (67) → [Full release history](./releases-history.md#pkg-service)
 
-## @nudojs/parser 1.5.13 {#pkg-parser}
+## nudojs (CLI) 1.9.6 {#pkg-nudojs}
 
-## 1.5.13
+## 1.9.6
 
 ### Patch Changes
 
-- Updated dependencies [b888b76]
-  - @nudojs/core@1.20.3
+- 322ad41: Resolve the remaining audit batch: type-text mapping, entry domains, narrowing, dts/validator projection, builtins, and contract-draft evidence.
+  
+  - TS annotations: same-file interface/type-alias references, generic type parameters and constraints, function/method signatures, index signatures, literal terms (including hex/bin/oct/BigInt/separators), readonly tuples, tuple labels, intersection merging, `keyof`, indexed access and template literal types now map into the entry domain. Explicit `unknown` annotations are declarations, not inference failures.
+  - Check/entry: default initializers, destructured defaults, rest annotations and optional-parameter undefined arms seed the same entry domain used by dts/guard/zod/standard; local `let`/`var` annotations feed assignment reconciliation.
+  - Narrowing: `typeof` narrows `unknown` and member targets, user-defined type predicates participate in call-site narrowing, `in` produces union pruning facts, member logical assignments write back, and switch/fallback arms apply negated guard facts.
+  - dts/validators: annotation gates recognize rest tuples, global lib type names and `typeof` value references; literal and readonly declarations survive observed returns; class fields/accessors and object methods keep their signatures; module value aliases, default interfaces, `export type`, class expressions, user symbols and `unique symbol` render correctly.
+  - Builtins: `Object.fromEntries` expands typed entry arrays; `String.match` and array iterators retain per-index/element domains; `flat` no longer joins the original element domain; abstract index reads do not invent an undefined arm.
+  - Architecture: one annotation resolver now owns type-parameter / same-file / imported / built-in / `typeof` name resolution, and one `buildEntryDomain` feeds check, L2, service entry witnesses, dts and validators. Unresolvable annotations surface as `nudo:annotation-unresolved` instead of silently falling back to `any`.
+  - Annotation names: relative / package `types` / tsconfig `paths` modules are resolved for type imports; explicit `unknown` and generic parameters now use provenance/term namespaces instead of silent `any`.
+  - Provenance: `Abs` gains a `provenance` facet (`declared` / `observed` / `asserted` / `inferred` / `synthetic`); dts and validator projection use it to preserve declared literals and drop synthetic OOB arms at the boundary.
+  - `contract --draft`: coercion calls and operator uses are not type evidence; drafts import the constraint `lit` alias, strip single-line JSDoc tails, keep throws in suggested bodies, and preserve generalized return obligations.
+- Updated dependencies [322ad41]
+  - @nudojs/core@1.20.4
+  - @nudojs/service@1.12.6
+  - @nudojs/env@0.5.14
+  - @nudojs/harvester@0.6.6
+  - @nudojs/parser@1.5.14
 
-Older versions (63) → [Full release history](./releases-history.md#pkg-parser)
+Older versions (64) → [Full release history](./releases-history.md#pkg-nudojs)
 
-## @nudojs/lsp 1.10.5 {#pkg-lsp}
+## @nudojs/parser 1.5.14 {#pkg-parser}
 
-## 1.10.5
+## 1.5.14
 
 ### Patch Changes
 
-- Updated dependencies [b888b76]
-  - @nudojs/core@1.20.3
-  - @nudojs/service@1.12.5
-  - @nudojs/parser@1.5.13
+- Updated dependencies [322ad41]
+  - @nudojs/core@1.20.4
 
-Older versions (67) → [Full release history](./releases-history.md#pkg-lsp)
+Older versions (64) → [Full release history](./releases-history.md#pkg-parser)
 
-## @nudojs/env 0.5.13 {#pkg-env}
+## @nudojs/lsp 1.10.6 {#pkg-lsp}
 
-## 0.5.13
+## 1.10.6
 
 ### Patch Changes
 
-- Updated dependencies [b888b76]
-  - @nudojs/core@1.20.3
+- Updated dependencies [322ad41]
+  - @nudojs/core@1.20.4
+  - @nudojs/service@1.12.6
+  - @nudojs/parser@1.5.14
 
-Older versions (63) → [Full release history](./releases-history.md#pkg-env)
+Older versions (68) → [Full release history](./releases-history.md#pkg-lsp)
 
-## @nudojs/harvester 0.6.5 {#pkg-harvester}
+## @nudojs/env 0.5.14 {#pkg-env}
 
-## 0.6.5
-
-### Patch Changes
-
-- b888b76: Close the BUG-174..238 audit batch: one judgment per fact across the evaluator, projection faces, migration tools, and reporting surfaces.
-  
-  **Evaluation and domains** — rest tuples keep their fixed prefix instead of collapsing to a single array element type; TS `null` / `undefined` / `void` annotations map to terms instead of degrading the whole annotation to `any`; optional parameters (`x?: T`) enter the entry domain with `undefined`; arrow parameters inherit contextual function types; `Object.prototype.toString` covers union / any / unknown receivers; computed array keys consult `Array.prototype`; `Object.assign` propagates the open-key-set marker; Proxy `ownKeys` honours trap-only and non-enumerable keys; `Map` / `Set` `forEach` forwards `thisArg`; `URLSearchParams.forEach` runs its callback; reflector symbol keys stay symbols; sparse-array descriptors skip holes and honour `enumerable`; typed arrays expose `@@iterator`.
-  
-  **Classes and effects** — `X.prototype` identity is keyed by class binding, so same-named classes in different scopes/modules no longer share prototype writes; `class X extends Array` keeps the subclass instance face; generator `.throw()` into a `try/catch` records may-throw only when the transpile-time catch facts allow a rethrow (`YIELD_CATCH_THROWS`); `JSON.parse(<abstract text>)` records `SyntaxError`; union receivers record the nullish arm only for declared entry domains, keeping guard-derived slot reads quiet.
-  
-  **Dts / export** — overload sets are emitted without implementation signatures (free functions) and with full overload sets (methods); inline-object method names, same-module enum type refs, and string/template literal types survive resolvability checks; default parameter values are type evidence; contract `any()` slots no longer mint generic parameters; namespace constants and annotated `const f: T = …` keep their declared types; inherited members substitute base type arguments and preserve `private` / `protected`; constructor overloads and parameter-property optionality, symbol members, and type-only export aliases are emitted; observed return values / guard-zod domains are widened to base types (including a single call-site sample), while asserted `@nudo:case` literals stay exact.
-  
-  **Migrate / strip** — folded YAML scalars preserve more-indented command lines; `migrate verify --with-tsc` rejects files outside the tsconfig project instead of reporting `ok`; strip keeps imports referenced from destructuring defaults, elides proven type-only re-exports, and surfaces package-specifier retain notes.
-  
-  **Reporting / tooling** — the per-function analysis cache no longer replays pre-synthesis snapshots or stale diagnostics across case modes; `health` prints the drift line alongside file errors and no longer labels a rewrite as `+1 new`; directive witnesses render as `debug "call@…"` instead of masquerading as call sites; `contract --from-dts --write` writes alias-shaped drafts; `contract --emit --json --dry-run` carries `dryRun: true` with an empty `written` list; `.d.mts` / `.d.cts` resolve `.mjs` / `.cjs` runtime siblings; vite `include` literals use the same path-shaped matcher as the service watcher.
-  
-  Compatibility notes: `@nudojs/core/internal` gains `absTypeForTsTypeText`; `@nudojs/service/emit` gains the observation-widening helpers used by guard/zod/standard. Observed return types in generated `.d.ts` and runtime validators are now wider by design (a call-site sample is not a function domain); asserted cases keep exact literals. These are additive or stricter-correctness changes, not API removals.
-- Updated dependencies [b888b76]
-  - @nudojs/core@1.20.3
-  - @nudojs/env@0.5.13
-  - @nudojs/parser@1.5.13
-
-Older versions (63) → [Full release history](./releases-history.md#pkg-harvester)
-
-## vite-plugin-nudo 0.7.6 {#pkg-vite-plugin}
-
-## 0.7.6
+## 0.5.14
 
 ### Patch Changes
 
-- b888b76: Close the BUG-174..238 audit batch: one judgment per fact across the evaluator, projection faces, migration tools, and reporting surfaces.
-  
-  **Evaluation and domains** — rest tuples keep their fixed prefix instead of collapsing to a single array element type; TS `null` / `undefined` / `void` annotations map to terms instead of degrading the whole annotation to `any`; optional parameters (`x?: T`) enter the entry domain with `undefined`; arrow parameters inherit contextual function types; `Object.prototype.toString` covers union / any / unknown receivers; computed array keys consult `Array.prototype`; `Object.assign` propagates the open-key-set marker; Proxy `ownKeys` honours trap-only and non-enumerable keys; `Map` / `Set` `forEach` forwards `thisArg`; `URLSearchParams.forEach` runs its callback; reflector symbol keys stay symbols; sparse-array descriptors skip holes and honour `enumerable`; typed arrays expose `@@iterator`.
-  
-  **Classes and effects** — `X.prototype` identity is keyed by class binding, so same-named classes in different scopes/modules no longer share prototype writes; `class X extends Array` keeps the subclass instance face; generator `.throw()` into a `try/catch` records may-throw only when the transpile-time catch facts allow a rethrow (`YIELD_CATCH_THROWS`); `JSON.parse(<abstract text>)` records `SyntaxError`; union receivers record the nullish arm only for declared entry domains, keeping guard-derived slot reads quiet.
-  
-  **Dts / export** — overload sets are emitted without implementation signatures (free functions) and with full overload sets (methods); inline-object method names, same-module enum type refs, and string/template literal types survive resolvability checks; default parameter values are type evidence; contract `any()` slots no longer mint generic parameters; namespace constants and annotated `const f: T = …` keep their declared types; inherited members substitute base type arguments and preserve `private` / `protected`; constructor overloads and parameter-property optionality, symbol members, and type-only export aliases are emitted; observed return values / guard-zod domains are widened to base types (including a single call-site sample), while asserted `@nudo:case` literals stay exact.
-  
-  **Migrate / strip** — folded YAML scalars preserve more-indented command lines; `migrate verify --with-tsc` rejects files outside the tsconfig project instead of reporting `ok`; strip keeps imports referenced from destructuring defaults, elides proven type-only re-exports, and surfaces package-specifier retain notes.
-  
-  **Reporting / tooling** — the per-function analysis cache no longer replays pre-synthesis snapshots or stale diagnostics across case modes; `health` prints the drift line alongside file errors and no longer labels a rewrite as `+1 new`; directive witnesses render as `debug "call@…"` instead of masquerading as call sites; `contract --from-dts --write` writes alias-shaped drafts; `contract --emit --json --dry-run` carries `dryRun: true` with an empty `written` list; `.d.mts` / `.d.cts` resolve `.mjs` / `.cjs` runtime siblings; vite `include` literals use the same path-shaped matcher as the service watcher.
-  
-  Compatibility notes: `@nudojs/core/internal` gains `absTypeForTsTypeText`; `@nudojs/service/emit` gains the observation-widening helpers used by guard/zod/standard. Observed return types in generated `.d.ts` and runtime validators are now wider by design (a call-site sample is not a function domain); asserted cases keep exact literals. These are additive or stricter-correctness changes, not API removals.
-- Updated dependencies [b888b76]
-  - @nudojs/core@1.20.3
-  - @nudojs/service@1.12.5
+- Updated dependencies [322ad41]
+  - @nudojs/core@1.20.4
 
-Older versions (66) → [Full release history](./releases-history.md#pkg-vite-plugin)
+Older versions (64) → [Full release history](./releases-history.md#pkg-env)
+
+## @nudojs/harvester 0.6.6 {#pkg-harvester}
+
+## 0.6.6
+
+### Patch Changes
+
+- Updated dependencies [322ad41]
+  - @nudojs/core@1.20.4
+  - @nudojs/env@0.5.14
+  - @nudojs/parser@1.5.14
+
+Older versions (64) → [Full release history](./releases-history.md#pkg-harvester)
+
+## vite-plugin-nudo 0.7.7 {#pkg-vite-plugin}
+
+## 0.7.7
+
+### Patch Changes
+
+- Updated dependencies [322ad41]
+  - @nudojs/core@1.20.4
+  - @nudojs/service@1.12.6
+
+Older versions (67) → [Full release history](./releases-history.md#pkg-vite-plugin)
 
 ## nudo-vscode 0.3.7 {#pkg-vscode}
 
