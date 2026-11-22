@@ -66,3 +66,106 @@ export function renderDtsSignature(sig: DtsSignature): string {
     sig.thisParam === undefined ? sig.params : [sig.thisParam, ...sig.params];
   return `${sig.typeParams ?? ""}(${params.join(", ")}): ${sig.returnType}`;
 }
+
+/**
+ * 对象字面量成员函数的**源码注解证据**（BUG-157）：成员键 → 形参 / 返回注解原文。
+ *
+ * 求值面把对象字面量成员变成 `$fnVal([...形参名], fn, {…})`——成员没被调用时
+ * 只有形参名，没有类型（`(a: unknown) => unknown`）。源码注解就在 AST 上，
+ * 必须在投影时叠加进 Abs（只补缺：观测到的返回类型优先）。
+ */
+export interface DtsObjectFnAnnotation {
+  /** 成员键（静态键；计算键不收） */
+  key: string;
+  /** 形参注解原文（与形参位平行；无注解 ⇒ undefined） */
+  paramTypes: Array<string | undefined>;
+  /** 该位是否 rest（rest 注解必须是数组类型才放行） */
+  rest: boolean[];
+  /** 方法 / 函数的返回注解原文 */
+  returnType?: string;
+}
+
+/**
+ * 模块级**值声明**面（BUG-190）：`export const/let/var` 与 TS `enum`。
+ *
+ * 这些绑定在导出面表里**已登记**（`exportBindings`），但旧实现只发射函数与类
+ * ⇒ 发布的 `.d.ts` 里从不出现 ⇒ 消费端 `import { VERSION }` 报 TS2305
+ * （而运行时确实有这些导出）。
+ */
+export interface DtsValueSurface {
+  /** 声明种类（`const` / `let` / `var` / TS `enum`） */
+  kind: "const" | "let" | "var" | "enum";
+  /** enum 成员（源码序 + 字面量初始化器；非 enum ⇒ undefined） */
+  enumMembers?: Array<{ name: string; init?: string }>;
+  /** Bug 25：`export const enum` ⇒ 发射 `declare const enum`（否则运行时 import 报错） */
+  constEnum?: boolean;
+  /** Bug 20：`export default <表达式>` 无分析面绑定时预投影的类型串 */
+  typeText?: string;
+  /** Bug 77：`as const` ⇒ 对象槽按只读投影 */
+  asConst?: boolean;
+  /**
+   * BUG-260：顶层 `const <ident> = <primitive literal>`。tsc 对这种绑定保留
+   * 字面量类型；解构 / 对象初始化器仍按拓宽口径（`const {a} = {a:1}` ⇒
+   * `a: number`），不能用同一把闸门。
+   */
+  literalConst?: boolean;
+  /**
+   * BUG-130：源码的类型注解原文（`export const c1: number[] = []` 的
+   * `number[]`）。
+   */
+  annotation?: string;
+  /**
+   * BUG-140：初始化器**内部**有 `as const`（`{ x: [1, 2] as const }`）时按源码
+   * 字面量投影的类型串。
+   */
+  nestedConstType?: string;
+  /** BUG-157：对象字面量成员函数的源码注解（投影时叠加进 Abs，只补缺） */
+  fnMemberAnnotations?: DtsObjectFnAnnotation[];
+  /**
+   * BUG-258 / BUG-254：初始化器 AST 的类型文本（仅 `typeof X` 引用与显式泛型
+   * 实参这类 Abs 表达不了的声明事实优先于分析面观测）。
+   */
+  initTypeText?: string;
+  /** BUG-264：`const s = Symbol("…")` ⇒ `unique symbol`。 */
+  uniqueSymbol?: boolean;
+  /** BUG-263：对象字面量里用户符号键的源码名（按出现序）。 */
+  userSymbolKeys?: string[];
+  /**
+   * BUG-358：初始化器**不是**函数 / 类值（`export const handle = 1`）。
+   *
+   * 分析面可能把同名**对象成员键**误登记成模块级函数入口（`registry.handle`
+   * 与 `const handle` 是两个实体）⇒ 当函数入口与一个非函数值绑定同名时，
+   * 以值绑定为准：值声明照发、phantom 函数入口不发射。
+   */
+  nonFunctionValue?: boolean;
+}
+
+/**
+ * namespace 面（BUG-191）：`export namespace NS { … }` 的成员声明文本。
+ */
+export interface DtsNamespaceSurface {
+  /** 导出名（未导出 ⇒ undefined） */
+  exportName?: string;
+  /** 全部导出名（具名优先，其后的别名逐条补发） */
+  exportNames?: string[];
+  /** 成员声明行 */
+  members: string[];
+}
+
+/**
+ * 导入面（一条 import 声明里的**类型名** → 模块说明符）。
+ *
+ * Bug 233：brand 引用的类若来自**别的模块**（本模块 import 进来的），
+ * 产物里必须能解析那个类名 ⇒ 补 `import type { C } from "…";`。
+ */
+export interface DtsImportSurface {
+  /** 模块说明符（源码原文） */
+  specifier: string;
+  /** 导入形态：具名 / 默认 / `import x = require("…")` */
+  kind: "named" | "default" | "equals";
+  /**
+   * BUG-012：具名导入的**原名**（`import { X as Y }` 里的 X）。再导出链条
+   * （`export { Y as Z }`）要按原名写 `export { X as Z } from "…"`。
+   */
+  importedName?: string;
+}
