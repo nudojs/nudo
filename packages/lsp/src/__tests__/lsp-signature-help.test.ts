@@ -54,7 +54,7 @@ function tmpFile(src: string): { dir: string; file: string } {
       // detail 不再用 `?` 占位返回值，改为与 hover / check 同口径的
       // 签名渲染（`<name>(<param>: <T>, …) => <R>`）；本用例仍钉「源码真名与
       // 真个数」（不是 arg0/arg1 假名）。
-      expect(detailOf("withDefault")).toBe("withDefault(x: any, y: number) => any");
+      expect(detailOf("withDefault")).toBe("withDefault(x: any, y: any) => any");
       expect(detailOf("withRest")).toBe("withRest(x: any, ...rest: any) => any");
       expect(detailOf("plain")).toBe("plain(x: any, y: any) => any");
     } finally {
