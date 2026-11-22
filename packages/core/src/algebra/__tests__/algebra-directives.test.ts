@@ -2061,10 +2061,41 @@ export function f() { return x; }
   }
 });
 
-
-
-
-
+// ---------------------------------------------------------------------------
+// TS 4.9 accessor 与 TS 5 标准装饰器
+// ---------------------------------------------------------------------------
+describe("TS 4.9 accessor 与 TS 5 标准装饰器整文件解析成功", () => {
+  it("accessor 字段 ⇒ ClassAccessorProperty；类 / 方法 / 字段装饰器 ⇒ decorators 长度 1；@dec export 与 export @dec 两种顺序均可解析", () => {
+    {
+      const ast = parseSource_____parse_source_ts(`export class C { accessor x = 1; }\n`, { keepTs: true });
+      const cls = (ast.program.body[0] as any).declaration;
+      expect(cls.body.body[0].type).toBe("ClassAccessorProperty");
+      expect(cls.body.body[0].key.name).toBe("x");
+    }
+    {
+      const ast = parseSource_____parse_source_ts(`function dec(v: any) { return v; }
+@dec
+export class D {
+  @dec accessor x = 1;
+  @dec m() {}
+}
+`, { keepTs: true });
+      const cls = (ast.program.body[1] as any).declaration;
+      expect(cls.decorators).toHaveLength(1);
+      expect(cls.body.body.map((m: any) => m.decorators?.length)).toEqual([1, 1]);
+    }
+    {
+      const before = parseSource_____parse_source_ts(`function dec(v: any) { return v; }
+@dec export class E {}
+`, { keepTs: true });
+      const after = parseSource_____parse_source_ts(`function dec(v: any) { return v; }
+export @dec class F {}
+`, { keepTs: true });
+      expect((before.program.body[1] as any).declaration.decorators).toHaveLength(1);
+      expect((after.program.body[1] as any).declaration.decorators).toHaveLength(1);
+    }
+  });
+});
 
 });
 
