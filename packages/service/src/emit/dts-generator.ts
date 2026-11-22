@@ -209,7 +209,7 @@ export function absToTSType(a: Abs, typeVars?: Map<string, string>): string {
  * `dts-type.ts` 打印；其余 shape 回落既有 `absToTSType`。
  */
 function absToTSTypeIr(a: Abs, typeVars?: Map<string, string>): string {
-  const t = dtsTypeOfAbs(a, { readonlyTuples: currentReadonlySlots });
+  const t = dtsTypeOfAbs(a, { readonlyValues: currentReadonlySlots });
   return t === undefined ? absToTSType(a, typeVars) : renderDtsType(t);
 }
 

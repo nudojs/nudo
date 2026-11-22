@@ -8,7 +8,9 @@
  * 这样新路径可以逐步接管简单返回 / 参数类型，而不在一次改动里重写 8.5k 行
  * 渲染器。
  */
-import { extStateOf, type Abs } from "@nudojs/core";
+import { extStateOf, lookupObjAccessor, type Abs } from "@nudojs/core";
+import { formatObjectKey } from "@nudojs/core/internal";
+import { isHiddenInternalSlot } from "./internal-slot.ts";
 
 export type DtsType =
   | { kind: "prim"; name: string }
@@ -23,11 +25,18 @@ export type DtsType =
       rest?: DtsType;
       readonly?: boolean;
     }
+  | {
+      kind: "object";
+      slots: Array<{ key: string; type: DtsType; optional?: boolean; readonly?: boolean }>;
+      /** 零成员对象：closed ⇒ never；open ⇒ unknown */
+      empty?: "never" | "unknown";
+    }
+  | { kind: "generic"; name: string; args: DtsType[] }
   | { kind: "union"; members: DtsType[] };
 
 export type DtsTypeOpts = {
-  /** `as const` 通道下的元组是 readonly（与 absToTSType 的全局开关同口径） */
-  readonlyTuples?: boolean;
+  /** `as const` 通道下的值整体只读（与 absToTSType 的全局开关同口径） */
+  readonlyValues?: boolean;
 };
 
 /**
@@ -73,7 +82,7 @@ export function dtsTypeOfAbs(a: Abs, opts: DtsTypeOpts = {}): DtsType | undefine
         : {
             kind: "array",
             element,
-            ...(opts.readonlyTuples || isFrozen(a) ? { readonly: true } : {}),
+            ...(opts.readonlyValues || isFrozen(a) ? { readonly: true } : {}),
           };
     }
     case "tuple": {
@@ -93,8 +102,15 @@ export function dtsTypeOfAbs(a: Abs, opts: DtsTypeOpts = {}): DtsType | undefine
         elements,
         ...(a.shape.holes?.length ? { holes: [...a.shape.holes] } : {}),
         ...(rest ? { rest } : {}),
-        ...(opts.readonlyTuples || isFrozen(a) ? { readonly: true } : {}),
+        ...(opts.readonlyValues || isFrozen(a) ? { readonly: true } : {}),
       };
+    }
+    case "eff": {
+      const inner = dtsTypeOfAbs(a.shape.inner, opts);
+      if (inner === undefined) return undefined;
+      return a.shape.eff === "promise"
+        ? { kind: "generic", name: "Promise", args: [inner] }
+        : inner;
     }
     case "sum": {
       const members: DtsType[] = [];
@@ -104,6 +120,35 @@ export function dtsTypeOfAbs(a: Abs, opts: DtsTypeOpts = {}): DtsType | undefine
         members.push(t);
       }
       return { kind: "union", members };
+    }
+    case "obj": {
+      // 迭代器 / 数组视图 / 索引签名 / 开放对象 / 访问器 / symbol 键都有
+      // 独立的渲染规则 ⇒ 本切片显式回落，避免输出与 absToTSType 分叉。
+      if (a.shape.view !== undefined || a.shape.index !== undefined) return undefined;
+      const entries = Object.entries(a.shape.slots);
+      if (entries.length === 0) {
+        return { kind: "object", slots: [], empty: a.shape.open === true ? "unknown" : "never" };
+      }
+      if (a.shape.open === true) return undefined;
+      const slots: Array<{
+        key: string;
+        type: DtsType;
+        optional?: boolean;
+        readonly?: boolean;
+      }> = [];
+      for (const [k, slot] of entries) {
+        if (slot.symbolKey === true || isHiddenInternalSlot(k, slot)) return undefined;
+        if (lookupObjAccessor(a, k) !== undefined) return undefined;
+        const t = dtsTypeOfAbs(slot.value, opts);
+        if (t === undefined) return undefined;
+        slots.push({
+          key: formatObjectKey(k),
+          type: t,
+          ...(slot.optional ? { optional: true } : {}),
+          ...(slot.readonly === true || opts.readonlyValues ? { readonly: true } : {}),
+        });
+      }
+      return { kind: "object", slots };
     }
     default:
       return undefined;
@@ -147,6 +192,17 @@ export function renderDtsType(t: DtsType): string {
       }
       return `${t.readonly ? "readonly " : ""}[${parts.join(", ")}]`;
     }
+    case "object": {
+      if (t.slots.length === 0) return `Record<string, ${t.empty ?? "never"}>`;
+      const parts = t.slots.map((s) => {
+        const typ = renderDtsType(s.type);
+        const value = s.optional && s.type.kind === "union" ? `(${typ})` : typ;
+        return `${s.readonly ? "readonly " : ""}${s.key}${s.optional ? "?" : ""}: ${value}`;
+      });
+      return `{ ${parts.join("; ")} }`;
+    }
+    case "generic":
+      return `${t.name}<${t.args.map(renderDtsType).join(", ")}>`;
     case "union": {
       const parts = t.members
         .map(renderDtsType)
