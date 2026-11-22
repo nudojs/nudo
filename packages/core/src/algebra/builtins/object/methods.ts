@@ -2614,9 +2614,29 @@ function inheritedProtoSlots(proto: Abs): Record<string, { value: Abs; inherited
         // Bug 326：组键集不可判（回调返回值非字面量 → 运行时 ToPropertyKey）
         // ⇒ 自有键集不完备 ⇒ 键家族折 partial（此前折 exact 空元组 = 自信
         // 的确切错值 ⇒ dts/zod/guard 三个产物面判「只接受空数组」）
+        // BUG-383：unkeyed 元素域是分组值（元素数组）的唯一代表——落成
+        // index 签名，dts 才能发布 `{[k: string]: T[]}` 而不是 `never`。
+        const unkeyed = fold.unkeyed ?? [];
+        const index =
+          unkeyed.length > 0
+            ? {
+                key: str(),
+                value: abs(
+                  { k: "arr", element: unkeyed.reduce((a, b) => joinAbs(a, b)) },
+                  undefined,
+                  undefined,
+                  "partial",
+                ),
+              }
+            : undefined;
         return markKeySetOpen(
           markNullProtoObj(
-            abs({ k: "obj", slots, open: true }, undefined, undefined, "partial"),
+            abs(
+              { k: "obj", slots, open: true, ...(index ? { index } : {}) },
+              undefined,
+              undefined,
+              "partial",
+            ),
           ),
         );
       }

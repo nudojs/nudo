@@ -2481,7 +2481,7 @@ function moduleDts(source: string, path = "/test/r2-generics.ts"): string {
   return projectModuleDts(surface, entries, { values: valuesOf(source, path) }).lines.join("\n");
 }
 
-  it("无默认类型形参的泛型类：返回位补 `<unknown>`，产物独立编译通过（旧口径裸名 ⇒ TS2314）", () => {
+  it("泛型类返回位的具体类型实参保留（`Stack<number>`），产物独立编译通过", () => {
     const dts = moduleDts(`export class Stack<T> {
   items: T[] = [];
   push(x: T) {
@@ -2493,7 +2493,7 @@ export function make(): Stack<number> {
 }
 `);
     expect(dts).toContain("export declare class Stack<T> {");
-    expect(dts).toContain("make(): Stack<unknown>;");
+    expect(dts).toContain("make(): Stack<number>;");
     expect(dts).not.toMatch(/make\(\): Stack;/);
     const check = tscNoEmit({ "mod.d.ts": dts });
     expect(check.ok, check.stderr).toBe(true);
@@ -3151,5 +3151,80 @@ export function hex(x: 0xff, b: 0b101, big: 10n): number { return x + b + Number
     expect(dts).toContain('export declare function litRet(): "abc";');
     expect(dts).toContain("export declare function hex(x: 0xff, b: 0b101, big: 10n): number;");
     expect(dts).not.toContain("nudo:dropped-type-annotation hex");
+  });
+});
+
+describe("审计批次 dts 模块面与值通道（355-393）", () => {
+  function allDts(source: string, path: string): string {
+    const result = analyzeFile(path, source);
+    const surface = dtsModuleSurface(source);
+    const entries = result.functions
+      .filter((fn) => !fn.noDeclaration)
+      .map((fn) => ({ fn, projection: projectFunctionDts(fn, undefined, surface) }));
+    const values = new Map<string, Abs>();
+    for (const [name, info] of result.bindings) values.set(name, info.abs);
+    return projectModuleDts(surface, entries, { values }).lines.join("\n");
+  }
+
+  it("BUG-378 / 383 / 384 / 387 / 390 / 393：implements、open index、export=、import=require、namespace 再导出、泛型返回注解", () => {
+    const impl = allDts(
+      `interface Shape { side(): number; }
+export class Sq implements Shape { side(): number { return 1; } }
+`,
+      "/test/j-implements.ts",
+    );
+    expect(impl).toContain("implements Shape");
+
+    const group = allDts(
+      `export function groupDyn(xs: number[], keyOf: (n: number) => string) { return Object.groupBy(xs, keyOf); }
+`,
+      "/test/j-group.ts",
+    );
+    expect(group).toContain("[key: string]: number[]");
+
+    const exported = allDts(
+      `const api = { f: () => 1 };
+export = api;
+`,
+      "/test/j-export-eq.ts",
+    );
+    expect(exported).toContain("export = api;");
+    expect(exported).not.toContain("export declare const api");
+
+    const importEq = allDts(
+      `import src = require("./types");
+export function useI(): src.I { return { x: 1 }; }
+`,
+      "/test/j-import-eq.ts",
+    );
+    expect(importEq).toContain('import src = require("./types");');
+    expect(importEq).toContain("useI(): src.I");
+
+    const nsRe = allDts(
+      `import * as ns from "./a";
+export { ns };
+`,
+      "/test/j-ns-re.ts",
+    );
+    expect(nsRe).toContain("import * as ns");
+    expect(nsRe).toContain("export { ns as ns };");
+
+    const box = allDts(
+      `class Box<T> { constructor(public value: T) {} }
+export function boxNum(): Box<number> { return new Box(1); }
+`,
+      "/test/j-box.ts",
+    );
+    expect(box).toContain("boxNum(): Box<number>");
+  });
+
+  it("BUG-381 对象成员函数的推断返回进入值通道（被调用的成员）", () => {
+    const dts = allDts(
+      `export const inferred = { f: (y: string) => y.length, m: (z: number) => String(z) };
+export const n = inferred.f("abc");
+`,
+      "/test/j-inferred.ts",
+    );
+    expect(dts).toContain("(y: string) => 3");
   });
 });

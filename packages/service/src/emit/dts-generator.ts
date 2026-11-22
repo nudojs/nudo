@@ -857,10 +857,18 @@ function absToTSTypeInner(a: Abs, typeVars: Map<string, string> | undefined, bud
         }
         entries.push(`${ro}${formatPropKey(k)}: ${inner}`);
       }
+      // BUG-383：索引签名（open 对象的运行时键值域）→ TS 索引签名。
+      if (a.shape.index) {
+        const key = absToTSTypeB(a.shape.index.key, typeVars, budget);
+        const value = absToTSTypeB(a.shape.index.value, typeVars, budget);
+        entries.push(`[key: ${key}]: ${value}`);
+      }
       // Bug 565：零成员对象**不是** TS 的 `{}`（= 任意非 nullish 值）⇒ 渲染成
       // `Record<string, never>`（空对象类型）：属性读合法（不再 TS2339 假红），
       // 且在联合类型里**不吸收** `{ a: number }`（`{}` 会把契约义务整个吃掉）。
-      if (entries.length === 0) return "Record<string, never>";
+      if (entries.length === 0) {
+        return a.shape.open === true ? "Record<string, unknown>" : "Record<string, never>";
+      }
       return `{ ${entries.join("; ")} }`;
     }
     case "arr":
@@ -1064,6 +1072,17 @@ function widenParamAbsInner(a: Abs, budget: ProjectionBudget): Abs {
           // BUG-258：数组视图 facet 必须透传——widen 造新 shape 时丢掉它 ⇒
           // 形参位投影回对象字面量类型（`.map` TS2339）。
           ...(s.view !== undefined ? { view: s.view } : {}),
+          // BUG-383：open 对象的值域（groupBy / fromEntries 的 index 签名）
+          // 必须随 widen 透传，否则 dts 退化成空对象。
+          ...(s.open === true ? { open: true } : {}),
+          ...(s.index !== undefined
+            ? {
+                index: {
+                  key: widenParamAbs(s.index.key, budget),
+                  value: widenParamAbs(s.index.value, budget),
+                },
+              }
+            : {}),
         },
         undefined,
         undefined,
@@ -3371,9 +3390,16 @@ function tsDeclaredReturn(
   const namedEnumReturn =
     /^[A-Za-z_$][\w$]*$/.test(bareName) &&
     ctx?.surface?.values.get(bareName)?.kind === "enum";
+  // BUG-393：用户泛型类的具体返回注解（`Box<number>`）不能被裸 `Box` /
+  // `Box<unknown>` 观测覆盖——分析面 brand 不携带类型实参。
+  const genericRef = /^([A-Za-z_$][\w$]*)<[\s\S]+>$/.exec(bareName);
+  const genericDeclMorePrecise =
+    genericRef !== null &&
+    (observed === genericRef[1] || observed.startsWith(`${genericRef[1]}<unknown`));
   const declarationMorePrecise =
     declaredNarrower ||
     namedEnumReturn ||
+    genericDeclMorePrecise ||
     hasLibGlobalTypeText(raw) ||
     isPlaceholderBuiltinType(observed) ||
     (hasReadonlyTypePrefix(raw) && !observed.includes("readonly")) ||
@@ -3844,6 +3870,8 @@ export interface DtsClassMemberSurface {
    * 只在**产物里可解析**的类名上采集（否则 `extends Unknown` 是 TS2304）。
    */
   superClass?: string;
+  /** BUG-378：`implements` 子句原文（与 tsc 一致，接口的编译期义务不得丢）。 */
+  implements?: string[];
   /** Bug 73：源码里写下的超类**类型实参**原文（`extends Base<string>` ⇒ `["string"]`） */
   superTypeArguments?: string[];
   /**
@@ -4007,8 +4035,8 @@ export interface DtsNamespaceSurface {
 export interface DtsImportSurface {
   /** 模块说明符（源码原文） */
   specifier: string;
-  /** 导入形态：具名（`import type { X } from "…"`）/ 默认（`import type X from "…"`） */
-  kind: "named" | "default";
+  /** 导入形态：具名 / 默认 / `import x = require("…")` */
+  kind: "named" | "default" | "equals";
   /**
    * BUG-012：具名导入的**原名**（`import { X as Y }` 里的 X）。再导出链条
    * （`export { Y as Z }`）要按原名写 `export { X as Z } from "…"`——按本地名
@@ -4902,6 +4930,13 @@ function scanClassSurface(
     decl.superTypeArguments as SurfaceNode | undefined,
     source,
   );
+  // BUG-378：类的 `implements` 子句（文本级保真；接口义务必须在产物里）。
+  const implementsTexts =
+    source === undefined
+      ? []
+      : ((decl.implements as SurfaceNode[] | undefined) ?? [])
+          .map((n) => surfaceSlice(source, n))
+          .filter((t): t is string => t !== undefined);
   // BUG-109：超类不是标识符 / 限定名，而是表达式（`extends mixin(Base)` /
   // `extends (class { … })`）⇒ 留原文作台账，发射侧降级成开放构造基类。
   // 注意：`superName` 有值但**不可解析**（`extends Unknown`）是另一条既有
@@ -5472,6 +5507,7 @@ function scanClassSurface(
     ...(superClass !== undefined ? { superClass } : {}),
     ...(superTypeArguments.length > 0 ? { superTypeArguments } : {}),
     ...(superExpressionText !== undefined ? { superExpressionText } : {}),
+    ...(implementsTexts.length > 0 ? { implements: implementsTexts } : {}),
     ...(instanceFields.length > 0 ? { instanceFields } : {}),
     ...(staticFields.length > 0 ? { staticFields } : {}),
     ...(accessors.length > 0 ? { accessors } : {}),
@@ -6025,6 +6061,19 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
   // 默认导入按**本地名**记；命名空间导入不能当类型名 ⇒ 不收。
   const imports = surface.imports ?? new Map<string, DtsImportSurface>();
   for (const stmt of body) {
+    // BUG-387：`import src = require("./types")` 的导入面。
+    if (stmt.type === "TSImportEqualsDeclaration") {
+      const local = surfaceName(stmt.id as SurfaceNode | undefined);
+      const ref = stmt.moduleReference as SurfaceNode | undefined;
+      const specifier =
+        ref?.type === "TSExternalModuleReference"
+          ? String((ref.expression as SurfaceNode | undefined)?.value ?? "")
+          : "";
+      if (local && specifier && !imports.has(local)) {
+        imports.set(local, { specifier, kind: "equals" });
+      }
+      continue;
+    }
     if (stmt.type !== "ImportDeclaration") continue;
     const from = stmt.source as SurfaceNode | undefined;
     const specifier = String(from?.value ?? "");
@@ -6224,6 +6273,13 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
         const exported = surfaceName(spec.exported as SurfaceNode | undefined);
         if (!exported || !local) continue;
         bind(exported, local);
+        // BUG-390：本地再导出命名空间导入 —— 产物补
+        // `import * as ns …; export { ns };`（不得静默空产物）。
+        if (surface.namespaceImports?.has(local)) {
+          surface.reexports.push(
+            `export { ${exportNameRepr(local)} as ${exportNameRepr(exported)} };`,
+          );
+        }
       }
       continue;
     }
@@ -7344,9 +7400,42 @@ function projectModuleDtsInner(
   // 已作为函数 / 类声明发射的本地绑定不再发值声明（`export const f = () => …`
   // 被分析成函数；再发一条 `declare const f` 就是 TS2300 Duplicate identifier）。
   const declaredLocals = new Set<string>(entries.map((e) => e.fn.name));
+  // BUG-381：对象成员函数在值通道只有形参名；成员自己的分析返回 Abs 在
+  // entries 里（`fn f => number`）——传给注解叠加层，未写返回注解也能发布。
+  const analyzedMemberReturns = new Map<string, Abs>();
+  for (const e of entries) {
+    if (e.fn.combinedAbs) analyzedMemberReturns.set(e.fn.name, e.fn.combinedAbs);
+  }
   lines.push(
-    ...dtsValueDeclarations(surface, values, declaredLocals, annotationRefs, annotatedConstLocals),
+    ...dtsValueDeclarations(
+      surface,
+      values,
+      declaredLocals,
+      annotationRefs,
+      annotatedConstLocals,
+      analyzedMemberReturns,
+    ),
   );
+
+  // BUG-384：`export =` / `module.exports = <值>` 的值目标（对象 / 原始值）
+  // 也必须走 `export =` 模块形态；上面只转换了类目标。
+  if (
+    surface?.exportEquals !== undefined &&
+    surface.exportEquals.local !== "" &&
+    !lines.some((l) => l.startsWith("export = "))
+  ) {
+    const target = surface.exportEquals.local;
+    const prefix = `export declare const ${dtsIdentifier(target)}:`;
+    let converted = false;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]!;
+      if (line.startsWith(prefix)) {
+        lines[i] = line.slice("export ".length);
+        converted = true;
+      }
+    }
+    if (converted) lines.push(`export = ${dtsIdentifier(target)};`);
+  }
 
   // ── namespace 声明（BUG-191）──
   // `export namespace NS { export const x: number = 1 }` 在运行时是真实对象
@@ -7433,6 +7522,10 @@ function projectModuleDtsInner(
       if (!brands.has(name) && !annotationRefs.has(name) && !typeDeclRefs.has(name)) continue;
       if (surface.classes.has(name)) continue; // 本地已声明 ⇒ 走 declare class
       const src = JSON.stringify(imp.specifier);
+      if (imp.kind === "equals") {
+        importLines.push(`import ${name} = require(${src});`);
+        continue;
+      }
       if (imp.kind === "default") {
         importLines.push(`import type ${name} from ${src};`);
         continue;
@@ -7449,9 +7542,12 @@ function projectModuleDtsInner(
   // `import * as NS from "…"`，否则产物里 `NS` 从未声明（`extends` 整条被丢）。
   if (surface?.namespaceImports) {
     for (const [name, specifier] of surface.namespaceImports) {
-      const used = [...classNames].some(
-        (c) => surface.classes.get(c)?.superClass?.startsWith(`${name}.`) === true,
-      );
+      const used =
+        [...classNames].some(
+          (c) => surface.classes.get(c)?.superClass?.startsWith(`${name}.`) === true,
+        ) ||
+        // BUG-390：`import * as ns` 的再导出（`export { ns }`）也要补导入行。
+        [...surface.exportBindings.values()].some((local) => local === name);
       if (used) {
         importLines.push(`import * as ${name} from ${JSON.stringify(specifier)};`);
       }
@@ -7801,7 +7897,11 @@ function dtsClassDeclaration(
       ]
     : [];
   const effectiveSuperText = degradedSuper ? ` extends ${baseName}` : superText;
-  const header = `${declaredName}${typeParamsText}${effectiveSuperText}`;
+  const implementsText =
+    cls?.implements !== undefined && cls.implements.length > 0
+      ? ` implements ${cls.implements.join(", ")}`
+      : "";
+  const header = `${declaredName}${typeParamsText}${effectiveSuperText}${implementsText}`;
   // Bug 42：abstract 类修饰符。
   const abs = cls?.isAbstract ? "abstract " : "";
   const exportNames =
@@ -7994,6 +8094,7 @@ function overlayObjectFnAnnotations(
   annotations: readonly DtsObjectFnAnnotation[] | undefined,
   surface: DtsModuleSurface,
   refs?: Set<string>,
+  analyzedReturns?: ReadonlyMap<string, Abs>,
 ): Abs {
   // BUG-256：即使没有任何函数注解，也要走访问器实体化（getter-only 的
   // `readonly` 是访问器表的事实，与注解无关）。
@@ -8039,6 +8140,17 @@ function overlayObjectFnAnnotations(
       changed = true;
     }
   }
+  // BUG-381：无注解的成员也要用**分析返回**（成员自己的 fn 条目）补返回位，
+  // 不能只依赖 `fnMemberAnnotations`（对象属性箭头没有 AST 成员注解条目）。
+  for (const [member, ret] of analyzedReturns ?? []) {
+    const slot = slots[member];
+    if (!slot || slot.value.shape.k !== "fn" || slot.value.shape.returnType !== undefined) continue;
+    slots[member] = {
+      ...slot,
+      value: { ...slot.value, shape: { ...slot.value.shape, returnType: ret } },
+    };
+    changed = true;
+  }
   for (const ann of annotations ?? []) {
     const slot = slots[ann.key];
     if (!slot) continue;
@@ -8057,6 +8169,14 @@ function overlayObjectFnAnnotations(
       fnChanged = true;
     });
     let returnType = fn.shape.returnType;
+    if (returnType === undefined && ann.returnType === undefined) {
+      // BUG-381：成员自己的分析已给出返回域（`fn f => number exact`）。
+      const analyzed = analyzedReturns?.get(ann.key);
+      if (analyzed !== undefined) {
+        returnType = analyzed;
+        fnChanged = true;
+      }
+    }
     if (returnType === undefined && ann.returnType !== undefined) {
       if (safeValueAnnotation(ann.returnType, surface, refs).unresolved === undefined) {
         const shape = tsAnnotationShape(ann.returnType);
@@ -8097,6 +8217,8 @@ function dtsValueDeclarations(
    * 不得按函数处理的「已声明」跳过。
    */
   annotatedFunctionLocals: ReadonlySet<string> = new Set<string>(),
+  /** BUG-381：对象成员函数的分析返回 Abs（成员名 → 返回域）。 */
+  analyzedMemberReturns: ReadonlyMap<string, Abs> = new Map<string, Abs>(),
 ): string[] {
   if (!surface) return [];
   const out: string[] = [];
@@ -8171,7 +8293,13 @@ function dtsValueDeclarations(
       //
       // BUG-157：对象字面量成员函数的形参 / 返回注解叠加进 Abs（只补缺）。
       const withMemberAnnotations = (a: Abs): Abs =>
-        overlayObjectFnAnnotations(a, value.fnMemberAnnotations, surface, annotationRefs);
+        overlayObjectFnAnnotations(
+          a,
+          value.fnMemberAnnotations,
+          surface,
+          annotationRefs,
+          analyzedMemberReturns,
+        );
       // BUG-236：symbol 方法的返回注解走文本旁路（见 withSymbolReturnOverrides）
       const symbolReturns = new Map<string, string>();
       // BUG-271：普通对象方法的返回注解（`Promise<number>` / 具名别名 /
