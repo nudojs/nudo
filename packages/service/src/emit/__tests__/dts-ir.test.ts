@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { renderDtsParams, type DtsParam } from "../dts-ir.ts";
+import {
+  renderDtsParams,
+  renderDtsSignature,
+  type DtsParam,
+} from "../dts-ir.ts";
 
 const p = (
   name: string,
@@ -38,6 +42,27 @@ describe("dts 参数 IR 打印器", () => {
         p("...rest", "string[]", { isRest: true }),
       ]),
     ).toEqual(["a?: number", "...rest: string[]"]);
+  });
+
+  it("签名打印：类型形参 / this / 空参数", () => {
+    expect(
+      renderDtsSignature({ params: ["a: number"], returnType: "string" }),
+    ).toBe("(a: number): string");
+    expect(
+      renderDtsSignature({
+        typeParams: "<T>",
+        params: ["x: T"],
+        returnType: "T",
+      }),
+    ).toBe("<T>(x: T): T");
+    expect(
+      renderDtsSignature({
+        thisParam: "this: Box<T>",
+        params: ["x: number"],
+        returnType: "void",
+      }),
+    ).toBe("(this: Box<T>, x: number): void");
+    expect(renderDtsSignature({ params: [], returnType: "void" })).toBe("(): void");
   });
 
   it("纯函数：不改写入参，重复渲染同结果", () => {

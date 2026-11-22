@@ -31,7 +31,7 @@ import { tsAnnotationShape, tsAnnotationTypeText } from "../ts-annotation.ts";
 import { exportNameRepr } from "./export-binding.ts";
 import { isHiddenInternalSlot } from "./internal-slot.ts";
 import { isRuntimeGlobalCtorName } from "./schema-generator.ts";
-import { renderDtsParams, type DtsParam } from "./dts-ir.ts";
+import { renderDtsParams, renderDtsSignature, type DtsParam } from "./dts-ir.ts";
 
 // ---------------------------------------------------------------------------
 // Abs → TS（dts 主路径）
@@ -3579,7 +3579,7 @@ function dtsFunctionDeclaration(
     lines.push(
       ...dtsExportDeclaration(
         form,
-        `${tparams}(${hofParams.join(", ")}): ${returnType}`,
+        renderDtsSignature({ typeParams: tparams, params: hofParams, returnType }),
       ),
     );
     return {
@@ -3606,7 +3606,11 @@ function dtsFunctionDeclaration(
         sig.typeParams && sig.typeParams.length > 0
           ? `<${typeParamDecls(sig.typeParams, sig.constraints)}>`
           : "";
-      const paramsText = `${srcTypeParams}${contractTParams}${plain}`;
+      const paramsText = renderDtsSignature({
+        typeParams: `${srcTypeParams}${contractTParams}`,
+        params: sig.params,
+        returnType: sig.returnType,
+      });
       return {
         lines: [
           ...contractJSDocLines(contract),
@@ -3651,7 +3655,11 @@ function dtsFunctionDeclaration(
   lines.push(
     ...dtsExportDeclaration(
       form,
-      `${srcTypeParams}${sigTParams}${plain}`,
+      renderDtsSignature({
+        typeParams: `${srcTypeParams}${sigTParams}`,
+        params: sig.params,
+        returnType: sig.returnType,
+      }),
       srcTypeParams && !sigTParams && compatAllowed(plain) ? plain : undefined,
     ),
   );
@@ -5834,7 +5842,8 @@ function namespaceMemberLines(
         decl.typeParameters as SurfaceNode | undefined,
         source,
       ) ?? "";
-      return [`export function ${name}${tps}(${params.join(", ")}): ${ret};`];
+      const sigText = renderDtsSignature({ typeParams: tps, params, returnType: ret });
+      return [`export function ${name}${sigText};`];
     }
     case "ClassDeclaration": {
       // Bug 76：ambient 声明体合法 ⇒ 发射成员，不再无条件空类体。
