@@ -1060,6 +1060,38 @@ function tsOnlySyntaxDiagnostic(
 }
 
 /**
+ * BUG-374：解析失败的统一 LSP 归因。
+ *
+ * - `.js` 里的 TS-only 语法 ⇒ 与 CLI 同款的 `syntax-error`（精确 token）；
+ * - 其余解析失败 ⇒ `syntax-error` + Babel 位置，而不是无 code 的
+ *   `Analysis error`（后者只留给真正的引擎故障 / check 通道异常）。
+ */
+export function parseFailureDiagnostic(
+  filePath: string,
+  source: string,
+  err: unknown,
+): LspDiagnostic {
+  const tsOnly = tsOnlySyntaxDiagnostic(filePath, source);
+  if (tsOnly) return tsOnly;
+  const e = err as { message?: string; loc?: { line?: number; column?: number } };
+  const raw = String(e?.message ?? err);
+  const essence = raw.replace(/\s*\(\d+:\d+\)\s*$/, "").trim();
+  const line = e?.loc?.line ?? 1;
+  const column = e?.loc?.column ?? 0;
+  return {
+    severity: DiagnosticSeverity.Error,
+    range: lspDiagnosticRange(
+      { line, column },
+      { line, column: column + 1 },
+      lineLengthsOf(source),
+    ),
+    message: `syntax error: ${sanitizeErrorMessage(essence, undefined)}`,
+    source: "nudo-check",
+    code: "syntax-error",
+  };
+}
+
+/**
  * Abs check → LSP diagnostics（主通道：约束蕴含，非 TS assignability）。
  */
 export function checkToLspDiagnostics(
@@ -1358,15 +1390,16 @@ export async function validateText(
         );
       } catch (err) {
         if (!stillCurrent()) return;
+        // BUG-374：解析失败按 syntax-error 归因（与 CLI 同码 / 同 range 口径），
+        // 且尊重 analysis.diagnostics: "off"。
+        const level = diagnosticsLevelForFile(filePath);
         deps.sendDiagnostics({
           uri,
           version,
-          diagnostics: [{
-            severity: DiagnosticSeverity.Error,
-            range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
-            message: `Analysis error: ${sanitizeErrorMessage((err as Error).message, deps.workspaceRoots)}`,
-            source: "nudo",
-          }],
+          diagnostics:
+            level === "off"
+              ? []
+              : [parseFailureDiagnostic(filePath, text, err)],
         });
         return;
       }

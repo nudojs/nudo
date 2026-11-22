@@ -222,7 +222,7 @@ export function pushEvalStaticDiagnostics(args: {
       severity: "info",
       message: "Code after return/throw statement is unreachable",
       tags: ["unnecessary"],
-      code: "nudo-unreachable",
+      code: DIAG.unreachable,
       suggestions: ["Remove the unreachable code after the return/throw statement"],
     });
   }

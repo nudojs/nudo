@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { checkSource, pTrue } from "../index.ts";
 import { sigOf } from "./nudo-constraints.ts";
+import { DIAG } from "../diagnostics/diag-codes.ts";
+import { checkIssuesFromDiagnostics } from "../check/check-report.ts";
 
 /**
  * 回归：OSS 语料 semver/bin/semver.js L109 的 L1 FP（2026-10-03 main 红）。
@@ -179,6 +181,20 @@ export function un(x: string | undefined): void {}
     expect(sig("u")).toBe("undefined");
     expect(sig("n")).toBe("null");
     expect(sig("un")).toBe("string | undefined");
+  });
+
+  it("check 面可见 nudo-unreachable，且档位为 info（不挡门禁）", () => {
+    const issues = checkIssuesFromDiagnostics([
+      {
+        range: { start: { line: 0, column: 0 } },
+        severity: "info",
+        message: "Code after return/throw statement is unreachable",
+        code: DIAG.unreachable,
+      },
+    ]);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]!.code).toBe("nudo-unreachable");
+    expect(issues[0]!.severity).toBe("info");
   });
 
   it("filter reassignment still flags genuinely incompatible element rewrite", () => {

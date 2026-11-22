@@ -109,7 +109,11 @@ function failureEnvelope(
       externalFunctions: 0,
       cases: 0,
       diagnostics: 0,
-      errors: failures.length + (targetErrors?.length ?? 0),
+      // BUG-373：`targetErrors` 是 `failures` 的**精确子集**（shared.ts 的闸门
+      // 错误同时留在 pathErrors）⇒ 不得重复计数。
+      errors: failures.length,
+      // 与 check --json 同口径的消歧字段。
+      pathErrors: failures.length,
     },
     functions: [],
     diagnostics: [],
