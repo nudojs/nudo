@@ -381,6 +381,24 @@ export function relationFn(
   return a;
 }
 
+/**
+ * 回调的类型谓词声明（BUG-367 / BUG-382）：`(x): x is number => …`。
+ *
+ * 谓词是**源码声明事实**，不参与 Abs 形状 / 指纹（回调未调用时与普通
+ * boolean 回调不可区分）。HOF 在调用点按对象身份读取；`$fnVal` 创建时
+ * 由转译器写入。
+ */
+export type FnTypePredicate = { paramIndex: number; typeOf: string };
+const fnTypePredicates = new WeakMap<object, FnTypePredicate>();
+
+export function setFnTypePredicate(a: Abs, predicate: FnTypePredicate): void {
+  fnTypePredicates.set(a as object, predicate);
+}
+
+export function fnTypePredicateOf(a: Abs | undefined): FnTypePredicate | undefined {
+  return a === undefined ? undefined : fnTypePredicates.get(a as object);
+}
+
 /** 仅写 shape 槽（E 路径 / §5.2 提升产物）；禁止 attachFnImpl */
 export function shapeOnlyFn(
   paramTypes: Abs[],

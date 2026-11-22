@@ -11,7 +11,7 @@
  */
 import type { Abs } from "../../abs.ts";
 import { isAbsLike } from "../../abs.ts";
-import { absFunction, getFnImpl, hostFnCtorFacet } from "../../abs-fn.ts";
+import { absFunction, getFnImpl, hostFnCtorFacet, setFnTypePredicate } from "../../abs-fn.ts";
 import { noBody as sharedNoBody } from "../../builtins/shared.ts";
 import { pTrue } from "../../pred.ts";
 import { joinAbs } from "../../objects.ts";
@@ -240,7 +240,7 @@ function padOmittedArgs(
 export function $fnVal(
   params: string[],
   impl: (...args: Abs[]) => Abs,
-  opts?: { bindThis?: boolean; ctor?: boolean; padArgs?: boolean; length?: number; effectFree?: boolean; closed?: boolean; kind?: string; fnKind?: "function" | "async" | "generator" | "async-generator"; optionalParams?: boolean[]; emptyBody?: boolean },
+  opts?: { bindThis?: boolean; ctor?: boolean; padArgs?: boolean; length?: number; effectFree?: boolean; closed?: boolean; kind?: string; fnKind?: "function" | "async" | "generator" | "async-generator"; optionalParams?: boolean[]; emptyBody?: boolean; predicate?: { paramIndex: number; typeOf: string } },
 ): Abs {
   const argsOf =
     opts?.padArgs === false
@@ -279,6 +279,8 @@ export function $fnVal(
       ...(opts?.length !== undefined ? { length: opts.length } : {}),
     },
   );
+  // BUG-367 / BUG-382：回调的类型谓词声明（HOF 结果域消费）。
+  if (opts?.predicate) setFnTypePredicate(fn, opts.predicate);
   // Bug 141：空体匿名函数表达式作构造器 ⇒ 实例自有面确定为空。
   if (opts?.emptyBody) markKnownEmptyInstanceCtor(fn);
   return fn;

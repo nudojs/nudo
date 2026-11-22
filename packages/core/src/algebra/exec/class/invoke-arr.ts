@@ -18,9 +18,9 @@ import { joinAbs, canonicalArrayIndex, getSlot } from "../../objects.ts";
 import { markLiveContainer } from "../runtime/containers/obj.ts";
 import { fromIdxAbs } from "../../builtins.ts";
 import { markDomainShared } from "../../len-sharing.ts";
-import { $lit, $arrMutContainer, callAtFunctionBoundary } from "../runtime.ts";
+import { $lit, $arrMutContainer, $narrowTypeOf, callAtFunctionBoundary } from "../runtime.ts";
 import { callHostGlobalFn } from "../calls.ts";
-import { getFnImpl } from "../../abs-fn.ts";
+import { getFnImpl, fnTypePredicateOf } from "../../abs-fn.ts";
 import { collectionIteratorAbs, abstractSeqIteratorAbs } from "../../builtins.ts";
 import { arrayJoinToString, arrayJoinWithSep, validateJoinElements } from "../../builtins/array.ts";
 import { TUPLE_MATERIALIZE_CAP } from "../../containers.ts";
@@ -444,10 +444,26 @@ function hofMap(ctx: ArrCtx): Abs {
   return abs({ k: "arr", element: el }, undefined, undefined, conf);
 }
 
+/** 回调的 `x is T` 谓词 → 元素域收窄（无谓词 ⇒ undefined）。 */
+function narrowedByPredicate(el: Abs, cb: Abs): Abs | undefined {
+  const pred = fnTypePredicateOf(cb);
+  if (!pred) return undefined;
+  return $narrowTypeOf(el, pred.typeOf, true);
+}
+
 /** filter：具体谓词保留精确子序列；不确定谓词枚举子集或降 arr。 */
 function hofFilter(ctx: ArrCtx): Abs {
   const { arr, args, shape, liveAt, callFn, callbackTruth } = ctx;
   requireCallback(ctx, "filter");
+  // BUG-367：类型谓词回调的结果元素域 = 谓词目标类型；tuple 接收者也按
+  // TS 语义发布 array（filter 改变长度），不再保留 tuple 上界。
+  const domain =
+    shape.k === "tuple"
+      ? shape.elements.length
+        ? shape.elements.reduce((a, b) => joinAbs(a, b))
+        : unknown
+      : shape.element;
+  const predEl = narrowedByPredicate(domain, args[0]);
   // 逐位谓词：具体 true 保留、具体 false 丢弃、不确定并入（side effect 计数精确）。
   // hole 跳过谓词且不出现在结果里（原生 filter 收紧数组）。
   if (shape.k === "tuple") {
@@ -462,7 +478,11 @@ function hofFilter(ctx: ArrCtx): Abs {
       const t = callbackTruth(p);
       if (t === false) continue;
       if (t === undefined) anyUncertain = true;
-      kept.push(live.el);
+      kept.push(narrowedByPredicate(live.el, args[0]) ?? live.el);
+    }
+    // BUG-367 / BUG-394：类型谓词结果发布为 array（TS filter 语义）。
+    if (predEl) {
+      return abs({ k: "arr", element: predEl }, undefined, undefined, confJoin(arr.conf, "path"));
     }
     if (kept.length === 0) {
       // 每个现存元素的谓词都 definitely-false（空元组平凡成立）→ 结果恒为 []。
@@ -491,7 +511,8 @@ function hofFilter(ctx: ArrCtx): Abs {
     const el = kept.reduce((a, b) => joinAbs(a, b));
     return abs({ k: "arr", element: el }, undefined, undefined, conf);
   }
-  // arr：filter 保持元素类型（不传播回调 pred）
+  // arr：无谓词保持元素类型；类型谓词回调按目标类型收窄。
+  if (predEl) return abs({ k: "arr", element: predEl }, undefined, undefined, confJoin(arr.conf, "path"));
   return arr;
 }
 
@@ -568,6 +589,7 @@ function hofSomeEvery(ctx: ArrCtx): Abs {
 function hofFind(ctx: ArrCtx): Abs {
   const { arr, args, shape, liveGet, callFn, callbackTruth } = ctx;
   requireCallback(ctx, "find");
+  const narrowEl = (el: Abs): Abs => narrowedByPredicate(el, args[0]) ?? el;
   if (shape.k === "tuple") {
     let undecided = false;
     // Bug 248：逐位现读当前容器（Get 语义——hole 位照样回调，值 undefined）。
@@ -575,20 +597,20 @@ function hofFind(ctx: ArrCtx): Abs {
     for (let i = 0; i < len; i++) {
       const el = liveGet(i);
       const t = callbackTruth(callFn(args[0], args[1], el, $lit(i), arr));
-      if (t === true) return el;
+      if (t === true) return narrowEl(el);
       if (t === undefined) undecided = true;
     }
     if (undecided) {
-      const joined = shape.elements.reduce((a, b) => joinAbs(a, b));
+      const joined = shape.elements.map(narrowEl).reduce((a, b) => joinAbs(a, b));
       return joinAbs(joined, undefAbs());
     }
     return undefAbs();
   }
   const el = markDomainShared(shape.element);
   const t = callbackTruth(callFn(args[0], args[1], el, fromIdxAbs(), arr));
-  if (t === true) return el;
+  if (t === true) return narrowEl(el);
   if (t === false) return undefAbs();
-  return joinAbs(el, undefAbs());
+  return joinAbs(narrowEl(el), undefAbs());
 }
 
 /** findIndex：Get 语义；命中返回下标。 */
@@ -620,18 +642,19 @@ function hofFindLast(ctx: ArrCtx): Abs {
   // hofFindIndex 合并：迭代方向与空数组 undecided 兜底口径刻意分叉）
   requireCallback(ctx, method);
   const wantIndex = method === "findLastIndex";
+  const narrowEl = (el: Abs): Abs => narrowedByPredicate(el, args[0]) ?? el;
   if (shape.k === "tuple") {
     let undecided = false;
     for (let i = shape.elements.length - 1; i >= 0; i--) {
       // Bug 248：逐位现读当前容器（Get 语义——hole 位照样回调，值 undefined）。
       const el = liveGet(i);
       const t = callbackTruth(callFn(args[0], args[1], el, $lit(i), arr));
-      if (t === true) return wantIndex ? $lit(i) : el;
+      if (t === true) return wantIndex ? $lit(i) : narrowEl(el);
       if (t === undefined) undecided = true;
     }
     if (undecided) {
       const joined = shape.elements.length
-        ? shape.elements.reduce((a, b) => joinAbs(a, b))
+        ? shape.elements.map(narrowEl).reduce((a, b) => joinAbs(a, b))
         : unknown;
       return wantIndex ? joinAbs(unknownIdx(), $lit(-1)) : joinAbs(joined, undefAbs());
     }
@@ -643,9 +666,9 @@ function hofFindLast(ctx: ArrCtx): Abs {
     if (t === false) return $lit(-1);
     return joinAbs(unknownIdx(), $lit(-1));
   }
-  if (t === true) return shape.element;
+  if (t === true) return narrowEl(shape.element);
   if (t === false) return undefAbs();
-  return joinAbs(shape.element, undefAbs());
+  return joinAbs(narrowEl(shape.element), undefAbs());
 }
 
 /** reduce：len 进体前取一次；tuple 按首个在场元素起算（Bug 6/18）。 */

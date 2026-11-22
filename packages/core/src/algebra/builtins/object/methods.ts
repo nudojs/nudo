@@ -1318,10 +1318,15 @@ function inheritedProtoSlots(proto: Abs): Record<string, { value: Abs; inherited
         const shape = a0.shape as { slots: Record<string, unknown>; open?: boolean };
         // Bug 84：internal 私有槽非自有属性（内部槽，GetOwnProperty 不可见）；
         // Bug 66：inherited 槽（errorBrandAbs 的 name——原型链解析）同折 false
-        const own = shape.slots[key] as { internal?: boolean; inherited?: boolean } | undefined;
+        const own = shape.slots[key] as
+          | { internal?: boolean; inherited?: boolean; optional?: boolean }
+          | undefined;
         if (own?.internal === true || own?.inherited === true) {
           return boolLit(false);
         }
+        // BUG-405：可选槽运行期可能缺席 ⇒ 不能折精确 true（与下方类实例
+        // 分支的 `slot.optional → boolPrim()` 同口径）。
+        if (own?.optional === true) return boolPrim();
         if (Object.prototype.hasOwnProperty.call(shape.slots, key)) return boolLit(true);
         // 闭 exact 对象确定无槽 → false；open/非 exact conf → 保守
         if (!shape.open && a0.conf === "exact") return boolLit(false);
@@ -1486,11 +1491,16 @@ function inheritedProtoSlots(proto: Abs): Record<string, { value: Abs; inherited
         // + 逐键 defineProperty；falsy ⇒ TypeError）
         if (isProxyAbs(a0)) {
           proxySetIntegrity(a0, "frozen");
-          return markExtState(a0, "frozen");
+          const frozen = markExtState(a0, "frozen");
+          // BUG-392：只读观察面随 Abs 搬运（dts 投影 `Readonly<T>`）。
+          frozen.facets = { ...(frozen.facets ?? {}), frozen: true };
+          return frozen;
         }
         // Bug 291：键级标志落地（writable:false / configurable:false）
         applyIntegrityFlags(a0, "frozen");
-        return markExtState(a0, "frozen");
+        const frozen = markExtState(a0, "frozen");
+        frozen.facets = { ...(frozen.facets ?? {}), frozen: true };
+        return frozen;
       }
       return undefined;
     }

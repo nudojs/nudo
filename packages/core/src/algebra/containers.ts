@@ -13,10 +13,26 @@
  * 策略调整只改本文件。
  */
 
-import type { Confidence } from "./abs.ts";
+import type { Abs, Confidence } from "./abs.ts";
 
 /** 数组字面量保持 tuple 的最大元素数（含边界） */
 export const TUPLE_LITERAL_CAP = 8;
+
+/**
+ * BUG-394：`filter` 的 tuple 结果在 TS 里是 **array**（长度可变）。引擎保留
+ * tuple 以维持运行期长度精确，但越界下标读必须按元素域投影（`r[5]` 是
+ * element，不是 undefined）。侧表按 tuple 对象身份携带过滤后的元素域。
+ */
+const filterResultElements = new WeakMap<object, Abs>();
+
+export function markFilterResultElement(a: Abs, element: Abs): Abs {
+  filterResultElements.set(a as object, element);
+  return a;
+}
+
+export function filterResultElementOf(a: Abs | undefined): Abs | undefined {
+  return a === undefined ? undefined : filterResultElements.get(a as object);
+}
 
 /** 字面量 tuple 元素数上限（>cap 降为 arr） */
 export function tupleLiteralCap(): number {

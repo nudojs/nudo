@@ -190,6 +190,12 @@ export type AbsFacets = {
    * 缺省 = 旧 Abs（按 inferred 处理）。只影响投影裁决，不进 leq / 展示。
    */
   provenance?: "declared" | "observed" | "asserted" | "inferred" | "synthetic";
+  /**
+   * BUG-392：`Object.freeze` 的**只读**观察面。与 extState 写门互补——
+   * extState 是侧表身份、dts/快照搬运会丢；本槽位随 Abs 整包搬运，供
+   * 投影面发布 `Readonly<T>` / `readonly T[]`。
+   */
+  frozen?: boolean;
 };
 
 /**

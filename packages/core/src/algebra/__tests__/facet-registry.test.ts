@@ -36,6 +36,7 @@ const SAMPLE: { [K in keyof AbsFacets]-?: AbsFacets[K] } = {
   genNext: strLit("v"),
   genElements: [numLit(1)],
   provenance: "declared",
+  frozen: true,
 };
 
 describe("ABS-15 · 登记表覆盖与声明序", () => {
@@ -53,6 +54,7 @@ describe("ABS-15 · 登记表覆盖与声明序", () => {
       "genNext",
       "genElements",
       "provenance",
+      "frozen",
     ]);
   });
 
@@ -162,7 +164,7 @@ describe("ABS-15 · 等价副本按 kind 搬运", () => {
     expect(copy.genElements![0]).toBe(src.genElements![0]);
   });
 
-  it("全槽位容器：六项全在且顺序 = 声明序", () => {
+  it("全槽位容器：七项全在且顺序 = 声明序", () => {
     const copy = cloneAbsFacets(SAMPLE)!;
     expect(Object.keys(copy)).toEqual([...facetKeys()]);
     expect(copy).toEqual(SAMPLE);

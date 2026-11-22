@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { checkSource, pTrue } from "../index.ts";
+import { sigOf } from "./nudo-constraints.ts";
 
 /**
  * 回归：OSS 语料 semver/bin/semver.js L109 的 L1 FP（2026-10-03 main 红）。
@@ -70,6 +71,40 @@ describe("check: loop push-join binding reassigned to filter result (semver shap
       ].join("\n"),
     );
     expect(codes).toEqual([]);
+  });
+
+  it("类型谓词回调 / tuple filter / keyof 下标 / 可选调用 / hasOwn 可选槽的结果域", () => {
+    const r = checkSource(
+      "/t/hof-optional.ts",
+      `export function filterNums(xs: (number | string)[]) {
+  return xs.filter((x): x is number => typeof x === "number");
+}
+export function findNum(xs: (number | string)[]) {
+  return xs.find((x): x is number => typeof x === "number");
+}
+export function filterTuple(t: [number, string]) {
+  const kept = t.filter((x): x is number => typeof x === "number");
+  return kept[5];
+}
+export function pickKey(o: { a: number; b: string }, k: keyof { a: number; b: string }) {
+  return o[k];
+}
+export function optDirect(o: { m?: () => number }) {
+  return o.m?.();
+}
+export function hasOpt(o: { a?: number }) {
+  return Object.hasOwn(o, "a");
+}
+`,
+      pTrue,
+    );
+    expect(sigOf(r, "filterNums")).toBe("number[]");
+    expect(sigOf(r, "findNum")).toBe("number | undefined");
+    expect(sigOf(r, "filterTuple")).toMatch(/number/);
+    expect(sigOf(r, "pickKey")).toBe("number | string");
+    expect(sigOf(r, "optDirect")).toBe("undefined | number");
+    expect(sigOf(r, "hasOpt")).toBe("boolean");
+    expect(r.summary.errors).toBe(0);
   });
 
   it("filter reassignment still flags genuinely incompatible element rewrite", () => {

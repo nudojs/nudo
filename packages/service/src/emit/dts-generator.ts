@@ -12,6 +12,7 @@ import {
   substAbs,
   provenanceOf,
   leqAbs,
+  extStateOf,
 } from "@nudojs/core";
 import {
   isTemplateLike,
@@ -175,7 +176,13 @@ function absToTSTypeB(a: Abs, typeVars: Map<string, string> | undefined, budget:
   if (stop === "cycle") return TS_TRUNC.cycle;
   if (stop === "depth") return TS_TRUNC.depth;
   try {
-    return absToTSTypeInner(a, typeVars, budget);
+    const text = absToTSTypeInner(a, typeVars, budget);
+    // BUG-392：`Object.freeze` 的返回值在引擎里是 frozen 侧表状态；dts 面
+    // 必须带上 readonly 维度（对象 ⇒ Readonly<T>，数组/元组 ⇒ readonly T）。
+    if (a.facets?.frozen !== true && extStateOf(a) !== "frozen") return text;
+    if (a.shape.k === "obj") return `Readonly<${text}>`;
+    if (a.shape.k === "arr" || a.shape.k === "tuple") return `readonly ${text}`;
+    return text;
   } finally {
     budget.exit();
   }

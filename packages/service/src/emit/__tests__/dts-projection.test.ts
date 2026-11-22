@@ -3114,6 +3114,16 @@ export class StrBase extends Base<string> { m(): string { return "m"; } }
     expect(ctrl).toContain("get(): string;");
   });
 
+  it("BUG-392 `Object.freeze` 返回值发布 readonly 维度（对象 / 数组）", () => {
+    const dts = batchDts(
+      `export function frozenObj() { return Object.freeze({ a: 1, b: "s" }); }
+export function frozenArr() { return Object.freeze([1, 2, 3]); }
+`,
+    );
+    expect(dts).toContain("Readonly<");
+    expect(dts).toContain("readonly number[]");
+  });
+
   it("BUG-252/257/274/362 返回位：空数组 widen、readonly 声明保真、函数签名保真、抽象下标无 undefined 臂", () => {
     const dts = batchDts(
       `export function empty() { return []; }
