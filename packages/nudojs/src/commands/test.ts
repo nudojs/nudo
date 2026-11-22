@@ -14,6 +14,8 @@ import {
   analyzeFileAsync,
   collectEvalReplacements,
   getPathEnvLoadErrors,
+  SYNTAX_ERROR_CODE,
+  USAGE_ERROR_CODE,
   type AlsoSynthesizeCases,
   type AnalysisResult,
   type CallRecord,
@@ -73,12 +75,6 @@ type TestFailure = {
   message: string;
   suggestion: string;
 };
-
-/** 用法错误的机器面码（与 `check` / `contract` 的 `nudo:usage-error` 同码）。 */
-const USAGE_ERROR_CODE = "nudo:usage-error";
-
-/** 语法错的机器面码（与 check 面 `pathErrors[{code:"syntax-error"}]` 同码）。 */
-const SYNTAX_ERROR_CODE = "syntax-error";
 
 /**
  * CaseJson 失败信封（`--json` 机器面）——**路径错误 / 用法错误 / 语法错

@@ -15,16 +15,8 @@
 import { readFileSync, existsSync } from "node:fs";
 import { resolve, dirname, relative, join, isAbsolute, sep } from "node:path";
 import { unifiedDiff } from "@nudojs/service/emit";
-import { normalizeRealPath, type CallRecord } from "@nudojs/service";
+import { normalizeRealPath, USAGE_ERROR_CODE, type CallRecord } from "@nudojs/service";
 import { relFromCwd, type PathError } from "./shared.ts";
-
-/**
- * 机器面**用法错误**码（族 20 · Bug 663）。
- *
- * 与 `contract.ts` / `contract-emit.ts` 的 `CONTRACT_USAGE_ERROR_CODE` **同值**
- * （同一条协议常量）；三处各自定义 ⇒ 不跨模块 import（零新增导出）。
- */
-const CONTRACT_USAGE_ERROR_CODE = "nudo:usage-error";
 
 /** Bug 80：契约面透出的装载诊断（与 service 侧 ContractFaceDiagnostic 同形）。 */
 type ContractFaceDiagnostic = {
@@ -85,7 +77,7 @@ export async function runContractDraft(
           file: rel,
           errors: [
             {
-              code: CONTRACT_USAGE_ERROR_CODE,
+              code: USAGE_ERROR_CODE,
               message: "error: --write cannot be combined with --json",
               suggestion:
                 "drop --write (--json prints the draft for review); use `--draft --write` to persist it",
@@ -154,7 +146,7 @@ export async function runContractDraft(
       // 机器面：stdout 必须是一份合法 JSON 文档（命令层的聚合层把它收进数组外壳）
       console.log(
         JSON.stringify(
-          { file: rel, errors: [{ code: CONTRACT_USAGE_ERROR_CODE, message }] },
+          { file: rel, errors: [{ code: USAGE_ERROR_CODE, message }] },
           null,
           2,
         ),

@@ -35,6 +35,7 @@ import {
   getSessionCacheLimits,
   isProjectConfigPath,
   isNudoTargetPath,
+  SYNTAX_ERROR_CODE,
   type AnalysisResult,
   type Diagnostic as JsDiagnostic,
   type DiagnosticSeverity as JsDiagSeverity,
@@ -1054,7 +1055,7 @@ function tsOnlySyntaxDiagnostic(
       ),
       message: `syntax error: TypeScript-only syntax is not valid in a .js file: ${essence}`,
       source: "nudo-check",
-      code: "syntax-error",
+      code: SYNTAX_ERROR_CODE,
     };
   }
 }
@@ -1087,7 +1088,7 @@ export function parseFailureDiagnostic(
     ),
     message: `syntax error: ${sanitizeErrorMessage(essence, undefined)}`,
     source: "nudo-check",
-    code: "syntax-error",
+    code: SYNTAX_ERROR_CODE,
   };
 }
 
