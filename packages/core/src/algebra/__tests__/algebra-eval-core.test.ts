@@ -3205,7 +3205,8 @@ describe("TS 声明类型文本 → Abs：字面量值域 / 索引签名 / 方�
   it("显式 unknown 注解带声明项，不再被当成推断失败", () => {
     const a = absTypeForTsTypeText("unknown");
     expect(a?.shape).toEqual({ k: "unknown" });
-    expect(a?.term).toEqual({ op: "var", id: "unknown#annotation" });
+    expect(a?.term).toBeUndefined();
+    expect(a?.facets?.provenance).toBe("declared");
   });
 
   it("同文件 interface / type 别名引用可解析为结构化域（无损链式展开）", () => {

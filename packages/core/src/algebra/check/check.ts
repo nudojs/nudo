@@ -94,7 +94,7 @@ import {
 import { guardLoadModule, type LoadReadFailure } from "../load-guard.ts";
 import { anyAbs } from "../abs.ts";
 import type { Abs } from "../abs.ts";
-import { abs } from "../abs.ts";
+import { abs, provenanceOf } from "../abs.ts";
 import type { Phi, Pred } from "../pred.ts";
 import { and as pAndPred, le as lePred, pTrue } from "../pred.ts";
 import { v as termVar } from "../term.ts";
@@ -809,9 +809,9 @@ function assumePremisesPhiOf(
 function isTrueUnknownAbs(a: Abs | undefined): boolean {
   if (!a) return false;
   if (a.shape.k === "unknown") {
-    // BUG-276：显式 `unknown` 注解由类型文本映射器打 `unknown#annotation`
-    // 声明项——它是源码事实，不是「分析没拿到信息」的引擎债。
-    if (a.term?.op === "var" && a.term.id.startsWith("unknown#annotation")) return false;
+    // BUG-276：显式 `unknown` 注解带 provenance=declared——它是源码事实，
+    // 不是「分析没拿到信息」的引擎债。嵌套对象槽 / union 成员同样生效。
+    if (provenanceOf(a) === "declared") return false;
     return a.term?.op !== "lit";
   }
   if (a.shape.k === "sum") return a.shape.members.some((m) => isTrueUnknownAbs(m));

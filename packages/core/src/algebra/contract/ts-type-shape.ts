@@ -17,10 +17,10 @@
  *   lit term」表达，Shape 表达不了 ⇒ 只有 Abs 面（{@link absTypeForTsTypeText}）
  *   映射它们；Shape 面（{@link absShapeForTsTypeText}）保持旧口径不映射。
  */
-import { abs, type Abs, type Shape } from "../abs.ts";
+import { abs, withProvenance, type Abs, type Shape } from "../abs.ts";
 import { relationFn } from "../abs-fn.ts";
 import { parseSource } from "../parse-source.ts";
-import { lit, v, type Term } from "../term.ts";
+import { lit, type Term } from "../term.ts";
 
 /**
  * 注解解析上下文（**单一解析层**的输入）。
@@ -513,10 +513,17 @@ export function importedTypeTextsForSource(
       if (stmt.type !== "ImportDeclaration") continue;
       const srcNode = stmt.source as { value?: unknown } | undefined;
       if (typeof srcNode?.value !== "string") continue;
+      const specs = (stmt.specifiers as Array<Record<string, unknown>> | undefined) ?? [];
+      // 只展开**类型导入**（`import type` 或 `import { type X }`）：
+      // 运行时包（zod / express …）的 .d.ts 很大，逐个 import 全量解析会拖慢
+      // 每个入口；无 type 修饰的运行时导入不可能是本解析层的类型来源。
+      const typeImport =
+        stmt.importKind === "type" || specs.some((sp) => sp.importKind === "type");
+      if (!typeImport) continue;
       const loaded = load(srcNode.value);
       if (loaded === undefined) continue;
       const decls = namedTypeTextsForSource(loaded);
-      for (const spec of (stmt.specifiers as Array<Record<string, unknown>> | undefined) ?? []) {
+      for (const spec of specs) {
         if (spec.type !== "ImportSpecifier") continue;
         const imported = spec.imported as { name?: string; value?: string } | undefined;
         const local = spec.local as { name?: string } | undefined;
@@ -924,11 +931,10 @@ function mapTsType(
     case "any":
       return absOf({ k: "any" });
     case "unknown":
-      // BUG-276：用户显式写的 `unknown` 不是「推断失败」。裸 unknown 形状
-      // 无 term 是引擎债令牌（check 的 isTrueUnknownAbs）⇒ 带一个声明项，
-      // 让诊断面区分「源码声明」与「分析没拿到信息」。项身份固定：不能按
-      // 调用次数铸新 id，否则同一源码两次分析的 Abs 指纹不稳定。
-      return abs({ k: "unknown" }, v("unknown#annotation"), undefined, "exact");
+      // BUG-276 / provenance：用户显式写的 `unknown` 不是「推断失败」。
+      // 用 provenance=declared 表达源码事实，不再借 term 旁路（term 会进
+      // 指纹 / 等式语义，且嵌套 union/对象槽拿不到顶层标记）。
+      return withProvenance(abs({ k: "unknown" }, undefined, undefined, "exact"), "declared");
     case "never":
       return absOf({ k: "never" });
     case "object":

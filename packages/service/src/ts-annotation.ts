@@ -23,8 +23,7 @@
  * - **不可映射 ≠ unknown**：推断面回落的是 **any**（无约束 = 任意 JS 值），
  *   不是 unknown（分析失败）——与 design-cli-semantics §2 一致。
  */
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { typeAnnotationSourceOf } from "./type-annotation-resolve.ts";
 import type { Abs, Shape } from "@nudojs/core";
 import { abs as makeAbsVal, anyAbs, spread, withProvenance } from "@nudojs/core";
 import {
@@ -53,19 +52,9 @@ export function importedTypeTextsForFile(
   const key = `${filePath}\u0000${source}`;
   const hit = importedTypeMemo.get(key);
   if (hit) return hit;
-  const base = dirname(filePath);
-  const texts = importedTypeTextsForSource(source, (spec) => {
-    if (!spec.startsWith(".")) return undefined;
-    const raw = resolve(base, spec);
-    for (const p of [raw, `${raw}.ts`, `${raw}.tsx`, `${raw}.d.ts`, `${raw}.js`, `${raw}/index.ts`, `${raw}/index.d.ts`]) {
-      try {
-        return readFileSync(p, "utf8");
-      } catch {
-        // try next
-      }
-    }
-    return undefined;
-  });
+  const texts = importedTypeTextsForSource(source, (spec) =>
+    typeAnnotationSourceOf(spec, filePath),
+  );
   if (importedTypeMemo.size >= IMPORTED_TYPE_MEMO_MAX) {
     const oldest = importedTypeMemo.keys().next().value;
     if (oldest !== undefined) importedTypeMemo.delete(oldest);

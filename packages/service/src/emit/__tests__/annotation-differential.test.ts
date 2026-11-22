@@ -10,6 +10,9 @@
  * 泛型参数 / 同文件 interface / 跨文件 import / Date / Map / keyof / typeof。
  */
 import { describe, it, expect, beforeEach } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { analyzeFile, resetAllAnalysisCaches } from "../../index.ts";
 import { dtsModuleSurface, projectFunctionDts, projectModuleDts } from "../dts-generator.ts";
 import { absToZodSchemaModule } from "../schema-generator.ts";
@@ -17,7 +20,8 @@ import { generateGuardFunctionFromAbs } from "../guard-generator.ts";
 import { absToStandardSchemaModule } from "../standard-schema.ts";
 import { tscDeclaration } from "./dts-tsc.ts";
 import { tsAnnotationArgAbs } from "../../ts-annotation.ts";
-import { provenanceOf } from "@nudojs/core";
+import { typeAnnotationSourceOf } from "../../type-annotation-resolve.ts";
+import { checkSource, pTrue, provenanceOf } from "@nudojs/core";
 import { namedTypeTextsForSource } from "@nudojs/core/internal";
 
 type Case = {
@@ -173,6 +177,45 @@ describe("注解解析差分矩阵：nudo dts ≡ tsc dts", () => {
     expect(source).toContain("z.object");
   });
 
+
+  it("包名 types 入口：fake-types 的 index.d.ts 进入同文件声明表", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-pkg-types-"));
+    try {
+      mkdirSync(join(dir, "node_modules", "fake-types"), { recursive: true });
+      writeFileSync(
+        join(dir, "node_modules", "fake-types", "package.json"),
+        JSON.stringify({ name: "fake-types", types: "index.d.ts" }),
+      );
+      writeFileSync(
+        join(dir, "node_modules", "fake-types", "index.d.ts"),
+        "export interface Opts { a: number; b?: string }\n",
+      );
+      const src = 'import type { Opts } from "fake-types";\nexport function f(o: Opts): number { return o.a; }\n';
+      writeFileSync(join(dir, "lib.ts"), src);
+      const loaded = typeAnnotationSourceOf("fake-types", join(dir, "lib.ts"));
+      expect(loaded).toContain("interface Opts");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("tsconfig paths：`@m/*` 映射到 types/* 后进入声明表", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-tsconfig-paths-"));
+    try {
+      mkdirSync(join(dir, "types"), { recursive: true });
+      writeFileSync(
+        join(dir, "tsconfig.json"),
+        JSON.stringify({ compilerOptions: { baseUrl: ".", paths: { "@m/*": ["types/*"] } } }),
+      );
+      writeFileSync(join(dir, "types", "opts.ts"), "export interface Opts { a: number }\n");
+      writeFileSync(join(dir, "lib.ts"), 'import type { Opts } from "@m/opts";\n');
+      const loaded = typeAnnotationSourceOf("@m/opts", join(dir, "lib.ts"));
+      expect(loaded).toContain("interface Opts");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("声明来源的字面量在 zod / guard / standard 面保真", () => {
     const arg = tsAnnotationArgAbs('"a" | "b"');
     expect(provenanceOf(arg)).toBe("declared");
@@ -184,6 +227,16 @@ describe("注解解析差分矩阵：nudo dts ≡ tsc dts", () => {
     expect(guard).toContain('"b"');
     const standard = absToStandardSchemaModule({ x: arg }).source;
     expect(standard).toContain('"lit"');
+  });
+
+
+  it("check 面保留泛型类型参数名（T[] / T），不再压成 any", () => {
+    const src = "export function first<T>(xs: T[]): T | undefined { return xs[0]; }\n";
+    resetAllAnalysisCaches();
+    const r = checkSource("/t/annotation-generic-check.ts", src, pTrue);
+    const sig = r.signatures.find((s) => s.name === "first");
+    expect(sig?.paramTypes?.[0] ?? "").toBe("T[]");
+    expect(sig?.paramTypes?.[0] ?? "").not.toContain("any[]");
   });
 
   it("内建实例在入口域可调用（Date / Map 不退 any）", () => {

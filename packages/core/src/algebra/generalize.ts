@@ -300,9 +300,9 @@ function annotationAbsForText(
 ): Abs {
   const mapped = absTypeForTsTypeText(text, env);
   if (!mapped) return abs({ k: "any" }, term, pTrue, "path");
-  const annotated = markOpenObjSlots(
-    withProvenance(abs(mapped.shape, mapped.term ?? term, pTrue, "path"), "declared"),
-  );
+  const base = abs(mapped.shape, mapped.term ?? term, pTrue, "path");
+  const mappedFacets = mapped.facets ? { ...base, facets: mapped.facets } : base;
+  const annotated = markOpenObjSlots(withProvenance(mappedFacets, "declared"));
   return markEntryDomainAbs(annotated);
 }
 
@@ -1947,7 +1947,12 @@ function typeParamEnvOf(source: string, fnName: string): ReadonlyMap<string, Abs
       c && typeof c.start === "number" && typeof c.end === "number"
         ? source.slice(c.start, c.end)
         : undefined;
-    env.set(name, (text ? absTypeForTsTypeText(text) : undefined) ?? abs({ k: "any" }, undefined, undefined, "exact"));
+    const base =
+      (text ? absTypeForTsTypeText(text) : undefined) ??
+      abs({ k: "any" }, undefined, undefined, "exact");
+    // 类型参数名用 term 命名空间承载（`tp:T`）：formatShape 可还原名字，
+    // 但 facets 仍遵守 ABS-15（不参与展示 / 等价）。
+    env.set(name, { ...base, term: { op: "var", id: `tp:${name}` } });
   }
   if (typeParamEnvMemo.size >= TYPE_PARAM_ENV_MEMO_MAX) {
     const oldest = typeParamEnvMemo.keys().next().value;

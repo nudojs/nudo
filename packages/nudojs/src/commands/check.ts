@@ -47,6 +47,7 @@ import {
   mockFromErrorIssues,
   openDiskCache,
   resolveModule,
+  typeAnnotationSourceOf,
   type CallRecord,
   type MockFromError,
 } from "@nudojs/service";
@@ -843,19 +844,9 @@ function annotationEnvForFile(source: string, filePath: string): AnnotationEnv {
   const key = `${filePath}\u0000${source}`;
   const hit = annotationEnvMemo.get(key);
   if (hit) return hit;
-  const base = dirname(filePath);
-  const imported = importedTypeTextsForSource(source, (spec) => {
-    if (!spec.startsWith(".")) return undefined;
-    const raw = resolve(base, spec);
-    for (const p of [raw, `${raw}.ts`, `${raw}.tsx`, `${raw}.d.ts`, `${raw}.js`, `${raw}/index.ts`, `${raw}/index.d.ts`]) {
-      try {
-        return readFileSync(p, "utf8");
-      } catch {
-        // try next
-      }
-    }
-    return undefined;
-  });
+  const imported = importedTypeTextsForSource(source, (spec) =>
+    typeAnnotationSourceOf(spec, filePath),
+  );
   const env: AnnotationEnv = {
     namedTypes: new Map([...imported, ...namedTypeTextsForSource(source)]),
     valueTypes: valueTypeTextsForSource(source),
