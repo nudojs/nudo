@@ -3629,8 +3629,7 @@ function dtsFunctionDeclaration(
           typeParams: tparams,
           ...(hofThis === "" ? {} : { thisParam: hofThis }),
           params: hofSlots,
-          returnType,
-          returnWiden: dtsReturnWidenOf(fn.cases),
+          returnType: { type: returnType, widen: dtsReturnWidenOf(fn.cases) },
         }),
       ),
     );
@@ -3662,7 +3661,7 @@ function dtsFunctionDeclaration(
         typeParams: `${srcTypeParams}${contractTParams}`,
         ...(sig.thisParam === undefined ? {} : { thisParam: sig.thisParam }),
         params: sig.paramSlots,
-        returnType: sig.returnType,
+        returnType: { type: sig.returnType, widen: "none" },
       });
       return {
         lines: [
@@ -3712,8 +3711,7 @@ function dtsFunctionDeclaration(
         typeParams: `${srcTypeParams}${sigTParams}`,
         ...(sig.thisParam === undefined ? {} : { thisParam: sig.thisParam }),
         params: sig.paramSlots,
-        returnType: sig.returnType,
-        ...(sig.returnWiden === undefined ? {} : { returnWiden: sig.returnWiden }),
+        returnType: { type: sig.returnType, widen: sig.returnWiden ?? "none" },
       }),
       srcTypeParams && !sigTParams && compatAllowed(plain) ? plain : undefined,
     ),

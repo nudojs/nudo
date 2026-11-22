@@ -48,6 +48,12 @@ export function renderDtsParams(slots: readonly DtsParam[]): string[] {
   return out;
 }
 
+/** 已定型的返回位：类型文本 + widen 来源。 */
+export type DtsReturn = {
+  type: string;
+  widen: DtsReturnWiden;
+};
+
 /** 函数 / 方法签名模型（参数位是声明事实，打印器只拼 TS 语法）。 */
 export type DtsSignature = {
   /** 类型形参子句原文（`<T>` / `<T = string>`；无 ⇒ "" / undefined） */
@@ -56,21 +62,19 @@ export type DtsSignature = {
   thisParam?: string;
   /** 参数位（由 renderDtsParams 打印） */
   params: readonly DtsParam[];
-  /** 返回类型文本（已由模型构造阶段定型） */
-  returnType: string;
-  /** 该返回位采用的 widen 来源（模型元数据，打印器不使用） */
-  returnWiden?: DtsReturnWiden;
+  /** 已定型的返回位（打印器只读 type） */
+  returnType: DtsReturn;
 };
 
 /** 打印函数签名：`<T>(this: X, a: number): R`。 */
 export function renderDtsSignature(sig: DtsSignature): string {
   const params = renderDtsParams(sig.params);
   const all = sig.thisParam === undefined ? params : [sig.thisParam, ...params];
-  return `${sig.typeParams ?? ""}(${all.join(", ")}): ${sig.returnType}`;
+  return `${sig.typeParams ?? ""}(${all.join(", ")}): ${sig.returnType.type}`;
 }
 
-/** 返回位的拓宽来源：纯观测递归拓宽 / case 域仅顶层拓宽。 */
-export type DtsReturnWiden = "observed" | "scalar";
+/** 返回位的拓宽来源：纯观测递归拓宽 / case 域仅顶层拓宽 / 声明面不拓宽。 */
+export type DtsReturnWiden = "observed" | "scalar" | "none";
 
 /** dts 返回位决策的 case 形状（避免 IR 依赖 analyzer 类型）。 */
 export type DtsReturnCase = {
