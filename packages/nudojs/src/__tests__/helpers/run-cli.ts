@@ -16,7 +16,7 @@
  * 返回值归一：`status ?? 1`、`stdout ?? ""`、`stderr ?? ""`。
  */
 import { spawnSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -83,16 +83,46 @@ export interface CliRunOpts {
   env?: Record<string, string>;
 }
 
+/**
+ * 子进程 env。本地 src 模式下，**cwd 没有自己的 tsconfig** 时注入仓根
+ * tsconfig（`@nudojs/*` paths → 仓内 src）——否则 tsx 从临时夹具解析到各包
+ * `dist/`，源码改动没 build 时会测到陈旧实现（曾导致 `::error` 静默消失）。
+ *
+ * 夹具自己写了 tsconfig（含 `writeSrcTsconfig`）⇒ 尊重夹具；显式传入
+ * `TSX_TSCONFIG_PATH` ⇒ 尊重调用方；`NUDO_TEST_CLI=dist` ⇒ 不注入（CI 的
+ * build 与测试同 SHA，跑的就是 dist）。
+ */
+export function cliEnvForCwd(
+  cwd: string,
+  extra: Record<string, string> = {},
+): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    NO_COLOR: "1",
+    GITHUB_ACTIONS: "false",
+    ...extra,
+  };
+  if (
+    !useDistCli() &&
+    env.TSX_TSCONFIG_PATH === undefined &&
+    !existsSync(join(cwd, "tsconfig.json"))
+  ) {
+    env.TSX_TSCONFIG_PATH = join(repoRoot, "tsconfig.json");
+  }
+  return env;
+}
+
 function run(
   command: string,
   baseArgs: string[],
   args: string[],
   opts: CliRunOpts,
 ): CliRunResult {
+  const cwd = opts.cwd ?? repoRoot;
   const r = spawnSync(command, [...baseArgs, ...args], {
-    cwd: opts.cwd ?? repoRoot,
+    cwd,
     encoding: "utf8",
-    env: { ...process.env, NO_COLOR: "1", GITHUB_ACTIONS: "false", ...opts.env },
+    env: cliEnvForCwd(cwd, opts.env),
   });
   return { status: r.status ?? 1, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
 }
