@@ -274,6 +274,9 @@ export function $concat(a: Abs, b: Abs): Abs {
  * 现在能力查询只有这一份；局部别名只保留可读的短名。
  */
 function iterableExpandElements(x: Abs): Abs[] | null {
+  // BUG-401：注解 Map/Set 的 obj 模型长度未知（元素域只在 genElements）——
+  // 不得被用户迭代器协议误当精确序列。
+  if (x.facets?.brand === "Map" || x.facets?.brand === "Set") return null;
   if (isSetAbs(x)) return setElementsAbs(x);
   if (isMapAbs(x)) return mapEntriesAbs(x);
   // BUG-125：URLSearchParams 自身可迭代（@@iterator === entries）——
@@ -348,7 +351,8 @@ function iterableElementDomain(x: Abs, expanded: Abs[] | null): Abs {
 }
 
 /** 只有长度确定的容器才允许走精确展开（否则 tuple 形会假装长度）。 */
-function iterableExactElements(x: Abs): Abs[] | null {
+export function iterableExactElements(x: Abs): Abs[] | null {
+  if (x.facets?.brand === "Map" || x.facets?.brand === "Set") return null;
   if (
     isSetAbs(x) ||
     isMapAbs(x) ||
@@ -975,37 +979,24 @@ function elemsOf(a: Abs): Abs[] {
   // unbounded，0 次出口由调用方 join 承接）。
   const ase = abstractSeqElementOf(a);
   if (ase !== undefined) return [ase];
-  // BUG-125：URLSearchParams 自身 @@iterator === entries——条目表精确展开
-  //（此分支必须先于 collectUserIterElems / brand 内层 delegation）。
-  const urlSpEls = builtinExactIterableElems(a);
-  if (urlSpEls) return urlSpEls;
-  const svR = litValue(a);
-  const sv = svR.ok ? svR.value : undefined;
-  // 字面量字符串：code points 精确展开（必须先于抽象 prim 臂——lit 也是
-  // prim string shape）
-  if (typeof sv === "string") return [...sv].map((c) => $lit(c));
+  // URLSearchParams / 字面量字符串 / 用户 iterable（本轮可走到 done）/
+  // TypedArray / brand 内层 tuple：精确序列统一由能力函数给出。
+  const exact = iterableExactElements(a);
+  if (exact) return exact;
   // 抽象字符串 prim：code point 迭代，元素域恒 string（Bug 19：for-of /
   // yield* 循环变量折 unknown → 算术/成员读级联污染）——单代表元素，与
   // arr 臂 [element] 同口径（长度不可知由 $forOf unbounded 出口 join 承接）
   if (a.shape.k === "prim" && a.shape.type === "string") {
     return [abs({ k: "prim", type: "string" }, undefined, undefined, "path")];
   }
-  // Bug 140：用户 iterable（对象带自有 `@@iterator` 槽，引擎无其元素模型）——
-  // 元素按**迭代序**取（GetIterator + IteratorNext），不是按索引序。步数上界
-  // 触顶时尾域折 unknown（sound：剩余元素个数不可知）。
+  // Bug 140：用户 iterable 的**截断**尾域（exact 能力返回 null）——
+  // 元素按迭代序取，触顶后补 unknown（剩余元素个数不可知）。
   const ui = collectUserIterElems(a, USER_ITER_MAX_STEPS);
   if (ui) return ui.truncated ? [...ui.els, unknown] : ui.els;
-  // TypedArray brand：原型 `@@iterator` 的元素序列 = 内层索引槽（长度精确时
-  // 逐槽；槽未物化则退元素域单代表）。与 `iterabilityKind` 的 total 判定、
-  // `$get` 的 ITERABLE_BRANDS 值读同口径——此前落 brand 内层空 obj ⇒
-  // `unknown[]`（可迭代却给不出元素域）。
+  // TypedArray brand 的非精确回退：内层索引槽未物化 ⇒ 元素域单代表。
   if (a.shape.k === "brand") {
     const elem = TYPED_ARRAY_ELEMENT[(a.shape as { name?: string }).name ?? ""];
-    if (elem) {
-      const exact = typedArrayIterElems(a);
-      if (exact) return exact;
-      return [abs({ k: "prim", type: elem }, undefined, undefined, "path")];
-    }
+    if (elem) return [abs({ k: "prim", type: elem }, undefined, undefined, "path")];
   }
   // brand 结构面在内层（issue #147）：env/harvest 的 Array<T> brand 的
   // for-of / spread 元素域 = 内层 arr 元素（此前折 unknown）。Set/Map/
@@ -1505,6 +1496,9 @@ export function $forOf(
           boxedStringLength(iterable) ??
           // BUG-125：URLSearchParams 条目数可判（@@iterator === entries）
           builtinExactIterableElems(iterable)?.length ??
+          // TypedArray brand：内层索引槽齐备时长度精确（与 spread/rest 同
+          // 能力源；此前 for-of 退 unbounded ⇒ 计数折抽象）。
+          (shape.k === "brand" ? typedArrayIterElems(iterable)?.length : undefined) ??
           (collectionExactLen(iterable) ?? sideIterLen(iterable));
   const items = asyncOnly
     ? // Bug 141：async generator（**生成器对象**，只有 @@asyncIterator 槽）——

@@ -30,7 +30,12 @@ import { markFreshInstance } from "../key/instance-id.ts";
 import { recordMayThrow } from "../diagnostics/may-throw.ts";
 import { matchIterElements, replayGenDeferred, drainGenElements, genDrainViewOf, userIterLenOf } from "../exec/match-iter.ts";
 import { abstractSeqElementOf } from "./error/iterator.ts";
-import { iterabilityKind, $elems, builtinExactIterableElems } from "../exec/runtime/containers/iterate.ts";
+import {
+  iterabilityKind,
+  iterableExactElements,
+  $elems,
+  builtinExactIterableElems,
+} from "../exec/runtime/containers/iterate.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs } from "../exec/may-throw.ts";
 import { and, ge, lt, pTrue, type Pred } from "../pred.ts";
@@ -304,6 +309,22 @@ function evalArrayFrom(args: Abs[]): Abs {
   // 此前 brand 落函数尾部 unknown。
   {
     const exactEls = builtinExactIterableElems(a0);
+    if (exactEls) {
+      const mapped = exactEls.map((el, i) => mapOne(el, numLit(i)));
+      return abs(
+        { k: "tuple", elements: mapped },
+        undefined,
+        undefined,
+        a0.conf === "exact" ? "exact" : "path",
+      );
+    }
+  }
+  // boxed String / 用户 iterable / TypedArray / brand 内层 tuple：精确序列
+  // 由迭代能力统一给出（P4：与 spread / rest / for-of 同一判据）。只接
+  // brand——tuple / arr / prim / obj 已有各自口径（Array.from(arguments)
+  // 的 arr 形状、Set/Map 的抽象长度都是既有契约）。
+  if (k === "brand") {
+    const exactEls = iterableExactElements(a0);
     if (exactEls) {
       const mapped = exactEls.map((el, i) => mapOne(el, numLit(i)));
       return abs(
