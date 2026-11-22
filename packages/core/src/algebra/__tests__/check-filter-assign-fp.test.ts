@@ -166,6 +166,21 @@ export function parseBase(s: string): string { return require("path").parse(s).b
     }
   });
 
+  it("独立 nullish 形参注解在签名面印 nullish 名字，不是 true unknown", () => {
+    const r = checkSource(
+      "/t/nullish-sig.ts",
+      `export function u(x: undefined): void {}
+export function n(x: null): void {}
+export function un(x: string | undefined): void {}
+`,
+      pTrue,
+    );
+    const sig = (name: string) => r.signatures.find((s) => s.name === name)?.paramTypes?.[0];
+    expect(sig("u")).toBe("undefined");
+    expect(sig("n")).toBe("null");
+    expect(sig("un")).toBe("string | undefined");
+  });
+
   it("filter reassignment still flags genuinely incompatible element rewrite", () => {
     // 拓宽是「数组→数组」的同伦：元素改型（数组→标量）仍必须报
     const codes = errorCodes(
