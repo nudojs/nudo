@@ -22,6 +22,8 @@ export type BodyReadField = {
   type: string;
   /** 推断依据（调试/草稿注释） */
   via: string;
+  /** BUG-379：源码注解里的可选成员（`o: { a?: number }`）。 */
+  optional?: boolean;
   /** 继续解引用的子字段（该字段值是对象）；叶子无此键。
    *  中间环不得写 any()——any 值上的成员读取仍记 may-throw（L2 不清） */
   fields?: BodyReadField[];
@@ -648,6 +650,7 @@ export function collectParamBodyReadTypes(source: string): BodyReadTypes {
       const fieldsOf = new Map<string, BodyReadField[]>();
       for (const [pname, pathMap] of reads.paths) {
         const fields = fieldsFromPaths([pathMap]);
+        markOptionalFields(fields, optionalKeysForParam(fnNode, pname));
         if (fields.length > 0) fieldsOf.set(pname, fields);
       }
       if (fieldsOf.size === 0) return;
@@ -674,6 +677,9 @@ export function collectParamContracts(source: string): ParamContracts {
       const byParam = new Map<string, ParamContractEvidence>();
       for (const pname of paramNames) {
         const ev = contractOf(reads, pname);
+        if (ev?.kind === "shape") {
+          markOptionalFields(ev.fields, optionalKeysForParam(fnNode, pname));
+        }
         if (ev !== undefined) byParam.set(pname, ev);
       }
       if (byParam.size === 0) return;
@@ -772,10 +778,41 @@ function mergeHints(hints: UseHint[]): { type: string; via: string } {
  */
 export function shapeDslFromFields(fields: BodyReadField[]): string {
   if (fields.length === 0) return "shape({})";
-  const parts = fields.map((f) =>
-    f.fields && f.fields.length > 0
-      ? `${f.field}: ${shapeDslFromFields(f.fields)}`
-      : `${f.field}: ${f.type}`,
-  );
+  const parts = fields.map((f) => {
+    const key = `${f.field}${f.optional === true ? "?" : ""}`;
+    return f.fields && f.fields.length > 0
+      ? `${key}: ${shapeDslFromFields(f.fields)}`
+      : `${key}: ${f.type}`;
+  });
   return `shape({ ${parts.join(", ")} })`;
+}
+
+/** 注解文本顶层可选成员键（`{ a?: number; b: string }` ⇒ ["a"]）。 */
+function optionalKeysOfAnnotation(text: string | undefined): Set<string> {
+  const out = new Set<string>();
+  if (typeof text !== "string") return out;
+  const re = /(?:^|[{;,])\s*([A-Za-z_$][\w$]*)\s*\?/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) out.add(m[1]!);
+  return out;
+}
+
+function optionalKeysForParam(
+  fnNode: unknown,
+  pname: string,
+): ReadonlySet<string> {
+  const params = (fnNode as { params?: Array<{ type?: string; name?: string; nudoTypeText?: unknown }> })
+    .params ?? [];
+  const p = params.find((x) => x.type === "Identifier" && x.name === pname);
+  return typeof p?.nudoTypeText === "string"
+    ? optionalKeysOfAnnotation(p.nudoTypeText)
+    : new Set<string>();
+}
+
+function markOptionalFields(
+  fields: BodyReadField[],
+  optional: ReadonlySet<string>,
+): void {
+  if (optional.size === 0) return;
+  for (const f of fields) if (optional.has(f.field)) f.optional = true;
 }
