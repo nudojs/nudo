@@ -295,15 +295,25 @@ export function $concat(a: Abs, b: Abs): Abs {
     ) {
       return expand(x);
     }
+    // URLSearchParams / match 迭代器等**内建精确条目表**（可能挂在 obj
+    // 模型上，不能先落用户迭代器协议的 truncated 兜底）。
+    const builtinEls = builtinExactIterableElems(x);
+    if (builtinEls) return builtinEls;
     // 内层 / 裸 tuple 是精确序列（[...brandTuple] 保持 tuple 形状）。
     if (x.shape.k === "tuple") return [...x.shape.elements];
-    // brand 的结构面在内层：内层 tuple 仍是精确序列；内层 arr 长度未知 ⇒ null。
-    if (x.shape.k === "brand") return exactEls(x.shape.shape);
     // 用户 iterable 只有在**本轮能走到 done** 时才是精确长度；抽象 done /
-    // 截断 ⇒ 交给 sideEl 的单代表元素域（不得折定长 tuple）。
+    // 截断 ⇒ 交给 sideEl 的单代表元素域（不得折定长 tuple）。brand（用户类
+    // 实例）也先走这条：类链上的 `[Symbol.iterator]` 是原型面事实。
     if (userIteratorFn(x)) {
       const ui = collectUserIterElems(x, USER_ITER_MAX_STEPS);
       return ui && !ui.truncated ? ui.els : null;
+    }
+    // brand 的结构面：boxed String / URLSearchParams / TypedArray 的精确
+    // 序列由 expand 侧表提供；内层 tuple 仍是精确序列；内层 arr 长度未知。
+    if (x.shape.k === "brand") {
+      const expanded = expand(x);
+      if (expanded) return expanded;
+      return exactEls(x.shape.shape);
     }
     return null;
   };

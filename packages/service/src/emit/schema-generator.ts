@@ -119,7 +119,16 @@ function widenObservedTuple(a: Abs): Abs | undefined {
 }
 
 export function widenObservedLiteralDomains(a: Abs, memo: Map<Abs, Abs> = new Map()): Abs {
-  return mapObservedLiteralTree(a, memo, (x) => widenObservedTuple(x) ?? widenObservedLiteralUnion(x));
+  return mapObservedLiteralTree(a, memo, widenObservedLiteralUnion);
+}
+
+/**
+ * BUG-370：**返回位**观测的同构元组 → 数组（与 dts 的 return widen 同规则）。
+ * 只由 export 的三个 validator 面对 `<fn>Output` 调用——形参 / 手工构造的
+ * tuple 不拓宽（保持既有形参契约与 BUG-252 的 `[1]` 元组精度）。
+ */
+export function widenObservedTupleOutput(a: Abs): Abs {
+  return widenObservedTuple(a) ?? a;
 }
 
 /**

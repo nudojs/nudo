@@ -189,7 +189,7 @@ export const a = cfg.g("str");
 }
 `,
     expectDts: ["m(): number;", "constructor(n: number);"],
-    rejectDts: ["number | string"],
+    rejectDts: ["m(): number | string"],
     correct: `import { K } from "./out/class-method-return.js";
 
 export const v: number = new K(1).m();
@@ -217,7 +217,7 @@ export const s: string = new K(1).m();
 }
 `,
     expectDts: ["m(): number;", "constructor(n: number);"],
-    rejectDts: ["number | string"],
+    rejectDts: ["m(): number | string"],
     correct: `import { K2 } from "./out/class-method-return-annotated.js";
 
 export const v: number = new K2(1).m();

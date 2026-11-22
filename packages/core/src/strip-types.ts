@@ -1344,7 +1344,14 @@ function deleteTypeSyntaxFields(
         )
         .filter((t): t is string => t !== undefined);
       if (texts.length > 0) {
-        (node as Record<string, unknown>).nudoTypeArguments = texts;
+        // 与 nudoTypeText 同口径：旁路字段必须**不可枚举**（AST 深比较 /
+        // Babel 打印 / 消费方遍历不得看到引擎私有字段）。
+        Object.defineProperty(node, "nudoTypeArguments", {
+          value: texts,
+          enumerable: false,
+          configurable: true,
+          writable: true,
+        });
       }
     }
     delete node.typeArguments;

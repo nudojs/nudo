@@ -6,7 +6,11 @@
  * 与整参校验器同名同形、语义却不同，消费方必然误用）。
  */
 import { type Abs, type EffectiveContract } from "@nudojs/core";
-import { absToStandardSchemaFunction, type SchemaProjectionScope } from "@nudojs/service/emit";
+import {
+  absToStandardSchemaFunction,
+  widenObservedTupleOutput,
+  type SchemaProjectionScope,
+} from "@nudojs/service/emit";
 import type { FunctionAnalysis } from "@nudojs/service";
 import { effectiveContractReturnFace, type FaceContext, type ParamFace } from "./contract-face.ts";
 
@@ -45,7 +49,8 @@ export function standardFaceChunk(
     ...(p.optional === true ? { optional: true } : {}),
   }));
   const stdReturns = effectiveContractReturnFace(fn, eff, ctx);
-  if (stdInputs.length === 0 && stdReturns === undefined && outputAbs === undefined) {
+  const widenedOutput = outputAbs === undefined ? undefined : widenObservedTupleOutput(outputAbs);
+  if (stdInputs.length === 0 && stdReturns === undefined && widenedOutput === undefined) {
     return undefined;
   }
   const mod = absToStandardSchemaFunction(
@@ -54,7 +59,7 @@ export function standardFaceChunk(
       inputs: stdInputs,
       formals: fn.formals,
       returns: stdReturns,
-      output: outputAbs,
+      output: widenedOutput,
     },
     scope ? { scope } : undefined,
   );
