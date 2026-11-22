@@ -38,6 +38,7 @@ import {
   type DtsParam,
   type DtsReturnWiden,
 } from "./dts-ir.ts";
+import { dtsTypeOfAbs, renderDtsType } from "./dts-type.ts";
 import type {
   DtsClassAccessorSurface,
   DtsClassFieldSurface,
@@ -201,6 +202,15 @@ function slotAbsOf(a: Abs, k: string, fallback: Abs): Abs {
  */
 export function absToTSType(a: Abs, typeVars?: Map<string, string>): string {
   return absToTSTypeB(a, typeVars, new ProjectionBudget());
+}
+
+/**
+ * 优先走类型 IR 的渲染：prim / 字面量 / array / tuple / union 由
+ * `dts-type.ts` 打印；其余 shape 回落既有 `absToTSType`。
+ */
+function absToTSTypeIr(a: Abs, typeVars?: Map<string, string>): string {
+  const t = dtsTypeOfAbs(a, { readonlyTuples: currentReadonlySlots });
+  return t === undefined ? absToTSType(a, typeVars) : renderDtsType(t);
 }
 
 function absToTSTypeB(a: Abs, typeVars: Map<string, string> | undefined, budget: ProjectionBudget): string {
@@ -2580,7 +2590,7 @@ function computeMainSignature(
   // 与 call@ 同为观测——不能因为缺 source 就退回「字面量即类型」的旧口径。
   const returnWiden = dtsReturnWidenOf(fn.cases);
   const observedReturnType = retAbs
-    ? absToTSType(widenReturnAbs(retAbs, returnWiden === "observed"))
+    ? absToTSTypeIr(widenReturnAbs(retAbs, returnWiden === "observed"), typeVars)
     : "unknown";
   // BUG-134：类型谓词 / 断言签名是**返回位的类型**（声明级证据）⇒ 优先于
   // 观测面（观测只能给 `boolean` / `undefined`）；手写契约返回位仍是最高优先。
@@ -2597,7 +2607,7 @@ function computeMainSignature(
       : (predicateReturn ??
         declaredReturn ??
         (hofReturn && isNoInfoType(observedReturnType.replace(/\[\]$/, ""))
-          ? absToTSType(hofReturn, typeVars)
+          ? absToTSTypeIr(hofReturn, typeVars)
           : observedReturnType));
   // ABS-03：可达性过滤（与 contractOnlySignature 同源）
   // 可达性只看**类型文本**（paramTypes / returnType）——形参名不是类型引用
@@ -2850,7 +2860,7 @@ function computeHofSignature(
       ? (tsDeclaredReturn(fn, "unknown", ctx) ??
         solveHofBetaFromParamAnnotation(fn, retAbs, ctx))
       : undefined;
-  const returnType = betaReturn ?? (retAbs ? absToTSType(retAbs, typeVars) : "unknown");
+  const returnType = betaReturn ?? (retAbs ? absToTSTypeIr(retAbs, typeVars) : "unknown");
   // ABS-14 PR4a：free 变元全量发射会留下悬空类型参数（entry-only
   // processItems 的 A2 从未被任何形参/返回位引用）。按签名文本过滤，
   // 与契约面 reachableTypeParams 同口径；投影单向，不改 Abs 分析结果。
@@ -3188,7 +3198,7 @@ function contractOnlySignature(
   const returnType = contract.return
     ? contractReturnTSType(contract.return, typeVars)
     : fn.combinedAbs
-      ? absToTSType(fn.combinedAbs)
+      ? absToTSTypeIr(fn.combinedAbs, typeVars)
       : "unknown";
   // 可达性过滤：只发射在最终签名文本里真正出现的类型形参
   // 可达性只看**类型文本**（paramTypes / returnType）——形参名不是类型引用
@@ -3679,7 +3689,7 @@ function dtsFunctionDeclaration(
     const retAbs = fn.combinedAbs;
     if (retAbs) {
       return {
-        lines: dtsExportDeclaration(form, `(...args: unknown[]): ${absToTSType(retAbs)}`),
+        lines: dtsExportDeclaration(form, `(...args: unknown[]): ${absToTSTypeIr(retAbs)}`),
         // rest-args 声明面无具名参数位可提示（skip = 开发者主动退出推断）
         params: [],
       };
