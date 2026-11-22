@@ -126,7 +126,11 @@ export function transpileOperatorExpr(
         : transpileShortCircuitExpr(opts, {
             alwaysNodes: [lNode],
             alwaysSrc: l,
+            // BUG-395：`||` 的真臂由「左值 truthy」进入 ⇒ 左值必非 nullish。
+            // 直接沿用左值会把 undefined/null 臂带进结果域（
+            // `(a || b).length` 假 may-throw、dts `string | undefined`）。
             consSrc: "__test",
+            consOf: (leftRef) => `$removeNullish(${leftRef})`,
             consNodes: [],
             altSrc: r,
             altNodes: [rNode],

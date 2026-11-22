@@ -242,6 +242,36 @@ export function use(x: string | number): string {
     expect(sigOf(r, "use")).not.toMatch(/throws/);
   });
 
+  it("穷尽字面量 switch（无 default）：no-match 臂不可达，返回域不含 undefined", () => {
+    const r = checkSource(
+      "/t/guard-exhaustive-switch.ts",
+      `export function pick(): number {
+  const x = Math.random() > 0.5 ? "a" : "b";
+  switch (x) {
+    case "a": return 1;
+    case "b": return 2;
+  }
+}
+`,
+      pTrue,
+    );
+    expect(r.summary.errors).toBe(0);
+    expect(sigOf(r, "pick")).not.toMatch(/undefined/);
+  });
+
+  it("`||` 真臂左值非 nullish：返回域与成员读不再带 undefined", () => {
+    const r = checkSource(
+      "/t/guard-logical-or.ts",
+      `export function orVal(a: string | undefined, b: string): string { return a || b; }
+export function orLen(a: string | undefined, b: string): number { return (a || b).length; }
+`,
+      pTrue,
+    );
+    expect(r.summary.errors).toBe(0);
+    expect(sigOf(r, "orVal")).toBe("string");
+    expect(sigOf(r, "orLen")).not.toMatch(/undefined/);
+  });
+
   it("标识符–字面量等值：事实臂把 k 重绑为字面量，动态下标读按精确键分发", () => {
     const r = checkSource(
       "/t/guard-lit-eq.ts",

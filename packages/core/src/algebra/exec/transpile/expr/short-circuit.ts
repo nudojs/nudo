@@ -96,6 +96,8 @@ export function transpileShortCircuitExpr(opts: TranspileOptions, parts: {
   altNodes: Array<Node | null | undefined>;
   /** 覆盖 $fork 测试表达式（?? 用 $nullishTest(left)）——入参是左操作数的**绑定名** */
   testOf?: (leftRef: string) => string;
+  /** cons 臂表达式（|| 用 $removeNullish(left)）——入参是左操作数的绑定名；优先于 consSrc */
+  consOf?: (leftRef: string) => string;
   /** alt 臂表达式（?? 用 $removeNullish(left)）——入参是左操作数的绑定名；优先于 altSrc */
   altOf?: (leftRef: string) => string;
   /** 额外的 fork 绑定名（臂内写回的绑定——须走 fork 绑定-join 协议收口） */
@@ -167,7 +169,11 @@ export function transpileShortCircuitExpr(opts: TranspileOptions, parts: {
     const bindLeft = leftReused && leftIsImpure(leftNode);
     const leftRef = bindLeft ? sc0Name : parts.alwaysSrc;
     const forkTest = parts.testOf ? parts.testOf(leftRef) : leftRef;
-    let consExpr = consIsSentinel ? leftRef : parts.consSrc;
+    let consExpr = consIsSentinel
+      ? parts.consOf
+        ? parts.consOf(leftRef)
+        : leftRef
+      : parts.consSrc;
     let altExpr = altIsSentinel
       ? leftRef
       : parts.altOf
@@ -213,7 +219,7 @@ export function transpileShortCircuitExpr(opts: TranspileOptions, parts: {
   }
 
   const consLines = consIsSentinel
-    ? [`return ${testName};`]
+    ? [parts.consOf ? `return (${parts.consOf(testName)});` : `return ${testName};`]
     : consRebinds.length === 0
       ? [`return (${parts.consSrc});`]
       : [`const ${vName} = (${parts.consSrc});`, ...consRebinds, `return ${vName};`];
