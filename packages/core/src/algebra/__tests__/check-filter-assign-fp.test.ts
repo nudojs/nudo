@@ -129,6 +129,43 @@ export function useNS(): number { return NS.f(); }
     expect(sigOf(r, "useNS")).toBe("2");
   });
 
+  it("require(node 内建) 与 path 族实参执法：非字面量 string 实参不记假 TypeError", () => {
+    const builtin = checkSource(
+      "/t/require-builtin.ts",
+      `export function joinPath() { return require("path").join("a", "b"); }
+`,
+      pTrue,
+    );
+    expect(builtin.summary.errors).toBe(0);
+    expect(sigOf(builtin, "joinPath")).toBe("unknown");
+    // 真缺失仍然是 Error（不得被内建白名单吞掉）。
+    const missing = checkSource(
+      "/t/require-missing.ts",
+      `export function missing() { return require("./definitely-missing"); }
+`,
+      pTrue,
+    );
+    expect(missing.summary.errors).toBeGreaterThan(0);
+    expect(sigOf(missing, "missing")).toMatch(/throws Error/);
+
+    const paths = checkSource(
+      "/t/path-args.ts",
+      `/// @nudo:env node
+export function dir1(s: string): string { return require("path").dirname(s); }
+export function ext1(s: string): string { return require("path").extname(s); }
+export function norm1(s: string): string { return require("path").normalize(s); }
+export function base1(s: string): string { return require("path").basename(s); }
+export function join2(a: string, b: string): string { return require("path").join(a, b); }
+export function parseBase(s: string): string { return require("path").parse(s).base; }
+`,
+      pTrue,
+    );
+    expect(paths.summary.errors).toBe(0);
+    for (const name of ["dir1", "ext1", "norm1", "base1", "join2", "parseBase"]) {
+      expect(sigOf(paths, name), name).not.toMatch(/throws/);
+    }
+  });
+
   it("filter reassignment still flags genuinely incompatible element rewrite", () => {
     // 拓宽是「数组→数组」的同伦：元素改型（数组→标量）仍必须报
     const codes = errorCodes(

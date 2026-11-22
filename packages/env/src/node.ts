@@ -264,7 +264,6 @@ export function defineEnv(): EnvDefinition {
           name: strLit(parsed.name),
         });
       }, pathParseAbs, 1),
-      { enforceArgs: true },
     );
 
   /** `path.format` 的平台面（顶层与 posix / win32 共用；实参必须是对象）。 */
@@ -312,7 +311,6 @@ export function defineEnv(): EnvDefinition {
       [prim.str()],
       prim.str(),
       pathApply(strImpl1Abs(nodePath.dirname), prim.str(), 1),
-      { enforceArgs: true },
     ),
     // ext is optional in Node — required arity 1; label+type render `ext?: string`.
     // Bug 877：ext 是**可选位** ⇒ 传 undefined 视作未传（原生不抛）⇒ 不用
@@ -328,25 +326,21 @@ export function defineEnv(): EnvDefinition {
       [prim.str()],
       prim.str(),
       pathApply(strImpl1Abs(nodePath.extname), prim.str(), 1),
-      { enforceArgs: true },
     ),
     relative: envFn(
       [prim.str(), prim.str()],
       prim.str(),
       pathApply(pathRelativeAbs, prim.str(), 2),
-      { enforceArgs: true },
     ),
     normalize: envFn(
       [prim.str()],
       prim.str(),
       pathApply(strImpl1Abs(nodePath.normalize), prim.str(), 1),
-      { enforceArgs: true },
     ),
     isAbsolute: envFn(
       [prim.str()],
       prim.bool(),
       pathApply(pathIsAbsoluteAbs, prim.bool(), 1),
-      { enforceArgs: true },
     ),
     // BUG-255：`parse` / `format` 必须在**平台面**——宿主
     // `Object.getOwnPropertyNames(path.posix)` 含这两个（顶层同源）。
@@ -465,12 +459,14 @@ export function defineEnv(): EnvDefinition {
   const pathArgVerdict = (arg: Abs): "ok" | "mismatch" | "abstract" | "undef" => {
     // undefined 字面量：必填位原生抛、可选位视作未传
     if (arg.term?.op === "lit" && arg.term.value === undefined) return "undef";
-    // 抽象（unknown / any / 非 exact）⇒ 判不出 ⇒ 原生可能抛
-    if (arg.shape.k === "unknown" || arg.shape.k === "any" || arg.conf !== "exact") {
-      return "abstract";
-    }
-    // 其余按声明类型判：可赋给 string ⇒ 放行；确定不符 ⇒ 原生必抛
-    return leqAbs(arg, prim.str()).ok ? "ok" : "mismatch";
+    // 抽象（unknown / any）⇒ 判不出 ⇒ 原生可能抛
+    if (arg.shape.k === "unknown" || arg.shape.k === "any") return "abstract";
+    // BUG-397：**先做赋值判定**。`s: string` 的 conf 是 path（非 exact），
+    // 旧顺序先落 abstract ⇒ 所有非字面量实参都成死代码。
+    if (leqAbs(arg, prim.str()).ok) return "ok";
+    // 联合 / 非 exact：可能含 string 臂 ⇒ 判不出（不是确定 mismatch）。
+    if (arg.shape.k === "sum" || arg.conf !== "exact") return "abstract";
+    return "mismatch";
   };
 
   /**
