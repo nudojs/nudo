@@ -145,12 +145,12 @@ function observedSlotAbs(cases: readonly CaseResult[], index: number): Abs | und
 }
 
 /**
- * 该 case 是**观测**（call@ / entry@ / 无断言指令见证）还是**域声明**
- * （带 `=> expected` 的 `@nudo:case`）。
+ * validator 输出面的观测性：带 `=> expected` 的 directive 才是作者申报的域；
+ * 无 expected 的 case 是调试见证（一次采样）⇒ 输出必须拓宽。
  *
- * 观测是「一次采样的快照」，发布成输入 / 输出域必须拓宽到基类型（否则
- * 单点观测让校验器拒收函数自己的合法输入与输出）；带断言指令是用户申报
- * 的域，保持精确（BUG-213 / BUG-511）。
+ * 注意：dts 的返回位**不共用**这条判据——`.d.ts` 是协变读取面，保留
+ * directive 见证的字面量精度不会拒收合法值；validator 是运行时网关，必须
+ * 按更宽的域放行。两条判据的差异是语义，不是漂移。
  */
 function isObservationCase(c: CaseResult): boolean {
   return !(c.source === "directive" && c.expected !== undefined);

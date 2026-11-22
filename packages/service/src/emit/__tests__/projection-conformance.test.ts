@@ -45,11 +45,11 @@ const SIGNATURES = {
 
 const DIRECTIVE_TUPLE = analyzeOutput(
   "directiveTuple",
-  `/**\n * @nudo:case "x" ()\n */\nexport function directiveTuple() { return [1, 2]; }\n`,
+  `/**\n * @nudo:case "x" () => [1, 2]\n */\nexport function directiveTuple() { return [1, 2]; }\n`,
 );
 const DIRECTIVE_SCALAR = analyzeOutput(
   "directiveScalar",
-  `/**\n * @nudo:case "x" ()\n */\nexport function directiveScalar() { return 1; }\n`,
+  `/**\n * @nudo:case "x" () => 1\n */\nexport function directiveScalar() { return 1; }\n`,
 );
 
 const projected = (a: ReturnWidenMode, output: (typeof SIGNATURES.tuple)["output"]) =>
