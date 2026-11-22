@@ -48,23 +48,23 @@ export function renderDtsParams(slots: readonly DtsParam[]): string[] {
   return out;
 }
 
-/** 函数 / 方法签名模型（参数文本已是声明事实，打印器只拼 TS 语法）。 */
+/** 函数 / 方法签名模型（参数位是声明事实，打印器只拼 TS 语法）。 */
 export type DtsSignature = {
   /** 类型形参子句原文（`<T>` / `<T = string>`；无 ⇒ "" / undefined） */
   typeParams?: string;
   /** 接收者子句（`this: Box<T>`；无 ⇒ undefined） */
   thisParam?: string;
-  /** 参数位文本（`a: number` / `...rest: string[]`） */
-  params: readonly string[];
+  /** 参数位（由 renderDtsParams 打印） */
+  params: readonly DtsParam[];
   /** 返回类型文本 */
   returnType: string;
 };
 
 /** 打印函数签名：`<T>(this: X, a: number): R`。 */
 export function renderDtsSignature(sig: DtsSignature): string {
-  const params =
-    sig.thisParam === undefined ? sig.params : [sig.thisParam, ...sig.params];
-  return `${sig.typeParams ?? ""}(${params.join(", ")}): ${sig.returnType}`;
+  const params = renderDtsParams(sig.params);
+  const all = sig.thisParam === undefined ? params : [sig.thisParam, ...params];
+  return `${sig.typeParams ?? ""}(${all.join(", ")}): ${sig.returnType}`;
 }
 
 /**

@@ -2064,6 +2064,10 @@ function contractParamRenderAbs(hit: { abs?: Abs; optional?: boolean }): Abs | u
 type MainSignature = {
   /** 渲染后的参数声明（含 `?` / `...rest`），如 `["x: number", "y?: string"]` */
   params: string[];
+  /** 参数声明事实（签名 IR 打印器的输入） */
+  paramSlots: DtsParam[];
+  /** `this: T` 接收者子句（无 ⇒ undefined） */
+  thisParam?: string;
   /** 去重后的参数名（JSDoc @param 与渲染共用，保证一致） */
   paramNames: string[];
   /** 各参数位 widen 后的 TS 类型串（JSDoc 与精确度比对用） */
@@ -2600,6 +2604,8 @@ function computeMainSignature(
   const constraints = contractTypeParamConstraints(contract, typeVars);
   return {
     params,
+    paramSlots: slots,
+    ...(thisClause === "" ? {} : { thisParam: thisClause }),
     paramNames,
     paramTypes,
     returnType,
@@ -3188,6 +3194,7 @@ function contractOnlySignature(
   const constraints = contractTypeParamConstraints(contract, typeVars);
   return {
     params,
+    paramSlots: slots,
     paramNames,
     paramTypes,
     returnType,
@@ -3585,9 +3592,16 @@ function dtsFunctionDeclaration(
       ? contractReturnTSType(contract.return)
       : hofSig.returnType;
     const lines: string[] = [];
+    const hofSlots: DtsParam[] = hofSig.paramNames.map((name, i) => ({
+      name,
+      type: hofSig.paramTypes[i] ?? "unknown",
+      optional: false,
+      ...(name.startsWith("...") ? { isRest: true } : {}),
+    }));
     if (fn.cases.length > 0) {
       const jsdoc = generateJSDoc(fn, {
         params: hofSig.params,
+        paramSlots: hofSlots,
         paramNames: hofSig.paramNames,
         paramTypes: hofSig.paramTypes,
         returnType,
@@ -3601,11 +3615,15 @@ function dtsFunctionDeclaration(
     // 观测签名分支 ⇒ `g<T>(this: Box<T>) { return (x) => … }` 的接收者契约
     // 整条消失）。子句可解析性判据与降级台账同 `thisReceiverClause`。
     const hofThis = thisReceiverClause(fn, ctx);
-    const hofParams = hofThis === "" ? hofSig.params : [hofThis, ...hofSig.params];
     lines.push(
       ...dtsExportDeclaration(
         form,
-        renderDtsSignature({ typeParams: tparams, params: hofParams, returnType }),
+        renderDtsSignature({
+          typeParams: tparams,
+          ...(hofThis === "" ? {} : { thisParam: hofThis }),
+          params: hofSlots,
+          returnType,
+        }),
       ),
     );
     return {
@@ -3634,7 +3652,8 @@ function dtsFunctionDeclaration(
           : "";
       const paramsText = renderDtsSignature({
         typeParams: `${srcTypeParams}${contractTParams}`,
-        params: sig.params,
+        ...(sig.thisParam === undefined ? {} : { thisParam: sig.thisParam }),
+        params: sig.paramSlots,
         returnType: sig.returnType,
       });
       return {
@@ -3683,7 +3702,8 @@ function dtsFunctionDeclaration(
       form,
       renderDtsSignature({
         typeParams: `${srcTypeParams}${sigTParams}`,
-        params: sig.params,
+        ...(sig.thisParam === undefined ? {} : { thisParam: sig.thisParam }),
+        params: sig.paramSlots,
         returnType: sig.returnType,
       }),
       srcTypeParams && !sigTParams && compatAllowed(plain) ? plain : undefined,
@@ -5445,8 +5465,8 @@ function namespaceMemberLines(
         decl.typeParameters as SurfaceNode | undefined,
         source,
       ) ?? "";
-      const sigText = renderDtsSignature({ typeParams: tps, params, returnType: ret });
-      return [`export function ${name}${sigText};`];
+      const paramsText = params.join(", ");
+      return [`export function ${name}${tps}(${paramsText}): ${ret};`];
     }
     case "ClassDeclaration": {
       // Bug 76：ambient 声明体合法 ⇒ 发射成员，不再无条件空类体。

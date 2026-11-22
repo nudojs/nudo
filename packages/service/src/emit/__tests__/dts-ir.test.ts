@@ -46,19 +46,19 @@ describe("dts 参数 IR 打印器", () => {
 
   it("签名打印：类型形参 / this / 空参数", () => {
     expect(
-      renderDtsSignature({ params: ["a: number"], returnType: "string" }),
+      renderDtsSignature({ params: [p("a", "number")], returnType: "string" }),
     ).toBe("(a: number): string");
     expect(
       renderDtsSignature({
         typeParams: "<T>",
-        params: ["x: T"],
+        params: [p("x", "T")],
         returnType: "T",
       }),
     ).toBe("<T>(x: T): T");
     expect(
       renderDtsSignature({
         thisParam: "this: Box<T>",
-        params: ["x: number"],
+        params: [p("x", "number")],
         returnType: "void",
       }),
     ).toBe("(this: Box<T>, x: number): void");
