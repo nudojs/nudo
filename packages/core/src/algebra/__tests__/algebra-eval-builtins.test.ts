@@ -9,7 +9,7 @@ import { litValue as litValue___nudojs_core, formatShape as formatShape___nudojs
 import { formatShape, checkSource as checkSource_____index_ts, pTrue } from "../index.ts";
 import { enumOwnKeys, enumOwnStringKeys } from "../builtins/invariants.ts";
 import { objOf } from "../objects.ts";
-import { l2Count } from "./nudo-constraints.ts";
+import { l2Count, sigOf } from "./nudo-constraints.ts";
 import { checkSource } from "../check/check.ts";
 import { hostNameAvailable } from "./builtin-coverage-registry.ts";
 import { runWithMayThrowSession, setMayThrowCollector, type MayThrowEffect } from "../diagnostics/may-throw.ts";
@@ -4448,6 +4448,55 @@ describe("负控制（区间合并的邻近形态不回归）", () => {
     expect(v(`export function f() { return Math.abs(-3); }`)).toEqual({ ok: true, value: 3 });
     expect(v(`export function f() { return Math.round(2.4); }`)).toEqual({ ok: true, value: 2 });
   }
+});
+
+// ---------------------------------------------------------------------------
+// fix-16：BUG-289 Object.fromEntries 条目数组 / BUG-365 values·entries 值域
+// ---------------------------------------------------------------------------
+describe("Object.fromEntries 条目数组与键家族值域投影", () => {
+  const SRC = `
+export function feLit(): number { return Object.fromEntries([["a", 1]]).a ?? 0; }
+export function fePairs(kv: [string, number][]): number { return Object.fromEntries(kv).a ?? 0; }
+export function feRead(kv: [string, number][], k: string): number { return Object.fromEntries(kv)[k] ?? 0; }
+export function roundTrip(o: { a: number }): number { return Object.fromEntries(Object.entries(o)).a ?? 0; }
+export function paramVals(o: { a: number; b: string }) { return Object.values(o); }
+export function paramEnt(o: { a: number; b: string }) { return Object.entries(o); }
+export function localVals() { const local = { a: 1, b: "s" }; return Object.values(local); }
+`;
+  const check = () => checkSource("/t/fix16obj.js", SRC, pTrue, {});
+
+  it("BUG-289：已定型条目数组不落 may-throw（fePairs / feRead / roundTrip 均 total）", () => {
+    const r = check();
+    for (const fn of ["fePairs", "feRead", "roundTrip"]) {
+      expect(l2Count(r, fn), fn).toBe(0);
+      expect(sigOf(r, fn), fn).toBe("number");
+    }
+    expect(sigOf(r, "feLit")).toBe("1");
+  });
+
+  it("BUG-289：抽象键条目在结果对象上留下索引值域（.a / [k] 读 number）", () => {
+    const kvAbs = abs(
+      { k: "arr", element: abs({ k: "tuple", elements: [abs({ k: "prim", type: "string" }, undefined, undefined, "path"), num()] }, undefined, undefined, "exact") },
+      undefined,
+      undefined,
+      "exact",
+    );
+    const readA = call(`export function f(kv) { return Object.fromEntries(kv).a; }`, "f", [kvAbs]);
+    expect(formatShape(readA.result as never)).toBe("number");
+    const readK = call(`export function f(kv, k) { return Object.fromEntries(kv)[k]; }`, "f", [
+      kvAbs,
+      abs({ k: "prim", type: "string" }, undefined, undefined, "path"),
+    ]);
+    expect(formatShape(readK.result as never)).toBe("number");
+  });
+
+  it("BUG-365：values / entries 投影已声明槽值域（不是 unknown）", () => {
+    const r = check();
+    expect(sigOf(r, "paramVals")).toBe("(number | string)[]");
+    expect(sigOf(r, "paramEnt")).toBe("[string, number | string][]");
+    // 本地字面量对照：仍是精确元组（键集封闭）
+    expect(sigOf(r, "localVals")).toBe('[1, "s"]');
+  });
 });
 
 

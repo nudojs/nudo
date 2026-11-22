@@ -259,7 +259,7 @@ createEnvironment(parent?, bindings?)
 | <a id="formatconstraint"></a>`formatConstraint` | fn | extensional rendering (one-way) | `formatConstraint(c: NudoConstraint): string` |
 | <a id="formatshape"></a>`formatShape` | fn | extensional rendering (one-way) | `formatShape( a: Abs, opts?: { maxDepth?: number; showLits?: boolean; pretty?: boolean }, ): string` |
 | <a id="formatunknownexplanations"></a>`formatUnknownExplanations` | fn | unknown / any origin explanation (observation-only side channel — ABS-02) | `formatUnknownExplanations( explanations: readonly AnalysisExplanation[], ): string` |
-| <a id="generalizefromast"></a>`generalizeFromAst` | fn | symbolic α generalization; `TypeParam.bounds` = optional simple bounds per formal (ABS-14 PR2 additive, write-only) | `generalizeFromAst( fnName: string, source: string, opts: { budget?: LeakBudget; label?: string; refine?: EffectiveContractOpts; file?: ReturnType<typeof babelParse>; depsFp?: LoadDepsFingerprint; sidecarFp?: string; modules?: Record<string, AbsModuleExports \| Record<string, unknown>>; inject?: RunTranspiledOptions; } = {}, ): PolyFn \| undefined` |
+| <a id="generalizefromast"></a>`generalizeFromAst` | fn | symbolic α generalization; `TypeParam.bounds` = optional simple bounds per formal (ABS-14 PR2 additive, write-only) | `generalizeFromAst( fnName: string, source: string, opts: { budget?: LeakBudget; label?: string; refine?: EffectiveContractOpts; file?: ReturnType<typeof babelParse>; depsFp?: LoadDepsFingerprint; sidecarFp?: string; modules?: Record<string, AbsModuleExports \| Record<string, unknown>>; inject?: RunTranspiledOptions; annotationEnv?: AnnotationEnv; } = {}, ): PolyFn \| undefined` |
 | <a id="getparsesourcecachesize"></a>`getParseSourceCacheSize` | fn | Babel parse + memo | `getParseSourceCacheSize(): number` |
 | <a id="instantiateconstraint"></a>`instantiateConstraint` | fn | contract checking (binder scope = one constraint tree; unbound refs fail closed) | `instantiateConstraint( c: NudoConstraint, paramName: string, depth: number = LAZY_TEMPLATE_DEPTH, binders?: BinderTable, ): Pred` |
 | <a id="isabsapplyresult"></a>`isAbsApplyResult` | fn | evaluator execution (analyze mode); `callTranspiledExportApply` is the only apply-wrap of `callTranspiledExportFull` (throws channel, H1); construct AbsApplyResult only via `makeAbsApplyResult` (brand) | `isAbsApplyResult(v: AbsApplyReturn): v` |
@@ -402,7 +402,7 @@ createEnvironment(parent?, bindings?)
 | <a id="transpilesource"></a>`transpileSource` | fn | JS AST → `$op` program | `transpileSource(source: string, opts: TranspileOptions = {}): string` |
 
 <details>
-<summary>src/index.ts 其余导出（334）</summary>
+<summary>src/index.ts 其余导出（336）</summary>
 
 | 名称 | 种类 | 说明 | 签名 |
 |------|------|------|------|
@@ -657,6 +657,7 @@ createEnvironment(parent?, bindings?)
 | <a id="propflags"></a>`PropFlags` | type | — | `PropFlags = { writable?: boolean; enumerable?: boolean; configurable?: boolean; }` |
 | <a id="protobrandabs"></a>`protoBrandAbs` | fn | — | `protoBrandAbs(ctorName: string, identity?: object): Abs` |
 | <a id="protoofrecv"></a>`protoOfRecv` | fn | Object.getPrototypeOf 的具体原型投影（constructor 链可解）。 | `protoOfRecv(a: Abs): Abs` |
+| <a id="provenanceof"></a>`provenanceOf` | fn | 读证据来源；缺省 = undefined（旧 Abs，按 inferred 处理）。 | `provenanceOf(a: Abs \| undefined): Provenance \| undefined` |
 | <a id="ptrue"></a>`pTrue` | const | — | `const pTrue` |
 | <a id="ptypeof"></a>`ptypeof` | const | — | `const ptypeof` |
 | <a id="purefnnameof"></a>`pureFnNameOf` | fn | 读纯函数标记（Abs impl 或对象属性 `_memoize`） | `pureFnNameOf(fn: unknown): string \| undefined` |
@@ -739,6 +740,7 @@ createEnvironment(parent?, bindings?)
 | <a id="undefabs"></a>`undefAbs` | fn | undefined 值的统一 Abs 表示（forEach/find 等） | `undefAbs(): Abs` |
 | <a id="ushrabs"></a>`ushrAbs` | fn | &gt;&gt;&gt; —— 逻辑右移（rhs ToUint32 &amp; 31；bigint 无此运算符 → 不可折叠） | `ushrAbs(a: Abs, b: Abs): Abs` |
 | <a id="withexecphi"></a>`withExecPhi` | fn | — | `withExecPhi<T>(p: Phi, body: () => T): T` |
+| <a id="withprovenance"></a>`withProvenance` | fn | 打证据来源（缺省不分配新对象；不改变 shape/term/pred/conf）。 | `withProvenance(a: Abs, provenance: Provenance): Abs` |
 | <a id="withvar"></a>`withVar` | fn | — | `withVar(env: AstEnv, name: string, value: Abs): AstEnv` |
 
 </details>

@@ -68,6 +68,8 @@ export const DIAG = {
   promiseMicroTruncated: "nudo:promise-micro-truncated",
   recursionTruncated: "nudo:recursion-truncated",
   unknownInference: "nudo:unknown-inference",
+  /** 形参/返回注解有源码文本，但解析器无法映射成 Abs（回落 any）。 */
+  annotationUnresolved: "nudo:annotation-unresolved",
   unknownRecv: "nudo:unknown-recv",
   // --- 成员 / 槽位 ---
   missingSlot: "nudo:missing-slot",

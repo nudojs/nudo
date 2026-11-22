@@ -62,6 +62,7 @@ import {
   protoChainContains,
   markKeySetOpenAbs,
   keySetIncompleteAbs,
+  joinAbs,
   type ObjShape,
 } from "../../objects.ts";
 import { mapEntriesAbs } from "../../collections.ts";
@@ -1053,16 +1054,29 @@ function inheritedProtoSlots(proto: Abs): Record<string, { value: Abs; inherited
     case "values": {
       throwIfNullishRecv(a0);
       if (a0?.shape.k === "obj") {
-        // Bug 326：自有键集不完备 ⇒ 诚实 partial（此前 exact 空元组 =
-        // 自信的确切错值，native values = [[1,2]]）
-        if (keySetIncomplete(a0)) {
-          return abs({ k: "arr", element: unknown }, undefined, undefined, "partial");
-        }
         const os = a0.shape as { slots: Record<string, { value: Abs }> };
         const slots = os.slots;
         // Bug 57：[[Get]] 语义——访问器 getter 求值（直接读占位槽会折
         // undefined/unknown）
         const vals = enumKeys(slots, a0).map((k) => readProperty(a0, k));
+        // Bug 326：自有键集不完备 ⇒ 诚实 partial（此前 exact 空元组 =
+        // 自信的确切错值，native values = [[1,2]]）。
+        // BUG-365：但已声明槽的值域仍要投影——参数注解的封闭对象
+        // （`o: { a: number; b: string }`）在入口 Abs 上带键集开放标记，
+        // 元素域应取已知槽值域 join（tsc 的 `(string | number)[]`），
+        // 不得整条退 unknown（那会让 dts 发 `unknown[]`、guard 恒真）。
+        // 无已知槽时才真正无信息（unknown）。
+        if (keySetIncomplete(a0)) {
+          if (vals.length === 0) {
+            return abs({ k: "arr", element: unknown }, undefined, undefined, "partial");
+          }
+          return abs(
+            { k: "arr", element: vals.reduce((x, y) => joinAbs(x, y)) },
+            undefined,
+            undefined,
+            "partial",
+          );
+        }
         return abs({ k: "tuple", elements: vals }, undefined, undefined, "exact");
       }
       if (a0?.shape.k === "tuple") {
@@ -1144,30 +1158,38 @@ function inheritedProtoSlots(proto: Abs): Record<string, { value: Abs; inherited
     case "entries": {
       throwIfNullishRecv(a0);
       if (a0?.shape.k === "obj") {
-        // Bug 326：自有键集不完备 ⇒ 诚实 partial（此前 exact 空元组 =
-        // 自信的确切错值，native entries = [["[object Object]",[1,2]]]）
-        if (keySetIncomplete(a0)) {
-          return abs(
-            {
-              k: "arr",
-              element: abs(
-                { k: "tuple", elements: [str("path"), unknown] },
-                undefined,
-                undefined,
-                "partial",
-              ),
-            },
-            undefined,
-            undefined,
-            "partial",
-          );
-        }
         const os = a0.shape as { slots: Record<string, { value: Abs }> };
         const slots = os.slots;
         // Bug 57：[[Get]] 语义——访问器 getter 求值
         const entries = enumKeys(slots, a0).map((k) =>
           abs({ k: "tuple", elements: [strLit(k), readProperty(a0, k)] }, undefined, undefined, "exact"),
         );
+        // Bug 326：自有键集不完备 ⇒ 诚实 partial（此前 exact 空元组 =
+        // 自信的确切错值，native entries = [["[object Object]",[1,2]]]）。
+        // BUG-365：同 values——已声明槽的条目域仍要投影（`[string,
+        // string | number][]`），不得把值域整条退 unknown。无已知槽时
+        // 保留 `[string, unknown]` 的诚实面。
+        if (keySetIncomplete(a0)) {
+          // 元素域 = 单个 [string, 槽值域 join] 元组——不得发成各槽元组的
+          // 联合：dts 的同构元组拓宽会把 `["a", number] | ["b", string]`
+          // 里的齐次臂折成 `string[]`（产物 `([string, number] | string[])[]`）。
+          // 键域恒 string（自有可枚举字符串键），值域 = 已知槽值域 join；
+          // 无已知槽时保留 unknown 的诚实面。
+          const vals = entries.map((e) => (e.shape.k === "tuple" ? e.shape.elements[1]! : unknown));
+          const element = abs(
+            {
+              k: "tuple",
+              elements: [
+                str("path"),
+                vals.length > 0 ? vals.reduce((x, y) => joinAbs(x, y)) : unknown,
+              ],
+            },
+            undefined,
+            undefined,
+            "partial",
+          );
+          return abs({ k: "arr", element }, undefined, undefined, "partial");
+        }
         return abs({ k: "tuple", elements: entries }, undefined, undefined, "exact");
       }
       if (a0?.shape.k === "tuple") {
@@ -2435,6 +2457,14 @@ function inheritedProtoSlots(proto: Abs): Record<string, { value: Abs; inherited
       const slots: Record<string, { value: Abs }> = {};
       let open = false;
       let conf: Abs["conf"] = "exact";
+      /**
+       * BUG-289：抽象键条目的**索引值域**（`shape.index`）。键不可折时槽表
+       * 装不下条目，但值域可投影：`Object.fromEntries(kv)` 的后续成员读
+       * （`obj[k]` / `.a`）应给值域而不是 unknown。此前抽象键只置 `open`，
+       * 值域直接丢弃。
+       */
+      let indexKey: Abs | undefined;
+      let indexValue: Abs | undefined;
       const putEntry = (k0: Abs | undefined, v1: Abs | undefined): void => {
         const value = v1 ?? undefAbs();
         conf = confJoin(conf, value.conf);
@@ -2449,6 +2479,8 @@ function inheritedProtoSlots(proto: Abs): Record<string, { value: Abs; inherited
           return;
         }
         // symbol prim 键保留（不建模）或抽象键 → 键集不完备
+        indexKey = indexKey ? joinAbs(indexKey, k0) : k0;
+        indexValue = indexValue ? joinAbs(indexValue, value) : value;
         open = true;
       };
       const noteEntry = (el: Abs): void => {
@@ -2476,6 +2508,14 @@ function inheritedProtoSlots(proto: Abs): Record<string, { value: Abs; inherited
         // any/unknown/sum/fn/brand/eff/arr：条目性不可判 → may
         recordMayThrow({ kind: "TypeError", cause: "Object.fromEntries entry may not be an object" });
         open = true;
+      };
+      /** 结果对象（开放时带抽象键的索引值域）。 */
+      const outObj = (o: boolean): Abs => {
+        const shape: ObjShape = o ? { k: "obj", slots, open: true } : { k: "obj", slots };
+        if (indexValue !== undefined) {
+          shape.index = { key: indexKey ?? str("path"), value: indexValue };
+        }
+        return abs(shape, undefined, undefined, o ? "partial" : conf);
       };
       if (a0.shape.k === "prim") {
         if ((a0.shape as { type?: string }).type === "string") {
@@ -2506,9 +2546,7 @@ function inheritedProtoSlots(proto: Abs): Record<string, { value: Abs; inherited
           }
           noteEntry(a0.shape.elements[i]!);
         }
-        return open
-          ? abs({ k: "obj", slots, open: true }, undefined, undefined, "partial")
-          : abs({ k: "obj", slots }, undefined, undefined, conf);
+        return outObj(open);
       }
       if (a0.shape.k === "brand" && (a0.shape as { name?: string }).name === "Map") {
         // Map 条目即 [k,v]：键值表投影（shadow 键 → 开放）
@@ -2519,11 +2557,17 @@ function inheritedProtoSlots(proto: Abs): Record<string, { value: Abs; inherited
             open = true;
           }
         }
-        return open
-          ? abs({ k: "obj", slots, open: true }, undefined, undefined, "partial")
-          : abs({ k: "obj", slots }, undefined, undefined, conf);
+        return outObj(open);
       }
-      // arr/obj/fn/brand/eff/any/unknown/sum：迭代性·条目性不可判 →
+      if (a0.shape.k === "arr") {
+        // BUG-289：元素域已定型的条目数组（`[string, number][]` /
+        // `Object.entries(o)` 的返回）——元素 Abs 就是全体条目的域代表，
+        // 投影一次即覆盖全体。此前 arr 落兜底 ⇒ 无条件记 may-throw +
+        // 开放空对象（合法调用假红、值域 unknown）。
+        noteEntry(a0.shape.element);
+        return outObj(open);
+      }
+      // obj/fn/brand/eff/any/unknown/sum：迭代性·条目性不可判 →
       // may + 开放 obj（含 {} —— 原生不可迭代抛，但 symbol 计算键迭代器
       // 不可见，不硬抛）
       recordMayThrow({

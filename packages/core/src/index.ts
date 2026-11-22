@@ -155,6 +155,6 @@ export {
   transpileBodyNode, transpileExpression, transpileFile, transpileSource,
   trueConstraint, tryMakeRegexAbs,
   tryRunTranspiled, typeofAbs, undefAbs, union, unknown, ushrAbs, v,
-  withExecPhi, withVar
+  provenanceOf, withExecPhi, withProvenance, withVar
 } from "./algebra/index.ts";
 

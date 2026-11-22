@@ -25,7 +25,7 @@ export function staticName(node) {
   it("arith → number(); string method → string()", () => {
     const map = collectParamBodyReadTypes(`
 export function f(o) {
-  const a = o.count + 1;
+  const a = o.count * 2;
   const b = o.label.toLowerCase();
   return a + b;
 }
@@ -33,6 +33,45 @@ export function f(o) {
     const fields = map.get("f")?.get("o");
     expect(fields?.find((f) => f.field === "count")?.type).toBe("number()");
     expect(fields?.find((f) => f.field === "label")?.type).toBe("string()");
+  });
+
+  // BUG-250：强制转换 / 判定调用对实参类型不蕴含任何信息
+  // （String(3) / Number("7") / Boolean(0) / Array.isArray("x") 全合法）
+  it("coercion calls are not type evidence (BUG-250)", () => {
+    const map = collectParamBodyReadTypes(`
+export function viaString(o) { return String(o.retries); }
+export function viaNumber(o) { return Number(o.s); }
+export function viaBoolean(o) { return Boolean(o.b); }
+export function viaIsArray(o) { return Array.isArray(o.xs); }
+`);
+    const typeOf = (fn: string) => map.get(fn)?.get("o")?.[0]?.type;
+    expect(typeOf("viaString")).toBe("any()");
+    expect(typeOf("viaNumber")).toBe("any()");
+    expect(typeOf("viaBoolean")).toBe("any()");
+    expect(typeOf("viaIsArray")).toBe("any()");
+  });
+
+  // BUG-268：`+`（数值字面量一侧）/ 关系运算符 / lastIndexOf / valueOf
+  // 都不要求 number / string ⇒ 草稿不得把它们当类型证据。
+  it("+, relational, lastIndexOf, valueOf are not type evidence (BUG-268)", () => {
+    const map = collectParamBodyReadTypes(`
+export function label(o) { return o.prefix + 1; }
+export function relRule(o) { return o.a < o.b; }
+export function lastIdx(o) { return o.xs.lastIndexOf(1); }
+export function valueOfRule(o) { return o.s.valueOf(); }
+export function directArith(o) { return o.qty * 2; }
+`);
+    const fields = (fn: string) => map.get(fn)?.get("o") ?? [];
+    expect(fields("label").find((f) => f.field === "prefix")?.type).toBe("any()");
+    expect(fields("relRule").find((f) => f.field === "a")?.type).toBe("any()");
+    expect(fields("relRule").find((f) => f.field === "b")?.type).toBe("any()");
+    expect(fields("lastIdx").find((f) => f.field === "xs")?.type).toBe("any()");
+    // 方法名不得被当成字段（`xs: shape({ lastIndexOf: … })` 是幽灵路径）
+    expect(fields("lastIdx").some((f) => f.field === "lastIndexOf")).toBe(false);
+    expect(fields("valueOfRule").find((f) => f.field === "s")?.type).toBe("any()");
+    expect(fields("valueOfRule").some((f) => f.field === "valueOf")).toBe(false);
+    // 真数值专属运算仍是证据
+    expect(fields("directArith").find((f) => f.field === "qty")?.type).toBe("number()");
   });
 
   it("typeof === 'number' → number()", () => {
@@ -68,14 +107,27 @@ export function k(o) {
     expect(fields?.find((f) => f.field === "tags")?.type).toBe("any()");
   });
 
-  it("Array.isArray(param.field) → array(any())", () => {
+  it("Array.isArray(param.field) alone is not type evidence (BUG-250)", () => {
+    // isArray 的语义恰恰是「可能不是数组」⇒ 不蕴含实参是 array(any())
+    const map = collectParamBodyReadTypes(`
+export function a(o) {
+  return Array.isArray(o.items) ? 0 : 1;
+}
+`);
+    const fields = map.get("a")?.get("o");
+    expect(fields?.find((f) => f.field === "items")?.type).toBe("any()");
+  });
+
+  it("Array.isArray + .length keeps only the .length union evidence", () => {
     const map = collectParamBodyReadTypes(`
 export function a(o) {
   return Array.isArray(o.items) ? o.items.length : 0;
 }
 `);
     const fields = map.get("a")?.get("o");
-    expect(fields?.find((f) => f.field === "items")?.type).toBe("array(any())");
+    expect(fields?.find((f) => f.field === "items")?.type).toBe(
+      "union(string(), array(any()))",
+    );
   });
 
   it("shapeDslFromFields fills types", () => {

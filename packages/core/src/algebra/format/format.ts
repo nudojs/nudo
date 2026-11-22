@@ -200,6 +200,10 @@ function needsGrouping(shape: Shape): boolean {
 }
 
 function formatShapeInner(a: Abs, budget: ProjectionBudget, ind: string): string {
+  // 类型参数名是声明面事实：`T[]` / `T | undefined` 不能渲染成 `any[]` /
+  // `any | undefined`（check 与 dts 的泛型关系此前因此分叉）。用 term 的
+  // 命名空间承载（facets 按 ABS-15 不参与 formatShape）。
+  if (a.term?.op === "var" && a.term.id.startsWith("tp:")) return a.term.id.slice(3);
   const s = a.shape;
   switch (s.k) {
     case "never":
@@ -306,6 +310,13 @@ function formatShapeInner(a: Abs, budget: ProjectionBudget, ind: string): string
           }
           return `${key}${opt}: ${val}`;
         });
+      // BUG-253：索引签名是声明面事实，不能渲染成空对象 `{  }`——否则
+      // check 签名把已声明的键值域谎报成「无成员」。
+      if (s.index) {
+        const keyText = formatShapeB(s.index.key, budget, `${ind}  `);
+        const valueText = formatShapeB(s.index.value, budget, `${ind}  `);
+        entries.push(`[k: ${keyText}]: ${valueText}`);
+      }
       // pretty：每槽一行 + 尾逗号 + 2 空格缩进递增（值内嵌套以槽位
       // 行起点为基准列——悬挂式对齐）；空 obj 保持单行（与默认口径同形）
       if (budget.pretty && entries.length > 0) {
@@ -314,6 +325,10 @@ function formatShapeInner(a: Abs, budget: ProjectionBudget, ind: string): string
       return `{ ${entries.join(", ")} }`;
     }
     case "arr": {
+      // 类型参数元素（`T[]`）先还原名字；否则 any+var 元素显示 arr(A1)。
+      if (s.element.term?.op === "var" && s.element.term.id.startsWith("tp:")) {
+        return `${s.element.term.id.slice(3)}[]`;
+      }
       // any+var 元素 → arr(A1)（展示关系）；否则 element[]
       if (s.element.shape.k === "any" && s.element.term?.op === "var") {
         return `arr(${formatShapeSlotB(s.element, budget, ind)})`;

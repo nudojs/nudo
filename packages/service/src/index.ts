@@ -302,3 +302,4 @@ export {
 export { parseIgnoreThrows, configIgnoreThrows } from "./gate-config.ts";
 export { normalizeRealPath } from "./normalize-path.ts";
 export { writeFileAtomic } from "./write-atomic.ts";
+export { typeAnnotationSourceOf } from "./type-annotation-resolve.ts";

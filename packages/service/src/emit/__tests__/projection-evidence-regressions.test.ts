@@ -248,7 +248,8 @@ export const topInferred = 1;
 `);
     expect(dts).toContain("export const ann: number;");
     expect(dts).toContain("export const inferred: number;");
-    expect(dts).toContain("export declare const topInferred: number;");
+    // BUG-260：顶层 `const` 字面量初始化器保留字面量类型（tsc 同口径）。
+    expect(dts).toContain("export declare const topInferred: 1;");
 
     const checked = tscNoEmit({
       "mod.d.ts": dts,

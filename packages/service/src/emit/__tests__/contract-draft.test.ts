@@ -414,4 +414,146 @@ describe("draftContract", () => {
     expect(r.draftSource).toMatch(/import \{ fn, number \} from "@nudojs\/core";/);
     expect(r.draftSource).not.toContain("any,");
   });
+
+  // BUG-250：强制转换 / 判定调用不是类型证据
+  it("body-read suggestion does not invert annotations via coercion calls (BUG-250)", async () => {
+    const file = join(dir, "coerce.ts");
+    writeFileSync(
+      file,
+      `export function viaString(o: { retries: number }): string { return String(o.retries); }
+export function viaNumber(o: { s: string }): number { return Number(o.s); }
+export function viaIsArray(o: { xs: number[] }): boolean { return Array.isArray(o.xs); }
+export function viaToUpper(o: { s: string }): string { return o.s.toUpperCase(); }
+`,
+    );
+    const r = await draftContract(file);
+    const displayOf = (fn: string) =>
+      r.entries.find((e) => e.fn === fn)!.params[0]!.display;
+    expect(displayOf("viaString")).toBe("/* body-read shape({ retries: any() }) */");
+    expect(displayOf("viaNumber")).toBe("/* body-read shape({ s: any() }) */");
+    expect(displayOf("viaIsArray")).toBe("/* body-read shape({ xs: any() }) */");
+    // 真接收者方法证据不变
+    expect(displayOf("viaToUpper")).toBe("/* body-read shape({ s: string() }) */");
+  });
+
+  // BUG-268：`+`（数值字面量）/ 关系 / lastIndexOf / valueOf 不是类型证据
+  it("body-read suggestion keeps operator/method false evidence out (BUG-268)", async () => {
+    const file = join(dir, "ops.ts");
+    writeFileSync(
+      file,
+      `export function label(o: { prefix: string }): string { return o.prefix + 1; }
+export function relRule(o: { a: string; b: string }): boolean { return o.a < o.b; }
+export function lastIdx(o: { xs: number[] }): number { return o.xs.lastIndexOf(1); }
+export function valueOfRule(o: { s: string }): string { return o.s.valueOf(); }
+`,
+    );
+    const r = await draftContract(file);
+    const displayOf = (fn: string) =>
+      r.entries.find((e) => e.fn === fn)!.params[0]!.display;
+    expect(displayOf("label")).toBe("/* body-read shape({ prefix: any() }) */");
+    expect(displayOf("relRule")).toBe("/* body-read shape({ a: any(), b: any() }) */");
+    expect(displayOf("lastIdx")).toBe("/* body-read shape({ xs: any() }) */");
+    expect(displayOf("valueOfRule")).toBe("/* body-read shape({ s: any() }) */");
+    // 建议行同样不得出现与注解相反的类型
+    const suggestionLines = r.draftSource
+      .split("\n")
+      .filter((l) => l.startsWith("// export const "));
+    expect(suggestionLines.length).toBe(4);
+    for (const line of suggestionLines) {
+      expect(line).not.toMatch(/number\(\)|string\(\)/);
+    }
+  });
+
+  // BUG-266 + BUG-267：多错误名 throws 槽的 import 绑定与载荷解析
+  it("throws slot imports litC as lit and never invents '*/' (BUG-266/267)", async () => {
+    const file = join(dir, "throws.ts");
+    writeFileSync(
+      file,
+      `/** @nudo:throws TypeError, RangeError */
+export function parse(s: string): number { return Number(s); }
+`,
+    );
+    const r = await draftContract(file);
+    expect(r.draftSource).toContain(
+      'import { fn, any, litC as lit, union } from "@nudojs/core";',
+    );
+    expect(r.draftSource).toContain(
+      'export const parse = fn({}, any(), { throws: union(lit("TypeError"), lit("RangeError")) });',
+    );
+    // 单行 JSDoc 不得把尾随 `*/` 解析成第三个错误名
+    expect(r.draftSource).not.toContain('"*/"');
+    expect(r.entries.find((e) => e.fn === "parse")!.throws?.kinds).toEqual([
+      "TypeError",
+      "RangeError",
+    ]);
+
+    // 多行形态与单行形态同口径（同一载荷 → 同一 throws 槽）
+    const multi = join(dir, "throws-multi.ts");
+    writeFileSync(
+      multi,
+      `/**
+ * @nudo:throws TypeError, RangeError
+ */
+export function parse(s: string): number { return Number(s); }
+`,
+    );
+    const multiR = await draftContract(multi);
+    expect(multiR.draftSource).toContain(
+      'export const parse = fn({}, any(), { throws: union(lit("TypeError"), lit("RangeError")) });',
+    );
+    expect(multiR.draftSource).not.toContain('"*/"');
+  });
+
+  // BUG-269：建议行必须与正式 export 行走同一个 throws 槽
+  it("suggested line carries the declared throws slot (BUG-269)", async () => {
+    const file = join(dir, "read.ts");
+    writeFileSync(
+      file,
+      `/**
+ * @nudo:throws TypeError
+ */
+export function read(o: { name: string }): string { return o.name; }
+`,
+    );
+    const r = await draftContract(file);
+    expect(r.draftSource).toContain(
+      '// export const read = fn({ o: shape({ name: any() }) }, any(), { throws: "TypeError" });',
+    );
+    expect(r.draftSource).toContain(
+      'export const read = fn({}, any(), { throws: "TypeError" });',
+    );
+    // 建议行去注释后是合法、完整（含 throws）的侧车绑定
+    const suggested = r.draftSource
+      .split("\n")
+      .find((l) => l.startsWith("// export const read = "))!;
+    expect(suggested.replace(/^\/\/ /, "")).toBe(
+      'export const read = fn({ o: shape({ name: any() }) }, any(), { throws: "TypeError" });',
+    );
+  });
+
+  // BUG-361：泛化返回兜底不得被 PROJECTABLE_CONF 挡住
+  it("widened/partial generalized return still projects to number() (BUG-361)", async () => {
+    const file = join(dir, "unionparam.ts");
+    writeFileSync(
+      file,
+      `export function a(x: number) { return x + 1; }
+export function b(x: number | null) { return x + 1; }
+export function c(x: number | null) { return (x ?? 0) + 1; }
+export function d(x: number | undefined) { return x + 1; }
+export function g(x: number | string) { return x; }
+`,
+    );
+    const r = await draftContract(file);
+    const entryOf = (fn: string) => r.entries.find((e) => e.fn === fn)!;
+    for (const fn of ["a", "b", "c", "d"]) {
+      expect(entryOf(fn).dsl).toBe("fn({}, number())");
+      expect(entryOf(fn).returnEvidence).toBe("symbolic");
+      expect(entryOf(fn).returns?.projected).toBe(true);
+      // 「not projectable: number」与事实相反（同文件 a 就是 number()）
+      expect(entryOf(fn).returns?.display).not.toContain("not projectable");
+    }
+    // 真不可表达（number | string 联合）仍诚实标 not-projectable
+    expect(entryOf("g").returns?.display).toContain("not projectable: number | string");
+    expect(r.draftSource).not.toContain("not projectable: number */");
+  });
 });

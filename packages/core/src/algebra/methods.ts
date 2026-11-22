@@ -8,13 +8,13 @@
 import type { Abs } from "./abs.ts";
 import { abs, litValue, numLit, strLit, boolLit, unknown, str } from "./abs.ts";
 import { applyCallbackAbs, undefAbs, validateIndexArg } from "./hof.ts";
-import { joinAbs, objOf, setSlot, isNullProtoWithoutCoercer, toPrimitiveCoercionOf } from "./objects.ts";
+import { joinAbs, objOf, setSlot, getSlot, isNullProtoWithoutCoercer, toPrimitiveCoercionOf, type ObjShape } from "./objects.ts";
 import { NudoThrow } from "./diagnostics/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "./diagnostics/may-throw.ts";
 import { pTrue } from "./pred.ts";
 import { defaultLeakBudget } from "./diagnostics/leak.ts";
 import { isSymbolAbs } from "./key/symbol-id.ts";
-import { regexParts, matchIteratorAbs } from "./exec/regexp-runtime.ts";
+import { regexParts, matchIteratorAbs, abstractMatchArrayAbs, abstractMatchArrayUnknownGroupsAbs } from "./exec/regexp-runtime.ts";
 import { isRegExpBrandAbs } from "./builtins/regexp.ts";
 import { mayToStringThrowOperand } from "./builtins/shared.ts";
 import {
@@ -251,18 +251,69 @@ function validateLocalesArg(x: Abs | undefined, what: string): void {
   }
 }
 
-/** Bug 2：match 的保守返回域——null | 匹配数组（global → string[]，
- *  非 global → 捕获可为 undefined），与 execRegexBrand 抽象 subject 臂
- *  （exec/regexp-runtime.ts）同款保守并。 */
-function matchResultDomain(): Abs {
-  const matchArr = abs(
-    { k: "arr", element: joinAbs(str(), undefAbs()) },
-    undefined,
-    undefined,
-    "path",
-  );
+/**
+ * Bug 2 / BUG-341：match 的返回域——null | 匹配结果。
+ *
+ * 结果域按 pattern 的 **global 标志**分流（原生语义）：
+ * - global：`string[]`（全部匹配文本，**无捕获组槽**）；`m[0]` 恒 string；
+ * - 非 global：`RegExpMatchArray` 的 per-index 槽——`"0"` 恒 string，
+ *   捕获组 `"1".."ng"` 才可能 undefined（与 execRegexBrand 抽象 subject 臂
+ *   共用 `abstractMatchArrayAbs`）。
+ *
+ * 此前一律发均质 `(string | undefined)[]` ⇒ 非 global 的 `m[0]` 也被当成
+ * 可能 undefined（`if (m) m[0].length` 假 may-throw，BUG-341）；exec 通道
+ * 早已是 per-index 槽，两入口口径相反。
+ *
+ * 载体不是 prim / RegExp brand（可能自带 `@@match` 自定义钩子）⇒ 结果域
+ * 不可判，保持旧的保守并（null | 均质数组）。
+ */
+function matchResultDomain(pattern?: Abs): Abs {
   const nullAbs = abs({ k: "unknown" }, { op: "lit", value: null }, undefined, "exact");
-  return joinAbs(nullAbs, matchArr);
+  const withNull = (v: Abs): Abs => joinAbs(nullAbs, v);
+  const conservative = (): Abs => {
+    const matchArr = abs(
+      { k: "arr", element: joinAbs(str(), undefAbs()) },
+      undefined,
+      undefined,
+      "path",
+    );
+    return joinAbs(nullAbs, matchArr);
+  };
+  // flags：undefined = 不可判；"" = 已知非 global（string / 字面量模式）。
+  let flags: string | undefined;
+  let patternText: string | undefined;
+  if (pattern === undefined) {
+    flags = "";
+    patternText = "";
+  } else if (isRegExpBrandAbs(pattern)) {
+    flags = literalRegexFlags(pattern);
+    if (flags !== undefined) patternText = regexParts(pattern)?.pat;
+  } else if (pattern.shape.k === "prim" && pattern.shape.type !== "symbol") {
+    // 非 RegExp 模式：RegExpCreate(ToString(pattern))，无 flags ⇒ 非 global
+    flags = "";
+    patternText = literalPatternString(pattern);
+  } else if (pattern.term?.op === "lit") {
+    flags = "";
+    patternText = literalPatternString(pattern);
+  }
+  if (flags === undefined) return conservative();
+  if (flags.includes("g")) return withNull(strArr("path"));
+  if (patternText !== undefined) {
+    const m = abstractMatchArrayAbs(patternText);
+    if (m) return withNull(m);
+  }
+  // 非 global、源文本不可判：形态仍是 RegExpMatchArray（"0" 恒 string）
+  return withNull(abstractMatchArrayUnknownGroupsAbs());
+}
+
+/** RegExp brand 的**字面量** flags（不可判 → undefined；非 RegExp → undefined）。 */
+function literalRegexFlags(pattern: Abs): string | undefined {
+  if (!isRegExpBrandAbs(pattern)) return undefined;
+  const inner = pattern.shape.k === "brand" ? pattern.shape.shape : undefined;
+  if (!inner || inner.shape.k !== "obj") return undefined;
+  const slot = getSlot((inner.shape as ObjShape).slots, "flags");
+  const fv = slot ? litValue(slot.value) : undefined;
+  return fv?.ok && typeof fv.value === "string" ? fv.value : undefined;
 }
 
 /**
@@ -566,7 +617,7 @@ export function callAbsMethod(
       case "search":
         return numPrim("path");
       case "match":
-        return matchResultDomain();
+        return matchResultDomain(args[0]);
       case "matchAll":
         return matchAllAbstractArm(args);
       case "concat": {
@@ -748,8 +799,8 @@ export function callAbsMethod(
       // -1）；字面量接收者 + 可折 pattern 已由 stringRegexMethod 先行接管
       return numPrim("path");
     case "match":
-      // Bug 2：null | 匹配数组（与模板段/execRegexBrand 抽象臂同域）
-      return matchResultDomain();
+      // Bug 2 / BUG-341：null | 匹配结果（flags 感知；与 exec 抽象臂同域）
+      return matchResultDomain(args[0]);
     case "matchAll":
       // Bug 2：迭代器（字面量双折由 stringRegexMethod 先行接管）
       return matchAllAbstractArm(args);

@@ -227,10 +227,19 @@ export { isEsmProgram } from "./algebra/exec/transpile/meta.ts";
 export {
   absShapeForTsTypeText,
   absTypeForTsTypeText,
+  namedTypeTextsForSource,
+  valueTypeTextsForSource,
+  importedTypeTextsForSource,
+  resolveNamedTypeText,
+  splitTypeArgs,
+  type AnnotationEnv,
 } from "./algebra/contract/ts-type-shape.ts";
 // check 签名面的形参类型文本（`nudo check` 与 lsp hover 的形参行同口径；
 // 此前 LSP 侧留同公式拷贝 formatEntryParamShapeLike 靠手工同步）
 export { formatEntryParamShape } from "./algebra/check/check-signatures.ts";
+// 开放对象键集标记（service 入口注解 / dts 侧表共用；A7 纪律：造新 Abs
+// 必须重打，否则键家族会把声明槽折成 exact 键表）。
+export { keySetIncompleteAbs, markKeySetOpenAbs } from "./algebra/objects.ts";
 // JS Error 家族构造器名（service 补全近似表 builtin-prototype 的错误类
 // 判定复用；此前 8 名复刻 BUILTIN_ERROR_CLASSES 靠"保持同步"注释互钉）
 export { ERROR_CTOR_NAMES } from "./algebra/diagnostics/error-names.ts";
@@ -274,7 +283,14 @@ export {
   type RawDiagnostic,
 } from "./algebra/diagnostics/evidence-shadow.ts";
 
-export { entryThisReceiverOf, entryThisReceiverTypeTextOf } from "./algebra/generalize.ts";
+export {
+  buildEntryDomain,
+  entryThisReceiverOf,
+  entryThisReceiverTypeTextOf,
+  typeParamEnvForFunction,
+  type EntryDomain,
+  type EntryParamDomain,
+} from "./algebra/generalize.ts";
 // 本地名 → 导出槽（default / 别名 / CJS 成员）：service 的类方法见证解析复用
 // （BUG-153：`export default class C` 的本地名不是导出槽名）。
 export { resolveExportSlotCall } from "./algebra/contract/export-slot.ts";

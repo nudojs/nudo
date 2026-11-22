@@ -27,7 +27,7 @@ import {abs, num, str, anyAbs, unknown, numLit, type Abs} from "../abs.ts";
 import {objOf} from "../objects.ts";
 import {lit} from "../term.ts";
 import {cmp} from "../arithmetic.ts";
-import {$removeNull, $removeUndefined, $narrowTypeOf} from "../exec/runtime/async.ts";
+import {$removeNull, $removeUndefined, $narrowIn, $narrowTypeOf} from "../exec/runtime/async.ts";
 import {runWithMayThrowSession, setMayThrowCollector, type MayThrowEffect} from "../diagnostics/may-throw.ts";
 import {nullishGuardOf, typeGuardOf} from "../exec/transpile/stmt/predicates.ts";
 
@@ -293,11 +293,14 @@ describe("守卫剪影运行时助手", () => {
     const single = numLit(5);
     expect($narrowTypeOf(single, "string", true)).toBe(single);
     // issue #105：裸 any 事实臂窄化为对应 prim（term/pred/conf 保留）；
-    // 补集臂（keep=false）不可表示 → 保留 any；unknown 是 fail-closed 令牌 → 不窄化
+    // 补集臂（keep=false）不可表示 → 保留 any；BUG-275：unknown（用户
+    // 显式注解 / 引擎令牌）在事实臂同样窄化为对应 prim，补集臂保留
     expect($narrowTypeOf(anyAbs, "string", true)!.shape).toEqual(str().shape);
     expect($narrowTypeOf(anyAbs, "number", true)!.shape).toEqual(num().shape);
     expect($narrowTypeOf(anyAbs, "string", false)).toBe(anyAbs);
-    expect($narrowTypeOf(unknown, "string", true)).toBe(unknown);
+    expect($narrowTypeOf(unknown, "string", true)!.shape).toEqual(str().shape);
+    expect($narrowTypeOf(unknown, "number", true)!.shape).toEqual(num().shape);
+    expect($narrowTypeOf(unknown, "string", false)).toBe(unknown);
     // object/function/undefined 无单一 Abs 可表（null/数组/函数各有形态）→ 保留
     expect($narrowTypeOf(anyAbs, "object", true)).toBe(anyAbs);
     expect($narrowTypeOf(anyAbs, "function", true)).toBe(anyAbs);
@@ -325,5 +328,229 @@ describe("守卫剪影运行时助手", () => {
     // "undefined" 走 nullish 通道，typeGuardOf 不认
     expect(typeGuardOf({ type: "BinaryExpression", operator: "===", left: { type: "UnaryExpression", operator: "typeof", argument: { type: "Identifier", name: "u" } }, right: { type: "StringLiteral", value: "undefined" } }))
       .toBeUndefined();
+  });
+});
+
+// --- BUG-275 / 282 / 290 / 291 / 292 / 335 / 363：守卫事实矩阵 ---------
+
+/** TS 源（形参注解直接给入口域）：与 CLI 的 `check <file>.ts` 同口径 */
+function checkTs(src: string) {
+  return checkSource("/t/guard-matrix.ts", src, pTrue, {});
+}
+
+describe("typeof 守卫收窄 unknown", () => {
+  const SRC = `
+export function g1(x: unknown): string { return typeof x === "string" ? x : ""; }
+export function g2(x: unknown): number { if (typeof x === "number") { return x; } return 0; }
+`;
+
+  it("check：签名不再把 unknown 带进返回域，零 L2", () => {
+    const r = checkTs(SRC);
+    expect(l2Count(r, "g1")).toBe(0);
+    expect(l2Count(r, "g2")).toBe(0);
+    expect(r.summary.errors).toBe(0);
+    expect(sigOf(r, "g1")).toMatch(/^string\b/);
+    expect(sigOf(r, "g2")).toMatch(/^number\b/);
+  });
+
+  it("Abs 面：事实臂窄化为对应 prim，补集臂仍保留 unknown", () => {
+    expect($narrowTypeOf(unknown, "string", true)!.shape).toEqual(str().shape);
+    expect($narrowTypeOf(unknown, "string", false)).toBe(unknown);
+  });
+});
+
+describe("typeof 成员目标守卫（typeof o.v）", () => {
+  const SRC = `
+export function memGuard(o: { v: number } | { v: string }): string {
+  if (typeof o.v === "number") { return o.v.toFixed(); }
+  return o.v;
+}
+export function plainGuard(x: number | string): string {
+  if (typeof x === "number") { return x.toFixed(); }
+  return x;
+}
+`;
+
+  it("check：成员目标守卫生效，零 L2 / 返回域 string", () => {
+    const r = checkTs(SRC);
+    expect(l2Count(r, "memGuard")).toBe(0);
+    expect(l2Count(r, "plainGuard")).toBe(0);
+    expect(r.summary.errors).toBe(0);
+    expect(sigOf(r, "memGuard")).toMatch(/^string\b/);
+  });
+
+  it("Abs 面：事实臂把 union 剪到 v:number 臂，补集臂剪到 v:string 臂", () => {
+    const u = sumOf([objOf({ v: { value: num() } }), objOf({ v: { value: str() } })]);
+    const hit = $narrowTypeOf(u, "number", true, "v");
+    expect(hit.shape.k).toBe("obj");
+    expect(hit.shape.k === "obj" ? hit.shape.slots.v!.value.shape : undefined).toEqual(num().shape);
+    const alt = $narrowTypeOf(u, "number", false, "v");
+    expect(alt.shape.k).toBe("obj");
+    expect(alt.shape.k === "obj" ? alt.shape.slots.v!.value.shape : undefined).toEqual(str().shape);
+  });
+
+  it('运行时：memGuard({v:"s"}) / memGuard({v:1}) 都不抛', () => {
+    const exports = runTranspiled(SRC, { mode: "analyze" });
+    for (const arg of [objOf({ v: { value: num() } }), objOf({ v: { value: str() } })]) {
+      const res = callTranspiledExportFull(exports, "memGuard", [arg] as never);
+      expect(formatAbs(res.throws)).toMatch(/^never\b/);
+      expect(formatAbs(res.result)).toMatch(/^string\b/);
+    }
+  });
+});
+
+describe("`in` 守卫剪 union 臂", () => {
+  const SRC = `
+export function inNarrow(o: { a: number } | { b: string }): number {
+  if ("a" in o) { return o.a; }
+  return 0;
+}
+export function inNarrowStr(o: { a: string } | { b: number }): string {
+  if ("a" in o) { return String(o.a); }
+  return "";
+}
+export function inNarrowBoth(o: { a: number } | { a: number; b: string }): number {
+  if ("a" in o) { return o.a; }
+  return 0;
+}
+`;
+
+  it("check：只含一臂的联合被剪枝（无 unknown / 零 L2）", () => {
+    const r = checkTs(SRC);
+    expect(l2Count(r, "inNarrow")).toBe(0);
+    expect(l2Count(r, "inNarrowStr")).toBe(0);
+    expect(l2Count(r, "inNarrowBoth")).toBe(0);
+    expect(r.summary.errors).toBe(0);
+    expect(r.issues.filter((i) => i.code === "nudo:unknown-inference").length).toBe(0);
+    expect(sigOf(r, "inNarrow")).toMatch(/^number\b/);
+    expect(sigOf(r, "inNarrowStr")).toMatch(/^string\b/);
+  });
+
+  it("Abs 面：$narrowIn 剪缺席 / 在场的联合成员", () => {
+    const u = sumOf([objOf({ a: { value: num() } }), objOf({ b: { value: str() } })]);
+    expect($narrowIn(u, "a", true).shape).toEqual(objOf({ a: { value: num() } }).shape);
+    expect($narrowIn(u, "a", false).shape).toEqual(objOf({ b: { value: str() } }).shape);
+    // 两臂都含 a ⇒ 两侧都不剪
+    const both = sumOf([
+      objOf({ a: { value: num() } }),
+      objOf({ a: { value: num() }, b: { value: str() } }),
+    ]);
+    expect($narrowIn(both, "a", true)).toBe(both);
+  });
+});
+
+describe("用户定义类型谓词参与调用点收窄", () => {
+  const SRC = `
+export function isStr(x: string | number): x is string { return typeof x === "string"; }
+export function useGuard(x: string | number): string { return isStr(x) ? x.toUpperCase() : ""; }
+export function useBoolOnly(x: string | number): string { return isStr(x) ? "yes" : "no"; }
+`;
+
+  it("check：isStr(x) 三元真臂把 x 收窄为 string（零 L2）", () => {
+    const r = checkTs(SRC);
+    expect(l2Count(r, "useGuard")).toBe(0);
+    expect(l2Count(r, "useBoolOnly")).toBe(0);
+    expect(r.summary.errors).toBe(0);
+    expect(sigOf(r, "useGuard")).toMatch(/^string\b/);
+    expect(sigOf(r, "isStr")).toMatch(/^boolean\b/);
+  });
+
+  it("运行时：合法 string 输入不抛", () => {
+    const exports = runTranspiled(SRC, { mode: "analyze" });
+    const res = callTranspiledExportFull(exports, "useGuard", [str()] as never);
+    expect(formatAbs(res.throws)).toMatch(/^never\b/);
+    expect(formatAbs(res.result)).toMatch(/^string\b/);
+  });
+});
+
+describe("switch (typeof x) case 臂应用 typeof 事实", () => {
+  const SRC = `
+export function switchTypeof(x: string | number): string {
+  switch (typeof x) {
+    case "string": return x.toUpperCase();
+    case "number": return x.toFixed();
+    default: return "";
+  }
+}
+export function ifTypeof(x: string | number): string {
+  if (typeof x === "string") return x.toUpperCase();
+  if (typeof x === "number") return x.toFixed();
+  return "";
+}
+`;
+
+  it("check：case 臂按 typeof 收窄（零 L2 / 返回域 string）", () => {
+    const r = checkTs(SRC);
+    expect(l2Count(r, "switchTypeof")).toBe(0);
+    expect(l2Count(r, "ifTypeof")).toBe(0);
+    expect(r.summary.errors).toBe(0);
+    expect(sigOf(r, "switchTypeof")).toMatch(/^string\b/);
+  });
+
+  it("运行时：string / number 输入都走各自臂", () => {
+    const exports = runTranspiled(SRC, { mode: "analyze" });
+    for (const arg of [str(), num()]) {
+      const res = callTranspiledExportFull(exports, "switchTypeof", [arg] as never);
+      expect(formatAbs(res.throws)).toMatch(/^never\b/);
+      expect(formatAbs(res.result)).toMatch(/^string\b/);
+    }
+  });
+});
+
+describe("fork 隐式 else 接取反守卫", () => {
+  const SRC = `
+export function identWriteThenRead(a?: string) { if (a === undefined) a = "x"; return a.length; }
+export function bangWriteThenRead(a?: string) { if (!a) a = "x"; return a.length; }
+export function memberLooseWrite(o: { a?: string }) { if (o.a == null) o.a = "x"; return o.a.length; }
+export function memberTruthyWrite(o: { a?: string }) { if (!o.a) o.a = "x"; return o.a.length; }
+export function earlyReturnControl(a?: string) { if (a === undefined) return 0; return a.length; }
+`;
+
+  it("check：五形态全部 total（零 L2，返回 number）", () => {
+    const r = checkTs(SRC);
+    for (const name of [
+      "identWriteThenRead",
+      "bangWriteThenRead",
+      "memberLooseWrite",
+      "memberTruthyWrite",
+      "earlyReturnControl",
+    ]) {
+      expect(l2Count(r, name), name).toBe(0);
+      expect(sigOf(r, name), name).not.toMatch(/never/);
+    }
+    expect(r.summary.errors).toBe(0);
+  });
+
+  it("运行时：undefined 入口补默认值后 length 不抛", () => {
+    const exports = runTranspiled(SRC, { mode: "analyze" });
+    const res = callTranspiledExportFull(exports, "identWriteThenRead", [undefLit] as never);
+    expect(formatAbs(res.throws)).toMatch(/^never\b/);
+    expect(formatAbs(res.result)).toMatch(/^(number|1)\b/);
+  });
+});
+
+describe("成员逻辑赋值写回成员槽", () => {
+  const SRC = `
+export function nullishAssign(o: { a?: number }) { o.a ??= 5; return o.a; }
+export function logicalOrAssign(o: { a?: number }) { o.a ||= 5; return o.a; }
+export function logicalAndAssign(o: { a?: number }) { o.a &&= 5; return o.a; }
+export function localNullish(o: { a?: number }) { let a = o.a; a ??= 5; return a; }
+`;
+
+  it("check：??= / ||= 之后槽型为 number；&&= 保持 number | undefined", () => {
+    const r = checkTs(SRC);
+    expect(sigOf(r, "nullishAssign")).toMatch(/^number\b/);
+    expect(sigOf(r, "logicalOrAssign")).toMatch(/^number\b/);
+    expect(sigOf(r, "logicalAndAssign")).toMatch(/^number \| undefined\b/);
+    expect(sigOf(r, "localNullish")).toMatch(/^number\b/);
+  });
+
+  it("运行时：空对象入口 ??= / ||= 返回 number", () => {
+    const exports = runTranspiled(SRC, { mode: "analyze" });
+    const empty = objOf({ a: { value: num(), optional: true } });
+    for (const name of ["nullishAssign", "logicalOrAssign"]) {
+      const res = callTranspiledExportFull(exports, name, [empty] as never);
+      expect(formatAbs(res.result), name).toMatch(/^number\b/);
+    }
   });
 });

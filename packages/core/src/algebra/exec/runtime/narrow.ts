@@ -19,7 +19,7 @@
  * runtime.ts 只做转出）；新增 narrow 算子放这里，不要回填 async.ts。
  */
 import type { Abs } from "../../abs.ts";
-import { abs, bool, boolLit, isNumPrim, numLit, strLit, isAbsLike } from "../../abs.ts";
+import { abs, bool, boolLit, isNumPrim, numLit, strLit, isAbsLike, withProvenance, provenanceOf, type Provenance } from "../../abs.ts";
 import { lit, termEquals } from "../../term.ts";
 import { pTrue, and, ne, implies, REL_COMPLEMENT_OPS, type Pred, type PrimName } from "../../pred.ts";
 import { migrateNullProto, type ObjShape } from "../../objects.ts";
@@ -29,6 +29,31 @@ import { accessorTable, migrateAccessors } from "../../accessors.ts";
 import { leqAbs } from "../../leq.ts";
 import { isNullishLitAbs, definitelyNotNullishShape, typeofName } from "../../surface.ts";
 import { currentExecPhi } from "./phi.ts";
+
+/**
+ * BUG-354：局部声明（`let x: T = init`）的**声明域播种**。
+ *
+ * 赋值对账（`nudo:assign-mismatch`）的「existing shape」取赋值前读到的绑定
+ * 值。若绑定从初始化器起步（`let x: string | number = 1` ⇒ `1`），第一次
+ * **合法**重赋值（`x = "abcd"`）就被判 `string ⊭ number`（假红、exit 1）；
+ * TS 的可变绑定域是**声明注解**，初始化器只是初值。
+ *
+ * 口径：形状取声明域（`declared.shape`），保留初始化器的值证据（`term` /
+ * `pred`）——`let n: number = 1` 与旧行为逐位相同（prim + lit 1），只有
+ * 「声明比初始化器宽」的形态（联合 / 可选对象 / 联合数组）基线变正确。
+ */
+export function $declDomain(
+  declared: Abs,
+  init: Abs,
+  provenance?: Provenance,
+): Abs {
+  if (!isAbsLike(declared)) return init;
+  if (!isAbsLike(init)) return declared;
+  return withProvenance(
+    abs(declared.shape, init.term, init.pred ?? declared.pred, declared.conf),
+    provenance ?? provenanceOf(declared) ?? "inferred",
+  );
+}
 
 /**
  * sum 成员过滤共享尾（#12 收敛）：`step` 逐成员分类——返回 null 剔除该
@@ -232,25 +257,170 @@ function typeofOfMember(m: Abs): string | undefined {
 }
 
 /**
+ * Abs 值域可能的 JS typeof 名集合；undefined = 不可判（any / unknown /
+ * 混合 sum 成员 / 含 unknown 成员的 sum）。字面量 term 优先（null /
+ * undefined 的 typeof 名不由 shape 表达）。
+ */
+function typeOfSetOfAbs(a: Abs): Set<string> | undefined {
+  const t = a.term;
+  if (t?.op === "lit") {
+    if (t.value === null) return new Set(["object"]);
+    if (t.value === undefined) return new Set(["undefined"]);
+    return new Set([typeof t.value]);
+  }
+  const s = a.shape;
+  if (s.k === "sum") {
+    const out = new Set<string>();
+    for (const m of (s as { members: Abs[] }).members) {
+      const ms = typeOfSetOfAbs(m);
+      if (!ms) return undefined;
+      for (const n of ms) out.add(n);
+    }
+    return out;
+  }
+  const n = typeofName(s);
+  return n === "unknown" ? undefined : new Set([n]);
+}
+
+/**
+ * 成员 key 槽的可能 typeof 集合（BUG-291）：
+ * - 非 obj 成员 → undefined（读面不可判，保守）；
+ * - getter 在场 → undefined（读 getter 结果）；
+ * - 自有槽 → 槽值集合；optional 槽并入 "undefined"（$get 的 join(value, undef)）；
+ * - 闭 shape 缺席（无 open/index、无 proto 方法名 / constructor）→ {"undefined"}；
+ * - open/index 缺席 / 原型链读出函数 → undefined。
+ */
+function memberTypeOfSet(m: Abs, key: string): Set<string> | undefined {
+  if (m.shape.k !== "obj") return undefined;
+  if (accessorTable.get(m)?.get(key)?.get) return undefined;
+  const sh = m.shape as ObjShape;
+  if (Object.prototype.hasOwnProperty.call(sh.slots, key)) {
+    const slot = sh.slots[key]!;
+    const out = typeOfSetOfAbs(slot.value);
+    if (!out) return undefined;
+    if (slot.optional) out.add("undefined");
+    return out;
+  }
+  if (sh.open || sh.index) return undefined;
+  if (OBJECT_PROTO_METHOD_NAMES.has(key) || key === "constructor") return undefined;
+  return new Set(["undefined"]);
+}
+
+/**
+ * 成员目标的 typeof 守卫分类 / 槽精化（BUG-291）：`typeof o.v === "number"`
+ * 事实臂把 o 剪到「v 可能为 number」的联合臂（keep=true）/ 补集臂（keep=false，
+ * 剪掉 v 必为 number 的臂）。闭 shape 缺 v ⇒ 读出 undefined ⇒ 事实臂
+ * （typeOf ≠ "undefined"）不可达 ⇒ prune。保留成员按槽值 `$narrowTypeOf`
+ * 精化（事实臂另摘 optional 标记）。
+ */
+function memberTypeOfRefine(
+  m: Abs,
+  key: string,
+  typeOf: string,
+  keep: boolean,
+): MemberSlotRefine {
+  if (m.shape.k !== "obj") return { kind: "keep" };
+  const set = memberTypeOfSet(m, key);
+  if (!set) return { kind: "keep" };
+  const has = set.has(typeOf);
+  if (keep) {
+    if (!has) return { kind: "prune" };
+  } else if (has && set.size === 1) {
+    return { kind: "prune" };
+  }
+  const sh = m.shape as ObjShape;
+  if (!Object.prototype.hasOwnProperty.call(sh.slots, key)) return { kind: "keep" };
+  if (accessorTable.get(m)?.get(key)?.get) return { kind: "keep" };
+  const slot = sh.slots[key]!;
+  const value = $narrowTypeOf(slot.value, typeOf, keep);
+  const dropOptional = keep && typeOf !== "undefined" && slot.optional === true;
+  if (value === slot.value && !dropOptional) return { kind: "keep" };
+  const next: { value: Abs; optional?: boolean; readonly?: boolean } = { ...slot, value };
+  if (dropOptional) delete next.optional;
+  return { kind: "refine", slot: next };
+}
+
+/**
+ * `in` 守卫的成员在场判定（BUG-290）：`"a" in o` 事实臂把 union 剪到键
+ * 确定在场的成员 / 补集臂剪到键确定缺席的成员。
+ * - true：自有槽 / accessorTable 登记（getter/setter 在场 ⇒ `in` 为真）；
+ * - false：闭 shape 缺席槽（无 open/index）；
+ * - undefined：非 obj / open/index / 原型链方法名 / constructor（在场性
+ *   沿原型链不可判，双臂保守保留）。
+ */
+function memberKeyPresence(m: Abs, key: string): boolean | undefined {
+  if (m.shape.k !== "obj") return undefined;
+  const sh = m.shape as ObjShape;
+  // index 签名：任意键都可能在场 ⇒ 不可判。open（TS 结构化注解的默认开
+  // 形态）按**声明槽**判定——与 TS 4.9 `in` 收窄口径一致（对象字面量的
+  // 额外属性不在类型面；声明里没有该键的联合臂被剪掉）。
+  if (sh.index) return undefined;
+  if (OBJECT_PROTO_METHOD_NAMES.has(key) || key === "constructor") return undefined;
+  if (accessorTable.get(m)?.has(key)) return true;
+  return Object.prototype.hasOwnProperty.call(sh.slots, key);
+}
+
+/**
+ * `in` 守卫臂剪影（BUG-290）：`"a" in o` 事实臂（keep=true）剪掉键确定
+ * 缺席的联合成员；补集臂（keep=false）剪掉键确定在场的成员。单形态
+ * 无可剪（保持原样——闭 shape 缺席时事实臂不可达，无 Abs 可表）。
+ */
+export function $narrowIn(a: Abs, key: string, keep: boolean): Abs {
+  if (!isAbsLike(a)) return a;
+  if (a.shape.k !== "sum") return a;
+  return filterSumMembers(a, (m) => {
+    const present = memberKeyPresence(m, key);
+    if (present === undefined) return m;
+    if (keep) return present ? m : null;
+    return present ? null : m;
+  });
+}
+
+/**
  * typeof 类型守卫臂剪影（Bug 23）：`typeof v === "string"` 真臂把 v 重绑为
  * union 中 typeof 匹配的成员（keep=true）/ 假臂绑补集（keep=false）——臂内
  * `+`/关系/迭代/模板串拿到成员类型而非 union，不再记假 may-throw。
- * 裸 any 在事实臂窄化为对应 prim（issue #105）；sum 内不可判成员
- * （any/unknown）两侧都保留（保守，不引假阴性）；全剪空 →
+ * 裸 any 在事实臂窄化为对应 prim（issue #105）；`unknown`（用户显式注解 /
+ * 引擎令牌）在事实臂同样窄化为对应 prim（BUG-275：`typeof x === "string"`
+ * 为真时 x 必是 string，不是凭空捏造；补集臂仍不可表示）；`memberKey`
+ * 存在时目标是成员槽（`typeof o.v`），按 key 槽分类 / 精化并重建基名
+ * （BUG-291）。sub 内不可判成员（any/unknown）两侧都保留；全剪空 →
  * 原样返回（臂不可达的保守近似，与 $removeNullish 空集口径一致）。
  */
-export function $narrowTypeOf(a: Abs, typeOf: string, keep: boolean): Abs {
+export function $narrowTypeOf(a: Abs, typeOf: string, keep: boolean, memberKey?: string): Abs {
   if (!isAbsLike(a)) return a;
+  if (memberKey !== undefined) {
+    if (a.shape.k !== "sum") {
+      const r = memberTypeOfRefine(a, memberKey, typeOf, keep);
+      if (r.kind !== "refine") return a;
+      const sh = a.shape as ObjShape;
+      const next: Abs = { ...a, shape: { ...sh, slots: { ...sh.slots, [memberKey]: r.slot } } };
+      migrateAccessors(a, next);
+      migrateInvariants(a, next);
+      migrateNullProto(a, next);
+      return next;
+    }
+    return filterSumMembers(a, (m) => {
+      const r = memberTypeOfRefine(m, memberKey, typeOf, keep);
+      if (r.kind === "prune") return null;
+      if (r.kind === "keep") return m;
+      const sh = m.shape as ObjShape;
+      const next: Abs = { ...m, shape: { ...sh, slots: { ...sh.slots, [memberKey]: r.slot } } };
+      migrateAccessors(m, next);
+      migrateInvariants(m, next);
+      migrateNullProto(m, next);
+      return next;
+    });
+  }
   if (a.shape.k !== "sum") {
     // 单形态：判定的 typeof 与守卫一致（或补集臂判不一致但值本就单一）
     // 无可剪；不一致属臂不可达，原样返回（保守）。
-    // issue #105：裸 any（无约束入口参数）在事实臂（keep=true）可健全窄化为
+    // issue #105 / BUG-275：any / unknown 在事实臂（keep=true）可健全窄化为
     // 对应 prim——typeof v === "string" 的真臂里 v 必是 string，exec/test
     // 等 ToString 强转面不再记假 may-throw。补集臂（keep=false）不可表示
-    // （"非 string" 覆盖其余全域），保留 any；object/function/undefined 无
-    // 单一 Abs 可表（null/数组/函数各有形态），同样保留；unknown 是引擎
-    // fail-closed 令牌，窄化会凭空捏造信息，原样返回。
-    if (keep && a.shape.k === "any") {
+    // （"非 string" 覆盖其余全域），保留原值；object/function/undefined 无
+    // 单一 Abs 可表（null/数组/函数各有形态），同样保留。
+    if (keep && (a.shape.k === "any" || a.shape.k === "unknown")) {
       const p = primShapeOfTypeOf(typeOf);
       if (p) return abs(p, a.term, a.pred, a.conf);
     }
@@ -258,7 +428,16 @@ export function $narrowTypeOf(a: Abs, typeOf: string, keep: boolean): Abs {
   }
   return filterSumMembers(a, (m) => {
     const t = typeofOfMember(m);
-    if (t === undefined) return m;
+    if (t === undefined) {
+      // BUG-275：sum 内 unknown 令牌在事实臂窄化为对应 prim（事实成立的
+      // 路径上它必是该 prim）。any 成员按既有口径两侧保留（issue #105 的
+      // 「不可判成员两侧都保留」契约不变）。
+      if (keep && m.shape.k === "unknown") {
+        const p = primShapeOfTypeOf(typeOf);
+        if (p) return abs(p, m.term, m.pred, m.conf);
+      }
+      return m;
+    }
     return keep ? (t === typeOf ? m : null) : (t === typeOf ? null : m);
   });
 }

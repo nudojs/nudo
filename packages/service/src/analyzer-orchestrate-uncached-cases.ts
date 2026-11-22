@@ -61,7 +61,6 @@ import {
   formatThrowsAbs,
   throwAbsToKinds,
   throwsKindCovered,
-  makeSymbolicRestAbs,
   resolveExportSlotCall,
   type MayThrowEffect,
   type EvalMemberDiag,
@@ -79,7 +78,14 @@ import { mockSeedsToAbsMocks, mockScopeSelected, type AbsMockSeeds } from "./moc
 import type { CallSiteRecord } from "./analyzer-orchestrate-calls.ts";
 import { findProjectConfig, contractConfig, analysisConfig } from "./evaluator/config.ts";
 import { defaultLoadModule } from "./load-module.ts";
-import { entryThisReceiverOf } from "@nudojs/core/internal";
+import {
+  buildEntryDomain,
+  entryThisReceiverOf,
+  namedTypeTextsForSource,
+  typeParamEnvForFunction,
+  valueTypeTextsForSource,
+  type AnnotationEnv,
+} from "@nudojs/core/internal";
 import { tryEvalCall, tryEvalCallFull, tryRunEval } from "./eval-run.ts";
 import {
   buildAbsImportLocalMap,
@@ -94,7 +100,7 @@ import {
 } from "./analyzer-abs-eval.ts";
 import { COLLAPSE_LITERAL_THRESHOLD, dedupeCallRecords } from "./analyzer-diagnose.ts";
 import { extractFormals, extractParamNames, resolveFunctionNode } from "./analyzer-ast.ts";
-import { tsAnnotationArgAbs } from "./ts-annotation.ts";
+import { importedTypeTextsForFile } from "./ts-annotation.ts";
 import type {
   AnalyzeLoadModule,
   CaseHint,
@@ -1323,17 +1329,34 @@ export function synthesizeCallSiteCases(
 }
 
 /**
- * rest 形参的入口实参：**符号 rest 哨兵**（`makeSymbolicRestAbs`）。
+ * entry@ 实参播种（**三面同源**）：rest 展开 / 无注解默认值 / 可选形参的
+ * `undefined` 臂。
  *
- * Bug 103：此前造的是「一个值为 arr(any) 的**位置实参**」，`$restBind` 把它
- * 收进 `[arr(any)]` 一元组 ⇒ `identity(...xs)` 返回 `[any[]]`、`first(...xs)`
- * 返回 `any[]`、`count(...xs)` 折字面量 1（guard/zod/standard 拒绝函数自己的
- * 返回值、dts 让消费端 TS2322）。符号 rest 哨兵被 `$restBind` 识别后**直通
- * 开放数组**（arr-make.ts:124-127，Bug 44 既有机制）⇒ `xs` 恢复 `any[]`、
- * `xs[0]` 恢复 `any`、`xs.length` 恢复 `number`，与 `check` 面同源。
+ * - BUG-240：rest 按声明类型（`T[]` 元素域 / 元组逐位），不是恒 arr(any)；
+ * - BUG-246：无注解默认形参取初始化式域（= TS 推断的形参类型，与 dts 同源）；
+ * - BUG-251：`x?: T` 并上 `undefined`（与 core `withOptionalUndefined` 同口径）
+ *   ——否则 dts / guard / zod / standard 把返回位发布得比声明窄。
  */
-function restEntryArgAbs(): Abs {
-  return makeSymbolicRestAbs();
+function entryArgAbsListOf(
+  fnNode: Node | undefined,
+  source: string,
+  fnName: string,
+  filePath?: string,
+): Abs[] {
+  const formals = fnNode ? extractFormals(fnNode, source) : [];
+  const paramNodes = (fnNode as unknown as { params?: unknown[] } | undefined)?.params;
+  const annotationEnv: AnnotationEnv = {
+    typeParams: typeParamEnvForFunction(source, fnName),
+    namedTypes: new Map([
+      ...importedTypeTextsForFile(source, filePath),
+      ...namedTypeTextsForSource(source),
+    ]),
+    valueTypes: valueTypeTextsForSource(source),
+  };
+  return buildEntryDomain(fnName, source, formals, {
+    paramNodes,
+    annotationEnv,
+  }).args;
 }
 
 export function evaluateEntryCase(env: UncachedCaseEnv, candidate: SynthCandidate): void {
@@ -1364,9 +1387,7 @@ export function evaluateEntryCase(env: UncachedCaseEnv, candidate: SynthCandidat
     // `xs.length` 记成字面量 1 ⇒ 三方言（zod / standard / guard）把这次兜底
     // 观测当出口域（literal(1)），导出校验器拒绝被导出函数自己的返回值；dts
     // 面写 number ⇒ 四方言矛盾。
-    const argAbsEntry = (fnNode ? extractFormals(fnNode, env.source) : []).map((f) =>
-      f.kind === "rest" ? restEntryArgAbs() : tsAnnotationArgAbs(f.tsType),
-    );
+    const argAbsEntry = entryArgAbsListOf(fnNode, env.source, candidate.analysis.name, env.filePath);
     // BUG-133：`this: T` 接收者注解是入口求值的绑定上下文（不是形参位）
     const entryThisArg = entryThisReceiverOf(env.source, candidate.analysis.name);
     // Bug 511：domainOnly 模式（函数已带点观测见证）——入口求值只为产出推断域。
@@ -1589,9 +1610,7 @@ export function evaluateEntryCase(env: UncachedCaseEnv, candidate: SynthCandidat
 export function evaluateThrowsOnly(env: UncachedCaseEnv, candidate: SynthCandidate): void {
   const { source, filePath, envNames, seeds, loadModule, fnDepSeg } = env;
   const fnNode = candidate.node ? resolveFunctionNode(candidate.node) : undefined;
-  const argAbsEntry = (fnNode ? extractFormals(fnNode, env.source) : []).map((f) =>
-    f.kind === "rest" ? restEntryArgAbs() : tsAnnotationArgAbs(f.tsType),
-  );
+  const argAbsEntry = entryArgAbsListOf(fnNode, env.source, candidate.analysis.name, env.filePath);
   const entryThisArg = entryThisReceiverOf(env.source, candidate.analysis.name);
   let hardThrowsAbs: Abs = neverAbs;
   const effects: MayThrowEffect[] = [];

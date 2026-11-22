@@ -147,6 +147,10 @@ export function transpileAssignmentExpr(
           targetNode: Node,
           rootName: string | null,
           writeArm: (val: string) => string,
+          /** BUG-292：保留原值臂把「该臂事实」写回成员槽（单层静态键 +
+           *  可重绑根）——`o.a ??= 5` 的非 nullish 臂成立 `o.a` 非 nullish，
+           *  槽型须同步收窄，否则 fork join 回 `number | undefined`。 */
+          keepNarrow?: { root: string; key: string },
         ): string => {
           const common = {
             alwaysNodes: [] as Array<Node | null | undefined>,
@@ -154,11 +158,17 @@ export function transpileAssignmentExpr(
             leftNode: targetNode,
             ...(rootName ? { extraBindingNames: [rootName] } : {}),
           };
+          // 保留原值臂（不触发原生 [[Set]]）只做**类型面**写回：重建根 Abs
+          // 的槽值（$removeMemberNullish 不派发 setter / 不读 getter）。
+          const keepOf = (valSrc: string): string =>
+            keepNarrow
+              ? `((${keepNarrow.root} = $removeMemberNullish(${keepNarrow.root}, ${JSON.stringify(keepNarrow.key)})), ${valSrc})`
+              : valSrc;
           if (op === "||=") {
             // truthy → 保留原值（**不写**）；falsy → 写 right
             return transpileShortCircuitExpr(opts, {
               ...common,
-              consSrc: "__test",
+              consSrc: keepOf("__test"),
               consNodes: [],
               altSrc: writeArm(right),
               altNodes: [rNode],
@@ -179,7 +189,7 @@ export function transpileAssignmentExpr(
             ...common,
             consSrc: writeArm(right),
             consNodes: [rNode],
-            altOf: (leftRef) => `$removeNullish(${leftRef})`,
+            altOf: (leftRef) => keepOf(`$removeNullish(${leftRef})`),
             altNodes: [],
             testOf: (leftRef) => `$nullishTest(${leftRef})`,
           });
@@ -210,6 +220,21 @@ export function transpileAssignmentExpr(
           const path = memberPathOf(m, opts);
           if (path) {
             const rootName = writeBackRootName(m, opts);
+            // BUG-292：单层静态键 + 可重绑根才可做类型面槽写回（嵌套路径的
+            // 末层持有者不是根绑定；计算键无法转成 $removeMemberNullish 的
+            // 静态 key 参数）。
+            let keepNarrow: { root: string; key: string } | undefined;
+            if (path.rootRebindable && path.layers.length === 1) {
+              const layer = path.layers[0]!;
+              if (layer.keyConst) {
+                try {
+                  const k: unknown = JSON.parse(layer.keySrc);
+                  if (typeof k === "string") keepNarrow = { root: path.rootTarget, key: k };
+                } catch {
+                  /* 非静态字符串键（数值下标）⇒ 不做类型面写回 */
+                }
+              }
+            }
             return memberFork(
               readPathSrc(path),
               expr.left as unknown as Node,
@@ -218,6 +243,7 @@ export function transpileAssignmentExpr(
               // Bug 190：写回只落**末层**（中间层是访问器时不得写回根——
               // 原生写的是 getter 返回的对象，绝不对访问器层做 [[Set]]）。
               (val) => memberWriteIfe(path, val),
+              keepNarrow,
             );
           }
           // Bug 80：this.#x ||= v / &&= / ??=——memberPathOf 对 PrivateName

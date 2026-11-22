@@ -67,3 +67,27 @@ describe("槽克隆不得吞掉 __proto__ 槽", () => {
     expect(guard).toContain("data.a");
   });
 });
+
+describe("索引签名守卫", () => {
+  const indexed = (key: Abs, value: Abs): Abs =>
+    abs(
+      { k: "obj", slots: {}, index: { key, value }, open: true },
+      undefined,
+      undefined,
+      "exact",
+    );
+
+  it("字符串索引键：已知槽之外的每个键都按值域校验", () => {
+    const guard = generateGuardFunctionFromAbs("isIndexed", indexed(str(), num()));
+    expect(guard).toContain("Object.keys(data).every");
+    expect(guard).toContain('typeof __v === "number"');
+    expect(guard).not.toMatch(/return true;/);
+  });
+
+  it("数字索引键：只校验规范数字键（对照：字符串键无此限制）", () => {
+    const numeric = generateGuardFunctionFromAbs("isNumericIndexed", indexed(num(), num()));
+    expect(numeric).toContain("^(?:0|[1-9]\\d*)$");
+    const stringKey = generateGuardFunctionFromAbs("isStringIndexed", indexed(str(), num()));
+    expect(stringKey).not.toContain("^(?:0|[1-9]\\d*)$");
+  });
+});

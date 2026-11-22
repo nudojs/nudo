@@ -900,7 +900,8 @@ const JS_UPPER = `export function upper(a) {
     // BUG-036：数组注解不再退 any（旧口径 `string[]` 不在 5 个 primitive 表里）
     expect(formatShape(entryCase(len).argAbs[0]!)).toBe("string[]");
     const alias = analyzeFile("/test/bug479-entry6.ts", "export function pick(a: Record<string, number>): number {\n  return a.x;\n}\n").functions.find((f) => f.name === "pick")!;
-    expect(formatShape(entryCase(alias).argAbs[0]!)).toBe("any");
+    // `Record<string, number>` 是内建索引签名，不再回落 any。
+    expect(formatShape(entryCase(alias).argAbs[0]!)).toBe("{ [k: string]: number }");
   });
 }
 

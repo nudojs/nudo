@@ -12,7 +12,7 @@
  */
 
 import type { Abs, NudoConstraint, Pred, Term } from "@nudojs/core";
-import { absToConstraint, isIntFlag, joinAbs, predToString } from "@nudojs/core";
+import { absToConstraint, isIntFlag, joinAbs, predToString, provenanceOf } from "@nudojs/core";
 import { formatObjectKey, toJsBindingIdent, ProjectionBudget } from "@nudojs/core/internal";
 import { widenAbsPrim } from "../evaluator/call-record.ts";
 import { sanitizeLineCommentText } from "./line-comment.ts";
@@ -39,6 +39,9 @@ import {
  * 不在 `emit/index.ts` 的导出清单里（内部工具，非公开 API）。
  */
 export function widenUncertainLiteral(a: Abs): Abs | undefined {
+  // 声明 / 断言来源不是「一次观测」：字面量域必须保真。
+  const p = provenanceOf(a);
+  if (p === "declared" || p === "asserted") return undefined;
   if (a.term?.op === "lit") {
     const conf = a.conf;
     if (
@@ -137,6 +140,12 @@ function mapObservedLiteralTree(
 ): Abs {
   const hit = memo.get(a);
   if (hit) return hit;
+  // 声明 / 断言来源的字面量是域事实，不参与「观测一次采样」的拓宽。
+  const p = provenanceOf(a);
+  if (p === "declared" || p === "asserted") {
+    memo.set(a, a);
+    return a;
+  }
   const direct = widenLeaf(a);
   if (direct !== undefined) {
     memo.set(a, direct);
@@ -212,7 +221,17 @@ export type SchemaNode =
   // BUG-258：`arrayView` = 数组视图（`Shape.view === "array"`，RegExpExecArray
   // 等）——承载的槽（下标 / length / index / input / groups）与普通对象相同，
   // 但运行时**必须**是数组 ⇒ zod 面用 `z.tuple`（`z.object` 会按对象校验）。
-  | { k: "obj"; slots: Array<{ key: string; node: SchemaNode; optional?: boolean }>; arrayView?: boolean }
+  | {
+      k: "obj";
+      slots: Array<{ key: string; node: SchemaNode; optional?: boolean }>;
+      arrayView?: boolean;
+      /**
+       * BUG-253：对象索引签名（`{ [k: string]: number }`）的声明值域。旧实现
+       * 把它当「open object，已知槽为空」⇒ zod 发 `z.object({})`，拒绝所有
+       * 合法键值。
+       */
+      index?: { key: SchemaNode; value: SchemaNode };
+    }
   // BUG-094：数组**自身**的长度界（`array(T).min(n)` / `.max(n)`）此前无处承载
   // ⇒ zod / standard 面整段丢掉长度域、guard 面保留 ⇒ 跨面矛盾 + 零台账。
   | { k: "arr"; element: SchemaNode; minLen?: number; maxLen?: number }
@@ -874,8 +893,8 @@ function absToSchemaShape(
       return { node: { k: "prim", type: s.type, refinements }, dropped };
     }
     case "obj": {
-      if (s.open || s.index) {
-        dropped.push("open/index object not fully projected (known slots only)");
+      if (s.open && !s.index) {
+        dropped.push("open object not fully projected (known slots only)");
       }
       if (a.pred && a.pred.op !== "true") {
         dropped.push(`obj pred not projected: ${predToString(a.pred)}`);
@@ -890,6 +909,14 @@ function absToSchemaShape(
         dropped.push(...sub.dropped.map((n) => `${key}: ${n}`));
         slots.push({ key, node: sub.node, ...(slot.optional ? { optional: true } : {}) });
       }
+      const indexNode = (() => {
+        if (!s.index) return undefined;
+        const keySub = absToSchemaNodeB(s.index.key, budget, scope);
+        const valueSub = absToSchemaNodeB(s.index.value, budget, scope);
+        dropped.push(...keySub.dropped.map((n) => `[key]: ${n}`));
+        dropped.push(...valueSub.dropped.map((n) => `[value]: ${n}`));
+        return { key: keySub.node, value: valueSub.node };
+      })();
       return {
         node: {
           k: "obj",
@@ -897,6 +924,7 @@ function absToSchemaShape(
           // BUG-258：数组视图 facet 必须进节点——丢了它，zod 面就按
           // `z.object({...})` 校验真实数组（拒绝实现自己的返回值）。
           ...(s.view === "array" ? { arrayView: true } : {}),
+          ...(indexNode !== undefined ? { index: indexNode } : {}),
         },
         dropped,
       };
@@ -918,6 +946,11 @@ function absToSchemaShape(
       };
     }
     case "tuple": {
+      // BUG-252：空元组 = 一次调用的空数组观测（`return []`）⇒ `unknown[]`
+      // （`z.tuple([])` 只接受长度 0，拒绝消费方 push 后的合法数组）。
+      if (s.elements.length === 0 && s.rest === undefined) {
+        return { node: { k: "arr", element: { k: "unknown" } }, dropped };
+      }
       // hole 槽（`in` 为 false）≠ 显式 undefined 槽。zod tuple 无空槽概念，
       // 映射 z.unknown() 而非 z.undefined()，并把洞记入 dropped（有损投影台账）。
       const holes = s.holes ?? [];
@@ -1226,6 +1259,23 @@ function renderZod(node: SchemaNode): { source: string; dropped: string[] } {
           dropped,
         };
       }
+      // BUG-253：索引签名值域 = 声明的索引值类型。空槽表（`{ [k: string]:
+      // number }`）直接发 `z.record(key, value)`；已知槽 + 索引签名用
+      // `.catchall(value)`（已知槽仍按各自类型校验）。
+      const indexInner = (() => {
+        if (!node.index) return undefined;
+        const key = renderZod(node.index.key);
+        const value = renderZod(node.index.value);
+        dropped.push(...key.dropped.map((n) => `[key]: ${n}`));
+        dropped.push(...value.dropped.map((n) => `[value]: ${n}`));
+        return { key: key.source, value: value.source };
+      })();
+      if (indexInner !== undefined && node.slots.length === 0) {
+        return {
+          source: `z.record(${indexInner.key}, ${indexInner.value})`,
+          dropped,
+        };
+      }
       // BUG-156：zod v4 在 shape 阶段对 `__proto__` **整条跳过**
       // （`if (key === "__proto__") continue;`）⇒ 声明的必填字段**从不被校验**
       // ⇒ 违约值被静默放行（假绿），而 dts / guard / standard 三面都要求它。
@@ -1242,6 +1292,7 @@ function renderZod(node: SchemaNode): { source: string; dropped: string[] } {
         })
         .join(", ");
       let source = `z.object({ ${entries} })`;
+      if (indexInner !== undefined) source += `.catchall(${indexInner.value})`;
       // BUG-096：键存在性口径三面统一 —— 规则是「自有属性 或 原型链上的键，
       // 但 `Object.prototype` 自身的成员（污染键 `toString` / `valueOf` /
       // `constructor` / `hasOwnProperty` …）不算在场」。guard 面

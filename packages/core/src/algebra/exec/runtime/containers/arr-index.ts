@@ -2,9 +2,10 @@
  * 下标读写与长度：$idx/$idxSet/$len + abstractLen。
  *
  * Invariants:
- * - 抽象下标可能 miss → 元素 ∪ oobUndef marker（越界是引擎精度产物，
- *   下游嵌套读写不记 may-throw，issue #98）；已知规范下标仍按元素投影
- *   （split()[0] 等非空序列链不断）。
+ * - 抽象下标读（arr 接收者）按元素域投影，不并入 oobUndef marker
+ *   （BUG-362：TS 默认 noUncheckedIndexedAccess off ⇒ `xs[i]: T`；arr 形
+ *   不建模数值空洞）。tuple 接收者长度已知，越界位仍显式读 undefined。
+ *   已知规范下标仍按元素投影（split()[0] 等非空序列链不断）。
  * - arr 的具体下标读是**域分发**（xs[0]/xs[1] 同一 element Abs、不同
  *   具体值）——markDomainShared 标记后 abstractLen 不 memo 共享 len#N
  *   （issue #175：否则 xs[0].length - xs[1].length 假折 0）。
@@ -196,13 +197,15 @@ export function $idx(
     // 抽象值（$get 的 arr 臂返回 unknown）。
     // 闭 tuple 无 expando（写面已就地降 arr）⇒ 仍折 exact undefined。
     if (iv !== undefined && idx === undefined) return unknown;
-    // 抽象下标可能 miss → 元素 ∪ undefined（与对象未知键同口径）；
-    // 已知规范下标仍按元素投影（split()[0] 等非空序列链不断）
+    // 抽象下标可能 miss → 元素 ∪ oobUndef marker（越界是引擎精度产物，
+    // 内部保持 sound；BUG-362 的 `T | undefined` 发布于 dts/校验器投影面，
+    // 由 emit 侧剥掉该合成臂，不在这里删内部证据——删了会破坏
+    // `@nudo:invariant` 的循环宽化通道）。
     if (idx === undefined) {
       return joinAbs(a.shape.element, oobUndef());
     }
-    // #175 残留：具体下标读的元素投影是域分发（xs[0]/xs[1] 同一 element
-    // Abs、不同具体值）——标记后 abstractLen 不 memo 共享 len#N
+    // #175：具体下标读的元素投影是域分发（xs[0]/xs[1] 同一 element
+    // Abs、不同具体值）——标记后 abstractLen 不 memo 共享 len#N。
     return markDomainShared(a.shape.element);
   }
   // TypedArray brand：元素域 = 元素 prim ∪ undefined（长度未建模，下标可能
@@ -282,23 +285,27 @@ export function $idx(
   if (a.shape.k === "obj" || (a.shape.k === "brand" && a.shape.shape.shape.k === "obj")) {
     const objShape = (a.shape.k === "obj" ? a.shape : a.shape.shape.shape) as ObjShape;
     const slots = Object.values(objShape.slots).map((s) => s.value);
-    if (slots.length === 0) return objShape.open ? unknown : undef();
+    // BUG-289：声明索引值域（`shape.index.value`，如 Object.fromEntries 的
+    // 抽象键条目域）——成员读 `$get` 已走 openIndexValueOf，计算键读同源，
+    // 否则 `fromEntries(kv)[k]` 仍退 unknown。
+    const idxSig = objShape.index?.value;
+    if (slots.length === 0) return idxSig ?? (objShape.open ? unknown : undef());
     const joinSlotsWithUndef = (): Abs =>
       joinAbs(slots.reduce((x, y) => joinAbs(x, y)), undef());
     if (typeof iv === "string" || typeof iv === "number" || typeof iv === "boolean") {
       // getSlot：字面量键为 toString 等 Object.prototype 名时裸读踩原型链
       const slot = getSlot(objShape.slots, String(iv));
       if (slot) return slot.value;
-      if (objShape.open) return unknown;
+      if (objShape.open) return idxSig ?? unknown;
       // 闭 shape 字面量 key miss：键确定不存在 → 仅 undefined（与 $get / Map miss 一致）
       return undef();
     }
     if (objShape.open && slots.length > 0) {
-      // open shape：已知槽 ∪ unknown
-      return joinAbs(slots.reduce((x, y) => joinAbs(x, y)), unknown);
+      // open shape：已知槽 ∪ 索引值域（无声明才退 unknown）
+      return joinAbs(slots.reduce((x, y) => joinAbs(x, y)), idxSig ?? unknown);
     }
     // 闭 shape 未知 key：已知槽 ∪ undefined（键可能不存在）
-    return joinSlotsWithUndef();
+    return idxSig !== undefined ? joinAbs(joinSlotsWithUndef(), idxSig) : joinSlotsWithUndef();
   }
   // 字符串下标：s[i] → 第 i 个字符（字面量精确）。
   // 与元组同口径走 canonicalArrayIndex：s["1"] ≡ s[1]；s["foo"]/s[1.5]/s["01"]

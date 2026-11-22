@@ -250,6 +250,12 @@ Context: [L2 —— 入口 throws](../guides/check.md#l2--entry-throws)
 
 Context: [`any` 与 `unknown`](../concepts/limits.md#any-与-unknown) · [依赖类型](../guides/env-harvest.md)
 
+### `nudo:annotation-unresolved` {#nudo-annotation-unresolved}
+
+源码里有类型注解，但解析器无法把它映射成 Abs；入口域回落 `any`。这是**已知精度损失**，不是无约束形参。修复：改用受支持的内联形态、在同一文件声明该类型，或让被导入的类型模块进入分析。**Warning**。
+
+Context: [nudo check](../guides/check.md#what-it-checks)
+
 ### `nudo:unproven-return` {#nudo-unproven-return}
 
 Return postcondition could not be proved (any / unknown / opaque face, or a widened/bound-less arm facing a bounded obligation, or an out-of-bounds marker arm — an abstract index read like `d[m][n]` on a loop-built table joins a synthetic `undefined`; the loop-bound/length relation is lost, so neither proof nor disproof is possible). A bare widened `prim` arm still proves a bound-less prim contract (`number()` / `string()`) — the value domain is known even without term/pred evidence; only bounds (`gt(0)`, `int`, …) remain unprovable. **Warning** — inference failed to discharge the obligation; do not treat as success. Distinct from `nudo:constraint-violated` (definite violation).

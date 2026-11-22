@@ -94,6 +94,44 @@ export function listTopFunctions(source: string, file?: ReturnType<typeof parse>
   /** 本地类（ClassDeclaration + `export const C = class {}` 的类表达式） */
   const localClasses = new Map<string, Node>();
   /**
+   * BUG-358：模块级**绑定名**（函数 / 类 / 变量 / 导入）。对象字面量的成员键
+   * 只是该对象的成员（`registry.handle`），与同名模块绑定（`const handle`）是
+   * 两个实体——成员键不得抢占模块级导出名（否则 dts 面把值声明抑制掉，产物
+   * 换成一条既不是方法也不是常量的函数声明）。
+   */
+  const topLevelBindings = new Set<string>();
+  for (const stmt of f.program.body) {
+    if (stmt.type === "ImportDeclaration") {
+      for (const spec of ((stmt as { specifiers?: unknown[] }).specifiers ?? [])) {
+        const local = (spec as { local?: { name?: string } }).local?.name;
+        if (local) topLevelBindings.add(local);
+      }
+      continue;
+    }
+    const decl =
+      stmt.type === "ExportNamedDeclaration" || stmt.type === "ExportDefaultDeclaration"
+        ? ((stmt as { declaration?: Node }).declaration ?? stmt)
+        : stmt;
+    const id = (decl as { id?: { name?: string } }).id?.name;
+    if (
+      (decl.type === "FunctionDeclaration" ||
+        decl.type === "ClassDeclaration" ||
+        decl.type === "TSEnumDeclaration") &&
+      id
+    ) {
+      topLevelBindings.add(id);
+      continue;
+    }
+    if (decl.type === "VariableDeclaration") {
+      for (const d of ((decl as { declarations?: unknown[] }).declarations ?? [])) {
+        const did = (d as { id?: { type?: string; name?: string } }).id;
+        if (did?.type === "Identifier" && typeof did.name === "string") {
+          topLevelBindings.add(did.name);
+        }
+      }
+    }
+  }
+  /**
    * 本地对象字面量（BUG-108：`{ ...base }` 的展开源要能查到成员键）。
    *
    * 只收顶层 **`const`** 初值：`let` / `var` 可能被重新赋值（
@@ -370,6 +408,9 @@ export function listTopFunctions(source: string, file?: ReturnType<typeof parse>
         // 只对 export 包装的声明收集（未导出对象不是模块边界入口 ⇒ 不假红）。
         if (initType === "ObjectExpression" && isExported) {
           for (const keyName of objectMethodKeys(d.init as Node)) {
+            // BUG-358：成员键与同名模块绑定是两个实体；撞名时以模块绑定为准
+            // （`registry.handle` 不得把 `const handle` 从产物导出面挤掉）。
+            if (topLevelBindings.has(keyName)) continue;
             if (!names.includes(keyName)) names.push(keyName);
           }
         }

@@ -19,7 +19,7 @@ export {
   type Abs, type Confidence, type LitValueResult, type Shape, abs, absToString, anyAbs, anyVar,
   bigintLit, bool, boolLit, confJoin, isBigPrim, isExactLit, isNumPrim,
   isStrPrim, litValue, never, num, numLit, numVar, obj, shapeOfTerm,
-  shapeToString, str, strLit, unknown
+  shapeToString, str, strLit, unknown, provenanceOf, withProvenance
 } from "./abs.ts";
 
 export {

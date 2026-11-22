@@ -840,7 +840,7 @@ export const 日本 = 1;
     const dts = moduleDts(SRC);
     expect(dts).toContain("export declare function café(");
     expect(dts).not.toContain("caf_");
-    expect(dts).toContain("export declare const 日本: number;");
+    expect(dts).toContain("export declare const 日本: 1;");
   }
   {
     const check = tscNoEmit({
@@ -1703,8 +1703,8 @@ function moduleDts(source: string, path = "/test/bug190.ts", includeValues = tru
 export const LIMIT = 10;
 export let counter = 0;
 `);
-    expect(dts).toContain("export declare const VERSION: string;");
-    expect(dts).toContain("export declare const LIMIT: number;");
+    expect(dts).toContain('export declare const VERSION: "1.2.3";');
+    expect(dts).toContain("export declare const LIMIT: 10;");
     expect(dts).toContain("export declare let counter: number;");
     const check = tscNoEmit({
       "mod.d.ts": dts,
@@ -1859,7 +1859,7 @@ export const nested = { a: { b: 1 } };
     expect(dts).toContain("config: { retries: number; label: string }");
     expect(dts).toContain("empty: unknown[];");
     expect(dts).toContain("nums: number[];");
-    expect(dts).toContain("scalar: number;");
+    expect(dts).toContain("scalar: 42;");
     expect(dts).toContain("nested: { a: { b: number } };");
     expect(dts).not.toContain("retries: 3");
   }
@@ -2131,7 +2131,7 @@ describe("类字段的初始化器形状（函数值 / 断言包装）", () => {
 }
 `);
     // 函数值：不再退化成 unknown（消费方 TS18046）
-    expect(dts).toContain("fn: (a0: unknown) => unknown;");
+    expect(dts).toContain("fn: (x: number) => unknown;");
     expect(dts).toContain("zero: () => unknown;");
     // `as const` 走冻结字面量通道：只读 + 元组精度（旧实现 `unknown[]`）
     expect(dts).toContain("ro: readonly [1, 2];");
@@ -2546,8 +2546,8 @@ export declare const dv: number;
     const dts = moduleDts(`export const n = 1;
 export const bad: Hidden = 1 as any;
 `);
-    expect(dts).toContain("export declare const n: number;");
-    expect(dts).toContain("export declare const bad: number;");
+    expect(dts).toContain("export declare const n: 1;");
+    expect(dts).toContain("export declare const bad: unknown;");
     expect(dts).toContain("nudo:dropped-type-annotation bad: Hidden");
   });
 
@@ -2649,7 +2649,7 @@ export const method = { m() { return 1; }, x: [1, 2] as const };
     expect(dts).not.toContain("Record<string, never>");
     expect(dts).toMatch(/export declare const computed: \{ a: /);
     expect(dts).toMatch(/export declare const spread: \{ b: number; /);
-    expect(dts).toMatch(/export declare const accessor: \{ g: /);
+    expect(dts).toMatch(/export declare const accessor: \{ readonly g: /);
     expect(dts).toMatch(/export declare const method: \{ m: /);
     const check = tscNoEmit({
       "mod.d.ts": dts,
@@ -2730,5 +2730,379 @@ export function hof<T>(this: Box<T>, x: number) {
         "export const n: number = f((x: number) => String(x), 1);\n",
     });
     expect(check.ok, check.stderr).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 审计批次 242–360：dts 声明形态回归（每条带一变量对照）
+// ---------------------------------------------------------------------------
+describe("审计批次 dts 声明形态（242–360）", () => {
+  /** 与 CLI `export --format dts` 同路径（模块面 + 分析面 bindings）。 */
+  function batchDts(source: string, path = "/test/audit-dts.ts"): string {
+    const result = analyzeFile(path, source);
+    const surface = dtsModuleSurface(source);
+    const entries = result.functions
+      .filter((fn) => fn.cases.length > 0)
+      .map((fn) => ({ fn, projection: projectFunctionDts(fn, undefined, surface) }));
+    const values = new Map<string, Abs>();
+    for (const [name, info] of result.bindings) values.set(name, info.abs);
+    return projectModuleDts(surface, entries, { values }).lines.join("\n");
+  }
+
+  it("BUG-242 rest 元组注解不被丢弃（对照：普通元组形参）", () => {
+    const dts = batchDts(
+      `export function restTupUse(...x: [string, boolean]): string { return x[0].toUpperCase(); }
+export function tupUse(x: [string, boolean]): string { return x[0].toUpperCase(); }
+`,
+    );
+    expect(dts).toContain("export declare function restTupUse(...x: [string, boolean]): string;");
+    expect(dts).toContain("export declare function tupUse(x: [string, boolean]): string;");
+    expect(dts).not.toContain("...x: unknown[]");
+  });
+
+  it("BUG-243 import 别名保留 `X as Y`（对照：无别名导入）", () => {
+    const alias = batchDts(
+      `import type { Inner as I } from "./inner";
+export function name(u: I): number { return u.a; }
+`,
+      "/test/audit-alias.ts",
+    );
+    expect(alias).toContain('import type { Inner as I } from "./inner";');
+    expect(alias).not.toContain("import type { I }");
+    const plain = batchDts(
+      `import type { Inner } from "./inner";
+export function name(u: Inner): number { return u.a; }
+`,
+      "/test/audit-plain.ts",
+    );
+    expect(plain).toContain('import type { Inner } from "./inner";');
+  });
+
+  it("BUG-244 类字段/静态字段/访问器逐成员投影（对照：具名 export const）", () => {
+    const dts = batchDts(
+      `export class Store {
+  opts = { retries: 3 };
+  xs = [1, 2];
+  cache = new Map<string, number>();
+  get cfg() { return { a: 1 }; }
+}
+export const modOpts = { retries: 3 };
+`,
+    );
+    expect(dts).toContain("opts: { retries: number };");
+    expect(dts).toContain("xs: number[];");
+    expect(dts).toContain("cache: Map<string, number>;");
+    expect(dts).toContain("get cfg(): { a: number };");
+    expect(dts).toContain("export declare const modOpts: { retries: number };");
+    expect(dts).not.toContain("opts: object");
+    expect(dts).not.toContain("xs: unknown[]");
+  });
+
+  it("BUG-245 lib 全局纯类型名放行（对照：同族运行时构造器名）", () => {
+    const dts = batchDts(
+      `export function match(s: string): RegExpMatchArray | null { return s.match(/x/); }
+export function args(): IArguments { return (function () { return arguments; })(); }
+export function callable(c: CallableFunction): string { return c.name; }
+export function re(r: RegExp): string { return r.source; }
+`,
+    );
+    expect(dts).toContain("export declare function match(s: string): RegExpMatchArray | null;");
+    expect(dts).toContain("export declare function args(): IArguments;");
+    expect(dts).toContain("export declare function callable(c: CallableFunction): string;");
+    expect(dts).toContain("export declare function re(r: RegExp): string;");
+    expect(dts).not.toContain("nudo:unresolved-class Arguments");
+    expect(dts).not.toContain("dropped-type-annotation callable");
+  });
+
+  it("BUG-249 解构改名按 JS 绑定模式渲染（对照：无改名）", () => {
+    const dts = batchDts(
+      `export function renamed({ a: x, b }: { a: number; b: string }): number { return x + b.length; }
+export function plain({ a, b }: { a: number; b: string }): number { return a + b.length; }
+`,
+    );
+    expect(dts).toContain(
+      "export declare function renamed({ a: x, b }: { a: number; b: string }): number;",
+    );
+    expect(dts).toContain(
+      "export declare function plain({ a, b }: { a: number; b: string }): number;",
+    );
+    expect(dts).not.toContain("{ a, x, b }");
+  });
+
+  it("BUG-254 内建泛型实参保真（对照：声明注解通道）", () => {
+    const dts = batchDts(
+      `export const mPlain = new Map<string, number>();
+export const sPlain = new Set<number>();
+export const mAnnot: Map<string, number> = new Map();
+export function mkMap(): Map<string, number> { return new Map<string, number>(); }
+`,
+    );
+    expect(dts).toContain("export declare const mPlain: Map<string, number>;");
+    expect(dts).toContain("export declare const sPlain: Set<number>;");
+    expect(dts).toContain("export declare const mAnnot: Map<string, number>;");
+    expect(dts).toContain("export declare function mkMap(): Map<string, number>;");
+    expect(dts).not.toMatch(/declare (?:function|const) [^;]*Map<unknown, unknown>/);
+  });
+
+  it("BUG-256 getter-only 发 readonly（对照：getter+setter / 数据属性可写）", () => {
+    const dts = batchDts(
+      `export const gPlain = { get b() { return 1; } };
+export const gAnnot = { get a(): number { return 1; } };
+export const gPair = { _x: 0, get c(): number { return this._x; }, set c(v: number) { this._x = v; } };
+export const gData = { d: 1 };
+`,
+    );
+    expect(dts).toContain("export declare const gPlain: { readonly b: number };");
+    expect(dts).toContain("export declare const gAnnot: { readonly a: number };");
+    expect(dts).toContain("c: number");
+    expect(dts).not.toContain("readonly c");
+    expect(dts).toContain("d: number");
+  });
+
+  it("BUG-258 标识符初始化器发 `typeof target`（对照：显式注解 const）", () => {
+    const dts = batchDts(
+      `export function target(x: number): string { return String(x); }
+export const alias = target;
+export const obj = { fn: target };
+export const annotated: (x: number) => string = target;
+`,
+    );
+    expect(dts).toContain("export declare const alias: typeof target;");
+    expect(dts).toContain("export declare const obj: { fn: typeof target };");
+    expect(dts).toContain("export declare const annotated: (x: number) => string;");
+    expect(dts).not.toContain("alias: () => unknown");
+  });
+
+  it("BUG-260 const 字面量不拓宽、let 仍拓宽、as const 保真", () => {
+    const dts = batchDts(
+      `export const c = "abc";
+export let l = "abc";
+export const cAsConst = "abc" as const;
+export const cNum = 42;
+`,
+    );
+    expect(dts).toContain('export declare const c: "abc";');
+    expect(dts).toContain("export declare let l: string;");
+    expect(dts).toContain('export declare const cAsConst: "abc";');
+    expect(dts).toContain("export declare const cNum: 42;");
+    expect(dts).not.toContain("export declare const c: string;");
+  });
+
+  it("BUG-262 `typeof` 值引用可解析（对照：interface 类型引用）", () => {
+    const dts = batchDts(
+      `export interface Defaults { retries: number; label: string }
+export const defaults = { retries: 3, label: "n" };
+export function handler(n: number): number { return n; }
+export function readTyped(x: Defaults): number { return 0; }
+export function readDefaults(x: typeof defaults): number { return 0; }
+export function echoKey(k: keyof typeof defaults): number { return 0; }
+export function echoFn(f: typeof handler): number { return 0; }
+`,
+    );
+    expect(dts).toContain("export declare function readTyped(x: Defaults): number;");
+    expect(dts).toContain("export declare function readDefaults(x: typeof defaults): number;");
+    expect(dts).toContain(
+      "export declare function echoKey(k: keyof typeof defaults): number;",
+    );
+    expect(dts).toContain("export declare function echoFn(f: typeof handler): number;");
+    expect(dts).not.toContain("type not declared in this module");
+  });
+
+  it("BUG-263/264 用户 symbol 键成员 + unique symbol（对照：well-known / 显式 : symbol）", () => {
+    const dts = batchDts(
+      `export const tag = Symbol("tag");
+export const tagAnnotated: symbol = Symbol("t");
+export const obj = { [tag]: 1, name: "n" };
+export const iterable = { [Symbol.iterator](): Iterator<number> { return (function* () { yield 1; })(); } };
+`,
+    );
+    expect(dts).toContain("export declare const tag: unique symbol;");
+    expect(dts).toContain("export declare const tagAnnotated: symbol;");
+    expect(dts).toContain("export declare const obj: { [tag]: number; name: string };");
+    expect(dts).toContain("[Symbol.iterator](): Iterator<number>");
+    expect(dts).not.toContain("obj: { name: string }");
+  });
+
+  it("BUG-270 setter-only 用 setter 形参类型（对照：getter+setter）", () => {
+    const dts = batchDts(
+      `export const setterOnly = { set y(v: string) { void v; } };
+export const pair = { get g(): number { return 1; }, set g(v: number) { void v; } };
+export const data = { d: 1 };
+`,
+    );
+    expect(dts).toContain("export declare const setterOnly: { y: string };");
+    expect(dts).toContain("export declare const pair: { g: number };");
+    expect(dts).toContain("export declare const data: { d: number };");
+    expect(dts).not.toContain("y: undefined");
+  });
+
+  it("BUG-271 对象方法返回注解保真（对照：顶层函数 / 内联对象）", () => {
+    const dts = batchDts(
+      `type R = { n: number };
+export const objRet = {
+  named(): R { return { n: 1 }; },
+  nullable(): string | null { return "x"; },
+  date(): Date { return new Date(0); },
+  promise(): Promise<number> { return Promise.resolve(1); },
+  inline(): { n: number } { return { n: 1 }; },
+};
+export const arrowRet = { promise: (): Promise<number> => Promise.resolve(1) };
+`,
+    );
+    expect(dts).toContain("named: () => R");
+    expect(dts).toContain("nullable: () => string | null");
+    expect(dts).toContain("date: () => Date");
+    expect(dts).toContain("promise: () => Promise<number>");
+    expect(dts).toContain("inline: () => { n: number }");
+    expect(dts).toContain("arrowRet: { promise: () => Promise<number> }");
+    expect(dts).not.toContain("named: () => unknown");
+  });
+
+  it("BUG-272 `export default interface` 保留类型声明（对照：具名 interface）", () => {
+    const dts = batchDts(
+      `export interface A { x: number }
+export default interface D { z: boolean }
+export function useD(d: D): boolean { return d.z; }
+`,
+    );
+    expect(dts).toContain("export default interface D { z: boolean }");
+    expect(dts).toContain("export declare function useD(d: D): boolean;");
+    expect(dts).not.toContain("declare const _default: unknown");
+    const ctrl = batchDts(
+      `export interface D { z: boolean }
+export function useD(d: D): boolean { return d.z; }
+`,
+      "/test/audit-dts-ctrl.ts",
+    );
+    expect(ctrl).toContain("export interface D { z: boolean }");
+  });
+
+  it("BUG-273 readonly 类字段保留字面量（对照：mutable 字段 / as const / 显式注解）", () => {
+    const dts = batchDts(
+      `export class K {
+  static readonly sr = "s";
+  readonly r = 5;
+  readonly flag = true;
+  plain = 7;
+}
+`,
+    );
+    expect(dts).toContain('static readonly sr: "s";');
+    expect(dts).toContain("readonly r: 5;");
+    expect(dts).toContain("readonly flag: true;");
+    expect(dts).toContain("plain: number;");
+    expect(dts).not.toContain("readonly r: number");
+  });
+
+  it("BUG-309 `export type` 修饰符保留（对照：值再导出）", () => {
+    const dts = batchDts(
+      `export type { innerFn, Inner, innerVal } from "./inner";
+export { type innerFn as innerFnInline } from "./inner";
+export type * from "./inner";
+export type * as nsTypes from "./inner";
+import { innerFn } from "./inner";
+export type { innerFn as localFn };
+`,
+      "/test/audit-type-only.ts",
+    );
+    expect(dts).toContain('export type { innerFn, Inner, innerVal } from "./inner";');
+    expect(dts).toContain('export { type innerFn as innerFnInline } from "./inner";');
+    expect(dts).toContain('export type * from "./inner";');
+    expect(dts).toContain('export type * as nsTypes from "./inner";');
+    expect(dts).toContain("export type { innerFn as localFn }");
+    expect(dts).not.toContain('export { innerFn, Inner, innerVal } from "./inner";');
+  });
+
+  it("BUG-355 默认导出对象的方法签名（对照：具名 const）", () => {
+    const dts = batchDts(
+      `export default {
+  plain: 1,
+  greet(name: string): string { return "hi " + name; },
+  nested: { n(): number { return 1; } },
+};
+export const named = { plain: 1, greet(name: string): string { return "hi " + name; } };
+`,
+    );
+    expect(dts).toContain("greet: (name: string) => string");
+    expect(dts).toContain("nested: { n: () => number }");
+    expect(dts).toContain("export declare const named: { plain: number; greet: (name: string) => string };");
+    expect(dts).not.toContain("greet: unknown");
+  });
+
+  it("BUG-356 类字段函数字面量保留签名（对照：显式字段注解）", () => {
+    const dts = batchDts(
+      `export class C2 {
+  f = (x: number): string => x.toFixed(1);
+  static g = (n: number): number => n + 1;
+}
+export class C3 { f: (x: number) => string = (x) => x.toFixed(1); }
+`,
+    );
+    expect(dts).toContain("f: (x: number) => string;");
+    expect(dts).toContain("static g: (n: number) => number;");
+    expect(dts).not.toContain("(a0: unknown) => unknown");
+  });
+
+  it("BUG-358 对象成员键与模块绑定撞名时保留常量（对照：改名的成员键）", () => {
+    const dts = batchDts(
+      `export const registry = { handle(a: string): string { return a; } };
+export const handle = 1;
+`,
+    );
+    expect(dts).toContain("export declare const handle: 1;");
+    expect(dts).not.toContain("export declare function handle(");
+    expect(dts).toContain("registry: { handle: (a: string) => string }");
+    const ctrl = batchDts(
+      `export const registry = { dispatch(a: string): string { return a; } };
+export const handle = 1;
+`,
+      "/test/audit-collision-ctrl.ts",
+    );
+    expect(ctrl).toContain("export declare const handle: 1;");
+    expect(ctrl).toContain("dispatch: (a: string) => string");
+  });
+
+  it("BUG-360 类表达式发布成 const（对照：class 声明）", () => {
+    const dts = batchDts(
+      `export const C = class {
+  static origin = "0,0";
+  constructor(public x: number) {}
+  m(): number { return this.x; }
+};
+export class D { m(): number { return 1; } }
+`,
+    );
+    expect(dts).toContain("export declare const C: typeof __nudo_expr_C;");
+    expect(dts).not.toContain("export declare class C");
+    expect(dts).toContain("export declare class D {");
+  });
+
+  it("BUG-252/257/274/362 返回位：空数组 widen、readonly 声明保真、函数签名保真、抽象下标无 undefined 臂", () => {
+    const dts = batchDts(
+      `export function empty() { return []; }
+export function roArr(): readonly number[] { return [1, 2]; }
+export function fnRet(): (b: number) => number { const f = (b: number) => b + 1; return f; }
+export function g(xs: number[], i: number) { return xs[i]; }
+export function gLit(xs: number[]): number { return xs[0]!; }
+`,
+    );
+    expect(dts).toContain("export declare function empty(): unknown[];");
+    expect(dts).toContain("export declare function roArr(): readonly number[];");
+    expect(dts).toContain("export declare function fnRet(): (b: number) => number;");
+    expect(dts).toContain("export declare function g(xs: number[], i: number): number;");
+    expect(dts).toContain("export declare function gLit(xs: number[]): number;");
+    // Case 注释仍记录 entry@ 的原始观测（含内部 OOB 臂）；声明位必须干净。
+    expect(dts).not.toMatch(/export declare function g\([^)]*\): number \| undefined/);
+  });
+
+  it("BUG-261/353 声明的字面量类型保真、数字字面量不被当作类型引用", () => {
+    const dts = batchDts(
+      `export function litRet(): "abc" { return "abc"; }
+export function hex(x: 0xff, b: 0b101, big: 10n): number { return x + b + Number(big); }
+`,
+    );
+    expect(dts).toContain('export declare function litRet(): "abc";');
+    expect(dts).toContain("export declare function hex(x: 0xff, b: 0b101, big: 10n): number;");
+    expect(dts).not.toContain("nudo:dropped-type-annotation hex");
   });
 });

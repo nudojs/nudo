@@ -23,9 +23,45 @@
  * - **不可映射 ≠ unknown**：推断面回落的是 **any**（无约束 = 任意 JS 值），
  *   不是 unknown（分析失败）——与 design-cli-semantics §2 一致。
  */
+import { typeAnnotationSourceOf } from "./type-annotation-resolve.ts";
 import type { Abs, Shape } from "@nudojs/core";
-import { abs as makeAbsVal, anyAbs, spread } from "@nudojs/core";
-import { absShapeForTsTypeText, absTypeForTsTypeText } from "@nudojs/core/internal";
+import { abs as makeAbsVal, anyAbs, spread, withProvenance } from "@nudojs/core";
+import {
+  absShapeForTsTypeText,
+  absTypeForTsTypeText,
+  importedTypeTextsForSource,
+  keySetIncompleteAbs,
+  markKeySetOpenAbs,
+  type AnnotationEnv,
+} from "@nudojs/core/internal";
+
+const importedTypeMemo = new Map<string, ReadonlyMap<string, string>>();
+const IMPORTED_TYPE_MEMO_MAX = 32;
+
+/**
+ * 同文件 + 相对导入的 type/interface 文本表（入口注解的跨文件解析）。
+ *
+ * 只读相对说明符（`. / ..`）；包名 / 别名 / 目录索引用 Node 解析规则补齐
+ * 扩展名。读不到 ⇒ 空表（调用方回落 any，不猜）。
+ */
+export function importedTypeTextsForFile(
+  source: string,
+  filePath: string | undefined,
+): ReadonlyMap<string, string> {
+  if (!filePath) return new Map();
+  const key = `${filePath}\u0000${source}`;
+  const hit = importedTypeMemo.get(key);
+  if (hit) return hit;
+  const texts = importedTypeTextsForSource(source, (spec) =>
+    typeAnnotationSourceOf(spec, filePath),
+  );
+  if (importedTypeMemo.size >= IMPORTED_TYPE_MEMO_MAX) {
+    const oldest = importedTypeMemo.keys().next().value;
+    if (oldest !== undefined) importedTypeMemo.delete(oldest);
+  }
+  importedTypeMemo.set(key, texts);
+  return texts;
+}
 
 /**
  * 声明类型文本 → Abs 形状（不可映射 ⇒ undefined）。
@@ -51,15 +87,27 @@ export function tsAnnotationShape(text: string | undefined): Shape | undefined {
  * （与 `{...x}` 同一判据：任一侧键集不完备 ⇒ 结果不完备），不在本包另立
  * 第二套判定，也不复刻私有标记位。
  */
-export function tsAnnotationArgAbs(text: string | undefined): Abs {
+export function tsAnnotationArgAbs(
+  text: string | undefined,
+  env?: AnnotationEnv | ReadonlyMap<string, Abs>,
+  namedTypes?: ReadonlyMap<string, string>,
+): Abs {
   // Abs 面映射（不是 Shape 面）：`string | null` / `number | undefined` 的
   // nullish 字面量精度只能由 term 承载。Shape 面会把这类注解整条丢掉 ⇒
   // 入口实参退 any ⇒ entry@ 观测的返回位变宽（dts `string | unknown`、
   // zod `z.unknown()`、guard 恒真），与同一份产物里 `@param x - string | null`
   // 的注解原文自相矛盾；而 check 泛化面（generalize.ts）早已走 Abs 面。
-  const mapped = absTypeForTsTypeText(text);
+  const resolvedEnv =
+    env instanceof Map ? { typeParams: env, namedTypes } : env;
+  const mapped = absTypeForTsTypeText(text, resolvedEnv);
   if (!mapped) return anyAbs;
-  return markOpenObjKeys(makeAbsVal(mapped.shape, mapped.term, undefined, "path"));
+  const base = makeAbsVal(mapped.shape, mapped.term, undefined, "path");
+  // 开放对象的键集标记是 Abs 身份侧表：`markOpenObjKeys` 之后的 `spread`
+  // 会造新 Abs，再套 `withProvenance` 会把标记丢掉 ⇒ 先标记，再打
+  // provenance，最后在**新 Abs** 上重打键集标记。
+  const marked = mapped.shape.k === "obj" ? markOpenObjKeys(base) : base;
+  const declared = withProvenance(marked, "declared");
+  return keySetIncompleteAbs(marked) ? markKeySetOpenAbs(declared) : declared;
 }
 
 /**
@@ -82,7 +130,7 @@ function markOpenObjKeys(a: Abs): Abs {
     slots ??= { ...s.slots };
     slots[key] = { ...slot, value: marked };
   }
-  const base = slots === undefined ? a : makeAbsVal({ ...s, slots }, a.term, a.pred, a.conf);
+  const base = slots === undefined ? a : { ...a, shape: { ...s, slots } };
   return s.open === true ? spread(anyAbs, base) : base;
 }
 

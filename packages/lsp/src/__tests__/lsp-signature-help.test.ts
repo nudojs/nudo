@@ -80,7 +80,7 @@ function tmpFile(src: string): { dir: string; file: string } {
       // 裸标识符 callee 不再用 evaluator 的 arity-only fn Abs 冒充
       // 签名（返回位是占位 `unknown`）⇒ 落到与 hover 同源的 poly-fn 解析，
       // 返回位是真实推断（`x + y` ⇒ `number | string`）。
-      expect(label).toBe("(x: any, y: any) => number | string");
+      expect(label).toBe("(x: any, y: number) => number | string");
       expect(label).not.toContain("arg0");
     } finally {
       rmSync(dir, { recursive: true, force: true });

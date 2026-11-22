@@ -6,6 +6,7 @@ import type { Abs } from "../abs.ts";
 import type { AbsModuleExports } from "../abs-modules.ts";
 import type { AbsCallRecord } from "../ast-records.ts";
 import type { RunTranspiledOptions } from "../exec/run.ts";
+import type { AnnotationEnv } from "../contract/ts-type-shape.ts";
 
 /**
  * check 选项：core 不碰 fs；host 用 loadModule 喂 require 目标源码。
@@ -42,6 +43,8 @@ export type CheckOptions = {
    *  B 与解释路径共用——import/require 按表解析（CLI 经
    *  evalAbsModuleGraph 计算后下传） */
   modules?: Record<string, AbsModuleExports | Record<string, unknown>>;
+  /** 宿主解析的跨文件类型声明 / 内建表（入口注解解析单源）。 */
+  annotationEnv?: AnnotationEnv;
   /**
    * B run 注入包（modules/mocks/envGlobals/replacements/as）——透传
    * runTranspiled（generalize / L2 / 记录通道 / drift 同源）。memo 键按

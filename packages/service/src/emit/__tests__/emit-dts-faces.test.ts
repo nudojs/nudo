@@ -1174,9 +1174,9 @@ describe("— dts 顶层形参可选性来自声明形参表", () => {
 export function optNoEvidence(a, b = 2) { return a + b; }
 `;
     const dts = generateDts(analyzeFile("/test/s2-opt.js", source));
-    // 类型词（unknown / any）是类型渲染面的口径（不在本分片职责内）——
-    // 本钉只关心**可选性**标记。
-    expect(dts).toMatch(/export declare function optNoEvidence\(a: (unknown|any), b\?: (unknown|any)\)/);
+    // BUG-246：无注解默认值的形参类型取初始化式（number），不强制 any；
+    // 本钉只关心可选性标记，类型词接受 any / unknown / number。
+    expect(dts).toMatch(/export declare function optNoEvidence\(a: (unknown|any), b\?: (unknown|any|number)\)/);
   }
   {
     const source = `
@@ -1191,14 +1191,15 @@ optWithEvidence(1);
 export function optUndefinedDefault(a, b = undefined) { return a; }
 `;
     const dts = generateDts(analyzeFile("/test/s2-opt3.js", source));
-    expect(dts).toMatch(/export declare function optUndefinedDefault\(a: (unknown|any), b\?: (unknown|any)\)/);
+    expect(dts).toMatch(/export declare function optUndefinedDefault\(a: (unknown|any), b\?: (unknown|any|undefined)\)/);
   }
   {
     const source = `
 export function def(x = 1) { return x; }
 `;
     const dts = generateDts(analyzeFile("/test/s2-def.js", source));
-    expect(dts).toMatch(/export declare function def\(x\?: (unknown|any)\): (unknown|any);/);
+    // BUG-246：`x = 1` 的入口域 / 返回域取初始化式 number（TS 同口径）。
+    expect(dts).toMatch(/export declare function def\(x\?: (unknown|any|number)\): (unknown|any|number);/);
     const check = tscNoEmit({
       "mod.d.ts": dts,
       "use.ts": 'import { def } from "./mod.js";\nexport const r = def();\n',
@@ -1625,4 +1626,77 @@ export const scale = fn({ x: number().gt(0), y: string() }, number());
 
 
 
+});
+
+// ---------------------------------------------------------------------------
+// fix-16：内建下标 / 迭代器 / Object 键家族的 dts + zod 投影
+// BUG-289 / 341 / 357 / 362 / 364 / 365 的产物面钉。
+// ---------------------------------------------------------------------------
+describe("fix-16：内建 dts 投影（下标/迭代器/Object 键家族）", () => {
+  const SRC = `
+export function idx(xs: number[], i: number) { return xs[i]; }
+export function idxStr(xs: string[], i: number) { return xs[i]; }
+export function flatN(xs: number[][]) { return xs.flat(); }
+export function flat2(xs: number[][][]) { return xs.flat(2); }
+export function valOnly(xs: string[]) { return xs.values(); }
+export function keyOnly(xs: string[]) { return xs.keys(); }
+export function entOnly(xs: string[]) { return xs.entries(); }
+export function paramVals(o: { a: number; b: string }) { return Object.values(o); }
+export function paramEnt(o: { a: number; b: string }) { return Object.entries(o); }
+export function fePairs(kv: [string, number][]): number { return Object.fromEntries(kv).a ?? 0; }
+export function matchFull(s: string) { const m = s.match(/a(b)/); return m ? m[0].length : 0; }
+export function matchGlobal(s: string) { const m = s.match(/a/g); return m ? m[0].length : 0; }
+`;
+
+  const analyzed = () => analyzeFile("/t/fix16.ts", SRC);
+  const dts = () => generateDts(analyzed());
+  const witness = (name: string, r = analyzed()) =>
+    r.functions.find((f) => f.name === name)?.combinedAbs;
+
+  it("BUG-362：arr 抽象下标读发布元素类型（tsc 默认 noUncheckedIndexedAccess=off）", () => {
+    const t = dts();
+    expect(t).toMatch(/function idx\(xs: number\[\], i: number\): number;/);
+    expect(t).toMatch(/function idxStr\(xs: string\[\], i: number\): string;/);
+    expect(t).not.toMatch(/function idx\(xs: number\[\], i: number\): number \| undefined;/);
+  });
+
+  it("BUG-357：flat 发布展开后的元素域（T[][] → T[]；显式深度同口径）", () => {
+    const t = dts();
+    expect(t).toMatch(/function flatN\(xs: number\[\]\[\]\): number\[\];/);
+    expect(t).toMatch(/function flat2\(xs: number\[\]\[\]\[\]\): number\[\];/);
+    expect(t).not.toMatch(/\(number\[\] \| number\)\[\]/);
+  });
+
+  it("BUG-364：三个数组迭代器发布元素类型（不再是 IterableIterator<unknown>）", () => {
+    const t = dts();
+    expect(t).toMatch(/function valOnly\(xs: string\[\]\): IterableIterator<string>;/);
+    expect(t).toMatch(/function keyOnly\(xs: string\[\]\): IterableIterator<number>;/);
+    expect(t).toMatch(/function entOnly\(xs: string\[\]\): IterableIterator<\[number, string\]>;/);
+    expect(t).not.toContain("IterableIterator<unknown>");
+  });
+
+  it("BUG-365：Object.values/entries 对封闭注解对象发布槽值域（不是 unknown）", () => {
+    const t = dts();
+    expect(t).toMatch(/function paramVals\(o: \{ a: number; b: string \}\): \(number \| string\)\[\];/);
+    expect(t).toMatch(/function paramEnt\(o: \{ a: number; b: string \}\): \[string, number \| string\]\[\];/);
+    expect(t).not.toMatch(/function paramVals\([\s\S]*?\): unknown\[\];/);
+    // zod 面同源（BUG-365 报告里的假绿：z.array(z.unknown())）
+    const v = witness("paramVals");
+    expect(v).toBeDefined();
+    const zod = absToZodSchemaModule({ paramValsOutput: v! }).source;
+    expect(zod).toMatch(/paramValsOutput = z\.array\(/);
+    expect(zod).not.toContain("paramValsOutput = z.array(z.unknown())");
+    expect(zod).toContain("z.number(");
+  });
+
+  it("BUG-289：fromEntries 的条目数组不再假 may-throw，返回位是声明值域", () => {
+    const t = dts();
+    expect(t).toMatch(/function fePairs\(kv: \[string, number\]\[\]\): number;/);
+  });
+
+  it("BUG-341：String.match 的抽象接收者发布 number（m[0] 恒 string）", () => {
+    const t = dts();
+    expect(t).toMatch(/function matchFull\(s: string\): number;/);
+    expect(t).toMatch(/function matchGlobal\(s: string\): number;/);
+  });
 });

@@ -26,7 +26,7 @@
  *   builtins/object/descriptor.ts（enforceProxyOwnKeysInvariant）。
  */
 import type { Abs } from "../../abs.ts";
-import { abs, litValue, strLit, unknown, isAbsLike } from "../../abs.ts";
+import { abs, litValue, strLit, unknown, isAbsLike, withProvenance } from "../../abs.ts";
 import "../../term.ts";
 import { pTrue } from "../../pred.ts";
 import { registerSymbolMeta } from "../../key/symbol-id.ts";
@@ -530,7 +530,10 @@ export function undef(): Abs {
  * exact conf，仍走 may-throw 口径。
  */
 export function oobUndef(): Abs {
-  return abs({ k: "unknown" }, { op: "lit", value: undefined }, pTrue, "partial");
+  return withProvenance(
+    abs({ k: "unknown" }, { op: "lit", value: undefined }, pTrue, "partial"),
+    "synthetic",
+  );
 }
 
 /** OOB 合成 undefined 判定（conf=partial 的 lit undefined） */

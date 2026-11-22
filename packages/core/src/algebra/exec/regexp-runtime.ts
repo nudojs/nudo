@@ -79,6 +79,70 @@ function isUndefLit(a: Abs | undefined): boolean {
   return r.ok && r.value === undefined;
 }
 
+/**
+ * BUG-341：非 global 匹配结果（`RegExpMatchArray`）的抽象值。
+ *
+ * 与具体路径 `matchResultAbs` 同构：`"0"` 是**整个匹配**，只要结果非 null
+ * 就必然存在且是 string；捕获组 `"1".."ng"` 才可能是 undefined（未参与
+ * 捕获）。`length` / `index` / `input` / `groups` 附加槽同源。pattern 的
+ * 捕获组个数用 `pat + "|"` 空串必中探针（与 exec 抽象 subject 臂同一
+ * 单一实现）。pattern 无法编译 → undefined（调用方回落旧保守面）。
+ */
+export function abstractMatchArrayAbs(pattern: string): Abs | undefined {
+  let probe: RegExpExecArray | null = null;
+  try {
+    probe = new RegExp(`${pattern}|`).exec("");
+  } catch {
+    probe = null;
+  }
+  if (!probe) return undefined;
+  const ng = probe.length - 1;
+  const slots: Record<string, { value: Abs }> = {
+    "0": { value: str() },
+    length: { value: numLit(probe.length) },
+    index: { value: num() },
+    input: { value: str() },
+  };
+  for (let i = 1; i <= ng; i++) {
+    slots[String(i)] = { value: joinAbs(str(), undefAbs()) };
+  }
+  const groupNames = probe.groups ? Object.keys(probe.groups) : [];
+  slots["groups"] = {
+    value: groupNames.length
+      ? objOf(
+          Object.fromEntries(
+            groupNames.map((n) => [n, { value: joinAbs(str(), undefAbs()) }]),
+          ),
+        )
+      : undefAbs(),
+  };
+  // 数组视图标注——JSON.stringify 按下标槽走数组序列化（与具体路径同构）
+  const mAbs = abs({ k: "obj", slots }, undefined, undefined, "path");
+  setPropFlags(mAbs, "length", { enumerable: false });
+  markMatchArrayView(mAbs);
+  return mAbs;
+}
+
+/**
+ * BUG-341：非 global 匹配数组，**捕获组个数不可判**（抽象源文本）的形态。
+ * `"0"` 仍是整匹配（string），`length` 已知是 number、`index`/`input`
+ * 同源；未知下标（捕获组）读值域不可判 ⇒ `open: true`（不是假精确的
+ * undefined，也不是把 `"0"` 一并染成 unknown）。
+ */
+export function abstractMatchArrayUnknownGroupsAbs(): Abs {
+  const slots: Record<string, { value: Abs }> = {
+    "0": { value: str() },
+    length: { value: num() },
+    index: { value: num() },
+    input: { value: str() },
+    groups: { value: unknown },
+  };
+  const mAbs = abs({ k: "obj", slots, open: true }, undefined, undefined, "path");
+  setPropFlags(mAbs, "length", { enumerable: false });
+  markMatchArrayView(mAbs);
+  return mAbs;
+}
+
 /** Bug 126：r.compile(pattern, flags) 的 brand 重建（execRegexBrand 值通道与
  *  $reStateCall 写回通道共用）。原生（Annex B B.2.3.1）：
  *  - RegExp 实参 + flags 缺省/undefined 字面 → 复制其实参的 source/flags；
@@ -198,44 +262,15 @@ export function execRegexBrand(re: Abs, method: string, args: Abs[]): Abs | unde
     }
     // exec（issue #136）：null | 匹配数组。此前是均质 element（string|
     // undefined）的 arr——`m[0]` 与 `m[1]` 同值、无从窄化；改为与具体路径
-    // matchResultAbs 同构的 per-index 槽 obj：捕获组数用 `pat + '|'` 空串
-    // 必中探针（引擎权威计数 + groups 名单一次性取得），"0"=整匹配 string、
-    // "1".."ng"=string|undefined（未参与捕获组 undefined）、length/index/
-    // input/groups 附加属性同源。pattern 异常（理论不可达——brand source 槽
-    // 出自真构造）回落旧均质 arr 保守。
-    let probe: RegExpExecArray | null = null;
-    try {
-      probe = new RegExp(`${parts.pat}|`).exec("");
-    } catch {
-      probe = null;
-    }
+    // matchResultAbs 同构的 per-index 槽 obj（`abstractMatchArrayAbs`，
+    // BUG-341 与 String.prototype.match 共用同一元素域口径）。pattern 异常
+    // （理论不可达——brand source 槽出自真构造）回落旧均质 arr 保守。
     const nullArm = abs({ k: "unknown" }, { op: "lit", value: null }, undefined, "exact");
-    if (!probe) {
+    const mAbs = abstractMatchArrayAbs(parts.pat);
+    if (!mAbs) {
       const element = joinAbs(str(), undefAbs());
       return joinAbs(nullArm, abs({ k: "arr", element }, undefined, undefined, "path"));
     }
-    const ng = probe.length - 1;
-    const slots: Record<string, { value: Abs }> = {
-      "0": { value: str() },
-      length: { value: numLit(probe.length) },
-      index: { value: num() },
-      input: { value: str() },
-    };
-    for (let i = 1; i <= ng; i++) {
-      slots[String(i)] = { value: joinAbs(str(), undefAbs()) };
-    }
-    const groupNames = probe.groups ? Object.keys(probe.groups) : [];
-    slots["groups"] = {
-      value: groupNames.length
-        ? objOf(Object.fromEntries(groupNames.map((n) => [n, { value: joinAbs(str(), undefAbs()) }])))
-        : undefAbs(),
-    };
-    // Bug「match/exec 结果 JSON 视图」：数组视图标注——JSON.stringify 按
-    // 下标槽走数组序列化（与具体路径 matchResultAbs 同构；元素抽象时照常
-    // 不可折 partial）。length 单挂非枚举（原生数组 length 唯一非枚举）
-    const mAbs = abs({ k: "obj", slots }, undefined, undefined, "path");
-    setPropFlags(mAbs, "length", { enumerable: false });
-    markMatchArrayView(mAbs);
     return joinAbs(nullArm, mAbs);
   }
   try {

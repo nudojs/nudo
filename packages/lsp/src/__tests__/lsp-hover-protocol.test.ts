@@ -439,7 +439,7 @@ const COLUMN = 23;
     expect(patched).not.toContain("scaled(x = undefined");
   });
 
-  it("门禁面：应用后 `nudo check` 仍是 0 error（改前会翻成 1 error）", () => {
+  it("门禁面：应用后 `nudo check` 仍是 0 error（默认值现在按初始化式建模，改前对照组也不再假红）", () => {
     const r = makeParamOptionalAt(SRC, LINE, COLUMN);
     if (!r || !("edits" in r)) return;
     const patched = applyEdits(SRC, r.edits);
@@ -457,9 +457,10 @@ const COLUMN = 23;
       const beforeRes = runNudoCheck(before);
       expect(afterRes.code).toBe(0);
       expect(afterRes.stdout).toContain("0 error");
-      // 改前的症状（勘误）：门禁从 0 error 翻成 1 error（`nudo:entry-may-throw`）
-      expect(beforeRes.code).toBe(1);
-      expect(beforeRes.stdout).toContain("nudo:entry-may-throw");
+      // `x = undefined` 是合法的默认值声明，入口域是 undefined；`undefined * 2`
+      // 原生不抛（NaN），BUG-246 后也不再报假 `nudo:entry-may-throw`。
+      expect(beforeRes.code).toBe(0);
+      expect(beforeRes.stdout).not.toContain("nudo:entry-may-throw");
     });
   });
 

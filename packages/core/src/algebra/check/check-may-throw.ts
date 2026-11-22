@@ -42,7 +42,7 @@ import type { Phi } from "../pred.ts";
 import { pTrue } from "../pred.ts";
 import { formatShape } from "../format/format.ts";
 import type { PolyFn } from "../generalize.ts";
-import { classMethodIsStatic, ctorParamAbsArgs, entrySelfReferenceCount, entryThisReceiverOf, injectForFunctionScope } from "../generalize.ts";
+import { classMethodIsStatic, ctorParamAbsArgs, entryEvalArgsOf, entrySelfReferenceCount, entryThisReceiverOf, injectForFunctionScope } from "../generalize.ts";
 import type { CheckOptions } from "./check-types.ts";
 import { $invoke, $new, withExecPhi } from "../exec/index.ts";
 import { currentEvalRoundEpoch } from "../collector-scope.ts";
@@ -105,7 +105,9 @@ export function collectEntryMayThrows(
   opts: CheckOptions = {},
 ): MayThrowEffect[] {
   const effects: MayThrowEffect[] = [];
-  const entryArgs = g.typeParams.map((t) => t.value);
+  // BUG-240：rest 位按声明类型展开（数组哨兵直通 / 元组逐位），与签名面
+  // 同口径——不能把 `arr(声明域)` 当位置实参（`$restBind` 会多包一元组）。
+  const entryArgs = entryEvalArgsOf(g, source);
   // BUG-248：多自引用递归（`bin(n-1)+bin(n-2)`）的 α 实参 term 逐层加深，
   // 每层预算键都不同 ⇒ 环检测失效，深展到 depth 64 时堆先爆（进程 OOM、
   // check 无输出）。L2 只关心 throws 域，term 身份不参与判定 ⇒ 剥掉 term
@@ -408,6 +410,9 @@ export function evalThrowsOutcome(
                 clsName ?? "",
                 ctorArgs(file, clsName ?? ""),
                 runWithMayThrowSession,
+                // BUG-259：抽象方法桩——模板方法在虚构实例上 `this.m()` 时
+                // 返回声明域，不记假 `nudo:entry-may-throw`（与值域同口径）。
+                { file, source },
               );
               return $invoke(inst, methodName ?? "", args);
             }, phi),
