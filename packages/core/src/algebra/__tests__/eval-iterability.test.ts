@@ -271,3 +271,28 @@ describe("user class @@iterator is total（BUG-118）", () => {
     expect(r.value).toContain("1");
   });
 });
+
+describe("rest destructuring consumes the shared iterable capability", () => {
+  it.each([
+    ["literal string", `const [a, ...r] = "abc"; return a + ":" + r.join("");`, "a:bc"],
+    [
+      "boxed String",
+      `const [a, ...r] = new String("abc"); return a + ":" + r.join("");`,
+      "a:bc",
+    ],
+    [
+      "TypedArray",
+      `const [a, ...r] = new Uint8Array([1, 2, 3]); return a + ":" + r.join("");`,
+      "1:23",
+    ],
+    [
+      "user class @@iterator",
+      `export class Iter { *[Symbol.iterator]() { yield 1; yield 2; yield 3; } }
+       export function f() { const [a, ...r] = new Iter(); return a + ":" + r.join(""); }`,
+      "1:23",
+    ],
+  ])("%s", (_label, src, expected) => {
+    const r = evalSrc(src.includes("export function f") ? src : `export function f() { ${src} }`);
+    expect(r.value).toContain(expected);
+  });
+});

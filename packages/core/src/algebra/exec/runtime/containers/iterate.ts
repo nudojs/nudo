@@ -171,6 +171,11 @@ export function $arrRest(a: Abs, start: number): Abs {
     }
     return tupleOrWiden(a.shape.elements.slice(start), a.conf);
   }
+  // 其余迭代物（boxed String / 用户 iterable / TypedArray / 内层 tuple brand）
+  // ——能力函数给出精确序列时按 rest 切片；长度不可判（null）仍落 unknown。
+  // 这是 P4 的首个复用点：$arrRest 不再维护第二份「哪些内建可迭代」表。
+  const exact = iterableExactElements(a);
+  if (exact) return tupleOrWiden(exact.slice(start), a.conf);
   if (a.shape.k === "arr") return a;
   if (a.shape.k === "any") return abs({ k: "arr", element: anyMemberResult() }, undefined, undefined, "path");
   return unknown;
@@ -358,6 +363,13 @@ function iterableExactElements(x: Abs): Abs[] | null {
   if (builtinEls) return builtinEls;
   // 内层 / 裸 tuple 是精确序列（[...brandTuple] 保持 tuple 形状）。
   if (x.shape.k === "tuple") return [...x.shape.elements];
+  // 字面量字符串按 code point 精确展开（$arrRest 的 `const [a,...r] = "ab"`
+  // 走这里；$concat 在进入能力函数前已特判字符串）。抽象字符串长度不可知 ⇒
+  // 仍返回 null，由调用方走元素域。
+  const svR = litValue(x);
+  if (svR.ok && typeof svR.value === "string") {
+    return [...svR.value].map((c) => $lit(c));
+  }
   // 用户 iterable 只有在**本轮能走到 done** 时才是精确长度；抽象 done /
   // 截断 ⇒ 交给 sideEl 的单代表元素域（不得折定长 tuple）。brand（用户类
   // 实例）也先走这条：类链上的 `[Symbol.iterator]` 是原型面事实。
