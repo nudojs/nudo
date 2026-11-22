@@ -31,6 +31,7 @@ import { tsAnnotationShape, tsAnnotationTypeText } from "../ts-annotation.ts";
 import { exportNameRepr } from "./export-binding.ts";
 import { isHiddenInternalSlot } from "./internal-slot.ts";
 import { isRuntimeGlobalCtorName } from "./schema-generator.ts";
+import { renderDtsParams, type DtsParam } from "./dts-ir.ts";
 
 // ---------------------------------------------------------------------------
 // Abs → TS（dts 主路径）
@@ -2347,49 +2348,6 @@ function patternObservedKeys(members: Abs[]): string[] {
   return [...keys];
 }
 
-/** 参数位（渲染前的中间形态） */
-type ParamSlot = {
-  /** 声明名（rest 带 `...`；pattern 是 `{ a, b }`） */
-  name: string;
-  /** 基础类型串（不含 `?` / `| undefined`） */
-  type: string;
-  /** 该位可省略 */
-  optional: boolean;
-  /** 剩余参数位（`...rest`）——Bug 70：不得被当成「必填位」触发 TS1016 降级 */
-  isRest?: boolean;
-  /** `T | undefined` 文本（可选位不在尾部时用——TS1016 不允许 `?` 跟在必填位后） */
-  unionText?: string;
-};
-
-/**
- * 渲染参数位列表。
- *
- * TS 规则：**可选位之后不得跟必填位**（TS1016「A required parameter cannot
- * follow an optional parameter」）⇒ 可选位若不在尾部，只能渲染成
- * `T | undefined`（值可为 undefined，位置仍必填）——TS 的位置参数约定
- * 无法表达「中间位可省略」。
- *
- * Bug 70：rest 位虽然 `optional: false`，但 TS 允许 `a?: number, ...rest: T[]`
- * 这种形态（rest 不是「必填位」，TS1016 只约束必填位跟在可选位之后）⇒
- * 从右往左扫时 rest 位**不**置 `requiredAfter`，否则「默认值 + 后随 rest」
- * 的可省形参会被无谓地降级成 `T | undefined`（消费端 `f()` 报 TS2555）。
- */
-function renderParamSlots(slots: ParamSlot[]): string[] {
-  const out: string[] = new Array(slots.length);
-  let requiredAfter = false;
-  for (let i = slots.length - 1; i >= 0; i--) {
-    const s = slots[i]!;
-    const hasRequiredAfter = requiredAfter;
-    if (!s.optional && !s.isRest) requiredAfter = true;
-    if (s.optional && hasRequiredAfter) {
-      out[i] = `${s.name}: ${s.unionText ?? `${s.type} | undefined`}`;
-    } else {
-      out[i] = s.optional ? `${s.name}?: ${s.type}` : `${s.name}: ${s.type}`;
-    }
-  }
-  return out;
-}
-
 /** Abs → `T | undefined` 文本（union / fn 成员带括号） */
 function absUnionUndefined(a: Abs): string {
   return `${wrapComplexAbs(a, undefined, new ProjectionBudget())} | undefined`;
@@ -2443,7 +2401,7 @@ function computeMainSignature(
   //   且 rest 必居末位（TS1014：剩余参数必须是最后一个）（506）。
   const hasRest = declared.some((d) => d.isRest);
   const arity = hasRest ? declaredArity : Math.max(declaredArity, observedArity);
-  const slots: ParamSlot[] = [];
+  const slots: DtsParam[] = [];
   const paramNames: string[] = [];
   const paramTypes: string[] = [];
   const usedNames = new Set<string>();
@@ -2567,7 +2525,7 @@ function computeMainSignature(
   // BUG-133：`this: T` 是 TS 声明的接收者契约（不占运行时形参位，但 dts
   // 必须保留子句；否则消费方 `.call(receiver, …)` 失去接收者校验）。
   const thisClause = thisReceiverClause(fn, ctx);
-  const renderedParams = renderParamSlots(slots);
+  const renderedParams = renderDtsParams(slots);
   const params = thisClause === "" ? renderedParams : [thisClause, ...renderedParams];
   const retAbs = contract?.return ?? returnAbsOf(fn);
   // 契约返回位（声明级证据，权威）⇒ 保形（Bug 520：lit(42) → 42，与 zod /
@@ -3128,7 +3086,7 @@ function contractOnlySignature(
     };
     return contractTypeVarsOf(merged);
   })();
-  const slots: ParamSlot[] = [];
+  const slots: DtsParam[] = [];
   const paramNames: string[] = [];
   const paramTypes: string[] = [];
   const usedNames = new Set<string>();
@@ -3185,7 +3143,7 @@ function contractOnlySignature(
     paramNames.push(name);
     paramTypes.push(typeStr);
   }
-  const params = renderParamSlots(slots);
+  const params = renderDtsParams(slots);
   // 契约里多出、形参表对不上的参数名不投影（arity 谎言；check 面报
   // nudo:contract-param-mismatch，export 不执法）
   const returnType = contract.return
