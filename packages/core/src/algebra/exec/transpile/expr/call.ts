@@ -116,7 +116,25 @@ export function transpileCallExpr(
       const cname =
         callee.type === "Identifier" ? callee.name : isExpression(callee) ? transpileExpression(callee, opts) : "$lit(void 0)";
       const args = emitArgList(expr.arguments, opts);
-      return `$new(${cname}, [${args}])`;
+      // BUG-368：`new Array<T>(n)` 的调用位类型实参（strip-types 旁路）。
+      // 只把 typeof 可表的一元 prim 作为元素域提示传给构造器。
+      const typeArgs = (expr as unknown as { nudoTypeArguments?: unknown }).nudoTypeArguments;
+      const hintText =
+        callee.type === "Identifier" &&
+        callee.name === "Array" &&
+        Array.isArray(typeArgs) &&
+        typeArgs.length === 1 &&
+        typeof typeArgs[0] === "string"
+          ? typeArgs[0].trim()
+          : undefined;
+      const primHint =
+        hintText !== undefined &&
+        ["string", "number", "boolean", "bigint", "symbol", "unknown", "any"].includes(hintText)
+          ? hintText
+          : undefined;
+      return primHint !== undefined
+        ? `$new(${cname}, [${args}], $lit(${JSON.stringify(primHint)}))`
+        : `$new(${cname}, [${args}])`;
     }
     case "CallExpression":
     case "OptionalCallExpression": {

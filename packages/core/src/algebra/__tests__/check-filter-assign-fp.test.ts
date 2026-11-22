@@ -107,6 +107,28 @@ export function hasOpt(o: { a?: number }) {
     expect(r.summary.errors).toBe(0);
   });
 
+  it("局部声明注解 / new Array<T> / namespace 运行时对象", () => {
+    const r = checkSource(
+      "/t/decl-array-ns.ts",
+      `export function local(): string { let x: string | number = 1; x = "abcd"; return x; }
+export function newArr(): number[] { return new Array<number>(3).fill(0); }
+export namespace NS {
+  export const x = 1;
+  export function f(): number { return 2; }
+}
+export function nsX(): number { return NS.x; }
+export function useNS(): number { return NS.f(); }
+`,
+      pTrue,
+    );
+    expect(r.summary.errors).toBe(0);
+    expect(sigOf(r, "local")).toBe('"abcd"');
+    // type args 已播种元素域：`fill(0)` 观测到字面量 0（不再 undefined）。
+    expect(sigOf(r, "newArr")).toBe("0[]");
+    expect(sigOf(r, "nsX")).toBe("1");
+    expect(sigOf(r, "useNS")).toBe("2");
+  });
+
   it("filter reassignment still flags genuinely incompatible element rewrite", () => {
     // 拓宽是「数组→数组」的同伦：元素改型（数组→标量）仍必须报
     const codes = errorCodes(
