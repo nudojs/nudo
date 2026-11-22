@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  dtsReturnWidenOf,
   renderDtsParams,
   renderDtsSignature,
   type DtsParam,
@@ -63,6 +64,19 @@ describe("dts 参数 IR 打印器", () => {
       }),
     ).toBe("(this: Box<T>, x: number): void");
     expect(renderDtsSignature({ params: [], returnType: "void" })).toBe("(): void");
+  });
+
+  it("返回位 widen 决策：callsite/entry ⇒ observed；directive/无 case ⇒ scalar", () => {
+    expect(dtsReturnWidenOf([])).toBe("scalar");
+    expect(dtsReturnWidenOf([{ name: "entry@L1" }])).toBe("observed");
+    expect(dtsReturnWidenOf([{ source: "callsite", name: "call@L2" }])).toBe("observed");
+    expect(dtsReturnWidenOf([{ source: "directive", name: "x" }])).toBe("scalar");
+    expect(
+      dtsReturnWidenOf([
+        { name: "entry@L1" },
+        { source: "directive", name: "x" },
+      ]),
+    ).toBe("scalar");
   });
 
   it("纯函数：不改写入参，重复渲染同结果", () => {

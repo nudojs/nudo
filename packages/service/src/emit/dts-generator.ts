@@ -31,7 +31,13 @@ import { tsAnnotationShape, tsAnnotationTypeText } from "../ts-annotation.ts";
 import { exportNameRepr } from "./export-binding.ts";
 import { isHiddenInternalSlot } from "./internal-slot.ts";
 import { isRuntimeGlobalCtorName } from "./schema-generator.ts";
-import { renderDtsParams, renderDtsSignature, type DtsParam } from "./dts-ir.ts";
+import {
+  dtsReturnWidenOf,
+  renderDtsParams,
+  renderDtsSignature,
+  type DtsParam,
+  type DtsReturnWiden,
+} from "./dts-ir.ts";
 import type {
   DtsClassAccessorSurface,
   DtsClassFieldSurface,
@@ -2074,6 +2080,8 @@ type MainSignature = {
   paramTypes: string[];
   /** widen 后的返回类型串 */
   returnType: string;
+  /** 返回位 widen 来源（observed / scalar） */
+  returnWiden?: DtsReturnWiden;
   /** ABS-03：契约面推导出的类型形参（只含被形参 / 返回位引用的变元） */
   typeParams?: string[];
   /** ABS-14 PR4b：类型形参名 → TS `extends` 约束（只含可表达的简单界） */
@@ -2570,11 +2578,9 @@ function computeMainSignature(
   // （`source: "directive"`），维持嵌套精度（位置语义真实，字面量由 `Case:`
   // 行保留）。entry@ 是**合成见证**（`source` 缺省、名字带 `entry@L<n>`），
   // 与 call@ 同为观测——不能因为缺 source 就退回「字面量即类型」的旧口径。
-  const observationOnly =
-    fn.cases.length > 0 &&
-    fn.cases.every((c) => c.source === "callsite" || c.name.startsWith("entry@"));
+  const returnWiden = dtsReturnWidenOf(fn.cases);
   const observedReturnType = retAbs
-    ? absToTSType(widenReturnAbs(retAbs, observationOnly))
+    ? absToTSType(widenReturnAbs(retAbs, returnWiden === "observed"))
     : "unknown";
   // BUG-134：类型谓词 / 断言签名是**返回位的类型**（声明级证据）⇒ 优先于
   // 观测面（观测只能给 `boolean` / `undefined`）；手写契约返回位仍是最高优先。
@@ -2609,6 +2615,7 @@ function computeMainSignature(
     paramNames,
     paramTypes,
     returnType,
+    returnWiden,
     ...(typeParams.length > 0 ? { typeParams } : {}),
     ...(constraints.size > 0 ? { constraints } : {}),
   };
@@ -3623,6 +3630,7 @@ function dtsFunctionDeclaration(
           ...(hofThis === "" ? {} : { thisParam: hofThis }),
           params: hofSlots,
           returnType,
+          returnWiden: dtsReturnWidenOf(fn.cases),
         }),
       ),
     );
@@ -3705,6 +3713,7 @@ function dtsFunctionDeclaration(
         ...(sig.thisParam === undefined ? {} : { thisParam: sig.thisParam }),
         params: sig.paramSlots,
         returnType: sig.returnType,
+        ...(sig.returnWiden === undefined ? {} : { returnWiden: sig.returnWiden }),
       }),
       srcTypeParams && !sigTParams && compatAllowed(plain) ? plain : undefined,
     ),

@@ -56,8 +56,10 @@ export type DtsSignature = {
   thisParam?: string;
   /** 参数位（由 renderDtsParams 打印） */
   params: readonly DtsParam[];
-  /** 返回类型文本 */
+  /** 返回类型文本（已由模型构造阶段定型） */
   returnType: string;
+  /** 该返回位采用的 widen 来源（模型元数据，打印器不使用） */
+  returnWiden?: DtsReturnWiden;
 };
 
 /** 打印函数签名：`<T>(this: X, a: number): R`。 */
@@ -65,6 +67,28 @@ export function renderDtsSignature(sig: DtsSignature): string {
   const params = renderDtsParams(sig.params);
   const all = sig.thisParam === undefined ? params : [sig.thisParam, ...params];
   return `${sig.typeParams ?? ""}(${all.join(", ")}): ${sig.returnType}`;
+}
+
+/** 返回位的拓宽来源：纯观测递归拓宽 / case 域仅顶层拓宽。 */
+export type DtsReturnWiden = "observed" | "scalar";
+
+/** dts 返回位决策的 case 形状（避免 IR 依赖 analyzer 类型）。 */
+export type DtsReturnCase = {
+  source?: "directive" | "callsite";
+  name: string;
+};
+
+/**
+ * 返回位 widen 决策：call@ / entry@ 是**一次观测** ⇒ observed；作者写下的
+ * `@nudo:case` 是域声明 ⇒ scalar。没有 case ⇒ scalar（无观测证据）。
+ *
+ * 决策在**模型构造**阶段完成；打印器只消费已定型的返回类型文本。
+ */
+export function dtsReturnWidenOf(cases: readonly DtsReturnCase[]): DtsReturnWiden {
+  return cases.length > 0 &&
+    cases.every((c) => c.source === "callsite" || c.name.startsWith("entry@"))
+    ? "observed"
+    : "scalar";
 }
 
 /**
