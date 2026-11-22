@@ -8,6 +8,7 @@ import { obj, type Abs } from "@nudojs/core";
 import {
   absToZodSchemaModule,
   projectValidatorOutput,
+  type ReturnWidenMode,
   type SchemaProjectionScope,
   type ZodModuleProjection,
 } from "@nudojs/service/emit";
@@ -50,9 +51,12 @@ export function zodFaceEntries(
   baseName: string,
   paramExps: readonly ParamFace[],
   outputAbs: Abs | undefined,
+  widen: ReturnWidenMode = "observed",
 ): Array<[string, Abs]> {
   const entries: Array<[string, Abs]> = [[`${baseName}Input`, obj(zodInputSlots(paramExps))]];
-  if (outputAbs) entries.push([`${baseName}Output`, projectValidatorOutput(outputAbs)]);
+  if (outputAbs) {
+    entries.push([`${baseName}Output`, projectValidatorOutput(outputAbs, widen)]);
+  }
   return entries;
 }
 

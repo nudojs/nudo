@@ -27,7 +27,11 @@ import {
   type NudoConstraint,
 } from "@nudojs/core";
 import { absTypeForTsTypeText, wrapPromise } from "@nudojs/core/internal";
-import { domainEvidenceCases, widenObservedLiterals } from "@nudojs/service/emit";
+import {
+  domainEvidenceCases,
+  widenObservedLiterals,
+  type ReturnWidenMode,
+} from "@nudojs/service/emit";
 import { tryEvalCall, type CaseResult, type FunctionAnalysis } from "@nudojs/service";
 import { evidencePathOf } from "./selection.ts";
 
@@ -422,12 +426,18 @@ export function unifiedParamFace(
  * - Bug 626：契约返回**投影前复核实现**——实现不满足契约时不投影契约，
  *   回落实现实际的返回形态（契约不是已证成的事实）。
  */
+/** 统一返回面 + 该面的拓宽来源（validator 产物共用同一决策）。 */
+export type UnifiedReturnFace = {
+  abs: Abs | undefined;
+  widen: ReturnWidenMode;
+};
+
 export function unifiedReturnFace(
   fn: FunctionAnalysis,
   eff: EffectiveContract | undefined,
   caseResults: readonly CaseResult[],
   ctx?: FaceContext,
-): Abs | undefined {
+): UnifiedReturnFace {
   const observed = observedReturnFace(fn, caseResults);
   // BUG-261：声明返回里的字面量成员是声明面事实。优先用声明文本直接映射，
   // 避免观测侧早已拓宽成 string 后再也拿不回 `"a" | "b"`。
@@ -435,7 +445,10 @@ export function unifiedReturnFace(
     const declared = absTypeForTsTypeText(fn.declaredReturnType);
     if (declared) {
       const marked = withProvenance(declared, "declared");
-      return isPromiseAbs(observed) ? wrapPromise(marked) : marked;
+      return {
+        abs: isPromiseAbs(observed) ? wrapPromise(marked) : marked,
+        widen: "none",
+      };
     }
   }
   // BUG-213：纯观测返回面（call@/entry@ 采样）不是函数域 ⇒ 发布前拓宽到
@@ -444,27 +457,32 @@ export function unifiedReturnFace(
   // BUG-261：**声明注解**里的字面量类型也是声明面事实（`function f(): "abc"`），
   // 不是一次观测采样 ⇒ 不得随观测路径拓宽（否则 zod / standard 把返回域发布成
   // `string`，消费方 `const x: "abc" = f()` 反而被放行成任意字符串）。
-  const observedDomain =
+  const observedWidened =
     observed !== undefined &&
     observationOnlyCases(caseResults) &&
-    !declaredLiteralReturn(fn)
-      ? widenObservedLiterals(observed)
-      : observed;
+    !declaredLiteralReturn(fn);
+  const observedDomain = observedWidened ? widenObservedLiterals(observed) : observed;
+  const observedWiden: ReturnWidenMode =
+    observed === undefined ? "none" : observedWidened ? "observed" : "scalar";
   const contractReturn = contractReturnFace(eff);
   // 证据路径选择：契约返回面存在 ⇒ 走契约面（否则走观测面）
   if (evidencePathOf(contractReturn !== undefined) === "contract" && contractReturn !== undefined) {
     // 违约复核：实现不满足契约 ⇒ 不投影契约（回落实现实际返回）
-    if (contractViolated(fn, eff, observed, ctx)) return observedDomain;
-    // promise 保形：契约描述的是 await 后的值
-    if (isPromiseAbs(observed)) return wrapPromise(contractReturn);
-    return contractReturn;
+    if (contractViolated(fn, eff, observed, ctx)) {
+      return { abs: observedDomain, widen: observedWiden };
+    }
+    // promise 保形：契约描述的是 await 后的值；契约字面量是声明事实。
+    return {
+      abs: isPromiseAbs(observed) ? wrapPromise(contractReturn) : contractReturn,
+      widen: "none",
+    };
   }
   // 无返回契约：优先契约域种子重算（否则返回位落无约束入口观测，Bug 612）
   if (eff && eff.params.length > 0) {
     const seeded = seedDomainReturn(fn, eff, ctx);
-    if (seeded !== undefined) return seeded;
+    if (seeded !== undefined) return { abs: seeded, widen: "none" };
   }
-  return observedDomain;
+  return { abs: observedDomain, widen: observedWiden };
 }
 
 /**

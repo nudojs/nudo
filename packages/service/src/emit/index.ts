@@ -87,7 +87,10 @@ export {
   type ZodModuleProjection,
 } from "./schema-generator.ts";
 
-export { projectValidatorOutput } from "./projection-policy.ts";
+export {
+  projectValidatorOutput,
+  type ReturnWidenMode,
+} from "./projection-policy.ts";
 
 export {
   absToStandardSchemaFunction,

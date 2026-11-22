@@ -13,7 +13,11 @@
  * ——四个产物面共用一道闸门，Bug 621 / Bug 628，安装点归 S3）⇒ 本模块收到
  * 的函数已是**导出面**的函数，不再自带闸门（避免两处安装）。
  */
-import { generateGuardFunctionFromAbs, projectValidatorOutput } from "@nudojs/service/emit";
+import {
+  generateGuardFunctionFromAbs,
+  projectValidatorOutput,
+  type ReturnWidenMode,
+} from "@nudojs/service/emit";
 import type { Abs } from "@nudojs/core";
 
 /**
@@ -34,13 +38,14 @@ export function guardFaceChunk(
   baseName: string,
   outputAbs: Abs | undefined,
   used?: Set<string>,
+  widen: ReturnWidenMode = "observed",
 ): string {
   const lines: string[] = [`\n// === ${baseName} Type Guards ===`];
   if (outputAbs) {
     lines.push(
       generateGuardFunctionFromAbs(
         `is${baseName}Output`,
-        projectValidatorOutput(outputAbs),
+        projectValidatorOutput(outputAbs, widen),
         used,
       ),
     );
