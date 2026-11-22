@@ -27,8 +27,25 @@ function readSource(path: string): string | undefined {
   return text;
 }
 
+/** NodeNext / bundler 的 `.js` specifier 映射（BUG-400）。 */
+const JS_SPECIFIER_TO_TS: Record<string, readonly string[]> = {
+  ".js": [".ts", ".tsx", ".d.ts"],
+  ".jsx": [".tsx", ".ts", ".d.ts"],
+  ".mjs": [".mts", ".d.mts", ".ts"],
+  ".cjs": [".cts", ".d.cts", ".ts"],
+};
+
 function fileWithExts(raw: string): string | undefined {
-  for (const cand of [raw, ...TYPE_EXTS.map((e) => `${raw}${e}`)]) {
+  const candidates = [raw];
+  // `import type { T } from "./types.js"` 是 NodeNext / bundler 的常见写法；
+  // TS 会把 specifier 的 `.js` 换成源文件扩展名，而不是追加 `.js.ts`。
+  for (const [jsExt, tsExts] of Object.entries(JS_SPECIFIER_TO_TS)) {
+    if (!raw.endsWith(jsExt)) continue;
+    const stem = raw.slice(0, -jsExt.length);
+    for (const ext of tsExts) candidates.push(`${stem}${ext}`);
+  }
+  for (const ext of TYPE_EXTS) candidates.push(`${raw}${ext}`);
+  for (const cand of candidates) {
     const text = readSource(cand);
     if (text !== undefined) return text;
   }
@@ -65,31 +82,116 @@ function findUp(startDir: string, name: string): string | undefined {
   }
 }
 
+type TsconfigJson = {
+  extends?: string | string[];
+  compilerOptions?: {
+    baseUrl?: string;
+    paths?: Record<string, string[]>;
+  };
+};
+
+function isFile(path: string): boolean {
+  return statSync(path, { throwIfNoEntry: false })?.isFile() === true;
+}
+
+/**
+ * `extends` 目标解析：相对路径 / 绝对路径 / node_modules 包（含
+ * `@tsconfig/*` 这类目录形态）。TS 允许省略 `.json`，也允许指向目录。
+ */
+function resolveExtendsPath(spec: string, fromDir: string): string | undefined {
+  const variants = spec.endsWith(".json") ? [spec] : [spec, `${spec}.json`];
+  if (spec.startsWith(".") || isAbsolute(spec)) {
+    for (const v of variants) {
+      const p = resolve(fromDir, v);
+      if (isFile(p)) return p;
+    }
+    return undefined;
+  }
+  let dir = resolve(fromDir);
+  for (;;) {
+    for (const v of variants) {
+      const p = join(dir, "node_modules", v);
+      if (isFile(p)) return p;
+      const pkgConfig = join(p, "tsconfig.json");
+      if (isFile(pkgConfig)) return pkgConfig;
+    }
+    const parent = dirname(dir);
+    if (parent === dir) return undefined;
+    dir = parent;
+  }
+}
+
+function isPathsRecord(v: unknown): v is Record<string, string[]> {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return false;
+  return Object.values(v as Record<string, unknown>).every(
+    (targets) => Array.isArray(targets) && targets.every((t) => typeof t === "string"),
+  );
+}
+
+/**
+ * 读取 tsconfig 的**有效** `paths` / `baseUrl`（BUG-398）。
+ *
+ * 口径与 tsc 对齐：
+ * - `extends` 链自底向上合并；子配置覆盖父配置的同名选项。
+ * - `paths` 是整体替换（不是按键合并）：取链上**最近**一份声明。
+ * - `baseUrl` 是标量合并：取链上**最近**一份声明；继承来的 paths 也按这个
+ *   有效 baseUrl 解析（无 baseUrl 时相对声明 paths 的那份配置目录）。
+ * - `extends` 支持字符串与数组（数组按顺序后者覆盖前者）。
+ */
 function tsconfigPathsOf(fromFile: string): {
   baseDir: string;
   paths: Record<string, string[]>;
 } | undefined {
   const cfg = findUp(dirname(fromFile), "tsconfig.json");
   if (!cfg) return undefined;
-  const json = readJsonLoose(cfg);
-  const opts = json?.compilerOptions as
-    | { baseUrl?: string; paths?: Record<string, string[]> }
-    | undefined;
-  if (!opts?.paths) return undefined;
-  const baseDir = resolve(dirname(cfg), opts.baseUrl ?? ".");
-  return { baseDir, paths: opts.paths };
+  let effectiveBaseUrl: string | undefined;
+  let paths: Record<string, string[]> | undefined;
+  let pathsDir: string | undefined;
+  const seen = new Set<string>();
+  const visit = (file: string): void => {
+    const abs = resolve(file);
+    if (seen.has(abs)) return;
+    seen.add(abs);
+    const json = readJsonLoose(abs) as TsconfigJson | undefined;
+    if (!json) return;
+    const ext = json.extends;
+    const bases = typeof ext === "string" ? [ext] : Array.isArray(ext) ? ext : [];
+    for (const base of bases) {
+      if (typeof base !== "string") continue;
+      const p = resolveExtendsPath(base, dirname(abs));
+      if (p) visit(p);
+    }
+    const opts = json.compilerOptions;
+    if (typeof opts?.baseUrl === "string") {
+      effectiveBaseUrl = resolve(dirname(abs), opts.baseUrl);
+    }
+    if (isPathsRecord(opts?.paths)) {
+      paths = opts.paths;
+      pathsDir = dirname(abs);
+    }
+  };
+  visit(cfg);
+  if (!paths) return undefined;
+  return { baseDir: effectiveBaseUrl ?? pathsDir ?? dirname(cfg), paths };
 }
 
 function resolveTsconfigPath(spec: string, fromFile: string): string | undefined {
   const cfg = tsconfigPathsOf(fromFile);
   if (!cfg) return undefined;
   const exact = cfg.paths[spec];
+  // TS 的通配选择：精确键优先；通配键按 `*` 前缀长度降序（最长前缀优先）。
+  // 不能按对象插入序（BUG-399）——`*` 会抢走 `@app/*`。
   const wildcard = Object.keys(cfg.paths)
     .filter((k) => k.includes("*"))
-    .find((k) => {
+    .filter((k) => {
       const [pre, post] = k.split("*");
       return spec.startsWith(pre ?? "") && spec.endsWith(post ?? "");
-    });
+    })
+    .sort((a, b) => {
+      const pa = a.indexOf("*");
+      const pb = b.indexOf("*");
+      return pb - pa || b.length - a.length;
+    })[0];
   const patterns = exact ?? (wildcard ? cfg.paths[wildcard] : undefined);
   if (!patterns) return undefined;
   for (const pat of patterns) {
