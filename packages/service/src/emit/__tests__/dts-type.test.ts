@@ -13,7 +13,6 @@ import {
   type Abs,
 } from "@nudojs/core";
 import { createTemplateAbs } from "@nudojs/core/internal";
-import { absToTSType } from "../dts-generator.ts";
 import { dtsTypeOfAbs, renderDtsType } from "../dts-type.ts";
 
 const ir = (a: Abs): string => {
@@ -27,10 +26,10 @@ const nullLit = (): Abs => abs({ k: "unknown" }, { op: "lit", value: null }, und
 const undefLit = (): Abs =>
   abs({ k: "unknown" }, { op: "lit", value: undefined }, undefined, "exact");
 
-describe("dts 类型 IR 与 absToTSType 逐字同形（支持子集）", () => {
+describe("dts 类型 IR 快照", () => {
   it("基础 prim / never / unknown / any", () => {
     for (const a of [num(), str(), unknown, mk({ k: "never" }), anyAbs]) {
-      expect(ir(a)).toBe(absToTSType(a));
+      expect(ir(a)).toMatchSnapshot();
     }
   });
 
@@ -44,7 +43,7 @@ describe("dts 类型 IR 与 absToTSType 逐字同形（支持子集）", () => {
       nullLit(),
       undefLit(),
     ]) {
-      expect(ir(a)).toBe(absToTSType(a));
+      expect(ir(a)).toMatchSnapshot();
     }
   });
 
@@ -53,13 +52,13 @@ describe("dts 类型 IR 与 absToTSType 逐字同形（支持子集）", () => {
       mk({ k: "arr", element: num() }),
       mk({ k: "arr", element: joinAbs(num(), str()) }),
     ]) {
-      expect(ir(a)).toBe(absToTSType(a));
+      expect(ir(a)).toMatchSnapshot();
     }
   });
 
   it("元组：位置 / 洞 / rest", () => {
     const tuple = abs({ k: "tuple", elements: [numLit(1), str()] }, undefined, undefined, "exact");
-    expect(ir(tuple)).toBe(absToTSType(tuple));
+    expect(ir(tuple)).toMatchSnapshot();
 
     const withHole = abs(
       { k: "tuple", elements: [numLit(1), undefLit()], holes: [1] },
@@ -67,7 +66,7 @@ describe("dts 类型 IR 与 absToTSType 逐字同形（支持子集）", () => {
       undefined,
       "exact",
     );
-    expect(ir(withHole)).toBe(absToTSType(withHole));
+    expect(ir(withHole)).toMatchSnapshot();
 
     const withRest = abs(
       {
@@ -79,7 +78,7 @@ describe("dts 类型 IR 与 absToTSType 逐字同形（支持子集）", () => {
       undefined,
       "exact",
     );
-    expect(ir(withRest)).toBe(absToTSType(withRest));
+    expect(ir(withRest)).toMatchSnapshot();
   });
 
   it("对象：简单槽 / 可选 / 只读 / 空对象", () => {
@@ -91,7 +90,7 @@ describe("dts 类型 IR 与 absToTSType 逐字同形（支持子集）", () => {
         c: { value: numLit(1), readonly: true },
       },
     });
-    expect(ir(simple)).toBe(absToTSType(simple));
+    expect(ir(simple)).toMatchSnapshot();
 
     const empty = mk({ k: "obj", slots: {} });
     expect(ir(empty)).toBe("Record<string, never>");
@@ -104,7 +103,7 @@ describe("dts 类型 IR 与 absToTSType 逐字同形（支持子集）", () => {
       slots: { a: { value: num() } },
       open: true,
     } as never);
-    expect(ir(openWithSlots)).toBe(absToTSType(openWithSlots));
+    expect(ir(openWithSlots)).toMatchSnapshot();
   });
 
   it("契约字面量槽：eq(self, lit) → 字面量类型", () => {
@@ -116,7 +115,7 @@ describe("dts 类型 IR 与 absToTSType 逐字同形（支持子集）", () => {
       "path",
     );
     const obj = mk({ k: "obj", slots: { k: { value: slot } } } as never);
-    expect(ir(obj)).toBe(absToTSType(obj));
+    expect(ir(obj)).toMatchSnapshot();
   });
 
   it("索引签名 / 纯数组视图 / 模板字面量", () => {
@@ -125,14 +124,14 @@ describe("dts 类型 IR 与 absToTSType 逐字同形（支持子集）", () => {
       slots: { a: { value: num() } },
       index: { key: str(), value: num() },
     } as never);
-    expect(ir(indexed)).toBe(absToTSType(indexed));
+    expect(ir(indexed)).toMatchSnapshot();
 
     const indexedEmpty = mk({
       k: "obj",
       slots: {},
       index: { key: str(), value: num() },
     } as never);
-    expect(ir(indexedEmpty)).toBe(absToTSType(indexedEmpty));
+    expect(ir(indexedEmpty)).toMatchSnapshot();
 
     const view = mk({
       k: "obj",
@@ -143,18 +142,18 @@ describe("dts 类型 IR 与 absToTSType 逐字同形（支持子集）", () => {
       },
       view: "array",
     } as never);
-    expect(ir(view)).toBe(absToTSType(view));
+    expect(ir(view)).toMatchSnapshot();
 
     const tpl = createTemplateAbs([strLit("id-"), num()]);
-    expect(ir(tpl)).toBe(absToTSType(tpl));
+    expect(ir(tpl)).toMatchSnapshot();
   });
 
-  it("对象不支持的面：用户符号键 ⇒ undefined", () => {
+  it("无源码名的用户符号键被跳过（与旧渲染器同口径）", () => {
     expect(
-      dtsTypeOfAbs(
+      ir(
         mk({ k: "obj", slots: { "@@sym#1": { value: num(), symbolKey: true } } } as never),
       ),
-    ).toBeUndefined();
+    ).toBe("Record<string, never>");
   });
 
   it("生成器 / 迭代器协议对象", () => {
@@ -168,13 +167,13 @@ describe("dts 类型 IR 与 absToTSType 逐字同形（支持子集）", () => {
         "1": { value: numLit(2) },
       },
     } as never);
-    expect(ir(generator)).toBe(absToTSType(generator));
+    expect(ir(generator)).toMatchSnapshot();
 
     const iterator = mk({
       k: "obj",
       slots: { next: { value: nextFn }, "0": { value: numLit(1) } },
     } as never);
-    expect(ir(iterator)).toBe(absToTSType(iterator));
+    expect(ir(iterator)).toMatchSnapshot();
 
     const asyncGen = mk({
       k: "obj",
@@ -184,7 +183,7 @@ describe("dts 类型 IR 与 absToTSType 逐字同形（支持子集）", () => {
         "0": { value: numLit(1) },
       },
     } as never);
-    expect(ir(asyncGen)).toBe(absToTSType(asyncGen));
+    expect(ir(asyncGen)).toMatchSnapshot();
 
     const carried = {
       ...mk({
@@ -221,18 +220,18 @@ describe("dts 类型 IR 与 absToTSType 逐字同形（支持子集）", () => {
         a: { value: num() },
       },
     } as never);
-    expect(ir(privateObj)).toBe(absToTSType(privateObj));
+    expect(ir(privateObj)).toMatchSnapshot();
   });
 
   it("联合：去重 / 丢弃 never", () => {
     const union = joinAbs(joinAbs(num(), str()), mk({ k: "never" }));
-    expect(ir(union)).toBe(absToTSType(union));
+    expect(ir(union)).toMatchSnapshot();
   });
 
   it("brand：内建泛型 / Arguments 别名；用户类回落", () => {
     for (const name of ["Map", "Set", "Array", "Promise", "Generator"]) {
       const a = mk({ k: "brand", name, shape: mk({ k: "obj", slots: {} }) } as never);
-      expect(ir(a)).toBe(absToTSType(a));
+      expect(ir(a)).toMatchSnapshot();
     }
     const args = mk({
       k: "brand",
@@ -279,7 +278,7 @@ describe("dts 类型 IR 与 absToTSType 逐字同形（支持子集）", () => {
       paramTypes: [num()],
       returnType: str(),
     } as never);
-    expect(ir(simple)).toBe(absToTSType(simple));
+    expect(ir(simple)).toMatchSnapshot();
 
     const optional = mk({
       k: "fn",
@@ -287,7 +286,7 @@ describe("dts 类型 IR 与 absToTSType 逐字同形（支持子集）", () => {
       paramTypes: [num()],
       returnType: str(),
     } as never);
-    expect(ir(optional)).toBe(absToTSType(optional));
+    expect(ir(optional)).toMatchSnapshot();
 
     const restArr = mk({
       k: "fn",
@@ -295,7 +294,7 @@ describe("dts 类型 IR 与 absToTSType 逐字同形（支持子集）", () => {
       paramTypes: [mk({ k: "arr", element: num() })],
       returnType: str(),
     } as never);
-    expect(ir(restArr)).toBe(absToTSType(restArr));
+    expect(ir(restArr)).toMatchSnapshot();
 
     const restPrim = mk({
       k: "fn",
@@ -303,11 +302,11 @@ describe("dts 类型 IR 与 absToTSType 逐字同形（支持子集）", () => {
       paramTypes: [num()],
       returnType: str(),
     } as never);
-    expect(ir(restPrim)).toBe(absToTSType(restPrim));
+    expect(ir(restPrim)).toMatchSnapshot();
 
     const arrOfFn = mk({ k: "arr", element: simple });
-    expect(ir(arrOfFn)).toBe(absToTSType(arrOfFn));
-    expect(ir(joinAbs(simple, num()))).toBe(absToTSType(joinAbs(simple, num())));
+    expect(ir(arrOfFn)).toMatchSnapshot();
+    expect(ir(joinAbs(simple, num()))).toMatchSnapshot();
   });
 
   it("fn：重载集发调用签名对象", () => {
@@ -321,14 +320,14 @@ describe("dts 类型 IR 与 absToTSType 逐字同形（支持子集）", () => {
         { paramTypes: [str()], returnType: num() },
       ],
     } as never);
-    expect(ir(fn)).toBe(absToTSType(fn));
+    expect(ir(fn)).toMatchSnapshot();
   });
 
   it("effect：promise 包装 / 非 promise 透明", () => {
     const promise = mk({ k: "eff", eff: "promise", inner: num() } as never);
-    expect(ir(promise)).toBe(absToTSType(promise));
+    expect(ir(promise)).toMatchSnapshot();
     const thunk = mk({ k: "eff", eff: "unknown", inner: str() } as never);
-    expect(ir(thunk)).toBe(absToTSType(thunk));
+    expect(ir(thunk)).toMatchSnapshot();
   });
 
   it("符号成员 / 访问器 / 数组视图伴生槽 / contract or", () => {
@@ -345,7 +344,7 @@ describe("dts 类型 IR 与 absToTSType 逐字同形（支持子集）", () => {
         "@@toStringTag": { value: str(), symbolKey: true },
       },
     } as never);
-    expect(ir(symObj)).toBe(absToTSType(symObj));
+    expect(ir(symObj)).toMatchSnapshot();
 
     const placeholder = abs(
       { k: "unknown" },
@@ -359,7 +358,7 @@ describe("dts 类型 IR 与 absToTSType 逐字同形（支持子集）", () => {
       () => num(),
       null,
     );
-    expect(ir(accObj)).toBe(absToTSType(accObj));
+    expect(ir(accObj)).toMatchSnapshot();
 
     const view = mk({
       k: "obj",
@@ -370,7 +369,7 @@ describe("dts 类型 IR 与 absToTSType 逐字同形（支持子集）", () => {
       },
       view: "array",
     } as never);
-    expect(ir(view)).toBe(absToTSType(view));
+    expect(ir(view)).toMatchSnapshot();
 
     const self = { op: "var", id: "x" } as never;
     const orSlot = abs(
@@ -386,7 +385,7 @@ describe("dts 类型 IR 与 absToTSType 逐字同形（支持子集）", () => {
       "path",
     );
     const orObj = mk({ k: "obj", slots: { k: { value: orSlot } } } as never);
-    expect(ir(orObj)).toBe(absToTSType(orObj));
+    expect(ir(orObj)).toMatchSnapshot();
   });
 
   it("类型变量映射 / 对象方法返回注解 / symbol 返回注解", () => {
@@ -403,7 +402,7 @@ describe("dts 类型 IR 与 absToTSType 逐字同形（支持子集）", () => {
       returnType: str(),
     } as never);
     const obj = mk({ k: "obj", slots: { f: { value: fnSlot } } } as never);
-    expect(ir(obj)).toBe(absToTSType(obj));
+    expect(ir(obj)).toMatchSnapshot();
     expect(
       renderDtsType(
         dtsTypeOfAbs(obj, { objectFnReturnOverrides: new Map([["f", "string"]]) })!,
@@ -422,10 +421,10 @@ describe("dts 类型 IR 与 absToTSType 逐字同形（支持子集）", () => {
     ).toBe("{ [Symbol.iterator](): number }");
   });
 
-  it("不支持：类型变量 ⇒ undefined（回落旧渲染器）", () => {
+  it("未映射类型变量 ⇒ unknown（不再回落）", () => {
     expect(
-      dtsTypeOfAbs(abs({ k: "any" }, { op: "var", id: "T" }, undefined, "path")),
-    ).toBeUndefined();
+      ir(abs({ k: "any" }, { op: "var", id: "T" }, undefined, "path")),
+    ).toBe("unknown");
   });
 
   it("readonly 元组由模型标记打印", () => {

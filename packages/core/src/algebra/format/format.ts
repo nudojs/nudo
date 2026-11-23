@@ -189,7 +189,7 @@ function formatLitValue(v: LiteralValue): string {
  * - `sum(fn, n)` → `(a) => b | n` 被读成「返回 `b | n` 的函数」（应是「函数或 n」）
  *
  * ⇒ `fn` 出现在「后面还要接后缀」的位置（数组元素 / union 成员）时必须加括号。
- * dts 面（`absToTSType`）对同一形态**已经**加了括号 ⇒ 两个渲染器此前对同一
+ * dts 面（`DtsType`）对同一形态**已经**加了括号 ⇒ 两个渲染器此前对同一
  * Abs 给出两种读法（`formatShape` 面是坏渲染）。
  *
  * ⚠ 裁决范围：**只对 `fn`**（403 / 404 的实测证据只涉及 `fn`）。`brand` /

@@ -1,12 +1,9 @@
 /**
- * dts 声明 IR · 类型节点 + 打印器。
+ * dts 声明 IR · 类型节点 + 打印器（唯一 dts 类型渲染路径）。
  *
- * 第一切片只覆盖**无需引擎上下文**的类型：prim / 字面量 / array / tuple /
- * union / never / unknown。遇到 obj / brand / fn / eff / 模板 / 类型变量 /
- * 收窄 pred 时返回 undefined，由调用方回落到既有 `absToTSType`。
- *
- * 这样新路径可以逐步接管简单返回 / 参数类型，而不在一次改动里重写 8.5k 行
- * 渲染器。
+ * 覆盖 Abs 的全部 shape：prim / 字面量 / array / tuple / union /
+ * never / unknown / obj / brand / fn / eff / 模板 / 生成器协议。
+ * 环与超深结构发合法的截断标记；不存在旧渲染器回落。
  */
 import {
   abs as makeAbs,
@@ -23,9 +20,18 @@ import {
   formatObjectKey,
   isJsBindingIdent,
   isTemplateLike,
+  ProjectionBudget,
   templatePartsOf,
 } from "@nudojs/core/internal";
 import { isHiddenInternalSlot } from "./internal-slot.ts";
+
+/** 截断标记（与旧 dts 渲染器逐字一致；注释即可观测证据）。 */
+const TS_TRUNC = {
+  cycle: "/* nudo:truncated:cycle */ unknown",
+  depth: "/* nudo:truncated:depth */ unknown",
+  cycleTpl: "/* nudo:truncated:cycle */ string",
+  depthTpl: "/* nudo:truncated:depth */ string",
+} as const;
 
 /** 引擎的符号键投影（`"@@X"`）→ TS 符号键成员名。 */
 export const WELL_KNOWN_SYMBOLS = new Map<string, string>([
@@ -121,7 +127,7 @@ export type DtsBrandScope = {
 };
 
 export type DtsTypeOpts = {
-  /** `as const` 通道下的值整体只读（与 absToTSType 的全局开关同口径） */
+  /** `as const` 通道下的值整体只读（与 dts 全局开关同口径） */
   readonlyValues?: boolean;
   /** 模块投影作用域；缺省 = 纯投影（类名原样保留） */
   brandScope?: DtsBrandScope;
@@ -135,8 +141,8 @@ export type DtsTypeOpts = {
   symbolReturnOverrides?: ReadonlyMap<string, string>;
   /** 用户符号键的源码名队列（按出现序消费，`{ [tag]: 1 }` ⇒ `[tag]`） */
   userSymbolKeys?: string[];
-  /** @internal 递归环检测（DESIGN-001：Abs 允许成环） */
-  seen?: Set<Abs>;
+  /** @internal 环 / 深度预算（DESIGN-001） */
+  budget?: ProjectionBudget;
 };
 
 /** 返回位协变 widen：顶层（含 sum 成员）标量字面量 → 基类型。 */
@@ -164,9 +170,9 @@ function widenTopLevelDts(a: Abs): Abs {
 
 /**
  * 生成器 / 迭代器协议对象 → Generator / AsyncGenerator / IterableIterator。
- * 返回 undefined = 不是迭代器；null = 是迭代器但元素 / 返回位不可表达。
+ * 返回 undefined = 不是迭代器。
  */
-function iteratorDtsType(a: Abs, opts: DtsTypeOpts): DtsType | null | undefined {
+function iteratorDtsType(a: Abs, opts: DtsTypeOpts): DtsType | undefined {
   if (a.shape.k !== "obj") return undefined;
   const slots = a.shape.slots;
   const carried = a.facets?.brand;
@@ -189,18 +195,14 @@ function iteratorDtsType(a: Abs, opts: DtsTypeOpts): DtsType | null | undefined 
     } catch {
       joined = elems[0]!;
     }
-    const t = dtsTypeOfAbs(widenTopLevelDts(joined), opts);
-    if (t === undefined) return null;
-    elemType = t;
+    elemType = dtsTypeOfAbs(widenTopLevelDts(joined), opts);
   }
   const tReturn = a.facets?.genReturn
     ? dtsTypeOfAbs(widenTopLevelDts(a.facets.genReturn), opts)
     : undefined;
-  if (a.facets?.genReturn && tReturn === undefined) return null;
   const tNext = a.facets?.genNext
     ? dtsTypeOfAbs(widenTopLevelDts(a.facets.genNext), opts)
     : undefined;
-  if (a.facets?.genNext && tNext === undefined) return null;
 
   const args: DtsType[] = [elemType];
   if (tReturn !== undefined) args.push(tReturn);
@@ -218,21 +220,31 @@ function iteratorDtsType(a: Abs, opts: DtsTypeOpts): DtsType | null | undefined 
 /**
  * Abs → DtsType；返回 undefined = 本切片不负责，调用方回落。
  *
- * 保守条件：任何非字面量 term、任何收窄 pred、类型变量都直接放弃；宁可走
- * 旧渲染器，也不让新打印器输出与旧产物不同的文本。
+ * 唯一的 dts 类型投影入口：所有 Abs shape 都可表达；环 / 超深结构发合法的
+ * 截断标记，不再回落到第二套渲染器。
  */
-export function dtsTypeOfAbs(a: Abs, opts: DtsTypeOpts = {}): DtsType | undefined {
-  const seen = opts.seen ?? new Set<Abs>();
-  if (seen.has(a)) return undefined;
-  seen.add(a);
+export function dtsTypeOfAbs(a: Abs, opts: DtsTypeOpts = {}): DtsType {
+  const budget = opts.budget ?? new ProjectionBudget();
+  const stop = budget.enter(a);
+  if (stop === "cycle") return { kind: "raw", text: TS_TRUNC.cycle };
+  if (stop === "depth") return { kind: "raw", text: TS_TRUNC.depth };
   try {
-    return dtsTypeOfAbsInner(a, { ...opts, seen });
+    const out = dtsTypeOfAbsInner(a, { ...opts, budget });
+    // BUG-392：frozen 对象按 Readonly<T> 发布（数组 / 元组已在节点上 readonly）。
+    return a.shape.k === "obj" && isFrozen(a)
+      ? { kind: "generic", name: "Readonly", args: [out] }
+      : out;
   } finally {
-    seen.delete(a);
+    budget.exit();
   }
 }
 
-function dtsTypeOfAbsInner(a: Abs, opts: DtsTypeOpts): DtsType | undefined {
+/** 便捷文本投影（测试 / 非声明辅助面共用）。 */
+export function absToDtsTypeText(a: Abs, typeVars?: Map<string, string>): string {
+  return renderDtsType(dtsTypeOfAbs(a, typeVars === undefined ? {} : { typeVars }));
+}
+
+function dtsTypeOfAbsInner(a: Abs, opts: DtsTypeOpts): DtsType {
   // 类型变量：shape any + term var（α / B:param）。
   if (a.shape.k === "any" && a.term?.op === "var") {
     const mapped = opts.typeVars?.get(a.term.id);
@@ -246,16 +258,11 @@ function dtsTypeOfAbsInner(a: Abs, opts: DtsTypeOpts): DtsType | undefined {
       if (lv.ok && typeof lv.value === "string") {
         parts.push({ fixed: escapeTemplateTypeFixed(lv.value) });
       } else {
-        const t = dtsTypeOfAbs(p, opts);
-        if (t === undefined) return undefined;
-        parts.push({ type: t });
+        parts.push({ type: dtsTypeOfAbs(p, opts) });
       }
     }
     return { kind: "template", parts };
   }
-  if (a.pred !== undefined && a.pred.op !== "true") return undefined;
-  if (a.term !== undefined && a.term.op !== "lit") return undefined;
-
   if (a.term?.op === "lit") {
     const v = a.term.value;
     if (v === null) return { kind: "literal", text: "null" };
@@ -284,26 +291,15 @@ function dtsTypeOfAbsInner(a: Abs, opts: DtsTypeOpts): DtsType | undefined {
       return { kind: "prim", name: a.shape.type };
     case "arr": {
       const element = dtsTypeOfAbs(a.shape.element, opts);
-      return element === undefined
-        ? undefined
-        : {
-            kind: "array",
-            element,
-            ...(opts.readonlyValues || isFrozen(a) ? { readonly: true } : {}),
-          };
+      return {
+        kind: "array",
+        element,
+        ...(opts.readonlyValues || isFrozen(a) ? { readonly: true } : {}),
+      };
     }
     case "tuple": {
-      const elements: DtsType[] = [];
-      for (const el of a.shape.elements) {
-        const t = dtsTypeOfAbs(el, opts);
-        if (t === undefined) return undefined;
-        elements.push(t);
-      }
-      let rest: DtsType | undefined;
-      if (a.shape.rest) {
-        rest = dtsTypeOfAbs(a.shape.rest, opts);
-        if (rest === undefined) return undefined;
-      }
+      const elements = a.shape.elements.map((el) => dtsTypeOfAbs(el, opts));
+      const rest = a.shape.rest ? dtsTypeOfAbs(a.shape.rest, opts) : undefined;
       return {
         kind: "tuple",
         elements,
@@ -314,7 +310,6 @@ function dtsTypeOfAbsInner(a: Abs, opts: DtsTypeOpts): DtsType | undefined {
     }
     case "eff": {
       const inner = dtsTypeOfAbs(a.shape.inner, opts);
-      if (inner === undefined) return undefined;
       return a.shape.eff === "promise"
         ? { kind: "generic", name: "Promise", args: [inner] }
         : inner;
@@ -342,18 +337,10 @@ function dtsTypeOfAbsInner(a: Abs, opts: DtsTypeOpts): DtsType | undefined {
     }
     case "fn": {
       if (a.shape.overloads !== undefined && a.shape.overloads.length > 0) {
-        const arms: Array<{ paramTypes: DtsType[]; returnType: DtsType }> = [];
-        for (const arm of a.shape.overloads) {
-          const paramTypes: DtsType[] = [];
-          for (const pt of arm.paramTypes) {
-            const t = dtsTypeOfAbs(pt, opts);
-            if (t === undefined) return undefined;
-            paramTypes.push(t);
-          }
-          const returnType = dtsTypeOfAbs(arm.returnType, opts);
-          if (returnType === undefined) return undefined;
-          arms.push({ paramTypes, returnType });
-        }
+        const arms = a.shape.overloads.map((arm) => ({
+          paramTypes: arm.paramTypes.map((pt) => dtsTypeOfAbs(pt, opts)),
+          returnType: dtsTypeOfAbs(arm.returnType, opts),
+        }));
         return { kind: "overloads", arms };
       }
       const params: Array<{ name: string; type: DtsType }> = [];
@@ -364,7 +351,6 @@ function dtsTypeOfAbsInner(a: Abs, opts: DtsTypeOpts): DtsType | undefined {
         const pt = a.shape.paramTypes?.[i];
         if (pt) {
           const t = dtsTypeOfAbs(pt, opts);
-          if (t === undefined) return undefined;
           params.push({
             name: sanitizeFnParam(raw, i),
             type: isRest && pt.shape.k !== "arr" ? { kind: "array", element: t } : t,
@@ -378,26 +364,16 @@ function dtsTypeOfAbsInner(a: Abs, opts: DtsTypeOpts): DtsType | undefined {
       }
       const returnType = a.shape.returnType
         ? dtsTypeOfAbs(a.shape.returnType, opts)
-        : { kind: "unknown" as const };
-      if (returnType === undefined) return undefined;
+        : ({ kind: "unknown" } as const);
       return { kind: "fn", params, returnType };
     }
-    case "sum": {
-      const members: DtsType[] = [];
-      for (const m of a.shape.members) {
-        const t = dtsTypeOfAbs(m, opts);
-        if (t === undefined) return undefined;
-        members.push(t);
-      }
-      return { kind: "union", members };
-    }
+    case "sum":
+      return { kind: "union", members: a.shape.members.map((m) => dtsTypeOfAbs(m, opts)) };
     case "obj": {
       const iter = iteratorDtsType(a, opts);
-      if (iter === null) return undefined;
       if (iter !== undefined) return iter;
       const entries = Object.entries(a.shape.slots);
       if (a.shape.view !== undefined) {
-        if (a.shape.view !== "array") return undefined;
         const idxs = entries
           .map(([k]) => k)
           .filter((k) => CANONICAL_INDEX.test(k))
@@ -415,8 +391,11 @@ function dtsTypeOfAbsInner(a: Abs, opts: DtsTypeOpts): DtsType | undefined {
               continue;
             }
             const t = dtsTypeOfAbs(slot.value, opts);
-            if (t === undefined || t.kind === "union" || t.kind === "fn") return undefined;
-            elements.push(t);
+            elements.push(
+              t.kind === "union" || t.kind === "fn"
+                ? { kind: "raw", text: `(${renderDtsType(t)})` }
+                : t,
+            );
           }
           arrayPart = { kind: "tuple", elements };
         }
@@ -426,8 +405,9 @@ function dtsTypeOfAbsInner(a: Abs, opts: DtsTypeOpts): DtsType | undefined {
         if (sideEntries.length === 0) return arrayPart;
         const sideSlots: DtsObjectSlot[] = [];
         for (const [k, slot] of sideEntries) {
+          // 数组类型本身提供 [Symbol.iterator]，旧渲染器同样跳过该伴生槽。
+          if (k === "@@iterator" && slot.symbolKey === true) continue;
           const s = objectSlotOf(a, k, slot, opts);
-          if (s === undefined) return undefined;
           if (s === null) continue;
           sideSlots.push(s);
         }
@@ -438,10 +418,10 @@ function dtsTypeOfAbsInner(a: Abs, opts: DtsTypeOpts): DtsType | undefined {
       }
       let index: { key: DtsType; value: DtsType } | undefined;
       if (a.shape.index !== undefined) {
-        const key = dtsTypeOfAbs(a.shape.index.key, opts);
-        const value = dtsTypeOfAbs(a.shape.index.value, opts);
-        if (key === undefined || value === undefined) return undefined;
-        index = { key, value };
+        index = {
+          key: dtsTypeOfAbs(a.shape.index.key, opts),
+          value: dtsTypeOfAbs(a.shape.index.value, opts),
+        };
       }
       if (entries.length === 0 && index === undefined) {
         return { kind: "object", slots: [], empty: a.shape.open === true ? "unknown" : "never" };
@@ -449,14 +429,15 @@ function dtsTypeOfAbsInner(a: Abs, opts: DtsTypeOpts): DtsType | undefined {
       const slots: DtsObjectSlot[] = [];
       for (const [k, slot] of entries) {
         const s = objectSlotOf(a, k, slot, opts);
-        if (s === undefined) return undefined;
         if (s === null) continue;
         slots.push(s);
       }
       return { kind: "object", slots, ...(index ? { index } : {}) };
     }
-    default:
-      return undefined;
+    default: {
+      const exhaustive: never = a.shape;
+      return exhaustive;
+    }
   }
 }
 
@@ -481,7 +462,7 @@ function objectSlotOf(
   k: string,
   slot: { value: Abs; optional?: boolean; readonly?: boolean; symbolKey?: boolean },
   opts: DtsTypeOpts,
-): DtsObjectSlot | null | undefined {
+): DtsObjectSlot | null {
   const flags = {
     ...(slot.optional ? { optional: true } : {}),
     ...(slot.readonly === true || opts.readonlyValues ? { readonly: true } : {}),
@@ -492,7 +473,7 @@ function objectSlotOf(
         ? undefined
         : opts.userSymbolKeys?.shift();
     const sym = WELL_KNOWN_SYMBOLS.get(k) ?? userKey;
-    if (sym === undefined) return undefined;
+    if (sym === undefined) return null;
     if (slot.value.shape.k === "fn") {
       const fromAbs = slot.value.shape.returnType
         ? dtsTypeOfAbs(slot.value.shape.returnType, opts)
@@ -501,18 +482,11 @@ function objectSlotOf(
       const ret = fromAbs ?? (override !== undefined ? { kind: "raw" as const, text: override } : { kind: "unknown" as const });
       return { key: sym, symbol: true, type: { kind: "fn", params: [], returnType: ret } };
     }
-    const t = dtsTypeOfAbs(slot.value, opts);
-    return t === undefined ? undefined : { key: sym, symbol: true, type: t };
+    return { key: sym, symbol: true, type: dtsTypeOfAbs(slot.value, opts) };
   }
-  if (isHiddenInternalSlot(k, slot)) {
-    // 生成器 / 迭代器协议对象由 iteratorTSType 特判 ⇒ 回落；其余 internal
-    // 槽（私有字段等）在 absToTSType 里被跳过 ⇒ IR 同样跳过。
-    const gen =
-      a.facets?.brand === "Generator" ||
-      a.facets?.brand === "AsyncGenerator" ||
-      (a.shape.k === "obj" && a.shape.slots["next"] !== undefined);
-    return gen ? undefined : null;
-  }
+  // 生成器 / 迭代器协议对象已在 obj 分支由 iteratorDtsType 处理；其余
+  // internal 槽（私有字段等）在旧渲染器里被跳过 ⇒ IR 同样跳过。
+  if (isHiddenInternalSlot(k, slot)) return null;
 
   let source = slot.value;
   if (slot.value.term !== undefined) {
@@ -526,7 +500,6 @@ function objectSlotOf(
     }
   }
   let t = contractLiteralDtsType(source) ?? dtsTypeOfAbs(source, opts);
-  if (t === undefined) return undefined;
   if (t.kind === "fn") {
     const override = opts.objectFnReturnOverrides?.get(k);
     if (override !== undefined) {
@@ -633,12 +606,12 @@ function literalDtsType(v: LiteralValue): DtsType {
 /** 规范数组下标（`0` / `12`；无前导零）。 */
 const CANONICAL_INDEX = /^(?:0|[1-9]\d*)$/;
 
-/** `Object.freeze` 的冻结侧表（与 absToTSTypeB 的 BUG-392 判据同源）。 */
+/** `Object.freeze` 的冻结侧表（BUG-392 判据）。 */
 function isFrozen(a: Abs): boolean {
   return a.facets?.frozen === true || extStateOf(a) === "frozen";
 }
 
-/** DtsType → TS 文本（与 absToTSType 的支持子集逐字同形）。 */
+/** DtsType → TS 文本。 */
 export function renderDtsType(t: DtsType): string {
   switch (t.kind) {
     case "prim":
@@ -664,7 +637,7 @@ export function renderDtsType(t: DtsType): string {
         const restText =
           t.rest.kind === "array"
             ? renderDtsType(t.rest)
-            : t.rest.kind === "union"
+            : t.rest.kind === "union" || t.rest.kind === "fn"
               ? `(${renderDtsType(t.rest)})[]`
               : `${renderDtsType(t.rest)}[]`;
         parts.push(`...${restText}`);
@@ -696,7 +669,17 @@ export function renderDtsType(t: DtsType): string {
       return t.members.map(renderDtsType).join(" & ");
     case "template":
       return `\`${t.parts
-        .map((p) => (p.fixed !== undefined ? p.fixed : `\${${renderDtsType(p.type!)}}`))
+        .map((p) => {
+          if (p.fixed !== undefined) return p.fixed;
+          const text = renderDtsType(p.type!);
+          const safe =
+            text === TS_TRUNC.cycle
+              ? TS_TRUNC.cycleTpl
+              : text === TS_TRUNC.depth
+                ? TS_TRUNC.depthTpl
+                : text;
+          return `\${${safe}}`;
+        })
         .join("")}\``;
     case "generic":
       return `${t.name}<${t.args.map(renderDtsType).join(", ")}>`;

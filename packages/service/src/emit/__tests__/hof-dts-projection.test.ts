@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { abs, num, v, type Abs } from "@nudojs/core";
-import { absToTSType, generateDts } from "../dts-generator.ts";
+import { generateDts } from "../dts-generator.ts";
+import { absToDtsTypeText as absToTSType } from "../dts-type.ts";
 import { analyzeFile } from "@nudojs/service";
 import { resetAllAnalysisCaches } from "@nudojs/service";
 import { tscNoEmitSingle as tscNoEmit } from "./dts-tsc.ts";

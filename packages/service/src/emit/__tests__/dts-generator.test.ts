@@ -10,7 +10,8 @@ import {
   objOf,
   type Abs,
 } from "@nudojs/core";
-import { absToTSType, generateDts, generateFunctionDtsLines } from "../dts-generator.ts";
+import { generateDts, generateFunctionDtsLines } from "../dts-generator.ts";
+import { absToDtsTypeText as absToTSType } from "../dts-type.ts";
 import { analyzeFile } from "@nudojs/service";
 import { neverAbs, undefLit, tupleSparse, tupleDense, tupleLead, tupleTrail, tupleMulti } from "./fixtures.ts";
 

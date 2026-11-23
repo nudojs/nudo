@@ -12,7 +12,6 @@ import {
   substAbs,
   provenanceOf,
   leqAbs,
-  extStateOf,
 } from "@nudojs/core";
 import {
   isTemplateLike,
@@ -111,39 +110,6 @@ function dtsIdentifier(name: string): string {
   return toJsBindingIdent(name);
 }
 
-/** 函数类型 / 并集在数组元素、`| undefined` 等位置必须加括号（TS 优先级）。 */
-function wrapComplexAbs(a: Abs, typeVars: Map<string, string> | undefined, budget: ProjectionBudget): string {
-  const ts = absToTSTypeB(a, typeVars, budget);
-  if (a.shape.k === "sum" || a.shape.k === "fn") return `(${ts})`;
-  return ts;
-}
-
-/** 并集成员：函数类型必须括号，否则 `number | (x) => T` 非法（TS1385）。 */
-function wrapUnionMember(a: Abs, typeVars: Map<string, string> | undefined, budget: ProjectionBudget): string {
-  const ts = absToTSTypeB(a, typeVars, budget);
-  if (a.shape.k === "fn") return `(${ts})`;
-  return ts;
-}
-
-/**
- * 截断标记（DESIGN-001）：注释 + 基类型，任何类型位都是合法 TS 且可观测。
- * 模板插值位 unknown 不可插值（TS2322）→ string 变体；两个常量串不会与
- * 合法投影混淆（类型名不可能含 `/*`）。dts 无 dropped 台账——标记即观测。
- */
-const TS_TRUNC = {
-  cycle: "/* nudo:truncated:cycle */ unknown",
-  depth: "/* nudo:truncated:depth */ unknown",
-  cycleTpl: "/* nudo:truncated:cycle */ string",
-  depthTpl: "/* nudo:truncated:depth */ string",
-} as const;
-
-/** 模板插值位换合法变体（unknown 不是可插值类型） */
-function tsTplSafe(ts: string): string {
-  if (ts === TS_TRUNC.cycle) return TS_TRUNC.cycleTpl;
-  if (ts === TS_TRUNC.depth) return TS_TRUNC.depthTpl;
-  return ts;
-}
-
 /**
  * 成员声明里不能用保留字/非法标识符；空名与非 ident 落到 argN。
  * optional 标签（`options?`）先剥下再判 ident、保留 `?` 输出
@@ -206,14 +172,9 @@ function slotAbsOf(a: Abs, k: string, fallback: Abs): Abs {
  * `typeVars`：term var id → TS 类型参数名（HOF 泛型投影时传入；
  * `any`+var 在此映射下渲染为该参数名，否则 `unknown`）。
  */
-export function absToTSType(a: Abs, typeVars?: Map<string, string>): string {
-  return absToTSTypeB(a, typeVars, new ProjectionBudget());
-}
 
-/**
- * 优先走类型 IR 的渲染：prim / 字面量 / array / tuple / union 由
- * `dts-type.ts` 打印；其余 shape 回落既有 `absToTSType`。
- */
+
+/** dts 类型文本：唯一的 IR 渲染入口。 */
 function absToTSTypeIr(a: Abs, typeVars?: Map<string, string>): string {
   const t = dtsTypeOfAbs(a, {
     readonlyValues: currentReadonlySlots,
@@ -230,31 +191,15 @@ function absToTSTypeIr(a: Abs, typeVars?: Map<string, string>): string {
       ? {}
       : { userSymbolKeys: [...currentUserSymbolKeys] }),
   });
-  return t === undefined ? absToTSType(a, typeVars) : renderDtsType(t);
+  return renderDtsType(t);
 }
 
-function absToTSTypeB(a: Abs, typeVars: Map<string, string> | undefined, budget: ProjectionBudget): string {
-  // DESIGN-001：环 / 超深 shape 截断为显式标记（合法 TS，tsc 门可过）
-  const stop = budget.enter(a);
-  if (stop === "cycle") return TS_TRUNC.cycle;
-  if (stop === "depth") return TS_TRUNC.depth;
-  try {
-    const text = absToTSTypeInner(a, typeVars, budget);
-    // BUG-392：`Object.freeze` 的返回值在引擎里是 frozen 侧表状态；dts 面
-    // 必须带上 readonly 维度（对象 ⇒ Readonly<T>，数组/元组 ⇒ readonly T）。
-    if (a.facets?.frozen !== true && extStateOf(a) !== "frozen") return text;
-    if (a.shape.k === "obj") return `Readonly<${text}>`;
-    if (a.shape.k === "arr" || a.shape.k === "tuple") return `readonly ${text}`;
-    return text;
-  } finally {
-    budget.exit();
-  }
-}
+
 
 /**
  * Bug 233：brand 类名的解析口径（**当前投影作用域**内可解析的类名）。
  *
- * - `undefined` = 无模块面的**纯投影**（`absToTSType` 单值投影）⇒ 保持原样：
+ * - `undefined` = 无模块面的**纯投影**（IR 单值投影）⇒ 保持原样：
  *   类名原样输出（纯投影没有声明面，无从判断该名在产物里是否可解析）。
  * - 有模块面 ⇒ 只有**产物里可解析**的类名才保留：本地声明的类（`declare class`
  *   合成）/ 已 import 的类（补 `import type`）/ TS 全局类型名（与 zod 白名单同
@@ -297,8 +242,8 @@ function withBrandScope<T>(scope: BrandScope, fn: () => T): T {
 /**
  * Bug 77：模块级 `as const` 值声明通道专享的只读渲染开关。
  * 只在 `dtsValueDeclarations` 对 `as const` 绑定开启 ⇒ 对象槽渲染
- * `readonly k: …`；不影响其它任何 `absToTSType` 调用（返回位 / 参数位 /
- * 单值投影一律保持既有文本，避免把报告未列的既有行为改坏）。
+ * `readonly k: …`；不影响其它 dts 类型调用（返回位 / 参数位 / 单值投影
+ * 一律保持既有文本，避免把报告未列的既有行为改坏）。
  */
 let currentReadonlySlots = false;
 function withReadonlySlots<T>(fn: () => T): T {
@@ -524,24 +469,7 @@ function requiredTypeArgFillers(
  * TS 全局类型名（Date / RegExp / Error / URL …）与 zod 白名单**同名单**
  * （族 15 S11 的 zod 白名单同源）——它们在 TS 里是环境内建类型名，无需声明。
  */
-function brandTSType(name: string): string {
-  const alias = BRAND_TYPE_ALIASES.get(name);
-  if (alias !== undefined) return alias;
-  const builtin = BUILTIN_GENERIC_BRANDS.get(name);
-  if (builtin !== undefined) return builtin;
-  if (!isJsBindingIdent(name) && !/^[A-Z][A-Za-z0-9_$]*$/.test(name)) return "unknown";
-  const scope = currentBrandScope;
-  if (scope === undefined) return name;
-  if (scope.names.has(name)) {
-    // BUG-040：必填类型形参必须补实参（TS2314）——占位实参按约束选择
-    // （`unknown` 违反 `T extends string` ⇒ TS2344；见 `requiredTypeArgFillers`）。
-    const fillers = scope.requiredArgFillers.get(name);
-    if (!fillers || fillers.length === 0) return name;
-    return `${name}<${fillers.join(", ")}>`;
-  }
-  if (isRuntimeGlobalCtorName(name)) return name;
-  return "unknown";
-}
+
 
 /** 规范数组下标（"0" / "12"；无前导零）——生成器的元素槽位 */
 const CANONICAL_INDEX = /^(?:0|[1-9]\d*)$/;
@@ -558,72 +486,7 @@ const CANONICAL_INDEX = /^(?:0|[1-9]\d*)$/;
  * 元素类型取数字下标元素槽的 join（返回位协变口径：顶层字面量 → 基类型）；
  * 无元素槽 ⇒ `unknown`。
  */
-function iteratorTSType(
-  a: Abs,
-  typeVars: Map<string, string> | undefined,
-  budget: ProjectionBudget,
-): string | undefined {
-  if (a.shape.k !== "obj") return undefined;
-  const slots = a.shape.slots;
-  // A11 · 槽位启用：随值携带的生成器身份优先于 `next` 槽启发式——重建 /
-  // 快照产物可能丢内部协议槽，但 `facets.brand` 随 Abs 搬运。泛型实参仍由
-  // 下方数字下标槽推导 ⇒ 输出恒为 `Generator<T>` / `AsyncGenerator<T>`，
-  // 不会退化成裸名（TS2314，见 BUILTIN_GENERIC_BRANDS）。
-  const carried = a.facets?.brand;
-  const genBrand =
-    carried === "Generator" || carried === "AsyncGenerator" ? carried : undefined;
-  // 无 `next` 且无 brand ⇒ 不是迭代器（普通对象 / 仅可迭代对象仍走结构面）
-  if (!slots["next"] && !genBrand) return undefined;
-  // 「第三种」：元素域的**单一真值来源**是随值携带的 `facets.genElements`
-  // （完整 yield 序列，未经过 $arr widen）。此前靠 `CANONICAL_INDEX` 扫
-  // shape 数字下标槽反推语义，快照 / harvest 重建 / 跨包搬运后槽会折损。
-  // **严格 fallback**：字段为 undefined（手工构造 / 静态收割 / 旧 Abs）时
-  // 仍走数字槽 ⇒ 旧产物逐字不变（`emit-bug-130` 等负控制保持绿）。
-  const carriedElems = a.facets?.genElements;
-  const elems: Abs[] = carriedElems ? [...carriedElems] : [];
-  if (!carriedElems) {
-    for (const [k, slot] of Object.entries(slots)) {
-      if (!CANONICAL_INDEX.test(k)) continue;
-      elems.push(slot.value);
-    }
-  }
-  let elemType = "unknown";
-  if (elems.length > 0) {
-    let joined: Abs;
-    try {
-      joined = elems.reduce((x, y) => joinAbs(x, y));
-    } catch {
-      joined = elems[0]!;
-    }
-    elemType = absToTSTypeB(widenTopLevelAbs(joined), typeVars, budget);
-  }
-  // A11 残余：随值携带 TReturn 时补第 2 类型实参；TNext 只有**显式携带**
-  // 时才补第 3 实参（引擎不建模 `.next(v)` 入参 ⇒ 生产侧填最保守的
-  // `unknown`，与 TS 默认值类型等价）。输出恒带 `<…>`，不退化成裸名
-  // （TS2314）。手工构造 / 无 facets 的旧 Abs 仍输出 `Generator<T>` 或
-  // `Generator<T, TReturn>` 逐字不变。
-  const tReturn = a.facets?.genReturn
-    ? absToTSTypeB(widenTopLevelAbs(a.facets.genReturn), typeVars, budget)
-    : undefined;
-  const tNext = a.facets?.genNext
-    ? absToTSTypeB(widenTopLevelAbs(a.facets.genNext), typeVars, budget)
-    : undefined;
-  // 第 3 实参只有在第 2 实参存在时才有位置（TS 位置类型参数不可跳位）；
-  // 缺省 TReturn 时按 TS 默认值省略整段尾部。
-  const tail = tReturn
-    ? tNext
-      ? `, ${tReturn}, ${tNext}`
-      : `, ${tReturn}`
-    : "";
-  if (genBrand === "AsyncGenerator" || slots["@@asyncIterator"]) {
-    return `AsyncGenerator<${elemType}${tail}>`;
-  }
-  // 完整生成器协议（return / throw）或随值 brand ⇒ Generator；只有 next ⇒ 普通迭代器
-  if (genBrand === "Generator" || slots["return"] || slots["throw"]) {
-    return `Generator<${elemType}${tail}>`;
-  }
-  return `IterableIterator<${elemType}>`;
-}
+
 
 /**
  * BUG-216 / BUG-236：计算键里的 **well-known symbol** → 引擎符号键名
@@ -646,31 +509,7 @@ function surfaceSymbolKeyName(n: SurfaceNode | undefined): string | undefined {
  * 符号键槽 → TS 符号键成员行（`[Symbol.iterator](): T`）；未登记的符号键 ⇒
  * undefined（TS 没有任意 symbol 键的类型语法 ⇒ 有损跳过）。
  */
-function symbolMemberLine(
-  k: string,
-  slot: { value: Abs },
-  typeVars: Map<string, string> | undefined,
-  budget: ProjectionBudget,
-): string | undefined {
-  // BUG-263：用户 `Symbol()` 键的 Abs 槽是引擎内部 id（`@@sym#N`）；按属性
-  // 出现序从源码名队列取绑定名（`{ [tag]: 1 }` ⇒ `[tag]`）。
-  const userKey =
-    WELL_KNOWN_SYMBOLS.has(k) || !k.startsWith("@@sym#")
-      ? undefined
-      : currentUserSymbolKeys?.shift();
-  const sym = WELL_KNOWN_SYMBOLS.get(k) ?? userKey;
-  if (sym === undefined) return undefined;
-  const v = slot.value;
-  if (v.shape.k === "fn") {
-    // 方法形态：`[Symbol.iterator](): T`（TS 的可迭代判定要方法签名）
-    const ret = v.shape.returnType
-      ? absToTSTypeB(v.shape.returnType, typeVars, budget)
-      : // BUG-236：泛型 / 别名返回注解不映射 Abs（见 withSymbolReturnOverrides）
-        (currentSymbolReturnOverrides?.get(k) ?? "unknown");
-    return `[${sym}](): ${ret}`;
-  }
-  return `[${sym}]: ${absToTSTypeB(v, typeVars, budget)}`;
-}
+
 
 /**
  * BUG-271：把对象字面量方法的返回位换成源码注解原文（只替换 `=>` 之后的
@@ -694,290 +533,7 @@ function applyObjectFnReturnOverride(key: string, ts: string): string {
   return ts;
 }
 
-function absToTSTypeInner(a: Abs, typeVars: Map<string, string> | undefined, budget: ProjectionBudget): string {
-  // 类型变量：shape any + term var（α / B:param）
-  if (a.shape.k === "any" && a.term?.op === "var" && typeVars) {
-    const mapped = typeVars.get(a.term.id);
-    if (mapped) return mapped;
-  }
-  // arr(element=any+var) → T[]
-  if (
-    a.shape.k === "arr" &&
-    a.shape.element.shape.k === "any" &&
-    a.shape.element.term?.op === "var" &&
-    typeVars
-  ) {
-    const mapped = typeVars.get(a.shape.element.term.id);
-    if (mapped) return `${mapped}[]`;
-  }
 
-  if (a.term?.op === "lit") {
-    const v = a.term.value;
-    if (v === null) return "null";
-    if (v === undefined) return "undefined";
-    if (a.shape.k === "prim") {
-      if (typeof v === "string") return JSON.stringify(v);
-      if (typeof v === "boolean") return String(v);
-      if (typeof v === "number") {
-        // NaN/±Infinity 不是 TS 类型名；投影到基类型 number
-        if (!Number.isFinite(v)) return "number";
-        return String(v);
-      }
-    }
-  }
-
-  // 模板串：prim(string) + template pred
-  if (a.shape.k === "prim" && a.shape.type === "string" && isTemplateLike(a)) {
-    const parts = templatePartsOf(a);
-    const inner = parts
-      .map((p) => {
-        const lvR = litValue(p);
-        const lv = lvR.ok ? lvR.value : undefined;
-        // 固定段是嵌入语言：`\` `` ` `` `$` 必须转义，否则 `${` 变成类型插值
-        if (typeof lv === "string") return escapeTemplateTypeFixed(lv);
-        return `\${${tsTplSafe(absToTSTypeB(p, typeVars, budget))}}`;
-      })
-      .join("");
-    return `\`${inner}\``;
-  }
-
-  switch (a.shape.k) {
-    case "never":
-      return "never";
-    case "unknown":
-      // Abs unknown = **推断失败**（引擎没有信息）→ TS unknown（消费方必须先收窄）
-      return "unknown";
-    case "any":
-      // 2026-11-06 产品裁定：nudo 的 `any` 是「无约束并集 / 任意值」，语义
-      // 更接近 **TS 的 unknown（top，需先收窄）**，而不是 TS 的 `any`（关闭
-      // 类型检查的逃生舱）。三面运行时校验器早已把 any / unknown 同映为
-      // unknown（schema-generator.ts / guard-generator.ts / standard-schema.ts），
-      // dts 曾是唯一把 nudo any 直译成 TS any 的面。
-      // `abs.md` 的「any ≠ unknown」规则约束的是 **nudo 自己的展示 / CLI 面**
-      // （两个产品概念不得合并），不是 TS 投影面；BUG-544 把 TS2571 当假红，
-      // 按本裁判定性为**正确的类型安全提示**（无约束返回值理应先收窄）。
-      return "unknown";
-    case "prim":
-      return a.shape.type;
-    case "obj": {
-      // Bug 554：迭代器 / 生成器形态——Abs 里生成器对象是「带**内部协议槽**的
-      // obj」（next / return / throw / constructor / @@iterator + 数字下标元素
-      // 槽）。逐槽摊平 ⇒ 返回类型里没有 `[Symbol.iterator]()` ⇒ 消费方
-      // `for (const v of gen(1))` 报 TS2488（产物拒绝实现本身允许的用法）。
-      const iter = iteratorTSType(a, typeVars, budget);
-      if (iter !== undefined) return iter;
-      // BUG-258：**数组视图**（`view: "array"`，RegExpExecArray 等）必须投影成
-      // **数组类型**。逐槽摊平得到的是对象字面量类型（`{ "0": "abc"; … }`）⇒
-      // 消费方 `.map` / 下标读全报 TS2339，而同一份 Abs 在 guard / standard 面
-      // 要求 `Array.isArray`（产物与判据五面矛盾）。
-      // 下标槽（规范数组下标）→ 元组元素（洞位无语法可表 ⇒ `undefined`，与读值
-      // 同形）；`length` 由元组自带，不重复写；`index` / `input` / `groups` 等
-      // 引擎附带的**自有**槽 → 元组与对象类型的交集（`.map` 等数组成员仍可用）。
-      if (a.shape.view === "array") {
-        const idxNums = Object.keys(a.shape.slots)
-          .filter((k) => CANONICAL_INDEX.test(k))
-          .map(Number)
-          .sort((x, y) => x - y);
-        let arrayPart = "unknown[]";
-        if (idxNums.length > 0) {
-          const elems: string[] = [];
-          for (let i = 0; i <= idxNums[idxNums.length - 1]!; i++) {
-            const key = String(i);
-            const slot = a.shape.slots[key];
-            elems.push(
-              slot === undefined
-                ? "undefined"
-                : wrapComplexAbs(slotAbsOf(a, key, slot.value), typeVars, budget),
-            );
-          }
-          arrayPart = `[${elems.join(", ")}]`;
-        }
-        const sideEntries: string[] = [];
-        for (const [k, slot] of Object.entries(a.shape.slots)) {
-          if (CANONICAL_INDEX.test(k) || k === "length") continue;
-          // BUG-236：symbol 键槽在 **dts** 面是公开成员（TS 有 `[Symbol.x]`
-          // 语法），不适用 `isHiddenInternalSlot` 的「字符串键枚举面不可见」
-          // 判据——旧顺序先过滤后分流 ⇒ 分支不可达，`[Symbol.iterator]` /
-          // `[Symbol.toStringTag]` 整条丢失。分流必须在过滤之前。
-          if (slot.symbolKey === true) {
-            // 数组视图的元组部分**本身就是数组类型** ⇒ `[Symbol.iterator]`
-            // 由数组类型提供；再发一条合成成员只会把元素域写成 `unknown`
-            // （与 tuple 元素域自相矛盾）。
-            if (k === "@@iterator") continue;
-            const line = symbolMemberLine(k, slot, typeVars, budget);
-            if (line !== undefined) sideEntries.push(line);
-            continue;
-          }
-          if (isHiddenInternalSlot(k, slot)) continue;
-          const slotAbs = slotAbsOf(a, k, slot.value);
-          const base = absToTSTypeB(slotAbs, typeVars, budget);
-          const inner =
-            slotAbs.shape.k === "fn" ? applyObjectFnReturnOverride(k, base) : base;
-          const ro = currentReadonlySlots || slot.readonly === true ? "readonly " : "";
-          sideEntries.push(
-            slot.optional
-              ? `${ro}${formatPropKey(k)}?: ${
-                  slotAbs.shape.k === "fn"
-                    ? applyObjectFnReturnOverride(
-                        k,
-                        wrapComplexAbs(slotAbs, typeVars, budget),
-                      )
-                    : wrapComplexAbs(slotAbs, typeVars, budget)
-                }`
-              : `${ro}${formatPropKey(k)}: ${inner}`,
-          );
-        }
-        return sideEntries.length === 0 ? arrayPart : `${arrayPart} & { ${sideEntries.join("; ")} }`;
-      }
-      const entries: string[] = [];
-      for (const [k, slot] of Object.entries(a.shape.slots)) {
-        // BUG-236：symbol 键槽是 TS 的**符号键成员**（见上），必须先于
-        // `isHiddenInternalSlot` 分流，否则整条成员丢失。
-        if (slot.symbolKey === true) {
-          const line = symbolMemberLine(k, slot, typeVars, budget);
-          if (line !== undefined) entries.push(line);
-          continue;
-        }
-        // Bug 240 / 554：内部槽（internal）不是用户可见属性（私有字段 `#x` /
-        // 生成器协议槽）⇒ 不进结构字段（与 core 的 format / projection / denote
-        // 三面**同判据**：internal 且键不是规范数组下标）。
-        if (isHiddenInternalSlot(k, slot)) continue;
-        // Bug 543 / 560：optional 槽渲染成 TS 的**可选属性** `k?: T`。
-        // 旧口径 `k: T | undefined` 在 TS 里是「**键必需**、值可为 undefined」——
-        // 与顶层形参的 `k?: T` 口径相反，且比契约 / zod / standard / check
-        // 四个面都**严**（投影方向反了：one-way 投影不得更严）。TS 里「键可省略」
-        // 是独立的语法位，只有 `?` 能表达。
-        // Bug 191：访问器键的槽是 `$lit(void 0)` 占位（真 getter 住侧表）——
-        // dts 投影须取 getter 读域，否则把 getter 的返回值谎报成 exact
-        // `undefined`。
-        const slotAbs = slotAbsOf(a, k, slot.value);
-        // BUG-075：契约面的槽位字面量住在 **pred**（`eq(k, lit("n"))`），
-        // 不在 term ⇒ 只读 absToTSType 会把判别键拓宽成 `string`，
-        // `{ k: "n"; v: number } | { k: "s"; v: string }` 的判别联合退化成
-        // 交叉积，消费方接受 check 判红的值。契约字面量集优先。
-        const litTs = contractLiteralTSType(slotAbs);
-        const base = litTs ?? absToTSTypeB(slotAbs, typeVars, budget);
-        const inner =
-          slotAbs.shape.k === "fn" ? applyObjectFnReturnOverride(k, base) : base;
-        // Bug 77：`as const` 值声明通道 ⇒ 对象槽按只读投影（`readonly k: …`）。
-        // BUG-233：`slot.readonly` 是**分析面**带下来的事实（getter-only ⇒
-        // 只读），与 `as const` 通道相互独立——两者任一成立都要发 readonly。
-        const ro = currentReadonlySlots || slot.readonly === true ? "readonly " : "";
-        if (slot.optional) {
-          const baseOpt = litTs ?? wrapComplexAbs(slotAbs, typeVars, budget);
-          const t =
-            slotAbs.shape.k === "fn"
-              ? applyObjectFnReturnOverride(k, baseOpt)
-              : baseOpt;
-          entries.push(`${ro}${formatPropKey(k)}?: ${t}`);
-          continue;
-        }
-        entries.push(`${ro}${formatPropKey(k)}: ${inner}`);
-      }
-      // BUG-383：索引签名（open 对象的运行时键值域）→ TS 索引签名。
-      if (a.shape.index) {
-        const key = absToTSTypeB(a.shape.index.key, typeVars, budget);
-        const value = absToTSTypeB(a.shape.index.value, typeVars, budget);
-        entries.push(`[key: ${key}]: ${value}`);
-      }
-      // Bug 565：零成员对象**不是** TS 的 `{}`（= 任意非 nullish 值）⇒ 渲染成
-      // `Record<string, never>`（空对象类型）：属性读合法（不再 TS2339 假红），
-      // 且在联合类型里**不吸收** `{ a: number }`（`{}` 会把契约义务整个吃掉）。
-      if (entries.length === 0) {
-        return a.shape.open === true ? "Record<string, unknown>" : "Record<string, never>";
-      }
-      return `{ ${entries.join("; ")} }`;
-    }
-    case "arr":
-      return `${wrapComplexAbs(a.shape.element, typeVars, budget)}[]`;
-    case "tuple": {
-      // hole 槽（`1 in a` 为 false）不得伪装成显式 undefined 元素。
-      // TS 元组类型无空槽语法，用 labeled element `hole: T` 标出稀疏位。
-      const holes = a.shape.holes ?? [];
-      const parts = a.shape.elements.map((e, i) => {
-        const ts = absToTSTypeB(e, typeVars, budget);
-        return holes.includes(i) ? `hole: ${ts}` : ts;
-      });
-      if (a.shape.rest) {
-        const rest = a.shape.rest;
-        // rest 元素类型位与 arr 元素位同口径：union/fn 必须括号，
-        // 否则 `...number | string[]` / `...(x) => T[]` 语义不同或非法
-        const restTs =
-          rest.shape.k === "arr"
-            ? absToTSTypeB(rest, typeVars, budget)
-            : `${wrapComplexAbs(rest, typeVars, budget)}[]`;
-        parts.push(`...${restTs}`);
-      }
-      // Bug 77 / BUG-140：`as const` 通道下元组是**只读**的（`readonly [1, 2]`）。
-      // 此前只读开关只接了对象槽与数组视图侧槽 ⇒ 冻结元组照样可写、可 `push`，
-      // 作者声明的只读契约被无声撤销（消费方 `arr[0] = 1` 反而编译通过）。
-      return `${currentReadonlySlots ? "readonly " : ""}[${parts.join(", ")}]`;
-    }
-    case "fn": {
-      // A6/ABS-03：重载集 → TS 调用签名对象（声明序 = TS 解析序）。
-      // 逐 arm 发射保留「形参 ↔ 返回」的相关性；无重载集时退回单签名面。
-      const overloads = a.shape.overloads;
-      if (overloads && overloads.length > 0) {
-        const arms = overloads.map((arm) => {
-          const params = arm.paramTypes
-            .map((pt, i) => `a${i}: ${absToTSTypeB(pt, typeVars, budget)}`)
-            .join(", ");
-          const ret = absToTSTypeB(arm.returnType, typeVars, budget);
-          return `(${params}): ${ret}`;
-        });
-        return `{ ${arms.join("; ")} }`;
-      }
-      const paramTypes = a.shape.paramTypes;
-      const params = a.shape.params
-        .map((p, i) => {
-          const isRest = p.startsWith("...");
-          const name = sanitizeParamName(p, i);
-          const pt = paramTypes?.[i];
-          let typeStr: string;
-          if (pt) {
-            if (isRest) {
-              // rest 位必须是数组类型（TS：A rest parameter must be of an
-              // array type）——非 arr（sum/tuple/fn/prim…）提升为 (T)[]，
-              // 与 tuple rest 位同口径（BUG-020/S6-005：旧实现直接拼接，
-              // `...args: number | string` 非法 TS）
-              typeStr =
-                pt.shape.k === "arr"
-                  ? absToTSTypeB(pt, typeVars, budget)
-                  : `${wrapComplexAbs(pt, typeVars, budget)}[]`;
-            } else {
-              typeStr = absToTSTypeB(pt, typeVars, budget);
-            }
-          } else if (isRest) typeStr = "unknown[]";
-          else typeStr = "unknown";
-          return `${name}: ${typeStr}`;
-        })
-        .join(", ");
-      const ret = a.shape.returnType
-        ? absToTSTypeB(a.shape.returnType, typeVars, budget)
-        : "unknown";
-      return `(${params}) => ${ret}`;
-    }
-    case "brand":
-      return brandTSType(a.shape.name);
-    case "eff":
-      if (a.shape.eff === "promise")
-        return `Promise<${absToTSTypeB(a.shape.inner, typeVars, budget)}>`;
-      return absToTSTypeB(a.shape.inner, typeVars, budget);
-    case "sum": {
-      // 并集成员按渲染串去重：widen 后可能出现 number | number；
-      // never 是 join 单位元，对 .d.ts 返回位无意义。
-      const parts = a.shape.members
-        .map((m) => wrapUnionMember(m, typeVars, budget))
-        .filter((p) => p !== "never");
-      const uniq = [...new Set(parts)];
-      if (uniq.length === 0) return "never";
-      if (uniq.length === 1) return uniq[0]!;
-      return uniq.join(" | ");
-    }
-    default:
-      return "unknown";
-  }
-}
 
 /** case 在参数位 i 的 Abs */
 function caseArgAbs(c: CaseResult, i: number): Abs | undefined {
@@ -995,7 +551,7 @@ function caseResultAbs(c: CaseResult): Abs {
  */
 function widenParamAbs(a: Abs, budget: ProjectionBudget = new ProjectionBudget()): Abs {
   // DESIGN-001：环 / 超深时原样返回（widen 是尽力精度剥离，不是正确性必需）；
-  // 渲染侧 absToTSType 的预算会在同位置给出显式截断标记。
+  // 类型 IR 的预算会在同位置给出显式截断标记。
   const stop = budget.enter(a);
   if (stop) return a;
   try {
@@ -1029,8 +585,8 @@ function widenParamAbsInner(a: Abs, budget: ProjectionBudget): Abs {
         !holes?.length &&
         first &&
         widened.length > 0 &&
-        widened.every((el) => absToTSType(el) === absToTSType(first)) &&
-        (!widenedRest || absToTSType(widenedRest) === absToTSType(first))
+        widened.every((el) => absToTSTypeIr(el) === absToTSTypeIr(first)) &&
+        (!widenedRest || absToTSTypeIr(widenedRest) === absToTSTypeIr(first))
       ) {
         return makeAbs({ k: "arr", element: first }, undefined, undefined, "exact");
       }
@@ -1282,7 +838,7 @@ function tupleElementDomain(t: { elements: Abs[]; rest?: Abs; holes?: number[] }
   const members: Abs[] = [];
   const seen = new Set<string>();
   const push = (m: Abs): void => {
-    const key = absToTSType(m);
+    const key = absToTSTypeIr(m);
     if (seen.has(key)) return;
     seen.add(key);
     members.push(m);
@@ -2361,7 +1917,8 @@ function patternObservedKeys(members: Abs[]): string[] {
 
 /** Abs → `T | undefined` 文本（union / fn 成员带括号） */
 function absUnionUndefined(a: Abs): string {
-  return `${wrapComplexAbs(a, undefined, new ProjectionBudget())} | undefined`;
+  const ts = absToTSTypeIr(a);
+  return `${a.shape.k === "sum" || a.shape.k === "fn" ? `(${ts})` : ts} | undefined`;
 }
 
 /** 类型文本 → `T | undefined` 文本（TS 注解是原文；函数类型需括号） */
@@ -2607,8 +2164,8 @@ function generateJSDoc(fn: FunctionAnalysis, sig: MainSignature): string {
   // Case: 行完整保留。与主签名同形的 case（无信息损失）不罗列。
   // Case: 行走 Abs 精确展示（字面量台账），不参与主签名计算。
   for (const c of fn.cases) {
-    const argRenders = c.argAbs.map((a) => absToTSType(a));
-    const resultRender = absToTSType(c.abs);
+    const argRenders = c.argAbs.map((a) => absToTSTypeIr(a));
+    const resultRender = absToTSTypeIr(c.abs);
     // 无信息行（entry@ 兜底：全位 unknown / any）不占 JSDoc——签名位有
     // 契约/种子证据时它只会以 "=> unknown" / "=> any" 与主签名矛盾。
     // Abs 的 any（未约束）与 unknown（推断失败）分面后（Bug 544），两者
@@ -3439,7 +2996,7 @@ export function projectFunctionDts(
   if (!contract?.return && fn.declaredReturnType && fn.combinedAbs) {
     const mismatch = returnAnnotationMismatch(
       fn.declaredReturnType,
-      absToTSType(fn.combinedAbs),
+      absToTSTypeIr(fn.combinedAbs),
     );
     if (mismatch) ctx.mismatches?.push({ name: fn.name, ...mismatch });
   }

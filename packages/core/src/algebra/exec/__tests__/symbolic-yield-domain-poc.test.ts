@@ -25,7 +25,7 @@ import { joinAbs } from "../../objects.ts";
 import { snapshotAbs } from "../../hof.ts";
 import { runTranspiled, callTranspiledExportFull } from "../run.ts";
 import { $lit } from "../runtime/state.ts";
-import { absToTSType } from "../../../../../service/src/emit/dts-generator.ts";
+import { absToDtsTypeText as absToTSType } from "../../../../../service/src/emit/dts-type.ts";
 
 /** 无约束入口跑导出生成器，取随值携带的完整 yield 序列。 */
 function symbolicYields(src: string, arity: number): Abs {

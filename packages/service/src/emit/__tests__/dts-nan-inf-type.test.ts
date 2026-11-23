@@ -7,7 +7,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { abs, lit, numLit, strLit,  } from "@nudojs/core";
-import { absToTSType } from "@nudojs/service/emit/dts-generator";
+import { absToDtsTypeText as absToTSType } from "../dts-type.ts";
 
 function nanLit() {
   return abs({ k: "prim", type: "number" }, lit(NaN), undefined, "exact");

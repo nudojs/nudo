@@ -2,9 +2,9 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { formatShape } from "@nudojs/core";
 import {
   generateGuardFunctionFromAbs,
-  absToTSType,
   absToSchemaSource,
 } from "@nudojs/service/emit";
+import { absToDtsTypeText as absToTSType } from "../dts-type.ts";
 import { generateDts } from "../dts-generator.ts";
 import { analyzeFile, resetAllAnalysisCaches } from "@nudojs/service";
 

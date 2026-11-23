@@ -63,7 +63,6 @@ export {
   projectFunctionDts,
   dtsModuleSurface,
   projectModuleDts,
-  absToTSType,
   type DtsContractFace,
   type DtsFunctionProjection,
   type DtsModuleSurface,

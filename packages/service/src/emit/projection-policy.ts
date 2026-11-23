@@ -37,7 +37,7 @@ export function projectValidatorOutput(a: Abs, widen: ReturnWidenMode = "observe
 
 /**
  * 同构元组 → 数组。元素先经观测拓宽，再按**基类型键**比较；prim 只比类型，
- * 避免 `1` / `2` 的 term 差异阻止折叠（dts 用 `absToTSType` 同口径）。
+ * 避免 `1` / `2` 的 term 差异阻止折叠（dts IR 同口径）。
  */
 function collapseHomogeneousTuple(a: Abs): Abs | undefined {
   const s = a.shape;

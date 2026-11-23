@@ -10,7 +10,8 @@
 import { describe, it, expect } from "vitest";
 import { abs, num, str, numLit, strLit, type Abs } from "@nudojs/core";
 import { createTemplateAbs, denoteGuard } from "@nudojs/core/internal";
-import { absToTSType, generateFunctionDtsLines } from "../dts-generator.ts";
+import { generateFunctionDtsLines } from "../dts-generator.ts";
+import { absToDtsTypeText as absToTSType } from "../dts-type.ts";
 import {
   absToZodSchemaModule,
   formatJsObjectKey,

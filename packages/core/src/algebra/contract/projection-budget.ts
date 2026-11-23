@@ -3,7 +3,7 @@
  *
  * Abs 是可计算值：shape 图可环（evaluator 对 `const a = {}; a.self = a` 产出
  * 真环）、可深（深层嵌套结构 / harvest 链）。所有外延出口（formatShape /
- * absToString / absToTSType / absToSchemaNode / denoteGuard / absToConstraint /
+ * absToString / dtsTypeOfAbs / absToSchemaNode / denoteGuard / absToConstraint /
  * serializeCaseArg）必须有界——absStableKey / absShapeKey 的 "cycle" 哨兵早已
  * 承认该不变量，本模块是它的共享抽象。
  *

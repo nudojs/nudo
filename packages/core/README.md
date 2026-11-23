@@ -16,7 +16,7 @@ Nudo does not restrict how you write JavaScript. It executes code on Abs (`shape
 - **Abs** — `shape × term × pred × conf`; constraints participate in algebra
 - **Type operations** — union simplification, assignability (`leqAbs`), check/gate
 - **Operators & dispatch** — binary ops, property access, method calls on Abs
-- **Rendering** — `formatShape` / `formatAbs`, one-way projections (`absToTSType`, zod)
+- **Rendering** — `formatShape` / `formatAbs`, one-way projections (`absToString`, `absToConstraint`; dts/zod live in `@nudojs/service`)
 - **Environment** — scoped variable bindings for the abstract interpreter
 
 ## Install

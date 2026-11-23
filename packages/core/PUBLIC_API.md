@@ -61,7 +61,7 @@ changing the signature of any row below is **major**.
 | `numLit`, `strLit`, `boolLit`, `bigintLit`, `litValue`, `isExactLit` | value | literal Abs; `litValue` → `LitValueResult` tagged (`{ok:true,value}\|{ok:false}`) | **public** |
 | `leqAbs`, `joinAbs`, `joinValues`, `confJoin` | value | assignability / join | **public** |
 | `formatAbs`, `formatShape`, `formatConstraint`, `formatCheckReport` | value | extensional rendering (one-way) | **public** |
-| `absToTSType`, `absToSchemaSource`, `projectAbsToSchema` | value | one-way projections | **public** |
+| `absToString`, `absToConstraint` | value | one-way projections | **public** |
 | `checkSource`, `CheckJson`, `CheckReport`, `serializeCheckJson`, `serializeCheckJsonMulti` | value/type | `nudo check` gate | **public** |
 | `CheckOptions` (`checkSource` 4th parameter) | type | check options; `from?: readonly AbsCallRecord[]` = **cross-file** call-site evidence (CLI `--from`) fed into the `nudo:contract-drift` judgment (optional field — no new export) | **public** |
 | `generalizeFromAst` | value | symbolic α generalization; `TypeParam.bounds` = optional simple bounds per formal (ABS-14 PR2 additive, write-only) | **public** |

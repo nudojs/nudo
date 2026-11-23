@@ -3,7 +3,8 @@
  */
 import { describe, it, expect } from "vitest";
 import { abs, num, objOf, type Abs, localNamedExports, str, lit, v } from "@nudojs/core";
-import { absToTSType, dtsModuleSurface, projectFunctionDts, projectModuleDts, generateDts, type DtsContractFace } from "../dts-generator.ts";
+import { dtsModuleSurface, projectFunctionDts, projectModuleDts, generateDts, type DtsContractFace } from "../dts-generator.ts";
+import { absToDtsTypeText as absToTSType } from "../dts-type.ts";
 import { tscNoEmit } from "./dts-tsc.ts";
 import { analyzeFile } from "@nudojs/service";
 import type { AnalysisResult, FunctionAnalysis } from "../../analyzer-types.ts";

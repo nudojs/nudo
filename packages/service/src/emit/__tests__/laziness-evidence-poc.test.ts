@@ -27,7 +27,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { abs, numLit, snapshotAbs, type Abs } from "@nudojs/core";
-import { absToTSType } from "../dts-generator.ts";
+import { absToDtsTypeText as absToTSType } from "../dts-type.ts";
 
 const fnSlot = (): { value: Abs; internal: boolean } => ({
   value: abs({ k: "fn", params: [] }, undefined, undefined, "exact"),

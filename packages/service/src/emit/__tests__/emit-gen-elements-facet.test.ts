@@ -12,7 +12,8 @@
  */
 import { describe, it, expect } from "vitest";
 import { abs, numLit, type Abs } from "@nudojs/core";
-import { absToTSType, generateDts } from "../dts-generator.ts";
+import { generateDts } from "../dts-generator.ts";
+import { absToDtsTypeText as absToTSType } from "../dts-type.ts";
 import { analyzeFile } from "../../analyzer.ts";
 
 function fnSlot(): { value: Abs; internal: boolean } {

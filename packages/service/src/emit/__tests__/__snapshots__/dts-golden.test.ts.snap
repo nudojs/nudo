@@ -1,0 +1,148 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`dts golden — 删除旧渲染器前的基线 > brands 1`] = `
+"/**
+ * Case: entry@L1 () => Map<unknown, unknown>
+ * @returns Map<string, number>
+ */
+export declare function map(): Map<string, number>;
+/**
+ * Case: entry@L2 () => Set<unknown>
+ * @returns Set<number>
+ */
+export declare function set(): Set<number>;
+/**
+ * @returns Date
+ */
+export declare function date(): Date;
+/**
+ * @returns IArguments
+ */
+export declare function args(): IArguments;
+"
+`;
+
+exports[`dts golden — 删除旧渲染器前的基线 > cjs-export-equals 1`] = `
+"/**
+ * @param x - number
+ * @returns number
+ */
+export declare function f(x: number): number;
+"
+`;
+
+exports[`dts golden — 删除旧渲染器前的基线 > classes-generics 1`] = `
+"// nudo:dropped-type-annotation Base_get: T (return type) — type not declared in this module (falls back to the observed type)
+/**
+ * @returns unknown
+ */
+export declare function Base_get(): unknown;
+/**
+ * @param x - number
+ * @returns number
+ */
+export declare function Impl_m(x?: number): number;
+// nudo:dropped-type-annotation Impl_get: T (return type) — type not declared in this module (falls back to the observed type)
+/**
+ * @returns unknown
+ */
+export declare function Impl_get(): unknown;
+"
+`;
+
+exports[`dts golden — 删除旧渲染器前的基线 > cycle / depth truncation > cycle 1`] = `"{ self: /* nudo:truncated:cycle */ unknown }"`;
+
+exports[`dts golden — 删除旧渲染器前的基线 > cycle / depth truncation > depth 1`] = `"{ v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: { v: /* nudo:truncated:depth */ unknown } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } }"`;
+
+exports[`dts golden — 删除旧渲染器前的基线 > fn-hof-overloads 1`] = `
+"/**
+ * @param x - number
+ * @returns string
+ */
+export declare function fn(x: number): string;
+// nudo:dropped-type-annotation hof.x: T — type not declared in this module (falls back to the observed type)
+/**
+ * @param x - unknown
+ * @returns (y: unknown) => unknown
+ */
+export declare function hof(x: unknown): (y: unknown) => unknown;
+/**
+ * @param x - any
+ * @returns any
+ */
+export declare function overloaded(x: any): any;
+"
+`;
+
+exports[`dts golden — 删除旧渲染器前的基线 > generator-template 1`] = `
+"/**
+ * @returns Generator<number, undefined, unknown>
+ */
+export declare function gen(): Generator<number, undefined, unknown>;
+/**
+ * @param x - number
+ * @returns \`id-\${number}\`
+ */
+export declare function tpl(x: number): \`id-\${number}\`;
+/**
+ * Case: entry@L3 ("a" | "b") => "a" | "b"
+ * @param x - "a" | "b"
+ * @returns string
+ */
+export declare function literal(x: "a" | "b"): string;
+"
+`;
+
+exports[`dts golden — 删除旧渲染器前的基线 > namespace 1`] = `
+"
+"
+`;
+
+exports[`dts golden — 删除旧渲染器前的基线 > objects-index-view 1`] = `
+"/**
+ * @param x - { a: number; b?: string }
+ * @returns { a: number; b?: string }
+ */
+export declare function obj(x: { a: number; b?: string }): { a: number; b?: string };
+/**
+ * Case: entry@L2 () => { a: 1 }
+ * @returns { a: number }
+ */
+export declare function idx(): { a: number };
+/**
+ * Case: entry@L3 () => readonly [1, 2]
+ * @returns readonly number[]
+ */
+export declare function frozen(): readonly number[];
+/**
+ * Case: entry@L4 () => ["a"] & { index: 0; input: "a"; groups: undefined }
+ * @returns RegExpExecArray | null
+ */
+export declare function view(): RegExpExecArray | null;
+"
+`;
+
+exports[`dts golden — 删除旧渲染器前的基线 > primitives-arrays-tuples 1`] = `
+"/**
+ * @returns 1
+ */
+export declare function lit(): 1;
+/**
+ * Case: entry@L2 ([number, string], string[]) => [number, string]
+ * @param p - [number, string]
+ * @param rest - [...string[]]
+ * @returns [number, string]
+ */
+export declare function tuple(p: [number, string], rest: [...string[]]): [number, string];
+/**
+ * @param xs - number[]
+ * @returns number[]
+ */
+export declare function arr(xs: number[]): number[];
+/**
+ * @param x - number | string
+ * @returns number | string
+ */
+export declare function union(x: number | string): number | string;
+"
+`;
