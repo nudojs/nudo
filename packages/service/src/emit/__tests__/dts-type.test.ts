@@ -149,15 +149,10 @@ describe("dts 类型 IR 与 absToTSType 逐字同形（支持子集）", () => {
     expect(ir(tpl)).toBe(absToTSType(tpl));
   });
 
-  it("对象不支持的面：用户符号 / fn 槽 ⇒ undefined", () => {
+  it("对象不支持的面：用户符号键 ⇒ undefined", () => {
     expect(
       dtsTypeOfAbs(
         mk({ k: "obj", slots: { "@@sym#1": { value: num(), symbolKey: true } } } as never),
-      ),
-    ).toBeUndefined();
-    expect(
-      dtsTypeOfAbs(
-        mk({ k: "obj", slots: { f: { value: mk({ k: "fn" } as never) } } } as never),
       ),
     ).toBeUndefined();
   });
@@ -325,6 +320,39 @@ describe("dts 类型 IR 与 absToTSType 逐字同形（支持子集）", () => {
     );
     const orObj = mk({ k: "obj", slots: { k: { value: orSlot } } } as never);
     expect(ir(orObj)).toBe(absToTSType(orObj));
+  });
+
+  it("类型变量映射 / 对象方法返回注解 / symbol 返回注解", () => {
+    const varAbs = abs({ k: "any" }, { op: "var", id: "T" }, undefined, "path");
+    const tv = new Map([["T", "string"]]);
+    expect(renderDtsType(dtsTypeOfAbs(varAbs, { typeVars: tv })!)).toBe("string");
+    const arrVar = mk({ k: "arr", element: varAbs });
+    expect(renderDtsType(dtsTypeOfAbs(arrVar, { typeVars: tv })!)).toBe("string[]");
+
+    const fnSlot = mk({
+      k: "fn",
+      params: ["x"],
+      paramTypes: [num()],
+      returnType: str(),
+    } as never);
+    const obj = mk({ k: "obj", slots: { f: { value: fnSlot } } } as never);
+    expect(ir(obj)).toBe(absToTSType(obj));
+    expect(
+      renderDtsType(
+        dtsTypeOfAbs(obj, { objectFnReturnOverrides: new Map([["f", "string"]]) })!,
+      ),
+    ).toBe("{ f: (x: number) => string }");
+
+    const symFn = mk({ k: "fn", params: [], paramTypes: [] } as never);
+    const symObj = mk({
+      k: "obj",
+      slots: { "@@iterator": { value: symFn, symbolKey: true } },
+    } as never);
+    expect(
+      renderDtsType(
+        dtsTypeOfAbs(symObj, { symbolReturnOverrides: new Map([["@@iterator", "number"]]) })!,
+      ),
+    ).toBe("{ [Symbol.iterator](): number }");
   });
 
   it("不支持：类型变量 ⇒ undefined（回落旧渲染器）", () => {

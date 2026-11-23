@@ -98,6 +98,7 @@ export type DtsType =
   | { kind: "intersection"; members: DtsType[] }
   | { kind: "generic"; name: string; args: DtsType[] }
   | { kind: "named"; text: string }
+  | { kind: "raw"; text: string }
   | { kind: "template"; parts: Array<{ fixed?: string; type?: DtsType }> }
   | {
       kind: "fn";
@@ -124,6 +125,14 @@ export type DtsTypeOpts = {
   brandScope?: DtsBrandScope;
   /** TS 全局构造器名判定（有作用域时用于保留 Date/RegExp 等） */
   runtimeGlobalCtor?: (name: string) => boolean;
+  /** 类型变量名映射（α / B:param → 稳定 TS 名） */
+  typeVars?: ReadonlyMap<string, string>;
+  /** 对象方法返回注解原文（应用在返回位；源码声明优先） */
+  objectFnReturnOverrides?: ReadonlyMap<string, string>;
+  /** symbol 方法的返回注解原文（无 Abs 返回位时兜底） */
+  symbolReturnOverrides?: ReadonlyMap<string, string>;
+  /** @internal 递归环检测（DESIGN-001：Abs 允许成环） */
+  seen?: Set<Abs>;
 };
 
 /**
@@ -133,6 +142,22 @@ export type DtsTypeOpts = {
  * 旧渲染器，也不让新打印器输出与旧产物不同的文本。
  */
 export function dtsTypeOfAbs(a: Abs, opts: DtsTypeOpts = {}): DtsType | undefined {
+  const seen = opts.seen ?? new Set<Abs>();
+  if (seen.has(a)) return undefined;
+  seen.add(a);
+  try {
+    return dtsTypeOfAbsInner(a, { ...opts, seen });
+  } finally {
+    seen.delete(a);
+  }
+}
+
+function dtsTypeOfAbsInner(a: Abs, opts: DtsTypeOpts): DtsType | undefined {
+  // 类型变量：shape any + term var（α / B:param）。
+  if (a.shape.k === "any" && a.term?.op === "var") {
+    const mapped = opts.typeVars?.get(a.term.id);
+    if (mapped !== undefined) return { kind: "raw", text: mapped };
+  }
   // 模板字面量类型：pred 承载 parts，必须先于「收窄 pred ⇒ 回落」处理。
   if (a.shape.k === "prim" && a.shape.type === "string" && isTemplateLike(a)) {
     const parts: Array<{ fixed?: string; type?: DtsType }> = [];
@@ -380,10 +405,11 @@ function objectSlotOf(
     const sym = WELL_KNOWN_SYMBOLS.get(k);
     if (sym === undefined) return undefined;
     if (slot.value.shape.k === "fn") {
-      const ret = slot.value.shape.returnType
+      const fromAbs = slot.value.shape.returnType
         ? dtsTypeOfAbs(slot.value.shape.returnType, opts)
         : undefined;
-      if (ret === undefined) return undefined;
+      const override = opts.symbolReturnOverrides?.get(k);
+      const ret = fromAbs ?? (override !== undefined ? { kind: "raw" as const, text: override } : { kind: "unknown" as const });
       return { key: sym, symbol: true, type: { kind: "fn", params: [], returnType: ret } };
     }
     const t = dtsTypeOfAbs(slot.value, opts);
@@ -402,11 +428,15 @@ function objectSlotOf(
       }
     }
   }
-  // 对象方法可能叠加源码返回注解（applyObjectFnReturnOverride）⇒
-  // 独立 fn 类型支持不适用于对象槽，仍走旧渲染器。
-  if (source.shape.k === "fn") return undefined;
-  const t = contractLiteralDtsType(source) ?? dtsTypeOfAbs(source, opts);
-  return t === undefined ? undefined : { key: formatObjectKey(k), type: t, ...flags };
+  let t = contractLiteralDtsType(source) ?? dtsTypeOfAbs(source, opts);
+  if (t === undefined) return undefined;
+  if (t.kind === "fn") {
+    const override = opts.objectFnReturnOverrides?.get(k);
+    if (override !== undefined) {
+      t = { ...t, returnType: { kind: "raw", text: override } };
+    }
+  }
+  return { key: formatObjectKey(k), type: t, ...flags };
 }
 
 /** 契约字面量槽（`eq(self, lit(v))` / and / or）→ 字面量类型。 */
@@ -556,7 +586,8 @@ export function renderDtsType(t: DtsType): string {
           return `[${s.key}]: ${renderDtsType(s.type)}`;
         }
         const typ = renderDtsType(s.type);
-        const value = s.optional && s.type.kind === "union" ? `(${typ})` : typ;
+        const needsParens = s.type.kind === "union" || s.type.kind === "fn";
+        const value = s.optional && needsParens ? `(${typ})` : typ;
         return `${s.readonly ? "readonly " : ""}${s.key}${s.optional ? "?" : ""}: ${value}`;
       });
       if (t.index) {
@@ -573,6 +604,7 @@ export function renderDtsType(t: DtsType): string {
     case "generic":
       return `${t.name}<${t.args.map(renderDtsType).join(", ")}>`;
     case "named":
+    case "raw":
       return t.text;
     case "fn": {
       const params = t.params.map((p) => `${p.name}: ${renderDtsType(p.type)}`);

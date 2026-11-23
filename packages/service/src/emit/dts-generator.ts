@@ -219,6 +219,13 @@ function absToTSTypeIr(a: Abs, typeVars?: Map<string, string>): string {
     readonlyValues: currentReadonlySlots,
     ...(currentBrandScope === undefined ? {} : { brandScope: currentBrandScope }),
     runtimeGlobalCtor: isRuntimeGlobalCtorName,
+    ...(typeVars === undefined ? {} : { typeVars }),
+    ...(currentObjectFnReturnOverrides === undefined
+      ? {}
+      : { objectFnReturnOverrides: currentObjectFnReturnOverrides }),
+    ...(currentSymbolReturnOverrides === undefined
+      ? {}
+      : { symbolReturnOverrides: currentSymbolReturnOverrides }),
   });
   return t === undefined ? absToTSType(a, typeVars) : renderDtsType(t);
 }
