@@ -5,7 +5,20 @@
  * 既被函数签名发射器使用，也被类与 namespace 发射器使用。放在这里避免
  * 发射器模块之间互相 import（循环依赖）。
  */
-import { formatObjectKey, isJsBindingIdent } from "@nudojs/core/internal";
+import {
+  formatObjectKey,
+  isJsBindingIdent,
+  toJsBindingIdent,
+} from "@nudojs/core/internal";
+
+/**
+ * 函数 / 类名 → 合法 TS 绑定名。作用域名（`C.m`）不是合法标识符；保留字
+ * （`default` / `class` …）直出会 TS1359。`toJsBindingIdent` 是仓里既有的
+ * Unicode 保真口径：合法名原样、保留字加 `_` 前缀、非法字符逐字清洗。
+ */
+export function dtsIdentifier(name: string): string {
+  return toJsBindingIdent(name);
+}
 
 /**
  * 成员声明里不能用保留字/非法标识符；空名与非 ident 落到 argN。

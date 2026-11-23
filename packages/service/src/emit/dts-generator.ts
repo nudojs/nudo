@@ -19,7 +19,6 @@ import {
   escapeTemplateTypeFixed,
   isJsBindingIdent,
   sanitizeCommentText,
-  toJsBindingIdent,
   ProjectionBudget,
   absTypeForTsTypeText,
 } from "@nudojs/core/internal";
@@ -45,6 +44,7 @@ import {
   type DtsDrop,
 } from "./dts-type.ts";
 import {
+  dtsIdentifier,
   formatPropKey,
   isArrayTypeText,
   paramDeclOf,
@@ -54,6 +54,7 @@ import {
 import {
   analysisLineParamNames,
   classMethodDeclLines,
+  dtsClassDeclaration,
   fieldPrefix,
   memberKeyText,
   paramBaseName,
@@ -61,6 +62,15 @@ import {
   staticFieldPrefix,
   withMethodModifier,
 } from "./dts-class-emit.ts";
+import {
+  ambientFunctionDeclarationText,
+  dtsExportDeclaration,
+  dtsExportForm,
+  dtsExportNamesOf,
+  dtsFormExportName,
+  overloadExportGlue,
+  type DtsExportForm,
+} from "./dts-module-emit.ts";
 import type {
   DtsClassAccessorSurface,
   DtsClassFieldSurface,
@@ -107,25 +117,7 @@ function tsTypeParamName(id: string): string {
   return n;
 }
 
-/**
- * 函数名 → 合法 TS **绑定名**（.d.ts 必须始终可被 tsc 解析）。
- *
- * 作用域名（类方法 `C.m`）不是合法标识符——直接落进 `export declare function
- * C.m(...)` 就是非法 TS（#494）。清洗口径与 noDeclaration 分支的
- * `Class_method` 投影一致（`C.m` → `C_m`），也与 zod / standard / guard 面
- * 的 `C_m*` 命名同源。
- *
- * **保留字**（`default` / `class` / `let` / `eval` …）也不是合法绑定名——
- * 直出就是 **TS1359 + TS1005**（整份 .d.ts 解析失败，Bug 552）。core 的
- * `toJsBindingIdent` 是仓里既有的保留字口径（保留字加 `_` 前缀）⇒ 复用。
- */
-function dtsIdentifier(name: string): string {
-  // Bug 11：合法绑定名（含 Unicode，如 `café` / `日本`）必须原样保留——ASCII
-  // 预筛会把它们洗成 `caf_`，把模块的公开名字改掉。`toJsBindingIdent` 已是
-  // 仓里 Unicode 保真的绑定名口径：合法名原样、保留字加 `_` 前缀、非法字符
-  // 逐字清洗（`C.m` → `C_m`，#494 口径不变）。
-  return toJsBindingIdent(name);
-}
+
 
 /**
  * Bug 191：对象字面量访问器（getter）的**读域**——访问器不住在 shape 槽里
@@ -5870,225 +5862,6 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
   return surface;
 }
 
-/**
- * 本地绑定名 → **全部**导出名（模块面）：未导出 ⇒ `[]`。
- *
- * BUG-189：同一个绑定可以同时是具名导出与 default 导出
- * （`export function foo(){}` + `export { foo as default }`，或 `export default foo;`）。
- * 旧实现拿到第一个命中就 `return`（且优先具名）⇒ default 别名被丢弃 ⇒ 发布的
- * `.d.ts` 里 default 导出**整个消失**（消费端 default import 报 TS2349 / TS2351，
- * 而运行时 default 与具名导出同时存在）。
- *
- * 具名导出（本地名即导出名）排在最前 = 主声明形态；其余名字按源码序补发。
- */
-function dtsExportNamesOf(surface: DtsModuleSurface, localName: string): string[] {
-  // 匿名 default（普查名 "default"）
-  if (localName === "default") return ["default"];
-  const names: string[] = [];
-  for (const [exportName, local] of surface.exportBindings) {
-    if (local !== localName) continue;
-    if (!names.includes(exportName)) names.push(exportName);
-  }
-  const self = names.indexOf(localName);
-  if (self > 0) {
-    names.splice(self, 1);
-    names.unshift(localName);
-  }
-  return names;
-}
-
-/** 主声明之外的附加导出名（补一条 `export { <declared> as <name> };`） */
-type DtsExportExtra = { exportNameRepr: string };
-
-/** 导出形态 → 声明写法 */
-type DtsExportForm =
-  | { kind: "none" }
-  | { kind: "named"; exportName: string; extras?: DtsExportExtra[] }
-  | { kind: "member"; memberName: string }
-  | { kind: "default"; localName: string; extras?: DtsExportExtra[] }
-  /**
-   * BUG-008：CJS `module.exports = <单值>`。运行期 `require()` 拿到的就是那个
-   * 值，ESM 的 `export default` / `export declare function` 声明与真实形态不符
-   * ⇒ 消费方 `import f from "./x.cjs"` 报 TS2349（没有调用签名）。
-   * `localName` = 产物里承载该值的本地名（匿名右值用 `_default`）。
-   */
-  | { kind: "exportEquals"; localName: string }
-  | {
-      kind: "alias";
-      exportName: string;
-      exportNameRepr: string;
-      localName: string;
-      extras?: DtsExportExtra[];
-    };
-
-/** 导出形态解析（模块面优先；无模块面 ⇒ 普查名即导出名） */
-function dtsExportForm(
-  localName: string,
-  surface: DtsModuleSurface | undefined,
-): DtsExportForm {
-  if (!surface) {
-    if (localName === "default") return { kind: "default", localName: "" };
-    return { kind: "named", exportName: dtsIdentifier(localName) };
-  }
-  // BUG-008：`module.exports = <单值>` 的模块形态是 `export =`，不是 ESM 导出。
-  // 必须先于 exportBindings 判定——扫描面为了「名字可解析」把该本地名登记成
-  // 具名导出，但那只是内部记账，不是模块形态。
-  if (surface.exportEquals !== undefined) {
-    const target = surface.exportEquals.local;
-    const hit = target === "" ? localName === "default" : localName === target;
-    if (hit) return { kind: "exportEquals", localName: target === "" ? "_default" : target };
-  }
-  const names = dtsExportNamesOf(surface, localName);
-  const exportName = names[0];
-  if (exportName === undefined) return { kind: "none" };
-  const extras = names.slice(1).map((n) => ({ exportNameRepr: exportNameRepr(n) }));
-  const withExtras = extras.length > 0 ? { extras } : {};
-  if (exportName === "default") {
-    // 匿名 default（普查名 "default"）⇒ `export default function (…)`
-    return {
-      kind: "default",
-      localName: localName === "default" ? "" : localName,
-      ...withExtras,
-    };
-  }
-  if (exportName === localName || !isJsBindingIdent(localName)) {
-    // 本地名不是合法绑定名 ⇒ 不能 `declare function <local>` + 别名导出
-    return { kind: "named", exportName: dtsIdentifier(exportName), ...withExtras };
-  }
-  return {
-    kind: "alias",
-    exportName,
-    exportNameRepr: exportNameRepr(exportName),
-    localName,
-    ...withExtras,
-  };
-}
-
-/** 导出形态 → 导出名（类成员不是模块级导出 ⇒ undefined） */
-function dtsFormExportName(form: DtsExportForm): string | undefined {
-  switch (form.kind) {
-    case "named":
-      return form.exportName;
-    case "alias":
-      return form.exportName;
-    case "default":
-      return "default";
-    case "exportEquals":
-      // `export = X` 对 ESM 消费方等价于 default 导入；台账按导出名记账。
-      return form.localName;
-    default:
-      return undefined;
-  }
-}
-
-/** 主声明之外的导出名 → `export { <declared> as <name> };` 行 */
-function dtsExtraExportLines(
-  declared: string | undefined,
-  extras: DtsExportExtra[] | undefined,
-): string[] {
-  if (declared === undefined) return [];
-  return (extras ?? []).map((e) => `export { ${declared} as ${e.exportNameRepr} };`);
-}
-
-/**
- * BUG-175：源码里的**无体重载声明** → `.d.ts` / stdout 平铺面都能编译的
- * ambient 形态。
- *
- * `.d.ts` 里裸 `export function f(a: string): string;` 本来合法（文件级
- * ambient 上下文），但 stdout 是把同一份文本平铺进**普通 `.ts` 模块**——
- * 非 ambient 的重载签名（无实现）会与实现的 `declare` 混排成 TS2384。
- * 统一补 `declare` 后两处都是 ambient 声明。
- */
-function ambientFunctionDeclarationText(text: string): string {
-  const t = text.trim();
-  if (/^export\s+declare\s+(async\s+)?function\b/.test(t)) return t;
-  if (/^declare\s+(async\s+)?function\b/.test(t)) return t;
-  if (/^export\s+(async\s+)?function\b/.test(t)) return t.replace(/^export\s+/, "export declare ");
-  if (/^(async\s+)?function\b/.test(t)) return `declare ${t}`;
-  return t;
-}
-
-/**
- * BUG-175：重载集已由镜像声明发射 ⇒ 实现签名只补**导出胶水**。
- *
- * 具名自导出（`export function f(…)`）的镜像行自带 `export`，无需补；
- * `export { f as g }` / default / `export =` 的导出语句原本挂在实现声明上，
- * 抑制实现后必须单独补回，否则导出面消失。
- */
-function overloadExportGlue(form: DtsExportForm, declaredExported: boolean): string[] {
-  switch (form.kind) {
-    case "named":
-      // 声明本身带 `export` ⇒ 已是导出面成员；否则补一条导出语句
-      return declaredExported || !isJsBindingIdent(form.exportName)
-        ? []
-        : [`export { ${form.exportName} };`];
-    case "alias":
-      return [
-        `export { ${form.localName} as ${form.exportNameRepr} };`,
-        ...dtsExtraExportLines(form.localName, form.extras),
-      ];
-    case "default":
-      return [`export { ${form.localName} as default };`, ...dtsExtraExportLines(form.localName, form.extras)];
-    case "exportEquals":
-      return [`export = ${form.localName};`];
-    default:
-      return [];
-  }
-}
-
-/**
- * 声明行（按导出形态；`signature` = `(<params>): <ret>`，可含类型参数）。
- *
- * `compatSignature`：Bug 57 兼容位——named 形态带源码类型形参时，除
- * `f<T>(…)` 主声明外再补一条同签名的非泛型重载，使「泛型函数旧文本形态」
- * 的既有钉与消费端都成立（TS 允许重载；带显式类型实参的调用命中泛型那条）。
- */
-function dtsExportDeclaration(
-  form: DtsExportForm,
-  signature: string,
-  compatSignature?: string,
-): string[] {
-  switch (form.kind) {
-    case "named":
-      return [
-        `export declare function ${form.exportName}${signature};`,
-        ...(compatSignature
-          ? [`export declare function ${form.exportName}${compatSignature};`]
-          : []),
-        ...dtsExtraExportLines(form.exportName, form.extras),
-      ];
-    case "member":
-      return [`${form.memberName}${signature};`];
-    case "default":
-      if (form.localName) {
-        return [
-          `export default function ${form.localName}${signature};`,
-          ...dtsExtraExportLines(form.localName, form.extras),
-        ];
-      }
-      // 匿名默认函数：`.d.ts` 上下文里 `export default function (…)` 合法。
-      // stdout 平铺面（普通 .ts 模块）需要 `ambientizeDtsSegment` 支持匿名
-      // 形态——根因在 packages/nudojs/src/commands/export/stdout.ts，超出
-      // 本文件改动范围（见最终汇报），此处保持既有发射形态不动。
-      return [`export default function ${signature};`];
-    case "alias":
-      return [
-        `declare function ${form.localName}${signature};`,
-        `export { ${form.localName} as ${form.exportNameRepr} };`,
-        ...dtsExtraExportLines(form.localName, form.extras),
-      ];
-    case "exportEquals":
-      // `export = <local>` 只允许一条，且不得与其他导出语句共存（TS2309）；
-      // 声明本身必须**不带 export**（否则变成 ESM 具名导出 + TS2309）。
-      return [
-        `declare function ${form.localName}${signature};`,
-        `export = ${form.localName};`,
-      ];
-    default:
-      return [];
-  }
-}
-
 /** 模块面 dts 投影结果 */
 export interface DtsModuleProjection {
   /** .d.ts 行（模块级声明 + 类声明 + 再导出） */
@@ -6573,247 +6346,6 @@ function projectModuleDtsInner(
   if (surface) for (const r of surface.reexports) lines.push(r);
 
   return { lines: [...importLines, ...ledger, ...lines], params };
-}
-
-/** 类声明行（导出形态 + 类型形参 + 超类 + 构造器 + 方法 + 字段 + 修饰符） */
-function dtsClassDeclaration(
-  className: string,
-  cls: DtsClassSurface | undefined,
-  memberList: Array<{ member: string; lines: string[] }>,
-  fields: DtsClassFieldSurface[],
-  superText = "",
-  /**
-   * 沿 `extends` 链**继承来的**静态成员名（BUG-070）。
-   *
-   * 分析面把基类的 `static` 方法也登记到导出子类名下（Bug 64：未导出基类的
-   * 方法也是子类公共面的一部分），但登记名 `` `${sub}.${m.name}` `` **不带
-   * static 标记** ⇒ 下面的「Bug 13」守卫只查**该类自己**源码面的
-   * `staticMethods` ⇒ 继承来的 static 落进实例方法循环，产物对子类凭空声明
-   * 一个**实例**方法（`export class Sub extends Base {}` ⇒ `v(): number;`），
-   * 消费方 `new Sub().v()` 类型检查通过、运行期 `TypeError`。
-   */
-  inheritedStatics: ReadonlySet<string> = new Set(),
-  /**
-   * BUG-194 / BUG-228：**继承来的实例方法**（只是分析面按子类名登记的基类
-   * own 方法）。值 = 已按超类类型实参代入的声明行 + 基类源码面的访问修饰符。
-   *
-   * 继承链由 `extends` 子句带进子类类型面；重声明必须（a）代入类型实参，
-   * 否则 `Box<number>.get(): T` 落到子类变成 `unknown` ⇒ 产物自身 TS2416；
-   * （b）保留 `protected`；`private` 则**不得**重发（TS 要求同一个私有声明，
-   * 重发即 TS2415）。
-   */
-  inherited: ReadonlyMap<string, { lines?: string[]; accessibility?: "private" | "protected" | "public" }> = new Map(),
-): string[] {
-  const body: string[] = [];
-  const methodNames = new Set<string>();
-  // Bug 87：`#private;` 名义标记——含 `#` 私有字段的类之间不可结构互赋。
-  if (cls?.hasPrivateIdentifier) body.push("#private;");
-  // Bug 88：index signature 是公开索引面。
-  for (const idx of cls?.indexSignatures ?? []) body.push(idx);
-  // 构造器（源码面：形参名已知；Bug 48 起带源码注解的类型也保真）
-  //
-  // BUG-234：重载构造器只发声明集（与 tsc 同口径），实现签名不发。
-  if (cls?.ctorOverloads !== undefined && cls.ctorOverloads.length > 0) {
-    for (const sig of cls.ctorOverloads) {
-      const params = sig.params
-        .map((p, i) => paramDeclOf(p, i, sig.paramTypes?.[i]))
-        .join(", ");
-      const ctorAcc = sig.accessibility ?? cls.ctorAccessibility;
-      const ctorPrefix = ctorAcc !== undefined ? `${ctorAcc} ` : "";
-      body.push(`${ctorPrefix}constructor(${params});`);
-    }
-  } else if (cls?.ctorParams) {
-    const params = cls.ctorParams
-      .map((p, i) => paramDeclOf(p, i, cls.ctorParamTypes?.[i]))
-      .join(", ");
-    // BUG-042：构造器可见性（`private constructor` ⇒ 消费方不可 `new`）
-    const ctorPrefix = cls.ctorAccessibility ? `${cls.ctorAccessibility} ` : "";
-    body.push(`${ctorPrefix}constructor(${params});`);
-  }
-  const instanceSurface = cls?.instanceMethods ?? [];
-  const staticSurface = cls?.staticMethods ?? [];
-  // Bug 13：「仅 static」的方法在普查面被登记成同名实例方法 ⇒ 那条是幻影，
-  // 只发源码面的 static 版本；同名 static + instance 同时存在时不跳过。
-  //
-  // BUG-070：**继承来的** static 同样算「仅 static」——`Sub extends Base {}`
-  // 的 `Sub.v` 来自基类的 `static v`，子类不得把它投影成实例方法（基类那条
-  // static 由 `extends Base` 继承下来，消费方照样能 `Sub.v()`）。
-  const staticOnly = new Set(
-    [...staticSurface.map((sm) => sm.name), ...inheritedStatics].filter(
-      (name) => !instanceSurface.some((im) => im.name === name),
-    ),
-  );
-  // Bug 86：源码面方法的访问修饰符查表。
-  const accessibility = new Map<string, string>();
-  for (const m of [...instanceSurface, ...staticSurface]) {
-    if (m.accessibility) accessibility.set(m.name, m.accessibility);
-  }
-  // 实例方法（分析面）
-  // BUG-156：分析面的返回类型取求值面 `combinedAbs`（构造器实参被播种成
-  // `any`）⇒ `this.<带注解字段> + 1` 折成 `number | string`。源码面已按注解
-  // 证据静态定型（`annotationReturnType`），这里**只收窄**观测串，并同步
-  // JSDoc 的 `@returns`（否则注释与声明自相矛盾）。
-  const refineAnnotationReturn = (member: string, lines: string[]): string[] => {
-    const evidence = instanceSurface.find((x) => x.name === member)?.annotationReturnType;
-    if (evidence === undefined || lines.length === 0) return lines;
-    const last = lines[lines.length - 1]!;
-    const sig = /^(.*\)\s*:\s*)(.+?)(;\s*)$/.exec(last);
-    if (!sig) return lines;
-    const observed = sig[2]!.trim();
-    const refined = refineObservedReturn(observed, evidence);
-    if (refined === observed) return lines;
-    const out = [...lines.slice(0, -1), `${sig[1]}${refined}${sig[3]}`];
-    return out.map((l) =>
-      l.includes(`@returns ${observed}`)
-        ? l.replace(`@returns ${observed}`, `@returns ${refined}`)
-        : l,
-    );
-  };
-  for (const m of memberList) {
-    if (staticOnly.has(m.member)) continue;
-    methodNames.add(m.member);
-    // BUG-175：源码面重载集 ⇒ 只发声明集（分析面的实现签名是 `any` catch-all）
-    const own = instanceSurface.find((x) => x.name === m.member);
-    if (own?.overloads !== undefined && own.overloads.length > 0) {
-      const prefix = [own.accessibility ?? "", own.isAbstract ? "abstract" : ""]
-        .filter(Boolean)
-        .join(" ");
-      body.push(
-        ...classMethodDeclLines(own, { prefix: prefix.length > 0 ? `${prefix} ` : "" }),
-      );
-      continue;
-    }
-    // BUG-194 / BUG-228：继承来的方法用代入后的声明行 + 基类修饰符
-    const inh = inherited.get(m.member);
-    if (inh !== undefined && inh.lines === undefined) continue; // private 继承成员不重发
-    const lines = inh?.lines ?? refineAnnotationReturn(m.member, m.lines);
-    const modifier =
-      inh !== undefined ? (inh.accessibility ?? "") : (accessibility.get(m.member) ?? "");
-    for (const l of withMethodModifier(lines, modifier)) {
-      body.push(...l.split("\n"));
-    }
-  }
-  // Bug 42：abstract 方法 / 无函数体的声明方法在分析面没有条目 ⇒ 从源码面补发。
-  for (const m of instanceSurface) {
-    if (methodNames.has(m.name)) continue;
-    methodNames.add(m.name);
-    const parts = [m.accessibility ?? "", m.isAbstract ? "abstract" : ""].filter(Boolean);
-    const prefix = parts.length > 0 ? `${parts.join(" ")} ` : "";
-    body.push(...classMethodDeclLines(m, { prefix }));
-  }
-  // 静态方法（源码面）
-  // BUG-095：JS 源码没有返回注解 ⇒ 从分析面同名成员的签名行取返回类型
-  // （实例方法一直走分析面，static 只读注解是两套口径）。
-  //
-  // 回归修正：分析面按**裸成员名**（`C.m`）查——同名 static / instance 只有
-  // 一条签名（实例位）⇒ 直接复用会把实例方法的返回类型贴到静态方法上
-  // （wrong-exact）。只有形参名 / 元数一致（同一条声明的同一调用面）才复用；
-  // 否则回落到静态方法自己的方法体观测，再否则 `unknown`。
-  const analysisReturnOf = (name: string, params: readonly string[]): string | undefined => {
-    const entry = memberList.find((m) => m.member === name);
-    if (!entry) return undefined;
-    const last = entry.lines[entry.lines.length - 1];
-    if (!last) return undefined;
-    const ret = /\)\s*:\s*([^;]+);\s*$/.exec(last);
-    if (!ret) return undefined;
-    const analysisParams = analysisLineParamNames(last);
-    const want = params.map(paramBaseName);
-    if (
-      !analysisParams ||
-      analysisParams.length !== want.length ||
-      analysisParams.some((n, i) => n !== want[i])
-    ) {
-      return undefined;
-    }
-    return ret[1]?.trim();
-  };
-  for (const m of staticSurface) {
-    const prefix = m.accessibility ? `${m.accessibility} ` : "";
-    if (m.overloads !== undefined && m.overloads.length > 0) {
-      body.push(...classMethodDeclLines(m, { static: true, prefix }));
-      continue;
-    }
-    const ret =
-      m.returnType ??
-      analysisReturnOf(m.name, m.params) ??
-      m.observedReturnType ??
-      "unknown";
-    body.push(...classMethodDeclLines({ ...m, returnType: ret }, { static: true, prefix }));
-  }
-  // Bug 23：static 字段（运行时公开数据属性）
-  for (const f of cls?.staticFields ?? []) {
-    body.push(
-      `${staticFieldPrefix(f)}${memberKeyText(f.name, f.symbolKey)}${f.optional ? "?" : ""}: ${f.type};`,
-    );
-  }
-  // Bug 23：访问器（getter / setter 属于公开类型面）
-  for (const a of cls?.accessors ?? []) {
-    const acc = a.accessibility ? `${a.accessibility} ` : "";
-    const st = a.isStatic ? "static " : "";
-    const key = memberKeyText(a.name, a.symbolKey);
-    body.push(
-      a.kind === "get"
-        ? `${acc}${st}get ${key}(): ${a.type};`
-        : `${acc}${st}set ${key}(v: ${a.type});`,
-    );
-  }
-  // 实例字段（brand 实例形状 ∪ 源码面字段）
-  for (const f of fields) {
-    if (methodNames.has(f.name)) continue;
-    body.push(
-      `${fieldPrefix(f)}${memberKeyText(f.name, f.symbolKey)}${f.optional ? "?" : ""}: ${f.type};`,
-    );
-  }
-  // Bug 74：类型形参子句优先取源码原文（含默认值 / 约束），否则按名字表补槽。
-  const typeParams = cls?.typeParams ?? [];
-  const typeParamsText =
-    cls?.typeParamsText ?? (typeParams.length > 0 ? `<${typeParams.join(", ")}>` : "");
-  const inner =
-    body.length > 0
-      ? `\n${body.map((l) => (l.trim() === "" ? l : `  ${l}`)).join("\n")}\n`
-      : "";
-  // Bug 12：匿名 default 类的普查名就是 "default"，保留字不能当类名 ⇒
-  // 用合成声明名 `_default`（`export default class _default { … }` 合法）。
-  const declaredName = className === "default" ? "_default" : className;
-  // BUG-109：表达式超类（`extends mixin(Base)`）无法按名字解析，但继承链
-  // 不能整条消失。降级成一个**开放构造基类**：实例 / 静态成员都可读可调用
-  // （`any` 只出现在这条显式降级里），并发台账点名原文——比对每个继承成员
-  // 报 TS2339 更可诊断，也不会把「作者声明的继承」静默撤销。
-  const superExpr = cls?.superExpressionText;
-  const baseName = `__nudo_base_${declaredName}`;
-  const degradedSuper = superText === "" && superExpr !== undefined;
-  const prelude = degradedSuper
-    ? [
-        `// nudo:unresolved-superclass ${declaredName} — extends ${sanitizeCommentText(superExpr)} (projected as open structural base)`,
-        `declare const ${baseName}: { new (): any; [key: string]: any };`,
-      ]
-    : [];
-  const effectiveSuperText = degradedSuper ? ` extends ${baseName}` : superText;
-  const implementsText =
-    cls?.implements !== undefined && cls.implements.length > 0
-      ? ` implements ${cls.implements.join(", ")}`
-      : "";
-  const header = `${declaredName}${typeParamsText}${effectiveSuperText}${implementsText}`;
-  // Bug 42：abstract 类修饰符。
-  const abs = cls?.isAbstract ? "abstract " : "";
-  const exportNames =
-    cls?.exportNames ?? (cls?.exportName !== undefined ? [cls.exportName] : []);
-  const exportName = exportNames[0];
-  const extras = exportNames
-    .slice(1)
-    .map((n) => `export { ${declaredName} as ${exportNameRepr(n)} };`);
-  if (exportName === undefined)
-    return [...prelude, `declare ${abs}class ${header} {${inner}}`];
-  if (exportName === "default")
-    return [...prelude, `export default ${abs}class ${header} {${inner}}`, ...extras];
-  if (exportName === className)
-    return [...prelude, `export declare ${abs}class ${header} {${inner}}`, ...extras];
-  return [
-    ...prelude,
-    `declare ${abs}class ${header} {${inner}}`,
-    `export { ${declaredName} as ${exportNameRepr(exportName)} };`,
-    ...extras,
-  ];
 }
 
 /**
