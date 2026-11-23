@@ -957,32 +957,23 @@ function elemsOf(a: Abs): Abs[] {
   if (a.shape.k === "tuple") return [...a.shape.elements];
   // #175 残留：arr 元素域分发标记（len-sharing.ts——跨读不保证同值）
   if (a.shape.k === "arr") return [markDomainShared(a.shape.element)];
-  if (isSetAbs(a)) return setElementsAbs(a);
-  if (isMapAbs(a)) return mapEntriesAbs(a);
   // BUG-401：注解 `Map<K,V>` / `Set<T>` 的 obj 模型携带集合身份 facet
-  // （方法面保留 obj，元素域由 genElements 承载）——spread / for-of 直接
-  // 读条目代表，不落用户迭代器协议的「done 不可判 ⇒ unknown」兜底。
+  // （方法面保留 obj，元素域由 genElements 承载）——长度不可知，不能先过
+  // `iterableExactElements`（它按协议故意返回 null）。
   if (a.facets?.brand === "Map" || a.facets?.brand === "Set") {
     const els = a.facets.genElements;
     if (els && els.length > 0) return els;
   }
-  // Bug 236：boxed String 品牌——字符序列精确展开（原生可迭代）
-  const boxedChars = boxedStringChars(a);
-  if (boxedChars) return boxedChars;
-  // Bug 54：生成器对象——从当前位取剩余并推进状态（迭代 = 消费），不再从 0 重放
-  const drained = drainGenElements(a);
-  if (drained) return drained;
-  const mi = matchIterElements(a);
-  if (mi) return mi;
+  // Set/Map、URLSearchParams、boxed String、生成器消费视图、match 迭代器、
+  // 字面量字符串、已走完的用户 iterable、TypedArray、brand 内层 tuple ——
+  // 精确序列只有一个来源。
+  const exact = iterableExactElements(a);
+  if (exact) return exact;
   // BUG-364：长度未知的序列迭代器（arr.keys/values/entries 的抽象臂、
   // 抽象字符串迭代器）——元素域取单代表（表不声明长度 ⇒ for-of 仍
   // unbounded，0 次出口由调用方 join 承接）。
   const ase = abstractSeqElementOf(a);
   if (ase !== undefined) return [ase];
-  // URLSearchParams / 字面量字符串 / 用户 iterable（本轮可走到 done）/
-  // TypedArray / brand 内层 tuple：精确序列统一由能力函数给出。
-  const exact = iterableExactElements(a);
-  if (exact) return exact;
   // 抽象字符串 prim：code point 迭代，元素域恒 string（Bug 19：for-of /
   // yield* 循环变量折 unknown → 算术/成员读级联污染）——单代表元素，与
   // arr 臂 [element] 同口径（长度不可知由 $forOf unbounded 出口 join 承接）
@@ -997,11 +988,11 @@ function elemsOf(a: Abs): Abs[] {
   if (a.shape.k === "brand") {
     const elem = TYPED_ARRAY_ELEMENT[(a.shape as { name?: string }).name ?? ""];
     if (elem) return [abs({ k: "prim", type: elem }, undefined, undefined, "path")];
+    // brand 结构面在内层（issue #147）：env/harvest 的 Array<T> brand 的
+    // for-of / spread 元素域 = 内层 arr 元素（此前折 unknown）。Set/Map/
+    // match-iter brand 已由能力函数命中，此处只兜结构 delegation。
+    return elemsOf(a.shape.shape);
   }
-  // brand 结构面在内层（issue #147）：env/harvest 的 Array<T> brand 的
-  // for-of / spread 元素域 = 内层 arr 元素（此前折 unknown）。Set/Map/
-  // match-iter brand 已在上方按名命中侧表，此处只兜结构 delegation。
-  if (a.shape.k === "brand") return elemsOf(a.shape.shape);
   return [unknown];
 }
 
