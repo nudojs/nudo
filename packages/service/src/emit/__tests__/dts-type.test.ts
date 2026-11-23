@@ -11,6 +11,7 @@ import {
   unknown,
   type Abs,
 } from "@nudojs/core";
+import { createTemplateAbs } from "@nudojs/core/internal";
 import { absToTSType } from "../dts-generator.ts";
 import { dtsTypeOfAbs, renderDtsType } from "../dts-type.ts";
 
@@ -98,13 +99,56 @@ describe("dts 类型 IR 与 absToTSType 逐字同形（支持子集）", () => {
     expect(ir(open)).toBe("Record<string, unknown>");
   });
 
-  it("对象不支持的面：view / index / symbol / internal / fn 槽 ⇒ undefined", () => {
-    expect(
-      dtsTypeOfAbs(mk({ k: "obj", slots: {}, view: "array" } as never)),
-    ).toBeUndefined();
+  it("契约字面量槽：eq(self, lit) → 字面量类型", () => {
+    const self = { op: "var", id: "x" } as never;
+    const slot = abs(
+      { k: "prim", type: "string" },
+      self,
+      { op: "eq", a: self, b: { op: "lit", value: "n" } } as never,
+      "path",
+    );
+    const obj = mk({ k: "obj", slots: { k: { value: slot } } } as never);
+    expect(ir(obj)).toBe(absToTSType(obj));
+  });
+
+  it("索引签名 / 纯数组视图 / 模板字面量", () => {
+    const indexed = mk({
+      k: "obj",
+      slots: { a: { value: num() } },
+      index: { key: str(), value: num() },
+    } as never);
+    expect(ir(indexed)).toBe(absToTSType(indexed));
+
+    const indexedEmpty = mk({
+      k: "obj",
+      slots: {},
+      index: { key: str(), value: num() },
+    } as never);
+    expect(ir(indexedEmpty)).toBe(absToTSType(indexedEmpty));
+
+    const view = mk({
+      k: "obj",
+      slots: {
+        "0": { value: numLit(1) },
+        "1": { value: str() },
+        length: { value: numLit(2) },
+      },
+      view: "array",
+    } as never);
+    expect(ir(view)).toBe(absToTSType(view));
+
+    const tpl = createTemplateAbs([strLit("id-"), num()]);
+    expect(ir(tpl)).toBe(absToTSType(tpl));
+  });
+
+  it("对象不支持的面：带伴生槽的 view / symbol / internal / fn 槽 ⇒ undefined", () => {
     expect(
       dtsTypeOfAbs(
-        mk({ k: "obj", slots: {}, index: { key: str(), value: num() } } as never),
+        mk({
+          k: "obj",
+          slots: { "0": { value: num() }, index: { value: num() } },
+          view: "array",
+        } as never),
       ),
     ).toBeUndefined();
     expect(
@@ -124,6 +168,77 @@ describe("dts 类型 IR 与 absToTSType 逐字同形（支持子集）", () => {
     expect(ir(union)).toBe(absToTSType(union));
   });
 
+  it("brand：内建泛型 / Arguments 别名；用户类回落", () => {
+    for (const name of ["Map", "Set", "Array", "Promise", "Generator"]) {
+      const a = mk({ k: "brand", name, shape: mk({ k: "obj", slots: {} }) } as never);
+      expect(ir(a)).toBe(absToTSType(a));
+    }
+    const args = mk({
+      k: "brand",
+      name: "Arguments",
+      shape: mk({ k: "obj", slots: {} }),
+    } as never);
+    expect(ir(args)).toBe("IArguments");
+    expect(
+      dtsTypeOfAbs(
+        mk({
+          k: "brand",
+          name: "MyClass",
+          shape: mk({ k: "obj", slots: {} }),
+        } as never),
+      ),
+    ).toBeUndefined();
+  });
+
+  it("fn：简单签名 / 可选 / rest / 数组与联合中的括号", () => {
+    const simple = mk({
+      k: "fn",
+      params: ["x"],
+      paramTypes: [num()],
+      returnType: str(),
+    } as never);
+    expect(ir(simple)).toBe(absToTSType(simple));
+
+    const optional = mk({
+      k: "fn",
+      params: ["x?"],
+      paramTypes: [num()],
+      returnType: str(),
+    } as never);
+    expect(ir(optional)).toBe(absToTSType(optional));
+
+    const restArr = mk({
+      k: "fn",
+      params: ["...xs"],
+      paramTypes: [mk({ k: "arr", element: num() })],
+      returnType: str(),
+    } as never);
+    expect(ir(restArr)).toBe(absToTSType(restArr));
+
+    const restPrim = mk({
+      k: "fn",
+      params: ["...xs"],
+      paramTypes: [num()],
+      returnType: str(),
+    } as never);
+    expect(ir(restPrim)).toBe(absToTSType(restPrim));
+
+    const arrOfFn = mk({ k: "arr", element: simple });
+    expect(ir(arrOfFn)).toBe(absToTSType(arrOfFn));
+    expect(ir(joinAbs(simple, num()))).toBe(absToTSType(joinAbs(simple, num())));
+  });
+
+  it("fn：重载集回落旧渲染器", () => {
+    const fn = mk({
+      k: "fn",
+      params: ["x"],
+      paramTypes: [num()],
+      returnType: str(),
+      overloads: [{ paramTypes: [num()], returnType: str() }],
+    } as never);
+    expect(dtsTypeOfAbs(fn)).toBeUndefined();
+  });
+
   it("effect：promise 包装 / 非 promise 透明", () => {
     const promise = mk({ k: "eff", eff: "promise", inner: num() } as never);
     expect(ir(promise)).toBe(absToTSType(promise));
@@ -131,11 +246,10 @@ describe("dts 类型 IR 与 absToTSType 逐字同形（支持子集）", () => {
     expect(ir(thunk)).toBe(absToTSType(thunk));
   });
 
-  it("不支持：brand / fn / 类型变量 ⇒ undefined（回落旧渲染器）", () => {
+  it("不支持：用户 brand / 类型变量 ⇒ undefined（回落旧渲染器）", () => {
     expect(
       dtsTypeOfAbs(mk({ k: "brand", name: "Date", shape: mk({ k: "obj", slots: {} }) } as never)),
     ).toBeUndefined();
-    expect(dtsTypeOfAbs(mk({ k: "fn" } as never))).toBeUndefined();
     expect(
       dtsTypeOfAbs(abs({ k: "any" }, { op: "var", id: "T" }, undefined, "path")),
     ).toBeUndefined();

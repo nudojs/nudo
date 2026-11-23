@@ -38,7 +38,12 @@ import {
   type DtsParam,
   type DtsReturnWiden,
 } from "./dts-ir.ts";
-import { dtsTypeOfAbs, renderDtsType } from "./dts-type.ts";
+import {
+  BRAND_TYPE_ALIASES,
+  BUILTIN_GENERIC_BRANDS,
+  dtsTypeOfAbs,
+  renderDtsType,
+} from "./dts-type.ts";
 import type {
   DtsClassAccessorSurface,
   DtsClassFieldSurface,
@@ -230,35 +235,6 @@ function absToTSTypeB(a: Abs, typeVars: Map<string, string> | undefined, budget:
     budget.exit();
   }
 }
-
-/**
- * 内建**泛型** brand → TS 类型串（Bug 521）。
- *
- * TS 里 `Map` / `Set` / `WeakMap` / `WeakSet` / `Array` / `Promise` … 是泛型：
- * 裸名缺类型实参 ⇒ **TS2314**（整份 `.d.ts` 编译不过）。内建 brand 的实例
- * 形状不带 K/V 证据（core 侧 brand 形状是 `objOf({})`）⇒ 实参落到最宽的
- * 合法值（`unknown`；`WeakMap` / `WeakSet` 的键位受 `WeakKey` 约束 ⇒ `object`）。
- *
- * 用户类 brand 走 `declare class` 路径（Bug 517）——不在本表内，原样保留类名。
- */
-const BUILTIN_GENERIC_BRANDS = new Map<string, string>([
-  ["Map", "Map<unknown, unknown>"],
-  ["ReadonlyMap", "ReadonlyMap<unknown, unknown>"],
-  ["WeakMap", "WeakMap<object, unknown>"],
-  ["Set", "Set<unknown>"],
-  ["ReadonlySet", "ReadonlySet<unknown>"],
-  ["WeakSet", "WeakSet<object>"],
-  ["Array", "Array<unknown>"],
-  ["Promise", "Promise<unknown>"],
-  ["Generator", "Generator<unknown>"],
-  ["AsyncGenerator", "AsyncGenerator<unknown>"],
-  ["Iterator", "Iterator<unknown>"],
-  ["Iterable", "Iterable<unknown>"],
-  ["IterableIterator", "IterableIterator<unknown>"],
-  ["AsyncIterator", "AsyncIterator<unknown>"],
-  ["AsyncIterable", "AsyncIterable<unknown>"],
-  ["AsyncIterableIterator", "AsyncIterableIterator<unknown>"],
-]);
 
 /**
  * Bug 233：brand 类名的解析口径（**当前投影作用域**内可解析的类名）。
@@ -1557,7 +1533,7 @@ function contractReturnTSType(a: Abs, typeVars?: Map<string, string>): string {
   return (
     contractAnyTSType(a) ??
     contractLiteralTSType(a) ??
-    absToTSType(widenTopLevelAbs(a), typeVars)
+    absToTSTypeIr(widenTopLevelAbs(a), typeVars)
   );
 }
 
@@ -1566,9 +1542,9 @@ function restParamType(
   isRest: boolean,
   typeVars?: Map<string, string>,
 ): string {
-  if (!isRest) return absToTSType(widened, typeVars);
-  if (widened.shape.k === "arr") return absToTSType(widened, typeVars);
-  const ts = absToTSType(widened, typeVars);
+  if (!isRest) return absToTSTypeIr(widened, typeVars);
+  if (widened.shape.k === "arr") return absToTSTypeIr(widened, typeVars);
+  const ts = absToTSTypeIr(widened, typeVars);
   return widened.shape.k === "sum" || widened.shape.k === "fn" ? `(${ts})[]` : `${ts}[]`;
 }
 
@@ -1671,17 +1647,6 @@ const TS_TYPE_TOKENS: ReadonlySet<string> = new Set([
   "PromiseRejectedResult", "Disposable", "AsyncDisposable", "DisposableStack",
   "AsyncDisposableStack", "SuppressedError", "WeakKey", "ArrayBufferView",
   "NodeJS",
-]);
-
-/**
- * 引擎 brand 名 → TS 类型名的别名（BUG-245）。
- *
- * `arguments` 的运行时 brand 是 `Arguments`，TS 里对应的是 `IArguments`；
- * 直接把 `Arguments` 写进 `.d.ts` 是 TS2304，而按 unknown 降级又会丢掉
- * 观察到的实参表。别名只作用于 brand 渲染与未解析台账。
- */
-const BRAND_TYPE_ALIASES: ReadonlyMap<string, string> = new Map([
-  ["Arguments", "IArguments"],
 ]);
 
 /**
@@ -2842,7 +2807,7 @@ function computeHofSignature(
     // 上游挡住——有契约参数时本函数根本不会被调用）。
     const typeStr = tsParamAnnotation(fn, i, isRest, ctx)
       ?? (promoted
-        ? absToTSType(promoted, typeVars)
+        ? absToTSTypeIr(promoted, typeVars)
         : isRest
           ? "unknown[]"
           : "unknown");
@@ -7924,11 +7889,11 @@ function dtsValueDeclarations(
       const renderAbs = (): string => {
         if (!abs) return value.typeText ?? "unknown";
         const annotated = withMemberAnnotations(abs);
-        if (value.asConst) return absToTSType(annotated);
+        if (value.asConst) return absToTSTypeIr(annotated);
         if (value.literalConst === true && annotated.shape.k === "prim" && annotated.term?.op === "lit") {
-          return absToTSType(annotated);
+          return absToTSTypeIr(annotated);
         }
-        return absToTSType(widenModuleValueAbs(annotated));
+        return absToTSTypeIr(widenModuleValueAbs(annotated));
       };
       const render = (): string =>
         withUserSymbolKeys(value.userSymbolKeys, () =>
@@ -8008,7 +7973,7 @@ function brandFieldLines(
     // Bug 240：私有字段（`#x`）是 internal 槽 ⇒ 不是用户可见属性 ⇒ 不进类体
     // （与 core 三面同判据）。
     if (isHiddenInternalSlot(k, slot)) continue;
-    out.push({ name: k, type: absToTSType(widenParamAbs(slot.value)) });
+    out.push({ name: k, type: absToTSTypeIr(widenParamAbs(slot.value)) });
   }
   return out;
 }
