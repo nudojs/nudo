@@ -58,6 +58,18 @@ function mergeTypeParamClauses(srcClause: string, derived: readonly string[]): s
   return `${srcClause.slice(0, close)}, ${extra.join(", ")}>`;
 }
 
+/**
+ * 为单个函数生成 .d.ts 投影（JSDoc + 单一 widen 主签名）。
+ * 证据优先级：手写契约（contract，export CLI 从 effectiveContract 取）
+ * > hof 泛型投影（C3.3）> case-widen。
+ * service 的 generateDts 与 CLI export --format dts 共用本函数。
+ *
+ * Bug 514/515/518/550：声明的**导出名**取自模块面（surface）——
+ * `export { internal as publicName }` 的导出名是 publicName；
+ * `export default function f` 的导出名是 default（写成
+ * `export default function f(...)`，不是 `export declare function f`）；
+ * 类成员（`C.m`）**不是**模块级导出（类声明由 projectModuleDts 合成）。
+ */
 export function projectFunctionDts(
   fn: FunctionAnalysis,
   contract?: DtsContractFace,

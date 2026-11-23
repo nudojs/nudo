@@ -291,15 +291,6 @@ export function generateDts(result: AnalysisResult): string {
 /** namespace 体 → 成员行（`namespace A.B` 的尾段挂在嵌套 TSModuleDeclaration 上） */
 
 
-/**
- * 模块导出面扫描（源文件 → 导出名表 + 类面 + 再导出语句）。
- *
- * 与 core 侧车的 `localNamedExports` 同源同口径（同一 AST 扫描），但**多**给
- * 两样东西：导出名 → 本地绑定的**映射**（别名导出要按导出名声明）与再导出
- * 语句（dts 要复现再导出面）。
- */
-
-
 /** 模块面 dts 投影结果 */
 
 export interface DtsModuleProjection {

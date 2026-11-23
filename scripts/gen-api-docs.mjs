@@ -137,8 +137,8 @@ function lookupDefDeep(src, name, filePath, seen = new Set()) {
   seen.add(key);
   const direct = lookupDef(src, name);
   if (direct) return direct;
-  // re-export hop: export { name } from "spec"  (also `name as local`)
-  for (const m of src.matchAll(/export\s*\{([\s\S]*?)\}\s*from\s*["']([^"']+)["']/g)) {
+  // re-export hop: export [type] { name } from "spec"  (also `name as local`)
+  for (const m of src.matchAll(/export\s*(?:type\s+)?\{([\s\S]*?)\}\s*from\s*["']([^"']+)["']/g)) {
     const spec = m[2];
     for (const part of m[1].split(",")) {
       const item = part.trim().replace(/^type\s+/, "");
@@ -295,16 +295,17 @@ function parseBarrel(rel) {
   const src = readFileSync(abs, "utf8");
   const out = new Map(); // name -> { name, kind, summary, signature, typeOnly }
 
-  // export { a, type B, c as d } from "spec"
-  for (const m of src.matchAll(/export\s*\{([\s\S]*?)\}\s*from\s*["']([^"']+)["']/g)) {
-    const names = m[1];
-    const spec = m[2];
+  // export [type] { a, type B, c as d } from "spec"
+  for (const m of src.matchAll(/export\s*(type\s+)?\{([\s\S]*?)\}\s*from\s*["']([^"']+)["']/g)) {
+    const stmtIsType = Boolean(m[1]);
+    const names = m[2];
+    const spec = m[3];
     const defPath = resolveModule(abs, spec);
     const defSrc = defPath ? readFileSync(defPath, "utf8") : null;
     for (const part of names.split(",")) {
       const item = part.trim();
       if (!item) continue;
-      const isType = /^type\s+/.test(item);
+      const isType = stmtIsType || /^type\s+/.test(item);
       const cleaned = item.replace(/^type\s+/, "").trim();
       const asMatch = /^([\w$]+)\s+as\s+([\w$]+)$/.exec(cleaned);
       const local = asMatch ? asMatch[1] : cleaned;

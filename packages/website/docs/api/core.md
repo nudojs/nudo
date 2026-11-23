@@ -206,8 +206,8 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="absapplynothrowfn"></a>`AbsApplyNoThrowFn` | type | no-throw apply face: narrow signature for impls that return bare `Abs`; `absOnly` peels the abs facet off `AbsApplyReturn` (test/host convenience, drops throws) | `AbsApplyNoThrowFn = (args: Abs[], thisVal?: Abs) => AbsApplyNoThrow` |
 | <a id="absapplyresult"></a>`AbsApplyResult` | type | evaluator execution (analyze mode); `callTranspiledExportApply` is the only apply-wrap of `callTranspiledExportFull` (throws channel, H1); construct AbsApplyResult only via `makeAbsApplyResult` (brand) | `AbsApplyResult = { abs: Abs; throws: Abs; readonly applyResult: true; }` |
 | <a id="absonly"></a>`absOnly` | fn | no-throw apply face: narrow signature for impls that return bare `Abs`; `absOnly` peels the abs facet off `AbsApplyReturn` (test/host convenience, drops throws) | `absOnly(r: AbsApplyReturn): AbsApplyNoThrow` |
-| <a id="abstoschemasource"></a>`absToSchemaSource` | const | one-way projections | — |
-| <a id="abstotstype"></a>`absToTSType` | const | one-way projections | — |
+| <a id="abstoconstraint"></a>`absToConstraint` | fn | one-way projections | `absToConstraint( a: Abs, budget: ProjectionBudget = new ProjectionBudget(), ): NudoConstraint \| undefined` |
+| <a id="abstostring"></a>`absToString` | fn | one-way projections | `absToString(a: Abs): string` |
 | <a id="analysisexplanation"></a>`AnalysisExplanation` | type | unknown / any origin explanation (observation-only side channel — ABS-02) | `AnalysisExplanation = { fn?: string; reason: UnknownReason; detail: string; suggestion?: string; }` |
 | <a id="and"></a>`and` | fn | `@nudo:contract` builder grammar (structural conjunction: shape∧shape / array∧array / union∧union / fn∧fn — ABS-11) | `and(...preds: Pred[]): Pred` |
 | <a id="andc"></a>`andC` | fn | `@nudo:contract` builder grammar (structural conjunction: shape∧shape / array∧array / union∧union / fn∧fn — ABS-11) | `andC( ...cs: (NudoConstraint \| ConstraintBuilder)[] ): ConstraintBuilder` |
@@ -230,7 +230,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="checkarg"></a>`checkArg` | fn | contract checking (binder scope = one constraint tree; unbound refs fail closed) | `checkArg( arg: Abs, expect: Pred \| undefined, phi: Phi = pTrue, ): Diagnostic \| undefined` |
 | <a id="checkcall"></a>`checkCall` | fn | contract checking (binder scope = one constraint tree; unbound refs fail closed) | `checkCall( source: string, fnName: string, args: Abs[], phi: Phi = pTrue, ): Diagnostic[]` |
 | <a id="checkjson"></a>`CheckJson` | type | `nudo check` gate | `CheckJson = { version: 1; file: string; ok: boolean; summary: CheckReport["summary"]; signatures: Array<{ name: string; params: string[];...` |
-| <a id="checkoptions"></a>`CheckOptions` | type | check options; `from?: readonly AbsCallRecord[]` = cross-file call-site evidence (CLI `--from`) fed into the `nudo:contract-drift` judgment (optional field — no new export) | — |
+| <a id="checkoptions"></a>`CheckOptions` | type | check options; `from?: readonly AbsCallRecord[]` = cross-file call-site evidence (CLI `--from`) fed into the `nudo:contract-drift` judgment (optional field — no new export) | `CheckOptions = { loadModule?: (spec: string, fromFile: string) => string \| undefined; fromFile?: string; autoBind?: boolean; projectDir?:...` |
 | <a id="checkreport"></a>`CheckReport` | type | `nudo check` gate | `CheckReport = { file: string; issues: CheckIssue[]; ok: boolean; signatures: NudoSig[]; summary: { errors: number; warnings: number; info...` |
 | <a id="checksource"></a>`checkSource` | fn | `nudo check` gate | `checkSource( filePath: string, source: string, phi: Phi = pTrue, opts: CheckOptions = {}, ): CheckReport` |
 | <a id="collectbinders"></a>`collectBinders` | const | contract checking (binder scope = one constraint tree; unbound refs fail closed) | — |
@@ -292,7 +292,6 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="parsesource"></a>`parseSource` | fn | Babel parse + memo | `parseSource( source: string, opts?: { errorRecovery?: boolean; keepTs?: boolean; filename?: string }, ): File` |
 | <a id="phi"></a>`Phi` | type | Abs = shape × term × pred × conf; `LiteralValue` 含 bigint | `Phi = Pred` |
 | <a id="pred"></a>`Pred` | type | Abs = shape × term × pred × conf; `LiteralValue` 含 bigint | `Pred = \| { op: "true" } \| { op: "false" } \| { op: "eq"; a: Term; b: Term } \| { op: "ne"; a: Term; b: Term } \| { op: "lt"; a: Term; b: Ter...` |
-| <a id="projectabstoschema"></a>`projectAbsToSchema` | const | one-way projections | — |
 | <a id="ref"></a>`ref` | const | `@nudo:contract` builder grammar (structural conjunction: shape∧shape / array∧array / union∧union / fn∧fn — ABS-11) | — |
 | <a id="refineabsforreltrue"></a>`refineAbsForRelTrue` | fn | refinement gate | `refineAbsForRelTrue( a: Abs, op: "gt" \| "ge" \| "lt" \| "le", k: number, ): Abs` |
 | <a id="rel"></a>`rel` | const | `@nudo:contract` builder grammar (structural conjunction: shape∧shape / array∧array / union∧union / fn∧fn — ABS-11) | — |
@@ -342,7 +341,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="$del"></a>`$del` | fn | object / member runtime | `$del: (o: Abs, key: Abs) => Abs` |
 | <a id="$elems"></a>`$elems` | fn | object / member runtime | `$elems(a: Abs): Abs[]` |
 | <a id="$eq"></a>`$eq` | fn | operator runtime | `$eq(a: Abs, b: Abs): Abs` |
-| <a id="$fnval"></a>`$fnVal` | fn | value / class runtime | `$fnVal( params: string[], impl: (...args: Abs[]) => Abs, opts?: { bindThis?: boolean; ctor?: boolean; padArgs?: boolean; length?: number; effectFree?: boolean; closed?: boolean; kind?: string; fnKind?: "function" \| "async" \| "generator" \| "async-generator"; optionalParams?: boolean[]; emptyBody?: boolean }, ): Abs` |
+| <a id="$fnval"></a>`$fnVal` | fn | value / class runtime | `$fnVal( params: string[], impl: (...args: Abs[]) => Abs, opts?: { bindThis?: boolean; ctor?: boolean; padArgs?: boolean; length?: number; effectFree?: boolean; closed?: boolean; kind?: string; fnKind?: "function" \| "async" \| "generator" \| "async-generator"; optionalParams?: boolean[]; emptyBody?: boolean; predicate?: { paramIndex: number; typeOf: string } }, ): Abs` |
 | <a id="$for"></a>`$for` | fn | control-flow lowering | `$for( init: Abs, test: (s: Abs) => Abs, step: (s: Abs) => Abs, body: (s: Abs) => Abs, maxIters: number = DEFAULT_MAX_LOOP_ITERS, opts?: { pack?: () => Abs; unpack?: (s: Abs) => void; label?: string; loopVar?: () => Abs; }, ): Abs` |
 | <a id="$fork"></a>`$fork` | fn | control-flow lowering | `$fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): Abs` |
 | <a id="$ge"></a>`$ge` | fn | operator runtime | `$ge(a: Abs, b: Abs): Abs` |
@@ -398,11 +397,11 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="transpilebodynode"></a>`transpileBodyNode` | fn | JS AST → `$op` program | `transpileBodyNode(node: Node, opts: TranspileOptions): string` |
 | <a id="transpileexpression"></a>`transpileExpression` | fn | JS AST → `$op` program | `transpileExpression(expr: Expression, opts: TranspileOptions = {}): string` |
 | <a id="transpilefile"></a>`transpileFile` | fn | JS AST → `$op` program | `transpileFile(file: File, opts: TranspileOptions = {}): string` |
-| <a id="transpileoptions"></a>`TranspileOptions` | type | JS AST → `$op` program | — |
+| <a id="transpileoptions"></a>`TranspileOptions` | type | JS AST → `$op` program | `TranspileOptions extends BaseEmitOpts, FlowCtx, NamingCtx, InjectCtx {}` |
 | <a id="transpilesource"></a>`transpileSource` | fn | JS AST → `$op` program | `transpileSource(source: string, opts: TranspileOptions = {}): string` |
 
 <details>
-<summary>Additional exports from src/index.ts (336)</summary>
+<summary>Additional exports from src/index.ts (334)</summary>
 
 | Name | Kind | Summary | Signature |
 |------|------|------|------|
@@ -414,8 +413,6 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="absmoduleexports"></a>`AbsModuleExports` | type | — | `AbsModuleExports = { named: Record<string, Abs>; default?: Abs; evaluated?: boolean; cjsMain?: boolean; interopDefault?: boolean; }` |
 | <a id="absshapekey"></a>`absShapeKey` | fn | 结构键的最小面（join 去重 / 槽相等 / env 声明去重共用）。 | `absShapeKey(a: Abs, seen: Set<object> = new Set()): string` |
 | <a id="abssigimpl"></a>`AbsSigImpl` | type | Abs 原生 env/builtin 实现（evaluator 优先） | `AbsSigImpl = (args: Abs[], thisVal?: Abs) => Abs \| undefined` |
-| <a id="abstoconstraint"></a>`absToConstraint` | fn | Abs → 契约；不可表达 → undefined。 | `absToConstraint( a: Abs, budget: ProjectionBudget = new ProjectionBudget(), ): NudoConstraint \| undefined` |
-| <a id="abstostring"></a>`absToString` | fn | — | `absToString(a: Abs): string` |
 | <a id="actionsforissue"></a>`actionsForIssue` | fn | 诊断码 → 结构化动作（AI1）；未知码给 info 提示 | `actionsForIssue(i: { code: string; expected?: string; suggestion?: string; fn?: string; reason?: string; }): CheckAction[]` |
 | <a id="add"></a>`add` | fn | — | `add(a: Abs, b: Abs, phi: Phi = pTrue): Abs` |
 | <a id="applycallbackabs"></a>`applyCallbackAbs` | fn | — | `applyCallbackAbs( cb: Abs \| { type: string }, args: Abs[], env: unknown, phi: unknown, budget: unknown, thisVal?: Abs, ): Abs` |
@@ -423,7 +420,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="asabs"></a>`asAbs` | fn | 从 map/filter/reduce 回调实参里取出 Abs（Identifier 已绑定或直接 Abs） | `asAbs(v: unknown): Abs \| undefined` |
 | <a id="assignsourceslots"></a>`assignSourceSlots` | fn | — | `assignSourceSlots(src: Abs): Record<string, { value: Abs }> \| undefined` |
 | <a id="assumefinite"></a>`assumeFinite` | const | 显式有限证据：t 为有限数（非 NaN/±Inf），开启线性环化简 | `const assumeFinite` |
-| <a id="astenv"></a>`AstEnv` | type | — | — |
+| <a id="astenv"></a>`AstEnv` | type | — | `AstEnv = { vars: Map<string, Abs>; fns: Map< string, { params: string[]; body: Node; async?: boolean; kind?: string; optionalParams?: boo...` |
 | <a id="attachfnimpl"></a>`attachFnImpl` | fn | — | `attachFnImpl(a: Abs, impl: AbsFnImpl): void` |
 | <a id="begincollectionfork"></a>`beginCollectionFork` | fn | — | `beginCollectionFork(): void` |
 | <a id="bindimports"></a>`bindImports` | fn | 把 import 说明符绑定进 env（宿主已求值依赖） | `bindImports( node: ImportDeclaration, env: AstEnv, modules: Record<string, AbsModuleExports>, ): void` |
@@ -481,8 +478,8 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="evalabsassignrecord"></a>`EvalAbsAssignRecord` | type | B 赋值记录（与 ast-records.ts AbsAssignRecord 同形；structuralAssignIssues 消费） | `EvalAbsAssignRecord = { name: string; prev: Abs \| undefined; next: Abs; line?: number; column?: number; conditional?: boolean; paramBindi...` |
 | <a id="evalarraystatic"></a>`evalArrayStatic` | fn | Array.isArray / Array.from / Array.of | `evalArrayStatic(name: string, args: Abs[]): Abs \| undefined` |
 | <a id="evalbuiltininstancemethod"></a>`evalBuiltinInstanceMethod` | fn | brand 实例方法（Date/RegExp/Map/Set/Error 家族/装箱拆箱后的 prim 面在外层） | `evalBuiltinInstanceMethod( brandName: string, method: string, recv: Abs, args: Abs[], ): Abs \| undefined` |
-| <a id="evalbuiltinnew"></a>`evalBuiltinNew` | fn | new X(...) | `evalBuiltinNew(className: string, args: Abs[]): Abs \| undefined` |
-| <a id="evalclassspec"></a>`EvalClassSpec` | type | — | — |
+| <a id="evalbuiltinnew"></a>`evalBuiltinNew` | fn | new X(...) | `evalBuiltinNew( className: string, args: Abs[], typeHint?: Abs, ): Abs \| undefined` |
+| <a id="evalclassspec"></a>`EvalClassSpec` | type | — | `EvalClassSpec = { name: string; superName?: string; superSpec?: EvalClassSpec; superNull?: boolean; superBuiltinHost?: boolean; ctor?: (t...` |
 | <a id="evaldatector"></a>`evalDateCtor` | fn | — | `evalDateCtor(args: Abs[]): Abs` |
 | <a id="evaldatemethod"></a>`evalDateMethod` | fn | — | `evalDateMethod(name: string, recv: Abs, args: Abs[]): Abs \| undefined` |
 | <a id="evaldatestatic"></a>`evalDateStatic` | fn | — | `evalDateStatic(name: string, args: Abs[]): Abs \| undefined` |
@@ -544,7 +541,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="gitlabcodequalityissue"></a>`GitlabCodeQualityIssue` | type | — | `GitlabCodeQualityIssue = { description: string; check_name: string; fingerprint: string; severity: "major" \| "minor" \| "info" \| "blocker"...` |
 | <a id="gt"></a>`gt` | const | — | `const gt` |
 | <a id="gtnum"></a>`gtNum` | fn | 便捷：数字下界 | `gtNum(term: Term, n: number): Pred` |
-| <a id="hofsite"></a>`HofSite` | type | — | — |
+| <a id="hofsite"></a>`HofSite` | type | — | `HofSite = { param: string; argTerms: Term[]; result: Abs; loc?: { line: number; column: number }; }` |
 | <a id="hostbuiltinctorname"></a>`hostBuiltinCtorName` | fn | 宿主全局构造器身份（Number === (42).constructor 折叠用） | `hostBuiltinCtorName(v: unknown): string \| undefined` |
 | <a id="hostfnctorfacet"></a>`hostFnCtorFacet` | fn | 宿主 JS 函数的可构造性（Bug 9）：generator/async/async-generator 声明、 箭头、内建方法不可 new；bind 产物取决于目标（未知）。 | `hostFnCtorFacet(v: Function): boolean \| undefined` |
 | <a id="implicationoracle"></a>`ImplicationOracle` | type | 外部蕴含 oracle（可选 SMT 等）。内建判定证不出时调用。 | `ImplicationOracle = (phi: Phi, pred: Pred) => boolean \| undefined` |
@@ -591,7 +588,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="looseeqabs"></a>`looseEqAbs` | fn | 宽松相等 `==`（C2.3）：双 lit 走 Abstract Equality；否则回落严格相等判定。 | `looseEqAbs(a: Abs, b: Abs): boolean \| undefined` |
 | <a id="lt"></a>`lt` | const | — | `const lt` |
 | <a id="ltnum"></a>`ltNum` | fn | — | `ltNum(term: Term, n: number): Pred` |
-| <a id="makearrayctorabs"></a>`makeArrayCtorAbs` | fn | — | `makeArrayCtorAbs(args: Abs[]): Abs` |
+| <a id="makearrayctorabs"></a>`makeArrayCtorAbs` | fn | — | `makeArrayCtorAbs(args: Abs[], typeHint?: Abs): Abs` |
 | <a id="makemapabs"></a>`makeMapAbs` | fn | — | `makeMapAbs(iterable?: Abs): Abs` |
 | <a id="makesetabs"></a>`makeSetAbs` | fn | — | `makeSetAbs(iterable?: Abs): Abs` |
 | <a id="makesymbolabs"></a>`makeSymbolAbs` | fn | Symbol([description])：非具体 unique symbol（prim type=symbol，无 term）。 | `makeSymbolAbs(descArg?: Abs): Abs` |
@@ -674,7 +671,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="registerevalclass"></a>`registerEvalClass` | fn | 注册类规格（裸名主键 + epoch 碰撞记录——BUG-026/172 注释群）。 | `registerEvalClass(spec: EvalClassSpec): void` |
 | <a id="relationfingerprint"></a>`relationFingerprint` | fn | relationFn 稳定 fingerprint（同签名共享，见 §3.3 已知限制）。 | `relationFingerprint( paramTypes: Abs[], returnType: Abs, ): string` |
 | <a id="relationfn"></a>`relationFn` | fn | 无 body、纯关系的 fn Abs。params 仅记 arity。 | `relationFn( paramTypes: Abs[], returnType: Abs, opts?: { params?: string[]; conf?: Confidence; fingerprint?: string; inferFrom?: { fromVar: string; via: "arr" \| "promise"; inferVar: string }; condFallback?: Abs; throws?: Abs; }, ): Abs` |
-| <a id="relsource"></a>`RelSource` | type | — | — |
+| <a id="relsource"></a>`RelSource` | type | 关系来源标记：P4 豁免与 diagnostics 依赖它，禁止隐式猜。 | `RelSource = "promote" \| "refine" \| "relationFn"` |
 | <a id="requiredfnarity"></a>`requiredFnArity` | fn | Required arity from fn param labels — skips rest (`...`) and optional (`?`). | `requiredFnArity(params: readonly string[] \| undefined): number` |
 | <a id="resetchecksourcememo"></a>`resetCheckSourceMemo` | fn | — | `resetCheckSourceMemo(): void` |
 | <a id="resetevalcallbudget"></a>`resetEvalCallBudget` | fn | 宿主入口前强制清零（测试 / 显式 API）。执行入口请用 enterEvalCallBudgetSession。 | `resetEvalCallBudget(): void` |
