@@ -17,7 +17,6 @@ import {
   isTemplateLike,
   templatePartsOf,
   escapeTemplateTypeFixed,
-  formatObjectKey,
   isJsBindingIdent,
   sanitizeCommentText,
   toJsBindingIdent,
@@ -45,6 +44,23 @@ import {
   renderDtsType,
   type DtsDrop,
 } from "./dts-type.ts";
+import {
+  formatPropKey,
+  isArrayTypeText,
+  paramDeclOf,
+  sanitizeParamName,
+  splitTopLevel,
+} from "./dts-text.ts";
+import {
+  analysisLineParamNames,
+  classMethodDeclLines,
+  fieldPrefix,
+  memberKeyText,
+  paramBaseName,
+  refineObservedReturn,
+  staticFieldPrefix,
+  withMethodModifier,
+} from "./dts-class-emit.ts";
 import type {
   DtsClassAccessorSurface,
   DtsClassFieldSurface,
@@ -109,33 +125,6 @@ function dtsIdentifier(name: string): string {
   // 仓里 Unicode 保真的绑定名口径：合法名原样、保留字加 `_` 前缀、非法字符
   // 逐字清洗（`C.m` → `C_m`，#494 口径不变）。
   return toJsBindingIdent(name);
-}
-
-/**
- * 成员声明里不能用保留字/非法标识符；空名与非 ident 落到 argN。
- * optional 标签（`options?`）先剥下再判 ident、保留 `?` 输出
- * （与 formatShape 的 `label?` 口径一致，BUG-020/S6-005：
- * 旧实现整名换 argN，`?` 语义丢失变必填）。
- */
-function sanitizeParamName(name: string, index: number): string {
-  let optional = false;
-  let base = name;
-  if (base.endsWith("?")) {
-    optional = true;
-    base = base.slice(0, -1);
-  }
-  if (base.startsWith("...")) {
-    const rest = base.slice(3);
-    if (isJsBindingIdent(rest)) return `...${rest}${optional ? "?" : ""}`;
-    return `...arg${index}`;
-  }
-  if (isJsBindingIdent(base)) return `${base}${optional ? "?" : ""}`;
-  return `arg${index}`;
-}
-
-/** 对象字面量键：ident / 规范数字键可裸写，其余 JSON 引号（与 schema formatJsObjectKey 同口径）。 */
-function formatPropKey(k: string): string {
-  return formatObjectKey(k);
 }
 
 /**
@@ -278,40 +267,6 @@ function brandScopeOf(surface: DtsModuleSurface | undefined): BrandScope {
   // 导入类的形参个数要看被导入模块，模块面拿不到 ⇒ 只能原样（与旧口径一致）。
   for (const name of surface.imports?.keys() ?? []) names.add(name);
   return { names, requiredArgFillers };
-}
-
-/**
- * 顶层切分（忽略 `<>` / `()` / `[]` / `{}` 内的分隔符）。
- * 类型形参子句里常见 `T extends Record<string, unknown>` —— 逗号在实参里，
- * 不能就地 split。
- */
-function splitTopLevel(text: string, sep: string): string[] {
-  const out: string[] = [];
-  let depth = 0;
-  let cur = "";
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i]!;
-    if (ch === "<" || ch === "(" || ch === "[" || ch === "{") depth++;
-    // 箭头函数 `=>`（`T extends (x: number) => string, U`）里的 `>` 是运算符
-    // 而不是闭合括号：当成闭合会把 depth 减成负数，后续 `,` 全被当成实参内
-    // 分隔符 ⇒ 第二个形参 `U` 从子句里消失（形参名 / 返回位引用被误判未声明）。
-    else if (
-      (ch === ">" && text[i - 1] !== "=") ||
-      ch === ")" ||
-      ch === "]" ||
-      ch === "}"
-    ) {
-      depth--;
-    }
-    if (ch === sep && depth === 0) {
-      out.push(cur);
-      cur = "";
-      continue;
-    }
-    cur += ch;
-  }
-  out.push(cur);
-  return out;
 }
 
 /** 类型形参子句里的形参名（`<T, U extends X = Y>` ⇒ `["T","U"]`） */
@@ -1366,24 +1321,6 @@ function tsParamAnnotation(
     }
   }
   return text;
-}
-
-/**
- * rest 位可用的类型文本（`T[]` / `Array<T>` / `ReadonlyArray<T>` / 元组）。
- *
- * TS 4.0 起 rest 形参允许**元组**（`...x: [string, boolean]`：实参元数 = 元组
- * 长度）⇒ 闸门必须放行 `[A, B]` / `readonly [A, B]`，否则注解被丢、回落
- * 符号哨兵的 `unknown[]`（BUG-242）。
- */
-function isArrayTypeText(t: string): boolean {
-  const text = t.trim();
-  return (
-    /\[\]$/.test(text) ||
-    /^Array<.*>$/.test(text) ||
-    /^ReadonlyArray<.*>$/.test(text) ||
-    /^readonly\s+\[[\s\S]*\]$/.test(text) ||
-    /^\[[\s\S]*\]$/.test(text)
-  );
 }
 
 /**
@@ -6638,111 +6575,6 @@ function projectModuleDtsInner(
   return { lines: [...importLines, ...ledger, ...lines], params };
 }
 
-/**
- * 静态字段修饰符前缀（BUG-041）：`static` 必须排在 `readonly` 之前
- * （TS1029 "'static' modifier must precede 'readonly' modifier"）。旧实现先拼
- * `fieldPrefix`（readonly/accessibility）再拼 `static` ⇒ `readonly static`。
- */
-function staticFieldPrefix(f: DtsClassFieldSurface): string {
-  const parts = [
-    f.accessibility ?? "",
-    "static",
-    f.readonly ? "readonly" : "",
-    f.isAbstract ? "abstract" : "",
-  ].filter(Boolean);
-  return `${parts.join(" ")} `;
-}
-
-/** 字段修饰符前缀（Bug 77 readonly / Bug 86 accessibility / Bug 42 abstract）。 */
-function fieldPrefix(f: DtsClassFieldSurface): string {
-  const parts = [
-    f.accessibility ?? "",
-    f.isAbstract ? "abstract" : "",
-    f.readonly ? "readonly" : "",
-  ].filter(Boolean);
-  return parts.length > 0 ? `${parts.join(" ")} ` : "";
-}
-
-/**
- * 给分析面方法声明行加访问修饰符（Bug 86）：声明行是 `lines` 的最后一行，
- * JSDoc / 降级台账都在它前面，只给声明行加前缀，注释保持原样。
- */
-function withMethodModifier(lines: string[], prefix: string): string[] {
-  if (!prefix || lines.length === 0) return lines;
-  const out = [...lines];
-  const last = out.length - 1;
-  out[last] = `${prefix} ${out[last]}`;
-  return out;
-}
-
-/** 形参声明 → 基名（`...rest` / `y?` / `y: unknown` ⇒ `rest` / `y` / `y`） */
-function paramBaseName(decl: string): string {
-  let t = decl.trim();
-  if (t.startsWith("...")) t = t.slice(3);
-  const colon = t.indexOf(":");
-  if (colon >= 0) t = t.slice(0, colon);
-  t = t.trim();
-  return t.endsWith("?") ? t.slice(0, -1) : t;
-}
-
-/**
- * 分析面签名行 → 形参基名表（`m(x: unknown, y?: T): R;` ⇒ `["x", "y"]`）。
- * 括号按深度配对（形参类型里可能有函数类型）；解析失败 ⇒ undefined。
- */
-function analysisLineParamNames(line: string): string[] | undefined {
-  const open = line.indexOf("(");
-  if (open < 0) return undefined;
-  let depth = 0;
-  let close = -1;
-  for (let i = open; i < line.length; i++) {
-    const ch = line[i];
-    if (ch === "(") depth++;
-    else if (ch === ")") {
-      depth--;
-      if (depth === 0) {
-        close = i;
-        break;
-      }
-    }
-  }
-  if (close < 0) return undefined;
-  const inner = line.slice(open + 1, close).trim();
-  if (inner === "") return [];
-  return splitTopLevel(inner, ",").map(paramBaseName);
-}
-
-/**
- * 类成员键的声明文本：符号键还原成 `[Symbol.iterator]` 括号形态（BUG-216），
- * 其余与对象键同口径（ident / 数字 / JSON 引号）。
- */
-function memberKeyText(name: string, symbolKey?: boolean): string {
-  if (symbolKey === true) {
-    const sym = WELL_KNOWN_SYMBOLS.get(name);
-    if (sym !== undefined) return `[${sym}]`;
-  }
-  return formatPropKey(name);
-}
-
-/**
- * 类方法声明行（BUG-175 / BUG-215 / BUG-216）：有 `overloads` ⇒ 只发声明集
- * （不发实现），否则发单条签名；`?` / 符号键 / 类型形参子句逐条保留。
- */
-function classMethodDeclLines(
-  m: DtsClassMethodSurface,
-  opts: { static?: boolean; prefix?: string } = {},
-): string[] {
-  const st = opts.static === true ? "static " : "";
-  const prefix = opts.prefix ?? "";
-  const key = `${memberKeyText(m.name, m.symbolKey)}${m.optional ? "?" : ""}`;
-  const signatures = m.overloads !== undefined && m.overloads.length > 0 ? m.overloads : [m];
-  return signatures.map((sig) => {
-    const params = sig.params
-      .map((p, i) => paramDeclOf(p, i, sig.paramTypes?.[i]))
-      .join(", ");
-    return `${prefix}${st}${key}${sig.typeParams ?? ""}(${params}): ${sig.returnType ?? "unknown"};`;
-  });
-}
-
 /** 类声明行（导出形态 + 类型形参 + 超类 + 构造器 + 方法 + 字段 + 修饰符） */
 function dtsClassDeclaration(
   className: string,
@@ -7408,47 +7240,6 @@ function dtsValueDeclarations(
     out.push(...names.slice(1).map((n) => `export { ${local} as ${exportNameRepr(n)} };`));
   }
   return out;
-}
-
-/**
- * 类形参声明（构造器 / 方法 / static）。
- *
- * BUG-003 曾把这里从硬编码 `unknown` 改成 `any`，理由是「nudo 展示面的
- * 无约束形参显示 any」。2026-11-06 产品裁定明确：该 display 规则只管
- * **nudo 展示 / CLI 面**；**TS 投影面**把 nudo 的无约束 any 映为 TS
- * `unknown`（top），所以无注解时仍回 `unknown`，且理由不是「推断失败」而是
- * 「TS 侧的 top」。
- *
- * 有注解时**原文保真**（源码里写什么就是什么）：形参注解不是「猜类型」，
- * 是声明面事实——抽象 / 无体方法在分析面没有条目，源码面是唯一证据源。
- * rest 位的注解在合法 TS 里本来就是数组类型（`...rest: number[]`），不得
- * 再追加 `[]`（`number[][]` 会让消费方 `new C(1, 2, 3)` 报 TS2345）；只有
- * 注解不可用（缺 / 非数组文本）时才补 `unknown[]`。
- */
-function paramDeclOf(name: string, index: number, annotation?: string): string {
-  const safe = sanitizeParamName(name, index);
-  if (annotation !== undefined) {
-    if (safe.startsWith("...") && !isArrayTypeText(annotation)) {
-      return `${safe}: ${annotation}[]`;
-    }
-    return `${safe}: ${annotation}`;
-  }
-  return safe.startsWith("...") ? `${safe}: unknown[]` : `${safe}: unknown`;
-}
-
-/**
- * 观测返回串 → 注解证据收窄（BUG-156）。
- *
- * 只做**收窄**：观测是 `unknown`（求值面没有信息）或是**标量联合**且注解证据
- * 是其中一个成员时采用注解证据。反向（注解证据不在观测串里 / 观测是单类型 /
- * 结构化类型）一律不动——本函数**不放宽**，也不改字面量精度（`2` 保持 `2`）。
- */
-function refineObservedReturn(observed: string, annotationEvidence?: string): string {
-  if (annotationEvidence === undefined) return observed;
-  if (observed === "unknown") return annotationEvidence;
-  const members = observed.split("|").map((s) => s.trim());
-  if (members.length < 2) return observed;
-  return members.includes(annotationEvidence) ? annotationEvidence : observed;
 }
 
 /** brand 实例形状 → 字段声明（排除方法名——方法进类体，不进字段） */
