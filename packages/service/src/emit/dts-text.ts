@@ -81,6 +81,22 @@ export function splitTopLevel(text: string, sep: string): string[] {
   return out;
 }
 
+/** 类型形参子句里的形参名（`<T, U extends X = Y>` ⇒ `["T","U"]`） */
+export function typeParamNamesInClause(clause: string | undefined): string[] {
+  if (!clause) return [];
+  const trimmed = clause.trim();
+  if (!/^</.test(trimmed)) return [];
+  const inner = trimmed.slice(
+    1,
+    trimmed.lastIndexOf(">") >= 0 ? trimmed.lastIndexOf(">") : undefined,
+  );
+  return splitTopLevel(inner, ",")
+    .map(
+      (p) => /^(?:(?:const|in|out)\s+)*([A-Za-z_$][\w$]*)/.exec(p.trim())?.[1],
+    )
+    .filter((n): n is string => n !== undefined);
+}
+
 /**
  * rest 位可用的类型文本（`T[]` / `Array<T>` / `ReadonlyArray<T>` / 元组）。
  *
