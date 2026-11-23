@@ -39,10 +39,15 @@ import {
   BRAND_TYPE_ALIASES,
   BUILTIN_GENERIC_BRANDS,
   WELL_KNOWN_SYMBOLS,
-  dtsTypeOfAbs,
-  renderDtsType,
+  type DtsBrandScope,
   type DtsDrop,
 } from "./dts-type.ts";
+import {
+  absToTSTypeIr,
+  dropLedgerLines,
+  pushDrop,
+  withDtsContext,
+} from "./dts-context.ts";
 import {
   dtsIdentifier,
   formatPropKey,
@@ -151,26 +156,7 @@ function slotAbsOf(a: Abs, k: string, fallback: Abs): Abs {
 }
 
 /** dts 类型文本：唯一的 IR 渲染入口。 */
-function absToTSTypeIr(a: Abs, typeVars?: Map<string, string>): string {
-  const ctx = currentDtsContext;
-  const t = dtsTypeOfAbs(a, {
-    readonlyValues: ctx.readonlyValues,
-    ...(ctx.brandScope === undefined ? {} : { brandScope: ctx.brandScope }),
-    runtimeGlobalCtor: isRuntimeGlobalCtorName,
-    ...(typeVars === undefined ? {} : { typeVars }),
-    ...(ctx.objectFnReturnOverrides === undefined
-      ? {}
-      : { objectFnReturnOverrides: ctx.objectFnReturnOverrides }),
-    ...(ctx.symbolReturnOverrides === undefined
-      ? {}
-      : { symbolReturnOverrides: ctx.symbolReturnOverrides }),
-    ...(ctx.userSymbolKeys === undefined
-      ? {}
-      : { userSymbolKeys: [...ctx.userSymbolKeys] }),
-    ...(ctx.onDrop === undefined ? {} : { onDrop: ctx.onDrop }),
-  });
-  return renderDtsType(t);
-}
+
 
 
 
@@ -184,71 +170,20 @@ function absToTSTypeIr(a: Abs, typeVars?: Map<string, string>): string {
  *   名单）。其余（用户类 brand 来自未声明的名字）**降级为 unknown**——产物里
  *   出现「从未声明的类型名」会让消费方 tsc 报 TS2304（Bug 233）。
  */
-type BrandScope = {
-  /** 产物里可解析的类名 */
-  names: ReadonlySet<string>;
-  /**
-   * 类名 → **必填**类型形参的占位实参（按声明顺序）。
-   *
-   * BUG-040：`class Box<T>` 在返回位被投影成裸 `Box` ⇒ 产物 TS2314（Generic
-   * type 'Box<T>' requires 1 type argument(s)）。内建泛型早就在
-   * `BUILTIN_GENERIC_BRANDS` 里补了 `unknown` 实参，用户类缺这一档。只对
-   * **必填**形参补（有默认值的 `class Box<T = string>` 裸名合法，保持逐字
-   * 不变——既有回归钉的就是这一半）。
-   *
-   * 回归修正：占位实参不能一律 `unknown`——`class C<T extends string>` 会被
-   * 填成 `C<unknown>` ⇒ 消费端 TS2344（`unknown` 不满足约束）。无约束 ⇒
-   * `unknown`；约束自包含 ⇒ 约束原文（`C<string>`）；否则 `any`（TS 的
-   * `any` 满足任意约束，不会把「不可解析」变成编译错误）。
-   */
-  requiredArgFillers: ReadonlyMap<string, readonly string[]>;
-};
+
 
 /**
  * dts 类型投影的完整上下文。此前拆成 5 个可变全局（brandScope / readonly /
  * symbol 覆盖 / user symbol 队列 / object fn 覆盖），新增一维就必须在
  * `absToTSTypeIr` 再手工搬运一次。现在只有这一份快照。
  */
-type DtsProjectionContext = {
-  readonlyValues: boolean;
-  brandScope?: BrandScope;
-  symbolReturnOverrides?: ReadonlyMap<string, string>;
-  userSymbolKeys?: readonly string[];
-  objectFnReturnOverrides?: ReadonlyMap<string, string>;
-  onDrop?: (drop: DtsDrop) => void;
-};
 
-let currentDtsContext: DtsProjectionContext = { readonlyValues: false };
-
-/** 在给定投影上下文下渲染；嵌套时按 patch 合并并恢复。 */
-function withDtsContext<T>(patch: Partial<DtsProjectionContext>, fn: () => T): T {
-  const prev = currentDtsContext;
-  currentDtsContext = { ...prev, ...patch };
-  try {
-    return fn();
-  } finally {
-    currentDtsContext = prev;
-  }
-}
-
-function pushDrop(sink: DtsDrop[], drop: DtsDrop): void {
-  if (sink.some((d) => d.key === drop.key && d.reason === drop.reason)) return;
-  sink.push(drop);
-}
-
-/** 无法表达成员的可诊断台账（产物里是注释，不影响 TS 语法）。 */
-function dropLedgerLines(drops: readonly DtsDrop[]): string[] {
-  return drops.map(
-    (d) =>
-      `// nudo:dropped-type-member ${d.key} — symbol key has no source name (cannot be expressed in .d.ts)`,
-  );
-}
 
 /**
  * 模块面可解析的类名（本地声明的类 + 已 import 的类）——brand 类名只在这里
  * 列出的名字下才允许进产物。
  */
-function brandScopeOf(surface: DtsModuleSurface | undefined): BrandScope {
+function brandScopeOf(surface: DtsModuleSurface | undefined): DtsBrandScope {
   const names = new Set<string>();
   const requiredArgFillers = new Map<string, readonly string[]>();
   if (!surface) return { names, requiredArgFillers };
