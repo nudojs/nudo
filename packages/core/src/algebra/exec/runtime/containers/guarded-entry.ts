@@ -16,8 +16,8 @@ import { $idx as $idxInner, $idxSet as $idxSetInner } from "./arr-index.ts";
 import {
   $elems as $elemsInner,
   $forOf as $forOfInner,
-  $iterCheck as $iterCheckInner,
 } from "./iterate.ts";
+import { $iterCheck as $iterCheckInner } from "./iter-check.ts";
 import { $get as $getInner, $set as $setInner, hasOwnAccessorOf } from "./member.ts";
 import { assertThisAccessible } from "../../super-access.ts";
 

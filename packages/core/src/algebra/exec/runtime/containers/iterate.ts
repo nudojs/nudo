@@ -80,6 +80,13 @@ import {
 export { $tpl } from "./template-object.ts";
 export { $forInKeys } from "./for-in-keys.ts";
 import {
+  USER_ITER_MAX_STEPS,
+  collectUserIterElems,
+  iteratorClose,
+  userIteratorFn,
+} from "./user-iterator.ts";
+export type { UserIterReader } from "./user-iterator.ts";
+import {
   anyMemberResult,
 } from "../../member-diag.ts";
 import { errorTypeAbs, recordMayThrow } from "../../may-throw.ts";
@@ -583,7 +590,7 @@ function asyncIterabilityKind(a: Abs): IterabilityKind {
 /** 迭代消费守卫：definite 非可迭代 → 原生 TypeError（hard NudoThrow）；
  *  抽象面可能非可迭代 → recordMayThrow（值域投影不变）。
  *  $elems（for-of / spread 实参）与 $iterCheck（数组解构）共用。 */
-function guardIterable(a: Abs, ctx: string): void {
+export function guardIterable(a: Abs, ctx: string): void {
   const kind = iterabilityKind(a);
   if (kind === "definite") throw new NudoThrow(errorTypeAbs("TypeError"));
   if (kind === "may") {
@@ -601,7 +608,7 @@ function guardIterable(a: Abs, ctx: string): void {
  * 有界，否则用户迭代器不终止时挂死。超界 ⇒ 元素域折 unknown（sound：
  * 剩余元素个数不可知，不得折确定长度 / 确定元素）。
  */
-const USER_ITER_MAX_STEPS = 1024;
+
 
 /**
  * fn 值是否**真实现**（可驱动）。
@@ -617,12 +624,7 @@ const USER_ITER_MAX_STEPS = 1024;
  * 迭代器（`abstractSeqIteratorAbs` 的 `@@iterator`）被误判为真实现 ⇒ 跑
  * 用户协议调占位 fn ⇒ 确定 TypeError（`[...Array.from('ab').keys()]` 假抛）。
  */
-function hasRealImpl(fn: Abs): boolean {
-  const impl = getFnImpl(fn);
-  if (!impl) return false;
-  if (typeof impl.apply === "function") return true;
-  return !!impl.body && impl.body !== noBody;
-}
+
 
 /**
  * 用户 iterable 的 `@@iterator` 槽值（非用户 iterable → undefined）。
@@ -632,12 +634,7 @@ function hasRealImpl(fn: Abs): boolean {
  * （Array/Map/Set 的 values/keys/entries）/ matchAll 迭代器各有侧表 ⇒ 走
  * 既有消费路径（`$idx` peek / drain / 侧表切片），**不进**用户协议。
  */
-function userIteratorFn(a: Abs): Abs | undefined {
-  if (matchIterElements(a) !== undefined) return undefined;
-  const fn = $get(a, "@@iterator", { symbolKey: true });
-  if (!fn || !hasRealImpl(fn)) return undefined;
-  return fn;
-}
+
 
 /**
  * 用户迭代器协议采集：调 `@@iterator`（this = 接收者）拿迭代器 → 反复调
@@ -648,54 +645,7 @@ function userIteratorFn(a: Abs): Abs | undefined {
  * `truncated` = 元素列表可能不完整（步数上界触顶 / `done` 抽象不可判）⇒
  * 尾域折 unknown（sound）。
  */
-function collectUserIterElems(
-  a: Abs,
-  maxSteps: number,
-): { els: Abs[]; truncated: boolean } | null {
-  const iterFn = userIteratorFn(a);
-  if (!iterFn) return null;
-  const limit = Math.max(0, Math.min(maxSteps, USER_ITER_MAX_STEPS));
-  // GetIterator：调 @@iterator（this = 接收者）
-  const iter = $call(iterFn, [], a);
-  // Bug 199：登记迭代器对象——非正常退出（break/return/throw）的
-  // IteratorClose（调 return()）按此取用。
-  registerUserIter(a, iter);
-  const els: Abs[] = [];
-  let truncated = false;
-  let exhausted = false;
-  for (let i = 0; i < limit; i++) {
-    const nextFn = $get(iter, "next");
-    if (!hasRealImpl(nextFn)) {
-      // 原生：iter.next 不可调用 → TypeError（引擎保守：may-throw + 尾域折
-      // unknown——不因引擎建模缺口定抛假错）
-      recordMayThrow({ kind: "TypeError", cause: "iterator has no callable next method" });
-      truncated = true;
-      break;
-    }
-    // IteratorNext：调 next()（this = 迭代器）读结果对象的 value / done
-    const res = $call(nextFn, [], iter);
-    if (res.shape.k !== "obj" && res.shape.k !== "brand") {
-      recordMayThrow({ kind: "TypeError", cause: "iterator result is not an object" });
-      truncated = true;
-      break;
-    }
-    // done 语义 = ToBoolean（原生 Get(result, "done") 的真值判定）
-    const dt = litTruth($get(res, "done"));
-    if (dt !== false) {
-      // done 为真 → 迭代结束；done 抽象（不可判）→ 保守停（尾域折 unknown）
-      exhausted = dt === true;
-      truncated = dt === undefined;
-      break;
-    }
-    els.push($get(res, "value"));
-  }
-  // 步数上界触顶（未 done）⇒ 剩余元素个数不可知 → 折 unknown（sound）
-  if (els.length >= limit && limit >= USER_ITER_MAX_STEPS) truncated = true;
-  // Bug 199：迭代器报告 done ⇒ 元素数确切（for-of 迭代次数据此定 N 次，
-  // 与原生同）；未耗尽 ⇒ 长度不可知 ⇒ 沿用 unbounded 单代表口径。
-  registerUserIterLen(a, exhausted && !truncated ? els.length : undefined);
-  return { els, truncated };
-}
+
 
 /**
  * 用户 iterable 的**迭代序**元素读取器（`$iterCheck` 返回值）：
@@ -704,10 +654,7 @@ function collectUserIterElems(
  * - `rest(i)`：从第 i 项起的剩余元素（原生 rest 语义：迭代到 done 为止）；
  *   截断 → unknown（剩余长度不可知）。
  */
-export interface UserIterReader {
-  get(i: number): Abs;
-  rest(i: number): Abs;
-}
+
 
 /**
  * Bug 199：IteratorClose——对**用户迭代器**调 `return()`（原生规范：
@@ -723,28 +670,7 @@ export interface UserIterReader {
  * - 抽象面（占位 fn / 不可判值）⇒ 不判定（不得凭空抛——引擎建模缺口
  *   不得折成原生定抛）。
  */
-function iteratorClose(iter: Abs | undefined): void {
-  if (!iter) return;
-  const ret = $get(iter, "return", { silent: true });
-  if (!ret) return;
-  const lit = ret.term?.op === "lit" ? (ret.term as { value: unknown }).value : undefined;
-  if (ret.term?.op === "lit") {
-    // GetMethod：undefined/null ⇒ 无 return 槽（不调用）
-    if (lit === undefined || lit === null) return;
-    // 确定的非可调用值 ⇒ GetMethod 定抛 TypeError
-    if (typeof lit !== "function") throw new NudoThrow(errorTypeAbs("TypeError"));
-  }
-  // 抽象/占位 fn ⇒ 不判定（不得凭空抛）
-  if (!hasRealImpl(ret)) return;
-  const r = $call(ret, [], iter);
-  // IteratorClose step 5：return() 的返回值必须是对象 ⇒ 否则定抛 TypeError
-  if (r?.term?.op === "lit") {
-    const v = (r.term as { value: unknown }).value;
-    if (v === null || (typeof v !== "object" && typeof v !== "function")) {
-      throw new NudoThrow(errorTypeAbs("TypeError"));
-    }
-  }
-}
+
 
 /**
  * 数组解构模式接收者守卫 + **用户 iterable 迭代序元素读取器**。
@@ -760,58 +686,7 @@ function iteratorClose(iter: Abs | undefined): void {
  * `maxElements`：本次最多取几个元素（原生按需取：模式有 n 个位置就取 n 个，
  * 空位也消耗一个）；缺省 / 负数 = 取到 done（受 USER_ITER_MAX_STEPS 上界约束）。
  */
-export function $iterCheck(a: unknown, maxElements?: number): UserIterReader | null {
-  const v = asAbsVal(a);
-  guardIterable(v, "array destructuring");
-  // Bug 34：体内抛错的生成器（延迟异常挂对象侧表）——解构消费触达抛点
-  replayGenDeferred(v);
-  const bounded = maxElements !== undefined && maxElements >= 0;
-  // BUG-125：URLSearchParams 的数组解构按条目表读取（与 @@iterator === entries
-  // 同源）——必须先于用户迭代协议采集：brand 的 @@iterator 是内建符号成员
-  // （可调用派发），collectUserIterElems 只会采到 unknown 兜底。
-  {
-    const urlSpEls = builtinExactIterableElems(v);
-    if (urlSpEls) {
-      return {
-        get: (i: number): Abs => (i < urlSpEls.length ? urlSpEls[i]! : undef()),
-        rest: (i: number): Abs => $arr(urlSpEls.slice(i)),
-      };
-    }
-  }
-  const r = collectUserIterElems(
-    v,
-    maxElements === undefined || maxElements < 0 ? USER_ITER_MAX_STEPS : maxElements,
-  );
-  if (!r) {
-    // Bug 4：数组解构对**字符串**接收者按 code point 迭代（原生
-    // GetIterator + String.prototype[Symbol.iterator]）。此前 $iterCheck 对
-    // 字符串返回 null ⇒ emit.ts 的 readAt 回落 `$idx(str, i)`（UTF-16 码元
-    // 下标）⇒ "𠮷" 解出孤立高/低代理项。值可判的字面量串在此按码点给
-    // 读取器；抽象 string 域仍返回 null（回落路径不折假精确）。
-    const sv = v.shape.k === "prim" && (v.shape as { type?: string }).type === "string"
-      ? litValue(v)
-      : undefined;
-    if (sv?.ok && typeof sv.value === "string") {
-      const cps = Array.from(sv.value, (cp) => strLit(cp));
-      return {
-        get: (i: number): Abs => (i < cps.length ? cps[i]! : undef()),
-        rest: (i: number): Abs => $arr(cps.slice(i)),
-      };
-    }
-    return null;
-  }
-  const { els, truncated } = r;
-  // Bug 199：模式填满（无 rest）而迭代器未耗尽 ⇒ IteratorClose（原生调
-  // `return()`——`const [a,b] = it` 也会触发）。模式带 rest（取到 done）
-  // 或迭代器已耗尽 ⇒ 不调用（原生同）。
-  if (bounded && els.length >= maxElements! && !truncated) {
-    iteratorClose(userIterOf(v));
-  }
-  return {
-    get: (i: number): Abs => (i < els.length ? els[i]! : truncated ? unknown : undef()),
-    rest: (i: number): Abs => (truncated ? unknown : $arr(els.slice(i))),
-  };
-}
+
 
 /** 元素列表（tuple 展开；arr 抽象；C1 Set/Map 逐条目；matchAll 迭代器逐匹配项；
  *  字符串按 code points）。Map 迭代语义是 entry `[key, value]` 元组，不是裸 value。
