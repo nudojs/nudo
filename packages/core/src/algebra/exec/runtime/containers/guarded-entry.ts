@@ -13,10 +13,8 @@ import { getFnImpl } from "../../../abs-fn.ts";
 import { NudoThrow } from "../../nudo-throw.ts";
 import { errorTypeAbs } from "../../may-throw.ts";
 import { $idx as $idxInner, $idxSet as $idxSetInner } from "./arr-index.ts";
-import {
-  $elems as $elemsInner,
-  $forOf as $forOfInner,
-} from "./iterate.ts";
+import { $elems as $elemsInner } from "./iterate.ts";
+import { $forOf as $forOfInner } from "./for-of.ts";
 import { $iterCheck as $iterCheckInner } from "./iter-check.ts";
 import { $get as $getInner, $set as $setInner, hasOwnAccessorOf } from "./member.ts";
 import { assertThisAccessible } from "../../super-access.ts";
